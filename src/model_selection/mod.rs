@@ -417,6 +417,129 @@ impl StratifiedKFold {
     }
 }
 
+/// Grid search result containing best parameters and score.
+#[derive(Debug, Clone)]
+pub struct GridSearchResult {
+    /// Best alpha value found
+    pub best_alpha: f32,
+    /// Best cross-validation score
+    pub best_score: f32,
+    /// All alpha values tried
+    pub alphas: Vec<f32>,
+    /// Corresponding scores for each alpha
+    pub scores: Vec<f32>,
+}
+
+impl GridSearchResult {
+    /// Returns the index of the best alpha value.
+    pub fn best_index(&self) -> usize {
+        self.scores
+            .iter()
+            .enumerate()
+            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
+            .map(|(idx, _)| idx)
+            .unwrap_or(0)
+    }
+}
+
+/// Performs grid search over alpha parameter for regularized linear models.
+///
+/// Exhaustively evaluates all provided alpha values using K-fold cross-validation
+/// and returns the alpha that achieves the highest cross-validation score.
+///
+/// # Arguments
+///
+/// * `model_type` - Type of model: "ridge", "lasso", or "elastic_net"
+/// * `alphas` - Vector of alpha values to try
+/// * `x` - Feature matrix
+/// * `y` - Target vector
+/// * `cv` - Cross-validation splitter
+/// * `l1_ratio` - Optional l1_ratio for ElasticNet (ignored for Ridge/Lasso)
+///
+/// # Returns
+///
+/// `GridSearchResult` containing best alpha, best score, and all results
+///
+/// # Example
+///
+/// ```rust
+/// use aprender::model_selection::{grid_search_alpha, KFold};
+/// use aprender::primitives::{Matrix, Vector};
+///
+/// let x_data: Vec<f32> = (0..50).map(|i| i as f32).collect();
+/// let y_data: Vec<f32> = x_data.iter().map(|&x| 2.0 * x + 1.0).collect();
+///
+/// let x = Matrix::from_vec(50, 1, x_data).unwrap();
+/// let y = Vector::from_vec(y_data);
+///
+/// let alphas = vec![0.001, 0.01, 0.1, 1.0, 10.0];
+/// let kfold = KFold::new(5).with_random_state(42);
+///
+/// let result = grid_search_alpha("ridge", &alphas, &x, &y, &kfold, None).unwrap();
+/// println!("Best alpha: {}, Best score: {}", result.best_alpha, result.best_score);
+/// ```
+pub fn grid_search_alpha(
+    model_type: &str,
+    alphas: &[f32],
+    x: &Matrix<f32>,
+    y: &Vector<f32>,
+    cv: &KFold,
+    l1_ratio: Option<f32>,
+) -> Result<GridSearchResult, String> {
+    if alphas.is_empty() {
+        return Err("Alphas vector cannot be empty".to_string());
+    }
+
+    let mut best_alpha = alphas[0];
+    let mut best_score = f32::NEG_INFINITY;
+    let mut all_scores = Vec::with_capacity(alphas.len());
+
+    for &alpha in alphas {
+        // Create model based on type
+        let score = match model_type {
+            "ridge" => {
+                use crate::linear_model::Ridge;
+                let model = Ridge::new(alpha);
+                let cv_result = cross_validate(&model, x, y, cv)?;
+                cv_result.mean()
+            }
+            "lasso" => {
+                use crate::linear_model::Lasso;
+                let model = Lasso::new(alpha);
+                let cv_result = cross_validate(&model, x, y, cv)?;
+                cv_result.mean()
+            }
+            "elastic_net" => {
+                use crate::linear_model::ElasticNet;
+                let ratio = l1_ratio.ok_or("l1_ratio required for ElasticNet")?;
+                let model = ElasticNet::new(alpha, ratio);
+                let cv_result = cross_validate(&model, x, y, cv)?;
+                cv_result.mean()
+            }
+            _ => {
+                return Err(format!(
+                    "Unknown model type: {}. Use 'ridge', 'lasso', or 'elastic_net'",
+                    model_type
+                ))
+            }
+        };
+
+        all_scores.push(score);
+
+        if score > best_score {
+            best_score = score;
+            best_alpha = alpha;
+        }
+    }
+
+    Ok(GridSearchResult {
+        best_alpha,
+        best_score,
+        alphas: alphas.to_vec(),
+        scores: all_scores,
+    })
+}
+
 /// Split arrays into random train and test subsets.
 ///
 /// # Arguments
@@ -1030,5 +1153,156 @@ mod tests {
 
         let splits = skfold.split(&y);
         assert_eq!(splits.len(), 2);
+    }
+
+    // ==================== Grid Search Tests ====================
+
+    #[test]
+    fn test_grid_search_alpha_ridge() {
+        let x_data: Vec<f32> = (0..50).map(|i| i as f32).collect();
+        let y_data: Vec<f32> = x_data.iter().map(|&x| 2.0 * x + 1.0).collect();
+
+        let x = Matrix::from_vec(50, 1, x_data).unwrap();
+        let y = Vector::from_vec(y_data);
+
+        let alphas = vec![0.001, 0.01, 0.1, 1.0, 10.0];
+        let kfold = KFold::new(5).with_random_state(42);
+
+        let result = grid_search_alpha("ridge", &alphas, &x, &y, &kfold, None).unwrap();
+
+        assert!(alphas.contains(&result.best_alpha));
+        assert!(result.best_score > 0.9);
+        assert_eq!(result.alphas.len(), alphas.len());
+        assert_eq!(result.scores.len(), alphas.len());
+    }
+
+    #[test]
+    fn test_grid_search_alpha_lasso() {
+        let x_data: Vec<f32> = (0..50).map(|i| i as f32).collect();
+        let y_data: Vec<f32> = x_data.iter().map(|&x| 2.0 * x + 1.0).collect();
+
+        let x = Matrix::from_vec(50, 1, x_data).unwrap();
+        let y = Vector::from_vec(y_data);
+
+        let alphas = vec![0.001, 0.01, 0.1];
+        let kfold = KFold::new(5).with_random_state(42);
+
+        let result = grid_search_alpha("lasso", &alphas, &x, &y, &kfold, None).unwrap();
+
+        assert!(alphas.contains(&result.best_alpha));
+        assert!(result.best_score > 0.9);
+        assert_eq!(result.alphas.len(), alphas.len());
+        assert_eq!(result.scores.len(), alphas.len());
+    }
+
+    #[test]
+    fn test_grid_search_alpha_elastic_net() {
+        let x_data: Vec<f32> = (0..50).map(|i| i as f32).collect();
+        let y_data: Vec<f32> = x_data.iter().map(|&x| 2.0 * x + 1.0).collect();
+
+        let x = Matrix::from_vec(50, 1, x_data).unwrap();
+        let y = Vector::from_vec(y_data);
+
+        let alphas = vec![0.001, 0.01, 0.1];
+        let kfold = KFold::new(5).with_random_state(42);
+
+        let result = grid_search_alpha("elastic_net", &alphas, &x, &y, &kfold, Some(0.5)).unwrap();
+
+        assert!(alphas.contains(&result.best_alpha));
+        assert!(result.best_score > 0.9);
+        assert_eq!(result.alphas.len(), alphas.len());
+        assert_eq!(result.scores.len(), alphas.len());
+    }
+
+    #[test]
+    fn test_grid_search_result_best_index() {
+        let result = GridSearchResult {
+            best_alpha: 0.1,
+            best_score: 0.95,
+            alphas: vec![0.01, 0.1, 1.0],
+            scores: vec![0.90, 0.95, 0.85],
+        };
+
+        assert_eq!(result.best_index(), 1);
+    }
+
+    #[test]
+    fn test_grid_search_empty_alphas() {
+        let x = Matrix::from_vec(10, 1, (0..10).map(|i| i as f32).collect()).unwrap();
+        let y = Vector::from_vec(vec![0.0; 10]);
+
+        let alphas: Vec<f32> = vec![];
+        let kfold = KFold::new(3);
+
+        let result = grid_search_alpha("ridge", &alphas, &x, &y, &kfold, None);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("empty"));
+    }
+
+    #[test]
+    fn test_grid_search_invalid_model_type() {
+        let x = Matrix::from_vec(10, 1, (0..10).map(|i| i as f32).collect()).unwrap();
+        let y = Vector::from_vec(vec![0.0; 10]);
+
+        let alphas = vec![0.1, 1.0];
+        let kfold = KFold::new(3);
+
+        let result = grid_search_alpha("invalid_model", &alphas, &x, &y, &kfold, None);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Unknown model type"));
+    }
+
+    #[test]
+    fn test_grid_search_elastic_net_missing_l1_ratio() {
+        let x = Matrix::from_vec(10, 1, (0..10).map(|i| i as f32).collect()).unwrap();
+        let y = Vector::from_vec(vec![0.0; 10]);
+
+        let alphas = vec![0.1, 1.0];
+        let kfold = KFold::new(3);
+
+        let result = grid_search_alpha("elastic_net", &alphas, &x, &y, &kfold, None);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("l1_ratio required"));
+    }
+
+    #[test]
+    fn test_grid_search_finds_optimal_alpha() {
+        let x_data: Vec<f32> = (0..30).map(|i| i as f32).collect();
+        let y_data: Vec<f32> = x_data.iter().map(|&x| 3.0 * x + 2.0).collect();
+
+        let x = Matrix::from_vec(30, 1, x_data).unwrap();
+        let y = Vector::from_vec(y_data);
+
+        // Try range of alphas - should prefer smaller for this simple problem
+        let alphas = vec![0.001, 0.01, 0.1, 1.0, 10.0, 100.0];
+        let kfold = KFold::new(5).with_random_state(42);
+
+        let result = grid_search_alpha("ridge", &alphas, &x, &y, &kfold, None).unwrap();
+
+        // Best alpha should be one of the smaller values (less regularization needed)
+        assert!(result.best_alpha <= 1.0, "Best alpha should be <= 1.0");
+
+        // All alphas should be evaluated
+        assert_eq!(result.scores.len(), alphas.len());
+
+        // Scores should generally decrease with higher alpha (more regularization hurts)
+        let first_score = result.scores[0];
+        let last_score = result.scores[alphas.len() - 1];
+        assert!(first_score > last_score);
+    }
+
+    #[test]
+    fn test_grid_search_single_alpha() {
+        let x = Matrix::from_vec(10, 1, (0..10).map(|i| i as f32).collect()).unwrap();
+        let y = Vector::from_vec((0..10).map(|i| i as f32).collect());
+
+        let alphas = vec![0.1];
+        let kfold = KFold::new(3);
+
+        let result = grid_search_alpha("ridge", &alphas, &x, &y, &kfold, None).unwrap();
+
+        assert_eq!(result.best_alpha, 0.1);
+        assert_eq!(result.alphas.len(), 1);
+        assert_eq!(result.scores.len(), 1);
     }
 }

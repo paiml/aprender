@@ -18,4 +18,4 @@ pub use crate::traits::{Estimator, Transformer, UnsupervisedEstimator};
 pub use crate::tree::DecisionTreeClassifier;
 
 // Re-export model_selection types
-pub use crate::model_selection::StratifiedKFold;
+pub use crate::model_selection::{grid_search_alpha, GridSearchResult, StratifiedKFold};
