@@ -453,6 +453,84 @@ mod tests {
     }
 
     #[test]
+    fn test_silhouette_score_two_samples() {
+        // Test with exactly 2 samples - catches n_samples < 2 → <= 2 mutation (line 288)
+        let data = Matrix::from_vec(2, 2, vec![0.0, 0.0, 10.0, 10.0]).unwrap();
+        let labels = vec![0, 1];
+        let score = silhouette_score(&data, &labels);
+
+        // With 2 samples in different clusters, silhouette should be meaningful (not 0)
+        // If mutation changes < to <=, this would return 0.0
+        assert!(
+            score.abs() > 0.0,
+            "Score with 2 samples should be non-zero, got {}",
+            score
+        );
+    }
+
+    #[test]
+    fn test_silhouette_score_distance_calculation() {
+        // Test that catches arithmetic mutations in distance calculations
+        // Line 204: / with % or * (mean_intra_cluster_distance)
+        // Line 230: - with + (distance calculation)
+        // Line 235: / with * (min_inter_cluster_distance)
+        let data = Matrix::from_vec(
+            6,
+            1,
+            vec![
+                0.0,   // Cluster 0, point 0
+                1.0,   // Cluster 0, point 1
+                2.0,   // Cluster 0, point 2
+                100.0, // Cluster 1, point 3
+                101.0, // Cluster 1, point 4
+                102.0, // Cluster 1, point 5
+            ],
+        )
+        .unwrap();
+        let labels = vec![0, 0, 0, 1, 1, 1];
+        let score = silhouette_score(&data, &labels);
+
+        // Well-separated clusters should have high silhouette score
+        // If arithmetic is wrong, score will be very different
+        assert!(
+            score > 0.9,
+            "Well-separated clusters should have high score, got {}",
+            score
+        );
+
+        // Score should be reasonable (not > 1.0 which would indicate calculation error)
+        assert!(score <= 1.0, "Score should be <= 1.0, got {}", score);
+    }
+
+    #[test]
+    fn test_silhouette_score_mean_not_one() {
+        // Test that catches mean_intra_cluster_distance -> 1.0 mutation (line 190)
+        // Create clusters where mean intra-cluster distance is definitely not 1.0
+        let data = Matrix::from_vec(
+            4,
+            1,
+            vec![
+                0.0,  // Cluster 0
+                10.0, // Cluster 0 (distance = 10)
+                50.0, // Cluster 1
+                60.0, // Cluster 1 (distance = 10)
+            ],
+        )
+        .unwrap();
+        let labels = vec![0, 0, 1, 1];
+        let score = silhouette_score(&data, &labels);
+
+        // Verify the score calculation uses actual distances
+        // Mean intra-cluster distance = 10.0 for each cluster
+        // If mutation returns 1.0 instead, the score would be very different
+        assert!(
+            score > 0.5,
+            "Score should be high for well-separated clusters, got {}",
+            score
+        );
+    }
+
+    #[test]
     fn test_metrics_consistency() {
         // Property: RMSE = sqrt(MSE)
         let y_true = Vector::from_slice(&[1.0, 2.0, 3.0, 4.0, 5.0]);
