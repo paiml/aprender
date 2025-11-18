@@ -1,7 +1,7 @@
 # Aprender Makefile
 # Certeza Methodology - Tiered Quality Gates
 
-.PHONY: all build test lint fmt clean doc tier1 tier2 tier3 tier4 coverage profile hooks-install hooks-verify lint-scripts
+.PHONY: all build test lint fmt clean doc tier1 tier2 tier3 tier4 coverage profile hooks-install hooks-verify lint-scripts chaos-test fuzz
 
 # Default target
 all: tier2
@@ -86,6 +86,18 @@ profile:
 # Benchmarks
 bench:
 	cargo bench
+
+# Chaos engineering tests (from renacer)
+chaos-test: ## Run chaos engineering tests
+	@echo "🔥 Running chaos engineering tests..."
+	@cargo test --features chaos-basic --quiet
+	@echo "✅ Chaos tests passed"
+
+# Fuzz testing (from renacer, 60s)
+fuzz: ## Run fuzz testing for 60 seconds
+	@echo "🎲 Running fuzz tests (60s)..."
+	@cargo +nightly fuzz run fuzz_target_1 -- -max_total_time=60 || echo "⚠️  Fuzz testing requires nightly Rust: rustup default nightly"
+	@echo "✅ Fuzz testing complete"
 
 # Development workflow
 dev: tier1

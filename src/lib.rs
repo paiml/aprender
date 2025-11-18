@@ -39,7 +39,9 @@
 //! - [`preprocessing`]: Data transformers (scalers, encoders)
 //! - [`optim`]: Optimization algorithms (SGD, Adam)
 //! - [`loss`]: Loss functions for training (MSE, MAE, Huber)
+//! - [`chaos`]: Chaos engineering configuration (from renacer)
 
+pub mod chaos;
 pub mod cluster;
 pub mod data;
 pub mod linear_model;

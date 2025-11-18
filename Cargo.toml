@@ -31,6 +31,11 @@ criterion = "0.5"
 default = []
 gpu = []
 cpu-only = []
+# Chaos engineering features (from renacer)
+chaos-basic = []
+chaos-network = ["chaos-basic"]
+chaos-byzantine = ["chaos-basic"]
+chaos-full = ["chaos-network", "chaos-byzantine"]
 
 [[bench]]
 name = "linear_regression"
