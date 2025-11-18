@@ -296,6 +296,68 @@ proptest! {
             prop_assert!(pred < n_classes);
         }
     }
+
+    // StandardScaler properties
+    #[test]
+    fn standard_scaler_produces_zero_mean(data in matrix_strategy(10, 3)) {
+        let mut scaler = StandardScaler::new();
+        let transformed = scaler.fit_transform(&data).unwrap();
+
+        let (n_rows, n_cols) = transformed.shape();
+        for j in 0..n_cols {
+            let mut sum = 0.0;
+            for i in 0..n_rows {
+                sum += transformed.get(i, j);
+            }
+            let mean = sum / n_rows as f32;
+            prop_assert!(mean.abs() < 1e-4, "Column {} mean should be ~0, got {}", j, mean);
+        }
+    }
+
+    #[test]
+    fn standard_scaler_produces_unit_variance(data in matrix_strategy(10, 3)) {
+        let mut scaler = StandardScaler::new();
+        let transformed = scaler.fit_transform(&data).unwrap();
+
+        let (n_rows, n_cols) = transformed.shape();
+        for j in 0..n_cols {
+            // Compute variance
+            let mut sum = 0.0;
+            for i in 0..n_rows {
+                sum += transformed.get(i, j);
+            }
+            let mean = sum / n_rows as f32;
+
+            let mut var_sum = 0.0;
+            for i in 0..n_rows {
+                let diff = transformed.get(i, j) - mean;
+                var_sum += diff * diff;
+            }
+            let std = (var_sum / n_rows as f32).sqrt();
+
+            // std should be 1 (or 0 if constant column)
+            prop_assert!(std < 1e-4 || (std - 1.0).abs() < 1e-4,
+                "Column {} std should be ~0 or ~1, got {}", j, std);
+        }
+    }
+
+    #[test]
+    fn standard_scaler_inverse_recovers_data(data in matrix_strategy(8, 2)) {
+        let mut scaler = StandardScaler::new();
+        let transformed = scaler.fit_transform(&data).unwrap();
+        let recovered = scaler.inverse_transform(&transformed).unwrap();
+
+        let (n_rows, n_cols) = data.shape();
+        for i in 0..n_rows {
+            for j in 0..n_cols {
+                prop_assert!(
+                    (data.get(i, j) - recovered.get(i, j)).abs() < 1e-3,
+                    "Mismatch at ({}, {}): expected {}, got {}",
+                    i, j, data.get(i, j), recovered.get(i, j)
+                );
+            }
+        }
+    }
 }
 
 #[cfg(test)]

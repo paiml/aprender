@@ -36,6 +36,7 @@
 //! - [`tree`]: Decision tree classifiers
 //! - [`metrics`]: Evaluation metrics
 //! - [`model_selection`]: Cross-validation and train/test splitting
+//! - [`preprocessing`]: Data transformers (scalers, encoders)
 
 pub mod cluster;
 pub mod data;
@@ -43,6 +44,7 @@ pub mod linear_model;
 pub mod metrics;
 pub mod model_selection;
 pub mod prelude;
+pub mod preprocessing;
 pub mod primitives;
 pub mod traits;
 pub mod tree;
