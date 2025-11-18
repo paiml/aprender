@@ -442,6 +442,69 @@ impl GridSearchResult {
     }
 }
 
+/// Evaluate a single alpha value with cross-validation for a specific model type.
+///
+/// Creates the appropriate model based on model_type and evaluates it using
+/// cross-validation.
+///
+/// # Arguments
+///
+/// * `model_type` - Type of model: "ridge", "lasso", or "elastic_net"
+/// * `alpha` - Alpha value to evaluate
+/// * `x` - Training data
+/// * `y` - Target values
+/// * `cv` - Cross-validation splitter
+/// * `l1_ratio` - L1 ratio for ElasticNet
+///
+/// # Returns
+///
+/// Mean cross-validation score
+fn evaluate_alpha_for_model(
+    model_type: &str,
+    alpha: f32,
+    x: &Matrix<f32>,
+    y: &Vector<f32>,
+    cv: &KFold,
+    l1_ratio: Option<f32>,
+) -> Result<f32, String> {
+    let score = match model_type {
+        "ridge" => {
+            use crate::linear_model::Ridge;
+            let model = Ridge::new(alpha);
+            let cv_result = cross_validate(&model, x, y, cv)?;
+            cv_result.mean()
+        }
+        "lasso" => {
+            use crate::linear_model::Lasso;
+            let model = Lasso::new(alpha);
+            let cv_result = cross_validate(&model, x, y, cv)?;
+            cv_result.mean()
+        }
+        "elastic_net" => {
+            use crate::linear_model::ElasticNet;
+            let ratio = l1_ratio.ok_or("l1_ratio required for ElasticNet")?;
+            let model = ElasticNet::new(alpha, ratio);
+            let cv_result = cross_validate(&model, x, y, cv)?;
+            cv_result.mean()
+        }
+        _ => {
+            return Err(format!(
+                "Unknown model type: {}. Use 'ridge', 'lasso', or 'elastic_net'",
+                model_type
+            ))
+        }
+    };
+    Ok(score)
+}
+
+/// Update best score and alpha if current score is better.
+fn update_best_if_improved(score: f32, alpha: f32, best_score: &mut f32, best_alpha: &mut f32) {
+    if score > *best_score {
+        *best_score = score;
+        *best_alpha = alpha;
+    }
+}
+
 /// Performs grid search over alpha parameter for regularized linear models.
 ///
 /// Exhaustively evaluates all provided alpha values using K-fold cross-validation
@@ -495,41 +558,9 @@ pub fn grid_search_alpha(
     let mut all_scores = Vec::with_capacity(alphas.len());
 
     for &alpha in alphas {
-        // Create model based on type
-        let score = match model_type {
-            "ridge" => {
-                use crate::linear_model::Ridge;
-                let model = Ridge::new(alpha);
-                let cv_result = cross_validate(&model, x, y, cv)?;
-                cv_result.mean()
-            }
-            "lasso" => {
-                use crate::linear_model::Lasso;
-                let model = Lasso::new(alpha);
-                let cv_result = cross_validate(&model, x, y, cv)?;
-                cv_result.mean()
-            }
-            "elastic_net" => {
-                use crate::linear_model::ElasticNet;
-                let ratio = l1_ratio.ok_or("l1_ratio required for ElasticNet")?;
-                let model = ElasticNet::new(alpha, ratio);
-                let cv_result = cross_validate(&model, x, y, cv)?;
-                cv_result.mean()
-            }
-            _ => {
-                return Err(format!(
-                    "Unknown model type: {}. Use 'ridge', 'lasso', or 'elastic_net'",
-                    model_type
-                ))
-            }
-        };
-
+        let score = evaluate_alpha_for_model(model_type, alpha, x, y, cv, l1_ratio)?;
         all_scores.push(score);
-
-        if score > best_score {
-            best_score = score;
-            best_alpha = alpha;
-        }
+        update_best_if_improved(score, alpha, &mut best_score, &mut best_alpha);
     }
 
     Ok(GridSearchResult {
