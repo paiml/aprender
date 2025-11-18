@@ -568,6 +568,164 @@ fn build_tree(
     }
 }
 
+/// Random Forest classifier - an ensemble of decision trees.
+///
+/// Combines multiple decision trees trained on bootstrap samples
+/// with random feature selection to reduce overfitting and improve accuracy.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RandomForestClassifier {
+    trees: Vec<DecisionTreeClassifier>,
+    n_estimators: usize,
+    max_depth: Option<usize>,
+    random_state: Option<u64>,
+}
+
+impl RandomForestClassifier {
+    /// Creates a new Random Forest classifier.
+    ///
+    /// # Arguments
+    ///
+    /// * `n_estimators` - Number of trees in the forest
+    pub fn new(n_estimators: usize) -> Self {
+        Self {
+            trees: Vec::new(),
+            n_estimators,
+            max_depth: None,
+            random_state: None,
+        }
+    }
+
+    /// Sets the maximum depth for each tree.
+    pub fn with_max_depth(mut self, max_depth: usize) -> Self {
+        self.max_depth = Some(max_depth);
+        self
+    }
+
+    /// Sets the random state for reproducibility.
+    pub fn with_random_state(mut self, random_state: u64) -> Self {
+        self.random_state = Some(random_state);
+        self
+    }
+
+    /// Fits the random forest to training data.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if fitting fails.
+    pub fn fit(
+        &mut self,
+        x: &crate::primitives::Matrix<f32>,
+        y: &[usize],
+    ) -> Result<(), &'static str> {
+        let (n_samples, n_features) = x.shape();
+        self.trees = Vec::with_capacity(self.n_estimators);
+
+        // Train each tree on a bootstrap sample
+        for i in 0..self.n_estimators {
+            // Get bootstrap sample indices
+            let seed = self.random_state.map(|s| s + i as u64);
+            let bootstrap_indices = _bootstrap_sample(n_samples, seed);
+
+            // Extract bootstrap sample
+            let mut bootstrap_x_data = Vec::with_capacity(n_samples * n_features);
+            let mut bootstrap_y = Vec::with_capacity(n_samples);
+
+            for &idx in &bootstrap_indices {
+                for j in 0..n_features {
+                    bootstrap_x_data.push(x.get(idx, j));
+                }
+                bootstrap_y.push(y[idx]);
+            }
+
+            let bootstrap_x =
+                crate::primitives::Matrix::from_vec(n_samples, n_features, bootstrap_x_data)
+                    .map_err(|_| "Failed to create bootstrap matrix")?;
+
+            // Create and train a decision tree
+            let mut tree = if let Some(max_depth) = self.max_depth {
+                DecisionTreeClassifier::new().with_max_depth(max_depth)
+            } else {
+                DecisionTreeClassifier::new()
+            };
+
+            tree.fit(&bootstrap_x, &bootstrap_y)?;
+            self.trees.push(tree);
+        }
+
+        Ok(())
+    }
+
+    /// Makes predictions for input data.
+    #[allow(clippy::needless_range_loop)]
+    pub fn predict(&self, x: &crate::primitives::Matrix<f32>) -> Vec<usize> {
+        let n_samples = x.shape().0;
+        let mut predictions = vec![0; n_samples];
+
+        // Get predictions from each tree
+        for sample_idx in 0..n_samples {
+            let mut votes: std::collections::HashMap<usize, usize> =
+                std::collections::HashMap::new();
+
+            // Collect votes from all trees
+            for tree in &self.trees {
+                let tree_prediction = tree.predict(x)[sample_idx];
+                *votes.entry(tree_prediction).or_insert(0) += 1;
+            }
+
+            // Find class with most votes (majority voting)
+            let mut max_votes = 0;
+            let mut predicted_class = 0;
+            for (class, count) in votes {
+                if count > max_votes {
+                    max_votes = count;
+                    predicted_class = class;
+                }
+            }
+
+            predictions[sample_idx] = predicted_class;
+        }
+
+        predictions
+    }
+
+    /// Calculates accuracy score on test data.
+    pub fn score(&self, x: &crate::primitives::Matrix<f32>, y: &[usize]) -> f32 {
+        let predictions = self.predict(x);
+        let correct = predictions
+            .iter()
+            .zip(y.iter())
+            .filter(|(pred, true_label)| pred == true_label)
+            .count();
+        correct as f32 / y.len() as f32
+    }
+}
+
+/// Creates a bootstrap sample (random sample with replacement).
+///
+/// Returns indices of samples to include in the bootstrap sample.
+fn _bootstrap_sample(n_samples: usize, random_state: Option<u64>) -> Vec<usize> {
+    use rand::distributions::{Distribution, Uniform};
+    use rand::SeedableRng;
+
+    let dist = Uniform::from(0..n_samples);
+
+    let mut indices = Vec::with_capacity(n_samples);
+
+    if let Some(seed) = random_state {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
+        for _ in 0..n_samples {
+            indices.push(dist.sample(&mut rng));
+        }
+    } else {
+        let mut rng = rand::thread_rng();
+        for _ in 0..n_samples {
+            indices.push(dist.sample(&mut rng));
+        }
+    }
+
+    indices
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1075,5 +1233,137 @@ mod tests {
 
         // Cleanup
         fs::remove_file(path).ok();
+    }
+
+    // Random Forest Tests
+
+    #[test]
+    fn test_bootstrap_sample_size() {
+        let indices = _bootstrap_sample(100, Some(42));
+        assert_eq!(
+            indices.len(),
+            100,
+            "Bootstrap sample should have same size as original"
+        );
+    }
+
+    #[test]
+    fn test_bootstrap_sample_reproducible() {
+        let indices1 = _bootstrap_sample(50, Some(42));
+        let indices2 = _bootstrap_sample(50, Some(42));
+        assert_eq!(
+            indices1, indices2,
+            "Same seed should give same bootstrap sample"
+        );
+    }
+
+    #[test]
+    fn test_random_forest_creation() {
+        let rf = RandomForestClassifier::new(10);
+        assert_eq!(rf.n_estimators, 10);
+    }
+
+    #[test]
+    fn test_random_forest_builder() {
+        let rf = RandomForestClassifier::new(5)
+            .with_max_depth(3)
+            .with_random_state(42);
+        assert_eq!(rf.n_estimators, 5);
+        assert_eq!(rf.max_depth, Some(3));
+        assert_eq!(rf.random_state, Some(42));
+    }
+
+    #[test]
+    fn test_random_forest_fit_basic() {
+        let x = crate::primitives::Matrix::from_vec(
+            6,
+            2,
+            vec![
+                1.0, 1.0, // class 0
+                1.5, 1.5, // class 0
+                5.0, 5.0, // class 1
+                5.5, 5.5, // class 1
+                9.0, 9.0, // class 2
+                9.5, 9.5, // class 2
+            ],
+        )
+        .unwrap();
+        let y = vec![0, 0, 1, 1, 2, 2];
+
+        let mut rf = RandomForestClassifier::new(3)
+            .with_max_depth(3)
+            .with_random_state(42);
+
+        rf.fit(&x, &y).expect("Fit should succeed");
+
+        // Should have trained the correct number of trees
+        assert_eq!(rf.trees.len(), 3, "Should have 3 trees");
+    }
+
+    #[test]
+    fn test_random_forest_predict() {
+        let x = crate::primitives::Matrix::from_vec(
+            6,
+            2,
+            vec![
+                1.0, 1.0, // class 0
+                1.5, 1.5, // class 0
+                5.0, 5.0, // class 1
+                5.5, 5.5, // class 1
+                9.0, 9.0, // class 2
+                9.5, 9.5, // class 2
+            ],
+        )
+        .unwrap();
+        let y = vec![0, 0, 1, 1, 2, 2];
+
+        let mut rf = RandomForestClassifier::new(5)
+            .with_max_depth(5)
+            .with_random_state(42);
+
+        rf.fit(&x, &y).unwrap();
+        let predictions = rf.predict(&x);
+
+        assert_eq!(predictions.len(), 6, "Should predict for all samples");
+
+        // Perfect separation - should get perfect accuracy
+        let score = rf.score(&x, &y);
+        assert!(
+            score > 0.8,
+            "Random Forest should achieve >80% accuracy on simple data"
+        );
+    }
+
+    #[test]
+    fn test_random_forest_reproducible() {
+        let x = crate::primitives::Matrix::from_vec(
+            8,
+            2,
+            vec![
+                0.0, 0.0, // class 0
+                0.5, 0.5, // class 0
+                5.0, 5.0, // class 1
+                5.5, 5.5, // class 1
+                10.0, 10.0, // class 2
+                10.5, 10.5, // class 2
+                1.0, 1.0, // class 0
+                6.0, 6.0, // class 1
+            ],
+        )
+        .unwrap();
+        let y = vec![0, 0, 1, 1, 2, 2, 0, 1];
+
+        let mut rf1 = RandomForestClassifier::new(5).with_random_state(42);
+        rf1.fit(&x, &y).unwrap();
+        let pred1 = rf1.predict(&x);
+
+        let mut rf2 = RandomForestClassifier::new(5).with_random_state(42);
+        rf2.fit(&x, &y).unwrap();
+        let pred2 = rf2.predict(&x);
+
+        assert_eq!(
+            pred1, pred2,
+            "Same random state should give same predictions"
+        );
     }
 }
