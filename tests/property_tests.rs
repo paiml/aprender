@@ -2,6 +2,7 @@
 //!
 //! These tests verify invariants and properties of the ML algorithms.
 
+use aprender::model_selection::{train_test_split, KFold};
 use aprender::prelude::*;
 use proptest::prelude::*;
 
@@ -214,6 +215,86 @@ proptest! {
         kmeans.fit(&matrix).unwrap();
 
         prop_assert!(kmeans.inertia() >= 0.0);
+    }
+
+    // Train-test split properties
+    #[test]
+    fn train_test_split_preserves_samples(n_samples in 10usize..50) {
+        let x_data: Vec<f32> = (0..n_samples * 2).map(|i| i as f32).collect();
+        let y_data: Vec<f32> = (0..n_samples).map(|i| i as f32).collect();
+
+        let x = Matrix::from_vec(n_samples, 2, x_data).unwrap();
+        let y = Vector::from_vec(y_data);
+
+        let (x_train, x_test, y_train, y_test) = train_test_split(&x, &y, 0.2, Some(42)).unwrap();
+
+        // Total samples should be preserved
+        let total = x_train.n_rows() + x_test.n_rows();
+        prop_assert_eq!(total, n_samples);
+        prop_assert_eq!(y_train.len() + y_test.len(), n_samples);
+    }
+
+    #[test]
+    fn train_test_split_ratio_approximate(test_size in 0.1f32..0.5) {
+        let n_samples = 100;
+        let x_data: Vec<f32> = (0..n_samples * 2).map(|i| i as f32).collect();
+        let y_data: Vec<f32> = (0..n_samples).map(|i| i as f32).collect();
+
+        let x = Matrix::from_vec(n_samples, 2, x_data).unwrap();
+        let y = Vector::from_vec(y_data);
+
+        let (_, x_test, _, _) = train_test_split(&x, &y, test_size, Some(42)).unwrap();
+
+        // Test set should be approximately the right size
+        let actual_ratio = x_test.n_rows() as f32 / n_samples as f32;
+        prop_assert!((actual_ratio - test_size).abs() < 0.1);
+    }
+
+    #[test]
+    fn kfold_splits_cover_all_samples(k in 2usize..6) {
+        let n_samples = 20;
+        let kfold = KFold::new(k);
+
+        let mut seen = vec![false; n_samples];
+        for (_, test_indices) in kfold.split(n_samples) {
+            for &idx in &test_indices {
+                seen[idx] = true;
+            }
+        }
+
+        // Every sample should appear in exactly one test fold
+        for (i, &s) in seen.iter().enumerate() {
+            prop_assert!(s, "Sample {} not in any test fold", i);
+        }
+    }
+
+    // Decision tree properties
+    #[test]
+    fn decision_tree_predictions_valid(n_classes in 2usize..4) {
+        // Create well-separated data
+        let n_per_class = 5;
+        let n_samples = n_classes * n_per_class;
+        let mut data = Vec::with_capacity(n_samples * 2);
+        let mut labels = Vec::with_capacity(n_samples);
+
+        for class in 0..n_classes {
+            for i in 0..n_per_class {
+                data.push((class * 10) as f32 + i as f32 * 0.1);
+                data.push((class * 10) as f32 + i as f32 * 0.1);
+                labels.push(class);
+            }
+        }
+
+        let x = Matrix::from_vec(n_samples, 2, data).unwrap();
+        let mut tree = DecisionTreeClassifier::new().with_max_depth(5);
+        tree.fit(&x, &labels).unwrap();
+
+        let predictions = tree.predict(&x);
+
+        // All predictions should be valid class indices
+        for &pred in &predictions {
+            prop_assert!(pred < n_classes);
+        }
     }
 }
 
