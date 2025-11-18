@@ -433,4 +433,65 @@ mod tests {
         // Verify it's not division: would be 0.4, 0.5, 0.571...
         assert!((result[1] - 0.5).abs() > 1.0);
     }
+
+    #[test]
+    fn test_is_empty_true() {
+        // Test that empty vector returns true for is_empty
+        // Catches is_empty -> false mutation
+        let v: Vector<f32> = Vector::from_slice(&[]);
+        assert!(v.is_empty(), "Empty vector should return true for is_empty");
+        assert_eq!(v.len(), 0, "Empty vector should have len 0");
+    }
+
+    #[test]
+    fn test_is_empty_false() {
+        // Test that non-empty vector returns false for is_empty
+        let v = Vector::from_slice(&[1.0_f32]);
+        assert!(
+            !v.is_empty(),
+            "Non-empty vector should return false for is_empty"
+        );
+    }
+
+    #[test]
+    fn test_argmin_not_at_one() {
+        // Min at index 0, not 1 - catches "argmin -> 1" mutation
+        let v = Vector::from_slice(&[1.0_f32, 5.0, 3.0]);
+        assert_eq!(v.argmin(), 0, "Minimum should be at index 0, not 1");
+    }
+
+    #[test]
+    fn test_argmin_at_end() {
+        // Min at last index - catches various index mutations
+        let v = Vector::from_slice(&[5.0_f32, 3.0, 1.0]);
+        assert_eq!(v.argmin(), 2, "Minimum should be at index 2");
+    }
+
+    #[test]
+    fn test_as_mut_slice_modifies() {
+        // Test that as_mut_slice actually allows modification
+        // Catches as_mut_slice -> empty slice mutation
+        let mut v = Vector::from_slice(&[1.0_f32, 2.0, 3.0]);
+        {
+            let slice = v.as_mut_slice();
+            slice[0] = 10.0;
+            slice[1] = 20.0;
+        }
+        assert!(
+            (v[0] - 10.0).abs() < 1e-6,
+            "First element should be modified to 10.0"
+        );
+        assert!(
+            (v[1] - 20.0).abs() < 1e-6,
+            "Second element should be modified to 20.0"
+        );
+    }
+
+    #[test]
+    fn test_as_mut_slice_length() {
+        // Verify as_mut_slice returns correct length
+        let mut v = Vector::from_slice(&[1.0_f32, 2.0, 3.0, 4.0]);
+        let slice = v.as_mut_slice();
+        assert_eq!(slice.len(), 4, "Mutable slice should have correct length");
+    }
 }

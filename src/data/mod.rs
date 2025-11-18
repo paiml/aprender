@@ -499,4 +499,123 @@ mod tests {
         let matrix = selected.to_matrix();
         assert_eq!(matrix.n_cols(), 2);
     }
+
+    #[test]
+    fn test_describe_median_even_length() {
+        // Test median calculation for even-length arrays
+        // Median of [1, 2, 3, 4] = (2 + 3) / 2 = 2.5
+        let columns = vec![("x".to_string(), Vector::from_slice(&[1.0, 2.0, 3.0, 4.0]))];
+        let df = DataFrame::new(columns).unwrap();
+        let stats = df.describe();
+
+        // This catches mutations in:
+        // - sorted.len() % 2 == 0 (% vs + or /)
+        // - sorted[sorted.len() / 2 - 1] (index calculation)
+        // - + sorted[sorted.len() / 2] (sum of middle values)
+        // - / 2.0 (averaging)
+        assert!(
+            (stats[0].median - 2.5).abs() < 1e-6,
+            "Expected median 2.5, got {}",
+            stats[0].median
+        );
+    }
+
+    #[test]
+    fn test_describe_median_odd_length() {
+        // Test median calculation for odd-length arrays
+        // Median of [1, 2, 3] = 2.0 (middle element)
+        let columns = vec![("x".to_string(), Vector::from_slice(&[1.0, 2.0, 3.0]))];
+        let df = DataFrame::new(columns).unwrap();
+        let stats = df.describe();
+
+        // For odd length, median = sorted[len / 2] = sorted[1] = 2.0
+        assert!(
+            (stats[0].median - 2.0).abs() < 1e-6,
+            "Expected median 2.0, got {}",
+            stats[0].median
+        );
+    }
+
+    #[test]
+    fn test_describe_median_two_elements() {
+        // Test median with exactly 2 elements
+        // Median of [10, 20] = (10 + 20) / 2 = 15
+        let columns = vec![("x".to_string(), Vector::from_slice(&[10.0, 20.0]))];
+        let df = DataFrame::new(columns).unwrap();
+        let stats = df.describe();
+
+        // This catches mutations in median averaging
+        assert!(
+            (stats[0].median - 15.0).abs() < 1e-6,
+            "Expected median 15.0, got {}",
+            stats[0].median
+        );
+    }
+
+    #[test]
+    fn test_describe_median_arithmetic_mutations() {
+        // Test to catch specific arithmetic mutations
+        // Using values where wrong operations give different results
+        // [2, 4, 6, 8]: median = (4 + 6) / 2 = 5.0
+        let columns = vec![("x".to_string(), Vector::from_slice(&[2.0, 4.0, 6.0, 8.0]))];
+        let df = DataFrame::new(columns).unwrap();
+        let stats = df.describe();
+
+        // If + becomes - in median sum: (4 - 6) / 2 = -1
+        // If / 2.0 becomes * 2.0: (4 + 6) * 2 = 20
+        // If / 2 - 1 becomes / 2 + 1: would access wrong index
+        assert!(
+            (stats[0].median - 5.0).abs() < 1e-6,
+            "Expected median 5.0, got {}",
+            stats[0].median
+        );
+        assert!(
+            stats[0].median > 0.0,
+            "Median should be positive, got {}",
+            stats[0].median
+        );
+        assert!(
+            stats[0].median < 10.0,
+            "Median should be < 10, got {}",
+            stats[0].median
+        );
+    }
+
+    #[test]
+    fn test_describe_median_unsorted_input() {
+        // Verify median calculation sorts data correctly
+        // Input [5, 1, 3, 2, 4] -> sorted [1, 2, 3, 4, 5] -> median = 3
+        let columns = vec![(
+            "x".to_string(),
+            Vector::from_slice(&[5.0, 1.0, 3.0, 2.0, 4.0]),
+        )];
+        let df = DataFrame::new(columns).unwrap();
+        let stats = df.describe();
+
+        assert!(
+            (stats[0].median - 3.0).abs() < 1e-6,
+            "Expected median 3.0, got {}",
+            stats[0].median
+        );
+    }
+
+    #[test]
+    fn test_describe_six_elements() {
+        // Test with 6 elements to ensure index math is correct
+        // [1, 2, 3, 4, 5, 6]: median = (3 + 4) / 2 = 3.5
+        // len = 6, len/2 = 3, len/2 - 1 = 2
+        // sorted[2] = 3, sorted[3] = 4
+        let columns = vec![(
+            "x".to_string(),
+            Vector::from_slice(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]),
+        )];
+        let df = DataFrame::new(columns).unwrap();
+        let stats = df.describe();
+
+        assert!(
+            (stats[0].median - 3.5).abs() < 1e-6,
+            "Expected median 3.5, got {}",
+            stats[0].median
+        );
+    }
 }
