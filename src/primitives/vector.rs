@@ -408,4 +408,28 @@ mod tests {
         assert!(idx < v.len());
         assert!((v[idx] - 5.0).abs() < 1e-6);
     }
+
+    #[test]
+    fn test_argmax_not_at_zero() {
+        // Max at index 2, not 0 - catches "argmax -> 0" mutation
+        let v = Vector::from_slice(&[1.0_f32, 2.0, 10.0]);
+        assert_eq!(v.argmax(), 2);
+    }
+
+    #[test]
+    fn test_mul_vectors() {
+        // Element-wise multiplication - catches operator mutations
+        let a = Vector::from_slice(&[2.0_f32, 3.0, 4.0]);
+        let b = Vector::from_slice(&[5.0_f32, 6.0, 7.0]);
+        let result = &a * &b;
+        // 2*5=10, 3*6=18, 4*7=28
+        assert!((result[0] - 10.0).abs() < 1e-6);
+        assert!((result[1] - 18.0).abs() < 1e-6);
+        assert!((result[2] - 28.0).abs() < 1e-6);
+
+        // Verify it's not addition: would be 7, 9, 11
+        assert!((result[0] - 7.0).abs() > 0.1);
+        // Verify it's not division: would be 0.4, 0.5, 0.571...
+        assert!((result[1] - 0.5).abs() > 1.0);
+    }
 }
