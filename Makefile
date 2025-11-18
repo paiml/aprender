@@ -68,8 +68,16 @@ tier4: tier3
 	@echo "Tier 4: PASSED"
 
 # Coverage report (requires cargo-llvm-cov)
-coverage:
-	cargo llvm-cov --all-features --workspace --html
+coverage: ## Generate coverage report (>85% required, <10 min target)
+	@echo "📊 Generating coverage report (target: >85%, <10 min)..."
+	@# Temporarily disable mold linker (breaks LLVM coverage)
+	@test -f ~/.cargo/config.toml && mv ~/.cargo/config.toml ~/.cargo/config.toml.cov-backup || true
+	@cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
+	@cargo llvm-cov report --html --output-dir target/coverage/html
+	@# Restore mold linker
+	@test -f ~/.cargo/config.toml.cov-backup && mv ~/.cargo/config.toml.cov-backup ~/.cargo/config.toml || true
+	@echo "✅ Coverage report: target/coverage/html/index.html"
+	@cargo llvm-cov report | grep TOTAL
 
 # Profiling (requires renacer)
 profile:
