@@ -38,10 +38,12 @@
 //! - [`model_selection`]: Cross-validation and train/test splitting
 //! - [`preprocessing`]: Data transformers (scalers, encoders)
 //! - [`optim`]: Optimization algorithms (SGD, Adam)
+//! - [`loss`]: Loss functions for training (MSE, MAE, Huber)
 
 pub mod cluster;
 pub mod data;
 pub mod linear_model;
+pub mod loss;
 pub mod metrics;
 pub mod model_selection;
 pub mod optim;
