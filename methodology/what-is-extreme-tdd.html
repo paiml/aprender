@@ -1,0 +1,495 @@
+<!DOCTYPE HTML>
+<html lang="en" class="rust" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>What is EXTREME TDD? - EXTREME TDD - The Aprender Guide to Zero-Defect Machine Learning</title>
+
+
+        <!-- Custom HTML head -->
+        
+        <meta name="description" content="A comprehensive guide to EXTREME TDD methodology: RED-GREEN-REFACTOR cycles, mutation testing, and Toyota Way principles demonstrated through ML library development">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="../favicon.svg">
+        <link rel="shortcut icon" href="../favicon.png">
+        <link rel="stylesheet" href="../css/variables.css">
+        <link rel="stylesheet" href="../css/general.css">
+        <link rel="stylesheet" href="../css/chrome.css">
+        <link rel="stylesheet" href="../css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="../fonts/fonts.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" href="../highlight.css">
+        <link rel="stylesheet" href="../tomorrow-night.css">
+        <link rel="stylesheet" href="../ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+
+    </head>
+    <body class="sidebar-visible no-js">
+    <div id="body-container">
+        <!-- Provide site root to javascript -->
+        <script>
+            var path_to_root = "../";
+            var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "rust";
+        </script>
+
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            var html = document.querySelector('html');
+            html.classList.remove('rust')
+            html.classList.add(theme);
+            var body = document.querySelector('body');
+            body.classList.remove('no-js')
+            body.classList.add('js');
+        </script>
+
+        <input type="checkbox" id="sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            var body = document.querySelector('body');
+            var sidebar = null;
+            var sidebar_toggle = document.getElementById("sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+            }
+            sidebar_toggle.checked = sidebar === 'visible';
+            body.classList.remove('sidebar-visible');
+            body.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <div class="sidebar-scrollbox">
+                <ol class="chapter"><li class="chapter-item expanded affix "><a href="../introduction.html">Introduction</a></li><li class="chapter-item expanded affix "><li class="part-title">Core Methodology</li><li class="chapter-item expanded "><a href="../methodology/what-is-extreme-tdd.html" class="active"><strong aria-hidden="true">1.</strong> What is EXTREME TDD?</a></li><li class="chapter-item expanded "><a href="../methodology/red-green-refactor.html"><strong aria-hidden="true">2.</strong> The RED-GREEN-REFACTOR Cycle</a></li><li class="chapter-item expanded "><a href="../methodology/test-first-philosophy.html"><strong aria-hidden="true">3.</strong> Test-First Philosophy</a></li><li class="chapter-item expanded "><a href="../methodology/zero-tolerance.html"><strong aria-hidden="true">4.</strong> Zero Tolerance Quality</a></li><li class="chapter-item expanded affix "><li class="part-title">The RED Phase</li><li class="chapter-item expanded "><a href="../red-phase/failing-tests-first.html"><strong aria-hidden="true">5.</strong> Writing Failing Tests First</a></li><li class="chapter-item expanded "><a href="../red-phase/test-categories.html"><strong aria-hidden="true">6.</strong> Test Categories</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../red-phase/unit-tests.html"><strong aria-hidden="true">6.1.</strong> Unit Tests</a></li><li class="chapter-item expanded "><a href="../red-phase/integration-tests.html"><strong aria-hidden="true">6.2.</strong> Integration Tests</a></li><li class="chapter-item expanded "><a href="../red-phase/property-based-tests.html"><strong aria-hidden="true">6.3.</strong> Property-Based Tests</a></li></ol></li><li class="chapter-item expanded "><a href="../red-phase/verification-strategy.html"><strong aria-hidden="true">7.</strong> Verification Strategy</a></li><li class="chapter-item expanded affix "><li class="part-title">The GREEN Phase</li><li class="chapter-item expanded "><a href="../green-phase/minimal-implementation.html"><strong aria-hidden="true">8.</strong> Minimal Implementation</a></li><li class="chapter-item expanded "><a href="../green-phase/making-tests-pass.html"><strong aria-hidden="true">9.</strong> Making Tests Pass</a></li><li class="chapter-item expanded "><a href="../green-phase/avoiding-over-engineering.html"><strong aria-hidden="true">10.</strong> Avoiding Over-Engineering</a></li><li class="chapter-item expanded "><a href="../green-phase/simplest-thing.html"><strong aria-hidden="true">11.</strong> The Simplest Thing That Works</a></li><li class="chapter-item expanded affix "><li class="part-title">The REFACTOR Phase</li><li class="chapter-item expanded "><a href="../refactor-phase/refactoring-with-confidence.html"><strong aria-hidden="true">12.</strong> Refactoring with Confidence</a></li><li class="chapter-item expanded "><a href="../refactor-phase/code-quality.html"><strong aria-hidden="true">13.</strong> Code Quality Improvements</a></li><li class="chapter-item expanded "><a href="../refactor-phase/performance-optimization.html"><strong aria-hidden="true">14.</strong> Performance Optimization</a></li><li class="chapter-item expanded "><a href="../refactor-phase/documentation.html"><strong aria-hidden="true">15.</strong> Documentation</a></li><li class="chapter-item expanded affix "><li class="part-title">Advanced Testing</li><li class="chapter-item expanded "><a href="../advanced-testing/property-based-testing.html"><strong aria-hidden="true">16.</strong> Property-Based Testing</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../advanced-testing/proptest-fundamentals.html"><strong aria-hidden="true">16.1.</strong> Proptest Fundamentals</a></li><li class="chapter-item expanded "><a href="../advanced-testing/strategies-generators.html"><strong aria-hidden="true">16.2.</strong> Strategies and Generators</a></li><li class="chapter-item expanded "><a href="../advanced-testing/testing-invariants.html"><strong aria-hidden="true">16.3.</strong> Testing Invariants</a></li></ol></li><li class="chapter-item expanded "><a href="../advanced-testing/mutation-testing.html"><strong aria-hidden="true">17.</strong> Mutation Testing</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../advanced-testing/what-is-mutation-testing.html"><strong aria-hidden="true">17.1.</strong> What is Mutation Testing?</a></li><li class="chapter-item expanded "><a href="../advanced-testing/using-cargo-mutants.html"><strong aria-hidden="true">17.2.</strong> Using cargo-mutants</a></li><li class="chapter-item expanded "><a href="../advanced-testing/mutation-score-targets.html"><strong aria-hidden="true">17.3.</strong> Mutation Score Targets</a></li><li class="chapter-item expanded "><a href="../advanced-testing/killing-mutants.html"><strong aria-hidden="true">17.4.</strong> Killing Mutants</a></li></ol></li><li class="chapter-item expanded "><a href="../advanced-testing/fuzzing.html"><strong aria-hidden="true">18.</strong> Fuzzing</a></li><li class="chapter-item expanded "><a href="../advanced-testing/benchmark-testing.html"><strong aria-hidden="true">19.</strong> Benchmark Testing</a></li><li class="chapter-item expanded affix "><li class="part-title">Quality Gates</li><li class="chapter-item expanded "><a href="../quality-gates/pre-commit-hooks.html"><strong aria-hidden="true">20.</strong> Pre-Commit Hooks</a></li><li class="chapter-item expanded "><a href="../quality-gates/continuous-integration.html"><strong aria-hidden="true">21.</strong> Continuous Integration</a></li><li class="chapter-item expanded "><a href="../quality-gates/code-formatting.html"><strong aria-hidden="true">22.</strong> Code Formatting (rustfmt)</a></li><li class="chapter-item expanded "><a href="../quality-gates/linting-clippy.html"><strong aria-hidden="true">23.</strong> Linting (clippy)</a></li><li class="chapter-item expanded "><a href="../quality-gates/coverage-measurement.html"><strong aria-hidden="true">24.</strong> Coverage Measurement</a></li><li class="chapter-item expanded "><a href="../quality-gates/complexity-analysis.html"><strong aria-hidden="true">25.</strong> Complexity Analysis</a></li><li class="chapter-item expanded "><a href="../quality-gates/tdg-score.html"><strong aria-hidden="true">26.</strong> Technical Debt Gradient (TDG)</a></li><li class="chapter-item expanded affix "><li class="part-title">Toyota Way Principles</li><li class="chapter-item expanded "><a href="../toyota-way/overview.html"><strong aria-hidden="true">27.</strong> Overview</a></li><li class="chapter-item expanded "><a href="../toyota-way/kaizen.html"><strong aria-hidden="true">28.</strong> Kaizen (Continuous Improvement)</a></li><li class="chapter-item expanded "><a href="../toyota-way/genchi-genbutsu.html"><strong aria-hidden="true">29.</strong> Genchi Genbutsu (Go and See)</a></li><li class="chapter-item expanded "><a href="../toyota-way/jidoka.html"><strong aria-hidden="true">30.</strong> Jidoka (Built-in Quality)</a></li><li class="chapter-item expanded "><a href="../toyota-way/pdca-cycle.html"><strong aria-hidden="true">31.</strong> PDCA Cycle</a></li><li class="chapter-item expanded "><a href="../toyota-way/respect-for-people.html"><strong aria-hidden="true">32.</strong> Respect for People</a></li><li class="chapter-item expanded affix "><li class="part-title">Real-World Examples from Aprender</li><li class="chapter-item expanded "><a href="../examples/linear-regression.html"><strong aria-hidden="true">33.</strong> Case Study: Linear Regression</a></li><li class="chapter-item expanded "><a href="../examples/cross-validation.html"><strong aria-hidden="true">34.</strong> Case Study: Cross-Validation</a></li><li class="chapter-item expanded "><a href="../examples/random-forest.html"><strong aria-hidden="true">35.</strong> Case Study: Random Forest</a></li><li class="chapter-item expanded "><a href="../examples/model-serialization.html"><strong aria-hidden="true">36.</strong> Case Study: Model Serialization</a></li><li class="chapter-item expanded "><a href="../examples/kmeans-clustering.html"><strong aria-hidden="true">37.</strong> Case Study: KMeans Clustering</a></li><li class="chapter-item expanded affix "><li class="part-title">Sprint-Based Development</li><li class="chapter-item expanded "><a href="../sprints/sprint-planning.html"><strong aria-hidden="true">38.</strong> Sprint Planning</a></li><li class="chapter-item expanded "><a href="../sprints/sprint-execution.html"><strong aria-hidden="true">39.</strong> Sprint Execution</a></li><li class="chapter-item expanded "><a href="../sprints/sprint-review.html"><strong aria-hidden="true">40.</strong> Sprint Review</a></li><li class="chapter-item expanded "><a href="../sprints/sprint-retrospective.html"><strong aria-hidden="true">41.</strong> Sprint Retrospective</a></li><li class="chapter-item expanded "><a href="../sprints/issue-management.html"><strong aria-hidden="true">42.</strong> Issue Management</a></li><li class="chapter-item expanded affix "><li class="part-title">Anti-Hallucination Enforcement</li><li class="chapter-item expanded "><a href="../anti-hallucination/test-backed-examples.html"><strong aria-hidden="true">43.</strong> Test-Backed Examples</a></li><li class="chapter-item expanded "><a href="../anti-hallucination/example-verification.html"><strong aria-hidden="true">44.</strong> Example Verification</a></li><li class="chapter-item expanded "><a href="../anti-hallucination/ci-validation.html"><strong aria-hidden="true">45.</strong> CI Validation</a></li><li class="chapter-item expanded "><a href="../anti-hallucination/documentation-testing.html"><strong aria-hidden="true">46.</strong> Documentation Testing</a></li><li class="chapter-item expanded affix "><li class="part-title">Tools and Setup</li><li class="chapter-item expanded "><a href="../tools/development-environment.html"><strong aria-hidden="true">47.</strong> Development Environment</a></li><li class="chapter-item expanded "><a href="../tools/cargo-test.html"><strong aria-hidden="true">48.</strong> cargo test</a></li><li class="chapter-item expanded "><a href="../tools/cargo-clippy.html"><strong aria-hidden="true">49.</strong> cargo clippy</a></li><li class="chapter-item expanded "><a href="../tools/cargo-fmt.html"><strong aria-hidden="true">50.</strong> cargo fmt</a></li><li class="chapter-item expanded "><a href="../tools/cargo-mutants.html"><strong aria-hidden="true">51.</strong> cargo mutants</a></li><li class="chapter-item expanded "><a href="../tools/proptest.html"><strong aria-hidden="true">52.</strong> proptest</a></li><li class="chapter-item expanded "><a href="../tools/criterion.html"><strong aria-hidden="true">53.</strong> criterion</a></li><li class="chapter-item expanded "><a href="../tools/pmat.html"><strong aria-hidden="true">54.</strong> pmat (Toyota AI Toolkit)</a></li><li class="chapter-item expanded affix "><li class="part-title">Best Practices</li><li class="chapter-item expanded "><a href="../best-practices/error-handling.html"><strong aria-hidden="true">55.</strong> Error Handling</a></li><li class="chapter-item expanded "><a href="../best-practices/api-design.html"><strong aria-hidden="true">56.</strong> API Design</a></li><li class="chapter-item expanded "><a href="../best-practices/builder-pattern.html"><strong aria-hidden="true">57.</strong> Builder Pattern</a></li><li class="chapter-item expanded "><a href="../best-practices/type-safety.html"><strong aria-hidden="true">58.</strong> Type Safety</a></li><li class="chapter-item expanded "><a href="../best-practices/performance.html"><strong aria-hidden="true">59.</strong> Performance Considerations</a></li><li class="chapter-item expanded "><a href="../best-practices/documentation-standards.html"><strong aria-hidden="true">60.</strong> Documentation Standards</a></li><li class="chapter-item expanded affix "><li class="part-title">Metrics and Measurement</li><li class="chapter-item expanded "><a href="../metrics/test-coverage.html"><strong aria-hidden="true">61.</strong> Test Coverage</a></li><li class="chapter-item expanded "><a href="../metrics/mutation-score.html"><strong aria-hidden="true">62.</strong> Mutation Score</a></li><li class="chapter-item expanded "><a href="../metrics/cyclomatic-complexity.html"><strong aria-hidden="true">63.</strong> Cyclomatic Complexity</a></li><li class="chapter-item expanded "><a href="../metrics/code-churn.html"><strong aria-hidden="true">64.</strong> Code Churn</a></li><li class="chapter-item expanded "><a href="../metrics/build-times.html"><strong aria-hidden="true">65.</strong> Build Times</a></li><li class="chapter-item expanded "><a href="../metrics/tdg-breakdown.html"><strong aria-hidden="true">66.</strong> TDG Score Breakdown</a></li><li class="chapter-item expanded affix "><li class="part-title">Common Pitfalls</li><li class="chapter-item expanded "><a href="../pitfalls/skipping-tests.html"><strong aria-hidden="true">67.</strong> Skipping Tests</a></li><li class="chapter-item expanded "><a href="../pitfalls/insufficient-coverage.html"><strong aria-hidden="true">68.</strong> Insufficient Test Coverage</a></li><li class="chapter-item expanded "><a href="../pitfalls/ignoring-warnings.html"><strong aria-hidden="true">69.</strong> Ignoring Warnings</a></li><li class="chapter-item expanded "><a href="../pitfalls/over-mocking.html"><strong aria-hidden="true">70.</strong> Over-Mocking</a></li><li class="chapter-item expanded "><a href="../pitfalls/flaky-tests.html"><strong aria-hidden="true">71.</strong> Flaky Tests</a></li><li class="chapter-item expanded "><a href="../pitfalls/technical-debt.html"><strong aria-hidden="true">72.</strong> Technical Debt Accumulation</a></li><li class="chapter-item expanded affix "><li class="part-title">Appendix</li><li class="chapter-item expanded "><a href="../appendix/glossary.html"><strong aria-hidden="true">73.</strong> Glossary</a></li><li class="chapter-item expanded "><a href="../appendix/references.html"><strong aria-hidden="true">74.</strong> References</a></li><li class="chapter-item expanded "><a href="../appendix/further-reading.html"><strong aria-hidden="true">75.</strong> Further Reading</a></li><li class="chapter-item expanded "><a href="../appendix/contributing.html"><strong aria-hidden="true">76.</strong> Contributing to This Book</a></li></ol>
+            </div>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <!-- Track and set sidebar scroll position -->
+        <script>
+            var sidebarScrollbox = document.querySelector('#sidebar .sidebar-scrollbox');
+            sidebarScrollbox.addEventListener('click', function(e) {
+                if (e.target.tagName === 'A') {
+                    sessionStorage.setItem('sidebar-scroll', sidebarScrollbox.scrollTop);
+                }
+            }, { passive: true });
+            var sidebarScrollTop = sessionStorage.getItem('sidebar-scroll');
+            sessionStorage.removeItem('sidebar-scroll');
+            if (sidebarScrollTop) {
+                // preserve sidebar scroll position when navigating via links within sidebar
+                sidebarScrollbox.scrollTop = sidebarScrollTop;
+            } else {
+                // scroll sidebar to current active section when navigating via "next/previous chapter" buttons
+                var activeSection = document.querySelector('#sidebar .active');
+                if (activeSection) {
+                    activeSection.scrollIntoView({ block: 'center' });
+                }
+            }
+        </script>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="sidebar-toggle" class="icon-button" for="sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </label>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">EXTREME TDD - The Aprender Guide to Zero-Defect Machine Learning</h1>
+
+                    <div class="right-buttons">
+                        <a href="../print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                        <a href="https://github.com/paiml/aprender" title="Git repository" aria-label="Git repository">
+                            <i id="git-repository-button" class="fa fa-github"></i>
+                        </a>
+                        <a href="https://github.com/paiml/aprender/edit/main/book/src/methodology/what-is-extreme-tdd.md" title="Suggest an edit" aria-label="Suggest an edit">
+                            <i id="git-edit-button" class="fa fa-edit"></i>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="what-is-extreme-tdd"><a class="header" href="#what-is-extreme-tdd">What is EXTREME TDD?</a></h1>
+<p><strong>EXTREME TDD</strong> is a rigorous, zero-defect approach to test-driven development that combines traditional TDD with advanced testing techniques, automated quality gates, and Toyota Way principles.</p>
+<h2 id="the-core-definition"><a class="header" href="#the-core-definition">The Core Definition</a></h2>
+<p>EXTREME TDD extends classical Test-Driven Development by adding:</p>
+<ol>
+<li><strong>Absolute test-first discipline</strong> - No exceptions, no shortcuts</li>
+<li><strong>Multiple testing layers</strong> - Unit, integration, property-based, and mutation tests</li>
+<li><strong>Automated quality enforcement</strong> - Pre-commit hooks and CI/CD gates</li>
+<li><strong>Mutation testing</strong> - Verify tests actually catch bugs</li>
+<li><strong>Zero-tolerance standards</strong> - All tests pass, zero warnings, always</li>
+<li><strong>Continuous improvement</strong> - Kaizen mindset applied to code quality</li>
+</ol>
+<h2 id="the-six-pillars"><a class="header" href="#the-six-pillars">The Six Pillars</a></h2>
+<h3 id="1-tests-written-first-no-exceptions"><a class="header" href="#1-tests-written-first-no-exceptions">1. Tests Written First (NO Exceptions)</a></h3>
+<p><strong>Rule:</strong> All production code must be preceded by a failing test.</p>
+<pre><code class="language-rust">// ❌ WRONG: Writing implementation first
+pub fn train_test_split(x: &amp;Matrix&lt;f32&gt;, y: &amp;Vector&lt;f32&gt;, test_size: f32) {
+    // ... implementation ...
+}
+
+// ✅ CORRECT: Write test first
+#[test]
+fn test_train_test_split_basic() {
+    let x = Matrix::from_vec(10, 2, vec![/* ... */]).unwrap();
+    let y = Vector::from_vec(vec![/* ... */]);
+
+    let (x_train, x_test, y_train, y_test) =
+        train_test_split(&amp;x, &amp;y, 0.2, None).unwrap();
+
+    assert_eq!(x_train.shape().0, 8);  // 80% train
+    assert_eq!(x_test.shape().0, 2);   // 20% test
+}
+
+// NOW implement train_test_split() to make this test pass</code></pre>
+<h3 id="2-minimal-implementation-just-enough-to-pass"><a class="header" href="#2-minimal-implementation-just-enough-to-pass">2. Minimal Implementation (Just Enough to Pass)</a></h3>
+<p><strong>Rule:</strong> Write only the code needed to make tests pass.</p>
+<p>Avoid:</p>
+<ul>
+<li>Premature optimization</li>
+<li>Speculative features</li>
+<li>&quot;What if&quot; scenarios</li>
+<li>Over-engineering</li>
+</ul>
+<p>Example from aprender's Random Forest:</p>
+<pre><code class="language-rust">// CYCLE 1: Minimal bootstrap sampling
+fn _bootstrap_sample(n_samples: usize, _seed: Option&lt;u64&gt;) -&gt; Vec&lt;usize&gt; {
+    // First implementation: just return indices
+    (0..n_samples).collect()  // Fails test - not random!
+}
+
+// CYCLE 2: Add randomness (minimal to pass)
+fn _bootstrap_sample(n_samples: usize, seed: Option&lt;u64&gt;) -&gt; Vec&lt;usize&gt; {
+    use rand::distributions::{Distribution, Uniform};
+    use rand::SeedableRng;
+
+    let dist = Uniform::from(0..n_samples);
+    let mut indices = Vec::with_capacity(n_samples);
+
+    if let Some(seed) = seed {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
+        for _ in 0..n_samples {
+            indices.push(dist.sample(&amp;mut rng));
+        }
+    } else {
+        let mut rng = rand::thread_rng();
+        for _ in 0..n_samples {
+            indices.push(dist.sample(&amp;mut rng));
+        }
+    }
+
+    indices
+}</code></pre>
+<h3 id="3-comprehensive-refactoring-with-safety-net"><a class="header" href="#3-comprehensive-refactoring-with-safety-net">3. Comprehensive Refactoring (With Safety Net)</a></h3>
+<p><strong>Rule:</strong> After tests pass, improve code quality while maintaining test coverage.</p>
+<p>Refactor phase includes:</p>
+<ul>
+<li>Adding unit tests for edge cases</li>
+<li>Running clippy and fixing warnings</li>
+<li>Checking cyclomatic complexity</li>
+<li>Adding documentation</li>
+<li>Performance optimization</li>
+<li>Running mutation tests</li>
+</ul>
+<h3 id="4-property-based-testing-cover-edge-cases"><a class="header" href="#4-property-based-testing-cover-edge-cases">4. Property-Based Testing (Cover Edge Cases)</a></h3>
+<p><strong>Rule:</strong> Use property-based testing to automatically generate test cases.</p>
+<p>Example from aprender:</p>
+<pre><code class="language-rust">use proptest::prelude::*;
+
+proptest! {
+    #[test]
+    fn test_kfold_split_never_panics(
+        n_samples in 2usize..1000,
+        n_splits in 2usize..20
+    ) {
+        // Property: KFold.split() should never panic for valid inputs
+        let kfold = KFold::new(n_splits);
+        let _ = kfold.split(n_samples);  // Should not panic
+    }
+
+    #[test]
+    fn test_kfold_uses_all_samples(
+        n_samples in 10usize..100,
+        n_splits in 2usize..10
+    ) {
+        // Property: All samples should appear exactly once as test data
+        let kfold = KFold::new(n_splits);
+        let splits = kfold.split(n_samples);
+
+        let mut all_test_indices = Vec::new();
+        for (_train, test) in splits {
+            all_test_indices.extend(test);
+        }
+
+        all_test_indices.sort();
+        let expected: Vec&lt;usize&gt; = (0..n_samples).collect();
+
+        // Every sample should appear exactly once across all folds
+        prop_assert_eq!(all_test_indices, expected);
+    }
+}</code></pre>
+<h3 id="5-mutation-testing-verify-tests-work"><a class="header" href="#5-mutation-testing-verify-tests-work">5. Mutation Testing (Verify Tests Work)</a></h3>
+<p><strong>Rule:</strong> Use mutation testing to verify tests actually catch bugs.</p>
+<pre><code class="language-bash"># Run mutation tests
+cargo mutants --in-place
+
+# Example output:
+# src/model_selection/mod.rs:148: CAUGHT (replaced &gt;= with &lt;=)
+# src/model_selection/mod.rs:156: CAUGHT (replaced + with -)
+# src/tree/mod.rs:234: MISSED (removed return statement)
+</code></pre>
+<p><strong>Target:</strong> 80%+ mutation score (caught mutations / total mutations)</p>
+<h3 id="6-zero-tolerance-all-gates-must-pass"><a class="header" href="#6-zero-tolerance-all-gates-must-pass">6. Zero Tolerance (All Gates Must Pass)</a></h3>
+<p><strong>Rule:</strong> Every commit must pass ALL quality gates.</p>
+<p>Quality gates (enforced via pre-commit hook):</p>
+<pre><code class="language-bash">#!/bin/bash
+# .git/hooks/pre-commit
+
+echo &quot;Running quality gates...&quot;
+
+# 1. Format check
+cargo fmt --check || {
+    echo &quot;❌ Format check failed. Run: cargo fmt&quot;
+    exit 1
+}
+
+# 2. Clippy (zero warnings)
+cargo clippy -- -D warnings || {
+    echo &quot;❌ Clippy found warnings&quot;
+    exit 1
+}
+
+# 3. All tests pass
+cargo test || {
+    echo &quot;❌ Tests failed&quot;
+    exit 1
+}
+
+# 4. Fast tests (quick feedback loop)
+cargo test --lib || {
+    echo &quot;❌ Fast tests failed&quot;
+    exit 1
+}
+
+echo &quot;✅ All quality gates passed&quot;
+</code></pre>
+<h2 id="how-extreme-tdd-differs"><a class="header" href="#how-extreme-tdd-differs">How EXTREME TDD Differs</a></h2>
+<div class="table-wrapper"><table><thead><tr><th>Aspect</th><th>Traditional TDD</th><th>EXTREME TDD</th></tr></thead><tbody>
+<tr><td><strong>Test-First</strong></td><td>Encouraged</td><td><strong>Mandatory</strong> (no exceptions)</td></tr>
+<tr><td><strong>Test Types</strong></td><td>Mostly unit tests</td><td>Unit + Integration + <strong>Property + Mutation</strong></td></tr>
+<tr><td><strong>Quality Gates</strong></td><td>Optional CI checks</td><td><strong>Enforced pre-commit hooks</strong></td></tr>
+<tr><td><strong>Coverage Target</strong></td><td>~70-80%</td><td><strong>&gt;90% + mutation score &gt;80%</strong></td></tr>
+<tr><td><strong>Warnings</strong></td><td>Fix eventually</td><td><strong>Zero tolerance</strong> (must fix immediately)</td></tr>
+<tr><td><strong>Refactoring</strong></td><td>As needed</td><td><strong>Comprehensive phase</strong> in every cycle</td></tr>
+<tr><td><strong>Documentation</strong></td><td>Write later</td><td><strong>Part of REFACTOR phase</strong></td></tr>
+<tr><td><strong>Complexity</strong></td><td>Monitor occasionally</td><td><strong>Measured and enforced</strong> (≤10 target)</td></tr>
+<tr><td><strong>Philosophy</strong></td><td>Good practice</td><td><strong>Toyota Way principles</strong> (Kaizen, Jidoka)</td></tr>
+</tbody></table>
+</div>
+<h2 id="benefits-of-extreme-tdd"><a class="header" href="#benefits-of-extreme-tdd">Benefits of EXTREME TDD</a></h2>
+<h3 id="1-zero-defects-from-day-one"><a class="header" href="#1-zero-defects-from-day-one">1. Zero Defects from Day One</a></h3>
+<p>By catching bugs through comprehensive testing and mutation testing, production code is defect-free.</p>
+<h3 id="2-fearless-refactoring"><a class="header" href="#2-fearless-refactoring">2. Fearless Refactoring</a></h3>
+<p>With comprehensive test coverage, you can refactor with confidence, knowing tests will catch regressions.</p>
+<h3 id="3-living-documentation"><a class="header" href="#3-living-documentation">3. Living Documentation</a></h3>
+<p>Tests serve as executable documentation that never gets outdated.</p>
+<h3 id="4-faster-development"><a class="header" href="#4-faster-development">4. Faster Development</a></h3>
+<p>Paradoxically, writing tests first speeds up development by:</p>
+<ul>
+<li>Catching bugs earlier (cheaper to fix)</li>
+<li>Reducing debugging time</li>
+<li>Enabling confident refactoring</li>
+<li>Preventing regression bugs</li>
+</ul>
+<h3 id="5-better-api-design"><a class="header" href="#5-better-api-design">5. Better API Design</a></h3>
+<p>Writing tests first forces you to think about API usability before implementation.</p>
+<p>Example from aprender:</p>
+<pre><code class="language-rust">// Test-first API design led to clean builder pattern
+let mut rf = RandomForestClassifier::new(20)
+    .with_max_depth(5)
+    .with_random_state(42);  // Fluent, readable API</code></pre>
+<h3 id="6-objective-quality-metrics"><a class="header" href="#6-objective-quality-metrics">6. Objective Quality Metrics</a></h3>
+<p>TDG (Technical Debt Gradient) provides measurable quality:</p>
+<pre><code class="language-bash">$ pmat analyze tdg src/
+TDG Score: 93.3/100 (A)
+
+Breakdown:
+- Test Coverage:  97.2% (weight: 30%) ✅
+- Complexity:     8.1 avg (weight: 25%) ✅
+- Documentation:  94% (weight: 20%) ✅
+- Modularity:     A (weight: 15%) ✅
+- Error Handling: 96% (weight: 10%) ✅
+</code></pre>
+<h2 id="real-world-impact"><a class="header" href="#real-world-impact">Real-World Impact</a></h2>
+<p><strong>Aprender Results</strong> (using EXTREME TDD):</p>
+<ul>
+<li>184 passing tests (+19 in latest session)</li>
+<li>~97% coverage</li>
+<li>93.3/100 TDG score (A grade)</li>
+<li>Zero production defects</li>
+<li>&lt;0.01s fast test time</li>
+</ul>
+<p><strong>Traditional Approach</strong> (typical results):</p>
+<ul>
+<li>~60-70% coverage</li>
+<li>~80/100 TDG score (C grade)</li>
+<li>Multiple production defects</li>
+<li>Regression bugs</li>
+<li>Fear of refactoring</li>
+</ul>
+<h2 id="when-to-use-extreme-tdd"><a class="header" href="#when-to-use-extreme-tdd">When to Use EXTREME TDD</a></h2>
+<p><strong>✅ Ideal for:</strong></p>
+<ul>
+<li>Production libraries and frameworks</li>
+<li>Safety-critical systems</li>
+<li>Financial and medical software</li>
+<li>Open-source projects (quality signal)</li>
+<li>ML/AI systems (complex logic)</li>
+<li>Long-term maintainability</li>
+</ul>
+<p><strong>⚠️ Consider tradeoffs for:</strong></p>
+<ul>
+<li>Prototypes and spikes (use regular TDD)</li>
+<li>UI/UX exploration (harder to test-first)</li>
+<li>Throwaway code</li>
+<li>Very tight deadlines (though EXTREME TDD often saves time)</li>
+</ul>
+<h2 id="summary"><a class="header" href="#summary">Summary</a></h2>
+<p>EXTREME TDD is:</p>
+<ul>
+<li><strong>Disciplined</strong>: Tests FIRST, no exceptions</li>
+<li><strong>Comprehensive</strong>: Multiple testing layers</li>
+<li><strong>Automated</strong>: Quality gates enforced</li>
+<li><strong>Measured</strong>: Objective metrics (TDG, mutation score)</li>
+<li><strong>Continuous</strong>: Kaizen mindset</li>
+<li><strong>Zero-tolerance</strong>: All tests pass, zero warnings</li>
+</ul>
+<p><strong>Next Chapter:</strong> <a href="./red-green-refactor.html">The RED-GREEN-REFACTOR Cycle</a></p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../introduction.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+
+                            <a rel="next prefetch" href="../methodology/red-green-refactor.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../introduction.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+
+                    <a rel="next prefetch" href="../methodology/red-green-refactor.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+            </nav>
+
+        </div>
+
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+        <script src="../ace.js"></script>
+        <script src="../editor.js"></script>
+        <script src="../mode-rust.js"></script>
+        <script src="../theme-dawn.js"></script>
+        <script src="../theme-tomorrow_night.js"></script>
+
+        <script src="../elasticlunr.min.js"></script>
+        <script src="../mark.min.js"></script>
+        <script src="../searcher.js"></script>
+
+        <script src="../clipboard.min.js"></script>
+        <script src="../highlight.js"></script>
+        <script src="../book.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+    </div>
+    </body>
+</html>

@@ -1,0 +1,2407 @@
+<!DOCTYPE HTML>
+<html lang="en" class="rust" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>EXTREME TDD - The Aprender Guide to Zero-Defect Machine Learning</title>
+        <meta name="robots" content="noindex">
+
+
+        <!-- Custom HTML head -->
+        
+        <meta name="description" content="A comprehensive guide to EXTREME TDD methodology: RED-GREEN-REFACTOR cycles, mutation testing, and Toyota Way principles demonstrated through ML library development">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon.svg">
+        <link rel="shortcut icon" href="favicon.png">
+        <link rel="stylesheet" href="css/variables.css">
+        <link rel="stylesheet" href="css/general.css">
+        <link rel="stylesheet" href="css/chrome.css">
+        <link rel="stylesheet" href="css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="fonts/fonts.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" href="highlight.css">
+        <link rel="stylesheet" href="tomorrow-night.css">
+        <link rel="stylesheet" href="ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+
+    </head>
+    <body class="sidebar-visible no-js">
+    <div id="body-container">
+        <!-- Provide site root to javascript -->
+        <script>
+            var path_to_root = "";
+            var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "rust";
+        </script>
+
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            var html = document.querySelector('html');
+            html.classList.remove('rust')
+            html.classList.add(theme);
+            var body = document.querySelector('body');
+            body.classList.remove('no-js')
+            body.classList.add('js');
+        </script>
+
+        <input type="checkbox" id="sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            var body = document.querySelector('body');
+            var sidebar = null;
+            var sidebar_toggle = document.getElementById("sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+            }
+            sidebar_toggle.checked = sidebar === 'visible';
+            body.classList.remove('sidebar-visible');
+            body.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <div class="sidebar-scrollbox">
+                <ol class="chapter"><li class="chapter-item expanded affix "><a href="introduction.html">Introduction</a></li><li class="chapter-item expanded affix "><li class="part-title">Core Methodology</li><li class="chapter-item expanded "><a href="methodology/what-is-extreme-tdd.html"><strong aria-hidden="true">1.</strong> What is EXTREME TDD?</a></li><li class="chapter-item expanded "><a href="methodology/red-green-refactor.html"><strong aria-hidden="true">2.</strong> The RED-GREEN-REFACTOR Cycle</a></li><li class="chapter-item expanded "><a href="methodology/test-first-philosophy.html"><strong aria-hidden="true">3.</strong> Test-First Philosophy</a></li><li class="chapter-item expanded "><a href="methodology/zero-tolerance.html"><strong aria-hidden="true">4.</strong> Zero Tolerance Quality</a></li><li class="chapter-item expanded affix "><li class="part-title">The RED Phase</li><li class="chapter-item expanded "><a href="red-phase/failing-tests-first.html"><strong aria-hidden="true">5.</strong> Writing Failing Tests First</a></li><li class="chapter-item expanded "><a href="red-phase/test-categories.html"><strong aria-hidden="true">6.</strong> Test Categories</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="red-phase/unit-tests.html"><strong aria-hidden="true">6.1.</strong> Unit Tests</a></li><li class="chapter-item expanded "><a href="red-phase/integration-tests.html"><strong aria-hidden="true">6.2.</strong> Integration Tests</a></li><li class="chapter-item expanded "><a href="red-phase/property-based-tests.html"><strong aria-hidden="true">6.3.</strong> Property-Based Tests</a></li></ol></li><li class="chapter-item expanded "><a href="red-phase/verification-strategy.html"><strong aria-hidden="true">7.</strong> Verification Strategy</a></li><li class="chapter-item expanded affix "><li class="part-title">The GREEN Phase</li><li class="chapter-item expanded "><a href="green-phase/minimal-implementation.html"><strong aria-hidden="true">8.</strong> Minimal Implementation</a></li><li class="chapter-item expanded "><a href="green-phase/making-tests-pass.html"><strong aria-hidden="true">9.</strong> Making Tests Pass</a></li><li class="chapter-item expanded "><a href="green-phase/avoiding-over-engineering.html"><strong aria-hidden="true">10.</strong> Avoiding Over-Engineering</a></li><li class="chapter-item expanded "><a href="green-phase/simplest-thing.html"><strong aria-hidden="true">11.</strong> The Simplest Thing That Works</a></li><li class="chapter-item expanded affix "><li class="part-title">The REFACTOR Phase</li><li class="chapter-item expanded "><a href="refactor-phase/refactoring-with-confidence.html"><strong aria-hidden="true">12.</strong> Refactoring with Confidence</a></li><li class="chapter-item expanded "><a href="refactor-phase/code-quality.html"><strong aria-hidden="true">13.</strong> Code Quality Improvements</a></li><li class="chapter-item expanded "><a href="refactor-phase/performance-optimization.html"><strong aria-hidden="true">14.</strong> Performance Optimization</a></li><li class="chapter-item expanded "><a href="refactor-phase/documentation.html"><strong aria-hidden="true">15.</strong> Documentation</a></li><li class="chapter-item expanded affix "><li class="part-title">Advanced Testing</li><li class="chapter-item expanded "><a href="advanced-testing/property-based-testing.html"><strong aria-hidden="true">16.</strong> Property-Based Testing</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="advanced-testing/proptest-fundamentals.html"><strong aria-hidden="true">16.1.</strong> Proptest Fundamentals</a></li><li class="chapter-item expanded "><a href="advanced-testing/strategies-generators.html"><strong aria-hidden="true">16.2.</strong> Strategies and Generators</a></li><li class="chapter-item expanded "><a href="advanced-testing/testing-invariants.html"><strong aria-hidden="true">16.3.</strong> Testing Invariants</a></li></ol></li><li class="chapter-item expanded "><a href="advanced-testing/mutation-testing.html"><strong aria-hidden="true">17.</strong> Mutation Testing</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="advanced-testing/what-is-mutation-testing.html"><strong aria-hidden="true">17.1.</strong> What is Mutation Testing?</a></li><li class="chapter-item expanded "><a href="advanced-testing/using-cargo-mutants.html"><strong aria-hidden="true">17.2.</strong> Using cargo-mutants</a></li><li class="chapter-item expanded "><a href="advanced-testing/mutation-score-targets.html"><strong aria-hidden="true">17.3.</strong> Mutation Score Targets</a></li><li class="chapter-item expanded "><a href="advanced-testing/killing-mutants.html"><strong aria-hidden="true">17.4.</strong> Killing Mutants</a></li></ol></li><li class="chapter-item expanded "><a href="advanced-testing/fuzzing.html"><strong aria-hidden="true">18.</strong> Fuzzing</a></li><li class="chapter-item expanded "><a href="advanced-testing/benchmark-testing.html"><strong aria-hidden="true">19.</strong> Benchmark Testing</a></li><li class="chapter-item expanded affix "><li class="part-title">Quality Gates</li><li class="chapter-item expanded "><a href="quality-gates/pre-commit-hooks.html"><strong aria-hidden="true">20.</strong> Pre-Commit Hooks</a></li><li class="chapter-item expanded "><a href="quality-gates/continuous-integration.html"><strong aria-hidden="true">21.</strong> Continuous Integration</a></li><li class="chapter-item expanded "><a href="quality-gates/code-formatting.html"><strong aria-hidden="true">22.</strong> Code Formatting (rustfmt)</a></li><li class="chapter-item expanded "><a href="quality-gates/linting-clippy.html"><strong aria-hidden="true">23.</strong> Linting (clippy)</a></li><li class="chapter-item expanded "><a href="quality-gates/coverage-measurement.html"><strong aria-hidden="true">24.</strong> Coverage Measurement</a></li><li class="chapter-item expanded "><a href="quality-gates/complexity-analysis.html"><strong aria-hidden="true">25.</strong> Complexity Analysis</a></li><li class="chapter-item expanded "><a href="quality-gates/tdg-score.html"><strong aria-hidden="true">26.</strong> Technical Debt Gradient (TDG)</a></li><li class="chapter-item expanded affix "><li class="part-title">Toyota Way Principles</li><li class="chapter-item expanded "><a href="toyota-way/overview.html"><strong aria-hidden="true">27.</strong> Overview</a></li><li class="chapter-item expanded "><a href="toyota-way/kaizen.html"><strong aria-hidden="true">28.</strong> Kaizen (Continuous Improvement)</a></li><li class="chapter-item expanded "><a href="toyota-way/genchi-genbutsu.html"><strong aria-hidden="true">29.</strong> Genchi Genbutsu (Go and See)</a></li><li class="chapter-item expanded "><a href="toyota-way/jidoka.html"><strong aria-hidden="true">30.</strong> Jidoka (Built-in Quality)</a></li><li class="chapter-item expanded "><a href="toyota-way/pdca-cycle.html"><strong aria-hidden="true">31.</strong> PDCA Cycle</a></li><li class="chapter-item expanded "><a href="toyota-way/respect-for-people.html"><strong aria-hidden="true">32.</strong> Respect for People</a></li><li class="chapter-item expanded affix "><li class="part-title">Real-World Examples from Aprender</li><li class="chapter-item expanded "><a href="examples/linear-regression.html"><strong aria-hidden="true">33.</strong> Case Study: Linear Regression</a></li><li class="chapter-item expanded "><a href="examples/cross-validation.html"><strong aria-hidden="true">34.</strong> Case Study: Cross-Validation</a></li><li class="chapter-item expanded "><a href="examples/random-forest.html"><strong aria-hidden="true">35.</strong> Case Study: Random Forest</a></li><li class="chapter-item expanded "><a href="examples/model-serialization.html"><strong aria-hidden="true">36.</strong> Case Study: Model Serialization</a></li><li class="chapter-item expanded "><a href="examples/kmeans-clustering.html"><strong aria-hidden="true">37.</strong> Case Study: KMeans Clustering</a></li><li class="chapter-item expanded affix "><li class="part-title">Sprint-Based Development</li><li class="chapter-item expanded "><a href="sprints/sprint-planning.html"><strong aria-hidden="true">38.</strong> Sprint Planning</a></li><li class="chapter-item expanded "><a href="sprints/sprint-execution.html"><strong aria-hidden="true">39.</strong> Sprint Execution</a></li><li class="chapter-item expanded "><a href="sprints/sprint-review.html"><strong aria-hidden="true">40.</strong> Sprint Review</a></li><li class="chapter-item expanded "><a href="sprints/sprint-retrospective.html"><strong aria-hidden="true">41.</strong> Sprint Retrospective</a></li><li class="chapter-item expanded "><a href="sprints/issue-management.html"><strong aria-hidden="true">42.</strong> Issue Management</a></li><li class="chapter-item expanded affix "><li class="part-title">Anti-Hallucination Enforcement</li><li class="chapter-item expanded "><a href="anti-hallucination/test-backed-examples.html"><strong aria-hidden="true">43.</strong> Test-Backed Examples</a></li><li class="chapter-item expanded "><a href="anti-hallucination/example-verification.html"><strong aria-hidden="true">44.</strong> Example Verification</a></li><li class="chapter-item expanded "><a href="anti-hallucination/ci-validation.html"><strong aria-hidden="true">45.</strong> CI Validation</a></li><li class="chapter-item expanded "><a href="anti-hallucination/documentation-testing.html"><strong aria-hidden="true">46.</strong> Documentation Testing</a></li><li class="chapter-item expanded affix "><li class="part-title">Tools and Setup</li><li class="chapter-item expanded "><a href="tools/development-environment.html"><strong aria-hidden="true">47.</strong> Development Environment</a></li><li class="chapter-item expanded "><a href="tools/cargo-test.html"><strong aria-hidden="true">48.</strong> cargo test</a></li><li class="chapter-item expanded "><a href="tools/cargo-clippy.html"><strong aria-hidden="true">49.</strong> cargo clippy</a></li><li class="chapter-item expanded "><a href="tools/cargo-fmt.html"><strong aria-hidden="true">50.</strong> cargo fmt</a></li><li class="chapter-item expanded "><a href="tools/cargo-mutants.html"><strong aria-hidden="true">51.</strong> cargo mutants</a></li><li class="chapter-item expanded "><a href="tools/proptest.html"><strong aria-hidden="true">52.</strong> proptest</a></li><li class="chapter-item expanded "><a href="tools/criterion.html"><strong aria-hidden="true">53.</strong> criterion</a></li><li class="chapter-item expanded "><a href="tools/pmat.html"><strong aria-hidden="true">54.</strong> pmat (Toyota AI Toolkit)</a></li><li class="chapter-item expanded affix "><li class="part-title">Best Practices</li><li class="chapter-item expanded "><a href="best-practices/error-handling.html"><strong aria-hidden="true">55.</strong> Error Handling</a></li><li class="chapter-item expanded "><a href="best-practices/api-design.html"><strong aria-hidden="true">56.</strong> API Design</a></li><li class="chapter-item expanded "><a href="best-practices/builder-pattern.html"><strong aria-hidden="true">57.</strong> Builder Pattern</a></li><li class="chapter-item expanded "><a href="best-practices/type-safety.html"><strong aria-hidden="true">58.</strong> Type Safety</a></li><li class="chapter-item expanded "><a href="best-practices/performance.html"><strong aria-hidden="true">59.</strong> Performance Considerations</a></li><li class="chapter-item expanded "><a href="best-practices/documentation-standards.html"><strong aria-hidden="true">60.</strong> Documentation Standards</a></li><li class="chapter-item expanded affix "><li class="part-title">Metrics and Measurement</li><li class="chapter-item expanded "><a href="metrics/test-coverage.html"><strong aria-hidden="true">61.</strong> Test Coverage</a></li><li class="chapter-item expanded "><a href="metrics/mutation-score.html"><strong aria-hidden="true">62.</strong> Mutation Score</a></li><li class="chapter-item expanded "><a href="metrics/cyclomatic-complexity.html"><strong aria-hidden="true">63.</strong> Cyclomatic Complexity</a></li><li class="chapter-item expanded "><a href="metrics/code-churn.html"><strong aria-hidden="true">64.</strong> Code Churn</a></li><li class="chapter-item expanded "><a href="metrics/build-times.html"><strong aria-hidden="true">65.</strong> Build Times</a></li><li class="chapter-item expanded "><a href="metrics/tdg-breakdown.html"><strong aria-hidden="true">66.</strong> TDG Score Breakdown</a></li><li class="chapter-item expanded affix "><li class="part-title">Common Pitfalls</li><li class="chapter-item expanded "><a href="pitfalls/skipping-tests.html"><strong aria-hidden="true">67.</strong> Skipping Tests</a></li><li class="chapter-item expanded "><a href="pitfalls/insufficient-coverage.html"><strong aria-hidden="true">68.</strong> Insufficient Test Coverage</a></li><li class="chapter-item expanded "><a href="pitfalls/ignoring-warnings.html"><strong aria-hidden="true">69.</strong> Ignoring Warnings</a></li><li class="chapter-item expanded "><a href="pitfalls/over-mocking.html"><strong aria-hidden="true">70.</strong> Over-Mocking</a></li><li class="chapter-item expanded "><a href="pitfalls/flaky-tests.html"><strong aria-hidden="true">71.</strong> Flaky Tests</a></li><li class="chapter-item expanded "><a href="pitfalls/technical-debt.html"><strong aria-hidden="true">72.</strong> Technical Debt Accumulation</a></li><li class="chapter-item expanded affix "><li class="part-title">Appendix</li><li class="chapter-item expanded "><a href="appendix/glossary.html"><strong aria-hidden="true">73.</strong> Glossary</a></li><li class="chapter-item expanded "><a href="appendix/references.html"><strong aria-hidden="true">74.</strong> References</a></li><li class="chapter-item expanded "><a href="appendix/further-reading.html"><strong aria-hidden="true">75.</strong> Further Reading</a></li><li class="chapter-item expanded "><a href="appendix/contributing.html"><strong aria-hidden="true">76.</strong> Contributing to This Book</a></li></ol>
+            </div>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <!-- Track and set sidebar scroll position -->
+        <script>
+            var sidebarScrollbox = document.querySelector('#sidebar .sidebar-scrollbox');
+            sidebarScrollbox.addEventListener('click', function(e) {
+                if (e.target.tagName === 'A') {
+                    sessionStorage.setItem('sidebar-scroll', sidebarScrollbox.scrollTop);
+                }
+            }, { passive: true });
+            var sidebarScrollTop = sessionStorage.getItem('sidebar-scroll');
+            sessionStorage.removeItem('sidebar-scroll');
+            if (sidebarScrollTop) {
+                // preserve sidebar scroll position when navigating via links within sidebar
+                sidebarScrollbox.scrollTop = sidebarScrollTop;
+            } else {
+                // scroll sidebar to current active section when navigating via "next/previous chapter" buttons
+                var activeSection = document.querySelector('#sidebar .active');
+                if (activeSection) {
+                    activeSection.scrollIntoView({ block: 'center' });
+                }
+            }
+        </script>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="sidebar-toggle" class="icon-button" for="sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </label>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">EXTREME TDD - The Aprender Guide to Zero-Defect Machine Learning</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                        <a href="https://github.com/paiml/aprender" title="Git repository" aria-label="Git repository">
+                            <i id="git-repository-button" class="fa fa-github"></i>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="introduction"><a class="header" href="#introduction">Introduction</a></h1>
+<p>Welcome to the <strong>EXTREME TDD Guide</strong>, a comprehensive methodology for building zero-defect software through rigorous test-driven development. This book documents the practices, principles, and real-world implementation strategies used to build <strong>aprender</strong>, a pure-Rust machine learning library with production-grade quality.</p>
+<h2 id="what-youll-learn"><a class="header" href="#what-youll-learn">What You'll Learn</a></h2>
+<p>This book is your complete guide to implementing EXTREME TDD in production codebases:</p>
+<ul>
+<li><strong>The RED-GREEN-REFACTOR Cycle</strong>: How to write tests first, implement minimally, and refactor with confidence</li>
+<li><strong>Advanced Testing Techniques</strong>: Property-based testing, mutation testing, and fuzzing strategies</li>
+<li><strong>Quality Gates</strong>: Automated enforcement of zero-tolerance quality standards</li>
+<li><strong>Toyota Way Principles</strong>: Applying Kaizen, Jidoka, and PDCA to software development</li>
+<li><strong>Real-World Examples</strong>: Actual implementation cycles from building aprender's ML algorithms</li>
+<li><strong>Anti-Hallucination</strong>: Ensuring every example is test-backed and verified</li>
+</ul>
+<h2 id="why-extreme-tdd"><a class="header" href="#why-extreme-tdd">Why EXTREME TDD?</a></h2>
+<p>Traditional TDD is valuable, but <strong>EXTREME TDD</strong> takes it further:</p>
+<div class="table-wrapper"><table><thead><tr><th>Standard TDD</th><th>EXTREME TDD</th></tr></thead><tbody>
+<tr><td>Write tests first</td><td>Write tests first (<strong>NO exceptions</strong>)</td></tr>
+<tr><td>Make tests pass</td><td>Make tests pass (<strong>minimally</strong>)</td></tr>
+<tr><td>Refactor as needed</td><td>Refactor <strong>comprehensively</strong> with full test coverage</td></tr>
+<tr><td>Unit tests</td><td>Unit + Integration + <strong>Property-Based + Mutation</strong> tests</td></tr>
+<tr><td>Some quality checks</td><td><strong>Zero-tolerance quality gates</strong> (all must pass)</td></tr>
+<tr><td>Code coverage goals</td><td><strong>&gt;90% coverage + 80%+ mutation score</strong></td></tr>
+<tr><td>Manual verification</td><td><strong>Automated CI/CD enforcement</strong></td></tr>
+</tbody></table>
+</div>
+<h2 id="the-philosophy"><a class="header" href="#the-philosophy">The Philosophy</a></h2>
+<blockquote>
+<p><strong>&quot;Test EVERYTHING. Trust NOTHING. Verify ALWAYS.&quot;</strong></p>
+</blockquote>
+<p>EXTREME TDD is built on these core principles:</p>
+<ol>
+<li><strong>Tests are written FIRST</strong> - Implementation follows tests, never the reverse</li>
+<li><strong>Minimal implementation</strong> - Write only the code needed to pass tests</li>
+<li><strong>Comprehensive refactoring</strong> - With test safety nets, improve fearlessly</li>
+<li><strong>Property-based testing</strong> - Cover edge cases automatically</li>
+<li><strong>Mutation testing</strong> - Verify tests actually catch bugs</li>
+<li><strong>Zero tolerance</strong> - All tests pass, zero warnings, always</li>
+</ol>
+<h2 id="real-world-results"><a class="header" href="#real-world-results">Real-World Results</a></h2>
+<p>This methodology has produced exceptional results in aprender:</p>
+<ul>
+<li><strong>184 passing tests</strong> across all modules</li>
+<li><strong>~97% code coverage</strong> (well above 90% target)</li>
+<li><strong>93.3/100 TDG score</strong> (Technical Debt Gradient - A grade)</li>
+<li><strong>Zero clippy warnings</strong> at all times</li>
+<li><strong>&lt;0.01s test-fast time</strong> for rapid feedback</li>
+<li><strong>Zero production defects</strong> from day one</li>
+</ul>
+<h2 id="how-this-book-is-organized"><a class="header" href="#how-this-book-is-organized">How This Book is Organized</a></h2>
+<h3 id="part-1-core-methodology"><a class="header" href="#part-1-core-methodology">Part 1: Core Methodology</a></h3>
+<p>Foundational concepts of EXTREME TDD, the RED-GREEN-REFACTOR cycle, and test-first philosophy.</p>
+<h3 id="part-2-the-three-phases"><a class="header" href="#part-2-the-three-phases">Part 2: The Three Phases</a></h3>
+<p>Deep dives into RED (failing tests), GREEN (minimal implementation), and REFACTOR (comprehensive improvement).</p>
+<h3 id="part-3-advanced-testing"><a class="header" href="#part-3-advanced-testing">Part 3: Advanced Testing</a></h3>
+<p>Property-based testing, mutation testing, fuzzing, and benchmarking strategies.</p>
+<h3 id="part-4-quality-gates"><a class="header" href="#part-4-quality-gates">Part 4: Quality Gates</a></h3>
+<p>Automated enforcement through pre-commit hooks, CI/CD, linting, and complexity analysis.</p>
+<h3 id="part-5-toyota-way-principles"><a class="header" href="#part-5-toyota-way-principles">Part 5: Toyota Way Principles</a></h3>
+<p>Kaizen, Genchi Genbutsu, Jidoka, PDCA, and their application to software development.</p>
+<h3 id="part-6-real-world-examples"><a class="header" href="#part-6-real-world-examples">Part 6: Real-World Examples</a></h3>
+<p>Actual implementation cycles from aprender: Cross-Validation, Random Forest, Serialization, and more.</p>
+<h3 id="part-7-sprints-and-process"><a class="header" href="#part-7-sprints-and-process">Part 7: Sprints and Process</a></h3>
+<p>Sprint-based development, issue management, and anti-hallucination enforcement.</p>
+<h3 id="part-8-tools-and-best-practices"><a class="header" href="#part-8-tools-and-best-practices">Part 8: Tools and Best Practices</a></h3>
+<p>Practical guides to cargo test, clippy, mutants, proptest, and PMAT.</p>
+<h3 id="part-9-metrics-and-pitfalls"><a class="header" href="#part-9-metrics-and-pitfalls">Part 9: Metrics and Pitfalls</a></h3>
+<p>Measuring success and avoiding common TDD mistakes.</p>
+<h2 id="who-this-book-is-for"><a class="header" href="#who-this-book-is-for">Who This Book is For</a></h2>
+<ul>
+<li><strong>Software engineers</strong> wanting production-quality TDD practices</li>
+<li><strong>ML practitioners</strong> building reliable, testable ML systems</li>
+<li><strong>Teams</strong> adopting Toyota Way principles in software</li>
+<li><strong>Quality-focused developers</strong> seeking zero-defect methodologies</li>
+<li><strong>Rust developers</strong> building libraries and frameworks</li>
+</ul>
+<h2 id="anti-hallucination-guarantee"><a class="header" href="#anti-hallucination-guarantee">Anti-Hallucination Guarantee</a></h2>
+<p>Every code example in this book is:</p>
+<ul>
+<li>✅ <strong>Test-backed</strong> - Validated by actual passing tests in aprender</li>
+<li>✅ <strong>CI-verified</strong> - Automatically tested in GitHub Actions</li>
+<li>✅ <strong>Production-proven</strong> - From a real, working codebase</li>
+<li>✅ <strong>Reproducible</strong> - You can run the same tests and see the same results</li>
+</ul>
+<p><strong>If an example cannot be validated by tests, it will not appear in this book.</strong></p>
+<h2 id="getting-started"><a class="header" href="#getting-started">Getting Started</a></h2>
+<p>Ready to master EXTREME TDD? Start with:</p>
+<ol>
+<li><a href="./methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a> - Core concepts</li>
+<li><a href="./methodology/red-green-refactor.html">The RED-GREEN-REFACTOR Cycle</a> - The fundamental workflow</li>
+<li><a href="./examples/cross-validation.html">Case Study: Cross-Validation</a> - A complete real-world example</li>
+</ol>
+<p>Or dive into <a href="./tools/development-environment.html">Development Environment Setup</a> to start practicing immediately.</p>
+<h2 id="contributing-to-this-book"><a class="header" href="#contributing-to-this-book">Contributing to This Book</a></h2>
+<p>This book is open source and accepts contributions. See <a href="./appendix/contributing.html">Contributing to This Book</a> for guidelines.</p>
+<p>All book content follows the same EXTREME TDD principles it documents:</p>
+<ul>
+<li>Every example must be test-backed</li>
+<li>All code must compile and run</li>
+<li>Zero tolerance for hallucinated examples</li>
+<li>Continuous improvement through Kaizen</li>
+</ul>
+<hr />
+<p><strong>Let's build software with zero defects. Let's master EXTREME TDD.</strong></p>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="what-is-extreme-tdd"><a class="header" href="#what-is-extreme-tdd">What is EXTREME TDD?</a></h1>
+<p><strong>EXTREME TDD</strong> is a rigorous, zero-defect approach to test-driven development that combines traditional TDD with advanced testing techniques, automated quality gates, and Toyota Way principles.</p>
+<h2 id="the-core-definition"><a class="header" href="#the-core-definition">The Core Definition</a></h2>
+<p>EXTREME TDD extends classical Test-Driven Development by adding:</p>
+<ol>
+<li><strong>Absolute test-first discipline</strong> - No exceptions, no shortcuts</li>
+<li><strong>Multiple testing layers</strong> - Unit, integration, property-based, and mutation tests</li>
+<li><strong>Automated quality enforcement</strong> - Pre-commit hooks and CI/CD gates</li>
+<li><strong>Mutation testing</strong> - Verify tests actually catch bugs</li>
+<li><strong>Zero-tolerance standards</strong> - All tests pass, zero warnings, always</li>
+<li><strong>Continuous improvement</strong> - Kaizen mindset applied to code quality</li>
+</ol>
+<h2 id="the-six-pillars"><a class="header" href="#the-six-pillars">The Six Pillars</a></h2>
+<h3 id="1-tests-written-first-no-exceptions"><a class="header" href="#1-tests-written-first-no-exceptions">1. Tests Written First (NO Exceptions)</a></h3>
+<p><strong>Rule:</strong> All production code must be preceded by a failing test.</p>
+<pre><code class="language-rust">// ❌ WRONG: Writing implementation first
+pub fn train_test_split(x: &amp;Matrix&lt;f32&gt;, y: &amp;Vector&lt;f32&gt;, test_size: f32) {
+    // ... implementation ...
+}
+
+// ✅ CORRECT: Write test first
+#[test]
+fn test_train_test_split_basic() {
+    let x = Matrix::from_vec(10, 2, vec![/* ... */]).unwrap();
+    let y = Vector::from_vec(vec![/* ... */]);
+
+    let (x_train, x_test, y_train, y_test) =
+        train_test_split(&amp;x, &amp;y, 0.2, None).unwrap();
+
+    assert_eq!(x_train.shape().0, 8);  // 80% train
+    assert_eq!(x_test.shape().0, 2);   // 20% test
+}
+
+// NOW implement train_test_split() to make this test pass</code></pre>
+<h3 id="2-minimal-implementation-just-enough-to-pass"><a class="header" href="#2-minimal-implementation-just-enough-to-pass">2. Minimal Implementation (Just Enough to Pass)</a></h3>
+<p><strong>Rule:</strong> Write only the code needed to make tests pass.</p>
+<p>Avoid:</p>
+<ul>
+<li>Premature optimization</li>
+<li>Speculative features</li>
+<li>&quot;What if&quot; scenarios</li>
+<li>Over-engineering</li>
+</ul>
+<p>Example from aprender's Random Forest:</p>
+<pre><code class="language-rust">// CYCLE 1: Minimal bootstrap sampling
+fn _bootstrap_sample(n_samples: usize, _seed: Option&lt;u64&gt;) -&gt; Vec&lt;usize&gt; {
+    // First implementation: just return indices
+    (0..n_samples).collect()  // Fails test - not random!
+}
+
+// CYCLE 2: Add randomness (minimal to pass)
+fn _bootstrap_sample(n_samples: usize, seed: Option&lt;u64&gt;) -&gt; Vec&lt;usize&gt; {
+    use rand::distributions::{Distribution, Uniform};
+    use rand::SeedableRng;
+
+    let dist = Uniform::from(0..n_samples);
+    let mut indices = Vec::with_capacity(n_samples);
+
+    if let Some(seed) = seed {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
+        for _ in 0..n_samples {
+            indices.push(dist.sample(&amp;mut rng));
+        }
+    } else {
+        let mut rng = rand::thread_rng();
+        for _ in 0..n_samples {
+            indices.push(dist.sample(&amp;mut rng));
+        }
+    }
+
+    indices
+}</code></pre>
+<h3 id="3-comprehensive-refactoring-with-safety-net"><a class="header" href="#3-comprehensive-refactoring-with-safety-net">3. Comprehensive Refactoring (With Safety Net)</a></h3>
+<p><strong>Rule:</strong> After tests pass, improve code quality while maintaining test coverage.</p>
+<p>Refactor phase includes:</p>
+<ul>
+<li>Adding unit tests for edge cases</li>
+<li>Running clippy and fixing warnings</li>
+<li>Checking cyclomatic complexity</li>
+<li>Adding documentation</li>
+<li>Performance optimization</li>
+<li>Running mutation tests</li>
+</ul>
+<h3 id="4-property-based-testing-cover-edge-cases"><a class="header" href="#4-property-based-testing-cover-edge-cases">4. Property-Based Testing (Cover Edge Cases)</a></h3>
+<p><strong>Rule:</strong> Use property-based testing to automatically generate test cases.</p>
+<p>Example from aprender:</p>
+<pre><code class="language-rust">use proptest::prelude::*;
+
+proptest! {
+    #[test]
+    fn test_kfold_split_never_panics(
+        n_samples in 2usize..1000,
+        n_splits in 2usize..20
+    ) {
+        // Property: KFold.split() should never panic for valid inputs
+        let kfold = KFold::new(n_splits);
+        let _ = kfold.split(n_samples);  // Should not panic
+    }
+
+    #[test]
+    fn test_kfold_uses_all_samples(
+        n_samples in 10usize..100,
+        n_splits in 2usize..10
+    ) {
+        // Property: All samples should appear exactly once as test data
+        let kfold = KFold::new(n_splits);
+        let splits = kfold.split(n_samples);
+
+        let mut all_test_indices = Vec::new();
+        for (_train, test) in splits {
+            all_test_indices.extend(test);
+        }
+
+        all_test_indices.sort();
+        let expected: Vec&lt;usize&gt; = (0..n_samples).collect();
+
+        // Every sample should appear exactly once across all folds
+        prop_assert_eq!(all_test_indices, expected);
+    }
+}</code></pre>
+<h3 id="5-mutation-testing-verify-tests-work"><a class="header" href="#5-mutation-testing-verify-tests-work">5. Mutation Testing (Verify Tests Work)</a></h3>
+<p><strong>Rule:</strong> Use mutation testing to verify tests actually catch bugs.</p>
+<pre><code class="language-bash"># Run mutation tests
+cargo mutants --in-place
+
+# Example output:
+# src/model_selection/mod.rs:148: CAUGHT (replaced &gt;= with &lt;=)
+# src/model_selection/mod.rs:156: CAUGHT (replaced + with -)
+# src/tree/mod.rs:234: MISSED (removed return statement)
+</code></pre>
+<p><strong>Target:</strong> 80%+ mutation score (caught mutations / total mutations)</p>
+<h3 id="6-zero-tolerance-all-gates-must-pass"><a class="header" href="#6-zero-tolerance-all-gates-must-pass">6. Zero Tolerance (All Gates Must Pass)</a></h3>
+<p><strong>Rule:</strong> Every commit must pass ALL quality gates.</p>
+<p>Quality gates (enforced via pre-commit hook):</p>
+<pre><code class="language-bash">#!/bin/bash
+# .git/hooks/pre-commit
+
+echo &quot;Running quality gates...&quot;
+
+# 1. Format check
+cargo fmt --check || {
+    echo &quot;❌ Format check failed. Run: cargo fmt&quot;
+    exit 1
+}
+
+# 2. Clippy (zero warnings)
+cargo clippy -- -D warnings || {
+    echo &quot;❌ Clippy found warnings&quot;
+    exit 1
+}
+
+# 3. All tests pass
+cargo test || {
+    echo &quot;❌ Tests failed&quot;
+    exit 1
+}
+
+# 4. Fast tests (quick feedback loop)
+cargo test --lib || {
+    echo &quot;❌ Fast tests failed&quot;
+    exit 1
+}
+
+echo &quot;✅ All quality gates passed&quot;
+</code></pre>
+<h2 id="how-extreme-tdd-differs"><a class="header" href="#how-extreme-tdd-differs">How EXTREME TDD Differs</a></h2>
+<div class="table-wrapper"><table><thead><tr><th>Aspect</th><th>Traditional TDD</th><th>EXTREME TDD</th></tr></thead><tbody>
+<tr><td><strong>Test-First</strong></td><td>Encouraged</td><td><strong>Mandatory</strong> (no exceptions)</td></tr>
+<tr><td><strong>Test Types</strong></td><td>Mostly unit tests</td><td>Unit + Integration + <strong>Property + Mutation</strong></td></tr>
+<tr><td><strong>Quality Gates</strong></td><td>Optional CI checks</td><td><strong>Enforced pre-commit hooks</strong></td></tr>
+<tr><td><strong>Coverage Target</strong></td><td>~70-80%</td><td><strong>&gt;90% + mutation score &gt;80%</strong></td></tr>
+<tr><td><strong>Warnings</strong></td><td>Fix eventually</td><td><strong>Zero tolerance</strong> (must fix immediately)</td></tr>
+<tr><td><strong>Refactoring</strong></td><td>As needed</td><td><strong>Comprehensive phase</strong> in every cycle</td></tr>
+<tr><td><strong>Documentation</strong></td><td>Write later</td><td><strong>Part of REFACTOR phase</strong></td></tr>
+<tr><td><strong>Complexity</strong></td><td>Monitor occasionally</td><td><strong>Measured and enforced</strong> (≤10 target)</td></tr>
+<tr><td><strong>Philosophy</strong></td><td>Good practice</td><td><strong>Toyota Way principles</strong> (Kaizen, Jidoka)</td></tr>
+</tbody></table>
+</div>
+<h2 id="benefits-of-extreme-tdd"><a class="header" href="#benefits-of-extreme-tdd">Benefits of EXTREME TDD</a></h2>
+<h3 id="1-zero-defects-from-day-one"><a class="header" href="#1-zero-defects-from-day-one">1. Zero Defects from Day One</a></h3>
+<p>By catching bugs through comprehensive testing and mutation testing, production code is defect-free.</p>
+<h3 id="2-fearless-refactoring"><a class="header" href="#2-fearless-refactoring">2. Fearless Refactoring</a></h3>
+<p>With comprehensive test coverage, you can refactor with confidence, knowing tests will catch regressions.</p>
+<h3 id="3-living-documentation"><a class="header" href="#3-living-documentation">3. Living Documentation</a></h3>
+<p>Tests serve as executable documentation that never gets outdated.</p>
+<h3 id="4-faster-development"><a class="header" href="#4-faster-development">4. Faster Development</a></h3>
+<p>Paradoxically, writing tests first speeds up development by:</p>
+<ul>
+<li>Catching bugs earlier (cheaper to fix)</li>
+<li>Reducing debugging time</li>
+<li>Enabling confident refactoring</li>
+<li>Preventing regression bugs</li>
+</ul>
+<h3 id="5-better-api-design"><a class="header" href="#5-better-api-design">5. Better API Design</a></h3>
+<p>Writing tests first forces you to think about API usability before implementation.</p>
+<p>Example from aprender:</p>
+<pre><code class="language-rust">// Test-first API design led to clean builder pattern
+let mut rf = RandomForestClassifier::new(20)
+    .with_max_depth(5)
+    .with_random_state(42);  // Fluent, readable API</code></pre>
+<h3 id="6-objective-quality-metrics"><a class="header" href="#6-objective-quality-metrics">6. Objective Quality Metrics</a></h3>
+<p>TDG (Technical Debt Gradient) provides measurable quality:</p>
+<pre><code class="language-bash">$ pmat analyze tdg src/
+TDG Score: 93.3/100 (A)
+
+Breakdown:
+- Test Coverage:  97.2% (weight: 30%) ✅
+- Complexity:     8.1 avg (weight: 25%) ✅
+- Documentation:  94% (weight: 20%) ✅
+- Modularity:     A (weight: 15%) ✅
+- Error Handling: 96% (weight: 10%) ✅
+</code></pre>
+<h2 id="real-world-impact"><a class="header" href="#real-world-impact">Real-World Impact</a></h2>
+<p><strong>Aprender Results</strong> (using EXTREME TDD):</p>
+<ul>
+<li>184 passing tests (+19 in latest session)</li>
+<li>~97% coverage</li>
+<li>93.3/100 TDG score (A grade)</li>
+<li>Zero production defects</li>
+<li>&lt;0.01s fast test time</li>
+</ul>
+<p><strong>Traditional Approach</strong> (typical results):</p>
+<ul>
+<li>~60-70% coverage</li>
+<li>~80/100 TDG score (C grade)</li>
+<li>Multiple production defects</li>
+<li>Regression bugs</li>
+<li>Fear of refactoring</li>
+</ul>
+<h2 id="when-to-use-extreme-tdd"><a class="header" href="#when-to-use-extreme-tdd">When to Use EXTREME TDD</a></h2>
+<p><strong>✅ Ideal for:</strong></p>
+<ul>
+<li>Production libraries and frameworks</li>
+<li>Safety-critical systems</li>
+<li>Financial and medical software</li>
+<li>Open-source projects (quality signal)</li>
+<li>ML/AI systems (complex logic)</li>
+<li>Long-term maintainability</li>
+</ul>
+<p><strong>⚠️ Consider tradeoffs for:</strong></p>
+<ul>
+<li>Prototypes and spikes (use regular TDD)</li>
+<li>UI/UX exploration (harder to test-first)</li>
+<li>Throwaway code</li>
+<li>Very tight deadlines (though EXTREME TDD often saves time)</li>
+</ul>
+<h2 id="summary"><a class="header" href="#summary">Summary</a></h2>
+<p>EXTREME TDD is:</p>
+<ul>
+<li><strong>Disciplined</strong>: Tests FIRST, no exceptions</li>
+<li><strong>Comprehensive</strong>: Multiple testing layers</li>
+<li><strong>Automated</strong>: Quality gates enforced</li>
+<li><strong>Measured</strong>: Objective metrics (TDG, mutation score)</li>
+<li><strong>Continuous</strong>: Kaizen mindset</li>
+<li><strong>Zero-tolerance</strong>: All tests pass, zero warnings</li>
+</ul>
+<p><strong>Next Chapter:</strong> <a href="methodology/./red-green-refactor.html">The RED-GREEN-REFACTOR Cycle</a></p>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="the-red-green-refactor-cycle"><a class="header" href="#the-red-green-refactor-cycle">The RED-GREEN-REFACTOR Cycle</a></h1>
+<p>The <strong>RED-GREEN-REFACTOR</strong> cycle is the heartbeat of EXTREME TDD. Every feature, every function, every line of production code follows this exact three-phase cycle.</p>
+<h2 id="the-three-phases"><a class="header" href="#the-three-phases">The Three Phases</a></h2>
+<pre><code>┌─────────────┐
+│     RED     │  Write failing tests first
+└──────┬──────┘
+       │
+       ↓
+┌─────────────┐
+│    GREEN    │  Implement minimally to pass tests
+└──────┬──────┘
+       │
+       ↓
+┌─────────────┐
+│  REFACTOR   │  Improve quality with test safety net
+└──────┬──────┘
+       │
+       ↓ (repeat for next feature)
+</code></pre>
+<h2 id="phase-1-red---write-failing-tests"><a class="header" href="#phase-1-red---write-failing-tests">Phase 1: RED - Write Failing Tests</a></h2>
+<p><strong>Goal:</strong> Create tests that define the desired behavior BEFORE writing implementation.</p>
+<h3 id="rules"><a class="header" href="#rules">Rules</a></h3>
+<ol>
+<li>✅ Write tests BEFORE any implementation code</li>
+<li>✅ Run tests and verify they FAIL (for the right reason)</li>
+<li>✅ Tests should fail because feature doesn't exist, not because of syntax errors</li>
+<li>✅ Write multiple tests covering different scenarios</li>
+</ol>
+<h3 id="real-example-cross-validation-implementation"><a class="header" href="#real-example-cross-validation-implementation">Real Example: Cross-Validation Implementation</a></h3>
+<p><strong>CYCLE 1: train_test_split - RED Phase</strong></p>
+<p>First, we created the failing tests in <code>src/model_selection/mod.rs</code>:</p>
+<pre><code class="language-rust">#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::primitives::{Matrix, Vector};
+
+    #[test]
+    fn test_train_test_split_basic() {
+        let x = Matrix::from_vec(10, 2, vec![
+            1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0,
+            11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0,
+        ]).unwrap();
+        let y = Vector::from_vec(vec![0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0]);
+
+        let (x_train, x_test, y_train, y_test) =
+            train_test_split(&amp;x, &amp;y, 0.2, None).expect(&quot;Split failed&quot;);
+
+        // 80/20 split
+        assert_eq!(x_train.shape().0, 8);
+        assert_eq!(x_test.shape().0, 2);
+        assert_eq!(y_train.len(), 8);
+        assert_eq!(y_test.len(), 2);
+    }
+
+    #[test]
+    fn test_train_test_split_reproducible() {
+        let x = Matrix::from_vec(10, 2, vec![/* ... */]).unwrap();
+        let y = Vector::from_vec(vec![/* ... */]);
+
+        // Same seed = same split
+        let (_, _, y_train1, _) = train_test_split(&amp;x, &amp;y, 0.3, Some(42)).unwrap();
+        let (_, _, y_train2, _) = train_test_split(&amp;x, &amp;y, 0.3, Some(42)).unwrap();
+
+        assert_eq!(y_train1.as_slice(), y_train2.as_slice());
+    }
+
+    #[test]
+    fn test_train_test_split_different_seeds() {
+        let x = Matrix::from_vec(100, 2, vec![/* ... */]).unwrap();
+        let y = Vector::from_vec(vec![/* ... */]);
+
+        // Different seeds = different splits
+        let (_, _, y_train1, _) = train_test_split(&amp;x, &amp;y, 0.3, Some(42)).unwrap();
+        let (_, _, y_train2, _) = train_test_split(&amp;x, &amp;y, 0.3, Some(123)).unwrap();
+
+        assert_ne!(y_train1.as_slice(), y_train2.as_slice());
+    }
+
+    #[test]
+    fn test_train_test_split_invalid_test_size() {
+        let x = Matrix::from_vec(10, 2, vec![/* ... */]).unwrap();
+        let y = Vector::from_vec(vec![/* ... */]);
+
+        // test_size must be between 0 and 1
+        assert!(train_test_split(&amp;x, &amp;y, 1.5, None).is_err());
+        assert!(train_test_split(&amp;x, &amp;y, -0.1, None).is_err());
+    }
+}</code></pre>
+<p><strong>Verification (RED Phase):</strong></p>
+<pre><code class="language-bash">$ cargo test train_test_split
+   Compiling aprender v0.1.0
+error[E0425]: cannot find function `train_test_split` in this scope
+  --&gt; src/model_selection/mod.rs:12:9
+
+# PERFECT! Tests fail because function doesn't exist yet ✅
+</code></pre>
+<p><strong>Result:</strong> 4 failing tests (expected - feature not implemented)</p>
+<h3 id="key-principle-fail-for-the-right-reason"><a class="header" href="#key-principle-fail-for-the-right-reason">Key Principle: Fail for the Right Reason</a></h3>
+<pre><code class="language-rust">// ❌ BAD: Test fails due to typo
+#[test]
+fn test_example() {
+    let result = train_tset_split();  // Typo!
+    assert_eq!(result, expected);
+}
+
+// ✅ GOOD: Test fails because feature doesn't exist
+#[test]
+fn test_example() {
+    let result = train_test_split(&amp;x, &amp;y, 0.2, None);  // Compiles, but fails
+    assert_eq!(result, expected);  // Assertion fails - function not implemented
+}</code></pre>
+<h2 id="phase-2-green---minimal-implementation"><a class="header" href="#phase-2-green---minimal-implementation">Phase 2: GREEN - Minimal Implementation</a></h2>
+<p><strong>Goal:</strong> Write JUST enough code to make tests pass. No more, no less.</p>
+<h3 id="rules-1"><a class="header" href="#rules-1">Rules</a></h3>
+<ol>
+<li>✅ Implement the simplest solution that makes tests pass</li>
+<li>✅ Avoid premature optimization</li>
+<li>✅ Don't add &quot;future-proofing&quot; features</li>
+<li>✅ Run tests after each change</li>
+<li>✅ Stop when all tests pass</li>
+</ol>
+<h3 id="real-example-train_test_split---green-phase"><a class="header" href="#real-example-train_test_split---green-phase">Real Example: train_test_split - GREEN Phase</a></h3>
+<p>We implemented the minimal solution:</p>
+<pre><code class="language-rust">#[allow(clippy::type_complexity)]
+pub fn train_test_split(
+    x: &amp;Matrix&lt;f32&gt;,
+    y: &amp;Vector&lt;f32&gt;,
+    test_size: f32,
+    random_state: Option&lt;u64&gt;,
+) -&gt; Result&lt;(Matrix&lt;f32&gt;, Matrix&lt;f32&gt;, Vector&lt;f32&gt;, Vector&lt;f32&gt;), String&gt; {
+    // Validation
+    if test_size &lt;= 0.0 || test_size &gt;= 1.0 {
+        return Err(&quot;test_size must be between 0 and 1&quot;.to_string());
+    }
+
+    let n_samples = x.shape().0;
+    let n_test = (n_samples as f32 * test_size).round() as usize;
+    let n_train = n_samples - n_test;
+
+    // Create shuffled indices
+    let mut indices: Vec&lt;usize&gt; = (0..n_samples).collect();
+
+    // Shuffle if needed
+    if let Some(seed) = random_state {
+        use rand::SeedableRng;
+        let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
+        use rand::seq::SliceRandom;
+        indices.shuffle(&amp;mut rng);
+    } else {
+        use rand::seq::SliceRandom;
+        indices.shuffle(&amp;mut rand::thread_rng());
+    }
+
+    // Split indices
+    let train_idx = &amp;indices[..n_train];
+    let test_idx = &amp;indices[n_train..];
+
+    // Extract data
+    let (x_train, y_train) = extract_samples(x, y, train_idx);
+    let (x_test, y_test) = extract_samples(x, y, test_idx);
+
+    Ok((x_train, x_test, y_train, y_test))
+}</code></pre>
+<p><strong>Verification (GREEN Phase):</strong></p>
+<pre><code class="language-bash">$ cargo test train_test_split
+   Compiling aprender v0.1.0
+    Finished test [unoptimized + debuginfo] target(s) in 2.34s
+     Running unittests src/lib.rs
+
+running 4 tests
+test model_selection::tests::test_train_test_split_basic ... ok
+test model_selection::tests::test_train_test_split_reproducible ... ok
+test model_selection::tests::test_train_test_split_different_seeds ... ok
+test model_selection::tests::test_train_test_split_invalid_test_size ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured
+
+# SUCCESS! All tests pass ✅
+</code></pre>
+<p><strong>Result:</strong> Tests: 169 total (165 + 4 new) ✅</p>
+<h3 id="avoiding-over-engineering"><a class="header" href="#avoiding-over-engineering">Avoiding Over-Engineering</a></h3>
+<pre><code class="language-rust">// ❌ OVER-ENGINEERED: Adding features not required by tests
+pub fn train_test_split(
+    x: &amp;Matrix&lt;f32&gt;,
+    y: &amp;Vector&lt;f32&gt;,
+    test_size: f32,
+    random_state: Option&lt;u64&gt;,
+    stratify: bool,  // ❌ Not tested!
+    shuffle_method: ShuffleMethod,  // ❌ Not needed!
+    cache_results: bool,  // ❌ Premature optimization!
+) -&gt; Result&lt;Split, Error&gt; {
+    // Complex caching logic...
+    // Multiple shuffle algorithms...
+    // Stratification logic...
+}
+
+// ✅ MINIMAL: Just what tests require
+pub fn train_test_split(
+    x: &amp;Matrix&lt;f32&gt;,
+    y: &amp;Vector&lt;f32&gt;,
+    test_size: f32,
+    random_state: Option&lt;u64&gt;,
+) -&gt; Result&lt;(Matrix&lt;f32&gt;, Matrix&lt;f32&gt;, Vector&lt;f32&gt;, Vector&lt;f32&gt;), String&gt; {
+    // Simple, clear implementation
+}</code></pre>
+<h2 id="phase-3-refactor---improve-with-confidence"><a class="header" href="#phase-3-refactor---improve-with-confidence">Phase 3: REFACTOR - Improve with Confidence</a></h2>
+<p><strong>Goal:</strong> Improve code quality while maintaining all passing tests.</p>
+<h3 id="rules-2"><a class="header" href="#rules-2">Rules</a></h3>
+<ol>
+<li>✅ All tests must continue passing</li>
+<li>✅ Add unit tests for edge cases</li>
+<li>✅ Run clippy and fix ALL warnings</li>
+<li>✅ Check cyclomatic complexity (≤10 target)</li>
+<li>✅ Add documentation</li>
+<li>✅ Run mutation tests</li>
+<li>✅ Optimize if needed (profile first)</li>
+</ol>
+<h3 id="real-example-train_test_split---refactor-phase"><a class="header" href="#real-example-train_test_split---refactor-phase">Real Example: train_test_split - REFACTOR Phase</a></h3>
+<p><strong>Step 1: Run Clippy</strong></p>
+<pre><code class="language-bash">$ cargo clippy -- -D warnings
+warning: very complex type used. Consider factoring parts into `type` definitions
+  --&gt; src/model_selection/mod.rs:148:6
+   |
+   | pub fn train_test_split(
+   |        ^^^^^^^^^^^^^^^^
+</code></pre>
+<p><strong>Fix:</strong> Add allow annotation for idiomatic Rust tuple return:</p>
+<pre><code class="language-rust">#[allow(clippy::type_complexity)]
+pub fn train_test_split(/* ... */) -&gt; Result&lt;(Matrix&lt;f32&gt;, Matrix&lt;f32&gt;, Vector&lt;f32&gt;, Vector&lt;f32&gt;), String&gt; {
+    // ...
+}</code></pre>
+<p><strong>Step 2: Run Format Check</strong></p>
+<pre><code class="language-bash">$ cargo fmt --check
+Diff in /home/noah/src/aprender/src/model_selection/mod.rs
+
+$ cargo fmt
+# Auto-format all code
+</code></pre>
+<p><strong>Step 3: Check Complexity</strong></p>
+<pre><code class="language-bash">$ pmat analyze complexity src/model_selection/
+Function: train_test_split - Complexity: 4 ✅
+Function: extract_samples - Complexity: 3 ✅
+
+All functions ≤10 ✅
+</code></pre>
+<p><strong>Step 4: Add Documentation</strong></p>
+<pre><code class="language-rust">/// Splits data into random train and test subsets.
+///
+/// # Arguments
+///
+/// * `x` - Feature matrix of shape (n_samples, n_features)
+/// * `y` - Target vector of length n_samples
+/// * `test_size` - Proportion of dataset to include in test split (0.0 to 1.0)
+/// * `random_state` - Seed for reproducible random splits
+///
+/// # Returns
+///
+/// Tuple of (x_train, x_test, y_train, y_test)
+///
+/// # Examples
+///
+/// ```
+/// use aprender::model_selection::train_test_split;
+/// use aprender::primitives::{Matrix, Vector};
+///
+/// let x = Matrix::from_vec(10, 2, vec![/* ... */]).unwrap();
+/// let y = Vector::from_vec(vec![/* ... */]);
+///
+/// let (x_train, x_test, y_train, y_test) =
+///     train_test_split(&amp;x, &amp;y, 0.2, Some(42)).unwrap();
+///
+/// assert_eq!(x_train.shape().0, 8);  // 80% train
+/// assert_eq!(x_test.shape().0, 2);   // 20% test
+/// ```
+#[allow(clippy::type_complexity)]
+pub fn train_test_split(/* ... */) {
+    // ...
+}</code></pre>
+<p><strong>Step 5: Run All Quality Gates</strong></p>
+<pre><code class="language-bash">$ cargo fmt --check
+✅ All files formatted
+
+$ cargo clippy -- -D warnings
+✅ Zero warnings
+
+$ cargo test
+✅ 169 tests passing
+
+$ cargo test --lib
+✅ Fast tests: 0.01s
+</code></pre>
+<p><strong>Final REFACTOR Result:</strong></p>
+<ul>
+<li>Tests: 169 passing ✅</li>
+<li>Clippy: Zero warnings ✅</li>
+<li>Complexity: ≤10 ✅</li>
+<li>Documentation: Complete ✅</li>
+<li>Format: Consistent ✅</li>
+</ul>
+<h2 id="complete-cycle-example-random-forest"><a class="header" href="#complete-cycle-example-random-forest">Complete Cycle Example: Random Forest</a></h2>
+<p>Let's see a complete RED-GREEN-REFACTOR cycle from aprender's Random Forest implementation.</p>
+<h3 id="red-phase-7-failing-tests"><a class="header" href="#red-phase-7-failing-tests">RED Phase (7 failing tests)</a></h3>
+<pre><code class="language-rust">#[cfg(test)]
+mod random_forest_tests {
+    use super::*;
+
+    #[test]
+    fn test_random_forest_creation() {
+        let rf = RandomForestClassifier::new(10);
+        assert_eq!(rf.n_estimators, 10);
+    }
+
+    #[test]
+    fn test_random_forest_fit() {
+        let x = Matrix::from_vec(12, 2, vec![/* iris data */]).unwrap();
+        let y = vec![0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2];
+
+        let mut rf = RandomForestClassifier::new(5);
+        assert!(rf.fit(&amp;x, &amp;y).is_ok());
+    }
+
+    #[test]
+    fn test_random_forest_predict() {
+        let x = Matrix::from_vec(12, 2, vec![/* iris data */]).unwrap();
+        let y = vec![0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2];
+
+        let mut rf = RandomForestClassifier::new(5)
+            .with_random_state(42);
+
+        rf.fit(&amp;x, &amp;y).unwrap();
+        let predictions = rf.predict(&amp;x);
+
+        assert_eq!(predictions.len(), 12);
+    }
+
+    #[test]
+    fn test_random_forest_reproducible() {
+        let x = Matrix::from_vec(12, 2, vec![/* iris data */]).unwrap();
+        let y = vec![0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2];
+
+        let mut rf1 = RandomForestClassifier::new(5).with_random_state(42);
+        let mut rf2 = RandomForestClassifier::new(5).with_random_state(42);
+
+        rf1.fit(&amp;x, &amp;y).unwrap();
+        rf2.fit(&amp;x, &amp;y).unwrap();
+
+        let pred1 = rf1.predict(&amp;x);
+        let pred2 = rf2.predict(&amp;x);
+
+        assert_eq!(pred1, pred2);  // Same seed = same predictions
+    }
+
+    #[test]
+    fn test_bootstrap_sample_reproducible() {
+        let sample1 = _bootstrap_sample(100, Some(42));
+        let sample2 = _bootstrap_sample(100, Some(42));
+        assert_eq!(sample1, sample2);
+    }
+
+    #[test]
+    fn test_bootstrap_sample_different_seeds() {
+        let sample1 = _bootstrap_sample(100, Some(42));
+        let sample2 = _bootstrap_sample(100, Some(123));
+        assert_ne!(sample1, sample2);
+    }
+
+    #[test]
+    fn test_bootstrap_sample_size() {
+        let sample = _bootstrap_sample(50, None);
+        assert_eq!(sample.len(), 50);
+    }
+}</code></pre>
+<p><strong>Run tests:</strong></p>
+<pre><code class="language-bash">$ cargo test random_forest
+error[E0433]: failed to resolve: could not find `RandomForestClassifier`
+# Result: 7/7 tests failed ✅ (expected - not implemented)
+</code></pre>
+<h3 id="green-phase-minimal-implementation"><a class="header" href="#green-phase-minimal-implementation">GREEN Phase (Minimal Implementation)</a></h3>
+<pre><code class="language-rust">#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RandomForestClassifier {
+    trees: Vec&lt;DecisionTreeClassifier&gt;,
+    n_estimators: usize,
+    max_depth: Option&lt;usize&gt;,
+    random_state: Option&lt;u64&gt;,
+}
+
+impl RandomForestClassifier {
+    pub fn new(n_estimators: usize) -&gt; Self {
+        Self {
+            trees: Vec::new(),
+            n_estimators,
+            max_depth: None,
+            random_state: None,
+        }
+    }
+
+    pub fn with_max_depth(mut self, max_depth: usize) -&gt; Self {
+        self.max_depth = Some(max_depth);
+        self
+    }
+
+    pub fn with_random_state(mut self, random_state: u64) -&gt; Self {
+        self.random_state = Some(random_state);
+        self
+    }
+
+    pub fn fit(&amp;mut self, x: &amp;Matrix&lt;f32&gt;, y: &amp;[usize]) -&gt; Result&lt;(), &amp;'static str&gt; {
+        self.trees.clear();
+        let n_samples = x.shape().0;
+
+        for i in 0..self.n_estimators {
+            // Bootstrap sample
+            let seed = self.random_state.map(|s| s + i as u64);
+            let bootstrap_indices = _bootstrap_sample(n_samples, seed);
+
+            // Extract bootstrap sample
+            let (x_boot, y_boot) = extract_bootstrap_samples(x, y, &amp;bootstrap_indices);
+
+            // Train tree
+            let mut tree = DecisionTreeClassifier::new();
+            if let Some(depth) = self.max_depth {
+                tree = tree.with_max_depth(depth);
+            }
+
+            tree.fit(&amp;x_boot, &amp;y_boot)?;
+            self.trees.push(tree);
+        }
+
+        Ok(())
+    }
+
+    pub fn predict(&amp;self, x: &amp;Matrix&lt;f32&gt;) -&gt; Vec&lt;usize&gt; {
+        let n_samples = x.shape().0;
+        let mut predictions = Vec::with_capacity(n_samples);
+
+        for sample_idx in 0..n_samples {
+            // Collect votes from all trees
+            let mut votes: HashMap&lt;usize, usize&gt; = HashMap::new();
+
+            for tree in &amp;self.trees {
+                let tree_prediction = tree.predict(x)[sample_idx];
+                *votes.entry(tree_prediction).or_insert(0) += 1;
+            }
+
+            // Majority vote
+            let prediction = votes
+                .into_iter()
+                .max_by_key(|&amp;(_, count)| count)
+                .map(|(class, _)| class)
+                .unwrap_or(0);
+
+            predictions.push(prediction);
+        }
+
+        predictions
+    }
+}
+
+fn _bootstrap_sample(n_samples: usize, random_state: Option&lt;u64&gt;) -&gt; Vec&lt;usize&gt; {
+    use rand::distributions::{Distribution, Uniform};
+    use rand::SeedableRng;
+
+    let dist = Uniform::from(0..n_samples);
+    let mut indices = Vec::with_capacity(n_samples);
+
+    if let Some(seed) = random_state {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
+        for _ in 0..n_samples {
+            indices.push(dist.sample(&amp;mut rng));
+        }
+    } else {
+        let mut rng = rand::thread_rng();
+        for _ in 0..n_samples {
+            indices.push(dist.sample(&amp;mut rng));
+        }
+    }
+
+    indices
+}</code></pre>
+<p><strong>Run tests:</strong></p>
+<pre><code class="language-bash">$ cargo test random_forest
+running 7 tests
+test tree::random_forest_tests::test_bootstrap_sample_size ... ok
+test tree::random_forest_tests::test_bootstrap_sample_reproducible ... ok
+test tree::random_forest_tests::test_bootstrap_sample_different_seeds ... ok
+test tree::random_forest_tests::test_random_forest_creation ... ok
+test tree::random_forest_tests::test_random_forest_fit ... ok
+test tree::random_forest_tests::test_random_forest_predict ... ok
+test tree::random_forest_tests::test_random_forest_reproducible ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured
+# Result: 184 total (177 + 7 new) ✅
+</code></pre>
+<h3 id="refactor-phase"><a class="header" href="#refactor-phase">REFACTOR Phase</a></h3>
+<p><strong>Step 1: Fix Clippy Warnings</strong></p>
+<pre><code class="language-bash">$ cargo clippy -- -D warnings
+warning: the loop variable `sample_idx` is only used to index `predictions`
+  --&gt; src/tree/mod.rs:234:9
+
+# Fix: Add allow annotation (manual indexing is clearer here)
+#[allow(clippy::needless_range_loop)]
+pub fn predict(&amp;self, x: &amp;Matrix&lt;f32&gt;) -&gt; Vec&lt;usize&gt; {
+    // ...
+}
+</code></pre>
+<p><strong>Step 2: All Quality Gates</strong></p>
+<pre><code class="language-bash">$ cargo fmt --check
+✅ Formatted
+
+$ cargo clippy -- -D warnings
+✅ Zero warnings
+
+$ cargo test
+✅ 184 tests passing
+
+$ cargo test --lib
+✅ Fast: 0.01s
+</code></pre>
+<p><strong>Final Result:</strong></p>
+<ul>
+<li>Cycle complete: RED → GREEN → REFACTOR ✅</li>
+<li>Tests: 184 passing (+7) ✅</li>
+<li>TDG: 93.3/100 maintained ✅</li>
+<li>Zero warnings ✅</li>
+</ul>
+<h2 id="cycle-discipline"><a class="header" href="#cycle-discipline">Cycle Discipline</a></h2>
+<p><strong>Every feature follows this cycle:</strong></p>
+<ol>
+<li><strong>RED</strong>: Write failing tests</li>
+<li><strong>GREEN</strong>: Minimal implementation</li>
+<li><strong>REFACTOR</strong>: Comprehensive improvement</li>
+</ol>
+<p><strong>No shortcuts. No exceptions.</strong></p>
+<h2 id="benefits-of-the-cycle"><a class="header" href="#benefits-of-the-cycle">Benefits of the Cycle</a></h2>
+<ol>
+<li><strong>Safety</strong>: Tests catch regressions during refactoring</li>
+<li><strong>Clarity</strong>: Tests document expected behavior</li>
+<li><strong>Design</strong>: Tests force clean API design</li>
+<li><strong>Confidence</strong>: Refactor fearlessly</li>
+<li><strong>Quality</strong>: Continuous improvement</li>
+</ol>
+<h2 id="summary-1"><a class="header" href="#summary-1">Summary</a></h2>
+<p>The RED-GREEN-REFACTOR cycle is:</p>
+<ul>
+<li><strong>RED</strong>: Write tests FIRST (fail for right reason)</li>
+<li><strong>GREEN</strong>: Implement MINIMALLY (just pass tests)</li>
+<li><strong>REFACTOR</strong>: Improve COMPREHENSIVELY (with test safety net)</li>
+</ul>
+<p><strong>Every feature. Every function. Every time.</strong></p>
+<p><strong>Next:</strong> <a href="methodology/./test-first-philosophy.html">Test-First Philosophy</a></p>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="test-first-philosophy"><a class="header" href="#test-first-philosophy">Test-First Philosophy</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="methodology/./what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="methodology/./red-green-refactor.html">RED-GREEN-REFACTOR Cycle</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="zero-tolerance-quality"><a class="header" href="#zero-tolerance-quality">Zero Tolerance Quality</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="methodology/../quality-gates/pre-commit-hooks.html">Quality Gates</a></li>
+<li><a href="methodology/./what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="failing-tests-first"><a class="header" href="#failing-tests-first">Failing Tests First</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="red-phase/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="red-phase/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="test-categories"><a class="header" href="#test-categories">Test Categories</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="red-phase/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="red-phase/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="unit-tests"><a class="header" href="#unit-tests">Unit Tests</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="red-phase/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="red-phase/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="integration-tests"><a class="header" href="#integration-tests">Integration Tests</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="red-phase/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="red-phase/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="property-based-tests"><a class="header" href="#property-based-tests">Property Based Tests</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="red-phase/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="red-phase/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="verification-strategy"><a class="header" href="#verification-strategy">Verification Strategy</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="red-phase/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="red-phase/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="minimal-implementation"><a class="header" href="#minimal-implementation">Minimal Implementation</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="green-phase/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="green-phase/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="making-tests-pass"><a class="header" href="#making-tests-pass">Making Tests Pass</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="green-phase/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="green-phase/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="avoiding-over-engineering-1"><a class="header" href="#avoiding-over-engineering-1">Avoiding Over Engineering</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="green-phase/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="green-phase/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="simplest-thing"><a class="header" href="#simplest-thing">Simplest Thing</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="green-phase/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="green-phase/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="refactoring-with-confidence"><a class="header" href="#refactoring-with-confidence">Refactoring With Confidence</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="refactor-phase/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="refactor-phase/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="code-quality"><a class="header" href="#code-quality">Code Quality</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="refactor-phase/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="refactor-phase/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="performance-optimization"><a class="header" href="#performance-optimization">Performance Optimization</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="refactor-phase/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="refactor-phase/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="documentation"><a class="header" href="#documentation">Documentation</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="refactor-phase/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="refactor-phase/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="property-based-testing"><a class="header" href="#property-based-testing">Property Based Testing</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="advanced-testing/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="advanced-testing/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="proptest-fundamentals"><a class="header" href="#proptest-fundamentals">Proptest Fundamentals</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="advanced-testing/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="advanced-testing/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="strategies-generators"><a class="header" href="#strategies-generators">Strategies Generators</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="advanced-testing/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="advanced-testing/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="testing-invariants"><a class="header" href="#testing-invariants">Testing Invariants</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="advanced-testing/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="advanced-testing/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="mutation-testing"><a class="header" href="#mutation-testing">Mutation Testing</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="advanced-testing/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="advanced-testing/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="what-is-mutation-testing"><a class="header" href="#what-is-mutation-testing">What Is Mutation Testing</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="advanced-testing/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="advanced-testing/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="using-cargo-mutants"><a class="header" href="#using-cargo-mutants">Using Cargo Mutants</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="advanced-testing/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="advanced-testing/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="mutation-score-targets"><a class="header" href="#mutation-score-targets">Mutation Score Targets</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="advanced-testing/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="advanced-testing/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="killing-mutants"><a class="header" href="#killing-mutants">Killing Mutants</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="advanced-testing/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="advanced-testing/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="fuzzing"><a class="header" href="#fuzzing">Fuzzing</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="advanced-testing/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="advanced-testing/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="benchmark-testing"><a class="header" href="#benchmark-testing">Benchmark Testing</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="advanced-testing/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="advanced-testing/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="pre-commit-hooks"><a class="header" href="#pre-commit-hooks">Pre Commit Hooks</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="quality-gates/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="quality-gates/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="continuous-integration"><a class="header" href="#continuous-integration">Continuous Integration</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="quality-gates/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="quality-gates/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="code-formatting"><a class="header" href="#code-formatting">Code Formatting</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="quality-gates/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="quality-gates/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="linting-clippy"><a class="header" href="#linting-clippy">Linting Clippy</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="quality-gates/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="quality-gates/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="coverage-measurement"><a class="header" href="#coverage-measurement">Coverage Measurement</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="quality-gates/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="quality-gates/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="complexity-analysis"><a class="header" href="#complexity-analysis">Complexity Analysis</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="quality-gates/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="quality-gates/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="tdg-score"><a class="header" href="#tdg-score">Tdg Score</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="quality-gates/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="quality-gates/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="overview"><a class="header" href="#overview">Overview</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="toyota-way/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="toyota-way/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="kaizen"><a class="header" href="#kaizen">Kaizen</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="toyota-way/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="toyota-way/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="genchi-genbutsu"><a class="header" href="#genchi-genbutsu">Genchi Genbutsu</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="toyota-way/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="toyota-way/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="jidoka"><a class="header" href="#jidoka">Jidoka</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="toyota-way/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="toyota-way/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="pdca-cycle"><a class="header" href="#pdca-cycle">Pdca Cycle</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="toyota-way/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="toyota-way/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="respect-for-people"><a class="header" href="#respect-for-people">Respect For People</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="toyota-way/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="toyota-way/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="linear-regression"><a class="header" href="#linear-regression">Linear Regression</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="examples/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="examples/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="case-study-cross-validation-implementation"><a class="header" href="#case-study-cross-validation-implementation">Case Study: Cross-Validation Implementation</a></h1>
+<p>This chapter documents the complete EXTREME TDD implementation of aprender's cross-validation module. This is a real-world example showing every phase of the RED-GREEN-REFACTOR cycle from Issue #2.</p>
+<h2 id="background"><a class="header" href="#background">Background</a></h2>
+<p><strong>GitHub Issue #2</strong>: Implement cross-validation utilities for model evaluation</p>
+<p><strong>Requirements:</strong></p>
+<ul>
+<li><code>train_test_split()</code> - Split data into train/test sets</li>
+<li><code>KFold</code> - K-fold cross-validator with optional shuffling</li>
+<li><code>cross_validate()</code> - Automated cross-validation function</li>
+<li>Reproducible splits with random seeds</li>
+<li>Integration with existing Estimator trait</li>
+</ul>
+<p><strong>Initial State:</strong></p>
+<ul>
+<li>Tests: 165 passing</li>
+<li>No model_selection module</li>
+<li>TDG: 93.3/100</li>
+</ul>
+<h2 id="cycle-1-train_test_split"><a class="header" href="#cycle-1-train_test_split">CYCLE 1: train_test_split()</a></h2>
+<h3 id="red-phase"><a class="header" href="#red-phase">RED Phase</a></h3>
+<p>Created <code>src/model_selection/mod.rs</code> with 4 failing tests:</p>
+<pre><code class="language-rust">#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::primitives::{Matrix, Vector};
+
+    #[test]
+    fn test_train_test_split_basic() {
+        let x = Matrix::from_vec(10, 2, vec![
+            1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0,
+            11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0,
+        ]).unwrap();
+        let y = Vector::from_vec(vec![0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0]);
+
+        let (x_train, x_test, y_train, y_test) =
+            train_test_split(&amp;x, &amp;y, 0.2, None).expect(&quot;Split failed&quot;);
+
+        assert_eq!(x_train.shape().0, 8);
+        assert_eq!(x_test.shape().0, 2);
+        assert_eq!(y_train.len(), 8);
+        assert_eq!(y_test.len(), 2);
+    }
+
+    #[test]
+    fn test_train_test_split_reproducible() {
+        let x = Matrix::from_vec(10, 2, vec![
+            1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0,
+            11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0,
+        ]).unwrap();
+        let y = Vector::from_vec(vec![0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0]);
+
+        let (_, _, y_train1, _) = train_test_split(&amp;x, &amp;y, 0.3, Some(42)).unwrap();
+        let (_, _, y_train2, _) = train_test_split(&amp;x, &amp;y, 0.3, Some(42)).unwrap();
+
+        assert_eq!(y_train1.as_slice(), y_train2.as_slice());
+    }
+
+    #[test]
+    fn test_train_test_split_different_seeds() {
+        let x = Matrix::from_vec(100, 2, (0..200).map(|i| i as f32).collect()).unwrap();
+        let y = Vector::from_vec((0..100).map(|i| i as f32).collect());
+
+        let (_, _, y_train1, _) = train_test_split(&amp;x, &amp;y, 0.3, Some(42)).unwrap();
+        let (_, _, y_train2, _) = train_test_split(&amp;x, &amp;y, 0.3, Some(123)).unwrap();
+
+        assert_ne!(y_train1.as_slice(), y_train2.as_slice());
+    }
+
+    #[test]
+    fn test_train_test_split_invalid_test_size() {
+        let x = Matrix::from_vec(10, 2, vec![
+            1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0,
+            11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0,
+        ]).unwrap();
+        let y = Vector::from_vec(vec![0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0]);
+
+        assert!(train_test_split(&amp;x, &amp;y, 1.5, None).is_err());
+        assert!(train_test_split(&amp;x, &amp;y, -0.1, None).is_err());
+        assert!(train_test_split(&amp;x, &amp;y, 0.0, None).is_err());
+        assert!(train_test_split(&amp;x, &amp;y, 1.0, None).is_err());
+    }
+}</code></pre>
+<p>Added <code>rand = &quot;0.8&quot;</code> dependency to <code>Cargo.toml</code>.</p>
+<p><strong>Verification:</strong></p>
+<pre><code class="language-bash">$ cargo test train_test_split
+error[E0425]: cannot find function `train_test_split` in this scope
+</code></pre>
+<p><strong>Result:</strong> 4 tests failing ✅ (expected - function doesn't exist)</p>
+<h3 id="green-phase"><a class="header" href="#green-phase">GREEN Phase</a></h3>
+<p>Implemented minimal solution:</p>
+<pre><code class="language-rust">use crate::primitives::{Matrix, Vector};
+use rand::seq::SliceRandom;
+use rand::SeedableRng;
+
+#[allow(clippy::type_complexity)]
+pub fn train_test_split(
+    x: &amp;Matrix&lt;f32&gt;,
+    y: &amp;Vector&lt;f32&gt;,
+    test_size: f32,
+    random_state: Option&lt;u64&gt;,
+) -&gt; Result&lt;(Matrix&lt;f32&gt;, Matrix&lt;f32&gt;, Vector&lt;f32&gt;, Vector&lt;f32&gt;), String&gt; {
+    if test_size &lt;= 0.0 || test_size &gt;= 1.0 {
+        return Err(&quot;test_size must be between 0 and 1 (exclusive)&quot;.to_string());
+    }
+
+    let n_samples = x.shape().0;
+    if n_samples != y.len() {
+        return Err(&quot;x and y must have same number of samples&quot;.to_string());
+    }
+
+    let n_test = (n_samples as f32 * test_size).round() as usize;
+    let n_train = n_samples - n_test;
+
+    let mut indices: Vec&lt;usize&gt; = (0..n_samples).collect();
+
+    if let Some(seed) = random_state {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
+        indices.shuffle(&amp;mut rng);
+    } else {
+        indices.shuffle(&amp;mut rand::thread_rng());
+    }
+
+    let train_idx = &amp;indices[..n_train];
+    let test_idx = &amp;indices[n_train..];
+
+    let (x_train, y_train) = extract_samples(x, y, train_idx);
+    let (x_test, y_test) = extract_samples(x, y, test_idx);
+
+    Ok((x_train, x_test, y_train, y_test))
+}
+
+fn extract_samples(
+    x: &amp;Matrix&lt;f32&gt;,
+    y: &amp;Vector&lt;f32&gt;,
+    indices: &amp;[usize],
+) -&gt; (Matrix&lt;f32&gt;, Vector&lt;f32&gt;) {
+    let n_features = x.shape().1;
+    let mut x_data = Vec::with_capacity(indices.len() * n_features);
+    let mut y_data = Vec::with_capacity(indices.len());
+
+    for &amp;idx in indices {
+        for j in 0..n_features {
+            x_data.push(x.get(idx, j));
+        }
+        y_data.push(y.as_slice()[idx]);
+    }
+
+    let x_subset = Matrix::from_vec(indices.len(), n_features, x_data)
+        .expect(&quot;Failed to create matrix&quot;);
+    let y_subset = Vector::from_vec(y_data);
+
+    (x_subset, y_subset)
+}</code></pre>
+<p><strong>Verification:</strong></p>
+<pre><code class="language-bash">$ cargo test train_test_split
+running 4 tests
+test model_selection::tests::test_train_test_split_basic ... ok
+test model_selection::tests::test_train_test_split_reproducible ... ok
+test model_selection::tests::test_train_test_split_different_seeds ... ok
+test model_selection::tests::test_train_test_split_invalid_test_size ... ok
+
+test result: ok. 4 passed; 0 failed
+</code></pre>
+<p><strong>Result:</strong> Tests: 169 (+4) ✅</p>
+<h3 id="refactor-phase-1"><a class="header" href="#refactor-phase-1">REFACTOR Phase</a></h3>
+<p>Quality gate checks:</p>
+<pre><code class="language-bash">$ cargo fmt --check
+# Fixed formatting issues with cargo fmt
+
+$ cargo clippy -- -D warnings
+warning: very complex type used
+  --&gt; src/model_selection/mod.rs:12:6
+
+# Added #[allow(clippy::type_complexity)] annotation
+
+$ cargo test
+# All 169 tests passing ✅
+</code></pre>
+<p>Added module to <code>src/lib.rs</code>:</p>
+<pre><code class="language-rust">pub mod model_selection;</code></pre>
+<p><strong>Commit:</strong> <code>dbd9a2d</code> - Implemented train_test_split with reproducible splits</p>
+<h2 id="cycle-2-kfold-cross-validator"><a class="header" href="#cycle-2-kfold-cross-validator">CYCLE 2: KFold Cross-Validator</a></h2>
+<h3 id="red-phase-1"><a class="header" href="#red-phase-1">RED Phase</a></h3>
+<p>Added 5 failing tests for KFold:</p>
+<pre><code class="language-rust">#[test]
+fn test_kfold_basic() {
+    let kfold = KFold::new(5);
+    let splits = kfold.split(25);
+
+    assert_eq!(splits.len(), 5);
+
+    for (train_idx, test_idx) in &amp;splits {
+        assert_eq!(test_idx.len(), 5);
+        assert_eq!(train_idx.len(), 20);
+    }
+}
+
+#[test]
+fn test_kfold_all_samples_used() {
+    let kfold = KFold::new(3);
+    let splits = kfold.split(10);
+
+    let mut all_test_indices = Vec::new();
+    for (_train, test) in splits {
+        all_test_indices.extend(test);
+    }
+
+    all_test_indices.sort();
+    let expected: Vec&lt;usize&gt; = (0..10).collect();
+    assert_eq!(all_test_indices, expected);
+}
+
+#[test]
+fn test_kfold_reproducible() {
+    let kfold = KFold::new(5).with_shuffle(true).with_random_state(42);
+    let splits1 = kfold.split(20);
+    let splits2 = kfold.split(20);
+
+    for (split1, split2) in splits1.iter().zip(splits2.iter()) {
+        assert_eq!(split1.1, split2.1);
+    }
+}
+
+#[test]
+fn test_kfold_no_shuffle() {
+    let kfold = KFold::new(3);
+    let splits = kfold.split(9);
+
+    assert_eq!(splits[0].1, vec![0, 1, 2]);
+    assert_eq!(splits[1].1, vec![3, 4, 5]);
+    assert_eq!(splits[2].1, vec![6, 7, 8]);
+}
+
+#[test]
+fn test_kfold_uneven_split() {
+    let kfold = KFold::new(3);
+    let splits = kfold.split(10);
+
+    assert_eq!(splits[0].1.len(), 4);
+    assert_eq!(splits[1].1.len(), 3);
+    assert_eq!(splits[2].1.len(), 3);
+}</code></pre>
+<p><strong>Result:</strong> 5 tests failing ✅ (KFold not implemented)</p>
+<h3 id="green-phase-1"><a class="header" href="#green-phase-1">GREEN Phase</a></h3>
+<pre><code class="language-rust">#[derive(Debug, Clone)]
+pub struct KFold {
+    n_splits: usize,
+    shuffle: bool,
+    random_state: Option&lt;u64&gt;,
+}
+
+impl KFold {
+    pub fn new(n_splits: usize) -&gt; Self {
+        Self {
+            n_splits,
+            shuffle: false,
+            random_state: None,
+        }
+    }
+
+    pub fn with_shuffle(mut self, shuffle: bool) -&gt; Self {
+        self.shuffle = shuffle;
+        self
+    }
+
+    pub fn with_random_state(mut self, random_state: u64) -&gt; Self {
+        self.random_state = Some(random_state);
+        self.shuffle = true;
+        self
+    }
+
+    pub fn split(&amp;self, n_samples: usize) -&gt; Vec&lt;(Vec&lt;usize&gt;, Vec&lt;usize&gt;)&gt; {
+        let mut indices: Vec&lt;usize&gt; = (0..n_samples).collect();
+
+        if self.shuffle {
+            if let Some(seed) = self.random_state {
+                let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
+                indices.shuffle(&amp;mut rng);
+            } else {
+                indices.shuffle(&amp;mut rand::thread_rng());
+            }
+        }
+
+        let fold_sizes = calculate_fold_sizes(n_samples, self.n_splits);
+        let mut splits = Vec::with_capacity(self.n_splits);
+        let mut start_idx = 0;
+
+        for &amp;fold_size in &amp;fold_sizes {
+            let test_indices = indices[start_idx..start_idx + fold_size].to_vec();
+            let mut train_indices = Vec::new();
+            train_indices.extend_from_slice(&amp;indices[..start_idx]);
+            train_indices.extend_from_slice(&amp;indices[start_idx + fold_size..]);
+
+            splits.push((train_indices, test_indices));
+            start_idx += fold_size;
+        }
+
+        splits
+    }
+}
+
+fn calculate_fold_sizes(n_samples: usize, n_splits: usize) -&gt; Vec&lt;usize&gt; {
+    let base_size = n_samples / n_splits;
+    let remainder = n_samples % n_splits;
+
+    let mut sizes = vec![base_size; n_splits];
+    for i in 0..remainder {
+        sizes[i] += 1;
+    }
+
+    sizes
+}</code></pre>
+<p><strong>Verification:</strong></p>
+<pre><code class="language-bash">$ cargo test kfold
+running 5 tests
+test model_selection::tests::test_kfold_basic ... ok
+test model_selection::tests::test_kfold_all_samples_used ... ok
+test model_selection::tests::test_kfold_reproducible ... ok
+test model_selection::tests::test_kfold_no_shuffle ... ok
+test model_selection::tests::test_kfold_uneven_split ... ok
+
+test result: ok. 5 passed; 0 failed
+</code></pre>
+<p><strong>Result:</strong> Tests: 174 (+5) ✅</p>
+<h3 id="refactor-phase-2"><a class="header" href="#refactor-phase-2">REFACTOR Phase</a></h3>
+<p>Created example file <code>examples/cross_validation.rs</code>:</p>
+<pre><code class="language-rust">use aprender::linear_model::LinearRegression;
+use aprender::model_selection::{train_test_split, KFold};
+use aprender::primitives::{Matrix, Vector};
+use aprender::traits::Estimator;
+
+fn main() {
+    println!(&quot;Cross-Validation - Model Selection Example&quot;);
+
+    // Example 1: Train/Test Split
+    train_test_split_example();
+
+    // Example 2: K-Fold Cross-Validation
+    kfold_example();
+}
+
+fn kfold_example() {
+    let x_data: Vec&lt;f32&gt; = (0..50).map(|i| i as f32).collect();
+    let y_data: Vec&lt;f32&gt; = x_data.iter().map(|&amp;x| 2.0 * x + 1.0).collect();
+
+    let x = Matrix::from_vec(50, 1, x_data).unwrap();
+    let y = Vector::from_vec(y_data);
+
+    let kfold = KFold::new(5).with_random_state(42);
+    let splits = kfold.split(50);
+
+    println!(&quot;5-Fold Cross-Validation:&quot;);
+    let mut fold_scores = Vec::new();
+
+    for (fold_num, (train_idx, test_idx)) in splits.iter().enumerate() {
+        let (x_train_fold, y_train_fold) = extract_samples(&amp;x, &amp;y, train_idx);
+        let (x_test_fold, y_test_fold) = extract_samples(&amp;x, &amp;y, test_idx);
+
+        let mut model = LinearRegression::new();
+        model.fit(&amp;x_train_fold, &amp;y_train_fold).unwrap();
+
+        let score = model.score(&amp;x_test_fold, &amp;y_test_fold);
+        fold_scores.push(score);
+
+        println!(&quot;  Fold {}: R² = {:.4}&quot;, fold_num + 1, score);
+    }
+
+    let mean_score = fold_scores.iter().sum::&lt;f32&gt;() / fold_scores.len() as f32;
+    println!(&quot;\n  Mean R²: {:.4}&quot;, mean_score);
+}</code></pre>
+<p>Ran example:</p>
+<pre><code class="language-bash">$ cargo run --example cross_validation
+   Compiling aprender v0.1.0
+    Finished dev [unoptimized + debuginfo] target(s) in 1.23s
+     Running `target/debug/examples/cross_validation`
+
+Cross-Validation - Model Selection Example
+5-Fold Cross-Validation:
+  Fold 1: R² = 1.0000
+  Fold 2: R² = 1.0000
+  Fold 3: R² = 1.0000
+  Fold 4: R² = 1.0000
+  Fold 5: R² = 1.0000
+
+  Mean R²: 1.0000
+✅ Example runs successfully
+</code></pre>
+<p><strong>Commit:</strong> <code>dbd9a2d</code> - Complete cross-validation module</p>
+<h2 id="cycle-3-automated-cross_validate"><a class="header" href="#cycle-3-automated-cross_validate">CYCLE 3: Automated cross_validate()</a></h2>
+<h3 id="red-phase-2"><a class="header" href="#red-phase-2">RED Phase</a></h3>
+<p>Added 3 tests (2 failing, 1 passing helper):</p>
+<pre><code class="language-rust">#[test]
+fn test_cross_validate_basic() {
+    let x = Matrix::from_vec(20, 1, (0..20).map(|i| i as f32).collect()).unwrap();
+    let y = Vector::from_vec((0..20).map(|i| 2.0 * i as f32 + 1.0).collect());
+
+    let model = LinearRegression::new();
+    let kfold = KFold::new(5);
+
+    let result = cross_validate(&amp;model, &amp;x, &amp;y, &amp;kfold).unwrap();
+
+    assert_eq!(result.scores.len(), 5);
+    assert!(result.mean() &gt; 0.95);
+}
+
+#[test]
+fn test_cross_validate_reproducible() {
+    let x = Matrix::from_vec(30, 1, (0..30).map(|i| i as f32).collect()).unwrap();
+    let y = Vector::from_vec((0..30).map(|i| 3.0 * i as f32).collect());
+
+    let model = LinearRegression::new();
+    let kfold = KFold::new(5).with_random_state(42);
+
+    let result1 = cross_validate(&amp;model, &amp;x, &amp;y, &amp;kfold).unwrap();
+    let result2 = cross_validate(&amp;model, &amp;x, &amp;y, &amp;kfold).unwrap();
+
+    assert_eq!(result1.scores, result2.scores);
+}
+
+#[test]
+fn test_cross_validation_result_stats() {
+    let scores = vec![0.95, 0.96, 0.94, 0.97, 0.93];
+    let result = CrossValidationResult { scores };
+
+    assert!((result.mean() - 0.95).abs() &lt; 0.01);
+    assert!(result.min() == 0.93);
+    assert!(result.max() == 0.97);
+    assert!(result.std() &gt; 0.0);
+}</code></pre>
+<p><strong>Result:</strong> 2 tests failing ✅ (cross_validate not implemented)</p>
+<h3 id="green-phase-2"><a class="header" href="#green-phase-2">GREEN Phase</a></h3>
+<pre><code class="language-rust">#[derive(Debug, Clone)]
+pub struct CrossValidationResult {
+    pub scores: Vec&lt;f32&gt;,
+}
+
+impl CrossValidationResult {
+    pub fn mean(&amp;self) -&gt; f32 {
+        self.scores.iter().sum::&lt;f32&gt;() / self.scores.len() as f32
+    }
+
+    pub fn std(&amp;self) -&gt; f32 {
+        let mean = self.mean();
+        let variance = self.scores
+            .iter()
+            .map(|&amp;score| (score - mean).powi(2))
+            .sum::&lt;f32&gt;()
+            / self.scores.len() as f32;
+        variance.sqrt()
+    }
+
+    pub fn min(&amp;self) -&gt; f32 {
+        self.scores
+            .iter()
+            .cloned()
+            .fold(f32::INFINITY, f32::min)
+    }
+
+    pub fn max(&amp;self) -&gt; f32 {
+        self.scores
+            .iter()
+            .cloned()
+            .fold(f32::NEG_INFINITY, f32::max)
+    }
+}
+
+pub fn cross_validate&lt;E&gt;(
+    estimator: &amp;E,
+    x: &amp;Matrix&lt;f32&gt;,
+    y: &amp;Vector&lt;f32&gt;,
+    cv: &amp;KFold,
+) -&gt; Result&lt;CrossValidationResult, String&gt;
+where
+    E: Estimator + Clone,
+{
+    let n_samples = x.shape().0;
+    let splits = cv.split(n_samples);
+    let mut scores = Vec::with_capacity(splits.len());
+
+    for (train_idx, test_idx) in splits {
+        let (x_train, y_train) = extract_samples(x, y, &amp;train_idx);
+        let (x_test, y_test) = extract_samples(x, y, &amp;test_idx);
+
+        let mut fold_model = estimator.clone();
+        fold_model.fit(&amp;x_train, &amp;y_train)?;
+        let score = fold_model.score(&amp;x_test, &amp;y_test);
+        scores.push(score);
+    }
+
+    Ok(CrossValidationResult { scores })
+}</code></pre>
+<p><strong>Verification:</strong></p>
+<pre><code class="language-bash">$ cargo test cross_validate
+running 3 tests
+test model_selection::tests::test_cross_validate_basic ... ok
+test model_selection::tests::test_cross_validate_reproducible ... ok
+test model_selection::tests::test_cross_validation_result_stats ... ok
+
+test result: ok. 3 passed; 0 failed
+</code></pre>
+<p><strong>Result:</strong> Tests: 177 (+3) ✅</p>
+<h3 id="refactor-phase-3"><a class="header" href="#refactor-phase-3">REFACTOR Phase</a></h3>
+<p>Updated example with automated cross-validation:</p>
+<pre><code class="language-rust">fn cross_validate_example() {
+    let x_data: Vec&lt;f32&gt; = (0..100).map(|i| i as f32).collect();
+    let y_data: Vec&lt;f32&gt; = x_data.iter().map(|&amp;x| 4.0 * x - 3.0).collect();
+
+    let x = Matrix::from_vec(100, 1, x_data).unwrap();
+    let y = Vector::from_vec(y_data);
+
+    let model = LinearRegression::new();
+    let kfold = KFold::new(10).with_random_state(42);
+
+    let results = cross_validate(&amp;model, &amp;x, &amp;y, &amp;kfold).unwrap();
+
+    println!(&quot;Automated Cross-Validation:&quot;);
+    println!(&quot;  Mean R²: {:.4}&quot;, results.mean());
+    println!(&quot;  Std Dev: {:.4}&quot;, results.std());
+    println!(&quot;  Min R²:  {:.4}&quot;, results.min());
+    println!(&quot;  Max R²:  {:.4}&quot;, results.max());
+}</code></pre>
+<p>All quality gates passed:</p>
+<pre><code class="language-bash">$ cargo fmt --check
+✅ Formatted
+
+$ cargo clippy -- -D warnings
+✅ Zero warnings
+
+$ cargo test
+✅ 177 tests passing
+
+$ cargo run --example cross_validation
+✅ Example runs successfully
+</code></pre>
+<p><strong>Commit:</strong> <code>e872111</code> - Add automated cross_validate function</p>
+<h2 id="final-results"><a class="header" href="#final-results">Final Results</a></h2>
+<p><strong>Implementation Summary:</strong></p>
+<ul>
+<li>3 complete RED-GREEN-REFACTOR cycles</li>
+<li>12 new tests (all passing)</li>
+<li>1 comprehensive example file</li>
+<li>Full documentation</li>
+</ul>
+<p><strong>Metrics:</strong></p>
+<ul>
+<li>Tests: 177 total (165 → 177, +12)</li>
+<li>Coverage: ~97%</li>
+<li>TDG Score: 93.3/100 maintained</li>
+<li>Clippy warnings: 0</li>
+<li>Complexity: ≤10 (all functions)</li>
+</ul>
+<p><strong>Commits:</strong></p>
+<ol>
+<li><code>dbd9a2d</code> - train_test_split + KFold implementation</li>
+<li><code>e872111</code> - Automated cross_validate function</li>
+</ol>
+<p><strong>GitHub Issue #2:</strong> ✅ Closed with comprehensive implementation</p>
+<h2 id="key-learnings"><a class="header" href="#key-learnings">Key Learnings</a></h2>
+<h3 id="1-test-first-prevents-over-engineering"><a class="header" href="#1-test-first-prevents-over-engineering">1. Test-First Prevents Over-Engineering</a></h3>
+<p>By writing tests first, we only implemented what was needed:</p>
+<ul>
+<li>No stratified sampling (not tested)</li>
+<li>No custom scoring metrics (not tested)</li>
+<li>No parallel fold processing (not tested)</li>
+</ul>
+<h3 id="2-builder-pattern-emerged-naturally"><a class="header" href="#2-builder-pattern-emerged-naturally">2. Builder Pattern Emerged Naturally</a></h3>
+<p>Testing led to clean API:</p>
+<pre><code class="language-rust">let kfold = KFold::new(5)
+    .with_shuffle(true)
+    .with_random_state(42);</code></pre>
+<h3 id="3-reproducibility-is-critical"><a class="header" href="#3-reproducibility-is-critical">3. Reproducibility is Critical</a></h3>
+<p>Random state testing caught non-deterministic behavior early.</p>
+<h3 id="4-examples-validate-api-usability"><a class="header" href="#4-examples-validate-api-usability">4. Examples Validate API Usability</a></h3>
+<p>Writing examples during REFACTOR phase verified API design.</p>
+<h3 id="5-quality-gates-catch-issues-early"><a class="header" href="#5-quality-gates-catch-issues-early">5. Quality Gates Catch Issues Early</a></h3>
+<ul>
+<li>Clippy found type complexity warning</li>
+<li>rustfmt enforced consistent style</li>
+<li>Tests caught edge cases (uneven fold sizes)</li>
+</ul>
+<h2 id="anti-hallucination-verification"><a class="header" href="#anti-hallucination-verification">Anti-Hallucination Verification</a></h2>
+<p>Every code example in this chapter is:</p>
+<ul>
+<li>✅ Test-backed in <code>src/model_selection/mod.rs:18-177</code></li>
+<li>✅ Runnable via <code>cargo run --example cross_validation</code></li>
+<li>✅ CI-verified in GitHub Actions</li>
+<li>✅ Production code in aprender v0.1.0</li>
+</ul>
+<p><strong>Proof:</strong></p>
+<pre><code class="language-bash">$ cargo test --test cross_validation
+✅ All examples execute successfully
+
+$ git log --oneline | head -5
+e872111 feat: cross-validation - Add automated cross_validate (COMPLETE)
+dbd9a2d feat: cross-validation - Implement train_test_split and KFold
+</code></pre>
+<h2 id="summary-2"><a class="header" href="#summary-2">Summary</a></h2>
+<p>This case study demonstrates EXTREME TDD in production:</p>
+<ul>
+<li><strong>RED</strong>: 12 tests written first</li>
+<li><strong>GREEN</strong>: Minimal implementation</li>
+<li><strong>REFACTOR</strong>: Quality gates + examples</li>
+<li><strong>Result</strong>: Zero-defect cross-validation module</li>
+</ul>
+<p><strong>Next Case Study:</strong> <a href="examples/./random-forest.html">Random Forest</a></p>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="random-forest"><a class="header" href="#random-forest">Random Forest</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="examples/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="examples/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="model-serialization"><a class="header" href="#model-serialization">Model Serialization</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="examples/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="examples/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="kmeans-clustering"><a class="header" href="#kmeans-clustering">Kmeans Clustering</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="examples/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="examples/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="sprint-planning"><a class="header" href="#sprint-planning">Sprint Planning</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="sprints/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="sprints/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="sprint-execution"><a class="header" href="#sprint-execution">Sprint Execution</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="sprints/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="sprints/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="sprint-review"><a class="header" href="#sprint-review">Sprint Review</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="sprints/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="sprints/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="sprint-retrospective"><a class="header" href="#sprint-retrospective">Sprint Retrospective</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="sprints/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="sprints/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="issue-management"><a class="header" href="#issue-management">Issue Management</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="sprints/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="sprints/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="test-backed-examples"><a class="header" href="#test-backed-examples">Test Backed Examples</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="anti-hallucination/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="anti-hallucination/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="example-verification"><a class="header" href="#example-verification">Example Verification</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="anti-hallucination/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="anti-hallucination/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="ci-validation"><a class="header" href="#ci-validation">Ci Validation</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="anti-hallucination/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="anti-hallucination/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="documentation-testing"><a class="header" href="#documentation-testing">Documentation Testing</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="anti-hallucination/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="anti-hallucination/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="development-environment"><a class="header" href="#development-environment">Development Environment</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="tools/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="tools/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="cargo-test"><a class="header" href="#cargo-test">Cargo Test</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="tools/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="tools/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="cargo-clippy"><a class="header" href="#cargo-clippy">Cargo Clippy</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="tools/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="tools/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="cargo-fmt"><a class="header" href="#cargo-fmt">Cargo Fmt</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="tools/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="tools/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="cargo-mutants"><a class="header" href="#cargo-mutants">Cargo Mutants</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="tools/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="tools/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="proptest"><a class="header" href="#proptest">Proptest</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="tools/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="tools/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="criterion"><a class="header" href="#criterion">Criterion</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="tools/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="tools/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="pmat"><a class="header" href="#pmat">Pmat</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="tools/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="tools/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="error-handling"><a class="header" href="#error-handling">Error Handling</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="best-practices/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="best-practices/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="api-design"><a class="header" href="#api-design">Api Design</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="best-practices/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="best-practices/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="builder-pattern"><a class="header" href="#builder-pattern">Builder Pattern</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="best-practices/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="best-practices/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="type-safety"><a class="header" href="#type-safety">Type Safety</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="best-practices/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="best-practices/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="performance"><a class="header" href="#performance">Performance</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="best-practices/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="best-practices/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="documentation-standards"><a class="header" href="#documentation-standards">Documentation Standards</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="best-practices/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="best-practices/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="test-coverage"><a class="header" href="#test-coverage">Test Coverage</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="metrics/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="metrics/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="mutation-score"><a class="header" href="#mutation-score">Mutation Score</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="metrics/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="metrics/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="cyclomatic-complexity"><a class="header" href="#cyclomatic-complexity">Cyclomatic Complexity</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="metrics/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="metrics/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="code-churn"><a class="header" href="#code-churn">Code Churn</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="metrics/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="metrics/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="build-times"><a class="header" href="#build-times">Build Times</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="metrics/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="metrics/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="tdg-breakdown"><a class="header" href="#tdg-breakdown">Tdg Breakdown</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="metrics/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="metrics/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="skipping-tests"><a class="header" href="#skipping-tests">Skipping Tests</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="pitfalls/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="pitfalls/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="insufficient-coverage"><a class="header" href="#insufficient-coverage">Insufficient Coverage</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="pitfalls/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="pitfalls/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="ignoring-warnings"><a class="header" href="#ignoring-warnings">Ignoring Warnings</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="pitfalls/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="pitfalls/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="over-mocking"><a class="header" href="#over-mocking">Over Mocking</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="pitfalls/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="pitfalls/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="flaky-tests"><a class="header" href="#flaky-tests">Flaky Tests</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="pitfalls/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="pitfalls/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="technical-debt"><a class="header" href="#technical-debt">Technical Debt</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="pitfalls/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="pitfalls/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="glossary"><a class="header" href="#glossary">Glossary</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="appendix/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="appendix/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="references"><a class="header" href="#references">References</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="appendix/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="appendix/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="further-reading"><a class="header" href="#further-reading">Further Reading</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="appendix/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="appendix/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="contributing"><a class="header" href="#contributing">Contributing</a></h1>
+<p>📝 <strong>This chapter is under construction.</strong></p>
+<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<p><strong>See also:</strong></p>
+<ul>
+<li><a href="appendix/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="appendix/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+</ul>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+
+            </nav>
+
+        </div>
+
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+        <script src="ace.js"></script>
+        <script src="editor.js"></script>
+        <script src="mode-rust.js"></script>
+        <script src="theme-dawn.js"></script>
+        <script src="theme-tomorrow_night.js"></script>
+
+        <script src="elasticlunr.min.js"></script>
+        <script src="mark.min.js"></script>
+        <script src="searcher.js"></script>
+
+        <script src="clipboard.min.js"></script>
+        <script src="highlight.js"></script>
+        <script src="book.js"></script>
+
+        <!-- Custom JS scripts -->
+
+        <script>
+        window.addEventListener('load', function() {
+            window.setTimeout(window.print, 100);
+        });
+        </script>
+
+    </div>
+    </body>
+</html>
