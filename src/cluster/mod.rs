@@ -587,4 +587,189 @@ mod tests {
         assert_eq!(labels[6], labels[7]);
         assert_eq!(labels[7], labels[8]);
     }
+
+    #[test]
+    fn test_identical_points() {
+        // All points are the same
+        let data = Matrix::from_vec(5, 2, vec![
+            1.0, 1.0,
+            1.0, 1.0,
+            1.0, 1.0,
+            1.0, 1.0,
+            1.0, 1.0,
+        ]).unwrap();
+
+        let mut kmeans = KMeans::new(2).with_random_state(42);
+        kmeans.fit(&data).unwrap();
+
+        // All should be in same cluster
+        let labels = kmeans.predict(&data);
+        let first = labels[0];
+        assert!(labels.iter().all(|&l| l == first));
+
+        // Inertia should be 0
+        assert!(kmeans.inertia() < 1e-6);
+    }
+
+    #[test]
+    fn test_one_dimensional_data() {
+        // 1D clustering
+        let data = Matrix::from_vec(6, 1, vec![
+            0.0,
+            0.1,
+            0.2,
+            10.0,
+            10.1,
+            10.2,
+        ]).unwrap();
+
+        let mut kmeans = KMeans::new(2).with_random_state(42);
+        kmeans.fit(&data).unwrap();
+
+        let labels = kmeans.predict(&data);
+
+        // First 3 should be in one cluster, last 3 in another
+        assert_eq!(labels[0], labels[1]);
+        assert_eq!(labels[1], labels[2]);
+        assert_eq!(labels[3], labels[4]);
+        assert_eq!(labels[4], labels[5]);
+        assert_ne!(labels[0], labels[3]);
+    }
+
+    #[test]
+    fn test_high_dimensional_data() {
+        // 5D clustering
+        let data = Matrix::from_vec(6, 5, vec![
+            0.0, 0.0, 0.0, 0.0, 0.0,
+            0.1, 0.1, 0.1, 0.1, 0.1,
+            0.2, 0.2, 0.2, 0.2, 0.2,
+            10.0, 10.0, 10.0, 10.0, 10.0,
+            10.1, 10.1, 10.1, 10.1, 10.1,
+            10.2, 10.2, 10.2, 10.2, 10.2,
+        ]).unwrap();
+
+        let mut kmeans = KMeans::new(2).with_random_state(42);
+        kmeans.fit(&data).unwrap();
+
+        let labels = kmeans.predict(&data);
+
+        // First 3 should be in one cluster, last 3 in another
+        assert_eq!(labels[0], labels[1]);
+        assert_eq!(labels[1], labels[2]);
+        assert_eq!(labels[3], labels[4]);
+        assert_eq!(labels[4], labels[5]);
+        assert_ne!(labels[0], labels[3]);
+    }
+
+    #[test]
+    fn test_negative_values() {
+        // Test with negative coordinates
+        let data = Matrix::from_vec(6, 2, vec![
+            -10.0, -10.0,
+            -10.1, -10.1,
+            -10.2, -10.0,
+            10.0, 10.0,
+            10.1, 10.1,
+            10.0, 10.2,
+        ]).unwrap();
+
+        let mut kmeans = KMeans::new(2).with_random_state(42);
+        kmeans.fit(&data).unwrap();
+
+        let labels = kmeans.predict(&data);
+
+        assert_eq!(labels[0], labels[1]);
+        assert_eq!(labels[1], labels[2]);
+        assert_eq!(labels[3], labels[4]);
+        assert_eq!(labels[4], labels[5]);
+        assert_ne!(labels[0], labels[3]);
+    }
+
+    #[test]
+    fn test_exact_k_samples() {
+        // Exactly k samples for k clusters
+        let data = Matrix::from_vec(3, 2, vec![
+            0.0, 0.0,
+            5.0, 5.0,
+            10.0, 10.0,
+        ]).unwrap();
+
+        let mut kmeans = KMeans::new(3).with_random_state(42);
+        kmeans.fit(&data).unwrap();
+
+        let labels = kmeans.predict(&data);
+
+        // All should have different labels
+        assert_ne!(labels[0], labels[1]);
+        assert_ne!(labels[1], labels[2]);
+        assert_ne!(labels[0], labels[2]);
+
+        // Inertia should be 0 (each point is its own centroid)
+        assert!(kmeans.inertia() < 1e-6);
+    }
+
+    #[test]
+    fn test_max_iter_limit() {
+        let data = sample_data();
+        let mut kmeans = KMeans::new(2).with_max_iter(1).with_random_state(42);
+        kmeans.fit(&data).unwrap();
+
+        // Should stop at 1 iteration
+        assert_eq!(kmeans.n_iter(), 1);
+    }
+
+    #[test]
+    fn test_tight_tolerance() {
+        let data = sample_data();
+        let mut kmeans = KMeans::new(2).with_tol(1e-10).with_random_state(42);
+        kmeans.fit(&data).unwrap();
+
+        // With tight tolerance, should still converge for simple data
+        assert!(kmeans.is_fitted());
+    }
+
+    #[test]
+    fn test_centroid_shapes() {
+        let data = Matrix::from_vec(10, 3, vec![
+            0.0, 0.0, 0.0,
+            0.1, 0.1, 0.1,
+            0.2, 0.2, 0.2,
+            0.3, 0.3, 0.3,
+            0.4, 0.4, 0.4,
+            10.0, 10.0, 10.0,
+            10.1, 10.1, 10.1,
+            10.2, 10.2, 10.2,
+            10.3, 10.3, 10.3,
+            10.4, 10.4, 10.4,
+        ]).unwrap();
+
+        let mut kmeans = KMeans::new(2).with_random_state(42);
+        kmeans.fit(&data).unwrap();
+
+        let centroids = kmeans.centroids();
+        assert_eq!(centroids.shape(), (2, 3));
+    }
+
+    #[test]
+    fn test_different_random_states() {
+        let data = sample_data();
+
+        let mut kmeans1 = KMeans::new(2).with_random_state(1);
+        kmeans1.fit(&data).unwrap();
+
+        let mut kmeans2 = KMeans::new(2).with_random_state(999);
+        kmeans2.fit(&data).unwrap();
+
+        // Different seeds should still produce valid results
+        // (labels may differ but should be valid)
+        let labels1 = kmeans1.predict(&data);
+        let labels2 = kmeans2.predict(&data);
+
+        for &l in &labels1 {
+            assert!(l < 2);
+        }
+        for &l in &labels2 {
+            assert!(l < 2);
+        }
+    }
 }

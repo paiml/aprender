@@ -427,4 +427,119 @@ mod tests {
         assert!((coef[0] - 2.0).abs() < 1e-3);
         assert!((model.intercept() - 3.0).abs() < 1e-3);
     }
+
+    #[test]
+    fn test_single_sample_single_feature() {
+        // Edge case: minimum viable data
+        let x = Matrix::from_vec(2, 1, vec![1.0, 2.0]).unwrap();
+        let y = Vector::from_slice(&[3.0, 5.0]);
+
+        let mut model = LinearRegression::new();
+        model.fit(&x, &y).unwrap();
+
+        // y = 2x + 1
+        let coef = model.coefficients();
+        assert!((coef[0] - 2.0).abs() < 1e-4);
+        assert!((model.intercept() - 1.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn test_negative_values() {
+        // Test with negative coefficients and values
+        let x = Matrix::from_vec(4, 1, vec![-2.0, -1.0, 0.0, 1.0]).unwrap();
+        let y = Vector::from_slice(&[5.0, 3.0, 1.0, -1.0]); // y = -2x + 1
+
+        let mut model = LinearRegression::new();
+        model.fit(&x, &y).unwrap();
+
+        let coef = model.coefficients();
+        assert!((coef[0] - (-2.0)).abs() < 1e-4);
+        assert!((model.intercept() - 1.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn test_large_values() {
+        // Test numerical stability with large values
+        let x = Matrix::from_vec(3, 1, vec![1000.0, 2000.0, 3000.0]).unwrap();
+        let y = Vector::from_slice(&[2001.0, 4001.0, 6001.0]); // y = 2x + 1
+
+        let mut model = LinearRegression::new();
+        model.fit(&x, &y).unwrap();
+
+        let coef = model.coefficients();
+        assert!((coef[0] - 2.0).abs() < 1e-2);
+        assert!((model.intercept() - 1.0).abs() < 10.0); // Larger tolerance for large values
+    }
+
+    #[test]
+    fn test_small_values() {
+        // Test with small values
+        let x = Matrix::from_vec(3, 1, vec![0.001, 0.002, 0.003]).unwrap();
+        let y = Vector::from_slice(&[0.003, 0.005, 0.007]); // y = 2x + 0.001
+
+        let mut model = LinearRegression::new();
+        model.fit(&x, &y).unwrap();
+
+        let coef = model.coefficients();
+        assert!((coef[0] - 2.0).abs() < 1e-2);
+    }
+
+    #[test]
+    fn test_zero_intercept_data() {
+        // Data that should produce zero intercept
+        let x = Matrix::from_vec(3, 1, vec![1.0, 2.0, 3.0]).unwrap();
+        let y = Vector::from_slice(&[2.0, 4.0, 6.0]); // y = 2x
+
+        let mut model = LinearRegression::new();
+        model.fit(&x, &y).unwrap();
+
+        let coef = model.coefficients();
+        assert!((coef[0] - 2.0).abs() < 1e-4);
+        assert!(model.intercept().abs() < 1e-4);
+    }
+
+    #[test]
+    fn test_constant_target() {
+        // All y values are the same
+        let x = Matrix::from_vec(3, 1, vec![1.0, 2.0, 3.0]).unwrap();
+        let y = Vector::from_slice(&[5.0, 5.0, 5.0]);
+
+        let mut model = LinearRegression::new();
+        model.fit(&x, &y).unwrap();
+
+        // Coefficient should be ~0, intercept should be ~5
+        let coef = model.coefficients();
+        assert!(coef[0].abs() < 1e-4);
+        assert!((model.intercept() - 5.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn test_r2_score_bounds() {
+        // R² should be in reasonable range for good fit
+        let x = Matrix::from_vec(5, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0]).unwrap();
+        let y = Vector::from_slice(&[2.1, 3.9, 6.1, 7.9, 10.1]);
+
+        let mut model = LinearRegression::new();
+        model.fit(&x, &y).unwrap();
+
+        let r2 = model.score(&x, &y);
+        assert!(r2 > 0.0);
+        assert!(r2 <= 1.0);
+    }
+
+    #[test]
+    fn test_extrapolation() {
+        // Test prediction outside training range
+        let x_train = Matrix::from_vec(3, 1, vec![1.0, 2.0, 3.0]).unwrap();
+        let y_train = Vector::from_slice(&[2.0, 4.0, 6.0]); // y = 2x
+
+        let mut model = LinearRegression::new();
+        model.fit(&x_train, &y_train).unwrap();
+
+        // Predict at x = 10 (extrapolation)
+        let x_test = Matrix::from_vec(1, 1, vec![10.0]).unwrap();
+        let predictions = model.predict(&x_test);
+
+        assert!((predictions[0] - 20.0).abs() < 1e-4);
+    }
 }
