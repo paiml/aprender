@@ -312,6 +312,136 @@ fn find_best_split(
     }
 }
 
+/// Find the majority class from a set of labels.
+///
+/// Returns the most frequent class label. Ties are broken arbitrarily.
+///
+/// # Arguments
+///
+/// * `labels` - Slice of class labels
+///
+/// # Returns
+///
+/// Most frequent class label
+#[allow(dead_code)] // Will be used in tree building
+fn majority_class(labels: &[usize]) -> usize {
+    let mut counts = std::collections::HashMap::new();
+    for &label in labels {
+        *counts.entry(label).or_insert(0) += 1;
+    }
+    *counts.iter().max_by_key(|(_, &count)| count).unwrap().0
+}
+
+/// Build a decision tree recursively.
+///
+/// # Arguments
+///
+/// * `x` - Training data (n_samples × n_features)
+/// * `y` - Labels (n_samples)
+/// * `depth` - Current depth in tree
+/// * `max_depth` - Maximum allowed depth (None = unlimited)
+///
+/// # Returns
+///
+/// Root node of the built tree
+#[allow(dead_code)] // Will be used in fit() implementation
+fn build_tree(
+    x: &crate::primitives::Matrix<f32>,
+    y: &[usize],
+    depth: usize,
+    max_depth: Option<usize>,
+) -> TreeNode {
+    let n_samples = y.len();
+
+    // Check stopping criteria
+
+    // Criterion 1: All same label (pure node)
+    let unique_labels: std::collections::HashSet<_> = y.iter().collect();
+    if unique_labels.len() == 1 {
+        return TreeNode::Leaf(Leaf {
+            class_label: y[0],
+            n_samples,
+        });
+    }
+
+    // Criterion 2: Max depth reached
+    if let Some(max_d) = max_depth {
+        if depth >= max_d {
+            return TreeNode::Leaf(Leaf {
+                class_label: majority_class(y),
+                n_samples,
+            });
+        }
+    }
+
+    // Try to find best split
+    if let Some((feature_idx, threshold, _gain)) = find_best_split(x, y) {
+        // Split data based on threshold
+        let mut left_indices = Vec::new();
+        let mut right_indices = Vec::new();
+
+        for row in 0..n_samples {
+            if x.get(row, feature_idx) <= threshold {
+                left_indices.push(row);
+            } else {
+                right_indices.push(row);
+            }
+        }
+
+        // Safety check - ensure split is valid
+        if left_indices.is_empty() || right_indices.is_empty() {
+            return TreeNode::Leaf(Leaf {
+                class_label: majority_class(y),
+                n_samples,
+            });
+        }
+
+        // Create left and right datasets
+        let (_n_rows, n_cols) = x.shape();
+        let mut left_data = Vec::with_capacity(left_indices.len() * n_cols);
+        let mut left_labels = Vec::with_capacity(left_indices.len());
+
+        for &idx in &left_indices {
+            for col in 0..n_cols {
+                left_data.push(x.get(idx, col));
+            }
+            left_labels.push(y[idx]);
+        }
+
+        let mut right_data = Vec::with_capacity(right_indices.len() * n_cols);
+        let mut right_labels = Vec::with_capacity(right_indices.len());
+
+        for &idx in &right_indices {
+            for col in 0..n_cols {
+                right_data.push(x.get(idx, col));
+            }
+            right_labels.push(y[idx]);
+        }
+
+        let left_matrix =
+            crate::primitives::Matrix::from_vec(left_indices.len(), n_cols, left_data).unwrap();
+        let right_matrix =
+            crate::primitives::Matrix::from_vec(right_indices.len(), n_cols, right_data).unwrap();
+
+        // Recursively build subtrees
+        let left_child = build_tree(&left_matrix, &left_labels, depth + 1, max_depth);
+        let right_child = build_tree(&right_matrix, &right_labels, depth + 1, max_depth);
+
+        TreeNode::Node(Node {
+            feature_idx,
+            threshold,
+            left: Box::new(left_child),
+            right: Box::new(right_child),
+        })
+    } else {
+        // No valid split found - create leaf
+        TreeNode::Leaf(Leaf {
+            class_label: majority_class(y),
+            n_samples,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -569,5 +699,102 @@ mod tests {
         assert!(threshold > 2.0 && threshold < 5.0);
         // Gain should be maximum (from mixed to pure)
         assert!(gain > 0.4); // At least some significant gain
+    }
+
+    // RED-GREEN-REFACTOR Cycle 4: Tree Building
+
+    #[test]
+    fn test_majority_class_simple() {
+        let labels = vec![0, 0, 1, 0, 1];
+        // Class 0 appears 3 times, class 1 appears 2 times
+        assert_eq!(majority_class(&labels), 0);
+    }
+
+    #[test]
+    fn test_majority_class_tie() {
+        let labels = vec![0, 1, 0, 1];
+        // Tie - either 0 or 1 is acceptable
+        let result = majority_class(&labels);
+        assert!(result == 0 || result == 1);
+    }
+
+    #[test]
+    fn test_majority_class_single() {
+        let labels = vec![5];
+        assert_eq!(majority_class(&labels), 5);
+    }
+
+    #[test]
+    fn test_build_tree_pure_leaf() {
+        use crate::primitives::Matrix;
+
+        // All same label - should create a leaf immediately
+        let x = Matrix::from_vec(3, 2, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]).unwrap();
+        let y = vec![0, 0, 0];
+
+        let tree = build_tree(&x, &y, 0, None);
+
+        // Should be a leaf with class 0
+        match tree {
+            TreeNode::Leaf(leaf) => {
+                assert_eq!(leaf.class_label, 0);
+                assert_eq!(leaf.n_samples, 3);
+            }
+            _ => panic!("Expected Leaf node for pure data"),
+        }
+    }
+
+    #[test]
+    fn test_build_tree_max_depth_zero() {
+        use crate::primitives::Matrix;
+
+        // Mixed labels but max_depth=0, should create leaf with majority
+        let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0]).unwrap();
+        let y = vec![0, 0, 1, 1];
+
+        let tree = build_tree(&x, &y, 0, Some(0));
+
+        // Should be a leaf (can't split at depth 0)
+        match tree {
+            TreeNode::Leaf(leaf) => {
+                assert!(leaf.class_label == 0 || leaf.class_label == 1);
+                assert_eq!(leaf.n_samples, 4);
+            }
+            _ => panic!("Expected Leaf node at max depth"),
+        }
+    }
+
+    #[test]
+    fn test_build_tree_simple_split() {
+        use crate::primitives::Matrix;
+
+        // Simple binary split
+        let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 5.0, 6.0]).unwrap();
+        let y = vec![0, 0, 1, 1];
+
+        let tree = build_tree(&x, &y, 0, Some(5));
+
+        // Should be a node (not pure, depth allows split)
+        match tree {
+            TreeNode::Node(node) => {
+                assert_eq!(node.feature_idx, 0); // Only one feature
+                assert!(node.threshold > 2.0 && node.threshold < 5.0);
+            }
+            _ => panic!("Expected Node for splittable data"),
+        }
+    }
+
+    #[test]
+    fn test_build_tree_depth_tracking() {
+        use crate::primitives::Matrix;
+
+        // Build tree and verify depth is respected
+        let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 5.0, 6.0]).unwrap();
+        let y = vec![0, 0, 1, 1];
+
+        let tree = build_tree(&x, &y, 0, Some(1));
+
+        // Depth should be <= 1
+        assert!(tree.depth() <= 1);
     }
 }
