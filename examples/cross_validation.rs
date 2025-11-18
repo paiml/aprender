@@ -4,7 +4,7 @@
 //! Essential for assessing model performance and preventing overfitting.
 
 use aprender::linear_model::LinearRegression;
-use aprender::model_selection::{train_test_split, KFold};
+use aprender::model_selection::{cross_validate, train_test_split, KFold};
 use aprender::primitives::{Matrix, Vector};
 use aprender::traits::Estimator;
 
@@ -17,10 +17,15 @@ fn main() {
     println!("---------------------------");
     train_test_split_example();
 
-    // Example 2: K-Fold Cross-Validation
-    println!("\nExample 2: K-Fold Cross-Validation");
-    println!("----------------------------------");
+    // Example 2: K-Fold Cross-Validation (Manual)
+    println!("\nExample 2: K-Fold Cross-Validation (Manual)");
+    println!("-------------------------------------------");
     kfold_example();
+
+    // Example 3: Automated cross_validate()
+    println!("\nExample 3: Automated cross_validate()");
+    println!("-------------------------------------");
+    cross_validate_example();
 
     println!("\n✅ Cross-validation complete!");
     println!("\nKey Benefits:");
@@ -143,6 +148,55 @@ fn kfold_example() {
     if std_dev < 0.05 {
         println!("  ✓ Stable model across folds!");
     }
+}
+
+fn cross_validate_example() {
+    // Create synthetic dataset: y = 4x - 3
+    let x_data: Vec<f32> = (0..100).map(|i| i as f32).collect();
+    let y_data: Vec<f32> = x_data.iter().map(|&x| 4.0 * x - 3.0).collect();
+
+    let x = Matrix::from_vec(100, 1, x_data).unwrap();
+    let y = Vector::from_vec(y_data);
+
+    // Create model and cross-validation splitter
+    let model = LinearRegression::new();
+    let kfold = KFold::new(10).with_random_state(42);
+
+    println!("  Dataset: 100 samples");
+    println!("  Model: LinearRegression");
+    println!("  CV Strategy: 10-Fold (reproducible)\n");
+
+    // Run automated cross-validation
+    let results = cross_validate(&model, &x, &y, &kfold).expect("Cross-validation failed");
+
+    println!("  Results:");
+    println!("  --------");
+    println!("  Mean R²: {:.4}", results.mean());
+    println!("  Std Dev: {:.4}", results.std());
+    println!("  Min R²:  {:.4}", results.min());
+    println!("  Max R²:  {:.4}", results.max());
+    println!("  Folds:   {}", results.scores.len());
+
+    // Show all fold scores
+    println!("\n  Fold Scores:");
+    for (i, &score) in results.scores.iter().enumerate() {
+        println!("    Fold {:2}: {:.4}", i + 1, score);
+    }
+
+    // Interpret results
+    println!("\n  Interpretation:");
+    if results.mean() > 0.95 {
+        println!("  ✓ Excellent model performance (R² > 0.95)");
+    }
+    if results.std() < 0.05 {
+        println!("  ✓ Very stable across folds (std < 0.05)");
+    }
+
+    println!("\n  Advantages:");
+    println!("  • Single function call - no manual loop");
+    println!("  • Automatic fold management");
+    println!("  • Built-in statistics (mean, std, min, max)");
+    println!("  • Reproducible with random_state");
 }
 
 /// Helper function to extract samples by indices

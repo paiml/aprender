@@ -6,6 +6,135 @@
 //! - Cross-validation with multiple metrics
 
 use crate::primitives::{Matrix, Vector};
+use crate::traits::Estimator;
+
+/// Results from cross-validation.
+#[derive(Debug, Clone)]
+pub struct CrossValidationResult {
+    /// Score for each fold
+    pub scores: Vec<f32>,
+}
+
+impl CrossValidationResult {
+    /// Calculate mean score across folds
+    pub fn mean(&self) -> f32 {
+        if self.scores.is_empty() {
+            return 0.0;
+        }
+        self.scores.iter().sum::<f32>() / self.scores.len() as f32
+    }
+
+    /// Calculate standard deviation of scores
+    pub fn std(&self) -> f32 {
+        if self.scores.is_empty() {
+            return 0.0;
+        }
+        let mean = self.mean();
+        let variance = self
+            .scores
+            .iter()
+            .map(|&score| (score - mean).powi(2))
+            .sum::<f32>()
+            / self.scores.len() as f32;
+        variance.sqrt()
+    }
+
+    /// Get minimum score
+    pub fn min(&self) -> f32 {
+        self.scores.iter().cloned().fold(f32::INFINITY, f32::min)
+    }
+
+    /// Get maximum score
+    pub fn max(&self) -> f32 {
+        self.scores
+            .iter()
+            .cloned()
+            .fold(f32::NEG_INFINITY, f32::max)
+    }
+}
+
+/// Run cross-validation on an estimator.
+///
+/// Automatically trains and evaluates the model on each fold, returning scores.
+///
+/// # Arguments
+///
+/// * `estimator` - The model to cross-validate (must be cloneable)
+/// * `x` - Feature matrix
+/// * `y` - Target vector
+/// * `cv` - Cross-validation splitter (e.g., KFold)
+///
+/// # Example
+///
+/// ```rust
+/// use aprender::prelude::*;
+/// use aprender::model_selection::{cross_validate, KFold};
+///
+/// let x = Matrix::from_vec(50, 1, (0..50).map(|i| i as f32).collect()).unwrap();
+/// let y = Vector::from_slice(&vec![0.0; 50]);
+///
+/// let model = LinearRegression::new();
+/// let kfold = KFold::new(5);
+///
+/// let results = cross_validate(&model, &x, &y, &kfold).unwrap();
+/// println!("Mean R²: {:.3} ± {:.3}", results.mean(), results.std());
+/// ```
+pub fn cross_validate<E>(
+    estimator: &E,
+    x: &Matrix<f32>,
+    y: &Vector<f32>,
+    cv: &KFold,
+) -> Result<CrossValidationResult, String>
+where
+    E: Estimator + Clone,
+{
+    let n_samples = x.shape().0;
+    let splits = cv.split(n_samples);
+
+    let mut scores = Vec::with_capacity(splits.len());
+
+    for (train_idx, test_idx) in splits {
+        // Extract fold data
+        let (x_train, y_train) = extract_samples(x, y, &train_idx);
+        let (x_test, y_test) = extract_samples(x, y, &test_idx);
+
+        // Clone and train model
+        let mut fold_model = estimator.clone();
+        fold_model
+            .fit(&x_train, &y_train)
+            .map_err(|e| format!("Training failed: {}", e))?;
+
+        // Score on test fold
+        let score = fold_model.score(&x_test, &y_test);
+        scores.push(score);
+    }
+
+    Ok(CrossValidationResult { scores })
+}
+
+/// Helper function to extract samples by indices
+fn extract_samples(
+    x: &Matrix<f32>,
+    y: &Vector<f32>,
+    indices: &[usize],
+) -> (Matrix<f32>, Vector<f32>) {
+    let n_features = x.shape().1;
+    let mut x_data = Vec::with_capacity(indices.len() * n_features);
+    let mut y_data = Vec::with_capacity(indices.len());
+
+    for &idx in indices {
+        for j in 0..n_features {
+            x_data.push(x.get(idx, j));
+        }
+        y_data.push(y.as_slice()[idx]);
+    }
+
+    let x_subset =
+        Matrix::from_vec(indices.len(), n_features, x_data).expect("Failed to create matrix");
+    let y_subset = Vector::from_vec(y_data);
+
+    (x_subset, y_subset)
+}
 
 /// K-Fold cross-validator.
 ///
@@ -396,6 +525,83 @@ mod tests {
         assert_eq!(
             total_test, 10,
             "All samples should be used as test exactly once"
+        );
+    }
+
+    #[test]
+    fn test_cross_validate_basic() {
+        use crate::linear_model::LinearRegression;
+
+        // Create simple dataset: y = 2x
+        let x_data: Vec<f32> = (0..50).map(|i| i as f32).collect();
+        let y_data: Vec<f32> = x_data.iter().map(|&x| 2.0 * x).collect();
+
+        let x = Matrix::from_vec(50, 1, x_data).unwrap();
+        let y = Vector::from_vec(y_data);
+
+        let model = LinearRegression::new();
+        let kfold = KFold::new(5).with_random_state(42);
+
+        let result =
+            cross_validate(&model, &x, &y, &kfold).expect("Cross-validation should succeed");
+
+        // Should have 5 scores (one per fold)
+        assert_eq!(result.scores.len(), 5, "Should have 5 fold scores");
+
+        // All scores should be very high (perfect linear relationship)
+        for &score in &result.scores {
+            assert!(score > 0.99, "Score should be > 0.99, got {}", score);
+        }
+
+        // Mean should be close to 1.0
+        assert!(result.mean() > 0.99, "Mean R² should be > 0.99");
+
+        // Std should be very low (stable across folds)
+        assert!(result.std() < 0.01, "Std should be < 0.01");
+    }
+
+    #[test]
+    fn test_cross_validate_result_stats() {
+        let result = CrossValidationResult {
+            scores: vec![0.95, 0.96, 0.94, 0.97, 0.93],
+        };
+
+        // Test mean
+        let mean = result.mean();
+        assert!((mean - 0.95).abs() < 0.001, "Mean should be ~0.95");
+
+        // Test min/max
+        assert_eq!(result.min(), 0.93);
+        assert_eq!(result.max(), 0.97);
+
+        // Test std
+        let std = result.std();
+        assert!(std > 0.0, "Std should be > 0");
+        assert!(std < 0.02, "Std should be < 0.02");
+    }
+
+    #[test]
+    fn test_cross_validate_reproducible() {
+        use crate::linear_model::LinearRegression;
+
+        let x_data: Vec<f32> = (0..30).map(|i| i as f32).collect();
+        let y_data: Vec<f32> = x_data.iter().map(|&x| 3.0 * x + 1.0).collect();
+
+        let x = Matrix::from_vec(30, 1, x_data).unwrap();
+        let y = Vector::from_vec(y_data);
+
+        let model = LinearRegression::new();
+
+        // Same random state should give same results
+        let kfold1 = KFold::new(5).with_random_state(42);
+        let result1 = cross_validate(&model, &x, &y, &kfold1).unwrap();
+
+        let kfold2 = KFold::new(5).with_random_state(42);
+        let result2 = cross_validate(&model, &x, &y, &kfold2).unwrap();
+
+        assert_eq!(
+            result1.scores, result2.scores,
+            "Results should be reproducible"
         );
     }
 }
