@@ -1,0 +1,134 @@
+# EXTREME TDD - The Aprender Guide
+
+[Introduction](./introduction.md)
+
+# Core Methodology
+
+- [What is EXTREME TDD?](./methodology/what-is-extreme-tdd.md)
+- [The RED-GREEN-REFACTOR Cycle](./methodology/red-green-refactor.md)
+- [Test-First Philosophy](./methodology/test-first-philosophy.md)
+- [Zero Tolerance Quality](./methodology/zero-tolerance.md)
+
+# The RED Phase
+
+- [Writing Failing Tests First](./red-phase/failing-tests-first.md)
+- [Test Categories](./red-phase/test-categories.md)
+  - [Unit Tests](./red-phase/unit-tests.md)
+  - [Integration Tests](./red-phase/integration-tests.md)
+  - [Property-Based Tests](./red-phase/property-based-tests.md)
+- [Verification Strategy](./red-phase/verification-strategy.md)
+
+# The GREEN Phase
+
+- [Minimal Implementation](./green-phase/minimal-implementation.md)
+- [Making Tests Pass](./green-phase/making-tests-pass.md)
+- [Avoiding Over-Engineering](./green-phase/avoiding-over-engineering.md)
+- [The Simplest Thing That Works](./green-phase/simplest-thing.md)
+
+# The REFACTOR Phase
+
+- [Refactoring with Confidence](./refactor-phase/refactoring-with-confidence.md)
+- [Code Quality Improvements](./refactor-phase/code-quality.md)
+- [Performance Optimization](./refactor-phase/performance-optimization.md)
+- [Documentation](./refactor-phase/documentation.md)
+
+# Advanced Testing
+
+- [Property-Based Testing](./advanced-testing/property-based-testing.md)
+  - [Proptest Fundamentals](./advanced-testing/proptest-fundamentals.md)
+  - [Strategies and Generators](./advanced-testing/strategies-generators.md)
+  - [Testing Invariants](./advanced-testing/testing-invariants.md)
+- [Mutation Testing](./advanced-testing/mutation-testing.md)
+  - [What is Mutation Testing?](./advanced-testing/what-is-mutation-testing.md)
+  - [Using cargo-mutants](./advanced-testing/using-cargo-mutants.md)
+  - [Mutation Score Targets](./advanced-testing/mutation-score-targets.md)
+  - [Killing Mutants](./advanced-testing/killing-mutants.md)
+- [Fuzzing](./advanced-testing/fuzzing.md)
+- [Benchmark Testing](./advanced-testing/benchmark-testing.md)
+
+# Quality Gates
+
+- [Pre-Commit Hooks](./quality-gates/pre-commit-hooks.md)
+- [Continuous Integration](./quality-gates/continuous-integration.md)
+- [Code Formatting (rustfmt)](./quality-gates/code-formatting.md)
+- [Linting (clippy)](./quality-gates/linting-clippy.md)
+- [Coverage Measurement](./quality-gates/coverage-measurement.md)
+- [Complexity Analysis](./quality-gates/complexity-analysis.md)
+- [Technical Debt Gradient (TDG)](./quality-gates/tdg-score.md)
+
+# Toyota Way Principles
+
+- [Overview](./toyota-way/overview.md)
+- [Kaizen (Continuous Improvement)](./toyota-way/kaizen.md)
+- [Genchi Genbutsu (Go and See)](./toyota-way/genchi-genbutsu.md)
+- [Jidoka (Built-in Quality)](./toyota-way/jidoka.md)
+- [PDCA Cycle](./toyota-way/pdca-cycle.md)
+- [Respect for People](./toyota-way/respect-for-people.md)
+
+# Real-World Examples from Aprender
+
+- [Case Study: Linear Regression](./examples/linear-regression.md)
+- [Case Study: Cross-Validation](./examples/cross-validation.md)
+- [Case Study: Random Forest](./examples/random-forest.md)
+- [Case Study: Model Serialization](./examples/model-serialization.md)
+- [Case Study: KMeans Clustering](./examples/kmeans-clustering.md)
+
+# Sprint-Based Development
+
+- [Sprint Planning](./sprints/sprint-planning.md)
+- [Sprint Execution](./sprints/sprint-execution.md)
+- [Sprint Review](./sprints/sprint-review.md)
+- [Sprint Retrospective](./sprints/sprint-retrospective.md)
+- [Issue Management](./sprints/issue-management.md)
+
+# Anti-Hallucination Enforcement
+
+- [Test-Backed Examples](./anti-hallucination/test-backed-examples.md)
+- [Example Verification](./anti-hallucination/example-verification.md)
+- [CI Validation](./anti-hallucination/ci-validation.md)
+- [Documentation Testing](./anti-hallucination/documentation-testing.md)
+
+# Tools and Setup
+
+- [Development Environment](./tools/development-environment.md)
+- [cargo test](./tools/cargo-test.md)
+- [cargo clippy](./tools/cargo-clippy.md)
+- [cargo fmt](./tools/cargo-fmt.md)
+- [cargo mutants](./tools/cargo-mutants.md)
+- [proptest](./tools/proptest.md)
+- [criterion](./tools/criterion.md)
+- [pmat (Toyota AI Toolkit)](./tools/pmat.md)
+
+# Best Practices
+
+- [Error Handling](./best-practices/error-handling.md)
+- [API Design](./best-practices/api-design.md)
+- [Builder Pattern](./best-practices/builder-pattern.md)
+- [Type Safety](./best-practices/type-safety.md)
+- [Performance Considerations](./best-practices/performance.md)
+- [Documentation Standards](./best-practices/documentation-standards.md)
+
+# Metrics and Measurement
+
+- [Test Coverage](./metrics/test-coverage.md)
+- [Mutation Score](./metrics/mutation-score.md)
+- [Cyclomatic Complexity](./metrics/cyclomatic-complexity.md)
+- [Code Churn](./metrics/code-churn.md)
+- [Build Times](./metrics/build-times.md)
+- [TDG Score Breakdown](./metrics/tdg-breakdown.md)
+
+# Common Pitfalls
+
+- [Skipping Tests](./pitfalls/skipping-tests.md)
+- [Insufficient Test Coverage](./pitfalls/insufficient-coverage.md)
+- [Ignoring Warnings](./pitfalls/ignoring-warnings.md)
+- [Over-Mocking](./pitfalls/over-mocking.md)
+- [Flaky Tests](./pitfalls/flaky-tests.md)
+- [Technical Debt Accumulation](./pitfalls/technical-debt.md)
+
+# Appendix
+
+- [Glossary](./appendix/glossary.md)
+- [References](./appendix/references.md)
+- [Further Reading](./appendix/further-reading.md)
+- [Contributing to This Book](./appendix/contributing.md)
