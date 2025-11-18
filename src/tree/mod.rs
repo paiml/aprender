@@ -329,6 +329,62 @@ fn get_sorted_unique_values(x: &[f32]) -> Vec<f32> {
     unique_values
 }
 
+/// Split labels into left and right partitions based on threshold.
+///
+/// # Arguments
+///
+/// * `x` - Feature values
+/// * `y` - Labels
+/// * `threshold` - Split threshold
+///
+/// # Returns
+///
+/// `(left_labels, right_labels)` tuple, or None if split is invalid
+#[allow(dead_code)]
+fn split_labels_by_threshold(
+    x: &[f32],
+    y: &[usize],
+    threshold: f32,
+) -> Option<(Vec<usize>, Vec<usize>)> {
+    let mut left_labels = Vec::new();
+    let mut right_labels = Vec::new();
+
+    for (idx, &val) in x.iter().enumerate() {
+        if val <= threshold {
+            left_labels.push(y[idx]);
+        } else {
+            right_labels.push(y[idx]);
+        }
+    }
+
+    if left_labels.is_empty() || right_labels.is_empty() {
+        None
+    } else {
+        Some((left_labels, right_labels))
+    }
+}
+
+/// Calculate information gain for a potential split.
+///
+/// # Arguments
+///
+/// * `current_impurity` - Gini impurity before split
+/// * `left_labels` - Labels in left partition
+/// * `right_labels` - Labels in right partition
+///
+/// # Returns
+///
+/// Information gain from the split
+#[allow(dead_code)]
+fn calculate_information_gain(
+    current_impurity: f32,
+    left_labels: &[usize],
+    right_labels: &[usize],
+) -> f32 {
+    let split_impurity = gini_split(left_labels, right_labels);
+    current_impurity - split_impurity
+}
+
 /// Find the best split for a given feature.
 ///
 /// Tries all possible threshold values (midpoints between consecutive unique values)
@@ -348,16 +404,12 @@ fn find_best_split_for_feature(x: &[f32], y: &[usize]) -> Option<(f32, f32)> {
         return None;
     }
 
-    // Get sorted unique values using helper
     let unique_values = get_sorted_unique_values(x);
-
     if unique_values.len() < 2 {
         return None;
     }
 
-    // Calculate current impurity
     let current_impurity = gini_impurity(y);
-
     let mut best_gain = 0.0;
     let mut best_threshold = 0.0;
 
@@ -365,29 +417,13 @@ fn find_best_split_for_feature(x: &[f32], y: &[usize]) -> Option<(f32, f32)> {
     for i in 0..unique_values.len() - 1 {
         let threshold = (unique_values[i] + unique_values[i + 1]) / 2.0;
 
-        // Split labels based on threshold
-        let mut left_labels = Vec::new();
-        let mut right_labels = Vec::new();
+        if let Some((left_labels, right_labels)) = split_labels_by_threshold(x, y, threshold) {
+            let gain = calculate_information_gain(current_impurity, &left_labels, &right_labels);
 
-        for (idx, &val) in x.iter().enumerate() {
-            if val <= threshold {
-                left_labels.push(y[idx]);
-            } else {
-                right_labels.push(y[idx]);
+            if gain > best_gain {
+                best_gain = gain;
+                best_threshold = threshold;
             }
-        }
-
-        if left_labels.is_empty() || right_labels.is_empty() {
-            continue;
-        }
-
-        // Calculate weighted Gini for this split
-        let split_impurity = gini_split(&left_labels, &right_labels);
-        let gain = current_impurity - split_impurity;
-
-        if gain > best_gain {
-            best_gain = gain;
-            best_threshold = threshold;
         }
     }
 
@@ -492,6 +528,69 @@ fn split_data_by_indices(
     (matrix, labels)
 }
 
+/// Check if tree building should stop at this node.
+///
+/// Returns a leaf node if stopping criteria are met, None otherwise.
+#[allow(dead_code)]
+fn check_stopping_criteria(
+    y: &[usize],
+    depth: usize,
+    max_depth: Option<usize>,
+) -> Option<TreeNode> {
+    let n_samples = y.len();
+
+    // Criterion 1: All same label (pure node)
+    let unique_labels: std::collections::HashSet<_> = y.iter().collect();
+    if unique_labels.len() == 1 {
+        return Some(TreeNode::Leaf(Leaf {
+            class_label: y[0],
+            n_samples,
+        }));
+    }
+
+    // Criterion 2: Max depth reached
+    if let Some(max_d) = max_depth {
+        if depth >= max_d {
+            return Some(TreeNode::Leaf(Leaf {
+                class_label: majority_class(y),
+                n_samples,
+            }));
+        }
+    }
+
+    None
+}
+
+/// Split data indices based on feature threshold.
+///
+/// # Returns
+///
+/// `Some((left_indices, right_indices))` if split is valid, None otherwise
+#[allow(dead_code)]
+fn split_indices_by_threshold(
+    x: &crate::primitives::Matrix<f32>,
+    feature_idx: usize,
+    threshold: f32,
+    n_samples: usize,
+) -> Option<(Vec<usize>, Vec<usize>)> {
+    let mut left_indices = Vec::new();
+    let mut right_indices = Vec::new();
+
+    for row in 0..n_samples {
+        if x.get(row, feature_idx) <= threshold {
+            left_indices.push(row);
+        } else {
+            right_indices.push(row);
+        }
+    }
+
+    if left_indices.is_empty() || right_indices.is_empty() {
+        None
+    } else {
+        Some((left_indices, right_indices))
+    }
+}
+
 /// Build a decision tree recursively.
 ///
 /// # Arguments
@@ -514,28 +613,12 @@ fn build_tree(
     let n_samples = y.len();
 
     // Check stopping criteria
-
-    // Criterion 1: All same label (pure node)
-    let unique_labels: std::collections::HashSet<_> = y.iter().collect();
-    if unique_labels.len() == 1 {
-        return TreeNode::Leaf(Leaf {
-            class_label: y[0],
-            n_samples,
-        });
-    }
-
-    // Criterion 2: Max depth reached
-    if let Some(max_d) = max_depth {
-        if depth >= max_d {
-            return TreeNode::Leaf(Leaf {
-                class_label: majority_class(y),
-                n_samples,
-            });
-        }
+    if let Some(leaf) = check_stopping_criteria(y, depth, max_depth) {
+        return leaf;
     }
 
     // Try to find best split
-    let best_split = match find_best_split(x, y) {
+    let (feature_idx, threshold, _gain) = match find_best_split(x, y) {
         Some(split) => split,
         None => {
             return TreeNode::Leaf(Leaf {
@@ -545,29 +628,19 @@ fn build_tree(
         }
     };
 
-    let (feature_idx, threshold, _gain) = best_split;
-
     // Split data based on threshold
-    let mut left_indices = Vec::new();
-    let mut right_indices = Vec::new();
+    let (left_indices, right_indices) =
+        match split_indices_by_threshold(x, feature_idx, threshold, n_samples) {
+            Some(indices) => indices,
+            None => {
+                return TreeNode::Leaf(Leaf {
+                    class_label: majority_class(y),
+                    n_samples,
+                });
+            }
+        };
 
-    for row in 0..n_samples {
-        if x.get(row, feature_idx) <= threshold {
-            left_indices.push(row);
-        } else {
-            right_indices.push(row);
-        }
-    }
-
-    // Safety check - ensure split is valid
-    if left_indices.is_empty() || right_indices.is_empty() {
-        return TreeNode::Leaf(Leaf {
-            class_label: majority_class(y),
-            n_samples,
-        });
-    }
-
-    // Create left and right datasets using helper
+    // Create left and right datasets
     let (left_matrix, left_labels) = split_data_by_indices(x, y, &left_indices);
     let (right_matrix, right_labels) = split_data_by_indices(x, y, &right_indices);
 
