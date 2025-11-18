@@ -83,6 +83,26 @@ jobs:
           files: lcov.info
           fail_ci_if_error: false
 
+  mutants:
+    name: Mutation Testing
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-mutants
+        uses: taiki-e/install-action@cargo-mutants
+      - name: Run mutation tests (sample)
+        run: cargo mutants --no-times --timeout 300 --in-place -- --all-features
+        continue-on-error: true
+      - name: Upload mutants results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutants-results
+          path: mutants.out/
+          retention-days: 30
+
   security:
     name: Security Audit
     runs-on: ubuntu-latest
