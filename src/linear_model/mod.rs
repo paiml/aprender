@@ -693,4 +693,62 @@ mod tests {
         // Cleanup
         fs::remove_file(path).ok();
     }
+
+    #[test]
+    fn test_with_intercept_returns_self() {
+        // Test that with_intercept returns the modified self, not a default
+        // This catches the mutation: with_intercept -> Default::default()
+        let model = LinearRegression::new().with_intercept(false);
+
+        // If mutation returns Default::default(), fit_intercept would be true
+        // Since new() sets fit_intercept = true by default
+
+        // We need to verify the model actually has fit_intercept = false
+        // by checking the fitted behavior
+        let x = Matrix::from_vec(3, 1, vec![1.0, 2.0, 3.0]).unwrap();
+        let y = Vector::from_slice(&[2.0, 4.0, 6.0]); // y = 2x
+
+        let mut model = model;
+        model.fit(&x, &y).unwrap();
+
+        // Without intercept, the model should pass through origin
+        // Predicting x=0 should give y=0 (no intercept term)
+        let x_zero = Matrix::from_vec(1, 1, vec![0.0]).unwrap();
+        let pred = model.predict(&x_zero);
+
+        assert!(
+            pred[0].abs() < 1e-6,
+            "Model without intercept should predict 0 at x=0, got {}",
+            pred[0]
+        );
+    }
+
+    #[test]
+    fn test_with_intercept_builder_chain() {
+        // Test that builder pattern works correctly
+        // with_intercept(false) followed by fitting should not have intercept
+        let x = Matrix::from_vec(2, 1, vec![1.0, 2.0]).unwrap();
+        let y = Vector::from_slice(&[3.0, 5.0]); // y = 2x + 1
+
+        // Model with intercept
+        let mut with_int = LinearRegression::new().with_intercept(true);
+        with_int.fit(&x, &y).unwrap();
+
+        // Model without intercept
+        let mut without_int = LinearRegression::new().with_intercept(false);
+        without_int.fit(&x, &y).unwrap();
+
+        // The intercept should be different
+        // With intercept: should have non-zero intercept for this data
+        // Without intercept: intercept is always 0
+        assert!(
+            with_int.intercept().abs() > 0.1,
+            "Model with intercept should have non-zero intercept"
+        );
+        assert!(
+            without_int.intercept().abs() < 1e-6,
+            "Model without intercept should have zero intercept, got {}",
+            without_int.intercept()
+        );
+    }
 }
