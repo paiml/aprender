@@ -425,6 +425,47 @@ mod tests {
     }
 
     #[test]
+    fn test_add_dimension_mismatch() {
+        // Test that mismatched dimensions are detected (catches || → && mutation)
+        let a = Matrix::from_vec(2, 2, vec![1.0_f32; 4]).unwrap();
+        let b = Matrix::from_vec(3, 2, vec![1.0_f32; 6]).unwrap();
+        assert!(a.add(&b).is_err());
+
+        let c = Matrix::from_vec(2, 3, vec![1.0_f32; 6]).unwrap();
+        assert!(a.add(&c).is_err());
+    }
+
+    #[test]
+    fn test_sub() {
+        // Test element-wise subtraction
+        let a = Matrix::from_vec(2, 2, vec![10.0_f32, 8.0, 6.0, 12.0]).unwrap();
+        let b = Matrix::from_vec(2, 2, vec![4.0_f32, 3.0, 2.0, 7.0]).unwrap();
+        let c = a.sub(&b).unwrap();
+
+        // Verify all elements: a[i] - b[i]
+        assert!((c.get(0, 0) - 6.0).abs() < 1e-6); // 10 - 4 = 6
+        assert!((c.get(0, 1) - 5.0).abs() < 1e-6); // 8 - 3 = 5
+        assert!((c.get(1, 0) - 4.0).abs() < 1e-6); // 6 - 2 = 4
+        assert!((c.get(1, 1) - 5.0).abs() < 1e-6); // 12 - 7 = 5
+    }
+
+    #[test]
+    fn test_sub_dimension_mismatch_rows() {
+        // Test that mismatched rows are detected
+        let a = Matrix::from_vec(2, 2, vec![1.0_f32; 4]).unwrap();
+        let b = Matrix::from_vec(3, 2, vec![1.0_f32; 6]).unwrap();
+        assert!(a.sub(&b).is_err());
+    }
+
+    #[test]
+    fn test_sub_dimension_mismatch_cols() {
+        // Test that mismatched columns are detected
+        let a = Matrix::from_vec(2, 2, vec![1.0_f32; 4]).unwrap();
+        let b = Matrix::from_vec(2, 3, vec![1.0_f32; 6]).unwrap();
+        assert!(a.sub(&b).is_err());
+    }
+
+    #[test]
     fn test_cholesky_solve() {
         // Solve A*x = b where A is symmetric positive definite
         // A = [[4, 2], [2, 3]]
@@ -457,6 +498,57 @@ mod tests {
         for i in 0..3 {
             assert!((result[i] - b[i]).abs() < 1e-4);
         }
+    }
+
+    #[test]
+    fn test_cholesky_solve_strict() {
+        // Stricter test to catch arithmetic mutations in cholesky_solve
+        // Uses a 4x4 SPD matrix to exercise all accumulation loops
+        // A = [[4, 2, 1, 1],
+        //      [2, 5, 2, 1],
+        //      [1, 2, 6, 2],
+        //      [1, 1, 2, 7]]
+        // This is symmetric positive definite with non-trivial decomposition
+        let a = Matrix::from_vec(
+            4,
+            4,
+            vec![
+                4.0_f32, 2.0, 1.0, 1.0, 2.0, 5.0, 2.0, 1.0, 1.0, 2.0, 6.0, 2.0, 1.0, 1.0, 2.0, 7.0,
+            ],
+        )
+        .unwrap();
+        let b = Vector::from_slice(&[1.0_f32, 2.0, 3.0, 4.0]);
+        let x = a.cholesky_solve(&b).unwrap();
+
+        // Verify A*x = b with very tight tolerance
+        let result = a.matvec(&x).unwrap();
+        for i in 0..4 {
+            assert!(
+                (result[i] - b[i]).abs() < 1e-5,
+                "Failed at index {}: expected {}, got {}",
+                i,
+                b[i],
+                result[i]
+            );
+        }
+
+        // Also test a 3x3 case with known solution
+        // A = [[9, 3, 3], [3, 5, 1], [3, 1, 4]], b = [15, 9, 8] => x = [1, 1, 1]
+        let a3 =
+            Matrix::from_vec(3, 3, vec![9.0_f32, 3.0, 3.0, 3.0, 5.0, 1.0, 3.0, 1.0, 4.0]).unwrap();
+        let b3 = Vector::from_slice(&[15.0_f32, 9.0, 8.0]);
+        let x3 = a3.cholesky_solve(&b3).unwrap();
+
+        // Verify exact solution [1, 1, 1] with element-by-element check
+        assert!((x3[0] - 1.0).abs() < 1e-6);
+        assert!((x3[1] - 1.0).abs() < 1e-6);
+        assert!((x3[2] - 1.0).abs() < 1e-6);
+
+        // Additional verification: check that A*x3 = b3 with strict tolerance
+        let verify3 = a3.matvec(&x3).unwrap();
+        assert!((verify3[0] - 15.0).abs() < 1e-6);
+        assert!((verify3[1] - 9.0).abs() < 1e-6);
+        assert!((verify3[2] - 8.0).abs() < 1e-6);
     }
 
     #[test]
