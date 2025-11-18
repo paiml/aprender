@@ -10,13 +10,22 @@ use crate::primitives::{Matrix, Vector};
 ///
 /// # Examples
 ///
-/// ```ignore
+/// ```
 /// use aprender::prelude::*;
 ///
+/// // Create training data: y = 2x + 1
+/// let x_train = Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0]).unwrap();
+/// let y_train = Vector::from_slice(&[3.0, 5.0, 7.0, 9.0]);
+///
+/// // Test data
+/// let x_test = Matrix::from_vec(2, 1, vec![5.0, 6.0]).unwrap();
+/// let y_test = Vector::from_slice(&[11.0, 13.0]);
+///
 /// let mut model = LinearRegression::new();
-/// model.fit(&x_train, &y_train)?;
+/// model.fit(&x_train, &y_train).unwrap();
 /// let predictions = model.predict(&x_test);
 /// let score = model.score(&x_test, &y_test);
+/// assert!(score > 0.99);
 /// ```
 pub trait Estimator {
     /// Fits the model to training data.
@@ -37,12 +46,19 @@ pub trait Estimator {
 ///
 /// # Examples
 ///
-/// ```ignore
+/// ```
 /// use aprender::prelude::*;
 ///
-/// let mut kmeans = KMeans::new(3);
-/// kmeans.fit(&data)?;
+/// // Create data with 2 clear clusters
+/// let data = Matrix::from_vec(6, 2, vec![
+///     0.0, 0.0, 0.1, 0.1, 0.2, 0.0,  // Cluster 1
+///     10.0, 10.0, 10.1, 10.1, 10.0, 10.2,  // Cluster 2
+/// ]).unwrap();
+///
+/// let mut kmeans = KMeans::new(2).with_random_state(42);
+/// kmeans.fit(&data).unwrap();
 /// let labels = kmeans.predict(&data);
+/// assert_eq!(labels.len(), 6);
 /// ```
 pub trait UnsupervisedEstimator {
     /// The type of labels/clusters produced.
@@ -61,11 +77,12 @@ pub trait UnsupervisedEstimator {
 
 /// Trait for data transformers (scalers, encoders, etc.).
 ///
-/// # Examples
+/// This trait defines the interface for preprocessing transformers.
+/// Implementations include scalers, encoders, and feature transformers.
 ///
-/// ```ignore
-/// use aprender::prelude::*;
+/// # Future Usage
 ///
+/// ```text
 /// let mut scaler = StandardScaler::new();
 /// let x_scaled = scaler.fit_transform(&x)?;
 /// let x_test_scaled = scaler.transform(&x_test)?;
