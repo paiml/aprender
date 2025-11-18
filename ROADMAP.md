@@ -7,15 +7,73 @@ Next Generation Machine Learning in Pure Rust
 | Version | Status | Description |
 |---------|--------|-------------|
 | v0.1.0  | ✅ **Released** | Foundation - Linear Regression + K-Means |
-| v0.2.0  | Planned | Regularization & Optimization |
-| v0.3.0  | Planned | Classification |
-| v0.4.0  | Planned | Tree Ensembles |
+| v0.2.0  | ✅ **Released** | Decision Trees, Random Forests, Cross-Validation, Serialization |
+| v0.3.0  | Planned | Regularization & Optimization |
+| v0.4.0  | Planned | Classification |
 | v0.5.0  | Planned | Neural Networks |
 | v1.0.0  | Planned | Production Hardening |
 
 ---
 
-## v0.1.0: Foundation (Current)
+## v0.2.0: Tree Models & Cross-Validation (Current)
+
+**Target**: Decision Trees, Random Forests, Model Selection, Model Persistence
+
+### Completed
+
+- [x] **Tree Module**: Complete decision tree implementation
+  - DecisionTreeClassifier with GINI impurity
+  - Configurable max_depth
+  - Recursive tree building
+  - Integration tests with Iris dataset
+- [x] **Random Forest**: Bootstrap aggregating ensemble
+  - RandomForestClassifier with configurable n_estimators
+  - Bootstrap sampling with replacement
+  - Majority voting for predictions
+  - Reproducible with random_state
+- [x] **Cross-Validation**: Model evaluation utilities
+  - train_test_split() with reproducible random seeds
+  - KFold cross-validator with optional shuffling
+  - cross_validate() with statistics (mean, std, min, max)
+  - CrossValidationResult struct
+- [x] **Model Serialization**: Save/load models to disk
+  - Serde + bincode integration
+  - Works with all models (LinearRegression, KMeans, DecisionTree, RandomForest)
+  - Example demonstrating persistence
+- [x] **Examples**: New comprehensive examples
+  - decision_tree_iris.rs - Decision tree classification
+  - random_forest_iris.rs - Ensemble classification
+  - cross_validation.rs - Model evaluation workflow
+  - model_persistence.rs - Save/load demonstration
+- [x] **Documentation**: EXTREME TDD Book
+  - 90+ chapter structure on GitHub Pages
+  - Complete case study: Cross-Validation
+  - RED-GREEN-REFACTOR methodology
+  - Live at https://paiml.github.io/aprender/
+- [x] **Bug Fixes**
+  - Clear error messages for underdetermined systems
+
+### Quality Metrics Achieved
+
+- TDG Score: 93.3/100 (A grade)
+- Total Tests: 184 passing (+64 from v0.1.0)
+- Property Tests: 22
+- Doc Tests: 16
+- Test Coverage: ~97%
+- Max Cyclomatic Complexity: ≤10
+- Zero clippy warnings
+- Zero SATD comments
+
+### Released ✅
+
+- [x] Published to crates.io (2024-11-18)
+- [x] GitHub Release created with release notes
+- [x] EXTREME TDD Book deployed
+- [x] CI/CD pipeline passing
+
+---
+
+## v0.1.0: Foundation
 
 **Target**: Linear Regression + K-Means (2 algorithms, viable from day one)
 
@@ -54,7 +112,7 @@ Next Generation Machine Learning in Pure Rust
 
 ---
 
-## v0.2.0: Regularization & Optimization
+## v0.3.0: Regularization & Optimization
 
 - [ ] Ridge regression (L2 regularization)
 - [ ] Lasso regression (L1 via coordinate descent)
@@ -62,14 +120,14 @@ Next Generation Machine Learning in Pure Rust
 - [ ] SGD optimizer (mini-batch gradient descent)
 - [ ] Adam optimizer (adaptive learning rates)
 - [ ] Loss functions: MSE, MAE, Huber
-- [ ] Cross-validation: k-fold, stratified
+- [ ] Stratified cross-validation
 - [ ] Grid search (hyperparameter tuning)
-- [ ] Train/test split utility
 - [ ] StandardScaler transformer
+- [ ] MinMaxScaler transformer
 
 ---
 
-## v0.3.0: Classification
+## v0.4.0: Classification
 
 - [ ] Logistic regression (binary classification)
 - [ ] Softmax regression (multi-class)
@@ -80,17 +138,17 @@ Next Generation Machine Learning in Pure Rust
 
 ---
 
-## v0.4.0: Tree Ensembles
+## v0.5.0: Advanced Tree Methods
 
-- [ ] Decision tree (CART algorithm)
-- [ ] Random Forest (bagging + feature sampling)
 - [ ] Gradient Boosting (XGBoost-style)
 - [ ] Feature importance scores
 - [ ] Out-of-bag error estimation
+- [ ] Decision tree regression
+- [ ] Random Forest regression
 
 ---
 
-## v0.5.0: Neural Networks
+## v0.6.0: Neural Networks
 
 - [ ] Autodiff integration (feature-gated)
 - [ ] Dense layers (fully connected)
@@ -102,7 +160,7 @@ Next Generation Machine Learning in Pure Rust
 
 ---
 
-## v0.6.0: Advanced Statistics
+## v0.7.0: Advanced Statistics
 
 - [ ] Generalized Linear Models (GLM)
 - [ ] Statistical tests: t-test, chi-square, ANOVA
@@ -112,7 +170,7 @@ Next Generation Machine Learning in Pure Rust
 
 ---
 
-## v0.7.0: Time Series
+## v0.8.0: Time Series
 
 - [ ] ARIMA models
 - [ ] Exponential smoothing (Holt-Winters)
@@ -125,9 +183,10 @@ Next Generation Machine Learning in Pure Rust
 
 - [ ] GPU benchmarks and optimization
 - [ ] WASM examples (in-browser training)
-- [ ] Model serialization (serde with versioning)
-- [ ] Comprehensive documentation (book)
+- [ ] Model serialization versioning
+- [ ] Complete EXTREME TDD Book content
 - [ ] Performance whitepaper
+- [ ] Production deployment examples
 
 ---
 

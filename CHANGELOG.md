@@ -9,15 +9,88 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Comprehensive edge case tests for LinearRegression (9 tests)
-  - Single sample, negative/large/small values, constant target, extrapolation
-- Comprehensive edge case tests for KMeans (10 tests)
-  - Identical points, 1D/high-dim data, exact k samples, tolerance/iterations
-- DataFrame example (`examples/dataframe_basics.rs`)
+- None
 
 ### Changed
 
-- Total test count increased to 120 unit tests + 19 property tests + 13 doctests
+- None
+
+## [0.2.0] - 2024-11-18
+
+### Added
+
+#### Decision Tree & Random Forest
+
+- **DecisionTreeClassifier** - GINI-based decision tree classifier
+  - Configurable `max_depth` parameter
+  - Recursive tree building algorithm
+  - Support for multi-class classification
+  - Implements `Estimator` trait
+- **RandomForestClassifier** - Bootstrap aggregating ensemble
+  - Configurable `n_estimators` (number of trees)
+  - Bootstrap sampling with replacement
+  - Majority voting for predictions
+  - Reproducible results with `random_state`
+  - Builder pattern: `with_max_depth()`, `with_random_state()`
+
+#### Cross-Validation & Model Selection
+
+- **train_test_split()** - Random train/test splitting
+  - Configurable test_size (0.0 to 1.0)
+  - Optional random_state for reproducibility
+  - Shuffles data before splitting
+- **KFold** - K-fold cross-validator
+  - Configurable number of splits
+  - Optional shuffling with `with_shuffle()`
+  - Reproducible with `with_random_state()`
+  - Handles uneven splits (distributes remainder across first folds)
+- **cross_validate()** - Automated cross-validation
+  - Works with any `Estimator` implementation
+  - Returns `CrossValidationResult` with statistics
+  - Methods: `mean()`, `std()`, `min()`, `max()`
+
+#### Model Persistence
+
+- **Model Serialization** - Save/load models to disk
+  - Serde + bincode binary serialization
+  - Works with all models: LinearRegression, KMeans, DecisionTree, RandomForest
+  - Simple `save()` and `load()` API
+  - Example: `examples/model_persistence.rs`
+
+#### Examples
+
+- `decision_tree_iris.rs` - Decision tree classification demo
+- `random_forest_iris.rs` - Random Forest ensemble demo (20 trees, 100% accuracy)
+- `cross_validation.rs` - Complete CV workflow (train/test split, KFold, automated CV)
+- `model_persistence.rs` - Model save/load demonstration
+
+#### Documentation
+
+- **EXTREME TDD Book** - Comprehensive methodology guide
+  - 90+ chapter structure deployed to GitHub Pages
+  - Live at: https://paiml.github.io/aprender/
+  - Complete case study: Cross-Validation implementation
+  - RED-GREEN-REFACTOR cycle documentation
+  - Toyota Way principles (Kaizen, Jidoka, PDCA)
+  - Anti-hallucination enforcement (all examples test-backed)
+
+### Changed
+
+- **Dependencies**:
+  - Added `rand = "0.8"` for random sampling
+  - **Upgraded to trueno v0.2.2** - SIMD-accelerated tensor operations
+    - Replaces internal Vector/Matrix with optimized trueno implementation
+    - SIMD abs() performance improvements
+    - All 184 tests passing with trueno backend
+- Total test count: 184 (+64 from v0.1.0)
+- Property tests: 22 (+3)
+- Doc tests: 16 (+3)
+
+### Fixed
+
+- **LinearRegression**: Clear error message for underdetermined systems (Issue #4)
+  - Now returns "Cannot solve: system is underdetermined (more features than samples)"
+  - Previously threw cryptic Cholesky decomposition errors
 
 ## [0.1.0] - 2024-11-18
 
@@ -115,5 +188,25 @@ First release of Aprender, providing a minimal viable foundation for machine lea
 - No model serialization (planned for v1.0)
 - No train/test split utility (planned for v0.2)
 
-[Unreleased]: https://github.com/paiml/aprender/compare/v0.1.0...HEAD
+## Release Notes
+
+### v0.2.0
+
+Major feature release adding tree-based models, ensemble methods, cross-validation, and model persistence.
+
+**Highlights**:
+- Decision Tree and Random Forest classifiers
+- Complete cross-validation utilities (train/test split, KFold, automated CV)
+- Model serialization for all models
+- EXTREME TDD Book with comprehensive methodology guide
+- 64 new tests (+54% increase)
+
+**Breaking Changes**: None (backward compatible)
+
+**Migration Guide**: No migration needed. All v0.1.0 APIs remain unchanged.
+
+---
+
+[Unreleased]: https://github.com/paiml/aprender/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/paiml/aprender/releases/tag/v0.2.0
 [0.1.0]: https://github.com/paiml/aprender/releases/tag/v0.1.0
