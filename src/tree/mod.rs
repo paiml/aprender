@@ -307,6 +307,28 @@ fn gini_split(left_labels: &[usize], right_labels: &[usize]) -> f32 {
     weight_left * gini_impurity(left_labels) + weight_right * gini_impurity(right_labels)
 }
 
+/// Get sorted unique values from feature data.
+///
+/// Returns unique values in sorted order, filtering out values closer than 1e-10.
+#[allow(dead_code)]
+fn get_sorted_unique_values(x: &[f32]) -> Vec<f32> {
+    let mut sorted_indices: Vec<usize> = (0..x.len()).collect();
+    sorted_indices.sort_by(|&a, &b| x[a].partial_cmp(&x[b]).unwrap());
+
+    let mut unique_values = Vec::new();
+    let mut prev_val = x[sorted_indices[0]];
+    unique_values.push(prev_val);
+
+    for &idx in &sorted_indices[1..] {
+        if (x[idx] - prev_val).abs() > 1e-10 {
+            unique_values.push(x[idx]);
+            prev_val = x[idx];
+        }
+    }
+
+    unique_values
+}
+
 /// Find the best split for a given feature.
 ///
 /// Tries all possible threshold values (midpoints between consecutive unique values)
@@ -326,20 +348,8 @@ fn find_best_split_for_feature(x: &[f32], y: &[usize]) -> Option<(f32, f32)> {
         return None;
     }
 
-    // Get sorted unique values
-    let mut sorted_indices: Vec<usize> = (0..x.len()).collect();
-    sorted_indices.sort_by(|&a, &b| x[a].partial_cmp(&x[b]).unwrap());
-
-    let mut unique_values = Vec::new();
-    let mut prev_val = x[sorted_indices[0]];
-    unique_values.push(prev_val);
-
-    for &idx in &sorted_indices[1..] {
-        if (x[idx] - prev_val).abs() > 1e-10 {
-            unique_values.push(x[idx]);
-            prev_val = x[idx];
-        }
-    }
+    // Get sorted unique values using helper
+    let unique_values = get_sorted_unique_values(x);
 
     if unique_values.len() < 2 {
         return None;
@@ -458,6 +468,30 @@ fn majority_class(labels: &[usize]) -> usize {
     *counts.iter().max_by_key(|(_, &count)| count).unwrap().0
 }
 
+/// Split data into subsets based on indices.
+///
+/// Creates a matrix and label vector containing only the rows at the given indices.
+#[allow(dead_code)]
+fn split_data_by_indices(
+    x: &crate::primitives::Matrix<f32>,
+    y: &[usize],
+    indices: &[usize],
+) -> (crate::primitives::Matrix<f32>, Vec<usize>) {
+    let n_cols = x.shape().1;
+    let mut data = Vec::with_capacity(indices.len() * n_cols);
+    let mut labels = Vec::with_capacity(indices.len());
+
+    for &idx in indices {
+        for col in 0..n_cols {
+            data.push(x.get(idx, col));
+        }
+        labels.push(y[idx]);
+    }
+
+    let matrix = crate::primitives::Matrix::from_vec(indices.len(), n_cols, data).unwrap();
+    (matrix, labels)
+}
+
 /// Build a decision tree recursively.
 ///
 /// # Arguments
@@ -501,71 +535,52 @@ fn build_tree(
     }
 
     // Try to find best split
-    if let Some((feature_idx, threshold, _gain)) = find_best_split(x, y) {
-        // Split data based on threshold
-        let mut left_indices = Vec::new();
-        let mut right_indices = Vec::new();
-
-        for row in 0..n_samples {
-            if x.get(row, feature_idx) <= threshold {
-                left_indices.push(row);
-            } else {
-                right_indices.push(row);
-            }
-        }
-
-        // Safety check - ensure split is valid
-        if left_indices.is_empty() || right_indices.is_empty() {
+    let best_split = match find_best_split(x, y) {
+        Some(split) => split,
+        None => {
             return TreeNode::Leaf(Leaf {
                 class_label: majority_class(y),
                 n_samples,
             });
         }
+    };
 
-        // Create left and right datasets
-        let (_n_rows, n_cols) = x.shape();
-        let mut left_data = Vec::with_capacity(left_indices.len() * n_cols);
-        let mut left_labels = Vec::with_capacity(left_indices.len());
+    let (feature_idx, threshold, _gain) = best_split;
 
-        for &idx in &left_indices {
-            for col in 0..n_cols {
-                left_data.push(x.get(idx, col));
-            }
-            left_labels.push(y[idx]);
+    // Split data based on threshold
+    let mut left_indices = Vec::new();
+    let mut right_indices = Vec::new();
+
+    for row in 0..n_samples {
+        if x.get(row, feature_idx) <= threshold {
+            left_indices.push(row);
+        } else {
+            right_indices.push(row);
         }
+    }
 
-        let mut right_data = Vec::with_capacity(right_indices.len() * n_cols);
-        let mut right_labels = Vec::with_capacity(right_indices.len());
-
-        for &idx in &right_indices {
-            for col in 0..n_cols {
-                right_data.push(x.get(idx, col));
-            }
-            right_labels.push(y[idx]);
-        }
-
-        let left_matrix =
-            crate::primitives::Matrix::from_vec(left_indices.len(), n_cols, left_data).unwrap();
-        let right_matrix =
-            crate::primitives::Matrix::from_vec(right_indices.len(), n_cols, right_data).unwrap();
-
-        // Recursively build subtrees
-        let left_child = build_tree(&left_matrix, &left_labels, depth + 1, max_depth);
-        let right_child = build_tree(&right_matrix, &right_labels, depth + 1, max_depth);
-
-        TreeNode::Node(Node {
-            feature_idx,
-            threshold,
-            left: Box::new(left_child),
-            right: Box::new(right_child),
-        })
-    } else {
-        // No valid split found - create leaf
-        TreeNode::Leaf(Leaf {
+    // Safety check - ensure split is valid
+    if left_indices.is_empty() || right_indices.is_empty() {
+        return TreeNode::Leaf(Leaf {
             class_label: majority_class(y),
             n_samples,
-        })
+        });
     }
+
+    // Create left and right datasets using helper
+    let (left_matrix, left_labels) = split_data_by_indices(x, y, &left_indices);
+    let (right_matrix, right_labels) = split_data_by_indices(x, y, &right_indices);
+
+    // Recursively build subtrees
+    let left_child = build_tree(&left_matrix, &left_labels, depth + 1, max_depth);
+    let right_child = build_tree(&right_matrix, &right_labels, depth + 1, max_depth);
+
+    TreeNode::Node(Node {
+        feature_idx,
+        threshold,
+        left: Box::new(left_child),
+        right: Box::new(right_child),
+    })
 }
 
 /// Random Forest classifier - an ensemble of decision trees.

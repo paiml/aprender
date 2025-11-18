@@ -269,14 +269,12 @@ impl KFold {
 /// assert_eq!(x_train.shape().0, 8);  // 80% training
 /// assert_eq!(x_test.shape().0, 2);   // 20% test
 /// ```
-#[allow(clippy::type_complexity)]
-pub fn train_test_split(
+/// Validates inputs for train_test_split.
+fn validate_split_inputs(
     x: &Matrix<f32>,
     y: &Vector<f32>,
     test_size: f32,
-    random_state: Option<u64>,
-) -> Result<(Matrix<f32>, Matrix<f32>, Vector<f32>, Vector<f32>), String> {
-    // Validate inputs
+) -> Result<(usize, usize), String> {
     if test_size <= 0.0 || test_size >= 1.0 {
         return Err(format!(
             "test_size must be between 0 and 1, got {}",
@@ -284,7 +282,7 @@ pub fn train_test_split(
         ));
     }
 
-    let (n_samples, n_features) = x.shape();
+    let (n_samples, _) = x.shape();
     if n_samples != y.len() {
         return Err(format!(
             "X and y must have same number of samples, got {} and {}",
@@ -293,7 +291,6 @@ pub fn train_test_split(
         ));
     }
 
-    // Calculate split sizes
     let n_test = (n_samples as f32 * test_size).round() as usize;
     let n_train = n_samples - n_test;
 
@@ -304,7 +301,11 @@ pub fn train_test_split(
         ));
     }
 
-    // Create shuffled indices
+    Ok((n_train, n_test))
+}
+
+/// Shuffles indices with optional random seed.
+fn shuffle_indices(n_samples: usize, random_state: Option<u64>) -> Vec<usize> {
     use rand::seq::SliceRandom;
     use rand::SeedableRng;
 
@@ -318,37 +319,26 @@ pub fn train_test_split(
         indices.shuffle(&mut rng);
     }
 
-    // Split indices
+    indices
+}
+
+#[allow(clippy::type_complexity)]
+pub fn train_test_split(
+    x: &Matrix<f32>,
+    y: &Vector<f32>,
+    test_size: f32,
+    random_state: Option<u64>,
+) -> Result<(Matrix<f32>, Matrix<f32>, Vector<f32>, Vector<f32>), String> {
+    let (n_train, _) = validate_split_inputs(x, y, test_size)?;
+    let n_samples = x.shape().0;
+
+    let indices = shuffle_indices(n_samples, random_state);
     let train_indices = &indices[..n_train];
     let test_indices = &indices[n_train..];
 
-    // Build train/test matrices and vectors
-    let mut x_train_data = Vec::with_capacity(n_train * n_features);
-    let mut y_train_data = Vec::with_capacity(n_train);
-
-    for &idx in train_indices {
-        for j in 0..n_features {
-            x_train_data.push(x.get(idx, j));
-        }
-        y_train_data.push(y.as_slice()[idx]);
-    }
-
-    let mut x_test_data = Vec::with_capacity(n_test * n_features);
-    let mut y_test_data = Vec::with_capacity(n_test);
-
-    for &idx in test_indices {
-        for j in 0..n_features {
-            x_test_data.push(x.get(idx, j));
-        }
-        y_test_data.push(y.as_slice()[idx]);
-    }
-
-    let x_train = Matrix::from_vec(n_train, n_features, x_train_data)
-        .map_err(|e| format!("Failed to create train matrix: {}", e))?;
-    let x_test = Matrix::from_vec(n_test, n_features, x_test_data)
-        .map_err(|e| format!("Failed to create test matrix: {}", e))?;
-    let y_train = Vector::from_vec(y_train_data);
-    let y_test = Vector::from_vec(y_test_data);
+    // Use extract_samples helper for both train and test sets
+    let (x_train, y_train) = extract_samples(x, y, train_indices);
+    let (x_test, y_test) = extract_samples(x, y, test_indices);
 
     Ok((x_train, x_test, y_train, y_test))
 }
