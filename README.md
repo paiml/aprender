@@ -2,8 +2,12 @@
 
 Next Generation Machine Learning, Statistics and Deep Learning in PURE Rust
 
+[![CI](https://github.com/paiml/aprender/actions/workflows/ci.yml/badge.svg)](https://github.com/paiml/aprender/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/paiml/aprender/branch/main/graph/badge.svg)](https://codecov.io/gh/paiml/aprender)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![TDG Score](https://img.shields.io/badge/TDG-94.1%2F100-brightgreen)](https://github.com/noahgift/pmat)
+[![Crates.io](https://img.shields.io/crates/v/aprender.svg)](https://crates.io/crates/aprender)
+[![Docs.rs](https://docs.rs/aprender/badge.svg)](https://docs.rs/aprender)
 
 ## Overview
 
