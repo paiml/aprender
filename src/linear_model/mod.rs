@@ -131,6 +131,7 @@ impl Estimator for LinearRegression {
     ///
     /// Returns an error if:
     /// - Input dimensions don't match
+    /// - Not enough samples for the number of features (underdetermined system)
     /// - Matrix is singular (not positive definite)
     fn fit(&mut self, x: &Matrix<f32>, y: &Vector<f32>) -> Result<(), &'static str> {
         let (n_samples, n_features) = x.shape();
@@ -141,6 +142,23 @@ impl Estimator for LinearRegression {
 
         if n_samples == 0 {
             return Err("Cannot fit with zero samples");
+        }
+
+        // Check for underdetermined system
+        // When fitting intercept, we need n_samples >= n_features + 1
+        // Without intercept, we need n_samples >= n_features
+        let required_samples = if self.fit_intercept {
+            n_features + 1
+        } else {
+            n_features
+        };
+
+        if n_samples < required_samples {
+            return Err(
+                "Insufficient samples: LinearRegression requires at least as many samples as \
+                 features (plus 1 if fitting intercept). Consider using Ridge regression or \
+                 collecting more training data",
+            );
         }
 
         // Create design matrix (with or without intercept)
@@ -532,5 +550,77 @@ mod tests {
         let predictions = model.predict(&x_test);
 
         assert!((predictions[0] - 20.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn test_underdetermined_system_with_intercept() {
+        // n_samples < n_features + 1 (underdetermined with intercept)
+        // 3 samples, 5 features, fit_intercept=true means we need 6 parameters
+        let x = Matrix::from_vec(
+            3,
+            5,
+            vec![
+                1.0, 2.0, 3.0, 4.0, 5.0, 2.0, 3.0, 4.0, 5.0, 6.0, 3.0, 4.0, 5.0, 6.0, 7.0,
+            ],
+        )
+        .unwrap();
+        let y = Vector::from_vec(vec![10.0, 20.0, 30.0]);
+
+        let mut model = LinearRegression::new();
+        let result = model.fit(&x, &y);
+
+        assert!(result.is_err());
+        let error_msg = result.unwrap_err();
+        // Should mention samples, features, and suggest solutions
+        assert!(
+            error_msg.contains("samples") || error_msg.contains("features"),
+            "Error message should mention samples or features: {}",
+            error_msg
+        );
+    }
+
+    #[test]
+    fn test_underdetermined_system_without_intercept() {
+        // n_samples < n_features (underdetermined without intercept)
+        // 3 samples, 5 features, fit_intercept=false
+        let x = Matrix::from_vec(
+            3,
+            5,
+            vec![
+                1.0, 2.0, 3.0, 4.0, 5.0, 2.0, 3.0, 4.0, 5.0, 6.0, 3.0, 4.0, 5.0, 6.0, 7.0,
+            ],
+        )
+        .unwrap();
+        let y = Vector::from_vec(vec![10.0, 20.0, 30.0]);
+
+        let mut model = LinearRegression::new().with_intercept(false);
+        let result = model.fit(&x, &y);
+
+        assert!(result.is_err());
+        let error_msg = result.unwrap_err();
+        assert!(
+            error_msg.contains("samples") || error_msg.contains("features"),
+            "Error message should be helpful: {}",
+            error_msg
+        );
+    }
+
+    #[test]
+    fn test_exactly_determined_system() {
+        // n_samples == n_features + 1 (exactly determined with intercept)
+        // 4 samples, 3 features, fit_intercept=true means 4 parameters
+        let x = Matrix::from_vec(
+            4,
+            3,
+            vec![1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
+        )
+        .unwrap();
+        let y = Vector::from_vec(vec![1.0, 2.0, 3.0, 6.0]);
+
+        let mut model = LinearRegression::new();
+        let result = model.fit(&x, &y);
+
+        // This should succeed (exactly determined)
+        assert!(result.is_ok(), "Exactly determined system should work");
     }
 }
