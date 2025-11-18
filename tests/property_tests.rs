@@ -46,6 +46,33 @@ proptest! {
         prop_assert!((scaled.sum() - expected_sum).abs() < 1e-3);
     }
 
+    #[test]
+    fn vector_elementwise_mul_is_commutative(a in vector_strategy(10), b in vector_strategy(10)) {
+        let mul_ab = &a * &b;
+        let mul_ba = &b * &a;
+        for i in 0..10 {
+            prop_assert!((mul_ab[i] - mul_ba[i]).abs() < 1e-4);
+        }
+    }
+
+    #[test]
+    fn vector_elementwise_mul_with_ones_is_identity(v in vector_strategy(10)) {
+        let ones = Vector::<f32>::ones(10);
+        let result = &v * &ones;
+        for i in 0..10 {
+            prop_assert!((result[i] - v[i]).abs() < 1e-6);
+        }
+    }
+
+    #[test]
+    fn vector_elementwise_mul_with_zeros_is_zero(v in vector_strategy(10)) {
+        let zeros = Vector::<f32>::zeros(10);
+        let result = &v * &zeros;
+        for i in 0..10 {
+            prop_assert!((result[i]).abs() < 1e-6);
+        }
+    }
+
     // Matrix properties
     #[test]
     fn matrix_transpose_involution(m in matrix_strategy(5, 5)) {
