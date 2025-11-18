@@ -1,6 +1,6 @@
 //! Linear models for regression.
 //!
-//! Includes Ordinary Least Squares (OLS) linear regression.
+//! Includes Ordinary Least Squares (OLS) and regularized regression.
 
 use crate::metrics::r_squared;
 use crate::primitives::{Matrix, Vector};
@@ -202,6 +202,230 @@ impl Estimator for LinearRegression {
         let xty = xt.matvec(y)?;
 
         // Solve normal equations via Cholesky decomposition
+        let beta = xtx.cholesky_solve(&xty)?;
+
+        // Extract intercept and coefficients
+        if self.fit_intercept {
+            self.intercept = beta[0];
+            self.coefficients = Some(beta.slice(1, n_features + 1));
+        } else {
+            self.intercept = 0.0;
+            self.coefficients = Some(beta);
+        }
+
+        Ok(())
+    }
+
+    /// Predicts target values for input data.
+    ///
+    /// # Panics
+    ///
+    /// Panics if model is not fitted.
+    fn predict(&self, x: &Matrix<f32>) -> Vector<f32> {
+        let coefficients = self
+            .coefficients
+            .as_ref()
+            .expect("Model not fitted. Call fit() first.");
+
+        let result = x
+            .matvec(coefficients)
+            .expect("Matrix dimensions don't match coefficients");
+
+        result.add_scalar(self.intercept)
+    }
+
+    /// Computes the R² score.
+    fn score(&self, x: &Matrix<f32>, y: &Vector<f32>) -> f32 {
+        let y_pred = self.predict(x);
+        r_squared(&y_pred, y)
+    }
+}
+
+/// Ridge regression with L2 regularization.
+///
+/// Fits a linear model with L2 penalty on coefficient magnitudes.
+/// The optimization objective is:
+///
+/// ```text
+/// minimize ||y - Xβ||² + α||β||²
+/// ```
+///
+/// where `α` (alpha) controls the regularization strength.
+///
+/// # Solver
+///
+/// Uses regularized normal equations: `β = (X^T X + αI)^-1 X^T y`
+///
+/// # When to use Ridge
+///
+/// - When you have many correlated features (multicollinearity)
+/// - To prevent overfitting with limited samples
+/// - When all features are expected to contribute
+///
+/// # Examples
+///
+/// ```
+/// use aprender::prelude::*;
+/// use aprender::linear_model::Ridge;
+///
+/// // Data with some noise
+/// let x = Matrix::from_vec(5, 2, vec![
+///     1.0, 2.0,
+///     2.0, 3.0,
+///     3.0, 4.0,
+///     4.0, 5.0,
+///     5.0, 6.0,
+/// ]).unwrap();
+/// let y = Vector::from_slice(&[5.0, 8.0, 11.0, 14.0, 17.0]);
+///
+/// let mut model = Ridge::new(1.0);  // alpha = 1.0
+/// model.fit(&x, &y).unwrap();
+///
+/// let predictions = model.predict(&x);
+/// let r2 = model.score(&x, &y);
+/// assert!(r2 > 0.9);
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Ridge {
+    /// Regularization strength (lambda/alpha).
+    alpha: f32,
+    /// Coefficients for features (excluding intercept).
+    coefficients: Option<Vector<f32>>,
+    /// Intercept (bias) term.
+    intercept: f32,
+    /// Whether to fit an intercept.
+    fit_intercept: bool,
+}
+
+impl Ridge {
+    /// Creates a new `Ridge` regression with the given regularization strength.
+    ///
+    /// # Arguments
+    ///
+    /// * `alpha` - Regularization strength. Larger values = more regularization.
+    ///   Must be non-negative. Use 0.0 for no regularization (equivalent to OLS).
+    #[must_use]
+    pub fn new(alpha: f32) -> Self {
+        Self {
+            alpha,
+            coefficients: None,
+            intercept: 0.0,
+            fit_intercept: true,
+        }
+    }
+
+    /// Sets whether to fit an intercept term.
+    #[must_use]
+    pub fn with_intercept(mut self, fit_intercept: bool) -> Self {
+        self.fit_intercept = fit_intercept;
+        self
+    }
+
+    /// Returns the regularization strength (alpha).
+    #[must_use]
+    pub fn alpha(&self) -> f32 {
+        self.alpha
+    }
+
+    /// Returns the coefficients (excluding intercept).
+    ///
+    /// # Panics
+    ///
+    /// Panics if model is not fitted.
+    #[must_use]
+    pub fn coefficients(&self) -> &Vector<f32> {
+        self.coefficients
+            .as_ref()
+            .expect("Model not fitted. Call fit() first.")
+    }
+
+    /// Returns the intercept term.
+    #[must_use]
+    pub fn intercept(&self) -> f32 {
+        self.intercept
+    }
+
+    /// Returns true if the model has been fitted.
+    #[must_use]
+    pub fn is_fitted(&self) -> bool {
+        self.coefficients.is_some()
+    }
+
+    /// Saves the model to a binary file using bincode.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if serialization or file writing fails.
+    pub fn save<P: AsRef<Path>>(&self, path: P) -> Result<(), String> {
+        let bytes = bincode::serialize(self).map_err(|e| format!("Serialization failed: {}", e))?;
+        fs::write(path, bytes).map_err(|e| format!("File write failed: {}", e))?;
+        Ok(())
+    }
+
+    /// Loads a model from a binary file.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if file reading or deserialization fails.
+    pub fn load<P: AsRef<Path>>(path: P) -> Result<Self, String> {
+        let bytes = fs::read(path).map_err(|e| format!("File read failed: {}", e))?;
+        let model =
+            bincode::deserialize(&bytes).map_err(|e| format!("Deserialization failed: {}", e))?;
+        Ok(model)
+    }
+}
+
+impl Estimator for Ridge {
+    /// Fits the Ridge regression model using regularized normal equations.
+    ///
+    /// Solves: β = (X^T X + αI)^-1 X^T y
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if input dimensions don't match or matrix is singular.
+    fn fit(&mut self, x: &Matrix<f32>, y: &Vector<f32>) -> Result<(), &'static str> {
+        let (n_samples, n_features) = x.shape();
+
+        if n_samples != y.len() {
+            return Err("Number of samples must match target length");
+        }
+
+        if n_samples == 0 {
+            return Err("Cannot fit with zero samples");
+        }
+
+        // Create design matrix (with or without intercept)
+        let x_design = if self.fit_intercept {
+            LinearRegression::add_intercept_column(x)
+        } else {
+            x.clone()
+        };
+
+        let n_params = if self.fit_intercept {
+            n_features + 1
+        } else {
+            n_features
+        };
+
+        // Compute X^T X
+        let xt = x_design.transpose();
+        let mut xtx = xt.matmul(&x_design)?;
+
+        // Add regularization: X^T X + αI
+        // Note: We don't regularize the intercept term
+        for i in 0..n_params {
+            // Skip intercept if fitting intercept (first column)
+            if self.fit_intercept && i == 0 {
+                continue;
+            }
+            let current = xtx.get(i, i);
+            xtx.set(i, i, current + self.alpha);
+        }
+
+        // Compute X^T y
+        let xty = xt.matvec(y)?;
+
+        // Solve regularized normal equations via Cholesky decomposition
         let beta = xtx.cholesky_solve(&xty)?;
 
         // Extract intercept and coefficients
@@ -750,5 +974,222 @@ mod tests {
             "Model without intercept should have zero intercept, got {}",
             without_int.intercept()
         );
+    }
+
+    // Ridge regression tests
+    #[test]
+    fn test_ridge_new() {
+        let model = Ridge::new(1.0);
+        assert!(!model.is_fitted());
+        assert!((model.alpha() - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_ridge_simple_regression() {
+        // y = 2x + 1
+        let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0]).unwrap();
+        let y = Vector::from_slice(&[3.0, 5.0, 7.0, 9.0]);
+
+        let mut model = Ridge::new(0.0); // No regularization = OLS
+        model.fit(&x, &y).unwrap();
+
+        assert!(model.is_fitted());
+
+        // Check predictions are close (might not be perfect due to regularization)
+        let r2 = model.score(&x, &y);
+        assert!(r2 > 0.99);
+    }
+
+    #[test]
+    fn test_ridge_regularization_shrinks_coefficients() {
+        // Test that higher alpha shrinks coefficients
+        let x =
+            Matrix::from_vec(5, 2, vec![1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0, 5.0, 5.0]).unwrap();
+        let y = Vector::from_slice(&[4.0, 8.0, 12.0, 16.0, 20.0]);
+
+        // Low regularization
+        let mut low_reg = Ridge::new(0.01);
+        low_reg.fit(&x, &y).unwrap();
+
+        // High regularization
+        let mut high_reg = Ridge::new(100.0);
+        high_reg.fit(&x, &y).unwrap();
+
+        // Higher regularization should produce smaller coefficient magnitudes
+        let low_coef = low_reg.coefficients();
+        let high_coef = high_reg.coefficients();
+        let low_norm: f32 = (0..low_coef.len()).map(|i| low_coef[i] * low_coef[i]).sum();
+        let high_norm: f32 = (0..high_coef.len())
+            .map(|i| high_coef[i] * high_coef[i])
+            .sum();
+
+        assert!(
+            high_norm < low_norm,
+            "High regularization should shrink coefficients: {} < {}",
+            high_norm,
+            low_norm
+        );
+    }
+
+    #[test]
+    fn test_ridge_multivariate() {
+        // y = 1 + 2*x1 + 3*x2
+        let x =
+            Matrix::from_vec(5, 2, vec![1.0, 1.0, 2.0, 1.0, 1.0, 2.0, 2.0, 2.0, 3.0, 3.0]).unwrap();
+        let y = Vector::from_slice(&[6.0, 8.0, 9.0, 11.0, 16.0]);
+
+        let mut model = Ridge::new(0.1);
+        model.fit(&x, &y).unwrap();
+
+        let r2 = model.score(&x, &y);
+        assert!(r2 > 0.95);
+    }
+
+    #[test]
+    fn test_ridge_no_intercept() {
+        // y = 2x
+        let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0]).unwrap();
+        let y = Vector::from_slice(&[2.0, 4.0, 6.0, 8.0]);
+
+        let mut model = Ridge::new(0.1).with_intercept(false);
+        model.fit(&x, &y).unwrap();
+
+        assert!((model.intercept() - 0.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_ridge_dimension_mismatch_error() {
+        let x = Matrix::from_vec(3, 2, vec![1.0; 6]).unwrap();
+        let y = Vector::from_slice(&[1.0, 2.0]); // Wrong length
+
+        let mut model = Ridge::new(1.0);
+        let result = model.fit(&x, &y);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_ridge_empty_data_error() {
+        let x = Matrix::from_vec(0, 2, vec![]).unwrap();
+        let y = Vector::from_vec(vec![]);
+
+        let mut model = Ridge::new(1.0);
+        let result = model.fit(&x, &y);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_ridge_underdetermined_system() {
+        // Ridge can handle underdetermined systems due to regularization
+        // 3 samples, 5 features
+        let x = Matrix::from_vec(
+            3,
+            5,
+            vec![
+                1.0, 2.0, 3.0, 4.0, 5.0, 2.0, 3.0, 4.0, 5.0, 6.0, 3.0, 4.0, 5.0, 6.0, 7.0,
+            ],
+        )
+        .unwrap();
+        let y = Vector::from_vec(vec![10.0, 20.0, 30.0]);
+
+        // With sufficient regularization, this should work
+        let mut model = Ridge::new(10.0);
+        let result = model.fit(&x, &y);
+        assert!(
+            result.is_ok(),
+            "Ridge should handle underdetermined systems"
+        );
+    }
+
+    #[test]
+    fn test_ridge_clone() {
+        let x = Matrix::from_vec(3, 1, vec![1.0, 2.0, 3.0]).unwrap();
+        let y = Vector::from_slice(&[2.0, 4.0, 6.0]);
+
+        let mut model = Ridge::new(0.5);
+        model.fit(&x, &y).unwrap();
+
+        let cloned = model.clone();
+        assert!(cloned.is_fitted());
+        assert!((cloned.alpha() - model.alpha()).abs() < 1e-6);
+        assert!((cloned.intercept() - model.intercept()).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_ridge_alpha_zero_equals_ols() {
+        // Ridge with alpha=0 should give same results as OLS
+        let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0]).unwrap();
+        let y = Vector::from_slice(&[3.0, 5.0, 7.0, 9.0]);
+
+        let mut ridge = Ridge::new(0.0);
+        ridge.fit(&x, &y).unwrap();
+
+        let mut ols = LinearRegression::new();
+        ols.fit(&x, &y).unwrap();
+
+        // Coefficients should be nearly identical
+        assert!(
+            (ridge.coefficients()[0] - ols.coefficients()[0]).abs() < 1e-4,
+            "Ridge with alpha=0 should equal OLS"
+        );
+        assert!((ridge.intercept() - ols.intercept()).abs() < 1e-4);
+    }
+
+    #[test]
+    fn test_ridge_save_load() {
+        use std::fs;
+        use std::path::Path;
+
+        let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0]).unwrap();
+        let y = Vector::from_slice(&[3.0, 5.0, 7.0, 9.0]);
+
+        let mut model = Ridge::new(0.5);
+        model.fit(&x, &y).unwrap();
+
+        let path = Path::new("/tmp/test_ridge.bin");
+        model.save(path).expect("Failed to save model");
+
+        let loaded = Ridge::load(path).expect("Failed to load model");
+
+        // Verify loaded model matches original
+        assert!((loaded.alpha() - model.alpha()).abs() < 1e-6);
+        let original_pred = model.predict(&x);
+        let loaded_pred = loaded.predict(&x);
+
+        for i in 0..original_pred.len() {
+            assert!((original_pred[i] - loaded_pred[i]).abs() < 1e-6);
+        }
+
+        fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn test_ridge_with_intercept_builder() {
+        let model = Ridge::new(1.0).with_intercept(false);
+
+        let x = Matrix::from_vec(3, 1, vec![1.0, 2.0, 3.0]).unwrap();
+        let y = Vector::from_slice(&[2.0, 4.0, 6.0]);
+
+        let mut model = model;
+        model.fit(&x, &y).unwrap();
+
+        // Without intercept, predicting at x=0 should give 0
+        let x_zero = Matrix::from_vec(1, 1, vec![0.0]).unwrap();
+        let pred = model.predict(&x_zero);
+
+        assert!(
+            pred[0].abs() < 1e-6,
+            "Ridge without intercept should predict 0 at x=0"
+        );
+    }
+
+    #[test]
+    fn test_ridge_coefficients_length() {
+        let x = Matrix::from_vec(5, 3, vec![1.0; 15]).unwrap();
+        let y = Vector::from_slice(&[1.0, 2.0, 3.0, 4.0, 5.0]);
+
+        let mut model = Ridge::new(1.0);
+        model.fit(&x, &y).unwrap();
+
+        assert_eq!(model.coefficients().len(), 3);
     }
 }
