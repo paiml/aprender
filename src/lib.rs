@@ -33,6 +33,7 @@
 //! - [`data`]: DataFrame for named columns
 //! - [`linear_model`]: Linear regression algorithms
 //! - [`cluster`]: Clustering algorithms (K-Means)
+//! - [`tree`]: Decision tree classifiers
 //! - [`metrics`]: Evaluation metrics
 
 pub mod cluster;
@@ -42,6 +43,7 @@ pub mod metrics;
 pub mod prelude;
 pub mod primitives;
 pub mod traits;
+pub mod tree;
 
 pub use primitives::{Matrix, Vector};
 pub use traits::{Estimator, Transformer, UnsupervisedEstimator};
