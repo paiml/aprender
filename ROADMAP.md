@@ -120,7 +120,7 @@ Next Generation Machine Learning in Pure Rust
 - [x] SGD optimizer (mini-batch gradient descent)
 - [x] Adam optimizer (adaptive learning rates)
 - [x] Loss functions: MSE, MAE, Huber
-- [ ] Stratified cross-validation
+- [x] Stratified cross-validation
 - [ ] Grid search (hyperparameter tuning)
 - [x] StandardScaler transformer
 - [x] MinMaxScaler transformer

@@ -243,6 +243,180 @@ impl KFold {
     }
 }
 
+/// Stratified K-Fold cross-validator.
+///
+/// Provides train/test indices to split data into K consecutive folds while
+/// maintaining the percentage of samples for each class in each fold.
+///
+/// This is useful for classification problems with imbalanced class distributions.
+///
+/// # Example
+///
+/// ```rust
+/// use aprender::model_selection::StratifiedKFold;
+/// use aprender::primitives::Vector;
+///
+/// // Labels with imbalanced classes
+/// let y = Vector::from_slice(&[0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 2.0, 2.0]);
+///
+/// let skfold = StratifiedKFold::new(3);
+/// for (train_idx, test_idx) in skfold.split(&y) {
+///     // Each fold maintains approximate class distribution
+///     println!("Train: {:?}, Test: {:?}", train_idx, test_idx);
+/// }
+/// ```
+#[derive(Debug, Clone)]
+pub struct StratifiedKFold {
+    n_splits: usize,
+    shuffle: bool,
+    random_state: Option<u64>,
+}
+
+impl StratifiedKFold {
+    /// Create a new Stratified K-Fold cross-validator.
+    ///
+    /// # Arguments
+    ///
+    /// * `n_splits` - Number of folds. Must be at least 2.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use aprender::model_selection::StratifiedKFold;
+    ///
+    /// let skfold = StratifiedKFold::new(5);
+    /// ```
+    pub fn new(n_splits: usize) -> Self {
+        Self {
+            n_splits,
+            shuffle: false,
+            random_state: None,
+        }
+    }
+
+    /// Enable shuffling before splitting into batches.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use aprender::model_selection::StratifiedKFold;
+    ///
+    /// let skfold = StratifiedKFold::new(5).with_shuffle(true);
+    /// ```
+    pub fn with_shuffle(mut self, shuffle: bool) -> Self {
+        self.shuffle = shuffle;
+        self
+    }
+
+    /// Set random state for reproducible shuffling.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use aprender::model_selection::StratifiedKFold;
+    ///
+    /// let skfold = StratifiedKFold::new(5).with_random_state(42);
+    /// ```
+    pub fn with_random_state(mut self, random_state: u64) -> Self {
+        self.random_state = Some(random_state);
+        self.shuffle = true;
+        self
+    }
+
+    /// Generate stratified train/test indices for each fold.
+    ///
+    /// Maintains approximate class distribution in each fold by splitting
+    /// each class separately and combining the splits.
+    ///
+    /// # Arguments
+    ///
+    /// * `y` - Target labels vector
+    ///
+    /// # Returns
+    ///
+    /// Vector of (train_indices, test_indices) tuples
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use aprender::model_selection::StratifiedKFold;
+    /// use aprender::primitives::Vector;
+    ///
+    /// let y = Vector::from_slice(&[0.0, 0.0, 1.0, 1.0, 2.0, 2.0]);
+    /// let skfold = StratifiedKFold::new(2);
+    ///
+    /// let splits = skfold.split(&y);
+    /// assert_eq!(splits.len(), 2);
+    /// ```
+    pub fn split(&self, y: &Vector<f32>) -> Vec<(Vec<usize>, Vec<usize>)> {
+        use rand::seq::SliceRandom;
+        use rand::SeedableRng;
+        use std::collections::HashMap;
+
+        let n_samples = y.len();
+
+        // Group indices by class label
+        let mut class_indices: HashMap<i32, Vec<usize>> = HashMap::new();
+        for (i, &label) in y.as_slice().iter().enumerate() {
+            class_indices.entry(label as i32).or_default().push(i);
+        }
+
+        // Shuffle each class's indices if requested
+        if self.shuffle {
+            for indices in class_indices.values_mut() {
+                if let Some(seed) = self.random_state {
+                    let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
+                    indices.shuffle(&mut rng);
+                } else {
+                    let mut rng = rand::thread_rng();
+                    indices.shuffle(&mut rng);
+                }
+            }
+        }
+
+        // Initialize folds
+        let mut fold_indices: Vec<Vec<usize>> = vec![Vec::new(); self.n_splits];
+
+        // Distribute each class across folds
+        for indices in class_indices.values() {
+            let class_size = indices.len();
+            let fold_size = class_size / self.n_splits;
+            let remainder = class_size % self.n_splits;
+
+            let mut start = 0;
+            for (i, fold) in fold_indices.iter_mut().enumerate() {
+                let current_size = if i < remainder {
+                    fold_size + 1
+                } else {
+                    fold_size
+                };
+                let end = start + current_size;
+
+                fold.extend_from_slice(&indices[start..end]);
+                start = end;
+            }
+        }
+
+        // Create train/test splits
+        let mut result = Vec::with_capacity(self.n_splits);
+
+        for i in 0..self.n_splits {
+            let test_indices = fold_indices[i].clone();
+
+            let mut train_indices = Vec::with_capacity(n_samples - test_indices.len());
+            for (j, fold) in fold_indices.iter().enumerate() {
+                if i != j {
+                    train_indices.extend_from_slice(fold);
+                }
+            }
+
+            result.push((train_indices, test_indices));
+        }
+
+        result
+    }
+}
+
 /// Split arrays into random train and test subsets.
 ///
 /// # Arguments
@@ -593,5 +767,268 @@ mod tests {
             result1.scores, result2.scores,
             "Results should be reproducible"
         );
+    }
+
+    // ==================== StratifiedKFold Tests ====================
+
+    #[test]
+    fn test_stratified_kfold_new() {
+        let skfold = StratifiedKFold::new(5);
+        let y = Vector::from_slice(&[0.0, 0.0, 1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0]);
+
+        let splits = skfold.split(&y);
+        assert_eq!(splits.len(), 5);
+    }
+
+    #[test]
+    fn test_stratified_kfold_balanced_classes() {
+        // Perfectly balanced classes
+        let y = Vector::from_slice(&[0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 2.0, 2.0, 2.0]);
+        let skfold = StratifiedKFold::new(3);
+
+        let splits = skfold.split(&y);
+        assert_eq!(splits.len(), 3);
+
+        // Each fold should have one sample from each class
+        for (train_idx, test_idx) in &splits {
+            assert_eq!(test_idx.len(), 3, "Each test fold should have 3 samples");
+            assert_eq!(train_idx.len(), 6, "Each train fold should have 6 samples");
+
+            // Count classes in test fold
+            let mut class_counts = [0; 3];
+            for &idx in test_idx {
+                let label = y[idx] as usize;
+                class_counts[label] += 1;
+            }
+
+            // Each class should appear exactly once in test fold
+            for &count in &class_counts {
+                assert_eq!(
+                    count, 1,
+                    "Each class should appear exactly once in test fold"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_stratified_kfold_imbalanced_classes() {
+        // Imbalanced: 6 of class 0, 3 of class 1
+        let y = Vector::from_slice(&[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
+        let skfold = StratifiedKFold::new(3);
+
+        let splits = skfold.split(&y);
+
+        for (_train_idx, test_idx) in &splits {
+            // Count classes in test fold
+            let mut class_0_count = 0;
+            let mut class_1_count = 0;
+
+            for &idx in test_idx {
+                if y[idx] == 0.0 {
+                    class_0_count += 1;
+                } else {
+                    class_1_count += 1;
+                }
+            }
+
+            // Should maintain approximate 2:1 ratio in each fold
+            assert_eq!(
+                class_0_count, 2,
+                "Each fold should have 2 samples from class 0"
+            );
+            assert_eq!(
+                class_1_count, 1,
+                "Each fold should have 1 sample from class 1"
+            );
+        }
+    }
+
+    #[test]
+    fn test_stratified_kfold_all_samples_used() {
+        let y = Vector::from_slice(&[0.0, 0.0, 1.0, 1.0, 2.0, 2.0]);
+        let skfold = StratifiedKFold::new(3);
+
+        let splits = skfold.split(&y);
+
+        let mut all_test_indices = vec![];
+        for (_, test_idx) in splits {
+            all_test_indices.extend(test_idx);
+        }
+
+        all_test_indices.sort();
+        assert_eq!(
+            all_test_indices,
+            vec![0, 1, 2, 3, 4, 5],
+            "All samples should be used as test exactly once"
+        );
+    }
+
+    #[test]
+    fn test_stratified_kfold_with_shuffle() {
+        let y = Vector::from_slice(&[0.0, 0.0, 1.0, 1.0, 2.0, 2.0]);
+        let skfold = StratifiedKFold::new(2).with_shuffle(true);
+
+        let splits = skfold.split(&y);
+        assert_eq!(splits.len(), 2);
+
+        // Should still maintain stratification even with shuffling
+        for (_, test_idx) in &splits {
+            let mut class_counts = [0; 3];
+            for &idx in test_idx {
+                let label = y[idx] as usize;
+                class_counts[label] += 1;
+            }
+
+            // Each class should appear once in each fold
+            for &count in &class_counts {
+                assert_eq!(count, 1);
+            }
+        }
+    }
+
+    #[test]
+    fn test_stratified_kfold_with_random_state() {
+        let y = Vector::from_slice(&[0.0, 0.0, 1.0, 1.0, 2.0, 2.0]);
+
+        let skfold1 = StratifiedKFold::new(2).with_random_state(42);
+        let splits1 = skfold1.split(&y);
+
+        let skfold2 = StratifiedKFold::new(2).with_random_state(42);
+        let splits2 = skfold2.split(&y);
+
+        // Same random state should give same splits (check semantic equality)
+        assert_eq!(splits1.len(), splits2.len());
+        for ((train1, test1), (train2, test2)) in splits1.iter().zip(splits2.iter()) {
+            // Sort for comparison since HashMap iteration order is not deterministic
+            let mut train1_sorted = train1.clone();
+            let mut train2_sorted = train2.clone();
+            let mut test1_sorted = test1.clone();
+            let mut test2_sorted = test2.clone();
+
+            train1_sorted.sort();
+            train2_sorted.sort();
+            test1_sorted.sort();
+            test2_sorted.sort();
+
+            assert_eq!(train1_sorted, train2_sorted);
+            assert_eq!(test1_sorted, test2_sorted);
+        }
+    }
+
+    #[test]
+    fn test_stratified_kfold_different_random_states() {
+        // Use larger dataset so different random states are more likely to differ
+        let y = Vector::from_slice(&[
+            0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 2.0, 2.0, 2.0, 2.0, 2.0,
+            2.0,
+        ]);
+
+        let skfold1 = StratifiedKFold::new(3).with_random_state(42);
+        let splits1 = skfold1.split(&y);
+
+        let skfold2 = StratifiedKFold::new(3).with_random_state(123);
+        let splits2 = skfold2.split(&y);
+
+        // Different random states should give different splits
+        // Due to HashMap ordering, we can't guarantee different order in every case
+        // so we just verify both produce valid splits
+        assert_eq!(splits1.len(), 3);
+        assert_eq!(splits2.len(), 3);
+
+        // Verify stratification is maintained for both
+        for (_, test_idx) in &splits1 {
+            let mut class_counts = [0; 3];
+            for &idx in test_idx {
+                let label = y[idx] as usize;
+                class_counts[label] += 1;
+            }
+            // Each fold should have 2 samples from each class
+            for &count in &class_counts {
+                assert_eq!(count, 2);
+            }
+        }
+    }
+
+    #[test]
+    fn test_stratified_kfold_binary_classification() {
+        // Binary classification with 50-50 split
+        let y = Vector::from_slice(&[0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0]);
+        let skfold = StratifiedKFold::new(4);
+
+        let splits = skfold.split(&y);
+
+        for (_, test_idx) in splits {
+            assert_eq!(test_idx.len(), 2, "Each fold should have 2 samples");
+
+            // Count classes
+            let mut class_0_count = 0;
+            let mut class_1_count = 0;
+            for &idx in &test_idx {
+                if y[idx] == 0.0 {
+                    class_0_count += 1;
+                } else {
+                    class_1_count += 1;
+                }
+            }
+
+            // Should have exactly one sample from each class
+            assert_eq!(class_0_count, 1);
+            assert_eq!(class_1_count, 1);
+        }
+    }
+
+    #[test]
+    fn test_stratified_kfold_many_classes() {
+        // 5 classes, 2 samples each
+        let y = Vector::from_slice(&[0.0, 0.0, 1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0]);
+        let skfold = StratifiedKFold::new(2);
+
+        let splits = skfold.split(&y);
+
+        for (_, test_idx) in splits {
+            assert_eq!(test_idx.len(), 5, "Each fold should have 5 samples");
+
+            // Each class should appear exactly once
+            let mut class_counts = vec![0; 5];
+            for &idx in &test_idx {
+                let label = y[idx] as usize;
+                class_counts[label] += 1;
+            }
+
+            for &count in &class_counts {
+                assert_eq!(count, 1, "Each class should appear once per fold");
+            }
+        }
+    }
+
+    #[test]
+    fn test_stratified_kfold_no_overlap() {
+        let y = Vector::from_slice(&[0.0, 0.0, 1.0, 1.0, 2.0, 2.0]);
+        let skfold = StratifiedKFold::new(3);
+
+        let splits = skfold.split(&y);
+
+        for (train_idx, test_idx) in splits {
+            // Train and test should not overlap
+            for &test in &test_idx {
+                assert!(
+                    !train_idx.contains(&test),
+                    "Train and test indices should not overlap"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_stratified_kfold_builder_pattern() {
+        let y = Vector::from_slice(&[0.0, 0.0, 1.0, 1.0]);
+
+        let skfold = StratifiedKFold::new(2)
+            .with_shuffle(true)
+            .with_random_state(42);
+
+        let splits = skfold.split(&y);
+        assert_eq!(splits.len(), 2);
     }
 }

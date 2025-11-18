@@ -16,3 +16,6 @@ pub use crate::preprocessing::{MinMaxScaler, StandardScaler};
 pub use crate::primitives::{Matrix, Vector};
 pub use crate::traits::{Estimator, Transformer, UnsupervisedEstimator};
 pub use crate::tree::DecisionTreeClassifier;
+
+// Re-export model_selection types
+pub use crate::model_selection::StratifiedKFold;
