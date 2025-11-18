@@ -1,7 +1,7 @@
 # Aprender Makefile
 # Certeza Methodology - Tiered Quality Gates
 
-.PHONY: all build test lint fmt clean doc tier1 tier2 tier3 tier4 coverage profile hooks-install hooks-verify
+.PHONY: all build test lint fmt clean doc tier1 tier2 tier3 tier4 coverage profile hooks-install hooks-verify lint-scripts
 
 # Default target
 all: tier2
@@ -111,3 +111,21 @@ hooks-verify: ## Verify PMAT hooks are working
 	@echo "🔍 Verifying PMAT hooks..."
 	@pmat hooks verify
 	@pmat hooks run
+
+# Lint shell scripts (bashrs quality gates)
+lint-scripts: ## Lint shell scripts with shellcheck
+	@echo "🔍 Linting shell scripts..."
+	@if command -v shellcheck >/dev/null 2>&1; then \
+		shellcheck --severity=warning scripts/*.sh; \
+		echo "✅ Shell scripts pass shellcheck"; \
+	else \
+		echo "⚠️  shellcheck not installed, skipping"; \
+	fi
+
+# Run CI pipeline
+run-ci: ## Run full CI pipeline
+	@./scripts/ci.sh
+
+# Run benchmarks
+run-bench: ## Run benchmark suite
+	@./scripts/bench.sh
