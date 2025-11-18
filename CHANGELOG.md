@@ -78,8 +78,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Quality Metrics
 
-- **TDG Score**: 94.1/100 (A grade)
-- **Max Complexity**: 5 (target ≤10)
+- **TDG Score**: 95.6/100 (A+ grade)
+- **Repository Score**: 95.0/100 (A+)
+- **Test Coverage**: 97.72%
+- **Mutation Score**: 85.3%
+- **Max Cyclomatic Complexity**: 5 (target ≤10)
+- **Max Cognitive Complexity**: 8 (target ≤15)
 - **Clippy**: Zero warnings
 - **SATD**: Zero TODO/FIXME comments
 
