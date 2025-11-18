@@ -247,6 +247,207 @@ impl Transformer for StandardScaler {
     }
 }
 
+/// Scales features to a given range (default [0, 1]).
+///
+/// The transformation is: X_scaled = (X - X_min) / (X_max - X_min)
+///
+/// This transformer is useful for algorithms sensitive to feature scales
+/// and when you want bounded outputs (e.g., for neural networks).
+///
+/// # Example
+///
+/// ```
+/// use aprender::prelude::*;
+/// use aprender::preprocessing::MinMaxScaler;
+///
+/// let data = Matrix::from_vec(3, 2, vec![
+///     0.0, 0.0,
+///     5.0, 10.0,
+///     10.0, 20.0,
+/// ]).unwrap();
+///
+/// let mut scaler = MinMaxScaler::new();
+/// let scaled = scaler.fit_transform(&data).unwrap();
+///
+/// // Verify scaling to [0, 1]
+/// assert!((scaled.get(0, 0) - 0.0).abs() < 1e-6);
+/// assert!((scaled.get(2, 0) - 1.0).abs() < 1e-6);
+/// assert!((scaled.get(1, 0) - 0.5).abs() < 1e-6);
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MinMaxScaler {
+    /// Minimum value of each feature (computed during fit).
+    data_min: Option<Vec<f32>>,
+    /// Maximum value of each feature (computed during fit).
+    data_max: Option<Vec<f32>>,
+    /// Target minimum for scaling (default 0.0).
+    feature_min: f32,
+    /// Target maximum for scaling (default 1.0).
+    feature_max: f32,
+}
+
+impl Default for MinMaxScaler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl MinMaxScaler {
+    /// Creates a new `MinMaxScaler` with default range [0, 1].
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            data_min: None,
+            data_max: None,
+            feature_min: 0.0,
+            feature_max: 1.0,
+        }
+    }
+
+    /// Sets the target range for scaling.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use aprender::preprocessing::MinMaxScaler;
+    ///
+    /// let scaler = MinMaxScaler::new().with_range(-1.0, 1.0);
+    /// ```
+    #[must_use]
+    pub fn with_range(mut self, min: f32, max: f32) -> Self {
+        self.feature_min = min;
+        self.feature_max = max;
+        self
+    }
+
+    /// Returns the minimum value of each feature.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the scaler is not fitted.
+    #[must_use]
+    pub fn data_min(&self) -> &[f32] {
+        self.data_min
+            .as_ref()
+            .expect("Scaler not fitted. Call fit() first.")
+    }
+
+    /// Returns the maximum value of each feature.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the scaler is not fitted.
+    #[must_use]
+    pub fn data_max(&self) -> &[f32] {
+        self.data_max
+            .as_ref()
+            .expect("Scaler not fitted. Call fit() first.")
+    }
+
+    /// Returns true if the scaler has been fitted.
+    #[must_use]
+    pub fn is_fitted(&self) -> bool {
+        self.data_min.is_some()
+    }
+
+    /// Transforms data back to original scale.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the scaler is not fitted or dimensions mismatch.
+    pub fn inverse_transform(&self, x: &Matrix<f32>) -> Result<Matrix<f32>, &'static str> {
+        let data_min = self.data_min.as_ref().ok_or("Scaler not fitted")?;
+        let data_max = self.data_max.as_ref().ok_or("Scaler not fitted")?;
+
+        let (n_samples, n_features) = x.shape();
+        if n_features != data_min.len() {
+            return Err("Feature dimension mismatch");
+        }
+
+        let feature_range = self.feature_max - self.feature_min;
+        let mut result = vec![0.0; n_samples * n_features];
+
+        for i in 0..n_samples {
+            for j in 0..n_features {
+                let val = x.get(i, j);
+                let data_range = data_max[j] - data_min[j];
+
+                let original = if data_range.abs() > 1e-10 {
+                    (val - self.feature_min) / feature_range * data_range + data_min[j]
+                } else {
+                    data_min[j]
+                };
+
+                result[i * n_features + j] = original;
+            }
+        }
+
+        Matrix::from_vec(n_samples, n_features, result)
+    }
+}
+
+impl Transformer for MinMaxScaler {
+    /// Computes the min and max of each feature.
+    fn fit(&mut self, x: &Matrix<f32>) -> Result<(), &'static str> {
+        let (n_samples, n_features) = x.shape();
+
+        if n_samples == 0 {
+            return Err("Cannot fit with zero samples");
+        }
+
+        let mut data_min = vec![f32::INFINITY; n_features];
+        let mut data_max = vec![f32::NEG_INFINITY; n_features];
+
+        for i in 0..n_samples {
+            for j in 0..n_features {
+                let val = x.get(i, j);
+                if val < data_min[j] {
+                    data_min[j] = val;
+                }
+                if val > data_max[j] {
+                    data_max[j] = val;
+                }
+            }
+        }
+
+        self.data_min = Some(data_min);
+        self.data_max = Some(data_max);
+
+        Ok(())
+    }
+
+    /// Scales the data to the target range.
+    fn transform(&self, x: &Matrix<f32>) -> Result<Matrix<f32>, &'static str> {
+        let data_min = self.data_min.as_ref().ok_or("Scaler not fitted")?;
+        let data_max = self.data_max.as_ref().ok_or("Scaler not fitted")?;
+
+        let (n_samples, n_features) = x.shape();
+        if n_features != data_min.len() {
+            return Err("Feature dimension mismatch");
+        }
+
+        let feature_range = self.feature_max - self.feature_min;
+        let mut result = vec![0.0; n_samples * n_features];
+
+        for i in 0..n_samples {
+            for j in 0..n_features {
+                let val = x.get(i, j);
+                let data_range = data_max[j] - data_min[j];
+
+                let scaled = if data_range.abs() > 1e-10 {
+                    (val - data_min[j]) / data_range * feature_range + self.feature_min
+                } else {
+                    self.feature_min
+                };
+
+                result[i * n_features + j] = scaled;
+            }
+        }
+
+        Matrix::from_vec(n_samples, n_features, result)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -468,5 +669,206 @@ mod tests {
         // Values: 2, 4; mean=3; std=1
         // Without centering: 2/1=2, 4/1=4
         assert!(transformed.get(0, 0) > 0.0, "Should not be centered");
+    }
+
+    // MinMaxScaler tests
+    #[test]
+    fn test_minmax_new() {
+        let scaler = MinMaxScaler::new();
+        assert!(!scaler.is_fitted());
+    }
+
+    #[test]
+    fn test_minmax_default() {
+        let scaler = MinMaxScaler::default();
+        assert!(!scaler.is_fitted());
+    }
+
+    #[test]
+    fn test_minmax_fit_basic() {
+        let data = Matrix::from_vec(3, 2, vec![1.0, 10.0, 2.0, 20.0, 3.0, 30.0]).unwrap();
+
+        let mut scaler = MinMaxScaler::new();
+        scaler.fit(&data).unwrap();
+
+        assert!(scaler.is_fitted());
+
+        // Min should be [1.0, 10.0], max should be [3.0, 30.0]
+        let data_min = scaler.data_min();
+        let data_max = scaler.data_max();
+        assert!((data_min[0] - 1.0).abs() < 1e-6);
+        assert!((data_min[1] - 10.0).abs() < 1e-6);
+        assert!((data_max[0] - 3.0).abs() < 1e-6);
+        assert!((data_max[1] - 30.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_minmax_transform_basic() {
+        let data = Matrix::from_vec(3, 1, vec![0.0, 5.0, 10.0]).unwrap();
+
+        let mut scaler = MinMaxScaler::new();
+        scaler.fit(&data).unwrap();
+
+        let transformed = scaler.transform(&data).unwrap();
+
+        // Should scale to [0, 1]
+        assert!((transformed.get(0, 0) - 0.0).abs() < 1e-6);
+        assert!((transformed.get(1, 0) - 0.5).abs() < 1e-6);
+        assert!((transformed.get(2, 0) - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_minmax_fit_transform() {
+        let data =
+            Matrix::from_vec(4, 2, vec![0.0, 0.0, 10.0, 100.0, 20.0, 200.0, 30.0, 300.0]).unwrap();
+
+        let mut scaler = MinMaxScaler::new();
+        let transformed = scaler.fit_transform(&data).unwrap();
+
+        // Check min is 0 and max is 1 for each column
+        for j in 0..2 {
+            let mut min_val = f32::INFINITY;
+            let mut max_val = f32::NEG_INFINITY;
+            for i in 0..4 {
+                let val = transformed.get(i, j);
+                if val < min_val {
+                    min_val = val;
+                }
+                if val > max_val {
+                    max_val = val;
+                }
+            }
+            assert!(min_val.abs() < 1e-5, "Column {} min should be ~0", j);
+            assert!(
+                (max_val - 1.0).abs() < 1e-5,
+                "Column {} max should be ~1",
+                j
+            );
+        }
+    }
+
+    #[test]
+    fn test_minmax_inverse_transform() {
+        let data = Matrix::from_vec(3, 2, vec![1.0, 10.0, 2.0, 20.0, 3.0, 30.0]).unwrap();
+
+        let mut scaler = MinMaxScaler::new();
+        let transformed = scaler.fit_transform(&data).unwrap();
+        let recovered = scaler.inverse_transform(&transformed).unwrap();
+
+        // Should recover original data
+        for i in 0..3 {
+            for j in 0..2 {
+                assert!(
+                    (data.get(i, j) - recovered.get(i, j)).abs() < 1e-5,
+                    "Mismatch at ({}, {})",
+                    i,
+                    j
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_minmax_transform_new_data() {
+        let train = Matrix::from_vec(3, 1, vec![0.0, 5.0, 10.0]).unwrap();
+        let test = Matrix::from_vec(2, 1, vec![15.0, -5.0]).unwrap();
+
+        let mut scaler = MinMaxScaler::new();
+        scaler.fit(&train).unwrap();
+
+        let transformed = scaler.transform(&test).unwrap();
+
+        // 15 should map to 1.5 (beyond training range)
+        // -5 should map to -0.5 (below training range)
+        assert!((transformed.get(0, 0) - 1.5).abs() < 1e-5);
+        assert!((transformed.get(1, 0) - (-0.5)).abs() < 1e-5);
+    }
+
+    #[test]
+    fn test_minmax_custom_range() {
+        let data = Matrix::from_vec(3, 1, vec![0.0, 5.0, 10.0]).unwrap();
+
+        let mut scaler = MinMaxScaler::new().with_range(-1.0, 1.0);
+        let transformed = scaler.fit_transform(&data).unwrap();
+
+        // Should scale to [-1, 1]
+        assert!((transformed.get(0, 0) - (-1.0)).abs() < 1e-6);
+        assert!((transformed.get(1, 0) - 0.0).abs() < 1e-6);
+        assert!((transformed.get(2, 0) - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_minmax_constant_feature() {
+        // Feature with same min and max
+        let data = Matrix::from_vec(3, 2, vec![1.0, 5.0, 2.0, 5.0, 3.0, 5.0]).unwrap();
+
+        let mut scaler = MinMaxScaler::new();
+        let transformed = scaler.fit_transform(&data).unwrap();
+
+        // Second column is constant, should become feature_min (0)
+        assert!((transformed.get(0, 1) - 0.0).abs() < 1e-5);
+        assert!((transformed.get(1, 1) - 0.0).abs() < 1e-5);
+        assert!((transformed.get(2, 1) - 0.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn test_minmax_empty_data_error() {
+        let data = Matrix::from_vec(0, 2, vec![]).unwrap();
+        let mut scaler = MinMaxScaler::new();
+        assert!(scaler.fit(&data).is_err());
+    }
+
+    #[test]
+    fn test_minmax_transform_not_fitted_error() {
+        let data = Matrix::from_vec(3, 1, vec![1.0, 2.0, 3.0]).unwrap();
+        let scaler = MinMaxScaler::new();
+        assert!(scaler.transform(&data).is_err());
+    }
+
+    #[test]
+    fn test_minmax_dimension_mismatch_error() {
+        let train = Matrix::from_vec(3, 2, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]).unwrap();
+        let test = Matrix::from_vec(3, 3, vec![1.0; 9]).unwrap();
+
+        let mut scaler = MinMaxScaler::new();
+        scaler.fit(&train).unwrap();
+
+        assert!(scaler.transform(&test).is_err());
+    }
+
+    #[test]
+    fn test_minmax_single_sample() {
+        let data = Matrix::from_vec(1, 2, vec![5.0, 10.0]).unwrap();
+
+        let mut scaler = MinMaxScaler::new();
+        scaler.fit(&data).unwrap();
+
+        // With single sample, min = max = value
+        let data_min = scaler.data_min();
+        let data_max = scaler.data_max();
+        assert!((data_min[0] - 5.0).abs() < 1e-6);
+        assert!((data_max[0] - 5.0).abs() < 1e-6);
+
+        // Transform should give feature_min (0) since range is 0
+        let transformed = scaler.transform(&data).unwrap();
+        assert!((transformed.get(0, 0)).abs() < 1e-5);
+        assert!((transformed.get(0, 1)).abs() < 1e-5);
+    }
+
+    #[test]
+    fn test_minmax_inverse_with_custom_range() {
+        let data = Matrix::from_vec(3, 1, vec![0.0, 5.0, 10.0]).unwrap();
+
+        let mut scaler = MinMaxScaler::new().with_range(-1.0, 1.0);
+        let transformed = scaler.fit_transform(&data).unwrap();
+        let recovered = scaler.inverse_transform(&transformed).unwrap();
+
+        for i in 0..3 {
+            assert!(
+                (data.get(i, 0) - recovered.get(i, 0)).abs() < 1e-5,
+                "Mismatch at row {}",
+                i
+            );
+        }
     }
 }

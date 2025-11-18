@@ -122,8 +122,8 @@ Next Generation Machine Learning in Pure Rust
 - [ ] Loss functions: MSE, MAE, Huber
 - [ ] Stratified cross-validation
 - [ ] Grid search (hyperparameter tuning)
-- [ ] StandardScaler transformer
-- [ ] MinMaxScaler transformer
+- [x] StandardScaler transformer
+- [x] MinMaxScaler transformer
 
 ---
 

@@ -358,6 +358,73 @@ proptest! {
             }
         }
     }
+
+    // MinMaxScaler properties
+    #[test]
+    fn minmax_scaler_bounds_to_range(data in matrix_strategy(10, 3)) {
+        let mut scaler = MinMaxScaler::new();
+        let transformed = scaler.fit_transform(&data).unwrap();
+
+        let (n_rows, n_cols) = transformed.shape();
+        for j in 0..n_cols {
+            let mut min_val = f32::INFINITY;
+            let mut max_val = f32::NEG_INFINITY;
+            for i in 0..n_rows {
+                let val = transformed.get(i, j);
+                if val < min_val {
+                    min_val = val;
+                }
+                if val > max_val {
+                    max_val = val;
+                }
+            }
+            // Min should be 0, max should be 1 (or both 0 if constant)
+            prop_assert!(min_val >= -1e-4, "Column {} min should be >= 0, got {}", j, min_val);
+            prop_assert!(max_val <= 1.0 + 1e-4, "Column {} max should be <= 1, got {}", j, max_val);
+        }
+    }
+
+    #[test]
+    fn minmax_scaler_inverse_recovers_data(data in matrix_strategy(8, 2)) {
+        let mut scaler = MinMaxScaler::new();
+        let transformed = scaler.fit_transform(&data).unwrap();
+        let recovered = scaler.inverse_transform(&transformed).unwrap();
+
+        let (n_rows, n_cols) = data.shape();
+        for i in 0..n_rows {
+            for j in 0..n_cols {
+                prop_assert!(
+                    (data.get(i, j) - recovered.get(i, j)).abs() < 1e-3,
+                    "Mismatch at ({}, {}): expected {}, got {}",
+                    i, j, data.get(i, j), recovered.get(i, j)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn minmax_scaler_custom_range_bounds(data in matrix_strategy(10, 2)) {
+        let mut scaler = MinMaxScaler::new().with_range(-1.0, 1.0);
+        let transformed = scaler.fit_transform(&data).unwrap();
+
+        let (n_rows, n_cols) = transformed.shape();
+        for j in 0..n_cols {
+            let mut min_val = f32::INFINITY;
+            let mut max_val = f32::NEG_INFINITY;
+            for i in 0..n_rows {
+                let val = transformed.get(i, j);
+                if val < min_val {
+                    min_val = val;
+                }
+                if val > max_val {
+                    max_val = val;
+                }
+            }
+            // Min should be -1, max should be 1 (or both -1 if constant)
+            prop_assert!(min_val >= -1.0 - 1e-4, "Column {} min should be >= -1, got {}", j, min_val);
+            prop_assert!(max_val <= 1.0 + 1e-4, "Column {} max should be <= 1, got {}", j, max_val);
+        }
+    }
 }
 
 #[cfg(test)]
