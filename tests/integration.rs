@@ -179,3 +179,77 @@ fn test_complete_ml_pipeline() {
     // Price should be reasonable (between min and max of training data)
     assert!(predicted_price[0] > 200.0 && predicted_price[0] < 600.0);
 }
+
+#[test]
+fn test_decision_tree_iris_classification() {
+    // Simulated Iris dataset (3 species, 4 features)
+    // Features: sepal_length, sepal_width, petal_length, petal_width
+    let x = Matrix::from_vec(
+        15,
+        4,
+        vec![
+            // Setosa (class 0)
+            5.1, 3.5, 1.4, 0.2, 4.9, 3.0, 1.4, 0.2, 4.7, 3.2, 1.3, 0.2, 4.6, 3.1, 1.5, 0.2, 5.0,
+            3.6, 1.4, 0.2, // Versicolor (class 1)
+            7.0, 3.2, 4.7, 1.4, 6.4, 3.2, 4.5, 1.5, 6.9, 3.1, 4.9, 1.5, 5.5, 2.3, 4.0, 1.3, 6.5,
+            2.8, 4.6, 1.5, // Virginica (class 2)
+            6.3, 3.3, 6.0, 2.5, 5.8, 2.7, 5.1, 1.9, 7.1, 3.0, 5.9, 2.1, 6.3, 2.9, 5.6, 1.8, 6.5,
+            3.0, 5.8, 2.2,
+        ],
+    )
+    .unwrap();
+
+    let y = vec![0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2];
+
+    // Train Decision Tree
+    let mut tree = DecisionTreeClassifier::new().with_max_depth(5);
+    tree.fit(&x, &y).expect("Failed to fit Decision Tree");
+
+    // Make predictions
+    let predictions = tree.predict(&x);
+    assert_eq!(predictions.len(), 15);
+
+    // Calculate accuracy
+    let accuracy = tree.score(&x, &y);
+    assert!(
+        accuracy >= 0.9,
+        "Accuracy should be high on linearly separable Iris data: {}",
+        accuracy
+    );
+
+    // Verify predictions match expected classes
+    // First 5 should be class 0
+    for (i, &pred) in predictions.iter().enumerate().take(5) {
+        assert_eq!(pred, 0, "Sample {} should be class 0", i);
+    }
+
+    // Next 5 should be class 1
+    for (i, &pred) in predictions.iter().enumerate().skip(5).take(5) {
+        assert_eq!(pred, 1, "Sample {} should be class 1", i);
+    }
+
+    // Last 5 should be class 2
+    for (i, &pred) in predictions.iter().enumerate().skip(10).take(5) {
+        assert_eq!(pred, 2, "Sample {} should be class 2", i);
+    }
+
+    // Test on new samples
+    let new_samples = Matrix::from_vec(
+        3,
+        4,
+        vec![
+            5.0, 3.4, 1.5, 0.2, // Likely Setosa
+            6.2, 2.9, 4.3, 1.3, // Likely Versicolor
+            6.7, 3.1, 5.6, 2.4, // Likely Virginica
+        ],
+    )
+    .unwrap();
+
+    let new_predictions = tree.predict(&new_samples);
+    assert_eq!(new_predictions.len(), 3);
+
+    // Verify predictions are valid class labels
+    for &pred in &new_predictions {
+        assert!(pred < 3, "Predicted class should be 0, 1, or 2");
+    }
+}
