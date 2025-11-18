@@ -611,6 +611,118 @@ mod tests {
     }
 
     #[test]
+    fn test_initialization_centroid_spread() {
+        // Test that k-means++ produces well-separated initial centroids
+        // This catches distance calculation mutations (line 189: * with +)
+        let data = Matrix::from_vec(
+            4,
+            2,
+            vec![
+                0.0, 0.0, // Point 0: far from others
+                10.0, 10.0, // Point 1: far from 0
+                10.1, 10.1, // Point 2: very close to 1
+                10.2, 10.2, // Point 3: very close to 1
+            ],
+        )
+        .unwrap();
+
+        let mut kmeans = KMeans::new(2).with_random_state(42);
+        kmeans.fit(&data).unwrap();
+
+        let centroids = kmeans.centroids();
+
+        // With correct distance calculation, k-means++ should pick well-separated points
+        // First centroid: depends on seed
+        // Second centroid: should be far from first (catches dist calculation error)
+
+        // Verify centroids are well-separated (distance > 5.0)
+        let c0 = (centroids.get(0, 0), centroids.get(0, 1));
+        let c1 = (centroids.get(1, 0), centroids.get(1, 1));
+        let dist_sq = (c0.0 - c1.0).powi(2) + (c0.1 - c1.1).powi(2);
+
+        assert!(
+            dist_sq > 25.0,
+            "Centroids should be well-separated (dist > 5.0), got dist² = {}",
+            dist_sq
+        );
+    }
+
+    #[test]
+    fn test_initialization_selects_farthest() {
+        // Test that k-means++ initialization leads to correct clustering
+        // This catches comparison mutations (line 191: < with <=, line 202: > with >=)
+        // Data: two far apart points (0.0 and 10.0) plus one near first (0.5)
+        let data = Matrix::from_vec(
+            5,
+            1,
+            vec![
+                0.0,  // Point 0: cluster A
+                0.5,  // Point 1: cluster A (near 0)
+                0.3,  // Point 2: cluster A (near 0)
+                10.0, // Point 3: cluster B (far from others)
+                9.8,  // Point 4: cluster B (near 10)
+            ],
+        )
+        .unwrap();
+
+        let mut kmeans = KMeans::new(2).with_random_state(42);
+        kmeans.fit(&data).unwrap();
+
+        let labels = kmeans.predict(&data);
+
+        // Verify correct clustering: points 0,1,2 in one cluster, points 3,4 in another
+        // If k-means++ fails (due to mutations), might not separate clusters correctly
+        assert_eq!(
+            labels[0], labels[1],
+            "Points 0 and 1 should be in same cluster"
+        );
+        assert_eq!(
+            labels[0], labels[2],
+            "Points 0 and 2 should be in same cluster"
+        );
+        assert_eq!(
+            labels[3], labels[4],
+            "Points 3 and 4 should be in same cluster"
+        );
+        assert_ne!(labels[0], labels[3], "Clusters should be different");
+
+        // Also verify centroids are well-separated
+        let centroids = kmeans.centroids();
+        let diff = (centroids.get(0, 0) - centroids.get(1, 0)).abs();
+        assert!(
+            diff > 5.0,
+            "Centroids should be separated by > 5.0, got {}",
+            diff
+        );
+    }
+
+    #[test]
+    fn test_initialization_reproducibility() {
+        // Verify that same random_state produces same initialization
+        // This indirectly tests the distance and selection logic
+        let data = sample_data();
+
+        let mut kmeans1 = KMeans::new(2).with_random_state(42);
+        let mut kmeans2 = KMeans::new(2).with_random_state(42);
+
+        kmeans1.fit(&data).unwrap();
+        kmeans2.fit(&data).unwrap();
+
+        let c1 = kmeans1.centroids();
+        let c2 = kmeans2.centroids();
+
+        // Centroids should be identical for same seed
+        for i in 0..2 {
+            for j in 0..2 {
+                assert!(
+                    (c1.get(i, j) - c2.get(i, j)).abs() < 1e-6,
+                    "Centroids should match for same random_state"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn test_default() {
         let kmeans = KMeans::default();
         assert_eq!(kmeans.n_clusters, 8);
@@ -826,6 +938,46 @@ mod tests {
 
         // Should stop at 1 iteration
         assert_eq!(kmeans.n_iter(), 1);
+    }
+
+    #[test]
+    fn test_n_iter_not_one() {
+        // Test that catches n_iter() → 1 mutation (line 132)
+        // Use data that requires multiple iterations to converge
+        let data = sample_data();
+        let mut kmeans = KMeans::new(2).with_max_iter(100).with_random_state(42);
+        kmeans.fit(&data).unwrap();
+
+        // For this data, should converge in > 1 iteration
+        assert!(
+            kmeans.n_iter() > 1,
+            "Expected n_iter > 1, got {}",
+            kmeans.n_iter()
+        );
+        assert!(kmeans.n_iter() < 100, "Should converge before max_iter");
+    }
+
+    #[test]
+    fn test_inertia_not_zero() {
+        // Test that catches inertia() → 0.0 mutation (line 126)
+        // Use imperfect clustering to ensure non-zero inertia
+        let data = Matrix::from_vec(4, 2, vec![0.0, 0.0, 0.1, 0.1, 5.0, 5.0, 5.1, 5.1]).unwrap();
+
+        let mut kmeans = KMeans::new(2).with_random_state(42);
+        kmeans.fit(&data).unwrap();
+
+        // Inertia should be positive (points aren't exactly at centroids)
+        assert!(
+            kmeans.inertia() > 0.0,
+            "Inertia should be > 0.0, got {}",
+            kmeans.inertia()
+        );
+
+        // Also verify inertia is reasonable (not too large)
+        assert!(
+            kmeans.inertia() < 1.0,
+            "Inertia should be small for well-separated clusters"
+        );
     }
 
     #[test]
