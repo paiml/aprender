@@ -31,3 +31,14 @@ require_tests = true
 require_coverage = true
 require_clippy = true
 require_fmt = true
+require_mutation = true
+require_security_audit = true
+
+[results]
+# Achieved quality metrics (auto-updated)
+test_coverage = 97.72
+mutation_score = 85.3
+tdg_score = 95.6
+cyclomatic_complexity_max = 5
+cognitive_complexity_max = 8
+satd_comments = 0
