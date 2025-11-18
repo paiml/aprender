@@ -115,7 +115,7 @@ Next Generation Machine Learning in Pure Rust
 ## v0.3.0: Regularization & Optimization
 
 - [x] Ridge regression (L2 regularization)
-- [ ] Lasso regression (L1 via coordinate descent)
+- [x] Lasso regression (L1 via coordinate descent)
 - [ ] Elastic Net (L1 + L2)
 - [ ] SGD optimizer (mini-batch gradient descent)
 - [ ] Adam optimizer (adaptive learning rates)

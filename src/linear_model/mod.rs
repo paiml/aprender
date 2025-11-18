@@ -465,6 +465,321 @@ impl Estimator for Ridge {
     }
 }
 
+/// Lasso regression with L1 regularization.
+///
+/// Fits a linear model with L1 penalty on coefficient magnitudes.
+/// The optimization objective is:
+///
+/// ```text
+/// minimize ||y - Xβ||² + α||β||₁
+/// ```
+///
+/// where `α` (alpha) controls the regularization strength.
+///
+/// # Solver
+///
+/// Uses coordinate descent with soft-thresholding.
+///
+/// # When to use Lasso
+///
+/// - For automatic feature selection (produces sparse models)
+/// - When you expect only a few features to be relevant
+/// - When interpretability through sparsity is desired
+///
+/// # Examples
+///
+/// ```
+/// use aprender::prelude::*;
+/// use aprender::linear_model::Lasso;
+///
+/// // Data with some features
+/// let x = Matrix::from_vec(5, 2, vec![
+///     1.0, 2.0,
+///     2.0, 3.0,
+///     3.0, 4.0,
+///     4.0, 5.0,
+///     5.0, 6.0,
+/// ]).unwrap();
+/// let y = Vector::from_slice(&[5.0, 8.0, 11.0, 14.0, 17.0]);
+///
+/// let mut model = Lasso::new(0.1);  // alpha = 0.1
+/// model.fit(&x, &y).unwrap();
+///
+/// let predictions = model.predict(&x);
+/// let r2 = model.score(&x, &y);
+/// assert!(r2 > 0.9);
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Lasso {
+    /// Regularization strength (lambda/alpha).
+    alpha: f32,
+    /// Coefficients for features (excluding intercept).
+    coefficients: Option<Vector<f32>>,
+    /// Intercept (bias) term.
+    intercept: f32,
+    /// Whether to fit an intercept.
+    fit_intercept: bool,
+    /// Maximum number of iterations for coordinate descent.
+    max_iter: usize,
+    /// Tolerance for convergence.
+    tol: f32,
+}
+
+impl Lasso {
+    /// Creates a new `Lasso` regression with the given regularization strength.
+    ///
+    /// # Arguments
+    ///
+    /// * `alpha` - Regularization strength. Larger values = more sparsity.
+    ///   Must be non-negative.
+    #[must_use]
+    pub fn new(alpha: f32) -> Self {
+        Self {
+            alpha,
+            coefficients: None,
+            intercept: 0.0,
+            fit_intercept: true,
+            max_iter: 1000,
+            tol: 1e-4,
+        }
+    }
+
+    /// Sets whether to fit an intercept term.
+    #[must_use]
+    pub fn with_intercept(mut self, fit_intercept: bool) -> Self {
+        self.fit_intercept = fit_intercept;
+        self
+    }
+
+    /// Sets the maximum number of iterations.
+    #[must_use]
+    pub fn with_max_iter(mut self, max_iter: usize) -> Self {
+        self.max_iter = max_iter;
+        self
+    }
+
+    /// Sets the convergence tolerance.
+    #[must_use]
+    pub fn with_tol(mut self, tol: f32) -> Self {
+        self.tol = tol;
+        self
+    }
+
+    /// Returns the regularization strength (alpha).
+    #[must_use]
+    pub fn alpha(&self) -> f32 {
+        self.alpha
+    }
+
+    /// Returns the coefficients (excluding intercept).
+    ///
+    /// # Panics
+    ///
+    /// Panics if model is not fitted.
+    #[must_use]
+    pub fn coefficients(&self) -> &Vector<f32> {
+        self.coefficients
+            .as_ref()
+            .expect("Model not fitted. Call fit() first.")
+    }
+
+    /// Returns the intercept term.
+    #[must_use]
+    pub fn intercept(&self) -> f32 {
+        self.intercept
+    }
+
+    /// Returns true if the model has been fitted.
+    #[must_use]
+    pub fn is_fitted(&self) -> bool {
+        self.coefficients.is_some()
+    }
+
+    /// Soft-thresholding operator for L1 regularization.
+    fn soft_threshold(x: f32, lambda: f32) -> f32 {
+        if x > lambda {
+            x - lambda
+        } else if x < -lambda {
+            x + lambda
+        } else {
+            0.0
+        }
+    }
+
+    /// Saves the model to a binary file using bincode.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if serialization or file writing fails.
+    pub fn save<P: AsRef<Path>>(&self, path: P) -> Result<(), String> {
+        let bytes = bincode::serialize(self).map_err(|e| format!("Serialization failed: {}", e))?;
+        fs::write(path, bytes).map_err(|e| format!("File write failed: {}", e))?;
+        Ok(())
+    }
+
+    /// Loads a model from a binary file.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if file reading or deserialization fails.
+    pub fn load<P: AsRef<Path>>(path: P) -> Result<Self, String> {
+        let bytes = fs::read(path).map_err(|e| format!("File read failed: {}", e))?;
+        let model =
+            bincode::deserialize(&bytes).map_err(|e| format!("Deserialization failed: {}", e))?;
+        Ok(model)
+    }
+}
+
+impl Estimator for Lasso {
+    /// Fits the Lasso regression model using coordinate descent.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if input dimensions don't match.
+    fn fit(&mut self, x: &Matrix<f32>, y: &Vector<f32>) -> Result<(), &'static str> {
+        let (n_samples, n_features) = x.shape();
+
+        if n_samples != y.len() {
+            return Err("Number of samples must match target length");
+        }
+
+        if n_samples == 0 {
+            return Err("Cannot fit with zero samples");
+        }
+
+        // Center data if fitting intercept
+        let (x_centered, y_centered, y_mean) = if self.fit_intercept {
+            // Compute means
+            let mut x_mean = vec![0.0; n_features];
+            let mut y_sum = 0.0;
+
+            for i in 0..n_samples {
+                for (j, mean_j) in x_mean.iter_mut().enumerate() {
+                    *mean_j += x.get(i, j);
+                }
+                y_sum += y[i];
+            }
+
+            for mean in &mut x_mean {
+                *mean /= n_samples as f32;
+            }
+            let y_mean = y_sum / n_samples as f32;
+
+            // Center data
+            let mut x_data = vec![0.0; n_samples * n_features];
+            let mut y_data = vec![0.0; n_samples];
+
+            for i in 0..n_samples {
+                for j in 0..n_features {
+                    x_data[i * n_features + j] = x.get(i, j) - x_mean[j];
+                }
+                y_data[i] = y[i] - y_mean;
+            }
+
+            (
+                Matrix::from_vec(n_samples, n_features, x_data).unwrap(),
+                Vector::from_vec(y_data),
+                y_mean,
+            )
+        } else {
+            (x.clone(), y.clone(), 0.0)
+        };
+
+        // Initialize coefficients to zero
+        let mut beta = vec![0.0; n_features];
+
+        // Precompute X^T X diagonal (column norms squared)
+        let mut col_norms_sq = vec![0.0; n_features];
+        for (j, norm_sq) in col_norms_sq.iter_mut().enumerate() {
+            for i in 0..n_samples {
+                let val = x_centered.get(i, j);
+                *norm_sq += val * val;
+            }
+        }
+
+        // Coordinate descent
+        for _ in 0..self.max_iter {
+            let mut max_change = 0.0f32;
+
+            for j in 0..n_features {
+                if col_norms_sq[j] < 1e-10 {
+                    continue; // Skip zero-variance features
+                }
+
+                // Compute residual without current feature
+                let mut rho = 0.0;
+                for i in 0..n_samples {
+                    let mut pred = 0.0;
+                    for (k, &beta_k) in beta.iter().enumerate() {
+                        if k != j {
+                            pred += x_centered.get(i, k) * beta_k;
+                        }
+                    }
+                    let residual = y_centered[i] - pred;
+                    rho += x_centered.get(i, j) * residual;
+                }
+
+                // Update coefficient with soft-thresholding
+                let old_beta = beta[j];
+                beta[j] = Self::soft_threshold(rho, self.alpha) / col_norms_sq[j];
+
+                let change = (beta[j] - old_beta).abs();
+                if change > max_change {
+                    max_change = change;
+                }
+            }
+
+            // Check convergence
+            if max_change < self.tol {
+                break;
+            }
+        }
+
+        // Set intercept
+        if self.fit_intercept {
+            let mut intercept = y_mean;
+            let mut x_mean = vec![0.0; n_features];
+            for j in 0..n_features {
+                for i in 0..n_samples {
+                    x_mean[j] += x.get(i, j);
+                }
+                x_mean[j] /= n_samples as f32;
+                intercept -= beta[j] * x_mean[j];
+            }
+            self.intercept = intercept;
+        } else {
+            self.intercept = 0.0;
+        }
+
+        self.coefficients = Some(Vector::from_vec(beta));
+        Ok(())
+    }
+
+    /// Predicts target values for input data.
+    ///
+    /// # Panics
+    ///
+    /// Panics if model is not fitted.
+    fn predict(&self, x: &Matrix<f32>) -> Vector<f32> {
+        let coefficients = self
+            .coefficients
+            .as_ref()
+            .expect("Model not fitted. Call fit() first.");
+
+        let result = x
+            .matvec(coefficients)
+            .expect("Matrix dimensions don't match coefficients");
+
+        result.add_scalar(self.intercept)
+    }
+
+    /// Computes the R² score.
+    fn score(&self, x: &Matrix<f32>, y: &Vector<f32>) -> f32 {
+        let y_pred = self.predict(x);
+        r_squared(&y_pred, y)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1191,5 +1506,216 @@ mod tests {
         model.fit(&x, &y).unwrap();
 
         assert_eq!(model.coefficients().len(), 3);
+    }
+
+    // Lasso regression tests
+    #[test]
+    fn test_lasso_new() {
+        let model = Lasso::new(1.0);
+        assert!(!model.is_fitted());
+        assert!((model.alpha() - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_lasso_simple_regression() {
+        // y = 2x + 1
+        let x = Matrix::from_vec(5, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0]).unwrap();
+        let y = Vector::from_slice(&[3.0, 5.0, 7.0, 9.0, 11.0]);
+
+        let mut model = Lasso::new(0.01); // Small regularization
+        model.fit(&x, &y).unwrap();
+
+        assert!(model.is_fitted());
+
+        let r2 = model.score(&x, &y);
+        assert!(r2 > 0.98, "R² should be > 0.98, got {}", r2);
+    }
+
+    #[test]
+    fn test_lasso_produces_sparsity() {
+        // Test that Lasso with high alpha produces sparse coefficients
+        // Create data where only first feature matters: y = x1
+        let x = Matrix::from_vec(
+            6,
+            3,
+            vec![
+                1.0, 0.1, 0.2, 2.0, 0.2, 0.1, 3.0, 0.1, 0.3, 4.0, 0.3, 0.1, 5.0, 0.2, 0.2, 6.0,
+                0.1, 0.1,
+            ],
+        )
+        .unwrap();
+        let y = Vector::from_slice(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+
+        let mut model = Lasso::new(1.0); // High regularization
+        model.fit(&x, &y).unwrap();
+
+        // Count non-zero coefficients
+        let coef = model.coefficients();
+        let mut non_zero = 0;
+        for i in 0..coef.len() {
+            if coef[i].abs() > 1e-4 {
+                non_zero += 1;
+            }
+        }
+
+        // With high alpha, some coefficients should be zeroed out
+        assert!(
+            non_zero < coef.len(),
+            "Lasso should produce sparse solution, got {} non-zero out of {}",
+            non_zero,
+            coef.len()
+        );
+    }
+
+    #[test]
+    fn test_lasso_multivariate() {
+        // y = 1 + 2*x1 + 3*x2
+        let x = Matrix::from_vec(
+            6,
+            2,
+            vec![1.0, 1.0, 2.0, 1.0, 1.0, 2.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0],
+        )
+        .unwrap();
+        let y = Vector::from_slice(&[6.0, 8.0, 9.0, 11.0, 16.0, 21.0]);
+
+        let mut model = Lasso::new(0.01);
+        model.fit(&x, &y).unwrap();
+
+        let r2 = model.score(&x, &y);
+        assert!(r2 > 0.95, "R² should be > 0.95, got {}", r2);
+    }
+
+    #[test]
+    fn test_lasso_no_intercept() {
+        // y = 2x
+        let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0]).unwrap();
+        let y = Vector::from_slice(&[2.0, 4.0, 6.0, 8.0]);
+
+        let mut model = Lasso::new(0.01).with_intercept(false);
+        model.fit(&x, &y).unwrap();
+
+        assert!((model.intercept() - 0.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_lasso_dimension_mismatch_error() {
+        let x = Matrix::from_vec(3, 2, vec![1.0; 6]).unwrap();
+        let y = Vector::from_slice(&[1.0, 2.0]); // Wrong length
+
+        let mut model = Lasso::new(1.0);
+        let result = model.fit(&x, &y);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_lasso_empty_data_error() {
+        let x = Matrix::from_vec(0, 2, vec![]).unwrap();
+        let y = Vector::from_vec(vec![]);
+
+        let mut model = Lasso::new(1.0);
+        let result = model.fit(&x, &y);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_lasso_clone() {
+        let x = Matrix::from_vec(3, 1, vec![1.0, 2.0, 3.0]).unwrap();
+        let y = Vector::from_slice(&[2.0, 4.0, 6.0]);
+
+        let mut model = Lasso::new(0.5);
+        model.fit(&x, &y).unwrap();
+
+        let cloned = model.clone();
+        assert!(cloned.is_fitted());
+        assert!((cloned.alpha() - model.alpha()).abs() < 1e-6);
+        assert!((cloned.intercept() - model.intercept()).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_lasso_save_load() {
+        use std::fs;
+        use std::path::Path;
+
+        let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0]).unwrap();
+        let y = Vector::from_slice(&[3.0, 5.0, 7.0, 9.0]);
+
+        let mut model = Lasso::new(0.1);
+        model.fit(&x, &y).unwrap();
+
+        let path = Path::new("/tmp/test_lasso.bin");
+        model.save(path).expect("Failed to save model");
+
+        let loaded = Lasso::load(path).expect("Failed to load model");
+
+        assert!((loaded.alpha() - model.alpha()).abs() < 1e-6);
+        let original_pred = model.predict(&x);
+        let loaded_pred = loaded.predict(&x);
+
+        for i in 0..original_pred.len() {
+            assert!((original_pred[i] - loaded_pred[i]).abs() < 1e-6);
+        }
+
+        fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn test_lasso_with_intercept_builder() {
+        let model = Lasso::new(1.0).with_intercept(false);
+
+        let x = Matrix::from_vec(3, 1, vec![1.0, 2.0, 3.0]).unwrap();
+        let y = Vector::from_slice(&[2.0, 4.0, 6.0]);
+
+        let mut model = model;
+        model.fit(&x, &y).unwrap();
+
+        let x_zero = Matrix::from_vec(1, 1, vec![0.0]).unwrap();
+        let pred = model.predict(&x_zero);
+
+        assert!(
+            pred[0].abs() < 1e-6,
+            "Lasso without intercept should predict 0 at x=0"
+        );
+    }
+
+    #[test]
+    fn test_lasso_coefficients_length() {
+        let x = Matrix::from_vec(5, 3, vec![1.0; 15]).unwrap();
+        let y = Vector::from_slice(&[1.0, 2.0, 3.0, 4.0, 5.0]);
+
+        let mut model = Lasso::new(0.1);
+        model.fit(&x, &y).unwrap();
+
+        assert_eq!(model.coefficients().len(), 3);
+    }
+
+    #[test]
+    fn test_lasso_with_max_iter() {
+        let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0]).unwrap();
+        let y = Vector::from_slice(&[3.0, 5.0, 7.0, 9.0]);
+
+        let mut model = Lasso::new(0.1).with_max_iter(100);
+        model.fit(&x, &y).unwrap();
+
+        assert!(model.is_fitted());
+    }
+
+    #[test]
+    fn test_lasso_with_tol() {
+        let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0]).unwrap();
+        let y = Vector::from_slice(&[3.0, 5.0, 7.0, 9.0]);
+
+        let mut model = Lasso::new(0.1).with_tol(1e-6);
+        model.fit(&x, &y).unwrap();
+
+        assert!(model.is_fitted());
+    }
+
+    #[test]
+    fn test_lasso_soft_threshold() {
+        // Test the soft-thresholding function
+        assert!((Lasso::soft_threshold(5.0, 2.0) - 3.0).abs() < 1e-6);
+        assert!((Lasso::soft_threshold(-5.0, 2.0) - (-3.0)).abs() < 1e-6);
+        assert!((Lasso::soft_threshold(1.0, 2.0) - 0.0).abs() < 1e-6);
+        assert!((Lasso::soft_threshold(-1.0, 2.0) - 0.0).abs() < 1e-6);
     }
 }
