@@ -508,6 +508,109 @@ mod tests {
     }
 
     #[test]
+    fn test_centroids_converged_within_tolerance() {
+        // Test when centroids have converged (within tolerance)
+        let kmeans = KMeans::new(2).with_tol(0.01);
+
+        // Old centroids: [[1.0, 2.0], [3.0, 4.0]]
+        let old = Matrix::from_vec(2, 2, vec![1.0_f32, 2.0, 3.0, 4.0]).unwrap();
+
+        // New centroids: [[1.005, 2.005], [3.005, 4.005]]
+        // Distance per centroid: sqrt(0.005^2 + 0.005^2) ≈ 0.00707 < 0.01
+        let new = Matrix::from_vec(2, 2, vec![1.005_f32, 2.005, 3.005, 4.005]).unwrap();
+
+        assert!(kmeans.centroids_converged(&old, &new));
+    }
+
+    #[test]
+    fn test_centroids_not_converged() {
+        // Test when centroids have not converged (beyond tolerance)
+        let kmeans = KMeans::new(2).with_tol(0.01);
+
+        // Old centroids: [[1.0, 2.0], [3.0, 4.0]]
+        let old = Matrix::from_vec(2, 2, vec![1.0_f32, 2.0, 3.0, 4.0]).unwrap();
+
+        // New centroids: [[1.1, 2.1], [3.0, 4.0]]
+        // First centroid distance: sqrt(0.1^2 + 0.1^2) ≈ 0.141 > 0.01
+        let new = Matrix::from_vec(2, 2, vec![1.1_f32, 2.1, 3.0, 4.0]).unwrap();
+
+        assert!(!kmeans.centroids_converged(&old, &new));
+    }
+
+    #[test]
+    fn test_centroids_converged_exact_tolerance() {
+        // Test boundary case: distance exactly at tolerance²
+        // Use tol=0.1, so tol²=0.01
+        // Set up distance² to be exactly 0.01
+        let kmeans = KMeans::new(1).with_tol(0.1);
+
+        // Old centroid: [[0.0, 0.0]]
+        let old = Matrix::from_vec(1, 2, vec![0.0_f32, 0.0]).unwrap();
+
+        // New centroid: [[0.1, 0.0]]
+        // Distance²: 0.1² + 0.0² = 0.01 (exactly tol²)
+        // Should be converged (dist² = tol² means dist = tol, which is at boundary)
+        // Original code: dist² > tol² is false, so converged ✓
+        // Mutated code: dist² >= tol² is true, so NOT converged ✗
+        let new_exact = Matrix::from_vec(1, 2, vec![0.1_f32, 0.0]).unwrap();
+        assert!(
+            kmeans.centroids_converged(&old, &new_exact),
+            "Distance exactly at tolerance should be converged"
+        );
+
+        // Now test just beyond tolerance
+        // Distance²: 0.11² ≈ 0.0121 > 0.01
+        let new_beyond = Matrix::from_vec(1, 2, vec![0.11_f32, 0.0]).unwrap();
+        assert!(
+            !kmeans.centroids_converged(&old, &new_beyond),
+            "Distance beyond tolerance should not be converged"
+        );
+    }
+
+    #[test]
+    fn test_centroids_converged_multi_cluster() {
+        // Test with multiple clusters - all must be within tolerance
+        let kmeans = KMeans::new(3).with_tol(0.01);
+
+        let old = Matrix::from_vec(
+            3,
+            2,
+            vec![
+                1.0_f32, 2.0, // Cluster 0
+                3.0, 4.0, // Cluster 1
+                5.0, 6.0, // Cluster 2
+            ],
+        )
+        .unwrap();
+
+        // All clusters within tolerance
+        let new_converged = Matrix::from_vec(
+            3,
+            2,
+            vec![
+                1.005_f32, 2.005, // Small change
+                3.005, 4.005, // Small change
+                5.005, 6.005, // Small change
+            ],
+        )
+        .unwrap();
+        assert!(kmeans.centroids_converged(&old, &new_converged));
+
+        // One cluster beyond tolerance (cluster 1)
+        let new_not_converged = Matrix::from_vec(
+            3,
+            2,
+            vec![
+                1.005_f32, 2.005, // Small change
+                3.1, 4.1, // Large change
+                5.005, 6.005, // Small change
+            ],
+        )
+        .unwrap();
+        assert!(!kmeans.centroids_converged(&old, &new_not_converged));
+    }
+
+    #[test]
     fn test_default() {
         let kmeans = KMeans::default();
         assert_eq!(kmeans.n_clusters, 8);
