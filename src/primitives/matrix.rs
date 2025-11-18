@@ -1,6 +1,7 @@
 //! Matrix type for 2D numeric data.
 
 use super::Vector;
+use serde::{Deserialize, Serialize};
 
 /// A 2D matrix of floating-point values (row-major storage).
 ///
@@ -12,7 +13,7 @@ use super::Vector;
 /// let m = Matrix::from_vec(2, 3, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]).unwrap();
 /// assert_eq!(m.shape(), (2, 3));
 /// ```
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Matrix<T> {
     data: Vec<T>,
     rows: usize,

@@ -28,13 +28,15 @@
 //! let predictions = tree.predict(&x);
 //! ```
 
-// Imports will be added as needed during implementation
+use serde::{Deserialize, Serialize};
+use std::fs;
+use std::path::Path;
 
 /// Internal node in a decision tree.
 ///
 /// Contains a split condition (feature and threshold) and pointers to
 /// left and right subtrees.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Node {
     /// Index of the feature to split on
     pub feature_idx: usize,
@@ -50,7 +52,7 @@ pub struct Node {
 ///
 /// Contains the predicted class label and number of training samples
 /// that reached this leaf.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Leaf {
     /// Predicted class label for this leaf
     pub class_label: usize,
@@ -59,7 +61,7 @@ pub struct Leaf {
 }
 
 /// A node in a decision tree (either internal node or leaf).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum TreeNode {
     /// Internal decision node with split condition
     Node(Node),
@@ -82,7 +84,7 @@ impl TreeNode {
 /// Decision tree classifier using the CART algorithm.
 ///
 /// Uses Gini impurity for splitting criterion and builds trees recursively.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DecisionTreeClassifier {
     tree: Option<TreeNode>,
     max_depth: Option<usize>,
@@ -207,6 +209,29 @@ impl DecisionTreeClassifier {
             .filter(|(pred, true_label)| pred == true_label)
             .count();
         correct as f32 / y.len() as f32
+    }
+
+    /// Saves the model to a binary file using bincode.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if serialization or file writing fails.
+    pub fn save<P: AsRef<Path>>(&self, path: P) -> Result<(), String> {
+        let bytes = bincode::serialize(self).map_err(|e| format!("Serialization failed: {}", e))?;
+        fs::write(path, bytes).map_err(|e| format!("File write failed: {}", e))?;
+        Ok(())
+    }
+
+    /// Loads a model from a binary file.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if file reading or deserialization fails.
+    pub fn load<P: AsRef<Path>>(path: P) -> Result<Self, String> {
+        let bytes = fs::read(path).map_err(|e| format!("File read failed: {}", e))?;
+        let model =
+            bincode::deserialize(&bytes).map_err(|e| format!("Deserialization failed: {}", e))?;
+        Ok(model)
     }
 }
 
@@ -1004,5 +1029,51 @@ mod tests {
         assert_eq!(predictions.len(), 6);
         // Should classify perfectly
         assert_eq!(predictions, vec![0, 0, 1, 1, 2, 2]);
+    }
+
+    #[test]
+    fn test_save_load() {
+        use crate::primitives::Matrix;
+        use std::fs;
+        use std::path::Path;
+
+        // Train a tree
+        let x = Matrix::from_vec(
+            6,
+            2,
+            vec![
+                1.0, 1.0, // class 0
+                1.5, 1.5, // class 0
+                5.0, 5.0, // class 1
+                5.5, 5.5, // class 1
+                9.0, 9.0, // class 2
+                9.5, 9.5, // class 2
+            ],
+        )
+        .unwrap();
+        let y = vec![0, 0, 1, 1, 2, 2];
+
+        let mut tree = DecisionTreeClassifier::new().with_max_depth(5);
+        tree.fit(&x, &y).unwrap();
+
+        // Save model
+        let path = Path::new("/tmp/test_decision_tree.bin");
+        tree.save(path).expect("Failed to save model");
+
+        // Load model
+        let loaded = DecisionTreeClassifier::load(path).expect("Failed to load model");
+
+        // Verify predictions match
+        let original_pred = tree.predict(&x);
+        let loaded_pred = loaded.predict(&x);
+        assert_eq!(original_pred, loaded_pred);
+
+        // Verify accuracy matches
+        let original_score = tree.score(&x, &y);
+        let loaded_score = loaded.score(&x, &y);
+        assert!((original_score - loaded_score).abs() < 1e-6);
+
+        // Cleanup
+        fs::remove_file(path).ok();
     }
 }

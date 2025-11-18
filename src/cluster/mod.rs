@@ -5,6 +5,9 @@
 use crate::metrics::inertia;
 use crate::primitives::Matrix;
 use crate::traits::UnsupervisedEstimator;
+use serde::{Deserialize, Serialize};
+use std::fs;
+use std::path::Path;
 
 /// K-Means clustering algorithm.
 ///
@@ -42,7 +45,7 @@ use crate::traits::UnsupervisedEstimator;
 ///
 /// - Time complexity: O(nkdi) where n=samples, k=clusters, d=features, i=iterations
 /// - Space complexity: O(nk)
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KMeans {
     /// Number of clusters.
     n_clusters: usize,
@@ -133,6 +136,29 @@ impl KMeans {
     #[must_use]
     pub fn is_fitted(&self) -> bool {
         self.centroids.is_some()
+    }
+
+    /// Saves the model to a binary file using bincode.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if serialization or file writing fails.
+    pub fn save<P: AsRef<Path>>(&self, path: P) -> Result<(), String> {
+        let bytes = bincode::serialize(self).map_err(|e| format!("Serialization failed: {}", e))?;
+        fs::write(path, bytes).map_err(|e| format!("File write failed: {}", e))?;
+        Ok(())
+    }
+
+    /// Loads a model from a binary file.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if file reading or deserialization fails.
+    pub fn load<P: AsRef<Path>>(path: P) -> Result<Self, String> {
+        let bytes = fs::read(path).map_err(|e| format!("File read failed: {}", e))?;
+        let model =
+            bincode::deserialize(&bytes).map_err(|e| format!("Deserialization failed: {}", e))?;
+        Ok(model)
     }
 
     /// Initializes centroids using k-means++ algorithm.
@@ -749,5 +775,51 @@ mod tests {
         for &l in &labels2 {
             assert!(l < 2);
         }
+    }
+
+    #[test]
+    fn test_save_load() {
+        use std::fs;
+        use std::path::Path;
+
+        let data = sample_data();
+        let mut kmeans = KMeans::new(2).with_random_state(42);
+        kmeans.fit(&data).unwrap();
+
+        // Save model
+        let path = Path::new("/tmp/test_kmeans.bin");
+        kmeans.save(path).expect("Failed to save model");
+
+        // Load model
+        let loaded = KMeans::load(path).expect("Failed to load model");
+
+        // Verify loaded model matches original
+        assert_eq!(kmeans.n_clusters, loaded.n_clusters);
+        assert!((kmeans.inertia() - loaded.inertia()).abs() < 1e-6);
+
+        // Verify predictions match
+        let original_labels = kmeans.predict(&data);
+        let loaded_labels = loaded.predict(&data);
+        assert_eq!(original_labels, loaded_labels);
+
+        // Verify centroids match
+        let orig_centroids = kmeans.centroids();
+        let loaded_centroids = loaded.centroids();
+        assert_eq!(orig_centroids.shape(), loaded_centroids.shape());
+
+        let (n_clusters, n_features) = orig_centroids.shape();
+        for i in 0..n_clusters {
+            for j in 0..n_features {
+                assert!(
+                    (orig_centroids.get(i, j) - loaded_centroids.get(i, j)).abs() < 1e-6,
+                    "Centroid mismatch at ({}, {})",
+                    i,
+                    j
+                );
+            }
+        }
+
+        // Cleanup
+        fs::remove_file(path).ok();
     }
 }

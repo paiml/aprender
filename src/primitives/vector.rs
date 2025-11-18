@@ -1,5 +1,6 @@
 //! Vector type for 1D numeric data.
 
+use serde::{Deserialize, Serialize};
 use std::ops::{Add, Index, IndexMut, Mul, Sub};
 
 /// A 1D vector of floating-point values.
@@ -13,7 +14,7 @@ use std::ops::{Add, Index, IndexMut, Mul, Sub};
 /// assert_eq!(v.len(), 3);
 /// assert!((v.sum() - 6.0).abs() < 1e-6);
 /// ```
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Vector<T> {
     data: Vec<T>,
 }

@@ -5,6 +5,9 @@
 use crate::metrics::r_squared;
 use crate::primitives::{Matrix, Vector};
 use crate::traits::Estimator;
+use serde::{Deserialize, Serialize};
+use std::fs;
+use std::path::Path;
 
 /// Ordinary Least Squares (OLS) linear regression.
 ///
@@ -47,7 +50,7 @@ use crate::traits::Estimator;
 ///
 /// - Time complexity: O(n²p + p³) where n = samples, p = features
 /// - Space complexity: O(np)
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LinearRegression {
     /// Coefficients for features (excluding intercept).
     coefficients: Option<Vector<f32>>,
@@ -103,6 +106,29 @@ impl LinearRegression {
     #[must_use]
     pub fn is_fitted(&self) -> bool {
         self.coefficients.is_some()
+    }
+
+    /// Saves the model to a binary file using bincode.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if serialization or file writing fails.
+    pub fn save<P: AsRef<Path>>(&self, path: P) -> Result<(), String> {
+        let bytes = bincode::serialize(self).map_err(|e| format!("Serialization failed: {}", e))?;
+        fs::write(path, bytes).map_err(|e| format!("File write failed: {}", e))?;
+        Ok(())
+    }
+
+    /// Loads a model from a binary file.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if file reading or deserialization fails.
+    pub fn load<P: AsRef<Path>>(path: P) -> Result<Self, String> {
+        let bytes = fs::read(path).map_err(|e| format!("File read failed: {}", e))?;
+        let model =
+            bincode::deserialize(&bytes).map_err(|e| format!("Deserialization failed: {}", e))?;
+        Ok(model)
     }
 
     /// Adds an intercept column of ones to the design matrix.
@@ -622,5 +648,49 @@ mod tests {
 
         // This should succeed (exactly determined)
         assert!(result.is_ok(), "Exactly determined system should work");
+    }
+
+    #[test]
+    fn test_save_load_binary() {
+        use std::fs;
+        use std::path::Path;
+
+        // Train a model
+        let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0]).unwrap();
+        let y = Vector::from_slice(&[3.0, 5.0, 7.0, 9.0]); // y = 2x + 1
+
+        let mut model = LinearRegression::new();
+        model.fit(&x, &y).unwrap();
+
+        // Save to file
+        let path = Path::new("/tmp/test_linear_regression.bin");
+        model.save(path).expect("Failed to save model");
+
+        // Load from file
+        let loaded_model = LinearRegression::load(path).expect("Failed to load model");
+
+        // Verify loaded model matches original
+        let original_pred = model.predict(&x);
+        let loaded_pred = loaded_model.predict(&x);
+
+        for i in 0..original_pred.len() {
+            assert!(
+                (original_pred[i] - loaded_pred[i]).abs() < 1e-6,
+                "Loaded model predictions don't match original"
+            );
+        }
+
+        // Verify coefficients and intercept match
+        assert_eq!(
+            model.coefficients().len(),
+            loaded_model.coefficients().len()
+        );
+        for i in 0..model.coefficients().len() {
+            assert!((model.coefficients()[i] - loaded_model.coefficients()[i]).abs() < 1e-6);
+        }
+        assert!((model.intercept() - loaded_model.intercept()).abs() < 1e-6);
+
+        // Cleanup
+        fs::remove_file(path).ok();
     }
 }
