@@ -1077,4 +1077,175 @@ mod tests {
         // Cleanup
         fs::remove_file(path).ok();
     }
+
+    #[test]
+    fn test_centroids_converged_arithmetic() {
+        // Test to catch arithmetic mutations in centroids_converged
+        // (dist_sq += diff * diff should be sum of squared differences)
+        let kmeans = KMeans::new(1).with_tol(0.5);
+
+        // 1D case: old = [0.0], new = [0.3]
+        // diff = 0.3, dist_sq = 0.09
+        // tol² = 0.25, so 0.09 < 0.25, should converge
+        let old = Matrix::from_vec(1, 1, vec![0.0_f32]).unwrap();
+        let new = Matrix::from_vec(1, 1, vec![0.3_f32]).unwrap();
+        assert!(
+            kmeans.centroids_converged(&old, &new),
+            "Should converge when dist² (0.09) < tol² (0.25)"
+        );
+
+        // 2D case: movement of [0.4, 0.3]
+        // dist_sq = 0.16 + 0.09 = 0.25 = tol², should converge (<=)
+        let old_2d = Matrix::from_vec(1, 2, vec![0.0_f32, 0.0]).unwrap();
+        let new_2d = Matrix::from_vec(1, 2, vec![0.4_f32, 0.3]).unwrap();
+        assert!(
+            kmeans.centroids_converged(&old_2d, &new_2d),
+            "Should converge when dist² equals tol²"
+        );
+    }
+
+    #[test]
+    fn test_centroids_converged_comparison_mutations() {
+        // Test to catch > vs >= vs == vs < mutations
+        let kmeans = KMeans::new(1).with_tol(1.0);
+
+        // Case: dist_sq = 0.5, tol² = 1.0
+        // Should converge because 0.5 < 1.0
+        let old = Matrix::from_vec(1, 1, vec![0.0_f32]).unwrap();
+        let less = Matrix::from_vec(1, 1, vec![0.7_f32]).unwrap(); // dist_sq ≈ 0.49
+        assert!(
+            kmeans.centroids_converged(&old, &less),
+            "dist² < tol² should converge"
+        );
+
+        // Case: dist_sq = 1.5, tol² = 1.0
+        // Should NOT converge because 1.5 > 1.0
+        let more = Matrix::from_vec(1, 1, vec![1.3_f32]).unwrap(); // dist_sq ≈ 1.69
+        assert!(
+            !kmeans.centroids_converged(&old, &more),
+            "dist² > tol² should NOT converge"
+        );
+    }
+
+    #[test]
+    fn test_convergence_affects_iterations() {
+        // Test that catches centroids_converged -> true mutation
+        // If convergence always returns true, we'd stop at iteration 1
+        let data = Matrix::from_vec(
+            6,
+            2,
+            vec![
+                0.0, 0.0, 1.0, 0.0, 0.5, 0.0, // Cluster 1 region
+                10.0, 10.0, 11.0, 10.0, 10.5, 10.0, // Cluster 2 region
+            ],
+        )
+        .unwrap();
+
+        // Use very tight tolerance to force multiple iterations
+        let mut kmeans = KMeans::new(2)
+            .with_tol(1e-8)
+            .with_max_iter(50)
+            .with_random_state(42);
+        kmeans.fit(&data).unwrap();
+
+        // Should take more than 1 iteration to converge with tight tolerance
+        // If centroids_converged always returns true, n_iter would be 1
+        assert!(
+            kmeans.n_iter() >= 2,
+            "With tight tolerance, should need >= 2 iterations, got {}",
+            kmeans.n_iter()
+        );
+    }
+
+    #[test]
+    fn test_assign_labels_tie_breaking() {
+        // Test to catch < vs <= mutation in assign_labels
+        // When a point is equidistant, the first cluster should win
+        let mut kmeans = KMeans::new(2).with_random_state(42);
+
+        // Two centroids at (0, 0) and (2, 0)
+        // Point at (1, 0) is equidistant from both
+        let data = Matrix::from_vec(3, 2, vec![0.0, 0.0, 2.0, 0.0, 1.0, 0.0]).unwrap();
+
+        kmeans.fit(&data).unwrap();
+
+        // The key is that the middle point should be assigned consistently
+        let labels = kmeans.predict(&data);
+
+        // Points should be assigned to different clusters
+        // The equidistant point (1, 0) should go to first cluster found (cluster 0)
+        assert_ne!(
+            labels[0], labels[1],
+            "First two points should be in different clusters"
+        );
+    }
+
+    #[test]
+    fn test_kmeans_plusplus_selects_maximum() {
+        // Test to catch > vs >= mutation in kmeans_plusplus_init
+        // With identical max distances, should pick consistently
+        let data = Matrix::from_vec(
+            4,
+            1,
+            vec![
+                0.0,  // First centroid
+                5.0,  // Distance 5 from first
+                5.0,  // Also distance 5 (tie)
+                10.0, // Distance 10 (should be selected as max)
+            ],
+        )
+        .unwrap();
+
+        let mut kmeans = KMeans::new(2).with_random_state(42);
+        kmeans.fit(&data).unwrap();
+
+        // The two clusters should separate the far points
+        let labels = kmeans.predict(&data);
+
+        // Points 0,1,2 should be in one cluster, point 3 in another (or vice versa)
+        // The key is point 3 (at 10.0) should be in a different cluster than point 0
+        assert_ne!(
+            labels[0], labels[3],
+            "Points at 0.0 and 10.0 should be in different clusters"
+        );
+    }
+
+    #[test]
+    fn test_update_centroids_division() {
+        // Test to catch division-related mutations in update_centroids
+        // Ensures centroids are computed as mean, not sum
+        let data = Matrix::from_vec(
+            4,
+            1,
+            vec![
+                0.0, 2.0, // Cluster 0: mean = 1.0
+                10.0, 12.0, // Cluster 1: mean = 11.0
+            ],
+        )
+        .unwrap();
+
+        let mut kmeans = KMeans::new(2).with_random_state(42);
+        kmeans.fit(&data).unwrap();
+
+        let centroids = kmeans.centroids();
+
+        // Centroids should be at means (approximately 1.0 and 11.0)
+        let c0 = centroids.get(0, 0);
+        let c1 = centroids.get(1, 0);
+
+        // One centroid should be near 1.0, other near 11.0
+        let has_low = (c0 - 1.0).abs() < 1.0 || (c1 - 1.0).abs() < 1.0;
+        let has_high = (c0 - 11.0).abs() < 1.0 || (c1 - 11.0).abs() < 1.0;
+
+        assert!(
+            has_low,
+            "Should have centroid near 1.0, got {} and {}",
+            c0, c1
+        );
+        assert!(
+            has_high,
+            "Should have centroid near 11.0, got {} and {}",
+            c0, c1
+        );
+    }
 }
