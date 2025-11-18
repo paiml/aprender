@@ -118,7 +118,7 @@ Next Generation Machine Learning in Pure Rust
 - [x] Lasso regression (L1 via coordinate descent)
 - [x] Elastic Net (L1 + L2)
 - [x] SGD optimizer (mini-batch gradient descent)
-- [ ] Adam optimizer (adaptive learning rates)
+- [x] Adam optimizer (adaptive learning rates)
 - [ ] Loss functions: MSE, MAE, Huber
 - [ ] Stratified cross-validation
 - [ ] Grid search (hyperparameter tuning)
