@@ -369,4 +369,43 @@ mod tests {
         let v = Vector::<f32>::from_vec(vec![]);
         assert!((v.mean() - 0.0).abs() < 1e-6);
     }
+
+    #[test]
+    fn test_is_empty() {
+        let empty = Vector::<f32>::from_vec(vec![]);
+        assert!(empty.is_empty());
+
+        let non_empty = Vector::from_slice(&[1.0_f32]);
+        assert!(!non_empty.is_empty());
+    }
+
+    #[test]
+    fn test_argmax_single_element() {
+        let v = Vector::from_slice(&[42.0_f32]);
+        assert_eq!(v.argmax(), 0);
+    }
+
+    #[test]
+    fn test_argmax_all_equal() {
+        let v = Vector::from_slice(&[5.0_f32, 5.0, 5.0]);
+        let idx = v.argmax();
+        // When all equal, any valid index is acceptable
+        assert!(idx < v.len());
+        assert!((v[idx] - 5.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_argmin_single_element() {
+        let v = Vector::from_slice(&[42.0_f32]);
+        assert_eq!(v.argmin(), 0);
+    }
+
+    #[test]
+    fn test_argmin_all_equal() {
+        let v = Vector::from_slice(&[5.0_f32, 5.0, 5.0]);
+        let idx = v.argmin();
+        // When all equal, any valid index is acceptable
+        assert!(idx < v.len());
+        assert!((v[idx] - 5.0).abs() < 1e-6);
+    }
 }
