@@ -3,8 +3,8 @@
 //! These types provide the foundation for all ML algorithms.
 //! Designed for future Trueno integration.
 
-mod vector;
 mod matrix;
+mod vector;
 
-pub use vector::Vector;
 pub use matrix::Matrix;
+pub use vector::Vector;

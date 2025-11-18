@@ -442,11 +442,12 @@ mod tests {
     fn test_cholesky_solve_3x3() {
         // A = [[4, 12, -16], [12, 37, -43], [-16, -43, 98]]
         // b = [1, 2, 3]
-        let a = Matrix::from_vec(3, 3, vec![
-            4.0_f32, 12.0, -16.0,
-            12.0, 37.0, -43.0,
-            -16.0, -43.0, 98.0,
-        ]).unwrap();
+        let a = Matrix::from_vec(
+            3,
+            3,
+            vec![4.0_f32, 12.0, -16.0, 12.0, 37.0, -43.0, -16.0, -43.0, 98.0],
+        )
+        .unwrap();
         let b = Vector::from_slice(&[1.0_f32, 2.0, 3.0]);
         let x = a.cholesky_solve(&b).unwrap();
 

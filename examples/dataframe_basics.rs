@@ -10,9 +10,18 @@ fn main() {
 
     // Create a DataFrame with named columns
     let columns = vec![
-        ("age".to_string(), Vector::from_slice(&[25.0, 30.0, 35.0, 40.0, 45.0])),
-        ("income".to_string(), Vector::from_slice(&[50000.0, 60000.0, 75000.0, 90000.0, 110000.0])),
-        ("score".to_string(), Vector::from_slice(&[85.0, 90.0, 88.0, 92.0, 95.0])),
+        (
+            "age".to_string(),
+            Vector::from_slice(&[25.0, 30.0, 35.0, 40.0, 45.0]),
+        ),
+        (
+            "income".to_string(),
+            Vector::from_slice(&[50000.0, 60000.0, 75000.0, 90000.0, 110000.0]),
+        ),
+        (
+            "score".to_string(),
+            Vector::from_slice(&[85.0, 90.0, 88.0, 92.0, 95.0]),
+        ),
     ];
 
     let df = DataFrame::new(columns).expect("Failed to create DataFrame");
@@ -37,18 +46,26 @@ fn main() {
     // Convert to Matrix for ML algorithms
     let matrix = df.to_matrix();
     println!("\nMatrix shape: {:?}", matrix.shape());
-    println!("First row of matrix: [{:.0}, {:.0}, {:.0}]",
-             matrix.get(0, 0), matrix.get(0, 1), matrix.get(0, 2));
+    println!(
+        "First row of matrix: [{:.0}, {:.0}, {:.0}]",
+        matrix.get(0, 0),
+        matrix.get(0, 1),
+        matrix.get(0, 2)
+    );
 
     // Descriptive statistics
     println!("\nDescriptive Statistics:");
-    println!("{:>10} {:>10} {:>10} {:>10} {:>10}",
-             "Column", "Mean", "Std", "Min", "Max");
+    println!(
+        "{:>10} {:>10} {:>10} {:>10} {:>10}",
+        "Column", "Mean", "Std", "Min", "Max"
+    );
     println!("{}", "-".repeat(52));
 
     for stats in df.describe() {
-        println!("{:>10} {:>10.1} {:>10.1} {:>10.1} {:>10.1}",
-                 stats.name, stats.mean, stats.std, stats.min, stats.max);
+        println!(
+            "{:>10} {:>10.1} {:>10.1} {:>10.1} {:>10.1}",
+            stats.name, stats.mean, stats.std, stats.min, stats.max
+        );
     }
 
     // Use DataFrame with Linear Regression

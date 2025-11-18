@@ -331,14 +331,12 @@ mod tests {
 
     fn sample_data() -> Matrix<f32> {
         // Two well-separated clusters
-        Matrix::from_vec(6, 2, vec![
-            1.0, 2.0,
-            1.5, 1.8,
-            1.0, 0.6,
-            8.0, 8.0,
-            9.0, 11.0,
-            8.5, 9.0,
-        ]).unwrap()
+        Matrix::from_vec(
+            6,
+            2,
+            vec![1.0, 2.0, 1.5, 1.8, 1.0, 0.6, 8.0, 8.0, 9.0, 11.0, 8.5, 9.0],
+        )
+        .unwrap()
     }
 
     #[test]
@@ -545,28 +543,26 @@ mod tests {
         assert_ne!(first_label, second_label);
 
         // Check consistency within clusters
-        for i in 0..n / 2 {
-            assert_eq!(labels[i], first_label);
+        for label in labels.iter().take(n / 2) {
+            assert_eq!(*label, first_label);
         }
-        for i in n / 2..n {
-            assert_eq!(labels[i], second_label);
+        for label in labels.iter().skip(n / 2) {
+            assert_eq!(*label, second_label);
         }
     }
 
     #[test]
     fn test_three_clusters() {
         // Three well-separated clusters
-        let data = Matrix::from_vec(9, 2, vec![
-            0.0, 0.0,
-            0.1, 0.1,
-            0.2, 0.0,
-            5.0, 5.0,
-            5.1, 5.1,
-            5.0, 5.2,
-            10.0, 0.0,
-            10.1, 0.1,
-            10.0, 0.2,
-        ]).unwrap();
+        let data = Matrix::from_vec(
+            9,
+            2,
+            vec![
+                0.0, 0.0, 0.1, 0.1, 0.2, 0.0, 5.0, 5.0, 5.1, 5.1, 5.0, 5.2, 10.0, 0.0, 10.1, 0.1,
+                10.0, 0.2,
+            ],
+        )
+        .unwrap();
 
         let mut kmeans = KMeans::new(3).with_random_state(42);
         kmeans.fit(&data).unwrap();
@@ -591,13 +587,8 @@ mod tests {
     #[test]
     fn test_identical_points() {
         // All points are the same
-        let data = Matrix::from_vec(5, 2, vec![
-            1.0, 1.0,
-            1.0, 1.0,
-            1.0, 1.0,
-            1.0, 1.0,
-            1.0, 1.0,
-        ]).unwrap();
+        let data =
+            Matrix::from_vec(5, 2, vec![1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]).unwrap();
 
         let mut kmeans = KMeans::new(2).with_random_state(42);
         kmeans.fit(&data).unwrap();
@@ -614,14 +605,7 @@ mod tests {
     #[test]
     fn test_one_dimensional_data() {
         // 1D clustering
-        let data = Matrix::from_vec(6, 1, vec![
-            0.0,
-            0.1,
-            0.2,
-            10.0,
-            10.1,
-            10.2,
-        ]).unwrap();
+        let data = Matrix::from_vec(6, 1, vec![0.0, 0.1, 0.2, 10.0, 10.1, 10.2]).unwrap();
 
         let mut kmeans = KMeans::new(2).with_random_state(42);
         kmeans.fit(&data).unwrap();
@@ -639,14 +623,15 @@ mod tests {
     #[test]
     fn test_high_dimensional_data() {
         // 5D clustering
-        let data = Matrix::from_vec(6, 5, vec![
-            0.0, 0.0, 0.0, 0.0, 0.0,
-            0.1, 0.1, 0.1, 0.1, 0.1,
-            0.2, 0.2, 0.2, 0.2, 0.2,
-            10.0, 10.0, 10.0, 10.0, 10.0,
-            10.1, 10.1, 10.1, 10.1, 10.1,
-            10.2, 10.2, 10.2, 10.2, 10.2,
-        ]).unwrap();
+        let data = Matrix::from_vec(
+            6,
+            5,
+            vec![
+                0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 0.1, 0.1, 0.1, 0.1, 0.2, 0.2, 0.2, 0.2, 0.2, 10.0,
+                10.0, 10.0, 10.0, 10.0, 10.1, 10.1, 10.1, 10.1, 10.1, 10.2, 10.2, 10.2, 10.2, 10.2,
+            ],
+        )
+        .unwrap();
 
         let mut kmeans = KMeans::new(2).with_random_state(42);
         kmeans.fit(&data).unwrap();
@@ -664,14 +649,14 @@ mod tests {
     #[test]
     fn test_negative_values() {
         // Test with negative coordinates
-        let data = Matrix::from_vec(6, 2, vec![
-            -10.0, -10.0,
-            -10.1, -10.1,
-            -10.2, -10.0,
-            10.0, 10.0,
-            10.1, 10.1,
-            10.0, 10.2,
-        ]).unwrap();
+        let data = Matrix::from_vec(
+            6,
+            2,
+            vec![
+                -10.0, -10.0, -10.1, -10.1, -10.2, -10.0, 10.0, 10.0, 10.1, 10.1, 10.0, 10.2,
+            ],
+        )
+        .unwrap();
 
         let mut kmeans = KMeans::new(2).with_random_state(42);
         kmeans.fit(&data).unwrap();
@@ -688,11 +673,7 @@ mod tests {
     #[test]
     fn test_exact_k_samples() {
         // Exactly k samples for k clusters
-        let data = Matrix::from_vec(3, 2, vec![
-            0.0, 0.0,
-            5.0, 5.0,
-            10.0, 10.0,
-        ]).unwrap();
+        let data = Matrix::from_vec(3, 2, vec![0.0, 0.0, 5.0, 5.0, 10.0, 10.0]).unwrap();
 
         let mut kmeans = KMeans::new(3).with_random_state(42);
         kmeans.fit(&data).unwrap();
@@ -730,18 +711,15 @@ mod tests {
 
     #[test]
     fn test_centroid_shapes() {
-        let data = Matrix::from_vec(10, 3, vec![
-            0.0, 0.0, 0.0,
-            0.1, 0.1, 0.1,
-            0.2, 0.2, 0.2,
-            0.3, 0.3, 0.3,
-            0.4, 0.4, 0.4,
-            10.0, 10.0, 10.0,
-            10.1, 10.1, 10.1,
-            10.2, 10.2, 10.2,
-            10.3, 10.3, 10.3,
-            10.4, 10.4, 10.4,
-        ]).unwrap();
+        let data = Matrix::from_vec(
+            10,
+            3,
+            vec![
+                0.0, 0.0, 0.0, 0.1, 0.1, 0.1, 0.2, 0.2, 0.2, 0.3, 0.3, 0.3, 0.4, 0.4, 0.4, 10.0,
+                10.0, 10.0, 10.1, 10.1, 10.1, 10.2, 10.2, 10.2, 10.3, 10.3, 10.3, 10.4, 10.4, 10.4,
+            ],
+        )
+        .unwrap();
 
         let mut kmeans = KMeans::new(2).with_random_state(42);
         kmeans.fit(&data).unwrap();

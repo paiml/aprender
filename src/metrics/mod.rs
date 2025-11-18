@@ -40,11 +40,7 @@ pub fn r_squared(y_pred: &Vector<f32>, y_true: &Vector<f32>) -> f32 {
         .map(|(t, p)| (t - p).powi(2))
         .sum();
 
-    let ss_tot: f32 = y_true
-        .as_slice()
-        .iter()
-        .map(|t| (t - y_mean).powi(2))
-        .sum();
+    let ss_tot: f32 = y_true.as_slice().iter().map(|t| (t - y_mean).powi(2)).sum();
 
     if ss_tot == 0.0 {
         return 0.0;
@@ -241,13 +237,21 @@ fn min_inter_cluster_distance(
         }
     }
 
-    if min_mean == f32::INFINITY { 0.0 } else { min_mean }
+    if min_mean == f32::INFINITY {
+        0.0
+    } else {
+        min_mean
+    }
 }
 
 /// Computes the silhouette coefficient for a single point.
 fn silhouette_coefficient(a_i: f32, b_i: f32) -> f32 {
     let max_ab = a_i.max(b_i);
-    if max_ab == 0.0 { 0.0 } else { (b_i - a_i) / max_ab }
+    if max_ab == 0.0 {
+        0.0
+    } else {
+        (b_i - a_i) / max_ab
+    }
 }
 
 /// Computes the silhouette score for clustering quality.
@@ -388,17 +392,18 @@ mod tests {
     #[test]
     fn test_inertia() {
         // 4 points in 2 clusters
-        let data = Matrix::from_vec(4, 2, vec![
-            0.0, 0.0,
-            1.0, 0.0,
-            10.0, 10.0,
-            11.0, 10.0,
-        ]).unwrap();
+        let data =
+            Matrix::from_vec(4, 2, vec![0.0, 0.0, 1.0, 0.0, 10.0, 10.0, 11.0, 10.0]).unwrap();
 
-        let centroids = Matrix::from_vec(2, 2, vec![
-            0.5, 0.0,   // cluster 0 centroid
-            10.5, 10.0, // cluster 1 centroid
-        ]).unwrap();
+        let centroids = Matrix::from_vec(
+            2,
+            2,
+            vec![
+                0.5, 0.0, // cluster 0 centroid
+                10.5, 10.0, // cluster 1 centroid
+            ],
+        )
+        .unwrap();
 
         let labels = vec![0, 0, 1, 1];
         let score = inertia(&data, &centroids, &labels);
@@ -414,12 +419,8 @@ mod tests {
     #[test]
     fn test_silhouette_score_good() {
         // Well-separated clusters
-        let data = Matrix::from_vec(4, 2, vec![
-            0.0, 0.0,
-            0.1, 0.1,
-            10.0, 10.0,
-            10.1, 10.1,
-        ]).unwrap();
+        let data =
+            Matrix::from_vec(4, 2, vec![0.0, 0.0, 0.1, 0.1, 10.0, 10.0, 10.1, 10.1]).unwrap();
         let labels = vec![0, 0, 1, 1];
         let score = silhouette_score(&data, &labels);
         assert!(score > 0.9);
@@ -428,12 +429,7 @@ mod tests {
     #[test]
     fn test_silhouette_score_poor() {
         // Overlapping clusters
-        let data = Matrix::from_vec(4, 2, vec![
-            0.0, 0.0,
-            1.0, 1.0,
-            0.5, 0.5,
-            1.5, 1.5,
-        ]).unwrap();
+        let data = Matrix::from_vec(4, 2, vec![0.0, 0.0, 1.0, 1.0, 0.5, 0.5, 1.5, 1.5]).unwrap();
         let labels = vec![0, 0, 1, 1];
         let score = silhouette_score(&data, &labels);
         // With overlapping data, silhouette should be lower
@@ -442,12 +438,7 @@ mod tests {
 
     #[test]
     fn test_silhouette_score_single_cluster() {
-        let data = Matrix::from_vec(4, 2, vec![
-            0.0, 0.0,
-            1.0, 1.0,
-            2.0, 2.0,
-            3.0, 3.0,
-        ]).unwrap();
+        let data = Matrix::from_vec(4, 2, vec![0.0, 0.0, 1.0, 1.0, 2.0, 2.0, 3.0, 3.0]).unwrap();
         let labels = vec![0, 0, 0, 0];
         let score = silhouette_score(&data, &labels);
         assert!((score - 0.0).abs() < 1e-6);

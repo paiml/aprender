@@ -1,7 +1,7 @@
 # Aprender Makefile
 # Certeza Methodology - Tiered Quality Gates
 
-.PHONY: all build test lint fmt clean doc tier1 tier2 tier3 tier4 coverage profile
+.PHONY: all build test lint fmt clean doc tier1 tier2 tier3 tier4 coverage profile hooks-install hooks-verify
 
 # Default target
 all: tier2
@@ -99,3 +99,15 @@ ci: tier4
 # Quick check (compile only)
 check:
 	cargo check --all
+
+# Install PMAT pre-commit hooks
+hooks-install: ## Install PMAT pre-commit hooks
+	@echo "🔧 Installing PMAT pre-commit hooks..."
+	@pmat hooks install
+	@echo "✅ Hooks installed successfully"
+
+# Verify PMAT hooks
+hooks-verify: ## Verify PMAT hooks are working
+	@echo "🔍 Verifying PMAT hooks..."
+	@pmat hooks verify
+	@pmat hooks run

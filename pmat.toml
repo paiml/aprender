@@ -1,0 +1,30 @@
+# PMAT Configuration for Aprender
+# Technical Debt Gradient and Quality Gate Settings
+
+[quality]
+# Complexity thresholds (Toyota Way standard from spec)
+max_cyclomatic_complexity = 10
+max_cognitive_complexity = 15
+
+# Test coverage target
+min_test_coverage = 95
+
+# SATD (Self-Admitted Technical Debt) - zero tolerance
+max_satd_comments = 0
+
+# TDG Score target
+min_tdg_score = 95
+
+[hooks]
+# Pre-commit hook settings
+enabled = true
+fail_on_complexity = true
+fail_on_satd = true
+warn_on_missing_docs = true
+
+[analysis]
+# Include patterns
+include = ["src/**/*.rs"]
+
+# Exclude patterns
+exclude = ["target/**", "benches/**"]

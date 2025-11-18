@@ -35,13 +35,13 @@
 //! - [`cluster`]: Clustering algorithms (K-Means)
 //! - [`metrics`]: Evaluation metrics
 
-pub mod primitives;
-pub mod traits;
+pub mod cluster;
 pub mod data;
 pub mod linear_model;
-pub mod cluster;
 pub mod metrics;
 pub mod prelude;
+pub mod primitives;
+pub mod traits;
 
 pub use primitives::{Matrix, Vector};
 pub use traits::{Estimator, Transformer, UnsupervisedEstimator};

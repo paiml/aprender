@@ -1,7 +1,7 @@
 //! Benchmarks for K-Means clustering.
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use aprender::prelude::*;
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 
 fn bench_kmeans_fit(c: &mut Criterion) {
     let mut group = c.benchmark_group("kmeans_fit");
@@ -21,12 +21,16 @@ fn bench_kmeans_fit(c: &mut Criterion) {
 
         let matrix = Matrix::from_vec(n_samples, 2, data).unwrap();
 
-        group.bench_with_input(BenchmarkId::from_parameter(n_samples), &n_samples, |b, _| {
-            b.iter(|| {
-                let mut kmeans = KMeans::new(2).with_random_state(42).with_max_iter(100);
-                kmeans.fit(black_box(&matrix)).unwrap()
-            });
-        });
+        group.bench_with_input(
+            BenchmarkId::from_parameter(n_samples),
+            &n_samples,
+            |b, _| {
+                b.iter(|| {
+                    let mut kmeans = KMeans::new(2).with_random_state(42).with_max_iter(100);
+                    kmeans.fit(black_box(&matrix)).unwrap()
+                });
+            },
+        );
     }
 
     group.finish();
@@ -51,11 +55,13 @@ fn bench_kmeans_predict(c: &mut Criterion) {
         let mut kmeans = KMeans::new(2).with_random_state(42);
         kmeans.fit(&matrix).unwrap();
 
-        group.bench_with_input(BenchmarkId::from_parameter(n_samples), &n_samples, |b, _| {
-            b.iter(|| {
-                kmeans.predict(black_box(&matrix))
-            });
-        });
+        group.bench_with_input(
+            BenchmarkId::from_parameter(n_samples),
+            &n_samples,
+            |b, _| {
+                b.iter(|| kmeans.predict(black_box(&matrix)));
+            },
+        );
     }
 
     group.finish();

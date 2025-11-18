@@ -1,7 +1,7 @@
 //! Benchmarks for linear regression.
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use aprender::prelude::*;
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 
 fn bench_linear_regression_fit(c: &mut Criterion) {
     let mut group = c.benchmark_group("linear_regression_fit");
@@ -39,14 +39,16 @@ fn bench_linear_regression_predict(c: &mut Criterion) {
         model.fit(&x, &y).unwrap();
 
         group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, _| {
-            b.iter(|| {
-                model.predict(black_box(&x))
-            });
+            b.iter(|| model.predict(black_box(&x)));
         });
     }
 
     group.finish();
 }
 
-criterion_group!(benches, bench_linear_regression_fit, bench_linear_regression_predict);
+criterion_group!(
+    benches,
+    bench_linear_regression_fit,
+    bench_linear_regression_predict
+);
 criterion_main!(benches);

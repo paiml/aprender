@@ -1,6 +1,6 @@
 //! Vector type for 1D numeric data.
 
-use std::ops::{Add, Mul, Sub, Index, IndexMut};
+use std::ops::{Add, Index, IndexMut, Mul, Sub};
 
 /// A 1D vector of floating-point values.
 ///
@@ -116,7 +116,11 @@ impl Vector<f32> {
     /// Panics if vectors have different lengths.
     #[must_use]
     pub fn dot(&self, other: &Self) -> f32 {
-        assert_eq!(self.len(), other.len(), "Vector lengths must match for dot product");
+        assert_eq!(
+            self.len(),
+            other.len(),
+            "Vector lengths must match for dot product"
+        );
         self.data
             .iter()
             .zip(other.data.iter())
@@ -189,9 +193,18 @@ impl Add for &Vector<f32> {
     type Output = Vector<f32>;
 
     fn add(self, other: Self) -> Self::Output {
-        assert_eq!(self.len(), other.len(), "Vector lengths must match for addition");
+        assert_eq!(
+            self.len(),
+            other.len(),
+            "Vector lengths must match for addition"
+        );
         Vector {
-            data: self.data.iter().zip(other.data.iter()).map(|(a, b)| a + b).collect(),
+            data: self
+                .data
+                .iter()
+                .zip(other.data.iter())
+                .map(|(a, b)| a + b)
+                .collect(),
         }
     }
 }
@@ -200,9 +213,18 @@ impl Sub for &Vector<f32> {
     type Output = Vector<f32>;
 
     fn sub(self, other: Self) -> Self::Output {
-        assert_eq!(self.len(), other.len(), "Vector lengths must match for subtraction");
+        assert_eq!(
+            self.len(),
+            other.len(),
+            "Vector lengths must match for subtraction"
+        );
         Vector {
-            data: self.data.iter().zip(other.data.iter()).map(|(a, b)| a - b).collect(),
+            data: self
+                .data
+                .iter()
+                .zip(other.data.iter())
+                .map(|(a, b)| a - b)
+                .collect(),
         }
     }
 }
@@ -211,9 +233,18 @@ impl Mul for &Vector<f32> {
     type Output = Vector<f32>;
 
     fn mul(self, other: Self) -> Self::Output {
-        assert_eq!(self.len(), other.len(), "Vector lengths must match for multiplication");
+        assert_eq!(
+            self.len(),
+            other.len(),
+            "Vector lengths must match for multiplication"
+        );
         Vector {
-            data: self.data.iter().zip(other.data.iter()).map(|(a, b)| a * b).collect(),
+            data: self
+                .data
+                .iter()
+                .zip(other.data.iter())
+                .map(|(a, b)| a * b)
+                .collect(),
         }
     }
 }

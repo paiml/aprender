@@ -238,12 +238,7 @@ mod tests {
     #[test]
     fn test_multivariate_regression() {
         // y = 1 + 2*x1 + 3*x2
-        let x = Matrix::from_vec(4, 2, vec![
-            1.0, 1.0,
-            2.0, 1.0,
-            1.0, 2.0,
-            2.0, 2.0,
-        ]).unwrap();
+        let x = Matrix::from_vec(4, 2, vec![1.0, 1.0, 2.0, 1.0, 1.0, 2.0, 2.0, 2.0]).unwrap();
         let y = Vector::from_slice(&[6.0, 8.0, 9.0, 11.0]);
 
         let mut model = LinearRegression::new();
@@ -364,13 +359,8 @@ mod tests {
     fn test_prediction_invariant() {
         // Property: predict(fit(X, y), X) should approximate y
         // Use non-collinear data
-        let x = Matrix::from_vec(5, 2, vec![
-            1.0, 1.0,
-            2.0, 3.0,
-            3.0, 2.0,
-            4.0, 5.0,
-            5.0, 4.0,
-        ]).unwrap();
+        let x =
+            Matrix::from_vec(5, 2, vec![1.0, 1.0, 2.0, 3.0, 3.0, 2.0, 4.0, 5.0, 5.0, 4.0]).unwrap();
         // y = 2*x1 + 3*x2 + 1
         let y = Vector::from_slice(&[6.0, 14.0, 13.0, 24.0, 23.0]);
 
@@ -388,14 +378,15 @@ mod tests {
     fn test_coefficients_length_invariant() {
         // Property: coefficients.len() == n_features
         // Use well-conditioned data with independent columns
-        let x = Matrix::from_vec(6, 3, vec![
-            1.0, 0.0, 0.0,
-            0.0, 1.0, 0.0,
-            0.0, 0.0, 1.0,
-            1.0, 1.0, 0.0,
-            0.0, 1.0, 1.0,
-            1.0, 0.0, 1.0,
-        ]).unwrap();
+        let x = Matrix::from_vec(
+            6,
+            3,
+            vec![
+                1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0,
+                0.0, 1.0,
+            ],
+        )
+        .unwrap();
         let y = Vector::from_slice(&[1.0, 2.0, 3.0, 3.0, 5.0, 4.0]);
 
         let mut model = LinearRegression::new();

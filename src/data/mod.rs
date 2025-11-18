@@ -189,7 +189,8 @@ impl DataFrame {
             return Err("Cannot drop the last column");
         }
 
-        let idx = self.columns
+        let idx = self
+            .columns
             .iter()
             .position(|(n, _)| n == name)
             .ok_or("Column not found")?;
@@ -303,9 +304,7 @@ mod tests {
 
     #[test]
     fn test_new_empty_name_error() {
-        let columns = vec![
-            ("".to_string(), Vector::from_slice(&[1.0, 2.0])),
-        ];
+        let columns = vec![("".to_string(), Vector::from_slice(&[1.0, 2.0]))];
         let result = DataFrame::new(columns);
         assert!(result.is_err());
     }
@@ -443,9 +442,7 @@ mod tests {
 
     #[test]
     fn test_drop_last_column_error() {
-        let columns = vec![
-            ("a".to_string(), Vector::from_slice(&[1.0, 2.0])),
-        ];
+        let columns = vec![("a".to_string(), Vector::from_slice(&[1.0, 2.0]))];
         let mut df = DataFrame::new(columns).unwrap();
         let result = df.drop_column("a");
         assert!(result.is_err());
@@ -453,9 +450,10 @@ mod tests {
 
     #[test]
     fn test_describe() {
-        let columns = vec![
-            ("x".to_string(), Vector::from_slice(&[1.0, 2.0, 3.0, 4.0, 5.0])),
-        ];
+        let columns = vec![(
+            "x".to_string(),
+            Vector::from_slice(&[1.0, 2.0, 3.0, 4.0, 5.0]),
+        )];
         let df = DataFrame::new(columns).unwrap();
         let stats = df.describe();
 

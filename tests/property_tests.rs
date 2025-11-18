@@ -13,8 +13,7 @@ fn matrix_strategy(rows: usize, cols: usize) -> impl Strategy<Value = Matrix<f32
 
 // Strategy for generating vectors
 fn vector_strategy(len: usize) -> impl Strategy<Value = Vector<f32>> {
-    proptest::collection::vec(-100.0f32..100.0, len)
-        .prop_map(|data| Vector::from_vec(data))
+    proptest::collection::vec(-100.0f32..100.0, len).prop_map(Vector::from_vec)
 }
 
 proptest! {
@@ -218,14 +217,14 @@ mod additional_tests {
     #[test]
     fn test_silhouette_bounds() {
         // Silhouette score should be in [-1, 1]
-        let data = Matrix::from_vec(6, 2, vec![
-            0.0, 0.0,
-            0.1, 0.1,
-            0.2, 0.0,
-            10.0, 10.0,
-            10.1, 10.1,
-            10.0, 10.2,
-        ]).unwrap();
+        let data = Matrix::from_vec(
+            6,
+            2,
+            vec![
+                0.0, 0.0, 0.1, 0.1, 0.2, 0.0, 10.0, 10.0, 10.1, 10.1, 10.0, 10.2,
+            ],
+        )
+        .unwrap();
         let labels = vec![0, 0, 0, 1, 1, 1];
         let score = silhouette_score(&data, &labels);
 
