@@ -84,7 +84,6 @@ impl TreeNode {
 /// Uses Gini impurity for splitting criterion and builds trees recursively.
 #[derive(Debug, Clone)]
 pub struct DecisionTreeClassifier {
-    #[allow(dead_code)] // Will be used in fit/predict implementation
     tree: Option<TreeNode>,
     max_depth: Option<usize>,
 }
@@ -106,6 +105,108 @@ impl DecisionTreeClassifier {
     pub fn with_max_depth(mut self, depth: usize) -> Self {
         self.max_depth = Some(depth);
         self
+    }
+
+    /// Fits the decision tree to training data.
+    ///
+    /// # Arguments
+    ///
+    /// * `x` - Training features (n_samples × n_features)
+    /// * `y` - Training labels (n_samples class indices)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the data is invalid.
+    pub fn fit(
+        &mut self,
+        x: &crate::primitives::Matrix<f32>,
+        y: &[usize],
+    ) -> Result<(), &'static str> {
+        let (n_rows, _n_cols) = x.shape();
+        if n_rows != y.len() {
+            return Err("Number of samples in X and y must match");
+        }
+        if n_rows == 0 {
+            return Err("Cannot fit with zero samples");
+        }
+
+        self.tree = Some(build_tree(x, y, 0, self.max_depth));
+        Ok(())
+    }
+
+    /// Predicts class labels for samples.
+    ///
+    /// # Arguments
+    ///
+    /// * `x` - Feature matrix (n_samples × n_features)
+    ///
+    /// # Returns
+    ///
+    /// Vector of predicted class labels
+    ///
+    /// # Panics
+    ///
+    /// Panics if called before fit()
+    pub fn predict(&self, x: &crate::primitives::Matrix<f32>) -> Vec<usize> {
+        let (n_samples, n_features) = x.shape();
+        let mut predictions = Vec::with_capacity(n_samples);
+
+        for row in 0..n_samples {
+            let mut sample = Vec::with_capacity(n_features);
+            for col in 0..n_features {
+                sample.push(x.get(row, col));
+            }
+            predictions.push(self.predict_one(&sample));
+        }
+
+        predictions
+    }
+
+    /// Predicts the class label for a single sample.
+    ///
+    /// # Arguments
+    ///
+    /// * `x` - Feature vector for one sample
+    ///
+    /// # Returns
+    ///
+    /// Predicted class label
+    fn predict_one(&self, x: &[f32]) -> usize {
+        let tree = self.tree.as_ref().expect("Model not fitted yet");
+
+        let mut node = tree;
+        loop {
+            match node {
+                TreeNode::Leaf(leaf) => return leaf.class_label,
+                TreeNode::Node(internal) => {
+                    if x[internal.feature_idx] <= internal.threshold {
+                        node = &internal.left;
+                    } else {
+                        node = &internal.right;
+                    }
+                }
+            }
+        }
+    }
+
+    /// Computes the accuracy score on test data.
+    ///
+    /// # Arguments
+    ///
+    /// * `x` - Test features (n_samples × n_features)
+    /// * `y` - True labels (n_samples)
+    ///
+    /// # Returns
+    ///
+    /// Accuracy (fraction of correct predictions)
+    pub fn score(&self, x: &crate::primitives::Matrix<f32>, y: &[usize]) -> f32 {
+        let predictions = self.predict(x);
+        let correct = predictions
+            .iter()
+            .zip(y.iter())
+            .filter(|(pred, true_label)| pred == true_label)
+            .count();
+        correct as f32 / y.len() as f32
     }
 }
 
@@ -796,5 +897,112 @@ mod tests {
 
         // Depth should be <= 1
         assert!(tree.depth() <= 1);
+    }
+
+    // RED-GREEN-REFACTOR Cycle 5: fit/predict/score
+
+    #[test]
+    fn test_fit_simple() {
+        use crate::primitives::Matrix;
+
+        let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 5.0, 6.0]).unwrap();
+        let y = vec![0, 0, 1, 1];
+
+        let mut tree = DecisionTreeClassifier::new().with_max_depth(5);
+        let result = tree.fit(&x, &y);
+
+        assert!(result.is_ok());
+        assert!(tree.tree.is_some()); // Tree should be built
+    }
+
+    #[test]
+    fn test_predict_perfect_classification() {
+        use crate::primitives::Matrix;
+
+        // Perfectly separable data
+        let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 5.0, 6.0]).unwrap();
+        let y = vec![0, 0, 1, 1];
+
+        let mut tree = DecisionTreeClassifier::new().with_max_depth(5);
+        tree.fit(&x, &y).unwrap();
+
+        let predictions = tree.predict(&x);
+        assert_eq!(predictions, vec![0, 0, 1, 1]);
+    }
+
+    #[test]
+    fn test_predict_single_sample() {
+        use crate::primitives::Matrix;
+
+        let x_train = Matrix::from_vec(4, 1, vec![1.0, 2.0, 5.0, 6.0]).unwrap();
+        let y_train = vec![0, 0, 1, 1];
+
+        let mut tree = DecisionTreeClassifier::new().with_max_depth(5);
+        tree.fit(&x_train, &y_train).unwrap();
+
+        // Test single sample prediction
+        let x_test = Matrix::from_vec(1, 1, vec![1.5]).unwrap();
+        let predictions = tree.predict(&x_test);
+        assert_eq!(predictions.len(), 1);
+        assert_eq!(predictions[0], 0); // Should be class 0 (closer to 1.0, 2.0)
+    }
+
+    #[test]
+    fn test_score_perfect() {
+        use crate::primitives::Matrix;
+
+        let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 5.0, 6.0]).unwrap();
+        let y = vec![0, 0, 1, 1];
+
+        let mut tree = DecisionTreeClassifier::new().with_max_depth(5);
+        tree.fit(&x, &y).unwrap();
+
+        let accuracy = tree.score(&x, &y);
+        assert!((accuracy - 1.0).abs() < 1e-6); // Perfect classification
+    }
+
+    #[test]
+    fn test_score_partial() {
+        use crate::primitives::Matrix;
+
+        // Train on simple data
+        let x_train = Matrix::from_vec(4, 1, vec![1.0, 2.0, 5.0, 6.0]).unwrap();
+        let y_train = vec![0, 0, 1, 1];
+
+        let mut tree = DecisionTreeClassifier::new().with_max_depth(1);
+        tree.fit(&x_train, &y_train).unwrap();
+
+        // Score should be between 0 and 1
+        let accuracy = tree.score(&x_train, &y_train);
+        assert!((0.0..=1.0).contains(&accuracy));
+    }
+
+    #[test]
+    fn test_multiclass_classification() {
+        use crate::primitives::Matrix;
+
+        // 3-class problem
+        let x = Matrix::from_vec(
+            6,
+            2,
+            vec![
+                1.0, 1.0, // class 0
+                1.5, 1.5, // class 0
+                5.0, 5.0, // class 1
+                5.5, 5.5, // class 1
+                9.0, 9.0, // class 2
+                9.5, 9.5, // class 2
+            ],
+        )
+        .unwrap();
+        let y = vec![0, 0, 1, 1, 2, 2];
+
+        let mut tree = DecisionTreeClassifier::new().with_max_depth(5);
+        tree.fit(&x, &y).unwrap();
+
+        let predictions = tree.predict(&x);
+        assert_eq!(predictions.len(), 6);
+        // Should classify perfectly
+        assert_eq!(predictions, vec![0, 0, 1, 1, 2, 2]);
     }
 }
