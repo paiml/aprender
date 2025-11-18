@@ -35,11 +35,13 @@
 //! - [`cluster`]: Clustering algorithms (K-Means)
 //! - [`tree`]: Decision tree classifiers
 //! - [`metrics`]: Evaluation metrics
+//! - [`model_selection`]: Cross-validation and train/test splitting
 
 pub mod cluster;
 pub mod data;
 pub mod linear_model;
 pub mod metrics;
+pub mod model_selection;
 pub mod prelude;
 pub mod primitives;
 pub mod traits;
