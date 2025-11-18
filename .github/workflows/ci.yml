@@ -53,6 +53,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Unit tests
         run: cargo test --lib
+      - name: Integration tests
+        run: cargo test --test integration
       - name: Property tests
         run: cargo test --test property_tests
         env:
@@ -81,6 +83,34 @@ jobs:
           files: lcov.info
           fail_ci_if_error: false
 
+  security:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: rustsec/audit-check@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  deny:
+    name: Dependency Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+
+  docs:
+    name: Documentation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build docs
+        run: cargo doc --no-deps --all-features
+        env:
+          RUSTDOCFLAGS: -Dwarnings
+
   shellcheck:
     name: Shellcheck
     runs-on: ubuntu-latest
@@ -92,7 +122,7 @@ jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
-    needs: [check, fmt, clippy, test]
+    needs: [check, fmt, clippy, test, security, deny]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable

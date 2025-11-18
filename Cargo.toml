@@ -2,10 +2,13 @@
 name = "aprender"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.70"
 authors = ["Noah Gift <noah@paiml.com>"]
 license = "MIT"
 description = "Next-generation machine learning library in pure Rust"
 repository = "https://github.com/paiml/aprender"
+documentation = "https://docs.rs/aprender"
+readme = "README.md"
 keywords = ["machine-learning", "ml", "regression", "clustering", "statistics"]
 categories = ["science", "algorithms"]
 

@@ -27,7 +27,7 @@ fn main() {
     .unwrap();
 
     // True labels for comparison
-    let true_labels = vec![0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2];
+    let true_labels = [0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2];
 
     // Fit K-Means with 3 clusters
     println!("Fitting K-Means with 3 clusters...");

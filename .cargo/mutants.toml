@@ -1,0 +1,15 @@
+# cargo-mutants configuration
+# https://mutants.rs/
+
+# Timeout multiplier for tests
+timeout_multiplier = 2.0
+
+# Minimum timeout in seconds
+minimum_test_timeout = 60
+
+# Exclude test files from mutation
+exclude_globs = [
+    "tests/**",
+    "benches/**",
+    "examples/**",
+]

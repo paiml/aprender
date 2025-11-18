@@ -1,0 +1,11 @@
+# Clippy configuration
+# https://doc.rust-lang.org/clippy/configuration.html
+
+# Maximum cognitive complexity before warning
+cognitive-complexity-threshold = 15
+
+# Allowed names for single-character variables (mathematical notation)
+allowed-idents-below-min-chars = ["x", "y", "i", "j", "k", "n", "m", "a", "b", "c"]
+
+# Minimum identifier length (allow single chars for math)
+min-ident-chars-threshold = 1
