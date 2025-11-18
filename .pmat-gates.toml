@@ -1,0 +1,33 @@
+# PMAT Quality Gates Configuration
+# Toyota Way standards from aprender-spec-v1.md
+
+[gates]
+# Complexity thresholds
+max_cyclomatic_complexity = 10
+max_cognitive_complexity = 15
+
+# Test coverage
+min_test_coverage = 95
+min_mutation_score = 85
+
+# Technical debt
+max_satd_comments = 0
+min_tdg_score = 95
+
+# Documentation
+min_doc_coverage = 90
+
+[hooks]
+# Pre-commit checks
+run_on_commit = true
+fail_on_complexity = true
+fail_on_satd = true
+fail_on_fmt = true
+fail_on_clippy = true
+
+[ci]
+# CI/CD requirements
+require_tests = true
+require_coverage = true
+require_clippy = true
+require_fmt = true

@@ -37,6 +37,7 @@ harness = false
 [profile.release]
 lto = true
 codegen-units = 1
+debug = true  # Enable debug info for flamegraph/profiling
 
 [lints.rust]
 unsafe_code = "forbid"
