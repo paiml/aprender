@@ -91,7 +91,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Install cargo-mutants
-        uses: taiki-e/install-action@cargo-mutants
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-mutants
       - name: Run mutation tests (sample)
         run: cargo mutants --no-times --timeout 300 --in-place -- --all-features
         continue-on-error: true
