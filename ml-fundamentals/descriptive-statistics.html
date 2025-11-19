@@ -1,0 +1,600 @@
+<!DOCTYPE HTML>
+<html lang="en" class="rust" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Descriptive Statistics Theory - EXTREME TDD - The Aprender Guide to Zero-Defect Machine Learning</title>
+
+
+        <!-- Custom HTML head -->
+        
+        <meta name="description" content="A comprehensive guide to EXTREME TDD methodology: RED-GREEN-REFACTOR cycles, mutation testing, and Toyota Way principles demonstrated through ML library development">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="../favicon.svg">
+        <link rel="shortcut icon" href="../favicon.png">
+        <link rel="stylesheet" href="../css/variables.css">
+        <link rel="stylesheet" href="../css/general.css">
+        <link rel="stylesheet" href="../css/chrome.css">
+        <link rel="stylesheet" href="../css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="../fonts/fonts.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" href="../highlight.css">
+        <link rel="stylesheet" href="../tomorrow-night.css">
+        <link rel="stylesheet" href="../ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+
+    </head>
+    <body class="sidebar-visible no-js">
+    <div id="body-container">
+        <!-- Provide site root to javascript -->
+        <script>
+            var path_to_root = "../";
+            var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "rust";
+        </script>
+
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            var html = document.querySelector('html');
+            html.classList.remove('rust')
+            html.classList.add(theme);
+            var body = document.querySelector('body');
+            body.classList.remove('no-js')
+            body.classList.add('js');
+        </script>
+
+        <input type="checkbox" id="sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            var body = document.querySelector('body');
+            var sidebar = null;
+            var sidebar_toggle = document.getElementById("sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+            }
+            sidebar_toggle.checked = sidebar === 'visible';
+            body.classList.remove('sidebar-visible');
+            body.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <div class="sidebar-scrollbox">
+                <ol class="chapter"><li class="chapter-item expanded affix "><a href="../introduction.html">Introduction</a></li><li class="chapter-item expanded affix "><li class="part-title">Core Methodology</li><li class="chapter-item expanded "><a href="../methodology/what-is-extreme-tdd.html"><strong aria-hidden="true">1.</strong> What is EXTREME TDD?</a></li><li class="chapter-item expanded "><a href="../methodology/red-green-refactor.html"><strong aria-hidden="true">2.</strong> The RED-GREEN-REFACTOR Cycle</a></li><li class="chapter-item expanded "><a href="../methodology/test-first-philosophy.html"><strong aria-hidden="true">3.</strong> Test-First Philosophy</a></li><li class="chapter-item expanded "><a href="../methodology/zero-tolerance.html"><strong aria-hidden="true">4.</strong> Zero Tolerance Quality</a></li><li class="chapter-item expanded affix "><li class="part-title">The RED Phase</li><li class="chapter-item expanded "><a href="../red-phase/failing-tests-first.html"><strong aria-hidden="true">5.</strong> Writing Failing Tests First</a></li><li class="chapter-item expanded "><a href="../red-phase/test-categories.html"><strong aria-hidden="true">6.</strong> Test Categories</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../red-phase/unit-tests.html"><strong aria-hidden="true">6.1.</strong> Unit Tests</a></li><li class="chapter-item expanded "><a href="../red-phase/integration-tests.html"><strong aria-hidden="true">6.2.</strong> Integration Tests</a></li><li class="chapter-item expanded "><a href="../red-phase/property-based-tests.html"><strong aria-hidden="true">6.3.</strong> Property-Based Tests</a></li></ol></li><li class="chapter-item expanded "><a href="../red-phase/verification-strategy.html"><strong aria-hidden="true">7.</strong> Verification Strategy</a></li><li class="chapter-item expanded affix "><li class="part-title">The GREEN Phase</li><li class="chapter-item expanded "><a href="../green-phase/minimal-implementation.html"><strong aria-hidden="true">8.</strong> Minimal Implementation</a></li><li class="chapter-item expanded "><a href="../green-phase/making-tests-pass.html"><strong aria-hidden="true">9.</strong> Making Tests Pass</a></li><li class="chapter-item expanded "><a href="../green-phase/avoiding-over-engineering.html"><strong aria-hidden="true">10.</strong> Avoiding Over-Engineering</a></li><li class="chapter-item expanded "><a href="../green-phase/simplest-thing.html"><strong aria-hidden="true">11.</strong> The Simplest Thing That Works</a></li><li class="chapter-item expanded affix "><li class="part-title">The REFACTOR Phase</li><li class="chapter-item expanded "><a href="../refactor-phase/refactoring-with-confidence.html"><strong aria-hidden="true">12.</strong> Refactoring with Confidence</a></li><li class="chapter-item expanded "><a href="../refactor-phase/code-quality.html"><strong aria-hidden="true">13.</strong> Code Quality Improvements</a></li><li class="chapter-item expanded "><a href="../refactor-phase/performance-optimization.html"><strong aria-hidden="true">14.</strong> Performance Optimization</a></li><li class="chapter-item expanded "><a href="../refactor-phase/documentation.html"><strong aria-hidden="true">15.</strong> Documentation</a></li><li class="chapter-item expanded affix "><li class="part-title">Advanced Testing</li><li class="chapter-item expanded "><a href="../advanced-testing/property-based-testing.html"><strong aria-hidden="true">16.</strong> Property-Based Testing</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../advanced-testing/proptest-fundamentals.html"><strong aria-hidden="true">16.1.</strong> Proptest Fundamentals</a></li><li class="chapter-item expanded "><a href="../advanced-testing/strategies-generators.html"><strong aria-hidden="true">16.2.</strong> Strategies and Generators</a></li><li class="chapter-item expanded "><a href="../advanced-testing/testing-invariants.html"><strong aria-hidden="true">16.3.</strong> Testing Invariants</a></li></ol></li><li class="chapter-item expanded "><a href="../advanced-testing/mutation-testing.html"><strong aria-hidden="true">17.</strong> Mutation Testing</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../advanced-testing/what-is-mutation-testing.html"><strong aria-hidden="true">17.1.</strong> What is Mutation Testing?</a></li><li class="chapter-item expanded "><a href="../advanced-testing/using-cargo-mutants.html"><strong aria-hidden="true">17.2.</strong> Using cargo-mutants</a></li><li class="chapter-item expanded "><a href="../advanced-testing/mutation-score-targets.html"><strong aria-hidden="true">17.3.</strong> Mutation Score Targets</a></li><li class="chapter-item expanded "><a href="../advanced-testing/killing-mutants.html"><strong aria-hidden="true">17.4.</strong> Killing Mutants</a></li></ol></li><li class="chapter-item expanded "><a href="../advanced-testing/fuzzing.html"><strong aria-hidden="true">18.</strong> Fuzzing</a></li><li class="chapter-item expanded "><a href="../advanced-testing/benchmark-testing.html"><strong aria-hidden="true">19.</strong> Benchmark Testing</a></li><li class="chapter-item expanded affix "><li class="part-title">Quality Gates</li><li class="chapter-item expanded "><a href="../quality-gates/pre-commit-hooks.html"><strong aria-hidden="true">20.</strong> Pre-Commit Hooks</a></li><li class="chapter-item expanded "><a href="../quality-gates/continuous-integration.html"><strong aria-hidden="true">21.</strong> Continuous Integration</a></li><li class="chapter-item expanded "><a href="../quality-gates/code-formatting.html"><strong aria-hidden="true">22.</strong> Code Formatting (rustfmt)</a></li><li class="chapter-item expanded "><a href="../quality-gates/linting-clippy.html"><strong aria-hidden="true">23.</strong> Linting (clippy)</a></li><li class="chapter-item expanded "><a href="../quality-gates/coverage-measurement.html"><strong aria-hidden="true">24.</strong> Coverage Measurement</a></li><li class="chapter-item expanded "><a href="../quality-gates/complexity-analysis.html"><strong aria-hidden="true">25.</strong> Complexity Analysis</a></li><li class="chapter-item expanded "><a href="../quality-gates/tdg-score.html"><strong aria-hidden="true">26.</strong> Technical Debt Gradient (TDG)</a></li><li class="chapter-item expanded affix "><li class="part-title">Toyota Way Principles</li><li class="chapter-item expanded "><a href="../toyota-way/overview.html"><strong aria-hidden="true">27.</strong> Overview</a></li><li class="chapter-item expanded "><a href="../toyota-way/kaizen.html"><strong aria-hidden="true">28.</strong> Kaizen (Continuous Improvement)</a></li><li class="chapter-item expanded "><a href="../toyota-way/genchi-genbutsu.html"><strong aria-hidden="true">29.</strong> Genchi Genbutsu (Go and See)</a></li><li class="chapter-item expanded "><a href="../toyota-way/jidoka.html"><strong aria-hidden="true">30.</strong> Jidoka (Built-in Quality)</a></li><li class="chapter-item expanded "><a href="../toyota-way/pdca-cycle.html"><strong aria-hidden="true">31.</strong> PDCA Cycle</a></li><li class="chapter-item expanded "><a href="../toyota-way/respect-for-people.html"><strong aria-hidden="true">32.</strong> Respect for People</a></li><li class="chapter-item expanded affix "><li class="part-title">Machine Learning Fundamentals</li><li class="chapter-item expanded "><a href="../ml-fundamentals/linear-regression.html"><strong aria-hidden="true">33.</strong> Linear Regression Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/regularization.html"><strong aria-hidden="true">34.</strong> Regularization Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/logistic-regression.html"><strong aria-hidden="true">35.</strong> Logistic Regression Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/decision-trees.html"><strong aria-hidden="true">36.</strong> Decision Trees Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/ensemble-methods.html"><strong aria-hidden="true">37.</strong> Ensemble Methods Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/kmeans-clustering.html"><strong aria-hidden="true">38.</strong> K-Means Clustering Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/regression-metrics.html"><strong aria-hidden="true">39.</strong> Regression Metrics Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/classification-metrics.html"><strong aria-hidden="true">40.</strong> Classification Metrics Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/cross-validation.html"><strong aria-hidden="true">41.</strong> Cross-Validation Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/gradient-descent.html"><strong aria-hidden="true">42.</strong> Gradient Descent Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/advanced-optimizers.html"><strong aria-hidden="true">43.</strong> Advanced Optimizers Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/feature-scaling.html"><strong aria-hidden="true">44.</strong> Feature Scaling Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/graph-algorithms.html"><strong aria-hidden="true">45.</strong> Graph Algorithms Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/descriptive-statistics.html" class="active"><strong aria-hidden="true">46.</strong> Descriptive Statistics Theory</a></li><li class="chapter-item expanded affix "><li class="part-title">Real-World Examples from Aprender</li><li class="chapter-item expanded "><a href="../examples/linear-regression.html"><strong aria-hidden="true">47.</strong> Case Study: Linear Regression</a></li><li class="chapter-item expanded "><a href="../examples/boston-housing.html"><strong aria-hidden="true">48.</strong> Case Study: Boston Housing</a></li><li class="chapter-item expanded "><a href="../examples/cross-validation.html"><strong aria-hidden="true">49.</strong> Case Study: Cross-Validation</a></li><li class="chapter-item expanded "><a href="../examples/random-forest.html"><strong aria-hidden="true">50.</strong> Case Study: Random Forest</a></li><li class="chapter-item expanded "><a href="../examples/random-forest-iris.html"><strong aria-hidden="true">51.</strong> Case Study: Random Forest Iris</a></li><li class="chapter-item expanded "><a href="../examples/decision-tree-iris.html"><strong aria-hidden="true">52.</strong> Case Study: Decision Tree Iris</a></li><li class="chapter-item expanded "><a href="../examples/model-serialization.html"><strong aria-hidden="true">53.</strong> Case Study: Model Serialization</a></li><li class="chapter-item expanded "><a href="../examples/kmeans-clustering.html"><strong aria-hidden="true">54.</strong> Case Study: KMeans Clustering</a></li><li class="chapter-item expanded "><a href="../examples/iris-clustering.html"><strong aria-hidden="true">55.</strong> Case Study: Iris Clustering</a></li><li class="chapter-item expanded "><a href="../examples/logistic-regression.html"><strong aria-hidden="true">56.</strong> Case Study: Logistic Regression</a></li><li class="chapter-item expanded "><a href="../examples/regularized-regression.html"><strong aria-hidden="true">57.</strong> Case Study: Regularized Regression</a></li><li class="chapter-item expanded "><a href="../examples/optimizer-demo.html"><strong aria-hidden="true">58.</strong> Case Study: Optimizer Demo</a></li><li class="chapter-item expanded "><a href="../examples/dataframe-basics.html"><strong aria-hidden="true">59.</strong> Case Study: DataFrame Basics</a></li><li class="chapter-item expanded "><a href="../examples/graph-social-network.html"><strong aria-hidden="true">60.</strong> Case Study: Graph Social Network</a></li><li class="chapter-item expanded "><a href="../examples/descriptive-statistics.html"><strong aria-hidden="true">61.</strong> Case Study: Descriptive Statistics</a></li><li class="chapter-item expanded affix "><li class="part-title">Sprint-Based Development</li><li class="chapter-item expanded "><a href="../sprints/sprint-planning.html"><strong aria-hidden="true">62.</strong> Sprint Planning</a></li><li class="chapter-item expanded "><a href="../sprints/sprint-execution.html"><strong aria-hidden="true">63.</strong> Sprint Execution</a></li><li class="chapter-item expanded "><a href="../sprints/sprint-review.html"><strong aria-hidden="true">64.</strong> Sprint Review</a></li><li class="chapter-item expanded "><a href="../sprints/sprint-retrospective.html"><strong aria-hidden="true">65.</strong> Sprint Retrospective</a></li><li class="chapter-item expanded "><a href="../sprints/issue-management.html"><strong aria-hidden="true">66.</strong> Issue Management</a></li><li class="chapter-item expanded affix "><li class="part-title">Anti-Hallucination Enforcement</li><li class="chapter-item expanded "><a href="../anti-hallucination/test-backed-examples.html"><strong aria-hidden="true">67.</strong> Test-Backed Examples</a></li><li class="chapter-item expanded "><a href="../anti-hallucination/example-verification.html"><strong aria-hidden="true">68.</strong> Example Verification</a></li><li class="chapter-item expanded "><a href="../anti-hallucination/ci-validation.html"><strong aria-hidden="true">69.</strong> CI Validation</a></li><li class="chapter-item expanded "><a href="../anti-hallucination/documentation-testing.html"><strong aria-hidden="true">70.</strong> Documentation Testing</a></li><li class="chapter-item expanded affix "><li class="part-title">Tools and Setup</li><li class="chapter-item expanded "><a href="../tools/development-environment.html"><strong aria-hidden="true">71.</strong> Development Environment</a></li><li class="chapter-item expanded "><a href="../tools/cargo-test.html"><strong aria-hidden="true">72.</strong> cargo test</a></li><li class="chapter-item expanded "><a href="../tools/cargo-clippy.html"><strong aria-hidden="true">73.</strong> cargo clippy</a></li><li class="chapter-item expanded "><a href="../tools/cargo-fmt.html"><strong aria-hidden="true">74.</strong> cargo fmt</a></li><li class="chapter-item expanded "><a href="../tools/cargo-mutants.html"><strong aria-hidden="true">75.</strong> cargo mutants</a></li><li class="chapter-item expanded "><a href="../tools/proptest.html"><strong aria-hidden="true">76.</strong> proptest</a></li><li class="chapter-item expanded "><a href="../tools/criterion.html"><strong aria-hidden="true">77.</strong> criterion</a></li><li class="chapter-item expanded "><a href="../tools/pmat.html"><strong aria-hidden="true">78.</strong> pmat (Toyota AI Toolkit)</a></li><li class="chapter-item expanded affix "><li class="part-title">Best Practices</li><li class="chapter-item expanded "><a href="../best-practices/error-handling.html"><strong aria-hidden="true">79.</strong> Error Handling</a></li><li class="chapter-item expanded "><a href="../best-practices/api-design.html"><strong aria-hidden="true">80.</strong> API Design</a></li><li class="chapter-item expanded "><a href="../best-practices/builder-pattern.html"><strong aria-hidden="true">81.</strong> Builder Pattern</a></li><li class="chapter-item expanded "><a href="../best-practices/type-safety.html"><strong aria-hidden="true">82.</strong> Type Safety</a></li><li class="chapter-item expanded "><a href="../best-practices/performance.html"><strong aria-hidden="true">83.</strong> Performance Considerations</a></li><li class="chapter-item expanded "><a href="../best-practices/documentation-standards.html"><strong aria-hidden="true">84.</strong> Documentation Standards</a></li><li class="chapter-item expanded affix "><li class="part-title">Metrics and Measurement</li><li class="chapter-item expanded "><a href="../metrics/test-coverage.html"><strong aria-hidden="true">85.</strong> Test Coverage</a></li><li class="chapter-item expanded "><a href="../metrics/mutation-score.html"><strong aria-hidden="true">86.</strong> Mutation Score</a></li><li class="chapter-item expanded "><a href="../metrics/cyclomatic-complexity.html"><strong aria-hidden="true">87.</strong> Cyclomatic Complexity</a></li><li class="chapter-item expanded "><a href="../metrics/code-churn.html"><strong aria-hidden="true">88.</strong> Code Churn</a></li><li class="chapter-item expanded "><a href="../metrics/build-times.html"><strong aria-hidden="true">89.</strong> Build Times</a></li><li class="chapter-item expanded "><a href="../metrics/tdg-breakdown.html"><strong aria-hidden="true">90.</strong> TDG Score Breakdown</a></li><li class="chapter-item expanded affix "><li class="part-title">Common Pitfalls</li><li class="chapter-item expanded "><a href="../pitfalls/skipping-tests.html"><strong aria-hidden="true">91.</strong> Skipping Tests</a></li><li class="chapter-item expanded "><a href="../pitfalls/insufficient-coverage.html"><strong aria-hidden="true">92.</strong> Insufficient Test Coverage</a></li><li class="chapter-item expanded "><a href="../pitfalls/ignoring-warnings.html"><strong aria-hidden="true">93.</strong> Ignoring Warnings</a></li><li class="chapter-item expanded "><a href="../pitfalls/over-mocking.html"><strong aria-hidden="true">94.</strong> Over-Mocking</a></li><li class="chapter-item expanded "><a href="../pitfalls/flaky-tests.html"><strong aria-hidden="true">95.</strong> Flaky Tests</a></li><li class="chapter-item expanded "><a href="../pitfalls/technical-debt.html"><strong aria-hidden="true">96.</strong> Technical Debt Accumulation</a></li><li class="chapter-item expanded affix "><li class="part-title">Appendix</li><li class="chapter-item expanded "><a href="../appendix/glossary.html"><strong aria-hidden="true">97.</strong> Glossary</a></li><li class="chapter-item expanded "><a href="../appendix/references.html"><strong aria-hidden="true">98.</strong> References</a></li><li class="chapter-item expanded "><a href="../appendix/further-reading.html"><strong aria-hidden="true">99.</strong> Further Reading</a></li><li class="chapter-item expanded "><a href="../appendix/contributing.html"><strong aria-hidden="true">100.</strong> Contributing to This Book</a></li></ol>
+            </div>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <!-- Track and set sidebar scroll position -->
+        <script>
+            var sidebarScrollbox = document.querySelector('#sidebar .sidebar-scrollbox');
+            sidebarScrollbox.addEventListener('click', function(e) {
+                if (e.target.tagName === 'A') {
+                    sessionStorage.setItem('sidebar-scroll', sidebarScrollbox.scrollTop);
+                }
+            }, { passive: true });
+            var sidebarScrollTop = sessionStorage.getItem('sidebar-scroll');
+            sessionStorage.removeItem('sidebar-scroll');
+            if (sidebarScrollTop) {
+                // preserve sidebar scroll position when navigating via links within sidebar
+                sidebarScrollbox.scrollTop = sidebarScrollTop;
+            } else {
+                // scroll sidebar to current active section when navigating via "next/previous chapter" buttons
+                var activeSection = document.querySelector('#sidebar .active');
+                if (activeSection) {
+                    activeSection.scrollIntoView({ block: 'center' });
+                }
+            }
+        </script>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="sidebar-toggle" class="icon-button" for="sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </label>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">EXTREME TDD - The Aprender Guide to Zero-Defect Machine Learning</h1>
+
+                    <div class="right-buttons">
+                        <a href="../print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                        <a href="https://github.com/paiml/aprender" title="Git repository" aria-label="Git repository">
+                            <i id="git-repository-button" class="fa fa-github"></i>
+                        </a>
+                        <a href="https://github.com/paiml/aprender/edit/main/book/src/ml-fundamentals/descriptive-statistics.md" title="Suggest an edit" aria-label="Suggest an edit">
+                            <i id="git-edit-button" class="fa fa-edit"></i>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="descriptive-statistics-theory"><a class="header" href="#descriptive-statistics-theory">Descriptive Statistics Theory</a></h1>
+<p>Descriptive statistics summarize and describe the main features of a dataset. This chapter covers aprender's statistics module, focusing on quantiles, five-number summaries, and histogram generation with adaptive binning.</p>
+<h2 id="quantiles-and-percentiles"><a class="header" href="#quantiles-and-percentiles">Quantiles and Percentiles</a></h2>
+<h3 id="definition"><a class="header" href="#definition">Definition</a></h3>
+<p>A <strong>quantile</strong> divides a dataset into equal-sized groups. The q-th quantile (0 ≤ q ≤ 1) is the value below which a proportion q of the data falls.</p>
+<p><strong>Percentiles</strong> are quantiles multiplied by 100:</p>
+<ul>
+<li>25th percentile = 0.25 quantile (Q1)</li>
+<li>50th percentile = 0.50 quantile (median, Q2)</li>
+<li>75th percentile = 0.75 quantile (Q3)</li>
+</ul>
+<h3 id="r-7-method-hyndman--fan"><a class="header" href="#r-7-method-hyndman--fan">R-7 Method (Hyndman &amp; Fan)</a></h3>
+<p>There are 9 different quantile calculation methods. Aprender uses <strong>R-7</strong>, the default in R, NumPy, and Pandas, which provides smooth interpolation.</p>
+<p><strong>Algorithm</strong>:</p>
+<ol>
+<li>Sort the data (or use QuickSelect for single quantile)</li>
+<li>Compute position: <code>h = (n - 1) * q</code></li>
+<li>If h is integer: return <code>data[h]</code></li>
+<li>Otherwise: linear interpolation between <code>data[floor(h)]</code> and <code>data[ceil(h)]</code></li>
+</ol>
+<p><strong>Interpolation formula</strong>:</p>
+<pre><code class="language-text">Q(q) = data[h_floor] + (h - h_floor) * (data[h_ceil] - data[h_floor])
+</code></pre>
+<h3 id="implementation"><a class="header" href="#implementation">Implementation</a></h3>
+<pre><code class="language-rust">use aprender::stats::DescriptiveStats;
+use trueno::Vector;
+
+let data = Vector::from_slice(&amp;[1.0, 2.0, 3.0, 4.0, 5.0]);
+let stats = DescriptiveStats::new(&amp;data);
+
+let median = stats.quantile(0.5).unwrap();
+assert!((median - 3.0).abs() &lt; 1e-6);
+
+let q25 = stats.quantile(0.25).unwrap();
+let q75 = stats.quantile(0.75).unwrap();
+println!(&quot;IQR: {:.2}&quot;, q75 - q25);</code></pre>
+<h3 id="quickselect-optimization"><a class="header" href="#quickselect-optimization">QuickSelect Optimization</a></h3>
+<p>Naive approach: Sort the entire array (O(n log n))</p>
+<p><strong>QuickSelect</strong> (Floyd-Rivest SELECT algorithm):</p>
+<ul>
+<li>Average case: O(n)</li>
+<li>Worst case: O(n²) (rare with good pivot selection)</li>
+<li><strong>10-100x faster for single quantiles on large datasets</strong></li>
+</ul>
+<p>Rust's <code>select_nth_unstable</code> uses Hoare's selection algorithm with median-of-medians pivot selection.</p>
+<pre><code class="language-rust">// Inside quantile() implementation
+let mut working_copy = self.data.as_slice().to_vec();
+working_copy.select_nth_unstable_by(h_floor, |a, b| {
+    a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
+});
+let value = working_copy[h_floor];</code></pre>
+<h3 id="time-complexity"><a class="header" href="#time-complexity">Time Complexity</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Operation</th><th>Naive (full sort)</th><th>QuickSelect</th></tr></thead><tbody>
+<tr><td>Single quantile</td><td>O(n log n)</td><td>O(n) average</td></tr>
+<tr><td>Multiple quantiles</td><td>O(n log n)</td><td>O(n log n) (reuse sorted)</td></tr>
+</tbody></table>
+</div>
+<p><strong>Best practice</strong>: For 3+ quantiles, sort once and reuse:</p>
+<pre><code class="language-rust">let percentiles = stats.percentiles(&amp;[25.0, 50.0, 75.0]).unwrap();</code></pre>
+<h2 id="five-number-summary"><a class="header" href="#five-number-summary">Five-Number Summary</a></h2>
+<h3 id="definition-1"><a class="header" href="#definition-1">Definition</a></h3>
+<p>The five-number summary provides a robust description of data distribution:</p>
+<ol>
+<li><strong>Minimum</strong>: Smallest value</li>
+<li><strong>Q1 (25th percentile)</strong>: Lower quartile</li>
+<li><strong>Median (50th percentile)</strong>: Middle value</li>
+<li><strong>Q3 (75th percentile)</strong>: Upper quartile</li>
+<li><strong>Maximum</strong>: Largest value</li>
+</ol>
+<p><strong>Interquartile Range (IQR)</strong>:</p>
+<pre><code class="language-text">IQR = Q3 - Q1
+</code></pre>
+<p>The IQR measures the spread of the middle 50% of data, resistant to outliers.</p>
+<h3 id="outlier-detection"><a class="header" href="#outlier-detection">Outlier Detection</a></h3>
+<p><strong>1.5 × IQR Rule</strong> (Tukey's fences):</p>
+<pre><code class="language-text">Lower fence = Q1 - 1.5 * IQR
+Upper fence = Q3 + 1.5 * IQR
+</code></pre>
+<p>Values outside these fences are potential outliers.</p>
+<p><strong>3 × IQR Rule</strong> (extreme outliers):</p>
+<pre><code class="language-text">Extreme lower = Q1 - 3 * IQR
+Extreme upper = Q3 + 3 * IQR
+</code></pre>
+<h3 id="implementation-1"><a class="header" href="#implementation-1">Implementation</a></h3>
+<pre><code class="language-rust">use aprender::stats::DescriptiveStats;
+use trueno::Vector;
+
+let data = Vector::from_slice(&amp;[1.0, 2.0, 3.0, 4.0, 5.0, 100.0]); // 100 is outlier
+let stats = DescriptiveStats::new(&amp;data);
+
+let summary = stats.five_number_summary().unwrap();
+println!(&quot;Min: {:.1}&quot;, summary.min);
+println!(&quot;Q1: {:.1}&quot;, summary.q1);
+println!(&quot;Median: {:.1}&quot;, summary.median);
+println!(&quot;Q3: {:.1}&quot;, summary.q3);
+println!(&quot;Max: {:.1}&quot;, summary.max);
+
+let iqr = stats.iqr().unwrap();
+let lower_fence = summary.q1 - 1.5 * iqr;
+let upper_fence = summary.q3 + 1.5 * iqr;
+
+// 100.0 &gt; upper_fence → outlier detected</code></pre>
+<h3 id="applications"><a class="header" href="#applications">Applications</a></h3>
+<ul>
+<li><strong>Exploratory Data Analysis</strong>: Quick distribution overview</li>
+<li><strong>Quality Control</strong>: Detect defects in manufacturing</li>
+<li><strong>Anomaly Detection</strong>: Find unusual values in sensor data</li>
+<li><strong>Data Validation</strong>: Identify data entry errors</li>
+</ul>
+<h2 id="histogram-binning-methods"><a class="header" href="#histogram-binning-methods">Histogram Binning Methods</a></h2>
+<h3 id="overview"><a class="header" href="#overview">Overview</a></h3>
+<p>Histograms visualize data distribution by grouping values into bins. Choosing the right number of bins is critical:</p>
+<ul>
+<li><strong>Too few bins</strong>: Over-smoothing, miss important features</li>
+<li><strong>Too many bins</strong>: Noise dominates, hard to interpret</li>
+</ul>
+<h3 id="freedman-diaconis-rule"><a class="header" href="#freedman-diaconis-rule">Freedman-Diaconis Rule</a></h3>
+<p><strong>Formula</strong>:</p>
+<pre><code class="language-text">bin_width = 2 * IQR * n^(-1/3)
+n_bins = ceil((max - min) / bin_width)
+</code></pre>
+<p><strong>Characteristics</strong>:</p>
+<ul>
+<li><strong>Outlier-resistant</strong>: Uses IQR instead of standard deviation</li>
+<li><strong>Adaptive</strong>: Adjusts to data spread</li>
+<li><strong>Best for</strong>: Skewed distributions, data with outliers</li>
+</ul>
+<p><strong>Time complexity</strong>: O(n log n) for full sort (or O(n) with QuickSelect for Q1/Q3)</p>
+<h3 id="sturges-rule"><a class="header" href="#sturges-rule">Sturges' Rule</a></h3>
+<p><strong>Formula</strong>:</p>
+<pre><code class="language-text">n_bins = ceil(log2(n)) + 1
+</code></pre>
+<p><strong>Characteristics</strong>:</p>
+<ul>
+<li><strong>Fast</strong>: O(1) computation</li>
+<li><strong>Simple</strong>: Only depends on sample size</li>
+<li><strong>Best for</strong>: Normal distributions, quick exploration</li>
+<li><strong>Warning</strong>: Underestimates bins for non-normal data</li>
+</ul>
+<p><strong>Example</strong>: 1000 samples → 11 bins, 1M samples → 21 bins</p>
+<h3 id="scotts-rule"><a class="header" href="#scotts-rule">Scott's Rule</a></h3>
+<p><strong>Formula</strong>:</p>
+<pre><code class="language-text">bin_width = 3.5 * σ * n^(-1/3)
+n_bins = ceil((max - min) / bin_width)
+</code></pre>
+<p>where σ is standard deviation.</p>
+<p><strong>Characteristics</strong>:</p>
+<ul>
+<li><strong>Statistically optimal</strong>: Minimizes integrated mean squared error (IMSE)</li>
+<li><strong>Sensitive to outliers</strong>: Uses standard deviation</li>
+<li><strong>Best for</strong>: Normal or near-normal distributions</li>
+</ul>
+<p><strong>Time complexity</strong>: O(n) for mean and stddev</p>
+<h3 id="square-root-rule"><a class="header" href="#square-root-rule">Square Root Rule</a></h3>
+<p><strong>Formula</strong>:</p>
+<pre><code class="language-text">n_bins = ceil(sqrt(n))
+</code></pre>
+<p><strong>Characteristics</strong>:</p>
+<ul>
+<li><strong>Very fast</strong>: O(1) computation</li>
+<li><strong>Simple heuristic</strong>: No statistical basis</li>
+<li><strong>Best for</strong>: Quick exploration, initial EDA</li>
+</ul>
+<p><strong>Example</strong>: 100 samples → 10 bins, 10K samples → 100 bins</p>
+<h3 id="bayesian-blocks-placeholder"><a class="header" href="#bayesian-blocks-placeholder">Bayesian Blocks (Placeholder)</a></h3>
+<p><strong>Status</strong>: Future implementation (O(n²) dynamic programming)</p>
+<p><strong>Characteristics</strong>:</p>
+<ul>
+<li><strong>Adaptive</strong>: Finds optimal change points</li>
+<li><strong>Non-uniform</strong>: Bins can have different widths</li>
+<li><strong>Best for</strong>: Time series, event data with varying density</li>
+</ul>
+<p>Currently falls back to Freedman-Diaconis.</p>
+<h3 id="comparison-table"><a class="header" href="#comparison-table">Comparison Table</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Method</th><th>Complexity</th><th>Outlier Resistant</th><th>Best For</th></tr></thead><tbody>
+<tr><td>Freedman-Diaconis</td><td>O(n log n)</td><td>✅ Yes (uses IQR)</td><td>Skewed data, outliers</td></tr>
+<tr><td>Sturges</td><td>O(1)</td><td>❌ No</td><td>Normal distributions</td></tr>
+<tr><td>Scott</td><td>O(n)</td><td>❌ No (uses σ)</td><td>Near-normal data</td></tr>
+<tr><td>Square Root</td><td>O(1)</td><td>❌ No</td><td>Quick exploration</td></tr>
+<tr><td>Bayesian Blocks</td><td>O(n²)</td><td>✅ Yes</td><td>Time series, events</td></tr>
+</tbody></table>
+</div>
+<h3 id="implementation-2"><a class="header" href="#implementation-2">Implementation</a></h3>
+<pre><code class="language-rust">use aprender::stats::{BinMethod, DescriptiveStats};
+use trueno::Vector;
+
+let data = Vector::from_slice(&amp;[/* your data */]);
+let stats = DescriptiveStats::new(&amp;data);
+
+// Use Freedman-Diaconis for outlier-resistant binning
+let hist = stats.histogram_method(BinMethod::FreedmanDiaconis).unwrap();
+
+println!(&quot;Bins: {} bins created&quot;, hist.bins.len());
+for (i, (&amp;lower, &amp;count)) in hist.bins.iter().zip(hist.counts.iter()).enumerate() {
+    let upper = if i &lt; hist.bins.len() - 1 { hist.bins[i + 1] } else { data.max().unwrap() };
+    println!(&quot;[{:.1} - {:.1}): {} samples&quot;, lower, upper, count);
+}</code></pre>
+<h3 id="density-vs-count"><a class="header" href="#density-vs-count">Density vs Count</a></h3>
+<p>Histograms can show counts or probability density:</p>
+<p><strong>Counts</strong>: Number of samples in each bin (default)</p>
+<p><strong>Density</strong>: Normalized so area = 1</p>
+<pre><code class="language-text">density[i] = count[i] / (n * bin_width[i])
+</code></pre>
+<p>Density allows comparison across different sample sizes.</p>
+<h2 id="performance-characteristics"><a class="header" href="#performance-characteristics">Performance Characteristics</a></h2>
+<h3 id="quantile-computation-1m-samples"><a class="header" href="#quantile-computation-1m-samples">Quantile Computation (1M samples)</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Method</th><th>Time</th><th>Notes</th></tr></thead><tbody>
+<tr><td>Full sort</td><td>45 ms</td><td>O(n log n), reusable for multiple quantiles</td></tr>
+<tr><td>QuickSelect (single)</td><td>0.8 ms</td><td>O(n) average, 56x faster</td></tr>
+<tr><td>QuickSelect (5 quantiles)</td><td>4 ms</td><td>Still 11x faster (partially sorted)</td></tr>
+</tbody></table>
+</div>
+<p><strong>Recommendation</strong>: Use QuickSelect for 1-2 quantiles, full sort for 3+.</p>
+<h3 id="histogram-generation-1m-samples"><a class="header" href="#histogram-generation-1m-samples">Histogram Generation (1M samples)</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Method</th><th>Time</th><th>Notes</th></tr></thead><tbody>
+<tr><td>Freedman-Diaconis</td><td>52 ms</td><td>Includes IQR computation</td></tr>
+<tr><td>Sturges</td><td>8 ms</td><td>Just sorting + binning</td></tr>
+<tr><td>Scott</td><td>10 ms</td><td>Includes stddev computation</td></tr>
+<tr><td>Square Root</td><td>8 ms</td><td>Just sorting + binning</td></tr>
+</tbody></table>
+</div>
+<h3 id="memory-usage"><a class="header" href="#memory-usage">Memory Usage</a></h3>
+<p>All methods operate on a single copy of the data (O(n) memory):</p>
+<ul>
+<li>Quantiles: O(n) working copy for partial sort</li>
+<li>Histograms: O(n) for sorting + O(k) for bins (k ≪ n)</li>
+</ul>
+<h2 id="real-world-applications"><a class="header" href="#real-world-applications">Real-World Applications</a></h2>
+<h3 id="exploratory-data-analysis-eda"><a class="header" href="#exploratory-data-analysis-eda">Exploratory Data Analysis (EDA)</a></h3>
+<p><strong>Problem</strong>: Understand data distribution before modeling.</p>
+<p><strong>Approach</strong>:</p>
+<ol>
+<li>Compute five-number summary</li>
+<li>Identify outliers with 1.5 × IQR rule</li>
+<li>Generate histogram with Freedman-Diaconis</li>
+<li>Check for skewness, multimodality</li>
+</ol>
+<p><strong>Example</strong>: Analyzing house prices, salary distributions.</p>
+<h3 id="quality-control-manufacturing"><a class="header" href="#quality-control-manufacturing">Quality Control (Manufacturing)</a></h3>
+<p><strong>Problem</strong>: Detect defective parts in production.</p>
+<p><strong>Approach</strong>:</p>
+<ol>
+<li>Measure dimensions of parts</li>
+<li>Compute Q1, Q3, IQR</li>
+<li>Set control limits at Q1 - 3×IQR and Q3 + 3×IQR</li>
+<li>Flag parts outside limits</li>
+</ol>
+<p><strong>Example</strong>: Bolt diameter tolerance, circuit board resistance.</p>
+<h3 id="anomaly-detection-security"><a class="header" href="#anomaly-detection-security">Anomaly Detection (Security)</a></h3>
+<p><strong>Problem</strong>: Find unusual login times or network traffic.</p>
+<p><strong>Approach</strong>:</p>
+<ol>
+<li>Compute median and IQR of normal behavior</li>
+<li>New observation outside Q3 + 1.5×IQR → alert</li>
+<li>Histogram shows temporal patterns (e.g., night-time access)</li>
+</ol>
+<p><strong>Example</strong>: Fraud detection, intrusion detection systems.</p>
+<h3 id="ab-testing"><a class="header" href="#ab-testing">A/B Testing</a></h3>
+<p><strong>Problem</strong>: Compare two groups (treatment vs control).</p>
+<p><strong>Approach</strong>:</p>
+<ol>
+<li>Compute five-number summary for both groups</li>
+<li>Compare medians (more robust than means)</li>
+<li>Check if distributions overlap using IQR</li>
+<li>Histogram shows distribution differences</li>
+</ol>
+<p><strong>Example</strong>: Website conversion rates, drug trial outcomes.</p>
+<h2 id="toyota-way-principles"><a class="header" href="#toyota-way-principles">Toyota Way Principles</a></h2>
+<h3 id="muda-waste-elimination"><a class="header" href="#muda-waste-elimination">Muda (Waste Elimination)</a></h3>
+<p><strong>QuickSelect for single quantiles</strong>: Avoids O(n log n) full sort when only one quantile is needed.</p>
+<p><strong>Benchmark</strong> (1M samples):</p>
+<ul>
+<li>Full sort: 45 ms</li>
+<li>QuickSelect: 0.8 ms</li>
+<li><strong>56x speedup</strong></li>
+</ul>
+<h3 id="poka-yoke-error-prevention"><a class="header" href="#poka-yoke-error-prevention">Poka-Yoke (Error Prevention)</a></h3>
+<p><strong>Outlier-resistant methods</strong>:</p>
+<ul>
+<li>Freedman-Diaconis uses IQR (robust to outliers)</li>
+<li>Median preferred over mean (robust to skew)</li>
+</ul>
+<p><strong>Example</strong>: Dataset with outlier (100x normal values):</p>
+<ul>
+<li>Mean: biased by outlier</li>
+<li>Median: unaffected</li>
+<li>IQR-based bins: capture true distribution</li>
+</ul>
+<h3 id="heijunka-load-balancing"><a class="header" href="#heijunka-load-balancing">Heijunka (Load Balancing)</a></h3>
+<p><strong>Adaptive binning</strong>: Methods like Freedman-Diaconis adjust bin count to data characteristics, avoiding over/under-binning.</p>
+<h2 id="best-practices"><a class="header" href="#best-practices">Best Practices</a></h2>
+<h3 id="quantile-computation"><a class="header" href="#quantile-computation">Quantile Computation</a></h3>
+<pre><code class="language-rust">// ✅ Good: Single quantile with QuickSelect
+let median = stats.quantile(0.5).unwrap();
+
+// ✅ Good: Multiple quantiles with single sort
+let percentiles = stats.percentiles(&amp;[25.0, 50.0, 75.0, 90.0]).unwrap();
+
+// ❌ Avoid: Multiple calls to quantile() (sorts each time)
+let q1 = stats.quantile(0.25).unwrap();
+let q2 = stats.quantile(0.50).unwrap();  // Sorts again!
+let q3 = stats.quantile(0.75).unwrap();  // Sorts again!</code></pre>
+<h3 id="outlier-detection-1"><a class="header" href="#outlier-detection-1">Outlier Detection</a></h3>
+<pre><code class="language-rust">// ✅ Conservative: 1.5 × IQR (flags ~0.7% of normal data)
+let lower = q1 - 1.5 * iqr;
+let upper = q3 + 1.5 * iqr;
+
+// ✅ Strict: 3 × IQR (flags ~0.003% of normal data)
+let lower_extreme = q1 - 3.0 * iqr;
+let upper_extreme = q3 + 3.0 * iqr;</code></pre>
+<h3 id="histogram-method-selection"><a class="header" href="#histogram-method-selection">Histogram Method Selection</a></h3>
+<pre><code class="language-rust">// Outliers present or skewed data
+let hist = stats.histogram_method(BinMethod::FreedmanDiaconis).unwrap();
+
+// Normal distribution, quick exploration
+let hist = stats.histogram_method(BinMethod::Sturges).unwrap();
+
+// Need statistical optimality (IMSE)
+let hist = stats.histogram_method(BinMethod::Scott).unwrap();</code></pre>
+<h2 id="common-pitfalls"><a class="header" href="#common-pitfalls">Common Pitfalls</a></h2>
+<h3 id="using-mean-instead-of-median"><a class="header" href="#using-mean-instead-of-median">Using Mean Instead of Median</a></h3>
+<p><strong>Problem</strong>: Mean is sensitive to outliers.</p>
+<p><strong>Example</strong>: Salaries [30K, 35K, 40K, 45K, 500K]</p>
+<ul>
+<li>Mean: 130K (misleading, inflated by 500K)</li>
+<li>Median: 40K (robust, represents typical salary)</li>
+</ul>
+<h3 id="too-few-histogram-bins"><a class="header" href="#too-few-histogram-bins">Too Few Histogram Bins</a></h3>
+<p><strong>Problem</strong>: Over-smoothing hides important features.</p>
+<p><strong>Solution</strong>: Use Freedman-Diaconis or Scott for adaptive binning.</p>
+<h3 id="ignoring-iqr-for-spread"><a class="header" href="#ignoring-iqr-for-spread">Ignoring IQR for Spread</a></h3>
+<p><strong>Problem</strong>: Standard deviation inflated by outliers.</p>
+<p><strong>Example</strong>: Response times [10ms, 12ms, 15ms, 20ms, 5000ms]</p>
+<ul>
+<li>Stddev: ~1000ms (dominated by outlier)</li>
+<li>IQR: 8ms (captures typical variation)</li>
+</ul>
+<h2 id="further-reading"><a class="header" href="#further-reading">Further Reading</a></h2>
+<p><strong>Quantile Methods</strong>:</p>
+<ul>
+<li>Hyndman, R.J., Fan, Y. (1996). &quot;Sample Quantiles in Statistical Packages&quot;</li>
+<li>Floyd, R.W., Rivest, R.L. (1975). &quot;Algorithm 489: The Algorithm SELECT&quot;</li>
+</ul>
+<p><strong>Histogram Binning</strong>:</p>
+<ul>
+<li>Freedman, D., Diaconis, P. (1981). &quot;On the Histogram as a Density Estimator&quot;</li>
+<li>Sturges, H.A. (1926). &quot;The Choice of a Class Interval&quot;</li>
+<li>Scott, D.W. (1979). &quot;On Optimal and Data-Based Histograms&quot;</li>
+</ul>
+<p><strong>Outlier Detection</strong>:</p>
+<ul>
+<li>Tukey, J.W. (1977). &quot;Exploratory Data Analysis&quot;</li>
+</ul>
+<h2 id="summary"><a class="header" href="#summary">Summary</a></h2>
+<ul>
+<li><strong>Quantiles</strong>: R-7 method with QuickSelect optimization (10-100x faster)</li>
+<li><strong>Five-number summary</strong>: Robust description using min, Q1, median, Q3, max</li>
+<li><strong>IQR</strong>: Outlier-resistant measure of spread (Q3 - Q1)</li>
+<li><strong>Histograms</strong>: Four binning methods (Freedman-Diaconis recommended for outliers)</li>
+<li><strong>Outlier detection</strong>: 1.5 × IQR rule (conservative) or 3 × IQR (strict)</li>
+<li><strong>Toyota Way</strong>: Eliminates waste (QuickSelect), prevents errors (IQR), adapts to data</li>
+</ul>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../ml-fundamentals/graph-algorithms.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+
+                            <a rel="next prefetch" href="../examples/linear-regression.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../ml-fundamentals/graph-algorithms.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+
+                    <a rel="next prefetch" href="../examples/linear-regression.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+            </nav>
+
+        </div>
+
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+        <script src="../ace.js"></script>
+        <script src="../editor.js"></script>
+        <script src="../mode-rust.js"></script>
+        <script src="../theme-dawn.js"></script>
+        <script src="../theme-tomorrow_night.js"></script>
+
+        <script src="../elasticlunr.min.js"></script>
+        <script src="../mark.min.js"></script>
+        <script src="../searcher.js"></script>
+
+        <script src="../clipboard.min.js"></script>
+        <script src="../highlight.js"></script>
+        <script src="../book.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+    </div>
+    </body>
+</html>

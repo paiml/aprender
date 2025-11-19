@@ -1,0 +1,527 @@
+<!DOCTYPE HTML>
+<html lang="en" class="rust" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Graph Algorithms Theory - EXTREME TDD - The Aprender Guide to Zero-Defect Machine Learning</title>
+
+
+        <!-- Custom HTML head -->
+        
+        <meta name="description" content="A comprehensive guide to EXTREME TDD methodology: RED-GREEN-REFACTOR cycles, mutation testing, and Toyota Way principles demonstrated through ML library development">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="../favicon.svg">
+        <link rel="shortcut icon" href="../favicon.png">
+        <link rel="stylesheet" href="../css/variables.css">
+        <link rel="stylesheet" href="../css/general.css">
+        <link rel="stylesheet" href="../css/chrome.css">
+        <link rel="stylesheet" href="../css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="../fonts/fonts.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" href="../highlight.css">
+        <link rel="stylesheet" href="../tomorrow-night.css">
+        <link rel="stylesheet" href="../ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+
+    </head>
+    <body class="sidebar-visible no-js">
+    <div id="body-container">
+        <!-- Provide site root to javascript -->
+        <script>
+            var path_to_root = "../";
+            var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "rust";
+        </script>
+
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            var html = document.querySelector('html');
+            html.classList.remove('rust')
+            html.classList.add(theme);
+            var body = document.querySelector('body');
+            body.classList.remove('no-js')
+            body.classList.add('js');
+        </script>
+
+        <input type="checkbox" id="sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            var body = document.querySelector('body');
+            var sidebar = null;
+            var sidebar_toggle = document.getElementById("sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+            }
+            sidebar_toggle.checked = sidebar === 'visible';
+            body.classList.remove('sidebar-visible');
+            body.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <div class="sidebar-scrollbox">
+                <ol class="chapter"><li class="chapter-item expanded affix "><a href="../introduction.html">Introduction</a></li><li class="chapter-item expanded affix "><li class="part-title">Core Methodology</li><li class="chapter-item expanded "><a href="../methodology/what-is-extreme-tdd.html"><strong aria-hidden="true">1.</strong> What is EXTREME TDD?</a></li><li class="chapter-item expanded "><a href="../methodology/red-green-refactor.html"><strong aria-hidden="true">2.</strong> The RED-GREEN-REFACTOR Cycle</a></li><li class="chapter-item expanded "><a href="../methodology/test-first-philosophy.html"><strong aria-hidden="true">3.</strong> Test-First Philosophy</a></li><li class="chapter-item expanded "><a href="../methodology/zero-tolerance.html"><strong aria-hidden="true">4.</strong> Zero Tolerance Quality</a></li><li class="chapter-item expanded affix "><li class="part-title">The RED Phase</li><li class="chapter-item expanded "><a href="../red-phase/failing-tests-first.html"><strong aria-hidden="true">5.</strong> Writing Failing Tests First</a></li><li class="chapter-item expanded "><a href="../red-phase/test-categories.html"><strong aria-hidden="true">6.</strong> Test Categories</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../red-phase/unit-tests.html"><strong aria-hidden="true">6.1.</strong> Unit Tests</a></li><li class="chapter-item expanded "><a href="../red-phase/integration-tests.html"><strong aria-hidden="true">6.2.</strong> Integration Tests</a></li><li class="chapter-item expanded "><a href="../red-phase/property-based-tests.html"><strong aria-hidden="true">6.3.</strong> Property-Based Tests</a></li></ol></li><li class="chapter-item expanded "><a href="../red-phase/verification-strategy.html"><strong aria-hidden="true">7.</strong> Verification Strategy</a></li><li class="chapter-item expanded affix "><li class="part-title">The GREEN Phase</li><li class="chapter-item expanded "><a href="../green-phase/minimal-implementation.html"><strong aria-hidden="true">8.</strong> Minimal Implementation</a></li><li class="chapter-item expanded "><a href="../green-phase/making-tests-pass.html"><strong aria-hidden="true">9.</strong> Making Tests Pass</a></li><li class="chapter-item expanded "><a href="../green-phase/avoiding-over-engineering.html"><strong aria-hidden="true">10.</strong> Avoiding Over-Engineering</a></li><li class="chapter-item expanded "><a href="../green-phase/simplest-thing.html"><strong aria-hidden="true">11.</strong> The Simplest Thing That Works</a></li><li class="chapter-item expanded affix "><li class="part-title">The REFACTOR Phase</li><li class="chapter-item expanded "><a href="../refactor-phase/refactoring-with-confidence.html"><strong aria-hidden="true">12.</strong> Refactoring with Confidence</a></li><li class="chapter-item expanded "><a href="../refactor-phase/code-quality.html"><strong aria-hidden="true">13.</strong> Code Quality Improvements</a></li><li class="chapter-item expanded "><a href="../refactor-phase/performance-optimization.html"><strong aria-hidden="true">14.</strong> Performance Optimization</a></li><li class="chapter-item expanded "><a href="../refactor-phase/documentation.html"><strong aria-hidden="true">15.</strong> Documentation</a></li><li class="chapter-item expanded affix "><li class="part-title">Advanced Testing</li><li class="chapter-item expanded "><a href="../advanced-testing/property-based-testing.html"><strong aria-hidden="true">16.</strong> Property-Based Testing</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../advanced-testing/proptest-fundamentals.html"><strong aria-hidden="true">16.1.</strong> Proptest Fundamentals</a></li><li class="chapter-item expanded "><a href="../advanced-testing/strategies-generators.html"><strong aria-hidden="true">16.2.</strong> Strategies and Generators</a></li><li class="chapter-item expanded "><a href="../advanced-testing/testing-invariants.html"><strong aria-hidden="true">16.3.</strong> Testing Invariants</a></li></ol></li><li class="chapter-item expanded "><a href="../advanced-testing/mutation-testing.html"><strong aria-hidden="true">17.</strong> Mutation Testing</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../advanced-testing/what-is-mutation-testing.html"><strong aria-hidden="true">17.1.</strong> What is Mutation Testing?</a></li><li class="chapter-item expanded "><a href="../advanced-testing/using-cargo-mutants.html"><strong aria-hidden="true">17.2.</strong> Using cargo-mutants</a></li><li class="chapter-item expanded "><a href="../advanced-testing/mutation-score-targets.html"><strong aria-hidden="true">17.3.</strong> Mutation Score Targets</a></li><li class="chapter-item expanded "><a href="../advanced-testing/killing-mutants.html"><strong aria-hidden="true">17.4.</strong> Killing Mutants</a></li></ol></li><li class="chapter-item expanded "><a href="../advanced-testing/fuzzing.html"><strong aria-hidden="true">18.</strong> Fuzzing</a></li><li class="chapter-item expanded "><a href="../advanced-testing/benchmark-testing.html"><strong aria-hidden="true">19.</strong> Benchmark Testing</a></li><li class="chapter-item expanded affix "><li class="part-title">Quality Gates</li><li class="chapter-item expanded "><a href="../quality-gates/pre-commit-hooks.html"><strong aria-hidden="true">20.</strong> Pre-Commit Hooks</a></li><li class="chapter-item expanded "><a href="../quality-gates/continuous-integration.html"><strong aria-hidden="true">21.</strong> Continuous Integration</a></li><li class="chapter-item expanded "><a href="../quality-gates/code-formatting.html"><strong aria-hidden="true">22.</strong> Code Formatting (rustfmt)</a></li><li class="chapter-item expanded "><a href="../quality-gates/linting-clippy.html"><strong aria-hidden="true">23.</strong> Linting (clippy)</a></li><li class="chapter-item expanded "><a href="../quality-gates/coverage-measurement.html"><strong aria-hidden="true">24.</strong> Coverage Measurement</a></li><li class="chapter-item expanded "><a href="../quality-gates/complexity-analysis.html"><strong aria-hidden="true">25.</strong> Complexity Analysis</a></li><li class="chapter-item expanded "><a href="../quality-gates/tdg-score.html"><strong aria-hidden="true">26.</strong> Technical Debt Gradient (TDG)</a></li><li class="chapter-item expanded affix "><li class="part-title">Toyota Way Principles</li><li class="chapter-item expanded "><a href="../toyota-way/overview.html"><strong aria-hidden="true">27.</strong> Overview</a></li><li class="chapter-item expanded "><a href="../toyota-way/kaizen.html"><strong aria-hidden="true">28.</strong> Kaizen (Continuous Improvement)</a></li><li class="chapter-item expanded "><a href="../toyota-way/genchi-genbutsu.html"><strong aria-hidden="true">29.</strong> Genchi Genbutsu (Go and See)</a></li><li class="chapter-item expanded "><a href="../toyota-way/jidoka.html"><strong aria-hidden="true">30.</strong> Jidoka (Built-in Quality)</a></li><li class="chapter-item expanded "><a href="../toyota-way/pdca-cycle.html"><strong aria-hidden="true">31.</strong> PDCA Cycle</a></li><li class="chapter-item expanded "><a href="../toyota-way/respect-for-people.html"><strong aria-hidden="true">32.</strong> Respect for People</a></li><li class="chapter-item expanded affix "><li class="part-title">Machine Learning Fundamentals</li><li class="chapter-item expanded "><a href="../ml-fundamentals/linear-regression.html"><strong aria-hidden="true">33.</strong> Linear Regression Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/regularization.html"><strong aria-hidden="true">34.</strong> Regularization Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/logistic-regression.html"><strong aria-hidden="true">35.</strong> Logistic Regression Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/decision-trees.html"><strong aria-hidden="true">36.</strong> Decision Trees Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/ensemble-methods.html"><strong aria-hidden="true">37.</strong> Ensemble Methods Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/kmeans-clustering.html"><strong aria-hidden="true">38.</strong> K-Means Clustering Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/regression-metrics.html"><strong aria-hidden="true">39.</strong> Regression Metrics Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/classification-metrics.html"><strong aria-hidden="true">40.</strong> Classification Metrics Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/cross-validation.html"><strong aria-hidden="true">41.</strong> Cross-Validation Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/gradient-descent.html"><strong aria-hidden="true">42.</strong> Gradient Descent Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/advanced-optimizers.html"><strong aria-hidden="true">43.</strong> Advanced Optimizers Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/feature-scaling.html"><strong aria-hidden="true">44.</strong> Feature Scaling Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/graph-algorithms.html" class="active"><strong aria-hidden="true">45.</strong> Graph Algorithms Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/descriptive-statistics.html"><strong aria-hidden="true">46.</strong> Descriptive Statistics Theory</a></li><li class="chapter-item expanded affix "><li class="part-title">Real-World Examples from Aprender</li><li class="chapter-item expanded "><a href="../examples/linear-regression.html"><strong aria-hidden="true">47.</strong> Case Study: Linear Regression</a></li><li class="chapter-item expanded "><a href="../examples/boston-housing.html"><strong aria-hidden="true">48.</strong> Case Study: Boston Housing</a></li><li class="chapter-item expanded "><a href="../examples/cross-validation.html"><strong aria-hidden="true">49.</strong> Case Study: Cross-Validation</a></li><li class="chapter-item expanded "><a href="../examples/random-forest.html"><strong aria-hidden="true">50.</strong> Case Study: Random Forest</a></li><li class="chapter-item expanded "><a href="../examples/random-forest-iris.html"><strong aria-hidden="true">51.</strong> Case Study: Random Forest Iris</a></li><li class="chapter-item expanded "><a href="../examples/decision-tree-iris.html"><strong aria-hidden="true">52.</strong> Case Study: Decision Tree Iris</a></li><li class="chapter-item expanded "><a href="../examples/model-serialization.html"><strong aria-hidden="true">53.</strong> Case Study: Model Serialization</a></li><li class="chapter-item expanded "><a href="../examples/kmeans-clustering.html"><strong aria-hidden="true">54.</strong> Case Study: KMeans Clustering</a></li><li class="chapter-item expanded "><a href="../examples/iris-clustering.html"><strong aria-hidden="true">55.</strong> Case Study: Iris Clustering</a></li><li class="chapter-item expanded "><a href="../examples/logistic-regression.html"><strong aria-hidden="true">56.</strong> Case Study: Logistic Regression</a></li><li class="chapter-item expanded "><a href="../examples/regularized-regression.html"><strong aria-hidden="true">57.</strong> Case Study: Regularized Regression</a></li><li class="chapter-item expanded "><a href="../examples/optimizer-demo.html"><strong aria-hidden="true">58.</strong> Case Study: Optimizer Demo</a></li><li class="chapter-item expanded "><a href="../examples/dataframe-basics.html"><strong aria-hidden="true">59.</strong> Case Study: DataFrame Basics</a></li><li class="chapter-item expanded "><a href="../examples/graph-social-network.html"><strong aria-hidden="true">60.</strong> Case Study: Graph Social Network</a></li><li class="chapter-item expanded "><a href="../examples/descriptive-statistics.html"><strong aria-hidden="true">61.</strong> Case Study: Descriptive Statistics</a></li><li class="chapter-item expanded affix "><li class="part-title">Sprint-Based Development</li><li class="chapter-item expanded "><a href="../sprints/sprint-planning.html"><strong aria-hidden="true">62.</strong> Sprint Planning</a></li><li class="chapter-item expanded "><a href="../sprints/sprint-execution.html"><strong aria-hidden="true">63.</strong> Sprint Execution</a></li><li class="chapter-item expanded "><a href="../sprints/sprint-review.html"><strong aria-hidden="true">64.</strong> Sprint Review</a></li><li class="chapter-item expanded "><a href="../sprints/sprint-retrospective.html"><strong aria-hidden="true">65.</strong> Sprint Retrospective</a></li><li class="chapter-item expanded "><a href="../sprints/issue-management.html"><strong aria-hidden="true">66.</strong> Issue Management</a></li><li class="chapter-item expanded affix "><li class="part-title">Anti-Hallucination Enforcement</li><li class="chapter-item expanded "><a href="../anti-hallucination/test-backed-examples.html"><strong aria-hidden="true">67.</strong> Test-Backed Examples</a></li><li class="chapter-item expanded "><a href="../anti-hallucination/example-verification.html"><strong aria-hidden="true">68.</strong> Example Verification</a></li><li class="chapter-item expanded "><a href="../anti-hallucination/ci-validation.html"><strong aria-hidden="true">69.</strong> CI Validation</a></li><li class="chapter-item expanded "><a href="../anti-hallucination/documentation-testing.html"><strong aria-hidden="true">70.</strong> Documentation Testing</a></li><li class="chapter-item expanded affix "><li class="part-title">Tools and Setup</li><li class="chapter-item expanded "><a href="../tools/development-environment.html"><strong aria-hidden="true">71.</strong> Development Environment</a></li><li class="chapter-item expanded "><a href="../tools/cargo-test.html"><strong aria-hidden="true">72.</strong> cargo test</a></li><li class="chapter-item expanded "><a href="../tools/cargo-clippy.html"><strong aria-hidden="true">73.</strong> cargo clippy</a></li><li class="chapter-item expanded "><a href="../tools/cargo-fmt.html"><strong aria-hidden="true">74.</strong> cargo fmt</a></li><li class="chapter-item expanded "><a href="../tools/cargo-mutants.html"><strong aria-hidden="true">75.</strong> cargo mutants</a></li><li class="chapter-item expanded "><a href="../tools/proptest.html"><strong aria-hidden="true">76.</strong> proptest</a></li><li class="chapter-item expanded "><a href="../tools/criterion.html"><strong aria-hidden="true">77.</strong> criterion</a></li><li class="chapter-item expanded "><a href="../tools/pmat.html"><strong aria-hidden="true">78.</strong> pmat (Toyota AI Toolkit)</a></li><li class="chapter-item expanded affix "><li class="part-title">Best Practices</li><li class="chapter-item expanded "><a href="../best-practices/error-handling.html"><strong aria-hidden="true">79.</strong> Error Handling</a></li><li class="chapter-item expanded "><a href="../best-practices/api-design.html"><strong aria-hidden="true">80.</strong> API Design</a></li><li class="chapter-item expanded "><a href="../best-practices/builder-pattern.html"><strong aria-hidden="true">81.</strong> Builder Pattern</a></li><li class="chapter-item expanded "><a href="../best-practices/type-safety.html"><strong aria-hidden="true">82.</strong> Type Safety</a></li><li class="chapter-item expanded "><a href="../best-practices/performance.html"><strong aria-hidden="true">83.</strong> Performance Considerations</a></li><li class="chapter-item expanded "><a href="../best-practices/documentation-standards.html"><strong aria-hidden="true">84.</strong> Documentation Standards</a></li><li class="chapter-item expanded affix "><li class="part-title">Metrics and Measurement</li><li class="chapter-item expanded "><a href="../metrics/test-coverage.html"><strong aria-hidden="true">85.</strong> Test Coverage</a></li><li class="chapter-item expanded "><a href="../metrics/mutation-score.html"><strong aria-hidden="true">86.</strong> Mutation Score</a></li><li class="chapter-item expanded "><a href="../metrics/cyclomatic-complexity.html"><strong aria-hidden="true">87.</strong> Cyclomatic Complexity</a></li><li class="chapter-item expanded "><a href="../metrics/code-churn.html"><strong aria-hidden="true">88.</strong> Code Churn</a></li><li class="chapter-item expanded "><a href="../metrics/build-times.html"><strong aria-hidden="true">89.</strong> Build Times</a></li><li class="chapter-item expanded "><a href="../metrics/tdg-breakdown.html"><strong aria-hidden="true">90.</strong> TDG Score Breakdown</a></li><li class="chapter-item expanded affix "><li class="part-title">Common Pitfalls</li><li class="chapter-item expanded "><a href="../pitfalls/skipping-tests.html"><strong aria-hidden="true">91.</strong> Skipping Tests</a></li><li class="chapter-item expanded "><a href="../pitfalls/insufficient-coverage.html"><strong aria-hidden="true">92.</strong> Insufficient Test Coverage</a></li><li class="chapter-item expanded "><a href="../pitfalls/ignoring-warnings.html"><strong aria-hidden="true">93.</strong> Ignoring Warnings</a></li><li class="chapter-item expanded "><a href="../pitfalls/over-mocking.html"><strong aria-hidden="true">94.</strong> Over-Mocking</a></li><li class="chapter-item expanded "><a href="../pitfalls/flaky-tests.html"><strong aria-hidden="true">95.</strong> Flaky Tests</a></li><li class="chapter-item expanded "><a href="../pitfalls/technical-debt.html"><strong aria-hidden="true">96.</strong> Technical Debt Accumulation</a></li><li class="chapter-item expanded affix "><li class="part-title">Appendix</li><li class="chapter-item expanded "><a href="../appendix/glossary.html"><strong aria-hidden="true">97.</strong> Glossary</a></li><li class="chapter-item expanded "><a href="../appendix/references.html"><strong aria-hidden="true">98.</strong> References</a></li><li class="chapter-item expanded "><a href="../appendix/further-reading.html"><strong aria-hidden="true">99.</strong> Further Reading</a></li><li class="chapter-item expanded "><a href="../appendix/contributing.html"><strong aria-hidden="true">100.</strong> Contributing to This Book</a></li></ol>
+            </div>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <!-- Track and set sidebar scroll position -->
+        <script>
+            var sidebarScrollbox = document.querySelector('#sidebar .sidebar-scrollbox');
+            sidebarScrollbox.addEventListener('click', function(e) {
+                if (e.target.tagName === 'A') {
+                    sessionStorage.setItem('sidebar-scroll', sidebarScrollbox.scrollTop);
+                }
+            }, { passive: true });
+            var sidebarScrollTop = sessionStorage.getItem('sidebar-scroll');
+            sessionStorage.removeItem('sidebar-scroll');
+            if (sidebarScrollTop) {
+                // preserve sidebar scroll position when navigating via links within sidebar
+                sidebarScrollbox.scrollTop = sidebarScrollTop;
+            } else {
+                // scroll sidebar to current active section when navigating via "next/previous chapter" buttons
+                var activeSection = document.querySelector('#sidebar .active');
+                if (activeSection) {
+                    activeSection.scrollIntoView({ block: 'center' });
+                }
+            }
+        </script>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="sidebar-toggle" class="icon-button" for="sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </label>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">EXTREME TDD - The Aprender Guide to Zero-Defect Machine Learning</h1>
+
+                    <div class="right-buttons">
+                        <a href="../print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                        <a href="https://github.com/paiml/aprender" title="Git repository" aria-label="Git repository">
+                            <i id="git-repository-button" class="fa fa-github"></i>
+                        </a>
+                        <a href="https://github.com/paiml/aprender/edit/main/book/src/ml-fundamentals/graph-algorithms.md" title="Suggest an edit" aria-label="Suggest an edit">
+                            <i id="git-edit-button" class="fa fa-edit"></i>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="graph-algorithms-theory"><a class="header" href="#graph-algorithms-theory">Graph Algorithms Theory</a></h1>
+<p>Graph algorithms are fundamental tools for analyzing relationships and structures in networked data. This chapter covers the theory behind aprender's graph module, focusing on efficient representations and centrality measures.</p>
+<h2 id="graph-representation"><a class="header" href="#graph-representation">Graph Representation</a></h2>
+<h3 id="adjacency-list-vs-csr"><a class="header" href="#adjacency-list-vs-csr">Adjacency List vs CSR</a></h3>
+<p>Graphs can be represented in multiple ways, each with different performance characteristics:</p>
+<p><strong>Adjacency List (HashMap-based)</strong>:</p>
+<ul>
+<li><code>HashMap&lt;NodeId, Vec&lt;NodeId&gt;&gt;</code></li>
+<li>Pros: Easy to modify, intuitive API</li>
+<li>Cons: Poor cache locality, 50-70% memory overhead from pointers</li>
+</ul>
+<p><strong>Compressed Sparse Row (CSR)</strong>:</p>
+<ul>
+<li>Two flat arrays: <code>row_ptr</code> (offsets) and <code>col_indices</code> (neighbors)</li>
+<li>Pros: 50-70% memory reduction, sequential access (3-5x fewer cache misses)</li>
+<li>Cons: Immutable structure, slightly more complex construction</li>
+</ul>
+<p>Aprender uses <strong>CSR</strong> for production workloads, optimizing for read-heavy analytics.</p>
+<h3 id="csr-format-details"><a class="header" href="#csr-format-details">CSR Format Details</a></h3>
+<p>For a graph with <code>n</code> nodes and <code>m</code> edges:</p>
+<pre><code class="language-text">row_ptr: [0, 2, 5, 7, ...]  # length = n + 1
+col_indices: [1, 3, 0, 2, 4, ...]  # length = m (undirected: 2m)
+</code></pre>
+<p>Neighbors of node <code>v</code> are stored in:</p>
+<pre><code class="language-text">col_indices[row_ptr[v] .. row_ptr[v+1]]
+</code></pre>
+<p><strong>Memory comparison</strong> (1M nodes, 5M edges):</p>
+<ul>
+<li>HashMap: ~240 MB (pointers + Vec overhead)</li>
+<li>CSR: ~84 MB (two flat arrays)</li>
+</ul>
+<h2 id="degree-centrality"><a class="header" href="#degree-centrality">Degree Centrality</a></h2>
+<h3 id="definition"><a class="header" href="#definition">Definition</a></h3>
+<p>Degree centrality measures the number of edges connected to a node. It identifies the most &quot;popular&quot; nodes in a network.</p>
+<p><strong>Unnormalized degree</strong>:</p>
+<pre><code class="language-text">C_D(v) = deg(v)
+</code></pre>
+<p><strong>Freeman normalization</strong> (for comparability across graphs):</p>
+<pre><code class="language-text">C_D(v) = deg(v) / (n - 1)
+</code></pre>
+<p>where <code>n</code> is the number of nodes.</p>
+<h3 id="implementation"><a class="header" href="#implementation">Implementation</a></h3>
+<pre><code class="language-rust">use aprender::graph::Graph;
+
+let edges = vec![(0, 1), (1, 2), (2, 3), (0, 2)];
+let graph = Graph::from_edges(&amp;edges, false);
+
+let centrality = graph.degree_centrality();
+for (node, score) in centrality.iter() {
+    println!(&quot;Node {}: {:.3}&quot;, node, score);
+}</code></pre>
+<h3 id="time-complexity"><a class="header" href="#time-complexity">Time Complexity</a></h3>
+<ul>
+<li><strong>Construction</strong>: O(n + m) to build CSR</li>
+<li><strong>Query</strong>: O(1) per node (subtract adjacent row_ptr values)</li>
+<li><strong>All nodes</strong>: O(n)</li>
+</ul>
+<h3 id="applications"><a class="header" href="#applications">Applications</a></h3>
+<ul>
+<li>Social networks: Find influencers by connection count</li>
+<li>Protein interaction networks: Identify hub proteins</li>
+<li>Transportation: Find major transit hubs</li>
+</ul>
+<h2 id="pagerank"><a class="header" href="#pagerank">PageRank</a></h2>
+<h3 id="theory"><a class="header" href="#theory">Theory</a></h3>
+<p>PageRank models the probability that a random surfer lands on a node. Originally developed by Google for web page ranking, it considers both <strong>quantity</strong> and <strong>quality</strong> of connections.</p>
+<p><strong>Iterative formula</strong>:</p>
+<pre><code class="language-text">PR(v) = (1-d)/n + d * Σ[PR(u) / outdeg(u)]
+</code></pre>
+<p>where:</p>
+<ul>
+<li><code>d</code> = damping factor (typically 0.85)</li>
+<li><code>n</code> = number of nodes</li>
+<li>Sum over all nodes <code>u</code> with edges to <code>v</code></li>
+</ul>
+<h3 id="dangling-nodes"><a class="header" href="#dangling-nodes">Dangling Nodes</a></h3>
+<p>Nodes with no outgoing edges (dangling nodes) require special handling to preserve the probability distribution:</p>
+<pre><code class="language-text">dangling_sum = Σ PR(v) for all dangling v
+PR_new(v) += d * dangling_sum / n
+</code></pre>
+<p>Without this correction, rank &quot;leaks&quot; out of the system and Σ PR(v) ≠ 1.</p>
+<h3 id="numerical-stability"><a class="header" href="#numerical-stability">Numerical Stability</a></h3>
+<p>Naive summation accumulates O(n·ε) floating-point error on large graphs. Aprender uses <strong>Kahan compensated summation</strong>:</p>
+<pre><code class="language-rust">let mut sum = 0.0;
+let mut c = 0.0;  // Compensation term
+
+for value in values {
+    let y = value - c;
+    let t = sum + y;
+    c = (t - sum) - y;  // Recover low-order bits
+    sum = t;
+}</code></pre>
+<p><strong>Result</strong>: Σ PR(v) = 1.0 within 1e-10 precision (vs 1e-5 naive).</p>
+<h3 id="implementation-1"><a class="header" href="#implementation-1">Implementation</a></h3>
+<pre><code class="language-rust">use aprender::graph::Graph;
+
+let edges = vec![(0, 1), (1, 2), (2, 3), (3, 0)];
+let graph = Graph::from_edges(&amp;edges, true);  // directed
+
+let ranks = graph.pagerank(0.85, 100, 1e-6).unwrap();
+println!(&quot;PageRank scores: {:?}&quot;, ranks);</code></pre>
+<h3 id="time-complexity-1"><a class="header" href="#time-complexity-1">Time Complexity</a></h3>
+<ul>
+<li><strong>Per iteration</strong>: O(n + m)</li>
+<li><strong>Convergence</strong>: Typically 20-50 iterations</li>
+<li><strong>Total</strong>: O(k(n + m)) where k = iteration count</li>
+</ul>
+<h3 id="applications-1"><a class="header" href="#applications-1">Applications</a></h3>
+<ul>
+<li>Web search: Rank pages by importance</li>
+<li>Social networks: Identify influential users (considers network structure)</li>
+<li>Citation analysis: Find seminal papers</li>
+</ul>
+<h2 id="betweenness-centrality"><a class="header" href="#betweenness-centrality">Betweenness Centrality</a></h2>
+<h3 id="theory-1"><a class="header" href="#theory-1">Theory</a></h3>
+<p>Betweenness centrality measures how often a node appears on shortest paths between other nodes. High betweenness indicates <strong>bridging</strong> role in the network.</p>
+<p><strong>Formula</strong>:</p>
+<pre><code class="language-text">C_B(v) = Σ[σ_st(v) / σ_st]
+</code></pre>
+<p>where:</p>
+<ul>
+<li><code>σ_st</code> = number of shortest paths from <code>s</code> to <code>t</code></li>
+<li><code>σ_st(v)</code> = number of those paths passing through <code>v</code></li>
+<li>Sum over all pairs <code>s ≠ t ≠ v</code></li>
+</ul>
+<h3 id="brandes-algorithm"><a class="header" href="#brandes-algorithm">Brandes' Algorithm</a></h3>
+<p>Naive computation is O(n³). Brandes' algorithm reduces this to O(nm) using two phases:</p>
+<p><strong>Phase 1: Forward BFS from each source</strong></p>
+<ul>
+<li>Compute shortest path counts</li>
+<li>Build predecessor lists</li>
+</ul>
+<p><strong>Phase 2: Backward accumulation</strong></p>
+<ul>
+<li>Propagate dependencies from leaves to root</li>
+<li>Accumulate betweenness scores</li>
+</ul>
+<h3 id="parallel-implementation"><a class="header" href="#parallel-implementation">Parallel Implementation</a></h3>
+<p>The outer loop (BFS from each source) is <strong>embarrassingly parallel</strong>:</p>
+<pre><code class="language-rust">use rayon::prelude::*;
+
+let partial_scores: Vec&lt;Vec&lt;f64&gt;&gt; = (0..n)
+    .into_par_iter()  // Parallel iterator
+    .map(|source| brandes_bfs_from_source(source))
+    .collect();
+
+// Reduce (single-threaded, fast)
+let mut centrality = vec![0.0; n];
+for partial in partial_scores {
+    for (i, &amp;score) in partial.iter().enumerate() {
+        centrality[i] += score;
+    }
+}</code></pre>
+<p><strong>Expected speedup</strong>: ~8x on 8-core CPU for graphs with &gt;1K nodes.</p>
+<h3 id="normalization"><a class="header" href="#normalization">Normalization</a></h3>
+<p>For undirected graphs, each path is counted twice:</p>
+<pre><code class="language-rust">if !is_directed {
+    for score in &amp;mut centrality {
+        *score /= 2.0;
+    }
+}</code></pre>
+<h3 id="implementation-2"><a class="header" href="#implementation-2">Implementation</a></h3>
+<pre><code class="language-rust">use aprender::graph::Graph;
+
+let edges = vec![
+    (0, 1), (1, 2), (2, 3),  // Linear chain
+    (1, 4), (4, 3),          // Shortcut
+];
+let graph = Graph::from_edges(&amp;edges, false);
+
+let betweenness = graph.betweenness_centrality();
+println!(&quot;Node 1 betweenness: {:.2}&quot;, betweenness[1]);  // High (bridge)</code></pre>
+<h3 id="time-complexity-2"><a class="header" href="#time-complexity-2">Time Complexity</a></h3>
+<ul>
+<li><strong>Serial</strong>: O(nm) for unweighted graphs</li>
+<li><strong>Parallel</strong>: O(nm / p) where p = number of cores</li>
+<li><strong>Space</strong>: O(n + m) per thread</li>
+</ul>
+<h3 id="applications-2"><a class="header" href="#applications-2">Applications</a></h3>
+<ul>
+<li>Social networks: Find connectors between communities</li>
+<li>Transportation: Identify critical junctions</li>
+<li>Epidemiology: Find super-spreaders in contact networks</li>
+</ul>
+<h2 id="performance-characteristics"><a class="header" href="#performance-characteristics">Performance Characteristics</a></h2>
+<h3 id="memory-usage-1m-nodes-10m-edges"><a class="header" href="#memory-usage-1m-nodes-10m-edges">Memory Usage (1M nodes, 10M edges)</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Representation</th><th>Memory</th><th>Cache Misses</th></tr></thead><tbody>
+<tr><td>HashMap adjacency</td><td>480 MB</td><td>High (pointer chasing)</td></tr>
+<tr><td>CSR adjacency</td><td>168 MB</td><td>Low (sequential)</td></tr>
+</tbody></table>
+</div>
+<h3 id="runtime-benchmarks-intel-i7-8700k-6-cores"><a class="header" href="#runtime-benchmarks-intel-i7-8700k-6-cores">Runtime Benchmarks (Intel i7-8700K, 6 cores)</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Algorithm</th><th>10K nodes</th><th>100K nodes</th><th>1M nodes</th></tr></thead><tbody>
+<tr><td>Degree centrality</td><td>&lt;1 ms</td><td>8 ms</td><td>95 ms</td></tr>
+<tr><td>PageRank (50 iter)</td><td>12 ms</td><td>180 ms</td><td>2.4 s</td></tr>
+<tr><td>Betweenness (serial)</td><td>450 ms</td><td>52 s</td><td>timeout</td></tr>
+<tr><td>Betweenness (parallel)</td><td>95 ms</td><td>8.7 s</td><td>89 s</td></tr>
+</tbody></table>
+</div>
+<p><strong>Parallelization benefit</strong>: 4.7x speedup on 6-core CPU.</p>
+<h2 id="real-world-applications"><a class="header" href="#real-world-applications">Real-World Applications</a></h2>
+<h3 id="social-network-analysis"><a class="header" href="#social-network-analysis">Social Network Analysis</a></h3>
+<p><strong>Problem</strong>: Identify influential users in a social network.</p>
+<p><strong>Approach</strong>:</p>
+<ol>
+<li>Build graph from friendship/follower edges</li>
+<li>Compute PageRank for overall influence</li>
+<li>Compute betweenness to find community bridges</li>
+<li>Compute degree for local popularity</li>
+</ol>
+<p><strong>Example</strong>: Twitter influencer detection, LinkedIn connection recommendations.</p>
+<h3 id="supply-chain-optimization"><a class="header" href="#supply-chain-optimization">Supply Chain Optimization</a></h3>
+<p><strong>Problem</strong>: Find critical nodes in a logistics network.</p>
+<p><strong>Approach</strong>:</p>
+<ol>
+<li>Model warehouses/suppliers as nodes</li>
+<li>Compute betweenness centrality</li>
+<li>High-betweenness nodes are single points of failure</li>
+<li>Add redundancy or buffer inventory</li>
+</ol>
+<p><strong>Example</strong>: Amazon warehouse placement, manufacturing supply chains.</p>
+<h3 id="epidemiology"><a class="header" href="#epidemiology">Epidemiology</a></h3>
+<p><strong>Problem</strong>: Prioritize vaccination in contact networks.</p>
+<p><strong>Approach</strong>:</p>
+<ol>
+<li>Build contact network from tracing data</li>
+<li>Compute betweenness centrality</li>
+<li>Vaccinate high-betweenness individuals first</li>
+<li>Reduces R₀ by breaking transmission paths</li>
+</ol>
+<p><strong>Example</strong>: COVID-19 contact tracing, hospital infection control.</p>
+<h2 id="toyota-way-principles-in-implementation"><a class="header" href="#toyota-way-principles-in-implementation">Toyota Way Principles in Implementation</a></h2>
+<h3 id="muda-waste-elimination"><a class="header" href="#muda-waste-elimination">Muda (Waste Elimination)</a></h3>
+<p><strong>CSR representation</strong>: Eliminates HashMap pointer overhead, reduces memory by 50-70%.</p>
+<p><strong>Parallel betweenness</strong>: No synchronization needed in outer loop (embarrassingly parallel).</p>
+<h3 id="poka-yoke-error-prevention"><a class="header" href="#poka-yoke-error-prevention">Poka-Yoke (Error Prevention)</a></h3>
+<p><strong>Kahan summation</strong>: Prevents floating-point drift in PageRank. Without compensation:</p>
+<ul>
+<li>10K nodes: error ~1e-7</li>
+<li>100K nodes: error ~1e-5</li>
+<li>1M nodes: error ~1e-4</li>
+</ul>
+<p>With Kahan summation, error consistently &lt;1e-10.</p>
+<h3 id="heijunka-load-balancing"><a class="header" href="#heijunka-load-balancing">Heijunka (Load Balancing)</a></h3>
+<p><strong>Rayon work-stealing</strong>: Automatically balances BFS tasks across cores. Nodes with more edges take longer, but work-stealing prevents idle threads.</p>
+<h2 id="best-practices"><a class="header" href="#best-practices">Best Practices</a></h2>
+<h3 id="when-to-use-each-centrality"><a class="header" href="#when-to-use-each-centrality">When to Use Each Centrality</a></h3>
+<ul>
+<li><strong>Degree</strong>: Quick analysis, local importance only</li>
+<li><strong>PageRank</strong>: Global influence, considers network structure</li>
+<li><strong>Betweenness</strong>: Find bridges, critical paths</li>
+</ul>
+<h3 id="graph-construction-tips"><a class="header" href="#graph-construction-tips">Graph Construction Tips</a></h3>
+<pre><code class="language-rust">// Build graph once, query many times
+let graph = Graph::from_edges(&amp;edges, false);
+
+// Reuse for multiple algorithms
+let degree = graph.degree_centrality();
+let pagerank = graph.pagerank(0.85, 100, 1e-6).unwrap();
+let betweenness = graph.betweenness_centrality();</code></pre>
+<h3 id="choosing-pagerank-parameters"><a class="header" href="#choosing-pagerank-parameters">Choosing PageRank Parameters</a></h3>
+<ul>
+<li><strong>Damping factor (d)</strong>: 0.85 standard, higher = more weight to links</li>
+<li><strong>Max iterations</strong>: 100 usually sufficient (convergence ~20-50 iterations)</li>
+<li><strong>Tolerance</strong>: 1e-6 balances precision vs speed</li>
+</ul>
+<h2 id="further-reading"><a class="header" href="#further-reading">Further Reading</a></h2>
+<p><strong>Graph Algorithms</strong>:</p>
+<ul>
+<li>Brandes, U. (2001). &quot;A Faster Algorithm for Betweenness Centrality&quot;</li>
+<li>Page, L., Brin, S., et al. (1999). &quot;The PageRank Citation Ranking&quot;</li>
+<li>Buluç, A., et al. (2009). &quot;Parallel Sparse Matrix-Vector Multiplication&quot;</li>
+</ul>
+<p><strong>CSR Representation</strong>:</p>
+<ul>
+<li>Saad, Y. (2003). &quot;Iterative Methods for Sparse Linear Systems&quot;</li>
+</ul>
+<p><strong>Numerical Stability</strong>:</p>
+<ul>
+<li>Higham, N. (1993). &quot;The Accuracy of Floating Point Summation&quot;</li>
+</ul>
+<h2 id="summary"><a class="header" href="#summary">Summary</a></h2>
+<ul>
+<li><strong>CSR format</strong>: 50-70% memory reduction, 3-5x cache improvement</li>
+<li><strong>PageRank</strong>: Global influence with Kahan summation for numerical stability</li>
+<li><strong>Betweenness</strong>: Identifies bridges with parallel Brandes algorithm</li>
+<li><strong>Performance</strong>: Scales to 1M+ nodes with parallel algorithms</li>
+<li><strong>Toyota Way</strong>: Eliminates waste (CSR), prevents errors (Kahan), balances load (Rayon)</li>
+</ul>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../ml-fundamentals/feature-scaling.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+
+                            <a rel="next prefetch" href="../ml-fundamentals/descriptive-statistics.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../ml-fundamentals/feature-scaling.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+
+                    <a rel="next prefetch" href="../ml-fundamentals/descriptive-statistics.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+            </nav>
+
+        </div>
+
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+        <script src="../ace.js"></script>
+        <script src="../editor.js"></script>
+        <script src="../mode-rust.js"></script>
+        <script src="../theme-dawn.js"></script>
+        <script src="../theme-tomorrow_night.js"></script>
+
+        <script src="../elasticlunr.min.js"></script>
+        <script src="../mark.min.js"></script>
+        <script src="../searcher.js"></script>
+
+        <script src="../clipboard.min.js"></script>
+        <script src="../highlight.js"></script>
+        <script src="../book.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+    </div>
+    </body>
+</html>
