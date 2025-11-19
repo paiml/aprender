@@ -11,7 +11,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Model Serialization
 
-- **SafeTensors Format Support** - Industry-standard model serialization (Issue #5)
+- **SafeTensors Format Support - LogisticRegression** (Issue #6)
+  - `LogisticRegression::save_safetensors()` - Export binary classification models to SafeTensors format
+  - `LogisticRegression::load_safetensors()` - Load models from SafeTensors format
+  - Compatible with HuggingFace ecosystem, Ollama, PyTorch, TensorFlow
+  - Compatible with realizar inference engine
+  - Deterministic serialization (sorted keys for reproducibility)
+  - 5 comprehensive tests (unfitted model, roundtrip, corrupted file, missing file, probability preservation)
+  - Full documentation with rustdoc examples
+  - Serializes coefficients + intercept tensors
+  - Probability predictions preserved exactly after save/load roundtrip
+
+- **SafeTensors Format Support - LinearRegression** (Issue #5)
   - `LinearRegression::save_safetensors()` - Export models to SafeTensors format
   - `LinearRegression::load_safetensors()` - Load models from SafeTensors format
   - Compatible with HuggingFace ecosystem, Ollama, PyTorch, TensorFlow
@@ -25,7 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Dependencies: Added `serde_json = "1.0"` for SafeTensors metadata parsing
-- Test count: +7 SafeTensors integration tests (total: 482 tests)
+- Test count: +12 SafeTensors tests (5 LogisticRegression + 7 LinearRegression, total: 417 lib tests)
 
 ## [0.2.0] - 2024-11-18
 
