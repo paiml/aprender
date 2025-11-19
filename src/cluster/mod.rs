@@ -161,6 +161,150 @@ impl KMeans {
         Ok(model)
     }
 
+    /// Saves the K-Means model to a SafeTensors file.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Path where the SafeTensors file will be saved
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the model is unfitted or if saving fails.
+    pub fn save_safetensors<P: AsRef<Path>>(&self, path: P) -> Result<(), String> {
+        use crate::serialization::safetensors;
+        use std::collections::BTreeMap;
+
+        // Check if model is fitted
+        let centroids = self
+            .centroids
+            .as_ref()
+            .ok_or("Cannot save unfitted model. Call fit() first.")?;
+
+        let mut tensors = BTreeMap::new();
+
+        // Save centroids matrix as flat array
+        let (n_clusters, n_features) = centroids.shape();
+        let mut centroids_data = Vec::with_capacity(n_clusters * n_features);
+        for i in 0..n_clusters {
+            for j in 0..n_features {
+                centroids_data.push(centroids.get(i, j));
+            }
+        }
+        tensors.insert(
+            "centroids".to_string(),
+            (centroids_data, vec![n_clusters, n_features]),
+        );
+
+        // Save hyperparameters
+        tensors.insert(
+            "n_clusters".to_string(),
+            (vec![self.n_clusters as f32], vec![1]),
+        );
+        tensors.insert(
+            "max_iter".to_string(),
+            (vec![self.max_iter as f32], vec![1]),
+        );
+        tensors.insert("tol".to_string(), (vec![self.tol], vec![1]));
+
+        let random_state_val = if let Some(state) = self.random_state {
+            state as f32
+        } else {
+            -1.0
+        };
+        tensors.insert(
+            "random_state".to_string(),
+            (vec![random_state_val], vec![1]),
+        );
+
+        // Save metadata
+        tensors.insert("inertia".to_string(), (vec![self.inertia], vec![1]));
+        tensors.insert("n_iter".to_string(), (vec![self.n_iter as f32], vec![1]));
+
+        safetensors::save_safetensors(path, tensors)?;
+        Ok(())
+    }
+
+    /// Loads a K-Means model from a SafeTensors file.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Path to the SafeTensors file
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if loading fails or if the file format is invalid.
+    pub fn load_safetensors<P: AsRef<Path>>(path: P) -> Result<Self, String> {
+        use crate::serialization::safetensors;
+
+        // Load SafeTensors file
+        let (metadata, raw_data) = safetensors::load_safetensors(path)?;
+
+        // Extract centroids tensor
+        let centroids_meta = metadata
+            .get("centroids")
+            .ok_or("Missing 'centroids' tensor in SafeTensors file")?;
+        let centroids_data = safetensors::extract_tensor(&raw_data, centroids_meta)?;
+
+        // Get shape from metadata
+        let shape = &centroids_meta.shape;
+        if shape.len() != 2 {
+            return Err("Invalid centroids tensor shape".to_string());
+        }
+        let n_clusters_from_shape = shape[0];
+        let n_features = shape[1];
+
+        // Reconstruct centroids matrix
+        let centroids = Matrix::from_vec(n_clusters_from_shape, n_features, centroids_data)
+            .map_err(|e| format!("Failed to reconstruct centroids matrix: {}", e))?;
+
+        // Load hyperparameters
+        let n_clusters_meta = metadata
+            .get("n_clusters")
+            .ok_or("Missing 'n_clusters' tensor")?;
+        let n_clusters_data = safetensors::extract_tensor(&raw_data, n_clusters_meta)?;
+        let n_clusters = n_clusters_data[0] as usize;
+
+        let max_iter_meta = metadata
+            .get("max_iter")
+            .ok_or("Missing 'max_iter' tensor")?;
+        let max_iter_data = safetensors::extract_tensor(&raw_data, max_iter_meta)?;
+        let max_iter = max_iter_data[0] as usize;
+
+        let tol_meta = metadata.get("tol").ok_or("Missing 'tol' tensor")?;
+        let tol_data = safetensors::extract_tensor(&raw_data, tol_meta)?;
+        let tol = tol_data[0];
+
+        let random_state_meta = metadata
+            .get("random_state")
+            .ok_or("Missing 'random_state' tensor")?;
+        let random_state_data = safetensors::extract_tensor(&raw_data, random_state_meta)?;
+        let random_state = if random_state_data[0] < 0.0 {
+            None
+        } else {
+            Some(random_state_data[0] as u64)
+        };
+
+        // Load metadata
+        let inertia_meta = metadata.get("inertia").ok_or("Missing 'inertia' tensor")?;
+        let inertia_data = safetensors::extract_tensor(&raw_data, inertia_meta)?;
+        let inertia = inertia_data[0];
+
+        let n_iter_meta = metadata.get("n_iter").ok_or("Missing 'n_iter' tensor")?;
+        let n_iter_data = safetensors::extract_tensor(&raw_data, n_iter_meta)?;
+        let n_iter = n_iter_data[0] as usize;
+
+        Ok(Self {
+            n_clusters,
+            max_iter,
+            tol,
+            random_state,
+            centroids: Some(centroids),
+            labels: None, // Training labels not serialized
+            inertia,
+            n_iter,
+        })
+    }
+
     /// Initializes centroids using k-means++ algorithm.
     fn kmeans_plusplus_init(&self, x: &Matrix<f32>) -> Matrix<f32> {
         let (n_samples, n_features) = x.shape();
