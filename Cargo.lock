@@ -25,7 +25,7 @@ checksum = "5192cca8006f1fd4f7237516f40fa183bb07f8fbdfedaa0036de5ea9b0b45e78"
 
 [[package]]
 name = "aprender"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "bincode",
  "criterion",
