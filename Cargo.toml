@@ -38,6 +38,10 @@ chaos-network = ["chaos-basic"]
 chaos-byzantine = ["chaos-basic"]
 chaos-full = ["chaos-network", "chaos-byzantine"]
 
+[[test]]
+name = "book"
+path = "tests/book/mod.rs"
+
 [[bench]]
 name = "linear_regression"
 harness = false
