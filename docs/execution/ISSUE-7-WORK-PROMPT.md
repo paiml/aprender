@@ -9,7 +9,7 @@
 
 ## 📊 PROGRESS TRACKER (Update this section after each work session)
 
-**Overall Progress**: 10/15 tasks (66.7%)
+**Overall Progress**: 11/15 tasks (73.3%)
 
 ### Phase 1: Foundation (5/5 tasks = 100%) ✅ COMPLETE
 - ✅ [1/5] Create directory structure - `book/src/ml-fundamentals/`, `tests/book/` (100%)
@@ -33,7 +33,7 @@
   - Enforces property test requirements
   - All quality gates passing
 
-### Phase 2: Core Theory + Case Studies (5/6 pairs = 83.3%)
+### Phase 2: Core Theory + Case Studies (6/6 pairs = 100%) ✅ COMPLETE
 - ✅ [6/15] Linear Regression Theory + Case Study (100%)
   - Wrote comprehensive theory chapter (290 lines)
   - Mathematical foundation with OLS equation
@@ -42,7 +42,16 @@
   - Peer-reviewed citations (Tibshirani, Zou & Hastie)
   - DOC_STATUS: ✅ 100% Working
   - All 3 tests passing
-- ⬜ [7/15] Regularization Theory + Case Study (0%)
+- ✅ [7/15] Regularization Theory + Case Study (100%)
+  - Wrote comprehensive theory chapter (399 lines)
+  - All 3 methods: Ridge, Lasso, ElasticNet
+  - Mathematical foundations (L1, L2, combined penalties)
+  - Decision guide and comparison table
+  - Hyperparameter selection via CV
+  - Feature scaling importance
+  - Peer-reviewed citations (Tibshirani 1996, Zou & Hastie 2005)
+  - DOC_STATUS: ✅ 100% Working
+  - 40+ tests in src/linear_model/mod.rs
 - ✅ [8/15] Regression Metrics Theory + Case Study (100%)
   - Wrote theory chapter (285 lines)
   - All 4 metrics: R², MSE, RMSE, MAE
