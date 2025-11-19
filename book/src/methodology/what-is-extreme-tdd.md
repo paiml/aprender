@@ -1,5 +1,19 @@
 # What is EXTREME TDD?
 
+## Prerequisites
+
+This chapter is suitable for:
+- Developers familiar with basic testing concepts
+- Anyone interested in improving code quality
+- No prior TDD experience required (we'll start from scratch)
+
+**Recommended reading order:**
+1. [Introduction](../introduction.md) ← Start here
+2. This chapter (What is EXTREME TDD?)
+3. [The RED-GREEN-REFACTOR Cycle](./red-green-refactor.md)
+
+---
+
 **EXTREME TDD** is a rigorous, zero-defect approach to test-driven development that combines traditional TDD with advanced testing techniques, automated quality gates, and Toyota Way principles.
 
 ## The Core Definition
@@ -295,4 +309,21 @@ EXTREME TDD is:
 - **Continuous**: Kaizen mindset
 - **Zero-tolerance**: All tests pass, zero warnings
 
-**Next Chapter:** [The RED-GREEN-REFACTOR Cycle](./red-green-refactor.md)
+## Next Steps
+
+Now that you understand what EXTREME TDD is, continue your learning:
+
+1. **[The RED-GREEN-REFACTOR Cycle](./red-green-refactor.md)** ← Next
+   Learn the fundamental cycle of EXTREME TDD
+
+2. **[Test-First Philosophy](./test-first-philosophy.md)**
+   Understand why tests must come first
+
+3. **[Zero Tolerance Quality](./zero-tolerance.md)**
+   Learn about enforcing quality gates
+
+4. **[Property-Based Testing](../advanced-testing/property-based-testing.md)**
+   Advanced testing techniques for edge cases
+
+5. **[Mutation Testing](../advanced-testing/mutation-testing.md)**
+   Verify your tests actually catch bugs

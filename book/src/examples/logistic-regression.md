@@ -1,5 +1,26 @@
 # Logistic Regression
 
+## Prerequisites
+
+Before reading this chapter, you should understand:
+
+**Core Concepts:**
+- [What is EXTREME TDD?](../methodology/what-is-extreme-tdd.md) - The testing methodology
+- [The RED-GREEN-REFACTOR Cycle](../methodology/red-green-refactor.md) - The development cycle
+- Basic machine learning concepts (supervised learning, training/testing)
+
+**Rust Skills:**
+- Builder pattern (for fluent APIs)
+- Error handling with `Result`
+- Basic vector/matrix operations
+
+**Recommended reading order:**
+1. [What is EXTREME TDD?](../methodology/what-is-extreme-tdd.md)
+2. This chapter (Logistic Regression Case Study)
+3. [Property-Based Testing](../advanced-testing/property-based-testing.md)
+
+---
+
 📝 **This chapter demonstrates binary classification using Logistic Regression.**
 
 ## Overview
@@ -68,7 +89,27 @@ Test predictions:
   Feature1=7.50, Feature2=8.00 -> Class 1 (0.990 probability)
 ```
 
-**See also:**
-- [What is EXTREME TDD?](../methodology/what-is-extreme-tdd.md)
-- [Property-Based Testing](../advanced-testing/property-based-testing.md)
-- [Builder Pattern](../best-practices/builder-pattern.md)
+## Next Steps
+
+Now that you've seen binary classification with Logistic Regression, explore related topics:
+
+**More Classification Algorithms:**
+1. **[Decision Tree Iris](./decision-tree-iris.md)** ← Next case study
+   Multi-class classification with decision trees
+
+2. **[Random Forest](./random-forest.md)**
+   Ensemble methods for improved accuracy
+
+**Advanced Testing:**
+3. **[Property-Based Testing](../advanced-testing/property-based-testing.md)**
+   Learn how to write the 4 property tests shown in this chapter
+
+4. **[Mutation Testing](../advanced-testing/mutation-testing.md)**
+   Verify tests catch bugs
+
+**Best Practices:**
+5. **[Builder Pattern](../best-practices/builder-pattern.md)**
+   Master the fluent API design used in this example
+
+6. **[Error Handling](../best-practices/error-handling.md)**
+   Best practices for robust error handling

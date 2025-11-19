@@ -1,5 +1,16 @@
 # Introduction
 
+## Prerequisites
+
+**No prior knowledge required!** This book is designed for:
+- Developers with basic programming experience (any language)
+- Anyone interested in improving code quality
+- Rust developers (recommended but not required)
+
+**Time investment:** Each chapter takes 10-30 minutes to read. Real mastery comes from practice.
+
+---
+
 Welcome to the **EXTREME TDD Guide**, a comprehensive methodology for building zero-defect software through rigorous test-driven development. This book documents the practices, principles, and real-world implementation strategies used to build **aprender**, a pure-Rust machine learning library with production-grade quality.
 
 ## What You'll Learn
