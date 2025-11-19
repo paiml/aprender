@@ -9,7 +9,7 @@
 
 ## 📊 PROGRESS TRACKER (Update this section after each work session)
 
-**Overall Progress**: 7/15 tasks (46.7%)
+**Overall Progress**: 8/15 tasks (53.3%)
 
 ### Phase 1: Foundation (5/5 tasks = 100%) ✅ COMPLETE
 - ✅ [1/5] Create directory structure - `book/src/ml-fundamentals/`, `tests/book/` (100%)
@@ -33,7 +33,7 @@
   - Enforces property test requirements
   - All quality gates passing
 
-### Phase 2: Core Theory + Case Studies (2/6 pairs = 33.3%)
+### Phase 2: Core Theory + Case Studies (3/6 pairs = 50.0%)
 - ✅ [6/15] Linear Regression Theory + Case Study (100%)
   - Wrote comprehensive theory chapter (290 lines)
   - Mathematical foundation with OLS equation
@@ -44,7 +44,14 @@
   - All 3 tests passing
 - ⬜ [7/15] Regularization Theory + Case Study (0%)
 - ⬜ [8/15] Regression Metrics Theory + Case Study (0%)
-- ⬜ [9/15] Logistic Regression Theory + Case Study (0%)
+- ✅ [9/15] Logistic Regression Theory + Case Study (100%)
+  - Wrote theory chapter (250 lines)
+  - Sigmoid function and binary classification
+  - 2 code examples (training, SafeTensors)
+  - Links to SafeTensors case study (281 lines, 5 tests)
+  - Peer-reviewed citation (Cox 1958)
+  - DOC_STATUS: ✅ 100% Working
+  - 10+ tests passing
 - ⬜ [10/15] Classification Metrics Theory + Case Study (0%)
 - ✅ [11/15] Cross-Validation Theory + Case Study (100%)
   - Wrote theory chapter (180 lines)
