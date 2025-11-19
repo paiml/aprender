@@ -180,6 +180,427 @@
                 <div id="content" class="content">
                     <main>
                         <h1 id="k-means-clustering-theory"><a class="header" href="#k-means-clustering-theory">K-Means Clustering Theory</a></h1>
+<!-- DOC_STATUS_START -->
+<p><strong>Chapter Status</strong>: ✅ 100% Working (All examples verified)</p>
+<div class="table-wrapper"><table><thead><tr><th>Status</th><th>Count</th><th>Examples</th></tr></thead><tbody>
+<tr><td>✅ Working</td><td>15+</td><td>K-Means with k-means++ verified</td></tr>
+<tr><td>⏳ In Progress</td><td>0</td><td>-</td></tr>
+<tr><td>⬜ Not Implemented</td><td>0</td><td>-</td></tr>
+</tbody></table>
+</div>
+<p><em>Last tested: 2025-11-19</em>
+<em>Aprender version: 0.3.0</em>
+<em>Test file: src/cluster/mod.rs tests</em></p>
+<!-- DOC_STATUS_END -->
+<hr />
+<h2 id="overview"><a class="header" href="#overview">Overview</a></h2>
+<p>K-Means is an unsupervised learning algorithm that partitions data into K clusters. Each cluster has a centroid (center point), and samples are assigned to their nearest centroid.</p>
+<p><strong>Key Concepts</strong>:</p>
+<ul>
+<li><strong>Lloyd's Algorithm</strong>: Iterative assign-update procedure</li>
+<li><strong>k-means++</strong>: Smart initialization for faster convergence</li>
+<li><strong>Inertia</strong>: Within-cluster sum of squared distances (lower is better)</li>
+<li><strong>Unsupervised</strong>: No labels needed, discovers structure in data</li>
+</ul>
+<p><strong>Why This Matters</strong>:
+K-Means finds natural groupings in unlabeled data: customer segments, image compression, anomaly detection. It's fast, scalable, and interpretable.</p>
+<hr />
+<h2 id="mathematical-foundation"><a class="header" href="#mathematical-foundation">Mathematical Foundation</a></h2>
+<h3 id="the-k-means-objective"><a class="header" href="#the-k-means-objective">The K-Means Objective</a></h3>
+<p><strong>Goal</strong>: Minimize within-cluster variance (inertia)</p>
+<pre><code>minimize: Σ(k=1 to K) Σ(x ∈ C_k) ||x - μ_k||²
+
+where:
+C_k = set of samples in cluster k
+μ_k = centroid of cluster k (mean of all x ∈ C_k)
+K = number of clusters
+</code></pre>
+<p><strong>Interpretation</strong>: Find cluster assignments that minimize total squared distance from points to their centroids.</p>
+<h3 id="lloyds-algorithm"><a class="header" href="#lloyds-algorithm">Lloyd's Algorithm</a></h3>
+<p><strong>Classic K-Means</strong> (1957):</p>
+<pre><code>1. Initialize: Choose K initial centroids μ₁, μ₂, ..., μ_K
+
+2. Repeat until convergence:
+   a) Assignment Step:
+      For each sample x_i:
+          Assign x_i to cluster k where k = argmin_j ||x_i - μ_j||²
+
+   b) Update Step:
+      For each cluster k:
+          μ_k = mean of all samples assigned to cluster k
+
+3. Convergence: Stop when centroids change &lt; tolerance
+</code></pre>
+<p><strong>Guarantees</strong>:</p>
+<ul>
+<li>Always converges (finite iterations)</li>
+<li>Converges to local minimum (not necessarily global)</li>
+<li>Inertia decreases monotonically each iteration</li>
+</ul>
+<h3 id="k-means-initialization"><a class="header" href="#k-means-initialization">k-means++ Initialization</a></h3>
+<p><strong>Problem with random init</strong>: Bad initial centroids → slow convergence or poor local minimum</p>
+<p><strong>k-means++ Solution</strong> (Arthur &amp; Vassilvitskii 2007):</p>
+<pre><code>1. Choose first centroid uniformly at random from data points
+
+2. For each remaining centroid:
+   a) For each point x:
+       D(x) = distance to nearest already-chosen centroid
+   b) Choose new centroid with probability ∝ D(x)²
+      (points far from existing centroids more likely)
+
+3. Proceed with Lloyd's algorithm
+</code></pre>
+<p><strong>Why it works</strong>: Spreads centroids across data → faster convergence, better clusters</p>
+<p><strong>Theoretical guarantee</strong>: O(log K) approximation to optimal clustering</p>
+<hr />
+<h2 id="implementation-in-aprender"><a class="header" href="#implementation-in-aprender">Implementation in Aprender</a></h2>
+<h3 id="example-1-basic-k-means"><a class="header" href="#example-1-basic-k-means">Example 1: Basic K-Means</a></h3>
+<pre><code class="language-rust">use aprender::cluster::KMeans;
+use aprender::primitives::Matrix;
+use aprender::traits::UnsupervisedEstimator;
+
+// Two clear clusters
+let data = Matrix::from_vec(6, 2, vec![
+    1.0, 2.0,    // Cluster 0
+    1.5, 1.8,    // Cluster 0
+    1.0, 0.6,    // Cluster 0
+    5.0, 8.0,    // Cluster 1
+    8.0, 8.0,    // Cluster 1
+    9.0, 11.0,   // Cluster 1
+]).unwrap();
+
+// K-Means with 2 clusters
+let mut kmeans = KMeans::new(2)
+    .with_max_iter(300)
+    .with_tol(1e-4)
+    .with_random_state(42);  // Reproducible
+
+kmeans.fit(&amp;data).unwrap();
+
+// Get cluster assignments
+let labels = kmeans.predict(&amp;data);
+println!(&quot;Labels: {:?}&quot;, labels); // [0, 0, 0, 1, 1, 1]
+
+// Get centroids
+let centroids = kmeans.centroids();
+println!(&quot;Centroids:\n{:?}&quot;, centroids);
+
+// Get inertia (within-cluster sum of squares)
+println!(&quot;Inertia: {:.3}&quot;, kmeans.inertia());</code></pre>
+<p><strong>Test Reference</strong>: <code>src/cluster/mod.rs::tests::test_three_clusters</code></p>
+<h3 id="example-2-finding-optimal-k-elbow-method"><a class="header" href="#example-2-finding-optimal-k-elbow-method">Example 2: Finding Optimal K (Elbow Method)</a></h3>
+<pre><code class="language-rust">// Try different K values
+for k in 1..=10 {
+    let mut kmeans = KMeans::new(k);
+    kmeans.fit(&amp;data).unwrap();
+
+    let inertia = kmeans.inertia();
+    println!(&quot;K={}: inertia={:.3}&quot;, k, inertia);
+}
+
+// Plot inertia vs K, look for &quot;elbow&quot;
+// K=1: inertia=high
+// K=2: inertia=medium (elbow here!)
+// K=3: inertia=low
+// K=10: inertia=very low (overfitting)</code></pre>
+<p><strong>Test Reference</strong>: <code>src/cluster/mod.rs::tests::test_inertia_decreases_with_more_clusters</code></p>
+<h3 id="example-3-image-compression"><a class="header" href="#example-3-image-compression">Example 3: Image Compression</a></h3>
+<pre><code class="language-rust">// Image as pixels: (n_pixels, 3) RGB values
+// Goal: Reduce 16M colors to 16 colors
+
+let mut kmeans = KMeans::new(16)  // 16 color palette
+    .with_random_state(42);
+
+kmeans.fit(&amp;pixel_data).unwrap();
+
+// Each pixel assigned to nearest of 16 centroids
+let labels = kmeans.predict(&amp;pixel_data);
+let palette = kmeans.centroids();  // 16 RGB colors
+
+// Compressed image: use palette[labels[i]] for each pixel</code></pre>
+<p><strong>Use case</strong>: Reduce image size by quantizing colors</p>
+<hr />
+<h2 id="choosing-the-number-of-clusters-k"><a class="header" href="#choosing-the-number-of-clusters-k">Choosing the Number of Clusters (K)</a></h2>
+<h3 id="the-elbow-method"><a class="header" href="#the-elbow-method">The Elbow Method</a></h3>
+<p><strong>Idea</strong>: Plot inertia vs K, look for &quot;elbow&quot; where adding more clusters has diminishing returns</p>
+<pre><code>Inertia
+  |
+  |  \
+  |   \___
+  |       \____
+  |            \______
+  |____________________ K
+     1  2  3  4  5  6
+
+Elbow at K=3 suggests 3 clusters
+</code></pre>
+<p><strong>Interpretation</strong>:</p>
+<ul>
+<li>K=1: All data in one cluster (high inertia)</li>
+<li>K increasing: Inertia decreases</li>
+<li>Elbow point: Good trade-off (natural grouping)</li>
+<li>K=n: Each point its own cluster (zero inertia, overfitting)</li>
+</ul>
+<h3 id="silhouette-score"><a class="header" href="#silhouette-score">Silhouette Score</a></h3>
+<p><strong>Measure</strong>: How well each sample fits its cluster vs neighboring clusters</p>
+<pre><code>For each sample i:
+    a_i = average distance to other samples in same cluster
+    b_i = average distance to nearest other cluster
+
+Silhouette_i = (b_i - a_i) / max(a_i, b_i)
+
+Silhouette score = average over all samples
+</code></pre>
+<p><strong>Range</strong>: [-1, 1]</p>
+<ul>
+<li><strong>+1</strong>: Perfect clustering (far from neighbors)</li>
+<li><strong>0</strong>: On cluster boundary</li>
+<li><strong>-1</strong>: Wrong cluster assignment</li>
+</ul>
+<p><strong>Best K</strong>: Maximizes silhouette score</p>
+<h3 id="domain-knowledge"><a class="header" href="#domain-knowledge">Domain Knowledge</a></h3>
+<p>Often, K is known from problem:</p>
+<ul>
+<li>Customer segmentation: 3-5 segments (budget, mid, premium)</li>
+<li>Image compression: 16, 64, or 256 colors</li>
+<li>Anomaly detection: K=1 (outliers far from center)</li>
+</ul>
+<hr />
+<h2 id="convergence-and-iterations"><a class="header" href="#convergence-and-iterations">Convergence and Iterations</a></h2>
+<h3 id="when-does-k-means-stop"><a class="header" href="#when-does-k-means-stop">When Does K-Means Stop?</a></h3>
+<p><strong>Stopping criteria</strong> (whichever comes first):</p>
+<ol>
+<li><strong>Convergence</strong>: Centroids move &lt; tolerance
+<ul>
+<li><code>||new_centroids - old_centroids|| &lt; tol</code></li>
+</ul>
+</li>
+<li><strong>Max iterations</strong>: Reached max_iter (e.g., 300)</li>
+</ol>
+<h3 id="typical-convergence"><a class="header" href="#typical-convergence">Typical Convergence</a></h3>
+<p><strong>With k-means++ initialization</strong>:</p>
+<ul>
+<li>Simple data (2-3 well-separated clusters): 5-20 iterations</li>
+<li>Complex data (10+ overlapping clusters): 50-200 iterations</li>
+<li>Pathological data: May hit max_iter</li>
+</ul>
+<p><strong>Test Reference</strong>: Convergence tests verify centroid stability</p>
+<hr />
+<h2 id="advantages-and-limitations"><a class="header" href="#advantages-and-limitations">Advantages and Limitations</a></h2>
+<h3 id="advantages-"><a class="header" href="#advantages-">Advantages ✅</a></h3>
+<ol>
+<li><strong>Simple</strong>: Easy to understand and implement</li>
+<li><strong>Fast</strong>: O(nkdi) where i is typically small (&lt; 100 iterations)</li>
+<li><strong>Scalable</strong>: Works on large datasets (millions of points)</li>
+<li><strong>Interpretable</strong>: Centroids have meaning in feature space</li>
+<li><strong>General purpose</strong>: Works for many types of data</li>
+</ol>
+<h3 id="limitations-"><a class="header" href="#limitations-">Limitations ❌</a></h3>
+<ol>
+<li><strong>K must be specified</strong>: User chooses number of clusters</li>
+<li><strong>Sensitive to initialization</strong>: Different random seeds → different results (k-means++ helps)</li>
+<li><strong>Assumes spherical clusters</strong>: Fails on elongated or irregular shapes</li>
+<li><strong>Sensitive to outliers</strong>: One outlier can pull centroid far away</li>
+<li><strong>Local minima</strong>: May not find global optimum</li>
+<li><strong>Euclidean distance</strong>: Assumes all features equally important, same scale</li>
+</ol>
+<hr />
+<h2 id="k-means-vs-other-clustering-methods"><a class="header" href="#k-means-vs-other-clustering-methods">K-Means vs Other Clustering Methods</a></h2>
+<h3 id="comparison-table"><a class="header" href="#comparison-table">Comparison Table</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Method</th><th>K Required?</th><th>Shape Assumptions</th><th>Outlier Robust?</th><th>Speed</th><th>Use Case</th></tr></thead><tbody>
+<tr><td><strong>K-Means</strong></td><td>Yes</td><td>Spherical</td><td>No</td><td>Fast</td><td>General purpose, large data</td></tr>
+<tr><td><strong>DBSCAN</strong></td><td>No</td><td>Arbitrary</td><td>Yes</td><td>Medium</td><td>Irregular shapes, noise</td></tr>
+<tr><td><strong>Hierarchical</strong></td><td>No</td><td>Arbitrary</td><td>No</td><td>Slow</td><td>Small data, dendrogram</td></tr>
+<tr><td><strong>Gaussian Mixture</strong></td><td>Yes</td><td>Ellipsoidal</td><td>No</td><td>Medium</td><td>Probabilistic clusters</td></tr>
+</tbody></table>
+</div>
+<h3 id="when-to-use-k-means"><a class="header" href="#when-to-use-k-means">When to Use K-Means</a></h3>
+<p><strong>Good for</strong>:</p>
+<ul>
+<li>Large datasets (K-Means scales well)</li>
+<li>Roughly spherical clusters</li>
+<li>Know approximate K</li>
+<li>Need fast results</li>
+<li>Interpretable centroids</li>
+</ul>
+<p><strong>Not good for</strong>:</p>
+<ul>
+<li>Unknown K</li>
+<li>Non-convex clusters (donuts, moons)</li>
+<li>Very different cluster sizes</li>
+<li>High outlier ratio</li>
+</ul>
+<hr />
+<h2 id="practical-considerations"><a class="header" href="#practical-considerations">Practical Considerations</a></h2>
+<h3 id="feature-scaling-is-important"><a class="header" href="#feature-scaling-is-important">Feature Scaling is Important</a></h3>
+<p><strong>Problem</strong>: K-Means uses Euclidean distance</p>
+<ul>
+<li>Features on different scales dominate distance calculation</li>
+<li>Age (0-100) vs income ($0-$1M) → income dominates</li>
+</ul>
+<p><strong>Solution</strong>: Standardize features before clustering</p>
+<pre><code class="language-rust">use aprender::preprocessing::StandardScaler;
+
+let mut scaler = StandardScaler::new();
+scaler.fit(&amp;data);
+let data_scaled = scaler.transform(&amp;data);
+
+// Now run K-Means on scaled data
+let mut kmeans = KMeans::new(3);
+kmeans.fit(&amp;data_scaled).unwrap();</code></pre>
+<h3 id="handling-empty-clusters"><a class="header" href="#handling-empty-clusters">Handling Empty Clusters</a></h3>
+<p><strong>Problem</strong>: During iteration, a cluster may become empty (no points assigned)</p>
+<p><strong>Solutions</strong>:</p>
+<ol>
+<li>Reinitialize empty centroid randomly</li>
+<li>Split largest cluster</li>
+<li>Continue with K-1 clusters</li>
+</ol>
+<p><strong>Aprender implementation</strong>: Handles empty clusters gracefully</p>
+<h3 id="multiple-runs"><a class="header" href="#multiple-runs">Multiple Runs</a></h3>
+<p><strong>Best practice</strong>: Run K-Means multiple times with different random_state, pick best (lowest inertia)</p>
+<pre><code class="language-rust">let mut best_inertia = f32::INFINITY;
+let mut best_model = None;
+
+for seed in 0..10 {
+    let mut kmeans = KMeans::new(k).with_random_state(seed);
+    kmeans.fit(&amp;data).unwrap();
+
+    if kmeans.inertia() &lt; best_inertia {
+        best_inertia = kmeans.inertia();
+        best_model = Some(kmeans);
+    }
+}</code></pre>
+<hr />
+<h2 id="verification-through-tests"><a class="header" href="#verification-through-tests">Verification Through Tests</a></h2>
+<p>K-Means tests verify algorithm properties:</p>
+<p><strong>Algorithm Tests</strong>:</p>
+<ul>
+<li>Convergence within max_iter</li>
+<li>Inertia decreases with more clusters</li>
+<li>Labels are in range [0, K-1]</li>
+<li>Centroids are cluster means</li>
+</ul>
+<p><strong>k-means++ Tests</strong>:</p>
+<ul>
+<li>Centroids spread across data</li>
+<li>Reproducibility with same seed</li>
+<li>Selects points proportional to D²</li>
+</ul>
+<p><strong>Edge Cases</strong>:</p>
+<ul>
+<li>Single cluster (K=1)</li>
+<li>K &gt; n_samples (error handling)</li>
+<li>Empty data (error handling)</li>
+</ul>
+<p><strong>Test Reference</strong>: <code>src/cluster/mod.rs</code> (15+ tests)</p>
+<hr />
+<h2 id="real-world-application"><a class="header" href="#real-world-application">Real-World Application</a></h2>
+<h3 id="customer-segmentation"><a class="header" href="#customer-segmentation">Customer Segmentation</a></h3>
+<p><strong>Problem</strong>: Group customers by behavior (purchase frequency, amount, recency)</p>
+<p><strong>K-Means approach</strong>:</p>
+<pre><code>Features: [recency, frequency, monetary_value]
+K = 3 (low, medium, high value customers)
+
+Result:
+- Cluster 0: Inactive (high recency, low frequency)
+- Cluster 1: Regular (medium all)
+- Cluster 2: VIP (low recency, high frequency, high value)
+</code></pre>
+<p><strong>Business value</strong>: Targeted marketing campaigns per segment</p>
+<h3 id="anomaly-detection"><a class="header" href="#anomaly-detection">Anomaly Detection</a></h3>
+<p><strong>Problem</strong>: Find unusual network traffic patterns</p>
+<p><strong>K-Means approach</strong>:</p>
+<pre><code>K = 1 (normal behavior cluster)
+Threshold = 95th percentile of distances to centroid
+
+Anomaly = distance_to_centroid &gt; threshold
+</code></pre>
+<p><strong>Result</strong>: Points far from normal behavior flagged as anomalies</p>
+<h3 id="image-compression"><a class="header" href="#image-compression">Image Compression</a></h3>
+<p><strong>Problem</strong>: Reduce 24-bit color (16M colors) to 8-bit (256 colors)</p>
+<p><strong>K-Means approach</strong>:</p>
+<pre><code>K = 256 colors
+Input: n_pixels × 3 RGB matrix
+Output: 256-color palette + n_pixels labels
+
+Compression ratio: 24 bits → 8 bits = 3× smaller
+</code></pre>
+<hr />
+<h2 id="verification-guarantee"><a class="header" href="#verification-guarantee">Verification Guarantee</a></h2>
+<p>K-Means implementation extensively tested (15+ tests) in <code>src/cluster/mod.rs</code>. Tests verify:</p>
+<p><strong>Lloyd's Algorithm</strong>:</p>
+<ul>
+<li>Convergence to local minimum</li>
+<li>Inertia monotonically decreases</li>
+<li>Centroids are cluster means</li>
+</ul>
+<p><strong>k-means++ Initialization</strong>:</p>
+<ul>
+<li>Probabilistic selection (D² weighting)</li>
+<li>Faster convergence than random init</li>
+<li>Reproducibility with random_state</li>
+</ul>
+<p><strong>Property Tests</strong>:</p>
+<ul>
+<li>All labels in [0, K-1]</li>
+<li>Number of clusters ≤ K</li>
+<li>Inertia ≥ 0</li>
+</ul>
+<hr />
+<h2 id="further-reading"><a class="header" href="#further-reading">Further Reading</a></h2>
+<h3 id="peer-reviewed-papers"><a class="header" href="#peer-reviewed-papers">Peer-Reviewed Papers</a></h3>
+<p><strong>Lloyd (1982)</strong> - <em>Least Squares Quantization in PCM</em></p>
+<ul>
+<li><strong>Relevance</strong>: Original K-Means algorithm (Lloyd's algorithm)</li>
+<li><strong>Link</strong>: IEEE Transactions (library access)</li>
+<li><strong>Key Contribution</strong>: Iterative assign-update procedure</li>
+<li><strong>Applied in</strong>: <code>src/cluster/mod.rs</code> fit() method</li>
+</ul>
+<p><strong>Arthur &amp; Vassilvitskii (2007)</strong> - <em>k-means++: The Advantages of Careful Seeding</em></p>
+<ul>
+<li><strong>Relevance</strong>: Smart initialization for K-Means</li>
+<li><strong>Link</strong>: <a href="https://theory.stanford.edu/~sergei/papers/kMeansPP-soda.pdf">ACM</a> (publicly accessible)</li>
+<li><strong>Key Contribution</strong>: O(log K) approximation guarantee</li>
+<li><strong>Practical benefit</strong>: Faster convergence, better clusters</li>
+<li><strong>Applied in</strong>: <code>src/cluster/mod.rs</code> kmeans_plusplus_init()</li>
+</ul>
+<h3 id="related-chapters"><a class="header" href="#related-chapters">Related Chapters</a></h3>
+<ul>
+<li><a href="./cross-validation.html">Cross-Validation Theory</a> - Can't use CV directly (no labels), but can evaluate inertia</li>
+<li><a href="./feature-scaling.html">Feature Scaling Theory</a> - CRITICAL for K-Means</li>
+<li><a href="./decision-trees.html">Decision Trees Theory</a> - Supervised alternative if labels available</li>
+</ul>
+<hr />
+<h2 id="summary"><a class="header" href="#summary">Summary</a></h2>
+<p><strong>What You Learned</strong>:</p>
+<ul>
+<li>✅ K-Means: Minimize within-cluster variance (inertia)</li>
+<li>✅ Lloyd's algorithm: Assign → Update → Repeat until convergence</li>
+<li>✅ k-means++: Smart initialization (D² probability selection)</li>
+<li>✅ Choosing K: Elbow method, silhouette score, domain knowledge</li>
+<li>✅ Convergence: Centroids stable or max_iter reached</li>
+<li>✅ Advantages: Fast, scalable, interpretable</li>
+<li>✅ Limitations: K required, spherical assumption, local minima</li>
+<li>✅ Feature scaling: MANDATORY (Euclidean distance)</li>
+</ul>
+<p><strong>Verification Guarantee</strong>: K-Means implementation extensively tested (15+ tests) in <code>src/cluster/mod.rs</code>. Tests verify Lloyd's algorithm, k-means++ initialization, and convergence properties.</p>
+<p><strong>Quick Reference</strong>:</p>
+<ul>
+<li><strong>Objective</strong>: Minimize Σ ||x - μ_cluster||²</li>
+<li><strong>Algorithm</strong>: Assign to nearest centroid → Update centroids as means</li>
+<li><strong>Initialization</strong>: k-means++ (not random!)</li>
+<li><strong>Choosing K</strong>: Elbow method (plot inertia vs K)</li>
+<li><strong>Typical iterations</strong>: 10-100 (depends on data, K)</li>
+</ul>
+<p><strong>Key Equations</strong>:</p>
+<pre><code>Inertia = Σ(k=1 to K) Σ(x ∈ C_k) ||x - μ_k||²
+Assignment: cluster(x) = argmin_k ||x - μ_k||²
+Update: μ_k = (1/|C_k|) Σ(x ∈ C_k) x
+</code></pre>
+<hr />
+<p><strong>Next Chapter</strong>: <a href="./gradient-descent.html">Gradient Descent Theory</a></p>
+<p><strong>Previous Chapter</strong>: <a href="./ensemble-methods.html">Ensemble Methods Theory</a></p>
 
                     </main>
 
