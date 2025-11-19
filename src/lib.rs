@@ -40,6 +40,7 @@
 //! - [`preprocessing`]: Data transformers (scalers, encoders)
 //! - [`optim`]: Optimization algorithms (SGD, Adam)
 //! - [`loss`]: Loss functions for training (MSE, MAE, Huber)
+//! - [`serialization`]: Model serialization (SafeTensors format)
 //! - [`chaos`]: Chaos engineering configuration (from renacer)
 
 pub mod chaos;
@@ -54,6 +55,7 @@ pub mod optim;
 pub mod prelude;
 pub mod preprocessing;
 pub mod primitives;
+pub mod serialization;
 pub mod traits;
 pub mod tree;
 
