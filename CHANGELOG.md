@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2025-11-19
+
+### Changed
+
+#### Dependencies
+- **Upgraded trueno to v0.4.0** (from v0.2.2)
+  - AVX-512 backend support (11-12x speedup for compute-bound operations on supported CPUs)
+  - New vector operations: `norm_l2()`, `norm_l1()`, `norm_linf()`, `scale()`, `abs()`, `clamp()`, `lerp()`, `fma()`
+  - Neural network activation functions: `relu()`, `sigmoid()`, `gelu()`, `swish()`, `tanh()`, `exp()`
+  - Refactored multi-backend dispatch with macros (reduces ~1000 lines of code)
+  - 100% functional equivalence maintained (all 827 trueno tests passing)
+  - Critical bugfix: Missing `abs()` implementation in trueno v0.2.2 (Issue trueno#2)
+
+### Quality
+- All 541 tests passing with trueno v0.4.0
+- Zero clippy warnings
+- Release build verified
+
+### Notes
+This is a dependency upgrade release that brings performance improvements and new capabilities from trueno's AVX-512 backend. No API changes to aprender itself - fully backward compatible with v0.4.0.
+
 ## [0.4.0] - 2025-11-19
 
 ### 🎉 **MAJOR MILESTONE: TOP 10 ML ALGORITHMS - 100% COMPLETE!**

@@ -17,7 +17,7 @@ Aprender is a lightweight, pure Rust machine learning library designed for effic
 
 ### Core Primitives
 - **Vector** - 1D numerical array with statistical operations (mean, sum, dot, norm, variance)
-  - Powered by [trueno](https://github.com/paiml/trueno) v0.2.2 for SIMD acceleration
+  - Powered by [trueno](https://github.com/paiml/trueno) v0.4.0 for SIMD acceleration
 - **Matrix** - 2D numerical array with linear algebra (matmul, transpose, Cholesky decomposition)
   - SIMD-optimized operations via trueno backend
 - **DataFrame** - Named column container for ML data preparation workflows
@@ -47,7 +47,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-aprender = "0.2.0"
+aprender = "0.4.0"
 ```
 
 ## Quick Start

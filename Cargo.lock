@@ -34,7 +34,7 @@ dependencies = [
 
 [[package]]
 name = "aprender"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "bincode",
  "criterion",
@@ -827,9 +827,9 @@ dependencies = [
 
 [[package]]
 name = "trueno"
-version = "0.2.2"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "985cb970d326d4ece7d97bc6a2f6ff8c6a86bd9faa7dd4d11acaa06d0b76cb37"
+checksum = "e5b1b23877a56163ec7ac44c422118e7330b4b5db8ea6d4a6a8e233d838d2361"
 dependencies = [
  "thiserror",
 ]

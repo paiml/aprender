@@ -4,14 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Aprender is a next-generation machine learning library written in pure Rust. v0.1.0 implements core ML algorithms with 103 unit tests and a pmat TDG score of A (92.6/100).
+Aprender is a next-generation machine learning library written in pure Rust. v0.4.0 implements the TOP 10 ML algorithms with 541 unit tests and comprehensive quality gates.
 
 ## Build Commands
 
 ```bash
 # Standard Cargo commands
 cargo build --release        # Optimized build
-cargo test                   # Full test suite (103 unit tests + doctests)
+cargo test                   # Full test suite (541 unit tests + doctests)
 cargo test --lib             # Unit tests only
 cargo fmt --check            # Check formatting
 cargo clippy -- -D warnings  # Strict linting
@@ -58,7 +58,7 @@ pmat tdg . --include-components              # TDG score (target: A+ = 95.0+)
 
 ### Dependencies
 
-**Runtime:** Only `trueno = "0.3+"` (provides Vector, Matrix, backend dispatch)
+**Runtime:** `trueno = "0.4.0"` (SIMD-accelerated tensor operations)
 
 **Dev/Quality Tools:**
 - `proptest` - Property-based testing (10K+ cases)
@@ -80,12 +80,25 @@ cargo llvm-cov --html                   # Coverage report
 cargo mutants --no-times                # Mutation testing
 ```
 
-## Phase 1 Scope (v0.1.0)
+## v0.4.0 - TOP 10 ML Algorithms Complete
 
-- **DataFrame:** Minimal column naming (~300 LOC)
-- **Linear Regression:** OLS via normal equations
-- **K-Means:** Lloyd's + k-means++ initialization
-- **Metrics:** R², MSE, MAE, inertia, silhouette
+**Supervised Learning:**
+- Linear Regression (OLS)
+- Logistic Regression (gradient descent)
+- Decision Tree Classifier (GINI impurity)
+- Random Forest Classifier (bootstrap aggregating)
+- Gradient Boosting Machine (adaptive boosting)
+- Naive Bayes (Gaussian)
+- K-Nearest Neighbors (distance-based)
+- Support Vector Machine (linear kernel)
+
+**Unsupervised Learning:**
+- K-Means (Lloyd's + k-means++ initialization)
+- PCA (dimensionality reduction via eigendecomposition)
+
+**Model Selection:** train_test_split, KFold, cross_validate
+**Persistence:** serde + bincode serialization
+**Metrics:** R², MSE, RMSE, MAE, accuracy, silhouette, inertia
 
 ## Key Files
 
