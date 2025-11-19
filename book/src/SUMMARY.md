@@ -68,10 +68,18 @@
 # Real-World Examples from Aprender
 
 - [Case Study: Linear Regression](./examples/linear-regression.md)
+- [Case Study: Boston Housing](./examples/boston-housing.md)
 - [Case Study: Cross-Validation](./examples/cross-validation.md)
 - [Case Study: Random Forest](./examples/random-forest.md)
+- [Case Study: Random Forest Iris](./examples/random-forest-iris.md)
+- [Case Study: Decision Tree Iris](./examples/decision-tree-iris.md)
 - [Case Study: Model Serialization](./examples/model-serialization.md)
 - [Case Study: KMeans Clustering](./examples/kmeans-clustering.md)
+- [Case Study: Iris Clustering](./examples/iris-clustering.md)
+- [Case Study: Logistic Regression](./examples/logistic-regression.md)
+- [Case Study: Regularized Regression](./examples/regularized-regression.md)
+- [Case Study: Optimizer Demo](./examples/optimizer-demo.md)
+- [Case Study: DataFrame Basics](./examples/dataframe-basics.md)
 
 # Sprint-Based Development
 

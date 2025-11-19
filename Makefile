@@ -1,7 +1,7 @@
 # Aprender Makefile
 # Certeza Methodology - Tiered Quality Gates
 
-.PHONY: all build test lint fmt clean doc tier1 tier2 tier3 tier4 coverage profile hooks-install hooks-verify lint-scripts chaos-test fuzz
+.PHONY: all build test lint fmt clean doc book book-build book-serve book-test tier1 tier2 tier3 tier4 coverage profile hooks-install hooks-verify lint-scripts chaos-test fuzz
 
 # Default target
 all: tier2
@@ -36,6 +36,37 @@ clean:
 # Generate documentation
 doc:
 	cargo doc --no-deps --open
+
+# EXTREME TDD Book (mdBook)
+book: book-build ## Build and open the EXTREME TDD book
+
+book-build: ## Build the book
+	@echo "📚 Building EXTREME TDD book..."
+	@if command -v mdbook >/dev/null 2>&1; then \
+		mdbook build book; \
+		echo "✅ Book built: book/book/index.html"; \
+	else \
+		echo "❌ mdbook not found. Install with: cargo install mdbook"; \
+		exit 1; \
+	fi
+
+book-serve: ## Serve the book locally for development
+	@echo "📖 Serving book at http://localhost:3000..."
+	@mdbook serve book --open
+
+book-test: ## Test book synchronization
+	@echo "🔍 Testing book synchronization..."
+	@for example in examples/*.rs; do \
+		if [ -f "$$example" ]; then \
+			EXAMPLE_NAME=$$(basename "$$example" .rs); \
+			CASE_STUDY=$$(echo "$$EXAMPLE_NAME" | sed 's/_/-/g'); \
+			if [ ! -f "book/src/examples/$$CASE_STUDY.md" ]; then \
+				echo "❌ Missing case study for $$EXAMPLE_NAME"; \
+				exit 1; \
+			fi; \
+		fi; \
+	done
+	@echo "✅ All examples have corresponding book chapters"
 
 # Tier 1: On-save (<1 second, non-blocking)
 tier1:
