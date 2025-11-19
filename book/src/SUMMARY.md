@@ -72,12 +72,16 @@
 - [Linear Regression Theory](./ml-fundamentals/linear-regression.md)
 - [Regularization Theory](./ml-fundamentals/regularization.md)
 - [Logistic Regression Theory](./ml-fundamentals/logistic-regression.md)
+- [K-Nearest Neighbors (kNN) Theory](./ml-fundamentals/knn.md)
+- [Naive Bayes Theory](./ml-fundamentals/naive-bayes.md)
+- [Support Vector Machines (SVM) Theory](./ml-fundamentals/svm.md)
 - [Decision Trees Theory](./ml-fundamentals/decision-trees.md)
 - [Ensemble Methods Theory](./ml-fundamentals/ensemble-methods.md)
 
 ## Unsupervised Learning
 
 - [K-Means Clustering Theory](./ml-fundamentals/kmeans-clustering.md)
+- [Principal Component Analysis (PCA) Theory](./ml-fundamentals/pca.md)
 
 ## Model Evaluation
 
@@ -114,11 +118,15 @@
 - [Case Study: KMeans Clustering](./examples/kmeans-clustering.md)
 - [Case Study: Iris Clustering](./examples/iris-clustering.md)
 - [Case Study: Logistic Regression](./examples/logistic-regression.md)
+- [Case Study: KNN Iris](./examples/knn-iris.md)
+- [Case Study: Naive Bayes Iris](./examples/naive-bayes-iris.md)
+- [Case Study: SVM Iris](./examples/svm-iris.md)
 - [Case Study: Regularized Regression](./examples/regularized-regression.md)
 - [Case Study: Optimizer Demo](./examples/optimizer-demo.md)
 - [Case Study: DataFrame Basics](./examples/dataframe-basics.md)
 - [Case Study: Graph Social Network](./examples/graph-social-network.md)
 - [Case Study: Descriptive Statistics](./examples/descriptive-statistics.md)
+- [Case Study: PCA Iris](./examples/pca-iris.md)
 
 # Sprint-Based Development
 

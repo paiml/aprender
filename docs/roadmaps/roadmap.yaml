@@ -69,3 +69,41 @@ roadmap:
   estimated_effort: null
   labels:
   - documentation
+- id: GH-13
+  github_issue: 13
+  item_type: task
+  title: Implement PCA (Principal Component Analysis) for Dimensionality Reduction
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2025-11-19T13:44:12.333717587+00:00
+  updated: 2025-11-19T13:44:12.333717587+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - enhancement
+- id: GH-23
+  github_issue: 23
+  item_type: task
+  title: '[TOP 10] Implement K-Nearest Neighbors (kNN) Classifier'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2025-11-19T14:08:23.937219293+00:00
+  updated: 2025-11-19T14:08:23.937219293+00:00
+  spec: null
+  acceptance_criteria:
+  - KNN struct with fit/predict
+  - Distance metric selection
+  - Weighted voting option
+  - Comprehensive tests (EXTREME TDD)
+  - 'Example: knn_iris.rs'
+  - 'Book chapter: ml-fundamentals/knn.md'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - enhancement

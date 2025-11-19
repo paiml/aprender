@@ -27,6 +27,9 @@ rayon = "1.10"
 # Core compute primitives - SIMD-accelerated tensor operations
 trueno = "0.2.2"
 
+# Linear algebra for PCA eigendecomposition
+nalgebra = "0.33"
+
 [dev-dependencies]
 proptest = "1.6"
 criterion = "0.5"

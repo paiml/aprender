@@ -1,0 +1,34 @@
+roadmap_version: '1.0'
+github_enabled: true
+github_repo: null
+roadmap:
+- id: GH-25
+  github_issue: 25
+  item_type: task
+  title: 'Issue #25'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2025-11-19T14:27:05.462861098+00:00
+  updated: 2025-11-19T14:27:05.462861098+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+- id: GH-24
+  github_issue: 24
+  item_type: task
+  title: 'Issue #24'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2025-11-19T14:38:02.589878123+00:00
+  updated: 2025-11-19T14:38:02.589878123+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []

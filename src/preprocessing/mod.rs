@@ -542,6 +542,226 @@ impl Transformer for MinMaxScaler {
     }
 }
 
+/// Principal Component Analysis (PCA) for dimensionality reduction.
+///
+/// PCA reduces dimensionality by projecting data onto principal components
+/// (directions of maximum variance).
+///
+/// # Example
+///
+/// ```
+/// use aprender::preprocessing::PCA;
+/// use aprender::traits::Transformer;
+/// use aprender::primitives::Matrix;
+///
+/// let data = Matrix::from_vec(4, 3, vec![
+///     1.0, 2.0, 3.0,
+///     4.0, 5.0, 6.0,
+///     7.0, 8.0, 9.0,
+///     10.0, 11.0, 12.0,
+/// ]).unwrap();
+///
+/// let mut pca = PCA::new(2); // Reduce to 2 components
+/// let transformed = pca.fit_transform(&data).unwrap();
+/// assert_eq!(transformed.shape(), (4, 2));
+/// ```
+#[derive(Debug, Clone)]
+pub struct PCA {
+    /// Number of components to keep.
+    n_components: usize,
+    /// Mean of each feature (computed during fit).
+    mean: Option<Vec<f32>>,
+    /// Principal components (eigenvectors).
+    components: Option<Matrix<f32>>,
+    /// Variance explained by each component.
+    explained_variance: Option<Vec<f32>>,
+    /// Ratio of variance explained by each component.
+    explained_variance_ratio: Option<Vec<f32>>,
+}
+
+impl PCA {
+    /// Creates a new PCA transformer.
+    ///
+    /// # Arguments
+    ///
+    /// * `n_components` - Number of principal components to keep
+    #[must_use]
+    pub fn new(n_components: usize) -> Self {
+        Self {
+            n_components,
+            mean: None,
+            components: None,
+            explained_variance: None,
+            explained_variance_ratio: None,
+        }
+    }
+
+    /// Returns the variance explained by each component.
+    #[must_use]
+    pub fn explained_variance(&self) -> Option<&[f32]> {
+        self.explained_variance.as_deref()
+    }
+
+    /// Returns the ratio of variance explained by each component.
+    #[must_use]
+    pub fn explained_variance_ratio(&self) -> Option<&[f32]> {
+        self.explained_variance_ratio.as_deref()
+    }
+
+    /// Returns the principal components.
+    #[must_use]
+    pub fn components(&self) -> Option<&Matrix<f32>> {
+        self.components.as_ref()
+    }
+
+    /// Reconstructs data from principal component space.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if PCA is not fitted.
+    pub fn inverse_transform(&self, x: &Matrix<f32>) -> Result<Matrix<f32>, &'static str> {
+        let components = self.components.as_ref().ok_or("PCA not fitted")?;
+        let mean = self.mean.as_ref().ok_or("PCA not fitted")?;
+
+        let (n_samples, n_components) = x.shape();
+        let n_features = mean.len();
+
+        if n_components != self.n_components {
+            return Err("Input has wrong number of components");
+        }
+
+        // X_reconstructed = X_pca @ components^T + mean
+        let mut result = vec![0.0; n_samples * n_features];
+
+        for i in 0..n_samples {
+            for j in 0..n_features {
+                let mut value = mean[j];
+                for k in 0..n_components {
+                    value += x.get(i, k) * components.get(k, j);
+                }
+                result[i * n_features + j] = value;
+            }
+        }
+
+        Matrix::from_vec(n_samples, n_features, result)
+    }
+}
+
+impl Transformer for PCA {
+    fn fit(&mut self, x: &Matrix<f32>) -> Result<(), &'static str> {
+        use nalgebra::{DMatrix, SymmetricEigen};
+
+        let (n_samples, n_features) = x.shape();
+
+        if self.n_components > n_features {
+            return Err("n_components cannot exceed number of features");
+        }
+
+        // Compute mean
+        let mut mean = vec![0.0; n_features];
+        #[allow(clippy::needless_range_loop)]
+        for j in 0..n_features {
+            let mut sum = 0.0;
+            for i in 0..n_samples {
+                sum += x.get(i, j);
+            }
+            mean[j] = sum / n_samples as f32;
+        }
+
+        // Center the data
+        let mut centered = vec![0.0; n_samples * n_features];
+        for i in 0..n_samples {
+            for j in 0..n_features {
+                centered[i * n_features + j] = x.get(i, j) - mean[j];
+            }
+        }
+
+        // Compute covariance matrix: Σ = (X^T X) / (n-1)
+        let mut cov = vec![0.0; n_features * n_features];
+        for i in 0..n_features {
+            for j in 0..n_features {
+                let mut sum = 0.0;
+                for k in 0..n_samples {
+                    sum += centered[k * n_features + i] * centered[k * n_features + j];
+                }
+                cov[i * n_features + j] = sum / (n_samples - 1) as f32;
+            }
+        }
+
+        // Convert to nalgebra for eigendecomposition
+        let cov_matrix = DMatrix::from_row_slice(n_features, n_features, &cov);
+        let eigen = SymmetricEigen::new(cov_matrix);
+
+        // Get eigenvalues and eigenvectors
+        let eigenvalues = eigen.eigenvalues;
+        let eigenvectors = eigen.eigenvectors;
+
+        // Sort by eigenvalue (descending)
+        let mut indices: Vec<usize> = (0..n_features).collect();
+        indices.sort_by(|&a, &b| {
+            eigenvalues[b]
+                .partial_cmp(&eigenvalues[a])
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        // Select top n_components
+        let mut components_data = vec![0.0; self.n_components * n_features];
+        let mut explained_variance = vec![0.0; self.n_components];
+
+        for (i, &idx) in indices.iter().take(self.n_components).enumerate() {
+            explained_variance[i] = eigenvalues[idx] as f32;
+            for j in 0..n_features {
+                components_data[i * n_features + j] = eigenvectors[(j, idx)] as f32;
+            }
+        }
+
+        // Compute explained variance ratio
+        let total_variance: f32 = eigenvalues.iter().copied().sum();
+        let explained_variance_ratio: Vec<f32> = explained_variance
+            .iter()
+            .map(|&v| v / total_variance)
+            .collect();
+
+        self.mean = Some(mean);
+        self.components = Some(Matrix::from_vec(
+            self.n_components,
+            n_features,
+            components_data,
+        )?);
+        self.explained_variance = Some(explained_variance);
+        self.explained_variance_ratio = Some(explained_variance_ratio);
+
+        Ok(())
+    }
+
+    fn transform(&self, x: &Matrix<f32>) -> Result<Matrix<f32>, &'static str> {
+        let components = self.components.as_ref().ok_or("PCA not fitted")?;
+        let mean = self.mean.as_ref().ok_or("PCA not fitted")?;
+
+        let (n_samples, n_features) = x.shape();
+
+        if n_features != mean.len() {
+            return Err("Input has wrong number of features");
+        }
+
+        // Project onto principal components: X_pca = (X - mean) @ components^T
+        let mut result = vec![0.0; n_samples * self.n_components];
+
+        for i in 0..n_samples {
+            for j in 0..self.n_components {
+                let mut value = 0.0;
+                #[allow(clippy::needless_range_loop)]
+                for k in 0..n_features {
+                    value += (x.get(i, k) - mean[k]) * components.get(j, k);
+                }
+                result[i * self.n_components + j] = value;
+            }
+        }
+
+        Matrix::from_vec(n_samples, self.n_components, result)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -962,6 +1182,289 @@ mod tests {
                 (data.get(i, 0) - recovered.get(i, 0)).abs() < 1e-5,
                 "Mismatch at row {}",
                 i
+            );
+        }
+    }
+
+    // PCA tests
+    #[test]
+    fn test_pca_basic_fit_transform() {
+        // Simple 2D data that should reduce to 1D along diagonal
+        let data = Matrix::from_vec(4, 2, vec![1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0]).unwrap();
+
+        let mut pca = PCA::new(1);
+        let transformed = pca.fit_transform(&data).unwrap();
+
+        // Should reduce to (n_samples, n_components)
+        assert_eq!(transformed.shape(), (4, 1));
+
+        // Mean should be centered (approximately)
+        let mut sum = 0.0;
+        for i in 0..4 {
+            sum += transformed.get(i, 0);
+        }
+        let mean = sum / 4.0;
+        assert!(mean.abs() < 1e-5, "Mean should be ~0, got {}", mean);
+    }
+
+    #[test]
+    fn test_pca_explained_variance() {
+        // Data with known variance structure
+        let data =
+            Matrix::from_vec(5, 2, vec![1.0, 0.0, 2.0, 0.0, 3.0, 0.0, 4.0, 0.0, 5.0, 0.0]).unwrap();
+
+        let mut pca = PCA::new(2);
+        pca.fit(&data).unwrap();
+
+        let explained_var = pca
+            .explained_variance()
+            .expect("Should have explained variance");
+        let explained_ratio = pca
+            .explained_variance_ratio()
+            .expect("Should have explained variance ratio");
+
+        // First component should capture all variance (second column is constant)
+        assert_eq!(explained_var.len(), 2);
+        assert_eq!(explained_ratio.len(), 2);
+
+        // Ratios should sum to approximately 1.0
+        let total_ratio: f32 = explained_ratio.iter().sum();
+        assert!(
+            (total_ratio - 1.0).abs() < 1e-5,
+            "Variance ratios should sum to 1.0, got {}",
+            total_ratio
+        );
+
+        // First component should explain most variance
+        assert!(
+            explained_ratio[0] > 0.99,
+            "First component should explain >99% variance"
+        );
+    }
+
+    #[test]
+    fn test_pca_inverse_transform() {
+        let data = Matrix::from_vec(
+            4,
+            3,
+            vec![
+                1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0,
+            ],
+        )
+        .unwrap();
+
+        let mut pca = PCA::new(2);
+        let transformed = pca.fit_transform(&data).unwrap();
+        let reconstructed = pca.inverse_transform(&transformed).unwrap();
+
+        // Reconstruction should be close to original (with some loss since n_components < n_features)
+        assert_eq!(reconstructed.shape(), data.shape());
+
+        // Check reconstruction error is reasonable
+        let mut total_error = 0.0;
+        for i in 0..4 {
+            for j in 0..3 {
+                let error = (data.get(i, j) - reconstructed.get(i, j)).abs();
+                total_error += error * error;
+            }
+        }
+        let mse = total_error / 12.0;
+        // With dimensionality reduction, some error is expected
+        assert!(mse < 10.0, "Reconstruction MSE too large: {}", mse);
+    }
+
+    #[test]
+    fn test_pca_perfect_reconstruction() {
+        // When n_components == n_features, reconstruction should be perfect
+        let data = Matrix::from_vec(3, 2, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]).unwrap();
+
+        let mut pca = PCA::new(2);
+        let transformed = pca.fit_transform(&data).unwrap();
+        let reconstructed = pca.inverse_transform(&transformed).unwrap();
+
+        // Perfect reconstruction
+        for i in 0..3 {
+            for j in 0..2 {
+                assert!(
+                    (data.get(i, j) - reconstructed.get(i, j)).abs() < 1e-4,
+                    "Perfect reconstruction failed at ({}, {}): {} vs {}",
+                    i,
+                    j,
+                    data.get(i, j),
+                    reconstructed.get(i, j)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_pca_n_components_exceeds_features() {
+        let data = Matrix::from_vec(3, 2, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]).unwrap();
+
+        let mut pca = PCA::new(3); // More components than features
+        let result = pca.fit(&data);
+
+        assert!(
+            result.is_err(),
+            "Should fail when n_components > n_features"
+        );
+        assert_eq!(
+            result.unwrap_err(),
+            "n_components cannot exceed number of features"
+        );
+    }
+
+    #[test]
+    fn test_pca_not_fitted_error() {
+        let data = Matrix::from_vec(3, 2, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]).unwrap();
+
+        let pca = PCA::new(1);
+        let result = pca.transform(&data);
+
+        assert!(result.is_err(), "Should fail when transforming before fit");
+        assert_eq!(result.unwrap_err(), "PCA not fitted");
+    }
+
+    #[test]
+    fn test_pca_dimension_mismatch() {
+        let train = Matrix::from_vec(3, 2, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]).unwrap();
+        let test = Matrix::from_vec(3, 3, vec![1.0; 9]).unwrap();
+
+        let mut pca = PCA::new(1);
+        pca.fit(&train).unwrap();
+
+        let result = pca.transform(&test);
+        assert!(result.is_err(), "Should fail on dimension mismatch");
+        assert_eq!(result.unwrap_err(), "Input has wrong number of features");
+    }
+
+    #[test]
+    fn test_pca_inverse_dimension_mismatch() {
+        let train = Matrix::from_vec(3, 2, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]).unwrap();
+        let wrong_transformed = Matrix::from_vec(3, 2, vec![1.0; 6]).unwrap(); // Wrong n_components
+
+        let mut pca = PCA::new(1);
+        pca.fit(&train).unwrap();
+
+        let result = pca.inverse_transform(&wrong_transformed);
+        assert!(
+            result.is_err(),
+            "Should fail on inverse transform dimension mismatch"
+        );
+        assert_eq!(result.unwrap_err(), "Input has wrong number of components");
+    }
+
+    #[test]
+    fn test_pca_components_shape() {
+        let data = Matrix::from_vec(5, 4, vec![1.0; 20]).unwrap();
+
+        let mut pca = PCA::new(2);
+        pca.fit(&data).unwrap();
+
+        let components = pca.components().expect("Should have components");
+        // Components should be (n_components, n_features)
+        assert_eq!(components.shape(), (2, 4));
+    }
+
+    #[test]
+    fn test_pca_variance_preservation() {
+        // Property test: total variance should be preserved
+        let data = Matrix::from_vec(
+            6,
+            3,
+            vec![
+                1.0, 4.0, 7.0, 2.0, 5.0, 8.0, 3.0, 6.0, 9.0, 4.0, 7.0, 10.0, 5.0, 8.0, 11.0, 6.0,
+                9.0, 12.0,
+            ],
+        )
+        .unwrap();
+
+        let mut pca = PCA::new(3);
+        pca.fit(&data).unwrap();
+
+        let explained_var = pca.explained_variance().unwrap();
+
+        // Sum of explained variance should be close to total variance
+        let total_explained: f32 = explained_var.iter().sum();
+
+        // Calculate actual variance of centered data
+        let (n_samples, n_features) = data.shape();
+        let mut means = vec![0.0; n_features];
+        for (j, mean) in means.iter_mut().enumerate() {
+            for i in 0..n_samples {
+                *mean += data.get(i, j);
+            }
+            *mean /= n_samples as f32;
+        }
+
+        let mut total_var = 0.0;
+        for (j, &mean_j) in means.iter().enumerate() {
+            for i in 0..n_samples {
+                let diff = data.get(i, j) - mean_j;
+                total_var += diff * diff;
+            }
+        }
+        total_var /= (n_samples - 1) as f32;
+
+        // Explained variance should match total variance (with full components)
+        assert!(
+            (total_explained - total_var).abs() < 1e-3,
+            "Total explained variance {} should match total variance {}",
+            total_explained,
+            total_var
+        );
+    }
+
+    #[test]
+    fn test_pca_component_orthogonality() {
+        // Property test: principal components should be orthogonal
+        let data = Matrix::from_vec(
+            10,
+            4,
+            vec![
+                1.0, 2.0, 3.0, 4.0, 2.0, 4.0, 6.0, 8.0, 3.0, 6.0, 9.0, 12.0, 4.0, 8.0, 12.0, 16.0,
+                5.0, 10.0, 15.0, 20.0, 6.0, 12.0, 18.0, 24.0, 7.0, 14.0, 21.0, 28.0, 8.0, 16.0,
+                24.0, 32.0, 9.0, 18.0, 27.0, 36.0, 10.0, 20.0, 30.0, 40.0,
+            ],
+        )
+        .unwrap();
+
+        let mut pca = PCA::new(3);
+        pca.fit(&data).unwrap();
+
+        let components = pca.components().unwrap();
+        let (_n_components, n_features) = components.shape();
+
+        // Check that all pairs of components are orthogonal (dot product ≈ 0)
+        for i in 0..3 {
+            for j in (i + 1)..3 {
+                let mut dot_product = 0.0;
+                for k in 0..n_features {
+                    dot_product += components.get(i, k) * components.get(j, k);
+                }
+                assert!(
+                    dot_product.abs() < 1e-4,
+                    "Components {} and {} should be orthogonal, got dot product {}",
+                    i,
+                    j,
+                    dot_product
+                );
+            }
+        }
+
+        // Check that each component is normalized (length ≈ 1)
+        for i in 0..3 {
+            let mut norm_sq = 0.0;
+            for k in 0..n_features {
+                let val = components.get(i, k);
+                norm_sq += val * val;
+            }
+            let norm = norm_sq.sqrt();
+            assert!(
+                (norm - 1.0).abs() < 1e-4,
+                "Component {} should be unit length, got {}",
+                i,
+                norm
             );
         }
     }
