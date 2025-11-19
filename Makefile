@@ -1,7 +1,16 @@
 # Aprender Makefile
 # Certeza Methodology - Tiered Quality Gates
 
-.PHONY: all build test lint fmt clean doc book book-build book-serve book-test tier1 tier2 tier3 tier4 coverage profile hooks-install hooks-verify lint-scripts chaos-test fuzz
+# Disable built-in rules for performance
+.SUFFIXES:
+
+# Delete partially-built files on error
+.DELETE_ON_ERROR:
+
+# Multi-line recipes execute in same shell
+.ONESHELL:
+
+.PHONY: all build test lint fmt clean doc book book-build book-serve book-test tier1 tier2 tier3 tier4 coverage profile hooks-install hooks-verify lint-scripts bashrs-score bashrs-lint-makefile chaos-test fuzz bench dev pre-push ci check run-ci run-bench
 
 # Default target
 all: tier2
@@ -146,7 +155,7 @@ check:
 # Install PMAT pre-commit hooks
 hooks-install: ## Install PMAT pre-commit hooks
 	@echo "🔧 Installing PMAT pre-commit hooks..."
-	@pmat hooks install
+	@pmat hooks install || exit 1
 	@echo "✅ Hooks installed successfully"
 
 # Verify PMAT hooks
@@ -156,14 +165,30 @@ hooks-verify: ## Verify PMAT hooks are working
 	@pmat hooks run
 
 # Lint shell scripts (bashrs quality gates)
-lint-scripts: ## Lint shell scripts with shellcheck
-	@echo "🔍 Linting shell scripts..."
-	@if command -v shellcheck >/dev/null 2>&1; then \
-		shellcheck --severity=warning scripts/*.sh; \
-		echo "✅ Shell scripts pass shellcheck"; \
+lint-scripts: ## Lint shell scripts with bashrs (determinism + idempotency + safety)
+	@echo "🔍 Linting shell scripts with bashrs..."
+	@if command -v bashrs >/dev/null 2>&1; then \
+		for script in scripts/*.sh; do \
+			echo "  Linting $$script..."; \
+			bashrs lint "$$script" || exit 1; \
+		done; \
+		echo "✅ All shell scripts pass bashrs lint"; \
 	else \
-		echo "⚠️  shellcheck not installed, skipping"; \
+		echo "❌ bashrs not installed. Install with: cargo install bashrs"; \
+		exit 1; \
 	fi
+
+bashrs-score: ## Score shell script quality with bashrs
+	@echo "📊 Scoring shell scripts..."
+	@for script in scripts/*.sh; do \
+		echo ""; \
+		echo "Scoring $$script:"; \
+		bashrs score "$$script"; \
+	done
+
+bashrs-lint-makefile: ## Lint Makefile with bashrs
+	@echo "🔍 Linting Makefile with bashrs..."
+	@bashrs make lint Makefile || echo "⚠️  Makefile linting found issues"
 
 # Run CI pipeline
 run-ci: ## Run full CI pipeline
