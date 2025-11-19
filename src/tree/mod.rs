@@ -233,6 +233,281 @@ impl DecisionTreeClassifier {
             bincode::deserialize(&bytes).map_err(|e| format!("Deserialization failed: {}", e))?;
         Ok(model)
     }
+
+    /// Saves the model to SafeTensors format.
+    ///
+    /// Serializes the tree structure as flat arrays using pre-order traversal.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Model is not fitted
+    /// - Serialization fails
+    /// - File writing fails
+    pub fn save_safetensors<P: AsRef<Path>>(&self, path: P) -> Result<(), String> {
+        use crate::serialization::safetensors;
+        use std::collections::BTreeMap;
+
+        // Verify model is fitted
+        let tree = self
+            .tree
+            .as_ref()
+            .ok_or("Cannot save unfitted model. Call fit() first.")?;
+
+        // Flatten tree structure into arrays via pre-order traversal
+        let mut node_features = Vec::new();
+        let mut node_thresholds = Vec::new();
+        let mut node_classes = Vec::new();
+        let mut node_samples = Vec::new();
+        let mut node_left_child = Vec::new();
+        let mut node_right_child = Vec::new();
+
+        fn flatten_tree(
+            node: &TreeNode,
+            features: &mut Vec<f32>,
+            thresholds: &mut Vec<f32>,
+            classes: &mut Vec<f32>,
+            samples: &mut Vec<f32>,
+            left_children: &mut Vec<f32>,
+            right_children: &mut Vec<f32>,
+        ) -> usize {
+            let current_idx = features.len();
+
+            match node {
+                TreeNode::Leaf(leaf) => {
+                    // Leaf node: feature = -1, class and samples store data
+                    features.push(-1.0);
+                    thresholds.push(0.0);
+                    classes.push(leaf.class_label as f32);
+                    samples.push(leaf.n_samples as f32);
+                    left_children.push(-1.0);
+                    right_children.push(-1.0);
+                }
+                TreeNode::Node(internal) => {
+                    // Reserve space for this node (will update child indices later)
+                    features.push(internal.feature_idx as f32);
+                    thresholds.push(internal.threshold);
+                    classes.push(0.0); // Not used for internal nodes
+                    samples.push(0.0); // Not used for internal nodes
+                    left_children.push(0.0); // Placeholder
+                    right_children.push(0.0); // Placeholder
+
+                    // Recursively flatten left subtree
+                    let left_idx = flatten_tree(
+                        &internal.left,
+                        features,
+                        thresholds,
+                        classes,
+                        samples,
+                        left_children,
+                        right_children,
+                    );
+
+                    // Recursively flatten right subtree
+                    let right_idx = flatten_tree(
+                        &internal.right,
+                        features,
+                        thresholds,
+                        classes,
+                        samples,
+                        left_children,
+                        right_children,
+                    );
+
+                    // Update child indices
+                    left_children[current_idx] = left_idx as f32;
+                    right_children[current_idx] = right_idx as f32;
+                }
+            }
+
+            current_idx
+        }
+
+        flatten_tree(
+            tree,
+            &mut node_features,
+            &mut node_thresholds,
+            &mut node_classes,
+            &mut node_samples,
+            &mut node_left_child,
+            &mut node_right_child,
+        );
+
+        // Prepare tensors
+        let mut tensors = BTreeMap::new();
+
+        tensors.insert(
+            "node_features".to_string(),
+            (node_features.clone(), vec![node_features.len()]),
+        );
+        tensors.insert(
+            "node_thresholds".to_string(),
+            (node_thresholds.clone(), vec![node_thresholds.len()]),
+        );
+        tensors.insert(
+            "node_classes".to_string(),
+            (node_classes.clone(), vec![node_classes.len()]),
+        );
+        tensors.insert(
+            "node_samples".to_string(),
+            (node_samples.clone(), vec![node_samples.len()]),
+        );
+        tensors.insert(
+            "node_left_child".to_string(),
+            (node_left_child.clone(), vec![node_left_child.len()]),
+        );
+        tensors.insert(
+            "node_right_child".to_string(),
+            (node_right_child.clone(), vec![node_right_child.len()]),
+        );
+
+        // Max depth as tensor (-1 for None)
+        let max_depth_val = self.max_depth.map_or(-1.0, |d| d as f32);
+        tensors.insert("max_depth".to_string(), (vec![max_depth_val], vec![1]));
+
+        // Save to SafeTensors format
+        safetensors::save_safetensors(path, tensors)?;
+        Ok(())
+    }
+
+    /// Loads a model from SafeTensors format.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - File reading fails
+    /// - SafeTensors format is invalid
+    /// - Required tensors are missing
+    pub fn load_safetensors<P: AsRef<Path>>(path: P) -> Result<Self, String> {
+        use crate::serialization::safetensors;
+
+        // Load SafeTensors file
+        let (metadata, raw_data) = safetensors::load_safetensors(path)?;
+
+        // Extract all tensors
+        let node_features = safetensors::extract_tensor(
+            &raw_data,
+            metadata
+                .get("node_features")
+                .ok_or("Missing 'node_features' tensor")?,
+        )?;
+        let node_thresholds = safetensors::extract_tensor(
+            &raw_data,
+            metadata
+                .get("node_thresholds")
+                .ok_or("Missing 'node_thresholds' tensor")?,
+        )?;
+        let node_classes = safetensors::extract_tensor(
+            &raw_data,
+            metadata
+                .get("node_classes")
+                .ok_or("Missing 'node_classes' tensor")?,
+        )?;
+        let node_samples = safetensors::extract_tensor(
+            &raw_data,
+            metadata
+                .get("node_samples")
+                .ok_or("Missing 'node_samples' tensor")?,
+        )?;
+        let node_left_child = safetensors::extract_tensor(
+            &raw_data,
+            metadata
+                .get("node_left_child")
+                .ok_or("Missing 'node_left_child' tensor")?,
+        )?;
+        let node_right_child = safetensors::extract_tensor(
+            &raw_data,
+            metadata
+                .get("node_right_child")
+                .ok_or("Missing 'node_right_child' tensor")?,
+        )?;
+        let max_depth_data = safetensors::extract_tensor(
+            &raw_data,
+            metadata
+                .get("max_depth")
+                .ok_or("Missing 'max_depth' tensor")?,
+        )?;
+
+        // Validate tensor sizes match
+        let n_nodes = node_features.len();
+        if node_thresholds.len() != n_nodes
+            || node_classes.len() != n_nodes
+            || node_samples.len() != n_nodes
+            || node_left_child.len() != n_nodes
+            || node_right_child.len() != n_nodes
+        {
+            return Err("Inconsistent node array sizes in SafeTensors file".to_string());
+        }
+
+        if n_nodes == 0 {
+            return Err("Empty tree in SafeTensors file".to_string());
+        }
+
+        // Reconstruct tree from flat arrays
+        fn reconstruct_node(
+            idx: usize,
+            features: &[f32],
+            thresholds: &[f32],
+            classes: &[f32],
+            samples: &[f32],
+            left_children: &[f32],
+            right_children: &[f32],
+        ) -> TreeNode {
+            if features[idx] < 0.0 {
+                // Leaf node
+                TreeNode::Leaf(Leaf {
+                    class_label: classes[idx] as usize,
+                    n_samples: samples[idx] as usize,
+                })
+            } else {
+                // Internal node
+                let left_idx = left_children[idx] as usize;
+                let right_idx = right_children[idx] as usize;
+
+                TreeNode::Node(Node {
+                    feature_idx: features[idx] as usize,
+                    threshold: thresholds[idx],
+                    left: Box::new(reconstruct_node(
+                        left_idx,
+                        features,
+                        thresholds,
+                        classes,
+                        samples,
+                        left_children,
+                        right_children,
+                    )),
+                    right: Box::new(reconstruct_node(
+                        right_idx,
+                        features,
+                        thresholds,
+                        classes,
+                        samples,
+                        left_children,
+                        right_children,
+                    )),
+                })
+            }
+        }
+
+        let tree = Some(reconstruct_node(
+            0,
+            &node_features,
+            &node_thresholds,
+            &node_classes,
+            &node_samples,
+            &node_left_child,
+            &node_right_child,
+        ));
+
+        // Parse max_depth
+        let max_depth = if max_depth_data[0] < 0.0 {
+            None
+        } else {
+            Some(max_depth_data[0] as usize)
+        };
+
+        Ok(Self { tree, max_depth })
+    }
 }
 
 impl Default for DecisionTreeClassifier {
