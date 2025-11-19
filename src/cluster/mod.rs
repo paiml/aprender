@@ -1248,4 +1248,112 @@ mod tests {
             c0, c1
         );
     }
+
+    // EXTREME TDD: Additional mutation-killing tests for centroids_converged
+
+    #[test]
+    fn test_centroids_converged_squaring_not_division() {
+        // MUTATION TARGET: "replace * with / in diff * diff"
+        // Tests that we compute diff² correctly, not diff/diff
+        let kmeans = KMeans::new(1).with_tol(1.0);
+
+        // With diff = 0.5, if using * we get 0.25, if using / we get 1.0
+        let old = Matrix::from_vec(1, 1, vec![0.0_f32]).unwrap();
+        let new = Matrix::from_vec(1, 1, vec![0.5_f32]).unwrap();
+
+        // dist_sq = 0.5² = 0.25 < 1.0², should converge
+        assert!(
+            kmeans.centroids_converged(&old, &new),
+            "With diff=0.5, diff²=0.25 < tol²=1.0, should converge"
+        );
+
+        // If mutation uses diff/diff, we get dist_sq=1.0 = tol², still converges
+        // Need another case: diff = 2.0
+        let new2 = Matrix::from_vec(1, 1, vec![2.0_f32]).unwrap();
+        // dist_sq = 2.0² = 4.0 > 1.0², should NOT converge
+        // But if mutation uses 2.0/2.0 = 1.0 = 1.0², would converge (WRONG!)
+        assert!(
+            !kmeans.centroids_converged(&old, &new2),
+            "With diff=2.0, diff²=4.0 > tol²=1.0, must NOT converge. If using diff/diff=1.0, test fails."
+        );
+    }
+
+    #[test]
+    fn test_centroids_converged_sum_not_multiply() {
+        // MUTATION TARGET: "replace += with *= in dist_sq += diff * diff"
+        // Tests that we sum squared differences, not multiply them
+        let kmeans = KMeans::new(1).with_tol(0.6);
+
+        // 2D case: diffs = [0.3, 0.4]
+        // Correct: dist_sq = 0.09 + 0.16 = 0.25
+        // Mutation *= : dist_sq = 0 * 0.09 = 0, then 0 * 0.16 = 0 (always 0!)
+        let old = Matrix::from_vec(1, 2, vec![0.0_f32, 0.0]).unwrap();
+        let new = Matrix::from_vec(1, 2, vec![0.3_f32, 0.4]).unwrap();
+
+        // dist = √(0.25) = 0.5 < 0.6, should converge
+        assert!(
+            kmeans.centroids_converged(&old, &new),
+            "dist²=0.25 < tol²=0.36, should converge"
+        );
+
+        // If mutation uses *=, dist_sq stays 0.0, would always converge
+        // Test case that should NOT converge:
+        let new2 = Matrix::from_vec(1, 2, vec![0.5_f32, 0.5]).unwrap();
+        // dist_sq = 0.25 + 0.25 = 0.5 > 0.36, should NOT converge
+        // But if *= mutation, dist_sq = 0, would converge (WRONG!)
+        assert!(
+            !kmeans.centroids_converged(&old, &new2),
+            "dist²=0.5 > tol²=0.36, must NOT converge"
+        );
+    }
+
+    #[test]
+    fn test_centroids_converged_addition_not_squaring() {
+        // MUTATION TARGET: "replace * with + in diff * diff"
+        // Tests that we compute diff², not diff+diff
+        let kmeans = KMeans::new(1).with_tol(1.0);
+
+        // With diff = 0.6:
+        // Correct: diff² = 0.36 < 1.0, should converge
+        // Mutation: diff+diff = 1.2 > 1.0, would NOT converge (WRONG!)
+        let old = Matrix::from_vec(1, 1, vec![0.0_f32]).unwrap();
+        let new = Matrix::from_vec(1, 1, vec![0.6_f32]).unwrap();
+
+        assert!(
+            kmeans.centroids_converged(&old, &new),
+            "diff²=0.36 < tol²=1.0, must converge. If using diff+diff=1.2, test fails."
+        );
+    }
+
+    #[test]
+    fn test_centroids_converged_greater_not_equal() {
+        // MUTATION TARGET: "replace > with == in dist_sq > tol²"
+        let kmeans = KMeans::new(1).with_tol(1.0);
+
+        // Case: dist_sq = 1.5 > tol² = 1.0, should NOT converge
+        // If mutation uses ==, would converge (WRONG!)
+        let old = Matrix::from_vec(1, 1, vec![0.0_f32]).unwrap();
+        let new = Matrix::from_vec(1, 1, vec![1.3_f32]).unwrap(); // dist_sq ≈ 1.69
+
+        assert!(
+            !kmeans.centroids_converged(&old, &new),
+            "dist²=1.69 > tol²=1.0, must NOT converge"
+        );
+    }
+
+    #[test]
+    fn test_centroids_converged_greater_not_less() {
+        // MUTATION TARGET: "replace > with < in dist_sq > tol²"
+        let kmeans = KMeans::new(1).with_tol(1.0);
+
+        // Case: dist_sq = 0.5 < tol² = 1.0, should converge
+        // If mutation uses <, logic inverts: would NOT converge (WRONG!)
+        let old = Matrix::from_vec(1, 1, vec![0.0_f32]).unwrap();
+        let new = Matrix::from_vec(1, 1, vec![0.7_f32]).unwrap(); // dist_sq = 0.49
+
+        assert!(
+            kmeans.centroids_converged(&old, &new),
+            "dist²=0.49 < tol²=1.0, must converge. If using <, test fails."
+        );
+    }
 }

@@ -494,4 +494,89 @@ mod tests {
         let slice = v.as_mut_slice();
         assert_eq!(slice.len(), 4, "Mutable slice should have correct length");
     }
+
+    // EXTREME TDD: Additional mutation-killing tests
+    // These tests explicitly target MISSED mutants reported by cargo-mutants
+
+    #[test]
+    fn test_argmax_f32_returns_nonzero() {
+        // MUTATION TARGET: "replace Vector<f32>::argmax -> usize with 0"
+        // This test ensures argmax() does NOT always return 0
+        let v: Vector<f32> = Vector::from_slice(&[1.0, 2.0, 999.0, 3.0]);
+        assert_eq!(
+            v.argmax(),
+            2,
+            "argmax must return 2 (position of max 999.0), not 0"
+        );
+        // Double check: if mutation makes argmax() return 0, this fails
+        assert_ne!(v.argmax(), 0, "argmax must not always return 0");
+    }
+
+    #[test]
+    fn test_as_mut_slice_f32_not_empty() {
+        // MUTATION TARGET: "replace as_mut_slice -> &mut[T] with Vec::leak(Vec::new())"
+        // This test ensures as_mut_slice() does NOT return empty slice
+        let mut v: Vector<f32> = Vector::from_slice(&[10.0, 20.0, 30.0]);
+        let slice = v.as_mut_slice();
+
+        // If mutation returns empty slice, len check fails
+        assert_eq!(
+            slice.len(),
+            3,
+            "as_mut_slice must return slice with 3 elements, not empty"
+        );
+
+        // If mutation returns empty slice, modification has no effect
+        slice[0] = 100.0;
+        assert!(
+            (v[0] - 100.0).abs() < 1e-6,
+            "as_mut_slice must allow mutation of original data"
+        );
+    }
+
+    #[test]
+    fn test_mul_f32_not_addition() {
+        // MUTATION TARGET: "replace * with + in <impl Mul for &Vector<f32>>::mul"
+        // This test ensures Mul uses *, not +
+        let a: Vector<f32> = Vector::from_slice(&[3.0, 4.0]);
+        let b: Vector<f32> = Vector::from_slice(&[5.0, 6.0]);
+        let result = &a * &b;
+
+        // Multiplication: [3*5=15, 4*6=24]
+        assert!(
+            (result[0] - 15.0).abs() < 1e-6,
+            "3*5 must equal 15, not 3+5=8"
+        );
+        assert!(
+            (result[1] - 24.0).abs() < 1e-6,
+            "4*6 must equal 24, not 4+6=10"
+        );
+
+        // If mutation uses +, we get [8, 10] instead
+        assert!((result[0] - 8.0).abs() > 1.0, "Must not be addition");
+        assert!((result[1] - 10.0).abs() > 1.0, "Must not be addition");
+    }
+
+    #[test]
+    fn test_mul_f32_not_division() {
+        // MUTATION TARGET: "replace * with / in <impl Mul for &Vector<f32>>::mul"
+        // This test ensures Mul uses *, not /
+        let a: Vector<f32> = Vector::from_slice(&[12.0, 20.0]);
+        let b: Vector<f32> = Vector::from_slice(&[3.0, 4.0]);
+        let result = &a * &b;
+
+        // Multiplication: [12*3=36, 20*4=80]
+        assert!(
+            (result[0] - 36.0).abs() < 1e-6,
+            "12*3 must equal 36, not 12/3=4"
+        );
+        assert!(
+            (result[1] - 80.0).abs() < 1e-6,
+            "20*4 must equal 80, not 20/4=5"
+        );
+
+        // If mutation uses /, we get [4, 5] instead
+        assert!((result[0] - 4.0).abs() > 1.0, "Must not be division");
+        assert!((result[1] - 5.0).abs() > 1.0, "Must not be division");
+    }
 }
