@@ -9,11 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- None
+#### Model Serialization
+
+- **SafeTensors Format Support** - Industry-standard model serialization (Issue #5)
+  - `LinearRegression::save_safetensors()` - Export models to SafeTensors format
+  - `LinearRegression::load_safetensors()` - Load models from SafeTensors format
+  - Compatible with HuggingFace ecosystem, Ollama, PyTorch, TensorFlow
+  - Compatible with realizar inference engine
+  - Deterministic serialization (sorted keys for reproducibility)
+  - Comprehensive error handling (missing files, corrupted headers)
+  - 8-byte header + JSON metadata + F32 tensor data (little-endian)
+  - 7 integration tests covering roundtrip, validation, and error cases
+  - Full documentation with usage examples
 
 ### Changed
 
-- None
+- Dependencies: Added `serde_json = "1.0"` for SafeTensors metadata parsing
+- Test count: +7 SafeTensors integration tests (total: 482 tests)
 
 ## [0.2.0] - 2024-11-18
 

@@ -23,9 +23,9 @@ use std::path::Path;
 pub struct TensorMetadata {
     /// Data type of the tensor (e.g., "F32").
     pub dtype: String,
-    /// Shape of the tensor (e.g., [n_features] or [1]).
+    /// Shape of the tensor (e.g., `[n_features]` or `[1]`).
     pub shape: Vec<usize>,
-    /// Data offsets [start, end] in the raw data section.
+    /// Data offsets `[start, end]` in the raw data section.
     pub data_offsets: [usize; 2],
 }
 
