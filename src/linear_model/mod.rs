@@ -815,6 +815,147 @@ impl Lasso {
             bincode::deserialize(&bytes).map_err(|e| format!("Deserialization failed: {}", e))?;
         Ok(model)
     }
+
+    /// Saves the model to SafeTensors format.
+    ///
+    /// SafeTensors format is compatible with:
+    /// - HuggingFace ecosystem
+    /// - Ollama (can convert to GGUF)
+    /// - PyTorch, TensorFlow
+    /// - realizar inference engine
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Model is not fitted
+    /// - Serialization fails
+    /// - File writing fails
+    pub fn save_safetensors<P: AsRef<Path>>(&self, path: P) -> Result<(), String> {
+        use crate::serialization::safetensors;
+        use std::collections::BTreeMap;
+
+        // Verify model is fitted
+        let coefficients = self
+            .coefficients
+            .as_ref()
+            .ok_or("Cannot save unfitted model. Call fit() first.")?;
+
+        // Prepare tensors (BTreeMap ensures deterministic ordering)
+        let mut tensors = BTreeMap::new();
+
+        // Coefficients tensor
+        let coef_data: Vec<f32> = (0..coefficients.len()).map(|i| coefficients[i]).collect();
+        let coef_shape = vec![coefficients.len()];
+        tensors.insert("coefficients".to_string(), (coef_data, coef_shape));
+
+        // Intercept tensor
+        let intercept_data = vec![self.intercept];
+        let intercept_shape = vec![1];
+        tensors.insert("intercept".to_string(), (intercept_data, intercept_shape));
+
+        // Alpha (regularization strength) as tensor
+        let alpha_data = vec![self.alpha];
+        let alpha_shape = vec![1];
+        tensors.insert("alpha".to_string(), (alpha_data, alpha_shape));
+
+        // Max iterations as tensor (stored as f32 for consistency)
+        let max_iter_data = vec![self.max_iter as f32];
+        let max_iter_shape = vec![1];
+        tensors.insert("max_iter".to_string(), (max_iter_data, max_iter_shape));
+
+        // Tolerance as tensor
+        let tol_data = vec![self.tol];
+        let tol_shape = vec![1];
+        tensors.insert("tol".to_string(), (tol_data, tol_shape));
+
+        // Save to SafeTensors format
+        safetensors::save_safetensors(path, tensors)?;
+        Ok(())
+    }
+
+    /// Loads a model from SafeTensors format.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - File reading fails
+    /// - SafeTensors format is invalid
+    /// - Required tensors are missing
+    pub fn load_safetensors<P: AsRef<Path>>(path: P) -> Result<Self, String> {
+        use crate::serialization::safetensors;
+
+        // Load SafeTensors file
+        let (metadata, raw_data) = safetensors::load_safetensors(path)?;
+
+        // Extract coefficients tensor
+        let coef_meta = metadata
+            .get("coefficients")
+            .ok_or("Missing 'coefficients' tensor in SafeTensors file")?;
+        let coef_data = safetensors::extract_tensor(&raw_data, coef_meta)?;
+
+        // Extract intercept tensor
+        let intercept_meta = metadata
+            .get("intercept")
+            .ok_or("Missing 'intercept' tensor in SafeTensors file")?;
+        let intercept_data = safetensors::extract_tensor(&raw_data, intercept_meta)?;
+
+        // Extract alpha tensor
+        let alpha_meta = metadata
+            .get("alpha")
+            .ok_or("Missing 'alpha' tensor in SafeTensors file")?;
+        let alpha_data = safetensors::extract_tensor(&raw_data, alpha_meta)?;
+
+        // Extract max_iter tensor
+        let max_iter_meta = metadata
+            .get("max_iter")
+            .ok_or("Missing 'max_iter' tensor in SafeTensors file")?;
+        let max_iter_data = safetensors::extract_tensor(&raw_data, max_iter_meta)?;
+
+        // Extract tol tensor
+        let tol_meta = metadata
+            .get("tol")
+            .ok_or("Missing 'tol' tensor in SafeTensors file")?;
+        let tol_data = safetensors::extract_tensor(&raw_data, tol_meta)?;
+
+        // Validate tensor sizes
+        if intercept_data.len() != 1 {
+            return Err(format!(
+                "Expected intercept tensor to have 1 element, got {}",
+                intercept_data.len()
+            ));
+        }
+
+        if alpha_data.len() != 1 {
+            return Err(format!(
+                "Expected alpha tensor to have 1 element, got {}",
+                alpha_data.len()
+            ));
+        }
+
+        if max_iter_data.len() != 1 {
+            return Err(format!(
+                "Expected max_iter tensor to have 1 element, got {}",
+                max_iter_data.len()
+            ));
+        }
+
+        if tol_data.len() != 1 {
+            return Err(format!(
+                "Expected tol tensor to have 1 element, got {}",
+                tol_data.len()
+            ));
+        }
+
+        // Reconstruct model
+        Ok(Self {
+            alpha: alpha_data[0],
+            coefficients: Some(Vector::from_vec(coef_data)),
+            intercept: intercept_data[0],
+            fit_intercept: true, // Default to true for loaded models
+            max_iter: max_iter_data[0] as usize,
+            tol: tol_data[0],
+        })
+    }
 }
 
 impl Estimator for Lasso {
