@@ -180,6 +180,369 @@
                 <div id="content" class="content">
                     <main>
                         <h1 id="decision-trees-theory"><a class="header" href="#decision-trees-theory">Decision Trees Theory</a></h1>
+<!-- DOC_STATUS_START -->
+<p><strong>Chapter Status</strong>: ✅ 100% Working (All examples verified)</p>
+<div class="table-wrapper"><table><thead><tr><th>Status</th><th>Count</th><th>Examples</th></tr></thead><tbody>
+<tr><td>✅ Working</td><td>15+</td><td>CART algorithm verified</td></tr>
+<tr><td>⏳ In Progress</td><td>0</td><td>-</td></tr>
+<tr><td>⬜ Not Implemented</td><td>0</td><td>-</td></tr>
+</tbody></table>
+</div>
+<p><em>Last tested: 2025-11-19</em>
+<em>Aprender version: 0.3.0</em>
+<em>Test file: src/tree/mod.rs tests</em></p>
+<!-- DOC_STATUS_END -->
+<hr />
+<h2 id="overview"><a class="header" href="#overview">Overview</a></h2>
+<p>Decision trees learn hierarchical decision rules by recursively partitioning the feature space. They're interpretable, handle non-linear relationships, and require no feature scaling.</p>
+<p><strong>Key Concepts</strong>:</p>
+<ul>
+<li><strong>CART Algorithm</strong>: Classification And Regression Trees</li>
+<li><strong>Gini Impurity</strong>: Measures node purity (classification)</li>
+<li><strong>Recursive Splitting</strong>: Build tree top-down, greedy</li>
+<li><strong>Max Depth</strong>: Controls overfitting</li>
+</ul>
+<p><strong>Why This Matters</strong>:
+Decision trees mirror human decision-making: &quot;If feature X &gt; threshold, then...&quot; They're the foundation of powerful ensemble methods (Random Forests, Gradient Boosting).</p>
+<hr />
+<h2 id="mathematical-foundation"><a class="header" href="#mathematical-foundation">Mathematical Foundation</a></h2>
+<h3 id="the-decision-tree-structure"><a class="header" href="#the-decision-tree-structure">The Decision Tree Structure</a></h3>
+<p>A decision tree is a binary tree where:</p>
+<ul>
+<li><strong>Internal nodes</strong>: Test one feature against a threshold</li>
+<li><strong>Edges</strong>: Represent test outcomes (≤ threshold, &gt; threshold)</li>
+<li><strong>Leaves</strong>: Contain class predictions</li>
+</ul>
+<p><strong>Example Tree</strong>:</p>
+<pre><code>        [Petal Width ≤ 0.8]
+       /                    \
+   Class 0           [Petal Length ≤ 4.9]
+                    /                    \
+               Class 1                 Class 2
+</code></pre>
+<h3 id="gini-impurity"><a class="header" href="#gini-impurity">Gini Impurity</a></h3>
+<p><strong>Definition</strong>:</p>
+<pre><code>Gini(S) = 1 - Σ p_i²
+
+where:
+S = set of samples in a node
+p_i = proportion of class i in S
+</code></pre>
+<p><strong>Interpretation</strong>:</p>
+<ul>
+<li><strong>Gini = 0.0</strong>: Pure node (all samples same class)</li>
+<li><strong>Gini = 0.5</strong>: Maximum impurity (binary, 50/50 split)</li>
+<li><strong>Gini &lt; 0.5</strong>: More pure than random</li>
+</ul>
+<p><strong>Why squared?</strong> Penalizes mixed distributions more than linear measure.</p>
+<h3 id="information-gain"><a class="header" href="#information-gain">Information Gain</a></h3>
+<p>When we split a node into left and right children:</p>
+<pre><code>InfoGain = Gini(parent) - [w_L * Gini(left) + w_R * Gini(right)]
+
+where:
+w_L = n_left / n_total  (weight of left child)
+w_R = n_right / n_total (weight of right child)
+</code></pre>
+<p><strong>Goal</strong>: Maximize information gain → find best split</p>
+<h3 id="cart-algorithm-classification"><a class="header" href="#cart-algorithm-classification">CART Algorithm (Classification)</a></h3>
+<p><strong>Recursive Tree Building</strong>:</p>
+<pre><code>function BuildTree(X, y, depth, max_depth):
+    if stopping_criterion_met:
+        return Leaf(majority_class(y))
+
+    best_split = find_best_split(X, y)  # Maximize InfoGain
+
+    if no_valid_split or depth &gt;= max_depth:
+        return Leaf(majority_class(y))
+
+    X_left, y_left, X_right, y_right = partition(X, y, best_split)
+
+    return Node(
+        feature = best_split.feature,
+        threshold = best_split.threshold,
+        left = BuildTree(X_left, y_left, depth+1, max_depth),
+        right = BuildTree(X_right, y_right, depth+1, max_depth)
+    )
+</code></pre>
+<p><strong>Stopping Criteria</strong>:</p>
+<ol>
+<li>All samples in node have same class (Gini = 0)</li>
+<li>Reached max_depth</li>
+<li>Node has too few samples (min_samples_split)</li>
+<li>No split reduces impurity</li>
+</ol>
+<hr />
+<h2 id="implementation-in-aprender"><a class="header" href="#implementation-in-aprender">Implementation in Aprender</a></h2>
+<h3 id="example-1-simple-binary-classification"><a class="header" href="#example-1-simple-binary-classification">Example 1: Simple Binary Classification</a></h3>
+<pre><code class="language-rust">use aprender::tree::DecisionTreeClassifier;
+use aprender::primitives::Matrix;
+
+// XOR-like problem (not linearly separable)
+let x = Matrix::from_vec(4, 2, vec![
+    0.0, 0.0,  // Class 0
+    0.0, 1.0,  // Class 1
+    1.0, 0.0,  // Class 1
+    1.0, 1.0,  // Class 0
+]).unwrap();
+let y = vec![0, 1, 1, 0];
+
+// Train decision tree with max depth 3
+let mut tree = DecisionTreeClassifier::new()
+    .with_max_depth(3);
+
+tree.fit(&amp;x, &amp;y).unwrap();
+
+// Predict on training data (should be perfect)
+let predictions = tree.predict(&amp;x);
+println!(&quot;Predictions: {:?}&quot;, predictions); // [0, 1, 1, 0]
+
+let accuracy = tree.score(&amp;x, &amp;y);
+println!(&quot;Accuracy: {:.3}&quot;, accuracy); // 1.000</code></pre>
+<p><strong>Test Reference</strong>: <code>src/tree/mod.rs::tests::test_build_tree_simple_split</code></p>
+<h3 id="example-2-multi-class-classification-iris"><a class="header" href="#example-2-multi-class-classification-iris">Example 2: Multi-Class Classification (Iris)</a></h3>
+<pre><code class="language-rust">// Iris dataset (3 classes, 4 features)
+// Simplified example - see case study for full implementation
+
+let mut tree = DecisionTreeClassifier::new()
+    .with_max_depth(5);
+
+tree.fit(&amp;x_train, &amp;y_train).unwrap();
+
+// Test set evaluation
+let y_pred = tree.predict(&amp;x_test);
+let accuracy = tree.score(&amp;x_test, &amp;y_test);
+println!(&quot;Test Accuracy: {:.3}&quot;, accuracy); // e.g., 0.967</code></pre>
+<p><strong>Case Study</strong>: See <a href="../examples/decision-tree-iris.html">Decision Tree - Iris Classification</a></p>
+<h3 id="example-3-model-serialization"><a class="header" href="#example-3-model-serialization">Example 3: Model Serialization</a></h3>
+<pre><code class="language-rust">// Train and save tree
+let mut tree = DecisionTreeClassifier::new()
+    .with_max_depth(4);
+tree.fit(&amp;x_train, &amp;y_train).unwrap();
+
+tree.save(&quot;tree_model.bin&quot;).unwrap();
+
+// Load in production
+let loaded_tree = DecisionTreeClassifier::load(&quot;tree_model.bin&quot;).unwrap();
+let predictions = loaded_tree.predict(&amp;x_test);</code></pre>
+<p><strong>Test Reference</strong>: <code>src/tree/mod.rs::tests</code> (save/load tests)</p>
+<hr />
+<h2 id="understanding-gini-impurity"><a class="header" href="#understanding-gini-impurity">Understanding Gini Impurity</a></h2>
+<h3 id="example-calculation"><a class="header" href="#example-calculation">Example Calculation</a></h3>
+<p><strong>Scenario</strong>: Node with 6 samples: [A, A, A, B, B, C]</p>
+<pre><code>Class A: 3/6 = 0.5
+Class B: 2/6 = 0.33
+Class C: 1/6 = 0.17
+
+Gini = 1 - (0.5² + 0.33² + 0.17²)
+     = 1 - (0.25 + 0.11 + 0.03)
+     = 1 - 0.39
+     = 0.61
+</code></pre>
+<p><strong>Interpretation</strong>: 0.61 impurity (moderately mixed)</p>
+<h3 id="pure-vs-impure-nodes"><a class="header" href="#pure-vs-impure-nodes">Pure vs Impure Nodes</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Node</th><th>Distribution</th><th>Gini</th><th>Interpretation</th></tr></thead><tbody>
+<tr><td>[A, A, A, A]</td><td>100% A</td><td>0.0</td><td>Pure (stop splitting)</td></tr>
+<tr><td>[A, A, B, B]</td><td>50% A, 50% B</td><td>0.5</td><td>Maximum impurity (binary)</td></tr>
+<tr><td>[A, A, A, B]</td><td>75% A, 25% B</td><td>0.375</td><td>Moderately pure</td></tr>
+</tbody></table>
+</div>
+<p><strong>Test Reference</strong>: <code>src/tree/mod.rs::tests::test_gini_impurity_*</code></p>
+<hr />
+<h2 id="choosing-max-depth"><a class="header" href="#choosing-max-depth">Choosing Max Depth</a></h2>
+<h3 id="the-depth-trade-off"><a class="header" href="#the-depth-trade-off">The Depth Trade-off</a></h3>
+<p><strong>Too shallow (max_depth = 1)</strong>:</p>
+<ul>
+<li>Underfitting</li>
+<li>High bias, low variance</li>
+<li>Poor train and test accuracy</li>
+</ul>
+<p><strong>Too deep (max_depth = ∞)</strong>:</p>
+<ul>
+<li>Overfitting</li>
+<li>Low bias, high variance</li>
+<li>Perfect train accuracy, poor test accuracy</li>
+</ul>
+<p><strong>Just right (max_depth = 3-7)</strong>:</p>
+<ul>
+<li>Balanced bias-variance</li>
+<li>Good generalization</li>
+</ul>
+<h3 id="finding-optimal-depth"><a class="header" href="#finding-optimal-depth">Finding Optimal Depth</a></h3>
+<p>Use cross-validation:</p>
+<pre><code class="language-rust">// Pseudocode
+for depth in 1..=10 {
+    model = DecisionTreeClassifier::new().with_max_depth(depth);
+    cv_score = cross_validate(model, x, y, k=5);
+    // Select depth with best cv_score
+}</code></pre>
+<p><strong>Rule of Thumb</strong>:</p>
+<ul>
+<li>Simple problems: max_depth = 3-5</li>
+<li>Complex problems: max_depth = 5-10</li>
+<li>If using ensemble (Random Forest): deeper trees OK (15-30)</li>
+</ul>
+<hr />
+<h2 id="advantages-and-limitations"><a class="header" href="#advantages-and-limitations">Advantages and Limitations</a></h2>
+<h3 id="advantages-"><a class="header" href="#advantages-">Advantages ✅</a></h3>
+<ol>
+<li><strong>Interpretable</strong>: Can visualize and explain decisions</li>
+<li><strong>No feature scaling</strong>: Works on raw features</li>
+<li><strong>Handles non-linear</strong>: Learns complex boundaries</li>
+<li><strong>Mixed data types</strong>: Numeric and categorical features</li>
+<li><strong>Fast prediction</strong>: O(log n) traversal</li>
+</ol>
+<h3 id="limitations-"><a class="header" href="#limitations-">Limitations ❌</a></h3>
+<ol>
+<li><strong>Overfitting</strong>: Single trees overfit easily</li>
+<li><strong>Instability</strong>: Small data changes → different tree</li>
+<li><strong>Bias toward dominant classes</strong>: In imbalanced data</li>
+<li><strong>Greedy algorithm</strong>: May miss global optimum</li>
+<li><strong>Axis-aligned splits</strong>: Can't learn diagonal boundaries easily</li>
+</ol>
+<p><strong>Solution to overfitting</strong>: Use ensemble methods (Random Forests, Gradient Boosting)</p>
+<hr />
+<h2 id="decision-trees-vs-other-methods"><a class="header" href="#decision-trees-vs-other-methods">Decision Trees vs Other Methods</a></h2>
+<h3 id="comparison-table"><a class="header" href="#comparison-table">Comparison Table</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Method</th><th>Interpretability</th><th>Feature Scaling</th><th>Non-linear</th><th>Overfitting Risk</th><th>Speed</th></tr></thead><tbody>
+<tr><td><strong>Decision Tree</strong></td><td>High</td><td>Not needed</td><td>Yes</td><td>High (single tree)</td><td>Fast</td></tr>
+<tr><td><strong>Logistic Regression</strong></td><td>Medium</td><td>Required</td><td>No (unless polynomial)</td><td>Low</td><td>Fast</td></tr>
+<tr><td><strong>SVM</strong></td><td>Low</td><td>Required</td><td>Yes (kernels)</td><td>Medium</td><td>Slow</td></tr>
+<tr><td><strong>Random Forest</strong></td><td>Medium</td><td>Not needed</td><td>Yes</td><td>Low</td><td>Medium</td></tr>
+</tbody></table>
+</div>
+<h3 id="when-to-use-decision-trees"><a class="header" href="#when-to-use-decision-trees">When to Use Decision Trees</a></h3>
+<p><strong>Good for</strong>:</p>
+<ul>
+<li>Interpretability required (medical, legal domains)</li>
+<li>Mixed feature types</li>
+<li>Quick baseline</li>
+<li>Building block for ensembles</li>
+</ul>
+<p><strong>Not good for</strong>:</p>
+<ul>
+<li>Need best single-model accuracy (use ensemble instead)</li>
+<li>Linear relationships (logistic regression simpler)</li>
+<li>Large feature space (curse of dimensionality)</li>
+</ul>
+<hr />
+<h2 id="practical-considerations"><a class="header" href="#practical-considerations">Practical Considerations</a></h2>
+<h3 id="feature-importance"><a class="header" href="#feature-importance">Feature Importance</a></h3>
+<p>Decision trees naturally rank feature importance:</p>
+<ul>
+<li><strong>Most important</strong>: Features near the root (used early)</li>
+<li><strong>Less important</strong>: Features deeper in tree or unused</li>
+</ul>
+<p><strong>Interpretation</strong>: Features used for early splits have highest information gain.</p>
+<h3 id="handling-imbalanced-classes"><a class="header" href="#handling-imbalanced-classes">Handling Imbalanced Classes</a></h3>
+<p><strong>Problem</strong>: Tree biased toward majority class</p>
+<p><strong>Solutions</strong>:</p>
+<ol>
+<li><strong>Class weights</strong>: Penalize majority class errors more</li>
+<li><strong>Sampling</strong>: SMOTE, undersampling majority</li>
+<li><strong>Threshold tuning</strong>: Adjust prediction threshold</li>
+</ol>
+<h3 id="pruning-post-processing"><a class="header" href="#pruning-post-processing">Pruning (Post-Processing)</a></h3>
+<p><strong>Idea</strong>: Build full tree, then remove nodes with low information gain</p>
+<p><strong>Benefit</strong>: Reduces overfitting without limiting depth during training</p>
+<p><strong>Status in Aprender</strong>: Not yet implemented (use max_depth instead)</p>
+<hr />
+<h2 id="verification-through-tests"><a class="header" href="#verification-through-tests">Verification Through Tests</a></h2>
+<p>Decision tree tests verify mathematical properties:</p>
+<p><strong>Gini Impurity Tests</strong>:</p>
+<ul>
+<li>Pure node → Gini = 0.0</li>
+<li>50/50 binary split → Gini = 0.5</li>
+<li>Gini always in [0, 1]</li>
+</ul>
+<p><strong>Tree Building Tests</strong>:</p>
+<ul>
+<li>Pure leaf stops splitting</li>
+<li>Max depth enforced</li>
+<li>Predictions match majority class</li>
+</ul>
+<p><strong>Property Tests</strong> (via integration tests):</p>
+<ul>
+<li>Tree depth ≤ max_depth</li>
+<li>All leaves are pure or at max_depth</li>
+<li>Information gain non-negative</li>
+</ul>
+<p><strong>Test Reference</strong>: <code>src/tree/mod.rs</code> (15+ tests)</p>
+<hr />
+<h2 id="real-world-application"><a class="header" href="#real-world-application">Real-World Application</a></h2>
+<h3 id="medical-diagnosis-example"><a class="header" href="#medical-diagnosis-example">Medical Diagnosis Example</a></h3>
+<p><strong>Problem</strong>: Diagnose disease from symptoms (temperature, blood pressure, age)</p>
+<p><strong>Decision Tree</strong>:</p>
+<pre><code>          [Temperature &gt; 38°C]
+         /                    \
+   [BP &gt; 140]               Healthy
+   /        \
+Disease A   Disease B
+</code></pre>
+<p><strong>Why Decision Tree?</strong></p>
+<ul>
+<li>Interpretable (doctors can verify logic)</li>
+<li>No feature scaling (raw measurements)</li>
+<li>Handles mixed units (°C, mmHg, years)</li>
+</ul>
+<h3 id="credit-scoring-example"><a class="header" href="#credit-scoring-example">Credit Scoring Example</a></h3>
+<p><strong>Features</strong>: Income, debt, employment length, credit history</p>
+<p><strong>Decision Tree learns</strong>:</p>
+<ul>
+<li>If income &lt; $30k and debt &gt; $20k → High risk</li>
+<li>If income &gt; $80k → Low risk</li>
+<li>Else, check employment length...</li>
+</ul>
+<p><strong>Advantage</strong>: Transparent lending decisions (regulatory compliance)</p>
+<hr />
+<h2 id="further-reading"><a class="header" href="#further-reading">Further Reading</a></h2>
+<h3 id="peer-reviewed-papers"><a class="header" href="#peer-reviewed-papers">Peer-Reviewed Papers</a></h3>
+<p><strong>Breiman et al. (1984)</strong> - <em>Classification and Regression Trees</em></p>
+<ul>
+<li><strong>Relevance</strong>: Original CART algorithm (Gini impurity, recursive splitting)</li>
+<li><strong>Link</strong>: Chapman and Hall/CRC (book, library access)</li>
+<li><strong>Key Contribution</strong>: Unified framework for classification and regression trees</li>
+<li><strong>Applied in</strong>: <code>src/tree/mod.rs</code> CART implementation</li>
+</ul>
+<p><strong>Quinlan (1986)</strong> - <em>Induction of Decision Trees</em></p>
+<ul>
+<li><strong>Relevance</strong>: Alternative algorithm using entropy (ID3)</li>
+<li><strong>Link</strong>: <a href="https://link.springer.com/article/10.1007/BF00116251">SpringerLink</a></li>
+<li><strong>Key Contribution</strong>: Information gain via entropy (alternative to Gini)</li>
+</ul>
+<h3 id="related-chapters"><a class="header" href="#related-chapters">Related Chapters</a></h3>
+<ul>
+<li><a href="./ensemble-methods.html">Ensemble Methods Theory</a> - Random Forests (next chapter)</li>
+<li><a href="./classification-metrics.html">Classification Metrics Theory</a> - Evaluating trees</li>
+<li><a href="./cross-validation.html">Cross-Validation Theory</a> - Finding optimal max_depth</li>
+</ul>
+<hr />
+<h2 id="summary"><a class="header" href="#summary">Summary</a></h2>
+<p><strong>What You Learned</strong>:</p>
+<ul>
+<li>✅ Decision trees: hierarchical if-then rules</li>
+<li>✅ Gini impurity: Gini = 1 - Σ p_i² (0 = pure, 0.5 = max)</li>
+<li>✅ CART algorithm: greedy, top-down, recursive</li>
+<li>✅ Information gain: Maximize reduction in impurity</li>
+<li>✅ Max depth: Controls overfitting (tune with CV)</li>
+<li>✅ Advantages: Interpretable, no scaling, non-linear</li>
+<li>✅ Limitations: Overfitting, instability (use ensembles)</li>
+</ul>
+<p><strong>Verification Guarantee</strong>: Decision tree implementation extensively tested (15+ tests) in <code>src/tree/mod.rs</code>. Tests verify Gini calculations, tree building, and prediction logic.</p>
+<p><strong>Quick Reference</strong>:</p>
+<ul>
+<li><strong>Pure node</strong>: Gini = 0 (stop splitting)</li>
+<li><strong>Max impurity</strong>: Gini = 0.5 (binary 50/50)</li>
+<li><strong>Best split</strong>: Maximize information gain</li>
+<li><strong>Prevent overfit</strong>: Set max_depth (3-7 typical)</li>
+</ul>
+<p><strong>Key Equations</strong>:</p>
+<pre><code>Gini(S) = 1 - Σ p_i²
+InfoGain = Gini(parent) - Weighted_Avg(Gini(children))
+Split: feature ≤ threshold → left, else → right
+</code></pre>
+<hr />
+<p><strong>Next Chapter</strong>: <a href="./ensemble-methods.html">Ensemble Methods Theory</a></p>
+<p><strong>Previous Chapter</strong>: <a href="./classification-metrics.html">Classification Metrics Theory</a></p>
 
                     </main>
 

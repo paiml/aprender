@@ -2251,6 +2251,369 @@ assert_eq!(proba_original[0], proba_loaded[0]); // Exact match</code></pre>
 <p><strong>Previous Chapter</strong>: <a href="ml-fundamentals/./regularization.html">Regularization Theory</a></p>
 <p><strong>REQUIRED</strong>: Read <a href="ml-fundamentals/../examples/logistic-regression.html">Case Study: Logistic Regression</a> for SafeTensors implementation</p>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="decision-trees-theory"><a class="header" href="#decision-trees-theory">Decision Trees Theory</a></h1>
+<!-- DOC_STATUS_START -->
+<p><strong>Chapter Status</strong>: ✅ 100% Working (All examples verified)</p>
+<div class="table-wrapper"><table><thead><tr><th>Status</th><th>Count</th><th>Examples</th></tr></thead><tbody>
+<tr><td>✅ Working</td><td>15+</td><td>CART algorithm verified</td></tr>
+<tr><td>⏳ In Progress</td><td>0</td><td>-</td></tr>
+<tr><td>⬜ Not Implemented</td><td>0</td><td>-</td></tr>
+</tbody></table>
+</div>
+<p><em>Last tested: 2025-11-19</em>
+<em>Aprender version: 0.3.0</em>
+<em>Test file: src/tree/mod.rs tests</em></p>
+<!-- DOC_STATUS_END -->
+<hr />
+<h2 id="overview-4"><a class="header" href="#overview-4">Overview</a></h2>
+<p>Decision trees learn hierarchical decision rules by recursively partitioning the feature space. They're interpretable, handle non-linear relationships, and require no feature scaling.</p>
+<p><strong>Key Concepts</strong>:</p>
+<ul>
+<li><strong>CART Algorithm</strong>: Classification And Regression Trees</li>
+<li><strong>Gini Impurity</strong>: Measures node purity (classification)</li>
+<li><strong>Recursive Splitting</strong>: Build tree top-down, greedy</li>
+<li><strong>Max Depth</strong>: Controls overfitting</li>
+</ul>
+<p><strong>Why This Matters</strong>:
+Decision trees mirror human decision-making: &quot;If feature X &gt; threshold, then...&quot; They're the foundation of powerful ensemble methods (Random Forests, Gradient Boosting).</p>
+<hr />
+<h2 id="mathematical-foundation-3"><a class="header" href="#mathematical-foundation-3">Mathematical Foundation</a></h2>
+<h3 id="the-decision-tree-structure"><a class="header" href="#the-decision-tree-structure">The Decision Tree Structure</a></h3>
+<p>A decision tree is a binary tree where:</p>
+<ul>
+<li><strong>Internal nodes</strong>: Test one feature against a threshold</li>
+<li><strong>Edges</strong>: Represent test outcomes (≤ threshold, &gt; threshold)</li>
+<li><strong>Leaves</strong>: Contain class predictions</li>
+</ul>
+<p><strong>Example Tree</strong>:</p>
+<pre><code>        [Petal Width ≤ 0.8]
+       /                    \
+   Class 0           [Petal Length ≤ 4.9]
+                    /                    \
+               Class 1                 Class 2
+</code></pre>
+<h3 id="gini-impurity"><a class="header" href="#gini-impurity">Gini Impurity</a></h3>
+<p><strong>Definition</strong>:</p>
+<pre><code>Gini(S) = 1 - Σ p_i²
+
+where:
+S = set of samples in a node
+p_i = proportion of class i in S
+</code></pre>
+<p><strong>Interpretation</strong>:</p>
+<ul>
+<li><strong>Gini = 0.0</strong>: Pure node (all samples same class)</li>
+<li><strong>Gini = 0.5</strong>: Maximum impurity (binary, 50/50 split)</li>
+<li><strong>Gini &lt; 0.5</strong>: More pure than random</li>
+</ul>
+<p><strong>Why squared?</strong> Penalizes mixed distributions more than linear measure.</p>
+<h3 id="information-gain"><a class="header" href="#information-gain">Information Gain</a></h3>
+<p>When we split a node into left and right children:</p>
+<pre><code>InfoGain = Gini(parent) - [w_L * Gini(left) + w_R * Gini(right)]
+
+where:
+w_L = n_left / n_total  (weight of left child)
+w_R = n_right / n_total (weight of right child)
+</code></pre>
+<p><strong>Goal</strong>: Maximize information gain → find best split</p>
+<h3 id="cart-algorithm-classification"><a class="header" href="#cart-algorithm-classification">CART Algorithm (Classification)</a></h3>
+<p><strong>Recursive Tree Building</strong>:</p>
+<pre><code>function BuildTree(X, y, depth, max_depth):
+    if stopping_criterion_met:
+        return Leaf(majority_class(y))
+
+    best_split = find_best_split(X, y)  # Maximize InfoGain
+
+    if no_valid_split or depth &gt;= max_depth:
+        return Leaf(majority_class(y))
+
+    X_left, y_left, X_right, y_right = partition(X, y, best_split)
+
+    return Node(
+        feature = best_split.feature,
+        threshold = best_split.threshold,
+        left = BuildTree(X_left, y_left, depth+1, max_depth),
+        right = BuildTree(X_right, y_right, depth+1, max_depth)
+    )
+</code></pre>
+<p><strong>Stopping Criteria</strong>:</p>
+<ol>
+<li>All samples in node have same class (Gini = 0)</li>
+<li>Reached max_depth</li>
+<li>Node has too few samples (min_samples_split)</li>
+<li>No split reduces impurity</li>
+</ol>
+<hr />
+<h2 id="implementation-in-aprender-3"><a class="header" href="#implementation-in-aprender-3">Implementation in Aprender</a></h2>
+<h3 id="example-1-simple-binary-classification"><a class="header" href="#example-1-simple-binary-classification">Example 1: Simple Binary Classification</a></h3>
+<pre><code class="language-rust">use aprender::tree::DecisionTreeClassifier;
+use aprender::primitives::Matrix;
+
+// XOR-like problem (not linearly separable)
+let x = Matrix::from_vec(4, 2, vec![
+    0.0, 0.0,  // Class 0
+    0.0, 1.0,  // Class 1
+    1.0, 0.0,  // Class 1
+    1.0, 1.0,  // Class 0
+]).unwrap();
+let y = vec![0, 1, 1, 0];
+
+// Train decision tree with max depth 3
+let mut tree = DecisionTreeClassifier::new()
+    .with_max_depth(3);
+
+tree.fit(&amp;x, &amp;y).unwrap();
+
+// Predict on training data (should be perfect)
+let predictions = tree.predict(&amp;x);
+println!(&quot;Predictions: {:?}&quot;, predictions); // [0, 1, 1, 0]
+
+let accuracy = tree.score(&amp;x, &amp;y);
+println!(&quot;Accuracy: {:.3}&quot;, accuracy); // 1.000</code></pre>
+<p><strong>Test Reference</strong>: <code>src/tree/mod.rs::tests::test_build_tree_simple_split</code></p>
+<h3 id="example-2-multi-class-classification-iris"><a class="header" href="#example-2-multi-class-classification-iris">Example 2: Multi-Class Classification (Iris)</a></h3>
+<pre><code class="language-rust">// Iris dataset (3 classes, 4 features)
+// Simplified example - see case study for full implementation
+
+let mut tree = DecisionTreeClassifier::new()
+    .with_max_depth(5);
+
+tree.fit(&amp;x_train, &amp;y_train).unwrap();
+
+// Test set evaluation
+let y_pred = tree.predict(&amp;x_test);
+let accuracy = tree.score(&amp;x_test, &amp;y_test);
+println!(&quot;Test Accuracy: {:.3}&quot;, accuracy); // e.g., 0.967</code></pre>
+<p><strong>Case Study</strong>: See <a href="ml-fundamentals/../examples/decision-tree-iris.html">Decision Tree - Iris Classification</a></p>
+<h3 id="example-3-model-serialization"><a class="header" href="#example-3-model-serialization">Example 3: Model Serialization</a></h3>
+<pre><code class="language-rust">// Train and save tree
+let mut tree = DecisionTreeClassifier::new()
+    .with_max_depth(4);
+tree.fit(&amp;x_train, &amp;y_train).unwrap();
+
+tree.save(&quot;tree_model.bin&quot;).unwrap();
+
+// Load in production
+let loaded_tree = DecisionTreeClassifier::load(&quot;tree_model.bin&quot;).unwrap();
+let predictions = loaded_tree.predict(&amp;x_test);</code></pre>
+<p><strong>Test Reference</strong>: <code>src/tree/mod.rs::tests</code> (save/load tests)</p>
+<hr />
+<h2 id="understanding-gini-impurity"><a class="header" href="#understanding-gini-impurity">Understanding Gini Impurity</a></h2>
+<h3 id="example-calculation"><a class="header" href="#example-calculation">Example Calculation</a></h3>
+<p><strong>Scenario</strong>: Node with 6 samples: [A, A, A, B, B, C]</p>
+<pre><code>Class A: 3/6 = 0.5
+Class B: 2/6 = 0.33
+Class C: 1/6 = 0.17
+
+Gini = 1 - (0.5² + 0.33² + 0.17²)
+     = 1 - (0.25 + 0.11 + 0.03)
+     = 1 - 0.39
+     = 0.61
+</code></pre>
+<p><strong>Interpretation</strong>: 0.61 impurity (moderately mixed)</p>
+<h3 id="pure-vs-impure-nodes"><a class="header" href="#pure-vs-impure-nodes">Pure vs Impure Nodes</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Node</th><th>Distribution</th><th>Gini</th><th>Interpretation</th></tr></thead><tbody>
+<tr><td>[A, A, A, A]</td><td>100% A</td><td>0.0</td><td>Pure (stop splitting)</td></tr>
+<tr><td>[A, A, B, B]</td><td>50% A, 50% B</td><td>0.5</td><td>Maximum impurity (binary)</td></tr>
+<tr><td>[A, A, A, B]</td><td>75% A, 25% B</td><td>0.375</td><td>Moderately pure</td></tr>
+</tbody></table>
+</div>
+<p><strong>Test Reference</strong>: <code>src/tree/mod.rs::tests::test_gini_impurity_*</code></p>
+<hr />
+<h2 id="choosing-max-depth"><a class="header" href="#choosing-max-depth">Choosing Max Depth</a></h2>
+<h3 id="the-depth-trade-off"><a class="header" href="#the-depth-trade-off">The Depth Trade-off</a></h3>
+<p><strong>Too shallow (max_depth = 1)</strong>:</p>
+<ul>
+<li>Underfitting</li>
+<li>High bias, low variance</li>
+<li>Poor train and test accuracy</li>
+</ul>
+<p><strong>Too deep (max_depth = ∞)</strong>:</p>
+<ul>
+<li>Overfitting</li>
+<li>Low bias, high variance</li>
+<li>Perfect train accuracy, poor test accuracy</li>
+</ul>
+<p><strong>Just right (max_depth = 3-7)</strong>:</p>
+<ul>
+<li>Balanced bias-variance</li>
+<li>Good generalization</li>
+</ul>
+<h3 id="finding-optimal-depth"><a class="header" href="#finding-optimal-depth">Finding Optimal Depth</a></h3>
+<p>Use cross-validation:</p>
+<pre><code class="language-rust">// Pseudocode
+for depth in 1..=10 {
+    model = DecisionTreeClassifier::new().with_max_depth(depth);
+    cv_score = cross_validate(model, x, y, k=5);
+    // Select depth with best cv_score
+}</code></pre>
+<p><strong>Rule of Thumb</strong>:</p>
+<ul>
+<li>Simple problems: max_depth = 3-5</li>
+<li>Complex problems: max_depth = 5-10</li>
+<li>If using ensemble (Random Forest): deeper trees OK (15-30)</li>
+</ul>
+<hr />
+<h2 id="advantages-and-limitations"><a class="header" href="#advantages-and-limitations">Advantages and Limitations</a></h2>
+<h3 id="advantages-"><a class="header" href="#advantages-">Advantages ✅</a></h3>
+<ol>
+<li><strong>Interpretable</strong>: Can visualize and explain decisions</li>
+<li><strong>No feature scaling</strong>: Works on raw features</li>
+<li><strong>Handles non-linear</strong>: Learns complex boundaries</li>
+<li><strong>Mixed data types</strong>: Numeric and categorical features</li>
+<li><strong>Fast prediction</strong>: O(log n) traversal</li>
+</ol>
+<h3 id="limitations-"><a class="header" href="#limitations-">Limitations ❌</a></h3>
+<ol>
+<li><strong>Overfitting</strong>: Single trees overfit easily</li>
+<li><strong>Instability</strong>: Small data changes → different tree</li>
+<li><strong>Bias toward dominant classes</strong>: In imbalanced data</li>
+<li><strong>Greedy algorithm</strong>: May miss global optimum</li>
+<li><strong>Axis-aligned splits</strong>: Can't learn diagonal boundaries easily</li>
+</ol>
+<p><strong>Solution to overfitting</strong>: Use ensemble methods (Random Forests, Gradient Boosting)</p>
+<hr />
+<h2 id="decision-trees-vs-other-methods"><a class="header" href="#decision-trees-vs-other-methods">Decision Trees vs Other Methods</a></h2>
+<h3 id="comparison-table-1"><a class="header" href="#comparison-table-1">Comparison Table</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Method</th><th>Interpretability</th><th>Feature Scaling</th><th>Non-linear</th><th>Overfitting Risk</th><th>Speed</th></tr></thead><tbody>
+<tr><td><strong>Decision Tree</strong></td><td>High</td><td>Not needed</td><td>Yes</td><td>High (single tree)</td><td>Fast</td></tr>
+<tr><td><strong>Logistic Regression</strong></td><td>Medium</td><td>Required</td><td>No (unless polynomial)</td><td>Low</td><td>Fast</td></tr>
+<tr><td><strong>SVM</strong></td><td>Low</td><td>Required</td><td>Yes (kernels)</td><td>Medium</td><td>Slow</td></tr>
+<tr><td><strong>Random Forest</strong></td><td>Medium</td><td>Not needed</td><td>Yes</td><td>Low</td><td>Medium</td></tr>
+</tbody></table>
+</div>
+<h3 id="when-to-use-decision-trees"><a class="header" href="#when-to-use-decision-trees">When to Use Decision Trees</a></h3>
+<p><strong>Good for</strong>:</p>
+<ul>
+<li>Interpretability required (medical, legal domains)</li>
+<li>Mixed feature types</li>
+<li>Quick baseline</li>
+<li>Building block for ensembles</li>
+</ul>
+<p><strong>Not good for</strong>:</p>
+<ul>
+<li>Need best single-model accuracy (use ensemble instead)</li>
+<li>Linear relationships (logistic regression simpler)</li>
+<li>Large feature space (curse of dimensionality)</li>
+</ul>
+<hr />
+<h2 id="practical-considerations-3"><a class="header" href="#practical-considerations-3">Practical Considerations</a></h2>
+<h3 id="feature-importance"><a class="header" href="#feature-importance">Feature Importance</a></h3>
+<p>Decision trees naturally rank feature importance:</p>
+<ul>
+<li><strong>Most important</strong>: Features near the root (used early)</li>
+<li><strong>Less important</strong>: Features deeper in tree or unused</li>
+</ul>
+<p><strong>Interpretation</strong>: Features used for early splits have highest information gain.</p>
+<h3 id="handling-imbalanced-classes"><a class="header" href="#handling-imbalanced-classes">Handling Imbalanced Classes</a></h3>
+<p><strong>Problem</strong>: Tree biased toward majority class</p>
+<p><strong>Solutions</strong>:</p>
+<ol>
+<li><strong>Class weights</strong>: Penalize majority class errors more</li>
+<li><strong>Sampling</strong>: SMOTE, undersampling majority</li>
+<li><strong>Threshold tuning</strong>: Adjust prediction threshold</li>
+</ol>
+<h3 id="pruning-post-processing"><a class="header" href="#pruning-post-processing">Pruning (Post-Processing)</a></h3>
+<p><strong>Idea</strong>: Build full tree, then remove nodes with low information gain</p>
+<p><strong>Benefit</strong>: Reduces overfitting without limiting depth during training</p>
+<p><strong>Status in Aprender</strong>: Not yet implemented (use max_depth instead)</p>
+<hr />
+<h2 id="verification-through-tests-2"><a class="header" href="#verification-through-tests-2">Verification Through Tests</a></h2>
+<p>Decision tree tests verify mathematical properties:</p>
+<p><strong>Gini Impurity Tests</strong>:</p>
+<ul>
+<li>Pure node → Gini = 0.0</li>
+<li>50/50 binary split → Gini = 0.5</li>
+<li>Gini always in [0, 1]</li>
+</ul>
+<p><strong>Tree Building Tests</strong>:</p>
+<ul>
+<li>Pure leaf stops splitting</li>
+<li>Max depth enforced</li>
+<li>Predictions match majority class</li>
+</ul>
+<p><strong>Property Tests</strong> (via integration tests):</p>
+<ul>
+<li>Tree depth ≤ max_depth</li>
+<li>All leaves are pure or at max_depth</li>
+<li>Information gain non-negative</li>
+</ul>
+<p><strong>Test Reference</strong>: <code>src/tree/mod.rs</code> (15+ tests)</p>
+<hr />
+<h2 id="real-world-application-3"><a class="header" href="#real-world-application-3">Real-World Application</a></h2>
+<h3 id="medical-diagnosis-example"><a class="header" href="#medical-diagnosis-example">Medical Diagnosis Example</a></h3>
+<p><strong>Problem</strong>: Diagnose disease from symptoms (temperature, blood pressure, age)</p>
+<p><strong>Decision Tree</strong>:</p>
+<pre><code>          [Temperature &gt; 38°C]
+         /                    \
+   [BP &gt; 140]               Healthy
+   /        \
+Disease A   Disease B
+</code></pre>
+<p><strong>Why Decision Tree?</strong></p>
+<ul>
+<li>Interpretable (doctors can verify logic)</li>
+<li>No feature scaling (raw measurements)</li>
+<li>Handles mixed units (°C, mmHg, years)</li>
+</ul>
+<h3 id="credit-scoring-example"><a class="header" href="#credit-scoring-example">Credit Scoring Example</a></h3>
+<p><strong>Features</strong>: Income, debt, employment length, credit history</p>
+<p><strong>Decision Tree learns</strong>:</p>
+<ul>
+<li>If income &lt; $30k and debt &gt; $20k → High risk</li>
+<li>If income &gt; $80k → Low risk</li>
+<li>Else, check employment length...</li>
+</ul>
+<p><strong>Advantage</strong>: Transparent lending decisions (regulatory compliance)</p>
+<hr />
+<h2 id="further-reading-3"><a class="header" href="#further-reading-3">Further Reading</a></h2>
+<h3 id="peer-reviewed-papers-2"><a class="header" href="#peer-reviewed-papers-2">Peer-Reviewed Papers</a></h3>
+<p><strong>Breiman et al. (1984)</strong> - <em>Classification and Regression Trees</em></p>
+<ul>
+<li><strong>Relevance</strong>: Original CART algorithm (Gini impurity, recursive splitting)</li>
+<li><strong>Link</strong>: Chapman and Hall/CRC (book, library access)</li>
+<li><strong>Key Contribution</strong>: Unified framework for classification and regression trees</li>
+<li><strong>Applied in</strong>: <code>src/tree/mod.rs</code> CART implementation</li>
+</ul>
+<p><strong>Quinlan (1986)</strong> - <em>Induction of Decision Trees</em></p>
+<ul>
+<li><strong>Relevance</strong>: Alternative algorithm using entropy (ID3)</li>
+<li><strong>Link</strong>: <a href="https://link.springer.com/article/10.1007/BF00116251">SpringerLink</a></li>
+<li><strong>Key Contribution</strong>: Information gain via entropy (alternative to Gini)</li>
+</ul>
+<h3 id="related-chapters-3"><a class="header" href="#related-chapters-3">Related Chapters</a></h3>
+<ul>
+<li><a href="ml-fundamentals/./ensemble-methods.html">Ensemble Methods Theory</a> - Random Forests (next chapter)</li>
+<li><a href="ml-fundamentals/./classification-metrics.html">Classification Metrics Theory</a> - Evaluating trees</li>
+<li><a href="ml-fundamentals/./cross-validation.html">Cross-Validation Theory</a> - Finding optimal max_depth</li>
+</ul>
+<hr />
+<h2 id="summary-5"><a class="header" href="#summary-5">Summary</a></h2>
+<p><strong>What You Learned</strong>:</p>
+<ul>
+<li>✅ Decision trees: hierarchical if-then rules</li>
+<li>✅ Gini impurity: Gini = 1 - Σ p_i² (0 = pure, 0.5 = max)</li>
+<li>✅ CART algorithm: greedy, top-down, recursive</li>
+<li>✅ Information gain: Maximize reduction in impurity</li>
+<li>✅ Max depth: Controls overfitting (tune with CV)</li>
+<li>✅ Advantages: Interpretable, no scaling, non-linear</li>
+<li>✅ Limitations: Overfitting, instability (use ensembles)</li>
+</ul>
+<p><strong>Verification Guarantee</strong>: Decision tree implementation extensively tested (15+ tests) in <code>src/tree/mod.rs</code>. Tests verify Gini calculations, tree building, and prediction logic.</p>
+<p><strong>Quick Reference</strong>:</p>
+<ul>
+<li><strong>Pure node</strong>: Gini = 0 (stop splitting)</li>
+<li><strong>Max impurity</strong>: Gini = 0.5 (binary 50/50)</li>
+<li><strong>Best split</strong>: Maximize information gain</li>
+<li><strong>Prevent overfit</strong>: Set max_depth (3-7 typical)</li>
+</ul>
+<p><strong>Key Equations</strong>:</p>
+<pre><code>Gini(S) = 1 - Σ p_i²
+InfoGain = Gini(parent) - Weighted_Avg(Gini(children))
+Split: feature ≤ threshold → left, else → right
+</code></pre>
+<hr />
+<p><strong>Next Chapter</strong>: <a href="ml-fundamentals/./ensemble-methods.html">Ensemble Methods Theory</a></p>
+<p><strong>Previous Chapter</strong>: <a href="ml-fundamentals/./classification-metrics.html">Classification Metrics Theory</a></p>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="ensemble-methods-theory"><a class="header" href="#ensemble-methods-theory">Ensemble Methods Theory</a></h1>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="k-means-clustering-theory"><a class="header" href="#k-means-clustering-theory">K-Means Clustering Theory</a></h1>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="regression-metrics-theory"><a class="header" href="#regression-metrics-theory">Regression Metrics Theory</a></h1>
@@ -2267,7 +2630,7 @@ assert_eq!(proba_original[0], proba_loaded[0]); // Exact match</code></pre>
 <em>Test file: src/metrics/mod.rs tests</em></p>
 <!-- DOC_STATUS_END -->
 <hr />
-<h2 id="overview-4"><a class="header" href="#overview-4">Overview</a></h2>
+<h2 id="overview-5"><a class="header" href="#overview-5">Overview</a></h2>
 <p>Regression metrics measure how well a model predicts continuous values. Choosing the right metric is critical—it defines what &quot;good&quot; means for your model.</p>
 <p><strong>Key Metrics</strong>:</p>
 <ul>
@@ -2279,7 +2642,7 @@ assert_eq!(proba_original[0], proba_loaded[0]); // Exact match</code></pre>
 <p><strong>Why This Matters</strong>:
 &quot;You can't improve what you don't measure.&quot; Metrics transform vague goals (&quot;make better predictions&quot;) into concrete targets (R² &gt; 0.8).</p>
 <hr />
-<h2 id="mathematical-foundation-3"><a class="header" href="#mathematical-foundation-3">Mathematical Foundation</a></h2>
+<h2 id="mathematical-foundation-4"><a class="header" href="#mathematical-foundation-4">Mathematical Foundation</a></h2>
 <h3 id="r²-coefficient-of-determination"><a class="header" href="#r²-coefficient-of-determination">R² (Coefficient of Determination)</a></h3>
 <p><strong>Definition</strong>:</p>
 <pre><code>R² = 1 - (SS_res / SS_tot)
@@ -2324,7 +2687,7 @@ SS_tot = Σ(y_true - y_mean)²  (total sum of squares)
 </ul>
 <p><strong>When to Use</strong>: When outliers shouldn't dominate the metric.</p>
 <hr />
-<h2 id="implementation-in-aprender-3"><a class="header" href="#implementation-in-aprender-3">Implementation in Aprender</a></h2>
+<h2 id="implementation-in-aprender-4"><a class="header" href="#implementation-in-aprender-4">Implementation in Aprender</a></h2>
 <h3 id="example-all-metrics-on-same-data"><a class="header" href="#example-all-metrics-on-same-data">Example: All Metrics on Same Data</a></h3>
 <pre><code class="language-rust">use aprender::metrics::{r_squared, mse, rmse, mae};
 use aprender::primitives::Vector;
@@ -2369,7 +2732,7 @@ Are there outliers in your data?
 ├─ YES → Use MAE (robust) or Huber loss
 └─ NO → Use RMSE (more sensitive)
 </code></pre>
-<h3 id="comparison-table-1"><a class="header" href="#comparison-table-1">Comparison Table</a></h3>
+<h3 id="comparison-table-2"><a class="header" href="#comparison-table-2">Comparison Table</a></h3>
 <div class="table-wrapper"><table><thead><tr><th>Metric</th><th>Range</th><th>Units</th><th>Outlier Sensitivity</th><th>Use Case</th></tr></thead><tbody>
 <tr><td><strong>R²</strong></td><td>(-∞, 1]</td><td>Unitless</td><td>Medium</td><td>Overall fit quality</td></tr>
 <tr><td><strong>MSE</strong></td><td>[0, ∞)</td><td>Squared</td><td>High</td><td>Optimization (differentiable)</td></tr>
@@ -2378,7 +2741,7 @@ Are there outliers in your data?
 </tbody></table>
 </div>
 <hr />
-<h2 id="practical-considerations-3"><a class="header" href="#practical-considerations-3">Practical Considerations</a></h2>
+<h2 id="practical-considerations-4"><a class="header" href="#practical-considerations-4">Practical Considerations</a></h2>
 <h3 id="r²-limitations"><a class="header" href="#r²-limitations">R² Limitations</a></h3>
 <ol>
 <li><strong>Not Always 0-1</strong>: R² can be negative if model is terrible</li>
@@ -2416,7 +2779,7 @@ But predictions are systematically wrong!
 <li>All errors weighted equally (may not reflect reality)</li>
 </ul>
 <hr />
-<h2 id="verification-through-tests-2"><a class="header" href="#verification-through-tests-2">Verification Through Tests</a></h2>
+<h2 id="verification-through-tests-3"><a class="header" href="#verification-through-tests-3">Verification Through Tests</a></h2>
 <p>All metrics have comprehensive property tests:</p>
 <p><strong>Property 1</strong>: Perfect predictions → optimal metric value</p>
 <ul>
@@ -2433,7 +2796,7 @@ But predictions are systematically wrong!
 </ul>
 <p><strong>Test Reference</strong>: <code>src/metrics/mod.rs</code> has 10+ tests verifying these properties</p>
 <hr />
-<h2 id="real-world-application-3"><a class="header" href="#real-world-application-3">Real-World Application</a></h2>
+<h2 id="real-world-application-4"><a class="header" href="#real-world-application-4">Real-World Application</a></h2>
 <p><strong>Example</strong>: Evaluating Linear Regression</p>
 <pre><code class="language-rust">use aprender::linear_model::LinearRegression;
 use aprender::metrics::{r_squared, rmse};
@@ -2458,8 +2821,8 @@ println!(&quot;RMSE = {:.2}&quot;, error);   // e.g., 3.21 (avg error)
 <li><a href="ml-fundamentals/../examples/cross-validation.html">Cross-Validation</a> - Uses R² as CV score</li>
 </ul>
 <hr />
-<h2 id="further-reading-3"><a class="header" href="#further-reading-3">Further Reading</a></h2>
-<h3 id="peer-reviewed-papers-2"><a class="header" href="#peer-reviewed-papers-2">Peer-Reviewed Papers</a></h3>
+<h2 id="further-reading-4"><a class="header" href="#further-reading-4">Further Reading</a></h2>
+<h3 id="peer-reviewed-papers-3"><a class="header" href="#peer-reviewed-papers-3">Peer-Reviewed Papers</a></h3>
 <p><strong>Powers (2011)</strong> - <em>Evaluation: From Precision, Recall and F-Measure to ROC, Informedness, Markedness &amp; Correlation</em></p>
 <ul>
 <li><strong>Relevance</strong>: Comprehensive survey of evaluation metrics</li>
@@ -2467,14 +2830,14 @@ println!(&quot;RMSE = {:.2}&quot;, error);   // e.g., 3.21 (avg error)
 <li><strong>Key Insight</strong>: No single metric is best—choose based on problem</li>
 <li><strong>Applied in</strong>: <code>src/metrics/mod.rs</code></li>
 </ul>
-<h3 id="related-chapters-3"><a class="header" href="#related-chapters-3">Related Chapters</a></h3>
+<h3 id="related-chapters-4"><a class="header" href="#related-chapters-4">Related Chapters</a></h3>
 <ul>
 <li><a href="ml-fundamentals/./linear-regression.html">Linear Regression Theory</a> - OLS minimizes MSE</li>
 <li><a href="ml-fundamentals/./cross-validation.html">Cross-Validation Theory</a> - Uses metrics for evaluation</li>
 <li><a href="ml-fundamentals/./classification-metrics.html">Classification Metrics Theory</a> - For discrete targets</li>
 </ul>
 <hr />
-<h2 id="summary-5"><a class="header" href="#summary-5">Summary</a></h2>
+<h2 id="summary-6"><a class="header" href="#summary-6">Summary</a></h2>
 <p><strong>What You Learned</strong>:</p>
 <ul>
 <li>✅ R²: Variance explained (0-1, higher better)</li>
@@ -2508,7 +2871,7 @@ println!(&quot;RMSE = {:.2}&quot;, error);   // e.g., 3.21 (avg error)
 <em>Test file: src/metrics/mod.rs tests</em></p>
 <!-- DOC_STATUS_END -->
 <hr />
-<h2 id="overview-5"><a class="header" href="#overview-5">Overview</a></h2>
+<h2 id="overview-6"><a class="header" href="#overview-6">Overview</a></h2>
 <p>Classification metrics evaluate how well a model predicts discrete classes. Unlike regression, we're not measuring &quot;how far off&quot;—we're measuring &quot;right or wrong.&quot;</p>
 <p><strong>Key Metrics</strong>:</p>
 <ul>
@@ -2520,7 +2883,7 @@ println!(&quot;RMSE = {:.2}&quot;, error);   // e.g., 3.21 (avg error)
 <p><strong>Why This Matters</strong>:
 Accuracy alone can be misleading. A spam filter with 99% accuracy that marks all email as &quot;not spam&quot; is useless. We need precision and recall to understand performance fully.</p>
 <hr />
-<h2 id="mathematical-foundation-4"><a class="header" href="#mathematical-foundation-4">Mathematical Foundation</a></h2>
+<h2 id="mathematical-foundation-5"><a class="header" href="#mathematical-foundation-5">Mathematical Foundation</a></h2>
 <h3 id="the-confusion-matrix"><a class="header" href="#the-confusion-matrix">The Confusion Matrix</a></h3>
 <p>All classification metrics derive from the <strong>confusion matrix</strong>:</p>
 <pre><code>                Predicted
@@ -2580,7 +2943,7 @@ But: Model is useless (finds zero positives)
 <li>F1 = 2 * (1.0 * 0.01) / (1.0 + 0.01) = 0.02 (realistic)</li>
 </ul>
 <hr />
-<h2 id="implementation-in-aprender-4"><a class="header" href="#implementation-in-aprender-4">Implementation in Aprender</a></h2>
+<h2 id="implementation-in-aprender-5"><a class="header" href="#implementation-in-aprender-5">Implementation in Aprender</a></h2>
 <h3 id="example-binary-classification-metrics"><a class="header" href="#example-binary-classification-metrics">Example: Binary Classification Metrics</a></h3>
 <pre><code class="language-rust">use aprender::metrics::{accuracy, precision, recall, f1_score};
 use aprender::primitives::Vector;
@@ -2655,7 +3018,7 @@ Examples:
 <li>Middle ground → Maximize F1</li>
 </ul>
 <hr />
-<h2 id="practical-considerations-4"><a class="header" href="#practical-considerations-4">Practical Considerations</a></h2>
+<h2 id="practical-considerations-5"><a class="header" href="#practical-considerations-5">Practical Considerations</a></h2>
 <h3 id="imbalanced-classes"><a class="header" href="#imbalanced-classes">Imbalanced Classes</a></h3>
 <p><strong>Problem</strong>: 1% positive class (fraud detection, rare disease)</p>
 <p><strong>Bad Baseline</strong>:</p>
@@ -2677,7 +3040,7 @@ Class C: Precision = 0.5
 Macro-avg Precision = (0.9 + 0.8 + 0.5) / 3 = 0.73
 </code></pre>
 <hr />
-<h2 id="verification-through-tests-3"><a class="header" href="#verification-through-tests-3">Verification Through Tests</a></h2>
+<h2 id="verification-through-tests-4"><a class="header" href="#verification-through-tests-4">Verification Through Tests</a></h2>
 <p>Classification metrics have comprehensive test coverage:</p>
 <p><strong>Property Tests</strong>:</p>
 <ol>
@@ -2688,7 +3051,7 @@ Macro-avg Precision = (0.9 + 0.8 + 0.5) / 3 = 0.73
 </ol>
 <p><strong>Test Reference</strong>: <code>src/metrics/mod.rs</code> validates these properties</p>
 <hr />
-<h2 id="real-world-application-4"><a class="header" href="#real-world-application-4">Real-World Application</a></h2>
+<h2 id="real-world-application-5"><a class="header" href="#real-world-application-5">Real-World Application</a></h2>
 <h3 id="evaluating-logistic-regression"><a class="header" href="#evaluating-logistic-regression">Evaluating Logistic Regression</a></h3>
 <pre><code class="language-rust">use aprender::classification::LogisticRegression;
 use aprender::metrics::{accuracy, precision, recall, f1_score};
@@ -2715,7 +3078,7 @@ println!(&quot;F1 Score:  {:.3}&quot;, f1);    // e.g., 0.892
 // Decision: F1 &gt; 0.85 → Accept model</code></pre>
 <p><strong>Case Study</strong>: <a href="ml-fundamentals/../examples/logistic-regression.html">Logistic Regression</a> uses these metrics</p>
 <hr />
-<h2 id="further-reading-4"><a class="header" href="#further-reading-4">Further Reading</a></h2>
+<h2 id="further-reading-5"><a class="header" href="#further-reading-5">Further Reading</a></h2>
 <h3 id="peer-reviewed-paper-1"><a class="header" href="#peer-reviewed-paper-1">Peer-Reviewed Paper</a></h3>
 <p><strong>Powers (2011)</strong> - <em>Evaluation: From Precision, Recall and F-Measure to ROC, Informedness, Markedness &amp; Correlation</em></p>
 <ul>
@@ -2725,14 +3088,14 @@ println!(&quot;F1 Score:  {:.3}&quot;, f1);    // e.g., 0.892
 <li><strong>Advanced Topics</strong>: ROC curves, AUC, informedness</li>
 <li><strong>Applied in</strong>: <code>src/metrics/mod.rs</code></li>
 </ul>
-<h3 id="related-chapters-4"><a class="header" href="#related-chapters-4">Related Chapters</a></h3>
+<h3 id="related-chapters-5"><a class="header" href="#related-chapters-5">Related Chapters</a></h3>
 <ul>
 <li><a href="ml-fundamentals/./logistic-regression.html">Logistic Regression Theory</a> - Binary classification model</li>
 <li><a href="ml-fundamentals/./regression-metrics.html">Regression Metrics Theory</a> - For continuous targets</li>
 <li><a href="ml-fundamentals/./cross-validation.html">Cross-Validation Theory</a> - Using metrics in CV</li>
 </ul>
 <hr />
-<h2 id="summary-6"><a class="header" href="#summary-6">Summary</a></h2>
+<h2 id="summary-7"><a class="header" href="#summary-7">Summary</a></h2>
 <p><strong>What You Learned</strong>:</p>
 <ul>
 <li>✅ Confusion matrix: TP, TN, FP, FN</li>
@@ -2768,7 +3131,7 @@ println!(&quot;F1 Score:  {:.3}&quot;, f1);    // e.g., 0.892
 <em>Test file: tests/integration.rs + src/model_selection/mod.rs tests</em></p>
 <!-- DOC_STATUS_END -->
 <hr />
-<h2 id="overview-6"><a class="header" href="#overview-6">Overview</a></h2>
+<h2 id="overview-7"><a class="header" href="#overview-7">Overview</a></h2>
 <p>Cross-validation estimates how well a model generalizes to unseen data by systematically testing on held-out portions of the training set. It's the gold standard for model evaluation.</p>
 <p><strong>Key Concepts</strong>:</p>
 <ul>
@@ -2779,7 +3142,7 @@ println!(&quot;F1 Score:  {:.3}&quot;, f1);    // e.g., 0.892
 <p><strong>Why This Matters</strong>:
 Using training accuracy to evaluate a model is like grading your own exam. Cross-validation provides an honest estimate of real-world performance.</p>
 <hr />
-<h2 id="mathematical-foundation-5"><a class="header" href="#mathematical-foundation-5">Mathematical Foundation</a></h2>
+<h2 id="mathematical-foundation-6"><a class="header" href="#mathematical-foundation-6">Mathematical Foundation</a></h2>
 <h3 id="the-k-fold-algorithm"><a class="header" href="#the-k-fold-algorithm">The K-Fold Algorithm</a></h3>
 <ol>
 <li><strong>Partition</strong> data into K equal-sized folds: D₁, D₂, ..., Dₖ</li>
@@ -2800,7 +3163,7 @@ Using training accuracy to evaluate a model is like grading your own exam. Cross
 <li>K=n: Leave-One-Out CV (LOOCV) - expensive but low variance</li>
 </ul>
 <hr />
-<h2 id="implementation-in-aprender-5"><a class="header" href="#implementation-in-aprender-5">Implementation in Aprender</a></h2>
+<h2 id="implementation-in-aprender-6"><a class="header" href="#implementation-in-aprender-6">Implementation in Aprender</a></h2>
 <h3 id="example-1-traintest-split"><a class="header" href="#example-1-traintest-split">Example 1: Train/Test Split</a></h3>
 <pre><code class="language-rust">use aprender::model_selection::train_test_split;
 use aprender::primitives::{Matrix, Vector};
@@ -2837,7 +3200,7 @@ println!(&quot;Std dev: {:.3}&quot;, result.std());         // e.g., 0.042</code
 <strong>Property 3</strong>: Union of all folds = complete dataset</p>
 <p>These are verified in the comprehensive test suite. See <strong>Case Study</strong> for full property tests.</p>
 <hr />
-<h2 id="practical-considerations-5"><a class="header" href="#practical-considerations-5">Practical Considerations</a></h2>
+<h2 id="practical-considerations-6"><a class="header" href="#practical-considerations-6">Practical Considerations</a></h2>
 <h3 id="when-to-use"><a class="header" href="#when-to-use">When to Use</a></h3>
 <ul>
 <li>
@@ -2879,7 +3242,7 @@ println!(&quot;Std dev: {:.3}&quot;, result.std());         // e.g., 0.042</code
 </li>
 </ol>
 <hr />
-<h2 id="real-world-application-5"><a class="header" href="#real-world-application-5">Real-World Application</a></h2>
+<h2 id="real-world-application-6"><a class="header" href="#real-world-application-6">Real-World Application</a></h2>
 <p><strong>Case Study Reference</strong>: See <a href="ml-fundamentals/../examples/cross-validation.html">Case Study: Cross-Validation</a> for <strong>complete implementation</strong> showing:</p>
 <ul>
 <li>Full RED-GREEN-REFACTOR workflow</li>
@@ -2890,7 +3253,7 @@ println!(&quot;Std dev: {:.3}&quot;, result.std());         // e.g., 0.042</code
 </ul>
 <p><strong>Key Takeaway</strong>: The case study shows EXTREME TDD in action - every requirement becomes a test first.</p>
 <hr />
-<h2 id="further-reading-5"><a class="header" href="#further-reading-5">Further Reading</a></h2>
+<h2 id="further-reading-6"><a class="header" href="#further-reading-6">Further Reading</a></h2>
 <h3 id="peer-reviewed-paper-2"><a class="header" href="#peer-reviewed-paper-2">Peer-Reviewed Paper</a></h3>
 <p><strong>Kohavi (1995)</strong> - <em>A Study of Cross-Validation and Bootstrap for Accuracy Estimation and Model Selection</em></p>
 <ul>
@@ -2899,14 +3262,14 @@ println!(&quot;Std dev: {:.3}&quot;, result.std());         // e.g., 0.042</code
 <li><strong>Key Finding</strong>: K=10 optimal for bias-variance tradeoff</li>
 <li><strong>Applied in</strong>: <code>src/model_selection/mod.rs</code></li>
 </ul>
-<h3 id="related-chapters-5"><a class="header" href="#related-chapters-5">Related Chapters</a></h3>
+<h3 id="related-chapters-6"><a class="header" href="#related-chapters-6">Related Chapters</a></h3>
 <ul>
 <li><a href="ml-fundamentals/./linear-regression.html">Linear Regression Theory</a> - Model to evaluate with CV</li>
 <li><a href="ml-fundamentals/./regression-metrics.html">Regression Metrics Theory</a> - Scores used in CV</li>
 <li><a href="ml-fundamentals/../examples/cross-validation.html">Case Study: Cross-Validation</a> - <strong>REQUIRED READING</strong></li>
 </ul>
 <hr />
-<h2 id="summary-7"><a class="header" href="#summary-7">Summary</a></h2>
+<h2 id="summary-8"><a class="header" href="#summary-8">Summary</a></h2>
 <p><strong>What You Learned</strong>:</p>
 <ul>
 <li>✅ K-Fold algorithm: train on K-1 folds, test on 1</li>
@@ -3541,7 +3904,7 @@ $ git log --oneline | head -5
 e872111 feat: cross-validation - Add automated cross_validate (COMPLETE)
 dbd9a2d feat: cross-validation - Implement train_test_split and KFold
 </code></pre>
-<h2 id="summary-8"><a class="header" href="#summary-8">Summary</a></h2>
+<h2 id="summary-9"><a class="header" href="#summary-9">Summary</a></h2>
 <p>This case study demonstrates EXTREME TDD in production:</p>
 <ul>
 <li><strong>RED</strong>: 12 tests written first</li>
@@ -4131,7 +4494,7 @@ Optimize serialization for large models</p>
 </li>
 </ol>
 <hr />
-<h2 id="summary-9"><a class="header" href="#summary-9">Summary</a></h2>
+<h2 id="summary-10"><a class="header" href="#summary-10">Summary</a></h2>
 <p><strong>Key Takeaways:</strong></p>
 <ol>
 <li>✅ <strong>Write tests first</strong> - Caught header bug before production</li>
@@ -4209,7 +4572,7 @@ following EXTREME TDD principles.</p>
 </ol>
 <hr />
 <p>📝 <strong>This chapter demonstrates binary classification using Logistic Regression.</strong></p>
-<h2 id="overview-7"><a class="header" href="#overview-7">Overview</a></h2>
+<h2 id="overview-8"><a class="header" href="#overview-8">Overview</a></h2>
 <p>Logistic Regression is a fundamental classification algorithm that uses the sigmoid function to model the probability of binary outcomes. This case study demonstrates the RED-GREEN-REFACTOR cycle for implementing a production-quality classifier.</p>
 <h2 id="red-phase-writing-failing-tests"><a class="header" href="#red-phase-writing-failing-tests">RED Phase: Writing Failing Tests</a></h2>
 <p>Following EXTREME TDD principles, we begin by writing comprehensive tests before implementation:</p>
@@ -4874,7 +5237,7 @@ in aprender, following EXTREME TDD principles.</p>
 <li><a href="appendix/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
 <li><a href="appendix/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
 </ul>
-<div style="break-before: page; page-break-before: always;"></div><h1 id="further-reading-6"><a class="header" href="#further-reading-6">Further Reading</a></h1>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="further-reading-7"><a class="header" href="#further-reading-7">Further Reading</a></h1>
 <p>📝 <strong>This chapter is under construction.</strong></p>
 <p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
 <p><strong>See also:</strong></p>
