@@ -9,7 +9,7 @@
 
 ## 📊 PROGRESS TRACKER (Update this section after each work session)
 
-**Overall Progress**: 12/15 tasks (80.0%)
+**Overall Progress**: 13/15 tasks (86.7%)
 
 ### Phase 1: Foundation (5/5 tasks = 100%) ✅ COMPLETE
 - ✅ [1/5] Create directory structure - `book/src/ml-fundamentals/`, `tests/book/` (100%)
@@ -86,7 +86,7 @@
   - DOC_STATUS: ✅ 100% Working
   - Leverages existing extensive test suite
 
-### Phase 3: Advanced Topics (1/3 = 33.3%)
+### Phase 3: Advanced Topics (2/3 = 66.7%)
 - ✅ [12/15] Decision Trees Theory (100%)
   - Wrote comprehensive theory chapter (442 lines)
   - CART algorithm explanation (Classification And Regression Trees)
@@ -99,7 +99,21 @@
   - Peer-reviewed citations (Breiman et al. 1984, Quinlan 1986)
   - DOC_STATUS: ✅ 100% Working
   - 15+ tests in src/tree/mod.rs
-- ⬜ [13/15] Ensemble Methods Theory (0%)
+- ✅ [13/15] Ensemble Methods Theory (100%)
+  - Wrote comprehensive theory chapter (462 lines)
+  - Ensemble principle: many weak learners → strong learner
+  - Bagging (Bootstrap Aggregating) algorithm
+  - Random Forests: bagging + feature randomness
+  - Variance reduction: Var(ensemble) ≈ Var(single) / N
+  - Bootstrap sampling: ~37% out-of-bag probability analysis
+  - OOB score: free validation estimate
+  - Hyperparameter tuning (n_trees, max_depth, max_features)
+  - Feature importance computation
+  - Comparison: Single Tree vs Random Forest (+5-15% accuracy)
+  - Real-world examples (cancer detection, credit risk)
+  - Peer-reviewed citations (Breiman 2001, Dietterich 2000)
+  - DOC_STATUS: ✅ 100% Working
+  - 7+ tests in src/tree/mod.rs
 - ⬜ [14/15] K-Means Clustering Theory (0%)
 
 ### Phase 4: Integration (0/1 = 0%)
