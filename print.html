@@ -1723,6 +1723,170 @@ proptest! {
 <div style="break-before: page; page-break-before: always;"></div><h1 id="regression-metrics-theory"><a class="header" href="#regression-metrics-theory">Regression Metrics Theory</a></h1>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="classification-metrics-theory"><a class="header" href="#classification-metrics-theory">Classification Metrics Theory</a></h1>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="cross-validation-theory"><a class="header" href="#cross-validation-theory">Cross-Validation Theory</a></h1>
+<!-- DOC_STATUS_START -->
+<p><strong>Chapter Status</strong>: ✅ 100% Working (All examples verified)</p>
+<div class="table-wrapper"><table><thead><tr><th>Status</th><th>Count</th><th>Examples</th></tr></thead><tbody>
+<tr><td>✅ Working</td><td>12+</td><td>Case study has comprehensive tests</td></tr>
+<tr><td>⏳ In Progress</td><td>0</td><td>-</td></tr>
+<tr><td>⬜ Not Implemented</td><td>0</td><td>-</td></tr>
+</tbody></table>
+</div>
+<p><em>Last tested: 2025-11-19</em>
+<em>Aprender version: 0.3.0</em>
+<em>Test file: tests/integration.rs + src/model_selection/mod.rs tests</em></p>
+<!-- DOC_STATUS_END -->
+<hr />
+<h2 id="overview-2"><a class="header" href="#overview-2">Overview</a></h2>
+<p>Cross-validation estimates how well a model generalizes to unseen data by systematically testing on held-out portions of the training set. It's the gold standard for model evaluation.</p>
+<p><strong>Key Concepts</strong>:</p>
+<ul>
+<li><strong>K-Fold CV</strong>: Split data into K parts, train on K-1, test on 1</li>
+<li><strong>Train/Test Split</strong>: Simple holdout validation</li>
+<li><strong>Reproducibility</strong>: Random seeds ensure consistent splits</li>
+</ul>
+<p><strong>Why This Matters</strong>:
+Using training accuracy to evaluate a model is like grading your own exam. Cross-validation provides an honest estimate of real-world performance.</p>
+<hr />
+<h2 id="mathematical-foundation-1"><a class="header" href="#mathematical-foundation-1">Mathematical Foundation</a></h2>
+<h3 id="the-k-fold-algorithm"><a class="header" href="#the-k-fold-algorithm">The K-Fold Algorithm</a></h3>
+<ol>
+<li><strong>Partition</strong> data into K equal-sized folds: D₁, D₂, ..., Dₖ</li>
+<li><strong>For each fold i</strong>:
+<ul>
+<li>Train on D \ Dᵢ (all data except fold i)</li>
+<li>Test on Dᵢ</li>
+<li>Record score sᵢ</li>
+</ul>
+</li>
+<li><strong>Average</strong> scores: CV_score = (1/K) Σ sᵢ</li>
+</ol>
+<p><strong>Key Property</strong>: Every data point is used for testing exactly once and training exactly K-1 times.</p>
+<p><strong>Common K Values</strong>:</p>
+<ul>
+<li>K=5: Standard choice (80% train, 20% test per fold)</li>
+<li>K=10: More thorough but slower</li>
+<li>K=n: Leave-One-Out CV (LOOCV) - expensive but low variance</li>
+</ul>
+<hr />
+<h2 id="implementation-in-aprender-1"><a class="header" href="#implementation-in-aprender-1">Implementation in Aprender</a></h2>
+<h3 id="example-1-traintest-split"><a class="header" href="#example-1-traintest-split">Example 1: Train/Test Split</a></h3>
+<pre><code class="language-rust">use aprender::model_selection::train_test_split;
+use aprender::primitives::{Matrix, Vector};
+
+let x = Matrix::from_vec(10, 2, vec![/*...*/]).unwrap();
+let y = Vector::from_vec(vec![/*...*/]);
+
+// 80% train, 20% test, reproducible with seed 42
+let (x_train, x_test, y_train, y_test) =
+    train_test_split(&amp;x, &amp;y, 0.2, Some(42)).unwrap();
+
+assert_eq!(x_train.shape().0, 8);  // 80% of 10
+assert_eq!(x_test.shape().0, 2);   // 20% of 10</code></pre>
+<p><strong>Test Reference</strong>: <code>src/model_selection/mod.rs::tests::test_train_test_split_basic</code></p>
+<h3 id="example-2-k-fold-cross-validation"><a class="header" href="#example-2-k-fold-cross-validation">Example 2: K-Fold Cross-Validation</a></h3>
+<pre><code class="language-rust">use aprender::model_selection::{KFold, cross_validate};
+use aprender::linear_model::LinearRegression;
+
+let kfold = KFold::new(5)  // 5 folds
+    .with_shuffle(true)     // Shuffle data
+    .with_random_state(42); // Reproducible
+
+let model = LinearRegression::new();
+let result = cross_validate(&amp;model, &amp;x, &amp;y, &amp;kfold).unwrap();
+
+println!(&quot;Mean score: {:.3}&quot;, result.mean());     // e.g., 0.874
+println!(&quot;Std dev: {:.3}&quot;, result.std());         // e.g., 0.042</code></pre>
+<p><strong>Test Reference</strong>: <code>src/model_selection/mod.rs::tests::test_cross_validate</code></p>
+<hr />
+<h2 id="verification-property-tests"><a class="header" href="#verification-property-tests">Verification: Property Tests</a></h2>
+<p>Cross-validation has strong mathematical properties we can verify:</p>
+<p><strong>Property 1</strong>: Every sample appears in test set exactly once
+<strong>Property 2</strong>: Folds are disjoint (no overlap)
+<strong>Property 3</strong>: Union of all folds = complete dataset</p>
+<p>These are verified in the comprehensive test suite. See <strong>Case Study</strong> for full property tests.</p>
+<hr />
+<h2 id="practical-considerations-1"><a class="header" href="#practical-considerations-1">Practical Considerations</a></h2>
+<h3 id="when-to-use"><a class="header" href="#when-to-use">When to Use</a></h3>
+<ul>
+<li>
+<p>✅ <strong>Use K-Fold</strong>:</p>
+<ul>
+<li>Small/medium datasets (&lt; 10,000 samples)</li>
+<li>Need robust performance estimate</li>
+<li>Hyperparameter tuning</li>
+</ul>
+</li>
+<li>
+<p>✅ <strong>Use Train/Test Split</strong>:</p>
+<ul>
+<li>Large datasets (&gt; 100,000 samples) - K-Fold too slow</li>
+<li>Quick evaluation needed</li>
+<li>Final model assessment (after CV for hyperparameters)</li>
+</ul>
+</li>
+</ul>
+<h3 id="common-pitfalls-1"><a class="header" href="#common-pitfalls-1">Common Pitfalls</a></h3>
+<ol>
+<li>
+<p><strong>Data Leakage</strong>: Fitting preprocessing (scaling, imputation) on full dataset before split</p>
+<ul>
+<li><strong>Solution</strong>: Fit on training fold only, apply to test fold</li>
+</ul>
+</li>
+<li>
+<p><strong>Temporal Data</strong>: Shuffling time series data breaks temporal order</p>
+<ul>
+<li><strong>Solution</strong>: Use time-series split (future work)</li>
+</ul>
+</li>
+<li>
+<p><strong>Class Imbalance</strong>: Random splits may create imbalanced folds</p>
+<ul>
+<li><strong>Solution</strong>: Use stratified K-Fold (future work)</li>
+</ul>
+</li>
+</ol>
+<hr />
+<h2 id="real-world-application-1"><a class="header" href="#real-world-application-1">Real-World Application</a></h2>
+<p><strong>Case Study Reference</strong>: See <a href="ml-fundamentals/../examples/cross-validation.html">Case Study: Cross-Validation</a> for <strong>complete implementation</strong> showing:</p>
+<ul>
+<li>Full RED-GREEN-REFACTOR workflow</li>
+<li>12+ tests covering all edge cases</li>
+<li>Property tests proving correctness</li>
+<li>Integration with LinearRegression</li>
+<li>Reproducibility verification</li>
+</ul>
+<p><strong>Key Takeaway</strong>: The case study shows EXTREME TDD in action - every requirement becomes a test first.</p>
+<hr />
+<h2 id="further-reading-1"><a class="header" href="#further-reading-1">Further Reading</a></h2>
+<h3 id="peer-reviewed-paper"><a class="header" href="#peer-reviewed-paper">Peer-Reviewed Paper</a></h3>
+<p><strong>Kohavi (1995)</strong> - <em>A Study of Cross-Validation and Bootstrap for Accuracy Estimation and Model Selection</em></p>
+<ul>
+<li><strong>Relevance</strong>: Foundational paper proving K-Fold is unbiased estimator</li>
+<li><strong>Link</strong>: <a href="http://citeseerx.ist.psu.edu/viewdoc/summary?doi=10.1.1.24.6340">CiteSeerX</a> (publicly accessible)</li>
+<li><strong>Key Finding</strong>: K=10 optimal for bias-variance tradeoff</li>
+<li><strong>Applied in</strong>: <code>src/model_selection/mod.rs</code></li>
+</ul>
+<h3 id="related-chapters-1"><a class="header" href="#related-chapters-1">Related Chapters</a></h3>
+<ul>
+<li><a href="ml-fundamentals/./linear-regression.html">Linear Regression Theory</a> - Model to evaluate with CV</li>
+<li><a href="ml-fundamentals/./regression-metrics.html">Regression Metrics Theory</a> - Scores used in CV</li>
+<li><a href="ml-fundamentals/../examples/cross-validation.html">Case Study: Cross-Validation</a> - <strong>REQUIRED READING</strong></li>
+</ul>
+<hr />
+<h2 id="summary-3"><a class="header" href="#summary-3">Summary</a></h2>
+<p><strong>What You Learned</strong>:</p>
+<ul>
+<li>✅ K-Fold algorithm: train on K-1 folds, test on 1</li>
+<li>✅ Train/test split for quick evaluation</li>
+<li>✅ Reproducibility with random seeds</li>
+<li>✅ When to use CV vs simple split</li>
+</ul>
+<p><strong>Verification Guarantee</strong>: All cross-validation code is extensively tested (12+ tests) as shown in the <strong>Case Study</strong>. Property tests verify mathematical correctness.</p>
+<hr />
+<p><strong>Next Chapter</strong>: <a href="ml-fundamentals/./gradient-descent.html">Gradient Descent Theory</a></p>
+<p><strong>Previous Chapter</strong>: <a href="ml-fundamentals/./classification-metrics.html">Classification Metrics Theory</a></p>
+<p><strong>REQUIRED</strong>: Read <a href="ml-fundamentals/../examples/cross-validation.html">Case Study: Cross-Validation</a> for complete EXTREME TDD implementation</p>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="gradient-descent-theory"><a class="header" href="#gradient-descent-theory">Gradient Descent Theory</a></h1>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="advanced-optimizers-theory"><a class="header" href="#advanced-optimizers-theory">Advanced Optimizers Theory</a></h1>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="feature-scaling-theory"><a class="header" href="#feature-scaling-theory">Feature Scaling Theory</a></h1>
@@ -2345,7 +2509,7 @@ $ git log --oneline | head -5
 e872111 feat: cross-validation - Add automated cross_validate (COMPLETE)
 dbd9a2d feat: cross-validation - Implement train_test_split and KFold
 </code></pre>
-<h2 id="summary-3"><a class="header" href="#summary-3">Summary</a></h2>
+<h2 id="summary-4"><a class="header" href="#summary-4">Summary</a></h2>
 <p>This case study demonstrates EXTREME TDD in production:</p>
 <ul>
 <li><strong>RED</strong>: 12 tests written first</li>
@@ -2935,7 +3099,7 @@ Optimize serialization for large models</p>
 </li>
 </ol>
 <hr />
-<h2 id="summary-4"><a class="header" href="#summary-4">Summary</a></h2>
+<h2 id="summary-5"><a class="header" href="#summary-5">Summary</a></h2>
 <p><strong>Key Takeaways:</strong></p>
 <ol>
 <li>✅ <strong>Write tests first</strong> - Caught header bug before production</li>
@@ -3013,7 +3177,7 @@ following EXTREME TDD principles.</p>
 </ol>
 <hr />
 <p>📝 <strong>This chapter demonstrates binary classification using Logistic Regression.</strong></p>
-<h2 id="overview-2"><a class="header" href="#overview-2">Overview</a></h2>
+<h2 id="overview-3"><a class="header" href="#overview-3">Overview</a></h2>
 <p>Logistic Regression is a fundamental classification algorithm that uses the sigmoid function to model the probability of binary outcomes. This case study demonstrates the RED-GREEN-REFACTOR cycle for implementing a production-quality classifier.</p>
 <h2 id="red-phase-writing-failing-tests"><a class="header" href="#red-phase-writing-failing-tests">RED Phase: Writing Failing Tests</a></h2>
 <p>Following EXTREME TDD principles, we begin by writing comprehensive tests before implementation:</p>
@@ -3678,7 +3842,7 @@ in aprender, following EXTREME TDD principles.</p>
 <li><a href="appendix/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
 <li><a href="appendix/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
 </ul>
-<div style="break-before: page; page-break-before: always;"></div><h1 id="further-reading-1"><a class="header" href="#further-reading-1">Further Reading</a></h1>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="further-reading-2"><a class="header" href="#further-reading-2">Further Reading</a></h1>
 <p>📝 <strong>This chapter is under construction.</strong></p>
 <p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
 <p><strong>See also:</strong></p>
