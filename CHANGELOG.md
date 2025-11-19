@@ -7,6 +7,80 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2025-11-19
+
+### Added
+
+#### SafeTensors Model Serialization - Complete Coverage (Issue #8)
+
+**All 7 remaining models now support SafeTensors format**:
+
+- **Ridge** (linear_model)
+  - `Ridge::save_safetensors()` / `Ridge::load_safetensors()`
+  - Serializes: coefficients, intercept, alpha hyperparameter
+  - 11 comprehensive tests (roundtrip, metadata, multiple cycles, R² preservation)
+
+- **Lasso** (linear_model)
+  - `Lasso::save_safetensors()` / `Lasso::load_safetensors()`
+  - Serializes: coefficients, intercept, alpha, max_iter, tol
+  - 12 comprehensive tests including sparsity preservation
+  - Validates L1 regularization produces zero coefficients
+
+- **ElasticNet** (linear_model)
+  - `ElasticNet::save_safetensors()` / `ElasticNet::load_safetensors()`
+  - Serializes: coefficients, intercept, alpha, l1_ratio, max_iter, tol
+  - 12 comprehensive tests including L1/L2 mix validation
+  - Tests l1_ratio extremes (0.0=Ridge, 0.5=balanced, 1.0=Lasso)
+
+- **DecisionTreeClassifier** (tree)
+  - `DecisionTreeClassifier::save_safetensors()` / `DecisionTreeClassifier::load_safetensors()`
+  - Serializes: Tree structure flattened to 6 parallel arrays via pre-order traversal
+  - Arrays: node_features, node_thresholds, node_classes, node_samples, node_left_child, node_right_child
+  - 11 comprehensive tests including deep trees (10+ levels), single leaf edge case
+  - Preserves exact tree structure and decision boundaries
+
+- **RandomForestClassifier** (tree)
+  - `RandomForestClassifier::save_safetensors()` / `RandomForestClassifier::load_safetensors()`
+  - Serializes: Multiple trees with index prefixes (tree_0_, tree_1_, etc.)
+  - Each tree: 7 tensors (6 structure arrays + max_depth)
+  - Hyperparameters: n_estimators, max_depth, random_state
+  - 12 comprehensive tests including large ensembles (20 trees)
+  - Preserves voting behavior through exact tree reconstruction
+
+- **KMeans** (cluster)
+  - `KMeans::save_safetensors()` / `KMeans::load_safetensors()`
+  - Serializes: Centroids matrix (k × d), hyperparameters (n_clusters, max_iter, tol, random_state)
+  - Metadata: inertia (within-cluster sum of squares), n_iter
+  - 13 comprehensive tests including high-dimensional data (5 features)
+  - Preserves exact centroid positions for reproducible cluster assignments
+
+- **StandardScaler** (preprocessing)
+  - `StandardScaler::save_safetensors()` / `StandardScaler::load_safetensors()`
+  - Serializes: Mean vector, std vector, with_mean flag, with_std flag
+  - 14 comprehensive tests including inverse transform preservation
+  - Tests all configurations (center only, scale only, both, neither/identity)
+  - Preserves exact scaling parameters for reproducible transformations
+
+**Key Technical Achievements**:
+- Tree serialization via pre-order traversal (eliminates recursion in storage)
+- Shared helper functions (flatten_tree_node, reconstruct_tree_node) for code reuse
+- Ensemble serialization with index prefixes for multiple models
+- Matrix serialization with shape metadata for multi-dimensional data
+- Boolean flags encoded as floats (1.0/0.0) for SafeTensors compatibility
+
+**Test Coverage**:
+- Total: +85 SafeTensors tests across 7 models
+- All tests passing (100% success rate)
+- Property tests: idempotency, preservation of scores/predictions/inertia
+- Edge cases: unfitted models, corrupted files, nonexistent files
+
+**Cross-Platform Compatibility**:
+- Compatible with HuggingFace ecosystem
+- Compatible with PyTorch, TensorFlow via SafeTensors
+- Compatible with realizar inference engine
+- Enables Rust → Python, Python → Rust model deployment
+- Eliminates pickle security vulnerabilities
+
 ## [0.3.0] - 2025-11-19
 
 ### Added
