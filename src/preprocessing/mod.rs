@@ -27,6 +27,7 @@
 use crate::primitives::Matrix;
 use crate::traits::Transformer;
 use serde::{Deserialize, Serialize};
+use std::path::Path;
 
 /// Standardizes features by removing mean and scaling to unit variance.
 ///
@@ -173,6 +174,99 @@ impl StandardScaler {
         }
 
         Matrix::from_vec(n_samples, n_features, result)
+    }
+
+    /// Saves the StandardScaler to a SafeTensors file.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Path where the SafeTensors file will be saved
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the scaler is unfitted or if saving fails.
+    pub fn save_safetensors<P: AsRef<Path>>(&self, path: P) -> Result<(), String> {
+        use crate::serialization::safetensors;
+        use std::collections::BTreeMap;
+
+        // Check if scaler is fitted
+        let mean = self
+            .mean
+            .as_ref()
+            .ok_or("Cannot save unfitted scaler. Call fit() first.")?;
+        let std = self
+            .std
+            .as_ref()
+            .ok_or("Cannot save unfitted scaler. Call fit() first.")?;
+
+        let mut tensors = BTreeMap::new();
+
+        // Save mean and std vectors
+        tensors.insert("mean".to_string(), (mean.clone(), vec![mean.len()]));
+        tensors.insert("std".to_string(), (std.clone(), vec![std.len()]));
+
+        // Save hyperparameters as scalars
+        let with_mean_val = if self.with_mean { 1.0 } else { 0.0 };
+        tensors.insert("with_mean".to_string(), (vec![with_mean_val], vec![1]));
+
+        let with_std_val = if self.with_std { 1.0 } else { 0.0 };
+        tensors.insert("with_std".to_string(), (vec![with_std_val], vec![1]));
+
+        safetensors::save_safetensors(path, tensors)?;
+        Ok(())
+    }
+
+    /// Loads a StandardScaler from a SafeTensors file.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Path to the SafeTensors file
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if loading fails or if the file format is invalid.
+    pub fn load_safetensors<P: AsRef<Path>>(path: P) -> Result<Self, String> {
+        use crate::serialization::safetensors;
+
+        // Load SafeTensors file
+        let (metadata, raw_data) = safetensors::load_safetensors(path)?;
+
+        // Extract mean tensor
+        let mean_meta = metadata
+            .get("mean")
+            .ok_or("Missing 'mean' tensor in SafeTensors file")?;
+        let mean = safetensors::extract_tensor(&raw_data, mean_meta)?;
+
+        // Extract std tensor
+        let std_meta = metadata
+            .get("std")
+            .ok_or("Missing 'std' tensor in SafeTensors file")?;
+        let std = safetensors::extract_tensor(&raw_data, std_meta)?;
+
+        // Verify mean and std have same length
+        if mean.len() != std.len() {
+            return Err("Mean and std vectors have different lengths".to_string());
+        }
+
+        // Load hyperparameters
+        let with_mean_meta = metadata
+            .get("with_mean")
+            .ok_or("Missing 'with_mean' tensor")?;
+        let with_mean_data = safetensors::extract_tensor(&raw_data, with_mean_meta)?;
+        let with_mean = with_mean_data[0] > 0.5;
+
+        let with_std_meta = metadata
+            .get("with_std")
+            .ok_or("Missing 'with_std' tensor")?;
+        let with_std_data = safetensors::extract_tensor(&raw_data, with_std_meta)?;
+        let with_std = with_std_data[0] > 0.5;
+
+        Ok(Self {
+            mean: Some(mean),
+            std: Some(std),
+            with_mean,
+            with_std,
+        })
     }
 }
 
