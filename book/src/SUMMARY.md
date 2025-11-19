@@ -94,6 +94,14 @@
 
 - [Feature Scaling Theory](./ml-fundamentals/feature-scaling.md)
 
+## Graph Algorithms
+
+- [Graph Algorithms Theory](./ml-fundamentals/graph-algorithms.md)
+
+## Statistics
+
+- [Descriptive Statistics Theory](./ml-fundamentals/descriptive-statistics.md)
+
 # Real-World Examples from Aprender
 
 - [Case Study: Linear Regression](./examples/linear-regression.md)
@@ -109,6 +117,8 @@
 - [Case Study: Regularized Regression](./examples/regularized-regression.md)
 - [Case Study: Optimizer Demo](./examples/optimizer-demo.md)
 - [Case Study: DataFrame Basics](./examples/dataframe-basics.md)
+- [Case Study: Graph Social Network](./examples/graph-social-network.md)
+- [Case Study: Descriptive Statistics](./examples/descriptive-statistics.md)
 
 # Sprint-Based Development
 

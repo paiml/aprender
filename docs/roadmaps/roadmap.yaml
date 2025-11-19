@@ -17,3 +17,55 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
+- id: GH-10
+  github_issue: 10
+  item_type: task
+  title: Add Graph and Statistics Examples (cargo examples + book chapters)
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2025-11-19T11:51:12.022014868+00:00
+  updated: 2025-11-19T11:51:12.022014868+00:00
+  spec: null
+  acceptance_criteria:
+  - '`examples/graph_social_network.rs` implemented and tested'
+  - '`examples/descriptive_statistics.rs` implemented and tested'
+  - '`book/src/ml-fundamentals/graph-algorithms.md` written'
+  - '`book/src/ml-fundamentals/descriptive-statistics.md` written'
+  - '`book/src/examples/graph-social-network.md` written'
+  - '`book/src/examples/descriptive-statistics.md` written'
+  - '`book/src/SUMMARY.md` updated'
+  - '`cargo run --example graph_social_network` works'
+  - '`cargo run --example descriptive_statistics` works'
+  - '`mdbook test` passes'
+  - All examples in CI
+  - Zero clippy warnings
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - documentation
+  - enhancement
+- id: GH-11
+  github_issue: 11
+  item_type: task
+  title: Add Graph and Statistics Book Chapters
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2025-11-19T11:58:39.815125498+00:00
+  updated: 2025-11-19T11:58:39.815125498+00:00
+  spec: null
+  acceptance_criteria:
+  - book/src/ml-fundamentals/graph-algorithms.md written
+  - book/src/ml-fundamentals/descriptive-statistics.md written
+  - book/src/examples/graph-social-network.md written
+  - book/src/examples/descriptive-statistics.md written
+  - book/src/SUMMARY.md updated
+  - '`mdbook test` passes'
+  - Zero clippy warnings
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - documentation
