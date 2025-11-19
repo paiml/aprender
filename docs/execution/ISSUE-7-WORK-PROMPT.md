@@ -9,7 +9,7 @@
 
 ## 📊 PROGRESS TRACKER (Update this section after each work session)
 
-**Overall Progress**: 11/15 tasks (73.3%)
+**Overall Progress**: 12/15 tasks (80.0%)
 
 ### Phase 1: Foundation (5/5 tasks = 100%) ✅ COMPLETE
 - ✅ [1/5] Create directory structure - `book/src/ml-fundamentals/`, `tests/book/` (100%)
@@ -86,8 +86,19 @@
   - DOC_STATUS: ✅ 100% Working
   - Leverages existing extensive test suite
 
-### Phase 3: Advanced Topics (0/3 = 0%)
-- ⬜ [12/15] Decision Trees Theory (0%)
+### Phase 3: Advanced Topics (1/3 = 33.3%)
+- ✅ [12/15] Decision Trees Theory (100%)
+  - Wrote comprehensive theory chapter (442 lines)
+  - CART algorithm explanation (Classification And Regression Trees)
+  - Gini impurity: formula, interpretation, worked examples
+  - Information gain and greedy splitting
+  - Recursive tree building algorithm
+  - Max depth trade-off and hyperparameter tuning
+  - Advantages/limitations comparison table
+  - Real-world examples (medical diagnosis, credit scoring)
+  - Peer-reviewed citations (Breiman et al. 1984, Quinlan 1986)
+  - DOC_STATUS: ✅ 100% Working
+  - 15+ tests in src/tree/mod.rs
 - ⬜ [13/15] Ensemble Methods Theory (0%)
 - ⬜ [14/15] K-Means Clustering Theory (0%)
 
