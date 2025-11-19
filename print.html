@@ -1717,6 +1717,221 @@ proptest! {
 <p><strong>Previous Chapter</strong>: <a href="ml-fundamentals/../toyota-way/respect-for-people.html">Toyota Way: Respect for People</a></p>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="regularization-theory"><a class="header" href="#regularization-theory">Regularization Theory</a></h1>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="logistic-regression-theory"><a class="header" href="#logistic-regression-theory">Logistic Regression Theory</a></h1>
+<!-- DOC_STATUS_START -->
+<p><strong>Chapter Status</strong>: ✅ 100% Working (All examples verified)</p>
+<div class="table-wrapper"><table><thead><tr><th>Status</th><th>Count</th><th>Examples</th></tr></thead><tbody>
+<tr><td>✅ Working</td><td>5+</td><td>All verified by tests + SafeTensors</td></tr>
+<tr><td>⏳ In Progress</td><td>0</td><td>-</td></tr>
+<tr><td>⬜ Not Implemented</td><td>0</td><td>-</td></tr>
+</tbody></table>
+</div>
+<p><em>Last tested: 2025-11-19</em>
+<em>Aprender version: 0.3.0</em>
+<em>Test file: src/classification/mod.rs tests + SafeTensors tests</em></p>
+<!-- DOC_STATUS_END -->
+<hr />
+<h2 id="overview-2"><a class="header" href="#overview-2">Overview</a></h2>
+<p>Logistic regression is the foundation of binary classification. Despite its name, it's a <strong>classification</strong> algorithm that predicts probabilities using the logistic (sigmoid) function.</p>
+<p><strong>Key Concepts</strong>:</p>
+<ul>
+<li><strong>Sigmoid function</strong>: Maps any value to [0, 1] probability</li>
+<li><strong>Binary classification</strong>: Predict class 0 or 1</li>
+<li><strong>Gradient descent</strong>: Iterative optimization (no closed-form)</li>
+</ul>
+<p><strong>Why This Matters</strong>:
+Logistic regression powers countless applications: spam detection, medical diagnosis, credit scoring. It's interpretable, fast, and surprisingly effective.</p>
+<hr />
+<h2 id="mathematical-foundation-1"><a class="header" href="#mathematical-foundation-1">Mathematical Foundation</a></h2>
+<h3 id="the-sigmoid-function"><a class="header" href="#the-sigmoid-function">The Sigmoid Function</a></h3>
+<p>The <strong>sigmoid</strong> (logistic) function squashes any real number to [0, 1]:</p>
+<pre><code>σ(z) = 1 / (1 + e^(-z))
+</code></pre>
+<p><strong>Properties</strong>:</p>
+<ul>
+<li>σ(0) = 0.5 (decision boundary)</li>
+<li>σ(+∞) → 1 (high confidence for class 1)</li>
+<li>σ(-∞) → 0 (high confidence for class 0)</li>
+</ul>
+<h3 id="logistic-regression-model"><a class="header" href="#logistic-regression-model">Logistic Regression Model</a></h3>
+<p>For input <strong>x</strong> and coefficients <strong>β</strong>:</p>
+<pre><code>P(y=1|x) = σ(β·x + intercept)
+         = 1 / (1 + e^(-(β·x + intercept)))
+</code></pre>
+<p><strong>Decision Rule</strong>: Predict class 1 if P(y=1|x) ≥ 0.5, else class 0</p>
+<h3 id="training-gradient-descent"><a class="header" href="#training-gradient-descent">Training: Gradient Descent</a></h3>
+<p>Unlike linear regression, there's <strong>no closed-form solution</strong>. We use gradient descent to minimize the <strong>binary cross-entropy loss</strong>:</p>
+<pre><code>Loss = -[y log(p) + (1-y) log(1-p)]
+</code></pre>
+<p>Where p = σ(β·x + intercept) is the predicted probability.</p>
+<p><strong>Test Reference</strong>: Implementation uses gradient descent in <code>src/classification/mod.rs</code></p>
+<hr />
+<h2 id="implementation-in-aprender-1"><a class="header" href="#implementation-in-aprender-1">Implementation in Aprender</a></h2>
+<h3 id="example-1-binary-classification"><a class="header" href="#example-1-binary-classification">Example 1: Binary Classification</a></h3>
+<pre><code class="language-rust">use aprender::classification::LogisticRegression;
+use aprender::primitives::{Matrix, Vector};
+
+// Binary classification data (linearly separable)
+let x = Matrix::from_vec(4, 2, vec![
+    1.0, 1.0,  // Class 0
+    1.0, 2.0,  // Class 0
+    3.0, 3.0,  // Class 1
+    3.0, 4.0,  // Class 1
+]).unwrap();
+let y = Vector::from_vec(vec![0.0, 0.0, 1.0, 1.0]);
+
+// Train with gradient descent
+let mut model = LogisticRegression::new()
+    .with_learning_rate(0.1)
+    .with_max_iter(1000)
+    .with_tol(1e-4);
+
+model.fit(&amp;x, &amp;y).unwrap();
+
+// Predict probabilities
+let x_test = Matrix::from_vec(1, 2, vec![2.0, 2.5]).unwrap();
+let proba = model.predict_proba(&amp;x_test);
+println!(&quot;P(class=1) = {:.3}&quot;, proba[0]); // e.g., 0.612</code></pre>
+<p><strong>Test Reference</strong>: <code>src/classification/mod.rs::tests::test_logistic_regression_fit</code></p>
+<h3 id="example-2-model-serialization-safetensors"><a class="header" href="#example-2-model-serialization-safetensors">Example 2: Model Serialization (SafeTensors)</a></h3>
+<p>Logistic regression models can be saved and loaded:</p>
+<pre><code class="language-rust">// Save model
+model.save_safetensors(&quot;model.safetensors&quot;).unwrap();
+
+// Load model (in production environment)
+let loaded = LogisticRegression::load_safetensors(&quot;model.safetensors&quot;).unwrap();
+
+// Predictions match exactly
+let proba_original = model.predict_proba(&amp;x_test);
+let proba_loaded = loaded.predict_proba(&amp;x_test);
+assert_eq!(proba_original[0], proba_loaded[0]); // Exact match</code></pre>
+<p><strong>Why This Matters</strong>: SafeTensors format is compatible with HuggingFace, PyTorch, TensorFlow, enabling cross-platform ML pipelines.</p>
+<p><strong>Test Reference</strong>: <code>src/classification/mod.rs::tests::test_save_load_safetensors_roundtrip</code></p>
+<p><strong>Case Study</strong>: See <a href="ml-fundamentals/../examples/logistic-regression.html">Case Study: Logistic Regression</a> for complete SafeTensors implementation (281 lines)</p>
+<hr />
+<h2 id="verification-through-tests"><a class="header" href="#verification-through-tests">Verification Through Tests</a></h2>
+<p>Logistic regression has comprehensive test coverage:</p>
+<p><strong>Core Functionality Tests</strong>:</p>
+<ul>
+<li>Fitting on linearly separable data</li>
+<li>Probability predictions in [0, 1]</li>
+<li>Decision boundary at 0.5 threshold</li>
+</ul>
+<p><strong>SafeTensors Tests</strong> (5 tests):</p>
+<ul>
+<li>Unfitted model error handling</li>
+<li>Save/load roundtrip</li>
+<li>Corrupted file handling</li>
+<li>Missing file error</li>
+<li><strong>Probability preservation</strong> (critical for classification)</li>
+</ul>
+<p>All tests passing ensures production readiness.</p>
+<hr />
+<h2 id="practical-considerations-1"><a class="header" href="#practical-considerations-1">Practical Considerations</a></h2>
+<h3 id="when-to-use-logistic-regression"><a class="header" href="#when-to-use-logistic-regression">When to Use Logistic Regression</a></h3>
+<ul>
+<li>
+<p>✅ <strong>Good for</strong>:</p>
+<ul>
+<li>Binary classification (2 classes)</li>
+<li>Interpretable coefficients (feature importance)</li>
+<li>Probability estimates needed</li>
+<li>Linearly separable data</li>
+</ul>
+</li>
+<li>
+<p>❌ <strong>Not good for</strong>:</p>
+<ul>
+<li>Non-linear decision boundaries (use kernels or neural nets)</li>
+<li>Multi-class classification (use softmax regression)</li>
+<li>Imbalanced classes without adjustment</li>
+</ul>
+</li>
+</ul>
+<h3 id="performance-characteristics-1"><a class="header" href="#performance-characteristics-1">Performance Characteristics</a></h3>
+<ul>
+<li><strong>Time Complexity</strong>: O(n·m·iter) where iter ≈ 100-1000</li>
+<li><strong>Space Complexity</strong>: O(n·m)</li>
+<li><strong>Convergence</strong>: Usually fast (&lt; 1000 iterations)</li>
+</ul>
+<h3 id="common-pitfalls-1"><a class="header" href="#common-pitfalls-1">Common Pitfalls</a></h3>
+<ol>
+<li>
+<p><strong>Unscaled Features</strong>:</p>
+<ul>
+<li><strong>Problem</strong>: Features with different scales slow convergence</li>
+<li><strong>Solution</strong>: Use StandardScaler before training</li>
+</ul>
+</li>
+<li>
+<p><strong>Non-convergence</strong>:</p>
+<ul>
+<li><strong>Problem</strong>: Learning rate too high → oscillation</li>
+<li><strong>Solution</strong>: Reduce learning_rate or increase max_iter</li>
+</ul>
+</li>
+<li>
+<p><strong>Assuming Linearity</strong>:</p>
+<ul>
+<li><strong>Problem</strong>: Non-linear boundaries → poor accuracy</li>
+<li><strong>Solution</strong>: Add polynomial features or use kernel methods</li>
+</ul>
+</li>
+</ol>
+<hr />
+<h2 id="comparison-with-alternatives-1"><a class="header" href="#comparison-with-alternatives-1">Comparison with Alternatives</a></h2>
+<div class="table-wrapper"><table><thead><tr><th>Approach</th><th>Pros</th><th>Cons</th><th>When to Use</th></tr></thead><tbody>
+<tr><td><strong>Logistic Regression</strong></td><td>- Interpretable<br>- Fast training<br>- Probabilities</td><td>- Linear boundaries only<br>- Gradient descent needed</td><td>Interpretable binary classification</td></tr>
+<tr><td><strong>SVM</strong></td><td>- Non-linear kernels<br>- Max-margin</td><td>- No probabilities<br>- Slow on large data</td><td>Non-linear boundaries</td></tr>
+<tr><td><strong>Decision Trees</strong></td><td>- Non-linear<br>- No feature scaling</td><td>- Overfitting<br>- Unstable</td><td>Quick baseline</td></tr>
+</tbody></table>
+</div>
+<hr />
+<h2 id="real-world-application-1"><a class="header" href="#real-world-application-1">Real-World Application</a></h2>
+<p><strong>Case Study Reference</strong>: See <a href="ml-fundamentals/../examples/logistic-regression.html">Case Study: Logistic Regression</a> for:</p>
+<ul>
+<li>Complete SafeTensors implementation (281 lines)</li>
+<li>RED-GREEN-REFACTOR workflow</li>
+<li>5 comprehensive tests</li>
+<li>Production deployment example (aprender → realizar)</li>
+</ul>
+<p><strong>Key Insight</strong>: SafeTensors enables cross-platform ML. Train in Rust, deploy anywhere (Python, C++, WASM).</p>
+<hr />
+<h2 id="further-reading-1"><a class="header" href="#further-reading-1">Further Reading</a></h2>
+<h3 id="peer-reviewed-paper"><a class="header" href="#peer-reviewed-paper">Peer-Reviewed Paper</a></h3>
+<p><strong>Cox (1958)</strong> - <em>The Regression Analysis of Binary Sequences</em></p>
+<ul>
+<li><strong>Relevance</strong>: Original paper introducing logistic regression</li>
+<li><strong>Link</strong>: <a href="https://www.jstor.org/stable/2983890">JSTOR</a> (publicly accessible)</li>
+<li><strong>Key Contribution</strong>: Maximum likelihood estimation for binary outcomes</li>
+<li><strong>Applied in</strong>: <code>src/classification/mod.rs</code></li>
+</ul>
+<h3 id="related-chapters-1"><a class="header" href="#related-chapters-1">Related Chapters</a></h3>
+<ul>
+<li><a href="ml-fundamentals/./linear-regression.html">Linear Regression Theory</a> - Similar but for continuous targets</li>
+<li><a href="ml-fundamentals/./classification-metrics.html">Classification Metrics Theory</a> - Evaluating logistic regression</li>
+<li><a href="ml-fundamentals/./gradient-descent.html">Gradient Descent Theory</a> - Optimization algorithm used</li>
+<li><a href="ml-fundamentals/../examples/logistic-regression.html">Case Study: Logistic Regression</a> - <strong>REQUIRED READING</strong></li>
+</ul>
+<hr />
+<h2 id="summary-3"><a class="header" href="#summary-3">Summary</a></h2>
+<p><strong>What You Learned</strong>:</p>
+<ul>
+<li>✅ Sigmoid function: σ(z) = 1/(1 + e^(-z))</li>
+<li>✅ Binary classification via probability thresholding</li>
+<li>✅ Gradient descent training (no closed-form)</li>
+<li>✅ SafeTensors serialization for production</li>
+</ul>
+<p><strong>Verification Guarantee</strong>: All logistic regression code is extensively tested (10+ tests) including SafeTensors roundtrip. See case study for complete implementation.</p>
+<p><strong>Test Summary</strong>:</p>
+<ul>
+<li>5+ core tests (fitting, predictions, probabilities)</li>
+<li>5 SafeTensors tests (serialization, errors)</li>
+<li>100% passing rate</li>
+</ul>
+<hr />
+<p><strong>Next Chapter</strong>: <a href="ml-fundamentals/./decision-trees.html">Decision Trees Theory</a></p>
+<p><strong>Previous Chapter</strong>: <a href="ml-fundamentals/./regularization.html">Regularization Theory</a></p>
+<p><strong>REQUIRED</strong>: Read <a href="ml-fundamentals/../examples/logistic-regression.html">Case Study: Logistic Regression</a> for SafeTensors implementation</p>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="decision-trees-theory"><a class="header" href="#decision-trees-theory">Decision Trees Theory</a></h1>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="ensemble-methods-theory"><a class="header" href="#ensemble-methods-theory">Ensemble Methods Theory</a></h1>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="k-means-clustering-theory"><a class="header" href="#k-means-clustering-theory">K-Means Clustering Theory</a></h1>
@@ -1736,7 +1951,7 @@ proptest! {
 <em>Test file: tests/integration.rs + src/model_selection/mod.rs tests</em></p>
 <!-- DOC_STATUS_END -->
 <hr />
-<h2 id="overview-2"><a class="header" href="#overview-2">Overview</a></h2>
+<h2 id="overview-3"><a class="header" href="#overview-3">Overview</a></h2>
 <p>Cross-validation estimates how well a model generalizes to unseen data by systematically testing on held-out portions of the training set. It's the gold standard for model evaluation.</p>
 <p><strong>Key Concepts</strong>:</p>
 <ul>
@@ -1747,7 +1962,7 @@ proptest! {
 <p><strong>Why This Matters</strong>:
 Using training accuracy to evaluate a model is like grading your own exam. Cross-validation provides an honest estimate of real-world performance.</p>
 <hr />
-<h2 id="mathematical-foundation-1"><a class="header" href="#mathematical-foundation-1">Mathematical Foundation</a></h2>
+<h2 id="mathematical-foundation-2"><a class="header" href="#mathematical-foundation-2">Mathematical Foundation</a></h2>
 <h3 id="the-k-fold-algorithm"><a class="header" href="#the-k-fold-algorithm">The K-Fold Algorithm</a></h3>
 <ol>
 <li><strong>Partition</strong> data into K equal-sized folds: D₁, D₂, ..., Dₖ</li>
@@ -1768,7 +1983,7 @@ Using training accuracy to evaluate a model is like grading your own exam. Cross
 <li>K=n: Leave-One-Out CV (LOOCV) - expensive but low variance</li>
 </ul>
 <hr />
-<h2 id="implementation-in-aprender-1"><a class="header" href="#implementation-in-aprender-1">Implementation in Aprender</a></h2>
+<h2 id="implementation-in-aprender-2"><a class="header" href="#implementation-in-aprender-2">Implementation in Aprender</a></h2>
 <h3 id="example-1-traintest-split"><a class="header" href="#example-1-traintest-split">Example 1: Train/Test Split</a></h3>
 <pre><code class="language-rust">use aprender::model_selection::train_test_split;
 use aprender::primitives::{Matrix, Vector};
@@ -1805,7 +2020,7 @@ println!(&quot;Std dev: {:.3}&quot;, result.std());         // e.g., 0.042</code
 <strong>Property 3</strong>: Union of all folds = complete dataset</p>
 <p>These are verified in the comprehensive test suite. See <strong>Case Study</strong> for full property tests.</p>
 <hr />
-<h2 id="practical-considerations-1"><a class="header" href="#practical-considerations-1">Practical Considerations</a></h2>
+<h2 id="practical-considerations-2"><a class="header" href="#practical-considerations-2">Practical Considerations</a></h2>
 <h3 id="when-to-use"><a class="header" href="#when-to-use">When to Use</a></h3>
 <ul>
 <li>
@@ -1825,7 +2040,7 @@ println!(&quot;Std dev: {:.3}&quot;, result.std());         // e.g., 0.042</code
 </ul>
 </li>
 </ul>
-<h3 id="common-pitfalls-1"><a class="header" href="#common-pitfalls-1">Common Pitfalls</a></h3>
+<h3 id="common-pitfalls-2"><a class="header" href="#common-pitfalls-2">Common Pitfalls</a></h3>
 <ol>
 <li>
 <p><strong>Data Leakage</strong>: Fitting preprocessing (scaling, imputation) on full dataset before split</p>
@@ -1847,7 +2062,7 @@ println!(&quot;Std dev: {:.3}&quot;, result.std());         // e.g., 0.042</code
 </li>
 </ol>
 <hr />
-<h2 id="real-world-application-1"><a class="header" href="#real-world-application-1">Real-World Application</a></h2>
+<h2 id="real-world-application-2"><a class="header" href="#real-world-application-2">Real-World Application</a></h2>
 <p><strong>Case Study Reference</strong>: See <a href="ml-fundamentals/../examples/cross-validation.html">Case Study: Cross-Validation</a> for <strong>complete implementation</strong> showing:</p>
 <ul>
 <li>Full RED-GREEN-REFACTOR workflow</li>
@@ -1858,8 +2073,8 @@ println!(&quot;Std dev: {:.3}&quot;, result.std());         // e.g., 0.042</code
 </ul>
 <p><strong>Key Takeaway</strong>: The case study shows EXTREME TDD in action - every requirement becomes a test first.</p>
 <hr />
-<h2 id="further-reading-1"><a class="header" href="#further-reading-1">Further Reading</a></h2>
-<h3 id="peer-reviewed-paper"><a class="header" href="#peer-reviewed-paper">Peer-Reviewed Paper</a></h3>
+<h2 id="further-reading-2"><a class="header" href="#further-reading-2">Further Reading</a></h2>
+<h3 id="peer-reviewed-paper-1"><a class="header" href="#peer-reviewed-paper-1">Peer-Reviewed Paper</a></h3>
 <p><strong>Kohavi (1995)</strong> - <em>A Study of Cross-Validation and Bootstrap for Accuracy Estimation and Model Selection</em></p>
 <ul>
 <li><strong>Relevance</strong>: Foundational paper proving K-Fold is unbiased estimator</li>
@@ -1867,14 +2082,14 @@ println!(&quot;Std dev: {:.3}&quot;, result.std());         // e.g., 0.042</code
 <li><strong>Key Finding</strong>: K=10 optimal for bias-variance tradeoff</li>
 <li><strong>Applied in</strong>: <code>src/model_selection/mod.rs</code></li>
 </ul>
-<h3 id="related-chapters-1"><a class="header" href="#related-chapters-1">Related Chapters</a></h3>
+<h3 id="related-chapters-2"><a class="header" href="#related-chapters-2">Related Chapters</a></h3>
 <ul>
 <li><a href="ml-fundamentals/./linear-regression.html">Linear Regression Theory</a> - Model to evaluate with CV</li>
 <li><a href="ml-fundamentals/./regression-metrics.html">Regression Metrics Theory</a> - Scores used in CV</li>
 <li><a href="ml-fundamentals/../examples/cross-validation.html">Case Study: Cross-Validation</a> - <strong>REQUIRED READING</strong></li>
 </ul>
 <hr />
-<h2 id="summary-3"><a class="header" href="#summary-3">Summary</a></h2>
+<h2 id="summary-4"><a class="header" href="#summary-4">Summary</a></h2>
 <p><strong>What You Learned</strong>:</p>
 <ul>
 <li>✅ K-Fold algorithm: train on K-1 folds, test on 1</li>
@@ -2509,7 +2724,7 @@ $ git log --oneline | head -5
 e872111 feat: cross-validation - Add automated cross_validate (COMPLETE)
 dbd9a2d feat: cross-validation - Implement train_test_split and KFold
 </code></pre>
-<h2 id="summary-4"><a class="header" href="#summary-4">Summary</a></h2>
+<h2 id="summary-5"><a class="header" href="#summary-5">Summary</a></h2>
 <p>This case study demonstrates EXTREME TDD in production:</p>
 <ul>
 <li><strong>RED</strong>: 12 tests written first</li>
@@ -3099,7 +3314,7 @@ Optimize serialization for large models</p>
 </li>
 </ol>
 <hr />
-<h2 id="summary-5"><a class="header" href="#summary-5">Summary</a></h2>
+<h2 id="summary-6"><a class="header" href="#summary-6">Summary</a></h2>
 <p><strong>Key Takeaways:</strong></p>
 <ol>
 <li>✅ <strong>Write tests first</strong> - Caught header bug before production</li>
@@ -3177,7 +3392,7 @@ following EXTREME TDD principles.</p>
 </ol>
 <hr />
 <p>📝 <strong>This chapter demonstrates binary classification using Logistic Regression.</strong></p>
-<h2 id="overview-3"><a class="header" href="#overview-3">Overview</a></h2>
+<h2 id="overview-4"><a class="header" href="#overview-4">Overview</a></h2>
 <p>Logistic Regression is a fundamental classification algorithm that uses the sigmoid function to model the probability of binary outcomes. This case study demonstrates the RED-GREEN-REFACTOR cycle for implementing a production-quality classifier.</p>
 <h2 id="red-phase-writing-failing-tests"><a class="header" href="#red-phase-writing-failing-tests">RED Phase: Writing Failing Tests</a></h2>
 <p>Following EXTREME TDD principles, we begin by writing comprehensive tests before implementation:</p>
@@ -3842,7 +4057,7 @@ in aprender, following EXTREME TDD principles.</p>
 <li><a href="appendix/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
 <li><a href="appendix/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
 </ul>
-<div style="break-before: page; page-break-before: always;"></div><h1 id="further-reading-2"><a class="header" href="#further-reading-2">Further Reading</a></h1>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="further-reading-3"><a class="header" href="#further-reading-3">Further Reading</a></h1>
 <p>📝 <strong>This chapter is under construction.</strong></p>
 <p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
 <p><strong>See also:</strong></p>
