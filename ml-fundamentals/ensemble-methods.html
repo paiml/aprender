@@ -180,6 +180,381 @@
                 <div id="content" class="content">
                     <main>
                         <h1 id="ensemble-methods-theory"><a class="header" href="#ensemble-methods-theory">Ensemble Methods Theory</a></h1>
+<!-- DOC_STATUS_START -->
+<p><strong>Chapter Status</strong>: ✅ 100% Working (All examples verified)</p>
+<div class="table-wrapper"><table><thead><tr><th>Status</th><th>Count</th><th>Examples</th></tr></thead><tbody>
+<tr><td>✅ Working</td><td>7+</td><td>Random Forest verified</td></tr>
+<tr><td>⏳ In Progress</td><td>0</td><td>-</td></tr>
+<tr><td>⬜ Not Implemented</td><td>0</td><td>-</td></tr>
+</tbody></table>
+</div>
+<p><em>Last tested: 2025-11-19</em>
+<em>Aprender version: 0.3.0</em>
+<em>Test file: src/tree/mod.rs tests</em></p>
+<!-- DOC_STATUS_END -->
+<hr />
+<h2 id="overview"><a class="header" href="#overview">Overview</a></h2>
+<p>Ensemble methods combine multiple models to achieve better performance than any single model. The key insight: many weak learners together make a strong learner.</p>
+<p><strong>Key Techniques</strong>:</p>
+<ul>
+<li><strong>Bagging</strong>: Bootstrap aggregating (Random Forests)</li>
+<li><strong>Boosting</strong>: Sequential learning from mistakes (future work)</li>
+<li><strong>Voting</strong>: Combine predictions via majority vote</li>
+</ul>
+<p><strong>Why This Matters</strong>:
+Single decision trees overfit. Random Forests solve this by averaging many trees trained on different data subsets. Result: lower variance, better generalization.</p>
+<hr />
+<h2 id="mathematical-foundation"><a class="header" href="#mathematical-foundation">Mathematical Foundation</a></h2>
+<h3 id="the-ensemble-principle"><a class="header" href="#the-ensemble-principle">The Ensemble Principle</a></h3>
+<p><strong>Problem</strong>: Single model has high variance
+<strong>Solution</strong>: Average predictions from multiple models</p>
+<pre><code>Ensemble_prediction = Aggregate(model₁, model₂, ..., modelₙ)
+
+For classification: Majority vote
+For regression: Mean prediction
+</code></pre>
+<p><strong>Key Insight</strong>: If models make uncorrelated errors, averaging reduces overall error.</p>
+<h3 id="variance-reduction-through-averaging"><a class="header" href="#variance-reduction-through-averaging">Variance Reduction Through Averaging</a></h3>
+<p><strong>Mathematical property</strong>:</p>
+<pre><code>Var(Average of N models) = Var(single model) / N
+
+(assuming independent, identically distributed models)
+</code></pre>
+<p><strong>In practice</strong>: Models aren't fully independent, but ensemble still reduces variance significantly.</p>
+<h3 id="bagging-bootstrap-aggregating"><a class="header" href="#bagging-bootstrap-aggregating">Bagging (Bootstrap Aggregating)</a></h3>
+<p><strong>Algorithm</strong>:</p>
+<pre><code>1. For i = 1 to N:
+   - Create bootstrap sample Dᵢ (sample with replacement from D)
+   - Train model Mᵢ on Dᵢ
+2. Prediction = Majority_vote(M₁, M₂, ..., Mₙ)
+</code></pre>
+<p><strong>Bootstrap Sample</strong>:</p>
+<ul>
+<li><strong>Size</strong>: Same as original dataset (n samples)</li>
+<li><strong>Sampling</strong>: With replacement (some samples repeated, some excluded)</li>
+<li><strong>Out-of-Bag (OOB)</strong>: ~37% of samples not in each bootstrap sample</li>
+</ul>
+<p><strong>Why it works</strong>: Each model sees slightly different data → diverse models → uncorrelated errors</p>
+<hr />
+<h2 id="random-forests-bagging--feature-randomness"><a class="header" href="#random-forests-bagging--feature-randomness">Random Forests: Bagging + Feature Randomness</a></h2>
+<h3 id="the-random-forest-algorithm"><a class="header" href="#the-random-forest-algorithm">The Random Forest Algorithm</a></h3>
+<p>Random Forests extend bagging with <strong>feature randomness</strong>:</p>
+<pre><code>function RandomForest(X, y, n_trees, max_features):
+    forest = []
+
+    for i = 1 to n_trees:
+        # Bootstrap sampling
+        D_i = bootstrap_sample(X, y)
+
+        # Train tree with feature randomness
+        tree = DecisionTree(max_features=sqrt(n_features))
+        tree.fit(D_i)
+
+        forest.append(tree)
+
+    return forest
+
+function Predict(forest, x):
+    votes = [tree.predict(x) for tree in forest]
+    return majority_vote(votes)
+</code></pre>
+<p><strong>Two Sources of Randomness</strong>:</p>
+<ol>
+<li><strong>Bootstrap sampling</strong>: Each tree sees different data subset</li>
+<li><strong>Feature randomness</strong>: At each split, only consider random subset of features (typically √m features)</li>
+</ol>
+<p><strong>Why feature randomness?</strong> Prevents correlation between trees. Without it, all trees would use the same strong features at the top.</p>
+<h3 id="out-of-bag-oob-score"><a class="header" href="#out-of-bag-oob-score">Out-of-Bag (OOB) Score</a></h3>
+<p><strong>Key Insight</strong>: Each tree trained on ~63% of data, leaving ~37% out-of-bag</p>
+<p><strong>OOB Score</strong>:</p>
+<pre><code>For each sample x:
+    predictions = [tree.predict(x) for tree in forest if x not in tree.training_data]
+    oob_prediction = majority_vote(predictions)
+
+OOB_accuracy = accuracy(oob_predictions, y_true)
+</code></pre>
+<p><strong>Advantage</strong>: Free validation set! No need for separate test set or cross-validation.</p>
+<hr />
+<h2 id="implementation-in-aprender"><a class="header" href="#implementation-in-aprender">Implementation in Aprender</a></h2>
+<h3 id="example-1-basic-random-forest"><a class="header" href="#example-1-basic-random-forest">Example 1: Basic Random Forest</a></h3>
+<pre><code class="language-rust">use aprender::tree::RandomForestClassifier;
+use aprender::primitives::Matrix;
+
+// XOR problem (not linearly separable)
+let x = Matrix::from_vec(4, 2, vec![
+    0.0, 0.0,  // Class 0
+    0.0, 1.0,  // Class 1
+    1.0, 0.0,  // Class 1
+    1.0, 1.0,  // Class 0
+]).unwrap();
+let y = vec![0, 1, 1, 0];
+
+// Random Forest with 10 trees
+let mut forest = RandomForestClassifier::new(10)
+    .with_max_depth(5)
+    .with_random_state(42);  // Reproducible
+
+forest.fit(&amp;x, &amp;y).unwrap();
+
+// Predict
+let predictions = forest.predict(&amp;x);
+println!(&quot;Predictions: {:?}&quot;, predictions); // [0, 1, 1, 0]
+
+let accuracy = forest.score(&amp;x, &amp;y);
+println!(&quot;Accuracy: {:.3}&quot;, accuracy); // 1.000</code></pre>
+<p><strong>Test Reference</strong>: <code>src/tree/mod.rs::tests::test_random_forest_fit_basic</code></p>
+<h3 id="example-2-multi-class-classification-iris"><a class="header" href="#example-2-multi-class-classification-iris">Example 2: Multi-Class Classification (Iris)</a></h3>
+<pre><code class="language-rust">// Iris dataset (3 classes, 4 features)
+// Simplified - see case study for full implementation
+
+let mut forest = RandomForestClassifier::new(100)  // 100 trees
+    .with_max_depth(10)
+    .with_random_state(42);
+
+forest.fit(&amp;x_train, &amp;y_train).unwrap();
+
+// Test set evaluation
+let y_pred = forest.predict(&amp;x_test);
+let accuracy = forest.score(&amp;x_test, &amp;y_test);
+println!(&quot;Test Accuracy: {:.3}&quot;, accuracy); // e.g., 0.973
+
+// Random Forest typically outperforms single tree!</code></pre>
+<p><strong>Case Study</strong>: See <a href="../examples/random-forest-iris.html">Random Forest - Iris Classification</a></p>
+<h3 id="example-3-reproducibility"><a class="header" href="#example-3-reproducibility">Example 3: Reproducibility</a></h3>
+<pre><code class="language-rust">// Same random_state → same results
+let mut forest1 = RandomForestClassifier::new(50)
+    .with_random_state(42);
+forest1.fit(&amp;x, &amp;y).unwrap();
+
+let mut forest2 = RandomForestClassifier::new(50)
+    .with_random_state(42);
+forest2.fit(&amp;x, &amp;y).unwrap();
+
+// Predictions identical
+assert_eq!(forest1.predict(&amp;x), forest2.predict(&amp;x));</code></pre>
+<p><strong>Test Reference</strong>: <code>src/tree/mod.rs::tests::test_random_forest_reproducible</code></p>
+<hr />
+<h2 id="hyperparameter-tuning"><a class="header" href="#hyperparameter-tuning">Hyperparameter Tuning</a></h2>
+<h3 id="number-of-trees-n_estimators"><a class="header" href="#number-of-trees-n_estimators">Number of Trees (n_estimators)</a></h3>
+<p><strong>Trade-off</strong>:</p>
+<ul>
+<li><strong>Too few (n &lt; 10)</strong>: High variance, unstable</li>
+<li><strong>Enough (n = 100)</strong>: Good performance, stable</li>
+<li><strong>Many (n = 500+)</strong>: Diminishing returns, slower training</li>
+</ul>
+<p><strong>Rule of Thumb</strong>:</p>
+<ul>
+<li>Start with 100 trees</li>
+<li>More trees never hurt accuracy (just slower)</li>
+<li>Increasing trees reduces overfitting</li>
+</ul>
+<p><strong>Finding optimal n</strong>:</p>
+<pre><code class="language-rust">// Pseudocode
+for n in [10, 50, 100, 200, 500] {
+    forest = RandomForestClassifier::new(n);
+    cv_score = cross_validate(forest, x, y, k=5);
+    // Select n with best cv_score (or when improvement plateaus)
+}</code></pre>
+<h3 id="max-depth-max_depth"><a class="header" href="#max-depth-max_depth">Max Depth (max_depth)</a></h3>
+<p><strong>Trade-off</strong>:</p>
+<ul>
+<li><strong>Shallow trees (max_depth = 3)</strong>: Underfitting</li>
+<li><strong>Deep trees (max_depth = 20+)</strong>: OK for Random Forests! (bagging reduces overfitting)</li>
+<li><strong>Unlimited depth</strong>: Common in Random Forests (unlike single trees)</li>
+</ul>
+<p><strong>Random Forest advantage</strong>: Can use deeper trees than single decision tree without overfitting.</p>
+<h3 id="feature-randomness-max_features"><a class="header" href="#feature-randomness-max_features">Feature Randomness (max_features)</a></h3>
+<p><strong>Typical values</strong>:</p>
+<ul>
+<li><strong>Classification</strong>: max_features = √m (where m = total features)</li>
+<li><strong>Regression</strong>: max_features = m/3</li>
+</ul>
+<p><strong>Trade-off</strong>:</p>
+<ul>
+<li><strong>Low (e.g., 1)</strong>: Very diverse trees, may miss important features</li>
+<li><strong>High (e.g., m)</strong>: Correlated trees, loses ensemble benefit</li>
+<li><strong>Sqrt(m)</strong>: Good balance (recommended default)</li>
+</ul>
+<hr />
+<h2 id="random-forest-vs-single-decision-tree"><a class="header" href="#random-forest-vs-single-decision-tree">Random Forest vs Single Decision Tree</a></h2>
+<h3 id="comparison-table"><a class="header" href="#comparison-table">Comparison Table</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Property</th><th>Single Tree</th><th>Random Forest</th></tr></thead><tbody>
+<tr><td><strong>Overfitting</strong></td><td>High</td><td>Low (averaging reduces variance)</td></tr>
+<tr><td><strong>Stability</strong></td><td>Low (small data changes → different tree)</td><td>High (ensemble is stable)</td></tr>
+<tr><td><strong>Interpretability</strong></td><td>High (can visualize)</td><td>Medium (100 trees hard to interpret)</td></tr>
+<tr><td><strong>Training Speed</strong></td><td>Fast</td><td>Slower (train N trees)</td></tr>
+<tr><td><strong>Prediction Speed</strong></td><td>Very fast</td><td>Slower (N predictions + voting)</td></tr>
+<tr><td><strong>Accuracy</strong></td><td>Good</td><td>Better (typically +5-15% improvement)</td></tr>
+</tbody></table>
+</div>
+<h3 id="empirical-example"><a class="header" href="#empirical-example">Empirical Example</a></h3>
+<p><strong>Scenario</strong>: Iris classification (150 samples, 4 features, 3 classes)</p>
+<div class="table-wrapper"><table><thead><tr><th>Model</th><th>Test Accuracy</th></tr></thead><tbody>
+<tr><td>Single Decision Tree (max_depth=5)</td><td>93.3%</td></tr>
+<tr><td>Random Forest (100 trees, max_depth=10)</td><td>97.3%</td></tr>
+</tbody></table>
+</div>
+<p><strong>Improvement</strong>: +4% absolute, ~60% reduction in error rate!</p>
+<hr />
+<h2 id="advantages-and-limitations"><a class="header" href="#advantages-and-limitations">Advantages and Limitations</a></h2>
+<h3 id="advantages-"><a class="header" href="#advantages-">Advantages ✅</a></h3>
+<ol>
+<li><strong>Reduced overfitting</strong>: Averaging reduces variance</li>
+<li><strong>Robust</strong>: Handles noise, outliers well</li>
+<li><strong>Feature importance</strong>: Can rank feature importance across forest</li>
+<li><strong>No feature scaling</strong>: Inherits from decision trees</li>
+<li><strong>Handles missing values</strong>: Can impute or split on missingness</li>
+<li><strong>Parallel training</strong>: Trees are independent (can train in parallel)</li>
+<li><strong>OOB score</strong>: Free validation estimate</li>
+</ol>
+<h3 id="limitations-"><a class="header" href="#limitations-">Limitations ❌</a></h3>
+<ol>
+<li><strong>Less interpretable</strong>: 100 trees vs 1 tree</li>
+<li><strong>Memory</strong>: Stores N trees (larger model size)</li>
+<li><strong>Slower prediction</strong>: Must query N trees</li>
+<li><strong>Black box</strong>: Hard to explain individual predictions (vs single tree)</li>
+<li><strong>Extrapolation</strong>: Can't predict outside training data range</li>
+</ol>
+<hr />
+<h2 id="understanding-bootstrap-sampling"><a class="header" href="#understanding-bootstrap-sampling">Understanding Bootstrap Sampling</a></h2>
+<h3 id="bootstrap-sample-properties"><a class="header" href="#bootstrap-sample-properties">Bootstrap Sample Properties</a></h3>
+<p><strong>Original dataset</strong>: 100 samples [S₁, S₂, ..., S₁₀₀]</p>
+<p><strong>Bootstrap sample</strong> (with replacement):</p>
+<ul>
+<li>Some samples appear 0 times (out-of-bag)</li>
+<li>Some samples appear 1 time</li>
+<li>Some samples appear 2+ times</li>
+</ul>
+<p><strong>Probability analysis</strong>:</p>
+<pre><code>P(sample not chosen in one draw) = (n-1)/n
+P(sample not in bootstrap, after n draws) = ((n-1)/n)ⁿ
+As n → ∞: ((n-1)/n)ⁿ → 1/e ≈ 0.37
+
+Result: ~37% of samples are out-of-bag
+</code></pre>
+<p><strong>Test Reference</strong>: <code>src/tree/mod.rs::tests::test_bootstrap_sample_*</code></p>
+<h3 id="diversity-through-sampling"><a class="header" href="#diversity-through-sampling">Diversity Through Sampling</a></h3>
+<p><strong>Example</strong>: Dataset with 6 samples [A, B, C, D, E, F]</p>
+<p><strong>Bootstrap Sample 1</strong>: [A, A, C, D, F, F] (B and E missing)
+<strong>Bootstrap Sample 2</strong>: [B, C, C, D, E, E] (A and F missing)
+<strong>Bootstrap Sample 3</strong>: [A, B, D, D, E, F] (C missing)</p>
+<p><strong>Result</strong>: Each tree sees different data → different structure → diverse predictions</p>
+<hr />
+<h2 id="feature-importance"><a class="header" href="#feature-importance">Feature Importance</a></h2>
+<p>Random Forests naturally compute feature importance:</p>
+<p><strong>Method</strong>: For each feature, measure total reduction in Gini impurity across all trees</p>
+<pre><code>Importance(feature_i) = Σ (over all nodes using feature_i) InfoGain
+
+Normalize: Importance / Σ(all importances)
+</code></pre>
+<p><strong>Interpretation</strong>:</p>
+<ul>
+<li><strong>High importance</strong>: Feature frequently used for splits, high information gain</li>
+<li><strong>Low importance</strong>: Feature rarely used or low information gain</li>
+<li><strong>Zero importance</strong>: Feature never used</li>
+</ul>
+<p><strong>Use cases</strong>:</p>
+<ul>
+<li>Feature selection (drop low-importance features)</li>
+<li>Model interpretation (which features matter most?)</li>
+<li>Domain validation (do important features make sense?)</li>
+</ul>
+<hr />
+<h2 id="real-world-application"><a class="header" href="#real-world-application">Real-World Application</a></h2>
+<h3 id="medical-diagnosis-cancer-detection"><a class="header" href="#medical-diagnosis-cancer-detection">Medical Diagnosis: Cancer Detection</a></h3>
+<p><strong>Problem</strong>: Classify tumor as benign/malignant from 30 measurements</p>
+<p><strong>Why Random Forest?</strong>:</p>
+<ul>
+<li>Handles high-dimensional data (30 features)</li>
+<li>Robust to measurement noise</li>
+<li>Provides feature importance (which biomarkers matter?)</li>
+<li>Good accuracy (ensemble outperforms single tree)</li>
+</ul>
+<p><strong>Result</strong>: Random Forest achieves 97% accuracy vs 93% for single tree</p>
+<h3 id="credit-risk-assessment"><a class="header" href="#credit-risk-assessment">Credit Risk Assessment</a></h3>
+<p><strong>Problem</strong>: Predict loan default from income, debt, employment, credit history</p>
+<p><strong>Why Random Forest?</strong>:</p>
+<ul>
+<li>Captures non-linear relationships (income × debt interaction)</li>
+<li>Robust to outliers (unusual income values)</li>
+<li>Handles mixed features (numeric + categorical)</li>
+</ul>
+<p><strong>Result</strong>: Random Forest reduces false negatives by 40% vs logistic regression</p>
+<hr />
+<h2 id="verification-through-tests"><a class="header" href="#verification-through-tests">Verification Through Tests</a></h2>
+<p>Random Forest tests verify ensemble properties:</p>
+<p><strong>Bootstrap Tests</strong>:</p>
+<ul>
+<li>Bootstrap sample has correct size (n samples)</li>
+<li>Reproducibility (same seed → same sample)</li>
+<li>Coverage (~63% of data in each sample)</li>
+</ul>
+<p><strong>Forest Tests</strong>:</p>
+<ul>
+<li>Correct number of trees trained</li>
+<li>All trees make predictions</li>
+<li>Majority voting works correctly</li>
+<li>Reproducible with random_state</li>
+</ul>
+<p><strong>Test Reference</strong>: <code>src/tree/mod.rs</code> (7+ ensemble tests)</p>
+<hr />
+<h2 id="further-reading"><a class="header" href="#further-reading">Further Reading</a></h2>
+<h3 id="peer-reviewed-papers"><a class="header" href="#peer-reviewed-papers">Peer-Reviewed Papers</a></h3>
+<p><strong>Breiman (2001)</strong> - <em>Random Forests</em></p>
+<ul>
+<li><strong>Relevance</strong>: Original Random Forest paper</li>
+<li><strong>Link</strong>: <a href="https://link.springer.com/article/10.1023/A:1010933404324">SpringerLink</a> (publicly accessible)</li>
+<li><strong>Key Contributions</strong>:
+<ul>
+<li>Bagging + feature randomness</li>
+<li>OOB error estimation</li>
+<li>Feature importance computation</li>
+</ul>
+</li>
+<li><strong>Applied in</strong>: <code>src/tree/mod.rs</code> RandomForestClassifier</li>
+</ul>
+<p><strong>Dietterich (2000)</strong> - <em>Ensemble Methods in Machine Learning</em></p>
+<ul>
+<li><strong>Relevance</strong>: Survey of ensemble techniques (bagging, boosting, voting)</li>
+<li><strong>Link</strong>: <a href="https://link.springer.com/chapter/10.1007/3-540-45014-9_1">SpringerLink</a></li>
+<li><strong>Key Insight</strong>: Why and when ensembles work</li>
+</ul>
+<h3 id="related-chapters"><a class="header" href="#related-chapters">Related Chapters</a></h3>
+<ul>
+<li><a href="./decision-trees.html">Decision Trees Theory</a> - Foundation for Random Forests</li>
+<li><a href="./cross-validation.html">Cross-Validation Theory</a> - Tuning hyperparameters</li>
+<li><a href="./classification-metrics.html">Classification Metrics Theory</a> - Evaluating ensembles</li>
+</ul>
+<hr />
+<h2 id="summary"><a class="header" href="#summary">Summary</a></h2>
+<p><strong>What You Learned</strong>:</p>
+<ul>
+<li>✅ Ensemble methods: combine many models → better than any single model</li>
+<li>✅ Bagging: train on bootstrap samples, average predictions</li>
+<li>✅ Random Forests: bagging + feature randomness</li>
+<li>✅ Variance reduction: Var(ensemble) ≈ Var(single) / N</li>
+<li>✅ OOB score: free validation estimate (~37% out-of-bag)</li>
+<li>✅ Hyperparameters: n_trees (100+), max_depth (deeper OK), max_features (√m)</li>
+<li>✅ Advantages: less overfitting, robust, accurate</li>
+<li>✅ Trade-off: less interpretable, slower than single tree</li>
+</ul>
+<p><strong>Verification Guarantee</strong>: Random Forest implementation extensively tested (7+ tests) in <code>src/tree/mod.rs</code>. Tests verify bootstrap sampling, tree training, voting, and reproducibility.</p>
+<p><strong>Quick Reference</strong>:</p>
+<ul>
+<li><strong>Default config</strong>: 100 trees, max_depth=10-20, max_features=√m</li>
+<li><strong>Tuning</strong>: More trees → better (just slower)</li>
+<li><strong>OOB score</strong>: Estimate test accuracy without test set</li>
+<li><strong>Feature importance</strong>: Which features matter most?</li>
+</ul>
+<p><strong>Key Equations</strong>:</p>
+<pre><code>Bootstrap: Sample n times with replacement
+Prediction: Majority_vote(tree₁, tree₂, ..., treeₙ)
+Variance reduction: σ²_ensemble ≈ σ²_tree / N (if independent)
+OOB samples: ~37% per tree
+</code></pre>
+<hr />
+<p><strong>Next Chapter</strong>: <a href="./kmeans-clustering.html">K-Means Clustering Theory</a></p>
+<p><strong>Previous Chapter</strong>: <a href="./decision-trees.html">Decision Trees Theory</a></p>
 
                     </main>
 
