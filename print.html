@@ -1936,6 +1936,246 @@ assert_eq!(proba_original[0], proba_loaded[0]); // Exact match</code></pre>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="ensemble-methods-theory"><a class="header" href="#ensemble-methods-theory">Ensemble Methods Theory</a></h1>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="k-means-clustering-theory"><a class="header" href="#k-means-clustering-theory">K-Means Clustering Theory</a></h1>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="regression-metrics-theory"><a class="header" href="#regression-metrics-theory">Regression Metrics Theory</a></h1>
+<!-- DOC_STATUS_START -->
+<p><strong>Chapter Status</strong>: ✅ 100% Working (All metrics verified)</p>
+<div class="table-wrapper"><table><thead><tr><th>Status</th><th>Count</th><th>Examples</th></tr></thead><tbody>
+<tr><td>✅ Working</td><td>4</td><td>All metrics tested in src/metrics/mod.rs</td></tr>
+<tr><td>⏳ In Progress</td><td>0</td><td>-</td></tr>
+<tr><td>⬜ Not Implemented</td><td>0</td><td>-</td></tr>
+</tbody></table>
+</div>
+<p><em>Last tested: 2025-11-19</em>
+<em>Aprender version: 0.3.0</em>
+<em>Test file: src/metrics/mod.rs tests</em></p>
+<!-- DOC_STATUS_END -->
+<hr />
+<h2 id="overview-3"><a class="header" href="#overview-3">Overview</a></h2>
+<p>Regression metrics measure how well a model predicts continuous values. Choosing the right metric is critical—it defines what &quot;good&quot; means for your model.</p>
+<p><strong>Key Metrics</strong>:</p>
+<ul>
+<li><strong>R² (R-squared)</strong>: Proportion of variance explained (0-1, higher better)</li>
+<li><strong>MSE (Mean Squared Error)</strong>: Average squared prediction error (0+, lower better)</li>
+<li><strong>RMSE (Root Mean Squared Error)</strong>: MSE in original units (0+, lower better)</li>
+<li><strong>MAE (Mean Absolute Error)</strong>: Average absolute error (0+, lower better)</li>
+</ul>
+<p><strong>Why This Matters</strong>:
+&quot;You can't improve what you don't measure.&quot; Metrics transform vague goals (&quot;make better predictions&quot;) into concrete targets (R² &gt; 0.8).</p>
+<hr />
+<h2 id="mathematical-foundation-2"><a class="header" href="#mathematical-foundation-2">Mathematical Foundation</a></h2>
+<h3 id="r²-coefficient-of-determination"><a class="header" href="#r²-coefficient-of-determination">R² (Coefficient of Determination)</a></h3>
+<p><strong>Definition</strong>:</p>
+<pre><code>R² = 1 - (SS_res / SS_tot)
+
+where:
+SS_res = Σ(y_true - y_pred)²  (residual sum of squares)
+SS_tot = Σ(y_true - y_mean)²  (total sum of squares)
+</code></pre>
+<p><strong>Interpretation</strong>:</p>
+<ul>
+<li>R² = 1.0: Perfect predictions (SS_res = 0)</li>
+<li>R² = 0.0: Model no better than predicting mean</li>
+<li>R² &lt; 0.0: Model worse than mean (overfitting or bad fit)</li>
+</ul>
+<p><strong>Key Insight</strong>: R² measures variance explained. It answers: &quot;What fraction of the target's variance does my model capture?&quot;</p>
+<h3 id="mse-mean-squared-error"><a class="header" href="#mse-mean-squared-error">MSE (Mean Squared Error)</a></h3>
+<p><strong>Definition</strong>:</p>
+<pre><code>MSE = (1/n) Σ(y_true - y_pred)²
+</code></pre>
+<p><strong>Properties</strong>:</p>
+<ul>
+<li><strong>Units</strong>: Squared target units (e.g., dollars²)</li>
+<li><strong>Sensitivity</strong>: Heavily penalizes large errors (quadratic)</li>
+<li><strong>Differentiable</strong>: Good for gradient-based optimization</li>
+</ul>
+<p><strong>When to Use</strong>: When large errors are especially bad (e.g., financial predictions).</p>
+<h3 id="rmse-root-mean-squared-error"><a class="header" href="#rmse-root-mean-squared-error">RMSE (Root Mean Squared Error)</a></h3>
+<p><strong>Definition</strong>:</p>
+<pre><code>RMSE = √MSE = √[(1/n) Σ(y_true - y_pred)²]
+</code></pre>
+<p><strong>Advantage over MSE</strong>: Same units as target (e.g., dollars, not dollars²)</p>
+<p><strong>Interpretation</strong>: &quot;On average, predictions are off by X units&quot;</p>
+<h3 id="mae-mean-absolute-error"><a class="header" href="#mae-mean-absolute-error">MAE (Mean Absolute Error)</a></h3>
+<p><strong>Definition</strong>:</p>
+<pre><code>MAE = (1/n) Σ|y_true - y_pred|
+</code></pre>
+<p><strong>Properties</strong>:</p>
+<ul>
+<li><strong>Units</strong>: Same as target</li>
+<li><strong>Robustness</strong>: Less sensitive to outliers than MSE/RMSE</li>
+<li><strong>Interpretation</strong>: Average prediction error magnitude</li>
+</ul>
+<p><strong>When to Use</strong>: When outliers shouldn't dominate the metric.</p>
+<hr />
+<h2 id="implementation-in-aprender-2"><a class="header" href="#implementation-in-aprender-2">Implementation in Aprender</a></h2>
+<h3 id="example-all-metrics-on-same-data"><a class="header" href="#example-all-metrics-on-same-data">Example: All Metrics on Same Data</a></h3>
+<pre><code class="language-rust">use aprender::metrics::{r_squared, mse, rmse, mae};
+use aprender::primitives::Vector;
+
+let y_true = Vector::from_vec(vec![3.0, -0.5, 2.0, 7.0]);
+let y_pred = Vector::from_vec(vec![2.5, 0.0, 2.0, 8.0]);
+
+// R² (higher is better, max = 1.0)
+let r2 = r_squared(&amp;y_true, &amp;y_pred);
+println!(&quot;R² = {:.3}&quot;, r2); // e.g., 0.948
+
+// MSE (lower is better, min = 0.0)
+let mse_val = mse(&amp;y_true, &amp;y_pred);
+println!(&quot;MSE = {:.3}&quot;, mse_val); // e.g., 0.375
+
+// RMSE (same units as target)
+let rmse_val = rmse(&amp;y_true, &amp;y_pred);
+println!(&quot;RMSE = {:.3}&quot;, rmse_val); // e.g., 0.612
+
+// MAE (robust to outliers)
+let mae_val = mae(&amp;y_true, &amp;y_pred);
+println!(&quot;MAE = {:.3}&quot;, mae_val); // e.g., 0.500</code></pre>
+<p><strong>Test References</strong>:</p>
+<ul>
+<li><code>src/metrics/mod.rs::tests::test_r_squared</code></li>
+<li><code>src/metrics/mod.rs::tests::test_mse</code></li>
+<li><code>src/metrics/mod.rs::tests::test_rmse</code></li>
+<li><code>src/metrics/mod.rs::tests::test_mae</code></li>
+</ul>
+<hr />
+<h2 id="choosing-the-right-metric"><a class="header" href="#choosing-the-right-metric">Choosing the Right Metric</a></h2>
+<h3 id="decision-tree"><a class="header" href="#decision-tree">Decision Tree</a></h3>
+<pre><code>Are large errors much worse than small errors?
+├─ YES → Use MSE or RMSE (quadratic penalty)
+└─ NO → Use MAE (linear penalty)
+
+Do you need a unit-free measure of fit quality?
+├─ YES → Use R² (0-1 scale)
+└─ NO → Use RMSE or MAE (original units)
+
+Are there outliers in your data?
+├─ YES → Use MAE (robust) or Huber loss
+└─ NO → Use RMSE (more sensitive)
+</code></pre>
+<h3 id="comparison-table"><a class="header" href="#comparison-table">Comparison Table</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Metric</th><th>Range</th><th>Units</th><th>Outlier Sensitivity</th><th>Use Case</th></tr></thead><tbody>
+<tr><td><strong>R²</strong></td><td>(-∞, 1]</td><td>Unitless</td><td>Medium</td><td>Overall fit quality</td></tr>
+<tr><td><strong>MSE</strong></td><td>[0, ∞)</td><td>Squared</td><td>High</td><td>Optimization (differentiable)</td></tr>
+<tr><td><strong>RMSE</strong></td><td>[0, ∞)</td><td>Original</td><td>High</td><td>Interpretable error magnitude</td></tr>
+<tr><td><strong>MAE</strong></td><td>[0, ∞)</td><td>Original</td><td>Low</td><td>Robust to outliers</td></tr>
+</tbody></table>
+</div>
+<hr />
+<h2 id="practical-considerations-2"><a class="header" href="#practical-considerations-2">Practical Considerations</a></h2>
+<h3 id="r²-limitations"><a class="header" href="#r²-limitations">R² Limitations</a></h3>
+<ol>
+<li><strong>Not Always 0-1</strong>: R² can be negative if model is terrible</li>
+<li><strong>Doesn't Catch Bias</strong>: High R² doesn't mean unbiased predictions</li>
+<li><strong>Sensitive to Range</strong>: R² depends on target variance</li>
+</ol>
+<p><strong>Example of R² Misleading</strong>:</p>
+<pre><code>y_true = [10, 20, 30, 40, 50]
+y_pred = [15, 25, 35, 45, 55]  # All predictions +5 (biased)
+
+R² = 1.0 (perfect fit!)
+But predictions are systematically wrong!
+</code></pre>
+<h3 id="mse-vs-mae-trade-off"><a class="header" href="#mse-vs-mae-trade-off">MSE vs MAE Trade-off</a></h3>
+<p><strong>MSE Pros</strong>:</p>
+<ul>
+<li>Differentiable everywhere (good for gradient descent)</li>
+<li>Heavily penalizes large errors</li>
+<li>Mathematically convenient (OLS minimizes MSE)</li>
+</ul>
+<p><strong>MSE Cons</strong>:</p>
+<ul>
+<li>Outliers dominate the metric</li>
+<li>Units are squared (hard to interpret)</li>
+</ul>
+<p><strong>MAE Pros</strong>:</p>
+<ul>
+<li>Robust to outliers</li>
+<li>Same units as target</li>
+<li>Intuitive interpretation</li>
+</ul>
+<p><strong>MAE Cons</strong>:</p>
+<ul>
+<li>Not differentiable at zero (complicates optimization)</li>
+<li>All errors weighted equally (may not reflect reality)</li>
+</ul>
+<hr />
+<h2 id="verification-through-tests-1"><a class="header" href="#verification-through-tests-1">Verification Through Tests</a></h2>
+<p>All metrics have comprehensive property tests:</p>
+<p><strong>Property 1</strong>: Perfect predictions → optimal metric value</p>
+<ul>
+<li>R² = 1.0</li>
+<li>MSE = RMSE = MAE = 0.0</li>
+</ul>
+<p><strong>Property 2</strong>: Constant predictions (mean) → baseline</p>
+<ul>
+<li>R² = 0.0</li>
+</ul>
+<p><strong>Property 3</strong>: Metrics are non-negative (except R²)</p>
+<ul>
+<li>MSE, RMSE, MAE ≥ 0.0</li>
+</ul>
+<p><strong>Test Reference</strong>: <code>src/metrics/mod.rs</code> has 10+ tests verifying these properties</p>
+<hr />
+<h2 id="real-world-application-2"><a class="header" href="#real-world-application-2">Real-World Application</a></h2>
+<p><strong>Example</strong>: Evaluating Linear Regression</p>
+<pre><code class="language-rust">use aprender::linear_model::LinearRegression;
+use aprender::metrics::{r_squared, rmse};
+use aprender::traits::Estimator;
+
+// Train model
+let mut model = LinearRegression::new();
+model.fit(&amp;x_train, &amp;y_train).unwrap();
+
+// Evaluate on test set
+let y_pred = model.predict(&amp;x_test);
+let r2 = r_squared(&amp;y_test, &amp;y_pred);
+let error = rmse(&amp;y_test, &amp;y_pred);
+
+println!(&quot;R² = {:.3}&quot;, r2);        // e.g., 0.874 (good fit)
+println!(&quot;RMSE = {:.2}&quot;, error);   // e.g., 3.21 (avg error)
+
+// Decision: R² &gt; 0.8 and RMSE &lt; 5.0 → Accept model</code></pre>
+<p><strong>Case Studies</strong>:</p>
+<ul>
+<li><a href="ml-fundamentals/../examples/linear-regression.html">Linear Regression</a> - Uses R² for evaluation</li>
+<li><a href="ml-fundamentals/../examples/cross-validation.html">Cross-Validation</a> - Uses R² as CV score</li>
+</ul>
+<hr />
+<h2 id="further-reading-2"><a class="header" href="#further-reading-2">Further Reading</a></h2>
+<h3 id="peer-reviewed-papers-1"><a class="header" href="#peer-reviewed-papers-1">Peer-Reviewed Papers</a></h3>
+<p><strong>Powers (2011)</strong> - <em>Evaluation: From Precision, Recall and F-Measure to ROC, Informedness, Markedness &amp; Correlation</em></p>
+<ul>
+<li><strong>Relevance</strong>: Comprehensive survey of evaluation metrics</li>
+<li><strong>Link</strong>: <a href="https://arxiv.org/abs/2010.16061">arXiv</a> (publicly accessible)</li>
+<li><strong>Key Insight</strong>: No single metric is best—choose based on problem</li>
+<li><strong>Applied in</strong>: <code>src/metrics/mod.rs</code></li>
+</ul>
+<h3 id="related-chapters-2"><a class="header" href="#related-chapters-2">Related Chapters</a></h3>
+<ul>
+<li><a href="ml-fundamentals/./linear-regression.html">Linear Regression Theory</a> - OLS minimizes MSE</li>
+<li><a href="ml-fundamentals/./cross-validation.html">Cross-Validation Theory</a> - Uses metrics for evaluation</li>
+<li><a href="ml-fundamentals/./classification-metrics.html">Classification Metrics Theory</a> - For discrete targets</li>
+</ul>
+<hr />
+<h2 id="summary-4"><a class="header" href="#summary-4">Summary</a></h2>
+<p><strong>What You Learned</strong>:</p>
+<ul>
+<li>✅ R²: Variance explained (0-1, higher better)</li>
+<li>✅ MSE: Average squared error (good for optimization)</li>
+<li>✅ RMSE: MSE in original units (interpretable)</li>
+<li>✅ MAE: Robust to outliers (linear penalty)</li>
+<li>✅ Choose metric based on problem: outliers? units? optimization?</li>
+</ul>
+<p><strong>Verification Guarantee</strong>: All metrics extensively tested (10+ tests) in <code>src/metrics/mod.rs</code>. Property tests verify mathematical properties.</p>
+<p><strong>Quick Reference</strong>:</p>
+<ul>
+<li><strong>Overall fit</strong>: R²</li>
+<li><strong>Optimization</strong>: MSE</li>
+<li><strong>Interpretability</strong>: RMSE or MAE</li>
+<li><strong>Robustness</strong>: MAE</li>
+</ul>
+<hr />
+<p><strong>Next Chapter</strong>: <a href="ml-fundamentals/./classification-metrics.html">Classification Metrics Theory</a></p>
+<p><strong>Previous Chapter</strong>: <a href="ml-fundamentals/./regularization.html">Regularization Theory</a></p>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="classification-metrics-theory"><a class="header" href="#classification-metrics-theory">Classification Metrics Theory</a></h1>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="cross-validation-theory"><a class="header" href="#cross-validation-theory">Cross-Validation Theory</a></h1>
 <!-- DOC_STATUS_START -->
@@ -1951,7 +2191,7 @@ assert_eq!(proba_original[0], proba_loaded[0]); // Exact match</code></pre>
 <em>Test file: tests/integration.rs + src/model_selection/mod.rs tests</em></p>
 <!-- DOC_STATUS_END -->
 <hr />
-<h2 id="overview-3"><a class="header" href="#overview-3">Overview</a></h2>
+<h2 id="overview-4"><a class="header" href="#overview-4">Overview</a></h2>
 <p>Cross-validation estimates how well a model generalizes to unseen data by systematically testing on held-out portions of the training set. It's the gold standard for model evaluation.</p>
 <p><strong>Key Concepts</strong>:</p>
 <ul>
@@ -1962,7 +2202,7 @@ assert_eq!(proba_original[0], proba_loaded[0]); // Exact match</code></pre>
 <p><strong>Why This Matters</strong>:
 Using training accuracy to evaluate a model is like grading your own exam. Cross-validation provides an honest estimate of real-world performance.</p>
 <hr />
-<h2 id="mathematical-foundation-2"><a class="header" href="#mathematical-foundation-2">Mathematical Foundation</a></h2>
+<h2 id="mathematical-foundation-3"><a class="header" href="#mathematical-foundation-3">Mathematical Foundation</a></h2>
 <h3 id="the-k-fold-algorithm"><a class="header" href="#the-k-fold-algorithm">The K-Fold Algorithm</a></h3>
 <ol>
 <li><strong>Partition</strong> data into K equal-sized folds: D₁, D₂, ..., Dₖ</li>
@@ -1983,7 +2223,7 @@ Using training accuracy to evaluate a model is like grading your own exam. Cross
 <li>K=n: Leave-One-Out CV (LOOCV) - expensive but low variance</li>
 </ul>
 <hr />
-<h2 id="implementation-in-aprender-2"><a class="header" href="#implementation-in-aprender-2">Implementation in Aprender</a></h2>
+<h2 id="implementation-in-aprender-3"><a class="header" href="#implementation-in-aprender-3">Implementation in Aprender</a></h2>
 <h3 id="example-1-traintest-split"><a class="header" href="#example-1-traintest-split">Example 1: Train/Test Split</a></h3>
 <pre><code class="language-rust">use aprender::model_selection::train_test_split;
 use aprender::primitives::{Matrix, Vector};
@@ -2020,7 +2260,7 @@ println!(&quot;Std dev: {:.3}&quot;, result.std());         // e.g., 0.042</code
 <strong>Property 3</strong>: Union of all folds = complete dataset</p>
 <p>These are verified in the comprehensive test suite. See <strong>Case Study</strong> for full property tests.</p>
 <hr />
-<h2 id="practical-considerations-2"><a class="header" href="#practical-considerations-2">Practical Considerations</a></h2>
+<h2 id="practical-considerations-3"><a class="header" href="#practical-considerations-3">Practical Considerations</a></h2>
 <h3 id="when-to-use"><a class="header" href="#when-to-use">When to Use</a></h3>
 <ul>
 <li>
@@ -2062,7 +2302,7 @@ println!(&quot;Std dev: {:.3}&quot;, result.std());         // e.g., 0.042</code
 </li>
 </ol>
 <hr />
-<h2 id="real-world-application-2"><a class="header" href="#real-world-application-2">Real-World Application</a></h2>
+<h2 id="real-world-application-3"><a class="header" href="#real-world-application-3">Real-World Application</a></h2>
 <p><strong>Case Study Reference</strong>: See <a href="ml-fundamentals/../examples/cross-validation.html">Case Study: Cross-Validation</a> for <strong>complete implementation</strong> showing:</p>
 <ul>
 <li>Full RED-GREEN-REFACTOR workflow</li>
@@ -2073,7 +2313,7 @@ println!(&quot;Std dev: {:.3}&quot;, result.std());         // e.g., 0.042</code
 </ul>
 <p><strong>Key Takeaway</strong>: The case study shows EXTREME TDD in action - every requirement becomes a test first.</p>
 <hr />
-<h2 id="further-reading-2"><a class="header" href="#further-reading-2">Further Reading</a></h2>
+<h2 id="further-reading-3"><a class="header" href="#further-reading-3">Further Reading</a></h2>
 <h3 id="peer-reviewed-paper-1"><a class="header" href="#peer-reviewed-paper-1">Peer-Reviewed Paper</a></h3>
 <p><strong>Kohavi (1995)</strong> - <em>A Study of Cross-Validation and Bootstrap for Accuracy Estimation and Model Selection</em></p>
 <ul>
@@ -2082,14 +2322,14 @@ println!(&quot;Std dev: {:.3}&quot;, result.std());         // e.g., 0.042</code
 <li><strong>Key Finding</strong>: K=10 optimal for bias-variance tradeoff</li>
 <li><strong>Applied in</strong>: <code>src/model_selection/mod.rs</code></li>
 </ul>
-<h3 id="related-chapters-2"><a class="header" href="#related-chapters-2">Related Chapters</a></h3>
+<h3 id="related-chapters-3"><a class="header" href="#related-chapters-3">Related Chapters</a></h3>
 <ul>
 <li><a href="ml-fundamentals/./linear-regression.html">Linear Regression Theory</a> - Model to evaluate with CV</li>
 <li><a href="ml-fundamentals/./regression-metrics.html">Regression Metrics Theory</a> - Scores used in CV</li>
 <li><a href="ml-fundamentals/../examples/cross-validation.html">Case Study: Cross-Validation</a> - <strong>REQUIRED READING</strong></li>
 </ul>
 <hr />
-<h2 id="summary-4"><a class="header" href="#summary-4">Summary</a></h2>
+<h2 id="summary-5"><a class="header" href="#summary-5">Summary</a></h2>
 <p><strong>What You Learned</strong>:</p>
 <ul>
 <li>✅ K-Fold algorithm: train on K-1 folds, test on 1</li>
@@ -2724,7 +2964,7 @@ $ git log --oneline | head -5
 e872111 feat: cross-validation - Add automated cross_validate (COMPLETE)
 dbd9a2d feat: cross-validation - Implement train_test_split and KFold
 </code></pre>
-<h2 id="summary-5"><a class="header" href="#summary-5">Summary</a></h2>
+<h2 id="summary-6"><a class="header" href="#summary-6">Summary</a></h2>
 <p>This case study demonstrates EXTREME TDD in production:</p>
 <ul>
 <li><strong>RED</strong>: 12 tests written first</li>
@@ -3314,7 +3554,7 @@ Optimize serialization for large models</p>
 </li>
 </ol>
 <hr />
-<h2 id="summary-6"><a class="header" href="#summary-6">Summary</a></h2>
+<h2 id="summary-7"><a class="header" href="#summary-7">Summary</a></h2>
 <p><strong>Key Takeaways:</strong></p>
 <ol>
 <li>✅ <strong>Write tests first</strong> - Caught header bug before production</li>
@@ -3392,7 +3632,7 @@ following EXTREME TDD principles.</p>
 </ol>
 <hr />
 <p>📝 <strong>This chapter demonstrates binary classification using Logistic Regression.</strong></p>
-<h2 id="overview-4"><a class="header" href="#overview-4">Overview</a></h2>
+<h2 id="overview-5"><a class="header" href="#overview-5">Overview</a></h2>
 <p>Logistic Regression is a fundamental classification algorithm that uses the sigmoid function to model the probability of binary outcomes. This case study demonstrates the RED-GREEN-REFACTOR cycle for implementing a production-quality classifier.</p>
 <h2 id="red-phase-writing-failing-tests"><a class="header" href="#red-phase-writing-failing-tests">RED Phase: Writing Failing Tests</a></h2>
 <p>Following EXTREME TDD principles, we begin by writing comprehensive tests before implementation:</p>
@@ -4057,7 +4297,7 @@ in aprender, following EXTREME TDD principles.</p>
 <li><a href="appendix/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
 <li><a href="appendix/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
 </ul>
-<div style="break-before: page; page-break-before: always;"></div><h1 id="further-reading-3"><a class="header" href="#further-reading-3">Further Reading</a></h1>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="further-reading-4"><a class="header" href="#further-reading-4">Further Reading</a></h1>
 <p>📝 <strong>This chapter is under construction.</strong></p>
 <p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
 <p><strong>See also:</strong></p>
