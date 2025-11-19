@@ -9,7 +9,7 @@
 
 ## 📊 PROGRESS TRACKER (Update this section after each work session)
 
-**Overall Progress**: 5/15 tasks (33.3%)
+**Overall Progress**: 6/15 tasks (40.0%)
 
 ### Phase 1: Foundation (5/5 tasks = 100%) ✅ COMPLETE
 - ✅ [1/5] Create directory structure - `book/src/ml-fundamentals/`, `tests/book/` (100%)
@@ -33,8 +33,15 @@
   - Enforces property test requirements
   - All quality gates passing
 
-### Phase 2: Core Theory + Case Studies (0/6 pairs = 0%)
-- ⬜ [6/15] Linear Regression Theory + Case Study (0%)
+### Phase 2: Core Theory + Case Studies (1/6 pairs = 16.7%)
+- ✅ [6/15] Linear Regression Theory + Case Study (100%)
+  - Wrote comprehensive theory chapter (290 lines)
+  - Mathematical foundation with OLS equation
+  - 2 code examples with test references
+  - 1 property test proving correctness
+  - Peer-reviewed citations (Tibshirani, Zou & Hastie)
+  - DOC_STATUS: ✅ 100% Working
+  - All 3 tests passing
 - ⬜ [7/15] Regularization Theory + Case Study (0%)
 - ⬜ [8/15] Regression Metrics Theory + Case Study (0%)
 - ⬜ [9/15] Logistic Regression Theory + Case Study (0%)
