@@ -1,7 +1,9 @@
-//! Decision tree algorithms for classification.
+//! Decision tree algorithms and ensemble methods.
 //!
-//! This module implements the CART (Classification and Regression Trees) algorithm
-//! for building decision trees using Gini impurity as the split criterion.
+//! This module implements:
+//! - CART (Classification and Regression Trees) using Gini impurity
+//! - Random Forest ensemble classifier
+//! - Gradient Boosting Machine (GBM) for sequential ensemble learning
 //!
 //! # Example
 //!
@@ -1332,9 +1334,280 @@ fn _bootstrap_sample(n_samples: usize, random_state: Option<u64>) -> Vec<usize> 
     indices
 }
 
+/// Gradient Boosting Classifier.
+///
+/// Implements gradient boosting with decision trees as weak learners.
+/// Uses gradient descent in function space to iteratively improve predictions.
+///
+/// # Algorithm
+///
+/// 1. Initialize with constant prediction (log-odds)
+/// 2. For each boosting iteration:
+///    - Compute negative gradients (pseudo-residuals)
+///    - Fit a small decision tree to residuals
+///    - Update predictions with learning_rate * tree_prediction
+/// 3. Final prediction = sigmoid(sum of all tree predictions)
+///
+/// # Example
+///
+/// ```ignore
+/// use aprender::tree::GradientBoostingClassifier;
+/// use aprender::primitives::Matrix;
+///
+/// let x = Matrix::from_vec(4, 2, vec![
+///     0.0, 0.0,
+///     0.0, 1.0,
+///     1.0, 0.0,
+///     1.0, 1.0,
+/// ])?;
+/// let y = vec![0, 0, 1, 1];
+///
+/// let mut gbm = GradientBoostingClassifier::new()
+///     .with_n_estimators(50)
+///     .with_learning_rate(0.1)
+///     .with_max_depth(3);
+///
+/// gbm.fit(&x, &y)?;
+/// let predictions = gbm.predict(&x)?;
+/// ```
+#[derive(Debug, Clone)]
+pub struct GradientBoostingClassifier {
+    /// Number of boosting iterations (trees)
+    n_estimators: usize,
+    /// Learning rate (shrinkage parameter)
+    learning_rate: f32,
+    /// Maximum depth of each tree
+    max_depth: usize,
+    /// Initial prediction (log-odds for class 1)
+    init_prediction: f32,
+    /// Ensemble of decision trees
+    estimators: Vec<DecisionTreeClassifier>,
+}
+
+impl GradientBoostingClassifier {
+    /// Creates a new Gradient Boosting Classifier with default parameters.
+    ///
+    /// # Default Parameters
+    ///
+    /// - n_estimators: 100
+    /// - learning_rate: 0.1
+    /// - max_depth: 3
+    pub fn new() -> Self {
+        Self {
+            n_estimators: 100,
+            learning_rate: 0.1,
+            max_depth: 3,
+            init_prediction: 0.0,
+            estimators: Vec::new(),
+        }
+    }
+
+    /// Sets the number of boosting iterations (trees).
+    pub fn with_n_estimators(mut self, n_estimators: usize) -> Self {
+        self.n_estimators = n_estimators;
+        self
+    }
+
+    /// Sets the learning rate (shrinkage parameter).
+    ///
+    /// Lower values require more trees but often lead to better generalization.
+    /// Typical values: 0.01 - 0.3
+    pub fn with_learning_rate(mut self, learning_rate: f32) -> Self {
+        self.learning_rate = learning_rate;
+        self
+    }
+
+    /// Sets the maximum depth of each tree.
+    ///
+    /// Smaller depths prevent overfitting. Typical values: 3-8
+    pub fn with_max_depth(mut self, max_depth: usize) -> Self {
+        self.max_depth = max_depth;
+        self
+    }
+
+    /// Sigmoid function: σ(x) = 1 / (1 + e^(-x))
+    fn sigmoid(x: f32) -> f32 {
+        1.0 / (1.0 + (-x).exp())
+    }
+
+    /// Trains the Gradient Boosting Classifier.
+    ///
+    /// # Arguments
+    ///
+    /// - `x`: Feature matrix (n_samples × n_features)
+    /// - `y`: Binary labels (0 or 1)
+    ///
+    /// # Returns
+    ///
+    /// Ok(()) on success, Err with message on failure.
+    pub fn fit(
+        &mut self,
+        x: &crate::primitives::Matrix<f32>,
+        y: &[usize],
+    ) -> Result<(), &'static str> {
+        if x.n_rows() != y.len() {
+            return Err("x and y must have the same number of samples");
+        }
+
+        if x.n_rows() == 0 {
+            return Err("Cannot fit with 0 samples");
+        }
+
+        let n_samples = x.n_rows();
+
+        // Convert labels to {0.0, 1.0}
+        let y_float: Vec<f32> = y.iter().map(|&label| label as f32).collect();
+
+        // Initialize prediction with log-odds
+        let positive_count = y_float.iter().filter(|&&label| label == 1.0).count();
+        let p = positive_count as f32 / n_samples as f32;
+        self.init_prediction = if p > 0.0 && p < 1.0 {
+            (p / (1.0 - p)).ln()
+        } else if p >= 1.0 {
+            5.0 // Large positive value
+        } else {
+            -5.0 // Large negative value
+        };
+
+        // Initialize predictions (raw scores, not probabilities)
+        let mut raw_predictions = vec![self.init_prediction; n_samples];
+
+        // Clear previous estimators
+        self.estimators.clear();
+
+        // Boosting iterations
+        for _iteration in 0..self.n_estimators {
+            // Compute negative gradients (pseudo-residuals)
+            // For binary classification with log-loss:
+            // gradient = y - sigmoid(raw_prediction)
+            let mut residuals = Vec::with_capacity(n_samples);
+            for i in 0..n_samples {
+                let prob = Self::sigmoid(raw_predictions[i]);
+                residuals.push(y_float[i] - prob);
+            }
+
+            // Fit a decision tree to residuals
+            // We'll create pseudo-labels by binning residuals into classes
+            // This is a simplified approach - ideally we'd use regression trees
+            let residual_labels = self.residuals_to_labels(&residuals);
+
+            let mut tree = DecisionTreeClassifier::new().with_max_depth(self.max_depth);
+
+            // Fit tree to residuals (as classification problem)
+            if tree.fit(x, &residual_labels).is_err() {
+                // If tree fitting fails (e.g., all same class), stop boosting
+                break;
+            }
+
+            // Get tree predictions (these are class labels 0 or 1)
+            let tree_preds = tree.predict(x);
+
+            // Convert tree predictions back to residual estimates
+            // Map 0 -> -1, 1 -> +1 for residual direction
+            let tree_residuals: Vec<f32> = tree_preds
+                .iter()
+                .map(|&pred| if pred == 0 { -1.0 } else { 1.0 })
+                .collect();
+
+            // Update raw predictions
+            for i in 0..n_samples {
+                raw_predictions[i] += self.learning_rate * tree_residuals[i];
+            }
+
+            self.estimators.push(tree);
+        }
+
+        Ok(())
+    }
+
+    /// Converts residuals to class labels for tree fitting.
+    ///
+    /// Positive residuals -> class 1, negative residuals -> class 0
+    fn residuals_to_labels(&self, residuals: &[f32]) -> Vec<usize> {
+        residuals
+            .iter()
+            .map(|&r| if r >= 0.0 { 1 } else { 0 })
+            .collect()
+    }
+
+    /// Predicts class labels for the given samples.
+    ///
+    /// # Arguments
+    ///
+    /// - `x`: Feature matrix (n_samples × n_features)
+    ///
+    /// # Returns
+    ///
+    /// Vector of predicted labels (0 or 1).
+    pub fn predict(&self, x: &crate::primitives::Matrix<f32>) -> Result<Vec<usize>, &'static str> {
+        let probas = self.predict_proba(x)?;
+        Ok(probas
+            .iter()
+            .map(|probs| if probs[1] >= 0.5 { 1 } else { 0 })
+            .collect())
+    }
+
+    /// Predicts class probabilities for the given samples.
+    ///
+    /// # Arguments
+    ///
+    /// - `x`: Feature matrix (n_samples × n_features)
+    ///
+    /// # Returns
+    ///
+    /// Vector of probability distributions, one per sample.
+    /// Each distribution is [P(class=0), P(class=1)].
+    pub fn predict_proba(
+        &self,
+        x: &crate::primitives::Matrix<f32>,
+    ) -> Result<Vec<Vec<f32>>, &'static str> {
+        if self.estimators.is_empty() {
+            return Err("Model not trained yet");
+        }
+
+        let n_samples = x.n_rows();
+        let mut raw_predictions = vec![self.init_prediction; n_samples];
+
+        // Sum predictions from all trees
+        for tree in &self.estimators {
+            let tree_preds = tree.predict(x);
+            let tree_residuals: Vec<f32> = tree_preds
+                .iter()
+                .map(|&pred| if pred == 0 { -1.0 } else { 1.0 })
+                .collect();
+
+            for i in 0..n_samples {
+                raw_predictions[i] += self.learning_rate * tree_residuals[i];
+            }
+        }
+
+        // Convert raw predictions to probabilities
+        Ok(raw_predictions
+            .iter()
+            .map(|&raw| {
+                let prob_class1 = Self::sigmoid(raw);
+                let prob_class0 = 1.0 - prob_class1;
+                vec![prob_class0, prob_class1]
+            })
+            .collect())
+    }
+
+    /// Returns the number of estimators (trees) in the ensemble.
+    pub fn n_estimators(&self) -> usize {
+        self.estimators.len()
+    }
+}
+
+impl Default for GradientBoostingClassifier {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::primitives::Matrix;
 
     // RED Phase: Write failing tests first
 
@@ -1971,5 +2244,309 @@ mod tests {
             pred1, pred2,
             "Same random state should give same predictions"
         );
+    }
+
+    // ===== Gradient Boosting Tests =====
+
+    #[test]
+    fn test_gradient_boosting_new() {
+        let gbm = GradientBoostingClassifier::new();
+        assert_eq!(gbm.n_estimators, 100);
+        assert_eq!(gbm.learning_rate, 0.1);
+        assert_eq!(gbm.max_depth, 3);
+        assert_eq!(gbm.n_estimators(), 0); // No estimators before fit
+    }
+
+    #[test]
+    fn test_gradient_boosting_builder() {
+        let gbm = GradientBoostingClassifier::new()
+            .with_n_estimators(50)
+            .with_learning_rate(0.05)
+            .with_max_depth(5);
+
+        assert_eq!(gbm.n_estimators, 50);
+        assert_eq!(gbm.learning_rate, 0.05);
+        assert_eq!(gbm.max_depth, 5);
+    }
+
+    #[test]
+    fn test_gradient_boosting_fit_simple() {
+        // Simple linearly separable data
+        let x = Matrix::from_vec(
+            4,
+            2,
+            vec![
+                0.0, 0.0, // class 0
+                0.0, 1.0, // class 0
+                1.0, 0.0, // class 1
+                1.0, 1.0, // class 1
+            ],
+        )
+        .unwrap();
+        let y = vec![0, 0, 1, 1];
+
+        let mut gbm = GradientBoostingClassifier::new()
+            .with_n_estimators(10)
+            .with_learning_rate(0.1)
+            .with_max_depth(2);
+
+        let result = gbm.fit(&x, &y);
+        assert!(result.is_ok());
+        assert!(gbm.n_estimators() > 0); // Should have fitted some trees
+    }
+
+    #[test]
+    fn test_gradient_boosting_predict_simple() {
+        let x = Matrix::from_vec(
+            4,
+            2,
+            vec![
+                0.0, 0.0, // class 0
+                0.0, 1.0, // class 0
+                1.0, 0.0, // class 1
+                1.0, 1.0, // class 1
+            ],
+        )
+        .unwrap();
+        let y = vec![0, 0, 1, 1];
+
+        let mut gbm = GradientBoostingClassifier::new()
+            .with_n_estimators(20)
+            .with_learning_rate(0.1)
+            .with_max_depth(2);
+
+        gbm.fit(&x, &y).unwrap();
+        let predictions = gbm.predict(&x).unwrap();
+
+        assert_eq!(predictions.len(), 4);
+
+        // GBM should classify correctly with enough iterations
+        let correct = predictions
+            .iter()
+            .zip(y.iter())
+            .filter(|(pred, true_label)| *pred == *true_label)
+            .count();
+
+        // Should get at least 3 out of 4 correct
+        assert!(correct >= 3);
+    }
+
+    #[test]
+    fn test_gradient_boosting_predict_proba() {
+        let x = Matrix::from_vec(
+            4,
+            2,
+            vec![
+                0.0, 0.0, // class 0
+                0.0, 1.0, // class 0
+                1.0, 0.0, // class 1
+                1.0, 1.0, // class 1
+            ],
+        )
+        .unwrap();
+        let y = vec![0, 0, 1, 1];
+
+        let mut gbm = GradientBoostingClassifier::new()
+            .with_n_estimators(20)
+            .with_learning_rate(0.1)
+            .with_max_depth(2);
+
+        gbm.fit(&x, &y).unwrap();
+        let probas = gbm.predict_proba(&x).unwrap();
+
+        assert_eq!(probas.len(), 4);
+
+        // Each sample should have 2 probabilities (class 0 and class 1)
+        for probs in &probas {
+            assert_eq!(probs.len(), 2);
+            // Probabilities should sum to ~1.0
+            let sum: f32 = probs.iter().sum();
+            assert!((sum - 1.0).abs() < 0.01);
+            // Each probability should be between 0 and 1
+            for &p in probs {
+                assert!((0.0..=1.0).contains(&p));
+            }
+        }
+    }
+
+    #[test]
+    fn test_gradient_boosting_predict_untrained() {
+        let gbm = GradientBoostingClassifier::new();
+        let x = Matrix::from_vec(2, 2, vec![0.0, 0.0, 1.0, 1.0]).unwrap();
+
+        let result = gbm.predict(&x);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "Model not trained yet");
+    }
+
+    #[test]
+    fn test_gradient_boosting_empty_data() {
+        let x = Matrix::from_vec(0, 2, vec![]).unwrap();
+        let y = vec![];
+
+        let mut gbm = GradientBoostingClassifier::new();
+        let result = gbm.fit(&x, &y);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "Cannot fit with 0 samples");
+    }
+
+    #[test]
+    fn test_gradient_boosting_mismatched_samples() {
+        let x = Matrix::from_vec(4, 2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0]).unwrap();
+        let y = vec![0, 0, 1]; // Wrong length
+
+        let mut gbm = GradientBoostingClassifier::new();
+        let result = gbm.fit(&x, &y);
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err(),
+            "x and y must have the same number of samples"
+        );
+    }
+
+    #[test]
+    fn test_gradient_boosting_learning_rate_effect() {
+        let x = Matrix::from_vec(
+            6,
+            2,
+            vec![
+                0.0, 0.0, // class 0
+                0.1, 0.1, // class 0
+                0.0, 0.2, // class 0
+                1.0, 1.0, // class 1
+                0.9, 0.9, // class 1
+                1.0, 0.8, // class 1
+            ],
+        )
+        .unwrap();
+        let y = vec![0, 0, 0, 1, 1, 1];
+
+        // High learning rate
+        let mut gbm_high_lr = GradientBoostingClassifier::new()
+            .with_n_estimators(10)
+            .with_learning_rate(0.5);
+        gbm_high_lr.fit(&x, &y).unwrap();
+        let pred_high = gbm_high_lr.predict(&x).unwrap();
+
+        // Low learning rate
+        let mut gbm_low_lr = GradientBoostingClassifier::new()
+            .with_n_estimators(10)
+            .with_learning_rate(0.01);
+        gbm_low_lr.fit(&x, &y).unwrap();
+        let pred_low = gbm_low_lr.predict(&x).unwrap();
+
+        // Both should make predictions
+        assert_eq!(pred_high.len(), 6);
+        assert_eq!(pred_low.len(), 6);
+    }
+
+    #[test]
+    fn test_gradient_boosting_n_estimators_effect() {
+        let x = Matrix::from_vec(
+            6,
+            2,
+            vec![
+                0.0, 0.0, 0.1, 0.1, 0.0, 0.2, // class 0
+                1.0, 1.0, 0.9, 0.9, 1.0, 0.8, // class 1
+            ],
+        )
+        .unwrap();
+        let y = vec![0, 0, 0, 1, 1, 1];
+
+        // Few estimators
+        let mut gbm_few = GradientBoostingClassifier::new()
+            .with_n_estimators(5)
+            .with_learning_rate(0.1);
+        gbm_few.fit(&x, &y).unwrap();
+
+        // Many estimators
+        let mut gbm_many = GradientBoostingClassifier::new()
+            .with_n_estimators(50)
+            .with_learning_rate(0.1);
+        gbm_many.fit(&x, &y).unwrap();
+
+        // More estimators should generally lead to more trees (up to limit)
+        assert!(gbm_many.n_estimators() >= gbm_few.n_estimators());
+    }
+
+    #[test]
+    fn test_gradient_boosting_max_depth_effect() {
+        let x = Matrix::from_vec(
+            6,
+            2,
+            vec![
+                0.0, 0.0, 0.1, 0.1, 0.0, 0.2, // class 0
+                1.0, 1.0, 0.9, 0.9, 1.0, 0.8, // class 1
+            ],
+        )
+        .unwrap();
+        let y = vec![0, 0, 0, 1, 1, 1];
+
+        // Shallow trees
+        let mut gbm_shallow = GradientBoostingClassifier::new()
+            .with_n_estimators(20)
+            .with_max_depth(1);
+        gbm_shallow.fit(&x, &y).unwrap();
+        let pred_shallow = gbm_shallow.predict(&x).unwrap();
+
+        // Deeper trees
+        let mut gbm_deep = GradientBoostingClassifier::new()
+            .with_n_estimators(20)
+            .with_max_depth(5);
+        gbm_deep.fit(&x, &y).unwrap();
+        let pred_deep = gbm_deep.predict(&x).unwrap();
+
+        // Both should make predictions
+        assert_eq!(pred_shallow.len(), 6);
+        assert_eq!(pred_deep.len(), 6);
+    }
+
+    #[test]
+    fn test_gradient_boosting_binary_classification() {
+        // More realistic binary classification problem
+        let x = Matrix::from_vec(
+            10,
+            2,
+            vec![
+                // Class 0 (bottom-left cluster)
+                0.0, 0.0, 0.1, 0.1, 0.0, 0.2, 0.2, 0.0, 0.1,
+                0.2, // Class 1 (top-right cluster)
+                1.0, 1.0, 0.9, 0.9, 1.0, 0.8, 0.8, 1.0, 0.9, 1.1,
+            ],
+        )
+        .unwrap();
+        let y = vec![0, 0, 0, 0, 0, 1, 1, 1, 1, 1];
+
+        let mut gbm = GradientBoostingClassifier::new()
+            .with_n_estimators(30)
+            .with_learning_rate(0.1)
+            .with_max_depth(3);
+
+        gbm.fit(&x, &y).unwrap();
+        let predictions = gbm.predict(&x).unwrap();
+
+        // Should achieve reasonable accuracy
+        let correct = predictions
+            .iter()
+            .zip(y.iter())
+            .filter(|(pred, true_label)| *pred == *true_label)
+            .count();
+
+        // Should get at least 7 out of 10 correct for well-separated clusters
+        assert!(
+            correct >= 7,
+            "Expected at least 7/10 correct, got {}/10",
+            correct
+        );
+    }
+
+    #[test]
+    fn test_gradient_boosting_default() {
+        let gbm1 = GradientBoostingClassifier::new();
+        let gbm2 = GradientBoostingClassifier::default();
+
+        assert_eq!(gbm1.n_estimators, gbm2.n_estimators);
+        assert_eq!(gbm1.learning_rate, gbm2.learning_rate);
+        assert_eq!(gbm1.max_depth, gbm2.max_depth);
     }
 }

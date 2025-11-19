@@ -121,6 +121,7 @@
 - [Case Study: KNN Iris](./examples/knn-iris.md)
 - [Case Study: Naive Bayes Iris](./examples/naive-bayes-iris.md)
 - [Case Study: SVM Iris](./examples/svm-iris.md)
+- [Case Study: Gradient Boosting Iris](./examples/gbm-iris.md)
 - [Case Study: Regularized Regression](./examples/regularized-regression.md)
 - [Case Study: Optimizer Demo](./examples/optimizer-demo.md)
 - [Case Study: DataFrame Basics](./examples/dataframe-basics.md)
