@@ -9,7 +9,7 @@
 
 ## 📊 PROGRESS TRACKER (Update this section after each work session)
 
-**Overall Progress**: 9/15 tasks (60.0%)
+**Overall Progress**: 10/15 tasks (66.7%)
 
 ### Phase 1: Foundation (5/5 tasks = 100%) ✅ COMPLETE
 - ✅ [1/5] Create directory structure - `book/src/ml-fundamentals/`, `tests/book/` (100%)
@@ -33,7 +33,7 @@
   - Enforces property test requirements
   - All quality gates passing
 
-### Phase 2: Core Theory + Case Studies (4/6 pairs = 66.7%)
+### Phase 2: Core Theory + Case Studies (5/6 pairs = 83.3%)
 - ✅ [6/15] Linear Regression Theory + Case Study (100%)
   - Wrote comprehensive theory chapter (290 lines)
   - Mathematical foundation with OLS equation
@@ -60,7 +60,15 @@
   - Peer-reviewed citation (Cox 1958)
   - DOC_STATUS: ✅ 100% Working
   - 10+ tests passing
-- ⬜ [10/15] Classification Metrics Theory + Case Study (0%)
+- ✅ [10/15] Classification Metrics Theory + Case Study (100%)
+  - Wrote theory chapter (330 lines)
+  - Confusion matrix: TP, TN, FP, FN
+  - All 4 metrics: Accuracy, Precision, Recall, F1
+  - Decision guide for choosing metrics
+  - Precision-Recall trade-off explanation
+  - Peer-reviewed citation (Powers 2011)
+  - DOC_STATUS: ✅ 100% Working
+  - 4+ tests in src/metrics/mod.rs
 - ✅ [11/15] Cross-Validation Theory + Case Study (100%)
   - Wrote theory chapter (180 lines)
   - K-Fold algorithm explanation
