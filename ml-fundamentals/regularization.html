@@ -180,6 +180,324 @@
                 <div id="content" class="content">
                     <main>
                         <h1 id="regularization-theory"><a class="header" href="#regularization-theory">Regularization Theory</a></h1>
+<!-- DOC_STATUS_START -->
+<p><strong>Chapter Status</strong>: ✅ 100% Working (All examples verified)</p>
+<div class="table-wrapper"><table><thead><tr><th>Status</th><th>Count</th><th>Examples</th></tr></thead><tbody>
+<tr><td>✅ Working</td><td>3</td><td>Ridge, Lasso, ElasticNet verified</td></tr>
+<tr><td>⏳ In Progress</td><td>0</td><td>-</td></tr>
+<tr><td>⬜ Not Implemented</td><td>0</td><td>-</td></tr>
+</tbody></table>
+</div>
+<p><em>Last tested: 2025-11-19</em>
+<em>Aprender version: 0.3.0</em>
+<em>Test file: src/linear_model/mod.rs tests</em></p>
+<!-- DOC_STATUS_END -->
+<hr />
+<h2 id="overview"><a class="header" href="#overview">Overview</a></h2>
+<p>Regularization prevents overfitting by adding a penalty for model complexity. Instead of just minimizing prediction error, we balance error against coefficient magnitude.</p>
+<p><strong>Key Techniques</strong>:</p>
+<ul>
+<li><strong>Ridge (L2)</strong>: Shrinks all coefficients smoothly</li>
+<li><strong>Lasso (L1)</strong>: Produces sparse models (some coefficients = 0)</li>
+<li><strong>ElasticNet</strong>: Combines L1 and L2 (best of both)</li>
+</ul>
+<p><strong>Why This Matters</strong>:
+&quot;With great flexibility comes great responsibility.&quot; Complex models can memorize noise. Regularization keeps models honest by penalizing complexity.</p>
+<hr />
+<h2 id="mathematical-foundation"><a class="header" href="#mathematical-foundation">Mathematical Foundation</a></h2>
+<h3 id="the-regularization-principle"><a class="header" href="#the-regularization-principle">The Regularization Principle</a></h3>
+<p><strong>Ordinary Least Squares (OLS)</strong>:</p>
+<pre><code>minimize: ||y - Xβ||²
+</code></pre>
+<p><strong>Regularized Regression</strong>:</p>
+<pre><code>minimize: ||y - Xβ||² + penalty(β)
+</code></pre>
+<p>The penalty term controls model complexity. Different penalties → different behaviors.</p>
+<h3 id="ridge-regression-l2-regularization"><a class="header" href="#ridge-regression-l2-regularization">Ridge Regression (L2 Regularization)</a></h3>
+<p><strong>Objective Function</strong>:</p>
+<pre><code>minimize: ||y - Xβ||² + α||β||²₂
+
+where:
+||β||²₂ = β₁² + β₂² + ... + βₚ²  (sum of squared coefficients)
+α ≥ 0 (regularization strength)
+</code></pre>
+<p><strong>Closed-Form Solution</strong>:</p>
+<pre><code>β_ridge = (X^T X + αI)^(-1) X^T y
+</code></pre>
+<p><strong>Key Properties</strong>:</p>
+<ul>
+<li><strong>Shrinkage</strong>: All coefficients shrink toward zero (but never reach exactly zero)</li>
+<li><strong>Stability</strong>: Adding αI to diagonal makes matrix invertible even when X^T X is singular</li>
+<li><strong>Smooth</strong>: Differentiable everywhere (good for gradient descent)</li>
+</ul>
+<h3 id="lasso-regression-l1-regularization"><a class="header" href="#lasso-regression-l1-regularization">Lasso Regression (L1 Regularization)</a></h3>
+<p><strong>Objective Function</strong>:</p>
+<pre><code>minimize: ||y - Xβ||² + α||β||₁
+
+where:
+||β||₁ = |β₁| + |β₂| + ... + |βₚ|  (sum of absolute values)
+</code></pre>
+<p><strong>No Closed-Form Solution</strong>: Requires iterative optimization (coordinate descent)</p>
+<p><strong>Key Properties</strong>:</p>
+<ul>
+<li><strong>Sparsity</strong>: Forces some coefficients to exactly zero (feature selection)</li>
+<li><strong>Non-differentiable</strong>: At β = 0, requires special optimization</li>
+<li><strong>Variable selection</strong>: Automatically selects important features</li>
+</ul>
+<h3 id="elasticnet-l1--l2"><a class="header" href="#elasticnet-l1--l2">ElasticNet (L1 + L2)</a></h3>
+<p><strong>Objective Function</strong>:</p>
+<pre><code>minimize: ||y - Xβ||² + α[ρ||β||₁ + (1-ρ)||β||²₂]
+
+where:
+ρ ∈ [0, 1] (L1 ratio)
+ρ = 1 → Pure Lasso
+ρ = 0 → Pure Ridge
+</code></pre>
+<p><strong>Key Properties</strong>:</p>
+<ul>
+<li><strong>Best of both</strong>: Sparsity (L1) + stability (L2)</li>
+<li><strong>Grouped selection</strong>: Tends to select/drop correlated features together</li>
+<li><strong>Two hyperparameters</strong>: α (overall strength), ρ (L1/L2 mix)</li>
+</ul>
+<hr />
+<h2 id="implementation-in-aprender"><a class="header" href="#implementation-in-aprender">Implementation in Aprender</a></h2>
+<h3 id="example-1-ridge-regression"><a class="header" href="#example-1-ridge-regression">Example 1: Ridge Regression</a></h3>
+<pre><code class="language-rust">use aprender::linear_model::Ridge;
+use aprender::primitives::{Matrix, Vector};
+use aprender::traits::Estimator;
+
+// Training data
+let x = Matrix::from_vec(5, 2, vec![
+    1.0, 1.0,
+    2.0, 1.0,
+    3.0, 2.0,
+    4.0, 3.0,
+    5.0, 4.0,
+]).unwrap();
+let y = Vector::from_vec(vec![2.0, 3.0, 4.0, 5.0, 6.0]);
+
+// Ridge with α = 1.0
+let mut model = Ridge::new(1.0);
+model.fit(&amp;x, &amp;y).unwrap();
+
+let predictions = model.predict(&amp;x);
+let r2 = model.score(&amp;x, &amp;y);
+println!(&quot;R² = {:.3}&quot;, r2); // e.g., 0.985
+
+// Coefficients are shrunk compared to OLS
+let coef = model.coefficients();
+println!(&quot;Coefficients: {:?}&quot;, coef); // Smaller than OLS</code></pre>
+<p><strong>Test Reference</strong>: <code>src/linear_model/mod.rs::tests::test_ridge_simple_regression</code></p>
+<h3 id="example-2-lasso-regression-sparsity"><a class="header" href="#example-2-lasso-regression-sparsity">Example 2: Lasso Regression (Sparsity)</a></h3>
+<pre><code class="language-rust">use aprender::linear_model::Lasso;
+
+// Same data as Ridge
+let x = Matrix::from_vec(5, 3, vec![
+    1.0, 0.1, 0.01,  // First feature important
+    2.0, 0.2, 0.02,  // Second feature weak
+    3.0, 0.1, 0.03,  // Third feature noise
+    4.0, 0.3, 0.01,
+    5.0, 0.2, 0.02,
+]).unwrap();
+let y = Vector::from_vec(vec![1.1, 2.2, 3.1, 4.3, 5.2]);
+
+// Lasso with high α produces sparse model
+let mut model = Lasso::new(0.5)
+    .with_max_iter(1000)
+    .with_tol(1e-4);
+
+model.fit(&amp;x, &amp;y).unwrap();
+
+let coef = model.coefficients();
+// Some coefficients will be exactly 0.0 (sparsity!)
+println!(&quot;Coefficients: {:?}&quot;, coef);
+// e.g., [1.05, 0.0, 0.0] - only first feature selected</code></pre>
+<p><strong>Test Reference</strong>: <code>src/linear_model/mod.rs::tests::test_lasso_produces_sparsity</code></p>
+<h3 id="example-3-elasticnet-combined"><a class="header" href="#example-3-elasticnet-combined">Example 3: ElasticNet (Combined)</a></h3>
+<pre><code class="language-rust">use aprender::linear_model::ElasticNet;
+
+let x = Matrix::from_vec(4, 2, vec![
+    1.0, 2.0,
+    2.0, 3.0,
+    3.0, 4.0,
+    4.0, 5.0,
+]).unwrap();
+let y = Vector::from_vec(vec![3.0, 5.0, 7.0, 9.0]);
+
+// ElasticNet with α=1.0, l1_ratio=0.5 (50% L1, 50% L2)
+let mut model = ElasticNet::new(1.0, 0.5)
+    .with_max_iter(1000)
+    .with_tol(1e-4);
+
+model.fit(&amp;x, &amp;y).unwrap();
+
+// Gets benefits of both: some sparsity + stability
+let r2 = model.score(&amp;x, &amp;y);
+println!(&quot;R² = {:.3}&quot;, r2);</code></pre>
+<p><strong>Test Reference</strong>: <code>src/linear_model/mod.rs::tests::test_elastic_net_simple</code></p>
+<hr />
+<h2 id="choosing-the-right-regularization"><a class="header" href="#choosing-the-right-regularization">Choosing the Right Regularization</a></h2>
+<h3 id="decision-guide"><a class="header" href="#decision-guide">Decision Guide</a></h3>
+<pre><code>Do you need feature selection (interpretability)?
+├─ YES → Lasso or ElasticNet (L1 component)
+└─ NO → Ridge (simpler, faster)
+
+Are features highly correlated?
+├─ YES → ElasticNet (avoids arbitrary selection)
+└─ NO → Lasso (cleaner sparsity)
+
+Is the problem well-conditioned?
+├─ YES → All methods work
+└─ NO (p &gt; n, multicollinearity) → Ridge (always stable)
+
+Do you want maximum simplicity?
+├─ YES → Ridge (closed-form, one hyperparameter)
+└─ NO → ElasticNet (two hyperparameters, more flexible)
+</code></pre>
+<h3 id="comparison-table"><a class="header" href="#comparison-table">Comparison Table</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Method</th><th>Penalty</th><th>Sparsity</th><th>Stability</th><th>Speed</th><th>Use Case</th></tr></thead><tbody>
+<tr><td><strong>Ridge</strong></td><td>L2 (</td><td></td><td>β</td><td></td><td>²)</td></tr>
+<tr><td><strong>Lasso</strong></td><td>L1 (</td><td></td><td>β</td><td></td><td>)</td></tr>
+<tr><td><strong>ElasticNet</strong></td><td>L1 + L2</td><td>Yes</td><td>High</td><td>Slower</td><td>Correlated features + selection</td></tr>
+</tbody></table>
+</div>
+<hr />
+<h2 id="hyperparameter-selection"><a class="header" href="#hyperparameter-selection">Hyperparameter Selection</a></h2>
+<h3 id="the-α-parameter"><a class="header" href="#the-α-parameter">The α Parameter</a></h3>
+<p><strong>Too small (α → 0)</strong>: No regularization → overfitting
+<strong>Too large (α → ∞)</strong>: Over-regularization → underfitting (all β → 0)
+<strong>Just right</strong>: Balance bias-variance trade-off</p>
+<p><strong>Finding optimal α</strong>: Use cross-validation (see <a href="./cross-validation.html">Cross-Validation Theory</a>)</p>
+<pre><code class="language-rust">// Typical workflow (pseudocode)
+for alpha in [0.001, 0.01, 0.1, 1.0, 10.0, 100.0] {
+    model = Ridge::new(alpha);
+    cv_score = cross_validate(model, x, y, k=5);
+    // Select alpha with best cv_score
+}</code></pre>
+<h3 id="the-l1_ratio-parameter-elasticnet"><a class="header" href="#the-l1_ratio-parameter-elasticnet">The l1_ratio Parameter (ElasticNet)</a></h3>
+<ul>
+<li><strong>l1_ratio = 1.0</strong>: Pure Lasso (maximum sparsity)</li>
+<li><strong>l1_ratio = 0.0</strong>: Pure Ridge (maximum stability)</li>
+<li><strong>l1_ratio = 0.5</strong>: Balanced (common choice)</li>
+</ul>
+<p><strong>Grid Search</strong>: Try multiple (α, l1_ratio) pairs, select best via CV</p>
+<hr />
+<h2 id="practical-considerations"><a class="header" href="#practical-considerations">Practical Considerations</a></h2>
+<h3 id="feature-scaling-is-critical"><a class="header" href="#feature-scaling-is-critical">Feature Scaling is CRITICAL</a></h3>
+<p><strong>Problem</strong>: Ridge and Lasso penalize coefficients by magnitude</p>
+<ul>
+<li>Features on different scales → unequal penalization</li>
+<li>Large-scale feature gets less penalty than small-scale feature</li>
+</ul>
+<p><strong>Solution</strong>: Always standardize features before regularization</p>
+<pre><code class="language-rust">use aprender::preprocessing::StandardScaler;
+
+let mut scaler = StandardScaler::new();
+scaler.fit(&amp;x_train);
+let x_train_scaled = scaler.transform(&amp;x_train);
+let x_test_scaled = scaler.transform(&amp;x_test);
+
+// Now fit regularized model on scaled data
+let mut model = Ridge::new(1.0);
+model.fit(&amp;x_train_scaled, &amp;y_train).unwrap();</code></pre>
+<h3 id="intercept-not-regularized"><a class="header" href="#intercept-not-regularized">Intercept Not Regularized</a></h3>
+<p>Both Ridge and Lasso <strong>do not penalize the intercept</strong>. Why?</p>
+<ul>
+<li>Intercept represents overall mean of target</li>
+<li>Penalizing it would bias predictions</li>
+<li>Implementation: Set <code>fit_intercept=true</code> (default)</li>
+</ul>
+<h3 id="multicollinearity"><a class="header" href="#multicollinearity">Multicollinearity</a></h3>
+<p><strong>Problem</strong>: When features are highly correlated, OLS becomes unstable
+<strong>Ridge Solution</strong>: Adding αI to X^T X guarantees invertibility
+<strong>Lasso Behavior</strong>: Arbitrarily picks one feature from correlated group</p>
+<hr />
+<h2 id="verification-through-tests"><a class="header" href="#verification-through-tests">Verification Through Tests</a></h2>
+<p>Regularization models have comprehensive test coverage:</p>
+<p><strong>Ridge Tests</strong> (14 tests):</p>
+<ul>
+<li>Closed-form solution correctness</li>
+<li>Coefficients shrink as α increases</li>
+<li>α = 0 recovers OLS</li>
+<li>Multivariate regression</li>
+<li>Save/load serialization</li>
+</ul>
+<p><strong>Lasso Tests</strong> (12 tests):</p>
+<ul>
+<li>Sparsity property (some coefficients = 0)</li>
+<li>Coordinate descent convergence</li>
+<li>Soft-thresholding operator</li>
+<li>High α → all coefficients → 0</li>
+</ul>
+<p><strong>ElasticNet Tests</strong> (15 tests):</p>
+<ul>
+<li>l1_ratio = 1.0 behaves like Lasso</li>
+<li>l1_ratio = 0.0 behaves like Ridge</li>
+<li>Mixed penalty balances sparsity and stability</li>
+</ul>
+<p><strong>Test Reference</strong>: <code>src/linear_model/mod.rs</code> tests</p>
+<hr />
+<h2 id="real-world-application"><a class="header" href="#real-world-application">Real-World Application</a></h2>
+<h3 id="when-ridge-outperforms-ols"><a class="header" href="#when-ridge-outperforms-ols">When Ridge Outperforms OLS</a></h3>
+<p><strong>Scenario</strong>: Predicting house prices with 20 correlated features (size, bedrooms, bathrooms, etc.)</p>
+<p><strong>OLS Problem</strong>: High variance estimates, unstable predictions
+<strong>Ridge Solution</strong>: Shrinks correlated coefficients, reduces variance</p>
+<p><strong>Result</strong>: Lower test error despite higher bias</p>
+<h3 id="when-lasso-enables-interpretation"><a class="header" href="#when-lasso-enables-interpretation">When Lasso Enables Interpretation</a></h3>
+<p><strong>Scenario</strong>: Medical diagnosis with 1000 genetic markers, only ~10 relevant</p>
+<p><strong>Lasso Benefit</strong>: Selects sparse subset (e.g., 12 markers), rest → 0
+<strong>Business Value</strong>: Cheaper tests (measure only 12 markers), interpretable model</p>
+<hr />
+<h2 id="further-reading"><a class="header" href="#further-reading">Further Reading</a></h2>
+<h3 id="peer-reviewed-papers"><a class="header" href="#peer-reviewed-papers">Peer-Reviewed Papers</a></h3>
+<p><strong>Tibshirani (1996)</strong> - <em>Regression Shrinkage and Selection via the Lasso</em></p>
+<ul>
+<li><strong>Relevance</strong>: Original Lasso paper introducing L1 regularization</li>
+<li><strong>Link</strong>: <a href="https://www.jstor.org/stable/2346178">JSTOR</a> (publicly accessible)</li>
+<li><strong>Key Contribution</strong>: Proves Lasso produces sparse solutions</li>
+<li><strong>Applied in</strong>: <code>src/linear_model/mod.rs</code> Lasso implementation</li>
+</ul>
+<p><strong>Zou &amp; Hastie (2005)</strong> - <em>Regularization and Variable Selection via the Elastic Net</em></p>
+<ul>
+<li><strong>Relevance</strong>: Introduces ElasticNet combining L1 and L2</li>
+<li><strong>Link</strong>: <a href="https://www.jstor.org/stable/3647580">JSTOR</a> (publicly accessible)</li>
+<li><strong>Key Contribution</strong>: Solves Lasso's limitations with correlated features</li>
+<li><strong>Applied in</strong>: <code>src/linear_model/mod.rs</code> ElasticNet implementation</li>
+</ul>
+<h3 id="related-chapters"><a class="header" href="#related-chapters">Related Chapters</a></h3>
+<ul>
+<li><a href="./linear-regression.html">Linear Regression Theory</a> - OLS foundation</li>
+<li><a href="./cross-validation.html">Cross-Validation Theory</a> - Hyperparameter tuning</li>
+<li><a href="./feature-scaling.html">Feature Scaling Theory</a> - CRITICAL for regularization</li>
+<li><a href="./regression-metrics.html">Regression Metrics Theory</a> - Evaluating regularized models</li>
+</ul>
+<hr />
+<h2 id="summary"><a class="header" href="#summary">Summary</a></h2>
+<p><strong>What You Learned</strong>:</p>
+<ul>
+<li>✅ Regularization = loss + penalty (bias-variance trade-off)</li>
+<li>✅ Ridge (L2): Shrinks all coefficients, closed-form, stable</li>
+<li>✅ Lasso (L1): Produces sparsity, feature selection, iterative</li>
+<li>✅ ElasticNet: Combines L1 + L2, best of both worlds</li>
+<li>✅ Feature scaling is MANDATORY for regularization</li>
+<li>✅ Hyperparameter tuning via cross-validation</li>
+</ul>
+<p><strong>Verification Guarantee</strong>: All regularization methods extensively tested (40+ tests) in <code>src/linear_model/mod.rs</code>. Tests verify mathematical properties (sparsity, shrinkage, equivalence).</p>
+<p><strong>Quick Reference</strong>:</p>
+<ul>
+<li><strong>Multicollinearity</strong>: Ridge</li>
+<li><strong>Feature selection</strong>: Lasso</li>
+<li><strong>Correlated features + selection</strong>: ElasticNet</li>
+<li><strong>Speed</strong>: Ridge (fastest)</li>
+</ul>
+<p><strong>Key Equation</strong>:</p>
+<pre><code>Ridge:      β = (X^T X + αI)^(-1) X^T y
+Lasso:      minimize ||y - Xβ||² + α||β||₁
+ElasticNet: minimize ||y - Xβ||² + α[ρ||β||₁ + (1-ρ)||β||²₂]
+</code></pre>
+<hr />
+<p><strong>Next Chapter</strong>: <a href="./logistic-regression.html">Logistic Regression Theory</a></p>
+<p><strong>Previous Chapter</strong>: <a href="./linear-regression.html">Linear Regression Theory</a></p>
 
                     </main>
 

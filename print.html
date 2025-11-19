@@ -1716,6 +1716,324 @@ proptest! {
 <p><strong>Next Chapter</strong>: <a href="ml-fundamentals/./regularization.html">Regularization Theory</a></p>
 <p><strong>Previous Chapter</strong>: <a href="ml-fundamentals/../toyota-way/respect-for-people.html">Toyota Way: Respect for People</a></p>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="regularization-theory"><a class="header" href="#regularization-theory">Regularization Theory</a></h1>
+<!-- DOC_STATUS_START -->
+<p><strong>Chapter Status</strong>: ✅ 100% Working (All examples verified)</p>
+<div class="table-wrapper"><table><thead><tr><th>Status</th><th>Count</th><th>Examples</th></tr></thead><tbody>
+<tr><td>✅ Working</td><td>3</td><td>Ridge, Lasso, ElasticNet verified</td></tr>
+<tr><td>⏳ In Progress</td><td>0</td><td>-</td></tr>
+<tr><td>⬜ Not Implemented</td><td>0</td><td>-</td></tr>
+</tbody></table>
+</div>
+<p><em>Last tested: 2025-11-19</em>
+<em>Aprender version: 0.3.0</em>
+<em>Test file: src/linear_model/mod.rs tests</em></p>
+<!-- DOC_STATUS_END -->
+<hr />
+<h2 id="overview-2"><a class="header" href="#overview-2">Overview</a></h2>
+<p>Regularization prevents overfitting by adding a penalty for model complexity. Instead of just minimizing prediction error, we balance error against coefficient magnitude.</p>
+<p><strong>Key Techniques</strong>:</p>
+<ul>
+<li><strong>Ridge (L2)</strong>: Shrinks all coefficients smoothly</li>
+<li><strong>Lasso (L1)</strong>: Produces sparse models (some coefficients = 0)</li>
+<li><strong>ElasticNet</strong>: Combines L1 and L2 (best of both)</li>
+</ul>
+<p><strong>Why This Matters</strong>:
+&quot;With great flexibility comes great responsibility.&quot; Complex models can memorize noise. Regularization keeps models honest by penalizing complexity.</p>
+<hr />
+<h2 id="mathematical-foundation-1"><a class="header" href="#mathematical-foundation-1">Mathematical Foundation</a></h2>
+<h3 id="the-regularization-principle"><a class="header" href="#the-regularization-principle">The Regularization Principle</a></h3>
+<p><strong>Ordinary Least Squares (OLS)</strong>:</p>
+<pre><code>minimize: ||y - Xβ||²
+</code></pre>
+<p><strong>Regularized Regression</strong>:</p>
+<pre><code>minimize: ||y - Xβ||² + penalty(β)
+</code></pre>
+<p>The penalty term controls model complexity. Different penalties → different behaviors.</p>
+<h3 id="ridge-regression-l2-regularization"><a class="header" href="#ridge-regression-l2-regularization">Ridge Regression (L2 Regularization)</a></h3>
+<p><strong>Objective Function</strong>:</p>
+<pre><code>minimize: ||y - Xβ||² + α||β||²₂
+
+where:
+||β||²₂ = β₁² + β₂² + ... + βₚ²  (sum of squared coefficients)
+α ≥ 0 (regularization strength)
+</code></pre>
+<p><strong>Closed-Form Solution</strong>:</p>
+<pre><code>β_ridge = (X^T X + αI)^(-1) X^T y
+</code></pre>
+<p><strong>Key Properties</strong>:</p>
+<ul>
+<li><strong>Shrinkage</strong>: All coefficients shrink toward zero (but never reach exactly zero)</li>
+<li><strong>Stability</strong>: Adding αI to diagonal makes matrix invertible even when X^T X is singular</li>
+<li><strong>Smooth</strong>: Differentiable everywhere (good for gradient descent)</li>
+</ul>
+<h3 id="lasso-regression-l1-regularization"><a class="header" href="#lasso-regression-l1-regularization">Lasso Regression (L1 Regularization)</a></h3>
+<p><strong>Objective Function</strong>:</p>
+<pre><code>minimize: ||y - Xβ||² + α||β||₁
+
+where:
+||β||₁ = |β₁| + |β₂| + ... + |βₚ|  (sum of absolute values)
+</code></pre>
+<p><strong>No Closed-Form Solution</strong>: Requires iterative optimization (coordinate descent)</p>
+<p><strong>Key Properties</strong>:</p>
+<ul>
+<li><strong>Sparsity</strong>: Forces some coefficients to exactly zero (feature selection)</li>
+<li><strong>Non-differentiable</strong>: At β = 0, requires special optimization</li>
+<li><strong>Variable selection</strong>: Automatically selects important features</li>
+</ul>
+<h3 id="elasticnet-l1--l2"><a class="header" href="#elasticnet-l1--l2">ElasticNet (L1 + L2)</a></h3>
+<p><strong>Objective Function</strong>:</p>
+<pre><code>minimize: ||y - Xβ||² + α[ρ||β||₁ + (1-ρ)||β||²₂]
+
+where:
+ρ ∈ [0, 1] (L1 ratio)
+ρ = 1 → Pure Lasso
+ρ = 0 → Pure Ridge
+</code></pre>
+<p><strong>Key Properties</strong>:</p>
+<ul>
+<li><strong>Best of both</strong>: Sparsity (L1) + stability (L2)</li>
+<li><strong>Grouped selection</strong>: Tends to select/drop correlated features together</li>
+<li><strong>Two hyperparameters</strong>: α (overall strength), ρ (L1/L2 mix)</li>
+</ul>
+<hr />
+<h2 id="implementation-in-aprender-1"><a class="header" href="#implementation-in-aprender-1">Implementation in Aprender</a></h2>
+<h3 id="example-1-ridge-regression"><a class="header" href="#example-1-ridge-regression">Example 1: Ridge Regression</a></h3>
+<pre><code class="language-rust">use aprender::linear_model::Ridge;
+use aprender::primitives::{Matrix, Vector};
+use aprender::traits::Estimator;
+
+// Training data
+let x = Matrix::from_vec(5, 2, vec![
+    1.0, 1.0,
+    2.0, 1.0,
+    3.0, 2.0,
+    4.0, 3.0,
+    5.0, 4.0,
+]).unwrap();
+let y = Vector::from_vec(vec![2.0, 3.0, 4.0, 5.0, 6.0]);
+
+// Ridge with α = 1.0
+let mut model = Ridge::new(1.0);
+model.fit(&amp;x, &amp;y).unwrap();
+
+let predictions = model.predict(&amp;x);
+let r2 = model.score(&amp;x, &amp;y);
+println!(&quot;R² = {:.3}&quot;, r2); // e.g., 0.985
+
+// Coefficients are shrunk compared to OLS
+let coef = model.coefficients();
+println!(&quot;Coefficients: {:?}&quot;, coef); // Smaller than OLS</code></pre>
+<p><strong>Test Reference</strong>: <code>src/linear_model/mod.rs::tests::test_ridge_simple_regression</code></p>
+<h3 id="example-2-lasso-regression-sparsity"><a class="header" href="#example-2-lasso-regression-sparsity">Example 2: Lasso Regression (Sparsity)</a></h3>
+<pre><code class="language-rust">use aprender::linear_model::Lasso;
+
+// Same data as Ridge
+let x = Matrix::from_vec(5, 3, vec![
+    1.0, 0.1, 0.01,  // First feature important
+    2.0, 0.2, 0.02,  // Second feature weak
+    3.0, 0.1, 0.03,  // Third feature noise
+    4.0, 0.3, 0.01,
+    5.0, 0.2, 0.02,
+]).unwrap();
+let y = Vector::from_vec(vec![1.1, 2.2, 3.1, 4.3, 5.2]);
+
+// Lasso with high α produces sparse model
+let mut model = Lasso::new(0.5)
+    .with_max_iter(1000)
+    .with_tol(1e-4);
+
+model.fit(&amp;x, &amp;y).unwrap();
+
+let coef = model.coefficients();
+// Some coefficients will be exactly 0.0 (sparsity!)
+println!(&quot;Coefficients: {:?}&quot;, coef);
+// e.g., [1.05, 0.0, 0.0] - only first feature selected</code></pre>
+<p><strong>Test Reference</strong>: <code>src/linear_model/mod.rs::tests::test_lasso_produces_sparsity</code></p>
+<h3 id="example-3-elasticnet-combined"><a class="header" href="#example-3-elasticnet-combined">Example 3: ElasticNet (Combined)</a></h3>
+<pre><code class="language-rust">use aprender::linear_model::ElasticNet;
+
+let x = Matrix::from_vec(4, 2, vec![
+    1.0, 2.0,
+    2.0, 3.0,
+    3.0, 4.0,
+    4.0, 5.0,
+]).unwrap();
+let y = Vector::from_vec(vec![3.0, 5.0, 7.0, 9.0]);
+
+// ElasticNet with α=1.0, l1_ratio=0.5 (50% L1, 50% L2)
+let mut model = ElasticNet::new(1.0, 0.5)
+    .with_max_iter(1000)
+    .with_tol(1e-4);
+
+model.fit(&amp;x, &amp;y).unwrap();
+
+// Gets benefits of both: some sparsity + stability
+let r2 = model.score(&amp;x, &amp;y);
+println!(&quot;R² = {:.3}&quot;, r2);</code></pre>
+<p><strong>Test Reference</strong>: <code>src/linear_model/mod.rs::tests::test_elastic_net_simple</code></p>
+<hr />
+<h2 id="choosing-the-right-regularization"><a class="header" href="#choosing-the-right-regularization">Choosing the Right Regularization</a></h2>
+<h3 id="decision-guide"><a class="header" href="#decision-guide">Decision Guide</a></h3>
+<pre><code>Do you need feature selection (interpretability)?
+├─ YES → Lasso or ElasticNet (L1 component)
+└─ NO → Ridge (simpler, faster)
+
+Are features highly correlated?
+├─ YES → ElasticNet (avoids arbitrary selection)
+└─ NO → Lasso (cleaner sparsity)
+
+Is the problem well-conditioned?
+├─ YES → All methods work
+└─ NO (p &gt; n, multicollinearity) → Ridge (always stable)
+
+Do you want maximum simplicity?
+├─ YES → Ridge (closed-form, one hyperparameter)
+└─ NO → ElasticNet (two hyperparameters, more flexible)
+</code></pre>
+<h3 id="comparison-table"><a class="header" href="#comparison-table">Comparison Table</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Method</th><th>Penalty</th><th>Sparsity</th><th>Stability</th><th>Speed</th><th>Use Case</th></tr></thead><tbody>
+<tr><td><strong>Ridge</strong></td><td>L2 (</td><td></td><td>β</td><td></td><td>²)</td></tr>
+<tr><td><strong>Lasso</strong></td><td>L1 (</td><td></td><td>β</td><td></td><td>)</td></tr>
+<tr><td><strong>ElasticNet</strong></td><td>L1 + L2</td><td>Yes</td><td>High</td><td>Slower</td><td>Correlated features + selection</td></tr>
+</tbody></table>
+</div>
+<hr />
+<h2 id="hyperparameter-selection"><a class="header" href="#hyperparameter-selection">Hyperparameter Selection</a></h2>
+<h3 id="the-α-parameter"><a class="header" href="#the-α-parameter">The α Parameter</a></h3>
+<p><strong>Too small (α → 0)</strong>: No regularization → overfitting
+<strong>Too large (α → ∞)</strong>: Over-regularization → underfitting (all β → 0)
+<strong>Just right</strong>: Balance bias-variance trade-off</p>
+<p><strong>Finding optimal α</strong>: Use cross-validation (see <a href="ml-fundamentals/./cross-validation.html">Cross-Validation Theory</a>)</p>
+<pre><code class="language-rust">// Typical workflow (pseudocode)
+for alpha in [0.001, 0.01, 0.1, 1.0, 10.0, 100.0] {
+    model = Ridge::new(alpha);
+    cv_score = cross_validate(model, x, y, k=5);
+    // Select alpha with best cv_score
+}</code></pre>
+<h3 id="the-l1_ratio-parameter-elasticnet"><a class="header" href="#the-l1_ratio-parameter-elasticnet">The l1_ratio Parameter (ElasticNet)</a></h3>
+<ul>
+<li><strong>l1_ratio = 1.0</strong>: Pure Lasso (maximum sparsity)</li>
+<li><strong>l1_ratio = 0.0</strong>: Pure Ridge (maximum stability)</li>
+<li><strong>l1_ratio = 0.5</strong>: Balanced (common choice)</li>
+</ul>
+<p><strong>Grid Search</strong>: Try multiple (α, l1_ratio) pairs, select best via CV</p>
+<hr />
+<h2 id="practical-considerations-1"><a class="header" href="#practical-considerations-1">Practical Considerations</a></h2>
+<h3 id="feature-scaling-is-critical"><a class="header" href="#feature-scaling-is-critical">Feature Scaling is CRITICAL</a></h3>
+<p><strong>Problem</strong>: Ridge and Lasso penalize coefficients by magnitude</p>
+<ul>
+<li>Features on different scales → unequal penalization</li>
+<li>Large-scale feature gets less penalty than small-scale feature</li>
+</ul>
+<p><strong>Solution</strong>: Always standardize features before regularization</p>
+<pre><code class="language-rust">use aprender::preprocessing::StandardScaler;
+
+let mut scaler = StandardScaler::new();
+scaler.fit(&amp;x_train);
+let x_train_scaled = scaler.transform(&amp;x_train);
+let x_test_scaled = scaler.transform(&amp;x_test);
+
+// Now fit regularized model on scaled data
+let mut model = Ridge::new(1.0);
+model.fit(&amp;x_train_scaled, &amp;y_train).unwrap();</code></pre>
+<h3 id="intercept-not-regularized"><a class="header" href="#intercept-not-regularized">Intercept Not Regularized</a></h3>
+<p>Both Ridge and Lasso <strong>do not penalize the intercept</strong>. Why?</p>
+<ul>
+<li>Intercept represents overall mean of target</li>
+<li>Penalizing it would bias predictions</li>
+<li>Implementation: Set <code>fit_intercept=true</code> (default)</li>
+</ul>
+<h3 id="multicollinearity"><a class="header" href="#multicollinearity">Multicollinearity</a></h3>
+<p><strong>Problem</strong>: When features are highly correlated, OLS becomes unstable
+<strong>Ridge Solution</strong>: Adding αI to X^T X guarantees invertibility
+<strong>Lasso Behavior</strong>: Arbitrarily picks one feature from correlated group</p>
+<hr />
+<h2 id="verification-through-tests"><a class="header" href="#verification-through-tests">Verification Through Tests</a></h2>
+<p>Regularization models have comprehensive test coverage:</p>
+<p><strong>Ridge Tests</strong> (14 tests):</p>
+<ul>
+<li>Closed-form solution correctness</li>
+<li>Coefficients shrink as α increases</li>
+<li>α = 0 recovers OLS</li>
+<li>Multivariate regression</li>
+<li>Save/load serialization</li>
+</ul>
+<p><strong>Lasso Tests</strong> (12 tests):</p>
+<ul>
+<li>Sparsity property (some coefficients = 0)</li>
+<li>Coordinate descent convergence</li>
+<li>Soft-thresholding operator</li>
+<li>High α → all coefficients → 0</li>
+</ul>
+<p><strong>ElasticNet Tests</strong> (15 tests):</p>
+<ul>
+<li>l1_ratio = 1.0 behaves like Lasso</li>
+<li>l1_ratio = 0.0 behaves like Ridge</li>
+<li>Mixed penalty balances sparsity and stability</li>
+</ul>
+<p><strong>Test Reference</strong>: <code>src/linear_model/mod.rs</code> tests</p>
+<hr />
+<h2 id="real-world-application-1"><a class="header" href="#real-world-application-1">Real-World Application</a></h2>
+<h3 id="when-ridge-outperforms-ols"><a class="header" href="#when-ridge-outperforms-ols">When Ridge Outperforms OLS</a></h3>
+<p><strong>Scenario</strong>: Predicting house prices with 20 correlated features (size, bedrooms, bathrooms, etc.)</p>
+<p><strong>OLS Problem</strong>: High variance estimates, unstable predictions
+<strong>Ridge Solution</strong>: Shrinks correlated coefficients, reduces variance</p>
+<p><strong>Result</strong>: Lower test error despite higher bias</p>
+<h3 id="when-lasso-enables-interpretation"><a class="header" href="#when-lasso-enables-interpretation">When Lasso Enables Interpretation</a></h3>
+<p><strong>Scenario</strong>: Medical diagnosis with 1000 genetic markers, only ~10 relevant</p>
+<p><strong>Lasso Benefit</strong>: Selects sparse subset (e.g., 12 markers), rest → 0
+<strong>Business Value</strong>: Cheaper tests (measure only 12 markers), interpretable model</p>
+<hr />
+<h2 id="further-reading-1"><a class="header" href="#further-reading-1">Further Reading</a></h2>
+<h3 id="peer-reviewed-papers-1"><a class="header" href="#peer-reviewed-papers-1">Peer-Reviewed Papers</a></h3>
+<p><strong>Tibshirani (1996)</strong> - <em>Regression Shrinkage and Selection via the Lasso</em></p>
+<ul>
+<li><strong>Relevance</strong>: Original Lasso paper introducing L1 regularization</li>
+<li><strong>Link</strong>: <a href="https://www.jstor.org/stable/2346178">JSTOR</a> (publicly accessible)</li>
+<li><strong>Key Contribution</strong>: Proves Lasso produces sparse solutions</li>
+<li><strong>Applied in</strong>: <code>src/linear_model/mod.rs</code> Lasso implementation</li>
+</ul>
+<p><strong>Zou &amp; Hastie (2005)</strong> - <em>Regularization and Variable Selection via the Elastic Net</em></p>
+<ul>
+<li><strong>Relevance</strong>: Introduces ElasticNet combining L1 and L2</li>
+<li><strong>Link</strong>: <a href="https://www.jstor.org/stable/3647580">JSTOR</a> (publicly accessible)</li>
+<li><strong>Key Contribution</strong>: Solves Lasso's limitations with correlated features</li>
+<li><strong>Applied in</strong>: <code>src/linear_model/mod.rs</code> ElasticNet implementation</li>
+</ul>
+<h3 id="related-chapters-1"><a class="header" href="#related-chapters-1">Related Chapters</a></h3>
+<ul>
+<li><a href="ml-fundamentals/./linear-regression.html">Linear Regression Theory</a> - OLS foundation</li>
+<li><a href="ml-fundamentals/./cross-validation.html">Cross-Validation Theory</a> - Hyperparameter tuning</li>
+<li><a href="ml-fundamentals/./feature-scaling.html">Feature Scaling Theory</a> - CRITICAL for regularization</li>
+<li><a href="ml-fundamentals/./regression-metrics.html">Regression Metrics Theory</a> - Evaluating regularized models</li>
+</ul>
+<hr />
+<h2 id="summary-3"><a class="header" href="#summary-3">Summary</a></h2>
+<p><strong>What You Learned</strong>:</p>
+<ul>
+<li>✅ Regularization = loss + penalty (bias-variance trade-off)</li>
+<li>✅ Ridge (L2): Shrinks all coefficients, closed-form, stable</li>
+<li>✅ Lasso (L1): Produces sparsity, feature selection, iterative</li>
+<li>✅ ElasticNet: Combines L1 + L2, best of both worlds</li>
+<li>✅ Feature scaling is MANDATORY for regularization</li>
+<li>✅ Hyperparameter tuning via cross-validation</li>
+</ul>
+<p><strong>Verification Guarantee</strong>: All regularization methods extensively tested (40+ tests) in <code>src/linear_model/mod.rs</code>. Tests verify mathematical properties (sparsity, shrinkage, equivalence).</p>
+<p><strong>Quick Reference</strong>:</p>
+<ul>
+<li><strong>Multicollinearity</strong>: Ridge</li>
+<li><strong>Feature selection</strong>: Lasso</li>
+<li><strong>Correlated features + selection</strong>: ElasticNet</li>
+<li><strong>Speed</strong>: Ridge (fastest)</li>
+</ul>
+<p><strong>Key Equation</strong>:</p>
+<pre><code>Ridge:      β = (X^T X + αI)^(-1) X^T y
+Lasso:      minimize ||y - Xβ||² + α||β||₁
+ElasticNet: minimize ||y - Xβ||² + α[ρ||β||₁ + (1-ρ)||β||²₂]
+</code></pre>
+<hr />
+<p><strong>Next Chapter</strong>: <a href="ml-fundamentals/./logistic-regression.html">Logistic Regression Theory</a></p>
+<p><strong>Previous Chapter</strong>: <a href="ml-fundamentals/./linear-regression.html">Linear Regression Theory</a></p>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="logistic-regression-theory"><a class="header" href="#logistic-regression-theory">Logistic Regression Theory</a></h1>
 <!-- DOC_STATUS_START -->
 <p><strong>Chapter Status</strong>: ✅ 100% Working (All examples verified)</p>
@@ -1730,7 +2048,7 @@ proptest! {
 <em>Test file: src/classification/mod.rs tests + SafeTensors tests</em></p>
 <!-- DOC_STATUS_END -->
 <hr />
-<h2 id="overview-2"><a class="header" href="#overview-2">Overview</a></h2>
+<h2 id="overview-3"><a class="header" href="#overview-3">Overview</a></h2>
 <p>Logistic regression is the foundation of binary classification. Despite its name, it's a <strong>classification</strong> algorithm that predicts probabilities using the logistic (sigmoid) function.</p>
 <p><strong>Key Concepts</strong>:</p>
 <ul>
@@ -1741,7 +2059,7 @@ proptest! {
 <p><strong>Why This Matters</strong>:
 Logistic regression powers countless applications: spam detection, medical diagnosis, credit scoring. It's interpretable, fast, and surprisingly effective.</p>
 <hr />
-<h2 id="mathematical-foundation-1"><a class="header" href="#mathematical-foundation-1">Mathematical Foundation</a></h2>
+<h2 id="mathematical-foundation-2"><a class="header" href="#mathematical-foundation-2">Mathematical Foundation</a></h2>
 <h3 id="the-sigmoid-function"><a class="header" href="#the-sigmoid-function">The Sigmoid Function</a></h3>
 <p>The <strong>sigmoid</strong> (logistic) function squashes any real number to [0, 1]:</p>
 <pre><code>σ(z) = 1 / (1 + e^(-z))
@@ -1765,7 +2083,7 @@ Logistic regression powers countless applications: spam detection, medical diagn
 <p>Where p = σ(β·x + intercept) is the predicted probability.</p>
 <p><strong>Test Reference</strong>: Implementation uses gradient descent in <code>src/classification/mod.rs</code></p>
 <hr />
-<h2 id="implementation-in-aprender-1"><a class="header" href="#implementation-in-aprender-1">Implementation in Aprender</a></h2>
+<h2 id="implementation-in-aprender-2"><a class="header" href="#implementation-in-aprender-2">Implementation in Aprender</a></h2>
 <h3 id="example-1-binary-classification"><a class="header" href="#example-1-binary-classification">Example 1: Binary Classification</a></h3>
 <pre><code class="language-rust">use aprender::classification::LogisticRegression;
 use aprender::primitives::{Matrix, Vector};
@@ -1808,7 +2126,7 @@ assert_eq!(proba_original[0], proba_loaded[0]); // Exact match</code></pre>
 <p><strong>Test Reference</strong>: <code>src/classification/mod.rs::tests::test_save_load_safetensors_roundtrip</code></p>
 <p><strong>Case Study</strong>: See <a href="ml-fundamentals/../examples/logistic-regression.html">Case Study: Logistic Regression</a> for complete SafeTensors implementation (281 lines)</p>
 <hr />
-<h2 id="verification-through-tests"><a class="header" href="#verification-through-tests">Verification Through Tests</a></h2>
+<h2 id="verification-through-tests-1"><a class="header" href="#verification-through-tests-1">Verification Through Tests</a></h2>
 <p>Logistic regression has comprehensive test coverage:</p>
 <p><strong>Core Functionality Tests</strong>:</p>
 <ul>
@@ -1826,7 +2144,7 @@ assert_eq!(proba_original[0], proba_loaded[0]); // Exact match</code></pre>
 </ul>
 <p>All tests passing ensures production readiness.</p>
 <hr />
-<h2 id="practical-considerations-1"><a class="header" href="#practical-considerations-1">Practical Considerations</a></h2>
+<h2 id="practical-considerations-2"><a class="header" href="#practical-considerations-2">Practical Considerations</a></h2>
 <h3 id="when-to-use-logistic-regression"><a class="header" href="#when-to-use-logistic-regression">When to Use Logistic Regression</a></h3>
 <ul>
 <li>
@@ -1886,7 +2204,7 @@ assert_eq!(proba_original[0], proba_loaded[0]); // Exact match</code></pre>
 </tbody></table>
 </div>
 <hr />
-<h2 id="real-world-application-1"><a class="header" href="#real-world-application-1">Real-World Application</a></h2>
+<h2 id="real-world-application-2"><a class="header" href="#real-world-application-2">Real-World Application</a></h2>
 <p><strong>Case Study Reference</strong>: See <a href="ml-fundamentals/../examples/logistic-regression.html">Case Study: Logistic Regression</a> for:</p>
 <ul>
 <li>Complete SafeTensors implementation (281 lines)</li>
@@ -1896,7 +2214,7 @@ assert_eq!(proba_original[0], proba_loaded[0]); // Exact match</code></pre>
 </ul>
 <p><strong>Key Insight</strong>: SafeTensors enables cross-platform ML. Train in Rust, deploy anywhere (Python, C++, WASM).</p>
 <hr />
-<h2 id="further-reading-1"><a class="header" href="#further-reading-1">Further Reading</a></h2>
+<h2 id="further-reading-2"><a class="header" href="#further-reading-2">Further Reading</a></h2>
 <h3 id="peer-reviewed-paper"><a class="header" href="#peer-reviewed-paper">Peer-Reviewed Paper</a></h3>
 <p><strong>Cox (1958)</strong> - <em>The Regression Analysis of Binary Sequences</em></p>
 <ul>
@@ -1905,7 +2223,7 @@ assert_eq!(proba_original[0], proba_loaded[0]); // Exact match</code></pre>
 <li><strong>Key Contribution</strong>: Maximum likelihood estimation for binary outcomes</li>
 <li><strong>Applied in</strong>: <code>src/classification/mod.rs</code></li>
 </ul>
-<h3 id="related-chapters-1"><a class="header" href="#related-chapters-1">Related Chapters</a></h3>
+<h3 id="related-chapters-2"><a class="header" href="#related-chapters-2">Related Chapters</a></h3>
 <ul>
 <li><a href="ml-fundamentals/./linear-regression.html">Linear Regression Theory</a> - Similar but for continuous targets</li>
 <li><a href="ml-fundamentals/./classification-metrics.html">Classification Metrics Theory</a> - Evaluating logistic regression</li>
@@ -1913,7 +2231,7 @@ assert_eq!(proba_original[0], proba_loaded[0]); // Exact match</code></pre>
 <li><a href="ml-fundamentals/../examples/logistic-regression.html">Case Study: Logistic Regression</a> - <strong>REQUIRED READING</strong></li>
 </ul>
 <hr />
-<h2 id="summary-3"><a class="header" href="#summary-3">Summary</a></h2>
+<h2 id="summary-4"><a class="header" href="#summary-4">Summary</a></h2>
 <p><strong>What You Learned</strong>:</p>
 <ul>
 <li>✅ Sigmoid function: σ(z) = 1/(1 + e^(-z))</li>
@@ -1949,7 +2267,7 @@ assert_eq!(proba_original[0], proba_loaded[0]); // Exact match</code></pre>
 <em>Test file: src/metrics/mod.rs tests</em></p>
 <!-- DOC_STATUS_END -->
 <hr />
-<h2 id="overview-3"><a class="header" href="#overview-3">Overview</a></h2>
+<h2 id="overview-4"><a class="header" href="#overview-4">Overview</a></h2>
 <p>Regression metrics measure how well a model predicts continuous values. Choosing the right metric is critical—it defines what &quot;good&quot; means for your model.</p>
 <p><strong>Key Metrics</strong>:</p>
 <ul>
@@ -1961,7 +2279,7 @@ assert_eq!(proba_original[0], proba_loaded[0]); // Exact match</code></pre>
 <p><strong>Why This Matters</strong>:
 &quot;You can't improve what you don't measure.&quot; Metrics transform vague goals (&quot;make better predictions&quot;) into concrete targets (R² &gt; 0.8).</p>
 <hr />
-<h2 id="mathematical-foundation-2"><a class="header" href="#mathematical-foundation-2">Mathematical Foundation</a></h2>
+<h2 id="mathematical-foundation-3"><a class="header" href="#mathematical-foundation-3">Mathematical Foundation</a></h2>
 <h3 id="r²-coefficient-of-determination"><a class="header" href="#r²-coefficient-of-determination">R² (Coefficient of Determination)</a></h3>
 <p><strong>Definition</strong>:</p>
 <pre><code>R² = 1 - (SS_res / SS_tot)
@@ -2006,7 +2324,7 @@ SS_tot = Σ(y_true - y_mean)²  (total sum of squares)
 </ul>
 <p><strong>When to Use</strong>: When outliers shouldn't dominate the metric.</p>
 <hr />
-<h2 id="implementation-in-aprender-2"><a class="header" href="#implementation-in-aprender-2">Implementation in Aprender</a></h2>
+<h2 id="implementation-in-aprender-3"><a class="header" href="#implementation-in-aprender-3">Implementation in Aprender</a></h2>
 <h3 id="example-all-metrics-on-same-data"><a class="header" href="#example-all-metrics-on-same-data">Example: All Metrics on Same Data</a></h3>
 <pre><code class="language-rust">use aprender::metrics::{r_squared, mse, rmse, mae};
 use aprender::primitives::Vector;
@@ -2051,7 +2369,7 @@ Are there outliers in your data?
 ├─ YES → Use MAE (robust) or Huber loss
 └─ NO → Use RMSE (more sensitive)
 </code></pre>
-<h3 id="comparison-table"><a class="header" href="#comparison-table">Comparison Table</a></h3>
+<h3 id="comparison-table-1"><a class="header" href="#comparison-table-1">Comparison Table</a></h3>
 <div class="table-wrapper"><table><thead><tr><th>Metric</th><th>Range</th><th>Units</th><th>Outlier Sensitivity</th><th>Use Case</th></tr></thead><tbody>
 <tr><td><strong>R²</strong></td><td>(-∞, 1]</td><td>Unitless</td><td>Medium</td><td>Overall fit quality</td></tr>
 <tr><td><strong>MSE</strong></td><td>[0, ∞)</td><td>Squared</td><td>High</td><td>Optimization (differentiable)</td></tr>
@@ -2060,7 +2378,7 @@ Are there outliers in your data?
 </tbody></table>
 </div>
 <hr />
-<h2 id="practical-considerations-2"><a class="header" href="#practical-considerations-2">Practical Considerations</a></h2>
+<h2 id="practical-considerations-3"><a class="header" href="#practical-considerations-3">Practical Considerations</a></h2>
 <h3 id="r²-limitations"><a class="header" href="#r²-limitations">R² Limitations</a></h3>
 <ol>
 <li><strong>Not Always 0-1</strong>: R² can be negative if model is terrible</li>
@@ -2098,7 +2416,7 @@ But predictions are systematically wrong!
 <li>All errors weighted equally (may not reflect reality)</li>
 </ul>
 <hr />
-<h2 id="verification-through-tests-1"><a class="header" href="#verification-through-tests-1">Verification Through Tests</a></h2>
+<h2 id="verification-through-tests-2"><a class="header" href="#verification-through-tests-2">Verification Through Tests</a></h2>
 <p>All metrics have comprehensive property tests:</p>
 <p><strong>Property 1</strong>: Perfect predictions → optimal metric value</p>
 <ul>
@@ -2115,7 +2433,7 @@ But predictions are systematically wrong!
 </ul>
 <p><strong>Test Reference</strong>: <code>src/metrics/mod.rs</code> has 10+ tests verifying these properties</p>
 <hr />
-<h2 id="real-world-application-2"><a class="header" href="#real-world-application-2">Real-World Application</a></h2>
+<h2 id="real-world-application-3"><a class="header" href="#real-world-application-3">Real-World Application</a></h2>
 <p><strong>Example</strong>: Evaluating Linear Regression</p>
 <pre><code class="language-rust">use aprender::linear_model::LinearRegression;
 use aprender::metrics::{r_squared, rmse};
@@ -2140,8 +2458,8 @@ println!(&quot;RMSE = {:.2}&quot;, error);   // e.g., 3.21 (avg error)
 <li><a href="ml-fundamentals/../examples/cross-validation.html">Cross-Validation</a> - Uses R² as CV score</li>
 </ul>
 <hr />
-<h2 id="further-reading-2"><a class="header" href="#further-reading-2">Further Reading</a></h2>
-<h3 id="peer-reviewed-papers-1"><a class="header" href="#peer-reviewed-papers-1">Peer-Reviewed Papers</a></h3>
+<h2 id="further-reading-3"><a class="header" href="#further-reading-3">Further Reading</a></h2>
+<h3 id="peer-reviewed-papers-2"><a class="header" href="#peer-reviewed-papers-2">Peer-Reviewed Papers</a></h3>
 <p><strong>Powers (2011)</strong> - <em>Evaluation: From Precision, Recall and F-Measure to ROC, Informedness, Markedness &amp; Correlation</em></p>
 <ul>
 <li><strong>Relevance</strong>: Comprehensive survey of evaluation metrics</li>
@@ -2149,14 +2467,14 @@ println!(&quot;RMSE = {:.2}&quot;, error);   // e.g., 3.21 (avg error)
 <li><strong>Key Insight</strong>: No single metric is best—choose based on problem</li>
 <li><strong>Applied in</strong>: <code>src/metrics/mod.rs</code></li>
 </ul>
-<h3 id="related-chapters-2"><a class="header" href="#related-chapters-2">Related Chapters</a></h3>
+<h3 id="related-chapters-3"><a class="header" href="#related-chapters-3">Related Chapters</a></h3>
 <ul>
 <li><a href="ml-fundamentals/./linear-regression.html">Linear Regression Theory</a> - OLS minimizes MSE</li>
 <li><a href="ml-fundamentals/./cross-validation.html">Cross-Validation Theory</a> - Uses metrics for evaluation</li>
 <li><a href="ml-fundamentals/./classification-metrics.html">Classification Metrics Theory</a> - For discrete targets</li>
 </ul>
 <hr />
-<h2 id="summary-4"><a class="header" href="#summary-4">Summary</a></h2>
+<h2 id="summary-5"><a class="header" href="#summary-5">Summary</a></h2>
 <p><strong>What You Learned</strong>:</p>
 <ul>
 <li>✅ R²: Variance explained (0-1, higher better)</li>
@@ -2190,7 +2508,7 @@ println!(&quot;RMSE = {:.2}&quot;, error);   // e.g., 3.21 (avg error)
 <em>Test file: src/metrics/mod.rs tests</em></p>
 <!-- DOC_STATUS_END -->
 <hr />
-<h2 id="overview-4"><a class="header" href="#overview-4">Overview</a></h2>
+<h2 id="overview-5"><a class="header" href="#overview-5">Overview</a></h2>
 <p>Classification metrics evaluate how well a model predicts discrete classes. Unlike regression, we're not measuring &quot;how far off&quot;—we're measuring &quot;right or wrong.&quot;</p>
 <p><strong>Key Metrics</strong>:</p>
 <ul>
@@ -2202,7 +2520,7 @@ println!(&quot;RMSE = {:.2}&quot;, error);   // e.g., 3.21 (avg error)
 <p><strong>Why This Matters</strong>:
 Accuracy alone can be misleading. A spam filter with 99% accuracy that marks all email as &quot;not spam&quot; is useless. We need precision and recall to understand performance fully.</p>
 <hr />
-<h2 id="mathematical-foundation-3"><a class="header" href="#mathematical-foundation-3">Mathematical Foundation</a></h2>
+<h2 id="mathematical-foundation-4"><a class="header" href="#mathematical-foundation-4">Mathematical Foundation</a></h2>
 <h3 id="the-confusion-matrix"><a class="header" href="#the-confusion-matrix">The Confusion Matrix</a></h3>
 <p>All classification metrics derive from the <strong>confusion matrix</strong>:</p>
 <pre><code>                Predicted
@@ -2262,7 +2580,7 @@ But: Model is useless (finds zero positives)
 <li>F1 = 2 * (1.0 * 0.01) / (1.0 + 0.01) = 0.02 (realistic)</li>
 </ul>
 <hr />
-<h2 id="implementation-in-aprender-3"><a class="header" href="#implementation-in-aprender-3">Implementation in Aprender</a></h2>
+<h2 id="implementation-in-aprender-4"><a class="header" href="#implementation-in-aprender-4">Implementation in Aprender</a></h2>
 <h3 id="example-binary-classification-metrics"><a class="header" href="#example-binary-classification-metrics">Example: Binary Classification Metrics</a></h3>
 <pre><code class="language-rust">use aprender::metrics::{accuracy, precision, recall, f1_score};
 use aprender::primitives::Vector;
@@ -2297,7 +2615,7 @@ println!(&quot;F1: {:.3}&quot;, f1); // 0.857</code></pre>
 </ul>
 <hr />
 <h2 id="choosing-the-right-metric-1"><a class="header" href="#choosing-the-right-metric-1">Choosing the Right Metric</a></h2>
-<h3 id="decision-guide"><a class="header" href="#decision-guide">Decision Guide</a></h3>
+<h3 id="decision-guide-1"><a class="header" href="#decision-guide-1">Decision Guide</a></h3>
 <pre><code>Are classes balanced (roughly 50/50)?
 ├─ YES → Accuracy is reasonable
 └─ NO → Use Precision/Recall/F1
@@ -2337,7 +2655,7 @@ Examples:
 <li>Middle ground → Maximize F1</li>
 </ul>
 <hr />
-<h2 id="practical-considerations-3"><a class="header" href="#practical-considerations-3">Practical Considerations</a></h2>
+<h2 id="practical-considerations-4"><a class="header" href="#practical-considerations-4">Practical Considerations</a></h2>
 <h3 id="imbalanced-classes"><a class="header" href="#imbalanced-classes">Imbalanced Classes</a></h3>
 <p><strong>Problem</strong>: 1% positive class (fraud detection, rare disease)</p>
 <p><strong>Bad Baseline</strong>:</p>
@@ -2359,7 +2677,7 @@ Class C: Precision = 0.5
 Macro-avg Precision = (0.9 + 0.8 + 0.5) / 3 = 0.73
 </code></pre>
 <hr />
-<h2 id="verification-through-tests-2"><a class="header" href="#verification-through-tests-2">Verification Through Tests</a></h2>
+<h2 id="verification-through-tests-3"><a class="header" href="#verification-through-tests-3">Verification Through Tests</a></h2>
 <p>Classification metrics have comprehensive test coverage:</p>
 <p><strong>Property Tests</strong>:</p>
 <ol>
@@ -2370,7 +2688,7 @@ Macro-avg Precision = (0.9 + 0.8 + 0.5) / 3 = 0.73
 </ol>
 <p><strong>Test Reference</strong>: <code>src/metrics/mod.rs</code> validates these properties</p>
 <hr />
-<h2 id="real-world-application-3"><a class="header" href="#real-world-application-3">Real-World Application</a></h2>
+<h2 id="real-world-application-4"><a class="header" href="#real-world-application-4">Real-World Application</a></h2>
 <h3 id="evaluating-logistic-regression"><a class="header" href="#evaluating-logistic-regression">Evaluating Logistic Regression</a></h3>
 <pre><code class="language-rust">use aprender::classification::LogisticRegression;
 use aprender::metrics::{accuracy, precision, recall, f1_score};
@@ -2397,7 +2715,7 @@ println!(&quot;F1 Score:  {:.3}&quot;, f1);    // e.g., 0.892
 // Decision: F1 &gt; 0.85 → Accept model</code></pre>
 <p><strong>Case Study</strong>: <a href="ml-fundamentals/../examples/logistic-regression.html">Logistic Regression</a> uses these metrics</p>
 <hr />
-<h2 id="further-reading-3"><a class="header" href="#further-reading-3">Further Reading</a></h2>
+<h2 id="further-reading-4"><a class="header" href="#further-reading-4">Further Reading</a></h2>
 <h3 id="peer-reviewed-paper-1"><a class="header" href="#peer-reviewed-paper-1">Peer-Reviewed Paper</a></h3>
 <p><strong>Powers (2011)</strong> - <em>Evaluation: From Precision, Recall and F-Measure to ROC, Informedness, Markedness &amp; Correlation</em></p>
 <ul>
@@ -2407,14 +2725,14 @@ println!(&quot;F1 Score:  {:.3}&quot;, f1);    // e.g., 0.892
 <li><strong>Advanced Topics</strong>: ROC curves, AUC, informedness</li>
 <li><strong>Applied in</strong>: <code>src/metrics/mod.rs</code></li>
 </ul>
-<h3 id="related-chapters-3"><a class="header" href="#related-chapters-3">Related Chapters</a></h3>
+<h3 id="related-chapters-4"><a class="header" href="#related-chapters-4">Related Chapters</a></h3>
 <ul>
 <li><a href="ml-fundamentals/./logistic-regression.html">Logistic Regression Theory</a> - Binary classification model</li>
 <li><a href="ml-fundamentals/./regression-metrics.html">Regression Metrics Theory</a> - For continuous targets</li>
 <li><a href="ml-fundamentals/./cross-validation.html">Cross-Validation Theory</a> - Using metrics in CV</li>
 </ul>
 <hr />
-<h2 id="summary-5"><a class="header" href="#summary-5">Summary</a></h2>
+<h2 id="summary-6"><a class="header" href="#summary-6">Summary</a></h2>
 <p><strong>What You Learned</strong>:</p>
 <ul>
 <li>✅ Confusion matrix: TP, TN, FP, FN</li>
@@ -2450,7 +2768,7 @@ println!(&quot;F1 Score:  {:.3}&quot;, f1);    // e.g., 0.892
 <em>Test file: tests/integration.rs + src/model_selection/mod.rs tests</em></p>
 <!-- DOC_STATUS_END -->
 <hr />
-<h2 id="overview-5"><a class="header" href="#overview-5">Overview</a></h2>
+<h2 id="overview-6"><a class="header" href="#overview-6">Overview</a></h2>
 <p>Cross-validation estimates how well a model generalizes to unseen data by systematically testing on held-out portions of the training set. It's the gold standard for model evaluation.</p>
 <p><strong>Key Concepts</strong>:</p>
 <ul>
@@ -2461,7 +2779,7 @@ println!(&quot;F1 Score:  {:.3}&quot;, f1);    // e.g., 0.892
 <p><strong>Why This Matters</strong>:
 Using training accuracy to evaluate a model is like grading your own exam. Cross-validation provides an honest estimate of real-world performance.</p>
 <hr />
-<h2 id="mathematical-foundation-4"><a class="header" href="#mathematical-foundation-4">Mathematical Foundation</a></h2>
+<h2 id="mathematical-foundation-5"><a class="header" href="#mathematical-foundation-5">Mathematical Foundation</a></h2>
 <h3 id="the-k-fold-algorithm"><a class="header" href="#the-k-fold-algorithm">The K-Fold Algorithm</a></h3>
 <ol>
 <li><strong>Partition</strong> data into K equal-sized folds: D₁, D₂, ..., Dₖ</li>
@@ -2482,7 +2800,7 @@ Using training accuracy to evaluate a model is like grading your own exam. Cross
 <li>K=n: Leave-One-Out CV (LOOCV) - expensive but low variance</li>
 </ul>
 <hr />
-<h2 id="implementation-in-aprender-4"><a class="header" href="#implementation-in-aprender-4">Implementation in Aprender</a></h2>
+<h2 id="implementation-in-aprender-5"><a class="header" href="#implementation-in-aprender-5">Implementation in Aprender</a></h2>
 <h3 id="example-1-traintest-split"><a class="header" href="#example-1-traintest-split">Example 1: Train/Test Split</a></h3>
 <pre><code class="language-rust">use aprender::model_selection::train_test_split;
 use aprender::primitives::{Matrix, Vector};
@@ -2519,7 +2837,7 @@ println!(&quot;Std dev: {:.3}&quot;, result.std());         // e.g., 0.042</code
 <strong>Property 3</strong>: Union of all folds = complete dataset</p>
 <p>These are verified in the comprehensive test suite. See <strong>Case Study</strong> for full property tests.</p>
 <hr />
-<h2 id="practical-considerations-4"><a class="header" href="#practical-considerations-4">Practical Considerations</a></h2>
+<h2 id="practical-considerations-5"><a class="header" href="#practical-considerations-5">Practical Considerations</a></h2>
 <h3 id="when-to-use"><a class="header" href="#when-to-use">When to Use</a></h3>
 <ul>
 <li>
@@ -2561,7 +2879,7 @@ println!(&quot;Std dev: {:.3}&quot;, result.std());         // e.g., 0.042</code
 </li>
 </ol>
 <hr />
-<h2 id="real-world-application-4"><a class="header" href="#real-world-application-4">Real-World Application</a></h2>
+<h2 id="real-world-application-5"><a class="header" href="#real-world-application-5">Real-World Application</a></h2>
 <p><strong>Case Study Reference</strong>: See <a href="ml-fundamentals/../examples/cross-validation.html">Case Study: Cross-Validation</a> for <strong>complete implementation</strong> showing:</p>
 <ul>
 <li>Full RED-GREEN-REFACTOR workflow</li>
@@ -2572,7 +2890,7 @@ println!(&quot;Std dev: {:.3}&quot;, result.std());         // e.g., 0.042</code
 </ul>
 <p><strong>Key Takeaway</strong>: The case study shows EXTREME TDD in action - every requirement becomes a test first.</p>
 <hr />
-<h2 id="further-reading-4"><a class="header" href="#further-reading-4">Further Reading</a></h2>
+<h2 id="further-reading-5"><a class="header" href="#further-reading-5">Further Reading</a></h2>
 <h3 id="peer-reviewed-paper-2"><a class="header" href="#peer-reviewed-paper-2">Peer-Reviewed Paper</a></h3>
 <p><strong>Kohavi (1995)</strong> - <em>A Study of Cross-Validation and Bootstrap for Accuracy Estimation and Model Selection</em></p>
 <ul>
@@ -2581,14 +2899,14 @@ println!(&quot;Std dev: {:.3}&quot;, result.std());         // e.g., 0.042</code
 <li><strong>Key Finding</strong>: K=10 optimal for bias-variance tradeoff</li>
 <li><strong>Applied in</strong>: <code>src/model_selection/mod.rs</code></li>
 </ul>
-<h3 id="related-chapters-4"><a class="header" href="#related-chapters-4">Related Chapters</a></h3>
+<h3 id="related-chapters-5"><a class="header" href="#related-chapters-5">Related Chapters</a></h3>
 <ul>
 <li><a href="ml-fundamentals/./linear-regression.html">Linear Regression Theory</a> - Model to evaluate with CV</li>
 <li><a href="ml-fundamentals/./regression-metrics.html">Regression Metrics Theory</a> - Scores used in CV</li>
 <li><a href="ml-fundamentals/../examples/cross-validation.html">Case Study: Cross-Validation</a> - <strong>REQUIRED READING</strong></li>
 </ul>
 <hr />
-<h2 id="summary-6"><a class="header" href="#summary-6">Summary</a></h2>
+<h2 id="summary-7"><a class="header" href="#summary-7">Summary</a></h2>
 <p><strong>What You Learned</strong>:</p>
 <ul>
 <li>✅ K-Fold algorithm: train on K-1 folds, test on 1</li>
@@ -3223,7 +3541,7 @@ $ git log --oneline | head -5
 e872111 feat: cross-validation - Add automated cross_validate (COMPLETE)
 dbd9a2d feat: cross-validation - Implement train_test_split and KFold
 </code></pre>
-<h2 id="summary-7"><a class="header" href="#summary-7">Summary</a></h2>
+<h2 id="summary-8"><a class="header" href="#summary-8">Summary</a></h2>
 <p>This case study demonstrates EXTREME TDD in production:</p>
 <ul>
 <li><strong>RED</strong>: 12 tests written first</li>
@@ -3813,7 +4131,7 @@ Optimize serialization for large models</p>
 </li>
 </ol>
 <hr />
-<h2 id="summary-8"><a class="header" href="#summary-8">Summary</a></h2>
+<h2 id="summary-9"><a class="header" href="#summary-9">Summary</a></h2>
 <p><strong>Key Takeaways:</strong></p>
 <ol>
 <li>✅ <strong>Write tests first</strong> - Caught header bug before production</li>
@@ -3891,7 +4209,7 @@ following EXTREME TDD principles.</p>
 </ol>
 <hr />
 <p>📝 <strong>This chapter demonstrates binary classification using Logistic Regression.</strong></p>
-<h2 id="overview-6"><a class="header" href="#overview-6">Overview</a></h2>
+<h2 id="overview-7"><a class="header" href="#overview-7">Overview</a></h2>
 <p>Logistic Regression is a fundamental classification algorithm that uses the sigmoid function to model the probability of binary outcomes. This case study demonstrates the RED-GREEN-REFACTOR cycle for implementing a production-quality classifier.</p>
 <h2 id="red-phase-writing-failing-tests"><a class="header" href="#red-phase-writing-failing-tests">RED Phase: Writing Failing Tests</a></h2>
 <p>Following EXTREME TDD principles, we begin by writing comprehensive tests before implementation:</p>
@@ -4556,7 +4874,7 @@ in aprender, following EXTREME TDD principles.</p>
 <li><a href="appendix/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
 <li><a href="appendix/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
 </ul>
-<div style="break-before: page; page-break-before: always;"></div><h1 id="further-reading-5"><a class="header" href="#further-reading-5">Further Reading</a></h1>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="further-reading-6"><a class="header" href="#further-reading-6">Further Reading</a></h1>
 <p>📝 <strong>This chapter is under construction.</strong></p>
 <p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
 <p><strong>See also:</strong></p>
