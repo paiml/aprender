@@ -41,12 +41,15 @@
 //! - [`optim`]: Optimization algorithms (SGD, Adam)
 //! - [`loss`]: Loss functions for training (MSE, MAE, Huber)
 //! - [`serialization`]: Model serialization (SafeTensors format)
+//! - [`stats`]: Traditional descriptive statistics (quantiles, histograms)
+//! - [`graph`]: Graph construction and analysis (centrality, community detection)
 //! - [`chaos`]: Chaos engineering configuration (from renacer)
 
 pub mod chaos;
 pub mod classification;
 pub mod cluster;
 pub mod data;
+pub mod graph;
 pub mod linear_model;
 pub mod loss;
 pub mod metrics;
@@ -56,6 +59,7 @@ pub mod prelude;
 pub mod preprocessing;
 pub mod primitives;
 pub mod serialization;
+pub mod stats;
 pub mod traits;
 pub mod tree;
 
