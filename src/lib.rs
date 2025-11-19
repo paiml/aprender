@@ -33,6 +33,7 @@
 //! - [`data`]: DataFrame for named columns
 //! - [`linear_model`]: Linear regression algorithms
 //! - [`cluster`]: Clustering algorithms (K-Means)
+//! - [`classification`]: Classification algorithms (Logistic Regression)
 //! - [`tree`]: Decision tree classifiers
 //! - [`metrics`]: Evaluation metrics
 //! - [`model_selection`]: Cross-validation and train/test splitting
@@ -42,6 +43,7 @@
 //! - [`chaos`]: Chaos engineering configuration (from renacer)
 
 pub mod chaos;
+pub mod classification;
 pub mod cluster;
 pub mod data;
 pub mod linear_model;

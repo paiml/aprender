@@ -425,6 +425,76 @@ proptest! {
             prop_assert!(max_val <= 1.0 + 1e-4, "Column {} max should be <= 1, got {}", j, max_val);
         }
     }
+
+    // LogisticRegression properties
+    #[test]
+    fn logistic_regression_predict_proba_in_range(x in matrix_strategy(10, 3)) {
+        use aprender::classification::LogisticRegression;
+        let y = vec![0, 1, 0, 1, 0, 1, 0, 1, 0, 1]; // Binary labels
+
+        let mut model = LogisticRegression::new()
+            .with_learning_rate(0.1)
+            .with_max_iter(100);
+        model.fit(&x, &y).unwrap();
+
+        let probas = model.predict_proba(&x);
+
+        // All probabilities must be in [0, 1]
+        for &p in probas.as_slice() {
+            prop_assert!((0.0..=1.0).contains(&p));
+        }
+    }
+
+    #[test]
+    fn logistic_regression_predictions_are_binary(x in matrix_strategy(10, 3)) {
+        use aprender::classification::LogisticRegression;
+        let y = vec![0, 1, 0, 1, 0, 1, 0, 1, 0, 1];
+
+        let mut model = LogisticRegression::new()
+            .with_learning_rate(0.1)
+            .with_max_iter(100);
+        model.fit(&x, &y).unwrap();
+
+        let predictions = model.predict(&x);
+
+        // All predictions must be 0 or 1
+        for pred in predictions {
+            prop_assert!(pred == 0 || pred == 1);
+        }
+    }
+
+    #[test]
+    fn logistic_regression_score_in_range(x in matrix_strategy(10, 3)) {
+        use aprender::classification::LogisticRegression;
+        let y = vec![0, 1, 0, 1, 0, 1, 0, 1, 0, 1];
+
+        let mut model = LogisticRegression::new()
+            .with_learning_rate(0.1)
+            .with_max_iter(100);
+        model.fit(&x, &y).unwrap();
+
+        let score = model.score(&x, &y);
+
+        // Score (accuracy) must be in [0, 1]
+        prop_assert!((0.0..=1.0).contains(&score));
+    }
+
+    #[test]
+    fn logistic_regression_output_length_matches_input(x in matrix_strategy(15, 4)) {
+        use aprender::classification::LogisticRegression;
+        let y = vec![0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0];
+
+        let mut model = LogisticRegression::new()
+            .with_learning_rate(0.1)
+            .with_max_iter(100);
+        model.fit(&x, &y).unwrap();
+
+        let probas = model.predict_proba(&x);
+        let predictions = model.predict(&x);
+
+        prop_assert_eq!(probas.len(), 15);
+        prop_assert_eq!(predictions.len(), 15);
+    }
 }
 
 #[cfg(test)]

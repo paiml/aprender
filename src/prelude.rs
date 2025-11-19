@@ -6,6 +6,7 @@
 //! use aprender::prelude::*;
 //! ```
 
+pub use crate::classification::LogisticRegression;
 pub use crate::cluster::KMeans;
 pub use crate::data::DataFrame;
 pub use crate::linear_model::{ElasticNet, Lasso, LinearRegression, Ridge};
