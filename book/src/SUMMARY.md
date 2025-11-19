@@ -65,6 +65,35 @@
 - [PDCA Cycle](./toyota-way/pdca-cycle.md)
 - [Respect for People](./toyota-way/respect-for-people.md)
 
+# Machine Learning Fundamentals
+
+## Supervised Learning
+
+- [Linear Regression Theory](./ml-fundamentals/linear-regression.md)
+- [Regularization Theory](./ml-fundamentals/regularization.md)
+- [Logistic Regression Theory](./ml-fundamentals/logistic-regression.md)
+- [Decision Trees Theory](./ml-fundamentals/decision-trees.md)
+- [Ensemble Methods Theory](./ml-fundamentals/ensemble-methods.md)
+
+## Unsupervised Learning
+
+- [K-Means Clustering Theory](./ml-fundamentals/kmeans-clustering.md)
+
+## Model Evaluation
+
+- [Regression Metrics Theory](./ml-fundamentals/regression-metrics.md)
+- [Classification Metrics Theory](./ml-fundamentals/classification-metrics.md)
+- [Cross-Validation Theory](./ml-fundamentals/cross-validation.md)
+
+## Optimization
+
+- [Gradient Descent Theory](./ml-fundamentals/gradient-descent.md)
+- [Advanced Optimizers Theory](./ml-fundamentals/advanced-optimizers.md)
+
+## Preprocessing
+
+- [Feature Scaling Theory](./ml-fundamentals/feature-scaling.md)
+
 # Real-World Examples from Aprender
 
 - [Case Study: Linear Regression](./examples/linear-regression.md)
