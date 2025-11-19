@@ -262,68 +262,7 @@ impl DecisionTreeClassifier {
         let mut node_left_child = Vec::new();
         let mut node_right_child = Vec::new();
 
-        fn flatten_tree(
-            node: &TreeNode,
-            features: &mut Vec<f32>,
-            thresholds: &mut Vec<f32>,
-            classes: &mut Vec<f32>,
-            samples: &mut Vec<f32>,
-            left_children: &mut Vec<f32>,
-            right_children: &mut Vec<f32>,
-        ) -> usize {
-            let current_idx = features.len();
-
-            match node {
-                TreeNode::Leaf(leaf) => {
-                    // Leaf node: feature = -1, class and samples store data
-                    features.push(-1.0);
-                    thresholds.push(0.0);
-                    classes.push(leaf.class_label as f32);
-                    samples.push(leaf.n_samples as f32);
-                    left_children.push(-1.0);
-                    right_children.push(-1.0);
-                }
-                TreeNode::Node(internal) => {
-                    // Reserve space for this node (will update child indices later)
-                    features.push(internal.feature_idx as f32);
-                    thresholds.push(internal.threshold);
-                    classes.push(0.0); // Not used for internal nodes
-                    samples.push(0.0); // Not used for internal nodes
-                    left_children.push(0.0); // Placeholder
-                    right_children.push(0.0); // Placeholder
-
-                    // Recursively flatten left subtree
-                    let left_idx = flatten_tree(
-                        &internal.left,
-                        features,
-                        thresholds,
-                        classes,
-                        samples,
-                        left_children,
-                        right_children,
-                    );
-
-                    // Recursively flatten right subtree
-                    let right_idx = flatten_tree(
-                        &internal.right,
-                        features,
-                        thresholds,
-                        classes,
-                        samples,
-                        left_children,
-                        right_children,
-                    );
-
-                    // Update child indices
-                    left_children[current_idx] = left_idx as f32;
-                    right_children[current_idx] = right_idx as f32;
-                }
-            }
-
-            current_idx
-        }
-
-        flatten_tree(
+        flatten_tree_node(
             tree,
             &mut node_features,
             &mut node_thresholds,
@@ -444,52 +383,7 @@ impl DecisionTreeClassifier {
         }
 
         // Reconstruct tree from flat arrays
-        fn reconstruct_node(
-            idx: usize,
-            features: &[f32],
-            thresholds: &[f32],
-            classes: &[f32],
-            samples: &[f32],
-            left_children: &[f32],
-            right_children: &[f32],
-        ) -> TreeNode {
-            if features[idx] < 0.0 {
-                // Leaf node
-                TreeNode::Leaf(Leaf {
-                    class_label: classes[idx] as usize,
-                    n_samples: samples[idx] as usize,
-                })
-            } else {
-                // Internal node
-                let left_idx = left_children[idx] as usize;
-                let right_idx = right_children[idx] as usize;
-
-                TreeNode::Node(Node {
-                    feature_idx: features[idx] as usize,
-                    threshold: thresholds[idx],
-                    left: Box::new(reconstruct_node(
-                        left_idx,
-                        features,
-                        thresholds,
-                        classes,
-                        samples,
-                        left_children,
-                        right_children,
-                    )),
-                    right: Box::new(reconstruct_node(
-                        right_idx,
-                        features,
-                        thresholds,
-                        classes,
-                        samples,
-                        left_children,
-                        right_children,
-                    )),
-                })
-            }
-        }
-
-        let tree = Some(reconstruct_node(
+        let tree = Some(reconstruct_tree_node(
             0,
             &node_features,
             &node_thresholds,
@@ -513,6 +407,118 @@ impl DecisionTreeClassifier {
 impl Default for DecisionTreeClassifier {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+// Helper functions for tree serialization
+
+/// Flattens a tree structure into parallel arrays via pre-order traversal.
+///
+/// Returns the index of the root node.
+fn flatten_tree_node(
+    node: &TreeNode,
+    features: &mut Vec<f32>,
+    thresholds: &mut Vec<f32>,
+    classes: &mut Vec<f32>,
+    samples: &mut Vec<f32>,
+    left_children: &mut Vec<f32>,
+    right_children: &mut Vec<f32>,
+) -> usize {
+    let current_idx = features.len();
+
+    match node {
+        TreeNode::Leaf(leaf) => {
+            // Leaf node: feature = -1, class and samples store data
+            features.push(-1.0);
+            thresholds.push(0.0);
+            classes.push(leaf.class_label as f32);
+            samples.push(leaf.n_samples as f32);
+            left_children.push(-1.0);
+            right_children.push(-1.0);
+        }
+        TreeNode::Node(internal) => {
+            // Reserve space for this node (will update child indices later)
+            features.push(internal.feature_idx as f32);
+            thresholds.push(internal.threshold);
+            classes.push(0.0); // Not used for internal nodes
+            samples.push(0.0); // Not used for internal nodes
+            left_children.push(0.0); // Placeholder
+            right_children.push(0.0); // Placeholder
+
+            // Recursively flatten left subtree
+            let left_idx = flatten_tree_node(
+                &internal.left,
+                features,
+                thresholds,
+                classes,
+                samples,
+                left_children,
+                right_children,
+            );
+
+            // Recursively flatten right subtree
+            let right_idx = flatten_tree_node(
+                &internal.right,
+                features,
+                thresholds,
+                classes,
+                samples,
+                left_children,
+                right_children,
+            );
+
+            // Update child indices
+            left_children[current_idx] = left_idx as f32;
+            right_children[current_idx] = right_idx as f32;
+        }
+    }
+
+    current_idx
+}
+
+/// Reconstructs a tree from parallel arrays.
+fn reconstruct_tree_node(
+    idx: usize,
+    features: &[f32],
+    thresholds: &[f32],
+    classes: &[f32],
+    samples: &[f32],
+    left_children: &[f32],
+    right_children: &[f32],
+) -> TreeNode {
+    if features[idx] < 0.0 {
+        // Leaf node
+        TreeNode::Leaf(Leaf {
+            class_label: classes[idx] as usize,
+            n_samples: samples[idx] as usize,
+        })
+    } else {
+        // Internal node
+        let left_idx = left_children[idx] as usize;
+        let right_idx = right_children[idx] as usize;
+
+        TreeNode::Node(Node {
+            feature_idx: features[idx] as usize,
+            threshold: thresholds[idx],
+            left: Box::new(reconstruct_tree_node(
+                left_idx,
+                features,
+                thresholds,
+                classes,
+                samples,
+                left_children,
+                right_children,
+            )),
+            right: Box::new(reconstruct_tree_node(
+                right_idx,
+                features,
+                thresholds,
+                classes,
+                samples,
+                left_children,
+                right_children,
+            )),
+        })
     }
 }
 
@@ -1060,6 +1066,243 @@ impl RandomForestClassifier {
             .filter(|(pred, true_label)| pred == true_label)
             .count();
         correct as f32 / y.len() as f32
+    }
+
+    /// Saves the Random Forest model to a SafeTensors file.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Path where the SafeTensors file will be saved
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the model is unfitted or if saving fails.
+    pub fn save_safetensors<P: AsRef<Path>>(&self, path: P) -> Result<(), String> {
+        use crate::serialization::safetensors;
+        use std::collections::BTreeMap;
+
+        // Check if model is fitted
+        if self.trees.is_empty() {
+            return Err("Cannot save unfitted model. Call fit() first.".to_string());
+        }
+
+        let mut tensors = BTreeMap::new();
+
+        // Save each tree's structure
+        for (tree_idx, tree) in self.trees.iter().enumerate() {
+            // Get tree structure
+            let tree_node = tree
+                .tree
+                .as_ref()
+                .ok_or("Tree has no root node".to_string())?;
+
+            // Flatten tree to arrays
+            let mut node_features = Vec::new();
+            let mut node_thresholds = Vec::new();
+            let mut node_classes = Vec::new();
+            let mut node_samples = Vec::new();
+            let mut node_left_child = Vec::new();
+            let mut node_right_child = Vec::new();
+
+            flatten_tree_node(
+                tree_node,
+                &mut node_features,
+                &mut node_thresholds,
+                &mut node_classes,
+                &mut node_samples,
+                &mut node_left_child,
+                &mut node_right_child,
+            );
+
+            // Store each array with tree index prefix
+            let prefix = format!("tree_{}_", tree_idx);
+            tensors.insert(
+                format!("{}node_features", prefix),
+                (node_features.clone(), vec![node_features.len()]),
+            );
+            tensors.insert(
+                format!("{}node_thresholds", prefix),
+                (node_thresholds.clone(), vec![node_thresholds.len()]),
+            );
+            tensors.insert(
+                format!("{}node_classes", prefix),
+                (node_classes.clone(), vec![node_classes.len()]),
+            );
+            tensors.insert(
+                format!("{}node_samples", prefix),
+                (node_samples.clone(), vec![node_samples.len()]),
+            );
+            tensors.insert(
+                format!("{}node_left_child", prefix),
+                (node_left_child.clone(), vec![node_left_child.len()]),
+            );
+            tensors.insert(
+                format!("{}node_right_child", prefix),
+                (node_right_child.clone(), vec![node_right_child.len()]),
+            );
+
+            // Store tree's max_depth
+            let tree_max_depth = if let Some(depth) = tree.max_depth {
+                depth as f32
+            } else {
+                -1.0
+            };
+            tensors.insert(
+                format!("{}max_depth", prefix),
+                (vec![tree_max_depth], vec![1]),
+            );
+        }
+
+        // Save hyperparameters
+        tensors.insert(
+            "n_estimators".to_string(),
+            (vec![self.n_estimators as f32], vec![1]),
+        );
+
+        let max_depth_val = if let Some(depth) = self.max_depth {
+            depth as f32
+        } else {
+            -1.0
+        };
+        tensors.insert("max_depth".to_string(), (vec![max_depth_val], vec![1]));
+
+        let random_state_val = if let Some(state) = self.random_state {
+            state as f32
+        } else {
+            -1.0
+        };
+        tensors.insert(
+            "random_state".to_string(),
+            (vec![random_state_val], vec![1]),
+        );
+
+        safetensors::save_safetensors(path, tensors)?;
+        Ok(())
+    }
+
+    /// Loads a Random Forest model from a SafeTensors file.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Path to the SafeTensors file
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if loading fails or if the file format is invalid.
+    pub fn load_safetensors<P: AsRef<Path>>(path: P) -> Result<Self, String> {
+        use crate::serialization::safetensors;
+
+        // Load SafeTensors file
+        let (metadata, raw_data) = safetensors::load_safetensors(path)?;
+
+        // Load hyperparameters
+        let n_estimators_meta = metadata
+            .get("n_estimators")
+            .ok_or("Missing n_estimators tensor")?;
+        let n_estimators_data = safetensors::extract_tensor(&raw_data, n_estimators_meta)?;
+        let n_estimators = n_estimators_data[0] as usize;
+
+        let max_depth_meta = metadata
+            .get("max_depth")
+            .ok_or("Missing max_depth tensor")?;
+        let max_depth_data = safetensors::extract_tensor(&raw_data, max_depth_meta)?;
+        let max_depth = if max_depth_data[0] < 0.0 {
+            None
+        } else {
+            Some(max_depth_data[0] as usize)
+        };
+
+        let random_state_meta = metadata
+            .get("random_state")
+            .ok_or("Missing random_state tensor")?;
+        let random_state_data = safetensors::extract_tensor(&raw_data, random_state_meta)?;
+        let random_state = if random_state_data[0] < 0.0 {
+            None
+        } else {
+            Some(random_state_data[0] as u64)
+        };
+
+        // Reconstruct each tree
+        let mut trees = Vec::with_capacity(n_estimators);
+        for tree_idx in 0..n_estimators {
+            let prefix = format!("tree_{}_", tree_idx);
+
+            // Load tree arrays
+            let node_features_meta = metadata
+                .get(&format!("{}node_features", prefix))
+                .ok_or(format!("Missing tree {} node_features", tree_idx))?;
+            let node_features = safetensors::extract_tensor(&raw_data, node_features_meta)?;
+
+            let node_thresholds_meta = metadata
+                .get(&format!("{}node_thresholds", prefix))
+                .ok_or(format!("Missing tree {} node_thresholds", tree_idx))?;
+            let node_thresholds = safetensors::extract_tensor(&raw_data, node_thresholds_meta)?;
+
+            let node_classes_meta = metadata
+                .get(&format!("{}node_classes", prefix))
+                .ok_or(format!("Missing tree {} node_classes", tree_idx))?;
+            let node_classes = safetensors::extract_tensor(&raw_data, node_classes_meta)?;
+
+            let node_samples_meta = metadata
+                .get(&format!("{}node_samples", prefix))
+                .ok_or(format!("Missing tree {} node_samples", tree_idx))?;
+            let node_samples = safetensors::extract_tensor(&raw_data, node_samples_meta)?;
+
+            let node_left_child_meta = metadata
+                .get(&format!("{}node_left_child", prefix))
+                .ok_or(format!("Missing tree {} node_left_child", tree_idx))?;
+            let node_left_child = safetensors::extract_tensor(&raw_data, node_left_child_meta)?;
+
+            let node_right_child_meta = metadata
+                .get(&format!("{}node_right_child", prefix))
+                .ok_or(format!("Missing tree {} node_right_child", tree_idx))?;
+            let node_right_child = safetensors::extract_tensor(&raw_data, node_right_child_meta)?;
+
+            // Validate array sizes
+            let n_nodes = node_features.len();
+            if node_thresholds.len() != n_nodes
+                || node_classes.len() != n_nodes
+                || node_samples.len() != n_nodes
+                || node_left_child.len() != n_nodes
+                || node_right_child.len() != n_nodes
+            {
+                return Err(format!("Mismatched array sizes for tree {}", tree_idx));
+            }
+
+            // Reconstruct tree
+            let tree_node = reconstruct_tree_node(
+                0,
+                &node_features,
+                &node_thresholds,
+                &node_classes,
+                &node_samples,
+                &node_left_child,
+                &node_right_child,
+            );
+
+            // Load tree's max_depth
+            let tree_max_depth_meta = metadata
+                .get(&format!("{}max_depth", prefix))
+                .ok_or(format!("Missing tree {} max_depth", tree_idx))?;
+            let tree_max_depth_data = safetensors::extract_tensor(&raw_data, tree_max_depth_meta)?;
+            let tree_max_depth = if tree_max_depth_data[0] < 0.0 {
+                None
+            } else {
+                Some(tree_max_depth_data[0] as usize)
+            };
+
+            trees.push(DecisionTreeClassifier {
+                tree: Some(tree_node),
+                max_depth: tree_max_depth,
+            });
+        }
+
+        Ok(Self {
+            trees,
+            n_estimators,
+            max_depth,
+            random_state,
+        })
     }
 }
 
