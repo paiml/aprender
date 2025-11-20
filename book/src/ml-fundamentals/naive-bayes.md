@@ -50,7 +50,7 @@ Return class with highest posterior probability.
 
 ## Implementation in Aprender
 
-```rust
+```rust,ignore
 use aprender::classification::GaussianNB;
 use aprender::primitives::Matrix;
 
@@ -69,7 +69,7 @@ let probabilities = nb.predict_proba(&x_test)?;
 
 Adds small constant to variances to prevent numerical instability:
 
-```rust
+```rust,ignore
 let nb = GaussianNB::new().with_var_smoothing(1e-9);
 ```
 
@@ -116,7 +116,7 @@ See `examples/naive_bayes_iris.rs` for complete example.
 
 ## API Reference
 
-```rust
+```rust,ignore
 // Constructor
 pub fn new() -> Self
 

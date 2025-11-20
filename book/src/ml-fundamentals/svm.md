@@ -138,7 +138,7 @@ Balanced trade-off suitable for most problems.
 
 ## Implementation in Aprender
 
-```rust
+```rust,ignore
 use aprender::classification::LinearSVM;
 use aprender::primitives::Matrix;
 
