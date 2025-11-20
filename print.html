@@ -1874,7 +1874,7 @@ println!(&quot;R² = {:.3}&quot;, r2);</code></pre>
 <hr />
 <h2 id="choosing-the-right-regularization"><a class="header" href="#choosing-the-right-regularization">Choosing the Right Regularization</a></h2>
 <h3 id="decision-guide"><a class="header" href="#decision-guide">Decision Guide</a></h3>
-<pre><code>Do you need feature selection (interpretability)?
+<pre><code class="language-text">Do you need feature selection (interpretability)?
 ├─ YES → Lasso or ElasticNet (L1 component)
 └─ NO → Ridge (simpler, faster)
 
@@ -4615,7 +4615,7 @@ println!(&quot;MAE = {:.3}&quot;, mae_val); // e.g., 0.500</code></pre>
 <hr />
 <h2 id="choosing-the-right-metric"><a class="header" href="#choosing-the-right-metric">Choosing the Right Metric</a></h2>
 <h3 id="decision-tree"><a class="header" href="#decision-tree">Decision Tree</a></h3>
-<pre><code>Are large errors much worse than small errors?
+<pre><code class="language-text">Are large errors much worse than small errors?
 ├─ YES → Use MSE or RMSE (quadratic penalty)
 └─ NO → Use MAE (linear penalty)
 
@@ -4644,7 +4644,7 @@ Are there outliers in your data?
 <li><strong>Sensitive to Range</strong>: R² depends on target variance</li>
 </ol>
 <p><strong>Example of R² Misleading</strong>:</p>
-<pre><code>y_true = [10, 20, 30, 40, 50]
+<pre><code class="language-text">y_true = [10, 20, 30, 40, 50]
 y_pred = [15, 25, 35, 45, 55]  # All predictions +5 (biased)
 
 R² = 1.0 (perfect fit!)
