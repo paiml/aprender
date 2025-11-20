@@ -227,7 +227,7 @@ let data = Matrix::from_vec(30, 4, vec![
 <li>Result: Principal components biased toward large-scale features</li>
 </ul>
 <h3 id="implementation"><a class="header" href="#implementation">Implementation</a></h3>
-<pre><code class="language-rust no_run">use aprender::preprocessing::{StandardScaler, PCA};
+<pre><code class="language-rust ignore">use aprender::preprocessing::{StandardScaler, PCA};
 use aprender::traits::Transformer;
 
 let mut scaler = StandardScaler::new();
@@ -238,7 +238,7 @@ let scaled_data = scaler.fit_transform(&amp;data)?;</code></pre>
 <p>After standardization, all features contribute equally to PCA.</p>
 <h2 id="step-2-applying-pca-4d--2d"><a class="header" href="#step-2-applying-pca-4d--2d">Step 2: Applying PCA (4D → 2D)</a></h2>
 <h3 id="dimensionality-reduction"><a class="header" href="#dimensionality-reduction">Dimensionality Reduction</a></h3>
-<pre><code class="language-rust no_run">let mut pca = PCA::new(2); // Keep 2 principal components
+<pre><code class="language-rust ignore">let mut pca = PCA::new(2); // Keep 2 principal components
 let transformed = pca.fit_transform(&amp;scaled_data)?;
 
 println!(&quot;Original shape: {:?}&quot;, data.shape());       // (30, 4)
@@ -282,7 +282,7 @@ Information Lost:        4.00%
 <li>Suitable for downstream ML tasks</li>
 </ul>
 <h3 id="variance-ratios"><a class="header" href="#variance-ratios">Variance Ratios</a></h3>
-<pre><code class="language-rust no_run">let explained_var = pca.explained_variance()?;
+<pre><code class="language-rust ignore">let explained_var = pca.explained_variance()?;
 let explained_ratio = pca.explained_variance_ratio()?;
 
 for (i, (&amp;var, &amp;ratio)) in explained_var.iter()
@@ -323,7 +323,7 @@ for (i, (&amp;var, &amp;ratio)) in explained_var.iter()
 <p><strong>Conclusion</strong>: 2D projection enables easy visualization and classification of species.</p>
 <h2 id="step-5-reconstruction-2d--4d"><a class="header" href="#step-5-reconstruction-2d--4d">Step 5: Reconstruction (2D → 4D)</a></h2>
 <h3 id="implementation-1"><a class="header" href="#implementation-1">Implementation</a></h3>
-<pre><code class="language-rust no_run">let reconstructed_scaled = pca.inverse_transform(&amp;transformed)?;
+<pre><code class="language-rust ignore">let reconstructed_scaled = pca.inverse_transform(&amp;transformed)?;
 let reconstructed = scaler.inverse_transform(&amp;reconstructed_scaled)?;</code></pre>
 <p><strong>Inverse transform</strong>:</p>
 <pre><code class="language-text">X_reconstructed = X_pca @ components^T + mean
@@ -386,13 +386,13 @@ Sample 0:
 </ul>
 <h3 id="mathematical-properties"><a class="header" href="#mathematical-properties">Mathematical Properties</a></h3>
 <p><strong>Orthogonality</strong>: PC1 ⊥ PC2</p>
-<pre><code class="language-rust no_run">let components = pca.components()?;
+<pre><code class="language-rust ignore">let components = pca.components()?;
 let dot_product = (0..4).map(|k| {
     components.get(0, k) * components.get(1, k)
 }).sum::&lt;f32&gt;();
 assert!(dot_product.abs() &lt; 1e-6); // ≈ 0</code></pre>
 <p><strong>Unit length</strong>: ‖v_i‖ = 1</p>
-<pre><code class="language-rust no_run">let norm_sq = (0..4).map(|k| {
+<pre><code class="language-rust ignore">let norm_sq = (0..4).map(|k| {
     let val = components.get(0, k);
     val * val
 }).sum::&lt;f32&gt;();
@@ -443,7 +443,7 @@ assert!((norm_sq.sqrt() - 1.0).abs() &lt; 1e-6); // ≈ 1</code></pre>
 <li><strong>Visualize 2D projection</strong>: Verify species separation</li>
 </ol>
 <h2 id="full-code"><a class="header" href="#full-code">Full Code</a></h2>
-<pre><code class="language-rust no_run">use aprender::preprocessing::{StandardScaler, PCA};
+<pre><code class="language-rust ignore">use aprender::preprocessing::{StandardScaler, PCA};
 use aprender::primitives::Matrix;
 use aprender::traits::Transformer;
 
@@ -471,7 +471,7 @@ let rmse = compute_rmse(&amp;data, &amp;reconstructed);
 println!(&quot;RMSE: {:.4}&quot;, rmse);</code></pre>
 <h2 id="further-exploration"><a class="header" href="#further-exploration">Further Exploration</a></h2>
 <p><strong>Try different n_components</strong>:</p>
-<pre><code class="language-rust no_run">let mut pca1 = PCA::new(1);  // ~71% variance
+<pre><code class="language-rust ignore">let mut pca1 = PCA::new(1);  // ~71% variance
 let mut pca3 = PCA::new(3);  // ~99% variance
 let mut pca4 = PCA::new(4);  // 100% variance (perfect reconstruction)</code></pre>
 <p><strong>Analyze per-species variance</strong>:</p>

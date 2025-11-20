@@ -669,11 +669,11 @@ fn test_header_is_little_endian() {
 <hr />
 <h3 id="3-determinism-matters-for-cicd"><a class="header" href="#3-determinism-matters-for-cicd">3. Determinism Matters for CI/CD</a></h3>
 <p><strong>Non-deterministic</strong> serialization:</p>
-<pre><code># Day 1
+<pre><code class="language-text"># Day 1
 git diff model.safetensors  # 100 lines changed (but model unchanged!)
 </code></pre>
 <p><strong>Deterministic</strong> serialization:</p>
-<pre><code># Day 1
+<pre><code class="language-text"># Day 1
 git diff model.safetensors  # 2 lines changed (actual model update)
 </code></pre>
 <p><strong>Benefit</strong>: Meaningful code reviews, better CI caching.</p>
@@ -730,7 +730,7 @@ Optimize serialization for large models</p>
 <li>✅ <strong>Industry standards</strong> - SafeTensors = HuggingFace, Ollama, PyTorch compatible</li>
 </ol>
 <p><strong>EXTREME TDD Workflow:</strong></p>
-<pre><code>RED   → 7 failing tests
+<pre><code class="language-text">RED   → 7 failing tests
 GREEN → Minimal SafeTensors implementation
 REFACTOR → Deterministic serialization, error handling
 RESULT → Production-ready, industry-compatible serialization

@@ -226,7 +226,7 @@ let x_train = Matrix::from_vec(20, 4, vec![
 </ul>
 <h2 id="part-1-basic-knn-k3"><a class="header" href="#part-1-basic-knn-k3">Part 1: Basic kNN (k=3)</a></h2>
 <h3 id="implementation"><a class="header" href="#implementation">Implementation</a></h3>
-<pre><code class="language-rust no_run">use aprender::classification::KNearestNeighbors;
+<pre><code class="language-rust ignore">use aprender::classification::KNearestNeighbors;
 use aprender::primitives::Matrix;
 
 let mut knn = KNearestNeighbors::new(3);
@@ -245,7 +245,7 @@ let accuracy = compute_accuracy(&amp;predictions, &amp;y_test);</code></pre>
 </ul>
 <h2 id="part-2-effect-of-k-parameter"><a class="header" href="#part-2-effect-of-k-parameter">Part 2: Effect of k Parameter</a></h2>
 <h3 id="experiment"><a class="header" href="#experiment">Experiment</a></h3>
-<pre><code class="language-rust no_run">for k in [1, 3, 5, 7, 9] {
+<pre><code class="language-rust ignore">for k in [1, 3, 5, 7, 9] {
     let mut knn = KNearestNeighbors::new(k);
     knn.fit(&amp;x_train, &amp;y_train)?;
     let predictions = knn.predict(&amp;x_test)?;
@@ -283,7 +283,7 @@ k=9: Accuracy = 80.0%
 </ul>
 <h2 id="part-3-distance-metrics-k5"><a class="header" href="#part-3-distance-metrics-k5">Part 3: Distance Metrics (k=5)</a></h2>
 <h3 id="comparison"><a class="header" href="#comparison">Comparison</a></h3>
-<pre><code class="language-rust no_run">let mut knn_euclidean = KNearestNeighbors::new(5)
+<pre><code class="language-rust ignore">let mut knn_euclidean = KNearestNeighbors::new(5)
     .with_metric(DistanceMetric::Euclidean);
 
 let mut knn_manhattan = KNearestNeighbors::new(5)
@@ -313,7 +313,7 @@ Minkowski (p=3):      80.0%
 <p><strong>Recommendation</strong>: Use Euclidean (default) for continuous features, Manhattan for robustness to outliers.</p>
 <h2 id="part-4-weighted-vs-uniform-voting"><a class="header" href="#part-4-weighted-vs-uniform-voting">Part 4: Weighted vs Uniform Voting</a></h2>
 <h3 id="comparison-1"><a class="header" href="#comparison-1">Comparison</a></h3>
-<pre><code class="language-rust no_run">// Uniform voting: all neighbors count equally
+<pre><code class="language-rust ignore">// Uniform voting: all neighbors count equally
 let mut knn_uniform = KNearestNeighbors::new(5);
 knn_uniform.fit(&amp;x_train, &amp;y_train)?;
 
@@ -347,7 +347,7 @@ Weighted: 10.3 weighted votes Versicolor, 1.06 Setosa → Versicolor (91%)
 <p><strong>Recommendation</strong>: Use weighted voting for k ≥ 5, uniform for k ≤ 3.</p>
 <h2 id="part-5-probabilistic-predictions"><a class="header" href="#part-5-probabilistic-predictions">Part 5: Probabilistic Predictions</a></h2>
 <h3 id="implementation-1"><a class="header" href="#implementation-1">Implementation</a></h3>
-<pre><code class="language-rust no_run">let mut knn_proba = KNearestNeighbors::new(5).with_weights(true);
+<pre><code class="language-rust ignore">let mut knn_proba = KNearestNeighbors::new(5).with_weights(true);
 knn_proba.fit(&amp;x_train, &amp;y_train)?;
 
 let probabilities = knn_proba.predict_proba(&amp;x_test)?;
@@ -465,7 +465,7 @@ let predictions = knn_proba.predict(&amp;x_test)?;</code></pre>
 </ul>
 <p><strong>Scalability</strong>: kNN requires storing entire training set, making it memory-intensive for large datasets (n &gt; 100,000).</p>
 <h2 id="full-code"><a class="header" href="#full-code">Full Code</a></h2>
-<pre><code class="language-rust no_run">use aprender::classification::{KNearestNeighbors, DistanceMetric};
+<pre><code class="language-rust ignore">use aprender::classification::{KNearestNeighbors, DistanceMetric};
 use aprender::primitives::Matrix;
 
 // 1. Load data
@@ -498,7 +498,7 @@ for (i, &amp;pred) in knn_best.predict(&amp;x_test)?.iter().enumerate() {
 }</code></pre>
 <h2 id="further-exploration"><a class="header" href="#further-exploration">Further Exploration</a></h2>
 <p><strong>Try different k values</strong>:</p>
-<pre><code class="language-rust no_run">// Very small k (high variance)
+<pre><code class="language-rust ignore">// Very small k (high variance)
 let knn1 = KNearestNeighbors::new(1);  // Perfect training fit
 
 // Very large k (high bias)

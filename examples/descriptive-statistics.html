@@ -212,7 +212,7 @@
 <li>Sample size: 30 students</li>
 </ul>
 <h3 id="creating-the-statistics-object"><a class="header" href="#creating-the-statistics-object">Creating the Statistics Object</a></h3>
-<pre><code class="language-rust no_run">use aprender::stats::{BinMethod, DescriptiveStats};
+<pre><code class="language-rust ignore">use aprender::stats::{BinMethod, DescriptiveStats};
 use trueno::Vector;
 
 let data = Vector::from_slice(&amp;test_scores);
@@ -247,7 +247,7 @@ Percentile Distribution:
 <li><strong>P50 (82.5)</strong>: Median student scored B+ (82.5)</li>
 </ul>
 <h3 id="why-median--mean"><a class="header" href="#why-median--mean">Why Median &gt; Mean?</a></h3>
-<pre><code class="language-rust no_run">let mean = data.mean().unwrap();  // 80.53
+<pre><code class="language-rust ignore">let mean = data.mean().unwrap();  // 80.53
 let median = stats.quantile(0.5).unwrap();  // 82.5</code></pre>
 <p><strong>Mean (80.53)</strong> is pulled down by lower outliers (45, 52).</p>
 <p><strong>Median (82.5)</strong> represents the &quot;typical&quot; student, unaffected by outliers.</p>
@@ -449,7 +449,7 @@ Class Performance:
 </ul>
 <h2 id="performance-notes"><a class="header" href="#performance-notes">Performance Notes</a></h2>
 <h3 id="quickselect-optimization"><a class="header" href="#quickselect-optimization">QuickSelect Optimization</a></h3>
-<pre><code class="language-rust no_run">// Single quantile: O(n) with QuickSelect
+<pre><code class="language-rust ignore">// Single quantile: O(n) with QuickSelect
 let median = stats.quantile(0.5).unwrap();
 
 // Multiple quantiles: O(n log n) with single sort

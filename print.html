@@ -6990,11 +6990,11 @@ fn test_header_is_little_endian() {
 <hr />
 <h3 id="3-determinism-matters-for-cicd"><a class="header" href="#3-determinism-matters-for-cicd">3. Determinism Matters for CI/CD</a></h3>
 <p><strong>Non-deterministic</strong> serialization:</p>
-<pre><code># Day 1
+<pre><code class="language-text"># Day 1
 git diff model.safetensors  # 100 lines changed (but model unchanged!)
 </code></pre>
 <p><strong>Deterministic</strong> serialization:</p>
-<pre><code># Day 1
+<pre><code class="language-text"># Day 1
 git diff model.safetensors  # 2 lines changed (actual model update)
 </code></pre>
 <p><strong>Benefit</strong>: Meaningful code reviews, better CI caching.</p>
@@ -7051,7 +7051,7 @@ Optimize serialization for large models</p>
 <li>✅ <strong>Industry standards</strong> - SafeTensors = HuggingFace, Ollama, PyTorch compatible</li>
 </ol>
 <p><strong>EXTREME TDD Workflow:</strong></p>
-<pre><code>RED   → 7 failing tests
+<pre><code class="language-text">RED   → 7 failing tests
 GREEN → Minimal SafeTensors implementation
 REFACTOR → Deterministic serialization, error handling
 RESULT → Production-ready, industry-compatible serialization
@@ -7171,7 +7171,7 @@ fn test_logistic_regression_fit_simple() {
 <li><strong>Property tests</strong>: All 4 invariants hold</li>
 </ul>
 <h2 id="example-output"><a class="header" href="#example-output">Example Output</a></h2>
-<pre><code>Training Accuracy: 100.0%
+<pre><code class="language-text">Training Accuracy: 100.0%
 Test predictions:
   Feature1=2.50, Feature2=2.00 -&gt; Class 0 (0.043 probability)
   Feature1=7.50, Feature2=8.00 -&gt; Class 1 (0.990 probability)
@@ -7486,7 +7486,7 @@ let x_train = Matrix::from_vec(20, 4, vec![
 </ul>
 <h2 id="part-1-basic-knn-k3"><a class="header" href="#part-1-basic-knn-k3">Part 1: Basic kNN (k=3)</a></h2>
 <h3 id="implementation-6"><a class="header" href="#implementation-6">Implementation</a></h3>
-<pre><code class="language-rust no_run">use aprender::classification::KNearestNeighbors;
+<pre><code class="language-rust ignore">use aprender::classification::KNearestNeighbors;
 use aprender::primitives::Matrix;
 
 let mut knn = KNearestNeighbors::new(3);
@@ -7505,7 +7505,7 @@ let accuracy = compute_accuracy(&amp;predictions, &amp;y_test);</code></pre>
 </ul>
 <h2 id="part-2-effect-of-k-parameter"><a class="header" href="#part-2-effect-of-k-parameter">Part 2: Effect of k Parameter</a></h2>
 <h3 id="experiment"><a class="header" href="#experiment">Experiment</a></h3>
-<pre><code class="language-rust no_run">for k in [1, 3, 5, 7, 9] {
+<pre><code class="language-rust ignore">for k in [1, 3, 5, 7, 9] {
     let mut knn = KNearestNeighbors::new(k);
     knn.fit(&amp;x_train, &amp;y_train)?;
     let predictions = knn.predict(&amp;x_test)?;
@@ -7543,7 +7543,7 @@ k=9: Accuracy = 80.0%
 </ul>
 <h2 id="part-3-distance-metrics-k5"><a class="header" href="#part-3-distance-metrics-k5">Part 3: Distance Metrics (k=5)</a></h2>
 <h3 id="comparison"><a class="header" href="#comparison">Comparison</a></h3>
-<pre><code class="language-rust no_run">let mut knn_euclidean = KNearestNeighbors::new(5)
+<pre><code class="language-rust ignore">let mut knn_euclidean = KNearestNeighbors::new(5)
     .with_metric(DistanceMetric::Euclidean);
 
 let mut knn_manhattan = KNearestNeighbors::new(5)
@@ -7573,7 +7573,7 @@ Minkowski (p=3):      80.0%
 <p><strong>Recommendation</strong>: Use Euclidean (default) for continuous features, Manhattan for robustness to outliers.</p>
 <h2 id="part-4-weighted-vs-uniform-voting"><a class="header" href="#part-4-weighted-vs-uniform-voting">Part 4: Weighted vs Uniform Voting</a></h2>
 <h3 id="comparison-1"><a class="header" href="#comparison-1">Comparison</a></h3>
-<pre><code class="language-rust no_run">// Uniform voting: all neighbors count equally
+<pre><code class="language-rust ignore">// Uniform voting: all neighbors count equally
 let mut knn_uniform = KNearestNeighbors::new(5);
 knn_uniform.fit(&amp;x_train, &amp;y_train)?;
 
@@ -7607,7 +7607,7 @@ Weighted: 10.3 weighted votes Versicolor, 1.06 Setosa → Versicolor (91%)
 <p><strong>Recommendation</strong>: Use weighted voting for k ≥ 5, uniform for k ≤ 3.</p>
 <h2 id="part-5-probabilistic-predictions"><a class="header" href="#part-5-probabilistic-predictions">Part 5: Probabilistic Predictions</a></h2>
 <h3 id="implementation-7"><a class="header" href="#implementation-7">Implementation</a></h3>
-<pre><code class="language-rust no_run">let mut knn_proba = KNearestNeighbors::new(5).with_weights(true);
+<pre><code class="language-rust ignore">let mut knn_proba = KNearestNeighbors::new(5).with_weights(true);
 knn_proba.fit(&amp;x_train, &amp;y_train)?;
 
 let probabilities = knn_proba.predict_proba(&amp;x_test)?;
@@ -7725,7 +7725,7 @@ let predictions = knn_proba.predict(&amp;x_test)?;</code></pre>
 </ul>
 <p><strong>Scalability</strong>: kNN requires storing entire training set, making it memory-intensive for large datasets (n &gt; 100,000).</p>
 <h2 id="full-code"><a class="header" href="#full-code">Full Code</a></h2>
-<pre><code class="language-rust no_run">use aprender::classification::{KNearestNeighbors, DistanceMetric};
+<pre><code class="language-rust ignore">use aprender::classification::{KNearestNeighbors, DistanceMetric};
 use aprender::primitives::Matrix;
 
 // 1. Load data
@@ -7758,7 +7758,7 @@ for (i, &amp;pred) in knn_best.predict(&amp;x_test)?.iter().enumerate() {
 }</code></pre>
 <h2 id="further-exploration"><a class="header" href="#further-exploration">Further Exploration</a></h2>
 <p><strong>Try different k values</strong>:</p>
-<pre><code class="language-rust no_run">// Very small k (high variance)
+<pre><code class="language-rust ignore">// Very small k (high variance)
 let knn1 = KNearestNeighbors::new(1);  // Perfect training fit
 
 // Very large k (high bias)
@@ -8632,7 +8632,7 @@ for value in values {
 <li>Sample size: 30 students</li>
 </ul>
 <h3 id="creating-the-statistics-object"><a class="header" href="#creating-the-statistics-object">Creating the Statistics Object</a></h3>
-<pre><code class="language-rust no_run">use aprender::stats::{BinMethod, DescriptiveStats};
+<pre><code class="language-rust ignore">use aprender::stats::{BinMethod, DescriptiveStats};
 use trueno::Vector;
 
 let data = Vector::from_slice(&amp;test_scores);
@@ -8667,7 +8667,7 @@ Percentile Distribution:
 <li><strong>P50 (82.5)</strong>: Median student scored B+ (82.5)</li>
 </ul>
 <h3 id="why-median--mean"><a class="header" href="#why-median--mean">Why Median &gt; Mean?</a></h3>
-<pre><code class="language-rust no_run">let mean = data.mean().unwrap();  // 80.53
+<pre><code class="language-rust ignore">let mean = data.mean().unwrap();  // 80.53
 let median = stats.quantile(0.5).unwrap();  // 82.5</code></pre>
 <p><strong>Mean (80.53)</strong> is pulled down by lower outliers (45, 52).</p>
 <p><strong>Median (82.5)</strong> represents the &quot;typical&quot; student, unaffected by outliers.</p>
@@ -8869,7 +8869,7 @@ Class Performance:
 </ul>
 <h2 id="performance-notes-1"><a class="header" href="#performance-notes-1">Performance Notes</a></h2>
 <h3 id="quickselect-optimization-1"><a class="header" href="#quickselect-optimization-1">QuickSelect Optimization</a></h3>
-<pre><code class="language-rust no_run">// Single quantile: O(n) with QuickSelect
+<pre><code class="language-rust ignore">// Single quantile: O(n) with QuickSelect
 let median = stats.quantile(0.5).unwrap();
 
 // Multiple quantiles: O(n log n) with single sort
@@ -9052,7 +9052,7 @@ let data = Matrix::from_vec(30, 4, vec![
 <li>Result: Principal components biased toward large-scale features</li>
 </ul>
 <h3 id="implementation-11"><a class="header" href="#implementation-11">Implementation</a></h3>
-<pre><code class="language-rust no_run">use aprender::preprocessing::{StandardScaler, PCA};
+<pre><code class="language-rust ignore">use aprender::preprocessing::{StandardScaler, PCA};
 use aprender::traits::Transformer;
 
 let mut scaler = StandardScaler::new();
@@ -9063,7 +9063,7 @@ let scaled_data = scaler.fit_transform(&amp;data)?;</code></pre>
 <p>After standardization, all features contribute equally to PCA.</p>
 <h2 id="step-2-applying-pca-4d--2d"><a class="header" href="#step-2-applying-pca-4d--2d">Step 2: Applying PCA (4D → 2D)</a></h2>
 <h3 id="dimensionality-reduction"><a class="header" href="#dimensionality-reduction">Dimensionality Reduction</a></h3>
-<pre><code class="language-rust no_run">let mut pca = PCA::new(2); // Keep 2 principal components
+<pre><code class="language-rust ignore">let mut pca = PCA::new(2); // Keep 2 principal components
 let transformed = pca.fit_transform(&amp;scaled_data)?;
 
 println!(&quot;Original shape: {:?}&quot;, data.shape());       // (30, 4)
@@ -9107,7 +9107,7 @@ Information Lost:        4.00%
 <li>Suitable for downstream ML tasks</li>
 </ul>
 <h3 id="variance-ratios"><a class="header" href="#variance-ratios">Variance Ratios</a></h3>
-<pre><code class="language-rust no_run">let explained_var = pca.explained_variance()?;
+<pre><code class="language-rust ignore">let explained_var = pca.explained_variance()?;
 let explained_ratio = pca.explained_variance_ratio()?;
 
 for (i, (&amp;var, &amp;ratio)) in explained_var.iter()
@@ -9148,7 +9148,7 @@ for (i, (&amp;var, &amp;ratio)) in explained_var.iter()
 <p><strong>Conclusion</strong>: 2D projection enables easy visualization and classification of species.</p>
 <h2 id="step-5-reconstruction-2d--4d"><a class="header" href="#step-5-reconstruction-2d--4d">Step 5: Reconstruction (2D → 4D)</a></h2>
 <h3 id="implementation-12"><a class="header" href="#implementation-12">Implementation</a></h3>
-<pre><code class="language-rust no_run">let reconstructed_scaled = pca.inverse_transform(&amp;transformed)?;
+<pre><code class="language-rust ignore">let reconstructed_scaled = pca.inverse_transform(&amp;transformed)?;
 let reconstructed = scaler.inverse_transform(&amp;reconstructed_scaled)?;</code></pre>
 <p><strong>Inverse transform</strong>:</p>
 <pre><code class="language-text">X_reconstructed = X_pca @ components^T + mean
@@ -9211,13 +9211,13 @@ Sample 0:
 </ul>
 <h3 id="mathematical-properties"><a class="header" href="#mathematical-properties">Mathematical Properties</a></h3>
 <p><strong>Orthogonality</strong>: PC1 ⊥ PC2</p>
-<pre><code class="language-rust no_run">let components = pca.components()?;
+<pre><code class="language-rust ignore">let components = pca.components()?;
 let dot_product = (0..4).map(|k| {
     components.get(0, k) * components.get(1, k)
 }).sum::&lt;f32&gt;();
 assert!(dot_product.abs() &lt; 1e-6); // ≈ 0</code></pre>
 <p><strong>Unit length</strong>: ‖v_i‖ = 1</p>
-<pre><code class="language-rust no_run">let norm_sq = (0..4).map(|k| {
+<pre><code class="language-rust ignore">let norm_sq = (0..4).map(|k| {
     let val = components.get(0, k);
     val * val
 }).sum::&lt;f32&gt;();
@@ -9268,7 +9268,7 @@ assert!((norm_sq.sqrt() - 1.0).abs() &lt; 1e-6); // ≈ 1</code></pre>
 <li><strong>Visualize 2D projection</strong>: Verify species separation</li>
 </ol>
 <h2 id="full-code-1"><a class="header" href="#full-code-1">Full Code</a></h2>
-<pre><code class="language-rust no_run">use aprender::preprocessing::{StandardScaler, PCA};
+<pre><code class="language-rust ignore">use aprender::preprocessing::{StandardScaler, PCA};
 use aprender::primitives::Matrix;
 use aprender::traits::Transformer;
 
@@ -9296,7 +9296,7 @@ let rmse = compute_rmse(&amp;data, &amp;reconstructed);
 println!(&quot;RMSE: {:.4}&quot;, rmse);</code></pre>
 <h2 id="further-exploration-2"><a class="header" href="#further-exploration-2">Further Exploration</a></h2>
 <p><strong>Try different n_components</strong>:</p>
-<pre><code class="language-rust no_run">let mut pca1 = PCA::new(1);  // ~71% variance
+<pre><code class="language-rust ignore">let mut pca1 = PCA::new(1);  // ~71% variance
 let mut pca3 = PCA::new(3);  // ~99% variance
 let mut pca4 = PCA::new(4);  // 100% variance (perfect reconstruction)</code></pre>
 <p><strong>Analyze per-species variance</strong>:</p>
