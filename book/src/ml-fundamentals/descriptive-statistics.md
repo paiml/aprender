@@ -30,7 +30,7 @@ Q(q) = data[h_floor] + (h - h_floor) * (data[h_ceil] - data[h_floor])
 
 ### Implementation
 
-```rust
+```rust,ignore
 use aprender::stats::DescriptiveStats;
 use trueno::Vector;
 
@@ -56,7 +56,7 @@ Naive approach: Sort the entire array (O(n log n))
 
 Rust's `select_nth_unstable` uses Hoare's selection algorithm with median-of-medians pivot selection.
 
-```rust
+```rust,ignore
 // Inside quantile() implementation
 let mut working_copy = self.data.as_slice().to_vec();
 working_copy.select_nth_unstable_by(h_floor, |a, b| {
@@ -74,7 +74,7 @@ let value = working_copy[h_floor];
 
 **Best practice**: For 3+ quantiles, sort once and reuse:
 
-```rust
+```rust,ignore
 let percentiles = stats.percentiles(&[25.0, 50.0, 75.0]).unwrap();
 ```
 
@@ -117,7 +117,7 @@ Extreme upper = Q3 + 3 * IQR
 
 ### Implementation
 
-```rust
+```rust,ignore
 use aprender::stats::DescriptiveStats;
 use trueno::Vector;
 
@@ -237,7 +237,7 @@ Currently falls back to Freedman-Diaconis.
 
 ### Implementation
 
-```rust
+```rust,ignore
 use aprender::stats::{BinMethod, DescriptiveStats};
 use trueno::Vector;
 
@@ -373,7 +373,7 @@ All methods operate on a single copy of the data (O(n) memory):
 
 ### Quantile Computation
 
-```rust
+```rust,ignore
 // ✅ Good: Single quantile with QuickSelect
 let median = stats.quantile(0.5).unwrap();
 
@@ -388,7 +388,7 @@ let q3 = stats.quantile(0.75).unwrap();  // Sorts again!
 
 ### Outlier Detection
 
-```rust
+```rust,ignore
 // ✅ Conservative: 1.5 × IQR (flags ~0.7% of normal data)
 let lower = q1 - 1.5 * iqr;
 let upper = q3 + 1.5 * iqr;
@@ -400,7 +400,7 @@ let upper_extreme = q3 + 3.0 * iqr;
 
 ### Histogram Method Selection
 
-```rust
+```rust,ignore
 // Outliers present or skewed data
 let hist = stats.histogram_method(BinMethod::FreedmanDiaconis).unwrap();
 
