@@ -1743,22 +1743,22 @@ proptest! {
 <h2 id="mathematical-foundation-1"><a class="header" href="#mathematical-foundation-1">Mathematical Foundation</a></h2>
 <h3 id="the-regularization-principle"><a class="header" href="#the-regularization-principle">The Regularization Principle</a></h3>
 <p><strong>Ordinary Least Squares (OLS)</strong>:</p>
-<pre><code>minimize: ||y - Xβ||²
+<pre><code class="language-text">minimize: ||y - Xβ||²
 </code></pre>
 <p><strong>Regularized Regression</strong>:</p>
-<pre><code>minimize: ||y - Xβ||² + penalty(β)
+<pre><code class="language-text">minimize: ||y - Xβ||² + penalty(β)
 </code></pre>
 <p>The penalty term controls model complexity. Different penalties → different behaviors.</p>
 <h3 id="ridge-regression-l2-regularization"><a class="header" href="#ridge-regression-l2-regularization">Ridge Regression (L2 Regularization)</a></h3>
 <p><strong>Objective Function</strong>:</p>
-<pre><code>minimize: ||y - Xβ||² + α||β||²₂
+<pre><code class="language-text">minimize: ||y - Xβ||² + α||β||²₂
 
 where:
 ||β||²₂ = β₁² + β₂² + ... + βₚ²  (sum of squared coefficients)
 α ≥ 0 (regularization strength)
 </code></pre>
 <p><strong>Closed-Form Solution</strong>:</p>
-<pre><code>β_ridge = (X^T X + αI)^(-1) X^T y
+<pre><code class="language-text">β_ridge = (X^T X + αI)^(-1) X^T y
 </code></pre>
 <p><strong>Key Properties</strong>:</p>
 <ul>
@@ -1768,7 +1768,7 @@ where:
 </ul>
 <h3 id="lasso-regression-l1-regularization"><a class="header" href="#lasso-regression-l1-regularization">Lasso Regression (L1 Regularization)</a></h3>
 <p><strong>Objective Function</strong>:</p>
-<pre><code>minimize: ||y - Xβ||² + α||β||₁
+<pre><code class="language-text">minimize: ||y - Xβ||² + α||β||₁
 
 where:
 ||β||₁ = |β₁| + |β₂| + ... + |βₚ|  (sum of absolute values)
@@ -1782,7 +1782,7 @@ where:
 </ul>
 <h3 id="elasticnet-l1--l2"><a class="header" href="#elasticnet-l1--l2">ElasticNet (L1 + L2)</a></h3>
 <p><strong>Objective Function</strong>:</p>
-<pre><code>minimize: ||y - Xβ||² + α[ρ||β||₁ + (1-ρ)||β||²₂]
+<pre><code class="language-text">minimize: ||y - Xβ||² + α[ρ||β||₁ + (1-ρ)||β||²₂]
 
 where:
 ρ ∈ [0, 1] (L1 ratio)
@@ -1798,7 +1798,7 @@ where:
 <hr />
 <h2 id="implementation-in-aprender-1"><a class="header" href="#implementation-in-aprender-1">Implementation in Aprender</a></h2>
 <h3 id="example-1-ridge-regression"><a class="header" href="#example-1-ridge-regression">Example 1: Ridge Regression</a></h3>
-<pre><code class="language-rust">use aprender::linear_model::Ridge;
+<pre><code class="language-rust ignore">use aprender::linear_model::Ridge;
 use aprender::primitives::{Matrix, Vector};
 use aprender::traits::Estimator;
 
@@ -1825,7 +1825,7 @@ let coef = model.coefficients();
 println!(&quot;Coefficients: {:?}&quot;, coef); // Smaller than OLS</code></pre>
 <p><strong>Test Reference</strong>: <code>src/linear_model/mod.rs::tests::test_ridge_simple_regression</code></p>
 <h3 id="example-2-lasso-regression-sparsity"><a class="header" href="#example-2-lasso-regression-sparsity">Example 2: Lasso Regression (Sparsity)</a></h3>
-<pre><code class="language-rust">use aprender::linear_model::Lasso;
+<pre><code class="language-rust ignore">use aprender::linear_model::Lasso;
 
 // Same data as Ridge
 let x = Matrix::from_vec(5, 3, vec![
@@ -1850,7 +1850,7 @@ println!(&quot;Coefficients: {:?}&quot;, coef);
 // e.g., [1.05, 0.0, 0.0] - only first feature selected</code></pre>
 <p><strong>Test Reference</strong>: <code>src/linear_model/mod.rs::tests::test_lasso_produces_sparsity</code></p>
 <h3 id="example-3-elasticnet-combined"><a class="header" href="#example-3-elasticnet-combined">Example 3: ElasticNet (Combined)</a></h3>
-<pre><code class="language-rust">use aprender::linear_model::ElasticNet;
+<pre><code class="language-rust ignore">use aprender::linear_model::ElasticNet;
 
 let x = Matrix::from_vec(4, 2, vec![
     1.0, 2.0,
@@ -1904,7 +1904,7 @@ Do you want maximum simplicity?
 <strong>Too large (α → ∞)</strong>: Over-regularization → underfitting (all β → 0)
 <strong>Just right</strong>: Balance bias-variance trade-off</p>
 <p><strong>Finding optimal α</strong>: Use cross-validation (see <a href="ml-fundamentals/./cross-validation.html">Cross-Validation Theory</a>)</p>
-<pre><code class="language-rust">// Typical workflow (pseudocode)
+<pre><code class="language-rust ignore">// Typical workflow (pseudocode)
 for alpha in [0.001, 0.01, 0.1, 1.0, 10.0, 100.0] {
     model = Ridge::new(alpha);
     cv_score = cross_validate(model, x, y, k=5);
@@ -1926,7 +1926,7 @@ for alpha in [0.001, 0.01, 0.1, 1.0, 10.0, 100.0] {
 <li>Large-scale feature gets less penalty than small-scale feature</li>
 </ul>
 <p><strong>Solution</strong>: Always standardize features before regularization</p>
-<pre><code class="language-rust">use aprender::preprocessing::StandardScaler;
+<pre><code class="language-rust ignore">use aprender::preprocessing::StandardScaler;
 
 let mut scaler = StandardScaler::new();
 scaler.fit(&amp;x_train);
@@ -2027,7 +2027,7 @@ model.fit(&amp;x_train_scaled, &amp;y_train).unwrap();</code></pre>
 <li><strong>Speed</strong>: Ridge (fastest)</li>
 </ul>
 <p><strong>Key Equation</strong>:</p>
-<pre><code>Ridge:      β = (X^T X + αI)^(-1) X^T y
+<pre><code class="language-text">Ridge:      β = (X^T X + αI)^(-1) X^T y
 Lasso:      minimize ||y - Xβ||² + α||β||₁
 ElasticNet: minimize ||y - Xβ||² + α[ρ||β||₁ + (1-ρ)||β||²₂]
 </code></pre>
@@ -2062,7 +2062,7 @@ Logistic regression powers countless applications: spam detection, medical diagn
 <h2 id="mathematical-foundation-2"><a class="header" href="#mathematical-foundation-2">Mathematical Foundation</a></h2>
 <h3 id="the-sigmoid-function"><a class="header" href="#the-sigmoid-function">The Sigmoid Function</a></h3>
 <p>The <strong>sigmoid</strong> (logistic) function squashes any real number to [0, 1]:</p>
-<pre><code>σ(z) = 1 / (1 + e^(-z))
+<pre><code class="language-text">σ(z) = 1 / (1 + e^(-z))
 </code></pre>
 <p><strong>Properties</strong>:</p>
 <ul>
@@ -2072,20 +2072,20 @@ Logistic regression powers countless applications: spam detection, medical diagn
 </ul>
 <h3 id="logistic-regression-model"><a class="header" href="#logistic-regression-model">Logistic Regression Model</a></h3>
 <p>For input <strong>x</strong> and coefficients <strong>β</strong>:</p>
-<pre><code>P(y=1|x) = σ(β·x + intercept)
+<pre><code class="language-text">P(y=1|x) = σ(β·x + intercept)
          = 1 / (1 + e^(-(β·x + intercept)))
 </code></pre>
 <p><strong>Decision Rule</strong>: Predict class 1 if P(y=1|x) ≥ 0.5, else class 0</p>
 <h3 id="training-gradient-descent"><a class="header" href="#training-gradient-descent">Training: Gradient Descent</a></h3>
 <p>Unlike linear regression, there's <strong>no closed-form solution</strong>. We use gradient descent to minimize the <strong>binary cross-entropy loss</strong>:</p>
-<pre><code>Loss = -[y log(p) + (1-y) log(1-p)]
+<pre><code class="language-text">Loss = -[y log(p) + (1-y) log(1-p)]
 </code></pre>
 <p>Where p = σ(β·x + intercept) is the predicted probability.</p>
 <p><strong>Test Reference</strong>: Implementation uses gradient descent in <code>src/classification/mod.rs</code></p>
 <hr />
 <h2 id="implementation-in-aprender-2"><a class="header" href="#implementation-in-aprender-2">Implementation in Aprender</a></h2>
 <h3 id="example-1-binary-classification"><a class="header" href="#example-1-binary-classification">Example 1: Binary Classification</a></h3>
-<pre><code class="language-rust">use aprender::classification::LogisticRegression;
+<pre><code class="language-rust ignore">use aprender::classification::LogisticRegression;
 use aprender::primitives::{Matrix, Vector};
 
 // Binary classification data (linearly separable)
@@ -2112,7 +2112,7 @@ println!(&quot;P(class=1) = {:.3}&quot;, proba[0]); // e.g., 0.612</code></pre>
 <p><strong>Test Reference</strong>: <code>src/classification/mod.rs::tests::test_logistic_regression_fit</code></p>
 <h3 id="example-2-model-serialization-safetensors"><a class="header" href="#example-2-model-serialization-safetensors">Example 2: Model Serialization (SafeTensors)</a></h3>
 <p>Logistic regression models can be saved and loaded:</p>
-<pre><code class="language-rust">// Save model
+<pre><code class="language-rust ignore">// Save model
 model.save_safetensors(&quot;model.safetensors&quot;).unwrap();
 
 // Load model (in production environment)
@@ -3055,7 +3055,7 @@ Decision trees mirror human decision-making: &quot;If feature X &gt; threshold, 
 <li><strong>Leaves</strong>: Contain class predictions</li>
 </ul>
 <p><strong>Example Tree</strong>:</p>
-<pre><code>        [Petal Width ≤ 0.8]
+<pre><code class="language-text">        [Petal Width ≤ 0.8]
        /                    \
    Class 0           [Petal Length ≤ 4.9]
                     /                    \
@@ -3063,7 +3063,7 @@ Decision trees mirror human decision-making: &quot;If feature X &gt; threshold, 
 </code></pre>
 <h3 id="gini-impurity"><a class="header" href="#gini-impurity">Gini Impurity</a></h3>
 <p><strong>Definition</strong>:</p>
-<pre><code>Gini(S) = 1 - Σ p_i²
+<pre><code class="language-text">Gini(S) = 1 - Σ p_i²
 
 where:
 S = set of samples in a node
@@ -3078,7 +3078,7 @@ p_i = proportion of class i in S
 <p><strong>Why squared?</strong> Penalizes mixed distributions more than linear measure.</p>
 <h3 id="information-gain"><a class="header" href="#information-gain">Information Gain</a></h3>
 <p>When we split a node into left and right children:</p>
-<pre><code>InfoGain = Gini(parent) - [w_L * Gini(left) + w_R * Gini(right)]
+<pre><code class="language-text">InfoGain = Gini(parent) - [w_L * Gini(left) + w_R * Gini(right)]
 
 where:
 w_L = n_left / n_total  (weight of left child)
@@ -3087,7 +3087,7 @@ w_R = n_right / n_total (weight of right child)
 <p><strong>Goal</strong>: Maximize information gain → find best split</p>
 <h3 id="cart-algorithm-classification"><a class="header" href="#cart-algorithm-classification">CART Algorithm (Classification)</a></h3>
 <p><strong>Recursive Tree Building</strong>:</p>
-<pre><code>function BuildTree(X, y, depth, max_depth):
+<pre><code class="language-text">function BuildTree(X, y, depth, max_depth):
     if stopping_criterion_met:
         return Leaf(majority_class(y))
 
@@ -3115,7 +3115,7 @@ w_R = n_right / n_total (weight of right child)
 <hr />
 <h2 id="implementation-in-aprender-6"><a class="header" href="#implementation-in-aprender-6">Implementation in Aprender</a></h2>
 <h3 id="example-1-simple-binary-classification"><a class="header" href="#example-1-simple-binary-classification">Example 1: Simple Binary Classification</a></h3>
-<pre><code class="language-rust">use aprender::tree::DecisionTreeClassifier;
+<pre><code class="language-rust ignore">use aprender::tree::DecisionTreeClassifier;
 use aprender::primitives::Matrix;
 
 // XOR-like problem (not linearly separable)
@@ -3141,7 +3141,7 @@ let accuracy = tree.score(&amp;x, &amp;y);
 println!(&quot;Accuracy: {:.3}&quot;, accuracy); // 1.000</code></pre>
 <p><strong>Test Reference</strong>: <code>src/tree/mod.rs::tests::test_build_tree_simple_split</code></p>
 <h3 id="example-2-multi-class-classification-iris"><a class="header" href="#example-2-multi-class-classification-iris">Example 2: Multi-Class Classification (Iris)</a></h3>
-<pre><code class="language-rust">// Iris dataset (3 classes, 4 features)
+<pre><code class="language-rust ignore">// Iris dataset (3 classes, 4 features)
 // Simplified example - see case study for full implementation
 
 let mut tree = DecisionTreeClassifier::new()
@@ -3155,7 +3155,7 @@ let accuracy = tree.score(&amp;x_test, &amp;y_test);
 println!(&quot;Test Accuracy: {:.3}&quot;, accuracy); // e.g., 0.967</code></pre>
 <p><strong>Case Study</strong>: See <a href="ml-fundamentals/../examples/decision-tree-iris.html">Decision Tree - Iris Classification</a></p>
 <h3 id="example-3-model-serialization"><a class="header" href="#example-3-model-serialization">Example 3: Model Serialization</a></h3>
-<pre><code class="language-rust">// Train and save tree
+<pre><code class="language-rust ignore">// Train and save tree
 let mut tree = DecisionTreeClassifier::new()
     .with_max_depth(4);
 tree.fit(&amp;x_train, &amp;y_train).unwrap();
@@ -3170,7 +3170,7 @@ let predictions = loaded_tree.predict(&amp;x_test);</code></pre>
 <h2 id="understanding-gini-impurity"><a class="header" href="#understanding-gini-impurity">Understanding Gini Impurity</a></h2>
 <h3 id="example-calculation"><a class="header" href="#example-calculation">Example Calculation</a></h3>
 <p><strong>Scenario</strong>: Node with 6 samples: [A, A, A, B, B, C]</p>
-<pre><code>Class A: 3/6 = 0.5
+<pre><code class="language-text">Class A: 3/6 = 0.5
 Class B: 2/6 = 0.33
 Class C: 1/6 = 0.17
 
@@ -3210,7 +3210,7 @@ Gini = 1 - (0.5² + 0.33² + 0.17²)
 </ul>
 <h3 id="finding-optimal-depth"><a class="header" href="#finding-optimal-depth">Finding Optimal Depth</a></h3>
 <p>Use cross-validation:</p>
-<pre><code class="language-rust">// Pseudocode
+<pre><code class="language-rust ignore">// Pseudocode
 for depth in 1..=10 {
     model = DecisionTreeClassifier::new().with_max_depth(depth);
     cv_score = cross_validate(model, x, y, k=5);
@@ -3313,7 +3313,7 @@ for depth in 1..=10 {
 <h3 id="medical-diagnosis-example"><a class="header" href="#medical-diagnosis-example">Medical Diagnosis Example</a></h3>
 <p><strong>Problem</strong>: Diagnose disease from symptoms (temperature, blood pressure, age)</p>
 <p><strong>Decision Tree</strong>:</p>
-<pre><code>          [Temperature &gt; 38°C]
+<pre><code class="language-text">          [Temperature &gt; 38°C]
          /                    \
    [BP &gt; 140]               Healthy
    /        \
@@ -3377,7 +3377,7 @@ Disease A   Disease B
 <li><strong>Prevent overfit</strong>: Set max_depth (3-7 typical)</li>
 </ul>
 <p><strong>Key Equations</strong>:</p>
-<pre><code>Gini(S) = 1 - Σ p_i²
+<pre><code class="language-text">Gini(S) = 1 - Σ p_i²
 InfoGain = Gini(parent) - Weighted_Avg(Gini(children))
 Split: feature ≤ threshold → left, else → right
 </code></pre>

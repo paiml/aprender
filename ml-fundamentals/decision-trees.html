@@ -214,7 +214,7 @@ Decision trees mirror human decision-making: &quot;If feature X &gt; threshold, 
 <li><strong>Leaves</strong>: Contain class predictions</li>
 </ul>
 <p><strong>Example Tree</strong>:</p>
-<pre><code>        [Petal Width ≤ 0.8]
+<pre><code class="language-text">        [Petal Width ≤ 0.8]
        /                    \
    Class 0           [Petal Length ≤ 4.9]
                     /                    \
@@ -222,7 +222,7 @@ Decision trees mirror human decision-making: &quot;If feature X &gt; threshold, 
 </code></pre>
 <h3 id="gini-impurity"><a class="header" href="#gini-impurity">Gini Impurity</a></h3>
 <p><strong>Definition</strong>:</p>
-<pre><code>Gini(S) = 1 - Σ p_i²
+<pre><code class="language-text">Gini(S) = 1 - Σ p_i²
 
 where:
 S = set of samples in a node
@@ -237,7 +237,7 @@ p_i = proportion of class i in S
 <p><strong>Why squared?</strong> Penalizes mixed distributions more than linear measure.</p>
 <h3 id="information-gain"><a class="header" href="#information-gain">Information Gain</a></h3>
 <p>When we split a node into left and right children:</p>
-<pre><code>InfoGain = Gini(parent) - [w_L * Gini(left) + w_R * Gini(right)]
+<pre><code class="language-text">InfoGain = Gini(parent) - [w_L * Gini(left) + w_R * Gini(right)]
 
 where:
 w_L = n_left / n_total  (weight of left child)
@@ -246,7 +246,7 @@ w_R = n_right / n_total (weight of right child)
 <p><strong>Goal</strong>: Maximize information gain → find best split</p>
 <h3 id="cart-algorithm-classification"><a class="header" href="#cart-algorithm-classification">CART Algorithm (Classification)</a></h3>
 <p><strong>Recursive Tree Building</strong>:</p>
-<pre><code>function BuildTree(X, y, depth, max_depth):
+<pre><code class="language-text">function BuildTree(X, y, depth, max_depth):
     if stopping_criterion_met:
         return Leaf(majority_class(y))
 
@@ -274,7 +274,7 @@ w_R = n_right / n_total (weight of right child)
 <hr />
 <h2 id="implementation-in-aprender"><a class="header" href="#implementation-in-aprender">Implementation in Aprender</a></h2>
 <h3 id="example-1-simple-binary-classification"><a class="header" href="#example-1-simple-binary-classification">Example 1: Simple Binary Classification</a></h3>
-<pre><code class="language-rust">use aprender::tree::DecisionTreeClassifier;
+<pre><code class="language-rust ignore">use aprender::tree::DecisionTreeClassifier;
 use aprender::primitives::Matrix;
 
 // XOR-like problem (not linearly separable)
@@ -300,7 +300,7 @@ let accuracy = tree.score(&amp;x, &amp;y);
 println!(&quot;Accuracy: {:.3}&quot;, accuracy); // 1.000</code></pre>
 <p><strong>Test Reference</strong>: <code>src/tree/mod.rs::tests::test_build_tree_simple_split</code></p>
 <h3 id="example-2-multi-class-classification-iris"><a class="header" href="#example-2-multi-class-classification-iris">Example 2: Multi-Class Classification (Iris)</a></h3>
-<pre><code class="language-rust">// Iris dataset (3 classes, 4 features)
+<pre><code class="language-rust ignore">// Iris dataset (3 classes, 4 features)
 // Simplified example - see case study for full implementation
 
 let mut tree = DecisionTreeClassifier::new()
@@ -314,7 +314,7 @@ let accuracy = tree.score(&amp;x_test, &amp;y_test);
 println!(&quot;Test Accuracy: {:.3}&quot;, accuracy); // e.g., 0.967</code></pre>
 <p><strong>Case Study</strong>: See <a href="../examples/decision-tree-iris.html">Decision Tree - Iris Classification</a></p>
 <h3 id="example-3-model-serialization"><a class="header" href="#example-3-model-serialization">Example 3: Model Serialization</a></h3>
-<pre><code class="language-rust">// Train and save tree
+<pre><code class="language-rust ignore">// Train and save tree
 let mut tree = DecisionTreeClassifier::new()
     .with_max_depth(4);
 tree.fit(&amp;x_train, &amp;y_train).unwrap();
@@ -329,7 +329,7 @@ let predictions = loaded_tree.predict(&amp;x_test);</code></pre>
 <h2 id="understanding-gini-impurity"><a class="header" href="#understanding-gini-impurity">Understanding Gini Impurity</a></h2>
 <h3 id="example-calculation"><a class="header" href="#example-calculation">Example Calculation</a></h3>
 <p><strong>Scenario</strong>: Node with 6 samples: [A, A, A, B, B, C]</p>
-<pre><code>Class A: 3/6 = 0.5
+<pre><code class="language-text">Class A: 3/6 = 0.5
 Class B: 2/6 = 0.33
 Class C: 1/6 = 0.17
 
@@ -369,7 +369,7 @@ Gini = 1 - (0.5² + 0.33² + 0.17²)
 </ul>
 <h3 id="finding-optimal-depth"><a class="header" href="#finding-optimal-depth">Finding Optimal Depth</a></h3>
 <p>Use cross-validation:</p>
-<pre><code class="language-rust">// Pseudocode
+<pre><code class="language-rust ignore">// Pseudocode
 for depth in 1..=10 {
     model = DecisionTreeClassifier::new().with_max_depth(depth);
     cv_score = cross_validate(model, x, y, k=5);
@@ -472,7 +472,7 @@ for depth in 1..=10 {
 <h3 id="medical-diagnosis-example"><a class="header" href="#medical-diagnosis-example">Medical Diagnosis Example</a></h3>
 <p><strong>Problem</strong>: Diagnose disease from symptoms (temperature, blood pressure, age)</p>
 <p><strong>Decision Tree</strong>:</p>
-<pre><code>          [Temperature &gt; 38°C]
+<pre><code class="language-text">          [Temperature &gt; 38°C]
          /                    \
    [BP &gt; 140]               Healthy
    /        \
@@ -536,7 +536,7 @@ Disease A   Disease B
 <li><strong>Prevent overfit</strong>: Set max_depth (3-7 typical)</li>
 </ul>
 <p><strong>Key Equations</strong>:</p>
-<pre><code>Gini(S) = 1 - Σ p_i²
+<pre><code class="language-text">Gini(S) = 1 - Σ p_i²
 InfoGain = Gini(parent) - Weighted_Avg(Gini(children))
 Split: feature ≤ threshold → left, else → right
 </code></pre>

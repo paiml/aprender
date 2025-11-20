@@ -207,22 +207,22 @@
 <h2 id="mathematical-foundation"><a class="header" href="#mathematical-foundation">Mathematical Foundation</a></h2>
 <h3 id="the-regularization-principle"><a class="header" href="#the-regularization-principle">The Regularization Principle</a></h3>
 <p><strong>Ordinary Least Squares (OLS)</strong>:</p>
-<pre><code>minimize: ||y - Xβ||²
+<pre><code class="language-text">minimize: ||y - Xβ||²
 </code></pre>
 <p><strong>Regularized Regression</strong>:</p>
-<pre><code>minimize: ||y - Xβ||² + penalty(β)
+<pre><code class="language-text">minimize: ||y - Xβ||² + penalty(β)
 </code></pre>
 <p>The penalty term controls model complexity. Different penalties → different behaviors.</p>
 <h3 id="ridge-regression-l2-regularization"><a class="header" href="#ridge-regression-l2-regularization">Ridge Regression (L2 Regularization)</a></h3>
 <p><strong>Objective Function</strong>:</p>
-<pre><code>minimize: ||y - Xβ||² + α||β||²₂
+<pre><code class="language-text">minimize: ||y - Xβ||² + α||β||²₂
 
 where:
 ||β||²₂ = β₁² + β₂² + ... + βₚ²  (sum of squared coefficients)
 α ≥ 0 (regularization strength)
 </code></pre>
 <p><strong>Closed-Form Solution</strong>:</p>
-<pre><code>β_ridge = (X^T X + αI)^(-1) X^T y
+<pre><code class="language-text">β_ridge = (X^T X + αI)^(-1) X^T y
 </code></pre>
 <p><strong>Key Properties</strong>:</p>
 <ul>
@@ -232,7 +232,7 @@ where:
 </ul>
 <h3 id="lasso-regression-l1-regularization"><a class="header" href="#lasso-regression-l1-regularization">Lasso Regression (L1 Regularization)</a></h3>
 <p><strong>Objective Function</strong>:</p>
-<pre><code>minimize: ||y - Xβ||² + α||β||₁
+<pre><code class="language-text">minimize: ||y - Xβ||² + α||β||₁
 
 where:
 ||β||₁ = |β₁| + |β₂| + ... + |βₚ|  (sum of absolute values)
@@ -246,7 +246,7 @@ where:
 </ul>
 <h3 id="elasticnet-l1--l2"><a class="header" href="#elasticnet-l1--l2">ElasticNet (L1 + L2)</a></h3>
 <p><strong>Objective Function</strong>:</p>
-<pre><code>minimize: ||y - Xβ||² + α[ρ||β||₁ + (1-ρ)||β||²₂]
+<pre><code class="language-text">minimize: ||y - Xβ||² + α[ρ||β||₁ + (1-ρ)||β||²₂]
 
 where:
 ρ ∈ [0, 1] (L1 ratio)
@@ -262,7 +262,7 @@ where:
 <hr />
 <h2 id="implementation-in-aprender"><a class="header" href="#implementation-in-aprender">Implementation in Aprender</a></h2>
 <h3 id="example-1-ridge-regression"><a class="header" href="#example-1-ridge-regression">Example 1: Ridge Regression</a></h3>
-<pre><code class="language-rust">use aprender::linear_model::Ridge;
+<pre><code class="language-rust ignore">use aprender::linear_model::Ridge;
 use aprender::primitives::{Matrix, Vector};
 use aprender::traits::Estimator;
 
@@ -289,7 +289,7 @@ let coef = model.coefficients();
 println!(&quot;Coefficients: {:?}&quot;, coef); // Smaller than OLS</code></pre>
 <p><strong>Test Reference</strong>: <code>src/linear_model/mod.rs::tests::test_ridge_simple_regression</code></p>
 <h3 id="example-2-lasso-regression-sparsity"><a class="header" href="#example-2-lasso-regression-sparsity">Example 2: Lasso Regression (Sparsity)</a></h3>
-<pre><code class="language-rust">use aprender::linear_model::Lasso;
+<pre><code class="language-rust ignore">use aprender::linear_model::Lasso;
 
 // Same data as Ridge
 let x = Matrix::from_vec(5, 3, vec![
@@ -314,7 +314,7 @@ println!(&quot;Coefficients: {:?}&quot;, coef);
 // e.g., [1.05, 0.0, 0.0] - only first feature selected</code></pre>
 <p><strong>Test Reference</strong>: <code>src/linear_model/mod.rs::tests::test_lasso_produces_sparsity</code></p>
 <h3 id="example-3-elasticnet-combined"><a class="header" href="#example-3-elasticnet-combined">Example 3: ElasticNet (Combined)</a></h3>
-<pre><code class="language-rust">use aprender::linear_model::ElasticNet;
+<pre><code class="language-rust ignore">use aprender::linear_model::ElasticNet;
 
 let x = Matrix::from_vec(4, 2, vec![
     1.0, 2.0,
@@ -368,7 +368,7 @@ Do you want maximum simplicity?
 <strong>Too large (α → ∞)</strong>: Over-regularization → underfitting (all β → 0)
 <strong>Just right</strong>: Balance bias-variance trade-off</p>
 <p><strong>Finding optimal α</strong>: Use cross-validation (see <a href="./cross-validation.html">Cross-Validation Theory</a>)</p>
-<pre><code class="language-rust">// Typical workflow (pseudocode)
+<pre><code class="language-rust ignore">// Typical workflow (pseudocode)
 for alpha in [0.001, 0.01, 0.1, 1.0, 10.0, 100.0] {
     model = Ridge::new(alpha);
     cv_score = cross_validate(model, x, y, k=5);
@@ -390,7 +390,7 @@ for alpha in [0.001, 0.01, 0.1, 1.0, 10.0, 100.0] {
 <li>Large-scale feature gets less penalty than small-scale feature</li>
 </ul>
 <p><strong>Solution</strong>: Always standardize features before regularization</p>
-<pre><code class="language-rust">use aprender::preprocessing::StandardScaler;
+<pre><code class="language-rust ignore">use aprender::preprocessing::StandardScaler;
 
 let mut scaler = StandardScaler::new();
 scaler.fit(&amp;x_train);
@@ -491,7 +491,7 @@ model.fit(&amp;x_train_scaled, &amp;y_train).unwrap();</code></pre>
 <li><strong>Speed</strong>: Ridge (fastest)</li>
 </ul>
 <p><strong>Key Equation</strong>:</p>
-<pre><code>Ridge:      β = (X^T X + αI)^(-1) X^T y
+<pre><code class="language-text">Ridge:      β = (X^T X + αI)^(-1) X^T y
 Lasso:      minimize ||y - Xβ||² + α||β||₁
 ElasticNet: minimize ||y - Xβ||² + α[ρ||β||₁ + (1-ρ)||β||²₂]
 </code></pre>
