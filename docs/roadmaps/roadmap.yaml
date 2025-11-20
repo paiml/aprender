@@ -341,3 +341,18 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
+- id: Fix mdbook test failures - Phase 11 (pca-iris.md remaining failures)
+  github_issue: null
+  item_type: task
+  title: 'New task: Fix mdbook test failures - Phase 11 (pca-iris.md remaining failures)'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-20T22:11:09.621505588+00:00
+  updated: 2025-11-20T22:15:09.640635618+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
