@@ -82,7 +82,7 @@ The implementation includes:
 
 ## Example Output
 
-```
+```text
 Training Accuracy: 100.0%
 Test predictions:
   Feature1=2.50, Feature2=2.00 -> Class 0 (0.043 probability)

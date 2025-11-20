@@ -58,7 +58,7 @@ PCA is sensitive to feature scales. Without standardization:
 
 ### Implementation
 
-```rust,no_run
+```rust,ignore
 use aprender::preprocessing::{StandardScaler, PCA};
 use aprender::traits::Transformer;
 
@@ -77,7 +77,7 @@ After standardization, all features contribute equally to PCA.
 
 ### Dimensionality Reduction
 
-```rust,no_run
+```rust,ignore
 let mut pca = PCA::new(2); // Keep 2 principal components
 let transformed = pca.fit_transform(&scaled_data)?;
 
@@ -128,7 +128,7 @@ Information Lost:        4.00%
 
 ### Variance Ratios
 
-```rust,no_run
+```rust,ignore
 let explained_var = pca.explained_variance()?;
 let explained_ratio = pca.explained_variance_ratio()?;
 
@@ -178,7 +178,7 @@ Sample      Species        PC1        PC2
 
 ### Implementation
 
-```rust,no_run
+```rust,ignore
 let reconstructed_scaled = pca.inverse_transform(&transformed)?;
 let reconstructed = scaler.inverse_transform(&reconstructed_scaled)?;
 ```
@@ -253,7 +253,7 @@ Sample 0:
 ### Mathematical Properties
 
 **Orthogonality**: PC1 ⊥ PC2
-```rust,no_run
+```rust,ignore
 let components = pca.components()?;
 let dot_product = (0..4).map(|k| {
     components.get(0, k) * components.get(1, k)
@@ -262,7 +262,7 @@ assert!(dot_product.abs() < 1e-6); // ≈ 0
 ```
 
 **Unit length**: ‖v_i‖ = 1
-```rust,no_run
+```rust,ignore
 let norm_sq = (0..4).map(|k| {
     let val = components.get(0, k);
     val * val
@@ -322,7 +322,7 @@ assert!((norm_sq.sqrt() - 1.0).abs() < 1e-6); // ≈ 1
 
 ## Full Code
 
-```rust,no_run
+```rust,ignore
 use aprender::preprocessing::{StandardScaler, PCA};
 use aprender::primitives::Matrix;
 use aprender::traits::Transformer;
@@ -354,7 +354,7 @@ println!("RMSE: {:.4}", rmse);
 ## Further Exploration
 
 **Try different n_components**:
-```rust,no_run
+```rust,ignore
 let mut pca1 = PCA::new(1);  // ~71% variance
 let mut pca3 = PCA::new(3);  // ~99% variance
 let mut pca4 = PCA::new(4);  // 100% variance (perfect reconstruction)

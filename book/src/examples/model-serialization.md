@@ -595,13 +595,13 @@ fn test_header_is_little_endian() {
 ### 3. Determinism Matters for CI/CD
 
 **Non-deterministic** serialization:
-```
+```text
 # Day 1
 git diff model.safetensors  # 100 lines changed (but model unchanged!)
 ```
 
 **Deterministic** serialization:
-```
+```text
 # Day 1
 git diff model.safetensors  # 2 lines changed (actual model update)
 ```
@@ -659,7 +659,7 @@ Now that you understand SafeTensors serialization:
 5. ✅ **Industry standards** - SafeTensors = HuggingFace, Ollama, PyTorch compatible
 
 **EXTREME TDD Workflow:**
-```
+```text
 RED   → 7 failing tests
 GREEN → Minimal SafeTensors implementation
 REFACTOR → Deterministic serialization, error handling

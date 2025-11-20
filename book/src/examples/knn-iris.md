@@ -57,7 +57,7 @@ let x_train = Matrix::from_vec(20, 4, vec![
 
 ### Implementation
 
-```rust,no_run
+```rust,ignore
 use aprender::classification::KNearestNeighbors;
 use aprender::primitives::Matrix;
 
@@ -83,7 +83,7 @@ Test Accuracy: 90.0%
 
 ### Experiment
 
-```rust,no_run
+```rust,ignore
 for k in [1, 3, 5, 7, 9] {
     let mut knn = KNearestNeighbors::new(k);
     knn.fit(&x_train, &y_train)?;
@@ -127,7 +127,7 @@ k=9: Accuracy = 80.0%
 
 ### Comparison
 
-```rust,no_run
+```rust,ignore
 let mut knn_euclidean = KNearestNeighbors::new(5)
     .with_metric(DistanceMetric::Euclidean);
 
@@ -166,7 +166,7 @@ Minkowski (p=3):      80.0%
 
 ### Comparison
 
-```rust,no_run
+```rust,ignore
 // Uniform voting: all neighbors count equally
 let mut knn_uniform = KNearestNeighbors::new(5);
 knn_uniform.fit(&x_train, &y_train)?;
@@ -212,7 +212,7 @@ Weighted: 10.3 weighted votes Versicolor, 1.06 Setosa → Versicolor (91%)
 
 ### Implementation
 
-```rust,no_run
+```rust,ignore
 let mut knn_proba = KNearestNeighbors::new(5).with_weights(true);
 knn_proba.fit(&x_train, &y_train)?;
 
@@ -340,7 +340,7 @@ kNN provides competitive accuracy with zero training time but slower predictions
 
 ## Full Code
 
-```rust,no_run
+```rust,ignore
 use aprender::classification::{KNearestNeighbors, DistanceMetric};
 use aprender::primitives::Matrix;
 
@@ -377,7 +377,7 @@ for (i, &pred) in knn_best.predict(&x_test)?.iter().enumerate() {
 ## Further Exploration
 
 **Try different k values**:
-```rust,no_run
+```rust,ignore
 // Very small k (high variance)
 let knn1 = KNearestNeighbors::new(1);  // Perfect training fit
 

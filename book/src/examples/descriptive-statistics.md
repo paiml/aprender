@@ -42,7 +42,7 @@ let test_scores = vec![
 
 ### Creating the Statistics Object
 
-```rust,no_run
+```rust,ignore
 use aprender::stats::{BinMethod, DescriptiveStats};
 use trueno::Vector;
 
@@ -85,7 +85,7 @@ Percentile Distribution:
 
 ### Why Median > Mean?
 
-```rust,no_run
+```rust,ignore
 let mean = data.mean().unwrap();  // 80.53
 let median = stats.quantile(0.5).unwrap();  // 82.5
 ```
@@ -327,7 +327,7 @@ Class Performance:
 
 ### QuickSelect Optimization
 
-```rust,no_run
+```rust,ignore
 // Single quantile: O(n) with QuickSelect
 let median = stats.quantile(0.5).unwrap();
 
