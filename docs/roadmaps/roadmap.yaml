@@ -221,3 +221,18 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
+- id: Fix remaining mdbook test failures - Phase 3 (21 chapters remaining)
+  github_issue: null
+  item_type: task
+  title: 'New task: Fix remaining mdbook test failures - Phase 3 (21 chapters remaining)'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-20T21:39:39.730580744+00:00
+  updated: 2025-11-20T21:41:50.464473351+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
