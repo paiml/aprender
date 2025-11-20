@@ -2392,7 +2392,7 @@ where:
 <p><strong>Recommendation</strong>: Use weighted voting for k ≥ 5, uniform for k ≤ 3.</p>
 <h2 id="implementation-in-aprender-3"><a class="header" href="#implementation-in-aprender-3">Implementation in Aprender</a></h2>
 <h3 id="basic-usage"><a class="header" href="#basic-usage">Basic Usage</a></h3>
-<pre><code class="language-rust">use aprender::classification::{KNearestNeighbors, DistanceMetric};
+<pre><code class="language-rust ignore">use aprender::classification::{KNearestNeighbors, DistanceMetric};
 use aprender::primitives::Matrix;
 
 // Load data
@@ -2408,7 +2408,7 @@ let x_test = Matrix::from_vec(20, 4, test_data)?;
 let predictions = knn.predict(&amp;x_test)?;</code></pre>
 <h3 id="builder-pattern"><a class="header" href="#builder-pattern">Builder Pattern</a></h3>
 <p>Configure kNN with fluent API:</p>
-<pre><code class="language-rust">let mut knn = KNearestNeighbors::new(5)
+<pre><code class="language-rust ignore">let mut knn = KNearestNeighbors::new(5)
     .with_metric(DistanceMetric::Manhattan)
     .with_weights(true);  // Enable weighted voting
 
@@ -2416,7 +2416,7 @@ knn.fit(&amp;x_train, &amp;y_train)?;
 let predictions = knn.predict(&amp;x_test)?;</code></pre>
 <h3 id="probabilistic-predictions"><a class="header" href="#probabilistic-predictions">Probabilistic Predictions</a></h3>
 <p>Get class probability estimates:</p>
-<pre><code class="language-rust">let probabilities = knn.predict_proba(&amp;x_test)?;
+<pre><code class="language-rust ignore">let probabilities = knn.predict_proba(&amp;x_test)?;
 
 // probabilities[i][c] = estimated probability of class c for sample i
 for i in 0..x_test.n_rows() {
@@ -2428,7 +2428,7 @@ for i in 0..x_test.n_rows() {
 <li>Weighted voting: probabilities = weighted fraction (normalized by total weight)</li>
 </ul>
 <h3 id="distance-metrics-1"><a class="header" href="#distance-metrics-1">Distance Metrics</a></h3>
-<pre><code class="language-rust">use aprender::classification::DistanceMetric;
+<pre><code class="language-rust ignore">use aprender::classification::DistanceMetric;
 
 // Euclidean (default)
 let mut knn_euclidean = KNearestNeighbors::new(5)
@@ -2554,7 +2554,7 @@ let mut knn_minkowski = KNearestNeighbors::new(5)
 <h2 id="practical-considerations-3"><a class="header" href="#practical-considerations-3">Practical Considerations</a></h2>
 <h3 id="1-feature-standardization"><a class="header" href="#1-feature-standardization">1. Feature Standardization</a></h3>
 <p><strong>Always standardize features before kNN</strong>:</p>
-<pre><code class="language-rust">use aprender::preprocessing::StandardScaler;
+<pre><code class="language-rust ignore">use aprender::preprocessing::StandardScaler;
 use aprender::traits::Transformer;
 
 let mut scaler = StandardScaler::new();
@@ -2590,7 +2590,7 @@ let predictions = knn.predict(&amp;x_test_scaled)?;</code></pre>
 </ul>
 <h3 id="4-hyperparameter-tuning"><a class="header" href="#4-hyperparameter-tuning">4. Hyperparameter Tuning</a></h3>
 <p><strong>k selection</strong>:</p>
-<pre><code class="language-python"># Pseudocode (implement with cross-validation)
+<pre><code class="language-text"># Pseudocode (implement with cross-validation)
 for k in [1, 3, 5, 7, 9, 11, 15, 20]:
     knn = KNN(k)
     score = cross_validate(knn, X, y)
@@ -2605,7 +2605,7 @@ for k in [1, 3, 5, 7, 9, 11, 15, 20]:
 <h2 id="algorithm-details"><a class="header" href="#algorithm-details">Algorithm Details</a></h2>
 <h3 id="distance-computation"><a class="header" href="#distance-computation">Distance Computation</a></h3>
 <p>Aprender implements optimized distance computation:</p>
-<pre><code class="language-rust">fn compute_distance(
+<pre><code class="language-rust ignore">fn compute_distance(
     &amp;self,
     x: &amp;Matrix&lt;f32&gt;,
     i: usize,
@@ -2648,7 +2648,7 @@ for k in [1, 3, 5, 7, 9, 11, 15, 20]:
 </ul>
 <h3 id="voting-strategies"><a class="header" href="#voting-strategies">Voting Strategies</a></h3>
 <p><strong>Uniform voting</strong>:</p>
-<pre><code class="language-rust">fn majority_vote(&amp;self, neighbors: &amp;[(f32, usize)]) -&gt; usize {
+<pre><code class="language-rust ignore">fn majority_vote(&amp;self, neighbors: &amp;[(f32, usize)]) -&gt; usize {
     let mut counts = HashMap::new();
     for (_dist, label) in neighbors {
         *counts.entry(*label).or_insert(0) += 1;
@@ -2656,7 +2656,7 @@ for k in [1, 3, 5, 7, 9, 11, 15, 20]:
     *counts.iter().max_by_key(|(_, &amp;count)| count).unwrap().0
 }</code></pre>
 <p><strong>Weighted voting</strong>:</p>
-<pre><code class="language-rust">fn weighted_vote(&amp;self, neighbors: &amp;[(f32, usize)]) -&gt; usize {
+<pre><code class="language-rust ignore">fn weighted_vote(&amp;self, neighbors: &amp;[(f32, usize)]) -&gt; usize {
     let mut weights = HashMap::new();
     for (dist, label) in neighbors {
         let weight = if *dist &lt; 1e-10 { 1.0 } else { 1.0 / dist };
@@ -2666,7 +2666,7 @@ for k in [1, 3, 5, 7, 9, 11, 15, 20]:
 }</code></pre>
 <h2 id="example-iris-dataset"><a class="header" href="#example-iris-dataset">Example: Iris Dataset</a></h2>
 <p>Complete example from <code>examples/knn_iris.rs</code>:</p>
-<pre><code class="language-rust">use aprender::classification::{KNearestNeighbors, DistanceMetric};
+<pre><code class="language-rust ignore">use aprender::classification::{KNearestNeighbors, DistanceMetric};
 use aprender::primitives::Matrix;
 
 // Load data
@@ -2702,7 +2702,7 @@ let predictions = knn_best.predict(&amp;x_test)?;</code></pre>
 <li><strong>Weighted kNN</strong>: Dudani, S.A. &quot;The distance-weighted k-nearest-neighbor rule&quot; (1976)</li>
 </ul>
 <h2 id="api-reference"><a class="header" href="#api-reference">API Reference</a></h2>
-<pre><code class="language-rust">// Constructor
+<pre><code class="language-rust ignore">// Constructor
 pub fn new(k: usize) -&gt; Self
 
 // Builder methods
@@ -2999,7 +2999,7 @@ let decisions = svm.decision_function(&amp;x_test)?;</code></pre>
 </ul>
 <p>See <code>examples/svm_iris.rs</code> for complete example.</p>
 <h2 id="api-reference-2"><a class="header" href="#api-reference-2">API Reference</a></h2>
-<pre><code class="language-rust">// Constructor
+<pre><code class="language-rust ignore">// Constructor
 pub fn new() -&gt; Self
 
 // Builder
