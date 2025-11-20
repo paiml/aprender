@@ -25,7 +25,7 @@ Expected output: Social network analysis with degree centrality, PageRank, and b
 
 ### Building the Graph
 
-```rust
+```rust,ignore
 use aprender::graph::Graph;
 
 let edges = vec![
@@ -195,7 +195,7 @@ For this 10-node, 13-edge graph, the difference is minimal. Benefits appear at s
 
 Aprender uses **Kahan compensated summation** to prevent floating-point drift:
 
-```rust
+```rust,ignore
 let mut sum = 0.0;
 let mut c = 0.0;  // Compensation term
 
@@ -218,7 +218,7 @@ Without Kahan summation:
 
 Betweenness computation uses **Rayon** for parallelization:
 
-```rust
+```rust,ignore
 let partial_scores: Vec<Vec<f64>> = (0..n_nodes)
     .into_par_iter()  // Parallel iterator
     .map(|source| brandes_bfs_from_source(source))

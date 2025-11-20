@@ -68,7 +68,7 @@ Following EXTREME TDD, we write comprehensive tests **before** implementation.
 
 ### Test 1: File Creation
 
-```rust
+```rust,ignore
 #[test]
 fn test_linear_regression_save_safetensors_creates_file() {
     // Train a simple model
@@ -94,7 +94,7 @@ fn test_linear_regression_save_safetensors_creates_file() {
 
 ### Test 2: Header Format Validation
 
-```rust
+```rust,ignore
 #[test]
 fn test_safetensors_header_format() {
     let mut model = LinearRegression::new();
@@ -123,7 +123,7 @@ fn test_safetensors_header_format() {
 
 ### Test 3: JSON Metadata Structure
 
-```rust
+```rust,ignore
 #[test]
 fn test_safetensors_json_metadata_structure() {
     let x = Matrix::from_vec(3, 2, vec![1.0, 0.0, 0.0, 1.0, 1.0, 1.0]).unwrap();
@@ -163,7 +163,7 @@ fn test_safetensors_json_metadata_structure() {
 
 ### Test 4: Roundtrip Integrity (Most Important!)
 
-```rust
+```rust,ignore
 #[test]
 fn test_safetensors_roundtrip() {
     // Train original model
@@ -217,7 +217,7 @@ fn test_safetensors_roundtrip() {
 
 ### Test 5: Error Handling
 
-```rust
+```rust,ignore
 #[test]
 fn test_safetensors_file_does_not_exist_error() {
     let result = LinearRegression::load_safetensors("nonexistent.safetensors");
@@ -250,7 +250,7 @@ fn test_safetensors_corrupted_header_error() {
 
 ### Step 1: Create Serialization Module
 
-```rust
+```rust,ignore
 // src/serialization/mod.rs
 pub mod safetensors;
 pub use safetensors::SafeTensorsMetadata;
@@ -258,7 +258,7 @@ pub use safetensors::SafeTensorsMetadata;
 
 ### Step 2: Implement SafeTensors Format
 
-```rust
+```rust,ignore
 // src/serialization/safetensors.rs
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;  // BTreeMap for deterministic ordering!
@@ -328,7 +328,7 @@ pub fn save_safetensors<P: AsRef<Path>>(
 
 ### Step 3: Add LinearRegression Methods
 
-```rust
+```rust,ignore
 // src/linear_model/mod.rs
 impl LinearRegression {
     pub fn save_safetensors<P: AsRef<Path>>(&self, path: P) -> Result<(), String> {
@@ -388,7 +388,7 @@ impl LinearRegression {
 
 ### Refactoring 1: Extract Tensor Loading
 
-```rust
+```rust,ignore
 pub fn load_safetensors<P: AsRef<Path>>(path: P)
     -> Result<(SafeTensorsMetadata, Vec<u8>), String> {
     let bytes = fs::read(path).map_err(|e| format!("File read failed: {}", e))?;
@@ -427,12 +427,12 @@ pub fn load_safetensors<P: AsRef<Path>>(path: P)
 ### Refactoring 2: Deterministic Serialization
 
 **Before** (non-deterministic):
-```rust
+```rust,ignore
 let mut tensors = HashMap::new();  // ❌ Non-deterministic iteration order
 ```
 
 **After** (deterministic):
-```rust
+```rust,ignore
 let mut tensors = BTreeMap::new();  // ✅ Sorted keys = reproducible builds
 ```
 
@@ -457,7 +457,7 @@ let mut tensors = BTreeMap::new();  // ✅ Sorted keys = reproducible builds
 - ✅ **Roundtrip integrity** (save → load → predict)
 
 ### Property Tests (Future Enhancement)
-```rust
+```rust,ignore
 #[proptest]
 fn test_safetensors_roundtrip_property(
     #[strategy(1usize..10)] n_samples: usize,
@@ -491,13 +491,13 @@ fn test_safetensors_roundtrip_property(
 ### 1. Why BTreeMap Instead of HashMap?
 
 **HashMap**:
-```rust
+```rust,ignore
 {"intercept": {...}, "coefficients": {...}}  // First run
 {"coefficients": {...}, "intercept": {...}}  // Second run (different!)
 ```
 
 **BTreeMap**:
-```rust
+```rust,ignore
 {"coefficients": {...}, "intercept": {...}}  // Always sorted!
 ```
 
@@ -508,14 +508,14 @@ fn test_safetensors_roundtrip_property(
 ### 2. Why Eager Validation?
 
 **Lazy Validation (FlatBuffers)**:
-```rust
+```rust,ignore
 // ❌ Crash during inference (production!)
 let model = load_flatbuffers("model.fb");  // No validation
 let pred = model.predict(&x);  // 💥 CRASH: corrupted data
 ```
 
 **Eager Validation (SafeTensors)**:
-```rust
+```rust,ignore
 // ✅ Fail fast at load time (development)
 let model = load_safetensors("model.st")
     .expect("Invalid model file");  // Fails HERE, not in production
@@ -539,7 +539,7 @@ let pred = model.predict(&x);  // Safe!
 
 ### Example: Aprender → Realizar Pipeline
 
-```rust
+```rust,ignore
 // Training (aprender)
 let mut model = LinearRegression::new();
 model.fit(&training_data, &labels).unwrap();
@@ -567,7 +567,7 @@ let predictions = realizar_model.predict(&input_features);
 **Without tests**: Discovered header endianness bug in production (costly!)
 
 **With tests** (EXTREME TDD):
-```rust
+```rust,ignore
 #[test]
 fn test_header_is_little_endian() {
     // This test CAUGHT the bug before merge!

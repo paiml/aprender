@@ -22,7 +22,7 @@ Expected output: Step-by-step PCA analysis including standardization, dimensiona
 
 ### Iris Flower Measurements (30 samples)
 
-```rust
+```rust,ignore
 // Features: [sepal_length, sepal_width, petal_length, petal_width]
 // 10 samples each from: Setosa, Versicolor, Virginica
 

@@ -24,7 +24,7 @@ This chapter documents the complete EXTREME TDD implementation of aprender's cro
 
 Created `src/model_selection/mod.rs` with 4 failing tests:
 
-```rust
+```rust,ignore
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -102,7 +102,7 @@ error[E0425]: cannot find function `train_test_split` in this scope
 
 Implemented minimal solution:
 
-```rust
+```rust,ignore
 use crate::primitives::{Matrix, Vector};
 use rand::seq::SliceRandom;
 use rand::SeedableRng;
@@ -201,7 +201,7 @@ $ cargo test
 ```
 
 Added module to `src/lib.rs`:
-```rust
+```rust,ignore
 pub mod model_selection;
 ```
 
@@ -213,7 +213,7 @@ pub mod model_selection;
 
 Added 5 failing tests for KFold:
 
-```rust
+```rust,ignore
 #[test]
 fn test_kfold_basic() {
     let kfold = KFold::new(5);
@@ -278,7 +278,7 @@ fn test_kfold_uneven_split() {
 
 ### GREEN Phase
 
-```rust
+```rust,ignore
 #[derive(Debug, Clone)]
 pub struct KFold {
     n_splits: usize,
@@ -368,7 +368,7 @@ test result: ok. 5 passed; 0 failed
 
 Created example file `examples/cross_validation.rs`:
 
-```rust
+```rust,ignore
 use aprender::linear_model::LinearRegression;
 use aprender::model_selection::{train_test_split, KFold};
 use aprender::primitives::{Matrix, Vector};
@@ -442,7 +442,7 @@ Cross-Validation - Model Selection Example
 
 Added 3 tests (2 failing, 1 passing helper):
 
-```rust
+```rust,ignore
 #[test]
 fn test_cross_validate_basic() {
     let x = Matrix::from_vec(20, 1, (0..20).map(|i| i as f32).collect()).unwrap();
@@ -487,7 +487,7 @@ fn test_cross_validation_result_stats() {
 
 ### GREEN Phase
 
-```rust
+```rust,ignore
 #[derive(Debug, Clone)]
 pub struct CrossValidationResult {
     pub scores: Vec<f32>,
@@ -567,7 +567,7 @@ test result: ok. 3 passed; 0 failed
 
 Updated example with automated cross-validation:
 
-```rust
+```rust,ignore
 fn cross_validate_example() {
     let x_data: Vec<f32> = (0..100).map(|i| i as f32).collect();
     let y_data: Vec<f32> = x_data.iter().map(|&x| 4.0 * x - 3.0).collect();
@@ -636,7 +636,7 @@ By writing tests first, we only implemented what was needed:
 
 ### 2. Builder Pattern Emerged Naturally
 Testing led to clean API:
-```rust
+```rust,ignore
 let kfold = KFold::new(5)
     .with_shuffle(true)
     .with_random_state(42);

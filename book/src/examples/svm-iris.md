@@ -77,7 +77,7 @@ Both classes classified perfectly.
 
 ## Implementation
 
-```rust
+```rust,ignore
 use aprender::classification::LinearSVM;
 use aprender::primitives::Matrix;
 
@@ -197,7 +197,7 @@ All achieve 100% on this well-separated binary problem.
 ## Further Exploration
 
 ### Try Different C Values
-```rust
+```rust,ignore
 for c in [0.001, 0.01, 0.1, 1.0, 10.0, 100.0] {
     let mut svm = LinearSVM::new().with_c(c);
     svm.fit(&x_train, &y_train)?;
@@ -210,7 +210,7 @@ Plot the hyperplane w·x + b = 0 in 2D feature space (e.g., petal_length vs peta
 
 ### Multi-Class Extension
 Implement One-vs-Rest to handle all 3 Iris species:
-```rust
+```rust,ignore
 // Train 3 binary classifiers:
 // - Setosa vs (Versicolor, Virginica)
 // - Versicolor vs (Setosa, Virginica)

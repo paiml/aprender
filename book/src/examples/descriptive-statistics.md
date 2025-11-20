@@ -22,7 +22,7 @@ Expected output: Statistical analysis with quantiles, five-number summary, histo
 
 ### Test Scores (30 students)
 
-```rust
+```rust,ignore
 let test_scores = vec![
     45.0, // outlier (struggling student)
     52.0, // outlier

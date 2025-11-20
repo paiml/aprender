@@ -59,7 +59,7 @@ cargo run --example gbm_iris
 
 ## Implementation
 
-```rust
+```rust,ignore
 use aprender::tree::GradientBoostingClassifier;
 use aprender::primitives::Matrix;
 

@@ -68,7 +68,7 @@ All three species classified perfectly.
 
 ## Implementation
 
-```rust
+```rust,ignore
 use aprender::classification::GaussianNB;
 use aprender::primitives::Matrix;
 

@@ -23,7 +23,7 @@ Expected output: Comprehensive kNN analysis including accuracy for different k v
 
 ### Iris Flower Measurements
 
-```rust
+```rust,ignore
 // Features: [sepal_length, sepal_width, petal_length, petal_width]
 // Classes: 0=Setosa, 1=Versicolor, 2=Virginica
 

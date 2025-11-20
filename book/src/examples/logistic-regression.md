@@ -31,7 +31,7 @@ Logistic Regression is a fundamental classification algorithm that uses the sigm
 
 Following EXTREME TDD principles, we begin by writing comprehensive tests before implementation:
 
-```rust
+```rust,ignore
 #[test]
 fn test_logistic_regression_fit_simple() {
     let x = Matrix::from_vec(4, 2, vec![...]).unwrap();
@@ -110,7 +110,7 @@ SafeTensors is the industry-standard format for ML model serialization because i
 
 Following EXTREME TDD, we wrote 5 comprehensive tests before implementation:
 
-```rust
+```rust,ignore
 #[test]
 fn test_save_safetensors_unfitted_model() {
     // Test 1: Cannot save unfitted model
@@ -160,7 +160,7 @@ fn test_safetensors_preserves_probabilities() {
 
 The implementation serializes two tensors: **coefficients** and **intercept**.
 
-```rust
+```rust,ignore
 pub fn save_safetensors<P: AsRef<Path>>(&self, path: P) -> Result<(), String> {
     use crate::serialization::safetensors;
     use std::collections::BTreeMap;
@@ -210,7 +210,7 @@ pub fn save_safetensors<P: AsRef<Path>>(&self, path: P) -> Result<(), String> {
 
 ### Loading Models
 
-```rust
+```rust,ignore
 pub fn load_safetensors<P: AsRef<Path>>(path: P) -> Result<Self, String> {
     use crate::serialization::safetensors;
 
@@ -238,7 +238,7 @@ pub fn load_safetensors<P: AsRef<Path>>(path: P) -> Result<Self, String> {
 
 Train in **aprender**, deploy to **realizar**:
 
-```rust
+```rust,ignore
 // 1. Train LogisticRegression in aprender
 let mut model = LogisticRegression::new()
     .with_learning_rate(0.1)
@@ -265,7 +265,7 @@ model.save_safetensors("fraud_detection.safetensors").unwrap();
 
 We use `BTreeMap` instead of `HashMap` to ensure sorted keys:
 
-```rust
+```rust,ignore
 // ✅ CORRECT: Deterministic (sorted keys)
 let mut tensors = BTreeMap::new();
 tensors.insert("coefficients", ...);
@@ -288,7 +288,7 @@ tensors.insert("coefficients", ...);
 
 Binary classification requires **exact** probability preservation:
 
-```rust
+```rust,ignore
 // Before save
 let prob = model.predict_proba(&x)[0];  // 0.847362
 
@@ -308,7 +308,7 @@ assert_eq!(prob, prob_loaded);  // ✅ Passes (IEEE 754 F32 precision)
 
 Training hyperparameters (`learning_rate`, `max_iter`, `tol`) are **not** saved:
 
-```rust
+```rust,ignore
 // Hyperparameters only needed during training
 let mut model = LogisticRegression::new()
     .with_learning_rate(0.1)   // Not saved
@@ -344,7 +344,7 @@ print(tensors["coefficients"])  # torch.Tensor([...])
 ```
 
 **realizar (Rust):**
-```rust
+```rust,ignore
 use realizar::SafetensorsModel;
 
 let model = SafetensorsModel::from_file("model.safetensors")?;
