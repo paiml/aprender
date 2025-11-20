@@ -32,3 +32,33 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
+- id: Fix mdbook test failures - 9 failing code blocks in documentation
+  github_issue: null
+  item_type: task
+  title: 'New task: Fix mdbook test failures - 9 failing code blocks in documentation'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-20T21:12:36.620611606+00:00
+  updated: 2025-11-20T21:15:13.308982006+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+- id: Mark GH-10 and GH-11 (Graph/Stats documentation) as completed
+  github_issue: null
+  item_type: task
+  title: 'New task: Mark GH-10 and GH-11 (Graph/Stats documentation) as completed'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-20T21:15:21.981875231+00:00
+  updated: 2025-11-20T21:15:56.478521188+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
