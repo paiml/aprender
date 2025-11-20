@@ -131,3 +131,48 @@ roadmap:
   estimated_effort: null
   labels:
   - enhancement
+- id: Sovereign AI Integration Specification v1.1 - Complete architecture document with 10 peer-reviewed references, Toyota Way principles, and Rust safety improvements
+  github_issue: null
+  item_type: task
+  title: 'New task: Sovereign AI Integration Specification v1.1 - Complete architecture document with 10 peer-reviewed references, Toyota Way principles, and Rust safety improvements'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-20T19:29:36.580632661+00:00
+  updated: 2025-11-20T19:29:42.227136934+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+- id: 'Apply code review safety fixes: Add AprenderError enum and bounds checking to SIMD intrinsics'
+  github_issue: null
+  item_type: task
+  title: 'New task: Apply code review safety fixes: Add AprenderError enum and bounds checking to SIMD intrinsics'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-20T20:42:39.109330358+00:00
+  updated: 2025-11-20T20:44:14.615018758+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+- id: Update trait signatures to use AprenderError instead of static str
+  github_issue: null
+  item_type: task
+  title: 'New task: Update trait signatures to use AprenderError instead of static str'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-20T20:46:40.295933316+00:00
+  updated: 2025-11-20T21:00:09.527059615+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []

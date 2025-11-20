@@ -3,6 +3,7 @@
 //! Provides a minimal DataFrame implementation (~300 LOC) for ML workflows.
 //! Heavy data wrangling should be delegated to ruchy/polars.
 
+use crate::error::Result;
 use crate::primitives::{Matrix, Vector};
 
 /// A minimal DataFrame with named columns.
@@ -35,9 +36,9 @@ impl DataFrame {
     /// # Errors
     ///
     /// Returns an error if columns have different lengths or if empty.
-    pub fn new(columns: Vec<(String, Vector<f32>)>) -> Result<Self, &'static str> {
+    pub fn new(columns: Vec<(String, Vector<f32>)>) -> Result<Self> {
         if columns.is_empty() {
-            return Err("DataFrame must have at least one column");
+            return Err("DataFrame must have at least one column".into());
         }
 
         let n_rows = columns[0].1.len();
@@ -45,10 +46,10 @@ impl DataFrame {
         // Verify all columns have same length
         for (name, col) in &columns {
             if col.len() != n_rows {
-                return Err("All columns must have the same length");
+                return Err("All columns must have the same length".into());
             }
             if name.is_empty() {
-                return Err("Column names cannot be empty");
+                return Err("Column names cannot be empty".into());
             }
         }
 
@@ -57,7 +58,7 @@ impl DataFrame {
         names.sort_unstable();
         for i in 1..names.len() {
             if names[i] == names[i - 1] {
-                return Err("Duplicate column names not allowed");
+                return Err("Duplicate column names not allowed".into());
             }
         }
 
@@ -93,12 +94,12 @@ impl DataFrame {
     /// # Errors
     ///
     /// Returns an error if the column doesn't exist.
-    pub fn column(&self, name: &str) -> Result<&Vector<f32>, &'static str> {
+    pub fn column(&self, name: &str) -> Result<&Vector<f32>> {
         self.columns
             .iter()
             .find(|(n, _)| n == name)
             .map(|(_, v)| v)
-            .ok_or("Column not found")
+            .ok_or_else(|| "Column not found".into())
     }
 
     /// Selects multiple columns by name, returning a new DataFrame.
@@ -106,9 +107,9 @@ impl DataFrame {
     /// # Errors
     ///
     /// Returns an error if any column doesn't exist.
-    pub fn select(&self, names: &[&str]) -> Result<Self, &'static str> {
+    pub fn select(&self, names: &[&str]) -> Result<Self> {
         if names.is_empty() {
-            return Err("Must select at least one column");
+            return Err("Must select at least one column".into());
         }
 
         let mut selected = Vec::with_capacity(names.len());
@@ -126,9 +127,9 @@ impl DataFrame {
     /// # Errors
     ///
     /// Returns an error if the index is out of bounds.
-    pub fn row(&self, idx: usize) -> Result<Vector<f32>, &'static str> {
+    pub fn row(&self, idx: usize) -> Result<Vector<f32>> {
         if idx >= self.n_rows {
-            return Err("Row index out of bounds");
+            return Err("Row index out of bounds".into());
         }
 
         let data: Vec<f32> = self.columns.iter().map(|(_, col)| col[idx]).collect();
@@ -162,17 +163,17 @@ impl DataFrame {
     /// # Errors
     ///
     /// Returns an error if column length doesn't match or name already exists.
-    pub fn add_column(&mut self, name: String, data: Vector<f32>) -> Result<(), &'static str> {
+    pub fn add_column(&mut self, name: String, data: Vector<f32>) -> Result<()> {
         if data.len() != self.n_rows {
-            return Err("Column length must match existing rows");
+            return Err("Column length must match existing rows".into());
         }
 
         if self.columns.iter().any(|(n, _)| n == &name) {
-            return Err("Column name already exists");
+            return Err("Column name already exists".into());
         }
 
         if name.is_empty() {
-            return Err("Column name cannot be empty");
+            return Err("Column name cannot be empty".into());
         }
 
         self.columns.push((name, data));
@@ -184,9 +185,9 @@ impl DataFrame {
     /// # Errors
     ///
     /// Returns an error if the column doesn't exist or is the last column.
-    pub fn drop_column(&mut self, name: &str) -> Result<(), &'static str> {
+    pub fn drop_column(&mut self, name: &str) -> Result<()> {
         if self.columns.len() == 1 {
-            return Err("Cannot drop the last column");
+            return Err("Cannot drop the last column".into());
         }
 
         let idx = self

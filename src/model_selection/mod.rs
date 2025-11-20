@@ -84,7 +84,7 @@ pub fn cross_validate<E>(
     x: &Matrix<f32>,
     y: &Vector<f32>,
     cv: &KFold,
-) -> Result<CrossValidationResult, String>
+) -> std::result::Result<CrossValidationResult, String>
 where
     E: Estimator + Clone,
 {
@@ -466,7 +466,7 @@ fn evaluate_alpha_for_model(
     y: &Vector<f32>,
     cv: &KFold,
     l1_ratio: Option<f32>,
-) -> Result<f32, String> {
+) -> std::result::Result<f32, String> {
     let score = match model_type {
         "ridge" => {
             use crate::linear_model::Ridge;
@@ -548,7 +548,7 @@ pub fn grid_search_alpha(
     y: &Vector<f32>,
     cv: &KFold,
     l1_ratio: Option<f32>,
-) -> Result<GridSearchResult, String> {
+) -> std::result::Result<GridSearchResult, String> {
     if alphas.is_empty() {
         return Err("Alphas vector cannot be empty".to_string());
     }
@@ -602,7 +602,7 @@ fn validate_split_inputs(
     x: &Matrix<f32>,
     y: &Vector<f32>,
     test_size: f32,
-) -> Result<(usize, usize), String> {
+) -> std::result::Result<(usize, usize), String> {
     if test_size <= 0.0 || test_size >= 1.0 {
         return Err(format!(
             "test_size must be between 0 and 1, got {}",
@@ -656,7 +656,7 @@ pub fn train_test_split(
     y: &Vector<f32>,
     test_size: f32,
     random_state: Option<u64>,
-) -> Result<(Matrix<f32>, Matrix<f32>, Vector<f32>, Vector<f32>), String> {
+) -> std::result::Result<(Matrix<f32>, Matrix<f32>, Vector<f32>, Vector<f32>), String> {
     let (n_train, _) = validate_split_inputs(x, y, test_size)?;
     let n_samples = x.shape().0;
 

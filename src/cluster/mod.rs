@@ -2,6 +2,7 @@
 //!
 //! Includes K-Means clustering with k-means++ initialization.
 
+use crate::error::Result;
 use crate::metrics::inertia;
 use crate::primitives::Matrix;
 use crate::traits::UnsupervisedEstimator;
@@ -143,7 +144,7 @@ impl KMeans {
     /// # Errors
     ///
     /// Returns an error if serialization or file writing fails.
-    pub fn save<P: AsRef<Path>>(&self, path: P) -> Result<(), String> {
+    pub fn save<P: AsRef<Path>>(&self, path: P) -> std::result::Result<(), String> {
         let bytes = bincode::serialize(self).map_err(|e| format!("Serialization failed: {}", e))?;
         fs::write(path, bytes).map_err(|e| format!("File write failed: {}", e))?;
         Ok(())
@@ -154,7 +155,7 @@ impl KMeans {
     /// # Errors
     ///
     /// Returns an error if file reading or deserialization fails.
-    pub fn load<P: AsRef<Path>>(path: P) -> Result<Self, String> {
+    pub fn load<P: AsRef<Path>>(path: P) -> std::result::Result<Self, String> {
         let bytes = fs::read(path).map_err(|e| format!("File read failed: {}", e))?;
         let model =
             bincode::deserialize(&bytes).map_err(|e| format!("Deserialization failed: {}", e))?;
@@ -170,7 +171,7 @@ impl KMeans {
     /// # Errors
     ///
     /// Returns an error if the model is unfitted or if saving fails.
-    pub fn save_safetensors<P: AsRef<Path>>(&self, path: P) -> Result<(), String> {
+    pub fn save_safetensors<P: AsRef<Path>>(&self, path: P) -> std::result::Result<(), String> {
         use crate::serialization::safetensors;
         use std::collections::BTreeMap;
 
@@ -233,7 +234,7 @@ impl KMeans {
     /// # Errors
     ///
     /// Returns an error if loading fails or if the file format is invalid.
-    pub fn load_safetensors<P: AsRef<Path>>(path: P) -> Result<Self, String> {
+    pub fn load_safetensors<P: AsRef<Path>>(path: P) -> std::result::Result<Self, String> {
         use crate::serialization::safetensors;
 
         // Load SafeTensors file
@@ -442,15 +443,15 @@ impl UnsupervisedEstimator for KMeans {
     /// Returns an error if:
     /// - Data has fewer samples than clusters
     /// - Data is empty
-    fn fit(&mut self, x: &Matrix<f32>) -> Result<(), &'static str> {
+    fn fit(&mut self, x: &Matrix<f32>) -> Result<()> {
         let n_samples = x.n_rows();
 
         if n_samples == 0 {
-            return Err("Cannot fit with zero samples");
+            return Err("Cannot fit with zero samples".into());
         }
 
         if n_samples < self.n_clusters {
-            return Err("Number of samples must be >= number of clusters");
+            return Err("Number of samples must be >= number of clusters".into());
         }
 
         // Initialize centroids using k-means++

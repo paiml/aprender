@@ -2,6 +2,7 @@
 //!
 //! Includes Ordinary Least Squares (OLS) and regularized regression.
 
+use crate::error::Result;
 use crate::metrics::r_squared;
 use crate::primitives::{Matrix, Vector};
 use crate::traits::Estimator;
@@ -113,7 +114,7 @@ impl LinearRegression {
     /// # Errors
     ///
     /// Returns an error if serialization or file writing fails.
-    pub fn save<P: AsRef<Path>>(&self, path: P) -> Result<(), String> {
+    pub fn save<P: AsRef<Path>>(&self, path: P) -> std::result::Result<(), String> {
         let bytes = bincode::serialize(self).map_err(|e| format!("Serialization failed: {}", e))?;
         fs::write(path, bytes).map_err(|e| format!("File write failed: {}", e))?;
         Ok(())
@@ -124,7 +125,7 @@ impl LinearRegression {
     /// # Errors
     ///
     /// Returns an error if file reading or deserialization fails.
-    pub fn load<P: AsRef<Path>>(path: P) -> Result<Self, String> {
+    pub fn load<P: AsRef<Path>>(path: P) -> std::result::Result<Self, String> {
         let bytes = fs::read(path).map_err(|e| format!("File read failed: {}", e))?;
         let model =
             bincode::deserialize(&bytes).map_err(|e| format!("Deserialization failed: {}", e))?;
@@ -145,7 +146,7 @@ impl LinearRegression {
     /// - Model is not fitted
     /// - Serialization fails
     /// - File writing fails
-    pub fn save_safetensors<P: AsRef<Path>>(&self, path: P) -> Result<(), String> {
+    pub fn save_safetensors<P: AsRef<Path>>(&self, path: P) -> std::result::Result<(), String> {
         use crate::serialization::safetensors;
         use std::collections::BTreeMap;
 
@@ -181,7 +182,7 @@ impl LinearRegression {
     /// - File reading fails
     /// - SafeTensors format is invalid
     /// - Required tensors are missing
-    pub fn load_safetensors<P: AsRef<Path>>(path: P) -> Result<Self, String> {
+    pub fn load_safetensors<P: AsRef<Path>>(path: P) -> std::result::Result<Self, String> {
         use crate::serialization::safetensors;
 
         // Load SafeTensors file
@@ -243,15 +244,15 @@ impl Estimator for LinearRegression {
     /// - Input dimensions don't match
     /// - Not enough samples for the number of features (underdetermined system)
     /// - Matrix is singular (not positive definite)
-    fn fit(&mut self, x: &Matrix<f32>, y: &Vector<f32>) -> Result<(), &'static str> {
+    fn fit(&mut self, x: &Matrix<f32>, y: &Vector<f32>) -> Result<()> {
         let (n_samples, n_features) = x.shape();
 
         if n_samples != y.len() {
-            return Err("Number of samples must match target length");
+            return Err("Number of samples must match target length".into());
         }
 
         if n_samples == 0 {
-            return Err("Cannot fit with zero samples");
+            return Err("Cannot fit with zero samples".into());
         }
 
         // Check for underdetermined system
@@ -267,7 +268,8 @@ impl Estimator for LinearRegression {
             return Err(
                 "Insufficient samples: LinearRegression requires at least as many samples as \
                  features (plus 1 if fitting intercept). Consider using Ridge regression or \
-                 collecting more training data",
+                 collecting more training data"
+                    .into(),
             );
         }
 
@@ -440,7 +442,7 @@ impl Ridge {
     /// # Errors
     ///
     /// Returns an error if serialization or file writing fails.
-    pub fn save<P: AsRef<Path>>(&self, path: P) -> Result<(), String> {
+    pub fn save<P: AsRef<Path>>(&self, path: P) -> std::result::Result<(), String> {
         let bytes = bincode::serialize(self).map_err(|e| format!("Serialization failed: {}", e))?;
         fs::write(path, bytes).map_err(|e| format!("File write failed: {}", e))?;
         Ok(())
@@ -451,7 +453,7 @@ impl Ridge {
     /// # Errors
     ///
     /// Returns an error if file reading or deserialization fails.
-    pub fn load<P: AsRef<Path>>(path: P) -> Result<Self, String> {
+    pub fn load<P: AsRef<Path>>(path: P) -> std::result::Result<Self, String> {
         let bytes = fs::read(path).map_err(|e| format!("File read failed: {}", e))?;
         let model =
             bincode::deserialize(&bytes).map_err(|e| format!("Deserialization failed: {}", e))?;
@@ -472,7 +474,7 @@ impl Ridge {
     /// - Model is not fitted
     /// - Serialization fails
     /// - File writing fails
-    pub fn save_safetensors<P: AsRef<Path>>(&self, path: P) -> Result<(), String> {
+    pub fn save_safetensors<P: AsRef<Path>>(&self, path: P) -> std::result::Result<(), String> {
         use crate::serialization::safetensors;
         use std::collections::BTreeMap;
 
@@ -513,7 +515,7 @@ impl Ridge {
     /// - File reading fails
     /// - SafeTensors format is invalid
     /// - Required tensors are missing
-    pub fn load_safetensors<P: AsRef<Path>>(path: P) -> Result<Self, String> {
+    pub fn load_safetensors<P: AsRef<Path>>(path: P) -> std::result::Result<Self, String> {
         use crate::serialization::safetensors;
 
         // Load SafeTensors file
@@ -570,15 +572,15 @@ impl Estimator for Ridge {
     /// # Errors
     ///
     /// Returns an error if input dimensions don't match or matrix is singular.
-    fn fit(&mut self, x: &Matrix<f32>, y: &Vector<f32>) -> Result<(), &'static str> {
+    fn fit(&mut self, x: &Matrix<f32>, y: &Vector<f32>) -> Result<()> {
         let (n_samples, n_features) = x.shape();
 
         if n_samples != y.len() {
-            return Err("Number of samples must match target length");
+            return Err("Number of samples must match target length".into());
         }
 
         if n_samples == 0 {
-            return Err("Cannot fit with zero samples");
+            return Err("Cannot fit with zero samples".into());
         }
 
         // Create design matrix (with or without intercept)
@@ -798,7 +800,7 @@ impl Lasso {
     /// # Errors
     ///
     /// Returns an error if serialization or file writing fails.
-    pub fn save<P: AsRef<Path>>(&self, path: P) -> Result<(), String> {
+    pub fn save<P: AsRef<Path>>(&self, path: P) -> std::result::Result<(), String> {
         let bytes = bincode::serialize(self).map_err(|e| format!("Serialization failed: {}", e))?;
         fs::write(path, bytes).map_err(|e| format!("File write failed: {}", e))?;
         Ok(())
@@ -809,7 +811,7 @@ impl Lasso {
     /// # Errors
     ///
     /// Returns an error if file reading or deserialization fails.
-    pub fn load<P: AsRef<Path>>(path: P) -> Result<Self, String> {
+    pub fn load<P: AsRef<Path>>(path: P) -> std::result::Result<Self, String> {
         let bytes = fs::read(path).map_err(|e| format!("File read failed: {}", e))?;
         let model =
             bincode::deserialize(&bytes).map_err(|e| format!("Deserialization failed: {}", e))?;
@@ -830,7 +832,7 @@ impl Lasso {
     /// - Model is not fitted
     /// - Serialization fails
     /// - File writing fails
-    pub fn save_safetensors<P: AsRef<Path>>(&self, path: P) -> Result<(), String> {
+    pub fn save_safetensors<P: AsRef<Path>>(&self, path: P) -> std::result::Result<(), String> {
         use crate::serialization::safetensors;
         use std::collections::BTreeMap;
 
@@ -881,7 +883,7 @@ impl Lasso {
     /// - File reading fails
     /// - SafeTensors format is invalid
     /// - Required tensors are missing
-    pub fn load_safetensors<P: AsRef<Path>>(path: P) -> Result<Self, String> {
+    pub fn load_safetensors<P: AsRef<Path>>(path: P) -> std::result::Result<Self, String> {
         use crate::serialization::safetensors;
 
         // Load SafeTensors file
@@ -964,15 +966,15 @@ impl Estimator for Lasso {
     /// # Errors
     ///
     /// Returns an error if input dimensions don't match.
-    fn fit(&mut self, x: &Matrix<f32>, y: &Vector<f32>) -> Result<(), &'static str> {
+    fn fit(&mut self, x: &Matrix<f32>, y: &Vector<f32>) -> Result<()> {
         let (n_samples, n_features) = x.shape();
 
         if n_samples != y.len() {
-            return Err("Number of samples must match target length");
+            return Err("Number of samples must match target length".into());
         }
 
         if n_samples == 0 {
-            return Err("Cannot fit with zero samples");
+            return Err("Cannot fit with zero samples".into());
         }
 
         // Center data if fitting intercept
@@ -1253,7 +1255,7 @@ impl ElasticNet {
     /// # Errors
     ///
     /// Returns an error if serialization or file writing fails.
-    pub fn save<P: AsRef<Path>>(&self, path: P) -> Result<(), String> {
+    pub fn save<P: AsRef<Path>>(&self, path: P) -> std::result::Result<(), String> {
         let bytes = bincode::serialize(self).map_err(|e| format!("Serialization failed: {}", e))?;
         fs::write(path, bytes).map_err(|e| format!("File write failed: {}", e))?;
         Ok(())
@@ -1264,7 +1266,7 @@ impl ElasticNet {
     /// # Errors
     ///
     /// Returns an error if file reading or deserialization fails.
-    pub fn load<P: AsRef<Path>>(path: P) -> Result<Self, String> {
+    pub fn load<P: AsRef<Path>>(path: P) -> std::result::Result<Self, String> {
         let bytes = fs::read(path).map_err(|e| format!("File read failed: {}", e))?;
         let model =
             bincode::deserialize(&bytes).map_err(|e| format!("Deserialization failed: {}", e))?;
@@ -1285,7 +1287,7 @@ impl ElasticNet {
     /// - Model is not fitted
     /// - Serialization fails
     /// - File writing fails
-    pub fn save_safetensors<P: AsRef<Path>>(&self, path: P) -> Result<(), String> {
+    pub fn save_safetensors<P: AsRef<Path>>(&self, path: P) -> std::result::Result<(), String> {
         use crate::serialization::safetensors;
         use std::collections::BTreeMap;
 
@@ -1341,7 +1343,7 @@ impl ElasticNet {
     /// - File reading fails
     /// - SafeTensors format is invalid
     /// - Required tensors are missing
-    pub fn load_safetensors<P: AsRef<Path>>(path: P) -> Result<Self, String> {
+    pub fn load_safetensors<P: AsRef<Path>>(path: P) -> std::result::Result<Self, String> {
         use crate::serialization::safetensors;
 
         // Load SafeTensors file
@@ -1438,15 +1440,15 @@ impl Estimator for ElasticNet {
     /// # Errors
     ///
     /// Returns an error if input dimensions don't match.
-    fn fit(&mut self, x: &Matrix<f32>, y: &Vector<f32>) -> Result<(), &'static str> {
+    fn fit(&mut self, x: &Matrix<f32>, y: &Vector<f32>) -> Result<()> {
         let (n_samples, n_features) = x.shape();
 
         if n_samples != y.len() {
-            return Err("Number of samples must match target length");
+            return Err("Number of samples must match target length".into());
         }
 
         if n_samples == 0 {
-            return Err("Cannot fit with zero samples");
+            return Err("Cannot fit with zero samples".into());
         }
 
         // Center data if fitting intercept
@@ -1940,11 +1942,12 @@ mod tests {
 
         assert!(result.is_err());
         let error_msg = result.unwrap_err();
+        let error_str = error_msg.to_string();
         // Should mention samples, features, and suggest solutions
         assert!(
-            error_msg.contains("samples") || error_msg.contains("features"),
+            error_str.contains("samples") || error_str.contains("features"),
             "Error message should mention samples or features: {}",
-            error_msg
+            error_str
         );
     }
 
@@ -1967,10 +1970,11 @@ mod tests {
 
         assert!(result.is_err());
         let error_msg = result.unwrap_err();
+        let error_str = error_msg.to_string();
         assert!(
-            error_msg.contains("samples") || error_msg.contains("features"),
+            error_str.contains("samples") || error_str.contains("features"),
             "Error message should be helpful: {}",
-            error_msg
+            error_str
         );
     }
 

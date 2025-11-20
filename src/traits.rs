@@ -2,6 +2,7 @@
 //!
 //! These traits define the API contracts for all ML algorithms.
 
+use crate::error::Result;
 use crate::primitives::{Matrix, Vector};
 
 /// Primary trait for supervised learning estimators.
@@ -32,8 +33,8 @@ pub trait Estimator {
     ///
     /// # Errors
     ///
-    /// Returns an error if fitting fails.
-    fn fit(&mut self, x: &Matrix<f32>, y: &Vector<f32>) -> Result<(), &'static str>;
+    /// Returns an error if fitting fails (dimension mismatch, singular matrix, etc.).
+    fn fit(&mut self, x: &Matrix<f32>, y: &Vector<f32>) -> Result<()>;
 
     /// Predicts target values for input data.
     fn predict(&self, x: &Matrix<f32>) -> Vector<f32>;
@@ -68,8 +69,8 @@ pub trait UnsupervisedEstimator {
     ///
     /// # Errors
     ///
-    /// Returns an error if fitting fails.
-    fn fit(&mut self, x: &Matrix<f32>) -> Result<(), &'static str>;
+    /// Returns an error if fitting fails (empty data, invalid parameters, etc.).
+    fn fit(&mut self, x: &Matrix<f32>) -> Result<()>;
 
     /// Predicts cluster assignments or transforms data.
     fn predict(&self, x: &Matrix<f32>) -> Self::Labels;
@@ -93,21 +94,21 @@ pub trait Transformer {
     /// # Errors
     ///
     /// Returns an error if fitting fails.
-    fn fit(&mut self, x: &Matrix<f32>) -> Result<(), &'static str>;
+    fn fit(&mut self, x: &Matrix<f32>) -> Result<()>;
 
     /// Transforms data using fitted parameters.
     ///
     /// # Errors
     ///
     /// Returns an error if transformer is not fitted.
-    fn transform(&self, x: &Matrix<f32>) -> Result<Matrix<f32>, &'static str>;
+    fn transform(&self, x: &Matrix<f32>) -> Result<Matrix<f32>>;
 
     /// Fits and transforms in one step.
     ///
     /// # Errors
     ///
     /// Returns an error if fitting fails.
-    fn fit_transform(&mut self, x: &Matrix<f32>) -> Result<Matrix<f32>, &'static str> {
+    fn fit_transform(&mut self, x: &Matrix<f32>) -> Result<Matrix<f32>> {
         self.fit(x)?;
         self.transform(x)
     }

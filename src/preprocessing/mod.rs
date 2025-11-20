@@ -24,6 +24,7 @@
 //! assert!(scaled.get(0, 0).abs() < 2.0);
 //! ```
 
+use crate::error::{AprenderError, Result};
 use crate::primitives::Matrix;
 use crate::traits::Transformer;
 use serde::{Deserialize, Serialize};
@@ -144,13 +145,19 @@ impl StandardScaler {
     /// # Errors
     ///
     /// Returns an error if the scaler is not fitted or dimensions mismatch.
-    pub fn inverse_transform(&self, x: &Matrix<f32>) -> Result<Matrix<f32>, &'static str> {
-        let mean = self.mean.as_ref().ok_or("Scaler not fitted")?;
-        let std = self.std.as_ref().ok_or("Scaler not fitted")?;
+    pub fn inverse_transform(&self, x: &Matrix<f32>) -> Result<Matrix<f32>> {
+        let mean = self
+            .mean
+            .as_ref()
+            .ok_or_else(|| AprenderError::from("Scaler not fitted"))?;
+        let std = self
+            .std
+            .as_ref()
+            .ok_or_else(|| AprenderError::from("Scaler not fitted"))?;
 
         let (n_samples, n_features) = x.shape();
         if n_features != mean.len() {
-            return Err("Feature dimension mismatch");
+            return Err("Feature dimension mismatch".into());
         }
 
         let mut result = vec![0.0; n_samples * n_features];
@@ -173,7 +180,7 @@ impl StandardScaler {
             }
         }
 
-        Matrix::from_vec(n_samples, n_features, result)
+        Matrix::from_vec(n_samples, n_features, result).map_err(|e| e.into())
     }
 
     /// Saves the StandardScaler to a SafeTensors file.
@@ -185,7 +192,7 @@ impl StandardScaler {
     /// # Errors
     ///
     /// Returns an error if the scaler is unfitted or if saving fails.
-    pub fn save_safetensors<P: AsRef<Path>>(&self, path: P) -> Result<(), String> {
+    pub fn save_safetensors<P: AsRef<Path>>(&self, path: P) -> std::result::Result<(), String> {
         use crate::serialization::safetensors;
         use std::collections::BTreeMap;
 
@@ -193,11 +200,11 @@ impl StandardScaler {
         let mean = self
             .mean
             .as_ref()
-            .ok_or("Cannot save unfitted scaler. Call fit() first.")?;
+            .ok_or_else(|| "Cannot save unfitted scaler. Call fit() first.".to_string())?;
         let std = self
             .std
             .as_ref()
-            .ok_or("Cannot save unfitted scaler. Call fit() first.")?;
+            .ok_or_else(|| "Cannot save unfitted scaler. Call fit() first.".to_string())?;
 
         let mut tensors = BTreeMap::new();
 
@@ -225,7 +232,7 @@ impl StandardScaler {
     /// # Errors
     ///
     /// Returns an error if loading fails or if the file format is invalid.
-    pub fn load_safetensors<P: AsRef<Path>>(path: P) -> Result<Self, String> {
+    pub fn load_safetensors<P: AsRef<Path>>(path: P) -> std::result::Result<Self, String> {
         use crate::serialization::safetensors;
 
         // Load SafeTensors file
@@ -234,13 +241,13 @@ impl StandardScaler {
         // Extract mean tensor
         let mean_meta = metadata
             .get("mean")
-            .ok_or("Missing 'mean' tensor in SafeTensors file")?;
+            .ok_or_else(|| "Missing 'mean' tensor in SafeTensors file".to_string())?;
         let mean = safetensors::extract_tensor(&raw_data, mean_meta)?;
 
         // Extract std tensor
         let std_meta = metadata
             .get("std")
-            .ok_or("Missing 'std' tensor in SafeTensors file")?;
+            .ok_or_else(|| "Missing 'std' tensor in SafeTensors file".to_string())?;
         let std = safetensors::extract_tensor(&raw_data, std_meta)?;
 
         // Verify mean and std have same length
@@ -251,13 +258,13 @@ impl StandardScaler {
         // Load hyperparameters
         let with_mean_meta = metadata
             .get("with_mean")
-            .ok_or("Missing 'with_mean' tensor")?;
+            .ok_or_else(|| "Missing 'with_mean' tensor".to_string())?;
         let with_mean_data = safetensors::extract_tensor(&raw_data, with_mean_meta)?;
         let with_mean = with_mean_data[0] > 0.5;
 
         let with_std_meta = metadata
             .get("with_std")
-            .ok_or("Missing 'with_std' tensor")?;
+            .ok_or_else(|| "Missing 'with_std' tensor".to_string())?;
         let with_std_data = safetensors::extract_tensor(&raw_data, with_std_meta)?;
         let with_std = with_std_data[0] > 0.5;
 
@@ -272,11 +279,11 @@ impl StandardScaler {
 
 impl Transformer for StandardScaler {
     /// Computes the mean and standard deviation of each feature.
-    fn fit(&mut self, x: &Matrix<f32>) -> Result<(), &'static str> {
+    fn fit(&mut self, x: &Matrix<f32>) -> Result<()> {
         let (n_samples, n_features) = x.shape();
 
         if n_samples == 0 {
-            return Err("Cannot fit with zero samples");
+            return Err("Cannot fit with zero samples".into());
         }
 
         // Compute mean for each feature
@@ -308,13 +315,19 @@ impl Transformer for StandardScaler {
     }
 
     /// Standardizes the data using fitted mean and std.
-    fn transform(&self, x: &Matrix<f32>) -> Result<Matrix<f32>, &'static str> {
-        let mean = self.mean.as_ref().ok_or("Scaler not fitted")?;
-        let std = self.std.as_ref().ok_or("Scaler not fitted")?;
+    fn transform(&self, x: &Matrix<f32>) -> Result<Matrix<f32>> {
+        let mean = self
+            .mean
+            .as_ref()
+            .ok_or_else(|| AprenderError::from("Scaler not fitted"))?;
+        let std = self
+            .std
+            .as_ref()
+            .ok_or_else(|| AprenderError::from("Scaler not fitted"))?;
 
         let (n_samples, n_features) = x.shape();
         if n_features != mean.len() {
-            return Err("Feature dimension mismatch");
+            return Err("Feature dimension mismatch".into());
         }
 
         let mut result = vec![0.0; n_samples * n_features];
@@ -337,7 +350,7 @@ impl Transformer for StandardScaler {
             }
         }
 
-        Matrix::from_vec(n_samples, n_features, result)
+        Matrix::from_vec(n_samples, n_features, result).map_err(|e| e.into())
     }
 }
 
@@ -449,13 +462,19 @@ impl MinMaxScaler {
     /// # Errors
     ///
     /// Returns an error if the scaler is not fitted or dimensions mismatch.
-    pub fn inverse_transform(&self, x: &Matrix<f32>) -> Result<Matrix<f32>, &'static str> {
-        let data_min = self.data_min.as_ref().ok_or("Scaler not fitted")?;
-        let data_max = self.data_max.as_ref().ok_or("Scaler not fitted")?;
+    pub fn inverse_transform(&self, x: &Matrix<f32>) -> Result<Matrix<f32>> {
+        let data_min = self
+            .data_min
+            .as_ref()
+            .ok_or_else(|| AprenderError::from("Scaler not fitted"))?;
+        let data_max = self
+            .data_max
+            .as_ref()
+            .ok_or_else(|| AprenderError::from("Scaler not fitted"))?;
 
         let (n_samples, n_features) = x.shape();
         if n_features != data_min.len() {
-            return Err("Feature dimension mismatch");
+            return Err("Feature dimension mismatch".into());
         }
 
         let feature_range = self.feature_max - self.feature_min;
@@ -476,17 +495,17 @@ impl MinMaxScaler {
             }
         }
 
-        Matrix::from_vec(n_samples, n_features, result)
+        Matrix::from_vec(n_samples, n_features, result).map_err(|e| e.into())
     }
 }
 
 impl Transformer for MinMaxScaler {
     /// Computes the min and max of each feature.
-    fn fit(&mut self, x: &Matrix<f32>) -> Result<(), &'static str> {
+    fn fit(&mut self, x: &Matrix<f32>) -> Result<()> {
         let (n_samples, n_features) = x.shape();
 
         if n_samples == 0 {
-            return Err("Cannot fit with zero samples");
+            return Err("Cannot fit with zero samples".into());
         }
 
         let mut data_min = vec![f32::INFINITY; n_features];
@@ -511,13 +530,19 @@ impl Transformer for MinMaxScaler {
     }
 
     /// Scales the data to the target range.
-    fn transform(&self, x: &Matrix<f32>) -> Result<Matrix<f32>, &'static str> {
-        let data_min = self.data_min.as_ref().ok_or("Scaler not fitted")?;
-        let data_max = self.data_max.as_ref().ok_or("Scaler not fitted")?;
+    fn transform(&self, x: &Matrix<f32>) -> Result<Matrix<f32>> {
+        let data_min = self
+            .data_min
+            .as_ref()
+            .ok_or_else(|| AprenderError::from("Scaler not fitted"))?;
+        let data_max = self
+            .data_max
+            .as_ref()
+            .ok_or_else(|| AprenderError::from("Scaler not fitted"))?;
 
         let (n_samples, n_features) = x.shape();
         if n_features != data_min.len() {
-            return Err("Feature dimension mismatch");
+            return Err("Feature dimension mismatch".into());
         }
 
         let feature_range = self.feature_max - self.feature_min;
@@ -538,7 +563,7 @@ impl Transformer for MinMaxScaler {
             }
         }
 
-        Matrix::from_vec(n_samples, n_features, result)
+        Matrix::from_vec(n_samples, n_features, result).map_err(|e| e.into())
     }
 }
 
@@ -619,15 +644,21 @@ impl PCA {
     /// # Errors
     ///
     /// Returns error if PCA is not fitted.
-    pub fn inverse_transform(&self, x: &Matrix<f32>) -> Result<Matrix<f32>, &'static str> {
-        let components = self.components.as_ref().ok_or("PCA not fitted")?;
-        let mean = self.mean.as_ref().ok_or("PCA not fitted")?;
+    pub fn inverse_transform(&self, x: &Matrix<f32>) -> Result<Matrix<f32>> {
+        let components = self
+            .components
+            .as_ref()
+            .ok_or_else(|| AprenderError::from("PCA not fitted"))?;
+        let mean = self
+            .mean
+            .as_ref()
+            .ok_or_else(|| AprenderError::from("PCA not fitted"))?;
 
         let (n_samples, n_components) = x.shape();
         let n_features = mean.len();
 
         if n_components != self.n_components {
-            return Err("Input has wrong number of components");
+            return Err("Input has wrong number of components".into());
         }
 
         // X_reconstructed = X_pca @ components^T + mean
@@ -643,18 +674,18 @@ impl PCA {
             }
         }
 
-        Matrix::from_vec(n_samples, n_features, result)
+        Matrix::from_vec(n_samples, n_features, result).map_err(|e| e.into())
     }
 }
 
 impl Transformer for PCA {
-    fn fit(&mut self, x: &Matrix<f32>) -> Result<(), &'static str> {
+    fn fit(&mut self, x: &Matrix<f32>) -> Result<()> {
         use nalgebra::{DMatrix, SymmetricEigen};
 
         let (n_samples, n_features) = x.shape();
 
         if self.n_components > n_features {
-            return Err("n_components cannot exceed number of features");
+            return Err("n_components cannot exceed number of features".into());
         }
 
         // Compute mean
@@ -734,14 +765,20 @@ impl Transformer for PCA {
         Ok(())
     }
 
-    fn transform(&self, x: &Matrix<f32>) -> Result<Matrix<f32>, &'static str> {
-        let components = self.components.as_ref().ok_or("PCA not fitted")?;
-        let mean = self.mean.as_ref().ok_or("PCA not fitted")?;
+    fn transform(&self, x: &Matrix<f32>) -> Result<Matrix<f32>> {
+        let components = self
+            .components
+            .as_ref()
+            .ok_or_else(|| AprenderError::from("PCA not fitted"))?;
+        let mean = self
+            .mean
+            .as_ref()
+            .ok_or_else(|| AprenderError::from("PCA not fitted"))?;
 
         let (n_samples, n_features) = x.shape();
 
         if n_features != mean.len() {
-            return Err("Input has wrong number of features");
+            return Err("Input has wrong number of features".into());
         }
 
         // Project onto principal components: X_pca = (X - mean) @ components^T
@@ -758,7 +795,7 @@ impl Transformer for PCA {
             }
         }
 
-        Matrix::from_vec(n_samples, self.n_components, result)
+        Matrix::from_vec(n_samples, self.n_components, result).map_err(|e| e.into())
     }
 }
 

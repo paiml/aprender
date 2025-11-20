@@ -30,6 +30,8 @@
 //! let predictions = tree.predict(&x);
 //! ```
 
+use crate::error::Result;
+// Vector and Matrix imported via other modules
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
@@ -121,17 +123,13 @@ impl DecisionTreeClassifier {
     /// # Errors
     ///
     /// Returns an error if the data is invalid.
-    pub fn fit(
-        &mut self,
-        x: &crate::primitives::Matrix<f32>,
-        y: &[usize],
-    ) -> Result<(), &'static str> {
+    pub fn fit(&mut self, x: &crate::primitives::Matrix<f32>, y: &[usize]) -> Result<()> {
         let (n_rows, _n_cols) = x.shape();
         if n_rows != y.len() {
-            return Err("Number of samples in X and y must match");
+            return Err("Number of samples in X and y must match".into());
         }
         if n_rows == 0 {
-            return Err("Cannot fit with zero samples");
+            return Err("Cannot fit with zero samples".into());
         }
 
         self.tree = Some(build_tree(x, y, 0, self.max_depth));
@@ -218,7 +216,7 @@ impl DecisionTreeClassifier {
     /// # Errors
     ///
     /// Returns an error if serialization or file writing fails.
-    pub fn save<P: AsRef<Path>>(&self, path: P) -> Result<(), String> {
+    pub fn save<P: AsRef<Path>>(&self, path: P) -> std::result::Result<(), String> {
         let bytes = bincode::serialize(self).map_err(|e| format!("Serialization failed: {}", e))?;
         fs::write(path, bytes).map_err(|e| format!("File write failed: {}", e))?;
         Ok(())
@@ -229,7 +227,7 @@ impl DecisionTreeClassifier {
     /// # Errors
     ///
     /// Returns an error if file reading or deserialization fails.
-    pub fn load<P: AsRef<Path>>(path: P) -> Result<Self, String> {
+    pub fn load<P: AsRef<Path>>(path: P) -> std::result::Result<Self, String> {
         let bytes = fs::read(path).map_err(|e| format!("File read failed: {}", e))?;
         let model =
             bincode::deserialize(&bytes).map_err(|e| format!("Deserialization failed: {}", e))?;
@@ -246,7 +244,7 @@ impl DecisionTreeClassifier {
     /// - Model is not fitted
     /// - Serialization fails
     /// - File writing fails
-    pub fn save_safetensors<P: AsRef<Path>>(&self, path: P) -> Result<(), String> {
+    pub fn save_safetensors<P: AsRef<Path>>(&self, path: P) -> std::result::Result<(), String> {
         use crate::serialization::safetensors;
         use std::collections::BTreeMap;
 
@@ -319,7 +317,7 @@ impl DecisionTreeClassifier {
     /// - File reading fails
     /// - SafeTensors format is invalid
     /// - Required tensors are missing
-    pub fn load_safetensors<P: AsRef<Path>>(path: P) -> Result<Self, String> {
+    pub fn load_safetensors<P: AsRef<Path>>(path: P) -> std::result::Result<Self, String> {
         use crate::serialization::safetensors;
 
         // Load SafeTensors file
@@ -983,11 +981,7 @@ impl RandomForestClassifier {
     /// # Errors
     ///
     /// Returns an error if fitting fails.
-    pub fn fit(
-        &mut self,
-        x: &crate::primitives::Matrix<f32>,
-        y: &[usize],
-    ) -> Result<(), &'static str> {
+    pub fn fit(&mut self, x: &crate::primitives::Matrix<f32>, y: &[usize]) -> Result<()> {
         let (n_samples, n_features) = x.shape();
         self.trees = Vec::with_capacity(self.n_estimators);
 
@@ -1079,7 +1073,7 @@ impl RandomForestClassifier {
     /// # Errors
     ///
     /// Returns an error if the model is unfitted or if saving fails.
-    pub fn save_safetensors<P: AsRef<Path>>(&self, path: P) -> Result<(), String> {
+    pub fn save_safetensors<P: AsRef<Path>>(&self, path: P) -> std::result::Result<(), String> {
         use crate::serialization::safetensors;
         use std::collections::BTreeMap;
 
@@ -1191,7 +1185,7 @@ impl RandomForestClassifier {
     /// # Errors
     ///
     /// Returns an error if loading fails or if the file format is invalid.
-    pub fn load_safetensors<P: AsRef<Path>>(path: P) -> Result<Self, String> {
+    pub fn load_safetensors<P: AsRef<Path>>(path: P) -> std::result::Result<Self, String> {
         use crate::serialization::safetensors;
 
         // Load SafeTensors file
@@ -1440,17 +1434,13 @@ impl GradientBoostingClassifier {
     /// # Returns
     ///
     /// Ok(()) on success, Err with message on failure.
-    pub fn fit(
-        &mut self,
-        x: &crate::primitives::Matrix<f32>,
-        y: &[usize],
-    ) -> Result<(), &'static str> {
+    pub fn fit(&mut self, x: &crate::primitives::Matrix<f32>, y: &[usize]) -> Result<()> {
         if x.n_rows() != y.len() {
-            return Err("x and y must have the same number of samples");
+            return Err("x and y must have the same number of samples".into());
         }
 
         if x.n_rows() == 0 {
-            return Err("Cannot fit with 0 samples");
+            return Err("Cannot fit with 0 samples".into());
         }
 
         let n_samples = x.n_rows();
@@ -1539,7 +1529,7 @@ impl GradientBoostingClassifier {
     /// # Returns
     ///
     /// Vector of predicted labels (0 or 1).
-    pub fn predict(&self, x: &crate::primitives::Matrix<f32>) -> Result<Vec<usize>, &'static str> {
+    pub fn predict(&self, x: &crate::primitives::Matrix<f32>) -> Result<Vec<usize>> {
         let probas = self.predict_proba(x)?;
         Ok(probas
             .iter()
@@ -1557,12 +1547,9 @@ impl GradientBoostingClassifier {
     ///
     /// Vector of probability distributions, one per sample.
     /// Each distribution is [P(class=0), P(class=1)].
-    pub fn predict_proba(
-        &self,
-        x: &crate::primitives::Matrix<f32>,
-    ) -> Result<Vec<Vec<f32>>, &'static str> {
+    pub fn predict_proba(&self, x: &crate::primitives::Matrix<f32>) -> Result<Vec<Vec<f32>>> {
         if self.estimators.is_empty() {
-            return Err("Model not trained yet");
+            return Err("Model not trained yet".into());
         }
 
         let n_samples = x.n_rows();

@@ -34,6 +34,7 @@
 //! }
 //! ```
 
+use crate::error::Result;
 use crate::primitives::{Matrix, Vector};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
@@ -128,20 +129,20 @@ impl LogisticRegression {
     /// # Returns
     ///
     /// `Ok(())` on success, `Err` with message on failure
-    pub fn fit(&mut self, x: &Matrix<f32>, y: &[usize]) -> Result<(), &'static str> {
+    pub fn fit(&mut self, x: &Matrix<f32>, y: &[usize]) -> Result<()> {
         let (n_samples, n_features) = x.shape();
 
         if n_samples != y.len() {
-            return Err("Number of samples in X and y must match");
+            return Err("Number of samples in X and y must match".into());
         }
         if n_samples == 0 {
-            return Err("Cannot fit with zero samples");
+            return Err("Cannot fit with zero samples".into());
         }
 
         // Validate labels are binary (0 or 1)
         for &label in y {
             if label != 0 && label != 1 {
-                return Err("Labels must be 0 or 1 for binary classification");
+                return Err("Labels must be 0 or 1 for binary classification".into());
             }
         }
 
@@ -244,7 +245,7 @@ impl LogisticRegression {
     ///
     /// model.save_safetensors("model.safetensors").unwrap();
     /// ```
-    pub fn save_safetensors<P: AsRef<Path>>(&self, path: P) -> Result<(), String> {
+    pub fn save_safetensors<P: AsRef<Path>>(&self, path: P) -> std::result::Result<(), String> {
         use crate::serialization::safetensors;
         use std::collections::BTreeMap;
 
@@ -299,7 +300,7 @@ impl LogisticRegression {
     /// let loaded_model = LogisticRegression::load_safetensors("/tmp/doctest_logistic_model.safetensors").unwrap();
     /// # std::fs::remove_file("/tmp/doctest_logistic_model.safetensors").ok();
     /// ```
-    pub fn load_safetensors<P: AsRef<Path>>(path: P) -> Result<Self, String> {
+    pub fn load_safetensors<P: AsRef<Path>>(path: P) -> std::result::Result<Self, String> {
         use crate::serialization::safetensors;
 
         // Load SafeTensors file
@@ -443,19 +444,19 @@ impl KNearestNeighbors {
     /// # Errors
     ///
     /// Returns error if data dimensions are invalid.
-    pub fn fit(&mut self, x: &Matrix<f32>, y: &[usize]) -> Result<(), &'static str> {
+    pub fn fit(&mut self, x: &Matrix<f32>, y: &[usize]) -> Result<()> {
         let (n_samples, _n_features) = x.shape();
 
         if n_samples == 0 {
-            return Err("Cannot fit with zero samples");
+            return Err("Cannot fit with zero samples".into());
         }
 
         if y.len() != n_samples {
-            return Err("Number of samples in X and y must match");
+            return Err("Number of samples in X and y must match".into());
         }
 
         if self.k > n_samples {
-            return Err("k cannot be larger than number of training samples");
+            return Err("k cannot be larger than number of training samples".into());
         }
 
         // Store training data
@@ -473,7 +474,7 @@ impl KNearestNeighbors {
     /// # Errors
     ///
     /// Returns error if model is not fitted or dimensions mismatch.
-    pub fn predict(&self, x: &Matrix<f32>) -> Result<Vec<usize>, &'static str> {
+    pub fn predict(&self, x: &Matrix<f32>) -> Result<Vec<usize>> {
         let x_train = self.x_train.as_ref().ok_or("Model not fitted")?;
         let y_train = self.y_train.as_ref().ok_or("Model not fitted")?;
 
@@ -481,7 +482,7 @@ impl KNearestNeighbors {
         let (_n_train, n_train_features) = x_train.shape();
 
         if n_features != n_train_features {
-            return Err("Feature dimension mismatch");
+            return Err("Feature dimension mismatch".into());
         }
 
         let mut predictions = Vec::with_capacity(n_samples);
@@ -520,7 +521,7 @@ impl KNearestNeighbors {
     /// # Errors
     ///
     /// Returns error if model is not fitted or dimensions mismatch.
-    pub fn predict_proba(&self, x: &Matrix<f32>) -> Result<Vec<Vec<f32>>, &'static str> {
+    pub fn predict_proba(&self, x: &Matrix<f32>) -> Result<Vec<Vec<f32>>> {
         let x_train = self.x_train.as_ref().ok_or("Model not fitted")?;
         let y_train = self.y_train.as_ref().ok_or("Model not fitted")?;
 
@@ -528,7 +529,7 @@ impl KNearestNeighbors {
         let (_n_train, n_train_features) = x_train.shape();
 
         if n_features != n_train_features {
-            return Err("Feature dimension mismatch");
+            return Err("Feature dimension mismatch".into());
         }
 
         // Find number of classes
@@ -727,15 +728,15 @@ impl GaussianNB {
     /// - Sample count mismatch between X and y
     /// - Empty data
     /// - Less than 2 classes
-    pub fn fit(&mut self, x: &Matrix<f32>, y: &[usize]) -> Result<(), &'static str> {
+    pub fn fit(&mut self, x: &Matrix<f32>, y: &[usize]) -> Result<()> {
         let (n_samples, n_features) = x.shape();
 
         if n_samples == 0 {
-            return Err("Cannot fit with empty data");
+            return Err("Cannot fit with empty data".into());
         }
 
         if y.len() != n_samples {
-            return Err("Number of samples in X and y must match");
+            return Err("Number of samples in X and y must match".into());
         }
 
         // Find unique classes
@@ -744,7 +745,7 @@ impl GaussianNB {
         classes.dedup();
 
         if classes.len() < 2 {
-            return Err("Need at least 2 classes");
+            return Err("Need at least 2 classes".into());
         }
 
         let n_classes = classes.len();
@@ -804,7 +805,7 @@ impl GaussianNB {
     /// # Errors
     ///
     /// Returns error if model is not fitted or dimension mismatch.
-    pub fn predict(&self, x: &Matrix<f32>) -> Result<Vec<usize>, &'static str> {
+    pub fn predict(&self, x: &Matrix<f32>) -> Result<Vec<usize>> {
         let probabilities = self.predict_proba(x)?;
         let classes = self.classes.as_ref().ok_or("Model not fitted")?;
 
@@ -832,7 +833,7 @@ impl GaussianNB {
     /// # Errors
     ///
     /// Returns error if model is not fitted or dimension mismatch.
-    pub fn predict_proba(&self, x: &Matrix<f32>) -> Result<Vec<Vec<f32>>, &'static str> {
+    pub fn predict_proba(&self, x: &Matrix<f32>) -> Result<Vec<Vec<f32>>> {
         let means = self.means.as_ref().ok_or("Model not fitted")?;
         let variances = self.variances.as_ref().ok_or("Model not fitted")?;
         let class_priors = self.class_priors.as_ref().ok_or("Model not fitted")?;
@@ -841,7 +842,7 @@ impl GaussianNB {
         let n_classes = means.len();
 
         if n_features != means[0].len() {
-            return Err("Feature dimension mismatch");
+            return Err("Feature dimension mismatch".into());
         }
 
         let mut probabilities = Vec::with_capacity(n_samples);
@@ -997,13 +998,13 @@ impl LinearSVM {
     /// # Returns
     ///
     /// Ok(()) on success, Err with message on failure.
-    pub fn fit(&mut self, x: &Matrix<f32>, y: &[usize]) -> Result<(), &'static str> {
+    pub fn fit(&mut self, x: &Matrix<f32>, y: &[usize]) -> Result<()> {
         if x.n_rows() != y.len() {
-            return Err("x and y must have the same number of samples");
+            return Err("x and y must have the same number of samples".into());
         }
 
         if x.n_rows() == 0 {
-            return Err("Cannot fit with 0 samples");
+            return Err("Cannot fit with 0 samples".into());
         }
 
         // Convert labels to {-1, +1}
@@ -1086,11 +1087,11 @@ impl LinearSVM {
     /// # Returns
     ///
     /// Vector of decision values, one per sample.
-    pub fn decision_function(&self, x: &Matrix<f32>) -> Result<Vec<f32>, &'static str> {
+    pub fn decision_function(&self, x: &Matrix<f32>) -> Result<Vec<f32>> {
         let weights = self.weights.as_ref().ok_or("Model not trained yet")?;
 
         if x.n_cols() != weights.len() {
-            return Err("Feature dimension mismatch");
+            return Err("Feature dimension mismatch".into());
         }
 
         let mut decisions = Vec::with_capacity(x.n_rows());
@@ -1115,7 +1116,7 @@ impl LinearSVM {
     /// # Returns
     ///
     /// Vector of predicted labels (0 or 1).
-    pub fn predict(&self, x: &Matrix<f32>) -> Result<Vec<usize>, &'static str> {
+    pub fn predict(&self, x: &Matrix<f32>) -> Result<Vec<usize>> {
         let decisions = self.decision_function(x)?;
 
         Ok(decisions

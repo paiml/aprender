@@ -49,6 +49,7 @@ pub mod chaos;
 pub mod classification;
 pub mod cluster;
 pub mod data;
+pub mod error;
 pub mod graph;
 pub mod linear_model;
 pub mod loss;
@@ -63,5 +64,6 @@ pub mod stats;
 pub mod traits;
 pub mod tree;
 
+pub use error::{AprenderError, Result};
 pub use primitives::{Matrix, Vector};
 pub use traits::{Estimator, Transformer, UnsupervisedEstimator};

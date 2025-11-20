@@ -10,7 +10,7 @@
 # Multi-line recipes execute in same shell
 .ONESHELL:
 
-.PHONY: all build test lint fmt clean doc book book-build book-serve book-test tier1 tier2 tier3 tier4 coverage profile hooks-install hooks-verify lint-scripts bashrs-score bashrs-lint-makefile chaos-test fuzz bench dev pre-push ci check run-ci run-bench
+.PHONY: all build test lint fmt clean doc book book-build book-serve book-test tier1 tier2 tier3 tier4 coverage profile hooks-install hooks-verify lint-scripts bashrs-score bashrs-lint-makefile chaos-test fuzz bench dev pre-push ci check run-ci run-bench audit deps-validate deny
 
 # Default target
 all: tier2
@@ -151,6 +151,29 @@ ci: tier4
 # Quick check (compile only)
 check:
 	cargo check --all
+
+# Run security audit
+audit:
+	@echo "🔒 Running security audit..."
+	@cargo audit
+	@echo "✅ Security audit completed"
+
+# Validate dependencies (duplicates + security)
+deps-validate:
+	@echo "🔍 Validating dependencies..."
+	@cargo tree --duplicate | grep -v "^$$" || echo "✅ No duplicate dependencies"
+	@cargo audit || echo "⚠️  Security issues found"
+
+# Run cargo-deny checks (licenses, bans, advisories, sources)
+deny:
+	@echo "🔒 Running cargo-deny checks..."
+	@if command -v cargo-deny >/dev/null 2>&1; then \
+		cargo deny check; \
+	else \
+		echo "❌ cargo-deny not installed. Install with: cargo install cargo-deny"; \
+		exit 1; \
+	fi
+	@echo "✅ cargo-deny checks passed"
 
 # Install PMAT pre-commit hooks
 hooks-install: ## Install PMAT pre-commit hooks
