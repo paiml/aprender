@@ -281,3 +281,18 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
+- id: Fix mdbook test failures - Phase 7 (pca.md + classification-metrics.md)
+  github_issue: null
+  item_type: task
+  title: 'New task: Fix mdbook test failures - Phase 7 (pca.md + classification-metrics.md)'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-20T21:58:39.173370149+00:00
+  updated: 2025-11-20T22:02:26.233402895+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
