@@ -208,7 +208,7 @@
 <h2 id="mathematical-foundation"><a class="header" href="#mathematical-foundation">Mathematical Foundation</a></h2>
 <h3 id="r²-coefficient-of-determination"><a class="header" href="#r²-coefficient-of-determination">R² (Coefficient of Determination)</a></h3>
 <p><strong>Definition</strong>:</p>
-<pre><code>R² = 1 - (SS_res / SS_tot)
+<pre><code class="language-text">R² = 1 - (SS_res / SS_tot)
 
 where:
 SS_res = Σ(y_true - y_pred)²  (residual sum of squares)
@@ -223,7 +223,7 @@ SS_tot = Σ(y_true - y_mean)²  (total sum of squares)
 <p><strong>Key Insight</strong>: R² measures variance explained. It answers: &quot;What fraction of the target's variance does my model capture?&quot;</p>
 <h3 id="mse-mean-squared-error"><a class="header" href="#mse-mean-squared-error">MSE (Mean Squared Error)</a></h3>
 <p><strong>Definition</strong>:</p>
-<pre><code>MSE = (1/n) Σ(y_true - y_pred)²
+<pre><code class="language-text">MSE = (1/n) Σ(y_true - y_pred)²
 </code></pre>
 <p><strong>Properties</strong>:</p>
 <ul>
@@ -234,13 +234,13 @@ SS_tot = Σ(y_true - y_mean)²  (total sum of squares)
 <p><strong>When to Use</strong>: When large errors are especially bad (e.g., financial predictions).</p>
 <h3 id="rmse-root-mean-squared-error"><a class="header" href="#rmse-root-mean-squared-error">RMSE (Root Mean Squared Error)</a></h3>
 <p><strong>Definition</strong>:</p>
-<pre><code>RMSE = √MSE = √[(1/n) Σ(y_true - y_pred)²]
+<pre><code class="language-text">RMSE = √MSE = √[(1/n) Σ(y_true - y_pred)²]
 </code></pre>
 <p><strong>Advantage over MSE</strong>: Same units as target (e.g., dollars, not dollars²)</p>
 <p><strong>Interpretation</strong>: &quot;On average, predictions are off by X units&quot;</p>
 <h3 id="mae-mean-absolute-error"><a class="header" href="#mae-mean-absolute-error">MAE (Mean Absolute Error)</a></h3>
 <p><strong>Definition</strong>:</p>
-<pre><code>MAE = (1/n) Σ|y_true - y_pred|
+<pre><code class="language-text">MAE = (1/n) Σ|y_true - y_pred|
 </code></pre>
 <p><strong>Properties</strong>:</p>
 <ul>
@@ -252,7 +252,7 @@ SS_tot = Σ(y_true - y_mean)²  (total sum of squares)
 <hr />
 <h2 id="implementation-in-aprender"><a class="header" href="#implementation-in-aprender">Implementation in Aprender</a></h2>
 <h3 id="example-all-metrics-on-same-data"><a class="header" href="#example-all-metrics-on-same-data">Example: All Metrics on Same Data</a></h3>
-<pre><code class="language-rust">use aprender::metrics::{r_squared, mse, rmse, mae};
+<pre><code class="language-rust ignore">use aprender::metrics::{r_squared, mse, rmse, mae};
 use aprender::primitives::Vector;
 
 let y_true = Vector::from_vec(vec![3.0, -0.5, 2.0, 7.0]);
@@ -361,7 +361,7 @@ But predictions are systematically wrong!
 <hr />
 <h2 id="real-world-application"><a class="header" href="#real-world-application">Real-World Application</a></h2>
 <p><strong>Example</strong>: Evaluating Linear Regression</p>
-<pre><code class="language-rust">use aprender::linear_model::LinearRegression;
+<pre><code class="language-rust ignore">use aprender::linear_model::LinearRegression;
 use aprender::metrics::{r_squared, rmse};
 use aprender::traits::Estimator;
 

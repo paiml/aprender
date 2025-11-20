@@ -207,10 +207,10 @@ Linear regression is not just a model—it's a lens for understanding how mathem
 <h2 id="mathematical-foundation"><a class="header" href="#mathematical-foundation">Mathematical Foundation</a></h2>
 <h3 id="the-core-equation"><a class="header" href="#the-core-equation">The Core Equation</a></h3>
 <p>Given training data <strong>(X, y)</strong>, we seek coefficients <strong>β</strong> that minimize the squared error:</p>
-<pre><code>minimize: ||y - Xβ||²
+<pre><code class="language-text">minimize: ||y - Xβ||²
 </code></pre>
 <p><strong>Ordinary Least Squares (OLS) Solution</strong>:</p>
-<pre><code>β = (X^T X)^(-1) X^T y
+<pre><code class="language-text">β = (X^T X)^(-1) X^T y
 </code></pre>
 <p>Where:</p>
 <ul>
@@ -227,7 +227,7 @@ Linear regression is not just a model—it's a lens for understanding how mathem
 <h2 id="implementation-in-aprender"><a class="header" href="#implementation-in-aprender">Implementation in Aprender</a></h2>
 <h3 id="example-1-perfect-linear-data"><a class="header" href="#example-1-perfect-linear-data">Example 1: Perfect Linear Data</a></h3>
 <p>Let's verify OLS works on simple data: <strong>y = 2x + 1</strong></p>
-<pre><code class="language-rust">use aprender::linear_model::LinearRegression;
+<pre><code class="language-rust ignore">use aprender::linear_model::LinearRegression;
 use aprender::primitives::{Matrix, Vector};
 use aprender::traits::Estimator;
 
@@ -248,7 +248,7 @@ assert!((model.intercept() - 1.0).abs() &lt; 1e-5); // Intercept = 1.0</code></p
 <hr />
 <h3 id="example-2-making-predictions"><a class="header" href="#example-2-making-predictions">Example 2: Making Predictions</a></h3>
 <p>Once fitted, the model predicts new values:</p>
-<pre><code class="language-rust">use aprender::linear_model::LinearRegression;
+<pre><code class="language-rust ignore">use aprender::linear_model::LinearRegression;
 use aprender::primitives::{Matrix, Vector};
 use aprender::traits::Estimator;
 
@@ -285,7 +285,7 @@ assert!((predictions[1] - 10.0).abs() &lt; 1e-5); // 2 * 5 = 10</code></pre>
 <li>y = 0x + 0?</li>
 </ul>
 <p><strong>Property tests verify ALL of them</strong> (proptest runs 100+ random cases):</p>
-<pre><code class="language-rust">use proptest::prelude::*;
+<pre><code class="language-rust ignore">use proptest::prelude::*;
 
 proptest! {
     #[test]
