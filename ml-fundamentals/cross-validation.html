@@ -227,7 +227,7 @@ Using training accuracy to evaluate a model is like grading your own exam. Cross
 <hr />
 <h2 id="implementation-in-aprender"><a class="header" href="#implementation-in-aprender">Implementation in Aprender</a></h2>
 <h3 id="example-1-traintest-split"><a class="header" href="#example-1-traintest-split">Example 1: Train/Test Split</a></h3>
-<pre><code class="language-rust">use aprender::model_selection::train_test_split;
+<pre><code class="language-rust ignore">use aprender::model_selection::train_test_split;
 use aprender::primitives::{Matrix, Vector};
 
 let x = Matrix::from_vec(10, 2, vec![/*...*/]).unwrap();
@@ -241,7 +241,7 @@ assert_eq!(x_train.shape().0, 8);  // 80% of 10
 assert_eq!(x_test.shape().0, 2);   // 20% of 10</code></pre>
 <p><strong>Test Reference</strong>: <code>src/model_selection/mod.rs::tests::test_train_test_split_basic</code></p>
 <h3 id="example-2-k-fold-cross-validation"><a class="header" href="#example-2-k-fold-cross-validation">Example 2: K-Fold Cross-Validation</a></h3>
-<pre><code class="language-rust">use aprender::model_selection::{KFold, cross_validate};
+<pre><code class="language-rust ignore">use aprender::model_selection::{KFold, cross_validate};
 use aprender::linear_model::LinearRegression;
 
 let kfold = KFold::new(5)  // 5 folds

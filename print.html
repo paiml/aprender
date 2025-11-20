@@ -5061,7 +5061,7 @@ Using training accuracy to evaluate a model is like grading your own exam. Cross
 <hr />
 <h2 id="implementation-in-aprender-12"><a class="header" href="#implementation-in-aprender-12">Implementation in Aprender</a></h2>
 <h3 id="example-1-traintest-split"><a class="header" href="#example-1-traintest-split">Example 1: Train/Test Split</a></h3>
-<pre><code class="language-rust">use aprender::model_selection::train_test_split;
+<pre><code class="language-rust ignore">use aprender::model_selection::train_test_split;
 use aprender::primitives::{Matrix, Vector};
 
 let x = Matrix::from_vec(10, 2, vec![/*...*/]).unwrap();
@@ -5075,7 +5075,7 @@ assert_eq!(x_train.shape().0, 8);  // 80% of 10
 assert_eq!(x_test.shape().0, 2);   // 20% of 10</code></pre>
 <p><strong>Test Reference</strong>: <code>src/model_selection/mod.rs::tests::test_train_test_split_basic</code></p>
 <h3 id="example-2-k-fold-cross-validation"><a class="header" href="#example-2-k-fold-cross-validation">Example 2: K-Fold Cross-Validation</a></h3>
-<pre><code class="language-rust">use aprender::model_selection::{KFold, cross_validate};
+<pre><code class="language-rust ignore">use aprender::model_selection::{KFold, cross_validate};
 use aprender::linear_model::LinearRegression;
 
 let kfold = KFold::new(5)  // 5 folds
@@ -5223,7 +5223,7 @@ col_indices: [1, 3, 0, 2, 4, ...]  # length = m (undirected: 2m)
 </code></pre>
 <p>where <code>n</code> is the number of nodes.</p>
 <h3 id="implementation"><a class="header" href="#implementation">Implementation</a></h3>
-<pre><code class="language-rust">use aprender::graph::Graph;
+<pre><code class="language-rust ignore">use aprender::graph::Graph;
 
 let edges = vec![(0, 1), (1, 2), (2, 3), (0, 2)];
 let graph = Graph::from_edges(&amp;edges, false);
@@ -5264,7 +5264,7 @@ PR_new(v) += d * dangling_sum / n
 <p>Without this correction, rank &quot;leaks&quot; out of the system and Σ PR(v) ≠ 1.</p>
 <h3 id="numerical-stability-1"><a class="header" href="#numerical-stability-1">Numerical Stability</a></h3>
 <p>Naive summation accumulates O(n·ε) floating-point error on large graphs. Aprender uses <strong>Kahan compensated summation</strong>:</p>
-<pre><code class="language-rust">let mut sum = 0.0;
+<pre><code class="language-rust ignore">let mut sum = 0.0;
 let mut c = 0.0;  // Compensation term
 
 for value in values {
@@ -5275,7 +5275,7 @@ for value in values {
 }</code></pre>
 <p><strong>Result</strong>: Σ PR(v) = 1.0 within 1e-10 precision (vs 1e-5 naive).</p>
 <h3 id="implementation-1"><a class="header" href="#implementation-1">Implementation</a></h3>
-<pre><code class="language-rust">use aprender::graph::Graph;
+<pre><code class="language-rust ignore">use aprender::graph::Graph;
 
 let edges = vec![(0, 1), (1, 2), (2, 3), (3, 0)];
 let graph = Graph::from_edges(&amp;edges, true);  // directed
@@ -5320,7 +5320,7 @@ println!(&quot;PageRank scores: {:?}&quot;, ranks);</code></pre>
 </ul>
 <h3 id="parallel-implementation"><a class="header" href="#parallel-implementation">Parallel Implementation</a></h3>
 <p>The outer loop (BFS from each source) is <strong>embarrassingly parallel</strong>:</p>
-<pre><code class="language-rust">use rayon::prelude::*;
+<pre><code class="language-rust ignore">use rayon::prelude::*;
 
 let partial_scores: Vec&lt;Vec&lt;f64&gt;&gt; = (0..n)
     .into_par_iter()  // Parallel iterator
@@ -5337,13 +5337,13 @@ for partial in partial_scores {
 <p><strong>Expected speedup</strong>: ~8x on 8-core CPU for graphs with &gt;1K nodes.</p>
 <h3 id="normalization"><a class="header" href="#normalization">Normalization</a></h3>
 <p>For undirected graphs, each path is counted twice:</p>
-<pre><code class="language-rust">if !is_directed {
+<pre><code class="language-rust ignore">if !is_directed {
     for score in &amp;mut centrality {
         *score /= 2.0;
     }
 }</code></pre>
 <h3 id="implementation-2"><a class="header" href="#implementation-2">Implementation</a></h3>
-<pre><code class="language-rust">use aprender::graph::Graph;
+<pre><code class="language-rust ignore">use aprender::graph::Graph;
 
 let edges = vec![
     (0, 1), (1, 2), (2, 3),  // Linear chain
@@ -5434,7 +5434,7 @@ println!(&quot;Node 1 betweenness: {:.2}&quot;, betweenness[1]);  // High (bridg
 <li><strong>Betweenness</strong>: Find bridges, critical paths</li>
 </ul>
 <h3 id="graph-construction-tips"><a class="header" href="#graph-construction-tips">Graph Construction Tips</a></h3>
-<pre><code class="language-rust">// Build graph once, query many times
+<pre><code class="language-rust ignore">// Build graph once, query many times
 let graph = Graph::from_edges(&amp;edges, false);
 
 // Reuse for multiple algorithms
