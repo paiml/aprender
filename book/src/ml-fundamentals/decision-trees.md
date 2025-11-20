@@ -41,7 +41,7 @@ A decision tree is a binary tree where:
 - **Leaves**: Contain class predictions
 
 **Example Tree**:
-```
+```text
         [Petal Width ≤ 0.8]
        /                    \
    Class 0           [Petal Length ≤ 4.9]
@@ -52,7 +52,7 @@ A decision tree is a binary tree where:
 ### Gini Impurity
 
 **Definition**:
-```
+```text
 Gini(S) = 1 - Σ p_i²
 
 where:
@@ -71,7 +71,7 @@ p_i = proportion of class i in S
 
 When we split a node into left and right children:
 
-```
+```text
 InfoGain = Gini(parent) - [w_L * Gini(left) + w_R * Gini(right)]
 
 where:
@@ -84,7 +84,7 @@ w_R = n_right / n_total (weight of right child)
 ### CART Algorithm (Classification)
 
 **Recursive Tree Building**:
-```
+```text
 function BuildTree(X, y, depth, max_depth):
     if stopping_criterion_met:
         return Leaf(majority_class(y))
@@ -116,7 +116,7 @@ function BuildTree(X, y, depth, max_depth):
 
 ### Example 1: Simple Binary Classification
 
-```rust
+```rust,ignore
 use aprender::tree::DecisionTreeClassifier;
 use aprender::primitives::Matrix;
 
@@ -147,7 +147,7 @@ println!("Accuracy: {:.3}", accuracy); // 1.000
 
 ### Example 2: Multi-Class Classification (Iris)
 
-```rust
+```rust,ignore
 // Iris dataset (3 classes, 4 features)
 // Simplified example - see case study for full implementation
 
@@ -166,7 +166,7 @@ println!("Test Accuracy: {:.3}", accuracy); // e.g., 0.967
 
 ### Example 3: Model Serialization
 
-```rust
+```rust,ignore
 // Train and save tree
 let mut tree = DecisionTreeClassifier::new()
     .with_max_depth(4);
@@ -189,7 +189,7 @@ let predictions = loaded_tree.predict(&x_test);
 
 **Scenario**: Node with 6 samples: [A, A, A, B, B, C]
 
-```
+```text
 Class A: 3/6 = 0.5
 Class B: 2/6 = 0.33
 Class C: 1/6 = 0.17
@@ -236,7 +236,7 @@ Gini = 1 - (0.5² + 0.33² + 0.17²)
 
 Use cross-validation:
 
-```rust
+```rust,ignore
 // Pseudocode
 for depth in 1..=10 {
     model = DecisionTreeClassifier::new().with_max_depth(depth);
@@ -359,7 +359,7 @@ Decision tree tests verify mathematical properties:
 **Problem**: Diagnose disease from symptoms (temperature, blood pressure, age)
 
 **Decision Tree**:
-```
+```text
           [Temperature > 38°C]
          /                    \
    [BP > 140]               Healthy
@@ -428,7 +428,7 @@ Disease A   Disease B
 - **Prevent overfit**: Set max_depth (3-7 typical)
 
 **Key Equations**:
-```
+```text
 Gini(S) = 1 - Σ p_i²
 InfoGain = Gini(parent) - Weighted_Avg(Gini(children))
 Split: feature ≤ threshold → left, else → right

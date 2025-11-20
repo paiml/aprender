@@ -36,7 +36,7 @@ Logistic regression powers countless applications: spam detection, medical diagn
 
 The **sigmoid** (logistic) function squashes any real number to [0, 1]:
 
-```
+```text
 σ(z) = 1 / (1 + e^(-z))
 ```
 
@@ -49,7 +49,7 @@ The **sigmoid** (logistic) function squashes any real number to [0, 1]:
 
 For input **x** and coefficients **β**:
 
-```
+```text
 P(y=1|x) = σ(β·x + intercept)
          = 1 / (1 + e^(-(β·x + intercept)))
 ```
@@ -60,7 +60,7 @@ P(y=1|x) = σ(β·x + intercept)
 
 Unlike linear regression, there's **no closed-form solution**. We use gradient descent to minimize the **binary cross-entropy loss**:
 
-```
+```text
 Loss = -[y log(p) + (1-y) log(1-p)]
 ```
 
@@ -74,7 +74,7 @@ Where p = σ(β·x + intercept) is the predicted probability.
 
 ### Example 1: Binary Classification
 
-```rust
+```rust,ignore
 use aprender::classification::LogisticRegression;
 use aprender::primitives::{Matrix, Vector};
 
@@ -107,7 +107,7 @@ println!("P(class=1) = {:.3}", proba[0]); // e.g., 0.612
 
 Logistic regression models can be saved and loaded:
 
-```rust
+```rust,ignore
 // Save model
 model.save_safetensors("model.safetensors").unwrap();
 

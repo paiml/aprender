@@ -35,12 +35,12 @@ Regularization prevents overfitting by adding a penalty for model complexity. In
 ### The Regularization Principle
 
 **Ordinary Least Squares (OLS)**:
-```
+```text
 minimize: ||y - Xβ||²
 ```
 
 **Regularized Regression**:
-```
+```text
 minimize: ||y - Xβ||² + penalty(β)
 ```
 
@@ -49,7 +49,7 @@ The penalty term controls model complexity. Different penalties → different be
 ### Ridge Regression (L2 Regularization)
 
 **Objective Function**:
-```
+```text
 minimize: ||y - Xβ||² + α||β||²₂
 
 where:
@@ -58,7 +58,7 @@ where:
 ```
 
 **Closed-Form Solution**:
-```
+```text
 β_ridge = (X^T X + αI)^(-1) X^T y
 ```
 
@@ -70,7 +70,7 @@ where:
 ### Lasso Regression (L1 Regularization)
 
 **Objective Function**:
-```
+```text
 minimize: ||y - Xβ||² + α||β||₁
 
 where:
@@ -87,7 +87,7 @@ where:
 ### ElasticNet (L1 + L2)
 
 **Objective Function**:
-```
+```text
 minimize: ||y - Xβ||² + α[ρ||β||₁ + (1-ρ)||β||²₂]
 
 where:
@@ -107,7 +107,7 @@ where:
 
 ### Example 1: Ridge Regression
 
-```rust
+```rust,ignore
 use aprender::linear_model::Ridge;
 use aprender::primitives::{Matrix, Vector};
 use aprender::traits::Estimator;
@@ -139,7 +139,7 @@ println!("Coefficients: {:?}", coef); // Smaller than OLS
 
 ### Example 2: Lasso Regression (Sparsity)
 
-```rust
+```rust,ignore
 use aprender::linear_model::Lasso;
 
 // Same data as Ridge
@@ -169,7 +169,7 @@ println!("Coefficients: {:?}", coef);
 
 ### Example 3: ElasticNet (Combined)
 
-```rust
+```rust,ignore
 use aprender::linear_model::ElasticNet;
 
 let x = Matrix::from_vec(4, 2, vec![
@@ -238,7 +238,7 @@ Do you want maximum simplicity?
 
 **Finding optimal α**: Use cross-validation (see [Cross-Validation Theory](./cross-validation.md))
 
-```rust
+```rust,ignore
 // Typical workflow (pseudocode)
 for alpha in [0.001, 0.01, 0.1, 1.0, 10.0, 100.0] {
     model = Ridge::new(alpha);
@@ -267,7 +267,7 @@ for alpha in [0.001, 0.01, 0.1, 1.0, 10.0, 100.0] {
 
 **Solution**: Always standardize features before regularization
 
-```rust
+```rust,ignore
 use aprender::preprocessing::StandardScaler;
 
 let mut scaler = StandardScaler::new();
@@ -385,7 +385,7 @@ Regularization models have comprehensive test coverage:
 - **Speed**: Ridge (fastest)
 
 **Key Equation**:
-```
+```text
 Ridge:      β = (X^T X + αI)^(-1) X^T y
 Lasso:      minimize ||y - Xβ||² + α||β||₁
 ElasticNet: minimize ||y - Xβ||² + α[ρ||β||₁ + (1-ρ)||β||²₂]
