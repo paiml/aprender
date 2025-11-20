@@ -4,7 +4,7 @@ The **RED-GREEN-REFACTOR** cycle is the heartbeat of EXTREME TDD. Every feature,
 
 ## The Three Phases
 
-```
+```text
 ┌─────────────┐
 │     RED     │  Write failing tests first
 └──────┬──────┘
@@ -143,7 +143,7 @@ fn test_example() {
 
 We implemented the minimal solution:
 
-```rust
+```rust,ignore
 #[allow(clippy::type_complexity)]
 pub fn train_test_split(
     x: &Matrix<f32>,
@@ -208,7 +208,7 @@ test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured
 
 ### Avoiding Over-Engineering
 
-```rust
+```rust,ignore
 // ❌ OVER-ENGINEERED: Adding features not required by tests
 pub fn train_test_split(
     x: &Matrix<f32>,
@@ -263,7 +263,7 @@ warning: very complex type used. Consider factoring parts into `type` definition
 
 **Fix:** Add allow annotation for idiomatic Rust tuple return:
 
-```rust
+```rust,ignore
 #[allow(clippy::type_complexity)]
 pub fn train_test_split(/* ... */) -> Result<(Matrix<f32>, Matrix<f32>, Vector<f32>, Vector<f32>), String> {
     // ...
@@ -292,7 +292,7 @@ All functions ≤10 ✅
 
 **Step 4: Add Documentation**
 
-```rust
+```rust,ignore
 /// Splits data into random train and test subsets.
 ///
 /// # Arguments
@@ -438,7 +438,7 @@ error[E0433]: failed to resolve: could not find `RandomForestClassifier`
 
 ### GREEN Phase (Minimal Implementation)
 
-```rust
+```rust,ignore
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RandomForestClassifier {
     trees: Vec<DecisionTreeClassifier>,
