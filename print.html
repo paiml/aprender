@@ -3789,7 +3789,7 @@ K-Means finds natural groupings in unlabeled data: customer segments, image comp
 <h2 id="mathematical-foundation-5"><a class="header" href="#mathematical-foundation-5">Mathematical Foundation</a></h2>
 <h3 id="the-k-means-objective"><a class="header" href="#the-k-means-objective">The K-Means Objective</a></h3>
 <p><strong>Goal</strong>: Minimize within-cluster variance (inertia)</p>
-<pre><code>minimize: Σ(k=1 to K) Σ(x ∈ C_k) ||x - μ_k||²
+<pre><code class="language-text">minimize: Σ(k=1 to K) Σ(x ∈ C_k) ||x - μ_k||²
 
 where:
 C_k = set of samples in cluster k
@@ -3799,7 +3799,7 @@ K = number of clusters
 <p><strong>Interpretation</strong>: Find cluster assignments that minimize total squared distance from points to their centroids.</p>
 <h3 id="lloyds-algorithm"><a class="header" href="#lloyds-algorithm">Lloyd's Algorithm</a></h3>
 <p><strong>Classic K-Means</strong> (1957):</p>
-<pre><code>1. Initialize: Choose K initial centroids μ₁, μ₂, ..., μ_K
+<pre><code class="language-text">1. Initialize: Choose K initial centroids μ₁, μ₂, ..., μ_K
 
 2. Repeat until convergence:
    a) Assignment Step:
@@ -3821,7 +3821,7 @@ K = number of clusters
 <h3 id="k-means-initialization"><a class="header" href="#k-means-initialization">k-means++ Initialization</a></h3>
 <p><strong>Problem with random init</strong>: Bad initial centroids → slow convergence or poor local minimum</p>
 <p><strong>k-means++ Solution</strong> (Arthur &amp; Vassilvitskii 2007):</p>
-<pre><code>1. Choose first centroid uniformly at random from data points
+<pre><code class="language-text">1. Choose first centroid uniformly at random from data points
 
 2. For each remaining centroid:
    a) For each point x:
@@ -3836,7 +3836,7 @@ K = number of clusters
 <hr />
 <h2 id="implementation-in-aprender-8"><a class="header" href="#implementation-in-aprender-8">Implementation in Aprender</a></h2>
 <h3 id="example-1-basic-k-means"><a class="header" href="#example-1-basic-k-means">Example 1: Basic K-Means</a></h3>
-<pre><code class="language-rust">use aprender::cluster::KMeans;
+<pre><code class="language-rust ignore">use aprender::cluster::KMeans;
 use aprender::primitives::Matrix;
 use aprender::traits::UnsupervisedEstimator;
 
@@ -3870,7 +3870,7 @@ println!(&quot;Centroids:\n{:?}&quot;, centroids);
 println!(&quot;Inertia: {:.3}&quot;, kmeans.inertia());</code></pre>
 <p><strong>Test Reference</strong>: <code>src/cluster/mod.rs::tests::test_three_clusters</code></p>
 <h3 id="example-2-finding-optimal-k-elbow-method"><a class="header" href="#example-2-finding-optimal-k-elbow-method">Example 2: Finding Optimal K (Elbow Method)</a></h3>
-<pre><code class="language-rust">// Try different K values
+<pre><code class="language-rust ignore">// Try different K values
 for k in 1..=10 {
     let mut kmeans = KMeans::new(k);
     kmeans.fit(&amp;data).unwrap();
@@ -3886,7 +3886,7 @@ for k in 1..=10 {
 // K=10: inertia=very low (overfitting)</code></pre>
 <p><strong>Test Reference</strong>: <code>src/cluster/mod.rs::tests::test_inertia_decreases_with_more_clusters</code></p>
 <h3 id="example-3-image-compression"><a class="header" href="#example-3-image-compression">Example 3: Image Compression</a></h3>
-<pre><code class="language-rust">// Image as pixels: (n_pixels, 3) RGB values
+<pre><code class="language-rust ignore">// Image as pixels: (n_pixels, 3) RGB values
 // Goal: Reduce 16M colors to 16 colors
 
 let mut kmeans = KMeans::new(16)  // 16 color palette
@@ -3904,7 +3904,7 @@ let palette = kmeans.centroids();  // 16 RGB colors
 <h2 id="choosing-the-number-of-clusters-k"><a class="header" href="#choosing-the-number-of-clusters-k">Choosing the Number of Clusters (K)</a></h2>
 <h3 id="the-elbow-method"><a class="header" href="#the-elbow-method">The Elbow Method</a></h3>
 <p><strong>Idea</strong>: Plot inertia vs K, look for &quot;elbow&quot; where adding more clusters has diminishing returns</p>
-<pre><code>Inertia
+<pre><code class="language-text">Inertia
   |
   |  \
   |   \___
@@ -3924,7 +3924,7 @@ Elbow at K=3 suggests 3 clusters
 </ul>
 <h3 id="silhouette-score"><a class="header" href="#silhouette-score">Silhouette Score</a></h3>
 <p><strong>Measure</strong>: How well each sample fits its cluster vs neighboring clusters</p>
-<pre><code>For each sample i:
+<pre><code class="language-text">For each sample i:
     a_i = average distance to other samples in same cluster
     b_i = average distance to nearest other cluster
 
@@ -4020,7 +4020,7 @@ Silhouette score = average over all samples
 <li>Age (0-100) vs income ($0-$1M) → income dominates</li>
 </ul>
 <p><strong>Solution</strong>: Standardize features before clustering</p>
-<pre><code class="language-rust">use aprender::preprocessing::StandardScaler;
+<pre><code class="language-rust ignore">use aprender::preprocessing::StandardScaler;
 
 let mut scaler = StandardScaler::new();
 scaler.fit(&amp;data);
@@ -4040,7 +4040,7 @@ kmeans.fit(&amp;data_scaled).unwrap();</code></pre>
 <p><strong>Aprender implementation</strong>: Handles empty clusters gracefully</p>
 <h3 id="multiple-runs"><a class="header" href="#multiple-runs">Multiple Runs</a></h3>
 <p><strong>Best practice</strong>: Run K-Means multiple times with different random_state, pick best (lowest inertia)</p>
-<pre><code class="language-rust">let mut best_inertia = f32::INFINITY;
+<pre><code class="language-rust ignore">let mut best_inertia = f32::INFINITY;
 let mut best_model = None;
 
 for seed in 0..10 {
@@ -4080,7 +4080,7 @@ for seed in 0..10 {
 <h3 id="customer-segmentation"><a class="header" href="#customer-segmentation">Customer Segmentation</a></h3>
 <p><strong>Problem</strong>: Group customers by behavior (purchase frequency, amount, recency)</p>
 <p><strong>K-Means approach</strong>:</p>
-<pre><code>Features: [recency, frequency, monetary_value]
+<pre><code class="language-text">Features: [recency, frequency, monetary_value]
 K = 3 (low, medium, high value customers)
 
 Result:
@@ -4092,7 +4092,7 @@ Result:
 <h3 id="anomaly-detection"><a class="header" href="#anomaly-detection">Anomaly Detection</a></h3>
 <p><strong>Problem</strong>: Find unusual network traffic patterns</p>
 <p><strong>K-Means approach</strong>:</p>
-<pre><code>K = 1 (normal behavior cluster)
+<pre><code class="language-text">K = 1 (normal behavior cluster)
 Threshold = 95th percentile of distances to centroid
 
 Anomaly = distance_to_centroid &gt; threshold
@@ -4101,7 +4101,7 @@ Anomaly = distance_to_centroid &gt; threshold
 <h3 id="image-compression"><a class="header" href="#image-compression">Image Compression</a></h3>
 <p><strong>Problem</strong>: Reduce 24-bit color (16M colors) to 8-bit (256 colors)</p>
 <p><strong>K-Means approach</strong>:</p>
-<pre><code>K = 256 colors
+<pre><code class="language-text">K = 256 colors
 Input: n_pixels × 3 RGB matrix
 Output: 256-color palette + n_pixels labels
 
@@ -4175,7 +4175,7 @@ Compression ratio: 24 bits → 8 bits = 3× smaller
 <li><strong>Typical iterations</strong>: 10-100 (depends on data, K)</li>
 </ul>
 <p><strong>Key Equations</strong>:</p>
-<pre><code>Inertia = Σ(k=1 to K) Σ(x ∈ C_k) ||x - μ_k||²
+<pre><code class="language-text">Inertia = Σ(k=1 to K) Σ(x ∈ C_k) ||x - μ_k||²
 Assignment: cluster(x) = argmin_k ||x - μ_k||²
 Update: μ_k = (1/|C_k|) Σ(x ∈ C_k) x
 </code></pre>
