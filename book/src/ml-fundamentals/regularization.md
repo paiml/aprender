@@ -200,7 +200,7 @@ println!("R² = {:.3}", r2);
 
 ### Decision Guide
 
-```
+```text
 Do you need feature selection (interpretability)?
 ├─ YES → Lasso or ElasticNet (L1 component)
 └─ NO → Ridge (simpler, faster)

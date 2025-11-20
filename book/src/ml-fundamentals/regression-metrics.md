@@ -132,7 +132,7 @@ println!("MAE = {:.3}", mae_val); // e.g., 0.500
 
 ### Decision Tree
 
-```
+```text
 Are large errors much worse than small errors?
 ├─ YES → Use MSE or RMSE (quadratic penalty)
 └─ NO → Use MAE (linear penalty)
@@ -166,7 +166,7 @@ Are there outliers in your data?
 3. **Sensitive to Range**: R² depends on target variance
 
 **Example of R² Misleading**:
-```
+```text
 y_true = [10, 20, 30, 40, 50]
 y_pred = [15, 25, 35, 45, 55]  # All predictions +5 (biased)
 
