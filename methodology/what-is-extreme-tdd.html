@@ -208,7 +208,7 @@
 <h2 id="the-six-pillars"><a class="header" href="#the-six-pillars">The Six Pillars</a></h2>
 <h3 id="1-tests-written-first-no-exceptions"><a class="header" href="#1-tests-written-first-no-exceptions">1. Tests Written First (NO Exceptions)</a></h3>
 <p><strong>Rule:</strong> All production code must be preceded by a failing test.</p>
-<pre><code class="language-rust">// ❌ WRONG: Writing implementation first
+<pre><code class="language-rust ignore">// ❌ WRONG: Writing implementation first
 pub fn train_test_split(x: &amp;Matrix&lt;f32&gt;, y: &amp;Vector&lt;f32&gt;, test_size: f32) {
     // ... implementation ...
 }
@@ -237,7 +237,7 @@ fn test_train_test_split_basic() {
 <li>Over-engineering</li>
 </ul>
 <p>Example from aprender's Random Forest:</p>
-<pre><code class="language-rust">// CYCLE 1: Minimal bootstrap sampling
+<pre><code class="language-rust ignore">// CYCLE 1: Minimal bootstrap sampling
 fn _bootstrap_sample(n_samples: usize, _seed: Option&lt;u64&gt;) -&gt; Vec&lt;usize&gt; {
     // First implementation: just return indices
     (0..n_samples).collect()  // Fails test - not random!
@@ -279,7 +279,7 @@ fn _bootstrap_sample(n_samples: usize, seed: Option&lt;u64&gt;) -&gt; Vec&lt;usi
 <h3 id="4-property-based-testing-cover-edge-cases"><a class="header" href="#4-property-based-testing-cover-edge-cases">4. Property-Based Testing (Cover Edge Cases)</a></h3>
 <p><strong>Rule:</strong> Use property-based testing to automatically generate test cases.</p>
 <p>Example from aprender:</p>
-<pre><code class="language-rust">use proptest::prelude::*;
+<pre><code class="language-rust ignore">use proptest::prelude::*;
 
 proptest! {
     #[test]
@@ -389,7 +389,7 @@ echo &quot;✅ All quality gates passed&quot;
 <h3 id="5-better-api-design"><a class="header" href="#5-better-api-design">5. Better API Design</a></h3>
 <p>Writing tests first forces you to think about API usability before implementation.</p>
 <p>Example from aprender:</p>
-<pre><code class="language-rust">// Test-first API design led to clean builder pattern
+<pre><code class="language-rust ignore">// Test-first API design led to clean builder pattern
 let mut rf = RandomForestClassifier::new(20)
     .with_max_depth(5)
     .with_random_state(42);  // Fluent, readable API</code></pre>

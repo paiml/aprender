@@ -317,7 +317,7 @@
 <h2 id="the-six-pillars"><a class="header" href="#the-six-pillars">The Six Pillars</a></h2>
 <h3 id="1-tests-written-first-no-exceptions"><a class="header" href="#1-tests-written-first-no-exceptions">1. Tests Written First (NO Exceptions)</a></h3>
 <p><strong>Rule:</strong> All production code must be preceded by a failing test.</p>
-<pre><code class="language-rust">// ❌ WRONG: Writing implementation first
+<pre><code class="language-rust ignore">// ❌ WRONG: Writing implementation first
 pub fn train_test_split(x: &amp;Matrix&lt;f32&gt;, y: &amp;Vector&lt;f32&gt;, test_size: f32) {
     // ... implementation ...
 }
@@ -346,7 +346,7 @@ fn test_train_test_split_basic() {
 <li>Over-engineering</li>
 </ul>
 <p>Example from aprender's Random Forest:</p>
-<pre><code class="language-rust">// CYCLE 1: Minimal bootstrap sampling
+<pre><code class="language-rust ignore">// CYCLE 1: Minimal bootstrap sampling
 fn _bootstrap_sample(n_samples: usize, _seed: Option&lt;u64&gt;) -&gt; Vec&lt;usize&gt; {
     // First implementation: just return indices
     (0..n_samples).collect()  // Fails test - not random!
@@ -388,7 +388,7 @@ fn _bootstrap_sample(n_samples: usize, seed: Option&lt;u64&gt;) -&gt; Vec&lt;usi
 <h3 id="4-property-based-testing-cover-edge-cases"><a class="header" href="#4-property-based-testing-cover-edge-cases">4. Property-Based Testing (Cover Edge Cases)</a></h3>
 <p><strong>Rule:</strong> Use property-based testing to automatically generate test cases.</p>
 <p>Example from aprender:</p>
-<pre><code class="language-rust">use proptest::prelude::*;
+<pre><code class="language-rust ignore">use proptest::prelude::*;
 
 proptest! {
     #[test]
@@ -498,7 +498,7 @@ echo &quot;✅ All quality gates passed&quot;
 <h3 id="5-better-api-design"><a class="header" href="#5-better-api-design">5. Better API Design</a></h3>
 <p>Writing tests first forces you to think about API usability before implementation.</p>
 <p>Example from aprender:</p>
-<pre><code class="language-rust">// Test-first API design led to clean builder pattern
+<pre><code class="language-rust ignore">// Test-first API design led to clean builder pattern
 let mut rf = RandomForestClassifier::new(20)
     .with_max_depth(5)
     .with_random_state(42);  // Fluent, readable API</code></pre>
@@ -585,7 +585,7 @@ Verify your tests actually catch bugs</p>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="the-red-green-refactor-cycle"><a class="header" href="#the-red-green-refactor-cycle">The RED-GREEN-REFACTOR Cycle</a></h1>
 <p>The <strong>RED-GREEN-REFACTOR</strong> cycle is the heartbeat of EXTREME TDD. Every feature, every function, every line of production code follows this exact three-phase cycle.</p>
 <h2 id="the-three-phases"><a class="header" href="#the-three-phases">The Three Phases</a></h2>
-<pre><code>┌─────────────┐
+<pre><code class="language-text">┌─────────────┐
 │     RED     │  Write failing tests first
 └──────┬──────┘
        │
@@ -705,7 +705,7 @@ fn test_example() {
 </ol>
 <h3 id="real-example-train_test_split---green-phase"><a class="header" href="#real-example-train_test_split---green-phase">Real Example: train_test_split - GREEN Phase</a></h3>
 <p>We implemented the minimal solution:</p>
-<pre><code class="language-rust">#[allow(clippy::type_complexity)]
+<pre><code class="language-rust ignore">#[allow(clippy::type_complexity)]
 pub fn train_test_split(
     x: &amp;Matrix&lt;f32&gt;,
     y: &amp;Vector&lt;f32&gt;,
@@ -763,7 +763,7 @@ test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured
 </code></pre>
 <p><strong>Result:</strong> Tests: 169 total (165 + 4 new) ✅</p>
 <h3 id="avoiding-over-engineering"><a class="header" href="#avoiding-over-engineering">Avoiding Over-Engineering</a></h3>
-<pre><code class="language-rust">// ❌ OVER-ENGINEERED: Adding features not required by tests
+<pre><code class="language-rust ignore">// ❌ OVER-ENGINEERED: Adding features not required by tests
 pub fn train_test_split(
     x: &amp;Matrix&lt;f32&gt;,
     y: &amp;Vector&lt;f32&gt;,
@@ -809,7 +809,7 @@ warning: very complex type used. Consider factoring parts into `type` definition
    |        ^^^^^^^^^^^^^^^^
 </code></pre>
 <p><strong>Fix:</strong> Add allow annotation for idiomatic Rust tuple return:</p>
-<pre><code class="language-rust">#[allow(clippy::type_complexity)]
+<pre><code class="language-rust ignore">#[allow(clippy::type_complexity)]
 pub fn train_test_split(/* ... */) -&gt; Result&lt;(Matrix&lt;f32&gt;, Matrix&lt;f32&gt;, Vector&lt;f32&gt;, Vector&lt;f32&gt;), String&gt; {
     // ...
 }</code></pre>
@@ -828,7 +828,7 @@ Function: extract_samples - Complexity: 3 ✅
 All functions ≤10 ✅
 </code></pre>
 <p><strong>Step 4: Add Documentation</strong></p>
-<pre><code class="language-rust">/// Splits data into random train and test subsets.
+<pre><code class="language-rust ignore">/// Splits data into random train and test subsets.
 ///
 /// # Arguments
 ///
@@ -960,7 +960,7 @@ error[E0433]: failed to resolve: could not find `RandomForestClassifier`
 # Result: 7/7 tests failed ✅ (expected - not implemented)
 </code></pre>
 <h3 id="green-phase-minimal-implementation"><a class="header" href="#green-phase-minimal-implementation">GREEN Phase (Minimal Implementation)</a></h3>
-<pre><code class="language-rust">#[derive(Debug, Clone, Serialize, Deserialize)]
+<pre><code class="language-rust ignore">#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RandomForestClassifier {
     trees: Vec&lt;DecisionTreeClassifier&gt;,
     n_estimators: usize,
