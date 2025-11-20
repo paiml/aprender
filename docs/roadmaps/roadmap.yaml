@@ -311,3 +311,18 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
+- id: Fix mdbook test failures - Phase 9 (descriptive-statistics.md + gradient-descent.md)
+  github_issue: null
+  item_type: task
+  title: 'New task: Fix mdbook test failures - Phase 9 (descriptive-statistics.md + gradient-descent.md)'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-20T22:04:47.052534186+00:00
+  updated: 2025-11-20T22:06:24.550064133+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
