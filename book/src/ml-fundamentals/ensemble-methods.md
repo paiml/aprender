@@ -37,7 +37,7 @@ Single decision trees overfit. Random Forests solve this by averaging many trees
 **Problem**: Single model has high variance
 **Solution**: Average predictions from multiple models
 
-```
+```text
 Ensemble_prediction = Aggregate(model₁, model₂, ..., modelₙ)
 
 For classification: Majority vote
@@ -49,7 +49,7 @@ For regression: Mean prediction
 ### Variance Reduction Through Averaging
 
 **Mathematical property**:
-```
+```text
 Var(Average of N models) = Var(single model) / N
 
 (assuming independent, identically distributed models)
@@ -60,7 +60,7 @@ Var(Average of N models) = Var(single model) / N
 ### Bagging (Bootstrap Aggregating)
 
 **Algorithm**:
-```
+```text
 1. For i = 1 to N:
    - Create bootstrap sample Dᵢ (sample with replacement from D)
    - Train model Mᵢ on Dᵢ
@@ -82,7 +82,7 @@ Var(Average of N models) = Var(single model) / N
 
 Random Forests extend bagging with **feature randomness**:
 
-```
+```text
 function RandomForest(X, y, n_trees, max_features):
     forest = []
 
@@ -114,7 +114,7 @@ function Predict(forest, x):
 **Key Insight**: Each tree trained on ~63% of data, leaving ~37% out-of-bag
 
 **OOB Score**:
-```
+```text
 For each sample x:
     predictions = [tree.predict(x) for tree in forest if x not in tree.training_data]
     oob_prediction = majority_vote(predictions)
@@ -130,7 +130,7 @@ OOB_accuracy = accuracy(oob_predictions, y_true)
 
 ### Example 1: Basic Random Forest
 
-```rust
+```rust,ignore
 use aprender::tree::RandomForestClassifier;
 use aprender::primitives::Matrix;
 
@@ -162,7 +162,7 @@ println!("Accuracy: {:.3}", accuracy); // 1.000
 
 ### Example 2: Multi-Class Classification (Iris)
 
-```rust
+```rust,ignore
 // Iris dataset (3 classes, 4 features)
 // Simplified - see case study for full implementation
 
@@ -184,7 +184,7 @@ println!("Test Accuracy: {:.3}", accuracy); // e.g., 0.973
 
 ### Example 3: Reproducibility
 
-```rust
+```rust,ignore
 // Same random_state → same results
 let mut forest1 = RandomForestClassifier::new(50)
     .with_random_state(42);
@@ -217,7 +217,7 @@ assert_eq!(forest1.predict(&x), forest2.predict(&x));
 - Increasing trees reduces overfitting
 
 **Finding optimal n**:
-```rust
+```text
 // Pseudocode
 for n in [10, 50, 100, 200, 500] {
     forest = RandomForestClassifier::new(n);
@@ -308,7 +308,7 @@ for n in [10, 50, 100, 200, 500] {
 - Some samples appear 2+ times
 
 **Probability analysis**:
-```
+```text
 P(sample not chosen in one draw) = (n-1)/n
 P(sample not in bootstrap, after n draws) = ((n-1)/n)ⁿ
 As n → ∞: ((n-1)/n)ⁿ → 1/e ≈ 0.37
@@ -336,7 +336,7 @@ Random Forests naturally compute feature importance:
 
 **Method**: For each feature, measure total reduction in Gini impurity across all trees
 
-```
+```text
 Importance(feature_i) = Σ (over all nodes using feature_i) InfoGain
 
 Normalize: Importance / Σ(all importances)
@@ -447,7 +447,7 @@ Random Forest tests verify ensemble properties:
 - **Feature importance**: Which features matter most?
 
 **Key Equations**:
-```
+```text
 Bootstrap: Sample n times with replacement
 Prediction: Majority_vote(tree₁, tree₂, ..., treeₙ)
 Variance reduction: σ²_ensemble ≈ σ²_tree / N (if independent)
