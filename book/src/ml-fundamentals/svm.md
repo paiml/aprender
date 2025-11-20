@@ -218,7 +218,7 @@ See `examples/svm_iris.rs` for complete example.
 
 ## API Reference
 
-```rust
+```rust,ignore
 // Constructor
 pub fn new() -> Self
 

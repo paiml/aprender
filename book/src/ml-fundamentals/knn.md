@@ -167,7 +167,7 @@ w_i = 1 / d(x, x_i)   (or 1 if d = 0)
 
 ### Basic Usage
 
-```rust
+```rust,ignore
 use aprender::classification::{KNearestNeighbors, DistanceMetric};
 use aprender::primitives::Matrix;
 
@@ -188,7 +188,7 @@ let predictions = knn.predict(&x_test)?;
 
 Configure kNN with fluent API:
 
-```rust
+```rust,ignore
 let mut knn = KNearestNeighbors::new(5)
     .with_metric(DistanceMetric::Manhattan)
     .with_weights(true);  // Enable weighted voting
@@ -201,7 +201,7 @@ let predictions = knn.predict(&x_test)?;
 
 Get class probability estimates:
 
-```rust
+```rust,ignore
 let probabilities = knn.predict_proba(&x_test)?;
 
 // probabilities[i][c] = estimated probability of class c for sample i
@@ -216,7 +216,7 @@ for i in 0..x_test.n_rows() {
 
 ### Distance Metrics
 
-```rust
+```rust,ignore
 use aprender::classification::DistanceMetric;
 
 // Euclidean (default)
@@ -357,7 +357,7 @@ where:
 
 **Always standardize features before kNN**:
 
-```rust
+```rust,ignore
 use aprender::preprocessing::StandardScaler;
 use aprender::traits::Transformer;
 
@@ -398,7 +398,7 @@ let predictions = knn.predict(&x_test_scaled)?;
 ### 4. Hyperparameter Tuning
 
 **k selection**:
-```python
+```text
 # Pseudocode (implement with cross-validation)
 for k in [1, 3, 5, 7, 9, 11, 15, 20]:
     knn = KNN(k)
@@ -417,7 +417,7 @@ for k in [1, 3, 5, 7, 9, 11, 15, 20]:
 
 Aprender implements optimized distance computation:
 
-```rust
+```rust,ignore
 fn compute_distance(
     &self,
     x: &Matrix<f32>,
@@ -463,7 +463,7 @@ fn compute_distance(
 ### Voting Strategies
 
 **Uniform voting**:
-```rust
+```rust,ignore
 fn majority_vote(&self, neighbors: &[(f32, usize)]) -> usize {
     let mut counts = HashMap::new();
     for (_dist, label) in neighbors {
@@ -474,7 +474,7 @@ fn majority_vote(&self, neighbors: &[(f32, usize)]) -> usize {
 ```
 
 **Weighted voting**:
-```rust
+```rust,ignore
 fn weighted_vote(&self, neighbors: &[(f32, usize)]) -> usize {
     let mut weights = HashMap::new();
     for (dist, label) in neighbors {
@@ -489,7 +489,7 @@ fn weighted_vote(&self, neighbors: &[(f32, usize)]) -> usize {
 
 Complete example from `examples/knn_iris.rs`:
 
-```rust
+```rust,ignore
 use aprender::classification::{KNearestNeighbors, DistanceMetric};
 use aprender::primitives::Matrix;
 
@@ -528,7 +528,7 @@ let predictions = knn_best.predict(&x_test)?;
 
 ## API Reference
 
-```rust
+```rust,ignore
 // Constructor
 pub fn new(k: usize) -> Self
 
