@@ -33,7 +33,7 @@ EXTREME TDD extends classical Test-Driven Development by adding:
 
 **Rule:** All production code must be preceded by a failing test.
 
-```rust
+```rust,ignore
 // ❌ WRONG: Writing implementation first
 pub fn train_test_split(x: &Matrix<f32>, y: &Vector<f32>, test_size: f32) {
     // ... implementation ...
@@ -67,7 +67,7 @@ Avoid:
 
 Example from aprender's Random Forest:
 
-```rust
+```rust,ignore
 // CYCLE 1: Minimal bootstrap sampling
 fn _bootstrap_sample(n_samples: usize, _seed: Option<u64>) -> Vec<usize> {
     // First implementation: just return indices
@@ -116,7 +116,7 @@ Refactor phase includes:
 
 Example from aprender:
 
-```rust
+```rust,ignore
 use proptest::prelude::*;
 
 proptest! {
@@ -245,7 +245,7 @@ Writing tests first forces you to think about API usability before implementatio
 
 Example from aprender:
 
-```rust
+```rust,ignore
 // Test-first API design led to clean builder pattern
 let mut rf = RandomForestClassifier::new(20)
     .with_max_depth(5)
