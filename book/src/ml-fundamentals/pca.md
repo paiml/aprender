@@ -82,7 +82,7 @@ Perfect reconstruction when k = p (all components kept).
 
 ### Basic Usage
 
-```rust
+```rust,ignore
 use aprender::preprocessing::{PCA, StandardScaler};
 use aprender::traits::Transformer;
 use aprender::primitives::Matrix;
@@ -108,7 +108,7 @@ let reconstructed = pca.inverse_transform(&reduced)?;
 
 PCA implements the `Transformer` trait:
 
-```rust
+```rust,ignore
 pub trait Transformer {
     fn fit(&mut self, x: &Matrix<f32>) -> Result<(), &'static str>;
     fn transform(&self, x: &Matrix<f32>) -> Result<Matrix<f32>, &'static str>;
@@ -126,7 +126,7 @@ This enables:
 
 ### Explained Variance
 
-```rust
+```rust,ignore
 let explained_var = pca.explained_variance().unwrap();
 let explained_ratio = pca.explained_variance_ratio().unwrap();
 
@@ -143,7 +143,7 @@ for (i, ratio) in explained_ratio.iter().enumerate() {
 
 ### Principal Components (Loadings)
 
-```rust
+```rust,ignore
 let components = pca.components().unwrap();
 let (n_components, n_features) = components.shape();
 
@@ -200,7 +200,7 @@ where:
 
 1. **Variance threshold**: Keep components explaining ≥ 90% variance
 
-```rust
+```rust,ignore
 let ratios = pca.explained_variance_ratio().unwrap();
 let mut cumsum = 0.0;
 let mut k = 0;
@@ -253,7 +253,7 @@ println!("Need {} components for 90% variance", k);
 
 Aprender uses **nalgebra's SymmetricEigen** for covariance matrix eigendecomposition:
 
-```rust
+```rust,ignore
 use nalgebra::{DMatrix, SymmetricEigen};
 
 let cov_matrix = DMatrix::from_row_slice(n_features, n_features, &cov);
@@ -286,7 +286,7 @@ let eigenvectors = eigen.eigenvectors; // corresponding eigenvectors
 
 **Always standardize before PCA**:
 
-```rust
+```rust,ignore
 let mut scaler = StandardScaler::new();
 let scaled = scaler.fit_transform(&data)?;
 let mut pca = PCA::new(n_components);
@@ -322,7 +322,7 @@ let reduced = pca.fit_transform(&scaled)?;
 
 Complete example from `examples/pca_iris.rs`:
 
-```rust
+```rust,ignore
 use aprender::preprocessing::{PCA, StandardScaler};
 use aprender::traits::Transformer;
 
@@ -363,7 +363,7 @@ println!("Reconstruction RMSE: {:.4}", rmse);
 
 ## API Reference
 
-```rust
+```rust,ignore
 // Constructor
 pub fn new(n_components: usize) -> Self
 

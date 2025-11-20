@@ -37,7 +37,7 @@ Accuracy alone can be misleading. A spam filter with 99% accuracy that marks all
 
 All classification metrics derive from the **confusion matrix**:
 
-```
+```text
                 Predicted
                 Pos    Neg
 Actual  Pos    TP     FN
@@ -52,7 +52,7 @@ FN = False Negatives (incorrectly predicted negative - Type II error)
 ### Accuracy
 
 **Definition**:
-```
+```text
 Accuracy = (TP + TN) / (TP + TN + FP + FN)
          = Correct / Total
 ```
@@ -62,7 +62,7 @@ Accuracy = (TP + TN) / (TP + TN + FP + FN)
 **Weakness**: Misleading with imbalanced classes
 
 **Example**:
-```
+```text
 Dataset: 95% negative, 5% positive
 Model: Always predict negative
 Accuracy = 95% (looks good!)
@@ -72,7 +72,7 @@ But: Model is useless (finds zero positives)
 ### Precision
 
 **Definition**:
-```
+```text
 Precision = TP / (TP + FP)
           = True Positives / All Predicted Positives
 ```
@@ -86,7 +86,7 @@ Precision = TP / (TP + FP)
 ### Recall (Sensitivity, True Positive Rate)
 
 **Definition**:
-```
+```text
 Recall = TP / (TP + FN)
        = True Positives / All Actual Positives
 ```
@@ -100,7 +100,7 @@ Recall = TP / (TP + FN)
 ### F1 Score
 
 **Definition**:
-```
+```text
 F1 = 2 * (Precision * Recall) / (Precision + Recall)
    = Harmonic mean of Precision and Recall
 ```
@@ -117,7 +117,7 @@ F1 = 2 * (Precision * Recall) / (Precision + Recall)
 
 ### Example: Binary Classification Metrics
 
-```rust
+```rust,ignore
 use aprender::metrics::{accuracy, precision, recall, f1_score};
 use aprender::primitives::Vector;
 
@@ -156,7 +156,7 @@ println!("F1: {:.3}", f1); // 0.857
 
 ### Decision Guide
 
-```
+```text
 Are classes balanced (roughly 50/50)?
 ├─ YES → Accuracy is reasonable
 └─ NO → Use Precision/Recall/F1
@@ -189,7 +189,7 @@ Examples:
 
 ### Example: Spam Filter Threshold
 
-```
+```text
 Threshold | Precision | Recall | F1
 ----------|-----------|--------|----
   0.9     |   0.95    |  0.60  | 0.74  (conservative)
@@ -211,7 +211,7 @@ Threshold | Precision | Recall | F1
 **Problem**: 1% positive class (fraud detection, rare disease)
 
 **Bad Baseline**:
-```rust
+```rust,ignore
 // Always predict negative
 // Accuracy = 99% (misleading!)
 // Recall = 0% (finds no positives - useless)
@@ -227,7 +227,7 @@ For multi-class, compute metrics per class then average:
 - **Micro-average**: Aggregate TP/FP/FN across all classes
 
 **Example** (3 classes):
-```
+```text
 Class A: Precision = 0.9
 Class B: Precision = 0.8
 Class C: Precision = 0.5
@@ -255,7 +255,7 @@ Classification metrics have comprehensive test coverage:
 
 ### Evaluating Logistic Regression
 
-```rust
+```rust,ignore
 use aprender::classification::LogisticRegression;
 use aprender::metrics::{accuracy, precision, recall, f1_score};
 use aprender::traits::Classifier;
