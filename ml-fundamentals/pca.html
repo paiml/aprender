@@ -241,7 +241,7 @@ where:
 <p>Perfect reconstruction when k = p (all components kept).</p>
 <h2 id="implementation-in-aprender"><a class="header" href="#implementation-in-aprender">Implementation in Aprender</a></h2>
 <h3 id="basic-usage"><a class="header" href="#basic-usage">Basic Usage</a></h3>
-<pre><code class="language-rust">use aprender::preprocessing::{PCA, StandardScaler};
+<pre><code class="language-rust ignore">use aprender::preprocessing::{PCA, StandardScaler};
 use aprender::traits::Transformer;
 use aprender::primitives::Matrix;
 
@@ -262,7 +262,7 @@ println!(&quot;PC2 explains {:.1}%&quot;, var_ratio[1] * 100.0);
 let reconstructed = pca.inverse_transform(&amp;reduced)?;</code></pre>
 <h3 id="transformer-trait"><a class="header" href="#transformer-trait">Transformer Trait</a></h3>
 <p>PCA implements the <code>Transformer</code> trait:</p>
-<pre><code class="language-rust">pub trait Transformer {
+<pre><code class="language-rust ignore">pub trait Transformer {
     fn fit(&amp;mut self, x: &amp;Matrix&lt;f32&gt;) -&gt; Result&lt;(), &amp;'static str&gt;;
     fn transform(&amp;self, x: &amp;Matrix&lt;f32&gt;) -&gt; Result&lt;Matrix&lt;f32&gt;, &amp;'static str&gt;;
     fn fit_transform(&amp;mut self, x: &amp;Matrix&lt;f32&gt;) -&gt; Result&lt;Matrix&lt;f32&gt;, &amp;'static str&gt; {
@@ -277,7 +277,7 @@ let reconstructed = pca.inverse_transform(&amp;reduced)?;</code></pre>
 <li><strong>Pipeline compatibility</strong> → Chain with other transformers</li>
 </ul>
 <h3 id="explained-variance"><a class="header" href="#explained-variance">Explained Variance</a></h3>
-<pre><code class="language-rust">let explained_var = pca.explained_variance().unwrap();
+<pre><code class="language-rust ignore">let explained_var = pca.explained_variance().unwrap();
 let explained_ratio = pca.explained_variance_ratio().unwrap();
 
 // Cumulative variance
@@ -289,7 +289,7 @@ for (i, ratio) in explained_ratio.iter().enumerate() {
 }</code></pre>
 <p><strong>Rule of thumb</strong>: Keep components until 90-95% variance explained.</p>
 <h3 id="principal-components-loadings"><a class="header" href="#principal-components-loadings">Principal Components (Loadings)</a></h3>
-<pre><code class="language-rust">let components = pca.components().unwrap();
+<pre><code class="language-rust ignore">let components = pca.components().unwrap();
 let (n_components, n_features) = components.shape();
 
 for i in 0..n_components {
@@ -341,7 +341,7 @@ for i in 0..n_components {
 <ol>
 <li><strong>Variance threshold</strong>: Keep components explaining ≥ 90% variance</li>
 </ol>
-<pre><code class="language-rust">let ratios = pca.explained_variance_ratio().unwrap();
+<pre><code class="language-rust ignore">let ratios = pca.explained_variance_ratio().unwrap();
 let mut cumsum = 0.0;
 let mut k = 0;
 for ratio in ratios {
@@ -387,7 +387,7 @@ println!(&quot;Need {} components for 90% variance&quot;, k);</code></pre>
 <h2 id="algorithm-details"><a class="header" href="#algorithm-details">Algorithm Details</a></h2>
 <h3 id="eigendecomposition-implementation"><a class="header" href="#eigendecomposition-implementation">Eigendecomposition Implementation</a></h3>
 <p>Aprender uses <strong>nalgebra's SymmetricEigen</strong> for covariance matrix eigendecomposition:</p>
-<pre><code class="language-rust">use nalgebra::{DMatrix, SymmetricEigen};
+<pre><code class="language-rust ignore">use nalgebra::{DMatrix, SymmetricEigen};
 
 let cov_matrix = DMatrix::from_row_slice(n_features, n_features, &amp;cov);
 let eigen = SymmetricEigen::new(cov_matrix);
@@ -417,7 +417,7 @@ let eigenvectors = eigen.eigenvectors; // corresponding eigenvectors</code></pre
 </ul>
 <h2 id="standardization-best-practice"><a class="header" href="#standardization-best-practice">Standardization Best Practice</a></h2>
 <p><strong>Always standardize before PCA</strong>:</p>
-<pre><code class="language-rust">let mut scaler = StandardScaler::new();
+<pre><code class="language-rust ignore">let mut scaler = StandardScaler::new();
 let scaled = scaler.fit_transform(&amp;data)?;
 let mut pca = PCA::new(n_components);
 let reduced = pca.fit_transform(&amp;scaled)?;</code></pre>
@@ -450,7 +450,7 @@ let reduced = pca.fit_transform(&amp;scaled)?;</code></pre>
 </ul>
 <h2 id="example-iris-dataset"><a class="header" href="#example-iris-dataset">Example: Iris Dataset</a></h2>
 <p>Complete example from <code>examples/pca_iris.rs</code>:</p>
-<pre><code class="language-rust">use aprender::preprocessing::{PCA, StandardScaler};
+<pre><code class="language-rust ignore">use aprender::preprocessing::{PCA, StandardScaler};
 use aprender::traits::Transformer;
 
 // 1. Standardize
@@ -488,7 +488,7 @@ println!(&quot;Reconstruction RMSE: {:.4}&quot;, rmse);</code></pre>
 <li><strong>Randomized PCA</strong>: Approximate PCA for very high dimensions (p &gt; 10,000)</li>
 </ul>
 <h2 id="api-reference"><a class="header" href="#api-reference">API Reference</a></h2>
-<pre><code class="language-rust">// Constructor
+<pre><code class="language-rust ignore">// Constructor
 pub fn new(n_components: usize) -&gt; Self
 
 // Transformer trait

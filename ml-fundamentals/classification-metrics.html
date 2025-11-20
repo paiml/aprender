@@ -208,7 +208,7 @@ Accuracy alone can be misleading. A spam filter with 99% accuracy that marks all
 <h2 id="mathematical-foundation"><a class="header" href="#mathematical-foundation">Mathematical Foundation</a></h2>
 <h3 id="the-confusion-matrix"><a class="header" href="#the-confusion-matrix">The Confusion Matrix</a></h3>
 <p>All classification metrics derive from the <strong>confusion matrix</strong>:</p>
-<pre><code>                Predicted
+<pre><code class="language-text">                Predicted
                 Pos    Neg
 Actual  Pos    TP     FN
         Neg    FP     TN
@@ -220,20 +220,20 @@ FN = False Negatives (incorrectly predicted negative - Type II error)
 </code></pre>
 <h3 id="accuracy"><a class="header" href="#accuracy">Accuracy</a></h3>
 <p><strong>Definition</strong>:</p>
-<pre><code>Accuracy = (TP + TN) / (TP + TN + FP + FN)
+<pre><code class="language-text">Accuracy = (TP + TN) / (TP + TN + FP + FN)
          = Correct / Total
 </code></pre>
 <p><strong>Range</strong>: [0, 1], higher is better</p>
 <p><strong>Weakness</strong>: Misleading with imbalanced classes</p>
 <p><strong>Example</strong>:</p>
-<pre><code>Dataset: 95% negative, 5% positive
+<pre><code class="language-text">Dataset: 95% negative, 5% positive
 Model: Always predict negative
 Accuracy = 95% (looks good!)
 But: Model is useless (finds zero positives)
 </code></pre>
 <h3 id="precision"><a class="header" href="#precision">Precision</a></h3>
 <p><strong>Definition</strong>:</p>
-<pre><code>Precision = TP / (TP + FP)
+<pre><code class="language-text">Precision = TP / (TP + FP)
           = True Positives / All Predicted Positives
 </code></pre>
 <p><strong>Interpretation</strong>: &quot;Of all items I labeled positive, what fraction are actually positive?&quot;</p>
@@ -244,7 +244,7 @@ But: Model is useless (finds zero positives)
 </ul>
 <h3 id="recall-sensitivity-true-positive-rate"><a class="header" href="#recall-sensitivity-true-positive-rate">Recall (Sensitivity, True Positive Rate)</a></h3>
 <p><strong>Definition</strong>:</p>
-<pre><code>Recall = TP / (TP + FN)
+<pre><code class="language-text">Recall = TP / (TP + FN)
        = True Positives / All Actual Positives
 </code></pre>
 <p><strong>Interpretation</strong>: &quot;Of all actual positives, what fraction did I find?&quot;</p>
@@ -255,7 +255,7 @@ But: Model is useless (finds zero positives)
 </ul>
 <h3 id="f1-score"><a class="header" href="#f1-score">F1 Score</a></h3>
 <p><strong>Definition</strong>:</p>
-<pre><code>F1 = 2 * (Precision * Recall) / (Precision + Recall)
+<pre><code class="language-text">F1 = 2 * (Precision * Recall) / (Precision + Recall)
    = Harmonic mean of Precision and Recall
 </code></pre>
 <p><strong>Why harmonic mean?</strong> Punishes extreme imbalance. If either precision or recall is very low, F1 is low.</p>
@@ -267,7 +267,7 @@ But: Model is useless (finds zero positives)
 <hr />
 <h2 id="implementation-in-aprender"><a class="header" href="#implementation-in-aprender">Implementation in Aprender</a></h2>
 <h3 id="example-binary-classification-metrics"><a class="header" href="#example-binary-classification-metrics">Example: Binary Classification Metrics</a></h3>
-<pre><code class="language-rust">use aprender::metrics::{accuracy, precision, recall, f1_score};
+<pre><code class="language-rust ignore">use aprender::metrics::{accuracy, precision, recall, f1_score};
 use aprender::primitives::Vector;
 
 let y_true = Vector::from_vec(vec![1.0, 0.0, 1.0, 1.0, 0.0, 1.0]);
@@ -301,7 +301,7 @@ println!(&quot;F1: {:.3}&quot;, f1); // 0.857</code></pre>
 <hr />
 <h2 id="choosing-the-right-metric"><a class="header" href="#choosing-the-right-metric">Choosing the Right Metric</a></h2>
 <h3 id="decision-guide"><a class="header" href="#decision-guide">Decision Guide</a></h3>
-<pre><code>Are classes balanced (roughly 50/50)?
+<pre><code class="language-text">Are classes balanced (roughly 50/50)?
 ├─ YES → Accuracy is reasonable
 └─ NO → Use Precision/Recall/F1
 
@@ -327,7 +327,7 @@ Examples:
 <h2 id="precision-recall-trade-off"><a class="header" href="#precision-recall-trade-off">Precision-Recall Trade-off</a></h2>
 <p><strong>Key Insight</strong>: You can't maximize both precision and recall simultaneously (except for perfect classifier).</p>
 <h3 id="example-spam-filter-threshold"><a class="header" href="#example-spam-filter-threshold">Example: Spam Filter Threshold</a></h3>
-<pre><code>Threshold | Precision | Recall | F1
+<pre><code class="language-text">Threshold | Precision | Recall | F1
 ----------|-----------|--------|----
   0.9     |   0.95    |  0.60  | 0.74  (conservative)
   0.5     |   0.80    |  0.85  | 0.82  (balanced)
@@ -344,7 +344,7 @@ Examples:
 <h3 id="imbalanced-classes"><a class="header" href="#imbalanced-classes">Imbalanced Classes</a></h3>
 <p><strong>Problem</strong>: 1% positive class (fraud detection, rare disease)</p>
 <p><strong>Bad Baseline</strong>:</p>
-<pre><code class="language-rust">// Always predict negative
+<pre><code class="language-rust ignore">// Always predict negative
 // Accuracy = 99% (misleading!)
 // Recall = 0% (finds no positives - useless)</code></pre>
 <p><strong>Solution</strong>: Use precision, recall, F1 instead of accuracy</p>
@@ -355,7 +355,7 @@ Examples:
 <li><strong>Micro-average</strong>: Aggregate TP/FP/FN across all classes</li>
 </ul>
 <p><strong>Example</strong> (3 classes):</p>
-<pre><code>Class A: Precision = 0.9
+<pre><code class="language-text">Class A: Precision = 0.9
 Class B: Precision = 0.8
 Class C: Precision = 0.5
 
@@ -375,7 +375,7 @@ Macro-avg Precision = (0.9 + 0.8 + 0.5) / 3 = 0.73
 <hr />
 <h2 id="real-world-application"><a class="header" href="#real-world-application">Real-World Application</a></h2>
 <h3 id="evaluating-logistic-regression"><a class="header" href="#evaluating-logistic-regression">Evaluating Logistic Regression</a></h3>
-<pre><code class="language-rust">use aprender::classification::LogisticRegression;
+<pre><code class="language-rust ignore">use aprender::classification::LogisticRegression;
 use aprender::metrics::{accuracy, precision, recall, f1_score};
 use aprender::traits::Classifier;
 

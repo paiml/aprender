@@ -4245,7 +4245,7 @@ where:
 <p>Perfect reconstruction when k = p (all components kept).</p>
 <h2 id="implementation-in-aprender-9"><a class="header" href="#implementation-in-aprender-9">Implementation in Aprender</a></h2>
 <h3 id="basic-usage-1"><a class="header" href="#basic-usage-1">Basic Usage</a></h3>
-<pre><code class="language-rust">use aprender::preprocessing::{PCA, StandardScaler};
+<pre><code class="language-rust ignore">use aprender::preprocessing::{PCA, StandardScaler};
 use aprender::traits::Transformer;
 use aprender::primitives::Matrix;
 
@@ -4266,7 +4266,7 @@ println!(&quot;PC2 explains {:.1}%&quot;, var_ratio[1] * 100.0);
 let reconstructed = pca.inverse_transform(&amp;reduced)?;</code></pre>
 <h3 id="transformer-trait"><a class="header" href="#transformer-trait">Transformer Trait</a></h3>
 <p>PCA implements the <code>Transformer</code> trait:</p>
-<pre><code class="language-rust">pub trait Transformer {
+<pre><code class="language-rust ignore">pub trait Transformer {
     fn fit(&amp;mut self, x: &amp;Matrix&lt;f32&gt;) -&gt; Result&lt;(), &amp;'static str&gt;;
     fn transform(&amp;self, x: &amp;Matrix&lt;f32&gt;) -&gt; Result&lt;Matrix&lt;f32&gt;, &amp;'static str&gt;;
     fn fit_transform(&amp;mut self, x: &amp;Matrix&lt;f32&gt;) -&gt; Result&lt;Matrix&lt;f32&gt;, &amp;'static str&gt; {
@@ -4281,7 +4281,7 @@ let reconstructed = pca.inverse_transform(&amp;reduced)?;</code></pre>
 <li><strong>Pipeline compatibility</strong> → Chain with other transformers</li>
 </ul>
 <h3 id="explained-variance"><a class="header" href="#explained-variance">Explained Variance</a></h3>
-<pre><code class="language-rust">let explained_var = pca.explained_variance().unwrap();
+<pre><code class="language-rust ignore">let explained_var = pca.explained_variance().unwrap();
 let explained_ratio = pca.explained_variance_ratio().unwrap();
 
 // Cumulative variance
@@ -4293,7 +4293,7 @@ for (i, ratio) in explained_ratio.iter().enumerate() {
 }</code></pre>
 <p><strong>Rule of thumb</strong>: Keep components until 90-95% variance explained.</p>
 <h3 id="principal-components-loadings"><a class="header" href="#principal-components-loadings">Principal Components (Loadings)</a></h3>
-<pre><code class="language-rust">let components = pca.components().unwrap();
+<pre><code class="language-rust ignore">let components = pca.components().unwrap();
 let (n_components, n_features) = components.shape();
 
 for i in 0..n_components {
@@ -4345,7 +4345,7 @@ for i in 0..n_components {
 <ol>
 <li><strong>Variance threshold</strong>: Keep components explaining ≥ 90% variance</li>
 </ol>
-<pre><code class="language-rust">let ratios = pca.explained_variance_ratio().unwrap();
+<pre><code class="language-rust ignore">let ratios = pca.explained_variance_ratio().unwrap();
 let mut cumsum = 0.0;
 let mut k = 0;
 for ratio in ratios {
@@ -4391,7 +4391,7 @@ println!(&quot;Need {} components for 90% variance&quot;, k);</code></pre>
 <h2 id="algorithm-details-1"><a class="header" href="#algorithm-details-1">Algorithm Details</a></h2>
 <h3 id="eigendecomposition-implementation"><a class="header" href="#eigendecomposition-implementation">Eigendecomposition Implementation</a></h3>
 <p>Aprender uses <strong>nalgebra's SymmetricEigen</strong> for covariance matrix eigendecomposition:</p>
-<pre><code class="language-rust">use nalgebra::{DMatrix, SymmetricEigen};
+<pre><code class="language-rust ignore">use nalgebra::{DMatrix, SymmetricEigen};
 
 let cov_matrix = DMatrix::from_row_slice(n_features, n_features, &amp;cov);
 let eigen = SymmetricEigen::new(cov_matrix);
@@ -4421,7 +4421,7 @@ let eigenvectors = eigen.eigenvectors; // corresponding eigenvectors</code></pre
 </ul>
 <h2 id="standardization-best-practice"><a class="header" href="#standardization-best-practice">Standardization Best Practice</a></h2>
 <p><strong>Always standardize before PCA</strong>:</p>
-<pre><code class="language-rust">let mut scaler = StandardScaler::new();
+<pre><code class="language-rust ignore">let mut scaler = StandardScaler::new();
 let scaled = scaler.fit_transform(&amp;data)?;
 let mut pca = PCA::new(n_components);
 let reduced = pca.fit_transform(&amp;scaled)?;</code></pre>
@@ -4454,7 +4454,7 @@ let reduced = pca.fit_transform(&amp;scaled)?;</code></pre>
 </ul>
 <h2 id="example-iris-dataset-1"><a class="header" href="#example-iris-dataset-1">Example: Iris Dataset</a></h2>
 <p>Complete example from <code>examples/pca_iris.rs</code>:</p>
-<pre><code class="language-rust">use aprender::preprocessing::{PCA, StandardScaler};
+<pre><code class="language-rust ignore">use aprender::preprocessing::{PCA, StandardScaler};
 use aprender::traits::Transformer;
 
 // 1. Standardize
@@ -4492,7 +4492,7 @@ println!(&quot;Reconstruction RMSE: {:.4}&quot;, rmse);</code></pre>
 <li><strong>Randomized PCA</strong>: Approximate PCA for very high dimensions (p &gt; 10,000)</li>
 </ul>
 <h2 id="api-reference-3"><a class="header" href="#api-reference-3">API Reference</a></h2>
-<pre><code class="language-rust">// Constructor
+<pre><code class="language-rust ignore">// Constructor
 pub fn new(n_components: usize) -&gt; Self
 
 // Transformer trait
@@ -4782,7 +4782,7 @@ Accuracy alone can be misleading. A spam filter with 99% accuracy that marks all
 <h2 id="mathematical-foundation-8"><a class="header" href="#mathematical-foundation-8">Mathematical Foundation</a></h2>
 <h3 id="the-confusion-matrix"><a class="header" href="#the-confusion-matrix">The Confusion Matrix</a></h3>
 <p>All classification metrics derive from the <strong>confusion matrix</strong>:</p>
-<pre><code>                Predicted
+<pre><code class="language-text">                Predicted
                 Pos    Neg
 Actual  Pos    TP     FN
         Neg    FP     TN
@@ -4794,20 +4794,20 @@ FN = False Negatives (incorrectly predicted negative - Type II error)
 </code></pre>
 <h3 id="accuracy"><a class="header" href="#accuracy">Accuracy</a></h3>
 <p><strong>Definition</strong>:</p>
-<pre><code>Accuracy = (TP + TN) / (TP + TN + FP + FN)
+<pre><code class="language-text">Accuracy = (TP + TN) / (TP + TN + FP + FN)
          = Correct / Total
 </code></pre>
 <p><strong>Range</strong>: [0, 1], higher is better</p>
 <p><strong>Weakness</strong>: Misleading with imbalanced classes</p>
 <p><strong>Example</strong>:</p>
-<pre><code>Dataset: 95% negative, 5% positive
+<pre><code class="language-text">Dataset: 95% negative, 5% positive
 Model: Always predict negative
 Accuracy = 95% (looks good!)
 But: Model is useless (finds zero positives)
 </code></pre>
 <h3 id="precision"><a class="header" href="#precision">Precision</a></h3>
 <p><strong>Definition</strong>:</p>
-<pre><code>Precision = TP / (TP + FP)
+<pre><code class="language-text">Precision = TP / (TP + FP)
           = True Positives / All Predicted Positives
 </code></pre>
 <p><strong>Interpretation</strong>: &quot;Of all items I labeled positive, what fraction are actually positive?&quot;</p>
@@ -4818,7 +4818,7 @@ But: Model is useless (finds zero positives)
 </ul>
 <h3 id="recall-sensitivity-true-positive-rate"><a class="header" href="#recall-sensitivity-true-positive-rate">Recall (Sensitivity, True Positive Rate)</a></h3>
 <p><strong>Definition</strong>:</p>
-<pre><code>Recall = TP / (TP + FN)
+<pre><code class="language-text">Recall = TP / (TP + FN)
        = True Positives / All Actual Positives
 </code></pre>
 <p><strong>Interpretation</strong>: &quot;Of all actual positives, what fraction did I find?&quot;</p>
@@ -4829,7 +4829,7 @@ But: Model is useless (finds zero positives)
 </ul>
 <h3 id="f1-score"><a class="header" href="#f1-score">F1 Score</a></h3>
 <p><strong>Definition</strong>:</p>
-<pre><code>F1 = 2 * (Precision * Recall) / (Precision + Recall)
+<pre><code class="language-text">F1 = 2 * (Precision * Recall) / (Precision + Recall)
    = Harmonic mean of Precision and Recall
 </code></pre>
 <p><strong>Why harmonic mean?</strong> Punishes extreme imbalance. If either precision or recall is very low, F1 is low.</p>
@@ -4841,7 +4841,7 @@ But: Model is useless (finds zero positives)
 <hr />
 <h2 id="implementation-in-aprender-11"><a class="header" href="#implementation-in-aprender-11">Implementation in Aprender</a></h2>
 <h3 id="example-binary-classification-metrics"><a class="header" href="#example-binary-classification-metrics">Example: Binary Classification Metrics</a></h3>
-<pre><code class="language-rust">use aprender::metrics::{accuracy, precision, recall, f1_score};
+<pre><code class="language-rust ignore">use aprender::metrics::{accuracy, precision, recall, f1_score};
 use aprender::primitives::Vector;
 
 let y_true = Vector::from_vec(vec![1.0, 0.0, 1.0, 1.0, 0.0, 1.0]);
@@ -4875,7 +4875,7 @@ println!(&quot;F1: {:.3}&quot;, f1); // 0.857</code></pre>
 <hr />
 <h2 id="choosing-the-right-metric-1"><a class="header" href="#choosing-the-right-metric-1">Choosing the Right Metric</a></h2>
 <h3 id="decision-guide-1"><a class="header" href="#decision-guide-1">Decision Guide</a></h3>
-<pre><code>Are classes balanced (roughly 50/50)?
+<pre><code class="language-text">Are classes balanced (roughly 50/50)?
 ├─ YES → Accuracy is reasonable
 └─ NO → Use Precision/Recall/F1
 
@@ -4901,7 +4901,7 @@ Examples:
 <h2 id="precision-recall-trade-off"><a class="header" href="#precision-recall-trade-off">Precision-Recall Trade-off</a></h2>
 <p><strong>Key Insight</strong>: You can't maximize both precision and recall simultaneously (except for perfect classifier).</p>
 <h3 id="example-spam-filter-threshold"><a class="header" href="#example-spam-filter-threshold">Example: Spam Filter Threshold</a></h3>
-<pre><code>Threshold | Precision | Recall | F1
+<pre><code class="language-text">Threshold | Precision | Recall | F1
 ----------|-----------|--------|----
   0.9     |   0.95    |  0.60  | 0.74  (conservative)
   0.5     |   0.80    |  0.85  | 0.82  (balanced)
@@ -4918,7 +4918,7 @@ Examples:
 <h3 id="imbalanced-classes"><a class="header" href="#imbalanced-classes">Imbalanced Classes</a></h3>
 <p><strong>Problem</strong>: 1% positive class (fraud detection, rare disease)</p>
 <p><strong>Bad Baseline</strong>:</p>
-<pre><code class="language-rust">// Always predict negative
+<pre><code class="language-rust ignore">// Always predict negative
 // Accuracy = 99% (misleading!)
 // Recall = 0% (finds no positives - useless)</code></pre>
 <p><strong>Solution</strong>: Use precision, recall, F1 instead of accuracy</p>
@@ -4929,7 +4929,7 @@ Examples:
 <li><strong>Micro-average</strong>: Aggregate TP/FP/FN across all classes</li>
 </ul>
 <p><strong>Example</strong> (3 classes):</p>
-<pre><code>Class A: Precision = 0.9
+<pre><code class="language-text">Class A: Precision = 0.9
 Class B: Precision = 0.8
 Class C: Precision = 0.5
 
@@ -4949,7 +4949,7 @@ Macro-avg Precision = (0.9 + 0.8 + 0.5) / 3 = 0.73
 <hr />
 <h2 id="real-world-application-7"><a class="header" href="#real-world-application-7">Real-World Application</a></h2>
 <h3 id="evaluating-logistic-regression"><a class="header" href="#evaluating-logistic-regression">Evaluating Logistic Regression</a></h3>
-<pre><code class="language-rust">use aprender::classification::LogisticRegression;
+<pre><code class="language-rust ignore">use aprender::classification::LogisticRegression;
 use aprender::metrics::{accuracy, precision, recall, f1_score};
 use aprender::traits::Classifier;
 
