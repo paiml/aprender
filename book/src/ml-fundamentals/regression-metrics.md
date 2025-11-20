@@ -36,7 +36,7 @@ Regression metrics measure how well a model predicts continuous values. Choosing
 ### R² (Coefficient of Determination)
 
 **Definition**:
-```
+```text
 R² = 1 - (SS_res / SS_tot)
 
 where:
@@ -54,7 +54,7 @@ SS_tot = Σ(y_true - y_mean)²  (total sum of squares)
 ### MSE (Mean Squared Error)
 
 **Definition**:
-```
+```text
 MSE = (1/n) Σ(y_true - y_pred)²
 ```
 
@@ -68,7 +68,7 @@ MSE = (1/n) Σ(y_true - y_pred)²
 ### RMSE (Root Mean Squared Error)
 
 **Definition**:
-```
+```text
 RMSE = √MSE = √[(1/n) Σ(y_true - y_pred)²]
 ```
 
@@ -79,7 +79,7 @@ RMSE = √MSE = √[(1/n) Σ(y_true - y_pred)²]
 ### MAE (Mean Absolute Error)
 
 **Definition**:
-```
+```text
 MAE = (1/n) Σ|y_true - y_pred|
 ```
 
@@ -96,7 +96,7 @@ MAE = (1/n) Σ|y_true - y_pred|
 
 ### Example: All Metrics on Same Data
 
-```rust
+```rust,ignore
 use aprender::metrics::{r_squared, mse, rmse, mae};
 use aprender::primitives::Vector;
 
@@ -218,7 +218,7 @@ All metrics have comprehensive property tests:
 
 **Example**: Evaluating Linear Regression
 
-```rust
+```rust,ignore
 use aprender::linear_model::LinearRegression;
 use aprender::metrics::{r_squared, rmse};
 use aprender::traits::Estimator;

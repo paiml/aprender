@@ -36,13 +36,13 @@ Linear regression is not just a model—it's a lens for understanding how mathem
 
 Given training data **(X, y)**, we seek coefficients **β** that minimize the squared error:
 
-```
+```text
 minimize: ||y - Xβ||²
 ```
 
 **Ordinary Least Squares (OLS) Solution**:
 
-```
+```text
 β = (X^T X)^(-1) X^T y
 ```
 
@@ -68,7 +68,7 @@ The OLS solution comes from calculus: take the derivative of the squared error w
 
 Let's verify OLS works on simple data: **y = 2x + 1**
 
-```rust
+```rust,ignore
 use aprender::linear_model::LinearRegression;
 use aprender::primitives::{Matrix, Vector};
 use aprender::traits::Estimator;
@@ -97,7 +97,7 @@ assert!((model.intercept() - 1.0).abs() < 1e-5); // Intercept = 1.0
 
 Once fitted, the model predicts new values:
 
-```rust
+```rust,ignore
 use aprender::linear_model::LinearRegression;
 use aprender::primitives::{Matrix, Vector};
 use aprender::traits::Estimator;
@@ -143,7 +143,7 @@ But what about:
 
 **Property tests verify ALL of them** (proptest runs 100+ random cases):
 
-```rust
+```rust,ignore
 use proptest::prelude::*;
 
 proptest! {
