@@ -246,7 +246,7 @@
 <li><strong>Clean data</strong>: Iris dataset has low noise</li>
 </ol>
 <h2 id="implementation"><a class="header" href="#implementation">Implementation</a></h2>
-<pre><code class="language-rust">use aprender::classification::LinearSVM;
+<pre><code class="language-rust ignore">use aprender::classification::LinearSVM;
 use aprender::primitives::Matrix;
 
 // Load binary data (Setosa vs Versicolor)
@@ -368,7 +368,7 @@ println!(&quot;Accuracy: {:.1}%&quot;, accuracy * 100.0);</code></pre>
 </ul>
 <h2 id="further-exploration"><a class="header" href="#further-exploration">Further Exploration</a></h2>
 <h3 id="try-different-c-values"><a class="header" href="#try-different-c-values">Try Different C Values</a></h3>
-<pre><code class="language-rust">for c in [0.001, 0.01, 0.1, 1.0, 10.0, 100.0] {
+<pre><code class="language-rust ignore">for c in [0.001, 0.01, 0.1, 1.0, 10.0, 100.0] {
     let mut svm = LinearSVM::new().with_c(c);
     svm.fit(&amp;x_train, &amp;y_train)?;
     // Compare accuracy and margin sizes
@@ -377,7 +377,7 @@ println!(&quot;Accuracy: {:.1}%&quot;, accuracy * 100.0);</code></pre>
 <p>Plot the hyperplane w·x + b = 0 in 2D feature space (e.g., petal_length vs petal_width).</p>
 <h3 id="multi-class-extension"><a class="header" href="#multi-class-extension">Multi-Class Extension</a></h3>
 <p>Implement One-vs-Rest to handle all 3 Iris species:</p>
-<pre><code class="language-rust">// Train 3 binary classifiers:
+<pre><code class="language-rust ignore">// Train 3 binary classifiers:
 // - Setosa vs (Versicolor, Virginica)
 // - Versicolor vs (Setosa, Virginica)
 // - Virginica vs (Setosa, Versicolor)

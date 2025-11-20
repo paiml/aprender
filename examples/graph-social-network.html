@@ -199,7 +199,7 @@
 <p>Expected output: Social network analysis with degree centrality, PageRank, and betweenness centrality rankings.</p>
 <h2 id="network-construction"><a class="header" href="#network-construction">Network Construction</a></h2>
 <h3 id="building-the-graph"><a class="header" href="#building-the-graph">Building the Graph</a></h3>
-<pre><code class="language-rust">use aprender::graph::Graph;
+<pre><code class="language-rust ignore">use aprender::graph::Graph;
 
 let edges = vec![
     // Tech community (densely connected)
@@ -350,7 +350,7 @@ let graph = Graph::from_edges(&amp;edges, false);</code></pre>
 </ul>
 <h3 id="pagerank-numerical-stability"><a class="header" href="#pagerank-numerical-stability">PageRank Numerical Stability</a></h3>
 <p>Aprender uses <strong>Kahan compensated summation</strong> to prevent floating-point drift:</p>
-<pre><code class="language-rust">let mut sum = 0.0;
+<pre><code class="language-rust ignore">let mut sum = 0.0;
 let mut c = 0.0;  // Compensation term
 
 for value in values {
@@ -368,7 +368,7 @@ for value in values {
 </ul>
 <h3 id="parallel-betweenness"><a class="header" href="#parallel-betweenness">Parallel Betweenness</a></h3>
 <p>Betweenness computation uses <strong>Rayon</strong> for parallelization:</p>
-<pre><code class="language-rust">let partial_scores: Vec&lt;Vec&lt;f64&gt;&gt; = (0..n_nodes)
+<pre><code class="language-rust ignore">let partial_scores: Vec&lt;Vec&lt;f64&gt;&gt; = (0..n_nodes)
     .into_par_iter()  // Parallel iterator
     .map(|source| brandes_bfs_from_source(source))
     .collect();</code></pre>

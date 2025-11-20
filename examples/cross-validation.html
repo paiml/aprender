@@ -200,7 +200,7 @@
 <h2 id="cycle-1-train_test_split"><a class="header" href="#cycle-1-train_test_split">CYCLE 1: train_test_split()</a></h2>
 <h3 id="red-phase"><a class="header" href="#red-phase">RED Phase</a></h3>
 <p>Created <code>src/model_selection/mod.rs</code> with 4 failing tests:</p>
-<pre><code class="language-rust">#[cfg(test)]
+<pre><code class="language-rust ignore">#[cfg(test)]
 mod tests {
     use super::*;
     use crate::primitives::{Matrix, Vector};
@@ -269,7 +269,7 @@ error[E0425]: cannot find function `train_test_split` in this scope
 <p><strong>Result:</strong> 4 tests failing ✅ (expected - function doesn't exist)</p>
 <h3 id="green-phase"><a class="header" href="#green-phase">GREEN Phase</a></h3>
 <p>Implemented minimal solution:</p>
-<pre><code class="language-rust">use crate::primitives::{Matrix, Vector};
+<pre><code class="language-rust ignore">use crate::primitives::{Matrix, Vector};
 use rand::seq::SliceRandom;
 use rand::SeedableRng;
 
@@ -358,12 +358,12 @@ $ cargo test
 # All 169 tests passing ✅
 </code></pre>
 <p>Added module to <code>src/lib.rs</code>:</p>
-<pre><code class="language-rust">pub mod model_selection;</code></pre>
+<pre><code class="language-rust ignore">pub mod model_selection;</code></pre>
 <p><strong>Commit:</strong> <code>dbd9a2d</code> - Implemented train_test_split with reproducible splits</p>
 <h2 id="cycle-2-kfold-cross-validator"><a class="header" href="#cycle-2-kfold-cross-validator">CYCLE 2: KFold Cross-Validator</a></h2>
 <h3 id="red-phase-1"><a class="header" href="#red-phase-1">RED Phase</a></h3>
 <p>Added 5 failing tests for KFold:</p>
-<pre><code class="language-rust">#[test]
+<pre><code class="language-rust ignore">#[test]
 fn test_kfold_basic() {
     let kfold = KFold::new(5);
     let splits = kfold.split(25);
@@ -423,7 +423,7 @@ fn test_kfold_uneven_split() {
 }</code></pre>
 <p><strong>Result:</strong> 5 tests failing ✅ (KFold not implemented)</p>
 <h3 id="green-phase-1"><a class="header" href="#green-phase-1">GREEN Phase</a></h3>
-<pre><code class="language-rust">#[derive(Debug, Clone)]
+<pre><code class="language-rust ignore">#[derive(Debug, Clone)]
 pub struct KFold {
     n_splits: usize,
     shuffle: bool,
@@ -505,7 +505,7 @@ test result: ok. 5 passed; 0 failed
 <p><strong>Result:</strong> Tests: 174 (+5) ✅</p>
 <h3 id="refactor-phase-1"><a class="header" href="#refactor-phase-1">REFACTOR Phase</a></h3>
 <p>Created example file <code>examples/cross_validation.rs</code>:</p>
-<pre><code class="language-rust">use aprender::linear_model::LinearRegression;
+<pre><code class="language-rust ignore">use aprender::linear_model::LinearRegression;
 use aprender::model_selection::{train_test_split, KFold};
 use aprender::primitives::{Matrix, Vector};
 use aprender::traits::Estimator;
@@ -570,7 +570,7 @@ Cross-Validation - Model Selection Example
 <h2 id="cycle-3-automated-cross_validate"><a class="header" href="#cycle-3-automated-cross_validate">CYCLE 3: Automated cross_validate()</a></h2>
 <h3 id="red-phase-2"><a class="header" href="#red-phase-2">RED Phase</a></h3>
 <p>Added 3 tests (2 failing, 1 passing helper):</p>
-<pre><code class="language-rust">#[test]
+<pre><code class="language-rust ignore">#[test]
 fn test_cross_validate_basic() {
     let x = Matrix::from_vec(20, 1, (0..20).map(|i| i as f32).collect()).unwrap();
     let y = Vector::from_vec((0..20).map(|i| 2.0 * i as f32 + 1.0).collect());
@@ -610,7 +610,7 @@ fn test_cross_validation_result_stats() {
 }</code></pre>
 <p><strong>Result:</strong> 2 tests failing ✅ (cross_validate not implemented)</p>
 <h3 id="green-phase-2"><a class="header" href="#green-phase-2">GREEN Phase</a></h3>
-<pre><code class="language-rust">#[derive(Debug, Clone)]
+<pre><code class="language-rust ignore">#[derive(Debug, Clone)]
 pub struct CrossValidationResult {
     pub scores: Vec&lt;f32&gt;,
 }
@@ -682,7 +682,7 @@ test result: ok. 3 passed; 0 failed
 <p><strong>Result:</strong> Tests: 177 (+3) ✅</p>
 <h3 id="refactor-phase-2"><a class="header" href="#refactor-phase-2">REFACTOR Phase</a></h3>
 <p>Updated example with automated cross-validation:</p>
-<pre><code class="language-rust">fn cross_validate_example() {
+<pre><code class="language-rust ignore">fn cross_validate_example() {
     let x_data: Vec&lt;f32&gt; = (0..100).map(|i| i as f32).collect();
     let y_data: Vec&lt;f32&gt; = x_data.iter().map(|&amp;x| 4.0 * x - 3.0).collect();
 
@@ -746,7 +746,7 @@ $ cargo run --example cross_validation
 </ul>
 <h3 id="2-builder-pattern-emerged-naturally"><a class="header" href="#2-builder-pattern-emerged-naturally">2. Builder Pattern Emerged Naturally</a></h3>
 <p>Testing led to clean API:</p>
-<pre><code class="language-rust">let kfold = KFold::new(5)
+<pre><code class="language-rust ignore">let kfold = KFold::new(5)
     .with_shuffle(true)
     .with_random_state(42);</code></pre>
 <h3 id="3-reproducibility-is-critical"><a class="header" href="#3-reproducibility-is-critical">3. Reproducibility is Critical</a></h3>

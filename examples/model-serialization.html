@@ -239,7 +239,7 @@
 <h2 id="phase-1-red---write-failing-tests"><a class="header" href="#phase-1-red---write-failing-tests">Phase 1: RED - Write Failing Tests</a></h2>
 <p>Following EXTREME TDD, we write comprehensive tests <strong>before</strong> implementation.</p>
 <h3 id="test-1-file-creation"><a class="header" href="#test-1-file-creation">Test 1: File Creation</a></h3>
-<pre><code class="language-rust">#[test]
+<pre><code class="language-rust ignore">#[test]
 fn test_linear_regression_save_safetensors_creates_file() {
     // Train a simple model
     let x = Matrix::from_vec(4, 2, vec![1.0, 2.0, 2.0, 1.0, 3.0, 4.0, 4.0, 3.0]).unwrap();
@@ -259,7 +259,7 @@ fn test_linear_regression_save_safetensors_creates_file() {
 <p><strong>Expected Failure</strong>: <code>no method named 'save_safetensors' found</code></p>
 <hr />
 <h3 id="test-2-header-format-validation"><a class="header" href="#test-2-header-format-validation">Test 2: Header Format Validation</a></h3>
-<pre><code class="language-rust">#[test]
+<pre><code class="language-rust ignore">#[test]
 fn test_safetensors_header_format() {
     let mut model = LinearRegression::new();
     model.fit(&amp;x, &amp;y).unwrap();
@@ -282,7 +282,7 @@ fn test_safetensors_header_format() {
 <p><strong>Why This Test Matters</strong>: Ensures binary format compliance with SafeTensors spec.</p>
 <hr />
 <h3 id="test-3-json-metadata-structure"><a class="header" href="#test-3-json-metadata-structure">Test 3: JSON Metadata Structure</a></h3>
-<pre><code class="language-rust">#[test]
+<pre><code class="language-rust ignore">#[test]
 fn test_safetensors_json_metadata_structure() {
     let x = Matrix::from_vec(3, 2, vec![1.0, 0.0, 0.0, 1.0, 1.0, 1.0]).unwrap();
     let y = Vector::from_vec(vec![1.0, 2.0, 3.0]);
@@ -316,7 +316,7 @@ fn test_safetensors_json_metadata_structure() {
 <p><strong>Critical Property</strong>: Metadata must be valid JSON with all required fields.</p>
 <hr />
 <h3 id="test-4-roundtrip-integrity-most-important"><a class="header" href="#test-4-roundtrip-integrity-most-important">Test 4: Roundtrip Integrity (Most Important!)</a></h3>
-<pre><code class="language-rust">#[test]
+<pre><code class="language-rust ignore">#[test]
 fn test_safetensors_roundtrip() {
     // Train original model
     let x = Matrix::from_vec(
@@ -364,7 +364,7 @@ fn test_safetensors_roundtrip() {
 <p><strong>This is the CRITICAL test</strong>: If roundtrip fails, serialization is broken.</p>
 <hr />
 <h3 id="test-5-error-handling"><a class="header" href="#test-5-error-handling">Test 5: Error Handling</a></h3>
-<pre><code class="language-rust">#[test]
+<pre><code class="language-rust ignore">#[test]
 fn test_safetensors_file_does_not_exist_error() {
     let result = LinearRegression::load_safetensors(&quot;nonexistent.safetensors&quot;);
     assert!(result.is_err());
@@ -390,11 +390,11 @@ fn test_safetensors_corrupted_header_error() {
 <hr />
 <h2 id="phase-2-green---minimal-implementation"><a class="header" href="#phase-2-green---minimal-implementation">Phase 2: GREEN - Minimal Implementation</a></h2>
 <h3 id="step-1-create-serialization-module"><a class="header" href="#step-1-create-serialization-module">Step 1: Create Serialization Module</a></h3>
-<pre><code class="language-rust">// src/serialization/mod.rs
+<pre><code class="language-rust ignore">// src/serialization/mod.rs
 pub mod safetensors;
 pub use safetensors::SafeTensorsMetadata;</code></pre>
 <h3 id="step-2-implement-safetensors-format"><a class="header" href="#step-2-implement-safetensors-format">Step 2: Implement SafeTensors Format</a></h3>
-<pre><code class="language-rust">// src/serialization/safetensors.rs
+<pre><code class="language-rust ignore">// src/serialization/safetensors.rs
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;  // BTreeMap for deterministic ordering!
 use std::fs;
@@ -458,7 +458,7 @@ pub fn save_safetensors&lt;P: AsRef&lt;Path&gt;&gt;(
 <p><strong>Key Design Decision</strong>: Using <code>BTreeMap</code> instead of <code>HashMap</code> ensures <strong>deterministic serialization</strong> (sorted keys).</p>
 <hr />
 <h3 id="step-3-add-linearregression-methods"><a class="header" href="#step-3-add-linearregression-methods">Step 3: Add LinearRegression Methods</a></h3>
-<pre><code class="language-rust">// src/linear_model/mod.rs
+<pre><code class="language-rust ignore">// src/linear_model/mod.rs
 impl LinearRegression {
     pub fn save_safetensors&lt;P: AsRef&lt;Path&gt;&gt;(&amp;self, path: P) -&gt; Result&lt;(), String&gt; {
         use crate::serialization::safetensors;
@@ -512,7 +512,7 @@ impl LinearRegression {
 <hr />
 <h2 id="phase-3-refactor---quality-improvements"><a class="header" href="#phase-3-refactor---quality-improvements">Phase 3: REFACTOR - Quality Improvements</a></h2>
 <h3 id="refactoring-1-extract-tensor-loading"><a class="header" href="#refactoring-1-extract-tensor-loading">Refactoring 1: Extract Tensor Loading</a></h3>
-<pre><code class="language-rust">pub fn load_safetensors&lt;P: AsRef&lt;Path&gt;&gt;(path: P)
+<pre><code class="language-rust ignore">pub fn load_safetensors&lt;P: AsRef&lt;Path&gt;&gt;(path: P)
     -&gt; Result&lt;(SafeTensorsMetadata, Vec&lt;u8&gt;), String&gt; {
     let bytes = fs::read(path).map_err(|e| format!(&quot;File read failed: {}&quot;, e))?;
 
@@ -545,9 +545,9 @@ impl LinearRegression {
 <hr />
 <h3 id="refactoring-2-deterministic-serialization"><a class="header" href="#refactoring-2-deterministic-serialization">Refactoring 2: Deterministic Serialization</a></h3>
 <p><strong>Before</strong> (non-deterministic):</p>
-<pre><code class="language-rust">let mut tensors = HashMap::new();  // ❌ Non-deterministic iteration order</code></pre>
+<pre><code class="language-rust ignore">let mut tensors = HashMap::new();  // ❌ Non-deterministic iteration order</code></pre>
 <p><strong>After</strong> (deterministic):</p>
-<pre><code class="language-rust">let mut tensors = BTreeMap::new();  // ✅ Sorted keys = reproducible builds</code></pre>
+<pre><code class="language-rust ignore">let mut tensors = BTreeMap::new();  // ✅ Sorted keys = reproducible builds</code></pre>
 <p><strong>Why This Matters</strong>:</p>
 <ul>
 <li>Reproducible builds for security audits</li>
@@ -570,7 +570,7 @@ impl LinearRegression {
 <li>✅ <strong>Roundtrip integrity</strong> (save → load → predict)</li>
 </ul>
 <h3 id="property-tests-future-enhancement"><a class="header" href="#property-tests-future-enhancement">Property Tests (Future Enhancement)</a></h3>
-<pre><code class="language-rust">#[proptest]
+<pre><code class="language-rust ignore">#[proptest]
 fn test_safetensors_roundtrip_property(
     #[strategy(1usize..10)] n_samples: usize,
     #[strategy(1usize..5)] n_features: usize,
@@ -598,19 +598,19 @@ fn test_safetensors_roundtrip_property(
 <h2 id="key-design-decisions"><a class="header" href="#key-design-decisions">Key Design Decisions</a></h2>
 <h3 id="1-why-btreemap-instead-of-hashmap"><a class="header" href="#1-why-btreemap-instead-of-hashmap">1. Why BTreeMap Instead of HashMap?</a></h3>
 <p><strong>HashMap</strong>:</p>
-<pre><code class="language-rust">{&quot;intercept&quot;: {...}, &quot;coefficients&quot;: {...}}  // First run
+<pre><code class="language-rust ignore">{&quot;intercept&quot;: {...}, &quot;coefficients&quot;: {...}}  // First run
 {&quot;coefficients&quot;: {...}, &quot;intercept&quot;: {...}}  // Second run (different!)</code></pre>
 <p><strong>BTreeMap</strong>:</p>
-<pre><code class="language-rust">{&quot;coefficients&quot;: {...}, &quot;intercept&quot;: {...}}  // Always sorted!</code></pre>
+<pre><code class="language-rust ignore">{&quot;coefficients&quot;: {...}, &quot;intercept&quot;: {...}}  // Always sorted!</code></pre>
 <p><strong>Result</strong>: Deterministic builds, better git diffs, reproducible CI.</p>
 <hr />
 <h3 id="2-why-eager-validation"><a class="header" href="#2-why-eager-validation">2. Why Eager Validation?</a></h3>
 <p><strong>Lazy Validation (FlatBuffers)</strong>:</p>
-<pre><code class="language-rust">// ❌ Crash during inference (production!)
+<pre><code class="language-rust ignore">// ❌ Crash during inference (production!)
 let model = load_flatbuffers(&quot;model.fb&quot;);  // No validation
 let pred = model.predict(&amp;x);  // 💥 CRASH: corrupted data</code></pre>
 <p><strong>Eager Validation (SafeTensors)</strong>:</p>
-<pre><code class="language-rust">// ✅ Fail fast at load time (development)
+<pre><code class="language-rust ignore">// ✅ Fail fast at load time (development)
 let model = load_safetensors(&quot;model.st&quot;)
     .expect(&quot;Invalid model file&quot;);  // Fails HERE, not in production
 let pred = model.predict(&amp;x);  // Safe!</code></pre>
@@ -626,7 +626,7 @@ let pred = model.predict(&amp;x);  // Safe!</code></pre>
 <hr />
 <h2 id="production-deployment"><a class="header" href="#production-deployment">Production Deployment</a></h2>
 <h3 id="example-aprender--realizar-pipeline"><a class="header" href="#example-aprender--realizar-pipeline">Example: Aprender → Realizar Pipeline</a></h3>
-<pre><code class="language-rust">// Training (aprender)
+<pre><code class="language-rust ignore">// Training (aprender)
 let mut model = LinearRegression::new();
 model.fit(&amp;training_data, &amp;labels).unwrap();
 model.save_safetensors(&quot;production_model.safetensors&quot;).unwrap();
@@ -648,7 +648,7 @@ let predictions = realizar_model.predict(&amp;input_features);</code></pre>
 <h3 id="1-test-first-prevents-format-bugs"><a class="header" href="#1-test-first-prevents-format-bugs">1. Test-First Prevents Format Bugs</a></h3>
 <p><strong>Without tests</strong>: Discovered header endianness bug in production (costly!)</p>
 <p><strong>With tests</strong> (EXTREME TDD):</p>
-<pre><code class="language-rust">#[test]
+<pre><code class="language-rust ignore">#[test]
 fn test_header_is_little_endian() {
     // This test CAUGHT the bug before merge!
     let bytes = read_header();

@@ -5876,7 +5876,7 @@ let hist = stats.histogram_method(BinMethod::Scott).unwrap();</code></pre>
 <h2 id="cycle-1-train_test_split"><a class="header" href="#cycle-1-train_test_split">CYCLE 1: train_test_split()</a></h2>
 <h3 id="red-phase"><a class="header" href="#red-phase">RED Phase</a></h3>
 <p>Created <code>src/model_selection/mod.rs</code> with 4 failing tests:</p>
-<pre><code class="language-rust">#[cfg(test)]
+<pre><code class="language-rust ignore">#[cfg(test)]
 mod tests {
     use super::*;
     use crate::primitives::{Matrix, Vector};
@@ -5945,7 +5945,7 @@ error[E0425]: cannot find function `train_test_split` in this scope
 <p><strong>Result:</strong> 4 tests failing ✅ (expected - function doesn't exist)</p>
 <h3 id="green-phase"><a class="header" href="#green-phase">GREEN Phase</a></h3>
 <p>Implemented minimal solution:</p>
-<pre><code class="language-rust">use crate::primitives::{Matrix, Vector};
+<pre><code class="language-rust ignore">use crate::primitives::{Matrix, Vector};
 use rand::seq::SliceRandom;
 use rand::SeedableRng;
 
@@ -6034,12 +6034,12 @@ $ cargo test
 # All 169 tests passing ✅
 </code></pre>
 <p>Added module to <code>src/lib.rs</code>:</p>
-<pre><code class="language-rust">pub mod model_selection;</code></pre>
+<pre><code class="language-rust ignore">pub mod model_selection;</code></pre>
 <p><strong>Commit:</strong> <code>dbd9a2d</code> - Implemented train_test_split with reproducible splits</p>
 <h2 id="cycle-2-kfold-cross-validator"><a class="header" href="#cycle-2-kfold-cross-validator">CYCLE 2: KFold Cross-Validator</a></h2>
 <h3 id="red-phase-1"><a class="header" href="#red-phase-1">RED Phase</a></h3>
 <p>Added 5 failing tests for KFold:</p>
-<pre><code class="language-rust">#[test]
+<pre><code class="language-rust ignore">#[test]
 fn test_kfold_basic() {
     let kfold = KFold::new(5);
     let splits = kfold.split(25);
@@ -6099,7 +6099,7 @@ fn test_kfold_uneven_split() {
 }</code></pre>
 <p><strong>Result:</strong> 5 tests failing ✅ (KFold not implemented)</p>
 <h3 id="green-phase-1"><a class="header" href="#green-phase-1">GREEN Phase</a></h3>
-<pre><code class="language-rust">#[derive(Debug, Clone)]
+<pre><code class="language-rust ignore">#[derive(Debug, Clone)]
 pub struct KFold {
     n_splits: usize,
     shuffle: bool,
@@ -6181,7 +6181,7 @@ test result: ok. 5 passed; 0 failed
 <p><strong>Result:</strong> Tests: 174 (+5) ✅</p>
 <h3 id="refactor-phase-2"><a class="header" href="#refactor-phase-2">REFACTOR Phase</a></h3>
 <p>Created example file <code>examples/cross_validation.rs</code>:</p>
-<pre><code class="language-rust">use aprender::linear_model::LinearRegression;
+<pre><code class="language-rust ignore">use aprender::linear_model::LinearRegression;
 use aprender::model_selection::{train_test_split, KFold};
 use aprender::primitives::{Matrix, Vector};
 use aprender::traits::Estimator;
@@ -6246,7 +6246,7 @@ Cross-Validation - Model Selection Example
 <h2 id="cycle-3-automated-cross_validate"><a class="header" href="#cycle-3-automated-cross_validate">CYCLE 3: Automated cross_validate()</a></h2>
 <h3 id="red-phase-2"><a class="header" href="#red-phase-2">RED Phase</a></h3>
 <p>Added 3 tests (2 failing, 1 passing helper):</p>
-<pre><code class="language-rust">#[test]
+<pre><code class="language-rust ignore">#[test]
 fn test_cross_validate_basic() {
     let x = Matrix::from_vec(20, 1, (0..20).map(|i| i as f32).collect()).unwrap();
     let y = Vector::from_vec((0..20).map(|i| 2.0 * i as f32 + 1.0).collect());
@@ -6286,7 +6286,7 @@ fn test_cross_validation_result_stats() {
 }</code></pre>
 <p><strong>Result:</strong> 2 tests failing ✅ (cross_validate not implemented)</p>
 <h3 id="green-phase-2"><a class="header" href="#green-phase-2">GREEN Phase</a></h3>
-<pre><code class="language-rust">#[derive(Debug, Clone)]
+<pre><code class="language-rust ignore">#[derive(Debug, Clone)]
 pub struct CrossValidationResult {
     pub scores: Vec&lt;f32&gt;,
 }
@@ -6358,7 +6358,7 @@ test result: ok. 3 passed; 0 failed
 <p><strong>Result:</strong> Tests: 177 (+3) ✅</p>
 <h3 id="refactor-phase-3"><a class="header" href="#refactor-phase-3">REFACTOR Phase</a></h3>
 <p>Updated example with automated cross-validation:</p>
-<pre><code class="language-rust">fn cross_validate_example() {
+<pre><code class="language-rust ignore">fn cross_validate_example() {
     let x_data: Vec&lt;f32&gt; = (0..100).map(|i| i as f32).collect();
     let y_data: Vec&lt;f32&gt; = x_data.iter().map(|&amp;x| 4.0 * x - 3.0).collect();
 
@@ -6422,7 +6422,7 @@ $ cargo run --example cross_validation
 </ul>
 <h3 id="2-builder-pattern-emerged-naturally"><a class="header" href="#2-builder-pattern-emerged-naturally">2. Builder Pattern Emerged Naturally</a></h3>
 <p>Testing led to clean API:</p>
-<pre><code class="language-rust">let kfold = KFold::new(5)
+<pre><code class="language-rust ignore">let kfold = KFold::new(5)
     .with_shuffle(true)
     .with_random_state(42);</code></pre>
 <h3 id="3-reproducibility-is-critical"><a class="header" href="#3-reproducibility-is-critical">3. Reproducibility is Critical</a></h3>
@@ -6560,7 +6560,7 @@ following EXTREME TDD principles.</p>
 <h2 id="phase-1-red---write-failing-tests-1"><a class="header" href="#phase-1-red---write-failing-tests-1">Phase 1: RED - Write Failing Tests</a></h2>
 <p>Following EXTREME TDD, we write comprehensive tests <strong>before</strong> implementation.</p>
 <h3 id="test-1-file-creation"><a class="header" href="#test-1-file-creation">Test 1: File Creation</a></h3>
-<pre><code class="language-rust">#[test]
+<pre><code class="language-rust ignore">#[test]
 fn test_linear_regression_save_safetensors_creates_file() {
     // Train a simple model
     let x = Matrix::from_vec(4, 2, vec![1.0, 2.0, 2.0, 1.0, 3.0, 4.0, 4.0, 3.0]).unwrap();
@@ -6580,7 +6580,7 @@ fn test_linear_regression_save_safetensors_creates_file() {
 <p><strong>Expected Failure</strong>: <code>no method named 'save_safetensors' found</code></p>
 <hr />
 <h3 id="test-2-header-format-validation"><a class="header" href="#test-2-header-format-validation">Test 2: Header Format Validation</a></h3>
-<pre><code class="language-rust">#[test]
+<pre><code class="language-rust ignore">#[test]
 fn test_safetensors_header_format() {
     let mut model = LinearRegression::new();
     model.fit(&amp;x, &amp;y).unwrap();
@@ -6603,7 +6603,7 @@ fn test_safetensors_header_format() {
 <p><strong>Why This Test Matters</strong>: Ensures binary format compliance with SafeTensors spec.</p>
 <hr />
 <h3 id="test-3-json-metadata-structure"><a class="header" href="#test-3-json-metadata-structure">Test 3: JSON Metadata Structure</a></h3>
-<pre><code class="language-rust">#[test]
+<pre><code class="language-rust ignore">#[test]
 fn test_safetensors_json_metadata_structure() {
     let x = Matrix::from_vec(3, 2, vec![1.0, 0.0, 0.0, 1.0, 1.0, 1.0]).unwrap();
     let y = Vector::from_vec(vec![1.0, 2.0, 3.0]);
@@ -6637,7 +6637,7 @@ fn test_safetensors_json_metadata_structure() {
 <p><strong>Critical Property</strong>: Metadata must be valid JSON with all required fields.</p>
 <hr />
 <h3 id="test-4-roundtrip-integrity-most-important"><a class="header" href="#test-4-roundtrip-integrity-most-important">Test 4: Roundtrip Integrity (Most Important!)</a></h3>
-<pre><code class="language-rust">#[test]
+<pre><code class="language-rust ignore">#[test]
 fn test_safetensors_roundtrip() {
     // Train original model
     let x = Matrix::from_vec(
@@ -6685,7 +6685,7 @@ fn test_safetensors_roundtrip() {
 <p><strong>This is the CRITICAL test</strong>: If roundtrip fails, serialization is broken.</p>
 <hr />
 <h3 id="test-5-error-handling"><a class="header" href="#test-5-error-handling">Test 5: Error Handling</a></h3>
-<pre><code class="language-rust">#[test]
+<pre><code class="language-rust ignore">#[test]
 fn test_safetensors_file_does_not_exist_error() {
     let result = LinearRegression::load_safetensors(&quot;nonexistent.safetensors&quot;);
     assert!(result.is_err());
@@ -6711,11 +6711,11 @@ fn test_safetensors_corrupted_header_error() {
 <hr />
 <h2 id="phase-2-green---minimal-implementation-1"><a class="header" href="#phase-2-green---minimal-implementation-1">Phase 2: GREEN - Minimal Implementation</a></h2>
 <h3 id="step-1-create-serialization-module"><a class="header" href="#step-1-create-serialization-module">Step 1: Create Serialization Module</a></h3>
-<pre><code class="language-rust">// src/serialization/mod.rs
+<pre><code class="language-rust ignore">// src/serialization/mod.rs
 pub mod safetensors;
 pub use safetensors::SafeTensorsMetadata;</code></pre>
 <h3 id="step-2-implement-safetensors-format"><a class="header" href="#step-2-implement-safetensors-format">Step 2: Implement SafeTensors Format</a></h3>
-<pre><code class="language-rust">// src/serialization/safetensors.rs
+<pre><code class="language-rust ignore">// src/serialization/safetensors.rs
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;  // BTreeMap for deterministic ordering!
 use std::fs;
@@ -6779,7 +6779,7 @@ pub fn save_safetensors&lt;P: AsRef&lt;Path&gt;&gt;(
 <p><strong>Key Design Decision</strong>: Using <code>BTreeMap</code> instead of <code>HashMap</code> ensures <strong>deterministic serialization</strong> (sorted keys).</p>
 <hr />
 <h3 id="step-3-add-linearregression-methods"><a class="header" href="#step-3-add-linearregression-methods">Step 3: Add LinearRegression Methods</a></h3>
-<pre><code class="language-rust">// src/linear_model/mod.rs
+<pre><code class="language-rust ignore">// src/linear_model/mod.rs
 impl LinearRegression {
     pub fn save_safetensors&lt;P: AsRef&lt;Path&gt;&gt;(&amp;self, path: P) -&gt; Result&lt;(), String&gt; {
         use crate::serialization::safetensors;
@@ -6833,7 +6833,7 @@ impl LinearRegression {
 <hr />
 <h2 id="phase-3-refactor---quality-improvements"><a class="header" href="#phase-3-refactor---quality-improvements">Phase 3: REFACTOR - Quality Improvements</a></h2>
 <h3 id="refactoring-1-extract-tensor-loading"><a class="header" href="#refactoring-1-extract-tensor-loading">Refactoring 1: Extract Tensor Loading</a></h3>
-<pre><code class="language-rust">pub fn load_safetensors&lt;P: AsRef&lt;Path&gt;&gt;(path: P)
+<pre><code class="language-rust ignore">pub fn load_safetensors&lt;P: AsRef&lt;Path&gt;&gt;(path: P)
     -&gt; Result&lt;(SafeTensorsMetadata, Vec&lt;u8&gt;), String&gt; {
     let bytes = fs::read(path).map_err(|e| format!(&quot;File read failed: {}&quot;, e))?;
 
@@ -6866,9 +6866,9 @@ impl LinearRegression {
 <hr />
 <h3 id="refactoring-2-deterministic-serialization"><a class="header" href="#refactoring-2-deterministic-serialization">Refactoring 2: Deterministic Serialization</a></h3>
 <p><strong>Before</strong> (non-deterministic):</p>
-<pre><code class="language-rust">let mut tensors = HashMap::new();  // ❌ Non-deterministic iteration order</code></pre>
+<pre><code class="language-rust ignore">let mut tensors = HashMap::new();  // ❌ Non-deterministic iteration order</code></pre>
 <p><strong>After</strong> (deterministic):</p>
-<pre><code class="language-rust">let mut tensors = BTreeMap::new();  // ✅ Sorted keys = reproducible builds</code></pre>
+<pre><code class="language-rust ignore">let mut tensors = BTreeMap::new();  // ✅ Sorted keys = reproducible builds</code></pre>
 <p><strong>Why This Matters</strong>:</p>
 <ul>
 <li>Reproducible builds for security audits</li>
@@ -6891,7 +6891,7 @@ impl LinearRegression {
 <li>✅ <strong>Roundtrip integrity</strong> (save → load → predict)</li>
 </ul>
 <h3 id="property-tests-future-enhancement"><a class="header" href="#property-tests-future-enhancement">Property Tests (Future Enhancement)</a></h3>
-<pre><code class="language-rust">#[proptest]
+<pre><code class="language-rust ignore">#[proptest]
 fn test_safetensors_roundtrip_property(
     #[strategy(1usize..10)] n_samples: usize,
     #[strategy(1usize..5)] n_features: usize,
@@ -6919,19 +6919,19 @@ fn test_safetensors_roundtrip_property(
 <h2 id="key-design-decisions"><a class="header" href="#key-design-decisions">Key Design Decisions</a></h2>
 <h3 id="1-why-btreemap-instead-of-hashmap"><a class="header" href="#1-why-btreemap-instead-of-hashmap">1. Why BTreeMap Instead of HashMap?</a></h3>
 <p><strong>HashMap</strong>:</p>
-<pre><code class="language-rust">{&quot;intercept&quot;: {...}, &quot;coefficients&quot;: {...}}  // First run
+<pre><code class="language-rust ignore">{&quot;intercept&quot;: {...}, &quot;coefficients&quot;: {...}}  // First run
 {&quot;coefficients&quot;: {...}, &quot;intercept&quot;: {...}}  // Second run (different!)</code></pre>
 <p><strong>BTreeMap</strong>:</p>
-<pre><code class="language-rust">{&quot;coefficients&quot;: {...}, &quot;intercept&quot;: {...}}  // Always sorted!</code></pre>
+<pre><code class="language-rust ignore">{&quot;coefficients&quot;: {...}, &quot;intercept&quot;: {...}}  // Always sorted!</code></pre>
 <p><strong>Result</strong>: Deterministic builds, better git diffs, reproducible CI.</p>
 <hr />
 <h3 id="2-why-eager-validation"><a class="header" href="#2-why-eager-validation">2. Why Eager Validation?</a></h3>
 <p><strong>Lazy Validation (FlatBuffers)</strong>:</p>
-<pre><code class="language-rust">// ❌ Crash during inference (production!)
+<pre><code class="language-rust ignore">// ❌ Crash during inference (production!)
 let model = load_flatbuffers(&quot;model.fb&quot;);  // No validation
 let pred = model.predict(&amp;x);  // 💥 CRASH: corrupted data</code></pre>
 <p><strong>Eager Validation (SafeTensors)</strong>:</p>
-<pre><code class="language-rust">// ✅ Fail fast at load time (development)
+<pre><code class="language-rust ignore">// ✅ Fail fast at load time (development)
 let model = load_safetensors(&quot;model.st&quot;)
     .expect(&quot;Invalid model file&quot;);  // Fails HERE, not in production
 let pred = model.predict(&amp;x);  // Safe!</code></pre>
@@ -6947,7 +6947,7 @@ let pred = model.predict(&amp;x);  // Safe!</code></pre>
 <hr />
 <h2 id="production-deployment"><a class="header" href="#production-deployment">Production Deployment</a></h2>
 <h3 id="example-aprender--realizar-pipeline"><a class="header" href="#example-aprender--realizar-pipeline">Example: Aprender → Realizar Pipeline</a></h3>
-<pre><code class="language-rust">// Training (aprender)
+<pre><code class="language-rust ignore">// Training (aprender)
 let mut model = LinearRegression::new();
 model.fit(&amp;training_data, &amp;labels).unwrap();
 model.save_safetensors(&quot;production_model.safetensors&quot;).unwrap();
@@ -6969,7 +6969,7 @@ let predictions = realizar_model.predict(&amp;input_features);</code></pre>
 <h3 id="1-test-first-prevents-format-bugs"><a class="header" href="#1-test-first-prevents-format-bugs">1. Test-First Prevents Format Bugs</a></h3>
 <p><strong>Without tests</strong>: Discovered header endianness bug in production (costly!)</p>
 <p><strong>With tests</strong> (EXTREME TDD):</p>
-<pre><code class="language-rust">#[test]
+<pre><code class="language-rust ignore">#[test]
 fn test_header_is_little_endian() {
     // This test CAUGHT the bug before merge!
     let bytes = read_header();
@@ -7123,7 +7123,7 @@ following EXTREME TDD principles.</p>
 <p>Logistic Regression is a fundamental classification algorithm that uses the sigmoid function to model the probability of binary outcomes. This case study demonstrates the RED-GREEN-REFACTOR cycle for implementing a production-quality classifier.</p>
 <h2 id="red-phase-writing-failing-tests"><a class="header" href="#red-phase-writing-failing-tests">RED Phase: Writing Failing Tests</a></h2>
 <p>Following EXTREME TDD principles, we begin by writing comprehensive tests before implementation:</p>
-<pre><code class="language-rust">#[test]
+<pre><code class="language-rust ignore">#[test]
 fn test_logistic_regression_fit_simple() {
     let x = Matrix::from_vec(4, 2, vec![...]).unwrap();
     let y = vec![0, 0, 1, 1];
@@ -7191,7 +7191,7 @@ Test predictions:
 </ul>
 <h3 id="red-phase-safetensors-tests"><a class="header" href="#red-phase-safetensors-tests">RED Phase: SafeTensors Tests</a></h3>
 <p>Following EXTREME TDD, we wrote 5 comprehensive tests before implementation:</p>
-<pre><code class="language-rust">#[test]
+<pre><code class="language-rust ignore">#[test]
 fn test_save_safetensors_unfitted_model() {
     // Test 1: Cannot save unfitted model
     let model = LogisticRegression::new();
@@ -7237,7 +7237,7 @@ fn test_safetensors_preserves_probabilities() {
 </ol>
 <h3 id="green-phase-implementation"><a class="header" href="#green-phase-implementation">GREEN Phase: Implementation</a></h3>
 <p>The implementation serializes two tensors: <strong>coefficients</strong> and <strong>intercept</strong>.</p>
-<pre><code class="language-rust">pub fn save_safetensors&lt;P: AsRef&lt;Path&gt;&gt;(&amp;self, path: P) -&gt; Result&lt;(), String&gt; {
+<pre><code class="language-rust ignore">pub fn save_safetensors&lt;P: AsRef&lt;Path&gt;&gt;(&amp;self, path: P) -&gt; Result&lt;(), String&gt; {
     use crate::serialization::safetensors;
     use std::collections::BTreeMap;
 
@@ -7280,7 +7280,7 @@ fn test_safetensors_preserves_probabilities() {
 └─────────────────────────────────────────────────┘
 </code></pre>
 <h3 id="loading-models"><a class="header" href="#loading-models">Loading Models</a></h3>
-<pre><code class="language-rust">pub fn load_safetensors&lt;P: AsRef&lt;Path&gt;&gt;(path: P) -&gt; Result&lt;Self, String&gt; {
+<pre><code class="language-rust ignore">pub fn load_safetensors&lt;P: AsRef&lt;Path&gt;&gt;(path: P) -&gt; Result&lt;Self, String&gt; {
     use crate::serialization::safetensors;
 
     // Load SafeTensors file
@@ -7303,7 +7303,7 @@ fn test_safetensors_preserves_probabilities() {
 }</code></pre>
 <h3 id="production-deployment-example"><a class="header" href="#production-deployment-example">Production Deployment Example</a></h3>
 <p>Train in <strong>aprender</strong>, deploy to <strong>realizar</strong>:</p>
-<pre><code class="language-rust">// 1. Train LogisticRegression in aprender
+<pre><code class="language-rust ignore">// 1. Train LogisticRegression in aprender
 let mut model = LogisticRegression::new()
     .with_learning_rate(0.1)
     .with_max_iter(1000);
@@ -7324,7 +7324,7 @@ model.save_safetensors(&quot;fraud_detection.safetensors&quot;).unwrap();
 <h3 id="key-design-decisions-1"><a class="header" href="#key-design-decisions-1">Key Design Decisions</a></h3>
 <p><strong>1. Deterministic Serialization (BTreeMap)</strong></p>
 <p>We use <code>BTreeMap</code> instead of <code>HashMap</code> to ensure sorted keys:</p>
-<pre><code class="language-rust">// ✅ CORRECT: Deterministic (sorted keys)
+<pre><code class="language-rust ignore">// ✅ CORRECT: Deterministic (sorted keys)
 let mut tensors = BTreeMap::new();
 tensors.insert(&quot;coefficients&quot;, ...);
 tensors.insert(&quot;intercept&quot;, ...);
@@ -7343,7 +7343,7 @@ tensors.insert(&quot;coefficients&quot;, ...);
 </ul>
 <p><strong>2. Probability Preservation</strong></p>
 <p>Binary classification requires <strong>exact</strong> probability preservation:</p>
-<pre><code class="language-rust">// Before save
+<pre><code class="language-rust ignore">// Before save
 let prob = model.predict_proba(&amp;x)[0];  // 0.847362
 
 // After load
@@ -7359,7 +7359,7 @@ assert_eq!(prob, prob_loaded);  // ✅ Passes (IEEE 754 F32 precision)</code></p
 </ul>
 <p><strong>3. Hyperparameters Not Serialized</strong></p>
 <p>Training hyperparameters (<code>learning_rate</code>, <code>max_iter</code>, <code>tol</code>) are <strong>not</strong> saved:</p>
-<pre><code class="language-rust">// Hyperparameters only needed during training
+<pre><code class="language-rust ignore">// Hyperparameters only needed during training
 let mut model = LogisticRegression::new()
     .with_learning_rate(0.1)   // Not saved
     .with_max_iter(1000);       // Not saved
@@ -7390,7 +7390,7 @@ with safe_open(&quot;model.safetensors&quot;, framework=&quot;pt&quot;) as f:
 print(tensors[&quot;coefficients&quot;])  # torch.Tensor([...])
 </code></pre>
 <p><strong>realizar (Rust):</strong></p>
-<pre><code class="language-rust">use realizar::SafetensorsModel;
+<pre><code class="language-rust ignore">use realizar::SafetensorsModel;
 
 let model = SafetensorsModel::from_file(&quot;model.safetensors&quot;)?;
 let coefficients = model.get_tensor(&quot;coefficients&quot;)?;
@@ -7456,7 +7456,7 @@ Best practices for robust error handling</li>
 <p>Expected output: Comprehensive kNN analysis including accuracy for different k values, distance metric comparison, voting strategy comparison, and probabilistic predictions with confidence scores.</p>
 <h2 id="dataset"><a class="header" href="#dataset">Dataset</a></h2>
 <h3 id="iris-flower-measurements"><a class="header" href="#iris-flower-measurements">Iris Flower Measurements</a></h3>
-<pre><code class="language-rust">// Features: [sepal_length, sepal_width, petal_length, petal_width]
+<pre><code class="language-rust ignore">// Features: [sepal_length, sepal_width, petal_length, petal_width]
 // Classes: 0=Setosa, 1=Versicolor, 2=Virginica
 
 // Training set: 20 samples (7 Setosa, 7 Versicolor, 6 Virginica)
@@ -7839,7 +7839,7 @@ let knn15 = KNearestNeighbors::new(15); // 75% of training data</code></pre>
 <li><strong>Probabilistic</strong>: Full confidence scores for interpretability</li>
 </ol>
 <h2 id="implementation-8"><a class="header" href="#implementation-8">Implementation</a></h2>
-<pre><code class="language-rust">use aprender::classification::GaussianNB;
+<pre><code class="language-rust ignore">use aprender::classification::GaussianNB;
 use aprender::primitives::Matrix;
 
 // Load data
@@ -7950,7 +7950,7 @@ println!(&quot;Accuracy: {:.1}%&quot;, accuracy * 100.0);</code></pre>
 <li><strong>Clean data</strong>: Iris dataset has low noise</li>
 </ol>
 <h2 id="implementation-9"><a class="header" href="#implementation-9">Implementation</a></h2>
-<pre><code class="language-rust">use aprender::classification::LinearSVM;
+<pre><code class="language-rust ignore">use aprender::classification::LinearSVM;
 use aprender::primitives::Matrix;
 
 // Load binary data (Setosa vs Versicolor)
@@ -8072,7 +8072,7 @@ println!(&quot;Accuracy: {:.1}%&quot;, accuracy * 100.0);</code></pre>
 </ul>
 <h2 id="further-exploration-1"><a class="header" href="#further-exploration-1">Further Exploration</a></h2>
 <h3 id="try-different-c-values"><a class="header" href="#try-different-c-values">Try Different C Values</a></h3>
-<pre><code class="language-rust">for c in [0.001, 0.01, 0.1, 1.0, 10.0, 100.0] {
+<pre><code class="language-rust ignore">for c in [0.001, 0.01, 0.1, 1.0, 10.0, 100.0] {
     let mut svm = LinearSVM::new().with_c(c);
     svm.fit(&amp;x_train, &amp;y_train)?;
     // Compare accuracy and margin sizes
@@ -8081,7 +8081,7 @@ println!(&quot;Accuracy: {:.1}%&quot;, accuracy * 100.0);</code></pre>
 <p>Plot the hyperplane w·x + b = 0 in 2D feature space (e.g., petal_length vs petal_width).</p>
 <h3 id="multi-class-extension"><a class="header" href="#multi-class-extension">Multi-Class Extension</a></h3>
 <p>Implement One-vs-Rest to handle all 3 Iris species:</p>
-<pre><code class="language-rust">// Train 3 binary classifiers:
+<pre><code class="language-rust ignore">// Train 3 binary classifiers:
 // - Setosa vs (Versicolor, Virginica)
 // - Versicolor vs (Setosa, Virginica)
 // - Virginica vs (Setosa, Versicolor)
@@ -8134,7 +8134,7 @@ println!(&quot;Accuracy: {:.1}%&quot;, accuracy * 100.0);</code></pre>
 </div>
 <p><strong>Guideline</strong>: Shallow trees (3-8) prevent overfitting in boosting.</p>
 <h2 id="implementation-10"><a class="header" href="#implementation-10">Implementation</a></h2>
-<pre><code class="language-rust">use aprender::tree::GradientBoostingClassifier;
+<pre><code class="language-rust ignore">use aprender::tree::GradientBoostingClassifier;
 use aprender::primitives::Matrix;
 
 // Load data
@@ -8314,7 +8314,7 @@ in aprender, following EXTREME TDD principles.</p>
 <p>Expected output: Social network analysis with degree centrality, PageRank, and betweenness centrality rankings.</p>
 <h2 id="network-construction"><a class="header" href="#network-construction">Network Construction</a></h2>
 <h3 id="building-the-graph"><a class="header" href="#building-the-graph">Building the Graph</a></h3>
-<pre><code class="language-rust">use aprender::graph::Graph;
+<pre><code class="language-rust ignore">use aprender::graph::Graph;
 
 let edges = vec![
     // Tech community (densely connected)
@@ -8465,7 +8465,7 @@ let graph = Graph::from_edges(&amp;edges, false);</code></pre>
 </ul>
 <h3 id="pagerank-numerical-stability"><a class="header" href="#pagerank-numerical-stability">PageRank Numerical Stability</a></h3>
 <p>Aprender uses <strong>Kahan compensated summation</strong> to prevent floating-point drift:</p>
-<pre><code class="language-rust">let mut sum = 0.0;
+<pre><code class="language-rust ignore">let mut sum = 0.0;
 let mut c = 0.0;  // Compensation term
 
 for value in values {
@@ -8483,7 +8483,7 @@ for value in values {
 </ul>
 <h3 id="parallel-betweenness"><a class="header" href="#parallel-betweenness">Parallel Betweenness</a></h3>
 <p>Betweenness computation uses <strong>Rayon</strong> for parallelization:</p>
-<pre><code class="language-rust">let partial_scores: Vec&lt;Vec&lt;f64&gt;&gt; = (0..n_nodes)
+<pre><code class="language-rust ignore">let partial_scores: Vec&lt;Vec&lt;f64&gt;&gt; = (0..n_nodes)
     .into_par_iter()  // Parallel iterator
     .map(|source| brandes_bfs_from_source(source))
     .collect();</code></pre>
@@ -8615,7 +8615,7 @@ for value in values {
 <p>Expected output: Statistical analysis with quantiles, five-number summary, histogram comparisons, and summary statistics.</p>
 <h2 id="dataset-1"><a class="header" href="#dataset-1">Dataset</a></h2>
 <h3 id="test-scores-30-students"><a class="header" href="#test-scores-30-students">Test Scores (30 students)</a></h3>
-<pre><code class="language-rust">let test_scores = vec![
+<pre><code class="language-rust ignore">let test_scores = vec![
     45.0, // outlier (struggling student)
     52.0, // outlier
     62.0, 65.0, 68.0, 70.0, 72.0, 73.0, 75.0, 76.0, // lower cluster
@@ -9020,7 +9020,7 @@ Q(0.5) = data[14] + 0.5 * (data[15] - data[14])
 <p>Expected output: Step-by-step PCA analysis including standardization, dimensionality reduction, explained variance analysis, transformed data samples, reconstruction quality, and principal component loadings.</p>
 <h2 id="dataset-2"><a class="header" href="#dataset-2">Dataset</a></h2>
 <h3 id="iris-flower-measurements-30-samples"><a class="header" href="#iris-flower-measurements-30-samples">Iris Flower Measurements (30 samples)</a></h3>
-<pre><code class="language-rust">// Features: [sepal_length, sepal_width, petal_length, petal_width]
+<pre><code class="language-rust ignore">// Features: [sepal_length, sepal_width, petal_length, petal_width]
 // 10 samples each from: Setosa, Versicolor, Virginica
 
 let data = Matrix::from_vec(30, 4, vec![

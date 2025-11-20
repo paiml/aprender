@@ -206,7 +206,7 @@
 <p>Logistic Regression is a fundamental classification algorithm that uses the sigmoid function to model the probability of binary outcomes. This case study demonstrates the RED-GREEN-REFACTOR cycle for implementing a production-quality classifier.</p>
 <h2 id="red-phase-writing-failing-tests"><a class="header" href="#red-phase-writing-failing-tests">RED Phase: Writing Failing Tests</a></h2>
 <p>Following EXTREME TDD principles, we begin by writing comprehensive tests before implementation:</p>
-<pre><code class="language-rust">#[test]
+<pre><code class="language-rust ignore">#[test]
 fn test_logistic_regression_fit_simple() {
     let x = Matrix::from_vec(4, 2, vec![...]).unwrap();
     let y = vec![0, 0, 1, 1];
@@ -274,7 +274,7 @@ Test predictions:
 </ul>
 <h3 id="red-phase-safetensors-tests"><a class="header" href="#red-phase-safetensors-tests">RED Phase: SafeTensors Tests</a></h3>
 <p>Following EXTREME TDD, we wrote 5 comprehensive tests before implementation:</p>
-<pre><code class="language-rust">#[test]
+<pre><code class="language-rust ignore">#[test]
 fn test_save_safetensors_unfitted_model() {
     // Test 1: Cannot save unfitted model
     let model = LogisticRegression::new();
@@ -320,7 +320,7 @@ fn test_safetensors_preserves_probabilities() {
 </ol>
 <h3 id="green-phase-implementation"><a class="header" href="#green-phase-implementation">GREEN Phase: Implementation</a></h3>
 <p>The implementation serializes two tensors: <strong>coefficients</strong> and <strong>intercept</strong>.</p>
-<pre><code class="language-rust">pub fn save_safetensors&lt;P: AsRef&lt;Path&gt;&gt;(&amp;self, path: P) -&gt; Result&lt;(), String&gt; {
+<pre><code class="language-rust ignore">pub fn save_safetensors&lt;P: AsRef&lt;Path&gt;&gt;(&amp;self, path: P) -&gt; Result&lt;(), String&gt; {
     use crate::serialization::safetensors;
     use std::collections::BTreeMap;
 
@@ -363,7 +363,7 @@ fn test_safetensors_preserves_probabilities() {
 └─────────────────────────────────────────────────┘
 </code></pre>
 <h3 id="loading-models"><a class="header" href="#loading-models">Loading Models</a></h3>
-<pre><code class="language-rust">pub fn load_safetensors&lt;P: AsRef&lt;Path&gt;&gt;(path: P) -&gt; Result&lt;Self, String&gt; {
+<pre><code class="language-rust ignore">pub fn load_safetensors&lt;P: AsRef&lt;Path&gt;&gt;(path: P) -&gt; Result&lt;Self, String&gt; {
     use crate::serialization::safetensors;
 
     // Load SafeTensors file
@@ -386,7 +386,7 @@ fn test_safetensors_preserves_probabilities() {
 }</code></pre>
 <h3 id="production-deployment-example"><a class="header" href="#production-deployment-example">Production Deployment Example</a></h3>
 <p>Train in <strong>aprender</strong>, deploy to <strong>realizar</strong>:</p>
-<pre><code class="language-rust">// 1. Train LogisticRegression in aprender
+<pre><code class="language-rust ignore">// 1. Train LogisticRegression in aprender
 let mut model = LogisticRegression::new()
     .with_learning_rate(0.1)
     .with_max_iter(1000);
@@ -407,7 +407,7 @@ model.save_safetensors(&quot;fraud_detection.safetensors&quot;).unwrap();
 <h3 id="key-design-decisions"><a class="header" href="#key-design-decisions">Key Design Decisions</a></h3>
 <p><strong>1. Deterministic Serialization (BTreeMap)</strong></p>
 <p>We use <code>BTreeMap</code> instead of <code>HashMap</code> to ensure sorted keys:</p>
-<pre><code class="language-rust">// ✅ CORRECT: Deterministic (sorted keys)
+<pre><code class="language-rust ignore">// ✅ CORRECT: Deterministic (sorted keys)
 let mut tensors = BTreeMap::new();
 tensors.insert(&quot;coefficients&quot;, ...);
 tensors.insert(&quot;intercept&quot;, ...);
@@ -426,7 +426,7 @@ tensors.insert(&quot;coefficients&quot;, ...);
 </ul>
 <p><strong>2. Probability Preservation</strong></p>
 <p>Binary classification requires <strong>exact</strong> probability preservation:</p>
-<pre><code class="language-rust">// Before save
+<pre><code class="language-rust ignore">// Before save
 let prob = model.predict_proba(&amp;x)[0];  // 0.847362
 
 // After load
@@ -442,7 +442,7 @@ assert_eq!(prob, prob_loaded);  // ✅ Passes (IEEE 754 F32 precision)</code></p
 </ul>
 <p><strong>3. Hyperparameters Not Serialized</strong></p>
 <p>Training hyperparameters (<code>learning_rate</code>, <code>max_iter</code>, <code>tol</code>) are <strong>not</strong> saved:</p>
-<pre><code class="language-rust">// Hyperparameters only needed during training
+<pre><code class="language-rust ignore">// Hyperparameters only needed during training
 let mut model = LogisticRegression::new()
     .with_learning_rate(0.1)   // Not saved
     .with_max_iter(1000);       // Not saved
@@ -473,7 +473,7 @@ with safe_open(&quot;model.safetensors&quot;, framework=&quot;pt&quot;) as f:
 print(tensors[&quot;coefficients&quot;])  # torch.Tensor([...])
 </code></pre>
 <p><strong>realizar (Rust):</strong></p>
-<pre><code class="language-rust">use realizar::SafetensorsModel;
+<pre><code class="language-rust ignore">use realizar::SafetensorsModel;
 
 let model = SafetensorsModel::from_file(&quot;model.safetensors&quot;)?;
 let coefficients = model.get_tensor(&quot;coefficients&quot;)?;
