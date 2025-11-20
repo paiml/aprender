@@ -214,7 +214,7 @@ where P(xᵢ|y=c) ~ N(μᵢ,c, σ²ᵢ,c) (Gaussian PDF)
 </code></pre>
 <p>Return class with highest posterior probability.</p>
 <h2 id="implementation-in-aprender"><a class="header" href="#implementation-in-aprender">Implementation in Aprender</a></h2>
-<pre><code class="language-rust">use aprender::classification::GaussianNB;
+<pre><code class="language-rust ignore">use aprender::classification::GaussianNB;
 use aprender::primitives::Matrix;
 
 // Create and train
@@ -228,7 +228,7 @@ let predictions = nb.predict(&amp;x_test)?;
 let probabilities = nb.predict_proba(&amp;x_test)?;</code></pre>
 <h3 id="variance-smoothing"><a class="header" href="#variance-smoothing">Variance Smoothing</a></h3>
 <p>Adds small constant to variances to prevent numerical instability:</p>
-<pre><code class="language-rust">let nb = GaussianNB::new().with_var_smoothing(1e-9);</code></pre>
+<pre><code class="language-rust ignore">let nb = GaussianNB::new().with_var_smoothing(1e-9);</code></pre>
 <h2 id="complexity"><a class="header" href="#complexity">Complexity</a></h2>
 <div class="table-wrapper"><table><thead><tr><th>Operation</th><th>Time</th><th>Space</th></tr></thead><tbody>
 <tr><td>Training</td><td>O(n·p)</td><td>O(c·p)</td></tr>
@@ -262,7 +262,7 @@ let probabilities = nb.predict_proba(&amp;x_test)?;</code></pre>
 </ul>
 <p>See <code>examples/naive_bayes_iris.rs</code> for complete example.</p>
 <h2 id="api-reference"><a class="header" href="#api-reference">API Reference</a></h2>
-<pre><code class="language-rust">// Constructor
+<pre><code class="language-rust ignore">// Constructor
 pub fn new() -&gt; Self
 
 // Builder
