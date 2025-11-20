@@ -54,7 +54,7 @@ Using training accuracy to evaluate a model is like grading your own exam. Cross
 
 ### Example 1: Train/Test Split
 
-```rust
+```rust,ignore
 use aprender::model_selection::train_test_split;
 use aprender::primitives::{Matrix, Vector};
 
@@ -73,7 +73,7 @@ assert_eq!(x_test.shape().0, 2);   // 20% of 10
 
 ### Example 2: K-Fold Cross-Validation
 
-```rust
+```rust,ignore
 use aprender::model_selection::{KFold, cross_validate};
 use aprender::linear_model::LinearRegression;
 

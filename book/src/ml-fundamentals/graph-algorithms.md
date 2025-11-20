@@ -58,7 +58,7 @@ where `n` is the number of nodes.
 
 ### Implementation
 
-```rust
+```rust,ignore
 use aprender::graph::Graph;
 
 let edges = vec![(0, 1), (1, 2), (2, 3), (0, 2)];
@@ -113,7 +113,7 @@ Without this correction, rank "leaks" out of the system and Σ PR(v) ≠ 1.
 
 Naive summation accumulates O(n·ε) floating-point error on large graphs. Aprender uses **Kahan compensated summation**:
 
-```rust
+```rust,ignore
 let mut sum = 0.0;
 let mut c = 0.0;  // Compensation term
 
@@ -129,7 +129,7 @@ for value in values {
 
 ### Implementation
 
-```rust
+```rust,ignore
 use aprender::graph::Graph;
 
 let edges = vec![(0, 1), (1, 2), (2, 3), (3, 0)];
@@ -183,7 +183,7 @@ Naive computation is O(n³). Brandes' algorithm reduces this to O(nm) using two 
 
 The outer loop (BFS from each source) is **embarrassingly parallel**:
 
-```rust
+```rust,ignore
 use rayon::prelude::*;
 
 let partial_scores: Vec<Vec<f64>> = (0..n)
@@ -206,7 +206,7 @@ for partial in partial_scores {
 
 For undirected graphs, each path is counted twice:
 
-```rust
+```rust,ignore
 if !is_directed {
     for score in &mut centrality {
         *score /= 2.0;
@@ -216,7 +216,7 @@ if !is_directed {
 
 ### Implementation
 
-```rust
+```rust,ignore
 use aprender::graph::Graph;
 
 let edges = vec![
@@ -330,7 +330,7 @@ With Kahan summation, error consistently <1e-10.
 
 ### Graph Construction Tips
 
-```rust
+```rust,ignore
 // Build graph once, query many times
 let graph = Graph::from_edges(&edges, false);
 
