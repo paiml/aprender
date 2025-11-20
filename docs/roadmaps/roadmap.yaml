@@ -73,11 +73,11 @@ roadmap:
   github_issue: 13
   item_type: task
   title: Implement PCA (Principal Component Analysis) for Dimensionality Reduction
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2025-11-19T13:44:12.333717587+00:00
-  updated: 2025-11-19T13:44:12.333717587+00:00
+  updated: 2025-11-20T21:05:00.000000000+00:00
   spec: null
   acceptance_criteria: []
   phases: []
@@ -89,11 +89,11 @@ roadmap:
   github_issue: 23
   item_type: task
   title: '[TOP 10] Implement K-Nearest Neighbors (kNN) Classifier'
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2025-11-19T14:08:23.937219293+00:00
-  updated: 2025-11-19T14:08:23.937219293+00:00
+  updated: 2025-11-20T21:05:00.000000000+00:00
   spec: null
   acceptance_criteria:
   - KNN struct with fit/predict
@@ -111,11 +111,11 @@ roadmap:
   github_issue: 26
   item_type: task
   title: '[TOP 10] Implement Gradient Boosting Machine (GBM)'
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2025-11-19T14:56:44.525541927+00:00
-  updated: 2025-11-19T14:56:44.525541927+00:00
+  updated: 2025-11-20T21:05:00.000000000+00:00
   spec: null
   acceptance_criteria:
   - GradientBoostingClassifier struct
@@ -170,6 +170,36 @@ roadmap:
   assigned_to: null
   created: 2025-11-20T20:46:40.295933316+00:00
   updated: 2025-11-20T21:00:09.527059615+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+- id: Commit integration specification and proptest configuration
+  github_issue: null
+  item_type: task
+  title: 'New task: Commit integration specification and proptest configuration'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-20T21:03:37.876707487+00:00
+  updated: 2025-11-20T21:04:09.930853994+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+- id: Update roadmap status for completed TOP 10 algorithms (KNN, GBM, PCA)
+  github_issue: null
+  item_type: task
+  title: 'New task: Update roadmap status for completed TOP 10 algorithms (KNN, GBM, PCA)'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-20T21:04:35.044773055+00:00
+  updated: 2025-11-20T21:05:13.323191271+00:00
   spec: null
   acceptance_criteria: []
   phases: []
