@@ -37,7 +37,7 @@ K-Means finds natural groupings in unlabeled data: customer segments, image comp
 
 **Goal**: Minimize within-cluster variance (inertia)
 
-```
+```text
 minimize: Σ(k=1 to K) Σ(x ∈ C_k) ||x - μ_k||²
 
 where:
@@ -52,7 +52,7 @@ K = number of clusters
 
 **Classic K-Means** (1957):
 
-```
+```text
 1. Initialize: Choose K initial centroids μ₁, μ₂, ..., μ_K
 
 2. Repeat until convergence:
@@ -78,7 +78,7 @@ K = number of clusters
 
 **k-means++ Solution** (Arthur & Vassilvitskii 2007):
 
-```
+```text
 1. Choose first centroid uniformly at random from data points
 
 2. For each remaining centroid:
@@ -100,7 +100,7 @@ K = number of clusters
 
 ### Example 1: Basic K-Means
 
-```rust
+```rust,ignore
 use aprender::cluster::KMeans;
 use aprender::primitives::Matrix;
 use aprender::traits::UnsupervisedEstimator;
@@ -139,7 +139,7 @@ println!("Inertia: {:.3}", kmeans.inertia());
 
 ### Example 2: Finding Optimal K (Elbow Method)
 
-```rust
+```rust,ignore
 // Try different K values
 for k in 1..=10 {
     let mut kmeans = KMeans::new(k);
@@ -160,7 +160,7 @@ for k in 1..=10 {
 
 ### Example 3: Image Compression
 
-```rust
+```rust,ignore
 // Image as pixels: (n_pixels, 3) RGB values
 // Goal: Reduce 16M colors to 16 colors
 
@@ -186,7 +186,7 @@ let palette = kmeans.centroids();  // 16 RGB colors
 
 **Idea**: Plot inertia vs K, look for "elbow" where adding more clusters has diminishing returns
 
-```
+```text
 Inertia
   |
   |  \
@@ -209,7 +209,7 @@ Elbow at K=3 suggests 3 clusters
 
 **Measure**: How well each sample fits its cluster vs neighboring clusters
 
-```
+```text
 For each sample i:
     a_i = average distance to other samples in same cluster
     b_i = average distance to nearest other cluster
@@ -314,7 +314,7 @@ Often, K is known from problem:
 
 **Solution**: Standardize features before clustering
 
-```rust
+```rust,ignore
 use aprender::preprocessing::StandardScaler;
 
 let mut scaler = StandardScaler::new();
@@ -341,7 +341,7 @@ kmeans.fit(&data_scaled).unwrap();
 
 **Best practice**: Run K-Means multiple times with different random_state, pick best (lowest inertia)
 
-```rust
+```rust,ignore
 let mut best_inertia = f32::INFINITY;
 let mut best_model = None;
 
@@ -389,7 +389,7 @@ K-Means tests verify algorithm properties:
 **Problem**: Group customers by behavior (purchase frequency, amount, recency)
 
 **K-Means approach**:
-```
+```text
 Features: [recency, frequency, monetary_value]
 K = 3 (low, medium, high value customers)
 
@@ -406,7 +406,7 @@ Result:
 **Problem**: Find unusual network traffic patterns
 
 **K-Means approach**:
-```
+```text
 K = 1 (normal behavior cluster)
 Threshold = 95th percentile of distances to centroid
 
@@ -420,7 +420,7 @@ Anomaly = distance_to_centroid > threshold
 **Problem**: Reduce 24-bit color (16M colors) to 8-bit (256 colors)
 
 **K-Means approach**:
-```
+```text
 K = 256 colors
 Input: n_pixels × 3 RGB matrix
 Output: 256-color palette + n_pixels labels
@@ -498,7 +498,7 @@ K-Means implementation extensively tested (15+ tests) in `src/cluster/mod.rs`. T
 - **Typical iterations**: 10-100 (depends on data, K)
 
 **Key Equations**:
-```
+```text
 Inertia = Σ(k=1 to K) Σ(x ∈ C_k) ||x - μ_k||²
 Assignment: cluster(x) = argmin_k ||x - μ_k||²
 Update: μ_k = (1/|C_k|) Σ(x ∈ C_k) x
