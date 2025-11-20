@@ -203,7 +203,7 @@
 <pre><code class="language-text">Q(q) = data[h_floor] + (h - h_floor) * (data[h_ceil] - data[h_floor])
 </code></pre>
 <h3 id="implementation"><a class="header" href="#implementation">Implementation</a></h3>
-<pre><code class="language-rust">use aprender::stats::DescriptiveStats;
+<pre><code class="language-rust ignore">use aprender::stats::DescriptiveStats;
 use trueno::Vector;
 
 let data = Vector::from_slice(&amp;[1.0, 2.0, 3.0, 4.0, 5.0]);
@@ -224,7 +224,7 @@ println!(&quot;IQR: {:.2}&quot;, q75 - q25);</code></pre>
 <li><strong>10-100x faster for single quantiles on large datasets</strong></li>
 </ul>
 <p>Rust's <code>select_nth_unstable</code> uses Hoare's selection algorithm with median-of-medians pivot selection.</p>
-<pre><code class="language-rust">// Inside quantile() implementation
+<pre><code class="language-rust ignore">// Inside quantile() implementation
 let mut working_copy = self.data.as_slice().to_vec();
 working_copy.select_nth_unstable_by(h_floor, |a, b| {
     a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
@@ -237,7 +237,7 @@ let value = working_copy[h_floor];</code></pre>
 </tbody></table>
 </div>
 <p><strong>Best practice</strong>: For 3+ quantiles, sort once and reuse:</p>
-<pre><code class="language-rust">let percentiles = stats.percentiles(&amp;[25.0, 50.0, 75.0]).unwrap();</code></pre>
+<pre><code class="language-rust ignore">let percentiles = stats.percentiles(&amp;[25.0, 50.0, 75.0]).unwrap();</code></pre>
 <h2 id="five-number-summary"><a class="header" href="#five-number-summary">Five-Number Summary</a></h2>
 <h3 id="definition-1"><a class="header" href="#definition-1">Definition</a></h3>
 <p>The five-number summary provides a robust description of data distribution:</p>
@@ -263,7 +263,7 @@ Upper fence = Q3 + 1.5 * IQR
 Extreme upper = Q3 + 3 * IQR
 </code></pre>
 <h3 id="implementation-1"><a class="header" href="#implementation-1">Implementation</a></h3>
-<pre><code class="language-rust">use aprender::stats::DescriptiveStats;
+<pre><code class="language-rust ignore">use aprender::stats::DescriptiveStats;
 use trueno::Vector;
 
 let data = Vector::from_slice(&amp;[1.0, 2.0, 3.0, 4.0, 5.0, 100.0]); // 100 is outlier
@@ -362,7 +362,7 @@ n_bins = ceil((max - min) / bin_width)
 </tbody></table>
 </div>
 <h3 id="implementation-2"><a class="header" href="#implementation-2">Implementation</a></h3>
-<pre><code class="language-rust">use aprender::stats::{BinMethod, DescriptiveStats};
+<pre><code class="language-rust ignore">use aprender::stats::{BinMethod, DescriptiveStats};
 use trueno::Vector;
 
 let data = Vector::from_slice(&amp;[/* your data */]);
@@ -471,7 +471,7 @@ for (i, (&amp;lower, &amp;count)) in hist.bins.iter().zip(hist.counts.iter()).en
 <p><strong>Adaptive binning</strong>: Methods like Freedman-Diaconis adjust bin count to data characteristics, avoiding over/under-binning.</p>
 <h2 id="best-practices"><a class="header" href="#best-practices">Best Practices</a></h2>
 <h3 id="quantile-computation"><a class="header" href="#quantile-computation">Quantile Computation</a></h3>
-<pre><code class="language-rust">// ✅ Good: Single quantile with QuickSelect
+<pre><code class="language-rust ignore">// ✅ Good: Single quantile with QuickSelect
 let median = stats.quantile(0.5).unwrap();
 
 // ✅ Good: Multiple quantiles with single sort
@@ -482,7 +482,7 @@ let q1 = stats.quantile(0.25).unwrap();
 let q2 = stats.quantile(0.50).unwrap();  // Sorts again!
 let q3 = stats.quantile(0.75).unwrap();  // Sorts again!</code></pre>
 <h3 id="outlier-detection-1"><a class="header" href="#outlier-detection-1">Outlier Detection</a></h3>
-<pre><code class="language-rust">// ✅ Conservative: 1.5 × IQR (flags ~0.7% of normal data)
+<pre><code class="language-rust ignore">// ✅ Conservative: 1.5 × IQR (flags ~0.7% of normal data)
 let lower = q1 - 1.5 * iqr;
 let upper = q3 + 1.5 * iqr;
 
@@ -490,7 +490,7 @@ let upper = q3 + 1.5 * iqr;
 let lower_extreme = q1 - 3.0 * iqr;
 let upper_extreme = q3 + 3.0 * iqr;</code></pre>
 <h3 id="histogram-method-selection"><a class="header" href="#histogram-method-selection">Histogram Method Selection</a></h3>
-<pre><code class="language-rust">// Outliers present or skewed data
+<pre><code class="language-rust ignore">// Outliers present or skewed data
 let hist = stats.histogram_method(BinMethod::FreedmanDiaconis).unwrap();
 
 // Normal distribution, quick exploration
