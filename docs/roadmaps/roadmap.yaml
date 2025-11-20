@@ -206,3 +206,18 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
+- id: Push completed work to origin/main (5 commits)
+  github_issue: null
+  item_type: task
+  title: 'New task: Push completed work to origin/main (5 commits)'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-20T21:17:27.397448525+00:00
+  updated: 2025-11-20T21:17:51.956065347+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
