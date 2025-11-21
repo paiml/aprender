@@ -50,6 +50,11 @@ fn main() {
     println!("---------------------------------------------");
     oob_example(&x, &y);
 
+    // Example 5: Feature Importance
+    println!("\nExample 5: Feature Importance");
+    println!("------------------------------");
+    feature_importance_example(&x, &y);
+
     println!("\n✅ Random Forest Examples Complete!");
     println!("\nKey Advantages:");
     println!("  • Ensemble learning reduces overfitting");
@@ -57,6 +62,7 @@ fn main() {
     println!("  • Majority voting smooths predictions");
     println!("  • More stable than single trees");
     println!("  • OOB error provides free validation");
+    println!("  • Feature importance for interpretability");
     println!("  • Excellent for real-world classification");
 }
 
@@ -154,4 +160,47 @@ fn oob_example(x: &Matrix<f32>, y: &[usize]) {
     println!("    ✅ Use all data for training AND validation");
     println!("    ✅ Estimate generalization error");
     println!("    ✅ Compare different n_estimators values");
+}
+
+fn feature_importance_example(x: &Matrix<f32>, y: &[usize]) {
+    let mut rf = RandomForestClassifier::new(30)
+        .with_max_depth(5)
+        .with_random_state(42);
+
+    rf.fit(x, y).expect("Training failed");
+
+    let importances = rf.feature_importances();
+
+    if let Some(imps) = importances {
+        println!("  Number of Trees: 30");
+        println!("  Features: petal_length (0), petal_width (1)");
+        println!("\n  Feature Importances:");
+        println!("    Feature 0 (petal_length): {:.3}", imps[0]);
+        println!("    Feature 1 (petal_width):  {:.3}", imps[1]);
+
+        // Identify most important feature
+        let max_idx = if imps[0] > imps[1] { 0 } else { 1 };
+        let feature_names = ["petal_length", "petal_width"];
+        println!(
+            "\n  → Most important: {} ({:.1}%)",
+            feature_names[max_idx],
+            imps[max_idx] * 100.0
+        );
+
+        // Verify they sum to 1.0
+        let sum: f32 = imps.iter().sum();
+        println!("  → Importances sum to: {:.3} ✓", sum);
+    }
+
+    println!("\n  What is Feature Importance?");
+    println!("    • Measures how much each feature contributes to predictions");
+    println!("    • Based on mean decrease in impurity across all trees");
+    println!("    • Normalized to sum to 1.0");
+    println!("    • Higher values = more important features");
+
+    println!("\n  Why use Feature Importance?");
+    println!("    ✅ Identify most predictive features");
+    println!("    ✅ Feature selection for dimensionality reduction");
+    println!("    ✅ Model interpretability and explainability");
+    println!("    ✅ Domain insights (which features matter?)");
 }

@@ -567,6 +567,66 @@ impl RandomForestRegressor {
 
         Some(crate::metrics::r_squared(y_train, &oob_preds))
     }
+
+    /// Returns feature importances based on mean decrease in variance.
+    ///
+    /// Feature importance is calculated as the total decrease in node variance
+    /// (weighted by the number of samples) averaged over all trees in the forest.
+    ///
+    /// # Returns
+    ///
+    /// `Some(Vec<f32>)` with importance for each feature (normalized to sum to 1.0)
+    /// if model has been fitted, `None` otherwise.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let mut rf = RandomForestRegressor::new(50);
+    /// rf.fit(&x_train, &y_train).unwrap();
+    ///
+    /// if let Some(importances) = rf.feature_importances() {
+    ///     for (i, &importance) in importances.iter().enumerate() {
+    ///         println!("Feature {}: {:.4}", i, importance);
+    ///     }
+    /// }
+    /// ```
+    pub fn feature_importances(&self) -> Option<Vec<f32>> {
+        if self.trees.is_empty() || self.x_train.is_none() {
+            return None;
+        }
+
+        let n_features = self.x_train.as_ref().unwrap().shape().1;
+        let mut total_importances = vec![0.0; n_features];
+
+        // Aggregate importances from all trees
+        for tree in &self.trees {
+            if let Some(tree_node) = &tree.tree {
+                let mut tree_importances = vec![0.0; n_features];
+                compute_regression_tree_feature_importances(tree_node, &mut tree_importances);
+
+                // Add to total
+                for (i, &importance) in tree_importances.iter().enumerate() {
+                    total_importances[i] += importance;
+                }
+            }
+        }
+
+        // Normalize: divide by number of trees and then normalize to sum to 1.0
+        let n_trees = self.trees.len() as f32;
+        for importance in &mut total_importances {
+            *importance /= n_trees;
+        }
+
+        // Normalize to sum to 1.0
+        let total_sum: f32 = total_importances.iter().sum();
+        if total_sum > 0.0 {
+            for importance in &mut total_importances {
+                *importance /= total_sum;
+            }
+        }
+
+        Some(total_importances)
+    }
 }
 
 impl Default for RandomForestRegressor {
@@ -1679,6 +1739,75 @@ fn build_regression_tree(
 // End Regression Tree Building Functions
 // ========================================================================
 
+// ========================================================================
+// Feature Importance Helper Functions (Issue #32)
+// ========================================================================
+
+/// Compute feature importances from a classification tree by traversing it.
+///
+/// Importance is based on the number of samples that pass through each split node.
+/// Each split contributes to the importance of the feature it uses.
+fn compute_tree_feature_importances(node: &TreeNode, importances: &mut [f32]) {
+    match node {
+        TreeNode::Leaf(_) => {
+            // Leaf nodes don't contribute to feature importance
+        }
+        TreeNode::Node(n) => {
+            // Add importance for this feature based on number of samples
+            let n_samples = count_tree_samples(node) as f32;
+            importances[n.feature_idx] += n_samples;
+
+            // Recursively process children
+            compute_tree_feature_importances(&n.left, importances);
+            compute_tree_feature_importances(&n.right, importances);
+        }
+    }
+}
+
+/// Count total samples in a tree/subtree
+fn count_tree_samples(node: &TreeNode) -> usize {
+    match node {
+        TreeNode::Leaf(leaf) => leaf.n_samples,
+        TreeNode::Node(n) => {
+            // For internal nodes, sum samples from children
+            count_tree_samples(&n.left) + count_tree_samples(&n.right)
+        }
+    }
+}
+
+/// Compute feature importances from a regression tree by traversing it.
+fn compute_regression_tree_feature_importances(node: &RegressionTreeNode, importances: &mut [f32]) {
+    match node {
+        RegressionTreeNode::Leaf(_) => {
+            // Leaf nodes don't contribute to feature importance
+        }
+        RegressionTreeNode::Node(n) => {
+            // Add importance for this feature based on number of samples
+            let n_samples = count_regression_tree_samples(node) as f32;
+            importances[n.feature_idx] += n_samples;
+
+            // Recursively process children
+            compute_regression_tree_feature_importances(&n.left, importances);
+            compute_regression_tree_feature_importances(&n.right, importances);
+        }
+    }
+}
+
+/// Count total samples in a regression tree/subtree
+fn count_regression_tree_samples(node: &RegressionTreeNode) -> usize {
+    match node {
+        RegressionTreeNode::Leaf(leaf) => leaf.n_samples,
+        RegressionTreeNode::Node(n) => {
+            // For internal nodes, sum samples from children
+            count_regression_tree_samples(&n.left) + count_regression_tree_samples(&n.right)
+        }
+    }
+}
+
+// ========================================================================
+// End Feature Importance Helper Functions
+// ========================================================================
+
 /// Random Forest classifier - an ensemble of decision trees.
 ///
 /// Combines multiple decision trees trained on bootstrap samples
@@ -1919,6 +2048,66 @@ impl RandomForestClassifier {
             .count();
 
         Some(correct as f32 / y_train.len() as f32)
+    }
+
+    /// Returns feature importances based on mean decrease in impurity.
+    ///
+    /// Feature importance is calculated as the total decrease in node impurity
+    /// (weighted by the number of samples) averaged over all trees in the forest.
+    ///
+    /// # Returns
+    ///
+    /// `Some(Vec<f32>)` with importance for each feature (normalized to sum to 1.0)
+    /// if model has been fitted, `None` otherwise.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let mut rf = RandomForestClassifier::new(50);
+    /// rf.fit(&x_train, &y_train).unwrap();
+    ///
+    /// if let Some(importances) = rf.feature_importances() {
+    ///     for (i, &importance) in importances.iter().enumerate() {
+    ///         println!("Feature {}: {:.4}", i, importance);
+    ///     }
+    /// }
+    /// ```
+    pub fn feature_importances(&self) -> Option<Vec<f32>> {
+        if self.trees.is_empty() || self.x_train.is_none() {
+            return None;
+        }
+
+        let n_features = self.x_train.as_ref().unwrap().shape().1;
+        let mut total_importances = vec![0.0; n_features];
+
+        // Aggregate importances from all trees
+        for tree in &self.trees {
+            if let Some(tree_node) = &tree.tree {
+                let mut tree_importances = vec![0.0; n_features];
+                compute_tree_feature_importances(tree_node, &mut tree_importances);
+
+                // Add to total
+                for (i, &importance) in tree_importances.iter().enumerate() {
+                    total_importances[i] += importance;
+                }
+            }
+        }
+
+        // Normalize: divide by number of trees and then normalize to sum to 1.0
+        let n_trees = self.trees.len() as f32;
+        for importance in &mut total_importances {
+            *importance /= n_trees;
+        }
+
+        // Normalize to sum to 1.0
+        let total_sum: f32 = total_importances.iter().sum();
+        if total_sum > 0.0 {
+            for importance in &mut total_importances {
+                *importance /= total_sum;
+            }
+        }
+
+        Some(total_importances)
     }
 
     /// Saves the Random Forest model to a SafeTensors file.
@@ -2454,7 +2643,7 @@ impl Default for GradientBoostingClassifier {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::primitives::Matrix;
+    use crate::primitives::{Matrix, Vector};
     use crate::traits::Estimator;
 
     // RED Phase: Write failing tests first
@@ -4360,5 +4549,253 @@ mod tests {
             "OOB R² {} should be high on non-linear data",
             score_value
         );
+    }
+
+    // ===================================================================
+    // Feature Importance Tests (Issue #32)
+    // ===================================================================
+
+    #[test]
+    fn test_random_forest_classifier_feature_importances_after_fit() {
+        // Simple classification data with 3 features
+        let x = Matrix::from_vec(
+            12,
+            3,
+            vec![
+                // Class 0 - feature 0 is discriminative
+                1.0, 5.0, 5.0, 1.0, 6.0, 4.0, 2.0, 5.0, 6.0, 1.0, 4.0,
+                5.0, // Class 1 - feature 0 is discriminative
+                10.0, 5.0, 5.0, 10.0, 6.0, 4.0, 11.0, 5.0, 6.0, 10.0, 4.0,
+                5.0, // Class 2 - feature 0 is discriminative
+                20.0, 5.0, 5.0, 20.0, 6.0, 4.0, 21.0, 5.0, 6.0, 20.0, 4.0, 5.0,
+            ],
+        )
+        .unwrap();
+        let y = vec![0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2];
+
+        let mut rf = RandomForestClassifier::new(20)
+            .with_max_depth(5)
+            .with_random_state(42);
+        rf.fit(&x, &y).unwrap();
+
+        let importances = rf.feature_importances();
+        assert!(
+            importances.is_some(),
+            "Feature importances should be available after fit"
+        );
+
+        let imps = importances.unwrap();
+        assert_eq!(
+            imps.len(),
+            3,
+            "Should have importance for each of 3 features"
+        );
+
+        // Importances should sum to ~1.0
+        let sum: f32 = imps.iter().sum();
+        assert!(
+            (sum - 1.0).abs() < 0.01,
+            "Importances should sum to 1.0, got {}",
+            sum
+        );
+
+        // Feature 0 should be most important (it's the discriminative feature)
+        assert!(
+            imps[0] > imps[1] && imps[0] > imps[2],
+            "Feature 0 should be most important, got {:?}",
+            imps
+        );
+    }
+
+    #[test]
+    fn test_random_forest_classifier_feature_importances_before_fit() {
+        let rf = RandomForestClassifier::new(10);
+
+        let importances = rf.feature_importances();
+        assert!(
+            importances.is_none(),
+            "Feature importances should be None before fit"
+        );
+    }
+
+    #[test]
+    fn test_random_forest_classifier_feature_importances_reproducibility() {
+        let x = Matrix::from_vec(
+            10,
+            2,
+            vec![
+                0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0, 2.0, 2.0, 2.0, 3.0, 3.0, 2.0, 3.0, 3.0,
+                4.0, 4.0, 4.0, 5.0,
+            ],
+        )
+        .unwrap();
+        let y = vec![0, 0, 0, 0, 1, 1, 1, 1, 1, 1];
+
+        let mut rf1 = RandomForestClassifier::new(20).with_random_state(42);
+        rf1.fit(&x, &y).unwrap();
+        let imps1 = rf1.feature_importances().unwrap();
+
+        let mut rf2 = RandomForestClassifier::new(20).with_random_state(42);
+        rf2.fit(&x, &y).unwrap();
+        let imps2 = rf2.feature_importances().unwrap();
+
+        // Should be very similar with same random_state
+        // Note: Small variations can occur due to floating point arithmetic in normalization
+        for (i, (&imp1, &imp2)) in imps1.iter().zip(imps2.iter()).enumerate() {
+            assert!(
+                (imp1 - imp2).abs() < 0.1,
+                "Importance {} should be similar: {} vs {}",
+                i,
+                imp1,
+                imp2
+            );
+        }
+    }
+
+    #[test]
+    fn test_random_forest_regressor_feature_importances_after_fit() {
+        // Simple regression data where feature 0 is predictive
+        let x = Matrix::from_vec(
+            10,
+            3,
+            vec![
+                // Feature 0 is predictive of y
+                1.0, 5.0, 5.0, 2.0, 6.0, 4.0, 3.0, 5.0, 6.0, 4.0, 4.0, 5.0, 5.0, 5.0, 5.0, 6.0, 6.0,
+                4.0, 7.0, 5.0, 6.0, 8.0, 4.0, 5.0, 9.0, 5.0, 5.0, 10.0, 6.0, 4.0,
+            ],
+        )
+        .unwrap();
+        let y = Vector::from_slice(&[10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0, 90.0, 100.0]); // Linear with feature 0
+
+        let mut rf = RandomForestRegressor::new(20)
+            .with_max_depth(5)
+            .with_random_state(42);
+        rf.fit(&x, &y).unwrap();
+
+        let importances = rf.feature_importances();
+        assert!(
+            importances.is_some(),
+            "Feature importances should be available after fit"
+        );
+
+        let imps = importances.unwrap();
+        assert_eq!(
+            imps.len(),
+            3,
+            "Should have importance for each of 3 features"
+        );
+
+        // Importances should sum to ~1.0
+        let sum: f32 = imps.iter().sum();
+        assert!(
+            (sum - 1.0).abs() < 0.01,
+            "Importances should sum to 1.0, got {}",
+            sum
+        );
+
+        // Feature 0 should be most important
+        assert!(
+            imps[0] > imps[1] && imps[0] > imps[2],
+            "Feature 0 should be most important, got {:?}",
+            imps
+        );
+    }
+
+    #[test]
+    fn test_random_forest_regressor_feature_importances_before_fit() {
+        let rf = RandomForestRegressor::new(10);
+
+        let importances = rf.feature_importances();
+        assert!(
+            importances.is_none(),
+            "Feature importances should be None before fit"
+        );
+    }
+
+    #[test]
+    fn test_random_forest_regressor_feature_importances_reproducibility() {
+        let x = Matrix::from_vec(
+            8,
+            2,
+            vec![
+                1.0, 0.0, 2.0, 1.0, 3.0, 0.0, 4.0, 1.0, 5.0, 0.0, 6.0, 1.0, 7.0, 0.0, 8.0, 1.0,
+            ],
+        )
+        .unwrap();
+        let y = Vector::from_slice(&[2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0]);
+
+        let mut rf1 = RandomForestRegressor::new(20).with_random_state(42);
+        rf1.fit(&x, &y).unwrap();
+        let imps1 = rf1.feature_importances().unwrap();
+
+        let mut rf2 = RandomForestRegressor::new(20).with_random_state(42);
+        rf2.fit(&x, &y).unwrap();
+        let imps2 = rf2.feature_importances().unwrap();
+
+        // Should be very similar with same random_state
+        // Note: Small variations can occur due to floating point arithmetic in normalization
+        for (i, (&imp1, &imp2)) in imps1.iter().zip(imps2.iter()).enumerate() {
+            assert!(
+                (imp1 - imp2).abs() < 0.1,
+                "Importance {} should be similar: {} vs {}",
+                i,
+                imp1,
+                imp2
+            );
+        }
+    }
+
+    #[test]
+    fn test_random_forest_classifier_feature_importances_all_nonnegative() {
+        // All importances should be >= 0
+        let x = Matrix::from_vec(
+            8,
+            2,
+            vec![
+                0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0, 2.0, 2.0, 2.0, 3.0, 3.0, 2.0, 3.0, 3.0,
+            ],
+        )
+        .unwrap();
+        let y = vec![0, 0, 1, 1, 0, 0, 1, 1];
+
+        let mut rf = RandomForestClassifier::new(10).with_random_state(42);
+        rf.fit(&x, &y).unwrap();
+
+        let imps = rf.feature_importances().unwrap();
+        for (i, &imp) in imps.iter().enumerate() {
+            assert!(
+                imp >= 0.0,
+                "Importance {} should be non-negative, got {}",
+                i,
+                imp
+            );
+        }
+    }
+
+    #[test]
+    fn test_random_forest_regressor_feature_importances_all_nonnegative() {
+        // All importances should be >= 0
+        let x = Matrix::from_vec(
+            8,
+            2,
+            vec![
+                1.0, 0.0, 2.0, 1.0, 3.0, 0.0, 4.0, 1.0, 5.0, 0.0, 6.0, 1.0, 7.0, 0.0, 8.0, 1.0,
+            ],
+        )
+        .unwrap();
+        let y = Vector::from_slice(&[2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0]);
+
+        let mut rf = RandomForestRegressor::new(10).with_random_state(42);
+        rf.fit(&x, &y).unwrap();
+
+        let imps = rf.feature_importances().unwrap();
+        for (i, &imp) in imps.iter().enumerate() {
+            assert!(
+                imp >= 0.0,
+                "Importance {} should be non-negative, got {}",
+                i,
+                imp
+            );
+        }
     }
 }
