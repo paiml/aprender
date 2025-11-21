@@ -496,6 +496,207 @@ impl UnsupervisedEstimator for KMeans {
     }
 }
 
+/// DBSCAN (Density-Based Spatial Clustering of Applications with Noise).
+///
+/// Density-based clustering algorithm that can find arbitrarily-shaped clusters
+/// and identify outliers as noise points.
+///
+/// # Algorithm
+///
+/// 1. For each unvisited point:
+///    - Find all neighbors within eps distance
+///    - If neighbors < min_samples: mark as noise
+///    - Else: create new cluster and expand recursively
+/// 2. Noise points are labeled as -1
+/// 3. Clusters are labeled 0, 1, 2, ...
+///
+/// # Examples
+///
+/// ```
+/// use aprender::prelude::*;
+///
+/// let data = Matrix::from_vec(7, 2, vec![
+///     1.0, 1.0,  // Cluster 0
+///     1.2, 1.1,  // Cluster 0
+///     1.1, 1.2,  // Cluster 0
+///     5.0, 5.0,  // Cluster 1
+///     5.1, 5.2,  // Cluster 1
+///     5.2, 5.1,  // Cluster 1
+///     10.0, 10.0, // Noise
+/// ]).unwrap();
+///
+/// let mut dbscan = DBSCAN::new(0.5, 2);
+/// dbscan.fit(&data).unwrap();
+///
+/// let labels = dbscan.labels().unwrap();
+/// assert_eq!(labels[6], -1); // Last point is noise
+/// ```
+///
+/// # Performance
+///
+/// - Time complexity: O(n²) for distance computations
+/// - Space complexity: O(n)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DBSCAN {
+    /// Maximum distance between two samples to be neighbors.
+    eps: f32,
+    /// Minimum number of samples in a neighborhood to form a core point.
+    min_samples: usize,
+    /// Cluster labels after fitting (-1 for noise).
+    labels: Option<Vec<i32>>,
+}
+
+impl DBSCAN {
+    /// Creates a new DBSCAN with specified parameters.
+    ///
+    /// # Arguments
+    ///
+    /// * `eps` - Maximum distance between neighbors
+    /// * `min_samples` - Minimum points to form a dense region
+    #[must_use]
+    pub fn new(eps: f32, min_samples: usize) -> Self {
+        Self {
+            eps,
+            min_samples,
+            labels: None,
+        }
+    }
+
+    /// Returns the eps parameter.
+    #[must_use]
+    pub fn eps(&self) -> f32 {
+        self.eps
+    }
+
+    /// Returns the min_samples parameter.
+    #[must_use]
+    pub fn min_samples(&self) -> usize {
+        self.min_samples
+    }
+
+    /// Returns true if the model has been fitted.
+    #[must_use]
+    pub fn is_fitted(&self) -> bool {
+        self.labels.is_some()
+    }
+
+    /// Returns the cluster labels (-1 for noise).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the model has not been fitted.
+    #[must_use]
+    pub fn labels(&self) -> &Vec<i32> {
+        self.labels
+            .as_ref()
+            .expect("Model not fitted. Call fit() first.")
+    }
+
+    /// Finds all neighbors within eps distance of point i.
+    fn region_query(&self, x: &Matrix<f32>, i: usize) -> Vec<usize> {
+        let mut neighbors = Vec::new();
+        let n_samples = x.shape().0;
+
+        for j in 0..n_samples {
+            let dist = self.euclidean_distance(x, i, j);
+            if dist <= self.eps {
+                neighbors.push(j);
+            }
+        }
+
+        neighbors
+    }
+
+    /// Computes Euclidean distance between samples i and j.
+    fn euclidean_distance(&self, x: &Matrix<f32>, i: usize, j: usize) -> f32 {
+        let n_features = x.shape().1;
+        let mut sum = 0.0;
+
+        for k in 0..n_features {
+            let diff = x.get(i, k) - x.get(j, k);
+            sum += diff * diff;
+        }
+
+        sum.sqrt()
+    }
+
+    /// Expands a cluster from a core point.
+    fn expand_cluster(
+        &self,
+        x: &Matrix<f32>,
+        labels: &mut [i32],
+        point: usize,
+        neighbors: &mut Vec<usize>,
+        cluster_id: i32,
+    ) {
+        labels[point] = cluster_id;
+
+        let mut i = 0;
+        while i < neighbors.len() {
+            let neighbor = neighbors[i];
+
+            // If unlabeled or noise, assign to cluster
+            if labels[neighbor] == -2 {
+                labels[neighbor] = cluster_id;
+
+                // If core point, add its neighbors to expansion
+                let neighbor_neighbors = self.region_query(x, neighbor);
+                if neighbor_neighbors.len() >= self.min_samples {
+                    for &nn in &neighbor_neighbors {
+                        if !neighbors.contains(&nn) {
+                            neighbors.push(nn);
+                        }
+                    }
+                }
+            } else if labels[neighbor] == -1 {
+                // Border point: noise becomes part of cluster
+                labels[neighbor] = cluster_id;
+            }
+
+            i += 1;
+        }
+    }
+}
+
+impl UnsupervisedEstimator for DBSCAN {
+    type Labels = Vec<i32>;
+
+    fn fit(&mut self, x: &Matrix<f32>) -> Result<()> {
+        let n_samples = x.shape().0;
+        let mut labels = vec![-2; n_samples]; // -2 = unlabeled
+        let mut cluster_id = 0;
+
+        for i in 0..n_samples {
+            // Skip if already processed
+            if labels[i] != -2 {
+                continue;
+            }
+
+            // Find neighbors
+            let mut neighbors = self.region_query(x, i);
+
+            // Not a core point -> mark as noise (for now)
+            if neighbors.len() < self.min_samples {
+                labels[i] = -1;
+                continue;
+            }
+
+            // Core point -> expand cluster
+            self.expand_cluster(x, &mut labels, i, &mut neighbors, cluster_id);
+            cluster_id += 1;
+        }
+
+        self.labels = Some(labels);
+        Ok(())
+    }
+
+    fn predict(&self, _x: &Matrix<f32>) -> Self::Labels {
+        // For DBSCAN, predict returns the fitted labels
+        // (new points would require a different strategy)
+        self.labels().clone()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1500,5 +1701,224 @@ mod tests {
             kmeans.centroids_converged(&old, &new),
             "dist²=0.49 < tol²=1.0, must converge. If using <, test fails."
         );
+    }
+
+    // ============================================================================
+    // DBSCAN Tests
+    // ============================================================================
+
+    #[test]
+    fn test_dbscan_new() {
+        let dbscan = DBSCAN::new(0.5, 3);
+        assert_eq!(dbscan.eps(), 0.5);
+        assert_eq!(dbscan.min_samples(), 3);
+        assert!(!dbscan.is_fitted());
+    }
+
+    #[test]
+    fn test_dbscan_fit_basic() {
+        // Two well-separated clusters
+        let data = Matrix::from_vec(
+            6,
+            2,
+            vec![
+                1.0, 1.0, // Cluster 0
+                1.2, 1.1, // Cluster 0
+                1.1, 1.2, // Cluster 0
+                5.0, 5.0, // Cluster 1
+                5.1, 5.2, // Cluster 1
+                5.2, 5.1, // Cluster 1
+            ],
+        )
+        .unwrap();
+
+        let mut dbscan = DBSCAN::new(0.5, 2);
+        dbscan.fit(&data).unwrap();
+
+        assert!(dbscan.is_fitted());
+        let labels = dbscan.labels();
+        assert_eq!(labels.len(), 6);
+    }
+
+    #[test]
+    fn test_dbscan_predicts_clusters() {
+        let data = Matrix::from_vec(
+            6,
+            2,
+            vec![
+                1.0, 1.0, 1.2, 1.1, 1.1, 1.2, // Cluster 0
+                5.0, 5.0, 5.1, 5.2, 5.2, 5.1, // Cluster 1
+            ],
+        )
+        .unwrap();
+
+        let mut dbscan = DBSCAN::new(0.5, 2);
+        dbscan.fit(&data).unwrap();
+
+        let labels = dbscan.predict(&data);
+        assert_eq!(labels.len(), 6);
+
+        // First 3 samples should be in same cluster
+        assert_eq!(labels[0], labels[1]);
+        assert_eq!(labels[1], labels[2]);
+
+        // Last 3 samples should be in same cluster
+        assert_eq!(labels[3], labels[4]);
+        assert_eq!(labels[4], labels[5]);
+
+        // Two clusters should be different
+        assert_ne!(labels[0], labels[3]);
+    }
+
+    #[test]
+    fn test_dbscan_noise_detection() {
+        // Two clusters with one outlier
+        let data = Matrix::from_vec(
+            7,
+            2,
+            vec![
+                1.0, 1.0, // Cluster 0
+                1.2, 1.1, // Cluster 0
+                1.1, 1.2, // Cluster 0
+                5.0, 5.0, // Cluster 1
+                5.1, 5.2, // Cluster 1
+                5.2, 5.1, // Cluster 1
+                10.0, 10.0, // Noise (far from both clusters)
+            ],
+        )
+        .unwrap();
+
+        let mut dbscan = DBSCAN::new(0.5, 2);
+        dbscan.fit(&data).unwrap();
+
+        let labels = dbscan.labels();
+
+        // Last sample should be noise (-1)
+        assert_eq!(labels[6], -1);
+    }
+
+    #[test]
+    fn test_dbscan_single_cluster() {
+        // All points form one dense cluster
+        let data =
+            Matrix::from_vec(5, 2, vec![1.0, 1.0, 1.1, 1.0, 1.0, 1.1, 1.1, 1.1, 1.2, 1.0]).unwrap();
+
+        let mut dbscan = DBSCAN::new(0.3, 2);
+        dbscan.fit(&data).unwrap();
+
+        let labels = dbscan.labels();
+
+        // All samples should be in the same cluster (not noise)
+        let first_label = labels[0];
+        assert_ne!(first_label, -1);
+        for &label in labels.iter() {
+            assert_eq!(label, first_label);
+        }
+    }
+
+    #[test]
+    fn test_dbscan_all_noise() {
+        // All points far apart
+        let data =
+            Matrix::from_vec(4, 2, vec![0.0, 0.0, 10.0, 10.0, 20.0, 20.0, 30.0, 30.0]).unwrap();
+
+        let mut dbscan = DBSCAN::new(0.5, 2);
+        dbscan.fit(&data).unwrap();
+
+        let labels = dbscan.labels();
+
+        // All samples should be noise
+        for &label in labels.iter() {
+            assert_eq!(label, -1);
+        }
+    }
+
+    #[test]
+    fn test_dbscan_min_samples_effect() {
+        // Same data, different min_samples
+        let data = Matrix::from_vec(4, 2, vec![1.0, 1.0, 1.1, 1.0, 1.0, 1.1, 1.1, 1.1]).unwrap();
+
+        // With min_samples=2, should form cluster
+        let mut dbscan1 = DBSCAN::new(0.3, 2);
+        dbscan1.fit(&data).unwrap();
+        let labels1 = dbscan1.labels();
+        assert!(labels1.iter().any(|&l| l != -1));
+
+        // With min_samples=5, should be all noise
+        let mut dbscan2 = DBSCAN::new(0.3, 5);
+        dbscan2.fit(&data).unwrap();
+        let labels2 = dbscan2.labels();
+        assert!(labels2.iter().all(|&l| l == -1));
+    }
+
+    #[test]
+    fn test_dbscan_eps_effect() {
+        // Same data, different eps
+        let data = Matrix::from_vec(4, 2, vec![1.0, 1.0, 1.5, 1.5, 2.0, 2.0, 2.5, 2.5]).unwrap();
+
+        // With large eps, should form one cluster
+        let mut dbscan1 = DBSCAN::new(2.0, 2);
+        dbscan1.fit(&data).unwrap();
+        let labels1 = dbscan1.labels();
+        let unique_clusters: std::collections::HashSet<_> =
+            labels1.iter().filter(|&&l| l != -1).collect();
+        assert_eq!(unique_clusters.len(), 1);
+
+        // With small eps, more fragmentation
+        let mut dbscan2 = DBSCAN::new(0.3, 2);
+        dbscan2.fit(&data).unwrap();
+        let labels2 = dbscan2.labels();
+        // Should have noise or multiple small clusters
+        assert!(labels2.contains(&-1));
+    }
+
+    #[test]
+    fn test_dbscan_reproducible() {
+        let data = Matrix::from_vec(
+            6,
+            2,
+            vec![1.0, 1.0, 1.2, 1.1, 1.1, 1.2, 5.0, 5.0, 5.1, 5.2, 5.2, 5.1],
+        )
+        .unwrap();
+
+        let mut dbscan1 = DBSCAN::new(0.5, 2);
+        dbscan1.fit(&data).unwrap();
+        let labels1 = dbscan1.labels().clone();
+
+        let mut dbscan2 = DBSCAN::new(0.5, 2);
+        dbscan2.fit(&data).unwrap();
+        let labels2 = dbscan2.labels();
+
+        // Results should be identical
+        assert_eq!(labels1, *labels2);
+    }
+
+    #[test]
+    fn test_dbscan_fit_predict() {
+        let data = Matrix::from_vec(4, 2, vec![1.0, 1.0, 1.1, 1.0, 1.0, 1.1, 1.1, 1.1]).unwrap();
+
+        let mut dbscan = DBSCAN::new(0.3, 2);
+        dbscan.fit(&data).unwrap();
+
+        let labels_stored = dbscan.labels().clone();
+        let labels_predicted = dbscan.predict(&data);
+
+        // predict() should return same labels as stored from fit()
+        assert_eq!(labels_stored, labels_predicted);
+    }
+
+    #[test]
+    #[should_panic(expected = "Model not fitted")]
+    fn test_dbscan_predict_before_fit() {
+        let data = Matrix::from_vec(2, 2, vec![1.0, 1.0, 2.0, 2.0]).unwrap();
+        let dbscan = DBSCAN::new(0.5, 2);
+        let _ = dbscan.predict(&data); // Should panic
+    }
+
+    #[test]
+    #[should_panic(expected = "Model not fitted")]
+    fn test_dbscan_labels_before_fit() {
+        let dbscan = DBSCAN::new(0.5, 2);
+        let _ = dbscan.labels(); // Should panic
     }
 }
