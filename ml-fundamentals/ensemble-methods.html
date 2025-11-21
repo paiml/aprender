@@ -183,13 +183,13 @@
 <!-- DOC_STATUS_START -->
 <p><strong>Chapter Status</strong>: ✅ 100% Working (All examples verified)</p>
 <div class="table-wrapper"><table><thead><tr><th>Status</th><th>Count</th><th>Examples</th></tr></thead><tbody>
-<tr><td>✅ Working</td><td>7+</td><td>Random Forest verified</td></tr>
+<tr><td>✅ Working</td><td>23+</td><td>Random Forest classification + regression verified</td></tr>
 <tr><td>⏳ In Progress</td><td>0</td><td>-</td></tr>
 <tr><td>⬜ Not Implemented</td><td>0</td><td>-</td></tr>
 </tbody></table>
 </div>
-<p><em>Last tested: 2025-11-19</em>
-<em>Aprender version: 0.3.0</em>
+<p><em>Last tested: 2025-11-21</em>
+<em>Aprender version: 0.4.1</em>
 <em>Test file: src/tree/mod.rs tests</em></p>
 <!-- DOC_STATUS_END -->
 <hr />
@@ -333,6 +333,138 @@ forest2.fit(&amp;x, &amp;y).unwrap();
 // Predictions identical
 assert_eq!(forest1.predict(&amp;x), forest2.predict(&amp;x));</code></pre>
 <p><strong>Test Reference</strong>: <code>src/tree/mod.rs::tests::test_random_forest_reproducible</code></p>
+<hr />
+<h2 id="random-forest-regression"><a class="header" href="#random-forest-regression">Random Forest Regression</a></h2>
+<p>Random Forests also work for <strong>regression</strong> tasks (predicting continuous values) using the same bagging principle with a key difference: instead of majority voting, predictions are <strong>averaged</strong> across all trees.</p>
+<h3 id="algorithm-for-regression"><a class="header" href="#algorithm-for-regression">Algorithm for Regression</a></h3>
+<pre><code class="language-rust">use aprender::tree::RandomForestRegressor;
+use aprender::primitives::{Matrix, Vector};
+
+// Housing data: [sqft, bedrooms, age] → price
+let x = Matrix::from_vec(8, 3, vec![
+    1500.0, 3.0, 10.0,  // $280k
+    2000.0, 4.0, 5.0,   // $350k
+    1200.0, 2.0, 30.0,  // $180k
+    // ... more samples
+]).unwrap();
+
+let y = Vector::from_slice(&amp;[280.0, 350.0, 180.0, /* ... */]);
+
+// Train Random Forest Regressor
+let mut rf = RandomForestRegressor::new(50)
+    .with_max_depth(8)
+    .with_random_state(42);
+
+rf.fit(&amp;x, &amp;y).unwrap();
+
+// Predict: Average predictions from all 50 trees
+let predictions = rf.predict(&amp;x);
+let r2 = rf.score(&amp;x, &amp;y);  // R² coefficient</code></pre>
+<p><strong>Test Reference</strong>: <code>src/tree/mod.rs::tests::test_random_forest_regressor_*</code></p>
+<h3 id="prediction-aggregation-for-regression"><a class="header" href="#prediction-aggregation-for-regression">Prediction Aggregation for Regression</a></h3>
+<p><strong>Classification</strong>:</p>
+<pre><code class="language-text">Prediction = mode([tree₁(x), tree₂(x), ..., treeₙ(x)])  # Majority vote
+</code></pre>
+<p><strong>Regression</strong>:</p>
+<pre><code class="language-text">Prediction = mean([tree₁(x), tree₂(x), ..., treeₙ(x)])  # Average
+</code></pre>
+<p><strong>Why averaging works</strong>:</p>
+<ul>
+<li>Each tree makes different errors due to bootstrap sampling</li>
+<li>Errors cancel out when averaged</li>
+<li>Result: smoother, more stable predictions</li>
+</ul>
+<h3 id="variance-reduction-in-regression"><a class="header" href="#variance-reduction-in-regression">Variance Reduction in Regression</a></h3>
+<p><strong>Single Decision Tree</strong>:</p>
+<ul>
+<li>High variance (sensitive to data changes)</li>
+<li>Can overfit training data</li>
+<li>Predictions can be &quot;jumpy&quot; (discontinuous)</li>
+</ul>
+<p><strong>Random Forest Ensemble</strong>:</p>
+<ul>
+<li>Lower variance: Var(RF) ≈ Var(Tree) / √n_trees</li>
+<li>Averaging smooths out individual tree predictions</li>
+<li>More robust to outliers and noise</li>
+</ul>
+<p><strong>Example</strong>:</p>
+<pre><code class="language-text">Sample: [2000 sqft, 3 bed, 10 years]
+
+Tree 1 predicts: $305k
+Tree 2 predicts: $295k
+Tree 3 predicts: $310k
+...
+Tree 50 predicts: $302k
+
+Random Forest prediction: mean = $303k  (stable!)
+Single tree might predict: $310k or $295k (unstable)
+</code></pre>
+<h3 id="comparison-regression-vs-classification"><a class="header" href="#comparison-regression-vs-classification">Comparison: Regression vs Classification</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Aspect</th><th>Random Forest Regression</th><th>Random Forest Classification</th></tr></thead><tbody>
+<tr><td><strong>Task</strong></td><td>Predict continuous values</td><td>Predict discrete classes</td></tr>
+<tr><td><strong>Base learner</strong></td><td>DecisionTreeRegressor</td><td>DecisionTreeClassifier</td></tr>
+<tr><td><strong>Split criterion</strong></td><td>MSE (variance reduction)</td><td>Gini impurity</td></tr>
+<tr><td><strong>Leaf prediction</strong></td><td>Mean of samples</td><td>Majority class</td></tr>
+<tr><td><strong>Aggregation</strong></td><td>Average predictions</td><td>Majority vote</td></tr>
+<tr><td><strong>Evaluation</strong></td><td>R² score, MSE, MAE</td><td>Accuracy, F1 score</td></tr>
+<tr><td><strong>Output</strong></td><td>Real number (e.g., $305k)</td><td>Class label (e.g., 0, 1, 2)</td></tr>
+</tbody></table>
+</div>
+<h3 id="when-to-use-random-forest-regression"><a class="header" href="#when-to-use-random-forest-regression">When to Use Random Forest Regression</a></h3>
+<p>✅ <strong>Good for</strong>:</p>
+<ul>
+<li>Non-linear relationships (e.g., housing prices)</li>
+<li>Feature interactions (e.g., size × location)</li>
+<li>Outlier robustness</li>
+<li>When single tree overfits</li>
+<li>Want stable predictions (low variance)</li>
+</ul>
+<p>❌ <strong>Not ideal for</strong>:</p>
+<ul>
+<li>Linear relationships (use LinearRegression)</li>
+<li>Need smooth predictions (trees predict step functions)</li>
+<li>Extrapolation beyond training range</li>
+<li>Very small datasets (&lt; 50 samples)</li>
+</ul>
+<h3 id="example-housing-price-prediction"><a class="header" href="#example-housing-price-prediction">Example: Housing Price Prediction</a></h3>
+<pre><code class="language-rust">// Non-linear housing data
+let x = Matrix::from_vec(20, 4, vec![
+    1000.0, 2.0, 1.0, 50.0,  // $140k (small, old)
+    2500.0, 5.0, 3.0, 3.0,   // $480k (large, new)
+    // ... quadratic relationship between size and price
+]).unwrap();
+
+let y = Vector::from_slice(&amp;[140.0, 480.0, /* ... */]);
+
+// Train Random Forest
+let mut rf = RandomForestRegressor::new(30).with_max_depth(6);
+rf.fit(&amp;x, &amp;y).unwrap();
+
+// Compare with single tree
+let mut single_tree = DecisionTreeRegressor::new().with_max_depth(6);
+single_tree.fit(&amp;x, &amp;y).unwrap();
+
+let rf_r2 = rf.score(&amp;x, &amp;y);        // e.g., 0.95
+let tree_r2 = single_tree.score(&amp;x, &amp;y);  // e.g., 1.00 (overfit!)
+
+// On test data:
+// RF generalizes better due to averaging</code></pre>
+<p><strong>Case Study</strong>: See <a href="../examples/random-forest-regression.html">Random Forest Regression</a></p>
+<h3 id="hyperparameter-recommendations-for-regression"><a class="header" href="#hyperparameter-recommendations-for-regression">Hyperparameter Recommendations for Regression</a></h3>
+<p><strong>Default configuration</strong>:</p>
+<ul>
+<li><code>n_estimators = 50-100</code> (more trees = more stable)</li>
+<li><code>max_depth = 8-12</code> (can be deeper than classification trees)</li>
+<li>No min_samples_split needed (averaging handles overfitting)</li>
+</ul>
+<p><strong>Tuning strategy</strong>:</p>
+<ol>
+<li>Start with 50 trees, max_depth=8</li>
+<li>Check train vs test R²</li>
+<li>If overfitting: decrease max_depth or increase min_samples_split</li>
+<li>If underfitting: increase max_depth or n_estimators</li>
+<li>Use cross-validation for final tuning</li>
+</ol>
 <hr />
 <h2 id="hyperparameter-tuning"><a class="header" href="#hyperparameter-tuning">Hyperparameter Tuning</a></h2>
 <h3 id="number-of-trees-n_estimators"><a class="header" href="#number-of-trees-n_estimators">Number of Trees (n_estimators)</a></h3>
