@@ -641,3 +641,18 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
+- id: GH-39
+  github_issue: null
+  item_type: task
+  title: 'New task: GH-39'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-21T16:16:55.158861570+00:00
+  updated: 2025-11-21T16:22:12.459727091+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
