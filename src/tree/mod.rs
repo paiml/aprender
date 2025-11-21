@@ -85,6 +85,231 @@ impl TreeNode {
     }
 }
 
+// ========================================================================
+// Regression Tree Structures (Issue #29)
+// ========================================================================
+
+/// Leaf node in a regression tree.
+///
+/// Contains the predicted value (mean of training samples) and number of
+/// training samples that reached this leaf.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RegressionLeaf {
+    /// Predicted value for this leaf (mean of y values)
+    pub value: f32,
+    /// Number of training samples in this leaf
+    pub n_samples: usize,
+}
+
+/// Internal node in a regression tree.
+///
+/// Contains a split condition (feature and threshold) and pointers to
+/// left and right subtrees.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RegressionNode {
+    /// Index of the feature to split on
+    pub feature_idx: usize,
+    /// Threshold value for the split
+    pub threshold: f32,
+    /// Left subtree (samples where feature <= threshold)
+    pub left: Box<RegressionTreeNode>,
+    /// Right subtree (samples where feature > threshold)
+    pub right: Box<RegressionTreeNode>,
+}
+
+/// A node in a regression tree (either internal node or leaf).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum RegressionTreeNode {
+    /// Internal decision node with split condition
+    Node(RegressionNode),
+    /// Leaf node with value prediction
+    Leaf(RegressionLeaf),
+}
+
+impl RegressionTreeNode {
+    /// Returns the depth of the tree rooted at this node.
+    ///
+    /// Leaf nodes have depth 0, internal nodes have depth 1 + max(left, right).
+    pub fn depth(&self) -> usize {
+        match self {
+            RegressionTreeNode::Leaf(_) => 0,
+            RegressionTreeNode::Node(node) => 1 + node.left.depth().max(node.right.depth()),
+        }
+    }
+}
+
+/// Decision tree regressor using the CART algorithm.
+///
+/// Uses Mean Squared Error (MSE) for splitting criterion and builds trees recursively.
+/// Leaf nodes predict the mean of target values.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DecisionTreeRegressor {
+    tree: Option<RegressionTreeNode>,
+    max_depth: Option<usize>,
+    min_samples_split: usize,
+    min_samples_leaf: usize,
+}
+
+impl DecisionTreeRegressor {
+    /// Creates a new decision tree regressor with default parameters.
+    pub fn new() -> Self {
+        Self {
+            tree: None,
+            max_depth: None,
+            min_samples_split: 2,
+            min_samples_leaf: 1,
+        }
+    }
+
+    /// Sets the maximum depth of the tree.
+    ///
+    /// # Arguments
+    ///
+    /// * `depth` - Maximum depth (root has depth 0)
+    pub fn with_max_depth(mut self, depth: usize) -> Self {
+        self.max_depth = Some(depth);
+        self
+    }
+
+    /// Sets the minimum number of samples required to split an internal node.
+    ///
+    /// # Arguments
+    ///
+    /// * `min_samples` - Minimum samples to split (must be >= 2)
+    pub fn with_min_samples_split(mut self, min_samples: usize) -> Self {
+        self.min_samples_split = min_samples.max(2);
+        self
+    }
+
+    /// Sets the minimum number of samples required to be at a leaf node.
+    ///
+    /// # Arguments
+    ///
+    /// * `min_samples` - Minimum samples per leaf (must be >= 1)
+    pub fn with_min_samples_leaf(mut self, min_samples: usize) -> Self {
+        self.min_samples_leaf = min_samples.max(1);
+        self
+    }
+
+    /// Fits the decision tree to training data.
+    ///
+    /// # Arguments
+    ///
+    /// * `x` - Training features (n_samples × n_features)
+    /// * `y` - Training target values (n_samples continuous values)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the data is invalid.
+    pub fn fit(
+        &mut self,
+        x: &crate::primitives::Matrix<f32>,
+        y: &crate::primitives::Vector<f32>,
+    ) -> Result<()> {
+        let (n_rows, _n_cols) = x.shape();
+        if n_rows != y.len() {
+            return Err("Number of samples in X and y must match".into());
+        }
+        if n_rows == 0 {
+            return Err("Cannot fit with zero samples".into());
+        }
+
+        self.tree = Some(build_regression_tree(
+            x,
+            y,
+            0,
+            self.max_depth,
+            self.min_samples_split,
+            self.min_samples_leaf,
+        ));
+        Ok(())
+    }
+
+    /// Predicts target values for samples.
+    ///
+    /// # Arguments
+    ///
+    /// * `x` - Feature matrix (n_samples × n_features)
+    ///
+    /// # Returns
+    ///
+    /// Vector of predicted values
+    ///
+    /// # Panics
+    ///
+    /// Panics if called before fit()
+    pub fn predict(&self, x: &crate::primitives::Matrix<f32>) -> crate::primitives::Vector<f32> {
+        let (n_samples, n_features) = x.shape();
+        let mut predictions = Vec::with_capacity(n_samples);
+
+        for row in 0..n_samples {
+            let mut sample = Vec::with_capacity(n_features);
+            for col in 0..n_features {
+                sample.push(x.get(row, col));
+            }
+            predictions.push(self.predict_one(&sample));
+        }
+
+        crate::primitives::Vector::from_vec(predictions)
+    }
+
+    /// Predicts the value for a single sample.
+    ///
+    /// # Arguments
+    ///
+    /// * `x` - Feature vector for one sample
+    ///
+    /// # Returns
+    ///
+    /// Predicted value
+    fn predict_one(&self, x: &[f32]) -> f32 {
+        let tree = self.tree.as_ref().expect("Model not fitted");
+
+        let mut node = tree;
+        loop {
+            match node {
+                RegressionTreeNode::Leaf(leaf) => return leaf.value,
+                RegressionTreeNode::Node(internal) => {
+                    if x[internal.feature_idx] <= internal.threshold {
+                        node = &internal.left;
+                    } else {
+                        node = &internal.right;
+                    }
+                }
+            }
+        }
+    }
+
+    /// Computes the R² score on test data.
+    ///
+    /// # Arguments
+    ///
+    /// * `x` - Test features (n_samples × n_features)
+    /// * `y` - True target values (n_samples)
+    ///
+    /// # Returns
+    ///
+    /// R² coefficient of determination
+    pub fn score(
+        &self,
+        x: &crate::primitives::Matrix<f32>,
+        y: &crate::primitives::Vector<f32>,
+    ) -> f32 {
+        let predictions = self.predict(x);
+        crate::metrics::r_squared(y, &predictions)
+    }
+}
+
+impl Default for DecisionTreeRegressor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+// ========================================================================
+// End Regression Tree Structures
+// ========================================================================
+
 /// Decision tree classifier using the CART algorithm.
 ///
 /// Uses Gini impurity for splitting criterion and builds trees recursively.
@@ -937,6 +1162,254 @@ fn build_tree(
     })
 }
 
+// ========================================================================
+// Regression Tree Building Functions (Issue #29)
+// ========================================================================
+
+/// Compute the mean of a vector.
+fn mean_f32(values: &[f32]) -> f32 {
+    if values.is_empty() {
+        0.0
+    } else {
+        values.iter().sum::<f32>() / values.len() as f32
+    }
+}
+
+/// Compute the variance of target values.
+fn variance_f32(y: &[f32]) -> f32 {
+    if y.len() <= 1 {
+        return 0.0;
+    }
+
+    let mean = mean_f32(y);
+    let sum_squared_diff: f32 = y.iter().map(|&val| (val - mean).powi(2)).sum();
+    sum_squared_diff / y.len() as f32
+}
+
+/// Compute Mean Squared Error for a split.
+fn compute_mse(y_left: &[f32], y_right: &[f32]) -> f32 {
+    let n_left = y_left.len() as f32;
+    let n_right = y_right.len() as f32;
+    let n_total = n_left + n_right;
+
+    if n_total == 0.0 {
+        return 0.0;
+    }
+
+    let var_left = variance_f32(y_left);
+    let var_right = variance_f32(y_right);
+
+    (n_left / n_total) * var_left + (n_right / n_total) * var_right
+}
+
+/// Find the best split for regression using MSE criterion.
+///
+/// Returns (feature_idx, threshold, mse_reduction) if a valid split exists.
+fn find_best_regression_split(
+    x: &crate::primitives::Matrix<f32>,
+    y: &[f32],
+) -> Option<(usize, f32, f32)> {
+    let (n_samples, n_features) = x.shape();
+
+    if n_samples < 2 {
+        return None;
+    }
+
+    let current_variance = variance_f32(y);
+    let mut best_gain = 0.0;
+    let mut best_feature = 0;
+    let mut best_threshold = 0.0;
+
+    // Try each feature
+    for feature_idx in 0..n_features {
+        // Get unique values for this feature to use as potential split points
+        let mut feature_values: Vec<f32> = (0..n_samples).map(|i| x.get(i, feature_idx)).collect();
+        feature_values.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        feature_values.dedup();
+
+        // Try each pair of adjacent values as split point
+        for i in 0..feature_values.len().saturating_sub(1) {
+            let threshold = (feature_values[i] + feature_values[i + 1]) / 2.0;
+
+            // Split the data
+            let mut y_left = Vec::new();
+            let mut y_right = Vec::new();
+
+            for (row, &y_val) in y.iter().enumerate() {
+                if x.get(row, feature_idx) <= threshold {
+                    y_left.push(y_val);
+                } else {
+                    y_right.push(y_val);
+                }
+            }
+
+            // Skip if split is invalid
+            if y_left.is_empty() || y_right.is_empty() {
+                continue;
+            }
+
+            // Compute MSE for this split
+            let split_mse = compute_mse(&y_left, &y_right);
+            let gain = current_variance - split_mse;
+
+            if gain > best_gain {
+                best_gain = gain;
+                best_feature = feature_idx;
+                best_threshold = threshold;
+            }
+        }
+    }
+
+    if best_gain > 0.0 {
+        Some((best_feature, best_threshold, best_gain))
+    } else {
+        None
+    }
+}
+
+/// Split regression data by indices.
+fn split_regression_data_by_indices(
+    x: &crate::primitives::Matrix<f32>,
+    y: &[f32],
+    indices: &[usize],
+) -> (crate::primitives::Matrix<f32>, Vec<f32>) {
+    let (_n_samples, n_features) = x.shape();
+    let n_subset = indices.len();
+
+    let mut subset_data = Vec::with_capacity(n_subset * n_features);
+    let mut subset_labels = Vec::with_capacity(n_subset);
+
+    for &idx in indices {
+        for col in 0..n_features {
+            subset_data.push(x.get(idx, col));
+        }
+        subset_labels.push(y[idx]);
+    }
+
+    let subset_matrix = crate::primitives::Matrix::from_vec(n_subset, n_features, subset_data)
+        .unwrap_or_else(|_| crate::primitives::Matrix::from_vec(0, n_features, vec![]).unwrap());
+
+    (subset_matrix, subset_labels)
+}
+
+/// Build a regression decision tree recursively.
+///
+/// # Arguments
+///
+/// * `x` - Training data (n_samples × n_features)
+/// * `y` - Target values (n_samples)
+/// * `depth` - Current depth in tree
+/// * `max_depth` - Maximum allowed depth (None = unlimited)
+/// * `min_samples_split` - Minimum samples required to split
+/// * `min_samples_leaf` - Minimum samples required in a leaf
+///
+/// # Returns
+///
+/// Root node of the built tree
+fn build_regression_tree(
+    x: &crate::primitives::Matrix<f32>,
+    y: &crate::primitives::Vector<f32>,
+    depth: usize,
+    max_depth: Option<usize>,
+    min_samples_split: usize,
+    min_samples_leaf: usize,
+) -> RegressionTreeNode {
+    let n_samples = y.len();
+
+    // Convert Vector to slice for easier manipulation
+    let y_slice: Vec<f32> = y.as_slice().to_vec();
+
+    // Check stopping criteria
+    if n_samples < min_samples_split {
+        return RegressionTreeNode::Leaf(RegressionLeaf {
+            value: mean_f32(&y_slice),
+            n_samples,
+        });
+    }
+
+    if let Some(max_d) = max_depth {
+        if depth >= max_d {
+            return RegressionTreeNode::Leaf(RegressionLeaf {
+                value: mean_f32(&y_slice),
+                n_samples,
+            });
+        }
+    }
+
+    // All y values are the same (variance == 0)
+    if variance_f32(&y_slice) < 1e-10 {
+        return RegressionTreeNode::Leaf(RegressionLeaf {
+            value: mean_f32(&y_slice),
+            n_samples,
+        });
+    }
+
+    // Try to find best split
+    let (feature_idx, threshold, _gain) = match find_best_regression_split(x, &y_slice) {
+        Some(split) => split,
+        None => {
+            return RegressionTreeNode::Leaf(RegressionLeaf {
+                value: mean_f32(&y_slice),
+                n_samples,
+            });
+        }
+    };
+
+    // Split data based on threshold
+    let mut left_indices = Vec::new();
+    let mut right_indices = Vec::new();
+
+    for row in 0..n_samples {
+        if x.get(row, feature_idx) <= threshold {
+            left_indices.push(row);
+        } else {
+            right_indices.push(row);
+        }
+    }
+
+    // Check min_samples_leaf constraint
+    if left_indices.len() < min_samples_leaf || right_indices.len() < min_samples_leaf {
+        return RegressionTreeNode::Leaf(RegressionLeaf {
+            value: mean_f32(&y_slice),
+            n_samples,
+        });
+    }
+
+    // Create left and right datasets
+    let (left_matrix, left_labels) = split_regression_data_by_indices(x, &y_slice, &left_indices);
+    let (right_matrix, right_labels) =
+        split_regression_data_by_indices(x, &y_slice, &right_indices);
+
+    // Recursively build subtrees
+    let left_child = build_regression_tree(
+        &left_matrix,
+        &crate::primitives::Vector::from_vec(left_labels),
+        depth + 1,
+        max_depth,
+        min_samples_split,
+        min_samples_leaf,
+    );
+    let right_child = build_regression_tree(
+        &right_matrix,
+        &crate::primitives::Vector::from_vec(right_labels),
+        depth + 1,
+        max_depth,
+        min_samples_split,
+        min_samples_leaf,
+    );
+
+    RegressionTreeNode::Node(RegressionNode {
+        feature_idx,
+        threshold,
+        left: Box::new(left_child),
+        right: Box::new(right_child),
+    })
+}
+
+// ========================================================================
+// End Regression Tree Building Functions
+// ========================================================================
+
 /// Random Forest classifier - an ensemble of decision trees.
 ///
 /// Combines multiple decision trees trained on bootstrap samples
@@ -1595,6 +2068,7 @@ impl Default for GradientBoostingClassifier {
 mod tests {
     use super::*;
     use crate::primitives::Matrix;
+    use crate::traits::Estimator;
 
     // RED Phase: Write failing tests first
 
@@ -2535,5 +3009,276 @@ mod tests {
         assert_eq!(gbm1.n_estimators, gbm2.n_estimators);
         assert_eq!(gbm1.learning_rate, gbm2.learning_rate);
         assert_eq!(gbm1.max_depth, gbm2.max_depth);
+    }
+
+    // ========================================================================
+    // Decision Tree Regression Tests (RED Phase - Issue #29)
+    // ========================================================================
+
+    #[test]
+    fn test_regression_tree_creation() {
+        let tree = DecisionTreeRegressor::new();
+        assert!(tree.tree.is_none());
+        assert!(tree.max_depth.is_none());
+    }
+
+    #[test]
+    fn test_regression_tree_with_max_depth() {
+        let tree = DecisionTreeRegressor::new().with_max_depth(5);
+        assert_eq!(tree.max_depth, Some(5));
+    }
+
+    #[test]
+    fn test_regression_tree_fit_simple_linear() {
+        // Simple linear relationship: y = 2x + 1
+        let x = Matrix::from_vec(5, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0]).unwrap();
+        let y = crate::primitives::Vector::from_slice(&[3.0, 5.0, 7.0, 9.0, 11.0]);
+
+        let mut tree = DecisionTreeRegressor::new().with_max_depth(3);
+        tree.fit(&x, &y).unwrap();
+
+        let predictions = tree.predict(&x);
+
+        // Tree should learn the linear pattern reasonably well
+        let pred_slice = predictions.as_slice();
+        let y_slice = y.as_slice();
+        for i in 0..predictions.len() {
+            assert!(
+                (pred_slice[i] - y_slice[i]).abs() < 2.0,
+                "Prediction {} too far from true value {}",
+                pred_slice[i],
+                y_slice[i]
+            );
+        }
+    }
+
+    #[test]
+    fn test_regression_tree_predict_nonlinear() {
+        // Quadratic relationship: y = x^2
+        let x = Matrix::from_vec(5, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0]).unwrap();
+        let y = crate::primitives::Vector::from_slice(&[1.0, 4.0, 9.0, 16.0, 25.0]);
+
+        let mut tree = DecisionTreeRegressor::new().with_max_depth(4);
+        tree.fit(&x, &y).unwrap();
+
+        let predictions = tree.predict(&x);
+
+        // Should capture quadratic pattern with enough depth
+        let mut mse_sum = 0.0_f32;
+        let pred_slice = predictions.as_slice();
+        let y_slice = y.as_slice();
+        for i in 0..predictions.len() {
+            mse_sum += (pred_slice[i] - y_slice[i]).powi(2);
+        }
+        let mse = mse_sum / predictions.len() as f32;
+
+        assert!(mse < 50.0, "MSE {} too high for quadratic fit", mse);
+    }
+
+    #[test]
+    fn test_regression_tree_score() {
+        // Perfect predictions should give R² = 1.0
+        let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0]).unwrap();
+        let y = crate::primitives::Vector::from_slice(&[2.0, 4.0, 6.0, 8.0]);
+
+        let mut tree = DecisionTreeRegressor::new().with_max_depth(3);
+        tree.fit(&x, &y).unwrap();
+
+        let r2 = tree.score(&x, &y);
+
+        // R² should be high for training data
+        assert!(r2 > 0.5, "R² score {} too low", r2);
+        assert!(r2 <= 1.0, "R² score {} exceeds maximum", r2);
+    }
+
+    #[test]
+    fn test_regression_tree_max_depth_limits_complexity() {
+        let x = Matrix::from_vec(8, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]).unwrap();
+        let y =
+            crate::primitives::Vector::from_slice(&[1.0, 4.0, 9.0, 16.0, 25.0, 36.0, 49.0, 64.0]);
+
+        // Shallow tree
+        let mut tree_shallow = DecisionTreeRegressor::new().with_max_depth(1);
+        tree_shallow.fit(&x, &y).unwrap();
+        let depth_shallow = tree_shallow.tree.as_ref().unwrap().depth();
+        assert!(
+            depth_shallow <= 1,
+            "Shallow tree depth {} exceeds max",
+            depth_shallow
+        );
+
+        // Deep tree
+        let mut tree_deep = DecisionTreeRegressor::new().with_max_depth(5);
+        tree_deep.fit(&x, &y).unwrap();
+        let depth_deep = tree_deep.tree.as_ref().unwrap().depth();
+        assert!(
+            depth_deep <= 5,
+            "Deep tree depth {} exceeds max",
+            depth_deep
+        );
+
+        // Deeper tree should fit better
+        let r2_shallow = tree_shallow.score(&x, &y);
+        let r2_deep = tree_deep.score(&x, &y);
+        assert!(
+            r2_deep >= r2_shallow,
+            "Deeper tree R²={} should be >= shallow tree R²={}",
+            r2_deep,
+            r2_shallow
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "Model not fitted")]
+    fn test_regression_tree_predict_before_fit_panics() {
+        let tree = DecisionTreeRegressor::new();
+        let x = Matrix::from_vec(2, 1, vec![1.0, 2.0]).unwrap();
+        let _ = tree.predict(&x); // Should panic
+    }
+
+    #[test]
+    fn test_regression_tree_multidimensional_features() {
+        // 2D features: y = x1 + 2*x2
+        let x = Matrix::from_vec(
+            6,
+            2,
+            vec![
+                1.0, 1.0, // y = 3
+                2.0, 1.0, // y = 4
+                1.0, 2.0, // y = 5
+                2.0, 2.0, // y = 6
+                3.0, 1.0, // y = 5
+                1.0, 3.0, // y = 7
+            ],
+        )
+        .unwrap();
+        let y = crate::primitives::Vector::from_slice(&[3.0, 4.0, 5.0, 6.0, 5.0, 7.0]);
+
+        let mut tree = DecisionTreeRegressor::new().with_max_depth(4);
+        tree.fit(&x, &y).unwrap();
+
+        let r2 = tree.score(&x, &y);
+        assert!(r2 > 0.5, "R² score {} too low for 2D features", r2);
+    }
+
+    #[test]
+    fn test_regression_tree_constant_target() {
+        // All y values the same
+        let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0]).unwrap();
+        let y = crate::primitives::Vector::from_slice(&[5.0, 5.0, 5.0, 5.0]);
+
+        let mut tree = DecisionTreeRegressor::new();
+        tree.fit(&x, &y).unwrap();
+
+        let predictions = tree.predict(&x);
+
+        // Should predict the constant value
+        for &pred in predictions.as_slice() {
+            assert!(
+                (pred - 5.0).abs() < 1e-5,
+                "Prediction {} should be 5.0 for constant target",
+                pred
+            );
+        }
+    }
+
+    #[test]
+    fn test_regression_tree_single_sample() {
+        let x = Matrix::from_vec(1, 1, vec![5.0]).unwrap();
+        let y = crate::primitives::Vector::from_slice(&[10.0]);
+
+        let mut tree = DecisionTreeRegressor::new();
+        tree.fit(&x, &y).unwrap();
+
+        let predictions = tree.predict(&x);
+        assert_eq!(predictions.len(), 1);
+        assert!((predictions[0] - 10.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn test_regression_tree_fit_validation() {
+        let x = Matrix::from_vec(3, 1, vec![1.0, 2.0, 3.0]).unwrap();
+        let y = crate::primitives::Vector::from_slice(&[1.0, 2.0]); // Wrong size
+
+        let mut tree = DecisionTreeRegressor::new();
+        let result = tree.fit(&x, &y);
+
+        assert!(result.is_err(), "Should error on mismatched dimensions");
+    }
+
+    #[test]
+    fn test_regression_tree_zero_samples() {
+        let x = Matrix::from_vec(0, 1, vec![]).unwrap();
+        let y = crate::primitives::Vector::from_slice(&[]);
+
+        let mut tree = DecisionTreeRegressor::new();
+        let result = tree.fit(&x, &y);
+
+        assert!(result.is_err(), "Should error on zero samples");
+    }
+
+    #[test]
+    fn test_regression_tree_min_samples_split() {
+        let x = Matrix::from_vec(6, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]).unwrap();
+        let y = crate::primitives::Vector::from_slice(&[1.0, 4.0, 9.0, 16.0, 25.0, 36.0]);
+
+        // Tree with min_samples_split=4 should not split nodes with fewer samples
+        let mut tree = DecisionTreeRegressor::new()
+            .with_max_depth(5)
+            .with_min_samples_split(4);
+
+        tree.fit(&x, &y).unwrap();
+
+        // Should still fit successfully
+        let r2 = tree.score(&x, &y);
+        assert!(r2 > 0.0, "Tree with min_samples_split should still fit");
+    }
+
+    #[test]
+    fn test_regression_tree_min_samples_leaf() {
+        let x = Matrix::from_vec(8, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]).unwrap();
+        let y =
+            crate::primitives::Vector::from_slice(&[1.0, 4.0, 9.0, 16.0, 25.0, 36.0, 49.0, 64.0]);
+
+        // Tree with min_samples_leaf=3 should ensure leaves have at least 3 samples
+        let mut tree = DecisionTreeRegressor::new()
+            .with_max_depth(5)
+            .with_min_samples_leaf(3);
+
+        tree.fit(&x, &y).unwrap();
+
+        // Should fit without error
+        let predictions = tree.predict(&x);
+        assert_eq!(predictions.len(), 8);
+    }
+
+    #[test]
+    fn test_regression_tree_default() {
+        let tree1 = DecisionTreeRegressor::new();
+        let tree2 = DecisionTreeRegressor::default();
+
+        assert_eq!(tree1.max_depth, tree2.max_depth);
+        assert_eq!(tree1.tree.is_none(), tree2.tree.is_none());
+    }
+
+    #[test]
+    fn test_regression_tree_comparison_with_linear_regression() {
+        // On perfectly linear data, both should perform well
+        let x = Matrix::from_vec(5, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0]).unwrap();
+        let y = crate::primitives::Vector::from_slice(&[2.0, 4.0, 6.0, 8.0, 10.0]);
+
+        // Train tree
+        let mut tree = DecisionTreeRegressor::new().with_max_depth(4);
+        tree.fit(&x, &y).unwrap();
+        let tree_r2 = tree.score(&x, &y);
+
+        // Train linear model
+        let mut lr = crate::linear_model::LinearRegression::new();
+        lr.fit(&x, &y).unwrap();
+        let lr_r2 = lr.score(&x, &y);
+
+        // Both should achieve high R² on linear data
+        assert!(tree_r2 > 0.9, "Tree R² {} too low on linear data", tree_r2);
+        assert!(lr_r2 > 0.99, "Linear regression R² {} too low", lr_r2);
     }
 }
