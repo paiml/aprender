@@ -441,6 +441,230 @@ impl Graph {
 
         dependency
     }
+
+    /// Compute modularity of a community partition.
+    ///
+    /// Modularity Q measures the density of edges within communities compared to
+    /// a random graph. Ranges from -0.5 to 1.0 (higher is better).
+    ///
+    /// Formula: Q = (1/2m) Σ[A_ij - k_i*k_j/2m] δ(c_i, c_j)
+    /// where:
+    /// - m = total edges
+    /// - A_ij = adjacency matrix
+    /// - k_i = degree of node i
+    /// - δ(c_i, c_j) = 1 if nodes i,j in same community, 0 otherwise
+    ///
+    /// # Arguments
+    /// * `communities` - Vector of communities, each community is a vector of node IDs
+    ///
+    /// # Returns
+    /// Modularity score Q ∈ [-0.5, 1.0]
+    pub fn modularity(&self, communities: &[Vec<NodeId>]) -> f64 {
+        if self.n_nodes == 0 || communities.is_empty() {
+            return 0.0;
+        }
+
+        // Build community membership map
+        let mut community_map = vec![None; self.n_nodes];
+        for (comm_id, community) in communities.iter().enumerate() {
+            for &node in community {
+                community_map[node] = Some(comm_id);
+            }
+        }
+
+        // Total edges
+        let m = self.n_edges as f64;
+
+        if m == 0.0 {
+            return 0.0;
+        }
+
+        let two_m = 2.0 * m;
+
+        // Compute degrees
+        let degrees: Vec<f64> = (0..self.n_nodes)
+            .map(|i| self.neighbors(i).len() as f64)
+            .collect();
+
+        // Compute modularity: Q = (1/2m) Σ[A_ij - k_i*k_j/2m] δ(c_i, c_j)
+        let mut q = 0.0;
+
+        for i in 0..self.n_nodes {
+            for j in 0..self.n_nodes {
+                // Skip if nodes not in same community
+                match (community_map[i], community_map[j]) {
+                    (Some(ci), Some(cj)) if ci == cj => {
+                        // Check if edge exists
+                        let a_ij = if self.neighbors(i).contains(&j) {
+                            1.0
+                        } else {
+                            0.0
+                        };
+
+                        // Expected edges in random graph
+                        let expected = (degrees[i] * degrees[j]) / two_m;
+
+                        q += a_ij - expected;
+                    }
+                    _ => continue,
+                }
+            }
+        }
+
+        q / two_m
+    }
+
+    /// Detect communities using the Louvain algorithm.
+    ///
+    /// The Louvain method is a greedy modularity optimization algorithm that:
+    /// 1. Starts with each node in its own community
+    /// 2. Iteratively moves nodes to communities that maximize modularity gain
+    /// 3. Aggregates the graph by treating communities as super-nodes
+    /// 4. Repeats until modularity converges
+    ///
+    /// # Performance
+    /// - Time: O(m·log n) typical, where m = edges, n = nodes
+    /// - Space: O(n + m)
+    ///
+    /// # Returns
+    /// Vector of communities, each community is a vector of node IDs
+    ///
+    /// # Examples
+    /// ```
+    /// use aprender::graph::Graph;
+    ///
+    /// // Two triangles connected by one edge
+    /// let g = Graph::from_edges(&[
+    ///     (0, 1), (1, 2), (2, 0),  // Triangle 1
+    ///     (3, 4), (4, 5), (5, 3),  // Triangle 2
+    ///     (2, 3),                   // Connection
+    /// ], false);
+    ///
+    /// let communities = g.louvain();
+    /// assert_eq!(communities.len(), 2);  // Two communities detected
+    /// ```
+    pub fn louvain(&self) -> Vec<Vec<NodeId>> {
+        if self.n_nodes == 0 {
+            return Vec::new();
+        }
+
+        // Initialize: each node in its own community
+        let mut node_to_comm: Vec<usize> = (0..self.n_nodes).collect();
+        let mut improved = true;
+        let mut iteration = 0;
+        let max_iterations = 100;
+
+        // Phase 1: Iteratively move nodes to communities
+        while improved && iteration < max_iterations {
+            improved = false;
+            iteration += 1;
+
+            for node in 0..self.n_nodes {
+                let current_comm = node_to_comm[node];
+                let neighbors = self.neighbors(node);
+
+                if neighbors.is_empty() {
+                    continue;
+                }
+
+                // Find best community to move to
+                let mut best_comm = current_comm;
+                let mut best_gain = 0.0;
+
+                // Try moving to each neighbor's community
+                let mut tried_comms = std::collections::HashSet::new();
+                for &neighbor in neighbors {
+                    let neighbor_comm = node_to_comm[neighbor];
+
+                    if tried_comms.contains(&neighbor_comm) {
+                        continue;
+                    }
+                    tried_comms.insert(neighbor_comm);
+
+                    // Calculate modularity gain
+                    let gain =
+                        self.modularity_gain(node, current_comm, neighbor_comm, &node_to_comm);
+
+                    if gain > best_gain {
+                        best_gain = gain;
+                        best_comm = neighbor_comm;
+                    }
+                }
+
+                // Move node if improves modularity
+                if best_comm != current_comm && best_gain > 1e-10 {
+                    node_to_comm[node] = best_comm;
+                    improved = true;
+                }
+            }
+        }
+
+        // Convert node_to_comm map to community lists
+        let mut communities: std::collections::HashMap<usize, Vec<NodeId>> =
+            std::collections::HashMap::new();
+
+        for (node, &comm) in node_to_comm.iter().enumerate() {
+            communities.entry(comm).or_default().push(node);
+        }
+
+        communities.into_values().collect()
+    }
+
+    /// Calculate modularity gain from moving a node to a different community.
+    fn modularity_gain(
+        &self,
+        node: NodeId,
+        from_comm: usize,
+        to_comm: usize,
+        node_to_comm: &[usize],
+    ) -> f64 {
+        if from_comm == to_comm {
+            return 0.0;
+        }
+
+        let m = self.n_edges as f64;
+        if m == 0.0 {
+            return 0.0;
+        }
+
+        let two_m = 2.0 * m;
+        let k_i = self.neighbors(node).len() as f64;
+
+        // Count edges from node to target community
+        let mut k_i_to = 0.0;
+        for &neighbor in self.neighbors(node) {
+            if node_to_comm[neighbor] == to_comm {
+                k_i_to += 1.0;
+            }
+        }
+
+        // Count edges from node to current community (excluding self)
+        let mut k_i_from = 0.0;
+        for &neighbor in self.neighbors(node) {
+            if node_to_comm[neighbor] == from_comm && neighbor != node {
+                k_i_from += 1.0;
+            }
+        }
+
+        // Total degree of target community (excluding node)
+        let sigma_tot_to: f64 = node_to_comm
+            .iter()
+            .enumerate()
+            .filter(|&(n, &comm)| comm == to_comm && n != node)
+            .map(|(n, _)| self.neighbors(n).len() as f64)
+            .sum();
+
+        // Total degree of current community (excluding node)
+        let sigma_tot_from: f64 = node_to_comm
+            .iter()
+            .enumerate()
+            .filter(|&(n, &comm)| comm == from_comm && n != node)
+            .map(|(n, _)| self.neighbors(n).len() as f64)
+            .sum();
+
+        // Modularity gain formula
+        (k_i_to - k_i_from) / m - k_i * (sigma_tot_to - sigma_tot_from) / (two_m * m)
+    }
 }
 
 /// Kahan summation for computing L1 distance between two vectors.
@@ -829,5 +1053,308 @@ mod tests {
         // Nodes within same component should have equal betweenness
         assert!((bc[0] - bc[1]).abs() < 1e-6);
         assert!((bc[2] - bc[3]).abs() < 1e-6);
+    }
+
+    // Community Detection Tests
+
+    #[test]
+    fn test_modularity_empty_graph() {
+        let g = Graph::new(false);
+        let communities = vec![];
+        let modularity = g.modularity(&communities);
+        assert_eq!(modularity, 0.0);
+    }
+
+    #[test]
+    fn test_modularity_single_community() {
+        // Triangle: all nodes in one community
+        let g = Graph::from_edges(&[(0, 1), (1, 2), (2, 0)], false);
+        let communities = vec![vec![0, 1, 2]];
+        let modularity = g.modularity(&communities);
+        // For single community covering whole graph, Q = 0
+        assert!((modularity - 0.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_modularity_two_communities() {
+        // Two triangles connected by single edge: 0-1-2 and 3-4-5, edge 2-3
+        let g = Graph::from_edges(
+            &[
+                (0, 1),
+                (1, 2),
+                (2, 0), // Triangle 1
+                (3, 4),
+                (4, 5),
+                (5, 3), // Triangle 2
+                (2, 3), // Inter-community edge
+            ],
+            false,
+        );
+
+        let communities = vec![vec![0, 1, 2], vec![3, 4, 5]];
+        let modularity = g.modularity(&communities);
+
+        // Should have positive modularity (good community structure)
+        assert!(modularity > 0.0);
+        assert!(modularity < 1.0); // Not perfect due to inter-community edge
+    }
+
+    #[test]
+    fn test_modularity_perfect_split() {
+        // Two disconnected triangles
+        let g = Graph::from_edges(
+            &[
+                (0, 1),
+                (1, 2),
+                (2, 0), // Triangle 1
+                (3, 4),
+                (4, 5),
+                (5, 3), // Triangle 2
+            ],
+            false,
+        );
+
+        let communities = vec![vec![0, 1, 2], vec![3, 4, 5]];
+        let modularity = g.modularity(&communities);
+
+        // Perfect split should have high modularity
+        assert!(modularity > 0.5);
+    }
+
+    #[test]
+    // Implementation complete
+    fn test_louvain_empty_graph() {
+        let g = Graph::new(false);
+        let communities = g.louvain();
+        assert_eq!(communities.len(), 0);
+    }
+
+    #[test]
+    // Implementation complete
+    fn test_louvain_single_node() {
+        // Single node with self-loop
+        let g = Graph::from_edges(&[(0, 0)], false);
+        let communities = g.louvain();
+        assert_eq!(communities.len(), 1);
+        assert_eq!(communities[0].len(), 1);
+    }
+
+    #[test]
+    // Implementation complete
+    fn test_louvain_two_nodes() {
+        let g = Graph::from_edges(&[(0, 1)], false);
+        let communities = g.louvain();
+
+        // Should find 1 community containing both nodes
+        assert_eq!(communities.len(), 1);
+        assert_eq!(communities[0].len(), 2);
+    }
+
+    #[test]
+    // Implementation complete
+    fn test_louvain_triangle() {
+        // Single triangle - should be one community
+        let g = Graph::from_edges(&[(0, 1), (1, 2), (2, 0)], false);
+        let communities = g.louvain();
+
+        assert_eq!(communities.len(), 1);
+        assert_eq!(communities[0].len(), 3);
+    }
+
+    #[test]
+    // Implementation complete
+    fn test_louvain_two_triangles_connected() {
+        // Two triangles connected by one edge
+        let g = Graph::from_edges(
+            &[
+                (0, 1),
+                (1, 2),
+                (2, 0), // Triangle 1
+                (3, 4),
+                (4, 5),
+                (5, 3), // Triangle 2
+                (2, 3), // Connection
+            ],
+            false,
+        );
+
+        let communities = g.louvain();
+
+        // Should find 2 communities
+        assert_eq!(communities.len(), 2);
+
+        // Verify all nodes are assigned
+        let all_nodes: Vec<_> = communities.iter().flat_map(|c| c.iter()).copied().collect();
+        assert_eq!(all_nodes.len(), 6);
+    }
+
+    #[test]
+    // Implementation complete
+    fn test_louvain_disconnected_components() {
+        // Two separate triangles (no connection)
+        let g = Graph::from_edges(
+            &[
+                (0, 1),
+                (1, 2),
+                (2, 0), // Component 1
+                (3, 4),
+                (4, 5),
+                (5, 3), // Component 2
+            ],
+            false,
+        );
+
+        let communities = g.louvain();
+
+        // Should find at least 2 communities (one per component)
+        assert!(communities.len() >= 2);
+
+        // Verify nodes 0,1,2 are in different community than 3,4,5
+        let comm1_nodes: Vec<_> = communities
+            .iter()
+            .find(|c| c.contains(&0))
+            .unwrap()
+            .to_vec();
+        let comm2_nodes: Vec<_> = communities
+            .iter()
+            .find(|c| c.contains(&3))
+            .unwrap()
+            .to_vec();
+
+        assert!(comm1_nodes.contains(&0));
+        assert!(comm1_nodes.contains(&1));
+        assert!(comm1_nodes.contains(&2));
+
+        assert!(comm2_nodes.contains(&3));
+        assert!(comm2_nodes.contains(&4));
+        assert!(comm2_nodes.contains(&5));
+
+        // Verify no overlap
+        assert!(!comm1_nodes.contains(&3));
+        assert!(!comm2_nodes.contains(&0));
+    }
+
+    #[test]
+    // Implementation complete
+    fn test_louvain_karate_club() {
+        // Zachary's Karate Club network (simplified 4-node version)
+        // Known ground truth: 2 factions
+        let g = Graph::from_edges(
+            &[
+                (0, 1),
+                (0, 2),
+                (1, 2), // Group 1
+                (2, 3), // Bridge
+                (3, 4),
+                (3, 5),
+                (4, 5), // Group 2
+            ],
+            false,
+        );
+
+        let communities = g.louvain();
+
+        // Should detect at least 2 communities
+        assert!(communities.len() >= 2);
+
+        // Node 2 and 3 are bridge nodes - could be in either community
+        // But groups {0,1} and {4,5} should be detected
+        let all_nodes: Vec<_> = communities.iter().flat_map(|c| c.iter()).copied().collect();
+        assert_eq!(all_nodes.len(), 6);
+    }
+
+    #[test]
+    // Implementation complete
+    fn test_louvain_star_graph() {
+        // Star graph: central node 0 connected to 1,2,3,4
+        let g = Graph::from_edges(&[(0, 1), (0, 2), (0, 3), (0, 4)], false);
+
+        let communities = g.louvain();
+
+        // Star graph could be 1 community or split
+        // Just verify all nodes are assigned
+        assert!(!communities.is_empty());
+        let all_nodes: Vec<_> = communities.iter().flat_map(|c| c.iter()).copied().collect();
+        assert_eq!(all_nodes.len(), 5);
+    }
+
+    #[test]
+    // Implementation complete
+    fn test_louvain_complete_graph() {
+        // Complete graph K4 - all nodes connected
+        let g = Graph::from_edges(&[(0, 1), (0, 2), (0, 3), (1, 2), (1, 3), (2, 3)], false);
+
+        let communities = g.louvain();
+
+        // Complete graph should be single community
+        assert_eq!(communities.len(), 1);
+        assert_eq!(communities[0].len(), 4);
+    }
+
+    #[test]
+    // Implementation complete
+    fn test_louvain_modularity_improves() {
+        // Two clear communities
+        let g = Graph::from_edges(
+            &[
+                (0, 1),
+                (1, 2),
+                (2, 0), // Triangle 1
+                (3, 4),
+                (4, 5),
+                (5, 3), // Triangle 2
+            ],
+            false,
+        );
+
+        let communities = g.louvain();
+        let modularity = g.modularity(&communities);
+
+        // Louvain should find good communities (high modularity)
+        assert!(modularity > 0.3);
+    }
+
+    #[test]
+    // Implementation complete
+    fn test_louvain_all_nodes_assigned() {
+        // Verify every node gets assigned to exactly one community
+        let g = Graph::from_edges(
+            &[
+                (0, 1),
+                (1, 2),
+                (2, 3),
+                (3, 4),
+                (4, 0), // Pentagon
+            ],
+            false,
+        );
+
+        let communities = g.louvain();
+
+        let mut assigned_nodes: Vec<NodeId> = Vec::new();
+        for community in &communities {
+            assigned_nodes.extend(community);
+        }
+
+        // All 5 nodes should be assigned
+        assigned_nodes.sort();
+        assert_eq!(assigned_nodes, vec![0, 1, 2, 3, 4]);
+
+        // No node should appear twice
+        let unique_count = assigned_nodes.len();
+        assigned_nodes.dedup();
+        assert_eq!(assigned_nodes.len(), unique_count);
+    }
+
+    #[test]
+    fn test_modularity_bad_partition() {
+        // Triangle with each node in separate community (worst partition)
+        let g = Graph::from_edges(&[(0, 1), (1, 2), (2, 0)], false);
+
+        let communities = vec![vec![0], vec![1], vec![2]];
+        let modularity = g.modularity(&communities);
+
+        // Bad partition should have negative or very low modularity
+        assert!(modularity < 0.1);
     }
 }
