@@ -180,6 +180,566 @@
                 <div id="content" class="content">
                     <main>
                         <h1 id="advanced-optimizers-theory"><a class="header" href="#advanced-optimizers-theory">Advanced Optimizers Theory</a></h1>
+<p>Modern optimizers go beyond vanilla gradient descent by adapting learning rates, incorporating momentum, and using gradient statistics to achieve faster and more stable convergence. This chapter covers state-of-the-art optimization algorithms used in deep learning and machine learning.</p>
+<h2 id="why-advanced-optimizers"><a class="header" href="#why-advanced-optimizers">Why Advanced Optimizers?</a></h2>
+<p>Standard SGD with momentum works well but has limitations:</p>
+<ol>
+<li>
+<p><strong>Fixed learning rate</strong>: Same η for all parameters</p>
+<ul>
+<li>Problem: Different parameters may need different learning rates</li>
+<li>Example: Rare features need larger updates than frequent ones</li>
+</ul>
+</li>
+<li>
+<p><strong>Manual tuning required</strong>: Finding optimal η is time-consuming</p>
+<ul>
+<li>Grid search expensive</li>
+<li>Different datasets need different learning rates</li>
+</ul>
+</li>
+<li>
+<p><strong>Slow convergence</strong>: Without careful tuning, training can be slow</p>
+<ul>
+<li>Especially in non-convex landscapes</li>
+<li>High-dimensional parameter spaces</li>
+</ul>
+</li>
+</ol>
+<p><strong>Solution</strong>: Adaptive optimizers that automatically adjust learning rates per parameter.</p>
+<h2 id="optimizer-comparison-table"><a class="header" href="#optimizer-comparison-table">Optimizer Comparison Table</a></h2>
+<div class="table-wrapper"><table><thead><tr><th>Optimizer</th><th>Key Feature</th><th>Best For</th><th>Pros</th><th>Cons</th></tr></thead><tbody>
+<tr><td><strong>SGD + Momentum</strong></td><td>Velocity accumulation</td><td>General purpose</td><td>Simple, well-understood</td><td>Requires manual tuning</td></tr>
+<tr><td><strong>AdaGrad</strong></td><td>Per-parameter lr</td><td>Sparse gradients</td><td>Adapts to data</td><td>lr decays too aggressively</td></tr>
+<tr><td><strong>RMSprop</strong></td><td>Exponential moving average</td><td>RNNs, non-stationary</td><td>Fixes AdaGrad decay</td><td>No bias correction</td></tr>
+<tr><td><strong>Adam</strong></td><td>Momentum + RMSprop</td><td>Deep learning (default)</td><td>Fast, robust</td><td>Can overfit on small data</td></tr>
+<tr><td><strong>AdamW</strong></td><td>Adam + decoupled weight decay</td><td>Transformers</td><td>Better generalization</td><td>Slightly slower</td></tr>
+<tr><td><strong>Nadam</strong></td><td>Adam + Nesterov momentum</td><td>Computer vision</td><td>Faster convergence</td><td>More complex</td></tr>
+</tbody></table>
+</div>
+<h2 id="adagrad-adaptive-gradient-algorithm"><a class="header" href="#adagrad-adaptive-gradient-algorithm">AdaGrad: Adaptive Gradient Algorithm</a></h2>
+<p><strong>Key idea</strong>: Accumulate squared gradients and divide learning rate by their square root, giving smaller updates to frequently updated parameters.</p>
+<h3 id="algorithm"><a class="header" href="#algorithm">Algorithm</a></h3>
+<pre><code>Initialize:
+  θ₀ = initial parameters
+  G₀ = 0  (accumulated squared gradients)
+  η = learning rate (typically 0.01)
+  ε = 1e-8 (numerical stability)
+
+For t = 1, 2, ...
+  g_t = ∇L(θ_{t-1})             // Compute gradient
+  G_t = G_{t-1} + g_t ⊙ g_t      // Accumulate squared gradients
+  θ_t = θ_{t-1} - η / √(G_t + ε) ⊙ g_t  // Adaptive update
+</code></pre>
+<p>Where <strong>⊙</strong> denotes element-wise multiplication.</p>
+<h3 id="how-it-works"><a class="header" href="#how-it-works">How It Works</a></h3>
+<p><strong>Per-parameter learning rate</strong>:</p>
+<pre><code>η_i(t) = η / √(Σ(g_i^2) + ε)
+                s=1..t
+</code></pre>
+<ul>
+<li>Frequently updated parameters → large accumulated gradient → small effective η</li>
+<li>Infrequently updated parameters → small accumulated gradient → large effective η</li>
+</ul>
+<h3 id="example"><a class="header" href="#example">Example</a></h3>
+<p>Consider two parameters with gradients:</p>
+<pre><code>Parameter θ₁: Gradients = [10, 10, 10, 10]  (frequent updates)
+Parameter θ₂: Gradients = [1, 0, 0, 1]      (sparse updates)
+
+After 4 iterations (η = 0.1):
+
+θ₁: G = 10² + 10² + 10² + 10² = 400
+    Effective η₁ = 0.1 / √400 = 0.1 / 20 = 0.005  (small)
+
+θ₂: G = 1² + 0² + 0² + 1² = 2
+    Effective η₂ = 0.1 / √2 = 0.1 / 1.41 ≈ 0.071  (large)
+</code></pre>
+<p><strong>Result</strong>: θ₂ gets ~14x larger updates despite having smaller gradients!</p>
+<h3 id="advantages"><a class="header" href="#advantages">Advantages</a></h3>
+<ol>
+<li><strong>Automatic learning rate adaptation</strong>: No manual tuning per parameter</li>
+<li><strong>Great for sparse data</strong>: NLP, recommender systems</li>
+<li><strong>Handles different scales</strong>: Features with different ranges</li>
+</ol>
+<h3 id="disadvantages"><a class="header" href="#disadvantages">Disadvantages</a></h3>
+<ol>
+<li>
+<p><strong>Learning rate decay</strong>: Accumulation never decreases</p>
+<ul>
+<li>Eventually η → 0, stopping learning</li>
+<li>Problem for deep learning (many iterations)</li>
+</ul>
+</li>
+<li>
+<p><strong>Requires careful initialization</strong>: Poor initial η can hurt performance</p>
+</li>
+</ol>
+<h3 id="when-to-use"><a class="header" href="#when-to-use">When to Use</a></h3>
+<ul>
+<li><strong>Sparse gradients</strong>: NLP (word embeddings), recommender systems</li>
+<li><strong>Convex optimization</strong>: Guaranteed convergence for convex functions</li>
+<li><strong>Short training</strong>: If iteration count is small</li>
+</ul>
+<p><strong>Not recommended for</strong>: Deep neural networks (use RMSprop or Adam instead)</p>
+<h2 id="rmsprop-root-mean-square-propagation"><a class="header" href="#rmsprop-root-mean-square-propagation">RMSprop: Root Mean Square Propagation</a></h2>
+<p><strong>Key idea</strong>: Fix AdaGrad's aggressive learning rate decay by using exponential moving average instead of sum.</p>
+<h3 id="algorithm-1"><a class="header" href="#algorithm-1">Algorithm</a></h3>
+<pre><code>Initialize:
+  θ₀ = initial parameters
+  v₀ = 0  (moving average of squared gradients)
+  η = learning rate (typically 0.001)
+  β = decay rate (typically 0.9)
+  ε = 1e-8
+
+For t = 1, 2, ...
+  g_t = ∇L(θ_{t-1})                    // Compute gradient
+  v_t = β·v_{t-1} + (1-β)·(g_t ⊙ g_t)  // Exponential moving average
+  θ_t = θ_{t-1} - η / √(v_t + ε) ⊙ g_t  // Adaptive update
+</code></pre>
+<h3 id="key-difference-from-adagrad"><a class="header" href="#key-difference-from-adagrad">Key Difference from AdaGrad</a></h3>
+<p><strong>AdaGrad</strong>: <code>G_t = G_{t-1} + g_t²</code> (sum, always increasing)
+<strong>RMSprop</strong>: <code>v_t = β·v_{t-1} + (1-β)·g_t²</code> (exponential moving average)</p>
+<p>The <strong>exponential moving average</strong> forgets old gradients, allowing learning rate to increase again if recent gradients are small.</p>
+<h3 id="effect-of-decay-rate-β"><a class="header" href="#effect-of-decay-rate-β">Effect of Decay Rate β</a></h3>
+<pre><code>β = 0.9 (typical):
+  - Averages over ~10 iterations
+  - Balance between stability and adaptivity
+
+β = 0.99:
+  - Averages over ~100 iterations
+  - More stable, slower adaptation
+
+β = 0.5:
+  - Averages over ~2 iterations
+  - Fast adaptation, more noise
+</code></pre>
+<h3 id="advantages-1"><a class="header" href="#advantages-1">Advantages</a></h3>
+<ol>
+<li><strong>No learning rate decay problem</strong>: Can train indefinitely</li>
+<li><strong>Works well for RNNs</strong>: Handles non-stationary problems</li>
+<li><strong>Less sensitive to initialization</strong>: Compared to AdaGrad</li>
+</ol>
+<h3 id="disadvantages-1"><a class="header" href="#disadvantages-1">Disadvantages</a></h3>
+<ol>
+<li><strong>No bias correction</strong>: Early iterations biased toward 0</li>
+<li><strong>Still requires tuning</strong>: η and β hyperparameters</li>
+</ol>
+<h3 id="when-to-use-1"><a class="header" href="#when-to-use-1">When to Use</a></h3>
+<ul>
+<li><strong>RNNs and LSTMs</strong>: Originally designed for this</li>
+<li><strong>Non-stationary problems</strong>: Changing data distributions</li>
+<li><strong>Deep learning</strong>: Better than AdaGrad for many epochs</li>
+</ul>
+<h2 id="adam-adaptive-moment-estimation"><a class="header" href="#adam-adaptive-moment-estimation">Adam: Adaptive Moment Estimation</a></h2>
+<p><strong>The most popular optimizer</strong> in modern deep learning. Combines the best ideas from momentum and RMSprop.</p>
+<h3 id="core-concept"><a class="header" href="#core-concept">Core Concept</a></h3>
+<p>Adam maintains two moving averages:</p>
+<ol>
+<li><strong>First moment</strong> (m): Exponential moving average of gradients (momentum)</li>
+<li><strong>Second moment</strong> (v): Exponential moving average of squared gradients (RMSprop)</li>
+</ol>
+<h3 id="algorithm-2"><a class="header" href="#algorithm-2">Algorithm</a></h3>
+<pre><code>Initialize:
+  θ₀ = initial parameters
+  m₀ = 0  (first moment: mean gradient)
+  v₀ = 0  (second moment: uncentered variance)
+  η = 0.001  (learning rate)
+  β₁ = 0.9   (exponential decay for first moment)
+  β₂ = 0.999 (exponential decay for second moment)
+  ε = 1e-8
+
+For t = 1, 2, ...
+  g_t = ∇L(θ_{t-1})                     // Gradient
+
+  m_t = β₁·m_{t-1} + (1-β₁)·g_t         // Update first moment
+  v_t = β₂·v_{t-1} + (1-β₂)·(g_t ⊙ g_t)  // Update second moment
+
+  m̂_t = m_t / (1 - β₁^t)                // Bias correction for m
+  v̂_t = v_t / (1 - β₂^t)                // Bias correction for v
+
+  θ_t = θ_{t-1} - η · m̂_t / (√v̂_t + ε)  // Parameter update
+</code></pre>
+<h3 id="why-bias-correction"><a class="header" href="#why-bias-correction">Why Bias Correction?</a></h3>
+<p>Initially, m and v are zero. Exponential moving averages are biased toward zero at the start.</p>
+<p><strong>Example</strong> (β₁ = 0.9, g₁ = 1.0):</p>
+<pre><code>Without bias correction:
+  m₁ = 0.9 × 0 + 0.1 × 1.0 = 0.1  (underestimates true mean of 1.0)
+
+With bias correction:
+  m̂₁ = 0.1 / (1 - 0.9¹) = 0.1 / 0.1 = 1.0  (correct!)
+</code></pre>
+<p>The correction factor <code>1 - β^t</code> approaches 1 as t increases, so correction matters most early in training.</p>
+<h3 id="hyperparameters"><a class="header" href="#hyperparameters">Hyperparameters</a></h3>
+<p><strong>Default values</strong> (from paper, work well in practice):</p>
+<ul>
+<li><strong>η = 0.001</strong>: Learning rate (most important to tune)</li>
+<li><strong>β₁ = 0.9</strong>: First moment decay (rarely changed)</li>
+<li><strong>β₂ = 0.999</strong>: Second moment decay (rarely changed)</li>
+<li><strong>ε = 1e-8</strong>: Numerical stability</li>
+</ul>
+<p><strong>Tuning guidelines</strong>:</p>
+<ol>
+<li>Start with defaults</li>
+<li>If unstable: reduce η to 0.0001</li>
+<li>If slow: increase η to 0.01</li>
+<li>Adjust β₁ for more/less momentum (rarely needed)</li>
+</ol>
+<h3 id="aprender-implementation"><a class="header" href="#aprender-implementation">aprender Implementation</a></h3>
+<pre><code class="language-rust">use aprender::optim::{Adam, Optimizer};
+
+// Create Adam optimizer with default hyperparameters
+let mut adam = Adam::new(0.001)  // learning rate
+    .with_beta1(0.9)             // optional: momentum coefficient
+    .with_beta2(0.999)           // optional: RMSprop coefficient
+    .with_epsilon(1e-8);         // optional: numerical stability
+
+// Training loop
+for epoch in 0..num_epochs {
+    for batch in data_loader {
+        // Forward pass
+        let predictions = model.predict(&amp;batch.x);
+        let loss = loss_fn(predictions, batch.y);
+
+        // Compute gradients
+        let grads = compute_gradients(&amp;model, &amp;batch);
+
+        // Adam step (handles momentum + adaptive lr internally)
+        adam.step(&amp;mut model.params, &amp;grads);
+    }
+}</code></pre>
+<p><strong>Key methods</strong>:</p>
+<ul>
+<li><code>Adam::new(η)</code>: Create with learning rate</li>
+<li><code>with_beta1(β₁)</code>, <code>with_beta2(β₂)</code>: Set moment decay rates</li>
+<li><code>step(&amp;mut params, &amp;grads)</code>: Perform one update step</li>
+<li><code>reset()</code>: Reset moment buffers (for multiple training runs)</li>
+</ul>
+<h3 id="advantages-2"><a class="header" href="#advantages-2">Advantages</a></h3>
+<ol>
+<li><strong>Robust</strong>: Works well with default hyperparameters</li>
+<li><strong>Fast convergence</strong>: Combines momentum + adaptive lr</li>
+<li><strong>Memory efficient</strong>: Only 2x parameter memory (m and v)</li>
+<li><strong>Well-studied</strong>: Extensive empirical validation</li>
+</ol>
+<h3 id="disadvantages-2"><a class="header" href="#disadvantages-2">Disadvantages</a></h3>
+<ol>
+<li><strong>Can overfit</strong>: On small datasets or with insufficient regularization</li>
+<li><strong>Generalization</strong>: Sometimes SGD with momentum generalizes better</li>
+<li><strong>Memory overhead</strong>: 2x parameter count</li>
+</ol>
+<h3 id="when-to-use-2"><a class="header" href="#when-to-use-2">When to Use</a></h3>
+<ul>
+<li><strong>Default choice</strong>: For most deep learning problems</li>
+<li><strong>Fast prototyping</strong>: Converges quickly, minimal tuning</li>
+<li><strong>Large-scale training</strong>: Handles high-dimensional problems well</li>
+</ul>
+<p><strong>When to avoid</strong>:</p>
+<ul>
+<li>Very small datasets (&lt;1000 samples): Try SGD + momentum</li>
+<li>Need best generalization: Consider SGD with learning rate schedule</li>
+</ul>
+<h2 id="adamw-adam-with-decoupled-weight-decay"><a class="header" href="#adamw-adam-with-decoupled-weight-decay">AdamW: Adam with Decoupled Weight Decay</a></h2>
+<p><strong>Problem with Adam</strong>: Weight decay (L2 regularization) interacts badly with adaptive learning rates.</p>
+<p><strong>Solution</strong>: Decouple weight decay from gradient-based optimization.</p>
+<h3 id="standard-adam-with-weight-decay-wrong"><a class="header" href="#standard-adam-with-weight-decay-wrong">Standard Adam with Weight Decay (Wrong)</a></h3>
+<pre><code>g_t = ∇L(θ_{t-1}) + λ·θ_{t-1}  // Add L2 penalty to gradient
+// ... normal Adam update with modified gradient
+</code></pre>
+<p><strong>Problem</strong>: Weight decay gets adapted by second moment estimate, weakening regularization.</p>
+<h3 id="adamw-correct"><a class="header" href="#adamw-correct">AdamW (Correct)</a></h3>
+<pre><code>// Normal Adam update (no λ in gradient)
+m_t = β₁·m_{t-1} + (1-β₁)·g_t
+v_t = β₂·v_{t-1} + (1-β₂)·(g_t ⊙ g_t)
+m̂_t = m_t / (1 - β₁^t)
+v̂_t = v_t / (1 - β₂^t)
+
+// Separate weight decay step
+θ_t = θ_{t-1} - η · (m̂_t / (√v̂_t + ε) + λ·θ_{t-1})
+</code></pre>
+<p>Weight decay applied directly to parameters, not through adaptive learning rates.</p>
+<h3 id="when-to-use-3"><a class="header" href="#when-to-use-3">When to Use</a></h3>
+<ul>
+<li><strong>Transformers</strong>: Essential for BERT, GPT models</li>
+<li><strong>Large models</strong>: Better generalization on big networks</li>
+<li><strong>Transfer learning</strong>: Fine-tuning pre-trained models</li>
+</ul>
+<p><strong>Hyperparameters</strong>:</p>
+<ul>
+<li>Same as Adam, plus:</li>
+<li><strong>λ = 0.01</strong>: Weight decay coefficient (typical)</li>
+</ul>
+<h2 id="optimizer-selection-guide"><a class="header" href="#optimizer-selection-guide">Optimizer Selection Guide</a></h2>
+<h3 id="decision-tree"><a class="header" href="#decision-tree">Decision Tree</a></h3>
+<pre><code>Start
+  │
+  ├─ Need fast prototyping?
+  │    └─ YES → Adam (default: η=0.001)
+  │
+  ├─ Training RNN/LSTM?
+  │    └─ YES → RMSprop (default: η=0.001, β=0.9)
+  │
+  ├─ Working with transformers?
+  │    └─ YES → AdamW (η=0.001, λ=0.01)
+  │
+  ├─ Sparse gradients (NLP embeddings)?
+  │    └─ YES → AdaGrad (η=0.01)
+  │
+  ├─ Need best generalization?
+  │    └─ YES → SGD + momentum (η=0.1, β=0.9) + lr schedule
+  │
+  └─ Small dataset (&lt;1000 samples)?
+       └─ YES → SGD + momentum (less overfitting)
+</code></pre>
+<h3 id="practical-recommendations"><a class="header" href="#practical-recommendations">Practical Recommendations</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Task</th><th>Recommended Optimizer</th><th>Learning Rate</th><th>Notes</th></tr></thead><tbody>
+<tr><td>Image classification (CNN)</td><td>Adam or SGD+momentum</td><td>0.001 (Adam), 0.1 (SGD)</td><td>SGD often better final accuracy</td></tr>
+<tr><td>NLP (word embeddings)</td><td>AdaGrad or Adam</td><td>0.01 (AdaGrad), 0.001 (Adam)</td><td>AdaGrad for sparse features</td></tr>
+<tr><td>RNN/LSTM</td><td>RMSprop or Adam</td><td>0.001</td><td>RMSprop traditional choice</td></tr>
+<tr><td>Transformers</td><td>AdamW</td><td>0.0001-0.001</td><td>Essential for BERT, GPT</td></tr>
+<tr><td>Small dataset</td><td>SGD + momentum</td><td>0.01-0.1</td><td>Less prone to overfitting</td></tr>
+<tr><td>Reinforcement learning</td><td>Adam or RMSprop</td><td>0.0001-0.001</td><td>Non-stationary problem</td></tr>
+</tbody></table>
+</div>
+<h2 id="learning-rate-schedules"><a class="header" href="#learning-rate-schedules">Learning Rate Schedules</a></h2>
+<p>Even with adaptive optimizers, <strong>learning rate schedules</strong> improve performance.</p>
+<h3 id="1-step-decay"><a class="header" href="#1-step-decay">1. Step Decay</a></h3>
+<p>Reduce η by factor every K epochs:</p>
+<pre><code class="language-rust">let initial_lr = 0.001;
+let decay_factor = 0.1;
+let decay_epochs = 30;
+
+for epoch in 0..num_epochs {
+    let lr = initial_lr * decay_factor.powi((epoch / decay_epochs) as i32);
+    let mut adam = Adam::new(lr);
+    // ... training
+}</code></pre>
+<h3 id="2-exponential-decay"><a class="header" href="#2-exponential-decay">2. Exponential Decay</a></h3>
+<p>Smooth exponential reduction:</p>
+<pre><code class="language-rust">let initial_lr = 0.001;
+let decay_rate = 0.96;
+
+for epoch in 0..num_epochs {
+    let lr = initial_lr * decay_rate.powi(epoch as i32);
+    let mut adam = Adam::new(lr);
+    // ... training
+}</code></pre>
+<h3 id="3-cosine-annealing"><a class="header" href="#3-cosine-annealing">3. Cosine Annealing</a></h3>
+<p>Smooth reduction following cosine curve:</p>
+<pre><code class="language-rust">use std::f32::consts::PI;
+
+let lr_max = 0.001;
+let lr_min = 0.00001;
+let T_max = 100; // periods
+
+for epoch in 0..num_epochs {
+    let lr = lr_min + 0.5 * (lr_max - lr_min) *
+             (1.0 + f32::cos(PI * (epoch as f32) / (T_max as f32)));
+    let mut adam = Adam::new(lr);
+    // ... training
+}</code></pre>
+<h3 id="4-warm-up--decay"><a class="header" href="#4-warm-up--decay">4. Warm-up + Decay</a></h3>
+<p>Start small, increase, then decay (used in transformers):</p>
+<pre><code class="language-rust">fn learning_rate_schedule(step: usize, d_model: usize, warmup_steps: usize) -&gt; f32 {
+    let d_model = d_model as f32;
+    let step = step as f32;
+    let warmup_steps = warmup_steps as f32;
+
+    let arg1 = 1.0 / step.sqrt();
+    let arg2 = step * warmup_steps.powf(-1.5);
+
+    d_model.powf(-0.5) * arg1.min(arg2)
+}</code></pre>
+<h2 id="comparison-sgd-vs-adam"><a class="header" href="#comparison-sgd-vs-adam">Comparison: SGD vs Adam</a></h2>
+<h3 id="when-sgd--momentum-is-better"><a class="header" href="#when-sgd--momentum-is-better">When SGD + Momentum is Better</a></h3>
+<p><strong>Advantages</strong>:</p>
+<ul>
+<li>Better final generalization (lower test error)</li>
+<li>Flatter minima (more robust to perturbations)</li>
+<li>Less memory (no moment estimates)</li>
+</ul>
+<p><strong>Requirements</strong>:</p>
+<ul>
+<li>Careful learning rate tuning</li>
+<li>Learning rate schedule essential</li>
+<li>More training time may be needed</li>
+</ul>
+<h3 id="when-adam-is-better"><a class="header" href="#when-adam-is-better">When Adam is Better</a></h3>
+<p><strong>Advantages</strong>:</p>
+<ul>
+<li>Faster initial convergence</li>
+<li>Minimal hyperparameter tuning</li>
+<li>Works across many problem types</li>
+</ul>
+<p><strong>Trade-offs</strong>:</p>
+<ul>
+<li>Can overfit more easily</li>
+<li>May find sharper minima</li>
+<li>Slightly worse generalization on some tasks</li>
+</ul>
+<h3 id="empirical-rule"><a class="header" href="#empirical-rule">Empirical Rule</a></h3>
+<p><strong>Adam for</strong>:</p>
+<ul>
+<li>Fast prototyping and experimentation</li>
+<li>Baseline models</li>
+<li>Large-scale problems (many parameters)</li>
+</ul>
+<p><strong>SGD + momentum for</strong>:</p>
+<ul>
+<li>Final production models (after tuning)</li>
+<li>When computational budget allows careful tuning</li>
+<li>Small to medium datasets</li>
+</ul>
+<h2 id="debugging-optimizer-issues"><a class="header" href="#debugging-optimizer-issues">Debugging Optimizer Issues</a></h2>
+<h3 id="loss-not-decreasing"><a class="header" href="#loss-not-decreasing">Loss Not Decreasing</a></h3>
+<p><strong>Possible causes</strong>:</p>
+<ol>
+<li>Learning rate too small
+<ul>
+<li><strong>Fix</strong>: Increase η by 10x</li>
+</ul>
+</li>
+<li>Vanishing gradients
+<ul>
+<li><strong>Fix</strong>: Check gradient norms, adjust architecture</li>
+</ul>
+</li>
+<li>Bug in gradient computation
+<ul>
+<li><strong>Fix</strong>: Use gradient checking</li>
+</ul>
+</li>
+</ol>
+<h3 id="loss-exploding-nan"><a class="header" href="#loss-exploding-nan">Loss Exploding (NaN)</a></h3>
+<p><strong>Possible causes</strong>:</p>
+<ol>
+<li>Learning rate too large
+<ul>
+<li><strong>Fix</strong>: Reduce η by 10x</li>
+</ul>
+</li>
+<li>Gradient explosion
+<ul>
+<li><strong>Fix</strong>: Gradient clipping, better initialization</li>
+</ul>
+</li>
+</ol>
+<h3 id="slow-convergence"><a class="header" href="#slow-convergence">Slow Convergence</a></h3>
+<p><strong>Possible causes</strong>:</p>
+<ol>
+<li>Poor learning rate
+<ul>
+<li><strong>Fix</strong>: Try different optimizer (Adam if using SGD)</li>
+</ul>
+</li>
+<li>No momentum
+<ul>
+<li><strong>Fix</strong>: Add momentum (β=0.9)</li>
+</ul>
+</li>
+<li>Suboptimal batch size
+<ul>
+<li><strong>Fix</strong>: Try 32, 64, 128</li>
+</ul>
+</li>
+</ol>
+<h3 id="overfitting"><a class="header" href="#overfitting">Overfitting</a></h3>
+<p><strong>Possible causes</strong>:</p>
+<ol>
+<li>Optimizer too aggressive (Adam on small data)
+<ul>
+<li><strong>Fix</strong>: Switch to SGD + momentum</li>
+</ul>
+</li>
+<li>No regularization
+<ul>
+<li><strong>Fix</strong>: Add weight decay (AdamW)</li>
+</ul>
+</li>
+</ol>
+<h2 id="aprender-optimizer-example"><a class="header" href="#aprender-optimizer-example">aprender Optimizer Example</a></h2>
+<pre><code class="language-rust">use aprender::optim::{Adam, SGD, Optimizer};
+use aprender::linear_model::LogisticRegression;
+use aprender::prelude::*;
+
+// Example: Comparing Adam vs SGD
+fn compare_optimizers(x_train: &amp;Matrix&lt;f32&gt;, y_train: &amp;Vector&lt;i32&gt;) {
+    // Optimizer 1: Adam (fast convergence)
+    let mut model_adam = LogisticRegression::new();
+    let mut adam = Adam::new(0.001);
+
+    println!(&quot;Training with Adam...&quot;);
+    for epoch in 0..50 {
+        let loss = train_epoch(&amp;mut model_adam, x_train, y_train, &amp;mut adam);
+        if epoch % 10 == 0 {
+            println!(&quot;  Epoch {}: Loss = {:.4}&quot;, epoch, loss);
+        }
+    }
+
+    // Optimizer 2: SGD + momentum (better generalization)
+    let mut model_sgd = LogisticRegression::new();
+    let mut sgd = SGD::new(0.1).with_momentum(0.9);
+
+    println!(&quot;\nTraining with SGD + Momentum...&quot;);
+    for epoch in 0..50 {
+        let loss = train_epoch(&amp;mut model_sgd, x_train, y_train, &amp;mut sgd);
+        if epoch % 10 == 0 {
+            println!(&quot;  Epoch {}: Loss = {:.4}&quot;, epoch, loss);
+        }
+    }
+}
+
+fn train_epoch&lt;O: Optimizer&gt;(
+    model: &amp;mut LogisticRegression,
+    x: &amp;Matrix&lt;f32&gt;,
+    y: &amp;Vector&lt;i32&gt;,
+    optimizer: &amp;mut O,
+) -&gt; f32 {
+    // Compute loss and gradients
+    let predictions = model.predict_proba(x);
+    let loss = compute_cross_entropy_loss(&amp;predictions, y);
+    let grads = compute_gradients(model, x, y);
+
+    // Update parameters
+    optimizer.step(&amp;mut model.coefficients_mut(), &amp;grads);
+
+    loss
+}</code></pre>
+<h2 id="further-reading"><a class="header" href="#further-reading">Further Reading</a></h2>
+<p><strong>Seminal Papers</strong>:</p>
+<ul>
+<li><strong>Adam</strong>: Kingma &amp; Ba (2015). &quot;Adam: A Method for Stochastic Optimization&quot;</li>
+<li><strong>AdamW</strong>: Loshchilov &amp; Hutter (2019). &quot;Decoupled Weight Decay Regularization&quot;</li>
+<li><strong>RMSprop</strong>: Hinton (unpublished, Coursera lecture)</li>
+<li><strong>AdaGrad</strong>: Duchi et al. (2011). &quot;Adaptive Subgradient Methods&quot;</li>
+</ul>
+<p><strong>Practical Guides</strong>:</p>
+<ul>
+<li>Ruder, S. (2016). &quot;An overview of gradient descent optimization algorithms&quot;</li>
+<li>CS231n Stanford: Optimization notes</li>
+</ul>
+<h2 id="related-chapters"><a class="header" href="#related-chapters">Related Chapters</a></h2>
+<ul>
+<li><a href="./gradient-descent.html">Gradient Descent Theory</a> - Foundation for all optimizers</li>
+<li><a href="../examples/optimizer-demo.html">Optimizer Demo</a> - Visual comparison of SGD and Adam</li>
+<li><a href="../examples/regularized-regression.html">Regularized Regression</a> - Coordinate descent alternative</li>
+</ul>
+<h2 id="summary"><a class="header" href="#summary">Summary</a></h2>
+<div class="table-wrapper"><table><thead><tr><th>Optimizer</th><th>Core Innovation</th><th>When to Use</th><th>aprender Support</th></tr></thead><tbody>
+<tr><td><strong>AdaGrad</strong></td><td>Per-parameter learning rates</td><td>Sparse gradients, convex problems</td><td>Not yet (v0.5.0)</td></tr>
+<tr><td><strong>RMSprop</strong></td><td>Exponential moving average of squared gradients</td><td>RNNs, non-stationary</td><td>Not yet (v0.5.0)</td></tr>
+<tr><td><strong>Adam</strong></td><td>Momentum + RMSprop + bias correction</td><td>Default choice, deep learning</td><td>✅ Implemented</td></tr>
+<tr><td><strong>AdamW</strong></td><td>Adam + decoupled weight decay</td><td>Transformers, large models</td><td>Not yet (v0.5.0)</td></tr>
+</tbody></table>
+</div>
+<p><strong>Key Takeaways</strong>:</p>
+<ol>
+<li><strong>Adam is the default</strong> for most deep learning: fast, robust, minimal tuning</li>
+<li><strong>SGD + momentum</strong> often achieves better final accuracy with proper tuning</li>
+<li><strong>Learning rate schedules</strong> improve all optimizers</li>
+<li><strong>AdamW essential</strong> for training transformers</li>
+<li><strong>Monitor convergence</strong>: Loss curves reveal optimizer issues</li>
+</ol>
+<p>Modern optimizers dramatically accelerate machine learning by adapting learning rates automatically. Understanding their trade-offs enables choosing the right tool for each problem.</p>
 
                     </main>
 

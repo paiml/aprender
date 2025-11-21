@@ -180,6 +180,404 @@
                 <div id="content" class="content">
                     <main>
                         <h1 id="gradient-descent-theory"><a class="header" href="#gradient-descent-theory">Gradient Descent Theory</a></h1>
+<p>Gradient descent is the fundamental optimization algorithm used to train machine learning models. It iteratively adjusts model parameters to minimize a loss function by following the direction of steepest descent.</p>
+<h2 id="mathematical-foundation"><a class="header" href="#mathematical-foundation">Mathematical Foundation</a></h2>
+<h3 id="the-core-idea"><a class="header" href="#the-core-idea">The Core Idea</a></h3>
+<p>Given a differentiable loss function <strong>L(θ)</strong> where <strong>θ</strong> represents model parameters, gradient descent finds parameters that minimize the loss:</p>
+<pre><code>θ* = argmin L(θ)
+       θ
+</code></pre>
+<p>The algorithm works by repeatedly taking steps proportional to the <strong>negative gradient</strong> of the loss function:</p>
+<pre><code>θ(t+1) = θ(t) - η ∇L(θ(t))
+</code></pre>
+<p>Where:</p>
+<ul>
+<li><strong>θ(t)</strong>: Parameters at iteration t</li>
+<li><strong>η</strong>: Learning rate (step size)</li>
+<li><strong>∇L(θ(t))</strong>: Gradient of loss with respect to parameters</li>
+</ul>
+<h3 id="why-the-negative-gradient"><a class="header" href="#why-the-negative-gradient">Why the Negative Gradient?</a></h3>
+<p>The gradient <strong>∇L(θ)</strong> points in the direction of <strong>steepest ascent</strong> (maximum increase in loss). By moving in the <strong>negative gradient direction</strong>, we move toward the steepest descent (minimum loss).</p>
+<p><strong>Intuition</strong>: Imagine standing on a mountain in thick fog. You can feel the slope beneath your feet but can't see the valley. Gradient descent is like repeatedly taking a step in the direction that slopes most steeply downward.</p>
+<h2 id="variants-of-gradient-descent"><a class="header" href="#variants-of-gradient-descent">Variants of Gradient Descent</a></h2>
+<h3 id="1-batch-gradient-descent-bgd"><a class="header" href="#1-batch-gradient-descent-bgd">1. Batch Gradient Descent (BGD)</a></h3>
+<p>Computes the gradient using the <strong>entire training dataset</strong>:</p>
+<pre><code>∇L(θ) = (1/N) Σ ∇L_i(θ)
+              i=1..N
+</code></pre>
+<p><strong>Advantages</strong>:</p>
+<ul>
+<li>Stable convergence (smooth trajectory)</li>
+<li>Guaranteed to converge to global minimum (convex functions)</li>
+<li>Theoretical guarantees</li>
+</ul>
+<p><strong>Disadvantages</strong>:</p>
+<ul>
+<li>Slow for large datasets (must process all samples)</li>
+<li>Memory intensive</li>
+<li>May converge to poor local minima (non-convex functions)</li>
+</ul>
+<p><strong>When to use</strong>: Small datasets (N &lt; 10,000), convex optimization problems</p>
+<h3 id="2-stochastic-gradient-descent-sgd"><a class="header" href="#2-stochastic-gradient-descent-sgd">2. Stochastic Gradient Descent (SGD)</a></h3>
+<p>Computes gradient using a <strong>single random sample</strong> at each iteration:</p>
+<pre><code>∇L(θ) ≈ ∇L_i(θ)    where i ~ Uniform(1..N)
+</code></pre>
+<p><strong>Advantages</strong>:</p>
+<ul>
+<li>Fast updates (one sample per iteration)</li>
+<li>Can escape shallow local minima (noise helps exploration)</li>
+<li>Memory efficient</li>
+<li>Online learning capable</li>
+</ul>
+<p><strong>Disadvantages</strong>:</p>
+<ul>
+<li>Noisy convergence (zig-zagging trajectory)</li>
+<li>May not converge exactly to minimum</li>
+<li>Requires learning rate decay</li>
+</ul>
+<p><strong>When to use</strong>: Large datasets, online learning, non-convex optimization</p>
+<p><strong>aprender implementation</strong>:</p>
+<pre><code class="language-rust">use aprender::optim::SGD;
+
+let mut optimizer = SGD::new(0.01) // learning rate = 0.01
+    .with_momentum(0.9);           // momentum coefficient
+
+// In training loop:
+let gradients = compute_gradients(&amp;params, &amp;data);
+optimizer.step(&amp;mut params, &amp;gradients);</code></pre>
+<h3 id="3-mini-batch-gradient-descent"><a class="header" href="#3-mini-batch-gradient-descent">3. Mini-Batch Gradient Descent</a></h3>
+<p>Computes gradient using a <strong>small batch of samples</strong> (typically 32-256):</p>
+<pre><code>∇L(θ) ≈ (1/B) Σ ∇L_i(θ)    where B &lt;&lt; N
+             i∈batch
+</code></pre>
+<p><strong>Advantages</strong>:</p>
+<ul>
+<li>Balance between BGD stability and SGD speed</li>
+<li>Vectorized operations (GPU/SIMD acceleration)</li>
+<li>Reduced variance compared to SGD</li>
+<li>Memory efficient</li>
+</ul>
+<p><strong>Disadvantages</strong>:</p>
+<ul>
+<li>Batch size is a hyperparameter to tune</li>
+<li>Still has some noise</li>
+</ul>
+<p><strong>When to use</strong>: Default choice for most ML problems, deep learning</p>
+<p><strong>Batch size guidelines</strong>:</p>
+<ul>
+<li>Small batches (32-64): Better generalization, more noise</li>
+<li>Large batches (128-512): Faster convergence, more stable</li>
+<li>Powers of 2: Better hardware utilization</li>
+</ul>
+<h2 id="the-learning-rate"><a class="header" href="#the-learning-rate">The Learning Rate</a></h2>
+<p>The learning rate <strong>η</strong> is the <strong>most critical hyperparameter</strong> in gradient descent.</p>
+<h3 id="too-small-learning-rate"><a class="header" href="#too-small-learning-rate">Too Small Learning Rate</a></h3>
+<pre><code>η = 0.001 (very small)
+
+Loss over time:
+1000 ┤
+ 900 ┤
+ 800 ┤
+ 700 ┤●
+ 600 ┤ ●
+ 500 ┤  ●
+ 400 ┤   ●●●●●●●●●●●●●●●  ← Slow convergence
+     └─────────────────────→
+        Iterations (10,000)
+</code></pre>
+<p><strong>Problem</strong>: Training is very slow, may not converge within time budget.</p>
+<h3 id="too-large-learning-rate"><a class="header" href="#too-large-learning-rate">Too Large Learning Rate</a></h3>
+<pre><code>η = 1.0 (very large)
+
+Loss over time:
+1000 ┤    ●
+ 900 ┤   ● ●
+ 800 ┤  ●   ●
+ 700 ┤ ●     ●  ← Oscillation
+ 600 ┤●       ●
+     └──────────→
+      Iterations
+</code></pre>
+<p><strong>Problem</strong>: Loss oscillates or diverges, never converges to minimum.</p>
+<h3 id="optimal-learning-rate"><a class="header" href="#optimal-learning-rate">Optimal Learning Rate</a></h3>
+<pre><code>η = 0.1 (just right)
+
+Loss over time:
+1000 ┤●
+ 800 ┤ ●●
+ 600 ┤    ●●●
+ 400 ┤       ●●●●  ← Smooth, fast convergence
+ 200 ┤           ●●●●
+     └───────────────→
+         Iterations
+</code></pre>
+<p><strong>Guidelines for choosing η</strong>:</p>
+<ol>
+<li>Start with <strong>η = 0.1</strong> and adjust by factors of 10</li>
+<li>Use <strong>learning rate schedules</strong> (decay over time)</li>
+<li>Monitor loss: if exploding → reduce η; if stagnating → increase η</li>
+<li>Try <strong>adaptive methods</strong> (Adam, RMSprop) that auto-tune η</li>
+</ol>
+<h2 id="convergence-analysis"><a class="header" href="#convergence-analysis">Convergence Analysis</a></h2>
+<h3 id="convex-functions"><a class="header" href="#convex-functions">Convex Functions</a></h3>
+<p>For <strong>convex loss functions</strong> (e.g., linear regression with MSE), gradient descent with fixed learning rate converges to the <strong>global minimum</strong>:</p>
+<pre><code>L(θ(t)) - L(θ*) ≤ C / t
+</code></pre>
+<p>Where <strong>C</strong> is a constant. The gap to the optimal loss decreases as <strong>1/t</strong>.</p>
+<p><strong>Convergence rate</strong>: O(1/t) for fixed learning rate</p>
+<h3 id="non-convex-functions"><a class="header" href="#non-convex-functions">Non-Convex Functions</a></h3>
+<p>For <strong>non-convex functions</strong> (e.g., neural networks), gradient descent may converge to:</p>
+<ul>
+<li>Local minimum</li>
+<li>Saddle point</li>
+<li>Plateau region</li>
+</ul>
+<p><strong>No guarantees</strong> of finding the global minimum, but SGD's noise helps escape poor local minima.</p>
+<h3 id="stopping-criteria"><a class="header" href="#stopping-criteria">Stopping Criteria</a></h3>
+<p><strong>When to stop iterating?</strong></p>
+<ol>
+<li>
+<p><strong>Gradient magnitude</strong>: Stop when ||∇L(θ)|| &lt; ε</p>
+<ul>
+<li>ε = 1e-4 typical threshold</li>
+</ul>
+</li>
+<li>
+<p><strong>Loss change</strong>: Stop when |L(t) - L(t-1)| &lt; ε</p>
+<ul>
+<li>Measures improvement per iteration</li>
+</ul>
+</li>
+<li>
+<p><strong>Maximum iterations</strong>: Stop after T iterations</p>
+<ul>
+<li>Prevents infinite loops</li>
+</ul>
+</li>
+<li>
+<p><strong>Validation loss</strong>: Stop when validation loss stops improving</p>
+<ul>
+<li>Prevents overfitting</li>
+</ul>
+</li>
+</ol>
+<p><strong>aprender example</strong>:</p>
+<pre><code class="language-rust">// SGD with convergence monitoring
+let mut optimizer = SGD::new(0.01);
+let mut prev_loss = f32::INFINITY;
+let tolerance = 1e-4;
+
+for epoch in 0..max_epochs {
+    let loss = compute_loss(&amp;model, &amp;data);
+
+    // Check convergence
+    if (prev_loss - loss).abs() &lt; tolerance {
+        println!(&quot;Converged at epoch {}&quot;, epoch);
+        break;
+    }
+
+    let gradients = compute_gradients(&amp;model, &amp;data);
+    optimizer.step(&amp;mut model.params, &amp;gradients);
+    prev_loss = loss;
+}</code></pre>
+<h2 id="common-pitfalls-and-solutions"><a class="header" href="#common-pitfalls-and-solutions">Common Pitfalls and Solutions</a></h2>
+<h3 id="1-exploding-gradients"><a class="header" href="#1-exploding-gradients">1. Exploding Gradients</a></h3>
+<p><strong>Problem</strong>: Gradients become very large, causing parameters to explode.</p>
+<p><strong>Symptoms</strong>:</p>
+<ul>
+<li>Loss becomes NaN or infinity</li>
+<li>Parameters grow to extreme values</li>
+<li>Occurs in deep networks or RNNs</li>
+</ul>
+<p><strong>Solutions</strong>:</p>
+<ul>
+<li>Reduce learning rate</li>
+<li>Gradient clipping: <code>g = min(g, threshold)</code></li>
+<li>Use batch normalization</li>
+<li>Better initialization (Xavier, He)</li>
+</ul>
+<h3 id="2-vanishing-gradients"><a class="header" href="#2-vanishing-gradients">2. Vanishing Gradients</a></h3>
+<p><strong>Problem</strong>: Gradients become very small, preventing parameter updates.</p>
+<p><strong>Symptoms</strong>:</p>
+<ul>
+<li>Loss stops decreasing but hasn't converged</li>
+<li>Parameters barely change</li>
+<li>Occurs in very deep networks</li>
+</ul>
+<p><strong>Solutions</strong>:</p>
+<ul>
+<li>Use ReLU activation (instead of sigmoid/tanh)</li>
+<li>Skip connections (ResNet architecture)</li>
+<li>Batch normalization</li>
+<li>Better initialization</li>
+</ul>
+<h3 id="3-learning-rate-decay"><a class="header" href="#3-learning-rate-decay">3. Learning Rate Decay</a></h3>
+<p><strong>Strategy</strong>: Start with large learning rate, gradually decrease it.</p>
+<p><strong>Common schedules</strong>:</p>
+<pre><code class="language-rust">// 1. Step decay: Reduce by factor every K epochs
+η(t) = η₀ × 0.1^(floor(t / K))
+
+// 2. Exponential decay: Smooth reduction
+η(t) = η₀ × e^(-λt)
+
+// 3. 1/t decay: Theoretical convergence guarantee
+η(t) = η₀ / (1 + λt)
+
+// 4. Cosine annealing: Cyclical with restarts
+η(t) = η_min + 0.5(η_max - η_min)(1 + cos(πt/T))</code></pre>
+<p><strong>aprender pattern</strong> (manual implementation):</p>
+<pre><code class="language-rust">let initial_lr = 0.1;
+let decay_rate = 0.95;
+
+for epoch in 0..num_epochs {
+    let lr = initial_lr * decay_rate.powi(epoch as i32);
+    let mut optimizer = SGD::new(lr);
+
+    // Training step
+    optimizer.step(&amp;mut params, &amp;gradients);
+}</code></pre>
+<h3 id="4-saddle-points"><a class="header" href="#4-saddle-points">4. Saddle Points</a></h3>
+<p><strong>Problem</strong>: Gradient is zero but point is not a minimum.</p>
+<pre><code>Surface shape at saddle point:
+    ╱╲    (upward in one direction)
+   ╱  ╲
+  ╱    ╲
+ ╱______╲  (downward in another)
+</code></pre>
+<p><strong>Solutions</strong>:</p>
+<ul>
+<li>Add momentum (helps escape saddle points)</li>
+<li>Use SGD noise to explore</li>
+<li>Second-order methods (Newton, L-BFGS)</li>
+</ul>
+<h2 id="momentum-enhancement"><a class="header" href="#momentum-enhancement">Momentum Enhancement</a></h2>
+<p>Standard SGD can be slow in regions with:</p>
+<ul>
+<li>High curvature (steep in some directions, flat in others)</li>
+<li>Noisy gradients</li>
+</ul>
+<p><strong>Momentum</strong> accelerates convergence by accumulating past gradients:</p>
+<pre><code>v(t) = βv(t-1) + ∇L(θ(t))      // Velocity accumulation
+θ(t+1) = θ(t) - η v(t)          // Update with velocity
+</code></pre>
+<p>Where <strong>β ∈ [0, 1]</strong> is the momentum coefficient (typically 0.9).</p>
+<p><strong>Effect</strong>:</p>
+<ul>
+<li>Smooths out noisy gradients</li>
+<li>Accelerates in consistent directions</li>
+<li>Dampens oscillations</li>
+</ul>
+<p><strong>Analogy</strong>: A ball rolling down a hill builds momentum, doesn't stop at small bumps.</p>
+<p><strong>aprender implementation</strong>:</p>
+<pre><code class="language-rust">let mut optimizer = SGD::new(0.01)
+    .with_momentum(0.9);  // β = 0.9
+
+// Momentum is applied automatically in step()
+optimizer.step(&amp;mut params, &amp;gradients);</code></pre>
+<h2 id="practical-guidelines"><a class="header" href="#practical-guidelines">Practical Guidelines</a></h2>
+<h3 id="choosing-gradient-descent-variant"><a class="header" href="#choosing-gradient-descent-variant">Choosing Gradient Descent Variant</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Dataset Size</th><th>Recommendation</th><th>Reason</th></tr></thead><tbody>
+<tr><td>N &lt; 1,000</td><td>Batch GD</td><td>Fast enough, stable convergence</td></tr>
+<tr><td>N = 1K-100K</td><td>Mini-batch GD (32-128)</td><td>Good balance</td></tr>
+<tr><td>N &gt; 100K</td><td>Mini-batch GD (128-512)</td><td>Leverage vectorization</td></tr>
+<tr><td>Streaming data</td><td>SGD</td><td>Online learning required</td></tr>
+</tbody></table>
+</div>
+<h3 id="hyperparameter-tuning-checklist"><a class="header" href="#hyperparameter-tuning-checklist">Hyperparameter Tuning Checklist</a></h3>
+<ol>
+<li>
+<p><strong>Learning rate η</strong>:</p>
+<ul>
+<li>Start: 0.1</li>
+<li>Grid search: [0.001, 0.01, 0.1, 1.0]</li>
+<li>Use learning rate finder</li>
+</ul>
+</li>
+<li>
+<p><strong>Momentum β</strong>:</p>
+<ul>
+<li>Default: 0.9</li>
+<li>Range: [0.5, 0.9, 0.99]</li>
+</ul>
+</li>
+<li>
+<p><strong>Batch size B</strong>:</p>
+<ul>
+<li>Default: 32 or 64</li>
+<li>Range: [16, 32, 64, 128, 256]</li>
+<li>Powers of 2 for hardware efficiency</li>
+</ul>
+</li>
+<li>
+<p><strong>Learning rate schedule</strong>:</p>
+<ul>
+<li>Option 1: Fixed (simple baseline)</li>
+<li>Option 2: Step decay every 10-30 epochs</li>
+<li>Option 3: Cosine annealing (state-of-the-art)</li>
+</ul>
+</li>
+</ol>
+<h3 id="debugging-convergence-issues"><a class="header" href="#debugging-convergence-issues">Debugging Convergence Issues</a></h3>
+<p><strong>Loss increasing</strong>: Learning rate too large
+→ Reduce η by 10x</p>
+<p><strong>Loss stagnating</strong>: Learning rate too small or stuck in local minimum
+→ Increase η by 2x or add momentum</p>
+<p><strong>Loss NaN</strong>: Exploding gradients
+→ Reduce η, clip gradients, check data preprocessing</p>
+<p><strong>Slow convergence</strong>: Poor learning rate or no momentum
+→ Use adaptive optimizer (Adam), add momentum</p>
+<h2 id="connection-to-aprender"><a class="header" href="#connection-to-aprender">Connection to aprender</a></h2>
+<p>The <code>aprender::optim::SGD</code> implementation provides:</p>
+<pre><code class="language-rust">use aprender::optim::{SGD, Optimizer};
+
+// Create SGD optimizer
+let mut sgd = SGD::new(learning_rate)
+    .with_momentum(momentum_coef);
+
+// In training loop:
+for epoch in 0..num_epochs {
+    for batch in data_loader {
+        // 1. Forward pass
+        let predictions = model.predict(&amp;batch.x);
+
+        // 2. Compute loss and gradients
+        let loss = loss_fn(predictions, batch.y);
+        let grads = compute_gradients(&amp;model, &amp;batch);
+
+        // 3. Update parameters using gradient descent
+        sgd.step(&amp;mut model.params, &amp;grads);
+    }
+}</code></pre>
+<p><strong>Key methods</strong>:</p>
+<ul>
+<li><code>SGD::new(η)</code>: Create optimizer with learning rate</li>
+<li><code>with_momentum(β)</code>: Add momentum coefficient</li>
+<li><code>step(&amp;mut params, &amp;grads)</code>: Perform one gradient descent step</li>
+<li><code>reset()</code>: Reset momentum buffers</li>
+</ul>
+<h2 id="further-reading"><a class="header" href="#further-reading">Further Reading</a></h2>
+<ul>
+<li><strong>Theory</strong>: Bottou, L. (2010). &quot;Large-Scale Machine Learning with Stochastic Gradient Descent&quot;</li>
+<li><strong>Momentum</strong>: Polyak, B. T. (1964). &quot;Some methods of speeding up the convergence of iteration methods&quot;</li>
+<li><strong>Adaptive methods</strong>: See <a href="./advanced-optimizers.html">Advanced Optimizers Theory</a></li>
+</ul>
+<h2 id="related-examples"><a class="header" href="#related-examples">Related Examples</a></h2>
+<ul>
+<li><a href="../examples/optimizer-demo.html">Optimizer Demo</a> - Visualizing SGD with momentum</li>
+<li><a href="../examples/logistic-regression.html">Logistic Regression</a> - SGD for classification</li>
+<li><a href="../examples/regularized-regression.html">Regularized Regression</a> - Coordinate descent vs SGD</li>
+</ul>
+<h2 id="summary"><a class="header" href="#summary">Summary</a></h2>
+<div class="table-wrapper"><table><thead><tr><th>Concept</th><th>Key Takeaway</th></tr></thead><tbody>
+<tr><td><strong>Core algorithm</strong></td><td>θ(t+1) = θ(t) - η ∇L(θ(t))</td></tr>
+<tr><td><strong>Learning rate</strong></td><td>Most critical hyperparameter; start with 0.1</td></tr>
+<tr><td><strong>Variants</strong></td><td>Batch (stable), SGD (fast), Mini-batch (best of both)</td></tr>
+<tr><td><strong>Momentum</strong></td><td>Accelerates convergence, smooths gradients</td></tr>
+<tr><td><strong>Convergence</strong></td><td>Guaranteed for convex functions with proper η</td></tr>
+<tr><td><strong>Debugging</strong></td><td>Loss ↑ → reduce η; Loss flat → increase η or add momentum</td></tr>
+</tbody></table>
+</div>
+<p>Gradient descent is the workhorse of machine learning optimization. Understanding its variants, hyperparameters, and convergence properties is essential for training effective models.</p>
 
                     </main>
 

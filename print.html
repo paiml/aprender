@@ -5629,8 +5629,1544 @@ println!(&quot;Std dev: {:.3}&quot;, result.std());         // e.g., 0.042</code
 <p><strong>Previous Chapter</strong>: <a href="ml-fundamentals/./classification-metrics.html">Classification Metrics Theory</a></p>
 <p><strong>REQUIRED</strong>: Read <a href="ml-fundamentals/../examples/cross-validation.html">Case Study: Cross-Validation</a> for complete EXTREME TDD implementation</p>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="gradient-descent-theory"><a class="header" href="#gradient-descent-theory">Gradient Descent Theory</a></h1>
+<p>Gradient descent is the fundamental optimization algorithm used to train machine learning models. It iteratively adjusts model parameters to minimize a loss function by following the direction of steepest descent.</p>
+<h2 id="mathematical-foundation-10"><a class="header" href="#mathematical-foundation-10">Mathematical Foundation</a></h2>
+<h3 id="the-core-idea"><a class="header" href="#the-core-idea">The Core Idea</a></h3>
+<p>Given a differentiable loss function <strong>L(θ)</strong> where <strong>θ</strong> represents model parameters, gradient descent finds parameters that minimize the loss:</p>
+<pre><code>θ* = argmin L(θ)
+       θ
+</code></pre>
+<p>The algorithm works by repeatedly taking steps proportional to the <strong>negative gradient</strong> of the loss function:</p>
+<pre><code>θ(t+1) = θ(t) - η ∇L(θ(t))
+</code></pre>
+<p>Where:</p>
+<ul>
+<li><strong>θ(t)</strong>: Parameters at iteration t</li>
+<li><strong>η</strong>: Learning rate (step size)</li>
+<li><strong>∇L(θ(t))</strong>: Gradient of loss with respect to parameters</li>
+</ul>
+<h3 id="why-the-negative-gradient"><a class="header" href="#why-the-negative-gradient">Why the Negative Gradient?</a></h3>
+<p>The gradient <strong>∇L(θ)</strong> points in the direction of <strong>steepest ascent</strong> (maximum increase in loss). By moving in the <strong>negative gradient direction</strong>, we move toward the steepest descent (minimum loss).</p>
+<p><strong>Intuition</strong>: Imagine standing on a mountain in thick fog. You can feel the slope beneath your feet but can't see the valley. Gradient descent is like repeatedly taking a step in the direction that slopes most steeply downward.</p>
+<h2 id="variants-of-gradient-descent"><a class="header" href="#variants-of-gradient-descent">Variants of Gradient Descent</a></h2>
+<h3 id="1-batch-gradient-descent-bgd"><a class="header" href="#1-batch-gradient-descent-bgd">1. Batch Gradient Descent (BGD)</a></h3>
+<p>Computes the gradient using the <strong>entire training dataset</strong>:</p>
+<pre><code>∇L(θ) = (1/N) Σ ∇L_i(θ)
+              i=1..N
+</code></pre>
+<p><strong>Advantages</strong>:</p>
+<ul>
+<li>Stable convergence (smooth trajectory)</li>
+<li>Guaranteed to converge to global minimum (convex functions)</li>
+<li>Theoretical guarantees</li>
+</ul>
+<p><strong>Disadvantages</strong>:</p>
+<ul>
+<li>Slow for large datasets (must process all samples)</li>
+<li>Memory intensive</li>
+<li>May converge to poor local minima (non-convex functions)</li>
+</ul>
+<p><strong>When to use</strong>: Small datasets (N &lt; 10,000), convex optimization problems</p>
+<h3 id="2-stochastic-gradient-descent-sgd"><a class="header" href="#2-stochastic-gradient-descent-sgd">2. Stochastic Gradient Descent (SGD)</a></h3>
+<p>Computes gradient using a <strong>single random sample</strong> at each iteration:</p>
+<pre><code>∇L(θ) ≈ ∇L_i(θ)    where i ~ Uniform(1..N)
+</code></pre>
+<p><strong>Advantages</strong>:</p>
+<ul>
+<li>Fast updates (one sample per iteration)</li>
+<li>Can escape shallow local minima (noise helps exploration)</li>
+<li>Memory efficient</li>
+<li>Online learning capable</li>
+</ul>
+<p><strong>Disadvantages</strong>:</p>
+<ul>
+<li>Noisy convergence (zig-zagging trajectory)</li>
+<li>May not converge exactly to minimum</li>
+<li>Requires learning rate decay</li>
+</ul>
+<p><strong>When to use</strong>: Large datasets, online learning, non-convex optimization</p>
+<p><strong>aprender implementation</strong>:</p>
+<pre><code class="language-rust">use aprender::optim::SGD;
+
+let mut optimizer = SGD::new(0.01) // learning rate = 0.01
+    .with_momentum(0.9);           // momentum coefficient
+
+// In training loop:
+let gradients = compute_gradients(&amp;params, &amp;data);
+optimizer.step(&amp;mut params, &amp;gradients);</code></pre>
+<h3 id="3-mini-batch-gradient-descent"><a class="header" href="#3-mini-batch-gradient-descent">3. Mini-Batch Gradient Descent</a></h3>
+<p>Computes gradient using a <strong>small batch of samples</strong> (typically 32-256):</p>
+<pre><code>∇L(θ) ≈ (1/B) Σ ∇L_i(θ)    where B &lt;&lt; N
+             i∈batch
+</code></pre>
+<p><strong>Advantages</strong>:</p>
+<ul>
+<li>Balance between BGD stability and SGD speed</li>
+<li>Vectorized operations (GPU/SIMD acceleration)</li>
+<li>Reduced variance compared to SGD</li>
+<li>Memory efficient</li>
+</ul>
+<p><strong>Disadvantages</strong>:</p>
+<ul>
+<li>Batch size is a hyperparameter to tune</li>
+<li>Still has some noise</li>
+</ul>
+<p><strong>When to use</strong>: Default choice for most ML problems, deep learning</p>
+<p><strong>Batch size guidelines</strong>:</p>
+<ul>
+<li>Small batches (32-64): Better generalization, more noise</li>
+<li>Large batches (128-512): Faster convergence, more stable</li>
+<li>Powers of 2: Better hardware utilization</li>
+</ul>
+<h2 id="the-learning-rate"><a class="header" href="#the-learning-rate">The Learning Rate</a></h2>
+<p>The learning rate <strong>η</strong> is the <strong>most critical hyperparameter</strong> in gradient descent.</p>
+<h3 id="too-small-learning-rate"><a class="header" href="#too-small-learning-rate">Too Small Learning Rate</a></h3>
+<pre><code>η = 0.001 (very small)
+
+Loss over time:
+1000 ┤
+ 900 ┤
+ 800 ┤
+ 700 ┤●
+ 600 ┤ ●
+ 500 ┤  ●
+ 400 ┤   ●●●●●●●●●●●●●●●  ← Slow convergence
+     └─────────────────────→
+        Iterations (10,000)
+</code></pre>
+<p><strong>Problem</strong>: Training is very slow, may not converge within time budget.</p>
+<h3 id="too-large-learning-rate"><a class="header" href="#too-large-learning-rate">Too Large Learning Rate</a></h3>
+<pre><code>η = 1.0 (very large)
+
+Loss over time:
+1000 ┤    ●
+ 900 ┤   ● ●
+ 800 ┤  ●   ●
+ 700 ┤ ●     ●  ← Oscillation
+ 600 ┤●       ●
+     └──────────→
+      Iterations
+</code></pre>
+<p><strong>Problem</strong>: Loss oscillates or diverges, never converges to minimum.</p>
+<h3 id="optimal-learning-rate"><a class="header" href="#optimal-learning-rate">Optimal Learning Rate</a></h3>
+<pre><code>η = 0.1 (just right)
+
+Loss over time:
+1000 ┤●
+ 800 ┤ ●●
+ 600 ┤    ●●●
+ 400 ┤       ●●●●  ← Smooth, fast convergence
+ 200 ┤           ●●●●
+     └───────────────→
+         Iterations
+</code></pre>
+<p><strong>Guidelines for choosing η</strong>:</p>
+<ol>
+<li>Start with <strong>η = 0.1</strong> and adjust by factors of 10</li>
+<li>Use <strong>learning rate schedules</strong> (decay over time)</li>
+<li>Monitor loss: if exploding → reduce η; if stagnating → increase η</li>
+<li>Try <strong>adaptive methods</strong> (Adam, RMSprop) that auto-tune η</li>
+</ol>
+<h2 id="convergence-analysis"><a class="header" href="#convergence-analysis">Convergence Analysis</a></h2>
+<h3 id="convex-functions"><a class="header" href="#convex-functions">Convex Functions</a></h3>
+<p>For <strong>convex loss functions</strong> (e.g., linear regression with MSE), gradient descent with fixed learning rate converges to the <strong>global minimum</strong>:</p>
+<pre><code>L(θ(t)) - L(θ*) ≤ C / t
+</code></pre>
+<p>Where <strong>C</strong> is a constant. The gap to the optimal loss decreases as <strong>1/t</strong>.</p>
+<p><strong>Convergence rate</strong>: O(1/t) for fixed learning rate</p>
+<h3 id="non-convex-functions"><a class="header" href="#non-convex-functions">Non-Convex Functions</a></h3>
+<p>For <strong>non-convex functions</strong> (e.g., neural networks), gradient descent may converge to:</p>
+<ul>
+<li>Local minimum</li>
+<li>Saddle point</li>
+<li>Plateau region</li>
+</ul>
+<p><strong>No guarantees</strong> of finding the global minimum, but SGD's noise helps escape poor local minima.</p>
+<h3 id="stopping-criteria"><a class="header" href="#stopping-criteria">Stopping Criteria</a></h3>
+<p><strong>When to stop iterating?</strong></p>
+<ol>
+<li>
+<p><strong>Gradient magnitude</strong>: Stop when ||∇L(θ)|| &lt; ε</p>
+<ul>
+<li>ε = 1e-4 typical threshold</li>
+</ul>
+</li>
+<li>
+<p><strong>Loss change</strong>: Stop when |L(t) - L(t-1)| &lt; ε</p>
+<ul>
+<li>Measures improvement per iteration</li>
+</ul>
+</li>
+<li>
+<p><strong>Maximum iterations</strong>: Stop after T iterations</p>
+<ul>
+<li>Prevents infinite loops</li>
+</ul>
+</li>
+<li>
+<p><strong>Validation loss</strong>: Stop when validation loss stops improving</p>
+<ul>
+<li>Prevents overfitting</li>
+</ul>
+</li>
+</ol>
+<p><strong>aprender example</strong>:</p>
+<pre><code class="language-rust">// SGD with convergence monitoring
+let mut optimizer = SGD::new(0.01);
+let mut prev_loss = f32::INFINITY;
+let tolerance = 1e-4;
+
+for epoch in 0..max_epochs {
+    let loss = compute_loss(&amp;model, &amp;data);
+
+    // Check convergence
+    if (prev_loss - loss).abs() &lt; tolerance {
+        println!(&quot;Converged at epoch {}&quot;, epoch);
+        break;
+    }
+
+    let gradients = compute_gradients(&amp;model, &amp;data);
+    optimizer.step(&amp;mut model.params, &amp;gradients);
+    prev_loss = loss;
+}</code></pre>
+<h2 id="common-pitfalls-and-solutions"><a class="header" href="#common-pitfalls-and-solutions">Common Pitfalls and Solutions</a></h2>
+<h3 id="1-exploding-gradients"><a class="header" href="#1-exploding-gradients">1. Exploding Gradients</a></h3>
+<p><strong>Problem</strong>: Gradients become very large, causing parameters to explode.</p>
+<p><strong>Symptoms</strong>:</p>
+<ul>
+<li>Loss becomes NaN or infinity</li>
+<li>Parameters grow to extreme values</li>
+<li>Occurs in deep networks or RNNs</li>
+</ul>
+<p><strong>Solutions</strong>:</p>
+<ul>
+<li>Reduce learning rate</li>
+<li>Gradient clipping: <code>g = min(g, threshold)</code></li>
+<li>Use batch normalization</li>
+<li>Better initialization (Xavier, He)</li>
+</ul>
+<h3 id="2-vanishing-gradients"><a class="header" href="#2-vanishing-gradients">2. Vanishing Gradients</a></h3>
+<p><strong>Problem</strong>: Gradients become very small, preventing parameter updates.</p>
+<p><strong>Symptoms</strong>:</p>
+<ul>
+<li>Loss stops decreasing but hasn't converged</li>
+<li>Parameters barely change</li>
+<li>Occurs in very deep networks</li>
+</ul>
+<p><strong>Solutions</strong>:</p>
+<ul>
+<li>Use ReLU activation (instead of sigmoid/tanh)</li>
+<li>Skip connections (ResNet architecture)</li>
+<li>Batch normalization</li>
+<li>Better initialization</li>
+</ul>
+<h3 id="3-learning-rate-decay"><a class="header" href="#3-learning-rate-decay">3. Learning Rate Decay</a></h3>
+<p><strong>Strategy</strong>: Start with large learning rate, gradually decrease it.</p>
+<p><strong>Common schedules</strong>:</p>
+<pre><code class="language-rust">// 1. Step decay: Reduce by factor every K epochs
+η(t) = η₀ × 0.1^(floor(t / K))
+
+// 2. Exponential decay: Smooth reduction
+η(t) = η₀ × e^(-λt)
+
+// 3. 1/t decay: Theoretical convergence guarantee
+η(t) = η₀ / (1 + λt)
+
+// 4. Cosine annealing: Cyclical with restarts
+η(t) = η_min + 0.5(η_max - η_min)(1 + cos(πt/T))</code></pre>
+<p><strong>aprender pattern</strong> (manual implementation):</p>
+<pre><code class="language-rust">let initial_lr = 0.1;
+let decay_rate = 0.95;
+
+for epoch in 0..num_epochs {
+    let lr = initial_lr * decay_rate.powi(epoch as i32);
+    let mut optimizer = SGD::new(lr);
+
+    // Training step
+    optimizer.step(&amp;mut params, &amp;gradients);
+}</code></pre>
+<h3 id="4-saddle-points"><a class="header" href="#4-saddle-points">4. Saddle Points</a></h3>
+<p><strong>Problem</strong>: Gradient is zero but point is not a minimum.</p>
+<pre><code>Surface shape at saddle point:
+    ╱╲    (upward in one direction)
+   ╱  ╲
+  ╱    ╲
+ ╱______╲  (downward in another)
+</code></pre>
+<p><strong>Solutions</strong>:</p>
+<ul>
+<li>Add momentum (helps escape saddle points)</li>
+<li>Use SGD noise to explore</li>
+<li>Second-order methods (Newton, L-BFGS)</li>
+</ul>
+<h2 id="momentum-enhancement"><a class="header" href="#momentum-enhancement">Momentum Enhancement</a></h2>
+<p>Standard SGD can be slow in regions with:</p>
+<ul>
+<li>High curvature (steep in some directions, flat in others)</li>
+<li>Noisy gradients</li>
+</ul>
+<p><strong>Momentum</strong> accelerates convergence by accumulating past gradients:</p>
+<pre><code>v(t) = βv(t-1) + ∇L(θ(t))      // Velocity accumulation
+θ(t+1) = θ(t) - η v(t)          // Update with velocity
+</code></pre>
+<p>Where <strong>β ∈ [0, 1]</strong> is the momentum coefficient (typically 0.9).</p>
+<p><strong>Effect</strong>:</p>
+<ul>
+<li>Smooths out noisy gradients</li>
+<li>Accelerates in consistent directions</li>
+<li>Dampens oscillations</li>
+</ul>
+<p><strong>Analogy</strong>: A ball rolling down a hill builds momentum, doesn't stop at small bumps.</p>
+<p><strong>aprender implementation</strong>:</p>
+<pre><code class="language-rust">let mut optimizer = SGD::new(0.01)
+    .with_momentum(0.9);  // β = 0.9
+
+// Momentum is applied automatically in step()
+optimizer.step(&amp;mut params, &amp;gradients);</code></pre>
+<h2 id="practical-guidelines"><a class="header" href="#practical-guidelines">Practical Guidelines</a></h2>
+<h3 id="choosing-gradient-descent-variant"><a class="header" href="#choosing-gradient-descent-variant">Choosing Gradient Descent Variant</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Dataset Size</th><th>Recommendation</th><th>Reason</th></tr></thead><tbody>
+<tr><td>N &lt; 1,000</td><td>Batch GD</td><td>Fast enough, stable convergence</td></tr>
+<tr><td>N = 1K-100K</td><td>Mini-batch GD (32-128)</td><td>Good balance</td></tr>
+<tr><td>N &gt; 100K</td><td>Mini-batch GD (128-512)</td><td>Leverage vectorization</td></tr>
+<tr><td>Streaming data</td><td>SGD</td><td>Online learning required</td></tr>
+</tbody></table>
+</div>
+<h3 id="hyperparameter-tuning-checklist"><a class="header" href="#hyperparameter-tuning-checklist">Hyperparameter Tuning Checklist</a></h3>
+<ol>
+<li>
+<p><strong>Learning rate η</strong>:</p>
+<ul>
+<li>Start: 0.1</li>
+<li>Grid search: [0.001, 0.01, 0.1, 1.0]</li>
+<li>Use learning rate finder</li>
+</ul>
+</li>
+<li>
+<p><strong>Momentum β</strong>:</p>
+<ul>
+<li>Default: 0.9</li>
+<li>Range: [0.5, 0.9, 0.99]</li>
+</ul>
+</li>
+<li>
+<p><strong>Batch size B</strong>:</p>
+<ul>
+<li>Default: 32 or 64</li>
+<li>Range: [16, 32, 64, 128, 256]</li>
+<li>Powers of 2 for hardware efficiency</li>
+</ul>
+</li>
+<li>
+<p><strong>Learning rate schedule</strong>:</p>
+<ul>
+<li>Option 1: Fixed (simple baseline)</li>
+<li>Option 2: Step decay every 10-30 epochs</li>
+<li>Option 3: Cosine annealing (state-of-the-art)</li>
+</ul>
+</li>
+</ol>
+<h3 id="debugging-convergence-issues"><a class="header" href="#debugging-convergence-issues">Debugging Convergence Issues</a></h3>
+<p><strong>Loss increasing</strong>: Learning rate too large
+→ Reduce η by 10x</p>
+<p><strong>Loss stagnating</strong>: Learning rate too small or stuck in local minimum
+→ Increase η by 2x or add momentum</p>
+<p><strong>Loss NaN</strong>: Exploding gradients
+→ Reduce η, clip gradients, check data preprocessing</p>
+<p><strong>Slow convergence</strong>: Poor learning rate or no momentum
+→ Use adaptive optimizer (Adam), add momentum</p>
+<h2 id="connection-to-aprender"><a class="header" href="#connection-to-aprender">Connection to aprender</a></h2>
+<p>The <code>aprender::optim::SGD</code> implementation provides:</p>
+<pre><code class="language-rust">use aprender::optim::{SGD, Optimizer};
+
+// Create SGD optimizer
+let mut sgd = SGD::new(learning_rate)
+    .with_momentum(momentum_coef);
+
+// In training loop:
+for epoch in 0..num_epochs {
+    for batch in data_loader {
+        // 1. Forward pass
+        let predictions = model.predict(&amp;batch.x);
+
+        // 2. Compute loss and gradients
+        let loss = loss_fn(predictions, batch.y);
+        let grads = compute_gradients(&amp;model, &amp;batch);
+
+        // 3. Update parameters using gradient descent
+        sgd.step(&amp;mut model.params, &amp;grads);
+    }
+}</code></pre>
+<p><strong>Key methods</strong>:</p>
+<ul>
+<li><code>SGD::new(η)</code>: Create optimizer with learning rate</li>
+<li><code>with_momentum(β)</code>: Add momentum coefficient</li>
+<li><code>step(&amp;mut params, &amp;grads)</code>: Perform one gradient descent step</li>
+<li><code>reset()</code>: Reset momentum buffers</li>
+</ul>
+<h2 id="further-reading-12"><a class="header" href="#further-reading-12">Further Reading</a></h2>
+<ul>
+<li><strong>Theory</strong>: Bottou, L. (2010). &quot;Large-Scale Machine Learning with Stochastic Gradient Descent&quot;</li>
+<li><strong>Momentum</strong>: Polyak, B. T. (1964). &quot;Some methods of speeding up the convergence of iteration methods&quot;</li>
+<li><strong>Adaptive methods</strong>: See <a href="ml-fundamentals/./advanced-optimizers.html">Advanced Optimizers Theory</a></li>
+</ul>
+<h2 id="related-examples"><a class="header" href="#related-examples">Related Examples</a></h2>
+<ul>
+<li><a href="ml-fundamentals/../examples/optimizer-demo.html">Optimizer Demo</a> - Visualizing SGD with momentum</li>
+<li><a href="ml-fundamentals/../examples/logistic-regression.html">Logistic Regression</a> - SGD for classification</li>
+<li><a href="ml-fundamentals/../examples/regularized-regression.html">Regularized Regression</a> - Coordinate descent vs SGD</li>
+</ul>
+<h2 id="summary-11"><a class="header" href="#summary-11">Summary</a></h2>
+<div class="table-wrapper"><table><thead><tr><th>Concept</th><th>Key Takeaway</th></tr></thead><tbody>
+<tr><td><strong>Core algorithm</strong></td><td>θ(t+1) = θ(t) - η ∇L(θ(t))</td></tr>
+<tr><td><strong>Learning rate</strong></td><td>Most critical hyperparameter; start with 0.1</td></tr>
+<tr><td><strong>Variants</strong></td><td>Batch (stable), SGD (fast), Mini-batch (best of both)</td></tr>
+<tr><td><strong>Momentum</strong></td><td>Accelerates convergence, smooths gradients</td></tr>
+<tr><td><strong>Convergence</strong></td><td>Guaranteed for convex functions with proper η</td></tr>
+<tr><td><strong>Debugging</strong></td><td>Loss ↑ → reduce η; Loss flat → increase η or add momentum</td></tr>
+</tbody></table>
+</div>
+<p>Gradient descent is the workhorse of machine learning optimization. Understanding its variants, hyperparameters, and convergence properties is essential for training effective models.</p>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="advanced-optimizers-theory"><a class="header" href="#advanced-optimizers-theory">Advanced Optimizers Theory</a></h1>
+<p>Modern optimizers go beyond vanilla gradient descent by adapting learning rates, incorporating momentum, and using gradient statistics to achieve faster and more stable convergence. This chapter covers state-of-the-art optimization algorithms used in deep learning and machine learning.</p>
+<h2 id="why-advanced-optimizers"><a class="header" href="#why-advanced-optimizers">Why Advanced Optimizers?</a></h2>
+<p>Standard SGD with momentum works well but has limitations:</p>
+<ol>
+<li>
+<p><strong>Fixed learning rate</strong>: Same η for all parameters</p>
+<ul>
+<li>Problem: Different parameters may need different learning rates</li>
+<li>Example: Rare features need larger updates than frequent ones</li>
+</ul>
+</li>
+<li>
+<p><strong>Manual tuning required</strong>: Finding optimal η is time-consuming</p>
+<ul>
+<li>Grid search expensive</li>
+<li>Different datasets need different learning rates</li>
+</ul>
+</li>
+<li>
+<p><strong>Slow convergence</strong>: Without careful tuning, training can be slow</p>
+<ul>
+<li>Especially in non-convex landscapes</li>
+<li>High-dimensional parameter spaces</li>
+</ul>
+</li>
+</ol>
+<p><strong>Solution</strong>: Adaptive optimizers that automatically adjust learning rates per parameter.</p>
+<h2 id="optimizer-comparison-table"><a class="header" href="#optimizer-comparison-table">Optimizer Comparison Table</a></h2>
+<div class="table-wrapper"><table><thead><tr><th>Optimizer</th><th>Key Feature</th><th>Best For</th><th>Pros</th><th>Cons</th></tr></thead><tbody>
+<tr><td><strong>SGD + Momentum</strong></td><td>Velocity accumulation</td><td>General purpose</td><td>Simple, well-understood</td><td>Requires manual tuning</td></tr>
+<tr><td><strong>AdaGrad</strong></td><td>Per-parameter lr</td><td>Sparse gradients</td><td>Adapts to data</td><td>lr decays too aggressively</td></tr>
+<tr><td><strong>RMSprop</strong></td><td>Exponential moving average</td><td>RNNs, non-stationary</td><td>Fixes AdaGrad decay</td><td>No bias correction</td></tr>
+<tr><td><strong>Adam</strong></td><td>Momentum + RMSprop</td><td>Deep learning (default)</td><td>Fast, robust</td><td>Can overfit on small data</td></tr>
+<tr><td><strong>AdamW</strong></td><td>Adam + decoupled weight decay</td><td>Transformers</td><td>Better generalization</td><td>Slightly slower</td></tr>
+<tr><td><strong>Nadam</strong></td><td>Adam + Nesterov momentum</td><td>Computer vision</td><td>Faster convergence</td><td>More complex</td></tr>
+</tbody></table>
+</div>
+<h2 id="adagrad-adaptive-gradient-algorithm"><a class="header" href="#adagrad-adaptive-gradient-algorithm">AdaGrad: Adaptive Gradient Algorithm</a></h2>
+<p><strong>Key idea</strong>: Accumulate squared gradients and divide learning rate by their square root, giving smaller updates to frequently updated parameters.</p>
+<h3 id="algorithm-2"><a class="header" href="#algorithm-2">Algorithm</a></h3>
+<pre><code>Initialize:
+  θ₀ = initial parameters
+  G₀ = 0  (accumulated squared gradients)
+  η = learning rate (typically 0.01)
+  ε = 1e-8 (numerical stability)
+
+For t = 1, 2, ...
+  g_t = ∇L(θ_{t-1})             // Compute gradient
+  G_t = G_{t-1} + g_t ⊙ g_t      // Accumulate squared gradients
+  θ_t = θ_{t-1} - η / √(G_t + ε) ⊙ g_t  // Adaptive update
+</code></pre>
+<p>Where <strong>⊙</strong> denotes element-wise multiplication.</p>
+<h3 id="how-it-works"><a class="header" href="#how-it-works">How It Works</a></h3>
+<p><strong>Per-parameter learning rate</strong>:</p>
+<pre><code>η_i(t) = η / √(Σ(g_i^2) + ε)
+                s=1..t
+</code></pre>
+<ul>
+<li>Frequently updated parameters → large accumulated gradient → small effective η</li>
+<li>Infrequently updated parameters → small accumulated gradient → large effective η</li>
+</ul>
+<h3 id="example"><a class="header" href="#example">Example</a></h3>
+<p>Consider two parameters with gradients:</p>
+<pre><code>Parameter θ₁: Gradients = [10, 10, 10, 10]  (frequent updates)
+Parameter θ₂: Gradients = [1, 0, 0, 1]      (sparse updates)
+
+After 4 iterations (η = 0.1):
+
+θ₁: G = 10² + 10² + 10² + 10² = 400
+    Effective η₁ = 0.1 / √400 = 0.1 / 20 = 0.005  (small)
+
+θ₂: G = 1² + 0² + 0² + 1² = 2
+    Effective η₂ = 0.1 / √2 = 0.1 / 1.41 ≈ 0.071  (large)
+</code></pre>
+<p><strong>Result</strong>: θ₂ gets ~14x larger updates despite having smaller gradients!</p>
+<h3 id="advantages-4"><a class="header" href="#advantages-4">Advantages</a></h3>
+<ol>
+<li><strong>Automatic learning rate adaptation</strong>: No manual tuning per parameter</li>
+<li><strong>Great for sparse data</strong>: NLP, recommender systems</li>
+<li><strong>Handles different scales</strong>: Features with different ranges</li>
+</ol>
+<h3 id="disadvantages-4"><a class="header" href="#disadvantages-4">Disadvantages</a></h3>
+<ol>
+<li>
+<p><strong>Learning rate decay</strong>: Accumulation never decreases</p>
+<ul>
+<li>Eventually η → 0, stopping learning</li>
+<li>Problem for deep learning (many iterations)</li>
+</ul>
+</li>
+<li>
+<p><strong>Requires careful initialization</strong>: Poor initial η can hurt performance</p>
+</li>
+</ol>
+<h3 id="when-to-use-4"><a class="header" href="#when-to-use-4">When to Use</a></h3>
+<ul>
+<li><strong>Sparse gradients</strong>: NLP (word embeddings), recommender systems</li>
+<li><strong>Convex optimization</strong>: Guaranteed convergence for convex functions</li>
+<li><strong>Short training</strong>: If iteration count is small</li>
+</ul>
+<p><strong>Not recommended for</strong>: Deep neural networks (use RMSprop or Adam instead)</p>
+<h2 id="rmsprop-root-mean-square-propagation"><a class="header" href="#rmsprop-root-mean-square-propagation">RMSprop: Root Mean Square Propagation</a></h2>
+<p><strong>Key idea</strong>: Fix AdaGrad's aggressive learning rate decay by using exponential moving average instead of sum.</p>
+<h3 id="algorithm-3"><a class="header" href="#algorithm-3">Algorithm</a></h3>
+<pre><code>Initialize:
+  θ₀ = initial parameters
+  v₀ = 0  (moving average of squared gradients)
+  η = learning rate (typically 0.001)
+  β = decay rate (typically 0.9)
+  ε = 1e-8
+
+For t = 1, 2, ...
+  g_t = ∇L(θ_{t-1})                    // Compute gradient
+  v_t = β·v_{t-1} + (1-β)·(g_t ⊙ g_t)  // Exponential moving average
+  θ_t = θ_{t-1} - η / √(v_t + ε) ⊙ g_t  // Adaptive update
+</code></pre>
+<h3 id="key-difference-from-adagrad"><a class="header" href="#key-difference-from-adagrad">Key Difference from AdaGrad</a></h3>
+<p><strong>AdaGrad</strong>: <code>G_t = G_{t-1} + g_t²</code> (sum, always increasing)
+<strong>RMSprop</strong>: <code>v_t = β·v_{t-1} + (1-β)·g_t²</code> (exponential moving average)</p>
+<p>The <strong>exponential moving average</strong> forgets old gradients, allowing learning rate to increase again if recent gradients are small.</p>
+<h3 id="effect-of-decay-rate-β"><a class="header" href="#effect-of-decay-rate-β">Effect of Decay Rate β</a></h3>
+<pre><code>β = 0.9 (typical):
+  - Averages over ~10 iterations
+  - Balance between stability and adaptivity
+
+β = 0.99:
+  - Averages over ~100 iterations
+  - More stable, slower adaptation
+
+β = 0.5:
+  - Averages over ~2 iterations
+  - Fast adaptation, more noise
+</code></pre>
+<h3 id="advantages-5"><a class="header" href="#advantages-5">Advantages</a></h3>
+<ol>
+<li><strong>No learning rate decay problem</strong>: Can train indefinitely</li>
+<li><strong>Works well for RNNs</strong>: Handles non-stationary problems</li>
+<li><strong>Less sensitive to initialization</strong>: Compared to AdaGrad</li>
+</ol>
+<h3 id="disadvantages-5"><a class="header" href="#disadvantages-5">Disadvantages</a></h3>
+<ol>
+<li><strong>No bias correction</strong>: Early iterations biased toward 0</li>
+<li><strong>Still requires tuning</strong>: η and β hyperparameters</li>
+</ol>
+<h3 id="when-to-use-5"><a class="header" href="#when-to-use-5">When to Use</a></h3>
+<ul>
+<li><strong>RNNs and LSTMs</strong>: Originally designed for this</li>
+<li><strong>Non-stationary problems</strong>: Changing data distributions</li>
+<li><strong>Deep learning</strong>: Better than AdaGrad for many epochs</li>
+</ul>
+<h2 id="adam-adaptive-moment-estimation"><a class="header" href="#adam-adaptive-moment-estimation">Adam: Adaptive Moment Estimation</a></h2>
+<p><strong>The most popular optimizer</strong> in modern deep learning. Combines the best ideas from momentum and RMSprop.</p>
+<h3 id="core-concept"><a class="header" href="#core-concept">Core Concept</a></h3>
+<p>Adam maintains two moving averages:</p>
+<ol>
+<li><strong>First moment</strong> (m): Exponential moving average of gradients (momentum)</li>
+<li><strong>Second moment</strong> (v): Exponential moving average of squared gradients (RMSprop)</li>
+</ol>
+<h3 id="algorithm-4"><a class="header" href="#algorithm-4">Algorithm</a></h3>
+<pre><code>Initialize:
+  θ₀ = initial parameters
+  m₀ = 0  (first moment: mean gradient)
+  v₀ = 0  (second moment: uncentered variance)
+  η = 0.001  (learning rate)
+  β₁ = 0.9   (exponential decay for first moment)
+  β₂ = 0.999 (exponential decay for second moment)
+  ε = 1e-8
+
+For t = 1, 2, ...
+  g_t = ∇L(θ_{t-1})                     // Gradient
+
+  m_t = β₁·m_{t-1} + (1-β₁)·g_t         // Update first moment
+  v_t = β₂·v_{t-1} + (1-β₂)·(g_t ⊙ g_t)  // Update second moment
+
+  m̂_t = m_t / (1 - β₁^t)                // Bias correction for m
+  v̂_t = v_t / (1 - β₂^t)                // Bias correction for v
+
+  θ_t = θ_{t-1} - η · m̂_t / (√v̂_t + ε)  // Parameter update
+</code></pre>
+<h3 id="why-bias-correction"><a class="header" href="#why-bias-correction">Why Bias Correction?</a></h3>
+<p>Initially, m and v are zero. Exponential moving averages are biased toward zero at the start.</p>
+<p><strong>Example</strong> (β₁ = 0.9, g₁ = 1.0):</p>
+<pre><code>Without bias correction:
+  m₁ = 0.9 × 0 + 0.1 × 1.0 = 0.1  (underestimates true mean of 1.0)
+
+With bias correction:
+  m̂₁ = 0.1 / (1 - 0.9¹) = 0.1 / 0.1 = 1.0  (correct!)
+</code></pre>
+<p>The correction factor <code>1 - β^t</code> approaches 1 as t increases, so correction matters most early in training.</p>
+<h3 id="hyperparameters"><a class="header" href="#hyperparameters">Hyperparameters</a></h3>
+<p><strong>Default values</strong> (from paper, work well in practice):</p>
+<ul>
+<li><strong>η = 0.001</strong>: Learning rate (most important to tune)</li>
+<li><strong>β₁ = 0.9</strong>: First moment decay (rarely changed)</li>
+<li><strong>β₂ = 0.999</strong>: Second moment decay (rarely changed)</li>
+<li><strong>ε = 1e-8</strong>: Numerical stability</li>
+</ul>
+<p><strong>Tuning guidelines</strong>:</p>
+<ol>
+<li>Start with defaults</li>
+<li>If unstable: reduce η to 0.0001</li>
+<li>If slow: increase η to 0.01</li>
+<li>Adjust β₁ for more/less momentum (rarely needed)</li>
+</ol>
+<h3 id="aprender-implementation"><a class="header" href="#aprender-implementation">aprender Implementation</a></h3>
+<pre><code class="language-rust">use aprender::optim::{Adam, Optimizer};
+
+// Create Adam optimizer with default hyperparameters
+let mut adam = Adam::new(0.001)  // learning rate
+    .with_beta1(0.9)             // optional: momentum coefficient
+    .with_beta2(0.999)           // optional: RMSprop coefficient
+    .with_epsilon(1e-8);         // optional: numerical stability
+
+// Training loop
+for epoch in 0..num_epochs {
+    for batch in data_loader {
+        // Forward pass
+        let predictions = model.predict(&amp;batch.x);
+        let loss = loss_fn(predictions, batch.y);
+
+        // Compute gradients
+        let grads = compute_gradients(&amp;model, &amp;batch);
+
+        // Adam step (handles momentum + adaptive lr internally)
+        adam.step(&amp;mut model.params, &amp;grads);
+    }
+}</code></pre>
+<p><strong>Key methods</strong>:</p>
+<ul>
+<li><code>Adam::new(η)</code>: Create with learning rate</li>
+<li><code>with_beta1(β₁)</code>, <code>with_beta2(β₂)</code>: Set moment decay rates</li>
+<li><code>step(&amp;mut params, &amp;grads)</code>: Perform one update step</li>
+<li><code>reset()</code>: Reset moment buffers (for multiple training runs)</li>
+</ul>
+<h3 id="advantages-6"><a class="header" href="#advantages-6">Advantages</a></h3>
+<ol>
+<li><strong>Robust</strong>: Works well with default hyperparameters</li>
+<li><strong>Fast convergence</strong>: Combines momentum + adaptive lr</li>
+<li><strong>Memory efficient</strong>: Only 2x parameter memory (m and v)</li>
+<li><strong>Well-studied</strong>: Extensive empirical validation</li>
+</ol>
+<h3 id="disadvantages-6"><a class="header" href="#disadvantages-6">Disadvantages</a></h3>
+<ol>
+<li><strong>Can overfit</strong>: On small datasets or with insufficient regularization</li>
+<li><strong>Generalization</strong>: Sometimes SGD with momentum generalizes better</li>
+<li><strong>Memory overhead</strong>: 2x parameter count</li>
+</ol>
+<h3 id="when-to-use-6"><a class="header" href="#when-to-use-6">When to Use</a></h3>
+<ul>
+<li><strong>Default choice</strong>: For most deep learning problems</li>
+<li><strong>Fast prototyping</strong>: Converges quickly, minimal tuning</li>
+<li><strong>Large-scale training</strong>: Handles high-dimensional problems well</li>
+</ul>
+<p><strong>When to avoid</strong>:</p>
+<ul>
+<li>Very small datasets (&lt;1000 samples): Try SGD + momentum</li>
+<li>Need best generalization: Consider SGD with learning rate schedule</li>
+</ul>
+<h2 id="adamw-adam-with-decoupled-weight-decay"><a class="header" href="#adamw-adam-with-decoupled-weight-decay">AdamW: Adam with Decoupled Weight Decay</a></h2>
+<p><strong>Problem with Adam</strong>: Weight decay (L2 regularization) interacts badly with adaptive learning rates.</p>
+<p><strong>Solution</strong>: Decouple weight decay from gradient-based optimization.</p>
+<h3 id="standard-adam-with-weight-decay-wrong"><a class="header" href="#standard-adam-with-weight-decay-wrong">Standard Adam with Weight Decay (Wrong)</a></h3>
+<pre><code>g_t = ∇L(θ_{t-1}) + λ·θ_{t-1}  // Add L2 penalty to gradient
+// ... normal Adam update with modified gradient
+</code></pre>
+<p><strong>Problem</strong>: Weight decay gets adapted by second moment estimate, weakening regularization.</p>
+<h3 id="adamw-correct"><a class="header" href="#adamw-correct">AdamW (Correct)</a></h3>
+<pre><code>// Normal Adam update (no λ in gradient)
+m_t = β₁·m_{t-1} + (1-β₁)·g_t
+v_t = β₂·v_{t-1} + (1-β₂)·(g_t ⊙ g_t)
+m̂_t = m_t / (1 - β₁^t)
+v̂_t = v_t / (1 - β₂^t)
+
+// Separate weight decay step
+θ_t = θ_{t-1} - η · (m̂_t / (√v̂_t + ε) + λ·θ_{t-1})
+</code></pre>
+<p>Weight decay applied directly to parameters, not through adaptive learning rates.</p>
+<h3 id="when-to-use-7"><a class="header" href="#when-to-use-7">When to Use</a></h3>
+<ul>
+<li><strong>Transformers</strong>: Essential for BERT, GPT models</li>
+<li><strong>Large models</strong>: Better generalization on big networks</li>
+<li><strong>Transfer learning</strong>: Fine-tuning pre-trained models</li>
+</ul>
+<p><strong>Hyperparameters</strong>:</p>
+<ul>
+<li>Same as Adam, plus:</li>
+<li><strong>λ = 0.01</strong>: Weight decay coefficient (typical)</li>
+</ul>
+<h2 id="optimizer-selection-guide"><a class="header" href="#optimizer-selection-guide">Optimizer Selection Guide</a></h2>
+<h3 id="decision-tree-1"><a class="header" href="#decision-tree-1">Decision Tree</a></h3>
+<pre><code>Start
+  │
+  ├─ Need fast prototyping?
+  │    └─ YES → Adam (default: η=0.001)
+  │
+  ├─ Training RNN/LSTM?
+  │    └─ YES → RMSprop (default: η=0.001, β=0.9)
+  │
+  ├─ Working with transformers?
+  │    └─ YES → AdamW (η=0.001, λ=0.01)
+  │
+  ├─ Sparse gradients (NLP embeddings)?
+  │    └─ YES → AdaGrad (η=0.01)
+  │
+  ├─ Need best generalization?
+  │    └─ YES → SGD + momentum (η=0.1, β=0.9) + lr schedule
+  │
+  └─ Small dataset (&lt;1000 samples)?
+       └─ YES → SGD + momentum (less overfitting)
+</code></pre>
+<h3 id="practical-recommendations"><a class="header" href="#practical-recommendations">Practical Recommendations</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Task</th><th>Recommended Optimizer</th><th>Learning Rate</th><th>Notes</th></tr></thead><tbody>
+<tr><td>Image classification (CNN)</td><td>Adam or SGD+momentum</td><td>0.001 (Adam), 0.1 (SGD)</td><td>SGD often better final accuracy</td></tr>
+<tr><td>NLP (word embeddings)</td><td>AdaGrad or Adam</td><td>0.01 (AdaGrad), 0.001 (Adam)</td><td>AdaGrad for sparse features</td></tr>
+<tr><td>RNN/LSTM</td><td>RMSprop or Adam</td><td>0.001</td><td>RMSprop traditional choice</td></tr>
+<tr><td>Transformers</td><td>AdamW</td><td>0.0001-0.001</td><td>Essential for BERT, GPT</td></tr>
+<tr><td>Small dataset</td><td>SGD + momentum</td><td>0.01-0.1</td><td>Less prone to overfitting</td></tr>
+<tr><td>Reinforcement learning</td><td>Adam or RMSprop</td><td>0.0001-0.001</td><td>Non-stationary problem</td></tr>
+</tbody></table>
+</div>
+<h2 id="learning-rate-schedules"><a class="header" href="#learning-rate-schedules">Learning Rate Schedules</a></h2>
+<p>Even with adaptive optimizers, <strong>learning rate schedules</strong> improve performance.</p>
+<h3 id="1-step-decay"><a class="header" href="#1-step-decay">1. Step Decay</a></h3>
+<p>Reduce η by factor every K epochs:</p>
+<pre><code class="language-rust">let initial_lr = 0.001;
+let decay_factor = 0.1;
+let decay_epochs = 30;
+
+for epoch in 0..num_epochs {
+    let lr = initial_lr * decay_factor.powi((epoch / decay_epochs) as i32);
+    let mut adam = Adam::new(lr);
+    // ... training
+}</code></pre>
+<h3 id="2-exponential-decay"><a class="header" href="#2-exponential-decay">2. Exponential Decay</a></h3>
+<p>Smooth exponential reduction:</p>
+<pre><code class="language-rust">let initial_lr = 0.001;
+let decay_rate = 0.96;
+
+for epoch in 0..num_epochs {
+    let lr = initial_lr * decay_rate.powi(epoch as i32);
+    let mut adam = Adam::new(lr);
+    // ... training
+}</code></pre>
+<h3 id="3-cosine-annealing"><a class="header" href="#3-cosine-annealing">3. Cosine Annealing</a></h3>
+<p>Smooth reduction following cosine curve:</p>
+<pre><code class="language-rust">use std::f32::consts::PI;
+
+let lr_max = 0.001;
+let lr_min = 0.00001;
+let T_max = 100; // periods
+
+for epoch in 0..num_epochs {
+    let lr = lr_min + 0.5 * (lr_max - lr_min) *
+             (1.0 + f32::cos(PI * (epoch as f32) / (T_max as f32)));
+    let mut adam = Adam::new(lr);
+    // ... training
+}</code></pre>
+<h3 id="4-warm-up--decay"><a class="header" href="#4-warm-up--decay">4. Warm-up + Decay</a></h3>
+<p>Start small, increase, then decay (used in transformers):</p>
+<pre><code class="language-rust">fn learning_rate_schedule(step: usize, d_model: usize, warmup_steps: usize) -&gt; f32 {
+    let d_model = d_model as f32;
+    let step = step as f32;
+    let warmup_steps = warmup_steps as f32;
+
+    let arg1 = 1.0 / step.sqrt();
+    let arg2 = step * warmup_steps.powf(-1.5);
+
+    d_model.powf(-0.5) * arg1.min(arg2)
+}</code></pre>
+<h2 id="comparison-sgd-vs-adam"><a class="header" href="#comparison-sgd-vs-adam">Comparison: SGD vs Adam</a></h2>
+<h3 id="when-sgd--momentum-is-better"><a class="header" href="#when-sgd--momentum-is-better">When SGD + Momentum is Better</a></h3>
+<p><strong>Advantages</strong>:</p>
+<ul>
+<li>Better final generalization (lower test error)</li>
+<li>Flatter minima (more robust to perturbations)</li>
+<li>Less memory (no moment estimates)</li>
+</ul>
+<p><strong>Requirements</strong>:</p>
+<ul>
+<li>Careful learning rate tuning</li>
+<li>Learning rate schedule essential</li>
+<li>More training time may be needed</li>
+</ul>
+<h3 id="when-adam-is-better"><a class="header" href="#when-adam-is-better">When Adam is Better</a></h3>
+<p><strong>Advantages</strong>:</p>
+<ul>
+<li>Faster initial convergence</li>
+<li>Minimal hyperparameter tuning</li>
+<li>Works across many problem types</li>
+</ul>
+<p><strong>Trade-offs</strong>:</p>
+<ul>
+<li>Can overfit more easily</li>
+<li>May find sharper minima</li>
+<li>Slightly worse generalization on some tasks</li>
+</ul>
+<h3 id="empirical-rule"><a class="header" href="#empirical-rule">Empirical Rule</a></h3>
+<p><strong>Adam for</strong>:</p>
+<ul>
+<li>Fast prototyping and experimentation</li>
+<li>Baseline models</li>
+<li>Large-scale problems (many parameters)</li>
+</ul>
+<p><strong>SGD + momentum for</strong>:</p>
+<ul>
+<li>Final production models (after tuning)</li>
+<li>When computational budget allows careful tuning</li>
+<li>Small to medium datasets</li>
+</ul>
+<h2 id="debugging-optimizer-issues"><a class="header" href="#debugging-optimizer-issues">Debugging Optimizer Issues</a></h2>
+<h3 id="loss-not-decreasing"><a class="header" href="#loss-not-decreasing">Loss Not Decreasing</a></h3>
+<p><strong>Possible causes</strong>:</p>
+<ol>
+<li>Learning rate too small
+<ul>
+<li><strong>Fix</strong>: Increase η by 10x</li>
+</ul>
+</li>
+<li>Vanishing gradients
+<ul>
+<li><strong>Fix</strong>: Check gradient norms, adjust architecture</li>
+</ul>
+</li>
+<li>Bug in gradient computation
+<ul>
+<li><strong>Fix</strong>: Use gradient checking</li>
+</ul>
+</li>
+</ol>
+<h3 id="loss-exploding-nan"><a class="header" href="#loss-exploding-nan">Loss Exploding (NaN)</a></h3>
+<p><strong>Possible causes</strong>:</p>
+<ol>
+<li>Learning rate too large
+<ul>
+<li><strong>Fix</strong>: Reduce η by 10x</li>
+</ul>
+</li>
+<li>Gradient explosion
+<ul>
+<li><strong>Fix</strong>: Gradient clipping, better initialization</li>
+</ul>
+</li>
+</ol>
+<h3 id="slow-convergence"><a class="header" href="#slow-convergence">Slow Convergence</a></h3>
+<p><strong>Possible causes</strong>:</p>
+<ol>
+<li>Poor learning rate
+<ul>
+<li><strong>Fix</strong>: Try different optimizer (Adam if using SGD)</li>
+</ul>
+</li>
+<li>No momentum
+<ul>
+<li><strong>Fix</strong>: Add momentum (β=0.9)</li>
+</ul>
+</li>
+<li>Suboptimal batch size
+<ul>
+<li><strong>Fix</strong>: Try 32, 64, 128</li>
+</ul>
+</li>
+</ol>
+<h3 id="overfitting"><a class="header" href="#overfitting">Overfitting</a></h3>
+<p><strong>Possible causes</strong>:</p>
+<ol>
+<li>Optimizer too aggressive (Adam on small data)
+<ul>
+<li><strong>Fix</strong>: Switch to SGD + momentum</li>
+</ul>
+</li>
+<li>No regularization
+<ul>
+<li><strong>Fix</strong>: Add weight decay (AdamW)</li>
+</ul>
+</li>
+</ol>
+<h2 id="aprender-optimizer-example"><a class="header" href="#aprender-optimizer-example">aprender Optimizer Example</a></h2>
+<pre><code class="language-rust">use aprender::optim::{Adam, SGD, Optimizer};
+use aprender::linear_model::LogisticRegression;
+use aprender::prelude::*;
+
+// Example: Comparing Adam vs SGD
+fn compare_optimizers(x_train: &amp;Matrix&lt;f32&gt;, y_train: &amp;Vector&lt;i32&gt;) {
+    // Optimizer 1: Adam (fast convergence)
+    let mut model_adam = LogisticRegression::new();
+    let mut adam = Adam::new(0.001);
+
+    println!(&quot;Training with Adam...&quot;);
+    for epoch in 0..50 {
+        let loss = train_epoch(&amp;mut model_adam, x_train, y_train, &amp;mut adam);
+        if epoch % 10 == 0 {
+            println!(&quot;  Epoch {}: Loss = {:.4}&quot;, epoch, loss);
+        }
+    }
+
+    // Optimizer 2: SGD + momentum (better generalization)
+    let mut model_sgd = LogisticRegression::new();
+    let mut sgd = SGD::new(0.1).with_momentum(0.9);
+
+    println!(&quot;\nTraining with SGD + Momentum...&quot;);
+    for epoch in 0..50 {
+        let loss = train_epoch(&amp;mut model_sgd, x_train, y_train, &amp;mut sgd);
+        if epoch % 10 == 0 {
+            println!(&quot;  Epoch {}: Loss = {:.4}&quot;, epoch, loss);
+        }
+    }
+}
+
+fn train_epoch&lt;O: Optimizer&gt;(
+    model: &amp;mut LogisticRegression,
+    x: &amp;Matrix&lt;f32&gt;,
+    y: &amp;Vector&lt;i32&gt;,
+    optimizer: &amp;mut O,
+) -&gt; f32 {
+    // Compute loss and gradients
+    let predictions = model.predict_proba(x);
+    let loss = compute_cross_entropy_loss(&amp;predictions, y);
+    let grads = compute_gradients(model, x, y);
+
+    // Update parameters
+    optimizer.step(&amp;mut model.coefficients_mut(), &amp;grads);
+
+    loss
+}</code></pre>
+<h2 id="further-reading-13"><a class="header" href="#further-reading-13">Further Reading</a></h2>
+<p><strong>Seminal Papers</strong>:</p>
+<ul>
+<li><strong>Adam</strong>: Kingma &amp; Ba (2015). &quot;Adam: A Method for Stochastic Optimization&quot;</li>
+<li><strong>AdamW</strong>: Loshchilov &amp; Hutter (2019). &quot;Decoupled Weight Decay Regularization&quot;</li>
+<li><strong>RMSprop</strong>: Hinton (unpublished, Coursera lecture)</li>
+<li><strong>AdaGrad</strong>: Duchi et al. (2011). &quot;Adaptive Subgradient Methods&quot;</li>
+</ul>
+<p><strong>Practical Guides</strong>:</p>
+<ul>
+<li>Ruder, S. (2016). &quot;An overview of gradient descent optimization algorithms&quot;</li>
+<li>CS231n Stanford: Optimization notes</li>
+</ul>
+<h2 id="related-chapters-9"><a class="header" href="#related-chapters-9">Related Chapters</a></h2>
+<ul>
+<li><a href="ml-fundamentals/./gradient-descent.html">Gradient Descent Theory</a> - Foundation for all optimizers</li>
+<li><a href="ml-fundamentals/../examples/optimizer-demo.html">Optimizer Demo</a> - Visual comparison of SGD and Adam</li>
+<li><a href="ml-fundamentals/../examples/regularized-regression.html">Regularized Regression</a> - Coordinate descent alternative</li>
+</ul>
+<h2 id="summary-12"><a class="header" href="#summary-12">Summary</a></h2>
+<div class="table-wrapper"><table><thead><tr><th>Optimizer</th><th>Core Innovation</th><th>When to Use</th><th>aprender Support</th></tr></thead><tbody>
+<tr><td><strong>AdaGrad</strong></td><td>Per-parameter learning rates</td><td>Sparse gradients, convex problems</td><td>Not yet (v0.5.0)</td></tr>
+<tr><td><strong>RMSprop</strong></td><td>Exponential moving average of squared gradients</td><td>RNNs, non-stationary</td><td>Not yet (v0.5.0)</td></tr>
+<tr><td><strong>Adam</strong></td><td>Momentum + RMSprop + bias correction</td><td>Default choice, deep learning</td><td>✅ Implemented</td></tr>
+<tr><td><strong>AdamW</strong></td><td>Adam + decoupled weight decay</td><td>Transformers, large models</td><td>Not yet (v0.5.0)</td></tr>
+</tbody></table>
+</div>
+<p><strong>Key Takeaways</strong>:</p>
+<ol>
+<li><strong>Adam is the default</strong> for most deep learning: fast, robust, minimal tuning</li>
+<li><strong>SGD + momentum</strong> often achieves better final accuracy with proper tuning</li>
+<li><strong>Learning rate schedules</strong> improve all optimizers</li>
+<li><strong>AdamW essential</strong> for training transformers</li>
+<li><strong>Monitor convergence</strong>: Loss curves reveal optimizer issues</li>
+</ol>
+<p>Modern optimizers dramatically accelerate machine learning by adapting learning rates automatically. Understanding their trade-offs enables choosing the right tool for each problem.</p>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="feature-scaling-theory"><a class="header" href="#feature-scaling-theory">Feature Scaling Theory</a></h1>
+<p>Feature scaling is a critical preprocessing step that transforms features to similar scales. Proper scaling dramatically improves convergence speed and model performance, especially for distance-based algorithms and gradient descent optimization.</p>
+<h2 id="why-feature-scaling-matters"><a class="header" href="#why-feature-scaling-matters">Why Feature Scaling Matters</a></h2>
+<h3 id="problem-features-on-different-scales"><a class="header" href="#problem-features-on-different-scales">Problem: Features on Different Scales</a></h3>
+<p>Consider a dataset with two features:</p>
+<pre><code>Feature 1 (salary):    [30,000, 50,000, 80,000, 120,000]  Range: 90,000
+Feature 2 (age):       [25, 30, 35, 40]                    Range: 15
+</code></pre>
+<p><strong>Issue</strong>: Salary values are ~6000x larger than age values!</p>
+<h3 id="impact-on-machine-learning-algorithms"><a class="header" href="#impact-on-machine-learning-algorithms">Impact on Machine Learning Algorithms</a></h3>
+<h4 id="1-gradient-descent"><a class="header" href="#1-gradient-descent">1. Gradient Descent</a></h4>
+<p>Without scaling, loss surface becomes elongated:</p>
+<pre><code>Unscaled Loss Surface:
+           θ₁ (salary coefficient)
+           ↑
+      1000 ┤●
+       800 ┤ ●
+       600 ┤  ●
+       400 ┤   ●  ← Very elongated
+       200 ┤    ●●●●●●●●●●●●●●●●●
+         0 └────────────────────────→
+                 θ₂ (age coefficient)
+
+Problem: Gradient descent takes tiny steps in θ₁ direction,
+         large steps in θ₂ direction → zig-zagging, slow convergence
+</code></pre>
+<p>With scaling, loss surface becomes circular:</p>
+<pre><code>Scaled Loss Surface:
+           θ₁
+           ↑
+      1.0 ┤
+      0.8 ┤    ●●●
+      0.6 ┤  ●     ●  ← Circular contours
+      0.4 ┤ ●   ✖   ●  (✖ = optimal)
+      0.2 ┤  ●     ●
+      0.0 └───●●●─────→
+                θ₂
+
+Result: Gradient descent takes efficient path to minimum
+</code></pre>
+<p><strong>Convergence speed</strong>: Scaling can improve training time by <strong>10-100x</strong>!</p>
+<h4 id="2-distance-based-algorithms-k-nn-k-means-svm"><a class="header" href="#2-distance-based-algorithms-k-nn-k-means-svm">2. Distance-Based Algorithms (K-NN, K-Means, SVM)</a></h4>
+<p>Euclidean distance formula:</p>
+<pre><code>d = √((x₁-y₁)² + (x₂-y₂)²)
+</code></pre>
+<p>With unscaled features:</p>
+<pre><code>Sample A: (salary=50000, age=30)
+Sample B: (salary=51000, age=35)
+
+Distance = √((51000-50000)² + (35-30)²)
+         = √(1000² + 5²)
+         = √(1,000,000 + 25)
+         = √1,000,025
+         ≈ 1000.01
+
+Contribution to distance:
+  Salary: 1,000,000 / 1,000,025 ≈ 99.997%
+  Age:           25 / 1,000,025 ≈  0.003%
+</code></pre>
+<p><strong>Problem</strong>: Age is completely ignored! K-NN makes decisions based solely on salary.</p>
+<p>With scaled features (both in range [0, 1]):</p>
+<pre><code>Scaled A: (0.2, 0.33)
+Scaled B: (0.3, 0.67)
+
+Distance = √((0.3-0.2)² + (0.67-0.33)²)
+         = √(0.01 + 0.1156)
+         = √0.1256
+         ≈ 0.354
+
+Contribution to distance:
+  Salary: 0.01 / 0.1256 ≈ 8%
+  Age:   0.1156 / 0.1256 ≈ 92%
+</code></pre>
+<p><strong>Result</strong>: Both features contribute meaningfully to distance calculation.</p>
+<h2 id="scaling-methods"><a class="header" href="#scaling-methods">Scaling Methods</a></h2>
+<h3 id="comparison-table-5"><a class="header" href="#comparison-table-5">Comparison Table</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Method</th><th>Formula</th><th>Range</th><th>Best For</th><th>Outlier Sensitive</th></tr></thead><tbody>
+<tr><td><strong>StandardScaler</strong></td><td>(x - μ) / σ</td><td>Unbounded, ~[-3, 3]</td><td>Normal distributions</td><td>Low</td></tr>
+<tr><td><strong>MinMaxScaler</strong></td><td>(x - min) / (max - min)</td><td>[0, 1] or custom</td><td>Known bounds needed</td><td>High</td></tr>
+<tr><td><strong>RobustScaler</strong></td><td>(x - median) / IQR</td><td>Unbounded</td><td>Data with outliers</td><td>Low</td></tr>
+<tr><td><strong>MaxAbsScaler</strong></td><td>x / |max|</td><td>[-1, 1]</td><td>Sparse data, preserves zeros</td><td>High</td></tr>
+<tr><td><strong>Normalization (L2)</strong></td><td>x / ‖x‖₂</td><td>Unit sphere</td><td>Text, TF-IDF vectors</td><td>N/A</td></tr>
+</tbody></table>
+</div>
+<h2 id="standardscaler-z-score-normalization"><a class="header" href="#standardscaler-z-score-normalization">StandardScaler: Z-Score Normalization</a></h2>
+<p><strong>Key idea</strong>: Center data at zero, scale by standard deviation.</p>
+<h3 id="formula"><a class="header" href="#formula">Formula</a></h3>
+<pre><code>x' = (x - μ) / σ
+
+Where:
+  μ = mean of feature
+  σ = standard deviation of feature
+</code></pre>
+<h3 id="properties"><a class="header" href="#properties">Properties</a></h3>
+<p>After standardization:</p>
+<ul>
+<li><strong>Mean = 0</strong></li>
+<li><strong>Standard deviation = 1</strong></li>
+<li>Distribution shape preserved</li>
+</ul>
+<h3 id="algorithm-5"><a class="header" href="#algorithm-5">Algorithm</a></h3>
+<pre><code>1. Fit phase (training data):
+   μ = (1/N) Σ xᵢ                    // Compute mean
+   σ = √[(1/N) Σ (xᵢ - μ)²]          // Compute std
+
+2. Transform phase:
+   x'ᵢ = (xᵢ - μ) / σ                // Scale each sample
+
+3. Inverse transform (optional):
+   xᵢ = x'ᵢ × σ + μ                  // Recover original scale
+</code></pre>
+<h3 id="example-1"><a class="header" href="#example-1">Example</a></h3>
+<pre><code>Original data: [1, 2, 3, 4, 5]
+
+Step 1: Compute statistics
+  μ = (1+2+3+4+5) / 5 = 3
+  σ = √[(1-3)² + (2-3)² + (3-3)² + (4-3)² + (5-3)²] / 5
+    = √[4 + 1 + 0 + 1 + 4] / 5
+    = √2 ≈ 1.414
+
+Step 2: Transform
+  x'₁ = (1 - 3) / 1.414 = -1.414
+  x'₂ = (2 - 3) / 1.414 = -0.707
+  x'₃ = (3 - 3) / 1.414 =  0.000
+  x'₄ = (4 - 3) / 1.414 =  0.707
+  x'₅ = (5 - 3) / 1.414 =  1.414
+
+Result: [-1.414, -0.707, 0.000, 0.707, 1.414]
+  Mean = 0, Std = 1 ✓
+</code></pre>
+<h3 id="aprender-implementation-1"><a class="header" href="#aprender-implementation-1">aprender Implementation</a></h3>
+<pre><code class="language-rust">use aprender::preprocessing::StandardScaler;
+use aprender::primitives::Matrix;
+
+// Create scaler
+let mut scaler = StandardScaler::new();
+
+// Fit on training data
+scaler.fit(&amp;x_train)?;
+
+// Transform training and test data
+let x_train_scaled = scaler.transform(&amp;x_train)?;
+let x_test_scaled = scaler.transform(&amp;x_test)?;
+
+// Access learned statistics
+println!(&quot;Mean: {:?}&quot;, scaler.mean());
+println!(&quot;Std:  {:?}&quot;, scaler.std());
+
+// Inverse transform (recover original scale)
+let x_recovered = scaler.inverse_transform(&amp;x_train_scaled)?;</code></pre>
+<h3 id="advantages-7"><a class="header" href="#advantages-7">Advantages</a></h3>
+<ol>
+<li><strong>Robust to outliers</strong>: Outliers affect mean/std less than min/max</li>
+<li><strong>Maintains distribution shape</strong>: Useful for normally distributed data</li>
+<li><strong>Unbounded output</strong>: Can handle values outside training range</li>
+<li><strong>Interpretable</strong>: &quot;How many standard deviations from the mean?&quot;</li>
+</ol>
+<h3 id="disadvantages-7"><a class="header" href="#disadvantages-7">Disadvantages</a></h3>
+<ol>
+<li><strong>Assumes normality</strong>: Less effective for heavily skewed distributions</li>
+<li><strong>Unbounded range</strong>: Output not in [0, 1] if that's required</li>
+<li><strong>Outliers still affect</strong>: Mean and std sensitive to extreme values</li>
+</ol>
+<h3 id="when-to-use-8"><a class="header" href="#when-to-use-8">When to Use</a></h3>
+<p>✅ <strong>Use StandardScaler for</strong>:</p>
+<ul>
+<li>Features with approximately normal distribution</li>
+<li>Gradient-based optimization (neural networks, logistic regression)</li>
+<li>SVM with RBF kernel</li>
+<li>PCA (Principal Component Analysis)</li>
+<li>Data with moderate outliers</li>
+</ul>
+<p>❌ <strong>Avoid StandardScaler for</strong>:</p>
+<ul>
+<li>Need strict [0, 1] bounds (use MinMaxScaler)</li>
+<li>Heavy outliers (use RobustScaler)</li>
+<li>Sparse data with many zeros (use MaxAbsScaler)</li>
+</ul>
+<h2 id="minmaxscaler-range-normalization"><a class="header" href="#minmaxscaler-range-normalization">MinMaxScaler: Range Normalization</a></h2>
+<p><strong>Key idea</strong>: Scale features to a fixed range, typically [0, 1].</p>
+<h3 id="formula-1"><a class="header" href="#formula-1">Formula</a></h3>
+<pre><code>x' = (x - min) / (max - min)           // Scale to [0, 1]
+
+x' = a + (x - min) × (b - a) / (max - min)  // Scale to [a, b]
+</code></pre>
+<h3 id="properties-1"><a class="header" href="#properties-1">Properties</a></h3>
+<p>After min-max scaling to [0, 1]:</p>
+<ul>
+<li><strong>Minimum value → 0</strong></li>
+<li><strong>Maximum value → 1</strong></li>
+<li>Linear transformation (preserves relationships)</li>
+</ul>
+<h3 id="algorithm-6"><a class="header" href="#algorithm-6">Algorithm</a></h3>
+<pre><code>1. Fit phase (training data):
+   min = minimum value in feature
+   max = maximum value in feature
+   range = max - min
+
+2. Transform phase:
+   x'ᵢ = (xᵢ - min) / range
+
+3. Inverse transform:
+   xᵢ = x'ᵢ × range + min
+</code></pre>
+<h3 id="example-2"><a class="header" href="#example-2">Example</a></h3>
+<pre><code>Original data: [10, 20, 30, 40, 50]
+
+Step 1: Compute range
+  min = 10
+  max = 50
+  range = 50 - 10 = 40
+
+Step 2: Transform to [0, 1]
+  x'₁ = (10 - 10) / 40 = 0.00
+  x'₂ = (20 - 10) / 40 = 0.25
+  x'₃ = (30 - 10) / 40 = 0.50
+  x'₄ = (40 - 10) / 40 = 0.75
+  x'₅ = (50 - 10) / 40 = 1.00
+
+Result: [0.00, 0.25, 0.50, 0.75, 1.00]
+  Min = 0, Max = 1 ✓
+</code></pre>
+<h3 id="custom-range-example"><a class="header" href="#custom-range-example">Custom Range Example</a></h3>
+<p>Scale to [-1, 1] for neural networks with tanh activation:</p>
+<pre><code>Original: [10, 20, 30, 40, 50]
+Range: [min=10, max=50]
+
+Formula: x' = -1 + (x - 10) × 2 / 40
+
+Result:
+  10 → -1.0
+  20 → -0.5
+  30 →  0.0
+  40 →  0.5
+  50 →  1.0
+</code></pre>
+<h3 id="aprender-implementation-2"><a class="header" href="#aprender-implementation-2">aprender Implementation</a></h3>
+<pre><code class="language-rust">use aprender::preprocessing::MinMaxScaler;
+
+// Scale to [0, 1] (default)
+let mut scaler = MinMaxScaler::new();
+
+// Scale to custom range [-1, 1]
+let mut scaler = MinMaxScaler::new()
+    .with_range(-1.0, 1.0);
+
+// Fit and transform
+scaler.fit(&amp;x_train)?;
+let x_train_scaled = scaler.transform(&amp;x_train)?;
+let x_test_scaled = scaler.transform(&amp;x_test)?;
+
+// Access learned parameters
+println!(&quot;Data min: {:?}&quot;, scaler.data_min());
+println!(&quot;Data max: {:?}&quot;, scaler.data_max());
+
+// Inverse transform
+let x_recovered = scaler.inverse_transform(&amp;x_train_scaled)?;</code></pre>
+<h3 id="advantages-8"><a class="header" href="#advantages-8">Advantages</a></h3>
+<ol>
+<li><strong>Bounded output</strong>: Guaranteed range [0, 1] or custom</li>
+<li><strong>Preserves zero</strong>: If data contains zeros, they remain zeros</li>
+<li><strong>Interpretable</strong>: &quot;What percentage of the range?&quot;</li>
+<li><strong>No assumptions</strong>: Works with any distribution</li>
+</ol>
+<h3 id="disadvantages-8"><a class="header" href="#disadvantages-8">Disadvantages</a></h3>
+<ol>
+<li><strong>Sensitive to outliers</strong>: Single extreme value affects entire scaling</li>
+<li><strong>Bounded by training data</strong>: Test values outside [train_min, train_max] → outside [0, 1]</li>
+<li><strong>Distorts distribution</strong>: Outliers compress main data range</li>
+</ol>
+<h3 id="when-to-use-9"><a class="header" href="#when-to-use-9">When to Use</a></h3>
+<p>✅ <strong>Use MinMaxScaler for</strong>:</p>
+<ul>
+<li>Neural networks with sigmoid/tanh activation</li>
+<li>Bounded features needed (e.g., image pixels)</li>
+<li>No outliers present</li>
+<li>Features with known bounds</li>
+<li>When interpretability as &quot;percentage&quot; is useful</li>
+</ul>
+<p>❌ <strong>Avoid MinMaxScaler for</strong>:</p>
+<ul>
+<li>Data with outliers (they compress everything else)</li>
+<li>Test data may have values outside training range</li>
+<li>Need to preserve distribution shape</li>
+</ul>
+<h2 id="outlier-handling-comparison"><a class="header" href="#outlier-handling-comparison">Outlier Handling Comparison</a></h2>
+<h3 id="dataset-with-outlier"><a class="header" href="#dataset-with-outlier">Dataset with Outlier</a></h3>
+<pre><code>Data: [1, 2, 3, 4, 5, 100]  ← 100 is an outlier
+</code></pre>
+<h3 id="standardscaler-less-affected"><a class="header" href="#standardscaler-less-affected">StandardScaler (Less Affected)</a></h3>
+<pre><code>μ = (1+2+3+4+5+100) / 6 ≈ 19.17
+σ ≈ 37.85
+
+Scaled:
+  1   → (1-19.17)/37.85  ≈ -0.48
+  2   → (2-19.17)/37.85  ≈ -0.45
+  3   → (3-19.17)/37.85  ≈ -0.43
+  4   → (4-19.17)/37.85  ≈ -0.40
+  5   → (5-19.17)/37.85  ≈ -0.37
+  100 → (100-19.17)/37.85 ≈ 2.14
+
+Main data: [-0.48 to -0.37]  (range ≈ 0.11)
+Outlier: 2.14
+</code></pre>
+<p><strong>Effect</strong>: Outlier shifted but main data still usable, relatively compressed.</p>
+<h3 id="minmaxscaler-heavily-affected"><a class="header" href="#minmaxscaler-heavily-affected">MinMaxScaler (Heavily Affected)</a></h3>
+<pre><code>min = 1, max = 100, range = 99
+
+Scaled:
+  1   → (1-1)/99   = 0.000
+  2   → (2-1)/99   = 0.010
+  3   → (3-1)/99   = 0.020
+  4   → (4-1)/99   = 0.030
+  5   → (5-1)/99   = 0.040
+  100 → (100-1)/99 = 1.000
+
+Main data: [0.000 to 0.040]  (compressed to 4% of range!)
+Outlier: 1.000
+</code></pre>
+<p><strong>Effect</strong>: Outlier uses 96% of range, main data compressed to tiny interval.</p>
+<p><strong>Lesson</strong>: Use StandardScaler or RobustScaler when outliers are present!</p>
+<h2 id="when-to-scale-features"><a class="header" href="#when-to-scale-features">When to Scale Features</a></h2>
+<h3 id="algorithms-that-require-scaling"><a class="header" href="#algorithms-that-require-scaling">Algorithms That REQUIRE Scaling</a></h3>
+<p>These algorithms <strong>fail or perform poorly</strong> without scaling:</p>
+<div class="table-wrapper"><table><thead><tr><th>Algorithm</th><th>Why Scaling Needed</th></tr></thead><tbody>
+<tr><td><strong>K-Nearest Neighbors</strong></td><td>Distance calculation dominated by large-scale features</td></tr>
+<tr><td><strong>K-Means Clustering</strong></td><td>Centroid calculation uses Euclidean distance</td></tr>
+<tr><td><strong>Support Vector Machines</strong></td><td>Distance to hyperplane affected by feature scales</td></tr>
+<tr><td><strong>Principal Component Analysis</strong></td><td>Variance calculation dominated by large-scale features</td></tr>
+<tr><td><strong>Gradient Descent</strong></td><td>Elongated loss surface causes slow convergence</td></tr>
+<tr><td><strong>Neural Networks</strong></td><td>Weights initialized for similar input scales</td></tr>
+<tr><td><strong>Logistic Regression</strong></td><td>Gradient descent convergence issues</td></tr>
+</tbody></table>
+</div>
+<h3 id="algorithms-that-dont-need-scaling"><a class="header" href="#algorithms-that-dont-need-scaling">Algorithms That DON'T Need Scaling</a></h3>
+<p>These algorithms are <strong>scale-invariant</strong>:</p>
+<div class="table-wrapper"><table><thead><tr><th>Algorithm</th><th>Why Scaling Not Needed</th></tr></thead><tbody>
+<tr><td><strong>Decision Trees</strong></td><td>Splits based on thresholds, not distances</td></tr>
+<tr><td><strong>Random Forests</strong></td><td>Ensemble of decision trees</td></tr>
+<tr><td><strong>Gradient Boosting</strong></td><td>Based on decision trees</td></tr>
+<tr><td><strong>Naive Bayes</strong></td><td>Works with probability distributions</td></tr>
+</tbody></table>
+</div>
+<p><strong>Exception</strong>: Even for tree-based models, scaling can help if using regularization or mixed with other algorithms.</p>
+<h2 id="critical-workflow-rules"><a class="header" href="#critical-workflow-rules">Critical Workflow Rules</a></h2>
+<h3 id="rule-1-fit-on-training-data-only"><a class="header" href="#rule-1-fit-on-training-data-only">Rule 1: Fit on Training Data ONLY</a></h3>
+<pre><code class="language-rust">// ❌ WRONG: Fitting on all data leaks information
+scaler.fit(&amp;x_all)?;
+let x_train_scaled = scaler.transform(&amp;x_train)?;
+let x_test_scaled = scaler.transform(&amp;x_test)?;
+
+// ✅ CORRECT: Fit only on training data
+scaler.fit(&amp;x_train)?;  // Learn μ, σ from training only
+let x_train_scaled = scaler.transform(&amp;x_train)?;
+let x_test_scaled = scaler.transform(&amp;x_test)?;  // Apply same μ, σ</code></pre>
+<p><strong>Why?</strong> Fitting on test data creates <strong>data leakage</strong>:</p>
+<ul>
+<li>Test set statistics influence scaling</li>
+<li>Model indirectly &quot;sees&quot; test data during training</li>
+<li>Overly optimistic performance estimates</li>
+<li>Fails in production (new data has different statistics)</li>
+</ul>
+<h3 id="rule-2-same-scaler-for-train-and-test"><a class="header" href="#rule-2-same-scaler-for-train-and-test">Rule 2: Same Scaler for Train and Test</a></h3>
+<pre><code class="language-rust">// ❌ WRONG: Different scalers
+let mut train_scaler = StandardScaler::new();
+train_scaler.fit(&amp;x_train)?;
+let x_train_scaled = train_scaler.transform(&amp;x_train)?;
+
+let mut test_scaler = StandardScaler::new();
+test_scaler.fit(&amp;x_test)?;  // ← WRONG! Different statistics
+let x_test_scaled = test_scaler.transform(&amp;x_test)?;
+
+// ✅ CORRECT: Same scaler
+let mut scaler = StandardScaler::new();
+scaler.fit(&amp;x_train)?;
+let x_train_scaled = scaler.transform(&amp;x_train)?;
+let x_test_scaled = scaler.transform(&amp;x_test)?;  // Same statistics</code></pre>
+<h3 id="rule-3-scale-before-splitting-no"><a class="header" href="#rule-3-scale-before-splitting-no">Rule 3: Scale Before Splitting? NO!</a></h3>
+<pre><code class="language-rust">// ❌ WRONG: Scale before train/test split
+scaler.fit(&amp;x_all)?;
+let x_scaled = scaler.transform(&amp;x_all)?;
+let (x_train, x_test, ...) = train_test_split(&amp;x_scaled, ...)?;
+
+// ✅ CORRECT: Split before scaling
+let (x_train, x_test, ...) = train_test_split(&amp;x, ...)?;
+scaler.fit(&amp;x_train)?;
+let x_train_scaled = scaler.transform(&amp;x_train)?;
+let x_test_scaled = scaler.transform(&amp;x_test)?;</code></pre>
+<h3 id="rule-4-save-scaler-for-production"><a class="header" href="#rule-4-save-scaler-for-production">Rule 4: Save Scaler for Production</a></h3>
+<pre><code class="language-rust">// Training phase
+let mut scaler = StandardScaler::new();
+scaler.fit(&amp;x_train)?;
+
+// Save scaler parameters
+let scaler_params = ScalerParams {
+    mean: scaler.mean().clone(),
+    std: scaler.std().clone(),
+};
+save_to_disk(&amp;scaler_params, &quot;scaler.json&quot;)?;
+
+// Production phase (months later)
+let scaler_params = load_from_disk(&quot;scaler.json&quot;)?;
+let mut scaler = StandardScaler::from_params(scaler_params);
+let x_new_scaled = scaler.transform(&amp;x_new)?;</code></pre>
+<h2 id="feature-specific-scaling-strategies"><a class="header" href="#feature-specific-scaling-strategies">Feature-Specific Scaling Strategies</a></h2>
+<h3 id="numerical-features"><a class="header" href="#numerical-features">Numerical Features</a></h3>
+<p><strong>Continuous variables</strong> (age, salary, temperature):</p>
+<ul>
+<li>StandardScaler if approximately normal</li>
+<li>MinMaxScaler if bounded and no outliers</li>
+<li>RobustScaler if outliers present</li>
+</ul>
+<h3 id="binary-features-01"><a class="header" href="#binary-features-01">Binary Features (0/1)</a></h3>
+<p><strong>No scaling needed!</strong></p>
+<pre><code>Original: [0, 1, 0, 1, 1]  ← Already in [0, 1]
+
+Don't scale: Breaks semantic meaning (presence/absence)
+</code></pre>
+<h3 id="count-features"><a class="header" href="#count-features">Count Features</a></h3>
+<p><strong>Examples</strong>: Number of purchases, page visits, words in document</p>
+<p><strong>Strategy</strong>: Consider log transformation first, then scale</p>
+<pre><code class="language-rust">// Apply log transform
+let x_log: Vec&lt;f32&gt; = x.iter()
+    .map(|&amp;count| (count + 1.0).ln())  // +1 to handle zeros
+    .collect();
+
+// Then scale
+scaler.fit(&amp;x_log)?;
+let x_scaled = scaler.transform(&amp;x_log)?;</code></pre>
+<h3 id="categorical-features-encoded"><a class="header" href="#categorical-features-encoded">Categorical Features (Encoded)</a></h3>
+<p><strong>One-hot encoded</strong>: No scaling needed (already 0/1)
+<strong>Label encoded</strong> (ordinal): Scale if using distance-based algorithms</p>
+<h2 id="impact-on-model-performance"><a class="header" href="#impact-on-model-performance">Impact on Model Performance</a></h2>
+<h3 id="example-k-nn-on-employee-data"><a class="header" href="#example-k-nn-on-employee-data">Example: K-NN on Employee Data</a></h3>
+<pre><code>Dataset:
+  Feature 1: Salary [30k-120k]
+  Feature 2: Age [25-40]
+  Feature 3: Years of experience [1-15]
+
+Task: Predict employee attrition
+
+Without scaling:
+  K-NN accuracy: 62%
+  (Salary dominates distance calculation)
+
+With StandardScaler:
+  K-NN accuracy: 84%
+  (All features contribute meaningfully)
+
+Improvement: +22 percentage points! ✅
+</code></pre>
+<h3 id="example-neural-network-convergence"><a class="header" href="#example-neural-network-convergence">Example: Neural Network Convergence</a></h3>
+<pre><code>Network: 3-layer MLP
+Dataset: Mixed-scale features
+
+Without scaling:
+  Epochs to converge: 500
+  Training time: 45 seconds
+
+With StandardScaler:
+  Epochs to converge: 50
+  Training time: 5 seconds
+
+Speedup: 9x faster! ✅
+</code></pre>
+<h2 id="decision-guide-2"><a class="header" href="#decision-guide-2">Decision Guide</a></h2>
+<h3 id="flowchart-which-scaler"><a class="header" href="#flowchart-which-scaler">Flowchart: Which Scaler?</a></h3>
+<pre><code>Start
+  │
+  ├─ Are there outliers?
+  │    ├─ YES → RobustScaler
+  │    └─ NO  → Continue
+  │
+  ├─ Need bounded range [0,1]?
+  │    ├─ YES → MinMaxScaler
+  │    └─ NO  → Continue
+  │
+  ├─ Is data approximately normal?
+  │    ├─ YES → StandardScaler ✓ (default choice)
+  │    └─ NO  → Continue
+  │
+  ├─ Is data sparse (many zeros)?
+  │    ├─ YES → MaxAbsScaler
+  │    └─ NO  → StandardScaler
+</code></pre>
+<h3 id="quick-reference"><a class="header" href="#quick-reference">Quick Reference</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Your Situation</th><th>Recommended Scaler</th></tr></thead><tbody>
+<tr><td>Default choice, unsure</td><td><strong>StandardScaler</strong></td></tr>
+<tr><td>Neural networks</td><td><strong>StandardScaler</strong> or <strong>MinMaxScaler</strong></td></tr>
+<tr><td>K-NN, K-Means, SVM</td><td><strong>StandardScaler</strong></td></tr>
+<tr><td>Data has outliers</td><td><strong>RobustScaler</strong></td></tr>
+<tr><td>Need [0,1] bounds</td><td><strong>MinMaxScaler</strong></td></tr>
+<tr><td>Sparse data</td><td><strong>MaxAbsScaler</strong></td></tr>
+<tr><td>Tree-based models</td><td><strong>No scaling</strong> (optional)</td></tr>
+</tbody></table>
+</div>
+<h2 id="common-mistakes"><a class="header" href="#common-mistakes">Common Mistakes</a></h2>
+<h3 id="mistake-1-forgetting-to-scale-test-data"><a class="header" href="#mistake-1-forgetting-to-scale-test-data">Mistake 1: Forgetting to Scale Test Data</a></h3>
+<pre><code class="language-rust">// ❌ WRONG
+scaler.fit(&amp;x_train)?;
+let x_train_scaled = scaler.transform(&amp;x_train)?;
+// ... train model on x_train_scaled ...
+let predictions = model.predict(&amp;x_test)?;  // ← Unscaled!</code></pre>
+<p><strong>Result</strong>: Model sees different scale at test time, terrible performance.</p>
+<h3 id="mistake-2-scaling-target-variable-unnecessarily"><a class="header" href="#mistake-2-scaling-target-variable-unnecessarily">Mistake 2: Scaling Target Variable Unnecessarily</a></h3>
+<pre><code class="language-rust">// ❌ Usually unnecessary for regression targets
+scaler_y.fit(&amp;y_train)?;
+let y_train_scaled = scaler_y.transform(&amp;y_train)?;</code></pre>
+<p><strong>When needed</strong>: Only if target has extreme range (e.g., house prices in millions)</p>
+<p><strong>Better solution</strong>: Use regularization or log-transform target</p>
+<h3 id="mistake-3-scaling-categorical-encoded-features"><a class="header" href="#mistake-3-scaling-categorical-encoded-features">Mistake 3: Scaling Categorical Encoded Features</a></h3>
+<pre><code class="language-rust">// One-hot encoded: [1, 0, 0] for category A
+//                  [0, 1, 0] for category B
+
+// ❌ WRONG: Scaling destroys categorical meaning
+scaler.fit(&amp;one_hot_encoded)?;</code></pre>
+<p><strong>Correct</strong>: Don't scale one-hot encoded features!</p>
+<h2 id="aprender-example-complete-pipeline"><a class="header" href="#aprender-example-complete-pipeline">aprender Example: Complete Pipeline</a></h2>
+<pre><code class="language-rust">use aprender::preprocessing::StandardScaler;
+use aprender::classification::KNearestNeighbors;
+use aprender::model_selection::train_test_split;
+use aprender::prelude::*;
+
+fn full_pipeline_example(x: &amp;Matrix&lt;f32&gt;, y: &amp;Vec&lt;i32&gt;) -&gt; Result&lt;f32&gt; {
+    // 1. Split data FIRST
+    let (x_train, x_test, y_train, y_test) =
+        train_test_split(x, y, 0.2, Some(42))?;
+
+    // 2. Create and fit scaler on training data ONLY
+    let mut scaler = StandardScaler::new();
+    scaler.fit(&amp;x_train)?;
+
+    // 3. Transform both train and test using same scaler
+    let x_train_scaled = scaler.transform(&amp;x_train)?;
+    let x_test_scaled = scaler.transform(&amp;x_test)?;
+
+    // 4. Train model on scaled data
+    let mut model = KNearestNeighbors::new(5);
+    model.fit(&amp;x_train_scaled, &amp;y_train)?;
+
+    // 5. Evaluate on scaled test data
+    let accuracy = model.score(&amp;x_test_scaled, &amp;y_test);
+
+    println!(&quot;Learned scaling parameters:&quot;);
+    println!(&quot;  Mean: {:?}&quot;, scaler.mean());
+    println!(&quot;  Std:  {:?}&quot;, scaler.std());
+    println!(&quot;\nTest accuracy: {:.4}&quot;, accuracy);
+
+    Ok(accuracy)
+}</code></pre>
+<h2 id="further-reading-14"><a class="header" href="#further-reading-14">Further Reading</a></h2>
+<p><strong>Theory</strong>:</p>
+<ul>
+<li>Standardization: Common practice in statistics since 1950s</li>
+<li>Min-Max Scaling: Standard normalization technique</li>
+</ul>
+<p><strong>Practical</strong>:</p>
+<ul>
+<li>sklearn documentation: Detailed scaler comparisons</li>
+<li>&quot;Feature Engineering for Machine Learning&quot; (Zheng &amp; Casari)</li>
+</ul>
+<h2 id="related-chapters-10"><a class="header" href="#related-chapters-10">Related Chapters</a></h2>
+<ul>
+<li><a href="ml-fundamentals/../examples/data-preprocessing-scalers.html">Data Preprocessing with Scalers</a> - Hands-on examples</li>
+<li><a href="ml-fundamentals/../examples/knn-iris.html">K-NN Iris Example</a> - Scaling impact on K-NN</li>
+<li><a href="ml-fundamentals/./gradient-descent.html">Gradient Descent Theory</a> - Why scaling accelerates optimization</li>
+</ul>
+<h2 id="summary-13"><a class="header" href="#summary-13">Summary</a></h2>
+<div class="table-wrapper"><table><thead><tr><th>Concept</th><th>Key Takeaway</th></tr></thead><tbody>
+<tr><td><strong>Why scale?</strong></td><td>Distance-based algorithms and gradient descent need similar feature scales</td></tr>
+<tr><td><strong>StandardScaler</strong></td><td>Default choice: centers at 0, scales by std dev</td></tr>
+<tr><td><strong>MinMaxScaler</strong></td><td>When bounded [0,1] range needed, no outliers</td></tr>
+<tr><td><strong>Fit on training</strong></td><td>CRITICAL: Only fit scaler on training data, apply to test</td></tr>
+<tr><td><strong>Algorithms needing scaling</strong></td><td>K-NN, K-Means, SVM, Neural Networks, PCA</td></tr>
+<tr><td><strong>Algorithms NOT needing scaling</strong></td><td>Decision Trees, Random Forests, Naive Bayes</td></tr>
+<tr><td><strong>Performance impact</strong></td><td>Can improve accuracy by 20%+ and speed by 10-100x</td></tr>
+</tbody></table>
+</div>
+<p>Feature scaling is often the <strong>single most important preprocessing step</strong> in machine learning pipelines. Proper scaling can mean the difference between a model that fails to converge and one that achieves state-of-the-art performance.</p>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="graph-algorithms-theory"><a class="header" href="#graph-algorithms-theory">Graph Algorithms Theory</a></h1>
 <p>Graph algorithms are fundamental tools for analyzing relationships and structures in networked data. This chapter covers the theory behind aprender's graph module, focusing on efficient representations and centrality measures.</p>
 <h2 id="graph-representation"><a class="header" href="#graph-representation">Graph Representation</a></h2>
@@ -5897,7 +7433,7 @@ let betweenness = graph.betweenness_centrality();</code></pre>
 <li><strong>Max iterations</strong>: 100 usually sufficient (convergence ~20-50 iterations)</li>
 <li><strong>Tolerance</strong>: 1e-6 balances precision vs speed</li>
 </ul>
-<h2 id="further-reading-12"><a class="header" href="#further-reading-12">Further Reading</a></h2>
+<h2 id="further-reading-15"><a class="header" href="#further-reading-15">Further Reading</a></h2>
 <p><strong>Graph Algorithms</strong>:</p>
 <ul>
 <li>Brandes, U. (2001). &quot;A Faster Algorithm for Betweenness Centrality&quot;</li>
@@ -5912,7 +7448,7 @@ let betweenness = graph.betweenness_centrality();</code></pre>
 <ul>
 <li>Higham, N. (1993). &quot;The Accuracy of Floating Point Summation&quot;</li>
 </ul>
-<h2 id="summary-11"><a class="header" href="#summary-11">Summary</a></h2>
+<h2 id="summary-14"><a class="header" href="#summary-14">Summary</a></h2>
 <ul>
 <li><strong>CSR format</strong>: 50-70% memory reduction, 3-5x cache improvement</li>
 <li><strong>PageRank</strong>: Global influence with Kahan summation for numerical stability</li>
@@ -6093,7 +7629,7 @@ n_bins = ceil((max - min) / bin_width)
 <li><strong>Best for</strong>: Time series, event data with varying density</li>
 </ul>
 <p>Currently falls back to Freedman-Diaconis.</p>
-<h3 id="comparison-table-5"><a class="header" href="#comparison-table-5">Comparison Table</a></h3>
+<h3 id="comparison-table-6"><a class="header" href="#comparison-table-6">Comparison Table</a></h3>
 <div class="table-wrapper"><table><thead><tr><th>Method</th><th>Complexity</th><th>Outlier Resistant</th><th>Best For</th></tr></thead><tbody>
 <tr><td>Freedman-Diaconis</td><td>O(n log n)</td><td>✅ Yes (uses IQR)</td><td>Skewed data, outliers</td></tr>
 <tr><td>Sturges</td><td>O(1)</td><td>❌ No</td><td>Normal distributions</td></tr>
@@ -6257,7 +7793,7 @@ let hist = stats.histogram_method(BinMethod::Scott).unwrap();</code></pre>
 <li>Stddev: ~1000ms (dominated by outlier)</li>
 <li>IQR: 8ms (captures typical variation)</li>
 </ul>
-<h2 id="further-reading-13"><a class="header" href="#further-reading-13">Further Reading</a></h2>
+<h2 id="further-reading-16"><a class="header" href="#further-reading-16">Further Reading</a></h2>
 <p><strong>Quantile Methods</strong>:</p>
 <ul>
 <li>Hyndman, R.J., Fan, Y. (1996). &quot;Sample Quantiles in Statistical Packages&quot;</li>
@@ -6273,7 +7809,7 @@ let hist = stats.histogram_method(BinMethod::Scott).unwrap();</code></pre>
 <ul>
 <li>Tukey, J.W. (1977). &quot;Exploratory Data Analysis&quot;</li>
 </ul>
-<h2 id="summary-12"><a class="header" href="#summary-12">Summary</a></h2>
+<h2 id="summary-15"><a class="header" href="#summary-15">Summary</a></h2>
 <ul>
 <li><strong>Quantiles</strong>: R-7 method with QuickSelect optimization (10-100x faster)</li>
 <li><strong>Five-number summary</strong>: Robust description using min, Q1, median, Q3, max</li>
@@ -6558,7 +8094,7 @@ Support: 1/4 = 25% ✗ (below threshold)
 <li><strong>Mutual information</strong>: Measures dependence between itemsets</li>
 <li><strong>Entropy</strong>: Quantifies uncertainty in item distributions</li>
 </ul>
-<h2 id="further-reading-14"><a class="header" href="#further-reading-14">Further Reading</a></h2>
+<h2 id="further-reading-17"><a class="header" href="#further-reading-17">Further Reading</a></h2>
 <ol>
 <li><strong>Original Apriori Paper</strong>: Agrawal &amp; Srikant (1994) - &quot;Fast Algorithms for Mining Association Rules&quot;</li>
 <li><strong>FP-Growth</strong>: Han et al. (2000) - &quot;Mining Frequent Patterns without Candidate Generation&quot;</li>
@@ -7190,7 +8726,7 @@ $ git log --oneline | head -5
 e872111 feat: cross-validation - Add automated cross_validate (COMPLETE)
 dbd9a2d feat: cross-validation - Implement train_test_split and KFold
 </code></pre>
-<h2 id="summary-13"><a class="header" href="#summary-13">Summary</a></h2>
+<h2 id="summary-16"><a class="header" href="#summary-16">Summary</a></h2>
 <p>This case study demonstrates EXTREME TDD in production:</p>
 <ul>
 <li><strong>RED</strong>: 12 tests written first</li>
@@ -7431,7 +8967,7 @@ println!(&quot;Final performance: {}&quot;, result.best_score); // Wrong!</code>
 <li>Refine around best region</li>
 <li>Use fewer folds for very large datasets</li>
 </ul>
-<h2 id="related-examples"><a class="header" href="#related-examples">Related Examples</a></h2>
+<h2 id="related-examples-1"><a class="header" href="#related-examples-1">Related Examples</a></h2>
 <ul>
 <li><a href="examples/./cross-validation.html">Cross-Validation</a> - K-Fold CV fundamentals</li>
 <li><a href="examples/./regularized-regression.html">Regularized Regression</a> - Ridge, Lasso, ElasticNet</li>
@@ -8029,7 +9565,7 @@ Optimize serialization for large models</p>
 </li>
 </ol>
 <hr />
-<h2 id="summary-14"><a class="header" href="#summary-14">Summary</a></h2>
+<h2 id="summary-17"><a class="header" href="#summary-17">Summary</a></h2>
 <p><strong>Key Takeaways:</strong></p>
 <ol>
 <li>✅ <strong>Write tests first</strong> - Caught header bug before production</li>
@@ -9252,7 +10788,7 @@ let predictions = knn_proba.predict(&amp;x_test)?;</code></pre>
 <li>&lt;50%: Prediction uncertain, manual review recommended</li>
 </ul>
 <h2 id="best-configuration"><a class="header" href="#best-configuration">Best Configuration</a></h2>
-<h3 id="summary-15"><a class="header" href="#summary-15">Summary</a></h3>
+<h3 id="summary-18"><a class="header" href="#summary-18">Summary</a></h3>
 <pre><code class="language-text">Best configuration found:
 - k = 5 neighbors
 - Distance metric: Euclidean
@@ -9386,7 +10922,7 @@ let knn15 = KNearestNeighbors::new(15); // 75% of training data</code></pre>
 <li>Iris features are already similar scale (all in cm)</li>
 <li>Expect minimal difference, but good practice</li>
 </ul>
-<h2 id="related-examples-1"><a class="header" href="#related-examples-1">Related Examples</a></h2>
+<h2 id="related-examples-2"><a class="header" href="#related-examples-2">Related Examples</a></h2>
 <ul>
 <li><a href="examples/./iris-clustering.html"><code>examples/iris_clustering.rs</code></a> - K-Means on same dataset</li>
 <li><a href="examples/../ml-fundamentals/knn.html"><code>book/src/ml-fundamentals/knn.md</code></a> - Full kNN theory</li>
@@ -9483,7 +11019,7 @@ println!(&quot;Accuracy: {:.1}%&quot;, accuracy * 100.0);</code></pre>
 <li>Don't assume Gaussian distribution</li>
 <li>Have abundant training data</li>
 </ul>
-<h2 id="related-examples-2"><a class="header" href="#related-examples-2">Related Examples</a></h2>
+<h2 id="related-examples-3"><a class="header" href="#related-examples-3">Related Examples</a></h2>
 <ul>
 <li><a href="examples/./knn-iris.html"><code>examples/knn_iris.rs</code></a> - kNN comparison</li>
 <li><a href="examples/../ml-fundamentals/naive-bayes.html"><code>book/src/ml-fundamentals/naive-bayes.md</code></a> - Theory</li>
@@ -9616,7 +11152,7 @@ println!(&quot;Accuracy: {:.1}%&quot;, accuracy * 100.0);</code></pre>
      ─────────   ──────────────────────────────
    regularization        hinge loss
 </code></pre>
-<h3 id="hyperparameters"><a class="header" href="#hyperparameters">Hyperparameters</a></h3>
+<h3 id="hyperparameters-1"><a class="header" href="#hyperparameters-1">Hyperparameters</a></h3>
 <ul>
 <li><strong>C = 1.0</strong>: Regularization strength (balanced)</li>
 <li><strong>learning_rate = 0.1</strong>: Step size for gradient descent</li>
@@ -9669,7 +11205,7 @@ println!(&quot;Accuracy: {:.1}%&quot;, accuracy * 100.0);</code></pre>
 <li><strong>Naive Bayes</strong>: Small data, need probabilities, instant training</li>
 <li><strong>kNN</strong>: Non-linear, local patterns, non-parametric</li>
 </ul>
-<h2 id="related-examples-3"><a class="header" href="#related-examples-3">Related Examples</a></h2>
+<h2 id="related-examples-4"><a class="header" href="#related-examples-4">Related Examples</a></h2>
 <ul>
 <li><a href="examples/./naive-bayes-iris.html"><code>examples/naive_bayes_iris.rs</code></a> - Gaussian Naive Bayes comparison</li>
 <li><a href="examples/./knn-iris.html"><code>examples/knn_iris.rs</code></a> - kNN comparison</li>
@@ -9771,13 +11307,13 @@ println!(&quot;Accuracy: {:.1}%&quot;, accuracy * 100.0);</code></pre>
 </code></pre>
 <p><strong>Observation</strong>: High confidence predictions (&gt;99%) despite moderate accuracy.</p>
 <h2 id="why-gradient-boosting"><a class="header" href="#why-gradient-boosting">Why Gradient Boosting</a></h2>
-<h3 id="advantages-4"><a class="header" href="#advantages-4">Advantages</a></h3>
+<h3 id="advantages-9"><a class="header" href="#advantages-9">Advantages</a></h3>
 <p>✓ <strong>Sequential learning</strong>: Each tree corrects previous errors<br />
 ✓ <strong>Flexible</strong>: Works with any differentiable loss function<br />
 ✓ <strong>Regularization</strong>: Learning rate and tree depth control overfitting<br />
 ✓ <strong>State-of-the-art</strong>: Dominates Kaggle competitions<br />
 ✓ <strong>Handles complex patterns</strong>: Non-linear decision boundaries</p>
-<h3 id="disadvantages-4"><a class="header" href="#disadvantages-4">Disadvantages</a></h3>
+<h3 id="disadvantages-9"><a class="header" href="#disadvantages-9">Disadvantages</a></h3>
 <p>✗ <strong>Sequential training</strong>: Cannot parallelize tree building<br />
 ✗ <strong>Hyperparameter sensitive</strong>: Requires careful tuning<br />
 ✗ <strong>Slower than Random Forest</strong>: Trees built one at a time<br />
@@ -9829,7 +11365,7 @@ println!(&quot;Accuracy: {:.1}%&quot;, accuracy * 100.0);</code></pre>
 ✓ Have time for hyperparameter tuning<br />
 ✓ Moderate dataset size (&lt;1M rows)<br />
 ✓ Feature engineering done</p>
-<h2 id="related-examples-4"><a class="header" href="#related-examples-4">Related Examples</a></h2>
+<h2 id="related-examples-5"><a class="header" href="#related-examples-5">Related Examples</a></h2>
 <ul>
 <li><a href="examples/./random-forest-iris.html"><code>examples/random_forest_iris.rs</code></a> - Random Forest comparison</li>
 <li><a href="examples/./naive-bayes-iris.html"><code>examples/naive_bayes_iris.rs</code></a> - Naive Bayes comparison</li>
@@ -9907,7 +11443,7 @@ in aprender, following EXTREME TDD principles.</p>
 <pre><code class="language-bash">cargo run --example data_preprocessing_scalers
 </code></pre>
 <h2 id="key-concepts-2"><a class="header" href="#key-concepts-2">Key Concepts</a></h2>
-<h3 id="standardscaler-z-score-normalization"><a class="header" href="#standardscaler-z-score-normalization">StandardScaler (Z-score Normalization)</a></h3>
+<h3 id="standardscaler-z-score-normalization-1"><a class="header" href="#standardscaler-z-score-normalization-1">StandardScaler (Z-score Normalization)</a></h3>
 <p>StandardScaler transforms features to have:</p>
 <ul>
 <li><strong>Mean = 0</strong> (centers data)</li>
@@ -9921,7 +11457,7 @@ in aprender, following EXTREME TDD principles.</p>
 <li>Algorithms sensitive to feature scale (SVM, neural networks)</li>
 <li>Want to preserve relative distances</li>
 </ul>
-<h3 id="minmaxscaler-range-normalization"><a class="header" href="#minmaxscaler-range-normalization">MinMaxScaler (Range Normalization)</a></h3>
+<h3 id="minmaxscaler-range-normalization-1"><a class="header" href="#minmaxscaler-range-normalization-1">MinMaxScaler (Range Normalization)</a></h3>
 <p>MinMaxScaler transforms features to a specific range (default <code>[0, 1]</code>):</p>
 <p><strong>Formula</strong>: <code>x' = (x - min) / (max - min)</code></p>
 <p><strong>When to use</strong>:</p>
@@ -10046,7 +11582,7 @@ let x_train_scaled = scaler.transform(&amp;x_train).unwrap();</code></pre>
 <pre><code class="language-rust">if scaler.is_fitted() {
     // Safe to transform
 }</code></pre>
-<h2 id="decision-guide-2"><a class="header" href="#decision-guide-2">Decision Guide</a></h2>
+<h2 id="decision-guide-3"><a class="header" href="#decision-guide-3">Decision Guide</a></h2>
 <h3 id="choose-standardscaler-when"><a class="header" href="#choose-standardscaler-when">Choose StandardScaler when:</a></h3>
 <ul>
 <li>✅ Data is approximately normally distributed</li>
@@ -10092,7 +11628,7 @@ let x_train_scaled = scaler.transform(&amp;x_train).unwrap();</code></pre>
 <li><strong>Over-scaling</strong>: Don't scale tree-based models</li>
 <li><strong>Losing the scaler</strong>: Save scaler with model for production use</li>
 </ol>
-<h2 id="related-examples-5"><a class="header" href="#related-examples-5">Related Examples</a></h2>
+<h2 id="related-examples-6"><a class="header" href="#related-examples-6">Related Examples</a></h2>
 <ul>
 <li><a href="examples/./knn-classification.html">K-Nearest Neighbors</a> - Distance-based classification</li>
 <li><a href="examples/./descriptive-statistics.html">Descriptive Statistics</a> - Computing mean and std</li>
@@ -10394,14 +11930,14 @@ for value in values {
 </ul>
 </li>
 </ol>
-<h2 id="further-reading-15"><a class="header" href="#further-reading-15">Further Reading</a></h2>
+<h2 id="further-reading-18"><a class="header" href="#further-reading-18">Further Reading</a></h2>
 <ul>
 <li><strong>Graph Algorithms</strong>: Newman, M. (2018). &quot;Networks&quot; (comprehensive textbook)</li>
 <li><strong>PageRank</strong>: Page, L., et al. (1999). &quot;The PageRank Citation Ranking&quot;</li>
 <li><strong>Betweenness</strong>: Brandes, U. (2001). &quot;A Faster Algorithm for Betweenness Centrality&quot;</li>
 <li><strong>Social Network Analysis</strong>: Wasserman, S., Faust, K. (1994). &quot;Social Network Analysis&quot;</li>
 </ul>
-<h2 id="summary-16"><a class="header" href="#summary-16">Summary</a></h2>
+<h2 id="summary-19"><a class="header" href="#summary-19">Summary</a></h2>
 <ul>
 <li><strong>Degree centrality</strong>: Local popularity (direct friends)</li>
 <li><strong>PageRank</strong>: Global influence (considers friend quality)</li>
@@ -10952,14 +12488,14 @@ Q(0.5) = data[14] + 0.5 * (data[15] - data[14])
 </ul>
 </li>
 </ol>
-<h2 id="further-reading-16"><a class="header" href="#further-reading-16">Further Reading</a></h2>
+<h2 id="further-reading-19"><a class="header" href="#further-reading-19">Further Reading</a></h2>
 <ul>
 <li><strong>Quantile Methods</strong>: Hyndman, R.J., Fan, Y. (1996). &quot;Sample Quantiles in Statistical Packages&quot;</li>
 <li><strong>Histogram Binning</strong>: Freedman, D., Diaconis, P. (1981). &quot;On the Histogram as a Density Estimator&quot;</li>
 <li><strong>Outlier Detection</strong>: Tukey, J.W. (1977). &quot;Exploratory Data Analysis&quot;</li>
 <li><strong>QuickSelect</strong>: Floyd, R.W., Rivest, R.L. (1975). &quot;Algorithm 489: The Algorithm SELECT&quot;</li>
 </ul>
-<h2 id="summary-17"><a class="header" href="#summary-17">Summary</a></h2>
+<h2 id="summary-20"><a class="header" href="#summary-20">Summary</a></h2>
 <ul>
 <li><strong>Quantiles</strong>: Median (82.5) better than mean (80.5) for skewed data</li>
 <li><strong>Five-number summary</strong>: Robust description (min, Q1, median, Q3, max)</li>
@@ -11071,7 +12607,7 @@ let fitness = previous_best + density_score - ncp_prior;</code></pre>
 <blockquote>
 <p>Scargle, J. D., et al. (2013). &quot;Studies in Astronomical Time Series Analysis. VI. Bayesian Block Representations.&quot; The Astrophysical Journal, 764(2), 167.</p>
 </blockquote>
-<h2 id="related-examples-6"><a class="header" href="#related-examples-6">Related Examples</a></h2>
+<h2 id="related-examples-7"><a class="header" href="#related-examples-7">Related Examples</a></h2>
 <ul>
 <li><a href="examples/./descriptive-statistics.html">Descriptive Statistics</a> - Basic statistical analysis</li>
 <li><a href="examples/./kmeans-clustering.html">K-Means Clustering</a> - Density-based clustering</li>
@@ -11391,7 +12927,7 @@ let mut pca4 = PCA::new(4);  // 100% variance (perfect reconstruction)</code></p
 <li>t-SNE: Non-linear visualization (preserves local structure)</li>
 <li>UMAP: Non-linear, faster than t-SNE</li>
 </ul>
-<h2 id="related-examples-7"><a class="header" href="#related-examples-7">Related Examples</a></h2>
+<h2 id="related-examples-8"><a class="header" href="#related-examples-8">Related Examples</a></h2>
 <ul>
 <li><a href="examples/./iris-clustering.html"><code>examples/iris_clustering.rs</code></a> - K-Means on same dataset</li>
 <li><a href="examples/../ml-fundamentals/pca.html"><code>book/src/ml-fundamentals/pca.md</code></a> - Full PCA theory</li>
@@ -13056,7 +14592,7 @@ self.rules.sort_by(|a, b| b.confidence.partial_cmp(&amp;a.confidence).unwrap());
 <li><a href="appendix/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
 <li><a href="appendix/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
 </ul>
-<div style="break-before: page; page-break-before: always;"></div><h1 id="further-reading-17"><a class="header" href="#further-reading-17">Further Reading</a></h1>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="further-reading-20"><a class="header" href="#further-reading-20">Further Reading</a></h1>
 <p>📝 <strong>This chapter is under construction.</strong></p>
 <p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
 <p><strong>See also:</strong></p>
