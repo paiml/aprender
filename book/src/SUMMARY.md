@@ -82,6 +82,7 @@
 
 - [K-Means Clustering Theory](./ml-fundamentals/kmeans-clustering.md)
 - [Principal Component Analysis (PCA) Theory](./ml-fundamentals/pca.md)
+- [t-SNE (t-Distributed Stochastic Neighbor Embedding) Theory](./ml-fundamentals/tsne.md)
 
 ## Model Evaluation
 
@@ -134,6 +135,7 @@
 - [Case Study: Isolation Forest Anomaly Detection](./examples/isolation-forest-anomaly.md)
 - [Case Study: Local Outlier Factor (LOF)](./examples/lof-anomaly.md)
 - [Case Study: Spectral Clustering](./examples/spectral-clustering.md)
+- [Case Study: t-SNE Visualization](./examples/tsne-visualization.md)
 
 # Sprint-Based Development
 

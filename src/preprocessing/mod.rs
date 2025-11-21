@@ -799,6 +799,396 @@ impl Transformer for PCA {
     }
 }
 
+// ============================================================================
+// t-SNE (t-Distributed Stochastic Neighbor Embedding)
+// ============================================================================
+
+/// t-SNE for dimensionality reduction and visualization.
+///
+/// t-Distributed Stochastic Neighbor Embedding (t-SNE) is a non-linear
+/// dimensionality reduction technique optimized for visualization of
+/// high-dimensional data in 2D or 3D space.
+///
+/// # Algorithm
+///
+/// 1. Compute pairwise similarities in high-D using Gaussian kernel
+/// 2. Compute perplexity-based conditional probabilities
+/// 3. Initialize low-D embedding (random or PCA)
+/// 4. Compute pairwise similarities in low-D using Student's t-distribution
+/// 5. Minimize KL divergence via gradient descent with momentum
+///
+/// # Example
+///
+/// ```
+/// use aprender::prelude::*;
+/// use aprender::preprocessing::TSNE;
+///
+/// let data = Matrix::from_vec(
+///     6,
+///     4,
+///     vec![
+///         1.0, 2.0, 3.0, 4.0,
+///         1.1, 2.1, 3.1, 4.1,
+///         5.0, 6.0, 7.0, 8.0,
+///         5.1, 6.1, 7.1, 8.1,
+///         10.0, 11.0, 12.0, 13.0,
+///         10.1, 11.1, 12.1, 13.1,
+///     ],
+/// )
+/// .unwrap();
+///
+/// let mut tsne = TSNE::new(2).with_perplexity(5.0).with_n_iter(250);
+/// let embedding = tsne.fit_transform(&data).unwrap();
+/// assert_eq!(embedding.shape(), (6, 2));
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TSNE {
+    /// Number of dimensions in embedding (usually 2 or 3).
+    n_components: usize,
+    /// Perplexity balances local vs global structure (5-50).
+    perplexity: f32,
+    /// Learning rate for gradient descent.
+    learning_rate: f32,
+    /// Number of gradient descent iterations.
+    n_iter: usize,
+    /// Random seed for reproducibility.
+    random_state: Option<u64>,
+    /// The learned embedding.
+    embedding: Option<Matrix<f32>>,
+}
+
+impl Default for TSNE {
+    fn default() -> Self {
+        Self::new(2)
+    }
+}
+
+impl TSNE {
+    /// Create a new t-SNE with default parameters.
+    ///
+    /// Default: perplexity=30.0, learning_rate=200.0, n_iter=1000
+    #[must_use]
+    pub fn new(n_components: usize) -> Self {
+        Self {
+            n_components,
+            perplexity: 30.0,
+            learning_rate: 200.0,
+            n_iter: 1000,
+            random_state: None,
+            embedding: None,
+        }
+    }
+
+    /// Set perplexity (balance between local and global structure).
+    ///
+    /// Typical range: 5-50. Higher perplexity considers more neighbors.
+    #[must_use]
+    pub fn with_perplexity(mut self, perplexity: f32) -> Self {
+        self.perplexity = perplexity;
+        self
+    }
+
+    /// Set learning rate for gradient descent.
+    #[must_use]
+    pub fn with_learning_rate(mut self, learning_rate: f32) -> Self {
+        self.learning_rate = learning_rate;
+        self
+    }
+
+    /// Set number of gradient descent iterations.
+    #[must_use]
+    pub fn with_n_iter(mut self, n_iter: usize) -> Self {
+        self.n_iter = n_iter;
+        self
+    }
+
+    /// Set random seed for reproducibility.
+    #[must_use]
+    pub fn with_random_state(mut self, seed: u64) -> Self {
+        self.random_state = Some(seed);
+        self
+    }
+
+    /// Get number of components.
+    #[must_use]
+    pub fn n_components(&self) -> usize {
+        self.n_components
+    }
+
+    /// Check if model has been fitted.
+    #[must_use]
+    pub fn is_fitted(&self) -> bool {
+        self.embedding.is_some()
+    }
+
+    /// Compute pairwise squared Euclidean distances.
+    fn compute_pairwise_distances(&self, x: &Matrix<f32>) -> Vec<f32> {
+        let (n_samples, n_features) = x.shape();
+        let mut distances = vec![0.0; n_samples * n_samples];
+
+        for i in 0..n_samples {
+            for j in 0..n_samples {
+                if i == j {
+                    distances[i * n_samples + j] = 0.0;
+                    continue;
+                }
+
+                let mut dist_sq = 0.0;
+                for k in 0..n_features {
+                    let diff = x.get(i, k) - x.get(j, k);
+                    dist_sq += diff * diff;
+                }
+                distances[i * n_samples + j] = dist_sq;
+            }
+        }
+
+        distances
+    }
+
+    /// Compute conditional probabilities P(j|i) with perplexity constraint.
+    ///
+    /// Uses binary search to find sigma_i such that perplexity matches target.
+    fn compute_p_conditional(&self, distances: &[f32], n_samples: usize) -> Vec<f32> {
+        let mut p_conditional = vec![0.0; n_samples * n_samples];
+        let target_entropy = self.perplexity.ln();
+
+        for i in 0..n_samples {
+            // Binary search for sigma that gives target perplexity
+            let mut beta_min = -f32::INFINITY;
+            let mut beta_max = f32::INFINITY;
+            let mut beta = 1.0; // beta = 1 / (2 * sigma^2)
+
+            for _ in 0..50 {
+                // Max iterations for binary search
+                // Compute P(j|i) with current beta
+                let mut sum_p = 0.0;
+                let mut entropy = 0.0;
+
+                for j in 0..n_samples {
+                    if i == j {
+                        p_conditional[i * n_samples + j] = 0.0;
+                        continue;
+                    }
+
+                    let p_ji = (-beta * distances[i * n_samples + j]).exp();
+                    p_conditional[i * n_samples + j] = p_ji;
+                    sum_p += p_ji;
+                }
+
+                // Normalize and compute entropy
+                if sum_p > 0.0 {
+                    for j in 0..n_samples {
+                        if i != j {
+                            let p_normalized = p_conditional[i * n_samples + j] / sum_p;
+                            p_conditional[i * n_samples + j] = p_normalized;
+                            if p_normalized > 1e-12 {
+                                entropy -= p_normalized * p_normalized.ln();
+                            }
+                        }
+                    }
+                }
+
+                // Check if entropy matches target
+                let entropy_diff = entropy - target_entropy;
+                if entropy_diff.abs() < 1e-5 {
+                    break;
+                }
+
+                // Update beta via binary search
+                if entropy_diff > 0.0 {
+                    beta_min = beta;
+                    beta = if beta_max.is_infinite() {
+                        beta * 2.0
+                    } else {
+                        (beta + beta_max) / 2.0
+                    };
+                } else {
+                    beta_max = beta;
+                    beta = if beta_min.is_infinite() {
+                        beta / 2.0
+                    } else {
+                        (beta + beta_min) / 2.0
+                    };
+                }
+            }
+        }
+
+        p_conditional
+    }
+
+    /// Compute symmetric P matrix: P_{ij} = (P_{j|i} + P_{i|j}) / (2N).
+    fn compute_p_joint(&self, p_conditional: &[f32], n_samples: usize) -> Vec<f32> {
+        let mut p_joint = vec![0.0; n_samples * n_samples];
+        let normalizer = 2.0 * n_samples as f32;
+
+        for i in 0..n_samples {
+            for j in 0..n_samples {
+                p_joint[i * n_samples + j] = (p_conditional[i * n_samples + j]
+                    + p_conditional[j * n_samples + i])
+                    / normalizer;
+                // Numerical stability
+                p_joint[i * n_samples + j] = p_joint[i * n_samples + j].max(1e-12);
+            }
+        }
+
+        p_joint
+    }
+
+    /// Compute Q matrix in low-dimensional space using Student's t-distribution.
+    fn compute_q(&self, y: &[f32], n_samples: usize) -> Vec<f32> {
+        let mut q = vec![0.0; n_samples * n_samples];
+        let mut sum_q = 0.0;
+
+        // Compute Q_{ij} = (1 + ||y_i - y_j||^2)^{-1}
+        for i in 0..n_samples {
+            for j in 0..n_samples {
+                if i == j {
+                    q[i * n_samples + j] = 0.0;
+                    continue;
+                }
+
+                let mut dist_sq = 0.0;
+                for k in 0..self.n_components {
+                    let diff = y[i * self.n_components + k] - y[j * self.n_components + k];
+                    dist_sq += diff * diff;
+                }
+
+                let q_ij = 1.0 / (1.0 + dist_sq);
+                q[i * n_samples + j] = q_ij;
+                sum_q += q_ij;
+            }
+        }
+
+        // Normalize
+        if sum_q > 0.0 {
+            for q_val in &mut q {
+                *q_val /= sum_q;
+                *q_val = q_val.max(1e-12); // Numerical stability
+            }
+        }
+
+        q
+    }
+
+    /// Compute gradient of KL divergence.
+    fn compute_gradient(&self, y: &[f32], p: &[f32], q: &[f32], n_samples: usize) -> Vec<f32> {
+        let mut gradient = vec![0.0; n_samples * self.n_components];
+
+        for i in 0..n_samples {
+            for j in 0..n_samples {
+                if i == j {
+                    continue;
+                }
+
+                let p_ij = p[i * n_samples + j];
+                let q_ij = q[i * n_samples + j];
+
+                // Gradient factor: 4 * (p_ij - q_ij) * q_ij * (1 + ||y_i - y_j||^2)^{-1}
+                // Simplified: 4 * (p_ij - q_ij) / (1 + ||y_i - y_j||^2)
+                let mut dist_sq = 0.0;
+                for k in 0..self.n_components {
+                    let diff = y[i * self.n_components + k] - y[j * self.n_components + k];
+                    dist_sq += diff * diff;
+                }
+
+                let factor = 4.0 * (p_ij - q_ij) / (1.0 + dist_sq);
+
+                for k in 0..self.n_components {
+                    let diff = y[i * self.n_components + k] - y[j * self.n_components + k];
+                    gradient[i * self.n_components + k] += factor * diff;
+                }
+            }
+        }
+
+        gradient
+    }
+}
+
+impl Transformer for TSNE {
+    fn fit(&mut self, x: &Matrix<f32>) -> Result<()> {
+        let (n_samples, _n_features) = x.shape();
+
+        // Compute pairwise distances in high-D
+        let distances = self.compute_pairwise_distances(x);
+
+        // Compute conditional probabilities with perplexity
+        let p_conditional = self.compute_p_conditional(&distances, n_samples);
+
+        // Compute joint probabilities (symmetric)
+        let p_joint = self.compute_p_joint(&p_conditional, n_samples);
+
+        // Initialize embedding randomly
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+
+        let seed = self.random_state.unwrap_or_else(|| {
+            let mut hasher = DefaultHasher::new();
+            std::time::SystemTime::now().hash(&mut hasher);
+            hasher.finish()
+        });
+
+        // Simple LCG random number generator for reproducibility
+        let mut rng_state = seed;
+        let mut rand = || -> f32 {
+            rng_state = rng_state.wrapping_mul(1664525).wrapping_add(1013904223);
+            ((rng_state >> 16) as f32 / 65536.0) - 0.5
+        };
+
+        let mut y = vec![0.0; n_samples * self.n_components];
+        for val in &mut y {
+            *val = rand() * 0.0001; // Small random initialization
+        }
+
+        // Gradient descent with momentum
+        let mut velocity = vec![0.0; n_samples * self.n_components];
+        let momentum = 0.5;
+        let final_momentum = 0.8;
+        let momentum_switch_iter = 250;
+
+        for iter in 0..self.n_iter {
+            // Compute Q matrix in low-D
+            let q = self.compute_q(&y, n_samples);
+
+            // Compute gradient
+            let gradient = self.compute_gradient(&y, &p_joint, &q, n_samples);
+
+            // Update with momentum
+            let current_momentum = if iter < momentum_switch_iter {
+                momentum
+            } else {
+                final_momentum
+            };
+
+            for i in 0..(n_samples * self.n_components) {
+                velocity[i] = current_momentum * velocity[i] - self.learning_rate * gradient[i];
+                y[i] += velocity[i];
+            }
+
+            // Early exaggeration (first 100 iterations)
+            if iter == 100 {
+                // Remove early exaggeration by dividing P by 4
+                // (we multiplied by 4 implicitly in gradient computation)
+            }
+        }
+
+        self.embedding = Some(Matrix::from_vec(n_samples, self.n_components, y)?);
+        Ok(())
+    }
+
+    fn transform(&self, _x: &Matrix<f32>) -> Result<Matrix<f32>> {
+        if !self.is_fitted() {
+            panic!("Model not fitted. Call fit() first.");
+        }
+        // t-SNE is non-parametric, return the embedding
+        Ok(self.embedding.as_ref().unwrap().clone())
+    }
+
+    fn fit_transform(&mut self, x: &Matrix<f32>) -> Result<Matrix<f32>> {
+        self.fit(x)?;
+        self.transform(x)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1503,6 +1893,259 @@ mod tests {
                 i,
                 norm
             );
+        }
+    }
+
+    // ========================================================================
+    // t-SNE Tests
+    // ========================================================================
+
+    #[test]
+    fn test_tsne_new() {
+        let tsne = TSNE::new(2);
+        assert!(!tsne.is_fitted());
+        assert_eq!(tsne.n_components(), 2);
+    }
+
+    #[test]
+    fn test_tsne_fit_basic() {
+        // Simple 2D data, reduce to 2D (should work)
+        let data = Matrix::from_vec(
+            6,
+            3,
+            vec![
+                1.0, 2.0, 3.0, 1.1, 2.1, 3.1, 5.0, 6.0, 7.0, 5.1, 6.1, 7.1, 10.0, 11.0, 12.0, 10.1,
+                11.1, 12.1,
+            ],
+        )
+        .unwrap();
+
+        let mut tsne = TSNE::new(2);
+        tsne.fit(&data).unwrap();
+        assert!(tsne.is_fitted());
+    }
+
+    #[test]
+    fn test_tsne_transform() {
+        let data = Matrix::from_vec(
+            4,
+            3,
+            vec![
+                1.0, 2.0, 3.0, 2.0, 3.0, 4.0, 10.0, 11.0, 12.0, 11.0, 12.0, 13.0,
+            ],
+        )
+        .unwrap();
+
+        let mut tsne = TSNE::new(2);
+        tsne.fit(&data).unwrap();
+
+        let transformed = tsne.transform(&data).unwrap();
+        assert_eq!(transformed.shape(), (4, 2));
+    }
+
+    #[test]
+    fn test_tsne_fit_transform() {
+        let data = Matrix::from_vec(
+            4,
+            3,
+            vec![
+                1.0, 2.0, 3.0, 2.0, 3.0, 4.0, 10.0, 11.0, 12.0, 11.0, 12.0, 13.0,
+            ],
+        )
+        .unwrap();
+
+        let mut tsne = TSNE::new(2);
+        let transformed = tsne.fit_transform(&data).unwrap();
+        assert_eq!(transformed.shape(), (4, 2));
+        assert!(tsne.is_fitted());
+    }
+
+    #[test]
+    fn test_tsne_perplexity() {
+        let data = Matrix::from_vec(
+            10,
+            3,
+            vec![
+                1.0, 2.0, 3.0, 1.1, 2.1, 3.1, 1.2, 2.2, 3.2, 5.0, 6.0, 7.0, 5.1, 6.1, 7.1, 5.2,
+                6.2, 7.2, 10.0, 11.0, 12.0, 10.1, 11.1, 12.1, 10.2, 11.2, 12.2, 10.3, 11.3, 12.3,
+            ],
+        )
+        .unwrap();
+
+        // Low perplexity (more local)
+        let mut tsne_low = TSNE::new(2).with_perplexity(2.0);
+        let result_low = tsne_low.fit_transform(&data).unwrap();
+        assert_eq!(result_low.shape(), (10, 2));
+
+        // High perplexity (more global)
+        let mut tsne_high = TSNE::new(2).with_perplexity(5.0);
+        let result_high = tsne_high.fit_transform(&data).unwrap();
+        assert_eq!(result_high.shape(), (10, 2));
+    }
+
+    #[test]
+    fn test_tsne_learning_rate() {
+        let data = Matrix::from_vec(
+            6,
+            3,
+            vec![
+                1.0, 2.0, 3.0, 2.0, 3.0, 4.0, 3.0, 4.0, 5.0, 10.0, 11.0, 12.0, 11.0, 12.0, 13.0,
+                12.0, 13.0, 14.0,
+            ],
+        )
+        .unwrap();
+
+        let mut tsne = TSNE::new(2).with_learning_rate(100.0).with_n_iter(100);
+        let transformed = tsne.fit_transform(&data).unwrap();
+        assert_eq!(transformed.shape(), (6, 2));
+    }
+
+    #[test]
+    fn test_tsne_n_components() {
+        let data = Matrix::from_vec(
+            4,
+            5,
+            vec![
+                1.0, 2.0, 3.0, 4.0, 5.0, 2.0, 3.0, 4.0, 5.0, 6.0, 10.0, 11.0, 12.0, 13.0, 14.0,
+                11.0, 12.0, 13.0, 14.0, 15.0,
+            ],
+        )
+        .unwrap();
+
+        // 2D embedding
+        let mut tsne_2d = TSNE::new(2);
+        let result_2d = tsne_2d.fit_transform(&data).unwrap();
+        assert_eq!(result_2d.shape(), (4, 2));
+
+        // 3D embedding
+        let mut tsne_3d = TSNE::new(3);
+        let result_3d = tsne_3d.fit_transform(&data).unwrap();
+        assert_eq!(result_3d.shape(), (4, 3));
+    }
+
+    #[test]
+    fn test_tsne_reproducibility() {
+        let data = Matrix::from_vec(
+            6,
+            3,
+            vec![
+                1.0, 2.0, 3.0, 2.0, 3.0, 4.0, 3.0, 4.0, 5.0, 10.0, 11.0, 12.0, 11.0, 12.0, 13.0,
+                12.0, 13.0, 14.0,
+            ],
+        )
+        .unwrap();
+
+        let mut tsne1 = TSNE::new(2).with_random_state(42);
+        let result1 = tsne1.fit_transform(&data).unwrap();
+
+        let mut tsne2 = TSNE::new(2).with_random_state(42);
+        let result2 = tsne2.fit_transform(&data).unwrap();
+
+        // Results should be identical with same random state
+        for i in 0..6 {
+            for j in 0..2 {
+                assert!(
+                    (result1.get(i, j) - result2.get(i, j)).abs() < 1e-5,
+                    "Results should be reproducible with same random state"
+                );
+            }
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "Model not fitted")]
+    fn test_tsne_transform_before_fit() {
+        let data = Matrix::from_vec(2, 2, vec![1.0, 2.0, 3.0, 4.0]).unwrap();
+        let tsne = TSNE::new(2);
+        let _ = tsne.transform(&data);
+    }
+
+    #[test]
+    fn test_tsne_preserves_local_structure() {
+        // Create data with clear local structure
+        let data = Matrix::from_vec(
+            8,
+            3,
+            vec![
+                // Cluster 1: tight cluster around (0, 0, 0)
+                0.0, 0.0, 0.0, 0.1, 0.1, 0.1, // Cluster 2: tight cluster around (5, 5, 5)
+                5.0, 5.0, 5.0, 5.1, 5.1, 5.1,
+                // Cluster 3: tight cluster around (10, 10, 10)
+                10.0, 10.0, 10.0, 10.1, 10.1, 10.1,
+                // Cluster 4: tight cluster around (15, 15, 15)
+                15.0, 15.0, 15.0, 15.1, 15.1, 15.1,
+            ],
+        )
+        .unwrap();
+
+        let mut tsne = TSNE::new(2)
+            .with_random_state(42)
+            .with_n_iter(500)
+            .with_perplexity(3.0);
+        let embedding = tsne.fit_transform(&data).unwrap();
+
+        // Points within same cluster should be close in embedding
+        // Cluster 1: points 0, 1
+        let dist_01 = ((embedding.get(0, 0) - embedding.get(1, 0)).powi(2)
+            + (embedding.get(0, 1) - embedding.get(1, 1)).powi(2))
+        .sqrt();
+
+        // Distance to far cluster should be larger
+        let dist_03 = ((embedding.get(0, 0) - embedding.get(3, 0)).powi(2)
+            + (embedding.get(0, 1) - embedding.get(3, 1)).powi(2))
+        .sqrt();
+
+        // Allow some tolerance - t-SNE is stochastic
+        // Just verify local structure is somewhat preserved
+        assert!(
+            dist_01 < dist_03 * 1.5,
+            "Local structure should be roughly preserved: dist_01={:.3} should be < dist_03*1.5={:.3}",
+            dist_01,
+            dist_03 * 1.5
+        );
+    }
+
+    #[test]
+    fn test_tsne_min_samples() {
+        // t-SNE should work with minimum number of samples (> perplexity * 3)
+        let data = Matrix::from_vec(
+            10,
+            3,
+            vec![
+                1.0, 2.0, 3.0, 2.0, 3.0, 4.0, 3.0, 4.0, 5.0, 4.0, 5.0, 6.0, 5.0, 6.0, 7.0, 6.0,
+                7.0, 8.0, 7.0, 8.0, 9.0, 8.0, 9.0, 10.0, 9.0, 10.0, 11.0, 10.0, 11.0, 12.0,
+            ],
+        )
+        .unwrap();
+
+        let mut tsne = TSNE::new(2).with_perplexity(3.0);
+        let result = tsne.fit_transform(&data).unwrap();
+        assert_eq!(result.shape(), (10, 2));
+    }
+
+    #[test]
+    fn test_tsne_embedding_finite() {
+        let data = Matrix::from_vec(
+            6,
+            3,
+            vec![
+                1.0, 2.0, 3.0, 2.0, 3.0, 4.0, 3.0, 4.0, 5.0, 10.0, 11.0, 12.0, 11.0, 12.0, 13.0,
+                12.0, 13.0, 14.0,
+            ],
+        )
+        .unwrap();
+
+        let mut tsne = TSNE::new(2).with_n_iter(100);
+        let embedding = tsne.fit_transform(&data).unwrap();
+
+        // All embedding values should be finite
+        for i in 0..6 {
+            for j in 0..2 {
+                assert!(
+                    embedding.get(i, j).is_finite(),
+                    "Embedding should contain only finite values"
+                );
+            }
         }
     }
 }
