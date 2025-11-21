@@ -45,12 +45,18 @@ fn main() {
     println!("-----------------------------------");
     random_forest_example(&x, &y, 20);
 
+    // Example 4: Out-of-Bag (OOB) Error Estimation
+    println!("\nExample 4: Out-of-Bag (OOB) Error Estimation");
+    println!("---------------------------------------------");
+    oob_example(&x, &y);
+
     println!("\n✅ Random Forest Examples Complete!");
     println!("\nKey Advantages:");
     println!("  • Ensemble learning reduces overfitting");
     println!("  • Bootstrap sampling creates diversity");
     println!("  • Majority voting smooths predictions");
     println!("  • More stable than single trees");
+    println!("  • OOB error provides free validation");
     println!("  • Excellent for real-world classification");
 }
 
@@ -113,4 +119,39 @@ fn random_forest_example(x: &Matrix<f32>, y: &[usize], n_trees: usize) {
     } else {
         println!("\n  {} misclassifications", errors);
     }
+}
+
+fn oob_example(x: &Matrix<f32>, y: &[usize]) {
+    let mut rf = RandomForestClassifier::new(30)
+        .with_max_depth(5)
+        .with_random_state(42);
+
+    rf.fit(x, y).expect("Training failed");
+
+    let training_accuracy = rf.score(x, y);
+    let oob_score = rf.oob_score();
+
+    println!("  Number of Trees: 30");
+    println!("  Training Accuracy: {:.1}%", training_accuracy * 100.0);
+
+    if let Some(oob) = oob_score {
+        println!("  OOB Accuracy:      {:.1}%", oob * 100.0);
+        println!(
+            "  Difference:        {:.1}%",
+            (training_accuracy - oob).abs() * 100.0
+        );
+    }
+
+    println!("\n  What is OOB (Out-of-Bag)?");
+    println!("    • Each tree trains on ~63% of data (bootstrap sample)");
+    println!("    • Remaining ~37% are 'out-of-bag' for that tree");
+    println!("    • OOB samples used as validation set");
+    println!("    • No need for separate test set!");
+    println!("    • Provides unbiased estimate of accuracy");
+
+    println!("\n  Why use OOB?");
+    println!("    ✅ Free validation without splitting data");
+    println!("    ✅ Use all data for training AND validation");
+    println!("    ✅ Estimate generalization error");
+    println!("    ✅ Compare different n_estimators values");
 }

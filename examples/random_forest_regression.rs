@@ -291,6 +291,37 @@ fn main() {
         );
     }
 
+    println!("\n=== Part 7: Out-of-Bag (OOB) Error Estimation ===\n");
+
+    // Train model with OOB evaluation
+    let mut rf_oob = RandomForestRegressor::new(50)
+        .with_max_depth(8)
+        .with_random_state(42);
+    rf_oob.fit(&x_train, &y_train).unwrap();
+
+    // Get OOB score (free validation without test set)
+    let oob_score = rf_oob.oob_score();
+    let training_score = rf_oob.score(&x_train, &y_train);
+
+    println!("Performance comparison:");
+    println!("  Training R²:    {:.4}", training_score);
+    if let Some(oob) = oob_score {
+        println!("  OOB R²:         {:.4}", oob);
+        println!("  Difference:     {:.4}", (training_score - oob).abs());
+    }
+
+    println!("\nWhat is Out-of-Bag (OOB) error?");
+    println!("  • Each tree is trained on ~63% of samples (bootstrap)");
+    println!("  • Remaining ~37% are 'out-of-bag' for that tree");
+    println!("  • OOB samples used for validation (unbiased estimate)");
+    println!("  • No need for separate validation set!");
+
+    println!("\nOOB vs Test Set:");
+    println!("  ✅ OOB: Free validation, no data split needed");
+    println!("  ✅ OOB: Unbiased estimate of generalization error");
+    println!("  ✅ OOB: All data used for training AND validation");
+    println!("  ✅ Test Set: Gold standard, but requires holding out data");
+
     println!("\n=== Summary ===\n");
     println!("✅ Random Forest Regression Advantages:");
     println!("   • Reduces overfitting through ensemble averaging");
@@ -299,6 +330,7 @@ fn main() {
     println!("   • No feature scaling required");
     println!("   • Good default hyperparameters (minimal tuning)");
     println!("   • Reproducible with random_state");
+    println!("   • OOB error estimation provides free validation");
     println!("\n✅ When to use Random Forest Regression:");
     println!("   • Non-linear relationships in data");
     println!("   • Feature interactions are important");

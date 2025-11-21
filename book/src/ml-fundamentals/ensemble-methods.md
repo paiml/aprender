@@ -5,13 +5,13 @@
 
 | Status | Count | Examples |
 |--------|-------|----------|
-| ✅ Working | 23+ | Random Forest classification + regression verified |
+| ✅ Working | 34+ | Random Forest classification + regression + OOB estimation verified |
 | ⏳ In Progress | 0 | - |
 | ⬜ Not Implemented | 0 | - |
 
 *Last tested: 2025-11-21*
 *Aprender version: 0.4.1*
-*Test file: src/tree/mod.rs tests*
+*Test file: src/tree/mod.rs tests (726 tests, 11 OOB tests)*
 <!-- DOC_STATUS_END -->
 
 ---
@@ -109,20 +109,63 @@ function Predict(forest, x):
 
 **Why feature randomness?** Prevents correlation between trees. Without it, all trees would use the same strong features at the top.
 
-### Out-of-Bag (OOB) Score
+### Out-of-Bag (OOB) Error Estimation
 
 **Key Insight**: Each tree trained on ~63% of data, leaving ~37% out-of-bag
 
-**OOB Score**:
+**The Mathematics**:
 ```text
-For each sample x:
-    predictions = [tree.predict(x) for tree in forest if x not in tree.training_data]
-    oob_prediction = majority_vote(predictions)
-
-OOB_accuracy = accuracy(oob_predictions, y_true)
+Bootstrap sampling with replacement:
+- Probability sample is NOT selected: (1 - 1/n)ⁿ
+- As n → ∞: lim (1 - 1/n)ⁿ = 1/e ≈ 0.368
+- Therefore: ~36.8% samples are OOB per tree
 ```
 
-**Advantage**: Free validation set! No need for separate test set or cross-validation.
+**OOB Score Algorithm**:
+```text
+For each sample xᵢ in training set:
+    1. Find all trees where xᵢ was NOT in bootstrap sample
+    2. Predict using only those trees
+    3. Aggregate predictions (majority vote or averaging)
+
+Classification: OOB_accuracy = accuracy(oob_predictions, y_true)
+Regression: OOB_R² = r_squared(oob_predictions, y_true)
+```
+
+**Why OOB is Powerful**:
+- ✅ **Free validation**: No separate validation set needed
+- ✅ **Unbiased estimate**: Similar to cross-validation accuracy
+- ✅ **Use all data**: 100% for training, still get validation score
+- ✅ **Model selection**: Compare different n_estimators values
+- ✅ **Early stopping**: Monitor OOB score during training
+
+**When to Use OOB**:
+- Small datasets (can't afford to hold out validation set)
+- Hyperparameter tuning (test different forest sizes)
+- Production monitoring (track OOB score over time)
+
+**Practical Usage in Aprender**:
+```rust,ignore
+use aprender::tree::RandomForestClassifier;
+use aprender::primitives::Matrix;
+
+let mut rf = RandomForestClassifier::new(50)
+    .with_max_depth(10)
+    .with_random_state(42);
+
+rf.fit(&x_train, &y_train).unwrap();
+
+// Get OOB score (unbiased estimate of generalization error)
+let oob_accuracy = rf.oob_score().unwrap();
+let training_accuracy = rf.score(&x_train, &y_train);
+
+println!("Training accuracy: {:.3}", training_accuracy);  // Often high
+println!("OOB accuracy: {:.3}", oob_accuracy);            // More realistic
+
+// OOB accuracy typically close to test set accuracy!
+```
+
+**Test Reference**: `src/tree/mod.rs::tests::test_random_forest_classifier_oob_score_after_fit`
 
 ---
 

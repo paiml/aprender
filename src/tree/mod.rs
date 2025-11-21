@@ -335,6 +335,12 @@ pub struct RandomForestRegressor {
     n_estimators: usize,
     max_depth: Option<usize>,
     random_state: Option<u64>,
+    /// OOB sample indices for each tree (samples NOT in bootstrap sample)
+    oob_indices: Vec<Vec<usize>>,
+    /// Training features (stored for OOB evaluation)
+    x_train: Option<crate::primitives::Matrix<f32>>,
+    /// Training targets (stored for OOB evaluation)
+    y_train: Option<crate::primitives::Vector<f32>>,
 }
 
 impl RandomForestRegressor {
@@ -349,6 +355,9 @@ impl RandomForestRegressor {
             n_estimators,
             max_depth: None,
             random_state: None,
+            oob_indices: Vec::new(),
+            x_train: None,
+            y_train: None,
         }
     }
 
@@ -385,12 +394,25 @@ impl RandomForestRegressor {
         }
 
         self.trees = Vec::with_capacity(self.n_estimators);
+        self.oob_indices = Vec::with_capacity(self.n_estimators);
+
+        // Store training data for OOB evaluation
+        self.x_train = Some(x.clone());
+        self.y_train = Some(y.clone());
 
         // Train each tree on a bootstrap sample
         for i in 0..self.n_estimators {
             // Get bootstrap sample indices
             let seed = self.random_state.map(|s| s + i as u64);
             let bootstrap_indices = _bootstrap_sample(n_samples, seed);
+
+            // Compute OOB indices (samples NOT in bootstrap sample)
+            let bootstrap_set: std::collections::HashSet<usize> =
+                bootstrap_indices.iter().copied().collect();
+            let oob_for_tree: Vec<usize> = (0..n_samples)
+                .filter(|idx| !bootstrap_set.contains(idx))
+                .collect();
+            self.oob_indices.push(oob_for_tree);
 
             // Extract bootstrap sample
             let mut bootstrap_x_data = Vec::with_capacity(n_samples * n_features);
@@ -469,6 +491,81 @@ impl RandomForestRegressor {
     ) -> f32 {
         let predictions = self.predict(x);
         crate::metrics::r_squared(y, &predictions)
+    }
+
+    /// Returns Out-of-Bag (OOB) predictions for training samples.
+    ///
+    /// For each training sample, predictions are made using only the trees
+    /// where that sample was NOT in the bootstrap sample (out-of-bag).
+    ///
+    /// # Returns
+    ///
+    /// `Some(Vector<f32>)` if the model has been fitted, `None` otherwise.
+    /// The vector has the same length as the training data.
+    pub fn oob_prediction(&self) -> Option<crate::primitives::Vector<f32>> {
+        // Return None if model not fitted
+        if self.trees.is_empty() || self.y_train.is_none() || self.x_train.is_none() {
+            return None;
+        }
+
+        let x_train = self.x_train.as_ref().unwrap();
+        let y_train = self.y_train.as_ref().unwrap();
+        let n_samples = y_train.len();
+        let n_features = x_train.shape().1;
+
+        // Track predictions and counts for each sample from OOB trees
+        let mut oob_predictions = vec![0.0; n_samples];
+        let mut oob_counts = vec![0; n_samples];
+
+        // For each tree, make predictions on its OOB samples
+        for (tree_idx, oob_indices) in self.oob_indices.iter().enumerate() {
+            let tree = &self.trees[tree_idx];
+
+            // For each OOB sample for this tree
+            for &sample_idx in oob_indices {
+                // Extract single sample as a 1×n_features matrix
+                let mut sample_data = Vec::with_capacity(n_features);
+                for j in 0..n_features {
+                    sample_data.push(x_train.get(sample_idx, j));
+                }
+
+                let sample_matrix =
+                    crate::primitives::Matrix::from_vec(1, n_features, sample_data).ok()?;
+
+                // Get prediction from this tree
+                let tree_predictions = tree.predict(&sample_matrix);
+                let predicted_value = tree_predictions.as_slice()[0];
+
+                // Accumulate prediction
+                oob_predictions[sample_idx] += predicted_value;
+                oob_counts[sample_idx] += 1;
+            }
+        }
+
+        // Average predictions for each sample
+        for (i, count) in oob_counts.iter().enumerate() {
+            if *count > 0 {
+                oob_predictions[i] /= *count as f32;
+            }
+            // If count is 0, sample was never OOB, keep 0.0 as default
+        }
+
+        Some(crate::primitives::Vector::from_slice(&oob_predictions))
+    }
+
+    /// Returns Out-of-Bag (OOB) R² score.
+    ///
+    /// Computes R² score using OOB predictions. This provides an unbiased
+    /// estimate of the model's performance without needing a validation set.
+    ///
+    /// # Returns
+    ///
+    /// `Some(f32)` with R² score if model has been fitted, `None` otherwise.
+    pub fn oob_score(&self) -> Option<f32> {
+        let oob_preds = self.oob_prediction()?;
+        let y_train = self.y_train.as_ref()?;
+
+        Some(crate::metrics::r_squared(y_train, &oob_preds))
     }
 }
 
@@ -1592,6 +1689,12 @@ pub struct RandomForestClassifier {
     n_estimators: usize,
     max_depth: Option<usize>,
     random_state: Option<u64>,
+    /// OOB sample indices for each tree (samples NOT in bootstrap sample)
+    oob_indices: Vec<Vec<usize>>,
+    /// Training features (stored for OOB evaluation)
+    x_train: Option<crate::primitives::Matrix<f32>>,
+    /// Training labels (stored for OOB evaluation)
+    y_train: Option<Vec<usize>>,
 }
 
 impl RandomForestClassifier {
@@ -1606,6 +1709,9 @@ impl RandomForestClassifier {
             n_estimators,
             max_depth: None,
             random_state: None,
+            oob_indices: Vec::new(),
+            x_train: None,
+            y_train: None,
         }
     }
 
@@ -1629,12 +1735,25 @@ impl RandomForestClassifier {
     pub fn fit(&mut self, x: &crate::primitives::Matrix<f32>, y: &[usize]) -> Result<()> {
         let (n_samples, n_features) = x.shape();
         self.trees = Vec::with_capacity(self.n_estimators);
+        self.oob_indices = Vec::with_capacity(self.n_estimators);
+
+        // Store training data for OOB evaluation
+        self.x_train = Some(x.clone());
+        self.y_train = Some(y.to_vec());
 
         // Train each tree on a bootstrap sample
         for i in 0..self.n_estimators {
             // Get bootstrap sample indices
             let seed = self.random_state.map(|s| s + i as u64);
             let bootstrap_indices = _bootstrap_sample(n_samples, seed);
+
+            // Compute OOB indices (samples NOT in bootstrap sample)
+            let bootstrap_set: std::collections::HashSet<usize> =
+                bootstrap_indices.iter().copied().collect();
+            let oob_for_tree: Vec<usize> = (0..n_samples)
+                .filter(|idx| !bootstrap_set.contains(idx))
+                .collect();
+            self.oob_indices.push(oob_for_tree);
 
             // Extract bootstrap sample
             let mut bootstrap_x_data = Vec::with_capacity(n_samples * n_features);
@@ -1707,6 +1826,99 @@ impl RandomForestClassifier {
             .filter(|(pred, true_label)| pred == true_label)
             .count();
         correct as f32 / y.len() as f32
+    }
+
+    /// Returns Out-of-Bag (OOB) predictions for training samples.
+    ///
+    /// For each training sample, predictions are made using only the trees
+    /// where that sample was NOT in the bootstrap sample (out-of-bag).
+    ///
+    /// # Returns
+    ///
+    /// `Some(Vec<usize>)` if the model has been fitted, `None` otherwise.
+    /// The vector has the same length as the training data.
+    pub fn oob_prediction(&self) -> Option<Vec<usize>> {
+        // Return None if model not fitted
+        if self.trees.is_empty() || self.y_train.is_none() || self.x_train.is_none() {
+            return None;
+        }
+
+        let x_train = self.x_train.as_ref().unwrap();
+        let y_train = self.y_train.as_ref().unwrap();
+        let n_samples = y_train.len();
+        let n_features = x_train.shape().1;
+
+        // Track votes for each sample from OOB trees
+        let mut oob_votes: Vec<std::collections::HashMap<usize, usize>> =
+            vec![std::collections::HashMap::new(); n_samples];
+
+        // For each tree, make predictions on its OOB samples
+        for (tree_idx, oob_indices) in self.oob_indices.iter().enumerate() {
+            let tree = &self.trees[tree_idx];
+
+            // For each OOB sample for this tree
+            for &sample_idx in oob_indices {
+                // Extract single sample as a 1×n_features matrix
+                let mut sample_data = Vec::with_capacity(n_features);
+                for j in 0..n_features {
+                    sample_data.push(x_train.get(sample_idx, j));
+                }
+
+                let sample_matrix =
+                    crate::primitives::Matrix::from_vec(1, n_features, sample_data).ok()?;
+
+                // Get prediction from this tree
+                let tree_predictions = tree.predict(&sample_matrix);
+                let predicted_class = tree_predictions[0];
+
+                // Record vote
+                *oob_votes[sample_idx].entry(predicted_class).or_insert(0) += 1;
+            }
+        }
+
+        // Convert votes to final predictions (majority voting)
+        let mut predictions = Vec::with_capacity(n_samples);
+        for votes in oob_votes {
+            if votes.is_empty() {
+                // No OOB predictions for this sample (never OOB for any tree)
+                // Use 0 as default (this shouldn't happen with enough trees)
+                predictions.push(0);
+            } else {
+                // Find class with most votes
+                let mut max_votes = 0;
+                let mut predicted_class = 0;
+                for (class, count) in votes {
+                    if count > max_votes {
+                        max_votes = count;
+                        predicted_class = class;
+                    }
+                }
+                predictions.push(predicted_class);
+            }
+        }
+
+        Some(predictions)
+    }
+
+    /// Returns Out-of-Bag (OOB) accuracy score.
+    ///
+    /// Computes accuracy using OOB predictions. This provides an unbiased
+    /// estimate of the model's performance without needing a validation set.
+    ///
+    /// # Returns
+    ///
+    /// `Some(f32)` with accuracy in [0, 1] if model has been fitted, `None` otherwise.
+    pub fn oob_score(&self) -> Option<f32> {
+        let oob_preds = self.oob_prediction()?;
+        let y_train = self.y_train.as_ref()?;
+
+        let correct = oob_preds
+            .iter()
+            .zip(y_train.iter())
+            .filter(|(pred, true_label)| pred == true_label)
+            .count();
+
+        Some(correct as f32 / y_train.len() as f32)
     }
 
     /// Saves the Random Forest model to a SafeTensors file.
@@ -1943,6 +2155,9 @@ impl RandomForestClassifier {
             n_estimators,
             max_depth,
             random_state,
+            oob_indices: Vec::new(),
+            x_train: None,
+            y_train: None,
         })
     }
 }
@@ -3806,6 +4021,344 @@ mod tests {
             "Deeper trees R² {} should exceed shallow trees R² {}",
             r2_deep,
             r2_shallow
+        );
+    }
+
+    // ===================================================================
+    // Out-of-Bag (OOB) Error Estimation Tests
+    // ===================================================================
+
+    #[test]
+    fn test_random_forest_classifier_oob_score_after_fit() {
+        // Simple classification data
+        let x = Matrix::from_vec(
+            15,
+            4,
+            vec![
+                // Class 0
+                5.1, 3.5, 1.4, 0.2, 4.9, 3.0, 1.4, 0.2, 4.7, 3.2, 1.3, 0.2, 4.6, 3.1, 1.5, 0.2, 5.0,
+                3.6, 1.4, 0.2, // Class 1
+                7.0, 3.2, 4.7, 1.4, 6.4, 3.2, 4.5, 1.5, 6.9, 3.1, 4.9, 1.5, 5.5, 2.3, 4.0, 1.3,
+                6.5, 2.8, 4.6, 1.5, // Class 2
+                6.3, 3.3, 6.0, 2.5, 5.8, 2.7, 5.1, 1.9, 7.1, 3.0, 5.9, 2.1, 6.3, 2.9, 5.6, 1.8,
+                6.5, 3.0, 5.8, 2.2,
+            ],
+        )
+        .unwrap();
+        let y = vec![0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2];
+
+        let mut rf = RandomForestClassifier::new(20)
+            .with_max_depth(5)
+            .with_random_state(42);
+        rf.fit(&x, &y).unwrap();
+
+        let oob_score = rf.oob_score();
+        assert!(
+            oob_score.is_some(),
+            "OOB score should be available after fit"
+        );
+
+        let score_value = oob_score.unwrap();
+        assert!(
+            (0.0..=1.0).contains(&score_value),
+            "OOB score {} should be between 0 and 1",
+            score_value
+        );
+    }
+
+    #[test]
+    fn test_random_forest_classifier_oob_prediction_length() {
+        let x = Matrix::from_vec(
+            10,
+            2,
+            vec![
+                0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0, 2.0, 2.0, 2.0, 3.0, 3.0, 2.0, 3.0, 3.0,
+                4.0, 4.0, 4.0, 5.0,
+            ],
+        )
+        .unwrap();
+        let y = vec![0, 0, 0, 0, 1, 1, 1, 1, 1, 1];
+
+        let mut rf = RandomForestClassifier::new(15).with_random_state(42);
+        rf.fit(&x, &y).unwrap();
+
+        let oob_preds = rf.oob_prediction();
+        assert!(
+            oob_preds.is_some(),
+            "OOB predictions should be available after fit"
+        );
+
+        let preds = oob_preds.unwrap();
+        assert_eq!(
+            preds.len(),
+            10,
+            "OOB predictions should have same length as training data"
+        );
+    }
+
+    #[test]
+    fn test_random_forest_classifier_oob_before_fit() {
+        let rf = RandomForestClassifier::new(10);
+
+        assert!(
+            rf.oob_score().is_none(),
+            "OOB score should be None before fit"
+        );
+        assert!(
+            rf.oob_prediction().is_none(),
+            "OOB prediction should be None before fit"
+        );
+    }
+
+    #[test]
+    fn test_random_forest_classifier_oob_vs_test_score() {
+        // Larger dataset to get reliable OOB estimate
+        let x = Matrix::from_vec(
+            30,
+            4,
+            vec![
+                // Class 0 (10 samples)
+                5.1, 3.5, 1.4, 0.2, 4.9, 3.0, 1.4, 0.2, 4.7, 3.2, 1.3, 0.2, 4.6, 3.1, 1.5, 0.2, 5.0,
+                3.6, 1.4, 0.2, 5.4, 3.9, 1.7, 0.4, 4.6, 3.4, 1.4, 0.3, 5.0, 3.4, 1.5, 0.2, 4.4,
+                2.9, 1.4, 0.2, 4.9, 3.1, 1.5, 0.1, // Class 1 (10 samples)
+                7.0, 3.2, 4.7, 1.4, 6.4, 3.2, 4.5, 1.5, 6.9, 3.1, 4.9, 1.5, 5.5, 2.3, 4.0, 1.3,
+                6.5, 2.8, 4.6, 1.5, 5.7, 2.8, 4.5, 1.3, 6.3, 3.3, 4.7, 1.6, 4.9, 2.4, 3.3, 1.0,
+                6.6, 2.9, 4.6, 1.3, 5.2, 2.7, 3.9, 1.4, // Class 2 (10 samples)
+                6.3, 3.3, 6.0, 2.5, 5.8, 2.7, 5.1, 1.9, 7.1, 3.0, 5.9, 2.1, 6.3, 2.9, 5.6, 1.8,
+                6.5, 3.0, 5.8, 2.2, 7.6, 3.0, 6.6, 2.1, 4.9, 2.5, 4.5, 1.7, 7.3, 2.9, 6.3, 1.8,
+                6.7, 2.5, 5.8, 1.8, 7.2, 3.6, 6.1, 2.5,
+            ],
+        )
+        .unwrap();
+        let y = vec![
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+            2,
+        ];
+
+        let mut rf = RandomForestClassifier::new(50)
+            .with_max_depth(5)
+            .with_random_state(42);
+        rf.fit(&x, &y).unwrap();
+
+        let oob_score = rf.oob_score().unwrap();
+        let train_score = rf.score(&x, &y);
+
+        // OOB score should be reasonable (within 0.3 of training score for small dataset)
+        assert!(
+            (oob_score - train_score).abs() < 0.3,
+            "OOB score {} should be close to training score {}",
+            oob_score,
+            train_score
+        );
+    }
+
+    #[test]
+    fn test_random_forest_classifier_oob_reproducibility() {
+        let x = Matrix::from_vec(
+            15,
+            2,
+            vec![
+                0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0, 2.0, 2.0, 2.0, 3.0, 3.0, 2.0, 3.0, 3.0,
+                4.0, 4.0, 4.0, 5.0, 5.0, 4.0, 5.0, 5.0, 6.0, 6.0, 6.0, 7.0, 7.0, 6.0,
+            ],
+        )
+        .unwrap();
+        let y = vec![0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2];
+
+        let mut rf1 = RandomForestClassifier::new(20)
+            .with_max_depth(4)
+            .with_random_state(42);
+        rf1.fit(&x, &y).unwrap();
+        let oob1 = rf1.oob_score();
+
+        let mut rf2 = RandomForestClassifier::new(20)
+            .with_max_depth(4)
+            .with_random_state(42);
+        rf2.fit(&x, &y).unwrap();
+        let oob2 = rf2.oob_score();
+
+        assert_eq!(oob1, oob2, "OOB scores should be identical with same seed");
+    }
+
+    #[test]
+    fn test_random_forest_regressor_oob_score_after_fit() {
+        let x = Matrix::from_vec(
+            20,
+            1,
+            vec![
+                1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0,
+                16.0, 17.0, 18.0, 19.0, 20.0,
+            ],
+        )
+        .unwrap();
+        let y = crate::primitives::Vector::from_slice(&[
+            2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0, 20.0, 22.0, 24.0, 26.0, 28.0, 30.0,
+            32.0, 34.0, 36.0, 38.0, 40.0,
+        ]);
+
+        let mut rf = RandomForestRegressor::new(30)
+            .with_max_depth(5)
+            .with_random_state(42);
+        rf.fit(&x, &y).unwrap();
+
+        let oob_score = rf.oob_score();
+        assert!(
+            oob_score.is_some(),
+            "OOB score should be available after fit"
+        );
+
+        let score_value = oob_score.unwrap();
+        assert!(
+            score_value > -1.0 && score_value <= 1.0,
+            "OOB R² score {} should be reasonable",
+            score_value
+        );
+    }
+
+    #[test]
+    fn test_random_forest_regressor_oob_prediction_length() {
+        let x = Matrix::from_vec(
+            12,
+            2,
+            vec![
+                1.0, 1.0, 2.0, 1.0, 1.0, 2.0, 2.0, 2.0, 3.0, 1.0, 3.0, 2.0, 4.0, 1.0, 4.0, 2.0,
+                5.0, 3.0, 5.0, 4.0, 6.0, 3.0, 6.0, 4.0,
+            ],
+        )
+        .unwrap();
+        let y = crate::primitives::Vector::from_slice(&[
+            3.0, 4.0, 5.0, 6.0, 5.0, 7.0, 6.0, 8.0, 8.0, 9.0, 9.0, 10.0,
+        ]);
+
+        let mut rf = RandomForestRegressor::new(20).with_random_state(42);
+        rf.fit(&x, &y).unwrap();
+
+        let oob_preds = rf.oob_prediction();
+        assert!(
+            oob_preds.is_some(),
+            "OOB predictions should be available after fit"
+        );
+
+        let preds = oob_preds.unwrap();
+        assert_eq!(
+            preds.len(),
+            12,
+            "OOB predictions should have same length as training data"
+        );
+    }
+
+    #[test]
+    fn test_random_forest_regressor_oob_before_fit() {
+        let rf = RandomForestRegressor::new(10);
+
+        assert!(
+            rf.oob_score().is_none(),
+            "OOB score should be None before fit"
+        );
+        assert!(
+            rf.oob_prediction().is_none(),
+            "OOB prediction should be None before fit"
+        );
+    }
+
+    #[test]
+    fn test_random_forest_regressor_oob_vs_test_score() {
+        // Linear data for predictable results
+        let x = Matrix::from_vec(
+            25,
+            1,
+            vec![
+                1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0,
+                16.0, 17.0, 18.0, 19.0, 20.0, 21.0, 22.0, 23.0, 24.0, 25.0,
+            ],
+        )
+        .unwrap();
+        let y = crate::primitives::Vector::from_slice(&[
+            3.0, 5.0, 7.0, 9.0, 11.0, 13.0, 15.0, 17.0, 19.0, 21.0, 23.0, 25.0, 27.0, 29.0, 31.0,
+            33.0, 35.0, 37.0, 39.0, 41.0, 43.0, 45.0, 47.0, 49.0, 51.0,
+        ]);
+
+        let mut rf = RandomForestRegressor::new(50)
+            .with_max_depth(6)
+            .with_random_state(42);
+        rf.fit(&x, &y).unwrap();
+
+        let oob_score = rf.oob_score().unwrap();
+        let train_score = rf.score(&x, &y);
+
+        // OOB R² should be positive and within reasonable range of training R²
+        assert!(oob_score > 0.5, "OOB R² {} should be positive", oob_score);
+        assert!(
+            (oob_score - train_score).abs() < 0.3,
+            "OOB R² {} should be close to training R² {}",
+            oob_score,
+            train_score
+        );
+    }
+
+    #[test]
+    fn test_random_forest_regressor_oob_reproducibility() {
+        let x = Matrix::from_vec(
+            15,
+            2,
+            vec![
+                1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0, 5.0, 5.0, 6.0, 6.0, 7.0, 7.0, 8.0, 8.0, 9.0,
+                9.0, 10.0, 10.0, 11.0, 11.0, 12.0, 12.0, 13.0, 13.0, 14.0, 14.0, 15.0, 15.0, 16.0,
+            ],
+        )
+        .unwrap();
+        let y = crate::primitives::Vector::from_slice(&[
+            5.0, 7.0, 9.0, 11.0, 13.0, 15.0, 17.0, 19.0, 21.0, 23.0, 25.0, 27.0, 29.0, 31.0, 33.0,
+        ]);
+
+        let mut rf1 = RandomForestRegressor::new(25)
+            .with_max_depth(5)
+            .with_random_state(42);
+        rf1.fit(&x, &y).unwrap();
+        let oob1 = rf1.oob_score();
+
+        let mut rf2 = RandomForestRegressor::new(25)
+            .with_max_depth(5)
+            .with_random_state(42);
+        rf2.fit(&x, &y).unwrap();
+        let oob2 = rf2.oob_score();
+
+        assert_eq!(
+            oob1, oob2,
+            "OOB R² scores should be identical with same seed"
+        );
+    }
+
+    #[test]
+    fn test_random_forest_regressor_oob_nonlinear_data() {
+        // Quadratic data to test OOB on non-linear patterns
+        let x = Matrix::from_vec(
+            15,
+            1,
+            vec![
+                1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0,
+            ],
+        )
+        .unwrap();
+        let y = crate::primitives::Vector::from_slice(&[
+            1.0, 4.0, 9.0, 16.0, 25.0, 36.0, 49.0, 64.0, 81.0, 100.0, 121.0, 144.0, 169.0, 196.0,
+            225.0,
+        ]);
+
+        let mut rf = RandomForestRegressor::new(40)
+            .with_max_depth(6)
+            .with_random_state(42);
+        rf.fit(&x, &y).unwrap();
+
+        let oob_score = rf.oob_score();
+        assert!(oob_score.is_some(), "OOB score should be available");
+
+        // OOB should still be reasonably high for non-linear data
+        let score_value = oob_score.unwrap();
+        assert!(
+            score_value > 0.7,
+            "OOB R² {} should be high on non-linear data",
+            score_value
         );
     }
 }
