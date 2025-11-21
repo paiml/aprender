@@ -5,12 +5,12 @@
 
 | Status | Count | Examples |
 |--------|-------|----------|
-| ✅ Working | 15+ | CART algorithm verified |
+| ✅ Working | 30+ | CART algorithm (classification + regression) verified |
 | ⏳ In Progress | 0 | - |
 | ⬜ Not Implemented | 0 | - |
 
-*Last tested: 2025-11-19*
-*Aprender version: 0.3.0*
+*Last tested: 2025-11-21*
+*Aprender version: 0.4.1*
 *Test file: src/tree/mod.rs tests*
 <!-- DOC_STATUS_END -->
 
@@ -23,11 +23,12 @@ Decision trees learn hierarchical decision rules by recursively partitioning the
 **Key Concepts**:
 - **CART Algorithm**: Classification And Regression Trees
 - **Gini Impurity**: Measures node purity (classification)
+- **MSE Criterion**: Measures variance (regression)
 - **Recursive Splitting**: Build tree top-down, greedy
 - **Max Depth**: Controls overfitting
 
 **Why This Matters**:
-Decision trees mirror human decision-making: "If feature X > threshold, then..." They're the foundation of powerful ensemble methods (Random Forests, Gradient Boosting).
+Decision trees mirror human decision-making: "If feature X > threshold, then..." They're the foundation of powerful ensemble methods (Random Forests, Gradient Boosting). The same algorithm handles both classification (predicting categories) and regression (predicting continuous values).
 
 ---
 
@@ -110,6 +111,98 @@ function BuildTree(X, y, depth, max_depth):
 3. Node has too few samples (min_samples_split)
 4. No split reduces impurity
 
+### CART Algorithm (Regression)
+
+Decision trees also handle **regression** tasks (predicting continuous values) using the same recursive splitting approach, but with different splitting criteria and leaf predictions.
+
+**Key Differences from Classification**:
+- **Splitting criterion**: Mean Squared Error (MSE) instead of Gini
+- **Leaf prediction**: Mean of target values instead of majority class
+- **Evaluation**: R² score instead of accuracy
+
+#### Mean Squared Error (MSE)
+
+**Definition**:
+```text
+MSE(S) = (1/n) Σ (y_i - ȳ)²
+
+where:
+S = set of samples in a node
+y_i = target value of sample i
+ȳ = mean target value in S
+n = number of samples
+```
+
+**Equivalent Formulation**:
+```text
+MSE(S) = Variance(y) = (1/n) Σ (y_i - ȳ)²
+```
+
+**Interpretation**:
+- **MSE = 0.0**: Pure node (all samples have same target value)
+- **High MSE**: High variance in target values
+- **Goal**: Minimize weighted MSE after split
+
+#### Variance Reduction
+
+When splitting a node into left and right children:
+
+```text
+VarReduction = MSE(parent) - [w_L * MSE(left) + w_R * MSE(right)]
+
+where:
+w_L = n_left / n_total  (weight of left child)
+w_R = n_right / n_total (weight of right child)
+```
+
+**Goal**: Maximize variance reduction → find best split
+
+**Analogy to Classification**:
+- MSE for regression ≈ Gini impurity for classification
+- Variance reduction ≈ Information gain
+- Both measure "purity" of nodes
+
+#### Regression Tree Building
+
+**Recursive Algorithm**:
+```text
+function BuildRegressionTree(X, y, depth, max_depth):
+    if stopping_criterion_met:
+        return Leaf(mean(y))
+
+    best_split = find_best_split(X, y)  # Maximize VarReduction
+
+    if no_valid_split or depth >= max_depth:
+        return Leaf(mean(y))
+
+    X_left, y_left, X_right, y_right = partition(X, y, best_split)
+
+    return Node(
+        feature = best_split.feature,
+        threshold = best_split.threshold,
+        left = BuildRegressionTree(X_left, y_left, depth+1, max_depth),
+        right = BuildRegressionTree(X_right, y_right, depth+1, max_depth)
+    )
+```
+
+**Stopping Criteria**:
+1. All samples have same target value (variance = 0)
+2. Reached max_depth
+3. Node has too few samples (min_samples_split)
+4. No split reduces variance
+
+#### MSE vs Gini Criterion Comparison
+
+| Aspect | MSE (Regression) | Gini (Classification) |
+|--------|------------------|----------------------|
+| **Task** | Continuous prediction | Class prediction |
+| **Range** | [0, ∞) | [0, 1] |
+| **Pure node** | MSE = 0 (constant target) | Gini = 0 (single class) |
+| **Impure node** | High variance | Gini ≈ 0.5 |
+| **Split goal** | Minimize MSE | Minimize Gini |
+| **Leaf prediction** | Mean of y | Majority class |
+| **Evaluation** | R² score | Accuracy |
+
 ---
 
 ## Implementation in Aprender
@@ -164,7 +257,56 @@ println!("Test Accuracy: {:.3}", accuracy); // e.g., 0.967
 
 **Case Study**: See [Decision Tree - Iris Classification](../examples/decision-tree-iris.md)
 
-### Example 3: Model Serialization
+### Example 3: Regression (Housing Prices)
+
+```rust,ignore
+use aprender::tree::DecisionTreeRegressor;
+use aprender::primitives::{Matrix, Vector};
+
+// Housing data: [sqft, bedrooms, age]
+let x = Matrix::from_vec(8, 3, vec![
+    1500.0, 3.0, 10.0,  // $280k
+    2000.0, 4.0, 5.0,   // $350k
+    1200.0, 2.0, 30.0,  // $180k
+    1800.0, 3.0, 15.0,  // $300k
+    2500.0, 5.0, 2.0,   // $450k
+    1000.0, 2.0, 50.0,  // $150k
+    2200.0, 4.0, 8.0,   // $380k
+    1600.0, 3.0, 20.0,  // $260k
+]).unwrap();
+
+let y = Vector::from_slice(&[
+    280.0, 350.0, 180.0, 300.0, 450.0, 150.0, 380.0, 260.0
+]);
+
+// Train regression tree
+let mut tree = DecisionTreeRegressor::new()
+    .with_max_depth(4)
+    .with_min_samples_split(2);
+
+tree.fit(&x, &y).unwrap();
+
+// Predict on new house: 1900 sqft, 4 bed, 12 years
+let x_new = Matrix::from_vec(1, 3, vec![1900.0, 4.0, 12.0]).unwrap();
+let predicted_price = tree.predict(&x_new);
+println!("Predicted: ${:.0}k", predicted_price.as_slice()[0]);
+
+// Evaluate with R² score
+let r2 = tree.score(&x, &y);
+println!("R² Score: {:.3}", r2); // e.g., 0.95+
+```
+
+**Key Differences from Classification**:
+- Uses `Vector<f32>` for continuous targets (not `Vec<usize>` classes)
+- Predictions are continuous values (not class labels)
+- Score returns R² instead of accuracy
+- MSE criterion splits on variance reduction
+
+**Test Reference**: `src/tree/mod.rs::tests::test_regression_tree_*`
+
+**Case Study**: See [Decision Tree Regression](../examples/decision-tree-regression.md)
+
+### Example 4: Model Serialization
 
 ```rust,ignore
 // Train and save tree
@@ -292,11 +434,14 @@ for depth in 1..=10 {
 - Mixed feature types
 - Quick baseline
 - Building block for ensembles
+- **Regression**: Non-linear relationships without feature engineering
+- **Classification**: Multi-class problems with complex boundaries
 
 **Not good for**:
 - Need best single-model accuracy (use ensemble instead)
-- Linear relationships (logistic regression simpler)
+- Linear relationships (logistic/linear regression simpler)
 - Large feature space (curse of dimensionality)
+- **Regression**: Smooth predictions or extrapolation beyond training range
 
 ---
 
@@ -411,27 +556,48 @@ Disease A   Disease B
 ## Summary
 
 **What You Learned**:
-- ✅ Decision trees: hierarchical if-then rules
-- ✅ Gini impurity: Gini = 1 - Σ p_i² (0 = pure, 0.5 = max)
-- ✅ CART algorithm: greedy, top-down, recursive
-- ✅ Information gain: Maximize reduction in impurity
+- ✅ Decision trees: hierarchical if-then rules for classification AND regression
+- ✅ **Classification**: Gini impurity (Gini = 1 - Σ p_i²), predict majority class
+- ✅ **Regression**: MSE criterion (variance), predict mean value
+- ✅ CART algorithm: greedy, top-down, recursive (same for both tasks)
+- ✅ Information gain: Maximize reduction in impurity (Gini or MSE)
 - ✅ Max depth: Controls overfitting (tune with CV)
 - ✅ Advantages: Interpretable, no scaling, non-linear
 - ✅ Limitations: Overfitting, instability (use ensembles)
 
-**Verification Guarantee**: Decision tree implementation extensively tested (15+ tests) in `src/tree/mod.rs`. Tests verify Gini calculations, tree building, and prediction logic.
+**Verification Guarantee**: Decision tree implementation extensively tested (30+ tests) in `src/tree/mod.rs`. Tests verify Gini calculations, MSE splitting, tree building, and prediction logic for both classification and regression.
 
 **Quick Reference**:
+
+**Classification**:
 - **Pure node**: Gini = 0 (stop splitting)
 - **Max impurity**: Gini = 0.5 (binary 50/50)
 - **Best split**: Maximize information gain
+- **Leaf prediction**: Majority class
+
+**Regression**:
+- **Pure node**: MSE = 0 (constant target, stop splitting)
+- **High impurity**: High variance in target values
+- **Best split**: Maximize variance reduction
+- **Leaf prediction**: Mean of target values
+
+**Both Tasks**:
 - **Prevent overfit**: Set max_depth (3-7 typical)
+- **Additional pruning**: min_samples_split, min_samples_leaf
+- **Evaluation**: R² for regression, accuracy for classification
 
 **Key Equations**:
 ```text
-Gini(S) = 1 - Σ p_i²
-InfoGain = Gini(parent) - Weighted_Avg(Gini(children))
-Split: feature ≤ threshold → left, else → right
+Classification:
+  Gini(S) = 1 - Σ p_i²
+  InfoGain = Gini(parent) - Weighted_Avg(Gini(children))
+
+Regression:
+  MSE(S) = (1/n) Σ (y_i - ȳ)²
+  VarReduction = MSE(parent) - Weighted_Avg(MSE(children))
+
+Both:
+  Split: feature ≤ threshold → left, else → right
 ```
 
 ---
