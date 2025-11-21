@@ -1,0 +1,90 @@
+name: Security Audit
+
+on:
+  # Run on PRs that modify dependencies
+  pull_request:
+    paths:
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/security.yml'
+
+  # Weekly scheduled security audit
+  schedule:
+    - cron: '0 3 * * 1'  # Every Monday at 3 AM UTC
+
+  # Manual trigger
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  audit:
+    name: Dependency Security Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+
+      - name: Run security audit
+        run: cargo audit --deny warnings
+
+  deny:
+    name: Dependency Policy Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-deny
+        run: cargo install cargo-deny --locked
+
+      - name: Run cargo-deny
+        run: cargo deny check
+
+  outdated:
+    name: Check for Outdated Dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-outdated
+        run: cargo install cargo-outdated --locked
+
+      - name: Check for outdated dependencies
+        run: cargo outdated --exit-code 1
+        continue-on-error: true
+
+      - name: Generate outdated summary
+        if: always()
+        run: |
+          echo "# Outdated Dependencies" > outdated-summary.md
+          echo "" >> outdated-summary.md
+          echo "**Date:** $(date -u)" >> outdated-summary.md
+          echo "" >> outdated-summary.md
+          cargo outdated >> outdated-summary.md || true
+          cat outdated-summary.md
+
+      - name: Upload outdated report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: outdated-dependencies-${{ github.sha }}
+          path: outdated-summary.md
+          retention-days: 30
