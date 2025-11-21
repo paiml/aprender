@@ -20,7 +20,7 @@ pub use crate::optim::{Adam, Optimizer, SGD};
 pub use crate::preprocessing::{MinMaxScaler, StandardScaler, TSNE};
 pub use crate::primitives::{Matrix, Vector};
 pub use crate::traits::{Estimator, Transformer, UnsupervisedEstimator};
-pub use crate::tree::{DecisionTreeClassifier, DecisionTreeRegressor};
+pub use crate::tree::{DecisionTreeClassifier, DecisionTreeRegressor, RandomForestRegressor};
 
 // Re-export model_selection types
 pub use crate::model_selection::{grid_search_alpha, GridSearchResult, StratifiedKFold};

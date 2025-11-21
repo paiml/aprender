@@ -310,6 +310,178 @@ impl Default for DecisionTreeRegressor {
 // End Regression Tree Structures
 // ========================================================================
 
+/// Random Forest Regressor.
+///
+/// Ensemble of decision tree regressors trained on bootstrap samples.
+/// Predictions are averaged across all trees to reduce variance and overfitting.
+///
+/// # Examples
+///
+/// ```
+/// use aprender::tree::RandomForestRegressor;
+/// use aprender::primitives::{Matrix, Vector};
+///
+/// let x = Matrix::from_vec(5, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0]).unwrap();
+/// let y = Vector::from_slice(&[2.0, 4.0, 6.0, 8.0, 10.0]);
+///
+/// let mut rf = RandomForestRegressor::new(10).with_max_depth(5);
+/// rf.fit(&x, &y).unwrap();
+/// let predictions = rf.predict(&x);
+/// let r2 = rf.score(&x, &y);
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RandomForestRegressor {
+    trees: Vec<DecisionTreeRegressor>,
+    n_estimators: usize,
+    max_depth: Option<usize>,
+    random_state: Option<u64>,
+}
+
+impl RandomForestRegressor {
+    /// Creates a new Random Forest regressor.
+    ///
+    /// # Arguments
+    ///
+    /// * `n_estimators` - Number of trees in the forest
+    pub fn new(n_estimators: usize) -> Self {
+        Self {
+            trees: Vec::new(),
+            n_estimators,
+            max_depth: None,
+            random_state: None,
+        }
+    }
+
+    /// Sets the maximum depth for each tree.
+    pub fn with_max_depth(mut self, max_depth: usize) -> Self {
+        self.max_depth = Some(max_depth);
+        self
+    }
+
+    /// Sets the random state for reproducibility.
+    pub fn with_random_state(mut self, random_state: u64) -> Self {
+        self.random_state = Some(random_state);
+        self
+    }
+
+    /// Fits the random forest to training data.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if fitting fails.
+    pub fn fit(
+        &mut self,
+        x: &crate::primitives::Matrix<f32>,
+        y: &crate::primitives::Vector<f32>,
+    ) -> Result<()> {
+        let (n_samples, n_features) = x.shape();
+
+        // Validate input
+        if n_samples != y.len() {
+            return Err("Number of samples in X and y must match".into());
+        }
+        if n_samples == 0 {
+            return Err("Cannot fit with zero samples".into());
+        }
+
+        self.trees = Vec::with_capacity(self.n_estimators);
+
+        // Train each tree on a bootstrap sample
+        for i in 0..self.n_estimators {
+            // Get bootstrap sample indices
+            let seed = self.random_state.map(|s| s + i as u64);
+            let bootstrap_indices = _bootstrap_sample(n_samples, seed);
+
+            // Extract bootstrap sample
+            let mut bootstrap_x_data = Vec::with_capacity(n_samples * n_features);
+            let mut bootstrap_y_data = Vec::with_capacity(n_samples);
+
+            for &idx in &bootstrap_indices {
+                for j in 0..n_features {
+                    bootstrap_x_data.push(x.get(idx, j));
+                }
+                bootstrap_y_data.push(y.as_slice()[idx]);
+            }
+
+            let bootstrap_x =
+                crate::primitives::Matrix::from_vec(n_samples, n_features, bootstrap_x_data)
+                    .map_err(|_| "Failed to create bootstrap matrix")?;
+            let bootstrap_y = crate::primitives::Vector::from_slice(&bootstrap_y_data);
+
+            // Create and train a decision tree
+            let mut tree = if let Some(max_depth) = self.max_depth {
+                DecisionTreeRegressor::new().with_max_depth(max_depth)
+            } else {
+                DecisionTreeRegressor::new()
+            };
+
+            tree.fit(&bootstrap_x, &bootstrap_y)?;
+            self.trees.push(tree);
+        }
+
+        Ok(())
+    }
+
+    /// Makes predictions for input data by averaging predictions from all trees.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the model hasn't been fitted yet.
+    pub fn predict(&self, x: &crate::primitives::Matrix<f32>) -> crate::primitives::Vector<f32> {
+        if self.trees.is_empty() {
+            panic!("Cannot predict with an unfitted Random Forest. Call fit() first.");
+        }
+
+        let n_samples = x.shape().0;
+        let mut predictions = vec![0.0; n_samples];
+
+        // Get predictions from each tree and average
+        for tree in &self.trees {
+            let tree_preds = tree.predict(x);
+            for (pred, &tree_pred) in predictions.iter_mut().zip(tree_preds.as_slice().iter()) {
+                *pred += tree_pred;
+            }
+        }
+
+        // Average the predictions
+        let n_trees = self.trees.len() as f32;
+        for pred in &mut predictions {
+            *pred /= n_trees;
+        }
+
+        crate::primitives::Vector::from_slice(&predictions)
+    }
+
+    /// Calculates R² score on test data.
+    ///
+    /// # Arguments
+    ///
+    /// * `x` - Test features (n_samples × n_features)
+    /// * `y` - True target values (n_samples)
+    ///
+    /// # Returns
+    ///
+    /// R² coefficient of determination
+    pub fn score(
+        &self,
+        x: &crate::primitives::Matrix<f32>,
+        y: &crate::primitives::Vector<f32>,
+    ) -> f32 {
+        let predictions = self.predict(x);
+        crate::metrics::r_squared(y, &predictions)
+    }
+}
+
+impl Default for RandomForestRegressor {
+    fn default() -> Self {
+        Self::new(10) // Default: 10 trees
+    }
+}
+
+// ========================================================================
+// End Random Forest Regression
+// ========================================================================
+
 /// Decision tree classifier using the CART algorithm.
 ///
 /// Uses Gini impurity for splitting criterion and builds trees recursively.
@@ -3280,5 +3452,360 @@ mod tests {
         // Both should achieve high R² on linear data
         assert!(tree_r2 > 0.9, "Tree R² {} too low on linear data", tree_r2);
         assert!(lr_r2 > 0.99, "Linear regression R² {} too low", lr_r2);
+    }
+
+    // ===================================================================
+    // Random Forest Regression Tests
+    // ===================================================================
+
+    #[test]
+    fn test_random_forest_regressor_creation() {
+        let rf = RandomForestRegressor::new(10);
+        assert_eq!(rf.n_estimators, 10);
+        assert!(rf.trees.is_empty());
+        assert!(rf.max_depth.is_none());
+    }
+
+    #[test]
+    fn test_random_forest_regressor_with_max_depth() {
+        let rf = RandomForestRegressor::new(5).with_max_depth(3);
+        assert_eq!(rf.max_depth, Some(3));
+    }
+
+    #[test]
+    fn test_random_forest_regressor_fit_simple_linear() {
+        // Simple linear data: y = 2x + 1
+        let x = Matrix::from_vec(
+            10,
+            1,
+            vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0],
+        )
+        .unwrap();
+        let y = crate::primitives::Vector::from_slice(&[
+            3.0, 5.0, 7.0, 9.0, 11.0, 13.0, 15.0, 17.0, 19.0, 21.0,
+        ]);
+
+        let mut rf = RandomForestRegressor::new(10).with_max_depth(5);
+        rf.fit(&x, &y).unwrap();
+
+        // Should have trained 10 trees
+        assert_eq!(rf.trees.len(), 10);
+
+        // Should make reasonable predictions
+        let _predictions = rf.predict(&x);
+        let r2 = rf.score(&x, &y);
+        assert!(r2 > 0.8, "R² should be high on training data: {}", r2);
+    }
+
+    #[test]
+    fn test_random_forest_regressor_predict_nonlinear() {
+        // Non-linear data: y = x²
+        let x = Matrix::from_vec(8, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]).unwrap();
+        let y =
+            crate::primitives::Vector::from_slice(&[1.0, 4.0, 9.0, 16.0, 25.0, 36.0, 49.0, 64.0]);
+
+        let mut rf = RandomForestRegressor::new(20).with_max_depth(4);
+        rf.fit(&x, &y).unwrap();
+
+        let predictions = rf.predict(&x);
+        assert_eq!(predictions.len(), 8);
+
+        // Check predictions are reasonable (allow some error due to averaging)
+        let pred_slice = predictions.as_slice();
+        let y_slice = y.as_slice();
+        for i in 0..8 {
+            let error = (pred_slice[i] - y_slice[i]).abs();
+            assert!(
+                error < 10.0,
+                "Prediction {} too far from true value {}: error {}",
+                pred_slice[i],
+                y_slice[i],
+                error
+            );
+        }
+    }
+
+    #[test]
+    fn test_random_forest_regressor_score() {
+        let x = Matrix::from_vec(6, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]).unwrap();
+        let y = crate::primitives::Vector::from_slice(&[2.0, 4.0, 6.0, 8.0, 10.0, 12.0]);
+
+        let mut rf = RandomForestRegressor::new(15).with_max_depth(3);
+        rf.fit(&x, &y).unwrap();
+
+        let r2 = rf.score(&x, &y);
+        // R² should be positive and high for this simple linear pattern
+        assert!(r2 > 0.7, "R² score {} should be high", r2);
+        assert!(r2 <= 1.0, "R² score {} should be <= 1.0", r2);
+    }
+
+    #[test]
+    fn test_random_forest_regressor_n_estimators_effect() {
+        let x = Matrix::from_vec(
+            10,
+            1,
+            vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0],
+        )
+        .unwrap();
+        let y = crate::primitives::Vector::from_slice(&[
+            1.0, 4.0, 9.0, 16.0, 25.0, 36.0, 49.0, 64.0, 81.0, 100.0,
+        ]);
+
+        // Few trees
+        let mut rf_few = RandomForestRegressor::new(5).with_max_depth(4);
+        rf_few.fit(&x, &y).unwrap();
+        let r2_few = rf_few.score(&x, &y);
+
+        // Many trees
+        let mut rf_many = RandomForestRegressor::new(30).with_max_depth(4);
+        rf_many.fit(&x, &y).unwrap();
+        let r2_many = rf_many.score(&x, &y);
+
+        // More trees should generally give same or better performance
+        // (at least not significantly worse)
+        assert!(
+            r2_many >= r2_few - 0.1,
+            "More trees should not hurt performance"
+        );
+    }
+
+    #[test]
+    fn test_random_forest_regressor_vs_single_tree() {
+        // Random forest should generalize better than single tree
+        let x = Matrix::from_vec(
+            15,
+            1,
+            vec![
+                1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0,
+            ],
+        )
+        .unwrap();
+        let y = crate::primitives::Vector::from_slice(&[
+            2.1, 4.2, 8.9, 16.1, 24.8, 36.2, 49.1, 63.8, 81.2, 100.1, 120.9, 144.2, 169.1, 195.8,
+            225.0,
+        ]);
+
+        // Single tree with high depth (prone to overfitting)
+        let mut single_tree = DecisionTreeRegressor::new().with_max_depth(10);
+        single_tree.fit(&x, &y).unwrap();
+        let single_r2 = single_tree.score(&x, &y);
+
+        // Random forest with moderate depth
+        let mut rf = RandomForestRegressor::new(20).with_max_depth(6);
+        rf.fit(&x, &y).unwrap();
+        let rf_r2 = rf.score(&x, &y);
+
+        // Both should fit well, but RF typically more stable
+        assert!(single_r2 > 0.8, "Single tree R²: {}", single_r2);
+        assert!(rf_r2 > 0.8, "Random forest R²: {}", rf_r2);
+    }
+
+    #[test]
+    fn test_random_forest_regressor_multidimensional() {
+        // 2D features: [x1, x2], y = x1 + 2*x2
+        let x = Matrix::from_vec(
+            8,
+            2,
+            vec![
+                1.0, 1.0, 2.0, 1.0, 1.0, 2.0, 2.0, 2.0, 3.0, 1.0, 3.0, 2.0, 4.0, 1.0, 4.0, 2.0,
+            ],
+        )
+        .unwrap();
+        let y = crate::primitives::Vector::from_slice(&[3.0, 4.0, 5.0, 6.0, 5.0, 7.0, 6.0, 8.0]);
+
+        let mut rf = RandomForestRegressor::new(15).with_max_depth(5);
+        rf.fit(&x, &y).unwrap();
+
+        let predictions = rf.predict(&x);
+        assert_eq!(predictions.len(), 8);
+
+        let r2 = rf.score(&x, &y);
+        assert!(r2 > 0.6, "R² on 2D data should be reasonable: {}", r2);
+    }
+
+    #[test]
+    fn test_random_forest_regressor_constant_target() {
+        // All samples have same target value
+        let x = Matrix::from_vec(5, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0]).unwrap();
+        let y = crate::primitives::Vector::from_slice(&[7.0, 7.0, 7.0, 7.0, 7.0]);
+
+        let mut rf = RandomForestRegressor::new(10).with_max_depth(3);
+        rf.fit(&x, &y).unwrap();
+
+        let predictions = rf.predict(&x);
+        for &pred in predictions.as_slice() {
+            assert!(
+                (pred - 7.0).abs() < 1e-5,
+                "Prediction {} should be ~7.0 for constant target",
+                pred
+            );
+        }
+    }
+
+    #[test]
+    fn test_random_forest_regressor_single_sample() {
+        let x = Matrix::from_vec(1, 2, vec![1.0, 2.0]).unwrap();
+        let y = crate::primitives::Vector::from_slice(&[5.0]);
+
+        let mut rf = RandomForestRegressor::new(5).with_max_depth(2);
+        rf.fit(&x, &y).unwrap();
+
+        let predictions = rf.predict(&x);
+        assert_eq!(predictions.len(), 1);
+        assert!(
+            (predictions.as_slice()[0] - 5.0).abs() < 1e-5,
+            "Single sample prediction should be exact"
+        );
+    }
+
+    #[test]
+    fn test_random_forest_regressor_random_state() {
+        let x = Matrix::from_vec(
+            10,
+            1,
+            vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0],
+        )
+        .unwrap();
+        let y = crate::primitives::Vector::from_slice(&[
+            2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0, 20.0,
+        ]);
+
+        // Train two forests with same random state
+        let mut rf1 = RandomForestRegressor::new(10)
+            .with_max_depth(4)
+            .with_random_state(42);
+        rf1.fit(&x, &y).unwrap();
+        let pred1 = rf1.predict(&x);
+
+        let mut rf2 = RandomForestRegressor::new(10)
+            .with_max_depth(4)
+            .with_random_state(42);
+        rf2.fit(&x, &y).unwrap();
+        let pred2 = rf2.predict(&x);
+
+        // Predictions should be identical
+        for (p1, p2) in pred1.as_slice().iter().zip(pred2.as_slice().iter()) {
+            assert!(
+                (p1 - p2).abs() < 1e-10,
+                "Predictions with same random_state should match: {} vs {}",
+                p1,
+                p2
+            );
+        }
+    }
+
+    #[test]
+    fn test_random_forest_regressor_validation_errors() {
+        // Mismatched dimensions
+        let x = Matrix::from_vec(
+            5,
+            2,
+            vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0],
+        )
+        .unwrap();
+        let y = crate::primitives::Vector::from_slice(&[1.0, 2.0, 3.0]); // Wrong size
+
+        let mut rf = RandomForestRegressor::new(5);
+        let result = rf.fit(&x, &y);
+        assert!(result.is_err(), "Should error on mismatched dimensions");
+
+        // Zero samples
+        let x_empty = Matrix::from_vec(0, 1, vec![]).unwrap();
+        let y_empty = crate::primitives::Vector::from_slice(&[]);
+        let mut rf_empty = RandomForestRegressor::new(5);
+        let result_empty = rf_empty.fit(&x_empty, &y_empty);
+        assert!(result_empty.is_err(), "Should error on zero samples");
+    }
+
+    #[test]
+    #[should_panic(expected = "Cannot predict with an unfitted Random Forest")]
+    fn test_random_forest_regressor_predict_before_fit() {
+        let rf = RandomForestRegressor::new(5);
+        let x = Matrix::from_vec(2, 1, vec![1.0, 2.0]).unwrap();
+        let _ = rf.predict(&x); // Should panic
+    }
+
+    #[test]
+    fn test_random_forest_regressor_default() {
+        let rf1 = RandomForestRegressor::new(10);
+        let rf2 = RandomForestRegressor::default();
+
+        assert_eq!(rf1.n_estimators, rf2.n_estimators);
+        assert_eq!(rf1.max_depth, rf2.max_depth);
+    }
+
+    #[test]
+    fn test_random_forest_regressor_comparison_with_linear_regression() {
+        // On non-linear data, RF should significantly outperform linear regression
+        let x = Matrix::from_vec(
+            10,
+            1,
+            vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0],
+        )
+        .unwrap();
+        let y = crate::primitives::Vector::from_slice(&[
+            1.0, 4.0, 9.0, 16.0, 25.0, 36.0, 49.0, 64.0, 81.0, 100.0,
+        ]); // y = x²
+
+        // Train RF
+        let mut rf = RandomForestRegressor::new(30).with_max_depth(5);
+        rf.fit(&x, &y).unwrap();
+        let rf_r2 = rf.score(&x, &y);
+
+        // Train linear regression
+        let mut lr = crate::linear_model::LinearRegression::new();
+        lr.fit(&x, &y).unwrap();
+        let lr_r2 = lr.score(&x, &y);
+
+        // RF should handle non-linearity better
+        assert!(
+            rf_r2 > 0.9,
+            "Random forest R² {} should be high on quadratic data",
+            rf_r2
+        );
+        assert!(
+            lr_r2 < 0.98,
+            "Linear regression R² {} should be lower on non-linear data",
+            lr_r2
+        );
+        assert!(
+            rf_r2 > lr_r2,
+            "RF R² {} should exceed linear R² {} on non-linear data",
+            rf_r2,
+            lr_r2
+        );
+    }
+
+    #[test]
+    fn test_random_forest_regressor_max_depth_effect() {
+        let x = Matrix::from_vec(
+            12,
+            1,
+            vec![
+                1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0,
+            ],
+        )
+        .unwrap();
+        let y = crate::primitives::Vector::from_slice(&[
+            1.0, 4.0, 9.0, 16.0, 25.0, 36.0, 49.0, 64.0, 81.0, 100.0, 121.0, 144.0,
+        ]);
+
+        // Shallow trees
+        let mut rf_shallow = RandomForestRegressor::new(15).with_max_depth(2);
+        rf_shallow.fit(&x, &y).unwrap();
+        let r2_shallow = rf_shallow.score(&x, &y);
+
+        // Deep trees
+        let mut rf_deep = RandomForestRegressor::new(15).with_max_depth(8);
+        rf_deep.fit(&x, &y).unwrap();
+        let r2_deep = rf_deep.score(&x, &y);
+
+        // Deeper trees should capture more complexity
+        assert!(
+            r2_deep > r2_shallow,
+            "Deeper trees R² {} should exceed shallow trees R² {}",
+            r2_deep,
+            r2_shallow
+        );
     }
 }
