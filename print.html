@@ -3538,14 +3538,14 @@ Both:
 <!-- DOC_STATUS_START -->
 <p><strong>Chapter Status</strong>: ✅ 100% Working (All examples verified)</p>
 <div class="table-wrapper"><table><thead><tr><th>Status</th><th>Count</th><th>Examples</th></tr></thead><tbody>
-<tr><td>✅ Working</td><td>23+</td><td>Random Forest classification + regression verified</td></tr>
+<tr><td>✅ Working</td><td>34+</td><td>Random Forest classification + regression + OOB estimation verified</td></tr>
 <tr><td>⏳ In Progress</td><td>0</td><td>-</td></tr>
 <tr><td>⬜ Not Implemented</td><td>0</td><td>-</td></tr>
 </tbody></table>
 </div>
 <p><em>Last tested: 2025-11-21</em>
 <em>Aprender version: 0.4.1</em>
-<em>Test file: src/tree/mod.rs tests</em></p>
+<em>Test file: src/tree/mod.rs tests (726 tests, 11 OOB tests)</em></p>
 <!-- DOC_STATUS_END -->
 <hr />
 <h2 id="overview-5"><a class="header" href="#overview-5">Overview</a></h2>
@@ -3619,16 +3619,56 @@ function Predict(forest, x):
 <li><strong>Feature randomness</strong>: At each split, only consider random subset of features (typically √m features)</li>
 </ol>
 <p><strong>Why feature randomness?</strong> Prevents correlation between trees. Without it, all trees would use the same strong features at the top.</p>
-<h3 id="out-of-bag-oob-score"><a class="header" href="#out-of-bag-oob-score">Out-of-Bag (OOB) Score</a></h3>
+<h3 id="out-of-bag-oob-error-estimation"><a class="header" href="#out-of-bag-oob-error-estimation">Out-of-Bag (OOB) Error Estimation</a></h3>
 <p><strong>Key Insight</strong>: Each tree trained on ~63% of data, leaving ~37% out-of-bag</p>
-<p><strong>OOB Score</strong>:</p>
-<pre><code class="language-text">For each sample x:
-    predictions = [tree.predict(x) for tree in forest if x not in tree.training_data]
-    oob_prediction = majority_vote(predictions)
-
-OOB_accuracy = accuracy(oob_predictions, y_true)
+<p><strong>The Mathematics</strong>:</p>
+<pre><code class="language-text">Bootstrap sampling with replacement:
+- Probability sample is NOT selected: (1 - 1/n)ⁿ
+- As n → ∞: lim (1 - 1/n)ⁿ = 1/e ≈ 0.368
+- Therefore: ~36.8% samples are OOB per tree
 </code></pre>
-<p><strong>Advantage</strong>: Free validation set! No need for separate test set or cross-validation.</p>
+<p><strong>OOB Score Algorithm</strong>:</p>
+<pre><code class="language-text">For each sample xᵢ in training set:
+    1. Find all trees where xᵢ was NOT in bootstrap sample
+    2. Predict using only those trees
+    3. Aggregate predictions (majority vote or averaging)
+
+Classification: OOB_accuracy = accuracy(oob_predictions, y_true)
+Regression: OOB_R² = r_squared(oob_predictions, y_true)
+</code></pre>
+<p><strong>Why OOB is Powerful</strong>:</p>
+<ul>
+<li>✅ <strong>Free validation</strong>: No separate validation set needed</li>
+<li>✅ <strong>Unbiased estimate</strong>: Similar to cross-validation accuracy</li>
+<li>✅ <strong>Use all data</strong>: 100% for training, still get validation score</li>
+<li>✅ <strong>Model selection</strong>: Compare different n_estimators values</li>
+<li>✅ <strong>Early stopping</strong>: Monitor OOB score during training</li>
+</ul>
+<p><strong>When to Use OOB</strong>:</p>
+<ul>
+<li>Small datasets (can't afford to hold out validation set)</li>
+<li>Hyperparameter tuning (test different forest sizes)</li>
+<li>Production monitoring (track OOB score over time)</li>
+</ul>
+<p><strong>Practical Usage in Aprender</strong>:</p>
+<pre><code class="language-rust ignore">use aprender::tree::RandomForestClassifier;
+use aprender::primitives::Matrix;
+
+let mut rf = RandomForestClassifier::new(50)
+    .with_max_depth(10)
+    .with_random_state(42);
+
+rf.fit(&amp;x_train, &amp;y_train).unwrap();
+
+// Get OOB score (unbiased estimate of generalization error)
+let oob_accuracy = rf.oob_score().unwrap();
+let training_accuracy = rf.score(&amp;x_train, &amp;y_train);
+
+println!(&quot;Training accuracy: {:.3}&quot;, training_accuracy);  // Often high
+println!(&quot;OOB accuracy: {:.3}&quot;, oob_accuracy);            // More realistic
+
+// OOB accuracy typically close to test set accuracy!</code></pre>
+<p><strong>Test Reference</strong>: <code>src/tree/mod.rs::tests::test_random_forest_classifier_oob_score_after_fit</code></p>
 <hr />
 <h2 id="implementation-in-aprender-7"><a class="header" href="#implementation-in-aprender-7">Implementation in Aprender</a></h2>
 <h3 id="example-1-basic-random-forest"><a class="header" href="#example-1-basic-random-forest">Example 1: Basic Random Forest</a></h3>
