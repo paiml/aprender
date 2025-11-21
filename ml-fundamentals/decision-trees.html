@@ -183,13 +183,13 @@
 <!-- DOC_STATUS_START -->
 <p><strong>Chapter Status</strong>: ✅ 100% Working (All examples verified)</p>
 <div class="table-wrapper"><table><thead><tr><th>Status</th><th>Count</th><th>Examples</th></tr></thead><tbody>
-<tr><td>✅ Working</td><td>15+</td><td>CART algorithm verified</td></tr>
+<tr><td>✅ Working</td><td>30+</td><td>CART algorithm (classification + regression) verified</td></tr>
 <tr><td>⏳ In Progress</td><td>0</td><td>-</td></tr>
 <tr><td>⬜ Not Implemented</td><td>0</td><td>-</td></tr>
 </tbody></table>
 </div>
-<p><em>Last tested: 2025-11-19</em>
-<em>Aprender version: 0.3.0</em>
+<p><em>Last tested: 2025-11-21</em>
+<em>Aprender version: 0.4.1</em>
 <em>Test file: src/tree/mod.rs tests</em></p>
 <!-- DOC_STATUS_END -->
 <hr />
@@ -199,11 +199,12 @@
 <ul>
 <li><strong>CART Algorithm</strong>: Classification And Regression Trees</li>
 <li><strong>Gini Impurity</strong>: Measures node purity (classification)</li>
+<li><strong>MSE Criterion</strong>: Measures variance (regression)</li>
 <li><strong>Recursive Splitting</strong>: Build tree top-down, greedy</li>
 <li><strong>Max Depth</strong>: Controls overfitting</li>
 </ul>
 <p><strong>Why This Matters</strong>:
-Decision trees mirror human decision-making: &quot;If feature X &gt; threshold, then...&quot; They're the foundation of powerful ensemble methods (Random Forests, Gradient Boosting).</p>
+Decision trees mirror human decision-making: &quot;If feature X &gt; threshold, then...&quot; They're the foundation of powerful ensemble methods (Random Forests, Gradient Boosting). The same algorithm handles both classification (predicting categories) and regression (predicting continuous values).</p>
 <hr />
 <h2 id="mathematical-foundation"><a class="header" href="#mathematical-foundation">Mathematical Foundation</a></h2>
 <h3 id="the-decision-tree-structure"><a class="header" href="#the-decision-tree-structure">The Decision Tree Structure</a></h3>
@@ -271,6 +272,86 @@ w_R = n_right / n_total (weight of right child)
 <li>Node has too few samples (min_samples_split)</li>
 <li>No split reduces impurity</li>
 </ol>
+<h3 id="cart-algorithm-regression"><a class="header" href="#cart-algorithm-regression">CART Algorithm (Regression)</a></h3>
+<p>Decision trees also handle <strong>regression</strong> tasks (predicting continuous values) using the same recursive splitting approach, but with different splitting criteria and leaf predictions.</p>
+<p><strong>Key Differences from Classification</strong>:</p>
+<ul>
+<li><strong>Splitting criterion</strong>: Mean Squared Error (MSE) instead of Gini</li>
+<li><strong>Leaf prediction</strong>: Mean of target values instead of majority class</li>
+<li><strong>Evaluation</strong>: R² score instead of accuracy</li>
+</ul>
+<h4 id="mean-squared-error-mse"><a class="header" href="#mean-squared-error-mse">Mean Squared Error (MSE)</a></h4>
+<p><strong>Definition</strong>:</p>
+<pre><code class="language-text">MSE(S) = (1/n) Σ (y_i - ȳ)²
+
+where:
+S = set of samples in a node
+y_i = target value of sample i
+ȳ = mean target value in S
+n = number of samples
+</code></pre>
+<p><strong>Equivalent Formulation</strong>:</p>
+<pre><code class="language-text">MSE(S) = Variance(y) = (1/n) Σ (y_i - ȳ)²
+</code></pre>
+<p><strong>Interpretation</strong>:</p>
+<ul>
+<li><strong>MSE = 0.0</strong>: Pure node (all samples have same target value)</li>
+<li><strong>High MSE</strong>: High variance in target values</li>
+<li><strong>Goal</strong>: Minimize weighted MSE after split</li>
+</ul>
+<h4 id="variance-reduction"><a class="header" href="#variance-reduction">Variance Reduction</a></h4>
+<p>When splitting a node into left and right children:</p>
+<pre><code class="language-text">VarReduction = MSE(parent) - [w_L * MSE(left) + w_R * MSE(right)]
+
+where:
+w_L = n_left / n_total  (weight of left child)
+w_R = n_right / n_total (weight of right child)
+</code></pre>
+<p><strong>Goal</strong>: Maximize variance reduction → find best split</p>
+<p><strong>Analogy to Classification</strong>:</p>
+<ul>
+<li>MSE for regression ≈ Gini impurity for classification</li>
+<li>Variance reduction ≈ Information gain</li>
+<li>Both measure &quot;purity&quot; of nodes</li>
+</ul>
+<h4 id="regression-tree-building"><a class="header" href="#regression-tree-building">Regression Tree Building</a></h4>
+<p><strong>Recursive Algorithm</strong>:</p>
+<pre><code class="language-text">function BuildRegressionTree(X, y, depth, max_depth):
+    if stopping_criterion_met:
+        return Leaf(mean(y))
+
+    best_split = find_best_split(X, y)  # Maximize VarReduction
+
+    if no_valid_split or depth &gt;= max_depth:
+        return Leaf(mean(y))
+
+    X_left, y_left, X_right, y_right = partition(X, y, best_split)
+
+    return Node(
+        feature = best_split.feature,
+        threshold = best_split.threshold,
+        left = BuildRegressionTree(X_left, y_left, depth+1, max_depth),
+        right = BuildRegressionTree(X_right, y_right, depth+1, max_depth)
+    )
+</code></pre>
+<p><strong>Stopping Criteria</strong>:</p>
+<ol>
+<li>All samples have same target value (variance = 0)</li>
+<li>Reached max_depth</li>
+<li>Node has too few samples (min_samples_split)</li>
+<li>No split reduces variance</li>
+</ol>
+<h4 id="mse-vs-gini-criterion-comparison"><a class="header" href="#mse-vs-gini-criterion-comparison">MSE vs Gini Criterion Comparison</a></h4>
+<div class="table-wrapper"><table><thead><tr><th>Aspect</th><th>MSE (Regression)</th><th>Gini (Classification)</th></tr></thead><tbody>
+<tr><td><strong>Task</strong></td><td>Continuous prediction</td><td>Class prediction</td></tr>
+<tr><td><strong>Range</strong></td><td>[0, ∞)</td><td>[0, 1]</td></tr>
+<tr><td><strong>Pure node</strong></td><td>MSE = 0 (constant target)</td><td>Gini = 0 (single class)</td></tr>
+<tr><td><strong>Impure node</strong></td><td>High variance</td><td>Gini ≈ 0.5</td></tr>
+<tr><td><strong>Split goal</strong></td><td>Minimize MSE</td><td>Minimize Gini</td></tr>
+<tr><td><strong>Leaf prediction</strong></td><td>Mean of y</td><td>Majority class</td></tr>
+<tr><td><strong>Evaluation</strong></td><td>R² score</td><td>Accuracy</td></tr>
+</tbody></table>
+</div>
 <hr />
 <h2 id="implementation-in-aprender"><a class="header" href="#implementation-in-aprender">Implementation in Aprender</a></h2>
 <h3 id="example-1-simple-binary-classification"><a class="header" href="#example-1-simple-binary-classification">Example 1: Simple Binary Classification</a></h3>
@@ -313,7 +394,51 @@ let y_pred = tree.predict(&amp;x_test);
 let accuracy = tree.score(&amp;x_test, &amp;y_test);
 println!(&quot;Test Accuracy: {:.3}&quot;, accuracy); // e.g., 0.967</code></pre>
 <p><strong>Case Study</strong>: See <a href="../examples/decision-tree-iris.html">Decision Tree - Iris Classification</a></p>
-<h3 id="example-3-model-serialization"><a class="header" href="#example-3-model-serialization">Example 3: Model Serialization</a></h3>
+<h3 id="example-3-regression-housing-prices"><a class="header" href="#example-3-regression-housing-prices">Example 3: Regression (Housing Prices)</a></h3>
+<pre><code class="language-rust ignore">use aprender::tree::DecisionTreeRegressor;
+use aprender::primitives::{Matrix, Vector};
+
+// Housing data: [sqft, bedrooms, age]
+let x = Matrix::from_vec(8, 3, vec![
+    1500.0, 3.0, 10.0,  // $280k
+    2000.0, 4.0, 5.0,   // $350k
+    1200.0, 2.0, 30.0,  // $180k
+    1800.0, 3.0, 15.0,  // $300k
+    2500.0, 5.0, 2.0,   // $450k
+    1000.0, 2.0, 50.0,  // $150k
+    2200.0, 4.0, 8.0,   // $380k
+    1600.0, 3.0, 20.0,  // $260k
+]).unwrap();
+
+let y = Vector::from_slice(&amp;[
+    280.0, 350.0, 180.0, 300.0, 450.0, 150.0, 380.0, 260.0
+]);
+
+// Train regression tree
+let mut tree = DecisionTreeRegressor::new()
+    .with_max_depth(4)
+    .with_min_samples_split(2);
+
+tree.fit(&amp;x, &amp;y).unwrap();
+
+// Predict on new house: 1900 sqft, 4 bed, 12 years
+let x_new = Matrix::from_vec(1, 3, vec![1900.0, 4.0, 12.0]).unwrap();
+let predicted_price = tree.predict(&amp;x_new);
+println!(&quot;Predicted: ${:.0}k&quot;, predicted_price.as_slice()[0]);
+
+// Evaluate with R² score
+let r2 = tree.score(&amp;x, &amp;y);
+println!(&quot;R² Score: {:.3}&quot;, r2); // e.g., 0.95+</code></pre>
+<p><strong>Key Differences from Classification</strong>:</p>
+<ul>
+<li>Uses <code>Vector&lt;f32&gt;</code> for continuous targets (not <code>Vec&lt;usize&gt;</code> classes)</li>
+<li>Predictions are continuous values (not class labels)</li>
+<li>Score returns R² instead of accuracy</li>
+<li>MSE criterion splits on variance reduction</li>
+</ul>
+<p><strong>Test Reference</strong>: <code>src/tree/mod.rs::tests::test_regression_tree_*</code></p>
+<p><strong>Case Study</strong>: See <a href="../examples/decision-tree-regression.html">Decision Tree Regression</a></p>
+<h3 id="example-4-model-serialization"><a class="header" href="#example-4-model-serialization">Example 4: Model Serialization</a></h3>
 <pre><code class="language-rust ignore">// Train and save tree
 let mut tree = DecisionTreeClassifier::new()
     .with_max_depth(4);
@@ -417,12 +542,15 @@ for depth in 1..=10 {
 <li>Mixed feature types</li>
 <li>Quick baseline</li>
 <li>Building block for ensembles</li>
+<li><strong>Regression</strong>: Non-linear relationships without feature engineering</li>
+<li><strong>Classification</strong>: Multi-class problems with complex boundaries</li>
 </ul>
 <p><strong>Not good for</strong>:</p>
 <ul>
 <li>Need best single-model accuracy (use ensemble instead)</li>
-<li>Linear relationships (logistic regression simpler)</li>
+<li>Linear relationships (logistic/linear regression simpler)</li>
 <li>Large feature space (curse of dimensionality)</li>
+<li><strong>Regression</strong>: Smooth predictions or extrapolation beyond training range</li>
 </ul>
 <hr />
 <h2 id="practical-considerations"><a class="header" href="#practical-considerations">Practical Considerations</a></h2>
@@ -519,26 +647,48 @@ Disease A   Disease B
 <h2 id="summary"><a class="header" href="#summary">Summary</a></h2>
 <p><strong>What You Learned</strong>:</p>
 <ul>
-<li>✅ Decision trees: hierarchical if-then rules</li>
-<li>✅ Gini impurity: Gini = 1 - Σ p_i² (0 = pure, 0.5 = max)</li>
-<li>✅ CART algorithm: greedy, top-down, recursive</li>
-<li>✅ Information gain: Maximize reduction in impurity</li>
+<li>✅ Decision trees: hierarchical if-then rules for classification AND regression</li>
+<li>✅ <strong>Classification</strong>: Gini impurity (Gini = 1 - Σ p_i²), predict majority class</li>
+<li>✅ <strong>Regression</strong>: MSE criterion (variance), predict mean value</li>
+<li>✅ CART algorithm: greedy, top-down, recursive (same for both tasks)</li>
+<li>✅ Information gain: Maximize reduction in impurity (Gini or MSE)</li>
 <li>✅ Max depth: Controls overfitting (tune with CV)</li>
 <li>✅ Advantages: Interpretable, no scaling, non-linear</li>
 <li>✅ Limitations: Overfitting, instability (use ensembles)</li>
 </ul>
-<p><strong>Verification Guarantee</strong>: Decision tree implementation extensively tested (15+ tests) in <code>src/tree/mod.rs</code>. Tests verify Gini calculations, tree building, and prediction logic.</p>
+<p><strong>Verification Guarantee</strong>: Decision tree implementation extensively tested (30+ tests) in <code>src/tree/mod.rs</code>. Tests verify Gini calculations, MSE splitting, tree building, and prediction logic for both classification and regression.</p>
 <p><strong>Quick Reference</strong>:</p>
+<p><strong>Classification</strong>:</p>
 <ul>
 <li><strong>Pure node</strong>: Gini = 0 (stop splitting)</li>
 <li><strong>Max impurity</strong>: Gini = 0.5 (binary 50/50)</li>
 <li><strong>Best split</strong>: Maximize information gain</li>
+<li><strong>Leaf prediction</strong>: Majority class</li>
+</ul>
+<p><strong>Regression</strong>:</p>
+<ul>
+<li><strong>Pure node</strong>: MSE = 0 (constant target, stop splitting)</li>
+<li><strong>High impurity</strong>: High variance in target values</li>
+<li><strong>Best split</strong>: Maximize variance reduction</li>
+<li><strong>Leaf prediction</strong>: Mean of target values</li>
+</ul>
+<p><strong>Both Tasks</strong>:</p>
+<ul>
 <li><strong>Prevent overfit</strong>: Set max_depth (3-7 typical)</li>
+<li><strong>Additional pruning</strong>: min_samples_split, min_samples_leaf</li>
+<li><strong>Evaluation</strong>: R² for regression, accuracy for classification</li>
 </ul>
 <p><strong>Key Equations</strong>:</p>
-<pre><code class="language-text">Gini(S) = 1 - Σ p_i²
-InfoGain = Gini(parent) - Weighted_Avg(Gini(children))
-Split: feature ≤ threshold → left, else → right
+<pre><code class="language-text">Classification:
+  Gini(S) = 1 - Σ p_i²
+  InfoGain = Gini(parent) - Weighted_Avg(Gini(children))
+
+Regression:
+  MSE(S) = (1/n) Σ (y_i - ȳ)²
+  VarReduction = MSE(parent) - Weighted_Avg(MSE(children))
+
+Both:
+  Split: feature ≤ threshold → left, else → right
 </code></pre>
 <hr />
 <p><strong>Next Chapter</strong>: <a href="./ensemble-methods.html">Ensemble Methods Theory</a></p>
