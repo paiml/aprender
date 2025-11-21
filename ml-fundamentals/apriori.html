@@ -1,0 +1,527 @@
+<!DOCTYPE HTML>
+<html lang="en" class="rust" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Apriori Algorithm Theory - EXTREME TDD - The Aprender Guide to Zero-Defect Machine Learning</title>
+
+
+        <!-- Custom HTML head -->
+        
+        <meta name="description" content="A comprehensive guide to EXTREME TDD methodology: RED-GREEN-REFACTOR cycles, mutation testing, and Toyota Way principles demonstrated through ML library development">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="../favicon.svg">
+        <link rel="shortcut icon" href="../favicon.png">
+        <link rel="stylesheet" href="../css/variables.css">
+        <link rel="stylesheet" href="../css/general.css">
+        <link rel="stylesheet" href="../css/chrome.css">
+        <link rel="stylesheet" href="../css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="../fonts/fonts.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" href="../highlight.css">
+        <link rel="stylesheet" href="../tomorrow-night.css">
+        <link rel="stylesheet" href="../ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+
+    </head>
+    <body class="sidebar-visible no-js">
+    <div id="body-container">
+        <!-- Provide site root to javascript -->
+        <script>
+            var path_to_root = "../";
+            var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "rust";
+        </script>
+
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            var html = document.querySelector('html');
+            html.classList.remove('rust')
+            html.classList.add(theme);
+            var body = document.querySelector('body');
+            body.classList.remove('no-js')
+            body.classList.add('js');
+        </script>
+
+        <input type="checkbox" id="sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            var body = document.querySelector('body');
+            var sidebar = null;
+            var sidebar_toggle = document.getElementById("sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+            }
+            sidebar_toggle.checked = sidebar === 'visible';
+            body.classList.remove('sidebar-visible');
+            body.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <div class="sidebar-scrollbox">
+                <ol class="chapter"><li class="chapter-item expanded affix "><a href="../introduction.html">Introduction</a></li><li class="chapter-item expanded affix "><li class="part-title">Core Methodology</li><li class="chapter-item expanded "><a href="../methodology/what-is-extreme-tdd.html"><strong aria-hidden="true">1.</strong> What is EXTREME TDD?</a></li><li class="chapter-item expanded "><a href="../methodology/red-green-refactor.html"><strong aria-hidden="true">2.</strong> The RED-GREEN-REFACTOR Cycle</a></li><li class="chapter-item expanded "><a href="../methodology/test-first-philosophy.html"><strong aria-hidden="true">3.</strong> Test-First Philosophy</a></li><li class="chapter-item expanded "><a href="../methodology/zero-tolerance.html"><strong aria-hidden="true">4.</strong> Zero Tolerance Quality</a></li><li class="chapter-item expanded affix "><li class="part-title">The RED Phase</li><li class="chapter-item expanded "><a href="../red-phase/failing-tests-first.html"><strong aria-hidden="true">5.</strong> Writing Failing Tests First</a></li><li class="chapter-item expanded "><a href="../red-phase/test-categories.html"><strong aria-hidden="true">6.</strong> Test Categories</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../red-phase/unit-tests.html"><strong aria-hidden="true">6.1.</strong> Unit Tests</a></li><li class="chapter-item expanded "><a href="../red-phase/integration-tests.html"><strong aria-hidden="true">6.2.</strong> Integration Tests</a></li><li class="chapter-item expanded "><a href="../red-phase/property-based-tests.html"><strong aria-hidden="true">6.3.</strong> Property-Based Tests</a></li></ol></li><li class="chapter-item expanded "><a href="../red-phase/verification-strategy.html"><strong aria-hidden="true">7.</strong> Verification Strategy</a></li><li class="chapter-item expanded affix "><li class="part-title">The GREEN Phase</li><li class="chapter-item expanded "><a href="../green-phase/minimal-implementation.html"><strong aria-hidden="true">8.</strong> Minimal Implementation</a></li><li class="chapter-item expanded "><a href="../green-phase/making-tests-pass.html"><strong aria-hidden="true">9.</strong> Making Tests Pass</a></li><li class="chapter-item expanded "><a href="../green-phase/avoiding-over-engineering.html"><strong aria-hidden="true">10.</strong> Avoiding Over-Engineering</a></li><li class="chapter-item expanded "><a href="../green-phase/simplest-thing.html"><strong aria-hidden="true">11.</strong> The Simplest Thing That Works</a></li><li class="chapter-item expanded affix "><li class="part-title">The REFACTOR Phase</li><li class="chapter-item expanded "><a href="../refactor-phase/refactoring-with-confidence.html"><strong aria-hidden="true">12.</strong> Refactoring with Confidence</a></li><li class="chapter-item expanded "><a href="../refactor-phase/code-quality.html"><strong aria-hidden="true">13.</strong> Code Quality Improvements</a></li><li class="chapter-item expanded "><a href="../refactor-phase/performance-optimization.html"><strong aria-hidden="true">14.</strong> Performance Optimization</a></li><li class="chapter-item expanded "><a href="../refactor-phase/documentation.html"><strong aria-hidden="true">15.</strong> Documentation</a></li><li class="chapter-item expanded affix "><li class="part-title">Advanced Testing</li><li class="chapter-item expanded "><a href="../advanced-testing/property-based-testing.html"><strong aria-hidden="true">16.</strong> Property-Based Testing</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../advanced-testing/proptest-fundamentals.html"><strong aria-hidden="true">16.1.</strong> Proptest Fundamentals</a></li><li class="chapter-item expanded "><a href="../advanced-testing/strategies-generators.html"><strong aria-hidden="true">16.2.</strong> Strategies and Generators</a></li><li class="chapter-item expanded "><a href="../advanced-testing/testing-invariants.html"><strong aria-hidden="true">16.3.</strong> Testing Invariants</a></li></ol></li><li class="chapter-item expanded "><a href="../advanced-testing/mutation-testing.html"><strong aria-hidden="true">17.</strong> Mutation Testing</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../advanced-testing/what-is-mutation-testing.html"><strong aria-hidden="true">17.1.</strong> What is Mutation Testing?</a></li><li class="chapter-item expanded "><a href="../advanced-testing/using-cargo-mutants.html"><strong aria-hidden="true">17.2.</strong> Using cargo-mutants</a></li><li class="chapter-item expanded "><a href="../advanced-testing/mutation-score-targets.html"><strong aria-hidden="true">17.3.</strong> Mutation Score Targets</a></li><li class="chapter-item expanded "><a href="../advanced-testing/killing-mutants.html"><strong aria-hidden="true">17.4.</strong> Killing Mutants</a></li></ol></li><li class="chapter-item expanded "><a href="../advanced-testing/fuzzing.html"><strong aria-hidden="true">18.</strong> Fuzzing</a></li><li class="chapter-item expanded "><a href="../advanced-testing/benchmark-testing.html"><strong aria-hidden="true">19.</strong> Benchmark Testing</a></li><li class="chapter-item expanded affix "><li class="part-title">Quality Gates</li><li class="chapter-item expanded "><a href="../quality-gates/pre-commit-hooks.html"><strong aria-hidden="true">20.</strong> Pre-Commit Hooks</a></li><li class="chapter-item expanded "><a href="../quality-gates/continuous-integration.html"><strong aria-hidden="true">21.</strong> Continuous Integration</a></li><li class="chapter-item expanded "><a href="../quality-gates/code-formatting.html"><strong aria-hidden="true">22.</strong> Code Formatting (rustfmt)</a></li><li class="chapter-item expanded "><a href="../quality-gates/linting-clippy.html"><strong aria-hidden="true">23.</strong> Linting (clippy)</a></li><li class="chapter-item expanded "><a href="../quality-gates/coverage-measurement.html"><strong aria-hidden="true">24.</strong> Coverage Measurement</a></li><li class="chapter-item expanded "><a href="../quality-gates/complexity-analysis.html"><strong aria-hidden="true">25.</strong> Complexity Analysis</a></li><li class="chapter-item expanded "><a href="../quality-gates/tdg-score.html"><strong aria-hidden="true">26.</strong> Technical Debt Gradient (TDG)</a></li><li class="chapter-item expanded affix "><li class="part-title">Toyota Way Principles</li><li class="chapter-item expanded "><a href="../toyota-way/overview.html"><strong aria-hidden="true">27.</strong> Overview</a></li><li class="chapter-item expanded "><a href="../toyota-way/kaizen.html"><strong aria-hidden="true">28.</strong> Kaizen (Continuous Improvement)</a></li><li class="chapter-item expanded "><a href="../toyota-way/genchi-genbutsu.html"><strong aria-hidden="true">29.</strong> Genchi Genbutsu (Go and See)</a></li><li class="chapter-item expanded "><a href="../toyota-way/jidoka.html"><strong aria-hidden="true">30.</strong> Jidoka (Built-in Quality)</a></li><li class="chapter-item expanded "><a href="../toyota-way/pdca-cycle.html"><strong aria-hidden="true">31.</strong> PDCA Cycle</a></li><li class="chapter-item expanded "><a href="../toyota-way/respect-for-people.html"><strong aria-hidden="true">32.</strong> Respect for People</a></li><li class="chapter-item expanded affix "><li class="part-title">Machine Learning Fundamentals</li><li class="chapter-item expanded "><a href="../ml-fundamentals/linear-regression.html"><strong aria-hidden="true">33.</strong> Linear Regression Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/regularization.html"><strong aria-hidden="true">34.</strong> Regularization Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/logistic-regression.html"><strong aria-hidden="true">35.</strong> Logistic Regression Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/knn.html"><strong aria-hidden="true">36.</strong> K-Nearest Neighbors (kNN) Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/naive-bayes.html"><strong aria-hidden="true">37.</strong> Naive Bayes Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/svm.html"><strong aria-hidden="true">38.</strong> Support Vector Machines (SVM) Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/decision-trees.html"><strong aria-hidden="true">39.</strong> Decision Trees Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/ensemble-methods.html"><strong aria-hidden="true">40.</strong> Ensemble Methods Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/kmeans-clustering.html"><strong aria-hidden="true">41.</strong> K-Means Clustering Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/pca.html"><strong aria-hidden="true">42.</strong> Principal Component Analysis (PCA) Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/tsne.html"><strong aria-hidden="true">43.</strong> t-SNE (t-Distributed Stochastic Neighbor Embedding) Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/regression-metrics.html"><strong aria-hidden="true">44.</strong> Regression Metrics Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/classification-metrics.html"><strong aria-hidden="true">45.</strong> Classification Metrics Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/cross-validation.html"><strong aria-hidden="true">46.</strong> Cross-Validation Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/gradient-descent.html"><strong aria-hidden="true">47.</strong> Gradient Descent Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/advanced-optimizers.html"><strong aria-hidden="true">48.</strong> Advanced Optimizers Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/feature-scaling.html"><strong aria-hidden="true">49.</strong> Feature Scaling Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/graph-algorithms.html"><strong aria-hidden="true">50.</strong> Graph Algorithms Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/descriptive-statistics.html"><strong aria-hidden="true">51.</strong> Descriptive Statistics Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/apriori.html" class="active"><strong aria-hidden="true">52.</strong> Apriori Algorithm Theory</a></li><li class="chapter-item expanded affix "><li class="part-title">Real-World Examples from Aprender</li><li class="chapter-item expanded "><a href="../examples/linear-regression.html"><strong aria-hidden="true">53.</strong> Case Study: Linear Regression</a></li><li class="chapter-item expanded "><a href="../examples/boston-housing.html"><strong aria-hidden="true">54.</strong> Case Study: Boston Housing</a></li><li class="chapter-item expanded "><a href="../examples/cross-validation.html"><strong aria-hidden="true">55.</strong> Case Study: Cross-Validation</a></li><li class="chapter-item expanded "><a href="../examples/random-forest.html"><strong aria-hidden="true">56.</strong> Case Study: Random Forest</a></li><li class="chapter-item expanded "><a href="../examples/random-forest-iris.html"><strong aria-hidden="true">57.</strong> Case Study: Random Forest Iris</a></li><li class="chapter-item expanded "><a href="../examples/decision-tree-iris.html"><strong aria-hidden="true">58.</strong> Case Study: Decision Tree Iris</a></li><li class="chapter-item expanded "><a href="../examples/model-serialization.html"><strong aria-hidden="true">59.</strong> Case Study: Model Serialization</a></li><li class="chapter-item expanded "><a href="../examples/kmeans-clustering.html"><strong aria-hidden="true">60.</strong> Case Study: KMeans Clustering</a></li><li class="chapter-item expanded "><a href="../examples/dbscan-clustering.html"><strong aria-hidden="true">61.</strong> Case Study: DBSCAN Clustering</a></li><li class="chapter-item expanded "><a href="../examples/hierarchical-clustering.html"><strong aria-hidden="true">62.</strong> Case Study: Hierarchical Clustering</a></li><li class="chapter-item expanded "><a href="../examples/gmm-clustering.html"><strong aria-hidden="true">63.</strong> Case Study: GMM Clustering</a></li><li class="chapter-item expanded "><a href="../examples/iris-clustering.html"><strong aria-hidden="true">64.</strong> Case Study: Iris Clustering</a></li><li class="chapter-item expanded "><a href="../examples/logistic-regression.html"><strong aria-hidden="true">65.</strong> Case Study: Logistic Regression</a></li><li class="chapter-item expanded "><a href="../examples/knn-iris.html"><strong aria-hidden="true">66.</strong> Case Study: KNN Iris</a></li><li class="chapter-item expanded "><a href="../examples/naive-bayes-iris.html"><strong aria-hidden="true">67.</strong> Case Study: Naive Bayes Iris</a></li><li class="chapter-item expanded "><a href="../examples/svm-iris.html"><strong aria-hidden="true">68.</strong> Case Study: SVM Iris</a></li><li class="chapter-item expanded "><a href="../examples/gbm-iris.html"><strong aria-hidden="true">69.</strong> Case Study: Gradient Boosting Iris</a></li><li class="chapter-item expanded "><a href="../examples/regularized-regression.html"><strong aria-hidden="true">70.</strong> Case Study: Regularized Regression</a></li><li class="chapter-item expanded "><a href="../examples/optimizer-demo.html"><strong aria-hidden="true">71.</strong> Case Study: Optimizer Demo</a></li><li class="chapter-item expanded "><a href="../examples/dataframe-basics.html"><strong aria-hidden="true">72.</strong> Case Study: DataFrame Basics</a></li><li class="chapter-item expanded "><a href="../examples/graph-social-network.html"><strong aria-hidden="true">73.</strong> Case Study: Graph Social Network</a></li><li class="chapter-item expanded "><a href="../examples/community-detection.html"><strong aria-hidden="true">74.</strong> Case Study: Community Detection with Louvain</a></li><li class="chapter-item expanded "><a href="../examples/descriptive-statistics.html"><strong aria-hidden="true">75.</strong> Case Study: Descriptive Statistics</a></li><li class="chapter-item expanded "><a href="../examples/pca-iris.html"><strong aria-hidden="true">76.</strong> Case Study: PCA Iris</a></li><li class="chapter-item expanded "><a href="../examples/isolation-forest-anomaly.html"><strong aria-hidden="true">77.</strong> Case Study: Isolation Forest Anomaly Detection</a></li><li class="chapter-item expanded "><a href="../examples/lof-anomaly.html"><strong aria-hidden="true">78.</strong> Case Study: Local Outlier Factor (LOF)</a></li><li class="chapter-item expanded "><a href="../examples/spectral-clustering.html"><strong aria-hidden="true">79.</strong> Case Study: Spectral Clustering</a></li><li class="chapter-item expanded "><a href="../examples/tsne-visualization.html"><strong aria-hidden="true">80.</strong> Case Study: t-SNE Visualization</a></li><li class="chapter-item expanded "><a href="../examples/market-basket-apriori.html"><strong aria-hidden="true">81.</strong> Case Study: Market Basket Analysis (Apriori)</a></li><li class="chapter-item expanded affix "><li class="part-title">Sprint-Based Development</li><li class="chapter-item expanded "><a href="../sprints/sprint-planning.html"><strong aria-hidden="true">82.</strong> Sprint Planning</a></li><li class="chapter-item expanded "><a href="../sprints/sprint-execution.html"><strong aria-hidden="true">83.</strong> Sprint Execution</a></li><li class="chapter-item expanded "><a href="../sprints/sprint-review.html"><strong aria-hidden="true">84.</strong> Sprint Review</a></li><li class="chapter-item expanded "><a href="../sprints/sprint-retrospective.html"><strong aria-hidden="true">85.</strong> Sprint Retrospective</a></li><li class="chapter-item expanded "><a href="../sprints/issue-management.html"><strong aria-hidden="true">86.</strong> Issue Management</a></li><li class="chapter-item expanded affix "><li class="part-title">Anti-Hallucination Enforcement</li><li class="chapter-item expanded "><a href="../anti-hallucination/test-backed-examples.html"><strong aria-hidden="true">87.</strong> Test-Backed Examples</a></li><li class="chapter-item expanded "><a href="../anti-hallucination/example-verification.html"><strong aria-hidden="true">88.</strong> Example Verification</a></li><li class="chapter-item expanded "><a href="../anti-hallucination/ci-validation.html"><strong aria-hidden="true">89.</strong> CI Validation</a></li><li class="chapter-item expanded "><a href="../anti-hallucination/documentation-testing.html"><strong aria-hidden="true">90.</strong> Documentation Testing</a></li><li class="chapter-item expanded affix "><li class="part-title">Tools and Setup</li><li class="chapter-item expanded "><a href="../tools/development-environment.html"><strong aria-hidden="true">91.</strong> Development Environment</a></li><li class="chapter-item expanded "><a href="../tools/cargo-test.html"><strong aria-hidden="true">92.</strong> cargo test</a></li><li class="chapter-item expanded "><a href="../tools/cargo-clippy.html"><strong aria-hidden="true">93.</strong> cargo clippy</a></li><li class="chapter-item expanded "><a href="../tools/cargo-fmt.html"><strong aria-hidden="true">94.</strong> cargo fmt</a></li><li class="chapter-item expanded "><a href="../tools/cargo-mutants.html"><strong aria-hidden="true">95.</strong> cargo mutants</a></li><li class="chapter-item expanded "><a href="../tools/proptest.html"><strong aria-hidden="true">96.</strong> proptest</a></li><li class="chapter-item expanded "><a href="../tools/criterion.html"><strong aria-hidden="true">97.</strong> criterion</a></li><li class="chapter-item expanded "><a href="../tools/pmat.html"><strong aria-hidden="true">98.</strong> pmat (Toyota AI Toolkit)</a></li><li class="chapter-item expanded affix "><li class="part-title">Best Practices</li><li class="chapter-item expanded "><a href="../best-practices/error-handling.html"><strong aria-hidden="true">99.</strong> Error Handling</a></li><li class="chapter-item expanded "><a href="../best-practices/api-design.html"><strong aria-hidden="true">100.</strong> API Design</a></li><li class="chapter-item expanded "><a href="../best-practices/builder-pattern.html"><strong aria-hidden="true">101.</strong> Builder Pattern</a></li><li class="chapter-item expanded "><a href="../best-practices/type-safety.html"><strong aria-hidden="true">102.</strong> Type Safety</a></li><li class="chapter-item expanded "><a href="../best-practices/performance.html"><strong aria-hidden="true">103.</strong> Performance Considerations</a></li><li class="chapter-item expanded "><a href="../best-practices/documentation-standards.html"><strong aria-hidden="true">104.</strong> Documentation Standards</a></li><li class="chapter-item expanded affix "><li class="part-title">Metrics and Measurement</li><li class="chapter-item expanded "><a href="../metrics/test-coverage.html"><strong aria-hidden="true">105.</strong> Test Coverage</a></li><li class="chapter-item expanded "><a href="../metrics/mutation-score.html"><strong aria-hidden="true">106.</strong> Mutation Score</a></li><li class="chapter-item expanded "><a href="../metrics/cyclomatic-complexity.html"><strong aria-hidden="true">107.</strong> Cyclomatic Complexity</a></li><li class="chapter-item expanded "><a href="../metrics/code-churn.html"><strong aria-hidden="true">108.</strong> Code Churn</a></li><li class="chapter-item expanded "><a href="../metrics/build-times.html"><strong aria-hidden="true">109.</strong> Build Times</a></li><li class="chapter-item expanded "><a href="../metrics/tdg-breakdown.html"><strong aria-hidden="true">110.</strong> TDG Score Breakdown</a></li><li class="chapter-item expanded affix "><li class="part-title">Common Pitfalls</li><li class="chapter-item expanded "><a href="../pitfalls/skipping-tests.html"><strong aria-hidden="true">111.</strong> Skipping Tests</a></li><li class="chapter-item expanded "><a href="../pitfalls/insufficient-coverage.html"><strong aria-hidden="true">112.</strong> Insufficient Test Coverage</a></li><li class="chapter-item expanded "><a href="../pitfalls/ignoring-warnings.html"><strong aria-hidden="true">113.</strong> Ignoring Warnings</a></li><li class="chapter-item expanded "><a href="../pitfalls/over-mocking.html"><strong aria-hidden="true">114.</strong> Over-Mocking</a></li><li class="chapter-item expanded "><a href="../pitfalls/flaky-tests.html"><strong aria-hidden="true">115.</strong> Flaky Tests</a></li><li class="chapter-item expanded "><a href="../pitfalls/technical-debt.html"><strong aria-hidden="true">116.</strong> Technical Debt Accumulation</a></li><li class="chapter-item expanded affix "><li class="part-title">Appendix</li><li class="chapter-item expanded "><a href="../appendix/glossary.html"><strong aria-hidden="true">117.</strong> Glossary</a></li><li class="chapter-item expanded "><a href="../appendix/references.html"><strong aria-hidden="true">118.</strong> References</a></li><li class="chapter-item expanded "><a href="../appendix/further-reading.html"><strong aria-hidden="true">119.</strong> Further Reading</a></li><li class="chapter-item expanded "><a href="../appendix/contributing.html"><strong aria-hidden="true">120.</strong> Contributing to This Book</a></li></ol>
+            </div>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <!-- Track and set sidebar scroll position -->
+        <script>
+            var sidebarScrollbox = document.querySelector('#sidebar .sidebar-scrollbox');
+            sidebarScrollbox.addEventListener('click', function(e) {
+                if (e.target.tagName === 'A') {
+                    sessionStorage.setItem('sidebar-scroll', sidebarScrollbox.scrollTop);
+                }
+            }, { passive: true });
+            var sidebarScrollTop = sessionStorage.getItem('sidebar-scroll');
+            sessionStorage.removeItem('sidebar-scroll');
+            if (sidebarScrollTop) {
+                // preserve sidebar scroll position when navigating via links within sidebar
+                sidebarScrollbox.scrollTop = sidebarScrollTop;
+            } else {
+                // scroll sidebar to current active section when navigating via "next/previous chapter" buttons
+                var activeSection = document.querySelector('#sidebar .active');
+                if (activeSection) {
+                    activeSection.scrollIntoView({ block: 'center' });
+                }
+            }
+        </script>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="sidebar-toggle" class="icon-button" for="sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </label>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">EXTREME TDD - The Aprender Guide to Zero-Defect Machine Learning</h1>
+
+                    <div class="right-buttons">
+                        <a href="../print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                        <a href="https://github.com/paiml/aprender" title="Git repository" aria-label="Git repository">
+                            <i id="git-repository-button" class="fa fa-github"></i>
+                        </a>
+                        <a href="https://github.com/paiml/aprender/edit/main/book/src/ml-fundamentals/apriori.md" title="Suggest an edit" aria-label="Suggest an edit">
+                            <i id="git-edit-button" class="fa fa-edit"></i>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="apriori-algorithm-theory"><a class="header" href="#apriori-algorithm-theory">Apriori Algorithm Theory</a></h1>
+<p>The Apriori algorithm is a classic data mining technique for discovering frequent itemsets and association rules in transactional databases. It's widely used in market basket analysis, recommendation systems, and pattern discovery.</p>
+<h2 id="problem-statement"><a class="header" href="#problem-statement">Problem Statement</a></h2>
+<p>Given a database of transactions, where each transaction contains a set of items:</p>
+<ul>
+<li>Find <strong>frequent itemsets</strong>: sets of items that appear together frequently</li>
+<li>Generate <strong>association rules</strong>: patterns like &quot;if customers buy {A, B}, they likely buy {C}&quot;</li>
+</ul>
+<h2 id="key-concepts"><a class="header" href="#key-concepts">Key Concepts</a></h2>
+<h3 id="1-support"><a class="header" href="#1-support">1. Support</a></h3>
+<p>Support measures how frequently an itemset appears in the database:</p>
+<pre><code class="language-text">Support(X) = (Transactions containing X) / (Total transactions)
+</code></pre>
+<p>Example: If {milk, bread} appears in 60 out of 100 transactions:</p>
+<pre><code class="language-text">Support({milk, bread}) = 60/100 = 0.6 (60%)
+</code></pre>
+<h3 id="2-confidence"><a class="header" href="#2-confidence">2. Confidence</a></h3>
+<p>Confidence measures the reliability of an association rule:</p>
+<pre><code class="language-text">Confidence(X =&gt; Y) = Support(X ∪ Y) / Support(X)
+</code></pre>
+<p>Example: For rule {milk} =&gt; {bread}:</p>
+<pre><code class="language-text">Confidence = P(bread | milk) = Support({milk, bread}) / Support({milk})
+</code></pre>
+<p>If 60 transactions have {milk, bread} and 80 have {milk}:</p>
+<pre><code class="language-text">Confidence = 60/80 = 0.75 (75%)
+</code></pre>
+<h3 id="3-lift"><a class="header" href="#3-lift">3. Lift</a></h3>
+<p>Lift measures how much more likely items are bought together than independently:</p>
+<pre><code class="language-text">Lift(X =&gt; Y) = Confidence(X =&gt; Y) / Support(Y)
+</code></pre>
+<ul>
+<li><strong>Lift &gt; 1.0</strong>: Positive correlation (bought together)</li>
+<li><strong>Lift = 1.0</strong>: Independent (no relationship)</li>
+<li><strong>Lift &lt; 1.0</strong>: Negative correlation (substitutes)</li>
+</ul>
+<p>Example: For rule {milk} =&gt; {bread}:</p>
+<pre><code class="language-text">Lift = 0.75 / 0.70 = 1.07
+</code></pre>
+<p>Customers who buy milk are 7% more likely to buy bread than average.</p>
+<h2 id="the-apriori-algorithm"><a class="header" href="#the-apriori-algorithm">The Apriori Algorithm</a></h2>
+<h3 id="core-principle-apriori-property"><a class="header" href="#core-principle-apriori-property">Core Principle: Apriori Property</a></h3>
+<p><strong>If an itemset is frequent, all of its subsets must also be frequent.</strong></p>
+<p>Contrapositive: <strong>If an itemset is infrequent, all of its supersets must also be infrequent.</strong></p>
+<p>This enables efficient pruning of the search space.</p>
+<h3 id="algorithm-steps"><a class="header" href="#algorithm-steps">Algorithm Steps</a></h3>
+<pre><code class="language-text">1. Find all frequent 1-itemsets (individual items)
+   - Scan database, count item occurrences
+   - Keep items with support &gt;= min_support
+
+2. For k = 2, 3, 4, ...:
+   a. Generate candidate k-itemsets from frequent (k-1)-itemsets
+      - Join step: Combine (k-1)-itemsets that differ by one item
+      - Prune step: Remove candidates with infrequent (k-1)-subsets
+
+   b. Scan database to count candidate support
+
+   c. Keep candidates with support &gt;= min_support
+
+   d. If no frequent k-itemsets found, stop
+
+3. Generate association rules from frequent itemsets:
+   - For each frequent itemset I with |I| &gt;= 2:
+     - For each non-empty subset A of I:
+       - Generate rule A =&gt; (I \ A)
+       - Keep rules with confidence &gt;= min_confidence
+</code></pre>
+<h3 id="example-execution"><a class="header" href="#example-execution">Example Execution</a></h3>
+<p>Transactions:</p>
+<pre><code class="language-text">T1: {milk, bread, butter}
+T2: {milk, bread}
+T3: {bread, butter}
+T4: {milk, butter}
+</code></pre>
+<p><strong>Step 1</strong>: Frequent 1-itemsets (min_support = 50%)</p>
+<pre><code class="language-text">{milk}:   3/4 = 75% ✓
+{bread}:  3/4 = 75% ✓
+{butter}: 3/4 = 75% ✓
+</code></pre>
+<p><strong>Step 2</strong>: Generate candidate 2-itemsets</p>
+<pre><code class="language-text">Candidates: {milk, bread}, {milk, butter}, {bread, butter}
+</code></pre>
+<p><strong>Step 3</strong>: Count support</p>
+<pre><code class="language-text">{milk, bread}:   2/4 = 50% ✓
+{milk, butter}:  2/4 = 50% ✓
+{bread, butter}: 2/4 = 50% ✓
+</code></pre>
+<p><strong>Step 4</strong>: Generate candidate 3-itemsets</p>
+<pre><code class="language-text">Candidate: {milk, bread, butter}
+Support: 1/4 = 25% ✗ (below threshold)
+</code></pre>
+<p><strong>Frequent itemsets</strong>: {milk}, {bread}, {butter}, {milk, bread}, {milk, butter}, {bread, butter}</p>
+<p><strong>Association rules</strong> (min_confidence = 60%):</p>
+<pre><code class="language-text">{milk} =&gt; {bread}    Conf: 2/3 = 67% ✓
+{bread} =&gt; {milk}    Conf: 2/3 = 67% ✓
+{milk} =&gt; {butter}   Conf: 2/3 = 67% ✓
+{butter} =&gt; {milk}   Conf: 2/3 = 67% ✓
+{bread} =&gt; {butter}  Conf: 2/3 = 67% ✓
+{butter} =&gt; {bread}  Conf: 2/3 = 67% ✓
+</code></pre>
+<h2 id="complexity-analysis"><a class="header" href="#complexity-analysis">Complexity Analysis</a></h2>
+<h3 id="time-complexity"><a class="header" href="#time-complexity">Time Complexity</a></h3>
+<p><strong>Worst case</strong>: O(2^n · |D| · |T|)</p>
+<ul>
+<li>n = number of unique items</li>
+<li>|D| = number of transactions</li>
+<li>|T| = average transaction size</li>
+</ul>
+<p><strong>In practice</strong>: Much better due to pruning</p>
+<ul>
+<li>Typical: O(n^k · |D|) where k is max frequent itemset size (usually &lt; 5)</li>
+</ul>
+<h3 id="space-complexity"><a class="header" href="#space-complexity">Space Complexity</a></h3>
+<p><strong>O(n + |F|)</strong></p>
+<ul>
+<li>n = unique items</li>
+<li>|F| = number of frequent itemsets (exponential worst case, but usually small)</li>
+</ul>
+<h2 id="parameters"><a class="header" href="#parameters">Parameters</a></h2>
+<h3 id="minimum-support"><a class="header" href="#minimum-support">Minimum Support</a></h3>
+<p><strong>Higher support (e.g., 50%)</strong>:</p>
+<ul>
+<li>Pros: Find common, reliable patterns</li>
+<li>Cons: Miss rare but important associations</li>
+</ul>
+<p><strong>Lower support (e.g., 10%)</strong>:</p>
+<ul>
+<li>Pros: Discover niche patterns</li>
+<li>Cons: Many spurious associations, slower</li>
+</ul>
+<p><strong>Rule of thumb</strong>: Start with 10-30% for exploratory analysis</p>
+<h3 id="minimum-confidence"><a class="header" href="#minimum-confidence">Minimum Confidence</a></h3>
+<p><strong>Higher confidence (e.g., 80%)</strong>:</p>
+<ul>
+<li>Pros: High-quality, actionable rules</li>
+<li>Cons: Miss weaker but still meaningful patterns</li>
+</ul>
+<p><strong>Lower confidence (e.g., 50%)</strong>:</p>
+<ul>
+<li>Pros: More exploratory insights</li>
+<li>Cons: Less reliable rules</li>
+</ul>
+<p><strong>Rule of thumb</strong>: 60-70% for actionable business insights</p>
+<h2 id="strengths"><a class="header" href="#strengths">Strengths</a></h2>
+<ol>
+<li><strong>Simplicity</strong>: Easy to understand and implement</li>
+<li><strong>Completeness</strong>: Finds all frequent itemsets (no false negatives)</li>
+<li><strong>Pruning</strong>: Apriori property enables efficient search</li>
+<li><strong>Interpretability</strong>: Rules are human-readable</li>
+</ol>
+<h2 id="limitations"><a class="header" href="#limitations">Limitations</a></h2>
+<ol>
+<li><strong>Multiple database scans</strong>: One scan per itemset size</li>
+<li><strong>Candidate generation</strong>: Exponential in worst case</li>
+<li><strong>Low support problem</strong>: Misses rare but important patterns</li>
+<li><strong>Binary transactions</strong>: Doesn't handle quantities or sequences</li>
+</ol>
+<h2 id="improvements-and-variants"><a class="header" href="#improvements-and-variants">Improvements and Variants</a></h2>
+<ol>
+<li><strong>FP-Growth</strong>: Avoids candidate generation using FP-tree (2x-10x faster)</li>
+<li><strong>Eclat</strong>: Vertical data format (item-TID lists)</li>
+<li><strong>AprioriTID</strong>: Reduces database scans</li>
+<li><strong>Weighted Apriori</strong>: Assigns weights to items</li>
+<li><strong>Multi-level Apriori</strong>: Handles concept hierarchies (e.g., &quot;dairy&quot; → &quot;milk&quot;)</li>
+</ol>
+<h2 id="applications"><a class="header" href="#applications">Applications</a></h2>
+<h3 id="1-market-basket-analysis"><a class="header" href="#1-market-basket-analysis">1. Market Basket Analysis</a></h3>
+<ul>
+<li>Cross-selling: &quot;Customers who bought X also bought Y&quot;</li>
+<li>Product placement: Put related items near each other</li>
+<li>Promotions: Bundle frequently bought items</li>
+</ul>
+<h3 id="2-recommendation-systems"><a class="header" href="#2-recommendation-systems">2. Recommendation Systems</a></h3>
+<ul>
+<li>Collaborative filtering: Users who liked X also liked Y</li>
+<li>Content discovery: Articles often read together</li>
+</ul>
+<h3 id="3-medical-diagnosis"><a class="header" href="#3-medical-diagnosis">3. Medical Diagnosis</a></h3>
+<ul>
+<li>Symptom patterns: Patients with X often have Y</li>
+<li>Drug interactions: Medications prescribed together</li>
+</ul>
+<h3 id="4-web-mining"><a class="header" href="#4-web-mining">4. Web Mining</a></h3>
+<ul>
+<li>Clickstream analysis: Pages visited together</li>
+<li>Session patterns: User navigation paths</li>
+</ul>
+<h3 id="5-bioinformatics"><a class="header" href="#5-bioinformatics">5. Bioinformatics</a></h3>
+<ul>
+<li>Gene co-expression: Genes activated together</li>
+<li>Protein interactions: Proteins that interact</li>
+</ul>
+<h2 id="best-practices"><a class="header" href="#best-practices">Best Practices</a></h2>
+<ol>
+<li>
+<p><strong>Data preprocessing</strong>:</p>
+<ul>
+<li>Remove duplicates</li>
+<li>Filter noise (very rare items)</li>
+<li>Group similar items (e.g., &quot;2% milk&quot; and &quot;whole milk&quot; → &quot;milk&quot;)</li>
+</ul>
+</li>
+<li>
+<p><strong>Parameter tuning</strong>:</p>
+<ul>
+<li>Start with balanced parameters (support=20-30%, confidence=60-70%)</li>
+<li>Increase support if too many rules</li>
+<li>Lower confidence to explore weak patterns</li>
+</ul>
+</li>
+<li>
+<p><strong>Rule filtering</strong>:</p>
+<ul>
+<li>Focus on high lift rules (&gt; 1.2)</li>
+<li>Remove obvious rules (e.g., &quot;butter =&gt; milk&quot; if everyone buys milk)</li>
+<li>Check rule support (avoid rare but high-confidence spurious rules)</li>
+</ul>
+</li>
+<li>
+<p><strong>Validation</strong>:</p>
+<ul>
+<li>Test rules on holdout data</li>
+<li>A/B test recommendations</li>
+<li>Monitor business metrics (sales lift, conversion rate)</li>
+</ul>
+</li>
+</ol>
+<h2 id="common-pitfalls"><a class="header" href="#common-pitfalls">Common Pitfalls</a></h2>
+<ol>
+<li><strong>Support too low</strong>: Millions of spurious rules</li>
+<li><strong>Support too high</strong>: Miss important niche patterns</li>
+<li><strong>Ignoring lift</strong>: High confidence ≠ useful (e.g., everyone buys bread)</li>
+<li><strong>Confusing correlation with causation</strong>: Apriori finds associations, not causes</li>
+</ol>
+<h2 id="example-use-case-grocery-store"><a class="header" href="#example-use-case-grocery-store">Example Use Case: Grocery Store</a></h2>
+<p><strong>Goal</strong>: Increase basket size through cross-selling</p>
+<p><strong>Data</strong>: 10,000 transactions, 500 unique items</p>
+<p><strong>Parameters</strong>: support=5%, confidence=60%</p>
+<p><strong>Results</strong>:</p>
+<pre><code class="language-text">Rule: {diapers} =&gt; {beer}
+  Support: 8% (800 transactions)
+  Confidence: 75%
+  Lift: 2.5
+</code></pre>
+<p><strong>Interpretation</strong>:</p>
+<ul>
+<li>8% of all transactions contain both diapers and beer</li>
+<li>75% of diaper buyers also buy beer</li>
+<li>Diaper buyers are 2.5x more likely to buy beer than average</li>
+</ul>
+<p><strong>Action</strong>:</p>
+<ul>
+<li>Place beer near diapers</li>
+<li>Offer &quot;diaper + beer&quot; bundle discount</li>
+<li>Target diaper buyers with beer promotions</li>
+</ul>
+<p><strong>Expected Result</strong>: 10-20% increase in beer sales among diaper buyers</p>
+<h2 id="mathematical-foundations"><a class="header" href="#mathematical-foundations">Mathematical Foundations</a></h2>
+<h3 id="set-theory"><a class="header" href="#set-theory">Set Theory</a></h3>
+<p>Frequent itemset mining is fundamentally about:</p>
+<ul>
+<li><strong>Power set</strong>: All 2^n possible itemsets from n items</li>
+<li><strong>Subset lattice</strong>: Hierarchical structure of itemsets</li>
+<li><strong>Anti-monotonicity</strong>: Apriori property (subset frequency ≥ superset frequency)</li>
+</ul>
+<h3 id="probability"><a class="header" href="#probability">Probability</a></h3>
+<p>Association rules encode conditional probabilities:</p>
+<ul>
+<li><strong>Support</strong>: P(X)</li>
+<li><strong>Confidence</strong>: P(Y|X) = P(X ∩ Y) / P(X)</li>
+<li><strong>Lift</strong>: P(Y|X) / P(Y)</li>
+</ul>
+<h3 id="information-theory"><a class="header" href="#information-theory">Information Theory</a></h3>
+<ul>
+<li><strong>Mutual information</strong>: Measures dependence between itemsets</li>
+<li><strong>Entropy</strong>: Quantifies uncertainty in item distributions</li>
+</ul>
+<h2 id="further-reading"><a class="header" href="#further-reading">Further Reading</a></h2>
+<ol>
+<li><strong>Original Apriori Paper</strong>: Agrawal &amp; Srikant (1994) - &quot;Fast Algorithms for Mining Association Rules&quot;</li>
+<li><strong>FP-Growth</strong>: Han et al. (2000) - &quot;Mining Frequent Patterns without Candidate Generation&quot;</li>
+<li><strong>Market Basket Analysis</strong>: Berry &amp; Linoff (2004) - &quot;Data Mining Techniques&quot;</li>
+<li><strong>Advanced Topics</strong>: Tan et al. (2006) - &quot;Introduction to Data Mining&quot;</li>
+</ol>
+<h2 id="related-topics"><a class="header" href="#related-topics">Related Topics</a></h2>
+<ul>
+<li><a href="./kmeans-clustering.html">K-Means Clustering</a></li>
+<li><a href="./decision-trees.html">Decision Trees</a></li>
+<li><a href="./naive-bayes.html">Naive Bayes</a></li>
+</ul>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../ml-fundamentals/descriptive-statistics.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+
+                            <a rel="next prefetch" href="../examples/linear-regression.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../ml-fundamentals/descriptive-statistics.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+
+                    <a rel="next prefetch" href="../examples/linear-regression.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+            </nav>
+
+        </div>
+
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+        <script src="../ace.js"></script>
+        <script src="../editor.js"></script>
+        <script src="../mode-rust.js"></script>
+        <script src="../theme-dawn.js"></script>
+        <script src="../theme-tomorrow_night.js"></script>
+
+        <script src="../elasticlunr.min.js"></script>
+        <script src="../mark.min.js"></script>
+        <script src="../searcher.js"></script>
+
+        <script src="../clipboard.min.js"></script>
+        <script src="../highlight.js"></script>
+        <script src="../book.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+    </div>
+    </body>
+</html>
