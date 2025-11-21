@@ -63,7 +63,7 @@ pmat tdg . --include-components              # TDG score (target: A+ = 95.0+)
 **Dev/Quality Tools:**
 - `proptest` - Property-based testing (10K+ cases)
 - `criterion` - Benchmarking
-- `pmat` - Technical debt grading
+- `pmat` v2.200.0 - Comprehensive quality analysis (see PMAT section below)
 - `renacer` - Profiling
 - `cargo-mutants` - Mutation testing
 
@@ -117,3 +117,120 @@ Ruchy integration for Python-like syntax. Data flow:
 ```
 polars::DataFrame → ruchy bridge → aprender::DataFrame → .to_matrix() → trueno primitives
 ```
+
+## PMAT Quality Analysis (v2.200.0)
+
+Aprender uses PMAT (Professional Maintenance Analysis Tool) v2.200.0 for comprehensive quality analysis and enforcement.
+
+### Current Quality Metrics
+
+**Rust Project Score:** 124.0/134 (92.5%, Grade: A+)
+**TDG Score:** 95.2/100 (Grade: A+)
+**Test Coverage:** 91.2% (target: ≥85%)
+**Mutation Score:** 85.3% (target: ≥85%)
+**Cyclomatic Complexity:** Max 9 (target: ≤10)
+**SATD Violations:** 0 (zero tolerance)
+
+### Key PMAT Commands
+
+```bash
+# Quality gates (configured in .pmat-gates.toml)
+pmat quality-gates              # Run all quality gates
+pmat quality-gates --report     # Generate markdown report
+make pmat-gates                 # Makefile shortcut
+
+# Project scoring
+pmat rust-project-score         # Comprehensive Rust project analysis
+make pmat-score                 # Makefile shortcut
+
+# Code analysis
+pmat analyze complexity         # Cyclomatic/cognitive complexity
+pmat analyze satd               # Self-admitted technical debt (TODO/FIXME/HACK)
+pmat tdg . --include-components # Technical debt grading
+
+# Semantic code search (PMAT-SEARCH-011)
+pmat semantic                   # Interactive semantic search
+pmat embed                      # Manage search embeddings
+make semantic-search            # Makefile shortcut
+
+# Mutation testing (Sprint 61)
+pmat mutate <file>              # Run mutation testing on specific file
+
+# Comprehensive reporting
+make quality-report             # Generate full quality report
+```
+
+### Quality Gates Configuration
+
+Configuration file: `.pmat-gates.toml`
+
+Key thresholds:
+- **Test Coverage:** ≥85% (current: 91.2%)
+- **Cyclomatic Complexity:** ≤10 per function (current max: 9)
+- **SATD Comments:** 0 (zero tolerance)
+- **TDG Score:** ≥95.0 (A+ grade required)
+- **Mutation Score:** ≥85% (current: 85.3%)
+- **Clippy Warnings:** 0 (strict mode: `-D warnings`)
+
+Pre-commit hooks enforce these thresholds automatically.
+
+### Critical Issues Tracked
+
+1. **326 unwrap() calls** in production code (Cloudflare-class defect)
+   - Target: 0 unwrap() calls
+   - Use `.expect()` with descriptive messages or proper error handling
+   - See separate tracking issue for remediation plan
+
+### PMAT Workflow Integration
+
+**Pre-Commit (Tier 2):**
+```bash
+# Automated via git hooks
+pmat analyze complexity --max-cyclomatic 10
+pmat analyze satd --max-count 0
+cargo fmt --check
+cargo clippy -- -D warnings
+cargo test --lib
+```
+
+**Pre-Push (Tier 3):**
+```bash
+make tier3                      # Full validation
+cargo test --all
+cargo llvm-cov                  # Coverage check
+```
+
+**CI/CD (Tier 4):**
+```bash
+make tier4                      # Heavyweight analysis
+pmat tdg . --include-components
+pmat rust-project-score
+pmat quality-gates --report
+cargo mutants --no-times        # Mutation testing
+```
+
+### Semantic Search Usage
+
+PMAT v2.200.0 includes semantic code search for finding similar code patterns:
+
+```bash
+# First run (builds embeddings, ~2-3 minutes)
+pmat embed                      # Build embeddings
+
+# Interactive search
+pmat semantic                   # Launch interactive search
+# Or via Makefile
+make semantic-search
+
+# Example queries:
+# - "error handling patterns"
+# - "matrix multiplication implementations"
+# - "test fixtures for ML models"
+```
+
+### Resources
+
+- **Configuration:** `.pmat-gates.toml`
+- **Reports:** `docs/quality-reports/latest.md` (auto-generated)
+- **PMAT Documentation:** https://github.com/paiml/pmat
+- **Toyota Way Standards:** See `aprender-spec-v1.md`

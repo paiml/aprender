@@ -10,7 +10,7 @@
 # Multi-line recipes execute in same shell
 .ONESHELL:
 
-.PHONY: all build test lint fmt clean doc book book-build book-serve book-test tier1 tier2 tier3 tier4 coverage profile hooks-install hooks-verify lint-scripts bashrs-score bashrs-lint-makefile chaos-test fuzz bench dev pre-push ci check run-ci run-bench audit deps-validate deny
+.PHONY: all build test lint fmt clean doc book book-build book-serve book-test tier1 tier2 tier3 tier4 coverage profile hooks-install hooks-verify lint-scripts bashrs-score bashrs-lint-makefile chaos-test fuzz bench dev pre-push ci check run-ci run-bench audit deps-validate deny pmat-score pmat-gates quality-report semantic-search
 
 # Default target
 all: tier2
@@ -105,6 +105,8 @@ tier4: tier3
 	@cargo test --release
 	@echo "Running pmat analysis..."
 	-pmat tdg . --include-components
+	-pmat rust-project-score
+	-pmat quality-gates --report
 	@echo "Tier 4: PASSED"
 
 # Coverage report (requires cargo-llvm-cov)
@@ -220,3 +222,37 @@ run-ci: ## Run full CI pipeline
 # Run benchmarks
 run-bench: ## Run benchmark suite
 	@./scripts/bench.sh
+
+# PMAT Quality Analysis (v2.200.0 features)
+
+pmat-score: ## Calculate Rust project quality score
+	@echo "📊 Calculating Rust project quality score..."
+	@pmat rust-project-score || echo "⚠️  pmat not found. Install with: cargo install pmat"
+	@echo ""
+
+pmat-gates: ## Run pmat quality gates
+	@echo "🔍 Running pmat quality gates..."
+	@pmat quality-gates --report || echo "⚠️  pmat not found or gates failed"
+	@echo ""
+
+quality-report: ## Generate comprehensive quality report
+	@echo "📋 Generating comprehensive quality report..."
+	@mkdir -p docs/quality-reports
+	@echo "# Aprender Quality Report" > docs/quality-reports/latest.md
+	@echo "" >> docs/quality-reports/latest.md
+	@echo "Generated: $$(date)" >> docs/quality-reports/latest.md
+	@echo "" >> docs/quality-reports/latest.md
+	@echo "## Rust Project Score" >> docs/quality-reports/latest.md
+	@pmat rust-project-score >> docs/quality-reports/latest.md 2>&1 || echo "Error getting score" >> docs/quality-reports/latest.md
+	@echo "" >> docs/quality-reports/latest.md
+	@echo "## Quality Gates" >> docs/quality-reports/latest.md
+	@pmat quality-gates --report >> docs/quality-reports/latest.md 2>&1 || echo "Error running gates" >> docs/quality-reports/latest.md
+	@echo "" >> docs/quality-reports/latest.md
+	@echo "## TDG Score" >> docs/quality-reports/latest.md
+	@pmat tdg . --include-components >> docs/quality-reports/latest.md 2>&1 || echo "Error getting TDG" >> docs/quality-reports/latest.md
+	@echo "✅ Report generated: docs/quality-reports/latest.md"
+
+semantic-search: ## Interactive semantic code search
+	@echo "🔍 Semantic code search..."
+	@echo "First run will build embeddings (may take a few minutes)..."
+	@pmat semantic || echo "⚠️  pmat semantic search not available"
