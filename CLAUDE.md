@@ -80,6 +80,52 @@ cargo llvm-cov --html                   # Coverage report
 cargo mutants --no-times                # Mutation testing
 ```
 
+## Linting Configuration
+
+Aprender enforces high-quality code standards through comprehensive Rust and Clippy lints configured in `Cargo.toml`.
+
+### Rust Lints
+
+**Safety:**
+- `unsafe_code = "forbid"` - Zero tolerance for unsafe code
+- `unsafe_op_in_unsafe_fn = "warn"` - Enforce safety blocks
+
+**Code Quality:**
+- `unreachable_pub = "warn"` - Public items must be actually reachable
+- `missing_debug_implementations = "warn"` - All public types must be debuggable
+
+**Best Practices:**
+- `rust_2018_idioms = "warn"` - Enforce modern Rust idioms
+- `trivial_casts/trivial_numeric_casts = "warn"` - Remove unnecessary casts
+- `unused_*` - Warn on unused imports, lifetimes, qualifications
+
+### Clippy Lints
+
+**Base Levels:**
+- `all = "warn"` - All clippy lints enabled
+- `pedantic = "warn"` - Strict code quality checks
+
+**High-Priority:**
+- `checked_conversions = "warn"` - Use checked arithmetic
+- `inefficient_to_string = "warn"` - Optimize string conversions
+- `redundant_closure_for_method_calls = "warn"` - Simplify closures
+
+**ML-Specific Allows:**
+- `cast_*` - Allow numeric conversions common in ML algorithms
+- `float_cmp` - Allow float comparisons (with proper epsilon checks)
+- `many_single_char_names` - Allow mathematical notation (x, y, z, i, j)
+- `unreadable_literal` - Allow long test data literals
+
+### Running Lints
+
+```bash
+cargo clippy                    # Check all lints
+cargo clippy -- -D warnings     # Fail on any warning (CI mode)
+cargo fmt --check               # Verify formatting
+```
+
+**Current State:** ~140 pedantic warnings (mostly style improvements like format string inlining). Core production code is lint-clean.
+
 ## v0.4.0 - TOP 10 ML Algorithms Complete
 
 **Supervised Learning:**
