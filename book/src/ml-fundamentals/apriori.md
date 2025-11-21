@@ -14,12 +14,12 @@ Given a database of transactions, where each transaction contains a set of items
 
 Support measures how frequently an itemset appears in the database:
 
-```
+```text
 Support(X) = (Transactions containing X) / (Total transactions)
 ```
 
 Example: If {milk, bread} appears in 60 out of 100 transactions:
-```
+```text
 Support({milk, bread}) = 60/100 = 0.6 (60%)
 ```
 
@@ -27,17 +27,17 @@ Support({milk, bread}) = 60/100 = 0.6 (60%)
 
 Confidence measures the reliability of an association rule:
 
-```
+```text
 Confidence(X => Y) = Support(X ∪ Y) / Support(X)
 ```
 
 Example: For rule {milk} => {bread}:
-```
+```text
 Confidence = P(bread | milk) = Support({milk, bread}) / Support({milk})
 ```
 
 If 60 transactions have {milk, bread} and 80 have {milk}:
-```
+```text
 Confidence = 60/80 = 0.75 (75%)
 ```
 
@@ -45,7 +45,7 @@ Confidence = 60/80 = 0.75 (75%)
 
 Lift measures how much more likely items are bought together than independently:
 
-```
+```text
 Lift(X => Y) = Confidence(X => Y) / Support(Y)
 ```
 
@@ -54,7 +54,7 @@ Lift(X => Y) = Confidence(X => Y) / Support(Y)
 - **Lift < 1.0**: Negative correlation (substitutes)
 
 Example: For rule {milk} => {bread}:
-```
+```text
 Lift = 0.75 / 0.70 = 1.07
 ```
 Customers who buy milk are 7% more likely to buy bread than average.
@@ -71,7 +71,7 @@ This enables efficient pruning of the search space.
 
 ### Algorithm Steps
 
-```
+```text
 1. Find all frequent 1-itemsets (individual items)
    - Scan database, count item occurrences
    - Keep items with support >= min_support
@@ -97,7 +97,7 @@ This enables efficient pruning of the search space.
 ### Example Execution
 
 Transactions:
-```
+```text
 T1: {milk, bread, butter}
 T2: {milk, bread}
 T3: {bread, butter}
@@ -105,26 +105,26 @@ T4: {milk, butter}
 ```
 
 **Step 1**: Frequent 1-itemsets (min_support = 50%)
-```
+```text
 {milk}:   3/4 = 75% ✓
 {bread}:  3/4 = 75% ✓
 {butter}: 3/4 = 75% ✓
 ```
 
 **Step 2**: Generate candidate 2-itemsets
-```
+```text
 Candidates: {milk, bread}, {milk, butter}, {bread, butter}
 ```
 
 **Step 3**: Count support
-```
+```text
 {milk, bread}:   2/4 = 50% ✓
 {milk, butter}:  2/4 = 50% ✓
 {bread, butter}: 2/4 = 50% ✓
 ```
 
 **Step 4**: Generate candidate 3-itemsets
-```
+```text
 Candidate: {milk, bread, butter}
 Support: 1/4 = 25% ✗ (below threshold)
 ```
@@ -132,7 +132,7 @@ Support: 1/4 = 25% ✗ (below threshold)
 **Frequent itemsets**: {milk}, {bread}, {butter}, {milk, bread}, {milk, butter}, {bread, butter}
 
 **Association rules** (min_confidence = 60%):
-```
+```text
 {milk} => {bread}    Conf: 2/3 = 67% ✓
 {bread} => {milk}    Conf: 2/3 = 67% ✓
 {milk} => {butter}   Conf: 2/3 = 67% ✓
@@ -268,7 +268,7 @@ Support: 1/4 = 25% ✗ (below threshold)
 **Parameters**: support=5%, confidence=60%
 
 **Results**:
-```
+```text
 Rule: {diapers} => {beer}
   Support: 8% (800 transactions)
   Confidence: 75%
