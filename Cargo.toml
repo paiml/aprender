@@ -60,7 +60,7 @@ items_after_statements = "allow"  # ML algorithms often need mid-function declar
 
 [package]
 name = "aprender"
-version = "0.4.1"
+version = "0.4.2"
 edition = "2021"
 rust-version = "1.70"
 authors = ["Noah Gift <noah@paiml.com>"]
@@ -96,7 +96,7 @@ nalgebra = "0.33"
 [dev-dependencies]
 proptest = "1.6"
 criterion = "0.5"
-renacer = "0.5.1"
+renacer = "0.6.1"
 
 [features]
 default = []

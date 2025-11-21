@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.2] - 2025-11-21
+
+### 🎯 **TESTING EXCELLENCE & DEPENDENCY UPDATE RELEASE**
+
+This release achieves 96.94% code coverage, integrates mutation testing, implements workspace-level lints, and upgrades core dependencies.
+
 ### Changed
 
 #### Dependencies
@@ -14,6 +20,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Enhanced SIMD optimizations and performance improvements
   - Improved floating-point precision handling
   - Updated test tolerances to accommodate SIMD precision differences
+- **Upgraded renacer to v0.6.1** (from v0.5.1, dev dependency)
+  - Latest profiling and chaos engineering features
+
+#### Lint Configuration (GH-42)
+- **Converted to workspace-level lints** in Cargo.toml
+  - Added `[workspace]` section with `members = ["."]`
+  - Moved all lints to `[workspace.lints.rust]` and `[workspace.lints.clippy]`
+  - Package inherits via `[lints] workspace = true`
+  - Prepares for future multi-crate workspace
+  - Improves PMAT Code Quality score
+
+### Added
+
+#### Testing Infrastructure (GH-55)
+- **Achieved 96.94% code coverage** (target: ≥95%)
+  - 95.46% region coverage, 96.62% function coverage
+  - All major modules >92% coverage
+  - 3 modules at 100%: optim, loss, graph
+  - HTML reports: `target/coverage/html/html/index.html`
+  - LCOV data for CI integration
+
+- **Coverage CI Integration**
+  - Automated coverage reports on every PR
+  - Codecov integration with PR comments
+  - Updated targets: 95% project, 90% patch
+
+- **Mutation Testing Integration**
+  - cargo-mutants v25.3.1 configured
+  - CI integration (~13,705 mutants)
+  - Results uploaded as artifacts (30-day retention)
+  - Target: ≥80% mutation score
+  - Configuration: `.cargo-mutants.toml`
+
+- **Documentation**
+  - `coverage-analysis.md` - Detailed coverage breakdown
+  - `mutation-testing-setup.md` - Comprehensive mutation testing guide
+  - CLAUDE.md updated with coverage and mutation testing sections
 
 ### Fixed
 
@@ -22,6 +65,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `test_random_forest_classifier_feature_importances_reproducibility`: Increased tolerance from 0.1 to 0.15 for SIMD precision differences
   - `test_forest_different_n_estimators`: Changed from exact match to 75% match threshold for predictions after serialization roundtrip
   - All 742 tests passing with new trueno version
+
+### Quality Metrics
+
+**Test Count:** 742 tests (unit + property + integration + doc)
+**Coverage:** 96.94% line, 95.46% region, 96.62% function
+**Rust Project Score:** Improved Testing Excellence category
+**PMAT Score:** Code Quality improvements via workspace lints
 
 ## [0.4.1] - 2025-11-21
 

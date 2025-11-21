@@ -1502,9 +1502,9 @@ checksum = "7a2d987857b319362043e95f5353c0535c1f58eec5336fdfcf626430af7def58"
 
 [[package]]
 name = "renacer"
-version = "0.5.1"
+version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "219b32828d77093c58ed2da1a2e2507cc5994aa71e57c86f094454eb2d0235f8"
+checksum = "fcd5b0b94a957eb8395361b6d69e08694c3163c4d4c1f767d4078646e29ebd1d"
 dependencies = [
  "addr2line 0.24.2",
  "anyhow",
