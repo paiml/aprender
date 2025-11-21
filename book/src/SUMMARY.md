@@ -133,6 +133,7 @@
 - [Case Study: PCA Iris](./examples/pca-iris.md)
 - [Case Study: Isolation Forest Anomaly Detection](./examples/isolation-forest-anomaly.md)
 - [Case Study: Local Outlier Factor (LOF)](./examples/lof-anomaly.md)
+- [Case Study: Spectral Clustering](./examples/spectral-clustering.md)
 
 # Sprint-Based Development
 

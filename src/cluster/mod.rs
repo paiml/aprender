@@ -2200,6 +2200,316 @@ impl Default for LocalOutlierFactor {
     }
 }
 
+// ============================================================================
+// Spectral Clustering for Graph-Based Clustering
+// ============================================================================
+
+/// Affinity types for constructing similarity graphs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Affinity {
+    /// Radial Basis Function (Gaussian) kernel
+    RBF,
+    /// k-Nearest Neighbors graph
+    KNN,
+}
+
+/// Spectral Clustering using graph Laplacian and eigendecomposition.
+///
+/// Uses graph theory to find clusters by analyzing the spectrum (eigenvalues)
+/// of the graph Laplacian. Effective for non-convex cluster shapes.
+///
+/// # Algorithm
+///
+/// 1. Construct affinity matrix W (RBF or k-NN)
+/// 2. Compute graph Laplacian: L = D - W (D = degree matrix)
+/// 3. Find k smallest eigenvectors of L
+/// 4. Cluster rows of eigenvector matrix using K-Means
+///
+/// # Examples
+///
+/// ```
+/// use aprender::prelude::*;
+///
+/// // Non-convex clusters (concentric circles)
+/// let data = Matrix::from_vec(
+///     8,
+///     2,
+///     vec![
+///         0.0, 1.0, 1.0, 0.0, 0.0, -1.0, -1.0, 0.0,  // Inner circle
+///         0.0, 3.0, 3.0, 0.0, 0.0, -3.0, -3.0, 0.0,  // Outer circle
+///     ],
+/// )
+/// .unwrap();
+///
+/// let mut sc = SpectralClustering::new(2).with_gamma(0.5);
+/// sc.fit(&data).unwrap();
+///
+/// let labels = sc.predict(&data);
+/// ```
+///
+/// # Performance
+///
+/// - Time complexity: O(n² + n³) for eigendecomposition
+/// - Space complexity: O(n²) for affinity matrix
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SpectralClustering {
+    /// Number of clusters
+    n_clusters: usize,
+    /// Affinity type (RBF or KNN)
+    affinity: Affinity,
+    /// RBF kernel coefficient (higher = more local)
+    gamma: f32,
+    /// Number of neighbors for KNN affinity
+    n_neighbors: usize,
+    /// Cluster labels
+    labels: Option<Vec<usize>>,
+}
+
+impl SpectralClustering {
+    /// Create a new Spectral Clustering with default parameters.
+    ///
+    /// Default: RBF affinity, gamma=1.0, n_neighbors=10
+    pub fn new(n_clusters: usize) -> Self {
+        Self {
+            n_clusters,
+            affinity: Affinity::RBF,
+            gamma: 1.0,
+            n_neighbors: 10,
+            labels: None,
+        }
+    }
+
+    /// Set the affinity type.
+    pub fn with_affinity(mut self, affinity: Affinity) -> Self {
+        self.affinity = affinity;
+        self
+    }
+
+    /// Set gamma for RBF kernel (higher = more local similarity).
+    pub fn with_gamma(mut self, gamma: f32) -> Self {
+        self.gamma = gamma;
+        self
+    }
+
+    /// Set number of neighbors for KNN affinity.
+    pub fn with_n_neighbors(mut self, n_neighbors: usize) -> Self {
+        self.n_neighbors = n_neighbors;
+        self
+    }
+
+    /// Check if model has been fitted.
+    pub fn is_fitted(&self) -> bool {
+        self.labels.is_some()
+    }
+
+    /// Get cluster labels (panics if not fitted).
+    pub fn labels(&self) -> &Vec<usize> {
+        if !self.is_fitted() {
+            panic!("Model not fitted. Call fit() first.");
+        }
+        self.labels.as_ref().unwrap()
+    }
+
+    /// Fit the Spectral Clustering model.
+    pub fn fit(&mut self, x: &Matrix<f32>) -> Result<()> {
+        let (n_samples, _) = x.shape();
+
+        // 1. Construct affinity matrix
+        let affinity_matrix = match self.affinity {
+            Affinity::RBF => self.compute_rbf_affinity(x),
+            Affinity::KNN => self.compute_knn_affinity(x),
+        };
+
+        // 2. Compute graph Laplacian
+        let laplacian = self.compute_laplacian(&affinity_matrix, n_samples);
+
+        // 3. Eigendecomposition - find k smallest eigenvectors
+        let mut embedding = self.compute_embedding(&laplacian, n_samples)?;
+
+        // 4. Normalize rows of embedding (critical for normalized spectral clustering)
+        for i in 0..n_samples {
+            let mut row_norm = 0.0;
+            for j in 0..self.n_clusters {
+                let val = embedding.get(i, j);
+                row_norm += val * val;
+            }
+            row_norm = row_norm.sqrt().max(1e-10); // Avoid division by zero
+            for j in 0..self.n_clusters {
+                let val = embedding.get(i, j);
+                embedding.set(i, j, val / row_norm);
+            }
+        }
+
+        // 5. Cluster in eigenspace using K-Means
+        let mut kmeans = KMeans::new(self.n_clusters).with_random_state(42);
+        kmeans.fit(&embedding)?;
+        let labels = kmeans.predict(&embedding);
+
+        self.labels = Some(labels);
+        Ok(())
+    }
+
+    /// Compute RBF (Gaussian) affinity matrix.
+    fn compute_rbf_affinity(&self, x: &Matrix<f32>) -> Vec<f32> {
+        let (n_samples, n_features) = x.shape();
+        let mut affinity = vec![0.0; n_samples * n_samples];
+
+        for i in 0..n_samples {
+            for j in 0..n_samples {
+                if i == j {
+                    affinity[i * n_samples + j] = 0.0;
+                    continue;
+                }
+
+                // Compute squared Euclidean distance
+                let mut dist_sq = 0.0;
+                for k in 0..n_features {
+                    let diff = x.get(i, k) - x.get(j, k);
+                    dist_sq += diff * diff;
+                }
+
+                // RBF kernel: exp(-gamma * ||x_i - x_j||^2)
+                let similarity = (-self.gamma * dist_sq).exp();
+                affinity[i * n_samples + j] = similarity;
+            }
+        }
+
+        affinity
+    }
+
+    /// Compute k-NN affinity matrix.
+    fn compute_knn_affinity(&self, x: &Matrix<f32>) -> Vec<f32> {
+        let (n_samples, n_features) = x.shape();
+        let mut affinity = vec![0.0; n_samples * n_samples];
+
+        // For each point, find k nearest neighbors
+        for i in 0..n_samples {
+            // Compute distances to all points
+            let mut distances: Vec<(f32, usize)> = Vec::with_capacity(n_samples);
+            for j in 0..n_samples {
+                if i == j {
+                    continue;
+                }
+
+                let mut dist_sq = 0.0;
+                for k in 0..n_features {
+                    let diff = x.get(i, k) - x.get(j, k);
+                    dist_sq += diff * diff;
+                }
+                distances.push((dist_sq.sqrt(), j));
+            }
+
+            // Sort and take k nearest
+            distances.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+            let k_neighbors = self.n_neighbors.min(n_samples - 1);
+
+            // Set affinity to 1 for k-nearest neighbors
+            for (_, neighbor_idx) in distances.iter().take(k_neighbors) {
+                affinity[i * n_samples + neighbor_idx] = 1.0;
+            }
+        }
+
+        // Make symmetric
+        for i in 0..n_samples {
+            for j in (i + 1)..n_samples {
+                let val = f32::max(affinity[i * n_samples + j], affinity[j * n_samples + i]);
+                affinity[i * n_samples + j] = val;
+                affinity[j * n_samples + i] = val;
+            }
+        }
+
+        affinity
+    }
+
+    /// Compute normalized graph Laplacian.
+    fn compute_laplacian(&self, affinity: &[f32], n_samples: usize) -> Vec<f32> {
+        // Compute degree matrix D
+        let mut degrees = vec![0.0; n_samples];
+        for i in 0..n_samples {
+            let mut degree = 0.0;
+            for j in 0..n_samples {
+                degree += affinity[i * n_samples + j];
+            }
+            degrees[i] = degree;
+        }
+
+        // Compute normalized Laplacian: L = I - D^(-1/2) * W * D^(-1/2)
+        let mut laplacian = vec![0.0; n_samples * n_samples];
+
+        for i in 0..n_samples {
+            for j in 0..n_samples {
+                if i == j {
+                    laplacian[i * n_samples + j] = 1.0;
+                } else {
+                    let d_i = degrees[i].max(1e-10); // Avoid division by zero
+                    let d_j = degrees[j].max(1e-10);
+                    let w_ij = affinity[i * n_samples + j];
+                    laplacian[i * n_samples + j] = -w_ij / (d_i * d_j).sqrt();
+                }
+            }
+        }
+
+        laplacian
+    }
+
+    /// Compute embedding via eigendecomposition.
+    fn compute_embedding(&self, laplacian: &[f32], n_samples: usize) -> Result<Matrix<f32>> {
+        use nalgebra::{DMatrix, SymmetricEigen};
+
+        // Convert to nalgebra matrix
+        let laplacian_matrix = DMatrix::from_row_slice(n_samples, n_samples, laplacian);
+
+        // Eigendecomposition
+        let eigen = SymmetricEigen::new(laplacian_matrix);
+
+        // Sort eigenvalues and get indices of k smallest
+        let mut eigen_pairs: Vec<(usize, f64)> = eigen
+            .eigenvalues
+            .iter()
+            .enumerate()
+            .map(|(i, &val)| (i, val as f64))
+            .collect();
+        eigen_pairs.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+
+        // Get k smallest eigenvectors
+        let k = self.n_clusters;
+        let smallest_indices: Vec<usize> = eigen_pairs.iter().take(k).map(|(i, _)| *i).collect();
+
+        let mut embedding_data = Vec::with_capacity(n_samples * k);
+
+        // Build embedding matrix in row-major order
+        for row_idx in 0..n_samples {
+            for &col_idx in &smallest_indices {
+                let eigenvector = eigen.eigenvectors.column(col_idx);
+                embedding_data.push(eigenvector[row_idx]);
+            }
+        }
+
+        Ok(Matrix::from_vec(n_samples, k, embedding_data)?)
+    }
+}
+
+impl UnsupervisedEstimator for SpectralClustering {
+    type Labels = Vec<usize>;
+
+    fn fit(&mut self, x: &Matrix<f32>) -> Result<()> {
+        SpectralClustering::fit(self, x)
+    }
+
+    fn predict(&self, _x: &Matrix<f32>) -> Self::Labels {
+        if !self.is_fitted() {
+            panic!("Model not fitted. Call fit() first.");
+        }
+        self.labels.as_ref().unwrap().clone()
+    }
+}
+
+impl Default for SpectralClustering {
+    fn default() -> Self {
+        Self::new(2)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -4652,5 +4962,223 @@ mod tests {
 
         // Points with higher LOF scores should be more likely to be anomalies
         assert_eq!(predictions.len(), scores.len());
+    }
+
+    // ========================================================================
+    // Spectral Clustering Tests
+    // ========================================================================
+
+    #[test]
+    fn test_spectral_clustering_new() {
+        let sc = SpectralClustering::new(3);
+        assert!(!sc.is_fitted());
+    }
+
+    #[test]
+    fn test_spectral_clustering_fit_basic() {
+        // Simple 2-cluster data
+        let data = Matrix::from_vec(
+            6,
+            2,
+            vec![
+                1.0, 1.0, 1.1, 1.0, 0.9, 1.1, // Cluster 1
+                5.0, 5.0, 5.1, 5.0, 4.9, 5.1, // Cluster 2
+            ],
+        )
+        .unwrap();
+
+        let mut sc = SpectralClustering::new(2);
+        sc.fit(&data).unwrap();
+        assert!(sc.is_fitted());
+    }
+
+    #[test]
+    fn test_spectral_clustering_predict() {
+        let data = Matrix::from_vec(
+            6,
+            2,
+            vec![1.0, 1.0, 1.1, 1.0, 0.9, 1.1, 5.0, 5.0, 5.1, 5.0, 4.9, 5.1],
+        )
+        .unwrap();
+
+        let mut sc = SpectralClustering::new(2);
+        sc.fit(&data).unwrap();
+
+        let labels = sc.predict(&data);
+        assert_eq!(labels.len(), 6);
+
+        // Points in same cluster should have same label
+        assert_eq!(labels[0], labels[1]);
+        assert_eq!(labels[0], labels[2]);
+        assert_eq!(labels[3], labels[4]);
+        assert_eq!(labels[3], labels[5]);
+
+        // Different clusters should have different labels (with label permutation tolerance)
+        assert_ne!(labels[0], labels[3]);
+    }
+
+    #[test]
+    fn test_spectral_clustering_non_convex() {
+        // Create two moon-shaped clusters (non-convex but separable)
+        // Upper moon
+        let upper: Vec<f32> = vec![0.0, 2.0, 0.5, 2.0, 1.0, 1.9, 1.5, 1.7, 2.0, 1.5];
+        // Lower moon
+        let lower: Vec<f32> = vec![0.5, 0.3, 1.0, 0.1, 1.5, 0.0, 2.0, 0.0, 2.5, 0.2];
+
+        let mut all_data = upper.clone();
+        all_data.extend(lower);
+
+        let data = Matrix::from_vec(10, 2, all_data).unwrap();
+
+        let mut sc = SpectralClustering::new(2)
+            .with_affinity(Affinity::KNN)
+            .with_n_neighbors(3);
+        sc.fit(&data).unwrap();
+
+        let labels = sc.predict(&data);
+
+        // Upper moon points should mostly be in same cluster
+        // Allow some flexibility for this challenging case
+        let upper_cluster = labels[0];
+        let same_cluster_count = (0..5).filter(|&i| labels[i] == upper_cluster).count();
+        assert!(same_cluster_count >= 4); // At least 4 out of 5
+
+        // Lower moon points should mostly be in same cluster
+        let lower_cluster = labels[5];
+        let same_cluster_count = (5..10).filter(|&i| labels[i] == lower_cluster).count();
+        assert!(same_cluster_count >= 4); // At least 4 out of 5
+
+        // The two moons should be in different clusters
+        assert_ne!(upper_cluster, lower_cluster);
+    }
+
+    #[test]
+    fn test_spectral_clustering_rbf_affinity() {
+        let data = Matrix::from_vec(4, 2, vec![0.0, 0.0, 0.1, 0.1, 5.0, 5.0, 5.1, 5.1]).unwrap();
+
+        let mut sc = SpectralClustering::new(2)
+            .with_affinity(Affinity::RBF)
+            .with_gamma(1.0);
+        sc.fit(&data).unwrap();
+
+        let labels = sc.predict(&data);
+        assert_eq!(labels.len(), 4);
+        assert_eq!(labels[0], labels[1]);
+        assert_eq!(labels[2], labels[3]);
+    }
+
+    #[test]
+    fn test_spectral_clustering_knn_affinity() {
+        let data = Matrix::from_vec(
+            6,
+            2,
+            vec![1.0, 1.0, 1.1, 1.0, 0.9, 1.1, 5.0, 5.0, 5.1, 5.0, 4.9, 5.1],
+        )
+        .unwrap();
+
+        let mut sc = SpectralClustering::new(2)
+            .with_affinity(Affinity::KNN)
+            .with_n_neighbors(3);
+        sc.fit(&data).unwrap();
+
+        let labels = sc.predict(&data);
+        assert_eq!(labels.len(), 6);
+    }
+
+    #[test]
+    fn test_spectral_clustering_gamma_effect() {
+        let data = Matrix::from_vec(4, 2, vec![0.0, 0.0, 1.0, 1.0, 5.0, 5.0, 6.0, 6.0]).unwrap();
+
+        // Small gamma - more global similarity
+        let mut sc_small = SpectralClustering::new(2).with_gamma(0.1);
+        sc_small.fit(&data).unwrap();
+
+        // Large gamma - more local similarity
+        let mut sc_large = SpectralClustering::new(2).with_gamma(10.0);
+        sc_large.fit(&data).unwrap();
+
+        // Both should work
+        assert!(sc_small.is_fitted());
+        assert!(sc_large.is_fitted());
+    }
+
+    #[test]
+    fn test_spectral_clustering_multiple_clusters() {
+        let data = Matrix::from_vec(
+            9,
+            2,
+            vec![
+                // Cluster 1
+                0.0, 0.0, 0.1, 0.1, -0.1, -0.1, // Cluster 2
+                5.0, 5.0, 5.1, 5.1, 4.9, 4.9, // Cluster 3
+                10.0, 10.0, 10.1, 10.1, 9.9, 9.9,
+            ],
+        )
+        .unwrap();
+
+        let mut sc = SpectralClustering::new(3);
+        sc.fit(&data).unwrap();
+
+        let labels = sc.predict(&data);
+        assert_eq!(labels.len(), 9);
+
+        // Check that we have 3 distinct clusters
+        let mut unique_labels: Vec<usize> = labels.clone();
+        unique_labels.sort_unstable();
+        unique_labels.dedup();
+        assert_eq!(unique_labels.len(), 3);
+    }
+
+    #[test]
+    fn test_spectral_clustering_labels_consistency() {
+        let data = Matrix::from_vec(4, 2, vec![1.0, 1.0, 1.1, 1.1, 5.0, 5.0, 5.1, 5.1]).unwrap();
+
+        let mut sc = SpectralClustering::new(2);
+        sc.fit(&data).unwrap();
+
+        let labels1 = sc.predict(&data);
+        let labels2 = sc.labels().clone();
+
+        assert_eq!(labels1, labels2);
+    }
+
+    #[test]
+    #[should_panic(expected = "Model not fitted")]
+    fn test_spectral_clustering_predict_before_fit() {
+        let data = Matrix::from_vec(2, 2, vec![1.0, 1.0, 2.0, 2.0]).unwrap();
+        let sc = SpectralClustering::new(2);
+        let _ = sc.predict(&data);
+    }
+
+    #[test]
+    #[should_panic(expected = "Model not fitted")]
+    fn test_spectral_clustering_labels_before_fit() {
+        let sc = SpectralClustering::new(2);
+        let _ = sc.labels();
+    }
+
+    #[test]
+    fn test_spectral_clustering_well_separated() {
+        // Very well-separated clusters
+        let data = Matrix::from_vec(
+            6,
+            2,
+            vec![
+                0.0, 0.0, 0.1, 0.1, 0.0, 0.1, 100.0, 100.0, 100.1, 100.1, 100.0, 100.1,
+            ],
+        )
+        .unwrap();
+
+        let mut sc = SpectralClustering::new(2);
+        sc.fit(&data).unwrap();
+
+        let labels = sc.predict(&data);
+
+        // Should clearly separate the two clusters
+        assert_eq!(labels[0], labels[1]);
+        assert_eq!(labels[0], labels[2]);
+        assert_eq!(labels[3], labels[4]);
+        assert_eq!(labels[3], labels[5]);
+        assert_ne!(labels[0], labels[3]);
     }
 }
