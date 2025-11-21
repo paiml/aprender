@@ -13,10 +13,7 @@
 //! ```
 //! use aprender::graph::Graph;
 //!
-//! let mut g = Graph::new(false); // undirected graph
-//! g.add_edge(0, 1, None).expect("add_edge should succeed for valid nodes");
-//! g.add_edge(1, 2, None).expect("add_edge should succeed for valid nodes");
-//! g.add_edge(2, 0, None).expect("add_edge should succeed for valid nodes");
+//! let g = Graph::from_edges(&[(0, 1), (1, 2), (2, 0)], false);
 //!
 //! let dc = g.degree_centrality();
 //! assert_eq!(dc.len(), 3);

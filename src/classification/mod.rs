@@ -380,7 +380,7 @@ pub enum DistanceMetric {
 /// knn.fit(&x, &y).expect("Valid training data with 6 samples");
 ///
 /// let test = Matrix::from_vec(1, 2, vec![0.5, 0.5]).expect("1x2 test matrix");
-/// let predictions = knn.predict(&test);
+/// let predictions = knn.predict(&test).expect("Predict should succeed");
 /// assert_eq!(predictions[0], 0);  // Closer to class 0
 /// ```
 #[derive(Debug, Clone)]

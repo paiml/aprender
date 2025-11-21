@@ -530,7 +530,7 @@ impl UnsupervisedEstimator for KMeans {
 /// let mut dbscan = DBSCAN::new(0.5, 2);
 /// dbscan.fit(&data).expect("Fit succeeds with valid data");
 ///
-/// let labels = dbscan.labels().expect("Labels available after fit");
+/// let labels = dbscan.labels();
 /// assert_eq!(labels[6], -1); // Last point is noise
 /// ```
 ///
