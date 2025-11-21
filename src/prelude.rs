@@ -8,7 +8,8 @@
 
 pub use crate::classification::LogisticRegression;
 pub use crate::cluster::{
-    AgglomerativeClustering, CovarianceType, GaussianMixture, KMeans, Linkage, DBSCAN,
+    AgglomerativeClustering, CovarianceType, GaussianMixture, IsolationForest, KMeans, Linkage,
+    DBSCAN,
 };
 pub use crate::data::DataFrame;
 pub use crate::linear_model::{ElasticNet, Lasso, LinearRegression, Ridge};
