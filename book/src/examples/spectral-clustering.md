@@ -66,7 +66,7 @@ Implemented complete Spectral Clustering algorithm (352 lines):
 
 **Key Algorithm Steps:**
 
-```rust
+```text
 1. Construct affinity matrix W (RBF or k-NN)
 2. Compute degree matrix D
 3. Compute normalized Laplacian L = I - D^(-1/2) * W * D^(-1/2)
@@ -106,7 +106,7 @@ Implemented complete Spectral Clustering algorithm (352 lines):
 - Laplacian matrix storage
 
 **RBF Affinity:**
-```
+```text
 W[i,j] = exp(-gamma * ||x_i - x_j||^2)
 ```
 - Gamma controls locality (higher = more local)
@@ -114,7 +114,7 @@ W[i,j] = exp(-gamma * ||x_i - x_j||^2)
 - Good for globular clusters
 
 **K-NN Affinity:**
-```
+```text
 W[i,j] = 1 if j in k-NN(i), 0 otherwise
 Symmetrize: W[i,j] = max(W[i,j], W[j,i])
 ```
@@ -123,7 +123,7 @@ Symmetrize: W[i,j] = max(W[i,j], W[j,i])
 - Parameter k controls graph density
 
 **Normalized Graph Laplacian:**
-```
+```text
 L = I - D^(-1/2) * W * D^(-1/2)
 ```
 Where D is the degree matrix (diagonal, D[i,i] = sum of row i of W).

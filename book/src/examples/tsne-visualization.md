@@ -71,7 +71,7 @@ Implemented complete t-SNE algorithm (~400 lines):
 
 **Key Algorithm Steps:**
 
-```rust
+```text
 1. Compute pairwise distances in high-D
 2. Binary search for sigma to match perplexity
 3. Compute conditional probabilities P(j|i)
