@@ -180,13 +180,540 @@
                 <div id="content" class="content">
                     <main>
                         <h1 id="type-safety"><a class="header" href="#type-safety">Type Safety</a></h1>
-<p>📝 <strong>This chapter is under construction.</strong></p>
-<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
-<p><strong>See also:</strong></p>
+<p>Rust's type system provides <strong>compile-time guarantees</strong> that eliminate entire classes of runtime errors common in Python ML libraries. This chapter explores how aprender leverages Rust's type safety for robust, efficient machine learning.</p>
+<h2 id="why-type-safety-matters-in-ml"><a class="header" href="#why-type-safety-matters-in-ml">Why Type Safety Matters in ML</a></h2>
+<p>Machine learning libraries have historically relied on <strong>runtime checks</strong> for correctness:</p>
+<pre><code class="language-python"># Python/NumPy - errors discovered at runtime
+import numpy as np
+
+X = np.random.rand(100, 5)
+y = np.random.rand(100)
+model.fit(X, y)  # OK
+
+X_test = np.random.rand(10, 3)  # Wrong shape!
+model.predict(X_test)  # RuntimeError (if you're lucky)
+</code></pre>
+<p><strong>Problems with runtime checks:</strong></p>
 <ul>
-<li><a href="../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
-<li><a href="../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+<li>Errors discovered late (often in production)</li>
+<li>Inconsistent error messages across libraries</li>
+<li>Performance overhead from defensive programming</li>
+<li>No IDE/compiler assistance</li>
 </ul>
+<p><strong>Rust's compile-time guarantees:</strong></p>
+<pre><code class="language-rust">// Rust - many errors caught at compile time
+let x_train = Matrix::from_vec(100, 5, train_data)?;
+let y_train = Vector::from_slice(&amp;labels);
+
+let mut model = LinearRegression::new();
+model.fit(&amp;x_train, &amp;y_train)?;
+
+let x_test = Matrix::from_vec(10, 3, test_data)?;
+model.predict(&amp;x_test);  // Type checks pass - dimensions verified at construction</code></pre>
+<p><strong>Benefits:</strong></p>
+<ol>
+<li><strong>Earlier error detection</strong>: Catch mistakes during development</li>
+<li><strong>No runtime overhead</strong>: Type checks erased at compile time</li>
+<li><strong>Self-documenting</strong>: Types communicate intent</li>
+<li><strong>Refactoring confidence</strong>: Compiler verifies correctness</li>
+</ol>
+<h2 id="rusts-type-system-advantages"><a class="header" href="#rusts-type-system-advantages">Rust's Type System Advantages</a></h2>
+<h3 id="1-generic-types-with-trait-bounds"><a class="header" href="#1-generic-types-with-trait-bounds">1. Generic Types with Trait Bounds</a></h3>
+<p>Aprender's <code>Matrix&lt;T&gt;</code> is generic over element type:</p>
+<pre><code class="language-rust">#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Matrix&lt;T&gt; {
+    data: Vec&lt;T&gt;,
+    rows: usize,
+    cols: usize,
+}
+
+// Generic implementation for any Copy type
+impl&lt;T: Copy&gt; Matrix&lt;T&gt; {
+    pub fn from_vec(rows: usize, cols: usize, data: Vec&lt;T&gt;) -&gt; Result&lt;Self, &amp;'static str&gt; {
+        if data.len() != rows * cols {
+            return Err(&quot;Data length must equal rows * cols&quot;);
+        }
+        Ok(Self { data, rows, cols })
+    }
+
+    pub fn get(&amp;self, row: usize, col: usize) -&gt; T {
+        self.data[row * self.cols + col]
+    }
+
+    pub fn shape(&amp;self) -&gt; (usize, usize) {
+        (self.rows, self.cols)
+    }
+}
+
+// Specialized implementation for f32 only
+impl Matrix&lt;f32&gt; {
+    pub fn zeros(rows: usize, cols: usize) -&gt; Self {
+        Self {
+            data: vec![0.0; rows * cols],
+            rows,
+            cols,
+        }
+    }
+
+    pub fn matmul(&amp;self, other: &amp;Self) -&gt; Result&lt;Self, &amp;'static str&gt; {
+        if self.cols != other.rows {
+            return Err(&quot;Matrix dimensions don't match for multiplication&quot;);
+        }
+        // ... matrix multiplication
+    }
+}</code></pre>
+<p><strong>Location:</strong> <code>src/primitives/matrix.rs:16-174</code></p>
+<p><strong>Key insights:</strong></p>
+<ul>
+<li><code>T: Copy</code> bound ensures efficient element access</li>
+<li>Generic code shared across all numeric types</li>
+<li>Specialized methods (like <code>matmul</code>) only for <code>f32</code></li>
+<li>Zero runtime overhead - monomorphization at compile time</li>
+</ul>
+<h3 id="2-associated-types"><a class="header" href="#2-associated-types">2. Associated Types</a></h3>
+<p>Traits can define <strong>associated types</strong> for flexible APIs:</p>
+<pre><code class="language-rust">pub trait UnsupervisedEstimator {
+    /// The type of labels/clusters produced.
+    type Labels;
+
+    fn fit(&amp;mut self, x: &amp;Matrix&lt;f32&gt;) -&gt; Result&lt;()&gt;;
+    fn predict(&amp;self, x: &amp;Matrix&lt;f32&gt;) -&gt; Self::Labels;
+}
+
+// K-Means produces Vec&lt;usize&gt; (cluster assignments)
+impl UnsupervisedEstimator for KMeans {
+    type Labels = Vec&lt;usize&gt;;
+
+    fn fit(&amp;mut self, x: &amp;Matrix&lt;f32&gt;) -&gt; Result&lt;()&gt; { /* ... */ }
+
+    fn predict(&amp;self, x: &amp;Matrix&lt;f32&gt;) -&gt; Vec&lt;usize&gt; { /* ... */ }
+}
+
+// PCA produces Matrix&lt;f32&gt; (transformed data)
+impl UnsupervisedEstimator for PCA {
+    type Labels = Matrix&lt;f32&gt;;
+
+    fn fit(&amp;mut self, x: &amp;Matrix&lt;f32&gt;) -&gt; Result&lt;()&gt; { /* ... */ }
+
+    fn predict(&amp;self, x: &amp;Matrix&lt;f32&gt;) -&gt; Matrix&lt;f32&gt; { /* ... */ }
+}</code></pre>
+<p><strong>Location:</strong> <code>src/traits.rs:64-77</code></p>
+<p><strong>Why associated types?</strong></p>
+<ul>
+<li>Each implementation determines output type</li>
+<li>Compiler enforces consistency</li>
+<li>More ergonomic than generic parameters: <code>trait UnsupervisedEstimator&lt;Labels&gt;</code> would be awkward</li>
+</ul>
+<p><strong>Example usage:</strong></p>
+<pre><code class="language-rust">fn cluster_data&lt;E: UnsupervisedEstimator&gt;(estimator: &amp;mut E, data: &amp;Matrix&lt;f32&gt;) -&gt; E::Labels {
+    estimator.fit(data).unwrap();
+    estimator.predict(data)
+}
+
+let mut kmeans = KMeans::new(3);
+let labels: Vec&lt;usize&gt; = cluster_data(&amp;mut kmeans, &amp;data);  // Type inferred!</code></pre>
+<h3 id="3-ownership-and-borrowing"><a class="header" href="#3-ownership-and-borrowing">3. Ownership and Borrowing</a></h3>
+<p>Rust's ownership system prevents <strong>use-after-free</strong>, <strong>double-free</strong>, and <strong>data races</strong> at compile time:</p>
+<pre><code class="language-rust">// ✅ Correct: immutable borrow for reading
+pub fn predict(&amp;self, x: &amp;Matrix&lt;f32&gt;) -&gt; Vector&lt;f32&gt; {
+    // self is borrowed immutably (read-only)
+    let coef = self.coefficients.as_ref().expect(&quot;Not fitted&quot;);
+    // ... prediction logic
+}
+
+// ✅ Correct: mutable borrow for training
+pub fn fit(&amp;mut self, x: &amp;Matrix&lt;f32&gt;, y: &amp;Vector&lt;f32&gt;) -&gt; Result&lt;()&gt; {
+    // self is borrowed mutably (can modify internal state)
+    self.coefficients = Some(compute_coefficients(x, y)?);
+    Ok(())
+}
+
+// ✅ Correct: optimizer takes mutable ref to params
+pub fn step(&amp;mut self, params: &amp;mut Vector&lt;f32&gt;, gradients: &amp;Vector&lt;f32&gt;) {
+    // params modified in place (no copy)
+    // gradients borrowed immutably (read-only)
+    for i in 0..params.len() {
+        params[i] -= self.learning_rate * gradients[i];
+    }
+}</code></pre>
+<p><strong>Location:</strong> <code>src/optim/mod.rs:136-172</code></p>
+<p><strong>Ownership patterns in ML:</strong></p>
+<ol>
+<li>
+<p><strong>Immutable borrow (<code>&amp;T</code>)</strong>: For read-only operations</p>
+<ul>
+<li>Prediction (multiple readers OK)</li>
+<li>Computing loss/metrics</li>
+<li>Accessing hyperparameters</li>
+</ul>
+</li>
+<li>
+<p><strong>Mutable borrow (<code>&amp;mut T</code>)</strong>: For in-place modification</p>
+<ul>
+<li>Training (update model state)</li>
+<li>Parameter updates (SGD step)</li>
+<li>Transformers (fit updates internal state)</li>
+</ul>
+</li>
+<li>
+<p><strong>Owned (<code>T</code>)</strong>: For consuming operations</p>
+<ul>
+<li>Builder pattern (consume and return <code>Self</code>)</li>
+<li>Destructive operations</li>
+</ul>
+</li>
+</ol>
+<h3 id="4-zero-cost-abstractions"><a class="header" href="#4-zero-cost-abstractions">4. Zero-Cost Abstractions</a></h3>
+<p>Rust's type system enables <strong>zero-runtime-cost</strong> abstractions:</p>
+<pre><code class="language-rust">// High-level trait-based API
+pub trait Estimator {
+    fn fit(&amp;mut self, x: &amp;Matrix&lt;f32&gt;, y: &amp;Vector&lt;f32&gt;) -&gt; Result&lt;()&gt;;
+    fn predict(&amp;self, x: &amp;Matrix&lt;f32&gt;) -&gt; Vector&lt;f32&gt;;
+    fn score(&amp;self, x: &amp;Matrix&lt;f32&gt;, y: &amp;Vector&lt;f32&gt;) -&gt; f32;
+}
+
+// Compiles to direct function calls (no vtable overhead for static dispatch)
+let mut model = LinearRegression::new();
+model.fit(&amp;x_train, &amp;y_train)?;  // ← Direct call, no indirection
+let predictions = model.predict(&amp;x_test);  // ← Direct call</code></pre>
+<p><strong>Static vs. Dynamic Dispatch:</strong></p>
+<pre><code class="language-rust">// Static dispatch (zero cost) - type known at compile time
+fn train_model(model: &amp;mut LinearRegression, x: &amp;Matrix&lt;f32&gt;, y: &amp;Vector&lt;f32&gt;) -&gt; Result&lt;()&gt; {
+    model.fit(x, y)  // Direct call to LinearRegression::fit
+}
+
+// Dynamic dispatch (small cost) - type unknown until runtime
+fn train_model_dyn(model: &amp;mut dyn Estimator, x: &amp;Matrix&lt;f32&gt;, y: &amp;Vector&lt;f32&gt;) -&gt; Result&lt;()&gt; {
+    model.fit(x, y)  // Vtable lookup (one pointer indirection)
+}
+
+// Generic static dispatch - monomorphization at compile time
+fn train_model_generic&lt;E: Estimator&gt;(model: &amp;mut E, x: &amp;Matrix&lt;f32&gt;, y: &amp;Vector&lt;f32&gt;) -&gt; Result&lt;()&gt; {
+    model.fit(x, y)  // Direct call - compiler generates separate function per type
+}</code></pre>
+<p><strong>When to use each:</strong></p>
+<ul>
+<li><strong>Static dispatch (default)</strong>: Maximum performance, code bloat for many types</li>
+<li><strong>Dynamic dispatch (<code>dyn Trait</code>)</strong>: Runtime polymorphism, slight overhead</li>
+<li><strong>Generic dispatch (<code>&lt;T: Trait&gt;</code>)</strong>: Best of both - static + polymorphic</li>
+</ul>
+<h2 id="dimension-safety"><a class="header" href="#dimension-safety">Dimension Safety</a></h2>
+<p>Matrix operations require <strong>dimension compatibility</strong>. Currently checked at runtime:</p>
+<pre><code class="language-rust">pub fn matmul(&amp;self, other: &amp;Self) -&gt; Result&lt;Self, &amp;'static str&gt; {
+    if self.cols != other.rows {
+        return Err(&quot;Matrix dimensions don't match for multiplication&quot;);
+    }
+    // ... perform multiplication
+}
+
+// Usage
+let a = Matrix::from_vec(3, 4, data_a)?;
+let b = Matrix::from_vec(5, 6, data_b)?;
+let c = a.matmul(&amp;b)?;  // ❌ Runtime error: 4 != 5</code></pre>
+<p><strong>Location:</strong> <code>src/primitives/matrix.rs:153-174</code></p>
+<h3 id="future-const-generics"><a class="header" href="#future-const-generics">Future: Const Generics</a></h3>
+<p>Rust's <strong>const generics</strong> enable compile-time dimension checking:</p>
+<pre><code class="language-rust">// Future design (not yet in aprender)
+pub struct Matrix&lt;T, const ROWS: usize, const COLS: usize&gt; {
+    data: [[T; COLS]; ROWS],  // Stack-allocated!
+}
+
+impl&lt;T, const M: usize, const N: usize, const P: usize&gt; Matrix&lt;T, M, N&gt; {
+    // Type signature enforces dimensional correctness
+    pub fn matmul(self, other: Matrix&lt;T, N, P&gt;) -&gt; Matrix&lt;T, M, P&gt; {
+        // Compiler verifies: self.cols (N) == other.rows (N)
+        // Result dimensions: M × P
+    }
+}
+
+// Usage
+let a = Matrix::&lt;f32, 3, 4&gt;::from_array(data_a);
+let b = Matrix::&lt;f32, 5, 6&gt;::from_array(data_b);
+let c = a.matmul(b);  // ❌ Compile error: expected Matrix&lt;f32, 4, N&gt;, found Matrix&lt;f32, 5, 6&gt;</code></pre>
+<p><strong>Trade-offs:</strong></p>
+<ul>
+<li>✅ Compile-time dimension checking</li>
+<li>✅ No runtime overhead</li>
+<li>❌ Only works for compile-time known dimensions</li>
+<li>❌ Type system complexity</li>
+</ul>
+<p><strong>When const generics make sense:</strong></p>
+<ul>
+<li>Small, fixed-size matrices (e.g., 3×3 rotation matrices)</li>
+<li>Embedded systems with known dimensions</li>
+<li>Zero-overhead abstractions for performance-critical code</li>
+</ul>
+<p><strong>When runtime dimensions are better:</strong></p>
+<ul>
+<li>Dynamic data (loaded from files, user input)</li>
+<li>Large matrices (heap allocation required)</li>
+<li>Flexible APIs (dimensions unknown at compile time)</li>
+</ul>
+<p>Aprender uses <strong>runtime dimensions</strong> because ML data is typically dynamic.</p>
+<h2 id="typestate-pattern"><a class="header" href="#typestate-pattern">Typestate Pattern</a></h2>
+<p>The <strong>typestate pattern</strong> encodes state transitions in the type system:</p>
+<pre><code class="language-rust">// Track whether model is fitted at compile time
+pub struct Unfitted;
+pub struct Fitted;
+
+pub struct LinearRegression&lt;State = Unfitted&gt; {
+    coefficients: Option&lt;Vector&lt;f32&gt;&gt;,
+    intercept: f32,
+    fit_intercept: bool,
+    _state: PhantomData&lt;State&gt;,
+}
+
+impl LinearRegression&lt;Unfitted&gt; {
+    pub fn new() -&gt; Self {
+        Self {
+            coefficients: None,
+            intercept: 0.0,
+            fit_intercept: true,
+            _state: PhantomData,
+        }
+    }
+
+    // fit() consumes Unfitted model, returns Fitted model
+    pub fn fit(mut self, x: &amp;Matrix&lt;f32&gt;, y: &amp;Vector&lt;f32&gt;) -&gt; Result&lt;LinearRegression&lt;Fitted&gt;&gt; {
+        // ... compute coefficients
+        self.coefficients = Some(coefficients);
+
+        Ok(LinearRegression {
+            coefficients: self.coefficients,
+            intercept: self.intercept,
+            fit_intercept: self.fit_intercept,
+            _state: PhantomData,
+        })
+    }
+}
+
+impl LinearRegression&lt;Fitted&gt; {
+    // predict() only available on Fitted models
+    pub fn predict(&amp;self, x: &amp;Matrix&lt;f32&gt;) -&gt; Vector&lt;f32&gt; {
+        let coef = self.coefficients.as_ref().unwrap();  // Safe: guaranteed fitted
+        // ... prediction logic
+    }
+}
+
+// Usage
+let model = LinearRegression::new();
+// model.predict(&amp;x);  // ❌ Compile error: method not found for LinearRegression&lt;Unfitted&gt;
+
+let model = model.fit(&amp;x_train, &amp;y_train)?;  // Now Fitted
+let predictions = model.predict(&amp;x_test);  // ✅ Compiles</code></pre>
+<p><strong>Trade-offs:</strong></p>
+<ul>
+<li>✅ Compile-time guarantees (can't predict on unfitted model)</li>
+<li>✅ No runtime checks (<code>is_fitted()</code> not needed)</li>
+<li>❌ More complex API (consumes model during <code>fit</code>)</li>
+<li>❌ Can't refit same model (need to clone)</li>
+</ul>
+<p><strong>When to use typestate:</strong></p>
+<ul>
+<li>Safety-critical applications</li>
+<li>When invalid state transitions are common bugs</li>
+<li>When API clarity is more important than convenience</li>
+</ul>
+<p><strong>Why aprender doesn't use typestate (currently):</strong></p>
+<ul>
+<li>sklearn API convention: models are mutable (<code>fit</code> modifies in place)</li>
+<li>Refitting same model is common (hyperparameter tuning)</li>
+<li>Runtime <code>is_fitted()</code> checks are explicit and clear</li>
+</ul>
+<h2 id="common-pitfalls"><a class="header" href="#common-pitfalls">Common Pitfalls</a></h2>
+<h3 id="pitfall-1-over-generic-code"><a class="header" href="#pitfall-1-over-generic-code">Pitfall 1: Over-Generic Code</a></h3>
+<pre><code class="language-rust">// ❌ Too generic - adds complexity without benefit
+pub struct Model&lt;T, U, V, W&gt;
+where
+    T: Estimator,
+    U: Transformer,
+    V: Regularizer,
+    W: Optimizer,
+{
+    estimator: T,
+    transformer: U,
+    regularizer: V,
+    optimizer: W,
+}
+
+// ✅ Concrete types - easier to use and understand
+pub struct Model {
+    estimator: LinearRegression,
+    transformer: StandardScaler,
+    regularizer: L2,
+    optimizer: SGD,
+}</code></pre>
+<p><strong>Guideline:</strong> Use generics only when you need <strong>multiple concrete implementations</strong>.</p>
+<h3 id="pitfall-2-unnecessary-dynamic-dispatch"><a class="header" href="#pitfall-2-unnecessary-dynamic-dispatch">Pitfall 2: Unnecessary Dynamic Dispatch</a></h3>
+<pre><code class="language-rust">// ❌ Dynamic dispatch when static dispatch would work
+fn train(models: Vec&lt;Box&lt;dyn Estimator&gt;&gt;) {
+    // Small runtime overhead from vtable lookups
+}
+
+// ✅ Static dispatch with generic
+fn train&lt;E: Estimator&gt;(models: Vec&lt;E&gt;) {
+    // Zero-cost abstraction, direct calls
+}</code></pre>
+<p><strong>Guideline:</strong> Prefer generics (<code>&lt;T: Trait&gt;</code>) over trait objects (<code>dyn Trait</code>) unless you need <strong>runtime polymorphism</strong>.</p>
+<h3 id="pitfall-3-fighting-the-borrow-checker"><a class="header" href="#pitfall-3-fighting-the-borrow-checker">Pitfall 3: Fighting the Borrow Checker</a></h3>
+<pre><code class="language-rust">// ❌ Trying to mutate while holding immutable reference
+let data = self.data.as_slice();
+self.transform(data);  // Error: can't borrow self as mutable
+
+// ✅ Solution 1: Clone data if needed
+let data = self.data.clone();
+self.transform(&amp;data);
+
+// ✅ Solution 2: Restructure to avoid simultaneous borrows
+fn transform(&amp;mut self) {
+    let data = self.data.clone();
+    self.process(&amp;data);
+}
+
+// ✅ Solution 3: Use interior mutability (RefCell, Cell) if appropriate</code></pre>
+<p><strong>Guideline:</strong> If the borrow checker complains, your design might need refactoring. Don't reach for <code>Rc&lt;RefCell&lt;T&gt;&gt;</code> immediately.</p>
+<h3 id="pitfall-4-exposing-internal-representation"><a class="header" href="#pitfall-4-exposing-internal-representation">Pitfall 4: Exposing Internal Representation</a></h3>
+<pre><code class="language-rust">// ❌ Exposes Vec directly - can invalidate invariants
+pub fn coefficients(&amp;self) -&gt; &amp;Vec&lt;f32&gt; {
+    &amp;self.coefficients
+}
+
+// ✅ Return slice - read-only view
+pub fn coefficients(&amp;self) -&gt; &amp;[f32] {
+    &amp;self.coefficients
+}
+
+// ✅ Return custom wrapper type with controlled interface
+pub fn coefficients(&amp;self) -&gt; &amp;Vector&lt;f32&gt; {
+    &amp;self.coefficients
+}</code></pre>
+<p><strong>Guideline:</strong> Return the <strong>least powerful</strong> type that satisfies the use case.</p>
+<h3 id="pitfall-5-ignoring-copy-vs-clone"><a class="header" href="#pitfall-5-ignoring-copy-vs-clone">Pitfall 5: Ignoring Copy vs. Clone</a></h3>
+<pre><code class="language-rust">// ❌ Accidentally copying large data
+fn process_matrix(m: Matrix&lt;f32&gt;) {  // Takes ownership, moves Matrix
+    // ...
+} // m dropped here
+
+let m = Matrix::zeros(1000, 1000);
+process_matrix(m);   // Moves matrix (no copy)
+// process_matrix(m); // ❌ Error: value moved
+
+// ✅ Borrow instead of moving
+fn process_matrix(m: &amp;Matrix&lt;f32&gt;) {
+    // ...
+}
+
+let m = Matrix::zeros(1000, 1000);
+process_matrix(&amp;m);  // Borrow
+process_matrix(&amp;m);  // ✅ OK: can borrow multiple times</code></pre>
+<p><strong>Guideline:</strong> Prefer borrowing (<code>&amp;T</code>, <code>&amp;mut T</code>) over ownership (<code>T</code>) for large data structures.</p>
+<h2 id="testing-type-safety"><a class="header" href="#testing-type-safety">Testing Type Safety</a></h2>
+<p>Type safety is partially <strong>self-testing</strong> (compiler verifies correctness), but runtime tests are still valuable:</p>
+<pre><code class="language-rust">#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_dimension_mismatch() {
+        let a = Matrix::from_vec(3, 4, vec![0.0; 12]).unwrap();
+        let b = Matrix::from_vec(5, 6, vec![0.0; 30]).unwrap();
+
+        // Runtime check - dimensions incompatible
+        assert!(a.matmul(&amp;b).is_err());
+    }
+
+    #[test]
+    fn test_unfitted_model_panics() {
+        let model = LinearRegression::new();
+
+        // Should panic: model not fitted
+        std::panic::catch_unwind(|| {
+            model.coefficients();
+        }).expect_err(&quot;Should panic on unfitted model&quot;);
+    }
+
+    #[test]
+    fn test_generic_estimator() {
+        fn check_estimator&lt;E: Estimator&gt;(mut model: E) {
+            let x = Matrix::from_vec(4, 2, vec![1.0; 8]).unwrap();
+            let y = Vector::from_slice(&amp;[1.0, 2.0, 3.0, 4.0]);
+
+            model.fit(&amp;x, &amp;y).unwrap();
+            let predictions = model.predict(&amp;x);
+            assert_eq!(predictions.len(), 4);
+        }
+
+        // Works with any Estimator
+        check_estimator(LinearRegression::new());
+        check_estimator(Ridge::new());
+    }
+}</code></pre>
+<h2 id="performance-benchmarking-type-erasure"><a class="header" href="#performance-benchmarking-type-erasure">Performance: Benchmarking Type Erasure</a></h2>
+<p>Rust's <strong>monomorphization</strong> generates specialized code for each type, with no runtime overhead:</p>
+<pre><code class="language-rust">use criterion::{black_box, criterion_group, criterion_main, Criterion};
+
+// Benchmark static dispatch (generic)
+fn bench_static_dispatch(c: &amp;mut Criterion) {
+    let mut model = LinearRegression::new();
+    let x = Matrix::from_vec(100, 10, vec![1.0; 1000]).unwrap();
+    let y = Vector::from_slice(&amp;vec![1.0; 100]);
+
+    c.bench_function(&quot;static_dispatch_fit&quot;, |b| {
+        b.iter(|| {
+            let mut m = model.clone();
+            m.fit(black_box(&amp;x), black_box(&amp;y)).unwrap();
+        });
+    });
+}
+
+// Benchmark dynamic dispatch (trait object)
+fn bench_dynamic_dispatch(c: &amp;mut Criterion) {
+    let mut model: Box&lt;dyn Estimator&gt; = Box::new(LinearRegression::new());
+    let x = Matrix::from_vec(100, 10, vec![1.0; 1000]).unwrap();
+    let y = Vector::from_slice(&amp;vec![1.0; 100]);
+
+    c.bench_function(&quot;dynamic_dispatch_fit&quot;, |b| {
+        b.iter(|| {
+            let mut m = model.clone();
+            m.fit(black_box(&amp;x), black_box(&amp;y)).unwrap();
+        });
+    });
+}
+
+criterion_group!(benches, bench_static_dispatch, bench_dynamic_dispatch);
+criterion_main!(benches);</code></pre>
+<p><strong>Expected results:</strong></p>
+<ul>
+<li>Static dispatch: ~1-2% faster (one vtable lookup eliminated)</li>
+<li>Most time spent in actual computation, not dispatch</li>
+</ul>
+<p><strong>Guideline:</strong> Prefer static dispatch by default, use dynamic dispatch when needed for flexibility.</p>
+<h2 id="summary"><a class="header" href="#summary">Summary</a></h2>
+<p>Rust's type system provides <strong>compile-time guarantees</strong> that eliminate entire classes of bugs:</p>
+<p><strong>Key principles:</strong></p>
+<ol>
+<li><strong>Generic types</strong> with trait bounds for code reuse without runtime cost</li>
+<li><strong>Associated types</strong> for flexible trait APIs</li>
+<li><strong>Ownership and borrowing</strong> prevent memory errors and data races</li>
+<li><strong>Zero-cost abstractions</strong> enable high-level APIs without performance penalties</li>
+<li><strong>Static dispatch</strong> (generics) preferred over dynamic dispatch (trait objects)</li>
+<li><strong>Runtime dimension checks</strong> (for now) with <strong>const generics</strong> as future upgrade</li>
+<li><strong>Typestate pattern</strong> for compile-time state guarantees (when appropriate)</li>
+</ol>
+<p><strong>Real-world examples:</strong></p>
+<ul>
+<li><code>src/primitives/matrix.rs:16-174</code> - Generic Matrix<T> with trait bounds</li>
+<li><code>src/traits.rs:64-77</code> - Associated types in UnsupervisedEstimator</li>
+<li><code>src/optim/mod.rs:136-172</code> - Ownership patterns in optimizer</li>
+</ul>
+<p><strong>Why it matters:</strong></p>
+<ul>
+<li>Fewer runtime errors → more reliable ML pipelines</li>
+<li>Better performance → faster training and inference</li>
+<li>Self-documenting → easier to understand and maintain</li>
+<li>Refactoring confidence → compiler verifies correctness</li>
+</ul>
+<p>Rust's type safety is not a restriction—it's a <strong>superpower</strong> that catches bugs before they reach production.</p>
 
                     </main>
 

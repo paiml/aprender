@@ -180,13 +180,583 @@
                 <div id="content" class="content">
                     <main>
                         <h1 id="error-handling"><a class="header" href="#error-handling">Error Handling</a></h1>
-<p>📝 <strong>This chapter is under construction.</strong></p>
-<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
-<p><strong>See also:</strong></p>
+<p>Error handling is fundamental to building robust machine learning applications. Aprender uses Rust's type-safe error handling with rich context to help users quickly identify and resolve issues.</p>
+<h2 id="core-principles"><a class="header" href="#core-principles">Core Principles</a></h2>
+<h3 id="1-use-result-for-fallible-operations"><a class="header" href="#1-use-result-for-fallible-operations">1. Use Result<T> for Fallible Operations</a></h3>
+<p><strong>Rule</strong>: Any operation that can fail returns <code>Result&lt;T&gt;</code> instead of panicking.</p>
+<pre><code class="language-rust">// ✅ GOOD: Returns Result for dimension check
+pub fn fit(&amp;mut self, x: &amp;Matrix&lt;f32&gt;, y: &amp;Vector&lt;f32&gt;) -&gt; Result&lt;()&gt; {
+    if x.shape().0 != y.len() {
+        return Err(AprenderError::DimensionMismatch {
+            expected: format!(&quot;{}x? (samples match)&quot;, y.len()),
+            actual: format!(&quot;{}x{}&quot;, x.shape().0, x.shape().1),
+        });
+    }
+    // ... rest of implementation
+    Ok(())
+}
+
+// ❌ BAD: Panics instead of returning error
+pub fn fit(&amp;mut self, x: &amp;Matrix&lt;f32&gt;, y: &amp;Vector&lt;f32&gt;) {
+    assert_eq!(x.shape().0, y.len(), &quot;Dimension mismatch!&quot;);  // Panic!
+    // ...
+}</code></pre>
+<p><strong>Why?</strong> Users can handle errors gracefully instead of crashing their applications.</p>
+<h3 id="2-provide-rich-error-context"><a class="header" href="#2-provide-rich-error-context">2. Provide Rich Error Context</a></h3>
+<p><strong>Rule</strong>: Error messages should include enough context to debug the issue without looking at source code.</p>
+<pre><code class="language-rust">// ✅ GOOD: Detailed error with actual values
+return Err(AprenderError::InvalidHyperparameter {
+    param: &quot;learning_rate&quot;.to_string(),
+    value: format!(&quot;{}&quot;, lr),
+    constraint: &quot;must be &gt; 0.0&quot;.to_string(),
+});
+
+// ❌ BAD: Vague error message
+return Err(&quot;Invalid learning rate&quot;.into());</code></pre>
+<p><strong>Example output</strong>:</p>
+<pre><code>Error: Invalid hyperparameter: learning_rate = -0.1, expected must be &gt; 0.0
+</code></pre>
+<p>Users immediately understand:</p>
 <ul>
-<li><a href="../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
-<li><a href="../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+<li>What parameter is wrong</li>
+<li>What value they provided</li>
+<li>What constraint was violated</li>
 </ul>
+<h3 id="3-match-error-types-to-failure-modes"><a class="header" href="#3-match-error-types-to-failure-modes">3. Match Error Types to Failure Modes</a></h3>
+<p><strong>Rule</strong>: Use specific error variants, not generic <code>Other</code>.</p>
+<pre><code class="language-rust">// ✅ GOOD: Specific error type
+if x.shape().0 != y.len() {
+    return Err(AprenderError::DimensionMismatch {
+        expected: format!(&quot;samples={}&quot;, y.len()),
+        actual: format!(&quot;samples={}&quot;, x.shape().0),
+    });
+}
+
+// ❌ BAD: Generic error loses type information
+if x.shape().0 != y.len() {
+    return Err(AprenderError::Other(&quot;Shapes don't match&quot;.to_string()));
+}</code></pre>
+<p><strong>Benefit</strong>: Users can pattern match on specific errors for recovery strategies.</p>
+<h2 id="aprendererror-design"><a class="header" href="#aprendererror-design">AprenderError Design</a></h2>
+<h3 id="error-variants"><a class="header" href="#error-variants">Error Variants</a></h3>
+<pre><code class="language-rust">pub enum AprenderError {
+    /// Matrix/vector dimensions incompatible for operation
+    DimensionMismatch {
+        expected: String,
+        actual: String,
+    },
+
+    /// Matrix is singular (not invertible)
+    SingularMatrix {
+        det: f64,
+    },
+
+    /// Algorithm failed to converge
+    ConvergenceFailure {
+        iterations: usize,
+        final_loss: f64,
+    },
+
+    /// Invalid hyperparameter value
+    InvalidHyperparameter {
+        param: String,
+        value: String,
+        constraint: String,
+    },
+
+    /// Compute backend unavailable
+    BackendUnavailable {
+        backend: String,
+    },
+
+    /// File I/O error
+    Io(std::io::Error),
+
+    /// Serialization error
+    Serialization(String),
+
+    /// Catch-all for other errors
+    Other(String),
+}</code></pre>
+<h3 id="when-to-use-each-variant"><a class="header" href="#when-to-use-each-variant">When to Use Each Variant</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Variant</th><th>Use When</th><th>Example</th></tr></thead><tbody>
+<tr><td><strong>DimensionMismatch</strong></td><td>Matrix/vector shapes incompatible</td><td><code>fit(x: 100x5, y: len=50)</code></td></tr>
+<tr><td><strong>SingularMatrix</strong></td><td>Matrix cannot be inverted</td><td>Ridge regression with λ=0 on rank-deficient matrix</td></tr>
+<tr><td><strong>ConvergenceFailure</strong></td><td>Iterative algorithm doesn't converge</td><td>Lasso with max_iter=10 insufficient</td></tr>
+<tr><td><strong>InvalidHyperparameter</strong></td><td>Parameter violates constraint</td><td><code>learning_rate = -0.1</code> (must be positive)</td></tr>
+<tr><td><strong>BackendUnavailable</strong></td><td>Requested hardware unavailable</td><td>GPU operations on CPU-only machine</td></tr>
+<tr><td><strong>Io</strong></td><td>File operations fail</td><td>Model file not found, permission denied</td></tr>
+<tr><td><strong>Serialization</strong></td><td>Save/load fails</td><td>Corrupted model file</td></tr>
+<tr><td><strong>Other</strong></td><td>Unexpected errors</td><td>Last resort, prefer specific variants</td></tr>
+</tbody></table>
+</div>
+<h3 id="rich-context-pattern"><a class="header" href="#rich-context-pattern">Rich Context Pattern</a></h3>
+<p><strong>Structure</strong>: <code>{error_type}: {what} = {actual}, expected {constraint}</code></p>
+<pre><code class="language-rust">// DimensionMismatch example
+AprenderError::DimensionMismatch {
+    expected: &quot;100x10 (samples=100, features=10)&quot;,
+    actual: &quot;100x5 (samples=100, features=5)&quot;,
+}
+// Output: &quot;Matrix dimension mismatch: expected 100x10 (samples=100, features=10), got 100x5 (samples=100, features=5)&quot;
+
+// InvalidHyperparameter example
+AprenderError::InvalidHyperparameter {
+    param: &quot;n_clusters&quot;,
+    value: &quot;0&quot;,
+    constraint: &quot;must be &gt;= 1&quot;,
+}
+// Output: &quot;Invalid hyperparameter: n_clusters = 0, expected must be &gt;= 1&quot;</code></pre>
+<h2 id="error-handling-patterns"><a class="header" href="#error-handling-patterns">Error Handling Patterns</a></h2>
+<h3 id="pattern-1-early-return-with-"><a class="header" href="#pattern-1-early-return-with-">Pattern 1: Early Return with ?</a></h3>
+<p><strong>Use the ? operator</strong> for error propagation:</p>
+<pre><code class="language-rust">pub fn fit(&amp;mut self, x: &amp;Matrix&lt;f32&gt;, y: &amp;Vector&lt;f32&gt;) -&gt; Result&lt;()&gt; {
+    // Validate dimensions
+    self.validate_inputs(x, y)?;  // Early return if error
+
+    // Check hyperparameters
+    self.validate_hyperparameters()?;  // Early return if error
+
+    // Perform training
+    self.train_internal(x, y)?;  // Early return if error
+
+    Ok(())
+}
+
+fn validate_inputs(&amp;self, x: &amp;Matrix&lt;f32&gt;, y: &amp;Vector&lt;f32&gt;) -&gt; Result&lt;()&gt; {
+    if x.shape().0 != y.len() {
+        return Err(AprenderError::DimensionMismatch {
+            expected: format!(&quot;samples={}&quot;, y.len()),
+            actual: format!(&quot;samples={}&quot;, x.shape().0),
+        });
+    }
+    Ok(())
+}</code></pre>
+<p><strong>Benefits</strong>:</p>
+<ul>
+<li>Clean, readable code</li>
+<li>Errors automatically propagate up the call stack</li>
+<li>Explicit Result types in signatures</li>
+</ul>
+<h3 id="pattern-2-result-type-alias"><a class="header" href="#pattern-2-result-type-alias">Pattern 2: Result Type Alias</a></h3>
+<p><strong>Use the crate-level Result alias</strong>:</p>
+<pre><code class="language-rust">use crate::error::Result;  // = std::result::Result&lt;T, AprenderError&gt;
+
+// ✅ GOOD: Concise type signature
+pub fn predict(&amp;self, x: &amp;Matrix&lt;f32&gt;) -&gt; Result&lt;Vector&lt;f32&gt;&gt; {
+    // ...
+}
+
+// ❌ VERBOSE: Fully qualified type
+pub fn predict(&amp;self, x: &amp;Matrix&lt;f32&gt;)
+    -&gt; std::result::Result&lt;Vector&lt;f32&gt;, crate::error::AprenderError&gt;
+{
+    // ...
+}</code></pre>
+<h3 id="pattern-3-validate-early-fail-fast"><a class="header" href="#pattern-3-validate-early-fail-fast">Pattern 3: Validate Early, Fail Fast</a></h3>
+<p><strong>Check preconditions at function entry</strong>:</p>
+<pre><code class="language-rust">pub fn fit(&amp;mut self, x: &amp;Matrix&lt;f32&gt;, y: &amp;Vector&lt;f32&gt;) -&gt; Result&lt;()&gt; {
+    // 1. Validate inputs FIRST
+    if x.shape().0 == 0 {
+        return Err(&quot;Cannot fit on empty dataset&quot;.into());
+    }
+
+    if x.shape().0 != y.len() {
+        return Err(AprenderError::DimensionMismatch {
+            expected: format!(&quot;samples={}&quot;, y.len()),
+            actual: format!(&quot;samples={}&quot;, x.shape().0),
+        });
+    }
+
+    // 2. Validate hyperparameters
+    if self.learning_rate &lt;= 0.0 {
+        return Err(AprenderError::InvalidHyperparameter {
+            param: &quot;learning_rate&quot;.to_string(),
+            value: format!(&quot;{}&quot;, self.learning_rate),
+            constraint: &quot;&gt; 0.0&quot;.to_string(),
+        });
+    }
+
+    // 3. Proceed with training (all checks passed)
+    self.train_internal(x, y)
+}</code></pre>
+<p><strong>Benefits</strong>:</p>
+<ul>
+<li>Errors caught before expensive computation</li>
+<li>Clear failure points</li>
+<li>Easy to test edge cases</li>
+</ul>
+<h3 id="pattern-4-convert-external-errors"><a class="header" href="#pattern-4-convert-external-errors">Pattern 4: Convert External Errors</a></h3>
+<p><strong>Use From trait</strong> for automatic conversion:</p>
+<pre><code class="language-rust">impl From&lt;std::io::Error&gt; for AprenderError {
+    fn from(err: std::io::Error) -&gt; Self {
+        AprenderError::Io(err)
+    }
+}
+
+// Now you can use ? with io::Error
+pub fn save&lt;P: AsRef&lt;Path&gt;&gt;(&amp;self, path: P) -&gt; Result&lt;()&gt; {
+    let file = File::create(path)?;  // io::Error → AprenderError automatically
+    let writer = BufWriter::new(file);
+    serde_json::to_writer(writer, self)?;  // Would need From for serde error
+    Ok(())
+}</code></pre>
+<h3 id="pattern-5-custom-error-messages-with-map_err"><a class="header" href="#pattern-5-custom-error-messages-with-map_err">Pattern 5: Custom Error Messages with .map_err()</a></h3>
+<p><strong>Add context when converting errors</strong>:</p>
+<pre><code class="language-rust">pub fn load_model(path: &amp;str) -&gt; Result&lt;Model&gt; {
+    let file = File::open(path)
+        .map_err(|e| AprenderError::Other(
+            format!(&quot;Failed to open model file '{}': {}&quot;, path, e)
+        ))?;
+
+    let model: Model = serde_json::from_reader(file)
+        .map_err(|e| AprenderError::Serialization(
+            format!(&quot;Failed to deserialize model: {}&quot;, e)
+        ))?;
+
+    Ok(model)
+}</code></pre>
+<h2 id="real-world-examples-from-aprender"><a class="header" href="#real-world-examples-from-aprender">Real-World Examples from Aprender</a></h2>
+<h3 id="example-1-linear-regression-dimension-check"><a class="header" href="#example-1-linear-regression-dimension-check">Example 1: Linear Regression Dimension Check</a></h3>
+<pre><code class="language-rust">// From: src/linear_model/mod.rs
+impl Estimator&lt;f32, f32&gt; for LinearRegression {
+    fn fit(&amp;mut self, x: &amp;Matrix&lt;f32&gt;, y: &amp;Vector&lt;f32&gt;) -&gt; Result&lt;()&gt; {
+        let (n_samples, n_features) = x.shape();
+
+        // Validate sample count matches
+        if n_samples != y.len() {
+            return Err(AprenderError::DimensionMismatch {
+                expected: format!(&quot;{}x{}&quot;, y.len(), n_features),
+                actual: format!(&quot;{}x{}&quot;, n_samples, n_features),
+            });
+        }
+
+        // Validate non-empty
+        if n_samples == 0 {
+            return Err(&quot;Cannot fit on empty dataset&quot;.into());
+        }
+
+        // ... training logic
+        Ok(())
+    }
+}</code></pre>
+<p><strong>Error message example</strong>:</p>
+<pre><code>Error: Matrix dimension mismatch: expected 100x5, got 80x5
+</code></pre>
+<p>User immediately knows:</p>
+<ul>
+<li>Expected 100 samples, got 80</li>
+<li>Feature count (5) is correct</li>
+<li>Need to check training data creation</li>
+</ul>
+<h3 id="example-2-k-means-hyperparameter-validation"><a class="header" href="#example-2-k-means-hyperparameter-validation">Example 2: K-Means Hyperparameter Validation</a></h3>
+<pre><code class="language-rust">// From: src/cluster/mod.rs
+impl KMeans {
+    pub fn new(n_clusters: usize) -&gt; Result&lt;Self&gt; {
+        if n_clusters == 0 {
+            return Err(AprenderError::InvalidHyperparameter {
+                param: &quot;n_clusters&quot;.to_string(),
+                value: &quot;0&quot;.to_string(),
+                constraint: &quot;must be &gt;= 1&quot;.to_string(),
+            });
+        }
+
+        Ok(Self {
+            n_clusters,
+            max_iter: 300,
+            tol: 1e-4,
+            random_state: None,
+            centroids: None,
+        })
+    }
+}</code></pre>
+<p><strong>Usage</strong>:</p>
+<pre><code class="language-rust">match KMeans::new(0) {
+    Ok(_) =&gt; println!(&quot;Created K-Means&quot;),
+    Err(e) =&gt; println!(&quot;Error: {}&quot;, e),
+    // Prints: &quot;Error: Invalid hyperparameter: n_clusters = 0, expected must be &gt;= 1&quot;
+}</code></pre>
+<h3 id="example-3-ridge-regression-singular-matrix"><a class="header" href="#example-3-ridge-regression-singular-matrix">Example 3: Ridge Regression Singular Matrix</a></h3>
+<pre><code class="language-rust">// From: src/linear_model/mod.rs
+impl Estimator&lt;f32, f32&gt; for Ridge {
+    fn fit(&amp;mut self, x: &amp;Matrix&lt;f32&gt;, y: &amp;Vector&lt;f32&gt;) -&gt; Result&lt;()&gt; {
+        // ... dimension checks ...
+
+        // Compute X^T X + λI
+        let xtx = x.transpose().matmul(&amp;x);
+        let regularized = xtx + self.alpha * Matrix::identity(n_features);
+
+        // Attempt Cholesky decomposition (fails if singular)
+        let cholesky = match regularized.cholesky() {
+            Some(l) =&gt; l,
+            None =&gt; {
+                return Err(AprenderError::SingularMatrix {
+                    det: 0.0,  // Approximate (actual computation expensive)
+                });
+            }
+        };
+
+        // ... solve system ...
+        Ok(())
+    }
+}</code></pre>
+<p><strong>Error message</strong>:</p>
+<pre><code>Error: Singular matrix detected: determinant = 0, cannot invert
+</code></pre>
+<p><strong>Recovery strategy</strong>:</p>
+<pre><code class="language-rust">match ridge.fit(&amp;x, &amp;y) {
+    Ok(()) =&gt; println!(&quot;Training succeeded&quot;),
+    Err(AprenderError::SingularMatrix { .. }) =&gt; {
+        println!(&quot;Matrix is singular, try increasing regularization:&quot;);
+        println!(&quot;  ridge.alpha = 1.0  (current: {})&quot;, ridge.alpha);
+    }
+    Err(e) =&gt; println!(&quot;Other error: {}&quot;, e),
+}</code></pre>
+<h3 id="example-4-lasso-convergence-failure"><a class="header" href="#example-4-lasso-convergence-failure">Example 4: Lasso Convergence Failure</a></h3>
+<pre><code class="language-rust">// From: src/linear_model/mod.rs
+impl Estimator&lt;f32, f32&gt; for Lasso {
+    fn fit(&amp;mut self, x: &amp;Matrix&lt;f32&gt;, y: &amp;Vector&lt;f32&gt;) -&gt; Result&lt;()&gt; {
+        // ... setup ...
+
+        for iter in 0..self.max_iter {
+            let prev_coef = self.coefficients.clone();
+
+            // Coordinate descent update
+            self.update_coordinates(x, y);
+
+            // Check convergence
+            let change = compute_max_change(&amp;self.coefficients, &amp;prev_coef);
+            if change &lt; self.tol {
+                return Ok(());  // Converged!
+            }
+        }
+
+        // Did not converge
+        Err(AprenderError::ConvergenceFailure {
+            iterations: self.max_iter,
+            final_loss: self.compute_loss(x, y),
+        })
+    }
+}</code></pre>
+<p><strong>Error handling</strong>:</p>
+<pre><code class="language-rust">match lasso.fit(&amp;x, &amp;y) {
+    Ok(()) =&gt; println!(&quot;Training converged&quot;),
+    Err(AprenderError::ConvergenceFailure { iterations, final_loss }) =&gt; {
+        println!(&quot;Warning: Did not converge after {} iterations&quot;, iterations);
+        println!(&quot;Final loss: {:.4}&quot;, final_loss);
+        println!(&quot;Try: lasso.max_iter = {}&quot;, iterations * 2);
+    }
+    Err(e) =&gt; println!(&quot;Error: {}&quot;, e),
+}</code></pre>
+<h2 id="user-facing-error-handling"><a class="header" href="#user-facing-error-handling">User-Facing Error Handling</a></h2>
+<h3 id="pattern-match-on-error-types"><a class="header" href="#pattern-match-on-error-types">Pattern: Match on Error Types</a></h3>
+<pre><code class="language-rust">use aprender::classification::KNearestNeighbors;
+use aprender::error::AprenderError;
+
+fn train_model(x: &amp;Matrix&lt;f32&gt;, y: &amp;Vec&lt;i32&gt;) {
+    let mut knn = KNearestNeighbors::new(5);
+
+    match knn.fit(x, y) {
+        Ok(()) =&gt; println!(&quot;✅ Training succeeded&quot;),
+
+        Err(AprenderError::DimensionMismatch { expected, actual }) =&gt; {
+            eprintln!(&quot;❌ Dimension mismatch:&quot;);
+            eprintln!(&quot;   Expected: {}&quot;, expected);
+            eprintln!(&quot;   Got:      {}&quot;, actual);
+            eprintln!(&quot;   Fix: Check your training data shapes&quot;);
+        }
+
+        Err(AprenderError::InvalidHyperparameter { param, value, constraint }) =&gt; {
+            eprintln!(&quot;❌ Invalid parameter: {} = {}&quot;, param, value);
+            eprintln!(&quot;   Constraint: {}&quot;, constraint);
+            eprintln!(&quot;   Fix: Adjust hyperparameter value&quot;);
+        }
+
+        Err(e) =&gt; {
+            eprintln!(&quot;❌ Unexpected error: {}&quot;, e);
+        }
+    }
+}</code></pre>
+<h3 id="pattern-propagate-with-context"><a class="header" href="#pattern-propagate-with-context">Pattern: Propagate with Context</a></h3>
+<pre><code class="language-rust">fn load_and_train(model_path: &amp;str, data_path: &amp;str) -&gt; Result&lt;Model&gt; {
+    // Load pre-trained model
+    let mut model = Model::load(model_path)
+        .map_err(|e| format!(&quot;Failed to load model from '{}': {}&quot;, model_path, e))?;
+
+    // Load training data
+    let (x, y) = load_data(data_path)
+        .map_err(|e| format!(&quot;Failed to load data from '{}': {}&quot;, data_path, e))?;
+
+    // Fine-tune model
+    model.fit(&amp;x, &amp;y)
+        .map_err(|e| format!(&quot;Training failed: {}&quot;, e))?;
+
+    Ok(model)
+}</code></pre>
+<h3 id="pattern-recover-from-specific-errors"><a class="header" href="#pattern-recover-from-specific-errors">Pattern: Recover from Specific Errors</a></h3>
+<pre><code class="language-rust">fn robust_training(x: &amp;Matrix&lt;f32&gt;, y: &amp;Vector&lt;f32&gt;) -&gt; Result&lt;Ridge&gt; {
+    let mut ridge = Ridge::new(0.1);  // Small regularization
+
+    match ridge.fit(x, y) {
+        Ok(()) =&gt; return Ok(ridge),
+
+        // Recovery: Increase regularization if matrix is singular
+        Err(AprenderError::SingularMatrix { .. }) =&gt; {
+            println!(&quot;Warning: Matrix singular with α=0.1, trying α=1.0&quot;);
+            ridge.alpha = 1.0;
+            ridge.fit(x, y)?;  // Retry with stronger regularization
+            Ok(ridge)
+        }
+
+        // Propagate other errors
+        Err(e) =&gt; Err(e),
+    }
+}</code></pre>
+<h2 id="testing-error-conditions"><a class="header" href="#testing-error-conditions">Testing Error Conditions</a></h2>
+<h3 id="test-each-error-variant"><a class="header" href="#test-each-error-variant">Test Each Error Variant</a></h3>
+<pre><code class="language-rust">#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_dimension_mismatch_error() {
+        let x = Matrix::from_vec(100, 5, vec![0.0; 500]).unwrap();
+        let y = Vector::from_vec(vec![0.0; 80]);  // Wrong size!
+
+        let mut lr = LinearRegression::new();
+        let result = lr.fit(&amp;x, &amp;y);
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            AprenderError::DimensionMismatch { expected, actual } =&gt; {
+                assert!(expected.contains(&quot;80&quot;));
+                assert!(actual.contains(&quot;100&quot;));
+            }
+            _ =&gt; panic!(&quot;Expected DimensionMismatch error&quot;),
+        }
+    }
+
+    #[test]
+    fn test_invalid_hyperparameter_error() {
+        let result = KMeans::new(0);  // Invalid: n_clusters must be &gt;= 1
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            AprenderError::InvalidHyperparameter { param, value, constraint } =&gt; {
+                assert_eq!(param, &quot;n_clusters&quot;);
+                assert_eq!(value, &quot;0&quot;);
+                assert!(constraint.contains(&quot;&gt;= 1&quot;));
+            }
+            _ =&gt; panic!(&quot;Expected InvalidHyperparameter error&quot;),
+        }
+    }
+
+    #[test]
+    fn test_convergence_failure_error() {
+        let x = Matrix::from_vec(10, 5, vec![1.0; 50]).unwrap();
+        let y = Vector::from_vec(vec![1.0; 10]);
+
+        let mut lasso = Lasso::new(0.1)
+            .with_max_iter(1);  // Force non-convergence
+
+        let result = lasso.fit(&amp;x, &amp;y);
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            AprenderError::ConvergenceFailure { iterations, .. } =&gt; {
+                assert_eq!(iterations, 1);
+            }
+            _ =&gt; panic!(&quot;Expected ConvergenceFailure error&quot;),
+        }
+    }
+}</code></pre>
+<h2 id="common-pitfalls"><a class="header" href="#common-pitfalls">Common Pitfalls</a></h2>
+<h3 id="pitfall-1-using-panic-instead-of-result"><a class="header" href="#pitfall-1-using-panic-instead-of-result">Pitfall 1: Using panic!() Instead of Result</a></h3>
+<pre><code class="language-rust">// ❌ BAD: Crashes user's application
+pub fn predict(&amp;self, x: &amp;Matrix&lt;f32&gt;) -&gt; Vector&lt;f32&gt; {
+    assert!(self.is_fitted(), &quot;Model not fitted!&quot;);  // Panic!
+    // ...
+}
+
+// ✅ GOOD: Returns error user can handle
+pub fn predict(&amp;self, x: &amp;Matrix&lt;f32&gt;) -&gt; Result&lt;Vector&lt;f32&gt;&gt; {
+    if !self.is_fitted() {
+        return Err(&quot;Model not fitted, call fit() first&quot;.into());
+    }
+    // ...
+    Ok(predictions)
+}</code></pre>
+<h3 id="pitfall-2-swallowing-errors"><a class="header" href="#pitfall-2-swallowing-errors">Pitfall 2: Swallowing Errors</a></h3>
+<pre><code class="language-rust">// ❌ BAD: Error information lost
+pub fn fit(&amp;mut self, x: &amp;Matrix&lt;f32&gt;, y: &amp;Vector&lt;f32&gt;) -&gt; Result&lt;()&gt; {
+    if let Err(_) = self.validate_inputs(x, y) {
+        return Err(&quot;Validation failed&quot;.into());  // Context lost!
+    }
+    // ...
+}
+
+// ✅ GOOD: Propagate full error
+pub fn fit(&amp;mut self, x: &amp;Matrix&lt;f32&gt;, y: &amp;Vector&lt;f32&gt;) -&gt; Result&lt;()&gt; {
+    self.validate_inputs(x, y)?;  // Full error propagated
+    // ...
+}</code></pre>
+<h3 id="pitfall-3-generic-other-errors"><a class="header" href="#pitfall-3-generic-other-errors">Pitfall 3: Generic Other Errors</a></h3>
+<pre><code class="language-rust">// ❌ BAD: Loses type information
+if n_clusters == 0 {
+    return Err(AprenderError::Other(&quot;n_clusters must be &gt;= 1&quot;.into()));
+}
+
+// ✅ GOOD: Specific error variant
+if n_clusters == 0 {
+    return Err(AprenderError::InvalidHyperparameter {
+        param: &quot;n_clusters&quot;.to_string(),
+        value: &quot;0&quot;.to_string(),
+        constraint: &quot;&gt;= 1&quot;.to_string(),
+    });
+}</code></pre>
+<h3 id="pitfall-4-unclear-error-messages"><a class="header" href="#pitfall-4-unclear-error-messages">Pitfall 4: Unclear Error Messages</a></h3>
+<pre><code class="language-rust">// ❌ BAD: Not actionable
+return Err(&quot;Invalid input&quot;.into());
+
+// ✅ GOOD: Specific and actionable
+return Err(AprenderError::DimensionMismatch {
+    expected: format!(&quot;samples={}, features={}&quot;, expected_samples, expected_features),
+    actual: format!(&quot;samples={}, features={}&quot;, x.shape().0, x.shape().1),
+});</code></pre>
+<h2 id="best-practices-summary"><a class="header" href="#best-practices-summary">Best Practices Summary</a></h2>
+<div class="table-wrapper"><table><thead><tr><th>Practice</th><th>Do</th><th>Don't</th></tr></thead><tbody>
+<tr><td><strong>Return types</strong></td><td>Use <code>Result&lt;T&gt;</code> for fallible operations</td><td>Use <code>panic!()</code> or <code>unwrap()</code> in library code</td></tr>
+<tr><td><strong>Error variants</strong></td><td>Use specific error types</td><td>Use generic <code>Other</code> variant</td></tr>
+<tr><td><strong>Error messages</strong></td><td>Include actual values and context</td><td>Use vague messages like &quot;Invalid input&quot;</td></tr>
+<tr><td><strong>Propagation</strong></td><td>Use <code>?</code> operator</td><td>Manually match and re-wrap errors</td></tr>
+<tr><td><strong>Validation</strong></td><td>Check preconditions early</td><td>Validate late, fail deep in call stack</td></tr>
+<tr><td><strong>Testing</strong></td><td>Test each error variant</td><td>Only test happy path</td></tr>
+<tr><td><strong>Recovery</strong></td><td>Match on specific error types</td><td>Ignore error details</td></tr>
+</tbody></table>
+</div>
+<h2 id="further-reading"><a class="header" href="#further-reading">Further Reading</a></h2>
+<ul>
+<li><strong>Rust Book</strong>: <a href="https://doc.rust-lang.org/book/ch09-00-error-handling.html">Error Handling Chapter</a></li>
+<li><strong>Rust By Example</strong>: <a href="https://doc.rust-lang.org/rust-by-example/error.html">Error Handling</a></li>
+<li><strong>Rust API Guidelines</strong>: <a href="https://rust-lang.github.io/api-guidelines/interoperability.html#error-types-are-meaningful-and-well-behaved-c-good-err">Error Design</a></li>
+</ul>
+<h2 id="related-chapters"><a class="header" href="#related-chapters">Related Chapters</a></h2>
+<ul>
+<li><a href="./api-design.html">API Design</a> - How Result fits into API design</li>
+<li><a href="./type-safety.html">Type Safety</a> - Using types to prevent errors</li>
+<li><a href="../methodology/test-first-philosophy.html">Testing</a> - Testing error paths</li>
+</ul>
+<h2 id="summary"><a class="header" href="#summary">Summary</a></h2>
+<div class="table-wrapper"><table><thead><tr><th>Concept</th><th>Key Takeaway</th></tr></thead><tbody>
+<tr><td><strong>Result<T></strong></td><td>All fallible operations return Result, never panic</td></tr>
+<tr><td><strong>Rich context</strong></td><td>Errors include actual values, expected values, constraints</td></tr>
+<tr><td><strong>Specific variants</strong></td><td>Use DimensionMismatch, InvalidHyperparameter, not generic Other</td></tr>
+<tr><td><strong>Early validation</strong></td><td>Check preconditions at function entry, fail fast</td></tr>
+<tr><td><strong>? operator</strong></td><td>Use for clean error propagation</td></tr>
+<tr><td><strong>Pattern matching</strong></td><td>Users match on error types for recovery strategies</td></tr>
+<tr><td><strong>Testing</strong></td><td>Test each error variant with targeted tests</td></tr>
+</tbody></table>
+</div>
+<p>Excellent error handling makes the difference between a frustrating library and a delightful one. Users should always know what went wrong and how to fix it.</p>
 
                     </main>
 
