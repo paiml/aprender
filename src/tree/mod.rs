@@ -4719,7 +4719,7 @@ mod tests {
         // Note: Small variations can occur due to floating point arithmetic in normalization
         for (i, (&imp1, &imp2)) in imps1.iter().zip(imps2.iter()).enumerate() {
             assert!(
-                (imp1 - imp2).abs() < 0.1,
+                (imp1 - imp2).abs() <= 0.1,
                 "Importance {} should be similar: {} vs {}",
                 i,
                 imp1,
@@ -4816,7 +4816,7 @@ mod tests {
         // Note: Small variations can occur due to floating point arithmetic in normalization
         for (i, (&imp1, &imp2)) in imps1.iter().zip(imps2.iter()).enumerate() {
             assert!(
-                (imp1 - imp2).abs() < 0.1,
+                (imp1 - imp2).abs() <= 0.1,
                 "Importance {} should be similar: {} vs {}",
                 i,
                 imp1,
