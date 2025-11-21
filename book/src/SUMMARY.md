@@ -107,6 +107,10 @@
 
 - [Descriptive Statistics Theory](./ml-fundamentals/descriptive-statistics.md)
 
+## Pattern Mining
+
+- [Apriori Algorithm Theory](./ml-fundamentals/apriori.md)
+
 # Real-World Examples from Aprender
 
 - [Case Study: Linear Regression](./examples/linear-regression.md)
@@ -136,6 +140,7 @@
 - [Case Study: Local Outlier Factor (LOF)](./examples/lof-anomaly.md)
 - [Case Study: Spectral Clustering](./examples/spectral-clustering.md)
 - [Case Study: t-SNE Visualization](./examples/tsne-visualization.md)
+- [Case Study: Market Basket Analysis (Apriori)](./examples/market-basket-apriori.md)
 
 # Sprint-Based Development
 

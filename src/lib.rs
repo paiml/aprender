@@ -36,6 +36,7 @@
 //! - [`classification`]: Classification algorithms (Logistic Regression)
 //! - [`tree`]: Decision tree classifiers
 //! - [`metrics`]: Evaluation metrics
+//! - [`mining`]: Pattern mining algorithms (Apriori for association rules)
 //! - [`model_selection`]: Cross-validation and train/test splitting
 //! - [`preprocessing`]: Data transformers (scalers, encoders)
 //! - [`optim`]: Optimization algorithms (SGD, Adam)
@@ -54,6 +55,7 @@ pub mod graph;
 pub mod linear_model;
 pub mod loss;
 pub mod metrics;
+pub mod mining;
 pub mod model_selection;
 pub mod optim;
 pub mod prelude;
