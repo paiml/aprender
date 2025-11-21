@@ -69,7 +69,7 @@ require_benchmarks = false  # Optional for now
 
 [rust]
 # Rust-specific settings
-check_unwraps = true  # CRITICAL: 326 unwrap() calls to fix
+check_unwraps = true  # CRITICAL: 1,066 unwrap() calls to fix in src/
 max_unwraps = 0  # Target: zero unwrap() in production code
 rust_project_score_min = 120  # Current: 124/134
 
@@ -92,7 +92,7 @@ cyclomatic_complexity_max = 9
 cognitive_complexity_max = 8
 satd_comments = 0  # Production code only
 rust_project_score = 124.0
-unwrap_count = 326  # TODO: Reduce to 0
+unwrap_count = 1066  # CRITICAL: src/ only, see GH-41
 last_updated = "2025-11-21"
 
 [targets]

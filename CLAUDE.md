@@ -176,10 +176,41 @@ Pre-commit hooks enforce these thresholds automatically.
 
 ### Critical Issues Tracked
 
-1. **326 unwrap() calls** in production code (Cloudflare-class defect)
-   - Target: 0 unwrap() calls
-   - Use `.expect()` with descriptive messages or proper error handling
-   - See separate tracking issue for remediation plan
+1. **1,066 unwrap() calls in src/** (Cloudflare-class defect, Issue #41)
+   - **Severity:** CRITICAL (P0)
+   - **Defect Class:** Cloudflare 2025-11-18 outage class (unwrap panic caused 3+ hour downtime)
+   - **Current Count:** 1,066 unwrap() calls in production code (src/)
+   - **Target:** 0 unwrap() calls
+   - **Timeline:** 6-8 weeks, 80-120 hours effort
+
+   **Top 5 Offenders:**
+   - `src/cluster/mod.rs`: 280 unwrap() (26.3%)
+   - `src/tree/mod.rs`: 178 unwrap() (16.7%)
+   - `src/classification/mod.rs`: 152 unwrap() (14.3%)
+   - `src/linear_model/mod.rs`: 136 unwrap() (12.8%)
+   - `src/preprocessing/mod.rs`: 121 unwrap() (11.4%)
+
+   **Enforcement:** `.clippy.toml` configured with `disallowed-methods` to ban unwrap()
+
+   **Remediation Strategy:**
+   ```rust
+   // ❌ DANGEROUS: Can panic and crash the process
+   let value = some_option.unwrap();
+
+   // ✅ ACCEPTABLE: Descriptive error message
+   let value = some_option.expect("User configuration must have name field");
+
+   // ✅ BEST: Proper error handling
+   let value = some_option.ok_or_else(|| AprenderError::MissingField("name"))?;
+   ```
+
+   **Testing Enforcement:**
+   ```bash
+   # This will now FAIL due to .clippy.toml disallowed-methods
+   cargo clippy -- -D clippy::disallowed-methods
+   ```
+
+   See Issue #41 for complete remediation plan.
 
 ### PMAT Workflow Integration
 

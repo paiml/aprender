@@ -1,0 +1,20 @@
+# Clippy Configuration for Aprender
+# Enforces Toyota Way quality standards
+
+# Disallow dangerous methods that can cause panics
+disallowed-methods = [
+    # unwrap() can panic and crash the process (Cloudflare 2025-11-18 class defect)
+    { path = "core::option::Option::unwrap", reason = "Use .expect() with descriptive message or proper error handling with ?. See GH-41." },
+    { path = "core::result::Result::unwrap", reason = "Use .expect() with descriptive message or proper error handling with ?. See GH-41." },
+
+    # Other panic-inducing methods
+    { path = "core::option::Option::unwrap_or_default", reason = "Use .unwrap_or() or .unwrap_or_else() to make the default explicit." },
+    { path = "core::result::Result::unwrap_err", reason = "Use .expect_err() with descriptive message or proper error handling." },
+]
+
+# Additional lint configuration
+# Cognitive complexity threshold (Toyota Way: ≤15)
+cognitive-complexity-threshold = 15
+
+# Type complexity threshold
+type-complexity-threshold = 250
