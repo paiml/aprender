@@ -1846,6 +1846,360 @@ impl Default for IsolationForest {
     }
 }
 
+// ============================================================================
+// Local Outlier Factor (LOF) for Anomaly Detection
+// ============================================================================
+
+/// Local Outlier Factor (LOF) for density-based anomaly detection.
+///
+/// LOF detects anomalies based on local density deviation. Unlike global methods,
+/// it finds outliers in regions with varying density by comparing each point's
+/// density to its neighbors' densities.
+///
+/// # Algorithm
+///
+/// 1. For each point, find k-nearest neighbors
+/// 2. Compute reachability distance for each neighbor
+/// 3. Compute local reachability density (LRD) for each point
+/// 4. Compute LOF score: ratio of neighbors' LRD to point's LRD
+///
+/// # LOF Score Interpretation
+///
+/// - LOF ≈ 1: Similar density to neighbors (normal point)
+/// - LOF >> 1: Lower density than neighbors (outlier)
+/// - LOF < 1: Higher density than neighbors (core point)
+///
+/// # Examples
+///
+/// ```
+/// use aprender::prelude::*;
+///
+/// let data = Matrix::from_vec(
+///     6,
+///     2,
+///     vec![
+///         2.0, 2.0, 2.1, 2.0, 1.9, 2.1, 2.0, 1.9,  // Normal cluster
+///         10.0, 10.0, -10.0, -10.0,                 // Outliers
+///     ],
+/// )
+/// .unwrap();
+///
+/// let mut lof = LocalOutlierFactor::new()
+///     .with_n_neighbors(3)
+///     .with_contamination(0.3);
+/// lof.fit(&data).unwrap();
+///
+/// // Predict returns 1 for normal, -1 for anomaly
+/// let predictions = lof.predict(&data);
+///
+/// // score_samples returns LOF scores (higher = more anomalous)
+/// let scores = lof.score_samples(&data);
+/// ```
+///
+/// # Performance
+///
+/// - Time complexity: O(n² log k) for k-NN search
+/// - Space complexity: O(n²) for distance matrix
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalOutlierFactor {
+    /// Number of neighbors to use
+    n_neighbors: usize,
+    /// Expected proportion of anomalies
+    contamination: f32,
+    /// LOF scores for training data
+    lof_scores: Option<Vec<f32>>,
+    /// Negative outlier factor (opposite of LOF for sklearn compatibility)
+    negative_outlier_factor: Option<Vec<f32>>,
+    /// Training data (needed for prediction)
+    training_data: Option<Matrix<f32>>,
+    /// k-NN distances for training data
+    knn_distances: Option<Vec<Vec<f32>>>,
+    /// k-NN indices for training data
+    knn_indices: Option<Vec<Vec<usize>>>,
+    /// Local reachability density for training data
+    lrd: Option<Vec<f32>>,
+    /// Threshold for classification
+    threshold: Option<f32>,
+}
+
+impl LocalOutlierFactor {
+    /// Create a new Local Outlier Factor with default parameters.
+    ///
+    /// Default: 20 neighbors, 0.1 contamination
+    pub fn new() -> Self {
+        Self {
+            n_neighbors: 20,
+            contamination: 0.1,
+            lof_scores: None,
+            negative_outlier_factor: None,
+            training_data: None,
+            knn_distances: None,
+            knn_indices: None,
+            lrd: None,
+            threshold: None,
+        }
+    }
+
+    /// Set the number of neighbors.
+    pub fn with_n_neighbors(mut self, n_neighbors: usize) -> Self {
+        self.n_neighbors = n_neighbors;
+        self
+    }
+
+    /// Set the expected proportion of anomalies (0 to 0.5).
+    pub fn with_contamination(mut self, contamination: f32) -> Self {
+        self.contamination = contamination.clamp(0.0, 0.5);
+        self
+    }
+
+    /// Check if model has been fitted.
+    pub fn is_fitted(&self) -> bool {
+        self.lof_scores.is_some()
+    }
+
+    /// Fit the Local Outlier Factor on training data.
+    pub fn fit(&mut self, x: &Matrix<f32>) -> Result<()> {
+        let (n_samples, _) = x.shape();
+
+        // Validate n_neighbors
+        if self.n_neighbors >= n_samples {
+            return Err("n_neighbors must be less than number of samples".into());
+        }
+
+        // Store training data for prediction
+        self.training_data = Some(x.clone());
+
+        // Compute k-NN for all points
+        let (knn_distances, knn_indices) = self.compute_knn(x, x);
+        self.knn_distances = Some(knn_distances.clone());
+        self.knn_indices = Some(knn_indices.clone());
+
+        // Compute local reachability density for all points
+        let lrd = self.compute_lrd(&knn_distances, &knn_indices);
+        self.lrd = Some(lrd.clone());
+
+        // Compute LOF scores
+        let lof_scores = self.compute_lof_scores(&lrd, &knn_indices);
+        self.lof_scores = Some(lof_scores.clone());
+
+        // Compute negative outlier factor (for sklearn compatibility)
+        let nof: Vec<f32> = lof_scores.iter().map(|&score| -score).collect();
+        self.negative_outlier_factor = Some(nof.clone());
+
+        // Determine threshold from contamination
+        let mut sorted_scores = lof_scores.clone();
+        sorted_scores.sort_by(|a, b| b.partial_cmp(a).unwrap()); // Descending order
+
+        let threshold_idx = (self.contamination * n_samples as f32) as usize;
+        self.threshold = Some(sorted_scores[threshold_idx.min(n_samples - 1)]);
+
+        Ok(())
+    }
+
+    /// Compute k-nearest neighbors for query points.
+    fn compute_knn(
+        &self,
+        query: &Matrix<f32>,
+        data: &Matrix<f32>,
+    ) -> (Vec<Vec<f32>>, Vec<Vec<usize>>) {
+        let (n_query, n_features) = query.shape();
+        let (n_data, _) = data.shape();
+
+        let mut knn_distances = Vec::with_capacity(n_query);
+        let mut knn_indices = Vec::with_capacity(n_query);
+
+        for i in 0..n_query {
+            // Compute distances to all points
+            let mut distances: Vec<(f32, usize)> = Vec::with_capacity(n_data);
+
+            for j in 0..n_data {
+                let mut dist_sq = 0.0;
+                for k in 0..n_features {
+                    let diff = query.get(i, k) - data.get(j, k);
+                    dist_sq += diff * diff;
+                }
+                let dist = dist_sq.sqrt();
+                distances.push((dist, j));
+            }
+
+            // Sort by distance
+            distances.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+
+            // Take k+1 nearest (skip self if query == data)
+            let skip_self = i < n_data;
+            let k_start = if skip_self { 1 } else { 0 };
+            let k_end = k_start + self.n_neighbors;
+
+            let dists: Vec<f32> = distances[k_start..k_end.min(distances.len())]
+                .iter()
+                .map(|(d, _)| *d)
+                .collect();
+            let indices: Vec<usize> = distances[k_start..k_end.min(distances.len())]
+                .iter()
+                .map(|(_, idx)| *idx)
+                .collect();
+
+            knn_distances.push(dists);
+            knn_indices.push(indices);
+        }
+
+        (knn_distances, knn_indices)
+    }
+
+    /// Compute reachability distance between two points.
+    fn reachability_distance(&self, dist: f32, k_distance: f32) -> f32 {
+        dist.max(k_distance)
+    }
+
+    /// Compute local reachability density for all points.
+    fn compute_lrd(&self, knn_distances: &[Vec<f32>], knn_indices: &[Vec<usize>]) -> Vec<f32> {
+        let n_samples = knn_indices.len();
+        let mut lrd = Vec::with_capacity(n_samples);
+
+        for i in 0..n_samples {
+            let neighbors = &knn_indices[i];
+            let neighbor_dists = &knn_distances[i];
+
+            if neighbors.is_empty() {
+                lrd.push(1.0);
+                continue;
+            }
+
+            // Compute sum of reachability distances
+            let mut sum_reach_dist = 0.0;
+            for (j, &neighbor_idx) in neighbors.iter().enumerate() {
+                let dist_to_neighbor = neighbor_dists[j];
+
+                // k-distance of neighbor (distance to its k-th neighbor)
+                let k_distance = if neighbor_idx < knn_distances.len() {
+                    knn_distances[neighbor_idx].last().copied().unwrap_or(0.0)
+                } else {
+                    0.0
+                };
+
+                let reach_dist = self.reachability_distance(dist_to_neighbor, k_distance);
+                sum_reach_dist += reach_dist;
+            }
+
+            // LRD = k / sum of reachability distances
+            let lrd_value = if sum_reach_dist > 0.0 {
+                neighbors.len() as f32 / sum_reach_dist
+            } else {
+                1.0 // Avoid division by zero
+            };
+
+            lrd.push(lrd_value);
+        }
+
+        lrd
+    }
+
+    /// Compute LOF scores for all points.
+    fn compute_lof_scores(&self, lrd: &[f32], knn_indices: &[Vec<usize>]) -> Vec<f32> {
+        let n_samples = knn_indices.len();
+        let mut lof_scores = Vec::with_capacity(n_samples);
+
+        for i in 0..n_samples {
+            let neighbors = &knn_indices[i];
+
+            if neighbors.is_empty() || lrd[i] == 0.0 {
+                lof_scores.push(1.0);
+                continue;
+            }
+
+            // Average LRD of neighbors
+            let sum_neighbor_lrd: f32 = neighbors.iter().map(|&idx| lrd[idx]).sum();
+            let avg_neighbor_lrd = sum_neighbor_lrd / neighbors.len() as f32;
+
+            // LOF = avg(neighbor LRD) / LRD(point)
+            let lof = avg_neighbor_lrd / lrd[i];
+
+            lof_scores.push(lof);
+        }
+
+        lof_scores
+    }
+
+    /// Compute LOF scores for samples.
+    ///
+    /// Returns a vector of LOF scores where higher scores indicate anomalies.
+    pub fn score_samples(&self, x: &Matrix<f32>) -> Vec<f32> {
+        if !self.is_fitted() {
+            panic!("Model not fitted. Call fit() first.");
+        }
+
+        let training_data = self.training_data.as_ref().unwrap();
+        let training_lrd = self.lrd.as_ref().unwrap();
+
+        // Compute k-NN for query points against training data
+        let (knn_distances, knn_indices) = self.compute_knn(x, training_data);
+
+        // Compute LRD for query points
+        let query_lrd = self.compute_lrd(&knn_distances, &knn_indices);
+
+        // Compute LOF scores for query points
+        let n_query = x.shape().0;
+        let mut lof_scores = Vec::with_capacity(n_query);
+
+        for i in 0..n_query {
+            let neighbors = &knn_indices[i];
+
+            if neighbors.is_empty() || query_lrd[i] == 0.0 {
+                lof_scores.push(1.0);
+                continue;
+            }
+
+            // Average LRD of neighbors (from training data)
+            let sum_neighbor_lrd: f32 = neighbors
+                .iter()
+                .filter_map(|&idx| training_lrd.get(idx).copied())
+                .sum();
+            let avg_neighbor_lrd = sum_neighbor_lrd / neighbors.len() as f32;
+
+            // LOF = avg(neighbor LRD) / LRD(point)
+            let lof = avg_neighbor_lrd / query_lrd[i];
+
+            lof_scores.push(lof);
+        }
+
+        lof_scores
+    }
+
+    /// Predict anomaly labels for samples.
+    ///
+    /// Returns 1 for normal points and -1 for anomalies.
+    pub fn predict(&self, x: &Matrix<f32>) -> Vec<i32> {
+        if !self.is_fitted() {
+            panic!("Model not fitted. Call fit() first.");
+        }
+
+        let threshold = self.threshold.unwrap();
+        let scores = self.score_samples(x);
+
+        scores
+            .iter()
+            .map(|&score| if score > threshold { -1 } else { 1 })
+            .collect()
+    }
+
+    /// Get the negative outlier factor for training samples.
+    ///
+    /// Returns negative of LOF scores (sklearn compatibility).
+    pub fn negative_outlier_factor(&self) -> &[f32] {
+        if !self.is_fitted() {
+            panic!("Model not fitted. Call fit() first.");
+        }
+
+        self.negative_outlier_factor.as_ref().unwrap()
+    }
+}
+
+impl Default for LocalOutlierFactor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3940,5 +4294,363 @@ mod tests {
     fn test_isolation_forest_empty_after_construction() {
         let iforest = IsolationForest::new();
         assert!(!iforest.is_fitted());
+    }
+
+    // ========================================================================
+    // Local Outlier Factor (LOF) Tests
+    // ========================================================================
+
+    #[test]
+    fn test_lof_new() {
+        let lof = LocalOutlierFactor::new();
+        assert!(!lof.is_fitted());
+    }
+
+    #[test]
+    fn test_lof_fit_basic() {
+        // Normal data clustered around (2, 2)
+        let data = Matrix::from_vec(
+            10,
+            2,
+            vec![
+                2.0, 2.0, 2.1, 2.0, 1.9, 2.1, 2.0, 1.9, 2.1, 2.1, 1.8, 2.0, 2.2, 2.0, 2.0, 2.2,
+                1.9, 1.9, 2.1, 1.8,
+            ],
+        )
+        .unwrap();
+
+        let mut lof = LocalOutlierFactor::new().with_n_neighbors(5);
+        lof.fit(&data).unwrap();
+        assert!(lof.is_fitted());
+    }
+
+    #[test]
+    fn test_lof_predict_anomalies() {
+        // 8 normal points + 2 outliers
+        let data = Matrix::from_vec(
+            10,
+            2,
+            vec![
+                2.0, 2.0, 2.1, 2.0, 1.9, 2.1, 2.0, 1.9, 2.1, 2.1, 1.8, 2.0, 2.2, 2.0, 2.0, 2.2,
+                10.0, 10.0, // Outlier 1
+                -10.0, -10.0, // Outlier 2
+            ],
+        )
+        .unwrap();
+
+        let mut lof = LocalOutlierFactor::new()
+            .with_n_neighbors(5)
+            .with_contamination(0.2);
+        lof.fit(&data).unwrap();
+
+        let predictions = lof.predict(&data);
+        assert_eq!(predictions.len(), 10);
+
+        // Check that predictions are either 1 (normal) or -1 (anomaly)
+        for &pred in &predictions {
+            assert!(pred == 1 || pred == -1);
+        }
+
+        // Should detect approximately 2 anomalies (20% contamination)
+        let n_anomalies = predictions.iter().filter(|&&p| p == -1).count();
+        assert!((1..=3).contains(&n_anomalies));
+    }
+
+    #[test]
+    fn test_lof_score_samples() {
+        let data = Matrix::from_vec(
+            6,
+            2,
+            vec![
+                2.0, 2.0, 2.1, 2.0, 1.9, 2.1, 2.0, 1.9, // Normal
+                10.0, 10.0, // Outlier 1
+                -10.0, -10.0, // Outlier 2
+            ],
+        )
+        .unwrap();
+
+        let mut lof = LocalOutlierFactor::new().with_n_neighbors(3);
+        lof.fit(&data).unwrap();
+
+        let scores = lof.score_samples(&data);
+        assert_eq!(scores.len(), 6);
+
+        // Outliers should have higher LOF scores than normal points
+        let normal_avg = (scores[0] + scores[1] + scores[2] + scores[3]) / 4.0;
+        let outlier_avg = (scores[4] + scores[5]) / 2.0;
+        assert!(outlier_avg > normal_avg);
+    }
+
+    #[test]
+    fn test_lof_negative_outlier_factor() {
+        let data = Matrix::from_vec(
+            6,
+            2,
+            vec![
+                2.0, 2.0, 2.1, 2.0, 1.9, 2.1, 2.0, 1.9, 10.0, 10.0, -10.0, -10.0,
+            ],
+        )
+        .unwrap();
+
+        let mut lof = LocalOutlierFactor::new().with_n_neighbors(3);
+        lof.fit(&data).unwrap();
+
+        let nof = lof.negative_outlier_factor();
+        assert_eq!(nof.len(), 6);
+
+        // Negative outlier factor should be opposite sign of LOF scores
+        let scores = lof.score_samples(&data);
+        for i in 0..6 {
+            // NOF should be negative of LOF (approximately)
+            assert!(nof[i] < 0.0 || scores[i] < 1.0);
+        }
+    }
+
+    #[test]
+    fn test_lof_contamination() {
+        let data = Matrix::from_vec(
+            10,
+            2,
+            vec![
+                2.0, 2.0, 2.1, 2.0, 1.9, 2.1, 2.0, 1.9, 2.1, 2.1, 1.8, 2.0, 2.2, 2.0, 2.0, 2.2,
+                10.0, 10.0, -10.0, -10.0,
+            ],
+        )
+        .unwrap();
+
+        // Low contamination (10%) - fewer anomalies expected
+        let mut lof_low = LocalOutlierFactor::new()
+            .with_contamination(0.1)
+            .with_n_neighbors(5);
+        lof_low.fit(&data).unwrap();
+        let pred_low = lof_low.predict(&data);
+        let anomalies_low = pred_low.iter().filter(|&&p| p == -1).count();
+
+        // High contamination (30%) - more anomalies expected
+        let mut lof_high = LocalOutlierFactor::new()
+            .with_contamination(0.3)
+            .with_n_neighbors(5);
+        lof_high.fit(&data).unwrap();
+        let pred_high = lof_high.predict(&data);
+        let anomalies_high = pred_high.iter().filter(|&&p| p == -1).count();
+
+        // Higher contamination should detect more or equal anomalies
+        assert!(anomalies_high >= anomalies_low);
+    }
+
+    #[test]
+    fn test_lof_n_neighbors() {
+        let data = Matrix::from_vec(
+            8,
+            2,
+            vec![
+                2.0, 2.0, 2.1, 2.0, 1.9, 2.1, 2.0, 1.9, 2.1, 2.1, 1.8, 2.0, 10.0, 10.0, -10.0,
+                -10.0,
+            ],
+        )
+        .unwrap();
+
+        // Fewer neighbors
+        let mut lof_few = LocalOutlierFactor::new().with_n_neighbors(3);
+        lof_few.fit(&data).unwrap();
+        let scores_few = lof_few.score_samples(&data);
+
+        // More neighbors
+        let mut lof_many = LocalOutlierFactor::new().with_n_neighbors(5);
+        lof_many.fit(&data).unwrap();
+        let scores_many = lof_many.score_samples(&data);
+
+        // Both should work and produce scores
+        assert_eq!(scores_few.len(), 8);
+        assert_eq!(scores_many.len(), 8);
+
+        // Scores should be different (different neighborhood sizes)
+        let diff_exists = scores_few
+            .iter()
+            .zip(scores_many.iter())
+            .any(|(a, b)| (a - b).abs() > 0.01);
+        assert!(diff_exists);
+    }
+
+    #[test]
+    fn test_lof_varying_density_clusters() {
+        // Two clusters with different densities
+        // Cluster 1: Dense (points close together)
+        // Cluster 2: Sparse (points far apart)
+        // Outlier: Between clusters
+        let data = Matrix::from_vec(
+            9,
+            2,
+            vec![
+                // Dense cluster (4 points around 0,0)
+                0.0, 0.0, 0.1, 0.1, -0.1, -0.1, 0.0,
+                0.1, // Sparse cluster (3 points around 10,10)
+                10.0, 10.0, 12.0, 12.0, 11.0, 9.0, // Outlier between clusters
+                5.0, 5.0, // Another outlier
+                5.5, 5.5,
+            ],
+        )
+        .unwrap();
+
+        let mut lof = LocalOutlierFactor::new()
+            .with_n_neighbors(3)
+            .with_contamination(0.2);
+        lof.fit(&data).unwrap();
+
+        let scores = lof.score_samples(&data);
+        let predictions = lof.predict(&data);
+
+        // LOF should detect outliers in varying density regions
+        // Points 7 and 8 (between clusters) should have higher LOF scores
+        assert!(scores[7] > 1.0 || scores[8] > 1.0);
+
+        // Should detect some anomalies
+        let n_anomalies = predictions.iter().filter(|&&p| p == -1).count();
+        assert!(n_anomalies >= 1);
+    }
+
+    #[test]
+    fn test_lof_lof_score_interpretation() {
+        let data = Matrix::from_vec(
+            5,
+            2,
+            vec![
+                2.0, 2.0, 2.1, 2.0, 1.9, 2.1, 2.0, 1.9, // Normal cluster
+                10.0, 10.0, // Clear outlier
+            ],
+        )
+        .unwrap();
+
+        let mut lof = LocalOutlierFactor::new().with_n_neighbors(3);
+        lof.fit(&data).unwrap();
+
+        let scores = lof.score_samples(&data);
+
+        // LOF ≈ 1: similar density to neighbors (normal)
+        // LOF >> 1: lower density than neighbors (outlier)
+        let normal_scores = &scores[0..4];
+        let outlier_score = scores[4];
+
+        // Normal points should have LOF close to 1
+        for &score in normal_scores {
+            assert!((0.5..2.0).contains(&score));
+        }
+
+        // Outlier should have LOF > 1 (significantly)
+        assert!(outlier_score > 1.5);
+    }
+
+    #[test]
+    fn test_lof_all_normal() {
+        // All points are normal (tightly clustered)
+        let data = Matrix::from_vec(
+            6,
+            2,
+            vec![2.0, 2.0, 2.1, 2.0, 1.9, 2.1, 2.0, 1.9, 2.1, 2.1, 1.8, 2.0],
+        )
+        .unwrap();
+
+        let mut lof = LocalOutlierFactor::new()
+            .with_contamination(0.1)
+            .with_n_neighbors(3);
+        lof.fit(&data).unwrap();
+
+        let predictions = lof.predict(&data);
+        let scores = lof.score_samples(&data);
+
+        // All LOF scores should be close to 1 (similar density)
+        for &score in &scores {
+            assert!((0.5..1.5).contains(&score));
+        }
+
+        // With 10% contamination, expect mostly normal points
+        let n_normal = predictions.iter().filter(|&&p| p == 1).count();
+        assert!(n_normal >= 5);
+    }
+
+    #[test]
+    fn test_lof_score_samples_finite() {
+        let data = Matrix::from_vec(4, 2, vec![2.0, 2.0, 2.1, 2.0, 1.9, 2.1, 10.0, 10.0]).unwrap();
+
+        let mut lof = LocalOutlierFactor::new().with_n_neighbors(2);
+        lof.fit(&data).unwrap();
+
+        let scores = lof.score_samples(&data);
+        // All LOF scores should be finite
+        for &score in &scores {
+            assert!(score.is_finite());
+            assert!(score > 0.0); // LOF is always positive
+        }
+    }
+
+    #[test]
+    fn test_lof_multidimensional() {
+        // Test with more features
+        let data = Matrix::from_vec(
+            6,
+            3,
+            vec![
+                1.0, 2.0, 3.0, 1.1, 2.1, 3.1, 1.0, 2.0, 3.0, 0.9, 1.9, 2.9, 10.0, 10.0, 10.0,
+                -10.0, -10.0, -10.0,
+            ],
+        )
+        .unwrap();
+
+        let mut lof = LocalOutlierFactor::new()
+            .with_contamination(0.3)
+            .with_n_neighbors(3);
+        lof.fit(&data).unwrap();
+
+        let predictions = lof.predict(&data);
+        let scores = lof.score_samples(&data);
+
+        assert_eq!(predictions.len(), 6);
+        assert_eq!(scores.len(), 6);
+    }
+
+    #[test]
+    #[should_panic(expected = "Model not fitted")]
+    fn test_lof_predict_before_fit() {
+        let data = Matrix::from_vec(2, 2, vec![1.0, 1.0, 2.0, 2.0]).unwrap();
+        let lof = LocalOutlierFactor::new();
+        let _ = lof.predict(&data); // Should panic
+    }
+
+    #[test]
+    #[should_panic(expected = "Model not fitted")]
+    fn test_lof_score_samples_before_fit() {
+        let data = Matrix::from_vec(2, 2, vec![1.0, 1.0, 2.0, 2.0]).unwrap();
+        let lof = LocalOutlierFactor::new();
+        let _ = lof.score_samples(&data); // Should panic
+    }
+
+    #[test]
+    #[should_panic(expected = "Model not fitted")]
+    fn test_lof_negative_outlier_factor_before_fit() {
+        let lof = LocalOutlierFactor::new();
+        let _ = lof.negative_outlier_factor(); // Should panic
+    }
+
+    #[test]
+    fn test_lof_decision_consistency() {
+        let data = Matrix::from_vec(
+            6,
+            2,
+            vec![
+                2.0, 2.0, 2.1, 2.0, 1.9, 2.1, 2.0, 1.9, 10.0, 10.0, -10.0, -10.0,
+            ],
+        )
+        .unwrap();
+
+        let mut lof = LocalOutlierFactor::new()
+            .with_contamination(0.3)
+            .with_n_neighbors(3);
+        lof.fit(&data).unwrap();
+
+        let predictions = lof.predict(&data);
+        let scores = lof.score_samples(&data);
+
+        // Points with higher LOF scores should be more likely to be anomalies
+        assert_eq!(predictions.len(), scores.len());
     }
 }

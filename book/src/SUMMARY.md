@@ -132,6 +132,7 @@
 - [Case Study: Descriptive Statistics](./examples/descriptive-statistics.md)
 - [Case Study: PCA Iris](./examples/pca-iris.md)
 - [Case Study: Isolation Forest Anomaly Detection](./examples/isolation-forest-anomaly.md)
+- [Case Study: Local Outlier Factor (LOF)](./examples/lof-anomaly.md)
 
 # Sprint-Based Development
 
