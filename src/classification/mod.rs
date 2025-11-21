@@ -19,13 +19,13 @@
 //!     0.0, 1.0,
 //!     1.0, 0.0,
 //!     1.0, 1.0,
-//! ]).unwrap();
+//! ]).expect("Matrix dimensions match data length");
 //! let y = vec![0, 0, 0, 1];
 //!
 //! let mut model = LogisticRegression::new()
 //!     .with_learning_rate(0.1)
 //!     .with_max_iter(1000);
-//! model.fit(&x, &y).unwrap();
+//! model.fit(&x, &y).expect("Training data is valid with 4 samples");
 //! let predictions = model.predict(&x);
 //!
 //! assert_eq!(predictions.len(), 4);
@@ -239,11 +239,11 @@ impl LogisticRegression {
     /// use aprender::prelude::*;
     ///
     /// let mut model = LogisticRegression::new();
-    /// let x = Matrix::from_vec(4, 2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0]).unwrap();
+    /// let x = Matrix::from_vec(4, 2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0]).expect("4x2 matrix with 8 values");
     /// let y = vec![0, 0, 1, 1];
-    /// model.fit(&x, &y).unwrap();
+    /// model.fit(&x, &y).expect("Valid training data");
     ///
-    /// model.save_safetensors("model.safetensors").unwrap();
+    /// model.save_safetensors("model.safetensors").expect("Model is fitted and path is writable");
     /// ```
     pub fn save_safetensors<P: AsRef<Path>>(&self, path: P) -> std::result::Result<(), String> {
         use crate::serialization::safetensors;
@@ -293,11 +293,11 @@ impl LogisticRegression {
     ///
     /// # use aprender::prelude::*;
     /// # let mut model = LogisticRegression::new();
-    /// # let x = Matrix::from_vec(4, 2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0]).unwrap();
+    /// # let x = Matrix::from_vec(4, 2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0]).expect("4x2 matrix with 8 values");
     /// # let y = vec![0, 0, 1, 1];
-    /// # model.fit(&x, &y).unwrap();
-    /// # model.save_safetensors("/tmp/doctest_logistic_model.safetensors").unwrap();
-    /// let loaded_model = LogisticRegression::load_safetensors("/tmp/doctest_logistic_model.safetensors").unwrap();
+    /// # model.fit(&x, &y).expect("Valid training data");
+    /// # model.save_safetensors("/tmp/doctest_logistic_model.safetensors").expect("Can save to /tmp");
+    /// let loaded_model = LogisticRegression::load_safetensors("/tmp/doctest_logistic_model.safetensors").expect("File exists and is valid SafeTensors format");
     /// # std::fs::remove_file("/tmp/doctest_logistic_model.safetensors").ok();
     /// ```
     pub fn load_safetensors<P: AsRef<Path>>(path: P) -> std::result::Result<Self, String> {
@@ -373,13 +373,13 @@ pub enum DistanceMetric {
 ///     5.0, 5.0,  // class 1
 ///     5.0, 6.0,  // class 1
 ///     6.0, 5.0,  // class 1
-/// ]).unwrap();
+/// ]).expect("6x2 matrix with 12 values");
 /// let y = vec![0, 0, 0, 1, 1, 1];
 ///
 /// let mut knn = KNearestNeighbors::new(3);
-/// knn.fit(&x, &y).unwrap();
+/// knn.fit(&x, &y).expect("Valid training data with 6 samples");
 ///
-/// let test = Matrix::from_vec(1, 2, vec![0.5, 0.5]).unwrap();
+/// let test = Matrix::from_vec(1, 2, vec![0.5, 0.5]).expect("1x2 test matrix");
 /// let predictions = knn.predict(&test);
 /// assert_eq!(predictions[0], 0);  // Closer to class 0
 /// ```
@@ -497,7 +497,10 @@ impl KNearestNeighbors {
             }
 
             // Sort by distance and take k nearest
-            distances.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+            distances.sort_by(|a, b| {
+                a.0.partial_cmp(&b.0)
+                    .expect("Distance values are valid f32 (not NaN)")
+            });
             let k_nearest = &distances[..self.k];
 
             // Vote for class
@@ -533,7 +536,11 @@ impl KNearestNeighbors {
         }
 
         // Find number of classes
-        let n_classes = *y_train.iter().max().unwrap() + 1;
+        let n_classes = *y_train
+            .iter()
+            .max()
+            .expect("Training labels are non-empty (verified in fit())")
+            + 1;
 
         let mut probabilities = Vec::with_capacity(n_samples);
 
@@ -547,7 +554,10 @@ impl KNearestNeighbors {
             }
 
             // Sort by distance and take k nearest
-            distances.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+            distances.sort_by(|a, b| {
+                a.0.partial_cmp(&b.0)
+                    .expect("Distance values are valid f32 (not NaN)")
+            });
             let k_nearest = &distances[..self.k];
 
             // Compute class probabilities
@@ -625,7 +635,7 @@ impl KNearestNeighbors {
             .iter()
             .max_by_key(|(_, count)| *count)
             .map(|(label, _)| label)
-            .unwrap()
+            .expect("Neighbors slice is non-empty (k >= 1)")
     }
 
     /// Performs weighted voting (inverse distance weighting).
@@ -639,9 +649,9 @@ impl KNearestNeighbors {
 
         *class_weights
             .iter()
-            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
+            .max_by(|(_, a), (_, b)| a.partial_cmp(b).expect("Weights are valid f32 (not NaN)"))
             .map(|(label, _)| label)
-            .unwrap()
+            .expect("Neighbors slice is non-empty (k >= 1)")
     }
 }
 
@@ -661,12 +671,12 @@ impl KNearestNeighbors {
 ///     0.0, 1.0,
 ///     1.0, 0.0,
 ///     1.0, 1.0,
-/// ]).unwrap();
+/// ]).expect("4x2 matrix with 8 values");
 /// let y = vec![0, 0, 1, 1];
 ///
 /// let mut model = GaussianNB::new();
-/// model.fit(&x, &y).unwrap();
-/// let predictions = model.predict(&x).unwrap();
+/// model.fit(&x, &y).expect("Valid training data");
+/// let predictions = model.predict(&x).expect("Model is fitted");
 /// ```
 #[derive(Debug, Clone)]
 pub struct GaussianNB {
@@ -815,9 +825,12 @@ impl GaussianNB {
                 let max_idx = probs
                     .iter()
                     .enumerate()
-                    .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
+                    .max_by(|(_, a), (_, b)| {
+                        a.partial_cmp(b)
+                            .expect("Probabilities are valid f32 (not NaN)")
+                    })
                     .map(|(idx, _)| idx)
-                    .unwrap();
+                    .expect("Probabilities vector is non-empty (n_classes >= 2)");
                 classes[max_idx]
             })
             .collect();
@@ -1175,7 +1188,7 @@ mod tests {
                 1.0, 1.0, // class 1
             ],
         )
-        .unwrap();
+        .expect("4x2 matrix with 8 values");
         let y = vec![0, 0, 1, 1];
 
         let mut model = LogisticRegression::new()
@@ -1199,14 +1212,16 @@ mod tests {
                 1.0, 1.0, // class 1
             ],
         )
-        .unwrap();
+        .expect("4x2 matrix with 8 values");
         let y = vec![0, 0, 1, 1];
 
         let mut model = LogisticRegression::new()
             .with_learning_rate(0.1)
             .with_max_iter(1000);
 
-        model.fit(&x, &y).unwrap();
+        model
+            .fit(&x, &y)
+            .expect("Training should succeed with valid data");
         let predictions = model.predict(&x);
 
         // Should correctly classify training data
@@ -1228,14 +1243,16 @@ mod tests {
                 1.0, 1.0, // class 1
             ],
         )
-        .unwrap();
+        .expect("4x2 matrix with 8 values");
         let y = vec![0, 0, 1, 1];
 
         let mut model = LogisticRegression::new()
             .with_learning_rate(0.1)
             .with_max_iter(1000);
 
-        model.fit(&x, &y).unwrap();
+        model
+            .fit(&x, &y)
+            .expect("Training should succeed with valid data");
         let accuracy = model.score(&x, &y);
 
         // Should achieve high accuracy on linearly separable data
@@ -1244,7 +1261,7 @@ mod tests {
 
     #[test]
     fn test_logistic_regression_invalid_labels() {
-        let x = Matrix::from_vec(2, 2, vec![0.0, 0.0, 1.0, 1.0]).unwrap();
+        let x = Matrix::from_vec(2, 2, vec![0.0, 0.0, 1.0, 1.0]).expect("2x2 matrix with 4 values");
         let y = vec![0, 2]; // Invalid label 2
 
         let mut model = LogisticRegression::new();
@@ -1252,14 +1269,14 @@ mod tests {
 
         assert!(result.is_err());
         assert_eq!(
-            result.unwrap_err(),
+            result.expect_err("Should fail with invalid label value"),
             "Labels must be 0 or 1 for binary classification"
         );
     }
 
     #[test]
     fn test_logistic_regression_mismatched_samples() {
-        let x = Matrix::from_vec(2, 2, vec![0.0, 0.0, 1.0, 1.0]).unwrap();
+        let x = Matrix::from_vec(2, 2, vec![0.0, 0.0, 1.0, 1.0]).expect("2x2 matrix with 4 values");
         let y = vec![0]; // Only 1 label for 2 samples
 
         let mut model = LogisticRegression::new();
@@ -1267,33 +1284,38 @@ mod tests {
 
         assert!(result.is_err());
         assert_eq!(
-            result.unwrap_err(),
+            result.expect_err("Should fail with mismatched sample counts"),
             "Number of samples in X and y must match"
         );
     }
 
     #[test]
     fn test_logistic_regression_zero_samples() {
-        let x = Matrix::from_vec(0, 2, vec![]).unwrap();
+        let x = Matrix::from_vec(0, 2, vec![]).expect("0x2 empty matrix");
         let y = vec![];
 
         let mut model = LogisticRegression::new();
         let result = model.fit(&x, &y);
 
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err(), "Cannot fit with zero samples");
+        assert_eq!(
+            result.expect_err("Should fail with zero samples"),
+            "Cannot fit with zero samples"
+        );
     }
 
     #[test]
     fn test_predict_proba() {
-        let x = Matrix::from_vec(2, 2, vec![0.0, 0.0, 1.0, 1.0]).unwrap();
+        let x = Matrix::from_vec(2, 2, vec![0.0, 0.0, 1.0, 1.0]).expect("2x2 matrix with 4 values");
         let y = vec![0, 1];
 
         let mut model = LogisticRegression::new()
             .with_learning_rate(0.1)
             .with_max_iter(1000);
 
-        model.fit(&x, &y).unwrap();
+        model
+            .fit(&x, &y)
+            .expect("Training should succeed with valid data");
         let probas = model.predict_proba(&x);
 
         assert_eq!(probas.len(), 2);
@@ -1312,7 +1334,9 @@ mod tests {
         let result = model.save_safetensors("/tmp/test_unfitted_logistic.safetensors");
 
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("unfitted"));
+        assert!(result
+            .expect_err("Should fail when saving unfitted model")
+            .contains("unfitted"));
     }
 
     #[test]
@@ -1328,31 +1352,52 @@ mod tests {
                 1.0, 1.0, // class 1
             ],
         )
-        .unwrap();
+        .expect("4x2 matrix with 8 values");
         let y = vec![0, 0, 1, 1];
 
         // Train model
         let mut model = LogisticRegression::new()
             .with_learning_rate(0.1)
             .with_max_iter(1000);
-        model.fit(&x, &y).unwrap();
+        model
+            .fit(&x, &y)
+            .expect("Training should succeed with valid data");
 
         // Save model
         let path = "/tmp/test_logistic_roundtrip.safetensors";
-        model.save_safetensors(path).unwrap();
+        model
+            .save_safetensors(path)
+            .expect("Should save fitted model to valid path");
 
         // Load model
-        let loaded = LogisticRegression::load_safetensors(path).unwrap();
+        let loaded =
+            LogisticRegression::load_safetensors(path).expect("Should load valid SafeTensors file");
 
         // Verify coefficients match
         assert_eq!(
-            model.coefficients.as_ref().unwrap().len(),
-            loaded.coefficients.as_ref().unwrap().len()
+            model
+                .coefficients
+                .as_ref()
+                .expect("Model is fitted and has coefficients")
+                .len(),
+            loaded
+                .coefficients
+                .as_ref()
+                .expect("Loaded model has coefficients")
+                .len()
         );
-        for i in 0..model.coefficients.as_ref().unwrap().len() {
+        for i in 0..model
+            .coefficients
+            .as_ref()
+            .expect("Model has coefficients")
+            .len()
+        {
             assert_eq!(
-                model.coefficients.as_ref().unwrap()[i],
-                loaded.coefficients.as_ref().unwrap()[i]
+                model.coefficients.as_ref().expect("Model has coefficients")[i],
+                loaded
+                    .coefficients
+                    .as_ref()
+                    .expect("Loaded model has coefficients")[i]
             );
         }
         assert_eq!(model.intercept, loaded.intercept);
@@ -1370,7 +1415,7 @@ mod tests {
     fn test_load_safetensors_corrupted_file() {
         // Test 3: Loading corrupted file fails gracefully
         let path = "/tmp/test_corrupted_logistic.safetensors";
-        std::fs::write(path, b"CORRUPTED DATA").unwrap();
+        std::fs::write(path, b"CORRUPTED DATA").expect("Should write test file");
 
         let result = LogisticRegression::load_safetensors(path);
         assert!(result.is_err());
@@ -1384,7 +1429,7 @@ mod tests {
         let result =
             LogisticRegression::load_safetensors("/tmp/nonexistent_logistic_xyz.safetensors");
         assert!(result.is_err());
-        let err = result.unwrap_err();
+        let err = result.expect_err("Should fail when loading nonexistent file");
         assert!(
             err.contains("No such file") || err.contains("not found"),
             "Error should mention file not found: {}",
@@ -1405,20 +1450,25 @@ mod tests {
                 1.0, 1.0, // class 1
             ],
         )
-        .unwrap();
+        .expect("4x2 matrix with 8 values");
         let y = vec![0, 0, 1, 1];
 
         let mut model = LogisticRegression::new()
             .with_learning_rate(0.1)
             .with_max_iter(1000);
-        model.fit(&x, &y).unwrap();
+        model
+            .fit(&x, &y)
+            .expect("Training should succeed with valid data");
 
         let probas_before = model.predict_proba(&x);
 
         // Save and load
         let path = "/tmp/test_logistic_probas.safetensors";
-        model.save_safetensors(path).unwrap();
-        let loaded = LogisticRegression::load_safetensors(path).unwrap();
+        model
+            .save_safetensors(path)
+            .expect("Should save fitted model to valid path");
+        let loaded =
+            LogisticRegression::load_safetensors(path).expect("Should load valid SafeTensors file");
 
         let probas_after = loaded.predict_proba(&x);
 
@@ -1455,20 +1505,21 @@ mod tests {
                 6.0, 5.0, // class 1
             ],
         )
-        .unwrap();
+        .expect("6x2 matrix with 12 values");
         let y = vec![0, 0, 0, 1, 1, 1];
 
         let mut knn = KNearestNeighbors::new(3);
-        knn.fit(&x, &y).unwrap();
+        knn.fit(&x, &y)
+            .expect("Training should succeed with valid data");
 
         // Test point close to class 0
-        let test1 = Matrix::from_vec(1, 2, vec![0.5, 0.5]).unwrap();
-        let pred1 = knn.predict(&test1).unwrap();
+        let test1 = Matrix::from_vec(1, 2, vec![0.5, 0.5]).expect("1x2 test matrix");
+        let pred1 = knn.predict(&test1).expect("Prediction should succeed");
         assert_eq!(pred1[0], 0);
 
         // Test point close to class 1
-        let test2 = Matrix::from_vec(1, 2, vec![5.5, 5.5]).unwrap();
-        let pred2 = knn.predict(&test2).unwrap();
+        let test2 = Matrix::from_vec(1, 2, vec![5.5, 5.5]).expect("1x2 test matrix");
+        let pred2 = knn.predict(&test2).expect("Prediction should succeed");
         assert_eq!(pred2[0], 1);
     }
 
@@ -1485,14 +1536,15 @@ mod tests {
                 3.0, 3.0, // class 1
             ],
         )
-        .unwrap();
+        .expect("4x2 matrix with 8 values");
         let y = vec![0, 1, 0, 1];
 
         let mut knn = KNearestNeighbors::new(1);
-        knn.fit(&x, &y).unwrap();
+        knn.fit(&x, &y)
+            .expect("Training should succeed with valid data");
 
         // Predict on training data - should be perfect
-        let predictions = knn.predict(&x).unwrap();
+        let predictions = knn.predict(&x).expect("Prediction should succeed");
         assert_eq!(predictions, y);
     }
 
@@ -1507,15 +1559,16 @@ mod tests {
                 1.0, 1.0, // class 0
             ],
         )
-        .unwrap();
+        .expect("3x2 matrix with 6 values");
         let y = vec![0, 1, 0];
 
         let mut knn = KNearestNeighbors::new(1).with_metric(DistanceMetric::Euclidean);
-        knn.fit(&x, &y).unwrap();
+        knn.fit(&x, &y)
+            .expect("Training should succeed with valid data");
 
         // Test point at (1.5, 2.0) - closer to (1, 1) than (3, 4)
-        let test = Matrix::from_vec(1, 2, vec![1.5, 2.0]).unwrap();
-        let pred = knn.predict(&test).unwrap();
+        let test = Matrix::from_vec(1, 2, vec![1.5, 2.0]).expect("1x2 test matrix");
+        let pred = knn.predict(&test).expect("Prediction should succeed");
         assert_eq!(pred[0], 0);
     }
 
@@ -1530,14 +1583,15 @@ mod tests {
                 1.0, 0.0, // class 0
             ],
         )
-        .unwrap();
+        .expect("3x2 matrix with 6 values");
         let y = vec![0, 1, 0];
 
         let mut knn = KNearestNeighbors::new(1).with_metric(DistanceMetric::Manhattan);
-        knn.fit(&x, &y).unwrap();
+        knn.fit(&x, &y)
+            .expect("Training should succeed with valid data");
 
-        let test = Matrix::from_vec(1, 2, vec![0.5, 0.0]).unwrap();
-        let pred = knn.predict(&test).unwrap();
+        let test = Matrix::from_vec(1, 2, vec![0.5, 0.0]).expect("1x2 test matrix");
+        let pred = knn.predict(&test).expect("Prediction should succeed");
         assert_eq!(pred[0], 0); // Closer to (1, 0)
     }
 
@@ -1552,15 +1606,16 @@ mod tests {
                 1.0, 1.0, // class 0
             ],
         )
-        .unwrap();
+        .expect("3x2 matrix with 6 values");
         let y = vec![0, 1, 0];
 
         // Minkowski with p=3
         let mut knn = KNearestNeighbors::new(1).with_metric(DistanceMetric::Minkowski(3.0));
-        knn.fit(&x, &y).unwrap();
+        knn.fit(&x, &y)
+            .expect("Training should succeed with valid data");
 
-        let test = Matrix::from_vec(1, 2, vec![0.5, 0.5]).unwrap();
-        let pred = knn.predict(&test).unwrap();
+        let test = Matrix::from_vec(1, 2, vec![0.5, 0.5]).expect("1x2 test matrix");
+        let pred = knn.predict(&test).expect("Prediction should succeed");
         assert_eq!(pred[0], 0);
     }
 
@@ -1578,15 +1633,19 @@ mod tests {
                 6.0, // class 1
             ],
         )
-        .unwrap();
+        .expect("5x1 matrix with 5 values");
         let y = vec![0, 0, 1, 1, 1];
 
         let mut knn_weighted = KNearestNeighbors::new(3).with_weights(true);
-        knn_weighted.fit(&x, &y).unwrap();
+        knn_weighted
+            .fit(&x, &y)
+            .expect("Training should succeed with valid data");
 
         // Test point at 0.05 - very close to class 0
-        let test = Matrix::from_vec(1, 1, vec![0.05]).unwrap();
-        let pred = knn_weighted.predict(&test).unwrap();
+        let test = Matrix::from_vec(1, 1, vec![0.05]).expect("1x1 test matrix");
+        let pred = knn_weighted
+            .predict(&test)
+            .expect("Prediction should succeed");
         assert_eq!(pred[0], 0); // Should be class 0 due to proximity weighting
     }
 
@@ -1604,14 +1663,17 @@ mod tests {
                 6.0, 5.0, // class 1
             ],
         )
-        .unwrap();
+        .expect("6x2 matrix with 12 values");
         let y = vec![0, 0, 0, 1, 1, 1];
 
         let mut knn = KNearestNeighbors::new(3);
-        knn.fit(&x, &y).unwrap();
+        knn.fit(&x, &y)
+            .expect("Training should succeed with valid data");
 
-        let test = Matrix::from_vec(1, 2, vec![0.5, 0.5]).unwrap();
-        let probas = knn.predict_proba(&test).unwrap();
+        let test = Matrix::from_vec(1, 2, vec![0.5, 0.5]).expect("1x2 test matrix");
+        let probas = knn
+            .predict_proba(&test)
+            .expect("Probability prediction should succeed");
 
         assert_eq!(probas.len(), 1);
         assert_eq!(probas[0].len(), 2); // 2 classes
@@ -1642,52 +1704,71 @@ mod tests {
                 11.0, 10.0, // class 2
             ],
         )
-        .unwrap();
+        .expect("9x2 matrix with 18 values");
         let y = vec![0, 0, 0, 1, 1, 1, 2, 2, 2];
 
         let mut knn = KNearestNeighbors::new(3);
-        knn.fit(&x, &y).unwrap();
+        knn.fit(&x, &y)
+            .expect("Training should succeed with valid data");
 
         // Test each cluster
-        let test1 = Matrix::from_vec(1, 2, vec![0.5, 0.5]).unwrap();
-        assert_eq!(knn.predict(&test1).unwrap()[0], 0);
+        let test1 = Matrix::from_vec(1, 2, vec![0.5, 0.5]).expect("1x2 test matrix");
+        assert_eq!(
+            knn.predict(&test1).expect("Prediction should succeed")[0],
+            0
+        );
 
-        let test2 = Matrix::from_vec(1, 2, vec![5.5, 5.5]).unwrap();
-        assert_eq!(knn.predict(&test2).unwrap()[0], 1);
+        let test2 = Matrix::from_vec(1, 2, vec![5.5, 5.5]).expect("1x2 test matrix");
+        assert_eq!(
+            knn.predict(&test2).expect("Prediction should succeed")[0],
+            1
+        );
 
-        let test3 = Matrix::from_vec(1, 2, vec![10.5, 10.5]).unwrap();
-        assert_eq!(knn.predict(&test3).unwrap()[0], 2);
+        let test3 = Matrix::from_vec(1, 2, vec![10.5, 10.5]).expect("1x2 test matrix");
+        assert_eq!(
+            knn.predict(&test3).expect("Prediction should succeed")[0],
+            2
+        );
     }
 
     #[test]
     fn test_knn_not_fitted_error() {
         let knn = KNearestNeighbors::new(3);
-        let test = Matrix::from_vec(1, 2, vec![0.0, 0.0]).unwrap();
+        let test = Matrix::from_vec(1, 2, vec![0.0, 0.0]).expect("1x2 test matrix");
 
         let result = knn.predict(&test);
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err(), "Model not fitted");
+        assert_eq!(
+            result.expect_err("Should fail when predicting with unfitted model"),
+            "Model not fitted"
+        );
     }
 
     #[test]
     fn test_knn_dimension_mismatch() {
-        let x = Matrix::from_vec(3, 2, vec![0.0, 0.0, 1.0, 1.0, 2.0, 2.0]).unwrap();
+        let x = Matrix::from_vec(3, 2, vec![0.0, 0.0, 1.0, 1.0, 2.0, 2.0])
+            .expect("3x2 matrix with 6 values");
         let y = vec![0, 1, 0];
 
         let mut knn = KNearestNeighbors::new(1);
-        knn.fit(&x, &y).unwrap();
+        knn.fit(&x, &y)
+            .expect("Training should succeed with valid data");
 
         // Test with wrong number of features
-        let test = Matrix::from_vec(1, 3, vec![0.0, 0.0, 0.0]).unwrap();
+        let test = Matrix::from_vec(1, 3, vec![0.0, 0.0, 0.0]).expect("1x3 test matrix");
         let result = knn.predict(&test);
 
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err(), "Feature dimension mismatch");
+        assert_eq!(
+            result.expect_err("Should fail with dimension mismatch"),
+            "Feature dimension mismatch"
+        );
     }
 
     #[test]
     fn test_knn_sample_mismatch() {
-        let x = Matrix::from_vec(3, 2, vec![0.0, 0.0, 1.0, 1.0, 2.0, 2.0]).unwrap();
+        let x = Matrix::from_vec(3, 2, vec![0.0, 0.0, 1.0, 1.0, 2.0, 2.0])
+            .expect("3x2 matrix with 6 values");
         let y = vec![0, 1]; // Wrong length
 
         let mut knn = KNearestNeighbors::new(1);
@@ -1695,14 +1776,15 @@ mod tests {
 
         assert!(result.is_err());
         assert_eq!(
-            result.unwrap_err(),
+            result.expect_err("Should fail with sample mismatch"),
             "Number of samples in X and y must match"
         );
     }
 
     #[test]
     fn test_knn_k_too_large() {
-        let x = Matrix::from_vec(3, 2, vec![0.0, 0.0, 1.0, 1.0, 2.0, 2.0]).unwrap();
+        let x = Matrix::from_vec(3, 2, vec![0.0, 0.0, 1.0, 1.0, 2.0, 2.0])
+            .expect("3x2 matrix with 6 values");
         let y = vec![0, 1, 0];
 
         let mut knn = KNearestNeighbors::new(5); // k > n_samples
@@ -1710,21 +1792,24 @@ mod tests {
 
         assert!(result.is_err());
         assert_eq!(
-            result.unwrap_err(),
+            result.expect_err("Should fail when k exceeds sample count"),
             "k cannot be larger than number of training samples"
         );
     }
 
     #[test]
     fn test_knn_empty_data() {
-        let x = Matrix::from_vec(0, 2, vec![]).unwrap();
+        let x = Matrix::from_vec(0, 2, vec![]).expect("0x2 empty matrix");
         let y = vec![];
 
         let mut knn = KNearestNeighbors::new(1);
         let result = knn.fit(&x, &y);
 
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err(), "Cannot fit with zero samples");
+        assert_eq!(
+            result.expect_err("Should fail with empty data"),
+            "Cannot fit with zero samples"
+        );
     }
 
     #[test]
@@ -1749,11 +1834,12 @@ mod tests {
                 3.0, 4.0, // point b
             ],
         )
-        .unwrap();
+        .expect("2x2 matrix with 4 values");
         let y = vec![0, 1];
 
         let mut knn = KNearestNeighbors::new(1);
-        knn.fit(&x, &y).unwrap();
+        knn.fit(&x, &y)
+            .expect("Training should succeed with valid data");
 
         // Compute both directions
         let dist_ab = knn.compute_distance(&x, 0, &x, 1, 2);
@@ -1773,13 +1859,14 @@ mod tests {
                 7.0, 8.0, 7.0, 8.0, 9.0, 8.0, 9.0, 10.0, 9.0, 10.0, 11.0, 10.0, 11.0, 12.0,
             ],
         )
-        .unwrap();
+        .expect("10x3 matrix with 30 values");
         let y = vec![0, 0, 1, 1, 0, 1, 0, 1, 0, 1];
 
         let mut knn = KNearestNeighbors::new(1);
-        knn.fit(&x, &y).unwrap();
+        knn.fit(&x, &y)
+            .expect("Training should succeed with valid data");
 
-        let predictions = knn.predict(&x).unwrap();
+        let predictions = knn.predict(&x).expect("Prediction should succeed");
         assert_eq!(predictions, y);
     }
 
@@ -1813,13 +1900,15 @@ mod tests {
                 0.9, 0.9, // class 1
             ],
         )
-        .unwrap();
+        .expect("4x2 matrix with 8 values");
         let y = vec![0, 0, 1, 1];
 
         let mut model = GaussianNB::new();
-        model.fit(&x, &y).unwrap();
+        model
+            .fit(&x, &y)
+            .expect("Training should succeed with valid data");
 
-        let predictions = model.predict(&x).unwrap();
+        let predictions = model.predict(&x).expect("Prediction should succeed");
         assert_eq!(predictions, y);
     }
 
@@ -1841,13 +1930,15 @@ mod tests {
                 -5.0, -5.1, // class 2
             ],
         )
-        .unwrap();
+        .expect("9x2 matrix with 18 values");
         let y = vec![0, 0, 0, 1, 1, 1, 2, 2, 2];
 
         let mut model = GaussianNB::new();
-        model.fit(&x, &y).unwrap();
+        model
+            .fit(&x, &y)
+            .expect("Training should succeed with valid data");
 
-        let predictions = model.predict(&x).unwrap();
+        let predictions = model.predict(&x).expect("Prediction should succeed");
         assert_eq!(predictions, y);
     }
 
@@ -1863,13 +1954,17 @@ mod tests {
                 0.9, 0.9, // class 1
             ],
         )
-        .unwrap();
+        .expect("4x2 matrix with 8 values");
         let y = vec![0, 0, 1, 1];
 
         let mut model = GaussianNB::new();
-        model.fit(&x, &y).unwrap();
+        model
+            .fit(&x, &y)
+            .expect("Training should succeed with valid data");
 
-        let probabilities = model.predict_proba(&x).unwrap();
+        let probabilities = model
+            .predict_proba(&x)
+            .expect("Probability prediction should succeed");
 
         // Check all samples have probabilities
         assert_eq!(probabilities.len(), 4);
@@ -1891,28 +1986,35 @@ mod tests {
     #[test]
     fn test_gaussian_nb_not_fitted_error() {
         let model = GaussianNB::new();
-        let x_test = Matrix::from_vec(2, 2, vec![0.0, 0.0, 1.0, 1.0]).unwrap();
+        let x_test = Matrix::from_vec(2, 2, vec![0.0, 0.0, 1.0, 1.0]).expect("2x2 test matrix");
 
         let result = model.predict(&x_test);
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err(), "Model not fitted");
+        assert_eq!(
+            result.expect_err("Should fail when predicting with unfitted model"),
+            "Model not fitted"
+        );
     }
 
     #[test]
     fn test_gaussian_nb_empty_data() {
-        let x = Matrix::from_vec(0, 2, vec![]).unwrap();
+        let x = Matrix::from_vec(0, 2, vec![]).expect("0x2 empty matrix");
         let y: Vec<usize> = vec![];
 
         let mut model = GaussianNB::new();
         let result = model.fit(&x, &y);
 
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err(), "Cannot fit with empty data");
+        assert_eq!(
+            result.expect_err("Should fail with empty data"),
+            "Cannot fit with empty data"
+        );
     }
 
     #[test]
     fn test_gaussian_nb_sample_mismatch() {
-        let x = Matrix::from_vec(3, 2, vec![0.0, 0.0, 1.0, 1.0, 2.0, 2.0]).unwrap();
+        let x = Matrix::from_vec(3, 2, vec![0.0, 0.0, 1.0, 1.0, 2.0, 2.0])
+            .expect("3x2 matrix with 6 values");
         let y = vec![0, 1]; // Wrong length
 
         let mut model = GaussianNB::new();
@@ -1920,36 +2022,47 @@ mod tests {
 
         assert!(result.is_err());
         assert_eq!(
-            result.unwrap_err(),
+            result.expect_err("Should fail with sample mismatch"),
             "Number of samples in X and y must match"
         );
     }
 
     #[test]
     fn test_gaussian_nb_single_class() {
-        let x = Matrix::from_vec(3, 2, vec![0.0, 0.0, 1.0, 1.0, 2.0, 2.0]).unwrap();
+        let x = Matrix::from_vec(3, 2, vec![0.0, 0.0, 1.0, 1.0, 2.0, 2.0])
+            .expect("3x2 matrix with 6 values");
         let y = vec![0, 0, 0]; // All same class
 
         let mut model = GaussianNB::new();
         let result = model.fit(&x, &y);
 
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err(), "Need at least 2 classes");
+        assert_eq!(
+            result.expect_err("Should fail with single class"),
+            "Need at least 2 classes"
+        );
     }
 
     #[test]
     fn test_gaussian_nb_dimension_mismatch() {
-        let x_train = Matrix::from_vec(4, 2, vec![0.0, 0.0, 0.1, 0.1, 1.0, 1.0, 0.9, 0.9]).unwrap();
+        let x_train = Matrix::from_vec(4, 2, vec![0.0, 0.0, 0.1, 0.1, 1.0, 1.0, 0.9, 0.9])
+            .expect("4x2 training matrix");
         let y_train = vec![0, 0, 1, 1];
 
         let mut model = GaussianNB::new();
-        model.fit(&x_train, &y_train).unwrap();
+        model
+            .fit(&x_train, &y_train)
+            .expect("Training should succeed with valid data");
 
-        let x_test = Matrix::from_vec(2, 3, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0]).unwrap();
+        let x_test =
+            Matrix::from_vec(2, 3, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0]).expect("2x3 test matrix");
         let result = model.predict(&x_test);
 
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err(), "Feature dimension mismatch");
+        assert_eq!(
+            result.expect_err("Should fail with dimension mismatch"),
+            "Feature dimension mismatch"
+        );
     }
 
     #[test]
@@ -1967,14 +2080,18 @@ mod tests {
                 1.2, 1.2, // class 1
             ],
         )
-        .unwrap();
+        .expect("6x2 matrix with 12 values");
         let y = vec![0, 0, 0, 1, 1, 1];
 
         let mut model = GaussianNB::new();
-        model.fit(&x, &y).unwrap();
+        model
+            .fit(&x, &y)
+            .expect("Training should succeed with valid data");
 
         // Check class priors are equal
-        let priors = model.class_priors.unwrap();
+        let priors = model
+            .class_priors
+            .expect("Model is fitted and has class priors");
         assert!((priors[0] - 0.5).abs() < 1e-5);
         assert!((priors[1] - 0.5).abs() < 1e-5);
     }
@@ -1992,14 +2109,18 @@ mod tests {
                 1.2, 1.2, // class 1
             ],
         )
-        .unwrap();
+        .expect("4x2 matrix with 8 values");
         let y = vec![0, 1, 1, 1];
 
         let mut model = GaussianNB::new();
-        model.fit(&x, &y).unwrap();
+        model
+            .fit(&x, &y)
+            .expect("Training should succeed with valid data");
 
         // Check class priors reflect imbalance
-        let priors = model.class_priors.unwrap();
+        let priors = model
+            .class_priors
+            .expect("Model is fitted and has class priors");
         assert!((priors[0] - 0.25).abs() < 1e-5); // 1/4
         assert!((priors[1] - 0.75).abs() < 1e-5); // 3/4
     }
@@ -2017,17 +2138,21 @@ mod tests {
                 1.0, 1.0, // class 1 - identical points
             ],
         )
-        .unwrap();
+        .expect("4x2 matrix with 8 values");
         let y = vec![0, 0, 1, 1];
 
         let mut model = GaussianNB::new().with_var_smoothing(1e-8);
-        model.fit(&x, &y).unwrap();
+        model
+            .fit(&x, &y)
+            .expect("Training should succeed with valid data");
 
         // Should not panic or produce NaN/Inf
-        let predictions = model.predict(&x).unwrap();
+        let predictions = model.predict(&x).expect("Prediction should succeed");
         assert_eq!(predictions, y);
 
-        let probabilities = model.predict_proba(&x).unwrap();
+        let probabilities = model
+            .predict_proba(&x)
+            .expect("Probability prediction should succeed");
         for probs in &probabilities {
             for &p in probs {
                 assert!(p.is_finite());
@@ -2047,13 +2172,17 @@ mod tests {
                 1.1, 1.1, 1.2, 1.2, 1.2, 1.3, 1.3, 1.3, 2.0, 2.0, 2.0, 2.1, 2.1, 2.1,
             ],
         )
-        .unwrap();
+        .expect("10x3 matrix with 30 values");
         let y = vec![0, 0, 0, 0, 1, 1, 1, 1, 2, 2];
 
         let mut model = GaussianNB::new();
-        model.fit(&x, &y).unwrap();
+        model
+            .fit(&x, &y)
+            .expect("Training should succeed with valid data");
 
-        let probabilities = model.predict_proba(&x).unwrap();
+        let probabilities = model
+            .predict_proba(&x)
+            .expect("Probability prediction should succeed");
 
         for probs in &probabilities {
             let sum: f32 = probs.iter().sum();
@@ -2082,13 +2211,17 @@ mod tests {
                 10.1, 10.1, // class 1 (far away)
             ],
         )
-        .unwrap();
+        .expect("4x2 matrix with 8 values");
         let y = vec![0, 0, 1, 1];
 
         let mut model = GaussianNB::new();
-        model.fit(&x, &y).unwrap();
+        model
+            .fit(&x, &y)
+            .expect("Training should succeed with valid data");
 
-        let probabilities = model.predict_proba(&x).unwrap();
+        let probabilities = model
+            .predict_proba(&x)
+            .expect("Probability prediction should succeed");
 
         // First sample should have very high confidence for class 0
         assert!(probabilities[0][0] > 0.99);
@@ -2137,7 +2270,7 @@ mod tests {
                 1.0, 1.0, // class 1
             ],
         )
-        .unwrap();
+        .expect("4x2 matrix with 8 values");
         let y = vec![0, 0, 1, 1];
 
         let mut svm = LinearSVM::new().with_max_iter(1000).with_learning_rate(0.1);
@@ -2160,13 +2293,14 @@ mod tests {
                 1.0, 1.0, // class 1
             ],
         )
-        .unwrap();
+        .expect("4x2 matrix with 8 values");
         let y = vec![0, 0, 1, 1];
 
         let mut svm = LinearSVM::new().with_max_iter(1000).with_learning_rate(0.1);
-        svm.fit(&x, &y).unwrap();
+        svm.fit(&x, &y)
+            .expect("Training should succeed with valid data");
 
-        let predictions = svm.predict(&x).unwrap();
+        let predictions = svm.predict(&x).expect("Prediction should succeed");
         assert_eq!(predictions.len(), 4);
 
         // Should classify correctly (or close to it)
@@ -2192,13 +2326,16 @@ mod tests {
                 1.0, 1.0, // class 1
             ],
         )
-        .unwrap();
+        .expect("4x2 matrix with 8 values");
         let y = vec![0, 0, 1, 1];
 
         let mut svm = LinearSVM::new().with_max_iter(1000).with_learning_rate(0.1);
-        svm.fit(&x, &y).unwrap();
+        svm.fit(&x, &y)
+            .expect("Training should succeed with valid data");
 
-        let decisions = svm.decision_function(&x).unwrap();
+        let decisions = svm
+            .decision_function(&x)
+            .expect("Decision function should succeed");
         assert_eq!(decisions.len(), 4);
 
         // Class 0 samples should have negative decisions
@@ -2209,49 +2346,62 @@ mod tests {
     #[test]
     fn test_linear_svm_predict_untrained() {
         let svm = LinearSVM::new();
-        let x = Matrix::from_vec(2, 2, vec![0.0, 0.0, 1.0, 1.0]).unwrap();
+        let x = Matrix::from_vec(2, 2, vec![0.0, 0.0, 1.0, 1.0]).expect("2x2 matrix with 4 values");
 
         let result = svm.predict(&x);
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err(), "Model not trained yet");
+        assert_eq!(
+            result.expect_err("Should fail when predicting with untrained model"),
+            "Model not trained yet"
+        );
     }
 
     #[test]
     fn test_linear_svm_dimension_mismatch() {
-        let x_train = Matrix::from_vec(4, 2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0]).unwrap();
+        let x_train = Matrix::from_vec(4, 2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0])
+            .expect("4x2 training matrix");
         let y = vec![0, 0, 1, 1];
 
         let mut svm = LinearSVM::new();
-        svm.fit(&x_train, &y).unwrap();
+        svm.fit(&x_train, &y)
+            .expect("Training should succeed with valid data");
 
         // Try to predict with wrong number of features
-        let x_test = Matrix::from_vec(2, 3, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0]).unwrap();
+        let x_test =
+            Matrix::from_vec(2, 3, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0]).expect("2x3 test matrix");
         let result = svm.predict(&x_test);
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err(), "Feature dimension mismatch");
+        assert_eq!(
+            result.expect_err("Should fail with dimension mismatch"),
+            "Feature dimension mismatch"
+        );
     }
 
     #[test]
     fn test_linear_svm_empty_data() {
-        let x = Matrix::from_vec(0, 2, vec![]).unwrap();
+        let x = Matrix::from_vec(0, 2, vec![]).expect("0x2 empty matrix");
         let y = vec![];
 
         let mut svm = LinearSVM::new();
         let result = svm.fit(&x, &y);
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err(), "Cannot fit with 0 samples");
+        assert_eq!(
+            result.expect_err("Should fail with empty data"),
+            "Cannot fit with 0 samples"
+        );
     }
 
     #[test]
     fn test_linear_svm_mismatched_samples() {
-        let x = Matrix::from_vec(4, 2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0]).unwrap();
+        let x = Matrix::from_vec(4, 2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0])
+            .expect("4x2 matrix with 8 values");
         let y = vec![0, 0, 1]; // Wrong length
 
         let mut svm = LinearSVM::new();
         let result = svm.fit(&x, &y);
         assert!(result.is_err());
         assert_eq!(
-            result.unwrap_err(),
+            result.expect_err("Should fail with mismatched sample counts"),
             "x and y must have the same number of samples"
         );
     }
@@ -2270,7 +2420,7 @@ mod tests {
                 1.0, 0.8, // class 1
             ],
         )
-        .unwrap();
+        .expect("6x2 matrix with 12 values");
         let y = vec![0, 0, 0, 1, 1, 1];
 
         // High C (less regularization) - should fit data more closely
@@ -2278,16 +2428,20 @@ mod tests {
             .with_c(10.0)
             .with_max_iter(1000)
             .with_learning_rate(0.1);
-        svm_high_c.fit(&x, &y).unwrap();
-        let pred_high_c = svm_high_c.predict(&x).unwrap();
+        svm_high_c
+            .fit(&x, &y)
+            .expect("Training should succeed with valid data");
+        let pred_high_c = svm_high_c.predict(&x).expect("Prediction should succeed");
 
         // Low C (more regularization) - should prefer simpler model
         let mut svm_low_c = LinearSVM::new()
             .with_c(0.1)
             .with_max_iter(1000)
             .with_learning_rate(0.1);
-        svm_low_c.fit(&x, &y).unwrap();
-        let pred_low_c = svm_low_c.predict(&x).unwrap();
+        svm_low_c
+            .fit(&x, &y)
+            .expect("Training should succeed with valid data");
+        let pred_low_c = svm_low_c.predict(&x).expect("Prediction should succeed");
 
         // Both should make predictions
         assert_eq!(pred_high_c.len(), 6);
@@ -2307,7 +2461,7 @@ mod tests {
                 1.0, 1.0, 0.9, 0.9, 1.0, 0.8, 0.8, 1.0, 0.9, 1.1,
             ],
         )
-        .unwrap();
+        .expect("10x2 matrix with 20 values");
         let y = vec![0, 0, 0, 0, 0, 1, 1, 1, 1, 1];
 
         let mut svm = LinearSVM::new()
@@ -2315,8 +2469,9 @@ mod tests {
             .with_max_iter(2000)
             .with_learning_rate(0.1);
 
-        svm.fit(&x, &y).unwrap();
-        let predictions = svm.predict(&x).unwrap();
+        svm.fit(&x, &y)
+            .expect("Training should succeed with valid data");
+        let predictions = svm.predict(&x).expect("Prediction should succeed");
 
         // Should achieve reasonable accuracy
         let correct = predictions
@@ -2335,16 +2490,21 @@ mod tests {
 
     #[test]
     fn test_linear_svm_convergence() {
-        let x = Matrix::from_vec(4, 2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0]).unwrap();
+        let x = Matrix::from_vec(4, 2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0])
+            .expect("4x2 matrix with 8 values");
         let y = vec![0, 0, 1, 1];
 
         // With very few iterations, might not converge
         let mut svm_few_iter = LinearSVM::new().with_max_iter(10).with_learning_rate(0.01);
-        svm_few_iter.fit(&x, &y).unwrap();
+        svm_few_iter
+            .fit(&x, &y)
+            .expect("Training should succeed with valid data");
 
         // With many iterations, should converge better
         let mut svm_many_iter = LinearSVM::new().with_max_iter(2000).with_learning_rate(0.1);
-        svm_many_iter.fit(&x, &y).unwrap();
+        svm_many_iter
+            .fit(&x, &y)
+            .expect("Training should succeed with valid data");
 
         // Both should train successfully
         assert!(svm_few_iter.weights.is_some());

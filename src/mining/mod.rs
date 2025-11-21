@@ -343,12 +343,17 @@ impl Apriori {
         self.generate_rules(transactions);
 
         // Sort frequent itemsets by support descending
-        self.frequent_itemsets
-            .sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+        self.frequent_itemsets.sort_by(|a, b| {
+            b.1.partial_cmp(&a.1)
+                .expect("Support values must be valid f64 (not NaN)")
+        });
 
         // Sort rules by confidence descending
-        self.rules
-            .sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap());
+        self.rules.sort_by(|a, b| {
+            b.confidence
+                .partial_cmp(&a.confidence)
+                .expect("Confidence values must be valid f64 (not NaN)")
+        });
     }
 
     /// Get the discovered frequent itemsets.

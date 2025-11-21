@@ -35,10 +35,10 @@ use std::path::Path;
 ///     8.0, 8.0,
 ///     1.0, 0.6,
 ///     9.0, 11.0,
-/// ]).unwrap();
+/// ]).expect("Valid matrix dimensions and data length");
 ///
 /// let mut kmeans = KMeans::new(2);
-/// kmeans.fit(&data).unwrap();
+/// kmeans.fit(&data).expect("Fit succeeds with valid data");
 ///
 /// let labels = kmeans.predict(&data);
 /// assert_eq!(labels.len(), 6);
@@ -359,7 +359,7 @@ impl KMeans {
         }
 
         Matrix::from_vec(self.n_clusters, n_features, centroids_data)
-            .expect("Internal error: centroid matrix creation failed")
+            .expect("Centroid matrix dimensions match allocated data length")
     }
 
     /// Assigns each sample to the nearest centroid.
@@ -413,7 +413,7 @@ impl KMeans {
         }
 
         Matrix::from_vec(self.n_clusters, n_features, new_centroids)
-            .expect("Internal error: centroid update failed")
+            .expect("Updated centroid matrix dimensions match preallocated vector length")
     }
 
     /// Checks if centroids have converged.
@@ -525,12 +525,12 @@ impl UnsupervisedEstimator for KMeans {
 ///     5.1, 5.2,  // Cluster 1
 ///     5.2, 5.1,  // Cluster 1
 ///     10.0, 10.0, // Noise
-/// ]).unwrap();
+/// ]).expect("Valid matrix dimensions and data length");
 ///
 /// let mut dbscan = DBSCAN::new(0.5, 2);
-/// dbscan.fit(&data).unwrap();
+/// dbscan.fit(&data).expect("Fit succeeds with valid data");
 ///
-/// let labels = dbscan.labels().unwrap();
+/// let labels = dbscan.labels().expect("Labels available after fit");
 /// assert_eq!(labels[6], -1); // Last point is noise
 /// ```
 ///
@@ -745,10 +745,10 @@ pub struct Merge {
 /// let data = Matrix::from_vec(6, 2, vec![
 ///     1.0, 1.0, 1.1, 1.0, 1.0, 1.1,
 ///     5.0, 5.0, 5.1, 5.0, 5.0, 5.1,
-/// ]).unwrap();
+/// ]).expect("Valid matrix dimensions and data length");
 ///
 /// let mut hc = AgglomerativeClustering::new(2, Linkage::Average);
-/// hc.fit(&data).unwrap();
+/// hc.fit(&data).expect("Fit succeeds with valid data");
 ///
 /// let labels = hc.predict(&data);
 /// assert_eq!(labels.len(), 6);
@@ -1062,10 +1062,10 @@ pub enum CovarianceType {
 /// let data = Matrix::from_vec(6, 2, vec![
 ///     1.0, 1.0, 1.1, 1.0, 1.0, 1.1,
 ///     5.0, 5.0, 5.1, 5.0, 5.0, 5.1,
-/// ]).unwrap();
+/// ]).expect("Valid matrix dimensions and data length");
 ///
 /// let mut gmm = GaussianMixture::new(2, CovarianceType::Full);
-/// gmm.fit(&data).unwrap();
+/// gmm.fit(&data).expect("Fit succeeds with valid data");
 ///
 /// let labels = gmm.predict(&data);
 /// assert_eq!(labels.len(), 6);
@@ -1274,9 +1274,18 @@ impl GaussianMixture {
     #[allow(clippy::needless_range_loop)]
     fn compute_responsibilities(&self, x: &Matrix<f32>) -> Matrix<f32> {
         let (n_samples, n_features) = x.shape();
-        let means = self.means.as_ref().unwrap();
-        let weights = self.weights.as_ref().unwrap();
-        let covariances = self.covariances.as_ref().unwrap();
+        let means = self
+            .means
+            .as_ref()
+            .expect("Means must be initialized before computing responsibilities");
+        let weights = self
+            .weights
+            .as_ref()
+            .expect("Weights must be initialized before computing responsibilities");
+        let covariances = self
+            .covariances
+            .as_ref()
+            .expect("Covariances must be initialized before computing responsibilities");
 
         let mut responsibilities = vec![0.0; n_samples * self.n_components];
 
@@ -1312,7 +1321,8 @@ impl GaussianMixture {
             }
         }
 
-        Matrix::from_vec(n_samples, self.n_components, responsibilities).unwrap()
+        Matrix::from_vec(n_samples, self.n_components, responsibilities)
+            .expect("Responsibility matrix dimensions match preallocated vector length")
     }
 
     /// M-step: Update parameters based on responsibilities.
@@ -1350,7 +1360,10 @@ impl GaussianMixture {
         self.means = Some(Matrix::from_vec(self.n_components, n_features, new_means)?);
 
         // Update covariances (simplified diagonal)
-        let means = self.means.as_ref().unwrap();
+        let means = self
+            .means
+            .as_ref()
+            .expect("Means must exist after update step");
         let mut new_covariances = Vec::new();
 
         for k in 0..self.n_components {
@@ -1584,8 +1597,12 @@ impl IsolationTree {
             return depth + Self::c(node.size);
         }
 
-        let feature_idx = node.split_feature.unwrap();
-        let split_val = node.split_value.unwrap();
+        let feature_idx = node
+            .split_feature
+            .expect("Split feature must exist for non-leaf nodes");
+        let split_val = node
+            .split_value
+            .expect("Split value must exist for non-leaf nodes");
 
         if sample[feature_idx] < split_val {
             if let Some(ref left) = node.left {
@@ -1639,12 +1656,12 @@ impl IsolationTree {
 ///         10.0, 10.0, -10.0, -10.0,                 // Outliers
 ///     ],
 /// )
-/// .unwrap();
+/// .expect("Valid matrix dimensions and data length");
 ///
 /// let mut iforest = IsolationForest::new()
 ///     .with_contamination(0.3)
 ///     .with_random_state(42);
-/// iforest.fit(&data).unwrap();
+/// iforest.fit(&data).expect("Fit succeeds with valid data");
 ///
 /// // Predict returns 1 for normal, -1 for anomaly
 /// let predictions = iforest.predict(&data);
@@ -1763,7 +1780,10 @@ impl IsolationForest {
         // Compute anomaly scores on training data to determine threshold
         let scores = self.score_samples(x);
         let mut sorted_scores = scores.clone();
-        sorted_scores.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        sorted_scores.sort_by(|a, b| {
+            a.partial_cmp(b)
+                .expect("Anomaly scores must be valid floats for comparison")
+        });
 
         // Threshold at contamination quantile
         let threshold_idx = (self.contamination * n_samples as f32) as usize;
@@ -1784,7 +1804,8 @@ impl IsolationForest {
             }
         }
 
-        Matrix::from_vec(n_samples, n_features, data).unwrap()
+        Matrix::from_vec(n_samples, n_features, data)
+            .expect("Subsampled matrix dimensions match collected data length")
     }
 
     /// Compute anomaly scores for samples.
@@ -1830,7 +1851,9 @@ impl IsolationForest {
             panic!("Model not fitted. Call fit() first.");
         }
 
-        let threshold = self.threshold.unwrap();
+        let threshold = self
+            .threshold
+            .expect("Threshold must be set during fit phase");
         let scores = self.score_samples(x);
 
         scores
@@ -1882,12 +1905,12 @@ impl Default for IsolationForest {
 ///         10.0, 10.0, -10.0, -10.0,                 // Outliers
 ///     ],
 /// )
-/// .unwrap();
+/// .expect("Valid matrix dimensions and data length");
 ///
 /// let mut lof = LocalOutlierFactor::new()
 ///     .with_n_neighbors(3)
 ///     .with_contamination(0.3);
-/// lof.fit(&data).unwrap();
+/// lof.fit(&data).expect("Fit succeeds with valid data");
 ///
 /// // Predict returns 1 for normal, -1 for anomaly
 /// let predictions = lof.predict(&data);
@@ -1988,7 +2011,10 @@ impl LocalOutlierFactor {
 
         // Determine threshold from contamination
         let mut sorted_scores = lof_scores.clone();
-        sorted_scores.sort_by(|a, b| b.partial_cmp(a).unwrap()); // Descending order
+        sorted_scores.sort_by(|a, b| {
+            b.partial_cmp(a)
+                .expect("LOF scores must be valid floats for comparison")
+        }); // Descending order
 
         let threshold_idx = (self.contamination * n_samples as f32) as usize;
         self.threshold = Some(sorted_scores[threshold_idx.min(n_samples - 1)]);
@@ -2023,7 +2049,10 @@ impl LocalOutlierFactor {
             }
 
             // Sort by distance
-            distances.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+            distances.sort_by(|a, b| {
+                a.0.partial_cmp(&b.0)
+                    .expect("Distances must be valid floats for comparison")
+            });
 
             // Take k+1 nearest (skip self if query == data)
             let skip_self = i < n_data;
@@ -2128,8 +2157,14 @@ impl LocalOutlierFactor {
             panic!("Model not fitted. Call fit() first.");
         }
 
-        let training_data = self.training_data.as_ref().unwrap();
-        let training_lrd = self.lrd.as_ref().unwrap();
+        let training_data = self
+            .training_data
+            .as_ref()
+            .expect("Training data must be stored during fit");
+        let training_lrd = self
+            .lrd
+            .as_ref()
+            .expect("LRD values must be computed during fit");
 
         // Compute k-NN for query points against training data
         let (knn_distances, knn_indices) = self.compute_knn(x, training_data);
@@ -2173,7 +2208,9 @@ impl LocalOutlierFactor {
             panic!("Model not fitted. Call fit() first.");
         }
 
-        let threshold = self.threshold.unwrap();
+        let threshold = self
+            .threshold
+            .expect("Threshold must be set during fit phase");
         let scores = self.score_samples(x);
 
         scores
@@ -2190,7 +2227,9 @@ impl LocalOutlierFactor {
             panic!("Model not fitted. Call fit() first.");
         }
 
-        self.negative_outlier_factor.as_ref().unwrap()
+        self.negative_outlier_factor
+            .as_ref()
+            .expect("Negative outlier factor must be computed during fit")
     }
 }
 
@@ -2239,10 +2278,10 @@ pub enum Affinity {
 ///         0.0, 3.0, 3.0, 0.0, 0.0, -3.0, -3.0, 0.0,  // Outer circle
 ///     ],
 /// )
-/// .unwrap();
+/// .expect("Valid matrix dimensions and data length");
 ///
 /// let mut sc = SpectralClustering::new(2).with_gamma(0.5);
-/// sc.fit(&data).unwrap();
+/// sc.fit(&data).expect("Fit succeeds with valid data");
 ///
 /// let labels = sc.predict(&data);
 /// ```
@@ -2307,7 +2346,9 @@ impl SpectralClustering {
         if !self.is_fitted() {
             panic!("Model not fitted. Call fit() first.");
         }
-        self.labels.as_ref().unwrap()
+        self.labels
+            .as_ref()
+            .expect("Labels must exist after successful fit")
     }
 
     /// Fit the Spectral Clustering model.
@@ -2400,7 +2441,10 @@ impl SpectralClustering {
             }
 
             // Sort and take k nearest
-            distances.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+            distances.sort_by(|a, b| {
+                a.0.partial_cmp(&b.0)
+                    .expect("Distances must be valid floats for comparison")
+            });
             let k_neighbors = self.n_neighbors.min(n_samples - 1);
 
             // Set affinity to 1 for k-nearest neighbors
@@ -2469,7 +2513,10 @@ impl SpectralClustering {
             .enumerate()
             .map(|(i, &val)| (i, val as f64))
             .collect();
-        eigen_pairs.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+        eigen_pairs.sort_by(|a, b| {
+            a.1.partial_cmp(&b.1)
+                .expect("Eigenvalues must be valid floats for comparison")
+        });
 
         // Get k smallest eigenvectors
         let k = self.n_clusters;
@@ -2500,7 +2547,10 @@ impl UnsupervisedEstimator for SpectralClustering {
         if !self.is_fitted() {
             panic!("Model not fitted. Call fit() first.");
         }
-        self.labels.as_ref().unwrap().clone()
+        self.labels
+            .as_ref()
+            .expect("Labels must exist after successful fit")
+            .clone()
     }
 }
 
@@ -2521,7 +2571,7 @@ mod tests {
             2,
             vec![1.0, 2.0, 1.5, 1.8, 1.0, 0.6, 8.0, 8.0, 9.0, 11.0, 8.5, 9.0],
         )
-        .unwrap()
+        .expect("Sample data matrix creation should succeed")
     }
 
     #[test]
@@ -2535,7 +2585,7 @@ mod tests {
     fn test_fit_basic() {
         let data = sample_data();
         let mut kmeans = KMeans::new(2);
-        kmeans.fit(&data).unwrap();
+        kmeans.fit(&data).expect("KMeans fit should succeed");
 
         assert!(kmeans.is_fitted());
         assert_eq!(kmeans.centroids().shape(), (2, 2));
@@ -2546,7 +2596,7 @@ mod tests {
     fn test_predict() {
         let data = sample_data();
         let mut kmeans = KMeans::new(2);
-        kmeans.fit(&data).unwrap();
+        kmeans.fit(&data).expect("KMeans fit should succeed");
 
         let labels = kmeans.predict(&data);
         assert_eq!(labels.len(), 6);
@@ -2561,7 +2611,7 @@ mod tests {
     fn test_labels_consistency() {
         let data = sample_data();
         let mut kmeans = KMeans::new(2);
-        kmeans.fit(&data).unwrap();
+        kmeans.fit(&data).expect("KMeans fit should succeed");
 
         let labels = kmeans.predict(&data);
 
@@ -2594,7 +2644,7 @@ mod tests {
 
     #[test]
     fn test_empty_data_error() {
-        let data = Matrix::from_vec(0, 2, vec![]).unwrap();
+        let data = Matrix::from_vec(0, 2, vec![]).expect("Empty matrix creation should succeed");
         let mut kmeans = KMeans::new(2);
         let result = kmeans.fit(&data);
         assert!(result.is_err());
@@ -2602,7 +2652,7 @@ mod tests {
 
     #[test]
     fn test_too_many_clusters_error() {
-        let data = Matrix::from_vec(3, 2, vec![1.0; 6]).unwrap();
+        let data = Matrix::from_vec(3, 2, vec![1.0; 6]).expect("Matrix creation should succeed");
         let mut kmeans = KMeans::new(5);
         let result = kmeans.fit(&data);
         assert!(result.is_err());
@@ -2612,7 +2662,7 @@ mod tests {
     fn test_single_cluster() {
         let data = sample_data();
         let mut kmeans = KMeans::new(1);
-        kmeans.fit(&data).unwrap();
+        kmeans.fit(&data).expect("KMeans fit should succeed");
 
         let labels = kmeans.predict(&data);
         // All points should be in cluster 0
@@ -2624,11 +2674,11 @@ mod tests {
         let data = sample_data();
 
         let mut kmeans1 = KMeans::new(1).with_random_state(42);
-        kmeans1.fit(&data).unwrap();
+        kmeans1.fit(&data).expect("KMeans fit should succeed");
         let inertia1 = kmeans1.inertia();
 
         let mut kmeans2 = KMeans::new(2).with_random_state(42);
-        kmeans2.fit(&data).unwrap();
+        kmeans2.fit(&data).expect("KMeans fit should succeed");
         let inertia2 = kmeans2.inertia();
 
         // More clusters should lead to lower or equal inertia
@@ -2640,10 +2690,10 @@ mod tests {
         let data = sample_data();
 
         let mut kmeans1 = KMeans::new(2).with_random_state(42);
-        kmeans1.fit(&data).unwrap();
+        kmeans1.fit(&data).expect("KMeans fit should succeed");
 
         let mut kmeans2 = KMeans::new(2).with_random_state(42);
-        kmeans2.fit(&data).unwrap();
+        kmeans2.fit(&data).expect("KMeans fit should succeed");
 
         // Same seed should give same centroids
         let c1 = kmeans1.centroids();
@@ -2660,7 +2710,7 @@ mod tests {
     fn test_convergence() {
         let data = sample_data();
         let mut kmeans = KMeans::new(2).with_max_iter(1000);
-        kmeans.fit(&data).unwrap();
+        kmeans.fit(&data).expect("KMeans fit should succeed");
 
         // Should converge before max iterations for simple data
         assert!(kmeans.n_iter() < 100);
@@ -2672,11 +2722,13 @@ mod tests {
         let kmeans = KMeans::new(2).with_tol(0.01);
 
         // Old centroids: [[1.0, 2.0], [3.0, 4.0]]
-        let old = Matrix::from_vec(2, 2, vec![1.0_f32, 2.0, 3.0, 4.0]).unwrap();
+        let old = Matrix::from_vec(2, 2, vec![1.0_f32, 2.0, 3.0, 4.0])
+            .expect("Matrix creation should succeed");
 
         // New centroids: [[1.005, 2.005], [3.005, 4.005]]
         // Distance per centroid: sqrt(0.005^2 + 0.005^2) ≈ 0.00707 < 0.01
-        let new = Matrix::from_vec(2, 2, vec![1.005_f32, 2.005, 3.005, 4.005]).unwrap();
+        let new = Matrix::from_vec(2, 2, vec![1.005_f32, 2.005, 3.005, 4.005])
+            .expect("Matrix creation should succeed");
 
         assert!(kmeans.centroids_converged(&old, &new));
     }
@@ -2687,11 +2739,13 @@ mod tests {
         let kmeans = KMeans::new(2).with_tol(0.01);
 
         // Old centroids: [[1.0, 2.0], [3.0, 4.0]]
-        let old = Matrix::from_vec(2, 2, vec![1.0_f32, 2.0, 3.0, 4.0]).unwrap();
+        let old = Matrix::from_vec(2, 2, vec![1.0_f32, 2.0, 3.0, 4.0])
+            .expect("Matrix creation should succeed");
 
         // New centroids: [[1.1, 2.1], [3.0, 4.0]]
         // First centroid distance: sqrt(0.1^2 + 0.1^2) ≈ 0.141 > 0.01
-        let new = Matrix::from_vec(2, 2, vec![1.1_f32, 2.1, 3.0, 4.0]).unwrap();
+        let new = Matrix::from_vec(2, 2, vec![1.1_f32, 2.1, 3.0, 4.0])
+            .expect("Matrix creation should succeed");
 
         assert!(!kmeans.centroids_converged(&old, &new));
     }
@@ -2704,14 +2758,16 @@ mod tests {
         let kmeans = KMeans::new(1).with_tol(0.1);
 
         // Old centroid: [[0.0, 0.0]]
-        let old = Matrix::from_vec(1, 2, vec![0.0_f32, 0.0]).unwrap();
+        let old =
+            Matrix::from_vec(1, 2, vec![0.0_f32, 0.0]).expect("Matrix creation should succeed");
 
         // New centroid: [[0.1, 0.0]]
         // Distance²: 0.1² + 0.0² = 0.01 (exactly tol²)
         // Should be converged (dist² = tol² means dist = tol, which is at boundary)
         // Original code: dist² > tol² is false, so converged ✓
         // Mutated code: dist² >= tol² is true, so NOT converged ✗
-        let new_exact = Matrix::from_vec(1, 2, vec![0.1_f32, 0.0]).unwrap();
+        let new_exact =
+            Matrix::from_vec(1, 2, vec![0.1_f32, 0.0]).expect("Matrix creation should succeed");
         assert!(
             kmeans.centroids_converged(&old, &new_exact),
             "Distance exactly at tolerance should be converged"
@@ -2719,7 +2775,8 @@ mod tests {
 
         // Now test just beyond tolerance
         // Distance²: 0.11² ≈ 0.0121 > 0.01
-        let new_beyond = Matrix::from_vec(1, 2, vec![0.11_f32, 0.0]).unwrap();
+        let new_beyond =
+            Matrix::from_vec(1, 2, vec![0.11_f32, 0.0]).expect("Matrix creation should succeed");
         assert!(
             !kmeans.centroids_converged(&old, &new_beyond),
             "Distance beyond tolerance should not be converged"
@@ -2740,7 +2797,7 @@ mod tests {
                 5.0, 6.0, // Cluster 2
             ],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed");
 
         // All clusters within tolerance
         let new_converged = Matrix::from_vec(
@@ -2752,7 +2809,7 @@ mod tests {
                 5.005, 6.005, // Small change
             ],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed");
         assert!(kmeans.centroids_converged(&old, &new_converged));
 
         // One cluster beyond tolerance (cluster 1)
@@ -2765,7 +2822,7 @@ mod tests {
                 5.005, 6.005, // Small change
             ],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed");
         assert!(!kmeans.centroids_converged(&old, &new_not_converged));
     }
 
@@ -2783,10 +2840,10 @@ mod tests {
                 10.2, 10.2, // Point 3: very close to 1
             ],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed");
 
         let mut kmeans = KMeans::new(2).with_random_state(42);
-        kmeans.fit(&data).unwrap();
+        kmeans.fit(&data).expect("KMeans fit should succeed");
 
         let centroids = kmeans.centroids();
 
@@ -2822,10 +2879,10 @@ mod tests {
                 9.8,  // Point 4: cluster B (near 10)
             ],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed");
 
         let mut kmeans = KMeans::new(2).with_random_state(42);
-        kmeans.fit(&data).unwrap();
+        kmeans.fit(&data).expect("KMeans fit should succeed");
 
         let labels = kmeans.predict(&data);
 
@@ -2864,8 +2921,8 @@ mod tests {
         let mut kmeans1 = KMeans::new(2).with_random_state(42);
         let mut kmeans2 = KMeans::new(2).with_random_state(42);
 
-        kmeans1.fit(&data).unwrap();
-        kmeans2.fit(&data).unwrap();
+        kmeans1.fit(&data).expect("KMeans fit should succeed");
+        kmeans2.fit(&data).expect("KMeans fit should succeed");
 
         let c1 = kmeans1.centroids();
         let c2 = kmeans2.centroids();
@@ -2892,10 +2949,10 @@ mod tests {
         // Property: labels.max() < n_clusters
         let data = sample_data();
         let mut kmeans = KMeans::new(3).with_random_state(42);
-        kmeans.fit(&data).unwrap();
+        kmeans.fit(&data).expect("KMeans fit should succeed");
 
         let labels = kmeans.predict(&data);
-        let max_label = labels.iter().max().unwrap();
+        let max_label = labels.iter().max().expect("Labels should not be empty");
         assert!(*max_label < 3);
     }
 
@@ -2903,10 +2960,11 @@ mod tests {
     fn test_predict_new_data() {
         let data = sample_data();
         let mut kmeans = KMeans::new(2).with_random_state(42);
-        kmeans.fit(&data).unwrap();
+        kmeans.fit(&data).expect("KMeans fit should succeed");
 
         // Predict on new data point
-        let new_point = Matrix::from_vec(1, 2, vec![1.2, 1.5]).unwrap();
+        let new_point =
+            Matrix::from_vec(1, 2, vec![1.2, 1.5]).expect("Matrix creation should succeed");
         let labels = kmeans.predict(&new_point);
 
         assert_eq!(labels.len(), 1);
@@ -2930,9 +2988,9 @@ mod tests {
             }
         }
 
-        let matrix = Matrix::from_vec(n, 2, data).unwrap();
+        let matrix = Matrix::from_vec(n, 2, data).expect("Matrix creation should succeed");
         let mut kmeans = KMeans::new(2).with_random_state(42);
-        kmeans.fit(&matrix).unwrap();
+        kmeans.fit(&matrix).expect("KMeans fit should succeed");
 
         let labels = kmeans.predict(&matrix);
 
@@ -2962,10 +3020,10 @@ mod tests {
                 10.0, 0.2,
             ],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed");
 
         let mut kmeans = KMeans::new(3).with_random_state(42);
-        kmeans.fit(&data).unwrap();
+        kmeans.fit(&data).expect("KMeans fit should succeed");
 
         let labels = kmeans.predict(&data);
 
@@ -2987,11 +3045,11 @@ mod tests {
     #[test]
     fn test_identical_points() {
         // All points are the same
-        let data =
-            Matrix::from_vec(5, 2, vec![1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]).unwrap();
+        let data = Matrix::from_vec(5, 2, vec![1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0])
+            .expect("Matrix creation should succeed");
 
         let mut kmeans = KMeans::new(2).with_random_state(42);
-        kmeans.fit(&data).unwrap();
+        kmeans.fit(&data).expect("KMeans fit should succeed");
 
         // All should be in same cluster
         let labels = kmeans.predict(&data);
@@ -3005,10 +3063,11 @@ mod tests {
     #[test]
     fn test_one_dimensional_data() {
         // 1D clustering
-        let data = Matrix::from_vec(6, 1, vec![0.0, 0.1, 0.2, 10.0, 10.1, 10.2]).unwrap();
+        let data = Matrix::from_vec(6, 1, vec![0.0, 0.1, 0.2, 10.0, 10.1, 10.2])
+            .expect("Matrix creation should succeed");
 
         let mut kmeans = KMeans::new(2).with_random_state(42);
-        kmeans.fit(&data).unwrap();
+        kmeans.fit(&data).expect("KMeans fit should succeed");
 
         let labels = kmeans.predict(&data);
 
@@ -3031,10 +3090,10 @@ mod tests {
                 10.0, 10.0, 10.0, 10.0, 10.1, 10.1, 10.1, 10.1, 10.1, 10.2, 10.2, 10.2, 10.2, 10.2,
             ],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed");
 
         let mut kmeans = KMeans::new(2).with_random_state(42);
-        kmeans.fit(&data).unwrap();
+        kmeans.fit(&data).expect("KMeans fit should succeed");
 
         let labels = kmeans.predict(&data);
 
@@ -3056,10 +3115,10 @@ mod tests {
                 -10.0, -10.0, -10.1, -10.1, -10.2, -10.0, 10.0, 10.0, 10.1, 10.1, 10.0, 10.2,
             ],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed");
 
         let mut kmeans = KMeans::new(2).with_random_state(42);
-        kmeans.fit(&data).unwrap();
+        kmeans.fit(&data).expect("KMeans fit should succeed");
 
         let labels = kmeans.predict(&data);
 
@@ -3073,10 +3132,11 @@ mod tests {
     #[test]
     fn test_exact_k_samples() {
         // Exactly k samples for k clusters
-        let data = Matrix::from_vec(3, 2, vec![0.0, 0.0, 5.0, 5.0, 10.0, 10.0]).unwrap();
+        let data = Matrix::from_vec(3, 2, vec![0.0, 0.0, 5.0, 5.0, 10.0, 10.0])
+            .expect("Matrix creation should succeed");
 
         let mut kmeans = KMeans::new(3).with_random_state(42);
-        kmeans.fit(&data).unwrap();
+        kmeans.fit(&data).expect("KMeans fit should succeed");
 
         let labels = kmeans.predict(&data);
 
@@ -3093,7 +3153,7 @@ mod tests {
     fn test_max_iter_limit() {
         let data = sample_data();
         let mut kmeans = KMeans::new(2).with_max_iter(1).with_random_state(42);
-        kmeans.fit(&data).unwrap();
+        kmeans.fit(&data).expect("KMeans fit should succeed");
 
         // Should stop at 1 iteration
         assert_eq!(kmeans.n_iter(), 1);
@@ -3105,7 +3165,7 @@ mod tests {
         // Use data that requires multiple iterations to converge
         let data = sample_data();
         let mut kmeans = KMeans::new(2).with_max_iter(100).with_random_state(42);
-        kmeans.fit(&data).unwrap();
+        kmeans.fit(&data).expect("KMeans fit should succeed");
 
         // For this data, should converge in > 1 iteration
         assert!(
@@ -3120,10 +3180,11 @@ mod tests {
     fn test_inertia_not_zero() {
         // Test that catches inertia() → 0.0 mutation (line 126)
         // Use imperfect clustering to ensure non-zero inertia
-        let data = Matrix::from_vec(4, 2, vec![0.0, 0.0, 0.1, 0.1, 5.0, 5.0, 5.1, 5.1]).unwrap();
+        let data = Matrix::from_vec(4, 2, vec![0.0, 0.0, 0.1, 0.1, 5.0, 5.0, 5.1, 5.1])
+            .expect("Matrix creation should succeed");
 
         let mut kmeans = KMeans::new(2).with_random_state(42);
-        kmeans.fit(&data).unwrap();
+        kmeans.fit(&data).expect("KMeans fit should succeed");
 
         // Inertia should be positive (points aren't exactly at centroids)
         assert!(
@@ -3143,7 +3204,7 @@ mod tests {
     fn test_tight_tolerance() {
         let data = sample_data();
         let mut kmeans = KMeans::new(2).with_tol(1e-10).with_random_state(42);
-        kmeans.fit(&data).unwrap();
+        kmeans.fit(&data).expect("KMeans fit should succeed");
 
         // With tight tolerance, should still converge for simple data
         assert!(kmeans.is_fitted());
@@ -3159,10 +3220,10 @@ mod tests {
                 10.0, 10.0, 10.1, 10.1, 10.1, 10.2, 10.2, 10.2, 10.3, 10.3, 10.3, 10.4, 10.4, 10.4,
             ],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed");
 
         let mut kmeans = KMeans::new(2).with_random_state(42);
-        kmeans.fit(&data).unwrap();
+        kmeans.fit(&data).expect("KMeans fit should succeed");
 
         let centroids = kmeans.centroids();
         assert_eq!(centroids.shape(), (2, 3));
@@ -3173,10 +3234,10 @@ mod tests {
         let data = sample_data();
 
         let mut kmeans1 = KMeans::new(2).with_random_state(1);
-        kmeans1.fit(&data).unwrap();
+        kmeans1.fit(&data).expect("KMeans fit should succeed");
 
         let mut kmeans2 = KMeans::new(2).with_random_state(999);
-        kmeans2.fit(&data).unwrap();
+        kmeans2.fit(&data).expect("KMeans fit should succeed");
 
         // Different seeds should still produce valid results
         // (labels may differ but should be valid)
@@ -3198,7 +3259,7 @@ mod tests {
 
         let data = sample_data();
         let mut kmeans = KMeans::new(2).with_random_state(42);
-        kmeans.fit(&data).unwrap();
+        kmeans.fit(&data).expect("KMeans fit should succeed");
 
         // Save model
         let path = Path::new("/tmp/test_kmeans.bin");
@@ -3246,8 +3307,8 @@ mod tests {
         // 1D case: old = [0.0], new = [0.3]
         // diff = 0.3, dist_sq = 0.09
         // tol² = 0.25, so 0.09 < 0.25, should converge
-        let old = Matrix::from_vec(1, 1, vec![0.0_f32]).unwrap();
-        let new = Matrix::from_vec(1, 1, vec![0.3_f32]).unwrap();
+        let old = Matrix::from_vec(1, 1, vec![0.0_f32]).expect("Matrix creation should succeed");
+        let new = Matrix::from_vec(1, 1, vec![0.3_f32]).expect("Matrix creation should succeed");
         assert!(
             kmeans.centroids_converged(&old, &new),
             "Should converge when dist² (0.09) < tol² (0.25)"
@@ -3255,8 +3316,10 @@ mod tests {
 
         // 2D case: movement of [0.4, 0.3]
         // dist_sq = 0.16 + 0.09 = 0.25 = tol², should converge (<=)
-        let old_2d = Matrix::from_vec(1, 2, vec![0.0_f32, 0.0]).unwrap();
-        let new_2d = Matrix::from_vec(1, 2, vec![0.4_f32, 0.3]).unwrap();
+        let old_2d =
+            Matrix::from_vec(1, 2, vec![0.0_f32, 0.0]).expect("Matrix creation should succeed");
+        let new_2d =
+            Matrix::from_vec(1, 2, vec![0.4_f32, 0.3]).expect("Matrix creation should succeed");
         assert!(
             kmeans.centroids_converged(&old_2d, &new_2d),
             "Should converge when dist² equals tol²"
@@ -3270,8 +3333,8 @@ mod tests {
 
         // Case: dist_sq = 0.5, tol² = 1.0
         // Should converge because 0.5 < 1.0
-        let old = Matrix::from_vec(1, 1, vec![0.0_f32]).unwrap();
-        let less = Matrix::from_vec(1, 1, vec![0.7_f32]).unwrap(); // dist_sq ≈ 0.49
+        let old = Matrix::from_vec(1, 1, vec![0.0_f32]).expect("Matrix creation should succeed");
+        let less = Matrix::from_vec(1, 1, vec![0.7_f32]).expect("Matrix creation should succeed"); // dist_sq ≈ 0.49
         assert!(
             kmeans.centroids_converged(&old, &less),
             "dist² < tol² should converge"
@@ -3279,7 +3342,7 @@ mod tests {
 
         // Case: dist_sq = 1.5, tol² = 1.0
         // Should NOT converge because 1.5 > 1.0
-        let more = Matrix::from_vec(1, 1, vec![1.3_f32]).unwrap(); // dist_sq ≈ 1.69
+        let more = Matrix::from_vec(1, 1, vec![1.3_f32]).expect("Matrix creation should succeed"); // dist_sq ≈ 1.69
         assert!(
             !kmeans.centroids_converged(&old, &more),
             "dist² > tol² should NOT converge"
@@ -3298,14 +3361,14 @@ mod tests {
                 10.0, 10.0, 11.0, 10.0, 10.5, 10.0, // Cluster 2 region
             ],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed");
 
         // Use very tight tolerance to force multiple iterations
         let mut kmeans = KMeans::new(2)
             .with_tol(1e-8)
             .with_max_iter(50)
             .with_random_state(42);
-        kmeans.fit(&data).unwrap();
+        kmeans.fit(&data).expect("KMeans fit should succeed");
 
         // Should take more than 1 iteration to converge with tight tolerance
         // If centroids_converged always returns true, n_iter would be 1
@@ -3324,9 +3387,10 @@ mod tests {
 
         // Two centroids at (0, 0) and (2, 0)
         // Point at (1, 0) is equidistant from both
-        let data = Matrix::from_vec(3, 2, vec![0.0, 0.0, 2.0, 0.0, 1.0, 0.0]).unwrap();
+        let data = Matrix::from_vec(3, 2, vec![0.0, 0.0, 2.0, 0.0, 1.0, 0.0])
+            .expect("Matrix creation should succeed");
 
-        kmeans.fit(&data).unwrap();
+        kmeans.fit(&data).expect("KMeans fit should succeed");
 
         // The key is that the middle point should be assigned consistently
         let labels = kmeans.predict(&data);
@@ -3353,10 +3417,10 @@ mod tests {
                 10.0, // Distance 10 (should be selected as max)
             ],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed");
 
         let mut kmeans = KMeans::new(2).with_random_state(42);
-        kmeans.fit(&data).unwrap();
+        kmeans.fit(&data).expect("KMeans fit should succeed");
 
         // The two clusters should separate the far points
         let labels = kmeans.predict(&data);
@@ -3381,10 +3445,10 @@ mod tests {
                 10.0, 12.0, // Cluster 1: mean = 11.0
             ],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed");
 
         let mut kmeans = KMeans::new(2).with_random_state(42);
-        kmeans.fit(&data).unwrap();
+        kmeans.fit(&data).expect("KMeans fit should succeed");
 
         let centroids = kmeans.centroids();
 
@@ -3417,8 +3481,8 @@ mod tests {
         let kmeans = KMeans::new(1).with_tol(1.0);
 
         // With diff = 0.5, if using * we get 0.25, if using / we get 1.0
-        let old = Matrix::from_vec(1, 1, vec![0.0_f32]).unwrap();
-        let new = Matrix::from_vec(1, 1, vec![0.5_f32]).unwrap();
+        let old = Matrix::from_vec(1, 1, vec![0.0_f32]).expect("Matrix creation should succeed");
+        let new = Matrix::from_vec(1, 1, vec![0.5_f32]).expect("Matrix creation should succeed");
 
         // dist_sq = 0.5² = 0.25 < 1.0², should converge
         assert!(
@@ -3428,7 +3492,7 @@ mod tests {
 
         // If mutation uses diff/diff, we get dist_sq=1.0 = tol², still converges
         // Need another case: diff = 2.0
-        let new2 = Matrix::from_vec(1, 1, vec![2.0_f32]).unwrap();
+        let new2 = Matrix::from_vec(1, 1, vec![2.0_f32]).expect("Matrix creation should succeed");
         // dist_sq = 2.0² = 4.0 > 1.0², should NOT converge
         // But if mutation uses 2.0/2.0 = 1.0 = 1.0², would converge (WRONG!)
         assert!(
@@ -3446,8 +3510,10 @@ mod tests {
         // 2D case: diffs = [0.3, 0.4]
         // Correct: dist_sq = 0.09 + 0.16 = 0.25
         // Mutation *= : dist_sq = 0 * 0.09 = 0, then 0 * 0.16 = 0 (always 0!)
-        let old = Matrix::from_vec(1, 2, vec![0.0_f32, 0.0]).unwrap();
-        let new = Matrix::from_vec(1, 2, vec![0.3_f32, 0.4]).unwrap();
+        let old =
+            Matrix::from_vec(1, 2, vec![0.0_f32, 0.0]).expect("Matrix creation should succeed");
+        let new =
+            Matrix::from_vec(1, 2, vec![0.3_f32, 0.4]).expect("Matrix creation should succeed");
 
         // dist = √(0.25) = 0.5 < 0.6, should converge
         assert!(
@@ -3457,7 +3523,8 @@ mod tests {
 
         // If mutation uses *=, dist_sq stays 0.0, would always converge
         // Test case that should NOT converge:
-        let new2 = Matrix::from_vec(1, 2, vec![0.5_f32, 0.5]).unwrap();
+        let new2 =
+            Matrix::from_vec(1, 2, vec![0.5_f32, 0.5]).expect("Matrix creation should succeed");
         // dist_sq = 0.25 + 0.25 = 0.5 > 0.36, should NOT converge
         // But if *= mutation, dist_sq = 0, would converge (WRONG!)
         assert!(
@@ -3475,8 +3542,8 @@ mod tests {
         // With diff = 0.6:
         // Correct: diff² = 0.36 < 1.0, should converge
         // Mutation: diff+diff = 1.2 > 1.0, would NOT converge (WRONG!)
-        let old = Matrix::from_vec(1, 1, vec![0.0_f32]).unwrap();
-        let new = Matrix::from_vec(1, 1, vec![0.6_f32]).unwrap();
+        let old = Matrix::from_vec(1, 1, vec![0.0_f32]).expect("Matrix creation should succeed");
+        let new = Matrix::from_vec(1, 1, vec![0.6_f32]).expect("Matrix creation should succeed");
 
         assert!(
             kmeans.centroids_converged(&old, &new),
@@ -3491,8 +3558,8 @@ mod tests {
 
         // Case: dist_sq = 1.5 > tol² = 1.0, should NOT converge
         // If mutation uses ==, would converge (WRONG!)
-        let old = Matrix::from_vec(1, 1, vec![0.0_f32]).unwrap();
-        let new = Matrix::from_vec(1, 1, vec![1.3_f32]).unwrap(); // dist_sq ≈ 1.69
+        let old = Matrix::from_vec(1, 1, vec![0.0_f32]).expect("Matrix creation should succeed");
+        let new = Matrix::from_vec(1, 1, vec![1.3_f32]).expect("Matrix creation should succeed"); // dist_sq ≈ 1.69
 
         assert!(
             !kmeans.centroids_converged(&old, &new),
@@ -3507,8 +3574,8 @@ mod tests {
 
         // Case: dist_sq = 0.5 < tol² = 1.0, should converge
         // If mutation uses <, logic inverts: would NOT converge (WRONG!)
-        let old = Matrix::from_vec(1, 1, vec![0.0_f32]).unwrap();
-        let new = Matrix::from_vec(1, 1, vec![0.7_f32]).unwrap(); // dist_sq = 0.49
+        let old = Matrix::from_vec(1, 1, vec![0.0_f32]).expect("Matrix creation should succeed");
+        let new = Matrix::from_vec(1, 1, vec![0.7_f32]).expect("Matrix creation should succeed"); // dist_sq = 0.49
 
         assert!(
             kmeans.centroids_converged(&old, &new),
@@ -3543,10 +3610,10 @@ mod tests {
                 5.2, 5.1, // Cluster 1
             ],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed");
 
         let mut dbscan = DBSCAN::new(0.5, 2);
-        dbscan.fit(&data).unwrap();
+        dbscan.fit(&data).expect("DBSCAN fit should succeed");
 
         assert!(dbscan.is_fitted());
         let labels = dbscan.labels();
@@ -3563,10 +3630,10 @@ mod tests {
                 5.0, 5.0, 5.1, 5.2, 5.2, 5.1, // Cluster 1
             ],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed");
 
         let mut dbscan = DBSCAN::new(0.5, 2);
-        dbscan.fit(&data).unwrap();
+        dbscan.fit(&data).expect("DBSCAN fit should succeed");
 
         let labels = dbscan.predict(&data);
         assert_eq!(labels.len(), 6);
@@ -3599,10 +3666,10 @@ mod tests {
                 10.0, 10.0, // Noise (far from both clusters)
             ],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed");
 
         let mut dbscan = DBSCAN::new(0.5, 2);
-        dbscan.fit(&data).unwrap();
+        dbscan.fit(&data).expect("DBSCAN fit should succeed");
 
         let labels = dbscan.labels();
 
@@ -3613,11 +3680,11 @@ mod tests {
     #[test]
     fn test_dbscan_single_cluster() {
         // All points form one dense cluster
-        let data =
-            Matrix::from_vec(5, 2, vec![1.0, 1.0, 1.1, 1.0, 1.0, 1.1, 1.1, 1.1, 1.2, 1.0]).unwrap();
+        let data = Matrix::from_vec(5, 2, vec![1.0, 1.0, 1.1, 1.0, 1.0, 1.1, 1.1, 1.1, 1.2, 1.0])
+            .expect("Matrix creation should succeed");
 
         let mut dbscan = DBSCAN::new(0.3, 2);
-        dbscan.fit(&data).unwrap();
+        dbscan.fit(&data).expect("DBSCAN fit should succeed");
 
         let labels = dbscan.labels();
 
@@ -3632,11 +3699,11 @@ mod tests {
     #[test]
     fn test_dbscan_all_noise() {
         // All points far apart
-        let data =
-            Matrix::from_vec(4, 2, vec![0.0, 0.0, 10.0, 10.0, 20.0, 20.0, 30.0, 30.0]).unwrap();
+        let data = Matrix::from_vec(4, 2, vec![0.0, 0.0, 10.0, 10.0, 20.0, 20.0, 30.0, 30.0])
+            .expect("Matrix creation should succeed");
 
         let mut dbscan = DBSCAN::new(0.5, 2);
-        dbscan.fit(&data).unwrap();
+        dbscan.fit(&data).expect("DBSCAN fit should succeed");
 
         let labels = dbscan.labels();
 
@@ -3649,17 +3716,18 @@ mod tests {
     #[test]
     fn test_dbscan_min_samples_effect() {
         // Same data, different min_samples
-        let data = Matrix::from_vec(4, 2, vec![1.0, 1.0, 1.1, 1.0, 1.0, 1.1, 1.1, 1.1]).unwrap();
+        let data = Matrix::from_vec(4, 2, vec![1.0, 1.0, 1.1, 1.0, 1.0, 1.1, 1.1, 1.1])
+            .expect("Matrix creation should succeed");
 
         // With min_samples=2, should form cluster
         let mut dbscan1 = DBSCAN::new(0.3, 2);
-        dbscan1.fit(&data).unwrap();
+        dbscan1.fit(&data).expect("DBSCAN fit should succeed");
         let labels1 = dbscan1.labels();
         assert!(labels1.iter().any(|&l| l != -1));
 
         // With min_samples=5, should be all noise
         let mut dbscan2 = DBSCAN::new(0.3, 5);
-        dbscan2.fit(&data).unwrap();
+        dbscan2.fit(&data).expect("DBSCAN fit should succeed");
         let labels2 = dbscan2.labels();
         assert!(labels2.iter().all(|&l| l == -1));
     }
@@ -3667,11 +3735,12 @@ mod tests {
     #[test]
     fn test_dbscan_eps_effect() {
         // Same data, different eps
-        let data = Matrix::from_vec(4, 2, vec![1.0, 1.0, 1.5, 1.5, 2.0, 2.0, 2.5, 2.5]).unwrap();
+        let data = Matrix::from_vec(4, 2, vec![1.0, 1.0, 1.5, 1.5, 2.0, 2.0, 2.5, 2.5])
+            .expect("Matrix creation should succeed");
 
         // With large eps, should form one cluster
         let mut dbscan1 = DBSCAN::new(2.0, 2);
-        dbscan1.fit(&data).unwrap();
+        dbscan1.fit(&data).expect("DBSCAN fit should succeed");
         let labels1 = dbscan1.labels();
         let unique_clusters: std::collections::HashSet<_> =
             labels1.iter().filter(|&&l| l != -1).collect();
@@ -3679,7 +3748,7 @@ mod tests {
 
         // With small eps, more fragmentation
         let mut dbscan2 = DBSCAN::new(0.3, 2);
-        dbscan2.fit(&data).unwrap();
+        dbscan2.fit(&data).expect("DBSCAN fit should succeed");
         let labels2 = dbscan2.labels();
         // Should have noise or multiple small clusters
         assert!(labels2.contains(&-1));
@@ -3692,14 +3761,14 @@ mod tests {
             2,
             vec![1.0, 1.0, 1.2, 1.1, 1.1, 1.2, 5.0, 5.0, 5.1, 5.2, 5.2, 5.1],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed");
 
         let mut dbscan1 = DBSCAN::new(0.5, 2);
-        dbscan1.fit(&data).unwrap();
+        dbscan1.fit(&data).expect("DBSCAN fit should succeed");
         let labels1 = dbscan1.labels().clone();
 
         let mut dbscan2 = DBSCAN::new(0.5, 2);
-        dbscan2.fit(&data).unwrap();
+        dbscan2.fit(&data).expect("DBSCAN fit should succeed");
         let labels2 = dbscan2.labels();
 
         // Results should be identical
@@ -3708,10 +3777,11 @@ mod tests {
 
     #[test]
     fn test_dbscan_fit_predict() {
-        let data = Matrix::from_vec(4, 2, vec![1.0, 1.0, 1.1, 1.0, 1.0, 1.1, 1.1, 1.1]).unwrap();
+        let data = Matrix::from_vec(4, 2, vec![1.0, 1.0, 1.1, 1.0, 1.0, 1.1, 1.1, 1.1])
+            .expect("Matrix creation should succeed");
 
         let mut dbscan = DBSCAN::new(0.3, 2);
-        dbscan.fit(&data).unwrap();
+        dbscan.fit(&data).expect("DBSCAN fit should succeed");
 
         let labels_stored = dbscan.labels().clone();
         let labels_predicted = dbscan.predict(&data);
@@ -3723,7 +3793,8 @@ mod tests {
     #[test]
     #[should_panic(expected = "Model not fitted")]
     fn test_dbscan_predict_before_fit() {
-        let data = Matrix::from_vec(2, 2, vec![1.0, 1.0, 2.0, 2.0]).unwrap();
+        let data = Matrix::from_vec(2, 2, vec![1.0, 1.0, 2.0, 2.0])
+            .expect("Matrix creation should succeed");
         let dbscan = DBSCAN::new(0.5, 2);
         let _ = dbscan.predict(&data); // Should panic
     }
@@ -3752,10 +3823,11 @@ mod tests {
             2,
             vec![1.0, 1.0, 1.1, 1.0, 1.0, 1.1, 5.0, 5.0, 5.1, 5.0, 5.0, 5.1],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed");
 
         let mut hc = AgglomerativeClustering::new(2, Linkage::Average);
-        hc.fit(&data).unwrap();
+        hc.fit(&data)
+            .expect("Hierarchical clustering fit should succeed");
         assert!(hc.is_fitted());
     }
 
@@ -3766,10 +3838,11 @@ mod tests {
             2,
             vec![1.0, 1.0, 1.1, 1.0, 1.0, 1.1, 5.0, 5.0, 5.1, 5.0, 5.0, 5.1],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed");
 
         let mut hc = AgglomerativeClustering::new(2, Linkage::Average);
-        hc.fit(&data).unwrap();
+        hc.fit(&data)
+            .expect("Hierarchical clustering fit should succeed");
 
         let labels = hc.predict(&data);
         assert_eq!(labels.len(), 6);
@@ -3786,10 +3859,12 @@ mod tests {
 
     #[test]
     fn test_agglomerative_linkage_single() {
-        let data = Matrix::from_vec(4, 2, vec![1.0, 1.0, 1.1, 1.1, 5.0, 5.0, 5.1, 5.1]).unwrap();
+        let data = Matrix::from_vec(4, 2, vec![1.0, 1.0, 1.1, 1.1, 5.0, 5.0, 5.1, 5.1])
+            .expect("Matrix creation should succeed");
 
         let mut hc = AgglomerativeClustering::new(2, Linkage::Single);
-        hc.fit(&data).unwrap();
+        hc.fit(&data)
+            .expect("Hierarchical clustering fit should succeed");
 
         let labels = hc.predict(&data);
         assert_eq!(labels.len(), 4);
@@ -3801,10 +3876,12 @@ mod tests {
 
     #[test]
     fn test_agglomerative_linkage_complete() {
-        let data = Matrix::from_vec(4, 2, vec![1.0, 1.0, 1.1, 1.1, 5.0, 5.0, 5.1, 5.1]).unwrap();
+        let data = Matrix::from_vec(4, 2, vec![1.0, 1.0, 1.1, 1.1, 5.0, 5.0, 5.1, 5.1])
+            .expect("Matrix creation should succeed");
 
         let mut hc = AgglomerativeClustering::new(2, Linkage::Complete);
-        hc.fit(&data).unwrap();
+        hc.fit(&data)
+            .expect("Hierarchical clustering fit should succeed");
 
         let labels = hc.predict(&data);
         assert_eq!(labels.len(), 4);
@@ -3815,10 +3892,12 @@ mod tests {
 
     #[test]
     fn test_agglomerative_linkage_average() {
-        let data = Matrix::from_vec(4, 2, vec![1.0, 1.0, 1.1, 1.1, 5.0, 5.0, 5.1, 5.1]).unwrap();
+        let data = Matrix::from_vec(4, 2, vec![1.0, 1.0, 1.1, 1.1, 5.0, 5.0, 5.1, 5.1])
+            .expect("Matrix creation should succeed");
 
         let mut hc = AgglomerativeClustering::new(2, Linkage::Average);
-        hc.fit(&data).unwrap();
+        hc.fit(&data)
+            .expect("Hierarchical clustering fit should succeed");
 
         let labels = hc.predict(&data);
         assert_eq!(labels.len(), 4);
@@ -3829,10 +3908,12 @@ mod tests {
 
     #[test]
     fn test_agglomerative_linkage_ward() {
-        let data = Matrix::from_vec(4, 2, vec![1.0, 1.0, 1.1, 1.1, 5.0, 5.0, 5.1, 5.1]).unwrap();
+        let data = Matrix::from_vec(4, 2, vec![1.0, 1.0, 1.1, 1.1, 5.0, 5.0, 5.1, 5.1])
+            .expect("Matrix creation should succeed");
 
         let mut hc = AgglomerativeClustering::new(2, Linkage::Ward);
-        hc.fit(&data).unwrap();
+        hc.fit(&data)
+            .expect("Hierarchical clustering fit should succeed");
 
         let labels = hc.predict(&data);
         assert_eq!(labels.len(), 4);
@@ -3843,10 +3924,12 @@ mod tests {
 
     #[test]
     fn test_agglomerative_n_clusters_1() {
-        let data = Matrix::from_vec(4, 2, vec![1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0]).unwrap();
+        let data = Matrix::from_vec(4, 2, vec![1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0])
+            .expect("Matrix creation should succeed");
 
         let mut hc = AgglomerativeClustering::new(1, Linkage::Average);
-        hc.fit(&data).unwrap();
+        hc.fit(&data)
+            .expect("Hierarchical clustering fit should succeed");
 
         let labels = hc.predict(&data);
         // All points should be in same cluster
@@ -3855,10 +3938,12 @@ mod tests {
 
     #[test]
     fn test_agglomerative_n_clusters_equals_samples() {
-        let data = Matrix::from_vec(4, 2, vec![1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0]).unwrap();
+        let data = Matrix::from_vec(4, 2, vec![1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0])
+            .expect("Matrix creation should succeed");
 
         let mut hc = AgglomerativeClustering::new(4, Linkage::Average);
-        hc.fit(&data).unwrap();
+        hc.fit(&data)
+            .expect("Hierarchical clustering fit should succeed");
 
         let labels = hc.predict(&data);
         // Each point should be its own cluster
@@ -3868,10 +3953,12 @@ mod tests {
 
     #[test]
     fn test_agglomerative_dendrogram() {
-        let data = Matrix::from_vec(4, 2, vec![1.0, 1.0, 1.1, 1.1, 5.0, 5.0, 5.1, 5.1]).unwrap();
+        let data = Matrix::from_vec(4, 2, vec![1.0, 1.0, 1.1, 1.1, 5.0, 5.0, 5.1, 5.1])
+            .expect("Matrix creation should succeed");
 
         let mut hc = AgglomerativeClustering::new(2, Linkage::Average);
-        hc.fit(&data).unwrap();
+        hc.fit(&data)
+            .expect("Hierarchical clustering fit should succeed");
 
         let dendrogram = hc.dendrogram();
         // Should have n_samples - n_clusters merges
@@ -3885,14 +3972,16 @@ mod tests {
             2,
             vec![1.0, 1.0, 1.1, 1.0, 1.0, 1.1, 5.0, 5.0, 5.1, 5.0, 5.0, 5.1],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed");
 
         let mut hc1 = AgglomerativeClustering::new(2, Linkage::Average);
-        hc1.fit(&data).unwrap();
+        hc1.fit(&data)
+            .expect("Hierarchical clustering fit should succeed");
         let labels1 = hc1.predict(&data);
 
         let mut hc2 = AgglomerativeClustering::new(2, Linkage::Average);
-        hc2.fit(&data).unwrap();
+        hc2.fit(&data)
+            .expect("Hierarchical clustering fit should succeed");
         let labels2 = hc2.predict(&data);
 
         // Results should be deterministic
@@ -3901,10 +3990,12 @@ mod tests {
 
     #[test]
     fn test_agglomerative_fit_predict_consistency() {
-        let data = Matrix::from_vec(4, 2, vec![1.0, 1.0, 1.1, 1.1, 5.0, 5.0, 5.1, 5.1]).unwrap();
+        let data = Matrix::from_vec(4, 2, vec![1.0, 1.0, 1.1, 1.1, 5.0, 5.0, 5.1, 5.1])
+            .expect("Matrix creation should succeed");
 
         let mut hc = AgglomerativeClustering::new(2, Linkage::Complete);
-        hc.fit(&data).unwrap();
+        hc.fit(&data)
+            .expect("Hierarchical clustering fit should succeed");
 
         let labels_stored = hc.labels().clone();
         let labels_predicted = hc.predict(&data);
@@ -3919,14 +4010,18 @@ mod tests {
             2,
             vec![1.0, 1.0, 1.5, 1.5, 2.0, 2.0, 8.0, 8.0, 8.5, 8.5, 9.0, 9.0],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed");
 
         let mut hc_single = AgglomerativeClustering::new(2, Linkage::Single);
-        hc_single.fit(&data).unwrap();
+        hc_single
+            .fit(&data)
+            .expect("Hierarchical clustering fit should succeed");
         let labels_single = hc_single.predict(&data);
 
         let mut hc_complete = AgglomerativeClustering::new(2, Linkage::Complete);
-        hc_complete.fit(&data).unwrap();
+        hc_complete
+            .fit(&data)
+            .expect("Hierarchical clustering fit should succeed");
         let labels_complete = hc_complete.predict(&data);
 
         // Different linkage methods may produce different results
@@ -3947,10 +4042,11 @@ mod tests {
                 0.0, 0.0, 0.1, 0.1, 0.0, 0.1, 100.0, 100.0, 100.1, 100.1, 100.0, 100.1,
             ],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed");
 
         let mut hc = AgglomerativeClustering::new(2, Linkage::Average);
-        hc.fit(&data).unwrap();
+        hc.fit(&data)
+            .expect("Hierarchical clustering fit should succeed");
         let labels = hc.predict(&data);
 
         // First 3 points should be in one cluster, last 3 in another
@@ -3964,7 +4060,8 @@ mod tests {
     #[test]
     #[should_panic(expected = "Model not fitted")]
     fn test_agglomerative_predict_before_fit() {
-        let data = Matrix::from_vec(2, 2, vec![1.0, 1.0, 2.0, 2.0]).unwrap();
+        let data = Matrix::from_vec(2, 2, vec![1.0, 1.0, 2.0, 2.0])
+            .expect("Matrix creation should succeed");
         let hc = AgglomerativeClustering::new(2, Linkage::Average);
         let _ = hc.predict(&data); // Should panic
     }
@@ -4000,10 +4097,10 @@ mod tests {
             2,
             vec![1.0, 1.0, 1.1, 1.0, 1.0, 1.1, 5.0, 5.0, 5.1, 5.0, 5.0, 5.1],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed");
 
         let mut gmm = GaussianMixture::new(2, CovarianceType::Full);
-        gmm.fit(&data).unwrap();
+        gmm.fit(&data).expect("GMM fit should succeed");
         assert!(gmm.is_fitted());
     }
 
@@ -4014,10 +4111,10 @@ mod tests {
             2,
             vec![1.0, 1.0, 1.1, 1.0, 1.0, 1.1, 5.0, 5.0, 5.1, 5.0, 5.0, 5.1],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed");
 
         let mut gmm = GaussianMixture::new(2, CovarianceType::Full);
-        gmm.fit(&data).unwrap();
+        gmm.fit(&data).expect("GMM fit should succeed");
 
         let labels = gmm.predict(&data);
         assert_eq!(labels.len(), 6);
@@ -4035,10 +4132,10 @@ mod tests {
             2,
             vec![1.0, 1.0, 1.1, 1.0, 1.0, 1.1, 5.0, 5.0, 5.1, 5.0, 5.0, 5.1],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed");
 
         let mut gmm = GaussianMixture::new(2, CovarianceType::Full);
-        gmm.fit(&data).unwrap();
+        gmm.fit(&data).expect("GMM fit should succeed");
 
         let proba = gmm.predict_proba(&data);
         assert_eq!(proba.shape(), (6, 2));
@@ -4060,10 +4157,11 @@ mod tests {
 
     #[test]
     fn test_gmm_covariance_full() {
-        let data = Matrix::from_vec(4, 2, vec![1.0, 1.0, 1.1, 1.1, 5.0, 5.0, 5.1, 5.1]).unwrap();
+        let data = Matrix::from_vec(4, 2, vec![1.0, 1.0, 1.1, 1.1, 5.0, 5.0, 5.1, 5.1])
+            .expect("Matrix creation should succeed");
 
         let mut gmm = GaussianMixture::new(2, CovarianceType::Full);
-        gmm.fit(&data).unwrap();
+        gmm.fit(&data).expect("GMM fit should succeed");
 
         let labels = gmm.predict(&data);
         assert_eq!(labels.len(), 4);
@@ -4071,10 +4169,11 @@ mod tests {
 
     #[test]
     fn test_gmm_covariance_tied() {
-        let data = Matrix::from_vec(4, 2, vec![1.0, 1.0, 1.1, 1.1, 5.0, 5.0, 5.1, 5.1]).unwrap();
+        let data = Matrix::from_vec(4, 2, vec![1.0, 1.0, 1.1, 1.1, 5.0, 5.0, 5.1, 5.1])
+            .expect("Matrix creation should succeed");
 
         let mut gmm = GaussianMixture::new(2, CovarianceType::Tied);
-        gmm.fit(&data).unwrap();
+        gmm.fit(&data).expect("GMM fit should succeed");
 
         let labels = gmm.predict(&data);
         assert_eq!(labels.len(), 4);
@@ -4082,10 +4181,11 @@ mod tests {
 
     #[test]
     fn test_gmm_covariance_diag() {
-        let data = Matrix::from_vec(4, 2, vec![1.0, 1.0, 1.1, 1.1, 5.0, 5.0, 5.1, 5.1]).unwrap();
+        let data = Matrix::from_vec(4, 2, vec![1.0, 1.0, 1.1, 1.1, 5.0, 5.0, 5.1, 5.1])
+            .expect("Matrix creation should succeed");
 
         let mut gmm = GaussianMixture::new(2, CovarianceType::Diag);
-        gmm.fit(&data).unwrap();
+        gmm.fit(&data).expect("GMM fit should succeed");
 
         let labels = gmm.predict(&data);
         assert_eq!(labels.len(), 4);
@@ -4093,10 +4193,11 @@ mod tests {
 
     #[test]
     fn test_gmm_covariance_spherical() {
-        let data = Matrix::from_vec(4, 2, vec![1.0, 1.0, 1.1, 1.1, 5.0, 5.0, 5.1, 5.1]).unwrap();
+        let data = Matrix::from_vec(4, 2, vec![1.0, 1.0, 1.1, 1.1, 5.0, 5.0, 5.1, 5.1])
+            .expect("Matrix creation should succeed");
 
         let mut gmm = GaussianMixture::new(2, CovarianceType::Spherical);
-        gmm.fit(&data).unwrap();
+        gmm.fit(&data).expect("GMM fit should succeed");
 
         let labels = gmm.predict(&data);
         assert_eq!(labels.len(), 4);
@@ -4109,10 +4210,10 @@ mod tests {
             2,
             vec![1.0, 1.0, 1.1, 1.0, 1.0, 1.1, 5.0, 5.0, 5.1, 5.0, 5.0, 5.1],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed");
 
         let mut gmm = GaussianMixture::new(2, CovarianceType::Full);
-        gmm.fit(&data).unwrap();
+        gmm.fit(&data).expect("GMM fit should succeed");
 
         let score = gmm.score(&data);
         // Log-likelihood should be finite
@@ -4126,10 +4227,10 @@ mod tests {
             2,
             vec![1.0, 1.0, 1.1, 1.0, 1.0, 1.1, 5.0, 5.0, 5.1, 5.0, 5.0, 5.1],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed");
 
         let mut gmm = GaussianMixture::new(2, CovarianceType::Full).with_max_iter(100);
-        gmm.fit(&data).unwrap();
+        gmm.fit(&data).expect("GMM fit should succeed");
         assert!(gmm.is_fitted());
     }
 
@@ -4140,14 +4241,14 @@ mod tests {
             2,
             vec![1.0, 1.0, 1.1, 1.0, 1.0, 1.1, 5.0, 5.0, 5.1, 5.0, 5.0, 5.1],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed");
 
         let mut gmm1 = GaussianMixture::new(2, CovarianceType::Full).with_random_state(42);
-        gmm1.fit(&data).unwrap();
+        gmm1.fit(&data).expect("GMM fit should succeed");
         let labels1 = gmm1.predict(&data);
 
         let mut gmm2 = GaussianMixture::new(2, CovarianceType::Full).with_random_state(42);
-        gmm2.fit(&data).unwrap();
+        gmm2.fit(&data).expect("GMM fit should succeed");
         let labels2 = gmm2.predict(&data);
 
         // Same seed should produce same results
@@ -4161,10 +4262,10 @@ mod tests {
             2,
             vec![1.0, 1.0, 1.1, 1.0, 1.0, 1.1, 5.0, 5.0, 5.1, 5.0, 5.0, 5.1],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed");
 
         let mut gmm = GaussianMixture::new(2, CovarianceType::Full);
-        gmm.fit(&data).unwrap();
+        gmm.fit(&data).expect("GMM fit should succeed");
 
         let means = gmm.means();
         assert_eq!(means.shape(), (2, 2));
@@ -4177,10 +4278,10 @@ mod tests {
             2,
             vec![1.0, 1.0, 1.1, 1.0, 1.0, 1.1, 5.0, 5.0, 5.1, 5.0, 5.0, 5.1],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed");
 
         let mut gmm = GaussianMixture::new(2, CovarianceType::Full);
-        gmm.fit(&data).unwrap();
+        gmm.fit(&data).expect("GMM fit should succeed");
 
         let weights = gmm.weights();
         assert_eq!(weights.len(), 2);
@@ -4200,10 +4301,10 @@ mod tests {
                 0.0, 0.0, 0.1, 0.1, 0.0, 0.1, 100.0, 100.0, 100.1, 100.1, 100.0, 100.1,
             ],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed");
 
         let mut gmm = GaussianMixture::new(2, CovarianceType::Full);
-        gmm.fit(&data).unwrap();
+        gmm.fit(&data).expect("GMM fit should succeed");
         let labels = gmm.predict(&data);
 
         // First 3 points should be in one cluster, last 3 in another
@@ -4221,10 +4322,10 @@ mod tests {
             2,
             vec![1.0, 1.0, 1.1, 1.0, 1.0, 1.1, 5.0, 5.0, 5.1, 5.0, 5.0, 5.1],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed");
 
         let mut gmm = GaussianMixture::new(2, CovarianceType::Full);
-        gmm.fit(&data).unwrap();
+        gmm.fit(&data).expect("GMM fit should succeed");
 
         let labels = gmm.predict(&data);
         let proba = gmm.predict_proba(&data);
@@ -4247,10 +4348,11 @@ mod tests {
 
     #[test]
     fn test_gmm_fit_predict_consistency() {
-        let data = Matrix::from_vec(4, 2, vec![1.0, 1.0, 1.1, 1.1, 5.0, 5.0, 5.1, 5.1]).unwrap();
+        let data = Matrix::from_vec(4, 2, vec![1.0, 1.0, 1.1, 1.1, 5.0, 5.0, 5.1, 5.1])
+            .expect("Matrix creation should succeed");
 
         let mut gmm = GaussianMixture::new(2, CovarianceType::Full);
-        gmm.fit(&data).unwrap();
+        gmm.fit(&data).expect("GMM fit should succeed");
 
         let labels_stored = gmm.labels().clone();
         let labels_predicted = gmm.predict(&data);
@@ -4261,7 +4363,8 @@ mod tests {
     #[test]
     #[should_panic(expected = "Model not fitted")]
     fn test_gmm_predict_before_fit() {
-        let data = Matrix::from_vec(2, 2, vec![1.0, 1.0, 2.0, 2.0]).unwrap();
+        let data = Matrix::from_vec(2, 2, vec![1.0, 1.0, 2.0, 2.0])
+            .expect("Matrix creation should succeed");
         let gmm = GaussianMixture::new(2, CovarianceType::Full);
         let _ = gmm.predict(&data); // Should panic
     }
@@ -4269,7 +4372,8 @@ mod tests {
     #[test]
     #[should_panic(expected = "Model not fitted")]
     fn test_gmm_predict_proba_before_fit() {
-        let data = Matrix::from_vec(2, 2, vec![1.0, 1.0, 2.0, 2.0]).unwrap();
+        let data = Matrix::from_vec(2, 2, vec![1.0, 1.0, 2.0, 2.0])
+            .expect("Matrix creation should succeed");
         let gmm = GaussianMixture::new(2, CovarianceType::Full);
         let _ = gmm.predict_proba(&data); // Should panic
     }
@@ -4277,7 +4381,8 @@ mod tests {
     #[test]
     #[should_panic(expected = "Model not fitted")]
     fn test_gmm_score_before_fit() {
-        let data = Matrix::from_vec(2, 2, vec![1.0, 1.0, 2.0, 2.0]).unwrap();
+        let data = Matrix::from_vec(2, 2, vec![1.0, 1.0, 2.0, 2.0])
+            .expect("Matrix creation should succeed");
         let gmm = GaussianMixture::new(2, CovarianceType::Full);
         let _ = gmm.score(&data); // Should panic
     }
@@ -4303,10 +4408,12 @@ mod tests {
                 1.9, 1.9, 2.1, 1.8,
             ],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed");
 
         let mut iforest = IsolationForest::new();
-        iforest.fit(&data).unwrap();
+        iforest
+            .fit(&data)
+            .expect("Isolation Forest fit should succeed");
         assert!(iforest.is_fitted());
     }
 
@@ -4322,13 +4429,15 @@ mod tests {
                 -10.0, -10.0, // Outlier 2
             ],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed");
 
         let mut iforest = IsolationForest::new()
             .with_n_estimators(100)
             .with_contamination(0.2)
             .with_random_state(42);
-        iforest.fit(&data).unwrap();
+        iforest
+            .fit(&data)
+            .expect("Isolation Forest fit should succeed");
 
         let predictions = iforest.predict(&data);
         assert_eq!(predictions.len(), 10);
@@ -4354,10 +4463,12 @@ mod tests {
                 -10.0, -10.0, // Outlier 2
             ],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed");
 
         let mut iforest = IsolationForest::new().with_random_state(42);
-        iforest.fit(&data).unwrap();
+        iforest
+            .fit(&data)
+            .expect("Isolation Forest fit should succeed");
 
         let scores = iforest.score_samples(&data);
         assert_eq!(scores.len(), 6);
@@ -4378,13 +4489,15 @@ mod tests {
                 10.0, 10.0, -10.0, -10.0,
             ],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed");
 
         // Low contamination (10%) - fewer anomalies expected
         let mut iforest_low = IsolationForest::new()
             .with_contamination(0.1)
             .with_random_state(42);
-        iforest_low.fit(&data).unwrap();
+        iforest_low
+            .fit(&data)
+            .expect("Isolation Forest fit should succeed");
         let pred_low = iforest_low.predict(&data);
         let anomalies_low = pred_low.iter().filter(|&&p| p == -1).count();
 
@@ -4392,7 +4505,9 @@ mod tests {
         let mut iforest_high = IsolationForest::new()
             .with_contamination(0.3)
             .with_random_state(42);
-        iforest_high.fit(&data).unwrap();
+        iforest_high
+            .fit(&data)
+            .expect("Isolation Forest fit should succeed");
         let pred_high = iforest_high.predict(&data);
         let anomalies_high = pred_high.iter().filter(|&&p| p == -1).count();
 
@@ -4410,19 +4525,23 @@ mod tests {
                 -10.0,
             ],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed");
 
         // Fewer trees
         let mut iforest_few = IsolationForest::new()
             .with_n_estimators(10)
             .with_random_state(42);
-        iforest_few.fit(&data).unwrap();
+        iforest_few
+            .fit(&data)
+            .expect("Isolation Forest fit should succeed");
 
         // More trees (should be more stable)
         let mut iforest_many = IsolationForest::new()
             .with_n_estimators(100)
             .with_random_state(42);
-        iforest_many.fit(&data).unwrap();
+        iforest_many
+            .fit(&data)
+            .expect("Isolation Forest fit should succeed");
 
         // Both should work, more trees typically more accurate
         let pred_few = iforest_few.predict(&data);
@@ -4442,13 +4561,15 @@ mod tests {
                 10.0, 10.0, -10.0, -10.0,
             ],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed");
 
         // Use subset of samples for each tree
         let mut iforest = IsolationForest::new()
             .with_max_samples(5)
             .with_random_state(42);
-        iforest.fit(&data).unwrap();
+        iforest
+            .fit(&data)
+            .expect("Isolation Forest fit should succeed");
 
         let predictions = iforest.predict(&data);
         assert_eq!(predictions.len(), 10);
@@ -4464,14 +4585,18 @@ mod tests {
                 -10.0,
             ],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed");
 
         let mut iforest1 = IsolationForest::new().with_random_state(42);
-        iforest1.fit(&data).unwrap();
+        iforest1
+            .fit(&data)
+            .expect("Isolation Forest fit should succeed");
         let pred1 = iforest1.predict(&data);
 
         let mut iforest2 = IsolationForest::new().with_random_state(42);
-        iforest2.fit(&data).unwrap();
+        iforest2
+            .fit(&data)
+            .expect("Isolation Forest fit should succeed");
         let pred2 = iforest2.predict(&data);
 
         assert_eq!(pred1, pred2);
@@ -4485,12 +4610,14 @@ mod tests {
             2,
             vec![2.0, 2.0, 2.1, 2.0, 1.9, 2.1, 2.0, 1.9, 2.1, 2.1, 1.8, 2.0],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed");
 
         let mut iforest = IsolationForest::new()
             .with_contamination(0.1)
             .with_random_state(42);
-        iforest.fit(&data).unwrap();
+        iforest
+            .fit(&data)
+            .expect("Isolation Forest fit should succeed");
 
         let predictions = iforest.predict(&data);
         // With 10% contamination, expect mostly normal points
@@ -4500,10 +4627,13 @@ mod tests {
 
     #[test]
     fn test_isolation_forest_score_samples_range() {
-        let data = Matrix::from_vec(4, 2, vec![2.0, 2.0, 2.1, 2.0, 1.9, 2.1, 10.0, 10.0]).unwrap();
+        let data = Matrix::from_vec(4, 2, vec![2.0, 2.0, 2.1, 2.0, 1.9, 2.1, 10.0, 10.0])
+            .expect("Matrix creation should succeed");
 
         let mut iforest = IsolationForest::new().with_random_state(42);
-        iforest.fit(&data).unwrap();
+        iforest
+            .fit(&data)
+            .expect("Isolation Forest fit should succeed");
 
         let scores = iforest.score_samples(&data);
         // Anomaly scores should be in reasonable range
@@ -4524,12 +4654,14 @@ mod tests {
                 2.05, 2.05, // Normal
             ],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed");
 
         let mut iforest = IsolationForest::new()
             .with_n_estimators(100)
             .with_random_state(42);
-        iforest.fit(&data).unwrap();
+        iforest
+            .fit(&data)
+            .expect("Isolation Forest fit should succeed");
 
         let scores = iforest.score_samples(&data);
         // Outlier (index 4) should have significantly different score
@@ -4549,12 +4681,14 @@ mod tests {
                 -10.0, -10.0, -10.0,
             ],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed");
 
         let mut iforest = IsolationForest::new()
             .with_contamination(0.3)
             .with_random_state(42);
-        iforest.fit(&data).unwrap();
+        iforest
+            .fit(&data)
+            .expect("Isolation Forest fit should succeed");
 
         let predictions = iforest.predict(&data);
         assert_eq!(predictions.len(), 6);
@@ -4569,12 +4703,14 @@ mod tests {
                 2.0, 2.0, 2.1, 2.0, 1.9, 2.1, 2.0, 1.9, 10.0, 10.0, -10.0, -10.0,
             ],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed");
 
         let mut iforest = IsolationForest::new()
             .with_contamination(0.3)
             .with_random_state(42);
-        iforest.fit(&data).unwrap();
+        iforest
+            .fit(&data)
+            .expect("Isolation Forest fit should succeed");
 
         let predictions = iforest.predict(&data);
         let scores = iforest.score_samples(&data);
@@ -4587,7 +4723,8 @@ mod tests {
     #[test]
     #[should_panic(expected = "Model not fitted")]
     fn test_isolation_forest_predict_before_fit() {
-        let data = Matrix::from_vec(2, 2, vec![1.0, 1.0, 2.0, 2.0]).unwrap();
+        let data = Matrix::from_vec(2, 2, vec![1.0, 1.0, 2.0, 2.0])
+            .expect("Matrix creation should succeed");
         let iforest = IsolationForest::new();
         let _ = iforest.predict(&data); // Should panic
     }
@@ -4595,7 +4732,8 @@ mod tests {
     #[test]
     #[should_panic(expected = "Model not fitted")]
     fn test_isolation_forest_score_samples_before_fit() {
-        let data = Matrix::from_vec(2, 2, vec![1.0, 1.0, 2.0, 2.0]).unwrap();
+        let data = Matrix::from_vec(2, 2, vec![1.0, 1.0, 2.0, 2.0])
+            .expect("Matrix creation should succeed");
         let iforest = IsolationForest::new();
         let _ = iforest.score_samples(&data); // Should panic
     }
@@ -4627,10 +4765,10 @@ mod tests {
                 1.9, 1.9, 2.1, 1.8,
             ],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed");
 
         let mut lof = LocalOutlierFactor::new().with_n_neighbors(5);
-        lof.fit(&data).unwrap();
+        lof.fit(&data).expect("LOF fit should succeed");
         assert!(lof.is_fitted());
     }
 
@@ -4646,12 +4784,12 @@ mod tests {
                 -10.0, -10.0, // Outlier 2
             ],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed");
 
         let mut lof = LocalOutlierFactor::new()
             .with_n_neighbors(5)
             .with_contamination(0.2);
-        lof.fit(&data).unwrap();
+        lof.fit(&data).expect("LOF fit should succeed");
 
         let predictions = lof.predict(&data);
         assert_eq!(predictions.len(), 10);
@@ -4677,10 +4815,10 @@ mod tests {
                 -10.0, -10.0, // Outlier 2
             ],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed");
 
         let mut lof = LocalOutlierFactor::new().with_n_neighbors(3);
-        lof.fit(&data).unwrap();
+        lof.fit(&data).expect("LOF fit should succeed");
 
         let scores = lof.score_samples(&data);
         assert_eq!(scores.len(), 6);
@@ -4700,10 +4838,10 @@ mod tests {
                 2.0, 2.0, 2.1, 2.0, 1.9, 2.1, 2.0, 1.9, 10.0, 10.0, -10.0, -10.0,
             ],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed");
 
         let mut lof = LocalOutlierFactor::new().with_n_neighbors(3);
-        lof.fit(&data).unwrap();
+        lof.fit(&data).expect("LOF fit should succeed");
 
         let nof = lof.negative_outlier_factor();
         assert_eq!(nof.len(), 6);
@@ -4726,13 +4864,13 @@ mod tests {
                 10.0, 10.0, -10.0, -10.0,
             ],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed");
 
         // Low contamination (10%) - fewer anomalies expected
         let mut lof_low = LocalOutlierFactor::new()
             .with_contamination(0.1)
             .with_n_neighbors(5);
-        lof_low.fit(&data).unwrap();
+        lof_low.fit(&data).expect("LOF fit should succeed");
         let pred_low = lof_low.predict(&data);
         let anomalies_low = pred_low.iter().filter(|&&p| p == -1).count();
 
@@ -4740,7 +4878,7 @@ mod tests {
         let mut lof_high = LocalOutlierFactor::new()
             .with_contamination(0.3)
             .with_n_neighbors(5);
-        lof_high.fit(&data).unwrap();
+        lof_high.fit(&data).expect("LOF fit should succeed");
         let pred_high = lof_high.predict(&data);
         let anomalies_high = pred_high.iter().filter(|&&p| p == -1).count();
 
@@ -4758,16 +4896,16 @@ mod tests {
                 -10.0,
             ],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed");
 
         // Fewer neighbors
         let mut lof_few = LocalOutlierFactor::new().with_n_neighbors(3);
-        lof_few.fit(&data).unwrap();
+        lof_few.fit(&data).expect("LOF fit should succeed");
         let scores_few = lof_few.score_samples(&data);
 
         // More neighbors
         let mut lof_many = LocalOutlierFactor::new().with_n_neighbors(5);
-        lof_many.fit(&data).unwrap();
+        lof_many.fit(&data).expect("LOF fit should succeed");
         let scores_many = lof_many.score_samples(&data);
 
         // Both should work and produce scores
@@ -4800,12 +4938,12 @@ mod tests {
                 5.5, 5.5,
             ],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed");
 
         let mut lof = LocalOutlierFactor::new()
             .with_n_neighbors(3)
             .with_contamination(0.2);
-        lof.fit(&data).unwrap();
+        lof.fit(&data).expect("LOF fit should succeed");
 
         let scores = lof.score_samples(&data);
         let predictions = lof.predict(&data);
@@ -4829,10 +4967,10 @@ mod tests {
                 10.0, 10.0, // Clear outlier
             ],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed");
 
         let mut lof = LocalOutlierFactor::new().with_n_neighbors(3);
-        lof.fit(&data).unwrap();
+        lof.fit(&data).expect("LOF fit should succeed");
 
         let scores = lof.score_samples(&data);
 
@@ -4858,12 +4996,12 @@ mod tests {
             2,
             vec![2.0, 2.0, 2.1, 2.0, 1.9, 2.1, 2.0, 1.9, 2.1, 2.1, 1.8, 2.0],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed");
 
         let mut lof = LocalOutlierFactor::new()
             .with_contamination(0.1)
             .with_n_neighbors(3);
-        lof.fit(&data).unwrap();
+        lof.fit(&data).expect("LOF fit should succeed");
 
         let predictions = lof.predict(&data);
         let scores = lof.score_samples(&data);
@@ -4880,10 +5018,11 @@ mod tests {
 
     #[test]
     fn test_lof_score_samples_finite() {
-        let data = Matrix::from_vec(4, 2, vec![2.0, 2.0, 2.1, 2.0, 1.9, 2.1, 10.0, 10.0]).unwrap();
+        let data = Matrix::from_vec(4, 2, vec![2.0, 2.0, 2.1, 2.0, 1.9, 2.1, 10.0, 10.0])
+            .expect("Matrix creation should succeed");
 
         let mut lof = LocalOutlierFactor::new().with_n_neighbors(2);
-        lof.fit(&data).unwrap();
+        lof.fit(&data).expect("LOF fit should succeed");
 
         let scores = lof.score_samples(&data);
         // All LOF scores should be finite
@@ -4904,12 +5043,12 @@ mod tests {
                 -10.0, -10.0, -10.0,
             ],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed");
 
         let mut lof = LocalOutlierFactor::new()
             .with_contamination(0.3)
             .with_n_neighbors(3);
-        lof.fit(&data).unwrap();
+        lof.fit(&data).expect("LOF fit should succeed");
 
         let predictions = lof.predict(&data);
         let scores = lof.score_samples(&data);
@@ -4921,7 +5060,8 @@ mod tests {
     #[test]
     #[should_panic(expected = "Model not fitted")]
     fn test_lof_predict_before_fit() {
-        let data = Matrix::from_vec(2, 2, vec![1.0, 1.0, 2.0, 2.0]).unwrap();
+        let data = Matrix::from_vec(2, 2, vec![1.0, 1.0, 2.0, 2.0])
+            .expect("Matrix creation should succeed");
         let lof = LocalOutlierFactor::new();
         let _ = lof.predict(&data); // Should panic
     }
@@ -4929,7 +5069,8 @@ mod tests {
     #[test]
     #[should_panic(expected = "Model not fitted")]
     fn test_lof_score_samples_before_fit() {
-        let data = Matrix::from_vec(2, 2, vec![1.0, 1.0, 2.0, 2.0]).unwrap();
+        let data = Matrix::from_vec(2, 2, vec![1.0, 1.0, 2.0, 2.0])
+            .expect("Matrix creation should succeed");
         let lof = LocalOutlierFactor::new();
         let _ = lof.score_samples(&data); // Should panic
     }
@@ -4950,12 +5091,12 @@ mod tests {
                 2.0, 2.0, 2.1, 2.0, 1.9, 2.1, 2.0, 1.9, 10.0, 10.0, -10.0, -10.0,
             ],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed");
 
         let mut lof = LocalOutlierFactor::new()
             .with_contamination(0.3)
             .with_n_neighbors(3);
-        lof.fit(&data).unwrap();
+        lof.fit(&data).expect("LOF fit should succeed");
 
         let predictions = lof.predict(&data);
         let scores = lof.score_samples(&data);
@@ -4985,10 +5126,11 @@ mod tests {
                 5.0, 5.0, 5.1, 5.0, 4.9, 5.1, // Cluster 2
             ],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed");
 
         let mut sc = SpectralClustering::new(2);
-        sc.fit(&data).unwrap();
+        sc.fit(&data)
+            .expect("Spectral Clustering fit should succeed");
         assert!(sc.is_fitted());
     }
 
@@ -4999,10 +5141,11 @@ mod tests {
             2,
             vec![1.0, 1.0, 1.1, 1.0, 0.9, 1.1, 5.0, 5.0, 5.1, 5.0, 4.9, 5.1],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed");
 
         let mut sc = SpectralClustering::new(2);
-        sc.fit(&data).unwrap();
+        sc.fit(&data)
+            .expect("Spectral Clustering fit should succeed");
 
         let labels = sc.predict(&data);
         assert_eq!(labels.len(), 6);
@@ -5028,12 +5171,13 @@ mod tests {
         let mut all_data = upper.clone();
         all_data.extend(lower);
 
-        let data = Matrix::from_vec(10, 2, all_data).unwrap();
+        let data = Matrix::from_vec(10, 2, all_data).expect("Matrix creation should succeed");
 
         let mut sc = SpectralClustering::new(2)
             .with_affinity(Affinity::KNN)
             .with_n_neighbors(3);
-        sc.fit(&data).unwrap();
+        sc.fit(&data)
+            .expect("Spectral Clustering fit should succeed");
 
         let labels = sc.predict(&data);
 
@@ -5054,12 +5198,14 @@ mod tests {
 
     #[test]
     fn test_spectral_clustering_rbf_affinity() {
-        let data = Matrix::from_vec(4, 2, vec![0.0, 0.0, 0.1, 0.1, 5.0, 5.0, 5.1, 5.1]).unwrap();
+        let data = Matrix::from_vec(4, 2, vec![0.0, 0.0, 0.1, 0.1, 5.0, 5.0, 5.1, 5.1])
+            .expect("Matrix creation should succeed");
 
         let mut sc = SpectralClustering::new(2)
             .with_affinity(Affinity::RBF)
             .with_gamma(1.0);
-        sc.fit(&data).unwrap();
+        sc.fit(&data)
+            .expect("Spectral Clustering fit should succeed");
 
         let labels = sc.predict(&data);
         assert_eq!(labels.len(), 4);
@@ -5074,12 +5220,13 @@ mod tests {
             2,
             vec![1.0, 1.0, 1.1, 1.0, 0.9, 1.1, 5.0, 5.0, 5.1, 5.0, 4.9, 5.1],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed");
 
         let mut sc = SpectralClustering::new(2)
             .with_affinity(Affinity::KNN)
             .with_n_neighbors(3);
-        sc.fit(&data).unwrap();
+        sc.fit(&data)
+            .expect("Spectral Clustering fit should succeed");
 
         let labels = sc.predict(&data);
         assert_eq!(labels.len(), 6);
@@ -5087,15 +5234,20 @@ mod tests {
 
     #[test]
     fn test_spectral_clustering_gamma_effect() {
-        let data = Matrix::from_vec(4, 2, vec![0.0, 0.0, 1.0, 1.0, 5.0, 5.0, 6.0, 6.0]).unwrap();
+        let data = Matrix::from_vec(4, 2, vec![0.0, 0.0, 1.0, 1.0, 5.0, 5.0, 6.0, 6.0])
+            .expect("Matrix creation should succeed");
 
         // Small gamma - more global similarity
         let mut sc_small = SpectralClustering::new(2).with_gamma(0.1);
-        sc_small.fit(&data).unwrap();
+        sc_small
+            .fit(&data)
+            .expect("Spectral Clustering fit should succeed");
 
         // Large gamma - more local similarity
         let mut sc_large = SpectralClustering::new(2).with_gamma(10.0);
-        sc_large.fit(&data).unwrap();
+        sc_large
+            .fit(&data)
+            .expect("Spectral Clustering fit should succeed");
 
         // Both should work
         assert!(sc_small.is_fitted());
@@ -5114,10 +5266,11 @@ mod tests {
                 10.0, 10.0, 10.1, 10.1, 9.9, 9.9,
             ],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed");
 
         let mut sc = SpectralClustering::new(3);
-        sc.fit(&data).unwrap();
+        sc.fit(&data)
+            .expect("Spectral Clustering fit should succeed");
 
         let labels = sc.predict(&data);
         assert_eq!(labels.len(), 9);
@@ -5131,10 +5284,12 @@ mod tests {
 
     #[test]
     fn test_spectral_clustering_labels_consistency() {
-        let data = Matrix::from_vec(4, 2, vec![1.0, 1.0, 1.1, 1.1, 5.0, 5.0, 5.1, 5.1]).unwrap();
+        let data = Matrix::from_vec(4, 2, vec![1.0, 1.0, 1.1, 1.1, 5.0, 5.0, 5.1, 5.1])
+            .expect("Matrix creation should succeed");
 
         let mut sc = SpectralClustering::new(2);
-        sc.fit(&data).unwrap();
+        sc.fit(&data)
+            .expect("Spectral Clustering fit should succeed");
 
         let labels1 = sc.predict(&data);
         let labels2 = sc.labels().clone();
@@ -5145,7 +5300,8 @@ mod tests {
     #[test]
     #[should_panic(expected = "Model not fitted")]
     fn test_spectral_clustering_predict_before_fit() {
-        let data = Matrix::from_vec(2, 2, vec![1.0, 1.0, 2.0, 2.0]).unwrap();
+        let data = Matrix::from_vec(2, 2, vec![1.0, 1.0, 2.0, 2.0])
+            .expect("Matrix creation should succeed");
         let sc = SpectralClustering::new(2);
         let _ = sc.predict(&data);
     }
@@ -5167,10 +5323,11 @@ mod tests {
                 0.0, 0.0, 0.1, 0.1, 0.0, 0.1, 100.0, 100.0, 100.1, 100.1, 100.0, 100.1,
             ],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed");
 
         let mut sc = SpectralClustering::new(2);
-        sc.fit(&data).unwrap();
+        sc.fit(&data)
+            .expect("Spectral Clustering fit should succeed");
 
         let labels = sc.predict(&data);
 

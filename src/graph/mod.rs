@@ -14,9 +14,9 @@
 //! use aprender::graph::Graph;
 //!
 //! let mut g = Graph::new(false); // undirected graph
-//! g.add_edge(0, 1, None).unwrap();
-//! g.add_edge(1, 2, None).unwrap();
-//! g.add_edge(2, 0, None).unwrap();
+//! g.add_edge(0, 1, None).expect("add_edge should succeed for valid nodes");
+//! g.add_edge(1, 2, None).expect("add_edge should succeed for valid nodes");
+//! g.add_edge(2, 0, None).expect("add_edge should succeed for valid nodes");
 //!
 //! let dc = g.degree_centrality();
 //! assert_eq!(dc.len(), 3);
@@ -266,7 +266,7 @@ impl Graph {
     /// use aprender::graph::Graph;
     ///
     /// let g = Graph::from_edges(&[(0, 1), (1, 2), (2, 0)], true);
-    /// let pr = g.pagerank(0.85, 100, 1e-6).unwrap();
+    /// let pr = g.pagerank(0.85, 100, 1e-6).expect("pagerank should converge for valid graph");
     /// assert!((pr.iter().sum::<f64>() - 1.0).abs() < 1e-10); // Kahan ensures precision
     /// ```
     pub fn pagerank(&self, damping: f64, max_iter: usize, tol: f64) -> Result<Vec<f64>, String> {
@@ -837,14 +837,18 @@ mod tests {
     #[test]
     fn test_pagerank_empty() {
         let g = Graph::new(true);
-        let pr = g.pagerank(0.85, 100, 1e-6).unwrap();
+        let pr = g
+            .pagerank(0.85, 100, 1e-6)
+            .expect("pagerank should succeed for empty graph");
         assert!(pr.is_empty());
     }
 
     #[test]
     fn test_pagerank_single_node() {
         let g = Graph::from_edges(&[(0, 0)], true);
-        let pr = g.pagerank(0.85, 100, 1e-6).unwrap();
+        let pr = g
+            .pagerank(0.85, 100, 1e-6)
+            .expect("pagerank should succeed for single node graph");
         assert_eq!(pr.len(), 1);
         assert!((pr[0] - 1.0).abs() < 1e-6); // Single node has all rank
     }
@@ -853,7 +857,9 @@ mod tests {
     fn test_pagerank_sum_equals_one() {
         // PageRank scores must sum to 1.0 (within numerical precision)
         let g = Graph::from_edges(&[(0, 1), (1, 2), (2, 0)], true);
-        let pr = g.pagerank(0.85, 100, 1e-6).unwrap();
+        let pr = g
+            .pagerank(0.85, 100, 1e-6)
+            .expect("pagerank should converge for cycle graph");
         let sum: f64 = pr.iter().sum();
         assert!((sum - 1.0).abs() < 1e-10); // Kahan ensures high precision
     }
@@ -863,7 +869,9 @@ mod tests {
         // Cycle graph: 0 -> 1 -> 2 -> 0
         // All nodes should have equal PageRank (by symmetry)
         let g = Graph::from_edges(&[(0, 1), (1, 2), (2, 0)], true);
-        let pr = g.pagerank(0.85, 100, 1e-6).unwrap();
+        let pr = g
+            .pagerank(0.85, 100, 1e-6)
+            .expect("pagerank should converge for symmetric cycle");
 
         assert_eq!(pr.len(), 3);
         // All nodes have equal rank in symmetric cycle
@@ -877,7 +885,9 @@ mod tests {
         // Star graph: 0 -> {1, 2, 3}
         // Node 0 distributes rank equally to 1, 2, 3
         let g = Graph::from_edges(&[(0, 1), (0, 2), (0, 3)], true);
-        let pr = g.pagerank(0.85, 100, 1e-6).unwrap();
+        let pr = g
+            .pagerank(0.85, 100, 1e-6)
+            .expect("pagerank should converge for directed star graph");
 
         assert_eq!(pr.len(), 4);
         // Leaves have no incoming edges except from 0
@@ -891,7 +901,9 @@ mod tests {
     fn test_pagerank_convergence() {
         // Test that PageRank converges within max_iter
         let g = Graph::from_edges(&[(0, 1), (1, 2), (2, 0), (1, 0)], true);
-        let pr = g.pagerank(0.85, 100, 1e-6).unwrap();
+        let pr = g
+            .pagerank(0.85, 100, 1e-6)
+            .expect("pagerank should converge within max iterations");
 
         // Should converge (not hit max_iter)
         assert_eq!(pr.len(), 3);
@@ -902,7 +914,9 @@ mod tests {
     fn test_pagerank_no_outgoing_edges() {
         // Node with no outgoing edges (dangling node)
         let g = Graph::from_edges(&[(0, 1), (1, 2)], true);
-        let pr = g.pagerank(0.85, 100, 1e-6).unwrap();
+        let pr = g
+            .pagerank(0.85, 100, 1e-6)
+            .expect("pagerank should handle dangling nodes correctly");
 
         // Node 2 has no outgoing edges, but should still have rank
         assert_eq!(pr.len(), 3);
@@ -914,7 +928,9 @@ mod tests {
     fn test_pagerank_undirected() {
         // Undirected graph: each edge goes both ways
         let g = Graph::from_edges(&[(0, 1), (1, 2)], false);
-        let pr = g.pagerank(0.85, 100, 1e-6).unwrap();
+        let pr = g
+            .pagerank(0.85, 100, 1e-6)
+            .expect("pagerank should converge for undirected path graph");
 
         assert_eq!(pr.len(), 3);
         // Middle node should have highest rank
@@ -1213,12 +1229,12 @@ mod tests {
         let comm1_nodes: Vec<_> = communities
             .iter()
             .find(|c| c.contains(&0))
-            .unwrap()
+            .expect("node 0 should be assigned to a community")
             .to_vec();
         let comm2_nodes: Vec<_> = communities
             .iter()
             .find(|c| c.contains(&3))
-            .unwrap()
+            .expect("node 3 should be assigned to a community")
             .to_vec();
 
         assert!(comm1_nodes.contains(&0));

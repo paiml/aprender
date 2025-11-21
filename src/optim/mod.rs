@@ -173,11 +173,21 @@ impl SGD {
 
         if self.momentum > 0.0 {
             // Initialize velocity if needed
-            if self.velocity.is_none() || self.velocity.as_ref().unwrap().len() != n {
+            if self.velocity.is_none()
+                || self
+                    .velocity
+                    .as_ref()
+                    .expect("Velocity must be initialized")
+                    .len()
+                    != n
+            {
                 self.velocity = Some(vec![0.0; n]);
             }
 
-            let velocity = self.velocity.as_mut().unwrap();
+            let velocity = self
+                .velocity
+                .as_mut()
+                .expect("Velocity was just initialized");
 
             for i in 0..n {
                 // v = γ * v + η * gradient
@@ -435,7 +445,14 @@ impl Adam {
         let n = params.len();
 
         // Initialize moment estimates if needed
-        if self.m.is_none() || self.m.as_ref().unwrap().len() != n {
+        if self.m.is_none()
+            || self
+                .m
+                .as_ref()
+                .expect("First moment estimate must be initialized")
+                .len()
+                != n
+        {
             self.m = Some(vec![0.0; n]);
             self.v = Some(vec![0.0; n]);
             self.t = 0;
@@ -444,8 +461,8 @@ impl Adam {
         self.t += 1;
         let t = self.t as f32;
 
-        let m = self.m.as_mut().unwrap();
-        let v = self.v.as_mut().unwrap();
+        let m = self.m.as_mut().expect("First moment was just initialized");
+        let v = self.v.as_mut().expect("Second moment was just initialized");
 
         // Compute bias-corrected learning rate
         let lr_t =

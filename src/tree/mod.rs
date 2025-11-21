@@ -18,13 +18,13 @@
 //!     0.0, 1.0,  // class 1
 //!     1.0, 0.0,  // class 1
 //!     1.0, 1.0,  // class 0
-//! ]).unwrap();
+//! ]).expect("Matrix creation should succeed in tests");
 //! let y = vec![0, 1, 1, 0];
 //!
 //! // Train decision tree
 //! let mut tree = DecisionTreeClassifier::new()
 //!     .with_max_depth(3);
-//! tree.fit(&x, &y).unwrap();
+//! tree.fit(&x, &y).expect("fit should succeed");
 //!
 //! // Make predictions
 //! let predictions = tree.predict(&x);
@@ -321,11 +321,11 @@ impl Default for DecisionTreeRegressor {
 /// use aprender::tree::RandomForestRegressor;
 /// use aprender::primitives::{Matrix, Vector};
 ///
-/// let x = Matrix::from_vec(5, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0]).unwrap();
+/// let x = Matrix::from_vec(5, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0]).expect("Matrix creation should succeed in tests");
 /// let y = Vector::from_slice(&[2.0, 4.0, 6.0, 8.0, 10.0]);
 ///
 /// let mut rf = RandomForestRegressor::new(10).with_max_depth(5);
-/// rf.fit(&x, &y).unwrap();
+/// rf.fit(&x, &y).expect("fit should succeed");
 /// let predictions = rf.predict(&x);
 /// let r2 = rf.score(&x, &y);
 /// ```
@@ -508,8 +508,14 @@ impl RandomForestRegressor {
             return None;
         }
 
-        let x_train = self.x_train.as_ref().unwrap();
-        let y_train = self.y_train.as_ref().unwrap();
+        let x_train = self
+            .x_train
+            .as_ref()
+            .expect("x_train should be stored after fit");
+        let y_train = self
+            .y_train
+            .as_ref()
+            .expect("y_train should be stored after fit");
         let n_samples = y_train.len();
         let n_features = x_train.shape().1;
 
@@ -582,7 +588,7 @@ impl RandomForestRegressor {
     ///
     /// ```ignore
     /// let mut rf = RandomForestRegressor::new(50);
-    /// rf.fit(&x_train, &y_train).unwrap();
+    /// rf.fit(&x_train, &y_train).expect("fit should succeed");
     ///
     /// if let Some(importances) = rf.feature_importances() {
     ///     for (i, &importance) in importances.iter().enumerate() {
@@ -595,7 +601,12 @@ impl RandomForestRegressor {
             return None;
         }
 
-        let n_features = self.x_train.as_ref().unwrap().shape().1;
+        let n_features = self
+            .x_train
+            .as_ref()
+            .expect("x_train should be stored after fit")
+            .shape()
+            .1;
         let mut total_importances = vec![0.0; n_features];
 
         // Aggregate importances from all trees
@@ -1148,7 +1159,10 @@ fn gini_split(left_labels: &[usize], right_labels: &[usize]) -> f32 {
 #[allow(dead_code)]
 fn get_sorted_unique_values(x: &[f32]) -> Vec<f32> {
     let mut sorted_indices: Vec<usize> = (0..x.len()).collect();
-    sorted_indices.sort_by(|&a, &b| x[a].partial_cmp(&x[b]).unwrap());
+    sorted_indices.sort_by(|&a, &b| {
+        x[a].partial_cmp(&x[b])
+            .expect("f32 values should be comparable")
+    });
 
     let mut unique_values = Vec::new();
     let mut prev_val = x[sorted_indices[0]];
@@ -1336,7 +1350,11 @@ fn majority_class(labels: &[usize]) -> usize {
     for &label in labels {
         *counts.entry(label).or_insert(0) += 1;
     }
-    *counts.iter().max_by_key(|(_, &count)| count).unwrap().0
+    *counts
+        .iter()
+        .max_by_key(|(_, &count)| count)
+        .expect("at least one label should exist")
+        .0
 }
 
 /// Split data into subsets based on indices.
@@ -1359,7 +1377,8 @@ fn split_data_by_indices(
         labels.push(y[idx]);
     }
 
-    let matrix = crate::primitives::Matrix::from_vec(indices.len(), n_cols, data).unwrap();
+    let matrix = crate::primitives::Matrix::from_vec(indices.len(), n_cols, data)
+        .expect("matrix creation should succeed with valid indices");
     (matrix, labels)
 }
 
@@ -1553,7 +1572,7 @@ fn find_best_regression_split(
     for feature_idx in 0..n_features {
         // Get unique values for this feature to use as potential split points
         let mut feature_values: Vec<f32> = (0..n_samples).map(|i| x.get(i, feature_idx)).collect();
-        feature_values.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        feature_values.sort_by(|a, b| a.partial_cmp(b).expect("f32 values should be comparable"));
         feature_values.dedup();
 
         // Try each pair of adjacent values as split point
@@ -1616,7 +1635,10 @@ fn split_regression_data_by_indices(
     }
 
     let subset_matrix = crate::primitives::Matrix::from_vec(n_subset, n_features, subset_data)
-        .unwrap_or_else(|_| crate::primitives::Matrix::from_vec(0, n_features, vec![]).unwrap());
+        .unwrap_or_else(|_| {
+            crate::primitives::Matrix::from_vec(0, n_features, vec![])
+                .expect("empty matrix creation should succeed")
+        });
 
     (subset_matrix, subset_labels)
 }
@@ -1972,8 +1994,14 @@ impl RandomForestClassifier {
             return None;
         }
 
-        let x_train = self.x_train.as_ref().unwrap();
-        let y_train = self.y_train.as_ref().unwrap();
+        let x_train = self
+            .x_train
+            .as_ref()
+            .expect("x_train should be stored after fit");
+        let y_train = self
+            .y_train
+            .as_ref()
+            .expect("y_train should be stored after fit");
         let n_samples = y_train.len();
         let n_features = x_train.shape().1;
 
@@ -2064,7 +2092,7 @@ impl RandomForestClassifier {
     ///
     /// ```ignore
     /// let mut rf = RandomForestClassifier::new(50);
-    /// rf.fit(&x_train, &y_train).unwrap();
+    /// rf.fit(&x_train, &y_train).expect("fit should succeed");
     ///
     /// if let Some(importances) = rf.feature_importances() {
     ///     for (i, &importance) in importances.iter().enumerate() {
@@ -2077,7 +2105,12 @@ impl RandomForestClassifier {
             return None;
         }
 
-        let n_features = self.x_train.as_ref().unwrap().shape().1;
+        let n_features = self
+            .x_train
+            .as_ref()
+            .expect("x_train should be stored after fit")
+            .shape()
+            .1;
         let mut total_importances = vec![0.0; n_features];
 
         // Aggregate importances from all trees
@@ -2822,7 +2855,7 @@ mod tests {
         let result = find_best_split_for_feature(&x, &y);
         assert!(result.is_some());
 
-        let (threshold, gain) = result.unwrap();
+        let (threshold, gain) = result.expect("should have valid result");
         // Threshold should be between 2.0 and 5.0
         assert!(threshold > 2.0 && threshold < 5.0);
         // Gain should be positive (we're reducing impurity)
@@ -2870,13 +2903,14 @@ mod tests {
         // Feature 1: [1.0, 2.0, 5.0, 6.0]
         // Labels:    [  0,   0,   1,   1]
         // Both features separate perfectly, should choose one
-        let x = Matrix::from_vec(4, 2, vec![1.0, 1.0, 1.0, 2.0, 5.0, 5.0, 5.0, 6.0]).unwrap();
+        let x = Matrix::from_vec(4, 2, vec![1.0, 1.0, 1.0, 2.0, 5.0, 5.0, 5.0, 6.0])
+            .expect("Matrix creation should succeed in tests");
         let y = vec![0, 0, 1, 1];
 
         let result = find_best_split(&x, &y);
         assert!(result.is_some());
 
-        let (feature_idx, _threshold, gain) = result.unwrap();
+        let (feature_idx, _threshold, gain) = result.expect("should have valid result");
         // Should choose one of the features
         assert!(feature_idx < 2);
         // Should have positive gain
@@ -2888,13 +2922,14 @@ mod tests {
         use crate::primitives::Matrix;
 
         // Perfectly separable data on feature 0
-        let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 5.0, 6.0]).unwrap();
+        let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 5.0, 6.0])
+            .expect("Matrix creation should succeed in tests");
         let y = vec![0, 0, 1, 1];
 
         let result = find_best_split(&x, &y);
         assert!(result.is_some());
 
-        let (feature_idx, threshold, gain) = result.unwrap();
+        let (feature_idx, threshold, gain) = result.expect("should have valid result");
         assert_eq!(feature_idx, 0); // Should choose the only feature
         assert!(threshold > 2.0 && threshold < 5.0);
         // Gain should be maximum (from mixed to pure)
@@ -2929,7 +2964,8 @@ mod tests {
         use crate::primitives::Matrix;
 
         // All same label - should create a leaf immediately
-        let x = Matrix::from_vec(3, 2, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]).unwrap();
+        let x = Matrix::from_vec(3, 2, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+            .expect("Matrix creation should succeed in tests");
         let y = vec![0, 0, 0];
 
         let tree = build_tree(&x, &y, 0, None);
@@ -2949,7 +2985,8 @@ mod tests {
         use crate::primitives::Matrix;
 
         // Mixed labels but max_depth=0, should create leaf with majority
-        let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0]).unwrap();
+        let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0])
+            .expect("Matrix creation should succeed in tests");
         let y = vec![0, 0, 1, 1];
 
         let tree = build_tree(&x, &y, 0, Some(0));
@@ -2969,7 +3006,8 @@ mod tests {
         use crate::primitives::Matrix;
 
         // Simple binary split
-        let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 5.0, 6.0]).unwrap();
+        let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 5.0, 6.0])
+            .expect("Matrix creation should succeed in tests");
         let y = vec![0, 0, 1, 1];
 
         let tree = build_tree(&x, &y, 0, Some(5));
@@ -2989,7 +3027,8 @@ mod tests {
         use crate::primitives::Matrix;
 
         // Build tree and verify depth is respected
-        let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 5.0, 6.0]).unwrap();
+        let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 5.0, 6.0])
+            .expect("Matrix creation should succeed in tests");
         let y = vec![0, 0, 1, 1];
 
         let tree = build_tree(&x, &y, 0, Some(1));
@@ -3004,7 +3043,8 @@ mod tests {
     fn test_fit_simple() {
         use crate::primitives::Matrix;
 
-        let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 5.0, 6.0]).unwrap();
+        let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 5.0, 6.0])
+            .expect("Matrix creation should succeed in tests");
         let y = vec![0, 0, 1, 1];
 
         let mut tree = DecisionTreeClassifier::new().with_max_depth(5);
@@ -3019,11 +3059,12 @@ mod tests {
         use crate::primitives::Matrix;
 
         // Perfectly separable data
-        let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 5.0, 6.0]).unwrap();
+        let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 5.0, 6.0])
+            .expect("Matrix creation should succeed in tests");
         let y = vec![0, 0, 1, 1];
 
         let mut tree = DecisionTreeClassifier::new().with_max_depth(5);
-        tree.fit(&x, &y).unwrap();
+        tree.fit(&x, &y).expect("fit should succeed");
 
         let predictions = tree.predict(&x);
         assert_eq!(predictions, vec![0, 0, 1, 1]);
@@ -3033,14 +3074,16 @@ mod tests {
     fn test_predict_single_sample() {
         use crate::primitives::Matrix;
 
-        let x_train = Matrix::from_vec(4, 1, vec![1.0, 2.0, 5.0, 6.0]).unwrap();
+        let x_train = Matrix::from_vec(4, 1, vec![1.0, 2.0, 5.0, 6.0])
+            .expect("Matrix creation should succeed in tests");
         let y_train = vec![0, 0, 1, 1];
 
         let mut tree = DecisionTreeClassifier::new().with_max_depth(5);
-        tree.fit(&x_train, &y_train).unwrap();
+        tree.fit(&x_train, &y_train).expect("fit should succeed");
 
         // Test single sample prediction
-        let x_test = Matrix::from_vec(1, 1, vec![1.5]).unwrap();
+        let x_test =
+            Matrix::from_vec(1, 1, vec![1.5]).expect("Matrix creation should succeed in tests");
         let predictions = tree.predict(&x_test);
         assert_eq!(predictions.len(), 1);
         assert_eq!(predictions[0], 0); // Should be class 0 (closer to 1.0, 2.0)
@@ -3050,11 +3093,12 @@ mod tests {
     fn test_score_perfect() {
         use crate::primitives::Matrix;
 
-        let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 5.0, 6.0]).unwrap();
+        let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 5.0, 6.0])
+            .expect("Matrix creation should succeed in tests");
         let y = vec![0, 0, 1, 1];
 
         let mut tree = DecisionTreeClassifier::new().with_max_depth(5);
-        tree.fit(&x, &y).unwrap();
+        tree.fit(&x, &y).expect("fit should succeed");
 
         let accuracy = tree.score(&x, &y);
         assert!((accuracy - 1.0).abs() < 1e-6); // Perfect classification
@@ -3065,11 +3109,12 @@ mod tests {
         use crate::primitives::Matrix;
 
         // Train on simple data
-        let x_train = Matrix::from_vec(4, 1, vec![1.0, 2.0, 5.0, 6.0]).unwrap();
+        let x_train = Matrix::from_vec(4, 1, vec![1.0, 2.0, 5.0, 6.0])
+            .expect("Matrix creation should succeed in tests");
         let y_train = vec![0, 0, 1, 1];
 
         let mut tree = DecisionTreeClassifier::new().with_max_depth(1);
-        tree.fit(&x_train, &y_train).unwrap();
+        tree.fit(&x_train, &y_train).expect("fit should succeed");
 
         // Score should be between 0 and 1
         let accuracy = tree.score(&x_train, &y_train);
@@ -3093,11 +3138,11 @@ mod tests {
                 9.5, 9.5, // class 2
             ],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed in tests");
         let y = vec![0, 0, 1, 1, 2, 2];
 
         let mut tree = DecisionTreeClassifier::new().with_max_depth(5);
-        tree.fit(&x, &y).unwrap();
+        tree.fit(&x, &y).expect("fit should succeed");
 
         let predictions = tree.predict(&x);
         assert_eq!(predictions.len(), 6);
@@ -3124,11 +3169,11 @@ mod tests {
                 9.5, 9.5, // class 2
             ],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed in tests");
         let y = vec![0, 0, 1, 1, 2, 2];
 
         let mut tree = DecisionTreeClassifier::new().with_max_depth(5);
-        tree.fit(&x, &y).unwrap();
+        tree.fit(&x, &y).expect("fit should succeed");
 
         // Save model
         let path = Path::new("/tmp/test_decision_tree.bin");
@@ -3203,7 +3248,7 @@ mod tests {
                 9.5, 9.5, // class 2
             ],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed in tests");
         let y = vec![0, 0, 1, 1, 2, 2];
 
         let mut rf = RandomForestClassifier::new(3)
@@ -3230,14 +3275,14 @@ mod tests {
                 9.5, 9.5, // class 2
             ],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed in tests");
         let y = vec![0, 0, 1, 1, 2, 2];
 
         let mut rf = RandomForestClassifier::new(5)
             .with_max_depth(5)
             .with_random_state(42);
 
-        rf.fit(&x, &y).unwrap();
+        rf.fit(&x, &y).expect("fit should succeed");
         let predictions = rf.predict(&x);
 
         assert_eq!(predictions.len(), 6, "Should predict for all samples");
@@ -3266,15 +3311,15 @@ mod tests {
                 6.0, 6.0, // class 1
             ],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed in tests");
         let y = vec![0, 0, 1, 1, 2, 2, 0, 1];
 
         let mut rf1 = RandomForestClassifier::new(5).with_random_state(42);
-        rf1.fit(&x, &y).unwrap();
+        rf1.fit(&x, &y).expect("fit should succeed");
         let pred1 = rf1.predict(&x);
 
         let mut rf2 = RandomForestClassifier::new(5).with_random_state(42);
-        rf2.fit(&x, &y).unwrap();
+        rf2.fit(&x, &y).expect("fit should succeed");
         let pred2 = rf2.predict(&x);
 
         assert_eq!(
@@ -3319,7 +3364,7 @@ mod tests {
                 1.0, 1.0, // class 1
             ],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed in tests");
         let y = vec![0, 0, 1, 1];
 
         let mut gbm = GradientBoostingClassifier::new()
@@ -3344,7 +3389,7 @@ mod tests {
                 1.0, 1.0, // class 1
             ],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed in tests");
         let y = vec![0, 0, 1, 1];
 
         let mut gbm = GradientBoostingClassifier::new()
@@ -3352,8 +3397,8 @@ mod tests {
             .with_learning_rate(0.1)
             .with_max_depth(2);
 
-        gbm.fit(&x, &y).unwrap();
-        let predictions = gbm.predict(&x).unwrap();
+        gbm.fit(&x, &y).expect("fit should succeed");
+        let predictions = gbm.predict(&x).expect("predict should succeed");
 
         assert_eq!(predictions.len(), 4);
 
@@ -3380,7 +3425,7 @@ mod tests {
                 1.0, 1.0, // class 1
             ],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed in tests");
         let y = vec![0, 0, 1, 1];
 
         let mut gbm = GradientBoostingClassifier::new()
@@ -3388,8 +3433,8 @@ mod tests {
             .with_learning_rate(0.1)
             .with_max_depth(2);
 
-        gbm.fit(&x, &y).unwrap();
-        let probas = gbm.predict_proba(&x).unwrap();
+        gbm.fit(&x, &y).expect("fit should succeed");
+        let probas = gbm.predict_proba(&x).expect("predict_proba should succeed");
 
         assert_eq!(probas.len(), 4);
 
@@ -3409,34 +3454,42 @@ mod tests {
     #[test]
     fn test_gradient_boosting_predict_untrained() {
         let gbm = GradientBoostingClassifier::new();
-        let x = Matrix::from_vec(2, 2, vec![0.0, 0.0, 1.0, 1.0]).unwrap();
+        let x = Matrix::from_vec(2, 2, vec![0.0, 0.0, 1.0, 1.0])
+            .expect("Matrix creation should succeed in tests");
 
         let result = gbm.predict(&x);
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err(), "Model not trained yet");
+        assert_eq!(
+            result.expect_err("Should fail when predicting with untrained model"),
+            "Model not trained yet"
+        );
     }
 
     #[test]
     fn test_gradient_boosting_empty_data() {
-        let x = Matrix::from_vec(0, 2, vec![]).unwrap();
+        let x = Matrix::from_vec(0, 2, vec![]).expect("Matrix creation should succeed in tests");
         let y = vec![];
 
         let mut gbm = GradientBoostingClassifier::new();
         let result = gbm.fit(&x, &y);
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err(), "Cannot fit with 0 samples");
+        assert_eq!(
+            result.expect_err("Should fail with empty data"),
+            "Cannot fit with 0 samples"
+        );
     }
 
     #[test]
     fn test_gradient_boosting_mismatched_samples() {
-        let x = Matrix::from_vec(4, 2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0]).unwrap();
+        let x = Matrix::from_vec(4, 2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0])
+            .expect("Matrix creation should succeed in tests");
         let y = vec![0, 0, 1]; // Wrong length
 
         let mut gbm = GradientBoostingClassifier::new();
         let result = gbm.fit(&x, &y);
         assert!(result.is_err());
         assert_eq!(
-            result.unwrap_err(),
+            result.expect_err("Should fail with mismatched sample counts"),
             "x and y must have the same number of samples"
         );
     }
@@ -3455,22 +3508,22 @@ mod tests {
                 1.0, 0.8, // class 1
             ],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed in tests");
         let y = vec![0, 0, 0, 1, 1, 1];
 
         // High learning rate
         let mut gbm_high_lr = GradientBoostingClassifier::new()
             .with_n_estimators(10)
             .with_learning_rate(0.5);
-        gbm_high_lr.fit(&x, &y).unwrap();
-        let pred_high = gbm_high_lr.predict(&x).unwrap();
+        gbm_high_lr.fit(&x, &y).expect("fit should succeed");
+        let pred_high = gbm_high_lr.predict(&x).expect("predict should succeed");
 
         // Low learning rate
         let mut gbm_low_lr = GradientBoostingClassifier::new()
             .with_n_estimators(10)
             .with_learning_rate(0.01);
-        gbm_low_lr.fit(&x, &y).unwrap();
-        let pred_low = gbm_low_lr.predict(&x).unwrap();
+        gbm_low_lr.fit(&x, &y).expect("fit should succeed");
+        let pred_low = gbm_low_lr.predict(&x).expect("predict should succeed");
 
         // Both should make predictions
         assert_eq!(pred_high.len(), 6);
@@ -3487,20 +3540,20 @@ mod tests {
                 1.0, 1.0, 0.9, 0.9, 1.0, 0.8, // class 1
             ],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed in tests");
         let y = vec![0, 0, 0, 1, 1, 1];
 
         // Few estimators
         let mut gbm_few = GradientBoostingClassifier::new()
             .with_n_estimators(5)
             .with_learning_rate(0.1);
-        gbm_few.fit(&x, &y).unwrap();
+        gbm_few.fit(&x, &y).expect("fit should succeed");
 
         // Many estimators
         let mut gbm_many = GradientBoostingClassifier::new()
             .with_n_estimators(50)
             .with_learning_rate(0.1);
-        gbm_many.fit(&x, &y).unwrap();
+        gbm_many.fit(&x, &y).expect("fit should succeed");
 
         // More estimators should generally lead to more trees (up to limit)
         assert!(gbm_many.n_estimators() >= gbm_few.n_estimators());
@@ -3516,22 +3569,22 @@ mod tests {
                 1.0, 1.0, 0.9, 0.9, 1.0, 0.8, // class 1
             ],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed in tests");
         let y = vec![0, 0, 0, 1, 1, 1];
 
         // Shallow trees
         let mut gbm_shallow = GradientBoostingClassifier::new()
             .with_n_estimators(20)
             .with_max_depth(1);
-        gbm_shallow.fit(&x, &y).unwrap();
-        let pred_shallow = gbm_shallow.predict(&x).unwrap();
+        gbm_shallow.fit(&x, &y).expect("fit should succeed");
+        let pred_shallow = gbm_shallow.predict(&x).expect("predict should succeed");
 
         // Deeper trees
         let mut gbm_deep = GradientBoostingClassifier::new()
             .with_n_estimators(20)
             .with_max_depth(5);
-        gbm_deep.fit(&x, &y).unwrap();
-        let pred_deep = gbm_deep.predict(&x).unwrap();
+        gbm_deep.fit(&x, &y).expect("fit should succeed");
+        let pred_deep = gbm_deep.predict(&x).expect("predict should succeed");
 
         // Both should make predictions
         assert_eq!(pred_shallow.len(), 6);
@@ -3551,7 +3604,7 @@ mod tests {
                 1.0, 1.0, 0.9, 0.9, 1.0, 0.8, 0.8, 1.0, 0.9, 1.1,
             ],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed in tests");
         let y = vec![0, 0, 0, 0, 0, 1, 1, 1, 1, 1];
 
         let mut gbm = GradientBoostingClassifier::new()
@@ -3559,8 +3612,8 @@ mod tests {
             .with_learning_rate(0.1)
             .with_max_depth(3);
 
-        gbm.fit(&x, &y).unwrap();
-        let predictions = gbm.predict(&x).unwrap();
+        gbm.fit(&x, &y).expect("fit should succeed");
+        let predictions = gbm.predict(&x).expect("predict should succeed");
 
         // Should achieve reasonable accuracy
         let correct = predictions
@@ -3607,11 +3660,12 @@ mod tests {
     #[test]
     fn test_regression_tree_fit_simple_linear() {
         // Simple linear relationship: y = 2x + 1
-        let x = Matrix::from_vec(5, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0]).unwrap();
+        let x = Matrix::from_vec(5, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0])
+            .expect("Matrix creation should succeed in tests");
         let y = crate::primitives::Vector::from_slice(&[3.0, 5.0, 7.0, 9.0, 11.0]);
 
         let mut tree = DecisionTreeRegressor::new().with_max_depth(3);
-        tree.fit(&x, &y).unwrap();
+        tree.fit(&x, &y).expect("fit should succeed");
 
         let predictions = tree.predict(&x);
 
@@ -3631,11 +3685,12 @@ mod tests {
     #[test]
     fn test_regression_tree_predict_nonlinear() {
         // Quadratic relationship: y = x^2
-        let x = Matrix::from_vec(5, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0]).unwrap();
+        let x = Matrix::from_vec(5, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0])
+            .expect("Matrix creation should succeed in tests");
         let y = crate::primitives::Vector::from_slice(&[1.0, 4.0, 9.0, 16.0, 25.0]);
 
         let mut tree = DecisionTreeRegressor::new().with_max_depth(4);
-        tree.fit(&x, &y).unwrap();
+        tree.fit(&x, &y).expect("fit should succeed");
 
         let predictions = tree.predict(&x);
 
@@ -3654,11 +3709,12 @@ mod tests {
     #[test]
     fn test_regression_tree_score() {
         // Perfect predictions should give R² = 1.0
-        let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0]).unwrap();
+        let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0])
+            .expect("Matrix creation should succeed in tests");
         let y = crate::primitives::Vector::from_slice(&[2.0, 4.0, 6.0, 8.0]);
 
         let mut tree = DecisionTreeRegressor::new().with_max_depth(3);
-        tree.fit(&x, &y).unwrap();
+        tree.fit(&x, &y).expect("fit should succeed");
 
         let r2 = tree.score(&x, &y);
 
@@ -3669,14 +3725,19 @@ mod tests {
 
     #[test]
     fn test_regression_tree_max_depth_limits_complexity() {
-        let x = Matrix::from_vec(8, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]).unwrap();
+        let x = Matrix::from_vec(8, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0])
+            .expect("Matrix creation should succeed in tests");
         let y =
             crate::primitives::Vector::from_slice(&[1.0, 4.0, 9.0, 16.0, 25.0, 36.0, 49.0, 64.0]);
 
         // Shallow tree
         let mut tree_shallow = DecisionTreeRegressor::new().with_max_depth(1);
-        tree_shallow.fit(&x, &y).unwrap();
-        let depth_shallow = tree_shallow.tree.as_ref().unwrap().depth();
+        tree_shallow.fit(&x, &y).expect("fit should succeed");
+        let depth_shallow = tree_shallow
+            .tree
+            .as_ref()
+            .expect("tree should exist after fit")
+            .depth();
         assert!(
             depth_shallow <= 1,
             "Shallow tree depth {} exceeds max",
@@ -3685,8 +3746,12 @@ mod tests {
 
         // Deep tree
         let mut tree_deep = DecisionTreeRegressor::new().with_max_depth(5);
-        tree_deep.fit(&x, &y).unwrap();
-        let depth_deep = tree_deep.tree.as_ref().unwrap().depth();
+        tree_deep.fit(&x, &y).expect("fit should succeed");
+        let depth_deep = tree_deep
+            .tree
+            .as_ref()
+            .expect("tree should exist after fit")
+            .depth();
         assert!(
             depth_deep <= 5,
             "Deep tree depth {} exceeds max",
@@ -3708,7 +3773,8 @@ mod tests {
     #[should_panic(expected = "Model not fitted")]
     fn test_regression_tree_predict_before_fit_panics() {
         let tree = DecisionTreeRegressor::new();
-        let x = Matrix::from_vec(2, 1, vec![1.0, 2.0]).unwrap();
+        let x = Matrix::from_vec(2, 1, vec![1.0, 2.0])
+            .expect("Matrix creation should succeed in tests");
         let _ = tree.predict(&x); // Should panic
     }
 
@@ -3727,11 +3793,11 @@ mod tests {
                 1.0, 3.0, // y = 7
             ],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed in tests");
         let y = crate::primitives::Vector::from_slice(&[3.0, 4.0, 5.0, 6.0, 5.0, 7.0]);
 
         let mut tree = DecisionTreeRegressor::new().with_max_depth(4);
-        tree.fit(&x, &y).unwrap();
+        tree.fit(&x, &y).expect("fit should succeed");
 
         let r2 = tree.score(&x, &y);
         assert!(r2 > 0.5, "R² score {} too low for 2D features", r2);
@@ -3740,11 +3806,12 @@ mod tests {
     #[test]
     fn test_regression_tree_constant_target() {
         // All y values the same
-        let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0]).unwrap();
+        let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0])
+            .expect("Matrix creation should succeed in tests");
         let y = crate::primitives::Vector::from_slice(&[5.0, 5.0, 5.0, 5.0]);
 
         let mut tree = DecisionTreeRegressor::new();
-        tree.fit(&x, &y).unwrap();
+        tree.fit(&x, &y).expect("fit should succeed");
 
         let predictions = tree.predict(&x);
 
@@ -3760,11 +3827,11 @@ mod tests {
 
     #[test]
     fn test_regression_tree_single_sample() {
-        let x = Matrix::from_vec(1, 1, vec![5.0]).unwrap();
+        let x = Matrix::from_vec(1, 1, vec![5.0]).expect("Matrix creation should succeed in tests");
         let y = crate::primitives::Vector::from_slice(&[10.0]);
 
         let mut tree = DecisionTreeRegressor::new();
-        tree.fit(&x, &y).unwrap();
+        tree.fit(&x, &y).expect("fit should succeed");
 
         let predictions = tree.predict(&x);
         assert_eq!(predictions.len(), 1);
@@ -3773,7 +3840,8 @@ mod tests {
 
     #[test]
     fn test_regression_tree_fit_validation() {
-        let x = Matrix::from_vec(3, 1, vec![1.0, 2.0, 3.0]).unwrap();
+        let x = Matrix::from_vec(3, 1, vec![1.0, 2.0, 3.0])
+            .expect("Matrix creation should succeed in tests");
         let y = crate::primitives::Vector::from_slice(&[1.0, 2.0]); // Wrong size
 
         let mut tree = DecisionTreeRegressor::new();
@@ -3784,7 +3852,7 @@ mod tests {
 
     #[test]
     fn test_regression_tree_zero_samples() {
-        let x = Matrix::from_vec(0, 1, vec![]).unwrap();
+        let x = Matrix::from_vec(0, 1, vec![]).expect("Matrix creation should succeed in tests");
         let y = crate::primitives::Vector::from_slice(&[]);
 
         let mut tree = DecisionTreeRegressor::new();
@@ -3795,7 +3863,8 @@ mod tests {
 
     #[test]
     fn test_regression_tree_min_samples_split() {
-        let x = Matrix::from_vec(6, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]).unwrap();
+        let x = Matrix::from_vec(6, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+            .expect("Matrix creation should succeed in tests");
         let y = crate::primitives::Vector::from_slice(&[1.0, 4.0, 9.0, 16.0, 25.0, 36.0]);
 
         // Tree with min_samples_split=4 should not split nodes with fewer samples
@@ -3803,7 +3872,7 @@ mod tests {
             .with_max_depth(5)
             .with_min_samples_split(4);
 
-        tree.fit(&x, &y).unwrap();
+        tree.fit(&x, &y).expect("fit should succeed");
 
         // Should still fit successfully
         let r2 = tree.score(&x, &y);
@@ -3812,7 +3881,8 @@ mod tests {
 
     #[test]
     fn test_regression_tree_min_samples_leaf() {
-        let x = Matrix::from_vec(8, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]).unwrap();
+        let x = Matrix::from_vec(8, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0])
+            .expect("Matrix creation should succeed in tests");
         let y =
             crate::primitives::Vector::from_slice(&[1.0, 4.0, 9.0, 16.0, 25.0, 36.0, 49.0, 64.0]);
 
@@ -3821,7 +3891,7 @@ mod tests {
             .with_max_depth(5)
             .with_min_samples_leaf(3);
 
-        tree.fit(&x, &y).unwrap();
+        tree.fit(&x, &y).expect("fit should succeed");
 
         // Should fit without error
         let predictions = tree.predict(&x);
@@ -3840,17 +3910,18 @@ mod tests {
     #[test]
     fn test_regression_tree_comparison_with_linear_regression() {
         // On perfectly linear data, both should perform well
-        let x = Matrix::from_vec(5, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0]).unwrap();
+        let x = Matrix::from_vec(5, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0])
+            .expect("Matrix creation should succeed in tests");
         let y = crate::primitives::Vector::from_slice(&[2.0, 4.0, 6.0, 8.0, 10.0]);
 
         // Train tree
         let mut tree = DecisionTreeRegressor::new().with_max_depth(4);
-        tree.fit(&x, &y).unwrap();
+        tree.fit(&x, &y).expect("fit should succeed");
         let tree_r2 = tree.score(&x, &y);
 
         // Train linear model
         let mut lr = crate::linear_model::LinearRegression::new();
-        lr.fit(&x, &y).unwrap();
+        lr.fit(&x, &y).expect("fit should succeed");
         let lr_r2 = lr.score(&x, &y);
 
         // Both should achieve high R² on linear data
@@ -3884,13 +3955,13 @@ mod tests {
             1,
             vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed in tests");
         let y = crate::primitives::Vector::from_slice(&[
             3.0, 5.0, 7.0, 9.0, 11.0, 13.0, 15.0, 17.0, 19.0, 21.0,
         ]);
 
         let mut rf = RandomForestRegressor::new(10).with_max_depth(5);
-        rf.fit(&x, &y).unwrap();
+        rf.fit(&x, &y).expect("fit should succeed");
 
         // Should have trained 10 trees
         assert_eq!(rf.trees.len(), 10);
@@ -3904,12 +3975,13 @@ mod tests {
     #[test]
     fn test_random_forest_regressor_predict_nonlinear() {
         // Non-linear data: y = x²
-        let x = Matrix::from_vec(8, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]).unwrap();
+        let x = Matrix::from_vec(8, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0])
+            .expect("Matrix creation should succeed in tests");
         let y =
             crate::primitives::Vector::from_slice(&[1.0, 4.0, 9.0, 16.0, 25.0, 36.0, 49.0, 64.0]);
 
         let mut rf = RandomForestRegressor::new(20).with_max_depth(4);
-        rf.fit(&x, &y).unwrap();
+        rf.fit(&x, &y).expect("fit should succeed");
 
         let predictions = rf.predict(&x);
         assert_eq!(predictions.len(), 8);
@@ -3931,11 +4003,12 @@ mod tests {
 
     #[test]
     fn test_random_forest_regressor_score() {
-        let x = Matrix::from_vec(6, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]).unwrap();
+        let x = Matrix::from_vec(6, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+            .expect("Matrix creation should succeed in tests");
         let y = crate::primitives::Vector::from_slice(&[2.0, 4.0, 6.0, 8.0, 10.0, 12.0]);
 
         let mut rf = RandomForestRegressor::new(15).with_max_depth(3);
-        rf.fit(&x, &y).unwrap();
+        rf.fit(&x, &y).expect("fit should succeed");
 
         let r2 = rf.score(&x, &y);
         // R² should be positive and high for this simple linear pattern
@@ -3950,19 +4023,19 @@ mod tests {
             1,
             vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed in tests");
         let y = crate::primitives::Vector::from_slice(&[
             1.0, 4.0, 9.0, 16.0, 25.0, 36.0, 49.0, 64.0, 81.0, 100.0,
         ]);
 
         // Few trees
         let mut rf_few = RandomForestRegressor::new(5).with_max_depth(4);
-        rf_few.fit(&x, &y).unwrap();
+        rf_few.fit(&x, &y).expect("fit should succeed");
         let r2_few = rf_few.score(&x, &y);
 
         // Many trees
         let mut rf_many = RandomForestRegressor::new(30).with_max_depth(4);
-        rf_many.fit(&x, &y).unwrap();
+        rf_many.fit(&x, &y).expect("fit should succeed");
         let r2_many = rf_many.score(&x, &y);
 
         // More trees should generally give same or better performance
@@ -3983,7 +4056,7 @@ mod tests {
                 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0,
             ],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed in tests");
         let y = crate::primitives::Vector::from_slice(&[
             2.1, 4.2, 8.9, 16.1, 24.8, 36.2, 49.1, 63.8, 81.2, 100.1, 120.9, 144.2, 169.1, 195.8,
             225.0,
@@ -3991,12 +4064,12 @@ mod tests {
 
         // Single tree with high depth (prone to overfitting)
         let mut single_tree = DecisionTreeRegressor::new().with_max_depth(10);
-        single_tree.fit(&x, &y).unwrap();
+        single_tree.fit(&x, &y).expect("fit should succeed");
         let single_r2 = single_tree.score(&x, &y);
 
         // Random forest with moderate depth
         let mut rf = RandomForestRegressor::new(20).with_max_depth(6);
-        rf.fit(&x, &y).unwrap();
+        rf.fit(&x, &y).expect("fit should succeed");
         let rf_r2 = rf.score(&x, &y);
 
         // Both should fit well, but RF typically more stable
@@ -4014,11 +4087,11 @@ mod tests {
                 1.0, 1.0, 2.0, 1.0, 1.0, 2.0, 2.0, 2.0, 3.0, 1.0, 3.0, 2.0, 4.0, 1.0, 4.0, 2.0,
             ],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed in tests");
         let y = crate::primitives::Vector::from_slice(&[3.0, 4.0, 5.0, 6.0, 5.0, 7.0, 6.0, 8.0]);
 
         let mut rf = RandomForestRegressor::new(15).with_max_depth(5);
-        rf.fit(&x, &y).unwrap();
+        rf.fit(&x, &y).expect("fit should succeed");
 
         let predictions = rf.predict(&x);
         assert_eq!(predictions.len(), 8);
@@ -4030,11 +4103,12 @@ mod tests {
     #[test]
     fn test_random_forest_regressor_constant_target() {
         // All samples have same target value
-        let x = Matrix::from_vec(5, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0]).unwrap();
+        let x = Matrix::from_vec(5, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0])
+            .expect("Matrix creation should succeed in tests");
         let y = crate::primitives::Vector::from_slice(&[7.0, 7.0, 7.0, 7.0, 7.0]);
 
         let mut rf = RandomForestRegressor::new(10).with_max_depth(3);
-        rf.fit(&x, &y).unwrap();
+        rf.fit(&x, &y).expect("fit should succeed");
 
         let predictions = rf.predict(&x);
         for &pred in predictions.as_slice() {
@@ -4048,11 +4122,12 @@ mod tests {
 
     #[test]
     fn test_random_forest_regressor_single_sample() {
-        let x = Matrix::from_vec(1, 2, vec![1.0, 2.0]).unwrap();
+        let x = Matrix::from_vec(1, 2, vec![1.0, 2.0])
+            .expect("Matrix creation should succeed in tests");
         let y = crate::primitives::Vector::from_slice(&[5.0]);
 
         let mut rf = RandomForestRegressor::new(5).with_max_depth(2);
-        rf.fit(&x, &y).unwrap();
+        rf.fit(&x, &y).expect("fit should succeed");
 
         let predictions = rf.predict(&x);
         assert_eq!(predictions.len(), 1);
@@ -4069,7 +4144,7 @@ mod tests {
             1,
             vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed in tests");
         let y = crate::primitives::Vector::from_slice(&[
             2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0, 20.0,
         ]);
@@ -4078,13 +4153,13 @@ mod tests {
         let mut rf1 = RandomForestRegressor::new(10)
             .with_max_depth(4)
             .with_random_state(42);
-        rf1.fit(&x, &y).unwrap();
+        rf1.fit(&x, &y).expect("fit should succeed");
         let pred1 = rf1.predict(&x);
 
         let mut rf2 = RandomForestRegressor::new(10)
             .with_max_depth(4)
             .with_random_state(42);
-        rf2.fit(&x, &y).unwrap();
+        rf2.fit(&x, &y).expect("fit should succeed");
         let pred2 = rf2.predict(&x);
 
         // Predictions should be identical
@@ -4106,7 +4181,7 @@ mod tests {
             2,
             vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed in tests");
         let y = crate::primitives::Vector::from_slice(&[1.0, 2.0, 3.0]); // Wrong size
 
         let mut rf = RandomForestRegressor::new(5);
@@ -4114,7 +4189,8 @@ mod tests {
         assert!(result.is_err(), "Should error on mismatched dimensions");
 
         // Zero samples
-        let x_empty = Matrix::from_vec(0, 1, vec![]).unwrap();
+        let x_empty =
+            Matrix::from_vec(0, 1, vec![]).expect("Matrix creation should succeed in tests");
         let y_empty = crate::primitives::Vector::from_slice(&[]);
         let mut rf_empty = RandomForestRegressor::new(5);
         let result_empty = rf_empty.fit(&x_empty, &y_empty);
@@ -4125,7 +4201,8 @@ mod tests {
     #[should_panic(expected = "Cannot predict with an unfitted Random Forest")]
     fn test_random_forest_regressor_predict_before_fit() {
         let rf = RandomForestRegressor::new(5);
-        let x = Matrix::from_vec(2, 1, vec![1.0, 2.0]).unwrap();
+        let x = Matrix::from_vec(2, 1, vec![1.0, 2.0])
+            .expect("Matrix creation should succeed in tests");
         let _ = rf.predict(&x); // Should panic
     }
 
@@ -4146,19 +4223,19 @@ mod tests {
             1,
             vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed in tests");
         let y = crate::primitives::Vector::from_slice(&[
             1.0, 4.0, 9.0, 16.0, 25.0, 36.0, 49.0, 64.0, 81.0, 100.0,
         ]); // y = x²
 
         // Train RF
         let mut rf = RandomForestRegressor::new(30).with_max_depth(5);
-        rf.fit(&x, &y).unwrap();
+        rf.fit(&x, &y).expect("fit should succeed");
         let rf_r2 = rf.score(&x, &y);
 
         // Train linear regression
         let mut lr = crate::linear_model::LinearRegression::new();
-        lr.fit(&x, &y).unwrap();
+        lr.fit(&x, &y).expect("fit should succeed");
         let lr_r2 = lr.score(&x, &y);
 
         // RF should handle non-linearity better
@@ -4189,19 +4266,19 @@ mod tests {
                 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0,
             ],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed in tests");
         let y = crate::primitives::Vector::from_slice(&[
             1.0, 4.0, 9.0, 16.0, 25.0, 36.0, 49.0, 64.0, 81.0, 100.0, 121.0, 144.0,
         ]);
 
         // Shallow trees
         let mut rf_shallow = RandomForestRegressor::new(15).with_max_depth(2);
-        rf_shallow.fit(&x, &y).unwrap();
+        rf_shallow.fit(&x, &y).expect("fit should succeed");
         let r2_shallow = rf_shallow.score(&x, &y);
 
         // Deep trees
         let mut rf_deep = RandomForestRegressor::new(15).with_max_depth(8);
-        rf_deep.fit(&x, &y).unwrap();
+        rf_deep.fit(&x, &y).expect("fit should succeed");
         let r2_deep = rf_deep.score(&x, &y);
 
         // Deeper trees should capture more complexity
@@ -4233,13 +4310,13 @@ mod tests {
                 6.5, 3.0, 5.8, 2.2,
             ],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed in tests");
         let y = vec![0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2];
 
         let mut rf = RandomForestClassifier::new(20)
             .with_max_depth(5)
             .with_random_state(42);
-        rf.fit(&x, &y).unwrap();
+        rf.fit(&x, &y).expect("fit should succeed");
 
         let oob_score = rf.oob_score();
         assert!(
@@ -4247,7 +4324,7 @@ mod tests {
             "OOB score should be available after fit"
         );
 
-        let score_value = oob_score.unwrap();
+        let score_value = oob_score.expect("oob_score should be available");
         assert!(
             (0.0..=1.0).contains(&score_value),
             "OOB score {} should be between 0 and 1",
@@ -4265,11 +4342,11 @@ mod tests {
                 4.0, 4.0, 4.0, 5.0,
             ],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed in tests");
         let y = vec![0, 0, 0, 0, 1, 1, 1, 1, 1, 1];
 
         let mut rf = RandomForestClassifier::new(15).with_random_state(42);
-        rf.fit(&x, &y).unwrap();
+        rf.fit(&x, &y).expect("fit should succeed");
 
         let oob_preds = rf.oob_prediction();
         assert!(
@@ -4277,7 +4354,7 @@ mod tests {
             "OOB predictions should be available after fit"
         );
 
-        let preds = oob_preds.unwrap();
+        let preds = oob_preds.expect("oob_preds should be available");
         assert_eq!(
             preds.len(),
             10,
@@ -4318,7 +4395,7 @@ mod tests {
                 6.7, 2.5, 5.8, 1.8, 7.2, 3.6, 6.1, 2.5,
             ],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed in tests");
         let y = vec![
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2,
             2,
@@ -4327,9 +4404,11 @@ mod tests {
         let mut rf = RandomForestClassifier::new(50)
             .with_max_depth(5)
             .with_random_state(42);
-        rf.fit(&x, &y).unwrap();
+        rf.fit(&x, &y).expect("fit should succeed");
 
-        let oob_score = rf.oob_score().unwrap();
+        let oob_score = rf
+            .oob_score()
+            .expect("oob_score should be available after fit");
         let train_score = rf.score(&x, &y);
 
         // OOB score should be reasonable (within 0.3 of training score for small dataset)
@@ -4351,19 +4430,19 @@ mod tests {
                 4.0, 4.0, 4.0, 5.0, 5.0, 4.0, 5.0, 5.0, 6.0, 6.0, 6.0, 7.0, 7.0, 6.0,
             ],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed in tests");
         let y = vec![0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2];
 
         let mut rf1 = RandomForestClassifier::new(20)
             .with_max_depth(4)
             .with_random_state(42);
-        rf1.fit(&x, &y).unwrap();
+        rf1.fit(&x, &y).expect("fit should succeed");
         let oob1 = rf1.oob_score();
 
         let mut rf2 = RandomForestClassifier::new(20)
             .with_max_depth(4)
             .with_random_state(42);
-        rf2.fit(&x, &y).unwrap();
+        rf2.fit(&x, &y).expect("fit should succeed");
         let oob2 = rf2.oob_score();
 
         assert_eq!(oob1, oob2, "OOB scores should be identical with same seed");
@@ -4379,7 +4458,7 @@ mod tests {
                 16.0, 17.0, 18.0, 19.0, 20.0,
             ],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed in tests");
         let y = crate::primitives::Vector::from_slice(&[
             2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0, 20.0, 22.0, 24.0, 26.0, 28.0, 30.0,
             32.0, 34.0, 36.0, 38.0, 40.0,
@@ -4388,7 +4467,7 @@ mod tests {
         let mut rf = RandomForestRegressor::new(30)
             .with_max_depth(5)
             .with_random_state(42);
-        rf.fit(&x, &y).unwrap();
+        rf.fit(&x, &y).expect("fit should succeed");
 
         let oob_score = rf.oob_score();
         assert!(
@@ -4396,7 +4475,7 @@ mod tests {
             "OOB score should be available after fit"
         );
 
-        let score_value = oob_score.unwrap();
+        let score_value = oob_score.expect("oob_score should be available");
         assert!(
             score_value > -1.0 && score_value <= 1.0,
             "OOB R² score {} should be reasonable",
@@ -4414,13 +4493,13 @@ mod tests {
                 5.0, 3.0, 5.0, 4.0, 6.0, 3.0, 6.0, 4.0,
             ],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed in tests");
         let y = crate::primitives::Vector::from_slice(&[
             3.0, 4.0, 5.0, 6.0, 5.0, 7.0, 6.0, 8.0, 8.0, 9.0, 9.0, 10.0,
         ]);
 
         let mut rf = RandomForestRegressor::new(20).with_random_state(42);
-        rf.fit(&x, &y).unwrap();
+        rf.fit(&x, &y).expect("fit should succeed");
 
         let oob_preds = rf.oob_prediction();
         assert!(
@@ -4428,7 +4507,7 @@ mod tests {
             "OOB predictions should be available after fit"
         );
 
-        let preds = oob_preds.unwrap();
+        let preds = oob_preds.expect("oob_preds should be available");
         assert_eq!(
             preds.len(),
             12,
@@ -4461,7 +4540,7 @@ mod tests {
                 16.0, 17.0, 18.0, 19.0, 20.0, 21.0, 22.0, 23.0, 24.0, 25.0,
             ],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed in tests");
         let y = crate::primitives::Vector::from_slice(&[
             3.0, 5.0, 7.0, 9.0, 11.0, 13.0, 15.0, 17.0, 19.0, 21.0, 23.0, 25.0, 27.0, 29.0, 31.0,
             33.0, 35.0, 37.0, 39.0, 41.0, 43.0, 45.0, 47.0, 49.0, 51.0,
@@ -4470,9 +4549,11 @@ mod tests {
         let mut rf = RandomForestRegressor::new(50)
             .with_max_depth(6)
             .with_random_state(42);
-        rf.fit(&x, &y).unwrap();
+        rf.fit(&x, &y).expect("fit should succeed");
 
-        let oob_score = rf.oob_score().unwrap();
+        let oob_score = rf
+            .oob_score()
+            .expect("oob_score should be available after fit");
         let train_score = rf.score(&x, &y);
 
         // OOB R² should be positive and within reasonable range of training R²
@@ -4495,7 +4576,7 @@ mod tests {
                 9.0, 10.0, 10.0, 11.0, 11.0, 12.0, 12.0, 13.0, 13.0, 14.0, 14.0, 15.0, 15.0, 16.0,
             ],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed in tests");
         let y = crate::primitives::Vector::from_slice(&[
             5.0, 7.0, 9.0, 11.0, 13.0, 15.0, 17.0, 19.0, 21.0, 23.0, 25.0, 27.0, 29.0, 31.0, 33.0,
         ]);
@@ -4503,13 +4584,13 @@ mod tests {
         let mut rf1 = RandomForestRegressor::new(25)
             .with_max_depth(5)
             .with_random_state(42);
-        rf1.fit(&x, &y).unwrap();
+        rf1.fit(&x, &y).expect("fit should succeed");
         let oob1 = rf1.oob_score();
 
         let mut rf2 = RandomForestRegressor::new(25)
             .with_max_depth(5)
             .with_random_state(42);
-        rf2.fit(&x, &y).unwrap();
+        rf2.fit(&x, &y).expect("fit should succeed");
         let oob2 = rf2.oob_score();
 
         assert_eq!(
@@ -4528,7 +4609,7 @@ mod tests {
                 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0,
             ],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed in tests");
         let y = crate::primitives::Vector::from_slice(&[
             1.0, 4.0, 9.0, 16.0, 25.0, 36.0, 49.0, 64.0, 81.0, 100.0, 121.0, 144.0, 169.0, 196.0,
             225.0,
@@ -4537,13 +4618,13 @@ mod tests {
         let mut rf = RandomForestRegressor::new(40)
             .with_max_depth(6)
             .with_random_state(42);
-        rf.fit(&x, &y).unwrap();
+        rf.fit(&x, &y).expect("fit should succeed");
 
         let oob_score = rf.oob_score();
         assert!(oob_score.is_some(), "OOB score should be available");
 
         // OOB should still be reasonably high for non-linear data
-        let score_value = oob_score.unwrap();
+        let score_value = oob_score.expect("oob_score should be available");
         assert!(
             score_value > 0.7,
             "OOB R² {} should be high on non-linear data",
@@ -4570,13 +4651,13 @@ mod tests {
                 20.0, 5.0, 5.0, 20.0, 6.0, 4.0, 21.0, 5.0, 6.0, 20.0, 4.0, 5.0,
             ],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed in tests");
         let y = vec![0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2];
 
         let mut rf = RandomForestClassifier::new(20)
             .with_max_depth(5)
             .with_random_state(42);
-        rf.fit(&x, &y).unwrap();
+        rf.fit(&x, &y).expect("fit should succeed");
 
         let importances = rf.feature_importances();
         assert!(
@@ -4584,7 +4665,7 @@ mod tests {
             "Feature importances should be available after fit"
         );
 
-        let imps = importances.unwrap();
+        let imps = importances.expect("importances should be available");
         assert_eq!(
             imps.len(),
             3,
@@ -4628,16 +4709,20 @@ mod tests {
                 4.0, 4.0, 4.0, 5.0,
             ],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed in tests");
         let y = vec![0, 0, 0, 0, 1, 1, 1, 1, 1, 1];
 
         let mut rf1 = RandomForestClassifier::new(20).with_random_state(42);
-        rf1.fit(&x, &y).unwrap();
-        let imps1 = rf1.feature_importances().unwrap();
+        rf1.fit(&x, &y).expect("fit should succeed");
+        let imps1 = rf1
+            .feature_importances()
+            .expect("feature importances should be available");
 
         let mut rf2 = RandomForestClassifier::new(20).with_random_state(42);
-        rf2.fit(&x, &y).unwrap();
-        let imps2 = rf2.feature_importances().unwrap();
+        rf2.fit(&x, &y).expect("fit should succeed");
+        let imps2 = rf2
+            .feature_importances()
+            .expect("feature importances should be available");
 
         // Should be very similar with same random_state
         // Note: Small variations can occur due to floating point arithmetic in normalization
@@ -4664,13 +4749,13 @@ mod tests {
                 4.0, 7.0, 5.0, 6.0, 8.0, 4.0, 5.0, 9.0, 5.0, 5.0, 10.0, 6.0, 4.0,
             ],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed in tests");
         let y = Vector::from_slice(&[10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0, 90.0, 100.0]); // Linear with feature 0
 
         let mut rf = RandomForestRegressor::new(20)
             .with_max_depth(5)
             .with_random_state(42);
-        rf.fit(&x, &y).unwrap();
+        rf.fit(&x, &y).expect("fit should succeed");
 
         let importances = rf.feature_importances();
         assert!(
@@ -4678,7 +4763,7 @@ mod tests {
             "Feature importances should be available after fit"
         );
 
-        let imps = importances.unwrap();
+        let imps = importances.expect("importances should be available");
         assert_eq!(
             imps.len(),
             3,
@@ -4721,16 +4806,20 @@ mod tests {
                 1.0, 0.0, 2.0, 1.0, 3.0, 0.0, 4.0, 1.0, 5.0, 0.0, 6.0, 1.0, 7.0, 0.0, 8.0, 1.0,
             ],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed in tests");
         let y = Vector::from_slice(&[2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0]);
 
         let mut rf1 = RandomForestRegressor::new(20).with_random_state(42);
-        rf1.fit(&x, &y).unwrap();
-        let imps1 = rf1.feature_importances().unwrap();
+        rf1.fit(&x, &y).expect("fit should succeed");
+        let imps1 = rf1
+            .feature_importances()
+            .expect("feature importances should be available");
 
         let mut rf2 = RandomForestRegressor::new(20).with_random_state(42);
-        rf2.fit(&x, &y).unwrap();
-        let imps2 = rf2.feature_importances().unwrap();
+        rf2.fit(&x, &y).expect("fit should succeed");
+        let imps2 = rf2
+            .feature_importances()
+            .expect("feature importances should be available");
 
         // Should be very similar with same random_state
         // Note: Small variations can occur due to floating point arithmetic in normalization
@@ -4755,13 +4844,15 @@ mod tests {
                 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0, 2.0, 2.0, 2.0, 3.0, 3.0, 2.0, 3.0, 3.0,
             ],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed in tests");
         let y = vec![0, 0, 1, 1, 0, 0, 1, 1];
 
         let mut rf = RandomForestClassifier::new(10).with_random_state(42);
-        rf.fit(&x, &y).unwrap();
+        rf.fit(&x, &y).expect("fit should succeed");
 
-        let imps = rf.feature_importances().unwrap();
+        let imps = rf
+            .feature_importances()
+            .expect("feature importances should be available");
         for (i, &imp) in imps.iter().enumerate() {
             assert!(
                 imp >= 0.0,
@@ -4782,13 +4873,15 @@ mod tests {
                 1.0, 0.0, 2.0, 1.0, 3.0, 0.0, 4.0, 1.0, 5.0, 0.0, 6.0, 1.0, 7.0, 0.0, 8.0, 1.0,
             ],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed in tests");
         let y = Vector::from_slice(&[2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0]);
 
         let mut rf = RandomForestRegressor::new(10).with_random_state(42);
-        rf.fit(&x, &y).unwrap();
+        rf.fit(&x, &y).expect("fit should succeed");
 
-        let imps = rf.feature_importances().unwrap();
+        let imps = rf
+            .feature_importances()
+            .expect("feature importances should be available");
         for (i, &imp) in imps.iter().enumerate() {
             assert!(
                 imp >= 0.0,

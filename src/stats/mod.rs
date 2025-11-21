@@ -17,9 +17,9 @@
 //! let data = Vector::from_slice(&[1.0, 2.0, 3.0, 4.0, 5.0]);
 //! let stats = DescriptiveStats::new(&data);
 //!
-//! assert_eq!(stats.quantile(0.5).unwrap(), 3.0); // median
-//! assert_eq!(stats.quantile(0.0).unwrap(), 1.0); // min
-//! assert_eq!(stats.quantile(1.0).unwrap(), 5.0); // max
+//! assert_eq!(stats.quantile(0.5).expect("median should be computable for valid data"), 3.0); // median
+//! assert_eq!(stats.quantile(0.0).expect("min quantile should be computable for valid data"), 1.0); // min
+//! assert_eq!(stats.quantile(1.0).expect("max quantile should be computable for valid data"), 5.0); // max
 //! ```
 
 use trueno::Vector;
@@ -119,9 +119,9 @@ impl<'a> DescriptiveStats<'a> {
     /// let data = Vector::from_slice(&[1.0, 2.0, 3.0, 4.0, 5.0]);
     /// let stats = DescriptiveStats::new(&data);
     ///
-    /// assert_eq!(stats.quantile(0.5).unwrap(), 3.0); // median
-    /// assert_eq!(stats.quantile(0.0).unwrap(), 1.0); // min
-    /// assert_eq!(stats.quantile(1.0).unwrap(), 5.0); // max
+    /// assert_eq!(stats.quantile(0.5).expect("median should be computable for valid data"), 3.0); // median
+    /// assert_eq!(stats.quantile(0.0).expect("min quantile should be computable for valid data"), 1.0); // min
+    /// assert_eq!(stats.quantile(1.0).expect("max quantile should be computable for valid data"), 5.0); // max
     /// ```
     pub fn quantile(&self, q: f64) -> Result<f32, String> {
         // Validation
@@ -153,7 +153,8 @@ impl<'a> DescriptiveStats<'a> {
         if h_floor == h_ceil {
             // Exact index, no interpolation needed
             working_copy.select_nth_unstable_by(h_floor, |a, b| {
-                a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
+                a.partial_cmp(b)
+                    .expect("f32 values should be comparable (not NaN)")
             });
             return Ok(working_copy[h_floor]);
         }
@@ -161,7 +162,8 @@ impl<'a> DescriptiveStats<'a> {
         // For interpolation, we need both floor and ceil values
         // Use nth_element twice (still O(n) average case)
         working_copy.select_nth_unstable_by(h_floor, |a, b| {
-            a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
+            a.partial_cmp(b)
+                .expect("f32 values should be comparable (not NaN)")
         });
         let lower = working_copy[h_floor];
 
@@ -169,7 +171,8 @@ impl<'a> DescriptiveStats<'a> {
         // Full sort is still O(n log n), but for single quantile with interpolation,
         // we need a different approach
         working_copy.select_nth_unstable_by(h_ceil, |a, b| {
-            a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
+            a.partial_cmp(b)
+                .expect("f32 values should be comparable (not NaN)")
         });
         let upper = working_copy[h_ceil];
 
@@ -198,7 +201,7 @@ impl<'a> DescriptiveStats<'a> {
     ///
     /// let data = Vector::from_slice(&[1.0, 2.0, 3.0, 4.0, 5.0]);
     /// let stats = DescriptiveStats::new(&data);
-    /// let p = stats.percentiles(&[25.0, 50.0, 75.0]).unwrap();
+    /// let p = stats.percentiles(&[25.0, 50.0, 75.0]).expect("percentiles should be computable for valid data");
     /// assert_eq!(p, vec![2.0, 3.0, 4.0]);
     /// ```
     pub fn percentiles(&self, percentiles: &[f64]) -> Result<Vec<f32>, String> {
@@ -214,7 +217,10 @@ impl<'a> DescriptiveStats<'a> {
 
         // For multiple quantiles, full sort is optimal
         let mut sorted = self.data.as_slice().to_vec();
-        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        sorted.sort_by(|a, b| {
+            a.partial_cmp(b)
+                .expect("f32 values should be comparable (not NaN)")
+        });
 
         let n = sorted.len();
         let mut results = Vec::with_capacity(percentiles.len());
@@ -249,7 +255,7 @@ impl<'a> DescriptiveStats<'a> {
     ///
     /// let data = Vector::from_slice(&[1.0, 2.0, 3.0, 4.0, 5.0]);
     /// let stats = DescriptiveStats::new(&data);
-    /// let summary = stats.five_number_summary().unwrap();
+    /// let summary = stats.five_number_summary().expect("five-number summary should be computable for valid data");
     ///
     /// assert_eq!(summary.min, 1.0);
     /// assert_eq!(summary.q1, 2.0);
@@ -286,7 +292,7 @@ impl<'a> DescriptiveStats<'a> {
     ///
     /// let data = Vector::from_slice(&[1.0, 2.0, 3.0, 4.0, 5.0]);
     /// let stats = DescriptiveStats::new(&data);
-    /// assert_eq!(stats.iqr().unwrap(), 2.0);
+    /// assert_eq!(stats.iqr().expect("IQR should be computable for valid data"), 2.0);
     /// ```
     pub fn iqr(&self) -> Result<f32, String> {
         let summary = self.five_number_summary()?;
@@ -305,7 +311,7 @@ impl<'a> DescriptiveStats<'a> {
     ///
     /// let data = Vector::from_slice(&[1.0, 2.0, 2.0, 3.0, 5.0]);
     /// let stats = DescriptiveStats::new(&data);
-    /// let hist = stats.histogram_auto().unwrap();
+    /// let hist = stats.histogram_auto().expect("histogram should be computable for valid data");
     /// assert_eq!(hist.bins.len(), hist.counts.len() + 1);
     /// ```
     pub fn histogram_auto(&self) -> Result<Histogram, String> {
@@ -334,7 +340,10 @@ impl<'a> DescriptiveStats<'a> {
 
         // Sort data (Bayesian Blocks requires sorted data)
         let mut sorted_data: Vec<f32> = self.data.as_slice().to_vec();
-        sorted_data.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        sorted_data.sort_by(|a, b| {
+            a.partial_cmp(b)
+                .expect("f32 values should be comparable (not NaN)")
+        });
 
         // Handle all same values
         if sorted_data[0] == sorted_data[n - 1] {
@@ -434,7 +443,10 @@ impl<'a> DescriptiveStats<'a> {
 
         // Ensure edges are strictly increasing and unique
         edges.dedup();
-        edges.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        edges.sort_by(|a, b| {
+            a.partial_cmp(b)
+                .expect("f32 values should be comparable (not NaN)")
+        });
 
         // Remove any non-strictly-increasing edges (shouldn't happen, but be safe)
         let mut i = 1;
@@ -466,7 +478,7 @@ impl<'a> DescriptiveStats<'a> {
     ///
     /// let data = Vector::from_slice(&[1.0, 2.0, 3.0, 4.0, 5.0]);
     /// let stats = DescriptiveStats::new(&data);
-    /// let hist = stats.histogram_method(BinMethod::Sturges).unwrap();
+    /// let hist = stats.histogram_method(BinMethod::Sturges).expect("histogram should be computable for valid data");
     /// ```
     pub fn histogram_method(&self, method: BinMethod) -> Result<Histogram, String> {
         if self.data.is_empty() {
@@ -531,7 +543,7 @@ impl<'a> DescriptiveStats<'a> {
     ///
     /// let data = Vector::from_slice(&[1.0, 2.0, 3.0, 4.0, 5.0]);
     /// let stats = DescriptiveStats::new(&data);
-    /// let hist = stats.histogram(3).unwrap();
+    /// let hist = stats.histogram(3).expect("histogram should be computable for valid data");
     /// assert_eq!(hist.bins.len(), 4); // n_bins + 1 edges
     /// assert_eq!(hist.counts.len(), 3);
     /// ```
@@ -594,7 +606,7 @@ impl<'a> DescriptiveStats<'a> {
     ///
     /// let data = Vector::from_slice(&[1.0, 2.0, 3.0, 4.0, 5.0]);
     /// let stats = DescriptiveStats::new(&data);
-    /// let hist = stats.histogram_edges(&[0.0, 2.5, 5.0, 10.0]).unwrap();
+    /// let hist = stats.histogram_edges(&[0.0, 2.5, 5.0, 10.0]).expect("histogram should be computable for valid bin edges");
     /// assert_eq!(hist.bins.len(), 4);
     /// assert_eq!(hist.counts.len(), 3);
     /// ```
@@ -667,40 +679,86 @@ mod tests {
     fn test_quantile_single_element() {
         let v = Vector::from_slice(&[42.0]);
         let stats = DescriptiveStats::new(&v);
-        assert_eq!(stats.quantile(0.0).unwrap(), 42.0);
-        assert_eq!(stats.quantile(0.5).unwrap(), 42.0);
-        assert_eq!(stats.quantile(1.0).unwrap(), 42.0);
+        assert_eq!(
+            stats
+                .quantile(0.0)
+                .expect("quantile should succeed for single element"),
+            42.0
+        );
+        assert_eq!(
+            stats
+                .quantile(0.5)
+                .expect("quantile should succeed for single element"),
+            42.0
+        );
+        assert_eq!(
+            stats
+                .quantile(1.0)
+                .expect("quantile should succeed for single element"),
+            42.0
+        );
     }
 
     #[test]
     fn test_quantile_two_elements() {
         let v = Vector::from_slice(&[1.0, 2.0]);
         let stats = DescriptiveStats::new(&v);
-        assert_eq!(stats.quantile(0.0).unwrap(), 1.0);
-        assert_eq!(stats.quantile(0.5).unwrap(), 1.5);
-        assert_eq!(stats.quantile(1.0).unwrap(), 2.0);
+        assert_eq!(
+            stats
+                .quantile(0.0)
+                .expect("quantile should succeed for two elements"),
+            1.0
+        );
+        assert_eq!(
+            stats
+                .quantile(0.5)
+                .expect("quantile should succeed for two elements"),
+            1.5
+        );
+        assert_eq!(
+            stats
+                .quantile(1.0)
+                .expect("quantile should succeed for two elements"),
+            2.0
+        );
     }
 
     #[test]
     fn test_quantile_odd_length() {
         let v = Vector::from_slice(&[1.0, 2.0, 3.0, 4.0, 5.0]);
         let stats = DescriptiveStats::new(&v);
-        assert_eq!(stats.quantile(0.5).unwrap(), 3.0); // exact median
+        assert_eq!(
+            stats
+                .quantile(0.5)
+                .expect("quantile should succeed for odd length data"),
+            3.0
+        ); // exact median
     }
 
     #[test]
     fn test_quantile_even_length() {
         let v = Vector::from_slice(&[1.0, 2.0, 3.0, 4.0]);
         let stats = DescriptiveStats::new(&v);
-        assert_eq!(stats.quantile(0.5).unwrap(), 2.5); // interpolated median
+        assert_eq!(
+            stats
+                .quantile(0.5)
+                .expect("quantile should succeed for even length data"),
+            2.5
+        ); // interpolated median
     }
 
     #[test]
     fn test_quantile_edge_cases() {
         let v = Vector::from_slice(&[1.0, 2.0, 3.0, 4.0, 5.0]);
         let stats = DescriptiveStats::new(&v);
-        assert_eq!(stats.quantile(0.0).unwrap(), 1.0); // min
-        assert_eq!(stats.quantile(1.0).unwrap(), 5.0); // max
+        assert_eq!(
+            stats.quantile(0.0).expect("min quantile should succeed"),
+            1.0
+        ); // min
+        assert_eq!(
+            stats.quantile(1.0).expect("max quantile should succeed"),
+            5.0
+        ); // max
     }
 
     #[test]
@@ -715,7 +773,9 @@ mod tests {
     fn test_percentiles() {
         let v = Vector::from_slice(&[1.0, 2.0, 3.0, 4.0, 5.0]);
         let stats = DescriptiveStats::new(&v);
-        let p = stats.percentiles(&[25.0, 50.0, 75.0]).unwrap();
+        let p = stats
+            .percentiles(&[25.0, 50.0, 75.0])
+            .expect("percentiles should succeed for valid inputs");
         assert_eq!(p, vec![2.0, 3.0, 4.0]);
     }
 
@@ -723,7 +783,9 @@ mod tests {
     fn test_five_number_summary() {
         let v = Vector::from_slice(&[1.0, 2.0, 3.0, 4.0, 5.0]);
         let stats = DescriptiveStats::new(&v);
-        let summary = stats.five_number_summary().unwrap();
+        let summary = stats
+            .five_number_summary()
+            .expect("five-number summary should succeed for valid data");
 
         assert_eq!(summary.min, 1.0);
         assert_eq!(summary.q1, 2.0);
@@ -736,7 +798,7 @@ mod tests {
     fn test_iqr() {
         let v = Vector::from_slice(&[1.0, 2.0, 3.0, 4.0, 5.0]);
         let stats = DescriptiveStats::new(&v);
-        assert_eq!(stats.iqr().unwrap(), 2.0);
+        assert_eq!(stats.iqr().expect("IQR should succeed for valid data"), 2.0);
     }
 
     // Histogram tests
@@ -759,7 +821,9 @@ mod tests {
     fn test_histogram_fixed_bins() {
         let v = Vector::from_slice(&[1.0, 2.0, 3.0, 4.0, 5.0]);
         let stats = DescriptiveStats::new(&v);
-        let hist = stats.histogram(3).unwrap();
+        let hist = stats
+            .histogram(3)
+            .expect("histogram should succeed for valid inputs");
 
         assert_eq!(hist.bins.len(), 4); // n_bins + 1
         assert_eq!(hist.counts.len(), 3);
@@ -771,7 +835,9 @@ mod tests {
         // Uniform distribution should have roughly equal counts
         let v = Vector::from_slice(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]);
         let stats = DescriptiveStats::new(&v);
-        let hist = stats.histogram(5).unwrap();
+        let hist = stats
+            .histogram(5)
+            .expect("histogram should succeed for uniform distribution");
 
         assert_eq!(hist.bins.len(), 6);
         assert_eq!(hist.counts.len(), 5);
@@ -785,7 +851,9 @@ mod tests {
     fn test_histogram_all_same_value() {
         let v = Vector::from_slice(&[5.0, 5.0, 5.0, 5.0]);
         let stats = DescriptiveStats::new(&v);
-        let hist = stats.histogram(3).unwrap();
+        let hist = stats
+            .histogram(3)
+            .expect("histogram should succeed for constant data");
 
         assert_eq!(hist.bins.len(), 2);
         assert_eq!(hist.counts.len(), 1);
@@ -796,7 +864,9 @@ mod tests {
     fn test_histogram_sturges() {
         let v = Vector::from_slice(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]);
         let stats = DescriptiveStats::new(&v);
-        let hist = stats.histogram_method(BinMethod::Sturges).unwrap();
+        let hist = stats
+            .histogram_method(BinMethod::Sturges)
+            .expect("histogram with Sturges method should succeed");
 
         // n = 8, so n_bins = ceil(log2(8)) + 1 = 3 + 1 = 4
         assert_eq!(hist.bins.len(), 5);
@@ -808,7 +878,9 @@ mod tests {
     fn test_histogram_square_root() {
         let v = Vector::from_slice(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]);
         let stats = DescriptiveStats::new(&v);
-        let hist = stats.histogram_method(BinMethod::SquareRoot).unwrap();
+        let hist = stats
+            .histogram_method(BinMethod::SquareRoot)
+            .expect("histogram with SquareRoot method should succeed");
 
         // n = 9, so n_bins = ceil(sqrt(9)) = 3
         assert_eq!(hist.bins.len(), 4);
@@ -820,7 +892,9 @@ mod tests {
     fn test_histogram_freedman_diaconis() {
         let v = Vector::from_slice(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]);
         let stats = DescriptiveStats::new(&v);
-        let hist = stats.histogram_method(BinMethod::FreedmanDiaconis).unwrap();
+        let hist = stats
+            .histogram_method(BinMethod::FreedmanDiaconis)
+            .expect("histogram with FreedmanDiaconis method should succeed");
 
         // Should have at least 1 bin
         assert!(hist.bins.len() >= 2);
@@ -832,7 +906,9 @@ mod tests {
     fn test_histogram_auto() {
         let v = Vector::from_slice(&[1.0, 2.0, 3.0, 4.0, 5.0]);
         let stats = DescriptiveStats::new(&v);
-        let hist = stats.histogram_auto().unwrap();
+        let hist = stats
+            .histogram_auto()
+            .expect("auto histogram should succeed");
 
         // Auto uses Freedman-Diaconis by default
         assert!(hist.bins.len() >= 2);
@@ -843,7 +919,9 @@ mod tests {
     fn test_histogram_edges_custom() {
         let v = Vector::from_slice(&[1.0, 2.0, 3.0, 4.0, 5.0]);
         let stats = DescriptiveStats::new(&v);
-        let hist = stats.histogram_edges(&[0.0, 2.5, 5.0, 10.0]).unwrap();
+        let hist = stats
+            .histogram_edges(&[0.0, 2.5, 5.0, 10.0])
+            .expect("histogram with custom edges should succeed");
 
         assert_eq!(hist.bins.len(), 4);
         assert_eq!(hist.counts.len(), 3);
@@ -877,7 +955,9 @@ mod tests {
         // Basic test: algorithm should run and produce valid histogram
         let v = Vector::from_slice(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]);
         let stats = DescriptiveStats::new(&v);
-        let hist = stats.histogram_method(BinMethod::Bayesian).unwrap();
+        let hist = stats
+            .histogram_method(BinMethod::Bayesian)
+            .expect("Bayesian histogram should succeed");
 
         // Should produce valid histogram
         assert!(hist.bins.len() >= 2);
@@ -901,7 +981,9 @@ mod tests {
             17.0, 18.0, 19.0, 20.0,
         ]);
         let stats = DescriptiveStats::new(&v);
-        let hist = stats.histogram_method(BinMethod::Bayesian).unwrap();
+        let hist = stats
+            .histogram_method(BinMethod::Bayesian)
+            .expect("Bayesian histogram should succeed for uniform data");
 
         // Uniform distribution should not need many bins
         assert!(hist.bins.len() <= 10); // Should be much fewer than 20
@@ -917,7 +999,9 @@ mod tests {
             9.0, 9.1, 9.2, 9.3, 9.4, 9.5, 9.6, 9.7, 9.8, 9.9, 10.0,
         ]);
         let stats = DescriptiveStats::new(&v);
-        let hist = stats.histogram_method(BinMethod::Bayesian).unwrap();
+        let hist = stats
+            .histogram_method(BinMethod::Bayesian)
+            .expect("Bayesian histogram should succeed for clustered data");
 
         // Should detect the gap and create appropriate bins
         // Should have at least 2 bins to capture both clusters
@@ -925,7 +1009,13 @@ mod tests {
 
         // Verify bins cover the data range
         assert!(hist.bins[0] <= 1.0);
-        assert!(*hist.bins.last().unwrap() >= 10.0);
+        assert!(
+            *hist
+                .bins
+                .last()
+                .expect("histogram should have at least one bin edge")
+                >= 10.0
+        );
     }
 
     #[test]
@@ -933,7 +1023,9 @@ mod tests {
         // Small dataset - should still work
         let v = Vector::from_slice(&[1.0, 2.0, 3.0]);
         let stats = DescriptiveStats::new(&v);
-        let hist = stats.histogram_method(BinMethod::Bayesian).unwrap();
+        let hist = stats
+            .histogram_method(BinMethod::Bayesian)
+            .expect("Bayesian histogram should succeed for small dataset");
 
         assert!(hist.bins.len() >= 2);
         assert_eq!(hist.bins.len(), hist.counts.len() + 1);
@@ -948,8 +1040,12 @@ mod tests {
         let v = Vector::from_slice(&[1.0, 2.0, 3.0, 4.0, 5.0, 10.0, 11.0, 12.0]);
         let stats = DescriptiveStats::new(&v);
 
-        let hist1 = stats.histogram_method(BinMethod::Bayesian).unwrap();
-        let hist2 = stats.histogram_method(BinMethod::Bayesian).unwrap();
+        let hist1 = stats
+            .histogram_method(BinMethod::Bayesian)
+            .expect("first Bayesian histogram should succeed");
+        let hist2 = stats
+            .histogram_method(BinMethod::Bayesian)
+            .expect("second Bayesian histogram should succeed");
 
         // Should produce identical results
         assert_eq!(hist1.bins.len(), hist2.bins.len());
@@ -964,7 +1060,9 @@ mod tests {
         // All same value - should handle gracefully
         let v = Vector::from_slice(&[5.0, 5.0, 5.0, 5.0, 5.0]);
         let stats = DescriptiveStats::new(&v);
-        let hist = stats.histogram_method(BinMethod::Bayesian).unwrap();
+        let hist = stats
+            .histogram_method(BinMethod::Bayesian)
+            .expect("Bayesian histogram should succeed for constant data");
 
         // Should create at least 1 bin
         assert!(hist.bins.len() >= 2); // n+1 edges for n bins
@@ -986,8 +1084,12 @@ mod tests {
         ]);
         let stats = DescriptiveStats::new(&v);
 
-        let hist_bayesian = stats.histogram_method(BinMethod::Bayesian).unwrap();
-        let hist_sturges = stats.histogram_method(BinMethod::Sturges).unwrap();
+        let hist_bayesian = stats
+            .histogram_method(BinMethod::Bayesian)
+            .expect("Bayesian histogram should succeed");
+        let hist_sturges = stats
+            .histogram_method(BinMethod::Sturges)
+            .expect("Sturges histogram should succeed");
 
         // Both should be valid
         assert!(hist_bayesian.bins.len() >= 2);
@@ -1008,7 +1110,9 @@ mod tests {
         let v = Vector::from_slice(&data);
         let stats = DescriptiveStats::new(&v);
 
-        let hist = stats.histogram_method(BinMethod::Bayesian).unwrap();
+        let hist = stats
+            .histogram_method(BinMethod::Bayesian)
+            .expect("Bayesian histogram should succeed for large dataset");
 
         // Should complete in reasonable time and produce valid result
         assert!(hist.bins.len() >= 2);

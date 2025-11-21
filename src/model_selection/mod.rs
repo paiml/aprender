@@ -70,13 +70,13 @@ impl CrossValidationResult {
 /// use aprender::prelude::*;
 /// use aprender::model_selection::{cross_validate, KFold};
 ///
-/// let x = Matrix::from_vec(50, 1, (0..50).map(|i| i as f32).collect()).unwrap();
+/// let x = Matrix::from_vec(50, 1, (0..50).map(|i| i as f32).collect()).expect("Matrix creation should succeed with valid dimensions and data");
 /// let y = Vector::from_slice(&vec![0.0; 50]);
 ///
 /// let model = LinearRegression::new();
 /// let kfold = KFold::new(5);
 ///
-/// let results = cross_validate(&model, &x, &y, &kfold).unwrap();
+/// let results = cross_validate(&model, &x, &y, &kfold).expect("Cross-validation should succeed with valid model and data");
 /// println!("Mean R²: {:.3} ± {:.3}", results.mean(), results.std());
 /// ```
 pub fn cross_validate<E>(
@@ -147,7 +147,7 @@ fn extract_samples(
 /// use aprender::model_selection::KFold;
 /// use aprender::primitives::Matrix;
 ///
-/// let x = Matrix::from_vec(10, 2, (0..20).map(|i| i as f32).collect()).unwrap();
+/// let x = Matrix::from_vec(10, 2, (0..20).map(|i| i as f32).collect()).expect("Matrix creation should succeed with valid dimensions and data");
 /// let kfold = KFold::new(5);
 ///
 /// for (train_idx, test_idx) in kfold.split(10) {
@@ -436,7 +436,10 @@ impl GridSearchResult {
         self.scores
             .iter()
             .enumerate()
-            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
+            .max_by(|(_, a), (_, b)| {
+                a.partial_cmp(b)
+                    .expect("Scores should be valid f32 values, not NaN")
+            })
             .map(|(idx, _)| idx)
             .unwrap_or(0)
     }
@@ -532,13 +535,13 @@ fn update_best_if_improved(score: f32, alpha: f32, best_score: &mut f32, best_al
 /// let x_data: Vec<f32> = (0..50).map(|i| i as f32).collect();
 /// let y_data: Vec<f32> = x_data.iter().map(|&x| 2.0 * x + 1.0).collect();
 ///
-/// let x = Matrix::from_vec(50, 1, x_data).unwrap();
+/// let x = Matrix::from_vec(50, 1, x_data).expect("Matrix creation should succeed with valid dimensions and data");
 /// let y = Vector::from_vec(y_data);
 ///
 /// let alphas = vec![0.001, 0.01, 0.1, 1.0, 10.0];
 /// let kfold = KFold::new(5).with_random_state(42);
 ///
-/// let result = grid_search_alpha("ridge", &alphas, &x, &y, &kfold, None).unwrap();
+/// let result = grid_search_alpha("ridge", &alphas, &x, &y, &kfold, None).expect("Grid search should succeed with valid inputs");
 /// println!("Best alpha: {}, Best score: {}", result.best_alpha, result.best_score);
 /// ```
 pub fn grid_search_alpha(
@@ -590,10 +593,10 @@ pub fn grid_search_alpha(
 /// use aprender::model_selection::train_test_split;
 /// use aprender::primitives::{Matrix, Vector};
 ///
-/// let x = Matrix::from_vec(10, 2, (0..20).map(|i| i as f32).collect()).unwrap();
+/// let x = Matrix::from_vec(10, 2, (0..20).map(|i| i as f32).collect()).expect("Matrix creation should succeed with valid dimensions and data");
 /// let y = Vector::from_slice(&[0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0]);
 ///
-/// let (x_train, x_test, y_train, y_test) = train_test_split(&x, &y, 0.2, Some(42)).unwrap();
+/// let (x_train, x_test, y_train, y_test) = train_test_split(&x, &y, 0.2, Some(42)).expect("Train/test split should succeed with valid inputs");
 /// assert_eq!(x_train.shape().0, 8);  // 80% training
 /// assert_eq!(x_test.shape().0, 2);   // 20% test
 /// ```
@@ -694,7 +697,7 @@ mod tests {
                 19.0, 20.0, // sample 9
             ],
         )
-        .unwrap();
+        .expect("Matrix creation should succeed with valid test data");
         let y = Vector::from_slice(&[0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0]);
 
         // Split 80/20
@@ -712,14 +715,15 @@ mod tests {
 
     #[test]
     fn test_train_test_split_reproducibility() {
-        let x = Matrix::from_vec(10, 2, (0..20).map(|i| i as f32).collect()).unwrap();
+        let x = Matrix::from_vec(10, 2, (0..20).map(|i| i as f32).collect())
+            .expect("Matrix creation should succeed with valid test data");
         let y = Vector::from_slice(&[0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0]);
 
         // Same random state should give same split
         let (x_train1, x_test1, y_train1, y_test1) =
-            train_test_split(&x, &y, 0.2, Some(42)).unwrap();
+            train_test_split(&x, &y, 0.2, Some(42)).expect("First split should succeed");
         let (x_train2, x_test2, y_train2, y_test2) =
-            train_test_split(&x, &y, 0.2, Some(42)).unwrap();
+            train_test_split(&x, &y, 0.2, Some(42)).expect("Second split should succeed");
 
         // Verify reproducibility
         assert_eq!(x_train1.as_slice(), x_train2.as_slice());
@@ -730,12 +734,15 @@ mod tests {
 
     #[test]
     fn test_train_test_split_different_seeds() {
-        let x = Matrix::from_vec(10, 2, (0..20).map(|i| i as f32).collect()).unwrap();
+        let x = Matrix::from_vec(10, 2, (0..20).map(|i| i as f32).collect())
+            .expect("Matrix creation should succeed with valid test data");
         let y = Vector::from_slice(&[0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0]);
 
         // Different random states should give different splits
-        let (_, _, y_train1, _) = train_test_split(&x, &y, 0.2, Some(42)).unwrap();
-        let (_, _, y_train2, _) = train_test_split(&x, &y, 0.2, Some(123)).unwrap();
+        let (_, _, y_train1, _) =
+            train_test_split(&x, &y, 0.2, Some(42)).expect("Split with seed 42 should succeed");
+        let (_, _, y_train2, _) =
+            train_test_split(&x, &y, 0.2, Some(123)).expect("Split with seed 123 should succeed");
 
         // Very likely to be different with different seeds
         assert_ne!(y_train1.as_slice(), y_train2.as_slice());
@@ -743,16 +750,19 @@ mod tests {
 
     #[test]
     fn test_train_test_split_different_sizes() {
-        let x = Matrix::from_vec(100, 3, (0..300).map(|i| i as f32).collect()).unwrap();
+        let x = Matrix::from_vec(100, 3, (0..300).map(|i| i as f32).collect())
+            .expect("Matrix creation should succeed with valid test data");
         let y = Vector::from_slice(&vec![0.0; 100]);
 
         // Test 70/30 split
-        let (x_train, x_test, _, _) = train_test_split(&x, &y, 0.3, Some(42)).unwrap();
+        let (x_train, x_test, _, _) =
+            train_test_split(&x, &y, 0.3, Some(42)).expect("70/30 split should succeed");
         assert_eq!(x_train.shape().0, 70);
         assert_eq!(x_test.shape().0, 30);
 
         // Test 50/50 split
-        let (x_train, x_test, _, _) = train_test_split(&x, &y, 0.5, Some(42)).unwrap();
+        let (x_train, x_test, _, _) =
+            train_test_split(&x, &y, 0.5, Some(42)).expect("50/50 split should succeed");
         assert_eq!(x_train.shape().0, 50);
         assert_eq!(x_test.shape().0, 50);
     }
@@ -854,7 +864,8 @@ mod tests {
         let x_data: Vec<f32> = (0..50).map(|i| i as f32).collect();
         let y_data: Vec<f32> = x_data.iter().map(|&x| 2.0 * x).collect();
 
-        let x = Matrix::from_vec(50, 1, x_data).unwrap();
+        let x = Matrix::from_vec(50, 1, x_data)
+            .expect("Matrix creation should succeed with valid test data");
         let y = Vector::from_vec(y_data);
 
         let model = LinearRegression::new();
@@ -905,17 +916,20 @@ mod tests {
         let x_data: Vec<f32> = (0..30).map(|i| i as f32).collect();
         let y_data: Vec<f32> = x_data.iter().map(|&x| 3.0 * x + 1.0).collect();
 
-        let x = Matrix::from_vec(30, 1, x_data).unwrap();
+        let x = Matrix::from_vec(30, 1, x_data)
+            .expect("Matrix creation should succeed with valid test data");
         let y = Vector::from_vec(y_data);
 
         let model = LinearRegression::new();
 
         // Same random state should give same results
         let kfold1 = KFold::new(5).with_random_state(42);
-        let result1 = cross_validate(&model, &x, &y, &kfold1).unwrap();
+        let result1 =
+            cross_validate(&model, &x, &y, &kfold1).expect("First cross-validation should succeed");
 
         let kfold2 = KFold::new(5).with_random_state(42);
-        let result2 = cross_validate(&model, &x, &y, &kfold2).unwrap();
+        let result2 = cross_validate(&model, &x, &y, &kfold2)
+            .expect("Second cross-validation should succeed");
 
         assert_eq!(
             result1.scores, result2.scores,
@@ -1193,13 +1207,15 @@ mod tests {
         let x_data: Vec<f32> = (0..50).map(|i| i as f32).collect();
         let y_data: Vec<f32> = x_data.iter().map(|&x| 2.0 * x + 1.0).collect();
 
-        let x = Matrix::from_vec(50, 1, x_data).unwrap();
+        let x = Matrix::from_vec(50, 1, x_data)
+            .expect("Matrix creation should succeed with valid test data");
         let y = Vector::from_vec(y_data);
 
         let alphas = vec![0.001, 0.01, 0.1, 1.0, 10.0];
         let kfold = KFold::new(5).with_random_state(42);
 
-        let result = grid_search_alpha("ridge", &alphas, &x, &y, &kfold, None).unwrap();
+        let result = grid_search_alpha("ridge", &alphas, &x, &y, &kfold, None)
+            .expect("Grid search for ridge should succeed");
 
         assert!(alphas.contains(&result.best_alpha));
         assert!(result.best_score > 0.9);
@@ -1212,13 +1228,15 @@ mod tests {
         let x_data: Vec<f32> = (0..50).map(|i| i as f32).collect();
         let y_data: Vec<f32> = x_data.iter().map(|&x| 2.0 * x + 1.0).collect();
 
-        let x = Matrix::from_vec(50, 1, x_data).unwrap();
+        let x = Matrix::from_vec(50, 1, x_data)
+            .expect("Matrix creation should succeed with valid test data");
         let y = Vector::from_vec(y_data);
 
         let alphas = vec![0.001, 0.01, 0.1];
         let kfold = KFold::new(5).with_random_state(42);
 
-        let result = grid_search_alpha("lasso", &alphas, &x, &y, &kfold, None).unwrap();
+        let result = grid_search_alpha("lasso", &alphas, &x, &y, &kfold, None)
+            .expect("Grid search for lasso should succeed");
 
         assert!(alphas.contains(&result.best_alpha));
         assert!(result.best_score > 0.9);
@@ -1231,13 +1249,15 @@ mod tests {
         let x_data: Vec<f32> = (0..50).map(|i| i as f32).collect();
         let y_data: Vec<f32> = x_data.iter().map(|&x| 2.0 * x + 1.0).collect();
 
-        let x = Matrix::from_vec(50, 1, x_data).unwrap();
+        let x = Matrix::from_vec(50, 1, x_data)
+            .expect("Matrix creation should succeed with valid test data");
         let y = Vector::from_vec(y_data);
 
         let alphas = vec![0.001, 0.01, 0.1];
         let kfold = KFold::new(5).with_random_state(42);
 
-        let result = grid_search_alpha("elastic_net", &alphas, &x, &y, &kfold, Some(0.5)).unwrap();
+        let result = grid_search_alpha("elastic_net", &alphas, &x, &y, &kfold, Some(0.5))
+            .expect("Grid search for elastic_net should succeed");
 
         assert!(alphas.contains(&result.best_alpha));
         assert!(result.best_score > 0.9);
@@ -1259,7 +1279,8 @@ mod tests {
 
     #[test]
     fn test_grid_search_empty_alphas() {
-        let x = Matrix::from_vec(10, 1, (0..10).map(|i| i as f32).collect()).unwrap();
+        let x = Matrix::from_vec(10, 1, (0..10).map(|i| i as f32).collect())
+            .expect("Matrix creation should succeed with valid test data");
         let y = Vector::from_vec(vec![0.0; 10]);
 
         let alphas: Vec<f32> = vec![];
@@ -1267,12 +1288,15 @@ mod tests {
 
         let result = grid_search_alpha("ridge", &alphas, &x, &y, &kfold, None);
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("empty"));
+        assert!(result
+            .expect_err("Should fail with empty alphas")
+            .contains("empty"));
     }
 
     #[test]
     fn test_grid_search_invalid_model_type() {
-        let x = Matrix::from_vec(10, 1, (0..10).map(|i| i as f32).collect()).unwrap();
+        let x = Matrix::from_vec(10, 1, (0..10).map(|i| i as f32).collect())
+            .expect("Matrix creation should succeed with valid test data");
         let y = Vector::from_vec(vec![0.0; 10]);
 
         let alphas = vec![0.1, 1.0];
@@ -1280,12 +1304,15 @@ mod tests {
 
         let result = grid_search_alpha("invalid_model", &alphas, &x, &y, &kfold, None);
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Unknown model type"));
+        assert!(result
+            .expect_err("Should fail with invalid model type")
+            .contains("Unknown model type"));
     }
 
     #[test]
     fn test_grid_search_elastic_net_missing_l1_ratio() {
-        let x = Matrix::from_vec(10, 1, (0..10).map(|i| i as f32).collect()).unwrap();
+        let x = Matrix::from_vec(10, 1, (0..10).map(|i| i as f32).collect())
+            .expect("Matrix creation should succeed with valid test data");
         let y = Vector::from_vec(vec![0.0; 10]);
 
         let alphas = vec![0.1, 1.0];
@@ -1293,7 +1320,9 @@ mod tests {
 
         let result = grid_search_alpha("elastic_net", &alphas, &x, &y, &kfold, None);
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("l1_ratio required"));
+        assert!(result
+            .expect_err("Should fail with missing l1_ratio")
+            .contains("l1_ratio required"));
     }
 
     #[test]
@@ -1301,14 +1330,16 @@ mod tests {
         let x_data: Vec<f32> = (0..30).map(|i| i as f32).collect();
         let y_data: Vec<f32> = x_data.iter().map(|&x| 3.0 * x + 2.0).collect();
 
-        let x = Matrix::from_vec(30, 1, x_data).unwrap();
+        let x = Matrix::from_vec(30, 1, x_data)
+            .expect("Matrix creation should succeed with valid test data");
         let y = Vector::from_vec(y_data);
 
         // Try range of alphas - should prefer smaller for this simple problem
         let alphas = vec![0.001, 0.01, 0.1, 1.0, 10.0, 100.0];
         let kfold = KFold::new(5).with_random_state(42);
 
-        let result = grid_search_alpha("ridge", &alphas, &x, &y, &kfold, None).unwrap();
+        let result = grid_search_alpha("ridge", &alphas, &x, &y, &kfold, None)
+            .expect("Grid search should find optimal alpha");
 
         // Best alpha should be one of the smaller values (less regularization needed)
         assert!(result.best_alpha <= 1.0, "Best alpha should be <= 1.0");
@@ -1324,13 +1355,15 @@ mod tests {
 
     #[test]
     fn test_grid_search_single_alpha() {
-        let x = Matrix::from_vec(10, 1, (0..10).map(|i| i as f32).collect()).unwrap();
+        let x = Matrix::from_vec(10, 1, (0..10).map(|i| i as f32).collect())
+            .expect("Matrix creation should succeed with valid test data");
         let y = Vector::from_vec((0..10).map(|i| i as f32).collect());
 
         let alphas = vec![0.1];
         let kfold = KFold::new(3);
 
-        let result = grid_search_alpha("ridge", &alphas, &x, &y, &kfold, None).unwrap();
+        let result = grid_search_alpha("ridge", &alphas, &x, &y, &kfold, None)
+            .expect("Grid search with single alpha should succeed");
 
         assert_eq!(result.best_alpha, 0.1);
         assert_eq!(result.alphas.len(), 1);

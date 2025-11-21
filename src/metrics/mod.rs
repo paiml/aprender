@@ -160,8 +160,8 @@ pub fn rmse(y_pred: &Vector<f32>, y_true: &Vector<f32>) -> f32 {
 ///     1.0, 0.0,
 ///     0.0, 1.0,
 ///     1.0, 1.0,
-/// ]).unwrap();
-/// let centroids = Matrix::from_vec(1, 2, vec![0.5, 0.5]).unwrap();
+/// ]).expect("Matrix dimensions and data length are valid");
+/// let centroids = Matrix::from_vec(1, 2, vec![0.5, 0.5]).expect("Matrix dimensions and data length are valid");
 /// let labels = vec![0, 0, 0, 0];
 /// let score = inertia(&data, &centroids, &labels);
 /// assert!(score > 0.0);
@@ -276,7 +276,7 @@ fn silhouette_coefficient(a_i: f32, b_i: f32) -> f32 {
 ///     0.1, 0.1,
 ///     5.0, 5.0,
 ///     5.1, 5.1,
-/// ]).unwrap();
+/// ]).expect("Matrix dimensions and data length are valid");
 /// let labels = vec![0, 0, 1, 1];
 /// let score = silhouette_score(&data, &labels);
 /// assert!(score > 0.5);
@@ -392,8 +392,8 @@ mod tests {
     #[test]
     fn test_inertia() {
         // 4 points in 2 clusters
-        let data =
-            Matrix::from_vec(4, 2, vec![0.0, 0.0, 1.0, 0.0, 10.0, 10.0, 11.0, 10.0]).unwrap();
+        let data = Matrix::from_vec(4, 2, vec![0.0, 0.0, 1.0, 0.0, 10.0, 10.0, 11.0, 10.0])
+            .expect("Matrix dimensions (4x2) match data length (8)");
 
         let centroids = Matrix::from_vec(
             2,
@@ -403,7 +403,7 @@ mod tests {
                 10.5, 10.0, // cluster 1 centroid
             ],
         )
-        .unwrap();
+        .expect("Matrix dimensions (2x2) match data length (4)");
 
         let labels = vec![0, 0, 1, 1];
         let score = inertia(&data, &centroids, &labels);
@@ -419,8 +419,8 @@ mod tests {
     #[test]
     fn test_silhouette_score_good() {
         // Well-separated clusters
-        let data =
-            Matrix::from_vec(4, 2, vec![0.0, 0.0, 0.1, 0.1, 10.0, 10.0, 10.1, 10.1]).unwrap();
+        let data = Matrix::from_vec(4, 2, vec![0.0, 0.0, 0.1, 0.1, 10.0, 10.0, 10.1, 10.1])
+            .expect("Matrix dimensions (4x2) match data length (8)");
         let labels = vec![0, 0, 1, 1];
         let score = silhouette_score(&data, &labels);
         assert!(score > 0.9);
@@ -429,7 +429,8 @@ mod tests {
     #[test]
     fn test_silhouette_score_poor() {
         // Overlapping clusters
-        let data = Matrix::from_vec(4, 2, vec![0.0, 0.0, 1.0, 1.0, 0.5, 0.5, 1.5, 1.5]).unwrap();
+        let data = Matrix::from_vec(4, 2, vec![0.0, 0.0, 1.0, 1.0, 0.5, 0.5, 1.5, 1.5])
+            .expect("Matrix dimensions (4x2) match data length (8)");
         let labels = vec![0, 0, 1, 1];
         let score = silhouette_score(&data, &labels);
         // With overlapping data, silhouette should be lower
@@ -438,7 +439,8 @@ mod tests {
 
     #[test]
     fn test_silhouette_score_single_cluster() {
-        let data = Matrix::from_vec(4, 2, vec![0.0, 0.0, 1.0, 1.0, 2.0, 2.0, 3.0, 3.0]).unwrap();
+        let data = Matrix::from_vec(4, 2, vec![0.0, 0.0, 1.0, 1.0, 2.0, 2.0, 3.0, 3.0])
+            .expect("Matrix dimensions (4x2) match data length (8)");
         let labels = vec![0, 0, 0, 0];
         let score = silhouette_score(&data, &labels);
         assert!((score - 0.0).abs() < 1e-6);
@@ -446,7 +448,8 @@ mod tests {
 
     #[test]
     fn test_silhouette_score_single_sample() {
-        let data = Matrix::from_vec(1, 2, vec![0.0, 0.0]).unwrap();
+        let data = Matrix::from_vec(1, 2, vec![0.0, 0.0])
+            .expect("Matrix dimensions (1x2) match data length (2)");
         let labels = vec![0];
         let score = silhouette_score(&data, &labels);
         assert!((score - 0.0).abs() < 1e-6);
@@ -455,7 +458,8 @@ mod tests {
     #[test]
     fn test_silhouette_score_two_samples() {
         // Test with exactly 2 samples - catches n_samples < 2 → <= 2 mutation (line 288)
-        let data = Matrix::from_vec(2, 2, vec![0.0, 0.0, 10.0, 10.0]).unwrap();
+        let data = Matrix::from_vec(2, 2, vec![0.0, 0.0, 10.0, 10.0])
+            .expect("Matrix dimensions (2x2) match data length (4)");
         let labels = vec![0, 1];
         let score = silhouette_score(&data, &labels);
 
@@ -486,7 +490,7 @@ mod tests {
                 102.0, // Cluster 1, point 5
             ],
         )
-        .unwrap();
+        .expect("Matrix dimensions (6x1) match data length (6)");
         let labels = vec![0, 0, 0, 1, 1, 1];
         let score = silhouette_score(&data, &labels);
 
@@ -516,7 +520,7 @@ mod tests {
                 60.0, // Cluster 1 (distance = 10)
             ],
         )
-        .unwrap();
+        .expect("Matrix dimensions (4x1) match data length (4)");
         let labels = vec![0, 0, 1, 1];
         let score = silhouette_score(&data, &labels);
 
@@ -547,7 +551,8 @@ mod tests {
         // Test that mean intra-cluster distance uses division, not multiplication
         // Cluster 0: points at 0, 1, 2 - mean distance from each point
         // Cluster 1: points at 100, 101, 102
-        let data = Matrix::from_vec(6, 1, vec![0.0, 1.0, 2.0, 100.0, 101.0, 102.0]).unwrap();
+        let data = Matrix::from_vec(6, 1, vec![0.0, 1.0, 2.0, 100.0, 101.0, 102.0])
+            .expect("Matrix dimensions (6x1) match data length (6)");
         let labels = vec![0, 0, 0, 1, 1, 1];
         let score = silhouette_score(&data, &labels);
 
@@ -570,7 +575,8 @@ mod tests {
     fn test_silhouette_inter_cluster_distance() {
         // Test that inter-cluster distance uses subtraction in norm
         // Two clusters: one near origin, one far away
-        let data = Matrix::from_vec(4, 1, vec![0.0, 1.0, 1000.0, 1001.0]).unwrap();
+        let data = Matrix::from_vec(4, 1, vec![0.0, 1.0, 1000.0, 1001.0])
+            .expect("Matrix dimensions (4x1) match data length (4)");
         let labels = vec![0, 0, 1, 1];
         let score = silhouette_score(&data, &labels);
 
@@ -587,7 +593,8 @@ mod tests {
     fn test_silhouette_score_exact_boundary() {
         // Test boundary condition where samples < n_clusters check matters
         // With exactly 2 samples in different clusters
-        let data = Matrix::from_vec(2, 1, vec![0.0, 100.0]).unwrap();
+        let data = Matrix::from_vec(2, 1, vec![0.0, 100.0])
+            .expect("Matrix dimensions (2x1) match data length (2)");
         let labels = vec![0, 1];
         let score = silhouette_score(&data, &labels);
 
@@ -613,7 +620,7 @@ mod tests {
                 300.0, 301.0, // Cluster 3
             ],
         )
-        .unwrap();
+        .expect("Matrix dimensions (8x1) match data length (8)");
         let labels = vec![0, 0, 1, 1, 2, 2, 3, 3];
         let score = silhouette_score(&data, &labels);
 

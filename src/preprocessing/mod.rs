@@ -14,11 +14,11 @@
 //!     2.0, 200.0,
 //!     3.0, 300.0,
 //!     4.0, 400.0,
-//! ]).unwrap();
+//! ]).expect("valid matrix dimensions");
 //!
 //! // Standardize to zero mean and unit variance
 //! let mut scaler = StandardScaler::new();
-//! let scaled = scaler.fit_transform(&data).unwrap();
+//! let scaled = scaler.fit_transform(&data).expect("fit_transform should succeed");
 //!
 //! // Each column now has mean ≈ 0 and std ≈ 1
 //! assert!(scaled.get(0, 0).abs() < 2.0);
@@ -47,10 +47,10 @@ use std::path::Path;
 ///     0.0, 0.0,
 ///     1.0, 10.0,
 ///     2.0, 20.0,
-/// ]).unwrap();
+/// ]).expect("valid matrix dimensions");
 ///
 /// let mut scaler = StandardScaler::new();
-/// let scaled = scaler.fit_transform(&data).unwrap();
+/// let scaled = scaler.fit_transform(&data).expect("fit_transform should succeed");
 ///
 /// // Verify standardization
 /// let (n_rows, n_cols) = scaled.shape();
@@ -371,10 +371,10 @@ impl Transformer for StandardScaler {
 ///     0.0, 0.0,
 ///     5.0, 10.0,
 ///     10.0, 20.0,
-/// ]).unwrap();
+/// ]).expect("valid matrix dimensions");
 ///
 /// let mut scaler = MinMaxScaler::new();
-/// let scaled = scaler.fit_transform(&data).unwrap();
+/// let scaled = scaler.fit_transform(&data).expect("fit_transform should succeed");
 ///
 /// // Verify scaling to [0, 1]
 /// assert!((scaled.get(0, 0) - 0.0).abs() < 1e-6);
@@ -584,10 +584,10 @@ impl Transformer for MinMaxScaler {
 ///     4.0, 5.0, 6.0,
 ///     7.0, 8.0, 9.0,
 ///     10.0, 11.0, 12.0,
-/// ]).unwrap();
+/// ]).expect("valid matrix dimensions");
 ///
 /// let mut pca = PCA::new(2); // Reduce to 2 components
-/// let transformed = pca.fit_transform(&data).unwrap();
+/// let transformed = pca.fit_transform(&data).expect("fit_transform should succeed");
 /// assert_eq!(transformed.shape(), (4, 2));
 /// ```
 #[derive(Debug, Clone)]
@@ -835,10 +835,10 @@ impl Transformer for PCA {
 ///         10.1, 11.1, 12.1, 13.1,
 ///     ],
 /// )
-/// .unwrap();
+/// .expect("valid matrix dimensions");
 ///
 /// let mut tsne = TSNE::new(2).with_perplexity(5.0).with_n_iter(250);
-/// let embedding = tsne.fit_transform(&data).unwrap();
+/// let embedding = tsne.fit_transform(&data).expect("fit_transform should succeed");
 /// assert_eq!(embedding.shape(), (6, 2));
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1180,7 +1180,11 @@ impl Transformer for TSNE {
             panic!("Model not fitted. Call fit() first.");
         }
         // t-SNE is non-parametric, return the embedding
-        Ok(self.embedding.as_ref().unwrap().clone())
+        Ok(self
+            .embedding
+            .as_ref()
+            .expect("embedding should exist after is_fitted() check")
+            .clone())
     }
 
     fn fit_transform(&mut self, x: &Matrix<f32>) -> Result<Matrix<f32>> {
@@ -1207,10 +1211,13 @@ mod tests {
 
     #[test]
     fn test_fit_basic() {
-        let data = Matrix::from_vec(3, 2, vec![1.0, 10.0, 2.0, 20.0, 3.0, 30.0]).unwrap();
+        let data = Matrix::from_vec(3, 2, vec![1.0, 10.0, 2.0, 20.0, 3.0, 30.0])
+            .expect("valid matrix dimensions");
 
         let mut scaler = StandardScaler::new();
-        scaler.fit(&data).unwrap();
+        scaler
+            .fit(&data)
+            .expect("fit should succeed with valid data");
 
         assert!(scaler.is_fitted());
 
@@ -1228,12 +1235,16 @@ mod tests {
 
     #[test]
     fn test_transform_basic() {
-        let data = Matrix::from_vec(3, 1, vec![1.0, 2.0, 3.0]).unwrap();
+        let data = Matrix::from_vec(3, 1, vec![1.0, 2.0, 3.0]).expect("valid matrix dimensions");
 
         let mut scaler = StandardScaler::new();
-        scaler.fit(&data).unwrap();
+        scaler
+            .fit(&data)
+            .expect("fit should succeed with valid data");
 
-        let transformed = scaler.transform(&data).unwrap();
+        let transformed = scaler
+            .transform(&data)
+            .expect("transform should succeed after fit");
 
         // Mean should be 0
         let mean: f32 = (0..3).map(|i| transformed.get(i, 0)).sum::<f32>() / 3.0;
@@ -1256,11 +1267,13 @@ mod tests {
 
     #[test]
     fn test_fit_transform() {
-        let data =
-            Matrix::from_vec(4, 2, vec![1.0, 100.0, 2.0, 200.0, 3.0, 300.0, 4.0, 400.0]).unwrap();
+        let data = Matrix::from_vec(4, 2, vec![1.0, 100.0, 2.0, 200.0, 3.0, 300.0, 4.0, 400.0])
+            .expect("valid matrix dimensions");
 
         let mut scaler = StandardScaler::new();
-        let transformed = scaler.fit_transform(&data).unwrap();
+        let transformed = scaler
+            .fit_transform(&data)
+            .expect("fit_transform should succeed with valid data");
 
         // Check each column has mean ≈ 0
         for j in 0..2 {
@@ -1271,11 +1284,16 @@ mod tests {
 
     #[test]
     fn test_inverse_transform() {
-        let data = Matrix::from_vec(3, 2, vec![1.0, 10.0, 2.0, 20.0, 3.0, 30.0]).unwrap();
+        let data = Matrix::from_vec(3, 2, vec![1.0, 10.0, 2.0, 20.0, 3.0, 30.0])
+            .expect("valid matrix dimensions");
 
         let mut scaler = StandardScaler::new();
-        let transformed = scaler.fit_transform(&data).unwrap();
-        let recovered = scaler.inverse_transform(&transformed).unwrap();
+        let transformed = scaler
+            .fit_transform(&data)
+            .expect("fit_transform should succeed");
+        let recovered = scaler
+            .inverse_transform(&transformed)
+            .expect("inverse_transform should succeed");
 
         // Should recover original data
         for i in 0..3 {
@@ -1292,13 +1310,17 @@ mod tests {
 
     #[test]
     fn test_transform_new_data() {
-        let train = Matrix::from_vec(3, 1, vec![1.0, 2.0, 3.0]).unwrap();
-        let test = Matrix::from_vec(2, 1, vec![4.0, 5.0]).unwrap();
+        let train = Matrix::from_vec(3, 1, vec![1.0, 2.0, 3.0]).expect("valid matrix dimensions");
+        let test = Matrix::from_vec(2, 1, vec![4.0, 5.0]).expect("valid matrix dimensions");
 
         let mut scaler = StandardScaler::new();
-        scaler.fit(&train).unwrap();
+        scaler
+            .fit(&train)
+            .expect("fit should succeed with valid data");
 
-        let transformed = scaler.transform(&test).unwrap();
+        let transformed = scaler
+            .transform(&test)
+            .expect("transform should succeed with new data");
 
         // Test data should be transformed using train stats
         // mean=2, std=sqrt(2/3)
@@ -1314,10 +1336,12 @@ mod tests {
 
     #[test]
     fn test_without_mean() {
-        let data = Matrix::from_vec(3, 1, vec![1.0, 2.0, 3.0]).unwrap();
+        let data = Matrix::from_vec(3, 1, vec![1.0, 2.0, 3.0]).expect("valid matrix dimensions");
 
         let mut scaler = StandardScaler::new().with_mean(false);
-        let transformed = scaler.fit_transform(&data).unwrap();
+        let transformed = scaler
+            .fit_transform(&data)
+            .expect("fit_transform should succeed");
 
         // Should only scale, not center
         // Original values divided by std
@@ -1329,10 +1353,12 @@ mod tests {
 
     #[test]
     fn test_without_std() {
-        let data = Matrix::from_vec(3, 1, vec![1.0, 2.0, 3.0]).unwrap();
+        let data = Matrix::from_vec(3, 1, vec![1.0, 2.0, 3.0]).expect("valid matrix dimensions");
 
         let mut scaler = StandardScaler::new().with_std(false);
-        let transformed = scaler.fit_transform(&data).unwrap();
+        let transformed = scaler
+            .fit_transform(&data)
+            .expect("fit_transform should succeed");
 
         // Should only center, not scale
         // mean = 2.0
@@ -1344,10 +1370,13 @@ mod tests {
     #[test]
     fn test_constant_feature() {
         // Feature with zero variance
-        let data = Matrix::from_vec(3, 2, vec![1.0, 5.0, 2.0, 5.0, 3.0, 5.0]).unwrap();
+        let data = Matrix::from_vec(3, 2, vec![1.0, 5.0, 2.0, 5.0, 3.0, 5.0])
+            .expect("valid matrix dimensions");
 
         let mut scaler = StandardScaler::new();
-        let transformed = scaler.fit_transform(&data).unwrap();
+        let transformed = scaler
+            .fit_transform(&data)
+            .expect("fit_transform should succeed");
 
         // Second column has zero std, should remain centered but not scaled
         assert!((transformed.get(0, 1) - 0.0).abs() < 1e-5);
@@ -1357,35 +1386,38 @@ mod tests {
 
     #[test]
     fn test_empty_data_error() {
-        let data = Matrix::from_vec(0, 2, vec![]).unwrap();
+        let data = Matrix::from_vec(0, 2, vec![]).expect("empty matrix should be valid");
         let mut scaler = StandardScaler::new();
         assert!(scaler.fit(&data).is_err());
     }
 
     #[test]
     fn test_transform_not_fitted_error() {
-        let data = Matrix::from_vec(3, 1, vec![1.0, 2.0, 3.0]).unwrap();
+        let data = Matrix::from_vec(3, 1, vec![1.0, 2.0, 3.0]).expect("valid matrix dimensions");
         let scaler = StandardScaler::new();
         assert!(scaler.transform(&data).is_err());
     }
 
     #[test]
     fn test_dimension_mismatch_error() {
-        let train = Matrix::from_vec(3, 2, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]).unwrap();
-        let test = Matrix::from_vec(3, 3, vec![1.0; 9]).unwrap();
+        let train = Matrix::from_vec(3, 2, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+            .expect("valid matrix dimensions");
+        let test = Matrix::from_vec(3, 3, vec![1.0; 9]).expect("valid matrix dimensions");
 
         let mut scaler = StandardScaler::new();
-        scaler.fit(&train).unwrap();
+        scaler.fit(&train).expect("fit should succeed");
 
         assert!(scaler.transform(&test).is_err());
     }
 
     #[test]
     fn test_single_sample() {
-        let data = Matrix::from_vec(1, 2, vec![5.0, 10.0]).unwrap();
+        let data = Matrix::from_vec(1, 2, vec![5.0, 10.0]).expect("valid matrix dimensions");
 
         let mut scaler = StandardScaler::new();
-        scaler.fit(&data).unwrap();
+        scaler
+            .fit(&data)
+            .expect("fit should succeed with single sample");
 
         // With single sample, std is 0
         let std = scaler.std();
@@ -1393,7 +1425,7 @@ mod tests {
         assert!((std[1]).abs() < 1e-6);
 
         // Transform should center only (std is 0, no scaling)
-        let transformed = scaler.transform(&data).unwrap();
+        let transformed = scaler.transform(&data).expect("transform should succeed");
         assert!((transformed.get(0, 0)).abs() < 1e-5);
         assert!((transformed.get(0, 1)).abs() < 1e-5);
     }
@@ -1402,9 +1434,11 @@ mod tests {
     fn test_builder_chain() {
         let scaler = StandardScaler::new().with_mean(false).with_std(true);
 
-        let data = Matrix::from_vec(2, 1, vec![2.0, 4.0]).unwrap();
+        let data = Matrix::from_vec(2, 1, vec![2.0, 4.0]).expect("valid matrix dimensions");
         let mut scaler = scaler;
-        let transformed = scaler.fit_transform(&data).unwrap();
+        let transformed = scaler
+            .fit_transform(&data)
+            .expect("fit_transform should succeed");
 
         // Only scaling, no centering
         // Values: 2, 4; mean=3; std=1
@@ -1427,10 +1461,13 @@ mod tests {
 
     #[test]
     fn test_minmax_fit_basic() {
-        let data = Matrix::from_vec(3, 2, vec![1.0, 10.0, 2.0, 20.0, 3.0, 30.0]).unwrap();
+        let data = Matrix::from_vec(3, 2, vec![1.0, 10.0, 2.0, 20.0, 3.0, 30.0])
+            .expect("valid matrix dimensions");
 
         let mut scaler = MinMaxScaler::new();
-        scaler.fit(&data).unwrap();
+        scaler
+            .fit(&data)
+            .expect("fit should succeed with valid data");
 
         assert!(scaler.is_fitted());
 
@@ -1445,12 +1482,16 @@ mod tests {
 
     #[test]
     fn test_minmax_transform_basic() {
-        let data = Matrix::from_vec(3, 1, vec![0.0, 5.0, 10.0]).unwrap();
+        let data = Matrix::from_vec(3, 1, vec![0.0, 5.0, 10.0]).expect("valid matrix dimensions");
 
         let mut scaler = MinMaxScaler::new();
-        scaler.fit(&data).unwrap();
+        scaler
+            .fit(&data)
+            .expect("fit should succeed with valid data");
 
-        let transformed = scaler.transform(&data).unwrap();
+        let transformed = scaler
+            .transform(&data)
+            .expect("transform should succeed after fit");
 
         // Should scale to [0, 1]
         assert!((transformed.get(0, 0) - 0.0).abs() < 1e-6);
@@ -1460,11 +1501,13 @@ mod tests {
 
     #[test]
     fn test_minmax_fit_transform() {
-        let data =
-            Matrix::from_vec(4, 2, vec![0.0, 0.0, 10.0, 100.0, 20.0, 200.0, 30.0, 300.0]).unwrap();
+        let data = Matrix::from_vec(4, 2, vec![0.0, 0.0, 10.0, 100.0, 20.0, 200.0, 30.0, 300.0])
+            .expect("valid matrix dimensions");
 
         let mut scaler = MinMaxScaler::new();
-        let transformed = scaler.fit_transform(&data).unwrap();
+        let transformed = scaler
+            .fit_transform(&data)
+            .expect("fit_transform should succeed with valid data");
 
         // Check min is 0 and max is 1 for each column
         for j in 0..2 {
@@ -1490,11 +1533,16 @@ mod tests {
 
     #[test]
     fn test_minmax_inverse_transform() {
-        let data = Matrix::from_vec(3, 2, vec![1.0, 10.0, 2.0, 20.0, 3.0, 30.0]).unwrap();
+        let data = Matrix::from_vec(3, 2, vec![1.0, 10.0, 2.0, 20.0, 3.0, 30.0])
+            .expect("valid matrix dimensions");
 
         let mut scaler = MinMaxScaler::new();
-        let transformed = scaler.fit_transform(&data).unwrap();
-        let recovered = scaler.inverse_transform(&transformed).unwrap();
+        let transformed = scaler
+            .fit_transform(&data)
+            .expect("fit_transform should succeed");
+        let recovered = scaler
+            .inverse_transform(&transformed)
+            .expect("inverse_transform should succeed");
 
         // Should recover original data
         for i in 0..3 {
@@ -1511,13 +1559,17 @@ mod tests {
 
     #[test]
     fn test_minmax_transform_new_data() {
-        let train = Matrix::from_vec(3, 1, vec![0.0, 5.0, 10.0]).unwrap();
-        let test = Matrix::from_vec(2, 1, vec![15.0, -5.0]).unwrap();
+        let train = Matrix::from_vec(3, 1, vec![0.0, 5.0, 10.0]).expect("valid matrix dimensions");
+        let test = Matrix::from_vec(2, 1, vec![15.0, -5.0]).expect("valid matrix dimensions");
 
         let mut scaler = MinMaxScaler::new();
-        scaler.fit(&train).unwrap();
+        scaler
+            .fit(&train)
+            .expect("fit should succeed with valid data");
 
-        let transformed = scaler.transform(&test).unwrap();
+        let transformed = scaler
+            .transform(&test)
+            .expect("transform should succeed with new data");
 
         // 15 should map to 1.5 (beyond training range)
         // -5 should map to -0.5 (below training range)
@@ -1527,10 +1579,12 @@ mod tests {
 
     #[test]
     fn test_minmax_custom_range() {
-        let data = Matrix::from_vec(3, 1, vec![0.0, 5.0, 10.0]).unwrap();
+        let data = Matrix::from_vec(3, 1, vec![0.0, 5.0, 10.0]).expect("valid matrix dimensions");
 
         let mut scaler = MinMaxScaler::new().with_range(-1.0, 1.0);
-        let transformed = scaler.fit_transform(&data).unwrap();
+        let transformed = scaler
+            .fit_transform(&data)
+            .expect("fit_transform should succeed");
 
         // Should scale to [-1, 1]
         assert!((transformed.get(0, 0) - (-1.0)).abs() < 1e-6);
@@ -1541,10 +1595,13 @@ mod tests {
     #[test]
     fn test_minmax_constant_feature() {
         // Feature with same min and max
-        let data = Matrix::from_vec(3, 2, vec![1.0, 5.0, 2.0, 5.0, 3.0, 5.0]).unwrap();
+        let data = Matrix::from_vec(3, 2, vec![1.0, 5.0, 2.0, 5.0, 3.0, 5.0])
+            .expect("valid matrix dimensions");
 
         let mut scaler = MinMaxScaler::new();
-        let transformed = scaler.fit_transform(&data).unwrap();
+        let transformed = scaler
+            .fit_transform(&data)
+            .expect("fit_transform should succeed");
 
         // Second column is constant, should become feature_min (0)
         assert!((transformed.get(0, 1) - 0.0).abs() < 1e-5);
@@ -1554,35 +1611,38 @@ mod tests {
 
     #[test]
     fn test_minmax_empty_data_error() {
-        let data = Matrix::from_vec(0, 2, vec![]).unwrap();
+        let data = Matrix::from_vec(0, 2, vec![]).expect("empty matrix should be valid");
         let mut scaler = MinMaxScaler::new();
         assert!(scaler.fit(&data).is_err());
     }
 
     #[test]
     fn test_minmax_transform_not_fitted_error() {
-        let data = Matrix::from_vec(3, 1, vec![1.0, 2.0, 3.0]).unwrap();
+        let data = Matrix::from_vec(3, 1, vec![1.0, 2.0, 3.0]).expect("valid matrix dimensions");
         let scaler = MinMaxScaler::new();
         assert!(scaler.transform(&data).is_err());
     }
 
     #[test]
     fn test_minmax_dimension_mismatch_error() {
-        let train = Matrix::from_vec(3, 2, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]).unwrap();
-        let test = Matrix::from_vec(3, 3, vec![1.0; 9]).unwrap();
+        let train = Matrix::from_vec(3, 2, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+            .expect("valid matrix dimensions");
+        let test = Matrix::from_vec(3, 3, vec![1.0; 9]).expect("valid matrix dimensions");
 
         let mut scaler = MinMaxScaler::new();
-        scaler.fit(&train).unwrap();
+        scaler.fit(&train).expect("fit should succeed");
 
         assert!(scaler.transform(&test).is_err());
     }
 
     #[test]
     fn test_minmax_single_sample() {
-        let data = Matrix::from_vec(1, 2, vec![5.0, 10.0]).unwrap();
+        let data = Matrix::from_vec(1, 2, vec![5.0, 10.0]).expect("valid matrix dimensions");
 
         let mut scaler = MinMaxScaler::new();
-        scaler.fit(&data).unwrap();
+        scaler
+            .fit(&data)
+            .expect("fit should succeed with single sample");
 
         // With single sample, min = max = value
         let data_min = scaler.data_min();
@@ -1591,18 +1651,22 @@ mod tests {
         assert!((data_max[0] - 5.0).abs() < 1e-6);
 
         // Transform should give feature_min (0) since range is 0
-        let transformed = scaler.transform(&data).unwrap();
+        let transformed = scaler.transform(&data).expect("transform should succeed");
         assert!((transformed.get(0, 0)).abs() < 1e-5);
         assert!((transformed.get(0, 1)).abs() < 1e-5);
     }
 
     #[test]
     fn test_minmax_inverse_with_custom_range() {
-        let data = Matrix::from_vec(3, 1, vec![0.0, 5.0, 10.0]).unwrap();
+        let data = Matrix::from_vec(3, 1, vec![0.0, 5.0, 10.0]).expect("valid matrix dimensions");
 
         let mut scaler = MinMaxScaler::new().with_range(-1.0, 1.0);
-        let transformed = scaler.fit_transform(&data).unwrap();
-        let recovered = scaler.inverse_transform(&transformed).unwrap();
+        let transformed = scaler
+            .fit_transform(&data)
+            .expect("fit_transform should succeed");
+        let recovered = scaler
+            .inverse_transform(&transformed)
+            .expect("inverse_transform should succeed");
 
         for i in 0..3 {
             assert!(
@@ -1617,10 +1681,13 @@ mod tests {
     #[test]
     fn test_pca_basic_fit_transform() {
         // Simple 2D data that should reduce to 1D along diagonal
-        let data = Matrix::from_vec(4, 2, vec![1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0]).unwrap();
+        let data = Matrix::from_vec(4, 2, vec![1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0])
+            .expect("valid matrix dimensions");
 
         let mut pca = PCA::new(1);
-        let transformed = pca.fit_transform(&data).unwrap();
+        let transformed = pca
+            .fit_transform(&data)
+            .expect("fit_transform should succeed");
 
         // Should reduce to (n_samples, n_components)
         assert_eq!(transformed.shape(), (4, 1));
@@ -1637,18 +1704,18 @@ mod tests {
     #[test]
     fn test_pca_explained_variance() {
         // Data with known variance structure
-        let data =
-            Matrix::from_vec(5, 2, vec![1.0, 0.0, 2.0, 0.0, 3.0, 0.0, 4.0, 0.0, 5.0, 0.0]).unwrap();
+        let data = Matrix::from_vec(5, 2, vec![1.0, 0.0, 2.0, 0.0, 3.0, 0.0, 4.0, 0.0, 5.0, 0.0])
+            .expect("valid matrix dimensions");
 
         let mut pca = PCA::new(2);
-        pca.fit(&data).unwrap();
+        pca.fit(&data).expect("fit should succeed with valid data");
 
         let explained_var = pca
             .explained_variance()
-            .expect("Should have explained variance");
+            .expect("explained variance should exist after fit");
         let explained_ratio = pca
             .explained_variance_ratio()
-            .expect("Should have explained variance ratio");
+            .expect("explained variance ratio should exist after fit");
 
         // First component should capture all variance (second column is constant)
         assert_eq!(explained_var.len(), 2);
@@ -1678,11 +1745,15 @@ mod tests {
                 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0,
             ],
         )
-        .unwrap();
+        .expect("valid matrix dimensions");
 
         let mut pca = PCA::new(2);
-        let transformed = pca.fit_transform(&data).unwrap();
-        let reconstructed = pca.inverse_transform(&transformed).unwrap();
+        let transformed = pca
+            .fit_transform(&data)
+            .expect("fit_transform should succeed");
+        let reconstructed = pca
+            .inverse_transform(&transformed)
+            .expect("inverse_transform should succeed");
 
         // Reconstruction should be close to original (with some loss since n_components < n_features)
         assert_eq!(reconstructed.shape(), data.shape());
@@ -1703,11 +1774,16 @@ mod tests {
     #[test]
     fn test_pca_perfect_reconstruction() {
         // When n_components == n_features, reconstruction should be perfect
-        let data = Matrix::from_vec(3, 2, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]).unwrap();
+        let data = Matrix::from_vec(3, 2, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+            .expect("valid matrix dimensions");
 
         let mut pca = PCA::new(2);
-        let transformed = pca.fit_transform(&data).unwrap();
-        let reconstructed = pca.inverse_transform(&transformed).unwrap();
+        let transformed = pca
+            .fit_transform(&data)
+            .expect("fit_transform should succeed");
+        let reconstructed = pca
+            .inverse_transform(&transformed)
+            .expect("inverse_transform should succeed");
 
         // Perfect reconstruction
         for i in 0..3 {
@@ -1726,7 +1802,8 @@ mod tests {
 
     #[test]
     fn test_pca_n_components_exceeds_features() {
-        let data = Matrix::from_vec(3, 2, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]).unwrap();
+        let data = Matrix::from_vec(3, 2, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+            .expect("valid matrix dimensions");
 
         let mut pca = PCA::new(3); // More components than features
         let result = pca.fit(&data);
@@ -1736,59 +1813,72 @@ mod tests {
             "Should fail when n_components > n_features"
         );
         assert_eq!(
-            result.unwrap_err(),
+            result.expect_err("Should fail when n_components exceeds features"),
             "n_components cannot exceed number of features"
         );
     }
 
     #[test]
     fn test_pca_not_fitted_error() {
-        let data = Matrix::from_vec(3, 2, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]).unwrap();
+        let data = Matrix::from_vec(3, 2, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+            .expect("valid matrix dimensions");
 
         let pca = PCA::new(1);
         let result = pca.transform(&data);
 
         assert!(result.is_err(), "Should fail when transforming before fit");
-        assert_eq!(result.unwrap_err(), "PCA not fitted");
+        assert_eq!(
+            result.expect_err("Should fail when PCA not fitted"),
+            "PCA not fitted"
+        );
     }
 
     #[test]
     fn test_pca_dimension_mismatch() {
-        let train = Matrix::from_vec(3, 2, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]).unwrap();
-        let test = Matrix::from_vec(3, 3, vec![1.0; 9]).unwrap();
+        let train = Matrix::from_vec(3, 2, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+            .expect("valid matrix dimensions");
+        let test = Matrix::from_vec(3, 3, vec![1.0; 9]).expect("valid matrix dimensions");
 
         let mut pca = PCA::new(1);
-        pca.fit(&train).unwrap();
+        pca.fit(&train).expect("fit should succeed");
 
         let result = pca.transform(&test);
         assert!(result.is_err(), "Should fail on dimension mismatch");
-        assert_eq!(result.unwrap_err(), "Input has wrong number of features");
+        assert_eq!(
+            result.expect_err("Should fail with dimension mismatch"),
+            "Input has wrong number of features"
+        );
     }
 
     #[test]
     fn test_pca_inverse_dimension_mismatch() {
-        let train = Matrix::from_vec(3, 2, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]).unwrap();
-        let wrong_transformed = Matrix::from_vec(3, 2, vec![1.0; 6]).unwrap(); // Wrong n_components
+        let train = Matrix::from_vec(3, 2, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+            .expect("valid matrix dimensions");
+        let wrong_transformed =
+            Matrix::from_vec(3, 2, vec![1.0; 6]).expect("valid matrix dimensions");
 
         let mut pca = PCA::new(1);
-        pca.fit(&train).unwrap();
+        pca.fit(&train).expect("fit should succeed");
 
         let result = pca.inverse_transform(&wrong_transformed);
         assert!(
             result.is_err(),
             "Should fail on inverse transform dimension mismatch"
         );
-        assert_eq!(result.unwrap_err(), "Input has wrong number of components");
+        assert_eq!(
+            result.expect_err("Should fail with wrong component count"),
+            "Input has wrong number of components"
+        );
     }
 
     #[test]
     fn test_pca_components_shape() {
-        let data = Matrix::from_vec(5, 4, vec![1.0; 20]).unwrap();
+        let data = Matrix::from_vec(5, 4, vec![1.0; 20]).expect("valid matrix dimensions");
 
         let mut pca = PCA::new(2);
-        pca.fit(&data).unwrap();
+        pca.fit(&data).expect("fit should succeed with valid data");
 
-        let components = pca.components().expect("Should have components");
+        let components = pca.components().expect("components should exist after fit");
         // Components should be (n_components, n_features)
         assert_eq!(components.shape(), (2, 4));
     }
@@ -1804,12 +1894,14 @@ mod tests {
                 9.0, 12.0,
             ],
         )
-        .unwrap();
+        .expect("valid matrix dimensions");
 
         let mut pca = PCA::new(3);
-        pca.fit(&data).unwrap();
+        pca.fit(&data).expect("fit should succeed with valid data");
 
-        let explained_var = pca.explained_variance().unwrap();
+        let explained_var = pca
+            .explained_variance()
+            .expect("explained variance should exist after fit");
 
         // Sum of explained variance should be close to total variance
         let total_explained: f32 = explained_var.iter().sum();
@@ -1854,12 +1946,12 @@ mod tests {
                 24.0, 32.0, 9.0, 18.0, 27.0, 36.0, 10.0, 20.0, 30.0, 40.0,
             ],
         )
-        .unwrap();
+        .expect("valid matrix dimensions");
 
         let mut pca = PCA::new(3);
-        pca.fit(&data).unwrap();
+        pca.fit(&data).expect("fit should succeed with valid data");
 
-        let components = pca.components().unwrap();
+        let components = pca.components().expect("components should exist after fit");
         let (_n_components, n_features) = components.shape();
 
         // Check that all pairs of components are orthogonal (dot product ≈ 0)
@@ -1918,10 +2010,10 @@ mod tests {
                 11.1, 12.1,
             ],
         )
-        .unwrap();
+        .expect("valid matrix dimensions");
 
         let mut tsne = TSNE::new(2);
-        tsne.fit(&data).unwrap();
+        tsne.fit(&data).expect("fit should succeed with valid data");
         assert!(tsne.is_fitted());
     }
 
@@ -1934,12 +2026,14 @@ mod tests {
                 1.0, 2.0, 3.0, 2.0, 3.0, 4.0, 10.0, 11.0, 12.0, 11.0, 12.0, 13.0,
             ],
         )
-        .unwrap();
+        .expect("valid matrix dimensions");
 
         let mut tsne = TSNE::new(2);
-        tsne.fit(&data).unwrap();
+        tsne.fit(&data).expect("fit should succeed with valid data");
 
-        let transformed = tsne.transform(&data).unwrap();
+        let transformed = tsne
+            .transform(&data)
+            .expect("transform should succeed after fit");
         assert_eq!(transformed.shape(), (4, 2));
     }
 
@@ -1952,10 +2046,12 @@ mod tests {
                 1.0, 2.0, 3.0, 2.0, 3.0, 4.0, 10.0, 11.0, 12.0, 11.0, 12.0, 13.0,
             ],
         )
-        .unwrap();
+        .expect("valid matrix dimensions");
 
         let mut tsne = TSNE::new(2);
-        let transformed = tsne.fit_transform(&data).unwrap();
+        let transformed = tsne
+            .fit_transform(&data)
+            .expect("fit_transform should succeed");
         assert_eq!(transformed.shape(), (4, 2));
         assert!(tsne.is_fitted());
     }
@@ -1970,16 +2066,20 @@ mod tests {
                 6.2, 7.2, 10.0, 11.0, 12.0, 10.1, 11.1, 12.1, 10.2, 11.2, 12.2, 10.3, 11.3, 12.3,
             ],
         )
-        .unwrap();
+        .expect("valid matrix dimensions");
 
         // Low perplexity (more local)
         let mut tsne_low = TSNE::new(2).with_perplexity(2.0);
-        let result_low = tsne_low.fit_transform(&data).unwrap();
+        let result_low = tsne_low
+            .fit_transform(&data)
+            .expect("fit_transform should succeed with low perplexity");
         assert_eq!(result_low.shape(), (10, 2));
 
         // High perplexity (more global)
         let mut tsne_high = TSNE::new(2).with_perplexity(5.0);
-        let result_high = tsne_high.fit_transform(&data).unwrap();
+        let result_high = tsne_high
+            .fit_transform(&data)
+            .expect("fit_transform should succeed with high perplexity");
         assert_eq!(result_high.shape(), (10, 2));
     }
 
@@ -1993,10 +2093,12 @@ mod tests {
                 12.0, 13.0, 14.0,
             ],
         )
-        .unwrap();
+        .expect("valid matrix dimensions");
 
         let mut tsne = TSNE::new(2).with_learning_rate(100.0).with_n_iter(100);
-        let transformed = tsne.fit_transform(&data).unwrap();
+        let transformed = tsne
+            .fit_transform(&data)
+            .expect("fit_transform should succeed with custom learning rate");
         assert_eq!(transformed.shape(), (6, 2));
     }
 
@@ -2010,16 +2112,20 @@ mod tests {
                 11.0, 12.0, 13.0, 14.0, 15.0,
             ],
         )
-        .unwrap();
+        .expect("valid matrix dimensions");
 
         // 2D embedding
         let mut tsne_2d = TSNE::new(2);
-        let result_2d = tsne_2d.fit_transform(&data).unwrap();
+        let result_2d = tsne_2d
+            .fit_transform(&data)
+            .expect("fit_transform should succeed for 2D");
         assert_eq!(result_2d.shape(), (4, 2));
 
         // 3D embedding
         let mut tsne_3d = TSNE::new(3);
-        let result_3d = tsne_3d.fit_transform(&data).unwrap();
+        let result_3d = tsne_3d
+            .fit_transform(&data)
+            .expect("fit_transform should succeed for 3D");
         assert_eq!(result_3d.shape(), (4, 3));
     }
 
@@ -2033,13 +2139,17 @@ mod tests {
                 12.0, 13.0, 14.0,
             ],
         )
-        .unwrap();
+        .expect("valid matrix dimensions");
 
         let mut tsne1 = TSNE::new(2).with_random_state(42);
-        let result1 = tsne1.fit_transform(&data).unwrap();
+        let result1 = tsne1
+            .fit_transform(&data)
+            .expect("fit_transform should succeed");
 
         let mut tsne2 = TSNE::new(2).with_random_state(42);
-        let result2 = tsne2.fit_transform(&data).unwrap();
+        let result2 = tsne2
+            .fit_transform(&data)
+            .expect("fit_transform should succeed");
 
         // Results should be identical with same random state
         for i in 0..6 {
@@ -2055,7 +2165,8 @@ mod tests {
     #[test]
     #[should_panic(expected = "Model not fitted")]
     fn test_tsne_transform_before_fit() {
-        let data = Matrix::from_vec(2, 2, vec![1.0, 2.0, 3.0, 4.0]).unwrap();
+        let data =
+            Matrix::from_vec(2, 2, vec![1.0, 2.0, 3.0, 4.0]).expect("valid matrix dimensions");
         let tsne = TSNE::new(2);
         let _ = tsne.transform(&data);
     }
@@ -2076,13 +2187,15 @@ mod tests {
                 15.0, 15.0, 15.0, 15.1, 15.1, 15.1,
             ],
         )
-        .unwrap();
+        .expect("valid matrix dimensions");
 
         let mut tsne = TSNE::new(2)
             .with_random_state(42)
             .with_n_iter(500)
             .with_perplexity(3.0);
-        let embedding = tsne.fit_transform(&data).unwrap();
+        let embedding = tsne
+            .fit_transform(&data)
+            .expect("fit_transform should succeed");
 
         // Points within same cluster should be close in embedding
         // Cluster 1: points 0, 1
@@ -2116,10 +2229,12 @@ mod tests {
                 7.0, 8.0, 7.0, 8.0, 9.0, 8.0, 9.0, 10.0, 9.0, 10.0, 11.0, 10.0, 11.0, 12.0,
             ],
         )
-        .unwrap();
+        .expect("valid matrix dimensions");
 
         let mut tsne = TSNE::new(2).with_perplexity(3.0);
-        let result = tsne.fit_transform(&data).unwrap();
+        let result = tsne
+            .fit_transform(&data)
+            .expect("fit_transform should succeed with minimum samples");
         assert_eq!(result.shape(), (10, 2));
     }
 
@@ -2133,10 +2248,12 @@ mod tests {
                 12.0, 13.0, 14.0,
             ],
         )
-        .unwrap();
+        .expect("valid matrix dimensions");
 
         let mut tsne = TSNE::new(2).with_n_iter(100);
-        let embedding = tsne.fit_transform(&data).unwrap();
+        let embedding = tsne
+            .fit_transform(&data)
+            .expect("fit_transform should succeed");
 
         // All embedding values should be finite
         for i in 0..6 {

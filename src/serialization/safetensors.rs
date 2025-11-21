@@ -233,20 +233,24 @@ mod tests {
         tensors.insert("bias".to_string(), (vec![0.5], vec![1]));
 
         // Save
-        save_safetensors(path, tensors.clone()).unwrap();
+        save_safetensors(path, tensors.clone())
+            .expect("Failed to save test tensors to SafeTensors format");
 
         // Load
-        let (metadata, raw_data) = load_safetensors(path).unwrap();
+        let (metadata, raw_data) =
+            load_safetensors(path).expect("Failed to load test SafeTensors file");
 
         // Verify metadata
         assert!(metadata.contains_key("weights"));
         assert!(metadata.contains_key("bias"));
 
         // Extract and verify tensors
-        let weights = extract_tensor(&raw_data, &metadata["weights"]).unwrap();
+        let weights = extract_tensor(&raw_data, &metadata["weights"])
+            .expect("Failed to extract weights tensor from raw data");
         assert_eq!(weights, vec![1.0, 2.0, 3.0]);
 
-        let bias = extract_tensor(&raw_data, &metadata["bias"]).unwrap();
+        let bias = extract_tensor(&raw_data, &metadata["bias"])
+            .expect("Failed to extract bias tensor from raw data");
         assert_eq!(bias, vec![0.5]);
 
         // Cleanup
@@ -260,13 +264,17 @@ mod tests {
         let mut tensors = BTreeMap::new();
         tensors.insert("test".to_string(), (vec![1.0], vec![1]));
 
-        save_safetensors(path, tensors).unwrap();
+        save_safetensors(path, tensors)
+            .expect("Failed to save test tensor for header format verification");
 
         // Read and verify header
-        let bytes = fs::read(path).unwrap();
+        let bytes =
+            fs::read(path).expect("Failed to read test SafeTensors file for header verification");
         assert!(bytes.len() >= 8, "File must have at least 8-byte header");
 
-        let header_bytes: [u8; 8] = bytes[0..8].try_into().unwrap();
+        let header_bytes: [u8; 8] = bytes[0..8]
+            .try_into()
+            .expect("Failed to convert first 8 bytes to header array (file has at least 8 bytes)");
         let metadata_len = u64::from_le_bytes(header_bytes);
         assert!(metadata_len > 0, "Metadata length must be > 0");
 
@@ -278,11 +286,13 @@ mod tests {
         let path = "/tmp/test_corrupted_header.safetensors";
 
         // Write invalid file (< 8 bytes)
-        fs::write(path, [1, 2, 3]).unwrap();
+        fs::write(path, [1, 2, 3]).expect("Failed to write test file with corrupted header");
 
         let result = load_safetensors(path);
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("8 bytes"));
+        assert!(result
+            .expect_err("Should fail with corrupted header size check")
+            .contains("8 bytes"));
 
         fs::remove_file(path).ok();
     }
@@ -291,7 +301,7 @@ mod tests {
     fn test_load_safetensors_nonexistent_file() {
         let result = load_safetensors("/tmp/nonexistent_file_xyz.safetensors");
         assert!(result.is_err());
-        let err = result.unwrap_err();
+        let err = result.expect_err("Should fail when file not found");
         assert!(
             err.contains("No such file") || err.contains("not found"),
             "Error should mention file not found: {}",
@@ -310,7 +320,9 @@ mod tests {
 
         let result = extract_tensor(&raw_data, &meta);
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("exceeds data size"));
+        assert!(result
+            .expect_err("Should fail when tensor offset exceeds data size")
+            .contains("exceeds data size"));
     }
 
     #[test]
@@ -325,12 +337,13 @@ mod tests {
         tensors.insert("m_middle".to_string(), (vec![2.0], vec![1]));
 
         // Save twice
-        save_safetensors(path1, tensors.clone()).unwrap();
-        save_safetensors(path2, tensors).unwrap();
+        save_safetensors(path1, tensors.clone())
+            .expect("Failed to save first deterministic test file");
+        save_safetensors(path2, tensors).expect("Failed to save second deterministic test file");
 
         // Files should be identical (deterministic)
-        let bytes1 = fs::read(path1).unwrap();
-        let bytes2 = fs::read(path2).unwrap();
+        let bytes1 = fs::read(path1).expect("Failed to read first deterministic test file");
+        let bytes2 = fs::read(path2).expect("Failed to read second deterministic test file");
         assert_eq!(bytes1, bytes2, "Serialization must be deterministic");
 
         fs::remove_file(path1).ok();

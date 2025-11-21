@@ -21,7 +21,7 @@ use crate::primitives::{Matrix, Vector};
 ///     ("x".to_string(), Vector::from_slice(&[1.0, 2.0, 3.0])),
 ///     ("y".to_string(), Vector::from_slice(&[4.0, 5.0, 6.0])),
 /// ];
-/// let df = DataFrame::new(columns).unwrap();
+/// let df = DataFrame::new(columns).expect("DataFrame creation should succeed with valid columns");
 /// assert_eq!(df.shape(), (3, 2));
 /// ```
 #[derive(Debug, Clone)]
@@ -266,7 +266,8 @@ mod tests {
             ("b".to_string(), Vector::from_slice(&[4.0, 5.0, 6.0])),
             ("c".to_string(), Vector::from_slice(&[7.0, 8.0, 9.0])),
         ];
-        DataFrame::new(columns).unwrap()
+        DataFrame::new(columns)
+            .expect("sample_df should create valid DataFrame with equal-length columns")
     }
 
     #[test]
@@ -320,7 +321,9 @@ mod tests {
     #[test]
     fn test_column() {
         let df = sample_df();
-        let col = df.column("b").unwrap();
+        let col = df
+            .column("b")
+            .expect("column 'b' should exist in sample_df");
         assert_eq!(col.len(), 3);
         assert!((col[0] - 4.0).abs() < 1e-6);
         assert!((col[1] - 5.0).abs() < 1e-6);
@@ -337,7 +340,9 @@ mod tests {
     #[test]
     fn test_select() {
         let df = sample_df();
-        let selected = df.select(&["a", "c"]).unwrap();
+        let selected = df
+            .select(&["a", "c"])
+            .expect("select should succeed with existing column names");
         assert_eq!(selected.shape(), (3, 2));
         assert_eq!(selected.column_names(), vec!["a", "c"]);
     }
@@ -359,7 +364,9 @@ mod tests {
     #[test]
     fn test_row() {
         let df = sample_df();
-        let row = df.row(1).unwrap();
+        let row = df
+            .row(1)
+            .expect("row index 1 should be valid for 3-row DataFrame");
         assert_eq!(row.len(), 3);
         assert!((row[0] - 2.0).abs() < 1e-6);
         assert!((row[1] - 5.0).abs() < 1e-6);
@@ -394,10 +401,13 @@ mod tests {
     fn test_add_column() {
         let mut df = sample_df();
         let new_col = Vector::from_slice(&[10.0, 11.0, 12.0]);
-        df.add_column("d".to_string(), new_col).unwrap();
+        df.add_column("d".to_string(), new_col)
+            .expect("add_column should succeed with matching length");
 
         assert_eq!(df.n_cols(), 4);
-        let col = df.column("d").unwrap();
+        let col = df
+            .column("d")
+            .expect("column 'd' should exist after add_column");
         assert!((col[0] - 10.0).abs() < 1e-6);
     }
 
@@ -428,7 +438,8 @@ mod tests {
     #[test]
     fn test_drop_column() {
         let mut df = sample_df();
-        df.drop_column("b").unwrap();
+        df.drop_column("b")
+            .expect("drop_column should succeed for existing column 'b'");
 
         assert_eq!(df.n_cols(), 2);
         assert!(df.column("b").is_err());
@@ -444,7 +455,8 @@ mod tests {
     #[test]
     fn test_drop_last_column_error() {
         let columns = vec![("a".to_string(), Vector::from_slice(&[1.0, 2.0]))];
-        let mut df = DataFrame::new(columns).unwrap();
+        let mut df = DataFrame::new(columns)
+            .expect("DataFrame creation should succeed with single valid column");
         let result = df.drop_column("a");
         assert!(result.is_err());
     }
@@ -455,7 +467,8 @@ mod tests {
             "x".to_string(),
             Vector::from_slice(&[1.0, 2.0, 3.0, 4.0, 5.0]),
         )];
-        let df = DataFrame::new(columns).unwrap();
+        let df = DataFrame::new(columns)
+            .expect("DataFrame creation should succeed with valid 5-element column");
         let stats = df.describe();
 
         assert_eq!(stats.len(), 1);
@@ -481,10 +494,16 @@ mod tests {
     fn test_select_preserves_property() {
         // Property: select(names).column(name) == original.column(name)
         let df = sample_df();
-        let selected = df.select(&["a", "c"]).unwrap();
+        let selected = df
+            .select(&["a", "c"])
+            .expect("select should succeed with existing columns");
 
-        let orig_a = df.column("a").unwrap();
-        let sel_a = selected.column("a").unwrap();
+        let orig_a = df
+            .column("a")
+            .expect("column 'a' should exist in original DataFrame");
+        let sel_a = selected
+            .column("a")
+            .expect("column 'a' should exist in selected DataFrame");
 
         assert_eq!(orig_a.len(), sel_a.len());
         for i in 0..orig_a.len() {
@@ -496,7 +515,9 @@ mod tests {
     fn test_to_matrix_column_count() {
         // Property: to_matrix().n_cols() == n_selected_columns
         let df = sample_df();
-        let selected = df.select(&["a", "b"]).unwrap();
+        let selected = df
+            .select(&["a", "b"])
+            .expect("select should succeed with existing columns 'a' and 'b'");
         let matrix = selected.to_matrix();
         assert_eq!(matrix.n_cols(), 2);
     }
@@ -506,7 +527,8 @@ mod tests {
         // Test median calculation for even-length arrays
         // Median of [1, 2, 3, 4] = (2 + 3) / 2 = 2.5
         let columns = vec![("x".to_string(), Vector::from_slice(&[1.0, 2.0, 3.0, 4.0]))];
-        let df = DataFrame::new(columns).unwrap();
+        let df = DataFrame::new(columns)
+            .expect("DataFrame creation should succeed with valid 4-element column");
         let stats = df.describe();
 
         // This catches mutations in:
@@ -526,7 +548,8 @@ mod tests {
         // Test median calculation for odd-length arrays
         // Median of [1, 2, 3] = 2.0 (middle element)
         let columns = vec![("x".to_string(), Vector::from_slice(&[1.0, 2.0, 3.0]))];
-        let df = DataFrame::new(columns).unwrap();
+        let df = DataFrame::new(columns)
+            .expect("DataFrame creation should succeed with valid 3-element column");
         let stats = df.describe();
 
         // For odd length, median = sorted[len / 2] = sorted[1] = 2.0
@@ -542,7 +565,8 @@ mod tests {
         // Test median with exactly 2 elements
         // Median of [10, 20] = (10 + 20) / 2 = 15
         let columns = vec![("x".to_string(), Vector::from_slice(&[10.0, 20.0]))];
-        let df = DataFrame::new(columns).unwrap();
+        let df = DataFrame::new(columns)
+            .expect("DataFrame creation should succeed with valid 2-element column");
         let stats = df.describe();
 
         // This catches mutations in median averaging
@@ -559,7 +583,8 @@ mod tests {
         // Using values where wrong operations give different results
         // [2, 4, 6, 8]: median = (4 + 6) / 2 = 5.0
         let columns = vec![("x".to_string(), Vector::from_slice(&[2.0, 4.0, 6.0, 8.0]))];
-        let df = DataFrame::new(columns).unwrap();
+        let df = DataFrame::new(columns)
+            .expect("DataFrame creation should succeed with valid 4-element column");
         let stats = df.describe();
 
         // If + becomes - in median sum: (4 - 6) / 2 = -1
@@ -590,7 +615,8 @@ mod tests {
             "x".to_string(),
             Vector::from_slice(&[5.0, 1.0, 3.0, 2.0, 4.0]),
         )];
-        let df = DataFrame::new(columns).unwrap();
+        let df = DataFrame::new(columns)
+            .expect("DataFrame creation should succeed with valid 5-element unsorted column");
         let stats = df.describe();
 
         assert!(
@@ -610,7 +636,8 @@ mod tests {
             "x".to_string(),
             Vector::from_slice(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]),
         )];
-        let df = DataFrame::new(columns).unwrap();
+        let df = DataFrame::new(columns)
+            .expect("DataFrame creation should succeed with valid 6-element column");
         let stats = df.describe();
 
         assert!(
