@@ -3446,10 +3446,7 @@ mod tests {
         let has_low = (c0 - 1.0).abs() < 1.0 || (c1 - 1.0).abs() < 1.0;
         let has_high = (c0 - 11.0).abs() < 1.0 || (c1 - 11.0).abs() < 1.0;
 
-        assert!(
-            has_low,
-            "Should have centroid near 1.0, got {c0} and {c1}"
-        );
+        assert!(has_low, "Should have centroid near 1.0, got {c0} and {c1}");
         assert!(
             has_high,
             "Should have centroid near 11.0, got {c0} and {c1}"

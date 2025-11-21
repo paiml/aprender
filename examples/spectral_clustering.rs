@@ -40,9 +40,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Verify clustering
     let cluster_0_points = labels.iter().filter(|&&l| l == 0).count();
     let cluster_1_points = labels.iter().filter(|&&l| l == 1).count();
-    println!(
-        "Cluster 0: {cluster_0_points} points, Cluster 1: {cluster_1_points} points\n"
-    );
+    println!("Cluster 0: {cluster_0_points} points, Cluster 1: {cluster_1_points} points\n");
 
     // Example 2: K-NN Affinity for graph-based clustering
     println!("--- Example 2: K-NN Affinity ---");

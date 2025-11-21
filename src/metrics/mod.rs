@@ -560,10 +560,7 @@ mod tests {
             score > 0.9,
             "Should have high silhouette for well-separated clusters, got {score}"
         );
-        assert!(
-            score <= 1.0,
-            "Silhouette score must be <= 1.0, got {score}"
-        );
+        assert!(score <= 1.0, "Silhouette score must be <= 1.0, got {score}");
     }
 
     #[test]

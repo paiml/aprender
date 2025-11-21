@@ -3717,8 +3717,7 @@ mod tests {
     fn test_regression_tree_max_depth_limits_complexity() {
         let x = Matrix::from_vec(8, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0])
             .expect("Matrix creation should succeed in tests");
-        let y =
-            Vector::from_slice(&[1.0, 4.0, 9.0, 16.0, 25.0, 36.0, 49.0, 64.0]);
+        let y = Vector::from_slice(&[1.0, 4.0, 9.0, 16.0, 25.0, 36.0, 49.0, 64.0]);
 
         // Shallow tree
         let mut tree_shallow = DecisionTreeRegressor::new().with_max_depth(1);
@@ -3741,10 +3740,7 @@ mod tests {
             .as_ref()
             .expect("tree should exist after fit")
             .depth();
-        assert!(
-            depth_deep <= 5,
-            "Deep tree depth {depth_deep} exceeds max"
-        );
+        assert!(depth_deep <= 5, "Deep tree depth {depth_deep} exceeds max");
 
         // Deeper tree should fit better
         let r2_shallow = tree_shallow.score(&x, &y);
@@ -3868,8 +3864,7 @@ mod tests {
     fn test_regression_tree_min_samples_leaf() {
         let x = Matrix::from_vec(8, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0])
             .expect("Matrix creation should succeed in tests");
-        let y =
-            Vector::from_slice(&[1.0, 4.0, 9.0, 16.0, 25.0, 36.0, 49.0, 64.0]);
+        let y = Vector::from_slice(&[1.0, 4.0, 9.0, 16.0, 25.0, 36.0, 49.0, 64.0]);
 
         // Tree with min_samples_leaf=3 should ensure leaves have at least 3 samples
         let mut tree = DecisionTreeRegressor::new()
@@ -3941,9 +3936,7 @@ mod tests {
             vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0],
         )
         .expect("Matrix creation should succeed in tests");
-        let y = Vector::from_slice(&[
-            3.0, 5.0, 7.0, 9.0, 11.0, 13.0, 15.0, 17.0, 19.0, 21.0,
-        ]);
+        let y = Vector::from_slice(&[3.0, 5.0, 7.0, 9.0, 11.0, 13.0, 15.0, 17.0, 19.0, 21.0]);
 
         let mut rf = RandomForestRegressor::new(10).with_max_depth(5);
         rf.fit(&x, &y).expect("fit should succeed");
@@ -3962,8 +3955,7 @@ mod tests {
         // Non-linear data: y = x²
         let x = Matrix::from_vec(8, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0])
             .expect("Matrix creation should succeed in tests");
-        let y =
-            Vector::from_slice(&[1.0, 4.0, 9.0, 16.0, 25.0, 36.0, 49.0, 64.0]);
+        let y = Vector::from_slice(&[1.0, 4.0, 9.0, 16.0, 25.0, 36.0, 49.0, 64.0]);
 
         // Train RF (with fixed random state for reproducibility)
         let mut rf = RandomForestRegressor::new(20)
@@ -4012,9 +4004,7 @@ mod tests {
             vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0],
         )
         .expect("Matrix creation should succeed in tests");
-        let y = Vector::from_slice(&[
-            1.0, 4.0, 9.0, 16.0, 25.0, 36.0, 49.0, 64.0, 81.0, 100.0,
-        ]);
+        let y = Vector::from_slice(&[1.0, 4.0, 9.0, 16.0, 25.0, 36.0, 49.0, 64.0, 81.0, 100.0]);
 
         // Few trees
         let mut rf_few = RandomForestRegressor::new(5).with_max_depth(4);
@@ -4132,9 +4122,7 @@ mod tests {
             vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0],
         )
         .expect("Matrix creation should succeed in tests");
-        let y = Vector::from_slice(&[
-            2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0, 20.0,
-        ]);
+        let y = Vector::from_slice(&[2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0, 20.0]);
 
         // Train two forests with same random state
         let mut rf1 = RandomForestRegressor::new(10)
@@ -4209,9 +4197,7 @@ mod tests {
             vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0],
         )
         .expect("Matrix creation should succeed in tests");
-        let y = Vector::from_slice(&[
-            1.0, 4.0, 9.0, 16.0, 25.0, 36.0, 49.0, 64.0, 81.0, 100.0,
-        ]); // y = x²
+        let y = Vector::from_slice(&[1.0, 4.0, 9.0, 16.0, 25.0, 36.0, 49.0, 64.0, 81.0, 100.0]); // y = x²
 
         // Train RF (with fixed random state for reproducibility)
         let mut rf = RandomForestRegressor::new(30)
@@ -4476,9 +4462,7 @@ mod tests {
             ],
         )
         .expect("Matrix creation should succeed in tests");
-        let y = Vector::from_slice(&[
-            3.0, 4.0, 5.0, 6.0, 5.0, 7.0, 6.0, 8.0, 8.0, 9.0, 9.0, 10.0,
-        ]);
+        let y = Vector::from_slice(&[3.0, 4.0, 5.0, 6.0, 5.0, 7.0, 6.0, 8.0, 8.0, 9.0, 9.0, 10.0]);
 
         let mut rf = RandomForestRegressor::new(20).with_random_state(42);
         rf.fit(&x, &y).expect("fit should succeed");

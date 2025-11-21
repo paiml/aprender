@@ -1521,10 +1521,7 @@ mod tests {
                 }
             }
             assert!(min_val.abs() < 1e-5, "Column {j} min should be ~0");
-            assert!(
-                (max_val - 1.0).abs() < 1e-5,
-                "Column {j} max should be ~1"
-            );
+            assert!((max_val - 1.0).abs() < 1e-5, "Column {j} max should be ~1");
         }
     }
 

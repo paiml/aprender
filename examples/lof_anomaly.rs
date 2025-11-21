@@ -180,9 +180,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("\nIsolation Forest (global isolation-based):");
     println!("  Handles varying density: partial");
-    println!(
-        "  Detected {iforest_anomalies} outliers in mixed-density data"
-    );
+    println!("  Detected {iforest_anomalies} outliers in mixed-density data");
 
     println!("\nKey difference:");
     println!("  LOF: Compares density locally → better for varying densities");

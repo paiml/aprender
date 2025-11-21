@@ -1226,11 +1226,13 @@ mod tests {
         let comm1_nodes: Vec<_> = communities
             .iter()
             .find(|c| c.contains(&0))
-            .expect("node 0 should be assigned to a community").clone();
+            .expect("node 0 should be assigned to a community")
+            .clone();
         let comm2_nodes: Vec<_> = communities
             .iter()
             .find(|c| c.contains(&3))
-            .expect("node 3 should be assigned to a community").clone();
+            .expect("node 3 should be assigned to a community")
+            .clone();
 
         assert!(comm1_nodes.contains(&0));
         assert!(comm1_nodes.contains(&1));
