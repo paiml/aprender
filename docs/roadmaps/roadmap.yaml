@@ -476,3 +476,18 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
+- id: GH-28
+  github_issue: null
+  item_type: task
+  title: 'New task: GH-28'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-21T12:42:05.362403072+00:00
+  updated: 2025-11-21T12:46:42.641483587+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
