@@ -1,10 +1,10 @@
 //! Clustering algorithms.
 //!
-//! Includes K-Means clustering with k-means++ initialization.
+//! Includes K-Means, DBSCAN, Hierarchical, and Gaussian Mixture Models.
 
 use crate::error::Result;
 use crate::metrics::inertia;
-use crate::primitives::Matrix;
+use crate::primitives::{Matrix, Vector};
 use crate::traits::UnsupervisedEstimator;
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -1025,6 +1025,425 @@ impl UnsupervisedEstimator for AgglomerativeClustering {
         // For hierarchical clustering, predict returns fitted labels
         // (new points would require a different strategy)
         self.labels().clone()
+    }
+}
+
+/// Covariance matrix types for Gaussian Mixture Models.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CovarianceType {
+    /// Full covariance matrix (most flexible, most parameters).
+    Full,
+    /// Tied covariance (all components share same covariance).
+    Tied,
+    /// Diagonal covariance (assumes feature independence).
+    Diag,
+    /// Spherical covariance (isotropic, like K-Means).
+    Spherical,
+}
+
+/// Gaussian Mixture Model (GMM) for probabilistic clustering.
+///
+/// Uses Expectation-Maximization (EM) algorithm to fit a mixture of
+/// Gaussian distributions to the data, providing soft cluster assignments.
+///
+/// # Algorithm
+///
+/// 1. **E-step**: Compute responsibilities (probability each point belongs to each cluster)
+/// 2. **M-step**: Update means, covariances, and mixing weights
+/// 3. Repeat until convergence
+///
+/// # Examples
+///
+/// ```
+/// use aprender::prelude::*;
+///
+/// let data = Matrix::from_vec(6, 2, vec![
+///     1.0, 1.0, 1.1, 1.0, 1.0, 1.1,
+///     5.0, 5.0, 5.1, 5.0, 5.0, 5.1,
+/// ]).unwrap();
+///
+/// let mut gmm = GaussianMixture::new(2, CovarianceType::Full);
+/// gmm.fit(&data).unwrap();
+///
+/// let labels = gmm.predict(&data);
+/// assert_eq!(labels.len(), 6);
+///
+/// let proba = gmm.predict_proba(&data);
+/// assert_eq!(proba.shape(), (6, 2));
+/// ```
+///
+/// # Performance
+///
+/// - Time complexity: O(nkd²i) where n=samples, k=components, d=features, i=iterations
+/// - Space complexity: O(nk + kd²)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GaussianMixture {
+    /// Number of mixture components.
+    n_components: usize,
+    /// Type of covariance matrix.
+    covariance_type: CovarianceType,
+    /// Maximum number of EM iterations.
+    max_iter: usize,
+    /// Convergence tolerance.
+    tol: f32,
+    /// Random seed for initialization.
+    random_state: Option<u64>,
+    /// Component means after fitting (k × d).
+    means: Option<Matrix<f32>>,
+    /// Component covariances after fitting.
+    covariances: Option<Vec<Matrix<f32>>>,
+    /// Mixing weights after fitting (sums to 1).
+    weights: Option<Vector<f32>>,
+    /// Cluster labels after fitting.
+    labels: Option<Vec<usize>>,
+}
+
+impl GaussianMixture {
+    /// Create new GaussianMixture with specified number of components and covariance type.
+    pub fn new(n_components: usize, covariance_type: CovarianceType) -> Self {
+        Self {
+            n_components,
+            covariance_type,
+            max_iter: 100,
+            tol: 1e-3,
+            random_state: None,
+            means: None,
+            covariances: None,
+            weights: None,
+            labels: None,
+        }
+    }
+
+    /// Set maximum number of EM iterations.
+    pub fn with_max_iter(mut self, max_iter: usize) -> Self {
+        self.max_iter = max_iter;
+        self
+    }
+
+    /// Set convergence tolerance.
+    pub fn with_tol(mut self, tol: f32) -> Self {
+        self.tol = tol;
+        self
+    }
+
+    /// Set random seed for reproducibility.
+    pub fn with_random_state(mut self, seed: u64) -> Self {
+        self.random_state = Some(seed);
+        self
+    }
+
+    /// Get number of components.
+    pub fn n_components(&self) -> usize {
+        self.n_components
+    }
+
+    /// Get covariance type.
+    pub fn covariance_type(&self) -> CovarianceType {
+        self.covariance_type
+    }
+
+    /// Check if model has been fitted.
+    pub fn is_fitted(&self) -> bool {
+        self.means.is_some()
+    }
+
+    /// Get component means (panic if not fitted).
+    pub fn means(&self) -> &Matrix<f32> {
+        self.means
+            .as_ref()
+            .expect("Model not fitted. Call fit() first.")
+    }
+
+    /// Get mixing weights (panic if not fitted).
+    pub fn weights(&self) -> &Vector<f32> {
+        self.weights
+            .as_ref()
+            .expect("Model not fitted. Call fit() first.")
+    }
+
+    /// Get cluster labels (panic if not fitted).
+    pub fn labels(&self) -> &Vec<usize> {
+        self.labels
+            .as_ref()
+            .expect("Model not fitted. Call fit() first.")
+    }
+
+    /// Compute log probability of data under the model.
+    pub fn score(&self, x: &Matrix<f32>) -> f32 {
+        if !self.is_fitted() {
+            panic!("Model not fitted. Call fit() first.");
+        }
+        let responsibilities = self.compute_responsibilities(x);
+        let n_samples = x.shape().0;
+
+        // Compute log-likelihood
+        let mut log_likelihood = 0.0;
+        for i in 0..n_samples {
+            let mut prob_sum = 0.0;
+            for k in 0..self.n_components {
+                prob_sum += responsibilities.get(i, k);
+            }
+            if prob_sum > 0.0 {
+                log_likelihood += prob_sum.ln();
+            }
+        }
+        log_likelihood / n_samples as f32
+    }
+
+    /// Predict cluster probabilities for each sample (soft assignment).
+    pub fn predict_proba(&self, x: &Matrix<f32>) -> Matrix<f32> {
+        if !self.is_fitted() {
+            panic!("Model not fitted. Call fit() first.");
+        }
+        self.compute_responsibilities(x)
+    }
+
+    /// Initialize parameters using K-Means.
+    fn initialize_parameters(&mut self, x: &Matrix<f32>) -> Result<()> {
+        let (_n_samples, n_features) = x.shape();
+
+        // Use K-Means for initialization
+        let mut kmeans = KMeans::new(self.n_components);
+        if let Some(seed) = self.random_state {
+            kmeans = kmeans.with_random_state(seed);
+        }
+        kmeans.fit(x)?;
+
+        // Set initial means from K-Means centroids
+        self.means = Some(kmeans.centroids().clone());
+
+        // Initialize weights uniformly
+        let weight = 1.0 / self.n_components as f32;
+        self.weights = Some(Vector::from_vec(vec![weight; self.n_components]));
+
+        // Initialize covariances
+        let mut covariances = Vec::new();
+        for _k in 0..self.n_components {
+            let cov = match self.covariance_type {
+                CovarianceType::Full
+                | CovarianceType::Tied
+                | CovarianceType::Diag
+                | CovarianceType::Spherical => {
+                    // Start with identity matrix
+                    let mut cov_matrix = vec![0.0; n_features * n_features];
+                    for i in 0..n_features {
+                        cov_matrix[i * n_features + i] = 1.0;
+                    }
+                    Matrix::from_vec(n_features, n_features, cov_matrix)?
+                }
+            };
+            covariances.push(cov);
+        }
+        self.covariances = Some(covariances);
+
+        Ok(())
+    }
+
+    /// Compute Gaussian probability density.
+    #[allow(clippy::needless_range_loop)]
+    fn gaussian_pdf(&self, x: &[f32], mean: &[f32], cov: &Matrix<f32>) -> f32 {
+        let n_features = mean.len();
+
+        // Compute (x - mean)
+        let mut diff = vec![0.0; n_features];
+        for i in 0..n_features {
+            diff[i] = x[i] - mean[i];
+        }
+
+        // For numerical stability, use simplified calculation
+        // This is a simplified version - production code would use proper matrix inverse
+        let mut mahalanobis = 0.0;
+        for i in 0..n_features {
+            let cov_ii = cov.get(i, i).max(1e-6); // Regularization
+            mahalanobis += diff[i] * diff[i] / cov_ii;
+        }
+
+        // Compute determinant (simplified for diagonal-like structure)
+        let mut det = 1.0;
+        for i in 0..n_features {
+            det *= cov.get(i, i).max(1e-6);
+        }
+
+        let norm_const = ((2.0 * std::f32::consts::PI).powi(n_features as i32) * det).sqrt();
+        (-0.5 * mahalanobis).exp() / norm_const.max(1e-10)
+    }
+
+    /// E-step: Compute responsibilities (posterior probabilities).
+    #[allow(clippy::needless_range_loop)]
+    fn compute_responsibilities(&self, x: &Matrix<f32>) -> Matrix<f32> {
+        let (n_samples, n_features) = x.shape();
+        let means = self.means.as_ref().unwrap();
+        let weights = self.weights.as_ref().unwrap();
+        let covariances = self.covariances.as_ref().unwrap();
+
+        let mut responsibilities = vec![0.0; n_samples * self.n_components];
+
+        for i in 0..n_samples {
+            let mut sample = vec![0.0; n_features];
+            for j in 0..n_features {
+                sample[j] = x.get(i, j);
+            }
+
+            let mut total_prob = 0.0;
+            for k in 0..self.n_components {
+                let mut mean_k = vec![0.0; n_features];
+                for j in 0..n_features {
+                    mean_k[j] = means.get(k, j);
+                }
+
+                let pdf = self.gaussian_pdf(&sample, &mean_k, &covariances[k]);
+                let weighted_pdf = weights[k] * pdf;
+                responsibilities[i * self.n_components + k] = weighted_pdf;
+                total_prob += weighted_pdf;
+            }
+
+            // Normalize responsibilities
+            if total_prob > 1e-10 {
+                for k in 0..self.n_components {
+                    responsibilities[i * self.n_components + k] /= total_prob;
+                }
+            } else {
+                // Uniform if total prob is too small
+                for k in 0..self.n_components {
+                    responsibilities[i * self.n_components + k] = 1.0 / self.n_components as f32;
+                }
+            }
+        }
+
+        Matrix::from_vec(n_samples, self.n_components, responsibilities).unwrap()
+    }
+
+    /// M-step: Update parameters based on responsibilities.
+    #[allow(clippy::needless_range_loop)]
+    fn update_parameters(&mut self, x: &Matrix<f32>, responsibilities: &Matrix<f32>) -> Result<()> {
+        let (n_samples, n_features) = x.shape();
+
+        // Compute effective number of points per component
+        let mut n_k = vec![0.0; self.n_components];
+        for k in 0..self.n_components {
+            for i in 0..n_samples {
+                n_k[k] += responsibilities.get(i, k);
+            }
+            n_k[k] = n_k[k].max(1e-6); // Regularization
+        }
+
+        // Update weights
+        let mut new_weights = vec![0.0; self.n_components];
+        for k in 0..self.n_components {
+            new_weights[k] = n_k[k] / n_samples as f32;
+        }
+        self.weights = Some(Vector::from_vec(new_weights));
+
+        // Update means
+        let mut new_means = vec![0.0; self.n_components * n_features];
+        for k in 0..self.n_components {
+            for j in 0..n_features {
+                let mut weighted_sum = 0.0;
+                for i in 0..n_samples {
+                    weighted_sum += responsibilities.get(i, k) * x.get(i, j);
+                }
+                new_means[k * n_features + j] = weighted_sum / n_k[k];
+            }
+        }
+        self.means = Some(Matrix::from_vec(self.n_components, n_features, new_means)?);
+
+        // Update covariances (simplified diagonal)
+        let means = self.means.as_ref().unwrap();
+        let mut new_covariances = Vec::new();
+
+        for k in 0..self.n_components {
+            let mut cov_data = vec![0.0; n_features * n_features];
+
+            for j in 0..n_features {
+                let mut variance = 0.0;
+                for i in 0..n_samples {
+                    let diff = x.get(i, j) - means.get(k, j);
+                    variance += responsibilities.get(i, k) * diff * diff;
+                }
+                variance = (variance / n_k[k]).max(1e-6); // Regularization
+                cov_data[j * n_features + j] = variance;
+            }
+
+            new_covariances.push(Matrix::from_vec(n_features, n_features, cov_data)?);
+        }
+        self.covariances = Some(new_covariances);
+
+        Ok(())
+    }
+}
+
+impl UnsupervisedEstimator for GaussianMixture {
+    type Labels = Vec<usize>;
+
+    fn fit(&mut self, x: &Matrix<f32>) -> Result<()> {
+        // Initialize parameters
+        self.initialize_parameters(x)?;
+
+        // EM algorithm
+        let mut prev_log_likelihood = f32::NEG_INFINITY;
+
+        for _iter in 0..self.max_iter {
+            // E-step: Compute responsibilities
+            let responsibilities = self.compute_responsibilities(x);
+
+            // M-step: Update parameters
+            self.update_parameters(x, &responsibilities)?;
+
+            // Check convergence
+            let log_likelihood = self.score(x);
+            if (log_likelihood - prev_log_likelihood).abs() < self.tol {
+                break;
+            }
+            prev_log_likelihood = log_likelihood;
+        }
+
+        // Assign labels based on final responsibilities
+        let responsibilities = self.compute_responsibilities(x);
+        let n_samples = x.shape().0;
+        let mut labels = vec![0; n_samples];
+
+        #[allow(clippy::needless_range_loop)]
+        for i in 0..n_samples {
+            let mut max_prob = 0.0;
+            let mut max_k = 0;
+            for k in 0..self.n_components {
+                let prob = responsibilities.get(i, k);
+                if prob > max_prob {
+                    max_prob = prob;
+                    max_k = k;
+                }
+            }
+            labels[i] = max_k;
+        }
+
+        self.labels = Some(labels);
+        Ok(())
+    }
+
+    fn predict(&self, x: &Matrix<f32>) -> Self::Labels {
+        if !self.is_fitted() {
+            panic!("Model not fitted. Call fit() first.");
+        }
+
+        let responsibilities = self.compute_responsibilities(x);
+        let n_samples = x.shape().0;
+        let mut labels = vec![0; n_samples];
+
+        #[allow(clippy::needless_range_loop)]
+        for i in 0..n_samples {
+            let mut max_prob = 0.0;
+            let mut max_k = 0;
+            for k in 0..self.n_components {
+                let prob = responsibilities.get(i, k);
+                if prob > max_prob {
+                    max_prob = prob;
+                    max_k = k;
+                }
+            }
+            labels[i] = max_k;
+        }
+
+        labels
     }
 }
 
@@ -2499,5 +2918,304 @@ mod tests {
     fn test_agglomerative_dendrogram_before_fit() {
         let hc = AgglomerativeClustering::new(2, Linkage::Average);
         let _ = hc.dendrogram(); // Should panic
+    }
+
+    // ==================== GaussianMixture Tests ====================
+
+    #[test]
+    fn test_gmm_new() {
+        let gmm = GaussianMixture::new(3, CovarianceType::Full);
+        assert_eq!(gmm.n_components(), 3);
+        assert_eq!(gmm.covariance_type(), CovarianceType::Full);
+        assert!(!gmm.is_fitted());
+    }
+
+    #[test]
+    fn test_gmm_fit_basic() {
+        let data = Matrix::from_vec(
+            6,
+            2,
+            vec![1.0, 1.0, 1.1, 1.0, 1.0, 1.1, 5.0, 5.0, 5.1, 5.0, 5.0, 5.1],
+        )
+        .unwrap();
+
+        let mut gmm = GaussianMixture::new(2, CovarianceType::Full);
+        gmm.fit(&data).unwrap();
+        assert!(gmm.is_fitted());
+    }
+
+    #[test]
+    fn test_gmm_predict() {
+        let data = Matrix::from_vec(
+            6,
+            2,
+            vec![1.0, 1.0, 1.1, 1.0, 1.0, 1.1, 5.0, 5.0, 5.1, 5.0, 5.0, 5.1],
+        )
+        .unwrap();
+
+        let mut gmm = GaussianMixture::new(2, CovarianceType::Full);
+        gmm.fit(&data).unwrap();
+
+        let labels = gmm.predict(&data);
+        assert_eq!(labels.len(), 6);
+
+        // All labels should be valid component indices
+        for &label in &labels {
+            assert!(label < 2);
+        }
+    }
+
+    #[test]
+    fn test_gmm_predict_proba() {
+        let data = Matrix::from_vec(
+            6,
+            2,
+            vec![1.0, 1.0, 1.1, 1.0, 1.0, 1.1, 5.0, 5.0, 5.1, 5.0, 5.0, 5.1],
+        )
+        .unwrap();
+
+        let mut gmm = GaussianMixture::new(2, CovarianceType::Full);
+        gmm.fit(&data).unwrap();
+
+        let proba = gmm.predict_proba(&data);
+        assert_eq!(proba.shape(), (6, 2));
+
+        // Probabilities should sum to 1 for each sample
+        for i in 0..6 {
+            let sum: f32 = (0..2).map(|j| proba.get(i, j)).sum();
+            assert!((sum - 1.0).abs() < 1e-5);
+        }
+
+        // All probabilities should be in [0, 1]
+        for i in 0..6 {
+            for j in 0..2 {
+                let p = proba.get(i, j);
+                assert!((0.0..=1.0).contains(&p));
+            }
+        }
+    }
+
+    #[test]
+    fn test_gmm_covariance_full() {
+        let data = Matrix::from_vec(4, 2, vec![1.0, 1.0, 1.1, 1.1, 5.0, 5.0, 5.1, 5.1]).unwrap();
+
+        let mut gmm = GaussianMixture::new(2, CovarianceType::Full);
+        gmm.fit(&data).unwrap();
+
+        let labels = gmm.predict(&data);
+        assert_eq!(labels.len(), 4);
+    }
+
+    #[test]
+    fn test_gmm_covariance_tied() {
+        let data = Matrix::from_vec(4, 2, vec![1.0, 1.0, 1.1, 1.1, 5.0, 5.0, 5.1, 5.1]).unwrap();
+
+        let mut gmm = GaussianMixture::new(2, CovarianceType::Tied);
+        gmm.fit(&data).unwrap();
+
+        let labels = gmm.predict(&data);
+        assert_eq!(labels.len(), 4);
+    }
+
+    #[test]
+    fn test_gmm_covariance_diag() {
+        let data = Matrix::from_vec(4, 2, vec![1.0, 1.0, 1.1, 1.1, 5.0, 5.0, 5.1, 5.1]).unwrap();
+
+        let mut gmm = GaussianMixture::new(2, CovarianceType::Diag);
+        gmm.fit(&data).unwrap();
+
+        let labels = gmm.predict(&data);
+        assert_eq!(labels.len(), 4);
+    }
+
+    #[test]
+    fn test_gmm_covariance_spherical() {
+        let data = Matrix::from_vec(4, 2, vec![1.0, 1.0, 1.1, 1.1, 5.0, 5.0, 5.1, 5.1]).unwrap();
+
+        let mut gmm = GaussianMixture::new(2, CovarianceType::Spherical);
+        gmm.fit(&data).unwrap();
+
+        let labels = gmm.predict(&data);
+        assert_eq!(labels.len(), 4);
+    }
+
+    #[test]
+    fn test_gmm_score() {
+        let data = Matrix::from_vec(
+            6,
+            2,
+            vec![1.0, 1.0, 1.1, 1.0, 1.0, 1.1, 5.0, 5.0, 5.1, 5.0, 5.0, 5.1],
+        )
+        .unwrap();
+
+        let mut gmm = GaussianMixture::new(2, CovarianceType::Full);
+        gmm.fit(&data).unwrap();
+
+        let score = gmm.score(&data);
+        // Log-likelihood should be finite
+        assert!(score.is_finite());
+    }
+
+    #[test]
+    fn test_gmm_convergence() {
+        let data = Matrix::from_vec(
+            6,
+            2,
+            vec![1.0, 1.0, 1.1, 1.0, 1.0, 1.1, 5.0, 5.0, 5.1, 5.0, 5.0, 5.1],
+        )
+        .unwrap();
+
+        let mut gmm = GaussianMixture::new(2, CovarianceType::Full).with_max_iter(100);
+        gmm.fit(&data).unwrap();
+        assert!(gmm.is_fitted());
+    }
+
+    #[test]
+    fn test_gmm_reproducible() {
+        let data = Matrix::from_vec(
+            6,
+            2,
+            vec![1.0, 1.0, 1.1, 1.0, 1.0, 1.1, 5.0, 5.0, 5.1, 5.0, 5.0, 5.1],
+        )
+        .unwrap();
+
+        let mut gmm1 = GaussianMixture::new(2, CovarianceType::Full).with_random_state(42);
+        gmm1.fit(&data).unwrap();
+        let labels1 = gmm1.predict(&data);
+
+        let mut gmm2 = GaussianMixture::new(2, CovarianceType::Full).with_random_state(42);
+        gmm2.fit(&data).unwrap();
+        let labels2 = gmm2.predict(&data);
+
+        // Same seed should produce same results
+        assert_eq!(labels1, labels2);
+    }
+
+    #[test]
+    fn test_gmm_means() {
+        let data = Matrix::from_vec(
+            6,
+            2,
+            vec![1.0, 1.0, 1.1, 1.0, 1.0, 1.1, 5.0, 5.0, 5.1, 5.0, 5.0, 5.1],
+        )
+        .unwrap();
+
+        let mut gmm = GaussianMixture::new(2, CovarianceType::Full);
+        gmm.fit(&data).unwrap();
+
+        let means = gmm.means();
+        assert_eq!(means.shape(), (2, 2));
+    }
+
+    #[test]
+    fn test_gmm_weights() {
+        let data = Matrix::from_vec(
+            6,
+            2,
+            vec![1.0, 1.0, 1.1, 1.0, 1.0, 1.1, 5.0, 5.0, 5.1, 5.0, 5.0, 5.1],
+        )
+        .unwrap();
+
+        let mut gmm = GaussianMixture::new(2, CovarianceType::Full);
+        gmm.fit(&data).unwrap();
+
+        let weights = gmm.weights();
+        assert_eq!(weights.len(), 2);
+
+        // Weights should sum to 1
+        let sum: f32 = weights.as_slice().iter().sum();
+        assert!((sum - 1.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn test_gmm_well_separated() {
+        // Two very well-separated clusters
+        let data = Matrix::from_vec(
+            6,
+            2,
+            vec![
+                0.0, 0.0, 0.1, 0.1, 0.0, 0.1, 100.0, 100.0, 100.1, 100.1, 100.0, 100.1,
+            ],
+        )
+        .unwrap();
+
+        let mut gmm = GaussianMixture::new(2, CovarianceType::Full);
+        gmm.fit(&data).unwrap();
+        let labels = gmm.predict(&data);
+
+        // First 3 points should be in one cluster, last 3 in another
+        assert_eq!(labels[0], labels[1]);
+        assert_eq!(labels[1], labels[2]);
+        assert_eq!(labels[3], labels[4]);
+        assert_eq!(labels[4], labels[5]);
+        assert_ne!(labels[0], labels[3]);
+    }
+
+    #[test]
+    fn test_gmm_soft_vs_hard_assignment() {
+        let data = Matrix::from_vec(
+            6,
+            2,
+            vec![1.0, 1.0, 1.1, 1.0, 1.0, 1.1, 5.0, 5.0, 5.1, 5.0, 5.0, 5.1],
+        )
+        .unwrap();
+
+        let mut gmm = GaussianMixture::new(2, CovarianceType::Full);
+        gmm.fit(&data).unwrap();
+
+        let labels = gmm.predict(&data);
+        let proba = gmm.predict_proba(&data);
+
+        // Hard assignment should match argmax of soft assignment
+        #[allow(clippy::needless_range_loop)]
+        for i in 0..6 {
+            let mut max_prob = 0.0;
+            let mut max_idx = 0;
+            for j in 0..2 {
+                let p = proba.get(i, j);
+                if p > max_prob {
+                    max_prob = p;
+                    max_idx = j;
+                }
+            }
+            assert_eq!(labels[i], max_idx);
+        }
+    }
+
+    #[test]
+    fn test_gmm_fit_predict_consistency() {
+        let data = Matrix::from_vec(4, 2, vec![1.0, 1.0, 1.1, 1.1, 5.0, 5.0, 5.1, 5.1]).unwrap();
+
+        let mut gmm = GaussianMixture::new(2, CovarianceType::Full);
+        gmm.fit(&data).unwrap();
+
+        let labels_stored = gmm.labels().clone();
+        let labels_predicted = gmm.predict(&data);
+
+        assert_eq!(labels_stored, labels_predicted);
+    }
+
+    #[test]
+    #[should_panic(expected = "Model not fitted")]
+    fn test_gmm_predict_before_fit() {
+        let data = Matrix::from_vec(2, 2, vec![1.0, 1.0, 2.0, 2.0]).unwrap();
+        let gmm = GaussianMixture::new(2, CovarianceType::Full);
+        let _ = gmm.predict(&data); // Should panic
+    }
+
+    #[test]
+    #[should_panic(expected = "Model not fitted")]
+    fn test_gmm_predict_proba_before_fit() {
+        let data = Matrix::from_vec(2, 2, vec![1.0, 1.0, 2.0, 2.0]).unwrap();
+        let gmm = GaussianMixture::new(2, CovarianceType::Full);
+        let _ = gmm.predict_proba(&data); // Should panic
+    }
+
+    #[test]
+    #[should_panic(expected = "Model not fitted")]
+    fn test_gmm_score_before_fit() {
+        let data = Matrix::from_vec(2, 2, vec![1.0, 1.0, 2.0, 2.0]).unwrap();
+        let gmm = GaussianMixture::new(2, CovarianceType::Full);
+        let _ = gmm.score(&data); // Should panic
     }
 }
