@@ -136,6 +136,7 @@
 - [Case Study: Graph Social Network](./examples/graph-social-network.md)
 - [Case Study: Community Detection with Louvain](./examples/community-detection.md)
 - [Case Study: Descriptive Statistics](./examples/descriptive-statistics.md)
+- [Case Study: Bayesian Blocks Histogram](./examples/bayesian-blocks-histogram.md)
 - [Case Study: PCA Iris](./examples/pca-iris.md)
 - [Case Study: Isolation Forest Anomaly Detection](./examples/isolation-forest-anomaly.md)
 - [Case Study: Local Outlier Factor (LOF)](./examples/lof-anomaly.md)
