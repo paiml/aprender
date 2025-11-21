@@ -69,7 +69,7 @@ Implemented complete Apriori algorithm (~400 lines):
 
 **Key Algorithm Steps:**
 
-```rust
+```text
 1. Find frequent 1-itemsets (items with support >= min_support)
 2. For k = 2, 3, 4, ...:
    a. Generate candidate k-itemsets from (k-1)-itemsets
@@ -121,7 +121,7 @@ Implemented complete Apriori algorithm (~400 lines):
 ### Candidate Generation Strategy
 
 **Join step**: Combine two (k-1)-itemsets that differ by exactly one item
-```rust
+```rust,ignore
 fn generate_candidates(&self, prev_itemsets: &[(HashSet<usize>, f64)]) -> Vec<HashSet<usize>> {
     let mut candidates = Vec::new();
     for i in 0..prev_itemsets.len() {
@@ -143,7 +143,7 @@ fn generate_candidates(&self, prev_itemsets: &[(HashSet<usize>, f64)]) -> Vec<Ha
 ```
 
 **Prune step**: Remove candidates with infrequent (k-1)-subsets
-```rust
+```rust,ignore
 fn has_infrequent_subset(&self, itemset: &HashSet<usize>, prev_itemsets: &[(HashSet<usize>, f64)]) -> bool {
     for &item in itemset {
         let mut subset = itemset.clone();
@@ -169,7 +169,8 @@ fn has_infrequent_subset(&self, itemset: &HashSet<usize>, prev_itemsets: &[(Hash
 - **Lower (5-10%)**: Discovers niche patterns; slower; more results
 
 **Example**:
-```rust
+```rust,ignore
+use aprender::mining::Apriori;
 let apriori = Apriori::new().with_min_support(0.3); // 30%
 ```
 
@@ -182,7 +183,8 @@ let apriori = Apriori::new().with_min_support(0.3); // 30%
 - **Lower (30-50%)**: More exploratory insights; more rules
 
 **Example**:
-```rust
+```rust,ignore
+use aprender::mining::Apriori;
 let apriori = Apriori::new()
     .with_min_support(0.2)
     .with_min_confidence(0.7); // 70%
@@ -202,7 +204,7 @@ The example (`market_basket_apriori.rs`) demonstrates:
 8. **Cross-selling opportunities** - Sorted by lift
 
 Output excerpt:
-```
+```text
 Frequent itemsets (support >= 30%):
   [2] -> support: 90.00%  (Bread - most popular)
   [1] -> support: 70.00%  (Milk)
@@ -249,7 +251,7 @@ Association rules (confidence >= 60%):
 ## Use Cases
 
 ### 1. Retail Market Basket Analysis
-```
+```text
 Rule: {diapers} => {beer}
   Support: 8% (common enough to act on)
   Confidence: 75% (reliable pattern)
@@ -260,7 +262,7 @@ Result: 10-20% sales increase
 ```
 
 ### 2. E-commerce Recommendations
-```
+```text
 Rule: {laptop} => {laptop bag}
   Support: 12%
   Confidence: 68%
@@ -271,7 +273,7 @@ Result: Higher average order value
 ```
 
 ### 3. Medical Diagnosis Support
-```
+```text
 Rule: {fever, cough} => {flu}
   Support: 15%
   Confidence: 82%
@@ -282,7 +284,7 @@ Result: Earlier diagnosis
 ```
 
 ### 4. Web Analytics
-```
+```text
 Rule: {homepage, product_page} => {cart}
   Support: 6%
   Confidence: 45%
@@ -326,7 +328,7 @@ Result: Increased checkout rate
 **Problem**: Generate all non-empty proper subsets as antecedents.
 **Solution**: Bit masking to generate power set in O(2^k) where k is itemset size (usually < 5).
 
-```rust
+```rust,ignore
 fn generate_subsets(&self, items: &[usize]) -> Vec<Vec<usize>> {
     let mut subsets = Vec::new();
     let n = items.len();
@@ -348,7 +350,7 @@ fn generate_subsets(&self, items: &[usize]) -> Vec<Vec<usize>> {
 **Problem**: Need to sort itemsets (HashSet) for display.
 **Solution**: Convert to Vec, sort descending by support using partial_cmp.
 
-```rust
+```rust,ignore
 self.frequent_itemsets.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
 self.rules.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap());
 ```
