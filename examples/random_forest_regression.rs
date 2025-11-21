@@ -291,7 +291,66 @@ fn main() {
         );
     }
 
-    println!("\n=== Part 7: Out-of-Bag (OOB) Error Estimation ===\n");
+    println!("\n=== Part 7: Feature Importance ===\n");
+
+    // Train model with all features to see their relative importance
+    let mut rf_importance = RandomForestRegressor::new(50)
+        .with_max_depth(8)
+        .with_random_state(42);
+    rf_importance.fit(&x_train, &y_train).unwrap();
+
+    let importances = rf_importance.feature_importances();
+
+    if let Some(imps) = importances {
+        println!("Feature Importances:");
+        let feature_names = ["sqft", "bedrooms", "bathrooms", "age"];
+        println!(
+            "{:>12} {:>12} {:>12}",
+            "Feature", "Importance", "Percentage"
+        );
+        println!("{}", "-".repeat(38));
+
+        for (i, &imp) in imps.iter().enumerate() {
+            println!(
+                "{:>12} {:>12.4} {:>11.1}%",
+                feature_names[i],
+                imp,
+                imp * 100.0
+            );
+        }
+
+        // Identify most important feature
+        let max_idx = imps
+            .iter()
+            .enumerate()
+            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
+            .map(|(idx, _)| idx)
+            .unwrap();
+
+        println!(
+            "\n  → Most important: {} ({:.1}%)",
+            feature_names[max_idx],
+            imps[max_idx] * 100.0
+        );
+
+        // Verify they sum to 1.0
+        let sum: f32 = imps.iter().sum();
+        println!("  → Importances sum to: {:.3} ✓", sum);
+    }
+
+    println!("\nWhat is Feature Importance?");
+    println!("  • Measures how much each feature contributes to predictions");
+    println!("  • Based on mean decrease in impurity across all trees");
+    println!("  • Normalized to sum to 1.0");
+    println!("  • Higher values = more important features");
+
+    println!("\nPractical Use Cases:");
+    println!("  ✅ Feature selection: Drop low-importance features");
+    println!("  ✅ Domain insights: Understand what drives prices");
+    println!("  ✅ Model debugging: Verify expected features are important");
+    println!("  ✅ Explainability: Show stakeholders what matters");
+
+    println!("\n=== Part 8: Out-of-Bag (OOB) Error Estimation ===\n");
 
     // Train model with OOB evaluation
     let mut rf_oob = RandomForestRegressor::new(50)
@@ -330,6 +389,7 @@ fn main() {
     println!("   • No feature scaling required");
     println!("   • Good default hyperparameters (minimal tuning)");
     println!("   • Reproducible with random_state");
+    println!("   • Feature importance for interpretability");
     println!("   • OOB error estimation provides free validation");
     println!("\n✅ When to use Random Forest Regression:");
     println!("   • Non-linear relationships in data");
