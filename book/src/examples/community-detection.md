@@ -30,7 +30,7 @@ Created 16 comprehensive tests:
 Implemented two core algorithms:
 
 **1. Modularity Computation** (~130 lines):
-```rust
+```rust,ignore
 pub fn modularity(&self, communities: &[Vec<NodeId>]) -> f64 {
     // Q = (1/2m) Σ[A_ij - k_i*k_j/2m] δ(c_i, c_j)
     // - Build community membership map
@@ -42,7 +42,7 @@ pub fn modularity(&self, communities: &[Vec<NodeId>]) -> f64 {
 ```
 
 **2. Louvain Algorithm** (~140 lines):
-```rust
+```rust,ignore
 pub fn louvain(&self) -> Vec<Vec<NodeId>> {
     // Initialize: each node in own community
     // While improved:
@@ -54,7 +54,7 @@ pub fn louvain(&self) -> Vec<Vec<NodeId>> {
 ```
 
 **Key helper**:
-```rust
+```rust,ignore
 fn modularity_gain(&self, node, from_comm, to_comm, node_to_comm) -> f64 {
     // ΔQ = (k_i_to - k_i_from)/m - k_i*(Σ_to - Σ_from)/(2m²)
 }

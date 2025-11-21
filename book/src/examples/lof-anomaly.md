@@ -107,18 +107,18 @@ Implemented complete LOF algorithm (352 lines):
 - Distance matrix and k-NN storage
 
 **Reachability Distance:**
-```
+```text
 reach_dist(A, B) = max(dist(A, B), k_dist(B))
 ```
 Where k_dist(B) is distance to B's k-th neighbor.
 
 **Local Reachability Density:**
-```
+```text
 LRD(A) = k / Σ_i reach_dist(A, neighbor_i)
 ```
 
 **LOF Score:**
-```
+```text
 LOF(A) = (Σ_i LRD(neighbor_i)) / (k * LRD(A))
 ```
 

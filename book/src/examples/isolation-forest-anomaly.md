@@ -121,7 +121,7 @@ Implemented complete Isolation Forest (387 lines):
 - t = n_estimators, m = max_samples, d = features
 
 **Average Path Length (c function):**
-```
+```text
 c(n) = 2H(n-1) - 2(n-1)/n
 where H(n) is harmonic number ≈ ln(n) + 0.5772
 ```
