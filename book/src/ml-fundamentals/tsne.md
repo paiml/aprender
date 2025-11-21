@@ -15,14 +15,14 @@ t-SNE preserves local structure by:
 
 Compute conditional probabilities using Gaussian kernel:
 
-```
+```text
 P(j|i) = exp(-||x_i - x_j||² / (2σ_i²)) / Σ_k exp(-||x_i - x_k||² / (2σ_i²))
 ```
 
 Where σ_i is chosen such that the perplexity equals a target value.
 
 **Perplexity** controls the effective number of neighbors:
-```
+```text
 Perplexity(P_i) = 2^H(P_i)
 where H(P_i) = -Σ_j P(j|i) log₂ P(j|i)
 ```
@@ -32,26 +32,26 @@ Typical range: 5-50 (default: 30)
 ### Step 2: Symmetric Joint Probabilities
 
 Make probabilities symmetric:
-```
+```text
 P_{ij} = (P(j|i) + P(i|j)) / (2N)
 ```
 
 ### Step 3: Low-Dimensional Similarities
 
 Use Student's t-distribution (heavy-tailed) to avoid "crowding problem":
-```
+```text
 Q_{ij} = (1 + ||y_i - y_j||²)^{-1} / Σ_{k≠l} (1 + ||y_k - y_l||²)^{-1}
 ```
 
 ### Step 4: Minimize KL Divergence
 
 Minimize Kullback-Leibler divergence:
-```
+```text
 KL(P||Q) = Σ_i Σ_j P_{ij} log(P_{ij} / Q_{ij})
 ```
 
 Using gradient descent with momentum:
-```
+```text
 ∂KL/∂y_i = 4 Σ_j (P_{ij} - Q_{ij}) · (y_i - y_j) · (1 + ||y_i - y_j||²)^{-1}
 ```
 
@@ -124,7 +124,7 @@ Using gradient descent with momentum:
 
 ## Example Usage
 
-```rust
+```rust,ignore
 use aprender::prelude::*;
 
 // High-dimensional data
