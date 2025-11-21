@@ -467,8 +467,7 @@ mod tests {
         // If mutation changes < to <=, this would return 0.0
         assert!(
             score.abs() > 0.0,
-            "Score with 2 samples should be non-zero, got {}",
-            score
+            "Score with 2 samples should be non-zero, got {score}"
         );
     }
 
@@ -498,12 +497,11 @@ mod tests {
         // If arithmetic is wrong, score will be very different
         assert!(
             score > 0.9,
-            "Well-separated clusters should have high score, got {}",
-            score
+            "Well-separated clusters should have high score, got {score}"
         );
 
         // Score should be reasonable (not > 1.0 which would indicate calculation error)
-        assert!(score <= 1.0, "Score should be <= 1.0, got {}", score);
+        assert!(score <= 1.0, "Score should be <= 1.0, got {score}");
     }
 
     #[test]
@@ -529,8 +527,7 @@ mod tests {
         // If mutation returns 1.0 instead, the score would be very different
         assert!(
             score > 0.5,
-            "Score should be high for well-separated clusters, got {}",
-            score
+            "Score should be high for well-separated clusters, got {score}"
         );
     }
 
@@ -561,13 +558,11 @@ mod tests {
         // This would give absurdly large values
         assert!(
             score > 0.9,
-            "Should have high silhouette for well-separated clusters, got {}",
-            score
+            "Should have high silhouette for well-separated clusters, got {score}"
         );
         assert!(
             score <= 1.0,
-            "Silhouette score must be <= 1.0, got {}",
-            score
+            "Silhouette score must be <= 1.0, got {score}"
         );
     }
 
@@ -584,8 +579,7 @@ mod tests {
         // distances would be wrong
         assert!(
             score > 0.99,
-            "Very well-separated clusters should have score > 0.99, got {}",
-            score
+            "Very well-separated clusters should have score > 0.99, got {score}"
         );
     }
 
@@ -627,8 +621,7 @@ mod tests {
         // All clusters well-separated, should have high score
         assert!(
             score > 0.9,
-            "Well-separated multi-cluster should have high score, got {}",
-            score
+            "Well-separated multi-cluster should have high score, got {score}"
         );
     }
 }

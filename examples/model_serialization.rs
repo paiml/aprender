@@ -51,7 +51,7 @@ fn linear_regression_example() {
     // Save model
     let path = Path::new("/tmp/linear_regression.bin");
     model.save(path).expect("Failed to save model");
-    println!("  ✓ Saved to {:?}", path);
+    println!("  ✓ Saved to {path:?}");
 
     // Get file size
     let metadata = fs::metadata(path).unwrap();
@@ -59,7 +59,7 @@ fn linear_regression_example() {
 
     // Load model
     let loaded_model = LinearRegression::load(path).expect("Failed to load model");
-    println!("  ✓ Loaded from {:?}", path);
+    println!("  ✓ Loaded from {path:?}");
 
     // Verify predictions match
     let x_test = Matrix::from_vec(1, 1, vec![10.0]).unwrap();
@@ -101,7 +101,7 @@ fn kmeans_example() {
     // Save model
     let path = Path::new("/tmp/kmeans.bin");
     kmeans.save(path).expect("Failed to save model");
-    println!("  ✓ Saved to {:?}", path);
+    println!("  ✓ Saved to {path:?}");
 
     // Get file size
     let metadata = fs::metadata(path).unwrap();
@@ -109,7 +109,7 @@ fn kmeans_example() {
 
     // Load model
     let loaded_kmeans = KMeans::load(path).expect("Failed to load model");
-    println!("  ✓ Loaded from {:?}", path);
+    println!("  ✓ Loaded from {path:?}");
 
     // Verify predictions match
     let test_point = Matrix::from_vec(1, 2, vec![1.2, 1.2]).unwrap();
@@ -153,7 +153,7 @@ fn decision_tree_example() {
     // Save model
     let path = Path::new("/tmp/decision_tree.bin");
     tree.save(path).expect("Failed to save model");
-    println!("  ✓ Saved to {:?}", path);
+    println!("  ✓ Saved to {path:?}");
 
     // Get file size
     let metadata = fs::metadata(path).unwrap();
@@ -161,7 +161,7 @@ fn decision_tree_example() {
 
     // Load model
     let loaded_tree = DecisionTreeClassifier::load(path).expect("Failed to load model");
-    println!("  ✓ Loaded from {:?}", path);
+    println!("  ✓ Loaded from {path:?}");
 
     // Verify predictions match
     let test_data = Matrix::from_vec(1, 2, vec![5.2, 5.2]).unwrap();

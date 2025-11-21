@@ -62,11 +62,7 @@ fn test_scaler_save_load_roundtrip() {
             let loaded = transformed_loaded.get(i, j);
             assert!(
                 (orig - loaded).abs() < 1e-6,
-                "Transformed[{},{}] mismatch: original={}, loaded={}",
-                i,
-                j,
-                orig,
-                loaded
+                "Transformed[{i},{j}] mismatch: original={orig}, loaded={loaded}"
             );
         }
     }
@@ -134,8 +130,7 @@ fn test_scaler_save_unfitted_model_fails() {
     let error_msg = result.unwrap_err();
     assert!(
         error_msg.contains("unfitted") || error_msg.contains("fit"),
-        "Error message should mention scaler is unfitted. Got: {}",
-        error_msg
+        "Error message should mention scaler is unfitted. Got: {error_msg}"
     );
 
     // Ensure no file was created
@@ -237,7 +232,7 @@ fn test_scaler_with_mean_flag_preserved() {
         for j in 0..n_cols {
             let orig = transformed_orig.get(i, j);
             let loaded = transformed_loaded.get(i, j);
-            assert!((orig - loaded).abs() < 1e-6, "Mismatch at [{},{}]", i, j);
+            assert!((orig - loaded).abs() < 1e-6, "Mismatch at [{i},{j}]");
         }
     }
 
@@ -267,7 +262,7 @@ fn test_scaler_with_std_flag_preserved() {
         for j in 0..n_cols {
             let orig = transformed_orig.get(i, j);
             let loaded = transformed_loaded.get(i, j);
-            assert!((orig - loaded).abs() < 1e-6, "Mismatch at [{},{}]", i, j);
+            assert!((orig - loaded).abs() < 1e-6, "Mismatch at [{i},{j}]");
         }
     }
 
@@ -346,11 +341,7 @@ fn test_scaler_inverse_transform_preserved() {
             let recon = reconstructed.get(i, j);
             assert!(
                 (orig - recon).abs() < 1e-4,
-                "Reconstructed[{},{}] mismatch: original={}, reconstructed={}",
-                i,
-                j,
-                orig,
-                recon
+                "Reconstructed[{i},{j}] mismatch: original={orig}, reconstructed={recon}"
             );
         }
     }
@@ -391,9 +382,7 @@ fn test_scaler_high_dimensional_data() {
             let loaded = transformed_loaded.get(i, j);
             assert!(
                 (orig - loaded).abs() < 1e-6,
-                "High-dimensional transformation mismatch at [{},{}]",
-                i,
-                j
+                "High-dimensional transformation mismatch at [{i},{j}]"
             );
         }
     }
@@ -423,14 +412,12 @@ fn test_scaler_file_size_reasonable() {
     // - Total: < 2KB for this small scaler
     assert!(
         file_size < 2048,
-        "SafeTensors file should be compact. Got {} bytes",
-        file_size
+        "SafeTensors file should be compact. Got {file_size} bytes"
     );
 
     assert!(
         file_size > 24,
-        "SafeTensors file should contain data. Got {} bytes",
-        file_size
+        "SafeTensors file should contain data. Got {file_size} bytes"
     );
 
     // Cleanup

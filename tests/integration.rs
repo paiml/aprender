@@ -23,7 +23,7 @@ fn test_linear_regression_workflow() {
 
     // Evaluate model
     let r2 = model.score(&x, &y);
-    assert!(r2 > 0.9, "R² should be high for linear data: {}", r2);
+    assert!(r2 > 0.9, "R² should be high for linear data: {r2}");
 
     // Test on new data
     let new_x = Matrix::from_vec(1, 2, vec![6.0, 7.0]).unwrap();
@@ -67,8 +67,7 @@ fn test_kmeans_workflow() {
     let silhouette = silhouette_score(&x, &labels);
     assert!(
         silhouette > 0.5,
-        "Silhouette should be high for well-separated clusters: {}",
-        silhouette
+        "Silhouette should be high for well-separated clusters: {silhouette}"
     );
 }
 
@@ -106,7 +105,7 @@ fn test_dataframe_to_ml_workflow() {
 
     // Evaluate
     let r2 = model.score(&x, &y);
-    assert!(r2 > 0.0, "R² should be positive: {}", r2);
+    assert!(r2 > 0.0, "R² should be positive: {r2}");
 }
 
 #[test]
@@ -213,24 +212,23 @@ fn test_decision_tree_iris_classification() {
     let accuracy = tree.score(&x, &y);
     assert!(
         accuracy >= 0.9,
-        "Accuracy should be high on linearly separable Iris data: {}",
-        accuracy
+        "Accuracy should be high on linearly separable Iris data: {accuracy}"
     );
 
     // Verify predictions match expected classes
     // First 5 should be class 0
     for (i, &pred) in predictions.iter().enumerate().take(5) {
-        assert_eq!(pred, 0, "Sample {} should be class 0", i);
+        assert_eq!(pred, 0, "Sample {i} should be class 0");
     }
 
     // Next 5 should be class 1
     for (i, &pred) in predictions.iter().enumerate().skip(5).take(5) {
-        assert_eq!(pred, 1, "Sample {} should be class 1", i);
+        assert_eq!(pred, 1, "Sample {i} should be class 1");
     }
 
     // Last 5 should be class 2
     for (i, &pred) in predictions.iter().enumerate().skip(10).take(5) {
-        assert_eq!(pred, 2, "Sample {} should be class 2", i);
+        assert_eq!(pred, 2, "Sample {i} should be class 2");
     }
 
     // Test on new samples

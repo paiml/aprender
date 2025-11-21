@@ -1226,13 +1226,11 @@ mod tests {
         let comm1_nodes: Vec<_> = communities
             .iter()
             .find(|c| c.contains(&0))
-            .expect("node 0 should be assigned to a community")
-            .to_vec();
+            .expect("node 0 should be assigned to a community").clone();
         let comm2_nodes: Vec<_> = communities
             .iter()
             .find(|c| c.contains(&3))
-            .expect("node 3 should be assigned to a community")
-            .to_vec();
+            .expect("node 3 should be assigned to a community").clone();
 
         assert!(comm1_nodes.contains(&0));
         assert!(comm1_nodes.contains(&1));
@@ -1350,7 +1348,7 @@ mod tests {
         }
 
         // All 5 nodes should be assigned
-        assigned_nodes.sort();
+        assigned_nodes.sort_unstable();
         assert_eq!(assigned_nodes, vec![0, 1, 2, 3, 4]);
 
         // No node should appear twice

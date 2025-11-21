@@ -137,8 +137,7 @@ fn test_tree_save_unfitted_model_fails() {
     let error_msg = result.unwrap_err();
     assert!(
         error_msg.contains("unfitted") || error_msg.contains("fit"),
-        "Error message should mention model is unfitted. Got: {}",
-        error_msg
+        "Error message should mention model is unfitted. Got: {error_msg}"
     );
 
     // Ensure no file was created
@@ -247,9 +246,7 @@ fn test_tree_accuracy_score_preserved() {
     // Accuracy should be identical
     assert!(
         (original_accuracy - loaded_accuracy).abs() < 1e-6,
-        "Accuracy should be preserved: original={}, loaded={}",
-        original_accuracy,
-        loaded_accuracy
+        "Accuracy should be preserved: original={original_accuracy}, loaded={loaded_accuracy}"
     );
 
     // Cleanup
@@ -305,14 +302,12 @@ fn test_tree_file_size_reasonable() {
     // File should be reasonable (not huge for small tree)
     assert!(
         file_size < 4096,
-        "SafeTensors file should be compact for small tree. Got {} bytes",
-        file_size
+        "SafeTensors file should be compact for small tree. Got {file_size} bytes"
     );
 
     assert!(
         file_size > 50,
-        "SafeTensors file should contain data. Got {} bytes",
-        file_size
+        "SafeTensors file should contain data. Got {file_size} bytes"
     );
 
     // Cleanup

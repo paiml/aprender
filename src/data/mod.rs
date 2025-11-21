@@ -306,7 +306,7 @@ mod tests {
 
     #[test]
     fn test_new_empty_name_error() {
-        let columns = vec![("".to_string(), Vector::from_slice(&[1.0, 2.0]))];
+        let columns = vec![(String::new(), Vector::from_slice(&[1.0, 2.0]))];
         let result = DataFrame::new(columns);
         assert!(result.is_err());
     }

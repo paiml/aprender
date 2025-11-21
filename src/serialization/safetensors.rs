@@ -300,8 +300,7 @@ mod tests {
         let err = result.expect_err("Should fail when file not found");
         assert!(
             err.contains("No such file") || err.contains("not found"),
-            "Error should mention file not found: {}",
-            err
+            "Error should mention file not found: {err}"
         );
     }
 

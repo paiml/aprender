@@ -1248,7 +1248,7 @@ mod tests {
 
         // Mean should be 0
         let mean: f32 = (0..3).map(|i| transformed.get(i, 0)).sum::<f32>() / 3.0;
-        assert!(mean.abs() < 1e-6, "Mean should be ~0, got {}", mean);
+        assert!(mean.abs() < 1e-6, "Mean should be ~0, got {mean}");
 
         // Std should be 1
         let variance: f32 = (0..3)
@@ -1278,7 +1278,7 @@ mod tests {
         // Check each column has mean ≈ 0
         for j in 0..2 {
             let mean: f32 = (0..4).map(|i| transformed.get(i, j)).sum::<f32>() / 4.0;
-            assert!(mean.abs() < 1e-5, "Column {} mean should be ~0", j);
+            assert!(mean.abs() < 1e-5, "Column {j} mean should be ~0");
         }
     }
 
@@ -1300,9 +1300,7 @@ mod tests {
             for j in 0..2 {
                 assert!(
                     (data.get(i, j) - recovered.get(i, j)).abs() < 1e-5,
-                    "Mismatch at ({}, {})",
-                    i,
-                    j
+                    "Mismatch at ({i}, {j})"
                 );
             }
         }
@@ -1522,11 +1520,10 @@ mod tests {
                     max_val = val;
                 }
             }
-            assert!(min_val.abs() < 1e-5, "Column {} min should be ~0", j);
+            assert!(min_val.abs() < 1e-5, "Column {j} min should be ~0");
             assert!(
                 (max_val - 1.0).abs() < 1e-5,
-                "Column {} max should be ~1",
-                j
+                "Column {j} max should be ~1"
             );
         }
     }
@@ -1549,9 +1546,7 @@ mod tests {
             for j in 0..2 {
                 assert!(
                     (data.get(i, j) - recovered.get(i, j)).abs() < 1e-5,
-                    "Mismatch at ({}, {})",
-                    i,
-                    j
+                    "Mismatch at ({i}, {j})"
                 );
             }
         }
@@ -1671,8 +1666,7 @@ mod tests {
         for i in 0..3 {
             assert!(
                 (data.get(i, 0) - recovered.get(i, 0)).abs() < 1e-5,
-                "Mismatch at row {}",
-                i
+                "Mismatch at row {i}"
             );
         }
     }
@@ -1698,7 +1692,7 @@ mod tests {
             sum += transformed.get(i, 0);
         }
         let mean = sum / 4.0;
-        assert!(mean.abs() < 1e-5, "Mean should be ~0, got {}", mean);
+        assert!(mean.abs() < 1e-5, "Mean should be ~0, got {mean}");
     }
 
     #[test]
@@ -1725,8 +1719,7 @@ mod tests {
         let total_ratio: f32 = explained_ratio.iter().sum();
         assert!(
             (total_ratio - 1.0).abs() < 1e-5,
-            "Variance ratios should sum to 1.0, got {}",
-            total_ratio
+            "Variance ratios should sum to 1.0, got {total_ratio}"
         );
 
         // First component should explain most variance
@@ -1768,7 +1761,7 @@ mod tests {
         }
         let mse = total_error / 12.0;
         // With dimensionality reduction, some error is expected
-        assert!(mse < 10.0, "Reconstruction MSE too large: {}", mse);
+        assert!(mse < 10.0, "Reconstruction MSE too large: {mse}");
     }
 
     #[test]
@@ -1928,9 +1921,7 @@ mod tests {
         // Explained variance should match total variance (with full components)
         assert!(
             (total_explained - total_var).abs() < 1e-3,
-            "Total explained variance {} should match total variance {}",
-            total_explained,
-            total_var
+            "Total explained variance {total_explained} should match total variance {total_var}"
         );
     }
 
@@ -1963,10 +1954,7 @@ mod tests {
                 }
                 assert!(
                     dot_product.abs() < 1e-4,
-                    "Components {} and {} should be orthogonal, got dot product {}",
-                    i,
-                    j,
-                    dot_product
+                    "Components {i} and {j} should be orthogonal, got dot product {dot_product}"
                 );
             }
         }
@@ -1981,9 +1969,7 @@ mod tests {
             let norm = norm_sq.sqrt();
             assert!(
                 (norm - 1.0).abs() < 1e-4,
-                "Component {} should be unit length, got {}",
-                i,
-                norm
+                "Component {i} should be unit length, got {norm}"
             );
         }
     }

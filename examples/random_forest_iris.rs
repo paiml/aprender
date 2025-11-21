@@ -76,11 +76,11 @@ fn single_tree_example(x: &Matrix<f32>, y: &[usize]) {
 
     println!("  Max Depth: 5");
     println!("  Training Accuracy: {:.1}%", accuracy * 100.0);
-    println!("  Predictions: {:?}", predictions);
+    println!("  Predictions: {predictions:?}");
 
     // Show some individual predictions
     println!("\n  Sample Predictions:");
-    for i in [0, 4, 8].iter() {
+    for i in &[0, 4, 8] {
         println!(
             "    Sample {}: True={}, Predicted={}",
             i, y[*i], predictions[*i]
@@ -98,15 +98,15 @@ fn random_forest_example(x: &Matrix<f32>, y: &[usize], n_trees: usize) {
     let predictions = rf.predict(x);
     let accuracy = rf.score(x, y);
 
-    println!("  Number of Trees: {}", n_trees);
+    println!("  Number of Trees: {n_trees}");
     println!("  Max Depth: 5");
     println!("  Random State: 42 (reproducible)");
     println!("  Training Accuracy: {:.1}%", accuracy * 100.0);
-    println!("  Predictions: {:?}", predictions);
+    println!("  Predictions: {predictions:?}");
 
     // Show voting mechanism
     println!("\n  Sample Predictions:");
-    for i in [0, 4, 8].iter() {
+    for i in &[0, 4, 8] {
         println!(
             "    Sample {}: True={}, Predicted={} (from {} tree votes)",
             i, y[*i], predictions[*i], n_trees
@@ -123,7 +123,7 @@ fn random_forest_example(x: &Matrix<f32>, y: &[usize], n_trees: usize) {
     if errors == 0 {
         println!("\n  ✓ Perfect classification! All samples correctly predicted.");
     } else {
-        println!("\n  {} misclassifications", errors);
+        println!("\n  {errors} misclassifications");
     }
 }
 
@@ -179,7 +179,7 @@ fn feature_importance_example(x: &Matrix<f32>, y: &[usize]) {
         println!("    Feature 1 (petal_width):  {:.3}", imps[1]);
 
         // Identify most important feature
-        let max_idx = if imps[0] > imps[1] { 0 } else { 1 };
+        let max_idx = usize::from(imps[0] <= imps[1]);
         let feature_names = ["petal_length", "petal_width"];
         println!(
             "\n  → Most important: {} ({:.1}%)",
@@ -189,7 +189,7 @@ fn feature_importance_example(x: &Matrix<f32>, y: &[usize]) {
 
         // Verify they sum to 1.0
         let sum: f32 = imps.iter().sum();
-        println!("  → Importances sum to: {:.3} ✓", sum);
+        println!("  → Importances sum to: {sum:.3} ✓");
     }
 
     println!("\n  What is Feature Importance?");

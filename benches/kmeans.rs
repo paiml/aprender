@@ -6,7 +6,7 @@ use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criteri
 fn bench_kmeans_fit(c: &mut Criterion) {
     let mut group = c.benchmark_group("kmeans_fit");
 
-    for &n_samples in [50, 100, 200].iter() {
+    for &n_samples in &[50, 100, 200] {
         // Create two clusters
         let mut data = Vec::with_capacity(n_samples * 2);
         for i in 0..n_samples {
@@ -27,7 +27,7 @@ fn bench_kmeans_fit(c: &mut Criterion) {
             |b, _| {
                 b.iter(|| {
                     let mut kmeans = KMeans::new(2).with_random_state(42).with_max_iter(100);
-                    kmeans.fit(black_box(&matrix)).unwrap()
+                    kmeans.fit(black_box(&matrix)).unwrap();
                 });
             },
         );
@@ -39,7 +39,7 @@ fn bench_kmeans_fit(c: &mut Criterion) {
 fn bench_kmeans_predict(c: &mut Criterion) {
     let mut group = c.benchmark_group("kmeans_predict");
 
-    for &n_samples in [50, 100, 200].iter() {
+    for &n_samples in &[50, 100, 200] {
         let mut data = Vec::with_capacity(n_samples * 2);
         for i in 0..n_samples {
             if i < n_samples / 2 {

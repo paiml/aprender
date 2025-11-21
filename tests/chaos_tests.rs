@@ -102,7 +102,7 @@ fn test_chaos_error_signal_injection() {
         signal: 9,
         reason: "Permission denied".to_string(),
     };
-    assert!(err.to_string().contains("9"));
+    assert!(err.to_string().contains('9'));
     assert!(err.to_string().contains("Permission denied"));
 }
 

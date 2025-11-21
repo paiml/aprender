@@ -6,7 +6,7 @@ use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criteri
 fn bench_dataframe_to_matrix(c: &mut Criterion) {
     let mut group = c.benchmark_group("dataframe_to_matrix");
 
-    for &n_rows in [100, 500, 1000].iter() {
+    for &n_rows in &[100, 500, 1000] {
         let columns = vec![
             (
                 "a".to_string(),
@@ -34,7 +34,7 @@ fn bench_dataframe_to_matrix(c: &mut Criterion) {
 fn bench_dataframe_select(c: &mut Criterion) {
     let mut group = c.benchmark_group("dataframe_select");
 
-    for &n_rows in [100, 500, 1000].iter() {
+    for &n_rows in &[100, 500, 1000] {
         let columns = vec![
             (
                 "a".to_string(),

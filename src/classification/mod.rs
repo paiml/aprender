@@ -1431,8 +1431,7 @@ mod tests {
         let err = result.expect_err("Should fail when loading nonexistent file");
         assert!(
             err.contains("No such file") || err.contains("not found"),
-            "Error should mention file not found: {}",
-            err
+            "Error should mention file not found: {err}"
         );
     }
 
@@ -2482,8 +2481,7 @@ mod tests {
         // Should get at least 8 out of 10 correct for well-separated clusters
         assert!(
             correct >= 8,
-            "Expected at least 8/10 correct, got {}/10",
-            correct
+            "Expected at least 8/10 correct, got {correct}/10"
         );
     }
 

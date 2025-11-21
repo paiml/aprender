@@ -35,14 +35,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     sc.fit(&data)?;
 
     let labels = sc.predict(&data);
-    println!("Cluster labels: {:?}", labels);
+    println!("Cluster labels: {labels:?}");
 
     // Verify clustering
     let cluster_0_points = labels.iter().filter(|&&l| l == 0).count();
     let cluster_1_points = labels.iter().filter(|&&l| l == 1).count();
     println!(
-        "Cluster 0: {} points, Cluster 1: {} points\n",
-        cluster_0_points, cluster_1_points
+        "Cluster 0: {cluster_0_points} points, Cluster 1: {cluster_1_points} points\n"
     );
 
     // Example 2: K-NN Affinity for graph-based clustering
@@ -65,7 +64,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     sc_knn.fit(&data2)?;
 
     let labels_knn = sc_knn.predict(&data2);
-    println!("K-NN Cluster labels: {:?}", labels_knn);
+    println!("K-NN Cluster labels: {labels_knn:?}");
 
     // Example 3: Gamma parameter effects (RBF affinity)
     println!("\n--- Example 3: Gamma Parameter Effects ---");
@@ -106,12 +105,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     sc3.fit(&data3)?;
 
     let labels3 = sc3.predict(&data3);
-    println!("Three-cluster labels: {:?}", labels3);
+    println!("Three-cluster labels: {labels3:?}");
 
     // Count points per cluster
     for cluster in 0..3 {
         let count = labels3.iter().filter(|&&l| l == cluster).count();
-        println!("  Cluster {}: {} points", cluster, count);
+        println!("  Cluster {cluster}: {count} points");
     }
 
     // Example 5: Spectral Clustering vs K-Means on non-convex data
@@ -141,8 +140,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     kmeans.fit(&elongated)?;
     let km_labels = kmeans.predict(&elongated);
 
-    println!("Spectral (K-NN): {:?}", sc_labels);
-    println!("K-Means:         {:?}", km_labels);
+    println!("Spectral (K-NN): {sc_labels:?}");
+    println!("K-Means:         {km_labels:?}");
     println!("\nSpectral Clustering works better for:");
     println!("  ✓ Non-convex cluster shapes");
     println!("  ✓ Clusters with varying densities");

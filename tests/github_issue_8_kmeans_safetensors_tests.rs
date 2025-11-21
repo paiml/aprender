@@ -148,8 +148,7 @@ fn test_kmeans_save_unfitted_model_fails() {
     let error_msg = result.unwrap_err();
     assert!(
         error_msg.contains("unfitted") || error_msg.contains("fit"),
-        "Error message should mention model is unfitted. Got: {}",
-        error_msg
+        "Error message should mention model is unfitted. Got: {error_msg}"
     );
 
     // Ensure no file was created
@@ -217,11 +216,7 @@ fn test_kmeans_centroids_preserved() {
             let loaded = loaded_centroids.get(i, j);
             assert!(
                 (orig - loaded).abs() < 1e-6,
-                "Centroid[{},{}] mismatch: original={}, loaded={}",
-                i,
-                j,
-                orig,
-                loaded
+                "Centroid[{i},{j}] mismatch: original={orig}, loaded={loaded}"
             );
         }
     }
@@ -383,14 +378,12 @@ fn test_kmeans_file_size_reasonable() {
     // - Total: < 2KB for this small model
     assert!(
         file_size < 2048,
-        "SafeTensors file should be compact. Got {} bytes",
-        file_size
+        "SafeTensors file should be compact. Got {file_size} bytes"
     );
 
     assert!(
         file_size > 40,
-        "SafeTensors file should contain data. Got {} bytes",
-        file_size
+        "SafeTensors file should contain data. Got {file_size} bytes"
     );
 
     // Cleanup
@@ -456,9 +449,7 @@ fn test_kmeans_inertia_preserved() {
     // Inertia should be identical
     assert!(
         (original_inertia - loaded_inertia).abs() < 1e-6,
-        "Inertia should be preserved: original={}, loaded={}",
-        original_inertia,
-        loaded_inertia
+        "Inertia should be preserved: original={original_inertia}, loaded={loaded_inertia}"
     );
 
     // Cleanup

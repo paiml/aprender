@@ -2807,8 +2807,8 @@ mod tests {
 
         for labels in labels_sets {
             let gini = gini_impurity(&labels);
-            assert!(gini >= 0.0, "Gini should be >= 0, got {}", gini);
-            assert!(gini <= 1.0, "Gini should be <= 1, got {}", gini);
+            assert!(gini >= 0.0, "Gini should be >= 0, got {gini}");
+            assert!(gini <= 1.0, "Gini should be <= 1, got {gini}");
         }
     }
 
@@ -3227,7 +3227,7 @@ mod tests {
 
     #[test]
     fn test_random_forest_fit_basic() {
-        let x = crate::primitives::Matrix::from_vec(
+        let x = Matrix::from_vec(
             6,
             2,
             vec![
@@ -3254,7 +3254,7 @@ mod tests {
 
     #[test]
     fn test_random_forest_predict() {
-        let x = crate::primitives::Matrix::from_vec(
+        let x = Matrix::from_vec(
             6,
             2,
             vec![
@@ -3288,7 +3288,7 @@ mod tests {
 
     #[test]
     fn test_random_forest_reproducible() {
-        let x = crate::primitives::Matrix::from_vec(
+        let x = Matrix::from_vec(
             8,
             2,
             vec![
@@ -3616,8 +3616,7 @@ mod tests {
         // Should get at least 7 out of 10 correct for well-separated clusters
         assert!(
             correct >= 7,
-            "Expected at least 7/10 correct, got {}/10",
-            correct
+            "Expected at least 7/10 correct, got {correct}/10"
         );
     }
 
@@ -3653,7 +3652,7 @@ mod tests {
         // Simple linear relationship: y = 2x + 1
         let x = Matrix::from_vec(5, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0])
             .expect("Matrix creation should succeed in tests");
-        let y = crate::primitives::Vector::from_slice(&[3.0, 5.0, 7.0, 9.0, 11.0]);
+        let y = Vector::from_slice(&[3.0, 5.0, 7.0, 9.0, 11.0]);
 
         let mut tree = DecisionTreeRegressor::new().with_max_depth(3);
         tree.fit(&x, &y).expect("fit should succeed");
@@ -3678,7 +3677,7 @@ mod tests {
         // Quadratic relationship: y = x^2
         let x = Matrix::from_vec(5, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0])
             .expect("Matrix creation should succeed in tests");
-        let y = crate::primitives::Vector::from_slice(&[1.0, 4.0, 9.0, 16.0, 25.0]);
+        let y = Vector::from_slice(&[1.0, 4.0, 9.0, 16.0, 25.0]);
 
         let mut tree = DecisionTreeRegressor::new().with_max_depth(4);
         tree.fit(&x, &y).expect("fit should succeed");
@@ -3694,7 +3693,7 @@ mod tests {
         }
         let mse = mse_sum / predictions.len() as f32;
 
-        assert!(mse < 50.0, "MSE {} too high for quadratic fit", mse);
+        assert!(mse < 50.0, "MSE {mse} too high for quadratic fit");
     }
 
     #[test]
@@ -3702,7 +3701,7 @@ mod tests {
         // Perfect predictions should give R² = 1.0
         let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0])
             .expect("Matrix creation should succeed in tests");
-        let y = crate::primitives::Vector::from_slice(&[2.0, 4.0, 6.0, 8.0]);
+        let y = Vector::from_slice(&[2.0, 4.0, 6.0, 8.0]);
 
         let mut tree = DecisionTreeRegressor::new().with_max_depth(3);
         tree.fit(&x, &y).expect("fit should succeed");
@@ -3710,8 +3709,8 @@ mod tests {
         let r2 = tree.score(&x, &y);
 
         // R² should be high for training data
-        assert!(r2 > 0.5, "R² score {} too low", r2);
-        assert!(r2 <= 1.0, "R² score {} exceeds maximum", r2);
+        assert!(r2 > 0.5, "R² score {r2} too low");
+        assert!(r2 <= 1.0, "R² score {r2} exceeds maximum");
     }
 
     #[test]
@@ -3719,7 +3718,7 @@ mod tests {
         let x = Matrix::from_vec(8, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0])
             .expect("Matrix creation should succeed in tests");
         let y =
-            crate::primitives::Vector::from_slice(&[1.0, 4.0, 9.0, 16.0, 25.0, 36.0, 49.0, 64.0]);
+            Vector::from_slice(&[1.0, 4.0, 9.0, 16.0, 25.0, 36.0, 49.0, 64.0]);
 
         // Shallow tree
         let mut tree_shallow = DecisionTreeRegressor::new().with_max_depth(1);
@@ -3731,8 +3730,7 @@ mod tests {
             .depth();
         assert!(
             depth_shallow <= 1,
-            "Shallow tree depth {} exceeds max",
-            depth_shallow
+            "Shallow tree depth {depth_shallow} exceeds max"
         );
 
         // Deep tree
@@ -3745,8 +3743,7 @@ mod tests {
             .depth();
         assert!(
             depth_deep <= 5,
-            "Deep tree depth {} exceeds max",
-            depth_deep
+            "Deep tree depth {depth_deep} exceeds max"
         );
 
         // Deeper tree should fit better
@@ -3754,9 +3751,7 @@ mod tests {
         let r2_deep = tree_deep.score(&x, &y);
         assert!(
             r2_deep >= r2_shallow,
-            "Deeper tree R²={} should be >= shallow tree R²={}",
-            r2_deep,
-            r2_shallow
+            "Deeper tree R²={r2_deep} should be >= shallow tree R²={r2_shallow}"
         );
     }
 
@@ -3785,13 +3780,13 @@ mod tests {
             ],
         )
         .expect("Matrix creation should succeed in tests");
-        let y = crate::primitives::Vector::from_slice(&[3.0, 4.0, 5.0, 6.0, 5.0, 7.0]);
+        let y = Vector::from_slice(&[3.0, 4.0, 5.0, 6.0, 5.0, 7.0]);
 
         let mut tree = DecisionTreeRegressor::new().with_max_depth(4);
         tree.fit(&x, &y).expect("fit should succeed");
 
         let r2 = tree.score(&x, &y);
-        assert!(r2 > 0.5, "R² score {} too low for 2D features", r2);
+        assert!(r2 > 0.5, "R² score {r2} too low for 2D features");
     }
 
     #[test]
@@ -3799,7 +3794,7 @@ mod tests {
         // All y values the same
         let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0])
             .expect("Matrix creation should succeed in tests");
-        let y = crate::primitives::Vector::from_slice(&[5.0, 5.0, 5.0, 5.0]);
+        let y = Vector::from_slice(&[5.0, 5.0, 5.0, 5.0]);
 
         let mut tree = DecisionTreeRegressor::new();
         tree.fit(&x, &y).expect("fit should succeed");
@@ -3810,8 +3805,7 @@ mod tests {
         for &pred in predictions.as_slice() {
             assert!(
                 (pred - 5.0).abs() < 1e-5,
-                "Prediction {} should be 5.0 for constant target",
-                pred
+                "Prediction {pred} should be 5.0 for constant target"
             );
         }
     }
@@ -3819,7 +3813,7 @@ mod tests {
     #[test]
     fn test_regression_tree_single_sample() {
         let x = Matrix::from_vec(1, 1, vec![5.0]).expect("Matrix creation should succeed in tests");
-        let y = crate::primitives::Vector::from_slice(&[10.0]);
+        let y = Vector::from_slice(&[10.0]);
 
         let mut tree = DecisionTreeRegressor::new();
         tree.fit(&x, &y).expect("fit should succeed");
@@ -3833,7 +3827,7 @@ mod tests {
     fn test_regression_tree_fit_validation() {
         let x = Matrix::from_vec(3, 1, vec![1.0, 2.0, 3.0])
             .expect("Matrix creation should succeed in tests");
-        let y = crate::primitives::Vector::from_slice(&[1.0, 2.0]); // Wrong size
+        let y = Vector::from_slice(&[1.0, 2.0]); // Wrong size
 
         let mut tree = DecisionTreeRegressor::new();
         let result = tree.fit(&x, &y);
@@ -3844,7 +3838,7 @@ mod tests {
     #[test]
     fn test_regression_tree_zero_samples() {
         let x = Matrix::from_vec(0, 1, vec![]).expect("Matrix creation should succeed in tests");
-        let y = crate::primitives::Vector::from_slice(&[]);
+        let y = Vector::from_slice(&[]);
 
         let mut tree = DecisionTreeRegressor::new();
         let result = tree.fit(&x, &y);
@@ -3856,7 +3850,7 @@ mod tests {
     fn test_regression_tree_min_samples_split() {
         let x = Matrix::from_vec(6, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
             .expect("Matrix creation should succeed in tests");
-        let y = crate::primitives::Vector::from_slice(&[1.0, 4.0, 9.0, 16.0, 25.0, 36.0]);
+        let y = Vector::from_slice(&[1.0, 4.0, 9.0, 16.0, 25.0, 36.0]);
 
         // Tree with min_samples_split=4 should not split nodes with fewer samples
         let mut tree = DecisionTreeRegressor::new()
@@ -3875,7 +3869,7 @@ mod tests {
         let x = Matrix::from_vec(8, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0])
             .expect("Matrix creation should succeed in tests");
         let y =
-            crate::primitives::Vector::from_slice(&[1.0, 4.0, 9.0, 16.0, 25.0, 36.0, 49.0, 64.0]);
+            Vector::from_slice(&[1.0, 4.0, 9.0, 16.0, 25.0, 36.0, 49.0, 64.0]);
 
         // Tree with min_samples_leaf=3 should ensure leaves have at least 3 samples
         let mut tree = DecisionTreeRegressor::new()
@@ -3903,7 +3897,7 @@ mod tests {
         // On perfectly linear data, both should perform well
         let x = Matrix::from_vec(5, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0])
             .expect("Matrix creation should succeed in tests");
-        let y = crate::primitives::Vector::from_slice(&[2.0, 4.0, 6.0, 8.0, 10.0]);
+        let y = Vector::from_slice(&[2.0, 4.0, 6.0, 8.0, 10.0]);
 
         // Train tree
         let mut tree = DecisionTreeRegressor::new().with_max_depth(4);
@@ -3916,8 +3910,8 @@ mod tests {
         let lr_r2 = lr.score(&x, &y);
 
         // Both should achieve high R² on linear data
-        assert!(tree_r2 > 0.9, "Tree R² {} too low on linear data", tree_r2);
-        assert!(lr_r2 > 0.99, "Linear regression R² {} too low", lr_r2);
+        assert!(tree_r2 > 0.9, "Tree R² {tree_r2} too low on linear data");
+        assert!(lr_r2 > 0.99, "Linear regression R² {lr_r2} too low");
     }
 
     // ===================================================================
@@ -3947,7 +3941,7 @@ mod tests {
             vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0],
         )
         .expect("Matrix creation should succeed in tests");
-        let y = crate::primitives::Vector::from_slice(&[
+        let y = Vector::from_slice(&[
             3.0, 5.0, 7.0, 9.0, 11.0, 13.0, 15.0, 17.0, 19.0, 21.0,
         ]);
 
@@ -3960,7 +3954,7 @@ mod tests {
         // Should make reasonable predictions
         let _predictions = rf.predict(&x);
         let r2 = rf.score(&x, &y);
-        assert!(r2 > 0.8, "R² should be high on training data: {}", r2);
+        assert!(r2 > 0.8, "R² should be high on training data: {r2}");
     }
 
     #[test]
@@ -3969,7 +3963,7 @@ mod tests {
         let x = Matrix::from_vec(8, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0])
             .expect("Matrix creation should succeed in tests");
         let y =
-            crate::primitives::Vector::from_slice(&[1.0, 4.0, 9.0, 16.0, 25.0, 36.0, 49.0, 64.0]);
+            Vector::from_slice(&[1.0, 4.0, 9.0, 16.0, 25.0, 36.0, 49.0, 64.0]);
 
         // Train RF (with fixed random state for reproducibility)
         let mut rf = RandomForestRegressor::new(20)
@@ -3999,15 +3993,15 @@ mod tests {
     fn test_random_forest_regressor_score() {
         let x = Matrix::from_vec(6, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
             .expect("Matrix creation should succeed in tests");
-        let y = crate::primitives::Vector::from_slice(&[2.0, 4.0, 6.0, 8.0, 10.0, 12.0]);
+        let y = Vector::from_slice(&[2.0, 4.0, 6.0, 8.0, 10.0, 12.0]);
 
         let mut rf = RandomForestRegressor::new(15).with_max_depth(3);
         rf.fit(&x, &y).expect("fit should succeed");
 
         let r2 = rf.score(&x, &y);
         // R² should be positive and high for this simple linear pattern
-        assert!(r2 > 0.7, "R² score {} should be high", r2);
-        assert!(r2 <= 1.0, "R² score {} should be <= 1.0", r2);
+        assert!(r2 > 0.7, "R² score {r2} should be high");
+        assert!(r2 <= 1.0, "R² score {r2} should be <= 1.0");
     }
 
     #[test]
@@ -4018,7 +4012,7 @@ mod tests {
             vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0],
         )
         .expect("Matrix creation should succeed in tests");
-        let y = crate::primitives::Vector::from_slice(&[
+        let y = Vector::from_slice(&[
             1.0, 4.0, 9.0, 16.0, 25.0, 36.0, 49.0, 64.0, 81.0, 100.0,
         ]);
 
@@ -4051,7 +4045,7 @@ mod tests {
             ],
         )
         .expect("Matrix creation should succeed in tests");
-        let y = crate::primitives::Vector::from_slice(&[
+        let y = Vector::from_slice(&[
             2.1, 4.2, 8.9, 16.1, 24.8, 36.2, 49.1, 63.8, 81.2, 100.1, 120.9, 144.2, 169.1, 195.8,
             225.0,
         ]);
@@ -4067,8 +4061,8 @@ mod tests {
         let rf_r2 = rf.score(&x, &y);
 
         // Both should fit well, but RF typically more stable
-        assert!(single_r2 > 0.8, "Single tree R²: {}", single_r2);
-        assert!(rf_r2 > 0.8, "Random forest R²: {}", rf_r2);
+        assert!(single_r2 > 0.8, "Single tree R²: {single_r2}");
+        assert!(rf_r2 > 0.8, "Random forest R²: {rf_r2}");
     }
 
     #[test]
@@ -4082,7 +4076,7 @@ mod tests {
             ],
         )
         .expect("Matrix creation should succeed in tests");
-        let y = crate::primitives::Vector::from_slice(&[3.0, 4.0, 5.0, 6.0, 5.0, 7.0, 6.0, 8.0]);
+        let y = Vector::from_slice(&[3.0, 4.0, 5.0, 6.0, 5.0, 7.0, 6.0, 8.0]);
 
         let mut rf = RandomForestRegressor::new(15).with_max_depth(5);
         rf.fit(&x, &y).expect("fit should succeed");
@@ -4091,7 +4085,7 @@ mod tests {
         assert_eq!(predictions.len(), 8);
 
         let r2 = rf.score(&x, &y);
-        assert!(r2 > 0.6, "R² on 2D data should be reasonable: {}", r2);
+        assert!(r2 > 0.6, "R² on 2D data should be reasonable: {r2}");
     }
 
     #[test]
@@ -4099,7 +4093,7 @@ mod tests {
         // All samples have same target value
         let x = Matrix::from_vec(5, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0])
             .expect("Matrix creation should succeed in tests");
-        let y = crate::primitives::Vector::from_slice(&[7.0, 7.0, 7.0, 7.0, 7.0]);
+        let y = Vector::from_slice(&[7.0, 7.0, 7.0, 7.0, 7.0]);
 
         let mut rf = RandomForestRegressor::new(10).with_max_depth(3);
         rf.fit(&x, &y).expect("fit should succeed");
@@ -4108,8 +4102,7 @@ mod tests {
         for &pred in predictions.as_slice() {
             assert!(
                 (pred - 7.0).abs() < 1e-5,
-                "Prediction {} should be ~7.0 for constant target",
-                pred
+                "Prediction {pred} should be ~7.0 for constant target"
             );
         }
     }
@@ -4118,7 +4111,7 @@ mod tests {
     fn test_random_forest_regressor_single_sample() {
         let x = Matrix::from_vec(1, 2, vec![1.0, 2.0])
             .expect("Matrix creation should succeed in tests");
-        let y = crate::primitives::Vector::from_slice(&[5.0]);
+        let y = Vector::from_slice(&[5.0]);
 
         let mut rf = RandomForestRegressor::new(5).with_max_depth(2);
         rf.fit(&x, &y).expect("fit should succeed");
@@ -4139,7 +4132,7 @@ mod tests {
             vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0],
         )
         .expect("Matrix creation should succeed in tests");
-        let y = crate::primitives::Vector::from_slice(&[
+        let y = Vector::from_slice(&[
             2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0, 20.0,
         ]);
 
@@ -4160,9 +4153,7 @@ mod tests {
         for (p1, p2) in pred1.as_slice().iter().zip(pred2.as_slice().iter()) {
             assert!(
                 (p1 - p2).abs() < 1e-10,
-                "Predictions with same random_state should match: {} vs {}",
-                p1,
-                p2
+                "Predictions with same random_state should match: {p1} vs {p2}"
             );
         }
     }
@@ -4176,7 +4167,7 @@ mod tests {
             vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0],
         )
         .expect("Matrix creation should succeed in tests");
-        let y = crate::primitives::Vector::from_slice(&[1.0, 2.0, 3.0]); // Wrong size
+        let y = Vector::from_slice(&[1.0, 2.0, 3.0]); // Wrong size
 
         let mut rf = RandomForestRegressor::new(5);
         let result = rf.fit(&x, &y);
@@ -4185,7 +4176,7 @@ mod tests {
         // Zero samples
         let x_empty =
             Matrix::from_vec(0, 1, vec![]).expect("Matrix creation should succeed in tests");
-        let y_empty = crate::primitives::Vector::from_slice(&[]);
+        let y_empty = Vector::from_slice(&[]);
         let mut rf_empty = RandomForestRegressor::new(5);
         let result_empty = rf_empty.fit(&x_empty, &y_empty);
         assert!(result_empty.is_err(), "Should error on zero samples");
@@ -4218,7 +4209,7 @@ mod tests {
             vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0],
         )
         .expect("Matrix creation should succeed in tests");
-        let y = crate::primitives::Vector::from_slice(&[
+        let y = Vector::from_slice(&[
             1.0, 4.0, 9.0, 16.0, 25.0, 36.0, 49.0, 64.0, 81.0, 100.0,
         ]); // y = x²
 
@@ -4237,19 +4228,15 @@ mod tests {
         // RF should handle non-linearity better
         assert!(
             rf_r2 > 0.9,
-            "Random forest R² {} should be high on quadratic data",
-            rf_r2
+            "Random forest R² {rf_r2} should be high on quadratic data"
         );
         assert!(
             lr_r2 < 0.98,
-            "Linear regression R² {} should be lower on non-linear data",
-            lr_r2
+            "Linear regression R² {lr_r2} should be lower on non-linear data"
         );
         assert!(
             rf_r2 > lr_r2,
-            "RF R² {} should exceed linear R² {} on non-linear data",
-            rf_r2,
-            lr_r2
+            "RF R² {rf_r2} should exceed linear R² {lr_r2} on non-linear data"
         );
     }
 
@@ -4263,7 +4250,7 @@ mod tests {
             ],
         )
         .expect("Matrix creation should succeed in tests");
-        let y = crate::primitives::Vector::from_slice(&[
+        let y = Vector::from_slice(&[
             1.0, 4.0, 9.0, 16.0, 25.0, 36.0, 49.0, 64.0, 81.0, 100.0, 121.0, 144.0,
         ]);
 
@@ -4285,9 +4272,7 @@ mod tests {
         // Note: On small datasets, the difference may be minimal due to variance
         assert!(
             r2_deep >= r2_shallow - 0.01,
-            "Deeper trees R² {} should be at least as good as shallow trees R² {}",
-            r2_deep,
-            r2_shallow
+            "Deeper trees R² {r2_deep} should be at least as good as shallow trees R² {r2_shallow}"
         );
     }
 
@@ -4328,8 +4313,7 @@ mod tests {
         let score_value = oob_score.expect("oob_score should be available");
         assert!(
             (0.0..=1.0).contains(&score_value),
-            "OOB score {} should be between 0 and 1",
-            score_value
+            "OOB score {score_value} should be between 0 and 1"
         );
     }
 
@@ -4415,9 +4399,7 @@ mod tests {
         // OOB score should be reasonable (within 0.3 of training score for small dataset)
         assert!(
             (oob_score - train_score).abs() < 0.3,
-            "OOB score {} should be close to training score {}",
-            oob_score,
-            train_score
+            "OOB score {oob_score} should be close to training score {train_score}"
         );
     }
 
@@ -4460,7 +4442,7 @@ mod tests {
             ],
         )
         .expect("Matrix creation should succeed in tests");
-        let y = crate::primitives::Vector::from_slice(&[
+        let y = Vector::from_slice(&[
             2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0, 20.0, 22.0, 24.0, 26.0, 28.0, 30.0,
             32.0, 34.0, 36.0, 38.0, 40.0,
         ]);
@@ -4479,8 +4461,7 @@ mod tests {
         let score_value = oob_score.expect("oob_score should be available");
         assert!(
             score_value > -1.0 && score_value <= 1.0,
-            "OOB R² score {} should be reasonable",
-            score_value
+            "OOB R² score {score_value} should be reasonable"
         );
     }
 
@@ -4495,7 +4476,7 @@ mod tests {
             ],
         )
         .expect("Matrix creation should succeed in tests");
-        let y = crate::primitives::Vector::from_slice(&[
+        let y = Vector::from_slice(&[
             3.0, 4.0, 5.0, 6.0, 5.0, 7.0, 6.0, 8.0, 8.0, 9.0, 9.0, 10.0,
         ]);
 
@@ -4542,7 +4523,7 @@ mod tests {
             ],
         )
         .expect("Matrix creation should succeed in tests");
-        let y = crate::primitives::Vector::from_slice(&[
+        let y = Vector::from_slice(&[
             3.0, 5.0, 7.0, 9.0, 11.0, 13.0, 15.0, 17.0, 19.0, 21.0, 23.0, 25.0, 27.0, 29.0, 31.0,
             33.0, 35.0, 37.0, 39.0, 41.0, 43.0, 45.0, 47.0, 49.0, 51.0,
         ]);
@@ -4558,12 +4539,10 @@ mod tests {
         let train_score = rf.score(&x, &y);
 
         // OOB R² should be positive and within reasonable range of training R²
-        assert!(oob_score > 0.5, "OOB R² {} should be positive", oob_score);
+        assert!(oob_score > 0.5, "OOB R² {oob_score} should be positive");
         assert!(
             (oob_score - train_score).abs() < 0.3,
-            "OOB R² {} should be close to training R² {}",
-            oob_score,
-            train_score
+            "OOB R² {oob_score} should be close to training R² {train_score}"
         );
     }
 
@@ -4578,7 +4557,7 @@ mod tests {
             ],
         )
         .expect("Matrix creation should succeed in tests");
-        let y = crate::primitives::Vector::from_slice(&[
+        let y = Vector::from_slice(&[
             5.0, 7.0, 9.0, 11.0, 13.0, 15.0, 17.0, 19.0, 21.0, 23.0, 25.0, 27.0, 29.0, 31.0, 33.0,
         ]);
 
@@ -4611,7 +4590,7 @@ mod tests {
             ],
         )
         .expect("Matrix creation should succeed in tests");
-        let y = crate::primitives::Vector::from_slice(&[
+        let y = Vector::from_slice(&[
             1.0, 4.0, 9.0, 16.0, 25.0, 36.0, 49.0, 64.0, 81.0, 100.0, 121.0, 144.0, 169.0, 196.0,
             225.0,
         ]);
@@ -4628,8 +4607,7 @@ mod tests {
         let score_value = oob_score.expect("oob_score should be available");
         assert!(
             score_value > 0.7,
-            "OOB R² {} should be high on non-linear data",
-            score_value
+            "OOB R² {score_value} should be high on non-linear data"
         );
     }
 
@@ -4677,15 +4655,13 @@ mod tests {
         let sum: f32 = imps.iter().sum();
         assert!(
             (sum - 1.0).abs() < 0.01,
-            "Importances should sum to 1.0, got {}",
-            sum
+            "Importances should sum to 1.0, got {sum}"
         );
 
         // Feature 0 should be most important (it's the discriminative feature)
         assert!(
             imps[0] > imps[1] && imps[0] > imps[2],
-            "Feature 0 should be most important, got {:?}",
-            imps
+            "Feature 0 should be most important, got {imps:?}"
         );
     }
 
@@ -4730,10 +4706,7 @@ mod tests {
         for (i, (&imp1, &imp2)) in imps1.iter().zip(imps2.iter()).enumerate() {
             assert!(
                 (imp1 - imp2).abs() <= 0.1,
-                "Importance {} should be similar: {} vs {}",
-                i,
-                imp1,
-                imp2
+                "Importance {i} should be similar: {imp1} vs {imp2}"
             );
         }
     }
@@ -4775,15 +4748,13 @@ mod tests {
         let sum: f32 = imps.iter().sum();
         assert!(
             (sum - 1.0).abs() < 0.01,
-            "Importances should sum to 1.0, got {}",
-            sum
+            "Importances should sum to 1.0, got {sum}"
         );
 
         // Feature 0 should be most important
         assert!(
             imps[0] > imps[1] && imps[0] > imps[2],
-            "Feature 0 should be most important, got {:?}",
-            imps
+            "Feature 0 should be most important, got {imps:?}"
         );
     }
 
@@ -4827,10 +4798,7 @@ mod tests {
         for (i, (&imp1, &imp2)) in imps1.iter().zip(imps2.iter()).enumerate() {
             assert!(
                 (imp1 - imp2).abs() <= 0.1,
-                "Importance {} should be similar: {} vs {}",
-                i,
-                imp1,
-                imp2
+                "Importance {i} should be similar: {imp1} vs {imp2}"
             );
         }
     }
@@ -4857,9 +4825,7 @@ mod tests {
         for (i, &imp) in imps.iter().enumerate() {
             assert!(
                 imp >= 0.0,
-                "Importance {} should be non-negative, got {}",
-                i,
-                imp
+                "Importance {i} should be non-negative, got {imp}"
             );
         }
     }
@@ -4886,9 +4852,7 @@ mod tests {
         for (i, &imp) in imps.iter().enumerate() {
             assert!(
                 imp >= 0.0,
-                "Importance {} should be non-negative, got {}",
-                i,
-                imp
+                "Importance {i} should be non-negative, got {imp}"
             );
         }
     }

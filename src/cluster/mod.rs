@@ -2848,8 +2848,7 @@ mod tests {
 
         assert!(
             dist_sq > 25.0,
-            "Centroids should be well-separated (dist > 5.0), got dist² = {}",
-            dist_sq
+            "Centroids should be well-separated (dist > 5.0), got dist² = {dist_sq}"
         );
     }
 
@@ -2897,8 +2896,7 @@ mod tests {
         let diff = (centroids.get(0, 0) - centroids.get(1, 0)).abs();
         assert!(
             diff > 5.0,
-            "Centroids should be separated by > 5.0, got {}",
-            diff
+            "Centroids should be separated by > 5.0, got {diff}"
         );
     }
 
@@ -3277,9 +3275,7 @@ mod tests {
             for j in 0..n_features {
                 assert!(
                     (orig_centroids.get(i, j) - loaded_centroids.get(i, j)).abs() < 1e-6,
-                    "Centroid mismatch at ({}, {})",
-                    i,
-                    j
+                    "Centroid mismatch at ({i}, {j})"
                 );
             }
         }
@@ -3452,13 +3448,11 @@ mod tests {
 
         assert!(
             has_low,
-            "Should have centroid near 1.0, got {} and {}",
-            c0, c1
+            "Should have centroid near 1.0, got {c0} and {c1}"
         );
         assert!(
             has_high,
-            "Should have centroid near 11.0, got {} and {}",
-            c0, c1
+            "Should have centroid near 11.0, got {c0} and {c1}"
         );
     }
 
@@ -3681,7 +3675,7 @@ mod tests {
         // All samples should be in the same cluster (not noise)
         let first_label = labels[0];
         assert_ne!(first_label, -1);
-        for &label in labels.iter() {
+        for &label in labels {
             assert_eq!(label, first_label);
         }
     }
@@ -3698,7 +3692,7 @@ mod tests {
         let labels = dbscan.labels();
 
         // All samples should be noise
-        for &label in labels.iter() {
+        for &label in labels {
             assert_eq!(label, -1);
         }
     }

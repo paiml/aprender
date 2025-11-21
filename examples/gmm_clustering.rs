@@ -46,7 +46,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let labels = gmm.predict(&data);
     println!("\nHard cluster assignments:");
     for (i, &label) in labels.iter().enumerate() {
-        println!("  Point {}: Cluster {}", i, label);
+        println!("  Point {i}: Cluster {label}");
     }
 
     // Example 2: Soft assignments (probabilities)
@@ -56,7 +56,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for i in 0..data.shape().0 {
         let p0 = proba.get(i, 0);
         let p1 = proba.get(i, 1);
-        println!("  Point {}: Cluster 0: {:.3}, Cluster 1: {:.3}", i, p0, p1);
+        println!("  Point {i}: Cluster 0: {p0:.3}, Cluster 1: {p1:.3}");
     }
 
     // Example 3: Model parameters
@@ -75,13 +75,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let weights = gmm.weights();
     println!("\nMixing weights (sum to 1):");
     for (k, &weight) in weights.as_slice().iter().enumerate() {
-        println!("  Component {}: {:.3}", k, weight);
+        println!("  Component {k}: {weight:.3}");
     }
 
     // Example 4: Log-likelihood (model fit quality)
     println!("\n--- Example 4: Model Quality ---");
     let log_likelihood = gmm.score(&data);
-    println!("Average log-likelihood: {:.3}", log_likelihood);
+    println!("Average log-likelihood: {log_likelihood:.3}");
     println!("(Higher is better)");
 
     // Example 5: Different covariance types
@@ -114,10 +114,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut kmeans = KMeans::new(2).with_random_state(42);
     kmeans.fit(&data)?;
     let kmeans_labels = kmeans.predict(&data);
-    println!("  Hard assignments: {:?}", kmeans_labels);
+    println!("  Hard assignments: {kmeans_labels:?}");
 
     println!("\nGMM (soft + hard assignments):");
-    println!("  Hard assignments: {:?}", labels);
+    println!("  Hard assignments: {labels:?}");
     println!("  Soft assignments available via predict_proba()");
     println!("  Provides uncertainty estimates!");
 

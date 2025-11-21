@@ -43,7 +43,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Predictions (1=normal, -1=anomaly):");
     for (i, &pred) in predictions.iter().enumerate() {
         let label = if pred == 1 { "NORMAL" } else { "ANOMALY" };
-        println!("  Point {}: {} ({})", i, pred, label);
+        println!("  Point {i}: {pred} ({label})");
     }
 
     let n_anomalies = predictions.iter().filter(|&&p| p == -1).count();
@@ -65,7 +65,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         } else {
             "clear outlier"
         };
-        println!("  Point {}: {:.3} ({})", i, score, interpretation);
+        println!("  Point {i}: {score:.3} ({interpretation})");
     }
 
     // Example 3: Varying density clusters (LOF's key advantage!)
@@ -108,7 +108,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  Point 10 (near sparse): LOF={:.3}", varied_scores[10]);
 
     let n_detected = varied_preds.iter().filter(|&&p| p == -1).count();
-    println!("\nLOF correctly identifies {} local outliers!", n_detected);
+    println!("\nLOF correctly identifies {n_detected} local outliers!");
 
     // Example 4: Effect of n_neighbors
     println!("\n--- Example 4: Effect of n_neighbors Parameter ---");
@@ -149,7 +149,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     lof_low.fit(&data)?;
     let pred_low = lof_low.predict(&data);
     let anomalies_low = pred_low.iter().filter(|&&p| p == -1).count();
-    println!("  Detected {} anomalies", anomalies_low);
+    println!("  Detected {anomalies_low} anomalies");
 
     println!("\nHigh contamination (30%):");
     let mut lof_high = LocalOutlierFactor::new()
@@ -158,7 +158,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     lof_high.fit(&data)?;
     let pred_high = lof_high.predict(&data);
     let anomalies_high = pred_high.iter().filter(|&&p| p == -1).count();
-    println!("  Detected {} anomalies", anomalies_high);
+    println!("  Detected {anomalies_high} anomalies");
 
     // Example 6: LOF vs Isolation Forest comparison
     println!("\n--- Example 6: LOF vs Isolation Forest ---");
@@ -167,7 +167,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // LOF results (already computed above)
     println!("LOF (local density-based):");
     println!("  Handles varying density: ✓");
-    println!("  Detected {} outliers in mixed-density data", n_detected);
+    println!("  Detected {n_detected} outliers in mixed-density data");
 
     // Isolation Forest for comparison
     let mut iforest = IsolationForest::new()
@@ -181,8 +181,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("\nIsolation Forest (global isolation-based):");
     println!("  Handles varying density: partial");
     println!(
-        "  Detected {} outliers in mixed-density data",
-        iforest_anomalies
+        "  Detected {iforest_anomalies} outliers in mixed-density data"
     );
 
     println!("\nKey difference:");

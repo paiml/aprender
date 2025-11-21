@@ -188,7 +188,7 @@ fn comparison_example() {
             "  No"
         };
 
-        println!("  {:25} {:>10} {:>15}", name, n_bins, adapts);
+        println!("  {name:25} {n_bins:>10} {adapts:>15}");
     }
 
     println!("\n  → Bayesian Blocks is the only method that automatically");

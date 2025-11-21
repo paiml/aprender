@@ -776,18 +776,15 @@ mod tests {
             assert_eq!(
                 train_idx.len(),
                 8,
-                "Fold {} should have 8 training samples",
-                i
+                "Fold {i} should have 8 training samples"
             );
-            assert_eq!(test_idx.len(), 2, "Fold {} should have 2 test samples", i);
+            assert_eq!(test_idx.len(), 2, "Fold {i} should have 2 test samples");
 
             // Verify no overlap between train and test
             for &test_i in test_idx {
                 assert!(
                     !train_idx.contains(&test_i),
-                    "Test index {} should not be in training set for fold {}",
-                    test_i,
-                    i
+                    "Test index {test_i} should not be in training set for fold {i}"
                 );
             }
         }
@@ -795,7 +792,7 @@ mod tests {
         // All indices should be used exactly once as test
         let mut all_test_indices: Vec<usize> =
             splits.iter().flat_map(|(_, test)| test).copied().collect();
-        all_test_indices.sort();
+        all_test_indices.sort_unstable();
         assert_eq!(all_test_indices, (0..10).collect::<Vec<_>>());
     }
 
@@ -875,7 +872,7 @@ mod tests {
 
         // All scores should be very high (perfect linear relationship)
         for &score in &result.scores {
-            assert!(score > 0.99, "Score should be > 0.99, got {}", score);
+            assert!(score > 0.99, "Score should be > 0.99, got {score}");
         }
 
         // Mean should be close to 1.0
@@ -1020,7 +1017,7 @@ mod tests {
             all_test_indices.extend(test_idx);
         }
 
-        all_test_indices.sort();
+        all_test_indices.sort_unstable();
         assert_eq!(
             all_test_indices,
             vec![0, 1, 2, 3, 4, 5],
@@ -1070,10 +1067,10 @@ mod tests {
             let mut test1_sorted = test1.clone();
             let mut test2_sorted = test2.clone();
 
-            train1_sorted.sort();
-            train2_sorted.sort();
-            test1_sorted.sort();
-            test2_sorted.sort();
+            train1_sorted.sort_unstable();
+            train2_sorted.sort_unstable();
+            test1_sorted.sort_unstable();
+            test2_sorted.sort_unstable();
 
             assert_eq!(train1_sorted, train2_sorted);
             assert_eq!(test1_sorted, test2_sorted);

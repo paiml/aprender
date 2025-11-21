@@ -1999,8 +1999,7 @@ mod tests {
         // Should mention samples, features, and suggest solutions
         assert!(
             error_str.contains("samples") || error_str.contains("features"),
-            "Error message should mention samples or features: {}",
-            error_str
+            "Error message should mention samples or features: {error_str}"
         );
     }
 
@@ -2027,8 +2026,7 @@ mod tests {
         let error_str = error_msg.to_string();
         assert!(
             error_str.contains("samples") || error_str.contains("features"),
-            "Error message should be helpful: {}",
-            error_str
+            "Error message should be helpful: {error_str}"
         );
     }
 
@@ -2219,9 +2217,7 @@ mod tests {
 
         assert!(
             high_norm < low_norm,
-            "High regularization should shrink coefficients: {} < {}",
-            high_norm,
-            low_norm
+            "High regularization should shrink coefficients: {high_norm} < {low_norm}"
         );
     }
 
@@ -2430,7 +2426,7 @@ mod tests {
         assert!(model.is_fitted());
 
         let r2 = model.score(&x, &y);
-        assert!(r2 > 0.98, "R² should be > 0.98, got {}", r2);
+        assert!(r2 > 0.98, "R² should be > 0.98, got {r2}");
     }
 
     #[test]
@@ -2488,7 +2484,7 @@ mod tests {
             .expect("Fit should succeed with valid test data");
 
         let r2 = model.score(&x, &y);
-        assert!(r2 > 0.95, "R² should be > 0.95, got {}", r2);
+        assert!(r2 > 0.95, "R² should be > 0.95, got {r2}");
     }
 
     #[test]

@@ -240,7 +240,7 @@ fn test_safetensors_roundtrip() {
 
     for i in 0..pred_original.len() {
         let diff = (pred_loaded[i] - pred_original[i]).abs();
-        assert!(diff < 1e-5, "Prediction {} must match", i);
+        assert!(diff < 1e-5, "Prediction {i} must match");
     }
 
     // Cleanup
@@ -259,8 +259,7 @@ fn test_safetensors_file_does_not_exist_error() {
     let error_msg = result.unwrap_err();
     assert!(
         error_msg.contains("No such file") || error_msg.contains("not found"),
-        "Error should mention file not found, got: {}",
-        error_msg
+        "Error should mention file not found, got: {error_msg}"
     );
 }
 

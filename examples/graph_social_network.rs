@@ -65,7 +65,7 @@ fn main() {
 
     let degree_scores = graph.degree_centrality();
     let mut degree_with_names: Vec<(&str, f64)> = Vec::new();
-    for (node_id, score) in degree_scores.iter() {
+    for (node_id, score) in &degree_scores {
         degree_with_names.push((names[*node_id], *score));
     }
     degree_with_names.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
