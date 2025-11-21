@@ -153,7 +153,20 @@ cargo mutants --list --file src/loss/mod.rs
 
 ## Linting Configuration
 
-Aprender enforces high-quality code standards through comprehensive Rust and Clippy lints configured in `Cargo.toml`.
+Aprender enforces high-quality code standards through comprehensive **workspace-level** Rust and Clippy lints configured in `Cargo.toml`.
+
+### Workspace-Level Lints (GH-42)
+
+As of v0.4.1, lints are defined at workspace level for consistency and future multi-crate support:
+- `[workspace.lints.rust]` - Workspace-wide Rust lints
+- `[workspace.lints.clippy]` - Workspace-wide Clippy lints
+- `[lints] workspace = true` - Package inherits workspace lints
+
+This approach provides:
+- Centralized lint configuration
+- Consistent enforcement across all crates
+- Easy addition of future crates to workspace
+- Improved PMAT Code Quality score
 
 ### Rust Lints
 
