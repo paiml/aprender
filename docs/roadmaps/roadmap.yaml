@@ -581,3 +581,18 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
+- id: GH-35
+  github_issue: null
+  item_type: task
+  title: 'New task: GH-35'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-21T14:34:14.673583967+00:00
+  updated: 2025-11-21T14:38:41.793960708+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
