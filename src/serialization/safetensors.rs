@@ -47,14 +47,14 @@ pub type SafeTensorsMetadata = BTreeMap<String, TensorMetadata>;
 /// - JSON serialization fails
 pub fn save_safetensors<P: AsRef<Path>>(
     path: P,
-    tensors: BTreeMap<String, (Vec<f32>, Vec<usize>)>,
+    tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
 ) -> Result<(), String> {
     let mut metadata = SafeTensorsMetadata::new();
     let mut raw_data = Vec::new();
     let mut current_offset = 0;
 
     // Process each tensor (BTreeMap already provides sorted iteration)
-    for (name, (data, shape)) in &tensors {
+    for (name, (data, shape)) in tensors {
         // Calculate data offsets
         let start_offset = current_offset;
         let data_size = data.len() * 4; // F32 = 4 bytes
@@ -79,8 +79,8 @@ pub fn save_safetensors<P: AsRef<Path>>(
     }
 
     // Serialize metadata to JSON
-    let metadata_json = serde_json::to_string(&metadata)
-        .map_err(|e| format!("JSON serialization failed: {}", e))?;
+    let metadata_json =
+        serde_json::to_string(&metadata).map_err(|e| format!("JSON serialization failed: {e}"))?;
     let metadata_bytes = metadata_json.as_bytes();
     let metadata_len = metadata_bytes.len() as u64;
 
@@ -93,7 +93,7 @@ pub fn save_safetensors<P: AsRef<Path>>(
     output.extend_from_slice(metadata_bytes);
     output.extend_from_slice(&raw_data);
 
-    fs::write(path, output).map_err(|e| format!("File write failed: {}", e))?;
+    fs::write(path, output).map_err(|e| format!("File write failed: {e}"))?;
     Ok(())
 }
 
@@ -118,7 +118,7 @@ pub fn save_safetensors<P: AsRef<Path>>(
 /// - Data section is truncated
 pub fn load_safetensors<P: AsRef<Path>>(path: P) -> Result<(SafeTensorsMetadata, Vec<u8>), String> {
     // Read file
-    let bytes = fs::read(path).map_err(|e| format!("File read failed: {}", e))?;
+    let bytes = fs::read(path).map_err(|e| format!("File read failed: {e}"))?;
 
     // Validate minimum size (8-byte header)
     if bytes.len() < 8 {
@@ -141,19 +141,18 @@ pub fn load_safetensors<P: AsRef<Path>>(path: P) -> Result<(SafeTensorsMetadata,
 
     if 8 + metadata_len > bytes.len() {
         return Err(format!(
-            "Invalid SafeTensors file: metadata length {} exceeds file size",
-            metadata_len
+            "Invalid SafeTensors file: metadata length {metadata_len} exceeds file size"
         ));
     }
 
     // Extract metadata JSON
     let metadata_json = &bytes[8..8 + metadata_len];
     let metadata_str = std::str::from_utf8(metadata_json)
-        .map_err(|e| format!("Metadata is not valid UTF-8: {}", e))?;
+        .map_err(|e| format!("Metadata is not valid UTF-8: {e}"))?;
 
     // Parse metadata JSON
     let metadata: SafeTensorsMetadata =
-        serde_json::from_str(metadata_str).map_err(|e| format!("JSON parsing failed: {}", e))?;
+        serde_json::from_str(metadata_str).map_err(|e| format!("JSON parsing failed: {e}"))?;
 
     // Extract raw data section
     let raw_data = bytes[8 + metadata_len..].to_vec();
@@ -190,10 +189,7 @@ pub fn extract_tensor(raw_data: &[u8], tensor_meta: &TensorMetadata) -> Result<V
     }
 
     if start >= end {
-        return Err(format!(
-            "Invalid data offset: start={} >= end={}",
-            start, end
-        ));
+        return Err(format!("Invalid data offset: start={start} >= end={end}"));
     }
 
     // Extract bytes
@@ -233,7 +229,7 @@ mod tests {
         tensors.insert("bias".to_string(), (vec![0.5], vec![1]));
 
         // Save
-        save_safetensors(path, tensors.clone())
+        save_safetensors(path, &tensors)
             .expect("Failed to save test tensors to SafeTensors format");
 
         // Load
@@ -264,7 +260,7 @@ mod tests {
         let mut tensors = BTreeMap::new();
         tensors.insert("test".to_string(), (vec![1.0], vec![1]));
 
-        save_safetensors(path, tensors)
+        save_safetensors(path, &tensors)
             .expect("Failed to save test tensor for header format verification");
 
         // Read and verify header
@@ -337,9 +333,8 @@ mod tests {
         tensors.insert("m_middle".to_string(), (vec![2.0], vec![1]));
 
         // Save twice
-        save_safetensors(path1, tensors.clone())
-            .expect("Failed to save first deterministic test file");
-        save_safetensors(path2, tensors).expect("Failed to save second deterministic test file");
+        save_safetensors(path1, &tensors).expect("Failed to save first deterministic test file");
+        save_safetensors(path2, &tensors).expect("Failed to save second deterministic test file");
 
         // Files should be identical (deterministic)
         let bytes1 = fs::read(path1).expect("Failed to read first deterministic test file");

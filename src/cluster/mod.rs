@@ -147,8 +147,8 @@ impl KMeans {
     ///
     /// Returns an error if serialization or file writing fails.
     pub fn save<P: AsRef<Path>>(&self, path: P) -> std::result::Result<(), String> {
-        let bytes = bincode::serialize(self).map_err(|e| format!("Serialization failed: {}", e))?;
-        fs::write(path, bytes).map_err(|e| format!("File write failed: {}", e))?;
+        let bytes = bincode::serialize(self).map_err(|e| format!("Serialization failed: {e}"))?;
+        fs::write(path, bytes).map_err(|e| format!("File write failed: {e}"))?;
         Ok(())
     }
 
@@ -158,9 +158,9 @@ impl KMeans {
     ///
     /// Returns an error if file reading or deserialization fails.
     pub fn load<P: AsRef<Path>>(path: P) -> std::result::Result<Self, String> {
-        let bytes = fs::read(path).map_err(|e| format!("File read failed: {}", e))?;
+        let bytes = fs::read(path).map_err(|e| format!("File read failed: {e}"))?;
         let model =
-            bincode::deserialize(&bytes).map_err(|e| format!("Deserialization failed: {}", e))?;
+            bincode::deserialize(&bytes).map_err(|e| format!("Deserialization failed: {e}"))?;
         Ok(model)
     }
 
@@ -223,7 +223,7 @@ impl KMeans {
         tensors.insert("inertia".to_string(), (vec![self.inertia], vec![1]));
         tensors.insert("n_iter".to_string(), (vec![self.n_iter as f32], vec![1]));
 
-        safetensors::save_safetensors(path, tensors)?;
+        safetensors::save_safetensors(path, &tensors)?;
         Ok(())
     }
 
@@ -258,7 +258,7 @@ impl KMeans {
 
         // Reconstruct centroids matrix
         let centroids = Matrix::from_vec(n_clusters_from_shape, n_features, centroids_data)
-            .map_err(|e| format!("Failed to reconstruct centroids matrix: {}", e))?;
+            .map_err(|e| format!("Failed to reconstruct centroids matrix: {e}"))?;
 
         // Load hyperparameters
         let n_clusters_meta = metadata
@@ -610,6 +610,7 @@ impl DBSCAN {
     }
 
     /// Computes Euclidean distance between samples i and j.
+    #[allow(clippy::unused_self)]
     fn euclidean_distance(&self, x: &Matrix<f32>, i: usize, j: usize) -> f32 {
         let n_features = x.shape().1;
         let mut sum = 0.0;
@@ -811,6 +812,7 @@ impl AgglomerativeClustering {
     }
 
     /// Calculate Euclidean distance between two points.
+    #[allow(clippy::unused_self)]
     fn euclidean_distance(&self, x: &Matrix<f32>, i: usize, j: usize) -> f32 {
         let n_features = x.shape().1;
         let mut sum = 0.0;
@@ -837,6 +839,7 @@ impl AgglomerativeClustering {
     }
 
     /// Find minimum distance between two active clusters.
+    #[allow(clippy::unused_self)]
     fn find_closest_clusters(
         &self,
         distances: &[Vec<f32>],
@@ -945,6 +948,7 @@ impl AgglomerativeClustering {
 
     /// Compute centroid of a cluster.
     #[allow(clippy::needless_range_loop)]
+    #[allow(clippy::unused_self)]
     fn compute_centroid(&self, x: &Matrix<f32>, cluster: &[usize]) -> Vec<f32> {
         let n_features = x.shape().1;
         let mut centroid = vec![0.0; n_features];
@@ -1172,9 +1176,7 @@ impl GaussianMixture {
 
     /// Compute log probability of data under the model.
     pub fn score(&self, x: &Matrix<f32>) -> f32 {
-        if !self.is_fitted() {
-            panic!("Model not fitted. Call fit() first.");
-        }
+        assert!(self.is_fitted(), "Model not fitted. Call fit() first.");
         let responsibilities = self.compute_responsibilities(x);
         let n_samples = x.shape().0;
 
@@ -1194,9 +1196,7 @@ impl GaussianMixture {
 
     /// Predict cluster probabilities for each sample (soft assignment).
     pub fn predict_proba(&self, x: &Matrix<f32>) -> Matrix<f32> {
-        if !self.is_fitted() {
-            panic!("Model not fitted. Call fit() first.");
-        }
+        assert!(self.is_fitted(), "Model not fitted. Call fit() first.");
         self.compute_responsibilities(x)
     }
 
@@ -1243,6 +1243,7 @@ impl GaussianMixture {
 
     /// Compute Gaussian probability density.
     #[allow(clippy::needless_range_loop)]
+    #[allow(clippy::unused_self)]
     fn gaussian_pdf(&self, x: &[f32], mean: &[f32], cov: &Matrix<f32>) -> f32 {
         let n_features = mean.len();
 
@@ -1436,9 +1437,7 @@ impl UnsupervisedEstimator for GaussianMixture {
     }
 
     fn predict(&self, x: &Matrix<f32>) -> Self::Labels {
-        if !self.is_fitted() {
-            panic!("Model not fitted. Call fit() first.");
-        }
+        assert!(self.is_fitted(), "Model not fitted. Call fit() first.");
 
         let responsibilities = self.compute_responsibilities(x);
         let n_samples = x.shape().0;
@@ -1591,6 +1590,7 @@ impl IsolationTree {
         }
     }
 
+    #[allow(clippy::self_only_used_in_recursion)]
     fn path_length_recursive(&self, sample: &[f32], node: &IsolationNode, depth: f32) -> f32 {
         // Leaf node - add average path length for remaining samples
         if node.split_feature.is_none() {
@@ -1793,6 +1793,7 @@ impl IsolationForest {
     }
 
     /// Extract subsample from data.
+    #[allow(clippy::unused_self)]
     fn extract_subsample(&self, x: &Matrix<f32>, indices: &[usize]) -> Matrix<f32> {
         let (_, n_features) = x.shape();
         let n_samples = indices.len();
@@ -1813,9 +1814,7 @@ impl IsolationForest {
     /// Returns a vector of scores where lower scores indicate higher anomaly likelihood.
     #[allow(clippy::needless_range_loop)]
     pub fn score_samples(&self, x: &Matrix<f32>) -> Vec<f32> {
-        if !self.is_fitted() {
-            panic!("Model not fitted. Call fit() first.");
-        }
+        assert!(self.is_fitted(), "Model not fitted. Call fit() first.");
 
         let (n_samples, n_features) = x.shape();
         let mut scores = vec![0.0; n_samples];
@@ -1847,9 +1846,7 @@ impl IsolationForest {
     ///
     /// Returns 1 for normal points and -1 for anomalies.
     pub fn predict(&self, x: &Matrix<f32>) -> Vec<i32> {
-        if !self.is_fitted() {
-            panic!("Model not fitted. Call fit() first.");
-        }
+        assert!(self.is_fitted(), "Model not fitted. Call fit() first.");
 
         let threshold = self
             .threshold
@@ -2056,7 +2053,7 @@ impl LocalOutlierFactor {
 
             // Take k+1 nearest (skip self if query == data)
             let skip_self = i < n_data;
-            let k_start = if skip_self { 1 } else { 0 };
+            let k_start = usize::from(skip_self);
             let k_end = k_start + self.n_neighbors;
 
             let dists: Vec<f32> = distances[k_start..k_end.min(distances.len())]
@@ -2076,6 +2073,7 @@ impl LocalOutlierFactor {
     }
 
     /// Compute reachability distance between two points.
+    #[allow(clippy::unused_self)]
     fn reachability_distance(&self, dist: f32, k_distance: f32) -> f32 {
         dist.max(k_distance)
     }
@@ -2124,6 +2122,7 @@ impl LocalOutlierFactor {
     }
 
     /// Compute LOF scores for all points.
+    #[allow(clippy::unused_self)]
     fn compute_lof_scores(&self, lrd: &[f32], knn_indices: &[Vec<usize>]) -> Vec<f32> {
         let n_samples = knn_indices.len();
         let mut lof_scores = Vec::with_capacity(n_samples);
@@ -2153,9 +2152,7 @@ impl LocalOutlierFactor {
     ///
     /// Returns a vector of LOF scores where higher scores indicate anomalies.
     pub fn score_samples(&self, x: &Matrix<f32>) -> Vec<f32> {
-        if !self.is_fitted() {
-            panic!("Model not fitted. Call fit() first.");
-        }
+        assert!(self.is_fitted(), "Model not fitted. Call fit() first.");
 
         let training_data = self
             .training_data
@@ -2204,9 +2201,7 @@ impl LocalOutlierFactor {
     ///
     /// Returns 1 for normal points and -1 for anomalies.
     pub fn predict(&self, x: &Matrix<f32>) -> Vec<i32> {
-        if !self.is_fitted() {
-            panic!("Model not fitted. Call fit() first.");
-        }
+        assert!(self.is_fitted(), "Model not fitted. Call fit() first.");
 
         let threshold = self
             .threshold
@@ -2223,9 +2218,7 @@ impl LocalOutlierFactor {
     ///
     /// Returns negative of LOF scores (sklearn compatibility).
     pub fn negative_outlier_factor(&self) -> &[f32] {
-        if !self.is_fitted() {
-            panic!("Model not fitted. Call fit() first.");
-        }
+        assert!(self.is_fitted(), "Model not fitted. Call fit() first.");
 
         self.negative_outlier_factor
             .as_ref()
@@ -2343,9 +2336,7 @@ impl SpectralClustering {
 
     /// Get cluster labels (panics if not fitted).
     pub fn labels(&self) -> &Vec<usize> {
-        if !self.is_fitted() {
-            panic!("Model not fitted. Call fit() first.");
-        }
+        assert!(self.is_fitted(), "Model not fitted. Call fit() first.");
         self.labels
             .as_ref()
             .expect("Labels must exist after successful fit")
@@ -2466,6 +2457,7 @@ impl SpectralClustering {
     }
 
     /// Compute normalized graph Laplacian.
+    #[allow(clippy::unused_self)]
     fn compute_laplacian(&self, affinity: &[f32], n_samples: usize) -> Vec<f32> {
         // Compute degree matrix D
         let mut degrees = vec![0.0; n_samples];
@@ -2511,7 +2503,7 @@ impl SpectralClustering {
             .eigenvalues
             .iter()
             .enumerate()
-            .map(|(i, &val)| (i, val as f64))
+            .map(|(i, &val)| (i, f64::from(val)))
             .collect();
         eigen_pairs.sort_by(|a, b| {
             a.1.partial_cmp(&b.1)
@@ -2544,9 +2536,7 @@ impl UnsupervisedEstimator for SpectralClustering {
     }
 
     fn predict(&self, _x: &Matrix<f32>) -> Self::Labels {
-        if !self.is_fitted() {
-            panic!("Model not fitted. Call fit() first.");
-        }
+        assert!(self.is_fitted(), "Model not fitted. Call fit() first.");
         self.labels
             .as_ref()
             .expect("Labels must exist after successful fit")

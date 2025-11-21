@@ -44,6 +44,7 @@ pub struct Edge {
 /// - Memory: 50-70% reduction vs HashMap (no pointer overhead)
 /// - Cache misses: 3-5x fewer (sequential access pattern)
 /// - SIMD-friendly: Neighbor iteration can use vectorization
+#[derive(Debug)]
 pub struct Graph {
     // CSR adjacency representation (cache-friendly)
     row_ptr: Vec<usize>,      // Offset into col_indices (length = n_nodes + 1)
@@ -503,7 +504,7 @@ impl Graph {
 
                         q += a_ij - expected;
                     }
-                    _ => continue,
+                    _ => {}
                 }
             }
         }
@@ -597,8 +598,7 @@ impl Graph {
         }
 
         // Convert node_to_comm map to community lists
-        let mut communities: std::collections::HashMap<usize, Vec<NodeId>> =
-            std::collections::HashMap::new();
+        let mut communities: HashMap<usize, Vec<NodeId>> = HashMap::new();
 
         for (node, &comm) in node_to_comm.iter().enumerate() {
             communities.entry(comm).or_default().push(node);

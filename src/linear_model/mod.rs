@@ -115,8 +115,8 @@ impl LinearRegression {
     ///
     /// Returns an error if serialization or file writing fails.
     pub fn save<P: AsRef<Path>>(&self, path: P) -> std::result::Result<(), String> {
-        let bytes = bincode::serialize(self).map_err(|e| format!("Serialization failed: {}", e))?;
-        fs::write(path, bytes).map_err(|e| format!("File write failed: {}", e))?;
+        let bytes = bincode::serialize(self).map_err(|e| format!("Serialization failed: {e}"))?;
+        fs::write(path, bytes).map_err(|e| format!("File write failed: {e}"))?;
         Ok(())
     }
 
@@ -126,9 +126,9 @@ impl LinearRegression {
     ///
     /// Returns an error if file reading or deserialization fails.
     pub fn load<P: AsRef<Path>>(path: P) -> std::result::Result<Self, String> {
-        let bytes = fs::read(path).map_err(|e| format!("File read failed: {}", e))?;
+        let bytes = fs::read(path).map_err(|e| format!("File read failed: {e}"))?;
         let model =
-            bincode::deserialize(&bytes).map_err(|e| format!("Deserialization failed: {}", e))?;
+            bincode::deserialize(&bytes).map_err(|e| format!("Deserialization failed: {e}"))?;
         Ok(model)
     }
 
@@ -170,7 +170,7 @@ impl LinearRegression {
         tensors.insert("intercept".to_string(), (intercept_data, intercept_shape));
 
         // Save to SafeTensors format
-        safetensors::save_safetensors(path, tensors)?;
+        safetensors::save_safetensors(path, &tensors)?;
         Ok(())
     }
 
@@ -443,8 +443,8 @@ impl Ridge {
     ///
     /// Returns an error if serialization or file writing fails.
     pub fn save<P: AsRef<Path>>(&self, path: P) -> std::result::Result<(), String> {
-        let bytes = bincode::serialize(self).map_err(|e| format!("Serialization failed: {}", e))?;
-        fs::write(path, bytes).map_err(|e| format!("File write failed: {}", e))?;
+        let bytes = bincode::serialize(self).map_err(|e| format!("Serialization failed: {e}"))?;
+        fs::write(path, bytes).map_err(|e| format!("File write failed: {e}"))?;
         Ok(())
     }
 
@@ -454,9 +454,9 @@ impl Ridge {
     ///
     /// Returns an error if file reading or deserialization fails.
     pub fn load<P: AsRef<Path>>(path: P) -> std::result::Result<Self, String> {
-        let bytes = fs::read(path).map_err(|e| format!("File read failed: {}", e))?;
+        let bytes = fs::read(path).map_err(|e| format!("File read failed: {e}"))?;
         let model =
-            bincode::deserialize(&bytes).map_err(|e| format!("Deserialization failed: {}", e))?;
+            bincode::deserialize(&bytes).map_err(|e| format!("Deserialization failed: {e}"))?;
         Ok(model)
     }
 
@@ -503,7 +503,7 @@ impl Ridge {
         tensors.insert("alpha".to_string(), (alpha_data, alpha_shape));
 
         // Save to SafeTensors format
-        safetensors::save_safetensors(path, tensors)?;
+        safetensors::save_safetensors(path, &tensors)?;
         Ok(())
     }
 
@@ -801,8 +801,8 @@ impl Lasso {
     ///
     /// Returns an error if serialization or file writing fails.
     pub fn save<P: AsRef<Path>>(&self, path: P) -> std::result::Result<(), String> {
-        let bytes = bincode::serialize(self).map_err(|e| format!("Serialization failed: {}", e))?;
-        fs::write(path, bytes).map_err(|e| format!("File write failed: {}", e))?;
+        let bytes = bincode::serialize(self).map_err(|e| format!("Serialization failed: {e}"))?;
+        fs::write(path, bytes).map_err(|e| format!("File write failed: {e}"))?;
         Ok(())
     }
 
@@ -812,9 +812,9 @@ impl Lasso {
     ///
     /// Returns an error if file reading or deserialization fails.
     pub fn load<P: AsRef<Path>>(path: P) -> std::result::Result<Self, String> {
-        let bytes = fs::read(path).map_err(|e| format!("File read failed: {}", e))?;
+        let bytes = fs::read(path).map_err(|e| format!("File read failed: {e}"))?;
         let model =
-            bincode::deserialize(&bytes).map_err(|e| format!("Deserialization failed: {}", e))?;
+            bincode::deserialize(&bytes).map_err(|e| format!("Deserialization failed: {e}"))?;
         Ok(model)
     }
 
@@ -871,7 +871,7 @@ impl Lasso {
         tensors.insert("tol".to_string(), (tol_data, tol_shape));
 
         // Save to SafeTensors format
-        safetensors::save_safetensors(path, tensors)?;
+        safetensors::save_safetensors(path, &tensors)?;
         Ok(())
     }
 
@@ -1257,8 +1257,8 @@ impl ElasticNet {
     ///
     /// Returns an error if serialization or file writing fails.
     pub fn save<P: AsRef<Path>>(&self, path: P) -> std::result::Result<(), String> {
-        let bytes = bincode::serialize(self).map_err(|e| format!("Serialization failed: {}", e))?;
-        fs::write(path, bytes).map_err(|e| format!("File write failed: {}", e))?;
+        let bytes = bincode::serialize(self).map_err(|e| format!("Serialization failed: {e}"))?;
+        fs::write(path, bytes).map_err(|e| format!("File write failed: {e}"))?;
         Ok(())
     }
 
@@ -1268,9 +1268,9 @@ impl ElasticNet {
     ///
     /// Returns an error if file reading or deserialization fails.
     pub fn load<P: AsRef<Path>>(path: P) -> std::result::Result<Self, String> {
-        let bytes = fs::read(path).map_err(|e| format!("File read failed: {}", e))?;
+        let bytes = fs::read(path).map_err(|e| format!("File read failed: {e}"))?;
         let model =
-            bincode::deserialize(&bytes).map_err(|e| format!("Deserialization failed: {}", e))?;
+            bincode::deserialize(&bytes).map_err(|e| format!("Deserialization failed: {e}"))?;
         Ok(model)
     }
 
@@ -1332,7 +1332,7 @@ impl ElasticNet {
         tensors.insert("tol".to_string(), (tol_data, tol_shape));
 
         // Save to SafeTensors format
-        safetensors::save_safetensors(path, tensors)?;
+        safetensors::save_safetensors(path, &tensors)?;
         Ok(())
     }
 

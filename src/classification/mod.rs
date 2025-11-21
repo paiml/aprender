@@ -199,7 +199,7 @@ impl LogisticRegression {
         probas
             .as_slice()
             .iter()
-            .map(|&p| if p >= 0.5 { 1 } else { 0 })
+            .map(|&p| usize::from(p >= 0.5))
             .collect()
     }
 
@@ -269,7 +269,7 @@ impl LogisticRegression {
         tensors.insert("intercept".to_string(), (intercept_data, intercept_shape));
 
         // Save to SafeTensors format
-        safetensors::save_safetensors(path, tensors)?;
+        safetensors::save_safetensors(path, &tensors)?;
         Ok(())
     }
 
@@ -624,6 +624,7 @@ impl KNearestNeighbors {
     }
 
     /// Performs majority voting among k nearest neighbors.
+    #[allow(clippy::unused_self)]
     fn majority_vote(&self, neighbors: &[(f32, usize)]) -> usize {
         let mut class_counts = std::collections::HashMap::new();
 
@@ -639,6 +640,7 @@ impl KNearestNeighbors {
     }
 
     /// Performs weighted voting (inverse distance weighting).
+    #[allow(clippy::unused_self)]
     fn weighted_vote(&self, neighbors: &[(f32, usize)]) -> usize {
         let mut class_weights = std::collections::HashMap::new();
 
@@ -1132,10 +1134,7 @@ impl LinearSVM {
     pub fn predict(&self, x: &Matrix<f32>) -> Result<Vec<usize>> {
         let decisions = self.decision_function(x)?;
 
-        Ok(decisions
-            .iter()
-            .map(|&d| if d >= 0.0 { 1 } else { 0 })
-            .collect())
+        Ok(decisions.iter().map(|&d| usize::from(d >= 0.0)).collect())
     }
 }
 

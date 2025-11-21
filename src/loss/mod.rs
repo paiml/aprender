@@ -218,7 +218,7 @@ impl Loss for MSELoss {
         mse_loss(y_pred, y_true)
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "MSE"
     }
 }
@@ -232,7 +232,7 @@ impl Loss for MAELoss {
         mae_loss(y_pred, y_true)
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "MAE"
     }
 }
@@ -280,7 +280,7 @@ impl Loss for HuberLoss {
         huber_loss(y_pred, y_true, self.delta)
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "Huber"
     }
 }

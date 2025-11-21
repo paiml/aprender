@@ -28,6 +28,7 @@ use trueno::Vector;
 ///
 /// Holds a reference to the data vector to avoid unnecessary copying.
 /// Uses lazy evaluation and caching for repeated computations.
+#[derive(Debug)]
 pub struct DescriptiveStats<'a> {
     data: &'a Vector<f32>,
 }
@@ -129,7 +130,7 @@ impl<'a> DescriptiveStats<'a> {
             return Err("Cannot compute quantile of empty vector".to_string());
         }
         if !(0.0..=1.0).contains(&q) {
-            return Err(format!("Quantile must be in [0, 1], got {}", q));
+            return Err(format!("Quantile must be in [0, 1], got {q}"));
         }
 
         let n = self.data.len();
@@ -211,7 +212,7 @@ impl<'a> DescriptiveStats<'a> {
         }
         for &p in percentiles {
             if !(0.0..=100.0).contains(&p) {
-                return Err(format!("Percentile must be in [0, 100], got {}", p));
+                return Err(format!("Percentile must be in [0, 100], got {p}"));
             }
         }
 

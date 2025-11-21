@@ -41,14 +41,14 @@ impl CrossValidationResult {
 
     /// Get minimum score
     pub fn min(&self) -> f32 {
-        self.scores.iter().cloned().fold(f32::INFINITY, f32::min)
+        self.scores.iter().copied().fold(f32::INFINITY, f32::min)
     }
 
     /// Get maximum score
     pub fn max(&self) -> f32 {
         self.scores
             .iter()
-            .cloned()
+            .copied()
             .fold(f32::NEG_INFINITY, f32::max)
     }
 }
@@ -84,7 +84,7 @@ pub fn cross_validate<E>(
     x: &Matrix<f32>,
     y: &Vector<f32>,
     cv: &KFold,
-) -> std::result::Result<CrossValidationResult, String>
+) -> Result<CrossValidationResult, String>
 where
     E: Estimator + Clone,
 {
@@ -102,7 +102,7 @@ where
         let mut fold_model = estimator.clone();
         fold_model
             .fit(&x_train, &y_train)
-            .map_err(|e| format!("Training failed: {}", e))?;
+            .map_err(|e| format!("Training failed: {e}"))?;
 
         // Score on test fold
         let score = fold_model.score(&x_test, &y_test);
@@ -440,8 +440,7 @@ impl GridSearchResult {
                 a.partial_cmp(b)
                     .expect("Scores should be valid f32 values, not NaN")
             })
-            .map(|(idx, _)| idx)
-            .unwrap_or(0)
+            .map_or(0, |(idx, _)| idx)
     }
 }
 
@@ -469,7 +468,7 @@ fn evaluate_alpha_for_model(
     y: &Vector<f32>,
     cv: &KFold,
     l1_ratio: Option<f32>,
-) -> std::result::Result<f32, String> {
+) -> Result<f32, String> {
     let score = match model_type {
         "ridge" => {
             use crate::linear_model::Ridge;
@@ -492,8 +491,7 @@ fn evaluate_alpha_for_model(
         }
         _ => {
             return Err(format!(
-                "Unknown model type: {}. Use 'ridge', 'lasso', or 'elastic_net'",
-                model_type
+                "Unknown model type: {model_type}. Use 'ridge', 'lasso', or 'elastic_net'"
             ))
         }
     };
@@ -551,7 +549,7 @@ pub fn grid_search_alpha(
     y: &Vector<f32>,
     cv: &KFold,
     l1_ratio: Option<f32>,
-) -> std::result::Result<GridSearchResult, String> {
+) -> Result<GridSearchResult, String> {
     if alphas.is_empty() {
         return Err("Alphas vector cannot be empty".to_string());
     }
@@ -605,11 +603,10 @@ fn validate_split_inputs(
     x: &Matrix<f32>,
     y: &Vector<f32>,
     test_size: f32,
-) -> std::result::Result<(usize, usize), String> {
+) -> Result<(usize, usize), String> {
     if test_size <= 0.0 || test_size >= 1.0 {
         return Err(format!(
-            "test_size must be between 0 and 1, got {}",
-            test_size
+            "test_size must be between 0 and 1, got {test_size}"
         ));
     }
 
@@ -627,8 +624,7 @@ fn validate_split_inputs(
 
     if n_test == 0 || n_train == 0 {
         return Err(format!(
-            "Split would result in empty train or test set (n_train={}, n_test={})",
-            n_train, n_test
+            "Split would result in empty train or test set (n_train={n_train}, n_test={n_test})"
         ));
     }
 
@@ -659,7 +655,7 @@ pub fn train_test_split(
     y: &Vector<f32>,
     test_size: f32,
     random_state: Option<u64>,
-) -> std::result::Result<(Matrix<f32>, Matrix<f32>, Vector<f32>, Vector<f32>), String> {
+) -> Result<(Matrix<f32>, Matrix<f32>, Vector<f32>, Vector<f32>), String> {
     let (n_train, _) = validate_split_inputs(x, y, test_size)?;
     let n_samples = x.shape().0;
 

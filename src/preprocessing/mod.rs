@@ -180,7 +180,7 @@ impl StandardScaler {
             }
         }
 
-        Matrix::from_vec(n_samples, n_features, result).map_err(|e| e.into())
+        Matrix::from_vec(n_samples, n_features, result).map_err(Into::into)
     }
 
     /// Saves the StandardScaler to a SafeTensors file.
@@ -219,7 +219,7 @@ impl StandardScaler {
         let with_std_val = if self.with_std { 1.0 } else { 0.0 };
         tensors.insert("with_std".to_string(), (vec![with_std_val], vec![1]));
 
-        safetensors::save_safetensors(path, tensors)?;
+        safetensors::save_safetensors(path, &tensors)?;
         Ok(())
     }
 
@@ -350,7 +350,7 @@ impl Transformer for StandardScaler {
             }
         }
 
-        Matrix::from_vec(n_samples, n_features, result).map_err(|e| e.into())
+        Matrix::from_vec(n_samples, n_features, result).map_err(Into::into)
     }
 }
 
@@ -495,7 +495,7 @@ impl MinMaxScaler {
             }
         }
 
-        Matrix::from_vec(n_samples, n_features, result).map_err(|e| e.into())
+        Matrix::from_vec(n_samples, n_features, result).map_err(Into::into)
     }
 }
 
@@ -563,7 +563,7 @@ impl Transformer for MinMaxScaler {
             }
         }
 
-        Matrix::from_vec(n_samples, n_features, result).map_err(|e| e.into())
+        Matrix::from_vec(n_samples, n_features, result).map_err(Into::into)
     }
 }
 
@@ -674,7 +674,7 @@ impl PCA {
             }
         }
 
-        Matrix::from_vec(n_samples, n_features, result).map_err(|e| e.into())
+        Matrix::from_vec(n_samples, n_features, result).map_err(Into::into)
     }
 }
 
@@ -740,9 +740,9 @@ impl Transformer for PCA {
         let mut explained_variance = vec![0.0; self.n_components];
 
         for (i, &idx) in indices.iter().take(self.n_components).enumerate() {
-            explained_variance[i] = eigenvalues[idx] as f32;
+            explained_variance[i] = eigenvalues[idx];
             for j in 0..n_features {
-                components_data[i * n_features + j] = eigenvectors[(j, idx)] as f32;
+                components_data[i * n_features + j] = eigenvectors[(j, idx)];
             }
         }
 
@@ -795,7 +795,7 @@ impl Transformer for PCA {
             }
         }
 
-        Matrix::from_vec(n_samples, self.n_components, result).map_err(|e| e.into())
+        Matrix::from_vec(n_samples, self.n_components, result).map_err(Into::into)
     }
 }
 
@@ -922,6 +922,7 @@ impl TSNE {
     }
 
     /// Compute pairwise squared Euclidean distances.
+    #[allow(clippy::unused_self)]
     fn compute_pairwise_distances(&self, x: &Matrix<f32>) -> Vec<f32> {
         let (n_samples, n_features) = x.shape();
         let mut distances = vec![0.0; n_samples * n_samples];
@@ -1017,6 +1018,7 @@ impl TSNE {
     }
 
     /// Compute symmetric P matrix: P_{ij} = (P_{j|i} + P_{i|j}) / (2N).
+    #[allow(clippy::unused_self)]
     fn compute_p_joint(&self, p_conditional: &[f32], n_samples: usize) -> Vec<f32> {
         let mut p_joint = vec![0.0; n_samples * n_samples];
         let normalizer = 2.0 * n_samples as f32;
@@ -1176,9 +1178,7 @@ impl Transformer for TSNE {
     }
 
     fn transform(&self, _x: &Matrix<f32>) -> Result<Matrix<f32>> {
-        if !self.is_fitted() {
-            panic!("Model not fitted. Call fit() first.");
-        }
+        assert!(self.is_fitted(), "Model not fitted. Call fit() first.");
         // t-SNE is non-parametric, return the embedding
         Ok(self
             .embedding

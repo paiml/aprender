@@ -194,6 +194,7 @@ impl Apriori {
     }
 
     /// Check if an itemset has any infrequent subset.
+    #[allow(clippy::unused_self)]
     fn has_infrequent_subset(
         &self,
         itemset: &HashSet<usize>,
@@ -285,6 +286,7 @@ impl Apriori {
     }
 
     /// Generate all non-empty subsets of items.
+    #[allow(clippy::unused_self)]
     fn generate_subsets(&self, items: &[usize]) -> Vec<Vec<usize>> {
         let mut subsets = Vec::new();
         let n = items.len();
@@ -397,7 +399,7 @@ impl Apriori {
             }
         }
 
-        count as f64 / transactions.len() as f64
+        f64::from(count) / transactions.len() as f64
     }
 }
 

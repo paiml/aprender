@@ -404,7 +404,7 @@ impl RandomForestRegressor {
         for i in 0..self.n_estimators {
             // Get bootstrap sample indices
             let seed = self.random_state.map(|s| s + i as u64);
-            let bootstrap_indices = _bootstrap_sample(n_samples, seed);
+            let bootstrap_indices = bootstrap_sample(n_samples, seed);
 
             // Compute OOB indices (samples NOT in bootstrap sample)
             let bootstrap_set: std::collections::HashSet<usize> =
@@ -450,9 +450,10 @@ impl RandomForestRegressor {
     ///
     /// Panics if the model hasn't been fitted yet.
     pub fn predict(&self, x: &crate::primitives::Matrix<f32>) -> crate::primitives::Vector<f32> {
-        if self.trees.is_empty() {
-            panic!("Cannot predict with an unfitted Random Forest. Call fit() first.");
-        }
+        assert!(
+            !self.trees.is_empty(),
+            "Cannot predict with an unfitted Random Forest. Call fit() first."
+        );
 
         let n_samples = x.shape().0;
         let mut predictions = vec![0.0; n_samples];
@@ -782,8 +783,8 @@ impl DecisionTreeClassifier {
     ///
     /// Returns an error if serialization or file writing fails.
     pub fn save<P: AsRef<Path>>(&self, path: P) -> std::result::Result<(), String> {
-        let bytes = bincode::serialize(self).map_err(|e| format!("Serialization failed: {}", e))?;
-        fs::write(path, bytes).map_err(|e| format!("File write failed: {}", e))?;
+        let bytes = bincode::serialize(self).map_err(|e| format!("Serialization failed: {e}"))?;
+        fs::write(path, bytes).map_err(|e| format!("File write failed: {e}"))?;
         Ok(())
     }
 
@@ -793,9 +794,9 @@ impl DecisionTreeClassifier {
     ///
     /// Returns an error if file reading or deserialization fails.
     pub fn load<P: AsRef<Path>>(path: P) -> std::result::Result<Self, String> {
-        let bytes = fs::read(path).map_err(|e| format!("File read failed: {}", e))?;
+        let bytes = fs::read(path).map_err(|e| format!("File read failed: {e}"))?;
         let model =
-            bincode::deserialize(&bytes).map_err(|e| format!("Deserialization failed: {}", e))?;
+            bincode::deserialize(&bytes).map_err(|e| format!("Deserialization failed: {e}"))?;
         Ok(model)
     }
 
@@ -870,7 +871,7 @@ impl DecisionTreeClassifier {
         tensors.insert("max_depth".to_string(), (vec![max_depth_val], vec![1]));
 
         // Save to SafeTensors format
-        safetensors::save_safetensors(path, tensors)?;
+        safetensors::save_safetensors(path, &tensors)?;
         Ok(())
     }
 
@@ -1472,27 +1473,22 @@ fn build_tree(
     }
 
     // Try to find best split
-    let (feature_idx, threshold, _gain) = match find_best_split(x, y) {
-        Some(split) => split,
-        None => {
-            return TreeNode::Leaf(Leaf {
-                class_label: majority_class(y),
-                n_samples,
-            });
-        }
+    let Some((feature_idx, threshold, _gain)) = find_best_split(x, y) else {
+        return TreeNode::Leaf(Leaf {
+            class_label: majority_class(y),
+            n_samples,
+        });
     };
 
     // Split data based on threshold
-    let (left_indices, right_indices) =
-        match split_indices_by_threshold(x, feature_idx, threshold, n_samples) {
-            Some(indices) => indices,
-            None => {
-                return TreeNode::Leaf(Leaf {
-                    class_label: majority_class(y),
-                    n_samples,
-                });
-            }
-        };
+    let Some((left_indices, right_indices)) =
+        split_indices_by_threshold(x, feature_idx, threshold, n_samples)
+    else {
+        return TreeNode::Leaf(Leaf {
+            class_label: majority_class(y),
+            n_samples,
+        });
+    };
 
     // Create left and right datasets
     let (left_matrix, left_labels) = split_data_by_indices(x, y, &left_indices);
@@ -1696,14 +1692,11 @@ fn build_regression_tree(
     }
 
     // Try to find best split
-    let (feature_idx, threshold, _gain) = match find_best_regression_split(x, &y_slice) {
-        Some(split) => split,
-        None => {
-            return RegressionTreeNode::Leaf(RegressionLeaf {
-                value: mean_f32(&y_slice),
-                n_samples,
-            });
-        }
+    let Some((feature_idx, threshold, _gain)) = find_best_regression_split(x, &y_slice) else {
+        return RegressionTreeNode::Leaf(RegressionLeaf {
+            value: mean_f32(&y_slice),
+            n_samples,
+        });
     };
 
     // Split data based on threshold
@@ -1896,7 +1889,7 @@ impl RandomForestClassifier {
         for i in 0..self.n_estimators {
             // Get bootstrap sample indices
             let seed = self.random_state.map(|s| s + i as u64);
-            let bootstrap_indices = _bootstrap_sample(n_samples, seed);
+            let bootstrap_indices = bootstrap_sample(n_samples, seed);
 
             // Compute OOB indices (samples NOT in bootstrap sample)
             let bootstrap_set: std::collections::HashSet<usize> =
@@ -2190,29 +2183,29 @@ impl RandomForestClassifier {
             );
 
             // Store each array with tree index prefix
-            let prefix = format!("tree_{}_", tree_idx);
+            let prefix = format!("tree_{tree_idx}_");
             tensors.insert(
-                format!("{}node_features", prefix),
+                format!("{prefix}node_features"),
                 (node_features.clone(), vec![node_features.len()]),
             );
             tensors.insert(
-                format!("{}node_thresholds", prefix),
+                format!("{prefix}node_thresholds"),
                 (node_thresholds.clone(), vec![node_thresholds.len()]),
             );
             tensors.insert(
-                format!("{}node_classes", prefix),
+                format!("{prefix}node_classes"),
                 (node_classes.clone(), vec![node_classes.len()]),
             );
             tensors.insert(
-                format!("{}node_samples", prefix),
+                format!("{prefix}node_samples"),
                 (node_samples.clone(), vec![node_samples.len()]),
             );
             tensors.insert(
-                format!("{}node_left_child", prefix),
+                format!("{prefix}node_left_child"),
                 (node_left_child.clone(), vec![node_left_child.len()]),
             );
             tensors.insert(
-                format!("{}node_right_child", prefix),
+                format!("{prefix}node_right_child"),
                 (node_right_child.clone(), vec![node_right_child.len()]),
             );
 
@@ -2223,7 +2216,7 @@ impl RandomForestClassifier {
                 -1.0
             };
             tensors.insert(
-                format!("{}max_depth", prefix),
+                format!("{prefix}max_depth"),
                 (vec![tree_max_depth], vec![1]),
             );
         }
@@ -2251,7 +2244,7 @@ impl RandomForestClassifier {
             (vec![random_state_val], vec![1]),
         );
 
-        safetensors::save_safetensors(path, tensors)?;
+        safetensors::save_safetensors(path, &tensors)?;
         Ok(())
     }
 
@@ -2300,37 +2293,37 @@ impl RandomForestClassifier {
         // Reconstruct each tree
         let mut trees = Vec::with_capacity(n_estimators);
         for tree_idx in 0..n_estimators {
-            let prefix = format!("tree_{}_", tree_idx);
+            let prefix = format!("tree_{tree_idx}_");
 
             // Load tree arrays
             let node_features_meta = metadata
-                .get(&format!("{}node_features", prefix))
-                .ok_or(format!("Missing tree {} node_features", tree_idx))?;
+                .get(&format!("{prefix}node_features"))
+                .ok_or(format!("Missing tree {tree_idx} node_features"))?;
             let node_features = safetensors::extract_tensor(&raw_data, node_features_meta)?;
 
             let node_thresholds_meta = metadata
-                .get(&format!("{}node_thresholds", prefix))
-                .ok_or(format!("Missing tree {} node_thresholds", tree_idx))?;
+                .get(&format!("{prefix}node_thresholds"))
+                .ok_or(format!("Missing tree {tree_idx} node_thresholds"))?;
             let node_thresholds = safetensors::extract_tensor(&raw_data, node_thresholds_meta)?;
 
             let node_classes_meta = metadata
-                .get(&format!("{}node_classes", prefix))
-                .ok_or(format!("Missing tree {} node_classes", tree_idx))?;
+                .get(&format!("{prefix}node_classes"))
+                .ok_or(format!("Missing tree {tree_idx} node_classes"))?;
             let node_classes = safetensors::extract_tensor(&raw_data, node_classes_meta)?;
 
             let node_samples_meta = metadata
-                .get(&format!("{}node_samples", prefix))
-                .ok_or(format!("Missing tree {} node_samples", tree_idx))?;
+                .get(&format!("{prefix}node_samples"))
+                .ok_or(format!("Missing tree {tree_idx} node_samples"))?;
             let node_samples = safetensors::extract_tensor(&raw_data, node_samples_meta)?;
 
             let node_left_child_meta = metadata
-                .get(&format!("{}node_left_child", prefix))
-                .ok_or(format!("Missing tree {} node_left_child", tree_idx))?;
+                .get(&format!("{prefix}node_left_child"))
+                .ok_or(format!("Missing tree {tree_idx} node_left_child"))?;
             let node_left_child = safetensors::extract_tensor(&raw_data, node_left_child_meta)?;
 
             let node_right_child_meta = metadata
-                .get(&format!("{}node_right_child", prefix))
-                .ok_or(format!("Missing tree {} node_right_child", tree_idx))?;
+                .get(&format!("{prefix}node_right_child"))
+                .ok_or(format!("Missing tree {tree_idx} node_right_child"))?;
             let node_right_child = safetensors::extract_tensor(&raw_data, node_right_child_meta)?;
 
             // Validate array sizes
@@ -2341,7 +2334,7 @@ impl RandomForestClassifier {
                 || node_left_child.len() != n_nodes
                 || node_right_child.len() != n_nodes
             {
-                return Err(format!("Mismatched array sizes for tree {}", tree_idx));
+                return Err(format!("Mismatched array sizes for tree {tree_idx}"));
             }
 
             // Reconstruct tree
@@ -2357,8 +2350,8 @@ impl RandomForestClassifier {
 
             // Load tree's max_depth
             let tree_max_depth_meta = metadata
-                .get(&format!("{}max_depth", prefix))
-                .ok_or(format!("Missing tree {} max_depth", tree_idx))?;
+                .get(&format!("{prefix}max_depth"))
+                .ok_or(format!("Missing tree {tree_idx} max_depth"))?;
             let tree_max_depth_data = safetensors::extract_tensor(&raw_data, tree_max_depth_meta)?;
             let tree_max_depth = if tree_max_depth_data[0] < 0.0 {
                 None
@@ -2387,7 +2380,7 @@ impl RandomForestClassifier {
 /// Creates a bootstrap sample (random sample with replacement).
 ///
 /// Returns indices of samples to include in the bootstrap sample.
-fn _bootstrap_sample(n_samples: usize, random_state: Option<u64>) -> Vec<usize> {
+fn bootstrap_sample(n_samples: usize, random_state: Option<u64>) -> Vec<usize> {
     use rand::distributions::{Distribution, Uniform};
     use rand::SeedableRng;
 
@@ -2595,11 +2588,9 @@ impl GradientBoostingClassifier {
     /// Converts residuals to class labels for tree fitting.
     ///
     /// Positive residuals -> class 1, negative residuals -> class 0
+    #[allow(clippy::unused_self)]
     fn residuals_to_labels(&self, residuals: &[f32]) -> Vec<usize> {
-        residuals
-            .iter()
-            .map(|&r| if r >= 0.0 { 1 } else { 0 })
-            .collect()
+        residuals.iter().map(|&r| usize::from(r >= 0.0)).collect()
     }
 
     /// Predicts class labels for the given samples.
@@ -2615,7 +2606,7 @@ impl GradientBoostingClassifier {
         let probas = self.predict_proba(x)?;
         Ok(probas
             .iter()
-            .map(|probs| if probs[1] >= 0.5 { 1 } else { 0 })
+            .map(|probs| usize::from(probs[1] >= 0.5))
             .collect())
     }
 
@@ -3200,7 +3191,7 @@ mod tests {
 
     #[test]
     fn test_bootstrap_sample_size() {
-        let indices = _bootstrap_sample(100, Some(42));
+        let indices = bootstrap_sample(100, Some(42));
         assert_eq!(
             indices.len(),
             100,
@@ -3210,8 +3201,8 @@ mod tests {
 
     #[test]
     fn test_bootstrap_sample_reproducible() {
-        let indices1 = _bootstrap_sample(50, Some(42));
-        let indices2 = _bootstrap_sample(50, Some(42));
+        let indices1 = bootstrap_sample(50, Some(42));
+        let indices2 = bootstrap_sample(50, Some(42));
         assert_eq!(
             indices1, indices2,
             "Same seed should give same bootstrap sample"

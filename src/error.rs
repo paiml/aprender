@@ -76,15 +76,13 @@ impl fmt::Display for AprenderError {
             AprenderError::DimensionMismatch { expected, actual } => {
                 write!(
                     f,
-                    "Matrix dimension mismatch: expected {}, got {}",
-                    expected, actual
+                    "Matrix dimension mismatch: expected {expected}, got {actual}"
                 )
             }
             AprenderError::SingularMatrix { det } => {
                 write!(
                     f,
-                    "Singular matrix detected: determinant = {}, cannot invert",
-                    det
+                    "Singular matrix detected: determinant = {det}, cannot invert"
                 )
             }
             AprenderError::ConvergenceFailure {
@@ -93,8 +91,7 @@ impl fmt::Display for AprenderError {
             } => {
                 write!(
                     f,
-                    "Convergence failure after {} iterations, loss = {}",
-                    iterations, final_loss
+                    "Convergence failure after {iterations} iterations, loss = {final_loss}"
                 )
             }
             AprenderError::InvalidHyperparameter {
@@ -104,16 +101,15 @@ impl fmt::Display for AprenderError {
             } => {
                 write!(
                     f,
-                    "Invalid hyperparameter: {} = {}, expected {}",
-                    param, value, constraint
+                    "Invalid hyperparameter: {param} = {value}, expected {constraint}"
                 )
             }
             AprenderError::BackendUnavailable { backend } => {
-                write!(f, "Backend not available: {}", backend)
+                write!(f, "Backend not available: {backend}")
             }
-            AprenderError::Io(e) => write!(f, "I/O error: {}", e),
-            AprenderError::Serialization(msg) => write!(f, "Serialization error: {}", msg),
-            AprenderError::Other(msg) => write!(f, "{}", msg),
+            AprenderError::Io(e) => write!(f, "I/O error: {e}"),
+            AprenderError::Serialization(msg) => write!(f, "Serialization error: {msg}"),
+            AprenderError::Other(msg) => write!(f, "{msg}"),
         }
     }
 }
