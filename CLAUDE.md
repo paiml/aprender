@@ -164,6 +164,31 @@ cargo bench --bench kmeans      # Run specific benchmark
 2. Or wait for weekly scheduled run
 3. Or modify performance-sensitive code and create PR
 
+### security.yml - Dependency Security & Policy
+Runs on weekly schedule (Mondays 3 AM UTC), PR (dependency changes), and manual trigger:
+- **cargo-audit**: Scans for known security vulnerabilities (CVEs) in dependencies
+- **cargo-deny**: Enforces dependency policies from deny.toml:
+  - License compliance (only approved licenses)
+  - Banned crates (security/maintenance concerns)
+  - Source verification (crates.io only)
+- **cargo-outdated**: Reports outdated dependencies for proactive updates
+- **Artifacts**: Outdated dependency reports stored for 30 days
+
+**Running security checks locally:**
+```bash
+cargo audit                     # Check for vulnerabilities
+cargo deny check                # Validate dependency policies
+cargo outdated                  # List outdated dependencies
+```
+
+### dependabot.yml - Automated Dependency Updates
+- **Rust dependencies**: Weekly updates (Mondays 3 AM UTC)
+  - Groups minor/patch updates to reduce PR noise
+  - Separate PRs for major version updates
+- **GitHub Actions**: Monthly updates for workflow actions
+- Automatic labeling: `dependencies`, `rust`, `github-actions`
+- Auto-assignment to `paiml/aprender-maintainers` team
+
 ### book.yml - Documentation CI
 Builds and deploys the EXTREME TDD book to GitHub Pages.
 
