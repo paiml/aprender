@@ -697,6 +697,337 @@ impl UnsupervisedEstimator for DBSCAN {
     }
 }
 
+/// Linkage methods for hierarchical clustering.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Linkage {
+    /// Minimum distance between clusters (single linkage).
+    Single,
+    /// Maximum distance between clusters (complete linkage).
+    Complete,
+    /// Average distance between all pairs (average linkage).
+    Average,
+    /// Minimize within-cluster variance (Ward's method).
+    Ward,
+}
+
+/// Dendrogram merge record.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Merge {
+    /// Clusters being merged.
+    pub clusters: (usize, usize),
+    /// Distance at which merge occurs.
+    pub distance: f32,
+    /// New cluster size after merge.
+    pub size: usize,
+}
+
+/// Agglomerative (bottom-up) hierarchical clustering.
+///
+/// Builds a tree of clusters (dendrogram) by iteratively merging
+/// closest clusters using various linkage methods.
+///
+/// # Algorithm
+///
+/// 1. Start with each point as its own cluster
+/// 2. Repeat until reaching n_clusters:
+///    - Find two closest clusters using linkage method
+///    - Merge them
+///    - Update distance matrix
+/// 3. Return cluster labels
+///
+/// # Examples
+///
+/// ```
+/// use aprender::prelude::*;
+///
+/// let data = Matrix::from_vec(6, 2, vec![
+///     1.0, 1.0, 1.1, 1.0, 1.0, 1.1,
+///     5.0, 5.0, 5.1, 5.0, 5.0, 5.1,
+/// ]).unwrap();
+///
+/// let mut hc = AgglomerativeClustering::new(2, Linkage::Average);
+/// hc.fit(&data).unwrap();
+///
+/// let labels = hc.predict(&data);
+/// assert_eq!(labels.len(), 6);
+/// ```
+///
+/// # Performance
+///
+/// - Time complexity: O(n³) for naive implementation
+/// - Space complexity: O(n²) for distance matrix
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgglomerativeClustering {
+    /// Target number of clusters.
+    n_clusters: usize,
+    /// Linkage method for distance calculation.
+    linkage: Linkage,
+    /// Cluster labels after fitting.
+    labels: Option<Vec<usize>>,
+    /// Dendrogram merge history.
+    dendrogram: Option<Vec<Merge>>,
+}
+
+impl AgglomerativeClustering {
+    /// Create new AgglomerativeClustering with target number of clusters and linkage method.
+    pub fn new(n_clusters: usize, linkage: Linkage) -> Self {
+        Self {
+            n_clusters,
+            linkage,
+            labels: None,
+            dendrogram: None,
+        }
+    }
+
+    /// Get target number of clusters.
+    pub fn n_clusters(&self) -> usize {
+        self.n_clusters
+    }
+
+    /// Get linkage method.
+    pub fn linkage(&self) -> Linkage {
+        self.linkage
+    }
+
+    /// Check if model has been fitted.
+    pub fn is_fitted(&self) -> bool {
+        self.labels.is_some()
+    }
+
+    /// Get cluster labels (panic if not fitted).
+    pub fn labels(&self) -> &Vec<usize> {
+        self.labels
+            .as_ref()
+            .expect("Model not fitted. Call fit() first.")
+    }
+
+    /// Get dendrogram merge history (panic if not fitted).
+    pub fn dendrogram(&self) -> &Vec<Merge> {
+        self.dendrogram
+            .as_ref()
+            .expect("Model not fitted. Call fit() first.")
+    }
+
+    /// Calculate Euclidean distance between two points.
+    fn euclidean_distance(&self, x: &Matrix<f32>, i: usize, j: usize) -> f32 {
+        let n_features = x.shape().1;
+        let mut sum = 0.0;
+        for k in 0..n_features {
+            let diff = x.get(i, k) - x.get(j, k);
+            sum += diff * diff;
+        }
+        sum.sqrt()
+    }
+
+    /// Calculate pairwise distance matrix.
+    #[allow(clippy::needless_range_loop)]
+    fn pairwise_distances(&self, x: &Matrix<f32>) -> Vec<Vec<f32>> {
+        let n_samples = x.shape().0;
+        let mut distances = vec![vec![0.0; n_samples]; n_samples];
+        for i in 0..n_samples {
+            for j in (i + 1)..n_samples {
+                let dist = self.euclidean_distance(x, i, j);
+                distances[i][j] = dist;
+                distances[j][i] = dist;
+            }
+        }
+        distances
+    }
+
+    /// Find minimum distance between two active clusters.
+    fn find_closest_clusters(
+        &self,
+        distances: &[Vec<f32>],
+        active: &[bool],
+    ) -> (usize, usize, f32) {
+        let n = distances.len();
+        let mut min_dist = f32::INFINITY;
+        let mut min_i = 0;
+        let mut min_j = 1;
+
+        for i in 0..n {
+            if !active[i] {
+                continue;
+            }
+            for j in (i + 1)..n {
+                if !active[j] {
+                    continue;
+                }
+                if distances[i][j] < min_dist {
+                    min_dist = distances[i][j];
+                    min_i = i;
+                    min_j = j;
+                }
+            }
+        }
+
+        (min_i, min_j, min_dist)
+    }
+
+    /// Update distances for a newly merged cluster using specified linkage.
+    fn update_distances(
+        &self,
+        x: &Matrix<f32>,
+        distances: &mut [Vec<f32>],
+        clusters: &[Vec<usize>],
+        merged_idx: usize,
+        other_idx: usize,
+    ) {
+        let merged_cluster = &clusters[merged_idx];
+        let other_cluster = &clusters[other_idx];
+
+        let dist = match self.linkage {
+            Linkage::Single => {
+                // Minimum distance
+                let mut min_dist = f32::INFINITY;
+                for &i in merged_cluster {
+                    for &j in other_cluster {
+                        let d = self.euclidean_distance(x, i, j);
+                        if d < min_dist {
+                            min_dist = d;
+                        }
+                    }
+                }
+                min_dist
+            }
+            Linkage::Complete => {
+                // Maximum distance
+                let mut max_dist = 0.0;
+                for &i in merged_cluster {
+                    for &j in other_cluster {
+                        let d = self.euclidean_distance(x, i, j);
+                        if d > max_dist {
+                            max_dist = d;
+                        }
+                    }
+                }
+                max_dist
+            }
+            Linkage::Average => {
+                // Average distance
+                let mut sum = 0.0;
+                let mut count = 0;
+                for &i in merged_cluster {
+                    for &j in other_cluster {
+                        sum += self.euclidean_distance(x, i, j);
+                        count += 1;
+                    }
+                }
+                if count > 0 {
+                    sum / count as f32
+                } else {
+                    0.0
+                }
+            }
+            Linkage::Ward => {
+                // Ward's method: minimize within-cluster variance
+                // Simplified: use centroid distance weighted by cluster sizes
+                let merged_centroid = self.compute_centroid(x, merged_cluster);
+                let other_centroid = self.compute_centroid(x, other_cluster);
+
+                let mut sum = 0.0;
+                for k in 0..x.shape().1 {
+                    let diff = merged_centroid[k] - other_centroid[k];
+                    sum += diff * diff;
+                }
+
+                let n1 = merged_cluster.len() as f32;
+                let n2 = other_cluster.len() as f32;
+                ((n1 * n2) / (n1 + n2)) * sum.sqrt()
+            }
+        };
+
+        distances[merged_idx][other_idx] = dist;
+        distances[other_idx][merged_idx] = dist;
+    }
+
+    /// Compute centroid of a cluster.
+    #[allow(clippy::needless_range_loop)]
+    fn compute_centroid(&self, x: &Matrix<f32>, cluster: &[usize]) -> Vec<f32> {
+        let n_features = x.shape().1;
+        let mut centroid = vec![0.0; n_features];
+
+        for &idx in cluster {
+            for k in 0..n_features {
+                centroid[k] += x.get(idx, k);
+            }
+        }
+
+        let size = cluster.len() as f32;
+        for val in &mut centroid {
+            *val /= size;
+        }
+
+        centroid
+    }
+}
+
+impl UnsupervisedEstimator for AgglomerativeClustering {
+    type Labels = Vec<usize>;
+
+    fn fit(&mut self, x: &Matrix<f32>) -> Result<()> {
+        let n_samples = x.shape().0;
+
+        // Initialize: each point is its own cluster
+        let mut clusters: Vec<Vec<usize>> = (0..n_samples).map(|i| vec![i]).collect();
+        let mut active = vec![true; n_samples];
+        let mut cluster_labels = vec![0; n_samples];
+        let mut dendrogram = Vec::new();
+
+        // Calculate initial pairwise distances
+        let mut distances = self.pairwise_distances(x);
+
+        // Merge until reaching target number of clusters
+        while clusters.iter().filter(|c| !c.is_empty()).count() > self.n_clusters {
+            // Find closest pair
+            let (i, j, dist) = self.find_closest_clusters(&distances, &active);
+
+            // Merge cluster j into cluster i
+            let merged_cluster = clusters[j].clone();
+            clusters[i].extend(&merged_cluster);
+            clusters[j].clear();
+            active[j] = false;
+
+            // Record merge in dendrogram
+            dendrogram.push(Merge {
+                clusters: (i, j),
+                distance: dist,
+                size: clusters[i].len(),
+            });
+
+            // Update distances for merged cluster
+            #[allow(clippy::needless_range_loop)]
+            for k in 0..n_samples {
+                if k == i || !active[k] {
+                    continue;
+                }
+                self.update_distances(x, &mut distances, &clusters, i, k);
+            }
+        }
+
+        // Assign labels
+        let mut cluster_id = 0;
+        for cluster in &clusters {
+            if !cluster.is_empty() {
+                for &point_idx in cluster {
+                    cluster_labels[point_idx] = cluster_id;
+                }
+                cluster_id += 1;
+            }
+        }
+
+        self.labels = Some(cluster_labels);
+        self.dendrogram = Some(dendrogram);
+        Ok(())
+    }
+
+    fn predict(&self, _x: &Matrix<f32>) -> Self::Labels {
+        // For hierarchical clustering, predict returns fitted labels
+        // (new points would require a different strategy)
+        self.labels().clone()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1920,5 +2251,253 @@ mod tests {
     fn test_dbscan_labels_before_fit() {
         let dbscan = DBSCAN::new(0.5, 2);
         let _ = dbscan.labels(); // Should panic
+    }
+
+    // ==================== AgglomerativeClustering Tests ====================
+
+    #[test]
+    fn test_agglomerative_new() {
+        let hc = AgglomerativeClustering::new(3, Linkage::Average);
+        assert_eq!(hc.n_clusters(), 3);
+        assert_eq!(hc.linkage(), Linkage::Average);
+        assert!(!hc.is_fitted());
+    }
+
+    #[test]
+    fn test_agglomerative_fit_basic() {
+        let data = Matrix::from_vec(
+            6,
+            2,
+            vec![1.0, 1.0, 1.1, 1.0, 1.0, 1.1, 5.0, 5.0, 5.1, 5.0, 5.0, 5.1],
+        )
+        .unwrap();
+
+        let mut hc = AgglomerativeClustering::new(2, Linkage::Average);
+        hc.fit(&data).unwrap();
+        assert!(hc.is_fitted());
+    }
+
+    #[test]
+    fn test_agglomerative_predict() {
+        let data = Matrix::from_vec(
+            6,
+            2,
+            vec![1.0, 1.0, 1.1, 1.0, 1.0, 1.1, 5.0, 5.0, 5.1, 5.0, 5.0, 5.1],
+        )
+        .unwrap();
+
+        let mut hc = AgglomerativeClustering::new(2, Linkage::Average);
+        hc.fit(&data).unwrap();
+
+        let labels = hc.predict(&data);
+        assert_eq!(labels.len(), 6);
+
+        // All labels should be valid cluster indices
+        for &label in &labels {
+            assert!(label < 2);
+        }
+
+        // Check that two distinct clusters were found
+        let unique_labels: std::collections::HashSet<_> = labels.iter().collect();
+        assert_eq!(unique_labels.len(), 2);
+    }
+
+    #[test]
+    fn test_agglomerative_linkage_single() {
+        let data = Matrix::from_vec(4, 2, vec![1.0, 1.0, 1.1, 1.1, 5.0, 5.0, 5.1, 5.1]).unwrap();
+
+        let mut hc = AgglomerativeClustering::new(2, Linkage::Single);
+        hc.fit(&data).unwrap();
+
+        let labels = hc.predict(&data);
+        assert_eq!(labels.len(), 4);
+
+        // Check that two clusters were formed
+        let unique_labels: std::collections::HashSet<_> = labels.iter().collect();
+        assert_eq!(unique_labels.len(), 2);
+    }
+
+    #[test]
+    fn test_agglomerative_linkage_complete() {
+        let data = Matrix::from_vec(4, 2, vec![1.0, 1.0, 1.1, 1.1, 5.0, 5.0, 5.1, 5.1]).unwrap();
+
+        let mut hc = AgglomerativeClustering::new(2, Linkage::Complete);
+        hc.fit(&data).unwrap();
+
+        let labels = hc.predict(&data);
+        assert_eq!(labels.len(), 4);
+
+        let unique_labels: std::collections::HashSet<_> = labels.iter().collect();
+        assert_eq!(unique_labels.len(), 2);
+    }
+
+    #[test]
+    fn test_agglomerative_linkage_average() {
+        let data = Matrix::from_vec(4, 2, vec![1.0, 1.0, 1.1, 1.1, 5.0, 5.0, 5.1, 5.1]).unwrap();
+
+        let mut hc = AgglomerativeClustering::new(2, Linkage::Average);
+        hc.fit(&data).unwrap();
+
+        let labels = hc.predict(&data);
+        assert_eq!(labels.len(), 4);
+
+        let unique_labels: std::collections::HashSet<_> = labels.iter().collect();
+        assert_eq!(unique_labels.len(), 2);
+    }
+
+    #[test]
+    fn test_agglomerative_linkage_ward() {
+        let data = Matrix::from_vec(4, 2, vec![1.0, 1.0, 1.1, 1.1, 5.0, 5.0, 5.1, 5.1]).unwrap();
+
+        let mut hc = AgglomerativeClustering::new(2, Linkage::Ward);
+        hc.fit(&data).unwrap();
+
+        let labels = hc.predict(&data);
+        assert_eq!(labels.len(), 4);
+
+        let unique_labels: std::collections::HashSet<_> = labels.iter().collect();
+        assert_eq!(unique_labels.len(), 2);
+    }
+
+    #[test]
+    fn test_agglomerative_n_clusters_1() {
+        let data = Matrix::from_vec(4, 2, vec![1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0]).unwrap();
+
+        let mut hc = AgglomerativeClustering::new(1, Linkage::Average);
+        hc.fit(&data).unwrap();
+
+        let labels = hc.predict(&data);
+        // All points should be in same cluster
+        assert!(labels.iter().all(|&l| l == 0));
+    }
+
+    #[test]
+    fn test_agglomerative_n_clusters_equals_samples() {
+        let data = Matrix::from_vec(4, 2, vec![1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0]).unwrap();
+
+        let mut hc = AgglomerativeClustering::new(4, Linkage::Average);
+        hc.fit(&data).unwrap();
+
+        let labels = hc.predict(&data);
+        // Each point should be its own cluster
+        let unique_labels: std::collections::HashSet<_> = labels.iter().collect();
+        assert_eq!(unique_labels.len(), 4);
+    }
+
+    #[test]
+    fn test_agglomerative_dendrogram() {
+        let data = Matrix::from_vec(4, 2, vec![1.0, 1.0, 1.1, 1.1, 5.0, 5.0, 5.1, 5.1]).unwrap();
+
+        let mut hc = AgglomerativeClustering::new(2, Linkage::Average);
+        hc.fit(&data).unwrap();
+
+        let dendrogram = hc.dendrogram();
+        // Should have n_samples - n_clusters merges
+        assert_eq!(dendrogram.len(), 2); // 4 samples - 2 clusters = 2 merges
+    }
+
+    #[test]
+    fn test_agglomerative_reproducible() {
+        let data = Matrix::from_vec(
+            6,
+            2,
+            vec![1.0, 1.0, 1.1, 1.0, 1.0, 1.1, 5.0, 5.0, 5.1, 5.0, 5.0, 5.1],
+        )
+        .unwrap();
+
+        let mut hc1 = AgglomerativeClustering::new(2, Linkage::Average);
+        hc1.fit(&data).unwrap();
+        let labels1 = hc1.predict(&data);
+
+        let mut hc2 = AgglomerativeClustering::new(2, Linkage::Average);
+        hc2.fit(&data).unwrap();
+        let labels2 = hc2.predict(&data);
+
+        // Results should be deterministic
+        assert_eq!(labels1, labels2);
+    }
+
+    #[test]
+    fn test_agglomerative_fit_predict_consistency() {
+        let data = Matrix::from_vec(4, 2, vec![1.0, 1.0, 1.1, 1.1, 5.0, 5.0, 5.1, 5.1]).unwrap();
+
+        let mut hc = AgglomerativeClustering::new(2, Linkage::Complete);
+        hc.fit(&data).unwrap();
+
+        let labels_stored = hc.labels().clone();
+        let labels_predicted = hc.predict(&data);
+
+        assert_eq!(labels_stored, labels_predicted);
+    }
+
+    #[test]
+    fn test_agglomerative_different_linkages_differ() {
+        let data = Matrix::from_vec(
+            6,
+            2,
+            vec![1.0, 1.0, 1.5, 1.5, 2.0, 2.0, 8.0, 8.0, 8.5, 8.5, 9.0, 9.0],
+        )
+        .unwrap();
+
+        let mut hc_single = AgglomerativeClustering::new(2, Linkage::Single);
+        hc_single.fit(&data).unwrap();
+        let labels_single = hc_single.predict(&data);
+
+        let mut hc_complete = AgglomerativeClustering::new(2, Linkage::Complete);
+        hc_complete.fit(&data).unwrap();
+        let labels_complete = hc_complete.predict(&data);
+
+        // Different linkage methods may produce different results
+        // but both should have exactly 2 clusters
+        let unique_single: std::collections::HashSet<_> = labels_single.iter().collect();
+        let unique_complete: std::collections::HashSet<_> = labels_complete.iter().collect();
+        assert_eq!(unique_single.len(), 2);
+        assert_eq!(unique_complete.len(), 2);
+    }
+
+    #[test]
+    fn test_agglomerative_well_separated_clusters() {
+        // Two very well-separated clusters
+        let data = Matrix::from_vec(
+            6,
+            2,
+            vec![
+                0.0, 0.0, 0.1, 0.1, 0.0, 0.1, 100.0, 100.0, 100.1, 100.1, 100.0, 100.1,
+            ],
+        )
+        .unwrap();
+
+        let mut hc = AgglomerativeClustering::new(2, Linkage::Average);
+        hc.fit(&data).unwrap();
+        let labels = hc.predict(&data);
+
+        // First 3 points should be in one cluster, last 3 in another
+        assert_eq!(labels[0], labels[1]);
+        assert_eq!(labels[1], labels[2]);
+        assert_eq!(labels[3], labels[4]);
+        assert_eq!(labels[4], labels[5]);
+        assert_ne!(labels[0], labels[3]);
+    }
+
+    #[test]
+    #[should_panic(expected = "Model not fitted")]
+    fn test_agglomerative_predict_before_fit() {
+        let data = Matrix::from_vec(2, 2, vec![1.0, 1.0, 2.0, 2.0]).unwrap();
+        let hc = AgglomerativeClustering::new(2, Linkage::Average);
+        let _ = hc.predict(&data); // Should panic
+    }
+
+    #[test]
+    #[should_panic(expected = "Model not fitted")]
+    fn test_agglomerative_labels_before_fit() {
+        let hc = AgglomerativeClustering::new(2, Linkage::Average);
+        let _ = hc.labels(); // Should panic
+    }
+
+    #[test]
+    #[should_panic(expected = "Model not fitted")]
+    fn test_agglomerative_dendrogram_before_fit() {
+        let hc = AgglomerativeClustering::new(2, Linkage::Average);
+        let _ = hc.dendrogram(); // Should panic
     }
 }

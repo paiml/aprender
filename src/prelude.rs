@@ -7,7 +7,7 @@
 //! ```
 
 pub use crate::classification::LogisticRegression;
-pub use crate::cluster::{KMeans, DBSCAN};
+pub use crate::cluster::{AgglomerativeClustering, KMeans, Linkage, DBSCAN};
 pub use crate::data::DataFrame;
 pub use crate::linear_model::{ElasticNet, Lasso, LinearRegression, Ridge};
 pub use crate::loss::{huber_loss, mae_loss, mse_loss, HuberLoss, Loss, MAELoss, MSELoss};

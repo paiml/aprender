@@ -117,6 +117,7 @@
 - [Case Study: Model Serialization](./examples/model-serialization.md)
 - [Case Study: KMeans Clustering](./examples/kmeans-clustering.md)
 - [Case Study: DBSCAN Clustering](./examples/dbscan-clustering.md)
+- [Case Study: Hierarchical Clustering](./examples/hierarchical-clustering.md)
 - [Case Study: Iris Clustering](./examples/iris-clustering.md)
 - [Case Study: Logistic Regression](./examples/logistic-regression.md)
 - [Case Study: KNN Iris](./examples/knn-iris.md)
