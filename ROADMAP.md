@@ -9,7 +9,8 @@ Next Generation Machine Learning in Pure Rust
 | v0.1.0  | ✅ **Released** | Foundation - Linear Regression + K-Means |
 | v0.2.0  | ✅ **Released** | Decision Trees, Random Forests, Cross-Validation, Serialization |
 | v0.3.0  | ✅ **Released** | Regularization & Optimization |
-| v0.4.0  | Planned | Classification |
+| v0.4.0  | ✅ **Released** | TOP 10 ML Algorithms Complete |
+| v0.4.1  | ✅ **Released** | Graph Algorithms, Advanced Clustering, Anomaly Detection, Stats |
 | v0.5.0  | Planned | Neural Networks |
 | v1.0.0  | Planned | Production Hardening |
 
@@ -177,24 +178,145 @@ Next Generation Machine Learning in Pure Rust
 
 ---
 
-## v0.4.0: Classification
+## v0.4.0: TOP 10 ML Algorithms Complete
 
-- [ ] Logistic regression (binary classification)
-- [ ] Softmax regression (multi-class)
-- [ ] Support Vector Machines (SVM)
-- [ ] Naive Bayes (Gaussian, Multinomial, Bernoulli)
-- [ ] Metrics: accuracy, precision, recall, F1, ROC-AUC
-- [ ] Confusion matrix utilities
+**Target**: Industry's most popular machine learning algorithms with comprehensive testing
+
+### Completed
+
+- [x] **Logistic Regression** (Issue #12)
+  - Binary and multi-class classification
+  - Gradient descent optimization with learning rate decay
+  - L2 regularization support
+  - predict_proba() for probability estimates
+- [x] **K-Nearest Neighbors** (Issue #23)
+  - Distance-based classification
+  - Configurable k parameter
+  - Brute-force and optimized distance computation
+  - Works with any distance metric
+- [x] **Support Vector Machine** (Issue #24)
+  - Linear SVM with hinge loss
+  - Subgradient descent optimizer
+  - C regularization parameter
+  - decision_function() for margin-based predictions
+- [x] **Naive Bayes** (Issue #25)
+  - GaussianNB with probabilistic classification
+  - Variance smoothing parameter
+  - predict_proba() returns class probabilities
+  - Fast training O(n·d)
+- [x] **Gradient Boosting Machine** (Issue #26)
+  - Adaptive boosting with residual learning
+  - Configurable n_estimators and learning_rate
+  - Tree-based weak learners
+  - Feature importance scores
+- [x] **Decision Trees & Random Forests** (v0.2.0)
+  - GINI impurity-based splitting
+  - Bootstrap aggregating for Random Forest
+  - Configurable max_depth and n_estimators
+- [x] **Linear Regression** (v0.1.0)
+  - OLS via normal equations
+  - Ridge/Lasso/ElasticNet (v0.3.0)
+- [x] **K-Means Clustering** (v0.1.0)
+  - k-means++ initialization
+  - Lloyd's algorithm
+  - Configurable max_iter
+- [x] **Principal Component Analysis** (Issue #13)
+  - Eigendecomposition-based dimensionality reduction
+  - Configurable n_components
+  - explained_variance_ratio for feature analysis
+  - transform() for new data projection
+- [x] **Classification Metrics**
+  - accuracy_score, precision_score, recall_score
+  - f1_score, confusion_matrix
+  - Multi-class support (macro/micro averaging)
+
+### Quality Metrics Achieved
+
+- Total Tests: 528 passing
+- Zero clippy warnings
+- Zero SATD violations
+- All quality gates passing
+- Comprehensive documentation with examples
+- 10/10 TOP algorithms implemented ✅
+
+### Released ✅
+
+- [x] Published to crates.io as v0.4.0 (2024-11-19)
+- [x] All TOP 10 algorithms tested and documented
+- [x] Examples for each algorithm
+- [x] Book chapters for theory + case studies
 
 ---
 
-## v0.5.0: Advanced Tree Methods
+## v0.4.1: Graph Algorithms, Advanced Clustering & Statistics
 
-- [ ] Gradient Boosting (XGBoost-style)
-- [ ] Feature importance scores
-- [ ] Out-of-bag error estimation
-- [ ] Decision tree regression
+**Target**: Expand beyond TOP 10 with graph theory, advanced clustering, anomaly detection, and statistical analysis
+
+### Completed
+
+- [x] **Graph Algorithms** (Issue #9)
+  - Betweenness Centrality (shortest path counting)
+  - PageRank (iterative power method)
+  - Graph data structure with adjacency list
+  - Weighted and unweighted edge support
+- [x] **Community Detection** (Issue #22)
+  - Louvain algorithm for modularity optimization
+  - Modularity computation Q = (1/2m) Σ[A_ij - k_i*k_j/2m] δ(c_i, c_j)
+  - Detects densely connected groups in networks
+  - O(m·log n) complexity
+- [x] **Advanced Clustering**
+  - DBSCAN (Issue #14) - Density-based clustering
+  - Hierarchical Clustering (Issue #15) - Agglomerative with linkage methods
+  - Gaussian Mixture Models (Issue #16) - EM algorithm for soft clustering
+  - Spectral Clustering (Issue #19) - Graph Laplacian eigendecomposition
+- [x] **Anomaly Detection**
+  - Isolation Forest (Issue #17) - Ensemble of isolation trees
+  - Local Outlier Factor (Issue #20) - Density-based outlier detection
+  - score_samples() and predict() methods
+  - Contamination parameter for threshold setting
+- [x] **Dimensionality Reduction**
+  - t-SNE (Issue #18) - Non-linear visualization
+  - Perplexity-based similarity computation
+  - KL divergence minimization via gradient descent
+  - 2D/3D embedding support
+- [x] **Association Rule Mining**
+  - Apriori Algorithm (Issue #21) - Frequent itemset mining
+  - Support, confidence, and lift metrics
+  - Market basket analysis support
+  - Efficient pruning with apriori property
+- [x] **Descriptive Statistics** (Issue #9)
+  - Mean, median, mode, variance, std deviation
+  - Quartiles (Q1, Q2, Q3), IQR
+  - Histograms with multiple binning strategies
+  - Five-number summary (min, Q1, median, Q3, max)
+
+### Quality Metrics Achieved
+
+- Total Tests: 683 passing (+155 from v0.4.0)
+- Zero clippy warnings
+- Zero critical SATD violations (1 low-priority Bayesian Blocks TODO)
+- All quality gates passing
+- Comprehensive EXTREME TDD book with case studies
+- mdbook tests: 0 failures across 119 chapters
+
+### Released ✅
+
+- [x] Published to crates.io as v0.4.1 (2024-11-21)
+- [x] All 6 advanced clustering algorithms implemented
+- [x] Graph algorithms with social network examples
+- [x] Complete anomaly detection suite
+- [x] Association rule mining for market basket analysis
+- [x] Comprehensive book chapters for all algorithms
+
+---
+
+## v0.5.0: Regression Trees & Advanced Ensemble Methods
+
+- [ ] Decision tree regression (CART algorithm)
 - [ ] Random Forest regression
+- [ ] Out-of-bag error estimation for Random Forests
+- [ ] Feature importance visualization
+- [ ] XGBoost-style optimizations (histogram binning, approximate split finding)
 
 ---
 
@@ -210,13 +332,14 @@ Next Generation Machine Learning in Pure Rust
 
 ---
 
-## v0.7.0: Advanced Statistics
+## v0.7.0: Advanced Statistics & Inference
 
 - [ ] Generalized Linear Models (GLM)
-- [ ] Statistical tests: t-test, chi-square, ANOVA
+- [ ] Statistical tests: t-test, chi-square, ANOVA, F-test
 - [ ] Covariance/correlation matrices
-- [ ] Principal Component Analysis (PCA)
 - [ ] Independent Component Analysis (ICA)
+- [ ] Factor Analysis
+- [ ] Hypothesis testing framework
 
 ---
 

@@ -17,16 +17,47 @@ Aprender is a lightweight, pure Rust machine learning library designed for effic
 
 ### Core Primitives
 - **Vector** - 1D numerical array with statistical operations (mean, sum, dot, norm, variance)
-  - Powered by [trueno](https://github.com/paiml/trueno) v0.4.0 for SIMD acceleration
+  - Powered by [trueno](https://github.com/paiml/trueno) v0.4.1 for SIMD acceleration
 - **Matrix** - 2D numerical array with linear algebra (matmul, transpose, Cholesky decomposition)
   - SIMD-optimized operations via trueno backend
 - **DataFrame** - Named column container for ML data preparation workflows
 
-### Machine Learning Models
+### Supervised Learning (TOP 10 ML Algorithms ✅)
 - **LinearRegression** - Ordinary Least Squares via normal equations
-- **KMeans** - K-means++ initialization with Lloyd's algorithm
+- **LogisticRegression** - Binary/multi-class classification with gradient descent
 - **DecisionTreeClassifier** - GINI-based decision tree with configurable max depth
 - **RandomForestClassifier** - Bootstrap aggregating ensemble with majority voting
+- **GradientBoostingClassifier** - Adaptive boosting with residual learning
+- **NaiveBayes** (GaussianNB) - Probabilistic classification with Bayes' theorem
+- **KNeighborsClassifier** - Distance-based classification (k-NN)
+- **LinearSVM** - Support Vector Machine with hinge loss and subgradient descent
+
+### Unsupervised Learning
+- **KMeans** - K-means++ initialization with Lloyd's algorithm
+- **DBSCAN** - Density-based clustering with eps and min_samples
+- **HierarchicalClustering** - Agglomerative clustering with linkage methods
+- **GaussianMixture** - EM algorithm for soft clustering
+- **SpectralClustering** - Graph Laplacian eigendecomposition clustering
+- **IsolationForest** - Ensemble-based anomaly detection
+- **LocalOutlierFactor** - Density-based outlier detection
+- **PCA** - Principal Component Analysis for dimensionality reduction (TOP 10 ✅)
+- **TSNE** - t-SNE for non-linear visualization
+
+### Graph Algorithms
+- **Graph** - Adjacency list representation with weighted/unweighted edges
+- **Betweenness Centrality** - Shortest path-based node importance
+- **PageRank** - Iterative power method for node ranking
+- **Louvain** - Community detection via modularity optimization
+
+### Association Rule Mining
+- **Apriori** - Frequent itemset mining for market basket analysis
+- Support, confidence, and lift metrics
+
+### Descriptive Statistics
+- **Mean, Median, Mode, Variance, Standard Deviation**
+- **Quartiles** (Q1, Q2, Q3), Interquartile Range (IQR)
+- **Histograms** with multiple binning strategies (Freedman-Diaconis, Sturges, Scott, Square Root)
+- **Five-number summary** (min, Q1, median, Q3, max)
 
 ### Model Selection & Evaluation
 - **train_test_split** - Random train/test splitting with reproducible seeds
@@ -35,11 +66,12 @@ Aprender is a lightweight, pure Rust machine learning library designed for effic
 
 ### Model Persistence
 - **Serialization** - Save/load models to disk (serde + bincode)
-- Works with all models: LinearRegression, KMeans, DecisionTree, RandomForest
+- Works with all models
 
 ### Metrics
-- Regression: `r_squared`, `mse`, `rmse`, `mae`
-- Clustering: `silhouette_score`, `inertia`
+- **Regression**: r_squared, mse, rmse, mae
+- **Classification**: accuracy, precision, recall, f1_score, confusion_matrix
+- **Clustering**: silhouette_score, inertia
 
 ## Installation
 
@@ -47,7 +79,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-aprender = "0.4.0"
+aprender = "0.4.1"
 ```
 
 ## Quick Start
@@ -158,27 +190,64 @@ fn main() {
 
 ## Examples
 
-Run the included examples:
+Run any of the 26+ included examples:
 
+### Supervised Learning
 ```bash
-cargo run --example boston_housing       # Linear regression demo
-cargo run --example iris_clustering      # K-Means clustering demo
-cargo run --example dataframe_basics     # DataFrame operations demo
-cargo run --example decision_tree_iris   # Decision Tree classifier demo
-cargo run --example random_forest_iris   # Random Forest ensemble demo
-cargo run --example cross_validation     # Cross-validation demo
-cargo run --example model_persistence    # Model save/load demo
+cargo run --example boston_housing           # Linear regression
+cargo run --example logistic_regression      # Binary classification
+cargo run --example decision_tree_iris       # Decision tree classifier
+cargo run --example random_forest_iris       # Random forest ensemble
+cargo run --example gbm_iris                 # Gradient boosting
+cargo run --example naive_bayes_iris         # Naive Bayes classifier
+cargo run --example knn_iris                 # K-nearest neighbors
+cargo run --example svm_iris                 # Support vector machine
+cargo run --example regularized_regression   # Ridge/Lasso/ElasticNet
+```
+
+### Unsupervised Learning
+```bash
+cargo run --example iris_clustering          # K-Means clustering
+cargo run --example dbscan_clustering        # Density-based clustering
+cargo run --example hierarchical_clustering  # Agglomerative clustering
+cargo run --example gmm_clustering           # Gaussian mixture models
+cargo run --example spectral_clustering      # Graph-based clustering
+cargo run --example pca_iris                 # Principal component analysis
+cargo run --example tsne_visualization       # t-SNE dimensionality reduction
+```
+
+### Anomaly Detection
+```bash
+cargo run --example isolation_forest_anomaly # Isolation forest
+cargo run --example lof_anomaly              # Local outlier factor
+```
+
+### Graph & Association Rules
+```bash
+cargo run --example graph_social_network     # PageRank & centrality
+cargo run --example community_detection      # Louvain algorithm
+cargo run --example market_basket_apriori    # Association rule mining
+```
+
+### Model Selection & Utilities
+```bash
+cargo run --example cross_validation         # K-fold cross-validation
+cargo run --example model_serialization      # Save/load models
+cargo run --example dataframe_basics         # DataFrame operations
+cargo run --example descriptive_statistics   # Statistical analysis
+cargo run --example optimizer_demo           # SGD and Adam optimizers
 ```
 
 ## Quality Metrics
 
 - **TDG Score**: 93.3/100 (A grade)
-- **Total Tests**: 184 passing
-- **Property Tests**: 22 (proptest)
-- **Doc Tests**: 16
-- **Coverage**: ~97%
+- **Total Tests**: 683 passing
+- **Property Tests**: 32 (proptest)
+- **Doc Tests**: 49
+- **Coverage**: ~95%
 - **Max Cyclomatic Complexity**: ≤10
 - **Clippy Warnings**: 0
+- **SATD Violations**: 0 critical (1 low-priority TODO)
 
 ## Documentation
 

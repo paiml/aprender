@@ -9,7 +9,7 @@ description = "Next-generation machine learning library in pure Rust"
 repository = "https://github.com/paiml/aprender"
 documentation = "https://docs.rs/aprender"
 readme = "README.md"
-keywords = ["machine-learning", "ml", "regression", "clustering", "tree-models"]
+keywords = ["machine-learning", "classification", "clustering", "statistics", "graph-algorithms"]
 categories = ["science", "algorithms"]
 
 [dependencies]
