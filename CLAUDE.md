@@ -126,6 +126,50 @@ cargo fmt --check               # Verify formatting
 
 **Current State:** ~140 pedantic warnings (mostly style improvements like format string inlining). Core production code is lint-clean.
 
+## CI/CD Workflows
+
+Aprender uses GitHub Actions for comprehensive CI/CD automation in `.github/workflows/`:
+
+### ci.yml - Main CI Pipeline
+Runs on every push and PR to main:
+- **Check**: `cargo check --all-features`
+- **Format**: `cargo fmt --all -- --check`
+- **Clippy**: `cargo clippy -- -D warnings` (zero tolerance)
+- **Test**: Unit, integration, property, doc, and full test suite
+- **Coverage**: `cargo llvm-cov` with Codecov upload (target: ≥85%)
+- **Mutation Testing**: `cargo mutants` (sample run, continue-on-error)
+- **Security**: `cargo audit` and `cargo deny` checks
+- **Docs**: `cargo doc` with -Dwarnings
+- **Shellcheck**: Script linting
+- **Build**: Release build + example runs
+
+### benchmark.yml - Performance Monitoring
+Runs on manual trigger, PR (for performance-sensitive changes), and weekly schedule:
+- **Benchmarks**: All criterion benchmarks (linear_regression, kmeans, dataframe)
+- **Artifacts**: Results stored for 90 days with historical tracking
+- **PR Comments**: Automatic benchmark result summaries on PRs
+- **Triggers**:
+  - Manual: `workflow_dispatch` for on-demand runs
+  - PR: When `src/**/*.rs` or `benches/**/*.rs` changes
+  - Schedule: Weekly on Sundays at 2 AM UTC
+
+**Running benchmarks locally:**
+```bash
+cargo bench                     # Run all benchmarks
+cargo bench --bench kmeans      # Run specific benchmark
+```
+
+**Triggering in CI:**
+1. Go to Actions → Benchmarks → Run workflow
+2. Or wait for weekly scheduled run
+3. Or modify performance-sensitive code and create PR
+
+### book.yml - Documentation CI
+Builds and deploys the EXTREME TDD book to GitHub Pages.
+
+### release.yml - Release Automation
+Automated releases on version tags.
+
 ## v0.4.0 - TOP 10 ML Algorithms Complete
 
 **Supervised Learning:**

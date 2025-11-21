@@ -1,0 +1,114 @@
+name: Benchmarks
+
+on:
+  # Manual trigger for on-demand benchmarking
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reason for running benchmarks'
+        required: false
+        default: 'Manual benchmark run'
+
+  # Run on PR for performance-sensitive changes
+  pull_request:
+    paths:
+      - 'src/**/*.rs'
+      - 'benches/**/*.rs'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+
+  # Weekly scheduled run for trend tracking
+  schedule:
+    - cron: '0 2 * * 0'  # Every Sunday at 2 AM UTC
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  benchmark:
+    name: Run Benchmarks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run all benchmarks
+        run: |
+          echo "Running benchmarks..."
+          cargo bench --no-fail-fast 2>&1 | tee benchmark-output.txt
+        continue-on-error: true
+
+      - name: Generate benchmark summary
+        if: always()
+        run: |
+          echo "# Benchmark Results" > benchmark-summary.md
+          echo "" >> benchmark-summary.md
+          echo "**Date:** $(date -u)" >> benchmark-summary.md
+          echo "**Branch:** ${{ github.ref_name }}" >> benchmark-summary.md
+          echo "**Commit:** ${{ github.sha }}" >> benchmark-summary.md
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "**Trigger:** Manual (${{ github.event.inputs.reason }})" >> benchmark-summary.md
+          elif [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "**Trigger:** Pull Request #${{ github.event.pull_request.number }}" >> benchmark-summary.md
+          elif [ "${{ github.event_name }}" = "schedule" ]; then
+            echo "**Trigger:** Weekly Schedule" >> benchmark-summary.md
+          fi
+
+          echo "" >> benchmark-summary.md
+          echo "## Benchmarks Run" >> benchmark-summary.md
+          echo "" >> benchmark-summary.md
+          echo "- Linear Regression (benches/linear_regression.rs)" >> benchmark-summary.md
+          echo "- K-Means Clustering (benches/kmeans.rs)" >> benchmark-summary.md
+          echo "- DataFrame Operations (benches/dataframe.rs)" >> benchmark-summary.md
+          echo "" >> benchmark-summary.md
+          echo "## Results" >> benchmark-summary.md
+          echo "" >> benchmark-summary.md
+          echo "Detailed results are stored in the \`criterion\` artifact." >> benchmark-summary.md
+          echo "" >> benchmark-summary.md
+          echo "### Performance Notes" >> benchmark-summary.md
+          echo "" >> benchmark-summary.md
+          echo "- All benchmarks use criterion.rs for statistical analysis" >> benchmark-summary.md
+          echo "- Results include mean, median, and standard deviation" >> benchmark-summary.md
+          echo "- Outliers are detected and reported" >> benchmark-summary.md
+
+          cat benchmark-summary.md
+
+      - name: Upload criterion results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: criterion-results-${{ github.sha }}
+          path: target/criterion/
+          retention-days: 90
+
+      - name: Upload benchmark output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-output-${{ github.sha }}
+          path: |
+            benchmark-output.txt
+            benchmark-summary.md
+          retention-days: 30
+
+      - name: Comment on PR (if applicable)
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const summary = fs.readFileSync('benchmark-summary.md', 'utf8');
+
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.name,
+              body: `## 📊 Benchmark Results\n\n${summary}\n\n---\n*Benchmarks completed on commit ${context.sha.substring(0, 7)}*`
+            });
