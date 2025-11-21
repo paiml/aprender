@@ -1,0 +1,14 @@
+# cargo-mutants configuration
+# https://mutants.rs/configuration.html
+
+# Use stable toolchain
+[toolchain]
+toolchain = "stable"
+
+# Test options
+timeout = 120
+minimum_test_timeout = 20
+
+# Only test library code
+test_tool = "cargo"
+test_options = ["--lib", "--all-features"]

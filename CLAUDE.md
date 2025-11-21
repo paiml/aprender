@@ -121,10 +121,35 @@ cargo llvm-cov report | grep TOTAL
 
 ### Mutation Testing
 
+**Current Setup:** Integrated in CI pipeline (`.github/workflows/ci.yml`)
+
 ```bash
-cargo mutants --no-times                # Mutation testing (target: ≥85%)
-cargo mutants --no-times --timeout 300  # With timeout (CI mode)
+# CI automatically runs mutation tests on every PR/push
+# Results stored as artifacts for 30 days
+
+# View CI results
+gh run list --workflow=ci.yml --limit 5
+gh run download <run-id> -n mutants-results
+
+# Local execution (when working):
+cargo mutants --no-times --timeout 300 --in-place -- --all-features
+
+# Test specific file:
+cargo mutants --no-times --timeout 120 --file src/loss/mod.rs
+
+# List mutants without running:
+cargo mutants --list --file src/loss/mod.rs
 ```
+
+**Known Issue:** Local mutation testing may fail with package ambiguity errors for published crates. Use CI for mutation testing or temporarily bump version for local testing.
+
+**Mutation Stats:**
+- Total mutants: ~13,705 across entire codebase
+- Target mutation score: ≥80% (PMAT recommendation)
+- CI timeout: 300s per mutant
+- Results: Available as CI artifacts for 30 days
+
+**Configuration:** See `mutation-testing-setup.md` for detailed documentation.
 
 ## Linting Configuration
 
