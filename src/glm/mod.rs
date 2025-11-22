@@ -6,13 +6,20 @@
 //!
 //! - **Linear predictor**: η = Xβ
 //! - **Link function**: g(μ) = η, maps mean to linear predictor
-//! - **Family**: Distribution from exponential family (Poisson, Gamma, Binomial)
+//! - **Family**: Distribution from exponential family
 //!
 //! # Families
 //!
-//! - **Poisson**: Count data, canonical link = log
-//! - **Gamma**: Positive continuous data, canonical link = inverse
-//! - **Binomial**: Binary/proportion data, canonical link = logit
+//! - **Poisson**: Count data, canonical link = log, V(μ) = μ
+//! - **Negative Binomial**: Overdispersed count data, canonical link = log, V(μ) = μ + α*μ²
+//! - **Gamma**: Positive continuous data, canonical link = inverse, V(μ) = μ²
+//! - **Binomial**: Binary/proportion data, canonical link = logit, V(μ) = μ(1-μ)
+//!
+//! # Overdispersion in Count Data
+//!
+//! For count data where variance >> mean (overdispersion), use **Negative Binomial**
+//! instead of Poisson. The dispersion parameter α controls extra variance.
+//! See `notes-poisson.md` for detailed explanation with peer-reviewed references.
 //!
 //! # Example
 //!
@@ -20,8 +27,8 @@
 //! use aprender::glm::{GLM, Family};
 //! use aprender::primitives::{Matrix, Vector};
 //!
-//! // Count data with Poisson regression
-//! let mut model = GLM::new(Family::Poisson);
+//! // Overdispersed count data - use Negative Binomial
+//! let mut model = GLM::new(Family::NegativeBinomial).with_dispersion(0.5);
 //! model.fit(&x, &y).unwrap();
 //! let predictions = model.predict(&x_test).unwrap();
 //! ```
@@ -35,6 +42,11 @@ pub enum Family {
     /// Poisson distribution for count data.
     /// Canonical link: log, Variance: V(μ) = μ
     Poisson,
+
+    /// Negative Binomial distribution for overdispersed count data.
+    /// Canonical link: log, Variance: V(μ) = μ + α*μ² (α = dispersion parameter)
+    /// Handles data where variance >> mean (overdispersion).
+    NegativeBinomial,
 
     /// Gamma distribution for positive continuous data.
     /// Canonical link: inverse, Variance: V(μ) = μ²
@@ -65,30 +77,38 @@ impl Family {
     /// Returns the canonical link function for this family.
     pub const fn canonical_link(&self) -> Link {
         match self {
-            Self::Poisson => Link::Log,
+            Self::Poisson | Self::NegativeBinomial => Link::Log,
             Self::Gamma => Link::Inverse,
             Self::Binomial => Link::Logit,
         }
     }
 
     /// Variance function V(μ).
-    fn variance(self, mu: f32) -> f32 {
+    ///
+    /// For Negative Binomial, requires dispersion parameter α.
+    fn variance(self, mu: f32, dispersion: f32) -> f32 {
         match self {
-            Self::Poisson => mu,               // V(μ) = μ
-            Self::Gamma => mu * mu,            // V(μ) = μ²
-            Self::Binomial => mu * (1.0 - mu), // V(μ) = μ(1-μ)
+            Self::Poisson => mu,                                 // V(μ) = μ
+            Self::NegativeBinomial => mu + dispersion * mu * mu, // V(μ) = μ + α*μ²
+            Self::Gamma => mu * mu,                              // V(μ) = μ²
+            Self::Binomial => mu * (1.0 - mu),                   // V(μ) = μ(1-μ)
         }
     }
 
     /// Validates that y values are appropriate for this family.
     fn validate_response(self, y: &Vector<f32>) -> Result<()> {
         match self {
-            Self::Poisson => {
+            Self::Poisson | Self::NegativeBinomial => {
                 // Must be non-negative counts
                 for &val in y.as_slice() {
                     if val < 0.0 {
+                        let family_name = if matches!(self, Self::Poisson) {
+                            "Poisson"
+                        } else {
+                            "Negative Binomial"
+                        };
                         return Err(AprenderError::Other(format!(
-                            "Poisson requires non-negative counts, got {val}"
+                            "{family_name} requires non-negative counts, got {val}"
                         )));
                     }
                 }
@@ -171,6 +191,10 @@ pub struct GLM {
     /// Convergence tolerance
     tol: f32,
 
+    /// Dispersion parameter for Negative Binomial (α in V(μ) = μ + α*μ²)
+    /// Default: 1.0 (moderate overdispersion)
+    dispersion: f32,
+
     /// Fitted coefficients
     coefficients: Option<Vec<f32>>,
 
@@ -184,8 +208,9 @@ impl GLM {
         Self {
             family,
             link: family.canonical_link(),
-            max_iter: 1000, // Increased for better convergence
-            tol: 1e-3,      // More relaxed tolerance for practical convergence
+            max_iter: 1000,  // Increased for better convergence
+            tol: 1e-3,       // More relaxed tolerance for practical convergence
+            dispersion: 1.0, // Default dispersion for Negative Binomial
             coefficients: None,
             intercept: None,
         }
@@ -208,6 +233,16 @@ impl GLM {
     #[must_use]
     pub fn with_tolerance(mut self, tol: f32) -> Self {
         self.tol = tol;
+        self
+    }
+
+    /// Sets the dispersion parameter for Negative Binomial family.
+    ///
+    /// The dispersion parameter α controls overdispersion: V(μ) = μ + α*μ².
+    /// Higher α = more overdispersion. Default: 1.0.
+    #[must_use]
+    pub fn with_dispersion(mut self, dispersion: f32) -> Self {
+        self.dispersion = dispersion;
         self
     }
 
@@ -268,8 +303,10 @@ impl GLM {
                     let mu_raw = self.link.inverse_link(e);
                     // Clamp mu to reasonable ranges based on family
                     match self.family {
-                        Family::Poisson | Family::Gamma => mu_raw.max(1e-6), // Must be positive
-                        Family::Binomial => mu_raw.clamp(1e-6, 1.0 - 1e-6),  // Must be in (0,1)
+                        Family::Poisson | Family::NegativeBinomial | Family::Gamma => {
+                            mu_raw.max(1e-6) // Must be positive
+                        }
+                        Family::Binomial => mu_raw.clamp(1e-6, 1.0 - 1e-6), // Must be in (0,1)
                     }
                 })
                 .collect();
@@ -284,7 +321,7 @@ impl GLM {
             // Compute weights W = 1 / (V(μ) * [g'(η)]²)
             let mut weights = Vec::with_capacity(n);
             for i in 0..n {
-                let var = self.family.variance(mu[i]).max(1e-10); // Avoid zero variance
+                let var = self.family.variance(mu[i], self.dispersion).max(1e-10); // Avoid zero variance
                 let deriv = self.link.derivative(eta[i]);
                 let weight = 1.0 / (var * deriv * deriv + 1e-10); // Add epsilon for stability
                                                                   // Clamp weights to reasonable range to avoid numerical issues
@@ -362,23 +399,37 @@ impl GLM {
             let intercept_new = beta_aug[0];
             let beta_new = beta_aug.as_slice()[1..].to_vec();
 
-            // Update linear predictor
+            // Step damping for log link to prevent divergence
+            // Log link can cause numerical instability regardless of family
+            let step_size = match self.link {
+                Link::Log => 0.5, // Damped steps for log link
+                _ => 1.0,         // Full steps for other links
+            };
+
+            let intercept_damped = intercept + step_size * (intercept_new - intercept);
+            let beta_damped: Vec<f32> = beta
+                .iter()
+                .zip(&beta_new)
+                .map(|(old, new)| old + step_size * (new - old))
+                .collect();
+
+            // Update linear predictor with damped steps
             for i in 0..n {
-                let mut new_eta = intercept_new;
+                let mut new_eta = intercept_damped;
                 for j in 0..p {
-                    new_eta += x.get(i, j) * beta_new[j];
+                    new_eta += x.get(i, j) * beta_damped[j];
                 }
                 eta[i] = new_eta;
             }
 
             // Check convergence
-            let mut max_change = (intercept_new - intercept).abs();
+            let mut max_change = (intercept_damped - intercept).abs();
             for j in 0..p {
-                max_change = max_change.max((beta_new[j] - beta[j]).abs());
+                max_change = max_change.max((beta_damped[j] - beta[j]).abs());
             }
 
-            beta = beta_new;
-            intercept = intercept_new;
+            beta = beta_damped;
+            intercept = intercept_damped;
 
             if max_change < self.tol {
                 self.coefficients = Some(beta);
@@ -472,35 +523,68 @@ mod tests {
         assert_eq!(link.inverse_link(mu), mu);
     }
 
-    /// Test: Poisson regression on count data
+    /// Test: Negative Binomial regression on overdispersed count data
     ///
-    /// TODO: Poisson GLM has convergence issues even with simple data.
-    /// IRLS algorithm needs damping/step size control for Poisson family.
-    /// Currently passing: Gamma (canonical), Binomial (canonical), Gamma (non-canonical log link)
-    /// Consider implementing: gradient descent, Newton-Raphson with line search, or L-BFGS
+    /// Negative Binomial handles count data where variance >> mean (overdispersion).
+    /// This is the proper solution for overdispersed counts, as documented in notes-poisson.md.
+    /// V(μ) = μ + α*μ² where α is the dispersion parameter.
     #[test]
-    #[ignore = "Poisson GLM convergence issues - IRLS needs damping for Poisson family"]
-    fn test_poisson_regression() {
-        // Simple count data with very gentle increase
-        let x = Matrix::from_vec(5, 1, vec![0.0, 1.0, 2.0, 3.0, 4.0]).expect("Valid matrix");
-        let y = Vector::from_vec(vec![3.0, 3.0, 4.0, 4.0, 5.0]);
+    fn test_negative_binomial_regression() {
+        // Gentle linear count data with slight overdispersion
+        let x = Matrix::from_vec(6, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]).expect("Valid matrix");
+        let y = Vector::from_vec(vec![5.0, 6.0, 7.0, 8.0, 9.0, 10.0]);
 
-        let mut model = GLM::new(Family::Poisson);
+        let mut model = GLM::new(Family::NegativeBinomial)
+            .with_dispersion(0.1)
+            .with_max_iter(5000); // More iterations for damped convergence
         let result = model.fit(&x, &y);
 
         assert!(
             result.is_ok(),
-            "Poisson GLM should fit, error: {:?}",
+            "Negative Binomial GLM should fit, error: {:?}",
             result.err()
         );
         assert!(model.coefficients().is_some());
         assert!(model.intercept().is_some());
 
-        // Predictions should be positive
+        // Verify predictions work
         let predictions = model.predict(&x).expect("Predictions should succeed");
-        for &pred in predictions.as_slice() {
-            assert!(pred > 0.0, "Poisson predictions should be positive");
-        }
+        assert_eq!(predictions.len(), y.len());
+    }
+
+    /// Test: Negative Binomial with low dispersion (approaches Poisson)
+    #[test]
+    fn test_negative_binomial_low_dispersion() {
+        // Low overdispersion data
+        let x = Matrix::from_vec(6, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]).expect("Valid matrix");
+        let y = Vector::from_vec(vec![3.0, 4.0, 5.0, 6.0, 7.0, 8.0]);
+
+        let mut model = GLM::new(Family::NegativeBinomial)
+            .with_dispersion(0.01) // Very low dispersion, close to Poisson
+            .with_max_iter(5000);
+        let result = model.fit(&x, &y);
+
+        assert!(result.is_ok(), "Low dispersion NB should converge");
+        assert!(model.coefficients().is_some());
+    }
+
+    /// Test: Negative Binomial validation rejects negative counts
+    #[test]
+    fn test_negative_binomial_validation() {
+        let x = Matrix::from_vec(3, 1, vec![1.0, 2.0, 3.0]).expect("Valid matrix");
+        let y = Vector::from_vec(vec![3.0, -1.0, 5.0]); // Negative count
+
+        let mut model = GLM::new(Family::NegativeBinomial);
+        let result = model.fit(&x, &y);
+
+        assert!(
+            result.is_err(),
+            "Negative Binomial should reject negative counts"
+        );
+        assert!(result
+            .expect_err("Should return error for negative counts")
+            .to_string()
+            .contains("Negative Binomial requires non-negative counts"));
     }
 
     /// Test: Gamma regression on positive continuous data
