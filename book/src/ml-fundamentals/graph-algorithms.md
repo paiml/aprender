@@ -241,6 +241,389 @@ println!("Node 1 betweenness: {:.2}", betweenness[1]);  // High (bridge)
 - Transportation: Identify critical junctions
 - Epidemiology: Find super-spreaders in contact networks
 
+## Closeness Centrality
+
+### Theory
+
+Closeness centrality measures how close a node is to all other nodes in the network. Nodes with high closeness can spread information or resources efficiently through the network.
+
+**Formula** (Wasserman & Faust 1994):
+```text
+C_C(v) = (n-1) / Σ d(v,u)
+```
+
+where:
+- `n` = number of nodes
+- `d(v,u)` = shortest path distance from v to u
+- Sum over all reachable nodes u
+
+For **disconnected nodes** (unreachable from v), closeness = 0.0 (convention).
+
+### Implementation
+
+```rust,ignore
+use aprender::graph::Graph;
+
+let edges = vec![(0, 1), (1, 2), (2, 3)];  // Path graph
+let graph = Graph::from_edges(&edges, false);
+
+let closeness = graph.closeness_centrality();
+println!("Node 1 closeness: {:.3}", closeness[1]);  // Central node
+```
+
+### Time Complexity
+
+- **Per node**: O(n + m) via BFS
+- **All nodes**: O(n·(n + m))
+- **Parallel**: Available via Rayon (future optimization)
+
+### Applications
+
+- Social networks: Identify people who can spread information quickly
+- Supply chains: Find optimal distribution centers
+- Disease modeling: Find efficient vaccination targets
+
+## Eigenvector Centrality
+
+### Theory
+
+Eigenvector centrality assigns importance based on the importance of neighbors. It's the principle behind Google's PageRank, but for undirected graphs.
+
+**Formula**:
+```text
+x_v = (1/λ) * Σ A_vu * x_u
+```
+
+where:
+- `A` = adjacency matrix
+- `λ` = largest eigenvalue
+- `x` = eigenvector (centrality scores)
+
+Solved via **power iteration**:
+```text
+x^(k+1) = A · x^(k) / ||A · x^(k)||
+```
+
+### Implementation
+
+```rust,ignore
+use aprender::graph::Graph;
+
+let edges = vec![(0, 1), (1, 2), (2, 0), (1, 3)];  // Triangle + spoke
+let graph = Graph::from_edges(&edges, false);
+
+let centrality = graph.eigenvector_centrality(100, 1e-6).unwrap();
+println!("Centralities: {:?}", centrality);
+```
+
+### Convergence
+
+- **Typical iterations**: 10-30 for most graphs
+- **Disconnected graphs**: Returns error (no dominant eigenvalue)
+- **Convergence check**: ||x^(k+1) - x^(k)|| < tolerance
+
+### Time Complexity
+
+- **Per iteration**: O(n + m)
+- **Convergence**: O(k·(n + m)) where k ≈ 10-30
+
+### Applications
+
+- Social networks: Find influencers (connected to other influencers)
+- Citation networks: Identify seminal papers
+- Collaboration networks: Find well-connected researchers
+
+## Katz Centrality
+
+### Theory
+
+Katz centrality is a generalization of eigenvector centrality that works for directed graphs and gives every node a baseline importance.
+
+**Formula**:
+```text
+x = (I - αA^T)^(-1) · β·1
+```
+
+where:
+- `α` = attenuation factor (< 1/λ_max)
+- `β` = baseline importance (typically 1.0)
+- `A^T` = transpose of adjacency matrix
+
+Solved via **power iteration**:
+```text
+x^(k+1) = β·1 + α·A^T·x^(k)
+```
+
+### Implementation
+
+```rust,ignore
+use aprender::graph::Graph;
+
+let edges = vec![(0, 1), (1, 2), (2, 0)];  // Directed cycle
+let graph = Graph::from_edges(&edges, true);
+
+let centrality = graph.katz_centrality(0.1, 1.0, 100, 1e-6).unwrap();
+println!("Katz scores: {:?}", centrality);
+```
+
+### Parameter Selection
+
+- **Alpha**: Must be < 1/λ_max for convergence
+  - Rule of thumb: α = 0.1 works for most graphs
+  - Larger α → more weight to distant neighbors
+- **Beta**: Baseline importance (usually 1.0)
+
+### Time Complexity
+
+- **Per iteration**: O(n + m)
+- **Convergence**: O(k·(n + m)) where k ≈ 10-30
+
+### Applications
+
+- Social networks: Influence with baseline activity
+- Web graphs: Modified PageRank for directed graphs
+- Recommendation systems: Item importance scoring
+
+## Harmonic Centrality
+
+### Theory
+
+Harmonic centrality is a robust variant of closeness centrality that handles disconnected graphs gracefully by summing inverse distances instead of averaging.
+
+**Formula** (Boldi & Vigna 2014):
+```text
+H(v) = Σ 1/d(v,u)
+```
+
+where:
+- `d(v,u)` = shortest path distance
+- If u unreachable: 1/∞ = 0 (natural handling)
+- No special case needed for disconnected graphs
+
+### Advantages over Closeness
+
+1. **No zero-division** for disconnected nodes
+2. **Discriminates better** in sparse graphs
+3. **Additive**: Can compute incrementally
+
+### Implementation
+
+```rust,ignore
+use aprender::graph::Graph;
+
+let edges = vec![
+    (0, 1), (1, 2),  // Component 1
+    (3, 4),          // Component 2 (disconnected)
+];
+let graph = Graph::from_edges(&edges, false);
+
+let harmonic = graph.harmonic_centrality();
+// Works correctly even with disconnected components
+```
+
+### Time Complexity
+
+- **All nodes**: O(n·(n + m))
+- Same as closeness, but more robust
+
+### Applications
+
+- Fragmented networks: Social networks with isolated communities
+- Transportation: Networks with unreachable zones
+- Communication: Networks with partitions
+
+## Network Density
+
+### Theory
+
+Density measures the ratio of actual edges to possible edges. It quantifies how "connected" a graph is overall.
+
+**Formula** (undirected):
+```text
+D = 2m / (n(n-1))
+```
+
+**Formula** (directed):
+```text
+D = m / (n(n-1))
+```
+
+where:
+- `m` = number of edges
+- `n` = number of nodes
+
+### Interpretation
+
+- **D = 0**: No edges (empty graph)
+- **D = 1**: Complete graph (every pair connected)
+- **D ∈ (0,1)**: Partial connectivity
+
+### Implementation
+
+```rust,ignore
+use aprender::graph::Graph;
+
+let edges = vec![(0, 1), (1, 2), (2, 0)];  // Triangle
+let graph = Graph::from_edges(&edges, false);
+
+let density = graph.density();
+println!("Density: {:.3}", density);  // 3 edges / 3 possible = 1.0
+```
+
+### Time Complexity
+
+- **O(1)**: Just arithmetic on n_nodes and n_edges
+
+### Applications
+
+- Social networks: Measure community cohesion
+- Biological networks: Protein interaction density
+- Comparison: Compare connectivity across graphs
+
+## Network Diameter
+
+### Theory
+
+Diameter is the longest shortest path between any pair of nodes. It measures the "worst-case" reachability in a network.
+
+**Formula**:
+```text
+diam(G) = max{d(u,v) : u,v ∈ V}
+```
+
+**Special cases**:
+- Disconnected graph → `None` (infinite diameter)
+- Single node → 0
+- Empty graph → 0
+
+### Implementation
+
+```rust,ignore
+use aprender::graph::Graph;
+
+let edges = vec![(0, 1), (1, 2), (2, 3)];  // Path of length 3
+let graph = Graph::from_edges(&edges, false);
+
+match graph.diameter() {
+    Some(d) => println!("Diameter: {}", d),  // 3 hops
+    None => println!("Graph is disconnected"),
+}
+```
+
+### Algorithm
+
+Uses **all-pairs BFS**:
+1. Run BFS from each node
+2. Track maximum distance found
+3. Return None if any node unreachable
+
+### Time Complexity
+
+- **O(n·(n + m))**: BFS from every node
+- Can be expensive for large graphs
+
+### Applications
+
+- Communication networks: Worst-case message delay
+- Social networks: "Six degrees of separation"
+- Transportation: Maximum travel time
+
+## Clustering Coefficient
+
+### Theory
+
+Clustering coefficient measures how much nodes tend to cluster together. It quantifies the probability that two neighbors of a node are also neighbors of each other (forming triangles).
+
+**Formula** (global):
+```text
+C = (3 × number of triangles) / number of connected triples
+```
+
+**Implementation** (average local clustering):
+```text
+C = (1/n) Σ C_i
+
+where C_i = (2 × triangles around i) / (deg(i) × (deg(i)-1))
+```
+
+### Interpretation
+
+- **C = 0**: No triangles (e.g., tree structure)
+- **C = 1**: Every neighbor pair is connected
+- **C ∈ (0,1)**: Partial clustering
+
+### Implementation
+
+```rust,ignore
+use aprender::graph::Graph;
+
+let edges = vec![(0, 1), (1, 2), (2, 0)];  // Perfect triangle
+let graph = Graph::from_edges(&edges, false);
+
+let clustering = graph.clustering_coefficient();
+println!("Clustering: {:.3}", clustering);  // 1.0
+```
+
+### Time Complexity
+
+- **O(n·d²)** where d = average degree
+- Worst case O(n³) for dense graphs
+- Typically much faster due to sparsity
+
+### Applications
+
+- Social networks: Measure friend-of-friend connections
+- Biological networks: Functional module detection
+- Small-world property: High clustering + low diameter
+
+## Degree Assortativity
+
+### Theory
+
+Assortativity measures the tendency of nodes to connect with similar nodes. For degree assortativity, it answers: "Do high-degree nodes connect with other high-degree nodes?"
+
+**Formula** (Newman 2002):
+```text
+r = Σ_e j·k·e_jk - [Σ_e (j+k)·e_jk/2]²
+    ─────────────────────────────────────
+    Σ_e (j²+k²)·e_jk/2 - [Σ_e (j+k)·e_jk/2]²
+```
+
+where `e_jk` = fraction of edges connecting degree-j to degree-k nodes.
+
+**Simplified interpretation**: Pearson correlation of degrees at edge endpoints.
+
+### Interpretation
+
+- **r > 0**: Assortative (similar degrees connect)
+  - Examples: Social networks (homophily)
+- **r < 0**: Disassortative (different degrees connect)
+  - Examples: Biological networks (hubs connect to leaves)
+- **r = 0**: No correlation
+
+### Implementation
+
+```rust,ignore
+use aprender::graph::Graph;
+
+// Star graph: hub (high degree) connects to leaves (low degree)
+let edges = vec![(0, 1), (0, 2), (0, 3), (0, 4)];
+let graph = Graph::from_edges(&edges, false);
+
+let assortativity = graph.assortativity();
+println!("Assortativity: {:.3}", assortativity);  // Negative (disassortative)
+```
+
+### Time Complexity
+
+- **O(n + m)**: Linear scan of edges
+
+### Applications
+
+- Social networks: Detect homophily (like connects to like)
+- Biological networks: Hub-and-spoke vs mesh topology
+- Resilience analysis: Assortative networks more robust to attacks
+
 ## Performance Characteristics
 
 ### Memory Usage (1M nodes, 10M edges)

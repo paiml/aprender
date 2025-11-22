@@ -3,13 +3,16 @@
 //! This example demonstrates graph algorithms on a social network:
 //! - Building a friendship graph
 //! - Finding most connected people (degree centrality)
-//! - Identifying influential users (PageRank)
+//! - Identifying influential users (PageRank, eigenvector, Katz)
 //! - Discovering bridges between communities (betweenness centrality)
+//! - Measuring network closeness (closeness and harmonic centrality)
+//! - Analyzing network structure (density, diameter, clustering, assortativity)
 //!
 //! Run with: `cargo run --example graph_social_network`
 
 use aprender::graph::Graph;
 
+#[allow(clippy::too_many_lines)]
 fn main() {
     println!("═══════════════════════════════════════════════════════");
     println!("  Social Network Analysis with Aprender");
@@ -135,6 +138,111 @@ fn main() {
     println!("   High scores = many shortest paths pass through this person");
     println!("   These people connect different communities");
     println!("   Removing them would fragment the network\n");
+
+    // ========================================================================
+    // Closeness Centrality: Who can reach everyone quickly?
+    // ========================================================================
+    println!("═══════════════════════════════════════════════════════");
+    println!("  4. Closeness Centrality (Reachability)");
+    println!("═══════════════════════════════════════════════════════\n");
+
+    let closeness_scores = graph.closeness_centrality();
+    let mut closeness_with_names: Vec<(&str, f64)> = Vec::new();
+    for (i, &score) in closeness_scores.iter().enumerate() {
+        closeness_with_names.push((names[i], score));
+    }
+    closeness_with_names
+        .sort_by(|a, b| b.1.partial_cmp(&a.1).expect("Example data should be valid"));
+
+    println!("Top 5 Most Reachable People:");
+    for (i, (name, score)) in closeness_with_names.iter().take(5).enumerate() {
+        println!(
+            "  {}. {} - {:.4} (closeness centrality)",
+            i + 1,
+            name,
+            score
+        );
+    }
+    println!("\n💡 Interpretation:");
+    println!("   High scores = can reach others via short paths");
+    println!("   These people can spread information quickly");
+    println!("   Based on average shortest path distance\n");
+
+    // ========================================================================
+    // Eigenvector Centrality: Who is connected to important people?
+    // ========================================================================
+    println!("═══════════════════════════════════════════════════════");
+    println!("  5. Eigenvector Centrality (Quality of Connections)");
+    println!("═══════════════════════════════════════════════════════\n");
+
+    let eigenvector_scores = graph
+        .eigenvector_centrality(100, 1e-6)
+        .expect("Eigenvector computation failed");
+    let mut eigenvector_with_names: Vec<(&str, f64)> = Vec::new();
+    for (i, &score) in eigenvector_scores.iter().enumerate() {
+        eigenvector_with_names.push((names[i], score));
+    }
+    eigenvector_with_names
+        .sort_by(|a, b| b.1.partial_cmp(&a.1).expect("Example data should be valid"));
+
+    println!("Top 5 by Connection Quality:");
+    for (i, (name, score)) in eigenvector_with_names.iter().take(5).enumerate() {
+        println!(
+            "  {}. {} - {:.4} (eigenvector centrality)",
+            i + 1,
+            name,
+            score
+        );
+    }
+    println!("\n💡 Interpretation:");
+    println!("   High scores = connected to other well-connected people");
+    println!("   Quality matters more than quantity of connections");
+    println!("   Uses power iteration method\n");
+
+    // ========================================================================
+    // Network Structural Properties
+    // ========================================================================
+    println!("═══════════════════════════════════════════════════════");
+    println!("  6. Network Structural Statistics");
+    println!("═══════════════════════════════════════════════════════\n");
+
+    let density = graph.density();
+    let diameter = graph.diameter();
+    let clustering = graph.clustering_coefficient();
+    let assortativity = graph.assortativity();
+
+    println!("Network Metrics:");
+    println!("  • Density: {density:.4}");
+    println!("    (Ratio of actual to possible edges)");
+
+    match diameter {
+        Some(d) => println!("  • Diameter: {d} hops"),
+        None => println!("  • Diameter: ∞ (disconnected graph)"),
+    }
+    println!("    (Longest shortest path in network)");
+
+    println!("  • Clustering Coefficient: {clustering:.4}");
+    println!("    (Probability that your friends are friends)");
+
+    println!("  • Degree Assortativity: {assortativity:.4}");
+    println!("    (Do popular people connect with popular people?)");
+
+    println!("\n💡 Interpretation:");
+    println!(
+        "   Density: {:.1}% of possible connections exist",
+        density * 100.0
+    );
+    if assortativity > 0.0 {
+        println!("   Assortativity > 0: Popular people prefer popular people");
+    } else {
+        println!("   Assortativity < 0: Popular people connect with less popular");
+    }
+    if clustering > 0.5 {
+        println!("   High clustering: Strong community structure");
+    } else {
+        println!("   Low clustering: Sparse friend-of-friend connections");
+    }
+    println!();
 
     // ========================================================================
     // Analysis Summary
