@@ -1110,6 +1110,94 @@ impl Graph {
 
         numerator / denominator
     }
+
+    /// Compute shortest path between two nodes using BFS.
+    ///
+    /// Finds the shortest path (minimum number of hops) from source to target
+    /// using breadth-first search. Works for both directed and undirected graphs.
+    ///
+    /// # Algorithm
+    /// Uses BFS with predecessor tracking (Pohl 1971, bidirectional variant).
+    ///
+    /// # Arguments
+    /// * `source` - Starting node ID
+    /// * `target` - Destination node ID
+    ///
+    /// # Returns
+    /// * `Some(path)` - Shortest path as vector of node IDs from source to target
+    /// * `None` - No path exists between source and target
+    ///
+    /// # Complexity
+    /// * Time: O(n + m) where n = nodes, m = edges
+    /// * Space: O(n) for predecessor tracking
+    ///
+    /// # Examples
+    /// ```
+    /// use aprender::graph::Graph;
+    ///
+    /// let edges = vec![(0, 1), (1, 2), (2, 3), (0, 3)];
+    /// let g = Graph::from_edges(&edges, false);
+    ///
+    /// // Shortest path from 0 to 3
+    /// let path = g.shortest_path(0, 3).unwrap();
+    /// assert_eq!(path.len(), 2); // 0 -> 3 (direct edge)
+    /// assert_eq!(path[0], 0);
+    /// assert_eq!(path[1], 3);
+    ///
+    /// // Path 0 to 2
+    /// let path = g.shortest_path(0, 2).unwrap();
+    /// assert!(path.len() <= 3); // Either 0->1->2 or 0->3->2
+    /// ```
+    pub fn shortest_path(&self, source: NodeId, target: NodeId) -> Option<Vec<NodeId>> {
+        // Bounds checking
+        if source >= self.n_nodes || target >= self.n_nodes {
+            return None;
+        }
+
+        // Special case: source == target
+        if source == target {
+            return Some(vec![source]);
+        }
+
+        // BFS with predecessor tracking
+        let mut visited = vec![false; self.n_nodes];
+        let mut predecessor = vec![None; self.n_nodes];
+        let mut queue = VecDeque::new();
+
+        visited[source] = true;
+        queue.push_back(source);
+
+        while let Some(v) = queue.pop_front() {
+            // Early termination if we reach target
+            if v == target {
+                break;
+            }
+
+            for &w in self.neighbors(v) {
+                if !visited[w] {
+                    visited[w] = true;
+                    predecessor[w] = Some(v);
+                    queue.push_back(w);
+                }
+            }
+        }
+
+        // Reconstruct path from target to source
+        if !visited[target] {
+            return None; // No path exists
+        }
+
+        let mut path = Vec::new();
+        let mut current = Some(target);
+
+        while let Some(node) = current {
+            path.push(node);
+            current = predecessor[node];
+        }
+
+        path.reverse();
+        Some(path)
+    }
 }
 
 /// Kahan summation for computing L1 distance between two vectors.
@@ -2138,5 +2226,182 @@ mod tests {
 
         // Should have negative assortativity
         assert!(assort < 0.0);
+    }
+
+    // ========================================================================
+    // Pathfinding Algorithm Tests
+    // ========================================================================
+
+    #[test]
+    fn test_shortest_path_direct_edge() {
+        // Simplest case: direct edge between source and target
+        let g = Graph::from_edges(&[(0, 1)], false);
+        let path = g.shortest_path(0, 1).expect("path should exist");
+        assert_eq!(path, vec![0, 1]);
+        assert_eq!(path.len(), 2);
+    }
+
+    #[test]
+    fn test_shortest_path_same_node() {
+        // Source == target should return single-node path
+        let g = Graph::from_edges(&[(0, 1), (1, 2)], false);
+        let path = g.shortest_path(1, 1).expect("path should exist");
+        assert_eq!(path, vec![1]);
+    }
+
+    #[test]
+    fn test_shortest_path_disconnected() {
+        // No path between disconnected components
+        let g = Graph::from_edges(&[(0, 1), (2, 3)], false);
+        assert!(g.shortest_path(0, 3).is_none());
+        assert!(g.shortest_path(1, 2).is_none());
+    }
+
+    #[test]
+    fn test_shortest_path_invalid_nodes() {
+        // Out-of-bounds node IDs should return None
+        let g = Graph::from_edges(&[(0, 1)], false);
+        assert!(g.shortest_path(0, 10).is_none());
+        assert!(g.shortest_path(10, 0).is_none());
+    }
+
+    #[test]
+    fn test_shortest_path_multiple_paths() {
+        // Graph with multiple paths of same length
+        // 0 -- 1
+        // |    |
+        // 2 -- 3
+        let g = Graph::from_edges(&[(0, 1), (1, 3), (0, 2), (2, 3)], false);
+        let path = g.shortest_path(0, 3).expect("path should exist");
+
+        // Both 0->1->3 and 0->2->3 are shortest paths (length 3)
+        assert_eq!(path.len(), 3);
+        assert_eq!(path[0], 0);
+        assert_eq!(path[2], 3);
+        assert!(path[1] == 1 || path[1] == 2); // Either path is valid
+    }
+
+    #[test]
+    fn test_shortest_path_linear_chain() {
+        // Path graph: 0 -- 1 -- 2 -- 3 -- 4
+        let g = Graph::from_edges(&[(0, 1), (1, 2), (2, 3), (3, 4)], false);
+
+        // Test various source-target pairs
+        let path = g.shortest_path(0, 4).expect("path should exist");
+        assert_eq!(path, vec![0, 1, 2, 3, 4]);
+
+        let path = g.shortest_path(0, 2).expect("path should exist");
+        assert_eq!(path, vec![0, 1, 2]);
+
+        let path = g.shortest_path(1, 3).expect("path should exist");
+        assert_eq!(path, vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn test_shortest_path_triangle() {
+        // Triangle graph
+        let g = Graph::from_edges(&[(0, 1), (1, 2), (2, 0)], false);
+
+        // All pairs should have path length 2
+        let path = g.shortest_path(0, 1).expect("path should exist");
+        assert_eq!(path.len(), 2);
+
+        let path = g.shortest_path(0, 2).expect("path should exist");
+        assert_eq!(path.len(), 2);
+
+        let path = g.shortest_path(1, 2).expect("path should exist");
+        assert_eq!(path.len(), 2);
+    }
+
+    #[test]
+    fn test_shortest_path_directed() {
+        // Directed graph: 0 -> 1 -> 2
+        let g = Graph::from_edges(&[(0, 1), (1, 2)], true);
+
+        // Forward paths exist
+        let path = g.shortest_path(0, 2).expect("forward path should exist");
+        assert_eq!(path, vec![0, 1, 2]);
+
+        // Backward paths don't exist
+        assert!(g.shortest_path(2, 0).is_none());
+    }
+
+    #[test]
+    fn test_shortest_path_cycle() {
+        // Cycle graph: 0 -> 1 -> 2 -> 3 -> 0
+        let g = Graph::from_edges(&[(0, 1), (1, 2), (2, 3), (3, 0)], true);
+
+        // Test path that uses cycle
+        let path = g.shortest_path(0, 3).expect("path should exist");
+
+        // Direct path 0->1->2->3 (length 4) vs backward 0<-3 (not possible in directed)
+        assert_eq!(path.len(), 4);
+        assert_eq!(path, vec![0, 1, 2, 3]);
+    }
+
+    #[test]
+    fn test_shortest_path_star_graph() {
+        // Star graph: 0 connected to 1, 2, 3, 4
+        let g = Graph::from_edges(&[(0, 1), (0, 2), (0, 3), (0, 4)], false);
+
+        // Center to leaf: length 2
+        let path = g.shortest_path(0, 1).expect("path should exist");
+        assert_eq!(path.len(), 2);
+
+        // Leaf to leaf through center: length 3
+        let path = g.shortest_path(1, 2).expect("path should exist");
+        assert_eq!(path.len(), 3);
+        assert_eq!(path[0], 1);
+        assert_eq!(path[1], 0); // Must go through center
+        assert_eq!(path[2], 2);
+    }
+
+    #[test]
+    fn test_shortest_path_empty_graph() {
+        // Empty graph
+        let g = Graph::new(false);
+        assert!(g.shortest_path(0, 0).is_none());
+    }
+
+    #[test]
+    fn test_shortest_path_single_node_graph() {
+        // Graph with single self-loop
+        let g = Graph::from_edges(&[(0, 0)], false);
+        let path = g.shortest_path(0, 0).expect("path should exist");
+        assert_eq!(path, vec![0]);
+    }
+
+    #[test]
+    fn test_shortest_path_complete_graph() {
+        // Complete graph K4
+        let g = Graph::from_edges(&[(0, 1), (0, 2), (0, 3), (1, 2), (1, 3), (2, 3)], false);
+
+        // All pairs should have direct edge (length 2)
+        for i in 0..4 {
+            for j in 0..4 {
+                if i != j {
+                    let path = g.shortest_path(i, j).expect("path should exist");
+                    assert_eq!(path.len(), 2, "Path from {} to {} should be direct", i, j);
+                    assert_eq!(path[0], i);
+                    assert_eq!(path[1], j);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_shortest_path_bidirectional() {
+        // Undirected: path should exist in both directions
+        let g = Graph::from_edges(&[(0, 1), (1, 2)], false);
+
+        let path_forward = g.shortest_path(0, 2).expect("forward path should exist");
+        let path_backward = g.shortest_path(2, 0).expect("backward path should exist");
+
+        assert_eq!(path_forward.len(), path_backward.len());
+        assert_eq!(path_forward.len(), 3);
+
+        // Paths should be reverses of each other
+        let reversed: Vec<_> = path_backward.iter().rev().copied().collect();
+        assert_eq!(path_forward, reversed);
     }
 }
