@@ -1021,11 +1021,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'New task: Implement Statistical Hypothesis Tests (t-test, chi-square, ANOVA)'
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2025-11-22T17:57:31.042254053+00:00
-  updated: 2025-11-22T17:57:31.042254053+00:00
+  updated: 2025-11-22T18:08:46.664578379+00:00
   spec: null
   acceptance_criteria: []
   phases: []
