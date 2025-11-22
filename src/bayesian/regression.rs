@@ -6,6 +6,7 @@
 //! - Prediction intervals and uncertainty quantification
 
 use crate::error::{AprenderError, Result};
+use crate::primitives::{Matrix, Vector};
 
 /// Bayesian Linear Regression with analytical posterior.
 ///
@@ -175,6 +176,159 @@ impl BayesianLinearRegression {
     pub fn noise_variance(&self) -> Option<f32> {
         self.noise_variance
     }
+
+    /// Fits the Bayesian Linear Regression using analytical posterior.
+    ///
+    /// Computes the posterior distribution over coefficients β given data (X, y)
+    /// using the conjugate Normal-InverseGamma prior.
+    ///
+    /// # Arguments
+    ///
+    /// * `x` - Feature matrix (n × p)
+    /// * `y` - Target vector (n × 1)
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` on success, or error if dimensions mismatch or matrix is singular
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use aprender::bayesian::BayesianLinearRegression;
+    /// use aprender::primitives::{Matrix, Vector};
+    ///
+    /// let mut model = BayesianLinearRegression::new(2);
+    ///
+    /// let x = Matrix::from_vec(3, 2, vec![1.0, 1.0, 1.0, 2.0, 1.0, 3.0]).unwrap();
+    /// let y = Vector::from_vec(vec![2.0, 3.0, 4.0]);
+    ///
+    /// model.fit(&x, &y).unwrap();
+    /// assert!(model.posterior_mean().is_some());
+    /// ```
+    pub fn fit(&mut self, x: &Matrix<f32>, y: &Vector<f32>) -> Result<()> {
+        let n = x.n_rows();
+        let p = x.n_cols();
+
+        // Validate dimensions
+        if p != self.n_features {
+            return Err(AprenderError::DimensionMismatch {
+                expected: format!("{} features in X", self.n_features),
+                actual: format!("{p} columns in X"),
+            });
+        }
+        if n != y.len() {
+            return Err(AprenderError::DimensionMismatch {
+                expected: format!("{n} samples in X"),
+                actual: format!("{} samples in y", y.len()),
+            });
+        }
+        if n < p {
+            return Err(AprenderError::Other(format!(
+                "Need at least {p} samples for {p} features, got {n}"
+            )));
+        }
+
+        // Step 1: Compute XᵀX and Xᵀy
+        let xt = x.transpose();
+        let xtx = xt.matmul(x).map_err(|e| AprenderError::Other(e.into()))?;
+        let xty = xt.matvec(y).map_err(|e| AprenderError::Other(e.into()))?;
+
+        // Step 2: Estimate noise variance σ² from OLS residuals
+        // OLS solution: β_ols = (XᵀX)⁻¹Xᵀy
+        let beta_ols = xtx
+            .cholesky_solve(&xty)
+            .map_err(|e| AprenderError::Other(format!("Cholesky decomposition failed: {e}")))?;
+
+        // Compute residuals: r = y - Xβ_ols
+        let y_pred = x.matvec(&beta_ols).map_err(|e| {
+            AprenderError::Other(format!("Matrix-vector multiplication failed: {e}"))
+        })?;
+
+        let mut rss = 0.0_f32;
+        for i in 0..n {
+            let residual = y[i] - y_pred[i];
+            rss += residual * residual;
+        }
+
+        // Estimate σ²: σ² = RSS / (n - p)
+        let sigma2 = rss / ((n - p) as f32);
+
+        // Step 3: Compute posterior precision
+        // Σₙ⁻¹ = Σ₀⁻¹ + σ⁻²XᵀX
+        // Since Σ₀ = (1/precision) * I, we have Σ₀⁻¹ = precision * I
+        let prior_precision_matrix = Matrix::eye(p).mul_scalar(self.beta_prior_precision);
+        let data_precision = xtx.mul_scalar(1.0 / sigma2);
+        let posterior_precision_inv = prior_precision_matrix
+            .add(&data_precision)
+            .map_err(|e| AprenderError::Other(format!("Matrix addition failed: {e}")))?;
+
+        // Step 4: Compute posterior mean
+        // βₙ = Σₙ(Σ₀⁻¹β₀ + σ⁻²Xᵀy)
+        // Right-hand side: Σ₀⁻¹β₀ + σ⁻²Xᵀy
+        let mut rhs = Vec::with_capacity(p);
+        for i in 0..p {
+            let prior_term = self.beta_prior_mean[i] * self.beta_prior_precision;
+            let data_term = xty[i] / sigma2;
+            rhs.push(prior_term + data_term);
+        }
+        let rhs_vec = Vector::from_vec(rhs);
+
+        // Solve Σₙ⁻¹ βₙ = rhs for βₙ
+        let posterior_mean = posterior_precision_inv
+            .cholesky_solve(&rhs_vec)
+            .map_err(|e| AprenderError::Other(format!("Posterior mean computation failed: {e}")))?;
+
+        // Step 5: Store results
+        self.posterior_mean = Some(posterior_mean.as_slice().to_vec());
+        self.noise_variance = Some(sigma2);
+
+        // Store posterior precision matrix (for prediction intervals later)
+        let precision_data: Vec<Vec<f32>> = posterior_precision_inv
+            .as_slice()
+            .chunks(p)
+            .map(|row: &[f32]| row.to_vec())
+            .collect();
+        self.posterior_precision = Some(precision_data);
+
+        Ok(())
+    }
+
+    /// Predicts target values for new data using posterior mean.
+    ///
+    /// # Arguments
+    ///
+    /// * `x_test` - Test feature matrix (n_test × p)
+    ///
+    /// # Returns
+    ///
+    /// Predicted values (n_test × 1)
+    ///
+    /// # Errors
+    ///
+    /// Returns error if model not fitted or dimensions mismatch
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let predictions = model.predict(&x_test).unwrap();
+    /// ```
+    pub fn predict(&self, x_test: &Matrix<f32>) -> Result<Vector<f32>> {
+        let posterior_mean = self.posterior_mean.as_ref().ok_or_else(|| {
+            AprenderError::Other("Model not fitted yet. Call fit() first.".into())
+        })?;
+
+        if x_test.n_cols() != self.n_features {
+            return Err(AprenderError::DimensionMismatch {
+                expected: format!("{} features", self.n_features),
+                actual: format!("{} columns in x_test", x_test.n_cols()),
+            });
+        }
+
+        let beta = Vector::from_slice(posterior_mean);
+        x_test
+            .matvec(&beta)
+            .map_err(|e| AprenderError::Other(format!("Prediction failed: {e}")))
+    }
 }
 
 #[cfg(test)]
@@ -231,5 +385,110 @@ mod tests {
             2.0,
         );
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_fit_simple_linear() {
+        use crate::primitives::{Matrix, Vector};
+
+        // Simple linear relationship through origin: y = 2x
+        let x =
+            Matrix::from_vec(5, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0]).expect("Valid matrix dimensions");
+        let y = Vector::from_vec(vec![2.0, 4.0, 6.0, 8.0, 10.0]);
+
+        let mut model = BayesianLinearRegression::new(1);
+        model.fit(&x, &y).expect("Fit should succeed");
+
+        // Check that posterior mean is computed
+        assert!(model.posterior_mean().is_some());
+        assert!(model.noise_variance().is_some());
+
+        // With weak prior, posterior should be close to OLS: β ≈ 2.0
+        let beta = model.posterior_mean().expect("Posterior mean exists");
+        assert_eq!(beta.len(), 1);
+        assert!(
+            (beta[0] - 2.0).abs() < 0.01,
+            "Expected β ≈ 2.0, got {}",
+            beta[0]
+        );
+    }
+
+    #[test]
+    fn test_fit_dimension_mismatch() {
+        use crate::primitives::{Matrix, Vector};
+
+        let x = Matrix::from_vec(3, 2, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+            .expect("Valid matrix dimensions");
+        let y = Vector::from_vec(vec![1.0, 2.0]); // Wrong length
+
+        let mut model = BayesianLinearRegression::new(2);
+        let result = model.fit(&x, &y);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_predict_simple() {
+        use crate::primitives::{Matrix, Vector};
+
+        // Train on simple linear relationship through origin: y = 2x
+        let x_train =
+            Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0]).expect("Valid matrix dimensions");
+        let y_train = Vector::from_vec(vec![2.0, 4.0, 6.0, 8.0]);
+
+        let mut model = BayesianLinearRegression::new(1);
+        model.fit(&x_train, &y_train).expect("Fit should succeed");
+
+        // Predict on test data
+        let x_test = Matrix::from_vec(2, 1, vec![5.0, 6.0]).expect("Valid matrix dimensions");
+        let predictions = model.predict(&x_test).expect("Predict should succeed");
+
+        assert_eq!(predictions.len(), 2);
+        // y = 2x, so predictions should be approximately [10, 12]
+        assert!((predictions[0] - 10.0).abs() < 0.1);
+        assert!((predictions[1] - 12.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn test_predict_not_fitted() {
+        use crate::primitives::Matrix;
+
+        let model = BayesianLinearRegression::new(2);
+        let x_test = Matrix::from_vec(1, 2, vec![1.0, 2.0]).expect("Valid matrix dimensions");
+
+        let result = model.predict(&x_test);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_fit_multivariate() {
+        use crate::primitives::{Matrix, Vector};
+
+        // Multiple features: y = 2x₁ + 3x₂ + noise
+        let x = Matrix::from_vec(
+            6,
+            2,
+            vec![
+                1.0, 1.0, // row 0
+                2.0, 1.0, // row 1
+                3.0, 2.0, // row 2
+                4.0, 2.0, // row 3
+                5.0, 3.0, // row 4
+                6.0, 3.0, // row 5
+            ],
+        )
+        .expect("Valid matrix dimensions");
+        let y = Vector::from_vec(vec![5.0, 7.0, 12.0, 14.0, 19.0, 21.0]);
+
+        let mut model = BayesianLinearRegression::new(2);
+        model.fit(&x, &y).expect("Fit should succeed");
+
+        assert!(model.posterior_mean().is_some());
+        let beta = model.posterior_mean().expect("Posterior mean exists");
+        assert_eq!(beta.len(), 2);
+
+        // Coefficients should be approximately [2.0, 3.0]
+        assert!((beta[0] - 2.0).abs() < 0.5, "β₁ ≈ 2.0, got {}", beta[0]);
+        assert!((beta[1] - 3.0).abs() < 0.5, "β₂ ≈ 3.0, got {}", beta[1]);
     }
 }
