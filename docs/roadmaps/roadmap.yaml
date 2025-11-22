@@ -989,11 +989,43 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'New task: Implement Bayesian Logistic Regression (Laplace approximation)'
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2025-11-22T17:08:26.938091419+00:00
-  updated: 2025-11-22T17:08:26.938091419+00:00
+  updated: 2025-11-22T17:28:20.766867698+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: Implement Generalized Linear Models (GLM) - Poisson, Gamma, Binomial families
+  github_issue: null
+  item_type: task
+  title: 'New task: Implement Generalized Linear Models (GLM) - Poisson, Gamma, Binomial families'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2025-11-22T17:31:10.952421911+00:00
+  updated: 2025-11-22T17:31:10.952421911+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: Implement Statistical Hypothesis Tests (t-test, chi-square, ANOVA)
+  github_issue: null
+  item_type: task
+  title: 'New task: Implement Statistical Hypothesis Tests (t-test, chi-square, ANOVA)'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2025-11-22T17:57:31.042254053+00:00
+  updated: 2025-11-22T17:57:31.042254053+00:00
   spec: null
   acceptance_criteria: []
   phases: []

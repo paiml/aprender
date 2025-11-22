@@ -6,6 +6,7 @@
 //! - Quantiles and percentiles using R-7 method (Hyndman & Fan 1996)
 //! - Five-number summary (min, Q1, median, Q3, max)
 //! - Histograms with multiple bin selection methods
+//! - Hypothesis testing (t-tests, chi-square, ANOVA)
 //! - Optimized with Toyota Way principles (QuickSelect for O(n) quantiles)
 //!
 //! # Examples
@@ -21,6 +22,13 @@
 //! assert_eq!(stats.quantile(0.0).expect("min quantile should be computable for valid data"), 1.0); // min
 //! assert_eq!(stats.quantile(1.0).expect("max quantile should be computable for valid data"), 5.0); // max
 //! ```
+
+pub mod hypothesis;
+
+pub use hypothesis::{
+    chisquare, f_oneway, ttest_1samp, ttest_ind, ttest_rel, AnovaResult, ChiSquareResult,
+    TTestResult,
+};
 
 use trueno::Vector;
 
