@@ -102,6 +102,7 @@
 ## Graph Algorithms
 
 - [Graph Algorithms Theory](./ml-fundamentals/graph-algorithms.md)
+- [Graph Pathfinding Theory](./ml-fundamentals/graph-pathfinding.md)
 
 ## Statistics
 
