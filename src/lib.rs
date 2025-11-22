@@ -45,6 +45,7 @@
 //! - [`stats`]: Traditional descriptive statistics (quantiles, histograms)
 //! - [`graph`]: Graph construction and analysis (centrality, community detection)
 //! - [`bayesian`]: Bayesian inference (conjugate priors, MCMC, variational inference)
+//! - [`glm`]: Generalized Linear Models (Poisson, Gamma, Binomial families)
 //! - [`chaos`]: Chaos engineering configuration (from renacer)
 
 pub mod bayesian;
@@ -53,6 +54,7 @@ pub mod classification;
 pub mod cluster;
 pub mod data;
 pub mod error;
+pub mod glm;
 pub mod graph;
 pub mod linear_model;
 pub mod loss;
