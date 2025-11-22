@@ -1634,6 +1634,62 @@ impl Graph {
         path.reverse();
         Some(path)
     }
+
+    /// Depth-First Search (DFS) traversal starting from a given node.
+    ///
+    /// Returns nodes in the order they were visited (pre-order traversal).
+    /// Only visits nodes reachable from the source node.
+    ///
+    /// # Arguments
+    /// * `source` - Starting node for traversal
+    ///
+    /// # Returns
+    /// Vector of visited nodes in DFS order, or None if source is invalid
+    ///
+    /// # Time Complexity
+    /// O(n + m) where n = number of nodes, m = number of edges
+    ///
+    /// # Examples
+    /// ```
+    /// use aprender::graph::Graph;
+    ///
+    /// let g = Graph::from_edges(&[(0, 1), (1, 2), (0, 3)], false);
+    /// let visited = g.dfs(0).expect("valid source");
+    /// assert_eq!(visited.len(), 4); // All nodes reachable
+    /// assert_eq!(visited[0], 0); // Starts at source
+    /// ```
+    pub fn dfs(&self, source: NodeId) -> Option<Vec<NodeId>> {
+        // Validate source node
+        if source >= self.n_nodes {
+            return None;
+        }
+
+        let mut visited = vec![false; self.n_nodes];
+        let mut stack = Vec::new();
+        let mut order = Vec::new();
+
+        // Start DFS from source
+        stack.push(source);
+
+        while let Some(node) = stack.pop() {
+            if visited[node] {
+                continue;
+            }
+
+            visited[node] = true;
+            order.push(node);
+
+            // Add neighbors to stack (in reverse order for consistent left-to-right traversal)
+            let neighbors = self.neighbors(node);
+            for &neighbor in neighbors.iter().rev() {
+                if !visited[neighbor] {
+                    stack.push(neighbor);
+                }
+            }
+        }
+
+        Some(order)
+    }
 }
 
 /// Kahan summation for computing L1 distance between two vectors.
@@ -3388,5 +3444,141 @@ mod tests {
         assert_eq!(path.len(), 4); // 0->1->3->4 or 0->2->3->4
         assert_eq!(path[0], 0);
         assert_eq!(path[3], 4);
+    }
+
+    // DFS Tests
+
+    #[test]
+    fn test_dfs_linear_chain() {
+        // Linear chain: 0 -- 1 -- 2 -- 3
+        let g = Graph::from_edges(&[(0, 1), (1, 2), (2, 3)], false);
+        let visited = g.dfs(0).expect("valid source");
+
+        assert_eq!(visited.len(), 4);
+        assert_eq!(visited[0], 0); // Starts at source
+        assert!(visited.contains(&1));
+        assert!(visited.contains(&2));
+        assert!(visited.contains(&3));
+    }
+
+    #[test]
+    fn test_dfs_tree() {
+        // Tree: 0 connected to 1, 2, 3
+        let g = Graph::from_edges(&[(0, 1), (0, 2), (0, 3)], false);
+        let visited = g.dfs(0).expect("valid source");
+
+        assert_eq!(visited.len(), 4);
+        assert_eq!(visited[0], 0); // Root first
+                                   // Children visited in some order
+        assert!(visited.contains(&1));
+        assert!(visited.contains(&2));
+        assert!(visited.contains(&3));
+    }
+
+    #[test]
+    fn test_dfs_cycle() {
+        // Cycle: 0 -- 1 -- 2 -- 0
+        let g = Graph::from_edges(&[(0, 1), (1, 2), (2, 0)], false);
+        let visited = g.dfs(0).expect("valid source");
+
+        assert_eq!(visited.len(), 3);
+        assert_eq!(visited[0], 0);
+        assert!(visited.contains(&1));
+        assert!(visited.contains(&2));
+    }
+
+    #[test]
+    fn test_dfs_disconnected() {
+        // Two components: (0, 1) and (2, 3)
+        let g = Graph::from_edges(&[(0, 1), (2, 3)], false);
+
+        // DFS from 0 only visits component containing 0
+        let visited = g.dfs(0).expect("valid source");
+        assert_eq!(visited.len(), 2);
+        assert!(visited.contains(&0));
+        assert!(visited.contains(&1));
+        assert!(!visited.contains(&2));
+        assert!(!visited.contains(&3));
+
+        // DFS from 2 only visits component containing 2
+        let visited2 = g.dfs(2).expect("valid source");
+        assert_eq!(visited2.len(), 2);
+        assert!(visited2.contains(&2));
+        assert!(visited2.contains(&3));
+    }
+
+    #[test]
+    fn test_dfs_directed() {
+        // Directed: 0 -> 1 -> 2
+        let g = Graph::from_edges(&[(0, 1), (1, 2)], true);
+
+        // Forward traversal
+        let visited = g.dfs(0).expect("valid source");
+        assert_eq!(visited.len(), 3);
+        assert_eq!(visited[0], 0);
+
+        // Backward traversal (node 2 has no outgoing edges)
+        let visited2 = g.dfs(2).expect("valid source");
+        assert_eq!(visited2.len(), 1);
+        assert_eq!(visited2[0], 2);
+    }
+
+    #[test]
+    fn test_dfs_single_node() {
+        // Single node with self-loop
+        let g = Graph::from_edges(&[(0, 0)], false);
+
+        let visited = g.dfs(0).expect("valid source");
+        assert_eq!(visited.len(), 1);
+        assert_eq!(visited[0], 0);
+    }
+
+    #[test]
+    fn test_dfs_invalid_source() {
+        let g = Graph::from_edges(&[(0, 1), (1, 2)], false);
+
+        // Invalid source node
+        assert!(g.dfs(10).is_none());
+        assert!(g.dfs(100).is_none());
+    }
+
+    #[test]
+    fn test_dfs_complete_graph() {
+        // Complete graph K4
+        let g = Graph::from_edges(&[(0, 1), (0, 2), (0, 3), (1, 2), (1, 3), (2, 3)], false);
+        let visited = g.dfs(0).expect("valid source");
+
+        assert_eq!(visited.len(), 4);
+        assert_eq!(visited[0], 0);
+        // All other nodes reachable
+        assert!(visited.contains(&1));
+        assert!(visited.contains(&2));
+        assert!(visited.contains(&3));
+    }
+
+    #[test]
+    fn test_dfs_dag() {
+        // DAG: 0 -> 1, 0 -> 2, 1 -> 3, 2 -> 3
+        let g = Graph::from_edges(&[(0, 1), (0, 2), (1, 3), (2, 3)], true);
+        let visited = g.dfs(0).expect("valid source");
+
+        assert_eq!(visited.len(), 4);
+        assert_eq!(visited[0], 0);
+        // All nodes reachable from 0
+        assert!(visited.contains(&1));
+        assert!(visited.contains(&2));
+        assert!(visited.contains(&3));
+
+        // Node 3 is a sink (no outgoing edges)
+        let visited3 = g.dfs(3).expect("valid source");
+        assert_eq!(visited3.len(), 1);
+        assert_eq!(visited3[0], 3);
+    }
+
+    #[test]
+    fn test_dfs_empty_graph() {
+        let g = Graph::new(false);
+        // No nodes, so any DFS should return None
+        assert!(g.dfs(0).is_none());
     }
 }
