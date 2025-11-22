@@ -957,11 +957,27 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'New task: Implement Bayesian Linear Regression (analytical posterior)'
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2025-11-22T16:01:33.865842603+00:00
-  updated: 2025-11-22T16:01:33.865842603+00:00
+  updated: 2025-11-22T16:57:12.367914920+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: Implement Bayesian Model Selection (Bayes Factors, DIC, WAIC)
+  github_issue: null
+  item_type: task
+  title: 'New task: Implement Bayesian Model Selection (Bayes Factors, DIC, WAIC)'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2025-11-22T16:58:14.002509466+00:00
+  updated: 2025-11-22T16:58:14.002509466+00:00
   spec: null
   acceptance_criteria: []
   phases: []

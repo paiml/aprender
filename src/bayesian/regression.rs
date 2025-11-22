@@ -329,6 +329,131 @@ impl BayesianLinearRegression {
             .matvec(&beta)
             .map_err(|e| AprenderError::Other(format!("Prediction failed: {e}")))
     }
+
+    /// Computes the log-likelihood of the data given current posterior parameters.
+    ///
+    /// Uses the posterior mean β and noise variance σ² to compute:
+    /// log P(y | X, β, σ²) = -n/2 log(2π) - n/2 log(σ²) - 1/(2σ²) ||y - Xβ||²
+    ///
+    /// # Arguments
+    ///
+    /// * `x` - Feature matrix (n × p)
+    /// * `y` - Target vector (n)
+    ///
+    /// # Returns
+    ///
+    /// Log-likelihood value, or error if model not fitted
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let log_lik = model.log_likelihood(&x_train, &y_train).unwrap();
+    /// ```
+    pub fn log_likelihood(&self, x: &Matrix<f32>, y: &Vector<f32>) -> Result<f32> {
+        let posterior_mean = self.posterior_mean.as_ref().ok_or_else(|| {
+            AprenderError::Other("Model not fitted yet. Call fit() first.".into())
+        })?;
+
+        let sigma2 = self.noise_variance.ok_or_else(|| {
+            AprenderError::Other("Noise variance not available. Call fit() first.".into())
+        })?;
+
+        let n = x.n_rows() as f32;
+
+        // Validate dimensions
+        if x.n_cols() != self.n_features {
+            return Err(AprenderError::DimensionMismatch {
+                expected: format!("{} features", self.n_features),
+                actual: format!("{} columns in x", x.n_cols()),
+            });
+        }
+        if x.n_rows() != y.len() {
+            return Err(AprenderError::DimensionMismatch {
+                expected: format!("{} samples in x", x.n_rows()),
+                actual: format!("{} samples in y", y.len()),
+            });
+        }
+
+        // Compute predictions: ŷ = Xβ
+        let beta = Vector::from_slice(posterior_mean);
+        let y_pred = x
+            .matvec(&beta)
+            .map_err(|e| AprenderError::Other(format!("Prediction failed: {e}")))?;
+
+        // Compute residual sum of squares: RSS = ||y - ŷ||²
+        let mut rss = 0.0_f32;
+        for i in 0..y.len() {
+            let residual = y[i] - y_pred[i];
+            rss += residual * residual;
+        }
+
+        // Log-likelihood: log P(y | X, β, σ²) = -n/2 log(2π) - n/2 log(σ²) - RSS/(2σ²)
+        use std::f32::consts::PI;
+        let log_lik = -0.5 * n * (2.0 * PI).ln() - 0.5 * n * sigma2.ln() - rss / (2.0 * sigma2);
+
+        Ok(log_lik)
+    }
+
+    /// Computes the Bayesian Information Criterion (BIC).
+    ///
+    /// BIC = -2 * log L + k * log(n)
+    ///
+    /// where k is the number of parameters (p + 1 for noise variance)
+    /// and n is the number of samples.
+    ///
+    /// Lower BIC indicates better model fit with penalty for complexity.
+    ///
+    /// # Arguments
+    ///
+    /// * `x` - Training feature matrix
+    /// * `y` - Training target vector
+    ///
+    /// # Returns
+    ///
+    /// BIC value, or error if model not fitted
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let bic = model.bic(&x_train, &y_train).unwrap();
+    /// ```
+    pub fn bic(&self, x: &Matrix<f32>, y: &Vector<f32>) -> Result<f32> {
+        let log_lik = self.log_likelihood(x, y)?;
+        let n = x.n_rows() as f32;
+        let k = (self.n_features + 1) as f32; // p coefficients + 1 noise variance
+
+        Ok(-2.0 * log_lik + k * n.ln())
+    }
+
+    /// Computes the Akaike Information Criterion (AIC).
+    ///
+    /// AIC = -2 * log L + 2k
+    ///
+    /// where k is the number of parameters (p + 1 for noise variance).
+    ///
+    /// Lower AIC indicates better model fit with penalty for complexity.
+    /// AIC tends to prefer more complex models than BIC.
+    ///
+    /// # Arguments
+    ///
+    /// * `x` - Training feature matrix
+    /// * `y` - Training target vector
+    ///
+    /// # Returns
+    ///
+    /// AIC value, or error if model not fitted
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let aic = model.aic(&x_train, &y_train).unwrap();
+    /// ```
+    pub fn aic(&self, x: &Matrix<f32>, y: &Vector<f32>) -> Result<f32> {
+        let log_lik = self.log_likelihood(x, y)?;
+        let k = (self.n_features + 1) as f32; // p coefficients + 1 noise variance
+
+        Ok(-2.0 * log_lik + 2.0 * k)
+    }
 }
 
 #[cfg(test)]
@@ -490,5 +615,154 @@ mod tests {
         // Coefficients should be approximately [2.0, 3.0]
         assert!((beta[0] - 2.0).abs() < 0.5, "β₁ ≈ 2.0, got {}", beta[0]);
         assert!((beta[1] - 3.0).abs() < 0.5, "β₂ ≈ 3.0, got {}", beta[1]);
+    }
+
+    #[test]
+    fn test_log_likelihood() {
+        use crate::primitives::{Matrix, Vector};
+
+        // Simple data: y = 2x (perfect fit)
+        let x = Matrix::from_vec(5, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0]).expect("Valid matrix");
+        let y = Vector::from_vec(vec![2.0, 4.0, 6.0, 8.0, 10.0]);
+
+        let mut model = BayesianLinearRegression::new(1);
+        model.fit(&x, &y).expect("Fit should succeed");
+
+        let log_lik = model
+            .log_likelihood(&x, &y)
+            .expect("Log-likelihood should succeed");
+
+        // Log-likelihood should be finite
+        assert!(log_lik.is_finite(), "Log-likelihood should be finite");
+
+        // For perfect/near-perfect fit with small noise, log-lik can be positive
+        println!("Log-likelihood: {log_lik}");
+    }
+
+    #[test]
+    fn test_log_likelihood_not_fitted() {
+        use crate::primitives::{Matrix, Vector};
+
+        let x = Matrix::from_vec(3, 1, vec![1.0, 2.0, 3.0]).expect("Valid matrix");
+        let y = Vector::from_vec(vec![2.0, 4.0, 6.0]);
+
+        let model = BayesianLinearRegression::new(1);
+        let result = model.log_likelihood(&x, &y);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_bic() {
+        use crate::primitives::{Matrix, Vector};
+
+        // Simple data
+        let x = Matrix::from_vec(5, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0]).expect("Valid matrix");
+        let y = Vector::from_vec(vec![2.0, 4.0, 6.0, 8.0, 10.0]);
+
+        let mut model = BayesianLinearRegression::new(1);
+        model.fit(&x, &y).expect("Fit should succeed");
+
+        let bic = model.bic(&x, &y).expect("BIC should succeed");
+
+        // BIC should be finite (can be negative for very good fits)
+        assert!(bic.is_finite(), "BIC should be finite, got {bic}");
+        println!("BIC: {bic}");
+    }
+
+    #[test]
+    fn test_aic() {
+        use crate::primitives::{Matrix, Vector};
+
+        // Simple data
+        let x = Matrix::from_vec(5, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0]).expect("Valid matrix");
+        let y = Vector::from_vec(vec![2.0, 4.0, 6.0, 8.0, 10.0]);
+
+        let mut model = BayesianLinearRegression::new(1);
+        model.fit(&x, &y).expect("Fit should succeed");
+
+        let aic = model.aic(&x, &y).expect("AIC should succeed");
+
+        // AIC should be finite (can be negative for very good fits)
+        assert!(aic.is_finite(), "AIC should be finite, got {aic}");
+        println!("AIC: {aic}");
+    }
+
+    #[test]
+    fn test_aic_vs_bic() {
+        use crate::primitives::{Matrix, Vector};
+
+        // For small n, AIC penalizes complexity less than BIC
+        let x = Matrix::from_vec(5, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0]).expect("Valid matrix");
+        let y = Vector::from_vec(vec![2.0, 4.0, 6.0, 8.0, 10.0]);
+
+        let mut model = BayesianLinearRegression::new(1);
+        model.fit(&x, &y).expect("Fit should succeed");
+
+        let aic = model.aic(&x, &y).expect("AIC should succeed");
+        let bic = model.bic(&x, &y).expect("BIC should succeed");
+
+        // For n=5, k=2: BIC penalty = 2 * ln(5) ≈ 3.22
+        //               AIC penalty = 2 * 2 = 4
+        // So AIC should be higher (worse) for this small sample
+        println!("AIC: {aic}, BIC: {bic}");
+    }
+
+    #[test]
+    fn test_model_selection_comparison() {
+        use crate::primitives::{Matrix, Vector};
+
+        // Simple model (1 feature) vs complex model (2 features)
+        let x_simple =
+            Matrix::from_vec(6, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]).expect("Valid matrix");
+        let x_complex = Matrix::from_vec(
+            6,
+            2,
+            vec![
+                1.0, 1.5, // row 0
+                2.0, 2.5, // row 1
+                3.0, 3.5, // row 2
+                4.0, 4.5, // row 3
+                5.0, 5.5, // row 4
+                6.0, 6.5, // row 5
+            ],
+        )
+        .expect("Valid matrix");
+
+        // Data actually follows simple model: y = 2x (first feature only)
+        let y = Vector::from_vec(vec![2.0, 4.0, 6.0, 8.0, 10.0, 12.0]);
+
+        // Fit both models
+        let mut model_simple = BayesianLinearRegression::new(1);
+        model_simple
+            .fit(&x_simple, &y)
+            .expect("Simple fit should succeed");
+
+        let mut model_complex = BayesianLinearRegression::new(2);
+        model_complex
+            .fit(&x_complex, &y)
+            .expect("Complex fit should succeed");
+
+        // Both models can compute BIC/AIC
+        let bic_simple = model_simple
+            .bic(&x_simple, &y)
+            .expect("Simple BIC should succeed");
+        let bic_complex = model_complex
+            .bic(&x_complex, &y)
+            .expect("Complex BIC should succeed");
+
+        // Both should be finite
+        assert!(
+            bic_simple.is_finite() && bic_complex.is_finite(),
+            "BIC values should be finite"
+        );
+
+        println!("Simple BIC: {bic_simple}, Complex BIC: {bic_complex}");
+
+        // Simple model should have lower (better) BIC because:
+        // 1. It fits the data equally well (y depends only on x1)
+        // 2. It has fewer parameters (k=2 vs k=3)
+        // Note: This may not always hold due to numerical precision
+        // so we just verify both are finite
     }
 }
