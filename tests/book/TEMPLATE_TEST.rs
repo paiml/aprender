@@ -64,7 +64,7 @@ fn test_edge_case() {
 
     // Should fail gracefully with clear error message
     assert!(result.is_err());
-    assert!(result.unwrap_err().contains("expected error substring"));
+    assert!(result.expect_err("Expected error in test").contains("expected error substring"));
 }
 
 // ============================================================================

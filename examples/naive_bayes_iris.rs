@@ -11,6 +11,7 @@
 use aprender::classification::{GaussianNB, KNearestNeighbors};
 use aprender::primitives::Matrix;
 
+#[allow(clippy::too_many_lines)]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("=== Gaussian Naive Bayes: Iris Flower Classification ===\n");
 

@@ -9,6 +9,7 @@
 
 use aprender::prelude::*;
 
+#[allow(clippy::too_many_lines)]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("=== Spectral Clustering Example ===\n");
 

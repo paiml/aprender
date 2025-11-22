@@ -10,6 +10,7 @@
 use aprender::prelude::*;
 
 #[allow(clippy::needless_range_loop)]
+#[allow(clippy::too_many_lines)]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("=== Local Outlier Factor (LOF) Anomaly Detection ===\n");
 

@@ -8,6 +8,7 @@ use aprender::classification::{GaussianNB, LinearSVM};
 use aprender::primitives::Matrix;
 use aprender::tree::GradientBoostingClassifier;
 
+#[allow(clippy::too_many_lines)]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("=== Gradient Boosting: Iris Binary Classification ===\n");
 

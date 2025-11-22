@@ -11,6 +11,7 @@
 use aprender::stats::{BinMethod, DescriptiveStats};
 use trueno::Vector;
 
+#[allow(clippy::too_many_lines)]
 fn main() {
     println!("═══════════════════════════════════════════════════════");
     println!("  Descriptive Statistics with Aprender");

@@ -5,6 +5,7 @@
 
 use aprender::prelude::*;
 
+#[allow(clippy::too_many_lines)]
 fn main() {
     println!("Random Forest Regression Example");
     println!("=================================\n");

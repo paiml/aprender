@@ -3782,11 +3782,9 @@ mod tests {
 
         // Admissible heuristic (straight-line distance estimate)
         let heuristic = |node: usize| match node {
-            0 => 1.0, // Estimate to reach 2
-            1 => 1.0,
-            2 => 0.0, // At target
+            0 | 1 => 1.0, // Estimate to reach 2
             3 => 0.5,
-            _ => 0.0,
+            _ => 0.0, // At target (2) or other
         };
 
         let path = g.a_star(0, 2, heuristic).expect("path should exist");
@@ -3830,8 +3828,7 @@ mod tests {
         let heuristic = |node: usize| match node {
             0 => 3.0,
             1 => 2.0,
-            2 => 0.0,
-            _ => 0.0,
+            _ => 0.0, // At target (2) or other
         };
 
         let path = g.a_star(0, 2, heuristic).expect("path should exist");

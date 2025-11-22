@@ -76,6 +76,7 @@ fn test_safetensors_header_format() {
 }
 
 #[test]
+#[allow(clippy::disallowed_methods)] // serde_json::json! macro uses unwrap internally
 fn test_safetensors_json_metadata_structure() {
     // RED PHASE: Verify JSON metadata has correct structure
 
@@ -278,7 +279,7 @@ fn test_safetensors_file_does_not_exist_error() {
         result.is_err(),
         "Loading nonexistent file should return error"
     );
-    let error_msg = result.unwrap_err();
+    let error_msg = result.expect_err("Expected error in test");
     assert!(
         error_msg.contains("No such file") || error_msg.contains("not found"),
         "Error should mention file not found, got: {error_msg}"

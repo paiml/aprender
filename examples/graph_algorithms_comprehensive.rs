@@ -113,8 +113,7 @@ fn demo_pathfinding() {
         2 => 9.0,  // C to F: ~9km
         3 => 5.0,  // D to F: ~5km
         4 => 3.0,  // E to F: ~3km
-        5 => 0.0,  // F to F: 0km
-        _ => 0.0,
+        _ => 0.0,  // F to F or other: 0km
     };
 
     let astar_path = g_weighted
@@ -157,6 +156,7 @@ fn demo_pathfinding() {
     println!();
 }
 
+#[allow(clippy::too_many_lines)]
 fn demo_components_traversal() {
     println!("\n╔═══════════════════════════════════════════════════════════════╗");
     println!("║ PHASE 2: COMPONENTS & TRAVERSAL ALGORITHMS                    ║");

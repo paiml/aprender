@@ -11,6 +11,7 @@
 
 use aprender::graph::Graph;
 
+#[allow(clippy::too_many_lines, clippy::unnecessary_wraps)]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("=== Community Detection with Louvain Algorithm ===\n");
 

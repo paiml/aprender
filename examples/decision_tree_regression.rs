@@ -5,6 +5,7 @@
 
 use aprender::prelude::*;
 
+#[allow(clippy::too_many_lines)]
 fn main() {
     println!("Decision Tree Regression Example");
     println!("=================================\n");

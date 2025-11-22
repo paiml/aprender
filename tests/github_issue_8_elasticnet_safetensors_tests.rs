@@ -151,7 +151,7 @@ fn test_elasticnet_save_unfitted_model_fails() {
         result.is_err(),
         "Saving unfitted model should return an error"
     );
-    let error_msg = result.unwrap_err();
+    let error_msg = result.expect_err("Expected error in test");
     assert!(
         error_msg.contains("unfitted") || error_msg.contains("fit"),
         "Error message should mention model is unfitted. Got: {error_msg}"

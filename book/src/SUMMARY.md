@@ -140,6 +140,7 @@
 - [Case Study: Data Preprocessing with Scalers](./examples/data-preprocessing-scalers.md)
 - [Case Study: Graph Social Network](./examples/graph-social-network.md)
 - [Case Study: Community Detection with Louvain](./examples/community-detection.md)
+- [Case Study: Comprehensive Graph Algorithms](./examples/graph-algorithms-comprehensive.md)
 - [Case Study: Descriptive Statistics](./examples/descriptive-statistics.md)
 - [Case Study: Bayesian Blocks Histogram](./examples/bayesian-blocks-histogram.md)
 - [Case Study: PCA Iris](./examples/pca-iris.md)

@@ -18,6 +18,7 @@
 
 use aprender::mining::Apriori;
 
+#[allow(clippy::too_many_lines, clippy::unnecessary_wraps)]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("=== Market Basket Analysis with Apriori ===\n");
 

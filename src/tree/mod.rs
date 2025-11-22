@@ -2967,7 +2967,7 @@ mod tests {
                 assert_eq!(leaf.class_label, 0);
                 assert_eq!(leaf.n_samples, 3);
             }
-            _ => panic!("Expected Leaf node for pure data"),
+            TreeNode::Node(_) => panic!("Expected Leaf node for pure data"),
         }
     }
 
@@ -2988,7 +2988,7 @@ mod tests {
                 assert!(leaf.class_label == 0 || leaf.class_label == 1);
                 assert_eq!(leaf.n_samples, 4);
             }
-            _ => panic!("Expected Leaf node at max depth"),
+            TreeNode::Node(_) => panic!("Expected Leaf node at max depth"),
         }
     }
 
@@ -3009,7 +3009,7 @@ mod tests {
                 assert_eq!(node.feature_idx, 0); // Only one feature
                 assert!(node.threshold > 2.0 && node.threshold < 5.0);
             }
-            _ => panic!("Expected Node for splittable data"),
+            TreeNode::Leaf(_) => panic!("Expected Node for splittable data"),
         }
     }
 

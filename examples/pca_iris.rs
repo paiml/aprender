@@ -12,6 +12,7 @@ use aprender::preprocessing::{StandardScaler, PCA};
 use aprender::primitives::Matrix;
 use aprender::traits::Transformer;
 
+#[allow(clippy::too_many_lines)]
 fn main() {
     println!("═══════════════════════════════════════════════════════");
     println!("  PCA Dimensionality Reduction - Iris Dataset");

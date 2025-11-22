@@ -10,6 +10,7 @@
 
 use aprender::prelude::*;
 
+#[allow(clippy::too_many_lines)]
 fn main() {
     println!("=== Optimizer Demo ===\n");
 

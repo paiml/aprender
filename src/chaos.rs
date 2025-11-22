@@ -383,12 +383,14 @@ mod tests {
     #[test]
     fn test_chaos_result_type_alias() {
         // Test that ChaosResult is properly aliased to Result<T, ChaosError>
-        let _ok: ChaosResult<i32> = Ok(42);
-        let _err: ChaosResult<i32> = Err(ChaosError::MemoryLimitExceeded {
+        let ok: ChaosResult<i32> = Ok(42);
+        let err: ChaosResult<i32> = Err(ChaosError::MemoryLimitExceeded {
             limit: 100,
             used: 200,
         });
-        // Type alias compiles correctly
+        // Type alias compiles correctly - verify they work
+        assert!(ok.is_ok());
+        assert!(err.is_err());
     }
 
     #[test]

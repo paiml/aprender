@@ -11,6 +11,7 @@
 use aprender::model_selection::{grid_search_alpha, train_test_split, KFold};
 use aprender::prelude::*;
 
+#[allow(clippy::too_many_lines)]
 fn main() {
     println!("=== Regularized Regression Demo ===\n");
 
