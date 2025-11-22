@@ -925,11 +925,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'New task: Fix 4 failing Bayesian doctests'
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2025-11-22T15:45:02.954748688+00:00
-  updated: 2025-11-22T15:45:02.954748688+00:00
+  updated: 2025-11-22T15:48:16.753235600+00:00
   spec: null
   acceptance_criteria: []
   phases: []
