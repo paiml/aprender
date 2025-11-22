@@ -1,0 +1,509 @@
+<!DOCTYPE HTML>
+<html lang="en" class="rust" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Case Study: Dirichlet-Multinomial Bayesian Inference - EXTREME TDD - The Aprender Guide to Zero-Defect Machine Learning</title>
+
+
+        <!-- Custom HTML head -->
+        
+        <meta name="description" content="A comprehensive guide to EXTREME TDD methodology: RED-GREEN-REFACTOR cycles, mutation testing, and Toyota Way principles demonstrated through ML library development">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="../favicon.svg">
+        <link rel="shortcut icon" href="../favicon.png">
+        <link rel="stylesheet" href="../css/variables.css">
+        <link rel="stylesheet" href="../css/general.css">
+        <link rel="stylesheet" href="../css/chrome.css">
+        <link rel="stylesheet" href="../css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="../fonts/fonts.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" href="../highlight.css">
+        <link rel="stylesheet" href="../tomorrow-night.css">
+        <link rel="stylesheet" href="../ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+
+    </head>
+    <body class="sidebar-visible no-js">
+    <div id="body-container">
+        <!-- Provide site root to javascript -->
+        <script>
+            var path_to_root = "../";
+            var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "rust";
+        </script>
+
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            var html = document.querySelector('html');
+            html.classList.remove('rust')
+            html.classList.add(theme);
+            var body = document.querySelector('body');
+            body.classList.remove('no-js')
+            body.classList.add('js');
+        </script>
+
+        <input type="checkbox" id="sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            var body = document.querySelector('body');
+            var sidebar = null;
+            var sidebar_toggle = document.getElementById("sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+            }
+            sidebar_toggle.checked = sidebar === 'visible';
+            body.classList.remove('sidebar-visible');
+            body.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <div class="sidebar-scrollbox">
+                <ol class="chapter"><li class="chapter-item expanded affix "><a href="../introduction.html">Introduction</a></li><li class="chapter-item expanded affix "><li class="part-title">Core Methodology</li><li class="chapter-item expanded "><a href="../methodology/what-is-extreme-tdd.html"><strong aria-hidden="true">1.</strong> What is EXTREME TDD?</a></li><li class="chapter-item expanded "><a href="../methodology/red-green-refactor.html"><strong aria-hidden="true">2.</strong> The RED-GREEN-REFACTOR Cycle</a></li><li class="chapter-item expanded "><a href="../methodology/test-first-philosophy.html"><strong aria-hidden="true">3.</strong> Test-First Philosophy</a></li><li class="chapter-item expanded "><a href="../methodology/zero-tolerance.html"><strong aria-hidden="true">4.</strong> Zero Tolerance Quality</a></li><li class="chapter-item expanded affix "><li class="part-title">The RED Phase</li><li class="chapter-item expanded "><a href="../red-phase/failing-tests-first.html"><strong aria-hidden="true">5.</strong> Writing Failing Tests First</a></li><li class="chapter-item expanded "><a href="../red-phase/test-categories.html"><strong aria-hidden="true">6.</strong> Test Categories</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../red-phase/unit-tests.html"><strong aria-hidden="true">6.1.</strong> Unit Tests</a></li><li class="chapter-item expanded "><a href="../red-phase/integration-tests.html"><strong aria-hidden="true">6.2.</strong> Integration Tests</a></li><li class="chapter-item expanded "><a href="../red-phase/property-based-tests.html"><strong aria-hidden="true">6.3.</strong> Property-Based Tests</a></li></ol></li><li class="chapter-item expanded "><a href="../red-phase/verification-strategy.html"><strong aria-hidden="true">7.</strong> Verification Strategy</a></li><li class="chapter-item expanded affix "><li class="part-title">The GREEN Phase</li><li class="chapter-item expanded "><a href="../green-phase/minimal-implementation.html"><strong aria-hidden="true">8.</strong> Minimal Implementation</a></li><li class="chapter-item expanded "><a href="../green-phase/making-tests-pass.html"><strong aria-hidden="true">9.</strong> Making Tests Pass</a></li><li class="chapter-item expanded "><a href="../green-phase/avoiding-over-engineering.html"><strong aria-hidden="true">10.</strong> Avoiding Over-Engineering</a></li><li class="chapter-item expanded "><a href="../green-phase/simplest-thing.html"><strong aria-hidden="true">11.</strong> The Simplest Thing That Works</a></li><li class="chapter-item expanded affix "><li class="part-title">The REFACTOR Phase</li><li class="chapter-item expanded "><a href="../refactor-phase/refactoring-with-confidence.html"><strong aria-hidden="true">12.</strong> Refactoring with Confidence</a></li><li class="chapter-item expanded "><a href="../refactor-phase/code-quality.html"><strong aria-hidden="true">13.</strong> Code Quality Improvements</a></li><li class="chapter-item expanded "><a href="../refactor-phase/performance-optimization.html"><strong aria-hidden="true">14.</strong> Performance Optimization</a></li><li class="chapter-item expanded "><a href="../refactor-phase/documentation.html"><strong aria-hidden="true">15.</strong> Documentation</a></li><li class="chapter-item expanded affix "><li class="part-title">Advanced Testing</li><li class="chapter-item expanded "><a href="../advanced-testing/property-based-testing.html"><strong aria-hidden="true">16.</strong> Property-Based Testing</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../advanced-testing/proptest-fundamentals.html"><strong aria-hidden="true">16.1.</strong> Proptest Fundamentals</a></li><li class="chapter-item expanded "><a href="../advanced-testing/strategies-generators.html"><strong aria-hidden="true">16.2.</strong> Strategies and Generators</a></li><li class="chapter-item expanded "><a href="../advanced-testing/testing-invariants.html"><strong aria-hidden="true">16.3.</strong> Testing Invariants</a></li></ol></li><li class="chapter-item expanded "><a href="../advanced-testing/mutation-testing.html"><strong aria-hidden="true">17.</strong> Mutation Testing</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../advanced-testing/what-is-mutation-testing.html"><strong aria-hidden="true">17.1.</strong> What is Mutation Testing?</a></li><li class="chapter-item expanded "><a href="../advanced-testing/using-cargo-mutants.html"><strong aria-hidden="true">17.2.</strong> Using cargo-mutants</a></li><li class="chapter-item expanded "><a href="../advanced-testing/mutation-score-targets.html"><strong aria-hidden="true">17.3.</strong> Mutation Score Targets</a></li><li class="chapter-item expanded "><a href="../advanced-testing/killing-mutants.html"><strong aria-hidden="true">17.4.</strong> Killing Mutants</a></li></ol></li><li class="chapter-item expanded "><a href="../advanced-testing/fuzzing.html"><strong aria-hidden="true">18.</strong> Fuzzing</a></li><li class="chapter-item expanded "><a href="../advanced-testing/benchmark-testing.html"><strong aria-hidden="true">19.</strong> Benchmark Testing</a></li><li class="chapter-item expanded affix "><li class="part-title">Quality Gates</li><li class="chapter-item expanded "><a href="../quality-gates/pre-commit-hooks.html"><strong aria-hidden="true">20.</strong> Pre-Commit Hooks</a></li><li class="chapter-item expanded "><a href="../quality-gates/continuous-integration.html"><strong aria-hidden="true">21.</strong> Continuous Integration</a></li><li class="chapter-item expanded "><a href="../quality-gates/code-formatting.html"><strong aria-hidden="true">22.</strong> Code Formatting (rustfmt)</a></li><li class="chapter-item expanded "><a href="../quality-gates/linting-clippy.html"><strong aria-hidden="true">23.</strong> Linting (clippy)</a></li><li class="chapter-item expanded "><a href="../quality-gates/coverage-measurement.html"><strong aria-hidden="true">24.</strong> Coverage Measurement</a></li><li class="chapter-item expanded "><a href="../quality-gates/complexity-analysis.html"><strong aria-hidden="true">25.</strong> Complexity Analysis</a></li><li class="chapter-item expanded "><a href="../quality-gates/tdg-score.html"><strong aria-hidden="true">26.</strong> Technical Debt Gradient (TDG)</a></li><li class="chapter-item expanded affix "><li class="part-title">Toyota Way Principles</li><li class="chapter-item expanded "><a href="../toyota-way/overview.html"><strong aria-hidden="true">27.</strong> Overview</a></li><li class="chapter-item expanded "><a href="../toyota-way/kaizen.html"><strong aria-hidden="true">28.</strong> Kaizen (Continuous Improvement)</a></li><li class="chapter-item expanded "><a href="../toyota-way/genchi-genbutsu.html"><strong aria-hidden="true">29.</strong> Genchi Genbutsu (Go and See)</a></li><li class="chapter-item expanded "><a href="../toyota-way/jidoka.html"><strong aria-hidden="true">30.</strong> Jidoka (Built-in Quality)</a></li><li class="chapter-item expanded "><a href="../toyota-way/pdca-cycle.html"><strong aria-hidden="true">31.</strong> PDCA Cycle</a></li><li class="chapter-item expanded "><a href="../toyota-way/respect-for-people.html"><strong aria-hidden="true">32.</strong> Respect for People</a></li><li class="chapter-item expanded affix "><li class="part-title">Machine Learning Fundamentals</li><li class="chapter-item expanded "><a href="../ml-fundamentals/linear-regression.html"><strong aria-hidden="true">33.</strong> Linear Regression Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/regularization.html"><strong aria-hidden="true">34.</strong> Regularization Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/logistic-regression.html"><strong aria-hidden="true">35.</strong> Logistic Regression Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/knn.html"><strong aria-hidden="true">36.</strong> K-Nearest Neighbors (kNN) Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/naive-bayes.html"><strong aria-hidden="true">37.</strong> Naive Bayes Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/bayesian-inference.html"><strong aria-hidden="true">38.</strong> Bayesian Inference Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/svm.html"><strong aria-hidden="true">39.</strong> Support Vector Machines (SVM) Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/decision-trees.html"><strong aria-hidden="true">40.</strong> Decision Trees Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/ensemble-methods.html"><strong aria-hidden="true">41.</strong> Ensemble Methods Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/kmeans-clustering.html"><strong aria-hidden="true">42.</strong> K-Means Clustering Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/pca.html"><strong aria-hidden="true">43.</strong> Principal Component Analysis (PCA) Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/tsne.html"><strong aria-hidden="true">44.</strong> t-SNE (t-Distributed Stochastic Neighbor Embedding) Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/regression-metrics.html"><strong aria-hidden="true">45.</strong> Regression Metrics Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/classification-metrics.html"><strong aria-hidden="true">46.</strong> Classification Metrics Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/cross-validation.html"><strong aria-hidden="true">47.</strong> Cross-Validation Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/gradient-descent.html"><strong aria-hidden="true">48.</strong> Gradient Descent Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/advanced-optimizers.html"><strong aria-hidden="true">49.</strong> Advanced Optimizers Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/feature-scaling.html"><strong aria-hidden="true">50.</strong> Feature Scaling Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/graph-algorithms.html"><strong aria-hidden="true">51.</strong> Graph Algorithms Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/graph-pathfinding.html"><strong aria-hidden="true">52.</strong> Graph Pathfinding Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/graph-components-traversal.html"><strong aria-hidden="true">53.</strong> Graph Components and Traversal</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/graph-link-prediction.html"><strong aria-hidden="true">54.</strong> Graph Link Prediction and Community Detection</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/descriptive-statistics.html"><strong aria-hidden="true">55.</strong> Descriptive Statistics Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/apriori.html"><strong aria-hidden="true">56.</strong> Apriori Algorithm Theory</a></li><li class="chapter-item expanded affix "><li class="part-title">Real-World Examples from Aprender</li><li class="chapter-item expanded "><a href="../examples/linear-regression.html"><strong aria-hidden="true">57.</strong> Case Study: Linear Regression</a></li><li class="chapter-item expanded "><a href="../examples/boston-housing.html"><strong aria-hidden="true">58.</strong> Case Study: Boston Housing</a></li><li class="chapter-item expanded "><a href="../examples/cross-validation.html"><strong aria-hidden="true">59.</strong> Case Study: Cross-Validation</a></li><li class="chapter-item expanded "><a href="../examples/grid-search-tuning.html"><strong aria-hidden="true">60.</strong> Case Study: Grid Search Hyperparameter Tuning</a></li><li class="chapter-item expanded "><a href="../examples/random-forest.html"><strong aria-hidden="true">61.</strong> Case Study: Random Forest</a></li><li class="chapter-item expanded "><a href="../examples/random-forest-iris.html"><strong aria-hidden="true">62.</strong> Case Study: Random Forest Iris</a></li><li class="chapter-item expanded "><a href="../examples/decision-tree-iris.html"><strong aria-hidden="true">63.</strong> Case Study: Decision Tree Iris</a></li><li class="chapter-item expanded "><a href="../examples/model-serialization.html"><strong aria-hidden="true">64.</strong> Case Study: Model Serialization</a></li><li class="chapter-item expanded "><a href="../examples/kmeans-clustering.html"><strong aria-hidden="true">65.</strong> Case Study: KMeans Clustering</a></li><li class="chapter-item expanded "><a href="../examples/dbscan-clustering.html"><strong aria-hidden="true">66.</strong> Case Study: DBSCAN Clustering</a></li><li class="chapter-item expanded "><a href="../examples/hierarchical-clustering.html"><strong aria-hidden="true">67.</strong> Case Study: Hierarchical Clustering</a></li><li class="chapter-item expanded "><a href="../examples/gmm-clustering.html"><strong aria-hidden="true">68.</strong> Case Study: GMM Clustering</a></li><li class="chapter-item expanded "><a href="../examples/iris-clustering.html"><strong aria-hidden="true">69.</strong> Case Study: Iris Clustering</a></li><li class="chapter-item expanded "><a href="../examples/logistic-regression.html"><strong aria-hidden="true">70.</strong> Case Study: Logistic Regression</a></li><li class="chapter-item expanded "><a href="../examples/knn-iris.html"><strong aria-hidden="true">71.</strong> Case Study: KNN Iris</a></li><li class="chapter-item expanded "><a href="../examples/naive-bayes-iris.html"><strong aria-hidden="true">72.</strong> Case Study: Naive Bayes Iris</a></li><li class="chapter-item expanded "><a href="../examples/beta-binomial-inference.html"><strong aria-hidden="true">73.</strong> Case Study: Beta-Binomial Bayesian Inference</a></li><li class="chapter-item expanded "><a href="../examples/gamma-poisson-inference.html"><strong aria-hidden="true">74.</strong> Case Study: Gamma-Poisson Bayesian Inference</a></li><li class="chapter-item expanded "><a href="../examples/normal-inverse-gamma-inference.html"><strong aria-hidden="true">75.</strong> Case Study: Normal-InverseGamma Bayesian Inference</a></li><li class="chapter-item expanded "><a href="../examples/dirichlet-multinomial-inference.html" class="active"><strong aria-hidden="true">76.</strong> Case Study: Dirichlet-Multinomial Bayesian Inference</a></li><li class="chapter-item expanded "><a href="../examples/svm-iris.html"><strong aria-hidden="true">77.</strong> Case Study: SVM Iris</a></li><li class="chapter-item expanded "><a href="../examples/gbm-iris.html"><strong aria-hidden="true">78.</strong> Case Study: Gradient Boosting Iris</a></li><li class="chapter-item expanded "><a href="../examples/regularized-regression.html"><strong aria-hidden="true">79.</strong> Case Study: Regularized Regression</a></li><li class="chapter-item expanded "><a href="../examples/optimizer-demo.html"><strong aria-hidden="true">80.</strong> Case Study: Optimizer Demo</a></li><li class="chapter-item expanded "><a href="../examples/dataframe-basics.html"><strong aria-hidden="true">81.</strong> Case Study: DataFrame Basics</a></li><li class="chapter-item expanded "><a href="../examples/data-preprocessing-scalers.html"><strong aria-hidden="true">82.</strong> Case Study: Data Preprocessing with Scalers</a></li><li class="chapter-item expanded "><a href="../examples/graph-social-network.html"><strong aria-hidden="true">83.</strong> Case Study: Graph Social Network</a></li><li class="chapter-item expanded "><a href="../examples/community-detection.html"><strong aria-hidden="true">84.</strong> Case Study: Community Detection with Louvain</a></li><li class="chapter-item expanded "><a href="../examples/graph-algorithms-comprehensive.html"><strong aria-hidden="true">85.</strong> Case Study: Comprehensive Graph Algorithms</a></li><li class="chapter-item expanded "><a href="../examples/descriptive-statistics.html"><strong aria-hidden="true">86.</strong> Case Study: Descriptive Statistics</a></li><li class="chapter-item expanded "><a href="../examples/bayesian-blocks-histogram.html"><strong aria-hidden="true">87.</strong> Case Study: Bayesian Blocks Histogram</a></li><li class="chapter-item expanded "><a href="../examples/pca-iris.html"><strong aria-hidden="true">88.</strong> Case Study: PCA Iris</a></li><li class="chapter-item expanded "><a href="../examples/isolation-forest-anomaly.html"><strong aria-hidden="true">89.</strong> Case Study: Isolation Forest Anomaly Detection</a></li><li class="chapter-item expanded "><a href="../examples/lof-anomaly.html"><strong aria-hidden="true">90.</strong> Case Study: Local Outlier Factor (LOF)</a></li><li class="chapter-item expanded "><a href="../examples/spectral-clustering.html"><strong aria-hidden="true">91.</strong> Case Study: Spectral Clustering</a></li><li class="chapter-item expanded "><a href="../examples/tsne-visualization.html"><strong aria-hidden="true">92.</strong> Case Study: t-SNE Visualization</a></li><li class="chapter-item expanded "><a href="../examples/market-basket-apriori.html"><strong aria-hidden="true">93.</strong> Case Study: Market Basket Analysis (Apriori)</a></li><li class="chapter-item expanded affix "><li class="part-title">Sprint-Based Development</li><li class="chapter-item expanded "><a href="../sprints/sprint-planning.html"><strong aria-hidden="true">94.</strong> Sprint Planning</a></li><li class="chapter-item expanded "><a href="../sprints/sprint-execution.html"><strong aria-hidden="true">95.</strong> Sprint Execution</a></li><li class="chapter-item expanded "><a href="../sprints/sprint-review.html"><strong aria-hidden="true">96.</strong> Sprint Review</a></li><li class="chapter-item expanded "><a href="../sprints/sprint-retrospective.html"><strong aria-hidden="true">97.</strong> Sprint Retrospective</a></li><li class="chapter-item expanded "><a href="../sprints/issue-management.html"><strong aria-hidden="true">98.</strong> Issue Management</a></li><li class="chapter-item expanded affix "><li class="part-title">Anti-Hallucination Enforcement</li><li class="chapter-item expanded "><a href="../anti-hallucination/test-backed-examples.html"><strong aria-hidden="true">99.</strong> Test-Backed Examples</a></li><li class="chapter-item expanded "><a href="../anti-hallucination/example-verification.html"><strong aria-hidden="true">100.</strong> Example Verification</a></li><li class="chapter-item expanded "><a href="../anti-hallucination/ci-validation.html"><strong aria-hidden="true">101.</strong> CI Validation</a></li><li class="chapter-item expanded "><a href="../anti-hallucination/documentation-testing.html"><strong aria-hidden="true">102.</strong> Documentation Testing</a></li><li class="chapter-item expanded affix "><li class="part-title">Tools and Setup</li><li class="chapter-item expanded "><a href="../tools/development-environment.html"><strong aria-hidden="true">103.</strong> Development Environment</a></li><li class="chapter-item expanded "><a href="../tools/cargo-test.html"><strong aria-hidden="true">104.</strong> cargo test</a></li><li class="chapter-item expanded "><a href="../tools/cargo-clippy.html"><strong aria-hidden="true">105.</strong> cargo clippy</a></li><li class="chapter-item expanded "><a href="../tools/cargo-fmt.html"><strong aria-hidden="true">106.</strong> cargo fmt</a></li><li class="chapter-item expanded "><a href="../tools/cargo-mutants.html"><strong aria-hidden="true">107.</strong> cargo mutants</a></li><li class="chapter-item expanded "><a href="../tools/proptest.html"><strong aria-hidden="true">108.</strong> proptest</a></li><li class="chapter-item expanded "><a href="../tools/criterion.html"><strong aria-hidden="true">109.</strong> criterion</a></li><li class="chapter-item expanded "><a href="../tools/pmat.html"><strong aria-hidden="true">110.</strong> pmat (Toyota AI Toolkit)</a></li><li class="chapter-item expanded affix "><li class="part-title">Best Practices</li><li class="chapter-item expanded "><a href="../best-practices/error-handling.html"><strong aria-hidden="true">111.</strong> Error Handling</a></li><li class="chapter-item expanded "><a href="../best-practices/api-design.html"><strong aria-hidden="true">112.</strong> API Design</a></li><li class="chapter-item expanded "><a href="../best-practices/builder-pattern.html"><strong aria-hidden="true">113.</strong> Builder Pattern</a></li><li class="chapter-item expanded "><a href="../best-practices/type-safety.html"><strong aria-hidden="true">114.</strong> Type Safety</a></li><li class="chapter-item expanded "><a href="../best-practices/performance.html"><strong aria-hidden="true">115.</strong> Performance Considerations</a></li><li class="chapter-item expanded "><a href="../best-practices/documentation-standards.html"><strong aria-hidden="true">116.</strong> Documentation Standards</a></li><li class="chapter-item expanded affix "><li class="part-title">Metrics and Measurement</li><li class="chapter-item expanded "><a href="../metrics/test-coverage.html"><strong aria-hidden="true">117.</strong> Test Coverage</a></li><li class="chapter-item expanded "><a href="../metrics/mutation-score.html"><strong aria-hidden="true">118.</strong> Mutation Score</a></li><li class="chapter-item expanded "><a href="../metrics/cyclomatic-complexity.html"><strong aria-hidden="true">119.</strong> Cyclomatic Complexity</a></li><li class="chapter-item expanded "><a href="../metrics/code-churn.html"><strong aria-hidden="true">120.</strong> Code Churn</a></li><li class="chapter-item expanded "><a href="../metrics/build-times.html"><strong aria-hidden="true">121.</strong> Build Times</a></li><li class="chapter-item expanded "><a href="../metrics/tdg-breakdown.html"><strong aria-hidden="true">122.</strong> TDG Score Breakdown</a></li><li class="chapter-item expanded affix "><li class="part-title">Common Pitfalls</li><li class="chapter-item expanded "><a href="../pitfalls/skipping-tests.html"><strong aria-hidden="true">123.</strong> Skipping Tests</a></li><li class="chapter-item expanded "><a href="../pitfalls/insufficient-coverage.html"><strong aria-hidden="true">124.</strong> Insufficient Test Coverage</a></li><li class="chapter-item expanded "><a href="../pitfalls/ignoring-warnings.html"><strong aria-hidden="true">125.</strong> Ignoring Warnings</a></li><li class="chapter-item expanded "><a href="../pitfalls/over-mocking.html"><strong aria-hidden="true">126.</strong> Over-Mocking</a></li><li class="chapter-item expanded "><a href="../pitfalls/flaky-tests.html"><strong aria-hidden="true">127.</strong> Flaky Tests</a></li><li class="chapter-item expanded "><a href="../pitfalls/technical-debt.html"><strong aria-hidden="true">128.</strong> Technical Debt Accumulation</a></li><li class="chapter-item expanded affix "><li class="part-title">Appendix</li><li class="chapter-item expanded "><a href="../appendix/glossary.html"><strong aria-hidden="true">129.</strong> Glossary</a></li><li class="chapter-item expanded "><a href="../appendix/references.html"><strong aria-hidden="true">130.</strong> References</a></li><li class="chapter-item expanded "><a href="../appendix/further-reading.html"><strong aria-hidden="true">131.</strong> Further Reading</a></li><li class="chapter-item expanded "><a href="../appendix/contributing.html"><strong aria-hidden="true">132.</strong> Contributing to This Book</a></li></ol>
+            </div>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <!-- Track and set sidebar scroll position -->
+        <script>
+            var sidebarScrollbox = document.querySelector('#sidebar .sidebar-scrollbox');
+            sidebarScrollbox.addEventListener('click', function(e) {
+                if (e.target.tagName === 'A') {
+                    sessionStorage.setItem('sidebar-scroll', sidebarScrollbox.scrollTop);
+                }
+            }, { passive: true });
+            var sidebarScrollTop = sessionStorage.getItem('sidebar-scroll');
+            sessionStorage.removeItem('sidebar-scroll');
+            if (sidebarScrollTop) {
+                // preserve sidebar scroll position when navigating via links within sidebar
+                sidebarScrollbox.scrollTop = sidebarScrollTop;
+            } else {
+                // scroll sidebar to current active section when navigating via "next/previous chapter" buttons
+                var activeSection = document.querySelector('#sidebar .active');
+                if (activeSection) {
+                    activeSection.scrollIntoView({ block: 'center' });
+                }
+            }
+        </script>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="sidebar-toggle" class="icon-button" for="sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </label>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">EXTREME TDD - The Aprender Guide to Zero-Defect Machine Learning</h1>
+
+                    <div class="right-buttons">
+                        <a href="../print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                        <a href="https://github.com/paiml/aprender" title="Git repository" aria-label="Git repository">
+                            <i id="git-repository-button" class="fa fa-github"></i>
+                        </a>
+                        <a href="https://github.com/paiml/aprender/edit/main/book/src/examples/dirichlet-multinomial-inference.md" title="Suggest an edit" aria-label="Suggest an edit">
+                            <i id="git-edit-button" class="fa fa-edit"></i>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="case-study-dirichlet-multinomial-bayesian-inference"><a class="header" href="#case-study-dirichlet-multinomial-bayesian-inference">Case Study: Dirichlet-Multinomial Bayesian Inference</a></h1>
+<p>This case study demonstrates Bayesian inference for categorical data using the Dirichlet-Multinomial conjugate family. We cover four practical scenarios: product preference analysis, survey response comparison, sequential learning, and prior comparison.</p>
+<h2 id="overview"><a class="header" href="#overview">Overview</a></h2>
+<p>The Dirichlet-Multinomial conjugate family is fundamental for Bayesian inference on categorical data with k &gt; 2 categories:</p>
+<ul>
+<li><strong>Prior</strong>: Dirichlet(α₁, ..., αₖ) distribution over probability simplex</li>
+<li><strong>Likelihood</strong>: Multinomial(θ₁, ..., θₖ) for categorical observations</li>
+<li><strong>Posterior</strong>: Dirichlet(α₁ + n₁, ..., αₖ + nₖ) with element-wise closed-form update</li>
+</ul>
+<p>The probability simplex constraint: Σθᵢ = 1, where each θᵢ ∈ [0, 1] represents the probability of category i.</p>
+<p>This enables exact Bayesian inference for multinomial data without numerical integration.</p>
+<h2 id="running-the-example"><a class="header" href="#running-the-example">Running the Example</a></h2>
+<pre><code class="language-bash">cargo run --example dirichlet_multinomial_inference
+</code></pre>
+<p>Expected output: Four demonstrations showing prior specification, posterior updating, credible intervals per category, and sequential learning for categorical data.</p>
+<h2 id="example-1-customer-product-preference"><a class="header" href="#example-1-customer-product-preference">Example 1: Customer Product Preference</a></h2>
+<h3 id="problem"><a class="header" href="#problem">Problem</a></h3>
+<p>You're conducting market research for smartphones. You survey 120 customers about their brand preference among 4 brands (A, B, C, D). Results: [35, 45, 25, 15].</p>
+<p>What is each brand's market share, and which brand is the clear leader?</p>
+<h3 id="solution"><a class="header" href="#solution">Solution</a></h3>
+<pre><code class="language-rust">use aprender::bayesian::DirichletMultinomial;
+
+// Start with uniform prior Dirichlet(1, 1, 1, 1)
+// All brands equally likely: 25% each
+let mut model = DirichletMultinomial::uniform(4);
+
+// Update with survey responses
+let brand_counts = vec![35, 45, 25, 15]; // [A, B, C, D]
+model.update(&amp;brand_counts);
+
+// Posterior is Dirichlet(1+35, 1+45, 1+25, 1+15) = Dirichlet(36, 46, 26, 16)
+let posterior_probs = model.posterior_mean();
+// [0.290, 0.371, 0.210, 0.129] = [29.0%, 37.1%, 21.0%, 12.9%]</code></pre>
+<h3 id="posterior-statistics"><a class="header" href="#posterior-statistics">Posterior Statistics</a></h3>
+<pre><code class="language-rust">// Point estimates for each category
+let means = model.posterior_mean();  // E[θ | D] = (α₁+n₁, ..., αₖ+nₖ) / Σ(αᵢ+nᵢ)
+// [0.290, 0.371, 0.210, 0.129]
+
+let modes = model.posterior_mode().unwrap();  // MAP estimates
+// [(αᵢ+nᵢ - 1) / (Σαᵢ + Σnᵢ - k)] for all i
+// [0.292, 0.375, 0.208, 0.125]
+
+let variances = model.posterior_variance();  // Var[θᵢ | D] for each category
+// Individual variances for each brand
+
+// 95% credible intervals (one per category)
+let intervals = model.credible_intervals(0.95).unwrap();
+// Brand A: [21.1%, 37.0%]
+// Brand B: [28.6%, 45.6%]
+// Brand C: [13.8%, 28.1%]
+// Brand D: [ 7.0%, 18.8%]
+
+// Posterior predictive (next observation probabilities)
+let predictive = model.posterior_predictive();  // Same as posterior_mean</code></pre>
+<h3 id="interpretation"><a class="header" href="#interpretation">Interpretation</a></h3>
+<p><strong>Posterior means</strong>: Brand B leads with 37.1% market share, followed by A (29.0%), C (21.0%), and D (12.9%).</p>
+<p><strong>Credible intervals</strong>: Brand B's interval [28.6%, 45.6%] overlaps with Brand A's [21.1%, 37.0%], so leadership is not statistically conclusive. More data needed.</p>
+<p><strong>Probability simplex constraint</strong>: Note that Σθᵢ = 1.000 exactly (29.0% + 37.1% + 21.0% + 12.9% = 100.0%).</p>
+<h3 id="practical-application"><a class="header" href="#practical-application">Practical Application</a></h3>
+<p><strong>Market strategy</strong>:</p>
+<ul>
+<li>Focus advertising budget on Brand B (leader)</li>
+<li>Investigate why Brand D underperforms</li>
+<li>Sample size calculation: Need ~300+ responses for conclusive 95% separation</li>
+</ul>
+<p><strong>Competitive analysis</strong>: If Brand B's lower bound (28.6%) exceeds all other brands' upper bounds, leadership would be statistically significant.</p>
+<h2 id="example-2-survey-response-analysis"><a class="header" href="#example-2-survey-response-analysis">Example 2: Survey Response Analysis</a></h2>
+<h3 id="problem-1"><a class="header" href="#problem-1">Problem</a></h3>
+<p>Political survey with 5 candidates. Compare two regions:</p>
+<ul>
+<li><strong>Region 1 (Urban)</strong>: 300 voters → [85, 70, 65, 50, 30]</li>
+<li><strong>Region 2 (Rural)</strong>: 200 voters → [30, 45, 60, 40, 25]</li>
+</ul>
+<p>Are there significant regional differences in candidate preference?</p>
+<h3 id="solution-1"><a class="header" href="#solution-1">Solution</a></h3>
+<pre><code class="language-rust">// Region 1: Urban
+let region1_votes = vec![85, 70, 65, 50, 30];
+let mut model1 = DirichletMultinomial::uniform(5);
+model1.update(&amp;region1_votes);
+
+let probs1 = model1.posterior_mean();
+let intervals1 = model1.credible_intervals(0.95).unwrap();
+// Candidate 1: 28.2% [23.2%, 33.2%]
+// Candidate 2: 23.3% [18.5%, 28.0%]
+// Candidate 3: 21.6% [17.0%, 26.3%]
+// Candidate 4: 16.7% [12.5%, 20.9%]
+// Candidate 5: 10.2% [ 6.8%, 13.6%]
+
+// Region 2: Rural
+let region2_votes = vec![30, 45, 60, 40, 25];
+let mut model2 = DirichletMultinomial::uniform(5);
+model2.update(&amp;region2_votes);
+
+let probs2 = model2.posterior_mean();
+let intervals2 = model2.credible_intervals(0.95).unwrap();
+// Candidate 1: 15.1% [10.2%, 20.0%]
+// Candidate 2: 22.4% [16.7%, 28.1%]
+// Candidate 3: 29.8% [23.5%, 36.0%] ← Rural leader
+// Candidate 4: 20.0% [14.5%, 25.5%]
+// Candidate 5: 12.7% [ 8.1%, 17.2%]</code></pre>
+<h3 id="decision-rules"><a class="header" href="#decision-rules">Decision Rules</a></h3>
+<p><strong>Regional difference test</strong>:</p>
+<pre><code class="language-rust">// Check if credible intervals don't overlap
+for i in 0..5 {
+    if intervals1[i].1 &lt; intervals2[i].0 || intervals2[i].1 &lt; intervals1[i].0 {
+        println!(&quot;Candidate {} shows significant regional difference&quot;, i+1);
+    }
+}</code></pre>
+<p><strong>Leader identification</strong>:</p>
+<pre><code class="language-rust">let leader1 = probs1.iter().enumerate().max_by(...).unwrap().0;  // Candidate 1
+let leader2 = probs2.iter().enumerate().max_by(...).unwrap().0;  // Candidate 3</code></pre>
+<h3 id="interpretation-1"><a class="header" href="#interpretation-1">Interpretation</a></h3>
+<p><strong>Regional leaders differ</strong>: Candidate 1 leads urban (28.2%) but Candidate 3 leads rural (29.8%).</p>
+<p><strong>Significant differences</strong>: Candidate 1 shows statistically significant regional difference (28.2% urban vs 15.1% rural), with non-overlapping credible intervals.</p>
+<p><strong>Strategic implications</strong>: Campaign must be region-specific. Candidate 1 should focus on urban centers, while Candidate 3 should campaign in rural areas.</p>
+<h2 id="example-3-sequential-learning"><a class="header" href="#example-3-sequential-learning">Example 3: Sequential Learning</a></h2>
+<h3 id="problem-2"><a class="header" href="#problem-2">Problem</a></h3>
+<p>Text classification system categorizing documents into 5 categories (Tech, Sports, Politics, Entertainment, Business). Demonstrate convergence with streaming data.</p>
+<h3 id="solution-2"><a class="header" href="#solution-2">Solution</a></h3>
+<pre><code class="language-rust">let mut model = DirichletMultinomial::uniform(5);
+
+let experiments = vec![
+    vec![12, 8, 15, 10, 5],    // Batch 1: 50 documents
+    vec![18, 12, 20, 15, 10],  // Batch 2: 75 more documents
+    vec![22, 16, 25, 18, 14],  // Batch 3: 95 more documents
+    vec![28, 20, 30, 22, 18],  // Batch 4: 118 more documents
+    vec![35, 25, 38, 28, 22],  // Batch 5: 148 more documents
+];
+
+for batch in experiments {
+    model.update(&amp;batch);
+    let probs = model.posterior_mean();
+    let variances = model.posterior_variance();
+    // Print statistics...
+}</code></pre>
+<h3 id="results"><a class="header" href="#results">Results</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Docs</th><th>Tech</th><th>Sports</th><th>Politics</th><th>Entmt</th><th>Business</th><th>Avg Variance</th></tr></thead><tbody>
+<tr><td>50</td><td>0.236</td><td>0.164</td><td>0.291</td><td>0.200</td><td>0.109</td><td>0.0027887</td></tr>
+<tr><td>125</td><td>0.238</td><td>0.162</td><td>0.277</td><td>0.200</td><td>0.123</td><td>0.0011988</td></tr>
+<tr><td>220</td><td>0.236</td><td>0.164</td><td>0.271</td><td>0.196</td><td>0.133</td><td>0.0006973</td></tr>
+<tr><td>338</td><td>0.236</td><td>0.166</td><td>0.265</td><td>0.192</td><td>0.140</td><td>0.0004591</td></tr>
+<tr><td>486</td><td>0.236</td><td>0.167</td><td>0.263</td><td>0.191</td><td>0.143</td><td>0.0003213</td></tr>
+</tbody></table>
+</div>
+<h3 id="interpretation-2"><a class="header" href="#interpretation-2">Interpretation</a></h3>
+<p><strong>Convergence</strong>: Probability estimates stabilize after ~200 documents. Changes &lt;1% after n=220.</p>
+<p><strong>Variance reduction</strong>: Average variance decreases from 0.0028 (n=50) to 0.0003 (n=486), reflecting increased confidence.</p>
+<p><strong>Final distribution</strong>: Politics dominates (26.3%), followed by Tech (23.6%), Entertainment (19.1%), Sports (16.7%), and Business (14.3%).</p>
+<h3 id="practical-application-1"><a class="header" href="#practical-application-1">Practical Application</a></h3>
+<p><strong>Active learning</strong>: Stop collecting labeled data once variance drops below threshold (e.g., 0.001).</p>
+<p><strong>Class imbalance detection</strong>: If true distribution is uniform (20% each), Politics is overrepresented (26.3%) - investigate data source bias.</p>
+<h2 id="example-4-prior-comparison"><a class="header" href="#example-4-prior-comparison">Example 4: Prior Comparison</a></h2>
+<h3 id="problem-3"><a class="header" href="#problem-3">Problem</a></h3>
+<p>Demonstrate how different priors affect posterior inference for website page visit data: [45, 30, 25] visits across 3 pages.</p>
+<h3 id="solution-3"><a class="header" href="#solution-3">Solution</a></h3>
+<pre><code class="language-rust">// 1. Uniform Prior Dirichlet(1, 1, 1)
+let mut uniform = DirichletMultinomial::uniform(3);
+uniform.update(&amp;page_visits);
+// Posterior: Dirichlet(46, 31, 26)
+// Mean: [0.447, 0.301, 0.252] = [44.7%, 30.1%, 25.2%]
+
+// 2. Weakly Informative Prior Dirichlet(2, 2, 2)
+let mut weak = DirichletMultinomial::new(vec![2.0, 2.0, 2.0]).unwrap();
+weak.update(&amp;page_visits);
+// Posterior: Dirichlet(47, 32, 27)
+// Mean: [0.443, 0.302, 0.255] = [44.3%, 30.2%, 25.5%]
+
+// 3. Informative Prior Dirichlet(30, 30, 30) [strong equal belief]
+let mut informative = DirichletMultinomial::new(vec![30.0, 30.0, 30.0]).unwrap();
+informative.update(&amp;page_visits);
+// Posterior: Dirichlet(75, 60, 55)
+// Mean: [0.395, 0.316, 0.289] = [39.5%, 31.6%, 28.9%]</code></pre>
+<h3 id="results-1"><a class="header" href="#results-1">Results</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Prior Type</th><th>Prior Dirichlet(α)</th><th>Posterior Mean</th><th>Effective N</th></tr></thead><tbody>
+<tr><td>Uniform</td><td>(1, 1, 1)</td><td>(44.7%, 30.1%, 25.2%)</td><td>3</td></tr>
+<tr><td>Weak</td><td>(2, 2, 2)</td><td>(44.3%, 30.2%, 25.5%)</td><td>6</td></tr>
+<tr><td>Informative</td><td>(30, 30, 30)</td><td>(39.5%, 31.6%, 28.9%)</td><td>90</td></tr>
+</tbody></table>
+</div>
+<h3 id="interpretation-3"><a class="header" href="#interpretation-3">Interpretation</a></h3>
+<p><strong>Weak priors</strong>: Posterior closely matches data (45%, 30%, 25%).</p>
+<p><strong>Strong prior</strong>: With effective sample size Σαᵢ = 90 vs actual data n = 100, prior significantly influences posterior. Pulls toward equal probabilities (33%, 33%, 33%).</p>
+<p><strong>Prior effective sample size</strong>: Dirichlet(α₁, ..., αₖ) is equivalent to observing αᵢ - 1 counts for category i.</p>
+<h3 id="when-to-use-strong-priors"><a class="header" href="#when-to-use-strong-priors">When to Use Strong Priors</a></h3>
+<p><strong>Use informative priors when</strong>:</p>
+<ul>
+<li>Historical data exists (e.g., long-term website traffic patterns)</li>
+<li>Domain constraints apply (e.g., physics: uniform distribution of particle outcomes)</li>
+<li>Hierarchical models (e.g., learning category distributions across similar classification tasks)</li>
+<li>Regularization needed for sparse categories</li>
+</ul>
+<p><strong>Avoid informative priors when</strong>:</p>
+<ul>
+<li>No reliable prior knowledge</li>
+<li>Exploring new markets/domains</li>
+<li>Prior assumptions may introduce bias</li>
+<li>Data collection is inexpensive (just collect more data instead)</li>
+</ul>
+<h3 id="prior-sensitivity-analysis"><a class="header" href="#prior-sensitivity-analysis">Prior Sensitivity Analysis</a></h3>
+<ol>
+<li>Run with uniform prior Dirichlet(1, ..., 1)</li>
+<li>Run with weak prior Dirichlet(2, ..., 2)</li>
+<li>Run with domain-informed prior</li>
+<li>If posteriors diverge, collect more data until convergence</li>
+</ol>
+<p><strong>Convergence criterion</strong>: ||θ̂_uniform - θ̂_informative|| &lt; ε (e.g., ε = 0.05 for 5% tolerance)</p>
+<h2 id="key-takeaways"><a class="header" href="#key-takeaways">Key Takeaways</a></h2>
+<p><strong>1. k-dimensional conjugate prior for categorical data</strong></p>
+<ul>
+<li>Operates on probability simplex: Σθᵢ = 1</li>
+<li>Element-wise posterior update: Dirichlet(α + n)</li>
+<li>Generalizes Beta-Binomial to k &gt; 2 categories</li>
+</ul>
+<p><strong>2. Credible intervals for each category</strong></p>
+<ul>
+<li>Separate interval [θᵢ_lower, θᵢ_upper] for each i</li>
+<li>Can construct joint credible regions (simplexes) for (θ₁, ..., θₖ)</li>
+<li>Useful for detecting statistically significant category differences</li>
+</ul>
+<p><strong>3. Sequential updating is order-independent</strong></p>
+<ul>
+<li>Batch updates: Dirichlet(α) → Dirichlet(α + Σn_batches)</li>
+<li>Online updates: Update after each observation</li>
+<li>Final posterior is identical regardless of update order</li>
+</ul>
+<p><strong>4. Prior strength affects all categories</strong></p>
+<ul>
+<li>Effective sample size: Σαᵢ</li>
+<li>Large Σαᵢ = strong prior influence</li>
+<li>With n observations, posterior weight: n/(n + Σαᵢ) on data</li>
+</ul>
+<p><strong>5. Practical applications</strong></p>
+<ul>
+<li>Market research: product/brand preference</li>
+<li>Natural language: document classification, topic modeling</li>
+<li>User behavior: feature usage, click patterns</li>
+<li>Political polling: multi-candidate elections</li>
+<li>Quality control: defect categorization</li>
+</ul>
+<p><strong>6. Advantages over frequentist methods</strong></p>
+<ul>
+<li>Direct probability statements for each category</li>
+<li>Natural handling of sparse categories (Bayesian smoothing)</li>
+<li>Coherent framework for sequential testing</li>
+<li>No asymptotic approximations needed (exact inference)</li>
+</ul>
+<h2 id="related-chapters"><a class="header" href="#related-chapters">Related Chapters</a></h2>
+<ul>
+<li><a href="../ml-fundamentals/bayesian-inference.html">Bayesian Inference Theory</a></li>
+<li><a href="./beta-binomial-inference.html">Case Study: Beta-Binomial Bayesian Inference</a></li>
+<li><a href="./gamma-poisson-inference.html">Case Study: Gamma-Poisson Bayesian Inference</a></li>
+<li><a href="./normal-inverse-gamma-inference.html">Case Study: Normal-InverseGamma Bayesian Inference</a></li>
+</ul>
+<h2 id="references"><a class="header" href="#references">References</a></h2>
+<ol>
+<li>
+<p><strong>Jaynes, E. T. (2003)</strong>. <em>Probability Theory: The Logic of Science</em>. Cambridge University Press. Chapter 18: &quot;The Ap Distribution and Rule of Succession.&quot;</p>
+</li>
+<li>
+<p><strong>Gelman, A., et al. (2013)</strong>. <em>Bayesian Data Analysis</em> (3rd ed.). CRC Press. Chapter 5: &quot;Hierarchical Models - Multinomial model.&quot;</p>
+</li>
+<li>
+<p><strong>Murphy, K. P. (2012)</strong>. <em>Machine Learning: A Probabilistic Perspective</em>. MIT Press. Chapter 3.5: &quot;The Dirichlet-multinomial model.&quot;</p>
+</li>
+<li>
+<p><strong>Minka, T. (2000)</strong>. &quot;Estimating a Dirichlet distribution.&quot; Technical report, MIT. Classic reference for Dirichlet parameter estimation.</p>
+</li>
+<li>
+<p><strong>Frigyik, B. A., Kapila, A., &amp; Gupta, M. R. (2010)</strong>. &quot;Introduction to the Dirichlet Distribution and Related Processes.&quot; UWEE Technical Report. Comprehensive tutorial on Dirichlet mathematics.</p>
+</li>
+</ol>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../examples/normal-inverse-gamma-inference.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+
+                            <a rel="next prefetch" href="../examples/svm-iris.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../examples/normal-inverse-gamma-inference.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+
+                    <a rel="next prefetch" href="../examples/svm-iris.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+            </nav>
+
+        </div>
+
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+        <script src="../ace.js"></script>
+        <script src="../editor.js"></script>
+        <script src="../mode-rust.js"></script>
+        <script src="../theme-dawn.js"></script>
+        <script src="../theme-tomorrow_night.js"></script>
+
+        <script src="../elasticlunr.min.js"></script>
+        <script src="../mark.min.js"></script>
+        <script src="../searcher.js"></script>
+
+        <script src="../clipboard.min.js"></script>
+        <script src="../highlight.js"></script>
+        <script src="../book.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+    </div>
+    </body>
+</html>
