@@ -1690,6 +1690,96 @@ impl Graph {
 
         Some(order)
     }
+
+    /// Find connected components using Union-Find algorithm.
+    ///
+    /// Returns a vector where each index is a node ID and the value is its component ID.
+    /// Nodes in the same component have the same component ID.
+    ///
+    /// For directed graphs, this finds weakly connected components (ignores edge direction).
+    ///
+    /// # Returns
+    /// Vector mapping each node to its component ID (0-indexed)
+    ///
+    /// # Time Complexity
+    /// O(m·α(n)) where α is the inverse Ackermann function (effectively constant)
+    ///
+    /// # Examples
+    /// ```
+    /// use aprender::graph::Graph;
+    ///
+    /// // Two disconnected components: (0,1) and (2,3)
+    /// let g = Graph::from_edges(&[(0, 1), (2, 3)], false);
+    /// let components = g.connected_components();
+    ///
+    /// assert_eq!(components[0], components[1]); // Same component
+    /// assert_ne!(components[0], components[2]); // Different components
+    /// ```
+    pub fn connected_components(&self) -> Vec<usize> {
+        let n = self.n_nodes;
+        if n == 0 {
+            return Vec::new();
+        }
+
+        // Union-Find data structure
+        let mut parent: Vec<usize> = (0..n).collect();
+        let mut rank = vec![0; n];
+
+        // Find with path compression
+        fn find(parent: &mut [usize], mut x: usize) -> usize {
+            while parent[x] != x {
+                let next = parent[x];
+                parent[x] = parent[next]; // Path compression
+                x = next;
+            }
+            x
+        }
+
+        // Union by rank
+        fn union(parent: &mut [usize], rank: &mut [usize], x: usize, y: usize) {
+            let root_x = find(parent, x);
+            let root_y = find(parent, y);
+
+            if root_x == root_y {
+                return;
+            }
+
+            // Union by rank
+            use std::cmp::Ordering;
+            match rank[root_x].cmp(&rank[root_y]) {
+                Ordering::Less => parent[root_x] = root_y,
+                Ordering::Greater => parent[root_y] = root_x,
+                Ordering::Equal => {
+                    parent[root_y] = root_x;
+                    rank[root_x] += 1;
+                }
+            }
+        }
+
+        // Process all edges (treat directed graphs as undirected for weak connectivity)
+        for node in 0..n {
+            for &neighbor in self.neighbors(node) {
+                union(&mut parent, &mut rank, node, neighbor);
+            }
+        }
+
+        // Assign component IDs (compress paths and renumber)
+        let mut component_map = HashMap::new();
+        let mut next_component_id = 0;
+        let mut result = vec![0; n];
+
+        for (node, component) in result.iter_mut().enumerate().take(n) {
+            let root = find(&mut parent, node);
+            let component_id = *component_map.entry(root).or_insert_with(|| {
+                let id = next_component_id;
+                next_component_id += 1;
+                id
+            });
+            *component = component_id;
+        }
+
+        result
+    }
 }
 
 /// Kahan summation for computing L1 distance between two vectors.
@@ -3580,5 +3670,144 @@ mod tests {
         let g = Graph::new(false);
         // No nodes, so any DFS should return None
         assert!(g.dfs(0).is_none());
+    }
+
+    // Connected Components Tests
+
+    #[test]
+    fn test_connected_components_single() {
+        // Single connected component
+        let g = Graph::from_edges(&[(0, 1), (1, 2), (2, 3)], false);
+        let components = g.connected_components();
+
+        assert_eq!(components.len(), 4);
+        // All nodes in same component
+        assert_eq!(components[0], components[1]);
+        assert_eq!(components[1], components[2]);
+        assert_eq!(components[2], components[3]);
+    }
+
+    #[test]
+    fn test_connected_components_two() {
+        // Two disconnected components: (0,1) and (2,3)
+        let g = Graph::from_edges(&[(0, 1), (2, 3)], false);
+        let components = g.connected_components();
+
+        assert_eq!(components.len(), 4);
+        // Component 1: nodes 0 and 1
+        assert_eq!(components[0], components[1]);
+        // Component 2: nodes 2 and 3
+        assert_eq!(components[2], components[3]);
+        // Different components
+        assert_ne!(components[0], components[2]);
+    }
+
+    #[test]
+    fn test_connected_components_three() {
+        // Three components: (0,1), (2,3), (4)
+        let g = Graph::from_edges(&[(0, 1), (2, 3), (4, 4)], false);
+        let components = g.connected_components();
+
+        assert_eq!(components.len(), 5);
+        // Three distinct components
+        assert_eq!(components[0], components[1]);
+        assert_eq!(components[2], components[3]);
+        assert_ne!(components[0], components[2]);
+        assert_ne!(components[0], components[4]);
+        assert_ne!(components[2], components[4]);
+    }
+
+    #[test]
+    fn test_connected_components_complete() {
+        // Complete graph K4 - all in one component
+        let g = Graph::from_edges(&[(0, 1), (0, 2), (0, 3), (1, 2), (1, 3), (2, 3)], false);
+        let components = g.connected_components();
+
+        assert_eq!(components.len(), 4);
+        let first = components[0];
+        assert!(components.iter().all(|&c| c == first));
+    }
+
+    #[test]
+    fn test_connected_components_star() {
+        // Star graph - all connected through center
+        let g = Graph::from_edges(&[(0, 1), (0, 2), (0, 3)], false);
+        let components = g.connected_components();
+
+        assert_eq!(components.len(), 4);
+        // All in same component
+        assert_eq!(components[0], components[1]);
+        assert_eq!(components[0], components[2]);
+        assert_eq!(components[0], components[3]);
+    }
+
+    #[test]
+    fn test_connected_components_directed_weak() {
+        // Directed graph: 0 -> 1 -> 2 (weakly connected)
+        let g = Graph::from_edges(&[(0, 1), (1, 2)], true);
+        let components = g.connected_components();
+
+        assert_eq!(components.len(), 3);
+        // Weakly connected (ignores direction)
+        assert_eq!(components[0], components[1]);
+        assert_eq!(components[1], components[2]);
+    }
+
+    #[test]
+    fn test_connected_components_cycle() {
+        // Cycle graph
+        let g = Graph::from_edges(&[(0, 1), (1, 2), (2, 0)], false);
+        let components = g.connected_components();
+
+        assert_eq!(components.len(), 3);
+        // All in same component
+        assert_eq!(components[0], components[1]);
+        assert_eq!(components[1], components[2]);
+    }
+
+    #[test]
+    fn test_connected_components_empty() {
+        let g = Graph::new(false);
+        let components = g.connected_components();
+        assert!(components.is_empty());
+    }
+
+    #[test]
+    fn test_connected_components_isolated_nodes() {
+        // Graph with some isolated nodes
+        let g = Graph::from_edges(&[(0, 1), (3, 4)], false);
+        // Node 2 is isolated (no edges)
+        // But we only have nodes that appear in edges
+        let components = g.connected_components();
+
+        assert_eq!(components.len(), 5);
+        // Two components: (0,1) and (3,4), and isolated 2
+        assert_eq!(components[0], components[1]);
+        assert_eq!(components[3], components[4]);
+        assert_ne!(components[0], components[3]);
+        // Node 2 is in its own component
+        assert_ne!(components[2], components[0]);
+        assert_ne!(components[2], components[3]);
+    }
+
+    #[test]
+    fn test_connected_components_count() {
+        // Helper to count unique components
+        fn count_components(components: &[usize]) -> usize {
+            use std::collections::HashSet;
+            components.iter().copied().collect::<HashSet<_>>().len()
+        }
+
+        // Single component
+        let g1 = Graph::from_edges(&[(0, 1), (1, 2)], false);
+        assert_eq!(count_components(&g1.connected_components()), 1);
+
+        // Two components
+        let g2 = Graph::from_edges(&[(0, 1), (2, 3)], false);
+        assert_eq!(count_components(&g2.connected_components()), 2);
+
+        // Three components
+        let g3 = Graph::from_edges(&[(0, 1), (2, 3), (4, 5)], false);
+        assert_eq!(count_components(&g3.connected_components()), 3);
     }
 }
