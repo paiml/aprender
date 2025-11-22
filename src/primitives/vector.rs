@@ -186,6 +186,70 @@ impl Vector<f32> {
         let mean = self.mean();
         self.data.iter().map(|x| (x - mean).powi(2)).sum::<f32>() / self.data.len() as f32
     }
+
+    /// Computes standard deviation of all elements.
+    ///
+    /// Standard deviation is the square root of variance.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use aprender::primitives::Vector;
+    ///
+    /// let v = Vector::from_slice(&[1.0, 2.0, 3.0, 4.0, 5.0]);
+    /// let std = v.std();
+    /// assert!((std - 1.414).abs() < 0.01);
+    /// ```
+    #[must_use]
+    pub fn std(&self) -> f32 {
+        self.variance().sqrt()
+    }
+
+    /// Computes Gini coefficient (inequality measure).
+    ///
+    /// The Gini coefficient measures inequality in a distribution.
+    /// Formula: G = Σ Σ |x_i - x_j| / (2n² * mean)
+    ///
+    /// # Returns
+    /// - 0.0: Perfect equality (all values are the same)
+    /// - 1.0: Maximum inequality (one value has everything)
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use aprender::primitives::Vector;
+    ///
+    /// // Perfect equality
+    /// let v = Vector::from_slice(&[5.0, 5.0, 5.0]);
+    /// assert!((v.gini_coefficient() - 0.0).abs() < 0.01);
+    ///
+    /// // Some inequality
+    /// let v = Vector::from_slice(&[1.0, 2.0, 3.0, 4.0, 5.0]);
+    /// let gini = v.gini_coefficient();
+    /// assert!(gini > 0.0 && gini < 1.0);
+    /// ```
+    #[must_use]
+    pub fn gini_coefficient(&self) -> f32 {
+        if self.data.is_empty() {
+            return 0.0;
+        }
+
+        let mean = self.mean();
+        if mean == 0.0 {
+            return 0.0;
+        }
+
+        let n = self.data.len() as f32;
+        let mut sum_abs_diff = 0.0;
+
+        for i in 0..self.data.len() {
+            for j in 0..self.data.len() {
+                sum_abs_diff += (self.data[i] - self.data[j]).abs();
+            }
+        }
+
+        sum_abs_diff / (2.0 * n * n * mean)
+    }
 }
 
 impl Add for &Vector<f32> {
@@ -576,5 +640,59 @@ mod tests {
         // If mutation uses /, we get [4, 5] instead
         assert!((result[0] - 4.0).abs() > 1.0, "Must not be division");
         assert!((result[1] - 5.0).abs() > 1.0, "Must not be division");
+    }
+
+    #[test]
+    fn test_std() {
+        // Test standard deviation calculation
+        let v = Vector::from_slice(&[1.0, 2.0, 3.0, 4.0, 5.0]);
+        let std = v.std();
+
+        // Expected: sqrt(variance) = sqrt(2.0) ≈ 1.414
+        assert!((std - 1.414).abs() < 0.01, "std = {}", std);
+    }
+
+    #[test]
+    fn test_std_uniform() {
+        // Uniform values should have std = 0
+        let v = Vector::from_slice(&[5.0, 5.0, 5.0, 5.0]);
+        assert!((v.std() - 0.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_gini_coefficient_perfect_equality() {
+        // All values equal -> Gini = 0
+        let v = Vector::from_slice(&[5.0, 5.0, 5.0, 5.0]);
+        assert!((v.gini_coefficient() - 0.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_gini_coefficient_inequality() {
+        // Some inequality
+        let v = Vector::from_slice(&[1.0, 2.0, 3.0, 4.0, 5.0]);
+        let gini = v.gini_coefficient();
+
+        // Should be between 0 and 1
+        assert!(gini > 0.0 && gini < 1.0, "Gini = {}", gini);
+
+        // For this specific distribution: Gini ≈ 0.267
+        assert!((gini - 0.267).abs() < 0.01, "Gini = {}", gini);
+    }
+
+    #[test]
+    fn test_gini_coefficient_maximum_inequality() {
+        // Maximum inequality: one person has everything
+        let v = Vector::from_slice(&[0.0, 0.0, 0.0, 100.0]);
+        let gini = v.gini_coefficient();
+
+        // Should approach 1.0 (but exact value depends on n)
+        // For n=4: Gini = 0.75
+        assert!(gini > 0.7 && gini < 0.8, "Gini = {}", gini);
+    }
+
+    #[test]
+    fn test_gini_coefficient_empty() {
+        let v: Vector<f32> = Vector::from_slice(&[]);
+        assert_eq!(v.gini_coefficient(), 0.0);
     }
 }

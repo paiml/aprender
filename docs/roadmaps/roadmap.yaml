@@ -761,3 +761,18 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
+- id: 'Phase 1: Graph Pathfinding Algorithms (Dijkstra, A*, APSP, shortest_path)'
+  github_issue: null
+  item_type: task
+  title: 'New task: Phase 1: Graph Pathfinding Algorithms (Dijkstra, A*, APSP, shortest_path)'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2025-11-22T11:21:26.608035364+00:00
+  updated: 2025-11-22T11:21:26.608035364+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []

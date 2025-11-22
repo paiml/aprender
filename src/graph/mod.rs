@@ -1481,6 +1481,159 @@ impl Graph {
 
         distances
     }
+
+    /// Compute shortest path using A* search algorithm with heuristic.
+    ///
+    /// Finds the shortest path from source to target using A* algorithm
+    /// with a user-provided heuristic function. The heuristic must be
+    /// admissible (never overestimate) for optimality guarantees.
+    ///
+    /// # Algorithm
+    /// Uses A* search (Hart et al. 1968) with f(n) = g(n) + h(n) where:
+    /// - g(n) = actual cost from source to n
+    /// - h(n) = estimated cost from n to target (heuristic)
+    ///
+    /// # Arguments
+    /// * `source` - Starting node ID
+    /// * `target` - Destination node ID
+    /// * `heuristic` - Function mapping NodeId to estimated distance to target
+    ///
+    /// # Returns
+    /// * `Some(path)` - Shortest path as vector of node IDs
+    /// * `None` - No path exists
+    ///
+    /// # Complexity
+    /// * Time: O((n + m) log n) with admissible heuristic
+    /// * Space: O(n) for tracking
+    ///
+    /// # Examples
+    /// ```
+    /// use aprender::graph::Graph;
+    ///
+    /// let g = Graph::from_edges(&[(0, 1), (1, 2), (2, 3)], false);
+    ///
+    /// // Manhattan distance heuristic (example)
+    /// let heuristic = |node: usize| (3 - node) as f64;
+    ///
+    /// let path = g.a_star(0, 3, heuristic).unwrap();
+    /// assert_eq!(path, vec![0, 1, 2, 3]);
+    /// ```
+    pub fn a_star<F>(&self, source: NodeId, target: NodeId, heuristic: F) -> Option<Vec<NodeId>>
+    where
+        F: Fn(NodeId) -> f64,
+    {
+        use std::cmp::Ordering;
+        use std::collections::BinaryHeap;
+
+        // Bounds checking
+        if source >= self.n_nodes || target >= self.n_nodes {
+            return None;
+        }
+
+        // Special case: source == target
+        if source == target {
+            return Some(vec![source]);
+        }
+
+        // Priority queue entry with f-score
+        #[derive(Copy, Clone, PartialEq)]
+        struct State {
+            f_score: f64, // g + h
+            g_score: f64, // actual cost
+            node: NodeId,
+        }
+
+        impl Eq for State {}
+
+        impl Ord for State {
+            fn cmp(&self, other: &Self) -> Ordering {
+                // Min-heap: lower f-score has higher priority
+                other
+                    .f_score
+                    .partial_cmp(&self.f_score)
+                    .unwrap_or(Ordering::Equal)
+            }
+        }
+
+        impl PartialOrd for State {
+            fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+                Some(self.cmp(other))
+            }
+        }
+
+        let mut g_scores = vec![f64::INFINITY; self.n_nodes];
+        let mut predecessor = vec![None; self.n_nodes];
+        let mut heap = BinaryHeap::new();
+
+        g_scores[source] = 0.0;
+        heap.push(State {
+            f_score: heuristic(source),
+            g_score: 0.0,
+            node: source,
+        });
+
+        while let Some(State {
+            f_score: _,
+            g_score,
+            node,
+        }) = heap.pop()
+        {
+            // Early termination if we reach target
+            if node == target {
+                break;
+            }
+
+            // Skip if we've already found a better path
+            if g_score > g_scores[node] {
+                continue;
+            }
+
+            // Explore neighbors
+            let start = self.row_ptr[node];
+            let end = self.row_ptr[node + 1];
+
+            for i in start..end {
+                let neighbor = self.col_indices[i];
+                let edge_weight = if self.edge_weights.is_empty() {
+                    1.0
+                } else {
+                    self.edge_weights[i]
+                };
+
+                let tentative_g = g_score + edge_weight;
+
+                // Relaxation step
+                if tentative_g < g_scores[neighbor] {
+                    g_scores[neighbor] = tentative_g;
+                    predecessor[neighbor] = Some(node);
+
+                    let f = tentative_g + heuristic(neighbor);
+                    heap.push(State {
+                        f_score: f,
+                        g_score: tentative_g,
+                        node: neighbor,
+                    });
+                }
+            }
+        }
+
+        // Check if target is reachable
+        if g_scores[target].is_infinite() {
+            return None;
+        }
+
+        // Reconstruct path
+        let mut path = Vec::new();
+        let mut current = Some(target);
+
+        while let Some(node) = current {
+            path.push(node);
+            current = predecessor[node];
+        }
+
+        path.reverse();
+        Some(path)
+    }
 }
 
 /// Kahan summation for computing L1 distance between two vectors.
@@ -2235,7 +2388,9 @@ mod tests {
     #[test]
     fn test_eigenvector_centrality_empty() {
         let g = Graph::new(false);
-        let ec = g.eigenvector_centrality(100, 1e-6).unwrap();
+        let ec = g
+            .eigenvector_centrality(100, 1e-6)
+            .expect("eigenvector centrality should succeed on empty graph");
         assert!(ec.is_empty());
     }
 
@@ -2243,7 +2398,9 @@ mod tests {
     fn test_eigenvector_centrality_star_graph() {
         // Star graph: center has highest eigenvector centrality
         let g = Graph::from_edges(&[(0, 1), (0, 2), (0, 3)], false);
-        let ec = g.eigenvector_centrality(100, 1e-6).unwrap();
+        let ec = g
+            .eigenvector_centrality(100, 1e-6)
+            .expect("eigenvector centrality should succeed on star graph");
 
         assert_eq!(ec.len(), 4);
         // Center should have highest score
@@ -2256,7 +2413,9 @@ mod tests {
     fn test_eigenvector_centrality_path_graph() {
         // Path graph: middle nodes more central
         let g = Graph::from_edges(&[(0, 1), (1, 2), (2, 3)], false);
-        let ec = g.eigenvector_centrality(100, 1e-6).unwrap();
+        let ec = g
+            .eigenvector_centrality(100, 1e-6)
+            .expect("eigenvector centrality should succeed on path graph");
 
         assert_eq!(ec.len(), 4);
         // Middle nodes should have higher scores
@@ -2268,7 +2427,9 @@ mod tests {
     fn test_eigenvector_centrality_disconnected() {
         // Graph with no edges
         let g = Graph::from_edges(&[], false);
-        let ec = g.eigenvector_centrality(100, 1e-6).unwrap();
+        let ec = g
+            .eigenvector_centrality(100, 1e-6)
+            .expect("eigenvector centrality should succeed on graph with no edges");
         assert!(ec.is_empty());
     }
 
@@ -2277,7 +2438,9 @@ mod tests {
     #[test]
     fn test_katz_centrality_empty() {
         let g = Graph::new(true);
-        let kc = g.katz_centrality(0.1, 100, 1e-6).unwrap();
+        let kc = g
+            .katz_centrality(0.1, 100, 1e-6)
+            .expect("katz centrality should succeed on empty graph");
         assert!(kc.is_empty());
     }
 
@@ -2299,7 +2462,9 @@ mod tests {
     fn test_katz_centrality_cycle() {
         // Cycle graph: all nodes should have equal Katz centrality
         let g = Graph::from_edges(&[(0, 1), (1, 2), (2, 0)], true);
-        let kc = g.katz_centrality(0.1, 100, 1e-6).unwrap();
+        let kc = g
+            .katz_centrality(0.1, 100, 1e-6)
+            .expect("katz centrality should succeed on cycle graph");
 
         assert_eq!(kc.len(), 3);
         // All nodes equal by symmetry
@@ -2311,7 +2476,9 @@ mod tests {
     fn test_katz_centrality_star_directed() {
         // Directed star: 0 -> {1,2,3}
         let g = Graph::from_edges(&[(0, 1), (0, 2), (0, 3)], true);
-        let kc = g.katz_centrality(0.1, 100, 1e-6).unwrap();
+        let kc = g
+            .katz_centrality(0.1, 100, 1e-6)
+            .expect("katz centrality should succeed on directed star graph");
 
         assert_eq!(kc.len(), 4);
         // Nodes with incoming edges have higher Katz centrality
@@ -2664,7 +2831,7 @@ mod tests {
             for j in 0..4 {
                 if i != j {
                     let path = g.shortest_path(i, j).expect("path should exist");
-                    assert_eq!(path.len(), 2, "Path from {} to {} should be direct", i, j);
+                    assert_eq!(path.len(), 2, "Path from {i} to {j} should be direct");
                     assert_eq!(path[0], i);
                     assert_eq!(path[1], j);
                 }
@@ -2864,8 +3031,8 @@ mod tests {
         let dist = g.all_pairs_shortest_paths();
 
         // Check diagonal (distance to self = 0)
-        for i in 0..4 {
-            assert_eq!(dist[i][i], Some(0));
+        for (i, row) in dist.iter().enumerate().take(4) {
+            assert_eq!(row[i], Some(0));
         }
 
         // Check distances
@@ -2888,12 +3055,12 @@ mod tests {
         let dist = g.all_pairs_shortest_paths();
 
         // All pairs should have distance 1 (direct edge) except diagonal
-        for i in 0..4 {
-            for j in 0..4 {
+        for (i, row) in dist.iter().enumerate().take(4) {
+            for (j, &cell) in row.iter().enumerate().take(4) {
                 if i == j {
-                    assert_eq!(dist[i][j], Some(0));
+                    assert_eq!(cell, Some(0));
                 } else {
-                    assert_eq!(dist[i][j], Some(1));
+                    assert_eq!(cell, Some(1));
                 }
             }
         }
@@ -2942,12 +3109,12 @@ mod tests {
         let dist = g.all_pairs_shortest_paths();
 
         // All pairs should have distance 1 (triangle) except diagonal
-        for i in 0..3 {
-            for j in 0..3 {
+        for (i, row) in dist.iter().enumerate().take(3) {
+            for (j, &cell) in row.iter().enumerate().take(3) {
                 if i == j {
-                    assert_eq!(dist[i][j], Some(0));
+                    assert_eq!(cell, Some(0));
                 } else {
-                    assert_eq!(dist[i][j], Some(1));
+                    assert_eq!(cell, Some(1));
                 }
             }
         }
@@ -2999,9 +3166,9 @@ mod tests {
         assert_eq!(dist[1][3], Some(2));
 
         // All nodes reachable in directed cycle
-        for i in 0..4 {
-            for j in 0..4 {
-                assert!(dist[i][j].is_some());
+        for row in dist.iter().take(4) {
+            for &cell in row.iter().take(4) {
+                assert!(cell.is_some());
             }
         }
     }
@@ -3016,5 +3183,210 @@ mod tests {
         for row in &dist {
             assert_eq!(row.len(), 4);
         }
+    }
+
+    // ========================================================================
+    // A* Search Algorithm Tests
+    // ========================================================================
+
+    #[test]
+    fn test_astar_linear_chain() {
+        // Linear chain: 0 -- 1 -- 2 -- 3
+        let g = Graph::from_edges(&[(0, 1), (1, 2), (2, 3)], false);
+
+        // Simple distance heuristic
+        let heuristic = |node: usize| (3 - node) as f64;
+
+        let path = g.a_star(0, 3, heuristic).expect("path should exist");
+        assert_eq!(path, vec![0, 1, 2, 3]);
+    }
+
+    #[test]
+    fn test_astar_same_node() {
+        let g = Graph::from_edges(&[(0, 1)], false);
+        let heuristic = |_: usize| 0.0;
+
+        let path = g.a_star(0, 0, heuristic).expect("path should exist");
+        assert_eq!(path, vec![0]);
+    }
+
+    #[test]
+    fn test_astar_disconnected() {
+        // Two disconnected components
+        let g = Graph::from_edges(&[(0, 1), (2, 3)], false);
+        let heuristic = |_: usize| 0.0;
+
+        assert!(g.a_star(0, 3, heuristic).is_none());
+    }
+
+    #[test]
+    fn test_astar_zero_heuristic() {
+        // With h(n) = 0, A* behaves like Dijkstra
+        let g = Graph::from_edges(&[(0, 1), (1, 2), (2, 3)], false);
+        let heuristic = |_: usize| 0.0;
+
+        let path = g.a_star(0, 3, heuristic).expect("path should exist");
+        assert_eq!(path, vec![0, 1, 2, 3]);
+    }
+
+    #[test]
+    fn test_astar_admissible_heuristic() {
+        // Graph with shortcut
+        // 0 -- 1 -- 2
+        // |         |
+        // +----3----+
+        let g = Graph::from_weighted_edges(
+            &[(0, 1, 1.0), (1, 2, 1.0), (0, 3, 0.5), (3, 2, 0.5)],
+            false,
+        );
+
+        // Admissible heuristic (straight-line distance estimate)
+        let heuristic = |node: usize| match node {
+            0 => 1.0, // Estimate to reach 2
+            1 => 1.0,
+            2 => 0.0, // At target
+            3 => 0.5,
+            _ => 0.0,
+        };
+
+        let path = g.a_star(0, 2, heuristic).expect("path should exist");
+        // Should find shortest path via 3
+        assert!(path.contains(&3)); // Must use the shortcut
+    }
+
+    #[test]
+    fn test_astar_directed() {
+        // Directed graph: 0 -> 1 -> 2
+        let g = Graph::from_edges(&[(0, 1), (1, 2)], true);
+        let heuristic = |node: usize| (2 - node) as f64;
+
+        let path = g
+            .a_star(0, 2, heuristic)
+            .expect("forward path should exist");
+        assert_eq!(path, vec![0, 1, 2]);
+
+        // Backward path doesn't exist
+        assert!(g.a_star(2, 0, |_| 0.0).is_none());
+    }
+
+    #[test]
+    fn test_astar_triangle() {
+        // Triangle graph
+        let g = Graph::from_edges(&[(0, 1), (1, 2), (2, 0)], false);
+        let heuristic = |_: usize| 0.0;
+
+        let path = g.a_star(0, 2, heuristic).expect("path should exist");
+        assert_eq!(path.len(), 2); // Direct edge 0-2
+        assert_eq!(path[0], 0);
+        assert_eq!(path[1], 2);
+    }
+
+    #[test]
+    fn test_astar_weighted_graph() {
+        // Weighted graph with better heuristic guidance
+        let g = Graph::from_weighted_edges(&[(0, 1, 1.0), (1, 2, 2.0), (0, 2, 5.0)], false);
+
+        // Heuristic guides toward node 2
+        let heuristic = |node: usize| match node {
+            0 => 3.0,
+            1 => 2.0,
+            2 => 0.0,
+            _ => 0.0,
+        };
+
+        let path = g.a_star(0, 2, heuristic).expect("path should exist");
+        // Should find path 0->1->2 (cost 3) instead of 0->2 (cost 5)
+        assert_eq!(path, vec![0, 1, 2]);
+    }
+
+    #[test]
+    fn test_astar_complete_graph() {
+        // Complete graph K4
+        let g = Graph::from_edges(&[(0, 1), (0, 2), (0, 3), (1, 2), (1, 3), (2, 3)], false);
+        let heuristic = |_: usize| 0.0;
+
+        // All nodes directly connected
+        let path = g.a_star(0, 3, heuristic).expect("path should exist");
+        assert_eq!(path.len(), 2); // Direct path
+        assert_eq!(path[0], 0);
+        assert_eq!(path[1], 3);
+    }
+
+    #[test]
+    fn test_astar_invalid_nodes() {
+        let g = Graph::from_edges(&[(0, 1)], false);
+        let heuristic = |_: usize| 0.0;
+
+        assert!(g.a_star(0, 10, heuristic).is_none());
+        assert!(g.a_star(10, 0, heuristic).is_none());
+    }
+
+    #[test]
+    fn test_astar_vs_shortest_path() {
+        // On unweighted graph with zero heuristic, A* should match shortest_path
+        let g = Graph::from_edges(&[(0, 1), (1, 2), (2, 3)], false);
+
+        let sp_path = g
+            .shortest_path(0, 3)
+            .expect("shortest_path should find path");
+        let astar_path = g.a_star(0, 3, |_| 0.0).expect("astar should find path");
+
+        assert_eq!(sp_path.len(), astar_path.len());
+        assert_eq!(sp_path, astar_path);
+    }
+
+    #[test]
+    fn test_astar_star_graph() {
+        // Star graph: 0 connected to 1, 2, 3
+        let g = Graph::from_edges(&[(0, 1), (0, 2), (0, 3)], false);
+
+        // Heuristic that guides toward target 3
+        let heuristic = |node: usize| if node == 3 { 0.0 } else { 1.0 };
+
+        let path = g.a_star(1, 3, heuristic).expect("path should exist");
+        assert_eq!(path.len(), 3); // Must go through center
+        assert_eq!(path[0], 1);
+        assert_eq!(path[1], 0);
+        assert_eq!(path[2], 3);
+    }
+
+    #[test]
+    fn test_astar_perfect_heuristic() {
+        // Perfect heuristic (exact distance to target)
+        let g = Graph::from_edges(&[(0, 1), (1, 2), (2, 3)], false);
+
+        // Perfect heuristic = exact remaining distance
+        let heuristic = |node: usize| (3 - node) as f64;
+
+        let path = g.a_star(0, 3, heuristic).expect("path should exist");
+        assert_eq!(path, vec![0, 1, 2, 3]);
+    }
+
+    #[test]
+    fn test_astar_complex_graph() {
+        // More complex graph to test heuristic efficiency
+        //     1
+        //    / \
+        //   0   3 - 4
+        //    \ /
+        //     2
+        let g = Graph::from_weighted_edges(
+            &[
+                (0, 1, 1.0),
+                (0, 2, 1.0),
+                (1, 3, 1.0),
+                (2, 3, 1.0),
+                (3, 4, 1.0),
+            ],
+            false,
+        );
+
+        // Distance-based heuristic
+        let heuristic = |node: usize| (4 - node) as f64;
+
+        let path = g.a_star(0, 4, heuristic).expect("path should exist");
+        assert_eq!(path.len(), 4); // 0->1->3->4 or 0->2->3->4
+        assert_eq!(path[0], 0);
+        assert_eq!(path[3], 4);
     }
 }
