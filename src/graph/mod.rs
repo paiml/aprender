@@ -49,8 +49,7 @@ pub struct Graph {
     // CSR adjacency representation (cache-friendly)
     row_ptr: Vec<usize>,      // Offset into col_indices (length = n_nodes + 1)
     col_indices: Vec<NodeId>, // Flattened neighbor lists (length = n_edges)
-    #[allow(dead_code)]
-    edge_weights: Vec<f64>, // Parallel to col_indices (empty if unweighted)
+    edge_weights: Vec<f64>,   // Parallel to col_indices (empty if unweighted)
 
     // Metadata (accessed less frequently)
     #[allow(dead_code)]
@@ -196,6 +195,101 @@ impl Graph {
             is_directed,
             n_nodes,
             n_edges,
+        }
+    }
+
+    /// Build weighted graph from edge list with weights.
+    ///
+    /// # Arguments
+    /// * `edges` - Slice of (source, target, weight) tuples
+    /// * `is_directed` - Whether the graph is directed
+    ///
+    /// # Examples
+    /// ```
+    /// use aprender::graph::Graph;
+    ///
+    /// let g = Graph::from_weighted_edges(&[(0, 1, 1.0), (1, 2, 2.5)], false);
+    /// assert_eq!(g.num_nodes(), 3);
+    /// assert_eq!(g.num_edges(), 2);
+    /// ```
+    pub fn from_weighted_edges(edges: &[(NodeId, NodeId, f64)], is_directed: bool) -> Self {
+        if edges.is_empty() {
+            return Self::new(is_directed);
+        }
+
+        // Find max node ID
+        let max_node = edges
+            .iter()
+            .flat_map(|&(s, t, _)| [s, t])
+            .max()
+            .unwrap_or(0);
+        let n_nodes = max_node + 1;
+
+        // Build adjacency list with weights
+        let mut adj_list: Vec<Vec<(NodeId, f64)>> = vec![Vec::new(); n_nodes];
+        for &(source, target, weight) in edges {
+            adj_list[source].push((target, weight));
+            if !is_directed && source != target {
+                adj_list[target].push((source, weight));
+            }
+        }
+
+        // Sort and deduplicate (keep first weight for duplicates)
+        for neighbors in &mut adj_list {
+            neighbors.sort_unstable_by_key(|&(id, _)| id);
+            neighbors.dedup_by_key(|&mut (id, _)| id);
+        }
+
+        // Build CSR representation
+        let mut row_ptr = Vec::with_capacity(n_nodes + 1);
+        let mut col_indices = Vec::new();
+        let mut edge_weights = Vec::new();
+
+        row_ptr.push(0);
+        for neighbors in &adj_list {
+            for &(neighbor, weight) in neighbors {
+                col_indices.push(neighbor);
+                edge_weights.push(weight);
+            }
+            row_ptr.push(col_indices.len());
+        }
+
+        let n_edges = edges.len();
+
+        Self {
+            row_ptr,
+            col_indices,
+            edge_weights,
+            node_labels: vec![None; n_nodes],
+            label_to_id: HashMap::new(),
+            is_directed,
+            n_nodes,
+            n_edges,
+        }
+    }
+
+    /// Get edge weight between two nodes.
+    ///
+    /// # Returns
+    /// * `Some(weight)` if edge exists
+    /// * `None` if no edge exists
+    #[allow(dead_code)]
+    fn edge_weight(&self, source: NodeId, target: NodeId) -> Option<f64> {
+        if source >= self.n_nodes {
+            return None;
+        }
+
+        let start = self.row_ptr[source];
+        let end = self.row_ptr[source + 1];
+        let neighbors = &self.col_indices[start..end];
+
+        // Binary search for target
+        let pos = neighbors.binary_search(&target).ok()?;
+
+        if self.edge_weights.is_empty() {
+            Some(1.0) // Unweighted graph
+        } else {
+            Some(self.edge_weights[start + pos])
         }
     }
 
@@ -1197,6 +1291,151 @@ impl Graph {
 
         path.reverse();
         Some(path)
+    }
+
+    /// Compute shortest path using Dijkstra's algorithm for weighted graphs.
+    ///
+    /// Finds the shortest path from source to target using Dijkstra's algorithm
+    /// with a binary heap priority queue. Handles both weighted and unweighted graphs.
+    ///
+    /// # Algorithm
+    /// Uses Dijkstra's algorithm (1959) with priority queue for O((n+m) log n) complexity.
+    ///
+    /// # Arguments
+    /// * `source` - Starting node ID
+    /// * `target` - Destination node ID
+    ///
+    /// # Returns
+    /// * `Some((path, distance))` - Shortest path and total distance
+    /// * `None` - No path exists
+    ///
+    /// # Panics
+    /// Panics if graph contains negative edge weights.
+    ///
+    /// # Complexity
+    /// * Time: O((n + m) log n)
+    /// * Space: O(n) for distance tracking and priority queue
+    ///
+    /// # Examples
+    /// ```
+    /// use aprender::graph::Graph;
+    ///
+    /// let g = Graph::from_weighted_edges(&[(0, 1, 1.0), (1, 2, 2.0), (0, 2, 5.0)], false);
+    /// let (path, dist) = g.dijkstra(0, 2).unwrap();
+    /// assert_eq!(dist, 3.0); // 0->1->2 is shorter than 0->2
+    /// ```
+    pub fn dijkstra(&self, source: NodeId, target: NodeId) -> Option<(Vec<NodeId>, f64)> {
+        use std::cmp::Ordering;
+        use std::collections::BinaryHeap;
+
+        // Bounds checking
+        if source >= self.n_nodes || target >= self.n_nodes {
+            return None;
+        }
+
+        // Special case: source == target
+        if source == target {
+            return Some((vec![source], 0.0));
+        }
+
+        // Priority queue entry: (negative distance, node)
+        // Use Reverse to make min-heap
+        #[derive(Copy, Clone, PartialEq)]
+        struct State {
+            cost: f64,
+            node: NodeId,
+        }
+
+        impl Eq for State {}
+
+        impl Ord for State {
+            fn cmp(&self, other: &Self) -> Ordering {
+                // Reverse ordering for min-heap (negate costs)
+                other
+                    .cost
+                    .partial_cmp(&self.cost)
+                    .unwrap_or(Ordering::Equal)
+            }
+        }
+
+        impl PartialOrd for State {
+            fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+                Some(self.cmp(other))
+            }
+        }
+
+        let mut distances = vec![f64::INFINITY; self.n_nodes];
+        let mut predecessor = vec![None; self.n_nodes];
+        let mut heap = BinaryHeap::new();
+
+        distances[source] = 0.0;
+        heap.push(State {
+            cost: 0.0,
+            node: source,
+        });
+
+        while let Some(State { cost, node }) = heap.pop() {
+            // Early termination if we reach target
+            if node == target {
+                break;
+            }
+
+            // Skip if we've already found a better path
+            if cost > distances[node] {
+                continue;
+            }
+
+            // Explore neighbors
+            let start = self.row_ptr[node];
+            let end = self.row_ptr[node + 1];
+
+            for i in start..end {
+                let neighbor = self.col_indices[i];
+                let edge_weight = if self.edge_weights.is_empty() {
+                    1.0
+                } else {
+                    self.edge_weights[i]
+                };
+
+                // Panic on negative weights (Dijkstra requirement)
+                if edge_weight < 0.0 {
+                    panic!(
+                        "Dijkstra's algorithm requires non-negative edge weights. \
+                         Found negative weight {} on edge ({}, {})",
+                        edge_weight, node, neighbor
+                    );
+                }
+
+                let next_cost = cost + edge_weight;
+
+                // Relaxation step
+                if next_cost < distances[neighbor] {
+                    distances[neighbor] = next_cost;
+                    predecessor[neighbor] = Some(node);
+                    heap.push(State {
+                        cost: next_cost,
+                        node: neighbor,
+                    });
+                }
+            }
+        }
+
+        // Check if target is reachable
+        if distances[target].is_infinite() {
+            return None;
+        }
+
+        // Reconstruct path
+        let mut path = Vec::new();
+        let mut current = Some(target);
+
+        while let Some(node) = current {
+            path.push(node);
+            current = predecessor[node];
+        }
+
+        path.reverse();
+        Some((path, distances[target]))
     }
 }
 
@@ -2403,5 +2642,170 @@ mod tests {
         // Paths should be reverses of each other
         let reversed: Vec<_> = path_backward.iter().rev().copied().collect();
         assert_eq!(path_forward, reversed);
+    }
+
+    // ========================================================================
+    // Dijkstra's Algorithm Tests
+    // ========================================================================
+
+    #[test]
+    fn test_dijkstra_simple_weighted() {
+        // Simple weighted graph
+        let g = Graph::from_weighted_edges(&[(0, 1, 1.0), (1, 2, 2.0), (0, 2, 5.0)], false);
+
+        let (path, dist) = g.dijkstra(0, 2).expect("path should exist");
+        assert_eq!(dist, 3.0); // 0->1->2 is shorter than 0->2
+        assert_eq!(path, vec![0, 1, 2]);
+    }
+
+    #[test]
+    fn test_dijkstra_same_node() {
+        let g = Graph::from_weighted_edges(&[(0, 1, 1.0)], false);
+        let (path, dist) = g.dijkstra(0, 0).expect("path should exist");
+        assert_eq!(path, vec![0]);
+        assert_eq!(dist, 0.0);
+    }
+
+    #[test]
+    fn test_dijkstra_disconnected() {
+        let g = Graph::from_weighted_edges(&[(0, 1, 1.0), (2, 3, 1.0)], false);
+        assert!(g.dijkstra(0, 3).is_none());
+    }
+
+    #[test]
+    fn test_dijkstra_unweighted() {
+        // Unweighted graph (uses weight 1.0 for all edges)
+        let g = Graph::from_edges(&[(0, 1), (1, 2)], false);
+        let (path, dist) = g.dijkstra(0, 2).expect("path should exist");
+        assert_eq!(dist, 2.0);
+        assert_eq!(path, vec![0, 1, 2]);
+    }
+
+    #[test]
+    fn test_dijkstra_triangle_weighted() {
+        // Triangle with different weights
+        let g = Graph::from_weighted_edges(&[(0, 1, 1.0), (1, 2, 1.0), (0, 2, 5.0)], false);
+
+        let (path, dist) = g.dijkstra(0, 2).expect("path should exist");
+        assert_eq!(dist, 2.0); // 0->1->2 (cost 2) vs 0->2 (cost 5)
+        assert_eq!(path, vec![0, 1, 2]);
+    }
+
+    #[test]
+    fn test_dijkstra_multiple_paths() {
+        // Graph with multiple paths of different costs
+        //     1 ----2.0---- 2
+        //    /              |
+        //   /               |
+        //  0                1.0
+        //   \               |
+        //    \              |
+        //     3 ----1.0---- 4
+        let g = Graph::from_weighted_edges(
+            &[
+                (0, 1, 1.0),
+                (1, 2, 2.0),
+                (0, 3, 1.0),
+                (3, 4, 1.0),
+                (4, 2, 1.0),
+            ],
+            false,
+        );
+
+        let (_path, dist) = g.dijkstra(0, 2).expect("path should exist");
+        assert_eq!(dist, 3.0); // Best path: 0->3->4->2 or 0->1->2
+    }
+
+    #[test]
+    fn test_dijkstra_linear_chain() {
+        // Weighted linear chain
+        let g = Graph::from_weighted_edges(&[(0, 1, 1.0), (1, 2, 2.0), (2, 3, 3.0)], false);
+
+        let (path, dist) = g.dijkstra(0, 3).expect("path should exist");
+        assert_eq!(dist, 6.0);
+        assert_eq!(path, vec![0, 1, 2, 3]);
+    }
+
+    #[test]
+    fn test_dijkstra_directed_graph() {
+        // Directed weighted graph
+        let g = Graph::from_weighted_edges(&[(0, 1, 1.0), (1, 2, 2.0)], true);
+
+        let (path, dist) = g.dijkstra(0, 2).expect("forward path should exist");
+        assert_eq!(dist, 3.0);
+        assert_eq!(path, vec![0, 1, 2]);
+
+        // Backward path doesn't exist
+        assert!(g.dijkstra(2, 0).is_none());
+    }
+
+    #[test]
+    fn test_dijkstra_invalid_nodes() {
+        let g = Graph::from_weighted_edges(&[(0, 1, 1.0)], false);
+        assert!(g.dijkstra(0, 10).is_none());
+        assert!(g.dijkstra(10, 0).is_none());
+    }
+
+    #[test]
+    #[should_panic(expected = "negative edge weights")]
+    fn test_dijkstra_negative_weights() {
+        // Dijkstra should panic on negative weights
+        let g = Graph::from_weighted_edges(&[(0, 1, -1.0)], false);
+        let _ = g.dijkstra(0, 1);
+    }
+
+    #[test]
+    fn test_dijkstra_zero_weight_edges() {
+        // Zero-weight edges should work
+        let g = Graph::from_weighted_edges(&[(0, 1, 0.0), (1, 2, 1.0)], false);
+        let (path, dist) = g.dijkstra(0, 2).expect("path should exist");
+        assert_eq!(dist, 1.0);
+        assert_eq!(path, vec![0, 1, 2]);
+    }
+
+    #[test]
+    fn test_dijkstra_complete_graph_weighted() {
+        // Complete graph K3 with different weights
+        let g = Graph::from_weighted_edges(&[(0, 1, 1.0), (1, 2, 1.0), (0, 2, 3.0)], false);
+
+        // Direct edge 0->2 costs 3.0, but 0->1->2 costs 2.0
+        let (path, dist) = g.dijkstra(0, 2).expect("path should exist");
+        assert_eq!(dist, 2.0);
+        assert_eq!(path, vec![0, 1, 2]);
+    }
+
+    #[test]
+    fn test_dijkstra_star_graph_weighted() {
+        // Star graph with center at node 0
+        let g = Graph::from_weighted_edges(&[(0, 1, 1.0), (0, 2, 2.0), (0, 3, 3.0)], false);
+
+        // Path from 1 to 3 must go through 0
+        let (path, dist) = g.dijkstra(1, 3).expect("path should exist");
+        assert_eq!(dist, 4.0); // 1->0 (1.0) + 0->3 (3.0)
+        assert_eq!(path, vec![1, 0, 3]);
+    }
+
+    #[test]
+    fn test_dijkstra_vs_shortest_path() {
+        // On unweighted graph, Dijkstra should match shortest_path
+        let g = Graph::from_edges(&[(0, 1), (1, 2), (2, 3)], false);
+
+        let sp_path = g
+            .shortest_path(0, 3)
+            .expect("shortest_path should find path");
+        let (dij_path, dij_dist) = g.dijkstra(0, 3).expect("dijkstra should find path");
+
+        assert_eq!(sp_path.len(), dij_path.len());
+        assert_eq!(dij_dist, (dij_path.len() - 1) as f64);
+    }
+
+    #[test]
+    fn test_dijkstra_floating_point_precision() {
+        // Test with fractional weights
+        let g = Graph::from_weighted_edges(&[(0, 1, 0.1), (1, 2, 0.2), (0, 2, 0.31)], false);
+
+        let (path, dist) = g.dijkstra(0, 2).expect("path should exist");
+        assert!((dist - 0.3).abs() < 1e-10); // 0.1 + 0.2 = 0.3
+        assert_eq!(path, vec![0, 1, 2]);
     }
 }
