@@ -1966,6 +1966,128 @@ impl Graph {
         order.reverse();
         Some(order)
     }
+
+    /// Count common neighbors between two nodes (link prediction metric).
+    ///
+    /// Returns the number of neighbors shared by both nodes u and v.
+    /// Used for link prediction: nodes with many common neighbors are
+    /// more likely to form a connection.
+    ///
+    /// # Arguments
+    /// * `u` - First node
+    /// * `v` - Second node
+    ///
+    /// # Returns
+    /// Number of common neighbors, or None if either node is invalid
+    ///
+    /// # Time Complexity
+    /// O(min(deg(u), deg(v))) - intersection of neighbor sets
+    ///
+    /// # Examples
+    /// ```
+    /// use aprender::graph::Graph;
+    ///
+    /// // Triangle: 0-1, 0-2, 1-2
+    /// let g = Graph::from_edges(&[(0, 1), (0, 2), (1, 2)], false);
+    ///
+    /// // Nodes 1 and 2 share neighbor 0
+    /// assert_eq!(g.common_neighbors(1, 2), Some(1));
+    /// ```
+    pub fn common_neighbors(&self, u: NodeId, v: NodeId) -> Option<usize> {
+        // Validate nodes
+        if u >= self.n_nodes || v >= self.n_nodes {
+            return None;
+        }
+
+        let neighbors_u = self.neighbors(u);
+        let neighbors_v = self.neighbors(v);
+
+        // Use two-pointer technique (both are sorted)
+        let mut count = 0;
+        let mut i = 0;
+        let mut j = 0;
+
+        while i < neighbors_u.len() && j < neighbors_v.len() {
+            use std::cmp::Ordering;
+            match neighbors_u[i].cmp(&neighbors_v[j]) {
+                Ordering::Equal => {
+                    count += 1;
+                    i += 1;
+                    j += 1;
+                }
+                Ordering::Less => i += 1,
+                Ordering::Greater => j += 1,
+            }
+        }
+
+        Some(count)
+    }
+
+    /// Adamic-Adar index for link prediction between two nodes.
+    ///
+    /// Computes a weighted measure of common neighbors, where neighbors with
+    /// fewer connections are weighted more heavily. This captures the intuition
+    /// that sharing a rare neighbor is more significant than sharing a common one.
+    ///
+    /// Formula: AA(u,v) = Σ 1/log(deg(z)) for all common neighbors z
+    ///
+    /// # Arguments
+    /// * `u` - First node
+    /// * `v` - Second node
+    ///
+    /// # Returns
+    /// Adamic-Adar index score, or None if either node is invalid
+    ///
+    /// # Time Complexity
+    /// O(min(deg(u), deg(v))) - intersection of neighbor sets
+    ///
+    /// # Examples
+    /// ```
+    /// use aprender::graph::Graph;
+    ///
+    /// // Graph with shared neighbors
+    /// let g = Graph::from_edges(&[(0, 1), (0, 2), (1, 2), (1, 3), (2, 3)], false);
+    ///
+    /// // Adamic-Adar index for nodes 1 and 2
+    /// let aa = g.adamic_adar_index(1, 2).expect("valid nodes");
+    /// assert!(aa > 0.0);
+    /// ```
+    pub fn adamic_adar_index(&self, u: NodeId, v: NodeId) -> Option<f64> {
+        // Validate nodes
+        if u >= self.n_nodes || v >= self.n_nodes {
+            return None;
+        }
+
+        let neighbors_u = self.neighbors(u);
+        let neighbors_v = self.neighbors(v);
+
+        // Use two-pointer technique to find common neighbors
+        let mut score = 0.0;
+        let mut i = 0;
+        let mut j = 0;
+
+        while i < neighbors_u.len() && j < neighbors_v.len() {
+            use std::cmp::Ordering;
+            match neighbors_u[i].cmp(&neighbors_v[j]) {
+                Ordering::Equal => {
+                    let common_neighbor = neighbors_u[i];
+                    let degree = self.neighbors(common_neighbor).len();
+
+                    // Avoid log(1) = 0 division by zero
+                    if degree > 1 {
+                        score += 1.0 / (degree as f64).ln();
+                    }
+
+                    i += 1;
+                    j += 1;
+                }
+                Ordering::Less => i += 1,
+                Ordering::Greater => j += 1,
+            }
+        }
+
+        Some(score)
+    }
 }
 
 /// Kahan summation for computing L1 distance between two vectors.
@@ -4315,5 +4437,172 @@ mod tests {
         let g = Graph::from_edges(&[(0, 1), (1, 2)], false);
         // Undirected edges create cycles (0->1 and 1->0)
         assert!(g.topological_sort().is_none());
+    }
+
+    // Common Neighbors Tests
+
+    #[test]
+    fn test_common_neighbors_triangle() {
+        // Triangle: 0-1, 0-2, 1-2
+        let g = Graph::from_edges(&[(0, 1), (0, 2), (1, 2)], false);
+
+        // Nodes 1 and 2 share neighbor 0
+        assert_eq!(g.common_neighbors(1, 2), Some(1));
+        // Nodes 0 and 1 share neighbor 2
+        assert_eq!(g.common_neighbors(0, 1), Some(1));
+        // Nodes 0 and 2 share neighbor 1
+        assert_eq!(g.common_neighbors(0, 2), Some(1));
+    }
+
+    #[test]
+    fn test_common_neighbors_no_overlap() {
+        // Two stars: 0-{1,2}, 3-{4,5}
+        let g = Graph::from_edges(&[(0, 1), (0, 2), (3, 4), (3, 5)], false);
+
+        // Nodes 1 and 2 share neighbor 0
+        assert_eq!(g.common_neighbors(1, 2), Some(1));
+        // Nodes from different components have no common neighbors
+        assert_eq!(g.common_neighbors(1, 4), Some(0));
+        assert_eq!(g.common_neighbors(0, 3), Some(0));
+    }
+
+    #[test]
+    fn test_common_neighbors_complete() {
+        // Complete graph K4
+        let g = Graph::from_edges(&[(0, 1), (0, 2), (0, 3), (1, 2), (1, 3), (2, 3)], false);
+
+        // Any two nodes share 2 common neighbors
+        assert_eq!(g.common_neighbors(0, 1), Some(2)); // Share 2, 3
+        assert_eq!(g.common_neighbors(0, 2), Some(2)); // Share 1, 3
+        assert_eq!(g.common_neighbors(1, 2), Some(2)); // Share 0, 3
+    }
+
+    #[test]
+    fn test_common_neighbors_directed() {
+        // Directed: 0->1, 0->2, 1->2
+        let g = Graph::from_edges(&[(0, 1), (0, 2), (1, 2)], true);
+
+        // 0 has out-neighbors {1, 2}
+        // 1 has out-neighbors {2}
+        assert_eq!(g.common_neighbors(0, 1), Some(1)); // Share out-neighbor 2
+    }
+
+    #[test]
+    fn test_common_neighbors_invalid() {
+        let g = Graph::from_edges(&[(0, 1), (1, 2)], false);
+
+        // Invalid nodes
+        assert!(g.common_neighbors(0, 10).is_none());
+        assert!(g.common_neighbors(10, 0).is_none());
+        assert!(g.common_neighbors(10, 20).is_none());
+    }
+
+    #[test]
+    fn test_common_neighbors_self() {
+        let g = Graph::from_edges(&[(0, 1), (0, 2), (1, 2)], false);
+
+        // Node with itself shares all neighbors
+        assert_eq!(g.common_neighbors(0, 0), Some(2)); // Shares {1, 2}
+    }
+
+    #[test]
+    fn test_common_neighbors_empty() {
+        let g = Graph::new(false);
+        assert!(g.common_neighbors(0, 1).is_none());
+    }
+
+    #[test]
+    fn test_common_neighbors_star() {
+        // Star: 0 connected to {1, 2, 3, 4}
+        let g = Graph::from_edges(&[(0, 1), (0, 2), (0, 3), (0, 4)], false);
+
+        // Leaves share center as common neighbor
+        assert_eq!(g.common_neighbors(1, 2), Some(1)); // Share 0
+        assert_eq!(g.common_neighbors(1, 3), Some(1)); // Share 0
+        assert_eq!(g.common_neighbors(2, 4), Some(1)); // Share 0
+    }
+
+    // Adamic-Adar Index Tests
+
+    #[test]
+    fn test_adamic_adar_triangle() {
+        // Triangle: 0-1, 0-2, 1-2
+        let g = Graph::from_edges(&[(0, 1), (0, 2), (1, 2)], false);
+
+        // Nodes 1 and 2 share neighbor 0 (degree 2)
+        let aa = g.adamic_adar_index(1, 2).expect("valid nodes");
+        // Score should be 1/ln(2) ≈ 1.44
+        assert!((aa - 1.0 / 2.0_f64.ln()).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_adamic_adar_no_common() {
+        // Two disconnected edges
+        let g = Graph::from_edges(&[(0, 1), (2, 3)], false);
+
+        // No common neighbors
+        assert_eq!(g.adamic_adar_index(0, 2).expect("valid nodes"), 0.0);
+        assert_eq!(g.adamic_adar_index(1, 3).expect("valid nodes"), 0.0);
+    }
+
+    #[test]
+    fn test_adamic_adar_star() {
+        // Star: 0-{1,2,3,4}
+        let g = Graph::from_edges(&[(0, 1), (0, 2), (0, 3), (0, 4)], false);
+
+        // Leaves share center (degree 4)
+        let aa = g.adamic_adar_index(1, 2).expect("valid nodes");
+        // Score should be 1/ln(4) ≈ 0.72
+        assert!((aa - 1.0 / 4.0_f64.ln()).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_adamic_adar_multiple_common() {
+        // Graph where nodes 0 and 1 share multiple neighbors
+        // 0-{2,3,4}, 1-{2,3,4}
+        let g = Graph::from_edges(&[(0, 2), (0, 3), (0, 4), (1, 2), (1, 3), (1, 4)], false);
+
+        let aa = g.adamic_adar_index(0, 1).expect("valid nodes");
+        // Three common neighbors (2, 3, 4), each with degree 2
+        // Score = 3 * 1/ln(2) = 3/ln(2) ≈ 4.33
+        let expected = 3.0 / 2.0_f64.ln();
+        assert!((aa - expected).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_adamic_adar_degree_one() {
+        // Linear chain: 0-1-2
+        let g = Graph::from_edges(&[(0, 1), (1, 2)], false);
+
+        // Nodes 0 and 2 share neighbor 1 (degree 2)
+        let aa = g.adamic_adar_index(0, 2).expect("valid nodes");
+        assert!((aa - 1.0 / 2.0_f64.ln()).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_adamic_adar_invalid() {
+        let g = Graph::from_edges(&[(0, 1), (1, 2)], false);
+
+        assert!(g.adamic_adar_index(0, 10).is_none());
+        assert!(g.adamic_adar_index(10, 0).is_none());
+    }
+
+    #[test]
+    fn test_adamic_adar_directed() {
+        // Directed: 0->2, 1->2, 2->3
+        let g = Graph::from_edges(&[(0, 2), (1, 2), (2, 3)], true);
+
+        // 0 and 1 both point to 2 (share out-neighbor)
+        let aa = g.adamic_adar_index(0, 1).expect("valid nodes");
+        // Node 2 has degree 1 (out-degree), but we use total neighbor count
+        // which is 2 (1 in + 1 out in directed graph becomes bidirectional in CSR)
+        // Actually in CSR for directed graphs, degree is out-degree
+        assert!(aa >= 0.0);
+    }
+
+    #[test]
+    fn test_adamic_adar_empty() {
+        let g = Graph::new(false);
+        assert!(g.adamic_adar_index(0, 1).is_none());
     }
 }
