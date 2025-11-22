@@ -15,15 +15,18 @@ use std::path::Path;
 #[test]
 fn test_forest_save_safetensors_creates_file() {
     // Train a simple random forest
-    let x = Matrix::from_vec(4, 2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0]).unwrap();
+    let x = Matrix::from_vec(4, 2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0])
+        .expect("Test data should be valid");
     let y = vec![0, 1, 1, 0];
 
     let mut forest = RandomForestClassifier::new(3).with_max_depth(3);
-    forest.fit(&x, &y).unwrap();
+    forest.fit(&x, &y).expect("Test data should be valid");
 
     // Save to SafeTensors format
     let path = "test_forest_model.safetensors";
-    forest.save_safetensors(path).unwrap();
+    forest
+        .save_safetensors(path)
+        .expect("Test data should be valid");
 
     // Verify file was created
     assert!(
@@ -38,21 +41,25 @@ fn test_forest_save_safetensors_creates_file() {
 #[test]
 fn test_forest_save_load_roundtrip() {
     // Train random forest on XOR problem
-    let x = Matrix::from_vec(4, 2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0]).unwrap();
+    let x = Matrix::from_vec(4, 2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0])
+        .expect("Test data should be valid");
     let y = vec![0, 1, 1, 0];
 
     let mut forest = RandomForestClassifier::new(5)
         .with_max_depth(5)
         .with_random_state(42);
-    forest.fit(&x, &y).unwrap();
+    forest.fit(&x, &y).expect("Test data should be valid");
 
     // Get original predictions
     let pred_original = forest.predict(&x);
 
     // Save and load
     let path = "test_forest_roundtrip.safetensors";
-    forest.save_safetensors(path).unwrap();
-    let loaded_forest = RandomForestClassifier::load_safetensors(path).unwrap();
+    forest
+        .save_safetensors(path)
+        .expect("Test data should be valid");
+    let loaded_forest =
+        RandomForestClassifier::load_safetensors(path).expect("Test data should be valid");
 
     // Get loaded forest predictions
     let pred_loaded = loaded_forest.predict(&x);
@@ -70,25 +77,29 @@ fn test_forest_save_load_roundtrip() {
 #[test]
 fn test_forest_safetensors_metadata_includes_all_trees() {
     // Create and fit forest with 3 trees
-    let x = Matrix::from_vec(3, 2, vec![0.0, 0.0, 1.0, 1.0, 2.0, 2.0]).unwrap();
+    let x = Matrix::from_vec(3, 2, vec![0.0, 0.0, 1.0, 1.0, 2.0, 2.0])
+        .expect("Test data should be valid");
     let y = vec![0, 1, 2];
 
     let mut forest = RandomForestClassifier::new(3).with_max_depth(3);
-    forest.fit(&x, &y).unwrap();
+    forest.fit(&x, &y).expect("Test data should be valid");
 
     let path = "test_forest_metadata.safetensors";
-    forest.save_safetensors(path).unwrap();
+    forest
+        .save_safetensors(path)
+        .expect("Test data should be valid");
 
-    let bytes = fs::read(path).unwrap();
+    let bytes = fs::read(path).expect("Test data should be valid");
 
     // Extract metadata
-    let header_bytes: [u8; 8] = bytes[0..8].try_into().unwrap();
+    let header_bytes: [u8; 8] = bytes[0..8].try_into().expect("Test data should be valid");
     let metadata_len = u64::from_le_bytes(header_bytes) as usize;
     let metadata_json = &bytes[8..8 + metadata_len];
-    let metadata_str = std::str::from_utf8(metadata_json).unwrap();
+    let metadata_str = std::str::from_utf8(metadata_json).expect("Test data should be valid");
 
     // Parse JSON
-    let metadata: serde_json::Value = serde_json::from_str(metadata_str).unwrap();
+    let metadata: serde_json::Value =
+        serde_json::from_str(metadata_str).expect("Test data should be valid");
 
     // Verify hyperparameters exist
     assert!(
@@ -172,7 +183,7 @@ fn test_forest_load_nonexistent_file_fails() {
 fn test_forest_load_corrupted_metadata_fails() {
     // Create a file with invalid SafeTensors format
     let path = "test_corrupted_forest.safetensors";
-    fs::write(path, b"invalid safetensors data").unwrap();
+    fs::write(path, b"invalid safetensors data").expect("Test data should be valid");
 
     let result = RandomForestClassifier::load_safetensors(path);
     assert!(
@@ -192,29 +203,38 @@ fn test_forest_multiple_save_load_cycles() {
         2,
         vec![0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0, 2.0, 2.0, 2.0, 3.0],
     )
-    .unwrap();
+    .expect("Test data should be valid");
     let y = vec![0, 1, 1, 0, 2, 2];
 
     let mut forest = RandomForestClassifier::new(5)
         .with_max_depth(4)
         .with_random_state(123);
-    forest.fit(&x, &y).unwrap();
+    forest.fit(&x, &y).expect("Test data should be valid");
 
     let path1 = "test_forest_cycle1.safetensors";
     let path2 = "test_forest_cycle2.safetensors";
     let path3 = "test_forest_cycle3.safetensors";
 
     // Cycle 1: original → save → load
-    forest.save_safetensors(path1).unwrap();
-    let forest1 = RandomForestClassifier::load_safetensors(path1).unwrap();
+    forest
+        .save_safetensors(path1)
+        .expect("Test data should be valid");
+    let forest1 =
+        RandomForestClassifier::load_safetensors(path1).expect("Test data should be valid");
 
     // Cycle 2: loaded → save → load
-    forest1.save_safetensors(path2).unwrap();
-    let forest2 = RandomForestClassifier::load_safetensors(path2).unwrap();
+    forest1
+        .save_safetensors(path2)
+        .expect("Test data should be valid");
+    let forest2 =
+        RandomForestClassifier::load_safetensors(path2).expect("Test data should be valid");
 
     // Cycle 3: loaded again → save → load
-    forest2.save_safetensors(path3).unwrap();
-    let forest3 = RandomForestClassifier::load_safetensors(path3).unwrap();
+    forest2
+        .save_safetensors(path3)
+        .expect("Test data should be valid");
+    let forest3 =
+        RandomForestClassifier::load_safetensors(path3).expect("Test data should be valid");
 
     // All forests should produce identical predictions
     let pred_orig = forest.predict(&x);
@@ -242,20 +262,23 @@ fn test_forest_accuracy_score_preserved() {
             0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0, 2.0, 0.0, 2.0, 1.0, 3.0, 0.0, 3.0, 1.0,
         ],
     )
-    .unwrap();
+    .expect("Test data should be valid");
     let y = vec![0, 1, 1, 0, 2, 2, 3, 3];
 
     let mut forest = RandomForestClassifier::new(10)
         .with_max_depth(5)
         .with_random_state(42);
-    forest.fit(&x, &y).unwrap();
+    forest.fit(&x, &y).expect("Test data should be valid");
 
     let original_accuracy = forest.score(&x, &y);
 
     // Save and load
     let path = "test_forest_accuracy.safetensors";
-    forest.save_safetensors(path).unwrap();
-    let loaded_forest = RandomForestClassifier::load_safetensors(path).unwrap();
+    forest
+        .save_safetensors(path)
+        .expect("Test data should be valid");
+    let loaded_forest =
+        RandomForestClassifier::load_safetensors(path).expect("Test data should be valid");
 
     let loaded_accuracy = loaded_forest.score(&x, &y);
 
@@ -274,31 +297,38 @@ fn test_forest_accuracy_score_preserved() {
 #[test]
 fn test_forest_different_n_estimators() {
     // Test forests with different numbers of trees
-    let x = Matrix::from_vec(4, 2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0]).unwrap();
+    let x = Matrix::from_vec(4, 2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0])
+        .expect("Test data should be valid");
     let y = vec![0, 1, 1, 0];
 
     // Forest with 3 trees
     let mut forest3 = RandomForestClassifier::new(3)
         .with_max_depth(3)
         .with_random_state(42);
-    forest3.fit(&x, &y).unwrap();
+    forest3.fit(&x, &y).expect("Test data should be valid");
 
     // Forest with 10 trees (different seed)
     let mut forest10 = RandomForestClassifier::new(10)
         .with_max_depth(3)
         .with_random_state(123);
-    forest10.fit(&x, &y).unwrap();
+    forest10.fit(&x, &y).expect("Test data should be valid");
 
     // Save both forests
     let path3 = "test_forest_3trees.safetensors";
     let path10 = "test_forest_10trees.safetensors";
 
-    forest3.save_safetensors(path3).unwrap();
-    forest10.save_safetensors(path10).unwrap();
+    forest3
+        .save_safetensors(path3)
+        .expect("Test data should be valid");
+    forest10
+        .save_safetensors(path10)
+        .expect("Test data should be valid");
 
     // Load and verify n_estimators preserved
-    let loaded3 = RandomForestClassifier::load_safetensors(path3).unwrap();
-    let loaded10 = RandomForestClassifier::load_safetensors(path10).unwrap();
+    let loaded3 =
+        RandomForestClassifier::load_safetensors(path3).expect("Test data should be valid");
+    let loaded10 =
+        RandomForestClassifier::load_safetensors(path10).expect("Test data should be valid");
 
     // Verify predictions work (indirect verification of n_estimators)
     let pred3_orig = forest3.predict(&x);
@@ -332,16 +362,19 @@ fn test_forest_different_n_estimators() {
 #[test]
 fn test_forest_file_size_reasonable() {
     // Verify SafeTensors file size is reasonable
-    let x = Matrix::from_vec(4, 2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0]).unwrap();
+    let x = Matrix::from_vec(4, 2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0])
+        .expect("Test data should be valid");
     let y = vec![0, 1, 1, 0];
 
     let mut forest = RandomForestClassifier::new(5).with_max_depth(3);
-    forest.fit(&x, &y).unwrap();
+    forest.fit(&x, &y).expect("Test data should be valid");
 
     let path = "test_forest_size.safetensors";
-    forest.save_safetensors(path).unwrap();
+    forest
+        .save_safetensors(path)
+        .expect("Test data should be valid");
 
-    let file_size = fs::metadata(path).unwrap().len();
+    let file_size = fs::metadata(path).expect("Test data should be valid").len();
 
     // File should be reasonable (5 trees, each small)
     assert!(
@@ -363,16 +396,20 @@ fn test_forest_file_size_reasonable() {
 #[test]
 fn test_forest_single_tree_serialization() {
     // Edge case: Forest with just one tree (degenerates to single decision tree)
-    let x = Matrix::from_vec(3, 2, vec![0.0, 0.0, 1.0, 1.0, 2.0, 2.0]).unwrap();
+    let x = Matrix::from_vec(3, 2, vec![0.0, 0.0, 1.0, 1.0, 2.0, 2.0])
+        .expect("Test data should be valid");
     let y = vec![0, 1, 2];
 
     let mut forest = RandomForestClassifier::new(1).with_max_depth(5);
-    forest.fit(&x, &y).unwrap();
+    forest.fit(&x, &y).expect("Test data should be valid");
 
     // Save and load
     let path = "test_forest_single_tree.safetensors";
-    forest.save_safetensors(path).unwrap();
-    let loaded_forest = RandomForestClassifier::load_safetensors(path).unwrap();
+    forest
+        .save_safetensors(path)
+        .expect("Test data should be valid");
+    let loaded_forest =
+        RandomForestClassifier::load_safetensors(path).expect("Test data should be valid");
 
     // Verify predictions
     let pred_original = forest.predict(&x);
@@ -398,18 +435,21 @@ fn test_forest_large_ensemble_serialization() {
             0.0, 2.0, 1.0, 2.0, 2.0, 2.0, 3.0, 3.0, 0.0, 3.0, 1.0, 3.0, 2.0, 3.0, 3.0,
         ],
     )
-    .unwrap();
+    .expect("Test data should be valid");
     let y = vec![0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3];
 
     let mut forest = RandomForestClassifier::new(20)
         .with_max_depth(10)
         .with_random_state(999);
-    forest.fit(&x, &y).unwrap();
+    forest.fit(&x, &y).expect("Test data should be valid");
 
     // Save and load
     let path = "test_forest_large.safetensors";
-    forest.save_safetensors(path).unwrap();
-    let loaded_forest = RandomForestClassifier::load_safetensors(path).unwrap();
+    forest
+        .save_safetensors(path)
+        .expect("Test data should be valid");
+    let loaded_forest =
+        RandomForestClassifier::load_safetensors(path).expect("Test data should be valid");
 
     // Verify predictions match
     let pred_original = forest.predict(&x);

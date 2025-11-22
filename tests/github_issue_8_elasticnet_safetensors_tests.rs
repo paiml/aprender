@@ -16,15 +16,18 @@ use std::path::Path;
 #[test]
 fn test_elasticnet_save_safetensors_creates_file() {
     // Train a simple ElasticNet model
-    let x = Matrix::from_vec(4, 2, vec![1.0, 2.0, 2.0, 1.0, 3.0, 4.0, 4.0, 3.0]).unwrap();
+    let x = Matrix::from_vec(4, 2, vec![1.0, 2.0, 2.0, 1.0, 3.0, 4.0, 4.0, 3.0])
+        .expect("Test data should be valid");
     let y = Vector::from_vec(vec![5.0, 4.0, 11.0, 10.0]);
 
     let mut model = ElasticNet::new(0.1, 0.5); // alpha = 0.1, l1_ratio = 0.5
-    model.fit(&x, &y).unwrap();
+    model.fit(&x, &y).expect("Test data should be valid");
 
     // Save to SafeTensors format
     let path = "test_elasticnet_model.safetensors";
-    model.save_safetensors(path).unwrap();
+    model
+        .save_safetensors(path)
+        .expect("Test data should be valid");
 
     // Verify file was created
     assert!(
@@ -39,19 +42,22 @@ fn test_elasticnet_save_safetensors_creates_file() {
 #[test]
 fn test_elasticnet_save_load_roundtrip() {
     // Train ElasticNet model
-    let x = Matrix::from_vec(5, 2, vec![1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0, 5.0, 5.0, 6.0]).unwrap();
+    let x = Matrix::from_vec(5, 2, vec![1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0, 5.0, 5.0, 6.0])
+        .expect("Test data should be valid");
     let y = Vector::from_vec(vec![5.0, 8.0, 11.0, 14.0, 17.0]);
 
     let mut model = ElasticNet::new(0.5, 0.7).with_max_iter(500).with_tol(1e-5);
-    model.fit(&x, &y).unwrap();
+    model.fit(&x, &y).expect("Test data should be valid");
 
     // Get original predictions
     let pred_original = model.predict(&x);
 
     // Save and load
     let path = "test_elasticnet_roundtrip.safetensors";
-    model.save_safetensors(path).unwrap();
-    let loaded_model = ElasticNet::load_safetensors(path).unwrap();
+    model
+        .save_safetensors(path)
+        .expect("Test data should be valid");
+    let loaded_model = ElasticNet::load_safetensors(path).expect("Test data should be valid");
 
     // Get loaded model predictions
     let pred_loaded = loaded_model.predict(&x);
@@ -79,25 +85,29 @@ fn test_elasticnet_save_load_roundtrip() {
 #[test]
 fn test_elasticnet_safetensors_metadata_includes_all_hyperparameters() {
     // Create and fit ElasticNet model with specific hyperparameters
-    let x = Matrix::from_vec(3, 2, vec![1.0, 0.0, 0.0, 1.0, 1.0, 1.0]).unwrap();
+    let x = Matrix::from_vec(3, 2, vec![1.0, 0.0, 0.0, 1.0, 1.0, 1.0])
+        .expect("Test data should be valid");
     let y = Vector::from_vec(vec![1.0, 2.0, 3.0]);
 
     let mut model = ElasticNet::new(2.5, 0.3).with_max_iter(1500).with_tol(1e-6);
-    model.fit(&x, &y).unwrap();
+    model.fit(&x, &y).expect("Test data should be valid");
 
     let path = "test_elasticnet_hyperparams.safetensors";
-    model.save_safetensors(path).unwrap();
+    model
+        .save_safetensors(path)
+        .expect("Test data should be valid");
 
-    let bytes = fs::read(path).unwrap();
+    let bytes = fs::read(path).expect("Test data should be valid");
 
     // Extract metadata
-    let header_bytes: [u8; 8] = bytes[0..8].try_into().unwrap();
+    let header_bytes: [u8; 8] = bytes[0..8].try_into().expect("Test data should be valid");
     let metadata_len = u64::from_le_bytes(header_bytes) as usize;
     let metadata_json = &bytes[8..8 + metadata_len];
-    let metadata_str = std::str::from_utf8(metadata_json).unwrap();
+    let metadata_str = std::str::from_utf8(metadata_json).expect("Test data should be valid");
 
     // Parse JSON
-    let metadata: serde_json::Value = serde_json::from_str(metadata_str).unwrap();
+    let metadata: serde_json::Value =
+        serde_json::from_str(metadata_str).expect("Test data should be valid");
 
     // Verify all required tensors exist
     assert!(
@@ -168,7 +178,7 @@ fn test_elasticnet_load_nonexistent_file_fails() {
 fn test_elasticnet_load_corrupted_metadata_fails() {
     // Create a file with invalid SafeTensors format
     let path = "test_corrupted_elasticnet.safetensors";
-    fs::write(path, b"invalid safetensors data").unwrap();
+    fs::write(path, b"invalid safetensors data").expect("Test data should be valid");
 
     let result = ElasticNet::load_safetensors(path);
     assert!(
@@ -183,19 +193,22 @@ fn test_elasticnet_load_corrupted_metadata_fails() {
 #[test]
 fn test_elasticnet_l1_ratio_preserved() {
     // Verify l1_ratio is exactly preserved through save/load
-    let x = Matrix::from_vec(4, 2, vec![1.0, 2.0, 2.0, 1.0, 3.0, 4.0, 4.0, 3.0]).unwrap();
+    let x = Matrix::from_vec(4, 2, vec![1.0, 2.0, 2.0, 1.0, 3.0, 4.0, 4.0, 3.0])
+        .expect("Test data should be valid");
     let y = Vector::from_vec(vec![5.0, 4.0, 11.0, 10.0]);
 
     let mut model = ElasticNet::new(0.1, 0.7); // l1_ratio = 0.7
-    model.fit(&x, &y).unwrap();
+    model.fit(&x, &y).expect("Test data should be valid");
 
     let original_l1_ratio = model.l1_ratio();
     let original_alpha = model.alpha();
 
     // Save and load
     let path = "test_elasticnet_l1_ratio.safetensors";
-    model.save_safetensors(path).unwrap();
-    let loaded_model = ElasticNet::load_safetensors(path).unwrap();
+    model
+        .save_safetensors(path)
+        .expect("Test data should be valid");
+    let loaded_model = ElasticNet::load_safetensors(path).expect("Test data should be valid");
 
     let loaded_l1_ratio = loaded_model.l1_ratio();
     let loaded_alpha = loaded_model.alpha();
@@ -213,27 +226,33 @@ fn test_elasticnet_l1_ratio_preserved() {
 #[test]
 fn test_elasticnet_multiple_save_load_cycles() {
     // Property test: Multiple save/load cycles should be idempotent
-    let x = Matrix::from_vec(3, 1, vec![1.0, 2.0, 3.0]).unwrap();
+    let x = Matrix::from_vec(3, 1, vec![1.0, 2.0, 3.0]).expect("Test data should be valid");
     let y = Vector::from_vec(vec![2.0, 4.0, 6.0]);
 
     let mut model = ElasticNet::new(0.05, 0.5);
-    model.fit(&x, &y).unwrap();
+    model.fit(&x, &y).expect("Test data should be valid");
 
     let path1 = "test_elasticnet_cycle1.safetensors";
     let path2 = "test_elasticnet_cycle2.safetensors";
     let path3 = "test_elasticnet_cycle3.safetensors";
 
     // Cycle 1: original → save → load
-    model.save_safetensors(path1).unwrap();
-    let model1 = ElasticNet::load_safetensors(path1).unwrap();
+    model
+        .save_safetensors(path1)
+        .expect("Test data should be valid");
+    let model1 = ElasticNet::load_safetensors(path1).expect("Test data should be valid");
 
     // Cycle 2: loaded → save → load
-    model1.save_safetensors(path2).unwrap();
-    let model2 = ElasticNet::load_safetensors(path2).unwrap();
+    model1
+        .save_safetensors(path2)
+        .expect("Test data should be valid");
+    let model2 = ElasticNet::load_safetensors(path2).expect("Test data should be valid");
 
     // Cycle 3: loaded again → save → load
-    model2.save_safetensors(path3).unwrap();
-    let model3 = ElasticNet::load_safetensors(path3).unwrap();
+    model2
+        .save_safetensors(path3)
+        .expect("Test data should be valid");
+    let model3 = ElasticNet::load_safetensors(path3).expect("Test data should be valid");
 
     // All models should produce identical predictions
     let pred_orig = model.predict(&x);
@@ -256,34 +275,41 @@ fn test_elasticnet_multiple_save_load_cycles() {
 #[test]
 fn test_elasticnet_different_l1_ratios() {
     // Verify that models with different l1_ratios save/load correctly
-    let x = Matrix::from_vec(4, 2, vec![1.0, 2.0, 2.0, 1.0, 3.0, 4.0, 4.0, 3.0]).unwrap();
+    let x = Matrix::from_vec(4, 2, vec![1.0, 2.0, 2.0, 1.0, 3.0, 4.0, 4.0, 3.0])
+        .expect("Test data should be valid");
     let y = Vector::from_vec(vec![5.0, 4.0, 11.0, 10.0]);
 
     // Pure Ridge (l1_ratio = 0.0)
     let mut model1 = ElasticNet::new(0.1, 0.0);
-    model1.fit(&x, &y).unwrap();
+    model1.fit(&x, &y).expect("Test data should be valid");
 
     // Balanced (l1_ratio = 0.5)
     let mut model2 = ElasticNet::new(0.1, 0.5);
-    model2.fit(&x, &y).unwrap();
+    model2.fit(&x, &y).expect("Test data should be valid");
 
     // Pure Lasso (l1_ratio = 1.0)
     let mut model3 = ElasticNet::new(0.1, 1.0);
-    model3.fit(&x, &y).unwrap();
+    model3.fit(&x, &y).expect("Test data should be valid");
 
     // Save all models
     let path1 = "test_elasticnet_ridge.safetensors";
     let path2 = "test_elasticnet_balanced.safetensors";
     let path3 = "test_elasticnet_lasso.safetensors";
 
-    model1.save_safetensors(path1).unwrap();
-    model2.save_safetensors(path2).unwrap();
-    model3.save_safetensors(path3).unwrap();
+    model1
+        .save_safetensors(path1)
+        .expect("Test data should be valid");
+    model2
+        .save_safetensors(path2)
+        .expect("Test data should be valid");
+    model3
+        .save_safetensors(path3)
+        .expect("Test data should be valid");
 
     // Load and verify l1_ratios are preserved
-    let loaded1 = ElasticNet::load_safetensors(path1).unwrap();
-    let loaded2 = ElasticNet::load_safetensors(path2).unwrap();
-    let loaded3 = ElasticNet::load_safetensors(path3).unwrap();
+    let loaded1 = ElasticNet::load_safetensors(path1).expect("Test data should be valid");
+    let loaded2 = ElasticNet::load_safetensors(path2).expect("Test data should be valid");
+    let loaded3 = ElasticNet::load_safetensors(path3).expect("Test data should be valid");
 
     assert_eq!(loaded1.l1_ratio(), 0.0, "Pure Ridge l1_ratio");
     assert_eq!(loaded2.l1_ratio(), 0.5, "Balanced l1_ratio");
@@ -298,16 +324,19 @@ fn test_elasticnet_different_l1_ratios() {
 #[test]
 fn test_elasticnet_file_size_reasonable() {
     // Verify SafeTensors file size is reasonable (not bloated)
-    let x = Matrix::from_vec(3, 2, vec![1.0, 0.0, 0.0, 1.0, 1.0, 1.0]).unwrap();
+    let x = Matrix::from_vec(3, 2, vec![1.0, 0.0, 0.0, 1.0, 1.0, 1.0])
+        .expect("Test data should be valid");
     let y = Vector::from_vec(vec![1.0, 2.0, 3.0]);
 
     let mut model = ElasticNet::new(0.1, 0.5);
-    model.fit(&x, &y).unwrap();
+    model.fit(&x, &y).expect("Test data should be valid");
 
     let path = "test_elasticnet_size.safetensors";
-    model.save_safetensors(path).unwrap();
+    model
+        .save_safetensors(path)
+        .expect("Test data should be valid");
 
-    let file_size = fs::metadata(path).unwrap().len();
+    let file_size = fs::metadata(path).expect("Test data should be valid").len();
 
     // File should be reasonable:
     // - Metadata: < 1KB
@@ -337,18 +366,21 @@ fn test_elasticnet_file_size_reasonable() {
 #[test]
 fn test_elasticnet_r2_score_preserved() {
     // Property test: R² score should be identical after roundtrip
-    let x = Matrix::from_vec(5, 2, vec![1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0, 5.0, 5.0, 6.0]).unwrap();
+    let x = Matrix::from_vec(5, 2, vec![1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0, 5.0, 5.0, 6.0])
+        .expect("Test data should be valid");
     let y = Vector::from_vec(vec![5.0, 8.0, 11.0, 14.0, 17.0]);
 
     let mut model = ElasticNet::new(0.1, 0.5);
-    model.fit(&x, &y).unwrap();
+    model.fit(&x, &y).expect("Test data should be valid");
 
     let original_r2 = model.score(&x, &y);
 
     // Save and load
     let path = "test_elasticnet_r2.safetensors";
-    model.save_safetensors(path).unwrap();
-    let loaded_model = ElasticNet::load_safetensors(path).unwrap();
+    model
+        .save_safetensors(path)
+        .expect("Test data should be valid");
+    let loaded_model = ElasticNet::load_safetensors(path).expect("Test data should be valid");
 
     let loaded_r2 = loaded_model.score(&x, &y);
 
@@ -374,19 +406,21 @@ fn test_elasticnet_combined_regularization_behavior() {
             1.0, 0.1, 0.01, 2.0, 0.2, 0.02, 3.0, 0.1, 0.03, 4.0, 0.3, 0.01, 5.0, 0.2, 0.02,
         ],
     )
-    .unwrap();
+    .expect("Test data should be valid");
     let y = Vector::from_vec(vec![1.1, 2.2, 3.1, 4.3, 5.2]);
 
     // High alpha with balanced l1_ratio
     let mut model = ElasticNet::new(0.5, 0.5);
-    model.fit(&x, &y).unwrap();
+    model.fit(&x, &y).expect("Test data should be valid");
 
     let original_coef = model.coefficients();
 
     // Save and load
     let path = "test_elasticnet_combined.safetensors";
-    model.save_safetensors(path).unwrap();
-    let loaded_model = ElasticNet::load_safetensors(path).unwrap();
+    model
+        .save_safetensors(path)
+        .expect("Test data should be valid");
+    let loaded_model = ElasticNet::load_safetensors(path).expect("Test data should be valid");
 
     let loaded_coef = loaded_model.coefficients();
 

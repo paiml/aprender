@@ -15,15 +15,17 @@ use std::path::Path;
 #[test]
 fn test_tree_save_safetensors_creates_file() {
     // Train a simple decision tree
-    let x = Matrix::from_vec(4, 2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0]).unwrap();
+    let x = Matrix::from_vec(4, 2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0])
+        .expect("Test data should be valid");
     let y = vec![0, 1, 1, 0];
 
     let mut tree = DecisionTreeClassifier::new().with_max_depth(3);
-    tree.fit(&x, &y).unwrap();
+    tree.fit(&x, &y).expect("Test data should be valid");
 
     // Save to SafeTensors format
     let path = "test_tree_model.safetensors";
-    tree.save_safetensors(path).unwrap();
+    tree.save_safetensors(path)
+        .expect("Test data should be valid");
 
     // Verify file was created
     assert!(
@@ -38,19 +40,22 @@ fn test_tree_save_safetensors_creates_file() {
 #[test]
 fn test_tree_save_load_roundtrip() {
     // Train decision tree on XOR problem
-    let x = Matrix::from_vec(4, 2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0]).unwrap();
+    let x = Matrix::from_vec(4, 2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0])
+        .expect("Test data should be valid");
     let y = vec![0, 1, 1, 0];
 
     let mut tree = DecisionTreeClassifier::new().with_max_depth(5);
-    tree.fit(&x, &y).unwrap();
+    tree.fit(&x, &y).expect("Test data should be valid");
 
     // Get original predictions
     let pred_original = tree.predict(&x);
 
     // Save and load
     let path = "test_tree_roundtrip.safetensors";
-    tree.save_safetensors(path).unwrap();
-    let loaded_tree = DecisionTreeClassifier::load_safetensors(path).unwrap();
+    tree.save_safetensors(path)
+        .expect("Test data should be valid");
+    let loaded_tree =
+        DecisionTreeClassifier::load_safetensors(path).expect("Test data should be valid");
 
     // Get loaded tree predictions
     let pred_loaded = loaded_tree.predict(&x);
@@ -68,25 +73,28 @@ fn test_tree_save_load_roundtrip() {
 #[test]
 fn test_tree_safetensors_metadata_includes_tensors() {
     // Create and fit tree
-    let x = Matrix::from_vec(3, 2, vec![0.0, 0.0, 1.0, 1.0, 2.0, 2.0]).unwrap();
+    let x = Matrix::from_vec(3, 2, vec![0.0, 0.0, 1.0, 1.0, 2.0, 2.0])
+        .expect("Test data should be valid");
     let y = vec![0, 1, 2];
 
     let mut tree = DecisionTreeClassifier::new().with_max_depth(3);
-    tree.fit(&x, &y).unwrap();
+    tree.fit(&x, &y).expect("Test data should be valid");
 
     let path = "test_tree_metadata.safetensors";
-    tree.save_safetensors(path).unwrap();
+    tree.save_safetensors(path)
+        .expect("Test data should be valid");
 
-    let bytes = fs::read(path).unwrap();
+    let bytes = fs::read(path).expect("Test data should be valid");
 
     // Extract metadata
-    let header_bytes: [u8; 8] = bytes[0..8].try_into().unwrap();
+    let header_bytes: [u8; 8] = bytes[0..8].try_into().expect("Test data should be valid");
     let metadata_len = u64::from_le_bytes(header_bytes) as usize;
     let metadata_json = &bytes[8..8 + metadata_len];
-    let metadata_str = std::str::from_utf8(metadata_json).unwrap();
+    let metadata_str = std::str::from_utf8(metadata_json).expect("Test data should be valid");
 
     // Parse JSON
-    let metadata: serde_json::Value = serde_json::from_str(metadata_str).unwrap();
+    let metadata: serde_json::Value =
+        serde_json::from_str(metadata_str).expect("Test data should be valid");
 
     // Verify all required tensors exist
     assert!(
@@ -160,7 +168,7 @@ fn test_tree_load_nonexistent_file_fails() {
 fn test_tree_load_corrupted_metadata_fails() {
     // Create a file with invalid SafeTensors format
     let path = "test_corrupted_tree.safetensors";
-    fs::write(path, b"invalid safetensors data").unwrap();
+    fs::write(path, b"invalid safetensors data").expect("Test data should be valid");
 
     let result = DecisionTreeClassifier::load_safetensors(path);
     assert!(
@@ -180,27 +188,32 @@ fn test_tree_multiple_save_load_cycles() {
         2,
         vec![0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0, 2.0, 2.0, 2.0, 3.0],
     )
-    .unwrap();
+    .expect("Test data should be valid");
     let y = vec![0, 1, 1, 0, 2, 2];
 
     let mut tree = DecisionTreeClassifier::new().with_max_depth(4);
-    tree.fit(&x, &y).unwrap();
+    tree.fit(&x, &y).expect("Test data should be valid");
 
     let path1 = "test_tree_cycle1.safetensors";
     let path2 = "test_tree_cycle2.safetensors";
     let path3 = "test_tree_cycle3.safetensors";
 
     // Cycle 1: original → save → load
-    tree.save_safetensors(path1).unwrap();
-    let tree1 = DecisionTreeClassifier::load_safetensors(path1).unwrap();
+    tree.save_safetensors(path1)
+        .expect("Test data should be valid");
+    let tree1 = DecisionTreeClassifier::load_safetensors(path1).expect("Test data should be valid");
 
     // Cycle 2: loaded → save → load
-    tree1.save_safetensors(path2).unwrap();
-    let tree2 = DecisionTreeClassifier::load_safetensors(path2).unwrap();
+    tree1
+        .save_safetensors(path2)
+        .expect("Test data should be valid");
+    let tree2 = DecisionTreeClassifier::load_safetensors(path2).expect("Test data should be valid");
 
     // Cycle 3: loaded again → save → load
-    tree2.save_safetensors(path3).unwrap();
-    let tree3 = DecisionTreeClassifier::load_safetensors(path3).unwrap();
+    tree2
+        .save_safetensors(path3)
+        .expect("Test data should be valid");
+    let tree3 = DecisionTreeClassifier::load_safetensors(path3).expect("Test data should be valid");
 
     // All trees should produce identical predictions
     let pred_orig = tree.predict(&x);
@@ -228,18 +241,20 @@ fn test_tree_accuracy_score_preserved() {
             0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0, 2.0, 0.0, 2.0, 1.0, 3.0, 0.0, 3.0, 1.0,
         ],
     )
-    .unwrap();
+    .expect("Test data should be valid");
     let y = vec![0, 1, 1, 0, 2, 2, 3, 3];
 
     let mut tree = DecisionTreeClassifier::new().with_max_depth(5);
-    tree.fit(&x, &y).unwrap();
+    tree.fit(&x, &y).expect("Test data should be valid");
 
     let original_accuracy = tree.score(&x, &y);
 
     // Save and load
     let path = "test_tree_accuracy.safetensors";
-    tree.save_safetensors(path).unwrap();
-    let loaded_tree = DecisionTreeClassifier::load_safetensors(path).unwrap();
+    tree.save_safetensors(path)
+        .expect("Test data should be valid");
+    let loaded_tree =
+        DecisionTreeClassifier::load_safetensors(path).expect("Test data should be valid");
 
     let loaded_accuracy = loaded_tree.score(&x, &y);
 
@@ -264,16 +279,18 @@ fn test_tree_deep_tree_serialization() {
             0.0, 2.0, 1.0, 2.0, 2.0, 2.0, 3.0, 3.0, 0.0, 3.0, 1.0, 3.0, 2.0, 3.0, 3.0,
         ],
     )
-    .unwrap();
+    .expect("Test data should be valid");
     let y = vec![0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3];
 
     let mut tree = DecisionTreeClassifier::new().with_max_depth(10);
-    tree.fit(&x, &y).unwrap();
+    tree.fit(&x, &y).expect("Test data should be valid");
 
     // Save and load
     let path = "test_tree_deep.safetensors";
-    tree.save_safetensors(path).unwrap();
-    let loaded_tree = DecisionTreeClassifier::load_safetensors(path).unwrap();
+    tree.save_safetensors(path)
+        .expect("Test data should be valid");
+    let loaded_tree =
+        DecisionTreeClassifier::load_safetensors(path).expect("Test data should be valid");
 
     // Verify predictions match
     let pred_original = tree.predict(&x);
@@ -288,16 +305,18 @@ fn test_tree_deep_tree_serialization() {
 #[test]
 fn test_tree_file_size_reasonable() {
     // Verify SafeTensors file size is reasonable
-    let x = Matrix::from_vec(4, 2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0]).unwrap();
+    let x = Matrix::from_vec(4, 2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0])
+        .expect("Test data should be valid");
     let y = vec![0, 1, 1, 0];
 
     let mut tree = DecisionTreeClassifier::new().with_max_depth(3);
-    tree.fit(&x, &y).unwrap();
+    tree.fit(&x, &y).expect("Test data should be valid");
 
     let path = "test_tree_size.safetensors";
-    tree.save_safetensors(path).unwrap();
+    tree.save_safetensors(path)
+        .expect("Test data should be valid");
 
-    let file_size = fs::metadata(path).unwrap().len();
+    let file_size = fs::metadata(path).expect("Test data should be valid").len();
 
     // File should be reasonable (not huge for small tree)
     assert!(
@@ -317,16 +336,19 @@ fn test_tree_file_size_reasonable() {
 #[test]
 fn test_tree_single_leaf_serialization() {
     // Edge case: Tree with just one leaf (all samples same class)
-    let x = Matrix::from_vec(3, 2, vec![0.0, 0.0, 1.0, 1.0, 2.0, 2.0]).unwrap();
+    let x = Matrix::from_vec(3, 2, vec![0.0, 0.0, 1.0, 1.0, 2.0, 2.0])
+        .expect("Test data should be valid");
     let y = vec![1, 1, 1]; // All same class
 
     let mut tree = DecisionTreeClassifier::new().with_max_depth(5);
-    tree.fit(&x, &y).unwrap();
+    tree.fit(&x, &y).expect("Test data should be valid");
 
     // Save and load
     let path = "test_tree_single_leaf.safetensors";
-    tree.save_safetensors(path).unwrap();
-    let loaded_tree = DecisionTreeClassifier::load_safetensors(path).unwrap();
+    tree.save_safetensors(path)
+        .expect("Test data should be valid");
+    let loaded_tree =
+        DecisionTreeClassifier::load_safetensors(path).expect("Test data should be valid");
 
     // Verify predictions
     let pred_original = tree.predict(&x);

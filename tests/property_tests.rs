@@ -8,8 +8,9 @@ use proptest::prelude::*;
 
 // Strategy for generating small matrices
 fn matrix_strategy(rows: usize, cols: usize) -> impl Strategy<Value = Matrix<f32>> {
-    proptest::collection::vec(-100.0f32..100.0, rows * cols)
-        .prop_map(move |data| Matrix::from_vec(rows, cols, data).unwrap())
+    proptest::collection::vec(-100.0f32..100.0, rows * cols).prop_map(move |data| {
+        Matrix::from_vec(rows, cols, data).expect("Test data should be valid")
+    })
 }
 
 // Strategy for generating vectors
@@ -88,13 +89,13 @@ proptest! {
 
     #[test]
     fn matrix_shape_preserved_by_add(a in matrix_strategy(4, 3), b in matrix_strategy(4, 3)) {
-        let c = a.add(&b).unwrap();
+        let c = a.add(&b).expect("Test data should be valid");
         prop_assert_eq!(c.shape(), (4, 3));
     }
 
     #[test]
     fn matrix_matmul_shape(a in matrix_strategy(3, 4), b in matrix_strategy(4, 2)) {
-        let c = a.matmul(&b).unwrap();
+        let c = a.matmul(&b).expect("Test data should be valid");
         prop_assert_eq!(c.shape(), (3, 2));
     }
 
@@ -108,8 +109,8 @@ proptest! {
             ("b".to_string(), Vector::from_slice(&data[5..10])),
             ("c".to_string(), Vector::from_slice(&data[10..15])),
         ];
-        let df = DataFrame::new(columns).unwrap();
-        let selected = df.select(&["a", "c"]).unwrap();
+        let df = DataFrame::new(columns).expect("Test data should be valid");
+        let selected = df.select(&["a", "c"]).expect("Test data should be valid");
         prop_assert_eq!(selected.n_rows(), df.n_rows());
     }
 
@@ -122,7 +123,7 @@ proptest! {
             ("b".to_string(), Vector::from_slice(&data[5..10])),
             ("c".to_string(), Vector::from_slice(&data[10..15])),
         ];
-        let df = DataFrame::new(columns).unwrap();
+        let df = DataFrame::new(columns).expect("Test data should be valid");
         let matrix = df.to_matrix();
         prop_assert_eq!(matrix.shape(), (5, 3));
     }
@@ -170,7 +171,7 @@ proptest! {
             y_data[i] = (i + 1) as f32;
         }
 
-        let x = Matrix::from_vec(n_samples, n_features, x_data).unwrap();
+        let x = Matrix::from_vec(n_samples, n_features, x_data).expect("Test data should be valid");
         let y = Vector::from_vec(y_data);
 
         let mut model = LinearRegression::new();
@@ -193,9 +194,9 @@ proptest! {
             }
         }
 
-        let matrix = Matrix::from_vec(n_samples, 2, data).unwrap();
+        let matrix = Matrix::from_vec(n_samples, 2, data).expect("Test data should be valid");
         let mut kmeans = KMeans::new(n_clusters).with_random_state(42);
-        kmeans.fit(&matrix).unwrap();
+        kmeans.fit(&matrix).expect("Test data should be valid");
 
         let labels = kmeans.predict(&matrix);
 
@@ -209,10 +210,10 @@ proptest! {
     fn kmeans_inertia_non_negative(n_clusters in 1usize..3) {
         let n_samples = n_clusters * 3;
         let data: Vec<f32> = (0..n_samples * 2).map(|i| i as f32).collect();
-        let matrix = Matrix::from_vec(n_samples, 2, data).unwrap();
+        let matrix = Matrix::from_vec(n_samples, 2, data).expect("Test data should be valid");
 
         let mut kmeans = KMeans::new(n_clusters).with_random_state(42);
-        kmeans.fit(&matrix).unwrap();
+        kmeans.fit(&matrix).expect("Test data should be valid");
 
         prop_assert!(kmeans.inertia() >= 0.0);
     }
@@ -223,10 +224,10 @@ proptest! {
         let x_data: Vec<f32> = (0..n_samples * 2).map(|i| i as f32).collect();
         let y_data: Vec<f32> = (0..n_samples).map(|i| i as f32).collect();
 
-        let x = Matrix::from_vec(n_samples, 2, x_data).unwrap();
+        let x = Matrix::from_vec(n_samples, 2, x_data).expect("Test data should be valid");
         let y = Vector::from_vec(y_data);
 
-        let (x_train, x_test, y_train, y_test) = train_test_split(&x, &y, 0.2, Some(42)).unwrap();
+        let (x_train, x_test, y_train, y_test) = train_test_split(&x, &y, 0.2, Some(42)).expect("Test data should be valid");
 
         // Total samples should be preserved
         let total = x_train.n_rows() + x_test.n_rows();
@@ -240,10 +241,10 @@ proptest! {
         let x_data: Vec<f32> = (0..n_samples * 2).map(|i| i as f32).collect();
         let y_data: Vec<f32> = (0..n_samples).map(|i| i as f32).collect();
 
-        let x = Matrix::from_vec(n_samples, 2, x_data).unwrap();
+        let x = Matrix::from_vec(n_samples, 2, x_data).expect("Test data should be valid");
         let y = Vector::from_vec(y_data);
 
-        let (_, x_test, _, _) = train_test_split(&x, &y, test_size, Some(42)).unwrap();
+        let (_, x_test, _, _) = train_test_split(&x, &y, test_size, Some(42)).expect("Test data should be valid");
 
         // Test set should be approximately the right size
         let actual_ratio = x_test.n_rows() as f32 / n_samples as f32;
@@ -285,9 +286,9 @@ proptest! {
             }
         }
 
-        let x = Matrix::from_vec(n_samples, 2, data).unwrap();
+        let x = Matrix::from_vec(n_samples, 2, data).expect("Test data should be valid");
         let mut tree = DecisionTreeClassifier::new().with_max_depth(5);
-        tree.fit(&x, &labels).unwrap();
+        tree.fit(&x, &labels).expect("Test data should be valid");
 
         let predictions = tree.predict(&x);
 
@@ -301,7 +302,7 @@ proptest! {
     #[test]
     fn standard_scaler_produces_zero_mean(data in matrix_strategy(10, 3)) {
         let mut scaler = StandardScaler::new();
-        let transformed = scaler.fit_transform(&data).unwrap();
+        let transformed = scaler.fit_transform(&data).expect("Test data should be valid");
 
         let (n_rows, n_cols) = transformed.shape();
         for j in 0..n_cols {
@@ -317,7 +318,7 @@ proptest! {
     #[test]
     fn standard_scaler_produces_unit_variance(data in matrix_strategy(10, 3)) {
         let mut scaler = StandardScaler::new();
-        let transformed = scaler.fit_transform(&data).unwrap();
+        let transformed = scaler.fit_transform(&data).expect("Test data should be valid");
 
         let (n_rows, n_cols) = transformed.shape();
         for j in 0..n_cols {
@@ -344,8 +345,8 @@ proptest! {
     #[test]
     fn standard_scaler_inverse_recovers_data(data in matrix_strategy(8, 2)) {
         let mut scaler = StandardScaler::new();
-        let transformed = scaler.fit_transform(&data).unwrap();
-        let recovered = scaler.inverse_transform(&transformed).unwrap();
+        let transformed = scaler.fit_transform(&data).expect("Test data should be valid");
+        let recovered = scaler.inverse_transform(&transformed).expect("Test data should be valid");
 
         let (n_rows, n_cols) = data.shape();
         for i in 0..n_rows {
@@ -363,7 +364,7 @@ proptest! {
     #[test]
     fn minmax_scaler_bounds_to_range(data in matrix_strategy(10, 3)) {
         let mut scaler = MinMaxScaler::new();
-        let transformed = scaler.fit_transform(&data).unwrap();
+        let transformed = scaler.fit_transform(&data).expect("Test data should be valid");
 
         let (n_rows, n_cols) = transformed.shape();
         for j in 0..n_cols {
@@ -387,8 +388,8 @@ proptest! {
     #[test]
     fn minmax_scaler_inverse_recovers_data(data in matrix_strategy(8, 2)) {
         let mut scaler = MinMaxScaler::new();
-        let transformed = scaler.fit_transform(&data).unwrap();
-        let recovered = scaler.inverse_transform(&transformed).unwrap();
+        let transformed = scaler.fit_transform(&data).expect("Test data should be valid");
+        let recovered = scaler.inverse_transform(&transformed).expect("Test data should be valid");
 
         let (n_rows, n_cols) = data.shape();
         for i in 0..n_rows {
@@ -405,7 +406,7 @@ proptest! {
     #[test]
     fn minmax_scaler_custom_range_bounds(data in matrix_strategy(10, 2)) {
         let mut scaler = MinMaxScaler::new().with_range(-1.0, 1.0);
-        let transformed = scaler.fit_transform(&data).unwrap();
+        let transformed = scaler.fit_transform(&data).expect("Test data should be valid");
 
         let (n_rows, n_cols) = transformed.shape();
         for j in 0..n_cols {
@@ -435,7 +436,7 @@ proptest! {
         let mut model = LogisticRegression::new()
             .with_learning_rate(0.1)
             .with_max_iter(100);
-        model.fit(&x, &y).unwrap();
+        model.fit(&x, &y).expect("Test data should be valid");
 
         let probas = model.predict_proba(&x);
 
@@ -453,7 +454,7 @@ proptest! {
         let mut model = LogisticRegression::new()
             .with_learning_rate(0.1)
             .with_max_iter(100);
-        model.fit(&x, &y).unwrap();
+        model.fit(&x, &y).expect("Test data should be valid");
 
         let predictions = model.predict(&x);
 
@@ -471,7 +472,7 @@ proptest! {
         let mut model = LogisticRegression::new()
             .with_learning_rate(0.1)
             .with_max_iter(100);
-        model.fit(&x, &y).unwrap();
+        model.fit(&x, &y).expect("Test data should be valid");
 
         let score = model.score(&x, &y);
 
@@ -487,7 +488,7 @@ proptest! {
         let mut model = LogisticRegression::new()
             .with_learning_rate(0.1)
             .with_max_iter(100);
-        model.fit(&x, &y).unwrap();
+        model.fit(&x, &y).expect("Test data should be valid");
 
         let probas = model.predict_proba(&x);
         let predictions = model.predict(&x);
@@ -512,7 +513,7 @@ mod additional_tests {
         let eye = Matrix::<f32>::eye(3);
 
         // I * I = I
-        let result = eye.matmul(&eye).unwrap();
+        let result = eye.matmul(&eye).expect("Test data should be valid");
         for i in 0..3 {
             for j in 0..3 {
                 let expected = if i == j { 1.0 } else { 0.0 };
@@ -531,7 +532,7 @@ mod additional_tests {
                 0.0, 0.0, 0.1, 0.1, 0.2, 0.0, 10.0, 10.0, 10.1, 10.1, 10.0, 10.2,
             ],
         )
-        .unwrap();
+        .expect("Test data should be valid");
         let labels = vec![0, 0, 0, 1, 1, 1];
         let score = silhouette_score(&data, &labels);
 

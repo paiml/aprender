@@ -21,15 +21,18 @@ fn test_linear_regression_save_safetensors_creates_file() {
 
     // Train a simple model (need enough samples: n >= p + 1)
     // Use independent features to avoid collinearity
-    let x = Matrix::from_vec(4, 2, vec![1.0, 2.0, 2.0, 1.0, 3.0, 4.0, 4.0, 3.0]).unwrap();
+    let x = Matrix::from_vec(4, 2, vec![1.0, 2.0, 2.0, 1.0, 3.0, 4.0, 4.0, 3.0])
+        .expect("Test data should be valid");
     let y = Vector::from_vec(vec![5.0, 4.0, 11.0, 10.0]);
 
     let mut model = LinearRegression::new();
-    model.fit(&x, &y).unwrap();
+    model.fit(&x, &y).expect("Test data should be valid");
 
     // Save to SafeTensors format
     let path = "test_model.safetensors";
-    model.save_safetensors(path).unwrap();
+    model
+        .save_safetensors(path)
+        .expect("Test data should be valid");
 
     // Verify file was created
     assert!(
@@ -45,21 +48,23 @@ fn test_linear_regression_save_safetensors_creates_file() {
 fn test_safetensors_header_format() {
     // RED PHASE: Verify SafeTensors header is 8-byte u64 little-endian
 
-    let x = Matrix::from_vec(2, 1, vec![1.0, 2.0]).unwrap();
+    let x = Matrix::from_vec(2, 1, vec![1.0, 2.0]).expect("Test data should be valid");
     let y = Vector::from_vec(vec![3.0, 4.0]);
 
     let mut model = LinearRegression::new();
-    model.fit(&x, &y).unwrap();
+    model.fit(&x, &y).expect("Test data should be valid");
 
     let path = "test_header.safetensors";
-    model.save_safetensors(path).unwrap();
+    model
+        .save_safetensors(path)
+        .expect("Test data should be valid");
 
     // Read first 8 bytes (header)
-    let bytes = fs::read(path).unwrap();
+    let bytes = fs::read(path).expect("Test data should be valid");
     assert!(bytes.len() >= 8, "File must be at least 8 bytes");
 
     // First 8 bytes should be u64 little-endian (metadata length)
-    let header_bytes: [u8; 8] = bytes[0..8].try_into().unwrap();
+    let header_bytes: [u8; 8] = bytes[0..8].try_into().expect("Test data should be valid");
     let metadata_len = u64::from_le_bytes(header_bytes);
 
     // Metadata length should be reasonable (not zero, not huge)
@@ -75,25 +80,29 @@ fn test_safetensors_json_metadata_structure() {
     // RED PHASE: Verify JSON metadata has correct structure
 
     // Need at least 3 samples for 2 features (n >= p + 1)
-    let x = Matrix::from_vec(3, 2, vec![1.0, 0.0, 0.0, 1.0, 1.0, 1.0]).unwrap();
+    let x = Matrix::from_vec(3, 2, vec![1.0, 0.0, 0.0, 1.0, 1.0, 1.0])
+        .expect("Test data should be valid");
     let y = Vector::from_vec(vec![1.0, 2.0, 3.0]);
 
     let mut model = LinearRegression::new();
-    model.fit(&x, &y).unwrap();
+    model.fit(&x, &y).expect("Test data should be valid");
 
     let path = "test_metadata.safetensors";
-    model.save_safetensors(path).unwrap();
+    model
+        .save_safetensors(path)
+        .expect("Test data should be valid");
 
-    let bytes = fs::read(path).unwrap();
+    let bytes = fs::read(path).expect("Test data should be valid");
 
     // Extract metadata
-    let header_bytes: [u8; 8] = bytes[0..8].try_into().unwrap();
+    let header_bytes: [u8; 8] = bytes[0..8].try_into().expect("Test data should be valid");
     let metadata_len = u64::from_le_bytes(header_bytes) as usize;
     let metadata_json = &bytes[8..8 + metadata_len];
-    let metadata_str = std::str::from_utf8(metadata_json).unwrap();
+    let metadata_str = std::str::from_utf8(metadata_json).expect("Test data should be valid");
 
     // Parse JSON
-    let metadata: serde_json::Value = serde_json::from_str(metadata_str).unwrap();
+    let metadata: serde_json::Value =
+        serde_json::from_str(metadata_str).expect("Test data should be valid");
 
     // Verify "coefficients" tensor metadata
     assert!(
@@ -131,28 +140,35 @@ fn test_safetensors_coefficients_serialization() {
 
     // Need at least 3 samples for 2 features (n >= p + 1)
     // Use independent features
-    let x = Matrix::from_vec(3, 2, vec![1.0, 0.0, 0.0, 1.0, 1.0, 1.0]).unwrap();
+    let x = Matrix::from_vec(3, 2, vec![1.0, 0.0, 0.0, 1.0, 1.0, 1.0])
+        .expect("Test data should be valid");
     let y = Vector::from_vec(vec![2.0, 3.0, 5.0]);
 
     let mut model = LinearRegression::new();
-    model.fit(&x, &y).unwrap();
+    model.fit(&x, &y).expect("Test data should be valid");
 
     let path = "test_coeffs.safetensors";
-    model.save_safetensors(path).unwrap();
+    model
+        .save_safetensors(path)
+        .expect("Test data should be valid");
 
-    let bytes = fs::read(path).unwrap();
+    let bytes = fs::read(path).expect("Test data should be valid");
 
     // Extract metadata to find data offsets
-    let header_bytes: [u8; 8] = bytes[0..8].try_into().unwrap();
+    let header_bytes: [u8; 8] = bytes[0..8].try_into().expect("Test data should be valid");
     let metadata_len = u64::from_le_bytes(header_bytes) as usize;
     let metadata_json = &bytes[8..8 + metadata_len];
-    let metadata: serde_json::Value =
-        serde_json::from_str(std::str::from_utf8(metadata_json).unwrap()).unwrap();
+    let metadata: serde_json::Value = serde_json::from_str(
+        std::str::from_utf8(metadata_json).expect("Test data should be valid"),
+    )
+    .expect("Test data should be valid");
 
     // Get coefficients data offsets
-    let offsets = metadata["coefficients"]["data_offsets"].as_array().unwrap();
-    let start = offsets[0].as_u64().unwrap() as usize + 8 + metadata_len;
-    let end = offsets[1].as_u64().unwrap() as usize + 8 + metadata_len;
+    let offsets = metadata["coefficients"]["data_offsets"]
+        .as_array()
+        .expect("Test data should be valid");
+    let start = offsets[0].as_u64().expect("Test data should be valid") as usize + 8 + metadata_len;
+    let end = offsets[1].as_u64().expect("Test data should be valid") as usize + 8 + metadata_len;
 
     // Read coefficient bytes
     let coeff_bytes = &bytes[start..end];
@@ -167,7 +183,9 @@ fn test_safetensors_coefficients_serialization() {
     // Verify we can parse F32 values
     let n_coeffs = coeff_bytes.len() / 4;
     for i in 0..n_coeffs {
-        let f32_bytes: [u8; 4] = coeff_bytes[i * 4..(i + 1) * 4].try_into().unwrap();
+        let f32_bytes: [u8; 4] = coeff_bytes[i * 4..(i + 1) * 4]
+            .try_into()
+            .expect("Test data should be valid");
         let _value = f32::from_le_bytes(f32_bytes); // Should not panic
     }
 
@@ -188,12 +206,14 @@ fn test_safetensors_roundtrip() {
             1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0, 1.0, 0.0, 1.0,
         ],
     )
-    .unwrap();
+    .expect("Test data should be valid");
     let y = Vector::from_vec(vec![2.0, 3.0, 4.0, 5.0, 6.0]);
 
     // Train original model
     let mut model_original = LinearRegression::new();
-    model_original.fit(&x, &y).unwrap();
+    model_original
+        .fit(&x, &y)
+        .expect("Test data should be valid");
 
     // Get original coefficients and intercept
     let original_coeffs = model_original.coefficients();
@@ -201,10 +221,12 @@ fn test_safetensors_roundtrip() {
 
     // Save to SafeTensors
     let path = "test_roundtrip.safetensors";
-    model_original.save_safetensors(path).unwrap();
+    model_original
+        .save_safetensors(path)
+        .expect("Test data should be valid");
 
     // Load from SafeTensors
-    let model_loaded = LinearRegression::load_safetensors(path).unwrap();
+    let model_loaded = LinearRegression::load_safetensors(path).expect("Test data should be valid");
 
     // Verify coefficients match (within floating-point tolerance)
     let loaded_coeffs = model_loaded.coefficients();
@@ -269,7 +291,7 @@ fn test_safetensors_corrupted_header_error() {
 
     // Create file with invalid header (less than 8 bytes)
     let path = "test_corrupted.safetensors";
-    fs::write(path, [1, 2, 3]).unwrap();
+    fs::write(path, [1, 2, 3]).expect("Test data should be valid");
 
     let result = LinearRegression::load_safetensors(path);
     assert!(

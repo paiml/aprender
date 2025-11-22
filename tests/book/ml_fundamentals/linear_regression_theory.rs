@@ -16,11 +16,12 @@ use aprender::traits::Estimator;
 #[test]
 fn test_ols_closed_form_solution() {
     // Simple 2D case: y = 2x + 1
-    let x = Matrix::from_vec(5, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0]).unwrap();
+    let x =
+        Matrix::from_vec(5, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0]).expect("Test data should be valid");
     let y = Vector::from_vec(vec![3.0, 5.0, 7.0, 9.0, 11.0]);
 
     let mut model = LinearRegression::new();
-    model.fit(&x, &y).unwrap();
+    model.fit(&x, &y).expect("Test data should be valid");
 
     // Verify coefficients match expected values (f32 precision)
     let coefficients = model.coefficients();
@@ -39,14 +40,14 @@ fn test_ols_closed_form_solution() {
 /// Example 2: Verify predictions match theoretical values
 #[test]
 fn test_ols_predictions() {
-    let x = Matrix::from_vec(3, 1, vec![1.0, 2.0, 3.0]).unwrap();
+    let x = Matrix::from_vec(3, 1, vec![1.0, 2.0, 3.0]).expect("Test data should be valid");
     let y = Vector::from_vec(vec![2.0, 4.0, 6.0]);
 
     let mut model = LinearRegression::new();
-    model.fit(&x, &y).unwrap();
+    model.fit(&x, &y).expect("Test data should be valid");
 
     // Predict on new data
-    let x_test = Matrix::from_vec(2, 1, vec![4.0, 5.0]).unwrap();
+    let x_test = Matrix::from_vec(2, 1, vec![4.0, 5.0]).expect("Test data should be valid");
     let predictions = model.predict(&x_test);
 
     // Verify predictions match y = 2x (f32 precision)
@@ -71,7 +72,7 @@ mod properties {
         ) {
             // Generate data: y = true_slope * x + true_intercept
             let n = x_vals.len();
-            let x = Matrix::from_vec(n, 1, x_vals.clone()).unwrap();
+            let x = Matrix::from_vec(n, 1, x_vals.clone()).expect("Test data should be valid");
             let y: Vec<f32> = x_vals.iter()
                 .map(|&x_val| true_slope * x_val + true_intercept)
                 .collect();

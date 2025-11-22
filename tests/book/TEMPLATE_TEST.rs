@@ -33,12 +33,12 @@ use aprender::traits::Estimator;
 #[test]
 fn test_basic_usage() {
     // Create sample data (matches chapter example)
-    let x = Matrix::from_vec(5, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0]).unwrap();
+    let x = Matrix::from_vec(5, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0]).expect("Test data should be valid");
     let y = Vector::from_vec(vec![2.0, 4.0, 6.0, 8.0, 10.0]);
 
     // Fit model (matches chapter example)
     let mut model = Algorithm::new();
-    model.fit(&x, &y).unwrap();
+    model.fit(&x, &y).expect("Test data should be valid");
 
     // Verify expected behavior (matches chapter assertions)
     let coef = model.coefficients();
@@ -56,7 +56,7 @@ fn test_basic_usage() {
 #[test]
 fn test_edge_case() {
     // Edge case: [describe what makes this an edge case]
-    let x_edge = Matrix::from_vec(2, 1, vec![1.0, 1.0]).unwrap();
+    let x_edge = Matrix::from_vec(2, 1, vec![1.0, 1.0]).expect("Test data should be valid");
     let y_edge = Vector::from_vec(vec![1.0, 2.0]);
 
     let mut model = Algorithm::new();
@@ -96,7 +96,7 @@ mod properties {
         ) {
             // Generate test data from random inputs
             let n = x_vals.len();
-            let x = Matrix::from_vec(n, 1, x_vals.clone()).unwrap();
+            let x = Matrix::from_vec(n, 1, x_vals.clone()).expect("Test data should be valid");
 
             // [Generate y values based on known relationship]
             let y: Vec<f32> = x_vals.iter()
@@ -167,7 +167,7 @@ fn test_exercise_2() {
 #[test]
 fn test_numerical_precision() {
     // Test with small values
-    let x_small = Matrix::from_vec(3, 1, vec![1e-5, 2e-5, 3e-5]).unwrap();
+    let x_small = Matrix::from_vec(3, 1, vec![1e-5, 2e-5, 3e-5]).expect("Test data should be valid");
     let y_small = Vector::from_vec(vec![2e-5, 4e-5, 6e-5]);
 
     let mut model = Algorithm::new();

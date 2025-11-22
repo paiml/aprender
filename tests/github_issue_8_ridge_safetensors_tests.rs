@@ -16,15 +16,18 @@ use std::path::Path;
 #[test]
 fn test_ridge_save_safetensors_creates_file() {
     // Train a simple Ridge model
-    let x = Matrix::from_vec(4, 2, vec![1.0, 2.0, 2.0, 1.0, 3.0, 4.0, 4.0, 3.0]).unwrap();
+    let x = Matrix::from_vec(4, 2, vec![1.0, 2.0, 2.0, 1.0, 3.0, 4.0, 4.0, 3.0])
+        .expect("Test data should be valid");
     let y = Vector::from_vec(vec![5.0, 4.0, 11.0, 10.0]);
 
     let mut model = Ridge::new(1.0); // alpha = 1.0
-    model.fit(&x, &y).unwrap();
+    model.fit(&x, &y).expect("Test data should be valid");
 
     // Save to SafeTensors format
     let path = "test_ridge_model.safetensors";
-    model.save_safetensors(path).unwrap();
+    model
+        .save_safetensors(path)
+        .expect("Test data should be valid");
 
     // Verify file was created
     assert!(
@@ -39,19 +42,22 @@ fn test_ridge_save_safetensors_creates_file() {
 #[test]
 fn test_ridge_save_load_roundtrip() {
     // Train Ridge model
-    let x = Matrix::from_vec(5, 2, vec![1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0, 5.0, 5.0, 6.0]).unwrap();
+    let x = Matrix::from_vec(5, 2, vec![1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0, 5.0, 5.0, 6.0])
+        .expect("Test data should be valid");
     let y = Vector::from_vec(vec![5.0, 8.0, 11.0, 14.0, 17.0]);
 
     let mut model = Ridge::new(0.5); // alpha = 0.5
-    model.fit(&x, &y).unwrap();
+    model.fit(&x, &y).expect("Test data should be valid");
 
     // Get original predictions
     let pred_original = model.predict(&x);
 
     // Save and load
     let path = "test_ridge_roundtrip.safetensors";
-    model.save_safetensors(path).unwrap();
-    let loaded_model = Ridge::load_safetensors(path).unwrap();
+    model
+        .save_safetensors(path)
+        .expect("Test data should be valid");
+    let loaded_model = Ridge::load_safetensors(path).expect("Test data should be valid");
 
     // Get loaded model predictions
     let pred_loaded = loaded_model.predict(&x);
@@ -78,25 +84,29 @@ fn test_ridge_save_load_roundtrip() {
 #[test]
 fn test_ridge_safetensors_metadata_includes_alpha() {
     // Create and fit Ridge model with specific alpha
-    let x = Matrix::from_vec(3, 2, vec![1.0, 0.0, 0.0, 1.0, 1.0, 1.0]).unwrap();
+    let x = Matrix::from_vec(3, 2, vec![1.0, 0.0, 0.0, 1.0, 1.0, 1.0])
+        .expect("Test data should be valid");
     let y = Vector::from_vec(vec![1.0, 2.0, 3.0]);
 
     let mut model = Ridge::new(2.5); // alpha = 2.5
-    model.fit(&x, &y).unwrap();
+    model.fit(&x, &y).expect("Test data should be valid");
 
     let path = "test_ridge_alpha.safetensors";
-    model.save_safetensors(path).unwrap();
+    model
+        .save_safetensors(path)
+        .expect("Test data should be valid");
 
-    let bytes = fs::read(path).unwrap();
+    let bytes = fs::read(path).expect("Test data should be valid");
 
     // Extract metadata
-    let header_bytes: [u8; 8] = bytes[0..8].try_into().unwrap();
+    let header_bytes: [u8; 8] = bytes[0..8].try_into().expect("Test data should be valid");
     let metadata_len = u64::from_le_bytes(header_bytes) as usize;
     let metadata_json = &bytes[8..8 + metadata_len];
-    let metadata_str = std::str::from_utf8(metadata_json).unwrap();
+    let metadata_str = std::str::from_utf8(metadata_json).expect("Test data should be valid");
 
     // Parse JSON
-    let metadata: serde_json::Value = serde_json::from_str(metadata_str).unwrap();
+    let metadata: serde_json::Value =
+        serde_json::from_str(metadata_str).expect("Test data should be valid");
 
     // Verify all required tensors exist
     assert!(
@@ -155,7 +165,7 @@ fn test_ridge_load_nonexistent_file_fails() {
 fn test_ridge_load_corrupted_metadata_fails() {
     // Create a file with invalid SafeTensors format
     let path = "test_corrupted_ridge.safetensors";
-    fs::write(path, b"invalid safetensors data").unwrap();
+    fs::write(path, b"invalid safetensors data").expect("Test data should be valid");
 
     let result = Ridge::load_safetensors(path);
     assert!(
@@ -170,11 +180,12 @@ fn test_ridge_load_corrupted_metadata_fails() {
 #[test]
 fn test_ridge_coefficients_preserved() {
     // Verify coefficients are exactly preserved through save/load
-    let x = Matrix::from_vec(4, 2, vec![1.0, 2.0, 2.0, 1.0, 3.0, 4.0, 4.0, 3.0]).unwrap();
+    let x = Matrix::from_vec(4, 2, vec![1.0, 2.0, 2.0, 1.0, 3.0, 4.0, 4.0, 3.0])
+        .expect("Test data should be valid");
     let y = Vector::from_vec(vec![5.0, 4.0, 11.0, 10.0]);
 
     let mut model = Ridge::new(0.1);
-    model.fit(&x, &y).unwrap();
+    model.fit(&x, &y).expect("Test data should be valid");
 
     let original_coef = model.coefficients();
     let original_intercept = model.intercept();
@@ -182,8 +193,10 @@ fn test_ridge_coefficients_preserved() {
 
     // Save and load
     let path = "test_ridge_coef.safetensors";
-    model.save_safetensors(path).unwrap();
-    let loaded_model = Ridge::load_safetensors(path).unwrap();
+    model
+        .save_safetensors(path)
+        .expect("Test data should be valid");
+    let loaded_model = Ridge::load_safetensors(path).expect("Test data should be valid");
 
     let loaded_coef = loaded_model.coefficients();
     let loaded_intercept = loaded_model.intercept();
@@ -215,27 +228,33 @@ fn test_ridge_coefficients_preserved() {
 #[test]
 fn test_ridge_multiple_save_load_cycles() {
     // Property test: Multiple save/load cycles should be idempotent
-    let x = Matrix::from_vec(3, 1, vec![1.0, 2.0, 3.0]).unwrap();
+    let x = Matrix::from_vec(3, 1, vec![1.0, 2.0, 3.0]).expect("Test data should be valid");
     let y = Vector::from_vec(vec![2.0, 4.0, 6.0]);
 
     let mut model = Ridge::new(1.0);
-    model.fit(&x, &y).unwrap();
+    model.fit(&x, &y).expect("Test data should be valid");
 
     let path1 = "test_ridge_cycle1.safetensors";
     let path2 = "test_ridge_cycle2.safetensors";
     let path3 = "test_ridge_cycle3.safetensors";
 
     // Cycle 1: original → save → load
-    model.save_safetensors(path1).unwrap();
-    let model1 = Ridge::load_safetensors(path1).unwrap();
+    model
+        .save_safetensors(path1)
+        .expect("Test data should be valid");
+    let model1 = Ridge::load_safetensors(path1).expect("Test data should be valid");
 
     // Cycle 2: loaded → save → load
-    model1.save_safetensors(path2).unwrap();
-    let model2 = Ridge::load_safetensors(path2).unwrap();
+    model1
+        .save_safetensors(path2)
+        .expect("Test data should be valid");
+    let model2 = Ridge::load_safetensors(path2).expect("Test data should be valid");
 
     // Cycle 3: loaded again → save → load
-    model2.save_safetensors(path3).unwrap();
-    let model3 = Ridge::load_safetensors(path3).unwrap();
+    model2
+        .save_safetensors(path3)
+        .expect("Test data should be valid");
+    let model3 = Ridge::load_safetensors(path3).expect("Test data should be valid");
 
     // All models should produce identical predictions
     let pred_orig = model.predict(&x);
@@ -258,25 +277,30 @@ fn test_ridge_multiple_save_load_cycles() {
 #[test]
 fn test_ridge_different_alphas_produce_different_models() {
     // Verify that models with different alphas save/load correctly
-    let x = Matrix::from_vec(4, 2, vec![1.0, 2.0, 2.0, 1.0, 3.0, 4.0, 4.0, 3.0]).unwrap();
+    let x = Matrix::from_vec(4, 2, vec![1.0, 2.0, 2.0, 1.0, 3.0, 4.0, 4.0, 3.0])
+        .expect("Test data should be valid");
     let y = Vector::from_vec(vec![5.0, 4.0, 11.0, 10.0]);
 
     let mut model1 = Ridge::new(0.1);
-    model1.fit(&x, &y).unwrap();
+    model1.fit(&x, &y).expect("Test data should be valid");
 
     let mut model2 = Ridge::new(10.0);
-    model2.fit(&x, &y).unwrap();
+    model2.fit(&x, &y).expect("Test data should be valid");
 
     // Save both models
     let path1 = "test_ridge_alpha_01.safetensors";
     let path2 = "test_ridge_alpha_10.safetensors";
 
-    model1.save_safetensors(path1).unwrap();
-    model2.save_safetensors(path2).unwrap();
+    model1
+        .save_safetensors(path1)
+        .expect("Test data should be valid");
+    model2
+        .save_safetensors(path2)
+        .expect("Test data should be valid");
 
     // Load and verify alphas are preserved
-    let loaded1 = Ridge::load_safetensors(path1).unwrap();
-    let loaded2 = Ridge::load_safetensors(path2).unwrap();
+    let loaded1 = Ridge::load_safetensors(path1).expect("Test data should be valid");
+    let loaded2 = Ridge::load_safetensors(path2).expect("Test data should be valid");
 
     assert_eq!(loaded1.alpha(), 0.1);
     assert_eq!(loaded2.alpha(), 10.0);
@@ -306,16 +330,19 @@ fn test_ridge_different_alphas_produce_different_models() {
 #[test]
 fn test_ridge_file_size_reasonable() {
     // Verify SafeTensors file size is reasonable (not bloated)
-    let x = Matrix::from_vec(3, 2, vec![1.0, 0.0, 0.0, 1.0, 1.0, 1.0]).unwrap();
+    let x = Matrix::from_vec(3, 2, vec![1.0, 0.0, 0.0, 1.0, 1.0, 1.0])
+        .expect("Test data should be valid");
     let y = Vector::from_vec(vec![1.0, 2.0, 3.0]);
 
     let mut model = Ridge::new(1.0);
-    model.fit(&x, &y).unwrap();
+    model.fit(&x, &y).expect("Test data should be valid");
 
     let path = "test_ridge_size.safetensors";
-    model.save_safetensors(path).unwrap();
+    model
+        .save_safetensors(path)
+        .expect("Test data should be valid");
 
-    let file_size = fs::metadata(path).unwrap().len();
+    let file_size = fs::metadata(path).expect("Test data should be valid").len();
 
     // File should be reasonable:
     // - Metadata: < 1KB
@@ -342,18 +369,21 @@ fn test_ridge_file_size_reasonable() {
 #[test]
 fn test_ridge_r2_score_preserved() {
     // Property test: R² score should be identical after roundtrip
-    let x = Matrix::from_vec(5, 2, vec![1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0, 5.0, 5.0, 6.0]).unwrap();
+    let x = Matrix::from_vec(5, 2, vec![1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0, 5.0, 5.0, 6.0])
+        .expect("Test data should be valid");
     let y = Vector::from_vec(vec![5.0, 8.0, 11.0, 14.0, 17.0]);
 
     let mut model = Ridge::new(1.0);
-    model.fit(&x, &y).unwrap();
+    model.fit(&x, &y).expect("Test data should be valid");
 
     let original_r2 = model.score(&x, &y);
 
     // Save and load
     let path = "test_ridge_r2.safetensors";
-    model.save_safetensors(path).unwrap();
-    let loaded_model = Ridge::load_safetensors(path).unwrap();
+    model
+        .save_safetensors(path)
+        .expect("Test data should be valid");
+    let loaded_model = Ridge::load_safetensors(path).expect("Test data should be valid");
 
     let loaded_r2 = loaded_model.score(&x, &y);
 

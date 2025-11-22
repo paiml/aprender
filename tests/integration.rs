@@ -7,7 +7,8 @@ use aprender::prelude::*;
 #[test]
 fn test_linear_regression_workflow() {
     // Create training data (non-collinear)
-    let x = Matrix::from_vec(5, 2, vec![1.0, 1.0, 2.0, 4.0, 3.0, 2.0, 4.0, 5.0, 5.0, 3.0]).unwrap();
+    let x = Matrix::from_vec(5, 2, vec![1.0, 1.0, 2.0, 4.0, 3.0, 2.0, 4.0, 5.0, 5.0, 3.0])
+        .expect("Test data should be valid");
     let y = Vector::from_slice(&[3.0, 8.0, 7.0, 13.0, 11.0]);
 
     // Train model
@@ -26,7 +27,7 @@ fn test_linear_regression_workflow() {
     assert!(r2 > 0.9, "R² should be high for linear data: {r2}");
 
     // Test on new data
-    let new_x = Matrix::from_vec(1, 2, vec![6.0, 7.0]).unwrap();
+    let new_x = Matrix::from_vec(1, 2, vec![6.0, 7.0]).expect("Test data should be valid");
     let new_pred = model.predict(&new_x);
     assert_eq!(new_pred.len(), 1);
 }
@@ -42,7 +43,7 @@ fn test_kmeans_workflow() {
             10.0, 10.0, 10.5, 10.5, 11.0, 11.0, // Cluster 2
         ],
     )
-    .unwrap();
+    .expect("Test data should be valid");
 
     // Train model
     let mut kmeans = KMeans::new(2).with_max_iter(100).with_random_state(42);
@@ -95,9 +96,14 @@ fn test_dataframe_to_ml_workflow() {
     assert_eq!(df.shape(), (5, 3));
 
     // Select features
-    let features = df.select(&["feature1", "feature2"]).unwrap();
+    let features = df
+        .select(&["feature1", "feature2"])
+        .expect("Test data should be valid");
     let x = features.to_matrix();
-    let y = df.column("target").unwrap().clone();
+    let y = df
+        .column("target")
+        .expect("Test data should be valid")
+        .clone();
 
     // Train model
     let mut model = LinearRegression::new();
@@ -147,19 +153,25 @@ fn test_complete_ml_pipeline() {
         ),
     ];
 
-    let df = DataFrame::new(columns).unwrap();
+    let df = DataFrame::new(columns).expect("Test data should be valid");
 
     // 2. Get descriptive statistics
     let stats = df.describe();
     assert_eq!(stats.len(), 3);
 
     // 3. Extract features and target
-    let x = df.select(&["sqft", "bedrooms"]).unwrap().to_matrix();
-    let y = df.column("price").unwrap().clone();
+    let x = df
+        .select(&["sqft", "bedrooms"])
+        .expect("Test data should be valid")
+        .to_matrix();
+    let y = df
+        .column("price")
+        .expect("Test data should be valid")
+        .clone();
 
     // 4. Train model
     let mut model = LinearRegression::new();
-    model.fit(&x, &y).unwrap();
+    model.fit(&x, &y).expect("Test data should be valid");
 
     // 5. Make predictions
     let predictions = model.predict(&x);
@@ -172,7 +184,7 @@ fn test_complete_ml_pipeline() {
     assert!(mse_val < 1000.0);
 
     // 7. Predict on new data
-    let new_house = Matrix::from_vec(1, 2, vec![1800.0, 3.0]).unwrap();
+    let new_house = Matrix::from_vec(1, 2, vec![1800.0, 3.0]).expect("Test data should be valid");
     let predicted_price = model.predict(&new_house);
 
     // Price should be reasonable (between min and max of training data)
@@ -196,7 +208,7 @@ fn test_decision_tree_iris_classification() {
             3.0, 5.8, 2.2,
         ],
     )
-    .unwrap();
+    .expect("Test data should be valid");
 
     let y = vec![0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2];
 
@@ -241,7 +253,7 @@ fn test_decision_tree_iris_classification() {
             6.7, 3.1, 5.6, 2.4, // Likely Virginica
         ],
     )
-    .unwrap();
+    .expect("Test data should be valid");
 
     let new_predictions = tree.predict(&new_samples);
     assert_eq!(new_predictions.len(), 3);

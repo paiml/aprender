@@ -21,14 +21,16 @@ fn test_kmeans_save_safetensors_creates_file() {
         2,
         vec![1.0, 2.0, 1.5, 1.8, 5.0, 8.0, 8.0, 8.0, 9.0, 11.0, 9.5, 10.0],
     )
-    .unwrap();
+    .expect("Test data should be valid");
 
     let mut kmeans = KMeans::new(2);
-    kmeans.fit(&x).unwrap();
+    kmeans.fit(&x).expect("Test data should be valid");
 
     // Save to SafeTensors format
     let path = "test_kmeans_model.safetensors";
-    kmeans.save_safetensors(path).unwrap();
+    kmeans
+        .save_safetensors(path)
+        .expect("Test data should be valid");
 
     // Verify file was created
     assert!(
@@ -48,18 +50,20 @@ fn test_kmeans_save_load_roundtrip() {
         2,
         vec![1.0, 2.0, 1.5, 1.8, 5.0, 8.0, 8.0, 8.0, 9.0, 11.0, 9.5, 10.0],
     )
-    .unwrap();
+    .expect("Test data should be valid");
 
     let mut kmeans = KMeans::new(2).with_max_iter(300).with_tol(1e-4);
-    kmeans.fit(&x).unwrap();
+    kmeans.fit(&x).expect("Test data should be valid");
 
     // Get original predictions
     let pred_original = kmeans.predict(&x);
 
     // Save and load
     let path = "test_kmeans_roundtrip.safetensors";
-    kmeans.save_safetensors(path).unwrap();
-    let loaded_kmeans = KMeans::load_safetensors(path).unwrap();
+    kmeans
+        .save_safetensors(path)
+        .expect("Test data should be valid");
+    let loaded_kmeans = KMeans::load_safetensors(path).expect("Test data should be valid");
 
     // Get loaded model predictions
     let pred_loaded = loaded_kmeans.predict(&x);
@@ -77,27 +81,31 @@ fn test_kmeans_save_load_roundtrip() {
 #[test]
 fn test_kmeans_safetensors_metadata_includes_all_tensors() {
     // Create and fit KMeans model
-    let x = Matrix::from_vec(4, 2, vec![1.0, 2.0, 1.5, 1.8, 8.0, 8.0, 9.0, 11.0]).unwrap();
+    let x = Matrix::from_vec(4, 2, vec![1.0, 2.0, 1.5, 1.8, 8.0, 8.0, 9.0, 11.0])
+        .expect("Test data should be valid");
 
     let mut kmeans = KMeans::new(2)
         .with_max_iter(500)
         .with_tol(1e-5)
         .with_random_state(42);
-    kmeans.fit(&x).unwrap();
+    kmeans.fit(&x).expect("Test data should be valid");
 
     let path = "test_kmeans_metadata.safetensors";
-    kmeans.save_safetensors(path).unwrap();
+    kmeans
+        .save_safetensors(path)
+        .expect("Test data should be valid");
 
-    let bytes = fs::read(path).unwrap();
+    let bytes = fs::read(path).expect("Test data should be valid");
 
     // Extract metadata
-    let header_bytes: [u8; 8] = bytes[0..8].try_into().unwrap();
+    let header_bytes: [u8; 8] = bytes[0..8].try_into().expect("Test data should be valid");
     let metadata_len = u64::from_le_bytes(header_bytes) as usize;
     let metadata_json = &bytes[8..8 + metadata_len];
-    let metadata_str = std::str::from_utf8(metadata_json).unwrap();
+    let metadata_str = std::str::from_utf8(metadata_json).expect("Test data should be valid");
 
     // Parse JSON
-    let metadata: serde_json::Value = serde_json::from_str(metadata_str).unwrap();
+    let metadata: serde_json::Value =
+        serde_json::from_str(metadata_str).expect("Test data should be valid");
 
     // Verify all required tensors exist
     assert!(
@@ -171,7 +179,7 @@ fn test_kmeans_load_nonexistent_file_fails() {
 fn test_kmeans_load_corrupted_metadata_fails() {
     // Create a file with invalid SafeTensors format
     let path = "test_corrupted_kmeans.safetensors";
-    fs::write(path, b"invalid safetensors data").unwrap();
+    fs::write(path, b"invalid safetensors data").expect("Test data should be valid");
 
     let result = KMeans::load_safetensors(path);
     assert!(
@@ -191,18 +199,20 @@ fn test_kmeans_centroids_preserved() {
         2,
         vec![1.0, 2.0, 1.5, 1.8, 5.0, 8.0, 8.0, 8.0, 9.0, 11.0, 9.5, 10.0],
     )
-    .unwrap();
+    .expect("Test data should be valid");
 
     let mut kmeans = KMeans::new(2);
-    kmeans.fit(&x).unwrap();
+    kmeans.fit(&x).expect("Test data should be valid");
 
     let original_centroids = kmeans.centroids();
     let (n_clusters, n_features) = original_centroids.shape();
 
     // Save and load
     let path = "test_kmeans_centroids.safetensors";
-    kmeans.save_safetensors(path).unwrap();
-    let loaded_kmeans = KMeans::load_safetensors(path).unwrap();
+    kmeans
+        .save_safetensors(path)
+        .expect("Test data should be valid");
+    let loaded_kmeans = KMeans::load_safetensors(path).expect("Test data should be valid");
 
     let loaded_centroids = loaded_kmeans.centroids();
 
@@ -228,18 +238,21 @@ fn test_kmeans_centroids_preserved() {
 #[test]
 fn test_kmeans_hyperparameters_preserved() {
     // Verify hyperparameters are preserved
-    let x = Matrix::from_vec(4, 2, vec![1.0, 2.0, 1.5, 1.8, 8.0, 8.0, 9.0, 11.0]).unwrap();
+    let x = Matrix::from_vec(4, 2, vec![1.0, 2.0, 1.5, 1.8, 8.0, 8.0, 9.0, 11.0])
+        .expect("Test data should be valid");
 
     let mut kmeans = KMeans::new(2)
         .with_max_iter(500)
         .with_tol(1e-5)
         .with_random_state(42);
-    kmeans.fit(&x).unwrap();
+    kmeans.fit(&x).expect("Test data should be valid");
 
     // Save and load
     let path = "test_kmeans_hyperparams.safetensors";
-    kmeans.save_safetensors(path).unwrap();
-    let loaded_kmeans = KMeans::load_safetensors(path).unwrap();
+    kmeans
+        .save_safetensors(path)
+        .expect("Test data should be valid");
+    let loaded_kmeans = KMeans::load_safetensors(path).expect("Test data should be valid");
 
     // Verify hyperparameters match
     // Note: We can't directly access private fields, so we verify via behavior
@@ -270,26 +283,32 @@ fn test_kmeans_multiple_save_load_cycles() {
         2,
         vec![1.0, 2.0, 1.5, 1.8, 5.0, 8.0, 8.0, 8.0, 9.0, 11.0, 9.5, 10.0],
     )
-    .unwrap();
+    .expect("Test data should be valid");
 
     let mut kmeans = KMeans::new(2).with_random_state(42);
-    kmeans.fit(&x).unwrap();
+    kmeans.fit(&x).expect("Test data should be valid");
 
     let path1 = "test_kmeans_cycle1.safetensors";
     let path2 = "test_kmeans_cycle2.safetensors";
     let path3 = "test_kmeans_cycle3.safetensors";
 
     // Cycle 1: original → save → load
-    kmeans.save_safetensors(path1).unwrap();
-    let kmeans1 = KMeans::load_safetensors(path1).unwrap();
+    kmeans
+        .save_safetensors(path1)
+        .expect("Test data should be valid");
+    let kmeans1 = KMeans::load_safetensors(path1).expect("Test data should be valid");
 
     // Cycle 2: loaded → save → load
-    kmeans1.save_safetensors(path2).unwrap();
-    let kmeans2 = KMeans::load_safetensors(path2).unwrap();
+    kmeans1
+        .save_safetensors(path2)
+        .expect("Test data should be valid");
+    let kmeans2 = KMeans::load_safetensors(path2).expect("Test data should be valid");
 
     // Cycle 3: loaded again → save → load
-    kmeans2.save_safetensors(path3).unwrap();
-    let kmeans3 = KMeans::load_safetensors(path3).unwrap();
+    kmeans2
+        .save_safetensors(path3)
+        .expect("Test data should be valid");
+    let kmeans3 = KMeans::load_safetensors(path3).expect("Test data should be valid");
 
     // All models should produce identical predictions
     let pred_orig = kmeans.predict(&x);
@@ -318,26 +337,30 @@ fn test_kmeans_different_n_clusters() {
             10.5,
         ],
     )
-    .unwrap();
+    .expect("Test data should be valid");
 
     // Model with 2 clusters
     let mut kmeans2 = KMeans::new(2).with_random_state(42);
-    kmeans2.fit(&x).unwrap();
+    kmeans2.fit(&x).expect("Test data should be valid");
 
     // Model with 3 clusters
     let mut kmeans3 = KMeans::new(3).with_random_state(42);
-    kmeans3.fit(&x).unwrap();
+    kmeans3.fit(&x).expect("Test data should be valid");
 
     // Save both models
     let path2 = "test_kmeans_2clusters.safetensors";
     let path3 = "test_kmeans_3clusters.safetensors";
 
-    kmeans2.save_safetensors(path2).unwrap();
-    kmeans3.save_safetensors(path3).unwrap();
+    kmeans2
+        .save_safetensors(path2)
+        .expect("Test data should be valid");
+    kmeans3
+        .save_safetensors(path3)
+        .expect("Test data should be valid");
 
     // Load and verify predictions match
-    let loaded2 = KMeans::load_safetensors(path2).unwrap();
-    let loaded3 = KMeans::load_safetensors(path3).unwrap();
+    let loaded2 = KMeans::load_safetensors(path2).expect("Test data should be valid");
+    let loaded3 = KMeans::load_safetensors(path3).expect("Test data should be valid");
 
     let pred2_orig = kmeans2.predict(&x);
     let pred2_loaded = loaded2.predict(&x);
@@ -361,15 +384,18 @@ fn test_kmeans_different_n_clusters() {
 #[test]
 fn test_kmeans_file_size_reasonable() {
     // Verify SafeTensors file size is reasonable
-    let x = Matrix::from_vec(4, 2, vec![1.0, 2.0, 1.5, 1.8, 8.0, 8.0, 9.0, 11.0]).unwrap();
+    let x = Matrix::from_vec(4, 2, vec![1.0, 2.0, 1.5, 1.8, 8.0, 8.0, 9.0, 11.0])
+        .expect("Test data should be valid");
 
     let mut kmeans = KMeans::new(2);
-    kmeans.fit(&x).unwrap();
+    kmeans.fit(&x).expect("Test data should be valid");
 
     let path = "test_kmeans_size.safetensors";
-    kmeans.save_safetensors(path).unwrap();
+    kmeans
+        .save_safetensors(path)
+        .expect("Test data should be valid");
 
-    let file_size = fs::metadata(path).unwrap().len();
+    let file_size = fs::metadata(path).expect("Test data should be valid").len();
 
     // File should be reasonable:
     // - Metadata: < 1KB
@@ -401,15 +427,17 @@ fn test_kmeans_high_dimensional_data() {
             10.0, 11.0, 12.0, 8.5, 9.5, 10.5, 11.5, 12.5, 9.0, 10.0, 11.0, 12.0, 13.0,
         ],
     )
-    .unwrap();
+    .expect("Test data should be valid");
 
     let mut kmeans = KMeans::new(2).with_random_state(123);
-    kmeans.fit(&x).unwrap();
+    kmeans.fit(&x).expect("Test data should be valid");
 
     // Save and load
     let path = "test_kmeans_highdim.safetensors";
-    kmeans.save_safetensors(path).unwrap();
-    let loaded_kmeans = KMeans::load_safetensors(path).unwrap();
+    kmeans
+        .save_safetensors(path)
+        .expect("Test data should be valid");
+    let loaded_kmeans = KMeans::load_safetensors(path).expect("Test data should be valid");
 
     // Verify predictions match
     let pred_original = kmeans.predict(&x);
@@ -432,17 +460,19 @@ fn test_kmeans_inertia_preserved() {
         2,
         vec![1.0, 2.0, 1.5, 1.8, 5.0, 8.0, 8.0, 8.0, 9.0, 11.0, 9.5, 10.0],
     )
-    .unwrap();
+    .expect("Test data should be valid");
 
     let mut kmeans = KMeans::new(2).with_random_state(42);
-    kmeans.fit(&x).unwrap();
+    kmeans.fit(&x).expect("Test data should be valid");
 
     let original_inertia = kmeans.inertia();
 
     // Save and load
     let path = "test_kmeans_inertia.safetensors";
-    kmeans.save_safetensors(path).unwrap();
-    let loaded_kmeans = KMeans::load_safetensors(path).unwrap();
+    kmeans
+        .save_safetensors(path)
+        .expect("Test data should be valid");
+    let loaded_kmeans = KMeans::load_safetensors(path).expect("Test data should be valid");
 
     let loaded_inertia = loaded_kmeans.inertia();
 

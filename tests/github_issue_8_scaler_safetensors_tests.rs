@@ -16,14 +16,17 @@ use std::path::Path;
 #[test]
 fn test_scaler_save_safetensors_creates_file() {
     // Train a simple StandardScaler
-    let x = Matrix::from_vec(4, 2, vec![1.0, 100.0, 2.0, 200.0, 3.0, 300.0, 4.0, 400.0]).unwrap();
+    let x = Matrix::from_vec(4, 2, vec![1.0, 100.0, 2.0, 200.0, 3.0, 300.0, 4.0, 400.0])
+        .expect("Test data should be valid");
 
     let mut scaler = StandardScaler::new();
-    scaler.fit(&x).unwrap();
+    scaler.fit(&x).expect("Test data should be valid");
 
     // Save to SafeTensors format
     let path = "test_scaler_model.safetensors";
-    scaler.save_safetensors(path).unwrap();
+    scaler
+        .save_safetensors(path)
+        .expect("Test data should be valid");
 
     // Verify file was created
     assert!(
@@ -38,21 +41,26 @@ fn test_scaler_save_safetensors_creates_file() {
 #[test]
 fn test_scaler_save_load_roundtrip() {
     // Train StandardScaler
-    let x = Matrix::from_vec(4, 2, vec![1.0, 100.0, 2.0, 200.0, 3.0, 300.0, 4.0, 400.0]).unwrap();
+    let x = Matrix::from_vec(4, 2, vec![1.0, 100.0, 2.0, 200.0, 3.0, 300.0, 4.0, 400.0])
+        .expect("Test data should be valid");
 
     let mut scaler = StandardScaler::new();
-    scaler.fit(&x).unwrap();
+    scaler.fit(&x).expect("Test data should be valid");
 
     // Get original transformation
-    let transformed_original = scaler.transform(&x).unwrap();
+    let transformed_original = scaler.transform(&x).expect("Test data should be valid");
 
     // Save and load
     let path = "test_scaler_roundtrip.safetensors";
-    scaler.save_safetensors(path).unwrap();
-    let loaded_scaler = StandardScaler::load_safetensors(path).unwrap();
+    scaler
+        .save_safetensors(path)
+        .expect("Test data should be valid");
+    let loaded_scaler = StandardScaler::load_safetensors(path).expect("Test data should be valid");
 
     // Get loaded scaler transformation
-    let transformed_loaded = loaded_scaler.transform(&x).unwrap();
+    let transformed_loaded = loaded_scaler
+        .transform(&x)
+        .expect("Test data should be valid");
 
     // Verify transformations match (within floating point tolerance)
     let (n_rows, n_cols) = transformed_original.shape();
@@ -74,24 +82,28 @@ fn test_scaler_save_load_roundtrip() {
 #[test]
 fn test_scaler_safetensors_metadata_includes_all_tensors() {
     // Create and fit StandardScaler
-    let x = Matrix::from_vec(3, 2, vec![1.0, 10.0, 2.0, 20.0, 3.0, 30.0]).unwrap();
+    let x = Matrix::from_vec(3, 2, vec![1.0, 10.0, 2.0, 20.0, 3.0, 30.0])
+        .expect("Test data should be valid");
 
     let mut scaler = StandardScaler::new();
-    scaler.fit(&x).unwrap();
+    scaler.fit(&x).expect("Test data should be valid");
 
     let path = "test_scaler_metadata.safetensors";
-    scaler.save_safetensors(path).unwrap();
+    scaler
+        .save_safetensors(path)
+        .expect("Test data should be valid");
 
-    let bytes = fs::read(path).unwrap();
+    let bytes = fs::read(path).expect("Test data should be valid");
 
     // Extract metadata
-    let header_bytes: [u8; 8] = bytes[0..8].try_into().unwrap();
+    let header_bytes: [u8; 8] = bytes[0..8].try_into().expect("Test data should be valid");
     let metadata_len = u64::from_le_bytes(header_bytes) as usize;
     let metadata_json = &bytes[8..8 + metadata_len];
-    let metadata_str = std::str::from_utf8(metadata_json).unwrap();
+    let metadata_str = std::str::from_utf8(metadata_json).expect("Test data should be valid");
 
     // Parse JSON
-    let metadata: serde_json::Value = serde_json::from_str(metadata_str).unwrap();
+    let metadata: serde_json::Value =
+        serde_json::from_str(metadata_str).expect("Test data should be valid");
 
     // Verify all required tensors exist
     assert!(
@@ -153,7 +165,7 @@ fn test_scaler_load_nonexistent_file_fails() {
 fn test_scaler_load_corrupted_metadata_fails() {
     // Create a file with invalid SafeTensors format
     let path = "test_corrupted_scaler.safetensors";
-    fs::write(path, b"invalid safetensors data").unwrap();
+    fs::write(path, b"invalid safetensors data").expect("Test data should be valid");
 
     let result = StandardScaler::load_safetensors(path);
     assert!(
@@ -168,18 +180,21 @@ fn test_scaler_load_corrupted_metadata_fails() {
 #[test]
 fn test_scaler_mean_and_std_preserved() {
     // Verify mean and std are exactly preserved through save/load
-    let x = Matrix::from_vec(4, 2, vec![1.0, 100.0, 2.0, 200.0, 3.0, 300.0, 4.0, 400.0]).unwrap();
+    let x = Matrix::from_vec(4, 2, vec![1.0, 100.0, 2.0, 200.0, 3.0, 300.0, 4.0, 400.0])
+        .expect("Test data should be valid");
 
     let mut scaler = StandardScaler::new();
-    scaler.fit(&x).unwrap();
+    scaler.fit(&x).expect("Test data should be valid");
 
     let original_mean = scaler.mean();
     let original_std = scaler.std();
 
     // Save and load
     let path = "test_scaler_params.safetensors";
-    scaler.save_safetensors(path).unwrap();
-    let loaded_scaler = StandardScaler::load_safetensors(path).unwrap();
+    scaler
+        .save_safetensors(path)
+        .expect("Test data should be valid");
+    let loaded_scaler = StandardScaler::load_safetensors(path).expect("Test data should be valid");
 
     let loaded_mean = loaded_scaler.mean();
     let loaded_std = loaded_scaler.std();
@@ -213,19 +228,24 @@ fn test_scaler_mean_and_std_preserved() {
 #[test]
 fn test_scaler_with_mean_flag_preserved() {
     // Test with_mean=false
-    let x = Matrix::from_vec(3, 2, vec![1.0, 10.0, 2.0, 20.0, 3.0, 30.0]).unwrap();
+    let x = Matrix::from_vec(3, 2, vec![1.0, 10.0, 2.0, 20.0, 3.0, 30.0])
+        .expect("Test data should be valid");
 
     let mut scaler = StandardScaler::new().with_mean(false);
-    scaler.fit(&x).unwrap();
+    scaler.fit(&x).expect("Test data should be valid");
 
     // Save and load
     let path = "test_scaler_no_mean.safetensors";
-    scaler.save_safetensors(path).unwrap();
-    let loaded_scaler = StandardScaler::load_safetensors(path).unwrap();
+    scaler
+        .save_safetensors(path)
+        .expect("Test data should be valid");
+    let loaded_scaler = StandardScaler::load_safetensors(path).expect("Test data should be valid");
 
     // Verify transformations match (with_mean=false should not center)
-    let transformed_orig = scaler.transform(&x).unwrap();
-    let transformed_loaded = loaded_scaler.transform(&x).unwrap();
+    let transformed_orig = scaler.transform(&x).expect("Test data should be valid");
+    let transformed_loaded = loaded_scaler
+        .transform(&x)
+        .expect("Test data should be valid");
 
     let (n_rows, n_cols) = transformed_orig.shape();
     for i in 0..n_rows {
@@ -243,19 +263,24 @@ fn test_scaler_with_mean_flag_preserved() {
 #[test]
 fn test_scaler_with_std_flag_preserved() {
     // Test with_std=false
-    let x = Matrix::from_vec(3, 2, vec![1.0, 10.0, 2.0, 20.0, 3.0, 30.0]).unwrap();
+    let x = Matrix::from_vec(3, 2, vec![1.0, 10.0, 2.0, 20.0, 3.0, 30.0])
+        .expect("Test data should be valid");
 
     let mut scaler = StandardScaler::new().with_std(false);
-    scaler.fit(&x).unwrap();
+    scaler.fit(&x).expect("Test data should be valid");
 
     // Save and load
     let path = "test_scaler_no_std.safetensors";
-    scaler.save_safetensors(path).unwrap();
-    let loaded_scaler = StandardScaler::load_safetensors(path).unwrap();
+    scaler
+        .save_safetensors(path)
+        .expect("Test data should be valid");
+    let loaded_scaler = StandardScaler::load_safetensors(path).expect("Test data should be valid");
 
     // Verify transformations match (with_std=false should not scale)
-    let transformed_orig = scaler.transform(&x).unwrap();
-    let transformed_loaded = loaded_scaler.transform(&x).unwrap();
+    let transformed_orig = scaler.transform(&x).expect("Test data should be valid");
+    let transformed_loaded = loaded_scaler
+        .transform(&x)
+        .expect("Test data should be valid");
 
     let (n_rows, n_cols) = transformed_orig.shape();
     for i in 0..n_rows {
@@ -273,32 +298,39 @@ fn test_scaler_with_std_flag_preserved() {
 #[test]
 fn test_scaler_multiple_save_load_cycles() {
     // Property test: Multiple save/load cycles should be idempotent
-    let x = Matrix::from_vec(4, 2, vec![1.0, 100.0, 2.0, 200.0, 3.0, 300.0, 4.0, 400.0]).unwrap();
+    let x = Matrix::from_vec(4, 2, vec![1.0, 100.0, 2.0, 200.0, 3.0, 300.0, 4.0, 400.0])
+        .expect("Test data should be valid");
 
     let mut scaler = StandardScaler::new();
-    scaler.fit(&x).unwrap();
+    scaler.fit(&x).expect("Test data should be valid");
 
     let path1 = "test_scaler_cycle1.safetensors";
     let path2 = "test_scaler_cycle2.safetensors";
     let path3 = "test_scaler_cycle3.safetensors";
 
     // Cycle 1: original → save → load
-    scaler.save_safetensors(path1).unwrap();
-    let scaler1 = StandardScaler::load_safetensors(path1).unwrap();
+    scaler
+        .save_safetensors(path1)
+        .expect("Test data should be valid");
+    let scaler1 = StandardScaler::load_safetensors(path1).expect("Test data should be valid");
 
     // Cycle 2: loaded → save → load
-    scaler1.save_safetensors(path2).unwrap();
-    let scaler2 = StandardScaler::load_safetensors(path2).unwrap();
+    scaler1
+        .save_safetensors(path2)
+        .expect("Test data should be valid");
+    let scaler2 = StandardScaler::load_safetensors(path2).expect("Test data should be valid");
 
     // Cycle 3: loaded again → save → load
-    scaler2.save_safetensors(path3).unwrap();
-    let scaler3 = StandardScaler::load_safetensors(path3).unwrap();
+    scaler2
+        .save_safetensors(path3)
+        .expect("Test data should be valid");
+    let scaler3 = StandardScaler::load_safetensors(path3).expect("Test data should be valid");
 
     // All scalers should produce identical transformations
-    let trans_orig = scaler.transform(&x).unwrap();
-    let trans1 = scaler1.transform(&x).unwrap();
-    let trans2 = scaler2.transform(&x).unwrap();
-    let trans3 = scaler3.transform(&x).unwrap();
+    let trans_orig = scaler.transform(&x).expect("Test data should be valid");
+    let trans1 = scaler1.transform(&x).expect("Test data should be valid");
+    let trans2 = scaler2.transform(&x).expect("Test data should be valid");
+    let trans3 = scaler3.transform(&x).expect("Test data should be valid");
 
     let (n_rows, n_cols) = trans_orig.shape();
     for i in 0..n_rows {
@@ -318,20 +350,25 @@ fn test_scaler_multiple_save_load_cycles() {
 #[test]
 fn test_scaler_inverse_transform_preserved() {
     // Verify inverse transformation works after roundtrip
-    let x = Matrix::from_vec(4, 2, vec![1.0, 100.0, 2.0, 200.0, 3.0, 300.0, 4.0, 400.0]).unwrap();
+    let x = Matrix::from_vec(4, 2, vec![1.0, 100.0, 2.0, 200.0, 3.0, 300.0, 4.0, 400.0])
+        .expect("Test data should be valid");
 
     let mut scaler = StandardScaler::new();
-    scaler.fit(&x).unwrap();
+    scaler.fit(&x).expect("Test data should be valid");
 
-    let transformed = scaler.transform(&x).unwrap();
+    let transformed = scaler.transform(&x).expect("Test data should be valid");
 
     // Save and load
     let path = "test_scaler_inverse.safetensors";
-    scaler.save_safetensors(path).unwrap();
-    let loaded_scaler = StandardScaler::load_safetensors(path).unwrap();
+    scaler
+        .save_safetensors(path)
+        .expect("Test data should be valid");
+    let loaded_scaler = StandardScaler::load_safetensors(path).expect("Test data should be valid");
 
     // Inverse transform using loaded scaler
-    let reconstructed = loaded_scaler.inverse_transform(&transformed).unwrap();
+    let reconstructed = loaded_scaler
+        .inverse_transform(&transformed)
+        .expect("Test data should be valid");
 
     // Should match original data
     let (n_rows, n_cols) = x.shape();
@@ -361,19 +398,23 @@ fn test_scaler_high_dimensional_data() {
             3000.0, 30000.0, 4.0, 40.0, 400.0, 4000.0, 40000.0,
         ],
     )
-    .unwrap();
+    .expect("Test data should be valid");
 
     let mut scaler = StandardScaler::new();
-    scaler.fit(&x).unwrap();
+    scaler.fit(&x).expect("Test data should be valid");
 
     // Save and load
     let path = "test_scaler_highdim.safetensors";
-    scaler.save_safetensors(path).unwrap();
-    let loaded_scaler = StandardScaler::load_safetensors(path).unwrap();
+    scaler
+        .save_safetensors(path)
+        .expect("Test data should be valid");
+    let loaded_scaler = StandardScaler::load_safetensors(path).expect("Test data should be valid");
 
     // Verify transformations match
-    let transformed_orig = scaler.transform(&x).unwrap();
-    let transformed_loaded = loaded_scaler.transform(&x).unwrap();
+    let transformed_orig = scaler.transform(&x).expect("Test data should be valid");
+    let transformed_loaded = loaded_scaler
+        .transform(&x)
+        .expect("Test data should be valid");
 
     let (n_rows, n_cols) = transformed_orig.shape();
     for i in 0..n_rows {
@@ -394,15 +435,18 @@ fn test_scaler_high_dimensional_data() {
 #[test]
 fn test_scaler_file_size_reasonable() {
     // Verify SafeTensors file size is reasonable
-    let x = Matrix::from_vec(3, 2, vec![1.0, 10.0, 2.0, 20.0, 3.0, 30.0]).unwrap();
+    let x = Matrix::from_vec(3, 2, vec![1.0, 10.0, 2.0, 20.0, 3.0, 30.0])
+        .expect("Test data should be valid");
 
     let mut scaler = StandardScaler::new();
-    scaler.fit(&x).unwrap();
+    scaler.fit(&x).expect("Test data should be valid");
 
     let path = "test_scaler_size.safetensors";
-    scaler.save_safetensors(path).unwrap();
+    scaler
+        .save_safetensors(path)
+        .expect("Test data should be valid");
 
-    let file_size = fs::metadata(path).unwrap().len();
+    let file_size = fs::metadata(path).expect("Test data should be valid").len();
 
     // File should be reasonable:
     // - Metadata: < 1KB
@@ -427,12 +471,13 @@ fn test_scaler_file_size_reasonable() {
 #[test]
 fn test_scaler_both_flags_false() {
     // Edge case: both with_mean and with_std are false (identity transformation)
-    let x = Matrix::from_vec(3, 2, vec![1.0, 10.0, 2.0, 20.0, 3.0, 30.0]).unwrap();
+    let x = Matrix::from_vec(3, 2, vec![1.0, 10.0, 2.0, 20.0, 3.0, 30.0])
+        .expect("Test data should be valid");
 
     let mut scaler = StandardScaler::new().with_mean(false).with_std(false);
-    scaler.fit(&x).unwrap();
+    scaler.fit(&x).expect("Test data should be valid");
 
-    let transformed = scaler.transform(&x).unwrap();
+    let transformed = scaler.transform(&x).expect("Test data should be valid");
 
     // Should be identity (data unchanged)
     let (n_rows, n_cols) = x.shape();
@@ -447,11 +492,15 @@ fn test_scaler_both_flags_false() {
 
     // Save and load
     let path = "test_scaler_identity.safetensors";
-    scaler.save_safetensors(path).unwrap();
-    let loaded_scaler = StandardScaler::load_safetensors(path).unwrap();
+    scaler
+        .save_safetensors(path)
+        .expect("Test data should be valid");
+    let loaded_scaler = StandardScaler::load_safetensors(path).expect("Test data should be valid");
 
     // Should still be identity after load
-    let transformed_loaded = loaded_scaler.transform(&x).unwrap();
+    let transformed_loaded = loaded_scaler
+        .transform(&x)
+        .expect("Test data should be valid");
     for i in 0..n_rows {
         for j in 0..n_cols {
             assert!(
