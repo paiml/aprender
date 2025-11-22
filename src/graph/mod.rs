@@ -662,6 +662,454 @@ impl Graph {
         // Modularity gain formula
         (k_i_to - k_i_from) / m - k_i * (sigma_tot_to - sigma_tot_from) / (two_m * m)
     }
+
+    /// Compute closeness centrality for all nodes.
+    ///
+    /// Closeness measures how close a node is to all other nodes in the graph.
+    /// Uses Wasserman & Faust (1994) normalization: C_C(v) = (n-1) / Σd(v,u)
+    ///
+    /// # Returns
+    /// Vector of closeness centrality scores (one per node)
+    /// For disconnected graphs, nodes unreachable from v are ignored in the sum.
+    ///
+    /// # Performance
+    /// O(n·(n + m)) where n = nodes, m = edges (BFS from each node)
+    ///
+    /// # Examples
+    /// ```
+    /// use aprender::graph::Graph;
+    ///
+    /// // Star graph: center is close to all nodes
+    /// let g = Graph::from_edges(&[(0, 1), (0, 2), (0, 3)], false);
+    /// let cc = g.closeness_centrality();
+    /// assert!(cc[0] > cc[1]); // center has highest closeness
+    /// ```
+    pub fn closeness_centrality(&self) -> Vec<f64> {
+        if self.n_nodes == 0 {
+            return Vec::new();
+        }
+
+        let mut centrality = vec![0.0; self.n_nodes];
+
+        #[allow(clippy::needless_range_loop)]
+        for v in 0..self.n_nodes {
+            let distances = self.bfs_distances(v);
+
+            // Sum of distances to all reachable nodes
+            let sum: usize = distances.iter().filter(|&&d| d != usize::MAX).sum();
+            let reachable = distances
+                .iter()
+                .filter(|&&d| d != usize::MAX && d > 0)
+                .count();
+
+            if reachable > 0 && sum > 0 {
+                // Normalized closeness: (n-1) / sum_of_distances
+                centrality[v] = reachable as f64 / sum as f64;
+            }
+        }
+
+        centrality
+    }
+
+    /// BFS to compute shortest path distances from a source node.
+    fn bfs_distances(&self, source: NodeId) -> Vec<usize> {
+        let mut distances = vec![usize::MAX; self.n_nodes];
+        distances[source] = 0;
+
+        let mut queue = VecDeque::new();
+        queue.push_back(source);
+
+        while let Some(v) = queue.pop_front() {
+            for &w in self.neighbors(v) {
+                if distances[w] == usize::MAX {
+                    distances[w] = distances[v] + 1;
+                    queue.push_back(w);
+                }
+            }
+        }
+
+        distances
+    }
+
+    /// Compute eigenvector centrality using power iteration.
+    ///
+    /// Eigenvector centrality measures node importance based on the importance
+    /// of its neighbors. Uses the dominant eigenvector of the adjacency matrix.
+    ///
+    /// # Arguments
+    /// * `max_iter` - Maximum power iterations (default 100)
+    /// * `tol` - Convergence tolerance (default 1e-6)
+    ///
+    /// # Returns
+    /// Vector of eigenvector centrality scores (one per node)
+    ///
+    /// # Performance
+    /// O(k·m) where k = iterations, m = edges
+    ///
+    /// # Examples
+    /// ```
+    /// use aprender::graph::Graph;
+    ///
+    /// // Path graph: middle nodes have higher eigenvector centrality
+    /// let g = Graph::from_edges(&[(0, 1), (1, 2), (2, 3)], false);
+    /// let ec = g.eigenvector_centrality(100, 1e-6).unwrap();
+    /// assert!(ec[1] > ec[0]); // middle nodes more central
+    /// ```
+    pub fn eigenvector_centrality(&self, max_iter: usize, tol: f64) -> Result<Vec<f64>, String> {
+        if self.n_nodes == 0 {
+            return Ok(Vec::new());
+        }
+
+        let n = self.n_nodes;
+        let mut x = vec![1.0 / (n as f64).sqrt(); n]; // Initial uniform vector
+        let mut x_new = vec![0.0; n];
+
+        for _ in 0..max_iter {
+            // Matrix-vector multiplication: x_new = A * x
+            #[allow(clippy::needless_range_loop)]
+            for v in 0..n {
+                x_new[v] = self.neighbors(v).iter().map(|&u| x[u]).sum();
+            }
+
+            // Normalize to unit vector (L2 norm)
+            let norm: f64 = x_new.iter().map(|&val| val * val).sum::<f64>().sqrt();
+
+            if norm < 1e-10 {
+                // Disconnected graph or no edges
+                return Ok(vec![0.0; n]);
+            }
+
+            for val in &mut x_new {
+                *val /= norm;
+            }
+
+            // Check convergence
+            let diff: f64 = x.iter().zip(&x_new).map(|(a, b)| (a - b).abs()).sum();
+
+            if diff < tol {
+                return Ok(x_new);
+            }
+
+            std::mem::swap(&mut x, &mut x_new);
+        }
+
+        Ok(x)
+    }
+
+    /// Compute Katz centrality with attenuation factor.
+    ///
+    /// Katz centrality generalizes eigenvector centrality by adding an attenuation
+    /// factor for long-range connections: C_K = Σ(α^k · A^k · 1)
+    ///
+    /// # Arguments
+    /// * `alpha` - Attenuation factor (typically 0.1-0.5, must be < 1/λ_max)
+    /// * `max_iter` - Maximum iterations (default 100)
+    /// * `tol` - Convergence tolerance (default 1e-6)
+    ///
+    /// # Returns
+    /// Vector of Katz centrality scores
+    ///
+    /// # Performance
+    /// O(k·m) where k = iterations, m = edges
+    ///
+    /// # Examples
+    /// ```
+    /// use aprender::graph::Graph;
+    ///
+    /// let g = Graph::from_edges(&[(0, 1), (1, 2), (2, 0)], true);
+    /// let kc = g.katz_centrality(0.1, 100, 1e-6).unwrap();
+    /// assert_eq!(kc.len(), 3);
+    /// ```
+    pub fn katz_centrality(
+        &self,
+        alpha: f64,
+        max_iter: usize,
+        tol: f64,
+    ) -> Result<Vec<f64>, String> {
+        if self.n_nodes == 0 {
+            return Ok(Vec::new());
+        }
+
+        if alpha <= 0.0 || alpha >= 1.0 {
+            return Err("Alpha must be in (0, 1)".to_string());
+        }
+
+        let n = self.n_nodes;
+        let mut x = vec![1.0; n]; // Initial vector of ones
+        let mut x_new = vec![0.0; n];
+
+        for _ in 0..max_iter {
+            // Katz iteration: x_new = β + α·A^T·x (where β = 1)
+            // Use incoming neighbors (transpose adjacency matrix)
+            #[allow(clippy::needless_range_loop)]
+            for v in 0..n {
+                let incoming = self.incoming_neighbors(v);
+                let neighbors_sum: f64 = incoming.iter().map(|&u| x[u]).sum();
+                x_new[v] = 1.0 + alpha * neighbors_sum;
+            }
+
+            // Check convergence
+            let diff: f64 = x.iter().zip(&x_new).map(|(a, b)| (a - b).abs()).sum();
+
+            if diff < tol {
+                return Ok(x_new);
+            }
+
+            std::mem::swap(&mut x, &mut x_new);
+        }
+
+        Ok(x)
+    }
+
+    /// Compute harmonic centrality for all nodes.
+    ///
+    /// Harmonic centrality is the sum of reciprocal distances to all other nodes.
+    /// More robust than closeness for disconnected graphs (Boldi & Vigna 2014).
+    ///
+    /// Formula: C_H(v) = Σ(1/d(v,u)) for all u ≠ v
+    ///
+    /// # Returns
+    /// Vector of harmonic centrality scores
+    ///
+    /// # Performance
+    /// O(n·(n + m)) where n = nodes, m = edges
+    ///
+    /// # Examples
+    /// ```
+    /// use aprender::graph::Graph;
+    ///
+    /// // Star graph: center has highest harmonic centrality
+    /// let g = Graph::from_edges(&[(0, 1), (0, 2), (0, 3)], false);
+    /// let hc = g.harmonic_centrality();
+    /// assert!(hc[0] > hc[1]); // center most central
+    /// ```
+    pub fn harmonic_centrality(&self) -> Vec<f64> {
+        if self.n_nodes == 0 {
+            return Vec::new();
+        }
+
+        let mut centrality = vec![0.0; self.n_nodes];
+
+        #[allow(clippy::needless_range_loop)]
+        for v in 0..self.n_nodes {
+            let distances = self.bfs_distances(v);
+
+            // Sum reciprocals of distances (skip unreachable nodes)
+            for &dist in &distances {
+                if dist > 0 && dist != usize::MAX {
+                    centrality[v] += 1.0 / dist as f64;
+                }
+            }
+        }
+
+        centrality
+    }
+
+    /// Compute graph density.
+    ///
+    /// Density is the ratio of actual edges to possible edges.
+    /// For undirected: d = 2m / (n(n-1))
+    /// For directed: d = m / (n(n-1))
+    ///
+    /// # Returns
+    /// Density in [0, 1] where 1 is a complete graph
+    ///
+    /// # Examples
+    /// ```
+    /// use aprender::graph::Graph;
+    ///
+    /// // Complete graph K4 has density 1.0
+    /// let g = Graph::from_edges(&[(0,1), (0,2), (0,3), (1,2), (1,3), (2,3)], false);
+    /// assert!((g.density() - 1.0).abs() < 1e-6);
+    /// ```
+    pub fn density(&self) -> f64 {
+        if self.n_nodes <= 1 {
+            return 0.0;
+        }
+
+        let n = self.n_nodes as f64;
+        let m = self.n_edges as f64;
+        let possible = n * (n - 1.0);
+
+        if self.is_directed {
+            m / possible
+        } else {
+            (2.0 * m) / possible
+        }
+    }
+
+    /// Compute graph diameter (longest shortest path).
+    ///
+    /// Returns None if graph is disconnected.
+    ///
+    /// # Returns
+    /// Some(diameter) if connected, None otherwise
+    ///
+    /// # Performance
+    /// O(n·(n + m)) - runs BFS from all nodes
+    ///
+    /// # Examples
+    /// ```
+    /// use aprender::graph::Graph;
+    ///
+    /// // Path graph 0--1--2--3 has diameter 3
+    /// let g = Graph::from_edges(&[(0,1), (1,2), (2,3)], false);
+    /// assert_eq!(g.diameter(), Some(3));
+    /// ```
+    pub fn diameter(&self) -> Option<usize> {
+        if self.n_nodes == 0 {
+            return None;
+        }
+
+        let mut max_dist = 0;
+
+        for v in 0..self.n_nodes {
+            let distances = self.bfs_distances(v);
+
+            for &dist in &distances {
+                if dist == usize::MAX {
+                    // Disconnected graph
+                    return None;
+                }
+                if dist > max_dist {
+                    max_dist = dist;
+                }
+            }
+        }
+
+        Some(max_dist)
+    }
+
+    /// Compute global clustering coefficient.
+    ///
+    /// Measures the probability that two neighbors of a node are connected.
+    /// Formula: C = 3 × triangles / triads
+    ///
+    /// # Returns
+    /// Clustering coefficient in [0, 1]
+    ///
+    /// # Performance
+    /// O(n·d²) where d = average degree
+    ///
+    /// # Examples
+    /// ```
+    /// use aprender::graph::Graph;
+    ///
+    /// // Triangle has clustering coefficient 1.0
+    /// let g = Graph::from_edges(&[(0,1), (1,2), (2,0)], false);
+    /// assert!((g.clustering_coefficient() - 1.0).abs() < 1e-6);
+    /// ```
+    #[allow(clippy::cast_lossless)]
+    pub fn clustering_coefficient(&self) -> f64 {
+        if self.n_nodes == 0 {
+            return 0.0;
+        }
+
+        let mut triangles = 0;
+        let mut triads = 0;
+
+        for v in 0..self.n_nodes {
+            let neighbors = self.neighbors(v);
+            let deg = neighbors.len();
+
+            if deg < 2 {
+                continue;
+            }
+
+            // Count triads (pairs of neighbors)
+            triads += deg * (deg - 1) / 2;
+
+            // Count triangles (connected pairs of neighbors)
+            for i in 0..neighbors.len() {
+                for j in (i + 1)..neighbors.len() {
+                    let u = neighbors[i];
+                    let w = neighbors[j];
+
+                    // Check if u and w are connected
+                    if self.neighbors(u).contains(&w) {
+                        triangles += 1;
+                    }
+                }
+            }
+        }
+
+        if triads == 0 {
+            return 0.0;
+        }
+
+        // Each triangle is counted 3 times (once from each vertex)
+        // So we divide by 3 to get actual triangle count
+        (triangles as f64) / (triads as f64)
+    }
+
+    /// Compute degree assortativity coefficient.
+    ///
+    /// Measures correlation between degrees of connected nodes.
+    /// Positive: high-degree nodes connect to high-degree nodes
+    /// Negative: high-degree nodes connect to low-degree nodes
+    ///
+    /// # Returns
+    /// Assortativity coefficient in [-1, 1]
+    ///
+    /// # Performance
+    /// O(m) where m = edges
+    ///
+    /// # Examples
+    /// ```
+    /// use aprender::graph::Graph;
+    ///
+    /// // Star graph has negative assortativity
+    /// let g = Graph::from_edges(&[(0,1), (0,2), (0,3)], false);
+    /// assert!(g.assortativity() < 0.0);
+    /// ```
+    pub fn assortativity(&self) -> f64 {
+        if self.n_edges == 0 {
+            return 0.0;
+        }
+
+        // Compute degrees
+        let degrees: Vec<f64> = (0..self.n_nodes)
+            .map(|i| self.neighbors(i).len() as f64)
+            .collect();
+
+        let m = self.n_edges as f64;
+        let mut sum_jk = 0.0;
+        let mut sum_j = 0.0;
+        let mut sum_k = 0.0;
+        let mut sum_j_sq = 0.0;
+        let mut sum_k_sq = 0.0;
+
+        // Sum over all edges
+        for v in 0..self.n_nodes {
+            let j = degrees[v];
+            for &u in self.neighbors(v) {
+                let k = degrees[u];
+                sum_jk += j * k;
+                sum_j += j;
+                sum_k += k;
+                sum_j_sq += j * j;
+                sum_k_sq += k * k;
+            }
+        }
+
+        // For undirected graphs, each edge is counted twice
+        let normalization = if self.is_directed { m } else { 2.0 * m };
+
+        sum_jk /= normalization;
+        sum_j /= normalization;
+        sum_k /= normalization;
+        sum_j_sq /= normalization;
+        sum_k_sq /= normalization;
+
+        let numerator = sum_jk - sum_j * sum_k;
+        let denominator = ((sum_j_sq - sum_j * sum_j) * (sum_k_sq - sum_k * sum_k)).sqrt();
+
+        if denominator < 1e-10 {
+            return 0.0;
+        }
+
+        numerator / denominator
+    }
 }
 
 /// Kahan summation for computing L1 distance between two vectors.
@@ -1369,5 +1817,326 @@ mod tests {
 
         // Bad partition should have negative or very low modularity
         assert!(modularity < 0.1);
+    }
+
+    // Closeness Centrality Tests
+
+    #[test]
+    fn test_closeness_centrality_empty() {
+        let g = Graph::new(false);
+        let cc = g.closeness_centrality();
+        assert!(cc.is_empty());
+    }
+
+    #[test]
+    fn test_closeness_centrality_star_graph() {
+        // Star graph: center (0) is close to all nodes
+        let g = Graph::from_edges(&[(0, 1), (0, 2), (0, 3)], false);
+        let cc = g.closeness_centrality();
+
+        assert_eq!(cc.len(), 4);
+        // Center has highest closeness
+        assert!(cc[0] > cc[1]);
+        assert!(cc[0] > cc[2]);
+        assert!(cc[0] > cc[3]);
+        // Leaves have equal closeness by symmetry
+        assert!((cc[1] - cc[2]).abs() < 1e-6);
+        assert!((cc[2] - cc[3]).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_closeness_centrality_path_graph() {
+        // Path: 0--1--2--3
+        // Middle nodes have higher closeness
+        let g = Graph::from_edges(&[(0, 1), (1, 2), (2, 3)], false);
+        let cc = g.closeness_centrality();
+
+        assert_eq!(cc.len(), 4);
+        // Middle nodes more central
+        assert!(cc[1] > cc[0]);
+        assert!(cc[2] > cc[0]);
+        assert!(cc[1] > cc[3]);
+        assert!(cc[2] > cc[3]);
+    }
+
+    // Eigenvector Centrality Tests
+
+    #[test]
+    fn test_eigenvector_centrality_empty() {
+        let g = Graph::new(false);
+        let ec = g.eigenvector_centrality(100, 1e-6).unwrap();
+        assert!(ec.is_empty());
+    }
+
+    #[test]
+    fn test_eigenvector_centrality_star_graph() {
+        // Star graph: center has highest eigenvector centrality
+        let g = Graph::from_edges(&[(0, 1), (0, 2), (0, 3)], false);
+        let ec = g.eigenvector_centrality(100, 1e-6).unwrap();
+
+        assert_eq!(ec.len(), 4);
+        // Center should have highest score
+        assert!(ec[0] > ec[1]);
+        assert!(ec[0] > ec[2]);
+        assert!(ec[0] > ec[3]);
+    }
+
+    #[test]
+    fn test_eigenvector_centrality_path_graph() {
+        // Path graph: middle nodes more central
+        let g = Graph::from_edges(&[(0, 1), (1, 2), (2, 3)], false);
+        let ec = g.eigenvector_centrality(100, 1e-6).unwrap();
+
+        assert_eq!(ec.len(), 4);
+        // Middle nodes should have higher scores
+        assert!(ec[1] > ec[0]);
+        assert!(ec[2] > ec[3]);
+    }
+
+    #[test]
+    fn test_eigenvector_centrality_disconnected() {
+        // Graph with no edges
+        let g = Graph::from_edges(&[], false);
+        let ec = g.eigenvector_centrality(100, 1e-6).unwrap();
+        assert!(ec.is_empty());
+    }
+
+    // Katz Centrality Tests
+
+    #[test]
+    fn test_katz_centrality_empty() {
+        let g = Graph::new(true);
+        let kc = g.katz_centrality(0.1, 100, 1e-6).unwrap();
+        assert!(kc.is_empty());
+    }
+
+    #[test]
+    fn test_katz_centrality_invalid_alpha() {
+        let g = Graph::from_edges(&[(0, 1), (1, 2)], true);
+
+        // Alpha = 0 should fail
+        assert!(g.katz_centrality(0.0, 100, 1e-6).is_err());
+
+        // Alpha = 1 should fail
+        assert!(g.katz_centrality(1.0, 100, 1e-6).is_err());
+
+        // Alpha > 1 should fail
+        assert!(g.katz_centrality(1.5, 100, 1e-6).is_err());
+    }
+
+    #[test]
+    fn test_katz_centrality_cycle() {
+        // Cycle graph: all nodes should have equal Katz centrality
+        let g = Graph::from_edges(&[(0, 1), (1, 2), (2, 0)], true);
+        let kc = g.katz_centrality(0.1, 100, 1e-6).unwrap();
+
+        assert_eq!(kc.len(), 3);
+        // All nodes equal by symmetry
+        assert!((kc[0] - kc[1]).abs() < 1e-3);
+        assert!((kc[1] - kc[2]).abs() < 1e-3);
+    }
+
+    #[test]
+    fn test_katz_centrality_star_directed() {
+        // Directed star: 0 -> {1,2,3}
+        let g = Graph::from_edges(&[(0, 1), (0, 2), (0, 3)], true);
+        let kc = g.katz_centrality(0.1, 100, 1e-6).unwrap();
+
+        assert_eq!(kc.len(), 4);
+        // Nodes with incoming edges have higher Katz centrality
+        assert!(kc[1] > kc[0]);
+        assert!(kc[2] > kc[0]);
+        assert!(kc[3] > kc[0]);
+    }
+
+    // Harmonic Centrality Tests
+
+    #[test]
+    fn test_harmonic_centrality_empty() {
+        let g = Graph::new(false);
+        let hc = g.harmonic_centrality();
+        assert!(hc.is_empty());
+    }
+
+    #[test]
+    fn test_harmonic_centrality_star_graph() {
+        // Star graph: center has highest harmonic centrality
+        let g = Graph::from_edges(&[(0, 1), (0, 2), (0, 3)], false);
+        let hc = g.harmonic_centrality();
+
+        assert_eq!(hc.len(), 4);
+        // Center most central
+        assert!(hc[0] > hc[1]);
+        assert!(hc[0] > hc[2]);
+        assert!(hc[0] > hc[3]);
+    }
+
+    #[test]
+    fn test_harmonic_centrality_disconnected() {
+        // Disconnected graph: (0--1) and (2--3)
+        let g = Graph::from_edges(&[(0, 1), (2, 3)], false);
+        let hc = g.harmonic_centrality();
+
+        assert_eq!(hc.len(), 4);
+        // Nodes within same component have equal harmonic centrality
+        assert!((hc[0] - hc[1]).abs() < 1e-6);
+        assert!((hc[2] - hc[3]).abs() < 1e-6);
+    }
+
+    // Density Tests
+
+    #[test]
+    fn test_density_empty() {
+        let g = Graph::new(false);
+        assert_eq!(g.density(), 0.0);
+    }
+
+    #[test]
+    fn test_density_single_node() {
+        let g = Graph::from_edges(&[(0, 0)], false);
+        assert_eq!(g.density(), 0.0);
+    }
+
+    #[test]
+    fn test_density_complete_graph() {
+        // Complete graph K4: all nodes connected
+        let g = Graph::from_edges(&[(0, 1), (0, 2), (0, 3), (1, 2), (1, 3), (2, 3)], false);
+        assert!((g.density() - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_density_path_graph() {
+        // Path: 0--1--2--3 (3 edges, 4 nodes)
+        let g = Graph::from_edges(&[(0, 1), (1, 2), (2, 3)], false);
+
+        // Undirected: density = 2*m / (n*(n-1)) = 2*3 / (4*3) = 0.5
+        assert!((g.density() - 0.5).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_density_directed() {
+        // Directed: 0->1, 1->2 (2 edges, 3 nodes)
+        let g = Graph::from_edges(&[(0, 1), (1, 2)], true);
+
+        // Directed: density = m / (n*(n-1)) = 2 / (3*2) = 1/3
+        assert!((g.density() - 1.0 / 3.0).abs() < 1e-6);
+    }
+
+    // Diameter Tests
+
+    #[test]
+    fn test_diameter_empty() {
+        let g = Graph::new(false);
+        assert_eq!(g.diameter(), None);
+    }
+
+    #[test]
+    fn test_diameter_single_node() {
+        let g = Graph::from_edges(&[(0, 0)], false);
+        assert_eq!(g.diameter(), Some(0));
+    }
+
+    #[test]
+    fn test_diameter_path_graph() {
+        // Path: 0--1--2--3 has diameter 3
+        let g = Graph::from_edges(&[(0, 1), (1, 2), (2, 3)], false);
+        assert_eq!(g.diameter(), Some(3));
+    }
+
+    #[test]
+    fn test_diameter_star_graph() {
+        // Star graph: center to any leaf is 1, leaf to leaf is 2
+        let g = Graph::from_edges(&[(0, 1), (0, 2), (0, 3)], false);
+        assert_eq!(g.diameter(), Some(2));
+    }
+
+    #[test]
+    fn test_diameter_disconnected() {
+        // Disconnected: (0--1) and (2--3)
+        let g = Graph::from_edges(&[(0, 1), (2, 3)], false);
+        assert_eq!(g.diameter(), None); // Disconnected
+    }
+
+    #[test]
+    fn test_diameter_complete_graph() {
+        // Complete graph K4: diameter is 1 (all nodes adjacent)
+        let g = Graph::from_edges(&[(0, 1), (0, 2), (0, 3), (1, 2), (1, 3), (2, 3)], false);
+        assert_eq!(g.diameter(), Some(1));
+    }
+
+    // Clustering Coefficient Tests
+
+    #[test]
+    fn test_clustering_coefficient_empty() {
+        let g = Graph::new(false);
+        assert_eq!(g.clustering_coefficient(), 0.0);
+    }
+
+    #[test]
+    fn test_clustering_coefficient_triangle() {
+        // Triangle: perfect clustering (coefficient = 1.0)
+        let g = Graph::from_edges(&[(0, 1), (1, 2), (2, 0)], false);
+        assert!((g.clustering_coefficient() - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_clustering_coefficient_star_graph() {
+        // Star graph: no triangles (coefficient = 0.0)
+        let g = Graph::from_edges(&[(0, 1), (0, 2), (0, 3)], false);
+        assert_eq!(g.clustering_coefficient(), 0.0);
+    }
+
+    #[test]
+    fn test_clustering_coefficient_partial() {
+        // Graph with one triangle among 4 nodes
+        let g = Graph::from_edges(&[(0, 1), (1, 2), (2, 0), (0, 3)], false);
+
+        // Node 0: 3 neighbors, 1 triangle (0-1-2)
+        // Node 1: 2 neighbors, 1 triangle
+        // Node 2: 2 neighbors, 1 triangle
+        // Node 3: 1 neighbor, 0 triangles
+        let cc = g.clustering_coefficient();
+        assert!(cc > 0.0);
+        assert!(cc < 1.0);
+    }
+
+    // Assortativity Tests
+
+    #[test]
+    fn test_assortativity_empty() {
+        let g = Graph::new(false);
+        assert_eq!(g.assortativity(), 0.0);
+    }
+
+    #[test]
+    fn test_assortativity_star_graph() {
+        // Star graph: hub (deg 3) connects to leaves (deg 1)
+        // Negative assortativity (high-degree connects to low-degree)
+        let g = Graph::from_edges(&[(0, 1), (0, 2), (0, 3)], false);
+        assert!(g.assortativity() < 0.0);
+    }
+
+    #[test]
+    fn test_assortativity_complete_graph() {
+        // Complete graph K4: all nodes have same degree
+        // Should have assortativity close to 0 (or NaN due to zero variance)
+        let g = Graph::from_edges(&[(0, 1), (0, 2), (0, 3), (1, 2), (1, 3), (2, 3)], false);
+        let assort = g.assortativity();
+
+        // All nodes have degree 3, so variance is 0
+        // Assortativity is undefined but we return 0.0
+        assert_eq!(assort, 0.0);
+    }
+
+    #[test]
+    fn test_assortativity_path_graph() {
+        // Path: 0--1--2--3
+        // Endpoints (deg 1) connect to middle (deg 2)
+        // Middle nodes (deg 2) connect to mixed
+        let g = Graph::from_edges(&[(0, 1), (1, 2), (2, 3)], false);
+        let assort = g.assortativity();
+
+        // Should have negative assortativity
+        assert!(assort < 0.0);
     }
 }
