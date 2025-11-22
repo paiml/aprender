@@ -893,11 +893,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'New task: Phase 2: Bayesian Examples & Documentation - Create cargo examples and book chapters for Gamma-Poisson, Normal-InverseGamma, and Dirichlet-Multinomial conjugate priors'
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2025-11-22T14:41:15.060857542+00:00
-  updated: 2025-11-22T14:41:15.060857542+00:00
+  updated: 2025-11-22T14:55:52.231115468+00:00
   spec: null
   acceptance_criteria: []
   phases: []
