@@ -251,7 +251,7 @@ impl GLM {
         // Initialize coefficients to zero
         let mut beta = vec![0.0_f32; p];
 
-        // Initialize intercept and eta based on response mean (better initialization)
+        // Initialize intercept and eta based on response mean
         let y_mean = y.as_slice().iter().sum::<f32>() / n as f32;
         let y_mean_safe = y_mean.clamp(0.01, 0.99); // Avoid extreme values
         let mut intercept = self.link.link(y_mean_safe);
@@ -475,14 +475,15 @@ mod tests {
     /// Test: Poisson regression on count data
     ///
     /// TODO: Poisson GLM has convergence issues even with simple data.
-    /// Need to investigate IRLS algorithm implementation or use different solver.
+    /// IRLS algorithm needs damping/step size control for Poisson family.
     /// Currently passing: Gamma (canonical), Binomial (canonical), Gamma (non-canonical log link)
+    /// Consider implementing: gradient descent, Newton-Raphson with line search, or L-BFGS
     #[test]
-    #[ignore = "Poisson GLM convergence issues - needs algorithm refinement"]
+    #[ignore = "Poisson GLM convergence issues - IRLS needs damping for Poisson family"]
     fn test_poisson_regression() {
-        // Very simple count data - nearly constant
-        let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0]).expect("Valid matrix");
-        let y = Vector::from_vec(vec![5.0, 5.0, 6.0, 6.0]);
+        // Simple count data with very gentle increase
+        let x = Matrix::from_vec(5, 1, vec![0.0, 1.0, 2.0, 3.0, 4.0]).expect("Valid matrix");
+        let y = Vector::from_vec(vec![3.0, 3.0, 4.0, 4.0, 5.0]);
 
         let mut model = GLM::new(Family::Poisson);
         let result = model.fit(&x, &y);
@@ -652,7 +653,11 @@ mod tests {
             .with_max_iter(5000); // More iterations for non-canonical link
 
         let result = model.fit(&x, &y);
-        assert!(result.is_ok(), "Custom link should work");
+        assert!(
+            result.is_ok(),
+            "Custom link should work, error: {:?}",
+            result.err()
+        );
     }
 
     /// Test: Builder pattern
