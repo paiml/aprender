@@ -49,6 +49,12 @@ println!("  Posterior mean: {:.4} calls/hour", model.posterior_mean());  // 4.0
 ### Posterior Statistics
 
 ```rust
+use aprender::bayesian::GammaPoisson;
+
+// Assume model is already updated with data
+# let mut model = GammaPoisson::noninformative();
+# model.update(&vec![3, 5, 4, 6, 2, 4, 5, 3, 4, 4]);
+
 // Point estimates
 let mean = model.posterior_mean();  // E[λ|D] = 40.001 / 10.001 ≈ 4.0
 let mode = model.posterior_mode().unwrap();  // (40.001 - 1) / 10.001 ≈ 3.9
@@ -89,6 +95,8 @@ Which company has a significantly lower defect rate?
 ### Solution
 
 ```rust
+use aprender::bayesian::GammaPoisson;
+
 // Company A: 3 defects in 20 batches
 let company_a_defects = vec![0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0];
 let mut model_a = GammaPoisson::noninformative();
@@ -113,6 +121,19 @@ let (lower_b, upper_b) = model_b.credible_interval(0.95).unwrap();
 Check if credible intervals overlap:
 
 ```rust
+use aprender::bayesian::GammaPoisson;
+
+# // Setup from previous example
+# let company_a_defects = vec![0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0];
+# let mut model_a = GammaPoisson::noninformative();
+# model_a.update(&company_a_defects);
+# let (_mean_a, (lower_a, upper_a)) = (model_a.posterior_mean(), model_a.credible_interval(0.95).unwrap());
+#
+# let company_b_defects = vec![1, 0, 2, 1, 1, 0, 1, 1, 0, 1, 1, 2, 0, 1, 1, 0, 1, 0, 1, 1];
+# let mut model_b = GammaPoisson::noninformative();
+# model_b.update(&company_b_defects);
+# let (_mean_b, (lower_b, upper_b)) = (model_b.posterior_mean(), model_b.credible_interval(0.95).unwrap());
+
 if lower_b > upper_a {
     println!("✓ Company B has significantly higher defect rate (95% confidence)");
     println!("  Company A is the better supplier.");
@@ -154,6 +175,8 @@ Demonstrate how uncertainty decreases as we collect more data from server monito
 Run 5 sequential monitoring periods with true rate ≈ 10 requests/min:
 
 ```rust
+use aprender::bayesian::GammaPoisson;
+
 let mut model = GammaPoisson::noninformative();
 
 let experiments = vec![
@@ -219,6 +242,10 @@ Demonstrate how different priors affect the posterior with limited data.
 Same data ([3, 5, 4, 6, 2] events over 5 intervals), three different priors:
 
 ```rust
+use aprender::bayesian::GammaPoisson;
+
+# let counts = vec![3, 5, 4, 6, 2];
+
 // 1. Noninformative Prior Gamma(0.001, 0.001)
 let mut noninformative = GammaPoisson::noninformative();
 noninformative.update(&counts);

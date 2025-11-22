@@ -58,6 +58,13 @@ let std_dev = mean_var.sqrt();  // E[σ|D] ≈ 0.058
 ### Posterior Statistics
 
 ```rust
+use aprender::bayesian::NormalInverseGamma;
+
+// Assume model is already updated with data
+# let mut model = NormalInverseGamma::new(10.0, 1.0, 3.0, 0.02).expect("Valid parameters");
+# let measurements = vec![9.98, 10.02, 9.97, 10.03, 10.01, 9.99, 10.04, 9.96, 10.00, 10.02];
+# model.update(&measurements);
+
 // Posterior mean of μ (location parameter)
 let mean_mu = model.posterior_mean_mu();  // 10.002 mm
 
@@ -103,6 +110,8 @@ Does Patient B have significantly higher BP? Which patient has more variable BP?
 ### Solution
 
 ```rust
+use aprender::bayesian::NormalInverseGamma;
+
 // Patient A
 let patient_a = vec![118.0, 122.0, 120.0, 119.0, 121.0, 120.0, 118.0, 122.0];
 let mut model_a = NormalInverseGamma::noninformative();
@@ -128,6 +137,19 @@ let var_b = model_b.posterior_mean_variance().unwrap();  // 16.1 mmHg²
 
 **Mean comparison**:
 ```rust
+use aprender::bayesian::NormalInverseGamma;
+
+# // Setup from previous example
+# let patient_a = vec![118.0, 122.0, 120.0, 119.0, 121.0, 120.0, 118.0, 122.0];
+# let mut model_a = NormalInverseGamma::noninformative();
+# model_a.update(&patient_a);
+# let (lower_a, upper_a) = model_a.credible_interval_mu(0.95).unwrap();
+#
+# let patient_b = vec![135.0, 142.0, 138.0, 145.0, 140.0, 137.0, 143.0, 139.0];
+# let mut model_b = NormalInverseGamma::noninformative();
+# model_b.update(&patient_b);
+# let (lower_b, upper_b) = model_b.credible_interval_mu(0.95).unwrap();
+
 if lower_b > upper_a {
     println!("Patient B has significantly higher BP (95% confidence)");
 } else if lower_a > upper_b {
@@ -139,6 +161,19 @@ if lower_b > upper_a {
 
 **Variability comparison**:
 ```rust
+use aprender::bayesian::NormalInverseGamma;
+
+# // Setup from previous example
+# let patient_a = vec![118.0, 122.0, 120.0, 119.0, 121.0, 120.0, 118.0, 122.0];
+# let mut model_a = NormalInverseGamma::noninformative();
+# model_a.update(&patient_a);
+# let var_a = model_a.posterior_mean_variance().unwrap();
+#
+# let patient_b = vec![135.0, 142.0, 138.0, 145.0, 140.0, 137.0, 143.0, 139.0];
+# let mut model_b = NormalInverseGamma::noninformative();
+# model_b.update(&patient_b);
+# let var_b = model_b.posterior_mean_variance().unwrap();
+
 if var_b > 2.0 * var_a {
     println!("Patient B shows {:.1}x higher BP variability", var_b / var_a);
     println!("High variability may indicate cardiovascular instability.");
@@ -170,6 +205,8 @@ Demonstrate how uncertainty about both mean and variance decreases with sequenti
 Collect temperature readings in batches (true temperature: 25.0°C):
 
 ```rust
+use aprender::bayesian::NormalInverseGamma;
+
 let mut model = NormalInverseGamma::noninformative();
 
 let experiments = vec![
@@ -234,6 +271,10 @@ Demonstrate how different priors affect bivariate posterior inference with limit
 Same data ([22.1, 22.5, 22.3, 22.7, 22.4]°C), three different priors:
 
 ```rust
+use aprender::bayesian::NormalInverseGamma;
+
+# let measurements = vec![22.1, 22.5, 22.3, 22.7, 22.4];
+
 // 1. Noninformative Prior NIG(0, 1, 1, 1)
 let mut noninformative = NormalInverseGamma::noninformative();
 noninformative.update(&measurements);

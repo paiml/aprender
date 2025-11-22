@@ -50,6 +50,13 @@ let posterior_probs = model.posterior_mean();
 ### Posterior Statistics
 
 ```rust
+use aprender::bayesian::DirichletMultinomial;
+
+// Assume model is already updated with data
+# let mut model = DirichletMultinomial::uniform(4);
+# let brand_counts = vec![35, 45, 25, 15];
+# model.update(&brand_counts);
+
 // Point estimates for each category
 let means = model.posterior_mean();  // E[θ | D] = (α₁+n₁, ..., αₖ+nₖ) / Σ(αᵢ+nᵢ)
 // [0.290, 0.371, 0.210, 0.129]
@@ -102,6 +109,8 @@ Are there significant regional differences in candidate preference?
 ### Solution
 
 ```rust
+use aprender::bayesian::DirichletMultinomial;
+
 // Region 1: Urban
 let region1_votes = vec![85, 70, 65, 50, 30];
 let mut model1 = DirichletMultinomial::uniform(5);
@@ -133,6 +142,19 @@ let intervals2 = model2.credible_intervals(0.95).unwrap();
 
 **Regional difference test**:
 ```rust
+use aprender::bayesian::DirichletMultinomial;
+
+# // Setup from previous example
+# let region1_votes = vec![85, 70, 65, 50, 30];
+# let mut model1 = DirichletMultinomial::uniform(5);
+# model1.update(&region1_votes);
+# let intervals1 = model1.credible_intervals(0.95).unwrap();
+#
+# let region2_votes = vec![30, 45, 60, 40, 25];
+# let mut model2 = DirichletMultinomial::uniform(5);
+# model2.update(&region2_votes);
+# let intervals2 = model2.credible_intervals(0.95).unwrap();
+
 // Check if credible intervals don't overlap
 for i in 0..5 {
     if intervals1[i].1 < intervals2[i].0 || intervals2[i].1 < intervals1[i].0 {
@@ -143,8 +165,21 @@ for i in 0..5 {
 
 **Leader identification**:
 ```rust
-let leader1 = probs1.iter().enumerate().max_by(...).unwrap().0;  // Candidate 1
-let leader2 = probs2.iter().enumerate().max_by(...).unwrap().0;  // Candidate 3
+use aprender::bayesian::DirichletMultinomial;
+
+# // Setup from previous example
+# let region1_votes = vec![85, 70, 65, 50, 30];
+# let mut model1 = DirichletMultinomial::uniform(5);
+# model1.update(&region1_votes);
+# let probs1 = model1.posterior_mean();
+#
+# let region2_votes = vec![30, 45, 60, 40, 25];
+# let mut model2 = DirichletMultinomial::uniform(5);
+# model2.update(&region2_votes);
+# let probs2 = model2.posterior_mean();
+
+let leader1 = probs1.iter().enumerate().max_by(|a, b| a.1.partial_cmp(b.1).unwrap()).unwrap().0;  // Candidate 1
+let leader2 = probs2.iter().enumerate().max_by(|a, b| a.1.partial_cmp(b.1).unwrap()).unwrap().0;  // Candidate 3
 ```
 
 ### Interpretation
@@ -164,6 +199,8 @@ Text classification system categorizing documents into 5 categories (Tech, Sport
 ### Solution
 
 ```rust
+use aprender::bayesian::DirichletMultinomial;
+
 let mut model = DirichletMultinomial::uniform(5);
 
 let experiments = vec![
@@ -215,6 +252,10 @@ Demonstrate how different priors affect posterior inference for website page vis
 ### Solution
 
 ```rust
+use aprender::bayesian::DirichletMultinomial;
+
+# let page_visits = vec![45, 30, 25];
+
 // 1. Uniform Prior Dirichlet(1, 1, 1)
 let mut uniform = DirichletMultinomial::uniform(3);
 uniform.update(&page_visits);
