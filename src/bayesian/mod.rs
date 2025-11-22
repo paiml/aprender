@@ -83,6 +83,33 @@
 //! let (lower, upper) = model.credible_interval_mu(0.95).unwrap();
 //! assert!(lower < mean_mu && mean_mu < upper);
 //! ```
+//!
+//! # Example: Dirichlet-Multinomial (Categorical Data)
+//!
+//! ```
+//! use aprender::bayesian::DirichletMultinomial;
+//!
+//! // Prior: uniform over 3 categories [A, B, C]
+//! let mut model = DirichletMultinomial::uniform(3);
+//!
+//! // Observe categorical data: 10 A's, 5 B's, 3 C's
+//! model.update(&[10, 5, 3]);
+//!
+//! // Posterior probabilities for each category
+//! let probs = model.posterior_mean();
+//! assert!((probs[0] - 11.0/21.0).abs() < 0.01); // P(A) ≈ 0.524
+//! assert!((probs[1] - 6.0/21.0).abs() < 0.01);  // P(B) ≈ 0.286
+//! assert!((probs[2] - 4.0/21.0).abs() < 0.01);  // P(C) ≈ 0.190
+//!
+//! // Probabilities sum to 1
+//! assert!((probs.iter().sum::<f32>() - 1.0).abs() < 1e-6);
+//!
+//! // 95% credible intervals for each category
+//! let intervals = model.credible_intervals(0.95).unwrap();
+//! for i in 0..3 {
+//!     assert!(intervals[i].0 < probs[i] && probs[i] < intervals[i].1);
+//! }
+//! ```
 
 mod conjugate;
 

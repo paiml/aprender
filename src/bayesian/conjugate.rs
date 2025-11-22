@@ -971,22 +971,333 @@ impl NormalInverseGamma {
 
 /// Dirichlet-Multinomial conjugate prior for categorical data.
 ///
+/// Models probability parameters θ₁, ..., θₖ for k mutually exclusive categories
+/// where Σθᵢ = 1 (probability simplex).
+///
 /// **Prior**: Dirichlet(α₁, ..., αₖ)
 /// **Likelihood**: Multinomial(n, θ₁, ..., θₖ)
 /// **Posterior**: Dirichlet(α₁ + n₁, ..., αₖ + nₖ)
+///
+/// # Mathematical Foundation
+///
+/// Given observations in k categories with counts n₁, ..., nₖ:
+/// - Prior: p(θ) = Dirichlet(α) ∝ ∏θᵢ^(αᵢ-1)
+/// - Likelihood: p(n|θ) = Multinomial(n|θ) ∝ ∏θᵢ^nᵢ
+/// - Posterior: p(θ|n) = Dirichlet(α + n)
+///
+/// where α + n means element-wise addition: (α₁ + n₁, ..., αₖ + nₖ)
+///
+/// # Example
+///
+/// ```
+/// use aprender::bayesian::DirichletMultinomial;
+///
+/// // 3-category classification: [A, B, C]
+/// let mut model = DirichletMultinomial::uniform(3);
+///
+/// // Observe counts: 10 A's, 5 B's, 3 C's
+/// model.update(&[10, 5, 3]);
+///
+/// // Posterior probabilities
+/// let probs = model.posterior_mean();
+/// assert!((probs[0] - 10.0/21.0).abs() < 0.1); // P(A) ≈ 0.476
+/// ```
 #[derive(Debug, Clone)]
-#[allow(dead_code)] // Placeholder for future implementation
 pub struct DirichletMultinomial {
+    /// Concentration parameters α₁, ..., αₖ (pseudo-counts for each category)
     alphas: Vec<f32>,
 }
 
 impl DirichletMultinomial {
     /// Creates a uniform prior Dirichlet(1, ..., 1) for k categories.
+    ///
+    /// This represents equal probability for all categories with minimal prior belief.
+    ///
+    /// # Arguments
+    ///
+    /// * `k` - Number of categories (must be ≥ 2)
+    ///
+    /// # Panics
+    ///
+    /// Panics if k < 2.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use aprender::bayesian::DirichletMultinomial;
+    ///
+    /// let prior = DirichletMultinomial::uniform(3);
+    /// assert_eq!(prior.alphas().len(), 3);
+    /// assert_eq!(prior.alphas()[0], 1.0);
+    /// ```
     #[must_use]
     pub fn uniform(k: usize) -> Self {
+        assert!(k >= 2, "Must have at least 2 categories");
         Self {
             alphas: vec![1.0; k],
         }
+    }
+
+    /// Creates an informative prior Dirichlet(α₁, ..., αₖ) from prior belief.
+    ///
+    /// # Arguments
+    ///
+    /// * `alphas` - Concentration parameters αᵢ > 0 for each category
+    ///
+    /// # Interpretation
+    ///
+    /// - αᵢ: Pseudo-count for category i
+    /// - Σαᵢ: Total pseudo-count (strength of prior belief)
+    /// - αᵢ / Σαⱼ: Prior mean probability for category i
+    ///
+    /// # Errors
+    ///
+    /// Returns error if:
+    /// - Any αᵢ ≤ 0
+    /// - Fewer than 2 categories
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use aprender::bayesian::DirichletMultinomial;
+    ///
+    /// // Prior belief: category probabilities [0.5, 0.3, 0.2] with 10 pseudo-counts
+    /// let prior = DirichletMultinomial::new(vec![5.0, 3.0, 2.0]).unwrap();
+    /// let mean = prior.posterior_mean();
+    /// assert!((mean[0] - 0.5).abs() < 0.01);
+    /// ```
+    pub fn new(alphas: Vec<f32>) -> Result<Self> {
+        if alphas.len() < 2 {
+            return Err(AprenderError::InvalidHyperparameter {
+                param: "alphas".to_string(),
+                value: format!("{} categories", alphas.len()),
+                constraint: "at least 2 categories".to_string(),
+            });
+        }
+
+        if alphas.iter().any(|&a| a <= 0.0) {
+            return Err(AprenderError::InvalidHyperparameter {
+                param: "alphas".to_string(),
+                value: format!("{alphas:?}"),
+                constraint: "all > 0".to_string(),
+            });
+        }
+
+        Ok(Self { alphas })
+    }
+
+    /// Returns the current concentration parameters.
+    #[must_use]
+    pub fn alphas(&self) -> &[f32] {
+        &self.alphas
+    }
+
+    /// Returns the number of categories.
+    #[must_use]
+    pub fn num_categories(&self) -> usize {
+        self.alphas.len()
+    }
+
+    /// Updates the posterior with observed category counts (Bayesian update).
+    ///
+    /// # Arguments
+    ///
+    /// * `counts` - Observed counts for each category
+    ///
+    /// # Panics
+    ///
+    /// Panics if counts.len() != num_categories().
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use aprender::bayesian::DirichletMultinomial;
+    ///
+    /// let mut model = DirichletMultinomial::uniform(3);
+    /// model.update(&[10, 5, 3]); // 10 A's, 5 B's, 3 C's
+    ///
+    /// // Posterior is Dirichlet(1+10, 1+5, 1+3) = Dirichlet(11, 6, 4)
+    /// assert_eq!(model.alphas()[0], 11.0);
+    /// ```
+    pub fn update(&mut self, counts: &[u32]) {
+        assert_eq!(
+            counts.len(),
+            self.alphas.len(),
+            "Counts must match number of categories"
+        );
+
+        for (alpha, &count) in self.alphas.iter_mut().zip(counts.iter()) {
+            #[allow(clippy::cast_precision_loss)]
+            {
+                *alpha += count as f32;
+            }
+        }
+    }
+
+    /// Computes the posterior mean E[θ|data] for all categories.
+    ///
+    /// Returns a vector where element i is E[θᵢ|data] = αᵢ / Σαⱼ.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use aprender::bayesian::DirichletMultinomial;
+    ///
+    /// let mut model = DirichletMultinomial::uniform(3);
+    /// model.update(&[10, 5, 3]);
+    ///
+    /// let mean = model.posterior_mean();
+    /// assert!((mean[0] - 11.0/21.0).abs() < 0.01); // (1+10)/(1+1+1+10+5+3)
+    /// assert!((mean.iter().sum::<f32>() - 1.0).abs() < 1e-6); // Sums to 1
+    /// ```
+    #[must_use]
+    pub fn posterior_mean(&self) -> Vec<f32> {
+        let sum: f32 = self.alphas.iter().sum();
+        self.alphas.iter().map(|&a| a / sum).collect()
+    }
+
+    /// Computes the posterior mode (MAP estimate) for all categories.
+    ///
+    /// Returns a vector where element i is (αᵢ - 1) / (Σαⱼ - k).
+    /// Only defined when all αᵢ > 1.
+    ///
+    /// # Returns
+    ///
+    /// - `Some(mode)` if all αᵢ > 1
+    /// - `None` if any αᵢ ≤ 1 (distribution has no unique mode)
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use aprender::bayesian::DirichletMultinomial;
+    ///
+    /// let mut model = DirichletMultinomial::new(vec![2.0, 2.0, 2.0]).unwrap();
+    /// model.update(&[10, 5, 3]);
+    ///
+    /// let mode = model.posterior_mode().unwrap();
+    /// assert!((mode[0] - 11.0/21.0).abs() < 0.01); // (12-1)/(24-3)
+    /// ```
+    #[must_use]
+    pub fn posterior_mode(&self) -> Option<Vec<f32>> {
+        if self.alphas.iter().all(|&a| a > 1.0) {
+            let k = self.alphas.len() as f32;
+            let sum: f32 = self.alphas.iter().sum();
+            Some(self.alphas.iter().map(|&a| (a - 1.0) / (sum - k)).collect())
+        } else {
+            None
+        }
+    }
+
+    /// Computes the posterior variance Var[θᵢ|data] for all categories.
+    ///
+    /// Returns a vector where element i is:
+    /// Var[θᵢ] = αᵢ(α₀ - αᵢ) / (α₀²(α₀ + 1))
+    /// where α₀ = Σαⱼ
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use aprender::bayesian::DirichletMultinomial;
+    ///
+    /// let mut model = DirichletMultinomial::uniform(3);
+    /// model.update(&[10, 5, 3]);
+    ///
+    /// let variance = model.posterior_variance();
+    /// assert!(variance[0] > 0.0); // Positive uncertainty
+    /// ```
+    #[must_use]
+    pub fn posterior_variance(&self) -> Vec<f32> {
+        let sum: f32 = self.alphas.iter().sum();
+        self.alphas
+            .iter()
+            .map(|&a| a * (sum - a) / (sum * sum * (sum + 1.0)))
+            .collect()
+    }
+
+    /// Computes the posterior predictive distribution for the next observation.
+    ///
+    /// For Dirichlet-Multinomial, the posterior predictive probabilities are:
+    /// P(category i | data) = αᵢ / Σαⱼ
+    ///
+    /// This equals the posterior mean.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use aprender::bayesian::DirichletMultinomial;
+    ///
+    /// let mut model = DirichletMultinomial::uniform(3);
+    /// model.update(&[10, 5, 3]);
+    ///
+    /// let pred = model.posterior_predictive();
+    /// assert!((pred[0] - 11.0/21.0).abs() < 0.01);
+    /// assert!((pred.iter().sum::<f32>() - 1.0).abs() < 1e-6);
+    /// ```
+    #[must_use]
+    pub fn posterior_predictive(&self) -> Vec<f32> {
+        self.posterior_mean()
+    }
+
+    /// Computes (1-α) credible intervals for all category probabilities.
+    ///
+    /// Returns a vector of (lower, upper) bounds for each category.
+    /// Uses normal approximation for each marginal distribution.
+    ///
+    /// # Arguments
+    ///
+    /// * `confidence` - Confidence level (e.g., 0.95 for 95% credible intervals)
+    ///
+    /// # Errors
+    ///
+    /// Returns error if confidence ∉ (0, 1).
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use aprender::bayesian::DirichletMultinomial;
+    ///
+    /// let mut model = DirichletMultinomial::uniform(3);
+    /// model.update(&[10, 5, 3]);
+    ///
+    /// let intervals = model.credible_intervals(0.95).unwrap();
+    /// let mean = model.posterior_mean();
+    ///
+    /// // Mean should be within interval for each category
+    /// for i in 0..3 {
+    ///     assert!(intervals[i].0 < mean[i] && mean[i] < intervals[i].1);
+    /// }
+    /// ```
+    pub fn credible_intervals(&self, confidence: f32) -> Result<Vec<(f32, f32)>> {
+        if !(0.0..1.0).contains(&confidence) {
+            return Err(AprenderError::InvalidHyperparameter {
+                param: "confidence".to_string(),
+                value: confidence.to_string(),
+                constraint: "in (0, 1)".to_string(),
+            });
+        }
+
+        let means = self.posterior_mean();
+        let variances = self.posterior_variance();
+
+        let z = match confidence {
+            c if (c - 0.95).abs() < 0.01 => 1.96,
+            c if (c - 0.99).abs() < 0.01 => 2.576,
+            c if (c - 0.90).abs() < 0.01 => 1.645,
+            _ => 1.96,
+        };
+
+        let intervals = means
+            .iter()
+            .zip(variances.iter())
+            .map(|(&mean, &var)| {
+                let std = var.sqrt();
+                let lower = (mean - z * std).max(0.0); // Probability cannot be negative
+                let upper = (mean + z * std).min(1.0); // Probability cannot exceed 1
+                (lower, upper)
+            })
+            .collect();
+
+        Ok(intervals)
     }
 }
 
@@ -1447,5 +1758,217 @@ mod tests {
 
         // Posterior should be pulled toward prior (closer to 10.0 than 5.0)
         assert!(posterior_mean > 7.0); // Strong prior dominates
+    }
+
+    // ========== Dirichlet-Multinomial Tests ==========
+
+    #[test]
+    fn test_dirichlet_multinomial_uniform_prior() {
+        let prior = DirichletMultinomial::uniform(3);
+        assert_eq!(prior.num_categories(), 3);
+        assert_eq!(prior.alphas()[0], 1.0);
+        assert_eq!(prior.alphas()[1], 1.0);
+        assert_eq!(prior.alphas()[2], 1.0);
+    }
+
+    #[test]
+    #[should_panic(expected = "Must have at least 2 categories")]
+    fn test_dirichlet_multinomial_requires_2_categories() {
+        let _ = DirichletMultinomial::uniform(1);
+    }
+
+    #[test]
+    fn test_dirichlet_multinomial_custom_prior() {
+        let prior = DirichletMultinomial::new(vec![5.0, 3.0, 2.0]).expect("Valid parameters");
+        assert_eq!(prior.num_categories(), 3);
+        assert_eq!(prior.alphas()[0], 5.0);
+        assert_eq!(prior.alphas()[1], 3.0);
+        assert_eq!(prior.alphas()[2], 2.0);
+    }
+
+    #[test]
+    fn test_dirichlet_multinomial_invalid_prior() {
+        assert!(DirichletMultinomial::new(vec![0.0, 1.0, 1.0]).is_err()); // Zero alpha
+        assert!(DirichletMultinomial::new(vec![-1.0, 1.0, 1.0]).is_err()); // Negative alpha
+        assert!(DirichletMultinomial::new(vec![1.0]).is_err()); // Only 1 category
+    }
+
+    #[test]
+    fn test_dirichlet_multinomial_update() {
+        let mut model = DirichletMultinomial::uniform(3);
+        model.update(&[10, 5, 3]);
+
+        // Posterior should be Dirichlet(1+10, 1+5, 1+3) = Dirichlet(11, 6, 4)
+        assert_eq!(model.alphas()[0], 11.0);
+        assert_eq!(model.alphas()[1], 6.0);
+        assert_eq!(model.alphas()[2], 4.0);
+    }
+
+    #[test]
+    #[should_panic(expected = "Counts must match number of categories")]
+    fn test_dirichlet_multinomial_update_wrong_size() {
+        let mut model = DirichletMultinomial::uniform(3);
+        model.update(&[10, 5]); // Only 2 counts for 3 categories
+    }
+
+    #[test]
+    fn test_dirichlet_multinomial_posterior_mean() {
+        let mut model = DirichletMultinomial::uniform(3);
+        model.update(&[10, 5, 3]);
+
+        let mean = model.posterior_mean();
+
+        // Should be [11/21, 6/21, 4/21]
+        assert!((mean[0] - 11.0 / 21.0).abs() < 1e-6);
+        assert!((mean[1] - 6.0 / 21.0).abs() < 1e-6);
+        assert!((mean[2] - 4.0 / 21.0).abs() < 1e-6);
+
+        // Sum should be 1.0
+        assert!((mean.iter().sum::<f32>() - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_dirichlet_multinomial_posterior_mode() {
+        let mut model = DirichletMultinomial::new(vec![2.0, 2.0, 2.0]).expect("Valid parameters");
+        model.update(&[10, 5, 3]);
+
+        // Posterior is Dirichlet(12, 7, 5), all > 1
+        // Mode = [(12-1)/(24-3), (7-1)/(24-3), (5-1)/(24-3)]
+        let mode = model.posterior_mode().expect("Mode should exist");
+
+        assert!((mode[0] - 11.0 / 21.0).abs() < 1e-6);
+        assert!((mode[1] - 6.0 / 21.0).abs() < 1e-6);
+        assert!((mode[2] - 4.0 / 21.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_dirichlet_multinomial_no_mode_for_uniform() {
+        let model = DirichletMultinomial::uniform(3);
+        // Dirichlet(1, 1, 1) has no unique mode
+        assert!(model.posterior_mode().is_none());
+    }
+
+    #[test]
+    fn test_dirichlet_multinomial_posterior_variance() {
+        let mut model = DirichletMultinomial::uniform(3);
+        model.update(&[10, 5, 3]);
+
+        let variance = model.posterior_variance();
+
+        // All variances should be positive
+        assert!(variance[0] > 0.0);
+        assert!(variance[1] > 0.0);
+        assert!(variance[2] > 0.0);
+
+        // Higher probability categories should have higher variance
+        assert!(variance[0] > variance[2]); // Category 0 has highest prob
+    }
+
+    #[test]
+    fn test_dirichlet_multinomial_predictive() {
+        let mut model = DirichletMultinomial::uniform(3);
+        model.update(&[10, 5, 3]);
+
+        let pred = model.posterior_predictive();
+        let mean = model.posterior_mean();
+
+        // Predictive should equal posterior mean
+        for i in 0..3 {
+            assert!((pred[i] - mean[i]).abs() < 1e-6);
+        }
+
+        // Sum should be 1.0
+        assert!((pred.iter().sum::<f32>() - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_dirichlet_multinomial_credible_intervals() {
+        let mut model = DirichletMultinomial::uniform(3);
+        model.update(&[10, 5, 3]);
+
+        let intervals = model
+            .credible_intervals(0.95)
+            .expect("Valid confidence level");
+        let mean = model.posterior_mean();
+
+        // Mean should be within interval for each category
+        for i in 0..3 {
+            assert!(intervals[i].0 < mean[i]);
+            assert!(mean[i] < intervals[i].1);
+
+            // Bounds should be in [0, 1]
+            assert!((0.0..=1.0).contains(&intervals[i].0));
+            assert!((0.0..=1.0).contains(&intervals[i].1));
+        }
+    }
+
+    #[test]
+    fn test_dirichlet_multinomial_credible_intervals_invalid() {
+        let model = DirichletMultinomial::uniform(3);
+
+        assert!(model.credible_intervals(-0.1).is_err());
+        assert!(model.credible_intervals(1.1).is_err());
+    }
+
+    #[test]
+    fn test_dirichlet_multinomial_sequential_updates() {
+        let mut model = DirichletMultinomial::uniform(3);
+
+        // First batch: [10, 5, 3]
+        model.update(&[10, 5, 3]);
+        assert_eq!(model.alphas()[0], 11.0);
+
+        // Second batch: [5, 10, 2]
+        model.update(&[5, 10, 2]);
+        assert_eq!(model.alphas()[0], 16.0); // 11 + 5
+        assert_eq!(model.alphas()[1], 16.0); // 6 + 10
+        assert_eq!(model.alphas()[2], 6.0); // 4 + 2
+    }
+
+    #[test]
+    fn test_dirichlet_multinomial_empty_update() {
+        let mut model = DirichletMultinomial::uniform(3);
+        let original_alphas = model.alphas().to_vec();
+
+        // Empty update (all zeros)
+        model.update(&[0, 0, 0]);
+
+        // Alphas should remain unchanged
+        assert_eq!(model.alphas()[0], original_alphas[0]);
+        assert_eq!(model.alphas()[1], original_alphas[1]);
+        assert_eq!(model.alphas()[2], original_alphas[2]);
+    }
+
+    #[test]
+    fn test_dirichlet_multinomial_many_categories() {
+        let k = 10;
+        let mut model = DirichletMultinomial::uniform(k);
+
+        // Update with some counts
+        let counts = vec![5, 3, 8, 2, 10, 1, 4, 6, 7, 9];
+        model.update(&counts);
+
+        let mean = model.posterior_mean();
+
+        // Check properties
+        assert_eq!(mean.len(), k);
+        assert!((mean.iter().sum::<f32>() - 1.0).abs() < 1e-6);
+        assert!(mean.iter().all(|&p| p > 0.0 && p < 1.0));
+    }
+
+    #[test]
+    fn test_dirichlet_multinomial_strong_prior_influence() {
+        // Strong prior favoring category 0
+        let mut strong_prior =
+            DirichletMultinomial::new(vec![100.0, 10.0, 10.0]).expect("Valid parameters");
+
+        // Observe data favoring category 1
+        strong_prior.update(&[5, 20, 5]);
+
+        let mean = strong_prior.posterior_mean();
+
+        // Category 0 should still have highest probability due to strong prior
+        assert!(mean[0] > mean[1]); // Prior dominates
+        assert!(mean[0] > mean[2]);
     }
 }
