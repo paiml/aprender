@@ -937,3 +937,19 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: Push 4 commits to origin/main (Bayesian documentation and doctest fixes)
+  github_issue: null
+  item_type: task
+  title: 'New task: Push 4 commits to origin/main (Bayesian documentation and doctest fixes)'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-22T15:55:11.609457368+00:00
+  updated: 2025-11-22T15:56:02.775467885+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
