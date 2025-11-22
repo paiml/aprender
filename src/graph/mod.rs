@@ -1780,6 +1780,113 @@ impl Graph {
 
         result
     }
+
+    /// Find strongly connected components using Tarjan's algorithm.
+    ///
+    /// A strongly connected component (SCC) is a maximal set of vertices where
+    /// every vertex is reachable from every other vertex in the set.
+    ///
+    /// Only meaningful for directed graphs. For undirected graphs, use `connected_components()`.
+    ///
+    /// # Returns
+    /// Vector mapping each node to its SCC ID (0-indexed)
+    ///
+    /// # Time Complexity
+    /// O(n + m) - single-pass DFS
+    ///
+    /// # Examples
+    /// ```
+    /// use aprender::graph::Graph;
+    ///
+    /// // Directed cycle: 0 -> 1 -> 2 -> 0
+    /// let g = Graph::from_edges(&[(0, 1), (1, 2), (2, 0)], true);
+    /// let sccs = g.strongly_connected_components();
+    ///
+    /// // All nodes in same SCC
+    /// assert_eq!(sccs[0], sccs[1]);
+    /// assert_eq!(sccs[1], sccs[2]);
+    /// ```
+    pub fn strongly_connected_components(&self) -> Vec<usize> {
+        let n = self.n_nodes;
+        if n == 0 {
+            return Vec::new();
+        }
+
+        // Tarjan's algorithm state
+        struct TarjanState {
+            disc: Vec<Option<usize>>,
+            low: Vec<usize>,
+            on_stack: Vec<bool>,
+            stack: Vec<usize>,
+            time: usize,
+            scc_id: Vec<usize>,
+            scc_counter: usize,
+        }
+
+        impl TarjanState {
+            fn new(n: usize) -> Self {
+                Self {
+                    disc: vec![None; n],
+                    low: vec![0; n],
+                    on_stack: vec![false; n],
+                    stack: Vec::new(),
+                    time: 0,
+                    scc_id: vec![0; n],
+                    scc_counter: 0,
+                }
+            }
+
+            fn dfs(&mut self, v: usize, graph: &Graph) {
+                // Initialize discovery time and low-link value
+                self.disc[v] = Some(self.time);
+                self.low[v] = self.time;
+                self.time += 1;
+                self.stack.push(v);
+                self.on_stack[v] = true;
+
+                // Visit all neighbors
+                for &w in graph.neighbors(v) {
+                    if self.disc[w].is_none() {
+                        // Tree edge: recurse
+                        self.dfs(w, graph);
+                        self.low[v] = self.low[v].min(self.low[w]);
+                    } else if self.on_stack[w] {
+                        // Back edge to node on stack
+                        self.low[v] = self
+                            .low[v]
+                            .min(self.disc[w].expect("disc[w] should be Some"));
+                    }
+                }
+
+                // If v is a root node, pop the stack and create SCC
+                if let Some(disc_v) = self.disc[v] {
+                    if self.low[v] == disc_v {
+                        // Found an SCC
+                        loop {
+                            let w = self.stack.pop().expect("stack should not be empty");
+                            self.on_stack[w] = false;
+                            self.scc_id[w] = self.scc_counter;
+                            if w == v {
+                                break;
+                            }
+                        }
+                        self.scc_counter += 1;
+                    }
+                }
+            }
+        }
+
+        let mut state = TarjanState::new(n);
+
+        // Run Tarjan's algorithm from each unvisited node
+        for v in 0..n {
+            if state.disc[v].is_none() {
+                state.dfs(v, self);
+            }
+        }
+
+        state.scc_id
+    }
 }
 
 /// Kahan summation for computing L1 distance between two vectors.
@@ -3809,5 +3916,142 @@ mod tests {
         // Three components
         let g3 = Graph::from_edges(&[(0, 1), (2, 3), (4, 5)], false);
         assert_eq!(count_components(&g3.connected_components()), 3);
+    }
+
+    // Strongly Connected Components Tests
+
+    #[test]
+    fn test_scc_single_cycle() {
+        // Single SCC: 0 -> 1 -> 2 -> 0
+        let g = Graph::from_edges(&[(0, 1), (1, 2), (2, 0)], true);
+        let sccs = g.strongly_connected_components();
+
+        assert_eq!(sccs.len(), 3);
+        // All nodes in same SCC
+        assert_eq!(sccs[0], sccs[1]);
+        assert_eq!(sccs[1], sccs[2]);
+    }
+
+    #[test]
+    fn test_scc_dag() {
+        // DAG: 0 -> 1 -> 2 (each node is its own SCC)
+        let g = Graph::from_edges(&[(0, 1), (1, 2)], true);
+        let sccs = g.strongly_connected_components();
+
+        assert_eq!(sccs.len(), 3);
+        // Each node is its own SCC
+        assert_ne!(sccs[0], sccs[1]);
+        assert_ne!(sccs[1], sccs[2]);
+        assert_ne!(sccs[0], sccs[2]);
+    }
+
+    #[test]
+    fn test_scc_two_components() {
+        // Two SCCs: (0->1->0) and (2->3->2)
+        let g = Graph::from_edges(&[(0, 1), (1, 0), (2, 3), (3, 2)], true);
+        let sccs = g.strongly_connected_components();
+
+        assert_eq!(sccs.len(), 4);
+        // SCC 1: nodes 0 and 1
+        assert_eq!(sccs[0], sccs[1]);
+        // SCC 2: nodes 2 and 3
+        assert_eq!(sccs[2], sccs[3]);
+        // Different SCCs
+        assert_ne!(sccs[0], sccs[2]);
+    }
+
+    #[test]
+    fn test_scc_complex() {
+        // Complex graph with multiple SCCs
+        // SCC 1: 0 -> 1 -> 0
+        // SCC 2: 2 -> 3 -> 4 -> 2
+        // Edge from SCC1 to SCC2: 1 -> 2
+        let g = Graph::from_edges(&[(0, 1), (1, 0), (1, 2), (2, 3), (3, 4), (4, 2)], true);
+        let sccs = g.strongly_connected_components();
+
+        assert_eq!(sccs.len(), 5);
+        // SCC 1: nodes 0 and 1
+        assert_eq!(sccs[0], sccs[1]);
+        // SCC 2: nodes 2, 3, 4
+        assert_eq!(sccs[2], sccs[3]);
+        assert_eq!(sccs[3], sccs[4]);
+        // Different SCCs
+        assert_ne!(sccs[0], sccs[2]);
+    }
+
+    #[test]
+    fn test_scc_self_loop() {
+        // Single node with self-loop is an SCC
+        let g = Graph::from_edges(&[(0, 0)], true);
+        let sccs = g.strongly_connected_components();
+
+        assert_eq!(sccs.len(), 1);
+        assert_eq!(sccs[0], 0);
+    }
+
+    #[test]
+    fn test_scc_disconnected() {
+        // Two disconnected cycles
+        let g = Graph::from_edges(&[(0, 1), (1, 0), (2, 3), (3, 2)], true);
+        let sccs = g.strongly_connected_components();
+
+        assert_eq!(sccs.len(), 4);
+        // Two separate SCCs
+        assert_eq!(sccs[0], sccs[1]);
+        assert_eq!(sccs[2], sccs[3]);
+        assert_ne!(sccs[0], sccs[2]);
+    }
+
+    #[test]
+    fn test_scc_empty() {
+        let g = Graph::new(true);
+        let sccs = g.strongly_connected_components();
+        assert!(sccs.is_empty());
+    }
+
+    #[test]
+    fn test_scc_linear_dag() {
+        // Linear DAG: 0 -> 1 -> 2 -> 3
+        let g = Graph::from_edges(&[(0, 1), (1, 2), (2, 3)], true);
+        let sccs = g.strongly_connected_components();
+
+        assert_eq!(sccs.len(), 4);
+        // Each node is its own SCC in a DAG
+        use std::collections::HashSet;
+        let unique_sccs: HashSet<_> = sccs.iter().copied().collect();
+        assert_eq!(unique_sccs.len(), 4);
+    }
+
+    #[test]
+    fn test_scc_complete_graph() {
+        // Complete directed graph (all nodes reachable from all)
+        let g = Graph::from_edges(&[(0, 1), (0, 2), (1, 0), (1, 2), (2, 0), (2, 1)], true);
+        let sccs = g.strongly_connected_components();
+
+        assert_eq!(sccs.len(), 3);
+        // All in same SCC
+        assert_eq!(sccs[0], sccs[1]);
+        assert_eq!(sccs[1], sccs[2]);
+    }
+
+    #[test]
+    fn test_scc_count() {
+        // Helper to count unique SCCs
+        fn count_sccs(sccs: &[usize]) -> usize {
+            use std::collections::HashSet;
+            sccs.iter().copied().collect::<HashSet<_>>().len()
+        }
+
+        // Single SCC
+        let g1 = Graph::from_edges(&[(0, 1), (1, 0)], true);
+        assert_eq!(count_sccs(&g1.strongly_connected_components()), 1);
+
+        // Two SCCs
+        let g2 = Graph::from_edges(&[(0, 1)], true);
+        assert_eq!(count_sccs(&g2.strongly_connected_components()), 2);
+
+        // Three SCCs
+        let g3 = Graph::from_edges(&[(0, 1), (2, 3), (3, 2)], true);
+        assert_eq!(count_sccs(&g3.strongly_connected_components()), 3);
     }
 }
