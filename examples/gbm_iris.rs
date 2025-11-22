@@ -128,7 +128,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "Versicolor"
         };
 
-        println!("   {}     {}   {:.3}      {:.3}", i, species, p0, p1);
+        println!("   {i}     {species}   {p0:.3}      {p1:.3}");
     }
     println!();
 

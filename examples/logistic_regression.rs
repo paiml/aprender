@@ -24,7 +24,7 @@ fn main() {
             7.5, 8.0, 6.8,
         ],
     )
-    .unwrap();
+    .expect("Example data should be valid");
 
     let y_train = vec![0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
 
@@ -95,7 +95,7 @@ fn main() {
             7.5, 8.0,
         ],
     )
-    .unwrap();
+    .expect("Example data should be valid");
 
     let test_predictions = model.predict(&x_test);
     let test_probabilities = model.predict_proba(&x_test);

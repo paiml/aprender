@@ -24,7 +24,7 @@ fn main() {
             3.0, 5.8, 2.2,
         ],
     )
-    .unwrap();
+    .expect("Example data should be valid");
 
     // True labels for comparison
     let true_labels = [0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2];
@@ -76,8 +76,8 @@ fn main() {
     let silhouette = silhouette_score(&x, &predicted_labels);
 
     println!("\nClustering Metrics:");
-    println!("  Inertia:         {:.4}", inertia_val);
-    println!("  Silhouette:      {:.4}", silhouette);
+    println!("  Inertia:         {inertia_val:.4}");
+    println!("  Silhouette:      {silhouette:.4}");
     println!("  Iterations:      {}", kmeans.n_iter());
 
     // Evaluate cluster quality interpretation

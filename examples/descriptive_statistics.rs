@@ -46,9 +46,9 @@ fn main() {
     let q75 = stats.quantile(0.75).expect("Failed to compute Q3");
 
     println!("Key Quantiles:");
-    println!("  • 25th percentile (Q1): {:.1}", q25);
-    println!("  • 50th percentile (Median): {:.1}", median);
-    println!("  • 75th percentile (Q3): {:.1}", q75);
+    println!("  • 25th percentile (Q1): {q25:.1}");
+    println!("  • 50th percentile (Median): {median:.1}");
+    println!("  • 75th percentile (Q3): {q75:.1}");
 
     let percentiles = stats
         .percentiles(&[10.0, 25.0, 50.0, 75.0, 90.0])
@@ -64,11 +64,8 @@ fn main() {
     println!("  • P90: {:.1} - Top 10% scored above this", percentiles[4]);
 
     println!("\n💡 Interpretation:");
-    println!("   Half the class scored above {:.1}", median);
-    println!(
-        "   The middle 50% of students scored between {:.1} and {:.1}\n",
-        q25, q75
-    );
+    println!("   Half the class scored above {median:.1}");
+    println!("   The middle 50% of students scored between {q25:.1} and {q75:.1}\n");
 
     // ========================================================================
     // Five-Number Summary
@@ -88,14 +85,14 @@ fn main() {
     println!("  • Median (50th percentile): {:.1}", summary.median);
     println!("  • Q3 (75th percentile): {:.1}", summary.q3);
     println!("  • Maximum: {:.1}", summary.max);
-    println!("\n  • IQR (Q3 - Q1): {:.1}", iqr);
+    println!("\n  • IQR (Q3 - Q1): {iqr:.1}");
 
     // Outlier detection using 1.5 * IQR rule
     let lower_fence = summary.q1 - 1.5 * iqr;
     let upper_fence = summary.q3 + 1.5 * iqr;
     println!("\nOutlier Fences (1.5 × IQR rule):");
-    println!("  • Lower fence: {:.1}", lower_fence);
-    println!("  • Upper fence: {:.1}", upper_fence);
+    println!("  • Lower fence: {lower_fence:.1}");
+    println!("  • Upper fence: {upper_fence:.1}");
 
     let outliers: Vec<f32> = test_scores
         .iter()
@@ -131,9 +128,9 @@ fn main() {
     for (method, name) in methods {
         let hist = stats
             .histogram_method(method)
-            .unwrap_or_else(|_| panic!("Failed to compute {} histogram", name));
+            .unwrap_or_else(|_| panic!("Failed to compute {name} histogram"));
 
-        println!("📊 {} Rule:", name);
+        println!("📊 {name} Rule:");
         println!("   {} bins created", hist.bins.len());
 
         // Print histogram bars
@@ -152,7 +149,7 @@ fn main() {
             };
             let bar = "█".repeat(bar_length);
 
-            println!("   [{:5.1} - {:5.1}): {:2} {}", lower, upper, count, bar);
+            println!("   [{lower:5.1} - {upper:5.1}): {count:2} {bar}");
         }
         println!();
     }
@@ -177,11 +174,11 @@ fn main() {
 
     println!("Dataset Statistics:");
     println!("  • Sample size: {}", test_scores.len());
-    println!("  • Mean: {:.2}", mean);
-    println!("  • Std Dev: {:.2}", stddev);
-    println!("  • Range: [{:.1}, {:.1}]", min, max);
-    println!("  • Median: {:.1}", median);
-    println!("  • IQR: {:.1}", iqr);
+    println!("  • Mean: {mean:.2}");
+    println!("  • Std Dev: {stddev:.2}");
+    println!("  • Range: [{min:.1}, {max:.1}]");
+    println!("  • Median: {median:.1}");
+    println!("  • IQR: {iqr:.1}");
 
     println!("\nClass Performance:");
     let pass_count = test_scores.iter().filter(|&&score| score >= 60.0).count();

@@ -68,7 +68,7 @@ fn main() {
     for (node_id, score) in &degree_scores {
         degree_with_names.push((names[*node_id], *score));
     }
-    degree_with_names.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+    degree_with_names.sort_by(|a, b| b.1.partial_cmp(&a.1).expect("Example data should be valid"));
 
     println!("Top 5 Most Connected People:");
     for (i, (name, score)) in degree_with_names.iter().take(5).enumerate() {
@@ -95,7 +95,8 @@ fn main() {
     for (i, &score) in pagerank_scores.iter().enumerate() {
         pagerank_with_names.push((names[i], score));
     }
-    pagerank_with_names.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+    pagerank_with_names
+        .sort_by(|a, b| b.1.partial_cmp(&a.1).expect("Example data should be valid"));
 
     println!("Top 5 Most Influential People:");
     for (i, (name, score)) in pagerank_with_names.iter().take(5).enumerate() {
@@ -118,7 +119,8 @@ fn main() {
     for (i, &score) in betweenness_scores.iter().enumerate() {
         betweenness_with_names.push((names[i], score));
     }
-    betweenness_with_names.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+    betweenness_with_names
+        .sort_by(|a, b| b.1.partial_cmp(&a.1).expect("Example data should be valid"));
 
     println!("Top 5 Bridge People:");
     for (i, (name, score)) in betweenness_with_names.iter().take(5).enumerate() {

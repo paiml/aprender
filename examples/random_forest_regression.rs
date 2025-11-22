@@ -29,7 +29,7 @@ fn main() {
             1.0, 7000.0, 10.0, 8.0, 0.5,
         ],
     )
-    .unwrap();
+    .expect("Example data should be valid");
 
     let y_train = Vector::from_slice(&[
         140.0, 145.0, 150.0, 160.0, 170.0, // Small
@@ -51,7 +51,7 @@ fn main() {
             4800.0, 8.0, 6.0, 0.8, // Luxury house
         ],
     )
-    .unwrap();
+    .expect("Example data should be valid");
 
     println!("=== Part 1: Random Forest vs Single Decision Tree ===\n");
 
@@ -72,8 +72,8 @@ fn main() {
     let tree_r2 = single_tree.score(&x_train, &y_train);
 
     println!("\nTraining Performance:");
-    println!("  Random Forest R²:     {:.4}", rf_r2);
-    println!("  Single Tree R²:       {:.4}", tree_r2);
+    println!("  Random Forest R²:     {rf_r2:.4}");
+    println!("  Single Tree R²:       {tree_r2:.4}");
     println!("  → RF advantage:       {:.4}", rf_r2 - tree_r2);
 
     // Predictions on test data
@@ -95,10 +95,7 @@ fn main() {
         let rf_pred = rf_slice[i];
         let tree_pred = tree_slice[i];
         let diff = rf_pred - tree_pred;
-        println!(
-            "{:>12.0} {:>12.0} {:>12.0} {:>12.0}",
-            sqft, rf_pred, tree_pred, diff
-        );
+        println!("{sqft:>12.0} {rf_pred:>12.0} {tree_pred:>12.0} {diff:>12.0}");
     }
 
     println!("\n=== Part 2: Effect of n_estimators (Number of Trees) ===\n");
@@ -116,7 +113,8 @@ fn main() {
         let mut rf = RandomForestRegressor::new(n_est)
             .with_max_depth(5)
             .with_random_state(42);
-        rf.fit(&x_train, &y_train).unwrap();
+        rf.fit(&x_train, &y_train)
+            .expect("Example data should be valid");
 
         let r2 = rf.score(&x_train, &y_train);
 
@@ -139,7 +137,8 @@ fn main() {
 
         // Simulate different training by using different bootstrap samples
         // (In practice, you'd use different random splits)
-        tree.fit(&x_train, &y_train).unwrap();
+        tree.fit(&x_train, &y_train)
+            .expect("Example data should be valid");
         let r2 = tree.score(&x_train, &y_train);
         tree_r2s.push(r2);
         println!("  Tree {}: R² = {:.4}", seed + 1, r2);
@@ -153,19 +152,17 @@ fn main() {
         / tree_r2s.len() as f32)
         .sqrt();
 
-    println!(
-        "\n  Single trees: Mean R² = {:.4}, Std = {:.4}",
-        tree_mean, tree_std
-    );
+    println!("\n  Single trees: Mean R² = {tree_mean:.4}, Std = {tree_std:.4}");
 
     // Train Random Forest
     let mut rf = RandomForestRegressor::new(50)
         .with_max_depth(6)
         .with_random_state(42);
-    rf.fit(&x_train, &y_train).unwrap();
+    rf.fit(&x_train, &y_train)
+        .expect("Example data should be valid");
     let rf_r2 = rf.score(&x_train, &y_train);
 
-    println!("  Random Forest: R² = {:.4} (stable)", rf_r2);
+    println!("  Random Forest: R² = {rf_r2:.4} (stable)");
     println!("\n  → Random Forest reduces variance through averaging!");
 
     println!("\n=== Part 4: Handling Non-Linear Patterns ===\n");
@@ -178,7 +175,7 @@ fn main() {
             1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0,
         ],
     )
-    .unwrap();
+    .expect("Example data should be valid");
 
     let y_quad = Vector::from_slice(&[
         1.0, 4.0, 9.0, 16.0, 25.0, 36.0, 49.0, 64.0, 81.0, 100.0, 121.0, 144.0,
@@ -188,18 +185,22 @@ fn main() {
     let mut rf_quad = RandomForestRegressor::new(30)
         .with_max_depth(4)
         .with_random_state(42);
-    rf_quad.fit(&x_quad, &y_quad).unwrap();
+    rf_quad
+        .fit(&x_quad, &y_quad)
+        .expect("Example data should be valid");
 
     // Train Linear Regression
     let mut lr_quad = LinearRegression::new();
-    lr_quad.fit(&x_quad, &y_quad).unwrap();
+    lr_quad
+        .fit(&x_quad, &y_quad)
+        .expect("Example data should be valid");
 
     let rf_r2_quad = rf_quad.score(&x_quad, &y_quad);
     let lr_r2_quad = lr_quad.score(&x_quad, &y_quad);
 
     println!("Performance on quadratic data (y = x²):");
-    println!("  Random Forest R²:      {:.4}", rf_r2_quad);
-    println!("  Linear Regression R²:  {:.4}", lr_r2_quad);
+    println!("  Random Forest R²:      {rf_r2_quad:.4}");
+    println!("  Linear Regression R²:  {lr_r2_quad:.4}");
     println!(
         "  → RF captures non-linearity {:.1}% better",
         (rf_r2_quad - lr_r2_quad) * 100.0
@@ -211,13 +212,15 @@ fn main() {
     let mut rf1 = RandomForestRegressor::new(20)
         .with_max_depth(5)
         .with_random_state(42);
-    rf1.fit(&x_train, &y_train).unwrap();
+    rf1.fit(&x_train, &y_train)
+        .expect("Example data should be valid");
     let pred1 = rf1.predict(&x_test);
 
     let mut rf2 = RandomForestRegressor::new(20)
         .with_max_depth(5)
         .with_random_state(42);
-    rf2.fit(&x_train, &y_train).unwrap();
+    rf2.fit(&x_train, &y_train)
+        .expect("Example data should be valid");
     let pred2 = rf2.predict(&x_test);
 
     println!("Training two forests with same random_state=42:");
@@ -259,13 +262,15 @@ fn main() {
             5200.0, 9.0, 6.5, 0.5, // Luxury house: 5200 sqft, 9 bed, 6.5 bath, 0.5 years
         ],
     )
-    .unwrap();
+    .expect("Example data should be valid");
 
     // Train final model
     let mut final_rf = RandomForestRegressor::new(50)
         .with_max_depth(8)
         .with_random_state(42);
-    final_rf.fit(&x_train, &y_train).unwrap();
+    final_rf
+        .fit(&x_train, &y_train)
+        .expect("Example data should be valid");
 
     let predictions = final_rf.predict(&new_houses);
 
@@ -285,10 +290,7 @@ fn main() {
         let age = new_houses.get(i, 3);
         let price = predictions.as_slice()[i];
 
-        println!(
-            "{:>10.0} {:>8.0} {:>6.1} {:>8.0} ${:>7.0}k {:>15}",
-            sqft, beds, baths, age, price, desc
-        );
+        println!("{sqft:>10.0} {beds:>8.0} {baths:>6.1} {age:>8.0} ${price:>7.0}k {desc:>15}");
     }
 
     println!("\n=== Part 7: Feature Importance ===\n");
@@ -297,7 +299,9 @@ fn main() {
     let mut rf_importance = RandomForestRegressor::new(50)
         .with_max_depth(8)
         .with_random_state(42);
-    rf_importance.fit(&x_train, &y_train).unwrap();
+    rf_importance
+        .fit(&x_train, &y_train)
+        .expect("Example data should be valid");
 
     let importances = rf_importance.feature_importances();
 
@@ -323,9 +327,9 @@ fn main() {
         let max_idx = imps
             .iter()
             .enumerate()
-            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
+            .max_by(|(_, a), (_, b)| a.partial_cmp(b).expect("Example data should be valid"))
             .map(|(idx, _)| idx)
-            .unwrap();
+            .expect("Example data should be valid");
 
         println!(
             "\n  → Most important: {} ({:.1}%)",
@@ -335,7 +339,7 @@ fn main() {
 
         // Verify they sum to 1.0
         let sum: f32 = imps.iter().sum();
-        println!("  → Importances sum to: {:.3} ✓", sum);
+        println!("  → Importances sum to: {sum:.3} ✓");
     }
 
     println!("\nWhat is Feature Importance?");
@@ -356,16 +360,18 @@ fn main() {
     let mut rf_oob = RandomForestRegressor::new(50)
         .with_max_depth(8)
         .with_random_state(42);
-    rf_oob.fit(&x_train, &y_train).unwrap();
+    rf_oob
+        .fit(&x_train, &y_train)
+        .expect("Example data should be valid");
 
     // Get OOB score (free validation without test set)
     let oob_score = rf_oob.oob_score();
     let training_score = rf_oob.score(&x_train, &y_train);
 
     println!("Performance comparison:");
-    println!("  Training R²:    {:.4}", training_score);
+    println!("  Training R²:    {training_score:.4}");
     if let Some(oob) = oob_score {
-        println!("  OOB R²:         {:.4}", oob);
+        println!("  OOB R²:         {oob:.4}");
         println!("  Difference:     {:.4}", (training_score - oob).abs());
     }
 

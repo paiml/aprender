@@ -61,7 +61,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             i,
             status,
             if label == -1 {
-                "".to_string()
+                String::new()
             } else {
                 label.to_string()
             }
@@ -77,8 +77,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map_or(0, |m| (m + 1) as usize);
     let n_noise = labels.iter().filter(|&&l| l == -1).count();
     println!("\nSummary:");
-    println!("  Clusters found: {}", n_clusters);
-    println!("  Noise points: {}", n_noise);
+    println!("  Clusters found: {n_clusters}");
+    println!("  Noise points: {n_noise}");
 
     // Example 2: Effect of eps parameter
     println!("\n--- Example 2: Effect of eps (neighborhood size) ---");
@@ -96,7 +96,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let noise_small = labels_small.iter().filter(|&&l| l == -1).count();
 
     println!("eps=0.2, min_samples=3:");
-    println!("  Clusters: {}, Noise: {}", clusters_small, noise_small);
+    println!("  Clusters: {clusters_small}, Noise: {noise_small}");
 
     // Medium eps: balanced
     let mut dbscan_medium = DBSCAN::new(0.5, 3);
@@ -111,7 +111,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let noise_medium = labels_medium.iter().filter(|&&l| l == -1).count();
 
     println!("eps=0.5, min_samples=3:");
-    println!("  Clusters: {}, Noise: {}", clusters_medium, noise_medium);
+    println!("  Clusters: {clusters_medium}, Noise: {noise_medium}");
 
     // Large eps: loose neighborhoods
     let mut dbscan_large = DBSCAN::new(2.0, 3);
@@ -126,7 +126,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let noise_large = labels_large.iter().filter(|&&l| l == -1).count();
 
     println!("eps=2.0, min_samples=3:");
-    println!("  Clusters: {}, Noise: {}", clusters_large, noise_large);
+    println!("  Clusters: {clusters_large}, Noise: {noise_large}");
 
     println!("\nObservation: Smaller eps → more noise, larger eps → fewer clusters");
 
@@ -140,7 +140,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let noise_low = labels_low.iter().filter(|&&l| l == -1).count();
 
     println!("eps=0.5, min_samples=2:");
-    println!("  Noise: {}", noise_low);
+    println!("  Noise: {noise_low}");
 
     // High min_samples: stricter density requirement
     let mut dbscan_high = DBSCAN::new(0.5, 5);
@@ -149,7 +149,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let noise_high = labels_high.iter().filter(|&&l| l == -1).count();
 
     println!("eps=0.5, min_samples=5:");
-    println!("  Noise: {}", noise_high);
+    println!("  Noise: {noise_high}");
 
     println!("\nObservation: Higher min_samples → stricter density → more noise");
 
@@ -166,8 +166,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  Cannot detect outliers");
 
     println!("\nDBSCAN (eps=0.5, min_samples=3):");
-    println!("  Finds {} clusters automatically", n_clusters);
-    println!("  Identifies {} outliers as noise", n_noise);
+    println!("  Finds {n_clusters} clusters automatically");
+    println!("  Identifies {n_noise} outliers as noise");
 
     println!("\nKey differences:");
     println!("  - K-Means: must specify k, assigns all points");

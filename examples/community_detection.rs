@@ -38,7 +38,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for (i, community) in communities.iter().enumerate() {
         println!("  Community {}: {:?}", i + 1, community);
     }
-    println!("Modularity: {:.3}\n", modularity);
+    println!("Modularity: {modularity:.3}\n");
 
     // Example 2: Social Network (Karate Club Style)
     println!("\nExample 2: Social Network Clustering");
@@ -64,7 +64,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for (i, community) in communities2.iter().enumerate() {
         println!("  Community {}: {:?}", i + 1, community);
     }
-    println!("Modularity: {:.3}", modularity2);
+    println!("Modularity: {modularity2:.3}");
     println!(
         "Bridge node (3) connects communities: {}",
         if communities2.len() >= 2 {
@@ -97,7 +97,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for (i, community) in communities3.iter().enumerate() {
         println!("  Community {}: {:?}", i + 1, community);
     }
-    println!("Modularity: {:.3}", modularity3);
+    println!("Modularity: {modularity3:.3}");
     println!("Disconnected components are correctly separated\n");
 
     // Example 4: Modularity Comparison
@@ -113,15 +113,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let bad_mod = g3.modularity(&bad_partition);
 
     println!("Good partition (by components):");
-    println!("  {:?}", good_partition);
-    println!("  Modularity: {:.3}", good_mod);
+    println!("  {good_partition:?}");
+    println!("  Modularity: {good_mod:.3}");
     println!("\nBad partition (all separate):");
-    println!("  {:?}", bad_partition);
-    println!("  Modularity: {:.3}", bad_mod);
-    println!(
-        "\nLouvain found modularity: {:.3} (should match good partition)",
-        modularity3
-    );
+    println!("  {bad_partition:?}");
+    println!("  Modularity: {bad_mod:.3}");
+    println!("\nLouvain found modularity: {modularity3:.3} (should match good partition)");
 
     // Example 5: Complete Graph (Single Community)
     println!("\n\nExample 5: Complete Graph");
@@ -137,7 +134,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         communities4.len()
     );
     println!("Community: {:?}", communities4[0]);
-    println!("Modularity: {:.3}", modularity4);
+    println!("Modularity: {modularity4:.3}");
     println!("Complete graphs have Q ≈ 0 (no community structure)\n");
 
     println!("=== Analysis Complete ===");

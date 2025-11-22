@@ -36,7 +36,7 @@ fn main() {
             5.8, 1.8, 7.2, 3.6, 6.1, 2.5,
         ],
     )
-    .unwrap();
+    .expect("Example data should be valid");
 
     let species = vec![
         "Setosa",
@@ -73,11 +73,8 @@ fn main() {
 
     let (n_samples, n_features) = data.shape();
     println!("📊 Dataset Information:");
-    println!("   Samples: {}", n_samples);
-    println!(
-        "   Features: {} (sepal length, sepal width, petal length, petal width)",
-        n_features
-    );
+    println!("   Samples: {n_samples}");
+    println!("   Features: {n_features} (sepal length, sepal width, petal length, petal width)");
     println!("   Species: Setosa, Versicolor, Virginica (10 each)\n");
 
     // ========================================================================
@@ -88,7 +85,9 @@ fn main() {
     println!("═══════════════════════════════════════════════════════\n");
 
     let mut scaler = StandardScaler::new();
-    let scaled_data = scaler.fit_transform(&data).unwrap();
+    let scaled_data = scaler
+        .fit_transform(&data)
+        .expect("Example data should be valid");
 
     println!("Why standardize?");
     println!("   PCA is sensitive to feature scales. Standardizing ensures");
@@ -102,10 +101,12 @@ fn main() {
     println!("═══════════════════════════════════════════════════════\n");
 
     let mut pca = PCA::new(2);
-    let transformed = pca.fit_transform(&scaled_data).unwrap();
+    let transformed = pca
+        .fit_transform(&scaled_data)
+        .expect("Example data should be valid");
 
     println!("Dimensionality Reduction:");
-    println!("   Original: {} features", n_features);
+    println!("   Original: {n_features} features");
     println!("   Reduced:  {} principal components\n", 2);
 
     // ========================================================================
@@ -115,8 +116,12 @@ fn main() {
     println!("  Step 3: Explained Variance Analysis");
     println!("═══════════════════════════════════════════════════════\n");
 
-    let explained_var = pca.explained_variance().unwrap();
-    let explained_ratio = pca.explained_variance_ratio().unwrap();
+    let explained_var = pca
+        .explained_variance()
+        .expect("Example data should be valid");
+    let explained_ratio = pca
+        .explained_variance_ratio()
+        .expect("Example data should be valid");
 
     println!("Explained Variance by Component:");
     for i in 0..2 {
@@ -159,7 +164,7 @@ fn main() {
     );
     println!("{}", "─".repeat(44));
 
-    for i in [0, 1, 2, 3, 4, 10, 11, 12, 13, 14, 20, 21, 22, 23, 24].iter() {
+    for i in &[0, 1, 2, 3, 4, 10, 11, 12, 13, 14, 20, 21, 22, 23, 24] {
         println!(
             "{:>6} {:>12} {:>10.4} {:>10.4}",
             i,
@@ -177,8 +182,12 @@ fn main() {
     println!("  Step 5: Reconstruction from 2D → 4D");
     println!("═══════════════════════════════════════════════════════\n");
 
-    let reconstructed_scaled = pca.inverse_transform(&transformed).unwrap();
-    let reconstructed = scaler.inverse_transform(&reconstructed_scaled).unwrap();
+    let reconstructed_scaled = pca
+        .inverse_transform(&transformed)
+        .expect("Example data should be valid");
+    let reconstructed = scaler
+        .inverse_transform(&reconstructed_scaled)
+        .expect("Example data should be valid");
 
     // Calculate reconstruction error
     let mut total_squared_error = 0.0;
@@ -196,9 +205,9 @@ fn main() {
     let rmse = mse.sqrt();
 
     println!("Reconstruction Error Metrics:");
-    println!("   MSE:        {:.6}", mse);
-    println!("   RMSE:       {:.6}", rmse);
-    println!("   Max Error:  {:.6}\n", max_error);
+    println!("   MSE:        {mse:.6}");
+    println!("   RMSE:       {rmse:.6}");
+    println!("   Max Error:  {max_error:.6}\n");
 
     println!("Sample Reconstruction (First 3 samples):");
     println!(
@@ -209,7 +218,7 @@ fn main() {
 
     let feature_names = ["Sepal L", "Sepal W", "Petal L", "Petal W"];
     for sample_idx in 0..3 {
-        println!("\nSample {}:", sample_idx);
+        println!("\nSample {sample_idx}:");
         for (j, fname) in feature_names.iter().enumerate() {
             println!(
                 "{:>8} {:>10.4} {:>14.4}",
@@ -222,10 +231,7 @@ fn main() {
     println!();
 
     println!("💡 Interpretation:");
-    println!(
-        "   RMSE of {:.4} means typical reconstruction error is small",
-        rmse
-    );
+    println!("   RMSE of {rmse:.4} means typical reconstruction error is small");
     println!("   Dimensionality reduction preserved most information!\n");
 
     // ========================================================================
@@ -235,7 +241,7 @@ fn main() {
     println!("  Step 6: Principal Components (Feature Loadings)");
     println!("═══════════════════════════════════════════════════════\n");
 
-    let components = pca.components().unwrap();
+    let components = pca.components().expect("Example data should be valid");
     println!(
         "{:>10} {:>10} {:>10} {:>10} {:>10}",
         "Component", "Sepal L", "Sepal W", "Petal L", "Petal W"
@@ -271,7 +277,7 @@ fn main() {
         "  • Reduced 4D iris data to 2D with {:.1}% variance retained",
         total_variance * 100.0
     );
-    println!("  • RMSE of {:.4} shows good reconstruction quality", rmse);
+    println!("  • RMSE of {rmse:.4} shows good reconstruction quality");
     println!("  • 2D representation suitable for visualization");
     println!("  • Three species likely separable in 2D PC space\n");
 

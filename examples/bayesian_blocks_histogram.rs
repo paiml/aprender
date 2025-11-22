@@ -46,8 +46,12 @@ fn uniform_distribution_example() {
     let v = Vector::from_slice(&data);
     let stats = DescriptiveStats::new(&v);
 
-    let hist_bayesian = stats.histogram_method(BinMethod::Bayesian).unwrap();
-    let hist_sturges = stats.histogram_method(BinMethod::Sturges).unwrap();
+    let hist_bayesian = stats
+        .histogram_method(BinMethod::Bayesian)
+        .expect("Example data should be valid");
+    let hist_sturges = stats
+        .histogram_method(BinMethod::Sturges)
+        .expect("Example data should be valid");
 
     println!("  Data: 1, 2, 3, ..., 20 (uniform)");
     println!("\n  Bayesian Blocks:");
@@ -77,7 +81,9 @@ fn two_clusters_example() {
     let v = Vector::from_slice(&data);
     let stats = DescriptiveStats::new(&v);
 
-    let hist = stats.histogram_method(BinMethod::Bayesian).unwrap();
+    let hist = stats
+        .histogram_method(BinMethod::Bayesian)
+        .expect("Example data should be valid");
 
     println!("  Data: Two clusters (1.0-2.0 and 9.0-10.0)");
     println!("  Gap: 2.0 to 9.0 (no data)");
@@ -121,7 +127,9 @@ fn multiple_density_example() {
     let v = Vector::from_slice(&data);
     let stats = DescriptiveStats::new(&v);
 
-    let hist = stats.histogram_method(BinMethod::Bayesian).unwrap();
+    let hist = stats
+        .histogram_method(BinMethod::Bayesian)
+        .expect("Example data should be valid");
 
     println!("  Data: Dense (1.0-2.0), Sparse (5, 7, 9), Dense (15.0-16.0)");
     println!("\n  Bayesian Blocks Result:");
@@ -177,7 +185,9 @@ fn comparison_example() {
     println!("  {}", "-".repeat(52));
 
     for (method, name) in methods {
-        let hist = stats.histogram_method(method).unwrap();
+        let hist = stats
+            .histogram_method(method)
+            .expect("Example data should be valid");
         let n_bins = hist.counts.len();
 
         // Check if method detected the gap (should have low counts in middle bins)

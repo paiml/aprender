@@ -52,10 +52,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let decision = decisions[i];
         let margin = if true_label == 1 { decision } else { -decision };
 
-        println!(
-            "   {}      {}      {}       {:.3}    {:.3}",
-            i, true_label, pred, decision, margin
-        );
+        println!("   {i}      {true_label}      {pred}       {decision:.3}    {margin:.3}");
     }
     println!();
 

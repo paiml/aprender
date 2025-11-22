@@ -242,7 +242,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("Best cross-selling pairs (highest lift):");
     let mut sorted_rules = rules.clone();
-    sorted_rules.sort_by(|a, b| b.lift.partial_cmp(&a.lift).unwrap());
+    sorted_rules.sort_by(|a, b| {
+        b.lift
+            .partial_cmp(&a.lift)
+            .expect("Example data should be valid")
+    });
 
     for rule in sorted_rules.iter().take(3) {
         println!("  If customer buys {:?}:", rule.antecedent);

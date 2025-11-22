@@ -31,16 +31,18 @@ fn main() {
     println!("Columns: {:?}\n", df.column_names());
 
     // Access individual columns
-    let ages = df.column("age").unwrap();
+    let ages = df.column("age").expect("Example data should be valid");
     println!("Ages: {:?}", ages.as_slice());
     println!("Mean age: {:.1}\n", ages.mean());
 
     // Select specific columns
-    let selected = df.select(&["age", "income"]).unwrap();
+    let selected = df
+        .select(&["age", "income"])
+        .expect("Example data should be valid");
     println!("Selected columns shape: {:?}", selected.shape());
 
     // Access rows
-    let row = df.row(2).unwrap();
+    let row = df.row(2).expect("Example data should be valid");
     println!("Row 2: {:?}", row.as_slice());
 
     // Convert to Matrix for ML algorithms
@@ -72,9 +74,14 @@ fn main() {
     println!("\n--- Linear Regression with DataFrame ---\n");
 
     // Use age and income to predict score
-    let features = df.select(&["age", "income"]).unwrap();
+    let features = df
+        .select(&["age", "income"])
+        .expect("Example data should be valid");
     let x = features.to_matrix();
-    let y = df.column("score").unwrap().clone();
+    let y = df
+        .column("score")
+        .expect("Example data should be valid")
+        .clone();
 
     let mut model = LinearRegression::new();
     model.fit(&x, &y).expect("Failed to fit model");
@@ -86,7 +93,7 @@ fn main() {
     println!("  age coefficient:    {:.6}", model.coefficients()[0]);
     println!("  income coefficient: {:.10}", model.coefficients()[1]);
     println!("  intercept:          {:.4}", model.intercept());
-    println!("\nR² Score: {:.4}", r2);
+    println!("\nR² Score: {r2:.4}");
 
     // Predictions
     println!("\nPredictions vs Actual:");

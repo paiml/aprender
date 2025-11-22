@@ -11,13 +11,15 @@ fn bench_linear_regression_fit(c: &mut Criterion) {
         let x_data: Vec<f32> = (0..*size).map(|i| i as f32).collect();
         let y_data: Vec<f32> = x_data.iter().map(|&x| 2.0 * x + 1.0).collect();
 
-        let x = Matrix::from_vec(*size, 1, x_data).unwrap();
+        let x = Matrix::from_vec(*size, 1, x_data).expect("Benchmark data should be valid");
         let y = Vector::from_vec(y_data);
 
         group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, _| {
             b.iter(|| {
                 let mut model = LinearRegression::new();
-                model.fit(black_box(&x), black_box(&y)).unwrap();
+                model
+                    .fit(black_box(&x), black_box(&y))
+                    .expect("Benchmark data should be valid");
             });
         });
     }
@@ -32,11 +34,11 @@ fn bench_linear_regression_predict(c: &mut Criterion) {
         let x_data: Vec<f32> = (0..*size).map(|i| i as f32).collect();
         let y_data: Vec<f32> = x_data.iter().map(|&x| 2.0 * x + 1.0).collect();
 
-        let x = Matrix::from_vec(*size, 1, x_data).unwrap();
+        let x = Matrix::from_vec(*size, 1, x_data).expect("Benchmark data should be valid");
         let y = Vector::from_vec(y_data);
 
         let mut model = LinearRegression::new();
-        model.fit(&x, &y).unwrap();
+        model.fit(&x, &y).expect("Benchmark data should be valid");
 
         group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, _| {
             b.iter(|| model.predict(black_box(&x)));

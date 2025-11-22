@@ -24,7 +24,7 @@ fn main() {
             3.0, 5.8, 2.2,
         ],
     )
-    .unwrap();
+    .expect("Example data should be valid");
 
     let y_train = vec![0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2];
 
@@ -78,7 +78,7 @@ fn main() {
             6.7, 3.1, 5.6, 2.4,
         ],
     )
-    .unwrap();
+    .expect("Example data should be valid");
 
     let test_predictions = tree.predict(&x_test);
     let species = ["Setosa", "Versicolor", "Virginica"];

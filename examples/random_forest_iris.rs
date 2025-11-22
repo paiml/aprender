@@ -22,7 +22,7 @@ fn main() {
             6.0, 2.5, 5.9, 2.1, 6.1, 2.3, 5.8, 2.2,
         ],
     )
-    .unwrap();
+    .expect("Example data should be valid");
     let y = vec![0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2];
 
     println!("Dataset:");

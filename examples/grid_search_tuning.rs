@@ -17,7 +17,8 @@ fn main() {
     let (x, y) = generate_regression_data();
 
     // Split into train and test sets
-    let (x_train, x_test, y_train, y_test) = train_test_split(&x, &y, 0.2, Some(42)).unwrap();
+    let (x_train, x_test, y_train, y_test) =
+        train_test_split(&x, &y, 0.2, Some(42)).expect("Example data should be valid");
 
     println!("Dataset:");
     println!("  Training samples: {}", x_train.shape().0);
@@ -91,7 +92,7 @@ fn generate_regression_data() -> (Matrix<f32>, Vector<f32>) {
         y_data.push(y_val);
     }
 
-    let x = Matrix::from_vec(n_samples, n_features, x_data).unwrap();
+    let x = Matrix::from_vec(n_samples, n_features, x_data).expect("Example data should be valid");
     let y = Vector::from_vec(y_data);
 
     (x, y)
@@ -110,12 +111,13 @@ fn ridge_grid_search_example(
     let kfold = KFold::new(5).with_random_state(42);
 
     // Run grid search
-    let result = grid_search_alpha("ridge", &alphas, x_train, y_train, &kfold, None).unwrap();
+    let result = grid_search_alpha("ridge", &alphas, x_train, y_train, &kfold, None)
+        .expect("Example data should be valid");
 
-    println!("  Alpha Grid: {:?}", alphas);
+    println!("  Alpha Grid: {alphas:?}");
     println!("\n  Cross-Validation Scores:");
     for (alpha, score) in result.alphas.iter().zip(result.scores.iter()) {
-        println!("    α={:<8.3} → R²={:.4}", alpha, score);
+        println!("    α={alpha:<8.3} → R²={score:.4}");
     }
 
     println!("\n  Best Parameters:");
@@ -124,11 +126,13 @@ fn ridge_grid_search_example(
 
     // Train final model with best alpha
     let mut ridge = Ridge::new(result.best_alpha);
-    ridge.fit(x_train, y_train).unwrap();
+    ridge
+        .fit(x_train, y_train)
+        .expect("Example data should be valid");
 
     let test_score = ridge.score(x_test, y_test);
     println!("\n  Test Set Performance:");
-    println!("    R²={:.4}", test_score);
+    println!("    R²={test_score:.4}");
 }
 
 fn lasso_grid_search_example(
@@ -142,12 +146,13 @@ fn lasso_grid_search_example(
 
     let kfold = KFold::new(5).with_random_state(42);
 
-    let result = grid_search_alpha("lasso", &alphas, x_train, y_train, &kfold, None).unwrap();
+    let result = grid_search_alpha("lasso", &alphas, x_train, y_train, &kfold, None)
+        .expect("Example data should be valid");
 
-    println!("  Alpha Grid: {:?}", alphas);
+    println!("  Alpha Grid: {alphas:?}");
     println!("\n  Cross-Validation Scores:");
     for (alpha, score) in result.alphas.iter().zip(result.scores.iter()) {
-        println!("    α={:<8.4} → R²={:.4}", alpha, score);
+        println!("    α={alpha:<8.4} → R²={score:.4}");
     }
 
     println!("\n  Best Parameters:");
@@ -156,7 +161,9 @@ fn lasso_grid_search_example(
 
     // Train final model and check sparsity
     let mut lasso = Lasso::new(result.best_alpha);
-    lasso.fit(x_train, y_train).unwrap();
+    lasso
+        .fit(x_train, y_train)
+        .expect("Example data should be valid");
 
     let test_score = lasso.score(x_test, y_test);
     let coef = lasso.coefficients();
@@ -165,7 +172,7 @@ fn lasso_grid_search_example(
     let non_zero = coef.as_slice().iter().filter(|&&c| c.abs() > 1e-6).count();
 
     println!("\n  Test Set Performance:");
-    println!("    R²={:.4}", test_score);
+    println!("    R²={test_score:.4}");
     println!(
         "    Non-zero coefficients: {}/{}  (sparse!)",
         non_zero,
@@ -186,8 +193,8 @@ fn elasticnet_grid_search_example(
     let kfold = KFold::new(5).with_random_state(42);
 
     println!("  Searching over:");
-    println!("    α: {:?}", alphas);
-    println!("    l1_ratio: {:?}", l1_ratios);
+    println!("    α: {alphas:?}");
+    println!("    l1_ratio: {l1_ratios:?}");
 
     let mut best_alpha = alphas[0];
     let mut best_l1_ratio = l1_ratios[0];
@@ -206,10 +213,10 @@ fn elasticnet_grid_search_example(
             &kfold,
             Some(l1_ratio),
         )
-        .unwrap();
+        .expect("Example data should be valid");
 
         for (alpha, score) in result.alphas.iter().zip(result.scores.iter()) {
-            println!("  {:>8.3} {:>10.2} {:>10.4}", alpha, l1_ratio, score);
+            println!("  {alpha:>8.3} {l1_ratio:>10.2} {score:>10.4}");
 
             if *score > best_score {
                 best_score = *score;
@@ -220,17 +227,18 @@ fn elasticnet_grid_search_example(
     }
 
     println!("\n  Best Parameters:");
-    println!("    α={:.3}", best_alpha);
-    println!("    l1_ratio={:.2}", best_l1_ratio);
-    println!("    CV Score: {:.4}", best_score);
+    println!("    α={best_alpha:.3}");
+    println!("    l1_ratio={best_l1_ratio:.2}");
+    println!("    CV Score: {best_score:.4}");
 
     // Train final model
     let mut enet = ElasticNet::new(best_alpha, best_l1_ratio);
-    enet.fit(x_train, y_train).unwrap();
+    enet.fit(x_train, y_train)
+        .expect("Example data should be valid");
 
     let test_score = enet.score(x_test, y_test);
     println!("\n  Test Set Performance:");
-    println!("    R²={:.4}", test_score);
+    println!("    R²={test_score:.4}");
 
     println!("\n  l1_ratio Guide:");
     println!("    0.00: Pure Ridge (L2 only)");
@@ -246,18 +254,17 @@ fn visualize_grid_search_results(x_train: &Matrix<f32>, y_train: &Vector<f32>) {
     println!("\n  {:>10} {:>15} {:>15}", "Alpha", "Ridge R²", "Lasso R²");
     println!("  {}", "-".repeat(42));
 
-    let ridge_result = grid_search_alpha("ridge", &alphas, x_train, y_train, &kfold, None).unwrap();
-    let lasso_result = grid_search_alpha("lasso", &alphas, x_train, y_train, &kfold, None).unwrap();
+    let ridge_result = grid_search_alpha("ridge", &alphas, x_train, y_train, &kfold, None)
+        .expect("Example data should be valid");
+    let lasso_result = grid_search_alpha("lasso", &alphas, x_train, y_train, &kfold, None)
+        .expect("Example data should be valid");
 
     for ((alpha, ridge_score), lasso_score) in alphas
         .iter()
         .zip(ridge_result.scores.iter())
         .zip(lasso_result.scores.iter())
     {
-        println!(
-            "  {:>10.4} {:>15.4} {:>15.4}",
-            alpha, ridge_score, lasso_score
-        );
+        println!("  {alpha:>10.4} {ridge_score:>15.4} {lasso_score:>15.4}");
     }
 
     println!("\n  Observations:");
@@ -275,28 +282,33 @@ fn compare_default_vs_optimized(
 ) {
     // Default Ridge (α=1.0)
     let mut ridge_default = Ridge::new(1.0);
-    ridge_default.fit(x_train, y_train).unwrap();
+    ridge_default
+        .fit(x_train, y_train)
+        .expect("Example data should be valid");
     let default_score = ridge_default.score(x_test, y_test);
 
     // Optimized Ridge
     let alphas = vec![0.001, 0.01, 0.1, 1.0, 10.0, 100.0];
     let kfold = KFold::new(5).with_random_state(42);
-    let result = grid_search_alpha("ridge", &alphas, x_train, y_train, &kfold, None).unwrap();
+    let result = grid_search_alpha("ridge", &alphas, x_train, y_train, &kfold, None)
+        .expect("Example data should be valid");
 
     let mut ridge_optimized = Ridge::new(result.best_alpha);
-    ridge_optimized.fit(x_train, y_train).unwrap();
+    ridge_optimized
+        .fit(x_train, y_train)
+        .expect("Example data should be valid");
     let optimized_score = ridge_optimized.score(x_test, y_test);
 
     println!("  Ridge Regression Comparison:");
     println!("\n  Default (α=1.0):");
-    println!("    Test R²: {:.4}", default_score);
+    println!("    Test R²: {default_score:.4}");
 
     println!("\n  Grid Search Optimized (α={:.3}):", result.best_alpha);
     println!("    CV R²:   {:.4}", result.best_score);
-    println!("    Test R²: {:.4}", optimized_score);
+    println!("    Test R²: {optimized_score:.4}");
 
     let improvement = ((optimized_score - default_score) / default_score.abs()) * 100.0;
-    println!("\n  Improvement: {:.2}%", improvement);
+    println!("\n  Improvement: {improvement:.2}%");
 
     if improvement > 0.0 {
         println!("  → Grid search found better hyperparameters! ✓");

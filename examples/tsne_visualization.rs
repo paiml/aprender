@@ -144,7 +144,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    println!("Results identical with same random_state: {}", identical);
+    println!("Results identical with same random_state: {identical}");
 
     // Example 6: t-SNE vs PCA comparison
     println!("\n--- Example 6: t-SNE vs PCA ---\n");

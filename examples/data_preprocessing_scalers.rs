@@ -62,12 +62,14 @@ fn standard_scaler_example() {
             200.0, 2.0, 300.0, 3.0, 400.0, 4.0, 500.0, 5.0,
         ],
     )
-    .unwrap();
+    .expect("Example data should be valid");
 
     let mut scaler = StandardScaler::new();
-    scaler.fit(&data).unwrap();
+    scaler.fit(&data).expect("Example data should be valid");
 
-    let scaled = scaler.transform(&data).unwrap();
+    let scaled = scaler
+        .transform(&data)
+        .expect("Example data should be valid");
 
     println!("  Original Data:");
     println!("    Feature 0: [100, 200, 300, 400, 500]");
@@ -104,12 +106,14 @@ fn minmax_scaler_example() {
             20.0, 200.0, 30.0, 300.0, 40.0, 400.0, 50.0, 500.0,
         ],
     )
-    .unwrap();
+    .expect("Example data should be valid");
 
     let mut scaler = MinMaxScaler::new(); // Default range [0, 1]
-    scaler.fit(&data).unwrap();
+    scaler.fit(&data).expect("Example data should be valid");
 
-    let scaled = scaler.transform(&data).unwrap();
+    let scaled = scaler
+        .transform(&data)
+        .expect("Example data should be valid");
 
     println!("  Original Data:");
     println!("    Feature 0: [10, 20, 30, 40, 50]");
@@ -145,17 +149,21 @@ fn scaler_comparison() {
             1.0, 2.0, 3.0, 4.0, 5.0, 100.0, // Outlier!
         ],
     )
-    .unwrap();
+    .expect("Example data should be valid");
 
     // StandardScaler
     let mut standard = StandardScaler::new();
-    standard.fit(&data).unwrap();
-    let standard_scaled = standard.transform(&data).unwrap();
+    standard.fit(&data).expect("Example data should be valid");
+    let standard_scaled = standard
+        .transform(&data)
+        .expect("Example data should be valid");
 
     // MinMaxScaler
     let mut minmax = MinMaxScaler::new();
-    minmax.fit(&data).unwrap();
-    let minmax_scaled = minmax.transform(&data).unwrap();
+    minmax.fit(&data).expect("Example data should be valid");
+    let minmax_scaled = minmax
+        .transform(&data)
+        .expect("Example data should be valid");
 
     println!("  Data with Outlier: [1, 2, 3, 4, 5, 100]");
     println!(
@@ -195,23 +203,32 @@ fn scaling_impact_on_knn() {
             85.0, 38.0, 90.0, 40.0, 95.0, 42.0,
         ],
     )
-    .unwrap();
+    .expect("Example data should be valid");
     let y_train = vec![0, 0, 0, 0, 1, 1, 1, 1];
 
-    let x_test = Matrix::from_vec(2, 2, vec![70.0, 33.0, 75.0, 36.0]).unwrap();
+    let x_test =
+        Matrix::from_vec(2, 2, vec![70.0, 33.0, 75.0, 36.0]).expect("Example data should be valid");
 
     // K-NN without scaling
     let mut knn_unscaled = KNearestNeighbors::new(3);
-    knn_unscaled.fit(&x_train, &y_train).unwrap();
+    knn_unscaled
+        .fit(&x_train, &y_train)
+        .expect("Example data should be valid");
     let pred_unscaled = knn_unscaled.predict(&x_test);
 
     // K-NN with StandardScaler
     let mut scaler = StandardScaler::new();
-    let x_train_scaled = scaler.fit_transform(&x_train).unwrap();
-    let x_test_scaled = scaler.transform(&x_test).unwrap();
+    let x_train_scaled = scaler
+        .fit_transform(&x_train)
+        .expect("Example data should be valid");
+    let x_test_scaled = scaler
+        .transform(&x_test)
+        .expect("Example data should be valid");
 
     let mut knn_scaled = KNearestNeighbors::new(3);
-    knn_scaled.fit(&x_train_scaled, &y_train).unwrap();
+    knn_scaled
+        .fit(&x_train_scaled, &y_train)
+        .expect("Example data should be valid");
     let pred_scaled = knn_scaled.predict(&x_test_scaled);
 
     println!("  Dataset: Employee classification");
@@ -229,8 +246,8 @@ fn scaling_impact_on_knn() {
     println!("    Sample 1: Salary=75k, Age=36");
 
     println!("\n  Predictions (K=3):");
-    println!("    Without scaling: {:?}", pred_unscaled);
-    println!("    With scaling:    {:?}", pred_scaled);
+    println!("    Without scaling: {pred_unscaled:?}");
+    println!("    With scaling:    {pred_scaled:?}");
 
     println!("\n  Why Scaling Matters:");
     println!("    • K-NN uses Euclidean distance");
@@ -240,12 +257,15 @@ fn scaling_impact_on_knn() {
 }
 
 fn custom_range_example() {
-    let data = Matrix::from_vec(5, 1, vec![0.0, 25.0, 50.0, 75.0, 100.0]).unwrap();
+    let data = Matrix::from_vec(5, 1, vec![0.0, 25.0, 50.0, 75.0, 100.0])
+        .expect("Example data should be valid");
 
     // Scale to [-1, 1]
     let mut scaler = MinMaxScaler::new().with_range(-1.0, 1.0);
-    scaler.fit(&data).unwrap();
-    let scaled = scaler.transform(&data).unwrap();
+    scaler.fit(&data).expect("Example data should be valid");
+    let scaled = scaler
+        .transform(&data)
+        .expect("Example data should be valid");
 
     println!("  Original: [0, 25, 50, 75, 100]");
     println!("  Scaled to [-1, 1]:");
@@ -260,12 +280,17 @@ fn custom_range_example() {
 }
 
 fn inverse_transform_example() {
-    let original = Matrix::from_vec(3, 2, vec![10.0, 100.0, 20.0, 200.0, 30.0, 300.0]).unwrap();
+    let original = Matrix::from_vec(3, 2, vec![10.0, 100.0, 20.0, 200.0, 30.0, 300.0])
+        .expect("Example data should be valid");
 
     // Scale and inverse
     let mut scaler = StandardScaler::new();
-    let scaled = scaler.fit_transform(&original).unwrap();
-    let recovered = scaler.inverse_transform(&scaled).unwrap();
+    let scaled = scaler
+        .fit_transform(&original)
+        .expect("Example data should be valid");
+    let recovered = scaler
+        .inverse_transform(&scaled)
+        .expect("Example data should be valid");
 
     println!("  Original Data:");
     for i in 0..3 {
@@ -299,7 +324,7 @@ fn inverse_transform_example() {
         }
     }
 
-    println!("\n  Maximum reconstruction error: {:.6}", max_error);
+    println!("\n  Maximum reconstruction error: {max_error:.6}");
     println!("  → Data perfectly recovered! ✓");
 
     println!("\n  When to Use Inverse Transform:");

@@ -49,7 +49,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let labels = hc.labels();
     println!("\nCluster assignments:");
     for (i, &label) in labels.iter().enumerate() {
-        println!("  Point {}: Cluster {}", i, label);
+        println!("  Point {i}: Cluster {label}");
     }
 
     // Count points per cluster
@@ -59,7 +59,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     println!("\nCluster sizes:");
     for (i, count) in cluster_counts.iter().enumerate() {
-        println!("  Cluster {}: {} points", i, count);
+        println!("  Cluster {i}: {count} points");
     }
 
     // Example 2: Dendrogram (merge history)
@@ -158,7 +158,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let labels_test2 = hc_test2.labels().clone();
 
     let reproducible = labels_test1 == labels_test2;
-    println!("Results are reproducible: {}", reproducible);
+    println!("Results are reproducible: {reproducible}");
     println!("(Same data and parameters always produce same clustering)");
 
     println!("\n=== Example Complete ===");
@@ -176,7 +176,7 @@ fn print_cluster_summary(labels: &[usize], n_clusters: usize) {
     print!("  Cluster sizes: ");
     for (i, count) in cluster_counts.iter().enumerate() {
         if *count > 0 {
-            print!("C{}={} ", i, count);
+            print!("C{i}={count} ");
         }
     }
     println!();

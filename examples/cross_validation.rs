@@ -40,7 +40,7 @@ fn train_test_split_example() {
     let x_data: Vec<f32> = (0..100).map(|i| i as f32).collect();
     let y_data: Vec<f32> = x_data.iter().map(|&x| 3.0 * x + 2.0).collect();
 
-    let x = Matrix::from_vec(100, 1, x_data).unwrap();
+    let x = Matrix::from_vec(100, 1, x_data).expect("Example data should be valid");
     let y = Vector::from_vec(y_data);
 
     // Split 80/20
@@ -66,11 +66,11 @@ fn train_test_split_example() {
     let train_score = model.score(&x_train, &y_train);
     let test_score = model.score(&x_test, &y_test);
 
-    println!("\n  Training R²: {:.4}", train_score);
-    println!("  Test R²:     {:.4}", test_score);
+    println!("\n  Training R²: {train_score:.4}");
+    println!("  Test R²:     {test_score:.4}");
 
     let generalization_gap = (train_score - test_score).abs();
-    println!("  Generalization gap: {:.4}", generalization_gap);
+    println!("  Generalization gap: {generalization_gap:.4}");
 
     if generalization_gap < 0.05 {
         println!("  ✓ Model generalizes well!");
@@ -84,7 +84,7 @@ fn kfold_example() {
     let x_data: Vec<f32> = (0..50).map(|i| i as f32).collect();
     let y_data: Vec<f32> = x_data.iter().map(|&x| 2.0 * x + 1.0).collect();
 
-    let x = Matrix::from_vec(50, 1, x_data).unwrap();
+    let x = Matrix::from_vec(50, 1, x_data).expect("Example data should be valid");
     let y = Vector::from_vec(y_data);
 
     // 5-Fold cross-validation
@@ -132,16 +132,16 @@ fn kfold_example() {
 
     println!("\n  Cross-Validation Results:");
     println!("  -------------------------");
-    println!("  Mean R²: {:.4} ± {:.4}", mean_score, std_dev);
+    println!("  Mean R²: {mean_score:.4} ± {std_dev:.4}");
     println!(
         "  Min R²:  {:.4}",
-        fold_scores.iter().cloned().fold(f32::INFINITY, f32::min)
+        fold_scores.iter().copied().fold(f32::INFINITY, f32::min)
     );
     println!(
         "  Max R²:  {:.4}",
         fold_scores
             .iter()
-            .cloned()
+            .copied()
             .fold(f32::NEG_INFINITY, f32::max)
     );
 
@@ -155,7 +155,7 @@ fn cross_validate_example() {
     let x_data: Vec<f32> = (0..100).map(|i| i as f32).collect();
     let y_data: Vec<f32> = x_data.iter().map(|&x| 4.0 * x - 3.0).collect();
 
-    let x = Matrix::from_vec(100, 1, x_data).unwrap();
+    let x = Matrix::from_vec(100, 1, x_data).expect("Example data should be valid");
     let y = Vector::from_vec(y_data);
 
     // Create model and cross-validation splitter

@@ -21,8 +21,8 @@ fn main() {
     let learning_rate = 0.1;
     let max_iterations = 50;
 
-    println!("Optimization problem: minimize f(x) = (x - {})^2", target);
-    println!("Optimal solution: x* = {}\n", target);
+    println!("Optimization problem: minimize f(x) = (x - {target})^2");
+    println!("Optimal solution: x* = {target}\n");
 
     // 1. SGD without momentum
     println!("--- SGD (no momentum) ---");
@@ -120,7 +120,7 @@ fn main() {
     let mse = mse_loss(&y_pred, &y_true);
     let mse_loss_obj = MSELoss;
     println!("MSE Loss:");
-    println!("  Functional API: {:.4}", mse);
+    println!("  Functional API: {mse:.4}");
     println!("  OOP API: {:.4}", mse_loss_obj.compute(&y_pred, &y_true));
     println!();
 
@@ -128,7 +128,7 @@ fn main() {
     let mae = mae_loss(&y_pred, &y_true);
     let mae_loss_obj = MAELoss;
     println!("MAE Loss:");
-    println!("  Functional API: {:.4}", mae);
+    println!("  Functional API: {mae:.4}");
     println!("  OOP API: {:.4}", mae_loss_obj.compute(&y_pred, &y_true));
     println!();
 
@@ -136,8 +136,8 @@ fn main() {
     let delta = 1.0;
     let huber = huber_loss(&y_pred, &y_true, delta);
     let huber_loss_obj = HuberLoss::new(delta);
-    println!("Huber Loss (delta = {}):", delta);
-    println!("  Functional API: {:.4}", huber);
+    println!("Huber Loss (delta = {delta}):");
+    println!("  Functional API: {huber:.4}");
     println!("  OOP API: {:.4}", huber_loss_obj.compute(&y_pred, &y_true));
     println!();
 

@@ -56,7 +56,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("\nPredictions (1=normal, -1=anomaly):");
     for (i, &pred) in predictions.iter().enumerate() {
         let label = if pred == 1 { "NORMAL" } else { "ANOMALY" };
-        println!("  Point {}: {} ({})", i, pred, label);
+        println!("  Point {i}: {pred} ({label})");
     }
 
     // Count anomalies
@@ -69,19 +69,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let scores = iforest.score_samples(&data);
     println!("\nAnomaly scores (lower = more anomalous):");
     for (i, &score) in scores.iter().enumerate() {
-        println!("  Point {}: {:.4}", i, score);
+        println!("  Point {i}: {score:.4}");
     }
 
     // Find most anomalous point
     let (most_anomalous_idx, &most_anomalous_score) = scores
         .iter()
         .enumerate()
-        .min_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
-        .unwrap();
-    println!(
-        "\nMost anomalous point: {} with score {:.4}",
-        most_anomalous_idx, most_anomalous_score
-    );
+        .min_by(|(_, a), (_, b)| a.partial_cmp(b).expect("Example data should be valid"))
+        .expect("Example data should be valid");
+    println!("\nMost anomalous point: {most_anomalous_idx} with score {most_anomalous_score:.4}");
 
     // Example 3: Effect of contamination parameter
     println!("\n--- Example 3: Contamination Parameter ---");
@@ -93,7 +90,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     iforest_low.fit(&data)?;
     let pred_low = iforest_low.predict(&data);
     let anomalies_low = pred_low.iter().filter(|&&p| p == -1).count();
-    println!("  Detected {} anomalies", anomalies_low);
+    println!("  Detected {anomalies_low} anomalies");
 
     println!("\nMedium contamination (20%):");
     let mut iforest_med = IsolationForest::new()
@@ -102,7 +99,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     iforest_med.fit(&data)?;
     let pred_med = iforest_med.predict(&data);
     let anomalies_med = pred_med.iter().filter(|&&p| p == -1).count();
-    println!("  Detected {} anomalies", anomalies_med);
+    println!("  Detected {anomalies_med} anomalies");
 
     println!("\nHigh contamination (30%):");
     let mut iforest_high = IsolationForest::new()
@@ -111,7 +108,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     iforest_high.fit(&data)?;
     let pred_high = iforest_high.predict(&data);
     let anomalies_high = pred_high.iter().filter(|&&p| p == -1).count();
-    println!("  Detected {} anomalies", anomalies_high);
+    println!("  Detected {anomalies_high} anomalies");
 
     // Example 4: Effect of number of trees
     println!("\n--- Example 4: Number of Trees (Ensemble Size) ---");
@@ -122,7 +119,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_random_state(42);
     iforest_few.fit(&data)?;
     let pred_few = iforest_few.predict(&data);
-    println!("  Predictions: {:?}", pred_few);
+    println!("  Predictions: {pred_few:?}");
 
     println!("\nMany trees (100):");
     let mut iforest_many = IsolationForest::new()
@@ -130,7 +127,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_random_state(42);
     iforest_many.fit(&data)?;
     let pred_many = iforest_many.predict(&data);
-    println!("  Predictions: {:?}", pred_many);
+    println!("  Predictions: {pred_many:?}");
 
     println!("\nNote: More trees typically provide more stable results");
 
@@ -195,7 +192,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let n_flagged = fraud_predictions.iter().filter(|&&p| p == -1).count();
-    println!("\nFlagged {} transactions for review", n_flagged);
+    println!("\nFlagged {n_flagged} transactions for review");
 
     // Example 6: Reproducibility
     println!("\n--- Example 6: Reproducibility ---");

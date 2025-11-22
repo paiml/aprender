@@ -21,7 +21,7 @@ fn bench_dataframe_to_matrix(c: &mut Criterion) {
                 Vector::from_vec((0..n_rows).map(|i| i as f32 * 3.0).collect()),
             ),
         ];
-        let df = DataFrame::new(columns).unwrap();
+        let df = DataFrame::new(columns).expect("Benchmark data should be valid");
 
         group.bench_with_input(BenchmarkId::from_parameter(n_rows), &n_rows, |b, _| {
             b.iter(|| black_box(&df).to_matrix());
@@ -57,10 +57,14 @@ fn bench_dataframe_select(c: &mut Criterion) {
                 Vector::from_vec((0..n_rows).map(|i| i as f32 * 5.0).collect()),
             ),
         ];
-        let df = DataFrame::new(columns).unwrap();
+        let df = DataFrame::new(columns).expect("Benchmark data should be valid");
 
         group.bench_with_input(BenchmarkId::from_parameter(n_rows), &n_rows, |b, _| {
-            b.iter(|| black_box(&df).select(&["a", "c", "e"]).unwrap());
+            b.iter(|| {
+                black_box(&df)
+                    .select(&["a", "c", "e"])
+                    .expect("Benchmark data should be valid")
+            });
         });
     }
 

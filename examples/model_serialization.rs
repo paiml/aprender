@@ -36,11 +36,14 @@ fn main() {
 
 fn linear_regression_example() {
     // Train a model
-    let x_train = Matrix::from_vec(5, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0]).unwrap();
+    let x_train = Matrix::from_vec(5, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0])
+        .expect("Example data should be valid");
     let y_train = Vector::from_slice(&[3.0, 5.0, 7.0, 9.0, 11.0]); // y = 2x + 1
 
     let mut model = LinearRegression::new();
-    model.fit(&x_train, &y_train).unwrap();
+    model
+        .fit(&x_train, &y_train)
+        .expect("Example data should be valid");
 
     println!(
         "  Trained model: y = {:.2}x + {:.2}",
@@ -54,7 +57,7 @@ fn linear_regression_example() {
     println!("  ✓ Saved to {path:?}");
 
     // Get file size
-    let metadata = fs::metadata(path).unwrap();
+    let metadata = fs::metadata(path).expect("Example data should be valid");
     println!("  ✓ File size: {} bytes", metadata.len());
 
     // Load model
@@ -62,7 +65,7 @@ fn linear_regression_example() {
     println!("  ✓ Loaded from {path:?}");
 
     // Verify predictions match
-    let x_test = Matrix::from_vec(1, 1, vec![10.0]).unwrap();
+    let x_test = Matrix::from_vec(1, 1, vec![10.0]).expect("Example data should be valid");
     let original_pred = model.predict(&x_test);
     let loaded_pred = loaded_model.predict(&x_test);
 
@@ -89,11 +92,11 @@ fn kmeans_example() {
             11.0, 11.0, // Cluster 2
         ],
     )
-    .unwrap();
+    .expect("Example data should be valid");
 
     // Train model
     let mut kmeans = KMeans::new(2).with_random_state(42);
-    kmeans.fit(&data).unwrap();
+    kmeans.fit(&data).expect("Example data should be valid");
 
     println!("  Trained KMeans with {} clusters", 2);
     println!("  Inertia: {:.2}", kmeans.inertia());
@@ -104,7 +107,7 @@ fn kmeans_example() {
     println!("  ✓ Saved to {path:?}");
 
     // Get file size
-    let metadata = fs::metadata(path).unwrap();
+    let metadata = fs::metadata(path).expect("Example data should be valid");
     println!("  ✓ File size: {} bytes", metadata.len());
 
     // Load model
@@ -112,7 +115,7 @@ fn kmeans_example() {
     println!("  ✓ Loaded from {path:?}");
 
     // Verify predictions match
-    let test_point = Matrix::from_vec(1, 2, vec![1.2, 1.2]).unwrap();
+    let test_point = Matrix::from_vec(1, 2, vec![1.2, 1.2]).expect("Example data should be valid");
     let original_cluster = kmeans.predict(&test_point);
     let loaded_cluster = loaded_kmeans.predict(&test_point);
 
@@ -139,12 +142,13 @@ fn decision_tree_example() {
             9.5, 9.5, // class 2
         ],
     )
-    .unwrap();
+    .expect("Example data should be valid");
     let y_train = vec![0, 0, 1, 1, 2, 2];
 
     // Train model
     let mut tree = DecisionTreeClassifier::new().with_max_depth(5);
-    tree.fit(&x_train, &y_train).unwrap();
+    tree.fit(&x_train, &y_train)
+        .expect("Example data should be valid");
 
     let accuracy = tree.score(&x_train, &y_train);
     println!("  Trained DecisionTree with max_depth=5");
@@ -156,7 +160,7 @@ fn decision_tree_example() {
     println!("  ✓ Saved to {path:?}");
 
     // Get file size
-    let metadata = fs::metadata(path).unwrap();
+    let metadata = fs::metadata(path).expect("Example data should be valid");
     println!("  ✓ File size: {} bytes", metadata.len());
 
     // Load model
@@ -164,7 +168,7 @@ fn decision_tree_example() {
     println!("  ✓ Loaded from {path:?}");
 
     // Verify predictions match
-    let test_data = Matrix::from_vec(1, 2, vec![5.2, 5.2]).unwrap();
+    let test_data = Matrix::from_vec(1, 2, vec![5.2, 5.2]).expect("Example data should be valid");
     let original_pred = tree.predict(&test_data);
     let loaded_pred = loaded_tree.predict(&test_data);
 

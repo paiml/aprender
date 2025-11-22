@@ -20,7 +20,7 @@ fn main() {
             1600.0, 3.0, 2.0, 20.0, 3000.0, 5.0, 4.0, 1.0, 1400.0, 3.0, 1.5, 25.0,
         ],
     )
-    .unwrap();
+    .expect("Example data should be valid");
 
     // Prices (simulated based on features)
     let y = Vector::from_slice(&[
@@ -53,7 +53,7 @@ fn main() {
         let actual = y.as_slice()[i];
         let predicted = predictions.as_slice()[i];
         let error = actual - predicted;
-        println!("{:>10.1} {:>10.1} {:>10.1}", actual, predicted, error);
+        println!("{actual:>10.1} {predicted:>10.1} {error:>10.1}");
     }
 
     // Calculate metrics
@@ -62,12 +62,13 @@ fn main() {
     let mae_val = mae(&predictions, &y);
 
     println!("\nModel Performance:");
-    println!("  R² Score: {:.4}", r2);
-    println!("  MSE:      {:.4}", mse_val);
-    println!("  MAE:      {:.4}", mae_val);
+    println!("  R² Score: {r2:.4}");
+    println!("  MSE:      {mse_val:.4}");
+    println!("  MAE:      {mae_val:.4}");
 
     // Predict on new house
-    let new_house = Matrix::from_vec(1, 4, vec![1900.0, 4.0, 2.0, 12.0]).unwrap();
+    let new_house =
+        Matrix::from_vec(1, 4, vec![1900.0, 4.0, 2.0, 12.0]).expect("Example data should be valid");
     let predicted_price = model.predict(&new_house);
     println!("\nNew House Prediction:");
     println!("  Features: 1900 sqft, 4 bed, 2 bath, 12 years old");

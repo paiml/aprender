@@ -30,7 +30,7 @@ fn main() {
             0.5,
         ],
     )
-    .unwrap();
+    .expect("Example data should be valid");
 
     // Prices with non-linear patterns
     // Price increases non-linearly with size and age discount
@@ -54,7 +54,7 @@ fn main() {
             4800.0, 8.0, 6.0, 0.8, // Luxury house
         ],
     )
-    .unwrap();
+    .expect("Example data should be valid");
 
     println!("=== Part 1: Decision Tree vs Linear Regression ===\n");
 
@@ -73,8 +73,8 @@ fn main() {
     let linear_r2 = linear.score(&x_train, &y_train);
 
     println!("\nTraining Performance:");
-    println!("  Decision Tree R² Score: {:.4}", tree_r2);
-    println!("  Linear Regression R²:   {:.4}", linear_r2);
+    println!("  Decision Tree R² Score: {tree_r2:.4}");
+    println!("  Linear Regression R²:   {linear_r2:.4}");
     println!("  → Tree advantage:       {:.4}", tree_r2 - linear_r2);
 
     // Predictions on test data
@@ -96,10 +96,7 @@ fn main() {
         let tree_pred = tree_slice[i];
         let linear_pred = linear_slice[i];
         let diff = tree_pred - linear_pred;
-        println!(
-            "{:>12.0} {:>12.0} {:>12.0} {:>12.0}",
-            sqft, tree_pred, linear_pred, diff
-        );
+        println!("{sqft:>12.0} {tree_pred:>12.0} {linear_pred:>12.0} {diff:>12.0}");
     }
 
     println!("\n=== Part 2: Effect of max_depth Parameter ===\n");
@@ -115,13 +112,14 @@ fn main() {
 
     for &depth in &depths {
         let mut tree = DecisionTreeRegressor::new().with_max_depth(depth);
-        tree.fit(&x_train, &y_train).unwrap();
+        tree.fit(&x_train, &y_train)
+            .expect("Example data should be valid");
 
         let preds = tree.predict(&x_train);
         let r2 = tree.score(&x_train, &y_train);
         let mse_val = mse(&preds, &y_train);
 
-        println!("{:>12} {:>12.4} {:>12.2} {:>12}", depth, r2, mse_val, depth);
+        println!("{depth:>12} {r2:>12.4} {mse_val:>12.2} {depth:>12}");
     }
 
     println!("\n=== Part 3: Min Samples Parameters ===\n");
@@ -134,15 +132,19 @@ fn main() {
         .with_min_samples_split(4)
         .with_min_samples_leaf(2);
 
-    tree_default.fit(&x_train, &y_train).unwrap();
-    tree_pruned.fit(&x_train, &y_train).unwrap();
+    tree_default
+        .fit(&x_train, &y_train)
+        .expect("Example data should be valid");
+    tree_pruned
+        .fit(&x_train, &y_train)
+        .expect("Example data should be valid");
 
     let r2_default = tree_default.score(&x_train, &y_train);
     let r2_pruned = tree_pruned.score(&x_train, &y_train);
 
     println!("Pruning parameters prevent overfitting:");
-    println!("  Default tree R²:           {:.4}", r2_default);
-    println!("  Pruned tree R²:            {:.4}", r2_pruned);
+    println!("  Default tree R²:           {r2_default:.4}");
+    println!("  Pruned tree R²:            {r2_pruned:.4}");
     println!("  (Pruned: min_split=4, min_leaf=2)");
 
     println!("\n=== Part 4: Handling Non-Linear Patterns ===\n");
@@ -153,7 +155,7 @@ fn main() {
         1,
         vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0],
     )
-    .unwrap();
+    .expect("Example data should be valid");
 
     // y = x²
     let y_quad = Vector::from_slice(&[1.0, 4.0, 9.0, 16.0, 25.0, 36.0, 49.0, 64.0, 81.0, 100.0]);
@@ -161,15 +163,19 @@ fn main() {
     let mut tree_quad = DecisionTreeRegressor::new().with_max_depth(4);
     let mut linear_quad = LinearRegression::new();
 
-    tree_quad.fit(&x_quad, &y_quad).unwrap();
-    linear_quad.fit(&x_quad, &y_quad).unwrap();
+    tree_quad
+        .fit(&x_quad, &y_quad)
+        .expect("Example data should be valid");
+    linear_quad
+        .fit(&x_quad, &y_quad)
+        .expect("Example data should be valid");
 
     let tree_r2_quad = tree_quad.score(&x_quad, &y_quad);
     let linear_r2_quad = linear_quad.score(&x_quad, &y_quad);
 
     println!("Performance on quadratic data (y = x²):");
-    println!("  Decision Tree R²:     {:.4}", tree_r2_quad);
-    println!("  Linear Regression R²: {:.4}", linear_r2_quad);
+    println!("  Decision Tree R²:     {tree_r2_quad:.4}");
+    println!("  Linear Regression R²: {linear_r2_quad:.4}");
     println!(
         "  → Tree captures non-linearity {:.1}% better",
         (tree_r2_quad - linear_r2_quad) * 100.0
@@ -189,10 +195,7 @@ fn main() {
         let tree_pred = tree_preds_quad.as_slice()[i];
         let linear_pred = linear_preds_quad.as_slice()[i];
 
-        println!(
-            "{:>6.0} {:>8.0} {:>10.1} {:>10.1}",
-            x, y_true, tree_pred, linear_pred
-        );
+        println!("{x:>6.0} {y_true:>8.0} {tree_pred:>10.1} {linear_pred:>10.1}");
     }
 
     println!("\n=== Summary ===\n");

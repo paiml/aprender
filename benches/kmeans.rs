@@ -19,7 +19,7 @@ fn bench_kmeans_fit(c: &mut Criterion) {
             }
         }
 
-        let matrix = Matrix::from_vec(n_samples, 2, data).unwrap();
+        let matrix = Matrix::from_vec(n_samples, 2, data).expect("Benchmark data should be valid");
 
         group.bench_with_input(
             BenchmarkId::from_parameter(n_samples),
@@ -27,7 +27,9 @@ fn bench_kmeans_fit(c: &mut Criterion) {
             |b, _| {
                 b.iter(|| {
                     let mut kmeans = KMeans::new(2).with_random_state(42).with_max_iter(100);
-                    kmeans.fit(black_box(&matrix)).unwrap();
+                    kmeans
+                        .fit(black_box(&matrix))
+                        .expect("Benchmark data should be valid");
                 });
             },
         );
@@ -51,9 +53,9 @@ fn bench_kmeans_predict(c: &mut Criterion) {
             }
         }
 
-        let matrix = Matrix::from_vec(n_samples, 2, data).unwrap();
+        let matrix = Matrix::from_vec(n_samples, 2, data).expect("Benchmark data should be valid");
         let mut kmeans = KMeans::new(2).with_random_state(42);
-        kmeans.fit(&matrix).unwrap();
+        kmeans.fit(&matrix).expect("Benchmark data should be valid");
 
         group.bench_with_input(
             BenchmarkId::from_parameter(n_samples),
