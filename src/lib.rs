@@ -44,8 +44,10 @@
 //! - [`serialization`]: Model serialization (SafeTensors format)
 //! - [`stats`]: Traditional descriptive statistics (quantiles, histograms)
 //! - [`graph`]: Graph construction and analysis (centrality, community detection)
+//! - [`bayesian`]: Bayesian inference (conjugate priors, MCMC, variational inference)
 //! - [`chaos`]: Chaos engineering configuration (from renacer)
 
+pub mod bayesian;
 pub mod chaos;
 pub mod classification;
 pub mod cluster;

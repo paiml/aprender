@@ -946,7 +946,428 @@ impl DirichletProcessGMM {
 
 ---
 
-## 12. Implementation Roadmap
+## 12. The Toyota Way as Bayesian Inference
+
+### 12.1 The Convergence of Philosophy and Probability
+
+The Toyota Production System (TPS) is frequently viewed as a cultural or management philosophy distinct from rigorous statistical methods. However, a deep structural analysis reveals that TPS is fundamentally a **physical manifestation of Bayesian inference**. Every principle of the Toyota Way, when stripped of cultural artifacts and examined through an epistemological lens, maps directly to operations in Bayesian probability theory.
+
+**Core Thesis**: The factory floor is a Bayesian inference engine. Lean manufacturing is the practice of reducing entropy—the systematic tightening of probability distributions. Every act of Kaizen (continuous improvement) is a Bayesian update: movement from a prior belief about a process through the likelihood function of observed data to a posterior understanding closer to reality.
+
+**Waste (Muda) as Uncertainty**: The seven types of waste—overproduction, waiting, transport, overprocessing, inventory, motion, defects—are symptoms of a single underlying cause: **uncertainty**. Inventory exists because posterior probability distributions regarding demand, machine uptime, and supplier delivery have high variance. Perfect information (Dirac delta functions) would eliminate the need for buffers. Therefore, **waste elimination = variance reduction = information maximization**.
+
+**Reference**: Spear & Bowen (1999), "Decoding the DNA of the Toyota Production System" [20]
+
+### 12.2 PDCA as Recursive Bayesian Updating
+
+The Plan-Do-Check-Act (PDCA) cycle, perfected by Toyota, is a recursive Bayesian algorithm:
+
+#### 12.2.1 Plan: Establishing the Prior P(H)
+
+**Standardized Work** is the formalization of the Prior distribution. As Masaaki Imai stated: "Where there is no standard, there can be no kaizen." Why? Because without a defined Prior, any observation is equally likely, and evidence carries no information content.
+
+```rust
+pub struct StandardizedWork {
+    /// Prior distribution over process outcomes
+    prior_mean: f32,
+    prior_variance: f32,
+
+    /// Specification limits
+    lower_spec_limit: f32,
+    upper_spec_limit: f32,
+}
+
+impl StandardizedWork {
+    /// Creates a strong informative prior from historical data
+    pub fn from_historical_data(outcomes: &[f32]) -> Self;
+
+    /// Checks if observed outcome is within expected distribution
+    pub fn is_normal(&self, observed: f32) -> bool {
+        let z_score = (observed - self.prior_mean) / self.prior_variance.sqrt();
+        z_score.abs() < 3.0  // 3-sigma rule
+    }
+}
+```
+
+**Hansei (Reflection)**: Review of historical posteriors to inform new priors, ensuring plans are informed (not uniform) priors weighted by past experience.
+
+#### 12.2.2 Do: The Experiment and Likelihood P(E|H)
+
+The "Do" phase generates data under controlled conditions. Strict adherence to standards is required not to "enslave workers" but to **preserve data integrity** for valid Bayesian updating. Arbitrary deviations contaminate the likelihood function—we cannot distinguish whether results come from the process H or from deviations.
+
+```rust
+pub struct ProcessExecution {
+    standard: StandardizedWork,
+    observations: Vec<Observation>,
+}
+
+pub struct Observation {
+    timestamp: DateTime,
+    measurement: f32,
+    operator: String,
+    conditions: HashMap<String, f32>,
+}
+
+impl ProcessExecution {
+    /// Records high-fidelity observation
+    pub fn record(&mut self, obs: Observation);
+
+    /// Compute likelihood of observations given standard
+    pub fn log_likelihood(&self) -> f32;
+}
+```
+
+#### 12.2.3 Check/Study: Computing Posterior P(H|E)
+
+**Not mere inspection**, but analysis of the relationship between prediction and outcome. The Extended PDCA framework emphasizes process mining to rigorously compare "simulation model behavior" (Prior) with "observed log behavior" (Evidence)—functionally minimizing Kullback-Leibler divergence.
+
+```rust
+pub struct BayesianProcessControl {
+    prior: Distribution,
+    observations: Vec<f32>,
+}
+
+impl BayesianProcessControl {
+    /// Compute posterior distribution
+    pub fn update_posterior(&mut self) -> Distribution {
+        // Bayes' theorem: P(θ|D) ∝ P(D|θ) × P(θ)
+        let likelihood = self.compute_likelihood();
+        let posterior = self.prior.update(likelihood, &self.observations);
+
+        // Check if evidence is in low-probability region
+        if self.is_anomaly(&posterior) {
+            // Trigger problem-solving (Act phase)
+            self.trigger_andon();
+        }
+
+        posterior
+    }
+
+    fn is_anomaly(&self, posterior: &Distribution) -> bool {
+        // Low marginal likelihood P(E|H) indicates problem
+        posterior.marginal_likelihood() < THRESHOLD
+    }
+
+    fn trigger_andon(&self) {
+        // Stop the line - Bayesian filter prevents noise propagation
+    }
+}
+```
+
+**Reference**: Larrick & Feiler (2015), "Improving Bayesian Reasoning: Advice for Decision Makers" [21]
+
+#### 12.2.4 Act: Bayesian Decision Theory
+
+If posterior confirms prior (P(H|E) is high): Standardize further—reduce variance.
+If posterior refutes prior (P(H|E) is low): Formulate new hypothesis—pivot.
+
+This maps to **Bayesian Decision Theory**: choose action to minimize expected loss given posterior distribution.
+
+### 12.3 The 14 Principles as Bayesian Priors
+
+Jeffrey Liker's 14 Toyota Way principles transform from behavioral guidelines into structural requirements for a Bayesian inference engine:
+
+#### Principle 1: Long-Term Philosophy
+
+**Bayesian Interpretation**: Infinite time horizon for Bayesian Decision Theory. Shifts balance from exploitation (short-term greedy optimization) to exploration (learning that tightens posterior distributions for future iterations).
+
+Research via Latent Semantic Analysis of Toyota's corporate memory reveals "Team Work" and "Respect for People" are emphasized over "Kaizen" because the long-term cultural prior provides the container for short-term Bayesian updates.
+
+**Reference**: Hino (2006), "LSA analysis of Toyota corporate memory" [22]
+
+#### Principle 2: Create Continuous Flow
+
+**Flow as Signal Generation**: Batch-and-queue systems create temporal lag between events (H) and evidence (E), degrading the likelihood function P(E|H). One-piece flow creates immediate temporal linkage, maximizing signal-to-noise ratio for high-fidelity Bayesian updates.
+
+#### Principle 6: Standardized Tasks
+
+**Creating Strong Informative Priors**: Codifies 50+ years of experience into baseline distributions. Without standards (flat priors), massive data is required to converge on truth. Standards enable immediate anomaly detection.
+
+#### Principle 7: Visual Control
+
+**Probability Dashboard**: Kanban boards, Andon lights, shadow boards visualize system state and deviations from expected distributions in real-time, broadcasting probabilistic conflicts to the entire network.
+
+```rust
+pub struct VisualControl {
+    expected_state: State,
+    actual_state: State,
+}
+
+impl VisualControl {
+    /// Binary probability map
+    pub fn status(&self) -> ControlStatus {
+        if self.expected_state == self.actual_state {
+            ControlStatus::Normal(1.0)  // P = 1.0
+        } else {
+            ControlStatus::Abnormal(0.0)  // P = 0.0, flag low-likelihood event
+        }
+    }
+}
+```
+
+### 12.4 Set-Based Design: Bayesian Filtering in Product Development
+
+Traditional "Point-Based Design" selects one solution early (single hypothesis H₁) and iterates. Toyota's **Set-Based Concurrent Engineering** maintains broad solution sets and eliminates infeasible options through evidence.
+
+**Mechanism as Bayesian Sequential Monte Carlo**:
+
+1. **Initialization**: Define feasible region S₀ = {H₁, H₂, ..., Hₙ} (broad, flat prior)
+2. **Evidence Collection**: Trade-off curves and constraint data arrive from manufacturing, suppliers, styling
+3. **Intersection (Update)**: Eliminate weak solutions—intersect feasible sets from different departments
+   ```
+   S_new = S_manufacturing ∩ S_styling ∩ S_engineering
+   ```
+4. **Convergence**: Set narrows (posterior tightens) until final solution emerges by elimination of infeasible options
+
+**Second Toyota Paradox** (Ward et al., 1995): "Delaying decisions, communicating ambiguously, and pursuing excessive prototypes" appears wasteful to frequentists but is **optimal Sequential Monte Carlo filtering** to Bayesians. By delaying decision collapse, Toyota maintains high-entropy prior until likelihood information is strong enough for certainty.
+
+**Efficiency**: Verifying infeasibility is cheaper than verifying optimality. Progressive pruning avoids local optima that trap point-based designers.
+
+**Reference**: Ward, Liker, Cristiano & Sobek (1995), "The Second Toyota Paradox" [23]
+
+### 12.5 Genchi Genbutsu: High-Fidelity Sampling
+
+**"Go and See for Yourself"** - Safeguard against biased priors and noisy likelihoods.
+
+**Problem**: Managers using aggregated data construct office-based priors P(H_office) from lossy compression. Aggregation destroys variance information. Going to Gemba (the floor) collects raw, uncompressed evidence for accurate P(H_gemba).
+
+**Modular Neural Networks**: Recent computational biology research shows Bayesian inference in biological brains requires modular networks with different timescales. TPS's decentralized teams and cell-based manufacturing reflect this—local Bayesian processors update local priors P(H_local) at fast timescales, while management updates global priors P(H_global) at slower timescales.
+
+**Reference**: Ichikawa & Kaneko (2024), "Modular neural networks for Bayesian inference" [24]
+
+```rust
+pub trait BayesianSensor {
+    /// Collect high-fidelity, uncompressed observations
+    fn gemba_observation(&self) -> RawData;
+
+    /// Reject aggregated/lossy data
+    fn reject_office_prior(&self) -> bool;
+}
+
+pub struct WorkCell {
+    local_prior: Distribution,
+    update_rate: Duration,  // Fast timescale
+}
+
+pub struct ManagementLayer {
+    global_prior: Distribution,
+    update_rate: Duration,  // Slow timescale
+}
+```
+
+### 12.6 Bayesian Statistical Process Control (SPC)
+
+Traditional Shewhart charts assume fixed sample sizes, normality, and fixed parameters—failing in high-mix, low-volume Lean manufacturing.
+
+**Bayesian Control Charts** treat process parameters (μ, σ²) as random variables with prior distributions. Even small sample sizes allow updates and shift detection.
+
+#### 12.6.1 Bayesian EWMA Charts
+
+```rust
+pub struct BayesianEWMA {
+    prior_mean: f32,
+    prior_variance: f32,
+    smoothing_factor: f32,
+    measurement_error_model: Option<Distribution>,
+}
+
+impl BayesianEWMA {
+    /// Update with new observation, accounting for measurement error
+    pub fn update(&mut self, observation: f32) -> ControlResult {
+        // Incorporate measurement error model into likelihood
+        let posterior = self.bayesian_update(observation);
+
+        // Distinguish process drift from sensor noise
+        if self.is_process_drift(&posterior) {
+            ControlResult::OutOfControl(posterior)
+        } else if self.is_sensor_noise(&posterior) {
+            ControlResult::SensorWarning(posterior)
+        } else {
+            ControlResult::InControl(posterior)
+        }
+    }
+
+    /// Detect shifts with fewer samples than Shewhart
+    pub fn detect_shift(&self, data: &[f32]) -> Option<usize> {
+        // Bayesian charts achieve higher detection rate, fewer false alarms
+    }
+}
+```
+
+**Empirical Evidence**: Ali et al. (2025) compared Shewhart vs. Bayesian average charts in blood glucose monitoring (variable process similar to Lean manufacturing). **Result**: "Bayesian chart more accurate in detecting rapid changes, higher detection rate, fewer false alarms." [25]
+
+**Measurement Error**: Bayesian VEWMA charts incorporate measurement error models, probabilistically "doubting" sensor readings that conflict strongly with prior process state, waiting for confirmation before stopping the line.
+
+**Reference**: Ho & Quinino (2013), "Bayesian SPC with measurement error" [26]
+
+#### 12.6.2 System Reliability as Coherent Structures
+
+Toyota views the factory as a "coherent structure" of components (people, machines, suppliers). Bayesian methods synthesize component test data (likelihood) with engineering judgment (prior) to estimate system reliability.
+
+```rust
+pub struct CoherentSystem {
+    components: Vec<Component>,
+}
+
+pub struct Component {
+    reliability_prior: BetaDistribution,
+    test_data: Vec<bool>,  // Success/failure
+}
+
+impl CoherentSystem {
+    /// Estimate system reliability from component tests
+    pub fn system_reliability(&self) -> f32 {
+        self.components
+            .iter()
+            .map(|c| c.posterior_reliability())
+            .product()  // Assuming series system
+    }
+}
+```
+
+**TPS Insight**: Obsession with supplier development mathematically increases reliability of entire coherent structure by tightening prior distributions of supplier quality.
+
+**Reference**: Mastran & Singpurwalla (1978), "Bayesian estimation of coherent structure reliability" [27]
+
+### 12.7 Lean Startup: Bayesian Innovation
+
+Eric Ries adapted TPS principles for startups, making implicit Bayesian nature explicit.
+
+#### 12.7.1 MVP as Information Probe
+
+**Minimum Viable Product** = instrument to maximize Bayesian updating rate per dollar spent.
+
+**Mathematical Model** (Yoo, Huang & Arifoğlu, 2024): "Build-test-learn" cycle as two-stage decision process with Bayesian belief updating. [28]
+
+**Key Findings**:
+
+1. **Optimal MVP Quality**: Intermediate level maximizes discriminative power
+   - Too high: everyone buys (false positive)
+   - Too low: no one buys (false negative)
+   - Neither provides information about concept
+
+2. **Failure as Information**: "Failure to sell can be equally informative as success" if experiment designed to be discriminative
+
+```rust
+pub struct MVP {
+    quality_level: f32,  // Intermediate for max information
+    design_location: DesignPoint,
+}
+
+impl MVP {
+    /// Design experiment to maximize information gain
+    pub fn optimal_design(candidate_designs: &[DesignPoint]) -> Self {
+        // Select quality to maximize discriminative power
+        let quality = Self::intermediate_quality();
+
+        // Design to rule out less likely or confirm more likely
+        let location = Self::select_test_location(candidate_designs);
+
+        MVP { quality_level: quality, design_location: location }
+    }
+
+    /// Bayesian update from test results
+    pub fn update_belief(&self, sales_data: &[bool]) -> Distribution {
+        // Update posterior over business model space
+    }
+}
+```
+
+#### 12.7.2 Cognitive Bias Problem
+
+Entrepreneurs with strong priors P(Idea is Great) ≈ 1 ignore negative evidence (confirmation bias). York & Danes (2017) recommend formal decision aids—stopping rules, pre-mortems—to force Bayesian updates despite ego resistance. [29]
+
+#### 12.7.3 Advice Networks and Correlated Priors
+
+Cohen & Koning (2020): If 10 mentors from same background (ex-Google engineers) all say "Yes," effective sample size ≈ 1 due to correlated priors. Sophisticated Bayesian entrepreneurs must:
+- Account for correlation
+- Seek diverse sources
+- Actively challenge own priors
+- Seek "negative advice" (fatal flaws) to maximize information gain
+
+**Reference**: Cohen & Koning (2020), "The Bayesian Entrepreneur" [30]
+
+### 12.8 Measuring Kaizen Readiness
+
+**Bayesian Best-Worst Method (BBWM)** evaluates organizational readiness for Kaizen:
+
+Key success factors with Bayesian weights:
+- Training and Education: 0.119
+- Employee Attitude: 0.112
+- Senior Management Support: High significance
+
+**Poetic Insight**: Using Bayesian methods to determine if organization is ready to use... Bayesian methods (Kaizen). **Finding**: Organizational prior (culture/attitude) is strongest predictor of success. If prior is resistant (dogmatic), no amount of evidence (Kaizen events) leads to successful updates.
+
+**Toyota Maxim Proven**: "Build people, then build cars"—must condition the Bayesian Brain (workforce) before expecting effective information processing.
+
+**Reference**: Mahdiraji et al. (2023), "Bayesian Kaizen readiness evaluation" [31]
+
+### 12.9 Implementation in Aprender Development
+
+**Aprender itself follows TPS/Bayesian principles**:
+
+1. **Standardized Work** = Coding standards, clippy rules (Prior)
+2. **PDCA Cycle** = Red-Green-Refactor (Bayesian update loop)
+3. **Visual Control** = Test coverage dashboard, mutation scores
+4. **Andon** = Clippy warnings, failing tests stop the build
+5. **Genchi Genbutsu** = Read the code, run the benchmarks (not just read reports)
+6. **Flow** = One feature at a time, immediate CI feedback
+7. **Kaizen** = Continuous improvement via PMAT quality gates
+
+```rust
+// Example: Aprender development as Bayesian process
+pub struct DevelopmentCycle {
+    standard: CodingStandard,  // Prior
+    implementation: Code,       // Experiment
+    tests: TestResults,         // Evidence
+    coverage: f32,             // Likelihood metric
+}
+
+impl DevelopmentCycle {
+    /// PDCA = Red-Green-Refactor as Bayesian update
+    pub fn pdca_cycle(&mut self) -> Result<(), AprenderError> {
+        // RED: Write failing test (define expected distribution)
+        let expected_behavior = self.write_test();
+
+        // DO: Implement feature (generate evidence)
+        let actual_behavior = self.implement();
+
+        // CHECK: Compare expected vs actual (compute posterior)
+        let posterior = self.bayesian_update(expected_behavior, actual_behavior);
+
+        // ACT: If test fails (low P(E|H)), refine implementation
+        if posterior.is_low_probability() {
+            self.refactor()?;
+        } else {
+            self.standardize();  // Update standard (new prior)
+        }
+
+        Ok(())
+    }
+}
+```
+
+### 12.10 Summary: TPS-Bayesian Mapping
+
+| TPS Concept | Bayesian Equivalent | Function |
+|-------------|-------------------|----------|
+| Standardized Work | Prior Distribution P(H) | Baseline prediction, anomaly detection |
+| Production/Operation | Experiment | Generates data (Evidence E) |
+| Check/Study | Posterior P(H\|E) | Updates belief in process stability |
+| Problem (Deviation) | Low P(E\|H) | Signal that Prior doesn't match Reality |
+| Set-Based Design | Sequential Monte Carlo | Multiple hypotheses until data eliminates infeasible |
+| Root Cause Analysis | Causal Inference | Identify hidden variable explaining likelihood |
+| Kanban | Demand Signal | Propagate information to update inventory requirements |
+| Genchi Genbutsu | High-Fidelity Sampling | Replace biased priors with empirical priors |
+| Andon (Stop Line) | Bayesian Filter | Stop error propagation downstream |
+| Kaizen Readiness | Prior Belief State | Cultural condition for update mechanism |
+| True North | Zero Entropy (Asymptote) | P(Defect)=0, requires infinite information |
+
+**Conclusion**: The Toyota Production System is a rigorous, empirically-driven, probabilistic system for navigating uncertainty. To practice TPS without understanding probability is cargo cult. To the True Believer, the factory is a cathedral of data, and work is the holy act of aligning beliefs with reality—one Bayesian update at a time.
+
+---
+
+## 13. Implementation Roadmap
 
 ### Phase 1: Classical Bayesian Inference (v0.7.0, 4-6 weeks)
 

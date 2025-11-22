@@ -6,6 +6,7 @@
 //! use aprender::prelude::*;
 //! ```
 
+pub use crate::bayesian::{BetaBinomial, DirichletMultinomial, GammaPoisson, NormalInverseGamma};
 pub use crate::classification::LogisticRegression;
 pub use crate::cluster::{
     Affinity, AgglomerativeClustering, CovarianceType, GaussianMixture, IsolationForest, KMeans,
