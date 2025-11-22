@@ -103,6 +103,7 @@
 
 - [Graph Algorithms Theory](./ml-fundamentals/graph-algorithms.md)
 - [Graph Pathfinding Theory](./ml-fundamentals/graph-pathfinding.md)
+- [Graph Components and Traversal](./ml-fundamentals/graph-components-traversal.md)
 - [Graph Link Prediction and Community Detection](./ml-fundamentals/graph-link-prediction.md)
 
 ## Statistics
