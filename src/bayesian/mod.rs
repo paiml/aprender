@@ -112,7 +112,9 @@
 //! ```
 
 mod conjugate;
+mod logistic;
 mod regression;
 
 pub use conjugate::{BetaBinomial, DirichletMultinomial, GammaPoisson, NormalInverseGamma};
+pub use logistic::BayesianLogisticRegression;
 pub use regression::BayesianLinearRegression;

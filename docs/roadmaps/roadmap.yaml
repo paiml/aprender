@@ -973,11 +973,27 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'New task: Implement Bayesian Model Selection (Bayes Factors, DIC, WAIC)'
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2025-11-22T16:58:14.002509466+00:00
-  updated: 2025-11-22T16:58:14.002509466+00:00
+  updated: 2025-11-22T17:07:12.377508121+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: Implement Bayesian Logistic Regression (Laplace approximation)
+  github_issue: null
+  item_type: task
+  title: 'New task: Implement Bayesian Logistic Regression (Laplace approximation)'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2025-11-22T17:08:26.938091419+00:00
+  updated: 2025-11-22T17:08:26.938091419+00:00
   spec: null
   acceptance_criteria: []
   phases: []

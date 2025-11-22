@@ -138,6 +138,7 @@
 - [Case Study: Normal-InverseGamma Bayesian Inference](./examples/normal-inverse-gamma-inference.md)
 - [Case Study: Dirichlet-Multinomial Bayesian Inference](./examples/dirichlet-multinomial-inference.md)
 - [Case Study: Bayesian Linear Regression](./examples/bayesian-linear-regression.md)
+- [Case Study: Bayesian Logistic Regression](./examples/bayesian-logistic-regression.md)
 - [Case Study: SVM Iris](./examples/svm-iris.md)
 - [Case Study: Gradient Boosting Iris](./examples/gbm-iris.md)
 - [Case Study: Regularized Regression](./examples/regularized-regression.md)
