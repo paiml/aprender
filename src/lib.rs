@@ -46,6 +46,7 @@
 //! - [`graph`]: Graph construction and analysis (centrality, community detection)
 //! - [`bayesian`]: Bayesian inference (conjugate priors, MCMC, variational inference)
 //! - [`glm`]: Generalized Linear Models (Poisson, Gamma, Binomial families)
+//! - [`decomposition`]: Matrix decomposition (ICA, PCA)
 //! - [`chaos`]: Chaos engineering configuration (from renacer)
 
 pub mod bayesian;
@@ -53,6 +54,7 @@ pub mod chaos;
 pub mod classification;
 pub mod cluster;
 pub mod data;
+pub mod decomposition;
 pub mod error;
 pub mod glm;
 pub mod graph;
