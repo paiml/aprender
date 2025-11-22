@@ -154,8 +154,7 @@ fn test_elasticnet_save_unfitted_model_fails() {
     let error_msg = result.unwrap_err();
     assert!(
         error_msg.contains("unfitted") || error_msg.contains("fit"),
-        "Error message should mention model is unfitted. Got: {}",
-        error_msg
+        "Error message should mention model is unfitted. Got: {error_msg}"
     );
 
     // Ensure no file was created
@@ -349,14 +348,12 @@ fn test_elasticnet_file_size_reasonable() {
     // - Total: < 2KB for this small model
     assert!(
         file_size < 2048,
-        "SafeTensors file should be compact. Got {} bytes",
-        file_size
+        "SafeTensors file should be compact. Got {file_size} bytes"
     );
 
     assert!(
         file_size > 28,
-        "SafeTensors file should contain data. Got {} bytes",
-        file_size
+        "SafeTensors file should contain data. Got {file_size} bytes"
     );
 
     // Cleanup
@@ -387,9 +384,7 @@ fn test_elasticnet_r2_score_preserved() {
     // R² scores should be identical
     assert!(
         (original_r2 - loaded_r2).abs() < 1e-6,
-        "R² score should be preserved: original={}, loaded={}",
-        original_r2,
-        loaded_r2
+        "R² score should be preserved: original={original_r2}, loaded={loaded_r2}"
     );
 
     // Cleanup
@@ -429,8 +424,7 @@ fn test_elasticnet_combined_regularization_behavior() {
     for i in 0..original_coef.len() {
         assert!(
             (original_coef[i] - loaded_coef[i]).abs() < 1e-6,
-            "Coefficient {} mismatch",
-            i
+            "Coefficient {i} mismatch"
         );
     }
 

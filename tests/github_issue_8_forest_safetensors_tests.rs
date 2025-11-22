@@ -117,26 +117,22 @@ fn test_forest_safetensors_metadata_includes_all_trees() {
 
     // Verify all 3 trees have required tensors
     for tree_idx in 0..3 {
-        let prefix = format!("tree_{}_", tree_idx);
+        let prefix = format!("tree_{tree_idx}_");
         assert!(
-            metadata.get(format!("{}node_features", prefix)).is_some(),
-            "Metadata must include tree {} node_features",
-            tree_idx
+            metadata.get(format!("{prefix}node_features")).is_some(),
+            "Metadata must include tree {tree_idx} node_features"
         );
         assert!(
-            metadata.get(format!("{}node_thresholds", prefix)).is_some(),
-            "Metadata must include tree {} node_thresholds",
-            tree_idx
+            metadata.get(format!("{prefix}node_thresholds")).is_some(),
+            "Metadata must include tree {tree_idx} node_thresholds"
         );
         assert!(
-            metadata.get(format!("{}node_classes", prefix)).is_some(),
-            "Metadata must include tree {} node_classes",
-            tree_idx
+            metadata.get(format!("{prefix}node_classes")).is_some(),
+            "Metadata must include tree {tree_idx} node_classes"
         );
         assert!(
-            metadata.get(format!("{}max_depth", prefix)).is_some(),
-            "Metadata must include tree {} max_depth",
-            tree_idx
+            metadata.get(format!("{prefix}max_depth")).is_some(),
+            "Metadata must include tree {tree_idx} max_depth"
         );
     }
 
@@ -159,8 +155,7 @@ fn test_forest_save_unfitted_model_fails() {
     let error_msg = result.unwrap_err();
     assert!(
         error_msg.contains("unfitted") || error_msg.contains("fit"),
-        "Error message should mention model is unfitted. Got: {}",
-        error_msg
+        "Error message should mention model is unfitted. Got: {error_msg}"
     );
 
     // Ensure no file was created
@@ -285,9 +280,7 @@ fn test_forest_accuracy_score_preserved() {
     // Accuracy should be identical
     assert!(
         (original_accuracy - loaded_accuracy).abs() < 1e-6,
-        "Accuracy should be preserved: original={}, loaded={}",
-        original_accuracy,
-        loaded_accuracy
+        "Accuracy should be preserved: original={original_accuracy}, loaded={loaded_accuracy}"
     );
 
     // Cleanup
@@ -348,10 +341,7 @@ fn test_forest_different_n_estimators() {
         .count();
     assert!(
         matches >= 3,
-        "10-tree forest predictions should mostly match: {:?} vs {:?} ({}/4 match)",
-        pred10_orig,
-        pred10_loaded,
-        matches
+        "10-tree forest predictions should mostly match: {pred10_orig:?} vs {pred10_loaded:?} ({matches}/4 match)"
     );
 
     // Cleanup
@@ -379,14 +369,12 @@ fn test_forest_file_size_reasonable() {
     // File should be reasonable (5 trees, each small)
     assert!(
         file_size < 20_000,
-        "SafeTensors file should be compact for small forest. Got {} bytes",
-        file_size
+        "SafeTensors file should be compact for small forest. Got {file_size} bytes"
     );
 
     assert!(
         file_size > 200,
-        "SafeTensors file should contain data. Got {} bytes",
-        file_size
+        "SafeTensors file should contain data. Got {file_size} bytes"
     );
 
     // Cleanup
