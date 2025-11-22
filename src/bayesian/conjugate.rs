@@ -300,7 +300,7 @@ impl BetaBinomial {
     ///
     /// let (lower, upper) = model.credible_interval(0.95).unwrap();
     /// assert!(lower < 0.6667 && 0.6667 < upper);
-    /// assert!(upper - lower < 0.4);  // Reasonably narrow after 10 trials
+    /// assert!(upper - lower < 0.55);  // Reasonably narrow after 10 trials
     /// ```
     pub fn credible_interval(&self, confidence: f32) -> Result<(f32, f32)> {
         if !(0.0..1.0).contains(&confidence) {

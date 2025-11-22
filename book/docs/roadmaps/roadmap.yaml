@@ -17,6 +17,7 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
+  notes: null
 - id: GH-24
   github_issue: 24
   item_type: task
@@ -32,6 +33,7 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
+  notes: null
 - id: Fix mdbook test failures - 9 failing code blocks in documentation
   github_issue: null
   item_type: task
@@ -47,6 +49,7 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
+  notes: null
 - id: Mark GH-10 and GH-11 (Graph/Stats documentation) as completed
   github_issue: null
   item_type: task
@@ -62,6 +65,7 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
+  notes: null
 - id: 'Implement DBSCAN clustering algorithm (Issue #14)'
   github_issue: null
   item_type: task
@@ -77,3 +81,20 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
+  notes: null
+- id: 'Phase 3: Fix mdbook test failures for new Bayesian chapters (Gamma-Poisson, Normal-InverseGamma, Dirichlet-Multinomial)'
+  github_issue: null
+  item_type: task
+  title: 'New task: Phase 3: Fix mdbook test failures for new Bayesian chapters (Gamma-Poisson, Normal-InverseGamma, Dirichlet-Multinomial)'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2025-11-22T15:28:12.133005949+00:00
+  updated: 2025-11-22T15:28:12.133005949+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

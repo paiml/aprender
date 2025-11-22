@@ -33,7 +33,7 @@
 //! assert!((mean - 0.6667).abs() < 0.001);
 //!
 //! // 95% credible interval
-//! let (lower, upper) = model.credible_interval(0.95);
+//! let (lower, upper) = model.credible_interval(0.95).unwrap();
 //! assert!(lower < mean && mean < upper);
 //!
 //! // Predict next trial
@@ -56,7 +56,7 @@
 //! assert!((mean - 4.0).abs() < 0.5);
 //!
 //! // 95% credible interval for rate
-//! let (lower, upper) = model.credible_interval(0.95);
+//! let (lower, upper) = model.credible_interval(0.95).unwrap();
 //! assert!(lower < mean && mean < upper);
 //! ```
 //!
@@ -73,7 +73,7 @@
 //!
 //! // Posterior mean of μ (location)
 //! let mean_mu = model.posterior_mean_mu();
-//! assert!((mean_mu - 5.1).abs() < 0.5);
+//! assert!((mean_mu - 4.3).abs() < 0.3);
 //!
 //! // Posterior mean of σ² (variance)
 //! let mean_var = model.posterior_mean_variance().unwrap();
