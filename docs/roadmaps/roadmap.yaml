@@ -1033,3 +1033,19 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: Implement Covariance and Correlation Matrices
+  github_issue: null
+  item_type: task
+  title: 'New task: Implement Covariance and Correlation Matrices'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2025-11-22T18:21:14.036353506+00:00
+  updated: 2025-11-22T18:21:14.036353506+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

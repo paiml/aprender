@@ -7,6 +7,7 @@
 //! - Five-number summary (min, Q1, median, Q3, max)
 //! - Histograms with multiple bin selection methods
 //! - Hypothesis testing (t-tests, chi-square, ANOVA)
+//! - Covariance and correlation matrices
 //! - Optimized with Toyota Way principles (QuickSelect for O(n) quantiles)
 //!
 //! # Examples
@@ -23,8 +24,10 @@
 //! assert_eq!(stats.quantile(1.0).expect("max quantile should be computable for valid data"), 5.0); // max
 //! ```
 
+pub mod covariance;
 pub mod hypothesis;
 
+pub use covariance::{corr, corr_matrix, cov, cov_matrix};
 pub use hypothesis::{
     chisquare, f_oneway, ttest_1samp, ttest_ind, ttest_rel, AnovaResult, ChiSquareResult,
     TTestResult,

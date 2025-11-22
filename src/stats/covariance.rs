@@ -1,0 +1,519 @@
+//! Covariance and correlation computations.
+//!
+//! This module provides functions for computing covariance and correlation
+//! between variables.
+//!
+//! # Mathematical Background
+//!
+//! ## Covariance
+//!
+//! Covariance measures how two variables change together:
+//!
+//! ```text
+//! Cov(X, Y) = E[(X - E[X])(Y - E[Y])]
+//!           = (1/n) Σ (x_i - x̄)(y_i - ȳ)
+//! ```
+//!
+//! ## Pearson Correlation
+//!
+//! Pearson correlation normalizes covariance to [-1, 1]:
+//!
+//! ```text
+//! ρ(X, Y) = Cov(X, Y) / (σ_X σ_Y)
+//! ```
+//!
+//! Where σ_X and σ_Y are standard deviations.
+//!
+//! # Examples
+//!
+//! ```
+//! use aprender::stats::{cov, corr};
+//! use trueno::Vector;
+//!
+//! let x = Vector::from_slice(&[1.0, 2.0, 3.0, 4.0, 5.0]);
+//! let y = Vector::from_slice(&[2.0, 4.0, 6.0, 8.0, 10.0]);
+//!
+//! // Perfect positive correlation
+//! let covariance = cov(&x, &y).expect("covariance should compute");
+//! let correlation = corr(&x, &y).expect("correlation should compute");
+//!
+//! assert!(covariance > 0.0);
+//! assert!((correlation - 1.0).abs() < 1e-6);
+//! ```
+
+use crate::error::{AprenderError, Result};
+use crate::primitives::{Matrix, Vector};
+
+/// Computes the covariance between two vectors.
+///
+/// # Arguments
+///
+/// * `x` - First variable (n values)
+/// * `y` - Second variable (n values)
+///
+/// # Returns
+///
+/// Covariance: `Cov(X, Y) = (1/n) Σ (x_i - x̄)(y_i - ȳ)`
+///
+/// # Errors
+///
+/// Returns error if vectors have different lengths or are empty.
+///
+/// # Examples
+///
+/// ```
+/// use aprender::stats::cov;
+/// use trueno::Vector;
+///
+/// let x = Vector::from_slice(&[1.0, 2.0, 3.0]);
+/// let y = Vector::from_slice(&[2.0, 4.0, 5.0]);
+///
+/// let covariance = cov(&x, &y).expect("Should compute covariance");
+/// assert!(covariance > 0.0); // Positive relationship
+/// ```
+pub fn cov(x: &Vector<f32>, y: &Vector<f32>) -> Result<f32> {
+    let n = x.len();
+
+    if n != y.len() {
+        return Err(AprenderError::DimensionMismatch {
+            expected: format!("{n} values in x"),
+            actual: format!("{} values in y", y.len()),
+        });
+    }
+
+    if n == 0 {
+        return Err(AprenderError::Other(
+            "Cannot compute covariance of empty vectors".into(),
+        ));
+    }
+
+    // Compute means
+    let x_mean = x.as_slice().iter().sum::<f32>() / n as f32;
+    let y_mean = y.as_slice().iter().sum::<f32>() / n as f32;
+
+    // Compute covariance: (1/n) Σ (x_i - x̄)(y_i - ȳ)
+    let cov_sum: f32 = x
+        .as_slice()
+        .iter()
+        .zip(y.as_slice().iter())
+        .map(|(&xi, &yi)| (xi - x_mean) * (yi - y_mean))
+        .sum();
+
+    Ok(cov_sum / n as f32)
+}
+
+/// Computes the covariance matrix for a data matrix.
+///
+/// # Arguments
+///
+/// * `data` - Data matrix (n × p), where n is samples and p is features
+///
+/// # Returns
+///
+/// Covariance matrix (p × p) where entry (i, j) is `Cov(feature_i, feature_j)`
+///
+/// # Errors
+///
+/// Returns error if data is empty or has invalid dimensions.
+///
+/// # Examples
+///
+/// ```
+/// use aprender::stats::cov_matrix;
+/// use aprender::primitives::Matrix;
+///
+/// // 3 samples, 2 features
+/// let data = Matrix::from_vec(3, 2, vec![
+///     1.0, 2.0,
+///     2.0, 4.0,
+///     3.0, 6.0,
+/// ]).expect("Valid matrix");
+///
+/// let cov_mat = cov_matrix(&data).expect("Should compute covariance matrix");
+/// assert_eq!(cov_mat.n_rows(), 2);
+/// assert_eq!(cov_mat.n_cols(), 2);
+/// ```
+pub fn cov_matrix(data: &Matrix<f32>) -> Result<Matrix<f32>> {
+    let n = data.n_rows(); // samples
+    let p = data.n_cols(); // features
+
+    if n == 0 || p == 0 {
+        return Err(AprenderError::Other(
+            "Cannot compute covariance matrix for empty data".into(),
+        ));
+    }
+
+    // Compute means for each feature
+    let mut means = vec![0.0_f32; p];
+    #[allow(clippy::needless_range_loop)]
+    for j in 0..p {
+        let mut sum = 0.0;
+        for i in 0..n {
+            sum += data.get(i, j);
+        }
+        means[j] = sum / n as f32;
+    }
+
+    // Compute covariance matrix
+    let mut cov_data = vec![0.0_f32; p * p];
+    for i in 0..p {
+        for j in 0..=i {
+            // Only compute lower triangle (symmetric)
+            let mut cov_sum = 0.0;
+            for k in 0..n {
+                cov_sum += (data.get(k, i) - means[i]) * (data.get(k, j) - means[j]);
+            }
+            let cov_val = cov_sum / n as f32;
+
+            // Fill both (i,j) and (j,i) for symmetry
+            cov_data[i * p + j] = cov_val;
+            cov_data[j * p + i] = cov_val;
+        }
+    }
+
+    Matrix::from_vec(p, p, cov_data)
+        .map_err(|e| AprenderError::Other(format!("Failed to create covariance matrix: {e}")))
+}
+
+/// Computes the Pearson correlation coefficient between two vectors.
+///
+/// # Arguments
+///
+/// * `x` - First variable (n values)
+/// * `y` - Second variable (n values)
+///
+/// # Returns
+///
+/// Pearson correlation: `ρ(X, Y) = Cov(X, Y) / (σ_X σ_Y)`
+///
+/// Range: [-1, 1]
+/// - 1: Perfect positive correlation
+/// - 0: No linear correlation
+/// - -1: Perfect negative correlation
+///
+/// # Errors
+///
+/// Returns error if vectors have different lengths, are empty, or have zero variance.
+///
+/// # Examples
+///
+/// ```
+/// use aprender::stats::corr;
+/// use trueno::Vector;
+///
+/// let x = Vector::from_slice(&[1.0, 2.0, 3.0, 4.0]);
+/// let y = Vector::from_slice(&[2.0, 4.0, 6.0, 8.0]);
+///
+/// let correlation = corr(&x, &y).expect("Should compute correlation");
+/// assert!((correlation - 1.0).abs() < 1e-6); // Perfect positive correlation
+/// ```
+pub fn corr(x: &Vector<f32>, y: &Vector<f32>) -> Result<f32> {
+    let n = x.len();
+
+    if n != y.len() {
+        return Err(AprenderError::DimensionMismatch {
+            expected: format!("{n} values in x"),
+            actual: format!("{} values in y", y.len()),
+        });
+    }
+
+    if n == 0 {
+        return Err(AprenderError::Other(
+            "Cannot compute correlation of empty vectors".into(),
+        ));
+    }
+
+    // Compute means
+    let x_mean = x.as_slice().iter().sum::<f32>() / n as f32;
+    let y_mean = y.as_slice().iter().sum::<f32>() / n as f32;
+
+    // Compute covariance and variances
+    let mut cov_sum = 0.0;
+    let mut x_var_sum = 0.0;
+    let mut y_var_sum = 0.0;
+
+    for (&xi, &yi) in x.as_slice().iter().zip(y.as_slice().iter()) {
+        let x_diff = xi - x_mean;
+        let y_diff = yi - y_mean;
+        cov_sum += x_diff * y_diff;
+        x_var_sum += x_diff * x_diff;
+        y_var_sum += y_diff * y_diff;
+    }
+
+    let x_std = (x_var_sum / n as f32).sqrt();
+    let y_std = (y_var_sum / n as f32).sqrt();
+
+    if x_std < 1e-10 || y_std < 1e-10 {
+        return Err(AprenderError::Other(
+            "Cannot compute correlation when variance is zero".into(),
+        ));
+    }
+
+    let covariance = cov_sum / n as f32;
+    Ok(covariance / (x_std * y_std))
+}
+
+/// Computes the Pearson correlation matrix for a data matrix.
+///
+/// # Arguments
+///
+/// * `data` - Data matrix (n × p), where n is samples and p is features
+///
+/// # Returns
+///
+/// Correlation matrix (p × p) where entry (i, j) is the Pearson correlation
+/// between feature i and feature j. Diagonal entries are 1.0.
+///
+/// # Errors
+///
+/// Returns error if data is empty, has invalid dimensions, or features have zero variance.
+///
+/// # Examples
+///
+/// ```
+/// use aprender::stats::corr_matrix;
+/// use aprender::primitives::Matrix;
+///
+/// // 3 samples, 2 features
+/// let data = Matrix::from_vec(3, 2, vec![
+///     1.0, 2.0,
+///     2.0, 4.0,
+///     3.0, 6.0,
+/// ]).expect("Valid matrix");
+///
+/// let corr_mat = corr_matrix(&data).expect("Should compute correlation matrix");
+/// assert_eq!(corr_mat.n_rows(), 2);
+/// assert_eq!(corr_mat.n_cols(), 2);
+/// assert!((corr_mat.get(0, 0) - 1.0).abs() < 1e-6); // Diagonal is 1.0
+/// ```
+pub fn corr_matrix(data: &Matrix<f32>) -> Result<Matrix<f32>> {
+    let n = data.n_rows(); // samples
+    let p = data.n_cols(); // features
+
+    if n == 0 || p == 0 {
+        return Err(AprenderError::Other(
+            "Cannot compute correlation matrix for empty data".into(),
+        ));
+    }
+
+    // Compute means and standard deviations for each feature
+    let mut means = vec![0.0_f32; p];
+    let mut stds = vec![0.0_f32; p];
+
+    for j in 0..p {
+        let mut sum = 0.0;
+        for i in 0..n {
+            sum += data.get(i, j);
+        }
+        means[j] = sum / n as f32;
+
+        let mut var_sum = 0.0;
+        for i in 0..n {
+            let diff = data.get(i, j) - means[j];
+            var_sum += diff * diff;
+        }
+        stds[j] = (var_sum / n as f32).sqrt();
+
+        if stds[j] < 1e-10 {
+            return Err(AprenderError::Other(format!(
+                "Feature {j} has zero variance"
+            )));
+        }
+    }
+
+    // Compute correlation matrix
+    let mut corr_data = vec![0.0_f32; p * p];
+    for i in 0..p {
+        for j in 0..=i {
+            if i == j {
+                // Diagonal is 1.0
+                corr_data[i * p + j] = 1.0;
+            } else {
+                // Compute correlation
+                let mut cov_sum = 0.0;
+                for k in 0..n {
+                    cov_sum += (data.get(k, i) - means[i]) * (data.get(k, j) - means[j]);
+                }
+                let corr_val = cov_sum / (n as f32 * stds[i] * stds[j]);
+
+                // Fill both (i,j) and (j,i) for symmetry
+                corr_data[i * p + j] = corr_val;
+                corr_data[j * p + i] = corr_val;
+            }
+        }
+    }
+
+    Matrix::from_vec(p, p, corr_data)
+        .map_err(|e| AprenderError::Other(format!("Failed to create correlation matrix: {e}")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_cov_positive_relationship() {
+        let x = Vector::from_slice(&[1.0, 2.0, 3.0, 4.0, 5.0]);
+        let y = Vector::from_slice(&[2.0, 4.0, 6.0, 8.0, 10.0]);
+
+        let covariance = cov(&x, &y).expect("Should compute covariance");
+        assert!(
+            covariance > 0.0,
+            "Positive relationship should have positive covariance"
+        );
+    }
+
+    #[test]
+    fn test_cov_negative_relationship() {
+        let x = Vector::from_slice(&[1.0, 2.0, 3.0, 4.0, 5.0]);
+        let y = Vector::from_slice(&[10.0, 8.0, 6.0, 4.0, 2.0]);
+
+        let covariance = cov(&x, &y).expect("Should compute covariance");
+        assert!(
+            covariance < 0.0,
+            "Negative relationship should have negative covariance"
+        );
+    }
+
+    #[test]
+    fn test_cov_dimension_mismatch() {
+        let x = Vector::from_slice(&[1.0, 2.0, 3.0]);
+        let y = Vector::from_slice(&[1.0, 2.0]);
+
+        let result = cov(&x, &y);
+        assert!(result.is_err());
+        let err = result.expect_err("Should be dimension mismatch");
+        assert!(matches!(err, AprenderError::DimensionMismatch { .. }));
+    }
+
+    #[test]
+    fn test_cov_empty() {
+        let x = Vector::from_slice(&[]);
+        let y = Vector::from_slice(&[]);
+
+        let result = cov(&x, &y);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_cov_matrix_simple() {
+        // 3 samples, 2 features
+        let data =
+            Matrix::from_vec(3, 2, vec![1.0, 2.0, 2.0, 4.0, 3.0, 6.0]).expect("Valid matrix");
+
+        let cov_mat = cov_matrix(&data).expect("Should compute covariance matrix");
+
+        assert_eq!(cov_mat.n_rows(), 2);
+        assert_eq!(cov_mat.n_cols(), 2);
+
+        // Covariance matrix should be symmetric
+        assert!((cov_mat.get(0, 1) - cov_mat.get(1, 0)).abs() < 1e-6);
+
+        // Diagonal should be positive (variances)
+        assert!(cov_mat.get(0, 0) > 0.0);
+        assert!(cov_mat.get(1, 1) > 0.0);
+    }
+
+    #[test]
+    fn test_corr_perfect_positive() {
+        let x = Vector::from_slice(&[1.0, 2.0, 3.0, 4.0]);
+        let y = Vector::from_slice(&[2.0, 4.0, 6.0, 8.0]);
+
+        let correlation = corr(&x, &y).expect("Should compute correlation");
+        assert!(
+            (correlation - 1.0).abs() < 1e-6,
+            "Perfect positive correlation should be 1.0"
+        );
+    }
+
+    #[test]
+    fn test_corr_perfect_negative() {
+        let x = Vector::from_slice(&[1.0, 2.0, 3.0, 4.0]);
+        let y = Vector::from_slice(&[8.0, 6.0, 4.0, 2.0]);
+
+        let correlation = corr(&x, &y).expect("Should compute correlation");
+        assert!(
+            (correlation + 1.0).abs() < 1e-6,
+            "Perfect negative correlation should be -1.0"
+        );
+    }
+
+    #[test]
+    fn test_corr_no_relationship() {
+        // Orthogonal vectors (mean-centered)
+        let x = Vector::from_slice(&[-1.0, 0.0, 1.0]);
+        let y = Vector::from_slice(&[1.0, -2.0, 1.0]);
+
+        let correlation = corr(&x, &y).expect("Should compute correlation");
+        assert!(
+            correlation.abs() < 0.1,
+            "Orthogonal vectors should have near-zero correlation, got {correlation}"
+        );
+    }
+
+    #[test]
+    fn test_corr_zero_variance() {
+        let x = Vector::from_slice(&[1.0, 1.0, 1.0]);
+        let y = Vector::from_slice(&[2.0, 4.0, 6.0]);
+
+        let result = corr(&x, &y);
+        assert!(result.is_err(), "Should error when variance is zero");
+    }
+
+    #[test]
+    fn test_corr_matrix_simple() {
+        // 4 samples, 2 features
+        let data = Matrix::from_vec(4, 2, vec![1.0, 2.0, 2.0, 4.0, 3.0, 6.0, 4.0, 8.0])
+            .expect("Valid matrix");
+
+        let corr_mat = corr_matrix(&data).expect("Should compute correlation matrix");
+
+        assert_eq!(corr_mat.n_rows(), 2);
+        assert_eq!(corr_mat.n_cols(), 2);
+
+        // Diagonal should be 1.0
+        assert!((corr_mat.get(0, 0) - 1.0).abs() < 1e-6);
+        assert!((corr_mat.get(1, 1) - 1.0).abs() < 1e-6);
+
+        // Should be symmetric
+        assert!((corr_mat.get(0, 1) - corr_mat.get(1, 0)).abs() < 1e-6);
+
+        // Perfect correlation (y = 2*x)
+        assert!((corr_mat.get(0, 1) - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_corr_matrix_independent() {
+        // 3 samples, 2 independent features
+        let data =
+            Matrix::from_vec(3, 2, vec![1.0, 1.0, 2.0, 1.0, 3.0, 1.0]).expect("Valid matrix");
+
+        let result = corr_matrix(&data);
+        // Second feature has zero variance
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_corr_matrix_three_features() {
+        // 3 samples, 3 features
+        let data = Matrix::from_vec(3, 3, vec![1.0, 2.0, 3.0, 2.0, 3.0, 4.0, 3.0, 4.0, 5.0])
+            .expect("Valid matrix");
+
+        let corr_mat = corr_matrix(&data).expect("Should compute correlation matrix");
+
+        assert_eq!(corr_mat.n_rows(), 3);
+        assert_eq!(corr_mat.n_cols(), 3);
+
+        // All diagonals should be 1.0
+        for i in 0..3 {
+            assert!((corr_mat.get(i, i) - 1.0).abs() < 1e-6);
+        }
+
+        // All features perfectly correlated (linear relationship)
+        for i in 0..3 {
+            for j in 0..3 {
+                assert!((corr_mat.get(i, j) - 1.0).abs() < 1e-6);
+            }
+        }
+    }
+}
