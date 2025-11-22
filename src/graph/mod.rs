@@ -1435,6 +1435,52 @@ impl Graph {
         path.reverse();
         Some((path, distances[target]))
     }
+
+    /// Compute all-pairs shortest paths using repeated BFS.
+    ///
+    /// Computes the shortest path distance between all pairs of nodes.
+    /// Uses BFS for unweighted graphs (O(nm)) which is faster than
+    /// Floyd-Warshall (O(n³)) for sparse graphs.
+    ///
+    /// # Algorithm
+    /// Runs BFS from each node (Floyd 1962 for weighted, BFS for unweighted).
+    ///
+    /// # Returns
+    /// Distance matrix where `[i][j]` = shortest distance from node i to node j.
+    /// Returns `None` if nodes are not connected.
+    ///
+    /// # Complexity
+    /// * Time: O(n·(n + m)) for unweighted graphs
+    /// * Space: O(n²) for distance matrix
+    ///
+    /// # Examples
+    /// ```
+    /// use aprender::graph::Graph;
+    ///
+    /// let g = Graph::from_edges(&[(0, 1), (1, 2)], false);
+    /// let dist = g.all_pairs_shortest_paths();
+    ///
+    /// assert_eq!(dist[0][0], Some(0));
+    /// assert_eq!(dist[0][1], Some(1));
+    /// assert_eq!(dist[0][2], Some(2));
+    /// ```
+    pub fn all_pairs_shortest_paths(&self) -> Vec<Vec<Option<usize>>> {
+        let n = self.n_nodes;
+        let mut distances = vec![vec![None; n]; n];
+
+        // Run BFS from each node
+        for (source, row) in distances.iter_mut().enumerate().take(n) {
+            let dist = self.bfs_distances(source);
+
+            for (target, cell) in row.iter_mut().enumerate().take(n) {
+                if dist[target] != usize::MAX {
+                    *cell = Some(dist[target]);
+                }
+            }
+        }
+
+        distances
+    }
 }
 
 /// Kahan summation for computing L1 distance between two vectors.
@@ -2805,5 +2851,170 @@ mod tests {
         let (path, dist) = g.dijkstra(0, 2).expect("path should exist");
         assert!((dist - 0.3).abs() < 1e-10); // 0.1 + 0.2 = 0.3
         assert_eq!(path, vec![0, 1, 2]);
+    }
+
+    // ========================================================================
+    // All-Pairs Shortest Paths Tests
+    // ========================================================================
+
+    #[test]
+    fn test_apsp_linear_chain() {
+        // Linear chain: 0 -- 1 -- 2 -- 3
+        let g = Graph::from_edges(&[(0, 1), (1, 2), (2, 3)], false);
+        let dist = g.all_pairs_shortest_paths();
+
+        // Check diagonal (distance to self = 0)
+        for i in 0..4 {
+            assert_eq!(dist[i][i], Some(0));
+        }
+
+        // Check distances
+        assert_eq!(dist[0][1], Some(1));
+        assert_eq!(dist[0][2], Some(2));
+        assert_eq!(dist[0][3], Some(3));
+        assert_eq!(dist[1][2], Some(1));
+        assert_eq!(dist[1][3], Some(2));
+        assert_eq!(dist[2][3], Some(1));
+
+        // Check symmetry (undirected graph)
+        assert_eq!(dist[0][3], dist[3][0]);
+        assert_eq!(dist[1][2], dist[2][1]);
+    }
+
+    #[test]
+    fn test_apsp_complete_graph() {
+        // Complete graph K4
+        let g = Graph::from_edges(&[(0, 1), (0, 2), (0, 3), (1, 2), (1, 3), (2, 3)], false);
+        let dist = g.all_pairs_shortest_paths();
+
+        // All pairs should have distance 1 (direct edge) except diagonal
+        for i in 0..4 {
+            for j in 0..4 {
+                if i == j {
+                    assert_eq!(dist[i][j], Some(0));
+                } else {
+                    assert_eq!(dist[i][j], Some(1));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_apsp_disconnected() {
+        // Two disconnected components: (0, 1) and (2, 3)
+        let g = Graph::from_edges(&[(0, 1), (2, 3)], false);
+        let dist = g.all_pairs_shortest_paths();
+
+        // Within components
+        assert_eq!(dist[0][1], Some(1));
+        assert_eq!(dist[1][0], Some(1));
+        assert_eq!(dist[2][3], Some(1));
+        assert_eq!(dist[3][2], Some(1));
+
+        // Between components (no path)
+        assert_eq!(dist[0][2], None);
+        assert_eq!(dist[0][3], None);
+        assert_eq!(dist[1][2], None);
+        assert_eq!(dist[1][3], None);
+    }
+
+    #[test]
+    fn test_apsp_directed() {
+        // Directed graph: 0 -> 1 -> 2
+        let g = Graph::from_edges(&[(0, 1), (1, 2)], true);
+        let dist = g.all_pairs_shortest_paths();
+
+        // Forward paths
+        assert_eq!(dist[0][1], Some(1));
+        assert_eq!(dist[0][2], Some(2));
+        assert_eq!(dist[1][2], Some(1));
+
+        // Backward paths (no reverse edges)
+        assert_eq!(dist[1][0], None);
+        assert_eq!(dist[2][0], None);
+        assert_eq!(dist[2][1], None);
+    }
+
+    #[test]
+    fn test_apsp_triangle() {
+        // Triangle graph
+        let g = Graph::from_edges(&[(0, 1), (1, 2), (2, 0)], false);
+        let dist = g.all_pairs_shortest_paths();
+
+        // All pairs should have distance 1 (triangle) except diagonal
+        for i in 0..3 {
+            for j in 0..3 {
+                if i == j {
+                    assert_eq!(dist[i][j], Some(0));
+                } else {
+                    assert_eq!(dist[i][j], Some(1));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_apsp_star_graph() {
+        // Star graph: 0 connected to 1, 2, 3
+        let g = Graph::from_edges(&[(0, 1), (0, 2), (0, 3)], false);
+        let dist = g.all_pairs_shortest_paths();
+
+        // Center to leaves: distance 1
+        assert_eq!(dist[0][1], Some(1));
+        assert_eq!(dist[0][2], Some(1));
+        assert_eq!(dist[0][3], Some(1));
+
+        // Leaf to leaf through center: distance 2
+        assert_eq!(dist[1][2], Some(2));
+        assert_eq!(dist[1][3], Some(2));
+        assert_eq!(dist[2][3], Some(2));
+    }
+
+    #[test]
+    fn test_apsp_empty_graph() {
+        let g = Graph::new(false);
+        let dist = g.all_pairs_shortest_paths();
+        assert_eq!(dist.len(), 0);
+    }
+
+    #[test]
+    fn test_apsp_single_node() {
+        let g = Graph::from_edges(&[(0, 0)], false);
+        let dist = g.all_pairs_shortest_paths();
+
+        assert_eq!(dist.len(), 1);
+        assert_eq!(dist[0][0], Some(0));
+    }
+
+    #[test]
+    fn test_apsp_cycle() {
+        // Cycle: 0 -> 1 -> 2 -> 3 -> 0
+        let g = Graph::from_edges(&[(0, 1), (1, 2), (2, 3), (3, 0)], true);
+        let dist = g.all_pairs_shortest_paths();
+
+        // Along cycle direction
+        assert_eq!(dist[0][1], Some(1));
+        assert_eq!(dist[0][2], Some(2));
+        assert_eq!(dist[0][3], Some(3));
+        assert_eq!(dist[1][3], Some(2));
+
+        // All nodes reachable in directed cycle
+        for i in 0..4 {
+            for j in 0..4 {
+                assert!(dist[i][j].is_some());
+            }
+        }
+    }
+
+    #[test]
+    fn test_apsp_matrix_size() {
+        let g = Graph::from_edges(&[(0, 1), (1, 2), (2, 3)], false);
+        let dist = g.all_pairs_shortest_paths();
+
+        // Matrix should be n×n
+        assert_eq!(dist.len(), 4);
+        for row in &dist {
+            assert_eq!(row.len(), 4);
+        }
     }
 }
