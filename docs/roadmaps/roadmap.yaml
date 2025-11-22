@@ -877,11 +877,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'New task: Phase 1: Classical Bayesian Inference - Conjugate Priors (Gamma-Poisson, Normal-InverseGamma, Dirichlet-Multinomial)'
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2025-11-22T14:14:32.956638985+00:00
-  updated: 2025-11-22T14:14:32.956638985+00:00
+  updated: 2025-11-22T14:39:39.086233973+00:00
   spec: null
   acceptance_criteria: []
   phases: []
