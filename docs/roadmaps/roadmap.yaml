@@ -17,6 +17,7 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
+  notes: null
 - id: GH-10
   github_issue: 10
   item_type: task
@@ -46,6 +47,7 @@ roadmap:
   labels:
   - documentation
   - enhancement
+  notes: null
 - id: GH-11
   github_issue: 11
   item_type: task
@@ -69,6 +71,7 @@ roadmap:
   estimated_effort: null
   labels:
   - documentation
+  notes: null
 - id: GH-13
   github_issue: 13
   item_type: task
@@ -85,6 +88,7 @@ roadmap:
   estimated_effort: null
   labels:
   - enhancement
+  notes: null
 - id: GH-23
   github_issue: 23
   item_type: task
@@ -107,6 +111,7 @@ roadmap:
   estimated_effort: null
   labels:
   - enhancement
+  notes: null
 - id: GH-26
   github_issue: 26
   item_type: task
@@ -131,6 +136,7 @@ roadmap:
   estimated_effort: null
   labels:
   - enhancement
+  notes: null
 - id: Sovereign AI Integration Specification v1.1 - Complete architecture document with 10 peer-reviewed references, Toyota Way principles, and Rust safety improvements
   github_issue: null
   item_type: task
@@ -146,6 +152,7 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
+  notes: null
 - id: 'Apply code review safety fixes: Add AprenderError enum and bounds checking to SIMD intrinsics'
   github_issue: null
   item_type: task
@@ -161,6 +168,7 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
+  notes: null
 - id: Update trait signatures to use AprenderError instead of static str
   github_issue: null
   item_type: task
@@ -176,6 +184,7 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
+  notes: null
 - id: Commit integration specification and proptest configuration
   github_issue: null
   item_type: task
@@ -191,6 +200,7 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
+  notes: null
 - id: Update roadmap status for completed TOP 10 algorithms (KNN, GBM, PCA)
   github_issue: null
   item_type: task
@@ -206,6 +216,7 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
+  notes: null
 - id: Push completed work to origin/main (5 commits)
   github_issue: null
   item_type: task
@@ -221,6 +232,7 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
+  notes: null
 - id: Fix remaining mdbook test failures - Phase 3 (21 chapters remaining)
   github_issue: null
   item_type: task
@@ -236,6 +248,7 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
+  notes: null
 - id: Fix mdbook test failures - Phase 4 (20 chapters remaining)
   github_issue: null
   item_type: task
@@ -251,6 +264,7 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
+  notes: null
 - id: Fix mdbook test failures - Phase 5 (~17 chapters remaining)
   github_issue: null
   item_type: task
@@ -266,6 +280,7 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
+  notes: null
 - id: Fix mdbook test failures - Phase 6 (~15 chapters remaining)
   github_issue: null
   item_type: task
@@ -281,6 +296,7 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
+  notes: null
 - id: Fix mdbook test failures - Phase 7 (pca.md + classification-metrics.md)
   github_issue: null
   item_type: task
@@ -296,6 +312,7 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
+  notes: null
 - id: Fix mdbook test failures - Phase 8 (cross-validation.md + graph-algorithms.md)
   github_issue: null
   item_type: task
@@ -311,6 +328,7 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
+  notes: null
 - id: Fix mdbook test failures - Phase 9 (descriptive-statistics.md + gradient-descent.md)
   github_issue: null
   item_type: task
@@ -326,6 +344,7 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
+  notes: null
 - id: Fix mdbook test failures - Phase 10 (remaining example chapters)
   github_issue: null
   item_type: task
@@ -341,6 +360,7 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
+  notes: null
 - id: Fix mdbook test failures - Phase 11 (pca-iris.md remaining failures)
   github_issue: null
   item_type: task
@@ -356,6 +376,7 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
+  notes: null
 - id: GH-15
   github_issue: null
   item_type: task
@@ -371,6 +392,7 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
+  notes: null
 - id: GH-16
   github_issue: null
   item_type: task
@@ -386,6 +408,7 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
+  notes: null
 - id: GH-17
   github_issue: null
   item_type: task
@@ -401,6 +424,7 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
+  notes: null
 - id: GH-20
   github_issue: null
   item_type: task
@@ -416,6 +440,7 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
+  notes: null
 - id: GH-19
   github_issue: null
   item_type: task
@@ -431,6 +456,7 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
+  notes: null
 - id: GH-18
   github_issue: null
   item_type: task
@@ -446,6 +472,7 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
+  notes: null
 - id: GH-21
   github_issue: null
   item_type: task
@@ -461,6 +488,7 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
+  notes: null
 - id: GH-22
   github_issue: null
   item_type: task
@@ -476,6 +504,7 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
+  notes: null
 - id: GH-28
   github_issue: null
   item_type: task
@@ -491,6 +520,7 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
+  notes: null
 - id: GH-29
   github_issue: null
   item_type: task
@@ -506,6 +536,7 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
+  notes: null
 - id: GH-30
   github_issue: null
   item_type: task
@@ -521,6 +552,7 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
+  notes: null
 - id: GH-31
   github_issue: null
   item_type: task
@@ -536,6 +568,7 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
+  notes: null
 - id: GH-32
   github_issue: null
   item_type: task
@@ -551,6 +584,7 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
+  notes: null
 - id: GH-33
   github_issue: null
   item_type: task
@@ -566,6 +600,7 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
+  notes: null
 - id: GH-34
   github_issue: null
   item_type: task
@@ -581,6 +616,7 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
+  notes: null
 - id: GH-35
   github_issue: null
   item_type: task
@@ -596,6 +632,7 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
+  notes: null
 - id: GH-36
   github_issue: null
   item_type: task
@@ -611,6 +648,7 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
+  notes: null
 - id: GH-37
   github_issue: null
   item_type: task
@@ -626,6 +664,7 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
+  notes: null
 - id: GH-38
   github_issue: null
   item_type: task
@@ -641,6 +680,7 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
+  notes: null
 - id: GH-39
   github_issue: null
   item_type: task
@@ -656,6 +696,7 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
+  notes: null
 - id: GH-40
   github_issue: null
   item_type: task
@@ -671,6 +712,7 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
+  notes: null
 - id: GH-41
   github_issue: null
   item_type: task
@@ -686,6 +728,7 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
+  notes: null
 - id: GH-42
   github_issue: null
   item_type: task
@@ -701,6 +744,7 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
+  notes: null
 - id: GH-43
   github_issue: null
   item_type: task
@@ -716,6 +760,7 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
+  notes: null
 - id: GH-44
   github_issue: null
   item_type: task
@@ -731,6 +776,7 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
+  notes: null
 - id: GH-45
   github_issue: null
   item_type: task
@@ -746,6 +792,7 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
+  notes: null
 - id: GH-55
   github_issue: null
   item_type: task
@@ -761,6 +808,7 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
+  notes: null
 - id: 'Phase 1: Graph Pathfinding Algorithms (Dijkstra, A*, APSP, shortest_path)'
   github_issue: null
   item_type: task
@@ -776,6 +824,7 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
+  notes: null
 - id: 'Phase 2: Components & Traversal (DFS, connected_components, SCCs, topological_sort)'
   github_issue: null
   item_type: task
@@ -791,6 +840,7 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
+  notes: null
 - id: 'Phase 3: Community & Link Analysis (label_propagation, common_neighbors, adamic_adar)'
   github_issue: null
   item_type: task
@@ -806,6 +856,7 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
+  notes: null
 - id: 'Phase 4: Graph Benchmarks & Spec Update'
   github_issue: null
   item_type: task
@@ -821,3 +872,20 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
+  notes: null
+- id: 'Phase 1: Classical Bayesian Inference - Conjugate Priors (Gamma-Poisson, Normal-InverseGamma, Dirichlet-Multinomial)'
+  github_issue: null
+  item_type: task
+  title: 'New task: Phase 1: Classical Bayesian Inference - Conjugate Priors (Gamma-Poisson, Normal-InverseGamma, Dirichlet-Multinomial)'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2025-11-22T14:14:32.956638985+00:00
+  updated: 2025-11-22T14:14:32.956638985+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

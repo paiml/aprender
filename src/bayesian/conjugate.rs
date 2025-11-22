@@ -336,24 +336,292 @@ impl BetaBinomial {
 
 /// Gamma-Poisson conjugate prior for count data.
 ///
+/// Models a rate parameter λ > 0 for Poisson-distributed count data.
+/// Uses shape-rate parameterization: Gamma(α, β) where β is the rate parameter.
+///
 /// **Prior**: Gamma(α, β)
 /// **Likelihood**: Poisson(λ)
 /// **Posterior**: Gamma(α + Σxᵢ, β + n)
+///
+/// # Mathematical Foundation
+///
+/// Given n observations x₁, ..., xₙ from Poisson(λ):
+/// - Prior: p(λ) = Gamma(α, β) ∝ λ^(α-1) × exp(-βλ)
+/// - Likelihood: p(x|λ) = ∏ Poisson(xᵢ|λ) ∝ λ^(Σxᵢ) × exp(-nλ)
+/// - Posterior: p(λ|x) = Gamma(α + Σxᵢ, β + n)
+///
+/// # Example
+///
+/// ```
+/// use aprender::bayesian::GammaPoisson;
+///
+/// // Start with non-informative prior
+/// let mut model = GammaPoisson::noninformative();
+///
+/// // Observe counts: [3, 5, 4, 6, 2] events per hour
+/// model.update(&[3, 5, 4, 6, 2]);
+///
+/// // Expected event rate
+/// let mean = model.posterior_mean();
+/// assert!((mean - 4.0).abs() < 0.5);  // Should be around 4 events/hour
+/// ```
 #[derive(Debug, Clone)]
-#[allow(dead_code)] // Placeholder for future implementation
 pub struct GammaPoisson {
+    /// Shape parameter α (pseudo-count of prior observations)
     alpha: f32,
+    /// Rate parameter β (pseudo-count of prior time intervals)
     beta: f32,
 }
 
 impl GammaPoisson {
     /// Creates a non-informative prior Gamma(0.001, 0.001).
+    ///
+    /// This weakly informative prior has minimal influence on the posterior,
+    /// allowing the data to dominate.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use aprender::bayesian::GammaPoisson;
+    ///
+    /// let prior = GammaPoisson::noninformative();
+    /// assert_eq!(prior.alpha(), 0.001);
+    /// assert_eq!(prior.beta(), 0.001);
+    /// ```
     #[must_use]
     pub fn noninformative() -> Self {
         Self {
             alpha: 0.001,
             beta: 0.001,
         }
+    }
+
+    /// Creates an informative prior Gamma(α, β) from prior belief.
+    ///
+    /// # Arguments
+    ///
+    /// * `alpha` - Shape parameter α > 0 (prior total count)
+    /// * `beta` - Rate parameter β > 0 (prior number of intervals)
+    ///
+    /// # Interpretation
+    ///
+    /// - α/β: Prior mean rate
+    /// - α: Pseudo-count of prior observations
+    /// - β: Pseudo-count of prior time intervals
+    /// - Larger α, β: Stronger prior belief
+    ///
+    /// # Errors
+    ///
+    /// Returns error if α ≤ 0 or β ≤ 0.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use aprender::bayesian::GammaPoisson;
+    ///
+    /// // Prior belief: 50 events in 10 intervals (rate = 5)
+    /// let prior = GammaPoisson::new(50.0, 10.0).unwrap();
+    /// assert!((prior.posterior_mean() - 5.0).abs() < 0.01);
+    /// ```
+    pub fn new(alpha: f32, beta: f32) -> Result<Self> {
+        if alpha <= 0.0 || beta <= 0.0 {
+            return Err(AprenderError::InvalidHyperparameter {
+                param: "alpha, beta".to_string(),
+                value: format!("({alpha}, {beta})"),
+                constraint: "both > 0".to_string(),
+            });
+        }
+        Ok(Self { alpha, beta })
+    }
+
+    /// Returns the current α parameter.
+    #[must_use]
+    pub fn alpha(&self) -> f32 {
+        self.alpha
+    }
+
+    /// Returns the current β parameter.
+    #[must_use]
+    pub fn beta(&self) -> f32 {
+        self.beta
+    }
+
+    /// Updates the posterior with observed count data (Bayesian update).
+    ///
+    /// # Arguments
+    ///
+    /// * `counts` - Slice of observed counts (non-negative integers)
+    ///
+    /// # Panics
+    ///
+    /// Panics if any count is negative.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use aprender::bayesian::GammaPoisson;
+    ///
+    /// let mut model = GammaPoisson::noninformative();
+    /// model.update(&[3, 5, 4, 6, 2]);
+    ///
+    /// // Posterior is Gamma(0.001 + 20, 0.001 + 5)
+    /// assert!((model.alpha() - 20.001).abs() < 0.01);
+    /// assert!((model.beta() - 5.001).abs() < 0.01);
+    /// ```
+    pub fn update(&mut self, counts: &[u32]) {
+        let sum: u32 = counts.iter().sum();
+        let n = counts.len();
+
+        #[allow(clippy::cast_precision_loss)]
+        {
+            self.alpha += sum as f32;
+            self.beta += n as f32;
+        }
+    }
+
+    /// Computes the posterior mean E[λ|data] = α/β.
+    ///
+    /// This is the expected value of the rate parameter under the posterior.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use aprender::bayesian::GammaPoisson;
+    ///
+    /// let mut model = GammaPoisson::noninformative();
+    /// model.update(&[3, 5, 4, 6, 2]);  // Sum = 20, n = 5
+    ///
+    /// let mean = model.posterior_mean();
+    /// assert!((mean - 20.001/5.001).abs() < 0.01);  // ≈ 4.0
+    /// ```
+    #[must_use]
+    pub fn posterior_mean(&self) -> f32 {
+        self.alpha / self.beta
+    }
+
+    /// Computes the posterior mode (MAP estimate) = (α-1)/β.
+    ///
+    /// This is the most probable value of λ under the posterior.
+    /// Only defined for α > 1.
+    ///
+    /// # Returns
+    ///
+    /// - `Some(mode)` if α > 1
+    /// - `None` if distribution is monotonically decreasing (α ≤ 1)
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use aprender::bayesian::GammaPoisson;
+    ///
+    /// let mut model = GammaPoisson::new(2.0, 1.0).unwrap();
+    /// model.update(&[3, 5, 4, 6, 2]);
+    ///
+    /// let mode = model.posterior_mode().unwrap();
+    /// assert!((mode - (22.0 - 1.0)/6.0).abs() < 0.01);
+    /// ```
+    #[must_use]
+    pub fn posterior_mode(&self) -> Option<f32> {
+        if self.alpha > 1.0 {
+            Some((self.alpha - 1.0) / self.beta)
+        } else {
+            None
+        }
+    }
+
+    /// Computes the posterior variance Var[λ|data] = α/β².
+    ///
+    /// Measures uncertainty in the rate estimate.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use aprender::bayesian::GammaPoisson;
+    ///
+    /// let mut model = GammaPoisson::noninformative();
+    /// model.update(&[3, 5, 4, 6, 2]);
+    ///
+    /// let variance = model.posterior_variance();
+    /// assert!(variance < 1.0);  // Low uncertainty with 5 observations
+    /// ```
+    #[must_use]
+    pub fn posterior_variance(&self) -> f32 {
+        self.alpha / (self.beta * self.beta)
+    }
+
+    /// Computes the posterior predictive distribution for next observation.
+    ///
+    /// For Gamma-Poisson, the posterior predictive is Negative Binomial.
+    /// Returns the mean of the predictive distribution: α/β.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use aprender::bayesian::GammaPoisson;
+    ///
+    /// let mut model = GammaPoisson::noninformative();
+    /// model.update(&[3, 5, 4, 6, 2]);
+    ///
+    /// let pred_mean = model.posterior_predictive();
+    /// assert!((pred_mean - 4.0).abs() < 0.5);
+    /// ```
+    #[must_use]
+    pub fn posterior_predictive(&self) -> f32 {
+        self.posterior_mean()
+    }
+
+    /// Computes the (1-α) credible interval using normal approximation.
+    ///
+    /// Returns (lower, upper) bounds such that P(lower ≤ λ ≤ upper | data) = 1-α.
+    ///
+    /// # Arguments
+    ///
+    /// * `confidence` - Confidence level (e.g., 0.95 for 95% credible interval)
+    ///
+    /// # Returns
+    ///
+    /// (lower, upper) quantiles, with lower ≥ 0 (rate cannot be negative)
+    ///
+    /// # Errors
+    ///
+    /// Returns error if confidence ∉ (0, 1).
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use aprender::bayesian::GammaPoisson;
+    ///
+    /// let mut model = GammaPoisson::noninformative();
+    /// model.update(&[3, 5, 4, 6, 2]);
+    ///
+    /// let (lower, upper) = model.credible_interval(0.95).unwrap();
+    /// assert!(lower < 4.0 && 4.0 < upper);
+    /// ```
+    pub fn credible_interval(&self, confidence: f32) -> Result<(f32, f32)> {
+        if !(0.0..1.0).contains(&confidence) {
+            return Err(AprenderError::InvalidHyperparameter {
+                param: "confidence".to_string(),
+                value: confidence.to_string(),
+                constraint: "in (0, 1)".to_string(),
+            });
+        }
+
+        // Normal approximation for Gamma distribution
+        // For large α, Gamma(α, β) ≈ N(α/β, α/β²)
+        let mean = self.posterior_mean();
+        let std = self.posterior_variance().sqrt();
+
+        let z = match confidence {
+            c if (c - 0.95).abs() < 0.01 => 1.96,
+            c if (c - 0.99).abs() < 0.01 => 2.576,
+            c if (c - 0.90).abs() < 0.01 => 1.645,
+            _ => 1.96,
+        };
+
+        let lower = (mean - z * std).max(0.0); // Rate cannot be negative
+        let upper = mean + z * std;
+
+        Ok((lower, upper))
     }
 }
 
@@ -554,4 +822,146 @@ mod tests {
     // Property-based tests would go here using proptest
     // Example: Verify posterior mean is always in [0, 1]
     // Example: Verify variance decreases with more data
+
+    // ========== Gamma-Poisson Tests ==========
+
+    #[test]
+    fn test_gamma_poisson_noninformative_prior() {
+        let prior = GammaPoisson::noninformative();
+        assert_eq!(prior.alpha(), 0.001);
+        assert_eq!(prior.beta(), 0.001);
+        assert!((prior.posterior_mean() - 1.0).abs() < 0.01); // α/β = 1
+    }
+
+    #[test]
+    fn test_gamma_poisson_custom_prior() {
+        let prior = GammaPoisson::new(50.0, 10.0).expect("Valid parameters");
+        assert_eq!(prior.alpha(), 50.0);
+        assert_eq!(prior.beta(), 10.0);
+        assert!((prior.posterior_mean() - 5.0).abs() < 0.01); // 50/10 = 5
+    }
+
+    #[test]
+    fn test_gamma_poisson_invalid_prior() {
+        assert!(GammaPoisson::new(0.0, 1.0).is_err());
+        assert!(GammaPoisson::new(1.0, -1.0).is_err());
+    }
+
+    #[test]
+    fn test_gamma_poisson_update() {
+        let mut model = GammaPoisson::noninformative();
+        model.update(&[3, 5, 4, 6, 2]);
+
+        // Sum = 20, n = 5
+        // Posterior should be Gamma(0.001 + 20, 0.001 + 5)
+        assert!((model.alpha() - 20.001).abs() < 0.01);
+        assert!((model.beta() - 5.001).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_gamma_poisson_posterior_mean() {
+        let mut model = GammaPoisson::noninformative();
+        model.update(&[3, 5, 4, 6, 2]);
+
+        let mean = model.posterior_mean();
+        let expected = 20.001 / 5.001; // α/β ≈ 4.0
+        assert!((mean - expected).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_gamma_poisson_posterior_mode() {
+        let mut model = GammaPoisson::new(2.0, 1.0).expect("Valid parameters");
+        model.update(&[3, 5, 4, 6, 2]);
+
+        // Posterior is Gamma(22, 6)
+        // Mode = (α-1)/β = 21/6 = 3.5
+        let mode = model.posterior_mode().expect("Mode should exist");
+        let expected = 21.0 / 6.0;
+        assert!((mode - expected).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_gamma_poisson_no_mode_for_weak_prior() {
+        let model = GammaPoisson::noninformative();
+        // Gamma(0.001, 0.001) has α < 1, no unique mode
+        assert!(model.posterior_mode().is_none());
+    }
+
+    #[test]
+    fn test_gamma_poisson_posterior_variance() {
+        let mut model = GammaPoisson::noninformative();
+        model.update(&[3, 5, 4, 6, 2, 8, 7, 9, 1, 0]); // 10 observations
+
+        let variance = model.posterior_variance();
+
+        // More data → lower variance
+        assert!(variance < 1.0);
+    }
+
+    #[test]
+    fn test_gamma_poisson_predictive() {
+        let mut model = GammaPoisson::noninformative();
+        model.update(&[3, 5, 4, 6, 2]);
+
+        let prob = model.posterior_predictive();
+        let mean = model.posterior_mean();
+
+        // For Gamma-Poisson, predictive mean equals posterior mean
+        assert!((prob - mean).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_gamma_poisson_credible_interval() {
+        let mut model = GammaPoisson::noninformative();
+        model.update(&[3, 5, 4, 6, 2]);
+
+        let (lower, upper) = model
+            .credible_interval(0.95)
+            .expect("Valid confidence level");
+
+        let mean = model.posterior_mean();
+
+        // Mean should be within interval
+        assert!(lower < mean);
+        assert!(mean < upper);
+
+        // Lower bound should be non-negative (rate cannot be negative)
+        assert!(lower >= 0.0);
+    }
+
+    #[test]
+    fn test_gamma_poisson_credible_interval_invalid() {
+        let model = GammaPoisson::noninformative();
+
+        assert!(model.credible_interval(-0.1).is_err());
+        assert!(model.credible_interval(1.1).is_err());
+    }
+
+    #[test]
+    fn test_gamma_poisson_sequential_updates() {
+        let mut model = GammaPoisson::noninformative();
+
+        // First batch: [3, 5, 4] sum=12, n=3
+        model.update(&[3, 5, 4]);
+        assert!((model.alpha() - 12.001).abs() < 0.01);
+        assert!((model.beta() - 3.001).abs() < 0.01);
+
+        // Second batch: [6, 2] sum=8, n=2
+        model.update(&[6, 2]);
+        assert!((model.alpha() - 20.001).abs() < 0.01);
+        assert!((model.beta() - 5.001).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_gamma_poisson_empty_update() {
+        let mut model = GammaPoisson::noninformative();
+        let original_alpha = model.alpha();
+        let original_beta = model.beta();
+
+        // Empty data should not change parameters
+        model.update(&[]);
+
+        assert_eq!(model.alpha(), original_alpha);
+        assert_eq!(model.beta(), original_beta);
+    }
 }

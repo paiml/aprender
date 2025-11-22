@@ -17,7 +17,7 @@
 //! - Credible intervals (not confidence intervals)
 //! - Predictive distributions
 //!
-//! # Example: Beta-Binomial
+//! # Example: Beta-Binomial (Binary Outcomes)
 //!
 //! ```
 //! use aprender::bayesian::BetaBinomial;
@@ -38,6 +38,26 @@
 //!
 //! // Predict next trial
 //! let prob_success = model.posterior_predictive();
+//! ```
+//!
+//! # Example: Gamma-Poisson (Count Data)
+//!
+//! ```
+//! use aprender::bayesian::GammaPoisson;
+//!
+//! // Prior: Gamma(0.001, 0.001) = weakly informative
+//! let mut model = GammaPoisson::noninformative();
+//!
+//! // Observe counts: [3, 5, 4, 6, 2] events per interval
+//! model.update(&[3, 5, 4, 6, 2]);
+//!
+//! // Posterior mean event rate
+//! let mean = model.posterior_mean();
+//! assert!((mean - 4.0).abs() < 0.5);
+//!
+//! // 95% credible interval for rate
+//! let (lower, upper) = model.credible_interval(0.95);
+//! assert!(lower < mean && mean < upper);
 //! ```
 
 mod conjugate;
