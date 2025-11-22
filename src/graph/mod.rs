@@ -1852,9 +1852,8 @@ impl Graph {
                         self.low[v] = self.low[v].min(self.low[w]);
                     } else if self.on_stack[w] {
                         // Back edge to node on stack
-                        self.low[v] = self
-                            .low[v]
-                            .min(self.disc[w].expect("disc[w] should be Some"));
+                        self.low[v] =
+                            self.low[v].min(self.disc[w].expect("disc[w] should be Some"));
                     }
                 }
 
@@ -1886,6 +1885,86 @@ impl Graph {
         }
 
         state.scc_id
+    }
+
+    /// Topological sort for directed acyclic graphs (DAGs).
+    ///
+    /// Returns a linear ordering of vertices where for every directed edge (u,v),
+    /// u appears before v in the ordering.
+    ///
+    /// Only valid for DAGs. If the graph contains a cycle, returns None.
+    ///
+    /// # Returns
+    /// Some(Vec<NodeId>) with nodes in topological order, or None if graph has cycles
+    ///
+    /// # Time Complexity
+    /// O(n + m) - DFS-based approach
+    ///
+    /// # Examples
+    /// ```
+    /// use aprender::graph::Graph;
+    ///
+    /// // DAG: 0 -> 1 -> 2
+    /// let g = Graph::from_edges(&[(0, 1), (1, 2)], true);
+    /// let order = g.topological_sort().expect("DAG should have topological order");
+    ///
+    /// // 0 comes before 1, 1 comes before 2
+    /// assert!(order.iter().position(|&x| x == 0) < order.iter().position(|&x| x == 1));
+    /// assert!(order.iter().position(|&x| x == 1) < order.iter().position(|&x| x == 2));
+    /// ```
+    pub fn topological_sort(&self) -> Option<Vec<NodeId>> {
+        let n = self.n_nodes;
+        if n == 0 {
+            return Some(Vec::new());
+        }
+
+        // DFS-based topological sort with cycle detection
+        let mut visited = vec![false; n];
+        let mut in_stack = vec![false; n]; // For cycle detection
+        let mut order = Vec::new();
+
+        fn dfs(
+            v: usize,
+            graph: &Graph,
+            visited: &mut [bool],
+            in_stack: &mut [bool],
+            order: &mut Vec<usize>,
+        ) -> bool {
+            if in_stack[v] {
+                // Back edge found - cycle detected
+                return false;
+            }
+            if visited[v] {
+                // Already processed
+                return true;
+            }
+
+            visited[v] = true;
+            in_stack[v] = true;
+
+            // Visit all neighbors
+            for &neighbor in graph.neighbors(v) {
+                if !dfs(neighbor, graph, visited, in_stack, order) {
+                    return false; // Cycle detected
+                }
+            }
+
+            in_stack[v] = false;
+            order.push(v); // Add to order in post-order (reverse topological)
+
+            true
+        }
+
+        // Run DFS from each unvisited node
+        for v in 0..n {
+            if !visited[v] && !dfs(v, self, &mut visited, &mut in_stack, &mut order) {
+                return None; // Cycle detected
+            }
+        }
+
+        // Reverse to get topological order
+        order.reverse();
+        Some(order)
     }
 }
 
@@ -4053,5 +4132,188 @@ mod tests {
         // Three SCCs
         let g3 = Graph::from_edges(&[(0, 1), (2, 3), (3, 2)], true);
         assert_eq!(count_sccs(&g3.strongly_connected_components()), 3);
+    }
+
+    // Topological Sort Tests
+
+    #[test]
+    fn test_topo_linear_dag() {
+        // Linear DAG: 0 -> 1 -> 2 -> 3
+        let g = Graph::from_edges(&[(0, 1), (1, 2), (2, 3)], true);
+        let order = g
+            .topological_sort()
+            .expect("DAG should have topological order");
+
+        assert_eq!(order.len(), 4);
+        // Check ordering constraints
+        assert!(order.iter().position(|&x| x == 0) < order.iter().position(|&x| x == 1));
+        assert!(order.iter().position(|&x| x == 1) < order.iter().position(|&x| x == 2));
+        assert!(order.iter().position(|&x| x == 2) < order.iter().position(|&x| x == 3));
+    }
+
+    #[test]
+    fn test_topo_cycle() {
+        // Cycle: 0 -> 1 -> 2 -> 0
+        let g = Graph::from_edges(&[(0, 1), (1, 2), (2, 0)], true);
+        assert!(g.topological_sort().is_none()); // Should detect cycle
+    }
+
+    #[test]
+    fn test_topo_diamond() {
+        // Diamond DAG: 0 -> {1,2} -> 3
+        let g = Graph::from_edges(&[(0, 1), (0, 2), (1, 3), (2, 3)], true);
+        let order = g
+            .topological_sort()
+            .expect("DAG should have topological order");
+
+        assert_eq!(order.len(), 4);
+        // 0 must come before 1, 2, 3
+        let pos_0 = order
+            .iter()
+            .position(|&x| x == 0)
+            .expect("0 should be in order");
+        assert!(
+            pos_0
+                < order
+                    .iter()
+                    .position(|&x| x == 1)
+                    .expect("1 should be in order")
+        );
+        assert!(
+            pos_0
+                < order
+                    .iter()
+                    .position(|&x| x == 2)
+                    .expect("2 should be in order")
+        );
+        assert!(
+            pos_0
+                < order
+                    .iter()
+                    .position(|&x| x == 3)
+                    .expect("3 should be in order")
+        );
+
+        // 3 must come after 1 and 2
+        let pos_3 = order
+            .iter()
+            .position(|&x| x == 3)
+            .expect("3 should be in order");
+        assert!(
+            order
+                .iter()
+                .position(|&x| x == 1)
+                .expect("1 should be in order")
+                < pos_3
+        );
+        assert!(
+            order
+                .iter()
+                .position(|&x| x == 2)
+                .expect("2 should be in order")
+                < pos_3
+        );
+    }
+
+    #[test]
+    fn test_topo_empty() {
+        let g = Graph::new(true);
+        let order = g
+            .topological_sort()
+            .expect("Empty graph has topological order");
+        assert!(order.is_empty());
+    }
+
+    #[test]
+    fn test_topo_single_node() {
+        // Single node with self-loop creates cycle
+        let g = Graph::from_edges(&[(0, 0)], true);
+        assert!(g.topological_sort().is_none()); // Self-loop is a cycle
+    }
+
+    #[test]
+    fn test_topo_disconnected_dag() {
+        // Two disconnected chains: 0->1 and 2->3
+        let g = Graph::from_edges(&[(0, 1), (2, 3)], true);
+        let order = g
+            .topological_sort()
+            .expect("Disconnected DAG has topological order");
+
+        assert_eq!(order.len(), 4);
+        // Within each chain, ordering is preserved
+        assert!(order.iter().position(|&x| x == 0) < order.iter().position(|&x| x == 1));
+        assert!(order.iter().position(|&x| x == 2) < order.iter().position(|&x| x == 3));
+    }
+
+    #[test]
+    fn test_topo_tree() {
+        // Tree: 0 -> {1, 2}, 1 -> {3, 4}
+        let g = Graph::from_edges(&[(0, 1), (0, 2), (1, 3), (1, 4)], true);
+        let order = g.topological_sort().expect("Tree is a DAG");
+
+        assert_eq!(order.len(), 5);
+        // 0 must come first
+        assert_eq!(order.iter().position(|&x| x == 0), Some(0));
+        // 1 before 3 and 4
+        let pos_1 = order
+            .iter()
+            .position(|&x| x == 1)
+            .expect("1 should be in order");
+        assert!(
+            pos_1
+                < order
+                    .iter()
+                    .position(|&x| x == 3)
+                    .expect("3 should be in order")
+        );
+        assert!(
+            pos_1
+                < order
+                    .iter()
+                    .position(|&x| x == 4)
+                    .expect("4 should be in order")
+        );
+    }
+
+    #[test]
+    fn test_topo_self_loop() {
+        // Self-loop is a cycle
+        let g = Graph::from_edges(&[(0, 0)], true);
+        assert!(g.topological_sort().is_none());
+    }
+
+    #[test]
+    fn test_topo_complete_dag() {
+        // Complete DAG: 0 -> {1,2,3}, 1 -> {2,3}, 2 -> 3
+        let g = Graph::from_edges(&[(0, 1), (0, 2), (0, 3), (1, 2), (1, 3), (2, 3)], true);
+        let order = g
+            .topological_sort()
+            .expect("Complete DAG has topological order");
+
+        assert_eq!(order.len(), 4);
+        // Check all ordering constraints
+        let positions: Vec<_> = (0..4)
+            .map(|i| {
+                order
+                    .iter()
+                    .position(|&x| x == i)
+                    .expect("node should be in order")
+            })
+            .collect();
+
+        assert!(positions[0] < positions[1]);
+        assert!(positions[0] < positions[2]);
+        assert!(positions[0] < positions[3]);
+        assert!(positions[1] < positions[2]);
+        assert!(positions[1] < positions[3]);
+        assert!(positions[2] < positions[3]);
+    }
+
+    #[test]
+    fn test_topo_undirected() {
+        // Undirected graph is treated as bidirectional (always has cycles unless tree)
+        let g = Graph::from_edges(&[(0, 1), (1, 2)], false);
+        // Undirected edges create cycles (0->1 and 1->0)
+        assert!(g.topological_sort().is_none());
     }
 }
