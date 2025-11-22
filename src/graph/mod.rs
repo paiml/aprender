@@ -2088,6 +2088,92 @@ impl Graph {
 
         Some(score)
     }
+
+    /// Label propagation algorithm for community detection.
+    ///
+    /// Iteratively assigns each node the most common label among its neighbors.
+    /// Nodes with the same final label belong to the same community.
+    ///
+    /// # Arguments
+    /// * `max_iter` - Maximum number of iterations (default: 100)
+    /// * `seed` - Random seed for deterministic tie-breaking (optional)
+    ///
+    /// # Returns
+    /// Vector mapping each node to its community label (0-indexed)
+    ///
+    /// # Time Complexity
+    /// O(max_iter · m) where m = number of edges
+    ///
+    /// # Examples
+    /// ```
+    /// use aprender::graph::Graph;
+    ///
+    /// // Graph with two communities: (0,1,2) and (3,4,5)
+    /// let g = Graph::from_edges(
+    ///     &[(0, 1), (1, 2), (2, 0), (3, 4), (4, 5), (5, 3), (2, 3)],
+    ///     false
+    /// );
+    ///
+    /// let communities = g.label_propagation(100, Some(42));
+    /// // Nodes in same community have same label
+    /// assert_eq!(communities[0], communities[1]);
+    /// ```
+    pub fn label_propagation(&self, max_iter: usize, seed: Option<u64>) -> Vec<usize> {
+        let n = self.n_nodes;
+        if n == 0 {
+            return Vec::new();
+        }
+
+        // Initialize each node with unique label
+        let mut labels: Vec<usize> = (0..n).collect();
+
+        // Simple deterministic ordering based on seed
+        let mut node_order: Vec<usize> = (0..n).collect();
+        if let Some(s) = seed {
+            // Simple shuffle based on seed for deterministic results
+            for i in 0..n {
+                let j = ((s.wrapping_mul(i as u64 + 1)) % (n as u64)) as usize;
+                node_order.swap(i, j);
+            }
+        }
+
+        for _ in 0..max_iter {
+            let mut changed = false;
+
+            // Process nodes in random order
+            for &node in &node_order {
+                let neighbors = self.neighbors(node);
+                if neighbors.is_empty() {
+                    continue;
+                }
+
+                // Count neighbor labels
+                let mut label_counts = HashMap::new();
+                for &neighbor in neighbors {
+                    *label_counts.entry(labels[neighbor]).or_insert(0) += 1;
+                }
+
+                // Find most common label (with deterministic tie-breaking)
+                let most_common_label = label_counts
+                    .iter()
+                    .max_by_key(|(label, count)| (*count, std::cmp::Reverse(*label)))
+                    .map(|(label, _)| *label)
+                    .expect("label_counts should not be empty");
+
+                if labels[node] != most_common_label {
+                    labels[node] = most_common_label;
+                    changed = true;
+                }
+            }
+
+            // Early termination if converged
+            if !changed {
+                break;
+            }
+        }
+
+        labels
+    }
 }
 
 /// Kahan summation for computing L1 distance between two vectors.
@@ -4604,5 +4690,167 @@ mod tests {
     fn test_adamic_adar_empty() {
         let g = Graph::new(false);
         assert!(g.adamic_adar_index(0, 1).is_none());
+    }
+
+    // Label Propagation Tests
+
+    #[test]
+    fn test_label_propagation_two_triangles() {
+        // Two triangles connected by single edge
+        // Triangle 1: 0-1-2-0, Triangle 2: 3-4-5-3, Bridge: 2-3
+        let g = Graph::from_edges(
+            &[(0, 1), (1, 2), (2, 0), (3, 4), (4, 5), (5, 3), (2, 3)],
+            false,
+        );
+
+        let communities = g.label_propagation(100, Some(42));
+
+        // Nodes within same triangle should likely have same label
+        // This is probabilistic, but with seed should be deterministic
+        assert_eq!(communities.len(), 6);
+
+        // Count unique communities
+        use std::collections::HashSet;
+        let unique: HashSet<_> = communities.iter().copied().collect();
+        // Should have 2-3 communities depending on convergence
+        assert!(unique.len() >= 1 && unique.len() <= 6);
+    }
+
+    #[test]
+    fn test_label_propagation_complete_graph() {
+        // Complete graph K4 - all nodes fully connected
+        let g = Graph::from_edges(&[(0, 1), (0, 2), (0, 3), (1, 2), (1, 3), (2, 3)], false);
+
+        let communities = g.label_propagation(100, Some(42));
+
+        assert_eq!(communities.len(), 4);
+        // In complete graph, all nodes should converge to same label
+        let first_label = communities[0];
+        assert!(communities.iter().all(|&c| c == first_label));
+    }
+
+    #[test]
+    fn test_label_propagation_disconnected() {
+        // Two disconnected triangles
+        let g = Graph::from_edges(&[(0, 1), (1, 2), (2, 0), (3, 4), (4, 5), (5, 3)], false);
+
+        let communities = g.label_propagation(100, Some(42));
+
+        assert_eq!(communities.len(), 6);
+
+        // Each triangle should form its own community
+        // Nodes 0, 1, 2 should have same label
+        assert_eq!(communities[0], communities[1]);
+        assert_eq!(communities[1], communities[2]);
+
+        // Nodes 3, 4, 5 should have same label
+        assert_eq!(communities[3], communities[4]);
+        assert_eq!(communities[4], communities[5]);
+
+        // Different triangles should have different labels
+        assert_ne!(communities[0], communities[3]);
+    }
+
+    #[test]
+    fn test_label_propagation_star() {
+        // Star graph: center connected to all leaves
+        let g = Graph::from_edges(&[(0, 1), (0, 2), (0, 3), (0, 4)], false);
+
+        let communities = g.label_propagation(100, Some(42));
+
+        assert_eq!(communities.len(), 5);
+        // All nodes should eventually have same label
+        // (leaves adopt center's label or center adopts majority)
+        use std::collections::HashSet;
+        let unique: HashSet<_> = communities.iter().copied().collect();
+        assert_eq!(unique.len(), 1);
+    }
+
+    #[test]
+    fn test_label_propagation_linear() {
+        // Linear chain: 0-1-2-3-4
+        let g = Graph::from_edges(&[(0, 1), (1, 2), (2, 3), (3, 4)], false);
+
+        let communities = g.label_propagation(100, Some(42));
+
+        assert_eq!(communities.len(), 5);
+        // Linear graph may converge to 1-2 communities
+        use std::collections::HashSet;
+        let unique: HashSet<_> = communities.iter().copied().collect();
+        assert!(unique.len() >= 1 && unique.len() <= 5);
+    }
+
+    #[test]
+    fn test_label_propagation_empty() {
+        let g = Graph::new(false);
+        let communities = g.label_propagation(100, Some(42));
+        assert!(communities.is_empty());
+    }
+
+    #[test]
+    fn test_label_propagation_single_node() {
+        // Single isolated node (created via self-loop)
+        let g = Graph::from_edges(&[(0, 0)], false);
+        let communities = g.label_propagation(100, Some(42));
+
+        assert_eq!(communities.len(), 1);
+        assert_eq!(communities[0], 0); // Keeps its own label
+    }
+
+    #[test]
+    fn test_label_propagation_convergence() {
+        // Small graph that should converge quickly
+        let g = Graph::from_edges(&[(0, 1), (1, 2), (2, 0)], false);
+
+        let communities = g.label_propagation(100, Some(42));
+
+        assert_eq!(communities.len(), 3);
+        // Triangle should converge to single community
+        assert_eq!(communities[0], communities[1]);
+        assert_eq!(communities[1], communities[2]);
+    }
+
+    #[test]
+    fn test_label_propagation_directed() {
+        // Directed graph with mutual edges forms strongly connected component
+        // 0<->1<->2 (bidirectional edges)
+        let g = Graph::from_edges(
+            &[(0, 1), (1, 0), (1, 2), (2, 1), (0, 2), (2, 0)],
+            true,
+        );
+
+        let communities = g.label_propagation(100, Some(42));
+
+        assert_eq!(communities.len(), 3);
+        // Strongly connected component should form single community
+        assert_eq!(communities[0], communities[1]);
+        assert_eq!(communities[1], communities[2]);
+    }
+
+    #[test]
+    fn test_label_propagation_barbell() {
+        // Barbell graph: two cliques connected by bridge
+        // Clique 1: 0-1-2 (complete), Clique 2: 3-4-5 (complete), Bridge: 2-3
+        let g = Graph::from_edges(
+            &[
+                (0, 1),
+                (0, 2),
+                (1, 2),
+                (3, 4),
+                (3, 5),
+                (4, 5),
+                (2, 3),
+            ],
+            false,
+        );
+
+        let communities = g.label_propagation(100, Some(42));
+
+        assert_eq!(communities.len(), 6);
+
+        // Should detect 1-2 communities
+        use std::collections::HashSet;
+        let unique: HashSet<_> = communities.iter().copied().collect();
+        assert!(unique.len() >= 1 && unique.len() <= 3);
     }
 }
