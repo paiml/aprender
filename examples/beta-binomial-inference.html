@@ -1,0 +1,478 @@
+<!DOCTYPE HTML>
+<html lang="en" class="rust" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Case Study: Beta-Binomial Bayesian Inference - EXTREME TDD - The Aprender Guide to Zero-Defect Machine Learning</title>
+
+
+        <!-- Custom HTML head -->
+        
+        <meta name="description" content="A comprehensive guide to EXTREME TDD methodology: RED-GREEN-REFACTOR cycles, mutation testing, and Toyota Way principles demonstrated through ML library development">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="../favicon.svg">
+        <link rel="shortcut icon" href="../favicon.png">
+        <link rel="stylesheet" href="../css/variables.css">
+        <link rel="stylesheet" href="../css/general.css">
+        <link rel="stylesheet" href="../css/chrome.css">
+        <link rel="stylesheet" href="../css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="../fonts/fonts.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" href="../highlight.css">
+        <link rel="stylesheet" href="../tomorrow-night.css">
+        <link rel="stylesheet" href="../ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+
+    </head>
+    <body class="sidebar-visible no-js">
+    <div id="body-container">
+        <!-- Provide site root to javascript -->
+        <script>
+            var path_to_root = "../";
+            var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "rust";
+        </script>
+
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            var html = document.querySelector('html');
+            html.classList.remove('rust')
+            html.classList.add(theme);
+            var body = document.querySelector('body');
+            body.classList.remove('no-js')
+            body.classList.add('js');
+        </script>
+
+        <input type="checkbox" id="sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            var body = document.querySelector('body');
+            var sidebar = null;
+            var sidebar_toggle = document.getElementById("sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+            }
+            sidebar_toggle.checked = sidebar === 'visible';
+            body.classList.remove('sidebar-visible');
+            body.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <div class="sidebar-scrollbox">
+                <ol class="chapter"><li class="chapter-item expanded affix "><a href="../introduction.html">Introduction</a></li><li class="chapter-item expanded affix "><li class="part-title">Core Methodology</li><li class="chapter-item expanded "><a href="../methodology/what-is-extreme-tdd.html"><strong aria-hidden="true">1.</strong> What is EXTREME TDD?</a></li><li class="chapter-item expanded "><a href="../methodology/red-green-refactor.html"><strong aria-hidden="true">2.</strong> The RED-GREEN-REFACTOR Cycle</a></li><li class="chapter-item expanded "><a href="../methodology/test-first-philosophy.html"><strong aria-hidden="true">3.</strong> Test-First Philosophy</a></li><li class="chapter-item expanded "><a href="../methodology/zero-tolerance.html"><strong aria-hidden="true">4.</strong> Zero Tolerance Quality</a></li><li class="chapter-item expanded affix "><li class="part-title">The RED Phase</li><li class="chapter-item expanded "><a href="../red-phase/failing-tests-first.html"><strong aria-hidden="true">5.</strong> Writing Failing Tests First</a></li><li class="chapter-item expanded "><a href="../red-phase/test-categories.html"><strong aria-hidden="true">6.</strong> Test Categories</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../red-phase/unit-tests.html"><strong aria-hidden="true">6.1.</strong> Unit Tests</a></li><li class="chapter-item expanded "><a href="../red-phase/integration-tests.html"><strong aria-hidden="true">6.2.</strong> Integration Tests</a></li><li class="chapter-item expanded "><a href="../red-phase/property-based-tests.html"><strong aria-hidden="true">6.3.</strong> Property-Based Tests</a></li></ol></li><li class="chapter-item expanded "><a href="../red-phase/verification-strategy.html"><strong aria-hidden="true">7.</strong> Verification Strategy</a></li><li class="chapter-item expanded affix "><li class="part-title">The GREEN Phase</li><li class="chapter-item expanded "><a href="../green-phase/minimal-implementation.html"><strong aria-hidden="true">8.</strong> Minimal Implementation</a></li><li class="chapter-item expanded "><a href="../green-phase/making-tests-pass.html"><strong aria-hidden="true">9.</strong> Making Tests Pass</a></li><li class="chapter-item expanded "><a href="../green-phase/avoiding-over-engineering.html"><strong aria-hidden="true">10.</strong> Avoiding Over-Engineering</a></li><li class="chapter-item expanded "><a href="../green-phase/simplest-thing.html"><strong aria-hidden="true">11.</strong> The Simplest Thing That Works</a></li><li class="chapter-item expanded affix "><li class="part-title">The REFACTOR Phase</li><li class="chapter-item expanded "><a href="../refactor-phase/refactoring-with-confidence.html"><strong aria-hidden="true">12.</strong> Refactoring with Confidence</a></li><li class="chapter-item expanded "><a href="../refactor-phase/code-quality.html"><strong aria-hidden="true">13.</strong> Code Quality Improvements</a></li><li class="chapter-item expanded "><a href="../refactor-phase/performance-optimization.html"><strong aria-hidden="true">14.</strong> Performance Optimization</a></li><li class="chapter-item expanded "><a href="../refactor-phase/documentation.html"><strong aria-hidden="true">15.</strong> Documentation</a></li><li class="chapter-item expanded affix "><li class="part-title">Advanced Testing</li><li class="chapter-item expanded "><a href="../advanced-testing/property-based-testing.html"><strong aria-hidden="true">16.</strong> Property-Based Testing</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../advanced-testing/proptest-fundamentals.html"><strong aria-hidden="true">16.1.</strong> Proptest Fundamentals</a></li><li class="chapter-item expanded "><a href="../advanced-testing/strategies-generators.html"><strong aria-hidden="true">16.2.</strong> Strategies and Generators</a></li><li class="chapter-item expanded "><a href="../advanced-testing/testing-invariants.html"><strong aria-hidden="true">16.3.</strong> Testing Invariants</a></li></ol></li><li class="chapter-item expanded "><a href="../advanced-testing/mutation-testing.html"><strong aria-hidden="true">17.</strong> Mutation Testing</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../advanced-testing/what-is-mutation-testing.html"><strong aria-hidden="true">17.1.</strong> What is Mutation Testing?</a></li><li class="chapter-item expanded "><a href="../advanced-testing/using-cargo-mutants.html"><strong aria-hidden="true">17.2.</strong> Using cargo-mutants</a></li><li class="chapter-item expanded "><a href="../advanced-testing/mutation-score-targets.html"><strong aria-hidden="true">17.3.</strong> Mutation Score Targets</a></li><li class="chapter-item expanded "><a href="../advanced-testing/killing-mutants.html"><strong aria-hidden="true">17.4.</strong> Killing Mutants</a></li></ol></li><li class="chapter-item expanded "><a href="../advanced-testing/fuzzing.html"><strong aria-hidden="true">18.</strong> Fuzzing</a></li><li class="chapter-item expanded "><a href="../advanced-testing/benchmark-testing.html"><strong aria-hidden="true">19.</strong> Benchmark Testing</a></li><li class="chapter-item expanded affix "><li class="part-title">Quality Gates</li><li class="chapter-item expanded "><a href="../quality-gates/pre-commit-hooks.html"><strong aria-hidden="true">20.</strong> Pre-Commit Hooks</a></li><li class="chapter-item expanded "><a href="../quality-gates/continuous-integration.html"><strong aria-hidden="true">21.</strong> Continuous Integration</a></li><li class="chapter-item expanded "><a href="../quality-gates/code-formatting.html"><strong aria-hidden="true">22.</strong> Code Formatting (rustfmt)</a></li><li class="chapter-item expanded "><a href="../quality-gates/linting-clippy.html"><strong aria-hidden="true">23.</strong> Linting (clippy)</a></li><li class="chapter-item expanded "><a href="../quality-gates/coverage-measurement.html"><strong aria-hidden="true">24.</strong> Coverage Measurement</a></li><li class="chapter-item expanded "><a href="../quality-gates/complexity-analysis.html"><strong aria-hidden="true">25.</strong> Complexity Analysis</a></li><li class="chapter-item expanded "><a href="../quality-gates/tdg-score.html"><strong aria-hidden="true">26.</strong> Technical Debt Gradient (TDG)</a></li><li class="chapter-item expanded affix "><li class="part-title">Toyota Way Principles</li><li class="chapter-item expanded "><a href="../toyota-way/overview.html"><strong aria-hidden="true">27.</strong> Overview</a></li><li class="chapter-item expanded "><a href="../toyota-way/kaizen.html"><strong aria-hidden="true">28.</strong> Kaizen (Continuous Improvement)</a></li><li class="chapter-item expanded "><a href="../toyota-way/genchi-genbutsu.html"><strong aria-hidden="true">29.</strong> Genchi Genbutsu (Go and See)</a></li><li class="chapter-item expanded "><a href="../toyota-way/jidoka.html"><strong aria-hidden="true">30.</strong> Jidoka (Built-in Quality)</a></li><li class="chapter-item expanded "><a href="../toyota-way/pdca-cycle.html"><strong aria-hidden="true">31.</strong> PDCA Cycle</a></li><li class="chapter-item expanded "><a href="../toyota-way/respect-for-people.html"><strong aria-hidden="true">32.</strong> Respect for People</a></li><li class="chapter-item expanded affix "><li class="part-title">Machine Learning Fundamentals</li><li class="chapter-item expanded "><a href="../ml-fundamentals/linear-regression.html"><strong aria-hidden="true">33.</strong> Linear Regression Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/regularization.html"><strong aria-hidden="true">34.</strong> Regularization Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/logistic-regression.html"><strong aria-hidden="true">35.</strong> Logistic Regression Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/knn.html"><strong aria-hidden="true">36.</strong> K-Nearest Neighbors (kNN) Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/naive-bayes.html"><strong aria-hidden="true">37.</strong> Naive Bayes Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/bayesian-inference.html"><strong aria-hidden="true">38.</strong> Bayesian Inference Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/svm.html"><strong aria-hidden="true">39.</strong> Support Vector Machines (SVM) Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/decision-trees.html"><strong aria-hidden="true">40.</strong> Decision Trees Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/ensemble-methods.html"><strong aria-hidden="true">41.</strong> Ensemble Methods Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/kmeans-clustering.html"><strong aria-hidden="true">42.</strong> K-Means Clustering Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/pca.html"><strong aria-hidden="true">43.</strong> Principal Component Analysis (PCA) Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/tsne.html"><strong aria-hidden="true">44.</strong> t-SNE (t-Distributed Stochastic Neighbor Embedding) Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/regression-metrics.html"><strong aria-hidden="true">45.</strong> Regression Metrics Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/classification-metrics.html"><strong aria-hidden="true">46.</strong> Classification Metrics Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/cross-validation.html"><strong aria-hidden="true">47.</strong> Cross-Validation Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/gradient-descent.html"><strong aria-hidden="true">48.</strong> Gradient Descent Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/advanced-optimizers.html"><strong aria-hidden="true">49.</strong> Advanced Optimizers Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/feature-scaling.html"><strong aria-hidden="true">50.</strong> Feature Scaling Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/graph-algorithms.html"><strong aria-hidden="true">51.</strong> Graph Algorithms Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/graph-pathfinding.html"><strong aria-hidden="true">52.</strong> Graph Pathfinding Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/graph-components-traversal.html"><strong aria-hidden="true">53.</strong> Graph Components and Traversal</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/graph-link-prediction.html"><strong aria-hidden="true">54.</strong> Graph Link Prediction and Community Detection</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/descriptive-statistics.html"><strong aria-hidden="true">55.</strong> Descriptive Statistics Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/apriori.html"><strong aria-hidden="true">56.</strong> Apriori Algorithm Theory</a></li><li class="chapter-item expanded affix "><li class="part-title">Real-World Examples from Aprender</li><li class="chapter-item expanded "><a href="../examples/linear-regression.html"><strong aria-hidden="true">57.</strong> Case Study: Linear Regression</a></li><li class="chapter-item expanded "><a href="../examples/boston-housing.html"><strong aria-hidden="true">58.</strong> Case Study: Boston Housing</a></li><li class="chapter-item expanded "><a href="../examples/cross-validation.html"><strong aria-hidden="true">59.</strong> Case Study: Cross-Validation</a></li><li class="chapter-item expanded "><a href="../examples/grid-search-tuning.html"><strong aria-hidden="true">60.</strong> Case Study: Grid Search Hyperparameter Tuning</a></li><li class="chapter-item expanded "><a href="../examples/random-forest.html"><strong aria-hidden="true">61.</strong> Case Study: Random Forest</a></li><li class="chapter-item expanded "><a href="../examples/random-forest-iris.html"><strong aria-hidden="true">62.</strong> Case Study: Random Forest Iris</a></li><li class="chapter-item expanded "><a href="../examples/decision-tree-iris.html"><strong aria-hidden="true">63.</strong> Case Study: Decision Tree Iris</a></li><li class="chapter-item expanded "><a href="../examples/model-serialization.html"><strong aria-hidden="true">64.</strong> Case Study: Model Serialization</a></li><li class="chapter-item expanded "><a href="../examples/kmeans-clustering.html"><strong aria-hidden="true">65.</strong> Case Study: KMeans Clustering</a></li><li class="chapter-item expanded "><a href="../examples/dbscan-clustering.html"><strong aria-hidden="true">66.</strong> Case Study: DBSCAN Clustering</a></li><li class="chapter-item expanded "><a href="../examples/hierarchical-clustering.html"><strong aria-hidden="true">67.</strong> Case Study: Hierarchical Clustering</a></li><li class="chapter-item expanded "><a href="../examples/gmm-clustering.html"><strong aria-hidden="true">68.</strong> Case Study: GMM Clustering</a></li><li class="chapter-item expanded "><a href="../examples/iris-clustering.html"><strong aria-hidden="true">69.</strong> Case Study: Iris Clustering</a></li><li class="chapter-item expanded "><a href="../examples/logistic-regression.html"><strong aria-hidden="true">70.</strong> Case Study: Logistic Regression</a></li><li class="chapter-item expanded "><a href="../examples/knn-iris.html"><strong aria-hidden="true">71.</strong> Case Study: KNN Iris</a></li><li class="chapter-item expanded "><a href="../examples/naive-bayes-iris.html"><strong aria-hidden="true">72.</strong> Case Study: Naive Bayes Iris</a></li><li class="chapter-item expanded "><a href="../examples/beta-binomial-inference.html" class="active"><strong aria-hidden="true">73.</strong> Case Study: Beta-Binomial Bayesian Inference</a></li><li class="chapter-item expanded "><a href="../examples/svm-iris.html"><strong aria-hidden="true">74.</strong> Case Study: SVM Iris</a></li><li class="chapter-item expanded "><a href="../examples/gbm-iris.html"><strong aria-hidden="true">75.</strong> Case Study: Gradient Boosting Iris</a></li><li class="chapter-item expanded "><a href="../examples/regularized-regression.html"><strong aria-hidden="true">76.</strong> Case Study: Regularized Regression</a></li><li class="chapter-item expanded "><a href="../examples/optimizer-demo.html"><strong aria-hidden="true">77.</strong> Case Study: Optimizer Demo</a></li><li class="chapter-item expanded "><a href="../examples/dataframe-basics.html"><strong aria-hidden="true">78.</strong> Case Study: DataFrame Basics</a></li><li class="chapter-item expanded "><a href="../examples/data-preprocessing-scalers.html"><strong aria-hidden="true">79.</strong> Case Study: Data Preprocessing with Scalers</a></li><li class="chapter-item expanded "><a href="../examples/graph-social-network.html"><strong aria-hidden="true">80.</strong> Case Study: Graph Social Network</a></li><li class="chapter-item expanded "><a href="../examples/community-detection.html"><strong aria-hidden="true">81.</strong> Case Study: Community Detection with Louvain</a></li><li class="chapter-item expanded "><a href="../examples/graph-algorithms-comprehensive.html"><strong aria-hidden="true">82.</strong> Case Study: Comprehensive Graph Algorithms</a></li><li class="chapter-item expanded "><a href="../examples/descriptive-statistics.html"><strong aria-hidden="true">83.</strong> Case Study: Descriptive Statistics</a></li><li class="chapter-item expanded "><a href="../examples/bayesian-blocks-histogram.html"><strong aria-hidden="true">84.</strong> Case Study: Bayesian Blocks Histogram</a></li><li class="chapter-item expanded "><a href="../examples/pca-iris.html"><strong aria-hidden="true">85.</strong> Case Study: PCA Iris</a></li><li class="chapter-item expanded "><a href="../examples/isolation-forest-anomaly.html"><strong aria-hidden="true">86.</strong> Case Study: Isolation Forest Anomaly Detection</a></li><li class="chapter-item expanded "><a href="../examples/lof-anomaly.html"><strong aria-hidden="true">87.</strong> Case Study: Local Outlier Factor (LOF)</a></li><li class="chapter-item expanded "><a href="../examples/spectral-clustering.html"><strong aria-hidden="true">88.</strong> Case Study: Spectral Clustering</a></li><li class="chapter-item expanded "><a href="../examples/tsne-visualization.html"><strong aria-hidden="true">89.</strong> Case Study: t-SNE Visualization</a></li><li class="chapter-item expanded "><a href="../examples/market-basket-apriori.html"><strong aria-hidden="true">90.</strong> Case Study: Market Basket Analysis (Apriori)</a></li><li class="chapter-item expanded affix "><li class="part-title">Sprint-Based Development</li><li class="chapter-item expanded "><a href="../sprints/sprint-planning.html"><strong aria-hidden="true">91.</strong> Sprint Planning</a></li><li class="chapter-item expanded "><a href="../sprints/sprint-execution.html"><strong aria-hidden="true">92.</strong> Sprint Execution</a></li><li class="chapter-item expanded "><a href="../sprints/sprint-review.html"><strong aria-hidden="true">93.</strong> Sprint Review</a></li><li class="chapter-item expanded "><a href="../sprints/sprint-retrospective.html"><strong aria-hidden="true">94.</strong> Sprint Retrospective</a></li><li class="chapter-item expanded "><a href="../sprints/issue-management.html"><strong aria-hidden="true">95.</strong> Issue Management</a></li><li class="chapter-item expanded affix "><li class="part-title">Anti-Hallucination Enforcement</li><li class="chapter-item expanded "><a href="../anti-hallucination/test-backed-examples.html"><strong aria-hidden="true">96.</strong> Test-Backed Examples</a></li><li class="chapter-item expanded "><a href="../anti-hallucination/example-verification.html"><strong aria-hidden="true">97.</strong> Example Verification</a></li><li class="chapter-item expanded "><a href="../anti-hallucination/ci-validation.html"><strong aria-hidden="true">98.</strong> CI Validation</a></li><li class="chapter-item expanded "><a href="../anti-hallucination/documentation-testing.html"><strong aria-hidden="true">99.</strong> Documentation Testing</a></li><li class="chapter-item expanded affix "><li class="part-title">Tools and Setup</li><li class="chapter-item expanded "><a href="../tools/development-environment.html"><strong aria-hidden="true">100.</strong> Development Environment</a></li><li class="chapter-item expanded "><a href="../tools/cargo-test.html"><strong aria-hidden="true">101.</strong> cargo test</a></li><li class="chapter-item expanded "><a href="../tools/cargo-clippy.html"><strong aria-hidden="true">102.</strong> cargo clippy</a></li><li class="chapter-item expanded "><a href="../tools/cargo-fmt.html"><strong aria-hidden="true">103.</strong> cargo fmt</a></li><li class="chapter-item expanded "><a href="../tools/cargo-mutants.html"><strong aria-hidden="true">104.</strong> cargo mutants</a></li><li class="chapter-item expanded "><a href="../tools/proptest.html"><strong aria-hidden="true">105.</strong> proptest</a></li><li class="chapter-item expanded "><a href="../tools/criterion.html"><strong aria-hidden="true">106.</strong> criterion</a></li><li class="chapter-item expanded "><a href="../tools/pmat.html"><strong aria-hidden="true">107.</strong> pmat (Toyota AI Toolkit)</a></li><li class="chapter-item expanded affix "><li class="part-title">Best Practices</li><li class="chapter-item expanded "><a href="../best-practices/error-handling.html"><strong aria-hidden="true">108.</strong> Error Handling</a></li><li class="chapter-item expanded "><a href="../best-practices/api-design.html"><strong aria-hidden="true">109.</strong> API Design</a></li><li class="chapter-item expanded "><a href="../best-practices/builder-pattern.html"><strong aria-hidden="true">110.</strong> Builder Pattern</a></li><li class="chapter-item expanded "><a href="../best-practices/type-safety.html"><strong aria-hidden="true">111.</strong> Type Safety</a></li><li class="chapter-item expanded "><a href="../best-practices/performance.html"><strong aria-hidden="true">112.</strong> Performance Considerations</a></li><li class="chapter-item expanded "><a href="../best-practices/documentation-standards.html"><strong aria-hidden="true">113.</strong> Documentation Standards</a></li><li class="chapter-item expanded affix "><li class="part-title">Metrics and Measurement</li><li class="chapter-item expanded "><a href="../metrics/test-coverage.html"><strong aria-hidden="true">114.</strong> Test Coverage</a></li><li class="chapter-item expanded "><a href="../metrics/mutation-score.html"><strong aria-hidden="true">115.</strong> Mutation Score</a></li><li class="chapter-item expanded "><a href="../metrics/cyclomatic-complexity.html"><strong aria-hidden="true">116.</strong> Cyclomatic Complexity</a></li><li class="chapter-item expanded "><a href="../metrics/code-churn.html"><strong aria-hidden="true">117.</strong> Code Churn</a></li><li class="chapter-item expanded "><a href="../metrics/build-times.html"><strong aria-hidden="true">118.</strong> Build Times</a></li><li class="chapter-item expanded "><a href="../metrics/tdg-breakdown.html"><strong aria-hidden="true">119.</strong> TDG Score Breakdown</a></li><li class="chapter-item expanded affix "><li class="part-title">Common Pitfalls</li><li class="chapter-item expanded "><a href="../pitfalls/skipping-tests.html"><strong aria-hidden="true">120.</strong> Skipping Tests</a></li><li class="chapter-item expanded "><a href="../pitfalls/insufficient-coverage.html"><strong aria-hidden="true">121.</strong> Insufficient Test Coverage</a></li><li class="chapter-item expanded "><a href="../pitfalls/ignoring-warnings.html"><strong aria-hidden="true">122.</strong> Ignoring Warnings</a></li><li class="chapter-item expanded "><a href="../pitfalls/over-mocking.html"><strong aria-hidden="true">123.</strong> Over-Mocking</a></li><li class="chapter-item expanded "><a href="../pitfalls/flaky-tests.html"><strong aria-hidden="true">124.</strong> Flaky Tests</a></li><li class="chapter-item expanded "><a href="../pitfalls/technical-debt.html"><strong aria-hidden="true">125.</strong> Technical Debt Accumulation</a></li><li class="chapter-item expanded affix "><li class="part-title">Appendix</li><li class="chapter-item expanded "><a href="../appendix/glossary.html"><strong aria-hidden="true">126.</strong> Glossary</a></li><li class="chapter-item expanded "><a href="../appendix/references.html"><strong aria-hidden="true">127.</strong> References</a></li><li class="chapter-item expanded "><a href="../appendix/further-reading.html"><strong aria-hidden="true">128.</strong> Further Reading</a></li><li class="chapter-item expanded "><a href="../appendix/contributing.html"><strong aria-hidden="true">129.</strong> Contributing to This Book</a></li></ol>
+            </div>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <!-- Track and set sidebar scroll position -->
+        <script>
+            var sidebarScrollbox = document.querySelector('#sidebar .sidebar-scrollbox');
+            sidebarScrollbox.addEventListener('click', function(e) {
+                if (e.target.tagName === 'A') {
+                    sessionStorage.setItem('sidebar-scroll', sidebarScrollbox.scrollTop);
+                }
+            }, { passive: true });
+            var sidebarScrollTop = sessionStorage.getItem('sidebar-scroll');
+            sessionStorage.removeItem('sidebar-scroll');
+            if (sidebarScrollTop) {
+                // preserve sidebar scroll position when navigating via links within sidebar
+                sidebarScrollbox.scrollTop = sidebarScrollTop;
+            } else {
+                // scroll sidebar to current active section when navigating via "next/previous chapter" buttons
+                var activeSection = document.querySelector('#sidebar .active');
+                if (activeSection) {
+                    activeSection.scrollIntoView({ block: 'center' });
+                }
+            }
+        </script>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="sidebar-toggle" class="icon-button" for="sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </label>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">EXTREME TDD - The Aprender Guide to Zero-Defect Machine Learning</h1>
+
+                    <div class="right-buttons">
+                        <a href="../print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                        <a href="https://github.com/paiml/aprender" title="Git repository" aria-label="Git repository">
+                            <i id="git-repository-button" class="fa fa-github"></i>
+                        </a>
+                        <a href="https://github.com/paiml/aprender/edit/main/book/src/examples/beta-binomial-inference.md" title="Suggest an edit" aria-label="Suggest an edit">
+                            <i id="git-edit-button" class="fa fa-edit"></i>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="case-study-beta-binomial-bayesian-inference"><a class="header" href="#case-study-beta-binomial-bayesian-inference">Case Study: Beta-Binomial Bayesian Inference</a></h1>
+<p>This case study demonstrates Bayesian inference for binary outcomes using conjugate priors. We cover four practical scenarios: coin flip inference, A/B testing, sequential learning, and prior comparison.</p>
+<h2 id="overview"><a class="header" href="#overview">Overview</a></h2>
+<p>The Beta-Binomial conjugate family is the foundation of Bayesian inference for binary data:</p>
+<ul>
+<li><strong>Prior</strong>: Beta(α, β) distribution over probability parameter θ ∈ [0, 1]</li>
+<li><strong>Likelihood</strong>: Binomial(n, θ) for k successes in n trials</li>
+<li><strong>Posterior</strong>: Beta(α + k, β + n - k) with closed-form update</li>
+</ul>
+<p>This enables exact Bayesian inference without numerical integration.</p>
+<h2 id="running-the-example"><a class="header" href="#running-the-example">Running the Example</a></h2>
+<pre><code class="language-bash">cargo run --example beta_binomial_inference
+</code></pre>
+<p>Expected output: Four demonstrations showing prior specification, posterior updating, credible intervals, and sequential learning.</p>
+<h2 id="example-1-coin-flip-inference"><a class="header" href="#example-1-coin-flip-inference">Example 1: Coin Flip Inference</a></h2>
+<h3 id="problem"><a class="header" href="#problem">Problem</a></h3>
+<p>You flip a coin 10 times and observe 7 heads. What is the probability that this coin is fair (θ = 0.5)?</p>
+<h3 id="solution"><a class="header" href="#solution">Solution</a></h3>
+<pre><code class="language-rust">use aprender::bayesian::BetaBinomial;
+
+// Start with uniform prior Beta(1, 1) = complete ignorance
+let mut model = BetaBinomial::uniform();
+println!(&quot;Prior: Beta({}, {})&quot;, model.alpha(), model.beta());
+println!(&quot;  Prior mean: {:.4}&quot;, model.posterior_mean());  // 0.5
+
+// Observe 7 heads in 10 flips
+model.update(7, 10);
+
+// Posterior is Beta(1+7, 1+3) = Beta(8, 4)
+println!(&quot;Posterior: Beta({}, {})&quot;, model.alpha(), model.beta());
+println!(&quot;  Posterior mean: {:.4}&quot;, model.posterior_mean());  // 0.6667</code></pre>
+<h3 id="posterior-statistics"><a class="header" href="#posterior-statistics">Posterior Statistics</a></h3>
+<pre><code class="language-rust">// Point estimates
+let mean = model.posterior_mean();  // E[θ|D] = 8/12 = 0.6667
+let mode = model.posterior_mode().unwrap();  // (8-1)/(12-2) = 0.7
+let variance = model.posterior_variance();  // ≈ 0.017
+
+// 95% credible interval
+let (lower, upper) = model.credible_interval(0.95).unwrap();
+// ≈ [0.41, 0.92] - wide interval due to small sample size
+
+// Posterior predictive
+let prob_heads = model.posterior_predictive();  // 0.6667</code></pre>
+<h3 id="interpretation"><a class="header" href="#interpretation">Interpretation</a></h3>
+<p><strong>Posterior mean (0.667)</strong>: Our best estimate is that the coin has a 66.7% chance of heads.</p>
+<p><strong>Credible interval [0.41, 0.92]</strong>: We are 95% confident that the true probability is between 41% and 92%. This wide interval reflects uncertainty from small sample size.</p>
+<p><strong>Posterior predictive (0.667)</strong>: The probability of heads on the next flip is 66.7%, integrating over all possible values of θ weighted by the posterior.</p>
+<h3 id="is-the-coin-fair"><a class="header" href="#is-the-coin-fair">Is the coin fair?</a></h3>
+<p>The credible interval includes 0.5, so we <strong>cannot rule out</strong> that the coin is fair. With only 10 flips, the data is consistent with a fair coin that happened to land heads 7 times by chance.</p>
+<h2 id="example-2-ab-testing"><a class="header" href="#example-2-ab-testing">Example 2: A/B Testing</a></h2>
+<h3 id="problem-1"><a class="header" href="#problem-1">Problem</a></h3>
+<p>You run an A/B test comparing two website variants:</p>
+<ul>
+<li><strong>Variant A</strong>: 120 conversions out of 1,000 visitors (12% conversion rate)</li>
+<li><strong>Variant B</strong>: 145 conversions out of 1,000 visitors (14.5% conversion rate)</li>
+</ul>
+<p>Is Variant B significantly better, or could the difference be due to chance?</p>
+<h3 id="solution-1"><a class="header" href="#solution-1">Solution</a></h3>
+<pre><code class="language-rust">// Variant A: 120 conversions / 1000 visitors
+let mut variant_a = BetaBinomial::uniform();
+variant_a.update(120, 1000);
+let mean_a = variant_a.posterior_mean();  // 0.1208
+let (lower_a, upper_a) = variant_a.credible_interval(0.95).unwrap();
+// 95% CI: [0.1006, 0.1409]
+
+// Variant B: 145 conversions / 1000 visitors
+let mut variant_b = BetaBinomial::uniform();
+variant_b.update(145, 1000);
+let mean_b = variant_b.posterior_mean();  // 0.1457
+let (lower_b, upper_b) = variant_b.credible_interval(0.95).unwrap();
+// 95% CI: [0.1239, 0.1675]</code></pre>
+<h3 id="decision-rule"><a class="header" href="#decision-rule">Decision Rule</a></h3>
+<p>Check if credible intervals overlap:</p>
+<pre><code class="language-rust">if lower_b &gt; upper_a {
+    println!(&quot;✓ Variant B is significantly better (95% confidence)&quot;);
+} else if lower_a &gt; upper_b {
+    println!(&quot;✓ Variant A is significantly better (95% confidence)&quot;);
+} else {
+    println!(&quot;⚠ No clear winner yet - credible intervals overlap&quot;);
+    println!(&quot;  Consider collecting more data&quot;);
+}</code></pre>
+<h3 id="interpretation-1"><a class="header" href="#interpretation-1">Interpretation</a></h3>
+<p><strong>Output</strong>: &quot;No clear winner yet - credible intervals overlap&quot;</p>
+<p>The credible intervals overlap: [10.06%, 14.09%] for A and [12.39%, 16.75%] for B. While B appears better (14.57% vs 12.08%), the uncertainty intervals overlap, meaning we cannot conclusively say B is superior.</p>
+<p><strong>Recommendation</strong>: Collect more data to reduce uncertainty and determine if the 2.5 percentage point difference is real or due to sampling variability.</p>
+<h3 id="bayesian-vs-frequentist"><a class="header" href="#bayesian-vs-frequentist">Bayesian vs Frequentist</a></h3>
+<p><strong>Frequentist approach</strong>: Run a z-test for proportions, get p-value ≈ 0.02. Conclude &quot;significant at α = 0.05 level.&quot;</p>
+<p><strong>Bayesian advantage</strong>:</p>
+<ul>
+<li>Direct probability statements: &quot;95% confident B's conversion rate is between 12.4% and 16.8%&quot;</li>
+<li>Can incorporate prior knowledge (e.g., historical conversion rates)</li>
+<li>Natural stopping rules: collect data until credible intervals separate</li>
+<li>No p-value misinterpretation (&quot;p = 0.02&quot; does NOT mean &quot;2% chance hypothesis is true&quot;)</li>
+</ul>
+<h2 id="example-3-sequential-learning"><a class="header" href="#example-3-sequential-learning">Example 3: Sequential Learning</a></h2>
+<h3 id="problem-2"><a class="header" href="#problem-2">Problem</a></h3>
+<p>Demonstrate how uncertainty decreases as we collect more data, even with a consistent underlying success rate.</p>
+<h3 id="solution-2"><a class="header" href="#solution-2">Solution</a></h3>
+<p>Run 5 sequential experiments with true success rate ≈ 77%:</p>
+<pre><code class="language-rust">let mut model = BetaBinomial::uniform();
+
+let experiments = vec![
+    (7, 10),   // 70% success
+    (15, 20),  // 75% success
+    (23, 30),  // 76.7% success
+    (31, 40),  // 77.5% success
+    (77, 100), // 77% success
+];
+
+for (successes, trials) in experiments {
+    model.update(successes, trials);
+
+    let mean = model.posterior_mean();
+    let variance = model.posterior_variance();
+    let (lower, upper) = model.credible_interval(0.95).unwrap();
+    let width = upper - lower;
+
+    println!(&quot;Trials: {}, Mean: {:.3}, Variance: {:.7}, CI Width: {:.4}&quot;,
+             total_trials, mean, variance, width);
+}</code></pre>
+<h3 id="results"><a class="header" href="#results">Results</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Trials</th><th>Successes</th><th>Mean</th><th>Variance</th><th>95% CI Width</th></tr></thead><tbody>
+<tr><td>10</td><td>7</td><td>0.667</td><td>0.0170940</td><td>0.5125</td></tr>
+<tr><td>30</td><td>22</td><td>0.719</td><td>0.0061257</td><td>0.3068</td></tr>
+<tr><td>60</td><td>45</td><td>0.742</td><td>0.0030392</td><td>0.2161</td></tr>
+<tr><td>100</td><td>76</td><td>0.755</td><td>0.0017964</td><td>0.1661</td></tr>
+<tr><td>200</td><td>153</td><td>0.762</td><td>0.0008924</td><td>0.1171</td></tr>
+</tbody></table>
+</div>
+<h3 id="interpretation-2"><a class="header" href="#interpretation-2">Interpretation</a></h3>
+<p><strong>Observation 1</strong>: Posterior mean converges to true value (0.762 → 0.77)</p>
+<p><strong>Observation 2</strong>: Variance decreases inversely with sample size</p>
+<p>For Beta(α, β): Var[θ] = αβ / [(α+β)²(α+β+1)]</p>
+<p>As α + β (total count) increases, variance decreases approximately as 1/(α+β).</p>
+<p><strong>Observation 3</strong>: Credible interval width shrinks with √n</p>
+<p>The 95% CI width drops from 51% (n=10) to 12% (n=200), reflecting increased certainty.</p>
+<h3 id="practical-application"><a class="header" href="#practical-application">Practical Application</a></h3>
+<p><strong>Early Stopping</strong>: If credible intervals separate in A/B test, you can stop early and deploy the winner. No need for fixed sample size planning as in frequentist statistics.</p>
+<p><strong>Sample Size Planning</strong>: Want 95% CI width &lt; 5%? Solve for α + β ≈ 400 (200 trials).</p>
+<h2 id="example-4-prior-comparison"><a class="header" href="#example-4-prior-comparison">Example 4: Prior Comparison</a></h2>
+<h3 id="problem-3"><a class="header" href="#problem-3">Problem</a></h3>
+<p>Demonstrate how different priors affect the posterior with limited data.</p>
+<h3 id="solution-3"><a class="header" href="#solution-3">Solution</a></h3>
+<p>Same data (7 successes in 10 trials), three different priors:</p>
+<pre><code class="language-rust">// 1. Uniform Prior Beta(1, 1)
+let mut uniform = BetaBinomial::uniform();
+uniform.update(7, 10);
+// Posterior: Beta(8, 4), mean = 0.6667
+
+// 2. Jeffrey's Prior Beta(0.5, 0.5)
+let mut jeffreys = BetaBinomial::jeffreys();
+jeffreys.update(7, 10);
+// Posterior: Beta(7.5, 3.5), mean = 0.6818
+
+// 3. Informative Prior Beta(50, 50) - strong 50% belief
+let mut informative = BetaBinomial::new(50.0, 50.0).unwrap();
+informative.update(7, 10);
+// Posterior: Beta(57, 53), mean = 0.5182</code></pre>
+<h3 id="results-1"><a class="header" href="#results-1">Results</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Prior Type</th><th>Prior</th><th>Posterior</th><th>Posterior Mean</th></tr></thead><tbody>
+<tr><td>Uniform</td><td>Beta(1, 1)</td><td>Beta(8, 4)</td><td>0.6667</td></tr>
+<tr><td>Jeffrey's</td><td>Beta(0.5, 0.5)</td><td>Beta(7.5, 3.5)</td><td>0.6818</td></tr>
+<tr><td>Informative</td><td>Beta(50, 50)</td><td>Beta(57, 53)</td><td>0.5182</td></tr>
+</tbody></table>
+</div>
+<h3 id="interpretation-3"><a class="header" href="#interpretation-3">Interpretation</a></h3>
+<p><strong>Weak priors</strong> (Uniform, Jeffrey's): Posterior dominated by data (≈67% mean)</p>
+<p><strong>Strong prior</strong> (Beta(50, 50)): Posterior pulled toward prior belief (51.8% vs 66.7%)</p>
+<p>The informative prior Beta(50, 50) encodes a strong belief that θ ≈ 0.5 with effective sample size of 100. With only 10 new observations, the prior dominates, pulling the posterior mean from 0.667 down to 0.518.</p>
+<h3 id="when-to-use-strong-priors"><a class="header" href="#when-to-use-strong-priors">When to Use Strong Priors</a></h3>
+<p><strong>Use informative priors when</strong>:</p>
+<ul>
+<li>You have reliable historical data</li>
+<li>Expert domain knowledge is available</li>
+<li>Rare events require regularization</li>
+<li>Hierarchical learning across related tasks</li>
+</ul>
+<p><strong>Avoid informative priors when</strong>:</p>
+<ul>
+<li>No reliable prior knowledge exists</li>
+<li>Prior assumptions may be wrong</li>
+<li>Stakeholders require &quot;data-driven&quot; decisions</li>
+<li>Exploring novel domains</li>
+</ul>
+<h3 id="prior-sensitivity-analysis"><a class="header" href="#prior-sensitivity-analysis">Prior Sensitivity Analysis</a></h3>
+<p>Always check robustness:</p>
+<ol>
+<li>Run inference with weak prior (Beta(1, 1))</li>
+<li>Run inference with strong prior (Beta(50, 50))</li>
+<li>If posteriors differ substantially, <strong>collect more data</strong> until they converge</li>
+</ol>
+<p>With enough data, all reasonable priors converge to the same posterior (Bayesian consistency).</p>
+<h2 id="key-takeaways"><a class="header" href="#key-takeaways">Key Takeaways</a></h2>
+<p><strong>1. Conjugate priors enable closed-form updates</strong></p>
+<ul>
+<li>No MCMC or numerical integration required</li>
+<li>Efficient for real-time sequential updating (online learning)</li>
+</ul>
+<p><strong>2. Credible intervals quantify uncertainty</strong></p>
+<ul>
+<li>Direct probability statements about parameters</li>
+<li>Width decreases with √n as data accumulates</li>
+</ul>
+<p><strong>3. Sequential updating is natural in Bayesian framework</strong></p>
+<ul>
+<li>Each posterior becomes the next prior</li>
+<li>Final result is order-independent</li>
+</ul>
+<p><strong>4. Prior choice matters with small data</strong></p>
+<ul>
+<li>Weak priors: let data speak</li>
+<li>Strong priors: incorporate domain knowledge</li>
+<li>Always perform sensitivity analysis</li>
+</ul>
+<p><strong>5. Bayesian A/B testing avoids p-value pitfalls</strong></p>
+<ul>
+<li>No arbitrary α = 0.05 threshold</li>
+<li>Natural early stopping rules</li>
+<li>Direct decision-theoretic framework</li>
+</ul>
+<h2 id="related-chapters"><a class="header" href="#related-chapters">Related Chapters</a></h2>
+<ul>
+<li><a href="../ml-fundamentals/bayesian-inference.html">Bayesian Inference Theory</a></li>
+<li><a href="../ml-fundamentals/naive-bayes.html">Naive Bayes Theory</a></li>
+</ul>
+<h2 id="references"><a class="header" href="#references">References</a></h2>
+<ol>
+<li>
+<p><strong>Jaynes, E. T. (2003)</strong>. <em>Probability Theory: The Logic of Science</em>. Cambridge University Press. Chapter 6: &quot;Elementary Parameter Estimation.&quot;</p>
+</li>
+<li>
+<p><strong>Gelman, A., et al. (2013)</strong>. <em>Bayesian Data Analysis</em> (3rd ed.). CRC Press. Chapter 2: &quot;Single-parameter Models.&quot;</p>
+</li>
+<li>
+<p><strong>Kruschke, J. K. (2014)</strong>. <em>Doing Bayesian Data Analysis</em> (2nd ed.). Academic Press. Chapter 6: &quot;Inferring a Binomial Probability via Exact Mathematical Analysis.&quot;</p>
+</li>
+<li>
+<p><strong>VanderPlas, J. (2014)</strong>. &quot;Frequentism and Bayesianism: A Python-driven Primer.&quot; arXiv:1411.5018. Excellent comparison of paradigms with code examples.</p>
+</li>
+</ol>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../examples/naive-bayes-iris.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+
+                            <a rel="next prefetch" href="../examples/svm-iris.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../examples/naive-bayes-iris.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+
+                    <a rel="next prefetch" href="../examples/svm-iris.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+            </nav>
+
+        </div>
+
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+        <script src="../ace.js"></script>
+        <script src="../editor.js"></script>
+        <script src="../mode-rust.js"></script>
+        <script src="../theme-dawn.js"></script>
+        <script src="../theme-tomorrow_night.js"></script>
+
+        <script src="../elasticlunr.min.js"></script>
+        <script src="../mark.min.js"></script>
+        <script src="../searcher.js"></script>
+
+        <script src="../clipboard.min.js"></script>
+        <script src="../highlight.js"></script>
+        <script src="../book.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+    </div>
+    </body>
+</html>
