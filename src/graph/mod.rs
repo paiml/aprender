@@ -4713,7 +4713,7 @@ mod tests {
         use std::collections::HashSet;
         let unique: HashSet<_> = communities.iter().copied().collect();
         // Should have 2-3 communities depending on convergence
-        assert!(unique.len() >= 1 && unique.len() <= 6);
+        assert!(!unique.is_empty() && unique.len() <= 6);
     }
 
     #[test]
@@ -4777,7 +4777,7 @@ mod tests {
         // Linear graph may converge to 1-2 communities
         use std::collections::HashSet;
         let unique: HashSet<_> = communities.iter().copied().collect();
-        assert!(unique.len() >= 1 && unique.len() <= 5);
+        assert!(!unique.is_empty() && unique.len() <= 5);
     }
 
     #[test]
@@ -4814,10 +4814,7 @@ mod tests {
     fn test_label_propagation_directed() {
         // Directed graph with mutual edges forms strongly connected component
         // 0<->1<->2 (bidirectional edges)
-        let g = Graph::from_edges(
-            &[(0, 1), (1, 0), (1, 2), (2, 1), (0, 2), (2, 0)],
-            true,
-        );
+        let g = Graph::from_edges(&[(0, 1), (1, 0), (1, 2), (2, 1), (0, 2), (2, 0)], true);
 
         let communities = g.label_propagation(100, Some(42));
 
@@ -4832,15 +4829,7 @@ mod tests {
         // Barbell graph: two cliques connected by bridge
         // Clique 1: 0-1-2 (complete), Clique 2: 3-4-5 (complete), Bridge: 2-3
         let g = Graph::from_edges(
-            &[
-                (0, 1),
-                (0, 2),
-                (1, 2),
-                (3, 4),
-                (3, 5),
-                (4, 5),
-                (2, 3),
-            ],
+            &[(0, 1), (0, 2), (1, 2), (3, 4), (3, 5), (4, 5), (2, 3)],
             false,
         );
 
@@ -4851,6 +4840,6 @@ mod tests {
         // Should detect 1-2 communities
         use std::collections::HashSet;
         let unique: HashSet<_> = communities.iter().copied().collect();
-        assert!(unique.len() >= 1 && unique.len() <= 3);
+        assert!(!unique.is_empty() && unique.len() <= 3);
     }
 }

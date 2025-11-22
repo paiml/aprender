@@ -1,6 +1,6 @@
 //! Comprehensive Graph Algorithms Demo
 //!
-//! This example demonstrates all graph algorithms from v0.5.1:
+//! This example demonstrates all graph algorithms from v0.6.0:
 //!
 //! **Phase 1: Pathfinding**
 //! - shortest_path: BFS-based unweighted shortest path
@@ -25,7 +25,7 @@ use aprender::graph::Graph;
 
 fn main() {
     println!("═══════════════════════════════════════════════════════════════");
-    println!("  Comprehensive Graph Algorithms Demo - Aprender v0.5.1");
+    println!("  Comprehensive Graph Algorithms Demo - Aprender v0.6.0");
     println!("═══════════════════════════════════════════════════════════════\n");
 
     demo_pathfinding();
@@ -74,9 +74,7 @@ fn demo_pathfinding() {
     println!("1️⃣  Shortest Path (BFS - unweighted hops)");
     println!("─────────────────────────────────────────────────────────────────");
 
-    let path = g_unweighted
-        .shortest_path(0, 5)
-        .expect("Path should exist");
+    let path = g_unweighted.shortest_path(0, 5).expect("Path should exist");
 
     print!("   Route from {} to {}: ", cities[0], cities[5]);
     for (i, &node) in path.iter().enumerate() {
@@ -101,7 +99,7 @@ fn demo_pathfinding() {
         }
         print!("{}", cities[node]);
     }
-    println!(" ({:.1} km)\n", distance);
+    println!(" ({distance:.1} km)\n");
 
     // 3. A* Search - heuristic-guided pathfinding
     println!("─────────────────────────────────────────────────────────────────");
@@ -142,7 +140,7 @@ fn demo_pathfinding() {
     println!("   Distance matrix (hops):");
     print!("      ");
     for city in &cities {
-        print!("{:>3} ", city);
+        print!("{city:>3} ");
     }
     println!();
 
@@ -150,7 +148,7 @@ fn demo_pathfinding() {
         print!("   {:>2} ", cities[i]);
         for dist in row {
             match dist {
-                Some(d) => print!("{:>3} ", d),
+                Some(d) => print!("{d:>3} "),
                 None => print!("  - "),
             }
         }
@@ -185,7 +183,7 @@ fn demo_components_traversal() {
         if i > 0 {
             print!(" → ");
         }
-        print!("{}", node);
+        print!("{node}");
     }
     println!("\n");
 
@@ -245,7 +243,10 @@ fn demo_components_traversal() {
         scc_groups.entry(scc_id).or_default().push(node);
     }
 
-    println!("   Found {} strongly connected components:", scc_groups.len());
+    println!(
+        "   Found {} strongly connected components:",
+        scc_groups.len()
+    );
     for (i, nodes) in scc_groups.values().enumerate() {
         println!("   SCC {}: {:?}", i + 1, nodes);
     }
@@ -266,7 +267,7 @@ fn demo_components_traversal() {
     ];
     let dag = Graph::from_edges(&dag_edges, true);
 
-    let tasks = vec![
+    let tasks = [
         "Setup Environment",
         "Install Dependencies",
         "Configure System",
@@ -348,21 +349,21 @@ fn demo_community_link_analysis() {
     println!("   Link prediction: Will nodes 1 and 3 become friends?\n");
 
     let cn_1_3 = g_social.common_neighbors(1, 3).expect("Nodes exist");
-    println!("   Common neighbors of 1 and 3: {}", cn_1_3);
+    println!("   Common neighbors of 1 and 3: {cn_1_3}");
 
     // Check who those common neighbors are
     let neighbors_1: Vec<usize> = g_social.neighbors(1).to_vec();
     let neighbors_3: Vec<usize> = g_social.neighbors(3).to_vec();
 
-    println!("   Node 1 neighbors: {:?}", neighbors_1);
-    println!("   Node 3 neighbors: {:?}", neighbors_3);
+    println!("   Node 1 neighbors: {neighbors_1:?}");
+    println!("   Node 3 neighbors: {neighbors_3:?}");
 
     let common: Vec<usize> = neighbors_1
         .iter()
         .filter(|n| neighbors_3.contains(n))
         .copied()
         .collect();
-    println!("   Actual common neighbors: {:?}", common);
+    println!("   Actual common neighbors: {common:?}");
     println!("   → High common neighbor count suggests likely future connection\n");
 
     // 3. Adamic-Adar Index
@@ -371,15 +372,15 @@ fn demo_community_link_analysis() {
     println!("─────────────────────────────────────────────────────────────────");
 
     let aa_1_3 = g_social.adamic_adar_index(1, 3).expect("Nodes exist");
-    println!("   Adamic-Adar score for nodes 1 and 3: {:.4}", aa_1_3);
+    println!("   Adamic-Adar score for nodes 1 and 3: {aa_1_3:.4}");
 
     // Compare with another pair
     let aa_0_7 = g_social.adamic_adar_index(0, 7).expect("Nodes exist");
-    println!("   Adamic-Adar score for nodes 0 and 7: {:.4}", aa_0_7);
+    println!("   Adamic-Adar score for nodes 0 and 7: {aa_0_7:.4}");
 
     println!("\n   💡 Interpretation:");
     println!("   - Higher score = stronger prediction for future link");
-    println!("   - Nodes 1-3 (same community): {:.4}", aa_1_3);
-    println!("   - Nodes 0-7 (different communities): {:.4}", aa_0_7);
+    println!("   - Nodes 1-3 (same community): {aa_1_3:.4}");
+    println!("   - Nodes 0-7 (different communities): {aa_0_7:.4}");
     println!("   → Algorithm correctly identifies within-community links as more likely\n");
 }

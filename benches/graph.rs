@@ -1,5 +1,5 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
 use aprender::graph::Graph;
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 
 // Benchmark helper functions
 fn generate_random_edges(n_nodes: usize, n_edges: usize, seed: u64) -> Vec<(usize, usize)> {
@@ -22,11 +22,7 @@ fn generate_random_edges(n_nodes: usize, n_edges: usize, seed: u64) -> Vec<(usiz
     edges
 }
 
-fn generate_weighted_edges(
-    n_nodes: usize,
-    n_edges: usize,
-    seed: u64,
-) -> Vec<(usize, usize, f64)> {
+fn generate_weighted_edges(n_nodes: usize, n_edges: usize, seed: u64) -> Vec<(usize, usize, f64)> {
     let mut edges = Vec::new();
     let mut rng_state = seed;
 
@@ -52,14 +48,12 @@ fn generate_weighted_edges(
 fn bench_shortest_path(c: &mut Criterion) {
     let mut group = c.benchmark_group("shortest_path");
 
-    for size in [100, 500, 1000].iter() {
+    for size in &[100, 500, 1000] {
         let edges = generate_random_edges(*size, size * 5, 12345);
         let graph = Graph::from_edges(&edges, false);
 
         group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, _| {
-            b.iter(|| {
-                black_box(graph.shortest_path(0, size / 2))
-            });
+            b.iter(|| black_box(graph.shortest_path(0, size / 2)));
         });
     }
 
@@ -69,14 +63,12 @@ fn bench_shortest_path(c: &mut Criterion) {
 fn bench_dijkstra(c: &mut Criterion) {
     let mut group = c.benchmark_group("dijkstra");
 
-    for size in [100, 500, 1000].iter() {
+    for size in &[100, 500, 1000] {
         let edges = generate_weighted_edges(*size, size * 5, 12345);
         let graph = Graph::from_weighted_edges(&edges, false);
 
         group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, _| {
-            b.iter(|| {
-                black_box(graph.dijkstra(0, size / 2))
-            });
+            b.iter(|| black_box(graph.dijkstra(0, size / 2)));
         });
     }
 
@@ -86,7 +78,7 @@ fn bench_dijkstra(c: &mut Criterion) {
 fn bench_a_star(c: &mut Criterion) {
     let mut group = c.benchmark_group("a_star");
 
-    for size in [100, 500, 1000].iter() {
+    for size in &[100, 500, 1000] {
         let edges = generate_weighted_edges(*size, size * 5, 12345);
         let graph = Graph::from_weighted_edges(&edges, false);
         let target = size / 2;
@@ -95,9 +87,7 @@ fn bench_a_star(c: &mut Criterion) {
         let heuristic = |_node: usize| 5.0;
 
         group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, _| {
-            b.iter(|| {
-                black_box(graph.a_star(0, target, heuristic))
-            });
+            b.iter(|| black_box(graph.a_star(0, target, heuristic)));
         });
     }
 
@@ -108,14 +98,12 @@ fn bench_all_pairs_shortest_paths(c: &mut Criterion) {
     let mut group = c.benchmark_group("all_pairs_shortest_paths");
 
     // Smaller sizes for O(n²) algorithm
-    for size in [50, 100, 200].iter() {
+    for size in &[50, 100, 200] {
         let edges = generate_random_edges(*size, size * 3, 12345);
         let graph = Graph::from_edges(&edges, false);
 
         group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, _| {
-            b.iter(|| {
-                black_box(graph.all_pairs_shortest_paths())
-            });
+            b.iter(|| black_box(graph.all_pairs_shortest_paths()));
         });
     }
 
@@ -126,14 +114,12 @@ fn bench_all_pairs_shortest_paths(c: &mut Criterion) {
 fn bench_dfs(c: &mut Criterion) {
     let mut group = c.benchmark_group("dfs");
 
-    for size in [100, 500, 1000, 5000].iter() {
+    for size in &[100, 500, 1000, 5000] {
         let edges = generate_random_edges(*size, size * 3, 12345);
         let graph = Graph::from_edges(&edges, false);
 
         group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, _| {
-            b.iter(|| {
-                black_box(graph.dfs(0))
-            });
+            b.iter(|| black_box(graph.dfs(0)));
         });
     }
 
@@ -144,14 +130,12 @@ fn bench_dfs(c: &mut Criterion) {
 fn bench_connected_components(c: &mut Criterion) {
     let mut group = c.benchmark_group("connected_components");
 
-    for size in [100, 500, 1000, 5000].iter() {
+    for size in &[100, 500, 1000, 5000] {
         let edges = generate_random_edges(*size, size * 3, 12345);
         let graph = Graph::from_edges(&edges, false);
 
         group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, _| {
-            b.iter(|| {
-                black_box(graph.connected_components())
-            });
+            b.iter(|| black_box(graph.connected_components()));
         });
     }
 
@@ -161,14 +145,12 @@ fn bench_connected_components(c: &mut Criterion) {
 fn bench_strongly_connected_components(c: &mut Criterion) {
     let mut group = c.benchmark_group("strongly_connected_components");
 
-    for size in [100, 500, 1000, 5000].iter() {
+    for size in &[100, 500, 1000, 5000] {
         let edges = generate_random_edges(*size, size * 3, 12345);
         let graph = Graph::from_edges(&edges, true); // directed
 
         group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, _| {
-            b.iter(|| {
-                black_box(graph.strongly_connected_components())
-            });
+            b.iter(|| black_box(graph.strongly_connected_components()));
         });
     }
 
@@ -178,7 +160,7 @@ fn bench_strongly_connected_components(c: &mut Criterion) {
 fn bench_topological_sort(c: &mut Criterion) {
     let mut group = c.benchmark_group("topological_sort");
 
-    for size in [100, 500, 1000].iter() {
+    for size in &[100, 500, 1000] {
         // Generate DAG edges (u -> v where u < v)
         let mut edges = Vec::new();
         let mut rng_state = 12345u64;
@@ -198,9 +180,7 @@ fn bench_topological_sort(c: &mut Criterion) {
         let graph = Graph::from_edges(&edges, true); // directed
 
         group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, _| {
-            b.iter(|| {
-                black_box(graph.topological_sort())
-            });
+            b.iter(|| black_box(graph.topological_sort()));
         });
     }
 
@@ -211,14 +191,12 @@ fn bench_topological_sort(c: &mut Criterion) {
 fn bench_label_propagation(c: &mut Criterion) {
     let mut group = c.benchmark_group("label_propagation");
 
-    for size in [100, 500, 1000, 5000].iter() {
+    for size in &[100, 500, 1000, 5000] {
         let edges = generate_random_edges(*size, size * 5, 12345);
         let graph = Graph::from_edges(&edges, false);
 
         group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, _| {
-            b.iter(|| {
-                black_box(graph.label_propagation(10, Some(42)))
-            });
+            b.iter(|| black_box(graph.label_propagation(10, Some(42))));
         });
     }
 
@@ -229,14 +207,12 @@ fn bench_louvain(c: &mut Criterion) {
     let mut group = c.benchmark_group("louvain");
 
     // Louvain is more expensive, use smaller sizes
-    for size in [100, 500, 1000].iter() {
+    for size in &[100, 500, 1000] {
         let edges = generate_random_edges(*size, size * 5, 12345);
         let graph = Graph::from_edges(&edges, false);
 
         group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, _| {
-            b.iter(|| {
-                black_box(graph.louvain())
-            });
+            b.iter(|| black_box(graph.louvain()));
         });
     }
 
@@ -247,18 +223,16 @@ fn bench_louvain(c: &mut Criterion) {
 fn bench_common_neighbors(c: &mut Criterion) {
     let mut group = c.benchmark_group("common_neighbors");
 
-    for avg_degree in [10, 50, 100].iter() {
+    for avg_degree in &[10, 50, 100] {
         let size = 1000;
         let edges = generate_random_edges(size, size * avg_degree, 12345);
         let graph = Graph::from_edges(&edges, false);
 
         group.bench_with_input(
-            BenchmarkId::from_parameter(format!("degree_{}", avg_degree)),
+            BenchmarkId::from_parameter(format!("degree_{avg_degree}")),
             avg_degree,
             |b, _| {
-                b.iter(|| {
-                    black_box(graph.common_neighbors(0, size / 2))
-                });
+                b.iter(|| black_box(graph.common_neighbors(0, size / 2)));
             },
         );
     }
@@ -269,18 +243,16 @@ fn bench_common_neighbors(c: &mut Criterion) {
 fn bench_adamic_adar_index(c: &mut Criterion) {
     let mut group = c.benchmark_group("adamic_adar_index");
 
-    for avg_degree in [10, 50, 100].iter() {
+    for avg_degree in &[10, 50, 100] {
         let size = 1000;
         let edges = generate_random_edges(size, size * avg_degree, 12345);
         let graph = Graph::from_edges(&edges, false);
 
         group.bench_with_input(
-            BenchmarkId::from_parameter(format!("degree_{}", avg_degree)),
+            BenchmarkId::from_parameter(format!("degree_{avg_degree}")),
             avg_degree,
             |b, _| {
-                b.iter(|| {
-                    black_box(graph.adamic_adar_index(0, size / 2))
-                });
+                b.iter(|| black_box(graph.adamic_adar_index(0, size / 2)));
             },
         );
     }
@@ -292,14 +264,12 @@ fn bench_adamic_adar_index(c: &mut Criterion) {
 fn bench_degree_centrality(c: &mut Criterion) {
     let mut group = c.benchmark_group("degree_centrality");
 
-    for size in [100, 500, 1000, 5000].iter() {
+    for size in &[100, 500, 1000, 5000] {
         let edges = generate_random_edges(*size, size * 5, 12345);
         let graph = Graph::from_edges(&edges, false);
 
         group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, _| {
-            b.iter(|| {
-                black_box(graph.degree_centrality())
-            });
+            b.iter(|| black_box(graph.degree_centrality()));
         });
     }
 
@@ -310,14 +280,12 @@ fn bench_betweenness_centrality(c: &mut Criterion) {
     let mut group = c.benchmark_group("betweenness_centrality");
 
     // Betweenness is expensive, use smaller sizes
-    for size in [50, 100, 200].iter() {
+    for size in &[50, 100, 200] {
         let edges = generate_random_edges(*size, size * 3, 12345);
         let graph = Graph::from_edges(&edges, false);
 
         group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, _| {
-            b.iter(|| {
-                black_box(graph.betweenness_centrality())
-            });
+            b.iter(|| black_box(graph.betweenness_centrality()));
         });
     }
 
@@ -327,14 +295,12 @@ fn bench_betweenness_centrality(c: &mut Criterion) {
 fn bench_pagerank(c: &mut Criterion) {
     let mut group = c.benchmark_group("pagerank");
 
-    for size in [100, 500, 1000].iter() {
+    for size in &[100, 500, 1000] {
         let edges = generate_random_edges(*size, size * 5, 12345);
         let graph = Graph::from_edges(&edges, true); // directed for PageRank
 
         group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, _| {
-            b.iter(|| {
-                black_box(graph.pagerank(0.85, 100, 1e-6))
-            });
+            b.iter(|| black_box(graph.pagerank(0.85, 100, 1e-6)));
         });
     }
 
@@ -345,14 +311,12 @@ fn bench_pagerank(c: &mut Criterion) {
 fn bench_clustering_coefficient(c: &mut Criterion) {
     let mut group = c.benchmark_group("clustering_coefficient");
 
-    for size in [100, 500, 1000].iter() {
+    for size in &[100, 500, 1000] {
         let edges = generate_random_edges(*size, size * 5, 12345);
         let graph = Graph::from_edges(&edges, false);
 
         group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, _| {
-            b.iter(|| {
-                black_box(graph.clustering_coefficient())
-            });
+            b.iter(|| black_box(graph.clustering_coefficient()));
         });
     }
 
@@ -363,14 +327,12 @@ fn bench_diameter(c: &mut Criterion) {
     let mut group = c.benchmark_group("diameter");
 
     // Diameter is expensive, use smaller sizes
-    for size in [50, 100, 200].iter() {
+    for size in &[50, 100, 200] {
         let edges = generate_random_edges(*size, size * 3, 12345);
         let graph = Graph::from_edges(&edges, false);
 
         group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, _| {
-            b.iter(|| {
-                black_box(graph.diameter())
-            });
+            b.iter(|| black_box(graph.diameter()));
         });
     }
 
@@ -385,11 +347,7 @@ criterion_group!(
     bench_all_pairs_shortest_paths
 );
 
-criterion_group!(
-    traversal,
-    bench_dfs,
-    bench_topological_sort
-);
+criterion_group!(traversal, bench_dfs, bench_topological_sort);
 
 criterion_group!(
     components,
@@ -397,11 +355,7 @@ criterion_group!(
     bench_strongly_connected_components
 );
 
-criterion_group!(
-    community,
-    bench_label_propagation,
-    bench_louvain
-);
+criterion_group!(community, bench_label_propagation, bench_louvain);
 
 criterion_group!(
     link_prediction,
@@ -416,11 +370,7 @@ criterion_group!(
     bench_pagerank
 );
 
-criterion_group!(
-    structural,
-    bench_clustering_coefficient,
-    bench_diameter
-);
+criterion_group!(structural, bench_clustering_coefficient, bench_diameter);
 
 criterion_main!(
     pathfinding,

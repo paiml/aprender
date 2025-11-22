@@ -649,7 +649,7 @@ mod tests {
         let std = v.std();
 
         // Expected: sqrt(variance) = sqrt(2.0) ≈ 1.414
-        assert!((std - 1.414).abs() < 0.01, "std = {}", std);
+        assert!((std - 1.414).abs() < 0.01, "std = {std}");
     }
 
     #[test]
@@ -673,10 +673,10 @@ mod tests {
         let gini = v.gini_coefficient();
 
         // Should be between 0 and 1
-        assert!(gini > 0.0 && gini < 1.0, "Gini = {}", gini);
+        assert!(gini > 0.0 && gini < 1.0, "Gini = {gini}");
 
         // For this specific distribution: Gini ≈ 0.267
-        assert!((gini - 0.267).abs() < 0.01, "Gini = {}", gini);
+        assert!((gini - 0.267).abs() < 0.01, "Gini = {gini}");
     }
 
     #[test]
@@ -687,7 +687,7 @@ mod tests {
 
         // Should approach 1.0 (but exact value depends on n)
         // For n=4: Gini = 0.75
-        assert!(gini > 0.7 && gini < 0.8, "Gini = {}", gini);
+        assert!(gini > 0.7 && gini < 0.8, "Gini = {gini}");
     }
 
     #[test]
