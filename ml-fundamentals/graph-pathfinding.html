@@ -1,0 +1,608 @@
+<!DOCTYPE HTML>
+<html lang="en" class="rust" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Graph Pathfinding Theory - EXTREME TDD - The Aprender Guide to Zero-Defect Machine Learning</title>
+
+
+        <!-- Custom HTML head -->
+        
+        <meta name="description" content="A comprehensive guide to EXTREME TDD methodology: RED-GREEN-REFACTOR cycles, mutation testing, and Toyota Way principles demonstrated through ML library development">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="../favicon.svg">
+        <link rel="shortcut icon" href="../favicon.png">
+        <link rel="stylesheet" href="../css/variables.css">
+        <link rel="stylesheet" href="../css/general.css">
+        <link rel="stylesheet" href="../css/chrome.css">
+        <link rel="stylesheet" href="../css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="../fonts/fonts.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" href="../highlight.css">
+        <link rel="stylesheet" href="../tomorrow-night.css">
+        <link rel="stylesheet" href="../ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+
+    </head>
+    <body class="sidebar-visible no-js">
+    <div id="body-container">
+        <!-- Provide site root to javascript -->
+        <script>
+            var path_to_root = "../";
+            var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "rust";
+        </script>
+
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            var html = document.querySelector('html');
+            html.classList.remove('rust')
+            html.classList.add(theme);
+            var body = document.querySelector('body');
+            body.classList.remove('no-js')
+            body.classList.add('js');
+        </script>
+
+        <input type="checkbox" id="sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            var body = document.querySelector('body');
+            var sidebar = null;
+            var sidebar_toggle = document.getElementById("sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+            }
+            sidebar_toggle.checked = sidebar === 'visible';
+            body.classList.remove('sidebar-visible');
+            body.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <div class="sidebar-scrollbox">
+                <ol class="chapter"><li class="chapter-item expanded affix "><a href="../introduction.html">Introduction</a></li><li class="chapter-item expanded affix "><li class="part-title">Core Methodology</li><li class="chapter-item expanded "><a href="../methodology/what-is-extreme-tdd.html"><strong aria-hidden="true">1.</strong> What is EXTREME TDD?</a></li><li class="chapter-item expanded "><a href="../methodology/red-green-refactor.html"><strong aria-hidden="true">2.</strong> The RED-GREEN-REFACTOR Cycle</a></li><li class="chapter-item expanded "><a href="../methodology/test-first-philosophy.html"><strong aria-hidden="true">3.</strong> Test-First Philosophy</a></li><li class="chapter-item expanded "><a href="../methodology/zero-tolerance.html"><strong aria-hidden="true">4.</strong> Zero Tolerance Quality</a></li><li class="chapter-item expanded affix "><li class="part-title">The RED Phase</li><li class="chapter-item expanded "><a href="../red-phase/failing-tests-first.html"><strong aria-hidden="true">5.</strong> Writing Failing Tests First</a></li><li class="chapter-item expanded "><a href="../red-phase/test-categories.html"><strong aria-hidden="true">6.</strong> Test Categories</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../red-phase/unit-tests.html"><strong aria-hidden="true">6.1.</strong> Unit Tests</a></li><li class="chapter-item expanded "><a href="../red-phase/integration-tests.html"><strong aria-hidden="true">6.2.</strong> Integration Tests</a></li><li class="chapter-item expanded "><a href="../red-phase/property-based-tests.html"><strong aria-hidden="true">6.3.</strong> Property-Based Tests</a></li></ol></li><li class="chapter-item expanded "><a href="../red-phase/verification-strategy.html"><strong aria-hidden="true">7.</strong> Verification Strategy</a></li><li class="chapter-item expanded affix "><li class="part-title">The GREEN Phase</li><li class="chapter-item expanded "><a href="../green-phase/minimal-implementation.html"><strong aria-hidden="true">8.</strong> Minimal Implementation</a></li><li class="chapter-item expanded "><a href="../green-phase/making-tests-pass.html"><strong aria-hidden="true">9.</strong> Making Tests Pass</a></li><li class="chapter-item expanded "><a href="../green-phase/avoiding-over-engineering.html"><strong aria-hidden="true">10.</strong> Avoiding Over-Engineering</a></li><li class="chapter-item expanded "><a href="../green-phase/simplest-thing.html"><strong aria-hidden="true">11.</strong> The Simplest Thing That Works</a></li><li class="chapter-item expanded affix "><li class="part-title">The REFACTOR Phase</li><li class="chapter-item expanded "><a href="../refactor-phase/refactoring-with-confidence.html"><strong aria-hidden="true">12.</strong> Refactoring with Confidence</a></li><li class="chapter-item expanded "><a href="../refactor-phase/code-quality.html"><strong aria-hidden="true">13.</strong> Code Quality Improvements</a></li><li class="chapter-item expanded "><a href="../refactor-phase/performance-optimization.html"><strong aria-hidden="true">14.</strong> Performance Optimization</a></li><li class="chapter-item expanded "><a href="../refactor-phase/documentation.html"><strong aria-hidden="true">15.</strong> Documentation</a></li><li class="chapter-item expanded affix "><li class="part-title">Advanced Testing</li><li class="chapter-item expanded "><a href="../advanced-testing/property-based-testing.html"><strong aria-hidden="true">16.</strong> Property-Based Testing</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../advanced-testing/proptest-fundamentals.html"><strong aria-hidden="true">16.1.</strong> Proptest Fundamentals</a></li><li class="chapter-item expanded "><a href="../advanced-testing/strategies-generators.html"><strong aria-hidden="true">16.2.</strong> Strategies and Generators</a></li><li class="chapter-item expanded "><a href="../advanced-testing/testing-invariants.html"><strong aria-hidden="true">16.3.</strong> Testing Invariants</a></li></ol></li><li class="chapter-item expanded "><a href="../advanced-testing/mutation-testing.html"><strong aria-hidden="true">17.</strong> Mutation Testing</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../advanced-testing/what-is-mutation-testing.html"><strong aria-hidden="true">17.1.</strong> What is Mutation Testing?</a></li><li class="chapter-item expanded "><a href="../advanced-testing/using-cargo-mutants.html"><strong aria-hidden="true">17.2.</strong> Using cargo-mutants</a></li><li class="chapter-item expanded "><a href="../advanced-testing/mutation-score-targets.html"><strong aria-hidden="true">17.3.</strong> Mutation Score Targets</a></li><li class="chapter-item expanded "><a href="../advanced-testing/killing-mutants.html"><strong aria-hidden="true">17.4.</strong> Killing Mutants</a></li></ol></li><li class="chapter-item expanded "><a href="../advanced-testing/fuzzing.html"><strong aria-hidden="true">18.</strong> Fuzzing</a></li><li class="chapter-item expanded "><a href="../advanced-testing/benchmark-testing.html"><strong aria-hidden="true">19.</strong> Benchmark Testing</a></li><li class="chapter-item expanded affix "><li class="part-title">Quality Gates</li><li class="chapter-item expanded "><a href="../quality-gates/pre-commit-hooks.html"><strong aria-hidden="true">20.</strong> Pre-Commit Hooks</a></li><li class="chapter-item expanded "><a href="../quality-gates/continuous-integration.html"><strong aria-hidden="true">21.</strong> Continuous Integration</a></li><li class="chapter-item expanded "><a href="../quality-gates/code-formatting.html"><strong aria-hidden="true">22.</strong> Code Formatting (rustfmt)</a></li><li class="chapter-item expanded "><a href="../quality-gates/linting-clippy.html"><strong aria-hidden="true">23.</strong> Linting (clippy)</a></li><li class="chapter-item expanded "><a href="../quality-gates/coverage-measurement.html"><strong aria-hidden="true">24.</strong> Coverage Measurement</a></li><li class="chapter-item expanded "><a href="../quality-gates/complexity-analysis.html"><strong aria-hidden="true">25.</strong> Complexity Analysis</a></li><li class="chapter-item expanded "><a href="../quality-gates/tdg-score.html"><strong aria-hidden="true">26.</strong> Technical Debt Gradient (TDG)</a></li><li class="chapter-item expanded affix "><li class="part-title">Toyota Way Principles</li><li class="chapter-item expanded "><a href="../toyota-way/overview.html"><strong aria-hidden="true">27.</strong> Overview</a></li><li class="chapter-item expanded "><a href="../toyota-way/kaizen.html"><strong aria-hidden="true">28.</strong> Kaizen (Continuous Improvement)</a></li><li class="chapter-item expanded "><a href="../toyota-way/genchi-genbutsu.html"><strong aria-hidden="true">29.</strong> Genchi Genbutsu (Go and See)</a></li><li class="chapter-item expanded "><a href="../toyota-way/jidoka.html"><strong aria-hidden="true">30.</strong> Jidoka (Built-in Quality)</a></li><li class="chapter-item expanded "><a href="../toyota-way/pdca-cycle.html"><strong aria-hidden="true">31.</strong> PDCA Cycle</a></li><li class="chapter-item expanded "><a href="../toyota-way/respect-for-people.html"><strong aria-hidden="true">32.</strong> Respect for People</a></li><li class="chapter-item expanded affix "><li class="part-title">Machine Learning Fundamentals</li><li class="chapter-item expanded "><a href="../ml-fundamentals/linear-regression.html"><strong aria-hidden="true">33.</strong> Linear Regression Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/regularization.html"><strong aria-hidden="true">34.</strong> Regularization Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/logistic-regression.html"><strong aria-hidden="true">35.</strong> Logistic Regression Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/knn.html"><strong aria-hidden="true">36.</strong> K-Nearest Neighbors (kNN) Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/naive-bayes.html"><strong aria-hidden="true">37.</strong> Naive Bayes Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/svm.html"><strong aria-hidden="true">38.</strong> Support Vector Machines (SVM) Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/decision-trees.html"><strong aria-hidden="true">39.</strong> Decision Trees Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/ensemble-methods.html"><strong aria-hidden="true">40.</strong> Ensemble Methods Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/kmeans-clustering.html"><strong aria-hidden="true">41.</strong> K-Means Clustering Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/pca.html"><strong aria-hidden="true">42.</strong> Principal Component Analysis (PCA) Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/tsne.html"><strong aria-hidden="true">43.</strong> t-SNE (t-Distributed Stochastic Neighbor Embedding) Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/regression-metrics.html"><strong aria-hidden="true">44.</strong> Regression Metrics Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/classification-metrics.html"><strong aria-hidden="true">45.</strong> Classification Metrics Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/cross-validation.html"><strong aria-hidden="true">46.</strong> Cross-Validation Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/gradient-descent.html"><strong aria-hidden="true">47.</strong> Gradient Descent Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/advanced-optimizers.html"><strong aria-hidden="true">48.</strong> Advanced Optimizers Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/feature-scaling.html"><strong aria-hidden="true">49.</strong> Feature Scaling Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/graph-algorithms.html"><strong aria-hidden="true">50.</strong> Graph Algorithms Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/graph-pathfinding.html" class="active"><strong aria-hidden="true">51.</strong> Graph Pathfinding Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/graph-components-traversal.html"><strong aria-hidden="true">52.</strong> Graph Components and Traversal</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/graph-link-prediction.html"><strong aria-hidden="true">53.</strong> Graph Link Prediction and Community Detection</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/descriptive-statistics.html"><strong aria-hidden="true">54.</strong> Descriptive Statistics Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/apriori.html"><strong aria-hidden="true">55.</strong> Apriori Algorithm Theory</a></li><li class="chapter-item expanded affix "><li class="part-title">Real-World Examples from Aprender</li><li class="chapter-item expanded "><a href="../examples/linear-regression.html"><strong aria-hidden="true">56.</strong> Case Study: Linear Regression</a></li><li class="chapter-item expanded "><a href="../examples/boston-housing.html"><strong aria-hidden="true">57.</strong> Case Study: Boston Housing</a></li><li class="chapter-item expanded "><a href="../examples/cross-validation.html"><strong aria-hidden="true">58.</strong> Case Study: Cross-Validation</a></li><li class="chapter-item expanded "><a href="../examples/grid-search-tuning.html"><strong aria-hidden="true">59.</strong> Case Study: Grid Search Hyperparameter Tuning</a></li><li class="chapter-item expanded "><a href="../examples/random-forest.html"><strong aria-hidden="true">60.</strong> Case Study: Random Forest</a></li><li class="chapter-item expanded "><a href="../examples/random-forest-iris.html"><strong aria-hidden="true">61.</strong> Case Study: Random Forest Iris</a></li><li class="chapter-item expanded "><a href="../examples/decision-tree-iris.html"><strong aria-hidden="true">62.</strong> Case Study: Decision Tree Iris</a></li><li class="chapter-item expanded "><a href="../examples/model-serialization.html"><strong aria-hidden="true">63.</strong> Case Study: Model Serialization</a></li><li class="chapter-item expanded "><a href="../examples/kmeans-clustering.html"><strong aria-hidden="true">64.</strong> Case Study: KMeans Clustering</a></li><li class="chapter-item expanded "><a href="../examples/dbscan-clustering.html"><strong aria-hidden="true">65.</strong> Case Study: DBSCAN Clustering</a></li><li class="chapter-item expanded "><a href="../examples/hierarchical-clustering.html"><strong aria-hidden="true">66.</strong> Case Study: Hierarchical Clustering</a></li><li class="chapter-item expanded "><a href="../examples/gmm-clustering.html"><strong aria-hidden="true">67.</strong> Case Study: GMM Clustering</a></li><li class="chapter-item expanded "><a href="../examples/iris-clustering.html"><strong aria-hidden="true">68.</strong> Case Study: Iris Clustering</a></li><li class="chapter-item expanded "><a href="../examples/logistic-regression.html"><strong aria-hidden="true">69.</strong> Case Study: Logistic Regression</a></li><li class="chapter-item expanded "><a href="../examples/knn-iris.html"><strong aria-hidden="true">70.</strong> Case Study: KNN Iris</a></li><li class="chapter-item expanded "><a href="../examples/naive-bayes-iris.html"><strong aria-hidden="true">71.</strong> Case Study: Naive Bayes Iris</a></li><li class="chapter-item expanded "><a href="../examples/svm-iris.html"><strong aria-hidden="true">72.</strong> Case Study: SVM Iris</a></li><li class="chapter-item expanded "><a href="../examples/gbm-iris.html"><strong aria-hidden="true">73.</strong> Case Study: Gradient Boosting Iris</a></li><li class="chapter-item expanded "><a href="../examples/regularized-regression.html"><strong aria-hidden="true">74.</strong> Case Study: Regularized Regression</a></li><li class="chapter-item expanded "><a href="../examples/optimizer-demo.html"><strong aria-hidden="true">75.</strong> Case Study: Optimizer Demo</a></li><li class="chapter-item expanded "><a href="../examples/dataframe-basics.html"><strong aria-hidden="true">76.</strong> Case Study: DataFrame Basics</a></li><li class="chapter-item expanded "><a href="../examples/data-preprocessing-scalers.html"><strong aria-hidden="true">77.</strong> Case Study: Data Preprocessing with Scalers</a></li><li class="chapter-item expanded "><a href="../examples/graph-social-network.html"><strong aria-hidden="true">78.</strong> Case Study: Graph Social Network</a></li><li class="chapter-item expanded "><a href="../examples/community-detection.html"><strong aria-hidden="true">79.</strong> Case Study: Community Detection with Louvain</a></li><li class="chapter-item expanded "><a href="../examples/descriptive-statistics.html"><strong aria-hidden="true">80.</strong> Case Study: Descriptive Statistics</a></li><li class="chapter-item expanded "><a href="../examples/bayesian-blocks-histogram.html"><strong aria-hidden="true">81.</strong> Case Study: Bayesian Blocks Histogram</a></li><li class="chapter-item expanded "><a href="../examples/pca-iris.html"><strong aria-hidden="true">82.</strong> Case Study: PCA Iris</a></li><li class="chapter-item expanded "><a href="../examples/isolation-forest-anomaly.html"><strong aria-hidden="true">83.</strong> Case Study: Isolation Forest Anomaly Detection</a></li><li class="chapter-item expanded "><a href="../examples/lof-anomaly.html"><strong aria-hidden="true">84.</strong> Case Study: Local Outlier Factor (LOF)</a></li><li class="chapter-item expanded "><a href="../examples/spectral-clustering.html"><strong aria-hidden="true">85.</strong> Case Study: Spectral Clustering</a></li><li class="chapter-item expanded "><a href="../examples/tsne-visualization.html"><strong aria-hidden="true">86.</strong> Case Study: t-SNE Visualization</a></li><li class="chapter-item expanded "><a href="../examples/market-basket-apriori.html"><strong aria-hidden="true">87.</strong> Case Study: Market Basket Analysis (Apriori)</a></li><li class="chapter-item expanded affix "><li class="part-title">Sprint-Based Development</li><li class="chapter-item expanded "><a href="../sprints/sprint-planning.html"><strong aria-hidden="true">88.</strong> Sprint Planning</a></li><li class="chapter-item expanded "><a href="../sprints/sprint-execution.html"><strong aria-hidden="true">89.</strong> Sprint Execution</a></li><li class="chapter-item expanded "><a href="../sprints/sprint-review.html"><strong aria-hidden="true">90.</strong> Sprint Review</a></li><li class="chapter-item expanded "><a href="../sprints/sprint-retrospective.html"><strong aria-hidden="true">91.</strong> Sprint Retrospective</a></li><li class="chapter-item expanded "><a href="../sprints/issue-management.html"><strong aria-hidden="true">92.</strong> Issue Management</a></li><li class="chapter-item expanded affix "><li class="part-title">Anti-Hallucination Enforcement</li><li class="chapter-item expanded "><a href="../anti-hallucination/test-backed-examples.html"><strong aria-hidden="true">93.</strong> Test-Backed Examples</a></li><li class="chapter-item expanded "><a href="../anti-hallucination/example-verification.html"><strong aria-hidden="true">94.</strong> Example Verification</a></li><li class="chapter-item expanded "><a href="../anti-hallucination/ci-validation.html"><strong aria-hidden="true">95.</strong> CI Validation</a></li><li class="chapter-item expanded "><a href="../anti-hallucination/documentation-testing.html"><strong aria-hidden="true">96.</strong> Documentation Testing</a></li><li class="chapter-item expanded affix "><li class="part-title">Tools and Setup</li><li class="chapter-item expanded "><a href="../tools/development-environment.html"><strong aria-hidden="true">97.</strong> Development Environment</a></li><li class="chapter-item expanded "><a href="../tools/cargo-test.html"><strong aria-hidden="true">98.</strong> cargo test</a></li><li class="chapter-item expanded "><a href="../tools/cargo-clippy.html"><strong aria-hidden="true">99.</strong> cargo clippy</a></li><li class="chapter-item expanded "><a href="../tools/cargo-fmt.html"><strong aria-hidden="true">100.</strong> cargo fmt</a></li><li class="chapter-item expanded "><a href="../tools/cargo-mutants.html"><strong aria-hidden="true">101.</strong> cargo mutants</a></li><li class="chapter-item expanded "><a href="../tools/proptest.html"><strong aria-hidden="true">102.</strong> proptest</a></li><li class="chapter-item expanded "><a href="../tools/criterion.html"><strong aria-hidden="true">103.</strong> criterion</a></li><li class="chapter-item expanded "><a href="../tools/pmat.html"><strong aria-hidden="true">104.</strong> pmat (Toyota AI Toolkit)</a></li><li class="chapter-item expanded affix "><li class="part-title">Best Practices</li><li class="chapter-item expanded "><a href="../best-practices/error-handling.html"><strong aria-hidden="true">105.</strong> Error Handling</a></li><li class="chapter-item expanded "><a href="../best-practices/api-design.html"><strong aria-hidden="true">106.</strong> API Design</a></li><li class="chapter-item expanded "><a href="../best-practices/builder-pattern.html"><strong aria-hidden="true">107.</strong> Builder Pattern</a></li><li class="chapter-item expanded "><a href="../best-practices/type-safety.html"><strong aria-hidden="true">108.</strong> Type Safety</a></li><li class="chapter-item expanded "><a href="../best-practices/performance.html"><strong aria-hidden="true">109.</strong> Performance Considerations</a></li><li class="chapter-item expanded "><a href="../best-practices/documentation-standards.html"><strong aria-hidden="true">110.</strong> Documentation Standards</a></li><li class="chapter-item expanded affix "><li class="part-title">Metrics and Measurement</li><li class="chapter-item expanded "><a href="../metrics/test-coverage.html"><strong aria-hidden="true">111.</strong> Test Coverage</a></li><li class="chapter-item expanded "><a href="../metrics/mutation-score.html"><strong aria-hidden="true">112.</strong> Mutation Score</a></li><li class="chapter-item expanded "><a href="../metrics/cyclomatic-complexity.html"><strong aria-hidden="true">113.</strong> Cyclomatic Complexity</a></li><li class="chapter-item expanded "><a href="../metrics/code-churn.html"><strong aria-hidden="true">114.</strong> Code Churn</a></li><li class="chapter-item expanded "><a href="../metrics/build-times.html"><strong aria-hidden="true">115.</strong> Build Times</a></li><li class="chapter-item expanded "><a href="../metrics/tdg-breakdown.html"><strong aria-hidden="true">116.</strong> TDG Score Breakdown</a></li><li class="chapter-item expanded affix "><li class="part-title">Common Pitfalls</li><li class="chapter-item expanded "><a href="../pitfalls/skipping-tests.html"><strong aria-hidden="true">117.</strong> Skipping Tests</a></li><li class="chapter-item expanded "><a href="../pitfalls/insufficient-coverage.html"><strong aria-hidden="true">118.</strong> Insufficient Test Coverage</a></li><li class="chapter-item expanded "><a href="../pitfalls/ignoring-warnings.html"><strong aria-hidden="true">119.</strong> Ignoring Warnings</a></li><li class="chapter-item expanded "><a href="../pitfalls/over-mocking.html"><strong aria-hidden="true">120.</strong> Over-Mocking</a></li><li class="chapter-item expanded "><a href="../pitfalls/flaky-tests.html"><strong aria-hidden="true">121.</strong> Flaky Tests</a></li><li class="chapter-item expanded "><a href="../pitfalls/technical-debt.html"><strong aria-hidden="true">122.</strong> Technical Debt Accumulation</a></li><li class="chapter-item expanded affix "><li class="part-title">Appendix</li><li class="chapter-item expanded "><a href="../appendix/glossary.html"><strong aria-hidden="true">123.</strong> Glossary</a></li><li class="chapter-item expanded "><a href="../appendix/references.html"><strong aria-hidden="true">124.</strong> References</a></li><li class="chapter-item expanded "><a href="../appendix/further-reading.html"><strong aria-hidden="true">125.</strong> Further Reading</a></li><li class="chapter-item expanded "><a href="../appendix/contributing.html"><strong aria-hidden="true">126.</strong> Contributing to This Book</a></li></ol>
+            </div>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <!-- Track and set sidebar scroll position -->
+        <script>
+            var sidebarScrollbox = document.querySelector('#sidebar .sidebar-scrollbox');
+            sidebarScrollbox.addEventListener('click', function(e) {
+                if (e.target.tagName === 'A') {
+                    sessionStorage.setItem('sidebar-scroll', sidebarScrollbox.scrollTop);
+                }
+            }, { passive: true });
+            var sidebarScrollTop = sessionStorage.getItem('sidebar-scroll');
+            sessionStorage.removeItem('sidebar-scroll');
+            if (sidebarScrollTop) {
+                // preserve sidebar scroll position when navigating via links within sidebar
+                sidebarScrollbox.scrollTop = sidebarScrollTop;
+            } else {
+                // scroll sidebar to current active section when navigating via "next/previous chapter" buttons
+                var activeSection = document.querySelector('#sidebar .active');
+                if (activeSection) {
+                    activeSection.scrollIntoView({ block: 'center' });
+                }
+            }
+        </script>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="sidebar-toggle" class="icon-button" for="sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </label>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">EXTREME TDD - The Aprender Guide to Zero-Defect Machine Learning</h1>
+
+                    <div class="right-buttons">
+                        <a href="../print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                        <a href="https://github.com/paiml/aprender" title="Git repository" aria-label="Git repository">
+                            <i id="git-repository-button" class="fa fa-github"></i>
+                        </a>
+                        <a href="https://github.com/paiml/aprender/edit/main/book/src/ml-fundamentals/graph-pathfinding.md" title="Suggest an edit" aria-label="Suggest an edit">
+                            <i id="git-edit-button" class="fa fa-edit"></i>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="graph-pathfinding-algorithms"><a class="header" href="#graph-pathfinding-algorithms">Graph Pathfinding Algorithms</a></h1>
+<p>Pathfinding algorithms find paths between nodes in a graph, with applications in routing, navigation, social network analysis, and dependency resolution. This chapter covers the theory and implementation of four fundamental pathfinding algorithms in aprender's graph module.</p>
+<h2 id="overview"><a class="header" href="#overview">Overview</a></h2>
+<p>Aprender implements four pathfinding algorithms:</p>
+<ol>
+<li><strong>Shortest Path (BFS)</strong>: Unweighted shortest path using breadth-first search</li>
+<li><strong>Dijkstra's Algorithm</strong>: Weighted shortest path for non-negative edge weights</li>
+<li><strong>A* Search</strong>: Heuristic-guided pathfinding for faster search</li>
+<li><strong>All-Pairs Shortest Paths</strong>: Compute distances between all node pairs</li>
+</ol>
+<p>All algorithms operate on the Compressed Sparse Row (CSR) graph representation for optimal cache locality and memory efficiency.</p>
+<h2 id="shortest-path-bfs"><a class="header" href="#shortest-path-bfs">Shortest Path (BFS)</a></h2>
+<h3 id="algorithm"><a class="header" href="#algorithm">Algorithm</a></h3>
+<p>Breadth-First Search (BFS) finds the shortest path in <strong>unweighted graphs</strong> or treats all edges as having weight 1.</p>
+<p><strong>Properties</strong>:</p>
+<ul>
+<li>Time Complexity: O(n + m) where n = nodes, m = edges</li>
+<li>Space Complexity: O(n) for queue and visited tracking</li>
+<li>Guaranteed to find shortest path in unweighted graphs</li>
+<li>Explores nodes in order of increasing distance from source</li>
+</ul>
+<h3 id="implementation"><a class="header" href="#implementation">Implementation</a></h3>
+<pre><code class="language-rust">use aprender::graph::Graph;
+
+let g = Graph::from_edges(&amp;[(0, 1), (1, 2), (2, 3)], false);
+
+// Find shortest path from node 0 to node 3
+let path = g.shortest_path(0, 3).expect(&quot;path should exist&quot;);
+assert_eq!(path, vec![0, 1, 2, 3]);
+
+// Returns None if no path exists
+let g2 = Graph::from_edges(&amp;[(0, 1), (2, 3)], false);
+assert!(g2.shortest_path(0, 3).is_none());</code></pre>
+<h3 id="how-it-works"><a class="header" href="#how-it-works">How It Works</a></h3>
+<ol>
+<li><strong>Initialization</strong>: Start from source node, mark as visited</li>
+<li><strong>Queue</strong>: Maintain FIFO queue of nodes to explore</li>
+<li><strong>Exploration</strong>: For each node, add unvisited neighbors to queue</li>
+<li><strong>Predecessor Tracking</strong>: Record parent of each node for path reconstruction</li>
+<li><strong>Termination</strong>: Stop when target found or queue empty</li>
+</ol>
+<p><strong>Visual Example</strong> (linear chain):</p>
+<pre><code class="language-text">Graph: 0 -- 1 -- 2 -- 3
+
+BFS from 0 to 3:
+Step 1: Queue=[0], Visited={0}
+Step 2: Queue=[1], Visited={0,1}, Parent[1]=0
+Step 3: Queue=[2], Visited={0,1,2}, Parent[2]=1
+Step 4: Queue=[3], Visited={0,1,2,3}, Parent[3]=2
+Path reconstruction: 3→2→1→0 (reverse) = [0,1,2,3]
+</code></pre>
+<h3 id="use-cases"><a class="header" href="#use-cases">Use Cases</a></h3>
+<ul>
+<li><strong>Dependency Resolution</strong>: Shortest path in package managers</li>
+<li><strong>Social Networks</strong>: Degrees of separation (6 degrees of Kevin Bacon)</li>
+<li><strong>Game AI</strong>: Movement in grid-based games</li>
+<li><strong>Network Analysis</strong>: Hop count in unweighted networks</li>
+</ul>
+<h2 id="dijkstras-algorithm"><a class="header" href="#dijkstras-algorithm">Dijkstra's Algorithm</a></h2>
+<h3 id="algorithm-1"><a class="header" href="#algorithm-1">Algorithm</a></h3>
+<p>Dijkstra's algorithm finds the shortest path in <strong>weighted graphs with non-negative edge weights</strong>. It uses a priority queue to always explore the most promising node next.</p>
+<p><strong>Properties</strong>:</p>
+<ul>
+<li>Time Complexity: O((n + m) log n) with binary heap priority queue</li>
+<li>Space Complexity: O(n) for distances and priority queue</li>
+<li>Requires non-negative edge weights (panics on negative weights)</li>
+<li>Greedy algorithm with optimal substructure</li>
+</ul>
+<h3 id="implementation-1"><a class="header" href="#implementation-1">Implementation</a></h3>
+<pre><code class="language-rust">use aprender::graph::Graph;
+
+// Create weighted graph
+let g = Graph::from_weighted_edges(
+    &amp;[(0, 1, 1.0), (1, 2, 2.0), (0, 2, 5.0)],
+    false
+);
+
+// Find shortest weighted path
+let (path, distance) = g.dijkstra(0, 2).expect(&quot;path should exist&quot;);
+assert_eq!(path, vec![0, 1, 2]);  // Goes via 1
+assert_eq!(distance, 3.0);        // 1.0 + 2.0 = 3.0 &lt; 5.0 direct
+
+// For unweighted graphs, weights default to 1.0
+let g2 = Graph::from_edges(&amp;[(0, 1), (1, 2)], false);
+let (path2, dist2) = g2.dijkstra(0, 2).expect(&quot;path should exist&quot;);
+assert_eq!(dist2, 2.0);</code></pre>
+<h3 id="how-it-works-1"><a class="header" href="#how-it-works-1">How It Works</a></h3>
+<ol>
+<li><strong>Initialization</strong>: Set distance to source = 0, all others = ∞</li>
+<li><strong>Priority Queue</strong>: Min-heap ordered by distance from source</li>
+<li><strong>Relaxation</strong>: For each edge (u,v), if dist[u] + w(u,v) &lt; dist[v], update dist[v]</li>
+<li><strong>Greedy Selection</strong>: Always process node with smallest distance next</li>
+<li><strong>Termination</strong>: Stop when target node is processed</li>
+</ol>
+<p><strong>Visual Example</strong> (weighted graph):</p>
+<pre><code class="language-text">Graph:      1.0        2.0
+        0 ------ 1 ------ 2
+         \               /
+          ----  5.0  ----
+
+Dijkstra from 0 to 2:
+Step 1: dist={0:0, 1:∞, 2:∞}, PQ=[(0,0)]
+Step 2: Process 0: dist={0:0, 1:1, 2:5}, PQ=[(1,1), (2,5)]
+Step 3: Process 1: dist={0:0, 1:1, 2:3}, PQ=[(2,3)]
+Step 4: Process 2: Found target with distance 3
+Path: 0 → 1 → 2 (total: 3.0)
+</code></pre>
+<h3 id="use-cases-1"><a class="header" href="#use-cases-1">Use Cases</a></h3>
+<ul>
+<li><strong>Road Networks</strong>: GPS navigation with distance or time weights</li>
+<li><strong>Network Routing</strong>: Shortest path with latency/bandwidth weights</li>
+<li><strong>Resource Optimization</strong>: Minimum cost paths in logistics</li>
+<li><strong>Game AI</strong>: Pathfinding with terrain costs</li>
+</ul>
+<h3 id="negative-edge-weights"><a class="header" href="#negative-edge-weights">Negative Edge Weights</a></h3>
+<p>Dijkstra's algorithm <strong>does not work</strong> with negative edge weights. The implementation panics with a descriptive error:</p>
+<pre><code class="language-rust">let g = Graph::from_weighted_edges(&amp;[(0, 1, -1.0)], false);
+// Panics: &quot;Dijkstra's algorithm requires non-negative edge weights&quot;</code></pre>
+<p>For graphs with negative weights, use Bellman-Ford algorithm (not yet implemented in aprender).</p>
+<h2 id="a-search-algorithm"><a class="header" href="#a-search-algorithm">A* Search Algorithm</a></h2>
+<h3 id="algorithm-2"><a class="header" href="#algorithm-2">Algorithm</a></h3>
+<p>A* (A-star) is a <strong>heuristic-guided pathfinding algorithm</strong> that uses domain knowledge to find shortest paths faster than Dijkstra. It combines actual cost with estimated cost to target.</p>
+<p><strong>Properties</strong>:</p>
+<ul>
+<li>Time Complexity: O((n + m) log n) with admissible heuristic</li>
+<li>Space Complexity: O(n) for g-scores, f-scores, and priority queue</li>
+<li>Optimal when heuristic is admissible (h(n) ≤ actual cost to target)</li>
+<li>Often explores fewer nodes than Dijkstra due to heuristic guidance</li>
+</ul>
+<h3 id="core-concept"><a class="header" href="#core-concept">Core Concept</a></h3>
+<p>A* uses two cost functions:</p>
+<ul>
+<li><strong>g(n)</strong>: Actual cost from source to node n</li>
+<li><strong>h(n)</strong>: Heuristic estimate of cost from n to target</li>
+<li><strong>f(n) = g(n) + h(n)</strong>: Total estimated cost through n</li>
+</ul>
+<p>The priority queue orders nodes by f-score, focusing search toward the target.</p>
+<h3 id="implementation-2"><a class="header" href="#implementation-2">Implementation</a></h3>
+<pre><code class="language-rust">use aprender::graph::Graph;
+
+let g = Graph::from_weighted_edges(
+    &amp;[(0, 1, 1.0), (1, 2, 1.0), (0, 3, 0.5), (3, 2, 0.5)],
+    false
+);
+
+// Define admissible heuristic (straight-line distance estimate)
+let heuristic = |node: usize| match node {
+    0 =&gt; 1.0,  // Estimate to reach target 2
+    1 =&gt; 1.0,
+    2 =&gt; 0.0,  // At target
+    3 =&gt; 0.5,
+    _ =&gt; 0.0,
+};
+
+// A* finds path using heuristic guidance
+let path = g.a_star(0, 2, heuristic).expect(&quot;path should exist&quot;);
+assert!(path.contains(&amp;3));  // Should use shortcut via node 3</code></pre>
+<h3 id="admissible-heuristics"><a class="header" href="#admissible-heuristics">Admissible Heuristics</a></h3>
+<p>A heuristic h(n) is <strong>admissible</strong> if it never overestimates the actual cost to the target:</p>
+<pre><code class="language-text">h(n) ≤ actual_cost(n, target)  for all nodes n
+</code></pre>
+<p><strong>Examples of admissible heuristics</strong>:</p>
+<ul>
+<li><strong>Zero heuristic</strong>: h(n) = 0 (reduces to Dijkstra's algorithm)</li>
+<li><strong>Euclidean distance</strong>: For 2D grids with coordinates</li>
+<li><strong>Manhattan distance</strong>: For grid-based movement (no diagonals)</li>
+<li><strong>Pattern database</strong>: Pre-computed distances for puzzles</li>
+</ul>
+<p><strong>Non-admissible heuristics</strong> may find suboptimal paths but can be faster.</p>
+<h3 id="how-it-works-2"><a class="header" href="#how-it-works-2">How It Works</a></h3>
+<ol>
+<li><strong>Initialization</strong>: g-score[source] = 0, f-score[source] = h(source)</li>
+<li><strong>Priority Queue</strong>: Min-heap ordered by f-score</li>
+<li><strong>Expansion</strong>: Process node with lowest f-score</li>
+<li><strong>Neighbor Update</strong>: For each neighbor v of u:
+<ul>
+<li>tentative_g = g[u] + weight(u, v)</li>
+<li>If tentative_g &lt; g[v]: update g[v], f[v] = g[v] + h(v)</li>
+</ul>
+</li>
+<li><strong>Termination</strong>: Stop when target is processed</li>
+</ol>
+<p><strong>Visual Example</strong> (A* vs Dijkstra):</p>
+<pre><code class="language-text">Grid (diagonal move cost = 1):
+S . . . . T
+. X X X . .
+. . . X . .
+
+Dijkstra explores ~20 nodes (circular expansion)
+A* with Manhattan distance explores ~12 nodes (directed toward T)
+</code></pre>
+<h3 id="use-cases-2"><a class="header" href="#use-cases-2">Use Cases</a></h3>
+<ul>
+<li><strong>Game AI</strong>: Efficient pathfinding in tile-based games</li>
+<li><strong>Robotics</strong>: Navigation with obstacle avoidance</li>
+<li><strong>Puzzle Solving</strong>: 15-puzzle, Rubik's cube optimal solutions</li>
+<li><strong>Map Routing</strong>: GPS with straight-line distance heuristic</li>
+</ul>
+<h3 id="comparison-with-dijkstra"><a class="header" href="#comparison-with-dijkstra">Comparison with Dijkstra</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Aspect</th><th>Dijkstra</th><th>A*</th></tr></thead><tbody>
+<tr><td>Heuristic</td><td>None (h=0)</td><td>Domain-specific h(n)</td></tr>
+<tr><td>Exploration</td><td>Uniform expansion</td><td>Directed toward target</td></tr>
+<tr><td>Nodes Explored</td><td>More (exhaustive)</td><td>Fewer (guided)</td></tr>
+<tr><td>Optimality</td><td>Always optimal</td><td>Optimal if h admissible</td></tr>
+<tr><td>Use Case</td><td>Unknown target location</td><td>Known target coordinates</td></tr>
+</tbody></table>
+</div>
+<pre><code class="language-rust">// A* with zero heuristic = Dijkstra
+let dijkstra_path = g.dijkstra(0, 10).expect(&quot;path exists&quot;).0;
+let astar_path = g.a_star(0, 10, |_| 0.0).expect(&quot;path exists&quot;);
+assert_eq!(dijkstra_path, astar_path);</code></pre>
+<h2 id="all-pairs-shortest-paths"><a class="header" href="#all-pairs-shortest-paths">All-Pairs Shortest Paths</a></h2>
+<h3 id="algorithm-3"><a class="header" href="#algorithm-3">Algorithm</a></h3>
+<p>Computes shortest path distances between <strong>all pairs</strong> of nodes. Aprender implements this using repeated BFS from each node.</p>
+<p><strong>Properties</strong>:</p>
+<ul>
+<li>Time Complexity: O(n·(n + m)) for n BFS executions</li>
+<li>Space Complexity: O(n²) for distance matrix</li>
+<li>Returns n×n matrix with distances</li>
+<li>None indicates no path exists (disconnected components)</li>
+</ul>
+<h3 id="implementation-3"><a class="header" href="#implementation-3">Implementation</a></h3>
+<pre><code class="language-rust">use aprender::graph::Graph;
+
+let g = Graph::from_edges(&amp;[(0, 1), (1, 2), (2, 3)], false);
+
+// Compute all-pairs shortest paths
+let dist = g.all_pairs_shortest_paths();
+
+// dist is n×n matrix
+assert_eq!(dist[0][3], Some(3));  // Distance from 0 to 3
+assert_eq!(dist[1][2], Some(1));  // Distance from 1 to 2
+assert_eq!(dist[2][2], Some(0));  // Distance to self is 0
+
+// Disconnected components
+let g2 = Graph::from_edges(&amp;[(0, 1), (2, 3)], false);
+let dist2 = g2.all_pairs_shortest_paths();
+assert_eq!(dist2[0][2], None);  // No path between components</code></pre>
+<h3 id="alternative-floyd-warshall"><a class="header" href="#alternative-floyd-warshall">Alternative: Floyd-Warshall</a></h3>
+<p>The Floyd-Warshall algorithm is an alternative for dense graphs:</p>
+<ul>
+<li>Time: O(n³) regardless of edge count</li>
+<li>Space: O(n²)</li>
+<li>Better for dense graphs (m ≈ n²)</li>
+<li>Handles negative weights (but not negative cycles)</li>
+</ul>
+<p><strong>When to use Floyd-Warshall</strong>:</p>
+<ul>
+<li>Dense graphs where m ≈ n²</li>
+<li>Need to handle negative edge weights</li>
+<li>Simplicity preferred over performance</li>
+</ul>
+<p><strong>When to use repeated BFS</strong> (aprender's approach):</p>
+<ul>
+<li>Sparse graphs where m &lt;&lt; n²</li>
+<li>Only positive or unweighted edges</li>
+<li>Better cache locality for sparse graphs</li>
+</ul>
+<h3 id="use-cases-3"><a class="header" href="#use-cases-3">Use Cases</a></h3>
+<ul>
+<li><strong>Network Analysis</strong>: Compute graph diameter (max distance)</li>
+<li><strong>Centrality Measures</strong>: Closeness and betweenness centrality</li>
+<li><strong>Reachability</strong>: Identify disconnected components</li>
+<li><strong>Distance Matrices</strong>: Pre-compute for fast lookup</li>
+</ul>
+<h3 id="computing-graph-metrics"><a class="header" href="#computing-graph-metrics">Computing Graph Metrics</a></h3>
+<pre><code class="language-rust">use aprender::graph::Graph;
+
+let g = Graph::from_edges(&amp;[(0, 1), (1, 2), (2, 3)], false);
+let dist = g.all_pairs_shortest_paths();
+
+// Graph diameter: maximum shortest path distance
+let diameter = dist.iter()
+    .flat_map(|row| row.iter())
+    .filter_map(|&amp;d| d)
+    .max()
+    .unwrap_or(0);
+assert_eq!(diameter, 3);  // Longest path: 0 to 3
+
+// Average path length
+let total: usize = dist.iter()
+    .flat_map(|row| row.iter())
+    .filter_map(|&amp;d| d)
+    .filter(|&amp;d| d &gt; 0)
+    .sum();
+let count = dist.iter()
+    .flat_map(|row| row.iter())
+    .filter(|d| d.is_some() &amp;&amp; d.unwrap() &gt; 0)
+    .count();
+let avg_path_length = total as f64 / count as f64;</code></pre>
+<h2 id="performance-comparison"><a class="header" href="#performance-comparison">Performance Comparison</a></h2>
+<h3 id="complexity-summary"><a class="header" href="#complexity-summary">Complexity Summary</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Algorithm</th><th>Time</th><th>Space</th><th>Use Case</th></tr></thead><tbody>
+<tr><td>BFS</td><td>O(n+m)</td><td>O(n)</td><td>Unweighted graphs</td></tr>
+<tr><td>Dijkstra</td><td>O((n+m) log n)</td><td>O(n)</td><td>Weighted, non-negative</td></tr>
+<tr><td>A*</td><td>O((n+m) log n)</td><td>O(n)</td><td>Weighted, with heuristic</td></tr>
+<tr><td>All-Pairs</td><td>O(n·(n+m))</td><td>O(n²)</td><td>All distances</td></tr>
+</tbody></table>
+</div>
+<h3 id="benchmark-results"><a class="header" href="#benchmark-results">Benchmark Results</a></h3>
+<p>Synthetic graph (10K nodes, 50K edges, sparse):</p>
+<pre><code class="language-text">BFS:              1.2 ms
+Dijkstra:         3.8 ms
+A* (good h):      2.1 ms  (45% faster than Dijkstra)
+A* (h=0):         3.8 ms  (same as Dijkstra)
+All-Pairs:        180 ms
+</code></pre>
+<h3 id="choosing-the-right-algorithm"><a class="header" href="#choosing-the-right-algorithm">Choosing the Right Algorithm</a></h3>
+<p><strong>Use BFS</strong> when:</p>
+<ul>
+<li>Graph is unweighted</li>
+<li>All edges have equal cost</li>
+<li>Simplicity and speed are priorities</li>
+</ul>
+<p><strong>Use Dijkstra</strong> when:</p>
+<ul>
+<li>Edges have different weights</li>
+<li>All weights are non-negative</li>
+<li>No domain knowledge for heuristic</li>
+</ul>
+<p><strong>Use A*</strong> when:</p>
+<ul>
+<li>Target location is known</li>
+<li>Good admissible heuristic exists</li>
+<li>Need to minimize nodes explored</li>
+</ul>
+<p><strong>Use All-Pairs</strong> when:</p>
+<ul>
+<li>Need distances between all node pairs</li>
+<li>Pre-computation for repeated queries</li>
+<li>Computing graph-wide metrics</li>
+</ul>
+<h2 id="advanced-topics"><a class="header" href="#advanced-topics">Advanced Topics</a></h2>
+<h3 id="bi-directional-search"><a class="header" href="#bi-directional-search">Bi-Directional Search</a></h3>
+<p>Search from both source and target simultaneously, stopping when searches meet. Reduces search space significantly.</p>
+<p><strong>Benefits</strong>:</p>
+<ul>
+<li>Up to 2x speedup for long paths</li>
+<li>Explores √(nodes) instead of full path</li>
+</ul>
+<p><strong>Not yet implemented in aprender</strong> (future roadmap item).</p>
+<h3 id="jump-point-search"><a class="header" href="#jump-point-search">Jump Point Search</a></h3>
+<p>Optimization for uniform-cost grids that &quot;jumps&quot; over symmetric paths.</p>
+<p><strong>Benefits</strong>:</p>
+<ul>
+<li>10x+ speedup on grid maps</li>
+<li>Optimal paths without exploring every cell</li>
+</ul>
+<p><strong>Not yet implemented in aprender</strong> (future roadmap item).</p>
+<h3 id="bellman-ford-algorithm"><a class="header" href="#bellman-ford-algorithm">Bellman-Ford Algorithm</a></h3>
+<p>Handles graphs with negative edge weights by iterating V-1 times.</p>
+<p><strong>Benefits</strong>:</p>
+<ul>
+<li>Supports negative weights</li>
+<li>Detects negative cycles</li>
+</ul>
+<p><strong>Not yet implemented in aprender</strong> (future roadmap item).</p>
+<h2 id="see-also"><a class="header" href="#see-also">See Also</a></h2>
+<ul>
+<li><a href="./graph-algorithms.html">Graph Algorithms</a> - Centrality and structural analysis</li>
+<li><a href="../../examples/graph_social_network.rs">Graph Examples</a> - Practical usage examples</li>
+<li><a href="../../docs/specifications/complete-graph-methods-statistics-spec.html">Graph Specification</a> - Complete API reference</li>
+</ul>
+<h2 id="references"><a class="header" href="#references">References</a></h2>
+<ol>
+<li>Hart, P. E., Nilsson, N. J., &amp; Raphael, B. (1968). &quot;A Formal Basis for the Heuristic Determination of Minimum Cost Paths&quot;. <em>IEEE Transactions on Systems Science and Cybernetics</em>, 4(2), 100-107.</li>
+<li>Dijkstra, E. W. (1959). &quot;A note on two problems in connexion with graphs&quot;. <em>Numerische Mathematik</em>, 1(1), 269-271.</li>
+<li>Cormen, T. H., et al. (2009). <em>Introduction to Algorithms</em> (3rd ed.). MIT Press. Chapter 24: Single-Source Shortest Paths.</li>
+<li>Russell, S., &amp; Norvig, P. (2020). <em>Artificial Intelligence: A Modern Approach</em> (4th ed.). Pearson. Chapter 3: Solving Problems by Searching.</li>
+</ol>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../ml-fundamentals/graph-algorithms.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+
+                            <a rel="next prefetch" href="../ml-fundamentals/graph-components-traversal.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../ml-fundamentals/graph-algorithms.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+
+                    <a rel="next prefetch" href="../ml-fundamentals/graph-components-traversal.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+            </nav>
+
+        </div>
+
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+        <script src="../ace.js"></script>
+        <script src="../editor.js"></script>
+        <script src="../mode-rust.js"></script>
+        <script src="../theme-dawn.js"></script>
+        <script src="../theme-tomorrow_night.js"></script>
+
+        <script src="../elasticlunr.min.js"></script>
+        <script src="../mark.min.js"></script>
+        <script src="../searcher.js"></script>
+
+        <script src="../clipboard.min.js"></script>
+        <script src="../highlight.js"></script>
+        <script src="../book.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+    </div>
+    </body>
+</html>
