@@ -59,6 +59,30 @@
 //! let (lower, upper) = model.credible_interval(0.95);
 //! assert!(lower < mean && mean < upper);
 //! ```
+//!
+//! # Example: Normal-InverseGamma (Continuous Data)
+//!
+//! ```
+//! use aprender::bayesian::NormalInverseGamma;
+//!
+//! // Prior: weakly informative for both mean and variance
+//! let mut model = NormalInverseGamma::new(0.0, 1.0, 3.0, 2.0).unwrap();
+//!
+//! // Observe continuous data
+//! model.update(&[4.2, 5.8, 6.1, 4.5, 5.0]);
+//!
+//! // Posterior mean of μ (location)
+//! let mean_mu = model.posterior_mean_mu();
+//! assert!((mean_mu - 5.1).abs() < 0.5);
+//!
+//! // Posterior mean of σ² (variance)
+//! let mean_var = model.posterior_mean_variance().unwrap();
+//! assert!(mean_var > 0.0);
+//!
+//! // 95% credible interval for μ
+//! let (lower, upper) = model.credible_interval_mu(0.95).unwrap();
+//! assert!(lower < mean_mu && mean_mu < upper);
+//! ```
 
 mod conjugate;
 
