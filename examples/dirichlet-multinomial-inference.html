@@ -213,7 +213,14 @@ model.update(&amp;brand_counts);
 let posterior_probs = model.posterior_mean();
 // [0.290, 0.371, 0.210, 0.129] = [29.0%, 37.1%, 21.0%, 12.9%]</code></pre>
 <h3 id="posterior-statistics"><a class="header" href="#posterior-statistics">Posterior Statistics</a></h3>
-<pre><code class="language-rust">// Point estimates for each category
+<pre><code class="language-rust">use aprender::bayesian::DirichletMultinomial;
+
+// Assume model is already updated with data
+<span class="boring">let mut model = DirichletMultinomial::uniform(4);
+</span><span class="boring">let brand_counts = vec![35, 45, 25, 15];
+</span><span class="boring">model.update(&amp;brand_counts);
+</span>
+// Point estimates for each category
 let means = model.posterior_mean();  // E[θ | D] = (α₁+n₁, ..., αₖ+nₖ) / Σ(αᵢ+nᵢ)
 // [0.290, 0.371, 0.210, 0.129]
 
@@ -254,7 +261,9 @@ let predictive = model.posterior_predictive();  // Same as posterior_mean</code>
 </ul>
 <p>Are there significant regional differences in candidate preference?</p>
 <h3 id="solution-1"><a class="header" href="#solution-1">Solution</a></h3>
-<pre><code class="language-rust">// Region 1: Urban
+<pre><code class="language-rust">use aprender::bayesian::DirichletMultinomial;
+
+// Region 1: Urban
 let region1_votes = vec![85, 70, 65, 50, 30];
 let mut model1 = DirichletMultinomial::uniform(5);
 model1.update(&amp;region1_votes);
@@ -281,15 +290,41 @@ let intervals2 = model2.credible_intervals(0.95).unwrap();
 // Candidate 5: 12.7% [ 8.1%, 17.2%]</code></pre>
 <h3 id="decision-rules"><a class="header" href="#decision-rules">Decision Rules</a></h3>
 <p><strong>Regional difference test</strong>:</p>
-<pre><code class="language-rust">// Check if credible intervals don't overlap
+<pre><code class="language-rust">use aprender::bayesian::DirichletMultinomial;
+
+<span class="boring">// Setup from previous example
+</span><span class="boring">let region1_votes = vec![85, 70, 65, 50, 30];
+</span><span class="boring">let mut model1 = DirichletMultinomial::uniform(5);
+</span><span class="boring">model1.update(&amp;region1_votes);
+</span><span class="boring">let intervals1 = model1.credible_intervals(0.95).unwrap();
+</span><span class="boring">
+</span><span class="boring">let region2_votes = vec![30, 45, 60, 40, 25];
+</span><span class="boring">let mut model2 = DirichletMultinomial::uniform(5);
+</span><span class="boring">model2.update(&amp;region2_votes);
+</span><span class="boring">let intervals2 = model2.credible_intervals(0.95).unwrap();
+</span>
+// Check if credible intervals don't overlap
 for i in 0..5 {
     if intervals1[i].1 &lt; intervals2[i].0 || intervals2[i].1 &lt; intervals1[i].0 {
         println!(&quot;Candidate {} shows significant regional difference&quot;, i+1);
     }
 }</code></pre>
 <p><strong>Leader identification</strong>:</p>
-<pre><code class="language-rust">let leader1 = probs1.iter().enumerate().max_by(...).unwrap().0;  // Candidate 1
-let leader2 = probs2.iter().enumerate().max_by(...).unwrap().0;  // Candidate 3</code></pre>
+<pre><code class="language-rust">use aprender::bayesian::DirichletMultinomial;
+
+<span class="boring">// Setup from previous example
+</span><span class="boring">let region1_votes = vec![85, 70, 65, 50, 30];
+</span><span class="boring">let mut model1 = DirichletMultinomial::uniform(5);
+</span><span class="boring">model1.update(&amp;region1_votes);
+</span><span class="boring">let probs1 = model1.posterior_mean();
+</span><span class="boring">
+</span><span class="boring">let region2_votes = vec![30, 45, 60, 40, 25];
+</span><span class="boring">let mut model2 = DirichletMultinomial::uniform(5);
+</span><span class="boring">model2.update(&amp;region2_votes);
+</span><span class="boring">let probs2 = model2.posterior_mean();
+</span>
+let leader1 = probs1.iter().enumerate().max_by(|a, b| a.1.partial_cmp(b.1).unwrap()).unwrap().0;  // Candidate 1
+let leader2 = probs2.iter().enumerate().max_by(|a, b| a.1.partial_cmp(b.1).unwrap()).unwrap().0;  // Candidate 3</code></pre>
 <h3 id="interpretation-1"><a class="header" href="#interpretation-1">Interpretation</a></h3>
 <p><strong>Regional leaders differ</strong>: Candidate 1 leads urban (28.2%) but Candidate 3 leads rural (29.8%).</p>
 <p><strong>Significant differences</strong>: Candidate 1 shows statistically significant regional difference (28.2% urban vs 15.1% rural), with non-overlapping credible intervals.</p>
@@ -298,7 +333,9 @@ let leader2 = probs2.iter().enumerate().max_by(...).unwrap().0;  // Candidate 3<
 <h3 id="problem-2"><a class="header" href="#problem-2">Problem</a></h3>
 <p>Text classification system categorizing documents into 5 categories (Tech, Sports, Politics, Entertainment, Business). Demonstrate convergence with streaming data.</p>
 <h3 id="solution-2"><a class="header" href="#solution-2">Solution</a></h3>
-<pre><code class="language-rust">let mut model = DirichletMultinomial::uniform(5);
+<pre><code class="language-rust">use aprender::bayesian::DirichletMultinomial;
+
+let mut model = DirichletMultinomial::uniform(5);
 
 let experiments = vec![
     vec![12, 8, 15, 10, 5],    // Batch 1: 50 documents
@@ -334,7 +371,11 @@ for batch in experiments {
 <h3 id="problem-3"><a class="header" href="#problem-3">Problem</a></h3>
 <p>Demonstrate how different priors affect posterior inference for website page visit data: [45, 30, 25] visits across 3 pages.</p>
 <h3 id="solution-3"><a class="header" href="#solution-3">Solution</a></h3>
-<pre><code class="language-rust">// 1. Uniform Prior Dirichlet(1, 1, 1)
+<pre><code class="language-rust">use aprender::bayesian::DirichletMultinomial;
+
+<span class="boring">let page_visits = vec![45, 30, 25];
+</span>
+// 1. Uniform Prior Dirichlet(1, 1, 1)
 let mut uniform = DirichletMultinomial::uniform(3);
 uniform.update(&amp;page_visits);
 // Posterior: Dirichlet(46, 31, 26)

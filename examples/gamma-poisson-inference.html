@@ -213,7 +213,13 @@ model.update(&amp;hourly_calls);
 println!(&quot;Posterior: Gamma({:.3}, {:.3})&quot;, model.alpha(), model.beta());
 println!(&quot;  Posterior mean: {:.4} calls/hour&quot;, model.posterior_mean());  // 4.0</code></pre>
 <h3 id="posterior-statistics"><a class="header" href="#posterior-statistics">Posterior Statistics</a></h3>
-<pre><code class="language-rust">// Point estimates
+<pre><code class="language-rust">use aprender::bayesian::GammaPoisson;
+
+// Assume model is already updated with data
+<span class="boring">let mut model = GammaPoisson::noninformative();
+</span><span class="boring">model.update(&amp;vec![3, 5, 4, 6, 2, 4, 5, 3, 4, 4]);
+</span>
+// Point estimates
 let mean = model.posterior_mean();  // E[λ|D] = 40.001 / 10.001 ≈ 4.0
 let mode = model.posterior_mode().unwrap();  // (40.001 - 1) / 10.001 ≈ 3.9
 let variance = model.posterior_variance();  // 40.001 / (10.001)² ≈ 0.40
@@ -240,7 +246,9 @@ let predicted_rate = model.posterior_predictive();  // 4.0 calls/hour</code></pr
 </ul>
 <p>Which company has a significantly lower defect rate?</p>
 <h3 id="solution-1"><a class="header" href="#solution-1">Solution</a></h3>
-<pre><code class="language-rust">// Company A: 3 defects in 20 batches
+<pre><code class="language-rust">use aprender::bayesian::GammaPoisson;
+
+// Company A: 3 defects in 20 batches
 let company_a_defects = vec![0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0];
 let mut model_a = GammaPoisson::noninformative();
 model_a.update(&amp;company_a_defects);
@@ -259,7 +267,20 @@ let (lower_b, upper_b) = model_b.credible_interval(0.95).unwrap();
 // 95% CI: [0.41, 1.19]</code></pre>
 <h3 id="decision-rule"><a class="header" href="#decision-rule">Decision Rule</a></h3>
 <p>Check if credible intervals overlap:</p>
-<pre><code class="language-rust">if lower_b &gt; upper_a {
+<pre><code class="language-rust">use aprender::bayesian::GammaPoisson;
+
+<span class="boring">// Setup from previous example
+</span><span class="boring">let company_a_defects = vec![0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0];
+</span><span class="boring">let mut model_a = GammaPoisson::noninformative();
+</span><span class="boring">model_a.update(&amp;company_a_defects);
+</span><span class="boring">let (_mean_a, (lower_a, upper_a)) = (model_a.posterior_mean(), model_a.credible_interval(0.95).unwrap());
+</span><span class="boring">
+</span><span class="boring">let company_b_defects = vec![1, 0, 2, 1, 1, 0, 1, 1, 0, 1, 1, 2, 0, 1, 1, 0, 1, 0, 1, 1];
+</span><span class="boring">let mut model_b = GammaPoisson::noninformative();
+</span><span class="boring">model_b.update(&amp;company_b_defects);
+</span><span class="boring">let (_mean_b, (lower_b, upper_b)) = (model_b.posterior_mean(), model_b.credible_interval(0.95).unwrap());
+</span>
+if lower_b &gt; upper_a {
     println!(&quot;✓ Company B has significantly higher defect rate (95% confidence)&quot;);
     println!(&quot;  Company A is the better supplier.&quot;);
 } else if lower_a &gt; upper_b {
@@ -287,7 +308,9 @@ let (lower_b, upper_b) = model_b.credible_interval(0.95).unwrap();
 <p>Demonstrate how uncertainty decreases as we collect more data from server monitoring (HTTP requests per minute).</p>
 <h3 id="solution-2"><a class="header" href="#solution-2">Solution</a></h3>
 <p>Run 5 sequential monitoring periods with true rate ≈ 10 requests/min:</p>
-<pre><code class="language-rust">let mut model = GammaPoisson::noninformative();
+<pre><code class="language-rust">use aprender::bayesian::GammaPoisson;
+
+let mut model = GammaPoisson::noninformative();
 
 let experiments = vec![
     vec![8, 12, 10, 11, 9],              // 5 minutes: mean = 10
@@ -333,7 +356,11 @@ for batch in experiments {
 <p>Demonstrate how different priors affect the posterior with limited data.</p>
 <h3 id="solution-3"><a class="header" href="#solution-3">Solution</a></h3>
 <p>Same data ([3, 5, 4, 6, 2] events over 5 intervals), three different priors:</p>
-<pre><code class="language-rust">// 1. Noninformative Prior Gamma(0.001, 0.001)
+<pre><code class="language-rust">use aprender::bayesian::GammaPoisson;
+
+<span class="boring">let counts = vec![3, 5, 4, 6, 2];
+</span>
+// 1. Noninformative Prior Gamma(0.001, 0.001)
 let mut noninformative = GammaPoisson::noninformative();
 noninformative.update(&amp;counts);
 // Posterior: Gamma(20.001, 5.001), mean = 4.00

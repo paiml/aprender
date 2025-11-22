@@ -14475,7 +14475,13 @@ model.update(&amp;hourly_calls);
 println!(&quot;Posterior: Gamma({:.3}, {:.3})&quot;, model.alpha(), model.beta());
 println!(&quot;  Posterior mean: {:.4} calls/hour&quot;, model.posterior_mean());  // 4.0</code></pre>
 <h3 id="posterior-statistics-2"><a class="header" href="#posterior-statistics-2">Posterior Statistics</a></h3>
-<pre><code class="language-rust">// Point estimates
+<pre><code class="language-rust">use aprender::bayesian::GammaPoisson;
+
+// Assume model is already updated with data
+<span class="boring">let mut model = GammaPoisson::noninformative();
+</span><span class="boring">model.update(&amp;vec![3, 5, 4, 6, 2, 4, 5, 3, 4, 4]);
+</span>
+// Point estimates
 let mean = model.posterior_mean();  // E[λ|D] = 40.001 / 10.001 ≈ 4.0
 let mode = model.posterior_mode().unwrap();  // (40.001 - 1) / 10.001 ≈ 3.9
 let variance = model.posterior_variance();  // 40.001 / (10.001)² ≈ 0.40
@@ -14502,7 +14508,9 @@ let predicted_rate = model.posterior_predictive();  // 4.0 calls/hour</code></pr
 </ul>
 <p>Which company has a significantly lower defect rate?</p>
 <h3 id="solution-5"><a class="header" href="#solution-5">Solution</a></h3>
-<pre><code class="language-rust">// Company A: 3 defects in 20 batches
+<pre><code class="language-rust">use aprender::bayesian::GammaPoisson;
+
+// Company A: 3 defects in 20 batches
 let company_a_defects = vec![0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0];
 let mut model_a = GammaPoisson::noninformative();
 model_a.update(&amp;company_a_defects);
@@ -14521,7 +14529,20 @@ let (lower_b, upper_b) = model_b.credible_interval(0.95).unwrap();
 // 95% CI: [0.41, 1.19]</code></pre>
 <h3 id="decision-rule-1"><a class="header" href="#decision-rule-1">Decision Rule</a></h3>
 <p>Check if credible intervals overlap:</p>
-<pre><code class="language-rust">if lower_b &gt; upper_a {
+<pre><code class="language-rust">use aprender::bayesian::GammaPoisson;
+
+<span class="boring">// Setup from previous example
+</span><span class="boring">let company_a_defects = vec![0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0];
+</span><span class="boring">let mut model_a = GammaPoisson::noninformative();
+</span><span class="boring">model_a.update(&amp;company_a_defects);
+</span><span class="boring">let (_mean_a, (lower_a, upper_a)) = (model_a.posterior_mean(), model_a.credible_interval(0.95).unwrap());
+</span><span class="boring">
+</span><span class="boring">let company_b_defects = vec![1, 0, 2, 1, 1, 0, 1, 1, 0, 1, 1, 2, 0, 1, 1, 0, 1, 0, 1, 1];
+</span><span class="boring">let mut model_b = GammaPoisson::noninformative();
+</span><span class="boring">model_b.update(&amp;company_b_defects);
+</span><span class="boring">let (_mean_b, (lower_b, upper_b)) = (model_b.posterior_mean(), model_b.credible_interval(0.95).unwrap());
+</span>
+if lower_b &gt; upper_a {
     println!(&quot;✓ Company B has significantly higher defect rate (95% confidence)&quot;);
     println!(&quot;  Company A is the better supplier.&quot;);
 } else if lower_a &gt; upper_b {
@@ -14549,7 +14570,9 @@ let (lower_b, upper_b) = model_b.credible_interval(0.95).unwrap();
 <p>Demonstrate how uncertainty decreases as we collect more data from server monitoring (HTTP requests per minute).</p>
 <h3 id="solution-6"><a class="header" href="#solution-6">Solution</a></h3>
 <p>Run 5 sequential monitoring periods with true rate ≈ 10 requests/min:</p>
-<pre><code class="language-rust">let mut model = GammaPoisson::noninformative();
+<pre><code class="language-rust">use aprender::bayesian::GammaPoisson;
+
+let mut model = GammaPoisson::noninformative();
 
 let experiments = vec![
     vec![8, 12, 10, 11, 9],              // 5 minutes: mean = 10
@@ -14595,7 +14618,11 @@ for batch in experiments {
 <p>Demonstrate how different priors affect the posterior with limited data.</p>
 <h3 id="solution-7"><a class="header" href="#solution-7">Solution</a></h3>
 <p>Same data ([3, 5, 4, 6, 2] events over 5 intervals), three different priors:</p>
-<pre><code class="language-rust">// 1. Noninformative Prior Gamma(0.001, 0.001)
+<pre><code class="language-rust">use aprender::bayesian::GammaPoisson;
+
+<span class="boring">let counts = vec![3, 5, 4, 6, 2];
+</span>
+// 1. Noninformative Prior Gamma(0.001, 0.001)
 let mut noninformative = GammaPoisson::noninformative();
 noninformative.update(&amp;counts);
 // Posterior: Gamma(20.001, 5.001), mean = 4.00
@@ -14742,7 +14769,14 @@ let mean_mu = model.posterior_mean_mu();  // E[μ|D] ≈ 10.002
 let mean_var = model.posterior_mean_variance().unwrap();  // E[σ²|D] ≈ 0.0033
 let std_dev = mean_var.sqrt();  // E[σ|D] ≈ 0.058</code></pre>
 <h3 id="posterior-statistics-3"><a class="header" href="#posterior-statistics-3">Posterior Statistics</a></h3>
-<pre><code class="language-rust">// Posterior mean of μ (location parameter)
+<pre><code class="language-rust">use aprender::bayesian::NormalInverseGamma;
+
+// Assume model is already updated with data
+<span class="boring">let mut model = NormalInverseGamma::new(10.0, 1.0, 3.0, 0.02).expect(&quot;Valid parameters&quot;);
+</span><span class="boring">let measurements = vec![9.98, 10.02, 9.97, 10.03, 10.01, 9.99, 10.04, 9.96, 10.00, 10.02];
+</span><span class="boring">model.update(&amp;measurements);
+</span>
+// Posterior mean of μ (location parameter)
 let mean_mu = model.posterior_mean_mu();  // 10.002 mm
 
 // Posterior mean of σ² (variance parameter)
@@ -14774,7 +14808,9 @@ let predicted = model.posterior_predictive();  // E[x_new | D] = mean_mu</code><
 </ul>
 <p>Does Patient B have significantly higher BP? Which patient has more variable BP?</p>
 <h3 id="solution-9"><a class="header" href="#solution-9">Solution</a></h3>
-<pre><code class="language-rust">// Patient A
+<pre><code class="language-rust">use aprender::bayesian::NormalInverseGamma;
+
+// Patient A
 let patient_a = vec![118.0, 122.0, 120.0, 119.0, 121.0, 120.0, 118.0, 122.0];
 let mut model_a = NormalInverseGamma::noninformative();
 model_a.update(&amp;patient_a);
@@ -14795,7 +14831,20 @@ let (lower_b, upper_b) = model_b.credible_interval_mu(0.95).unwrap();
 let var_b = model_b.posterior_mean_variance().unwrap();  // 16.1 mmHg²</code></pre>
 <h3 id="decision-rules"><a class="header" href="#decision-rules">Decision Rules</a></h3>
 <p><strong>Mean comparison</strong>:</p>
-<pre><code class="language-rust">if lower_b &gt; upper_a {
+<pre><code class="language-rust">use aprender::bayesian::NormalInverseGamma;
+
+<span class="boring">// Setup from previous example
+</span><span class="boring">let patient_a = vec![118.0, 122.0, 120.0, 119.0, 121.0, 120.0, 118.0, 122.0];
+</span><span class="boring">let mut model_a = NormalInverseGamma::noninformative();
+</span><span class="boring">model_a.update(&amp;patient_a);
+</span><span class="boring">let (lower_a, upper_a) = model_a.credible_interval_mu(0.95).unwrap();
+</span><span class="boring">
+</span><span class="boring">let patient_b = vec![135.0, 142.0, 138.0, 145.0, 140.0, 137.0, 143.0, 139.0];
+</span><span class="boring">let mut model_b = NormalInverseGamma::noninformative();
+</span><span class="boring">model_b.update(&amp;patient_b);
+</span><span class="boring">let (lower_b, upper_b) = model_b.credible_interval_mu(0.95).unwrap();
+</span>
+if lower_b &gt; upper_a {
     println!(&quot;Patient B has significantly higher BP (95% confidence)&quot;);
 } else if lower_a &gt; upper_b {
     println!(&quot;Patient A has significantly higher BP (95% confidence)&quot;);
@@ -14803,7 +14852,20 @@ let var_b = model_b.posterior_mean_variance().unwrap();  // 16.1 mmHg²</code></
     println!(&quot;Credible intervals overlap - no clear difference&quot;);
 }</code></pre>
 <p><strong>Variability comparison</strong>:</p>
-<pre><code class="language-rust">if var_b &gt; 2.0 * var_a {
+<pre><code class="language-rust">use aprender::bayesian::NormalInverseGamma;
+
+<span class="boring">// Setup from previous example
+</span><span class="boring">let patient_a = vec![118.0, 122.0, 120.0, 119.0, 121.0, 120.0, 118.0, 122.0];
+</span><span class="boring">let mut model_a = NormalInverseGamma::noninformative();
+</span><span class="boring">model_a.update(&amp;patient_a);
+</span><span class="boring">let var_a = model_a.posterior_mean_variance().unwrap();
+</span><span class="boring">
+</span><span class="boring">let patient_b = vec![135.0, 142.0, 138.0, 145.0, 140.0, 137.0, 143.0, 139.0];
+</span><span class="boring">let mut model_b = NormalInverseGamma::noninformative();
+</span><span class="boring">model_b.update(&amp;patient_b);
+</span><span class="boring">let var_b = model_b.posterior_mean_variance().unwrap();
+</span>
+if var_b &gt; 2.0 * var_a {
     println!(&quot;Patient B shows {:.1}x higher BP variability&quot;, var_b / var_a);
     println!(&quot;High variability may indicate cardiovascular instability.&quot;);
 }</code></pre>
@@ -14822,7 +14884,9 @@ let var_b = model_b.posterior_mean_variance().unwrap();  // 16.1 mmHg²</code></
 <p>Demonstrate how uncertainty about both mean and variance decreases with sequential sensor calibration data.</p>
 <h3 id="solution-10"><a class="header" href="#solution-10">Solution</a></h3>
 <p>Collect temperature readings in batches (true temperature: 25.0°C):</p>
-<pre><code class="language-rust">let mut model = NormalInverseGamma::noninformative();
+<pre><code class="language-rust">use aprender::bayesian::NormalInverseGamma;
+
+let mut model = NormalInverseGamma::noninformative();
 
 let experiments = vec![
     vec![25.2, 24.8, 25.1, 24.9, 25.0],               // 5 readings
@@ -14865,7 +14929,11 @@ for batch in experiments {
 <p>Demonstrate how different priors affect bivariate posterior inference with limited data.</p>
 <h3 id="solution-11"><a class="header" href="#solution-11">Solution</a></h3>
 <p>Same data ([22.1, 22.5, 22.3, 22.7, 22.4]°C), three different priors:</p>
-<pre><code class="language-rust">// 1. Noninformative Prior NIG(0, 1, 1, 1)
+<pre><code class="language-rust">use aprender::bayesian::NormalInverseGamma;
+
+<span class="boring">let measurements = vec![22.1, 22.5, 22.3, 22.7, 22.4];
+</span>
+// 1. Noninformative Prior NIG(0, 1, 1, 1)
 let mut noninformative = NormalInverseGamma::noninformative();
 noninformative.update(&amp;measurements);
 // E[μ] = 22.40°C, E[σ²] = 0.23°C²
@@ -15008,7 +15076,14 @@ model.update(&amp;brand_counts);
 let posterior_probs = model.posterior_mean();
 // [0.290, 0.371, 0.210, 0.129] = [29.0%, 37.1%, 21.0%, 12.9%]</code></pre>
 <h3 id="posterior-statistics-4"><a class="header" href="#posterior-statistics-4">Posterior Statistics</a></h3>
-<pre><code class="language-rust">// Point estimates for each category
+<pre><code class="language-rust">use aprender::bayesian::DirichletMultinomial;
+
+// Assume model is already updated with data
+<span class="boring">let mut model = DirichletMultinomial::uniform(4);
+</span><span class="boring">let brand_counts = vec![35, 45, 25, 15];
+</span><span class="boring">model.update(&amp;brand_counts);
+</span>
+// Point estimates for each category
 let means = model.posterior_mean();  // E[θ | D] = (α₁+n₁, ..., αₖ+nₖ) / Σ(αᵢ+nᵢ)
 // [0.290, 0.371, 0.210, 0.129]
 
@@ -15049,7 +15124,9 @@ let predictive = model.posterior_predictive();  // Same as posterior_mean</code>
 </ul>
 <p>Are there significant regional differences in candidate preference?</p>
 <h3 id="solution-13"><a class="header" href="#solution-13">Solution</a></h3>
-<pre><code class="language-rust">// Region 1: Urban
+<pre><code class="language-rust">use aprender::bayesian::DirichletMultinomial;
+
+// Region 1: Urban
 let region1_votes = vec![85, 70, 65, 50, 30];
 let mut model1 = DirichletMultinomial::uniform(5);
 model1.update(&amp;region1_votes);
@@ -15076,15 +15153,41 @@ let intervals2 = model2.credible_intervals(0.95).unwrap();
 // Candidate 5: 12.7% [ 8.1%, 17.2%]</code></pre>
 <h3 id="decision-rules-1"><a class="header" href="#decision-rules-1">Decision Rules</a></h3>
 <p><strong>Regional difference test</strong>:</p>
-<pre><code class="language-rust">// Check if credible intervals don't overlap
+<pre><code class="language-rust">use aprender::bayesian::DirichletMultinomial;
+
+<span class="boring">// Setup from previous example
+</span><span class="boring">let region1_votes = vec![85, 70, 65, 50, 30];
+</span><span class="boring">let mut model1 = DirichletMultinomial::uniform(5);
+</span><span class="boring">model1.update(&amp;region1_votes);
+</span><span class="boring">let intervals1 = model1.credible_intervals(0.95).unwrap();
+</span><span class="boring">
+</span><span class="boring">let region2_votes = vec![30, 45, 60, 40, 25];
+</span><span class="boring">let mut model2 = DirichletMultinomial::uniform(5);
+</span><span class="boring">model2.update(&amp;region2_votes);
+</span><span class="boring">let intervals2 = model2.credible_intervals(0.95).unwrap();
+</span>
+// Check if credible intervals don't overlap
 for i in 0..5 {
     if intervals1[i].1 &lt; intervals2[i].0 || intervals2[i].1 &lt; intervals1[i].0 {
         println!(&quot;Candidate {} shows significant regional difference&quot;, i+1);
     }
 }</code></pre>
 <p><strong>Leader identification</strong>:</p>
-<pre><code class="language-rust">let leader1 = probs1.iter().enumerate().max_by(...).unwrap().0;  // Candidate 1
-let leader2 = probs2.iter().enumerate().max_by(...).unwrap().0;  // Candidate 3</code></pre>
+<pre><code class="language-rust">use aprender::bayesian::DirichletMultinomial;
+
+<span class="boring">// Setup from previous example
+</span><span class="boring">let region1_votes = vec![85, 70, 65, 50, 30];
+</span><span class="boring">let mut model1 = DirichletMultinomial::uniform(5);
+</span><span class="boring">model1.update(&amp;region1_votes);
+</span><span class="boring">let probs1 = model1.posterior_mean();
+</span><span class="boring">
+</span><span class="boring">let region2_votes = vec![30, 45, 60, 40, 25];
+</span><span class="boring">let mut model2 = DirichletMultinomial::uniform(5);
+</span><span class="boring">model2.update(&amp;region2_votes);
+</span><span class="boring">let probs2 = model2.posterior_mean();
+</span>
+let leader1 = probs1.iter().enumerate().max_by(|a, b| a.1.partial_cmp(b.1).unwrap()).unwrap().0;  // Candidate 1
+let leader2 = probs2.iter().enumerate().max_by(|a, b| a.1.partial_cmp(b.1).unwrap()).unwrap().0;  // Candidate 3</code></pre>
 <h3 id="interpretation-20"><a class="header" href="#interpretation-20">Interpretation</a></h3>
 <p><strong>Regional leaders differ</strong>: Candidate 1 leads urban (28.2%) but Candidate 3 leads rural (29.8%).</p>
 <p><strong>Significant differences</strong>: Candidate 1 shows statistically significant regional difference (28.2% urban vs 15.1% rural), with non-overlapping credible intervals.</p>
@@ -15093,7 +15196,9 @@ let leader2 = probs2.iter().enumerate().max_by(...).unwrap().0;  // Candidate 3<
 <h3 id="problem-14"><a class="header" href="#problem-14">Problem</a></h3>
 <p>Text classification system categorizing documents into 5 categories (Tech, Sports, Politics, Entertainment, Business). Demonstrate convergence with streaming data.</p>
 <h3 id="solution-14"><a class="header" href="#solution-14">Solution</a></h3>
-<pre><code class="language-rust">let mut model = DirichletMultinomial::uniform(5);
+<pre><code class="language-rust">use aprender::bayesian::DirichletMultinomial;
+
+let mut model = DirichletMultinomial::uniform(5);
 
 let experiments = vec![
     vec![12, 8, 15, 10, 5],    // Batch 1: 50 documents
@@ -15129,7 +15234,11 @@ for batch in experiments {
 <h3 id="problem-15"><a class="header" href="#problem-15">Problem</a></h3>
 <p>Demonstrate how different priors affect posterior inference for website page visit data: [45, 30, 25] visits across 3 pages.</p>
 <h3 id="solution-15"><a class="header" href="#solution-15">Solution</a></h3>
-<pre><code class="language-rust">// 1. Uniform Prior Dirichlet(1, 1, 1)
+<pre><code class="language-rust">use aprender::bayesian::DirichletMultinomial;
+
+<span class="boring">let page_visits = vec![45, 30, 25];
+</span>
+// 1. Uniform Prior Dirichlet(1, 1, 1)
 let mut uniform = DirichletMultinomial::uniform(3);
 uniform.update(&amp;page_visits);
 // Posterior: Dirichlet(46, 31, 26)
