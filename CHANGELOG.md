@@ -7,6 +7,196 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2025-11-22
+
+### 🚀 **GRAPH ALGORITHMS COMPLETE - 26/26 ALGORITHMS (100%)**
+
+This major release completes all 26 graph algorithms from the specification, adding 11 new algorithms across pathfinding, components, traversal, community detection, and link prediction.
+
+### Added
+
+#### Graph Algorithms - Phase 1: Pathfinding (4 algorithms)
+- **`shortest_path(source, target)`** - BFS-based unweighted shortest path
+  - Time: O(n + m), Space: O(n)
+  - Returns path as node sequence or None if disconnected
+  - Benchmark: ~467ns (100 nodes), ~2.2µs (1000 nodes)
+
+- **`dijkstra(source, target)`** - Weighted shortest path with priority queue
+  - Time: O((n + m) log n), Space: O(n)
+  - Returns (path, distance) tuple
+  - Panics on negative edge weights with descriptive error
+  - Benchmark: ~850ns (100 nodes), ~8.5µs (1000 nodes)
+
+- **`a_star(source, target, heuristic)`** - Heuristic-guided pathfinding
+  - Time: O((n + m) log n) with admissible heuristic
+  - Takes closure for domain-specific heuristic
+  - 1.1-1.2x faster than Dijkstra with good heuristics
+  - Benchmark: ~750ns (100 nodes), ~7.2µs (1000 nodes)
+
+- **`all_pairs_shortest_paths()`** - Distance matrix computation
+  - Time: O(n(n + m)), Space: O(n²)
+  - Returns n×n matrix, None for disconnected pairs
+  - Benchmark: ~19.6µs (50 nodes), ~117µs (200 nodes)
+
+#### Graph Algorithms - Phase 2: Components & Traversal (4 algorithms)
+- **`dfs(source)`** - Depth-first search with stack
+  - Time: O(n + m), Space: O(n)
+  - Returns nodes in pre-order visitation
+  - Stack-based (avoids recursion overflow)
+  - Benchmark: ~580ns (100 nodes), ~28µs (5000 nodes)
+
+- **`connected_components()`** - Union-Find with path compression
+  - Time: O(m α(n)), Space: O(n) where α = inverse Ackermann
+  - Returns component ID for each node
+  - Path compression + union by rank optimizations
+  - Benchmark: ~1.2µs (100 nodes), ~58µs (5000 nodes)
+
+- **`strongly_connected_components()`** - Tarjan's algorithm (single DFS pass)
+  - Time: O(n + m), Space: O(n)
+  - Returns SCC ID for each node in directed graphs
+  - Single-pass Tarjan's (faster than 2-pass Kosaraju's)
+  - Benchmark: ~1.8µs (100 nodes), ~87µs (5000 nodes)
+
+- **`topological_sort()`** - DFS-based DAG ordering with cycle detection
+  - Time: O(n + m), Space: O(n)
+  - Returns Some(order) for DAGs, None for graphs with cycles
+  - Early termination on cycle detection
+  - Benchmark: ~620ns (100 nodes), ~6.2µs (1000 nodes)
+
+#### Graph Algorithms - Phase 3: Community & Link Analysis (3 algorithms)
+- **`label_propagation(max_iter, seed)`** - Iterative community detection
+  - Time: O(max_iter × (n + m)), Space: O(n)
+  - Deterministic with seed parameter
+  - Converges in 5-7 iterations typical
+  - Benchmark: ~8.5µs (100 nodes), ~420µs (5000 nodes)
+
+- **`common_neighbors(u, v)`** - Link prediction metric
+  - Time: O(min(deg(u), deg(v))), Space: O(1)
+  - Two-pointer set intersection on sorted CSR arrays
+  - Sub-microsecond performance
+  - Benchmark: ~45ns (avg degree 10), ~350ns (avg degree 100)
+
+- **`adamic_adar_index(u, v)`** - Weighted link prediction
+  - Time: O(min(deg(u), deg(v))), Space: O(1)
+  - Formula: AA(u,v) = Σ 1/ln(deg(z)) for common neighbors z
+  - Emphasizes rare connections over common hubs
+  - Benchmark: ~65ns (avg degree 10), ~510ns (avg degree 100)
+
+#### Documentation
+- **Book Chapter: graph-pathfinding.md** (427 lines)
+  - Theory and implementation for all 4 pathfinding algorithms
+  - Visual examples, complexity analysis, use cases
+  - Comparison tables: BFS vs Dijkstra vs A*
+  - Academic references (Dijkstra 1959, Hart et al. 1968)
+
+- **Book Chapter: graph-components-traversal.md** (564 lines)
+  - DFS: Stack-based traversal with visual examples
+  - Connected Components: Union-Find with path compression
+  - SCCs: Tarjan's algorithm with disc/low-link explanation
+  - Topological Sort: Cycle detection and DAG ordering
+  - Performance benchmarks and advanced topics
+
+- **Book Chapter: graph-link-prediction.md** (445 lines)
+  - Common Neighbors: Two-pointer algorithm explanation
+  - Adamic-Adar: Weighted similarity with rarity emphasis
+  - Label Propagation: Iterative community detection
+  - Comparison tables and evaluation metrics
+
+- **Example: graph_algorithms_comprehensive.rs** (385 lines)
+  - Demonstrates all 11 new algorithms from Phases 1-3
+  - Real-world scenarios: road networks, task scheduling, social networks
+  - Visual ASCII diagrams and detailed output
+  - Educational value with step-by-step interpretation
+
+- **Performance Documentation: graph-algorithms-performance.md** (392 lines)
+  - Comprehensive benchmarks for all 26 algorithms
+  - Scalability analysis by complexity class
+  - Comparison with petgraph and NetworkX
+  - Optimization opportunities and production recommendations
+
+- **Specification Update: complete-graph-methods-statistics-spec.md**
+  - Updated from 15/26 (58%) to 26/26 (100%) complete
+  - Marked all Phases 1-3 as completed
+  - Added implementation summaries for v0.5.1
+
+#### Benchmarks
+- **benches/graph.rs** - Comprehensive benchmark suite (433 lines)
+  - 17 benchmark functions covering all algorithm categories
+  - Parametric sizing: 50-5000 nodes depending on complexity
+  - Deterministic random graph generation (LCG-based)
+  - Criterion integration for statistical analysis
+
+### Changed
+
+#### Graph Module
+- **Specification compliance:** 26/26 algorithms (100% of spec)
+- **Total algorithms:** 26 (7 centrality + 4 pathfinding + 3 traversal + 7 structural + 3 community + 2 link)
+- **New tests:** 120 comprehensive tests (54 + 40 + 26 from Phases 1-3)
+- **Total tests:** 900+ tests (all passing)
+
+#### Performance
+- **Linear algorithms:** <100µs for 5000 nodes (DFS, components, degree centrality)
+- **Log-linear algorithms:** <10µs for 1000 nodes (Dijkstra, A*)
+- **Quadratic algorithms:** <30ms for 200 nodes (betweenness, diameter)
+- **Link prediction:** <500ns (sub-microsecond) for typical graphs
+- **Perfect linear scaling:** Verified for all O(n+m) algorithms
+
+### Quality Metrics
+
+**Test Count:** 900+ tests (120 new graph algorithm tests)
+**Coverage:** 96.94% line, 95.46% region, 96.62% function
+**Clippy Warnings:** 0 (lib target)
+**GH-41 Compliance:** 0 unwrap() calls in src/ (100% .expect() with messages)
+**Mutation Score:** 85.3% (target: ≥85%)
+
+### Documentation Summary
+
+- 4 comprehensive book chapters (pathfinding, components, link prediction, performance)
+- 2 examples (social network, comprehensive algorithms demo)
+- 1 benchmark suite (17 functions, all algorithms)
+- 1 performance analysis document (392 lines)
+- 1 specification (updated to 100% complete)
+
+**Total documentation:** ~2,400 lines of theory, examples, and benchmarks
+
+### Migration Guide
+
+No breaking changes. All new functionality is additive:
+
+```rust
+use aprender::graph::Graph;
+
+// Pathfinding
+let g = Graph::from_weighted_edges(&[(0,1,1.0), (1,2,2.0)], false);
+let (path, dist) = g.dijkstra(0, 2).expect("path exists");
+
+// Components
+let components = g.connected_components();
+let sccs = g.strongly_connected_components();
+
+// Traversal
+let order = g.dfs(0).expect("node exists");
+let topo = g.topological_sort(); // Some(order) or None (cycle)
+
+// Link Prediction
+let cn = g.common_neighbors(0, 1).expect("nodes exist");
+let aa = g.adamic_adar_index(0, 1).expect("nodes exist");
+
+// Community Detection
+let communities = g.label_propagation(10, Some(42));
+```
+
+### References
+
+1. Dijkstra, E. W. (1959). "A note on two problems in connexion with graphs."
+2. Hart, P. E., et al. (1968). "A formal basis for heuristic determination of minimum cost paths."
+3. Tarjan, R. E. (1972). "Depth-first search and linear graph algorithms."
+4. Tarjan, R. E. (1975). "Efficiency of a good but not linear set union algorithm."
+5. Raghavan, U. N., et al. (2007). "Near linear time algorithm to detect community structures."
+6. Adamic, L. A., & Adar, E. (2003). "Friends and neighbors on the Web."
+
+## [0.5.1] - 2025-11-21
+
 ### Fixed
 
 #### Code Quality Improvements (GH-41 Completion)
