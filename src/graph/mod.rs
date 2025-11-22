@@ -1398,13 +1398,11 @@ impl Graph {
                 };
 
                 // Panic on negative weights (Dijkstra requirement)
-                if edge_weight < 0.0 {
-                    panic!(
-                        "Dijkstra's algorithm requires non-negative edge weights. \
-                         Found negative weight {} on edge ({}, {})",
-                        edge_weight, node, neighbor
-                    );
-                }
+                assert!(
+                    edge_weight >= 0.0,
+                    "Dijkstra's algorithm requires non-negative edge weights. \
+                     Found negative weight {edge_weight} on edge ({node}, {neighbor})"
+                );
 
                 let next_cost = cost + edge_weight;
 
