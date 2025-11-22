@@ -1,0 +1,486 @@
+<!DOCTYPE HTML>
+<html lang="en" class="rust" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Case Study: Bayesian Logistic Regression - EXTREME TDD - The Aprender Guide to Zero-Defect Machine Learning</title>
+
+
+        <!-- Custom HTML head -->
+        
+        <meta name="description" content="A comprehensive guide to EXTREME TDD methodology: RED-GREEN-REFACTOR cycles, mutation testing, and Toyota Way principles demonstrated through ML library development">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="../favicon.svg">
+        <link rel="shortcut icon" href="../favicon.png">
+        <link rel="stylesheet" href="../css/variables.css">
+        <link rel="stylesheet" href="../css/general.css">
+        <link rel="stylesheet" href="../css/chrome.css">
+        <link rel="stylesheet" href="../css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="../fonts/fonts.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" href="../highlight.css">
+        <link rel="stylesheet" href="../tomorrow-night.css">
+        <link rel="stylesheet" href="../ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+
+    </head>
+    <body class="sidebar-visible no-js">
+    <div id="body-container">
+        <!-- Provide site root to javascript -->
+        <script>
+            var path_to_root = "../";
+            var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "rust";
+        </script>
+
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            var html = document.querySelector('html');
+            html.classList.remove('rust')
+            html.classList.add(theme);
+            var body = document.querySelector('body');
+            body.classList.remove('no-js')
+            body.classList.add('js');
+        </script>
+
+        <input type="checkbox" id="sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            var body = document.querySelector('body');
+            var sidebar = null;
+            var sidebar_toggle = document.getElementById("sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+            }
+            sidebar_toggle.checked = sidebar === 'visible';
+            body.classList.remove('sidebar-visible');
+            body.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <div class="sidebar-scrollbox">
+                <ol class="chapter"><li class="chapter-item expanded affix "><a href="../introduction.html">Introduction</a></li><li class="chapter-item expanded affix "><li class="part-title">Core Methodology</li><li class="chapter-item expanded "><a href="../methodology/what-is-extreme-tdd.html"><strong aria-hidden="true">1.</strong> What is EXTREME TDD?</a></li><li class="chapter-item expanded "><a href="../methodology/red-green-refactor.html"><strong aria-hidden="true">2.</strong> The RED-GREEN-REFACTOR Cycle</a></li><li class="chapter-item expanded "><a href="../methodology/test-first-philosophy.html"><strong aria-hidden="true">3.</strong> Test-First Philosophy</a></li><li class="chapter-item expanded "><a href="../methodology/zero-tolerance.html"><strong aria-hidden="true">4.</strong> Zero Tolerance Quality</a></li><li class="chapter-item expanded affix "><li class="part-title">The RED Phase</li><li class="chapter-item expanded "><a href="../red-phase/failing-tests-first.html"><strong aria-hidden="true">5.</strong> Writing Failing Tests First</a></li><li class="chapter-item expanded "><a href="../red-phase/test-categories.html"><strong aria-hidden="true">6.</strong> Test Categories</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../red-phase/unit-tests.html"><strong aria-hidden="true">6.1.</strong> Unit Tests</a></li><li class="chapter-item expanded "><a href="../red-phase/integration-tests.html"><strong aria-hidden="true">6.2.</strong> Integration Tests</a></li><li class="chapter-item expanded "><a href="../red-phase/property-based-tests.html"><strong aria-hidden="true">6.3.</strong> Property-Based Tests</a></li></ol></li><li class="chapter-item expanded "><a href="../red-phase/verification-strategy.html"><strong aria-hidden="true">7.</strong> Verification Strategy</a></li><li class="chapter-item expanded affix "><li class="part-title">The GREEN Phase</li><li class="chapter-item expanded "><a href="../green-phase/minimal-implementation.html"><strong aria-hidden="true">8.</strong> Minimal Implementation</a></li><li class="chapter-item expanded "><a href="../green-phase/making-tests-pass.html"><strong aria-hidden="true">9.</strong> Making Tests Pass</a></li><li class="chapter-item expanded "><a href="../green-phase/avoiding-over-engineering.html"><strong aria-hidden="true">10.</strong> Avoiding Over-Engineering</a></li><li class="chapter-item expanded "><a href="../green-phase/simplest-thing.html"><strong aria-hidden="true">11.</strong> The Simplest Thing That Works</a></li><li class="chapter-item expanded affix "><li class="part-title">The REFACTOR Phase</li><li class="chapter-item expanded "><a href="../refactor-phase/refactoring-with-confidence.html"><strong aria-hidden="true">12.</strong> Refactoring with Confidence</a></li><li class="chapter-item expanded "><a href="../refactor-phase/code-quality.html"><strong aria-hidden="true">13.</strong> Code Quality Improvements</a></li><li class="chapter-item expanded "><a href="../refactor-phase/performance-optimization.html"><strong aria-hidden="true">14.</strong> Performance Optimization</a></li><li class="chapter-item expanded "><a href="../refactor-phase/documentation.html"><strong aria-hidden="true">15.</strong> Documentation</a></li><li class="chapter-item expanded affix "><li class="part-title">Advanced Testing</li><li class="chapter-item expanded "><a href="../advanced-testing/property-based-testing.html"><strong aria-hidden="true">16.</strong> Property-Based Testing</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../advanced-testing/proptest-fundamentals.html"><strong aria-hidden="true">16.1.</strong> Proptest Fundamentals</a></li><li class="chapter-item expanded "><a href="../advanced-testing/strategies-generators.html"><strong aria-hidden="true">16.2.</strong> Strategies and Generators</a></li><li class="chapter-item expanded "><a href="../advanced-testing/testing-invariants.html"><strong aria-hidden="true">16.3.</strong> Testing Invariants</a></li></ol></li><li class="chapter-item expanded "><a href="../advanced-testing/mutation-testing.html"><strong aria-hidden="true">17.</strong> Mutation Testing</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../advanced-testing/what-is-mutation-testing.html"><strong aria-hidden="true">17.1.</strong> What is Mutation Testing?</a></li><li class="chapter-item expanded "><a href="../advanced-testing/using-cargo-mutants.html"><strong aria-hidden="true">17.2.</strong> Using cargo-mutants</a></li><li class="chapter-item expanded "><a href="../advanced-testing/mutation-score-targets.html"><strong aria-hidden="true">17.3.</strong> Mutation Score Targets</a></li><li class="chapter-item expanded "><a href="../advanced-testing/killing-mutants.html"><strong aria-hidden="true">17.4.</strong> Killing Mutants</a></li></ol></li><li class="chapter-item expanded "><a href="../advanced-testing/fuzzing.html"><strong aria-hidden="true">18.</strong> Fuzzing</a></li><li class="chapter-item expanded "><a href="../advanced-testing/benchmark-testing.html"><strong aria-hidden="true">19.</strong> Benchmark Testing</a></li><li class="chapter-item expanded affix "><li class="part-title">Quality Gates</li><li class="chapter-item expanded "><a href="../quality-gates/pre-commit-hooks.html"><strong aria-hidden="true">20.</strong> Pre-Commit Hooks</a></li><li class="chapter-item expanded "><a href="../quality-gates/continuous-integration.html"><strong aria-hidden="true">21.</strong> Continuous Integration</a></li><li class="chapter-item expanded "><a href="../quality-gates/code-formatting.html"><strong aria-hidden="true">22.</strong> Code Formatting (rustfmt)</a></li><li class="chapter-item expanded "><a href="../quality-gates/linting-clippy.html"><strong aria-hidden="true">23.</strong> Linting (clippy)</a></li><li class="chapter-item expanded "><a href="../quality-gates/coverage-measurement.html"><strong aria-hidden="true">24.</strong> Coverage Measurement</a></li><li class="chapter-item expanded "><a href="../quality-gates/complexity-analysis.html"><strong aria-hidden="true">25.</strong> Complexity Analysis</a></li><li class="chapter-item expanded "><a href="../quality-gates/tdg-score.html"><strong aria-hidden="true">26.</strong> Technical Debt Gradient (TDG)</a></li><li class="chapter-item expanded affix "><li class="part-title">Toyota Way Principles</li><li class="chapter-item expanded "><a href="../toyota-way/overview.html"><strong aria-hidden="true">27.</strong> Overview</a></li><li class="chapter-item expanded "><a href="../toyota-way/kaizen.html"><strong aria-hidden="true">28.</strong> Kaizen (Continuous Improvement)</a></li><li class="chapter-item expanded "><a href="../toyota-way/genchi-genbutsu.html"><strong aria-hidden="true">29.</strong> Genchi Genbutsu (Go and See)</a></li><li class="chapter-item expanded "><a href="../toyota-way/jidoka.html"><strong aria-hidden="true">30.</strong> Jidoka (Built-in Quality)</a></li><li class="chapter-item expanded "><a href="../toyota-way/pdca-cycle.html"><strong aria-hidden="true">31.</strong> PDCA Cycle</a></li><li class="chapter-item expanded "><a href="../toyota-way/respect-for-people.html"><strong aria-hidden="true">32.</strong> Respect for People</a></li><li class="chapter-item expanded affix "><li class="part-title">Machine Learning Fundamentals</li><li class="chapter-item expanded "><a href="../ml-fundamentals/linear-regression.html"><strong aria-hidden="true">33.</strong> Linear Regression Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/regularization.html"><strong aria-hidden="true">34.</strong> Regularization Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/logistic-regression.html"><strong aria-hidden="true">35.</strong> Logistic Regression Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/knn.html"><strong aria-hidden="true">36.</strong> K-Nearest Neighbors (kNN) Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/naive-bayes.html"><strong aria-hidden="true">37.</strong> Naive Bayes Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/bayesian-inference.html"><strong aria-hidden="true">38.</strong> Bayesian Inference Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/svm.html"><strong aria-hidden="true">39.</strong> Support Vector Machines (SVM) Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/decision-trees.html"><strong aria-hidden="true">40.</strong> Decision Trees Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/ensemble-methods.html"><strong aria-hidden="true">41.</strong> Ensemble Methods Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/kmeans-clustering.html"><strong aria-hidden="true">42.</strong> K-Means Clustering Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/pca.html"><strong aria-hidden="true">43.</strong> Principal Component Analysis (PCA) Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/tsne.html"><strong aria-hidden="true">44.</strong> t-SNE (t-Distributed Stochastic Neighbor Embedding) Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/regression-metrics.html"><strong aria-hidden="true">45.</strong> Regression Metrics Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/classification-metrics.html"><strong aria-hidden="true">46.</strong> Classification Metrics Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/cross-validation.html"><strong aria-hidden="true">47.</strong> Cross-Validation Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/gradient-descent.html"><strong aria-hidden="true">48.</strong> Gradient Descent Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/advanced-optimizers.html"><strong aria-hidden="true">49.</strong> Advanced Optimizers Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/feature-scaling.html"><strong aria-hidden="true">50.</strong> Feature Scaling Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/graph-algorithms.html"><strong aria-hidden="true">51.</strong> Graph Algorithms Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/graph-pathfinding.html"><strong aria-hidden="true">52.</strong> Graph Pathfinding Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/graph-components-traversal.html"><strong aria-hidden="true">53.</strong> Graph Components and Traversal</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/graph-link-prediction.html"><strong aria-hidden="true">54.</strong> Graph Link Prediction and Community Detection</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/descriptive-statistics.html"><strong aria-hidden="true">55.</strong> Descriptive Statistics Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/apriori.html"><strong aria-hidden="true">56.</strong> Apriori Algorithm Theory</a></li><li class="chapter-item expanded affix "><li class="part-title">Real-World Examples from Aprender</li><li class="chapter-item expanded "><a href="../examples/linear-regression.html"><strong aria-hidden="true">57.</strong> Case Study: Linear Regression</a></li><li class="chapter-item expanded "><a href="../examples/boston-housing.html"><strong aria-hidden="true">58.</strong> Case Study: Boston Housing</a></li><li class="chapter-item expanded "><a href="../examples/cross-validation.html"><strong aria-hidden="true">59.</strong> Case Study: Cross-Validation</a></li><li class="chapter-item expanded "><a href="../examples/grid-search-tuning.html"><strong aria-hidden="true">60.</strong> Case Study: Grid Search Hyperparameter Tuning</a></li><li class="chapter-item expanded "><a href="../examples/random-forest.html"><strong aria-hidden="true">61.</strong> Case Study: Random Forest</a></li><li class="chapter-item expanded "><a href="../examples/random-forest-iris.html"><strong aria-hidden="true">62.</strong> Case Study: Random Forest Iris</a></li><li class="chapter-item expanded "><a href="../examples/decision-tree-iris.html"><strong aria-hidden="true">63.</strong> Case Study: Decision Tree Iris</a></li><li class="chapter-item expanded "><a href="../examples/model-serialization.html"><strong aria-hidden="true">64.</strong> Case Study: Model Serialization</a></li><li class="chapter-item expanded "><a href="../examples/kmeans-clustering.html"><strong aria-hidden="true">65.</strong> Case Study: KMeans Clustering</a></li><li class="chapter-item expanded "><a href="../examples/dbscan-clustering.html"><strong aria-hidden="true">66.</strong> Case Study: DBSCAN Clustering</a></li><li class="chapter-item expanded "><a href="../examples/hierarchical-clustering.html"><strong aria-hidden="true">67.</strong> Case Study: Hierarchical Clustering</a></li><li class="chapter-item expanded "><a href="../examples/gmm-clustering.html"><strong aria-hidden="true">68.</strong> Case Study: GMM Clustering</a></li><li class="chapter-item expanded "><a href="../examples/iris-clustering.html"><strong aria-hidden="true">69.</strong> Case Study: Iris Clustering</a></li><li class="chapter-item expanded "><a href="../examples/logistic-regression.html"><strong aria-hidden="true">70.</strong> Case Study: Logistic Regression</a></li><li class="chapter-item expanded "><a href="../examples/knn-iris.html"><strong aria-hidden="true">71.</strong> Case Study: KNN Iris</a></li><li class="chapter-item expanded "><a href="../examples/naive-bayes-iris.html"><strong aria-hidden="true">72.</strong> Case Study: Naive Bayes Iris</a></li><li class="chapter-item expanded "><a href="../examples/beta-binomial-inference.html"><strong aria-hidden="true">73.</strong> Case Study: Beta-Binomial Bayesian Inference</a></li><li class="chapter-item expanded "><a href="../examples/gamma-poisson-inference.html"><strong aria-hidden="true">74.</strong> Case Study: Gamma-Poisson Bayesian Inference</a></li><li class="chapter-item expanded "><a href="../examples/normal-inverse-gamma-inference.html"><strong aria-hidden="true">75.</strong> Case Study: Normal-InverseGamma Bayesian Inference</a></li><li class="chapter-item expanded "><a href="../examples/dirichlet-multinomial-inference.html"><strong aria-hidden="true">76.</strong> Case Study: Dirichlet-Multinomial Bayesian Inference</a></li><li class="chapter-item expanded "><a href="../examples/bayesian-linear-regression.html"><strong aria-hidden="true">77.</strong> Case Study: Bayesian Linear Regression</a></li><li class="chapter-item expanded "><a href="../examples/bayesian-logistic-regression.html" class="active"><strong aria-hidden="true">78.</strong> Case Study: Bayesian Logistic Regression</a></li><li class="chapter-item expanded "><a href="../examples/svm-iris.html"><strong aria-hidden="true">79.</strong> Case Study: SVM Iris</a></li><li class="chapter-item expanded "><a href="../examples/gbm-iris.html"><strong aria-hidden="true">80.</strong> Case Study: Gradient Boosting Iris</a></li><li class="chapter-item expanded "><a href="../examples/regularized-regression.html"><strong aria-hidden="true">81.</strong> Case Study: Regularized Regression</a></li><li class="chapter-item expanded "><a href="../examples/optimizer-demo.html"><strong aria-hidden="true">82.</strong> Case Study: Optimizer Demo</a></li><li class="chapter-item expanded "><a href="../examples/dataframe-basics.html"><strong aria-hidden="true">83.</strong> Case Study: DataFrame Basics</a></li><li class="chapter-item expanded "><a href="../examples/data-preprocessing-scalers.html"><strong aria-hidden="true">84.</strong> Case Study: Data Preprocessing with Scalers</a></li><li class="chapter-item expanded "><a href="../examples/graph-social-network.html"><strong aria-hidden="true">85.</strong> Case Study: Graph Social Network</a></li><li class="chapter-item expanded "><a href="../examples/community-detection.html"><strong aria-hidden="true">86.</strong> Case Study: Community Detection with Louvain</a></li><li class="chapter-item expanded "><a href="../examples/graph-algorithms-comprehensive.html"><strong aria-hidden="true">87.</strong> Case Study: Comprehensive Graph Algorithms</a></li><li class="chapter-item expanded "><a href="../examples/descriptive-statistics.html"><strong aria-hidden="true">88.</strong> Case Study: Descriptive Statistics</a></li><li class="chapter-item expanded "><a href="../examples/bayesian-blocks-histogram.html"><strong aria-hidden="true">89.</strong> Case Study: Bayesian Blocks Histogram</a></li><li class="chapter-item expanded "><a href="../examples/pca-iris.html"><strong aria-hidden="true">90.</strong> Case Study: PCA Iris</a></li><li class="chapter-item expanded "><a href="../examples/isolation-forest-anomaly.html"><strong aria-hidden="true">91.</strong> Case Study: Isolation Forest Anomaly Detection</a></li><li class="chapter-item expanded "><a href="../examples/lof-anomaly.html"><strong aria-hidden="true">92.</strong> Case Study: Local Outlier Factor (LOF)</a></li><li class="chapter-item expanded "><a href="../examples/spectral-clustering.html"><strong aria-hidden="true">93.</strong> Case Study: Spectral Clustering</a></li><li class="chapter-item expanded "><a href="../examples/tsne-visualization.html"><strong aria-hidden="true">94.</strong> Case Study: t-SNE Visualization</a></li><li class="chapter-item expanded "><a href="../examples/market-basket-apriori.html"><strong aria-hidden="true">95.</strong> Case Study: Market Basket Analysis (Apriori)</a></li><li class="chapter-item expanded affix "><li class="part-title">Sprint-Based Development</li><li class="chapter-item expanded "><a href="../sprints/sprint-planning.html"><strong aria-hidden="true">96.</strong> Sprint Planning</a></li><li class="chapter-item expanded "><a href="../sprints/sprint-execution.html"><strong aria-hidden="true">97.</strong> Sprint Execution</a></li><li class="chapter-item expanded "><a href="../sprints/sprint-review.html"><strong aria-hidden="true">98.</strong> Sprint Review</a></li><li class="chapter-item expanded "><a href="../sprints/sprint-retrospective.html"><strong aria-hidden="true">99.</strong> Sprint Retrospective</a></li><li class="chapter-item expanded "><a href="../sprints/issue-management.html"><strong aria-hidden="true">100.</strong> Issue Management</a></li><li class="chapter-item expanded affix "><li class="part-title">Anti-Hallucination Enforcement</li><li class="chapter-item expanded "><a href="../anti-hallucination/test-backed-examples.html"><strong aria-hidden="true">101.</strong> Test-Backed Examples</a></li><li class="chapter-item expanded "><a href="../anti-hallucination/example-verification.html"><strong aria-hidden="true">102.</strong> Example Verification</a></li><li class="chapter-item expanded "><a href="../anti-hallucination/ci-validation.html"><strong aria-hidden="true">103.</strong> CI Validation</a></li><li class="chapter-item expanded "><a href="../anti-hallucination/documentation-testing.html"><strong aria-hidden="true">104.</strong> Documentation Testing</a></li><li class="chapter-item expanded affix "><li class="part-title">Tools and Setup</li><li class="chapter-item expanded "><a href="../tools/development-environment.html"><strong aria-hidden="true">105.</strong> Development Environment</a></li><li class="chapter-item expanded "><a href="../tools/cargo-test.html"><strong aria-hidden="true">106.</strong> cargo test</a></li><li class="chapter-item expanded "><a href="../tools/cargo-clippy.html"><strong aria-hidden="true">107.</strong> cargo clippy</a></li><li class="chapter-item expanded "><a href="../tools/cargo-fmt.html"><strong aria-hidden="true">108.</strong> cargo fmt</a></li><li class="chapter-item expanded "><a href="../tools/cargo-mutants.html"><strong aria-hidden="true">109.</strong> cargo mutants</a></li><li class="chapter-item expanded "><a href="../tools/proptest.html"><strong aria-hidden="true">110.</strong> proptest</a></li><li class="chapter-item expanded "><a href="../tools/criterion.html"><strong aria-hidden="true">111.</strong> criterion</a></li><li class="chapter-item expanded "><a href="../tools/pmat.html"><strong aria-hidden="true">112.</strong> pmat (Toyota AI Toolkit)</a></li><li class="chapter-item expanded affix "><li class="part-title">Best Practices</li><li class="chapter-item expanded "><a href="../best-practices/error-handling.html"><strong aria-hidden="true">113.</strong> Error Handling</a></li><li class="chapter-item expanded "><a href="../best-practices/api-design.html"><strong aria-hidden="true">114.</strong> API Design</a></li><li class="chapter-item expanded "><a href="../best-practices/builder-pattern.html"><strong aria-hidden="true">115.</strong> Builder Pattern</a></li><li class="chapter-item expanded "><a href="../best-practices/type-safety.html"><strong aria-hidden="true">116.</strong> Type Safety</a></li><li class="chapter-item expanded "><a href="../best-practices/performance.html"><strong aria-hidden="true">117.</strong> Performance Considerations</a></li><li class="chapter-item expanded "><a href="../best-practices/documentation-standards.html"><strong aria-hidden="true">118.</strong> Documentation Standards</a></li><li class="chapter-item expanded affix "><li class="part-title">Metrics and Measurement</li><li class="chapter-item expanded "><a href="../metrics/test-coverage.html"><strong aria-hidden="true">119.</strong> Test Coverage</a></li><li class="chapter-item expanded "><a href="../metrics/mutation-score.html"><strong aria-hidden="true">120.</strong> Mutation Score</a></li><li class="chapter-item expanded "><a href="../metrics/cyclomatic-complexity.html"><strong aria-hidden="true">121.</strong> Cyclomatic Complexity</a></li><li class="chapter-item expanded "><a href="../metrics/code-churn.html"><strong aria-hidden="true">122.</strong> Code Churn</a></li><li class="chapter-item expanded "><a href="../metrics/build-times.html"><strong aria-hidden="true">123.</strong> Build Times</a></li><li class="chapter-item expanded "><a href="../metrics/tdg-breakdown.html"><strong aria-hidden="true">124.</strong> TDG Score Breakdown</a></li><li class="chapter-item expanded affix "><li class="part-title">Common Pitfalls</li><li class="chapter-item expanded "><a href="../pitfalls/skipping-tests.html"><strong aria-hidden="true">125.</strong> Skipping Tests</a></li><li class="chapter-item expanded "><a href="../pitfalls/insufficient-coverage.html"><strong aria-hidden="true">126.</strong> Insufficient Test Coverage</a></li><li class="chapter-item expanded "><a href="../pitfalls/ignoring-warnings.html"><strong aria-hidden="true">127.</strong> Ignoring Warnings</a></li><li class="chapter-item expanded "><a href="../pitfalls/over-mocking.html"><strong aria-hidden="true">128.</strong> Over-Mocking</a></li><li class="chapter-item expanded "><a href="../pitfalls/flaky-tests.html"><strong aria-hidden="true">129.</strong> Flaky Tests</a></li><li class="chapter-item expanded "><a href="../pitfalls/technical-debt.html"><strong aria-hidden="true">130.</strong> Technical Debt Accumulation</a></li><li class="chapter-item expanded affix "><li class="part-title">Appendix</li><li class="chapter-item expanded "><a href="../appendix/glossary.html"><strong aria-hidden="true">131.</strong> Glossary</a></li><li class="chapter-item expanded "><a href="../appendix/references.html"><strong aria-hidden="true">132.</strong> References</a></li><li class="chapter-item expanded "><a href="../appendix/further-reading.html"><strong aria-hidden="true">133.</strong> Further Reading</a></li><li class="chapter-item expanded "><a href="../appendix/contributing.html"><strong aria-hidden="true">134.</strong> Contributing to This Book</a></li></ol>
+            </div>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <!-- Track and set sidebar scroll position -->
+        <script>
+            var sidebarScrollbox = document.querySelector('#sidebar .sidebar-scrollbox');
+            sidebarScrollbox.addEventListener('click', function(e) {
+                if (e.target.tagName === 'A') {
+                    sessionStorage.setItem('sidebar-scroll', sidebarScrollbox.scrollTop);
+                }
+            }, { passive: true });
+            var sidebarScrollTop = sessionStorage.getItem('sidebar-scroll');
+            sessionStorage.removeItem('sidebar-scroll');
+            if (sidebarScrollTop) {
+                // preserve sidebar scroll position when navigating via links within sidebar
+                sidebarScrollbox.scrollTop = sidebarScrollTop;
+            } else {
+                // scroll sidebar to current active section when navigating via "next/previous chapter" buttons
+                var activeSection = document.querySelector('#sidebar .active');
+                if (activeSection) {
+                    activeSection.scrollIntoView({ block: 'center' });
+                }
+            }
+        </script>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="sidebar-toggle" class="icon-button" for="sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </label>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">EXTREME TDD - The Aprender Guide to Zero-Defect Machine Learning</h1>
+
+                    <div class="right-buttons">
+                        <a href="../print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                        <a href="https://github.com/paiml/aprender" title="Git repository" aria-label="Git repository">
+                            <i id="git-repository-button" class="fa fa-github"></i>
+                        </a>
+                        <a href="https://github.com/paiml/aprender/edit/main/book/src/examples/bayesian-logistic-regression.md" title="Suggest an edit" aria-label="Suggest an edit">
+                            <i id="git-edit-button" class="fa fa-edit"></i>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="bayesian-logistic-regression"><a class="header" href="#bayesian-logistic-regression">Bayesian Logistic Regression</a></h1>
+<p>Bayesian Logistic Regression extends maximum likelihood logistic regression by treating coefficients as random variables with a prior distribution, enabling uncertainty quantification for classification tasks.</p>
+<h2 id="theory"><a class="header" href="#theory">Theory</a></h2>
+<h3 id="model"><a class="header" href="#model">Model</a></h3>
+<p>$$
+y \sim \text{Bernoulli}(\sigma(X\beta)), \quad \sigma(z) = \frac{1}{1 + e^{-z}}
+$$</p>
+<p>Where:</p>
+<ul>
+<li>$y \in {0, 1}^n$: binary labels</li>
+<li>$X \in \mathbb{R}^{n \times p}$: feature matrix</li>
+<li>$\beta \in \mathbb{R}^p$: coefficient vector</li>
+<li>$\sigma$: sigmoid (logistic) function</li>
+</ul>
+<h3 id="prior-gaussian"><a class="header" href="#prior-gaussian">Prior (Gaussian)</a></h3>
+<p>$$
+\beta \sim \mathcal{N}(0, \lambda^{-1} I)
+$$</p>
+<p>Where $\lambda$ is the precision (inverse variance). Higher $\lambda$ → stronger regularization.</p>
+<h3 id="posterior-approximation-laplace"><a class="header" href="#posterior-approximation-laplace">Posterior Approximation (Laplace)</a></h3>
+<p>The posterior $p(\beta | y, X)$ is <strong>non-conjugate</strong> and has no closed form. The <strong>Laplace approximation</strong> fits a Gaussian at the posterior mode (MAP):</p>
+<p>$$
+\beta | y, X \approx \mathcal{N}(\beta_{\text{MAP}}, H^{-1})
+$$</p>
+<p>Where:</p>
+<ul>
+<li>$\beta_{\text{MAP}}$: maximum a posteriori estimate</li>
+<li>$H$: Hessian of the negative log-posterior at $\beta_{\text{MAP}}$</li>
+</ul>
+<h3 id="map-estimation"><a class="header" href="#map-estimation">MAP Estimation</a></h3>
+<p>Find $\beta_{\text{MAP}}$ by maximizing the log-posterior:</p>
+<p>$$
+\begin{aligned}
+\log p(\beta | y, X) &amp;= \log p(y | X, \beta) + \log p(\beta) + \text{const} \
+&amp;= \sum_{i=1}^n \left[ y_i \log \sigma(x_i^T \beta) + (1 - y_i) \log(1 - \sigma(x_i^T \beta)) \right] - \frac{\lambda}{2} ||\beta||^2
+\end{aligned}
+$$</p>
+<p>Use <strong>gradient ascent</strong>:</p>
+<p>$$
+\nabla_\beta \log p(\beta | y, X) = X^T (y - p) - \lambda \beta
+$$</p>
+<p>where $p_i = \sigma(x_i^T \beta)$.</p>
+<h3 id="hessian-for-uncertainty"><a class="header" href="#hessian-for-uncertainty">Hessian (for Uncertainty)</a></h3>
+<p>The Hessian at $\beta_{\text{MAP}}$ is:</p>
+<p>$$
+H = X^T W X + \lambda I
+$$</p>
+<p>where $W = \text{diag}(p_i (1 - p_i))$ is the Fisher information matrix.</p>
+<p>The posterior covariance is $\Sigma = H^{-1}$.</p>
+<h2 id="example-binary-classification-with-weak-prior"><a class="header" href="#example-binary-classification-with-weak-prior">Example: Binary Classification with Weak Prior</a></h2>
+<pre><code class="language-rust ignore">use aprender::bayesian::BayesianLogisticRegression;
+use aprender::primitives::{Matrix, Vector};
+
+fn main() {
+    // Training data: y = 1 if x &gt; 0, else 0
+    let x = Matrix::from_vec(8, 1, vec![
+        -2.0, -1.5, -1.0, -0.5, 0.5, 1.0, 1.5, 2.0
+    ]).unwrap();
+    let y = Vector::from_vec(vec![
+        0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0
+    ]);
+
+    // Create model with weak prior (precision = 0.1)
+    let mut model = BayesianLogisticRegression::new(0.1);
+
+    // Fit: compute MAP estimate and Hessian
+    model.fit(&amp;x, &amp;y).unwrap();
+
+    // MAP estimate
+    let beta = model.coefficients_map().unwrap();
+    println!(&quot;β (coefficient): {:.4}&quot;, beta[0]);  // ≈ 1.4765
+
+    // Make predictions
+    let x_test = Matrix::from_vec(3, 1, vec![-1.0, 0.0, 1.0]).unwrap();
+    let probas = model.predict_proba(&amp;x_test).unwrap();
+
+    println!(&quot;P(y=1 | x=-1.0): {:.4}&quot;, probas[0]);  // ≈ 0.1860
+    println!(&quot;P(y=1 | x= 0.0): {:.4}&quot;, probas[1]);  // ≈ 0.5000
+    println!(&quot;P(y=1 | x= 1.0): {:.4}&quot;, probas[2]);  // ≈ 0.8140
+}</code></pre>
+<p><strong>Output:</strong></p>
+<pre><code class="language-text">β (coefficient): 1.4765
+P(y=1 | x=-1.0): 0.1860
+P(y=1 | x= 0.0): 0.5000
+P(y=1 | x= 1.0): 0.8140
+</code></pre>
+<h2 id="example-uncertainty-quantification"><a class="header" href="#example-uncertainty-quantification">Example: Uncertainty Quantification</a></h2>
+<p>The Laplace approximation provides <strong>credible intervals</strong> for predicted probabilities:</p>
+<pre><code class="language-rust ignore">use aprender::bayesian::BayesianLogisticRegression;
+use aprender::primitives::{Matrix, Vector};
+
+fn main() {
+    // Small dataset (higher uncertainty)
+    let x = Matrix::from_vec(6, 1, vec![
+        -1.5, -1.0, -0.5, 0.5, 1.0, 1.5
+    ]).unwrap();
+    let y = Vector::from_vec(vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
+
+    let mut model = BayesianLogisticRegression::new(0.1);
+    model.fit(&amp;x, &amp;y).unwrap();
+
+    // Predict with 95% credible intervals
+    let x_test = Matrix::from_vec(2, 1, vec![-2.0, 2.0]).unwrap();
+    let probas = model.predict_proba(&amp;x_test).unwrap();
+    let (lower, upper) = model.predict_proba_interval(&amp;x_test, 0.95).unwrap();
+
+    for i in 0..2 {
+        println!(
+            &quot;x={:.1}: P(y=1)={:.4}, 95% CI=[{:.4}, {:.4}]&quot;,
+            x_test.get(i, 0), probas[i], lower[i], upper[i]
+        );
+    }
+}</code></pre>
+<p><strong>Output:</strong></p>
+<pre><code class="language-text">x=-2.0: P(y=1)=0.0433, 95% CI=[0.0007, 0.7546]
+x= 2.0: P(y=1)=0.9567, 95% CI=[0.2454, 0.9993]
+</code></pre>
+<p>The credible intervals are <strong>wide</strong> due to the small dataset, reflecting high posterior uncertainty.</p>
+<h2 id="example-prior-regularization"><a class="header" href="#example-prior-regularization">Example: Prior Regularization</a></h2>
+<p>The prior precision $\lambda$ acts as <strong>L2 regularization</strong> (ridge penalty):</p>
+<pre><code class="language-rust ignore">use aprender::bayesian::BayesianLogisticRegression;
+use aprender::primitives::{Matrix, Vector};
+
+fn main() {
+    // Tiny dataset (4 samples)
+    let x = Matrix::from_vec(4, 1, vec![-1.0, -0.3, 0.3, 1.0]).unwrap();
+    let y = Vector::from_vec(vec![0.0, 0.0, 1.0, 1.0]);
+
+    // Weak prior (low regularization)
+    let mut weak_model = BayesianLogisticRegression::new(0.1);
+    weak_model.fit(&amp;x, &amp;y).unwrap();
+
+    // Strong prior (high regularization)
+    let mut strong_model = BayesianLogisticRegression::new(2.0);
+    strong_model.fit(&amp;x, &amp;y).unwrap();
+
+    let beta_weak = weak_model.coefficients_map().unwrap();
+    let beta_strong = strong_model.coefficients_map().unwrap();
+
+    println!(&quot;Weak prior (λ=0.1):   β = {:.4}&quot;, beta_weak[0]);
+    println!(&quot;Strong prior (λ=2.0): β = {:.4}&quot;, beta_strong[0]);
+}</code></pre>
+<p><strong>Output:</strong></p>
+<pre><code class="language-text">Weak prior (λ=0.1):   β = 1.4927
+Strong prior (λ=2.0): β = 0.1519
+</code></pre>
+<p>The strong prior <strong>shrinks</strong> the coefficient toward zero, preventing overfitting on the tiny dataset.</p>
+<h2 id="comparison-bayesian-vs-mle-logistic-regression"><a class="header" href="#comparison-bayesian-vs-mle-logistic-regression">Comparison: Bayesian vs. MLE Logistic Regression</a></h2>
+<p>| Aspect | Bayesian (Laplace) | Maximum Likelihood |\n|--------|--------------------|--------------------|
+| <strong>Output</strong> | Posterior distribution over β | Point estimate β̂ |
+| <strong>Uncertainty</strong> | Credible intervals via $H^{-1}$ | Standard errors (asymptotic) |
+| <strong>Regularization</strong> | Natural via prior (λ) | Requires explicit penalty |
+| <strong>Interpretation</strong> | Posterior probability: $p(\beta | \text{data})$ | Frequentist confidence intervals |
+| <strong>Computation</strong> | Gradient ascent + Hessian | Gradient descent (IRLS) |
+| <strong>Small Data</strong> | Regularizes via prior | May overfit |</p>
+<h2 id="implementation-details"><a class="header" href="#implementation-details">Implementation Details</a></h2>
+<h3 id="laplace-approximation-algorithm"><a class="header" href="#laplace-approximation-algorithm">Laplace Approximation Algorithm</a></h3>
+<ol>
+<li><strong>Initialize</strong>: $\beta \leftarrow 0$</li>
+<li><strong>Gradient Ascent</strong> (find MAP):
+<ul>
+<li>Repeat until convergence:
+<ul>
+<li>Compute predictions: $p_i = \sigma(x_i^T \beta)$</li>
+<li>Compute gradient: $\nabla = X^T (y - p) - \lambda \beta$</li>
+<li>Update: $\beta \leftarrow \beta + \eta \nabla$ (learning rate $\eta$)</li>
+</ul>
+</li>
+</ul>
+</li>
+<li><strong>Compute Hessian</strong>:
+<ul>
+<li>$W = \text{diag}(p_i (1 - p_i))$</li>
+<li>$H = X^T W X + \lambda I$</li>
+</ul>
+</li>
+<li><strong>Store</strong>: $\beta_{\text{MAP}}$ and $H$</li>
+</ol>
+<h3 id="credible-intervals-for-predictions"><a class="header" href="#credible-intervals-for-predictions">Credible Intervals for Predictions</a></h3>
+<p>For a test point $x_*$:</p>
+<ol>
+<li>Compute linear predictor variance: $\text{Var}(x_<em>^T \beta) = x_</em>^T H^{-1} x_*$</li>
+<li>Compute z-score for desired level (e.g., 1.96 for 95%)</li>
+<li>Compute interval for $z_* = x_*^T \beta$:
+<ul>
+<li>$z_{\text{lower}} = z_* - 1.96 \sqrt{\text{Var}(z_*)}$</li>
+<li>$z_{\text{upper}} = z_* + 1.96 \sqrt{\text{Var}(z_*)}$</li>
+</ul>
+</li>
+<li>Apply sigmoid to get probability bounds:
+<ul>
+<li>$p_{\text{lower}} = \sigma(z_{\text{lower}})$</li>
+<li>$p_{\text{upper}} = \sigma(z_{\text{upper}})$</li>
+</ul>
+</li>
+</ol>
+<h3 id="numerical-stability"><a class="header" href="#numerical-stability">Numerical Stability</a></h3>
+<ul>
+<li><strong>Cholesky decomposition</strong> to solve $H v = x_*$ (avoids explicit inversion)</li>
+<li><strong>Gradient averaging</strong> by number of samples for stability</li>
+<li><strong>Convergence check</strong> on parameter updates (tolerance $10^{-4}$)</li>
+</ul>
+<h2 id="bayesian-interpretation-of-ridge-regularization"><a class="header" href="#bayesian-interpretation-of-ridge-regularization">Bayesian Interpretation of Ridge Regularization</a></h2>
+<p>Logistic regression with L2 penalty minimizes:</p>
+<p>$$
+L(\beta) = -\sum_{i=1}^n \left[ y_i \log \sigma(x_i^T \beta) + (1 - y_i) \log(1 - \sigma(x_i^T \beta)) \right] + \frac{\lambda}{2} ||\beta||^2
+$$</p>
+<p>This is equivalent to <strong>MAP estimation</strong> with Gaussian prior $\beta \sim \mathcal{N}(0, \lambda^{-1} I)$.</p>
+<p>Bayesian logistic regression extends this by computing the <strong>full posterior</strong>, not just the mode.</p>
+<h2 id="when-to-use"><a class="header" href="#when-to-use">When to Use</a></h2>
+<p><strong>Use Bayesian Logistic Regression when:</strong></p>
+<ul>
+<li>You want <strong>uncertainty quantification</strong> for predictions</li>
+<li>You have <strong>small datasets</strong> (prior regularizes)</li>
+<li>You need <strong>probabilistic predictions</strong> with confidence</li>
+<li>You want <strong>interpretable regularization</strong> via priors</li>
+</ul>
+<p><strong>Use MLE Logistic Regression when:</strong></p>
+<ul>
+<li>You only need <strong>point estimates</strong> and class labels</li>
+<li>You have <strong>large datasets</strong> (prior has little effect)</li>
+<li>You want <strong>computational speed</strong> (no Hessian computation)</li>
+</ul>
+<h2 id="limitations"><a class="header" href="#limitations">Limitations</a></h2>
+<p><strong>Laplace Approximation:</strong></p>
+<ul>
+<li>Assumes posterior is <strong>Gaussian</strong> (may be poor for highly skewed posteriors)</li>
+<li>Only captures <strong>first-order uncertainty</strong> (ignores higher moments)</li>
+<li>Requires <strong>MAP convergence</strong> (may fail for ill-conditioned problems)</li>
+</ul>
+<p><strong>For Better Posterior Estimates:</strong></p>
+<ul>
+<li>Use <strong>MCMC</strong> (Phase 2) for full posterior samples</li>
+<li>Use <strong>Variational Inference</strong> (Phase 2) for scalability</li>
+<li>Use <strong>Expectation Propagation</strong> for non-Gaussian posteriors</li>
+</ul>
+<h2 id="further-reading"><a class="header" href="#further-reading">Further Reading</a></h2>
+<ul>
+<li>Kevin Murphy, <em>Machine Learning: A Probabilistic Perspective</em>, Chapter 8</li>
+<li>Christopher Bishop, <em>Pattern Recognition and Machine Learning</em>, Chapter 4</li>
+<li>Radford Neal, <em>Bayesian Learning for Neural Networks</em> (Laplace approximation)</li>
+</ul>
+<h2 id="see-also"><a class="header" href="#see-also">See Also</a></h2>
+<ul>
+<li><a href="./bayesian-linear-regression.html">Bayesian Linear Regression</a> - Conjugate case with analytical posterior</li>
+<li><a href="#">Logistic Regression</a> - Maximum likelihood baseline (coming soon)</li>
+<li><a href="#">MCMC Methods</a> - Full posterior sampling (Phase 2)</li>
+</ul>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../examples/bayesian-linear-regression.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+
+                            <a rel="next prefetch" href="../examples/svm-iris.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../examples/bayesian-linear-regression.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+
+                    <a rel="next prefetch" href="../examples/svm-iris.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+            </nav>
+
+        </div>
+
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+        <script src="../ace.js"></script>
+        <script src="../editor.js"></script>
+        <script src="../mode-rust.js"></script>
+        <script src="../theme-dawn.js"></script>
+        <script src="../theme-tomorrow_night.js"></script>
+
+        <script src="../elasticlunr.min.js"></script>
+        <script src="../mark.min.js"></script>
+        <script src="../searcher.js"></script>
+
+        <script src="../clipboard.min.js"></script>
+        <script src="../highlight.js"></script>
+        <script src="../book.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+    </div>
+    </body>
+</html>
