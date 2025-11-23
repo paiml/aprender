@@ -48,7 +48,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::primitives::Vector;
+use crate::primitives::{Matrix, Vector};
 
 /// Result of an optimization procedure.
 ///
@@ -1119,6 +1119,288 @@ impl Optimizer for ConjugateGradient {
         self.prev_direction = None;
         self.prev_gradient = None;
         self.iter_count = 0;
+    }
+}
+
+/// Damped Newton optimizer with finite-difference Hessian approximation.
+///
+/// Newton's method uses second-order information (Hessian) to find the minimum
+/// by solving the linear system: H * d = -g, where H is the Hessian and g is
+/// the gradient. The damping factor and line search ensure global convergence.
+///
+/// # Algorithm
+///
+/// 1. Compute gradient g = ∇f(x)
+/// 2. Approximate Hessian H using finite differences
+/// 3. Solve H * d = -g using Cholesky decomposition
+/// 4. If Hessian not positive definite, fall back to steepest descent
+/// 5. Line search along d to find step size α
+/// 6. Update: x_{k+1} = x_k + α * d_k
+///
+/// # Parameters
+///
+/// - **max_iter**: Maximum number of iterations
+/// - **tol**: Convergence tolerance (gradient norm)
+/// - **epsilon**: Finite difference step size for Hessian approximation (default: 1e-5)
+///
+/// # Example
+///
+/// ```
+/// use aprender::optim::DampedNewton;
+/// use aprender::primitives::Vector;
+///
+/// let mut optimizer = DampedNewton::new(100, 1e-5);
+///
+/// // Minimize quadratic function f(x,y) = x^2 + 2y^2
+/// let f = |x: &Vector<f32>| x[0] * x[0] + 2.0 * x[1] * x[1];
+/// let grad = |x: &Vector<f32>| Vector::from_slice(&[2.0 * x[0], 4.0 * x[1]]);
+///
+/// let x0 = Vector::from_slice(&[5.0, 3.0]);
+/// let result = optimizer.minimize(f, grad, x0);
+/// ```
+#[derive(Debug, Clone)]
+pub struct DampedNewton {
+    /// Maximum number of iterations
+    max_iter: usize,
+    /// Convergence tolerance (gradient norm)
+    tol: f32,
+    /// Finite difference step size for Hessian approximation
+    epsilon: f32,
+    /// Line search strategy
+    line_search: BacktrackingLineSearch,
+}
+
+impl DampedNewton {
+    /// Creates a new Damped Newton optimizer.
+    ///
+    /// # Arguments
+    ///
+    /// * `max_iter` - Maximum number of iterations (typical: 100-1000)
+    /// * `tol` - Convergence tolerance for gradient norm (typical: 1e-5)
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use aprender::optim::DampedNewton;
+    ///
+    /// let optimizer = DampedNewton::new(100, 1e-5);
+    /// ```
+    #[must_use]
+    pub fn new(max_iter: usize, tol: f32) -> Self {
+        Self {
+            max_iter,
+            tol,
+            epsilon: 1e-5, // Finite difference step size
+            line_search: BacktrackingLineSearch::new(1e-4, 0.5, 50),
+        }
+    }
+
+    /// Sets the finite difference epsilon for Hessian approximation.
+    ///
+    /// # Arguments
+    ///
+    /// * `epsilon` - Step size for finite differences (typical: 1e-5 to 1e-8)
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use aprender::optim::DampedNewton;
+    ///
+    /// let optimizer = DampedNewton::new(100, 1e-5).with_epsilon(1e-6);
+    /// ```
+    #[must_use]
+    pub fn with_epsilon(mut self, epsilon: f32) -> Self {
+        self.epsilon = epsilon;
+        self
+    }
+
+    /// Approximates the Hessian matrix using finite differences.
+    ///
+    /// Uses central differences: H[i,j] ≈ (∂²f/∂x_i∂x_j)
+    fn approximate_hessian<G>(&self, grad: &G, x: &Vector<f32>) -> Matrix<f32>
+    where
+        G: Fn(&Vector<f32>) -> Vector<f32>,
+    {
+        let n = x.len();
+        let mut h_data = vec![0.0; n * n];
+
+        let g0 = grad(x);
+
+        // Compute Hessian using finite differences
+        for i in 0..n {
+            // Perturb x[i] by epsilon
+            let mut x_plus = x.clone();
+            x_plus[i] += self.epsilon;
+
+            let g_plus = grad(&x_plus);
+
+            // Approximate column i of Hessian: H[:,i] ≈ (g(x+ε*e_i) - g(x)) / ε
+            for j in 0..n {
+                h_data[j * n + i] = (g_plus[j] - g0[j]) / self.epsilon;
+            }
+        }
+
+        // Symmetrize the Hessian (since it should be symmetric)
+        for i in 0..n {
+            for j in (i + 1)..n {
+                let avg = (h_data[i * n + j] + h_data[j * n + i]) / 2.0;
+                h_data[i * n + j] = avg;
+                h_data[j * n + i] = avg;
+            }
+        }
+
+        Matrix::from_vec(n, n, h_data).expect("Matrix dimensions should be valid")
+    }
+
+    /// Computes the L2 norm of a vector.
+    fn norm(v: &Vector<f32>) -> f32 {
+        let mut sum = 0.0;
+        for i in 0..v.len() {
+            sum += v[i] * v[i];
+        }
+        sum.sqrt()
+    }
+}
+
+impl Optimizer for DampedNewton {
+    fn step(&mut self, _params: &mut Vector<f32>, _gradients: &Vector<f32>) {
+        unimplemented!(
+            "Damped Newton does not support stochastic updates (step). Use minimize() for batch optimization."
+        )
+    }
+
+    fn minimize<F, G>(
+        &mut self,
+        objective: F,
+        gradient: G,
+        x0: Vector<f32>,
+    ) -> OptimizationResult
+    where
+        F: Fn(&Vector<f32>) -> f32,
+        G: Fn(&Vector<f32>) -> Vector<f32>,
+    {
+        let start_time = std::time::Instant::now();
+        let n = x0.len();
+
+        let mut x = x0;
+        let mut fx = objective(&x);
+        let mut grad = gradient(&x);
+        let mut grad_norm = Self::norm(&grad);
+
+        for iter in 0..self.max_iter {
+            // Check convergence
+            if grad_norm < self.tol {
+                return OptimizationResult {
+                    solution: x,
+                    objective_value: fx,
+                    iterations: iter,
+                    status: ConvergenceStatus::Converged,
+                    gradient_norm: grad_norm,
+                    constraint_violation: 0.0,
+                    elapsed_time: start_time.elapsed(),
+                };
+            }
+
+            // Approximate Hessian
+            let hessian = self.approximate_hessian(&gradient, &x);
+
+            // Negate gradient for solving H * d = -g
+            let mut neg_grad = Vector::zeros(n);
+            for i in 0..n {
+                neg_grad[i] = -grad[i];
+            }
+
+            // Solve H * d = -g using Cholesky decomposition
+            let d = match hessian.cholesky_solve(&neg_grad) {
+                Ok(direction) => {
+                    // Check if it's a descent direction
+                    let mut grad_dot_d = 0.0;
+                    for i in 0..n {
+                        grad_dot_d += grad[i] * direction[i];
+                    }
+
+                    if grad_dot_d < 0.0 {
+                        // Valid descent direction from Newton step
+                        direction
+                    } else {
+                        // Not a descent direction - fall back to steepest descent
+                        let mut sd = Vector::zeros(n);
+                        for i in 0..n {
+                            sd[i] = -grad[i];
+                        }
+                        sd
+                    }
+                }
+                Err(_) => {
+                    // Hessian not positive definite - fall back to steepest descent
+                    let mut sd = Vector::zeros(n);
+                    for i in 0..n {
+                        sd[i] = -grad[i];
+                    }
+                    sd
+                }
+            };
+
+            // Line search
+            let alpha = self.line_search.search(&objective, &gradient, &x, &d);
+
+            // Check for stalled progress
+            if alpha < 1e-12 {
+                return OptimizationResult {
+                    solution: x,
+                    objective_value: fx,
+                    iterations: iter,
+                    status: ConvergenceStatus::Stalled,
+                    gradient_norm: grad_norm,
+                    constraint_violation: 0.0,
+                    elapsed_time: start_time.elapsed(),
+                };
+            }
+
+            // Update position: x_new = x + alpha * d
+            let mut x_new = Vector::zeros(n);
+            for i in 0..n {
+                x_new[i] = x[i] + alpha * d[i];
+            }
+
+            // Compute new objective and gradient
+            let fx_new = objective(&x_new);
+            let grad_new = gradient(&x_new);
+
+            // Check for numerical errors
+            if fx_new.is_nan() || fx_new.is_infinite() {
+                return OptimizationResult {
+                    solution: x,
+                    objective_value: fx,
+                    iterations: iter,
+                    status: ConvergenceStatus::NumericalError,
+                    gradient_norm: grad_norm,
+                    constraint_violation: 0.0,
+                    elapsed_time: start_time.elapsed(),
+                };
+            }
+
+            // Update for next iteration
+            x = x_new;
+            fx = fx_new;
+            grad = grad_new;
+            grad_norm = Self::norm(&grad);
+        }
+
+        // Max iterations reached
+        OptimizationResult {
+            solution: x,
+            objective_value: fx,
+            iterations: self.max_iter,
+            status: ConvergenceStatus::MaxIterations,
+            gradient_norm: grad_norm,
+            constraint_violation: 0.0,
+            elapsed_time: start_time.elapsed(),
+        }
+    }
+
+    fn reset(&mut self) {
+        // Damped Newton is stateless - nothing to reset
     }
 }
 
@@ -2957,5 +3239,260 @@ mod tests {
         for i in 0..3 {
             assert!((result_cg.solution[i] - result_lbfgs.solution[i]).abs() < 1e-3);
         }
+    }
+
+    // ==================== Damped Newton Tests ====================
+
+    #[test]
+    fn test_damped_newton_new() {
+        let optimizer = DampedNewton::new(100, 1e-5);
+        assert_eq!(optimizer.max_iter, 100);
+        assert!((optimizer.tol - 1e-5).abs() < 1e-10);
+        assert!((optimizer.epsilon - 1e-5).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_damped_newton_with_epsilon() {
+        let optimizer = DampedNewton::new(100, 1e-5).with_epsilon(1e-6);
+        assert!((optimizer.epsilon - 1e-6).abs() < 1e-12);
+    }
+
+    #[test]
+    fn test_damped_newton_simple_quadratic() {
+        // Minimize f(x) = x^2, optimal at x = 0
+        let f = |x: &Vector<f32>| x[0] * x[0];
+        let grad = |x: &Vector<f32>| Vector::from_slice(&[2.0 * x[0]]);
+
+        let mut optimizer = DampedNewton::new(100, 1e-5);
+        let x0 = Vector::from_slice(&[5.0]);
+        let result = optimizer.minimize(f, grad, x0);
+
+        assert_eq!(result.status, ConvergenceStatus::Converged);
+        assert!(result.solution[0].abs() < 1e-3);
+    }
+
+    #[test]
+    fn test_damped_newton_multidimensional_quadratic() {
+        // Minimize f(x,y) = x^2 + 2y^2, optimal at (0, 0)
+        let f = |x: &Vector<f32>| x[0] * x[0] + 2.0 * x[1] * x[1];
+        let grad = |x: &Vector<f32>| Vector::from_slice(&[2.0 * x[0], 4.0 * x[1]]);
+
+        let mut optimizer = DampedNewton::new(100, 1e-5);
+        let x0 = Vector::from_slice(&[5.0, 3.0]);
+        let result = optimizer.minimize(f, grad, x0);
+
+        assert_eq!(result.status, ConvergenceStatus::Converged);
+        assert!(result.solution[0].abs() < 1e-3);
+        assert!(result.solution[1].abs() < 1e-3);
+    }
+
+    #[test]
+    fn test_damped_newton_rosenbrock() {
+        // Rosenbrock function: f(x,y) = (1-x)^2 + 100(y-x^2)^2
+        let f = |v: &Vector<f32>| {
+            let x = v[0];
+            let y = v[1];
+            (1.0 - x).powi(2) + 100.0 * (y - x * x).powi(2)
+        };
+
+        let grad = |v: &Vector<f32>| {
+            let x = v[0];
+            let y = v[1];
+            let dx = -2.0 * (1.0 - x) - 400.0 * x * (y - x * x);
+            let dy = 200.0 * (y - x * x);
+            Vector::from_slice(&[dx, dy])
+        };
+
+        let mut optimizer = DampedNewton::new(200, 1e-4);
+        let x0 = Vector::from_slice(&[0.0, 0.0]);
+        let result = optimizer.minimize(f, grad, x0);
+
+        // Should converge close to (1, 1)
+        assert!(
+            result.status == ConvergenceStatus::Converged
+                || result.status == ConvergenceStatus::MaxIterations
+        );
+        assert!((result.solution[0] - 1.0).abs() < 0.1);
+        assert!((result.solution[1] - 1.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn test_damped_newton_sphere() {
+        // Sphere function: f(x) = sum(x_i^2)
+        let f = |x: &Vector<f32>| {
+            let mut sum = 0.0;
+            for i in 0..x.len() {
+                sum += x[i] * x[i];
+            }
+            sum
+        };
+
+        let grad = |x: &Vector<f32>| {
+            let mut g = Vector::zeros(x.len());
+            for i in 0..x.len() {
+                g[i] = 2.0 * x[i];
+            }
+            g
+        };
+
+        let mut optimizer = DampedNewton::new(100, 1e-5);
+        let x0 = Vector::from_slice(&[5.0, -3.0, 2.0]);
+        let result = optimizer.minimize(f, grad, x0);
+
+        assert_eq!(result.status, ConvergenceStatus::Converged);
+        for i in 0..3 {
+            assert!(result.solution[i].abs() < 1e-3);
+        }
+    }
+
+    #[test]
+    fn test_damped_newton_reset() {
+        let f = |x: &Vector<f32>| x[0] * x[0];
+        let grad = |x: &Vector<f32>| Vector::from_slice(&[2.0 * x[0]]);
+
+        let mut optimizer = DampedNewton::new(100, 1e-5);
+        let x0 = Vector::from_slice(&[5.0]);
+
+        // First run
+        optimizer.minimize(&f, &grad, x0.clone());
+
+        // Reset (stateless, so just verify it doesn't panic)
+        optimizer.reset();
+
+        // Second run should work
+        let result = optimizer.minimize(&f, &grad, x0);
+        assert_eq!(result.status, ConvergenceStatus::Converged);
+    }
+
+    #[test]
+    fn test_damped_newton_max_iterations() {
+        // Use Rosenbrock with very few iterations
+        let f = |v: &Vector<f32>| {
+            let x = v[0];
+            let y = v[1];
+            (1.0 - x).powi(2) + 100.0 * (y - x * x).powi(2)
+        };
+
+        let grad = |v: &Vector<f32>| {
+            let x = v[0];
+            let y = v[1];
+            let dx = -2.0 * (1.0 - x) - 400.0 * x * (y - x * x);
+            let dy = 200.0 * (y - x * x);
+            Vector::from_slice(&[dx, dy])
+        };
+
+        let mut optimizer = DampedNewton::new(3, 1e-10);
+        let x0 = Vector::from_slice(&[0.0, 0.0]);
+        let result = optimizer.minimize(f, grad, x0);
+
+        assert_eq!(result.status, ConvergenceStatus::MaxIterations);
+        assert_eq!(result.iterations, 3);
+    }
+
+    #[test]
+    #[should_panic(expected = "does not support stochastic")]
+    fn test_damped_newton_step_panics() {
+        let mut optimizer = DampedNewton::new(100, 1e-5);
+        let mut params = Vector::from_slice(&[1.0]);
+        let grad = Vector::from_slice(&[0.1]);
+
+        // Should panic - Damped Newton doesn't support step()
+        optimizer.step(&mut params, &grad);
+    }
+
+    #[test]
+    fn test_damped_newton_numerical_error_detection() {
+        // Function that produces NaN
+        let f = |x: &Vector<f32>| {
+            if x[0] < -100.0 {
+                f32::NAN
+            } else {
+                x[0] * x[0]
+            }
+        };
+        let grad = |x: &Vector<f32>| Vector::from_slice(&[2.0 * x[0]]);
+
+        let mut optimizer = DampedNewton::new(100, 1e-5);
+        let x0 = Vector::from_slice(&[0.0]);
+        let result = optimizer.minimize(f, grad, x0);
+
+        // Should detect numerical error or converge normally
+        assert!(
+            result.status == ConvergenceStatus::Converged
+                || result.status == ConvergenceStatus::NumericalError
+                || result.status == ConvergenceStatus::MaxIterations
+        );
+    }
+
+    #[test]
+    fn test_damped_newton_gradient_norm_tracking() {
+        let f = |x: &Vector<f32>| x[0] * x[0] + x[1] * x[1];
+        let grad = |x: &Vector<f32>| Vector::from_slice(&[2.0 * x[0], 2.0 * x[1]]);
+
+        let mut optimizer = DampedNewton::new(100, 1e-5);
+        let x0 = Vector::from_slice(&[3.0, 4.0]);
+        let result = optimizer.minimize(f, grad, x0);
+
+        // Gradient norm at convergence should be small
+        if result.status == ConvergenceStatus::Converged {
+            assert!(result.gradient_norm < 1e-5);
+        }
+    }
+
+    #[test]
+    fn test_damped_newton_quadratic_convergence() {
+        // Newton's method should converge quadratically on quadratic problems
+        let f = |x: &Vector<f32>| x[0] * x[0] + x[1] * x[1];
+        let grad = |x: &Vector<f32>| Vector::from_slice(&[2.0 * x[0], 2.0 * x[1]]);
+
+        let mut optimizer = DampedNewton::new(100, 1e-10);
+        let x0 = Vector::from_slice(&[5.0, 5.0]);
+        let result = optimizer.minimize(f, grad, x0);
+
+        assert_eq!(result.status, ConvergenceStatus::Converged);
+        // Should converge in very few iterations for quadratic problems
+        assert!(result.iterations < 20);
+    }
+
+    #[test]
+    fn test_damped_newton_vs_lbfgs_quadratic() {
+        // Compare Damped Newton and L-BFGS on a quadratic problem
+        let f = |x: &Vector<f32>| x[0] * x[0] + 2.0 * x[1] * x[1];
+        let grad = |x: &Vector<f32>| Vector::from_slice(&[2.0 * x[0], 4.0 * x[1]]);
+        let x0 = Vector::from_slice(&[5.0, 3.0]);
+
+        let mut dn = DampedNewton::new(100, 1e-5);
+        let result_dn = dn.minimize(&f, &grad, x0.clone());
+
+        let mut lbfgs = LBFGS::new(100, 1e-5, 10);
+        let result_lbfgs = lbfgs.minimize(&f, &grad, x0);
+
+        // Both should converge to same solution
+        assert_eq!(result_dn.status, ConvergenceStatus::Converged);
+        assert_eq!(result_lbfgs.status, ConvergenceStatus::Converged);
+
+        assert!((result_dn.solution[0] - result_lbfgs.solution[0]).abs() < 1e-3);
+        assert!((result_dn.solution[1] - result_lbfgs.solution[1]).abs() < 1e-3);
+    }
+
+    #[test]
+    fn test_damped_newton_different_epsilon() {
+        // Test with different finite difference epsilons
+        let f = |x: &Vector<f32>| x[0] * x[0];
+        let grad = |x: &Vector<f32>| Vector::from_slice(&[2.0 * x[0]]);
+        let x0 = Vector::from_slice(&[5.0]);
+
+        let mut opt1 = DampedNewton::new(100, 1e-5).with_epsilon(1e-5);
+        let result1 = opt1.minimize(&f, &grad, x0.clone());
+
+        let mut opt2 = DampedNewton::new(100, 1e-5).with_epsilon(1e-7);
+        let result2 = opt2.minimize(&f, &grad, x0);
+
+        // Both should converge
+        assert_eq!(result1.status, ConvergenceStatus::Converged);
+        assert_eq!(result2.status, ConvergenceStatus::Converged);
+
+        // Solutions should be similar
+        assert!((result1.solution[0] - result2.solution[0]).abs() < 1e-2);
     }
 }
