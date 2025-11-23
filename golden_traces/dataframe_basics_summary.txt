@@ -1,0 +1,62 @@
+========================
+
+DataFrame Shape: (5, 3)
+Columns: ["age", "income", "score"]
+
+Ages: [25.0, 30.0, 35.0, 40.0, 45.0]
+Mean age: 35.0
+
+Selected columns shape: (5, 2)
+Row 2: [35.0, 75000.0, 88.0]
+
+Matrix shape: (5, 3)
+First row of matrix: [25, 50000, 85]
+
+Descriptive Statistics:
+    Column       Mean        Std        Min        Max
+----------------------------------------------------
+       age       35.0        7.1       25.0       45.0
+    income    77000.0    21354.2    50000.0   110000.0
+     score       90.0        3.4       85.0       95.0
+
+--- Linear Regression with DataFrame ---
+
+Coefficients:
+  age coefficient:    0.440407
+  income coefficient: -0.0000001333
+  intercept:          74.5960
+
+R² Score: 0.8345
+
+Predictions vs Actual:
+  Actual     Pred
+    85.0     85.6
+    90.0     87.8
+    88.0     90.0
+    92.0     92.2
+    95.0     94.4
+
+DataFrame operations completed successfully!
+% time     seconds  usecs/call     calls    errors syscall
+------ ----------- ----------- --------- --------- ----------------
+ 26.43    0.000226           7        32           write
+ 18.60    0.000159          12        13           mmap
+  7.02    0.000060          10         6           mprotect
+  4.09    0.000035           7         5           rt_sigaction
+  6.43    0.000055          11         5           read
+  4.68    0.000040          10         4           close
+  2.92    0.000025           6         4           pread64
+  6.43    0.000055          13         4           openat
+  3.04    0.000026           6         4           unknown
+  4.33    0.000037           9         4           newfstatat
+  2.46    0.000021           7         3           sigaltstack
+  4.21    0.000036          12         3           brk
+  2.57    0.000022          11         2           munmap
+  2.22    0.000019           9         2         1 arch_prctl
+  1.40    0.000012          12         1         1 access
+  0.70    0.000006           6         1           set_tid_address
+  0.82    0.000007           7         1           set_robust_list
+  0.82    0.000007           7         1           getrandom
+  0.82    0.000007           7         1           poll
+------ ----------- ----------- --------- --------- ----------------
+100.00    0.000855           8        96         2 total
