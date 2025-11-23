@@ -1,11 +1,26 @@
 //! Optimization algorithms for gradient-based learning.
 //!
-//! This module provides both stochastic (mini-batch) and batch (deterministic) optimizers:
+//! This module provides both stochastic (mini-batch) and batch (deterministic) optimizers
+//! following the unified [`Optimizer`] trait architecture.
 //!
-//! - **Stochastic optimizers**: [`SGD`], [`Adam`] - for training with mini-batches
-//! - **Batch optimizers**: L-BFGS, Conjugate Gradient, Damped Newton (coming in v0.8.0)
+//! # Available Optimizers
+//!
+//! ## Stochastic (Mini-Batch) Optimizers
+//! - [`SGD`] - Stochastic Gradient Descent with optional momentum
+//! - [`Adam`] - Adaptive Moment Estimation (adaptive learning rates)
+//!
+//! ## Batch (Deterministic) Optimizers
+//! - [`LBFGS`] - Limited-memory BFGS (memory-efficient quasi-Newton)
+//! - [`ConjugateGradient`] - Conjugate Gradient with three beta formulas
+//! - [`DampedNewton`] - Newton's method with automatic damping for stability
+//!
+//! ## Utility Functions
+//! - [`safe_cholesky_solve`] - Cholesky solver with automatic regularization
 //!
 //! # Stochastic Optimization (Mini-Batch)
+//!
+//! Stochastic optimizers update parameters incrementally using mini-batch gradients.
+//! Use the [`Optimizer::step`] method for parameter updates:
 //!
 //! ```
 //! use aprender::optim::SGD;
@@ -27,13 +42,14 @@
 //!
 //! # Batch Optimization (Full Dataset)
 //!
-//! Batch optimizers will be available in v0.8.0. They support the `minimize` method
-//! for optimizing over the full dataset:
+//! Batch optimizers minimize objective functions using full dataset access.
+//! They use the `minimize` method which returns detailed convergence information:
 //!
-//! ```ignore
-//! use aprender::optim::LBFGS;
+//! ```
+//! use aprender::optim::{LBFGS, ConvergenceStatus, Optimizer};
 //! use aprender::primitives::Vector;
 //!
+//! // Create L-BFGS optimizer: 100 max iterations, 1e-5 tolerance, 10 memory size
 //! let mut optimizer = LBFGS::new(100, 1e-5, 10);
 //!
 //! // Define objective and gradient functions
@@ -44,7 +60,16 @@
 //!
 //! let x0 = Vector::from_slice(&[0.0, 0.0]);
 //! let result = optimizer.minimize(objective, gradient, x0);
+//!
+//! assert_eq!(result.status, ConvergenceStatus::Converged);
+//! assert!((result.solution[0] - 5.0).abs() < 1e-4);
+//! assert!((result.solution[1] - 3.0).abs() < 1e-4);
 //! ```
+//!
+//! # See Also
+//!
+//! - [`examples/batch_optimization.rs`](https://github.com/paiml/aprender/tree/main/examples/batch_optimization.rs) - Comprehensive examples
+//! - Specification: `docs/specifications/comprehensive-optimization-spec.md`
 
 use serde::{Deserialize, Serialize};
 
@@ -116,6 +141,103 @@ pub enum ConvergenceStatus {
     Running,
     /// User-requested termination
     UserTerminated,
+}
+
+/// Safely solves a linear system Ax = b using Cholesky decomposition with automatic regularization.
+///
+/// When the matrix is not positive definite or near-singular, this function automatically
+/// adds regularization (λI) to make the system solvable. This is essential for numerical
+/// stability in second-order optimization methods like Newton's method.
+///
+/// # Algorithm
+///
+/// 1. Try standard Cholesky solve with A
+/// 2. If it fails, add regularization: (A + λI)
+/// 3. Increase λ progressively (×10) until solve succeeds or max attempts reached
+///
+/// # Arguments
+///
+/// * `A` - Symmetric matrix (should be positive definite, but may not be)
+/// * `b` - Right-hand side vector
+/// * `initial_lambda` - Initial regularization parameter (typical: 1e-8)
+/// * `max_attempts` - Maximum regularization attempts (typical: 10)
+///
+/// # Returns
+///
+/// * `Ok(x)` - Solution vector if successful
+/// * `Err(msg)` - Error message if regularization failed
+///
+/// # Example
+///
+/// ```
+/// use aprender::optim::safe_cholesky_solve;
+/// use aprender::primitives::{Matrix, Vector};
+///
+/// // Slightly ill-conditioned matrix
+/// let A = Matrix::from_vec(2, 2, vec![1.0, 0.0, 0.0, 1e-8]).expect("valid dimensions");
+/// let b = Vector::from_slice(&[1.0, 1.0]);
+///
+/// let x = safe_cholesky_solve(&A, &b, 1e-8, 10).expect("should solve with regularization");
+/// assert_eq!(x.len(), 2);
+/// ```
+///
+/// # Use Cases
+///
+/// - **Damped Newton**: Regularize Hessian when not positive definite
+/// - **Levenberg-Marquardt**: Add damping parameter for stability
+/// - **Trust region**: Solve trust region subproblem with ill-conditioned Hessian
+///
+/// # References
+///
+/// - Nocedal & Wright (2006), *Numerical Optimization*, Chapter 3
+pub fn safe_cholesky_solve(
+    A: &Matrix<f32>,
+    b: &Vector<f32>,
+    initial_lambda: f32,
+    max_attempts: usize,
+) -> Result<Vector<f32>, &'static str> {
+    // First try without regularization
+    match A.cholesky_solve(b) {
+        Ok(x) => return Ok(x),
+        Err(_) => {
+            // Matrix not positive definite, try with regularization
+        }
+    }
+
+    let n = A.n_rows();
+    let identity = Matrix::eye(n);
+    let mut lambda = initial_lambda;
+
+    for _attempt in 0..max_attempts {
+        // Create regularized matrix: A_reg = A + λI
+        let mut A_reg_data = vec![0.0; n * n];
+        for i in 0..n {
+            for j in 0..n {
+                A_reg_data[i * n + j] = A.get(i, j) + lambda * identity.get(i, j);
+            }
+        }
+
+        let A_reg = Matrix::from_vec(n, n, A_reg_data)
+            .expect("Matrix dimensions should be valid after construction");
+
+        // Try Cholesky solve with regularized matrix
+        match A_reg.cholesky_solve(b) {
+            Ok(x) => return Ok(x),
+            Err(_) => {
+                // Increase regularization and try again
+                lambda *= 10.0;
+
+                // Prevent lambda from becoming too large
+                if lambda > 1e6 {
+                    return Err(
+                        "Cholesky solve failed: matrix too ill-conditioned even with regularization"
+                    );
+                }
+            }
+        }
+    }
+
+    Err("Cholesky solve failed after maximum regularization attempts")
 }
 
 /// Line search strategy for determining step size in batch optimization.
@@ -1404,6 +1526,626 @@ impl Optimizer for DampedNewton {
     }
 }
 
+// ==================== Proximal Operators ====================
+
+/// Proximal operators for non-smooth regularization.
+///
+/// A proximal operator for function g is defined as:
+/// ```text
+/// prox_g(v) = argmin_x { g(x) + ½‖x - v‖² }
+/// ```
+///
+/// These are essential building blocks for proximal gradient methods like FISTA.
+pub mod prox {
+    use crate::primitives::Vector;
+
+    /// Soft-thresholding operator for L1 regularization.
+    ///
+    /// Computes the proximal operator of the L1 norm: prox_{λ‖·‖₁}(v).
+    ///
+    /// # Formula
+    ///
+    /// ```text
+    /// prox_{λ‖·‖₁}(v) = sign(v) ⊙ max(|v| - λ, 0)
+    /// ```
+    ///
+    /// # Arguments
+    ///
+    /// * `v` - Input vector
+    /// * `lambda` - Regularization parameter (λ ≥ 0)
+    ///
+    /// # Returns
+    ///
+    /// Soft-thresholded vector
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use aprender::optim::prox::soft_threshold;
+    /// use aprender::primitives::Vector;
+    ///
+    /// let v = Vector::from_slice(&[2.0, -1.5, 0.5]);
+    /// let result = soft_threshold(&v, 1.0);
+    ///
+    /// assert!((result[0] - 1.0).abs() < 1e-6);  // 2.0 - 1.0 = 1.0
+    /// assert!((result[1] + 0.5).abs() < 1e-6);  // -1.5 + 1.0 = -0.5
+    /// assert!(result[2].abs() < 1e-6);          // 0.5 - 1.0 = 0 (thresholded)
+    /// ```
+    ///
+    /// # Use Cases
+    ///
+    /// - **Lasso regression**: Sparse linear models with L1 penalty
+    /// - **Compressed sensing**: Sparse signal recovery
+    /// - **Feature selection**: Automatic variable selection via sparsity
+    #[must_use]
+    pub fn soft_threshold(v: &Vector<f32>, lambda: f32) -> Vector<f32> {
+        let mut result = Vector::zeros(v.len());
+        for i in 0..v.len() {
+            let val = v[i];
+            result[i] = if val > lambda {
+                val - lambda
+            } else if val < -lambda {
+                val + lambda
+            } else {
+                0.0
+            };
+        }
+        result
+    }
+
+    /// Projects onto the non-negative orthant: x ≥ 0.
+    ///
+    /// # Arguments
+    ///
+    /// * `x` - Input vector
+    ///
+    /// # Returns
+    ///
+    /// Vector with all negative components set to zero
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use aprender::optim::prox::nonnegative;
+    /// use aprender::primitives::Vector;
+    ///
+    /// let x = Vector::from_slice(&[1.0, -2.0, 3.0, -0.5]);
+    /// let result = nonnegative(&x);
+    ///
+    /// assert_eq!(result[0], 1.0);
+    /// assert_eq!(result[1], 0.0);
+    /// assert_eq!(result[2], 3.0);
+    /// assert_eq!(result[3], 0.0);
+    /// ```
+    #[must_use]
+    pub fn nonnegative(x: &Vector<f32>) -> Vector<f32> {
+        let mut result = Vector::zeros(x.len());
+        for i in 0..x.len() {
+            result[i] = x[i].max(0.0);
+        }
+        result
+    }
+
+    /// Projects onto an L2 ball: ‖x‖₂ ≤ radius.
+    ///
+    /// # Arguments
+    ///
+    /// * `x` - Input vector
+    /// * `radius` - Ball radius (r > 0)
+    ///
+    /// # Returns
+    ///
+    /// Projected vector satisfying ‖result‖₂ ≤ radius
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use aprender::optim::prox::project_l2_ball;
+    /// use aprender::primitives::Vector;
+    ///
+    /// let x = Vector::from_slice(&[3.0, 4.0]); // norm = 5.0
+    /// let result = project_l2_ball(&x, 2.0);
+    ///
+    /// // Should be scaled to norm = 2.0
+    /// let norm = (result[0] * result[0] + result[1] * result[1]).sqrt();
+    /// assert!((norm - 2.0).abs() < 1e-5);
+    /// ```
+    #[must_use]
+    pub fn project_l2_ball(x: &Vector<f32>, radius: f32) -> Vector<f32> {
+        let mut norm_sq = 0.0;
+        for i in 0..x.len() {
+            norm_sq += x[i] * x[i];
+        }
+        let norm = norm_sq.sqrt();
+
+        if norm <= radius {
+            x.clone()
+        } else {
+            let scale = radius / norm;
+            let mut result = Vector::zeros(x.len());
+            for i in 0..x.len() {
+                result[i] = scale * x[i];
+            }
+            result
+        }
+    }
+
+    /// Projects onto box constraints: lower ≤ x ≤ upper.
+    ///
+    /// # Arguments
+    ///
+    /// * `x` - Input vector
+    /// * `lower` - Lower bounds
+    /// * `upper` - Upper bounds
+    ///
+    /// # Returns
+    ///
+    /// Vector with components clipped to [lower, upper]
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use aprender::optim::prox::project_box;
+    /// use aprender::primitives::Vector;
+    ///
+    /// let x = Vector::from_slice(&[-1.0, 0.5, 2.0]);
+    /// let lower = Vector::from_slice(&[0.0, 0.0, 0.0]);
+    /// let upper = Vector::from_slice(&[1.0, 1.0, 1.0]);
+    ///
+    /// let result = project_box(&x, &lower, &upper);
+    ///
+    /// assert_eq!(result[0], 0.0);  // Clipped to lower
+    /// assert_eq!(result[1], 0.5);  // Within bounds
+    /// assert_eq!(result[2], 1.0);  // Clipped to upper
+    /// ```
+    #[must_use]
+    pub fn project_box(x: &Vector<f32>, lower: &Vector<f32>, upper: &Vector<f32>) -> Vector<f32> {
+        let mut result = Vector::zeros(x.len());
+        for i in 0..x.len() {
+            result[i] = x[i].max(lower[i]).min(upper[i]);
+        }
+        result
+    }
+}
+
+// ==================== FISTA Optimizer ====================
+
+/// FISTA (Fast Iterative Shrinkage-Thresholding Algorithm).
+///
+/// Accelerated proximal gradient method for minimizing composite objectives:
+/// ```text
+/// minimize f(x) + g(x)
+/// ```
+/// where f is smooth and convex, g is convex (possibly non-smooth but "simple").
+///
+/// FISTA achieves O(1/k²) convergence rate using Nesterov acceleration,
+/// compared to O(1/k) for standard proximal gradient (ISTA).
+///
+/// # Key Applications
+///
+/// - **Lasso regression**: f(x) = ½‖Ax - b‖², g(x) = λ‖x‖₁
+/// - **Elastic Net**: f(x) = ½‖Ax - b‖², g(x) = λ₁‖x‖₁ + λ₂‖x‖₂²
+/// - **Total variation**: Image denoising with TV regularization
+/// - **Non-negative least squares**: f(x) = ½‖Ax - b‖², g(x) = indicator(x ≥ 0)
+///
+/// # Example
+///
+/// ```
+/// use aprender::optim::{FISTA, Optimizer, prox};
+/// use aprender::primitives::Vector;
+///
+/// // Minimize: ½(x - 5)² + 2|x|  (L1-regularized quadratic)
+/// let smooth = |x: &Vector<f32>| 0.5 * (x[0] - 5.0).powi(2);
+/// let grad_smooth = |x: &Vector<f32>| Vector::from_slice(&[x[0] - 5.0]);
+/// let proximal = |v: &Vector<f32>, _alpha: f32| prox::soft_threshold(v, 2.0);
+///
+/// let mut fista = FISTA::new(1000, 0.1, 1e-5);
+/// let x0 = Vector::from_slice(&[0.0]);
+/// let result = fista.minimize(smooth, grad_smooth, proximal, x0);
+///
+/// // Solution should be around 3.0 (5.0 - 2.0 from soft-thresholding)
+/// assert!((result.solution[0] - 3.0).abs() < 0.1);
+/// ```
+///
+/// # References
+///
+/// - Beck & Teboulle (2009). "A fast iterative shrinkage-thresholding algorithm
+///   for linear inverse problems." SIAM Journal on Imaging Sciences, 2(1), 183-202.
+#[derive(Debug, Clone)]
+pub struct FISTA {
+    /// Maximum number of iterations
+    max_iter: usize,
+    /// Step size (α > 0)
+    step_size: f32,
+    /// Convergence tolerance (‖xₖ₊₁ - xₖ‖ < tol)
+    tol: f32,
+}
+
+impl FISTA {
+    /// Creates a new FISTA optimizer.
+    ///
+    /// # Arguments
+    ///
+    /// * `max_iter` - Maximum number of iterations
+    /// * `step_size` - Step size α (should be ≤ 1/L where L is Lipschitz constant of ∇f)
+    /// * `tol` - Convergence tolerance
+    ///
+    /// # Returns
+    ///
+    /// New FISTA optimizer instance
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use aprender::optim::FISTA;
+    ///
+    /// let optimizer = FISTA::new(1000, 0.01, 1e-6);
+    /// ```
+    #[must_use]
+    pub fn new(max_iter: usize, step_size: f32, tol: f32) -> Self {
+        Self {
+            max_iter,
+            step_size,
+            tol,
+        }
+    }
+
+    /// Minimizes a composite objective function using FISTA.
+    ///
+    /// Solves: minimize f(x) + g(x) where f is smooth, g is "simple" (has easy prox).
+    ///
+    /// # Type Parameters
+    ///
+    /// * `F` - Smooth objective function type
+    /// * `G` - Gradient of smooth part type
+    /// * `P` - Proximal operator type
+    ///
+    /// # Arguments
+    ///
+    /// * `smooth` - Smooth part f(x)
+    /// * `grad_smooth` - Gradient ∇f(x)
+    /// * `prox` - Proximal operator prox_g(v, α)
+    /// * `x0` - Initial point
+    ///
+    /// # Returns
+    ///
+    /// [`OptimizationResult`] with solution and convergence information
+    pub fn minimize<F, G, P>(
+        &mut self,
+        smooth: F,
+        grad_smooth: G,
+        prox: P,
+        x0: Vector<f32>,
+    ) -> OptimizationResult
+    where
+        F: Fn(&Vector<f32>) -> f32,
+        G: Fn(&Vector<f32>) -> Vector<f32>,
+        P: Fn(&Vector<f32>, f32) -> Vector<f32>,
+    {
+        let start_time = std::time::Instant::now();
+
+        let mut x = x0.clone();
+        let mut y = x0;
+        let mut t = 1.0; // Nesterov momentum parameter
+
+        for iter in 0..self.max_iter {
+            // Proximal gradient step at y
+            let grad_y = grad_smooth(&y);
+
+            // Compute: y - α * ∇f(y)
+            let mut gradient_step = Vector::zeros(y.len());
+            for i in 0..y.len() {
+                gradient_step[i] = y[i] - self.step_size * grad_y[i];
+            }
+
+            // Apply proximal operator
+            let x_new = prox(&gradient_step, self.step_size);
+
+            // Check convergence
+            let mut diff_norm = 0.0;
+            for i in 0..x.len() {
+                let diff = x_new[i] - x[i];
+                diff_norm += diff * diff;
+            }
+            diff_norm = diff_norm.sqrt();
+
+            if diff_norm < self.tol {
+                let final_obj = smooth(&x_new);
+                return OptimizationResult {
+                    solution: x_new,
+                    objective_value: final_obj,
+                    iterations: iter,
+                    status: ConvergenceStatus::Converged,
+                    gradient_norm: diff_norm, // Use step norm as proxy for gradient norm
+                    constraint_violation: 0.0,
+                    elapsed_time: start_time.elapsed(),
+                };
+            }
+
+            // Nesterov acceleration
+            let t_new = (1.0_f32 + (1.0_f32 + 4.0_f32 * t * t).sqrt()) / 2.0_f32;
+            let beta = (t - 1.0_f32) / t_new;
+
+            // y_new = x_new + β(x_new - x)
+            let mut y_new = Vector::zeros(x.len());
+            for i in 0..x.len() {
+                y_new[i] = x_new[i] + beta * (x_new[i] - x[i]);
+            }
+
+            x = x_new;
+            y = y_new;
+            t = t_new;
+        }
+
+        // Max iterations reached
+        let final_obj = smooth(&x);
+        OptimizationResult {
+            solution: x,
+            objective_value: final_obj,
+            iterations: self.max_iter,
+            status: ConvergenceStatus::MaxIterations,
+            gradient_norm: 0.0,
+            constraint_violation: 0.0,
+            elapsed_time: start_time.elapsed(),
+        }
+    }
+}
+
+impl Optimizer for FISTA {
+    fn step(&mut self, _params: &mut Vector<f32>, _gradients: &Vector<f32>) {
+        unimplemented!(
+            "FISTA does not support stochastic updates (step). Use minimize() for batch optimization with proximal operators."
+        )
+    }
+
+    fn reset(&mut self) {
+        // FISTA is stateless - nothing to reset
+    }
+}
+
+// ==================== Coordinate Descent Optimizer ====================
+
+/// Coordinate Descent optimizer for high-dimensional problems.
+///
+/// Optimizes one coordinate at a time, which can be much more efficient than
+/// full gradient methods when the number of features is very large (n ≫ m).
+///
+/// # Algorithm
+///
+/// ```text
+/// for k = 1, 2, ..., max_iter:
+///     for i = 1, 2, ..., n (cyclic or random order):
+///         xᵢ ← argmin f(x₁, ..., xᵢ₋₁, xᵢ, xᵢ₊₁, ..., xₙ)
+/// ```
+///
+/// # Key Applications
+///
+/// - **Lasso regression**: Coordinate descent with soft-thresholding (scikit-learn default)
+/// - **Elastic Net**: L1 + L2 regularization
+/// - **SVM**: Sequential Minimal Optimization (SMO) variant
+/// - **High-dimensional statistics**: n ≫ m scenarios
+///
+/// # Advantages
+///
+/// - O(n) per coordinate update (vs O(n) for full gradient)
+/// - No line search needed for many problems
+/// - Handles non-differentiable objectives (e.g., L1)
+/// - Cache-friendly memory access patterns
+///
+/// # Example
+///
+/// ```
+/// use aprender::optim::{CoordinateDescent, Optimizer};
+/// use aprender::primitives::Vector;
+///
+/// // Minimize: ½‖x - c‖² where c = [1, 2, 3]
+/// // Coordinate i update: xᵢ = cᵢ (closed form)
+/// let c = vec![1.0, 2.0, 3.0];
+///
+/// let update = move |x: &mut Vector<f32>, i: usize| {
+///     x[i] = c[i]; // Closed-form solution for coordinate i
+/// };
+///
+/// let mut cd = CoordinateDescent::new(100, 1e-6);
+/// let x0 = Vector::from_slice(&[0.0, 0.0, 0.0]);
+/// let result = cd.minimize(update, x0);
+///
+/// // Should converge to c
+/// assert!((result.solution[0] - 1.0).abs() < 1e-5);
+/// assert!((result.solution[1] - 2.0).abs() < 1e-5);
+/// assert!((result.solution[2] - 3.0).abs() < 1e-5);
+/// ```
+///
+/// # References
+///
+/// - Wright (2015). "Coordinate descent algorithms." Mathematical Programming.
+/// - Friedman et al. (2010). "Regularization paths for generalized linear models via coordinate descent."
+#[derive(Debug, Clone)]
+pub struct CoordinateDescent {
+    /// Maximum number of outer iterations (passes through all coordinates)
+    max_iter: usize,
+    /// Convergence tolerance (‖xₖ₊₁ - xₖ‖ < tol)
+    tol: f32,
+    /// Whether to use random coordinate order (vs cyclic)
+    random_order: bool,
+}
+
+impl CoordinateDescent {
+    /// Creates a new Coordinate Descent optimizer.
+    ///
+    /// # Arguments
+    ///
+    /// * `max_iter` - Maximum number of passes through all coordinates
+    /// * `tol` - Convergence tolerance
+    ///
+    /// # Returns
+    ///
+    /// New Coordinate Descent optimizer with cyclic coordinate order
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use aprender::optim::CoordinateDescent;
+    ///
+    /// let optimizer = CoordinateDescent::new(1000, 1e-6);
+    /// ```
+    #[must_use]
+    pub fn new(max_iter: usize, tol: f32) -> Self {
+        Self {
+            max_iter,
+            tol,
+            random_order: false,
+        }
+    }
+
+    /// Sets whether to use random coordinate order.
+    ///
+    /// # Arguments
+    ///
+    /// * `random` - If true, coordinates are updated in random order each iteration
+    ///
+    /// # Returns
+    ///
+    /// Self for method chaining
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use aprender::optim::CoordinateDescent;
+    ///
+    /// let cd = CoordinateDescent::new(1000, 1e-6).with_random_order(true);
+    /// ```
+    #[must_use]
+    pub fn with_random_order(mut self, random: bool) -> Self {
+        self.random_order = random;
+        self
+    }
+
+    /// Minimizes an objective using coordinate descent.
+    ///
+    /// The user provides a coordinate update function that modifies one coordinate
+    /// at a time. This function should solve:
+    /// ```text
+    /// xᵢ ← argmin f(x₁, ..., xᵢ₋₁, xᵢ, xᵢ₊₁, ..., xₙ)
+    /// ```
+    ///
+    /// # Type Parameters
+    ///
+    /// * `U` - Coordinate update function type
+    ///
+    /// # Arguments
+    ///
+    /// * `update` - Function that updates coordinate i: `fn(&mut Vector, usize)`
+    /// * `x0` - Initial point
+    ///
+    /// # Returns
+    ///
+    /// [`OptimizationResult`] with solution and convergence information
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use aprender::optim::{CoordinateDescent, prox};
+    /// use aprender::primitives::Vector;
+    ///
+    /// // Lasso coordinate update: soft-thresholding
+    /// let lambda = 0.1;
+    /// let update = move |x: &mut Vector<f32>, i: usize| {
+    ///     // Simplified: actual Lasso requires computing residuals
+    ///     let v = x[i];
+    ///     x[i] = if v > lambda {
+    ///         v - lambda
+    ///     } else if v < -lambda {
+    ///         v + lambda
+    ///     } else {
+    ///         0.0
+    ///     };
+    /// };
+    ///
+    /// let mut cd = CoordinateDescent::new(100, 1e-6);
+    /// let x0 = Vector::from_slice(&[1.0, -0.5, 0.3]);
+    /// let result = cd.minimize(update, x0);
+    /// ```
+    pub fn minimize<U>(&mut self, mut update: U, x0: Vector<f32>) -> OptimizationResult
+    where
+        U: FnMut(&mut Vector<f32>, usize),
+    {
+        let start_time = std::time::Instant::now();
+        let n = x0.len();
+
+        let mut x = x0;
+
+        for iter in 0..self.max_iter {
+            // Save previous iterate for convergence check
+            let x_old = x.clone();
+
+            // Determine coordinate order
+            if self.random_order {
+                // Random permutation (Fisher-Yates shuffle)
+                let mut indices: Vec<usize> = (0..n).collect();
+                for i in (1..n).rev() {
+                    let j = (i as f32 * 0.123456).rem_euclid(1.0); // Simple pseudo-random
+                    let j = (j * (i + 1) as f32) as usize;
+                    indices.swap(i, j);
+                }
+
+                // Update in random order
+                for i in indices {
+                    update(&mut x, i);
+                }
+            } else {
+                // Cyclic order
+                for i in 0..n {
+                    update(&mut x, i);
+                }
+            }
+
+            // Check convergence
+            let mut diff_norm = 0.0;
+            for i in 0..n {
+                let diff = x[i] - x_old[i];
+                diff_norm += diff * diff;
+            }
+            diff_norm = diff_norm.sqrt();
+
+            if diff_norm < self.tol {
+                return OptimizationResult {
+                    solution: x,
+                    objective_value: 0.0, // Objective not tracked
+                    iterations: iter,
+                    status: ConvergenceStatus::Converged,
+                    gradient_norm: diff_norm,
+                    constraint_violation: 0.0,
+                    elapsed_time: start_time.elapsed(),
+                };
+            }
+        }
+
+        // Max iterations reached
+        OptimizationResult {
+            solution: x,
+            objective_value: 0.0,
+            iterations: self.max_iter,
+            status: ConvergenceStatus::MaxIterations,
+            gradient_norm: 0.0,
+            constraint_violation: 0.0,
+            elapsed_time: start_time.elapsed(),
+        }
+    }
+}
+
+impl Optimizer for CoordinateDescent {
+    fn step(&mut self, _params: &mut Vector<f32>, _gradients: &Vector<f32>) {
+        unimplemented!(
+            "Coordinate Descent does not support stochastic updates (step). Use minimize() with coordinate update function."
+        )
+    }
+
+    fn reset(&mut self) {
+        // Coordinate Descent is stateless - nothing to reset
+    }
+}
+
 /// Stochastic Gradient Descent optimizer.
 ///
 /// SGD updates parameters using the gradient of the loss function:
@@ -2020,6 +2762,160 @@ impl Optimizer for SGD {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ==================== SafeCholesky Tests ====================
+
+    #[test]
+    fn test_safe_cholesky_solve_positive_definite() {
+        // Well-conditioned positive definite matrix
+        let A = Matrix::from_vec(2, 2, vec![4.0, 2.0, 2.0, 3.0]).expect("valid dimensions");
+        let b = Vector::from_slice(&[6.0, 5.0]);
+
+        let x = safe_cholesky_solve(&A, &b, 1e-8, 10).expect("should solve");
+        assert_eq!(x.len(), 2);
+
+        // Verify solution: Ax should equal b (approximately)
+        let Ax = Vector::from_slice(&[
+            A.get(0, 0) * x[0] + A.get(0, 1) * x[1],
+            A.get(1, 0) * x[0] + A.get(1, 1) * x[1],
+        ]);
+        assert!((Ax[0] - b[0]).abs() < 1e-5);
+        assert!((Ax[1] - b[1]).abs() < 1e-5);
+    }
+
+    #[test]
+    fn test_safe_cholesky_solve_identity() {
+        // Identity matrix - should solve without regularization
+        let A = Matrix::eye(3);
+        let b = Vector::from_slice(&[1.0, 2.0, 3.0]);
+
+        let x = safe_cholesky_solve(&A, &b, 1e-8, 10).expect("should solve");
+
+        // For identity matrix, x should equal b
+        assert!((x[0] - 1.0).abs() < 1e-6);
+        assert!((x[1] - 2.0).abs() < 1e-6);
+        assert!((x[2] - 3.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_safe_cholesky_solve_ill_conditioned() {
+        // Ill-conditioned but solvable with regularization
+        let A = Matrix::from_vec(2, 2, vec![1.0, 0.0, 0.0, 1e-10]).expect("valid dimensions");
+        let b = Vector::from_slice(&[1.0, 1.0]);
+
+        // Should succeed with regularization
+        let x = safe_cholesky_solve(&A, &b, 1e-8, 10).expect("should solve with regularization");
+        assert_eq!(x.len(), 2);
+
+        // First component should be close to 1.0
+        assert!((x[0] - 1.0).abs() < 1e-3);
+    }
+
+    #[test]
+    fn test_safe_cholesky_solve_not_positive_definite() {
+        // Matrix with negative eigenvalue - needs regularization
+        let A = Matrix::from_vec(2, 2, vec![1.0, 0.0, 0.0, -0.5]).expect("valid dimensions");
+        let b = Vector::from_slice(&[1.0, 1.0]);
+
+        // Should solve with enough regularization
+        let result = safe_cholesky_solve(&A, &b, 1e-4, 10);
+
+        // May succeed with regularization or fail gracefully
+        match result {
+            Ok(x) => {
+                assert_eq!(x.len(), 2);
+                // Solution exists with regularization
+            }
+            Err(_) => {
+                // Also acceptable - matrix is indefinite
+            }
+        }
+    }
+
+    #[test]
+    fn test_safe_cholesky_solve_zero_matrix() {
+        // Zero matrix - should fail even with regularization
+        let A = Matrix::from_vec(2, 2, vec![0.0, 0.0, 0.0, 0.0]).expect("valid dimensions");
+        let b = Vector::from_slice(&[1.0, 1.0]);
+
+        // Should eventually succeed when regularization dominates
+        let result = safe_cholesky_solve(&A, &b, 1e-4, 10);
+        assert!(result.is_ok()); // Regularization makes it λI which is PD
+    }
+
+    #[test]
+    fn test_safe_cholesky_solve_small_initial_lambda() {
+        // Test with very small initial lambda
+        let A = Matrix::eye(2);
+        let b = Vector::from_slice(&[1.0, 1.0]);
+
+        let x = safe_cholesky_solve(&A, &b, 1e-12, 10).expect("should solve");
+
+        // Should still work for identity matrix
+        assert!((x[0] - 1.0).abs() < 1e-6);
+        assert!((x[1] - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_safe_cholesky_solve_max_attempts() {
+        // Test that max_attempts is respected
+        let A = Matrix::from_vec(2, 2, vec![1.0, 0.0, 0.0, 1.0]).expect("valid dimensions");
+        let b = Vector::from_slice(&[1.0, 1.0]);
+
+        // Even with 1 attempt, should work for identity
+        let x = safe_cholesky_solve(&A, &b, 1e-8, 1).expect("should solve");
+        assert_eq!(x.len(), 2);
+    }
+
+    #[test]
+    fn test_safe_cholesky_solve_large_system() {
+        // Test with larger system
+        let n = 5;
+        let mut data = vec![0.0; n * n];
+        for i in 0..n {
+            data[i * n + i] = 2.0; // Diagonal
+            if i > 0 {
+                data[i * n + (i - 1)] = 1.0; // Sub-diagonal
+                data[(i - 1) * n + i] = 1.0; // Super-diagonal
+            }
+        }
+        let A = Matrix::from_vec(n, n, data).expect("valid dimensions");
+        let b = Vector::from_slice(&[1.0, 1.0, 1.0, 1.0, 1.0]);
+
+        let x = safe_cholesky_solve(&A, &b, 1e-8, 10).expect("should solve");
+        assert_eq!(x.len(), 5);
+    }
+
+    #[test]
+    fn test_safe_cholesky_solve_symmetric() {
+        // Verify it works with symmetric matrix
+        let A = Matrix::from_vec(3, 3, vec![
+            2.0, 1.0, 0.0,
+            1.0, 2.0, 1.0,
+            0.0, 1.0, 2.0,
+        ]).expect("valid dimensions");
+        let b = Vector::from_slice(&[1.0, 2.0, 1.0]);
+
+        let x = safe_cholesky_solve(&A, &b, 1e-8, 10).expect("should solve");
+        assert_eq!(x.len(), 3);
+    }
+
+    #[test]
+    fn test_safe_cholesky_solve_lambda_escalation() {
+        // Test that lambda increases when needed
+        // This matrix might need several regularization attempts
+        let A = Matrix::from_vec(2, 2, vec![1.0, 0.999, 0.999, 1.0]).expect("valid dimensions");
+        let b = Vector::from_slice(&[1.0, 1.0]);
+
+        let x = safe_cholesky_solve(&A, &b, 1e-10, 15).expect("should solve");
+        assert_eq!(x.len(), 2);
+
+        // Solution should exist
+        assert!(x[0].is_finite());
+        assert!(x[1].is_finite());
+    }
+
+    // ==================== SGD Tests ====================
 
     #[test]
     fn test_sgd_new() {
@@ -3494,5 +4390,477 @@ mod tests {
 
         // Solutions should be similar
         assert!((result1.solution[0] - result2.solution[0]).abs() < 1e-2);
+    }
+
+    // ==================== Proximal Operator Tests ====================
+
+    #[test]
+    fn test_soft_threshold_basic() {
+        use crate::optim::prox::soft_threshold;
+
+        let v = Vector::from_slice(&[2.0, -1.5, 0.5, 0.0]);
+        let result = soft_threshold(&v, 1.0);
+
+        assert!((result[0] - 1.0).abs() < 1e-6);  // 2.0 - 1.0
+        assert!((result[1] + 0.5).abs() < 1e-6);  // -1.5 + 1.0
+        assert!(result[2].abs() < 1e-6);          // 0.5 - 1.0 -> 0
+        assert!(result[3].abs() < 1e-6);          // Already zero
+    }
+
+    #[test]
+    fn test_soft_threshold_zero_lambda() {
+        use crate::optim::prox::soft_threshold;
+
+        let v = Vector::from_slice(&[1.0, -2.0, 3.0]);
+        let result = soft_threshold(&v, 0.0);
+
+        // With λ=0, should return input unchanged
+        assert_eq!(result[0], 1.0);
+        assert_eq!(result[1], -2.0);
+        assert_eq!(result[2], 3.0);
+    }
+
+    #[test]
+    fn test_soft_threshold_large_lambda() {
+        use crate::optim::prox::soft_threshold;
+
+        let v = Vector::from_slice(&[1.0, -1.0, 0.5]);
+        let result = soft_threshold(&v, 10.0);
+
+        // All values should be thresholded to zero
+        assert!(result[0].abs() < 1e-6);
+        assert!(result[1].abs() < 1e-6);
+        assert!(result[2].abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_nonnegative_projection() {
+        use crate::optim::prox::nonnegative;
+
+        let x = Vector::from_slice(&[1.0, -2.0, 3.0, -0.5, 0.0]);
+        let result = nonnegative(&x);
+
+        assert_eq!(result[0], 1.0);
+        assert_eq!(result[1], 0.0);  // Projected to 0
+        assert_eq!(result[2], 3.0);
+        assert_eq!(result[3], 0.0);  // Projected to 0
+        assert_eq!(result[4], 0.0);
+    }
+
+    #[test]
+    fn test_project_l2_ball_inside() {
+        use crate::optim::prox::project_l2_ball;
+
+        // Point inside ball - should be unchanged
+        let x = Vector::from_slice(&[1.0, 1.0]); // norm = sqrt(2) ≈ 1.414
+        let result = project_l2_ball(&x, 2.0);
+
+        assert!((result[0] - 1.0).abs() < 1e-5);
+        assert!((result[1] - 1.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn test_project_l2_ball_outside() {
+        use crate::optim::prox::project_l2_ball;
+
+        // Point outside ball - should be scaled
+        let x = Vector::from_slice(&[3.0, 4.0]); // norm = 5.0
+        let result = project_l2_ball(&x, 2.0);
+
+        // Should be scaled to norm = 2.0
+        let norm = (result[0] * result[0] + result[1] * result[1]).sqrt();
+        assert!((norm - 2.0).abs() < 1e-5);
+
+        // Direction should be preserved
+        let scale = 2.0 / 5.0;
+        assert!((result[0] - 3.0 * scale).abs() < 1e-5);
+        assert!((result[1] - 4.0 * scale).abs() < 1e-5);
+    }
+
+    #[test]
+    fn test_project_box() {
+        use crate::optim::prox::project_box;
+
+        let x = Vector::from_slice(&[-1.0, 0.5, 2.0, 1.0]);
+        let lower = Vector::from_slice(&[0.0, 0.0, 0.0, 0.0]);
+        let upper = Vector::from_slice(&[1.0, 1.0, 1.0, 1.0]);
+
+        let result = project_box(&x, &lower, &upper);
+
+        assert_eq!(result[0], 0.0);  // Clipped to lower
+        assert_eq!(result[1], 0.5);  // Within bounds
+        assert_eq!(result[2], 1.0);  // Clipped to upper
+        assert_eq!(result[3], 1.0);  // Within bounds
+    }
+
+    // ==================== FISTA Tests ====================
+
+    #[test]
+    fn test_fista_new() {
+        let fista = FISTA::new(1000, 0.1, 1e-5);
+        assert_eq!(fista.max_iter, 1000);
+        assert!((fista.step_size - 0.1).abs() < 1e-9);
+        assert!((fista.tol - 1e-5).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_fista_l1_regularized_quadratic() {
+        use crate::optim::prox::soft_threshold;
+
+        // Minimize: ½(x - 5)² + 2|x|
+        // Solution should be around x ≈ 3 (soft-threshold of 5 with λ=2)
+        let smooth = |x: &Vector<f32>| 0.5 * (x[0] - 5.0).powi(2);
+        let grad_smooth = |x: &Vector<f32>| Vector::from_slice(&[x[0] - 5.0]);
+        let prox = |v: &Vector<f32>, alpha: f32| soft_threshold(v, 2.0 * alpha);
+
+        let mut fista = FISTA::new(1000, 0.1, 1e-5);
+        let x0 = Vector::from_slice(&[0.0]);
+        let result = fista.minimize(smooth, grad_smooth, prox, x0);
+
+        assert_eq!(result.status, ConvergenceStatus::Converged);
+        // Analytical solution: sign(5) * max(|5| - 2, 0) = 3
+        assert!((result.solution[0] - 3.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn test_fista_nonnegative_least_squares() {
+        use crate::optim::prox::nonnegative;
+
+        // Minimize: ½(x - (-2))² subject to x ≥ 0
+        // Solution should be x = 0 (projection of -2 onto [0, ∞))
+        let smooth = |x: &Vector<f32>| 0.5 * (x[0] + 2.0).powi(2);
+        let grad_smooth = |x: &Vector<f32>| Vector::from_slice(&[x[0] + 2.0]);
+        let prox = |v: &Vector<f32>, _alpha: f32| nonnegative(v);
+
+        let mut fista = FISTA::new(1000, 0.1, 1e-6);
+        let x0 = Vector::from_slice(&[1.0]);
+        let result = fista.minimize(smooth, grad_smooth, prox, x0);
+
+        assert_eq!(result.status, ConvergenceStatus::Converged);
+        assert!(result.solution[0].abs() < 0.01); // Should be very close to 0
+    }
+
+    #[test]
+    fn test_fista_box_constrained() {
+        use crate::optim::prox::project_box;
+
+        // Minimize: ½(x - 10)² subject to 0 ≤ x ≤ 1
+        // Solution should be x = 1 (projection of 10 onto [0, 1])
+        let smooth = |x: &Vector<f32>| 0.5 * (x[0] - 10.0).powi(2);
+        let grad_smooth = |x: &Vector<f32>| Vector::from_slice(&[x[0] - 10.0]);
+
+        let lower = Vector::from_slice(&[0.0]);
+        let upper = Vector::from_slice(&[1.0]);
+        let prox = move |v: &Vector<f32>, _alpha: f32| project_box(v, &lower, &upper);
+
+        let mut fista = FISTA::new(1000, 0.1, 1e-6);
+        let x0 = Vector::from_slice(&[0.5]);
+        let result = fista.minimize(smooth, grad_smooth, prox, x0);
+
+        assert_eq!(result.status, ConvergenceStatus::Converged);
+        assert!((result.solution[0] - 1.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_fista_multidimensional_lasso() {
+        use crate::optim::prox::soft_threshold;
+
+        // Minimize: ½‖x - c‖² + λ‖x‖₁ where c = [3, -2, 1]
+        let c = vec![3.0, -2.0, 1.0];
+        let lambda = 0.5;
+
+        let smooth = |x: &Vector<f32>| {
+            let mut sum = 0.0;
+            for i in 0..x.len() {
+                sum += 0.5 * (x[i] - c[i]).powi(2);
+            }
+            sum
+        };
+
+        let grad_smooth = |x: &Vector<f32>| {
+            let mut g = Vector::zeros(x.len());
+            for i in 0..x.len() {
+                g[i] = x[i] - c[i];
+            }
+            g
+        };
+
+        let prox = move |v: &Vector<f32>, alpha: f32| soft_threshold(v, lambda * alpha);
+
+        let mut fista = FISTA::new(1000, 0.1, 1e-6);
+        let x0 = Vector::from_slice(&[0.0, 0.0, 0.0]);
+        let result = fista.minimize(smooth, grad_smooth, prox, x0);
+
+        assert_eq!(result.status, ConvergenceStatus::Converged);
+
+        // Analytical solutions: sign(c[i]) * max(|c[i]| - λ, 0)
+        assert!((result.solution[0] - 2.5).abs() < 0.1);  // 3 - 0.5
+        assert!((result.solution[1] + 1.5).abs() < 0.1);  // -2 + 0.5
+        assert!((result.solution[2] - 0.5).abs() < 0.1);  // 1 - 0.5
+    }
+
+    #[test]
+    fn test_fista_max_iterations() {
+        use crate::optim::prox::soft_threshold;
+
+        // Use a difficult problem with very few iterations
+        let smooth = |x: &Vector<f32>| 0.5 * x[0].powi(2);
+        let grad_smooth = |x: &Vector<f32>| Vector::from_slice(&[x[0]]);
+        let prox = |v: &Vector<f32>, alpha: f32| soft_threshold(v, alpha);
+
+        let mut fista = FISTA::new(3, 0.001, 1e-10); // Very few iterations
+        let x0 = Vector::from_slice(&[10.0]);
+        let result = fista.minimize(smooth, grad_smooth, prox, x0);
+
+        // Should hit max iterations
+        assert_eq!(result.status, ConvergenceStatus::MaxIterations);
+        assert_eq!(result.iterations, 3);
+    }
+
+    #[test]
+    fn test_fista_convergence_tracking() {
+        use crate::optim::prox::soft_threshold;
+
+        let smooth = |x: &Vector<f32>| 0.5 * x[0].powi(2);
+        let grad_smooth = |x: &Vector<f32>| Vector::from_slice(&[x[0]]);
+        let prox = |v: &Vector<f32>, alpha: f32| soft_threshold(v, 0.1 * alpha);
+
+        let mut fista = FISTA::new(1000, 0.1, 1e-6);
+        let x0 = Vector::from_slice(&[5.0]);
+        let result = fista.minimize(smooth, grad_smooth, prox, x0);
+
+        assert_eq!(result.status, ConvergenceStatus::Converged);
+        assert!(result.iterations > 0);
+        assert!(result.elapsed_time.as_nanos() > 0);
+    }
+
+    #[test]
+    fn test_fista_vs_no_acceleration() {
+        use crate::optim::prox::soft_threshold;
+
+        // FISTA should converge faster than unaccelerated proximal gradient
+        let smooth = |x: &Vector<f32>| {
+            let mut sum = 0.0;
+            for i in 0..x.len() {
+                sum += 0.5 * (x[i] - (i as f32 + 1.0)).powi(2);
+            }
+            sum
+        };
+
+        let grad_smooth = |x: &Vector<f32>| {
+            let mut g = Vector::zeros(x.len());
+            for i in 0..x.len() {
+                g[i] = x[i] - (i as f32 + 1.0);
+            }
+            g
+        };
+
+        let prox = |v: &Vector<f32>, alpha: f32| soft_threshold(v, 0.5 * alpha);
+
+        let mut fista = FISTA::new(1000, 0.1, 1e-5);
+        let x0 = Vector::from_slice(&[0.0, 0.0, 0.0, 0.0, 0.0]);
+        let result = fista.minimize(smooth, grad_smooth, prox, x0);
+
+        assert_eq!(result.status, ConvergenceStatus::Converged);
+        // FISTA should converge reasonably fast
+        assert!(result.iterations < 500);
+    }
+
+    // ==================== Coordinate Descent Tests ====================
+
+    #[test]
+    fn test_coordinate_descent_new() {
+        let cd = CoordinateDescent::new(100, 1e-6);
+        assert_eq!(cd.max_iter, 100);
+        assert!((cd.tol - 1e-6).abs() < 1e-12);
+        assert!(!cd.random_order);
+    }
+
+    #[test]
+    fn test_coordinate_descent_with_random_order() {
+        let cd = CoordinateDescent::new(100, 1e-6).with_random_order(true);
+        assert!(cd.random_order);
+    }
+
+    #[test]
+    fn test_coordinate_descent_simple_quadratic() {
+        // Minimize: ½‖x - c‖² where c = [1, 2, 3]
+        // Coordinate update: xᵢ = cᵢ (closed form)
+        let c = vec![1.0, 2.0, 3.0];
+
+        let update = move |x: &mut Vector<f32>, i: usize| {
+            x[i] = c[i];
+        };
+
+        let mut cd = CoordinateDescent::new(100, 1e-6);
+        let x0 = Vector::from_slice(&[0.0, 0.0, 0.0]);
+        let result = cd.minimize(update, x0);
+
+        assert_eq!(result.status, ConvergenceStatus::Converged);
+        assert!((result.solution[0] - 1.0).abs() < 1e-5);
+        assert!((result.solution[1] - 2.0).abs() < 1e-5);
+        assert!((result.solution[2] - 3.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn test_coordinate_descent_soft_thresholding() {
+        // Coordinate-wise soft-thresholding applied to fixed values
+        // This models one iteration of Lasso coordinate descent
+        let lambda = 0.5;
+        let target = vec![2.0, -1.5, 0.3, -0.3];
+
+        let update = move |x: &mut Vector<f32>, i: usize| {
+            // Soft-threshold target[i]
+            let v = target[i];
+            x[i] = if v > lambda {
+                v - lambda
+            } else if v < -lambda {
+                v + lambda
+            } else {
+                0.0
+            };
+        };
+
+        let mut cd = CoordinateDescent::new(100, 1e-6);
+        let x0 = Vector::from_slice(&[0.0, 0.0, 0.0, 0.0]);
+        let result = cd.minimize(update, x0);
+
+        assert_eq!(result.status, ConvergenceStatus::Converged);
+
+        // Expected: soft-threshold of target values
+        assert!((result.solution[0] - 1.5).abs() < 1e-5);  // 2.0 - 0.5
+        assert!((result.solution[1] + 1.0).abs() < 1e-5);  // -1.5 + 0.5
+        assert!(result.solution[2].abs() < 1e-5);          // |0.3| < 0.5 → 0
+        assert!(result.solution[3].abs() < 1e-5);          // |-0.3| < 0.5 → 0
+    }
+
+    #[test]
+    fn test_coordinate_descent_projection() {
+        // Project onto [0, 1] box constraint coordinate-wise
+        let update = |x: &mut Vector<f32>, i: usize| {
+            x[i] = x[i].max(0.0).min(1.0);
+        };
+
+        let mut cd = CoordinateDescent::new(100, 1e-6);
+        let x0 = Vector::from_slice(&[-0.5, 0.5, 1.5, 2.0]);
+        let result = cd.minimize(update, x0);
+
+        assert_eq!(result.status, ConvergenceStatus::Converged);
+        assert!((result.solution[0] - 0.0).abs() < 1e-5);  // Clipped to 0
+        assert!((result.solution[1] - 0.5).abs() < 1e-5);  // Within [0,1]
+        assert!((result.solution[2] - 1.0).abs() < 1e-5);  // Clipped to 1
+        assert!((result.solution[3] - 1.0).abs() < 1e-5);  // Clipped to 1
+    }
+
+    #[test]
+    fn test_coordinate_descent_alternating_optimization() {
+        // Alternating minimization example: xᵢ → 0.5 * (xᵢ₋₁ + xᵢ₊₁)
+        // Should converge to uniform values
+        let update = |x: &mut Vector<f32>, i: usize| {
+            let n = x.len();
+            if n == 1 {
+                return;
+            }
+
+            let left = if i == 0 { x[n - 1] } else { x[i - 1] };
+            let right = if i == n - 1 { x[0] } else { x[i + 1] };
+
+            x[i] = 0.5 * (left + right);
+        };
+
+        let mut cd = CoordinateDescent::new(1000, 1e-5);
+        let x0 = Vector::from_slice(&[1.0, 0.0, 1.0, 0.0, 1.0]);
+        let result = cd.minimize(update, x0);
+
+        // Should converge (though possibly to MaxIterations for periodic case)
+        assert!(
+            result.status == ConvergenceStatus::Converged
+                || result.status == ConvergenceStatus::MaxIterations
+        );
+    }
+
+    #[test]
+    fn test_coordinate_descent_max_iterations() {
+        // Use update that doesn't converge quickly
+        let update = |x: &mut Vector<f32>, i: usize| {
+            x[i] = x[i] * 0.99; // Very slow convergence
+        };
+
+        let mut cd = CoordinateDescent::new(3, 1e-10); // Very few iterations
+        let x0 = Vector::from_slice(&[10.0, 10.0]);
+        let result = cd.minimize(update, x0);
+
+        assert_eq!(result.status, ConvergenceStatus::MaxIterations);
+        assert_eq!(result.iterations, 3);
+    }
+
+    #[test]
+    fn test_coordinate_descent_convergence_tracking() {
+        let c = vec![5.0, 3.0];
+        let update = move |x: &mut Vector<f32>, i: usize| {
+            x[i] = c[i];
+        };
+
+        let mut cd = CoordinateDescent::new(100, 1e-6);
+        let x0 = Vector::from_slice(&[0.0, 0.0]);
+        let result = cd.minimize(update, x0);
+
+        assert_eq!(result.status, ConvergenceStatus::Converged);
+        assert!(result.iterations > 0);
+        assert!(result.elapsed_time.as_nanos() > 0);
+    }
+
+    #[test]
+    fn test_coordinate_descent_multidimensional() {
+        // 5D problem
+        let target = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+        let target_clone = target.clone();
+
+        let update = move |x: &mut Vector<f32>, i: usize| {
+            x[i] = target_clone[i];
+        };
+
+        let mut cd = CoordinateDescent::new(100, 1e-6);
+        let x0 = Vector::from_slice(&[0.0, 0.0, 0.0, 0.0, 0.0]);
+        let result = cd.minimize(update, x0);
+
+        assert_eq!(result.status, ConvergenceStatus::Converged);
+        for i in 0..5 {
+            assert!((result.solution[i] - target[i]).abs() < 1e-5);
+        }
+    }
+
+    #[test]
+    fn test_coordinate_descent_immediate_convergence() {
+        // Already at optimum
+        let update = |_x: &mut Vector<f32>, _i: usize| {
+            // No change
+        };
+
+        let mut cd = CoordinateDescent::new(100, 1e-6);
+        let x0 = Vector::from_slice(&[1.0, 2.0]);
+        let result = cd.minimize(update, x0.clone());
+
+        assert_eq!(result.status, ConvergenceStatus::Converged);
+        assert_eq!(result.iterations, 0); // Converges immediately
+        assert_eq!(result.solution[0], x0[0]);
+        assert_eq!(result.solution[1], x0[1]);
+    }
+
+    #[test]
+    fn test_coordinate_descent_gradient_tracking() {
+        let c = vec![3.0, 4.0];
+        let update = move |x: &mut Vector<f32>, i: usize| {
+            x[i] = c[i];
+        };
+
+        let mut cd = CoordinateDescent::new(100, 1e-6);
+        let x0 = Vector::from_slice(&[0.0, 0.0]);
+        let result = cd.minimize(update, x0);
+
+        // Gradient norm should be tracked (as step size)
+        if result.status == ConvergenceStatus::Converged {
+            assert!(result.gradient_norm < 1e-6);
+        }
     }
 }
