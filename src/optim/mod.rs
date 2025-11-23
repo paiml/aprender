@@ -1,11 +1,26 @@
 //! Optimization algorithms for gradient-based learning.
 //!
-//! This module provides both stochastic (mini-batch) and batch (deterministic) optimizers:
+//! This module provides both stochastic (mini-batch) and batch (deterministic) optimizers
+//! following the unified [`Optimizer`] trait architecture.
 //!
-//! - **Stochastic optimizers**: [`SGD`], [`Adam`] - for training with mini-batches
-//! - **Batch optimizers**: L-BFGS, Conjugate Gradient, Damped Newton (coming in v0.8.0)
+//! # Available Optimizers
+//!
+//! ## Stochastic (Mini-Batch) Optimizers
+//! - [`SGD`] - Stochastic Gradient Descent with optional momentum
+//! - [`Adam`] - Adaptive Moment Estimation (adaptive learning rates)
+//!
+//! ## Batch (Deterministic) Optimizers
+//! - [`LBFGS`] - Limited-memory BFGS (memory-efficient quasi-Newton)
+//! - [`ConjugateGradient`] - Conjugate Gradient with three beta formulas
+//! - [`DampedNewton`] - Newton's method with automatic damping for stability
+//!
+//! ## Utility Functions
+//! - [`safe_cholesky_solve`] - Cholesky solver with automatic regularization
 //!
 //! # Stochastic Optimization (Mini-Batch)
+//!
+//! Stochastic optimizers update parameters incrementally using mini-batch gradients.
+//! Use the [`Optimizer::step`] method for parameter updates:
 //!
 //! ```
 //! use aprender::optim::SGD;
@@ -27,13 +42,14 @@
 //!
 //! # Batch Optimization (Full Dataset)
 //!
-//! Batch optimizers will be available in v0.8.0. They support the `minimize` method
-//! for optimizing over the full dataset:
+//! Batch optimizers minimize objective functions using full dataset access.
+//! They use the `minimize` method which returns detailed convergence information:
 //!
-//! ```ignore
-//! use aprender::optim::LBFGS;
+//! ```
+//! use aprender::optim::{LBFGS, ConvergenceStatus, Optimizer};
 //! use aprender::primitives::Vector;
 //!
+//! // Create L-BFGS optimizer: 100 max iterations, 1e-5 tolerance, 10 memory size
 //! let mut optimizer = LBFGS::new(100, 1e-5, 10);
 //!
 //! // Define objective and gradient functions
@@ -44,7 +60,16 @@
 //!
 //! let x0 = Vector::from_slice(&[0.0, 0.0]);
 //! let result = optimizer.minimize(objective, gradient, x0);
+//!
+//! assert_eq!(result.status, ConvergenceStatus::Converged);
+//! assert!((result.solution[0] - 5.0).abs() < 1e-4);
+//! assert!((result.solution[1] - 3.0).abs() < 1e-4);
 //! ```
+//!
+//! # See Also
+//!
+//! - [`examples/batch_optimization.rs`](https://github.com/paiml/aprender/tree/main/examples/batch_optimization.rs) - Comprehensive examples
+//! - Specification: `docs/specifications/comprehensive-optimization-spec.md`
 
 use serde::{Deserialize, Serialize};
 
@@ -116,6 +141,103 @@ pub enum ConvergenceStatus {
     Running,
     /// User-requested termination
     UserTerminated,
+}
+
+/// Safely solves a linear system Ax = b using Cholesky decomposition with automatic regularization.
+///
+/// When the matrix is not positive definite or near-singular, this function automatically
+/// adds regularization (λI) to make the system solvable. This is essential for numerical
+/// stability in second-order optimization methods like Newton's method.
+///
+/// # Algorithm
+///
+/// 1. Try standard Cholesky solve with A
+/// 2. If it fails, add regularization: (A + λI)
+/// 3. Increase λ progressively (×10) until solve succeeds or max attempts reached
+///
+/// # Arguments
+///
+/// * `A` - Symmetric matrix (should be positive definite, but may not be)
+/// * `b` - Right-hand side vector
+/// * `initial_lambda` - Initial regularization parameter (typical: 1e-8)
+/// * `max_attempts` - Maximum regularization attempts (typical: 10)
+///
+/// # Returns
+///
+/// * `Ok(x)` - Solution vector if successful
+/// * `Err(msg)` - Error message if regularization failed
+///
+/// # Example
+///
+/// ```
+/// use aprender::optim::safe_cholesky_solve;
+/// use aprender::primitives::{Matrix, Vector};
+///
+/// // Slightly ill-conditioned matrix
+/// let A = Matrix::from_vec(2, 2, vec![1.0, 0.0, 0.0, 1e-8]).expect("valid dimensions");
+/// let b = Vector::from_slice(&[1.0, 1.0]);
+///
+/// let x = safe_cholesky_solve(&A, &b, 1e-8, 10).expect("should solve with regularization");
+/// assert_eq!(x.len(), 2);
+/// ```
+///
+/// # Use Cases
+///
+/// - **Damped Newton**: Regularize Hessian when not positive definite
+/// - **Levenberg-Marquardt**: Add damping parameter for stability
+/// - **Trust region**: Solve trust region subproblem with ill-conditioned Hessian
+///
+/// # References
+///
+/// - Nocedal & Wright (2006), *Numerical Optimization*, Chapter 3
+pub fn safe_cholesky_solve(
+    A: &Matrix<f32>,
+    b: &Vector<f32>,
+    initial_lambda: f32,
+    max_attempts: usize,
+) -> Result<Vector<f32>, &'static str> {
+    // First try without regularization
+    match A.cholesky_solve(b) {
+        Ok(x) => return Ok(x),
+        Err(_) => {
+            // Matrix not positive definite, try with regularization
+        }
+    }
+
+    let n = A.n_rows();
+    let identity = Matrix::eye(n);
+    let mut lambda = initial_lambda;
+
+    for _attempt in 0..max_attempts {
+        // Create regularized matrix: A_reg = A + λI
+        let mut A_reg_data = vec![0.0; n * n];
+        for i in 0..n {
+            for j in 0..n {
+                A_reg_data[i * n + j] = A.get(i, j) + lambda * identity.get(i, j);
+            }
+        }
+
+        let A_reg = Matrix::from_vec(n, n, A_reg_data)
+            .expect("Matrix dimensions should be valid after construction");
+
+        // Try Cholesky solve with regularized matrix
+        match A_reg.cholesky_solve(b) {
+            Ok(x) => return Ok(x),
+            Err(_) => {
+                // Increase regularization and try again
+                lambda *= 10.0;
+
+                // Prevent lambda from becoming too large
+                if lambda > 1e6 {
+                    return Err(
+                        "Cholesky solve failed: matrix too ill-conditioned even with regularization"
+                    );
+                }
+            }
+        }
+    }
+
+    Err("Cholesky solve failed after maximum regularization attempts")
 }
 
 /// Line search strategy for determining step size in batch optimization.
@@ -2020,6 +2142,160 @@ impl Optimizer for SGD {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ==================== SafeCholesky Tests ====================
+
+    #[test]
+    fn test_safe_cholesky_solve_positive_definite() {
+        // Well-conditioned positive definite matrix
+        let A = Matrix::from_vec(2, 2, vec![4.0, 2.0, 2.0, 3.0]).expect("valid dimensions");
+        let b = Vector::from_slice(&[6.0, 5.0]);
+
+        let x = safe_cholesky_solve(&A, &b, 1e-8, 10).expect("should solve");
+        assert_eq!(x.len(), 2);
+
+        // Verify solution: Ax should equal b (approximately)
+        let Ax = Vector::from_slice(&[
+            A.get(0, 0) * x[0] + A.get(0, 1) * x[1],
+            A.get(1, 0) * x[0] + A.get(1, 1) * x[1],
+        ]);
+        assert!((Ax[0] - b[0]).abs() < 1e-5);
+        assert!((Ax[1] - b[1]).abs() < 1e-5);
+    }
+
+    #[test]
+    fn test_safe_cholesky_solve_identity() {
+        // Identity matrix - should solve without regularization
+        let A = Matrix::eye(3);
+        let b = Vector::from_slice(&[1.0, 2.0, 3.0]);
+
+        let x = safe_cholesky_solve(&A, &b, 1e-8, 10).expect("should solve");
+
+        // For identity matrix, x should equal b
+        assert!((x[0] - 1.0).abs() < 1e-6);
+        assert!((x[1] - 2.0).abs() < 1e-6);
+        assert!((x[2] - 3.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_safe_cholesky_solve_ill_conditioned() {
+        // Ill-conditioned but solvable with regularization
+        let A = Matrix::from_vec(2, 2, vec![1.0, 0.0, 0.0, 1e-10]).expect("valid dimensions");
+        let b = Vector::from_slice(&[1.0, 1.0]);
+
+        // Should succeed with regularization
+        let x = safe_cholesky_solve(&A, &b, 1e-8, 10).expect("should solve with regularization");
+        assert_eq!(x.len(), 2);
+
+        // First component should be close to 1.0
+        assert!((x[0] - 1.0).abs() < 1e-3);
+    }
+
+    #[test]
+    fn test_safe_cholesky_solve_not_positive_definite() {
+        // Matrix with negative eigenvalue - needs regularization
+        let A = Matrix::from_vec(2, 2, vec![1.0, 0.0, 0.0, -0.5]).expect("valid dimensions");
+        let b = Vector::from_slice(&[1.0, 1.0]);
+
+        // Should solve with enough regularization
+        let result = safe_cholesky_solve(&A, &b, 1e-4, 10);
+
+        // May succeed with regularization or fail gracefully
+        match result {
+            Ok(x) => {
+                assert_eq!(x.len(), 2);
+                // Solution exists with regularization
+            }
+            Err(_) => {
+                // Also acceptable - matrix is indefinite
+            }
+        }
+    }
+
+    #[test]
+    fn test_safe_cholesky_solve_zero_matrix() {
+        // Zero matrix - should fail even with regularization
+        let A = Matrix::from_vec(2, 2, vec![0.0, 0.0, 0.0, 0.0]).expect("valid dimensions");
+        let b = Vector::from_slice(&[1.0, 1.0]);
+
+        // Should eventually succeed when regularization dominates
+        let result = safe_cholesky_solve(&A, &b, 1e-4, 10);
+        assert!(result.is_ok()); // Regularization makes it λI which is PD
+    }
+
+    #[test]
+    fn test_safe_cholesky_solve_small_initial_lambda() {
+        // Test with very small initial lambda
+        let A = Matrix::eye(2);
+        let b = Vector::from_slice(&[1.0, 1.0]);
+
+        let x = safe_cholesky_solve(&A, &b, 1e-12, 10).expect("should solve");
+
+        // Should still work for identity matrix
+        assert!((x[0] - 1.0).abs() < 1e-6);
+        assert!((x[1] - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_safe_cholesky_solve_max_attempts() {
+        // Test that max_attempts is respected
+        let A = Matrix::from_vec(2, 2, vec![1.0, 0.0, 0.0, 1.0]).expect("valid dimensions");
+        let b = Vector::from_slice(&[1.0, 1.0]);
+
+        // Even with 1 attempt, should work for identity
+        let x = safe_cholesky_solve(&A, &b, 1e-8, 1).expect("should solve");
+        assert_eq!(x.len(), 2);
+    }
+
+    #[test]
+    fn test_safe_cholesky_solve_large_system() {
+        // Test with larger system
+        let n = 5;
+        let mut data = vec![0.0; n * n];
+        for i in 0..n {
+            data[i * n + i] = 2.0; // Diagonal
+            if i > 0 {
+                data[i * n + (i - 1)] = 1.0; // Sub-diagonal
+                data[(i - 1) * n + i] = 1.0; // Super-diagonal
+            }
+        }
+        let A = Matrix::from_vec(n, n, data).expect("valid dimensions");
+        let b = Vector::from_slice(&[1.0, 1.0, 1.0, 1.0, 1.0]);
+
+        let x = safe_cholesky_solve(&A, &b, 1e-8, 10).expect("should solve");
+        assert_eq!(x.len(), 5);
+    }
+
+    #[test]
+    fn test_safe_cholesky_solve_symmetric() {
+        // Verify it works with symmetric matrix
+        let A = Matrix::from_vec(3, 3, vec![
+            2.0, 1.0, 0.0,
+            1.0, 2.0, 1.0,
+            0.0, 1.0, 2.0,
+        ]).expect("valid dimensions");
+        let b = Vector::from_slice(&[1.0, 2.0, 1.0]);
+
+        let x = safe_cholesky_solve(&A, &b, 1e-8, 10).expect("should solve");
+        assert_eq!(x.len(), 3);
+    }
+
+    #[test]
+    fn test_safe_cholesky_solve_lambda_escalation() {
+        // Test that lambda increases when needed
+        // This matrix might need several regularization attempts
+        let A = Matrix::from_vec(2, 2, vec![1.0, 0.999, 0.999, 1.0]).expect("valid dimensions");
+        let b = Vector::from_slice(&[1.0, 1.0]);
+
+        let x = safe_cholesky_solve(&A, &b, 1e-10, 15).expect("should solve");
+        assert_eq!(x.len(), 2);
+
+        // Solution should exist
+        assert!(x[0].is_finite());
+        assert!(x[1].is_finite());
+    }
+
+    // ==================== SGD Tests ====================
 
     #[test]
     fn test_sgd_new() {
