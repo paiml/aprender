@@ -1,135 +1,122 @@
-# Comprehensive Optimization Methods Specification
+# Optimization Methods Specification (Lean Edition)
 
-**Version:** 1.0
+**Version:** 2.0 (Revised based on Toyota Way review)
 **Date:** 2025-11-23
 **Status:** Planning
 **Target Release:** v0.8.0+
+**Scope:** Lean, ML-focused optimization (25 high-value algorithms)
+
+---
+
+## ⚠️ Design Philosophy (Kaizen Principles)
+
+**Just-in-Time (JIT) Implementation:**
+- Build only what ML models need NOW
+- Defer speculative algorithms to `aprender-contrib`
+- Prioritize first-order methods over second-order for high-dimensional ML
+
+**Built-in Quality (Jidoka):**
+- Automatic Hessian regularization (SafeCholesky by default)
+- AutoDiff integration in Phase 1 (not "future work")
+- Zero unwrap() policy with descriptive error handling
+
+**Eliminate Waste (Muda):**
+- **Removed**: Genetic algorithms, simulated annealing, pattern search (moved to contrib)
+- **Removed**: Full Newton's method (replaced with damped Newton/Levenberg-Marquardt)
+- **Removed**: SDP, integer programming (out of scope for v1.0)
 
 ---
 
 ## Table of Contents
 
-1. [Executive Summary](#1-executive-summary)
+1. [Executive Summary](#1-executive-summary-revised)
 2. [Foundation: Optimization Theory](#2-foundation-optimization-theory)
-   - 2.1 Core Concepts
-   - 2.2 Problem Classes
-   - 2.3 Optimality Conditions
-3. [Classical Unconstrained Optimization](#3-classical-unconstrained-optimization)
-   - 3.1 Gradient Descent Variants
-   - 3.2 Newton's Method
-   - 3.3 Quasi-Newton Methods (BFGS, L-BFGS)
-   - 3.4 Conjugate Gradient
-   - 3.5 Trust Region Methods
-4. [Constrained Optimization](#4-constrained-optimization)
-   - 4.1 KKT Conditions
-   - 4.2 Penalty and Barrier Methods
-   - 4.3 Augmented Lagrangian
-   - 4.4 Sequential Quadratic Programming (SQP)
-   - 4.5 Interior Point Methods
-   - 4.6 Active Set Methods
-5. [Convex Optimization](#5-convex-optimization)
-   - 5.1 Convexity Theory
-   - 5.2 Proximal Gradient Methods
-   - 5.3 ADMM (Alternating Direction Method of Multipliers)
-   - 5.4 Frank-Wolfe Algorithm
-   - 5.5 Coordinate Descent
-6. [Derivative-Free Optimization](#6-derivative-free-optimization)
-   - 6.1 Nelder-Mead Simplex
-   - 6.2 Powell's Method
-   - 6.3 Pattern Search
-   - 6.4 Trust Region Methods (derivative-free)
-7. [Global Optimization](#7-global-optimization)
-   - 7.1 Simulated Annealing
-   - 7.2 Genetic Algorithms
-   - 7.3 Particle Swarm Optimization
-   - 7.4 CMA-ES (Covariance Matrix Adaptation)
-   - 7.5 Differential Evolution
-8. [Stochastic Optimization](#8-stochastic-optimization)
-   - 8.1 SGD and Momentum (existing)
-   - 8.2 Adaptive Methods (Adam, RMSprop, AdaGrad)
-   - 8.3 Variance Reduction (SVRG, SAGA)
-   - 8.4 Second-Order Stochastic Methods
-9. [Modern Techniques](#9-modern-techniques)
-   - 9.1 Operator Splitting Methods
-   - 9.2 Primal-Dual Methods
-   - 9.3 Accelerated Gradient Methods
-   - 9.4 Adaptive Restart Schemes
-10. [Specialized Optimization Problems](#10-specialized-optimization-problems)
-    - 10.1 Least Squares Optimization
-    - 10.2 Linear Programming
-    - 10.3 Quadratic Programming
-    - 10.4 Semidefinite Programming
-    - 10.5 Integer Programming
-11. [Implementation Architecture](#11-implementation-architecture)
-    - 11.1 Optimizer Trait Design
-    - 11.2 Line Search Strategies
-    - 11.3 Convergence Criteria
-    - 11.4 Numerical Stability
-12. [Integration with Aprender](#12-integration-with-aprender)
-    - 12.1 API Consistency
-    - 12.2 ML Model Integration
-    - 12.3 Automatic Differentiation
-13. [Implementation Roadmap](#13-implementation-roadmap)
-14. [Quality Standards](#14-quality-standards)
-15. [Performance Benchmarks](#15-performance-benchmarks)
-16. [Academic References](#16-academic-references)
+3. [Core ML Optimization Methods](#3-core-ml-optimization-methods)
+   - 3.1 Stochastic vs Deterministic Optimizers
+   - 3.2 L-BFGS (Memory-Efficient Quasi-Newton)
+   - 3.3 Conjugate Gradient
+   - 3.4 Damped Newton (Levenberg-Marquardt)
+4. [Convex Optimization](#4-convex-optimization)
+   - 4.1 Proximal Gradient Methods (FISTA)
+   - 4.2 ADMM (Distributed ML)
+   - 4.3 Coordinate Descent
+5. [Constrained Optimization](#5-constrained-optimization)
+   - 5.1 KKT Conditions
+   - 5.2 Augmented Lagrangian
+   - 5.3 Projected Gradient
+   - 5.4 Box Constraints (simple bounds)
+6. [Implementation Architecture](#6-implementation-architecture)
+   - 6.1 **Unified Optimizer Trait** (Stochastic + Deterministic)
+   - 6.2 AutoDiff Integration (trueno)
+   - 6.3 Line Search Strategies
+   - 6.4 Numerical Stability (SafeCholesky)
+7. [Integration with Aprender](#7-integration-with-aprender)
+8. [Implementation Roadmap](#8-implementation-roadmap)
+9. [Quality Standards](#9-quality-standards)
+10. [Performance Benchmarks](#10-performance-benchmarks)
+11. [Academic References](#11-academic-references)
+12. [Appendix: aprender-contrib](#12-appendix-aprender-contrib)
 
 ---
 
-## 1. Executive Summary
+## 1. Executive Summary (Revised)
 
-This specification defines a comprehensive implementation of optimization methods for the Aprender machine learning library. Building on the existing SGD and Adam optimizers, this expands to cover the full spectrum of optimization algorithms used in modern machine learning, scientific computing, and operations research.
+This specification defines a **lean, ML-focused** optimization framework for Aprender. Following **Toyota Way principles** (eliminate waste, build-in quality, just-in-time), we prioritize **25 high-value algorithms** that directly support modern machine learning workflows.
 
-**Scope**: 60+ optimization algorithms across 10 major categories, from classical Newton methods to modern ADMM and global optimization techniques.
+**Scope**: 25 ML-relevant algorithms (reduced from 60+)
+- **Core focus**: L-BFGS, ADMM, proximal methods, stochastic optimizers
+- **Deferred**: Global optimization → `aprender-contrib` crate
+- **Removed**: Pure Newton (replaced with damped Newton), SDP, integer programming
 
-**Philosophy**: Optimization as the core mathematical engine for machine learning—every training algorithm, every parameter update, every hyperparameter search is fundamentally an optimization problem.
+### Why This Revision?
 
-### Why Comprehensive Optimization?
+**Original spec suffered from Muri (overburden)**:
+- 60+ algorithms = 24-30 weeks implementation time
+- Included methods rarely used in ML (genetic algorithms, simulated annealing)
+- Second-order methods (O(n³) Newton) impractical for deep learning (n > 10⁶)
 
-Modern ML goes beyond gradient descent:
-- **Constrained problems**: SVMs, portfolio optimization, fairness constraints
-- **Non-smooth objectives**: L1 regularization, robust losses
-- **Derivative-free**: Hyperparameter tuning, architecture search
-- **Global optimization**: Neural architecture search, AutoML
-- **Large-scale**: Distributed optimization, federated learning
+**Lean approach** (Bottou et al., 2018):
+- Deep learning landscapes are **non-convex** and **high-dimensional**
+- First-order methods (SGD, Adam, L-BFGS) dominate modern ML
+- Constrained optimization needed for SVMs, fairness, robustness
+- ADMM enables distributed/federated learning
 
 ### Current State (v0.7.0)
 
 **Implemented**:
-- ✅ SGD with momentum (src/optim/sgd.rs)
-- ✅ Adam optimizer (src/optim/adam.rs)
+- ✅ SGD with momentum
+- ✅ Adam optimizer
 - ✅ Loss functions (MSE, MAE, Huber)
-- ✅ Basic gradient-based optimization
 
-**Missing** (this specification):
-- ❌ Second-order methods (Newton, BFGS, L-BFGS)
-- ❌ Constrained optimization (SQP, interior point)
-- ❌ Convex optimization (ADMM, proximal methods)
-- ❌ Derivative-free methods (Nelder-Mead, pattern search)
-- ❌ Global optimization (simulated annealing, genetic algorithms)
-- ❌ Specialized solvers (LP, QP, SDP)
+**Critical Gap**:
+- ❌ **AutoDiff integration** - Users must manually provide gradients (motion waste!)
+- ❌ **Stochastic trait design** - Optimizer trait assumes deterministic objectives
+- ❌ **L-BFGS** - Essential for batch optimization (logistic regression, GLMs)
+- ❌ **ADMM** - Distributed ML, Lasso, constrained problems
 
-### Target Outcomes
+### Target Outcomes (Lean Roadmap)
 
-**v0.8.0 - Classical Methods** (6-8 weeks):
-- Newton's method, BFGS, L-BFGS, Conjugate Gradient
-- Line search strategies (Armijo, Wolfe)
-- Trust region methods
-- 120+ tests, 2 book chapters
+**v0.8.0 - Core ML Optimizers** (4-6 weeks):
+- **AutoDiff integration** (trueno) - **CRITICAL FIRST**
+- L-BFGS (memory-efficient quasi-Newton)
+- Conjugate Gradient
+- Damped Newton (Levenberg-Marquardt, not pure Newton)
+- Unified Optimizer trait (stochastic + deterministic)
+- 80+ tests, 2 book chapters
 
-**v0.9.0 - Constrained Optimization** (8-10 weeks):
-- SQP, interior point, augmented Lagrangian
-- KKT conditions, constraint handling
-- Linear/quadratic programming
-- 150+ tests, 3 book chapters
+**v0.9.0 - Convex Optimization** (4-5 weeks):
+- ADMM (distributed ML)
+- Proximal gradient (FISTA) for L1 regularization
+- Coordinate descent (Lasso)
+- 60+ tests, 2 book chapters
 
-**v1.0.0 - Convex & Global** (10-12 weeks):
-- ADMM, proximal gradient, Frank-Wolfe
-- Simulated annealing, genetic algorithms, CMA-ES
-- Derivative-free methods
-- 180+ tests, 3 book chapters
+**v1.0.0 - Constrained Optimization** (5-6 weeks):
+- Augmented Lagrangian
+- Projected gradient
+- Box constraints
+- 60+ tests, 1 book chapter
 
-**Total**: 450+ tests, 8+ book chapters, 40+ runnable examples
+**Total**: 13-17 weeks (vs original 24-30), 200+ tests, 5 book chapters
 
 ---
 
@@ -200,217 +187,74 @@ At local minimum x*:
 
 ---
 
-## 3. Classical Unconstrained Optimization
+## 3. Core ML Optimization Methods
 
-### 3.1 Gradient Descent Variants
+### 3.1 Stochastic vs Deterministic Optimizers
 
-**Standard Gradient Descent**:
-```text
-xₖ₊₁ = xₖ - αₖ∇f(xₖ)
-```
+**Critical Design Distinction** identified in Toyota Way review.
 
-**Already implemented** in Aprender as `SGD` (see book/src/ml-fundamentals/advanced-optimizers.md).
+**Deterministic (Batch) Optimizers**:
+- Access full dataset at each iteration
+- Used for: convex optimization, small-medium datasets (n < 10⁵)
+- Examples: L-BFGS, conjugate gradient, damped Newton
+- API: `minimize(f, grad, x0)` - full objective function
 
-**Convergence**:
-- **Convex, Lipschitz**: O(1/k) convergence
-- **Strongly convex**: O(exp(-μk/L)) linear convergence
-- **Non-convex**: Converges to stationary point
+**Stochastic (Mini-Batch) Optimizers**:
+- Access random subsets of data (stochastic gradients)
+- Used for: deep learning, large-scale ML (n > 10⁵)
+- Examples: SGD, Adam, RMSprop (already implemented)
+- API: `step(params, grad_batch)` - per-batch updates
 
-### 3.2 Newton's Method
-
-**The Gold Standard** for second-order optimization.
-
-**Algorithm**:
-```text
-xₖ₊₁ = xₖ - [∇²f(xₖ)]⁻¹∇f(xₖ)
-```
-
-**Quadratic Convergence**: Near minimum, ‖xₖ₊₁ - x*‖ ≤ C‖xₖ - x*‖²
-
-**Rust Implementation**:
+**Unified Optimizer Trait** (see §6.1 for full design):
 ```rust
-pub struct NewtonMethod {
-    max_iter: usize,
-    tolerance: f32,
-    line_search: Option<LineSearch>,
-}
-
-impl NewtonMethod {
-    pub fn new() -> Self;
-
-    pub fn with_line_search(mut self, ls: LineSearch) -> Self;
-
-    pub fn minimize<F, G, H>(
-        &self,
-        f: F,
-        grad: G,
-        hess: H,
+pub trait Optimizer {
+    /// Deterministic optimization (batch methods)
+    fn minimize<F, G>(
+        &mut self,
+        objective: F,
+        gradient: G,
         x0: Vector,
     ) -> OptimizationResult
     where
         F: Fn(&Vector) -> f32,
-        G: Fn(&Vector) -> Vector,
-        H: Fn(&Vector) -> Matrix,
-    {
-        let mut x = x0;
+        G: Fn(&Vector) -> Vector;
 
-        for k in 0..self.max_iter {
-            let g = grad(&x);
-            if g.norm() < self.tolerance {
-                return OptimizationResult::converged(x, k);
-            }
-
-            // Solve Newton system: H·d = -g
-            let hessian = hess(&x);
-            let direction = hessian.cholesky_solve(&(-g))?;
-
-            // Line search (optional, for global convergence)
-            let alpha = self.line_search
-                .as_ref()
-                .map(|ls| ls.search(&f, &grad, &x, &direction))
-                .unwrap_or(1.0);
-
-            x = x + alpha * direction;
-        }
-
-        OptimizationResult::max_iterations(x)
-    }
+    /// Stochastic optimization (mini-batch methods)
+    fn step(&mut self, params: &mut Vector, grad: &Vector);
 }
 ```
 
-**Advantages**:
-- Quadratic convergence (fastest local convergence)
-- Scale-invariant (uses curvature information)
-- Optimal for quadratic problems (one step)
-
-**Disadvantages**:
-- O(n³) per iteration (Hessian inversion)
-- Requires second derivatives
-- Not globally convergent (needs line search/trust region)
-- Hessian may be indefinite (need modification)
-
-**Hessian Modification**:
-```rust
-impl NewtonMethod {
-    /// Modified Newton with Hessian regularization
-    fn modified_direction(hess: &Matrix, grad: &Vector) -> Vector {
-        let mut h = hess.clone();
-        let mut lambda = 0.0;
-
-        loop {
-            // Add λI to ensure positive definiteness
-            let h_modified = h + lambda * Matrix::eye(h.nrows());
-
-            if let Ok(direction) = h_modified.cholesky_solve(&(-grad)) {
-                return direction;
-            }
-
-            // Increase regularization
-            lambda = if lambda == 0.0 { 1e-3 } else { lambda * 10.0 };
-        }
-    }
-}
-```
-
-**Reference**: Nocedal & Wright (2006), *Numerical Optimization* [1]
+**Why This Matters**:
+- L-BFGS cannot be used with mini-batches (requires consistent gradient estimates)
+- Adam/SGD cannot efficiently use full datasets (too slow for batch)
+- Aprender must support both modes for different ML algorithms
 
 ---
 
-## 3.3 Quasi-Newton Methods (BFGS, L-BFGS)
+### 3.2 L-BFGS (Limited-Memory BFGS)
 
-**Key Insight**: Approximate Hessian from gradients, avoiding expensive second derivatives.
+**For Large-Scale Batch Optimization** (not BFGS - memory prohibitive for ML).
 
-### 3.3.1 BFGS (Broyden-Fletcher-Goldfarb-Shanno)
+**Key Insight**: Approximate Hessian from gradients using only m recent {sₖ, yₖ} pairs.
 
-**Secant Equation**: Bₖ₊₁(xₖ₊₁ - xₖ) = ∇f(xₖ₊₁) - ∇f(xₖ)
+**Memory**: O(mn) instead of O(n²) for full BFGS
+- n = 10⁶ parameters: BFGS = 4TB memory, L-BFGS = 80MB (m=10)
 
 **Algorithm**:
 ```text
-Initialize: x₀, B₀ = I (or scaled identity)
+Initialize: x₀
+Store: m recent {sₖ, yₖ} pairs where
+  sₖ = xₖ₊₁ - xₖ
+  yₖ = ∇f(xₖ₊₁) - ∇f(xₖ)
 
 For k = 0, 1, 2, ...
-  1. Compute search direction: dₖ = -Bₖ⁻¹∇f(xₖ)
+  1. Compute search direction: dₖ = -Hₖ∇f(xₖ)  [two-loop recursion]
   2. Line search: αₖ = argmin f(xₖ + αdₖ)
   3. Update: xₖ₊₁ = xₖ + αₖdₖ
-  4. Compute: sₖ = xₖ₊₁ - xₖ, yₖ = ∇f(xₖ₊₁) - ∇f(xₖ)
-  5. Update Hessian approximation:
-     Bₖ₊₁ = Bₖ - (BₖsₖsₖᵀBₖ)/(sₖᵀBₖsₖ) + (yₖyₖᵀ)/(yₖᵀsₖ)
+  4. Store sₖ, yₖ (discard oldest if |history| > m)
 ```
 
-**Rust Implementation**:
-```rust
-pub struct BFGS {
-    max_iter: usize,
-    tolerance: f32,
-    line_search: LineSearch,
-}
-
-impl BFGS {
-    pub fn minimize<F, G>(
-        &self,
-        f: F,
-        grad: G,
-        x0: Vector,
-    ) -> OptimizationResult
-    where
-        F: Fn(&Vector) -> f32,
-        G: Fn(&Vector) -> Vector,
-    {
-        let n = x0.len();
-        let mut x = x0;
-        let mut B_inv = Matrix::eye(n);  // Inverse Hessian approximation
-
-        for k in 0..self.max_iter {
-            let g = grad(&x);
-            if g.norm() < self.tolerance {
-                return OptimizationResult::converged(x, k);
-            }
-
-            // Search direction
-            let d = -B_inv.matvec(&g);
-
-            // Line search
-            let alpha = self.line_search.search(&f, &grad, &x, &d);
-
-            // Update
-            let x_new = x + alpha * &d;
-            let g_new = grad(&x_new);
-
-            // BFGS update
-            let s = x_new - &x;
-            let y = g_new - &g;
-
-            B_inv = self.bfgs_update(B_inv, &s, &y);
-
-            x = x_new;
-        }
-
-        OptimizationResult::max_iterations(x)
-    }
-
-    fn bfgs_update(&self, B_inv: Matrix, s: &Vector, y: &Vector) -> Matrix {
-        let rho = 1.0 / s.dot(y);
-        let I = Matrix::eye(s.len());
-
-        let V = I - rho * s.outer(y);
-        let V_t = I - rho * y.outer(s);
-
-        V.matmul(&B_inv).matmul(&V_t) + rho * s.outer(s)
-    }
-}
-```
-
-**Convergence**: Superlinear (between linear and quadratic)
-
-**Complexity**: O(n²) per iteration (matrix-vector products)
-
-### 3.3.2 L-BFGS (Limited-Memory BFGS)
-
-**For Large-Scale Problems**: Store only m recent {sₖ, yₖ} pairs instead of full matrix.
-
-**Memory**: O(mn) instead of O(n²)
-
-**Algorithm**:
+**Two-Loop Recursion** (O(mn) Hessian-vector product):
 ```rust
 pub struct LBFGS {
     max_iter: usize,
@@ -441,7 +285,7 @@ impl LBFGS {
             q = q - alpha[i] * &history.y_history[i];
         }
 
-        // Initial Hessian approximation
+        // Initial Hessian approximation H₀ = γI
         let gamma = if m > 0 {
             let s = &history.s_history[m-1];
             let y = &history.y_history[m-1];
@@ -464,15 +308,20 @@ impl LBFGS {
 ```
 
 **Use Cases**:
-- **Deep learning**: PyTorch's L-BFGS optimizer
-- **Large-scale ML**: Logistic regression with millions of features
-- **Scientific computing**: PDE-constrained optimization
+- **Logistic regression**: Large feature space (n > 10⁴)
+- **GLMs**: Iterative reweighted least squares (IRLS)
+- **PyTorch L-BFGS**: Second-order optimizer for small batches
+- **Scientific ML**: Physics-informed neural networks (PINNs)
+
+**Convergence**: Superlinear (between linear and quadratic)
+
+**Complexity**: O(mn) per iteration (vs O(n²) for BFGS, O(n³) for Newton)
 
 **Reference**: Liu & Nocedal (1989), "On the limited memory BFGS method for large scale optimization" [2]
 
 ---
 
-## 3.4 Conjugate Gradient (CG)
+### 3.3 Conjugate Gradient
 
 **For Large-Scale Quadratic Problems**: Minimize f(x) = ½xᵀAx - bᵀx
 
@@ -584,25 +433,43 @@ impl ConjugateGradient {
 
 ---
 
-## 3.5 Trust Region Methods
+### 3.4 Damped Newton (Levenberg-Marquardt)
 
-**Philosophy**: "Trust" quadratic model only in a local region.
+**Replaces Pure Newton** (Jidoka: built-in quality via automatic regularization).
 
-**Subproblem**:
-```text
-minimize  mₖ(d) = f(xₖ) + ∇f(xₖ)ᵀd + ½dᵀBₖd
-subject to ‖d‖ ≤ Δₖ  (trust region radius)
+**Problem with Pure Newton**:
+```rust
+// ❌ DANGEROUS: Cholesky fails on indefinite Hessian
+let direction = hessian.cholesky_solve(&(-grad))?;  // PANIC in non-convex landscapes!
 ```
 
-**Algorithm**:
+**In ML**: Hessians are often **not positive definite**:
+- Deep neural networks: non-convex loss landscapes
+- Logistic regression near convergence: ill-conditioned Hessian
+- GLMs with collinear features: singular Hessian
+
+**Levenberg-Marquardt Damping**:
+```text
+(H + λI)d = -g    where λ ≥ 0 (damping parameter)
+
+Behavior:
+- λ = 0 → Pure Newton (quadratic convergence, if H ≻ 0)
+- λ → ∞ → Gradient descent (slow but robust)
+- Adaptive λ: decrease if step succeeds, increase if step fails
+```
+
+**Rust Implementation** (with SafeCholesky):
 ```rust
-pub struct TrustRegion {
-    initial_radius: f32,
-    max_radius: f32,
-    eta: f32,  // Acceptance threshold (typically 0.1)
+pub struct DampedNewton {
+    max_iter: usize,
+    tolerance: f32,
+    initial_damping: f32,  // λ₀ (typically 1e-3)
+    damping_increase: f32, // Multiply λ on failure (typically 10.0)
+    damping_decrease: f32, // Multiply λ on success (typically 0.1)
+    line_search: Option<LineSearch>,
 }
 
-impl TrustRegion {
+impl DampedNewton {
     pub fn minimize<F, G, H>(
         &self,
         f: F,
@@ -616,58 +483,332 @@ impl TrustRegion {
         H: Fn(&Vector) -> Matrix,
     {
         let mut x = x0;
-        let mut delta = self.initial_radius;
+        let mut lambda = self.initial_damping;
 
-        loop {
+        for k in 0..self.max_iter {
+            let fx = f(&x);
             let g = grad(&x);
-            let B = hess(&x);
-
-            // Solve trust region subproblem
-            let d = self.solve_subproblem(&g, &B, delta);
-
-            // Actual vs predicted reduction
-            let actual_reduction = f(&x) - f(&(x.clone() + &d));
-            let predicted_reduction = self.model_reduction(&g, &B, &d);
-
-            let rho = actual_reduction / predicted_reduction;
-
-            // Update trust region radius
-            if rho < 0.25 {
-                delta *= 0.25;  // Shrink
-            } else if rho > 0.75 && d.norm() == delta {
-                delta = (2.0 * delta).min(self.max_radius);  // Expand
-            }
-
-            // Accept or reject step
-            if rho > self.eta {
-                x = x + d;
-            }
 
             if g.norm() < self.tolerance {
-                return OptimizationResult::converged(x);
+                return OptimizationResult::converged(x, k);
+            }
+
+            let H = hess(&x);
+
+            // Levenberg-Marquardt: solve (H + λI)d = -g
+            let direction = loop {
+                let H_damped = H.clone() + lambda * Matrix::eye(H.nrows());
+
+                // SafeCholesky: automatically handles near-singularity
+                match H_damped.safe_cholesky_solve(&(-g.clone())) {
+                    Ok(d) => break d,
+                    Err(_) => {
+                        // Increase damping and retry
+                        lambda *= self.damping_increase;
+                        if lambda > 1e6 {
+                            return OptimizationResult::Error(
+                                "Hessian too ill-conditioned, damping failed".into()
+                            );
+                        }
+                    }
+                }
+            };
+
+            // Line search (optional)
+            let alpha = self.line_search
+                .as_ref()
+                .map(|ls| ls.search(&f, &grad, &x, &direction))
+                .unwrap_or(1.0);
+
+            let x_new = x.clone() + alpha * &direction;
+            let fx_new = f(&x_new);
+
+            // Adaptive damping: reduce λ if step succeeds
+            if fx_new < fx {
+                lambda *= self.damping_decrease;
+                lambda = lambda.max(1e-10);  // Don't go to zero
+                x = x_new;
+            } else {
+                // Step failed, increase damping and retry
+                lambda *= self.damping_increase;
             }
         }
-    }
 
-    fn solve_subproblem(&self, g: &Vector, B: &Matrix, delta: f32) -> Vector {
-        // Solve via eigenvalue decomposition or iterative method
-        // Returns d such that ‖d‖ ≤ delta and d ≈ argmin m(d)
+        OptimizationResult::max_iterations(x)
     }
 }
 ```
 
-**Advantages**:
-- Globally convergent (no line search needed)
-- Handles indefinite Hessians naturally
-- Robust to poor models
+**Use Cases**:
+- **Nonlinear least squares**: f(x) = ½‖r(x)‖² (bundle adjustment, curve fitting)
+- **GLMs**: Newton-Raphson with numerical stability
+- **Neural networks**: Second-order optimization for small models
 
-**Reference**: Conn, Gould & Toint (2000), *Trust Region Methods* [4]
+**Convergence**:
+- **Near minimum** (if H ≻ 0): Quadratic (same as Newton)
+- **Far from minimum**: Robust (damping prevents overshooting)
+
+**Complexity**: O(n³) per iteration (same as Newton, but more stable)
+
+**Reference**: Nocedal & Wright (2006), Chapter 10 [1]; Marquardt (1963) [8]
 
 ---
 
-## 4. Constrained Optimization
+## 4. Convex Optimization
 
-### 4.1 KKT Conditions (Karush-Kuhn-Tucker)
+### 4.1 Proximal Gradient Methods (FISTA)
+
+**For Composite Minimization**: f(x) + g(x) where f is smooth, g is "simple" (possibly non-smooth).
+
+**Key ML Applications**:
+- **Lasso regression**: f(x) = ½‖Ax - b‖² + λ‖x‖₁ (L1 regularization)
+- **Group sparsity**: g(x) = Σⱼ‖xⱼ‖₂ (structured sparsity)
+- **Non-negative matrix factorization**: g(x) = indicator(x ≥ 0)
+
+**Proximal Operator**:
+```text
+prox_g(v) = argmin_x { g(x) + ½‖x - v‖² }
+
+Examples:
+- L1 norm: prox_{λ‖·‖₁}(v) = sign(v) ⊙ max(|v| - λ, 0)  [soft thresholding]
+- Indicator: prox_{I_C}(v) = Π_C(v)  [projection onto set C]
+```
+
+**FISTA (Fast Iterative Shrinkage-Thresholding Algorithm)**:
+```rust
+pub struct FISTA {
+    max_iter: usize,
+    step_size: f32,     // α (or compute via backtracking)
+    tolerance: f32,
+}
+
+impl FISTA {
+    pub fn minimize<F, G, P>(
+        &self,
+        smooth: F,          // f(x) - smooth part
+        grad_smooth: G,     // ∇f(x)
+        prox: P,            // prox operator for g(x)
+        x0: Vector,
+    ) -> OptimizationResult
+    where
+        F: Fn(&Vector) -> f32,
+        G: Fn(&Vector) -> Vector,
+        P: Fn(&Vector, f32) -> Vector,  // prox_g(v, α)
+    {
+        let mut x = x0.clone();
+        let mut y = x0;
+        let mut t = 1.0;  // Nesterov momentum parameter
+
+        for k in 0..self.max_iter {
+            // Proximal gradient step on y
+            let grad = grad_smooth(&y);
+            let x_new = prox(&(y.clone() - self.step_size * grad), self.step_size);
+
+            // Nesterov acceleration
+            let t_new = (1.0 + (1.0 + 4.0 * t * t).sqrt()) / 2.0;
+            let beta = (t - 1.0) / t_new;
+            let y_new = x_new.clone() + beta * (x_new.clone() - x.clone());
+
+            // Check convergence
+            if (x_new.clone() - x.clone()).norm() < self.tolerance {
+                return OptimizationResult::converged(x_new, k);
+            }
+
+            x = x_new;
+            y = y_new;
+            t = t_new;
+        }
+
+        OptimizationResult::max_iterations(x)
+    }
+}
+```
+
+**Convergence**: O(1/k²) for FISTA vs O(1/k) for ISTA (proximal gradient)
+
+**Example: Lasso Regression**:
+```rust
+// Minimize: ½‖Ax - b‖² + λ‖x‖₁
+let fista = FISTA::new(1000, 0.01, 1e-6);
+
+let smooth = |x: &Vector| 0.5 * (A.matvec(x) - b).norm_squared();
+let grad_smooth = |x: &Vector| A.transpose().matvec(&(A.matvec(x) - b));
+let prox = |v: &Vector, alpha: f32| soft_threshold(v, lambda * alpha);
+
+let result = fista.minimize(smooth, grad_smooth, prox, x0);
+```
+
+**Reference**: Beck & Teboulle (2009), "A fast iterative shrinkage-thresholding algorithm" [9]
+
+---
+
+### 4.2 ADMM (Alternating Direction Method of Multipliers)
+
+**For Distributed/Constrained Optimization**:
+```text
+minimize  f(x) + g(z)
+subject to Ax + Bz = c
+```
+
+**Key ML Applications**:
+- **Federated learning**: Distributed training across devices
+- **Lasso/Ridge**: Split data across workers
+- **Consensus optimization**: Average models from different sites
+
+**Algorithm**:
+```text
+x-update:  xᵏ⁺¹ = argmin_x { f(x) + (ρ/2)‖Ax + Bzᵏ - c + uᵏ‖² }
+z-update:  zᵏ⁺¹ = argmin_z { g(z) + (ρ/2)‖Axᵏ⁺¹ + Bz - c + uᵏ‖² }
+u-update:  uᵏ⁺¹ = uᵏ + (Axᵏ⁺¹ + Bzᵏ⁺¹ - c)
+```
+
+**Rust Implementation**:
+```rust
+pub struct ADMM {
+    max_iter: usize,
+    rho: f32,           // Penalty parameter
+    tolerance: f32,
+    adaptive_rho: bool, // Adjust ρ dynamically
+}
+
+impl ADMM {
+    pub fn minimize<F, G>(
+        &self,
+        f: F,              // First objective
+        g: G,              // Second objective
+        A: &Matrix,
+        B: &Matrix,
+        c: &Vector,
+        x0: Vector,
+        z0: Vector,
+    ) -> OptimizationResult
+    where
+        F: Fn(&Vector, &Vector, &Vector, f32) -> Vector,  // x-minimizer
+        G: Fn(&Vector, &Vector, &Vector, f32) -> Vector,  // z-minimizer
+    {
+        let mut x = x0;
+        let mut z = z0;
+        let mut u = Vector::zeros(c.len());
+        let mut rho = self.rho;
+
+        for k in 0..self.max_iter {
+            // x-update (often has closed form)
+            x = f(&z, &u, c, rho);
+
+            // z-update (often proximal operator)
+            let Ax = A.matvec(&x);
+            z = g(&Ax, &u, c, rho);
+
+            // u-update (scaled dual variable)
+            let residual = Ax.clone() + B.matvec(&z) - c;
+            u = u + residual.clone();
+
+            // Check convergence (primal + dual residuals)
+            let primal_res = residual.norm();
+            let dual_res = (rho * B.transpose().matvec(&(z.clone() - &z_old))).norm();
+
+            if primal_res < self.tolerance && dual_res < self.tolerance {
+                return OptimizationResult::converged(x, k);
+            }
+
+            // Adaptive ρ (Boyd et al. 2011)
+            if self.adaptive_rho {
+                if primal_res > 10.0 * dual_res {
+                    rho *= 2.0;
+                    u /= 2.0;
+                } else if dual_res > 10.0 * primal_res {
+                    rho /= 2.0;
+                    u *= 2.0;
+                }
+            }
+
+            z_old = z.clone();
+        }
+
+        OptimizationResult::max_iterations(x)
+    }
+}
+```
+
+**Use Cases**:
+- **Lasso**: f(x) = ½‖Ax - b‖², g(z) = λ‖z‖₁, constraint: x = z
+- **SVM**: Distributed training across data partitions
+- **Federated learning**: Local updates + global consensus
+
+**Convergence**: O(1/k) for convex problems
+
+**Reference**: Boyd et al. (2011), "Distributed Optimization and Statistical Learning via ADMM" [10]
+
+---
+
+### 4.3 Coordinate Descent
+
+**For High-Dimensional Problems**: Optimize one coordinate at a time.
+
+**Key Insight**: When n ≫ m (features ≫ samples), full gradient is expensive.
+
+**Algorithm**:
+```rust
+pub struct CoordinateDescent {
+    max_iter: usize,
+    max_inner_iter: usize,
+    tolerance: f32,
+    random_order: bool,  // Randomized vs cyclic
+}
+
+impl CoordinateDescent {
+    pub fn minimize<F>(
+        &self,
+        objective: F,
+        x0: Vector,
+    ) -> OptimizationResult
+    where
+        F: Fn(&Vector, usize) -> f32,  // Partial derivative w.r.t. coordinate i
+    {
+        let mut x = x0;
+        let n = x.len();
+
+        for k in 0..self.max_iter {
+            let x_old = x.clone();
+
+            // Coordinate order
+            let indices: Vec<usize> = if self.random_order {
+                (0..n).collect::<Vec<_>>().shuffle()
+            } else {
+                (0..n).collect()
+            };
+
+            // Update each coordinate
+            for &i in &indices {
+                // 1D line search for coordinate i
+                x[i] = self.minimize_coordinate(&objective, &x, i);
+            }
+
+            // Check convergence
+            if (x.clone() - x_old).norm() < self.tolerance {
+                return OptimizationResult::converged(x, k);
+            }
+        }
+
+        OptimizationResult::max_iterations(x)
+    }
+}
+```
+
+**Use Cases**:
+- **Lasso**: Coordinate descent with soft-thresholding (scikit-learn default)
+- **Elastic Net**: L1 + L2 regularization
+- **SVM**: Sequential Minimal Optimization (SMO)
+
+**Convergence**: Linear for strongly convex, smooth objectives
+
+**Reference**: Wright (2015), "Coordinate Descent Algorithms" [11]
+
+---
+
+## 5. Constrained Optimization
+
+### 5.1 KKT Conditions (Karush-Kuhn-Tucker)
 
 **The Fundamental Optimality Conditions** for constrained optimization.
 
@@ -727,86 +868,16 @@ impl KKTConditions {
 }
 ```
 
+**ML Applications**:
+- **SVM**: Quadratic program with inequality constraints
+- **Fairness**: Equality constraints on demographic parity
+- **Robustness**: Adversarial constraints on worst-case loss
+
 **Reference**: Boyd & Vandenberghe (2004), *Convex Optimization* [5]
 
-### 4.2 Penalty and Barrier Methods
+---
 
-**Penalty Method**: Convert constrained → unconstrained by penalizing constraint violations.
-
-**Quadratic Penalty**:
-```text
-minimize  f(x) + (ρ/2)Σᵢ[max(0, gᵢ(x))]² + (ρ/2)Σⱼ[hⱼ(x)]²
-```
-
-```rust
-pub struct PenaltyMethod {
-    penalty_param: f32,
-    penalty_increase: f32,  // Multiply ρ after each iteration
-    max_outer_iter: usize,
-}
-
-impl PenaltyMethod {
-    pub fn minimize<F, G, H>(
-        &self,
-        f: F,
-        inequalities: Vec<G>,
-        equalities: Vec<H>,
-        x0: Vector,
-    ) -> OptimizationResult
-    where
-        F: Fn(&Vector) -> f32,
-        G: Fn(&Vector) -> f32,
-        H: Fn(&Vector) -> f32,
-    {
-        let mut x = x0;
-        let mut rho = self.penalty_param;
-
-        for outer_iter in 0..self.max_outer_iter {
-            // Construct penalized objective
-            let penalized_f = |x: &Vector| {
-                let mut obj = f(x);
-
-                // Inequality penalties
-                for g in &inequalities {
-                    let viol = g(x).max(0.0);
-                    obj += 0.5 * rho * viol * viol;
-                }
-
-                // Equality penalties
-                for h in &equalities {
-                    let viol = h(x);
-                    obj += 0.5 * rho * viol * viol;
-                }
-
-                obj
-            };
-
-            // Solve unconstrained subproblem
-            let result = self.unconstrained_solver.minimize(penalized_f, x.clone());
-            x = result.solution;
-
-            // Check convergence
-            if self.is_converged(&x, &inequalities, &equalities) {
-                return OptimizationResult::converged(x, outer_iter);
-            }
-
-            // Increase penalty
-            rho *= self.penalty_increase;
-        }
-
-        OptimizationResult::max_iterations(x)
-    }
-}
-```
-
-**Barrier Method** (Interior Point): Stay strictly feasible, barrier → ∞ at boundary.
-
-**Logarithmic Barrier**:
-```text
-minimize  f(x) - (1/t)Σᵢ log(-gᵢ(x))    (for gᵢ(x) < 0)
-```
-
-### 4.3 Augmented Lagrangian
+### 5.2 Augmented Lagrangian
 
 **Combines** penalty method + Lagrange multipliers for better conditioning.
 
@@ -875,599 +946,65 @@ impl AugmentedLagrangian {
 
 **Reference**: Bertsekas (2014), *Constrained Optimization and Lagrange Multiplier Methods* [6]
 
-### 4.4 Sequential Quadratic Programming (SQP)
-
-**The Newton Method for Constrained Optimization**.
-
-**Key Idea**: At each iteration, solve a quadratic programming subproblem.
-
-**QP Subproblem**:
-```text
-minimize    ∇f(xₖ)ᵀd + ½dᵀ∇²L(xₖ,λₖ)d
-subject to  ∇gᵢ(xₖ)ᵀd + gᵢ(xₖ) ≤ 0
-            ∇hⱼ(xₖ)ᵀd + hⱼ(xₖ) = 0
-```
-
-**Algorithm**:
-```rust
-pub struct SQP {
-    max_iter: usize,
-    tolerance: f32,
-    qp_solver: Box<dyn QPSolver>,
-}
-
-pub struct QPSubproblem {
-    pub H: Matrix,        // Hessian of Lagrangian
-    pub g: Vector,        // Gradient
-    pub A_ineq: Matrix,   // Inequality constraint Jacobian
-    pub b_ineq: Vector,   // Inequality RHS
-    pub A_eq: Matrix,     // Equality constraint Jacobian
-    pub b_eq: Vector,     // Equality RHS
-}
-
-impl SQP {
-    pub fn minimize<F, G, H>(
-        &self,
-        f: F,
-        grad_f: G,
-        hess_f: H,
-        constraints: ConstraintSet,
-        x0: Vector,
-    ) -> OptimizationResult
-    where
-        F: Fn(&Vector) -> f32,
-        G: Fn(&Vector) -> Vector,
-        H: Fn(&Vector) -> Matrix,
-    {
-        let mut x = x0;
-        let mut lambda = Vector::zeros(constraints.len());
-
-        for k in 0..self.max_iter {
-            // Evaluate at current point
-            let grad = grad_f(&x);
-            let hess_lag = self.lagrangian_hessian(&x, &lambda, hess_f, &constraints);
-
-            // Build QP subproblem
-            let qp = self.build_qp_subproblem(&x, &grad, &hess_lag, &constraints);
-
-            // Solve QP
-            let qp_solution = self.qp_solver.solve(qp)?;
-            let d = qp_solution.primal;
-            let lambda_new = qp_solution.dual;
-
-            // Line search on merit function
-            let alpha = self.merit_line_search(&f, &constraints, &x, &d, &lambda);
-
-            // Update
-            x = x + alpha * d;
-            lambda = lambda_new;
-
-            // Check KKT conditions
-            if self.check_convergence(&x, &lambda, &grad, &constraints) {
-                return OptimizationResult::converged(x, k);
-            }
-        }
-
-        OptimizationResult::max_iterations(x)
-    }
-
-    fn merit_line_search(
-        &self,
-        f: &dyn Fn(&Vector) -> f32,
-        constraints: &ConstraintSet,
-        x: &Vector,
-        d: &Vector,
-        lambda: &Vector,
-    ) -> f32 {
-        // Merit function: φ(x) = f(x) + ρΣ|c(x)|
-        // Ensures both objective decrease and constraint satisfaction
-    }
-}
-```
-
-**Convergence**: Superlinear (like BFGS) with proper merit function.
-
-**Reference**: Nocedal & Wright (2006), Chapter 18 [1]
-
-### 4.5 Interior Point Methods
-
-**Primal-Dual Interior Point** for large-scale optimization.
-
-**Problem (Standard Form)**:
-```text
-minimize    cᵀx
-subject to  Ax = b
-            x ≥ 0
-```
-
-**Barrier Problem**:
-```text
-minimize  cᵀx - μΣ log(xᵢ)
-subject to Ax = b
-```
-
-**Primal-Dual System** (KKT conditions with barrier):
-```text
-[  0   Aᵀ  -I  ] [Δx]   [-c + Aᵀy - s]
-[  A   0   0   ] [Δy] = [   b - Ax    ]
-[  S   0   X   ] [Δs]   [ -XSe + μe   ]
-
-where X = diag(x), S = diag(s), e = [1,1,...,1]
-```
-
-```rust
-pub struct InteriorPointMethod {
-    max_iter: usize,
-    tolerance: f32,
-    barrier_reduction: f32,  // Reduce μ each iteration
-}
-
-pub struct IPMIteration {
-    pub x: Vector,      // Primal variables
-    pub y: Vector,      // Dual variables (equality)
-    pub s: Vector,      // Dual variables (inequality)
-    pub mu: f32,        // Barrier parameter
-}
-
-impl InteriorPointMethod {
-    pub fn solve_lp(
-        &self,
-        c: &Vector,
-        A: &Matrix,
-        b: &Vector,
-    ) -> OptimizationResult {
-        // Initialize strictly feasible point
-        let mut state = self.initialize_interior_point(A, b);
-
-        for k in 0..self.max_iter {
-            // Compute search direction (solve KKT system)
-            let direction = self.compute_direction(&state, c, A, b);
-
-            // Step size (maintain positivity)
-            let alpha = self.compute_step_size(&state, &direction);
-
-            // Update
-            state.x += alpha * direction.dx;
-            state.y += alpha * direction.dy;
-            state.s += alpha * direction.ds;
-
-            // Reduce barrier parameter
-            state.mu *= self.barrier_reduction;
-
-            // Check convergence
-            if self.check_convergence(&state, c, A, b) {
-                return OptimizationResult::converged(state.x, k);
-            }
-        }
-
-        OptimizationResult::max_iterations(state.x)
-    }
-
-    fn compute_direction(
-        &self,
-        state: &IPMIteration,
-        c: &Vector,
-        A: &Matrix,
-        b: &Vector,
-    ) -> IPMDirection {
-        // Solve KKT system using Cholesky factorization
-        // Typically reduces to: A·D·Aᵀ·Δy = rhs
-        // where D = X·S⁻¹ is diagonal
-    }
-}
-```
-
-**Complexity**: O(n³) per iteration (typically 10-100 iterations)
-
-**Advantages**:
-- Polynomial-time for LP/QP (worst-case)
-- Excellent for large sparse problems
-- Warm-start capable
-
-**Reference**: Wright (1997), *Primal-Dual Interior-Point Methods* [7]
-
-### 4.6 Active Set Methods
-
-**Identify Active Constraints** and solve equality-constrained subproblems.
-
-**Key Idea**: At optimum, only active constraints matter.
-
-```rust
-pub struct ActiveSetMethod {
-    max_iter: usize,
-    tolerance: f32,
-}
-
-pub struct ActiveSet {
-    indices: Vec<usize>,  // Active constraint indices
-}
-
-impl ActiveSetMethod {
-    pub fn solve_qp(
-        &self,
-        Q: &Matrix,
-        c: &Vector,
-        A_ineq: &Matrix,
-        b_ineq: &Vector,
-    ) -> OptimizationResult {
-        let mut x = self.find_initial_feasible_point(A_ineq, b_ineq)?;
-        let mut active_set = self.identify_active_constraints(&x, A_ineq, b_ineq);
-
-        for k in 0..self.max_iter {
-            // Solve equality-constrained QP with active constraints
-            let A_active = self.select_rows(A_ineq, &active_set.indices);
-            let b_active = self.select_elements(b_ineq, &active_set.indices);
-
-            let (d, lambda) = self.solve_eqp(Q, c, &x, A_active, b_active);
-
-            if d.norm() < self.tolerance {
-                // Check Lagrange multipliers
-                if lambda.iter().all(|&l| l >= -self.tolerance) {
-                    return OptimizationResult::converged(x, k);  // Optimal!
-                } else {
-                    // Remove most negative multiplier from active set
-                    let j = lambda.argmin();
-                    active_set.remove(j);
-                }
-            } else {
-                // Move in direction d
-                let alpha = self.step_to_boundary(&x, &d, A_ineq, b_ineq);
-                x += alpha * &d;
-
-                if alpha < 1.0 {
-                    // Hit new constraint, add to active set
-                    let blocking = self.find_blocking_constraint(&x, A_ineq, b_ineq);
-                    active_set.add(blocking);
-                }
-            }
-        }
-
-        OptimizationResult::max_iterations(x)
-    }
-}
-```
-
-**Advantages**:
-- Exact solution for QP (finite termination)
-- Good for small/medium problems
-- Warm-start with previous active set
-
-**Reference**: Nocedal & Wright (2006), Chapter 16 [1]
 
 ---
 
-## 5. Convex Optimization
+### 5.3 Projected Gradient
 
-### 5.1 Convexity Theory
+**For Simple Constraints**: Project onto feasible set C after gradient step.
 
-**Definition**: Function f is convex if:
+**Algorithm**:
 ```text
-f(λx + (1-λ)y) ≤ λf(x) + (1-λ)f(y)  ∀λ ∈ [0,1]
+xₖ₊₁ = Π_C(xₖ - αₖ∇f(xₖ))
+
+where Π_C(x) = argmin_{y∈C} ‖y - x‖
 ```
 
-**Key Properties**:
-- Local minimum = Global minimum
-- First-order condition sufficient: ∇f(x*)= 0 ⟹ x* is global min
-- Efficient algorithms with provable convergence
-
-**Common Convex Functions**:
-- Linear: aᵀx + b
-- Quadratic (PSD): ½xᵀQx + cᵀx (Q ⪰ 0)
-- Norms: ‖x‖, ‖x‖₁, ‖x‖₂, ‖x‖∞
-- Exponential: eᵃˣ
-- Log-sum-exp: log(Σexp(xᵢ))
-
-### 5.2 Proximal Gradient Methods
-
-**For** composite minimization: f(x) + g(x) where f is smooth, g is "simple" (possibly non-smooth).
-
-**Proximal Operator**:
-```text
-prox_g(v) = argmin_x { g(x) + ½‖x - v‖² }
-```
-
-**Proximal Gradient Algorithm** (ISTA):
-```text
-xₖ₊₁ = prox_{αg}(xₖ - α∇f(xₖ))
-```
-
-**Fast Proximal Gradient** (FISTA - Accelerated):
-```rust
-pub struct FISTA {
-    max_iter: usize,
-    step_size: f32,
-    tolerance: f32,
-}
-
-impl FISTA {
-    pub fn minimize<F, G, P>(
-        &self,
-        smooth: F,       // f(x) - smooth part
-        grad_smooth: G,  // ∇f(x)
-        prox: P,         // prox operator for g(x)
-        x0: Vector,
-    ) -> OptimizationResult
-    where
-        F: Fn(&Vector) -> f32,
-        G: Fn(&Vector) -> Vector,
-        P: Fn(&Vector, f32) -> Vector,  // prox_g(v, α)
-    {
-        let mut x = x0.clone();
-        let mut y = x0;
-        let mut t = 1.0;
-
-        for k in 0..self.max_iter {
-            // Proximal gradient step
-            let grad = grad_smooth(&y);
-            let x_new = prox(&(y - self.step_size * grad), self.step_size);
-
-            // Acceleration (Nesterov momentum)
-            let t_new = (1.0 + (1.0 + 4.0 * t * t).sqrt()) / 2.0;
-            let beta = (t - 1.0) / t_new;
-            let y_new = x_new.clone() + beta * (x_new.clone() - x.clone());
-
-            // Check convergence
-            if (x_new.clone() - x.clone()).norm() < self.tolerance {
-                return OptimizationResult::converged(x_new, k);
-            }
-
-            x = x_new;
-            y = y_new;
-            t = t_new;
-        }
-
-        OptimizationResult::max_iterations(x)
-    }
-}
-```
-
-**Common Proximal Operators**:
-```rust
-pub mod prox_operators {
-    use crate::primitives::Vector;
-
-    /// L1 norm (soft thresholding)
-    pub fn l1_norm(v: &Vector, lambda: f32) -> Vector {
-        v.map(|x| {
-            if x > lambda {
-                x - lambda
-            } else if x < -lambda {
-                x + lambda
-            } else {
-                0.0
-            }
-        })
-    }
-
-    /// L2 norm (projection onto ball)
-    pub fn l2_norm(v: &Vector, lambda: f32) -> Vector {
-        let norm = v.norm();
-        if norm <= lambda {
-            v.clone()
-        } else {
-            (lambda / norm) * v
-        }
-    }
-
-    /// Box constraints [l, u]
-    pub fn box_constraint(v: &Vector, lower: f32, upper: f32) -> Vector {
-        v.map(|x| x.max(lower).min(upper))
-    }
-
-    /// Nuclear norm (matrix case - SVD shrinkage)
-    pub fn nuclear_norm(V: &Matrix, lambda: f32) -> Matrix {
-        // Singular value soft thresholding
-    }
-}
-```
-
-**Use Cases**:
-- **L1 regularization** (Lasso): min ½‖Ax - b‖² + λ‖x‖₁
-- **Total variation** denoising
-- **Matrix completion**
-- **Compressed sensing**
-
-**Reference**: Beck & Teboulle (2009), "A Fast Iterative Shrinkage-Thresholding Algorithm" [8]
-
-### 5.3 ADMM (Alternating Direction Method of Multipliers)
-
-**The Swiss Army Knife** of convex optimization.
-
-**Problem**:
-```text
-minimize  f(x) + g(z)
-subject to Ax + Bz = c
-```
-
-**Augmented Lagrangian**:
-```text
-Lρ(x,z,y) = f(x) + g(z) + yᵀ(Ax + Bz - c) + (ρ/2)‖Ax + Bz - c‖²
-```
-
-**ADMM Algorithm**:
-```text
-1. x-update: xₖ₊₁ = argmin_x Lρ(x, zₖ, yₖ)
-2. z-update: zₖ₊₁ = argmin_z Lρ(xₖ₊₁, z, yₖ)
-3. y-update: yₖ₊₁ = yₖ + ρ(Axₖ₊₁ + Bzₖ₊₁ - c)
-```
+**Key Insight**: Many constraints have **closed-form projections**.
 
 **Rust Implementation**:
 ```rust
-pub struct ADMM {
+pub struct ProjectedGradient {
     max_iter: usize,
-    rho: f32,          // Penalty parameter
+    step_size: f32,
     tolerance: f32,
-    adaptive_rho: bool, // Adaptive penalty update
+    line_search: Option<LineSearch>,
 }
 
-impl ADMM {
-    pub fn minimize<F, G>(
+impl ProjectedGradient {
+    pub fn minimize<F, G, P>(
         &self,
-        f_prox: F,  // Proximal operator for f
-        g_prox: G,  // Proximal operator for g
-        A: &Matrix,
-        B: &Matrix,
-        c: &Vector,
-        x0: Vector,
-        z0: Vector,
-    ) -> OptimizationResult
-    where
-        F: Fn(&Vector, &Vector, f32) -> Vector,  // prox_f(v, y, ρ)
-        G: Fn(&Vector, &Vector, f32) -> Vector,  // prox_g(v, y, ρ)
-    {
-        let mut x = x0;
-        let mut z = z0;
-        let mut y = Vector::zeros(c.len());
-        let mut rho = self.rho;
-
-        for k in 0..self.max_iter {
-            // x-update (may involve solving linear system)
-            let x_arg = &z - (1.0 / rho) * A.transpose().matvec(&y);
-            x = f_prox(&x_arg, &y, rho);
-
-            // z-update
-            let z_arg = -&x - (1.0 / rho) * B.transpose().matvec(&y);
-            z = g_prox(&z_arg, &y, rho);
-
-            // Residuals
-            let primal_residual = A.matvec(&x) + B.matvec(&z) - c;
-            let dual_residual = rho * A.transpose().matvec(&(B.matvec(&z) - B.matvec(&z_old)));
-
-            // y-update (dual ascent)
-            y = y + rho * &primal_residual;
-
-            // Adaptive ρ update
-            if self.adaptive_rho {
-                rho = self.update_rho(rho, &primal_residual, &dual_residual);
-            }
-
-            // Check convergence
-            if primal_residual.norm() < self.tolerance &&
-               dual_residual.norm() < self.tolerance {
-                return OptimizationResult::converged(x, k);
-            }
-        }
-
-        OptimizationResult::max_iterations(x)
-    }
-
-    fn update_rho(&self, rho: f32, r_primal: &Vector, r_dual: &Vector) -> f32 {
-        let tau_incr = 2.0;
-        let tau_decr = 2.0;
-        let mu = 10.0;
-
-        if r_primal.norm() > mu * r_dual.norm() {
-            tau_incr * rho  // Increase ρ
-        } else if r_dual.norm() > mu * r_primal.norm() {
-            rho / tau_decr  // Decrease ρ
-        } else {
-            rho
-        }
-    }
-}
-```
-
-**Applications**:
-1. **Lasso**: Split into ‖Ax - b‖² + λ‖z‖₁ with x = z
-2. **Consensus optimization**: Distributed ML
-3. **Graph optimization**: Network flow, graph cuts
-4. **Image processing**: Total variation, denoising
-5. **Model fitting with constraints**
-
-**Example - Lasso Regression**:
-```rust
-pub fn lasso_admm(A: &Matrix, b: &Vector, lambda: f32) -> Vector {
-    let admm = ADMM::new(rho: 1.0, max_iter: 1000);
-
-    // f(x) = ½‖Ax - b‖²  →  x-update: (AᵀA + ρI)⁻¹(Aᵀb + ρz - y)
-    let f_prox = |z: &Vector, y: &Vector, rho: f32| {
-        let ATA_rho = A.transpose().matmul(A) + rho * Matrix::eye(A.ncols());
-        let rhs = A.transpose().matvec(b) + rho * z - y;
-        ATA_rho.cholesky_solve(&rhs).expect("Cholesky failed")
-    };
-
-    // g(z) = λ‖z‖₁  →  z-update: soft threshold
-    let g_prox = |x: &Vector, y: &Vector, rho: f32| {
-        let kappa = lambda / rho;
-        prox_operators::l1_norm(&(x + y / rho), kappa)
-    };
-
-    let x0 = Vector::zeros(A.ncols());
-    let z0 = Vector::zeros(A.ncols());
-
-    admm.minimize(f_prox, g_prox, A, &Matrix::eye(A.ncols()), &Vector::zeros(1), x0, z0)
-        .solution
-}
-```
-
-**Reference**: Boyd et al. (2011), "Distributed Optimization and Statistical Learning via ADMM" [9]
-
-### 5.4 Frank-Wolfe Algorithm (Conditional Gradient)
-
-**For** constrained optimization where projection is expensive but linear optimization is cheap.
-
-**Problem**:
-```text
-minimize  f(x)
-subject to x ∈ C  (convex set)
-```
-
-**Algorithm**:
-```text
-1. Linear minimization: sₖ = argmin_{s ∈ C} ∇f(xₖ)ᵀs
-2. Step size: αₖ ∈ [0, 1]
-3. Update: xₖ₊₁ = (1 - αₖ)xₖ + αₖsₖ
-```
-
-```rust
-pub struct FrankWolfe {
-    max_iter: usize,
-    tolerance: f32,
-    step_size_rule: StepSizeRule,
-}
-
-pub enum StepSizeRule {
-    Fixed(f32),
-    LineSearch,
-    DimishingReturns,  // αₖ = 2/(k+2)
-}
-
-impl FrankWolfe {
-    pub fn minimize<F, G, L>(
-        &self,
-        f: F,
-        grad: G,
-        linear_oracle: L,  // Solve linear program over C
+        objective: F,
+        gradient: G,
+        projection: P,
         x0: Vector,
     ) -> OptimizationResult
     where
         F: Fn(&Vector) -> f32,
         G: Fn(&Vector) -> Vector,
-        L: Fn(&Vector) -> Vector,  // argmin_{s ∈ C} gᵀs
+        P: Fn(&Vector) -> Vector,  // Project onto feasible set
     {
-        let mut x = x0;
+        let mut x = projection(&x0);  // Start feasible
 
         for k in 0..self.max_iter {
-            let g = grad(&x);
+            let g = gradient(&x);
 
-            // Linear minimization over C
-            let s = linear_oracle(&g);
+            // Check convergence (projected gradient norm)
+            let x_grad_step = x.clone() - self.step_size * &g;
+            let x_proj = projection(&x_grad_step);
+            let pg_norm = ((x.clone() - x_proj.clone()) / self.step_size).norm();
 
-            // Duality gap (stopping criterion)
-            let gap = g.dot(&(x.clone() - s.clone()));
-            if gap < self.tolerance {
+            if pg_norm < self.tolerance {
                 return OptimizationResult::converged(x, k);
             }
 
-            // Step size
-            let alpha = match self.step_size_rule {
-                StepSizeRule::Fixed(a) => a,
-                StepSizeRule::LineSearch => self.line_search(&f, &x, &s),
-                StepSizeRule::DimishingReturns => 2.0 / (k as f32 + 2.0),
-            };
+            // Gradient step + projection
+            let alpha = self.line_search
+                .as_ref()
+                .map(|ls| ls.search_projected(&objective, &gradient, &projection, &x, &g))
+                .unwrap_or(self.step_size);
 
-            // Update
-            x = (1.0 - alpha) * x + alpha * s;
+            x = projection(&(x - alpha * g));
         }
 
         OptimizationResult::max_iterations(x)
@@ -1475,509 +1012,225 @@ impl FrankWolfe {
 }
 ```
 
-**Advantages**:
-- Projection-free (only need linear optimization)
-- Sparse iterates (convex combinations)
-- Good for structured constraints (polytopes, nuclear norm ball)
+**Common Projections**:
+```rust
+pub mod projections {
+    use crate::primitives::Vector;
+
+    /// Box constraints: l ≤ x ≤ u
+    pub fn box_projection(x: &Vector, lower: &Vector, upper: &Vector) -> Vector {
+        x.zip_map(lower, upper, |xi, li, ui| xi.max(li).min(ui))
+    }
+
+    /// Non-negative orthant: x ≥ 0
+    pub fn nonnegative(x: &Vector) -> Vector {
+        x.map(|xi| xi.max(0.0))
+    }
+
+    /// L2 ball: ‖x‖ ≤ r
+    pub fn l2_ball(x: &Vector, radius: f32) -> Vector {
+        let norm = x.norm();
+        if norm <= radius {
+            x.clone()
+        } else {
+            (radius / norm) * x
+        }
+    }
+
+    /// Simplex: x ≥ 0, Σxᵢ = 1
+    pub fn simplex(x: &Vector) -> Vector {
+        // Duchi et al. (2008) O(n log n) algorithm
+        let mut sorted: Vec<f32> = x.as_slice().to_vec();
+        sorted.sort_by(|a, b| b.partial_cmp(a).unwrap());  // Descending
+
+        let mut theta = 0.0;
+        let mut cumsum = 0.0;
+
+        for (i, &xi) in sorted.iter().enumerate() {
+            cumsum += xi;
+            let candidate = (cumsum - 1.0) / (i + 1) as f32;
+            if xi > candidate {
+                theta = candidate;
+            } else {
+                break;
+            }
+        }
+
+        x.map(|xi| (xi - theta).max(0.0))
+    }
+
+    /// Linear equality: Ax = b (project onto affine subspace)
+    pub fn affine_projection(x: &Vector, A: &Matrix, b: &Vector) -> Vector {
+        // x_proj = x - Aᵀ(AAᵀ)⁻¹(Ax - b)
+        let residual = A.matvec(x) - b;
+        let AAT = A.matmul(&A.transpose());
+        let multiplier = AAT.cholesky_solve(&residual).expect("AAᵀ singular");
+        x - A.transpose().matvec(&multiplier)
+    }
+}
+```
 
 **Use Cases**:
-- **Matrix completion**: Nuclear norm constraints
-- **Sparse optimization**: L1 ball
-- **Traffic assignment**: Flow polytopes
+- **Non-negative matrix factorization**: x ≥ 0
+- **Portfolio optimization**: Σxᵢ = 1, x ≥ 0 (simplex)
+- **Support vector machines**: Dual variables bounded
 
-**Reference**: Jaggi (2013), "Revisiting Frank-Wolfe: Projection-Free Sparse Convex Optimization" [10]
+**Convergence**: O(1/k) for Lipschitz convex functions
 
-### 5.5 Coordinate Descent
+**Reference**: Bertsekas (2015), *Convex Optimization Algorithms* [12]
 
-**Optimize one coordinate at a time** (or block of coordinates).
+---
 
-**Algorithm**:
+### 5.4 Box Constraints
+
+**Simplest Constrained Optimization**: l ≤ x ≤ u
+
+**Why Special?**:
+- O(n) projection (element-wise clipping)
+- Most ML problems have natural bounds (probabilities ∈ [0,1], weights ≥ 0)
+- L-BFGS-B (L-BFGS with box constraints) widely used
+
+**L-BFGS-B Algorithm**:
 ```rust
-pub struct CoordinateDescent {
-    max_iter: usize,
-    tolerance: f32,
-    selection_rule: SelectionRule,
+pub struct LBFGSB {
+    lbfgs: LBFGS,
+    lower: Vector,
+    upper: Vector,
 }
 
-pub enum SelectionRule {
-    Cyclic,         // x₁, x₂, ..., xₙ, x₁, ...
-    Random,         // Random coordinate each iteration
-    GreedyGradient, // Largest gradient component
-}
-
-impl CoordinateDescent {
-    pub fn minimize<F>(
+impl LBFGSB {
+    pub fn minimize<F, G>(
         &self,
-        f: F,
-        one_d_solvers: Vec<Box<dyn OneDSolver>>,  // Univariate solvers
+        objective: F,
+        gradient: G,
         x0: Vector,
     ) -> OptimizationResult
     where
         F: Fn(&Vector) -> f32,
+        G: Fn(&Vector) -> Vector,
     {
-        let mut x = x0;
-        let n = x.len();
+        let mut x = self.project(&x0);
+        let mut history = LBFGSHistory::new(self.lbfgs.memory_size);
 
-        for iter in 0..self.max_iter {
-            let x_old = x.clone();
+        for k in 0..self.lbfgs.max_iter {
+            let g = gradient(&x);
 
-            for i in self.select_coordinates(n) {
-                // Minimize over xᵢ holding others fixed
-                let x_i_new = one_d_solvers[i].minimize(|xi| {
-                    let mut x_temp = x.clone();
-                    x_temp[i] = xi;
-                    f(&x_temp)
-                });
+            // Identify free/active variables
+            let (free_vars, active_vars) = self.identify_active_set(&x, &g);
 
-                x[i] = x_i_new;
+            if free_vars.is_empty() {
+                return OptimizationResult::converged(x, k);  // All variables at bounds
             }
 
-            if (x.clone() - x_old).norm() < self.tolerance {
-                return OptimizationResult::converged(x, iter);
-            }
+            // L-BFGS direction on free variables
+            let d_free = self.lbfgs.two_loop_recursion(&g.select(&free_vars), &history);
+
+            // Cauchy point (gradient projection)
+            let x_cauchy = self.cauchy_point(&x, &g);
+
+            // Subspace minimization
+            let d = self.subspace_minimization(&x, &g, &free_vars, &d_free, &x_cauchy);
+
+            // Line search with projection
+            let alpha = self.line_search_projected(&objective, &gradient, &x, &d);
+            let x_new = self.project(&(x.clone() + alpha * d));
+
+            // Update L-BFGS history
+            let s = x_new.clone() - &x;
+            let y = gradient(&x_new) - &g;
+            history.update(s, y);
+
+            x = x_new;
         }
 
         OptimizationResult::max_iterations(x)
     }
-}
-```
 
-**Closed-Form Updates** (when available):
-```rust
-// Lasso coordinate descent (closed-form soft thresholding)
-pub fn lasso_coordinate_descent(A: &Matrix, b: &Vector, lambda: f32) -> Vector {
-    let (n, p) = (A.nrows(), A.ncols());
-    let mut beta = Vector::zeros(p);
-
-    for iter in 0..max_iter {
-        for j in 0..p {
-            let a_j = A.column(j);
-            let r = b - A.matvec(&beta) + beta[j] * &a_j;  // Partial residual
-
-            // Soft thresholding
-            let z = a_j.dot(&r);
-            beta[j] = soft_threshold(z, lambda) / a_j.dot(&a_j);
-        }
+    fn project(&self, x: &Vector) -> Vector {
+        x.zip_map(&self.lower, &self.upper, |xi, li, ui| xi.max(li).min(ui))
     }
 
-    beta
-}
-```
+    fn identify_active_set(&self, x: &Vector, g: &Vector) -> (Vec<usize>, Vec<usize>) {
+        let mut free = Vec::new();
+        let mut active = Vec::new();
 
-**Advantages**:
-- Simple to implement
-- Exploits structure (separability)
-- Each iteration cheap (1D optimization)
-- Good for high dimensions
+        for i in 0..x.len() {
+            let at_lower = (x[i] - self.lower[i]).abs() < 1e-10 && g[i] > 0.0;
+            let at_upper = (x[i] - self.upper[i]).abs() < 1e-10 && g[i] < 0.0;
 
-**Reference**: Wright (2015), "Coordinate descent algorithms" [11]
-
----
-
-## 6. Derivative-Free Optimization
-
-**When gradients are unavailable**: Simulation-based, black-box, noisy objectives.
-
-### 6.1 Nelder-Mead Simplex
-
-**The classic** derivative-free method.
-
-**Maintain simplex** (n+1 points in ℝⁿ), perform geometric operations.
-
-```rust
-pub struct NelderMead {
-    max_iter: usize,
-    tolerance: f32,
-    alpha: f32,  // Reflection (1.0)
-    gamma: f32,  // Expansion (2.0)
-    rho: f32,    // Contraction (0.5)
-    sigma: f32,  // Shrink (0.5)
-}
-
-impl NelderMead {
-    pub fn minimize<F>(
-        &self,
-        f: F,
-        x0: Vector,
-    ) -> OptimizationResult
-    where
-        F: Fn(&Vector) -> f32,
-    {
-        let n = x0.len();
-        let mut simplex = self.initialize_simplex(&x0, n);
-        let mut f_vals = simplex.iter().map(|x| f(x)).collect::<Vec<_>>();
-
-        for iter in 0..self.max_iter {
-            // Sort simplex by function values
-            self.sort_simplex(&mut simplex, &mut f_vals);
-
-            // Check convergence (variance of f values)
-            if self.variance(&f_vals) < self.tolerance {
-                return OptimizationResult::converged(simplex[0].clone(), iter);
-            }
-
-            let x_best = &simplex[0];
-            let x_worst = &simplex[n];
-            let x_centroid = self.centroid(&simplex[0..n]);  // Exclude worst
-
-            // Reflection
-            let x_r = x_centroid.clone() + self.alpha * (x_centroid.clone() - x_worst.clone());
-            let f_r = f(&x_r);
-
-            if f_vals[0] <= f_r && f_r < f_vals[n-1] {
-                // Accept reflection
-                simplex[n] = x_r;
-                f_vals[n] = f_r;
-            } else if f_r < f_vals[0] {
-                // Try expansion
-                let x_e = x_centroid.clone() + self.gamma * (x_r.clone() - x_centroid.clone());
-                let f_e = f(&x_e);
-                if f_e < f_r {
-                    simplex[n] = x_e;
-                    f_vals[n] = f_e;
-                } else {
-                    simplex[n] = x_r;
-                    f_vals[n] = f_r;
-                }
+            if at_lower || at_upper {
+                active.push(i);
             } else {
-                // Contraction
-                let x_c = if f_r < f_vals[n] {
-                    // Outside contraction
-                    x_centroid.clone() + self.rho * (x_r.clone() - x_centroid.clone())
-                } else {
-                    // Inside contraction
-                    x_centroid.clone() - self.rho * (x_worst.clone() - x_centroid.clone())
-                };
-
-                let f_c = f(&x_c);
-                if f_c < f_vals[n] {
-                    simplex[n] = x_c;
-                    f_vals[n] = f_c;
-                } else {
-                    // Shrink entire simplex toward best point
-                    for i in 1..=n {
-                        simplex[i] = x_best.clone() + self.sigma * (simplex[i].clone() - x_best.clone());
-                        f_vals[i] = f(&simplex[i]);
-                    }
-                }
+                free.push(i);
             }
         }
 
-        OptimizationResult::max_iterations(simplex[0].clone())
+        (free, active)
+    }
+
+    fn cauchy_point(&self, x: &Vector, g: &Vector) -> Vector {
+        // Piecewise linear path along -g until hitting bounds
+        // Returns first local minimizer of quadratic model on path
+        self.project(&(x.clone() - g.clone()))  // Simplified version
     }
 }
 ```
 
-**Pros**: Simple, no derivatives, robust
-**Cons**: Slow convergence, not for high dimensions
+**Use Cases**:
+- **Logistic regression**: Prevent coefficient explosion
+- **Neural networks**: Weight clipping for stability
+- **PCA**: Constrain loadings to [-1, 1]
 
-### 6.2 Powell's Method
-
-**Direction set method** without derivatives.
-
-### 6.3 Pattern Search
-
-**Systematic exploration** on a grid.
+**Reference**: Byrd et al. (1995), "A Limited Memory Algorithm for Bound Constrained Optimization" [13]
 
 ---
 
-## 7. Global Optimization
+## 6. Implementation Architecture
 
-**Escape local minima**, find global optimum.
+### 6.1 Unified Optimizer Trait Design
 
-### 7.1 Simulated Annealing
+**Problem**: Stochastic optimizers (SGD, Adam) vs Batch optimizers (L-BFGS, CG) have different APIs.
 
-**Probabilistic accept uphill moves** (inspired by metallurgy).
-
-```rust
-pub struct SimulatedAnnealing {
-    max_iter: usize,
-    initial_temp: f32,
-    cooling_schedule: CoolingSchedule,
-}
-
-pub enum CoolingSchedule {
-    Exponential(f32),  // T = T₀ × αᵏ
-    Logarithmic,       // T = T₀ / log(k)
-    Linear(f32),       // T = T₀ - k×rate
-}
-
-impl SimulatedAnnealing {
-    pub fn minimize<F, N>(
-        &self,
-        f: F,
-        neighbor: N,
-        x0: Vector,
-    ) -> OptimizationResult
-    where
-        F: Fn(&Vector) -> f32,
-        N: Fn(&Vector) -> Vector,  // Generate neighbor
-    {
-        let mut x = x0;
-        let mut f_x = f(&x);
-        let mut x_best = x.clone();
-        let mut f_best = f_x;
-        let mut temp = self.initial_temp;
-        let mut rng = rand::thread_rng();
-
-        for k in 0..self.max_iter {
-            // Generate neighbor
-            let x_new = neighbor(&x);
-            let f_new = f(&x_new);
-
-            // Acceptance probability
-            let delta = f_new - f_x;
-            let accept = if delta < 0.0 {
-                true  // Always accept improvement
-            } else {
-                let p = (-delta / temp).exp();
-                rng.gen::<f32>() < p  // Probabilistic accept uphill
-            };
-
-            if accept {
-                x = x_new;
-                f_x = f_new;
-
-                if f_new < f_best {
-                    x_best = x.clone();
-                    f_best = f_new;
-                }
-            }
-
-            // Cool down
-            temp = self.cool(temp, k);
-        }
-
-        OptimizationResult { solution: x_best, iterations: self.max_iter }
-    }
-}
-```
-
-### 7.2 Genetic Algorithms
-
-**Evolution-inspired** population-based search.
-
-```rust
-pub struct GeneticAlgorithm {
-    population_size: usize,
-    generations: usize,
-    mutation_rate: f32,
-    crossover_rate: f32,
-    selection: SelectionMethod,
-}
-
-pub enum SelectionMethod {
-    Tournament(usize),  // Tournament size
-    RouletteWheel,
-    RankBased,
-}
-
-impl GeneticAlgorithm {
-    pub fn minimize<F>(
-        &self,
-        fitness: F,
-        bounds: &[(f32, f32)],
-    ) -> OptimizationResult
-    where
-        F: Fn(&Vector) -> f32,
-    {
-        let n = bounds.len();
-        let mut population = self.initialize_population(self.population_size, bounds);
-
-        for gen in 0..self.generations {
-            // Evaluate fitness
-            let fitness_vals: Vec<f32> = population.iter().map(|x| fitness(x)).collect();
-
-            // Selection
-            let parents = self.select_parents(&population, &fitness_vals);
-
-            // Crossover
-            let mut offspring = Vec::new();
-            for pair in parents.chunks(2) {
-                if rand::random::<f32>() < self.crossover_rate {
-                    let (child1, child2) = self.crossover(&pair[0], &pair[1]);
-                    offspring.push(child1);
-                    offspring.push(child2);
-                } else {
-                    offspring.push(pair[0].clone());
-                    offspring.push(pair[1].clone());
-                }
-            }
-
-            // Mutation
-            for individual in &mut offspring {
-                if rand::random::<f32>() < self.mutation_rate {
-                    self.mutate(individual, bounds);
-                }
-            }
-
-            population = offspring;
-        }
-
-        // Return best individual
-        let best_idx = population.iter()
-            .enumerate()
-            .min_by(|(_, a), (_, b)| {
-                fitness(a).partial_cmp(&fitness(b)).unwrap()
-            })
-            .map(|(i, _)| i)
-            .unwrap();
-
-        OptimizationResult::converged(population[best_idx].clone(), self.generations)
-    }
-}
-```
-
-### 7.3 CMA-ES (Covariance Matrix Adaptation Evolution Strategy)
-
-**State-of-the-art** evolutionary algorithm.
-
-**Adapts** full covariance matrix of search distribution.
-
-**Reference**: Hansen & Ostermeier (2001), "Completely Derandomized Self-Adaptation in Evolution Strategies" [12]
-
----
-
-## 8. Stochastic Optimization
-
-### 8.1 SGD and Momentum (Existing)
-
-**Already implemented** in Aprender:
-- `SGD`: Basic stochastic gradient descent
-- `SGD::with_momentum()`: Nesterov momentum
-
-See `book/src/ml-fundamentals/advanced-optimizers.md` for details.
-
-### 8.2 Adaptive Methods (Existing)
-
-**Already implemented**:
-- `Adam`: Adaptive moment estimation
-- RMSprop, AdaGrad: Documented in book
-
-### 8.3 Variance Reduction Methods
-
-**SVRG** (Stochastic Variance Reduced Gradient):
-```rust
-pub struct SVRG {
-    inner_loop_size: usize,
-    learning_rate: f32,
-}
-
-impl SVRG {
-    pub fn minimize(&self, grad_i: impl Fn(usize, &Vector) -> Vector, n: usize) {
-        // Periodically compute full gradient, use for variance reduction
-    }
-}
-```
-
-**Reference**: Johnson & Zhang (2013), "Accelerating Stochastic Gradient Descent using Predictive Variance Reduction" [13]
-
----
-
-## 9. Modern Techniques
-
-### 9.1 Operator Splitting Methods
-
-Decompose optimization into simpler subproblems.
-
-### 9.2 Primal-Dual Methods
-
-**Chambolle-Pock Algorithm**:
-```rust
-pub struct ChambollePock {
-    tau: f32,     // Primal step size
-    sigma: f32,   // Dual step size
-    theta: f32,   // Over-relaxation (typically 1.0)
-}
-```
-
-**Reference**: Chambolle & Pock (2011), "A First-Order Primal-Dual Algorithm for Convex Problems with Applications to Imaging" [14]
-
-### 9.3 Accelerated Gradient Methods
-
-**Nesterov Acceleration**:
-```text
-yₖ = xₖ + βₖ(xₖ - xₖ₋₁)    // Momentum extrapolation
-xₖ₊₁ = yₖ - α∇f(yₖ)          // Gradient step
-```
-
-**Convergence**: O(1/k²) vs O(1/k) for standard GD
-
-**Reference**: Nesterov (1983, 2018), "Lectures on Convex Optimization" [15]
-
-### 9.4 Adaptive Restart Schemes
-
-**Gradient-based restart**: Reset momentum when gradient alignment reverses.
-
-**Reference**: O'Donoghue & Candès (2015), "Adaptive Restart for Accelerated Gradient Schemes" [16]
-
----
-
-## 10. Specialized Optimization Problems
-
-### 10.1 Least Squares Optimization
-
-**Normal Equations**: (AᵀA)x = Aᵀb (O(n³))
-**QR Decomposition**: Ax = b → Rx = Qᵀb (more stable)
-**SVD**: Best for rank-deficient systems
-
-```rust
-pub fn least_squares_qr(A: &Matrix, b: &Vector) -> Vector {
-    let qr = A.qr_decomposition();
-    qr.R.upper_triangular_solve(&qr.Q.transpose().matvec(b))
-}
-```
-
-### 10.2 Linear Programming
-
-**Simplex Method**, **Interior Point** (see §4.5)
-
-### 10.3 Quadratic Programming
-
-**Active Set**, **Interior Point** (see §4.5-4.6)
-
-### 10.4 Semidefinite Programming (SDP)
-
-**Matrix optimization** with PSD constraints:
-```text
-minimize    tr(CX)
-subject to  tr(AᵢX) = bᵢ
-            X ⪰ 0  (positive semidefinite)
-```
-
-### 10.5 Integer Programming
-
-**Branch and Bound**, **Cutting Planes** (future work)
-
----
-
-## 11. Implementation Architecture
-
-### 11.1 Optimizer Trait Design
+**Solution**: Unified trait supporting both modes.
 
 ```rust
 pub trait Optimizer {
-    fn step(&mut self, params: &mut Vector, grads: &Vector);
-    fn reset(&mut self);
-}
+    /// Stochastic update (mini-batch mode) - for SGD, Adam, RMSprop
+    ///
+    /// Updates parameters in-place given gradient from current mini-batch.
+    /// Used in ML training loops where gradients come from different data batches.
+    fn step(&mut self, params: &mut Vector, grad: &Vector);
 
-pub trait UnconstrainedOptimizer {
+    /// Batch optimization (deterministic mode) - for L-BFGS, CG, Damped Newton
+    ///
+    /// Minimizes objective function with full dataset access.
+    /// Returns complete optimization trajectory and convergence info.
     fn minimize<F, G>(
-        &self,
-        f: F,
-        grad: G,
+        &mut self,
+        objective: F,
+        gradient: G,
         x0: Vector,
     ) -> OptimizationResult
     where
         F: Fn(&Vector) -> f32,
-        G: Fn(&Vector) -> Vector;
+        G: Fn(&Vector) -> Vector,
+    {
+        // Default implementation: not all optimizers support batch mode
+        unimplemented!(
+            "{} does not support batch optimization (minimize). Use step() for stochastic updates.",
+            std::any::type_name::<Self>()
+        )
+    }
+
+    /// Reset internal state (momentum, history, etc.)
+    fn reset(&mut self);
 }
 
-pub trait ConstrainedOptimizer {
-    fn minimize<F, G>(
-        &self,
-        f: F,
-        grad: G,
+pub trait ConstrainedOptimizer: Optimizer {
+    fn minimize_constrained<F, G>(
+        &mut self,
+        objective: F,
+        gradient: G,
         constraints: ConstraintSet,
         x0: Vector,
     ) -> OptimizationResult
@@ -1993,17 +1246,89 @@ pub struct OptimizationResult {
     pub status: ConvergenceStatus,
     pub gradient_norm: f32,
     pub constraint_violation: f32,
+    pub elapsed_time: std::time::Duration,
 }
 
 pub enum ConvergenceStatus {
-    Converged,
-    MaxIterations,
-    Stalled,
-    NumericalError,
+    Converged,           // Gradient norm < tolerance
+    MaxIterations,       // Reached iteration limit
+    Stalled,             // Progress stalled (step size too small)
+    NumericalError,      // Numerical issues (NaN, Inf)
+    UserTerminated,      // Callback requested termination
 }
 ```
 
-### 11.2 Line Search Strategies
+**Example Usage**:
+
+```rust
+// Stochastic mode (SGD/Adam)
+let mut adam = Adam::new(0.001);
+for batch in training_data.batches(32) {
+    let grad = compute_gradient(&model, &batch);
+    adam.step(&mut model.params, &grad);
+}
+
+// Batch mode (L-BFGS)
+let mut lbfgs = LBFGS::new(100, 1e-5, 10);
+let objective = |x: &Vector| loss_function(&full_dataset, x);
+let gradient = |x: &Vector| gradient_function(&full_dataset, x);
+let result = lbfgs.minimize(objective, gradient, x0);
+```
+
+**Why This Design**:
+1. **Type safety**: Compiler prevents using L-BFGS in mini-batch mode (would give poor results)
+2. **Ergonomics**: Stochastic optimizers don't need objective/gradient closures
+3. **Performance**: Avoids allocation overhead for stochastic updates
+4. **Flexibility**: Both APIs coexist in one trait
+
+---
+
+### 6.2 AutoDiff Integration (trueno)
+
+**Critical for Usability** (Toyota Way review feedback).
+
+**Current State** (v0.7.0): Users must manually provide gradients:
+```rust
+// ❌ Motion waste: manual gradient computation
+let lbfgs = LBFGS::new(...);
+let f = |x: &Vector| (x[0] - 5.0).powi(2) + (x[1] - 3.0).powi(2);
+let grad = |x: &Vector| Vector::from_slice(&[2.0 * (x[0] - 5.0), 2.0 * (x[1] - 3.0)]);
+lbfgs.minimize(f, grad, x0);
+```
+
+**v0.8.0 Goal**: Automatic differentiation via trueno:
+```rust
+// ✅ Jidoka: automatic gradient computation
+use aprender::autodiff::*;
+
+let f = |x: &Vector| (x[0] - 5.0).powi(2) + (x[1] - 3.0).powi(2);
+let x = Variable::new(x0);
+let loss = f(&x);
+let grad = loss.backward();  // Automatic!
+
+lbfgs.minimize_autodiff(loss, x);
+```
+
+**Implementation Strategy**:
+1. **Phase 1** (v0.8.0): Wrapper around trueno's computational graph
+2. **Phase 2** (v0.9.0): Hessian-vector products for Newton/L-BFGS
+3. **Phase 3** (v1.0.0): Forward-mode AD for Jacobian-vector products
+
+```rust
+pub trait AutoDiffOptimizer: Optimizer {
+    fn minimize_autodiff<F>(
+        &mut self,
+        objective: F,
+        x0: Variable,
+    ) -> OptimizationResult
+    where
+        F: Fn(&Variable) -> Scalar;
+}
+```
+
+---
+
+### 6.3 Line Search Strategies
 
 **Armijo Condition** (sufficient decrease):
 ```text
@@ -2041,7 +1366,7 @@ pub struct WolfeLineSearch {
 }
 ```
 
-### 11.3 Convergence Criteria
+### 6.4 Convergence Criteria
 
 ```rust
 pub struct ConvergenceCriteria {
@@ -2068,7 +1393,7 @@ impl ConvergenceCriteria {
 }
 ```
 
-### 11.4 Numerical Stability
+### 6.5 Numerical Stability
 
 **Critical considerations**:
 - Condition number monitoring
@@ -2099,7 +1424,7 @@ pub fn safe_cholesky(A: &Matrix, lambda: f32) -> Result<Matrix, AprenderError> {
 
 ---
 
-## 12. Integration with Aprender
+## 7. Integration with Aprender
 
 ### 12.1 API Consistency
 
@@ -2148,73 +1473,112 @@ model.fit_with_optimizer(&x, &y, LBFGS::new(100))?;
 
 ---
 
-## 13. Implementation Roadmap
+## 8. Implementation Roadmap (Lean Approach)
 
-### Phase 1: Classical Methods (v0.8.0, 6-8 weeks)
-
-**Unconstrained**:
-- [ ] Newton's Method
-- [ ] BFGS
-- [ ] L-BFGS
-- [ ] Conjugate Gradient (Polak-Ribière, Fletcher-Reeves)
-- [ ] Trust Region
-
-**Line Search**:
-- [ ] Backtracking (Armijo)
-- [ ] Wolfe conditions
-- [ ] More-Thuente cubic interpolation
-
-**Tests**: 120+ (convergence, numerical stability, edge cases)
-**Documentation**: 2 book chapters (Second-order methods, Line search)
-**Examples**: Rosenbrock, quadratic, logistic regression
-
-### Phase 2: Constrained Optimization (v0.9.0, 8-10 weeks)
-
-**Methods**:
-- [ ] KKT condition checking
-- [ ] Penalty method
-- [ ] Augmented Lagrangian
-- [ ] SQP (Sequential Quadratic Programming)
-- [ ] Interior Point (LP/QP)
-- [ ] Active Set (QP)
-
-**Constraint Handling**:
-- [ ] Linear constraints
-- [ ] Nonlinear constraints
-- [ ] Box constraints
-
-**Tests**: 150+ (feasibility, KKT, constraint satisfaction)
-**Documentation**: 3 book chapters (Constrained theory, SQP, Interior Point)
-**Examples**: Portfolio optimization, SVM training, constrained regression
-
-### Phase 3: Convex & Global (v1.0.0, 10-12 weeks)
-
-**Convex**:
-- [ ] Proximal gradient (ISTA, FISTA)
-- [ ] ADMM
-- [ ] Frank-Wolfe
-- [ ] Coordinate descent
-
-**Derivative-Free**:
-- [ ] Nelder-Mead
-- [ ] Powell's method
-- [ ] Pattern search
-
-**Global**:
-- [ ] Simulated annealing
-- [ ] Genetic algorithms
-- [ ] CMA-ES
-- [ ] Differential evolution
-
-**Tests**: 180+ (convexity, global convergence, derivative-free)
-**Documentation**: 3 book chapters (ADMM, Derivative-free, Global optimization)
-**Examples**: Lasso (ADMM), Hyperparameter tuning (CMA-ES), Black-box optimization
+**Total Timeline**: 13-17 weeks (vs original 24-30 weeks)
+**Total Tests**: 200+ (vs original 450+)
+**Book Chapters**: 5 (vs original 8+)
 
 ---
 
-## 14. Quality Standards
+### Phase 1: Core ML Optimizers (v0.8.0, 4-6 weeks)
 
-### 14.1 EXTREME TDD Requirements
+**Priority 1: AutoDiff Integration** (Week 1-2):
+- [ ] Wrapper around trueno's computational graph
+- [ ] Automatic gradient computation for all optimizers
+- [ ] **Jidoka**: Eliminate manual gradient specification
+
+**Priority 2: Batch Optimizers** (Week 3-4):
+- [ ] L-BFGS (memory-efficient quasi-Newton)
+- [ ] Conjugate Gradient (Polak-Ribière)
+- [ ] Damped Newton / Levenberg-Marquardt
+- [ ] **SafeCholesky** with automatic regularization
+
+**Priority 3: Unified Trait** (Week 5-6):
+- [ ] Optimizer trait (stochastic + deterministic modes)
+- [ ] Backtracking line search (Armijo)
+- [ ] Wolfe line search
+- [ ] Convergence criteria framework
+
+**Tests**: 80+ (convergence, numerical stability, edge cases)
+**Documentation**: 2 book chapters (L-BFGS & CG, Damped Newton)
+**Examples**: Logistic regression, Rosenbrock, GLMs
+
+**Key Deliverable**: Users can optimize ML models without manually computing gradients.
+
+---
+
+### Phase 2: Convex Optimization (v0.9.0, 4-5 weeks)
+
+**Priority 1: Proximal Methods** (Week 1-2):
+- [ ] FISTA (Fast Iterative Shrinkage-Thresholding)
+- [ ] Proximal operators (L1, L2, simplex, box)
+- [ ] Lasso regression example
+
+**Priority 2: ADMM** (Week 3):
+- [ ] Alternating Direction Method of Multipliers
+- [ ] Adaptive penalty parameter (ρ)
+- [ ] Distributed/federated learning example
+
+**Priority 3: Coordinate Descent** (Week 4-5):
+- [ ] Cyclic and randomized variants
+- [ ] Soft-thresholding for Lasso
+- [ ] Elastic Net example
+
+**Tests**: 60+ (convexity, optimality, proximal operators)
+**Documentation**: 2 book chapters (FISTA & ADMM, Coordinate Descent)
+**Examples**: Lasso (3 methods), federated learning, Elastic Net
+
+**Key Deliverable**: Full sparse regularization (L1/L2) support for ML.
+
+---
+
+### Phase 3: Constrained Optimization (v1.0.0, 5-6 weeks)
+
+**Priority 1: KKT & Augmented Lagrangian** (Week 1-2):
+- [ ] KKT condition checking
+- [ ] Augmented Lagrangian method
+- [ ] Constraint violation monitoring
+
+**Priority 2: Projected Gradient** (Week 3-4):
+- [ ] Projection operators (box, simplex, L2 ball, affine)
+- [ ] Projected line search
+- [ ] Non-negative matrix factorization example
+
+**Priority 3: Box Constraints (L-BFGS-B)** (Week 5-6):
+- [ ] L-BFGS with box constraints
+- [ ] Active set identification
+- [ ] Cauchy point computation
+
+**Tests**: 60+ (feasibility, KKT, constraint satisfaction, projections)
+**Documentation**: 1 book chapter (Constrained optimization)
+**Examples**: Portfolio optimization (simplex), SVM, bounded regression
+
+**Key Deliverable**: Full constrained optimization for fairness, robustness, interpretability.
+
+---
+
+### Deferred to aprender-contrib (Post v1.0)
+
+**Derivative-Free**:
+- Nelder-Mead, Powell's method, pattern search
+- **Rationale**: Rarely used in modern ML (gradients available)
+
+**Global Optimization**:
+- Simulated annealing, genetic algorithms, CMA-ES, differential evolution
+- **Rationale**: Not core to supervised/unsupervised learning, high complexity
+
+**Advanced Constrained**:
+- SQP (Sequential Quadratic Programming)
+- Interior Point Methods (Primal-Dual)
+- Active Set Methods
+- **Rationale**: ADMM + Projected Gradient cover most ML use cases
+
+---
+
+## 9. Quality Standards
+
+### 9.1 EXTREME TDD Requirements
 
 **All implementations must satisfy**:
 - ✅ 95%+ test coverage
@@ -2226,7 +1590,7 @@ model.fit_with_optimizer(&x, &y, LBFGS::new(100))?;
 - ✅ Book chapter for each major method
 - ✅ Runnable example demonstrating usage
 
-### 14.2 Convergence Testing
+### 9.2 Convergence Testing
 
 ```rust
 #[test]
@@ -2258,7 +1622,7 @@ fn test_lbfgs_rosenbrock() {
 }
 ```
 
-### 14.3 Numerical Robustness
+### 9.3 Numerical Robustness
 
 **Property tests**:
 ```rust
@@ -2281,7 +1645,7 @@ fn lbfgs_strongly_convex_converges(
 
 ---
 
-## 15. Performance Benchmarks
+## 10. Performance Benchmarks
 
 ### 15.1 Classical Methods (n=100)
 
@@ -2313,7 +1677,7 @@ fn lbfgs_strongly_convex_converges(
 
 ---
 
-## 16. Academic References
+## 11. Academic References
 
 ### Core Textbooks
 
@@ -2407,7 +1771,7 @@ fn lbfgs_strongly_convex_converges(
 
 ---
 
-## 17. Conclusion
+## 12. Conclusion
 
 This specification defines a **comprehensive optimization framework** for Aprender, covering the full spectrum from classical Newton methods to modern ADMM and global optimization techniques.
 
