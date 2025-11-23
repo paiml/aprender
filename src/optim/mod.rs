@@ -1526,6 +1526,383 @@ impl Optimizer for DampedNewton {
     }
 }
 
+// ==================== Proximal Operators ====================
+
+/// Proximal operators for non-smooth regularization.
+///
+/// A proximal operator for function g is defined as:
+/// ```text
+/// prox_g(v) = argmin_x { g(x) + ½‖x - v‖² }
+/// ```
+///
+/// These are essential building blocks for proximal gradient methods like FISTA.
+pub mod prox {
+    use crate::primitives::Vector;
+
+    /// Soft-thresholding operator for L1 regularization.
+    ///
+    /// Computes the proximal operator of the L1 norm: prox_{λ‖·‖₁}(v).
+    ///
+    /// # Formula
+    ///
+    /// ```text
+    /// prox_{λ‖·‖₁}(v) = sign(v) ⊙ max(|v| - λ, 0)
+    /// ```
+    ///
+    /// # Arguments
+    ///
+    /// * `v` - Input vector
+    /// * `lambda` - Regularization parameter (λ ≥ 0)
+    ///
+    /// # Returns
+    ///
+    /// Soft-thresholded vector
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use aprender::optim::prox::soft_threshold;
+    /// use aprender::primitives::Vector;
+    ///
+    /// let v = Vector::from_slice(&[2.0, -1.5, 0.5]);
+    /// let result = soft_threshold(&v, 1.0);
+    ///
+    /// assert!((result[0] - 1.0).abs() < 1e-6);  // 2.0 - 1.0 = 1.0
+    /// assert!((result[1] + 0.5).abs() < 1e-6);  // -1.5 + 1.0 = -0.5
+    /// assert!(result[2].abs() < 1e-6);          // 0.5 - 1.0 = 0 (thresholded)
+    /// ```
+    ///
+    /// # Use Cases
+    ///
+    /// - **Lasso regression**: Sparse linear models with L1 penalty
+    /// - **Compressed sensing**: Sparse signal recovery
+    /// - **Feature selection**: Automatic variable selection via sparsity
+    #[must_use]
+    pub fn soft_threshold(v: &Vector<f32>, lambda: f32) -> Vector<f32> {
+        let mut result = Vector::zeros(v.len());
+        for i in 0..v.len() {
+            let val = v[i];
+            result[i] = if val > lambda {
+                val - lambda
+            } else if val < -lambda {
+                val + lambda
+            } else {
+                0.0
+            };
+        }
+        result
+    }
+
+    /// Projects onto the non-negative orthant: x ≥ 0.
+    ///
+    /// # Arguments
+    ///
+    /// * `x` - Input vector
+    ///
+    /// # Returns
+    ///
+    /// Vector with all negative components set to zero
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use aprender::optim::prox::nonnegative;
+    /// use aprender::primitives::Vector;
+    ///
+    /// let x = Vector::from_slice(&[1.0, -2.0, 3.0, -0.5]);
+    /// let result = nonnegative(&x);
+    ///
+    /// assert_eq!(result[0], 1.0);
+    /// assert_eq!(result[1], 0.0);
+    /// assert_eq!(result[2], 3.0);
+    /// assert_eq!(result[3], 0.0);
+    /// ```
+    #[must_use]
+    pub fn nonnegative(x: &Vector<f32>) -> Vector<f32> {
+        let mut result = Vector::zeros(x.len());
+        for i in 0..x.len() {
+            result[i] = x[i].max(0.0);
+        }
+        result
+    }
+
+    /// Projects onto an L2 ball: ‖x‖₂ ≤ radius.
+    ///
+    /// # Arguments
+    ///
+    /// * `x` - Input vector
+    /// * `radius` - Ball radius (r > 0)
+    ///
+    /// # Returns
+    ///
+    /// Projected vector satisfying ‖result‖₂ ≤ radius
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use aprender::optim::prox::project_l2_ball;
+    /// use aprender::primitives::Vector;
+    ///
+    /// let x = Vector::from_slice(&[3.0, 4.0]); // norm = 5.0
+    /// let result = project_l2_ball(&x, 2.0);
+    ///
+    /// // Should be scaled to norm = 2.0
+    /// let norm = (result[0] * result[0] + result[1] * result[1]).sqrt();
+    /// assert!((norm - 2.0).abs() < 1e-5);
+    /// ```
+    #[must_use]
+    pub fn project_l2_ball(x: &Vector<f32>, radius: f32) -> Vector<f32> {
+        let mut norm_sq = 0.0;
+        for i in 0..x.len() {
+            norm_sq += x[i] * x[i];
+        }
+        let norm = norm_sq.sqrt();
+
+        if norm <= radius {
+            x.clone()
+        } else {
+            let scale = radius / norm;
+            let mut result = Vector::zeros(x.len());
+            for i in 0..x.len() {
+                result[i] = scale * x[i];
+            }
+            result
+        }
+    }
+
+    /// Projects onto box constraints: lower ≤ x ≤ upper.
+    ///
+    /// # Arguments
+    ///
+    /// * `x` - Input vector
+    /// * `lower` - Lower bounds
+    /// * `upper` - Upper bounds
+    ///
+    /// # Returns
+    ///
+    /// Vector with components clipped to [lower, upper]
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use aprender::optim::prox::project_box;
+    /// use aprender::primitives::Vector;
+    ///
+    /// let x = Vector::from_slice(&[-1.0, 0.5, 2.0]);
+    /// let lower = Vector::from_slice(&[0.0, 0.0, 0.0]);
+    /// let upper = Vector::from_slice(&[1.0, 1.0, 1.0]);
+    ///
+    /// let result = project_box(&x, &lower, &upper);
+    ///
+    /// assert_eq!(result[0], 0.0);  // Clipped to lower
+    /// assert_eq!(result[1], 0.5);  // Within bounds
+    /// assert_eq!(result[2], 1.0);  // Clipped to upper
+    /// ```
+    #[must_use]
+    pub fn project_box(x: &Vector<f32>, lower: &Vector<f32>, upper: &Vector<f32>) -> Vector<f32> {
+        let mut result = Vector::zeros(x.len());
+        for i in 0..x.len() {
+            result[i] = x[i].max(lower[i]).min(upper[i]);
+        }
+        result
+    }
+}
+
+// ==================== FISTA Optimizer ====================
+
+/// FISTA (Fast Iterative Shrinkage-Thresholding Algorithm).
+///
+/// Accelerated proximal gradient method for minimizing composite objectives:
+/// ```text
+/// minimize f(x) + g(x)
+/// ```
+/// where f is smooth and convex, g is convex (possibly non-smooth but "simple").
+///
+/// FISTA achieves O(1/k²) convergence rate using Nesterov acceleration,
+/// compared to O(1/k) for standard proximal gradient (ISTA).
+///
+/// # Key Applications
+///
+/// - **Lasso regression**: f(x) = ½‖Ax - b‖², g(x) = λ‖x‖₁
+/// - **Elastic Net**: f(x) = ½‖Ax - b‖², g(x) = λ₁‖x‖₁ + λ₂‖x‖₂²
+/// - **Total variation**: Image denoising with TV regularization
+/// - **Non-negative least squares**: f(x) = ½‖Ax - b‖², g(x) = indicator(x ≥ 0)
+///
+/// # Example
+///
+/// ```
+/// use aprender::optim::{FISTA, Optimizer, prox};
+/// use aprender::primitives::Vector;
+///
+/// // Minimize: ½(x - 5)² + 2|x|  (L1-regularized quadratic)
+/// let smooth = |x: &Vector<f32>| 0.5 * (x[0] - 5.0).powi(2);
+/// let grad_smooth = |x: &Vector<f32>| Vector::from_slice(&[x[0] - 5.0]);
+/// let proximal = |v: &Vector<f32>, _alpha: f32| prox::soft_threshold(v, 2.0);
+///
+/// let mut fista = FISTA::new(1000, 0.1, 1e-5);
+/// let x0 = Vector::from_slice(&[0.0]);
+/// let result = fista.minimize(smooth, grad_smooth, proximal, x0);
+///
+/// // Solution should be around 3.0 (5.0 - 2.0 from soft-thresholding)
+/// assert!((result.solution[0] - 3.0).abs() < 0.1);
+/// ```
+///
+/// # References
+///
+/// - Beck & Teboulle (2009). "A fast iterative shrinkage-thresholding algorithm
+///   for linear inverse problems." SIAM Journal on Imaging Sciences, 2(1), 183-202.
+#[derive(Debug, Clone)]
+pub struct FISTA {
+    /// Maximum number of iterations
+    max_iter: usize,
+    /// Step size (α > 0)
+    step_size: f32,
+    /// Convergence tolerance (‖xₖ₊₁ - xₖ‖ < tol)
+    tol: f32,
+}
+
+impl FISTA {
+    /// Creates a new FISTA optimizer.
+    ///
+    /// # Arguments
+    ///
+    /// * `max_iter` - Maximum number of iterations
+    /// * `step_size` - Step size α (should be ≤ 1/L where L is Lipschitz constant of ∇f)
+    /// * `tol` - Convergence tolerance
+    ///
+    /// # Returns
+    ///
+    /// New FISTA optimizer instance
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use aprender::optim::FISTA;
+    ///
+    /// let optimizer = FISTA::new(1000, 0.01, 1e-6);
+    /// ```
+    #[must_use]
+    pub fn new(max_iter: usize, step_size: f32, tol: f32) -> Self {
+        Self {
+            max_iter,
+            step_size,
+            tol,
+        }
+    }
+
+    /// Minimizes a composite objective function using FISTA.
+    ///
+    /// Solves: minimize f(x) + g(x) where f is smooth, g is "simple" (has easy prox).
+    ///
+    /// # Type Parameters
+    ///
+    /// * `F` - Smooth objective function type
+    /// * `G` - Gradient of smooth part type
+    /// * `P` - Proximal operator type
+    ///
+    /// # Arguments
+    ///
+    /// * `smooth` - Smooth part f(x)
+    /// * `grad_smooth` - Gradient ∇f(x)
+    /// * `prox` - Proximal operator prox_g(v, α)
+    /// * `x0` - Initial point
+    ///
+    /// # Returns
+    ///
+    /// [`OptimizationResult`] with solution and convergence information
+    pub fn minimize<F, G, P>(
+        &mut self,
+        smooth: F,
+        grad_smooth: G,
+        prox: P,
+        x0: Vector<f32>,
+    ) -> OptimizationResult
+    where
+        F: Fn(&Vector<f32>) -> f32,
+        G: Fn(&Vector<f32>) -> Vector<f32>,
+        P: Fn(&Vector<f32>, f32) -> Vector<f32>,
+    {
+        let start_time = std::time::Instant::now();
+
+        let mut x = x0.clone();
+        let mut y = x0;
+        let mut t = 1.0; // Nesterov momentum parameter
+
+        for iter in 0..self.max_iter {
+            // Proximal gradient step at y
+            let grad_y = grad_smooth(&y);
+
+            // Compute: y - α * ∇f(y)
+            let mut gradient_step = Vector::zeros(y.len());
+            for i in 0..y.len() {
+                gradient_step[i] = y[i] - self.step_size * grad_y[i];
+            }
+
+            // Apply proximal operator
+            let x_new = prox(&gradient_step, self.step_size);
+
+            // Check convergence
+            let mut diff_norm = 0.0;
+            for i in 0..x.len() {
+                let diff = x_new[i] - x[i];
+                diff_norm += diff * diff;
+            }
+            diff_norm = diff_norm.sqrt();
+
+            if diff_norm < self.tol {
+                let final_obj = smooth(&x_new);
+                return OptimizationResult {
+                    solution: x_new,
+                    objective_value: final_obj,
+                    iterations: iter,
+                    status: ConvergenceStatus::Converged,
+                    gradient_norm: diff_norm, // Use step norm as proxy for gradient norm
+                    constraint_violation: 0.0,
+                    elapsed_time: start_time.elapsed(),
+                };
+            }
+
+            // Nesterov acceleration
+            let t_new = (1.0_f32 + (1.0_f32 + 4.0_f32 * t * t).sqrt()) / 2.0_f32;
+            let beta = (t - 1.0_f32) / t_new;
+
+            // y_new = x_new + β(x_new - x)
+            let mut y_new = Vector::zeros(x.len());
+            for i in 0..x.len() {
+                y_new[i] = x_new[i] + beta * (x_new[i] - x[i]);
+            }
+
+            x = x_new;
+            y = y_new;
+            t = t_new;
+        }
+
+        // Max iterations reached
+        let final_obj = smooth(&x);
+        OptimizationResult {
+            solution: x,
+            objective_value: final_obj,
+            iterations: self.max_iter,
+            status: ConvergenceStatus::MaxIterations,
+            gradient_norm: 0.0,
+            constraint_violation: 0.0,
+            elapsed_time: start_time.elapsed(),
+        }
+    }
+}
+
+impl Optimizer for FISTA {
+    fn step(&mut self, _params: &mut Vector<f32>, _gradients: &Vector<f32>) {
+        unimplemented!(
+            "FISTA does not support stochastic updates (step). Use minimize() for batch optimization with proximal operators."
+        )
+    }
+
+    fn reset(&mut self) {
+        // FISTA is stateless - nothing to reset
+    }
+}
+
 /// Stochastic Gradient Descent optimizer.
 ///
 /// SGD updates parameters using the gradient of the loss function:
@@ -3770,5 +4147,279 @@ mod tests {
 
         // Solutions should be similar
         assert!((result1.solution[0] - result2.solution[0]).abs() < 1e-2);
+    }
+
+    // ==================== Proximal Operator Tests ====================
+
+    #[test]
+    fn test_soft_threshold_basic() {
+        use crate::optim::prox::soft_threshold;
+
+        let v = Vector::from_slice(&[2.0, -1.5, 0.5, 0.0]);
+        let result = soft_threshold(&v, 1.0);
+
+        assert!((result[0] - 1.0).abs() < 1e-6);  // 2.0 - 1.0
+        assert!((result[1] + 0.5).abs() < 1e-6);  // -1.5 + 1.0
+        assert!(result[2].abs() < 1e-6);          // 0.5 - 1.0 -> 0
+        assert!(result[3].abs() < 1e-6);          // Already zero
+    }
+
+    #[test]
+    fn test_soft_threshold_zero_lambda() {
+        use crate::optim::prox::soft_threshold;
+
+        let v = Vector::from_slice(&[1.0, -2.0, 3.0]);
+        let result = soft_threshold(&v, 0.0);
+
+        // With λ=0, should return input unchanged
+        assert_eq!(result[0], 1.0);
+        assert_eq!(result[1], -2.0);
+        assert_eq!(result[2], 3.0);
+    }
+
+    #[test]
+    fn test_soft_threshold_large_lambda() {
+        use crate::optim::prox::soft_threshold;
+
+        let v = Vector::from_slice(&[1.0, -1.0, 0.5]);
+        let result = soft_threshold(&v, 10.0);
+
+        // All values should be thresholded to zero
+        assert!(result[0].abs() < 1e-6);
+        assert!(result[1].abs() < 1e-6);
+        assert!(result[2].abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_nonnegative_projection() {
+        use crate::optim::prox::nonnegative;
+
+        let x = Vector::from_slice(&[1.0, -2.0, 3.0, -0.5, 0.0]);
+        let result = nonnegative(&x);
+
+        assert_eq!(result[0], 1.0);
+        assert_eq!(result[1], 0.0);  // Projected to 0
+        assert_eq!(result[2], 3.0);
+        assert_eq!(result[3], 0.0);  // Projected to 0
+        assert_eq!(result[4], 0.0);
+    }
+
+    #[test]
+    fn test_project_l2_ball_inside() {
+        use crate::optim::prox::project_l2_ball;
+
+        // Point inside ball - should be unchanged
+        let x = Vector::from_slice(&[1.0, 1.0]); // norm = sqrt(2) ≈ 1.414
+        let result = project_l2_ball(&x, 2.0);
+
+        assert!((result[0] - 1.0).abs() < 1e-5);
+        assert!((result[1] - 1.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn test_project_l2_ball_outside() {
+        use crate::optim::prox::project_l2_ball;
+
+        // Point outside ball - should be scaled
+        let x = Vector::from_slice(&[3.0, 4.0]); // norm = 5.0
+        let result = project_l2_ball(&x, 2.0);
+
+        // Should be scaled to norm = 2.0
+        let norm = (result[0] * result[0] + result[1] * result[1]).sqrt();
+        assert!((norm - 2.0).abs() < 1e-5);
+
+        // Direction should be preserved
+        let scale = 2.0 / 5.0;
+        assert!((result[0] - 3.0 * scale).abs() < 1e-5);
+        assert!((result[1] - 4.0 * scale).abs() < 1e-5);
+    }
+
+    #[test]
+    fn test_project_box() {
+        use crate::optim::prox::project_box;
+
+        let x = Vector::from_slice(&[-1.0, 0.5, 2.0, 1.0]);
+        let lower = Vector::from_slice(&[0.0, 0.0, 0.0, 0.0]);
+        let upper = Vector::from_slice(&[1.0, 1.0, 1.0, 1.0]);
+
+        let result = project_box(&x, &lower, &upper);
+
+        assert_eq!(result[0], 0.0);  // Clipped to lower
+        assert_eq!(result[1], 0.5);  // Within bounds
+        assert_eq!(result[2], 1.0);  // Clipped to upper
+        assert_eq!(result[3], 1.0);  // Within bounds
+    }
+
+    // ==================== FISTA Tests ====================
+
+    #[test]
+    fn test_fista_new() {
+        let fista = FISTA::new(1000, 0.1, 1e-5);
+        assert_eq!(fista.max_iter, 1000);
+        assert!((fista.step_size - 0.1).abs() < 1e-9);
+        assert!((fista.tol - 1e-5).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_fista_l1_regularized_quadratic() {
+        use crate::optim::prox::soft_threshold;
+
+        // Minimize: ½(x - 5)² + 2|x|
+        // Solution should be around x ≈ 3 (soft-threshold of 5 with λ=2)
+        let smooth = |x: &Vector<f32>| 0.5 * (x[0] - 5.0).powi(2);
+        let grad_smooth = |x: &Vector<f32>| Vector::from_slice(&[x[0] - 5.0]);
+        let prox = |v: &Vector<f32>, alpha: f32| soft_threshold(v, 2.0 * alpha);
+
+        let mut fista = FISTA::new(1000, 0.1, 1e-5);
+        let x0 = Vector::from_slice(&[0.0]);
+        let result = fista.minimize(smooth, grad_smooth, prox, x0);
+
+        assert_eq!(result.status, ConvergenceStatus::Converged);
+        // Analytical solution: sign(5) * max(|5| - 2, 0) = 3
+        assert!((result.solution[0] - 3.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn test_fista_nonnegative_least_squares() {
+        use crate::optim::prox::nonnegative;
+
+        // Minimize: ½(x - (-2))² subject to x ≥ 0
+        // Solution should be x = 0 (projection of -2 onto [0, ∞))
+        let smooth = |x: &Vector<f32>| 0.5 * (x[0] + 2.0).powi(2);
+        let grad_smooth = |x: &Vector<f32>| Vector::from_slice(&[x[0] + 2.0]);
+        let prox = |v: &Vector<f32>, _alpha: f32| nonnegative(v);
+
+        let mut fista = FISTA::new(1000, 0.1, 1e-6);
+        let x0 = Vector::from_slice(&[1.0]);
+        let result = fista.minimize(smooth, grad_smooth, prox, x0);
+
+        assert_eq!(result.status, ConvergenceStatus::Converged);
+        assert!(result.solution[0].abs() < 0.01); // Should be very close to 0
+    }
+
+    #[test]
+    fn test_fista_box_constrained() {
+        use crate::optim::prox::project_box;
+
+        // Minimize: ½(x - 10)² subject to 0 ≤ x ≤ 1
+        // Solution should be x = 1 (projection of 10 onto [0, 1])
+        let smooth = |x: &Vector<f32>| 0.5 * (x[0] - 10.0).powi(2);
+        let grad_smooth = |x: &Vector<f32>| Vector::from_slice(&[x[0] - 10.0]);
+
+        let lower = Vector::from_slice(&[0.0]);
+        let upper = Vector::from_slice(&[1.0]);
+        let prox = move |v: &Vector<f32>, _alpha: f32| project_box(v, &lower, &upper);
+
+        let mut fista = FISTA::new(1000, 0.1, 1e-6);
+        let x0 = Vector::from_slice(&[0.5]);
+        let result = fista.minimize(smooth, grad_smooth, prox, x0);
+
+        assert_eq!(result.status, ConvergenceStatus::Converged);
+        assert!((result.solution[0] - 1.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_fista_multidimensional_lasso() {
+        use crate::optim::prox::soft_threshold;
+
+        // Minimize: ½‖x - c‖² + λ‖x‖₁ where c = [3, -2, 1]
+        let c = vec![3.0, -2.0, 1.0];
+        let lambda = 0.5;
+
+        let smooth = |x: &Vector<f32>| {
+            let mut sum = 0.0;
+            for i in 0..x.len() {
+                sum += 0.5 * (x[i] - c[i]).powi(2);
+            }
+            sum
+        };
+
+        let grad_smooth = |x: &Vector<f32>| {
+            let mut g = Vector::zeros(x.len());
+            for i in 0..x.len() {
+                g[i] = x[i] - c[i];
+            }
+            g
+        };
+
+        let prox = move |v: &Vector<f32>, alpha: f32| soft_threshold(v, lambda * alpha);
+
+        let mut fista = FISTA::new(1000, 0.1, 1e-6);
+        let x0 = Vector::from_slice(&[0.0, 0.0, 0.0]);
+        let result = fista.minimize(smooth, grad_smooth, prox, x0);
+
+        assert_eq!(result.status, ConvergenceStatus::Converged);
+
+        // Analytical solutions: sign(c[i]) * max(|c[i]| - λ, 0)
+        assert!((result.solution[0] - 2.5).abs() < 0.1);  // 3 - 0.5
+        assert!((result.solution[1] + 1.5).abs() < 0.1);  // -2 + 0.5
+        assert!((result.solution[2] - 0.5).abs() < 0.1);  // 1 - 0.5
+    }
+
+    #[test]
+    fn test_fista_max_iterations() {
+        use crate::optim::prox::soft_threshold;
+
+        // Use a difficult problem with very few iterations
+        let smooth = |x: &Vector<f32>| 0.5 * x[0].powi(2);
+        let grad_smooth = |x: &Vector<f32>| Vector::from_slice(&[x[0]]);
+        let prox = |v: &Vector<f32>, alpha: f32| soft_threshold(v, alpha);
+
+        let mut fista = FISTA::new(3, 0.001, 1e-10); // Very few iterations
+        let x0 = Vector::from_slice(&[10.0]);
+        let result = fista.minimize(smooth, grad_smooth, prox, x0);
+
+        // Should hit max iterations
+        assert_eq!(result.status, ConvergenceStatus::MaxIterations);
+        assert_eq!(result.iterations, 3);
+    }
+
+    #[test]
+    fn test_fista_convergence_tracking() {
+        use crate::optim::prox::soft_threshold;
+
+        let smooth = |x: &Vector<f32>| 0.5 * x[0].powi(2);
+        let grad_smooth = |x: &Vector<f32>| Vector::from_slice(&[x[0]]);
+        let prox = |v: &Vector<f32>, alpha: f32| soft_threshold(v, 0.1 * alpha);
+
+        let mut fista = FISTA::new(1000, 0.1, 1e-6);
+        let x0 = Vector::from_slice(&[5.0]);
+        let result = fista.minimize(smooth, grad_smooth, prox, x0);
+
+        assert_eq!(result.status, ConvergenceStatus::Converged);
+        assert!(result.iterations > 0);
+        assert!(result.elapsed_time.as_nanos() > 0);
+    }
+
+    #[test]
+    fn test_fista_vs_no_acceleration() {
+        use crate::optim::prox::soft_threshold;
+
+        // FISTA should converge faster than unaccelerated proximal gradient
+        let smooth = |x: &Vector<f32>| {
+            let mut sum = 0.0;
+            for i in 0..x.len() {
+                sum += 0.5 * (x[i] - (i as f32 + 1.0)).powi(2);
+            }
+            sum
+        };
+
+        let grad_smooth = |x: &Vector<f32>| {
+            let mut g = Vector::zeros(x.len());
+            for i in 0..x.len() {
+                g[i] = x[i] - (i as f32 + 1.0);
+            }
+            g
+        };
+
+        let prox = |v: &Vector<f32>, alpha: f32| soft_threshold(v, 0.5 * alpha);
+
+        let mut fista = FISTA::new(1000, 0.1, 1e-5);
+        let x0 = Vector::from_slice(&[0.0, 0.0, 0.0, 0.0, 0.0]);
+        let result = fista.minimize(smooth, grad_smooth, prox, x0);
+
+        assert_eq!(result.status, ConvergenceStatus::Converged);
+        // FISTA should converge reasonably fast
+        assert!(result.iterations < 500);
     }
 }
