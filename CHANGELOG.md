@@ -7,6 +7,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2025-11-25
+
+### ✨ **NEW FEATURE: Content-Based Recommendation System**
+
+This minor release adds a production-ready content-based recommendation system with HNSW indexing.
+
+### Added
+
+#### Content-Based Recommender (`recommend` module)
+- **ContentRecommender**: Item-to-item similarity recommendations using TF-IDF + HNSW
+  - O(log n) approximate nearest neighbor search
+  - Automatic vocabulary growth handling with index rebuilding
+  - Cosine similarity metric optimized for text
+  - Example: Movie recommendations based on plot descriptions
+
+#### HNSW Index (`index` module)
+- **HNSWIndex**: Hierarchical Navigable Small World graph for fast ANN search
+  - Multi-layer probabilistic skip-list structure
+  - O(log n) insertion and query complexity
+  - Configurable M (connections) and ef_construction parameters
+  - Cosine distance metric for text similarity
+
+#### Incremental IDF Tracker (`text` module)
+- **IncrementalIDF**: Streaming IDF computation with exponential decay
+  - Prevents IDF drift in streaming contexts
+  - Decay factor 0.95 (half-life ~14 documents)
+  - Formula: `IDF = log((N + 1) / (df + 1)) + 1`
+  - Automatic vocabulary tracking
+
+### Changed
+
+#### Dimensional Consistency Fix (Phase 2)
+- Automatic HNSW index rebuilding when vocabulary grows
+- Sorted vocabulary terms for consistent vector ordering
+- Re-vectorization of all items on vocabulary expansion
+- Eliminated -inf and NaN similarity scores
+
+### Quality Metrics
+
+**Test Coverage:** 96.00% line coverage (maintained ≥95% requirement)
+**Test Count:** 1,293 tests (7 new recommender tests, 10 new property tests)
+**Benchmarks:** <100ms latency for 10,000 items (verified)
+**Clippy:** 0 warnings in new modules
+**Zero Defects:** Toyota Way compliance maintained
+
+### Documentation
+
+- **Book Chapter**: Comprehensive EXTREME TDD case study (`book/src/examples/content-recommender.md`)
+- **Example**: Movie recommendation demo (`examples/recommend_content.rs`)
+- **Benchmark**: Performance validation (`benches/recommend.rs`)
+
+### Files Added
+
+- `src/index/mod.rs`, `src/index/hnsw.rs` (504 lines)
+- `src/text/incremental_idf.rs` (276 lines)
+- `src/recommend/mod.rs`, `src/recommend/content_based.rs` (362 lines)
+- `benches/recommend.rs` (95 lines)
+- `examples/recommend_content.rs` (128 lines)
+
 ## [0.7.1] - 2024-11-24
 
 ### 🔧 **DEPENDENCY UPGRADE & QUALITY IMPROVEMENTS**
