@@ -8,6 +8,8 @@
 //! ADMM is particularly powerful for:
 //! - **Distributed ML**: Split data across workers
 //! - **Federated learning**: Train models across devices
+
+#![allow(non_snake_case)] // Allow mathematical matrix notation (A, B, Q, etc.)
 //! - **Constrained problems**: Equality constraints via consensus
 //!
 //! ## Mathematical Background
@@ -42,6 +44,7 @@ use aprender::primitives::{Matrix, Vector};
 ///
 /// This separates the smooth (least squares) and non-smooth (L1) parts,
 /// allowing each to be solved efficiently.
+#[allow(clippy::too_many_lines)]
 fn distributed_lasso_admm() {
     println!("=== Example 1: Distributed Lasso with ADMM ===\n");
 
@@ -75,9 +78,9 @@ fn distributed_lasso_admm() {
     let lambda = 0.3;
 
     println!("Distributed Lasso Problem:");
-    println!("Samples: {}, Features: {}", m, n);
+    println!("Samples: {m}, Features: {n}");
     println!("True sparsity: 3 non-zero coefficients");
-    println!("Regularization: λ = {}\n", lambda);
+    println!("Regularization: λ = {lambda}\n");
 
     // Consensus form: x = z (A = I, B = -I, c = 0)
     let A = Matrix::eye(n);
@@ -110,16 +113,15 @@ fn distributed_lasso_admm() {
         }
 
         // Solve using Cholesky
-        match lhs.cholesky_solve(&rhs) {
-            Ok(x) => x,
-            Err(_) => {
-                // Fallback: use gradient step if Cholesky fails
-                let mut x_new = Vector::zeros(n);
-                for i in 0..n {
-                    x_new[i] = (dtb[i] + rho * (z[i] - u[i])) / (dtd.get(i, i) + rho);
-                }
-                x_new
+        if let Ok(x) = lhs.cholesky_solve(&rhs) {
+            x
+        } else {
+            // Fallback: use gradient step if Cholesky fails
+            let mut x_new = Vector::zeros(n);
+            for i in 0..n {
+                x_new[i] = (dtb[i] + rho * (z[i] - u[i])) / (dtd.get(i, i) + rho);
             }
+            x_new
         }
     };
 
@@ -155,8 +157,8 @@ fn distributed_lasso_admm() {
     }
 
     println!("\nSparsity Analysis:");
-    println!("Non-zero coefficients found: {}/{}", nnz, n);
-    println!("Recovered indices: {:?}", recovered_indices);
+    println!("Non-zero coefficients found: {nnz}/{n}");
+    println!("Recovered indices: {recovered_indices:?}");
 
     println!("\nRecovered vs True coefficients:");
     println!(
@@ -182,7 +184,7 @@ fn distributed_lasso_admm() {
         pred_error += diff * diff;
     }
     pred_error = (pred_error / (m as f32)).sqrt();
-    println!("\nPrediction RMSE: {:.6}", pred_error);
+    println!("\nPrediction RMSE: {pred_error:.6}");
 
     println!();
 }
@@ -207,8 +209,8 @@ fn consensus_optimization_federated() {
     ];
 
     println!("Federated Learning Simulation:");
-    println!("Workers: {}", num_workers);
-    println!("Solution dimension: {}", n);
+    println!("Workers: {num_workers}");
+    println!("Solution dimension: {n}");
     println!("Goal: Reach consensus across all workers\n");
 
     // Consensus constraint: all worker solutions must agree
@@ -293,7 +295,7 @@ fn consensus_optimization_federated() {
         consensus_error += diff * diff;
     }
     consensus_error = consensus_error.sqrt();
-    println!("\nConsensus error: {:.6}", consensus_error);
+    println!("\nConsensus error: {consensus_error:.6}");
 
     println!();
 }
@@ -328,7 +330,7 @@ fn quadratic_programming_admm() {
     println!("Quadratic Programming:");
     println!("minimize ½xᵀQx + cᵀx");
     println!("subject to: x ≥ 0");
-    println!("Variables: {}\n", n);
+    println!("Variables: {n}\n");
 
     // Consensus: x = z
     let A = Matrix::eye(n);
@@ -359,16 +361,15 @@ fn quadratic_programming_admm() {
         }
 
         // Solve
-        match lhs.cholesky_solve(&rhs) {
-            Ok(x) => x,
-            Err(_) => {
-                // Fallback
-                let mut x_new = Vector::zeros(n);
-                for i in 0..n {
-                    x_new[i] = (-c_clone[i] + rho * (z[i] - u[i])) / (q_clone.get(i, i) + rho);
-                }
-                x_new
+        if let Ok(x) = lhs.cholesky_solve(&rhs) {
+            x
+        } else {
+            // Fallback
+            let mut x_new = Vector::zeros(n);
+            for i in 0..n {
+                x_new[i] = (-c_clone[i] + rho * (z[i] - u[i])) / (q_clone.get(i, i) + rho);
             }
+            x_new
         }
     };
 
@@ -410,7 +411,7 @@ fn quadratic_programming_admm() {
         .matvec(&result.solution)
         .expect("Matrix-vector multiplication");
     let obj = 0.5 * result.solution.dot(&qx) + c_vec.dot(&result.solution);
-    println!("\nObjective value: {:.6}", obj);
+    println!("\nObjective value: {obj:.6}");
 
     // Check constraints
     let mut min_val = f32::INFINITY;
@@ -419,7 +420,7 @@ fn quadratic_programming_admm() {
             min_val = result.solution[i];
         }
     }
-    println!("Minimum coefficient: {:.6} (should be ≥ 0)", min_val);
+    println!("Minimum coefficient: {min_val:.6} (should be ≥ 0)");
 
     println!();
 }
@@ -428,6 +429,7 @@ fn quadratic_programming_admm() {
 ///
 /// Compare ADMM and FISTA on the same Lasso problem to demonstrate
 /// convergence behavior and computational tradeoffs.
+#[allow(clippy::too_many_lines)]
 fn admm_vs_fista_comparison() {
     println!("=== Example 4: ADMM vs FISTA Comparison ===\n");
 
@@ -453,9 +455,9 @@ fn admm_vs_fista_comparison() {
     let lambda = 0.4;
 
     println!("Lasso Comparison: ADMM vs FISTA");
-    println!("Samples: {}, Features: {}", m, n);
+    println!("Samples: {m}, Features: {n}");
     println!("True sparsity: 3 non-zero coefficients");
-    println!("Regularization: λ = {}\n", lambda);
+    println!("Regularization: λ = {lambda}\n");
 
     // ===== ADMM =====
     println!("--- ADMM ---");
@@ -513,7 +515,7 @@ fn admm_vs_fista_comparison() {
             nnz_admm += 1;
         }
     }
-    println!("Non-zero coefficients: {}", nnz_admm);
+    println!("Non-zero coefficients: {nnz_admm}");
 
     // ===== FISTA =====
     println!("\n--- FISTA ---");
@@ -553,7 +555,7 @@ fn admm_vs_fista_comparison() {
             nnz_fista += 1;
         }
     }
-    println!("Non-zero coefficients: {}", nnz_fista);
+    println!("Non-zero coefficients: {nnz_fista}");
 
     // ===== Comparison =====
     println!("\n--- Comparison Summary ---");

@@ -3944,6 +3944,7 @@ impl Optimizer for SGD {
 }
 
 #[cfg(test)]
+#[allow(non_snake_case)] // Allow mathematical matrix notation (A, B, Q, etc.)
 mod tests {
     use super::*;
 
@@ -4005,14 +4006,11 @@ mod tests {
         let result = safe_cholesky_solve(&A, &b, 1e-4, 10);
 
         // May succeed with regularization or fail gracefully
-        match result {
-            Ok(x) => {
-                assert_eq!(x.len(), 2);
-                // Solution exists with regularization
-            }
-            Err(_) => {
-                // Also acceptable - matrix is indefinite
-            }
+        if let Ok(x) = result {
+            assert_eq!(x.len(), 2);
+            // Solution exists with regularization
+        } else {
+            // Also acceptable - matrix is indefinite
         }
     }
 
@@ -4609,19 +4607,19 @@ mod tests {
     #[should_panic(expected = "Wolfe conditions require 0 < c1 < c2 < 1")]
     fn test_wolfe_line_search_invalid_c1_c2() {
         // c1 >= c2 should panic
-        WolfeLineSearch::new(0.9, 0.5, 50);
+        let _ = WolfeLineSearch::new(0.9, 0.5, 50);
     }
 
     #[test]
     #[should_panic(expected = "Wolfe conditions require 0 < c1 < c2 < 1")]
     fn test_wolfe_line_search_c1_negative() {
-        WolfeLineSearch::new(-0.1, 0.9, 50);
+        let _ = WolfeLineSearch::new(-0.1, 0.9, 50);
     }
 
     #[test]
     #[should_panic(expected = "Wolfe conditions require 0 < c1 < c2 < 1")]
     fn test_wolfe_line_search_c2_too_large() {
-        WolfeLineSearch::new(0.1, 1.5, 50);
+        let _ = WolfeLineSearch::new(0.1, 1.5, 50);
     }
 
     #[test]
@@ -4785,7 +4783,7 @@ mod tests {
     #[test]
     fn test_lbfgs_multidimensional_quadratic() {
         // Minimize f(x) = ||x - c||^2 where c = [1, 2, 3]
-        let c = vec![1.0, 2.0, 3.0];
+        let c = [1.0, 2.0, 3.0];
         let f = |x: &Vector<f32>| {
             let mut sum = 0.0;
             for i in 0..x.len() {
@@ -4807,8 +4805,8 @@ mod tests {
         let result = optimizer.minimize(f, grad, x0);
 
         assert_eq!(result.status, ConvergenceStatus::Converged);
-        for i in 0..3 {
-            assert!((result.solution[i] - c[i]).abs() < 1e-3);
+        for (i, &target) in c.iter().enumerate().take(3) {
+            assert!((result.solution[i] - target).abs() < 1e-3);
         }
     }
 
@@ -4880,12 +4878,12 @@ mod tests {
 
         // Small history
         let mut opt_small = LBFGS::new(100, 1e-5, 3);
-        let result_small = opt_small.minimize(&f, &grad, x0.clone());
+        let result_small = opt_small.minimize(f, grad, x0.clone());
         assert_eq!(result_small.status, ConvergenceStatus::Converged);
 
         // Large history
         let mut opt_large = LBFGS::new(100, 1e-5, 20);
-        let result_large = opt_large.minimize(&f, &grad, x0);
+        let result_large = opt_large.minimize(f, grad, x0);
         assert_eq!(result_large.status, ConvergenceStatus::Converged);
 
         // Both should converge to same solution
@@ -4902,8 +4900,8 @@ mod tests {
         let x0 = Vector::from_slice(&[5.0]);
 
         // First run
-        optimizer.minimize(&f, &grad, x0.clone());
-        assert!(optimizer.s_history.len() > 0);
+        optimizer.minimize(f, grad, x0.clone());
+        assert!(!optimizer.s_history.is_empty());
 
         // Reset
         optimizer.reset();
@@ -4911,7 +4909,7 @@ mod tests {
         assert_eq!(optimizer.y_history.len(), 0);
 
         // Second run should work
-        let result = optimizer.minimize(&f, &grad, x0);
+        let result = optimizer.minimize(f, grad, x0);
         assert_eq!(result.status, ConvergenceStatus::Converged);
     }
 
@@ -5077,7 +5075,7 @@ mod tests {
     #[test]
     fn test_cg_multidimensional_quadratic() {
         // Minimize f(x) = ||x - c||^2 where c = [1, 2, 3]
-        let c = vec![1.0, 2.0, 3.0];
+        let c = [1.0, 2.0, 3.0];
         let f = |x: &Vector<f32>| {
             let mut sum = 0.0;
             for i in 0..x.len() {
@@ -5099,8 +5097,8 @@ mod tests {
         let result = optimizer.minimize(f, grad, x0);
 
         assert_eq!(result.status, ConvergenceStatus::Converged);
-        for i in 0..3 {
-            assert!((result.solution[i] - c[i]).abs() < 1e-3);
+        for (i, &target) in c.iter().enumerate() {
+            assert!((result.solution[i] - target).abs() < 1e-3);
         }
     }
 
@@ -5171,13 +5169,13 @@ mod tests {
         let x0 = Vector::from_slice(&[3.0, 4.0]);
 
         let mut opt_fr = ConjugateGradient::new(100, 1e-5, CGBetaFormula::FletcherReeves);
-        let result_fr = opt_fr.minimize(&f, &grad, x0.clone());
+        let result_fr = opt_fr.minimize(f, grad, x0.clone());
 
         let mut opt_pr = ConjugateGradient::new(100, 1e-5, CGBetaFormula::PolakRibiere);
-        let result_pr = opt_pr.minimize(&f, &grad, x0.clone());
+        let result_pr = opt_pr.minimize(f, grad, x0.clone());
 
         let mut opt_hs = ConjugateGradient::new(100, 1e-5, CGBetaFormula::HestenesStiefel);
-        let result_hs = opt_hs.minimize(&f, &grad, x0);
+        let result_hs = opt_hs.minimize(f, grad, x0);
 
         // All should converge to same solution
         assert_eq!(result_fr.status, ConvergenceStatus::Converged);
@@ -5213,7 +5211,7 @@ mod tests {
         let x0 = Vector::from_slice(&[5.0]);
 
         // First run
-        optimizer.minimize(&f, &grad, x0.clone());
+        optimizer.minimize(f, grad, x0.clone());
         assert!(optimizer.prev_direction.is_some());
 
         // Reset
@@ -5223,7 +5221,7 @@ mod tests {
         assert_eq!(optimizer.iter_count, 0);
 
         // Second run should work
-        let result = optimizer.minimize(&f, &grad, x0);
+        let result = optimizer.minimize(f, grad, x0);
         assert_eq!(result.status, ConvergenceStatus::Converged);
     }
 
@@ -5310,10 +5308,10 @@ mod tests {
         let x0 = Vector::from_slice(&[5.0, 3.0, 2.0]);
 
         let mut cg = ConjugateGradient::new(100, 1e-5, CGBetaFormula::PolakRibiere);
-        let result_cg = cg.minimize(&f, &grad, x0.clone());
+        let result_cg = cg.minimize(f, grad, x0.clone());
 
         let mut lbfgs = LBFGS::new(100, 1e-5, 10);
-        let result_lbfgs = lbfgs.minimize(&f, &grad, x0);
+        let result_lbfgs = lbfgs.minimize(f, grad, x0);
 
         // Both should converge to same solution
         assert_eq!(result_cg.status, ConvergenceStatus::Converged);
@@ -5437,13 +5435,13 @@ mod tests {
         let x0 = Vector::from_slice(&[5.0]);
 
         // First run
-        optimizer.minimize(&f, &grad, x0.clone());
+        optimizer.minimize(f, grad, x0.clone());
 
         // Reset (stateless, so just verify it doesn't panic)
         optimizer.reset();
 
         // Second run should work
-        let result = optimizer.minimize(&f, &grad, x0);
+        let result = optimizer.minimize(f, grad, x0);
         assert_eq!(result.status, ConvergenceStatus::Converged);
     }
 
@@ -5545,10 +5543,10 @@ mod tests {
         let x0 = Vector::from_slice(&[5.0, 3.0]);
 
         let mut dn = DampedNewton::new(100, 1e-5);
-        let result_dn = dn.minimize(&f, &grad, x0.clone());
+        let result_dn = dn.minimize(f, grad, x0.clone());
 
         let mut lbfgs = LBFGS::new(100, 1e-5, 10);
-        let result_lbfgs = lbfgs.minimize(&f, &grad, x0);
+        let result_lbfgs = lbfgs.minimize(f, grad, x0);
 
         // Both should converge to same solution
         assert_eq!(result_dn.status, ConvergenceStatus::Converged);
@@ -5566,10 +5564,10 @@ mod tests {
         let x0 = Vector::from_slice(&[5.0]);
 
         let mut opt1 = DampedNewton::new(100, 1e-5).with_epsilon(1e-5);
-        let result1 = opt1.minimize(&f, &grad, x0.clone());
+        let result1 = opt1.minimize(f, grad, x0.clone());
 
         let mut opt2 = DampedNewton::new(100, 1e-5).with_epsilon(1e-7);
-        let result2 = opt2.minimize(&f, &grad, x0);
+        let result2 = opt2.minimize(f, grad, x0);
 
         // Both should converge
         assert_eq!(result1.status, ConvergenceStatus::Converged);
@@ -5753,7 +5751,7 @@ mod tests {
         use crate::optim::prox::soft_threshold;
 
         // Minimize: ½‖x - c‖² + λ‖x‖₁ where c = [3, -2, 1]
-        let c = vec![3.0, -2.0, 1.0];
+        let c = [3.0, -2.0, 1.0];
         let lambda = 0.5;
 
         let smooth = |x: &Vector<f32>| {
@@ -5873,7 +5871,7 @@ mod tests {
     fn test_coordinate_descent_simple_quadratic() {
         // Minimize: ½‖x - c‖² where c = [1, 2, 3]
         // Coordinate update: xᵢ = cᵢ (closed form)
-        let c = vec![1.0, 2.0, 3.0];
+        let c = [1.0, 2.0, 3.0];
 
         let update = move |x: &mut Vector<f32>, i: usize| {
             x[i] = c[i];
@@ -5894,7 +5892,7 @@ mod tests {
         // Coordinate-wise soft-thresholding applied to fixed values
         // This models one iteration of Lasso coordinate descent
         let lambda = 0.5;
-        let target = vec![2.0, -1.5, 0.3, -0.3];
+        let target = [2.0, -1.5, 0.3, -0.3];
 
         let update = move |x: &mut Vector<f32>, i: usize| {
             // Soft-threshold target[i]
@@ -5925,7 +5923,7 @@ mod tests {
     fn test_coordinate_descent_projection() {
         // Project onto [0, 1] box constraint coordinate-wise
         let update = |x: &mut Vector<f32>, i: usize| {
-            x[i] = x[i].max(0.0).min(1.0);
+            x[i] = x[i].clamp(0.0, 1.0);
         };
 
         let mut cd = CoordinateDescent::new(100, 1e-6);
@@ -5970,7 +5968,7 @@ mod tests {
     fn test_coordinate_descent_max_iterations() {
         // Use update that doesn't converge quickly
         let update = |x: &mut Vector<f32>, i: usize| {
-            x[i] = x[i] * 0.99; // Very slow convergence
+            x[i] *= 0.99; // Very slow convergence
         };
 
         let mut cd = CoordinateDescent::new(3, 1e-10); // Very few iterations
@@ -5983,7 +5981,7 @@ mod tests {
 
     #[test]
     fn test_coordinate_descent_convergence_tracking() {
-        let c = vec![5.0, 3.0];
+        let c = [5.0, 3.0];
         let update = move |x: &mut Vector<f32>, i: usize| {
             x[i] = c[i];
         };
@@ -6012,8 +6010,8 @@ mod tests {
         let result = cd.minimize(update, x0);
 
         assert_eq!(result.status, ConvergenceStatus::Converged);
-        for i in 0..5 {
-            assert!((result.solution[i] - target[i]).abs() < 1e-5);
+        for (i, &targ) in target.iter().enumerate().take(5) {
+            assert!((result.solution[i] - targ).abs() < 1e-5);
         }
     }
 
@@ -6036,7 +6034,7 @@ mod tests {
 
     #[test]
     fn test_coordinate_descent_gradient_tracking() {
-        let c = vec![3.0, 4.0];
+        let c = [3.0, 4.0];
         let update = move |x: &mut Vector<f32>, i: usize| {
             x[i] = c[i];
         };
@@ -6220,7 +6218,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // TODO: Fix consensus form for box constraints - needs refinement
+    #[ignore = "TODO: Fix consensus form for box constraints - needs refinement"]
     fn test_admm_box_constraints_via_consensus() {
         // Minimize: ½‖x - target‖² subject to 0 ≤ z ≤ 1, x = z
         let n = 3;
@@ -6254,7 +6252,7 @@ mod tests {
             let mut z = Vector::zeros(n);
             for i in 0..n {
                 let v = -(ax[i] + u[i]);
-                z[i] = v.max(0.0).min(1.0);
+                z[i] = v.clamp(0.0, 1.0);
             }
             z
         };
@@ -6347,7 +6345,7 @@ mod tests {
 
         let result = admm_adaptive.minimize_consensus(
             x_minimizer.clone(),
-            z_minimizer.clone(),
+            z_minimizer,
             &A,
             &B,
             &c,
@@ -6546,8 +6544,8 @@ mod tests {
             + result.solution[1] * result.solution[1])
             .sqrt();
         assert!((norm - radius).abs() < 1e-4); // On boundary
-        assert!((result.solution[0] - 0.7071).abs() < 1e-3); // √2/2 ≈ 0.7071
-        assert!((result.solution[1] - 0.7071).abs() < 1e-3);
+        assert!((result.solution[0] - std::f32::consts::FRAC_1_SQRT_2).abs() < 1e-3); // √2/2
+        assert!((result.solution[1] - std::f32::consts::FRAC_1_SQRT_2).abs() < 1e-3);
     }
 
     #[test]

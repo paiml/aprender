@@ -64,7 +64,7 @@ fn booth_grad(x: &Vector<f32>) -> Vector<f32> {
 }
 
 fn print_result(name: &str, result: &aprender::optim::OptimizationResult) {
-    println!("\n{} Results:", name);
+    println!("\n{name} Results:");
     println!("  Status: {:?}", result.status);
     println!("  Iterations: {}", result.iterations);
     println!(
@@ -76,6 +76,7 @@ fn print_result(name: &str, result: &aprender::optim::OptimizationResult) {
     println!("  Time: {:?}", result.elapsed_time);
 }
 
+#[allow(clippy::too_many_lines)]
 fn main() {
     println!("=== Batch Optimization Examples ===\n");
 
@@ -157,7 +158,7 @@ fn main() {
     println!("\n\n--- Example 4: Convergence Comparison ---");
     println!("Running optimizers with different initial points\n");
 
-    let initial_points = vec![
+    let initial_points = [
         Vector::from_slice(&[-2.0, 2.0]),
         Vector::from_slice(&[5.0, -5.0]),
         Vector::from_slice(&[0.5, 0.5]),

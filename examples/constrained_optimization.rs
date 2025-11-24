@@ -8,6 +8,8 @@
 //! These methods handle various constraint types:
 //! - **Projection constraints**: x ∈ C (convex sets)
 //! - **Equality constraints**: h(x) = 0
+
+#![allow(non_snake_case)] // Allow mathematical matrix notation (A, B, Q, etc.)
 //! - **Inequality constraints**: g(x) ≤ 0
 //!
 //! ## Mathematical Background
@@ -58,7 +60,7 @@ fn nonnegative_quadratic_pgd() {
     println!("Quadratic Minimization Problem:");
     println!("minimize ½‖x - target‖²");
     println!("subject to: x ≥ 0 (non-negativity)");
-    println!("Problem size: {} variables\n", n);
+    println!("Problem size: {n} variables\n");
 
     // Objective: minimize ½‖x - target‖²
     let objective = |x: &Vector<f32>| -> f32 {
@@ -123,7 +125,7 @@ fn nonnegative_quadratic_pgd() {
     }
 
     println!("\nConstraint satisfaction:");
-    println!("  Minimum value: {:.6} (should be ≥ 0.0)", min_val);
+    println!("  Minimum value: {min_val:.6} (should be ≥ 0.0)");
 
     println!();
 }
@@ -154,8 +156,8 @@ fn equality_constrained_least_squares() {
 
     // Target vector
     let mut b_data = vec![0.0; m];
-    for i in 0..m {
-        b_data[i] = (i as f32 * 0.3).cos();
+    for (i, item) in b_data.iter_mut().enumerate().take(m) {
+        *item = (i as f32 * 0.3).cos();
     }
     let b = Vector::from_slice(&b_data);
 
@@ -177,9 +179,9 @@ fn equality_constrained_least_squares() {
     let d = Vector::from_slice(&[1.0, 0.5, 0.0]);
 
     println!("Equality-Constrained Least Squares:");
-    println!("Variables: {}", n);
-    println!("Observations: {}", m);
-    println!("Equality constraints: {}", p);
+    println!("Variables: {n}");
+    println!("Observations: {m}");
+    println!("Equality constraints: {p}");
     println!("Constraints:");
     println!("  x₀ + x₁ + x₂ = 1.0");
     println!("  x₃ + x₄ = 0.5");
@@ -240,16 +242,16 @@ fn equality_constrained_least_squares() {
         println!("  h[{}] = {:.6}", i, h_final[i]);
     }
     let constraint_violation = h_final.norm();
-    println!("  ‖h(x)‖ = {:.6}", constraint_violation);
+    println!("  ‖h(x)‖ = {constraint_violation:.6}");
 
     // Verify specific constraints
     println!("\nVerifying constraints:");
     let sum_012 = result.solution[0] + result.solution[1] + result.solution[2];
-    println!("  x₀ + x₁ + x₂ = {:.6} (target: 1.0)", sum_012);
+    println!("  x₀ + x₁ + x₂ = {sum_012:.6} (target: 1.0)");
     let sum_34 = result.solution[3] + result.solution[4];
-    println!("  x₃ + x₄ = {:.6} (target: 0.5)", sum_34);
+    println!("  x₃ + x₄ = {sum_34:.6} (target: 0.5)");
     let diff_56 = result.solution[5] - result.solution[6];
-    println!("  x₅ - x₆ = {:.6} (target: 0.0)", diff_56);
+    println!("  x₅ - x₆ = {diff_56:.6} (target: 0.0)");
 
     // Compute residual
     let y_pred = A
@@ -261,7 +263,7 @@ fn equality_constrained_least_squares() {
         residual_norm += diff * diff;
     }
     residual_norm = residual_norm.sqrt();
-    println!("\nLeast squares residual ‖Ax - b‖: {:.6}", residual_norm);
+    println!("\nLeast squares residual ‖Ax - b‖: {residual_norm:.6}");
 
     println!();
 }
@@ -469,7 +471,7 @@ fn quadratic_programming_interior_point() {
     }
 
     println!("\nConstraint satisfaction:");
-    println!("  Σx_i = {:.6} (≤ 5.0)", sum_x);
+    println!("  Σx_i = {sum_x:.6} (≤ 5.0)");
     println!("  Budget slack: {:.6}", 5.0 - sum_x);
 
     let mut min_x = f32::INFINITY;
@@ -478,7 +480,7 @@ fn quadratic_programming_interior_point() {
             min_x = result.solution[i];
         }
     }
-    println!("  min(x_i) = {:.6} (≥ 0)", min_x);
+    println!("  min(x_i) = {min_x:.6} (≥ 0)");
 
     // Count active constraints
     let active_budget = g_final[0].abs() < 0.1;
@@ -495,7 +497,7 @@ fn quadratic_programming_interior_point() {
     } else {
         println!("  Budget constraint is inactive (interior solution)");
     }
-    println!("  {} variables at lower bound (x_i = 0)", active_bounds);
+    println!("  {active_bounds} variables at lower bound (x_i = 0)");
 
     println!();
 }
@@ -504,6 +506,7 @@ fn quadratic_programming_interior_point() {
 ///
 /// Compare all three Phase 3 methods on the same problem:
 /// minimize ½‖x - target‖² subject to 0 ≤ x ≤ 1
+#[allow(clippy::too_many_lines)]
 fn method_comparison() {
     println!("=== Example 5: Method Comparison - Box-Constrained Quadratic ===\n");
 
@@ -512,7 +515,7 @@ fn method_comparison() {
 
     println!("Problem: minimize ½‖x - target‖²");
     println!("subject to: 0 ≤ x ≤ 1 (box constraints)");
-    println!("Problem size: {} variables\n", n);
+    println!("Problem size: {n} variables\n");
 
     println!(
         "Target vector: [{:.2}, {:.2}, {:.2}, {:.2}, {:.2}, {:.2}]",
@@ -535,7 +538,7 @@ fn method_comparison() {
     let project_box = |x: &Vector<f32>| -> Vector<f32> {
         let mut x_proj = Vector::zeros(n);
         for i in 0..n {
-            x_proj[i] = x[i].max(0.0).min(1.0);
+            x_proj[i] = x[i].clamp(0.0, 1.0);
         }
         x_proj
     };
