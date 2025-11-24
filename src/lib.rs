@@ -48,6 +48,7 @@
 //! - [`glm`]: Generalized Linear Models (Poisson, Gamma, Binomial families)
 //! - [`decomposition`]: Matrix decomposition (ICA, PCA)
 //! - [`text`]: Text processing and NLP (tokenization, stop words, stemming)
+//! - [`time_series`]: Time series analysis and forecasting (ARIMA)
 //! - [`chaos`]: Chaos engineering configuration (from renacer)
 
 pub mod bayesian;
@@ -71,6 +72,7 @@ pub mod primitives;
 pub mod serialization;
 pub mod stats;
 pub mod text;
+pub mod time_series;
 pub mod traits;
 pub mod tree;
 
