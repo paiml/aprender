@@ -28,7 +28,7 @@
 //!
 //! ```
 //! use aprender::stats::{cov, corr};
-//! use trueno::Vector;
+//! use aprender::primitives::Vector;
 //!
 //! let x = Vector::from_slice(&[1.0, 2.0, 3.0, 4.0, 5.0]);
 //! let y = Vector::from_slice(&[2.0, 4.0, 6.0, 8.0, 10.0]);
@@ -63,7 +63,7 @@ use crate::primitives::{Matrix, Vector};
 ///
 /// ```
 /// use aprender::stats::cov;
-/// use trueno::Vector;
+/// use aprender::primitives::Vector;
 ///
 /// let x = Vector::from_slice(&[1.0, 2.0, 3.0]);
 /// let y = Vector::from_slice(&[2.0, 4.0, 5.0]);
@@ -199,7 +199,7 @@ pub fn cov_matrix(data: &Matrix<f32>) -> Result<Matrix<f32>> {
 ///
 /// ```
 /// use aprender::stats::corr;
-/// use trueno::Vector;
+/// use aprender::primitives::Vector;
 ///
 /// let x = Vector::from_slice(&[1.0, 2.0, 3.0, 4.0]);
 /// let y = Vector::from_slice(&[2.0, 4.0, 6.0, 8.0]);

@@ -141,7 +141,7 @@ fn equality_constrained_least_squares() {
 
     let n = 10; // Number of variables
     let m = 20; // Number of observations
-    let p = 3;  // Number of equality constraints
+    let p = 3; // Number of equality constraints
 
     // Create least squares problem: minimize ½‖Ax - b‖²
     let mut a_data = vec![0.0; m * n];
@@ -196,7 +196,9 @@ fn equality_constrained_least_squares() {
     let gradient = |x: &Vector<f32>| -> Vector<f32> {
         let ax = A.matvec(x).expect("Matrix-vector multiplication");
         let residual = &ax - &b;
-        A.transpose().matvec(&residual).expect("Matrix-vector multiplication")
+        A.transpose()
+            .matvec(&residual)
+            .expect("Matrix-vector multiplication")
     };
 
     // Equality constraints: h(x) = Cx - d
@@ -250,7 +252,9 @@ fn equality_constrained_least_squares() {
     println!("  x₅ - x₆ = {:.6} (target: 0.0)", diff_56);
 
     // Compute residual
-    let y_pred = A.matvec(&result.solution).expect("Matrix-vector multiplication");
+    let y_pred = A
+        .matvec(&result.solution)
+        .expect("Matrix-vector multiplication");
     let mut residual_norm = 0.0;
     for i in 0..m {
         let diff = y_pred[i] - b[i];
@@ -307,10 +311,10 @@ fn linear_programming_interior_point() {
     // Jacobian of inequality constraints
     let inequality_jac = |_x: &Vector<f32>| -> Vec<Vector<f32>> {
         vec![
-            Vector::from_slice(&[1.0, 2.0]),   // ∇g₀
-            Vector::from_slice(&[3.0, 2.0]),   // ∇g₁
-            Vector::from_slice(&[-1.0, 0.0]),  // ∇g₂
-            Vector::from_slice(&[0.0, -1.0]),  // ∇g₃
+            Vector::from_slice(&[1.0, 2.0]),  // ∇g₀
+            Vector::from_slice(&[3.0, 2.0]),  // ∇g₁
+            Vector::from_slice(&[-1.0, 0.0]), // ∇g₂
+            Vector::from_slice(&[0.0, -1.0]), // ∇g₃
         ]
     };
 
@@ -326,7 +330,10 @@ fn linear_programming_interior_point() {
     println!("Convergence status: {:?}", result.status);
     println!("Iterations: {}", result.iterations);
     println!("Final objective: {:.6}", result.objective_value);
-    println!("Optimal solution: x₀ = {:.6}, x₁ = {:.6}", result.solution[0], result.solution[1]);
+    println!(
+        "Optimal solution: x₀ = {:.6}, x₁ = {:.6}",
+        result.solution[0], result.solution[1]
+    );
     println!("Elapsed time: {:?}", result.elapsed_time);
 
     // Check constraint satisfaction
@@ -507,8 +514,10 @@ fn method_comparison() {
     println!("subject to: 0 ≤ x ≤ 1 (box constraints)");
     println!("Problem size: {} variables\n", n);
 
-    println!("Target vector: [{:.2}, {:.2}, {:.2}, {:.2}, {:.2}, {:.2}]",
-             target[0], target[1], target[2], target[3], target[4], target[5]);
+    println!(
+        "Target vector: [{:.2}, {:.2}, {:.2}, {:.2}, {:.2}, {:.2}]",
+        target[0], target[1], target[2], target[3], target[4], target[5]
+    );
     println!("(Note: Some target values outside [0,1] box)\n");
 
     // Objective: f(x) = ½‖x - target‖²
@@ -534,12 +543,7 @@ fn method_comparison() {
     let x0_pgd = Vector::from_slice(&[0.5; 6]);
     let mut pgd = ProjectedGradientDescent::new(200, 0.1, 1e-6);
 
-    let result_pgd = pgd.minimize(
-        |x| objective(x),
-        |x| gradient(x),
-        project_box,
-        x0_pgd,
-    );
+    let result_pgd = pgd.minimize(|x| objective(x), |x| gradient(x), project_box, x0_pgd);
 
     println!("Status: {:?}", result_pgd.status);
     println!("Iterations: {}", result_pgd.iterations);
@@ -621,8 +625,8 @@ fn method_comparison() {
     let inequality_box = |x: &Vector<f32>| -> Vector<f32> {
         let mut g = Vector::zeros(2 * n);
         for i in 0..n {
-            g[i] = -x[i];           // -x_i ≤ 0
-            g[n + i] = x[i] - 1.0;  // x_i - 1 ≤ 0
+            g[i] = -x[i]; // -x_i ≤ 0
+            g[n + i] = x[i] - 1.0; // x_i - 1 ≤ 0
         }
         g
     };
@@ -669,7 +673,10 @@ fn method_comparison() {
 
     // ===== Comparison =====
     println!("\n--- Comparison Summary ---");
-    println!("\n{:<25} {:>12} {:>12} {:>12}", "Method", "Iterations", "Objective", "Time (μs)");
+    println!(
+        "\n{:<25} {:>12} {:>12} {:>12}",
+        "Method", "Iterations", "Objective", "Time (μs)"
+    );
     println!("{}", "─".repeat(65));
     println!(
         "{:<25} {:>12} {:>12.6} {:>12.0}",
@@ -695,7 +702,9 @@ fn method_comparison() {
 
     println!("\nKey Insights:");
     println!("• Projected GD: Simple projection, fast iterations, O(1/k) convergence");
-    println!("• Augmented Lagrangian: Handles general equality constraints, penalty parameter tuning");
+    println!(
+        "• Augmented Lagrangian: Handles general equality constraints, penalty parameter tuning"
+    );
     println!("• Interior Point: Natural for inequalities, log-barrier guarantees feasibility");
 
     println!("\nWhen to use each method:");

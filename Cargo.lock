@@ -141,7 +141,7 @@ dependencies = [
  "renacer",
  "serde",
  "serde_json",
- "trueno 0.6.0",
+ "trueno 0.7.1",
 ]
 
 [[package]]
@@ -2111,9 +2111,9 @@ dependencies = [
 
 [[package]]
 name = "trueno"
-version = "0.6.0"
+version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b8c98b9aef7ce98ccf2cf7b37c5d55cbc6392567ca92dc4d350ef8c2011fae08"
+checksum = "efbf2b2bfdd9c960d5db037a1533995c92039312aeea386a67bdba0d0aa01602"
 dependencies = [
  "thiserror 2.0.17",
 ]

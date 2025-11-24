@@ -159,12 +159,23 @@ fn distributed_lasso_admm() {
     println!("Recovered indices: {:?}", recovered_indices);
 
     println!("\nRecovered vs True coefficients:");
-    println!("  x[2]: true = {:.3}, recovered = {:.3}", x_true_data[2], result.solution[2]);
-    println!("  x[5]: true = {:.3}, recovered = {:.3}", x_true_data[5], result.solution[5]);
-    println!("  x[8]: true = {:.3}, recovered = {:.3}", x_true_data[8], result.solution[8]);
+    println!(
+        "  x[2]: true = {:.3}, recovered = {:.3}",
+        x_true_data[2], result.solution[2]
+    );
+    println!(
+        "  x[5]: true = {:.3}, recovered = {:.3}",
+        x_true_data[5], result.solution[5]
+    );
+    println!(
+        "  x[8]: true = {:.3}, recovered = {:.3}",
+        x_true_data[8], result.solution[8]
+    );
 
     // Prediction error
-    let y_pred = D.matvec(&result.solution).expect("Matrix-vector multiplication");
+    let y_pred = D
+        .matvec(&result.solution)
+        .expect("Matrix-vector multiplication");
     let mut pred_error = 0.0;
     for i in 0..m {
         let diff = y_pred[i] - b[i];
@@ -190,9 +201,9 @@ fn consensus_optimization_federated() {
 
     // Each worker has a different objective (simulating different local data)
     let worker_targets = vec![
-        Vector::from_slice(&[1.0, 2.0, 0.5, 1.5, 0.8]),  // Worker 1
-        Vector::from_slice(&[1.2, 1.8, 0.6, 1.3, 0.9]),  // Worker 2
-        Vector::from_slice(&[0.9, 2.1, 0.4, 1.6, 0.7]),  // Worker 3
+        Vector::from_slice(&[1.0, 2.0, 0.5, 1.5, 0.8]), // Worker 1
+        Vector::from_slice(&[1.2, 1.8, 0.6, 1.3, 0.9]), // Worker 2
+        Vector::from_slice(&[0.9, 2.1, 0.4, 1.6, 0.7]), // Worker 3
     ];
 
     println!("Federated Learning Simulation:");
@@ -377,15 +388,7 @@ fn quadratic_programming_admm() {
 
     println!("Running ADMM for QP...\n");
 
-    let result = admm.minimize_consensus(
-        x_minimizer,
-        z_minimizer,
-        &A,
-        &B,
-        &c_constraint,
-        x0,
-        z0,
-    );
+    let result = admm.minimize_consensus(x_minimizer, z_minimizer, &A, &B, &c_constraint, x0, z0);
 
     println!("Convergence: {:?}", result.status);
     println!("Iterations: {}", result.iterations);
@@ -403,7 +406,9 @@ fn quadratic_programming_admm() {
     println!("]");
 
     // Compute objective value
-    let qx = Q.matvec(&result.solution).expect("Matrix-vector multiplication");
+    let qx = Q
+        .matvec(&result.solution)
+        .expect("Matrix-vector multiplication");
     let obj = 0.5 * result.solution.dot(&qx) + c_vec.dot(&result.solution);
     println!("\nObjective value: {:.6}", obj);
 
@@ -481,7 +486,8 @@ fn admm_vs_fista_comparison() {
             rhs[i] = atb[i] + rho * (z[i] - u[i]);
         }
 
-        lhs.cholesky_solve(&rhs).unwrap_or_else(|_| Vector::zeros(n))
+        lhs.cholesky_solve(&rhs)
+            .unwrap_or_else(|_| Vector::zeros(n))
     };
 
     let z_min_admm = move |ax: &Vector<f32>, u: &Vector<f32>, _c: &Vector<f32>, rho: f32| {
@@ -494,13 +500,7 @@ fn admm_vs_fista_comparison() {
     let z0_admm = Vector::zeros(n);
 
     let result_admm = admm.minimize_consensus(
-        x_min_admm,
-        z_min_admm,
-        &A_eye,
-        &B_neg,
-        &c_zero,
-        x0_admm,
-        z0_admm,
+        x_min_admm, z_min_admm, &A_eye, &B_neg, &c_zero, x0_admm, z0_admm,
     );
 
     println!("Status: {:?}", result_admm.status);
@@ -535,9 +535,8 @@ fn admm_vs_fista_comparison() {
             .expect("Matrix-vector multiplication")
     };
 
-    let prox_l1 = |v: &Vector<f32>, alpha: f32| -> Vector<f32> {
-        prox::soft_threshold(v, lambda * alpha)
-    };
+    let prox_l1 =
+        |v: &Vector<f32>, alpha: f32| -> Vector<f32> { prox::soft_threshold(v, lambda * alpha) };
 
     let mut fista = FISTA::new(300, 0.01, 1e-5);
     let x0_fista = Vector::zeros(n);
@@ -558,7 +557,10 @@ fn admm_vs_fista_comparison() {
 
     // ===== Comparison =====
     println!("\n--- Comparison Summary ---");
-    println!("\n{:<15} {:>12} {:>12}", "Method", "Iterations", "Time (μs)");
+    println!(
+        "\n{:<15} {:>12} {:>12}",
+        "Method", "Iterations", "Time (μs)"
+    );
     println!("{}", "─".repeat(42));
     println!(
         "{:<15} {:>12} {:>12.0}",

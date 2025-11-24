@@ -5,9 +5,7 @@
 //!
 //! Run with: cargo run --example batch_optimization
 
-use aprender::optim::{
-    CGBetaFormula, ConjugateGradient, DampedNewton, Optimizer, LBFGS,
-};
+use aprender::optim::{CGBetaFormula, ConjugateGradient, DampedNewton, Optimizer, LBFGS};
 use aprender::primitives::Vector;
 
 /// Rosenbrock function: f(x,y) = (1-x)^2 + 100(y-x^2)^2
@@ -117,15 +115,24 @@ fn main() {
 
     let mut lbfgs = LBFGS::new(100, 1e-8, 10);
     let result = lbfgs.minimize(sphere, sphere_grad, x0_sphere.clone());
-    println!("L-BFGS: {} iterations, gradient norm: {:.2e}", result.iterations, result.gradient_norm);
+    println!(
+        "L-BFGS: {} iterations, gradient norm: {:.2e}",
+        result.iterations, result.gradient_norm
+    );
 
     let mut cg = ConjugateGradient::new(100, 1e-8, CGBetaFormula::PolakRibiere);
     let result = cg.minimize(sphere, sphere_grad, x0_sphere.clone());
-    println!("CG: {} iterations, gradient norm: {:.2e}", result.iterations, result.gradient_norm);
+    println!(
+        "CG: {} iterations, gradient norm: {:.2e}",
+        result.iterations, result.gradient_norm
+    );
 
     let mut dn = DampedNewton::new(100, 1e-8);
     let result = dn.minimize(sphere, sphere_grad, x0_sphere);
-    println!("Damped Newton: {} iterations, gradient norm: {:.2e}", result.iterations, result.gradient_norm);
+    println!(
+        "Damped Newton: {} iterations, gradient norm: {:.2e}",
+        result.iterations, result.gradient_norm
+    );
 
     // Example 3: Booth function
     println!("\n\n--- Example 3: Booth Function ---");
@@ -196,11 +203,12 @@ fn main() {
     // CG with periodic restart
     println!("\nConjugate Gradient with restart:");
     let mut cg_no_restart = ConjugateGradient::new(100, 1e-6, CGBetaFormula::PolakRibiere);
-    let result = cg_no_restart.minimize(rosenbrock, rosenbrock_grad, Vector::from_slice(&[0.0, 0.0]));
+    let result =
+        cg_no_restart.minimize(rosenbrock, rosenbrock_grad, Vector::from_slice(&[0.0, 0.0]));
     println!("  No restart: {} iterations", result.iterations);
 
-    let mut cg_restart = ConjugateGradient::new(100, 1e-6, CGBetaFormula::PolakRibiere)
-        .with_restart_interval(10);
+    let mut cg_restart =
+        ConjugateGradient::new(100, 1e-6, CGBetaFormula::PolakRibiere).with_restart_interval(10);
     let result = cg_restart.minimize(rosenbrock, rosenbrock_grad, Vector::from_slice(&[0.0, 0.0]));
     println!("  Restart every 10: {} iterations", result.iterations);
 

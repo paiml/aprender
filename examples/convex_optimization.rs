@@ -84,13 +84,14 @@ fn lasso_with_fista() {
     let grad_smooth = |x: &Vector<f32>| -> Vector<f32> {
         let ax = A.matvec(x).expect("Matrix-vector multiplication");
         let residual = &ax - &b;
-        A.transpose().matvec(&residual).expect("Matrix-vector multiplication")
+        A.transpose()
+            .matvec(&residual)
+            .expect("Matrix-vector multiplication")
     };
 
     // Proximal operator for L1 norm: prox_{λ‖·‖₁}(v) = soft_threshold(v, λα)
-    let prox_l1 = |v: &Vector<f32>, alpha: f32| -> Vector<f32> {
-        prox::soft_threshold(v, lambda * alpha)
-    };
+    let prox_l1 =
+        |v: &Vector<f32>, alpha: f32| -> Vector<f32> { prox::soft_threshold(v, lambda * alpha) };
 
     // Run FISTA
     let mut fista = FISTA::new(1000, 0.01, 1e-4); // max_iter, step_size, tol
@@ -120,7 +121,10 @@ fn lasso_with_fista() {
 
     // Show recovered coefficients at true non-zero locations
     println!("\nRecovered values at true non-zero locations:");
-    println!("  x[5]:  true = {:.3}, recovered = {:.3}", x_true_data[5], result.solution[5]);
+    println!(
+        "  x[5]:  true = {:.3}, recovered = {:.3}",
+        x_true_data[5], result.solution[5]
+    );
     println!(
         "  x[10]: true = {:.3}, recovered = {:.3}",
         x_true_data[10], result.solution[10]
@@ -131,7 +135,9 @@ fn lasso_with_fista() {
     );
 
     // Prediction error
-    let y_pred = A.matvec(&result.solution).expect("Matrix-vector multiplication");
+    let y_pred = A
+        .matvec(&result.solution)
+        .expect("Matrix-vector multiplication");
     let mut pred_error = 0.0_f32;
     for i in 0..m {
         let diff = y_pred[i] - b[i];
@@ -183,7 +189,9 @@ fn nonnegative_least_squares() {
     let grad_smooth = |x: &Vector<f32>| -> Vector<f32> {
         let ax = A.matvec(x).expect("Matrix-vector multiplication");
         let residual = &ax - &b;
-        A.transpose().matvec(&residual).expect("Matrix-vector multiplication")
+        A.transpose()
+            .matvec(&residual)
+            .expect("Matrix-vector multiplication")
     };
 
     // Proximal operator for non-negativity constraint: projection onto x ≥ 0
@@ -214,7 +222,9 @@ fn nonnegative_least_squares() {
     println!("Minimum coefficient value: {:.6} (should be ≥ 0)", min_val);
 
     // Reconstruction error
-    let y_pred = A.matvec(&result.solution).expect("Matrix-vector multiplication");
+    let y_pred = A
+        .matvec(&result.solution)
+        .expect("Matrix-vector multiplication");
     let mut recon_error = 0.0_f32;
     for i in 0..m {
         let diff = y_pred[i] - b[i];
@@ -337,7 +347,10 @@ fn high_dimensional_lasso_cd() {
 
     println!("\nSparsity analysis:");
     println!("Non-zero coefficients found: {}/{}", nnz, n);
-    println!("Recovered non-zero indices: {:?}", &recovered_indices[..nnz.min(10)]);
+    println!(
+        "Recovered non-zero indices: {:?}",
+        &recovered_indices[..nnz.min(10)]
+    );
 
     // Check true non-zero locations
     println!("\nRecovered values at true non-zero locations:");
@@ -349,7 +362,9 @@ fn high_dimensional_lasso_cd() {
     }
 
     // Prediction error
-    let y_pred = A.matvec(&result.solution).expect("Matrix-vector multiplication");
+    let y_pred = A
+        .matvec(&result.solution)
+        .expect("Matrix-vector multiplication");
     let mut pred_error = 0.0_f32;
     for i in 0..m {
         let diff = y_pred[i] - b[i];
@@ -451,7 +466,9 @@ fn box_constrained_quadratic() {
     println!("Max coefficient: {:.6} (should be ≤ 2.0)", max_val);
 
     // Compute final objective value
-    let qx = Q.matvec(&result.solution).expect("Matrix-vector multiplication");
+    let qx = Q
+        .matvec(&result.solution)
+        .expect("Matrix-vector multiplication");
     let obj = 0.5 * result.solution.dot(&qx) - c.dot(&result.solution);
     println!("\nFinal objective value: {:.6}", obj);
 
@@ -520,12 +537,13 @@ fn comparison_fista_vs_cd() {
     let grad_smooth = |x: &Vector<f32>| -> Vector<f32> {
         let ax = A.matvec(x).expect("Matrix-vector multiplication");
         let residual = &ax - &b;
-        A.transpose().matvec(&residual).expect("Matrix-vector multiplication")
+        A.transpose()
+            .matvec(&residual)
+            .expect("Matrix-vector multiplication")
     };
 
-    let prox_l1 = |v: &Vector<f32>, alpha: f32| -> Vector<f32> {
-        prox::soft_threshold(v, lambda * alpha)
-    };
+    let prox_l1 =
+        |v: &Vector<f32>, alpha: f32| -> Vector<f32> { prox::soft_threshold(v, lambda * alpha) };
 
     let mut fista = FISTA::new(500, 0.01, 1e-5);
     let x0_fista = Vector::zeros(n);
@@ -623,9 +641,18 @@ fn comparison_fista_vs_cd() {
         "• FISTA: {} iterations, {:.1?}",
         result_fista.iterations, result_fista.elapsed_time
     );
-    println!("• Coordinate Descent: {} iterations, {:.1?}", result_cd.iterations, result_cd.elapsed_time);
-    println!("• Both methods found {} non-zero coefficients (true: 3)", nnz_fista);
-    println!("• Solutions are very close (difference: {:.6})", solution_diff);
+    println!(
+        "• Coordinate Descent: {} iterations, {:.1?}",
+        result_cd.iterations, result_cd.elapsed_time
+    );
+    println!(
+        "• Both methods found {} non-zero coefficients (true: 3)",
+        nnz_fista
+    );
+    println!(
+        "• Solutions are very close (difference: {:.6})",
+        solution_diff
+    );
     println!("\nWhen to use each:");
     println!("• FISTA: General composite optimization, fast convergence O(1/k²)");
     println!("• CD: High-dimensional problems (n >> m), simple coordinate updates");
