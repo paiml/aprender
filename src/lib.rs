@@ -49,6 +49,8 @@
 //! - [`decomposition`]: Matrix decomposition (ICA, PCA)
 //! - [`text`]: Text processing and NLP (tokenization, stop words, stemming)
 //! - [`time_series`]: Time series analysis and forecasting (ARIMA)
+//! - [`index`]: Approximate nearest neighbor search (HNSW)
+//! - [`recommend`]: Recommendation systems (content-based, collaborative filtering)
 //! - [`chaos`]: Chaos engineering configuration (from renacer)
 
 pub mod bayesian;
@@ -60,6 +62,7 @@ pub mod decomposition;
 pub mod error;
 pub mod glm;
 pub mod graph;
+pub mod index;
 pub mod linear_model;
 pub mod loss;
 pub mod metrics;
@@ -69,6 +72,7 @@ pub mod optim;
 pub mod prelude;
 pub mod preprocessing;
 pub mod primitives;
+pub mod recommend;
 pub mod serialization;
 pub mod stats;
 pub mod text;

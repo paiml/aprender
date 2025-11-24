@@ -154,7 +154,7 @@ impl CountVectorizer {
     ///     .with_tokenizer(Box::new(WhitespaceTokenizer::new()));
     ///
     /// let matrix = vectorizer.fit_transform(&docs).unwrap();
-    /// assert_eq!(matrix.rows(), 2);
+    /// assert_eq!(matrix.n_rows(), 2);
     /// ```
     pub fn fit_transform<S: AsRef<str>>(
         &mut self,
@@ -252,7 +252,7 @@ impl CountVectorizer {
     ///
     /// vectorizer.fit(&docs).unwrap();
     /// let matrix = vectorizer.transform(&docs).unwrap();
-    /// assert_eq!(matrix.rows(), 1);
+    /// assert_eq!(matrix.n_rows(), 1);
     /// ```
     pub fn transform<S: AsRef<str>>(&self, documents: &[S]) -> Result<Matrix<f64>, AprenderError> {
         if documents.is_empty() {
@@ -467,7 +467,7 @@ impl TfidfVectorizer {
     ///     .with_tokenizer(Box::new(WhitespaceTokenizer::new()));
     ///
     /// let matrix = vectorizer.fit_transform(&docs).unwrap();
-    /// assert_eq!(matrix.rows(), 3);
+    /// assert_eq!(matrix.n_rows(), 3);
     /// ```
     pub fn fit_transform<S: AsRef<str>>(
         &mut self,
@@ -550,7 +550,7 @@ impl TfidfVectorizer {
     ///
     /// vectorizer.fit(&docs).unwrap();
     /// let matrix = vectorizer.transform(&docs).unwrap();
-    /// assert_eq!(matrix.rows(), 1);
+    /// assert_eq!(matrix.n_rows(), 1);
     /// ```
     pub fn transform<S: AsRef<str>>(&self, documents: &[S]) -> Result<Matrix<f64>, AprenderError> {
         if self.idf_values.is_empty() {

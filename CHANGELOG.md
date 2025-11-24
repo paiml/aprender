@@ -936,3 +936,4 @@ Major feature release adding tree-based models, ensemble methods, cross-validati
 [Unreleased]: https://github.com/paiml/aprender/compare/v0.2.0...HEAD
 [0.2.0]: https://github.com/paiml/aprender/releases/tag/v0.2.0
 [0.1.0]: https://github.com/paiml/aprender/releases/tag/v0.1.0
+- Implement Content-Based Recommender with HNSW (Phase 1) (#71)

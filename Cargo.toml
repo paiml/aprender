@@ -96,7 +96,7 @@ nalgebra = "0.33"
 [dev-dependencies]
 proptest = "1.6"
 criterion = "0.5"
-renacer = "0.6.1"
+renacer = "0.6.3"
 
 [features]
 default = []
@@ -126,6 +126,10 @@ harness = false
 
 [[bench]]
 name = "graph"
+harness = false
+
+[[bench]]
+name = "recommend"
 harness = false
 
 [profile.release]
