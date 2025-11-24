@@ -163,6 +163,7 @@
 - [Case Study: Market Basket Analysis (Apriori)](./examples/market-basket-apriori.md)
 - [Case Study: ARIMA Time Series Forecasting](./examples/time-series-forecasting.md)
 - [Case Study: Text Preprocessing for NLP](./examples/text-preprocessing.md)
+- [Case Study: Text Classification with TF-IDF](./examples/text-classification.md)
 
 # Sprint-Based Development
 

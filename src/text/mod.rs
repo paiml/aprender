@@ -4,6 +4,7 @@
 //! - Tokenization (word-level, character-level)
 //! - Stop words filtering
 //! - Stemming (Porter stemmer)
+//! - Vectorization (Bag of Words, TF-IDF)
 //!
 //! # Design Principles
 //!
@@ -33,6 +34,7 @@
 pub mod stem;
 pub mod stopwords;
 pub mod tokenize;
+pub mod vectorize;
 
 use crate::AprenderError;
 
