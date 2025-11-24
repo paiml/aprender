@@ -160,6 +160,21 @@ dependencies = [
 [[package]]
 name = "aprender"
 version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "444858eca984a7bed8261ab5b9ba5543973c9d23fa5b1af5eecabf79322a83b2"
+dependencies = [
+ "bincode",
+ "nalgebra",
+ "rand 0.8.5",
+ "rayon",
+ "serde",
+ "serde_json",
+ "trueno",
+]
+
+[[package]]
+name = "aprender"
+version = "0.8.0"
 dependencies = [
  "bincode",
  "criterion",
@@ -168,21 +183,6 @@ dependencies = [
  "rand 0.8.5",
  "rayon",
  "renacer",
- "serde",
- "serde_json",
- "trueno",
-]
-
-[[package]]
-name = "aprender"
-version = "0.7.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "444858eca984a7bed8261ab5b9ba5543973c9d23fa5b1af5eecabf79322a83b2"
-dependencies = [
- "bincode",
- "nalgebra",
- "rand 0.8.5",
- "rayon",
  "serde",
  "serde_json",
  "trueno",
@@ -2218,7 +2218,7 @@ checksum = "415e6481e90b7f1642ea53e8f827a13775b83603d784e0dbbe05364ffcc99c71"
 dependencies = [
  "addr2line 0.24.2",
  "anyhow",
- "aprender 0.7.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "aprender 0.7.1",
  "backtrace",
  "clap",
  "crossbeam",
@@ -2993,7 +2993,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8f1642b622921111445f537a56696112f967dffad18a27e8f027071a9c24efd4"
 dependencies = [
  "anyhow",
- "aprender 0.7.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "aprender 0.7.1",
  "arrow",
  "parquet",
  "thiserror 1.0.69",
