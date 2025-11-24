@@ -112,6 +112,9 @@ impl ContentRecommender {
         let item_id = item_id.into();
         let content = content.into();
 
+        // Track vocabulary size before update
+        let vocab_size_before = self.idf.len();
+
         // Tokenize
         let tokens = self
             .tokenizer
@@ -130,14 +133,19 @@ impl ContentRecommender {
         let term_refs: Vec<&str> = unique_terms.iter().map(String::as_str).collect();
         self.idf.update(&term_refs);
 
-        // Compute TF-IDF vector
-        let tfidf_vec = self.compute_tfidf(&tokens);
+        // Store content first (needed for rebuild)
+        self.item_content.insert(item_id.clone(), content);
 
-        // Add to HNSW index
-        self.hnsw.add(item_id.clone(), tfidf_vec);
-
-        // Store content
-        self.item_content.insert(item_id, content);
+        // Check if vocabulary grew
+        let vocab_size_after = self.idf.len();
+        if vocab_size_after > vocab_size_before && !self.item_content.is_empty() {
+            // Vocabulary grew - rebuild entire index to ensure dimensional consistency
+            self.rebuild_index();
+        } else {
+            // Vocabulary unchanged - just add this item
+            let tfidf_vec = self.compute_tfidf(&tokens);
+            self.hnsw.add(item_id, tfidf_vec);
+        }
     }
 
     /// Recommend similar items.
@@ -225,6 +233,25 @@ impl ContentRecommender {
         self.item_content.is_empty()
     }
 
+    /// Rebuild the HNSW index with re-vectorized items.
+    ///
+    /// This is called when vocabulary grows to ensure all vectors have consistent dimensions.
+    /// All items are re-vectorized using the current (expanded) vocabulary.
+    fn rebuild_index(&mut self) {
+        // Create new HNSW index
+        self.hnsw = HNSWIndex::new(self.hnsw.m(), self.hnsw.ef_construction(), 0.0);
+
+        // Re-vectorize and re-add all items
+        for (item_id, content) in &self.item_content {
+            let tokens = self
+                .tokenizer
+                .tokenize(content)
+                .unwrap_or_else(|_| Vec::new());
+            let tfidf_vec = self.compute_tfidf(&tokens);
+            self.hnsw.add(item_id.clone(), tfidf_vec);
+        }
+    }
+
     /// Compute TF-IDF vector for tokens.
     fn compute_tfidf(&self, tokens: &[String]) -> Vector<f64> {
         // Compute term frequencies
@@ -242,8 +269,9 @@ impl ContentRecommender {
             }
         }
 
-        // Get all vocabulary terms
-        let vocab: Vec<String> = self.idf.terms().keys().cloned().collect();
+        // Get all vocabulary terms in sorted order for consistency
+        let mut vocab: Vec<String> = self.idf.terms().keys().cloned().collect();
+        vocab.sort();
 
         // Compute TF-IDF vector (sparse representation as dense vector)
         let tfidf: Vec<f64> = vocab
@@ -306,21 +334,11 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "Known limitation: dimensional consistency when vocabulary grows - needs architectural fix"]
     fn test_similarity_scores() {
         let mut rec = ContentRecommender::new(16, 200, 0.95);
 
-        // KNOWN ISSUE: Current implementation has dimensional consistency issues
-        // when vocabulary grows over time. Items added early have vectors
-        // computed with smaller vocabulary than items added later, causing
-        // dimension mismatches in HNSW index.
-        //
-        // For production, need to either:
-        // 1. Re-vectorize all items when vocabulary changes, or
-        // 2. Use fixed vocabulary upfront, or
-        // 3. Pad vectors dynamically to handle growth
-        //
-        // This test is ignored until the architectural fix is implemented.
+        // Test that dimensional consistency is maintained when vocabulary grows.
+        // The recommender should automatically rebuild the index when new terms appear.
         rec.add_item("a", "machine learning");
         rec.add_item("b", "deep learning");
         rec.add_item("c", "data science");
@@ -337,6 +355,14 @@ mod tests {
                 "Similarity for {id} should be finite, got {sim}"
             );
         }
+
+        // "b" should be most similar to "a" (both contain "learning")
+        assert_eq!(similar[0].0, "b");
+        assert!(
+            similar[0].1 > 0.0,
+            "Similarity should be positive: {}",
+            similar[0].1
+        );
     }
 
     #[test]

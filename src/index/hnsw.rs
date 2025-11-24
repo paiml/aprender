@@ -247,6 +247,34 @@ impl HNSWIndex {
         self.nodes.is_empty()
     }
 
+    /// Get the M parameter (max connections per node).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use aprender::index::hnsw::HNSWIndex;
+    ///
+    /// let index = HNSWIndex::new(16, 200, 0.0);
+    /// assert_eq!(index.m(), 16);
+    /// ```
+    pub fn m(&self) -> usize {
+        self.m
+    }
+
+    /// Get the ef_construction parameter.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use aprender::index::hnsw::HNSWIndex;
+    ///
+    /// let index = HNSWIndex::new(16, 200, 0.0);
+    /// assert_eq!(index.ef_construction(), 200);
+    /// ```
+    pub fn ef_construction(&self) -> usize {
+        self.ef_construction
+    }
+
     /// Randomly select layer for new node.
     ///
     /// Uses exponential decay: P(layer = l) ~ exp(-l / ml)
