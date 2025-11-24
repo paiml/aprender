@@ -1085,11 +1085,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'New task: nlp-text-preprocessing'
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2025-11-24T20:09:32.343204134+00:00
-  updated: 2025-11-24T20:09:32.343204134+00:00
+  updated: 2025-11-24T20:29:28.403844977+00:00
   spec: null
   acceptance_criteria: []
   phases: []
