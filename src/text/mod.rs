@@ -30,6 +30,7 @@
 //! Based on the comprehensive NLP specification:
 //! `docs/specifications/nlp-models-techniques-spec.md`
 
+pub mod stopwords;
 pub mod tokenize;
 
 use crate::AprenderError;
