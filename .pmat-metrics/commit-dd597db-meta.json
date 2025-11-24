@@ -1,0 +1,9 @@
+{
+  "commit_sha": null,
+  "work_item_id": "Implement extractive summarization (TextRank, TF-IDF)",
+  "prompt": "New task: Implement extractive summarization (TextRank, TF-IDF)",
+  "tdg_score": 0.0,
+  "repo_score": 0.0,
+  "rust_project_score": 0.0,
+  "timestamp": "2025-11-24T21:41:50.092421924Z"
+}

@@ -56,6 +56,7 @@ use std::collections::HashMap;
 /// assert_eq!(matrix.n_rows(), 3);  // 3 documents
 /// assert_eq!(matrix.n_cols(), 3);  // 3 unique words
 /// ```
+#[allow(missing_debug_implementations)]
 pub struct CountVectorizer {
     /// Tokenizer for splitting text
     tokenizer: Option<Box<dyn Tokenizer>>,
@@ -374,6 +375,7 @@ impl Default for CountVectorizer {
 /// let matrix = vectorizer.fit_transform(&docs).unwrap();
 /// assert_eq!(matrix.n_rows(), 2);  // 2 documents
 /// ```
+#[allow(missing_debug_implementations)]
 pub struct TfidfVectorizer {
     /// Count vectorizer for term frequencies
     count_vectorizer: CountVectorizer,
@@ -507,6 +509,7 @@ impl TfidfVectorizer {
 
         let mut doc_freq = vec![0.0; vocab_size];
 
+        #[allow(clippy::needless_range_loop)]
         for col in 0..vocab_size {
             for row in 0..count_matrix.n_rows() {
                 if count_matrix.get(row, col) > 0.0 {

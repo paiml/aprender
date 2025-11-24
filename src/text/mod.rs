@@ -7,6 +7,9 @@
 //! - Vectorization (Bag of Words, TF-IDF)
 //! - Sentiment analysis (lexicon-based)
 //! - Topic modeling (LDA)
+//! - Document similarity (cosine, Jaccard, edit distance)
+//! - Entity extraction (emails, URLs, mentions, hashtags)
+//! - Text summarization (TextRank, TF-IDF extractive)
 //!
 //! # Design Principles
 //!
@@ -33,9 +36,12 @@
 //! Based on the comprehensive NLP specification:
 //! `docs/specifications/nlp-models-techniques-spec.md`
 
+pub mod entities;
 pub mod sentiment;
+pub mod similarity;
 pub mod stem;
 pub mod stopwords;
+pub mod summarize;
 pub mod tokenize;
 pub mod topic;
 pub mod vectorize;

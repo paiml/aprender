@@ -50,6 +50,7 @@ pub enum Polarity {
 /// let score = analyzer.score("terrible awful horrible").unwrap();
 /// assert!(score < 0.0);
 /// ```
+#[derive(Debug)]
 pub struct SentimentAnalyzer {
     /// Sentiment lexicon: word -> score mapping
     lexicon: HashMap<String, f64>,

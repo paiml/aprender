@@ -164,6 +164,7 @@
 - [Case Study: ARIMA Time Series Forecasting](./examples/time-series-forecasting.md)
 - [Case Study: Text Preprocessing for NLP](./examples/text-preprocessing.md)
 - [Case Study: Text Classification with TF-IDF](./examples/text-classification.md)
+- [Case Study: Advanced NLP (Similarity, Entities, Summarization)](./examples/advanced-nlp.md)
 
 # Sprint-Based Development
 

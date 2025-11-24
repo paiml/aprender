@@ -1097,3 +1097,51 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: Implement document similarity (cosine, Jaccard, edit distance)
+  github_issue: null
+  item_type: task
+  title: 'New task: Implement document similarity (cosine, Jaccard, edit distance)'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-24T21:22:04.356333142+00:00
+  updated: 2025-11-24T21:41:35.169137165+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: Implement pattern-based entity extraction (emails, URLs, keywords)
+  github_issue: null
+  item_type: task
+  title: 'New task: Implement pattern-based entity extraction (emails, URLs, keywords)'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-24T21:22:15.633104377+00:00
+  updated: 2025-11-24T21:41:43.155607139+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: Implement extractive summarization (TextRank, TF-IDF)
+  github_issue: null
+  item_type: task
+  title: 'New task: Implement extractive summarization (TextRank, TF-IDF)'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-24T21:22:17.774131412+00:00
+  updated: 2025-11-24T21:41:50.085071482+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

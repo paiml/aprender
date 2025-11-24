@@ -27,7 +27,7 @@ use crate::AprenderError;
 
 /// Latent Dirichlet Allocation for topic modeling.
 ///
-// LDA discovers latent topics in a collection of documents by modeling:
+/// LDA discovers latent topics in a collection of documents by modeling:
 /// - Each document as a mixture of topics
 /// - Each topic as a distribution over words
 ///
@@ -46,6 +46,7 @@ use crate::AprenderError;
 /// let mut lda = LatentDirichletAllocation::new(2);
 /// lda.fit(&dtm, 5).unwrap();
 /// ```
+#[derive(Debug)]
 pub struct LatentDirichletAllocation {
     /// Number of topics
     n_topics: usize,
@@ -150,8 +151,8 @@ impl LatentDirichletAllocation {
         }
 
         // Normalize
-        self.normalize_rows(&mut doc_topic_data, n_docs, self.n_topics);
-        self.normalize_rows(&mut topic_word_data, self.n_topics, n_terms);
+        Self::normalize_rows(&mut doc_topic_data, n_docs, self.n_topics);
+        Self::normalize_rows(&mut topic_word_data, self.n_topics, n_terms);
 
         // Simple iterative update (simplified EM-like algorithm)
         for _ in 0..max_iter {
@@ -187,8 +188,8 @@ impl LatentDirichletAllocation {
             }
 
             // M-step: Normalize distributions
-            self.normalize_rows(&mut new_doc_topic, n_docs, self.n_topics);
-            self.normalize_rows(&mut new_topic_word, self.n_topics, n_terms);
+            Self::normalize_rows(&mut new_doc_topic, n_docs, self.n_topics);
+            Self::normalize_rows(&mut new_topic_word, self.n_topics, n_terms);
 
             doc_topic_data = new_doc_topic;
             topic_word_data = new_topic_word;
@@ -325,7 +326,7 @@ impl LatentDirichletAllocation {
     }
 
     /// Normalize rows to sum to 1.
-    fn normalize_rows(&self, data: &mut [f64], n_rows: usize, n_cols: usize) {
+    fn normalize_rows(data: &mut [f64], n_rows: usize, n_cols: usize) {
         for i in 0..n_rows {
             let row_start = i * n_cols;
             let row_end = row_start + n_cols;
