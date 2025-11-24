@@ -1069,11 +1069,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'New task: Implement ARIMA (Auto-Regressive Integrated Moving Average)'
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2025-11-22T18:37:35.339187341+00:00
-  updated: 2025-11-22T18:37:35.339187341+00:00
+  updated: 2025-11-24T20:42:07.198350802+00:00
   spec: null
   acceptance_criteria: []
   phases: []
