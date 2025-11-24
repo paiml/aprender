@@ -162,6 +162,7 @@
 - [Case Study: t-SNE Visualization](./examples/tsne-visualization.md)
 - [Case Study: Market Basket Analysis (Apriori)](./examples/market-basket-apriori.md)
 - [Case Study: ARIMA Time Series Forecasting](./examples/time-series-forecasting.md)
+- [Case Study: Text Preprocessing for NLP](./examples/text-preprocessing.md)
 
 # Sprint-Based Development
 
