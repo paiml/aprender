@@ -5,6 +5,8 @@
 //! - Stop words filtering
 //! - Stemming (Porter stemmer)
 //! - Vectorization (Bag of Words, TF-IDF)
+//! - Sentiment analysis (lexicon-based)
+//! - Topic modeling (LDA)
 //!
 //! # Design Principles
 //!
@@ -31,9 +33,11 @@
 //! Based on the comprehensive NLP specification:
 //! `docs/specifications/nlp-models-techniques-spec.md`
 
+pub mod sentiment;
 pub mod stem;
 pub mod stopwords;
 pub mod tokenize;
+pub mod topic;
 pub mod vectorize;
 
 use crate::AprenderError;
