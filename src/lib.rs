@@ -47,6 +47,7 @@
 //! - [`bayesian`]: Bayesian inference (conjugate priors, MCMC, variational inference)
 //! - [`glm`]: Generalized Linear Models (Poisson, Gamma, Binomial families)
 //! - [`decomposition`]: Matrix decomposition (ICA, PCA)
+//! - [`text`]: Text processing and NLP (tokenization, stop words, stemming)
 //! - [`chaos`]: Chaos engineering configuration (from renacer)
 
 pub mod bayesian;
@@ -69,6 +70,7 @@ pub mod preprocessing;
 pub mod primitives;
 pub mod serialization;
 pub mod stats;
+pub mod text;
 pub mod traits;
 pub mod tree;
 

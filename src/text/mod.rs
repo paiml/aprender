@@ -1,0 +1,75 @@
+//! Text processing and NLP utilities.
+//!
+//! This module provides text preprocessing tools for Natural Language Processing:
+//! - Tokenization (word-level, character-level)
+//! - Stop words filtering
+//! - Stemming (Porter stemmer)
+//!
+//! # Design Principles
+//!
+//! Following the Toyota Way and aprender's quality standards:
+//! - Zero `unwrap()` calls (Cloudflare-class safety)
+//! - Result-based error handling with `AprenderError`
+//! - Comprehensive test coverage (≥95%)
+//! - Property-based testing with proptest
+//! - Pure Rust implementation (no external NLP dependencies)
+//!
+//! # Quick Start
+//!
+//! ```
+//! use aprender::text::tokenize::WhitespaceTokenizer;
+//! use aprender::text::Tokenizer;
+//!
+//! let tokenizer = WhitespaceTokenizer::new();
+//! let tokens = tokenizer.tokenize("Hello, world! This is aprender.").unwrap();
+//! assert_eq!(tokens, vec!["Hello,", "world!", "This", "is", "aprender."]);
+//! ```
+//!
+//! # References
+//!
+//! Based on the comprehensive NLP specification:
+//! `docs/specifications/nlp-models-techniques-spec.md`
+
+pub mod tokenize;
+
+use crate::AprenderError;
+
+/// Trait for text tokenization.
+///
+/// Tokenizers split text into smaller units (tokens) such as words or characters.
+/// All tokenizers must handle edge cases gracefully and return Result for error handling.
+///
+/// # Examples
+///
+/// ```
+/// use aprender::text::{Tokenizer, tokenize::WhitespaceTokenizer};
+///
+/// let tokenizer = WhitespaceTokenizer::new();
+/// let tokens = tokenizer.tokenize("Hello world").unwrap();
+/// assert_eq!(tokens, vec!["Hello", "world"]);
+/// ```
+pub trait Tokenizer {
+    /// Tokenize the input text into a vector of string tokens.
+    ///
+    /// # Arguments
+    ///
+    /// * `text` - Input text to tokenize
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Vec<String>)` - Successfully tokenized strings
+    /// * `Err(AprenderError)` - If tokenization fails (e.g., invalid encoding)
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use aprender::text::{Tokenizer, tokenize::WhitespaceTokenizer};
+    ///
+    /// let tokenizer = WhitespaceTokenizer::new();
+    /// assert_eq!(
+    ///     tokenizer.tokenize("foo bar").unwrap(),
+    ///     vec!["foo", "bar"]
+    /// );
+    /// ```
+    fn tokenize(&self, text: &str) -> Result<Vec<String>, AprenderError>;
+}
