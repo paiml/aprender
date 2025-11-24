@@ -161,6 +161,7 @@
 - [Case Study: Spectral Clustering](./examples/spectral-clustering.md)
 - [Case Study: t-SNE Visualization](./examples/tsne-visualization.md)
 - [Case Study: Market Basket Analysis (Apriori)](./examples/market-basket-apriori.md)
+- [Case Study: ARIMA Time Series Forecasting](./examples/time-series-forecasting.md)
 
 # Sprint-Based Development
 

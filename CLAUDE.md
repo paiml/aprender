@@ -299,6 +299,50 @@ Automated releases on version tags.
 **Persistence:** serde + bincode serialization
 **Metrics:** R², MSE, RMSE, MAE, accuracy, silhouette, inertia
 
+## v0.7.x - Advanced Modules
+
+**Time Series Analysis (`time_series` module):**
+- ARIMA(p, d, q) - Auto-Regressive Integrated Moving Average forecasting
+  - AR component: Uses past values to predict future (Yule-Walker estimation)
+  - I component: Differencing for stationarity (up to order d)
+  - MA component: Uses past forecast errors
+  - Multi-step forecasting with automatic integration
+- Example: `cargo run --example time_series_forecasting`
+- 11 unit tests + 8 doctests (19 tests total)
+
+**Text Processing & NLP (`text` module):**
+- **Tokenization**: `WhitespaceTokenizer`, `WordTokenizer`, `CharTokenizer`
+  - Unicode support including emojis and non-Latin scripts
+  - Punctuation handling, contraction preservation
+- **Stop Words**: `StopWordsFilter` with 171 English stop words (NLTK/sklearn-based)
+  - Case-insensitive matching, O(1) HashSet lookup
+  - Custom stop word support
+- **Stemming**: `PorterStemmer` (simplified Porter algorithm)
+  - Steps 1-5 suffix removal
+  - Handles plurals, -ed/-ing, common endings
+- 62 unit tests + 25 doctests (87 tests total)
+
+**Bayesian Inference (`bayesian` module):**
+- Conjugate Priors: Gamma-Poisson, Normal-InverseGamma, Dirichlet-Multinomial
+- Bayesian Linear Regression (analytical posterior)
+- Bayesian Logistic Regression (Laplace approximation)
+- Model Selection: Bayes Factors, DIC, WAIC
+
+**Generalized Linear Models (`glm` module):**
+- Poisson regression, Gamma regression, Binomial regression
+- Negative Binomial GLM
+- Link functions: log, identity, logit
+
+**Matrix Decomposition (`decomposition` module):**
+- PCA (Principal Component Analysis)
+- ICA (Independent Component Analysis via FastICA)
+
+**Graph Analysis (`graph` module):**
+- Pathfinding: Dijkstra, A*, all-pairs shortest path
+- Centrality: degree, betweenness, closeness, PageRank
+- Community detection: label propagation
+- Components: DFS, connected components, SCCs, topological sort
+
 ## Key Files
 
 - `src/lib.rs` - Library entry point with module exports
@@ -308,6 +352,12 @@ Automated releases on version tags.
 - `src/linear_model/mod.rs` - Linear regression with OLS
 - `src/cluster/mod.rs` - K-Means with k-means++ initialization
 - `src/metrics/mod.rs` - R², MSE, MAE, inertia, silhouette
+- `src/time_series/mod.rs` - ARIMA time series forecasting (524 LOC)
+- `src/text/` - Text preprocessing (tokenization, stop words, stemming)
+- `src/bayesian/` - Bayesian inference and model selection
+- `src/glm/` - Generalized Linear Models
+- `src/graph/` - Graph algorithms and analysis
+- `src/decomposition/` - PCA, ICA matrix decomposition
 - `docs/specifications/aprender-spec-v1.md` - Full v1.0 specification
 
 ## Integration
