@@ -19,6 +19,7 @@
 //! assert_eq!(dc.len(), 3);
 //! ```
 
+#[cfg(feature = "parallel")]
 use rayon::prelude::*;
 use std::collections::{HashMap, VecDeque};
 
@@ -464,9 +465,15 @@ impl Graph {
             return Vec::new();
         }
 
-        // Parallel outer loop: compute partial betweenness from each source
+        // Compute partial betweenness from each source (parallel when available)
+        #[cfg(feature = "parallel")]
         let partial_scores: Vec<Vec<f64>> = (0..self.n_nodes)
             .into_par_iter()
+            .map(|source| self.brandes_bfs_from_source(source))
+            .collect();
+
+        #[cfg(not(feature = "parallel"))]
+        let partial_scores: Vec<Vec<f64>> = (0..self.n_nodes)
             .map(|source| self.brandes_bfs_from_source(source))
             .collect();
 
