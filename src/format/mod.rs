@@ -481,6 +481,9 @@ pub struct Metadata {
     /// Custom user data
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub custom: HashMap<String, serde_json::Value>,
+    /// Distillation teacher hash (spec §6.3)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub distillation: Option<String>,
 }
 
 /// Training information
@@ -508,6 +511,7 @@ impl Default for Metadata {
             hyperparameters: HashMap::new(),
             metrics: HashMap::new(),
             custom: HashMap::new(),
+            distillation: None,
         }
     }
 }
@@ -2772,6 +2776,80 @@ mod tests {
         assert!(
             err_msg.contains("ENCRYPTED flag not set") || err_msg.contains("File too small"),
             "Expected ENCRYPTED flag error or size error, got: {err_msg}"
+        );
+    }
+
+    // EXTREME TDD: Distillation metadata (spec §6.3)
+    // Step 1: GREEN - Verified we can use description field
+    #[test]
+    fn test_distillation_teacher_hash() {
+        use tempfile::tempdir;
+
+        #[derive(Debug, Serialize, Deserialize, PartialEq)]
+        struct TestModel {
+            value: i32,
+        }
+
+        let model = TestModel { value: 42 };
+        let dir = tempdir().expect("create temp dir");
+        let path = dir.path().join("distilled.apr");
+
+        // For now, use the simplest approach - add to description
+        let options = SaveOptions::default()
+            .with_name("student_model")
+            .with_description("Distilled from teacher abc123");
+
+        save(&model, ModelType::Custom, &path, options).expect("save should succeed");
+
+        // Inspect and verify description contains teacher info
+        let info = inspect(&path).expect("inspect should succeed");
+        assert!(info.metadata.description.is_some());
+        assert!(info
+            .metadata
+            .description
+            .as_ref()
+            .expect("description should be set")
+            .contains("abc123"));
+    }
+
+    // Step 2: RED - Test dedicated distillation field
+    #[test]
+    fn test_distillation_dedicated_field() {
+        use tempfile::tempdir;
+
+        #[derive(Debug, Serialize, Deserialize)]
+        struct TestModel {
+            value: i32,
+        }
+
+        let model = TestModel { value: 123 };
+        let dir = tempdir().expect("create temp dir");
+        let path = dir.path().join("distilled2.apr");
+
+        // First verify that description (an existing Optional<String>) works
+        let options = SaveOptions::default().with_description("test description");
+
+        save(&model, ModelType::Custom, &path, options).expect("save should succeed");
+
+        let info = inspect(&path).expect("inspect should succeed");
+
+        // This should work
+        assert_eq!(
+            info.metadata.description,
+            Some("test description".to_string())
+        );
+
+        // Now test distillation
+        let mut options2 = SaveOptions::default();
+        options2.metadata.distillation = Some("teacher_abc123".to_string());
+
+        let path2 = dir.path().join("distilled2b.apr");
+        save(&model, ModelType::Custom, &path2, options2).expect("save should succeed");
+
+        let info2 = inspect(&path2).expect("inspect should succeed");
+        assert_eq!(
+            info2.metadata.distillation,
+            Some("teacher_abc123".to_string())
         );
     }
 }
