@@ -487,6 +487,9 @@ pub struct Metadata {
     /// Full distillation provenance (spec §6.3.2) - structured form
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub distillation_info: Option<DistillationInfo>,
+    /// Commercial license information (spec §9.1)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub license: Option<LicenseInfo>,
 }
 
 /// Training information
@@ -577,6 +580,43 @@ pub struct DistillationInfo {
     pub layer_mapping: Option<Vec<LayerMapping>>,
 }
 
+// ============================================================================
+// Commercial License Types (spec §9)
+// ============================================================================
+
+/// License tier levels (spec §9.1)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum LicenseTier {
+    /// Personal/individual use
+    Personal,
+    /// Team/organization use (limited seats)
+    Team,
+    /// Enterprise use (unlimited seats, priority support)
+    Enterprise,
+    /// Academic/research use (non-commercial)
+    Academic,
+}
+
+/// Commercial license information (spec §9.1)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LicenseInfo {
+    /// Unique license identifier (UUID v4)
+    pub uuid: String,
+    /// Hash of the license certificate (cryptographically bound)
+    pub hash: String,
+    /// License expiration date (ISO 8601) - None for perpetual
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expiry: Option<String>,
+    /// Maximum concurrent seats - None for unlimited
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seats: Option<u32>,
+    /// Licensee name/organization
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub licensee: Option<String>,
+    /// License tier
+    pub tier: LicenseTier,
+}
+
 impl Default for Metadata {
     fn default() -> Self {
         Self {
@@ -590,6 +630,7 @@ impl Default for Metadata {
             custom: HashMap::new(),
             distillation: None,
             distillation_info: None,
+            license: None,
         }
     }
 }
@@ -641,6 +682,12 @@ impl SaveOptions {
     /// Set distillation info (spec §6.3)
     pub fn with_distillation_info(mut self, info: DistillationInfo) -> Self {
         self.metadata.distillation_info = Some(info);
+        self
+    }
+
+    /// Set license info (spec §9.1)
+    pub fn with_license(mut self, license: LicenseInfo) -> Self {
+        self.metadata.license = Some(license);
         self
     }
 }
@@ -793,6 +840,11 @@ pub fn save<M: Serialize>(
     header.metadata_size = metadata_bytes.len() as u32;
     header.payload_size = payload_compressed.len() as u32;
     header.uncompressed_size = payload_uncompressed.len() as u32;
+
+    // Set LICENSED flag if license info present (spec §9.1)
+    if options.metadata.license.is_some() {
+        header.flags = header.flags.with_licensed();
+    }
 
     // Assemble file content (without checksum)
     let mut content = Vec::new();
@@ -3191,5 +3243,92 @@ mod tests {
 
         // Verify combined param count
         assert_eq!(restored.teacher.param_count, 10_000_000_000);
+    }
+
+    // ========================================================================
+    // EXTREME TDD: License Block (spec §9)
+    // ========================================================================
+
+    // Step 1: RED - Test LicenseInfo struct (spec §9.1)
+    #[test]
+    fn test_license_info_roundtrip() {
+        use tempfile::tempdir;
+
+        #[derive(Debug, Serialize, Deserialize)]
+        struct TestModel {
+            value: i32,
+        }
+
+        let model = TestModel { value: 42 };
+        let dir = tempdir().expect("create temp dir");
+        let path = dir.path().join("licensed.apr");
+
+        // Create LicenseInfo per spec §9.1
+        let license = LicenseInfo {
+            uuid: "550e8400-e29b-41d4-a716-446655440000".to_string(),
+            hash: "sha256:license_hash_abc123".to_string(),
+            expiry: Some("2025-12-31T23:59:59Z".to_string()),
+            seats: Some(10),
+            licensee: Some("ACME Corp".to_string()),
+            tier: LicenseTier::Enterprise,
+        };
+
+        let options = SaveOptions::default().with_license(license);
+
+        save(&model, ModelType::Custom, &path, options).expect("save should succeed");
+
+        let info = inspect(&path).expect("inspect should succeed");
+
+        // Verify LICENSED flag is set
+        assert!(info.licensed);
+
+        // Verify license info restored
+        let restored = info.metadata.license.expect("should have license");
+        assert_eq!(restored.uuid, "550e8400-e29b-41d4-a716-446655440000");
+        assert_eq!(restored.hash, "sha256:license_hash_abc123");
+        assert_eq!(restored.expiry, Some("2025-12-31T23:59:59Z".to_string()));
+        assert_eq!(restored.seats, Some(10));
+        assert_eq!(restored.licensee, Some("ACME Corp".to_string()));
+        assert!(matches!(restored.tier, LicenseTier::Enterprise));
+    }
+
+    // Step 2: RED - Test license tiers
+    #[test]
+    fn test_license_tiers() {
+        use tempfile::tempdir;
+
+        #[derive(Debug, Serialize, Deserialize)]
+        struct TestModel {
+            value: i32,
+        }
+
+        let model = TestModel { value: 42 };
+        let dir = tempdir().expect("create temp dir");
+
+        // Test each tier
+        for (tier, name) in [
+            (LicenseTier::Personal, "personal"),
+            (LicenseTier::Team, "team"),
+            (LicenseTier::Enterprise, "enterprise"),
+            (LicenseTier::Academic, "academic"),
+        ] {
+            let path = dir.path().join(format!("{name}.apr"));
+
+            let license = LicenseInfo {
+                uuid: format!("uuid-{name}"),
+                hash: format!("hash-{name}"),
+                expiry: None,
+                seats: None,
+                licensee: None,
+                tier,
+            };
+
+            let options = SaveOptions::default().with_license(license);
+            save(&model, ModelType::Custom, &path, options).expect("save should succeed");
+
+            let info = inspect(&path).expect("inspect should succeed");
+            let restored = info.metadata.license.expect("should have license");
+            assert_eq!(restored.uuid, format!("uuid-{name}"));
+        }
     }
 }

@@ -37,7 +37,7 @@
 | Quantization | §6.2 | ✓ Q8_0/Q4_0 impl | ✓ | format-quantize feature |
 | Distillation | §6.3 | ✓ DistillationInfo | ✓ | Standard/Progressive/Ensemble methods |
 | Streaming | §7 | ○ | N/A | format-streaming feature |
-| License block | §9 | ○ | ○ | format-commercial feature |
+| License block | §9 | ✓ LicenseInfo | ✓ | UUID/Hash/Expiry/Seats/Tier |
 | trueno-native | §8 | ○ | N/A | format-trueno feature |
 | GGUF export | §7.2 | ○ | ○ | format-gguf feature |
 
