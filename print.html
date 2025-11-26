@@ -8448,6 +8448,176 @@ let bootstrap: Option&lt;bool&gt; = trial.get_bool(&amp;RF::Bootstrap);</code></
    Trials run:  5
    Time:        51.3s
 </code></pre>
+<h2 id="synthetic-data-augmentation"><a class="header" href="#synthetic-data-augmentation">Synthetic Data Augmentation</a></h2>
+<p>Aprender's <code>synthetic</code> module enables automatic data augmentation with quality control and diversity monitoring—particularly powerful for low-resource domains like shell autocomplete.</p>
+<h3 id="the-problem-limited-training-data"><a class="header" href="#the-problem-limited-training-data">The Problem: Limited Training Data</a></h3>
+<p>Many ML tasks suffer from insufficient training data:</p>
+<ul>
+<li>Shell autocomplete: Limited user history</li>
+<li>Code translation: Sparse parallel corpora</li>
+<li>Domain-specific NLP: Rare terminology</li>
+</ul>
+<h3 id="the-solution-quality-controlled-synthetic-data"><a class="header" href="#the-solution-quality-controlled-synthetic-data">The Solution: Quality-Controlled Synthetic Data</a></h3>
+<pre><code class="language-rust">use aprender::synthetic::{SyntheticConfig, DiversityMonitor, DiversityScore};
+
+// Configure augmentation with quality controls
+let config = SyntheticConfig::default()
+    .with_augmentation_ratio(1.0)    // 100% more data
+    .with_quality_threshold(0.7)     // 70% minimum quality
+    .with_diversity_weight(0.3);     // Balance quality vs diversity
+
+// Monitor for mode collapse
+let mut monitor = DiversityMonitor::new(10)
+    .with_collapse_threshold(0.1);</code></pre>
+<h3 id="syntheticconfig-parameters"><a class="header" href="#syntheticconfig-parameters">SyntheticConfig Parameters</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Parameter</th><th>Default</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>augmentation_ratio</code></td><td>0.5</td><td>Synthetic/original ratio (1.0 = double data)</td></tr>
+<tr><td><code>quality_threshold</code></td><td>0.7</td><td>Minimum score for acceptance [0.0, 1.0]</td></tr>
+<tr><td><code>diversity_weight</code></td><td>0.3</td><td>Balance: 0=quality only, 1=diversity only</td></tr>
+<tr><td><code>max_attempts</code></td><td>10</td><td>Retries per sample before giving up</td></tr>
+</tbody></table>
+</div>
+<h3 id="generation-strategies"><a class="header" href="#generation-strategies">Generation Strategies</a></h3>
+<pre><code class="language-rust">use aprender::synthetic::GenerationStrategy;
+
+// Available strategies
+GenerationStrategy::Template       // Slot-filling templates
+GenerationStrategy::EDA            // Easy Data Augmentation
+GenerationStrategy::BackTranslation // Via intermediate representation
+GenerationStrategy::MixUp          // Embedding interpolation
+GenerationStrategy::GrammarBased   // Formal grammar rules
+GenerationStrategy::SelfTraining   // Pseudo-labels
+GenerationStrategy::WeakSupervision // Labeling functions (Snorkel)</code></pre>
+<h3 id="real-world-example-aprender-shell-augment"><a class="header" href="#real-world-example-aprender-shell-augment">Real-World Example: aprender-shell augment</a></h3>
+<p>The <code>aprender-shell augment</code> command demonstrates synthetic data power:</p>
+<pre><code class="language-bash">aprender-shell augment -a 1.0 -q 0.6 --monitor-diversity
+</code></pre>
+<p><strong>Output:</strong></p>
+<pre><code>🧬 aprender-shell: Data Augmentation (with aprender synthetic)
+
+📂 History file: /home/user/.zsh_history
+📊 Real commands: 21789
+⚙️  Augmentation ratio: 1.0x
+⚙️  Quality threshold:  60.0%
+🎯 Target synthetic:   21789 commands
+🔢 Known n-grams: 39180
+
+🧪 Generating synthetic commands... done!
+
+📈 Coverage Report:
+   Generated:          21789
+   Quality filtered:   21430 (rejected 359)
+   Known n-grams:      39180
+   Total n-grams:      26616
+   New n-grams added:  23329
+   Coverage gain:      87.7%
+
+📊 Diversity Metrics:
+   Mean diversity:     1.000
+   ✓  Diversity is healthy
+
+📊 Model Statistics:
+   Original commands:   21789
+   Synthetic commands:  21430
+   Total training:      43219
+   Unique n-grams:      65764
+   Vocabulary size:     37531
+</code></pre>
+<h3 id="before-vs-after-comparison"><a class="header" href="#before-vs-after-comparison">Before vs After Comparison</a></h3>
+<pre><code>═══════════════════════════════════════════════════════════════
+                    📈 IMPROVEMENT SUMMARY
+═══════════════════════════════════════════════════════════════
+
+                      BASELINE    AUGMENTED    GAIN
+───────────────────────────────────────────────────────────────
+  Commands:           21,789      43,219       +98%
+  Unique n-grams:     40,852      65,764       +61%
+  Vocabulary size:    16,102      37,531       +133%
+  Model size:         2,016 KB    3,017 KB     +50%
+  Coverage gain:        --        87.7%         ✓
+  Diversity:            --        1.000        Healthy
+═══════════════════════════════════════════════════════════════
+</code></pre>
+<h3 id="new-capabilities-from-synthetic-data"><a class="header" href="#new-capabilities-from-synthetic-data">New Capabilities from Synthetic Data</a></h3>
+<p>Commands the model never saw in history but now suggests:</p>
+<pre><code>kubectl suggestions (DevOps):
+kubectl exec        0.050
+kubectl config      0.050
+kubectl delete      0.050
+
+aws suggestions (Cloud):
+aws ec2             0.096
+aws lambda          0.076
+aws iam             0.065
+
+rustup suggestions (Rust):
+rustup toolchain    0.107
+rustup override     0.107
+rustup doc          0.107
+</code></pre>
+<h3 id="diversitymonitor-detecting-mode-collapse"><a class="header" href="#diversitymonitor-detecting-mode-collapse">DiversityMonitor: Detecting Mode Collapse</a></h3>
+<pre><code class="language-rust">use aprender::synthetic::{DiversityMonitor, DiversityScore};
+
+let mut monitor = DiversityMonitor::new(10)
+    .with_collapse_threshold(0.1);
+
+// Record diversity scores during generation
+for sample in generated_samples {
+    let score = DiversityScore::new(
+        mean_distance,   // Pairwise distance
+        min_distance,    // Closest pair
+        coverage,        // Space coverage
+    );
+    monitor.record(score);
+}
+
+// Check for problems
+if monitor.is_collapsing() {
+    println!(&quot;⚠️  Mode collapse detected!&quot;);
+}
+if monitor.is_trending_down() {
+    println!(&quot;⚠️  Diversity trending downward&quot;);
+}
+
+println!(&quot;Mean diversity: {:.3}&quot;, monitor.mean_diversity());</code></pre>
+<h3 id="qualitydegradationdetector"><a class="header" href="#qualitydegradationdetector">QualityDegradationDetector</a></h3>
+<p>Monitors whether synthetic data is helping or hurting:</p>
+<pre><code class="language-rust">use aprender::synthetic::QualityDegradationDetector;
+
+// Baseline: score without synthetic data
+let mut detector = QualityDegradationDetector::new(0.85, 10)
+    .with_min_improvement(0.02);
+
+// Record scores from training with synthetic data
+detector.record(0.87);  // Better!
+detector.record(0.86);
+detector.record(0.82);  // Getting worse...
+
+if detector.should_disable_synthetic() {
+    println!(&quot;Synthetic data is hurting performance&quot;);
+}
+
+let summary = detector.summary();
+println!(&quot;Improvement: {:.1}%&quot;, summary.improvement * 100.0);</code></pre>
+<h3 id="type-safe-synthetic-parameters"><a class="header" href="#type-safe-synthetic-parameters">Type-Safe Synthetic Parameters</a></h3>
+<pre><code class="language-rust">use aprender::synthetic::SyntheticParam;
+use aprender::automl::SearchSpace;
+
+// Add synthetic params to AutoML search space
+let space = SearchSpace::new()
+    // Model hyperparameters
+    .add(ModelParam::HiddenSize, 64..512)
+    // Synthetic data hyperparameters (jointly optimized!)
+    .add(SyntheticParam::AugmentationRatio, 0.0..2.0)
+    .add(SyntheticParam::QualityThreshold, 0.5..0.95);</code></pre>
+<h3 id="key-benefits"><a class="header" href="#key-benefits">Key Benefits</a></h3>
+<ol>
+<li><strong>Quality Filtering</strong>: Rejected 359 low-quality commands (1.6%)</li>
+<li><strong>Diversity Monitoring</strong>: Confirmed no mode collapse</li>
+<li><strong>Coverage Gain</strong>: 87.7% of synthetic data introduced new n-grams</li>
+<li><strong>Vocabulary Expansion</strong>: +133% vocabulary size</li>
+<li><strong>Joint Optimization</strong>: Augmentation params tuned alongside model</li>
+</ol>
 <h2 id="best-practices-1"><a class="header" href="#best-practices-1">Best Practices</a></h2>
 <h3 id="1-start-with-random-search"><a class="header" href="#1-start-with-random-search">1. Start with Random Search</a></h3>
 <pre><code class="language-rust">// Quick exploration
