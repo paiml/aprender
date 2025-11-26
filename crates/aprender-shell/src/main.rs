@@ -133,6 +133,21 @@ enum Commands {
         #[arg(short, long, default_value = "5000")]
         count: usize,
     },
+
+    /// Auto-tune hyperparameters using aprender's AutoML
+    Tune {
+        /// Path to history file (default: auto-detect)
+        #[arg(short = 'f', long)]
+        history: Option<PathBuf>,
+
+        /// Number of trials to run
+        #[arg(short, long, default_value = "10")]
+        trials: usize,
+
+        /// Train/test split ratio (0.0-1.0)
+        #[arg(short, long, default_value = "0.8")]
+        ratio: f32,
+    },
 }
 
 fn expand_path(path: &str) -> PathBuf {
@@ -195,6 +210,13 @@ fn main() {
             count,
         } => {
             cmd_augment(history, &output, ngram, count);
+        }
+        Commands::Tune {
+            history,
+            trials,
+            ratio,
+        } => {
+            cmd_tune(history, trials, ratio);
         }
     }
 }
@@ -517,4 +539,100 @@ fn cmd_augment(history_path: Option<PathBuf>, output: &str, ngram: usize, count:
 
     println!("\n💡 Validate improvement:");
     println!("   aprender-shell validate");
+}
+
+fn cmd_tune(history_path: Option<PathBuf>, trials: usize, ratio: f32) {
+    use aprender::automl::{RandomSearch, SearchSpace, SearchStrategy};
+
+    println!("🎯 aprender-shell: AutoML Hyperparameter Tuning\n");
+
+    // Find history file
+    let history_file = history_path.unwrap_or_else(|| {
+        HistoryParser::find_history_file().expect("Could not find shell history file")
+    });
+
+    println!("📂 History file: {}", history_file.display());
+
+    // Parse history
+    let parser = HistoryParser::new();
+    let commands = parser
+        .parse_file(&history_file)
+        .expect("Failed to parse history");
+
+    println!("📊 Total commands: {}", commands.len());
+    println!("🔬 Trials: {}", trials);
+    println!(
+        "📈 Train/test split: {:.0}% / {:.0}%\n",
+        ratio * 100.0,
+        (1.0 - ratio) * 100.0
+    );
+
+    // Define search space for n-gram size (2-5)
+    // Using GenericParam since ShellModelParam isn't needed for single param
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    enum ShellParam {
+        NGramSize,
+    }
+
+    impl aprender::automl::params::ParamKey for ShellParam {
+        fn name(&self) -> &'static str {
+            match self {
+                Self::NGramSize => "ngram_size",
+            }
+        }
+    }
+
+    let space: SearchSpace<ShellParam> = SearchSpace::new().add(ShellParam::NGramSize, 2..6);
+
+    let mut search = RandomSearch::new(trials).with_seed(42);
+
+    println!("═══════════════════════════════════════════");
+    println!("  Trial │ N-gram │ Hit@5  │  MRR   │ Score");
+    println!("════════╪════════╪════════╪════════╪═══════");
+
+    let mut best_ngram = 3_usize;
+    let mut best_score = 0.0_f32;
+
+    for trial_num in 1..=trials {
+        let trial_configs = search.suggest(&space, 1);
+        if trial_configs.is_empty() {
+            break;
+        }
+
+        let config = &trial_configs[0];
+        let ngram = config
+            .get_usize(&ShellParam::NGramSize)
+            .expect("ngram_size should exist");
+
+        // Evaluate with holdout validation
+        let result = MarkovModel::validate(&commands, ngram, ratio);
+
+        // Score = weighted combination of Hit@5 and MRR
+        let score = result.metrics.hit_at_5 * 0.6 + result.metrics.mrr * 0.4;
+
+        let marker = if score > best_score { "★" } else { " " };
+        println!(
+            "  {:>5} │   {:>2}   │ {:>5.1}% │ {:>6.3} │ {:>5.3} {}",
+            trial_num,
+            ngram,
+            result.metrics.hit_at_5 * 100.0,
+            result.metrics.mrr,
+            score,
+            marker
+        );
+
+        if score > best_score {
+            best_score = score;
+            best_ngram = ngram;
+        }
+    }
+
+    println!("═══════════════════════════════════════════\n");
+
+    println!("🏆 Best Configuration:");
+    println!("   N-gram size: {}", best_ngram);
+    println!("   Score:       {:.3}", best_score);
+
+    println!("\n💡 Train with optimal settings:");
+    println!("   aprender-shell train --ngram {}", best_ngram);
 }
