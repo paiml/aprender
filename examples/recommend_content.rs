@@ -65,7 +65,7 @@ fn main() {
 
     for (id, description) in &movies {
         recommender.add_item(*id, *description);
-        println!("Added: {} - {}", id, description);
+        println!("Added: {id} - {description}");
     }
 
     println!("\n{} movies added to recommender\n", recommender.len());
@@ -75,7 +75,7 @@ fn main() {
     let query_movies = vec!["inception", "shawshank", "avatar"];
 
     for query_id in query_movies {
-        println!("Finding movies similar to '{}':", query_id);
+        println!("Finding movies similar to '{query_id}':");
 
         match recommender.recommend(query_id, 3) {
             Ok(recommendations) => {
@@ -84,7 +84,7 @@ fn main() {
                 }
             }
             Err(e) => {
-                println!("Error getting recommendations: {}", e);
+                println!("Error getting recommendations: {e}");
             }
         }
 
@@ -109,7 +109,7 @@ fn main() {
             }
         }
         Err(e) => {
-            println!("Error: {}", e);
+            println!("Error: {e}");
         }
     }
 

@@ -62,7 +62,7 @@ fn main() {
     let loss_fn = MSELoss::new();
 
     println!("⚙️  Training Configuration:");
-    println!("   Optimizer: SGD (lr={})", learning_rate);
+    println!("   Optimizer: SGD (lr={learning_rate})");
     println!("   Loss: Mean Squared Error");
     println!("   Epochs: 1000\n");
 
@@ -114,10 +114,7 @@ fn main() {
                 .count();
             let accuracy = (correct as f32 / 4.0) * 100.0;
 
-            println!(
-                "   │  {:>5}  │    {:.6}  │   {:>3.0}%   │",
-                epoch, final_loss, accuracy
-            );
+            println!("   │  {epoch:>5}  │    {final_loss:.6}  │   {accuracy:>3.0}%   │");
         }
     }
 

@@ -5,6 +5,7 @@
 //! - Ed25519 signatures (provenance)
 //! - AES-256-GCM encryption (confidentiality)
 //! - Zstd compression (efficiency)
+//! - Quantization (Q8_0, Q4_0, Q4_1 - GGUF compatible)
 //! - Streaming/mmap (JIT loading)
 //!
 //! # Format Structure
@@ -51,6 +52,17 @@ use std::fs::File;
 use std::io::Cursor;
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::Path;
+
+// Quantization module (spec §6.2)
+#[cfg(feature = "format-quantize")]
+pub mod quantize;
+
+// Re-export quantization types when feature is enabled
+#[cfg(feature = "format-quantize")]
+pub use quantize::{
+    dequantize, quantize as quantize_data, Q4_0Quantizer, Q8_0Quantizer, QuantType,
+    QuantizationInfo, QuantizedBlock, QuantizedTensor, Quantizer, BLOCK_SIZE,
+};
 
 // Re-export signing types when feature is enabled
 #[cfg(feature = "format-signing")]
@@ -213,6 +225,8 @@ impl Flags {
     pub const LICENSED: u8 = 0b0000_1000;
     /// 64-byte aligned tensors for zero-copy SIMD (trueno-native)
     pub const TRUENO_NATIVE: u8 = 0b0001_0000;
+    /// Payload contains quantized tensors (spec §6.2)
+    pub const QUANTIZED: u8 = 0b0010_0000;
 
     /// Create new flags
     pub fn new() -> Self {
@@ -249,6 +263,12 @@ impl Flags {
         self
     }
 
+    /// Set quantized flag
+    pub fn with_quantized(mut self) -> Self {
+        self.0 |= Self::QUANTIZED;
+        self
+    }
+
     /// Check if encrypted
     pub fn is_encrypted(self) -> bool {
         self.0 & Self::ENCRYPTED != 0
@@ -274,6 +294,11 @@ impl Flags {
         self.0 & Self::TRUENO_NATIVE != 0
     }
 
+    /// Check if quantized
+    pub fn is_quantized(self) -> bool {
+        self.0 & Self::QUANTIZED != 0
+    }
+
     /// Get raw value
     pub fn bits(self) -> u8 {
         self.0
@@ -281,7 +306,7 @@ impl Flags {
 
     /// Create from raw value
     pub fn from_bits(bits: u8) -> Self {
-        Self(bits & 0b0001_1111) // Mask reserved bits (5-7)
+        Self(bits & 0b0011_1111) // Mask reserved bits (6-7)
     }
 }
 
@@ -556,6 +581,8 @@ pub struct ModelInfo {
     pub licensed: bool,
     /// Uses trueno-native 64-byte aligned tensors
     pub trueno_native: bool,
+    /// Contains quantized tensors
+    pub quantized: bool,
 }
 
 /// Compress payload based on algorithm (spec §3.3)
@@ -769,6 +796,272 @@ pub fn load<M: DeserializeOwned>(path: impl AsRef<Path>, expected_type: ModelTyp
         .map_err(|e| AprenderError::Serialization(format!("Failed to deserialize model: {e}")))
 }
 
+/// Load a model from a byte slice (spec §1.1 - Single Binary Deployment)
+///
+/// Enables the `include_bytes!()` pattern for embedding models directly
+/// in executables. This is the key function for zero-dependency ML deployment.
+///
+/// # Arguments
+/// * `data` - Raw .apr file bytes (e.g., from `include_bytes!()`)
+/// * `expected_type` - Expected model type (for type safety)
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use aprender::format::{load_from_bytes, ModelType};
+///
+/// // Embed model at compile time
+/// const MODEL: &[u8] = include_bytes!("sentiment.apr");
+///
+/// fn main() -> Result<()> {
+///     let model: LogisticRegression = load_from_bytes(MODEL, ModelType::LogisticRegression)?;
+///     let prediction = model.predict(&input)?;
+///     Ok(())
+/// }
+/// ```
+///
+/// # Errors
+/// Returns error on format error, type mismatch, or checksum failure
+pub fn load_from_bytes<M: DeserializeOwned>(data: &[u8], expected_type: ModelType) -> Result<M> {
+    // Verify minimum size
+    if data.len() < HEADER_SIZE + 4 {
+        return Err(AprenderError::FormatError {
+            message: format!("Data too small: {} bytes", data.len()),
+        });
+    }
+
+    // Verify checksum (Jidoka: stop the line on corruption)
+    let stored_checksum = u32::from_le_bytes([
+        data[data.len() - 4],
+        data[data.len() - 3],
+        data[data.len() - 2],
+        data[data.len() - 1],
+    ]);
+    let computed_checksum = crc32(&data[..data.len() - 4]);
+    if stored_checksum != computed_checksum {
+        return Err(AprenderError::ChecksumMismatch {
+            expected: stored_checksum,
+            actual: computed_checksum,
+        });
+    }
+
+    // Parse header
+    let header = Header::from_bytes(&data[..HEADER_SIZE])?;
+
+    // Verify model type
+    if header.model_type != expected_type {
+        return Err(AprenderError::FormatError {
+            message: format!(
+                "Model type mismatch: data contains {:?}, expected {:?}",
+                header.model_type, expected_type
+            ),
+        });
+    }
+
+    // Extract payload
+    let metadata_end = HEADER_SIZE + header.metadata_size as usize;
+    let payload_end = metadata_end + header.payload_size as usize;
+
+    if payload_end > data.len() - 4 {
+        return Err(AprenderError::FormatError {
+            message: "Payload extends beyond data boundary".to_string(),
+        });
+    }
+
+    let payload_compressed = &data[metadata_end..payload_end];
+
+    // Decompress payload
+    let payload_uncompressed = decompress_payload(payload_compressed, header.compression)?;
+
+    // Deserialize model
+    bincode::deserialize(&payload_uncompressed)
+        .map_err(|e| AprenderError::Serialization(format!("Failed to deserialize model: {e}")))
+}
+
+/// Load an encrypted model from a byte slice (spec §1.1 + §4.1.2)
+///
+/// Enables the `include_bytes!()` pattern for embedding encrypted models.
+/// Combines single binary deployment with password-based encryption.
+///
+/// # Arguments
+/// * `data` - Raw encrypted .apr file bytes
+/// * `expected_type` - Expected model type
+/// * `password` - Password for decryption
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use aprender::format::{load_from_bytes_encrypted, ModelType};
+///
+/// // Embed encrypted model at compile time
+/// const MODEL: &[u8] = include_bytes!("model.apr.enc");
+///
+/// fn main() -> Result<()> {
+///     let model: NaiveBayes = load_from_bytes_encrypted(
+///         MODEL,
+///         ModelType::NaiveBayes,
+///         &get_password_from_env(),
+///     )?;
+///     Ok(())
+/// }
+/// ```
+///
+/// # Errors
+/// Returns error on format error, type mismatch, or decryption failure
+#[cfg(feature = "format-encryption")]
+pub fn load_from_bytes_encrypted<M: DeserializeOwned>(
+    data: &[u8],
+    expected_type: ModelType,
+    password: &str,
+) -> Result<M> {
+    use aes_gcm::{
+        aead::{Aead, KeyInit},
+        Aes256Gcm, Nonce,
+    };
+    use argon2::Argon2;
+
+    // Verify minimum size
+    if data.len() < HEADER_SIZE + SALT_SIZE + NONCE_SIZE + 4 {
+        return Err(AprenderError::FormatError {
+            message: format!("Data too small for encrypted model: {} bytes", data.len()),
+        });
+    }
+
+    // Verify checksum (Jidoka: stop the line on corruption)
+    let stored_checksum = u32::from_le_bytes([
+        data[data.len() - 4],
+        data[data.len() - 3],
+        data[data.len() - 2],
+        data[data.len() - 1],
+    ]);
+    let computed_checksum = crc32(&data[..data.len() - 4]);
+    if stored_checksum != computed_checksum {
+        return Err(AprenderError::ChecksumMismatch {
+            expected: stored_checksum,
+            actual: computed_checksum,
+        });
+    }
+
+    // Parse header
+    let header = Header::from_bytes(&data[..HEADER_SIZE])?;
+
+    // Verify ENCRYPTED flag is set
+    if !header.flags.is_encrypted() {
+        return Err(AprenderError::FormatError {
+            message: "Data is not encrypted (ENCRYPTED flag not set)".to_string(),
+        });
+    }
+
+    // Verify model type
+    if header.model_type != expected_type {
+        return Err(AprenderError::FormatError {
+            message: format!(
+                "Model type mismatch: data contains {:?}, expected {:?}",
+                header.model_type, expected_type
+            ),
+        });
+    }
+
+    // Calculate content boundaries
+    let metadata_end = HEADER_SIZE + header.metadata_size as usize;
+    let salt_end = metadata_end + SALT_SIZE;
+    let nonce_end = salt_end + NONCE_SIZE;
+    let payload_end = metadata_end + header.payload_size as usize;
+
+    if payload_end > data.len() - 4 {
+        return Err(AprenderError::FormatError {
+            message: "Encrypted payload extends beyond data boundary".to_string(),
+        });
+    }
+
+    // Extract salt, nonce, and ciphertext
+    let salt: [u8; SALT_SIZE] =
+        data[metadata_end..salt_end]
+            .try_into()
+            .map_err(|_| AprenderError::FormatError {
+                message: "Invalid salt size".to_string(),
+            })?;
+    let nonce_bytes: [u8; NONCE_SIZE] =
+        data[salt_end..nonce_end]
+            .try_into()
+            .map_err(|_| AprenderError::FormatError {
+                message: "Invalid nonce size".to_string(),
+            })?;
+    let ciphertext = &data[nonce_end..payload_end];
+
+    // Derive key using Argon2id (same parameters as encryption)
+    let mut key = [0u8; KEY_SIZE];
+    Argon2::default()
+        .hash_password_into(password.as_bytes(), &salt, &mut key)
+        .map_err(|e| AprenderError::Other(format!("Key derivation failed: {e}")))?;
+
+    // Decrypt payload with AES-256-GCM
+    let cipher = Aes256Gcm::new_from_slice(&key)
+        .map_err(|e| AprenderError::Other(format!("Failed to create cipher: {e}")))?;
+    let nonce = Nonce::from_slice(&nonce_bytes);
+    let payload_compressed =
+        cipher
+            .decrypt(nonce, ciphertext)
+            .map_err(|_| AprenderError::DecryptionFailed {
+                message: "Decryption failed (wrong password or corrupted data)".to_string(),
+            })?;
+
+    // Decompress payload
+    let payload_uncompressed = decompress_payload(&payload_compressed, header.compression)?;
+
+    // Deserialize model
+    bincode::deserialize(&payload_uncompressed)
+        .map_err(|e| AprenderError::Serialization(format!("Failed to deserialize model: {e}")))
+}
+
+/// Inspect model data without loading the payload (spec §1.1)
+///
+/// Useful for validating embedded models or checking metadata
+/// without deserializing the full model.
+///
+/// # Arguments
+/// * `data` - Raw .apr file bytes
+///
+/// # Errors
+/// Returns error on format error
+pub fn inspect_bytes(data: &[u8]) -> Result<ModelInfo> {
+    // Verify minimum size
+    if data.len() < HEADER_SIZE {
+        return Err(AprenderError::FormatError {
+            message: format!("Data too small: {} bytes", data.len()),
+        });
+    }
+
+    // Parse header
+    let header = Header::from_bytes(&data[..HEADER_SIZE])?;
+
+    // Extract metadata
+    let metadata_end = HEADER_SIZE + header.metadata_size as usize;
+    if metadata_end > data.len() {
+        return Err(AprenderError::FormatError {
+            message: "Metadata extends beyond data boundary".to_string(),
+        });
+    }
+
+    let metadata_bytes = &data[HEADER_SIZE..metadata_end];
+    let metadata: Metadata = rmp_serde::from_slice(metadata_bytes)
+        .map_err(|e| AprenderError::Serialization(format!("Failed to parse metadata: {e}")))?;
+
+    Ok(ModelInfo {
+        model_type: header.model_type,
+        format_version: header.version,
+        metadata,
+        payload_size: header.payload_size as usize,
+        uncompressed_size: header.uncompressed_size as usize,
+        encrypted: header.flags.is_encrypted(),
+        signed: header.flags.is_signed(),
+        streaming: header.flags.is_streaming(),
+        licensed: header.flags.is_licensed(),
+        trueno_native: header.flags.is_trueno_native(),
+        quantized: header.flags.is_quantized(),
+    })
+}
+
 /// Inspect a model file without loading the payload
 ///
 /// # Arguments
@@ -805,6 +1098,7 @@ pub fn inspect(path: impl AsRef<Path>) -> Result<ModelInfo> {
         streaming: header.flags.is_streaming(),
         licensed: header.flags.is_licensed(),
         trueno_native: header.flags.is_trueno_native(),
+        quantized: header.flags.is_quantized(),
     })
 }
 
@@ -1582,14 +1876,16 @@ mod tests {
             .with_signed()
             .with_streaming()
             .with_licensed()
-            .with_trueno_native();
+            .with_trueno_native()
+            .with_quantized();
 
         assert!(flags.is_encrypted());
         assert!(flags.is_signed());
         assert!(flags.is_streaming());
         assert!(flags.is_licensed());
         assert!(flags.is_trueno_native());
-        assert_eq!(flags.bits(), 0b0001_1111);
+        assert!(flags.is_quantized());
+        assert_eq!(flags.bits(), 0b0011_1111);
     }
 
     #[test]
@@ -1644,6 +1940,130 @@ mod tests {
         assert_eq!(info.format_version, FORMAT_VERSION);
         assert!(!info.encrypted);
         assert!(!info.signed);
+    }
+
+    #[test]
+    fn test_load_from_bytes_roundtrip() {
+        use tempfile::tempdir;
+
+        // Simple serializable struct for testing
+        #[derive(Debug, Serialize, Deserialize, PartialEq)]
+        struct TestModel {
+            weights: Vec<f32>,
+            bias: f32,
+        }
+
+        let model = TestModel {
+            weights: vec![1.0, 2.0, 3.0, 4.0, 5.0],
+            bias: 0.5,
+        };
+
+        let dir = tempdir().expect("create temp dir");
+        let path = dir.path().join("embedded.apr");
+
+        // Save to file first
+        save(&model, ModelType::Custom, &path, SaveOptions::default())
+            .expect("save should succeed");
+
+        // Read file into bytes (simulating include_bytes!)
+        let data = std::fs::read(&path).expect("read file");
+
+        // Load from bytes
+        let loaded: TestModel =
+            load_from_bytes(&data, ModelType::Custom).expect("load_from_bytes should succeed");
+        assert_eq!(loaded, model);
+
+        // Inspect from bytes
+        let info = inspect_bytes(&data).expect("inspect_bytes should succeed");
+        assert_eq!(info.model_type, ModelType::Custom);
+        assert_eq!(info.format_version, FORMAT_VERSION);
+    }
+
+    #[test]
+    fn test_load_from_bytes_type_mismatch() {
+        use tempfile::tempdir;
+
+        #[derive(Debug, Serialize, Deserialize)]
+        struct TestModel {
+            value: i32,
+        }
+
+        let model = TestModel { value: 42 };
+        let dir = tempdir().expect("create temp dir");
+        let path = dir.path().join("typed.apr");
+
+        save(
+            &model,
+            ModelType::LinearRegression,
+            &path,
+            SaveOptions::default(),
+        )
+        .expect("save should succeed");
+
+        let data = std::fs::read(&path).expect("read file");
+
+        // Load with wrong type should fail
+        let result: Result<TestModel> = load_from_bytes(&data, ModelType::KMeans);
+        assert!(result.is_err());
+        assert!(result
+            .expect_err("should fail")
+            .to_string()
+            .contains("type mismatch"));
+    }
+
+    #[test]
+    fn test_load_from_bytes_checksum_failure() {
+        use tempfile::tempdir;
+
+        #[derive(Debug, Serialize, Deserialize)]
+        struct TestModel {
+            value: i32,
+        }
+
+        let model = TestModel { value: 42 };
+        let dir = tempdir().expect("create temp dir");
+        let path = dir.path().join("corrupt.apr");
+
+        save(&model, ModelType::Custom, &path, SaveOptions::default())
+            .expect("save should succeed");
+
+        // Read and corrupt the data
+        let mut data = std::fs::read(&path).expect("read file");
+        if data.len() > HEADER_SIZE + 10 {
+            data[HEADER_SIZE + 5] ^= 0xFF; // Flip some bits
+        }
+
+        // Load should fail with checksum error
+        let result: Result<TestModel> = load_from_bytes(&data, ModelType::Custom);
+        assert!(result.is_err());
+        assert!(result
+            .expect_err("should fail")
+            .to_string()
+            .contains("Checksum"));
+    }
+
+    #[test]
+    fn test_load_from_bytes_too_small() {
+        let data = vec![0u8; 10]; // Too small
+
+        let result: Result<i32> = load_from_bytes(&data, ModelType::Custom);
+        assert!(result.is_err());
+        assert!(result
+            .expect_err("should fail")
+            .to_string()
+            .contains("too small"));
+    }
+
+    #[test]
+    fn test_inspect_bytes_too_small() {
+        let data = vec![0u8; 10]; // Too small
+
+        let result = inspect_bytes(&data);
+        assert!(result.is_err());
+        assert!(result
+            .expect_err("should fail")
+            .to_string()
+            .contains("too small"));
     }
 
     #[test]
@@ -2024,6 +2444,83 @@ mod tests {
         let loaded: TestModel = load_encrypted(&path, ModelType::Custom, password)
             .expect("load_encrypted should succeed");
         assert_eq!(loaded, model);
+    }
+
+    #[test]
+    #[cfg(feature = "format-encryption")]
+    fn test_load_from_bytes_encrypted_roundtrip() {
+        use tempfile::tempdir;
+
+        #[derive(Debug, Serialize, Deserialize, PartialEq)]
+        struct TestModel {
+            weights: Vec<f32>,
+            bias: f32,
+        }
+
+        let model = TestModel {
+            weights: vec![1.0, 2.0, 3.0, 4.0, 5.0],
+            bias: 0.5,
+        };
+
+        let password = "embedded_secret_123!";
+
+        let dir = tempdir().expect("create temp dir");
+        let path = dir.path().join("encrypted_embedded.apr");
+
+        // Save with encryption
+        save_encrypted(
+            &model,
+            ModelType::Custom,
+            &path,
+            SaveOptions::default(),
+            password,
+        )
+        .expect("save_encrypted should succeed");
+
+        // Read file into bytes (simulating include_bytes!)
+        let data = std::fs::read(&path).expect("read file");
+
+        // Load from bytes with correct password
+        let loaded: TestModel = load_from_bytes_encrypted(&data, ModelType::Custom, password)
+            .expect("load_from_bytes_encrypted should succeed");
+        assert_eq!(loaded, model);
+    }
+
+    #[test]
+    #[cfg(feature = "format-encryption")]
+    fn test_load_from_bytes_encrypted_wrong_password() {
+        use tempfile::tempdir;
+
+        #[derive(Debug, Serialize, Deserialize)]
+        struct TestModel {
+            value: i32,
+        }
+
+        let model = TestModel { value: 42 };
+        let password = "correct_password";
+
+        let dir = tempdir().expect("create temp dir");
+        let path = dir.path().join("encrypted.apr");
+
+        save_encrypted(
+            &model,
+            ModelType::Custom,
+            &path,
+            SaveOptions::default(),
+            password,
+        )
+        .expect("save should succeed");
+
+        let data = std::fs::read(&path).expect("read file");
+
+        // Load with wrong password should fail
+        let result: Result<TestModel> =
+            load_from_bytes_encrypted(&data, ModelType::Custom, "wrong_password");
+        assert!(result.is_err());
+        assert!(result
+            .expect_err("should fail")
+            .to_string()
+            .contains("Decryption failed"));
     }
 
     #[test]

@@ -20,6 +20,7 @@ use aprender::nn::{
     Linear, Module, ReLU, Sequential, Sigmoid,
 };
 
+#[allow(clippy::too_many_lines)]
 fn main() {
     println!("╔══════════════════════════════════════════════════════════════╗");
     println!("║       Neural Network Training with Aprender                  ║");
@@ -162,7 +163,7 @@ fn main() {
 
     let model_path = "/tmp/xor_model.safetensors";
     save_model(&model, model_path).expect("Failed to save model");
-    println!("   Saved to: {}", model_path);
+    println!("   Saved to: {model_path}");
 
     // Create a new model with same architecture
     let mut loaded_model = Sequential::new()

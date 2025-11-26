@@ -100,13 +100,16 @@ dependencies = [
  "arrow-json",
  "bytes",
  "clap",
+ "lz4_flex",
  "memmap2",
  "parquet",
  "rand 0.8.5",
+ "rmp-serde",
  "serde",
  "serde_json",
  "thiserror 2.0.17",
  "tokio",
+ "zstd",
 ]
 
 [[package]]
@@ -236,6 +239,7 @@ dependencies = [
  "criterion",
  "ed25519-dalek",
  "getrandom 0.2.16",
+ "half",
  "hkdf",
  "nalgebra",
  "proptest",

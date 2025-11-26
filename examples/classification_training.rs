@@ -14,6 +14,7 @@ use aprender::nn::{
     loss::CrossEntropyLoss, optim::Adam, Linear, Module, Optimizer, ReLU, Sequential, Softmax,
 };
 
+#[allow(clippy::too_many_lines)]
 fn main() {
     println!("╔══════════════════════════════════════════════════════════════╗");
     println!("║       Neural Network Classification with Aprender            ║");
@@ -156,7 +157,6 @@ fn main() {
             .unwrap();
 
         let check = if pred_class == target {
-            "✓";
             correct += 1;
             "✓"
         } else {

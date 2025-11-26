@@ -44,8 +44,8 @@ fn generate_movie_descriptions(n: usize) -> Vec<(String, String)> {
             let genre = genres[i % genres.len()];
             let adj = adjectives[(i / 10) % adjectives.len()];
             let noun = nouns[(i / 100) % nouns.len()];
-            let id = format!("movie_{}", i);
-            let desc = format!("{} {} {} about heroes and villains", adj, genre, noun);
+            let id = format!("movie_{i}");
+            let desc = format!("{adj} {genre} {noun} about heroes and villains");
             (id, desc)
         })
         .collect()
@@ -54,7 +54,7 @@ fn generate_movie_descriptions(n: usize) -> Vec<(String, String)> {
 fn bench_add_items(c: &mut Criterion) {
     let mut group = c.benchmark_group("recommend_add");
 
-    for size in [100, 1_000, 10_000].iter() {
+    for size in &[100, 1_000, 10_000] {
         group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, &size| {
             b.iter(|| {
                 let mut rec = ContentRecommender::new(16, 200, 0.95);
@@ -74,7 +74,7 @@ fn bench_recommend(c: &mut Criterion) {
     let mut group = c.benchmark_group("recommend_search");
     group.sample_size(50); // Reduce samples for large datasets
 
-    for size in [100, 1_000, 10_000].iter() {
+    for size in &[100, 1_000, 10_000] {
         // Pre-build recommender
         let mut rec = ContentRecommender::new(16, 200, 0.95);
         let items = generate_movie_descriptions(*size);

@@ -13,12 +13,10 @@
 
 #![allow(non_snake_case)]
 
-use aprender::primitives::Matrix;
 use aprender::text::sentiment::{Polarity, SentimentAnalyzer};
 use aprender::text::tokenize::WhitespaceTokenizer;
 use aprender::text::topic::LatentDirichletAllocation;
 use aprender::text::vectorize::CountVectorizer;
-use aprender::text::Tokenizer;
 
 fn main() {
     println!("╔════════════════════════════════════════════════════════════════╗");
@@ -76,10 +74,10 @@ fn example_1_sentiment_analysis() {
             Polarity::Neutral => "Neutral  ⚪",
         };
 
-        println!("\n   {}:", label);
+        println!("\n   {label}:");
         println!("   Text: \"{}...\"", &text[..40.min(text.len())]);
-        println!("   Score: {:.3}", score);
-        println!("   → {}", polarity_str);
+        println!("   Score: {score:.3}");
+        println!("   → {polarity_str}");
     }
 
     // Statistics
@@ -93,9 +91,9 @@ fn example_1_sentiment_analysis() {
     let neu_count = scores.len() - pos_count - neg_count;
 
     println!("\n📈 Sentiment Distribution:");
-    println!("   Positive: {} reviews", pos_count);
-    println!("   Negative: {} reviews", neg_count);
-    println!("   Neutral:  {} reviews", neu_count);
+    println!("   Positive: {pos_count} reviews");
+    println!("   Negative: {neg_count} reviews");
+    println!("   Neutral:  {neu_count} reviews");
 }
 
 /// Example 2: Topic Modeling with LDA
@@ -139,8 +137,8 @@ fn example_2_topic_modeling() {
 
     lda.fit(&dtm, max_iter).expect("LDA fit should succeed");
 
-    println!("   Topics: {}", n_topics);
-    println!("   Iterations: {}", max_iter);
+    println!("   Topics: {n_topics}");
+    println!("   Iterations: {max_iter}");
 
     // Get vocabulary for display
     let mut vocab_pairs: Vec<_> = vectorizer.vocabulary().iter().collect();
@@ -159,7 +157,7 @@ fn example_2_topic_modeling() {
     for (topic_idx, words) in top_words.iter().enumerate() {
         println!("\n   Topic {} (top 5 words):", topic_idx + 1);
         for (word, score) in words {
-            println!("      {}: {:.3}", word, score);
+            println!("      {word}: {score:.3}");
         }
     }
 
@@ -186,6 +184,7 @@ fn example_2_topic_modeling() {
 /// Example 3: Combined Topic + Sentiment Analysis
 ///
 /// Analyzes topics and sentiment together for deeper insights.
+#[allow(clippy::too_many_lines)]
 fn example_3_topic_sentiment() {
     println!("EXAMPLE 3: Combined Topic + Sentiment Analysis");
     println!("{}", "─".repeat(64));
@@ -227,11 +226,11 @@ fn example_3_topic_sentiment() {
         .top_words(&vocabulary, 4)
         .expect("Top words should succeed");
 
-    println!("   Discovered {} topics:", n_topics);
+    println!("   Discovered {n_topics} topics:");
     for (topic_idx, words) in top_words.iter().enumerate() {
         let words_str: Vec<String> = words
             .iter()
-            .map(|(word, score)| format!("{}({:.2})", word, score))
+            .map(|(word, score)| format!("{word}({score:.2})"))
             .collect();
         println!("      Topic {}: {}", topic_idx + 1, words_str.join(", "));
     }
@@ -269,19 +268,19 @@ fn example_3_topic_sentiment() {
         let (dominant_topic, topic_prob) = topic_probs[0];
 
         let sentiment_label = match polarity {
-            Polarity::Positive => format!("Positive ({:.2})", sentiment),
-            Polarity::Negative => format!("Negative ({:.2})", sentiment),
-            Polarity::Neutral => format!("Neutral ({:.2})", sentiment),
+            Polarity::Positive => format!("Positive ({sentiment:.2})"),
+            Polarity::Negative => format!("Negative ({sentiment:.2})"),
+            Polarity::Neutral => format!("Neutral ({sentiment:.2})"),
         };
 
         println!("\n   Review {}:", idx + 1);
-        println!("      Text: \"{}...\"", review_preview);
+        println!("      Text: \"{review_preview}...\"");
         println!(
             "      Topic: {} ({:.1}%)",
             dominant_topic + 1,
             topic_prob * 100.0
         );
-        println!("      Sentiment: {}", sentiment_label);
+        println!("      Sentiment: {sentiment_label}");
     }
 
     // Topic-sentiment correlation
@@ -289,6 +288,7 @@ fn example_3_topic_sentiment() {
     for topic_idx in 0..n_topics {
         let mut topic_sentiments = Vec::new();
 
+        #[allow(clippy::needless_range_loop)]
         for doc_idx in 0..reviews.len() {
             let topic_prob = doc_topics.get(doc_idx, topic_idx);
             if topic_prob > 0.4 {

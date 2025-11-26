@@ -94,6 +94,9 @@ trueno = "0.7.3"
 # Compression for .apr format (optional, spec §3.3)
 zstd = { version = "0.13", optional = true }
 
+# Half-precision floats for quantization (spec §6.2)
+half = { version = "2.4", optional = true, default-features = false, features = ["std"] }
+
 # Digital signatures for .apr format (optional, spec §4.2)
 ed25519-dalek = { version = "2.1", optional = true, default-features = false, features = ["std", "zeroize", "rand_core"] }
 
@@ -123,6 +126,7 @@ datasets = ["alimentar"]  # Enable data loading from alimentar
 format-compression = ["zstd"]  # Enable zstd compression for .apr format (spec §3.3)
 format-signing = ["ed25519-dalek"]  # Enable Ed25519 signatures for .apr format (spec §4.2)
 format-encryption = ["aes-gcm", "argon2", "x25519-dalek", "hkdf", "sha2"]  # Enable encryption for .apr format (spec §4.1)
+format-quantize = ["half"]  # Enable quantization for .apr format (spec §6.2)
 gpu = []
 cpu-only = []
 # Chaos engineering features (from renacer)

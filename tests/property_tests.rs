@@ -509,7 +509,7 @@ proptest! {
 
         // Cosine similarity should be in [-1, 1]
         if let Ok(sim) = cosine_similarity(&a, &b) {
-            prop_assert!(sim >= -1.0 && sim <= 1.0);
+            prop_assert!((-1.0..=1.0).contains(&sim));
         }
     }
 
@@ -535,7 +535,7 @@ proptest! {
 
         // Jaccard similarity should be in [0, 1]
         let sim = jaccard_similarity(&tokens1, &tokens2).expect("Should succeed");
-        prop_assert!(sim >= 0.0 && sim <= 1.0);
+        prop_assert!((0.0..=1.0).contains(&sim));
     }
 
     #[test]
@@ -636,7 +636,7 @@ proptest! {
         let entities = extractor.extract(&text).expect("Should succeed");
 
         // Should extract exactly one URL
-        prop_assert!(entities.urls.len() >= 1);
+        prop_assert!(!entities.urls.is_empty());
         prop_assert!(entities.urls[0].starts_with("http"));
     }
 
@@ -650,7 +650,7 @@ proptest! {
 
         // Create text with n_sentences
         let sentences: Vec<String> = (0..n_sentences)
-            .map(|i| format!("Sentence number {} with some content here", i))
+            .map(|i| format!("Sentence number {i} with some content here"))
             .collect();
         let text = sentences.join(". ");
 
@@ -669,7 +669,7 @@ proptest! {
 
         // Create text with numbered sentences
         let sentences: Vec<String> = (0..n_sentences)
-            .map(|i| format!("Important sentence number {} with content", i))
+            .map(|i| format!("Important sentence number {i} with content"))
             .collect();
         let text = sentences.join(". ");
 
@@ -715,7 +715,7 @@ proptest! {
 
         // Add vectors to index
         for (i, vec) in vectors.iter().enumerate() {
-            index.add(format!("item{}", i), vec.clone());
+            index.add(format!("item{i}"), vec.clone());
         }
 
         // Search with first vector as query
@@ -725,7 +725,7 @@ proptest! {
         // Should return at most k results
         prop_assert!(results.len() <= k);
         // Should return at least 1 result (since index is not empty)
-        prop_assert!(results.len() >= 1);
+        prop_assert!(!results.is_empty());
     }
 
     #[test]
@@ -738,7 +738,7 @@ proptest! {
         let mut index = HNSWIndex::new(8, 100, 0.0);
 
         for (i, vec) in vectors.iter().enumerate() {
-            index.add(format!("item{}", i), vec.clone());
+            index.add(format!("item{i}"), vec.clone());
         }
 
         let query = &vectors[0];
@@ -763,7 +763,7 @@ proptest! {
         let mut index = HNSWIndex::new(8, 100, 42.0);
 
         for (i, vec) in vectors.iter().enumerate() {
-            index.add(format!("item{}", i), vec.clone());
+            index.add(format!("item{i}"), vec.clone());
         }
 
         let query = &vectors[0];
@@ -788,7 +788,7 @@ proptest! {
 
         // Add all vectors (handle zeros by checking distances are valid)
         for (i, vec) in vectors.iter().enumerate() {
-            index.add(format!("item{}", i), vec.clone());
+            index.add(format!("item{i}"), vec.clone());
         }
 
         let query = &vectors[0];
@@ -915,7 +915,7 @@ proptest! {
         // Add items
         for (i, words) in items.iter().enumerate() {
             let content = words.join(" ");
-            rec.add_item(format!("item{}", i), content);
+            rec.add_item(format!("item{i}"), content);
         }
 
         // Get recommendations for first item
@@ -935,7 +935,7 @@ proptest! {
 
         for (i, word) in items.iter().enumerate() {
             let initial_len = rec.len();
-            rec.add_item(format!("item{}", i), word.clone());
+            rec.add_item(format!("item{i}"), word.clone());
             let new_len = rec.len();
 
             // Size should increase by exactly 1
@@ -956,7 +956,7 @@ proptest! {
 
         // Add items with empty content
         for i in 0..num_items {
-            rec.add_item(format!("item{}", i), "");
+            rec.add_item(format!("item{i}"), "");
         }
 
         // Should not panic

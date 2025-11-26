@@ -64,7 +64,7 @@ fn example1_document_similarity() {
     for (i, doc) in documents.iter().enumerate().skip(1) {
         let similarity = cosine_similarity(&doc_vectors[0], &doc_vectors[i])
             .expect("Cosine similarity should succeed");
-        println!("  vs '{}': {:.3}", doc, similarity);
+        println!("  vs '{doc}': {similarity:.3}");
     }
 
     // Find top-k most similar documents to a query
@@ -95,7 +95,7 @@ fn example1_document_similarity() {
     let str1 = "machine learning";
     let str2 = "deep learning";
     let distance = edit_distance(str1, str2).expect("Edit distance should succeed");
-    println!("  '{}' vs '{}': {} edits\n", str1, str2, distance);
+    println!("  '{str1}' vs '{str2}': {distance} edits\n");
 }
 
 /// Example 2: Entity Extraction
@@ -122,7 +122,7 @@ fn example2_entity_extraction() {
     if !entities.emails.is_empty() {
         println!("Emails:");
         for email in &entities.emails {
-            println!("  - {}", email);
+            println!("  - {email}");
         }
         println!();
     }
@@ -130,7 +130,7 @@ fn example2_entity_extraction() {
     if !entities.urls.is_empty() {
         println!("URLs:");
         for url in &entities.urls {
-            println!("  - {}", url);
+            println!("  - {url}");
         }
         println!();
     }
@@ -138,7 +138,7 @@ fn example2_entity_extraction() {
     if !entities.phone_numbers.is_empty() {
         println!("Phone Numbers:");
         for phone in &entities.phone_numbers {
-            println!("  - {}", phone);
+            println!("  - {phone}");
         }
         println!();
     }
@@ -146,7 +146,7 @@ fn example2_entity_extraction() {
     if !entities.mentions.is_empty() {
         println!("Mentions:");
         for mention in &entities.mentions {
-            println!("  - {}", mention);
+            println!("  - {mention}");
         }
         println!();
     }
@@ -154,7 +154,7 @@ fn example2_entity_extraction() {
     if !entities.hashtags.is_empty() {
         println!("Hashtags:");
         for hashtag in &entities.hashtags {
-            println!("  - {}", hashtag);
+            println!("  - {hashtag}");
         }
         println!();
     }
@@ -162,7 +162,7 @@ fn example2_entity_extraction() {
     if !entities.named_entities.is_empty() {
         println!("Named Entities (Capitalized Words):");
         for entity in &entities.named_entities {
-            println!("  - {}", entity);
+            println!("  - {entity}");
         }
         println!();
     }
@@ -249,7 +249,7 @@ fn example3_text_summarization() {
 
 /// Helper function to count sentences in text.
 fn count_sentences(text: &str) -> usize {
-    text.split(|c| c == '.' || c == '!' || c == '?')
+    text.split(['.', '!', '?'])
         .filter(|s| !s.trim().is_empty())
         .count()
 }

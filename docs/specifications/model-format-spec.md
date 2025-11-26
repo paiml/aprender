@@ -26,7 +26,7 @@
 | **Single Binary** | §1.1 | ✓ load_from_bytes | ✓ | include_bytes!() ready |
 | Header (32-byte) | §3 | ✓ | ✓ | - |
 | CRC32 checksum | §5.4 | ✓ | ✓ | - |
-| save/load/inspect | §2 | ✓ | ✓ | - |
+| save/load/inspect | §2 | ✓ file + bytes | ✓ | load_from_bytes, inspect_bytes |
 | Model types | §3.1 | ✓ 17 types | ✓ | - |
 | Flags | §3.2 | ✓ 6/6 bits | ✓ | - |
 | Metadata | §4 | ✓ MessagePack | ✓ | - |
@@ -34,7 +34,7 @@
 | Encryption (password) | §5.2 | ✓ AES-256-GCM + Argon2id | ✓ | format-encryption feature |
 | Encryption (X25519) | §5.3 | ✓ X25519+HKDF+AES-GCM | ✓ | format-encryption feature |
 | Signing | §5.4 | ✓ Ed25519 (feature) | ✓ | format-signing feature |
-| Quantization | §6.2 | ○ Spec complete | ✓ | format-quantize feature |
+| Quantization | §6.2 | ✓ Q8_0/Q4_0 impl | ✓ | format-quantize feature |
 | Distillation | §6.3 | ○ Spec complete | ✓ | metadata only (entrenar integration) |
 | Streaming | §7 | ○ | N/A | format-streaming feature |
 | License block | §9 | ○ | ○ | format-commercial feature |
