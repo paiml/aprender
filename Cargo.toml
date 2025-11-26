@@ -91,6 +91,9 @@ rayon = { version = "1.10", optional = true }
 # Core compute primitives - SIMD-accelerated tensor operations
 trueno = "0.7.3"
 
+# Compression for .apr format (optional, spec §3.3)
+zstd = { version = "0.13", optional = true }
+
 # Linear algebra for PCA eigendecomposition
 nalgebra = "0.33"
 
@@ -107,6 +110,7 @@ tempfile = "3.14"  # For format module tests
 default = ["parallel"]
 parallel = ["rayon"]  # Enable parallel graph algorithms (disable for WASM)
 datasets = ["alimentar"]  # Enable data loading from alimentar
+format-compression = ["zstd"]  # Enable zstd compression for .apr format (spec §3.3)
 gpu = []
 cpu-only = []
 # Chaos engineering features (from renacer)

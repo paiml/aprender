@@ -208,6 +208,7 @@ dependencies = [
  "serde_json",
  "tempfile",
  "trueno",
+ "zstd",
 ]
 
 [[package]]

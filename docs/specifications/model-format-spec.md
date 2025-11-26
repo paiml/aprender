@@ -23,7 +23,7 @@
 | Model types | §3.1 | ✓ 17 types | - |
 | Flags | §3.2 | ✓ 5/5 bits | - |
 | Metadata | §2 | ✓ MessagePack | - |
-| Compression | §3.3 | ✗ None only | Add zstd feature |
+| Compression | §3.3 | ✓ zstd (feature) | format-compression feature |
 | Encryption (password) | §4.1.2 | ○ | format-encryption feature |
 | Encryption (X25519) | §4.1.3 | ○ | format-encryption feature |
 | Private inference | §4.1.4 | ○ | format-encryption feature |

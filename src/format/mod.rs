@@ -47,6 +47,8 @@ use crate::error::{AprenderError, Result};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::File;
+#[cfg(feature = "format-compression")]
+use std::io::Cursor;
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::Path;
 
@@ -350,7 +352,7 @@ impl Header {
         let model_type_raw = u16::from_le_bytes([bytes[6], bytes[7]]);
         let model_type =
             ModelType::from_u16(model_type_raw).ok_or_else(|| AprenderError::FormatError {
-                message: format!("Unknown model type: 0x{:04X}", model_type_raw),
+                message: format!("Unknown model type: 0x{model_type_raw:04X}"),
             })?;
 
         // Parse sizes
@@ -362,8 +364,7 @@ impl Header {
         if uncompressed_size > MAX_UNCOMPRESSED_SIZE {
             return Err(AprenderError::FormatError {
                 message: format!(
-                    "Uncompressed size {} exceeds maximum {} (compression bomb protection)",
-                    uncompressed_size, MAX_UNCOMPRESSED_SIZE
+                    "Uncompressed size {uncompressed_size} exceeds maximum {MAX_UNCOMPRESSED_SIZE} (compression bomb protection)"
                 ),
             });
         }
@@ -493,6 +494,7 @@ impl SaveOptions {
 
 /// Model information (from inspection)
 #[derive(Debug, Clone)]
+#[allow(clippy::struct_excessive_bools)] // Bools represent independent flag states
 pub struct ModelInfo {
     /// Model type
     pub model_type: ModelType,
@@ -514,6 +516,57 @@ pub struct ModelInfo {
     pub licensed: bool,
     /// Uses trueno-native 64-byte aligned tensors
     pub trueno_native: bool,
+}
+
+/// Compress payload based on algorithm (spec §3.3)
+#[allow(clippy::unnecessary_wraps)] // Returns Result to handle compression errors when feature enabled
+fn compress_payload(data: &[u8], compression: Compression) -> Result<(Vec<u8>, Compression)> {
+    match compression {
+        Compression::None => Ok((data.to_vec(), Compression::None)),
+        #[cfg(feature = "format-compression")]
+        Compression::ZstdDefault => {
+            // Zstd level 3 (good balance of speed and ratio)
+            let compressed = zstd::encode_all(Cursor::new(data), 3).map_err(|e| {
+                AprenderError::Serialization(format!("Zstd compression failed: {e}"))
+            })?;
+            Ok((compressed, Compression::ZstdDefault))
+        }
+        #[cfg(feature = "format-compression")]
+        Compression::ZstdMax => {
+            // Zstd level 19 (maximum compression for archival)
+            let compressed = zstd::encode_all(Cursor::new(data), 19).map_err(|e| {
+                AprenderError::Serialization(format!("Zstd compression failed: {e}"))
+            })?;
+            Ok((compressed, Compression::ZstdMax))
+        }
+        #[cfg(not(feature = "format-compression"))]
+        Compression::ZstdDefault | Compression::ZstdMax => {
+            // Feature not enabled, fall back to no compression
+            Ok((data.to_vec(), Compression::None))
+        }
+        Compression::Lz4 => {
+            // LZ4 not yet implemented, fall back to no compression
+            Ok((data.to_vec(), Compression::None))
+        }
+    }
+}
+
+/// Decompress payload based on algorithm (spec §3.3)
+fn decompress_payload(data: &[u8], compression: Compression) -> Result<Vec<u8>> {
+    match compression {
+        Compression::None => Ok(data.to_vec()),
+        #[cfg(feature = "format-compression")]
+        Compression::ZstdDefault | Compression::ZstdMax => zstd::decode_all(Cursor::new(data))
+            .map_err(|e| AprenderError::Serialization(format!("Zstd decompression failed: {e}"))),
+        #[cfg(not(feature = "format-compression"))]
+        Compression::ZstdDefault | Compression::ZstdMax => Err(AprenderError::FormatError {
+            message: "Zstd compression not supported (enable format-compression feature)"
+                .to_string(),
+        }),
+        Compression::Lz4 => Err(AprenderError::FormatError {
+            message: "LZ4 compression not yet implemented".to_string(),
+        }),
+    }
 }
 
 /// CRC32 checksum (IEEE polynomial)
@@ -557,6 +610,7 @@ fn crc32(data: &[u8]) -> u32 {
 ///
 /// # Errors
 /// Returns error on I/O failure or serialization error
+#[allow(clippy::needless_pass_by_value)] // SaveOptions is small and passed by value for ergonomics
 pub fn save<M: Serialize>(
     model: &M,
     model_type: ModelType,
@@ -569,12 +623,9 @@ pub fn save<M: Serialize>(
     let payload_uncompressed = bincode::serialize(model)
         .map_err(|e| AprenderError::Serialization(format!("Failed to serialize model: {e}")))?;
 
-    // Compress payload (currently only None supported, zstd requires feature)
-    let (payload_compressed, compression) = match options.compression {
-        Compression::None => (payload_uncompressed.clone(), Compression::None),
-        // TODO: Add zstd/lz4 when features enabled
-        _ => (payload_uncompressed.clone(), Compression::None),
-    };
+    // Compress payload
+    let (payload_compressed, compression) =
+        compress_payload(&payload_uncompressed, options.compression)?;
 
     // Serialize metadata as MessagePack (spec §2)
     let metadata_bytes = rmp_serde::to_vec(&options.metadata)
@@ -671,18 +722,7 @@ pub fn load<M: DeserializeOwned>(path: impl AsRef<Path>, expected_type: ModelTyp
     let payload_compressed = &content[metadata_end..payload_end];
 
     // Decompress payload
-    let payload_uncompressed = match header.compression {
-        Compression::None => payload_compressed.to_vec(),
-        // TODO: Add zstd/lz4 when features enabled
-        _ => {
-            return Err(AprenderError::FormatError {
-                message: format!(
-                    "Compression {:?} not supported (enable feature)",
-                    header.compression
-                ),
-            });
-        }
-    };
+    let payload_uncompressed = decompress_payload(payload_compressed, header.compression)?;
 
     // Deserialize model
     bincode::deserialize(&payload_uncompressed)
@@ -929,5 +969,125 @@ mod tests {
         let result: Result<TestModel> = load(&path, ModelType::KMeans);
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("type mismatch"));
+    }
+
+    #[test]
+    #[cfg(feature = "format-compression")]
+    fn test_zstd_compression_roundtrip() {
+        use tempfile::tempdir;
+
+        // Model with repetitive data (compresses well)
+        #[derive(Debug, Serialize, Deserialize, PartialEq)]
+        struct LargeModel {
+            weights: Vec<f32>,
+        }
+
+        // 10,000 floats with repetitive pattern (compresses well)
+        let model = LargeModel {
+            weights: (0..10_000).map(|i| (i % 100) as f32).collect(),
+        };
+
+        let dir = tempdir().expect("create temp dir");
+        let path = dir.path().join("compressed.apr");
+
+        // Save with default zstd compression
+        save(
+            &model,
+            ModelType::Custom,
+            &path,
+            SaveOptions::default().with_compression(Compression::ZstdDefault),
+        )
+        .expect("save should succeed");
+
+        // Load and verify
+        let loaded: LargeModel = load(&path, ModelType::Custom).expect("load should succeed");
+        assert_eq!(loaded, model);
+
+        // Verify compression reduced size
+        let info = inspect(&path).expect("inspect should succeed");
+        assert!(
+            info.payload_size < info.uncompressed_size,
+            "Compressed size {} should be less than uncompressed {}",
+            info.payload_size,
+            info.uncompressed_size
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "format-compression")]
+    fn test_zstd_max_compression() {
+        use tempfile::tempdir;
+
+        #[derive(Debug, Serialize, Deserialize, PartialEq)]
+        struct TestModel {
+            data: Vec<u8>,
+        }
+
+        // Highly compressible data (all zeros)
+        let model = TestModel {
+            data: vec![0u8; 50_000],
+        };
+
+        let dir = tempdir().expect("create temp dir");
+        let path_default = dir.path().join("default.apr");
+        let path_max = dir.path().join("max.apr");
+
+        // Save with default compression
+        save(
+            &model,
+            ModelType::Custom,
+            &path_default,
+            SaveOptions::default().with_compression(Compression::ZstdDefault),
+        )
+        .expect("save default should succeed");
+
+        // Save with maximum compression
+        save(
+            &model,
+            ModelType::Custom,
+            &path_max,
+            SaveOptions::default().with_compression(Compression::ZstdMax),
+        )
+        .expect("save max should succeed");
+
+        // Both should load correctly
+        let loaded_default: TestModel =
+            load(&path_default, ModelType::Custom).expect("load default should succeed");
+        let loaded_max: TestModel =
+            load(&path_max, ModelType::Custom).expect("load max should succeed");
+
+        assert_eq!(loaded_default, model);
+        assert_eq!(loaded_max, model);
+
+        // Max compression should be at least as small (often smaller)
+        let info_default = inspect(&path_default).expect("inspect default");
+        let info_max = inspect(&path_max).expect("inspect max");
+        assert!(
+            info_max.payload_size <= info_default.payload_size,
+            "Max compression {} should be <= default {}",
+            info_max.payload_size,
+            info_default.payload_size
+        );
+    }
+
+    #[test]
+    fn test_compression_fallback_without_feature() {
+        // When feature is disabled, zstd requests should fall back to None
+        let data = vec![1u8, 2, 3, 4, 5];
+        let (compressed, actual_compression) =
+            compress_payload(&data, Compression::ZstdDefault).expect("should fallback");
+
+        #[cfg(not(feature = "format-compression"))]
+        {
+            assert_eq!(actual_compression, Compression::None);
+            assert_eq!(compressed, data);
+        }
+
+        #[cfg(feature = "format-compression")]
+        {
+            assert_eq!(actual_compression, Compression::ZstdDefault);
+            // Compressed data will be different (has zstd header)
+            assert_ne!(compressed, data);
+        }
     }
 }
