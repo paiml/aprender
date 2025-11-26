@@ -8,11 +8,13 @@ use std::path::PathBuf;
 
 mod history;
 mod model;
+mod paged_model;
 mod synthetic;
 mod trie;
 
 use history::HistoryParser;
 use model::MarkovModel;
+use paged_model::PagedMarkovModel;
 use synthetic::SyntheticPipeline;
 
 #[derive(Parser)]
@@ -39,6 +41,10 @@ enum Commands {
         /// N-gram size (2-5)
         #[arg(short, long, default_value = "3")]
         ngram: usize,
+
+        /// Memory limit in MB (enables paged storage for large histories)
+        #[arg(long)]
+        memory_limit: Option<usize>,
     },
 
     /// Incrementally update model with new commands (fast)
@@ -68,6 +74,10 @@ enum Commands {
         /// Number of suggestions
         #[arg(short, long, default_value = "5")]
         count: usize,
+
+        /// Memory limit in MB (for paged models)
+        #[arg(long)]
+        memory_limit: Option<usize>,
     },
 
     /// Show model statistics
@@ -75,6 +85,10 @@ enum Commands {
         /// Model file
         #[arg(short, long, default_value = "~/.aprender-shell.model")]
         model: String,
+
+        /// Memory limit in MB (for paged models)
+        #[arg(long)]
+        memory_limit: Option<usize>,
     },
 
     /// Export model for sharing
@@ -175,8 +189,9 @@ fn main() {
             history,
             output,
             ngram,
+            memory_limit,
         } => {
-            cmd_train(history, &output, ngram);
+            cmd_train(history, &output, ngram, memory_limit);
         }
         Commands::Update {
             history,
@@ -189,11 +204,15 @@ fn main() {
             prefix,
             model,
             count,
+            memory_limit,
         } => {
-            cmd_suggest(&prefix, &model, count);
+            cmd_suggest(&prefix, &model, count, memory_limit);
         }
-        Commands::Stats { model } => {
-            cmd_stats(&model);
+        Commands::Stats {
+            model,
+            memory_limit,
+        } => {
+            cmd_stats(&model, memory_limit);
         }
         Commands::Export { model, output } => {
             cmd_export(&model, &output);
@@ -238,8 +257,15 @@ fn main() {
     }
 }
 
-fn cmd_train(history_path: Option<PathBuf>, output: &str, ngram: usize) {
-    println!("🚀 aprender-shell: Training model...\n");
+fn cmd_train(
+    history_path: Option<PathBuf>,
+    output: &str,
+    ngram: usize,
+    memory_limit: Option<usize>,
+) {
+    let paged = memory_limit.is_some();
+    let mode_str = if paged { "paged" } else { "standard" };
+    println!("🚀 aprender-shell: Training {mode_str} model...\n");
 
     // Find history file
     let history_file = history_path.unwrap_or_else(|| {
@@ -261,28 +287,55 @@ fn cmd_train(history_path: Option<PathBuf>, output: &str, ngram: usize) {
         std::process::exit(1);
     }
 
-    // Train model
-    print!("🧠 Training {}-gram model... ", ngram);
-    let mut model = MarkovModel::new(ngram);
-    model.train(&commands);
-    println!("done!");
-
-    // Save model
     let output_path = expand_path(output);
-    model.save(&output_path).expect("Failed to save model");
 
-    println!("\n✅ Model saved to: {}", output_path.display());
-    println!("\n📈 Model Statistics:");
-    println!("   Unique n-grams: {}", model.ngram_count());
-    println!("   Vocabulary size: {}", model.vocab_size());
-    println!(
-        "   Model size: {:.1} KB",
-        model.size_bytes() as f64 / 1024.0
-    );
+    if let Some(mem_mb) = memory_limit {
+        // Paged model for large histories
+        let output_path = output_path.with_extension("apbundle");
+        print!(
+            "🧠 Training {ngram}-gram paged model ({}MB limit)... ",
+            mem_mb
+        );
+        let mut model = PagedMarkovModel::new(ngram, mem_mb);
+        model.train(&commands);
+        println!("done!");
 
-    println!("\n💡 Next steps:");
-    println!("   1. Test: aprender-shell suggest \"git \"");
-    println!("   2. Install: aprender-shell zsh-widget >> ~/.zshrc");
+        model
+            .save(&output_path)
+            .expect("Failed to save paged model");
+
+        let stats = model.stats();
+        println!("\n✅ Paged model saved to: {}", output_path.display());
+        println!("\n📈 Model Statistics:");
+        println!("   Segments:        {}", stats.total_segments);
+        println!("   Vocabulary size: {}", stats.vocab_size);
+        println!("   Memory limit:    {} MB", mem_mb);
+
+        println!("\n💡 Next steps:");
+        println!("   1. Test: aprender-shell suggest \"git \" --memory-limit {mem_mb}");
+        println!("   2. Stats: aprender-shell stats --memory-limit {mem_mb}");
+    } else {
+        // Standard in-memory model
+        print!("🧠 Training {ngram}-gram model... ");
+        let mut model = MarkovModel::new(ngram);
+        model.train(&commands);
+        println!("done!");
+
+        model.save(&output_path).expect("Failed to save model");
+
+        println!("\n✅ Model saved to: {}", output_path.display());
+        println!("\n📈 Model Statistics:");
+        println!("   Unique n-grams: {}", model.ngram_count());
+        println!("   Vocabulary size: {}", model.vocab_size());
+        println!(
+            "   Model size: {:.1} KB",
+            model.size_bytes() as f64 / 1024.0
+        );
+
+        println!("\n💡 Next steps:");
+        println!("   1. Test: aprender-shell suggest \"git \"");
+        println!("   2. Install: aprender-shell zsh-widget >> ~/.zshrc");
+    }
 }
 
 fn cmd_update(history_path: Option<PathBuf>, model_path: &str, quiet: bool) {
@@ -338,37 +391,98 @@ fn cmd_update(history_path: Option<PathBuf>, model_path: &str, quiet: bool) {
     }
 }
 
-fn cmd_suggest(prefix: &str, model_path: &str, count: usize) {
+fn cmd_suggest(prefix: &str, model_path: &str, count: usize, memory_limit: Option<usize>) {
     let path = expand_path(model_path);
-    let model = MarkovModel::load(&path).expect("Failed to load model");
 
-    let suggestions = model.suggest(prefix, count);
+    if let Some(mem_mb) = memory_limit {
+        // Paged model
+        let paged_path = path.with_extension("apbundle");
+        let mut model =
+            PagedMarkovModel::load(&paged_path, mem_mb).expect("Failed to load paged model");
 
-    if suggestions.is_empty() {
-        // Silent for shell integration
-        return;
-    }
+        let suggestions = model.suggest(prefix, count);
 
-    for (suggestion, score) in suggestions {
-        println!("{}\t{:.3}", suggestion, score);
+        if suggestions.is_empty() {
+            return;
+        }
+
+        for (suggestion, score) in suggestions {
+            println!("{}\t{:.3}", suggestion, score);
+        }
+    } else {
+        // Standard model
+        let model = MarkovModel::load(&path).expect("Failed to load model");
+
+        let suggestions = model.suggest(prefix, count);
+
+        if suggestions.is_empty() {
+            return;
+        }
+
+        for (suggestion, score) in suggestions {
+            println!("{}\t{:.3}", suggestion, score);
+        }
     }
 }
 
-fn cmd_stats(model_path: &str) {
+fn cmd_stats(model_path: &str, memory_limit: Option<usize>) {
     let path = expand_path(model_path);
-    let model = MarkovModel::load(&path).expect("Failed to load model");
 
-    println!("📊 Model Statistics:");
-    println!("   N-gram size: {}", model.ngram_size());
-    println!("   Unique n-grams: {}", model.ngram_count());
-    println!("   Vocabulary size: {}", model.vocab_size());
-    println!(
-        "   Model size: {:.1} KB",
-        model.size_bytes() as f64 / 1024.0
-    );
-    println!("\n🔝 Top commands:");
-    for (cmd, count) in model.top_commands(10) {
-        println!("   {:>6}x  {}", count, cmd);
+    if let Some(mem_mb) = memory_limit {
+        // Paged model stats
+        let paged_path = path.with_extension("apbundle");
+        let model =
+            PagedMarkovModel::load(&paged_path, mem_mb).expect("Failed to load paged model");
+
+        let stats = model.stats();
+        println!("📊 Paged Model Statistics:");
+        println!("   N-gram size:     {}", stats.n);
+        println!("   Total commands:  {}", stats.total_commands);
+        println!("   Vocabulary size: {}", stats.vocab_size);
+        println!("   Total segments:  {}", stats.total_segments);
+        println!("   Loaded segments: {}", stats.loaded_segments);
+        println!(
+            "   Memory limit:    {:.1} MB",
+            stats.memory_limit as f64 / 1024.0 / 1024.0
+        );
+        println!(
+            "   Loaded bytes:    {:.1} KB",
+            stats.loaded_bytes as f64 / 1024.0
+        );
+
+        if let Some(paging_stats) = model.paging_stats() {
+            println!("\n📈 Paging Statistics:");
+            println!("   Page hits:       {}", paging_stats.hits);
+            println!("   Page misses:     {}", paging_stats.misses);
+            println!("   Evictions:       {}", paging_stats.evictions);
+            if paging_stats.hits + paging_stats.misses > 0 {
+                let hit_rate = paging_stats.hits as f64
+                    / (paging_stats.hits + paging_stats.misses) as f64
+                    * 100.0;
+                println!("   Hit rate:        {:.1}%", hit_rate);
+            }
+        }
+
+        println!("\n🔝 Top commands:");
+        for (cmd, count) in model.top_commands(10) {
+            println!("   {:>6}x  {}", count, cmd);
+        }
+    } else {
+        // Standard model stats
+        let model = MarkovModel::load(&path).expect("Failed to load model");
+
+        println!("📊 Model Statistics:");
+        println!("   N-gram size: {}", model.ngram_size());
+        println!("   Unique n-grams: {}", model.ngram_count());
+        println!("   Vocabulary size: {}", model.vocab_size());
+        println!(
+            "   Model size: {:.1} KB",
+            model.size_bytes() as f64 / 1024.0
+        );
+        println!("\n🔝 Top commands:");
+        for (cmd, count) in model.top_commands(10) {
+            println!("   {:>6}x  {}", count, cmd);
+        }
     }
 }
 

@@ -24,6 +24,7 @@ use crate::error::Result;
 /// ```
 /// use aprender::synthetic::mixup::Embeddable;
 ///
+/// #[derive(Clone)]
 /// struct TextSample {
 ///     text: String,
 ///     embedding: Vec<f32>,
