@@ -1,6 +1,6 @@
 # Aprender Model Format Specification (.apr)
 
-**Version:** 1.3.0
+**Version:** 1.5.0
 **Status:** Partially Implemented
 **Author:** paiml
 **Reviewer:** Toyota Way AI Agent
@@ -12,77 +12,181 @@
 - v1.1.0: Sovereign AI architecture, GGUF export, ONNX out of scope
 - v1.2.0: Commercial licensing, watermarking, model marketplace support
 - v1.3.0: trueno integration, expanded model types, implementation status tracking
+- v1.4.0: **WASM compatibility as HARD REQUIREMENT** (§1.0) - spec gate, mandatory CI testing
+- v1.5.0: Model Cards [Mitchell2019], Quantization, Andon error protocols, supply chain integrity
 
 ### Implementation Status
 
-| Component | Spec | Implementation | Action |
-|-----------|------|----------------|--------|
-| Header (32-byte) | §3 | ✓ | - |
-| CRC32 checksum | §4.3 | ✓ | - |
-| save/load/inspect | §2 | ✓ | - |
-| Model types | §3.1 | ✓ 17 types | - |
-| Flags | §3.2 | ✓ 5/5 bits | - |
-| Metadata | §2 | ✓ MessagePack | - |
-| Compression | §3.3 | ✓ zstd (feature) | format-compression feature |
-| Encryption (password) | §4.1.2 | ✓ AES-256-GCM + Argon2id | format-encryption feature |
-| Encryption (X25519) | §4.1.3 | ○ | format-encryption feature |
-| Private inference | §4.1.4 | ○ | format-encryption feature |
-| Signing | §4.2 | ✓ Ed25519 (feature) | format-signing feature |
-| Streaming | §6 | ○ | format-streaming feature |
-| License block | §8 | ○ | format-commercial feature |
-| trueno-native | §9 | ○ | format-trueno feature |
-| GGUF export | §7 | ○ | format-gguf feature |
+| Component | Spec | Implementation | WASM | Action |
+|-----------|------|----------------|------|--------|
+| **WASM Compat** | §1.0 | ○ CI required | GATE | Blocks all other features |
+| Header (32-byte) | §3 | ✓ | ○ | - |
+| CRC32 checksum | §5.4 | ✓ | ○ | - |
+| save/load/inspect | §2 | ✓ | ○ | - |
+| Model types | §3.1 | ✓ 17 types | ○ | - |
+| Flags | §3.2 | ✓ 6/6 bits | ○ | - |
+| Metadata | §4 | ✓ MessagePack | ○ | - |
+| Compression | §6.1 | ✓ zstd (feature) | ○ | format-compression feature |
+| Encryption (password) | §5.2 | ✓ AES-256-GCM + Argon2id | ○ | format-encryption feature |
+| Encryption (X25519) | §5.3 | ✓ X25519+HKDF+AES-GCM | ○ | format-encryption feature |
+| Signing | §5.4 | ✓ Ed25519 (feature) | ○ | format-signing feature |
+| Quantization | §6.2 | ○ | ○ | format-quantize feature |
+| Streaming | §7 | ○ | N/A | format-streaming feature |
+| License block | §9 | ○ | ○ | format-commercial feature |
+| trueno-native | §8 | ○ | N/A | format-trueno feature |
+| GGUF export | §7.2 | ○ | ○ | format-gguf feature |
 
-**Legend:** ✓ Conformant, ✗ Non-conformant (fix required), ○ Not started
+**Legend:** ✓ Conformant, ✗ Non-conformant (fix required), ○ Not started, N/A = Native only
+
+**⚠️ WASM column must be ✓ for spec conformance. Any ✗ in WASM = entire spec non-conformant.**
 
 ## 1. Executive Summary & Scientific Basis
 
-This specification defines the `.apr` (Aprender Model Format), a unified binary format designed for the rigorous lifecycle management of machine learning models. It addresses the **Toyota Way** principles of *Jidoka* (built-in quality via checksums and signatures) and *Just-in-Time* (streaming access).
+This specification defines the `.apr` (Aprender Model Format), a unified binary format designed for the rigorous lifecycle management of machine learning models. It strictly adheres to **Toyota Way** principles: *Jidoka* (built-in quality via checksums and signatures), *Just-in-Time* (streaming access), and *Standardized Work* (metadata schemas).
 
-Unlike generic serialization formats, `.apr` is purpose-built for secure, verifiable, and efficient model deployment, drawing upon established cryptographic and compression standards.
+### 1.0 WASM Compatibility (HARD REQUIREMENT)
+
+**⚠️ SPECIFICATION GATE: ALL features MUST work in `wasm32-unknown-unknown` target.**
+
+This is not optional. WASM compatibility is a **hard requirement** for the entire specification. Any feature that fails to compile or run correctly under WASM causes the **entire specification to be non-conformant**.
+
+| Requirement | Rationale |
+|-------------|-----------|
+| Zero C/C++ FFI | WASM cannot link native libraries |
+| No `std::fs` in core | Browser has no filesystem |
+| No threads in core | WASM threads require SharedArrayBuffer |
+| Pure Rust crypto | `ring` forbidden (C/asm); use `*-dalek` crates |
+| No `getrandom` default | Must use `js` feature for browser entropy |
+
+**Mandatory Testing:**
+
+```bash
+# CI MUST run these tests on every PR
+cargo check --target wasm32-unknown-unknown --no-default-features
+cargo check --target wasm32-unknown-unknown --features format-encryption,format-signing
+
+# Integration test: save on native, load in WASM
+wasm-pack test --node --features format-encryption
+```
+
+**Dependency Allowlist (WASM-safe):**
+
+| Crate | WASM Status | Notes |
+|-------|-------------|-------|
+| `bincode` | ✓ | Pure Rust serialization |
+| `rmp-serde` | ✓ | Pure Rust MessagePack |
+| `zstd` | ✓ | Requires `wasm32` feature |
+| `aes-gcm` | ✓ | Pure Rust AES |
+| `argon2` | ✓ | Pure Rust KDF |
+| `ed25519-dalek` | ✓ | Pure Rust signatures |
+| `x25519-dalek` | ✓ | Pure Rust key exchange |
+| `hkdf` + `sha2` | ✓ | Pure Rust KDF |
+| `getrandom` | ✓ | With `js` feature only |
+
+**Blocklist (NEVER use):**
+
+| Crate | Reason |
+|-------|--------|
+| `ring` | Contains C/asm, fails WASM |
+| `openssl` | System library, fails WASM |
+| `rustls` (default) | Uses `ring` by default |
+| `rayon` | Threads not portable to WASM |
+| `tokio` | Async runtime not WASM-portable |
+
+**Jidoka Enforcement:**
+
+If any `.apr` feature fails WASM compilation:
+1. **Stop the line** - Block all PRs until fixed
+2. **Root cause analysis** - Identify offending dependency
+3. **Countermeasure** - Replace with pure Rust alternative or feature-gate
+
+This requirement ensures models saved anywhere can be loaded in browsers, edge devices, and serverless WASM runtimes (Cloudflare Workers, Fastly Compute, Vercel Edge).
+
+**Ecosystem Coordination:**
+
+The `.apr` format shares WASM requirements with the alimentar `.ald` dataset format (see `alimentar/docs/specifications/dataset-format-spec.md` §1.0). Both formats use:
+- Same crypto stack: `aes-gcm`, `argon2`, `ed25519-dalek`, `x25519-dalek`
+- Same HKDF pattern: `apr-v1-encrypt` / `ald-v1-encrypt`
+- Same graceful degradation: STREAMING/TRUENO_NATIVE flags ignored in WASM
+
+This enables end-to-end ML pipelines in the browser:
+```
+.ald dataset (WASM) → aprender model (WASM) → .apr model (WASM) → inference (WASM)
+```
+
+**Graceful Degradation:**
+
+When STREAMING (bit 2) or TRUENO_NATIVE (bit 4) flags are set but running in WASM:
+- Flags are **silently ignored** (no error)
+- Model loads via standard in-memory path
+- Performance hint only, not a hard requirement
+
+```rust
+#[cfg(target_arch = "wasm32")]
+fn load_payload(data: &[u8], flags: u8) -> Result<Model> {
+    // Ignore STREAMING/TRUENO_NATIVE flags - process in-memory
+    decompress_and_deserialize(data)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn load_payload(path: &Path, flags: u8) -> Result<Model> {
+    if flags & FLAG_STREAMING != 0 {
+        load_mmap(path)
+    } else if flags & FLAG_TRUENO_NATIVE != 0 {
+        load_aligned(path)
+    } else {
+        load_standard(path)
+    }
+}
+```
 
 ### 1.1 Scientific Annotations & Standards
 
-The design choices in this specification are grounded in peer-reviewed research and industry standards:
+The architecture is supported by peer-reviewed publications, ensuring decisions are data-driven (*Genchi Genbutsu*):
 
-1.  **Zstandard Compression [Collet2018]:** Chosen for its superior Pareto frontier of compression ratio vs. decompression speed, essential for minimizing *Muda* (waste) in storage and transfer.
-2.  **AES-GCM Encryption [McGrew2004]:** Provides authenticated encryption, ensuring both confidentiality and integrity (preventing *Muda* of defective data injection).
-3.  **Ed25519 Signatures [Bernstein2012]:** High-speed, high-security signatures for provenance verification, supporting *Jidoka* by automatically rejecting untrusted models.
-4.  **Argon2 Key Derivation [Biryukov2016]:** Memory-hard function to resist GPU-based brute-force attacks on password-protected models.
-5.  **CRC32 Checksum [Peterson1961]:** Fast error detection for data integrity during transmission/storage.
-6.  **MessagePack [Sumaray2012]:** Binary serialization for metadata, ~30% smaller than JSON, faster parsing.
-7.  **Memory Mapping (mmap) [Silberschatz2018]:** Enables *Just-in-Time* data loading, reducing memory pressure for large models.
-8.  **Versioning Strategies [PrestonWerner2013]:** Semantic versioning ensures backward compatibility and smooth evolution (*Kaizen*).
-9.  **Authenticated Data Structures [Tamassia2003]:** The structure implies a Merkle-like integrity check where the signature covers the header and payload.
-10. **Serialization Security [Parder2021]:** Avoids "Pickle"-style arbitrary code execution risks by strictly defining data schemas.
+1.  **Zstandard Compression [Collet2018]:** Minimizes *Muda* (waste) in storage.
+2.  **AES-GCM Encryption [McGrew2004]:** Authenticated encryption for data integrity.
+3.  **Ed25519 Signatures [Bernstein2012]:** High-speed provenance verification.
+4.  **Argon2 Key Derivation [Biryukov2016]:** Resistance to GPU brute-force attacks.
+5.  **X25519 Key Agreement [Bernstein2006]:** Forward-secret key exchange.
+6.  **CRC32 Checksum [Peterson1961]:** Fast error detection.
+7.  **MessagePack [Sumaray2012]:** Compact binary serialization.
+8.  **Memory Mapping [Silberschatz2018]:** *Just-in-Time* data loading.
+9.  **Versioning [PrestonWerner2013]:** Semantic evolution (*Kaizen*).
+10. **Merkle Integrity [Tamassia2003]:** Tamper-evident structure.
+11. **Serialization Security [Parder2021]:** Schema-enforced safety.
+12. **Model Cards [Mitchell2019]:** Standardized transparency reporting.
+13. **Supply Chain Integrity [TorresArias2019]:** End-to-end provenance (in-toto).
+14. **Integer Quantization [Jacob2018]:** Efficient inference (*Muda* reduction).
+15. **Threat Modeling [Shostack2014]:** Security by design.
 
 ## 2. Format Structure (Visual Control)
 
-The file layout is designed for linear parsing and immediate validation.
+The file layout uses fixed headers for immediate visual validation ("Kanban" for the parser).
 
 ```text
 ┌─────────────────────────────────────────┐
 │ Header (32 bytes, fixed)                │ ← Standardized Entry Point
 ├─────────────────────────────────────────┤
-│ Metadata (variable, MessagePack)        │ ← Context & Provenance
+│ Metadata (variable, MessagePack)        │ ← Standardized Model Card
 ├─────────────────────────────────────────┤
 │ Chunk Index (if STREAMING flag)         │ ← JIT Access Map
 ├─────────────────────────────────────────┤
 │ Salt + Nonce (if ENCRYPTED flag)        │ ← Security Parameters
 ├─────────────────────────────────────────┤
-│ Payload (variable, compressed)          │ ← The Value (Model Weights)
+│ Payload (variable, compressed)          │ ← The Value (Weights)
 ├─────────────────────────────────────────┤
-│ Signature Block (if SIGNED flag)        │ ← Quality Assurance
+│ Signature Block (if SIGNED flag)        │ ← Supply Chain Verification
 ├─────────────────────────────────────────┤
 │ License Block (if LICENSED flag)        │ ← Commercial Protection
 ├─────────────────────────────────────────┤
-│ Checksum (4 bytes, CRC32)               │ ← Final Gate
+│ Checksum (4 bytes, CRC32)               │ ← The Andon Cord
 └─────────────────────────────────────────┘
 ```
 
 ## 3. Header Specification (Standardized Work)
 
-The 32-byte header is the "Kanban" of the file, providing all necessary information to process the downstream data.
+The 32-byte header is the "Kanban" of the file, providing all necessary information to process downstream data.
 
 | Offset | Size | Field | Description | Toyota Principle |
 |--------|------|-------|-------------|------------------|
@@ -93,7 +197,7 @@ The 32-byte header is the "Kanban" of the file, providing all necessary informat
 | 12 | 4 | `payload_size` | Compressed Bytes | Exactness |
 | 16 | 4 | `uncompressed_size` | Original Bytes | Safety (Alloc check) |
 | 20 | 1 | `compression` | Algorithm ID | Efficiency |
-| 21 | 1 | `flags` | Feature Bitmask (see §3.3) | Flexibility |
+| 21 | 1 | `flags` | Feature Bitmask (see §3.2) | Flexibility |
 | 22 | 10 | `reserved` | Zero-filled | Future Kaizen |
 
 ### 3.1 Model Types (Standardized Catalog)
@@ -141,49 +245,100 @@ The 32-byte header is the "Kanban" of the file, providing all necessary informat
 
 ### 3.2 Header Flags
 
-| Bit | Flag | Description |
-|-----|------|-------------|
-| 0 | ENCRYPTED | Payload encrypted (AES-256-GCM) |
-| 1 | SIGNED | Has digital signature (Ed25519) |
-| 2 | STREAMING | Supports chunked/mmap loading |
-| 3 | LICENSED | Has commercial license block |
-| 4 | TRUENO_NATIVE | 64-byte aligned tensors for zero-copy SIMD |
-| 5-7 | Reserved | Must be zero |
+| Bit | Flag | Description | WASM |
+|-----|------|-------------|------|
+| 0 | ENCRYPTED | Payload encrypted (AES-256-GCM) | ✓ |
+| 1 | SIGNED | Has digital signature (Ed25519) | ✓ |
+| 2 | STREAMING | Supports chunked/mmap loading | ignored |
+| 3 | LICENSED | Has commercial license block | ✓ |
+| 4 | TRUENO_NATIVE | 64-byte aligned tensors for zero-copy SIMD | ignored |
+| 5 | QUANTIZED | Integer weights [Jacob2018] | ✓ |
+| 6-7 | Reserved | Must be zero | - |
 
-### 3.3 Compression Algorithms (Efficiency)
+**WASM Behavior:** Flags 2 and 4 are silently ignored in WASM - model loads normally via in-memory path.
 
-| ID | Algo | Ref | Use Case |
-|----|------|-----|----------|
-| 0x00 | None | - | Debugging (Genchi Genbutsu) |
-| 0x01 | Zstd (L3) | [Collet2018] | Standard Distribution |
-| 0x02 | Zstd (L19) | [Collet2018] | Archival (Max compression) |
-| 0x03 | LZ4 | - | High-throughput Streaming |
+## 4. Standardized Metadata (Model Cards)
 
-## 4. Safety & Security (Jidoka)
+To eliminate tribal knowledge, metadata SHOULD adhere to the **Model Card** standard [Mitchell2019]. This is "Standardized Work" for model reporting.
+
+### 4.1 Schema Definition
+
+```rust
+struct ModelCard {
+    // Identity
+    name: String,
+    version: String,
+    author: Option<String>,
+    license: Option<String>, // SPDX identifier
+
+    // Provenance [TorresArias2019]
+    source_code_hash: Option<String>, // Git SHA
+    training_data_hash: Option<String>,
+
+    // Intended Use (Genchi Genbutsu)
+    domain: Option<String>, // e.g., "NLP", "Tabular"
+    intended_users: Vec<String>,
+    out_of_scope: Vec<String>,
+
+    // Quantitative Analysis
+    metrics: HashMap<String, f32>, // e.g., {"accuracy": 0.95}
+    hyperparameters: HashMap<String, Value>,
+
+    // Ethical Considerations [Mitchell2019]
+    bias_risks: Option<String>,
+    limitations: Option<String>,
+
+    // Timestamps
+    created_at: String,
+    updated_at: Option<String>,
+}
+```
+
+## 5. Safety & Security (Jidoka)
 
 Safety is not an add-on; it is built into the format structure.
 
-### 4.1 Encryption (Confidentiality)
-When `ENCRYPTED` (Bit 0) is set, the payload is encrypted using **AES-256-GCM** [McGrew2004].
+### 5.1 The Andon Cord (Error Protocols)
 
-#### 4.1.1 Encryption Modes
+If any verification step fails, the loader must **Stop the Line** immediately. No "best effort" loading of corrupted models.
 
-| Mode | Header Byte 22 | Key Source | Use Case |
-|------|----------------|------------|----------|
-| Password | 0x00 | Argon2id(password, salt) | Personal/team models |
-| Recipient | 0x01 | X25519(sender_priv, recipient_pub) | Commercial distribution |
-| Multi-recipient | 0x02 | Per-recipient wrapped keys | Enterprise/group access |
+| Error Condition | Andon Signal | Action |
+|-----------------|--------------|--------|
+| Invalid Magic | `InvalidFormat` | Reject file immediately |
+| Checksum Mismatch | `ChecksumMismatch` | **Stop**. Do not parse payload. |
+| Signature Invalid | `SignatureInvalid` | **Stop**. Security violation. |
+| Decryption Failed | `DecryptionFailed` | **Stop**. Wrong key/password. |
+| Version Incompatible | `UnsupportedVersion` | **Stop**. Prevent undefined behavior. |
+| Type Mismatch | `ModelTypeMismatch` | **Stop**. Wrong model type requested. |
 
-#### 4.1.2 Password Mode (0x00)
-- **Key Derivation:** Argon2id [Biryukov2016] is mandatory for password-based keys to prevent brute-force attacks.
-- **Authentication:** GCM tag ensures that any tampering with the ciphertext is detected immediately (Stop the line).
+### 5.2 Password Encryption (§4.1.2)
 
-#### 4.1.3 Recipient Mode (0x01) - Asymmetric Encryption
-Uses X25519 [Bernstein2006] key agreement + AES-256-GCM:
+When `ENCRYPTED` (Bit 0) is set with password mode:
+
+- **Key Derivation:** Argon2id [Biryukov2016] (memory-hard, GPU-resistant)
+- **Encryption:** AES-256-GCM [McGrew2004] (authenticated)
+- **Layout:** `salt (16 bytes) || nonce (12 bytes) || ciphertext`
+- **Integrity:** GCM tag failure triggers `DecryptionFailed` Andon signal
+
+```rust
+// Argon2id parameters (OWASP recommendations)
+const SALT_SIZE: usize = 16;
+const NONCE_SIZE: usize = 12;
+const KEY_SIZE: usize = 32;
+const ARGON2_M_COST: u32 = 19456; // 19 MiB
+const ARGON2_T_COST: u32 = 2;
+const ARGON2_P_COST: u32 = 1;
+```
+
+### 5.3 Recipient Encryption (§4.1.3) - X25519
+
+When `ENCRYPTED` (Bit 0) is set with recipient mode (asymmetric):
+
+Uses X25519 [Bernstein2006] key agreement + HKDF-SHA256 + AES-256-GCM:
 
 ```text
 ┌─────────────────────────────────────────┐
-│ Encryption Block (when mode = 0x01)     │
+│ Encryption Block (recipient mode)       │
 │  ├── sender_ephemeral_pub (32 bytes)    │
 │  ├── recipient_pub_hash (8 bytes)       │ ← Identifies intended recipient
 │  ├── nonce (12 bytes)                   │
@@ -196,61 +351,62 @@ encryption_key = HKDF-SHA256(shared_secret, "apr-v1-encrypt")
 
 **Benefits:**
 - No password sharing required
-- Cryptographic binding to recipient (non-transferable)
+- Cryptographically bound to recipient (non-transferable)
 - Forward secrecy via ephemeral sender keys
+- Perfect for model marketplaces
 
-#### 4.1.4 Bidirectional Encryption (Private Inference)
+### 5.4 Digital Signatures (Provenance)
 
-Models can publish a public key for encrypted inference requests:
+When `SIGNED` (Bit 1) is set, an **Ed25519** [Bernstein2012] signature block is appended.
 
-```text
-User → Model Owner:
-  request = X25519_Encrypt(user_input, model_pub)
+- **Scope:** `Signature = Sign(Private_Key, Header || Metadata || Payload)`
+- **Verification:** The loader MUST verify the signature against a trusted public key before instantiating the model logic. If verification fails, the process halts immediately (Jidoka).
+- **Concept:** Adopts "in-toto" principles [TorresArias2019] to link artifacts to build steps.
 
-Model Owner → User:
-  response = X25519_Encrypt(prediction, user_pub)
-```
+### 5.5 Checksum (Integrity)
 
-**Use Cases:**
-- HIPAA-compliant medical inference
-- GDPR-compliant EU data processing
-- Zero-trust ML APIs (intermediaries see only ciphertext)
-- Financial data analysis without exposure
+A **CRC32** [Peterson1961] checksum is the final 4 bytes.
+- **Purpose:** Detect accidental corruption (bit rot) during storage/transfer.
+- **Action:** If `CRC32(File[0..-4]) != File[-4..]`, the loader returns `ChecksumMismatch` error.
 
-The model's public key is stored in metadata:
-```json
-{
-  "inference_pub_key": "base64(32-byte X25519 public key)",
-  "inference_protocol": "x25519-aes256gcm-v1"
+## 6. Waste Elimination (Muda)
+
+### 6.1 Compression Strategy
+
+We select algorithms based on the Pareto frontier of decompression speed vs. ratio.
+
+| ID | Algo | Ref | Use Case |
+|----|------|-----|----------|
+| 0x00 | None | - | Debugging (Genchi Genbutsu) |
+| 0x01 | Zstd (L3) | [Collet2018] | Standard Distribution |
+| 0x02 | Zstd (L19) | [Collet2018] | Archival (Max compression) |
+| 0x03 | LZ4 | - | High-throughput Streaming |
+
+### 6.2 Quantization [Jacob2018]
+
+When `QUANTIZED` (Bit 5) is set, weights are stored as `i8` or `u8` with scaling factors.
+This reduces model size by 4x (75% less storage *Muda*) and increases inference speed on SIMD hardware.
+
+```rust
+struct QuantizedTensor {
+    data: Vec<i8>,
+    scale: f32,
+    zero_point: i32,
 }
 ```
 
-#### 4.1.5 Pure Rust Implementation
-- `x25519-dalek` for key agreement (same curve family as Ed25519 signing)
-- `aes-gcm` for authenticated encryption
-- `hkdf` for key derivation
-- Zero C/C++ dependencies (Sovereign AI compliant)
+## 7. Ecosystem Architecture (Sovereign AI)
 
-### 4.2 Digital Signatures (Provenance)
-When `SIGNED` (Bit 1) is set, an **Ed25519** [Bernstein2012] signature block is appended.
-- **Scope:** `Signature = Sign(Private_Key, Header || Metadata || Payload)`
-- **Verification:** The loader MUST verify the signature against a trusted public key before instantiating the model logic. If verification fails, the process halts immediately (Jidoka).
+**Goal:** Complete independence from C/C++ runtimes (ONNX, TensorFlow). Pure Rust.
 
-### 4.3 Checksum (Integrity)
-A **CRC32** [Peterson1961] checksum is the final 4 bytes.
-- **Purpose:** Detect accidental corruption (bit rot) during storage/transfer.
-- **Action:** If `CRC32(File[0..-4]) != File[-4..]`, the loader returns a `CorruptedFile` error.
-
-## 5. Ecosystem Architecture (Lean Core)
-
-### 5.1 Design Philosophy
+### 7.1 Design Philosophy
 
 `.apr` is the **native source-of-truth format** for aprender models. The core implementation has **zero heavy dependencies** - no protobuf, no ONNX runtime, no external schema compilers.
 
 ```text
 ┌─────────────────────────────────────────────────────────────┐
 │                    aprender (core)                          │
-│  Pure Rust • Zero C/C++ • Sovereign AI                      │
+│  Pure Rust • Zero C/C++ • Sovereign AI • WASM-compatible    │
 ├─────────────────────────────────────────────────────────────┤
 │  .apr     │ Native format (bincode + zstd + CRC32)          │
 │  .safetensors │ HuggingFace export (serde_json)             │
@@ -260,419 +416,156 @@ A **CRC32** [Peterson1961] checksum is the final 4 bytes.
           │ optional features (still pure Rust)
           ▼
 ┌──────────────────────┐
-│ format-encryption    │  AES-256-GCM (aes-gcm)
+│ format-encryption    │  AES-256-GCM + Argon2id + X25519
 │ format-signing       │  Ed25519 (ed25519-dalek)
-│ format-streaming     │  mmap (memmap2)
+│ format-compression   │  Zstd (zstd crate)
+│ format-streaming     │  mmap (memmap2) - native only
 │ +~650KB              │
 └──────────────────────┘
 ```
 
-### 5.2 Interoperability Strategy (Sovereign AI)
+### 7.2 Interoperability Matrix
 
-All supported formats are **pure Rust** with **zero C/C++ dependencies**.
-
-| Format | Role | Location | Dependencies | Sovereign |
-|--------|------|----------|--------------|-----------|
-| `.apr` | Native storage | `aprender::format` | bincode, zstd | ✓ |
-| SafeTensors | HuggingFace interop | `aprender::serialization` | serde_json | ✓ |
-| GGUF | Ollama/llama.cpp | `aprender::format::gguf` | none | ✓ |
+| Format | Role | Dependencies | Sovereign | WASM |
+|--------|------|--------------|-----------|------|
+| **.apr** | Native | `bincode`, `zstd` | ✓ | ✓ |
+| **SafeTensors** | Import/Export | `serde_json` | ✓ | ✓ |
+| **GGUF** | Export | Pure Rust writer | ✓ | ✓ |
 
 **Explicitly out of scope:** ONNX (requires C++ runtime for practical use)
 
-### 5.3 Export Targets
-
-- **Native (read/write):** `.apr`
-- **Export (write-only):** SafeTensors, GGUF
-- **Import (read-only):** SafeTensors (via realizar)
-
-Users needing ONNX can use [tract](https://github.com/sonos/tract) (pure Rust) to load SafeTensors and re-export.
-
-### 5.4 Dependency Budget
+### 7.3 Dependency Budget
 
 All dependencies are **pure Rust** crates.
 
-| Feature Set | Binary Size Impact | C/C++ Deps |
-|-------------|-------------------|------------|
-| core (header, CRC32) | ~10KB | None |
-| + bincode payload | ~50KB | None |
-| + zstd compression | ~300KB | None |
-| + encryption (aes-gcm, argon2) | ~180KB | None |
-| + signing (ed25519-dalek) | ~150KB | None |
-| + streaming (memmap2) | ~20KB | None |
-| + GGUF export | ~5KB | None |
-| **Total (all features)** | **~715KB** | **None** |
-
-## 6. Streaming & JIT Loading
-
-For models larger than 100MB, the `STREAMING` (Bit 2) flag enables memory-mapped I/O.
-
-### Chunk Index
-Similar to a file system table, this index allows the loader to jump directly to specific tensors (e.g., "layer 5 weights") without decompressing the entire model. This minimizes the working set memory (*Muda* of Overprocessing).
-
-```rust
-struct ChunkIndex {
-    entries: Vec<ChunkEntry>, // Sorted by offset
-}
-```
-
-## 7. GGUF Export
-
-Pure Rust GGUF writer for Ollama/llama.cpp interoperability.
-
-### 7.1 Supported Model Types
-
-| Model Type | GGUF Tensor Layout | Status |
-|------------|-------------------|--------|
-| NEURAL_SEQUENTIAL | weight/bias per layer | Planned |
-| LINEAR_REGRESSION | coefficients, intercept | Planned |
-| LOGISTIC_REGRESSION | coefficients, intercept | Planned |
-
-### 7.2 Export API
-
-```rust
-use aprender::format::gguf;
-
-// Export trained model to GGUF
-let model = LinearRegression::new();
-// ... train ...
-gguf::export(&model, "model.gguf", GgufOptions::default())?;
-```
-
-### 7.3 Quantization Support
-
-| Type | Bits | Block Size | Status |
-|------|------|------------|--------|
-| F32 | 32 | - | Planned |
-| Q8_0 | 8 | 32 | Planned |
-| Q4_0 | 4 | 32 | Future |
-
-## 8. Commercial Licensing & Model Marketplace
-
-Support for selling, distributing, and protecting commercial ML models.
-
-### 8.1 License Block
-
-When `LICENSED` flag (bit 3) is set, a license block follows the signature block:
-
-```text
-┌─────────────────────────────────────────┐
-│ License Block (72+ bytes)               │
-│  ├── license_id (16 bytes, UUID)        │
-│  ├── licensee_hash (32 bytes, SHA-256)  │
-│  ├── issued_at (8 bytes, unix epoch)    │
-│  ├── expires_at (8 bytes, unix epoch)   │
-│  ├── flags (1 byte)                     │
-│  ├── seat_limit (2 bytes, u16)          │
-│  ├── inference_limit (4 bytes, u32)     │
-│  └── custom_terms_len + data (variable) │
-└─────────────────────────────────────────┘
-```
-
-### 8.2 License Flags
-
-| Bit | Flag | Description |
-|-----|------|-------------|
-| 0 | SEATS_ENFORCED | Limit concurrent installations |
-| 1 | EXPIRATION_ENFORCED | Model stops working after expires_at |
-| 2 | INFERENCE_LIMITED | Count-based usage cap |
-| 3 | WATERMARKED | Contains buyer-specific fingerprint |
-| 4 | REVOCABLE | Can be remotely revoked (requires network) |
-| 5 | TRANSFERABLE | License can be resold |
-| 6-7 | Reserved | Must be zero |
-
-### 8.3 Watermarking (Leak Traceability)
-
-Buyer-specific fingerprints embedded in model weights for tracing leaked models.
-
-**Technique:** Subtle perturbations to low-significance weight bits that:
-- Don't affect model accuracy (< 0.01% degradation)
-- Survive fine-tuning attempts
-- Encode buyer identity (recoverable by seller)
-
-```rust
-pub struct Watermark {
-    /// Buyer identifier (hashed)
-    pub buyer_hash: [u8; 32],
-    /// Embedding strength (0.0001 - 0.001 typical)
-    pub strength: f32,
-    /// Layers watermarked
-    pub layer_indices: Vec<usize>,
-}
-
-pub trait Watermarkable {
-    fn embed_watermark(&mut self, watermark: &Watermark) -> Result<(), FormatError>;
-    fn extract_watermark(&self) -> Option<Watermark>;
-    fn verify_watermark(&self, buyer_hash: &[u8; 32]) -> bool;
-}
-```
-
-### 8.4 Commercial Workflow
-
-```text
-Seller                              Buyer
-  │                                   │
-  ├─── Train model ──────────────────►│
-  │                                   │
-  ├─── Sign with seller key ─────────►│
-  │                                   │
-  ├─── Add license (buyer-specific) ─►│
-  │                                   │
-  ├─── Embed watermark ──────────────►│
-  │                                   │
-  ├─── Encrypt payload ──────────────►│
-  │                                   │
-  └─── Deliver .apr file ────────────►│
-                                      │
-                              Load with password
-                              Verify signature
-                              Check license validity
-                              Run inference
-```
-
-### 8.5 Model Marketplace API
-
-```rust
-/// Package model for commercial distribution
-pub fn package_commercial(
-    model: &impl Serialize,
-    model_type: ModelType,
-    seller_key: &SigningKey,
-    license: &License,
-    watermark: Option<&Watermark>,
-    buyer_password: &str,
-) -> Result<Vec<u8>, FormatError>;
-
-/// Verify and load commercial model
-pub fn load_commercial<M: DeserializeOwned>(
-    path: impl AsRef<Path>,
-    password: &str,
-    trusted_sellers: &[VerifyingKey],
-) -> Result<(M, LicenseInfo), FormatError>;
-```
-
-### 8.6 Anti-Piracy Considerations
-
-| Threat | Mitigation |
-|--------|------------|
-| Password sharing | Watermark traces to buyer |
-| Weight extraction | Encryption + watermark survives |
-| License bypass | Signature verification required |
-| Model leaking | Watermark extraction identifies source |
-| Reverse engineering | Obfuscation (future: weight encryption per-layer) |
-
-### 8.7 Compliance Metadata
-
-Optional fields for regulatory compliance:
-
-```json
-{
-  "compliance": {
-    "gdpr_training_consent": true,
-    "data_retention_policy": "https://...",
-    "model_card_url": "https://...",
-    "bias_audit_date": "2025-01-15",
-    "export_control": "EAR99"
-  }
-}
-```
-
-## 9. trueno Integration (Zero-Copy SIMD)
-
-Native integration with [trueno](https://crates.io/crates/trueno) for maximum inference performance.
-
-### 9.1 Design Rationale
-
-Standard serialization (bincode, JSON) destroys SIMD-friendly memory layout:
-
-| Approach | Alignment | Zero-Copy | Backend Aware |
-|----------|-----------|-----------|---------------|
-| bincode | ✗ 1-byte | ✗ | ✗ |
-| SafeTensors | ✗ 1-byte | ✓ (mmap) | ✗ |
-| **.apr trueno mode** | ✓ 64-byte | ✓ (mmap) | ✓ |
-
-### 9.2 Tensor Storage Format
-
-When `TRUENO_NATIVE` flag (bit 4) is set, tensors use aligned storage:
-
-```text
-┌─────────────────────────────────────────────────────────────┐
-│ Tensor Index (after metadata)                               │
-│  ├── tensor_count (u32)                                     │
-│  └── entries[]                                              │
-│       ├── name_hash (u64, FNV-1a)                           │
-│       ├── dtype (u8): 0=f32, 1=f16, 2=bf16, 3=i8, 4=u8      │
-│       ├── ndims (u8)                                        │
-│       ├── shape[ndims] (u32 each)                           │
-│       ├── stride[ndims] (u32 each, elements not bytes)      │
-│       ├── alignment (u8): 32=AVX, 64=AVX-512                │
-│       ├── backend_hint (u8): see Backend enum               │
-│       ├── offset (u64, 64-byte aligned)                     │
-│       └── size_bytes (u64)                                  │
-├─────────────────────────────────────────────────────────────┤
-│ Padding (to 64-byte boundary)                               │
-├─────────────────────────────────────────────────────────────┤
-│ Tensor Data (each tensor 64-byte aligned)                   │
-│  ├── tensor_0 data (aligned)                                │
-│  ├── padding (to 64-byte boundary)                          │
-│  ├── tensor_1 data (aligned)                                │
-│  └── ...                                                    │
-└─────────────────────────────────────────────────────────────┘
-```
-
-### 9.3 Backend Hints
-
-Stored per-tensor to guide runtime dispatch:
-
-| Value | Backend | SIMD Width | Use Case |
-|-------|---------|------------|----------|
-| 0x00 | Auto | - | Let trueno decide |
-| 0x01 | Scalar | 1 | Fallback |
-| 0x02 | SSE2 | 128-bit | x86_64 baseline |
-| 0x03 | AVX | 256-bit | Sandy Bridge+ |
-| 0x04 | AVX2 | 256-bit + FMA | Haswell+ |
-| 0x05 | AVX-512 | 512-bit | Skylake-X+ |
-| 0x06 | NEON | 128-bit | ARM64 |
-| 0x07 | WASM SIMD | 128-bit | Browser/Edge |
-| 0x08 | GPU | - | wgpu compute |
-
-### 9.4 Zero-Copy Loading API
-
-```rust
-use aprender::format::trueno_native;
-use trueno::{Vector, Matrix, Backend};
-
-/// Memory-mapped model with zero-copy tensor access
-pub struct MappedModel {
-    mmap: Mmap,
-    index: TensorIndex,
-}
-
-impl MappedModel {
-    /// Open model file (header + index only, tensors lazy)
-    pub fn open(path: impl AsRef<Path>) -> Result<Self, FormatError>;
-
-    /// Get tensor as trueno Vector (zero-copy)
-    pub fn get_vector(&self, name: &str) -> Result<Vector<f32>, FormatError> {
-        let entry = self.index.get(name)?;
-        let ptr = self.mmap[entry.offset..].as_ptr();
-
-        // Safety: alignment verified at save time
-        unsafe {
-            Vector::from_aligned_ptr(
-                ptr as *const f32,
-                entry.shape[0],
-                Backend::from_u8(entry.backend_hint),
-            )
-        }
-    }
-
-    /// Get tensor as trueno Matrix (zero-copy)
-    pub fn get_matrix(&self, name: &str) -> Result<Matrix<f32>, FormatError>;
-
-    /// Prefetch tensor into CPU cache (async)
-    pub fn prefetch(&self, name: &str);
-}
-```
-
-### 9.5 Alignment Requirements
-
-| Backend | Required Alignment | Reason |
-|---------|-------------------|--------|
-| Scalar | 4 bytes | f32 natural |
-| SSE2/NEON | 16 bytes | 128-bit loads |
-| AVX/AVX2 | 32 bytes | 256-bit loads |
-| AVX-512 | 64 bytes | 512-bit loads |
-| GPU | 256 bytes | GPU cache lines |
-
-`.apr` uses **64-byte alignment** universally (covers all SIMD, only 1.5% overhead on average).
-
-### 9.6 Memory Layout
-
-Row-major with explicit strides for flexibility:
-
-```rust
-/// Tensor memory layout
-pub struct TensorLayout {
-    /// Shape: [batch, channels, height, width] etc.
-    pub shape: Vec<u32>,
-    /// Stride per dimension (in elements, not bytes)
-    pub strides: Vec<u32>,
-    /// Data type
-    pub dtype: DType,
-}
-
-impl TensorLayout {
-    /// Calculate byte offset for multi-dimensional index
-    pub fn offset(&self, indices: &[u32]) -> usize {
-        indices.iter()
-            .zip(&self.strides)
-            .map(|(&i, &s)| i as usize * s as usize)
-            .sum::<usize>() * self.dtype.size_bytes()
-    }
-}
-```
-
-### 9.7 Saving with trueno Alignment
-
-```rust
-use aprender::format::{save_trueno, SaveOptions};
-use trueno::Backend;
-
-// Save model with trueno-native tensors
-save_trueno(
-    &model,
-    ModelType::NeuralSequential,
-    "model.apr",
-    SaveOptions::default()
-        .with_trueno_native(true)
-        .with_alignment(64)
-        .with_backend_hint(Backend::AVX2),
-)?;
-```
-
-### 9.8 Performance Comparison
-
-| Operation | bincode Load | trueno-native mmap |
-|-----------|-------------|-------------------|
-| 10MB model | 12ms | 0.3ms (40x faster) |
-| 100MB model | 120ms | 0.5ms (240x faster) |
-| 1GB model | 1200ms | 2ms (600x faster) |
-| First inference | +5ms (cache miss) | +0ms (prefetched) |
-
-*mmap = kernel page fault on access, no user-space copy*
-
-### 9.9 Compatibility Matrix
-
-| Flag Combination | Format | Zero-Copy | Compression |
-|------------------|--------|-----------|-------------|
-| None | bincode | ✗ | ✓ zstd |
-| TRUENO_NATIVE | aligned raw | ✓ | ✗ (alignment) |
-| TRUENO_NATIVE + STREAMING | chunked mmap | ✓ | ✗ |
-| STREAMING only | chunked bincode | ✗ | ✓ zstd |
-
-**Note:** Compression and zero-copy are mutually exclusive. Choose based on:
-- **Distribution:** Compression (smaller download)
-- **Inference:** trueno-native (faster startup)
-
-Conversion: `apr-convert model.apr --trueno-native` decompresses once for deployment.
+| Feature Set | Binary Size Impact | C/C++ Deps | WASM |
+|-------------|-------------------|------------|------|
+| core (header, CRC32) | ~10KB | None | ✓ |
+| + bincode payload | ~50KB | None | ✓ |
+| + zstd compression | ~300KB | None | ✓ |
+| + encryption (aes-gcm, argon2, x25519) | ~180KB | None | ✓ |
+| + signing (ed25519-dalek) | ~150KB | None | ✓ |
+| + streaming (memmap2) | ~20KB | None | Native |
+| **Total (all features)** | **~710KB** | **None** | - |
+
+## 8. trueno Integration (Zero-Copy)
+
+Native `TRUENO_NATIVE` (Bit 4) aligns tensors to 64-byte boundaries.
+
+- **Why?** AVX-512 requires 64-byte alignment for aligned loads.
+- **Benefit:** `mmap` -> Pointer cast -> Inference. **Zero** allocation *Muda*.
+- **Speed:** 600x faster loading for 1GB models vs bincode.
+- **WASM:** Flag ignored, falls back to standard loading.
+
+## 9. Commercial & Legal (Standardized Contracts)
+
+### 9.1 License Block
+
+When `LICENSED` (Bit 3) is set:
+- **Structure:** UUID, Hash, Expiry, Seats.
+- **Enforcement:** Cryptographically bound to the signature.
+- **Traceability:** Watermarking [Uchida2017] embeds buyer identity in weights.
+
+### 9.2 Watermarking
+
+Using techniques from [Adi2018], we embed a robust watermark that survives fine-tuning.
+- **Purpose:** Trace leaks to the specific buyer.
+- **Method:** Subtle perturbations to low-significance weight bits.
 
 ## 10. Bibliography
 
-1.  **[Bernstein2006]** Bernstein, D. J. (2006). Curve25519: new Diffie-Hellman speed records. *PKC 2006*.
-2.  **[Bernstein2012]** Bernstein, D. J., et al. (2012). High-speed high-security signatures. *J. Cryptographic Engineering*.
-3.  **[Biryukov2016]** Biryukov, A., et al. (2016). Argon2: New Generation of Memory-Hard Functions. *EuroS&P*.
-4.  **[Collet2018]** Collet, Y., & Kucherawy, M. (2018). Zstandard Compression and the application/zstd Media Type. *RFC 8478*.
-5.  **[LeCun1998]** LeCun, Y., et al. (1998). Gradient-based learning applied to document recognition. *Proc. IEEE*.
-6.  **[McGrew2004]** McGrew, D., & Viega, J. (2004). The Security and Performance of AES-GCM. *INDOCRYPT*.
-7.  **[Parder2021]** Parder, T. (2021). Security Risks in Machine Learning Model Formats. *AI Safety Journal*.
-8.  **[Peterson1961]** Peterson, W. W., & Brown, D. T. (1961). Cyclic codes for error detection. *Proc. IRE*.
-9.  **[PrestonWerner2013]** Preston-Werner, T. (2013). Semantic Versioning 2.0.0.
-10. **[Silberschatz2018]** Silberschatz, A., et al. (2018). *Operating System Concepts*. (Virtual Memory/Mmap).
-11. **[Sumaray2012]** Sumaray, A., & Makki, S. K. (2012). Comparison of Data Serialization Formats. *Int. Conf. Software Tech*.
-12. **[GGUF2023]** Gerganov, G. (2023). GGUF: GPT-Generated Unified Format. *GitHub/ggml*.
-13. **[Tamassia2003]** Tamassia, R. (2003). Authenticated Data Structures. *European Symposium on Algorithms*.
-14. **[Uchida2017]** Uchida, Y., et al. (2017). Embedding Watermarks into Deep Neural Networks. *ICMR*.
-15. **[Adi2018]** Adi, Y., et al. (2018). Turning Your Weakness Into a Strength: Watermarking Deep Neural Networks. *USENIX Security*.
+1.  **[Adi2018]** Adi, Y., et al. (2018). Turning Your Weakness Into a Strength: Watermarking Deep Neural Networks. *USENIX Security*.
+2.  **[Bernstein2006]** Bernstein, D. J. (2006). Curve25519: new Diffie-Hellman speed records. *PKC 2006*.
+3.  **[Bernstein2012]** Bernstein, D. J., et al. (2012). High-speed high-security signatures. *J. Cryptographic Engineering*.
+4.  **[Biryukov2016]** Biryukov, A., et al. (2016). Argon2: New Generation of Memory-Hard Functions. *EuroS&P*.
+5.  **[Collet2018]** Collet, Y., & Kucherawy, M. (2018). Zstandard Compression and the application/zstd Media Type. *RFC 8478*.
+6.  **[Jacob2018]** Jacob, B., et al. (2018). Quantization and Training of Neural Networks for Efficient Integer-Arithmetic-Only Inference. *CVPR*.
+7.  **[LeCun1998]** LeCun, Y., et al. (1998). Gradient-based learning applied to document recognition. *Proc. IEEE*.
+8.  **[McGrew2004]** McGrew, D., & Viega, J. (2004). The Security and Performance of AES-GCM. *INDOCRYPT*.
+9.  **[Mitchell2019]** Mitchell, M., et al. (2019). Model Cards for Model Reporting. *FAT* *.
+10. **[Parder2021]** Parder, T. (2021). Security Risks in Machine Learning Model Formats. *AI Safety Journal*.
+11. **[Peterson1961]** Peterson, W. W., & Brown, D. T. (1961). Cyclic codes for error detection. *Proc. IRE*.
+12. **[PrestonWerner2013]** Preston-Werner, T. (2013). Semantic Versioning 2.0.0.
+13. **[Shostack2014]** Shostack, A. (2014). *Threat Modeling: Designing for Security*. Wiley.
+14. **[Silberschatz2018]** Silberschatz, A., et al. (2018). *Operating System Concepts*.
+15. **[Sumaray2012]** Sumaray, A., & Makki, S. K. (2012). Comparison of Data Serialization Formats. *Int. Conf. Software Tech*.
+16. **[Tamassia2003]** Tamassia, R. (2003). Authenticated Data Structures. *ESA*.
+17. **[TorresArias2019]** Torres-Arias, S., et al. (2019). in-toto: Providing farm-to-table guarantees for software supply chain integrity. *USENIX Security*.
+18. **[Uchida2017]** Uchida, Y., et al. (2017). Embedding Watermarks into Deep Neural Networks. *ICMR*.
+19. **[GGUF2023]** Gerganov, G. (2023). GGUF Format. *GitHub*.
+
+## Appendix A: WASM Loading
+
+Browser/edge environments use Fetch API instead of filesystem:
+
+```rust
+// WASM: Load model from URL
+#[cfg(target_arch = "wasm32")]
+pub async fn load_from_url<M: DeserializeOwned>(
+    url: &str,
+    expected_type: ModelType,
+) -> Result<M, FormatError> {
+    let response = fetch(url).await?;
+    let bytes = response.bytes().await?;
+    load_from_bytes(&bytes, expected_type)
+}
+
+// WASM: Load from IndexedDB cache
+#[cfg(target_arch = "wasm32")]
+pub async fn load_cached<M: DeserializeOwned>(
+    key: &str,
+    expected_type: ModelType,
+) -> Result<Option<M>, FormatError> {
+    if let Some(bytes) = idb_get(key).await? {
+        Ok(Some(load_from_bytes(&bytes, expected_type)?))
+    } else {
+        Ok(None)
+    }
+}
+```
+
+### WASM Feature Subset
+
+| Feature | Status | Alternative |
+|---------|--------|-------------|
+| File I/O | ✗ | Fetch API |
+| mmap | ✗ | ArrayBuffer |
+| Multi-threading | ✗ | Single-threaded |
+| SIMD alignment | ✗ | Standard alignment |
+| IndexedDB | ✓ | Cache storage |
+| Encryption | ✓ | Pure Rust aes-gcm |
+| Signing | ✓ | Pure Rust ed25519-dalek |
+| Compression | ✓ | Pure Rust zstd |
+
+### Size Budget (WASM)
+
+| Component | Size |
+|-----------|------|
+| Core (header, CRC32) | ~10KB |
+| bincode payload | ~50KB |
+| zstd (pure) | ~250KB |
+| Crypto (aes-gcm, argon2, ed25519) | ~180KB |
+| **Total** | **~490KB** |
+
+Target: <400KB gzipped for browser delivery.
+
+### CI Integration
+
+```yaml
+# .github/workflows/ci.yml
+wasm-check:
+  runs-on: ubuntu-latest
+  steps:
+    - uses: actions/checkout@v4
+    - name: Install WASM target
+      run: rustup target add wasm32-unknown-unknown
+    - name: Check core (no features)
+      run: cargo check --target wasm32-unknown-unknown --no-default-features
+    - name: Check with crypto
+      run: cargo check --target wasm32-unknown-unknown --no-default-features --features format-encryption,format-signing
+    - name: Check with compression
+      run: cargo check --target wasm32-unknown-unknown --no-default-features --features format-compression
+```
 
 ---
-*Review Status: Approved for implementation. Sovereign AI architecture - pure Rust, zero C/C++ dependencies. ONNX explicitly out of scope. Implementation must adhere strictly to the "Stop the Line" policy on verification failures.*
+*Review Status: **APPROVED**. Specification v1.5.0 merges Toyota Way enhancements (Model Cards, Andon protocols, Quantization) with WASM hard requirement (§1.0). Pure Rust, zero C/C++ dependencies. Implementation must adhere strictly to the "Stop the Line" policy on verification failures.*

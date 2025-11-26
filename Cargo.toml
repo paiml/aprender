@@ -100,6 +100,9 @@ ed25519-dalek = { version = "2.1", optional = true, default-features = false, fe
 # Encryption for .apr format (optional, spec §4.1)
 aes-gcm = { version = "0.10", optional = true }
 argon2 = { version = "0.5", optional = true, default-features = false, features = ["std"] }
+x25519-dalek = { version = "2.0", optional = true, default-features = false, features = ["static_secrets"] }
+hkdf = { version = "0.12", optional = true }
+sha2 = { version = "0.10", optional = true }  # For HKDF-SHA256
 
 # Linear algebra for PCA eigendecomposition
 nalgebra = "0.33"
@@ -119,7 +122,7 @@ parallel = ["rayon"]  # Enable parallel graph algorithms (disable for WASM)
 datasets = ["alimentar"]  # Enable data loading from alimentar
 format-compression = ["zstd"]  # Enable zstd compression for .apr format (spec §3.3)
 format-signing = ["ed25519-dalek"]  # Enable Ed25519 signatures for .apr format (spec §4.2)
-format-encryption = ["aes-gcm", "argon2"]  # Enable AES-256-GCM encryption for .apr format (spec §4.1)
+format-encryption = ["aes-gcm", "argon2", "x25519-dalek", "hkdf", "sha2"]  # Enable encryption for .apr format (spec §4.1)
 gpu = []
 cpu-only = []
 # Chaos engineering features (from renacer)

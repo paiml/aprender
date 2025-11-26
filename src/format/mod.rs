@@ -76,6 +76,22 @@ pub const NONCE_SIZE: usize = 12;
 #[cfg(feature = "format-encryption")]
 pub const KEY_SIZE: usize = 32;
 
+/// X25519 public key size in bytes (spec §4.1.3)
+#[cfg(feature = "format-encryption")]
+pub const X25519_PUBLIC_KEY_SIZE: usize = 32;
+
+/// Recipient public key hash size for identification (spec §4.1.3)
+#[cfg(feature = "format-encryption")]
+pub const RECIPIENT_HASH_SIZE: usize = 8;
+
+/// HKDF info string for X25519 key derivation (spec §4.1.3)
+#[cfg(feature = "format-encryption")]
+pub const HKDF_INFO: &[u8] = b"apr-v1-encrypt";
+
+// Re-export X25519 types when feature is enabled
+#[cfg(feature = "format-encryption")]
+pub use x25519_dalek::{PublicKey as X25519PublicKey, StaticSecret as X25519SecretKey};
+
 /// Magic number: "APRN" in ASCII (0x4150524E)
 pub const MAGIC: [u8; 4] = [0x41, 0x50, 0x52, 0x4E];
 
@@ -1216,6 +1232,273 @@ pub fn load_encrypted<M: DeserializeOwned>(
         .map_err(|e| AprenderError::Serialization(format!("Failed to deserialize model: {e}")))
 }
 
+/// Save a model encrypted for a specific recipient (spec §4.1.3)
+///
+/// Uses X25519 key agreement + AES-256-GCM. The sender generates an ephemeral
+/// keypair, performs ECDH with the recipient's public key, and derives the
+/// encryption key using HKDF-SHA256.
+///
+/// # Arguments
+/// * `model` - The model to save (must implement Serialize)
+/// * `model_type` - Model type identifier
+/// * `path` - Output file path
+/// * `options` - Save options (compression, metadata)
+/// * `recipient_public_key` - Recipient's X25519 public key
+///
+/// # Errors
+/// Returns error on I/O failure, serialization error, or encryption failure
+#[cfg(feature = "format-encryption")]
+#[allow(clippy::needless_pass_by_value)] // SaveOptions is small and passed by value for ergonomics
+pub fn save_for_recipient<M: Serialize>(
+    model: &M,
+    model_type: ModelType,
+    path: impl AsRef<Path>,
+    options: SaveOptions,
+    recipient_public_key: &X25519PublicKey,
+) -> Result<()> {
+    use aes_gcm::{
+        aead::{Aead, KeyInit},
+        Aes256Gcm, Nonce,
+    };
+    use hkdf::Hkdf;
+    use sha2::Sha256;
+
+    let path = path.as_ref();
+
+    // Serialize payload with bincode
+    let payload_uncompressed = bincode::serialize(model)
+        .map_err(|e| AprenderError::Serialization(format!("Failed to serialize model: {e}")))?;
+
+    // Compress payload
+    let (payload_compressed, compression) =
+        compress_payload(&payload_uncompressed, options.compression)?;
+
+    // Generate ephemeral keypair for this encryption
+    let ephemeral_secret = X25519SecretKey::random_from_rng(rand::rngs::OsRng);
+    let ephemeral_public = X25519PublicKey::from(&ephemeral_secret);
+
+    // Perform X25519 key agreement
+    let shared_secret = ephemeral_secret.diffie_hellman(recipient_public_key);
+
+    // Derive encryption key using HKDF-SHA256 (spec §4.1.3)
+    let hkdf = Hkdf::<Sha256>::new(None, shared_secret.as_bytes());
+    let mut key = [0u8; KEY_SIZE];
+    hkdf.expand(HKDF_INFO, &mut key)
+        .map_err(|_| AprenderError::Other("HKDF expansion failed".to_string()))?;
+
+    // Generate random nonce
+    let mut nonce_bytes = [0u8; NONCE_SIZE];
+    rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut nonce_bytes);
+
+    // Encrypt payload with AES-256-GCM
+    let cipher = Aes256Gcm::new_from_slice(&key)
+        .map_err(|e| AprenderError::Other(format!("Failed to create cipher: {e}")))?;
+    let nonce = Nonce::from_slice(&nonce_bytes);
+    let ciphertext = cipher
+        .encrypt(nonce, payload_compressed.as_ref())
+        .map_err(|e| AprenderError::Other(format!("Encryption failed: {e}")))?;
+
+    // Create recipient hash (first 8 bytes of recipient public key for identification)
+    let recipient_hash: [u8; RECIPIENT_HASH_SIZE] = recipient_public_key.as_bytes()
+        [..RECIPIENT_HASH_SIZE]
+        .try_into()
+        .expect("recipient hash size is correct");
+
+    // Serialize metadata as MessagePack (spec §2)
+    let metadata_bytes = rmp_serde::to_vec(&options.metadata)
+        .map_err(|e| AprenderError::Serialization(format!("Failed to serialize metadata: {e}")))?;
+
+    // Build header with ENCRYPTED flag
+    let mut header = Header::new(model_type);
+    header.compression = compression;
+    header.metadata_size = metadata_bytes.len() as u32;
+    // Payload: ephemeral_pub (32) + recipient_hash (8) + nonce (12) + ciphertext
+    header.payload_size =
+        (X25519_PUBLIC_KEY_SIZE + RECIPIENT_HASH_SIZE + NONCE_SIZE + ciphertext.len()) as u32;
+    header.uncompressed_size = payload_uncompressed.len() as u32;
+    header.flags = header.flags.with_encrypted();
+
+    // Assemble file content (spec §4.1.3 layout)
+    let mut content = Vec::new();
+    content.extend_from_slice(&header.to_bytes());
+    content.extend_from_slice(&metadata_bytes);
+    content.extend_from_slice(ephemeral_public.as_bytes()); // 32 bytes
+    content.extend_from_slice(&recipient_hash); // 8 bytes
+    content.extend_from_slice(&nonce_bytes); // 12 bytes
+    content.extend_from_slice(&ciphertext);
+
+    // Calculate and append checksum
+    let checksum = crc32(&content);
+    content.extend_from_slice(&checksum.to_le_bytes());
+
+    // Write to file
+    let file = File::create(path)?;
+    let mut writer = BufWriter::new(file);
+    writer.write_all(&content)?;
+    writer.flush()?;
+
+    Ok(())
+}
+
+/// Load a model encrypted for this recipient (spec §4.1.3)
+///
+/// Uses X25519 key agreement + AES-256-GCM. The recipient uses their secret key
+/// to perform ECDH with the sender's ephemeral public key.
+///
+/// # Arguments
+/// * `path` - Input file path
+/// * `expected_type` - Expected model type (for type safety)
+/// * `recipient_secret_key` - Recipient's X25519 secret key
+///
+/// # Errors
+/// Returns error on I/O failure, format error, type mismatch, or decryption failure
+#[cfg(feature = "format-encryption")]
+#[allow(clippy::too_many_lines)]
+pub fn load_as_recipient<M: DeserializeOwned>(
+    path: impl AsRef<Path>,
+    expected_type: ModelType,
+    recipient_secret_key: &X25519SecretKey,
+) -> Result<M> {
+    use aes_gcm::{
+        aead::{Aead, KeyInit},
+        Aes256Gcm, Nonce,
+    };
+    use hkdf::Hkdf;
+    use sha2::Sha256;
+
+    let path = path.as_ref();
+
+    // Read entire file
+    let file = File::open(path)?;
+    let mut reader = BufReader::new(file);
+    let mut content = Vec::new();
+    reader.read_to_end(&mut content)?;
+
+    // Calculate minimum size for X25519 encrypted file
+    const MIN_PAYLOAD_SIZE: usize = X25519_PUBLIC_KEY_SIZE + RECIPIENT_HASH_SIZE + NONCE_SIZE;
+    if content.len() < HEADER_SIZE + MIN_PAYLOAD_SIZE + 4 {
+        return Err(AprenderError::FormatError {
+            message: format!(
+                "File too small for X25519 encrypted model: {} bytes",
+                content.len()
+            ),
+        });
+    }
+
+    // Verify checksum (Jidoka: stop the line on corruption)
+    let stored_checksum = u32::from_le_bytes([
+        content[content.len() - 4],
+        content[content.len() - 3],
+        content[content.len() - 2],
+        content[content.len() - 1],
+    ]);
+    let computed_checksum = crc32(&content[..content.len() - 4]);
+    if stored_checksum != computed_checksum {
+        return Err(AprenderError::ChecksumMismatch {
+            expected: stored_checksum,
+            actual: computed_checksum,
+        });
+    }
+
+    // Parse header
+    let header = Header::from_bytes(&content[..HEADER_SIZE])?;
+
+    // Verify ENCRYPTED flag is set
+    if !header.flags.is_encrypted() {
+        return Err(AprenderError::FormatError {
+            message: "File is not encrypted (ENCRYPTED flag not set)".to_string(),
+        });
+    }
+
+    // Verify model type
+    if header.model_type != expected_type {
+        return Err(AprenderError::FormatError {
+            message: format!(
+                "Model type mismatch: file contains {:?}, expected {:?}",
+                header.model_type, expected_type
+            ),
+        });
+    }
+
+    // Calculate content boundaries
+    let metadata_end = HEADER_SIZE + header.metadata_size as usize;
+    let ephemeral_pub_end = metadata_end + X25519_PUBLIC_KEY_SIZE;
+    let recipient_hash_end = ephemeral_pub_end + RECIPIENT_HASH_SIZE;
+    let nonce_end = recipient_hash_end + NONCE_SIZE;
+    let payload_end = metadata_end + header.payload_size as usize;
+
+    if payload_end > content.len() - 4 {
+        return Err(AprenderError::FormatError {
+            message: "Encrypted payload extends beyond file boundary".to_string(),
+        });
+    }
+
+    // Extract ephemeral public key
+    let ephemeral_pub_bytes: [u8; X25519_PUBLIC_KEY_SIZE] = content
+        [metadata_end..ephemeral_pub_end]
+        .try_into()
+        .map_err(|_| AprenderError::FormatError {
+            message: "Invalid ephemeral public key size".to_string(),
+        })?;
+    let ephemeral_public = X25519PublicKey::from(ephemeral_pub_bytes);
+
+    // Extract and verify recipient hash
+    let stored_recipient_hash: [u8; RECIPIENT_HASH_SIZE] = content
+        [ephemeral_pub_end..recipient_hash_end]
+        .try_into()
+        .map_err(|_| AprenderError::FormatError {
+            message: "Invalid recipient hash size".to_string(),
+        })?;
+
+    // Verify this file is for us
+    let our_public = X25519PublicKey::from(recipient_secret_key);
+    let our_hash: [u8; RECIPIENT_HASH_SIZE] = our_public.as_bytes()[..RECIPIENT_HASH_SIZE]
+        .try_into()
+        .expect("hash size is correct");
+
+    if stored_recipient_hash != our_hash {
+        return Err(AprenderError::DecryptionFailed {
+            message: "This file was encrypted for a different recipient".to_string(),
+        });
+    }
+
+    // Extract nonce and ciphertext
+    let nonce_bytes: [u8; NONCE_SIZE] =
+        content[recipient_hash_end..nonce_end]
+            .try_into()
+            .map_err(|_| AprenderError::FormatError {
+                message: "Invalid nonce size".to_string(),
+            })?;
+    let ciphertext = &content[nonce_end..payload_end];
+
+    // Perform X25519 key agreement
+    let shared_secret = recipient_secret_key.diffie_hellman(&ephemeral_public);
+
+    // Derive encryption key using HKDF-SHA256 (same as encryption)
+    let hkdf = Hkdf::<Sha256>::new(None, shared_secret.as_bytes());
+    let mut key = [0u8; KEY_SIZE];
+    hkdf.expand(HKDF_INFO, &mut key)
+        .map_err(|_| AprenderError::Other("HKDF expansion failed".to_string()))?;
+
+    // Decrypt payload with AES-256-GCM
+    let cipher = Aes256Gcm::new_from_slice(&key)
+        .map_err(|e| AprenderError::Other(format!("Failed to create cipher: {e}")))?;
+    let nonce = Nonce::from_slice(&nonce_bytes);
+    let payload_compressed =
+        cipher
+            .decrypt(nonce, ciphertext)
+            .map_err(|_| AprenderError::DecryptionFailed {
+                message: "Decryption failed (wrong recipient key or corrupted data)".to_string(),
+            })?;
+
+    // Decompress payload
+    let payload_uncompressed = decompress_payload(&payload_compressed, header.compression)?;
+
+    // Deserialize model
+    bincode::deserialize(&payload_uncompressed)
+        .map_err(|e| AprenderError::Serialization(format!("Failed to deserialize model: {e}")))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1842,5 +2125,156 @@ mod tests {
         let loaded: LargeModel = load_encrypted(&path, ModelType::Custom, password)
             .expect("load_encrypted should succeed");
         assert_eq!(loaded, model);
+    }
+
+    #[test]
+    #[cfg(feature = "format-encryption")]
+    fn test_x25519_recipient_roundtrip() {
+        use tempfile::tempdir;
+        use x25519_dalek::{PublicKey, StaticSecret};
+
+        #[derive(Debug, Serialize, Deserialize, PartialEq)]
+        struct TestModel {
+            weights: Vec<f32>,
+            bias: f32,
+        }
+
+        let model = TestModel {
+            weights: vec![1.0, 2.0, 3.0, 4.0, 5.0],
+            bias: 0.5,
+        };
+
+        // Generate recipient keypair
+        let recipient_secret = StaticSecret::random_from_rng(rand::thread_rng());
+        let recipient_public = PublicKey::from(&recipient_secret);
+
+        let dir = tempdir().expect("create temp dir");
+        let path = dir.path().join("recipient_encrypted.apr");
+
+        // Save for recipient
+        save_for_recipient(
+            &model,
+            ModelType::Custom,
+            &path,
+            SaveOptions::default(),
+            &recipient_public,
+        )
+        .expect("save_for_recipient should succeed");
+
+        // Inspect - should show encrypted flag
+        let info = inspect(&path).expect("inspect should succeed");
+        assert!(info.encrypted, "Model should be marked as encrypted");
+        assert_eq!(info.model_type, ModelType::Custom);
+
+        // Load as recipient with correct key
+        let loaded: TestModel = load_as_recipient(&path, ModelType::Custom, &recipient_secret)
+            .expect("load_as_recipient should succeed");
+        assert_eq!(loaded, model);
+    }
+
+    #[test]
+    #[cfg(feature = "format-encryption")]
+    fn test_x25519_wrong_key_fails() {
+        use tempfile::tempdir;
+        use x25519_dalek::{PublicKey, StaticSecret};
+
+        #[derive(Debug, Serialize, Deserialize, PartialEq)]
+        struct TestModel {
+            value: i32,
+        }
+
+        let model = TestModel { value: 42 };
+
+        // Generate correct recipient keypair
+        let recipient_secret = StaticSecret::random_from_rng(rand::thread_rng());
+        let recipient_public = PublicKey::from(&recipient_secret);
+
+        // Generate wrong keypair
+        let wrong_secret = StaticSecret::random_from_rng(rand::thread_rng());
+
+        let dir = tempdir().expect("create temp dir");
+        let path = dir.path().join("x25519_wrong_key.apr");
+
+        // Save for correct recipient
+        save_for_recipient(
+            &model,
+            ModelType::Custom,
+            &path,
+            SaveOptions::default(),
+            &recipient_public,
+        )
+        .expect("save_for_recipient should succeed");
+
+        // Try to load with wrong key - should fail
+        let result: Result<TestModel> = load_as_recipient(&path, ModelType::Custom, &wrong_secret);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Decryption failed"));
+    }
+
+    #[test]
+    #[cfg(feature = "format-encryption")]
+    fn test_x25519_rejects_password_encrypted_file() {
+        use tempfile::tempdir;
+        use x25519_dalek::StaticSecret;
+
+        #[derive(Debug, Serialize, Deserialize)]
+        struct TestModel {
+            value: i32,
+        }
+
+        let model = TestModel { value: 42 };
+
+        let dir = tempdir().expect("create temp dir");
+        let path = dir.path().join("password_not_x25519.apr");
+
+        // Save with password encryption
+        save_encrypted(
+            &model,
+            ModelType::Custom,
+            &path,
+            SaveOptions::default(),
+            "some_password",
+        )
+        .expect("save_encrypted should succeed");
+
+        // Try to load as recipient - should fail
+        let wrong_secret = StaticSecret::random_from_rng(rand::thread_rng());
+        let result: Result<TestModel> = load_as_recipient(&path, ModelType::Custom, &wrong_secret);
+        assert!(result.is_err());
+        // Will fail because file layout doesn't match X25519 format
+    }
+
+    #[test]
+    #[cfg(feature = "format-encryption")]
+    fn test_x25519_load_rejects_unencrypted_file() {
+        use tempfile::tempdir;
+        use x25519_dalek::StaticSecret;
+
+        #[derive(Debug, Serialize, Deserialize)]
+        struct TestModel {
+            value: i32,
+        }
+
+        let model = TestModel { value: 42 };
+
+        let dir = tempdir().expect("create temp dir");
+        let path = dir.path().join("unencrypted_for_x25519.apr");
+
+        // Save without encryption
+        save(&model, ModelType::Custom, &path, SaveOptions::default())
+            .expect("save should succeed");
+
+        // load_as_recipient should reject unencrypted files
+        let secret = StaticSecret::random_from_rng(rand::thread_rng());
+        let result: Result<TestModel> = load_as_recipient(&path, ModelType::Custom, &secret);
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("ENCRYPTED flag not set") || err_msg.contains("File too small"),
+            "Expected ENCRYPTED flag error or size error, got: {err_msg}"
+        );
     }
 }
