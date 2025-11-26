@@ -94,6 +94,8 @@ dependencies = [
 [[package]]
 name = "alimentar"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "edcd75dc7f516577e390760823e5e2317dcd5523f18e74456a3b845520fade3d"
 dependencies = [
  "arrow",
  "arrow-csv",
