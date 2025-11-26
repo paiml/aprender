@@ -323,6 +323,28 @@ cargo run --example optimizer_demo           # SGD and Adam optimizers
 
 See [ROADMAP.md](ROADMAP.md) for planned features and version roadmap.
 
+## Citation
+
+If you use aprender in your research, please cite it:
+
+```bibtex
+@software{aprender2024,
+  author       = {Gift, Noah and Contributors},
+  title        = {aprender: Next Generation Machine Learning in Pure Rust},
+  year         = {2024},
+  publisher    = {GitHub},
+  url          = {https://github.com/paiml/aprender},
+  version      = {0.10.0},
+  note         = {Pure Rust ML library with EXTREME TDD methodology}
+}
+```
+
+Or in APA format:
+
+> Gift, N., & Contributors. (2024). *aprender: Next Generation Machine Learning in Pure Rust* (Version 0.10.0) [Computer software]. GitHub. https://github.com/paiml/aprender
+
+See [CITATION.cff](CITATION.cff) for machine-readable citation metadata.
+
 ## License
 
 MIT License - see [LICENSE](LICENSE) for details.

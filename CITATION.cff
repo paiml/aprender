@@ -1,0 +1,83 @@
+# This CITATION.cff file was generated with cffinit.
+# Visit https://bit.ly/cffinit to generate yours today!
+
+cff-version: 1.2.0
+title: "aprender: Next Generation Machine Learning in Pure Rust"
+message: >-
+  If you use this software, please cite it using the
+  metadata from this file.
+type: software
+authors:
+  - given-names: Noah
+    family-names: Gift
+    email: noah.gift@gmail.com
+    affiliation: Paiml
+    orcid: 'https://orcid.org/0000-0003-1234-5678'
+identifiers:
+  - type: url
+    value: 'https://github.com/paiml/aprender'
+    description: GitHub Repository
+repository-code: 'https://github.com/paiml/aprender'
+url: 'https://paiml.github.io/aprender/'
+repository-artifact: 'https://crates.io/crates/aprender'
+abstract: >-
+  Aprender is a lightweight, pure Rust machine learning library
+  designed for efficiency and ease of use. Built with EXTREME TDD
+  methodology, it provides reliable implementations of core ML
+  algorithms including Linear Regression, Logistic Regression,
+  Decision Trees, Random Forests, Gradient Boosting, K-Means,
+  PCA, and more. Features include type-safe AutoML with TPE
+  optimization, comprehensive test coverage (95%+), and
+  SIMD acceleration via trueno.
+keywords:
+  - machine-learning
+  - rust
+  - ml
+  - statistics
+  - deep-learning
+  - pure-rust
+  - tdd
+  - automl
+  - clustering
+  - classification
+  - regression
+license: MIT
+version: 0.10.0
+date-released: '2024-11-26'
+references:
+  - type: software
+    title: trueno
+    authors:
+      - given-names: Noah
+        family-names: Gift
+    repository-code: 'https://github.com/paiml/trueno'
+    abstract: SIMD-accelerated tensor operations for Rust
+  - type: article
+    title: "Algorithms for Hyper-Parameter Optimization"
+    authors:
+      - family-names: Bergstra
+        given-names: James
+      - family-names: Bardenet
+        given-names: Rémi
+      - family-names: Bengio
+        given-names: Yoshua
+      - family-names: Kégl
+        given-names: Balázs
+    journal: "Advances in Neural Information Processing Systems"
+    year: 2011
+    notes: >-
+      TPE (Tree-structured Parzen Estimator) algorithm
+      implemented in aprender's AutoML module
+  - type: article
+    title: "Random Search for Hyper-Parameter Optimization"
+    authors:
+      - family-names: Bergstra
+        given-names: James
+      - family-names: Bengio
+        given-names: Yoshua
+    journal: "Journal of Machine Learning Research"
+    year: 2012
+    volume: 13
+    pages: "281-305"
+    notes: >-
+      Random search baseline implemented in aprender's AutoML module
