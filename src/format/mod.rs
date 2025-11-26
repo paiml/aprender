@@ -3389,4 +3389,88 @@ mod tests {
         // 8 + 12 + 4 + 8 + 10 = 42 bytes
         assert!(!buffer.is_empty());
     }
+
+    // Step 2: RED - Test full GGUF export function
+    #[test]
+    fn test_gguf_export_simple_tensor() {
+        // Create a simple f32 tensor to export
+        let tensor_data: Vec<f32> = vec![1.0, 2.0, 3.0, 4.0];
+        let data: Vec<u8> = tensor_data.iter().flat_map(|f| f.to_le_bytes()).collect();
+        let tensor = gguf::GgufTensor {
+            name: "test.weight".to_string(),
+            shape: vec![2, 2],
+            dtype: gguf::GgmlType::F32,
+            data,
+        };
+
+        let mut buffer = Vec::new();
+
+        // Export to GGUF format
+        gguf::export_tensors_to_gguf(
+            &mut buffer,
+            &[tensor],
+            &[(
+                "general.name".to_string(),
+                gguf::GgufValue::String("test_model".to_string()),
+            )],
+        )
+        .expect("export should succeed");
+
+        // Verify magic number at start
+        assert_eq!(&buffer[0..4], b"GGUF");
+
+        // Verify we have content
+        assert!(buffer.len() > 24); // At least header size
+    }
+
+    #[test]
+    fn test_gguf_export_with_metadata() {
+        let tensor_data: Vec<f32> = vec![0.5; 16];
+        let data: Vec<u8> = tensor_data.iter().flat_map(|f| f.to_le_bytes()).collect();
+        let tensor = gguf::GgufTensor {
+            name: "model.embed".to_string(),
+            shape: vec![4, 4],
+            dtype: gguf::GgmlType::F32,
+            data,
+        };
+
+        let metadata = vec![
+            (
+                "general.name".to_string(),
+                gguf::GgufValue::String("aprender_model".to_string()),
+            ),
+            (
+                "general.architecture".to_string(),
+                gguf::GgufValue::String("mlp".to_string()),
+            ),
+            (
+                "aprender.version".to_string(),
+                gguf::GgufValue::String(env!("CARGO_PKG_VERSION").to_string()),
+            ),
+        ];
+
+        let mut buffer = Vec::new();
+        gguf::export_tensors_to_gguf(&mut buffer, &[tensor], &metadata).expect("export");
+
+        // Verify header
+        assert_eq!(&buffer[0..4], b"GGUF");
+
+        // Verify version is 3
+        let version = u32::from_le_bytes([buffer[4], buffer[5], buffer[6], buffer[7]]);
+        assert_eq!(version, 3);
+
+        // Verify tensor count is 1
+        let tensor_count = u64::from_le_bytes([
+            buffer[8], buffer[9], buffer[10], buffer[11], buffer[12], buffer[13], buffer[14],
+            buffer[15],
+        ]);
+        assert_eq!(tensor_count, 1);
+
+        // Verify metadata count is 3
+        let metadata_count = u64::from_le_bytes([
+            buffer[16], buffer[17], buffer[18], buffer[19], buffer[20], buffer[21], buffer[22],
+            buffer[23],
+        ]);
+        assert_eq!(metadata_count, 3);
+    }
 }

@@ -367,6 +367,121 @@ pub const fn padding_for_alignment(offset: usize, alignment: usize) -> usize {
     }
 }
 
+// ============================================================================
+// High-Level Export API
+// ============================================================================
+
+/// A tensor to be exported to GGUF format
+#[derive(Debug, Clone)]
+pub struct GgufTensor {
+    /// Tensor name (e.g., "model.layers.0.weight")
+    pub name: String,
+    /// Tensor shape (e.g., [768, 768])
+    pub shape: Vec<u64>,
+    /// Data type
+    pub dtype: GgmlType,
+    /// Raw tensor data (little-endian bytes)
+    pub data: Vec<u8>,
+}
+
+impl GgufTensor {
+    /// Calculate the byte size based on dtype and shape
+    #[must_use]
+    pub fn byte_size(&self) -> usize {
+        let elements: u64 = self.shape.iter().product();
+        let bytes_per_element = match self.dtype {
+            GgmlType::F32 | GgmlType::I32 => 4,
+            GgmlType::F16 | GgmlType::I16 => 2,
+            GgmlType::I8 => 1,
+            GgmlType::Q4_0 | GgmlType::Q4_1 => {
+                // Block-quantized: 32 elements per block
+                // Q4_0: 2 bytes scale + 16 bytes data = 18 bytes per 32 elements
+                ((elements as usize + 31) / 32) * 18
+            }
+            GgmlType::Q8_0 => {
+                // Q8_0: 2 bytes scale + 32 bytes data = 34 bytes per 32 elements
+                ((elements as usize + 31) / 32) * 34
+            }
+            GgmlType::F64 | GgmlType::I64 => 8,
+        };
+        elements as usize * bytes_per_element / elements.max(1) as usize
+    }
+}
+
+/// Export tensors to GGUF format
+///
+/// # Arguments
+///
+/// * `writer` - Output writer
+/// * `tensors` - Tensors to export
+/// * `metadata` - Key-value metadata pairs
+///
+/// # Errors
+///
+/// Returns error on I/O failure
+pub fn export_tensors_to_gguf<W: Write>(
+    writer: &mut W,
+    tensors: &[GgufTensor],
+    metadata: &[(String, GgufValue)],
+) -> Result<()> {
+    // Write header
+    let header = GgufHeader {
+        version: GGUF_VERSION,
+        tensor_count: tensors.len() as u64,
+        metadata_kv_count: metadata.len() as u64,
+    };
+    header.write_to(writer)?;
+
+    // Write metadata
+    for (key, value) in metadata {
+        write_metadata_kv(writer, key, value)?;
+    }
+
+    // Calculate tensor data offsets
+    // First, calculate header + metadata size
+    let mut current_offset = 0usize;
+
+    // Write tensor infos
+    for tensor in tensors {
+        let info = GgufTensorInfo {
+            name: tensor.name.clone(),
+            n_dims: tensor.shape.len() as u32,
+            dims: tensor.shape.clone(),
+            dtype: tensor.dtype,
+            offset: current_offset as u64,
+        };
+        info.write_to(writer)?;
+        current_offset += tensor.data.len();
+        // Add padding for alignment
+        current_offset += padding_for_alignment(current_offset, GGUF_DEFAULT_ALIGNMENT);
+    }
+
+    // Pad to alignment before tensor data
+    let padding = padding_for_alignment(current_offset, GGUF_DEFAULT_ALIGNMENT);
+    for _ in 0..padding {
+        writer
+            .write_all(&[0u8])
+            .map_err(|e| AprenderError::Io(io::Error::new(e.kind(), e.to_string())))?;
+    }
+
+    // Write tensor data
+    for tensor in tensors {
+        writer
+            .write_all(&tensor.data)
+            .map_err(|e| AprenderError::Io(io::Error::new(e.kind(), e.to_string())))?;
+
+        // Pad to alignment
+        let padding = padding_for_alignment(tensor.data.len(), GGUF_DEFAULT_ALIGNMENT);
+        for _ in 0..padding {
+            writer
+                .write_all(&[0u8])
+                .map_err(|e| AprenderError::Io(io::Error::new(e.kind(), e.to_string())))?;
+        }
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
