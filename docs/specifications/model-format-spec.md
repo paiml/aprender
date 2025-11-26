@@ -1,6 +1,6 @@
 # Aprender Model Format Specification (.apr)
 
-**Version:** 1.5.0
+**Version:** 1.6.0
 **Status:** Partially Implemented
 **Author:** paiml
 **Reviewer:** Toyota Way AI Agent
@@ -13,7 +13,8 @@
 - v1.2.0: Commercial licensing, watermarking, model marketplace support
 - v1.3.0: trueno integration, expanded model types, implementation status tracking
 - v1.4.0: **WASM compatibility as HARD REQUIREMENT** (§1.0) - spec gate, mandatory CI testing
-- v1.5.0: Model Cards [Mitchell2019], Quantization, Andon error protocols, supply chain integrity
+- v1.5.0: Model Cards [Mitchell2019], Andon error protocols, supply chain integrity
+- v1.6.0: **Full quantization spec** (§6.2) - GGUF-compatible Q8_0/Q4_0/Q4_1, Quantizer trait, plugin architecture, CLI commands, explicit opt-in only
 
 ### Implementation Status
 
@@ -30,7 +31,7 @@
 | Encryption (password) | §5.2 | ✓ AES-256-GCM + Argon2id | ✓ | format-encryption feature |
 | Encryption (X25519) | §5.3 | ✓ X25519+HKDF+AES-GCM | ✓ | format-encryption feature |
 | Signing | §5.4 | ✓ Ed25519 (feature) | ✓ | format-signing feature |
-| Quantization | §6.2 | ○ | ○ | format-quantize feature |
+| Quantization | §6.2 | ○ Spec complete | ✓ | format-quantize feature |
 | Streaming | §7 | ○ | N/A | format-streaming feature |
 | License block | §9 | ○ | ○ | format-commercial feature |
 | trueno-native | §8 | ○ | N/A | format-trueno feature |
@@ -384,16 +385,231 @@ We select algorithms based on the Pareto frontier of decompression speed vs. rat
 
 ### 6.2 Quantization [Jacob2018]
 
-When `QUANTIZED` (Bit 5) is set, weights are stored as `i8` or `u8` with scaling factors.
-This reduces model size by 4x (75% less storage *Muda*) and increases inference speed on SIMD hardware.
+When `QUANTIZED` (Bit 5) is set, weights use integer representation with scaling factors.
+This reduces model size by 4-8x and increases inference speed on SIMD hardware.
+
+**Design Principles:**
+- **Explicit opt-in only** - Never quantize by default (API or CLI required)
+- **GGUF compatibility** - Match llama.cpp block sizes for ecosystem interop
+- **SafeTensors export** - Separate tensor + scales for HuggingFace compatibility
+- **Plugin architecture** - Custom quantizers via trait extension
+
+#### 6.2.1 Quantization Types (GGUF-Compatible)
+
+| Type | Bits | Block Size | Scale Type | GGUF Equivalent |
+|------|------|------------|------------|-----------------|
+| Q8_0 | 8 | 32 | f16 per block | GGML_TYPE_Q8_0 |
+| Q4_0 | 4 | 32 | f16 per block | GGML_TYPE_Q4_0 |
+| Q4_1 | 4 | 32 | f16 + min per block | GGML_TYPE_Q4_1 |
+| Q8_TENSOR | 8 | full tensor | f32 per tensor | SafeTensors style |
+
+**Block Layout (32 elements, GGUF standard):**
+
+```text
+Q8_0 Block (34 bytes):
+┌──────────────┬────────────────────────────────┐
+│ scale (f16)  │ quants[32] (i8 × 32)           │
+│ 2 bytes      │ 32 bytes                       │
+└──────────────┴────────────────────────────────┘
+
+Q4_0 Block (18 bytes):
+┌──────────────┬────────────────────────────────┐
+│ scale (f16)  │ quants[16] (nibbles, 32 vals)  │
+│ 2 bytes      │ 16 bytes                       │
+└──────────────┴────────────────────────────────┘
+
+Q4_1 Block (20 bytes):
+┌──────────────┬──────────────┬─────────────────┐
+│ scale (f16)  │ min (f16)    │ quants[16]      │
+│ 2 bytes      │ 2 bytes      │ 16 bytes        │
+└──────────────┴──────────────┴─────────────────┘
+```
+
+#### 6.2.2 Schema Definition
 
 ```rust
-struct QuantizedTensor {
-    data: Vec<i8>,
-    scale: f32,
-    zero_point: i32,
+/// Quantization type identifier
+#[repr(u8)]
+pub enum QuantType {
+    Q8_0 = 0x01,      // 8-bit, block-wise, GGUF compatible
+    Q4_0 = 0x02,      // 4-bit, block-wise, GGUF compatible
+    Q4_1 = 0x03,      // 4-bit with min, GGUF compatible
+    Q8Tensor = 0x10,  // 8-bit, per-tensor (SafeTensors style)
+    Custom = 0xFF,    // Plugin-defined
+}
+
+/// Block-wise quantized tensor (GGUF-compatible)
+pub struct QuantizedBlock {
+    pub quant_type: QuantType,
+    pub shape: Vec<usize>,
+    pub blocks: Vec<u8>,      // Raw block data
+    pub block_size: usize,    // 32 for GGUF compat
+}
+
+/// Per-tensor quantized tensor (SafeTensors-compatible)
+pub struct QuantizedTensor {
+    pub quant_type: QuantType,
+    pub shape: Vec<usize>,
+    pub data: Vec<i8>,        // Quantized values
+    pub scale: f32,           // S in r = S(q - Z)
+    pub zero_point: i32,      // Z in r = S(q - Z)
+}
+
+/// Quantization metadata in model header
+pub struct QuantizationInfo {
+    pub quant_type: QuantType,
+    pub calibration_method: String,  // "minmax", "percentile", "mse"
+    pub calibration_samples: u32,
+    pub original_dtype: String,      // "f32", "f16", "bf16"
 }
 ```
+
+#### 6.2.3 Quantizer Trait (Plugin Architecture)
+
+```rust
+/// Trait for custom quantization schemes
+pub trait Quantizer: Send + Sync {
+    /// Unique identifier for this quantizer
+    fn name(&self) -> &str;
+
+    /// Quantize f32 tensor to blocks
+    fn quantize(&self, data: &[f32], shape: &[usize]) -> Result<QuantizedBlock>;
+
+    /// Dequantize blocks back to f32
+    fn dequantize(&self, block: &QuantizedBlock) -> Result<Vec<f32>>;
+
+    /// Bytes per element (for size estimation)
+    fn bits_per_weight(&self) -> f32;
+}
+
+/// Built-in quantizers
+pub struct Q8_0Quantizer;   // 8.5 bits/weight (32 i8 + f16 scale)
+pub struct Q4_0Quantizer;   // 4.5 bits/weight (32 nibbles + f16 scale)
+pub struct Q4_1Quantizer;   // 5.0 bits/weight (32 nibbles + f16 scale + f16 min)
+
+/// Registry for plugin quantizers
+pub struct QuantizerRegistry {
+    quantizers: HashMap<String, Box<dyn Quantizer>>,
+}
+
+impl QuantizerRegistry {
+    pub fn register(&mut self, quantizer: Box<dyn Quantizer>);
+    pub fn get(&self, name: &str) -> Option<&dyn Quantizer>;
+}
+```
+
+#### 6.2.4 Per-Layer Control (QuantizationHooks)
+
+```rust
+/// Fine-grained control over quantization decisions
+pub trait QuantizationHooks {
+    /// Called before quantizing each layer
+    /// Return None to skip quantization for this layer
+    fn select_quantizer(&self, layer_name: &str, shape: &[usize]) -> Option<QuantType>;
+
+    /// Called after quantization to validate accuracy
+    fn validate(&self, layer_name: &str, original: &[f32], quantized: &QuantizedBlock) -> bool;
+}
+
+/// Default hooks: quantize all layers with same type
+pub struct UniformQuantization {
+    pub quant_type: QuantType,
+}
+
+/// Mixed precision: keep embeddings in higher precision
+pub struct MixedPrecisionHooks {
+    pub default_type: QuantType,
+    pub embedding_type: QuantType,  // Often Q8_0 for embeddings
+    pub output_type: QuantType,     // Often skip quantization
+}
+```
+
+#### 6.2.5 API (Explicit Opt-In Only)
+
+Quantization is **NEVER** automatic. Users must explicitly request it:
+
+```rust
+// API: Quantize existing model
+let quantized = model.quantize(QuantType::Q4_0)?;
+save(&quantized, ModelType::LinearRegression, "model.apr", opts)?;
+
+// API: Quantize with custom hooks
+let hooks = MixedPrecisionHooks {
+    default_type: QuantType::Q4_0,
+    embedding_type: QuantType::Q8_0,
+    output_type: QuantType::Q8Tensor,
+};
+let quantized = model.quantize_with_hooks(&hooks)?;
+
+// API: Use custom quantizer plugin
+let registry = QuantizerRegistry::default();
+registry.register(Box::new(MyCustomQuantizer::new()));
+let quantized = model.quantize_with_registry("my-custom", &registry)?;
+```
+
+#### 6.2.6 CLI Commands
+
+```bash
+# Quantize existing model (explicit action)
+apr quantize model.apr --type q4_0 --output model-q4.apr
+
+# Quantize with calibration data
+apr quantize model.apr --type q8_0 --calibration data.csv --output model-q8.apr
+
+# Mixed precision
+apr quantize model.apr --type q4_0 --embedding-type q8_0 --output model-mixed.apr
+
+# Inspect quantization info
+apr inspect model-q4.apr --quantization
+# Output: Type: Q4_0, Block size: 32, Bits/weight: 4.5, Original: f32
+
+# Export to GGUF
+apr export model-q4.apr --format gguf --output model.gguf
+
+# Export to SafeTensors (separate scales file)
+apr export model-q4.apr --format safetensors --output model/
+# Creates: model/weights.safetensors, model/scales.json
+```
+
+#### 6.2.7 Export Mappings
+
+| .apr Type | GGUF Export | SafeTensors Export |
+|-----------|-------------|-------------------|
+| Q8_0 | GGML_TYPE_Q8_0 | int8 tensor + scales.json |
+| Q4_0 | GGML_TYPE_Q4_0 | int8 packed + scales.json |
+| Q4_1 | GGML_TYPE_Q4_1 | int8 packed + scales.json + mins.json |
+| Q8_TENSOR | GGML_TYPE_I8 | int8 tensor + scale/zero_point in metadata |
+
+#### 6.2.8 WASM Compatibility
+
+All quantization operations are WASM-compatible:
+- Pure Rust arithmetic (no SIMD intrinsics required)
+- Standard Vec allocations
+- No filesystem access in quantize/dequantize paths
+
+```rust
+#[cfg(target_arch = "wasm32")]
+pub fn dequantize_q4_0(block: &[u8]) -> Vec<f32> {
+    // Pure Rust implementation, works in browser
+    let scale = f16_to_f32(&block[0..2]);
+    let mut output = Vec::with_capacity(32);
+    for i in 0..16 {
+        let byte = block[2 + i];
+        output.push(scale * ((byte & 0x0F) as i8 - 8) as f32);
+        output.push(scale * ((byte >> 4) as i8 - 8) as f32);
+    }
+    output
+}
+```
+
+#### 6.2.9 Jidoka (Quality Gates)
+
+| Check | Andon Signal | Action |
+|-------|--------------|--------|
+| Unknown QuantType | `UnsupportedQuantization` | **Stop**. Invalid type byte. |
+| Block size mismatch | `QuantizationCorrupt` | **Stop**. Block count doesn't match shape. |
+| Accuracy degradation >5% | Warning in metadata | Log but proceed (user responsibility). |
+| GGUF export incompatible | `ExportFailed` | **Stop**. Type not supported by target. |
 
 ## 7. Ecosystem Architecture (Sovereign AI)
 
@@ -568,4 +784,4 @@ wasm-check:
 ```
 
 ---
-*Review Status: **APPROVED**. Specification v1.5.0 merges Toyota Way enhancements (Model Cards, Andon protocols, Quantization) with WASM hard requirement (§1.0). Pure Rust, zero C/C++ dependencies. Implementation must adhere strictly to the "Stop the Line" policy on verification failures.*
+*Review Status: **PENDING REVIEW**. Specification v1.6.0 adds full quantization design (§6.2): GGUF-compatible Q8_0/Q4_0/Q4_1 with 32-element blocks, Quantizer trait for plugin extensibility, QuantizationHooks for per-layer control, CLI commands, explicit opt-in only. Pure Rust, zero C/C++ dependencies, WASM-compatible. Implementation must adhere strictly to the "Stop the Line" policy on verification failures.*

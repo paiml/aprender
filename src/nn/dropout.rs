@@ -443,8 +443,7 @@ mod tests {
         // Expected value should be close to 1.0 (original value)
         assert!(
             (mean - 1.0).abs() < 0.1,
-            "Mean {} should be close to 1.0",
-            mean
+            "Mean {mean} should be close to 1.0"
         );
     }
 
@@ -527,9 +526,7 @@ mod tests {
             for &val in channel_data {
                 assert!(
                     (val - first_val).abs() < 1e-5,
-                    "Channel should have uniform values, got {} and {}",
-                    first_val,
-                    val
+                    "Channel should have uniform values, got {first_val} and {val}"
                 );
             }
         }

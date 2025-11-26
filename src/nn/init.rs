@@ -141,11 +141,8 @@ mod tests {
 
         for &val in t.data() {
             assert!(
-                val >= -a && val <= a,
-                "Value {} out of bounds [-{}, {}]",
-                val,
-                a,
-                a
+                (-a..=a).contains(&val),
+                "Value {val} out of bounds [-{a}, {a}]"
             );
         }
     }
@@ -177,8 +174,8 @@ mod tests {
         let std = var.sqrt();
 
         // Allow 10% tolerance for statistical tests
-        assert!((mean - 5.0).abs() < 0.5, "Mean {} too far from 5.0", mean);
-        assert!((std - 2.0).abs() < 0.3, "Std {} too far from 2.0", std);
+        assert!((mean - 5.0).abs() < 0.5, "Mean {mean} too far from 5.0");
+        assert!((std - 2.0).abs() < 0.3, "Std {std} too far from 2.0");
     }
 
     #[test]

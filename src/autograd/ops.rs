@@ -750,10 +750,7 @@ mod tests {
         let y = x.sum();
         y.backward();
 
-        let grad = crate::autograd::get_grad(x_id);
-        assert!(grad.is_some(), "Gradient should exist");
-
-        let grad = grad.unwrap();
+        let grad = crate::autograd::get_grad(x_id).expect("Gradient should exist");
         assert_eq!(grad.data(), &[1.0, 1.0, 1.0]);
     }
 
@@ -876,7 +873,7 @@ mod tests {
         let expected = vec![8.0, 16.0, 24.0];
 
         for (g, e) in grad.data().iter().zip(expected.iter()) {
-            assert!((g - e).abs() < 1e-3, "Expected {}, got {}", e, g);
+            assert!((g - e).abs() < 1e-3, "Expected {e}, got {g}");
         }
     }
 

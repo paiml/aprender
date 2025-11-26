@@ -1539,8 +1539,8 @@ mod tests {
         bytes[0..4].copy_from_slice(b"BAAD");
 
         let result = Header::from_bytes(&bytes);
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Invalid magic"));
+        let err = result.expect_err("Should fail with invalid magic");
+        assert!(err.to_string().contains("Invalid magic"));
     }
 
     #[test]
@@ -1552,8 +1552,8 @@ mod tests {
         bytes[4] = 99; // Major version
 
         let result = Header::from_bytes(&bytes);
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Unsupported"));
+        let err = result.expect_err("Should fail with unsupported version");
+        assert!(err.to_string().contains("Unsupported"));
     }
 
     #[test]
@@ -1563,8 +1563,8 @@ mod tests {
 
         let bytes = header.to_bytes();
         let result = Header::from_bytes(&bytes);
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("compression bomb"));
+        let err = result.expect_err("Should fail with compression bomb protection");
+        assert!(err.to_string().contains("compression bomb"));
     }
 
     #[test]
@@ -1671,8 +1671,8 @@ mod tests {
 
         // Load should fail with checksum error
         let result: Result<TestModel> = load(&path, ModelType::Custom);
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Checksum"));
+        let err = result.expect_err("Should fail with checksum error");
+        assert!(err.to_string().contains("Checksum"));
     }
 
     #[test]
@@ -1698,8 +1698,8 @@ mod tests {
 
         // Load with wrong type should fail
         let result: Result<TestModel> = load(&path, ModelType::KMeans);
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("type mismatch"));
+        let err = result.expect_err("Should fail with type mismatch");
+        assert!(err.to_string().contains("type mismatch"));
     }
 
     #[test]

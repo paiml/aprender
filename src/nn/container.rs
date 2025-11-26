@@ -495,7 +495,7 @@ mod tests {
         assert_eq!(layers.len(), 2);
 
         // Access by index
-        let layer0 = layers.get(0).unwrap();
+        let layer0 = layers.get(0).expect("layer 0 should exist");
         let x = Tensor::ones(&[1, 10]);
         let _ = layer0.forward(&x);
     }
@@ -545,7 +545,7 @@ mod tests {
         assert!(dict.contains("layer2"));
         assert!(!dict.contains("layer3"));
 
-        let layer1 = dict.get("layer1").unwrap();
+        let layer1 = dict.get("layer1").expect("layer1 should exist");
         let x = Tensor::ones(&[2, 10]);
         let y = layer1.forward(&x);
         assert_eq!(y.shape(), &[2, 5]);
@@ -628,7 +628,7 @@ mod tests {
         // Should still have only one key
         assert_eq!(dict.len(), 1);
 
-        let layer = dict.get("layer").unwrap();
+        let layer = dict.get("layer").expect("layer should exist after replace");
         let x = Tensor::ones(&[2, 10]);
         let y = layer.forward(&x);
         assert_eq!(y.shape(), &[2, 10]); // From the second Linear

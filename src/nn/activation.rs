@@ -232,7 +232,7 @@ mod tests {
 
         // Should be in (-1, 1)
         for &val in y.data() {
-            assert!(val >= -1.0 && val <= 1.0);
+            assert!((-1.0..=1.0).contains(&val));
         }
 
         // More specific bounds for non-extreme values
@@ -270,7 +270,7 @@ mod tests {
         let (batch, features) = (2, 3);
         for b in 0..batch {
             let sum: f32 = (0..features).map(|j| y.data()[b * features + j]).sum();
-            assert!((sum - 1.0).abs() < 1e-5, "Row {} sums to {}", b, sum);
+            assert!((sum - 1.0).abs() < 1e-5, "Row {b} sums to {sum}");
         }
     }
 
@@ -284,7 +284,7 @@ mod tests {
         // Should not have NaN or Inf
         for &val in y.data() {
             assert!(val.is_finite());
-            assert!(val >= 0.0 && val <= 1.0);
+            assert!((0.0..=1.0).contains(&val));
         }
 
         // Should still sum to 1

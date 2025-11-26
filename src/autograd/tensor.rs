@@ -380,13 +380,20 @@ mod tests {
         let mut t = Tensor::from_slice(&[1.0, 2.0, 3.0]).requires_grad();
 
         t.accumulate_grad(Tensor::from_slice(&[0.1, 0.2, 0.3]));
-        assert!(t.grad().is_some());
 
-        let grad1 = t.grad().unwrap().data().to_vec();
+        let grad1 = t
+            .grad()
+            .expect("grad should exist after accumulate")
+            .data()
+            .to_vec();
         assert_eq!(grad1, vec![0.1, 0.2, 0.3]);
 
         t.accumulate_grad(Tensor::from_slice(&[0.1, 0.2, 0.3]));
-        let grad2 = t.grad().unwrap().data().to_vec();
+        let grad2 = t
+            .grad()
+            .expect("grad should exist after second accumulate")
+            .data()
+            .to_vec();
         assert_eq!(grad2, vec![0.2, 0.4, 0.6]);
     }
 }
