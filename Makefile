@@ -1,5 +1,14 @@
 # Aprender Makefile
 # Certeza Methodology - Tiered Quality Gates
+#
+# PERFORMANCE TARGETS (Toyota Way: Zero Defects, Fast Feedback)
+# - make test-fast: < 30 seconds (unit tests, no encryption features)
+# - make test:      < 2 minutes (all tests, reduced property cases)
+# - make coverage:  < 5 minutes (coverage report, reduced property cases)
+# - make test-full: comprehensive (all tests, all features, full property cases)
+
+# Use bash for shell commands
+SHELL := /bin/bash
 
 # Disable built-in rules for performance
 .SUFFIXES:
@@ -10,7 +19,7 @@
 # Multi-line recipes execute in same shell
 .ONESHELL:
 
-.PHONY: all build test lint fmt clean doc book book-build book-serve book-test tier1 tier2 tier3 tier4 coverage profile hooks-install hooks-verify lint-scripts bashrs-score bashrs-lint-makefile chaos-test fuzz bench dev pre-push ci check run-ci run-bench audit deps-validate deny pmat-score pmat-gates quality-report semantic-search
+.PHONY: all build test test-fast test-quick test-full lint fmt clean doc book book-build book-serve book-test tier1 tier2 tier3 tier4 coverage coverage-fast profile hooks-install hooks-verify lint-scripts bashrs-score bashrs-lint-makefile chaos-test fuzz bench dev pre-push ci check run-ci run-bench audit deps-validate deny pmat-score pmat-gates quality-report semantic-search
 
 # Default target
 all: tier2
@@ -19,13 +28,30 @@ all: tier2
 build:
 	cargo build --release
 
-# Run all tests
-test:
-	cargo test --all
+# ============================================================================
+# TEST TARGETS (Performance-Optimized)
+# ============================================================================
 
-# Fast tests (unit tests only)
+# Fast tests (<30s): Unit tests only, no slow encryption features
 test-fast:
-	cargo test --lib
+	@echo "⚡ Running fast tests (<30s)..."
+	@time cargo test --lib
+	@echo "✅ Fast tests passed"
+
+# Quick alias for test-fast
+test-quick: test-fast
+
+# Standard tests (<2min): All tests with reduced encryption iterations
+test:
+	@echo "🧪 Running standard tests (<2min)..."
+	@time cargo test --all
+	@echo "✅ Standard tests passed"
+
+# Full comprehensive tests: All features, all property cases
+test-full:
+	@echo "🔬 Running full comprehensive tests..."
+	@time cargo test --all --all-features
+	@echo "✅ Full tests passed"
 
 # Linting
 lint:
@@ -109,12 +135,31 @@ tier4: tier3
 	-pmat quality-gates --report
 	@echo "Tier 4: PASSED"
 
-# Coverage report (requires cargo-llvm-cov)
-coverage: ## Generate coverage report (>85% required, <10 min target)
-	@echo "📊 Generating coverage report (target: >85%, <10 min)..."
+# ============================================================================
+# COVERAGE TARGETS (Performance-Optimized)
+# ============================================================================
+
+# Fast coverage (<5 min): Skip slow encryption features
+coverage-fast: ## Fast coverage report (no encryption, <5 min)
+	@echo "📊 Generating fast coverage report (<5 min)..."
 	@# Temporarily disable mold linker (breaks LLVM coverage)
 	@test -f ~/.cargo/config.toml && mv ~/.cargo/config.toml ~/.cargo/config.toml.cov-backup || true
-	@cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
+	@time cargo llvm-cov --workspace --lcov --output-path lcov.info
+	@cargo llvm-cov report --html --output-dir target/coverage/html
+	@# Restore mold linker
+	@test -f ~/.cargo/config.toml.cov-backup && mv ~/.cargo/config.toml.cov-backup ~/.cargo/config.toml || true
+	@echo "✅ Coverage report: target/coverage/html/index.html"
+	@cargo llvm-cov report | grep TOTAL
+
+# Standard coverage: Alias to fast coverage for dev workflow
+coverage: coverage-fast
+
+# Full coverage: All features (slow, use for CI)
+coverage-full: ## Full coverage report (all features, >10 min)
+	@echo "📊 Generating full coverage report (all features)..."
+	@# Temporarily disable mold linker (breaks LLVM coverage)
+	@test -f ~/.cargo/config.toml && mv ~/.cargo/config.toml ~/.cargo/config.toml.cov-backup || true
+	@time cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
 	@cargo llvm-cov report --html --output-dir target/coverage/html
 	@# Restore mold linker
 	@test -f ~/.cargo/config.toml.cov-backup && mv ~/.cargo/config.toml.cov-backup ~/.cargo/config.toml || true

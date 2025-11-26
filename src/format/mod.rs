@@ -3805,3 +3805,332 @@ mod proptests {
         }
     }
 }
+
+// ============================================================================
+// Encryption Property Tests (EXTREME TDD - Security Critical)
+// NOTE: These tests are slow due to Argon2id. Use only 3 cases by default.
+// For comprehensive testing: PROPTEST_CASES=100 cargo test
+// ============================================================================
+
+#[cfg(all(test, feature = "format-encryption"))]
+mod encryption_proptests {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// Strategy for generating valid passwords (8-64 chars)
+    fn arb_password() -> impl Strategy<Value = String> {
+        proptest::collection::vec(any::<u8>(), 8..64)
+            .prop_map(|bytes| bytes.iter().map(|b| (b % 94 + 33) as char).collect())
+    }
+
+    /// Strategy for generating test model data
+    fn arb_model_data() -> impl Strategy<Value = Vec<f32>> {
+        proptest::collection::vec(-100.0f32..100.0, 1..100)
+    }
+
+    // Use only 3 cases for encryption tests (Argon2id is intentionally slow)
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(3))]
+
+        /// Property: Encryption roundtrip preserves data (in-memory)
+        #[test]
+        fn prop_encryption_roundtrip_preserves_data(
+            password in arb_password(),
+            data in arb_model_data()
+        ) {
+            use tempfile::tempdir;
+
+            #[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq)]
+            struct Model { weights: Vec<f32> }
+
+            let model = Model { weights: data.clone() };
+            let dir = tempdir().expect("tempdir");
+            let path = dir.path().join("test.apr");
+
+            save_encrypted(&model, ModelType::Custom, &path, SaveOptions::default(), &password)
+                .expect("save");
+            let loaded: Model = load_encrypted(&path, ModelType::Custom, &password)
+                .expect("load");
+
+            prop_assert_eq!(loaded.weights, data);
+        }
+
+        /// Property: Wrong password fails decryption
+        #[test]
+        fn prop_wrong_password_fails(
+            password in arb_password(),
+            wrong_password in arb_password()
+        ) {
+            // Skip if passwords happen to be the same
+            if password == wrong_password {
+                return Ok(());
+            }
+
+            use tempfile::tempdir;
+
+            #[derive(Debug, serde::Serialize, serde::Deserialize)]
+            struct Model { value: i32 }
+
+            let model = Model { value: 42 };
+            let dir = tempdir().expect("tempdir");
+            let path = dir.path().join("test.apr");
+
+            save_encrypted(&model, ModelType::Custom, &path, SaveOptions::default(), &password)
+                .expect("save");
+            let result: Result<Model> = load_encrypted(&path, ModelType::Custom, &wrong_password);
+
+            prop_assert!(result.is_err(), "Wrong password should fail");
+        }
+
+        /// Property: Encrypted files have ENCRYPTED flag set
+        #[test]
+        fn prop_encrypted_flag_set(password in arb_password()) {
+            use tempfile::tempdir;
+
+            #[derive(Debug, serde::Serialize, serde::Deserialize)]
+            struct Model { v: i32 }
+
+            let model = Model { v: 1 };
+            let dir = tempdir().expect("tempdir");
+            let path = dir.path().join("test.apr");
+
+            save_encrypted(&model, ModelType::Custom, &path, SaveOptions::default(), &password)
+                .expect("save");
+            let info = inspect(&path).expect("inspect");
+
+            prop_assert!(info.encrypted, "ENCRYPTED flag must be set");
+        }
+
+        /// Property: load_from_bytes_encrypted roundtrip works
+        #[test]
+        fn prop_bytes_encrypted_roundtrip(
+            password in arb_password(),
+            data in arb_model_data()
+        ) {
+            use tempfile::tempdir;
+
+            #[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq)]
+            struct Model { weights: Vec<f32> }
+
+            let model = Model { weights: data.clone() };
+            let dir = tempdir().expect("tempdir");
+            let path = dir.path().join("test.apr");
+
+            save_encrypted(&model, ModelType::Custom, &path, SaveOptions::default(), &password)
+                .expect("save");
+
+            let bytes = std::fs::read(&path).expect("read");
+            let loaded: Model = load_from_bytes_encrypted(&bytes, ModelType::Custom, &password)
+                .expect("load from bytes");
+
+            prop_assert_eq!(loaded.weights, data);
+        }
+    }
+}
+
+// ============================================================================
+// X25519 Encryption Property Tests (EXTREME TDD - Security Critical)
+// ============================================================================
+
+#[cfg(all(test, feature = "format-encryption"))]
+mod x25519_proptests {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// Strategy for generating test model data
+    fn arb_model_data() -> impl Strategy<Value = Vec<f32>> {
+        proptest::collection::vec(-100.0f32..100.0, 1..50)
+    }
+
+    proptest! {
+        /// Property: X25519 roundtrip preserves data
+        #[test]
+        fn prop_x25519_roundtrip(data in arb_model_data()) {
+            use tempfile::tempdir;
+
+            #[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq)]
+            struct Model { weights: Vec<f32> }
+
+            let model = Model { weights: data.clone() };
+
+            // Generate recipient keypair
+            let recipient_secret = X25519SecretKey::random_from_rng(rand::thread_rng());
+            let recipient_public = X25519PublicKey::from(&recipient_secret);
+
+            let dir = tempdir().expect("tempdir");
+            let path = dir.path().join("test.apr");
+
+            save_for_recipient(&model, ModelType::Custom, &path, SaveOptions::default(), &recipient_public)
+                .expect("save");
+            let loaded: Model = load_as_recipient(&path, ModelType::Custom, &recipient_secret)
+                .expect("load");
+
+            prop_assert_eq!(loaded.weights, data);
+        }
+
+        /// Property: X25519 wrong key fails
+        #[test]
+        fn prop_x25519_wrong_key_fails(data in arb_model_data()) {
+            use tempfile::tempdir;
+
+            #[derive(Debug, serde::Serialize, serde::Deserialize)]
+            struct Model { weights: Vec<f32> }
+
+            let model = Model { weights: data };
+
+            // Generate two different keypairs
+            let recipient_secret = X25519SecretKey::random_from_rng(rand::thread_rng());
+            let recipient_public = X25519PublicKey::from(&recipient_secret);
+            let wrong_secret = X25519SecretKey::random_from_rng(rand::thread_rng());
+
+            let dir = tempdir().expect("tempdir");
+            let path = dir.path().join("test.apr");
+
+            save_for_recipient(&model, ModelType::Custom, &path, SaveOptions::default(), &recipient_public)
+                .expect("save");
+            let result: Result<Model> = load_as_recipient(&path, ModelType::Custom, &wrong_secret);
+
+            prop_assert!(result.is_err(), "Wrong key should fail");
+        }
+
+        /// Property: X25519 encrypted files have ENCRYPTED flag
+        #[test]
+        fn prop_x25519_encrypted_flag(_seed in any::<u8>()) {
+            use tempfile::tempdir;
+
+            #[derive(Debug, serde::Serialize, serde::Deserialize)]
+            struct Model { v: i32 }
+
+            let model = Model { v: 1 };
+            let recipient_secret = X25519SecretKey::random_from_rng(rand::thread_rng());
+            let recipient_public = X25519PublicKey::from(&recipient_secret);
+
+            let dir = tempdir().expect("tempdir");
+            let path = dir.path().join("test.apr");
+
+            save_for_recipient(&model, ModelType::Custom, &path, SaveOptions::default(), &recipient_public)
+                .expect("save");
+            let info = inspect(&path).expect("inspect");
+
+            prop_assert!(info.encrypted, "ENCRYPTED flag must be set");
+        }
+    }
+}
+
+// ============================================================================
+// Signing Property Tests (EXTREME TDD - Security Critical)
+// ============================================================================
+
+#[cfg(all(test, feature = "format-signing"))]
+mod signing_proptests {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// Strategy for generating test model data
+    fn arb_model_data() -> impl Strategy<Value = Vec<f32>> {
+        proptest::collection::vec(-100.0f32..100.0, 1..50)
+    }
+
+    proptest! {
+        /// Property: Signing roundtrip preserves data and verifies
+        #[test]
+        fn prop_signing_roundtrip(data in arb_model_data()) {
+            use tempfile::tempdir;
+
+            #[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq)]
+            struct Model { weights: Vec<f32> }
+
+            let model = Model { weights: data.clone() };
+
+            // Generate signing keypair
+            let signing_key = SigningKey::generate(&mut rand::thread_rng());
+            let verifying_key = signing_key.verifying_key();
+
+            let dir = tempdir().expect("tempdir");
+            let path = dir.path().join("test.apr");
+
+            save_signed(&model, ModelType::Custom, &path, SaveOptions::default(), &signing_key)
+                .expect("save");
+            let loaded: Model = load_verified(&path, ModelType::Custom, Some(&verifying_key))
+                .expect("load");
+
+            prop_assert_eq!(loaded.weights, data);
+        }
+
+        /// Property: Wrong verification key fails
+        #[test]
+        fn prop_signing_wrong_key_fails(data in arb_model_data()) {
+            use tempfile::tempdir;
+
+            #[derive(Debug, serde::Serialize, serde::Deserialize)]
+            struct Model { weights: Vec<f32> }
+
+            let model = Model { weights: data };
+
+            // Generate two different keypairs
+            let signing_key = SigningKey::generate(&mut rand::thread_rng());
+            let wrong_key = SigningKey::generate(&mut rand::thread_rng());
+            let wrong_verifying = wrong_key.verifying_key();
+
+            let dir = tempdir().expect("tempdir");
+            let path = dir.path().join("test.apr");
+
+            save_signed(&model, ModelType::Custom, &path, SaveOptions::default(), &signing_key)
+                .expect("save");
+            let result: Result<Model> = load_verified(&path, ModelType::Custom, Some(&wrong_verifying));
+
+            prop_assert!(result.is_err(), "Wrong key should fail verification");
+        }
+
+        /// Property: Signed files have SIGNED flag set
+        #[test]
+        fn prop_signed_flag_set(_seed in any::<u8>()) {
+            use tempfile::tempdir;
+
+            #[derive(Debug, serde::Serialize, serde::Deserialize)]
+            struct Model { v: i32 }
+
+            let model = Model { v: 1 };
+            let signing_key = SigningKey::generate(&mut rand::thread_rng());
+
+            let dir = tempdir().expect("tempdir");
+            let path = dir.path().join("test.apr");
+
+            save_signed(&model, ModelType::Custom, &path, SaveOptions::default(), &signing_key)
+                .expect("save");
+            let info = inspect(&path).expect("inspect");
+
+            prop_assert!(info.signed, "SIGNED flag must be set");
+        }
+
+        /// Property: Tampering with signed file is detected
+        #[test]
+        fn prop_tampering_detected(data in arb_model_data()) {
+            use tempfile::tempdir;
+
+            #[derive(Debug, serde::Serialize, serde::Deserialize)]
+            struct Model { weights: Vec<f32> }
+
+            let model = Model { weights: data };
+
+            let signing_key = SigningKey::generate(&mut rand::thread_rng());
+            let verifying_key = signing_key.verifying_key();
+
+            let dir = tempdir().expect("tempdir");
+            let path = dir.path().join("test.apr");
+
+            save_signed(&model, ModelType::Custom, &path, SaveOptions::default(), &signing_key)
+                .expect("save");
+
+            // Tamper with the file (modify a byte in the middle)
+            let mut content = std::fs::read(&path).expect("read");
+            if content.len() > 50 {
+                content[50] ^= 0xFF; // Flip bits
+                std::fs::write(&path, content).expect("write");
+
+                let result: Result<Model> = load_verified(&path, ModelType::Custom, Some(&verifying_key));
+                prop_assert!(result.is_err(), "Tampered file should fail verification");
+            }
+        }
+    }
+}
