@@ -438,8 +438,46 @@ let result = AutoTuner::new(TPE::new(500))
 
 2. Bergstra, J., & Bengio, Y. (2012). **Random Search for Hyper-Parameter Optimization.** JMLR, 13, 281-305.
 
+## Running the Example
+
+```bash
+cargo run --example automl_clustering
+```
+
+**Sample Output:**
+
+```
+AutoML Clustering - TPE Optimization
+=====================================
+
+Generated 100 samples with 4 true clusters
+
+Search Space: K ∈ [2, 10]
+Objective: Maximize silhouette score
+
+═══════════════════════════════════════════
+ Trial │   K   │ Silhouette │   Status
+═══════╪═══════╪════════════╪════════════
+    1  │    9  │    0.460   │ moderate
+    2  │    6  │    0.599   │ good
+    3  │    5  │    0.707   │ good
+    ...
+═══════════════════════════════════════════
+
+🏆 TPE Optimization Results:
+   Best K:          5
+   Best silhouette: 0.7072
+   True K:          4
+   Trials run:      8
+
+📈 Interpretation:
+   ✓ TPE found a close approximation (within ±1)
+   ✅ Excellent cluster separation (silhouette > 0.5)
+```
+
 ## Related Topics
 
+- [Case Study: AutoML Clustering](../examples/automl-clustering.md) - Full example
 - [Grid Search Hyperparameter Tuning](../examples/grid-search-tuning.md) - Manual grid search
 - [Cross-Validation](./cross-validation.md) - CV fundamentals
 - [Random Forest](../examples/random-forest.md) - Model to tune

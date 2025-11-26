@@ -125,6 +125,7 @@
 - [Case Study: Boston Housing](./examples/boston-housing.md)
 - [Case Study: Cross-Validation](./examples/cross-validation.md)
 - [Case Study: Grid Search Hyperparameter Tuning](./examples/grid-search-tuning.md)
+- [Case Study: AutoML Clustering (TPE)](./examples/automl-clustering.md)
 - [Case Study: Random Forest](./examples/random-forest.md)
 - [Case Study: Random Forest Iris](./examples/random-forest-iris.md)
 - [Case Study: Decision Tree Iris](./examples/decision-tree-iris.md)
