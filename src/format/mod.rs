@@ -481,9 +481,12 @@ pub struct Metadata {
     /// Custom user data
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub custom: HashMap<String, serde_json::Value>,
-    /// Distillation teacher hash (spec §6.3)
+    /// Distillation teacher hash (spec §6.3) - simple form
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub distillation: Option<String>,
+    /// Full distillation provenance (spec §6.3.2) - structured form
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub distillation_info: Option<DistillationInfo>,
 }
 
 /// Training information
@@ -500,6 +503,80 @@ pub struct TrainingInfo {
     pub source: Option<String>,
 }
 
+// ============================================================================
+// Knowledge Distillation Types (spec §6.3)
+// ============================================================================
+
+/// Distillation method used (spec §6.3.1)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DistillMethod {
+    /// KL divergence on final logits (Hinton2015)
+    Standard,
+    /// Intermediate layer matching
+    Progressive,
+    /// Multiple teachers weighted average
+    Ensemble,
+}
+
+/// Teacher model provenance for audit trails (spec §6.3.2)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TeacherProvenance {
+    /// SHA256 hash of teacher .apr file
+    pub hash: String,
+    /// Ed25519 signature of teacher (if signed)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signature: Option<String>,
+    /// Teacher model type
+    pub model_type: ModelType,
+    /// Teacher parameter count
+    pub param_count: u64,
+    /// For ensemble: multiple teachers
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ensemble_teachers: Option<Vec<TeacherProvenance>>,
+}
+
+/// Distillation hyperparameters (spec §6.3.2)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DistillationParams {
+    /// Temperature for softening distributions (typically 2.0-5.0)
+    pub temperature: f32,
+    /// Weight for soft vs hard loss (α in loss formula)
+    pub alpha: f32,
+    /// For progressive: weight for hidden vs logit loss (β)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub beta: Option<f32>,
+    /// Training epochs for distillation
+    pub epochs: u32,
+    /// Final distillation loss achieved
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub final_loss: Option<f32>,
+}
+
+/// Layer mapping for progressive distillation (spec §6.3.2)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LayerMapping {
+    /// Student layer index
+    pub student_layer: usize,
+    /// Teacher layer index
+    pub teacher_layer: usize,
+    /// Weight for this layer's loss
+    pub weight: f32,
+}
+
+/// Complete distillation provenance (spec §6.3.2)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DistillationInfo {
+    /// Distillation method used
+    pub method: DistillMethod,
+    /// Teacher model provenance
+    pub teacher: TeacherProvenance,
+    /// Distillation hyperparameters
+    pub params: DistillationParams,
+    /// Optional: layer mapping for progressive distillation
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub layer_mapping: Option<Vec<LayerMapping>>,
+}
+
 impl Default for Metadata {
     fn default() -> Self {
         Self {
@@ -512,6 +589,7 @@ impl Default for Metadata {
             metrics: HashMap::new(),
             custom: HashMap::new(),
             distillation: None,
+            distillation_info: None,
         }
     }
 }
@@ -557,6 +635,12 @@ impl SaveOptions {
     /// Set description
     pub fn with_description(mut self, desc: impl Into<String>) -> Self {
         self.metadata.description = Some(desc.into());
+        self
+    }
+
+    /// Set distillation info (spec §6.3)
+    pub fn with_distillation_info(mut self, info: DistillationInfo) -> Self {
+        self.metadata.distillation_info = Some(info);
         self
     }
 }
@@ -698,8 +782,9 @@ pub fn save<M: Serialize>(
     let (payload_compressed, compression) =
         compress_payload(&payload_uncompressed, options.compression)?;
 
-    // Serialize metadata as MessagePack (spec §2)
-    let metadata_bytes = rmp_serde::to_vec(&options.metadata)
+    // Serialize metadata as MessagePack with named fields (spec §2)
+    // Must use to_vec_named() for map mode to preserve field names with skip_serializing_if
+    let metadata_bytes = rmp_serde::to_vec_named(&options.metadata)
         .map_err(|e| AprenderError::Serialization(format!("Failed to serialize metadata: {e}")))?;
 
     // Build header
@@ -1141,8 +1226,9 @@ pub fn save_signed<M: Serialize>(
     let (payload_compressed, compression) =
         compress_payload(&payload_uncompressed, options.compression)?;
 
-    // Serialize metadata as MessagePack (spec §2)
-    let metadata_bytes = rmp_serde::to_vec(&options.metadata)
+    // Serialize metadata as MessagePack with named fields (spec §2)
+    // Must use to_vec_named() for map mode to preserve field names with skip_serializing_if
+    let metadata_bytes = rmp_serde::to_vec_named(&options.metadata)
         .map_err(|e| AprenderError::Serialization(format!("Failed to serialize metadata: {e}")))?;
 
     // Build header with SIGNED flag
@@ -1367,8 +1453,9 @@ pub fn save_encrypted<M: Serialize>(
         .encrypt(nonce, payload_compressed.as_ref())
         .map_err(|e| AprenderError::Other(format!("Encryption failed: {e}")))?;
 
-    // Serialize metadata as MessagePack (spec §2)
-    let metadata_bytes = rmp_serde::to_vec(&options.metadata)
+    // Serialize metadata as MessagePack with named fields (spec §2)
+    // Must use to_vec_named() for map mode to preserve field names with skip_serializing_if
+    let metadata_bytes = rmp_serde::to_vec_named(&options.metadata)
         .map_err(|e| AprenderError::Serialization(format!("Failed to serialize metadata: {e}")))?;
 
     // Build header with ENCRYPTED flag
@@ -1602,8 +1689,9 @@ pub fn save_for_recipient<M: Serialize>(
         .try_into()
         .expect("recipient hash size is correct");
 
-    // Serialize metadata as MessagePack (spec §2)
-    let metadata_bytes = rmp_serde::to_vec(&options.metadata)
+    // Serialize metadata as MessagePack with named fields (spec §2)
+    // Must use to_vec_named() for map mode to preserve field names with skip_serializing_if
+    let metadata_bytes = rmp_serde::to_vec_named(&options.metadata)
         .map_err(|e| AprenderError::Serialization(format!("Failed to serialize metadata: {e}")))?;
 
     // Build header with ENCRYPTED flag
@@ -2850,6 +2938,81 @@ mod tests {
         assert_eq!(
             info2.metadata.distillation,
             Some("teacher_abc123".to_string())
+        );
+    }
+
+    // Test: serialize/deserialize metadata directly with named fields
+    #[test]
+    fn test_metadata_msgpack_roundtrip() {
+        let metadata = Metadata {
+            description: Some("test description".to_string()),
+            distillation: Some("teacher_abc123".to_string()),
+            ..Default::default()
+        };
+
+        // Serialize with named fields (map mode) - required for skip_serializing_if
+        let bytes = rmp_serde::to_vec_named(&metadata).expect("serialize");
+
+        // Deserialize
+        let restored: Metadata = rmp_serde::from_slice(&bytes).expect("deserialize");
+
+        assert_eq!(restored.description, metadata.description);
+        assert_eq!(restored.distillation, metadata.distillation);
+    }
+
+    // EXTREME TDD: Step 3 - RED test for DistillationInfo struct (spec §6.3)
+    #[test]
+    fn test_distillation_info_struct() {
+        use tempfile::tempdir;
+
+        #[derive(Debug, Serialize, Deserialize)]
+        struct TestModel {
+            value: i32,
+        }
+
+        let model = TestModel { value: 42 };
+        let dir = tempdir().expect("create temp dir");
+        let path = dir.path().join("distilled3.apr");
+
+        // Create DistillationInfo per spec §6.3.2
+        let distill_info = DistillationInfo {
+            method: DistillMethod::Standard,
+            teacher: TeacherProvenance {
+                hash: "sha256:abc123def456".to_string(),
+                signature: None,
+                model_type: ModelType::NeuralSequential,
+                param_count: 7_000_000_000, // 7B params
+                ensemble_teachers: None,
+            },
+            params: DistillationParams {
+                temperature: 3.0,
+                alpha: 0.7,
+                beta: None,
+                epochs: 10,
+                final_loss: Some(0.42),
+            },
+            layer_mapping: None,
+        };
+
+        let options = SaveOptions::default().with_distillation_info(distill_info);
+
+        save(&model, ModelType::Custom, &path, options).expect("save should succeed");
+
+        let info = inspect(&path).expect("inspect should succeed");
+        let restored = info
+            .metadata
+            .distillation_info
+            .expect("should have distillation_info");
+
+        assert!(matches!(restored.method, DistillMethod::Standard));
+        assert_eq!(restored.teacher.hash, "sha256:abc123def456");
+        assert_eq!(restored.teacher.param_count, 7_000_000_000);
+        assert!((restored.params.temperature - 3.0).abs() < f32::EPSILON);
+        assert!((restored.params.alpha - 0.7).abs() < f32::EPSILON);
+        assert_eq!(restored.params.epochs, 10);
+        assert!(
+            (restored.params.final_loss.expect("should have final_loss") - 0.42).abs()
+                < f32::EPSILON
         );
     }
 }
