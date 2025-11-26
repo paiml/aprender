@@ -24,7 +24,7 @@
 | Flags | §3.2 | ✓ 5/5 bits | - |
 | Metadata | §2 | ✓ MessagePack | - |
 | Compression | §3.3 | ✓ zstd (feature) | format-compression feature |
-| Encryption (password) | §4.1.2 | ○ | format-encryption feature |
+| Encryption (password) | §4.1.2 | ✓ AES-256-GCM + Argon2id | format-encryption feature |
 | Encryption (X25519) | §4.1.3 | ○ | format-encryption feature |
 | Private inference | §4.1.4 | ○ | format-encryption feature |
 | Signing | §4.2 | ✓ Ed25519 (feature) | format-signing feature |

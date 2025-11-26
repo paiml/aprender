@@ -64,6 +64,18 @@ pub const SIGNATURE_SIZE: usize = 64;
 #[cfg(feature = "format-signing")]
 pub const PUBLIC_KEY_SIZE: usize = 32;
 
+/// Argon2id salt size in bytes (spec §4.1.2)
+#[cfg(feature = "format-encryption")]
+pub const SALT_SIZE: usize = 16;
+
+/// AES-GCM nonce size in bytes
+#[cfg(feature = "format-encryption")]
+pub const NONCE_SIZE: usize = 12;
+
+/// AES-256 key size in bytes
+#[cfg(feature = "format-encryption")]
+pub const KEY_SIZE: usize = 32;
+
 /// Magic number: "APRN" in ASCII (0x4150524E)
 pub const MAGIC: [u8; 4] = [0x41, 0x50, 0x52, 0x4E];
 
@@ -981,6 +993,229 @@ pub fn load_verified<M: DeserializeOwned>(
         .map_err(|e| AprenderError::Serialization(format!("Failed to deserialize model: {e}")))
 }
 
+/// Save a model with password-based encryption (spec §4.1.2)
+///
+/// Encrypts the model payload using AES-256-GCM with a key derived from
+/// the password using Argon2id. The salt and nonce are prepended to the
+/// encrypted payload.
+///
+/// # Arguments
+/// * `model` - The model to save (must implement Serialize)
+/// * `model_type` - Model type identifier
+/// * `path` - Output file path
+/// * `options` - Save options (compression, metadata)
+/// * `password` - Password for encryption
+///
+/// # Errors
+/// Returns error on I/O failure, serialization error, or encryption failure
+#[cfg(feature = "format-encryption")]
+#[allow(clippy::needless_pass_by_value)] // SaveOptions is small and passed by value for ergonomics
+pub fn save_encrypted<M: Serialize>(
+    model: &M,
+    model_type: ModelType,
+    path: impl AsRef<Path>,
+    options: SaveOptions,
+    password: &str,
+) -> Result<()> {
+    use aes_gcm::{
+        aead::{Aead, KeyInit},
+        Aes256Gcm, Nonce,
+    };
+    use argon2::Argon2;
+
+    let path = path.as_ref();
+
+    // Serialize payload with bincode
+    let payload_uncompressed = bincode::serialize(model)
+        .map_err(|e| AprenderError::Serialization(format!("Failed to serialize model: {e}")))?;
+
+    // Compress payload
+    let (payload_compressed, compression) =
+        compress_payload(&payload_uncompressed, options.compression)?;
+
+    // Generate random salt and nonce
+    let mut salt = [0u8; SALT_SIZE];
+    let mut nonce_bytes = [0u8; NONCE_SIZE];
+    rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut salt);
+    rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut nonce_bytes);
+
+    // Derive key using Argon2id (spec §4.1.2)
+    let mut key = [0u8; KEY_SIZE];
+    Argon2::default()
+        .hash_password_into(password.as_bytes(), &salt, &mut key)
+        .map_err(|e| AprenderError::Other(format!("Key derivation failed: {e}")))?;
+
+    // Encrypt payload with AES-256-GCM
+    let cipher = Aes256Gcm::new_from_slice(&key)
+        .map_err(|e| AprenderError::Other(format!("Failed to create cipher: {e}")))?;
+    let nonce = Nonce::from_slice(&nonce_bytes);
+    let ciphertext = cipher
+        .encrypt(nonce, payload_compressed.as_ref())
+        .map_err(|e| AprenderError::Other(format!("Encryption failed: {e}")))?;
+
+    // Serialize metadata as MessagePack (spec §2)
+    let metadata_bytes = rmp_serde::to_vec(&options.metadata)
+        .map_err(|e| AprenderError::Serialization(format!("Failed to serialize metadata: {e}")))?;
+
+    // Build header with ENCRYPTED flag
+    let mut header = Header::new(model_type);
+    header.compression = compression;
+    header.metadata_size = metadata_bytes.len() as u32;
+    // Payload size now includes salt + nonce + ciphertext
+    header.payload_size = (SALT_SIZE + NONCE_SIZE + ciphertext.len()) as u32;
+    header.uncompressed_size = payload_uncompressed.len() as u32;
+    header.flags = header.flags.with_encrypted();
+
+    // Assemble file content
+    let mut content = Vec::new();
+    content.extend_from_slice(&header.to_bytes());
+    content.extend_from_slice(&metadata_bytes);
+    content.extend_from_slice(&salt);
+    content.extend_from_slice(&nonce_bytes);
+    content.extend_from_slice(&ciphertext);
+
+    // Calculate and append checksum
+    let checksum = crc32(&content);
+    content.extend_from_slice(&checksum.to_le_bytes());
+
+    // Write to file
+    let file = File::create(path)?;
+    let mut writer = BufWriter::new(file);
+    writer.write_all(&content)?;
+    writer.flush()?;
+
+    Ok(())
+}
+
+/// Load a model with password-based decryption (spec §4.1.2)
+///
+/// Decrypts the model payload using AES-256-GCM with a key derived from
+/// the password using Argon2id.
+///
+/// # Arguments
+/// * `path` - Input file path
+/// * `expected_type` - Expected model type (for type safety)
+/// * `password` - Password for decryption
+///
+/// # Errors
+/// Returns error on I/O failure, format error, type mismatch, or decryption failure
+#[cfg(feature = "format-encryption")]
+pub fn load_encrypted<M: DeserializeOwned>(
+    path: impl AsRef<Path>,
+    expected_type: ModelType,
+    password: &str,
+) -> Result<M> {
+    use aes_gcm::{
+        aead::{Aead, KeyInit},
+        Aes256Gcm, Nonce,
+    };
+    use argon2::Argon2;
+
+    let path = path.as_ref();
+
+    // Read entire file
+    let file = File::open(path)?;
+    let mut reader = BufReader::new(file);
+    let mut content = Vec::new();
+    reader.read_to_end(&mut content)?;
+
+    // Verify minimum size
+    if content.len() < HEADER_SIZE + SALT_SIZE + NONCE_SIZE + 4 {
+        return Err(AprenderError::FormatError {
+            message: format!(
+                "File too small for encrypted model: {} bytes",
+                content.len()
+            ),
+        });
+    }
+
+    // Verify checksum (Jidoka: stop the line on corruption)
+    let stored_checksum = u32::from_le_bytes([
+        content[content.len() - 4],
+        content[content.len() - 3],
+        content[content.len() - 2],
+        content[content.len() - 1],
+    ]);
+    let computed_checksum = crc32(&content[..content.len() - 4]);
+    if stored_checksum != computed_checksum {
+        return Err(AprenderError::ChecksumMismatch {
+            expected: stored_checksum,
+            actual: computed_checksum,
+        });
+    }
+
+    // Parse header
+    let header = Header::from_bytes(&content[..HEADER_SIZE])?;
+
+    // Verify ENCRYPTED flag is set
+    if !header.flags.is_encrypted() {
+        return Err(AprenderError::FormatError {
+            message: "File is not encrypted (ENCRYPTED flag not set)".to_string(),
+        });
+    }
+
+    // Verify model type
+    if header.model_type != expected_type {
+        return Err(AprenderError::FormatError {
+            message: format!(
+                "Model type mismatch: file contains {:?}, expected {:?}",
+                header.model_type, expected_type
+            ),
+        });
+    }
+
+    // Calculate content boundaries
+    let metadata_end = HEADER_SIZE + header.metadata_size as usize;
+    let salt_end = metadata_end + SALT_SIZE;
+    let nonce_end = salt_end + NONCE_SIZE;
+    let payload_end = metadata_end + header.payload_size as usize;
+
+    if payload_end > content.len() - 4 {
+        return Err(AprenderError::FormatError {
+            message: "Encrypted payload extends beyond file boundary".to_string(),
+        });
+    }
+
+    // Extract salt, nonce, and ciphertext
+    let salt: [u8; SALT_SIZE] =
+        content[metadata_end..salt_end]
+            .try_into()
+            .map_err(|_| AprenderError::FormatError {
+                message: "Invalid salt size".to_string(),
+            })?;
+    let nonce_bytes: [u8; NONCE_SIZE] =
+        content[salt_end..nonce_end]
+            .try_into()
+            .map_err(|_| AprenderError::FormatError {
+                message: "Invalid nonce size".to_string(),
+            })?;
+    let ciphertext = &content[nonce_end..payload_end];
+
+    // Derive key using Argon2id (same parameters as encryption)
+    let mut key = [0u8; KEY_SIZE];
+    Argon2::default()
+        .hash_password_into(password.as_bytes(), &salt, &mut key)
+        .map_err(|e| AprenderError::Other(format!("Key derivation failed: {e}")))?;
+
+    // Decrypt payload with AES-256-GCM
+    let cipher = Aes256Gcm::new_from_slice(&key)
+        .map_err(|e| AprenderError::Other(format!("Failed to create cipher: {e}")))?;
+    let nonce = Nonce::from_slice(&nonce_bytes);
+    let payload_compressed =
+        cipher
+            .decrypt(nonce, ciphertext)
+            .map_err(|_| AprenderError::DecryptionFailed {
+                message: "Decryption failed (wrong password or corrupted data)".to_string(),
+            })?;
+
+    // Decompress payload
+    let payload_uncompressed = decompress_payload(&payload_compressed, header.compression)?;
+
+    // Deserialize model
+    bincode::deserialize(&payload_uncompressed)
+        .map_err(|e| AprenderError::Serialization(format!("Failed to deserialize model: {e}")))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1464,5 +1699,148 @@ mod tests {
             err_msg.contains("SIGNED flag not set") || err_msg.contains("File too small"),
             "Expected SIGNED flag error or size error, got: {err_msg}"
         );
+    }
+
+    #[test]
+    #[cfg(feature = "format-encryption")]
+    fn test_encrypted_save_load_roundtrip() {
+        use tempfile::tempdir;
+
+        #[derive(Debug, Serialize, Deserialize, PartialEq)]
+        struct TestModel {
+            weights: Vec<f32>,
+            bias: f32,
+        }
+
+        let model = TestModel {
+            weights: vec![1.0, 2.0, 3.0, 4.0, 5.0],
+            bias: 0.5,
+        };
+
+        let password = "super_secret_password_123!";
+
+        let dir = tempdir().expect("create temp dir");
+        let path = dir.path().join("encrypted.apr");
+
+        // Save with encryption
+        save_encrypted(
+            &model,
+            ModelType::Custom,
+            &path,
+            SaveOptions::default(),
+            password,
+        )
+        .expect("save_encrypted should succeed");
+
+        // Inspect - should show encrypted flag
+        let info = inspect(&path).expect("inspect should succeed");
+        assert!(info.encrypted, "Model should be marked as encrypted");
+        assert_eq!(info.model_type, ModelType::Custom);
+
+        // Load with correct password
+        let loaded: TestModel = load_encrypted(&path, ModelType::Custom, password)
+            .expect("load_encrypted should succeed");
+        assert_eq!(loaded, model);
+    }
+
+    #[test]
+    #[cfg(feature = "format-encryption")]
+    fn test_encrypted_wrong_password_fails() {
+        use tempfile::tempdir;
+
+        #[derive(Debug, Serialize, Deserialize, PartialEq)]
+        struct TestModel {
+            value: i32,
+        }
+
+        let model = TestModel { value: 42 };
+        let correct_password = "correct_password";
+        let wrong_password = "wrong_password";
+
+        let dir = tempdir().expect("create temp dir");
+        let path = dir.path().join("encrypted_wrong.apr");
+
+        // Save with correct password
+        save_encrypted(
+            &model,
+            ModelType::Custom,
+            &path,
+            SaveOptions::default(),
+            correct_password,
+        )
+        .expect("save_encrypted should succeed");
+
+        // Try to load with wrong password - should fail
+        let result: Result<TestModel> = load_encrypted(&path, ModelType::Custom, wrong_password);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Decryption failed"));
+    }
+
+    #[test]
+    #[cfg(feature = "format-encryption")]
+    fn test_load_encrypted_rejects_unencrypted_file() {
+        use tempfile::tempdir;
+
+        #[derive(Debug, Serialize, Deserialize)]
+        struct TestModel {
+            value: i32,
+        }
+
+        let model = TestModel { value: 42 };
+
+        let dir = tempdir().expect("create temp dir");
+        let path = dir.path().join("unencrypted.apr");
+
+        // Save without encryption
+        save(&model, ModelType::Custom, &path, SaveOptions::default())
+            .expect("save should succeed");
+
+        // load_encrypted should reject unencrypted files
+        let result: Result<TestModel> = load_encrypted(&path, ModelType::Custom, "any_password");
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("ENCRYPTED flag not set") || err_msg.contains("File too small"),
+            "Expected ENCRYPTED flag error or size error, got: {err_msg}"
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "format-encryption")]
+    fn test_encrypted_with_compression() {
+        use tempfile::tempdir;
+
+        #[derive(Debug, Serialize, Deserialize, PartialEq)]
+        struct LargeModel {
+            data: Vec<f32>,
+        }
+
+        // Repetitive data compresses well
+        let model = LargeModel {
+            data: (0..1000).map(|i| (i % 10) as f32).collect(),
+        };
+
+        let password = "compress_and_encrypt";
+
+        let dir = tempdir().expect("create temp dir");
+        let path = dir.path().join("encrypted_compressed.apr");
+
+        // Save with encryption (compression will be applied before encryption)
+        save_encrypted(
+            &model,
+            ModelType::Custom,
+            &path,
+            SaveOptions::default(), // No explicit compression, but internal compression happens
+            password,
+        )
+        .expect("save_encrypted should succeed");
+
+        // Load and verify
+        let loaded: LargeModel = load_encrypted(&path, ModelType::Custom, password)
+            .expect("load_encrypted should succeed");
+        assert_eq!(loaded, model);
     }
 }
