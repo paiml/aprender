@@ -1,13 +1,30 @@
-# aprender
+<h1 align="center">aprender</h1>
+<h4 align="center">Next Generation Machine Learning, Statistics and Deep Learning in PURE Rust</h4>
 
-Next Generation Machine Learning, Statistics and Deep Learning in PURE Rust
+<p align="center">
+  <a href="https://github.com/paiml/aprender/actions/workflows/ci.yml">
+    <img src="https://github.com/paiml/aprender/actions/workflows/ci.yml/badge.svg" alt="CI">
+  </a>
+  <a href="https://codecov.io/gh/paiml/aprender">
+    <img src="https://codecov.io/gh/paiml/aprender/branch/main/graph/badge.svg" alt="codecov">
+  </a>
+  <a href="https://opensource.org/licenses/MIT">
+    <img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT">
+  </a>
+  <a href="https://github.com/noahgift/pmat">
+    <img src="https://img.shields.io/badge/TDG-93.3%2F100-brightgreen" alt="TDG Score">
+  </a>
+  <a href="https://crates.io/crates/aprender">
+    <img src="https://img.shields.io/crates/v/aprender.svg" alt="Crates.io">
+  </a>
+  <a href="https://docs.rs/aprender">
+    <img src="https://docs.rs/aprender/badge.svg" alt="Docs.rs">
+  </a>
+</p>
 
-[![CI](https://github.com/paiml/aprender/actions/workflows/ci.yml/badge.svg)](https://github.com/paiml/aprender/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/gh/paiml/aprender/branch/main/graph/badge.svg)](https://codecov.io/gh/paiml/aprender)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![TDG Score](https://img.shields.io/badge/TDG-93.3%2F100-brightgreen)](https://github.com/noahgift/pmat)
-[![Crates.io](https://img.shields.io/crates/v/aprender.svg)](https://crates.io/crates/aprender)
-[![Docs.rs](https://docs.rs/aprender/badge.svg)](https://docs.rs/aprender)
+<p align="center">
+  <img src=".github/apr-format-hero.svg" alt=".apr Model Format - Sovereign AI" width="1000">
+</p>
 
 ## Overview
 
@@ -92,9 +109,29 @@ aprender is part of the **[Paiml Sovereign AI Stack](docs/sovereign-ai-stack.md)
 - **KFold** - K-fold cross-validator with optional shuffling
 - **cross_validate** - Automated cross-validation with statistics (mean, std, min, max)
 
-### Model Persistence
-- **Serialization** - Save/load models to disk (serde + bincode)
-- Works with all models
+### Model Format (.apr)
+
+Native binary format with built-in quality (Jidoka):
+
+```rust
+use aprender::format::{save, load, ModelType, SaveOptions};
+
+// Save model with metadata
+save(&model, ModelType::LinearRegression, "model.apr",
+    SaveOptions::default().with_name("house-prices"))?;
+
+// Load with automatic verification
+let model: LinearRegression = load("model.apr", ModelType::LinearRegression)?;
+```
+
+**Features:**
+- **Security**: AES-256-GCM encryption, Ed25519 signatures, X25519 key exchange
+- **Integrity**: CRC32 checksums, type verification (Jidoka - stop on corruption)
+- **Performance**: trueno-native mode for 600x faster loading via zero-copy mmap
+- **Commercial**: License blocks, watermarking, buyer-specific encryption
+- **Interop**: Export to SafeTensors (HuggingFace), GGUF (Ollama)
+
+→ [Full spec](docs/specifications/model-format-spec.md) | [Book chapter](book/src/examples/model-format.md)
 
 ### Metrics
 - **Regression**: r_squared, mse, rmse, mae

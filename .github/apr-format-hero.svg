@@ -1,0 +1,212 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 600">
+  <defs>
+    <linearGradient id="headerGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#1a1a2e"/>
+      <stop offset="100%" style="stop-color:#16213e"/>
+    </linearGradient>
+    <linearGradient id="securityGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#e94560"/>
+      <stop offset="100%" style="stop-color:#ff6b6b"/>
+    </linearGradient>
+    <linearGradient id="formatGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0f3460"/>
+      <stop offset="100%" style="stop-color:#16537e"/>
+    </linearGradient>
+    <linearGradient id="truenoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#533483"/>
+      <stop offset="100%" style="stop-color:#7952b3"/>
+    </linearGradient>
+    <linearGradient id="commercialGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0a9396"/>
+      <stop offset="100%" style="stop-color:#14b8a6"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="2" dy="4" stdDeviation="4" flood-opacity="0.3"/>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="600" fill="#0d1117"/>
+
+  <!-- Title -->
+  <text x="600" y="45" text-anchor="middle" fill="#ffffff" font-family="system-ui, -apple-system, sans-serif" font-size="28" font-weight="bold">.apr Model Format</text>
+  <text x="600" y="72" text-anchor="middle" fill="#8b949e" font-family="system-ui, -apple-system, sans-serif" font-size="14">Sovereign AI • Pure Rust • Zero C/C++ Dependencies</text>
+
+  <!-- File Structure (Left) -->
+  <g transform="translate(50, 100)">
+    <text x="120" y="0" text-anchor="middle" fill="#58a6ff" font-family="system-ui, sans-serif" font-size="16" font-weight="bold">Binary Format</text>
+
+    <!-- Header block -->
+    <rect x="0" y="20" width="240" height="50" rx="6" fill="url(#headerGrad)" filter="url(#shadow)"/>
+    <text x="120" y="42" text-anchor="middle" fill="#ffffff" font-family="monospace" font-size="13" font-weight="bold">Header (32 bytes)</text>
+    <text x="120" y="58" text-anchor="middle" fill="#8b949e" font-family="monospace" font-size="10">APRN • v1.0 • type • sizes • flags</text>
+
+    <!-- Metadata block -->
+    <rect x="0" y="80" width="240" height="45" rx="6" fill="url(#formatGrad)" filter="url(#shadow)"/>
+    <text x="120" y="100" text-anchor="middle" fill="#ffffff" font-family="monospace" font-size="13" font-weight="bold">Metadata (MessagePack)</text>
+    <text x="120" y="115" text-anchor="middle" fill="#8b949e" font-family="monospace" font-size="10">hyperparams • metrics • custom</text>
+
+    <!-- Payload block -->
+    <rect x="0" y="135" width="240" height="55" rx="6" fill="url(#formatGrad)" filter="url(#shadow)"/>
+    <text x="120" y="157" text-anchor="middle" fill="#ffffff" font-family="monospace" font-size="13" font-weight="bold">Payload (bincode)</text>
+    <text x="120" y="175" text-anchor="middle" fill="#8b949e" font-family="monospace" font-size="10">model weights • compressed</text>
+
+    <!-- Optional blocks -->
+    <rect x="0" y="200" width="240" height="40" rx="6" fill="url(#securityGrad)" filter="url(#shadow)" opacity="0.9"/>
+    <text x="120" y="220" text-anchor="middle" fill="#ffffff" font-family="monospace" font-size="12">Signature (Ed25519) • License</text>
+
+    <!-- Checksum block -->
+    <rect x="0" y="250" width="240" height="35" rx="6" fill="#238636" filter="url(#shadow)"/>
+    <text x="120" y="272" text-anchor="middle" fill="#ffffff" font-family="monospace" font-size="13" font-weight="bold">CRC32 Checksum</text>
+  </g>
+
+  <!-- Security Features (Center-Left) -->
+  <g transform="translate(340, 100)">
+    <text x="110" y="0" text-anchor="middle" fill="#f85149" font-family="system-ui, sans-serif" font-size="16" font-weight="bold">Security (Jidoka)</text>
+
+    <!-- Encryption -->
+    <rect x="0" y="20" width="220" height="70" rx="8" fill="url(#securityGrad)" filter="url(#shadow)"/>
+    <text x="110" y="42" text-anchor="middle" fill="#ffffff" font-family="system-ui, sans-serif" font-size="13" font-weight="bold">Encryption</text>
+    <text x="110" y="58" text-anchor="middle" fill="#ffffffcc" font-family="monospace" font-size="10">Password: Argon2id + AES-256-GCM</text>
+    <text x="110" y="72" text-anchor="middle" fill="#ffffffcc" font-family="monospace" font-size="10">Recipient: X25519 Key Agreement</text>
+    <text x="110" y="86" text-anchor="middle" fill="#ffffffcc" font-family="monospace" font-size="10">Private Inference: HIPAA/GDPR</text>
+
+    <!-- Signatures -->
+    <rect x="0" y="100" width="220" height="50" rx="8" fill="url(#securityGrad)" filter="url(#shadow)" opacity="0.85"/>
+    <text x="110" y="122" text-anchor="middle" fill="#ffffff" font-family="system-ui, sans-serif" font-size="13" font-weight="bold">Digital Signatures</text>
+    <text x="110" y="140" text-anchor="middle" fill="#ffffffcc" font-family="monospace" font-size="10">Ed25519 • Provenance Verification</text>
+
+    <!-- Integrity -->
+    <rect x="0" y="160" width="220" height="50" rx="8" fill="#238636" filter="url(#shadow)"/>
+    <text x="110" y="182" text-anchor="middle" fill="#ffffff" font-family="system-ui, sans-serif" font-size="13" font-weight="bold">Integrity</text>
+    <text x="110" y="200" text-anchor="middle" fill="#ffffffcc" font-family="monospace" font-size="10">CRC32 • Stop-the-Line on Corruption</text>
+  </g>
+
+  <!-- Header Flags (Center-Right) -->
+  <g transform="translate(600, 100)">
+    <text x="110" y="0" text-anchor="middle" fill="#a371f7" font-family="system-ui, sans-serif" font-size="16" font-weight="bold">Header Flags</text>
+
+    <g transform="translate(0, 20)">
+      <rect x="0" y="0" width="220" height="32" rx="4" fill="#238636"/>
+      <text x="15" y="21" fill="#ffffff" font-family="monospace" font-size="11">0</text>
+      <text x="40" y="21" fill="#ffffff" font-family="monospace" font-size="11" font-weight="bold">ENCRYPTED</text>
+      <text x="180" y="21" fill="#ffffffaa" font-family="monospace" font-size="10">AES-GCM</text>
+    </g>
+
+    <g transform="translate(0, 57)">
+      <rect x="0" y="0" width="220" height="32" rx="4" fill="#238636"/>
+      <text x="15" y="21" fill="#ffffff" font-family="monospace" font-size="11">1</text>
+      <text x="40" y="21" fill="#ffffff" font-family="monospace" font-size="11" font-weight="bold">SIGNED</text>
+      <text x="180" y="21" fill="#ffffffaa" font-family="monospace" font-size="10">Ed25519</text>
+    </g>
+
+    <g transform="translate(0, 94)">
+      <rect x="0" y="0" width="220" height="32" rx="4" fill="#238636"/>
+      <text x="15" y="21" fill="#ffffff" font-family="monospace" font-size="11">2</text>
+      <text x="40" y="21" fill="#ffffff" font-family="monospace" font-size="11" font-weight="bold">STREAMING</text>
+      <text x="180" y="21" fill="#ffffffaa" font-family="monospace" font-size="10">mmap</text>
+    </g>
+
+    <g transform="translate(0, 131)">
+      <rect x="0" y="0" width="220" height="32" rx="4" fill="url(#commercialGrad)"/>
+      <text x="15" y="21" fill="#ffffff" font-family="monospace" font-size="11">3</text>
+      <text x="40" y="21" fill="#ffffff" font-family="monospace" font-size="11" font-weight="bold">LICENSED</text>
+      <text x="180" y="21" fill="#ffffffaa" font-family="monospace" font-size="10">DRM</text>
+    </g>
+
+    <g transform="translate(0, 168)">
+      <rect x="0" y="0" width="220" height="32" rx="4" fill="url(#truenoGrad)"/>
+      <text x="15" y="21" fill="#ffffff" font-family="monospace" font-size="11">4</text>
+      <text x="40" y="21" fill="#ffffff" font-family="monospace" font-size="11" font-weight="bold">TRUENO_NATIVE</text>
+      <text x="180" y="21" fill="#ffffffaa" font-family="monospace" font-size="10">SIMD</text>
+    </g>
+  </g>
+
+  <!-- Model Types (Right) -->
+  <g transform="translate(870, 100)">
+    <text x="140" y="0" text-anchor="middle" fill="#79c0ff" font-family="system-ui, sans-serif" font-size="16" font-weight="bold">17 Model Types</text>
+
+    <rect x="0" y="20" width="280" height="190" rx="8" fill="#21262d" filter="url(#shadow)"/>
+
+    <!-- Supervised -->
+    <text x="15" y="42" fill="#58a6ff" font-family="system-ui, sans-serif" font-size="11" font-weight="bold">Supervised</text>
+    <text x="15" y="58" fill="#8b949e" font-family="monospace" font-size="10">LinearRegression • LogisticRegression</text>
+    <text x="15" y="72" fill="#8b949e" font-family="monospace" font-size="10">DecisionTree • RandomForest • GBM</text>
+    <text x="15" y="86" fill="#8b949e" font-family="monospace" font-size="10">NaiveBayes • KNN • SVM</text>
+
+    <!-- Unsupervised -->
+    <text x="15" y="108" fill="#58a6ff" font-family="system-ui, sans-serif" font-size="11" font-weight="bold">Unsupervised</text>
+    <text x="15" y="124" fill="#8b949e" font-family="monospace" font-size="10">KMeans • PCA</text>
+
+    <!-- NLP -->
+    <text x="15" y="146" fill="#58a6ff" font-family="system-ui, sans-serif" font-size="11" font-weight="bold">NLP</text>
+    <text x="15" y="162" fill="#8b949e" font-family="monospace" font-size="10">NgramLM • TF-IDF • CountVectorizer</text>
+
+    <!-- Neural/Recommenders -->
+    <text x="15" y="184" fill="#58a6ff" font-family="system-ui, sans-serif" font-size="11" font-weight="bold">Neural / Recommenders</text>
+    <text x="15" y="200" fill="#8b949e" font-family="monospace" font-size="10">Sequential • Custom • ContentRecommender</text>
+  </g>
+
+  <!-- trueno Integration (Bottom Left) -->
+  <g transform="translate(50, 420)">
+    <rect x="0" y="0" width="350" height="130" rx="10" fill="url(#truenoGrad)" filter="url(#shadow)"/>
+    <text x="175" y="28" text-anchor="middle" fill="#ffffff" font-family="system-ui, sans-serif" font-size="15" font-weight="bold">trueno-native Mode</text>
+    <text x="175" y="48" text-anchor="middle" fill="#ffffffcc" font-family="system-ui, sans-serif" font-size="12">Zero-Copy SIMD Inference</text>
+
+    <text x="25" y="75" fill="#ffffffdd" font-family="monospace" font-size="11">64-byte aligned tensors</text>
+    <text x="25" y="93" fill="#ffffffdd" font-family="monospace" font-size="11">Memory-mapped loading (mmap)</text>
+    <text x="25" y="111" fill="#ffffffdd" font-family="monospace" font-size="11">AVX-512 / AVX2 / NEON / WASM SIMD</text>
+
+    <!-- Performance badge -->
+    <rect x="240" y="70" width="95" height="45" rx="6" fill="#ffffff22"/>
+    <text x="287" y="90" text-anchor="middle" fill="#ffffff" font-family="system-ui, sans-serif" font-size="11" font-weight="bold">600x faster</text>
+    <text x="287" y="105" text-anchor="middle" fill="#ffffffaa" font-family="monospace" font-size="9">vs bincode load</text>
+  </g>
+
+  <!-- Commercial Features (Bottom Center) -->
+  <g transform="translate(425, 420)">
+    <rect x="0" y="0" width="350" height="130" rx="10" fill="url(#commercialGrad)" filter="url(#shadow)"/>
+    <text x="175" y="28" text-anchor="middle" fill="#ffffff" font-family="system-ui, sans-serif" font-size="15" font-weight="bold">Commercial Licensing</text>
+    <text x="175" y="48" text-anchor="middle" fill="#ffffffcc" font-family="system-ui, sans-serif" font-size="12">Model Marketplace Ready</text>
+
+    <text x="25" y="75" fill="#ffffffdd" font-family="monospace" font-size="11">Watermarking (leak traceability)</text>
+    <text x="25" y="93" fill="#ffffffdd" font-family="monospace" font-size="11">Seat limits • Expiration • Inference caps</text>
+    <text x="25" y="111" fill="#ffffffdd" font-family="monospace" font-size="11">Buyer-specific encryption (X25519)</text>
+
+    <!-- DRM badge -->
+    <rect x="255" y="70" width="80" height="45" rx="6" fill="#ffffff22"/>
+    <text x="295" y="90" text-anchor="middle" fill="#ffffff" font-family="system-ui, sans-serif" font-size="11" font-weight="bold">DRM</text>
+    <text x="295" y="105" text-anchor="middle" fill="#ffffffaa" font-family="monospace" font-size="9">built-in</text>
+  </g>
+
+  <!-- Interoperability (Bottom Right) -->
+  <g transform="translate(800, 420)">
+    <rect x="0" y="0" width="350" height="130" rx="10" fill="url(#formatGrad)" filter="url(#shadow)"/>
+    <text x="175" y="28" text-anchor="middle" fill="#ffffff" font-family="system-ui, sans-serif" font-size="15" font-weight="bold">Interoperability</text>
+    <text x="175" y="48" text-anchor="middle" fill="#ffffffcc" font-family="system-ui, sans-serif" font-size="12">Export to Industry Formats</text>
+
+    <g transform="translate(25, 60)">
+      <rect x="0" y="0" width="90" height="55" rx="6" fill="#ffffff15"/>
+      <text x="45" y="22" text-anchor="middle" fill="#ffffff" font-family="system-ui, sans-serif" font-size="12" font-weight="bold">.apr</text>
+      <text x="45" y="38" text-anchor="middle" fill="#ffffffaa" font-family="monospace" font-size="9">Native</text>
+      <text x="45" y="50" text-anchor="middle" fill="#238636" font-family="monospace" font-size="9">R/W</text>
+    </g>
+
+    <g transform="translate(130, 60)">
+      <rect x="0" y="0" width="90" height="55" rx="6" fill="#ffffff15"/>
+      <text x="45" y="22" text-anchor="middle" fill="#ffffff" font-family="system-ui, sans-serif" font-size="12" font-weight="bold">SafeTensors</text>
+      <text x="45" y="38" text-anchor="middle" fill="#ffffffaa" font-family="monospace" font-size="9">HuggingFace</text>
+      <text x="45" y="50" text-anchor="middle" fill="#58a6ff" font-family="monospace" font-size="9">Export</text>
+    </g>
+
+    <g transform="translate(235, 60)">
+      <rect x="0" y="0" width="90" height="55" rx="6" fill="#ffffff15"/>
+      <text x="45" y="22" text-anchor="middle" fill="#ffffff" font-family="system-ui, sans-serif" font-size="12" font-weight="bold">GGUF</text>
+      <text x="45" y="38" text-anchor="middle" fill="#ffffffaa" font-family="monospace" font-size="9">Ollama</text>
+      <text x="45" y="50" text-anchor="middle" fill="#58a6ff" font-family="monospace" font-size="9">Export</text>
+    </g>
+  </g>
+
+  <!-- Footer -->
+  <text x="600" y="580" text-anchor="middle" fill="#484f58" font-family="system-ui, sans-serif" font-size="11">aprender v0.9 • Spec v1.3.0 • Pure Rust • ONNX out of scope (requires C++)</text>
+</svg>
