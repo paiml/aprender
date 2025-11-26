@@ -32,6 +32,8 @@
 
 pub mod andon;
 pub mod cache;
+pub mod code_eda;
+pub mod code_features;
 mod config;
 mod diversity;
 pub mod eda;
