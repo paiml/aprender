@@ -3,9 +3,10 @@
 ## aprender Automated Synthetic Data Generation for AutoML
 
 **Status**: Draft
-**Version**: 1.0.0
+**Version**: 1.1.0
 **Target Release**: v0.14.0
 **Depends On**: AutoML Specification v1.0
+**Review Status**: Approved with Comments (2025-11-26)
 
 ---
 
@@ -87,6 +88,26 @@ pub struct SyntheticConfig {
     pub seed: u64,
 }
 
+/// Andon alert handler for production monitoring (Toyota Jidoka)
+pub trait AndonHandler: Send + Sync {
+    /// Called when rejection rate exceeds threshold - HALT pipeline
+    fn on_high_rejection(&self, rejection_rate: f32, threshold: f32);
+    /// Called when quality score drifts below historical baseline
+    fn on_quality_drift(&self, current: f32, baseline: f32);
+}
+
+/// Default Andon: log and halt
+pub struct DefaultAndon;
+
+impl AndonHandler for DefaultAndon {
+    fn on_high_rejection(&self, rejection_rate: f32, threshold: f32) {
+        panic!("ANDON HALT: Rejection rate {rejection_rate:.1}% exceeds {threshold:.1}% - check quality_score drift");
+    }
+    fn on_quality_drift(&self, current: f32, baseline: f32) {
+        eprintln!("ANDON WARNING: Quality {current:.3} below baseline {baseline:.3}");
+    }
+}
+
 impl Default for SyntheticConfig {
     fn default() -> Self {
         Self {
@@ -95,6 +116,9 @@ impl Default for SyntheticConfig {
             diversity_weight: 0.3,
             max_attempts: 10,
             seed: 42,
+            // Andon thresholds (Toyota Jidoka)
+            andon_rejection_threshold: 0.90,  // Halt if >90% rejected
+            andon_enabled: true,
         }
     }
 }
@@ -335,6 +359,10 @@ pub struct CodePair {
 }
 
 /// Generator for code translation training data
+///
+/// **EXPERIMENTAL** (v0.14.0): Code translation is AI-Complete.
+/// Ship Shell SLM first; defer this to v0.15.0 for production use.
+/// See review: docs/specifications/reviews/automl-with-synthetic-data-review.md
 pub struct CodeTranslationGenerator {
     /// Python parser for AST manipulation
     python_parser: PythonParser,
@@ -344,6 +372,9 @@ pub struct CodeTranslationGenerator {
     code_embedder: CodeEmbedder,
     /// Type inference engine
     type_inferencer: TypeInferencer,
+    /// **[NASA V&V]** Sandbox executor for functional correctness
+    /// Codex-class models hallucinate bugs that compile but fail tests
+    sandbox: SandboxExecutor,
 }
 ```
 
@@ -404,7 +435,20 @@ impl SyntheticGenerator for CodeTranslationGenerator {
         // Rust compilation success (binary)
         let compiles = self.rust_parser.compiles(&generated.rust) as u8 as f32;
 
-        0.3 * python_sim + 0.2 * rust_sim + 0.2 * type_consistent + 0.3 * compiles
+        // **[NASA V&V]** Functional correctness via sandbox execution
+        // Addresses Chen et al. Codex hallucination issue - compiles != correct
+        let functional_correct = if compiles > 0.5 {
+            // Generate unit tests from Python behavior, run against Rust
+            let tests = self.sandbox.generate_tests_from_python(&seed.python);
+            let pass_rate = self.sandbox.run_rust_tests(&generated.rust, &tests);
+            pass_rate  // 0.0 - 1.0
+        } else {
+            0.0
+        };
+
+        // Weights adjusted: functional correctness now primary signal
+        0.15 * python_sim + 0.15 * rust_sim + 0.1 * type_consistent
+            + 0.2 * compiles + 0.4 * functional_correct
     }
 
     fn diversity_score(&self, batch: &[CodePair]) -> f32 {
@@ -681,6 +725,9 @@ impl<'a, G: SyntheticGenerator> Iterator for SyntheticStream<'a, G> {
 | **Overfitting to Artifacts** | Model learns generation artifacts, not patterns | Regularization during training; artifact detection in quality scoring |
 | **Computational Cost** | Generation overhead exceeds training savings | Caching; batched generation; early stopping when quality plateaus |
 | **Evaluation Contamination** | Synthetic data leaks into validation set | Strict train/val/test separation; evaluate only on original data |
+| **Silent Quality Drift** [Toyota] | Embedder bias causes garbage generation | **Andon mechanism**: Halt if rejection rate >90%; alert on quality drift |
+| **Code Hallucination** [NASA] | Rust compiles but has subtle logic bugs | **Sandbox V&V**: Generate tests from Python, execute against Rust |
+| **AI-Complete Overreach** [Startup] | Code Oracle delays Shell SLM MVP | **Decoupling**: Ship Shell SLM v0.14.0; defer Code Oracle to v0.15.0 |
 
 ### 9.1 Quality Degradation Detection
 
@@ -706,13 +753,18 @@ impl QualityDegradationDetector {
 
 ## 10. Implementation Roadmap
 
-| Phase | Features | Target Release |
-|-------|----------|----------------|
-| 1 | Core `SyntheticGenerator` trait, `SyntheticConfig`, basic validators | v0.13.0 |
-| 2 | EDA, Template strategies, AutoML integration | v0.13.1 |
-| 3 | Shell autocomplete generator, quality metrics | v0.14.0 |
-| 4 | Code translation generator, back-translation | v0.14.1 |
-| 5 | Advanced strategies (MixUp, weak supervision), caching | v0.15.0 |
+**Updated per review feedback (2025-11-26):** Decoupled Code Oracle to v0.15.0.
+
+| Phase | Features | Target Release | Status |
+|-------|----------|----------------|--------|
+| 1 | Core `SyntheticGenerator` trait, `SyntheticConfig`, basic validators | v0.13.0 | Planned |
+| 2 | EDA, Template strategies, AutoML integration, **Andon mechanism** | v0.13.1 | Planned |
+| 3 | Shell autocomplete generator, quality metrics, diversity monitoring | v0.14.0 | **MVP** |
+| 4 | Advanced strategies (MixUp, weak supervision), caching | v0.14.1 | Planned |
+| 5 | **[EXPERIMENTAL]** Code translation generator, sandbox V&V, back-translation | v0.15.0 | Deferred |
+
+**Rationale:** Shell Autocomplete is a "Structured Prediction" problem (tractable). Code Translation
+is "AI-Complete" (Chen et al. Codex shows high hallucination rate). Ship proven value first.
 
 ## 11. References (Peer-Reviewed Publications)
 

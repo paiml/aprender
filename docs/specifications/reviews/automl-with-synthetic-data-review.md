@@ -114,6 +114,26 @@ The specification's validity is supported by the following mapping of features t
 ---
 
 ## 6. Action Items
-1.  **[NASA]** Add `sandbox_execution` check to `CodeTranslationGenerator`.
-2.  **[Toyota]** Implement `Andon` alert for high rejection rates in `generate()`.
-3.  **[Startup]** Mark `CodeTranslationGenerator` as "Experimental" in v0.14.0.
+
+| # | Source | Action | Status |
+|---|--------|--------|--------|
+| 1 | NASA | Add `sandbox_execution` check to `CodeTranslationGenerator` | ✅ **RESOLVED** (v1.1.0) |
+| 2 | Toyota | Implement `Andon` alert for high rejection rates in `generate()` | ✅ **RESOLVED** (v1.1.0) |
+| 3 | Startup | Mark `CodeTranslationGenerator` as "Experimental" in v0.14.0 | ✅ **RESOLVED** (v1.1.0) |
+
+### Resolution Summary (2025-11-26)
+
+**[NASA]** Added `SandboxExecutor` field to `CodeTranslationGenerator`. Updated `quality_score()` to:
+- Generate unit tests from Python behavior
+- Execute tests against generated Rust code
+- Weight functional correctness at 40% (primary signal)
+
+**[Toyota]** Added `AndonHandler` trait and `DefaultAndon` implementation:
+- Halts pipeline if rejection rate >90%
+- Alerts on quality drift below baseline
+- Configurable via `SyntheticConfig.andon_*` fields
+
+**[Startup]** Decoupled roadmap:
+- Shell SLM: v0.14.0 (MVP, tractable structured prediction)
+- Code Oracle: v0.15.0 (experimental, AI-Complete problem)
+- Added EXPERIMENTAL warning to `CodeTranslationGenerator` docstring
