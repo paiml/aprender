@@ -51,6 +51,7 @@
 //! - [`time_series`]: Time series analysis and forecasting (ARIMA)
 //! - [`index`]: Approximate nearest neighbor search (HNSW)
 //! - [`recommend`]: Recommendation systems (content-based, collaborative filtering)
+//! - [`synthetic`]: Synthetic data generation for AutoML (EDA, back-translation, MixUp)
 //! - [`chaos`]: Chaos engineering configuration (from renacer)
 
 pub mod autograd;
@@ -79,6 +80,7 @@ pub mod primitives;
 pub mod recommend;
 pub mod serialization;
 pub mod stats;
+pub mod synthetic;
 pub mod text;
 pub mod time_series;
 pub mod traits;
