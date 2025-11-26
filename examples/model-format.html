@@ -180,7 +180,7 @@
                 <div id="content" class="content">
                     <main>
                         <h1 id="case-study-model-serialization-apr-format"><a class="header" href="#case-study-model-serialization-apr-format">Case Study: Model Serialization (.apr Format)</a></h1>
-<p>Save and load ML models with built-in quality: checksums, signatures, encryption.</p>
+<p>Save and load ML models with built-in quality: checksums, signatures, encryption, WASM compatibility.</p>
 <h2 id="quick-start"><a class="header" href="#quick-start">Quick Start</a></h2>
 <pre><code class="language-rust">use aprender::format::{save, load, ModelType, SaveOptions};
 use aprender::linear_model::LinearRegression;
@@ -194,13 +194,44 @@ save(&amp;model, ModelType::LinearRegression, &quot;model.apr&quot;, SaveOptions
 
 // Load
 let loaded: LinearRegression = load(&quot;model.apr&quot;, ModelType::LinearRegression)?;</code></pre>
+<h2 id="wasm-compatibility-hard-requirement"><a class="header" href="#wasm-compatibility-hard-requirement">WASM Compatibility (Hard Requirement)</a></h2>
+<p>The <code>.apr</code> format is designed for <strong>universal deployment</strong>. Every feature works in:</p>
+<ul>
+<li>Native (Linux, macOS, Windows)</li>
+<li>WASM (browsers, Cloudflare Workers, Vercel Edge)</li>
+<li>Embedded (no_std with alloc)</li>
+</ul>
+<pre><code class="language-rust">// Same model works everywhere
+#[cfg(target_arch = &quot;wasm32&quot;)]
+async fn load_in_browser() -&gt; Result&lt;LinearRegression&gt; {
+    let bytes = fetch(&quot;https://models.example.com/house-prices.apr&quot;).await?;
+    load_from_bytes(&amp;bytes, ModelType::LinearRegression)
+}
+
+#[cfg(not(target_arch = &quot;wasm32&quot;))]
+fn load_native() -&gt; Result&lt;LinearRegression&gt; {
+    load(&quot;house-prices.apr&quot;, ModelType::LinearRegression)
+}</code></pre>
+<p><strong>Why this matters:</strong></p>
+<ul>
+<li>Train once, deploy anywhere</li>
+<li>Browser-based ML demos</li>
+<li>Edge inference (low latency)</li>
+<li>Serverless functions</li>
+</ul>
 <h2 id="format-structure"><a class="header" href="#format-structure">Format Structure</a></h2>
 <pre><code class="language-text">┌─────────────────────────────────────────┐
 │ Header (32 bytes, fixed)                │ ← Magic, version, type, sizes
 ├─────────────────────────────────────────┤
 │ Metadata (variable, MessagePack)        │ ← Hyperparameters, metrics
 ├─────────────────────────────────────────┤
+│ Salt + Nonce (if ENCRYPTED)             │ ← Security parameters
+├─────────────────────────────────────────┤
 │ Payload (variable, compressed)          │ ← Model weights (bincode)
+├─────────────────────────────────────────┤
+│ Signature (if SIGNED)                   │ ← Ed25519 signature
+├─────────────────────────────────────────┤
+│ License (if LICENSED)                   │ ← Commercial protection
 ├─────────────────────────────────────────┤
 │ Checksum (4 bytes, CRC32)               │ ← Integrity verification
 └─────────────────────────────────────────┘
@@ -258,47 +289,79 @@ println!(&quot;Signed: {}&quot;, info.signed);</code></pre>
 <tr><td>0x0005</td><td>GradientBoosting</td><td>High-performance ensemble</td></tr>
 <tr><td>0x0006</td><td>KMeans</td><td>Clustering</td></tr>
 <tr><td>0x0007</td><td>Pca</td><td>Dimensionality reduction</td></tr>
+<tr><td>0x0008</td><td>NaiveBayes</td><td>Probabilistic classification</td></tr>
+<tr><td>0x0009</td><td>Knn</td><td>Distance-based classification</td></tr>
+<tr><td>0x000A</td><td>Svm</td><td>Support vector machine</td></tr>
 <tr><td>0x0010</td><td>NgramLm</td><td>Language modeling</td></tr>
+<tr><td>0x0011</td><td>TfIdf</td><td>Text vectorization</td></tr>
+<tr><td>0x0012</td><td>CountVectorizer</td><td>Bag of words</td></tr>
 <tr><td>0x0020</td><td>NeuralSequential</td><td>Deep learning</td></tr>
+<tr><td>0x0021</td><td>NeuralCustom</td><td>Custom architectures</td></tr>
 <tr><td>0x0030</td><td>ContentRecommender</td><td>Recommendations</td></tr>
 <tr><td>0x00FF</td><td>Custom</td><td>User-defined</td></tr>
 </tbody></table>
 </div>
 <h2 id="encryption-feature-format-encryption"><a class="header" href="#encryption-feature-format-encryption">Encryption (Feature: <code>format-encryption</code>)</a></h2>
-<h3 id="password-based"><a class="header" href="#password-based">Password-Based</a></h3>
+<h3 id="password-based-personalteam"><a class="header" href="#password-based-personalteam">Password-Based (Personal/Team)</a></h3>
 <pre><code class="language-rust">use aprender::format::{save_encrypted, load_encrypted};
 
-// Save with password
+// Save with password (Argon2id + AES-256-GCM)
 save_encrypted(&amp;model, ModelType::LinearRegression, &quot;secure.apr&quot;,
-    SaveOptions::default(), &quot;my-password&quot;)?;
+    SaveOptions::default(), &quot;my-strong-password&quot;)?;
 
 // Load with password
 let model: LinearRegression = load_encrypted(&quot;secure.apr&quot;,
-    ModelType::LinearRegression, &quot;my-password&quot;)?;</code></pre>
-<p>Uses Argon2id key derivation + AES-256-GCM.</p>
-<h3 id="recipient-based-asymmetric"><a class="header" href="#recipient-based-asymmetric">Recipient-Based (Asymmetric)</a></h3>
-<pre><code class="language-rust">use aprender::format::{save_for_recipient, load_with_key};
+    ModelType::LinearRegression, &quot;my-strong-password&quot;)?;</code></pre>
+<p><strong>Security properties:</strong></p>
+<ul>
+<li>Argon2id: Memory-hard, GPU-resistant key derivation</li>
+<li>AES-256-GCM: Authenticated encryption (detects tampering)</li>
+<li>Random salt: Same password produces different ciphertexts</li>
+</ul>
+<h3 id="recipient-based-commercial-distribution"><a class="header" href="#recipient-based-commercial-distribution">Recipient-Based (Commercial Distribution)</a></h3>
+<pre><code class="language-rust">use aprender::format::{save_for_recipient, load_as_recipient};
+use x25519_dalek::{PublicKey, StaticSecret};
 
-// Seller encrypts for buyer's public key
+// Generate buyer's keypair (done once by buyer)
+let buyer_secret = StaticSecret::random_from_rng(&amp;mut rng);
+let buyer_public = PublicKey::from(&amp;buyer_secret);
+
+// Seller encrypts for buyer's public key (no password sharing!)
 save_for_recipient(&amp;model, ModelType::LinearRegression, &quot;commercial.apr&quot;,
-    SaveOptions::default(), &amp;buyer_public_key)?;
+    SaveOptions::default(), &amp;buyer_public)?;
 
-// Only buyer's private key can decrypt
-let model: LinearRegression = load_with_key(&quot;commercial.apr&quot;,
-    ModelType::LinearRegression, &amp;buyer_private_key)?;</code></pre>
-<p>Uses X25519 key agreement + AES-256-GCM. No password sharing needed.</p>
+// Only buyer's secret key can decrypt
+let model: LinearRegression = load_as_recipient(&quot;commercial.apr&quot;,
+    ModelType::LinearRegression, &amp;buyer_secret)?;</code></pre>
+<p><strong>Benefits:</strong></p>
+<ul>
+<li>No password sharing required</li>
+<li>Cryptographically bound to buyer (non-transferable)</li>
+<li>Forward secrecy via ephemeral sender keys</li>
+<li>Perfect for model marketplaces</li>
+</ul>
 <h2 id="digital-signatures-feature-format-signing"><a class="header" href="#digital-signatures-feature-format-signing">Digital Signatures (Feature: <code>format-signing</code>)</a></h2>
 <p>Verify model provenance:</p>
 <pre><code class="language-rust">use aprender::format::{save_signed, load_verified};
+use ed25519_dalek::{SigningKey, VerifyingKey};
 
-// Sign with private key
+// Generate seller's keypair (done once)
+let signing_key = SigningKey::generate(&amp;mut rng);
+let verifying_key = VerifyingKey::from(&amp;signing_key);
+
+// Sign model with private key
 save_signed(&amp;model, ModelType::LinearRegression, &quot;signed.apr&quot;,
     SaveOptions::default(), &amp;signing_key)?;
 
-// Verify with public key before loading
+// Verify signature before loading (reject tampering)
 let model: LinearRegression = load_verified(&quot;signed.apr&quot;,
-    ModelType::LinearRegression, &amp;[trusted_public_key])?;</code></pre>
-<p>Uses Ed25519 signatures.</p>
+    ModelType::LinearRegression, Some(&amp;verifying_key))?;</code></pre>
+<p><strong>Use cases:</strong></p>
+<ul>
+<li>Model marketplaces (verify seller identity)</li>
+<li>Compliance (audit trail)</li>
+<li>Supply chain security</li>
+</ul>
 <h2 id="compression-feature-format-compression"><a class="header" href="#compression-feature-format-compression">Compression (Feature: <code>format-compression</code>)</a></h2>
 <pre><code class="language-rust">use aprender::format::{Compression, SaveOptions};
 
@@ -315,6 +378,70 @@ let archival = SaveOptions::default()
 <tr><td>LZ4</td><td>~2:1</td><td>Very fast</td><td>Streaming</td></tr>
 </tbody></table>
 </div>
+<h2 id="wasm-loading-patterns"><a class="header" href="#wasm-loading-patterns">WASM Loading Patterns</a></h2>
+<h3 id="browser-fetch-api"><a class="header" href="#browser-fetch-api">Browser (Fetch API)</a></h3>
+<pre><code class="language-rust">#[cfg(target_arch = &quot;wasm32&quot;)]
+pub async fn load_from_url&lt;M: DeserializeOwned&gt;(
+    url: &amp;str,
+    model_type: ModelType,
+) -&gt; Result&lt;M&gt; {
+    let response = fetch(url).await?;
+    let bytes = response.bytes().await?;
+    load_from_bytes(&amp;bytes, model_type)
+}
+
+// Usage
+let model = load_from_url::&lt;LinearRegression&gt;(
+    &quot;https://models.example.com/house-prices.apr&quot;,
+    ModelType::LinearRegression
+).await?;</code></pre>
+<h3 id="indexeddb-cache"><a class="header" href="#indexeddb-cache">IndexedDB Cache</a></h3>
+<pre><code class="language-rust">#[cfg(target_arch = &quot;wasm32&quot;)]
+pub async fn load_cached&lt;M: DeserializeOwned&gt;(
+    cache_key: &amp;str,
+    url: &amp;str,
+    model_type: ModelType,
+) -&gt; Result&lt;M&gt; {
+    // Try cache first
+    if let Some(bytes) = idb_get(cache_key).await? {
+        return load_from_bytes(&amp;bytes, model_type);
+    }
+
+    // Fetch and cache
+    let bytes = fetch(url).await?.bytes().await?;
+    idb_set(cache_key, &amp;bytes).await?;
+    load_from_bytes(&amp;bytes, model_type)
+}</code></pre>
+<h3 id="graceful-degradation"><a class="header" href="#graceful-degradation">Graceful Degradation</a></h3>
+<p>Some features are native-only (STREAMING, TRUENO_NATIVE). In WASM, they're silently ignored:</p>
+<pre><code class="language-rust">// This works in both native and WASM
+let options = SaveOptions::default()
+    .with_compression(Compression::ZstdDefault)  // Works everywhere
+    .with_streaming(true);  // Ignored in WASM, no error
+
+// WASM: loads via in-memory path
+// Native: uses mmap for large models
+let model: LinearRegression = load(&quot;model.apr&quot;, ModelType::LinearRegression)?;</code></pre>
+<h2 id="ecosystem-integration"><a class="header" href="#ecosystem-integration">Ecosystem Integration</a></h2>
+<p>The <code>.apr</code> format coordinates with alimentar's <code>.ald</code> dataset format:</p>
+<pre><code class="language-text">Training Pipeline (Native):
+┌─────────────┐    ┌─────────────┐    ┌─────────────┐
+│ dataset.ald │ → │  aprender   │ → │  model.apr  │
+│ (alimentar) │    │  training   │    │  (aprender) │
+└─────────────┘    └─────────────┘    └─────────────┘
+
+Inference Pipeline (WASM):
+┌─────────────┐    ┌─────────────┐    ┌─────────────┐
+│ Fetch .apr  │ → │   aprender  │ → │ Prediction  │
+│ from CDN    │    │  inference  │    │ in browser  │
+└─────────────┘    └─────────────┘    └─────────────┘
+</code></pre>
+<p><strong>Shared properties:</strong></p>
+<ul>
+<li>Same crypto stack (aes-gcm, ed25519-dalek, x25519-dalek)</li>
+<li>Same WASM compatibility requirements</li>
+<li>Same Toyota Way principles (Jidoka, checksums, signatures)</li>
+</ul>
 <h2 id="private-inference-hipaagdpr"><a class="header" href="#private-inference-hipaagdpr">Private Inference (HIPAA/GDPR)</a></h2>
 <p>For sensitive data, use bidirectional encryption:</p>
 <pre><code class="language-rust">// Model publishes public key in metadata
@@ -327,14 +454,22 @@ let encrypted_input = encrypt_for_model(&amp;patient_data, model_pub_key)?;
 // Send encrypted_input to model owner
 // Model owner decrypts, runs inference, encrypts response with user's public key
 // Only user can decrypt the prediction</code></pre>
-<p>No intermediary sees the data. Zero-trust ML.</p>
+<p><strong>Use cases:</strong></p>
+<ul>
+<li>HIPAA-compliant medical inference</li>
+<li>GDPR-compliant EU data processing</li>
+<li>Financial data analysis</li>
+<li>Zero-trust ML APIs</li>
+</ul>
 <h2 id="toyota-way-principles"><a class="header" href="#toyota-way-principles">Toyota Way Principles</a></h2>
 <div class="table-wrapper"><table><thead><tr><th>Principle</th><th>Implementation</th></tr></thead><tbody>
 <tr><td><strong>Jidoka</strong></td><td>CRC32 checksum stops on corruption</td></tr>
 <tr><td><strong>Jidoka</strong></td><td>Type verification stops on mismatch</td></tr>
 <tr><td><strong>Jidoka</strong></td><td>Signature verification stops on tampering</td></tr>
+<tr><td><strong>Jidoka</strong></td><td>Decryption fails on wrong key (authenticated)</td></tr>
 <tr><td><strong>Genchi Genbutsu</strong></td><td><code>inspect()</code> to see actual file contents</td></tr>
 <tr><td><strong>Kaizen</strong></td><td>Semantic versioning for format evolution</td></tr>
+<tr><td><strong>Heijunka</strong></td><td>Graceful degradation (WASM ignores native-only flags)</td></tr>
 </tbody></table>
 </div>
 <h2 id="error-handling"><a class="header" href="#error-handling">Error Handling</a></h2>
@@ -345,25 +480,206 @@ match load::&lt;LinearRegression&gt;(&quot;model.apr&quot;, ModelType::LinearReg
     Err(AprenderError::ChecksumMismatch { expected, actual }) =&gt; {
         eprintln!(&quot;File corrupted: expected {:08X}, got {:08X}&quot;, expected, actual);
     },
+    Err(AprenderError::ModelTypeMismatch { expected, found }) =&gt; {
+        eprintln!(&quot;Wrong model type: expected {:?}, found {:?}&quot;, expected, found);
+    },
+    Err(AprenderError::SignatureInvalid) =&gt; {
+        eprintln!(&quot;Signature verification failed - model may be tampered&quot;);
+    },
+    Err(AprenderError::DecryptionFailed) =&gt; {
+        eprintln!(&quot;Decryption failed - wrong password or key&quot;);
+    },
     Err(AprenderError::UnsupportedVersion { found, supported }) =&gt; {
         eprintln!(&quot;Version {}.{} not supported (max {}.{})&quot;,
             found.0, found.1, supported.0, supported.1);
     },
-    Err(AprenderError::FormatError { message }) =&gt; {
-        eprintln!(&quot;Invalid format: {}&quot;, message);
-    },
     Err(e) =&gt; eprintln!(&quot;Error: {}&quot;, e),
 }</code></pre>
+<h2 id="feature-flags"><a class="header" href="#feature-flags">Feature Flags</a></h2>
+<div class="table-wrapper"><table><thead><tr><th>Feature</th><th>Crates Added</th><th>Binary Size</th><th>WASM</th></tr></thead><tbody>
+<tr><td>(core)</td><td>bincode, rmp-serde</td><td>~60KB</td><td>✓</td></tr>
+<tr><td><code>format-compression</code></td><td>zstd</td><td>+250KB</td><td>✓</td></tr>
+<tr><td><code>format-signing</code></td><td>ed25519-dalek</td><td>+150KB</td><td>✓</td></tr>
+<tr><td><code>format-encryption</code></td><td>aes-gcm, argon2, x25519-dalek, hkdf, sha2</td><td>+180KB</td><td>✓</td></tr>
+</tbody></table>
+</div>
+<pre><code class="language-toml"># Cargo.toml
+[dependencies]
+aprender = { version = &quot;0.9&quot;, features = [&quot;format-encryption&quot;, &quot;format-signing&quot;] }
+</code></pre>
+<h2 id="single-binary-deployment"><a class="header" href="#single-binary-deployment">Single Binary Deployment</a></h2>
+<p>The <code>.apr</code> format's killer feature: embed models directly in your executable.</p>
+<h3 id="the-pattern"><a class="header" href="#the-pattern">The Pattern</a></h3>
+<pre><code class="language-rust">// Embed model at compile time - zero runtime dependencies
+const MODEL: &amp;[u8] = include_bytes!(&quot;sentiment.apr&quot;);
+
+fn main() -&gt; Result&lt;()&gt; {
+    let model: LogisticRegression = load_from_bytes(MODEL, ModelType::LogisticRegression)?;
+
+    // SIMD inference immediately available
+    let prediction = model.predict(&amp;features)?;
+}</code></pre>
+<p><strong>Build and deploy:</strong></p>
+<pre><code class="language-bash">cargo build --release --target aarch64-unknown-linux-gnu
+# Output: single 5MB binary with model embedded
+./app  # Runs anywhere, NEON SIMD active on ARM
+</code></pre>
+<h3 id="why-this-matters"><a class="header" href="#why-this-matters">Why This Matters</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Metric</th><th>Docker + Python</th><th>aprender Binary</th></tr></thead><tbody>
+<tr><td>Cold start</td><td>5-30 seconds</td><td>&lt;100ms</td></tr>
+<tr><td>Memory</td><td>500MB - 2GB</td><td>10-50MB</td></tr>
+<tr><td>Dependencies</td><td>Python, PyTorch, etc.</td><td>None</td></tr>
+<tr><td>Artifacts</td><td>5-20 files</td><td>1 file</td></tr>
+</tbody></table>
+</div>
+<h3 id="aws-lambda-arm-graviton"><a class="header" href="#aws-lambda-arm-graviton">AWS Lambda ARM (Graviton)</a></h3>
+<p>Based on <a href="https://github.com/paiml/ruchy-lambda">ruchy-lambda research</a>: blocking I/O achieves 7.69ms cold start.</p>
+<pre><code class="language-rust">const MODEL: &amp;[u8] = include_bytes!(&quot;classifier.apr&quot;);
+
+fn main() {
+    let model: LogisticRegression = load_from_bytes(MODEL, ModelType::LogisticRegression)
+        .expect(&quot;embedded model valid&quot;);
+
+    // Lambda Runtime API loop (blocking, no tokio)
+    loop {
+        let event = get_next_event();           // blocking GET
+        let pred = model.predict(&amp;event.data);  // NEON SIMD
+        send_response(pred);                    // blocking POST
+    }
+}</code></pre>
+<p><strong>Performance:</strong> 128MB ARM64, &lt;10ms cold start, ~$0.0000002/request.</p>
+<h3 id="deployment-targets"><a class="header" href="#deployment-targets">Deployment Targets</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Target</th><th>Binary</th><th>SIMD</th><th>Use Case</th></tr></thead><tbody>
+<tr><td><code>x86_64-unknown-linux-gnu</code></td><td>~5MB</td><td>AVX2/512</td><td>Lambda x86, servers</td></tr>
+<tr><td><code>aarch64-unknown-linux-gnu</code></td><td>~4MB</td><td>NEON</td><td>Lambda ARM, RPi</td></tr>
+<tr><td><code>wasm32-unknown-unknown</code></td><td>~500KB</td><td>-</td><td>Browser, Workers</td></tr>
+</tbody></table>
+</div>
+<h2 id="quantization"><a class="header" href="#quantization">Quantization</a></h2>
+<p>Reduce model size 4-8x with integer weights (GGUF-compatible).</p>
+<h3 id="quick-start-1"><a class="header" href="#quick-start-1">Quick Start</a></h3>
+<pre><code class="language-bash"># Quantize existing model
+apr quantize model.apr --type q4_0 --output model-q4.apr
+
+# Inspect
+apr inspect model-q4.apr --quantization
+# Type: Q4_0, Block size: 32, Bits/weight: 4.5
+</code></pre>
+<h3 id="types-gguf-standard"><a class="header" href="#types-gguf-standard">Types (GGUF Standard)</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Type</th><th>Bits</th><th>Block</th><th>Use Case</th></tr></thead><tbody>
+<tr><td>Q8_0</td><td>8</td><td>32</td><td>High accuracy</td></tr>
+<tr><td>Q4_0</td><td>4</td><td>32</td><td>Balanced</td></tr>
+<tr><td>Q4_1</td><td>4</td><td>32</td><td>Better accuracy</td></tr>
+</tbody></table>
+</div>
+<h3 id="api"><a class="header" href="#api">API</a></h3>
+<pre><code class="language-rust">use aprender::format::{QuantType, save_quantized};
+
+// Quantize and save
+let quantized = model.quantize(QuantType::Q4_0)?;
+save(&amp;quantized, ModelType::NeuralSequential, &quot;model-q4.apr&quot;, opts)?;</code></pre>
+<h3 id="export"><a class="header" href="#export">Export</a></h3>
+<pre><code class="language-bash"># To GGUF (llama.cpp compatible)
+apr export model-q4.apr --format gguf --output model.gguf
+
+# To SafeTensors (HuggingFace)
+apr export model-q4.apr --format safetensors --output model/
+</code></pre>
+<h2 id="knowledge-distillation"><a class="header" href="#knowledge-distillation">Knowledge Distillation</a></h2>
+<p>Train smaller models from larger teachers with full provenance tracking.</p>
+<h3 id="the-pipeline"><a class="header" href="#the-pipeline">The Pipeline</a></h3>
+<pre><code class="language-bash"># 1. Distill 7B → 1B
+apr distill teacher-7b.apr --output student-1b.apr \
+    --temperature 3.0 --alpha 0.7
+
+# 2. Quantize
+apr quantize student-1b.apr --type q4_0 --output student-q4.apr
+
+# 3. Embed in binary
+# include_bytes!(&quot;student-q4.apr&quot;)
+</code></pre>
+<p><strong>Size reduction:</strong></p>
+<div class="table-wrapper"><table><thead><tr><th>Stage</th><th>Size</th><th>Reduction</th></tr></thead><tbody>
+<tr><td>Teacher (7B, FP32)</td><td>28 GB</td><td>baseline</td></tr>
+<tr><td>Student (1B, FP32)</td><td>4 GB</td><td>7x</td></tr>
+<tr><td>Student (Q4_0)</td><td>500 MB</td><td>56x</td></tr>
+<tr><td>+ Zstd</td><td>400 MB</td><td><strong>70x</strong></td></tr>
+</tbody></table>
+</div>
+<h3 id="provenance"><a class="header" href="#provenance">Provenance</a></h3>
+<p>Every distilled model stores teacher information:</p>
+<pre><code class="language-rust">let info = inspect(&quot;student.apr&quot;)?;
+let distill = info.distillation.unwrap();
+
+println!(&quot;Teacher: {}&quot;, distill.teacher.hash);      // SHA256
+println!(&quot;Method: {:?}&quot;, distill.method);           // Standard/Progressive/Ensemble
+println!(&quot;Temperature: {}&quot;, distill.params.temperature);
+println!(&quot;Final loss: {}&quot;, distill.params.final_loss);</code></pre>
+<h3 id="methods"><a class="header" href="#methods">Methods</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Method</th><th>Description</th></tr></thead><tbody>
+<tr><td>Standard</td><td>KL divergence on final logits</td></tr>
+<tr><td>Progressive</td><td>Layer-wise intermediate matching</td></tr>
+<tr><td>Ensemble</td><td>Multiple teachers averaged</td></tr>
+</tbody></table>
+</div>
+<pre><code class="language-bash"># Progressive distillation with layer mapping
+apr distill teacher.apr --output student.apr \
+    --method progressive --layer-map &quot;0:0,1:2,2:4&quot;
+
+# Ensemble from multiple teachers
+apr distill teacher1.apr teacher2.apr teacher3.apr \
+    --output student.apr --method ensemble
+</code></pre>
+<h2 id="complete-slm-pipeline"><a class="header" href="#complete-slm-pipeline">Complete SLM Pipeline</a></h2>
+<p>End-to-end: large model → edge deployment.</p>
+<pre><code class="language-text">┌──────────────────┐
+│ LLaMA 7B (28GB)  │  Teacher model
+└────────┬─────────┘
+         │ distill (entrenar)
+         ▼
+┌──────────────────┐
+│ Student 1B (4GB) │  Knowledge transferred
+└────────┬─────────┘
+         │ quantize (Q4_0)
+         ▼
+┌──────────────────┐
+│ Quantized (500MB)│  4-bit weights
+└────────┬─────────┘
+         │ compress (zstd)
+         ▼
+┌──────────────────┐
+│ Compressed (400MB)│ 70x smaller
+└────────┬─────────┘
+         │ embed (include_bytes!)
+         ▼
+┌──────────────────┐
+│ Single Binary    │  Deploy anywhere
+│ ARM NEON SIMD    │  &lt;10ms cold start
+│ 2GB RAM device   │  $0.0000002/req
+└──────────────────┘
+</code></pre>
+<p><strong>Cargo.toml for minimal binary:</strong></p>
+<pre><code class="language-toml">[profile.release]
+lto = true
+codegen-units = 1
+panic = &quot;abort&quot;
+strip = true
+opt-level = &quot;z&quot;
+</code></pre>
 <h2 id="specification"><a class="header" href="#specification">Specification</a></h2>
 <p>Full specification: <a href="https://github.com/paiml/aprender/blob/main/docs/specifications/model-format-spec.md">docs/specifications/model-format-spec.md</a></p>
 <p><strong>Key properties:</strong></p>
 <ul>
 <li>Pure Rust (Sovereign AI, zero C/C++ dependencies)</li>
+<li>WASM compatibility (hard requirement, spec §1.0)</li>
+<li>Single binary deployment (spec §1.1)</li>
+<li>GGUF-compatible quantization (spec §6.2)</li>
+<li>Knowledge distillation provenance (spec §6.3)</li>
 <li>32-byte fixed header for fast scanning</li>
 <li>MessagePack metadata (compact, fast)</li>
 <li>bincode payload (zero-copy potential)</li>
 <li>CRC32 integrity, Ed25519 signatures, AES-256-GCM encryption</li>
-<li>trueno-native mode for zero-copy SIMD inference</li>
+<li>trueno-native mode for zero-copy SIMD inference (native only)</li>
 </ul>
 
                     </main>
