@@ -1,7 +1,13 @@
 //! Evaluation metrics for ML models.
 //!
-//! Includes regression metrics (R², MSE, MAE) and clustering metrics
-//! (inertia, silhouette score).
+//! Includes regression metrics (R², MSE, MAE), clustering metrics
+//! (inertia, silhouette score), classification metrics
+//! (accuracy, precision, recall, F1-score, confusion matrix),
+//! model evaluation framework, and drift detection.
+
+pub mod classification;
+pub mod drift;
+pub mod evaluator;
 
 use crate::primitives::{Matrix, Vector};
 

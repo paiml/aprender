@@ -1169,3 +1169,24 @@ roadmap:
   labels:
   - enhancement
   notes: null
+- id: GH-73
+  github_issue: 73
+  item_type: task
+  title: 'feat: Model evaluation framework for .apr models with retraining support'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2025-11-26T13:45:00.888174658+00:00
+  updated: 2025-11-26T13:45:00.888174658+00:00
+  spec: null
+  acceptance_criteria:
+  - Add classification metrics to `src/metrics/mod.rs`
+  - Add `src/eval/mod.rs` evaluation framework
+  - Add drift detection (`src/eval/drift.rs`)
+  - Integration with entrenar
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - enhancement
+  notes: null

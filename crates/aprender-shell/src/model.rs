@@ -1,9 +1,10 @@
 //! N-gram Markov model for command prediction
+//!
+//! Uses the .apr binary format for efficient model persistence.
 
+use aprender::format::{self, ModelType, SaveOptions};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::fs::File;
-use std::io::{BufReader, BufWriter};
 use std::path::Path;
 
 use crate::trie::Trie;
@@ -194,21 +195,25 @@ impl MarkovModel {
         suggestions
     }
 
-    /// Save model to file
+    /// Save model to .apr file
     pub fn save(&self, path: &Path) -> std::io::Result<()> {
-        let file = File::create(path)?;
-        let writer = BufWriter::new(file);
-        serde_json::to_writer(writer, self)?;
-        Ok(())
+        let options = SaveOptions::default()
+            .with_name("aprender-shell")
+            .with_description(&format!(
+                "{}-gram shell completion model ({} commands)",
+                self.n, self.total_commands
+            ));
+
+        format::save(self, ModelType::Custom, path, options)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))
     }
 
-    /// Load model from file
+    /// Load model from .apr file
     pub fn load(path: &Path) -> std::io::Result<Self> {
-        let file = File::open(path)?;
-        let reader = BufReader::new(file);
-        let mut model: Self = serde_json::from_reader(reader)?;
+        let mut model: Self = format::load(path, ModelType::Custom)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
 
-        // Rebuild trie
+        // Rebuild trie (not serialized)
         let mut trie = Trie::new();
         for cmd in model.command_freq.keys() {
             trie.insert(cmd);
