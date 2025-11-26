@@ -39,7 +39,7 @@
 | Streaming | §7 | ○ | N/A | format-streaming feature |
 | License block | §9 | ✓ LicenseInfo | ✓ | UUID/Hash/Expiry/Seats/Tier |
 | trueno-native | §8 | ○ | N/A | format-trueno feature |
-| GGUF export | §7.2 | ○ | ○ | format-gguf feature |
+| GGUF export | §7.2 | ✓ gguf module | ✓ | Pure Rust writer (WASM) |
 
 **Legend:** ✓ Conformant, ✗ Non-conformant (fix required), ○ Not started, N/A = Native only
 

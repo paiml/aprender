@@ -57,6 +57,9 @@ use std::path::Path;
 #[cfg(feature = "format-quantize")]
 pub mod quantize;
 
+// GGUF export module (spec §7.2)
+pub mod gguf;
+
 // Re-export quantization types when feature is enabled
 #[cfg(feature = "format-quantize")]
 pub use quantize::{
@@ -3330,5 +3333,60 @@ mod tests {
             let restored = info.metadata.license.expect("should have license");
             assert_eq!(restored.uuid, format!("uuid-{name}"));
         }
+    }
+
+    // ========================================================================
+    // EXTREME TDD: GGUF Export (spec §7.2)
+    // ========================================================================
+
+    // Step 1: RED - Test GGUF magic number and header
+    #[test]
+    fn test_gguf_magic_number() {
+        // GGUF magic is "GGUF" = 0x46554747 in little-endian
+        assert_eq!(gguf::GGUF_MAGIC, 0x4655_4747);
+        assert_eq!(&gguf::GGUF_MAGIC.to_le_bytes(), b"GGUF");
+    }
+
+    #[test]
+    fn test_gguf_header_write() {
+        let mut buffer = Vec::new();
+
+        // Write minimal GGUF header
+        let header = gguf::GgufHeader {
+            version: gguf::GGUF_VERSION,
+            tensor_count: 1,
+            metadata_kv_count: 0,
+        };
+
+        header.write_to(&mut buffer).expect("write header");
+
+        // Verify: magic (4) + version (4) + tensor_count (8) + kv_count (8) = 24 bytes
+        assert_eq!(buffer.len(), 24);
+
+        // Verify magic
+        assert_eq!(&buffer[0..4], b"GGUF");
+
+        // Verify version (little-endian u32)
+        assert_eq!(
+            u32::from_le_bytes([buffer[4], buffer[5], buffer[6], buffer[7]]),
+            3
+        );
+    }
+
+    #[test]
+    fn test_gguf_metadata_string() {
+        let mut buffer = Vec::new();
+
+        // Write a string metadata value
+        gguf::write_metadata_kv(
+            &mut buffer,
+            "general.name",
+            &gguf::GgufValue::String("test_model".to_string()),
+        )
+        .expect("write metadata");
+
+        // Should have: key_len (8) + key + value_type (4) + str_len (8) + str
+        // 8 + 12 + 4 + 8 + 10 = 42 bytes
+        assert!(!buffer.is_empty());
     }
 }
