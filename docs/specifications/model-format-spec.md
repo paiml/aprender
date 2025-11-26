@@ -203,27 +203,49 @@ Single binary (5MB) → inference
 | Artifact count | 5-20 files | 1 file |
 | ARM support | Complex | Native |
 
-#### 1.1.3 AWS Lambda ARM Example
+#### 1.1.3 AWS Lambda Performance (Validated)
+
+**Research from ruchy-lambda** demonstrates Rust blocking I/O achieves world-class Lambda performance:
+
+| Runtime | Cold Start | Memory | Binary |
+|---------|-----------|--------|--------|
+| **Rust (blocking)** | **7.69ms** | **14MB** | **352KB** |
+| Rust (tokio) | 14.90ms | 12MB | 596KB |
+| Go | 56.49ms | 19MB | 4.2MB |
+| Python 3.12 | 85.73ms | 36MB | 78MB+ |
+
+**Key insight**: Avoiding async runtime (tokio) cuts cold start by 50%.
+
+**aprender Lambda pattern** (blocking I/O, no tokio):
 
 ```rust
-use lambda_runtime::{service_fn, LambdaEvent, Error};
+use aprender::format::{load_from_bytes, ModelType};
+use std::io::{Read, Write};
+use std::net::TcpStream;
 
 const MODEL: &[u8] = include_bytes!("classifier.apr");
 
-#[tokio::main]
-async fn main() -> Result<(), Error> {
-    // Model loaded once, reused across invocations
-    let model: LogisticRegression = load_from_bytes(MODEL, ModelType::LogisticRegression)?;
-    lambda_runtime::run(service_fn(|event| handler(event, &model))).await
-}
+fn main() {
+    // Load model once at cold start
+    let model: LogisticRegression = load_from_bytes(MODEL, ModelType::LogisticRegression)
+        .expect("embedded model should be valid");
 
-async fn handler(event: LambdaEvent<Request>, model: &LogisticRegression) -> Result<Response, Error> {
-    let prediction = model.predict(&event.payload.features)?;  // NEON SIMD on Graviton
-    Ok(Response { class: prediction })
+    // Blocking Lambda Runtime API loop
+    loop {
+        let event = get_next_event();  // blocking HTTP GET
+        let prediction = model.predict(&event.features);  // SIMD inference
+        send_response(prediction);     // blocking HTTP POST
+    }
 }
 ```
 
-**Lambda config:** 128MB RAM, ARM64, <10ms inference, ~$0.0000002/request.
+**Expected performance** (128MB ARM64 Lambda):
+- Cold start: <10ms (model load + runtime init)
+- Warm invoke: <2ms (NEON SIMD inference)
+- Memory: ~20MB (14MB runtime + 6MB model)
+- Cost: ~$0.0000002/request
+
+**ARM64 (Graviton)**: 20-30% cheaper than x86_64 at same performance.
 
 #### 1.1.4 Ecosystem Integration
 
@@ -833,6 +855,7 @@ Using techniques from [Adi2018], we embed a robust watermark that survives fine-
 17. **[TorresArias2019]** Torres-Arias, S., et al. (2019). in-toto: Providing farm-to-table guarantees for software supply chain integrity. *USENIX Security*.
 18. **[Uchida2017]** Uchida, Y., et al. (2017). Embedding Watermarks into Deep Neural Networks. *ICMR*.
 19. **[GGUF2023]** Gerganov, G. (2023). GGUF Format. *GitHub*.
+20. **[RuchyLambda2025]** Gift, N. (2025). Ruchy Lambda: World's Fastest Custom AWS Lambda Runtime. 7.69ms cold start via blocking I/O. *Internal Research*.
 
 ## Appendix A: WASM Loading
 
