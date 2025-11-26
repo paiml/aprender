@@ -873,6 +873,153 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
+## Part 7: Model Validation with aprender Metrics
+
+The `aprender-shell` CLI uses aprender's ranking metrics for proper evaluation:
+
+```bash
+# Train on your history
+aprender-shell train
+
+# Validate with holdout evaluation
+aprender-shell validate
+```
+
+### Ranking Metrics (aprender::metrics::ranking)
+
+```rust,ignore
+use aprender::metrics::ranking::{hit_at_k, mrr, RankingMetrics};
+
+// Hit@K: Is correct answer in top K predictions?
+let predictions = vec!["git commit", "git push", "git pull"];
+let target = "git push";
+assert_eq!(hit_at_k(&predictions, target, 1), 0.0);  // Not #1
+assert_eq!(hit_at_k(&predictions, target, 2), 1.0);  // In top 2
+
+// Mean Reciprocal Rank: 1/rank of correct answer
+let all_predictions = vec![
+    vec!["git commit", "git push"],  // target at rank 2 → RR = 0.5
+    vec!["cargo test", "cargo build"],  // target at rank 1 → RR = 1.0
+];
+let targets = vec!["git push", "cargo test"];
+let score = mrr(&all_predictions, &targets);  // (0.5 + 1.0) / 2 = 0.75
+
+// Comprehensive metrics
+let metrics = RankingMetrics::compute(&all_predictions, &targets);
+println!("Hit@1: {:.1}%", metrics.hit_at_1 * 100.0);
+println!("Hit@5: {:.1}%", metrics.hit_at_5 * 100.0);
+println!("MRR: {:.3}", metrics.mrr);
+```
+
+### Validation Output
+
+```text
+🔬 aprender-shell: Model Validation
+
+📂 History file: ~/.zsh_history
+📊 Total commands: 21,763
+⚙️  N-gram size: 3
+📈 Train/test split: 80% / 20%
+
+═══════════════════════════════════════════
+           VALIDATION RESULTS
+═══════════════════════════════════════════
+  Training set:      17,410 commands
+  Test set:           4,353 commands
+  Evaluated:          3,857 commands
+───────────────────────────────────────────
+  Hit@1  (top 1):     13.3%
+  Hit@5  (top 5):     26.2%
+  Hit@10 (top 10):    30.7%
+  MRR (Mean Recip):  0.181
+═══════════════════════════════════════════
+```
+
+**Interpretation:**
+- **Hit@5 ~27%**: Model suggests correct command in top 5 for ~1 in 4 predictions
+- **MRR ~0.18**: Average rank of correct answer is ~5th position
+- This is realistic for shell completion given command diversity
+
+## Part 8: Synthetic Data Augmentation
+
+Improve model coverage with three strategies:
+
+```bash
+# Generate 5000 synthetic commands and retrain
+aprender-shell augment --count 5000
+```
+
+### CLI Command Templates
+
+```rust,ignore
+use aprender_shell::synthetic::CommandGenerator;
+
+let gen = CommandGenerator::new();
+let commands = gen.generate(1000);
+
+// Generates realistic dev commands:
+// - git status, git commit -m, git push --force
+// - cargo build --release, cargo test --lib
+// - docker run -it, kubectl get pods
+// - npm install --save-dev, pip install -r
+```
+
+### Mutation Engine
+
+```rust,ignore
+use aprender_shell::synthetic::CommandMutator;
+
+let mutator = CommandMutator::new();
+
+// Original: "git commit -m test"
+// Mutations:
+//   - "git add -m test"      (command substitution)
+//   - "git commit -am test"  (flag substitution)
+//   - "git commit test"      (flag removal)
+let mutations = mutator.mutate("git commit -m test");
+```
+
+### Coverage-Guided Generation
+
+```rust,ignore
+use aprender_shell::synthetic::{SyntheticPipeline, CoverageGuidedGenerator};
+use std::collections::HashSet;
+
+// Extract known n-grams from current model
+let known_ngrams: HashSet<String> = model.ngram_keys().collect();
+
+// Generate commands that maximize new n-gram coverage
+let pipeline = SyntheticPipeline::new();
+let result = pipeline.generate(&real_history, known_ngrams, 5000);
+
+println!("New n-grams added: {}", result.report.new_ngrams);
+println!("Coverage gain: {:.1}%", result.report.coverage_gain * 100.0);
+```
+
+### Augmentation Output
+
+```text
+🧬 aprender-shell: Data Augmentation
+
+📂 History file: ~/.zsh_history
+📊 Real commands: 21,761
+🔢 Known n-grams: 39,176
+
+🧪 Generating synthetic commands... done!
+
+📈 Coverage Report:
+   Synthetic commands: 5,000
+   New n-grams added:  5,473
+   Coverage gain:      99.0%
+
+✅ Augmented model saved
+
+📊 Model Statistics:
+   Total training commands: 26,761
+   Unique n-grams: 46,340 (+18%)
+   Vocabulary size: 21,101 (+31%)
+```
+
 ## Summary
 
 | Component | Purpose | Complexity |
@@ -882,6 +1029,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 | .apr format | Persistence + metadata | ~2KB overhead |
 | Encryption | Privacy protection | +50ms save/load |
 | Single binary | Zero-dependency deployment | +500KB binary size |
+| **Ranking metrics** | Model validation | `aprender::metrics::ranking` |
+| **Synthetic data** | Coverage improvement | +13% n-grams |
 
 **Key insights:**
 1. Shell commands are highly predictable (Markov property)
@@ -889,9 +1038,35 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 3. `.apr` format provides type-safe, versioned persistence
 4. Encryption enables sharing sensitive models securely
 5. `include_bytes!()` enables self-contained deployment
+6. **Ranking metrics** (Hit@K, MRR) are standard for language model evaluation
+7. **Synthetic data** fills coverage gaps for commands you rarely use
+
+## CLI Reference
+
+```bash
+# Training
+aprender-shell train              # Full retrain from history
+aprender-shell update             # Incremental update (fast)
+
+# Evaluation
+aprender-shell validate           # Holdout evaluation with metrics
+aprender-shell validate -n 4      # Test different n-gram sizes
+aprender-shell stats              # Model statistics
+
+# Data Augmentation
+aprender-shell augment            # Generate synthetic data + retrain
+aprender-shell augment -c 10000   # Custom synthetic count
+
+# Inference
+aprender-shell suggest "git "     # Get completions
+aprender-shell suggest "cargo t"  # Prefix matching
+
+# Export
+aprender-shell export model.apr   # Export to .apr format
+```
 
 ## Next Steps
 
 - [`aprender-shell` source code](https://github.com/paiml/aprender/tree/main/crates/aprender-shell)
 - [Model Format Specification](../examples/model-format.md)
-- [Encryption Features](../ml-fundamentals/model-encryption.md)
+- [Ranking Metrics API](../ml-fundamentals/ranking-metrics.md)

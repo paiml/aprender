@@ -54,6 +54,7 @@
 //! - [`chaos`]: Chaos engineering configuration (from renacer)
 
 pub mod autograd;
+pub mod automl;
 pub mod bayesian;
 pub mod chaos;
 pub mod classification;

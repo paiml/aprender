@@ -8,10 +8,12 @@ use std::path::PathBuf;
 
 mod history;
 mod model;
+mod synthetic;
 mod trie;
 
 use history::HistoryParser;
 use model::MarkovModel;
+use synthetic::SyntheticPipeline;
 
 #[derive(Parser)]
 #[command(name = "aprender-shell")]
@@ -97,12 +99,46 @@ enum Commands {
 
     /// Generate ZSH widget code
     ZshWidget,
+
+    /// Validate model accuracy using holdout evaluation
+    Validate {
+        /// Path to history file (default: auto-detect)
+        #[arg(short = 'f', long)]
+        history: Option<PathBuf>,
+
+        /// N-gram size (2-5)
+        #[arg(short, long, default_value = "3")]
+        ngram: usize,
+
+        /// Train/test split ratio (0.0-1.0)
+        #[arg(short, long, default_value = "0.8")]
+        ratio: f32,
+    },
+
+    /// Augment training data with synthetic commands
+    Augment {
+        /// Path to history file (default: auto-detect)
+        #[arg(short = 'f', long)]
+        history: Option<PathBuf>,
+
+        /// Output model file
+        #[arg(short, long, default_value = "~/.aprender-shell.model")]
+        output: String,
+
+        /// N-gram size (2-5)
+        #[arg(short, long, default_value = "3")]
+        ngram: usize,
+
+        /// Number of synthetic commands to generate
+        #[arg(short, long, default_value = "5000")]
+        count: usize,
+    },
 }
 
 fn expand_path(path: &str) -> PathBuf {
-    if path.starts_with("~/") {
+    if let Some(rest) = path.strip_prefix("~/") {
         if let Some(home) = dirs::home_dir() {
-            return home.join(&path[2..]);
+            return home.join(rest);
         }
     }
     PathBuf::from(path)
@@ -144,6 +180,21 @@ fn main() {
         }
         Commands::ZshWidget => {
             cmd_zsh_widget();
+        }
+        Commands::Validate {
+            history,
+            ngram,
+            ratio,
+        } => {
+            cmd_validate(history, ngram, ratio);
+        }
+        Commands::Augment {
+            history,
+            output,
+            ngram,
+            count,
+        } => {
+            cmd_augment(history, &output, ngram, count);
         }
     }
 }
@@ -331,4 +382,139 @@ bindkey '^I' _aprender_accept      # Tab
 bindkey '^[[C' _aprender_accept    # Right arrow
 "#
     );
+}
+
+fn cmd_validate(history_path: Option<PathBuf>, ngram: usize, ratio: f32) {
+    println!("🔬 aprender-shell: Model Validation\n");
+
+    // Find history file
+    let history_file = history_path.unwrap_or_else(|| {
+        HistoryParser::find_history_file().expect("Could not find shell history file")
+    });
+
+    println!("📂 History file: {}", history_file.display());
+
+    // Parse history
+    let parser = HistoryParser::new();
+    let commands = parser
+        .parse_file(&history_file)
+        .expect("Failed to parse history");
+
+    println!("📊 Total commands: {}", commands.len());
+    println!("⚙️  N-gram size: {}", ngram);
+    println!(
+        "📈 Train/test split: {:.0}% / {:.0}%\n",
+        ratio * 100.0,
+        (1.0 - ratio) * 100.0
+    );
+
+    print!("🧪 Running holdout validation... ");
+    let result = MarkovModel::validate(&commands, ngram, ratio);
+    println!("done!\n");
+
+    println!("═══════════════════════════════════════════");
+    println!("           VALIDATION RESULTS              ");
+    println!("═══════════════════════════════════════════");
+    println!("  Training set:     {:>6} commands", result.train_size);
+    println!("  Test set:         {:>6} commands", result.test_size);
+    println!("  Evaluated:        {:>6} commands", result.evaluated);
+    println!("───────────────────────────────────────────");
+    // Use aprender's ranking metrics
+    println!(
+        "  Hit@1  (top 1):   {:>6.1}%",
+        result.metrics.hit_at_1 * 100.0
+    );
+    println!(
+        "  Hit@5  (top 5):   {:>6.1}%",
+        result.metrics.hit_at_5 * 100.0
+    );
+    println!(
+        "  Hit@10 (top 10):  {:>6.1}%",
+        result.metrics.hit_at_10 * 100.0
+    );
+    println!("  MRR (Mean Recip): {:>6.3}", result.metrics.mrr);
+    println!("═══════════════════════════════════════════");
+
+    // Interpretation
+    println!("\n📊 Interpretation:");
+    if result.metrics.hit_at_5 >= 0.5 {
+        println!("   ✅ Excellent: Model finds correct command in top 5 >50% of the time");
+    } else if result.metrics.hit_at_5 >= 0.3 {
+        println!("   ✓ Good: Model provides useful suggestions");
+    } else {
+        println!("   ⚠️  Consider more training data or adjusting n-gram size");
+        println!("   💡 Try: aprender-shell augment --count 5000");
+    }
+}
+
+fn cmd_augment(history_path: Option<PathBuf>, output: &str, ngram: usize, count: usize) {
+    println!("🧬 aprender-shell: Data Augmentation\n");
+
+    // Find history file
+    let history_file = history_path.unwrap_or_else(|| {
+        HistoryParser::find_history_file().expect("Could not find shell history file")
+    });
+
+    println!("📂 History file: {}", history_file.display());
+
+    // Parse history
+    let parser = HistoryParser::new();
+    let commands = parser
+        .parse_file(&history_file)
+        .expect("Failed to parse history");
+
+    println!("📊 Real commands: {}", commands.len());
+
+    // Extract known n-grams from current history
+    let mut known_ngrams = std::collections::HashSet::new();
+    for cmd in &commands {
+        let tokens: Vec<&str> = cmd.split_whitespace().collect();
+        for i in 0..tokens.len() {
+            let start = i.saturating_sub(ngram - 1);
+            let context = tokens[start..=i].join(" ");
+            known_ngrams.insert(context);
+        }
+    }
+    println!("🔢 Known n-grams: {}", known_ngrams.len());
+
+    // Generate synthetic data
+    print!("\n🧪 Generating synthetic commands... ");
+    let pipeline = SyntheticPipeline::new();
+    let result = pipeline.generate(&commands, known_ngrams, count);
+    println!("done!");
+
+    println!("\n📈 Coverage Report:");
+    println!("   Synthetic commands: {}", result.commands.len());
+    println!("   Known n-grams:      {}", result.report.known_ngrams);
+    println!("   Total n-grams:      {}", result.report.total_ngrams);
+    println!("   New n-grams added:  {}", result.report.new_ngrams);
+    println!(
+        "   Coverage gain:      {:.1}%",
+        result.report.coverage_gain * 100.0
+    );
+
+    // Combine real + synthetic
+    let mut augmented_commands = commands.clone();
+    augmented_commands.extend(result.commands);
+
+    println!("\n🧠 Training augmented model...");
+    let mut model = MarkovModel::new(ngram);
+    model.train(&augmented_commands);
+
+    // Save model
+    let output_path = expand_path(output);
+    model.save(&output_path).expect("Failed to save model");
+
+    println!("\n✅ Augmented model saved to: {}", output_path.display());
+    println!("\n📊 Model Statistics:");
+    println!("   Total training commands: {}", augmented_commands.len());
+    println!("   Unique n-grams: {}", model.ngram_count());
+    println!("   Vocabulary size: {}", model.vocab_size());
+    println!(
+        "   Model size: {:.1} KB",
+        model.size_bytes() as f64 / 1024.0
+    );
+
+    println!("\n💡 Validate improvement:");
+    println!("   aprender-shell validate");
 }

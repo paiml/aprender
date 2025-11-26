@@ -230,7 +230,7 @@ dependencies = [
 
 [[package]]
 name = "aprender"
-version = "0.9.1"
+version = "0.10.0"
 dependencies = [
  "aes-gcm",
  "alimentar",
@@ -260,7 +260,7 @@ dependencies = [
 name = "aprender-shell"
 version = "0.1.0"
 dependencies = [
- "aprender 0.9.1",
+ "aprender 0.10.0",
  "clap",
  "dirs",
  "serde",

@@ -65,8 +65,8 @@ impl HistoryParser {
         }
 
         // Fish history format: "- cmd: command"
-        if line.starts_with("- cmd: ") {
-            return Some(line[7..].to_string());
+        if let Some(cmd) = line.strip_prefix("- cmd: ") {
+            return Some(cmd.to_string());
         }
 
         // Plain format (bash)

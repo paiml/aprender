@@ -3,11 +3,13 @@
 //! Includes regression metrics (R², MSE, MAE), clustering metrics
 //! (inertia, silhouette score), classification metrics
 //! (accuracy, precision, recall, F1-score, confusion matrix),
-//! model evaluation framework, and drift detection.
+//! ranking metrics (Hit@K, MRR, NDCG), model evaluation framework,
+//! and drift detection.
 
 pub mod classification;
 pub mod drift;
 pub mod evaluator;
+pub mod ranking;
 
 use crate::primitives::{Matrix, Vector};
 
