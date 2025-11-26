@@ -991,6 +991,124 @@ fn main() -&gt; Result&lt;(), Box&lt;dyn std::error::Error&gt;&gt; {
 
     Ok(())
 }</code></pre>
+<h2 id="part-7-model-validation-with-aprender-metrics"><a class="header" href="#part-7-model-validation-with-aprender-metrics">Part 7: Model Validation with aprender Metrics</a></h2>
+<p>The <code>aprender-shell</code> CLI uses aprender's ranking metrics for proper evaluation:</p>
+<pre><code class="language-bash"># Train on your history
+aprender-shell train
+
+# Validate with holdout evaluation
+aprender-shell validate
+</code></pre>
+<h3 id="ranking-metrics-aprendermetricsranking"><a class="header" href="#ranking-metrics-aprendermetricsranking">Ranking Metrics (aprender::metrics::ranking)</a></h3>
+<pre><code class="language-rust ignore">use aprender::metrics::ranking::{hit_at_k, mrr, RankingMetrics};
+
+// Hit@K: Is correct answer in top K predictions?
+let predictions = vec![&quot;git commit&quot;, &quot;git push&quot;, &quot;git pull&quot;];
+let target = &quot;git push&quot;;
+assert_eq!(hit_at_k(&amp;predictions, target, 1), 0.0);  // Not #1
+assert_eq!(hit_at_k(&amp;predictions, target, 2), 1.0);  // In top 2
+
+// Mean Reciprocal Rank: 1/rank of correct answer
+let all_predictions = vec![
+    vec![&quot;git commit&quot;, &quot;git push&quot;],  // target at rank 2 → RR = 0.5
+    vec![&quot;cargo test&quot;, &quot;cargo build&quot;],  // target at rank 1 → RR = 1.0
+];
+let targets = vec![&quot;git push&quot;, &quot;cargo test&quot;];
+let score = mrr(&amp;all_predictions, &amp;targets);  // (0.5 + 1.0) / 2 = 0.75
+
+// Comprehensive metrics
+let metrics = RankingMetrics::compute(&amp;all_predictions, &amp;targets);
+println!(&quot;Hit@1: {:.1}%&quot;, metrics.hit_at_1 * 100.0);
+println!(&quot;Hit@5: {:.1}%&quot;, metrics.hit_at_5 * 100.0);
+println!(&quot;MRR: {:.3}&quot;, metrics.mrr);</code></pre>
+<h3 id="validation-output"><a class="header" href="#validation-output">Validation Output</a></h3>
+<pre><code class="language-text">🔬 aprender-shell: Model Validation
+
+📂 History file: ~/.zsh_history
+📊 Total commands: 21,763
+⚙️  N-gram size: 3
+📈 Train/test split: 80% / 20%
+
+═══════════════════════════════════════════
+           VALIDATION RESULTS
+═══════════════════════════════════════════
+  Training set:      17,410 commands
+  Test set:           4,353 commands
+  Evaluated:          3,857 commands
+───────────────────────────────────────────
+  Hit@1  (top 1):     13.3%
+  Hit@5  (top 5):     26.2%
+  Hit@10 (top 10):    30.7%
+  MRR (Mean Recip):  0.181
+═══════════════════════════════════════════
+</code></pre>
+<p><strong>Interpretation:</strong></p>
+<ul>
+<li><strong>Hit@5 ~27%</strong>: Model suggests correct command in top 5 for ~1 in 4 predictions</li>
+<li><strong>MRR ~0.18</strong>: Average rank of correct answer is ~5th position</li>
+<li>This is realistic for shell completion given command diversity</li>
+</ul>
+<h2 id="part-8-synthetic-data-augmentation"><a class="header" href="#part-8-synthetic-data-augmentation">Part 8: Synthetic Data Augmentation</a></h2>
+<p>Improve model coverage with three strategies:</p>
+<pre><code class="language-bash"># Generate 5000 synthetic commands and retrain
+aprender-shell augment --count 5000
+</code></pre>
+<h3 id="cli-command-templates"><a class="header" href="#cli-command-templates">CLI Command Templates</a></h3>
+<pre><code class="language-rust ignore">use aprender_shell::synthetic::CommandGenerator;
+
+let gen = CommandGenerator::new();
+let commands = gen.generate(1000);
+
+// Generates realistic dev commands:
+// - git status, git commit -m, git push --force
+// - cargo build --release, cargo test --lib
+// - docker run -it, kubectl get pods
+// - npm install --save-dev, pip install -r</code></pre>
+<h3 id="mutation-engine"><a class="header" href="#mutation-engine">Mutation Engine</a></h3>
+<pre><code class="language-rust ignore">use aprender_shell::synthetic::CommandMutator;
+
+let mutator = CommandMutator::new();
+
+// Original: &quot;git commit -m test&quot;
+// Mutations:
+//   - &quot;git add -m test&quot;      (command substitution)
+//   - &quot;git commit -am test&quot;  (flag substitution)
+//   - &quot;git commit test&quot;      (flag removal)
+let mutations = mutator.mutate(&quot;git commit -m test&quot;);</code></pre>
+<h3 id="coverage-guided-generation"><a class="header" href="#coverage-guided-generation">Coverage-Guided Generation</a></h3>
+<pre><code class="language-rust ignore">use aprender_shell::synthetic::{SyntheticPipeline, CoverageGuidedGenerator};
+use std::collections::HashSet;
+
+// Extract known n-grams from current model
+let known_ngrams: HashSet&lt;String&gt; = model.ngram_keys().collect();
+
+// Generate commands that maximize new n-gram coverage
+let pipeline = SyntheticPipeline::new();
+let result = pipeline.generate(&amp;real_history, known_ngrams, 5000);
+
+println!(&quot;New n-grams added: {}&quot;, result.report.new_ngrams);
+println!(&quot;Coverage gain: {:.1}%&quot;, result.report.coverage_gain * 100.0);</code></pre>
+<h3 id="augmentation-output"><a class="header" href="#augmentation-output">Augmentation Output</a></h3>
+<pre><code class="language-text">🧬 aprender-shell: Data Augmentation
+
+📂 History file: ~/.zsh_history
+📊 Real commands: 21,761
+🔢 Known n-grams: 39,176
+
+🧪 Generating synthetic commands... done!
+
+📈 Coverage Report:
+   Synthetic commands: 5,000
+   New n-grams added:  5,473
+   Coverage gain:      99.0%
+
+✅ Augmented model saved
+
+📊 Model Statistics:
+   Total training commands: 26,761
+   Unique n-grams: 46,340 (+18%)
+   Vocabulary size: 21,101 (+31%)
+</code></pre>
 <h2 id="summary"><a class="header" href="#summary">Summary</a></h2>
 <div class="table-wrapper"><table><thead><tr><th>Component</th><th>Purpose</th><th>Complexity</th></tr></thead><tbody>
 <tr><td>N-gram table</td><td>Token prediction</td><td>O(1) lookup</td></tr>
@@ -998,6 +1116,8 @@ fn main() -&gt; Result&lt;(), Box&lt;dyn std::error::Error&gt;&gt; {
 <tr><td>.apr format</td><td>Persistence + metadata</td><td>~2KB overhead</td></tr>
 <tr><td>Encryption</td><td>Privacy protection</td><td>+50ms save/load</td></tr>
 <tr><td>Single binary</td><td>Zero-dependency deployment</td><td>+500KB binary size</td></tr>
+<tr><td><strong>Ranking metrics</strong></td><td>Model validation</td><td><code>aprender::metrics::ranking</code></td></tr>
+<tr><td><strong>Synthetic data</strong></td><td>Coverage improvement</td><td>+13% n-grams</td></tr>
 </tbody></table>
 </div>
 <p><strong>Key insights:</strong></p>
@@ -1007,12 +1127,35 @@ fn main() -&gt; Result&lt;(), Box&lt;dyn std::error::Error&gt;&gt; {
 <li><code>.apr</code> format provides type-safe, versioned persistence</li>
 <li>Encryption enables sharing sensitive models securely</li>
 <li><code>include_bytes!()</code> enables self-contained deployment</li>
+<li><strong>Ranking metrics</strong> (Hit@K, MRR) are standard for language model evaluation</li>
+<li><strong>Synthetic data</strong> fills coverage gaps for commands you rarely use</li>
 </ol>
+<h2 id="cli-reference"><a class="header" href="#cli-reference">CLI Reference</a></h2>
+<pre><code class="language-bash"># Training
+aprender-shell train              # Full retrain from history
+aprender-shell update             # Incremental update (fast)
+
+# Evaluation
+aprender-shell validate           # Holdout evaluation with metrics
+aprender-shell validate -n 4      # Test different n-gram sizes
+aprender-shell stats              # Model statistics
+
+# Data Augmentation
+aprender-shell augment            # Generate synthetic data + retrain
+aprender-shell augment -c 10000   # Custom synthetic count
+
+# Inference
+aprender-shell suggest &quot;git &quot;     # Get completions
+aprender-shell suggest &quot;cargo t&quot;  # Prefix matching
+
+# Export
+aprender-shell export model.apr   # Export to .apr format
+</code></pre>
 <h2 id="next-steps"><a class="header" href="#next-steps">Next Steps</a></h2>
 <ul>
 <li><a href="https://github.com/paiml/aprender/tree/main/crates/aprender-shell"><code>aprender-shell</code> source code</a></li>
 <li><a href="../examples/model-format.html">Model Format Specification</a></li>
-<li><a href="../ml-fundamentals/model-encryption.html">Encryption Features</a></li>
+<li><a href="../ml-fundamentals/ranking-metrics.html">Ranking Metrics API</a></li>
 </ul>
 
                     </main>
