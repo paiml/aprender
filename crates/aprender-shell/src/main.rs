@@ -542,7 +542,10 @@ fn cmd_augment(history_path: Option<PathBuf>, output: &str, ngram: usize, count:
 }
 
 fn cmd_tune(history_path: Option<PathBuf>, trials: usize, ratio: f32) {
-    println!("🎯 aprender-shell: AutoML Hyperparameter Tuning\n");
+    use aprender::automl::params::ParamKey;
+    use aprender::automl::{AutoTuner, SearchSpace, TPE};
+
+    println!("🎯 aprender-shell: AutoML Hyperparameter Tuning (TPE)\n");
 
     // Find history file
     let history_file = history_path.unwrap_or_else(|| {
@@ -559,115 +562,148 @@ fn cmd_tune(history_path: Option<PathBuf>, trials: usize, ratio: f32) {
 
     println!("📊 Total commands: {}", commands.len());
 
-    // For small discrete space (n=2,3,4,5), use exhaustive grid search
-    // with multiple folds per config to reduce variance
-    let ngram_sizes = [2_usize, 3, 4, 5];
-    let folds_per_config = trials.max(1);
+    if commands.len() < 100 {
+        println!(
+            "⚠️  Warning: Small history ({} commands). Results may be noisy.",
+            commands.len()
+        );
+    }
 
-    println!("🔬 Folds per config: {}", folds_per_config);
+    // Define search space for shell model hyperparameters
+    // Using generic param for n-gram size (2-5)
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    enum ShellParam {
+        NGram,
+    }
+
+    impl aprender::automl::params::ParamKey for ShellParam {
+        fn name(&self) -> &'static str {
+            match self {
+                ShellParam::NGram => "ngram",
+            }
+        }
+    }
+
+    impl std::fmt::Display for ShellParam {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "{}", self.name())
+        }
+    }
+
+    let space: SearchSpace<ShellParam> = SearchSpace::new().add(ShellParam::NGram, 2..6); // 2, 3, 4, 5
+
+    println!("🔬 TPE trials: {}", trials);
     println!(
         "📈 Train/test split: {:.0}% / {:.0}%\n",
         ratio * 100.0,
         (1.0 - ratio) * 100.0
     );
 
-    println!("══════════════════════════════════════════════════");
-    println!(" N-gram │   Hit@5      │    MRR       │  Score  ");
-    println!("════════╪══════════════╪══════════════╪═════════");
+    // Track all results for final report
+    let mut all_results: Vec<(usize, f64, f32, f32)> = Vec::new();
 
-    #[derive(Default)]
-    struct Stats {
-        hit5_values: Vec<f32>,
-        mrr_values: Vec<f32>,
-    }
+    // Objective function: evaluate n-gram configuration
+    let objective = |trial: &aprender::automl::Trial<ShellParam>| -> f64 {
+        let ngram = trial.get_usize(&ShellParam::NGram).unwrap_or(3);
 
-    impl Stats {
-        fn mean_std(values: &[f32]) -> (f32, f32) {
-            let n = values.len() as f32;
-            let mean = values.iter().sum::<f32>() / n;
-            let var = values.iter().map(|x| (x - mean).powi(2)).sum::<f32>() / n;
-            (mean, var.sqrt())
-        }
-    }
+        // Run k-fold cross-validation for this configuration
+        let k_folds = 3;
+        let mut scores = Vec::new();
 
-    let mut results: Vec<(usize, Stats)> = Vec::new();
-
-    for &ngram in &ngram_sizes {
-        let mut stats = Stats::default();
-
-        // Cross-validation with different splits using rotation
-        for fold in 0..folds_per_config {
-            let rotation = (commands.len() / folds_per_config) * fold;
+        for fold in 0..k_folds {
+            let rotation = (commands.len() / k_folds) * fold;
             let mut rotated = commands.clone();
             rotated.rotate_left(rotation % commands.len().max(1));
 
             let result = MarkovModel::validate(&rotated, ngram, ratio);
 
-            stats.hit5_values.push(result.metrics.hit_at_5);
-            stats.mrr_values.push(result.metrics.mrr);
+            // Combined score: 60% Hit@5 + 40% MRR
+            let score =
+                f64::from(result.metrics.hit_at_5) * 0.6 + f64::from(result.metrics.mrr) * 0.4;
+            scores.push(score);
         }
 
-        results.push((ngram, stats));
-    }
+        scores.iter().sum::<f64>() / scores.len() as f64
+    };
 
-    let mut best_ngram = 3_usize;
-    let mut best_score = 0.0_f32;
+    println!("══════════════════════════════════════════════════");
+    println!(" Trial │ N-gram │   Hit@5   │    MRR    │  Score  ");
+    println!("═══════╪════════╪═══════════╪═══════════╪═════════");
 
-    for (ngram, stats) in &results {
-        let (hit5_mean, hit5_std) = Stats::mean_std(&stats.hit5_values);
-        let (mrr_mean, mrr_std) = Stats::mean_std(&stats.mrr_values);
+    // Use TPE with early stopping
+    let tpe = TPE::new(trials)
+        .with_seed(42)
+        .with_startup_trials(2) // Random for first 2 trials
+        .with_gamma(0.25);
 
-        // Score = weighted combination
-        let score = hit5_mean * 0.6 + mrr_mean * 0.4;
+    let result = AutoTuner::new(tpe)
+        .early_stopping(4) // Stop if no improvement for 4 trials
+        .maximize(&space, |trial| {
+            let ngram = trial.get_usize(&ShellParam::NGram).unwrap_or(3);
+            let score = objective(trial);
 
-        let marker = if score > best_score { " ★" } else { "  " };
+            // Get detailed metrics for display
+            let validation = MarkovModel::validate(&commands, ngram, ratio);
+            let hit5 = validation.metrics.hit_at_5;
+            let mrr = validation.metrics.mrr;
 
-        println!(
-            "   {:>2}   │ {:>5.1}% ±{:>4.1} │ {:>5.3} ±{:>5.3} │ {:>5.3}{}",
-            ngram,
-            hit5_mean * 100.0,
-            hit5_std * 100.0,
-            mrr_mean,
-            mrr_std,
-            score,
-            marker
-        );
+            all_results.push((ngram, score, hit5, mrr));
 
-        if score > best_score {
-            best_score = score;
-            best_ngram = *ngram;
-        }
-    }
+            println!(
+                "  {:>3}  │   {:>2}   │  {:>5.1}%   │  {:>5.3}   │ {:>6.3}",
+                all_results.len(),
+                ngram,
+                hit5 * 100.0,
+                mrr,
+                score
+            );
+
+            score
+        });
 
     println!("══════════════════════════════════════════════════\n");
 
-    // Detailed analysis
-    println!("📊 Analysis:");
-    for (ngram, stats) in &results {
-        let (hit5_mean, _) = Stats::mean_std(&stats.hit5_values);
-        let (mrr_mean, _) = Stats::mean_std(&stats.mrr_values);
-        let score = hit5_mean * 0.6 + mrr_mean * 0.4;
+    // Summary by n-gram size
+    println!("📊 Summary by N-gram size:");
+    for ngram in 2..=5 {
+        let ngram_results: Vec<_> = all_results
+            .iter()
+            .filter(|(n, _, _, _)| *n == ngram)
+            .collect();
 
-        let recommendation = if *ngram == best_ngram {
-            "← BEST"
-        } else if score > best_score * 0.95 {
-            "(competitive)"
-        } else {
-            ""
-        };
+        if !ngram_results.is_empty() {
+            let avg_score: f64 = ngram_results.iter().map(|(_, s, _, _)| s).sum::<f64>()
+                / ngram_results.len() as f64;
+            let avg_hit5: f32 = ngram_results.iter().map(|(_, _, h, _)| h).sum::<f32>()
+                / ngram_results.len() as f32;
+            let avg_mrr: f32 = ngram_results.iter().map(|(_, _, _, m)| m).sum::<f32>()
+                / ngram_results.len() as f32;
 
-        println!(
-            "   n={}: Hit@5={:.1}%, MRR={:.3} {}",
-            ngram,
-            hit5_mean * 100.0,
-            mrr_mean,
-            recommendation
-        );
+            let best = if result.best_trial.get_usize(&ShellParam::NGram) == Some(ngram) {
+                " ★"
+            } else {
+                ""
+            };
+
+            println!(
+                "   n={}: Hit@5={:>5.1}%, MRR={:.3}, Score={:.3} ({} trials){}",
+                ngram,
+                avg_hit5 * 100.0,
+                avg_mrr,
+                avg_score,
+                ngram_results.len(),
+                best
+            );
+        }
     }
 
-    println!("\n🏆 Best Configuration:");
+    let best_ngram = result.best_trial.get_usize(&ShellParam::NGram).unwrap_or(3);
+
+    println!("\n🏆 Best Configuration (TPE):");
     println!("   N-gram size: {}", best_ngram);
-    println!("   Score:       {:.3}", best_score);
+    println!("   Score:       {:.3}", result.best_score);
+    println!("   Trials run:  {}", result.n_trials);
+    println!("   Time:        {:.1}s", result.elapsed.as_secs_f64());
 
     println!("\n💡 Train with optimal settings:");
     println!("   aprender-shell train --ngram {}", best_ngram);
