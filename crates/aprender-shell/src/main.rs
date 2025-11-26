@@ -129,9 +129,17 @@ enum Commands {
         #[arg(short, long, default_value = "3")]
         ngram: usize,
 
-        /// Number of synthetic commands to generate
-        #[arg(short, long, default_value = "5000")]
-        count: usize,
+        /// Augmentation ratio (synthetic/original, e.g., 0.5 = 50% more data)
+        #[arg(short = 'a', long, default_value = "0.5")]
+        augmentation_ratio: f32,
+
+        /// Minimum quality threshold (0.0-1.0)
+        #[arg(short, long, default_value = "0.7")]
+        quality_threshold: f32,
+
+        /// Enable diversity monitoring
+        #[arg(long)]
+        monitor_diversity: bool,
     },
 
     /// Auto-tune hyperparameters using aprender's AutoML
@@ -207,9 +215,18 @@ fn main() {
             history,
             output,
             ngram,
-            count,
+            augmentation_ratio,
+            quality_threshold,
+            monitor_diversity,
         } => {
-            cmd_augment(history, &output, ngram, count);
+            cmd_augment(
+                history,
+                &output,
+                ngram,
+                augmentation_ratio,
+                quality_threshold,
+                monitor_diversity,
+            );
         }
         Commands::Tune {
             history,
@@ -469,8 +486,17 @@ fn cmd_validate(history_path: Option<PathBuf>, ngram: usize, ratio: f32) {
     }
 }
 
-fn cmd_augment(history_path: Option<PathBuf>, output: &str, ngram: usize, count: usize) {
-    println!("🧬 aprender-shell: Data Augmentation\n");
+fn cmd_augment(
+    history_path: Option<PathBuf>,
+    output: &str,
+    ngram: usize,
+    augmentation_ratio: f32,
+    quality_threshold: f32,
+    monitor_diversity: bool,
+) {
+    use aprender::synthetic::{DiversityMonitor, DiversityScore, SyntheticConfig};
+
+    println!("🧬 aprender-shell: Data Augmentation (with aprender synthetic)\n");
 
     // Find history file
     let history_file = history_path.unwrap_or_else(|| {
@@ -487,6 +513,17 @@ fn cmd_augment(history_path: Option<PathBuf>, output: &str, ngram: usize, count:
 
     println!("📊 Real commands: {}", commands.len());
 
+    // Configure synthetic data generation using aprender's SyntheticConfig
+    let config = SyntheticConfig::default()
+        .with_augmentation_ratio(augmentation_ratio)
+        .with_quality_threshold(quality_threshold)
+        .with_diversity_weight(0.3);
+
+    let target_count = config.target_count(commands.len());
+    println!("⚙️  Augmentation ratio: {:.1}x", augmentation_ratio);
+    println!("⚙️  Quality threshold:  {:.1}%", quality_threshold * 100.0);
+    println!("🎯 Target synthetic:   {} commands", target_count);
+
     // Extract known n-grams from current history
     let mut known_ngrams = std::collections::HashSet::new();
     for cmd in &commands {
@@ -499,14 +536,64 @@ fn cmd_augment(history_path: Option<PathBuf>, output: &str, ngram: usize, count:
     }
     println!("🔢 Known n-grams: {}", known_ngrams.len());
 
+    // Initialize diversity monitor if requested
+    let mut diversity_monitor = if monitor_diversity {
+        Some(DiversityMonitor::new(10).with_collapse_threshold(0.1))
+    } else {
+        None
+    };
+
     // Generate synthetic data
     print!("\n🧪 Generating synthetic commands... ");
     let pipeline = SyntheticPipeline::new();
-    let result = pipeline.generate(&commands, known_ngrams, count);
+    let result = pipeline.generate(&commands, known_ngrams, target_count);
     println!("done!");
 
+    // Quality filtering using aprender's config
+    let mut quality_filtered: Vec<String> = Vec::new();
+    let mut rejected_count = 0;
+
+    for cmd in &result.commands {
+        // Simple quality heuristic: command length and token count
+        let tokens: Vec<&str> = cmd.split_whitespace().collect();
+        let quality_score = if tokens.is_empty() {
+            0.0
+        } else {
+            // Quality based on: reasonable length, known base command
+            let length_score = (tokens.len() as f32 / 5.0).min(1.0);
+            let base_known =
+                ["git", "cargo", "docker", "make", "npm", "kubectl", "aws"].contains(&tokens[0]);
+            let base_score = if base_known { 0.8 } else { 0.5 };
+            (length_score * 0.4 + base_score * 0.6).min(1.0)
+        };
+
+        if config.meets_quality(quality_score) {
+            quality_filtered.push(cmd.clone());
+
+            // Update diversity monitor
+            if let Some(ref mut monitor) = diversity_monitor {
+                // Compute simple diversity based on unique tokens
+                let unique_tokens: std::collections::HashSet<_> = tokens.iter().collect();
+                let diversity = if tokens.is_empty() {
+                    0.0
+                } else {
+                    unique_tokens.len() as f32 / tokens.len() as f32
+                };
+                let score = DiversityScore::new(diversity, diversity * 0.5, diversity);
+                monitor.record(score);
+            }
+        } else {
+            rejected_count += 1;
+        }
+    }
+
     println!("\n📈 Coverage Report:");
-    println!("   Synthetic commands: {}", result.commands.len());
+    println!("   Generated:          {}", result.commands.len());
+    println!(
+        "   Quality filtered:   {} (rejected {})",
+        quality_filtered.len(),
+        rejected_count
+    );
     println!("   Known n-grams:      {}", result.report.known_ngrams);
     println!("   Total n-grams:      {}", result.report.total_ngrams);
     println!("   New n-grams added:  {}", result.report.new_ngrams);
@@ -515,9 +602,23 @@ fn cmd_augment(history_path: Option<PathBuf>, output: &str, ngram: usize, count:
         result.report.coverage_gain * 100.0
     );
 
+    // Show diversity metrics if monitoring
+    if let Some(ref monitor) = diversity_monitor {
+        println!("\n📊 Diversity Metrics:");
+        println!("   Mean diversity:     {:.3}", monitor.mean_diversity());
+        if monitor.is_collapsing() {
+            println!("   ⚠️  Warning: Low diversity detected (potential mode collapse)");
+        } else {
+            println!("   ✓  Diversity is healthy");
+        }
+        if monitor.is_trending_down() {
+            println!("   ⚠️  Warning: Diversity trending downward");
+        }
+    }
+
     // Combine real + synthetic
     let mut augmented_commands = commands.clone();
-    augmented_commands.extend(result.commands);
+    augmented_commands.extend(quality_filtered);
 
     println!("\n🧠 Training augmented model...");
     let mut model = MarkovModel::new(ngram);
@@ -529,16 +630,22 @@ fn cmd_augment(history_path: Option<PathBuf>, output: &str, ngram: usize, count:
 
     println!("\n✅ Augmented model saved to: {}", output_path.display());
     println!("\n📊 Model Statistics:");
-    println!("   Total training commands: {}", augmented_commands.len());
-    println!("   Unique n-grams: {}", model.ngram_count());
-    println!("   Vocabulary size: {}", model.vocab_size());
+    println!("   Original commands:   {}", commands.len());
     println!(
-        "   Model size: {:.1} KB",
+        "   Synthetic commands:  {}",
+        augmented_commands.len() - commands.len()
+    );
+    println!("   Total training:      {}", augmented_commands.len());
+    println!("   Unique n-grams:      {}", model.ngram_count());
+    println!("   Vocabulary size:     {}", model.vocab_size());
+    println!(
+        "   Model size:          {:.1} KB",
         model.size_bytes() as f64 / 1024.0
     );
 
-    println!("\n💡 Validate improvement:");
-    println!("   aprender-shell validate");
+    println!("\n💡 Next steps:");
+    println!("   Validate: aprender-shell validate");
+    println!("   Tune:     aprender-shell tune");
 }
 
 fn cmd_tune(history_path: Option<PathBuf>, trials: usize, ratio: f32) {
