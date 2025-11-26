@@ -31,15 +31,18 @@
 //! - Ratner et al. (2017). Snorkel: Weak Supervision. VLDB.
 
 pub mod andon;
+pub mod cache;
 mod config;
 mod diversity;
 pub mod eda;
+pub mod mixup;
 mod params;
 mod quality;
 pub mod shell;
 mod strategy;
 pub mod template;
 mod validator;
+pub mod weak_supervision;
 
 pub use andon::{AndonConfig, AndonEvent, AndonHandler, AndonSeverity, DefaultAndon, TestAndon};
 pub use config::SyntheticConfig;
