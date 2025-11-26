@@ -263,6 +263,7 @@ dependencies = [
  "aprender 0.10.0",
  "assert_cmd",
  "clap",
+ "criterion",
  "dirs",
  "predicates",
  "serde",

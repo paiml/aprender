@@ -10,9 +10,17 @@ keywords = ["shell", "zsh", "completion", "ai", "autocomplete"]
 categories = ["command-line-utilities", "text-processing"]
 readme = "README.md"
 
+[lib]
+name = "aprender_shell"
+path = "src/lib.rs"
+
 [[bin]]
 name = "aprender-shell"
 path = "src/main.rs"
+
+[[bench]]
+name = "shell_benchmarks"
+harness = false
 
 [dependencies]
 aprender = { path = "../.." }
@@ -23,5 +31,6 @@ serde_json = "1"
 
 [dev-dependencies]
 assert_cmd = "2"
+criterion = "0.5"
 predicates = "3"
 tempfile = "3"

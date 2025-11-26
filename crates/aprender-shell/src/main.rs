@@ -3,19 +3,9 @@
 //! Train a personalized autocomplete model on your shell history in seconds.
 //! 100% local, private, and fast.
 
+use aprender_shell::{synthetic, HistoryParser, MarkovModel, PagedMarkovModel, SyntheticPipeline};
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
-
-mod history;
-mod model;
-mod paged_model;
-mod synthetic;
-mod trie;
-
-use history::HistoryParser;
-use model::MarkovModel;
-use paged_model::PagedMarkovModel;
-use synthetic::SyntheticPipeline;
 
 #[derive(Parser)]
 #[command(name = "aprender-shell")]

@@ -1,0 +1,48 @@
+# Small history fixture (~50 commands)
+# Representative developer workflow
+git status
+git add .
+git commit -m "Initial commit"
+git push origin main
+cargo build
+cargo test
+cargo fmt
+cargo clippy
+ls -la
+cd src
+cat main.rs
+vim config.toml
+grep -r "TODO" .
+make build
+make test
+docker ps
+docker-compose up -d
+kubectl get pods
+npm install
+npm run dev
+python script.py
+pip install -r requirements.txt
+curl https://api.example.com/health
+ssh user@server
+scp file.txt user@server:/tmp/
+rsync -avz . user@server:/backup/
+tmux new -s dev
+htop
+ps aux | grep node
+kill -9 12345
+chmod +x script.sh
+./script.sh
+echo "Hello World"
+cat /etc/hosts
+tail -f /var/log/syslog
+head -n 100 data.csv
+wc -l *.txt
+find . -name "*.rs"
+tar -xzf archive.tar.gz
+unzip package.zip
+which python
+env | grep PATH
+export RUST_LOG=debug
+alias ll='ls -la'
+history | tail -20
+man git

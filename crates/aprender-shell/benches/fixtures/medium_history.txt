@@ -1,0 +1,267 @@
+# Medium history fixture (~500 commands)
+# Realistic developer workflow patterns
+git status
+git add .
+git commit -m "feat: add user authentication"
+git push origin main
+git pull origin main
+git checkout -b feature/new-api
+git merge main
+git rebase main
+git log --oneline -10
+git diff HEAD~1
+git stash
+git stash pop
+git branch -d old-branch
+git remote -v
+git fetch --all
+git reset --hard HEAD~1
+git cherry-pick abc123
+git tag v1.0.0
+git describe --tags
+cargo build
+cargo build --release
+cargo test
+cargo test -- --nocapture
+cargo test integration
+cargo run
+cargo run --example demo
+cargo fmt
+cargo fmt --check
+cargo clippy
+cargo clippy -- -D warnings
+cargo doc --open
+cargo bench
+cargo update
+cargo add serde
+cargo remove unused-dep
+cargo tree
+cargo audit
+cargo publish --dry-run
+rustup update
+rustup show
+rustc --version
+ls
+ls -la
+ls -lah
+ls src/
+cd src
+cd ..
+cd ~/projects
+pwd
+mkdir -p new-dir/sub
+rm -rf temp/
+mv old.txt new.txt
+cp -r src/ backup/
+cat README.md
+head -n 50 data.csv
+tail -f logs/app.log
+less large-file.txt
+vim main.rs
+nano config.yaml
+code .
+grep -r "error" logs/
+grep -rn "TODO" src/
+rg "pattern" --type rust
+ag "search term"
+find . -name "*.rs" -type f
+fd "\.rs$"
+sed -i 's/old/new/g' file.txt
+awk '{print $1}' data.txt
+sort data.txt | uniq -c
+wc -l *.rs
+du -sh *
+df -h
+free -m
+top
+htop
+ps aux
+ps aux | grep rust
+kill 12345
+killall node
+docker ps
+docker ps -a
+docker images
+docker build -t myapp .
+docker run -d myapp
+docker-compose up
+docker-compose down
+docker-compose logs -f
+docker exec -it container bash
+docker volume ls
+docker network ls
+kubectl get pods
+kubectl get svc
+kubectl logs pod-name
+kubectl describe pod pod-name
+kubectl apply -f deployment.yaml
+kubectl delete pod pod-name
+kubectl scale deployment app --replicas=3
+kubectl port-forward svc/app 8080:80
+helm install myapp ./chart
+helm upgrade myapp ./chart
+npm install
+npm install --save-dev jest
+npm run build
+npm run test
+npm run lint
+npm start
+npm publish
+yarn add package
+yarn build
+yarn test
+python script.py
+python -m pytest
+python -m venv venv
+pip install -r requirements.txt
+pip freeze > requirements.txt
+pip install package
+pytest tests/
+pytest -v tests/test_unit.py
+black .
+flake8 src/
+mypy src/
+curl -X GET https://api.example.com/users
+curl -X POST -d '{"name":"test"}' https://api.example.com/users
+curl -H "Authorization: Bearer token" https://api.example.com/me
+wget https://example.com/file.tar.gz
+httpie GET https://api.example.com
+ssh user@192.168.1.100
+ssh -i key.pem ec2-user@host
+scp file.txt user@server:/tmp/
+rsync -avz --progress . user@server:/backup/
+sftp user@server
+aws s3 ls
+aws s3 cp file.txt s3://bucket/
+aws ec2 describe-instances
+aws lambda invoke --function-name func out.json
+gcloud compute instances list
+gcloud app deploy
+az vm list
+terraform init
+terraform plan
+terraform apply
+ansible-playbook playbook.yml
+make
+make build
+make test
+make clean
+make install
+cmake ..
+cmake --build .
+gcc -o main main.c
+g++ -std=c++17 -o app app.cpp
+go build
+go test ./...
+go run main.go
+go mod tidy
+java -jar app.jar
+mvn clean install
+mvn test
+gradle build
+gradle test
+echo "Hello World"
+echo $PATH
+export RUST_LOG=debug
+export NODE_ENV=production
+env | grep AWS
+printenv
+alias ll='ls -la'
+alias gs='git status'
+source ~/.zshrc
+. ~/.bashrc
+history | grep docker
+!!
+!git
+man git
+tldr curl
+which python
+whereis gcc
+type ls
+file binary
+chmod +x script.sh
+chmod 644 config.txt
+chown user:group file
+sudo apt update
+sudo apt install package
+sudo systemctl restart nginx
+sudo journalctl -u service
+crontab -e
+crontab -l
+at now + 1 hour
+screen -S session
+tmux new -s dev
+tmux attach -t dev
+tmux ls
+nohup ./script.sh &
+bg
+fg
+jobs
+date
+cal
+uptime
+whoami
+hostname
+uname -a
+lsb_release -a
+cat /etc/os-release
+ip addr
+ifconfig
+netstat -tulpn
+ss -tulpn
+ping google.com
+traceroute google.com
+dig example.com
+nslookup example.com
+curl ifconfig.me
+iptables -L
+ufw status
+openssl genrsa -out key.pem 2048
+openssl req -new -x509 -key key.pem -out cert.pem
+gpg --gen-key
+gpg -c secret.txt
+base64 file.txt
+md5sum file.txt
+sha256sum file.txt
+tar -czf archive.tar.gz dir/
+tar -xzf archive.tar.gz
+zip -r archive.zip dir/
+unzip archive.zip
+gzip file.txt
+gunzip file.txt.gz
+bzip2 file.txt
+xz file.txt
+7z a archive.7z dir/
+mount /dev/sdb1 /mnt
+umount /mnt
+lsblk
+fdisk -l
+parted -l
+mkfs.ext4 /dev/sdb1
+dd if=/dev/zero of=file bs=1M count=100
+sync
+watch -n 1 'docker ps'
+time cargo build
+strace ./binary
+ltrace ./binary
+valgrind ./binary
+perf record ./binary
+perf report
+flamegraph ./binary
+hyperfine 'cargo build'
+tokei .
+cloc src/
+scc .
+git status
+git add -p
+git commit --amend
+git push -f origin branch
+git pull --rebase
+cargo test --all-features
+cargo build --all-targets
+npm ci
+yarn install --frozen-lockfile
+docker system prune -af
+kubectl rollout restart deployment/app
+terraform destroy
+ansible-vault encrypt secrets.yml
