@@ -27,7 +27,7 @@
 | Encryption (password) | §4.1.2 | ○ | format-encryption feature |
 | Encryption (X25519) | §4.1.3 | ○ | format-encryption feature |
 | Private inference | §4.1.4 | ○ | format-encryption feature |
-| Signing | §4.2 | ○ | format-signing feature |
+| Signing | §4.2 | ✓ Ed25519 (feature) | format-signing feature |
 | Streaming | §6 | ○ | format-streaming feature |
 | License block | §8 | ○ | format-commercial feature |
 | trueno-native | §9 | ○ | format-trueno feature |

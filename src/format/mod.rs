@@ -52,6 +52,18 @@ use std::io::Cursor;
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::Path;
 
+// Re-export signing types when feature is enabled
+#[cfg(feature = "format-signing")]
+pub use ed25519_dalek::{SigningKey, VerifyingKey};
+
+/// Ed25519 signature size in bytes
+#[cfg(feature = "format-signing")]
+pub const SIGNATURE_SIZE: usize = 64;
+
+/// Ed25519 public key size in bytes
+#[cfg(feature = "format-signing")]
+pub const PUBLIC_KEY_SIZE: usize = 32;
+
 /// Magic number: "APRN" in ASCII (0x4150524E)
 pub const MAGIC: [u8; 4] = [0x41, 0x50, 0x52, 0x4E];
 
@@ -768,6 +780,207 @@ pub fn inspect(path: impl AsRef<Path>) -> Result<ModelInfo> {
     })
 }
 
+/// Save a model with Ed25519 digital signature (spec §4.2)
+///
+/// Signs the model content (header + metadata + payload) for provenance verification.
+/// The signature block (96 bytes) is appended before the checksum.
+///
+/// # Arguments
+/// * `model` - The model to save (must implement Serialize)
+/// * `model_type` - Model type identifier
+/// * `path` - Output file path
+/// * `options` - Save options (compression, metadata)
+/// * `signing_key` - Ed25519 signing key for creating signature
+///
+/// # Errors
+/// Returns error on I/O failure, serialization error, or signing failure
+#[cfg(feature = "format-signing")]
+#[allow(clippy::needless_pass_by_value)] // SaveOptions is small and passed by value for ergonomics
+pub fn save_signed<M: Serialize>(
+    model: &M,
+    model_type: ModelType,
+    path: impl AsRef<Path>,
+    options: SaveOptions,
+    signing_key: &SigningKey,
+) -> Result<()> {
+    use ed25519_dalek::Signer;
+
+    let path = path.as_ref();
+
+    // Serialize payload with bincode
+    let payload_uncompressed = bincode::serialize(model)
+        .map_err(|e| AprenderError::Serialization(format!("Failed to serialize model: {e}")))?;
+
+    // Compress payload
+    let (payload_compressed, compression) =
+        compress_payload(&payload_uncompressed, options.compression)?;
+
+    // Serialize metadata as MessagePack (spec §2)
+    let metadata_bytes = rmp_serde::to_vec(&options.metadata)
+        .map_err(|e| AprenderError::Serialization(format!("Failed to serialize metadata: {e}")))?;
+
+    // Build header with SIGNED flag
+    let mut header = Header::new(model_type);
+    header.compression = compression;
+    header.metadata_size = metadata_bytes.len() as u32;
+    header.payload_size = payload_compressed.len() as u32;
+    header.uncompressed_size = payload_uncompressed.len() as u32;
+    header.flags = header.flags.with_signed();
+
+    // Assemble content to sign (header + metadata + payload)
+    let mut signable_content = Vec::new();
+    signable_content.extend_from_slice(&header.to_bytes());
+    signable_content.extend_from_slice(&metadata_bytes);
+    signable_content.extend_from_slice(&payload_compressed);
+
+    // Sign the content
+    let signature = signing_key.sign(&signable_content);
+    let verifying_key = signing_key.verifying_key();
+
+    // Assemble complete file content
+    let mut content = signable_content;
+    content.extend_from_slice(&signature.to_bytes()); // 64 bytes
+    content.extend_from_slice(verifying_key.as_bytes()); // 32 bytes
+
+    // Calculate and append checksum
+    let checksum = crc32(&content);
+    content.extend_from_slice(&checksum.to_le_bytes());
+
+    // Write to file
+    let file = File::create(path)?;
+    let mut writer = BufWriter::new(file);
+    writer.write_all(&content)?;
+    writer.flush()?;
+
+    Ok(())
+}
+
+/// Load a model with signature verification (spec §4.2, Jidoka)
+///
+/// Verifies the Ed25519 signature before deserializing the model.
+/// If verification fails, loading halts immediately (Jidoka principle).
+///
+/// # Arguments
+/// * `path` - Input file path
+/// * `expected_type` - Expected model type (for type safety)
+/// * `trusted_key` - Optional trusted public key for verification (if None, uses embedded key)
+///
+/// # Errors
+/// Returns error on I/O failure, format error, type mismatch, or signature verification failure
+#[cfg(feature = "format-signing")]
+pub fn load_verified<M: DeserializeOwned>(
+    path: impl AsRef<Path>,
+    expected_type: ModelType,
+    trusted_key: Option<&VerifyingKey>,
+) -> Result<M> {
+    use ed25519_dalek::{Signature, Verifier};
+
+    let path = path.as_ref();
+
+    // Read entire file
+    let file = File::open(path)?;
+    let mut reader = BufReader::new(file);
+    let mut content = Vec::new();
+    reader.read_to_end(&mut content)?;
+
+    // Verify minimum size (header + signature block + checksum)
+    const SIGNATURE_BLOCK_SIZE: usize = SIGNATURE_SIZE + PUBLIC_KEY_SIZE; // 96 bytes
+    if content.len() < HEADER_SIZE + SIGNATURE_BLOCK_SIZE + 4 {
+        return Err(AprenderError::FormatError {
+            message: format!("File too small for signed model: {} bytes", content.len()),
+        });
+    }
+
+    // Verify checksum (Jidoka: stop the line on corruption)
+    let stored_checksum = u32::from_le_bytes([
+        content[content.len() - 4],
+        content[content.len() - 3],
+        content[content.len() - 2],
+        content[content.len() - 1],
+    ]);
+    let computed_checksum = crc32(&content[..content.len() - 4]);
+    if stored_checksum != computed_checksum {
+        return Err(AprenderError::ChecksumMismatch {
+            expected: stored_checksum,
+            actual: computed_checksum,
+        });
+    }
+
+    // Parse header
+    let header = Header::from_bytes(&content[..HEADER_SIZE])?;
+
+    // Verify SIGNED flag is set
+    if !header.flags.is_signed() {
+        return Err(AprenderError::FormatError {
+            message: "File is not signed (SIGNED flag not set)".to_string(),
+        });
+    }
+
+    // Verify model type
+    if header.model_type != expected_type {
+        return Err(AprenderError::FormatError {
+            message: format!(
+                "Model type mismatch: file contains {:?}, expected {:?}",
+                header.model_type, expected_type
+            ),
+        });
+    }
+
+    // Calculate content boundaries
+    let metadata_end = HEADER_SIZE + header.metadata_size as usize;
+    let payload_end = metadata_end + header.payload_size as usize;
+    let signature_start = payload_end;
+    let pubkey_start = signature_start + SIGNATURE_SIZE;
+    let pubkey_end = pubkey_start + PUBLIC_KEY_SIZE;
+
+    if pubkey_end > content.len() - 4 {
+        return Err(AprenderError::FormatError {
+            message: "Signature block extends beyond file boundary".to_string(),
+        });
+    }
+
+    // Extract signature and public key
+    let signature_bytes: [u8; 64] =
+        content[signature_start..pubkey_start]
+            .try_into()
+            .map_err(|_| AprenderError::FormatError {
+                message: "Invalid signature size".to_string(),
+            })?;
+    let signature = Signature::from_bytes(&signature_bytes);
+
+    let pubkey_bytes: [u8; 32] =
+        content[pubkey_start..pubkey_end]
+            .try_into()
+            .map_err(|_| AprenderError::FormatError {
+                message: "Invalid public key size".to_string(),
+            })?;
+    let embedded_key =
+        VerifyingKey::from_bytes(&pubkey_bytes).map_err(|e| AprenderError::FormatError {
+            message: format!("Invalid public key: {e}"),
+        })?;
+
+    // Use trusted key if provided, otherwise use embedded key
+    let verifying_key = trusted_key.unwrap_or(&embedded_key);
+
+    // Extract signable content (header + metadata + payload)
+    let signable_content = &content[..payload_end];
+
+    // Verify signature (Jidoka: halt on verification failure)
+    verifying_key
+        .verify(signable_content, &signature)
+        .map_err(|e| AprenderError::SignatureInvalid {
+            reason: format!("Signature verification failed: {e}"),
+        })?;
+
+    // Extract and decompress payload
+    let payload_compressed = &content[metadata_end..payload_end];
+    let payload_uncompressed = decompress_payload(payload_compressed, header.compression)?;
+
+    // Deserialize model
+    bincode::deserialize(&payload_uncompressed)
+        .map_err(|e| AprenderError::Serialization(format!("Failed to deserialize model: {e}")))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1089,5 +1302,167 @@ mod tests {
             // Compressed data will be different (has zstd header)
             assert_ne!(compressed, data);
         }
+    }
+
+    #[test]
+    #[cfg(feature = "format-signing")]
+    fn test_signed_save_load_roundtrip() {
+        use tempfile::tempdir;
+
+        #[derive(Debug, Serialize, Deserialize, PartialEq)]
+        struct TestModel {
+            weights: Vec<f32>,
+            bias: f32,
+        }
+
+        let model = TestModel {
+            weights: vec![1.0, 2.0, 3.0, 4.0, 5.0],
+            bias: 0.5,
+        };
+
+        // Generate signing key
+        let signing_key = SigningKey::generate(&mut rand::rngs::OsRng);
+        let verifying_key = signing_key.verifying_key();
+
+        let dir = tempdir().expect("create temp dir");
+        let path = dir.path().join("signed.apr");
+
+        // Save with signature
+        save_signed(
+            &model,
+            ModelType::Custom,
+            &path,
+            SaveOptions::default(),
+            &signing_key,
+        )
+        .expect("save_signed should succeed");
+
+        // Inspect - should show signed flag
+        let info = inspect(&path).expect("inspect should succeed");
+        assert!(info.signed, "Model should be marked as signed");
+        assert_eq!(info.model_type, ModelType::Custom);
+
+        // Load with verification (using embedded key)
+        let loaded: TestModel =
+            load_verified(&path, ModelType::Custom, None).expect("load_verified should succeed");
+        assert_eq!(loaded, model);
+
+        // Load with verification (using trusted key)
+        let loaded2: TestModel = load_verified(&path, ModelType::Custom, Some(&verifying_key))
+            .expect("load_verified with trusted key should succeed");
+        assert_eq!(loaded2, model);
+    }
+
+    #[test]
+    #[cfg(feature = "format-signing")]
+    fn test_signature_verification_fails_with_wrong_key() {
+        use tempfile::tempdir;
+
+        #[derive(Debug, Serialize, Deserialize, PartialEq)]
+        struct TestModel {
+            value: i32,
+        }
+
+        let model = TestModel { value: 42 };
+
+        // Generate two different key pairs
+        let signing_key = SigningKey::generate(&mut rand::rngs::OsRng);
+        let wrong_key = SigningKey::generate(&mut rand::rngs::OsRng).verifying_key();
+
+        let dir = tempdir().expect("create temp dir");
+        let path = dir.path().join("signed_wrong.apr");
+
+        // Save with one key
+        save_signed(
+            &model,
+            ModelType::Custom,
+            &path,
+            SaveOptions::default(),
+            &signing_key,
+        )
+        .expect("save_signed should succeed");
+
+        // Try to verify with wrong key - should fail
+        let result: Result<TestModel> = load_verified(&path, ModelType::Custom, Some(&wrong_key));
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Signature verification failed"));
+    }
+
+    #[test]
+    #[cfg(feature = "format-signing")]
+    fn test_signed_model_detects_tampering() {
+        use tempfile::tempdir;
+
+        #[derive(Debug, Serialize, Deserialize)]
+        struct TestModel {
+            value: i32,
+        }
+
+        let model = TestModel { value: 42 };
+        let signing_key = SigningKey::generate(&mut rand::rngs::OsRng);
+
+        let dir = tempdir().expect("create temp dir");
+        let path = dir.path().join("tampered.apr");
+
+        // Save signed model
+        save_signed(
+            &model,
+            ModelType::Custom,
+            &path,
+            SaveOptions::default(),
+            &signing_key,
+        )
+        .expect("save_signed should succeed");
+
+        // Tamper with the file (modify a byte in the payload)
+        let mut content = std::fs::read(&path).expect("read file");
+        let payload_offset = HEADER_SIZE + 20; // Somewhere in metadata/payload
+        if content.len() > payload_offset {
+            content[payload_offset] ^= 0xFF;
+        }
+
+        // Recalculate checksum to avoid checksum failure
+        let checksum_start = content.len() - 4;
+        let new_checksum = crc32(&content[..checksum_start]);
+        content[checksum_start..].copy_from_slice(&new_checksum.to_le_bytes());
+
+        std::fs::write(&path, &content).expect("write tampered file");
+
+        // Verification should fail due to signature mismatch
+        let result: Result<TestModel> = load_verified(&path, ModelType::Custom, None);
+        assert!(result.is_err());
+        // Either signature verification fails or parsing fails due to corrupted data
+    }
+
+    #[test]
+    #[cfg(feature = "format-signing")]
+    fn test_load_verified_rejects_unsigned_file() {
+        use tempfile::tempdir;
+
+        #[derive(Debug, Serialize, Deserialize)]
+        struct TestModel {
+            value: i32,
+        }
+
+        let model = TestModel { value: 42 };
+
+        let dir = tempdir().expect("create temp dir");
+        let path = dir.path().join("unsigned.apr");
+
+        // Save without signature
+        save(&model, ModelType::Custom, &path, SaveOptions::default())
+            .expect("save should succeed");
+
+        // load_verified should reject unsigned files
+        let result: Result<TestModel> = load_verified(&path, ModelType::Custom, None);
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("SIGNED flag not set") || err_msg.contains("File too small"),
+            "Expected SIGNED flag error or size error, got: {err_msg}"
+        );
     }
 }

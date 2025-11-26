@@ -94,6 +94,9 @@ trueno = "0.7.3"
 # Compression for .apr format (optional, spec §3.3)
 zstd = { version = "0.13", optional = true }
 
+# Digital signatures for .apr format (optional, spec §4.2)
+ed25519-dalek = { version = "2.1", optional = true, default-features = false, features = ["std", "zeroize", "rand_core"] }
+
 # Linear algebra for PCA eigendecomposition
 nalgebra = "0.33"
 
@@ -111,6 +114,7 @@ default = ["parallel"]
 parallel = ["rayon"]  # Enable parallel graph algorithms (disable for WASM)
 datasets = ["alimentar"]  # Enable data loading from alimentar
 format-compression = ["zstd"]  # Enable zstd compression for .apr format (spec §3.3)
+format-signing = ["ed25519-dalek"]  # Enable Ed25519 signatures for .apr format (spec §4.2)
 gpu = []
 cpu-only = []
 # Chaos engineering features (from renacer)
