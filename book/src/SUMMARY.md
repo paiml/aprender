@@ -184,6 +184,7 @@
 - [Case Study: Topic & Sentiment Analysis](./examples/topic-sentiment-analysis.md)
 - [Case Study: Content-Based Recommendations](./examples/recommend-content.md)
 - [Case Study: AI Shell Completion](./examples/shell-completion.md)
+- [Case Study: Shell Completion Benchmarks](./examples/shell-completion-benchmarks.md)
 - [Developer's Guide: Shell History Models](./examples/shell-history-developer-guide.md)
 - [Building Custom Error Classifiers](./examples/custom-error-classifier.md)
 
