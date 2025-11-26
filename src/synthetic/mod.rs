@@ -36,6 +36,7 @@ mod diversity;
 pub mod eda;
 mod params;
 mod quality;
+pub mod shell;
 mod strategy;
 pub mod template;
 mod validator;
