@@ -159,11 +159,13 @@ let model: MyModel = load_as_recipient("partner.apr", ModelType::Custom, &my_sec
 
 ### What is trueno?
 
-trueno is aprender's SIMD-accelerated tensor library. Unlike NumPy/PyTorch:
+trueno is aprender's SIMD and GPU-accelerated tensor library. Unlike NumPy/PyTorch:
 
-- **Pure Rust** - No C/C++/Fortran
-- **Auto-vectorization** - Compiler generates optimal SIMD
-- **Multi-backend** - Same code runs on AVX-512, NEON, WASM SIMD
+- **Pure Rust** - No C/C++/Fortran/CUDA SDK required
+- **Auto-vectorization** - Compiler generates optimal SIMD for your CPU
+- **Six SIMD backends** - scalar, SSE2, AVX2, AVX-512, NEON (ARM), WASM SIMD128
+- **GPU backend** - wgpu (Vulkan/Metal/DX12/WebGPU) for 10-50x speedups
+- **Same API everywhere** - Code runs identically on x86, ARM, browsers, GPUs
 
 ### Why trueno + .apr?
 
@@ -423,19 +425,36 @@ export_onnx(&model, "model.onnx")?;
 
 ### "But I need GPU inference"
 
-**Answer:** trueno supports GPU backends (coming soon), and the .apr format is backend-agnostic:
+**Answer:** trueno has **production-ready GPU support** via wgpu (Vulkan/Metal/DX12/WebGPU):
 
 ```rust,ignore
-// Same model file works on CPU and GPU
-let model: NeuralNet = load("model.apr", ModelType::NeuralSequential)?;
+use trueno::backends::gpu::GpuBackend;
 
-// Backend selection is runtime, not format
-#[cfg(feature = "cuda")]
-let output = model.predict_gpu(&input)?;
+// GPU backend with cross-platform support
+let mut gpu = GpuBackend::new();
 
-#[cfg(not(feature = "cuda"))]
-let output = model.predict(&input)?; // Falls back to SIMD CPU
+// Check availability at runtime
+if GpuBackend::is_available() {
+    // Matrix multiplication: 10-50x faster than SIMD for large matrices
+    let result = gpu.matmul(&a, &b, m, k, n)?;
+
+    // All neural network activations on GPU
+    let relu_out = gpu.relu(&input)?;
+    let sigmoid_out = gpu.sigmoid(&input)?;
+    let gelu_out = gpu.gelu(&input)?;      // Transformers
+    let softmax_out = gpu.softmax(&input)?; // Classification
+
+    // 2D convolution for CNNs
+    let conv_out = gpu.convolve2d(&input, &kernel, h, w, kh, kw)?;
+}
+
+// Same .apr model file works on CPU (SIMD) and GPU - backend is runtime choice
 ```
+
+**trueno GPU capabilities:**
+- **Backends**: Vulkan, Metal, DirectX 12, WebGPU (browsers!)
+- **Operations**: matmul, dot, relu, leaky_relu, elu, sigmoid, tanh, swish, gelu, softmax, log_softmax, conv2d, clip
+- **Performance**: 10-50x speedup for matmul (1000×1000+), 5-20x for reductions (100K+ elements)
 
 ## Summary: When to Use .apr
 
