@@ -1,6 +1,6 @@
 # Aprender Model Format Specification (.apr)
 
-**Version:** 1.7.0
+**Version:** 1.8.0
 **Status:** Partially Implemented
 **Author:** paiml
 **Reviewer:** Toyota Way AI Agent
@@ -16,6 +16,7 @@
 - v1.5.0: Model Cards [Mitchell2019], Andon error protocols, supply chain integrity
 - v1.6.0: **Full quantization spec** (§6.2) - GGUF-compatible Q8_0/Q4_0/Q4_1, Quantizer trait, plugin architecture, CLI commands, explicit opt-in only
 - v1.7.0: **Single binary deployment** (§1.1) - `include_bytes!()` embedding, AWS Lambda ARM, SIMD-first, zero-dependency MLOps
+- v1.8.0: **Knowledge distillation** (§6.3) - Teacher provenance, distillation params, progressive/ensemble methods, SLM pipeline (7B→1B→Q4→binary)
 
 ### Implementation Status
 
@@ -34,6 +35,7 @@
 | Encryption (X25519) | §5.3 | ✓ X25519+HKDF+AES-GCM | ✓ | format-encryption feature |
 | Signing | §5.4 | ✓ Ed25519 (feature) | ✓ | format-signing feature |
 | Quantization | §6.2 | ○ Spec complete | ✓ | format-quantize feature |
+| Distillation | §6.3 | ○ Spec complete | ✓ | metadata only (entrenar integration) |
 | Streaming | §7 | ○ | N/A | format-streaming feature |
 | License block | §9 | ○ | ○ | format-commercial feature |
 | trueno-native | §8 | ○ | N/A | format-trueno feature |
@@ -757,6 +759,214 @@ pub fn dequantize_q4_0(block: &[u8]) -> Vec<f32> {
 | Accuracy degradation >5% | Warning in metadata | Log but proceed (user responsibility). |
 | GGUF export incompatible | `ExportFailed` | **Stop**. Type not supported by target. |
 
+### 6.3 Knowledge Distillation [Hinton2015]
+
+When a model is distilled from a teacher, provenance and distillation parameters are stored in metadata for reproducibility and audit trails.
+
+**Research basis:** entrenar distillation module provides production-ready implementation.
+
+#### 6.3.1 Distillation Methods
+
+| Method | Description | Use Case |
+|--------|-------------|----------|
+| Standard | Final logits KL divergence | General compression |
+| Progressive | Layer-wise intermediate matching | Deep networks |
+| Ensemble | Multiple teacher averaging | Robust distillation |
+
+#### 6.3.2 Schema Definition
+
+```rust
+/// Distillation provenance stored in ModelCard metadata
+#[derive(Serialize, Deserialize)]
+pub struct DistillationInfo {
+    /// Distillation method used
+    pub method: DistillMethod,
+
+    /// Teacher model provenance
+    pub teacher: TeacherProvenance,
+
+    /// Distillation hyperparameters
+    pub params: DistillationParams,
+
+    /// Optional: layer mapping for progressive distillation
+    pub layer_mapping: Option<Vec<LayerMapping>>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub enum DistillMethod {
+    Standard,      // KL divergence on final logits
+    Progressive,   // Intermediate layer matching
+    Ensemble,      // Multiple teachers
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct TeacherProvenance {
+    /// SHA256 hash of teacher .apr file
+    pub hash: String,
+
+    /// Ed25519 signature of teacher (if signed)
+    pub signature: Option<String>,
+
+    /// Teacher model type
+    pub model_type: ModelType,
+
+    /// Teacher parameter count
+    pub param_count: u64,
+
+    /// For ensemble: multiple teachers
+    pub ensemble_teachers: Option<Vec<TeacherProvenance>>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct DistillationParams {
+    /// Temperature for softening distributions (typically 2.0-5.0)
+    pub temperature: f32,
+
+    /// Weight for soft vs hard loss (α in loss formula)
+    pub alpha: f32,
+
+    /// For progressive: weight for hidden vs logit loss (β)
+    pub beta: Option<f32>,
+
+    /// Training epochs for distillation
+    pub epochs: u32,
+
+    /// Final distillation loss achieved
+    pub final_loss: Option<f32>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct LayerMapping {
+    /// Student layer index
+    pub student_layer: usize,
+
+    /// Teacher layer index
+    pub teacher_layer: usize,
+
+    /// Weight for this layer's loss
+    pub weight: f32,
+}
+```
+
+#### 6.3.3 API
+
+```rust
+use aprender::format::{save_distilled, DistillationInfo, DistillMethod};
+
+// Train student via distillation (using entrenar)
+let student = distill_from_teacher(&teacher, &data, DistillationParams {
+    temperature: 3.0,
+    alpha: 0.7,
+    ..Default::default()
+})?;
+
+// Save with distillation provenance
+let distill_info = DistillationInfo {
+    method: DistillMethod::Standard,
+    teacher: TeacherProvenance {
+        hash: sha256(&teacher_bytes),
+        signature: teacher_signature,
+        model_type: ModelType::NeuralSequential,
+        param_count: 7_000_000_000,
+        ensemble_teachers: None,
+    },
+    params: DistillationParams {
+        temperature: 3.0,
+        alpha: 0.7,
+        beta: None,
+        epochs: 10,
+        final_loss: Some(0.42),
+    },
+    layer_mapping: None,
+};
+
+save_distilled(&student, ModelType::NeuralSequential, "student.apr",
+    SaveOptions::default().with_distillation(distill_info))?;
+```
+
+#### 6.3.4 CLI Commands
+
+```bash
+# Distill teacher to student
+apr distill teacher.apr --output student.apr \
+    --temperature 3.0 --alpha 0.7 \
+    --method standard
+
+# Progressive distillation with layer mapping
+apr distill teacher.apr --output student.apr \
+    --method progressive \
+    --layer-map "0:0,1:2,2:4,3:6"
+
+# Ensemble distillation from multiple teachers
+apr distill teacher1.apr teacher2.apr teacher3.apr \
+    --output student.apr --method ensemble
+
+# Inspect distillation provenance
+apr inspect student.apr --distillation
+# Output:
+#   Method: Standard
+#   Teacher: sha256:abc123... (7B params)
+#   Temperature: 3.0, Alpha: 0.7
+#   Final Loss: 0.42
+```
+
+#### 6.3.5 Single Binary SLM Pipeline
+
+Complete workflow: distill large model → quantize → embed in binary:
+
+```bash
+# 1. Distill 7B teacher to 1B student
+apr distill llama-7b.apr --output llama-1b.apr \
+    --temperature 4.0 --alpha 0.8
+
+# 2. Quantize to Q4_0
+apr quantize llama-1b.apr --type q4_0 --output llama-1b-q4.apr
+
+# 3. Embed in Rust binary
+# Cargo.toml: include_bytes!("llama-1b-q4.apr")
+
+# Result: ~500MB binary with distilled+quantized model
+# Runs on: 2GB RAM edge device, ARM NEON SIMD
+```
+
+**Size reduction pipeline:**
+
+| Stage | Size | Reduction |
+|-------|------|-----------|
+| Teacher (7B, FP32) | 28 GB | baseline |
+| Student (1B, FP32) | 4 GB | 7x |
+| Student (1B, Q4_0) | 500 MB | 56x |
+| + Zstd compression | ~400 MB | 70x |
+
+#### 6.3.6 Verification (Jidoka)
+
+| Check | Andon Signal | Action |
+|-------|--------------|--------|
+| Teacher hash mismatch | `TeacherNotFound` | Warning (teacher may be unavailable) |
+| Invalid teacher signature | `TeacherTampered` | **Stop**. Supply chain violation. |
+| Missing distillation params | `IncompleteProvenance` | Warning (reduced reproducibility) |
+| Layer mapping invalid | `InvalidLayerMapping` | **Stop**. Student/teacher mismatch. |
+
+#### 6.3.7 WASM Compatibility
+
+Distillation metadata is pure data structures - fully WASM compatible:
+- MessagePack serialization
+- No filesystem access required
+- Provenance verification works in browser
+
+```rust
+#[cfg(target_arch = "wasm32")]
+pub fn verify_teacher_provenance(
+    student_bytes: &[u8],
+    expected_teacher_hash: &str,
+) -> Result<bool, FormatError> {
+    let info = inspect_from_bytes(student_bytes)?;
+    let distill = info.metadata.distillation
+        .ok_or(FormatError::NotDistilled)?;
+    Ok(distill.teacher.hash == expected_teacher_hash)
+}
+```
+
 ## 7. Ecosystem Architecture (Sovereign AI)
 
 **Goal:** Complete independence from C/C++ runtimes (ONNX, TensorFlow). Pure Rust.
@@ -856,6 +1066,8 @@ Using techniques from [Adi2018], we embed a robust watermark that survives fine-
 18. **[Uchida2017]** Uchida, Y., et al. (2017). Embedding Watermarks into Deep Neural Networks. *ICMR*.
 19. **[GGUF2023]** Gerganov, G. (2023). GGUF Format. *GitHub*.
 20. **[RuchyLambda2025]** Gift, N. (2025). Ruchy Lambda: World's Fastest Custom AWS Lambda Runtime. 7.69ms cold start via blocking I/O. *Internal Research*.
+21. **[Hinton2015]** Hinton, G., Vinyals, O., & Dean, J. (2015). Distilling the Knowledge in a Neural Network. *arXiv:1503.02531*.
+22. **[Entrenar2025]** Gift, N. (2025). Entrenar: Rust Training Library with LoRA/QLoRA and Knowledge Distillation. *Internal Research*.
 
 ## Appendix A: WASM Loading
 
@@ -931,4 +1143,4 @@ wasm-check:
 ```
 
 ---
-*Review Status: **PENDING REVIEW**. Specification v1.7.0 adds single binary deployment (§1.1) as first-class feature: `include_bytes!()` embedding, AWS Lambda ARM support, SIMD-first performance, zero-dependency MLOps. Combined with quantization (§6.2), enables SLMs on edge devices with <100ms cold start. Pure Rust, zero C/C++ dependencies, WASM-compatible.*
+*Review Status: **PENDING REVIEW**. Specification v1.8.0 adds knowledge distillation (§6.3) with teacher provenance, progressive/ensemble methods, and complete SLM pipeline (7B→1B→Q4→binary = 70x size reduction). Combined with single binary deployment (§1.1) and ruchy-lambda research (7.69ms cold start), enables production SLMs on edge devices. Pure Rust, zero C/C++ dependencies, WASM-compatible.*
