@@ -80,6 +80,16 @@ impl HistoryParser {
             return false;
         }
 
+        // Skip malformed/incomplete commands (multiline artifacts)
+        if self.is_malformed(cmd) {
+            return false;
+        }
+
+        // Skip corrupted commands (missing spaces before flags)
+        if self.has_corrupted_tokens(cmd) {
+            return false;
+        }
+
         // Skip commands with sensitive patterns
         let sensitive = [
             "password",
@@ -105,6 +115,49 @@ impl HistoryParser {
         }
 
         true
+    }
+
+    /// Check for malformed commands (incomplete multiline, etc.)
+    fn is_malformed(&self, cmd: &str) -> bool {
+        let trimmed = cmd.trim();
+
+        // Lone backslash or backslash with whitespace
+        if trimmed == "\\" || trimmed.ends_with("\\ ") {
+            return true;
+        }
+
+        // Incomplete brace/bracket patterns
+        if trimmed.starts_with('}') || trimmed.starts_with(')') || trimmed.starts_with(']') {
+            return true;
+        }
+
+        false
+    }
+
+    /// Check for corrupted tokens like "commit-m" (missing space before flag)
+    fn has_corrupted_tokens(&self, cmd: &str) -> bool {
+        // Common subcommands that should never have flags directly attached
+        let subcommands = [
+            "commit", "checkout", "clone", "push", "pull", "merge", "rebase", "status", "add",
+            "build", "run", "test", "install",
+        ];
+
+        for token in cmd.split_whitespace() {
+            if let Some(dash_pos) = token.find('-') {
+                if dash_pos > 0 && dash_pos < token.len() - 1 {
+                    let before = &token[..dash_pos];
+                    let after = &token[dash_pos + 1..];
+
+                    // Pattern: subcommand-flag (e.g., "commit-m", "add-A")
+                    if subcommands.contains(&before) && (after.len() <= 2 || after.starts_with('-'))
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        false
     }
 }
 
@@ -145,5 +198,61 @@ mod tests {
         let parser = HistoryParser::new();
         assert!(!parser.is_valid_command("l"));
         assert!(parser.is_valid_command("ls"));
+    }
+
+    // ==================== EXTREME TDD: Corrupted Command Filtering ====================
+
+    #[test]
+    fn test_filter_corrupted_commands() {
+        let parser = HistoryParser::new();
+
+        // Corrupted: missing space before flag
+        assert!(
+            !parser.is_valid_command("git commit-m test"),
+            "Should reject 'commit-m' (missing space)"
+        );
+        assert!(
+            !parser.is_valid_command("git add-A"),
+            "Should reject 'add-A' (missing space)"
+        );
+        assert!(
+            !parser.is_valid_command("cargo build-r"),
+            "Should reject 'build-r' (missing space)"
+        );
+
+        // Valid: proper spacing
+        assert!(
+            parser.is_valid_command("git commit -m test"),
+            "Should accept 'commit -m' (proper spacing)"
+        );
+        assert!(
+            parser.is_valid_command("git add -A"),
+            "Should accept 'add -A' (proper spacing)"
+        );
+
+        // Valid: legitimate hyphenated words
+        assert!(
+            parser.is_valid_command("git checkout feature-branch"),
+            "Should accept 'feature-branch' (legitimate hyphen)"
+        );
+        assert!(
+            parser.is_valid_command("npm install lodash-es"),
+            "Should accept 'lodash-es' (package name)"
+        );
+    }
+
+    #[test]
+    fn test_filter_malformed_multiline() {
+        let parser = HistoryParser::new();
+
+        // ZSH sometimes captures incomplete multiline commands
+        assert!(
+            !parser.is_valid_command("}\\ "),
+            "Should reject incomplete multiline"
+        );
+        assert!(
+            !parser.is_valid_command("\\"),
+            "Should reject lone backslash"
+        );
     }
 }
