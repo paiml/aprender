@@ -125,6 +125,7 @@
 - [Case Study: Random Forest Iris](./examples/random-forest-iris.md)
 - [Case Study: Decision Tree Iris](./examples/decision-tree-iris.md)
 - [Case Study: Model Serialization](./examples/model-serialization.md)
+- [Case Study: Model Format (.apr)](./examples/model-format.md)
 - [Case Study: KMeans Clustering](./examples/kmeans-clustering.md)
 - [Case Study: DBSCAN Clustering](./examples/dbscan-clustering.md)
 - [Case Study: Hierarchical Clustering](./examples/hierarchical-clustering.md)
