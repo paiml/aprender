@@ -490,3 +490,77 @@ fn test_cli_010_suggest_latency() {
         elapsed.as_millis()
     );
 }
+
+// ============================================================================
+// Test: CLI_011 - Analyze Command (CodeFeatureExtractor)
+// ============================================================================
+
+#[test]
+fn test_cli_011_analyze_basic() {
+    let history = create_temp_history(&[
+        "git status",
+        "git commit -m test",
+        "git commit -m 'fix bug'",
+        "cargo build",
+        "cargo test",
+    ]);
+
+    aprender_shell()
+        .args(["analyze", "-f", history.path().to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Command Analysis"))
+        .stdout(predicate::str::contains("Base Commands"));
+}
+
+#[test]
+fn test_cli_011_analyze_top_limit() {
+    let history = create_temp_history(&[
+        "git status",
+        "git commit -m test",
+        "cargo build",
+        "npm install",
+        "python script.py",
+    ]);
+
+    aprender_shell()
+        .args([
+            "analyze",
+            "-f",
+            history.path().to_str().unwrap(),
+            "--top",
+            "3",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Top 3 Base Commands"));
+}
+
+// ============================================================================
+// Test: CLI_012 - Augment with CodeEDA
+// ============================================================================
+
+#[test]
+fn test_cli_012_augment_code_eda() {
+    let history = create_temp_history(&[
+        "git status",
+        "git commit -m test",
+        "cargo build --release",
+        "npm run test",
+    ]);
+
+    let model = NamedTempFile::new().unwrap();
+
+    aprender_shell()
+        .args([
+            "augment",
+            "-f",
+            history.path().to_str().unwrap(),
+            "-o",
+            model.path().to_str().unwrap(),
+            "--use-code-eda",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("CodeEDA"));
+}
