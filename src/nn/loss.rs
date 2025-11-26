@@ -557,7 +557,7 @@ mod tests {
 
         // Gradient of MSE: 2 * (pred - target) / n
         // = 2 * [-1, 0, 1] / 3 = [-2/3, 0, 2/3]
-        let expected = vec![-2.0 / 3.0, 0.0, 2.0 / 3.0];
+        let expected = [-2.0 / 3.0, 0.0, 2.0 / 3.0];
         for (g, e) in grad.data().iter().zip(expected.iter()) {
             assert!((g - e).abs() < 1e-5, "Expected {e}, got {g}");
         }

@@ -870,7 +870,7 @@ mod tests {
 
         let grad = crate::autograd::get_grad(x_id).expect("No gradient");
         // Expected: 8 * x = [8, 16, 24]
-        let expected = vec![8.0, 16.0, 24.0];
+        let expected = [8.0, 16.0, 24.0];
 
         for (g, e) in grad.data().iter().zip(expected.iter()) {
             assert!((g - e).abs() < 1e-3, "Expected {e}, got {g}");

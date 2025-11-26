@@ -658,7 +658,7 @@ mod tests {
         sgd.step_with_params(&mut [&mut param]);
 
         // param = param - lr * grad = [1, 2, 3] - 0.1 * [2, 4, 6] = [0.8, 1.6, 2.4]
-        let expected = vec![0.8, 1.6, 2.4];
+        let expected = [0.8, 1.6, 2.4];
         for (p, e) in param.data().iter().zip(expected.iter()) {
             assert!((p - e).abs() < 1e-5, "Expected {e}, got {p}");
         }

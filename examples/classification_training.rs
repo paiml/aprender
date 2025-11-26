@@ -153,8 +153,8 @@ fn main() {
         let (pred_class, &max_prob) = prob_slice
             .iter()
             .enumerate()
-            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
-            .unwrap();
+            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+            .expect("probability slice should not be empty");
 
         let check = if pred_class == target {
             correct += 1;
@@ -208,8 +208,8 @@ fn main() {
         let (pred_class, &max_prob) = prob_slice
             .iter()
             .enumerate()
-            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
-            .unwrap();
+            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+            .expect("probability slice should not be empty");
 
         let check = if pred_class == expected { "✓" } else { "✗" };
 
@@ -251,9 +251,9 @@ fn compute_accuracy(logits: &Tensor, targets: &Tensor) -> f32 {
         let pred_class = logit_slice
             .iter()
             .enumerate()
-            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
+            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
             .map(|(idx, _)| idx)
-            .unwrap();
+            .expect("logit slice should not be empty");
 
         let target_class = targets.data()[i] as usize;
 

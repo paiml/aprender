@@ -235,7 +235,7 @@ mod tests {
         assert_ne!(layer1.parameters()[0].data(), layer2.parameters()[0].data());
 
         // Load state
-        load_state_dict_into(&mut layer2, &state, "").unwrap();
+        load_state_dict_into(&mut layer2, &state, "").expect("load_state_dict_into should succeed");
 
         // Now they should match
         assert_eq!(layer1.parameters()[0].data(), layer2.parameters()[0].data());
@@ -246,10 +246,10 @@ mod tests {
         let path = "/tmp/test_nn_serialize.safetensors";
 
         let model1 = Linear::with_seed(10, 5, Some(42));
-        save_model(&model1, path).unwrap();
+        save_model(&model1, path).expect("save_model should succeed");
 
         let mut model2 = Linear::with_seed(10, 5, Some(99));
-        load_model(&mut model2, path).unwrap();
+        load_model(&mut model2, path).expect("load_model should succeed");
 
         // Verify weights match
         assert_eq!(model1.parameters()[0].data(), model2.parameters()[0].data());
@@ -267,14 +267,14 @@ mod tests {
             .add(ReLU::new())
             .add(Linear::with_seed(8, 5, Some(43)));
 
-        save_model(&model1, path).unwrap();
+        save_model(&model1, path).expect("save_model should succeed");
 
         let mut model2 = Sequential::new()
             .add(Linear::with_seed(10, 8, Some(99)))
             .add(ReLU::new())
             .add(Linear::with_seed(8, 5, Some(100)));
 
-        load_model(&mut model2, path).unwrap();
+        load_model(&mut model2, path).expect("load_model should succeed");
 
         // Verify all parameters match
         for (p1, p2) in model1.parameters().iter().zip(model2.parameters().iter()) {
@@ -295,7 +295,8 @@ mod tests {
 
         let result = load_state_dict_into(&mut layer2, &state, "");
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Shape mismatch"));
+        let err = result.expect_err("Should fail with shape mismatch");
+        assert!(err.contains("Shape mismatch"));
     }
 
     #[test]
@@ -322,10 +323,10 @@ mod tests {
         let x = Tensor::ones(&[2, 10]);
         let y1 = model1.forward(&x);
 
-        save_model(&model1, path).unwrap();
+        save_model(&model1, path).expect("save_model should succeed");
 
         let mut model2 = Linear::with_seed(10, 5, Some(99));
-        load_model(&mut model2, path).unwrap();
+        load_model(&mut model2, path).expect("load_model should succeed");
 
         let y2 = model2.forward(&x);
 
