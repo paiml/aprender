@@ -302,11 +302,13 @@ save_for_recipient(&amp;model, ModelType::Custom, &quot;partner.apr&quot;, opts,
 let model: MyModel = load_as_recipient(&quot;partner.apr&quot;, ModelType::Custom, &amp;my_secret_key)?;</code></pre>
 <h2 id="deep-dive-trueno-integration"><a class="header" href="#deep-dive-trueno-integration">Deep Dive: trueno Integration</a></h2>
 <h3 id="what-is-trueno"><a class="header" href="#what-is-trueno">What is trueno?</a></h3>
-<p>trueno is aprender's SIMD-accelerated tensor library. Unlike NumPy/PyTorch:</p>
+<p>trueno is aprender's SIMD and GPU-accelerated tensor library. Unlike NumPy/PyTorch:</p>
 <ul>
-<li><strong>Pure Rust</strong> - No C/C++/Fortran</li>
-<li><strong>Auto-vectorization</strong> - Compiler generates optimal SIMD</li>
-<li><strong>Multi-backend</strong> - Same code runs on AVX-512, NEON, WASM SIMD</li>
+<li><strong>Pure Rust</strong> - No C/C++/Fortran/CUDA SDK required</li>
+<li><strong>Auto-vectorization</strong> - Compiler generates optimal SIMD for your CPU</li>
+<li><strong>Six SIMD backends</strong> - scalar, SSE2, AVX2, AVX-512, NEON (ARM), WASM SIMD128</li>
+<li><strong>GPU backend</strong> - wgpu (Vulkan/Metal/DX12/WebGPU) for 10-50x speedups</li>
+<li><strong>Same API everywhere</strong> - Code runs identically on x86, ARM, browsers, GPUs</li>
 </ul>
 <h3 id="why-trueno--apr"><a class="header" href="#why-trueno--apr">Why trueno + .apr?</a></h3>
 <p>The <code>TRUENO_NATIVE</code> flag (bit 4) enables zero-copy tensor loading:</p>
@@ -513,16 +515,34 @@ export_onnx(&amp;model, &quot;model.onnx&quot;)?;
 
 // But for new deployments, .apr is smaller, faster, and more portable</code></pre>
 <h3 id="but-i-need-gpu-inference"><a class="header" href="#but-i-need-gpu-inference">&quot;But I need GPU inference&quot;</a></h3>
-<p><strong>Answer:</strong> trueno supports GPU backends (coming soon), and the .apr format is backend-agnostic:</p>
-<pre><code class="language-rust ignore">// Same model file works on CPU and GPU
-let model: NeuralNet = load(&quot;model.apr&quot;, ModelType::NeuralSequential)?;
+<p><strong>Answer:</strong> trueno has <strong>production-ready GPU support</strong> via wgpu (Vulkan/Metal/DX12/WebGPU):</p>
+<pre><code class="language-rust ignore">use trueno::backends::gpu::GpuBackend;
 
-// Backend selection is runtime, not format
-#[cfg(feature = &quot;cuda&quot;)]
-let output = model.predict_gpu(&amp;input)?;
+// GPU backend with cross-platform support
+let mut gpu = GpuBackend::new();
 
-#[cfg(not(feature = &quot;cuda&quot;))]
-let output = model.predict(&amp;input)?; // Falls back to SIMD CPU</code></pre>
+// Check availability at runtime
+if GpuBackend::is_available() {
+    // Matrix multiplication: 10-50x faster than SIMD for large matrices
+    let result = gpu.matmul(&amp;a, &amp;b, m, k, n)?;
+
+    // All neural network activations on GPU
+    let relu_out = gpu.relu(&amp;input)?;
+    let sigmoid_out = gpu.sigmoid(&amp;input)?;
+    let gelu_out = gpu.gelu(&amp;input)?;      // Transformers
+    let softmax_out = gpu.softmax(&amp;input)?; // Classification
+
+    // 2D convolution for CNNs
+    let conv_out = gpu.convolve2d(&amp;input, &amp;kernel, h, w, kh, kw)?;
+}
+
+// Same .apr model file works on CPU (SIMD) and GPU - backend is runtime choice</code></pre>
+<p><strong>trueno GPU capabilities:</strong></p>
+<ul>
+<li><strong>Backends</strong>: Vulkan, Metal, DirectX 12, WebGPU (browsers!)</li>
+<li><strong>Operations</strong>: matmul, dot, relu, leaky_relu, elu, sigmoid, tanh, swish, gelu, softmax, log_softmax, conv2d, clip</li>
+<li><strong>Performance</strong>: 10-50x speedup for matmul (1000×1000+), 5-20x for reductions (100K+ elements)</li>
+</ul>
 <h2 id="summary-when-to-use-apr"><a class="header" href="#summary-when-to-use-apr">Summary: When to Use .apr</a></h2>
 <p><strong>Use .apr when:</strong></p>
 <ul>
