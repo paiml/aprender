@@ -19,17 +19,17 @@
 
 | Component | Spec | Implementation | WASM | Action |
 |-----------|------|----------------|------|--------|
-| **WASM Compat** | §1.0 | ○ CI required | GATE | Blocks all other features |
-| Header (32-byte) | §3 | ✓ | ○ | - |
-| CRC32 checksum | §5.4 | ✓ | ○ | - |
-| save/load/inspect | §2 | ✓ | ○ | - |
-| Model types | §3.1 | ✓ 17 types | ○ | - |
-| Flags | §3.2 | ✓ 6/6 bits | ○ | - |
-| Metadata | §4 | ✓ MessagePack | ○ | - |
-| Compression | §6.1 | ✓ zstd (feature) | ○ | format-compression feature |
-| Encryption (password) | §5.2 | ✓ AES-256-GCM + Argon2id | ○ | format-encryption feature |
-| Encryption (X25519) | §5.3 | ✓ X25519+HKDF+AES-GCM | ○ | format-encryption feature |
-| Signing | §5.4 | ✓ Ed25519 (feature) | ○ | format-signing feature |
+| **WASM Compat** | §1.0 | ✓ CI added | GATE | ci.yml wasm job |
+| Header (32-byte) | §3 | ✓ | ✓ | - |
+| CRC32 checksum | §5.4 | ✓ | ✓ | - |
+| save/load/inspect | §2 | ✓ | ✓ | - |
+| Model types | §3.1 | ✓ 17 types | ✓ | - |
+| Flags | §3.2 | ✓ 6/6 bits | ✓ | - |
+| Metadata | §4 | ✓ MessagePack | ✓ | - |
+| Compression | §6.1 | ✓ zstd (feature) | ✓ | format-compression feature |
+| Encryption (password) | §5.2 | ✓ AES-256-GCM + Argon2id | ✓ | format-encryption feature |
+| Encryption (X25519) | §5.3 | ✓ X25519+HKDF+AES-GCM | ✓ | format-encryption feature |
+| Signing | §5.4 | ✓ Ed25519 (feature) | ✓ | format-signing feature |
 | Quantization | §6.2 | ○ | ○ | format-quantize feature |
 | Streaming | §7 | ○ | N/A | format-streaming feature |
 | License block | §9 | ○ | ○ | format-commercial feature |

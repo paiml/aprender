@@ -141,10 +141,26 @@ jobs:
       - name: Shellcheck
         run: shellcheck --severity=warning scripts/*.sh
 
+  wasm:
+    name: WASM Compatibility
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - name: Check core (no features)
+        run: cargo check --target wasm32-unknown-unknown --no-default-features
+      - name: Check with crypto
+        run: cargo check --target wasm32-unknown-unknown --no-default-features --features format-encryption,format-signing
+      - name: Check with compression
+        run: cargo check --target wasm32-unknown-unknown --no-default-features --features format-compression
+
   build:
     name: Build
     runs-on: ubuntu-latest
-    needs: [check, fmt, clippy, test, security, deny]
+    needs: [check, fmt, clippy, test, security, deny, wasm]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
