@@ -124,6 +124,58 @@ $ aprender-shell stats
     198x  cd ..
 ```
 
+## Memory Paging for Large Histories
+
+For very large shell histories (100K+ commands), use memory paging to limit RAM usage:
+
+```bash
+# Train with 10MB memory limit (creates .apbundle file)
+$ aprender-shell train --memory-limit 10
+
+🚀 aprender-shell: Training paged model...
+
+📂 History file: /home/user/.zsh_history
+📊 Commands loaded: 150000
+🧠 Training 3-gram paged model (10MB limit)... done!
+
+✅ Paged model saved to: ~/.aprender-shell.apbundle
+
+📈 Model Statistics:
+   Segments:        45
+   Vocabulary size: 35000
+   Memory limit:    10 MB
+```
+
+```bash
+# Suggestions with paged loading
+$ aprender-shell suggest "git " --memory-limit 10
+
+# View paging statistics
+$ aprender-shell stats --memory-limit 10
+
+📊 Paged Model Statistics:
+   N-gram size:     3
+   Total commands:  150000
+   Vocabulary size: 35000
+   Total segments:  45
+   Loaded segments: 3
+   Memory limit:    10.0 MB
+
+📈 Paging Statistics:
+   Page hits:       127
+   Page misses:     3
+   Evictions:       0
+   Hit rate:        97.7%
+```
+
+**How it works:**
+- N-grams are grouped by command prefix (e.g., "git", "cargo")
+- Segments are stored in `.apbundle` format
+- Only accessed segments are loaded into RAM
+- LRU eviction frees memory when limit is reached
+
+See [Model Bundling and Memory Paging](./model-bundling-paging.md) for details.
+
 ## Sharing Models
 
 Export your model for teammates:
