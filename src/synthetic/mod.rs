@@ -33,9 +33,11 @@
 pub mod andon;
 mod config;
 mod diversity;
+pub mod eda;
 mod params;
 mod quality;
 mod strategy;
+pub mod template;
 mod validator;
 
 pub use andon::{AndonConfig, AndonEvent, AndonHandler, AndonSeverity, DefaultAndon, TestAndon};
