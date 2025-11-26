@@ -168,6 +168,7 @@
 - [Case Study: Advanced NLP (Similarity, Entities, Summarization)](./examples/advanced-nlp.md)
 - [Case Study: XOR Neural Network (Deep Learning)](./examples/xor-neural-network.md)
 - [Case Study: AI Shell Completion](./examples/shell-completion.md)
+- [Developer's Guide: Shell History Models](./examples/shell-history-developer-guide.md)
 
 # Sprint-Based Development
 
