@@ -31,8 +31,11 @@
 
 pub mod params;
 mod search;
+mod tuner;
 
 pub use params::{GradientBoostingParam, RandomForestParam};
 pub use search::{
-    GridSearch, HyperParam, LogScale, RandomSearch, SearchSpace, SearchStrategy, Trial, TrialResult,
+    GridSearch, HyperParam, LogScale, ParamValue, RandomSearch, SearchSpace, SearchStrategy, Trial,
+    TrialResult,
 };
+pub use tuner::{AutoTuner, Callback, EarlyStopping, ProgressCallback, TimeBudget, TuneResult};
