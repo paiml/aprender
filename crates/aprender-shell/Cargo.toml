@@ -22,6 +22,10 @@ path = "src/main.rs"
 name = "shell_benchmarks"
 harness = false
 
+[[bench]]
+name = "recommendation_latency"
+harness = false
+
 [dependencies]
 aprender = { path = "../.." }
 clap = { version = "4", features = ["derive"] }
