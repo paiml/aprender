@@ -404,6 +404,215 @@ match load::<LinearRegression>("model.apr", ModelType::LinearRegression) {
 aprender = { version = "0.9", features = ["format-encryption", "format-signing"] }
 ```
 
+## Single Binary Deployment
+
+The `.apr` format's killer feature: embed models directly in your executable.
+
+### The Pattern
+
+```rust
+// Embed model at compile time - zero runtime dependencies
+const MODEL: &[u8] = include_bytes!("sentiment.apr");
+
+fn main() -> Result<()> {
+    let model: LogisticRegression = load_from_bytes(MODEL, ModelType::LogisticRegression)?;
+
+    // SIMD inference immediately available
+    let prediction = model.predict(&features)?;
+}
+```
+
+**Build and deploy:**
+```bash
+cargo build --release --target aarch64-unknown-linux-gnu
+# Output: single 5MB binary with model embedded
+./app  # Runs anywhere, NEON SIMD active on ARM
+```
+
+### Why This Matters
+
+| Metric | Docker + Python | aprender Binary |
+|--------|-----------------|-----------------|
+| Cold start | 5-30 seconds | <100ms |
+| Memory | 500MB - 2GB | 10-50MB |
+| Dependencies | Python, PyTorch, etc. | None |
+| Artifacts | 5-20 files | 1 file |
+
+### AWS Lambda ARM (Graviton)
+
+Based on [ruchy-lambda research](https://github.com/paiml/ruchy-lambda): blocking I/O achieves 7.69ms cold start.
+
+```rust
+const MODEL: &[u8] = include_bytes!("classifier.apr");
+
+fn main() {
+    let model: LogisticRegression = load_from_bytes(MODEL, ModelType::LogisticRegression)
+        .expect("embedded model valid");
+
+    // Lambda Runtime API loop (blocking, no tokio)
+    loop {
+        let event = get_next_event();           // blocking GET
+        let pred = model.predict(&event.data);  // NEON SIMD
+        send_response(pred);                    // blocking POST
+    }
+}
+```
+
+**Performance:** 128MB ARM64, <10ms cold start, ~$0.0000002/request.
+
+### Deployment Targets
+
+| Target | Binary | SIMD | Use Case |
+|--------|--------|------|----------|
+| `x86_64-unknown-linux-gnu` | ~5MB | AVX2/512 | Lambda x86, servers |
+| `aarch64-unknown-linux-gnu` | ~4MB | NEON | Lambda ARM, RPi |
+| `wasm32-unknown-unknown` | ~500KB | - | Browser, Workers |
+
+## Quantization
+
+Reduce model size 4-8x with integer weights (GGUF-compatible).
+
+### Quick Start
+
+```bash
+# Quantize existing model
+apr quantize model.apr --type q4_0 --output model-q4.apr
+
+# Inspect
+apr inspect model-q4.apr --quantization
+# Type: Q4_0, Block size: 32, Bits/weight: 4.5
+```
+
+### Types (GGUF Standard)
+
+| Type | Bits | Block | Use Case |
+|------|------|-------|----------|
+| Q8_0 | 8 | 32 | High accuracy |
+| Q4_0 | 4 | 32 | Balanced |
+| Q4_1 | 4 | 32 | Better accuracy |
+
+### API
+
+```rust
+use aprender::format::{QuantType, save_quantized};
+
+// Quantize and save
+let quantized = model.quantize(QuantType::Q4_0)?;
+save(&quantized, ModelType::NeuralSequential, "model-q4.apr", opts)?;
+```
+
+### Export
+
+```bash
+# To GGUF (llama.cpp compatible)
+apr export model-q4.apr --format gguf --output model.gguf
+
+# To SafeTensors (HuggingFace)
+apr export model-q4.apr --format safetensors --output model/
+```
+
+## Knowledge Distillation
+
+Train smaller models from larger teachers with full provenance tracking.
+
+### The Pipeline
+
+```bash
+# 1. Distill 7B → 1B
+apr distill teacher-7b.apr --output student-1b.apr \
+    --temperature 3.0 --alpha 0.7
+
+# 2. Quantize
+apr quantize student-1b.apr --type q4_0 --output student-q4.apr
+
+# 3. Embed in binary
+# include_bytes!("student-q4.apr")
+```
+
+**Size reduction:**
+
+| Stage | Size | Reduction |
+|-------|------|-----------|
+| Teacher (7B, FP32) | 28 GB | baseline |
+| Student (1B, FP32) | 4 GB | 7x |
+| Student (Q4_0) | 500 MB | 56x |
+| + Zstd | 400 MB | **70x** |
+
+### Provenance
+
+Every distilled model stores teacher information:
+
+```rust
+let info = inspect("student.apr")?;
+let distill = info.distillation.unwrap();
+
+println!("Teacher: {}", distill.teacher.hash);      // SHA256
+println!("Method: {:?}", distill.method);           // Standard/Progressive/Ensemble
+println!("Temperature: {}", distill.params.temperature);
+println!("Final loss: {}", distill.params.final_loss);
+```
+
+### Methods
+
+| Method | Description |
+|--------|-------------|
+| Standard | KL divergence on final logits |
+| Progressive | Layer-wise intermediate matching |
+| Ensemble | Multiple teachers averaged |
+
+```bash
+# Progressive distillation with layer mapping
+apr distill teacher.apr --output student.apr \
+    --method progressive --layer-map "0:0,1:2,2:4"
+
+# Ensemble from multiple teachers
+apr distill teacher1.apr teacher2.apr teacher3.apr \
+    --output student.apr --method ensemble
+```
+
+## Complete SLM Pipeline
+
+End-to-end: large model → edge deployment.
+
+```text
+┌──────────────────┐
+│ LLaMA 7B (28GB)  │  Teacher model
+└────────┬─────────┘
+         │ distill (entrenar)
+         ▼
+┌──────────────────┐
+│ Student 1B (4GB) │  Knowledge transferred
+└────────┬─────────┘
+         │ quantize (Q4_0)
+         ▼
+┌──────────────────┐
+│ Quantized (500MB)│  4-bit weights
+└────────┬─────────┘
+         │ compress (zstd)
+         ▼
+┌──────────────────┐
+│ Compressed (400MB)│ 70x smaller
+└────────┬─────────┘
+         │ embed (include_bytes!)
+         ▼
+┌──────────────────┐
+│ Single Binary    │  Deploy anywhere
+│ ARM NEON SIMD    │  <10ms cold start
+│ 2GB RAM device   │  $0.0000002/req
+└──────────────────┘
+```
+
+**Cargo.toml for minimal binary:**
+
+```toml
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+opt-level = "z"
+```
+
 ## Specification
 
 Full specification: [docs/specifications/model-format-spec.md](https://github.com/paiml/aprender/blob/main/docs/specifications/model-format-spec.md)
@@ -411,6 +620,9 @@ Full specification: [docs/specifications/model-format-spec.md](https://github.co
 **Key properties:**
 - Pure Rust (Sovereign AI, zero C/C++ dependencies)
 - WASM compatibility (hard requirement, spec §1.0)
+- Single binary deployment (spec §1.1)
+- GGUF-compatible quantization (spec §6.2)
+- Knowledge distillation provenance (spec §6.3)
 - 32-byte fixed header for fast scanning
 - MessagePack metadata (compact, fast)
 - bincode payload (zero-copy potential)
