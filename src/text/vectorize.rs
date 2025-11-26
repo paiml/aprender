@@ -32,9 +32,12 @@
 //! ```
 
 use crate::primitives::Matrix;
+use crate::text::stopwords::StopWordsFilter;
 use crate::text::Tokenizer;
 use crate::AprenderError;
+use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
 
 /// Bag of Words vectorizer that converts text to word count matrix.
 ///
@@ -66,6 +69,16 @@ pub struct CountVectorizer {
     lowercase: bool,
     /// Maximum features (vocabulary size limit)
     max_features: Option<usize>,
+    /// N-gram range (min, max)
+    ngram_range: (usize, usize),
+    /// Minimum document frequency (absolute count)
+    min_df: usize,
+    /// Maximum document frequency (ratio 0.0-1.0)
+    max_df: f32,
+    /// Stop words filter
+    stop_words: Option<StopWordsFilter>,
+    /// Strip accents (unicode normalization)
+    strip_accents: bool,
 }
 
 impl CountVectorizer {
@@ -84,7 +97,61 @@ impl CountVectorizer {
             vocabulary: HashMap::new(),
             lowercase: true,
             max_features: None,
+            ngram_range: (1, 1),
+            min_df: 1,
+            max_df: 1.0,
+            stop_words: None,
+            strip_accents: false,
         }
+    }
+
+    /// Use English stop words (removes common words like "the", "and", "is").
+    pub fn with_stop_words_english(mut self) -> Self {
+        self.stop_words = Some(StopWordsFilter::english());
+        self
+    }
+
+    /// Use custom stop words.
+    pub fn with_stop_words(mut self, words: &[&str]) -> Self {
+        self.stop_words = Some(StopWordsFilter::new(words));
+        self
+    }
+
+    /// Strip accents/diacritics (e.g., "café" → "cafe").
+    pub fn with_strip_accents(mut self, enable: bool) -> Self {
+        self.strip_accents = enable;
+        self
+    }
+
+    /// Set n-gram range for feature extraction.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use aprender::text::vectorize::CountVectorizer;
+    ///
+    /// // Extract unigrams, bigrams, and trigrams
+    /// let vectorizer = CountVectorizer::new().with_ngram_range(1, 3);
+    /// ```
+    pub fn with_ngram_range(mut self, min_n: usize, max_n: usize) -> Self {
+        self.ngram_range = (min_n.max(1), max_n.max(1));
+        self
+    }
+
+    /// Set minimum document frequency threshold.
+    ///
+    /// Terms appearing in fewer than `min_df` documents are ignored.
+    pub fn with_min_df(mut self, min_df: usize) -> Self {
+        self.min_df = min_df;
+        self
+    }
+
+    /// Set maximum document frequency threshold (0.0-1.0).
+    ///
+    /// Terms appearing in more than `max_df` fraction of documents are ignored.
+    pub fn with_max_df(mut self, max_df: f32) -> Self {
+        self.max_df = max_df.clamp(0.0, 1.0);
+        self
     }
 
     /// Set the tokenizer to use.
@@ -194,25 +261,61 @@ impl CountVectorizer {
             AprenderError::Other("Tokenizer not set. Use with_tokenizer()".to_string())
         })?;
 
-        // Build vocabulary from all documents
-        let mut word_counts: HashMap<String, usize> = HashMap::new();
+        let n_docs = documents.len();
+        // Track term frequency and document frequency
+        let mut term_freq: HashMap<String, usize> = HashMap::new();
+        let mut doc_freq: HashMap<String, usize> = HashMap::new();
 
         for doc in documents {
             let text = doc.as_ref();
             let tokens = tokenizer.tokenize(text)?;
 
-            for token in tokens {
-                let word = if self.lowercase {
-                    token.to_lowercase()
-                } else {
-                    token
-                };
-                *word_counts.entry(word).or_insert(0) += 1;
+            // Process tokens: lowercase, strip accents, filter stop words
+            let tokens: Vec<String> = tokens
+                .into_iter()
+                .map(|t| {
+                    let mut t = if self.lowercase { t.to_lowercase() } else { t };
+                    if self.strip_accents {
+                        t = strip_accents_unicode(&t);
+                    }
+                    t
+                })
+                .filter(|t| {
+                    self.stop_words
+                        .as_ref()
+                        .map_or(true, |sw| !sw.is_stop_word(t))
+                })
+                .collect();
+
+            // Generate n-grams and track per-document unique terms
+            let mut doc_terms: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+            for n in self.ngram_range.0..=self.ngram_range.1 {
+                for ngram in tokens.windows(n) {
+                    let term = ngram.join("_");
+                    *term_freq.entry(term.clone()).or_insert(0) += 1;
+                    doc_terms.insert(term);
+                }
+            }
+
+            // Update document frequency
+            for term in doc_terms {
+                *doc_freq.entry(term).or_insert(0) += 1;
             }
         }
 
+        // Filter by document frequency
+        let max_df_count = (self.max_df * n_docs as f32).ceil() as usize;
+        let filtered: Vec<(String, usize)> = term_freq
+            .into_iter()
+            .filter(|(term, _)| {
+                let df = doc_freq.get(term).copied().unwrap_or(0);
+                df >= self.min_df && df <= max_df_count
+            })
+            .collect();
+
         // Sort by frequency and limit vocabulary size
-        let mut sorted_words: Vec<(String, usize)> = word_counts.into_iter().collect();
+        let mut sorted_words: Vec<(String, usize)> = filtered;
         sorted_words.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
 
         if let Some(max_features) = self.max_features {
@@ -280,16 +383,31 @@ impl CountVectorizer {
             let text = doc.as_ref();
             let tokens = tokenizer.tokenize(text)?;
 
-            for token in tokens {
-                let word = if self.lowercase {
-                    token.to_lowercase()
-                } else {
-                    token
-                };
+            // Process tokens matching fit()
+            let tokens: Vec<String> = tokens
+                .into_iter()
+                .map(|t| {
+                    let mut t = if self.lowercase { t.to_lowercase() } else { t };
+                    if self.strip_accents {
+                        t = strip_accents_unicode(&t);
+                    }
+                    t
+                })
+                .filter(|t| {
+                    self.stop_words
+                        .as_ref()
+                        .map_or(true, |sw| !sw.is_stop_word(t))
+                })
+                .collect();
 
-                if let Some(&word_idx) = self.vocabulary.get(&word) {
-                    let idx = doc_idx * vocab_size + word_idx;
-                    data[idx] += 1.0;
+            // Generate n-grams matching fit()
+            for n in self.ngram_range.0..=self.ngram_range.1 {
+                for ngram in tokens.windows(n) {
+                    let term = ngram.join("_");
+                    if let Some(&word_idx) = self.vocabulary.get(&term) {
+                        let idx = doc_idx * vocab_size + word_idx;
+                        data[idx] += 1.0;
+                    }
                 }
             }
         }
@@ -381,6 +499,8 @@ pub struct TfidfVectorizer {
     count_vectorizer: CountVectorizer,
     /// Inverse document frequencies
     idf_values: Vec<f64>,
+    /// Use sublinear TF scaling: tf = 1 + log(tf) if tf > 0
+    sublinear_tf: bool,
 }
 
 impl TfidfVectorizer {
@@ -397,7 +517,52 @@ impl TfidfVectorizer {
         Self {
             count_vectorizer: CountVectorizer::new(),
             idf_values: Vec::new(),
+            sublinear_tf: false,
         }
+    }
+
+    /// Enable sublinear TF scaling: tf = 1 + log(tf) if tf > 0.
+    ///
+    /// Dampens the effect of high term frequencies.
+    pub fn with_sublinear_tf(mut self, enable: bool) -> Self {
+        self.sublinear_tf = enable;
+        self
+    }
+
+    /// Set n-gram range for feature extraction.
+    pub fn with_ngram_range(mut self, min_n: usize, max_n: usize) -> Self {
+        self.count_vectorizer = self.count_vectorizer.with_ngram_range(min_n, max_n);
+        self
+    }
+
+    /// Set minimum document frequency threshold.
+    pub fn with_min_df(mut self, min_df: usize) -> Self {
+        self.count_vectorizer = self.count_vectorizer.with_min_df(min_df);
+        self
+    }
+
+    /// Set maximum document frequency threshold (0.0-1.0).
+    pub fn with_max_df(mut self, max_df: f32) -> Self {
+        self.count_vectorizer = self.count_vectorizer.with_max_df(max_df);
+        self
+    }
+
+    /// Use English stop words.
+    pub fn with_stop_words_english(mut self) -> Self {
+        self.count_vectorizer = self.count_vectorizer.with_stop_words_english();
+        self
+    }
+
+    /// Use custom stop words.
+    pub fn with_custom_stop_words(mut self, words: &[&str]) -> Self {
+        self.count_vectorizer = self.count_vectorizer.with_stop_words(words);
+        self
+    }
+
+    /// Strip accents/diacritics.
+    pub fn with_strip_accents(mut self, enable: bool) -> Self {
+        self.count_vectorizer = self.count_vectorizer.with_strip_accents(enable);
+        self
     }
 
     /// Set the tokenizer to use.
@@ -562,14 +727,20 @@ impl TfidfVectorizer {
         // Get count matrix (TF)
         let tf_matrix = self.count_vectorizer.transform(documents)?;
 
-        // Apply IDF weighting
+        // Apply IDF weighting with optional sublinear TF scaling
         let n_docs = tf_matrix.n_rows();
         let vocab_size = tf_matrix.n_cols();
         let mut tfidf_data = Vec::with_capacity(n_docs * vocab_size);
 
         for row in 0..n_docs {
             for col in 0..vocab_size {
-                let tf = tf_matrix.get(row, col);
+                let raw_tf = tf_matrix.get(row, col);
+                // Apply sublinear TF: tf = 1 + log(tf) if tf > 0
+                let tf = if self.sublinear_tf && raw_tf > 0.0 {
+                    1.0 + raw_tf.ln()
+                } else {
+                    raw_tf
+                };
                 let idf = self.idf_values[col];
                 tfidf_data.push(tf * idf);
             }
@@ -644,6 +815,150 @@ impl Default for TfidfVectorizer {
     }
 }
 
+/// Strip accents/diacritics from text using Unicode normalization.
+///
+/// Converts characters like "café" to "cafe", "naïve" to "naive".
+fn strip_accents_unicode(text: &str) -> String {
+    text.chars()
+        .map(|c| {
+            // Simple ASCII folding for common accented characters
+            match c {
+                'á' | 'à' | 'â' | 'ä' | 'ã' | 'å' => 'a',
+                'é' | 'è' | 'ê' | 'ë' => 'e',
+                'í' | 'ì' | 'î' | 'ï' => 'i',
+                'ó' | 'ò' | 'ô' | 'ö' | 'õ' => 'o',
+                'ú' | 'ù' | 'û' | 'ü' => 'u',
+                'ý' | 'ÿ' => 'y',
+                'ñ' => 'n',
+                'ç' => 'c',
+                'Á' | 'À' | 'Â' | 'Ä' | 'Ã' | 'Å' => 'A',
+                'É' | 'È' | 'Ê' | 'Ë' => 'E',
+                'Í' | 'Ì' | 'Î' | 'Ï' => 'I',
+                'Ó' | 'Ò' | 'Ô' | 'Ö' | 'Õ' => 'O',
+                'Ú' | 'Ù' | 'Û' | 'Ü' => 'U',
+                'Ý' => 'Y',
+                'Ñ' => 'N',
+                'Ç' => 'C',
+                _ => c,
+            }
+        })
+        .collect()
+}
+
+/// Stateless hashing vectorizer for streaming/large-scale text.
+///
+/// Maps tokens to feature indices using a hash function. Does not store
+/// a vocabulary, making it memory-efficient but irreversible.
+///
+/// # Examples
+///
+/// ```
+/// use aprender::text::vectorize::HashingVectorizer;
+/// use aprender::text::tokenize::WhitespaceTokenizer;
+///
+/// let docs = vec!["hello world", "hello rust"];
+///
+/// let vectorizer = HashingVectorizer::new(1000)
+///     .with_tokenizer(Box::new(WhitespaceTokenizer::new()));
+///
+/// let matrix = vectorizer.transform(&docs).unwrap();
+/// assert_eq!(matrix.n_rows(), 2);
+/// assert_eq!(matrix.n_cols(), 1000);
+/// ```
+#[allow(missing_debug_implementations)]
+pub struct HashingVectorizer {
+    tokenizer: Option<Box<dyn Tokenizer>>,
+    n_features: usize,
+    lowercase: bool,
+    ngram_range: (usize, usize),
+    stop_words: Option<StopWordsFilter>,
+}
+
+impl HashingVectorizer {
+    /// Create a new `HashingVectorizer` with specified number of features.
+    pub fn new(n_features: usize) -> Self {
+        Self {
+            tokenizer: None,
+            n_features,
+            lowercase: true,
+            ngram_range: (1, 1),
+            stop_words: None,
+        }
+    }
+
+    /// Set the tokenizer.
+    pub fn with_tokenizer(mut self, tokenizer: Box<dyn Tokenizer>) -> Self {
+        self.tokenizer = Some(tokenizer);
+        self
+    }
+
+    /// Set lowercase.
+    pub fn with_lowercase(mut self, lowercase: bool) -> Self {
+        self.lowercase = lowercase;
+        self
+    }
+
+    /// Set n-gram range.
+    pub fn with_ngram_range(mut self, min_n: usize, max_n: usize) -> Self {
+        self.ngram_range = (min_n.max(1), max_n.max(1));
+        self
+    }
+
+    /// Use English stop words.
+    pub fn with_stop_words_english(mut self) -> Self {
+        self.stop_words = Some(StopWordsFilter::english());
+        self
+    }
+
+    /// Transform documents to hashed feature matrix (stateless).
+    pub fn transform<S: AsRef<str>>(&self, documents: &[S]) -> Result<Matrix<f64>, AprenderError> {
+        if documents.is_empty() {
+            return Err(AprenderError::Other(
+                "Cannot transform empty documents".to_string(),
+            ));
+        }
+
+        let tokenizer = self
+            .tokenizer
+            .as_ref()
+            .ok_or_else(|| AprenderError::Other("Tokenizer not set".to_string()))?;
+
+        let n_docs = documents.len();
+        let mut data = vec![0.0; n_docs * self.n_features];
+
+        for (doc_idx, doc) in documents.iter().enumerate() {
+            let tokens = tokenizer.tokenize(doc.as_ref())?;
+            let tokens: Vec<String> = tokens
+                .into_iter()
+                .map(|t| if self.lowercase { t.to_lowercase() } else { t })
+                .filter(|t| {
+                    self.stop_words
+                        .as_ref()
+                        .map_or(true, |sw| !sw.is_stop_word(t))
+                })
+                .collect();
+
+            for n in self.ngram_range.0..=self.ngram_range.1 {
+                for ngram in tokens.windows(n) {
+                    let term = ngram.join("_");
+                    let hash_idx = hash_term(&term, self.n_features);
+                    data[doc_idx * self.n_features + hash_idx] += 1.0;
+                }
+            }
+        }
+
+        Matrix::from_vec(n_docs, self.n_features, data)
+            .map_err(|e: &str| AprenderError::Other(e.to_string()))
+    }
+}
+
+/// Hash a term to a feature index.
+fn hash_term(term: &str, n_features: usize) -> usize {
+    let mut hasher = DefaultHasher::new();
+    term.hash(&mut hasher);
+    (hasher.finish() as usize) % n_features
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -710,5 +1025,95 @@ mod tests {
         for &value in idf {
             assert!(value > 0.0);
         }
+    }
+
+    #[test]
+    fn test_ngram_extraction() {
+        let docs = vec!["the quick brown fox"];
+
+        let mut vectorizer = CountVectorizer::new()
+            .with_tokenizer(Box::new(WhitespaceTokenizer::new()))
+            .with_ngram_range(1, 2); // unigrams and bigrams
+
+        vectorizer.fit(&docs).expect("fit should succeed");
+
+        let vocab = vectorizer.vocabulary();
+        // Should have 4 unigrams + 3 bigrams = 7 terms
+        assert_eq!(vocab.len(), 7);
+        assert!(vocab.contains_key("the"));
+        assert!(vocab.contains_key("the_quick")); // bigram
+        assert!(vocab.contains_key("brown_fox")); // bigram
+    }
+
+    #[test]
+    fn test_min_df_filtering() {
+        let docs = vec!["cat dog", "cat bird", "fish"]; // cat appears in 2 docs
+
+        let mut vectorizer = CountVectorizer::new()
+            .with_tokenizer(Box::new(WhitespaceTokenizer::new()))
+            .with_min_df(2); // require term in at least 2 docs
+
+        vectorizer.fit(&docs).expect("fit should succeed");
+
+        let vocab = vectorizer.vocabulary();
+        // Only "cat" appears in 2+ docs
+        assert_eq!(vocab.len(), 1);
+        assert!(vocab.contains_key("cat"));
+    }
+
+    #[test]
+    fn test_max_df_filtering() {
+        let docs = vec!["the cat", "the dog", "the bird"]; // "the" in 100% of docs
+
+        let mut vectorizer = CountVectorizer::new()
+            .with_tokenizer(Box::new(WhitespaceTokenizer::new()))
+            .with_max_df(0.5); // exclude terms in >50% of docs
+
+        vectorizer.fit(&docs).expect("fit should succeed");
+
+        let vocab = vectorizer.vocabulary();
+        // "the" should be excluded (appears in 100% of docs)
+        assert!(!vocab.contains_key("the"));
+        assert_eq!(vocab.len(), 3); // cat, dog, bird
+    }
+
+    #[test]
+    fn test_sublinear_tf() {
+        let docs = vec!["word word word word"]; // word appears 4 times
+
+        let mut vectorizer_normal =
+            TfidfVectorizer::new().with_tokenizer(Box::new(WhitespaceTokenizer::new()));
+
+        let mut vectorizer_sublinear = TfidfVectorizer::new()
+            .with_tokenizer(Box::new(WhitespaceTokenizer::new()))
+            .with_sublinear_tf(true);
+
+        let matrix_normal = vectorizer_normal
+            .fit_transform(&docs)
+            .expect("fit should succeed");
+        let matrix_sublinear = vectorizer_sublinear
+            .fit_transform(&docs)
+            .expect("fit should succeed");
+
+        // With sublinear TF, the score should be lower (1 + ln(4) ≈ 2.39 vs 4)
+        assert!(matrix_sublinear.get(0, 0) < matrix_normal.get(0, 0));
+    }
+
+    #[test]
+    fn test_tfidf_full_pipeline() {
+        let docs = vec![
+            "machine learning is great",
+            "deep learning is powerful",
+            "machine learning and deep learning",
+        ];
+
+        let mut vectorizer = TfidfVectorizer::new()
+            .with_tokenizer(Box::new(WhitespaceTokenizer::new()))
+            .with_ngram_range(1, 2)
+            .with_sublinear_tf(true);
+
+        let matrix = vectorizer.fit_transform(&docs).expect("fit should succeed");
+        assert_eq!(matrix.n_rows(), 3);
+        assert!(vectorizer.vocabulary_size() > 0);
     }
 }

@@ -1,5 +1,5 @@
 [workspace]
-members = ["."]
+members = [".", "crates/aprender-shell"]
 
 [workspace.lints.rust]
 # Safety
@@ -88,10 +88,13 @@ rand = "0.8"
 rayon = { version = "1.10", optional = true }
 
 # Core compute primitives - SIMD-accelerated tensor operations
-trueno = "0.7.2"
+trueno = "0.7.3"
 
 # Linear algebra for PCA eigendecomposition
 nalgebra = "0.33"
+
+# Data loading (path dependency during development)
+alimentar = { path = "../alimentar", optional = true }
 
 [dev-dependencies]
 proptest = "1.6"
@@ -101,6 +104,7 @@ renacer = "0.6.3"
 [features]
 default = ["parallel"]
 parallel = ["rayon"]  # Enable parallel graph algorithms (disable for WASM)
+datasets = ["alimentar"]  # Enable data loading from alimentar
 gpu = []
 cpu-only = []
 # Chaos engineering features (from renacer)
@@ -108,6 +112,10 @@ chaos-basic = []
 chaos-network = ["chaos-basic"]
 chaos-byzantine = ["chaos-basic"]
 chaos-full = ["chaos-network", "chaos-byzantine"]
+
+# WASM support: enable getrandom's "js" feature for browser environments
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.2", features = ["js"] }
 
 [[test]]
 name = "book"

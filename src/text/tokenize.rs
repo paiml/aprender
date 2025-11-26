@@ -182,6 +182,113 @@ impl Tokenizer for CharTokenizer {
     }
 }
 
+/// Sentence tokenizer that splits text into sentences.
+///
+/// Uses punctuation-based rules to detect sentence boundaries,
+/// handling common abbreviations and edge cases.
+///
+/// # Examples
+///
+/// ```
+/// use aprender::text::tokenize::SentenceTokenizer;
+///
+/// let tokenizer = SentenceTokenizer::new();
+///
+/// let sentences = tokenizer.split("Hello world. How are you? I'm fine!");
+/// assert_eq!(sentences, vec!["Hello world.", "How are you?", "I'm fine!"]);
+/// ```
+#[derive(Debug, Clone, Default)]
+pub struct SentenceTokenizer {
+    /// Common abbreviations that don't end sentences
+    abbreviations: Vec<&'static str>,
+}
+
+impl SentenceTokenizer {
+    /// Create a new sentence tokenizer with default abbreviations.
+    pub fn new() -> Self {
+        Self {
+            abbreviations: vec![
+                "mr", "mrs", "ms", "dr", "prof", "sr", "jr", "vs", "etc", "inc", "ltd", "corp",
+                "st", "ave", "blvd", "rd", "dept", "gov", "gen", "col", "lt", "sgt", "rev", "hon",
+                "pres", "jan", "feb", "mar", "apr", "jun", "jul", "aug", "sep", "oct", "nov",
+                "dec", "i.e", "e.g", "cf", "al", "vol", "no", "fig", "pp", "ph.d", "m.d", "b.a",
+                "m.a", "d.d.s",
+            ],
+        }
+    }
+
+    /// Split text into sentences.
+    pub fn split(&self, text: &str) -> Vec<String> {
+        if text.is_empty() {
+            return Vec::new();
+        }
+
+        let mut sentences = Vec::new();
+        let mut current = String::new();
+        let chars: Vec<char> = text.chars().collect();
+        let len = chars.len();
+
+        let mut i = 0;
+        while i < len {
+            let c = chars[i];
+            current.push(c);
+
+            // Check for sentence-ending punctuation
+            if c == '.' || c == '?' || c == '!' {
+                // Look ahead to see if this is really a sentence end
+                let is_end = if i + 1 < len {
+                    let next = chars[i + 1];
+                    // End if followed by space + uppercase, or end of text
+                    if next.is_whitespace() {
+                        // Check if followed by uppercase
+                        let mut j = i + 2;
+                        while j < len && chars[j].is_whitespace() {
+                            j += 1;
+                        }
+                        j >= len || chars[j].is_uppercase()
+                    } else {
+                        false
+                    }
+                } else {
+                    true // End of text
+                };
+
+                // Check for abbreviation (for periods only)
+                let is_abbrev = if c == '.' {
+                    self.is_abbreviation(&current)
+                } else {
+                    false
+                };
+
+                if is_end && !is_abbrev {
+                    let trimmed = current.trim().to_string();
+                    if !trimmed.is_empty() {
+                        sentences.push(trimmed);
+                    }
+                    current.clear();
+                }
+            }
+            i += 1;
+        }
+
+        // Add remaining text
+        let trimmed = current.trim().to_string();
+        if !trimmed.is_empty() {
+            sentences.push(trimmed);
+        }
+
+        sentences
+    }
+
+    fn is_abbreviation(&self, text: &str) -> bool {
+        // Extract the last word before the period
+        let text = text.trim_end_matches('.');
+        let last_word = text.split_whitespace().last().unwrap_or("");
+        let lower = last_word.to_lowercase();
+        self.abbreviations.contains(&lower.as_str())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

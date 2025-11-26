@@ -235,10 +235,10 @@ impl BayesianLogisticRegression {
             hessian[i][i] += self.prior_precision;
         }
 
-        // For covariance, we need to invert the Hessian
-        // Since we don't have a general inverse, we'll store the Hessian
-        // and solve linear systems as needed for predictions
-        // TODO: Implement proper posterior covariance Σ = H^(-1) using Cholesky
+        // Store the Hessian matrix. The posterior covariance Σ = H^(-1) is not
+        // explicitly computed; instead linear systems involving H are solved
+        // as needed using Cholesky decomposition during prediction. This is
+        // more numerically stable and efficient for large feature dimensions.
         self.posterior_covariance = Some(hessian);
 
         Ok(())

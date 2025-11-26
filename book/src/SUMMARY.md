@@ -165,6 +165,8 @@
 - [Case Study: Text Preprocessing for NLP](./examples/text-preprocessing.md)
 - [Case Study: Text Classification with TF-IDF](./examples/text-classification.md)
 - [Case Study: Advanced NLP (Similarity, Entities, Summarization)](./examples/advanced-nlp.md)
+- [Case Study: XOR Neural Network (Deep Learning)](./examples/xor-neural-network.md)
+- [Case Study: AI Shell Completion](./examples/shell-completion.md)
 
 # Sprint-Based Development
 

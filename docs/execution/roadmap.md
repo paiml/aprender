@@ -1,21 +1,28 @@
 # PMAT Development Roadmap
 
-## Current Sprint: book-v1.0.0 ML Fundamentals Book Content - Theory Through Verification
-- **Duration**: 2025-11-19 to 2025-12-03
+## Current Sprint: v0.9.0 Autograd Engine - PyTorch-Compatible Automatic Differentiation
+- **Duration**: 2025-11-25 to 2025-12-16
 - **Priority**: P0
 - **Quality Gates**: Complexity ≤ 20, SATD = 0, Coverage ≥ 80%
 
 ### Tasks
 | ID | Description | Status | Complexity | Priority |
 |----|-------------|--------|------------|----------|
-| BOOK-001 | Phase 1: Foundation - Directory structure and TDD harness setup | not_started | M | P0 |
-| BOOK-002 | Phase 2a: Linear Regression Theory + Case Study | not_started | L | P0 |
-| BOOK-003 | Phase 2b: Regularization Theory + Case Study | not_started | L | P0 |
-| BOOK-004 | Phase 2c: Regression Metrics Theory + Case Study | not_started | M | P0 |
-| BOOK-005 | Phase 2d: Logistic Regression Theory + Case Study | not_started | L | P0 |
-| BOOK-006 | Phase 2e: Classification Metrics Theory + Case Study | not_started | M | P0 |
-| BOOK-007 | Phase 2f: Cross-Validation Theory + Case Study | not_started | M | P0 |
-| BOOK-008 | Phase 3: Integration and Quality Review | not_started | M | P1 |
+| AG-001 | Create `src/autograd/mod.rs` module structure | pending | low | P0 |
+| AG-002 | Implement `Tensor` struct with gradient tracking | pending | high | P0 |
+| AG-003 | Implement `GradFn` trait for backward operations | pending | high | P0 |
+| AG-004 | Implement `ComputationGraph` tape-based recorder | pending | high | P0 |
+| AG-005 | Implement element-wise ops: add, sub, mul, div, neg | pending | medium | P0 |
+| AG-006 | Implement transcendental ops: exp, log, pow, sqrt | pending | medium | P0 |
+| AG-007 | Implement reduction ops: sum, mean, sum_dim, mean_dim | pending | medium | P0 |
+| AG-008 | Implement matmul with trueno backend | pending | high | P0 |
+| AG-009 | Implement activation gradients: relu, sigmoid, tanh | pending | medium | P0 |
+| AG-010 | Implement softmax and log_softmax gradients | pending | high | P0 |
+| AG-011 | Implement backward() with topological sort | pending | high | P0 |
+| AG-012 | Implement no_grad context and detach() | pending | low | P1 |
+| AG-013 | Add gradient verification tests (numerical check) | pending | medium | P0 |
+| AG-014 | Integrate with existing optim module | pending | medium | P1 |
+| AG-015 | Documentation and examples | pending | low | P1 |
 
 ### Definition of Done
 - [ ] All tasks completed

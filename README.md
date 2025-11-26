@@ -13,6 +13,34 @@ Next Generation Machine Learning, Statistics and Deep Learning in PURE Rust
 
 Aprender is a lightweight, pure Rust machine learning library designed for efficiency and ease of use. Built with EXTREME TDD methodology, it provides reliable implementations of core ML algorithms with comprehensive test coverage.
 
+## Sovereign AI Stack
+
+aprender is part of the **[Paiml Sovereign AI Stack](docs/sovereign-ai-stack.md)** - a complete pure Rust ML/AI ecosystem.
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                   SOVEREIGN AI STACK                        │
+├─────────────────────────────────────────────────────────────┤
+│  APPLICATION   ruchy · depyler · decy · batuta              │
+├─────────────────────────────────────────────────────────────┤
+│  ML/AI         realizar · entrenar · ★ aprender ★           │
+├─────────────────────────────────────────────────────────────┤
+│  DATA          alimentar · trueno-db · trueno-graph         │
+├─────────────────────────────────────────────────────────────┤
+│  COMPUTE       trueno (SIMD/GPU/WASM) · repartir            │
+├─────────────────────────────────────────────────────────────┤
+│  QUALITY       pmat · certeza · renacer · verificar         │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Key Properties:**
+- **Pure Rust** - No Python, no FFI, WASM-compatible
+- **Sovereign** - Runs on-premises, EU clouds, or air-gapped
+- **GPU/SIMD** - Hardware acceleration via trueno
+- **Zero US dependency** - S3-compatible (MinIO, Scaleway, OVH)
+
+→ [Full stack documentation](docs/sovereign-ai-stack.md)
+
 ## Features
 
 ### Core Primitives

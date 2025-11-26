@@ -68,6 +68,40 @@ pub enum AprenderError {
 
     /// Generic error with string message.
     Other(String),
+
+    /// Invalid or corrupt model format.
+    FormatError {
+        /// Error description
+        message: String,
+    },
+
+    /// Unsupported format version.
+    UnsupportedVersion {
+        /// Version found
+        found: (u8, u8),
+        /// Maximum supported version
+        supported: (u8, u8),
+    },
+
+    /// Checksum verification failed.
+    ChecksumMismatch {
+        /// Expected checksum
+        expected: u32,
+        /// Actual checksum
+        actual: u32,
+    },
+
+    /// Signature verification failed.
+    SignatureInvalid {
+        /// Reason for failure
+        reason: String,
+    },
+
+    /// Decryption failed (wrong password or corrupt data).
+    DecryptionFailed {
+        /// Error details
+        message: String,
+    },
 }
 
 impl fmt::Display for AprenderError {
@@ -110,6 +144,28 @@ impl fmt::Display for AprenderError {
             AprenderError::Io(e) => write!(f, "I/O error: {e}"),
             AprenderError::Serialization(msg) => write!(f, "Serialization error: {msg}"),
             AprenderError::Other(msg) => write!(f, "{msg}"),
+            AprenderError::FormatError { message } => {
+                write!(f, "Invalid model format: {message}")
+            }
+            AprenderError::UnsupportedVersion { found, supported } => {
+                write!(
+                    f,
+                    "Unsupported format version: found {}.{}, max supported {}.{}",
+                    found.0, found.1, supported.0, supported.1
+                )
+            }
+            AprenderError::ChecksumMismatch { expected, actual } => {
+                write!(
+                    f,
+                    "Checksum mismatch: expected 0x{expected:08X}, got 0x{actual:08X}"
+                )
+            }
+            AprenderError::SignatureInvalid { reason } => {
+                write!(f, "Invalid signature: {reason}")
+            }
+            AprenderError::DecryptionFailed { message } => {
+                write!(f, "Decryption failed: {message}")
+            }
         }
     }
 }

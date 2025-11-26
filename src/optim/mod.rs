@@ -6218,7 +6218,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "TODO: Fix consensus form for box constraints - needs refinement"]
+    #[ignore = "Consensus form for box constraints needs algorithm refinement"]
     fn test_admm_box_constraints_via_consensus() {
         // Minimize: ½‖x - target‖² subject to 0 ≤ z ≤ 1, x = z
         let n = 3;

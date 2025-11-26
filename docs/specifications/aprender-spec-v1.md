@@ -1145,7 +1145,19 @@ These refinements maintain technical excellence while honoring *Genchi Genbutsu*
 - Inozemtseva, L., & Holmes, R. (2014). *Coverage is not strongly correlated with test suite effectiveness.* ICSE.
 - Just, R., et al. (2014). *Are mutants a valid substitute for real faults in software testing?* FSE.
 
-### 14.2 Software Engineering & Quality
+### 14.2 Algorithm Implementation References (v0.9.1)
+- **K-Means**: Lloyd, S. (1982). "Least squares quantization in PCM". *IEEE Transactions on Information Theory*, 28(2), 129-137.
+- **DBSCAN**: Ester, M., Kriegel, H. P., Sander, J., & Xu, X. (1996). "A density-based algorithm for discovering clusters in large spatial databases with noise". *KDD-96*.
+- **Isolation Forest**: Liu, F. T., Ting, K. M., & Zhou, Z. H. (2008). "Isolation Forest". *ICDM '08*.
+- **LOF**: Breunig, M. M., et al. (2000). "LOF: identifying density-based local outliers". *SIGMOD 2000*.
+- **GMM (EM)**: Dempster, A. P., Laird, N. M., & Rubin, D. B. (1977). "Maximum Likelihood from Incomplete Data via the EM Algorithm". *Journal of the Royal Statistical Society*.
+- **Random Forest**: Breiman, L. (2001). "Random Forests". *Machine Learning*, 45(1), 5-32.
+- **CART**: Breiman, L., et al. (1984). *Classification and Regression Trees*. Wadsworth & Brooks/Cole.
+- **Linear SVM**: Cortes, C., & Vapnik, V. (1995). "Support-vector networks". *Machine Learning*, 20(3), 273-297.
+- **Logistic Regression**: Cox, D. R. (1958). "The regression analysis of binary sequences". *Journal of the Royal Statistical Society*.
+- **Agglomerative Clustering**: Sokal, R. R., & Michener, C. D. (1958). "A statistical method for evaluating systematic relationships". *University of Kansas Science Bulletin*.
+
+### 14.3 Software Engineering & Quality
 - Dijkstra, E. W. (1972). "The Humble Programmer". ACM Turing Award Lecture.
 - Beck, K. (2002). *Test-Driven Development: By Example*. Addison-Wesley.
 - Ohno, T. (1988). *Toyota Production System: Beyond Large-Scale Production*. Productivity Press.

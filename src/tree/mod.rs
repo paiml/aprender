@@ -1972,6 +1972,53 @@ impl RandomForestClassifier {
         correct as f32 / y.len() as f32
     }
 
+    /// Predict class probabilities for input features.
+    ///
+    /// Returns probability distribution over classes based on
+    /// vote proportions across trees in the forest.
+    ///
+    /// # Returns
+    ///
+    /// `Matrix<f32>` with shape `(n_samples, n_classes)` where each row
+    /// sums to 1.0.
+    #[allow(clippy::needless_range_loop)]
+    pub fn predict_proba(
+        &self,
+        x: &crate::primitives::Matrix<f32>,
+    ) -> crate::primitives::Matrix<f32> {
+        let n_samples = x.shape().0;
+
+        // Determine number of classes from training data
+        let n_classes = self
+            .y_train
+            .as_ref()
+            .map_or(2, |y| y.iter().max().copied().unwrap_or(0) + 1);
+
+        let mut proba_data = vec![0.0f32; n_samples * n_classes];
+        let n_trees = self.trees.len() as f32;
+
+        // Get predictions from each tree and count votes
+        for sample_idx in 0..n_samples {
+            let mut votes = vec![0usize; n_classes];
+
+            for tree in &self.trees {
+                let tree_prediction = tree.predict(x)[sample_idx];
+                if tree_prediction < n_classes {
+                    votes[tree_prediction] += 1;
+                }
+            }
+
+            // Convert votes to probabilities
+            for class_idx in 0..n_classes {
+                let idx = sample_idx * n_classes + class_idx;
+                proba_data[idx] = votes[class_idx] as f32 / n_trees;
+            }
+        }
+
+        crate::primitives::Matrix::from_vec(n_samples, n_classes, proba_data)
+            .expect("Matrix creation should succeed")
+    }
+
     /// Returns Out-of-Bag (OOB) predictions for training samples.
     ///
     /// For each training sample, predictions are made using only the trees
@@ -4839,6 +4886,46 @@ mod tests {
                 imp >= 0.0,
                 "Importance {i} should be non-negative, got {imp}"
             );
+        }
+    }
+
+    #[test]
+    fn test_random_forest_classifier_predict_proba() {
+        // Test predict_proba returns valid probabilities
+        let x = Matrix::from_vec(
+            6,
+            2,
+            vec![0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 2.0, 2.0, 3.0, 3.0],
+        )
+        .expect("Matrix creation should succeed");
+        let y = vec![0, 0, 1, 1, 2, 2]; // 3 classes
+
+        let mut rf = RandomForestClassifier::new(10).with_random_state(42);
+        rf.fit(&x, &y).expect("fit should succeed");
+
+        let proba = rf.predict_proba(&x);
+
+        // Shape should be (n_samples, n_classes)
+        assert_eq!(proba.shape(), (6, 3));
+
+        // Each row should sum to 1.0
+        for row in 0..6 {
+            let sum: f32 = (0..3).map(|col| proba.get(row, col)).sum();
+            assert!(
+                (sum - 1.0).abs() < 1e-5,
+                "Row {row} probabilities should sum to 1.0, got {sum}"
+            );
+        }
+
+        // All probabilities should be in [0, 1]
+        for row in 0..6 {
+            for col in 0..3 {
+                let p = proba.get(row, col);
+                assert!(
+                    (0.0..=1.0).contains(&p),
+                    "Probability should be in [0,1], got {p}"
+                );
+            }
         }
     }
 }

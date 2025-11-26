@@ -53,6 +53,7 @@
 //! - [`recommend`]: Recommendation systems (content-based, collaborative filtering)
 //! - [`chaos`]: Chaos engineering configuration (from renacer)
 
+pub mod autograd;
 pub mod bayesian;
 pub mod chaos;
 pub mod classification;
@@ -68,6 +69,7 @@ pub mod loss;
 pub mod metrics;
 pub mod mining;
 pub mod model_selection;
+pub mod nn;
 pub mod optim;
 pub mod prelude;
 pub mod preprocessing;
