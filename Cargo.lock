@@ -203,8 +203,10 @@ dependencies = [
  "rand 0.8.5",
  "rayon",
  "renacer",
+ "rmp-serde",
  "serde",
  "serde_json",
+ "tempfile",
  "trueno",
 ]
 

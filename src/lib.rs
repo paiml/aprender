@@ -61,6 +61,7 @@ pub mod cluster;
 pub mod data;
 pub mod decomposition;
 pub mod error;
+pub mod format;
 pub mod glm;
 pub mod graph;
 pub mod index;

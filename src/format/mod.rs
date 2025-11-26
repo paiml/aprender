@@ -156,7 +156,7 @@ impl Compression {
     }
 }
 
-/// Feature flags (bitmask)
+/// Feature flags (bitmask) - spec §3.2
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Flags(u8);
 
@@ -167,6 +167,10 @@ impl Flags {
     pub const SIGNED: u8 = 0b0000_0010;
     /// Supports chunked/streaming loading
     pub const STREAMING: u8 = 0b0000_0100;
+    /// Has commercial license block
+    pub const LICENSED: u8 = 0b0000_1000;
+    /// 64-byte aligned tensors for zero-copy SIMD (trueno-native)
+    pub const TRUENO_NATIVE: u8 = 0b0001_0000;
 
     /// Create new flags
     pub fn new() -> Self {
@@ -191,6 +195,18 @@ impl Flags {
         self
     }
 
+    /// Set licensed flag
+    pub fn with_licensed(mut self) -> Self {
+        self.0 |= Self::LICENSED;
+        self
+    }
+
+    /// Set trueno-native flag
+    pub fn with_trueno_native(mut self) -> Self {
+        self.0 |= Self::TRUENO_NATIVE;
+        self
+    }
+
     /// Check if encrypted
     pub fn is_encrypted(self) -> bool {
         self.0 & Self::ENCRYPTED != 0
@@ -206,6 +222,16 @@ impl Flags {
         self.0 & Self::STREAMING != 0
     }
 
+    /// Check if licensed
+    pub fn is_licensed(self) -> bool {
+        self.0 & Self::LICENSED != 0
+    }
+
+    /// Check if trueno-native
+    pub fn is_trueno_native(self) -> bool {
+        self.0 & Self::TRUENO_NATIVE != 0
+    }
+
     /// Get raw value
     pub fn bits(self) -> u8 {
         self.0
@@ -213,7 +239,7 @@ impl Flags {
 
     /// Create from raw value
     pub fn from_bits(bits: u8) -> Self {
-        Self(bits & 0b0000_0111) // Mask reserved bits
+        Self(bits & 0b0001_1111) // Mask reserved bits (5-7)
     }
 }
 
@@ -292,7 +318,11 @@ impl Header {
     pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
         if bytes.len() < HEADER_SIZE {
             return Err(AprenderError::FormatError {
-                message: format!("Header too short: {} bytes, expected {}", bytes.len(), HEADER_SIZE),
+                message: format!(
+                    "Header too short: {} bytes, expected {}",
+                    bytes.len(),
+                    HEADER_SIZE
+                ),
             });
         }
 
@@ -318,11 +348,10 @@ impl Header {
 
         // Parse model type
         let model_type_raw = u16::from_le_bytes([bytes[6], bytes[7]]);
-        let model_type = ModelType::from_u16(model_type_raw).ok_or_else(|| {
-            AprenderError::FormatError {
+        let model_type =
+            ModelType::from_u16(model_type_raw).ok_or_else(|| AprenderError::FormatError {
                 message: format!("Unknown model type: 0x{:04X}", model_type_raw),
-            }
-        })?;
+            })?;
 
         // Parse sizes
         let metadata_size = u32::from_le_bytes([bytes[8], bytes[9], bytes[10], bytes[11]]);
@@ -340,11 +369,10 @@ impl Header {
         }
 
         // Parse compression
-        let compression = Compression::from_u8(bytes[20]).ok_or_else(|| {
-            AprenderError::FormatError {
+        let compression =
+            Compression::from_u8(bytes[20]).ok_or_else(|| AprenderError::FormatError {
                 message: format!("Unknown compression algorithm: 0x{:02X}", bytes[20]),
-            }
-        })?;
+            })?;
 
         // Parse flags
         let flags = Flags::from_bits(bytes[21]);
@@ -482,6 +510,10 @@ pub struct ModelInfo {
     pub signed: bool,
     /// Is streaming
     pub streaming: bool,
+    /// Has commercial license block
+    pub licensed: bool,
+    /// Uses trueno-native 64-byte aligned tensors
+    pub trueno_native: bool,
 }
 
 /// CRC32 checksum (IEEE polynomial)
@@ -534,9 +566,8 @@ pub fn save<M: Serialize>(
     let path = path.as_ref();
 
     // Serialize payload with bincode
-    let payload_uncompressed = bincode::serialize(model).map_err(|e| {
-        AprenderError::Serialization(format!("Failed to serialize model: {e}"))
-    })?;
+    let payload_uncompressed = bincode::serialize(model)
+        .map_err(|e| AprenderError::Serialization(format!("Failed to serialize model: {e}")))?;
 
     // Compress payload (currently only None supported, zstd requires feature)
     let (payload_compressed, compression) = match options.compression {
@@ -545,10 +576,9 @@ pub fn save<M: Serialize>(
         _ => (payload_uncompressed.clone(), Compression::None),
     };
 
-    // Serialize metadata as JSON (MessagePack would require rmp-serde)
-    let metadata_bytes = serde_json::to_vec(&options.metadata).map_err(|e| {
-        AprenderError::Serialization(format!("Failed to serialize metadata: {e}"))
-    })?;
+    // Serialize metadata as MessagePack (spec §2)
+    let metadata_bytes = rmp_serde::to_vec(&options.metadata)
+        .map_err(|e| AprenderError::Serialization(format!("Failed to serialize metadata: {e}")))?;
 
     // Build header
     let mut header = Header::new(model_type);
@@ -584,10 +614,7 @@ pub fn save<M: Serialize>(
 ///
 /// # Errors
 /// Returns error on I/O failure, format error, or type mismatch
-pub fn load<M: DeserializeOwned>(
-    path: impl AsRef<Path>,
-    expected_type: ModelType,
-) -> Result<M> {
+pub fn load<M: DeserializeOwned>(path: impl AsRef<Path>, expected_type: ModelType) -> Result<M> {
     let path = path.as_ref();
 
     // Read entire file
@@ -658,9 +685,8 @@ pub fn load<M: DeserializeOwned>(
     };
 
     // Deserialize model
-    bincode::deserialize(&payload_uncompressed).map_err(|e| {
-        AprenderError::Serialization(format!("Failed to deserialize model: {e}"))
-    })
+    bincode::deserialize(&payload_uncompressed)
+        .map_err(|e| AprenderError::Serialization(format!("Failed to deserialize model: {e}")))
 }
 
 /// Inspect a model file without loading the payload
@@ -682,12 +708,11 @@ pub fn inspect(path: impl AsRef<Path>) -> Result<ModelInfo> {
     reader.read_exact(&mut header_bytes)?;
     let header = Header::from_bytes(&header_bytes)?;
 
-    // Read metadata
+    // Read metadata (MessagePack per spec §2)
     let mut metadata_bytes = vec![0u8; header.metadata_size as usize];
     reader.read_exact(&mut metadata_bytes)?;
-    let metadata: Metadata = serde_json::from_slice(&metadata_bytes).map_err(|e| {
-        AprenderError::Serialization(format!("Failed to parse metadata: {e}"))
-    })?;
+    let metadata: Metadata = rmp_serde::from_slice(&metadata_bytes)
+        .map_err(|e| AprenderError::Serialization(format!("Failed to parse metadata: {e}")))?;
 
     Ok(ModelInfo {
         model_type: header.model_type,
@@ -698,13 +723,14 @@ pub fn inspect(path: impl AsRef<Path>) -> Result<ModelInfo> {
         encrypted: header.flags.is_encrypted(),
         signed: header.flags.is_signed(),
         streaming: header.flags.is_streaming(),
+        licensed: header.flags.is_licensed(),
+        trueno_native: header.flags.is_trueno_native(),
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Cursor;
 
     #[test]
     fn test_magic_number() {
@@ -783,12 +809,16 @@ mod tests {
         let flags = Flags::new()
             .with_encrypted()
             .with_signed()
-            .with_streaming();
+            .with_streaming()
+            .with_licensed()
+            .with_trueno_native();
 
         assert!(flags.is_encrypted());
         assert!(flags.is_signed());
         assert!(flags.is_streaming());
-        assert_eq!(flags.bits(), 0b0000_0111);
+        assert!(flags.is_licensed());
+        assert!(flags.is_trueno_native());
+        assert_eq!(flags.bits(), 0b0001_1111);
     }
 
     #[test]
@@ -849,7 +879,7 @@ mod tests {
     fn test_checksum_corruption() {
         use tempfile::tempdir;
 
-        #[derive(Serialize, Deserialize)]
+        #[derive(Debug, Serialize, Deserialize)]
         struct TestModel {
             value: i32,
         }
@@ -878,7 +908,7 @@ mod tests {
     fn test_type_mismatch() {
         use tempfile::tempdir;
 
-        #[derive(Serialize, Deserialize)]
+        #[derive(Debug, Serialize, Deserialize)]
         struct TestModel {
             value: i32,
         }
@@ -887,8 +917,13 @@ mod tests {
         let dir = tempdir().expect("create temp dir");
         let path = dir.path().join("typed.apr");
 
-        save(&model, ModelType::LinearRegression, &path, SaveOptions::default())
-            .expect("save should succeed");
+        save(
+            &model,
+            ModelType::LinearRegression,
+            &path,
+            SaveOptions::default(),
+        )
+        .expect("save should succeed");
 
         // Load with wrong type should fail
         let result: Result<TestModel> = load(&path, ModelType::KMeans);
