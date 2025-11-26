@@ -542,8 +542,6 @@ fn cmd_augment(history_path: Option<PathBuf>, output: &str, ngram: usize, count:
 }
 
 fn cmd_tune(history_path: Option<PathBuf>, trials: usize, ratio: f32) {
-    use aprender::automl::{RandomSearch, SearchSpace, SearchStrategy};
-
     println!("🎯 aprender-shell: AutoML Hyperparameter Tuning\n");
 
     // Find history file
@@ -560,76 +558,114 @@ fn cmd_tune(history_path: Option<PathBuf>, trials: usize, ratio: f32) {
         .expect("Failed to parse history");
 
     println!("📊 Total commands: {}", commands.len());
-    println!("🔬 Trials: {}", trials);
+
+    // For small discrete space (n=2,3,4,5), use exhaustive grid search
+    // with multiple folds per config to reduce variance
+    let ngram_sizes = [2_usize, 3, 4, 5];
+    let folds_per_config = trials.max(1);
+
+    println!("🔬 Folds per config: {}", folds_per_config);
     println!(
         "📈 Train/test split: {:.0}% / {:.0}%\n",
         ratio * 100.0,
         (1.0 - ratio) * 100.0
     );
 
-    // Define search space for n-gram size (2-5)
-    // Using GenericParam since ShellModelParam isn't needed for single param
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-    enum ShellParam {
-        NGramSize,
+    println!("══════════════════════════════════════════════════");
+    println!(" N-gram │   Hit@5      │    MRR       │  Score  ");
+    println!("════════╪══════════════╪══════════════╪═════════");
+
+    #[derive(Default)]
+    struct Stats {
+        hit5_values: Vec<f32>,
+        mrr_values: Vec<f32>,
     }
 
-    impl aprender::automl::params::ParamKey for ShellParam {
-        fn name(&self) -> &'static str {
-            match self {
-                Self::NGramSize => "ngram_size",
-            }
+    impl Stats {
+        fn mean_std(values: &[f32]) -> (f32, f32) {
+            let n = values.len() as f32;
+            let mean = values.iter().sum::<f32>() / n;
+            let var = values.iter().map(|x| (x - mean).powi(2)).sum::<f32>() / n;
+            (mean, var.sqrt())
         }
     }
 
-    let space: SearchSpace<ShellParam> = SearchSpace::new().add(ShellParam::NGramSize, 2..6);
+    let mut results: Vec<(usize, Stats)> = Vec::new();
 
-    let mut search = RandomSearch::new(trials).with_seed(42);
+    for &ngram in &ngram_sizes {
+        let mut stats = Stats::default();
 
-    println!("═══════════════════════════════════════════");
-    println!("  Trial │ N-gram │ Hit@5  │  MRR   │ Score");
-    println!("════════╪════════╪════════╪════════╪═══════");
+        // Cross-validation with different splits using rotation
+        for fold in 0..folds_per_config {
+            let rotation = (commands.len() / folds_per_config) * fold;
+            let mut rotated = commands.clone();
+            rotated.rotate_left(rotation % commands.len().max(1));
+
+            let result = MarkovModel::validate(&rotated, ngram, ratio);
+
+            stats.hit5_values.push(result.metrics.hit_at_5);
+            stats.mrr_values.push(result.metrics.mrr);
+        }
+
+        results.push((ngram, stats));
+    }
 
     let mut best_ngram = 3_usize;
     let mut best_score = 0.0_f32;
 
-    for trial_num in 1..=trials {
-        let trial_configs = search.suggest(&space, 1);
-        if trial_configs.is_empty() {
-            break;
-        }
+    for (ngram, stats) in &results {
+        let (hit5_mean, hit5_std) = Stats::mean_std(&stats.hit5_values);
+        let (mrr_mean, mrr_std) = Stats::mean_std(&stats.mrr_values);
 
-        let config = &trial_configs[0];
-        let ngram = config
-            .get_usize(&ShellParam::NGramSize)
-            .expect("ngram_size should exist");
+        // Score = weighted combination
+        let score = hit5_mean * 0.6 + mrr_mean * 0.4;
 
-        // Evaluate with holdout validation
-        let result = MarkovModel::validate(&commands, ngram, ratio);
+        let marker = if score > best_score { " ★" } else { "  " };
 
-        // Score = weighted combination of Hit@5 and MRR
-        let score = result.metrics.hit_at_5 * 0.6 + result.metrics.mrr * 0.4;
-
-        let marker = if score > best_score { "★" } else { " " };
         println!(
-            "  {:>5} │   {:>2}   │ {:>5.1}% │ {:>6.3} │ {:>5.3} {}",
-            trial_num,
+            "   {:>2}   │ {:>5.1}% ±{:>4.1} │ {:>5.3} ±{:>5.3} │ {:>5.3}{}",
             ngram,
-            result.metrics.hit_at_5 * 100.0,
-            result.metrics.mrr,
+            hit5_mean * 100.0,
+            hit5_std * 100.0,
+            mrr_mean,
+            mrr_std,
             score,
             marker
         );
 
         if score > best_score {
             best_score = score;
-            best_ngram = ngram;
+            best_ngram = *ngram;
         }
     }
 
-    println!("═══════════════════════════════════════════\n");
+    println!("══════════════════════════════════════════════════\n");
 
-    println!("🏆 Best Configuration:");
+    // Detailed analysis
+    println!("📊 Analysis:");
+    for (ngram, stats) in &results {
+        let (hit5_mean, _) = Stats::mean_std(&stats.hit5_values);
+        let (mrr_mean, _) = Stats::mean_std(&stats.mrr_values);
+        let score = hit5_mean * 0.6 + mrr_mean * 0.4;
+
+        let recommendation = if *ngram == best_ngram {
+            "← BEST"
+        } else if score > best_score * 0.95 {
+            "(competitive)"
+        } else {
+            ""
+        };
+
+        println!(
+            "   n={}: Hit@5={:.1}%, MRR={:.3} {}",
+            ngram,
+            hit5_mean * 100.0,
+            mrr_mean,
+            recommendation
+        );
+    }
+
+    println!("\n🏆 Best Configuration:");
     println!("   N-gram size: {}", best_ngram);
     println!("   Score:       {:.3}", best_score);
 
