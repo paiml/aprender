@@ -35,7 +35,7 @@
 | Encryption (X25519) | §5.3 | ✓ X25519+HKDF+AES-GCM | ✓ | format-encryption feature |
 | Signing | §5.4 | ✓ Ed25519 (feature) | ✓ | format-signing feature |
 | Quantization | §6.2 | ✓ Q8_0/Q4_0 impl | ✓ | format-quantize feature |
-| Distillation | §6.3 | ○ Spec complete | ✓ | metadata only (entrenar integration) |
+| Distillation | §6.3 | ✓ DistillationInfo | ✓ | Standard/Progressive/Ensemble methods |
 | Streaming | §7 | ○ | N/A | format-streaming feature |
 | License block | §9 | ○ | ○ | format-commercial feature |
 | trueno-native | §8 | ○ | N/A | format-trueno feature |

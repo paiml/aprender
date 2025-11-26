@@ -3015,4 +3015,181 @@ mod tests {
                 < f32::EPSILON
         );
     }
+
+    // EXTREME TDD: Test progressive distillation with layer mapping (spec §6.3.1)
+    #[test]
+    fn test_distillation_progressive_with_layer_mapping() {
+        use tempfile::tempdir;
+
+        #[derive(Debug, Serialize, Deserialize)]
+        struct TestModel {
+            value: i32,
+        }
+
+        let model = TestModel { value: 42 };
+        let dir = tempdir().expect("create temp dir");
+        let path = dir.path().join("progressive.apr");
+
+        // Progressive distillation: 4-layer student from 8-layer teacher
+        let layer_mapping = vec![
+            LayerMapping {
+                student_layer: 0,
+                teacher_layer: 0,
+                weight: 0.5,
+            },
+            LayerMapping {
+                student_layer: 1,
+                teacher_layer: 2,
+                weight: 0.3,
+            },
+            LayerMapping {
+                student_layer: 2,
+                teacher_layer: 5,
+                weight: 0.15,
+            },
+            LayerMapping {
+                student_layer: 3,
+                teacher_layer: 7,
+                weight: 0.05,
+            },
+        ];
+
+        let distill_info = DistillationInfo {
+            method: DistillMethod::Progressive,
+            teacher: TeacherProvenance {
+                hash: "sha256:teacher_8layer".to_string(),
+                signature: Some("sig_abc123".to_string()),
+                model_type: ModelType::NeuralSequential,
+                param_count: 1_000_000_000, // 1B params
+                ensemble_teachers: None,
+            },
+            params: DistillationParams {
+                temperature: 4.0,
+                alpha: 0.8,
+                beta: Some(0.5), // Progressive uses beta for hidden vs logit loss
+                epochs: 20,
+                final_loss: Some(0.31),
+            },
+            layer_mapping: Some(layer_mapping),
+        };
+
+        let options = SaveOptions::default().with_distillation_info(distill_info);
+        save(&model, ModelType::Custom, &path, options).expect("save should succeed");
+
+        let info = inspect(&path).expect("inspect should succeed");
+        let restored = info
+            .metadata
+            .distillation_info
+            .expect("should have distillation_info");
+
+        // Verify method
+        assert!(matches!(restored.method, DistillMethod::Progressive));
+
+        // Verify teacher info
+        assert_eq!(restored.teacher.hash, "sha256:teacher_8layer");
+        assert_eq!(restored.teacher.signature, Some("sig_abc123".to_string()));
+        assert_eq!(restored.teacher.param_count, 1_000_000_000);
+
+        // Verify params with beta
+        assert!((restored.params.temperature - 4.0).abs() < f32::EPSILON);
+        assert!((restored.params.alpha - 0.8).abs() < f32::EPSILON);
+        assert!((restored.params.beta.expect("should have beta") - 0.5).abs() < f32::EPSILON);
+        assert_eq!(restored.params.epochs, 20);
+
+        // Verify layer mapping
+        let mapping = restored.layer_mapping.expect("should have layer_mapping");
+        assert_eq!(mapping.len(), 4);
+        assert_eq!(mapping[0].student_layer, 0);
+        assert_eq!(mapping[0].teacher_layer, 0);
+        assert!((mapping[0].weight - 0.5).abs() < f32::EPSILON);
+        assert_eq!(mapping[2].student_layer, 2);
+        assert_eq!(mapping[2].teacher_layer, 5);
+    }
+
+    // EXTREME TDD: Test ensemble distillation with multiple teachers (spec §6.3.1)
+    #[test]
+    fn test_distillation_ensemble_multiple_teachers() {
+        use tempfile::tempdir;
+
+        #[derive(Debug, Serialize, Deserialize)]
+        struct TestModel {
+            value: i32,
+        }
+
+        let model = TestModel { value: 42 };
+        let dir = tempdir().expect("create temp dir");
+        let path = dir.path().join("ensemble.apr");
+
+        // Ensemble: 3 teachers averaged
+        let ensemble_teachers = vec![
+            TeacherProvenance {
+                hash: "sha256:teacher1".to_string(),
+                signature: None,
+                model_type: ModelType::NeuralSequential,
+                param_count: 3_000_000_000,
+                ensemble_teachers: None,
+            },
+            TeacherProvenance {
+                hash: "sha256:teacher2".to_string(),
+                signature: None,
+                model_type: ModelType::NeuralSequential,
+                param_count: 5_000_000_000,
+                ensemble_teachers: None,
+            },
+            TeacherProvenance {
+                hash: "sha256:teacher3".to_string(),
+                signature: None,
+                model_type: ModelType::GradientBoosting,
+                param_count: 2_000_000_000,
+                ensemble_teachers: None,
+            },
+        ];
+
+        let distill_info = DistillationInfo {
+            method: DistillMethod::Ensemble,
+            teacher: TeacherProvenance {
+                hash: "sha256:ensemble_meta".to_string(),
+                signature: None,
+                model_type: ModelType::NeuralSequential,
+                param_count: 10_000_000_000, // Combined param count
+                ensemble_teachers: Some(ensemble_teachers),
+            },
+            params: DistillationParams {
+                temperature: 2.5,
+                alpha: 0.6,
+                beta: None,
+                epochs: 15,
+                final_loss: Some(0.28),
+            },
+            layer_mapping: None,
+        };
+
+        let options = SaveOptions::default().with_distillation_info(distill_info);
+        save(&model, ModelType::Custom, &path, options).expect("save should succeed");
+
+        let info = inspect(&path).expect("inspect should succeed");
+        let restored = info
+            .metadata
+            .distillation_info
+            .expect("should have distillation_info");
+
+        // Verify method
+        assert!(matches!(restored.method, DistillMethod::Ensemble));
+
+        // Verify ensemble teachers
+        let teachers = restored
+            .teacher
+            .ensemble_teachers
+            .expect("should have ensemble_teachers");
+        assert_eq!(teachers.len(), 3);
+        assert_eq!(teachers[0].hash, "sha256:teacher1");
+        assert_eq!(teachers[1].param_count, 5_000_000_000);
+        assert!(matches!(
+            teachers[2].model_type,
+            ModelType::GradientBoosting
+        ));
+
+        // Verify combined param count
+        assert_eq!(restored.teacher.param_count, 10_000_000_000);
+    }
 }
