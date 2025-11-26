@@ -71,7 +71,8 @@ fn load_bundle_paged(path: &str) {
         .with_max_memory(1024) // 1KB limit
         .with_prefetch(false);
 
-    let mut bundle = PagedBundle::open(Path::new(path), config).expect("Failed to open paged bundle");
+    let mut bundle =
+        PagedBundle::open(Path::new(path), config).expect("Failed to open paged bundle");
 
     println!("   Memory limit: {} bytes", bundle.config().max_memory);
     println!("   Initially cached: {} models", bundle.cached_count());
@@ -80,19 +81,33 @@ fn load_bundle_paged(path: &str) {
     println!("\n   Accessing encoder...");
     let encoder = bundle.get_model("encoder").expect("Failed to get encoder");
     println!("   - Loaded encoder: {} bytes", encoder.len());
-    println!("   - Cached: {}, Memory used: {} bytes", bundle.cached_count(), bundle.memory_used());
+    println!(
+        "   - Cached: {}, Memory used: {} bytes",
+        bundle.cached_count(),
+        bundle.memory_used()
+    );
 
     // Access decoder - should evict encoder (1024 limit)
     println!("\n   Accessing decoder...");
     let decoder = bundle.get_model("decoder").expect("Failed to get decoder");
     println!("   - Loaded decoder: {} bytes", decoder.len());
-    println!("   - Cached: {}, Memory used: {} bytes", bundle.cached_count(), bundle.memory_used());
+    println!(
+        "   - Cached: {}, Memory used: {} bytes",
+        bundle.cached_count(),
+        bundle.memory_used()
+    );
 
     // Access classifier - should evict decoder
     println!("\n   Accessing classifier...");
-    let classifier = bundle.get_model("classifier").expect("Failed to get classifier");
+    let classifier = bundle
+        .get_model("classifier")
+        .expect("Failed to get classifier");
     println!("   - Loaded classifier: {} bytes", classifier.len());
-    println!("   - Cached: {}, Memory used: {} bytes", bundle.cached_count(), bundle.memory_used());
+    println!(
+        "   - Cached: {}, Memory used: {} bytes",
+        bundle.cached_count(),
+        bundle.memory_used()
+    );
 
     // Show paging statistics
     let stats = bundle.stats();

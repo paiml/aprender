@@ -57,6 +57,7 @@ return_self_not_must_use = "allow"
 float_cmp = "allow"  # ML algorithms often compare floats
 unreadable_literal = "allow"  # Test data often has long numeric literals
 items_after_statements = "allow"  # ML algorithms often need mid-function declarations
+large_stack_arrays = "allow"  # ML tests often need large data arrays
 
 [package]
 name = "aprender"
