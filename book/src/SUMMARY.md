@@ -96,6 +96,10 @@
 - [Gradient Descent Theory](./ml-fundamentals/gradient-descent.md)
 - [Advanced Optimizers Theory](./ml-fundamentals/advanced-optimizers.md)
 
+## AutoML
+
+- [AutoML: Automated Machine Learning](./ml-fundamentals/automl.md)
+
 ## Preprocessing
 
 - [Feature Scaling Theory](./ml-fundamentals/feature-scaling.md)
