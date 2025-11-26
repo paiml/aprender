@@ -136,6 +136,8 @@
 - [Case Study: Tracing Memory Paging with Renacer](./examples/tracing-memory-paging.md)
 - [Case Study: Bundle Trace Demo](./examples/bundle-trace-demo.md)
 - [Case Study: Synthetic Data Generation](./examples/synthetic-data-generation.md)
+- [Case Study: Code-Aware EDA](./examples/code-eda.md)
+- [Case Study: Code Feature Extraction](./examples/code-feature-extractor.md)
 - [Case Study: KMeans Clustering](./examples/kmeans-clustering.md)
 - [Case Study: DBSCAN Clustering](./examples/dbscan-clustering.md)
 - [Case Study: Hierarchical Clustering](./examples/hierarchical-clustering.md)
