@@ -1,5 +1,7 @@
 //! Configuration for synthetic data generation.
 
+use super::andon::AndonConfig;
+
 /// Configuration for synthetic data generation.
 ///
 /// Controls the ratio of synthetic to original data, quality thresholds,
@@ -34,6 +36,9 @@ pub struct SyntheticConfig {
 
     /// Random seed for reproducibility.
     pub seed: u64,
+
+    /// Andon configuration for quality monitoring (Toyota Jidoka).
+    pub andon: AndonConfig,
 }
 
 impl Default for SyntheticConfig {
@@ -44,6 +49,7 @@ impl Default for SyntheticConfig {
     /// - `diversity_weight`: 0.3 (30% diversity weight)
     /// - `max_attempts`: 10 attempts per sample
     /// - `seed`: 42 for reproducibility
+    /// - `andon`: Enabled with 90% rejection threshold (Toyota Jidoka)
     fn default() -> Self {
         Self {
             augmentation_ratio: 0.5,
@@ -51,6 +57,7 @@ impl Default for SyntheticConfig {
             diversity_weight: 0.3,
             max_attempts: 10,
             seed: 42,
+            andon: AndonConfig::default(),
         }
     }
 }
@@ -110,6 +117,27 @@ impl SyntheticConfig {
     #[must_use]
     pub fn with_seed(mut self, seed: u64) -> Self {
         self.seed = seed;
+        self
+    }
+
+    /// Set the Andon configuration for quality monitoring.
+    #[must_use]
+    pub fn with_andon(mut self, andon: AndonConfig) -> Self {
+        self.andon = andon;
+        self
+    }
+
+    /// Enable or disable Andon monitoring.
+    #[must_use]
+    pub fn with_andon_enabled(mut self, enabled: bool) -> Self {
+        self.andon.enabled = enabled;
+        self
+    }
+
+    /// Set the Andon rejection threshold.
+    #[must_use]
+    pub fn with_andon_rejection_threshold(mut self, threshold: f32) -> Self {
+        self.andon.rejection_threshold = threshold.clamp(0.0, 1.0);
         self
     }
 
@@ -287,5 +315,65 @@ mod tests {
         let debug = format!("{config:?}");
         assert!(debug.contains("SyntheticConfig"));
         assert!(debug.contains("augmentation_ratio"));
+    }
+
+    // ============================================================================
+    // EXTREME TDD: Andon Integration Tests
+    // ============================================================================
+
+    #[test]
+    fn test_default_andon_config() {
+        let config = SyntheticConfig::default();
+        assert!(config.andon.enabled);
+        assert!((config.andon.rejection_threshold - 0.90).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_with_andon() {
+        use crate::synthetic::AndonConfig;
+
+        let andon = AndonConfig::new()
+            .with_enabled(false)
+            .with_rejection_threshold(0.85);
+
+        let config = SyntheticConfig::new().with_andon(andon);
+
+        assert!(!config.andon.enabled);
+        assert!((config.andon.rejection_threshold - 0.85).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_with_andon_enabled() {
+        let config = SyntheticConfig::new().with_andon_enabled(false);
+        assert!(!config.andon.enabled);
+
+        let config = SyntheticConfig::new().with_andon_enabled(true);
+        assert!(config.andon.enabled);
+    }
+
+    #[test]
+    fn test_with_andon_rejection_threshold() {
+        let config = SyntheticConfig::new().with_andon_rejection_threshold(0.80);
+        assert!((config.andon.rejection_threshold - 0.80).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_with_andon_rejection_threshold_clamping() {
+        let config = SyntheticConfig::new().with_andon_rejection_threshold(1.5);
+        assert!((config.andon.rejection_threshold - 1.0).abs() < f32::EPSILON);
+
+        let config = SyntheticConfig::new().with_andon_rejection_threshold(-0.5);
+        assert!((config.andon.rejection_threshold - 0.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_andon_config_in_clone() {
+        let config1 = SyntheticConfig::new()
+            .with_andon_enabled(false)
+            .with_andon_rejection_threshold(0.75);
+
+        let config2 = config1.clone();
+        assert!(!config2.andon.enabled);
+        assert!((config2.andon.rejection_threshold - 0.75).abs() < f32::EPSILON);
     }
 }

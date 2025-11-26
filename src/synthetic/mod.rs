@@ -30,6 +30,7 @@
 //! - Wei & Zou (2019). EDA: Easy Data Augmentation. EMNLP.
 //! - Ratner et al. (2017). Snorkel: Weak Supervision. VLDB.
 
+pub mod andon;
 mod config;
 mod diversity;
 mod params;
@@ -37,6 +38,7 @@ mod quality;
 mod strategy;
 mod validator;
 
+pub use andon::{AndonConfig, AndonEvent, AndonHandler, AndonSeverity, DefaultAndon, TestAndon};
 pub use config::SyntheticConfig;
 pub use diversity::{DiversityMonitor, DiversityScore};
 pub use params::SyntheticParam;
@@ -137,6 +139,69 @@ pub trait SyntheticCallback: Send + Sync {
 
     /// Called when diversity metrics indicate potential collapse.
     fn on_diversity_collapse(&mut self, score: &DiversityScore);
+}
+
+/// Check Andon conditions and trigger events if thresholds exceeded.
+///
+/// Returns an error with Andon halt if critical conditions detected.
+///
+/// # Arguments
+///
+/// * `accepted` - Number of accepted samples
+/// * `total` - Total samples generated
+/// * `diversity` - Current diversity score
+/// * `config` - Synthetic configuration with Andon settings
+/// * `andon` - Optional Andon handler for event notification
+///
+/// # Returns
+///
+/// Ok(()) if generation should continue, Err if Andon halt triggered.
+pub fn check_andon<A: AndonHandler>(
+    accepted: usize,
+    total: usize,
+    diversity: f32,
+    config: &SyntheticConfig,
+    andon: Option<&A>,
+) -> Result<()> {
+    if !config.andon.enabled || total == 0 {
+        return Ok(());
+    }
+
+    let rejection_rate = 1.0 - (accepted as f32 / total as f32);
+
+    // Check rejection rate
+    if config.andon.exceeds_rejection_threshold(rejection_rate) {
+        let event = AndonEvent::HighRejectionRate {
+            rate: rejection_rate,
+            threshold: config.andon.rejection_threshold,
+        };
+
+        if let Some(handler) = andon {
+            handler.on_event(&event);
+            if handler.should_halt(&event) {
+                return Err(crate::error::AprenderError::Other(format!(
+                    "ANDON HALT: Rejection rate {:.1}% exceeds threshold {:.1}%",
+                    rejection_rate * 100.0,
+                    config.andon.rejection_threshold * 100.0
+                )));
+            }
+        }
+    }
+
+    // Check diversity collapse
+    if config.andon.has_diversity_collapse(diversity) {
+        let event = AndonEvent::DiversityCollapse {
+            score: diversity,
+            minimum: config.andon.diversity_minimum,
+        };
+
+        if let Some(handler) = andon {
+            handler.on_event(&event);
+            // Diversity collapse is warning, not halt
+        }
+    }
+
+    Ok(())
 }
 
 /// Generate synthetic data in batches to manage memory.
@@ -403,5 +468,88 @@ mod tests {
         // batch_size of 0 should be treated as 1
         let result = generate_batched(&gen, &seeds, &config, 0).expect("generation failed");
         assert_eq!(result, vec![2, 4, 6]);
+    }
+
+    // ============================================================================
+    // EXTREME TDD: Andon Integration Tests
+    // ============================================================================
+
+    #[test]
+    fn test_check_andon_disabled() {
+        let config = SyntheticConfig::default().with_andon_enabled(false);
+        let andon = TestAndon::new();
+
+        // Should not trigger even with 100% rejection
+        let result = check_andon::<TestAndon>(0, 100, 0.5, &config, Some(&andon));
+        assert!(result.is_ok());
+        assert!(andon.events().is_empty());
+    }
+
+    #[test]
+    fn test_check_andon_empty_total() {
+        let config = SyntheticConfig::default();
+        let andon = TestAndon::new();
+
+        // Zero total should not trigger
+        let result = check_andon::<TestAndon>(0, 0, 0.5, &config, Some(&andon));
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_check_andon_high_rejection_halts() {
+        let config = SyntheticConfig::default().with_andon_rejection_threshold(0.90);
+        let andon = TestAndon::new();
+
+        // 95% rejection rate (5 accepted out of 100)
+        let result = check_andon::<TestAndon>(5, 100, 0.5, &config, Some(&andon));
+        assert!(result.is_err());
+        assert!(andon.was_halted());
+        assert_eq!(andon.count_high_rejection(), 1);
+    }
+
+    #[test]
+    fn test_check_andon_acceptable_rejection() {
+        let config = SyntheticConfig::default().with_andon_rejection_threshold(0.90);
+        let andon = TestAndon::new();
+
+        // 80% rejection rate (20 accepted out of 100) - below threshold
+        let result = check_andon::<TestAndon>(20, 100, 0.5, &config, Some(&andon));
+        assert!(result.is_ok());
+        assert!(!andon.was_halted());
+    }
+
+    #[test]
+    fn test_check_andon_diversity_collapse_warns() {
+        let config =
+            SyntheticConfig::default().with_andon(AndonConfig::new().with_diversity_minimum(0.2));
+        let andon = TestAndon::new();
+
+        // Low diversity (0.1 < 0.2 minimum) but good acceptance
+        let result = check_andon::<TestAndon>(80, 100, 0.1, &config, Some(&andon));
+        assert!(result.is_ok()); // Diversity collapse is warning, not halt
+        assert!(!andon.was_halted());
+        assert_eq!(andon.events().len(), 1);
+    }
+
+    #[test]
+    fn test_check_andon_no_handler() {
+        let config = SyntheticConfig::default().with_andon_rejection_threshold(0.90);
+
+        // High rejection but no handler - should not error
+        let result = check_andon::<DefaultAndon>(5, 100, 0.5, &config, None);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_check_andon_multiple_conditions() {
+        let config = SyntheticConfig::default()
+            .with_andon_rejection_threshold(0.90)
+            .with_andon(AndonConfig::new().with_diversity_minimum(0.2));
+        let andon = TestAndon::new();
+
+        // Both high rejection AND low diversity
+        let result = check_andon::<TestAndon>(3, 100, 0.05, &config, Some(&andon));
+        assert!(result.is_err()); // Rejection halts first
+        assert!(andon.was_halted());
     }
 }
