@@ -52,11 +52,13 @@
 //! - [`index`]: Approximate nearest neighbor search (HNSW)
 //! - [`recommend`]: Recommendation systems (content-based, collaborative filtering)
 //! - [`synthetic`]: Synthetic data generation for AutoML (EDA, back-translation, MixUp)
+//! - [`bundle`]: Model bundling and memory paging for large models
 //! - [`chaos`]: Chaos engineering configuration (from renacer)
 
 pub mod autograd;
 pub mod automl;
 pub mod bayesian;
+pub mod bundle;
 pub mod chaos;
 pub mod classification;
 pub mod cluster;
