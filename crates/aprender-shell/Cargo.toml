@@ -27,7 +27,7 @@ name = "recommendation_latency"
 harness = false
 
 [dependencies]
-aprender = { path = "../.." }
+aprender = "0.10.0"
 clap = { version = "4", features = ["derive"] }
 dirs = "5"
 serde = { version = "1", features = ["derive"] }
