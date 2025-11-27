@@ -57,14 +57,31 @@ use std::path::Path;
 #[cfg(feature = "format-quantize")]
 pub mod quantize;
 
+// Homomorphic encryption module (spec: homomorphic-encryption-spec.md)
+#[cfg(feature = "format-homomorphic")]
+pub mod homomorphic;
+
 // GGUF export module (spec §7.2)
 pub mod gguf;
+
+// Model card module (spec §11)
+pub mod model_card;
+
+// Re-export model card types
+pub use model_card::{ModelCard, TrainingDataInfo};
 
 // Re-export quantization types when feature is enabled
 #[cfg(feature = "format-quantize")]
 pub use quantize::{
     dequantize, quantize as quantize_data, Q4_0Quantizer, Q8_0Quantizer, QuantType,
     QuantizationInfo, QuantizedBlock, QuantizedTensor, Quantizer, BLOCK_SIZE,
+};
+
+// Re-export homomorphic encryption types when feature is enabled
+#[cfg(feature = "format-homomorphic")]
+pub use homomorphic::{
+    Ciphertext, HeContext, HeGaloisKeys, HeParameters, HePublicKey, HeRelinKeys, HeScheme,
+    HeSecretKey, Plaintext, SecurityLevel,
 };
 
 // Re-export signing types when feature is enabled
@@ -230,6 +247,8 @@ impl Flags {
     pub const TRUENO_NATIVE: u8 = 0b0001_0000;
     /// Payload contains quantized tensors (spec §6.2)
     pub const QUANTIZED: u8 = 0b0010_0000;
+    /// Has model card metadata (spec §11)
+    pub const HAS_MODEL_CARD: u8 = 0b0100_0000;
 
     /// Create new flags
     pub fn new() -> Self {
@@ -272,6 +291,12 @@ impl Flags {
         self
     }
 
+    /// Set model card flag
+    pub fn with_model_card(mut self) -> Self {
+        self.0 |= Self::HAS_MODEL_CARD;
+        self
+    }
+
     /// Check if encrypted
     pub fn is_encrypted(self) -> bool {
         self.0 & Self::ENCRYPTED != 0
@@ -302,6 +327,11 @@ impl Flags {
         self.0 & Self::QUANTIZED != 0
     }
 
+    /// Check if has model card
+    pub fn has_model_card(self) -> bool {
+        self.0 & Self::HAS_MODEL_CARD != 0
+    }
+
     /// Get raw value
     pub fn bits(self) -> u8 {
         self.0
@@ -309,7 +339,7 @@ impl Flags {
 
     /// Create from raw value
     pub fn from_bits(bits: u8) -> Self {
-        Self(bits & 0b0011_1111) // Mask reserved bits (6-7)
+        Self(bits & 0b0111_1111) // Mask reserved bit (7 only)
     }
 }
 
@@ -493,6 +523,9 @@ pub struct Metadata {
     /// Commercial license information (spec §9.1)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub license: Option<LicenseInfo>,
+    /// Model card metadata (spec §11)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_card: Option<ModelCard>,
 }
 
 /// Training information
@@ -634,6 +667,7 @@ impl Default for Metadata {
             distillation: None,
             distillation_info: None,
             license: None,
+            model_card: None,
         }
     }
 }
@@ -693,6 +727,12 @@ impl SaveOptions {
         self.metadata.license = Some(license);
         self
     }
+
+    /// Set model card (spec §11)
+    pub fn with_model_card(mut self, card: ModelCard) -> Self {
+        self.metadata.model_card = Some(card);
+        self
+    }
 }
 
 /// Model information (from inspection)
@@ -721,6 +761,8 @@ pub struct ModelInfo {
     pub trueno_native: bool,
     /// Contains quantized tensors
     pub quantized: bool,
+    /// Has model card metadata (spec §11)
+    pub has_model_card: bool,
 }
 
 /// Compress payload based on algorithm (spec §3.3)
@@ -1022,6 +1064,91 @@ pub fn load_from_bytes<M: DeserializeOwned>(data: &[u8], expected_type: ModelTyp
         .map_err(|e| AprenderError::Serialization(format!("Failed to deserialize model: {e}")))
 }
 
+/// Threshold for switching to mmap loading (1MB)
+///
+/// Files larger than this will use memory-mapped I/O for better performance.
+/// Smaller files use standard read-to-heap which has lower overhead for small data.
+pub const MMAP_THRESHOLD: u64 = 1024 * 1024;
+
+/// Load a model using memory-mapped I/O (zero-copy where possible)
+///
+/// Toyota Way Principle: *Muda* (Waste Elimination) - Eliminates redundant
+/// data copies by mapping the file directly into the process address space.
+///
+/// # Performance
+///
+/// - Cold load: ~4x faster than standard `load()` for large models
+/// - Memory: Uses ~1x file size vs ~2x for standard load
+/// - Syscalls: Reduces `brk` calls from ~970 to ~50
+///
+/// # Safety
+///
+/// Uses OS-level memory mapping. The file must not be modified while loaded.
+/// See `bundle-mmap-spec.md` Section 4 for safety considerations.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use aprender::format::{load_mmap, ModelType};
+///
+/// // Load large model efficiently
+/// let model: RandomForest = load_mmap("large_model.apr", ModelType::RandomForest)?;
+/// ```
+///
+/// # Feature Flag
+///
+/// When `format-mmap` is enabled, uses real OS mmap via `memmap2`.
+/// Otherwise, falls back to standard file I/O (same API, heap-allocated).
+///
+/// # Errors
+///
+/// Returns error on file not found, format error, type mismatch, or checksum failure
+pub fn load_mmap<M: DeserializeOwned>(
+    path: impl AsRef<Path>,
+    expected_type: ModelType,
+) -> Result<M> {
+    use crate::bundle::MappedFile;
+
+    let mapped = MappedFile::open(path.as_ref())?;
+
+    load_from_bytes(mapped.as_slice(), expected_type)
+}
+
+/// Load a model with automatic strategy selection based on file size
+///
+/// Toyota Way Principle: *Heijunka* (Level Loading) - Chooses the optimal
+/// loading strategy based on file size to balance memory and performance.
+///
+/// # Strategy
+///
+/// - Files ≤ 1MB: Standard `load()` (lower overhead for small files)
+/// - Files > 1MB: Memory-mapped `load_mmap()` (better for large files)
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use aprender::format::{load_auto, ModelType};
+///
+/// // Automatically chooses best loading strategy
+/// let model: KMeans = load_auto("model.apr", ModelType::KMeans)?;
+/// ```
+///
+/// # Errors
+///
+/// Returns error on file not found, format error, type mismatch, or checksum failure
+pub fn load_auto<M: DeserializeOwned>(
+    path: impl AsRef<Path>,
+    expected_type: ModelType,
+) -> Result<M> {
+    let metadata = std::fs::metadata(path.as_ref())?;
+
+    if metadata.len() > MMAP_THRESHOLD {
+        load_mmap(path, expected_type)
+    } else {
+        load(path, expected_type)
+    }
+}
+
 /// Load an encrypted model from a byte slice (spec §1.1 + §4.1.2)
 ///
 /// Enables the `include_bytes!()` pattern for embedding encrypted models.
@@ -1203,6 +1330,7 @@ pub fn inspect_bytes(data: &[u8]) -> Result<ModelInfo> {
         licensed: header.flags.is_licensed(),
         trueno_native: header.flags.is_trueno_native(),
         quantized: header.flags.is_quantized(),
+        has_model_card: header.flags.has_model_card(),
     })
 }
 
@@ -1243,6 +1371,7 @@ pub fn inspect(path: impl AsRef<Path>) -> Result<ModelInfo> {
         licensed: header.flags.is_licensed(),
         trueno_native: header.flags.is_trueno_native(),
         quantized: header.flags.is_quantized(),
+        has_model_card: header.flags.has_model_card(),
     })
 }
 
@@ -3473,6 +3602,164 @@ mod tests {
         ]);
         assert_eq!(metadata_count, 3);
     }
+
+    // ========================================================================
+    // Memory-Mapped Loading Tests (bundle-mmap-spec.md)
+    // ========================================================================
+
+    #[test]
+    fn test_load_mmap_simple() {
+        use tempfile::tempdir;
+
+        #[derive(Debug, Serialize, Deserialize, PartialEq)]
+        struct TestModel {
+            weights: Vec<f32>,
+            bias: f32,
+        }
+
+        let model = TestModel {
+            weights: vec![1.0, 2.0, 3.0],
+            bias: 0.5,
+        };
+
+        let dir = tempdir().expect("create temp dir");
+        let path = dir.path().join("mmap_test.apr");
+
+        // Save
+        save(&model, ModelType::Custom, &path, SaveOptions::default())
+            .expect("save should succeed");
+
+        // Load with mmap
+        let loaded: TestModel =
+            load_mmap(&path, ModelType::Custom).expect("load_mmap should succeed");
+        assert_eq!(loaded, model);
+    }
+
+    #[test]
+    fn test_load_mmap_large_model() {
+        use tempfile::tempdir;
+
+        #[derive(Debug, Serialize, Deserialize, PartialEq)]
+        struct LargeModel {
+            weights: Vec<f64>,
+        }
+
+        // Create a model larger than MMAP_THRESHOLD (1MB)
+        let model = LargeModel {
+            weights: vec![1.0_f64; 200_000], // ~1.6MB
+        };
+
+        let dir = tempdir().expect("create temp dir");
+        let path = dir.path().join("large_mmap_test.apr");
+
+        // Save
+        save(&model, ModelType::Custom, &path, SaveOptions::default())
+            .expect("save should succeed");
+
+        // Verify file is large enough
+        let metadata = std::fs::metadata(&path).expect("get metadata");
+        assert!(metadata.len() > MMAP_THRESHOLD, "File should be > 1MB");
+
+        // Load with mmap
+        let loaded: LargeModel =
+            load_mmap(&path, ModelType::Custom).expect("load_mmap should succeed");
+        assert_eq!(loaded.weights.len(), model.weights.len());
+        assert_eq!(loaded, model);
+    }
+
+    #[test]
+    fn test_load_auto_small_file() {
+        use tempfile::tempdir;
+
+        #[derive(Debug, Serialize, Deserialize, PartialEq)]
+        struct SmallModel {
+            value: i32,
+        }
+
+        let model = SmallModel { value: 42 };
+
+        let dir = tempdir().expect("create temp dir");
+        let path = dir.path().join("small_auto_test.apr");
+
+        // Save
+        save(&model, ModelType::Custom, &path, SaveOptions::default())
+            .expect("save should succeed");
+
+        // Verify file is small
+        let metadata = std::fs::metadata(&path).expect("get metadata");
+        assert!(metadata.len() <= MMAP_THRESHOLD, "File should be <= 1MB");
+
+        // Load with auto (should use standard load)
+        let loaded: SmallModel =
+            load_auto(&path, ModelType::Custom).expect("load_auto should succeed");
+        assert_eq!(loaded, model);
+    }
+
+    #[test]
+    fn test_load_auto_large_file() {
+        use tempfile::tempdir;
+
+        #[derive(Debug, Serialize, Deserialize, PartialEq)]
+        struct LargeModel {
+            weights: Vec<f64>,
+        }
+
+        // Create a model larger than MMAP_THRESHOLD (1MB)
+        let model = LargeModel {
+            weights: vec![1.0_f64; 200_000], // ~1.6MB
+        };
+
+        let dir = tempdir().expect("create temp dir");
+        let path = dir.path().join("large_auto_test.apr");
+
+        // Save
+        save(&model, ModelType::Custom, &path, SaveOptions::default())
+            .expect("save should succeed");
+
+        // Verify file is large
+        let metadata = std::fs::metadata(&path).expect("get metadata");
+        assert!(metadata.len() > MMAP_THRESHOLD, "File should be > 1MB");
+
+        // Load with auto (should use mmap)
+        let loaded: LargeModel =
+            load_auto(&path, ModelType::Custom).expect("load_auto should succeed");
+        assert_eq!(loaded, model);
+    }
+
+    #[test]
+    fn test_load_mmap_nonexistent_file() {
+        #[derive(Debug, Serialize, Deserialize)]
+        struct TestModel {
+            value: i32,
+        }
+
+        let result: Result<TestModel> = load_mmap("/nonexistent/path.apr", ModelType::Custom);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_load_mmap_type_mismatch() {
+        use tempfile::tempdir;
+
+        #[derive(Debug, Serialize, Deserialize, PartialEq)]
+        struct TestModel {
+            value: i32,
+        }
+
+        let model = TestModel { value: 42 };
+
+        let dir = tempdir().expect("create temp dir");
+        let path = dir.path().join("type_mismatch.apr");
+
+        // Save as Custom
+        save(&model, ModelType::Custom, &path, SaveOptions::default())
+            .expect("save should succeed");
+
+        // Try to load as LinearRegression (wrong type)
+        let result: Result<TestModel> = load_mmap(&path, ModelType::LinearRegression);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("mismatch"));
+    }
 }
 
 // ============================================================================
@@ -3673,8 +3960,8 @@ mod proptests {
         #[test]
         fn prop_flags_masks_reserved(raw in any::<u8>()) {
             let flags = Flags::from_bits(raw);
-            // Bits 6-7 should be masked off
-            prop_assert!(flags.bits() < 64);
+            // Bit 7 should be masked off (bit 6 is now HAS_MODEL_CARD)
+            prop_assert!(flags.bits() < 128);
         }
 
         /// Property: with_encrypted sets ENCRYPTED bit
@@ -3715,6 +4002,14 @@ mod proptests {
             let flags = Flags::new().with_quantized();
             prop_assert!(flags.is_quantized());
             prop_assert_eq!(flags.bits() & Flags::QUANTIZED, Flags::QUANTIZED);
+        }
+
+        /// Property: with_model_card sets HAS_MODEL_CARD bit
+        #[test]
+        fn prop_flags_with_model_card(_seed in any::<u8>()) {
+            let flags = Flags::new().with_model_card();
+            prop_assert!(flags.has_model_card());
+            prop_assert_eq!(flags.bits() & Flags::HAS_MODEL_CARD, Flags::HAS_MODEL_CARD);
         }
 
         /// Property: Flag chaining is commutative (order doesn't matter)

@@ -331,17 +331,127 @@ Shell commands are repetitive patterns. N-gram captures this perfectly.
 aprender-shell <COMMAND>
 
 Commands:
-  train       Full retrain from history
-  update      Incremental update (fast)
-  suggest     Get completions for prefix
-  stats       Show model statistics
-  export      Export model for sharing
-  import      Import a shared model
-  zsh-widget  Generate ZSH integration code
+  train        Full retrain from history
+  update       Incremental update (fast)
+  suggest      Get completions for prefix (-c/-k for count)
+  stats        Show model statistics
+  export       Export model for sharing
+  import       Import a shared model
+  zsh-widget   Generate ZSH integration code
+  fish-widget  Generate Fish shell integration code
+  uninstall    Remove widget from shell config
+  validate     Validate model accuracy (train/test split)
+  augment      Generate synthetic training data
+  analyze      Analyze command patterns (CodeFeatureExtractor)
+  tune         AutoML hyperparameter tuning (TPE)
+  inspect      View model card metadata
+  publish      Publish model to Hugging Face Hub
 
 Options:
   -h, --help     Print help
   -V, --version  Print version
+```
+
+## Fish Shell Integration
+
+Generate the Fish widget:
+
+```bash
+aprender-shell fish-widget >> ~/.config/fish/config.fish
+source ~/.config/fish/config.fish
+```
+
+Disable temporarily:
+
+```fish
+set -gx APRENDER_DISABLED 1
+```
+
+## Model Cards & Inspection
+
+View model metadata:
+
+```bash
+$ aprender-shell inspect -m ~/.aprender-shell.model
+
+📋 Model Card: ~/.aprender-shell.model
+
+═══════════════════════════════════════════
+           MODEL INFORMATION
+═══════════════════════════════════════════
+  ID:           aprender-shell-markov-3gram-20251127
+  Name:         Shell Completion Model
+  Version:      1.0.0
+  Framework:    aprender 0.10.0
+  Architecture: MarkovModel
+  Parameters:   40848
+```
+
+Export formats:
+
+```bash
+# JSON (for programmatic access)
+aprender-shell inspect -m model.apr --format json
+
+# Hugging Face YAML (for model sharing)
+aprender-shell inspect -m model.apr --format huggingface
+```
+
+## Publishing to Hugging Face Hub
+
+Share your model with the community:
+
+```bash
+# Set token
+export HF_TOKEN=hf_xxx
+
+# Publish
+aprender-shell publish -m ~/.aprender-shell.model -r username/my-shell-model
+
+# With custom commit message
+aprender-shell publish -m model.apr -r org/repo -c "v1.0 release"
+```
+
+Without a token, generates README.md and upload instructions.
+
+## Model Validation
+
+Test accuracy with holdout validation:
+
+```bash
+$ aprender-shell validate
+
+🔬 aprender-shell: Model Validation
+
+📂 History file: ~/.zsh_history
+📊 Total commands: 21729
+⚙️  N-gram size: 3
+📈 Train/test split: 80% / 20%
+
+════════════════════════════════════════════
+           VALIDATION RESULTS
+════════════════════════════════════════════
+  Hit@1:    45.2%  (exact match)
+  Hit@3:    62.8%  (in top 3)
+  Hit@5:    71.4%  (in top 5)
+```
+
+## Uninstalling
+
+Remove widget from shell config:
+
+```bash
+# Dry run (show what would be removed)
+aprender-shell uninstall --dry-run
+
+# Remove from ZSH
+aprender-shell uninstall --zsh
+
+# Remove from Fish
+aprender-shell uninstall --fish
+
+# Keep model file
+aprender-shell uninstall --zsh --keep-model
 ```
 
 ## Troubleshooting

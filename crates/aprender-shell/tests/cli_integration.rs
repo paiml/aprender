@@ -708,3 +708,286 @@ fn test_cli_015_zsh_widget_uninstall_hint() {
         .success()
         .stdout(predicate::str::contains("aprender-shell uninstall"));
 }
+
+// ============================================================================
+// Test: CLI_016 - Inspect Command (Model Card - spec §11)
+// ============================================================================
+
+#[test]
+fn test_cli_016_inspect_help() {
+    aprender_shell()
+        .args(["inspect", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Inspect model metadata"))
+        .stdout(predicate::str::contains("--format"));
+}
+
+#[test]
+fn test_cli_016_inspect_text_format() {
+    // Train a model first
+    let history = create_temp_history(&[
+        "git status",
+        "git commit -m test",
+        "git push origin main",
+        "cargo build --release",
+        "cargo test --lib",
+    ]);
+
+    let model = NamedTempFile::new().unwrap();
+
+    // Train
+    aprender_shell()
+        .args([
+            "train",
+            "-f",
+            history.path().to_str().unwrap(),
+            "-o",
+            model.path().to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    // Inspect with text format (default)
+    aprender_shell()
+        .args(["inspect", "-m", model.path().to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("MODEL INFORMATION"))
+        .stdout(predicate::str::contains("Architecture"))
+        .stdout(predicate::str::contains("MarkovModel"));
+}
+
+#[test]
+fn test_cli_016_inspect_json_format() {
+    // Train a model first
+    let history = create_temp_history(&[
+        "kubectl get pods",
+        "kubectl describe pod test",
+        "docker ps -a",
+    ]);
+
+    let model = NamedTempFile::new().unwrap();
+
+    // Train
+    aprender_shell()
+        .args([
+            "train",
+            "-f",
+            history.path().to_str().unwrap(),
+            "-o",
+            model.path().to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    // Inspect with JSON format
+    aprender_shell()
+        .args([
+            "inspect",
+            "-m",
+            model.path().to_str().unwrap(),
+            "--format",
+            "json",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"model_id\""))
+        .stdout(predicate::str::contains("\"version\""))
+        .stdout(predicate::str::contains("\"architecture\""));
+}
+
+#[test]
+fn test_cli_016_inspect_huggingface_format() {
+    // Train a model first
+    let history = create_temp_history(&["npm install", "npm run build", "npm test"]);
+
+    let model = NamedTempFile::new().unwrap();
+
+    // Train
+    aprender_shell()
+        .args([
+            "train",
+            "-f",
+            history.path().to_str().unwrap(),
+            "-o",
+            model.path().to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    // Inspect with Hugging Face format
+    aprender_shell()
+        .args([
+            "inspect",
+            "-m",
+            model.path().to_str().unwrap(),
+            "--format",
+            "huggingface",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("---"))
+        .stdout(predicate::str::contains("pipeline_tag:"))
+        .stdout(predicate::str::contains("- aprender"))
+        .stdout(predicate::str::contains("- rust"));
+}
+
+#[test]
+fn test_cli_016_inspect_nonexistent_model() {
+    // Inspect a file that doesn't exist
+    aprender_shell()
+        .args(["inspect", "-m", "/nonexistent/model.apr"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("Failed to load model"));
+}
+
+// ============================================================================
+// Test: CLI_017 - Publish Command (HF Hub - GH-100)
+// ============================================================================
+
+#[test]
+fn test_cli_017_publish_help() {
+    aprender_shell()
+        .args(["publish", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "Publish model to Hugging Face Hub",
+        ))
+        .stdout(predicate::str::contains("--repo"))
+        .stdout(predicate::str::contains("--commit"));
+}
+
+#[test]
+fn test_cli_017_publish_nonexistent_model() {
+    aprender_shell()
+        .args(["publish", "-m", "/nonexistent/model.apr", "-r", "org/repo"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("Failed to load model"));
+}
+
+#[test]
+fn test_cli_017_publish_without_token() {
+    // Train a model first
+    let history = create_temp_history(&["git status", "git commit -m test", "cargo build"]);
+
+    let model = NamedTempFile::new().unwrap();
+
+    // Train
+    aprender_shell()
+        .args([
+            "train",
+            "-f",
+            history.path().to_str().unwrap(),
+            "-o",
+            model.path().to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    // Publish without HF_TOKEN (should show instructions)
+    aprender_shell()
+        .args([
+            "publish",
+            "-m",
+            model.path().to_str().unwrap(),
+            "-r",
+            "paiml/test-model",
+        ])
+        .env_remove("HF_TOKEN")
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("HF_TOKEN"))
+        .stdout(predicate::str::contains("Model card saved"));
+}
+
+#[test]
+fn test_cli_017_publish_generates_readme() {
+    // Train a model first
+    let history = create_temp_history(&[
+        "kubectl get pods",
+        "kubectl describe pod test",
+        "docker run nginx",
+    ]);
+
+    let temp_dir = tempfile::tempdir().unwrap();
+    let model_path = temp_dir.path().join("test.model");
+
+    // Train
+    aprender_shell()
+        .args([
+            "train",
+            "-f",
+            history.path().to_str().unwrap(),
+            "-o",
+            model_path.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    // Publish (generates README.md)
+    aprender_shell()
+        .args([
+            "publish",
+            "-m",
+            model_path.to_str().unwrap(),
+            "-r",
+            "paiml/kubectl-model",
+            "-c",
+            "Initial upload",
+        ])
+        .env_remove("HF_TOKEN")
+        .assert()
+        .success();
+
+    // Check README.md was created
+    let readme_path = temp_dir.path().join("README.md");
+    assert!(readme_path.exists(), "README.md should be created");
+
+    let content = std::fs::read_to_string(&readme_path).unwrap();
+    assert!(
+        content.contains("aprender"),
+        "README should mention aprender"
+    );
+    assert!(
+        content.contains("Shell Completion"),
+        "README should mention Shell Completion"
+    );
+}
+
+#[test]
+fn test_cli_017_publish_with_custom_commit() {
+    let history = create_temp_history(&["npm install", "npm test"]);
+    let model = NamedTempFile::new().unwrap();
+
+    aprender_shell()
+        .args([
+            "train",
+            "-f",
+            history.path().to_str().unwrap(),
+            "-o",
+            model.path().to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    // Without HF_TOKEN, shows upload instructions with commit message
+    aprender_shell()
+        .args([
+            "publish",
+            "-m",
+            model.path().to_str().unwrap(),
+            "-r",
+            "org/custom",
+            "-c",
+            "Custom commit v2",
+        ])
+        .env_remove("HF_TOKEN")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("org/custom"))
+        .stdout(predicate::str::contains("Model card saved"));
+}

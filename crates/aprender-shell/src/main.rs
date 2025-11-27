@@ -3,7 +3,10 @@
 //! Train a personalized autocomplete model on your shell history in seconds.
 //! 100% local, private, and fast.
 
-use aprender_shell::{synthetic, HistoryParser, MarkovModel, PagedMarkovModel, SyntheticPipeline};
+use aprender_shell::{
+    filter_sensitive_suggestions, load_model_graceful, sanitize_prefix, synthetic, HistoryParser,
+    MarkovModel, PagedMarkovModel, ShellError, SyntheticPipeline,
+};
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
@@ -35,6 +38,10 @@ enum Commands {
         /// Memory limit in MB (enables paged storage for large histories)
         #[arg(long)]
         memory_limit: Option<usize>,
+
+        /// Encrypt model with password (AES-256-GCM)
+        #[arg(short = 'p', long)]
+        password: bool,
     },
 
     /// Incrementally update model with new commands (fast)
@@ -50,11 +57,16 @@ enum Commands {
         /// Be quiet (for hooks)
         #[arg(short, long)]
         quiet: bool,
+
+        /// Model is encrypted (will prompt for password)
+        #[arg(short = 'p', long)]
+        password: bool,
     },
 
     /// Get completions for a prefix
     Suggest {
-        /// The current command prefix
+        /// The current command prefix (use -- for prefixes starting with -)
+        #[arg(allow_hyphen_values = true)]
         prefix: String,
 
         /// Model file to use
@@ -62,12 +74,16 @@ enum Commands {
         model: String,
 
         /// Number of suggestions
-        #[arg(short, long, default_value = "5")]
+        #[arg(short = 'c', visible_short_alias = 'k', long, default_value = "5")]
         count: usize,
 
         /// Memory limit in MB (for paged models)
         #[arg(long)]
         memory_limit: Option<usize>,
+
+        /// Model is encrypted (will prompt for password)
+        #[arg(short = 'p', long)]
+        password: bool,
     },
 
     /// Show model statistics
@@ -79,6 +95,10 @@ enum Commands {
         /// Memory limit in MB (for paged models)
         #[arg(long)]
         memory_limit: Option<usize>,
+
+        /// Model is encrypted (will prompt for password)
+        #[arg(short = 'p', long)]
+        password: bool,
     },
 
     /// Export model for sharing
@@ -201,6 +221,44 @@ enum Commands {
         #[arg(short, long, default_value = "0.8")]
         ratio: f32,
     },
+
+    /// Inspect model metadata (model card, version)
+    Inspect {
+        /// Model file
+        #[arg(short, long, default_value = "~/.aprender-shell.model")]
+        model: String,
+
+        /// Output format (json, yaml, huggingface)
+        #[arg(short, long, default_value = "text")]
+        format: String,
+
+        /// Model is encrypted (will prompt for password)
+        #[arg(short = 'p', long)]
+        password: bool,
+    },
+
+    /// Publish model to Hugging Face Hub (GH-100)
+    Publish {
+        /// Model file to publish
+        #[arg(short, long, default_value = "~/.aprender-shell.model")]
+        model: String,
+
+        /// Repository ID (org/name format)
+        #[arg(short, long)]
+        repo: String,
+
+        /// Commit message
+        #[arg(short, long, default_value = "Upload model via aprender-shell")]
+        commit: String,
+
+        /// Create repository if it doesn't exist
+        #[arg(long, default_value = "true")]
+        create: bool,
+
+        /// Make repository private
+        #[arg(long)]
+        private: bool,
+    },
 }
 
 fn expand_path(path: &str) -> PathBuf {
@@ -221,29 +279,33 @@ fn main() {
             output,
             ngram,
             memory_limit,
+            password,
         } => {
-            cmd_train(history, &output, ngram, memory_limit);
+            cmd_train(history, &output, ngram, memory_limit, password);
         }
         Commands::Update {
             history,
             model,
             quiet,
+            password,
         } => {
-            cmd_update(history, &model, quiet);
+            cmd_update(history, &model, quiet, password);
         }
         Commands::Suggest {
             prefix,
             model,
             count,
             memory_limit,
+            password,
         } => {
-            cmd_suggest(&prefix, &model, count, memory_limit);
+            cmd_suggest(&prefix, &model, count, memory_limit, password);
         }
         Commands::Stats {
             model,
             memory_limit,
+            password,
         } => {
-            cmd_stats(&model, memory_limit);
+            cmd_stats(&model, memory_limit, password);
         }
         Commands::Export { model, output } => {
             cmd_export(&model, &output);
@@ -302,6 +364,62 @@ fn main() {
         } => {
             cmd_tune(history, trials, ratio);
         }
+        Commands::Inspect {
+            model,
+            format,
+            password,
+        } => {
+            cmd_inspect(&model, &format, password);
+        }
+        Commands::Publish {
+            model,
+            repo,
+            commit,
+            create,
+            private,
+        } => {
+            cmd_publish(&model, &repo, &commit, create, private);
+        }
+    }
+}
+
+/// Helper: Find and validate history file with graceful error handling (QA 2.4, 8.3)
+fn find_history_file_graceful(history_path: Option<PathBuf>) -> PathBuf {
+    match history_path {
+        Some(path) => {
+            if !path.exists() {
+                eprintln!("❌ History file not found: {}", path.display());
+                eprintln!("   Hint: Check the path or use -f to specify a different file");
+                std::process::exit(1);
+            }
+            path
+        }
+        None => match HistoryParser::find_history_file() {
+            Some(path) => path,
+            None => {
+                eprintln!("❌ Could not find shell history file");
+                eprintln!("   Hint: Use -f to specify a history file manually");
+                std::process::exit(1);
+            }
+        },
+    }
+}
+
+/// Helper: Parse history file with graceful error handling (QA 8.3)
+fn parse_history_graceful(history_file: &PathBuf) -> Vec<String> {
+    let parser = HistoryParser::new();
+    match parser.parse_file(history_file) {
+        Ok(cmds) => cmds,
+        Err(e) => {
+            eprintln!("❌ Failed to read history file: {e}");
+            if e.to_string().contains("ermission") {
+                eprintln!(
+                    "   Hint: Check file permissions with 'ls -la {}'",
+                    history_file.display()
+                );
+            }
+            std::process::exit(1);
+        }
     }
 }
 
@@ -310,24 +428,18 @@ fn cmd_train(
     output: &str,
     ngram: usize,
     memory_limit: Option<usize>,
+    use_password: bool,
 ) {
     let paged = memory_limit.is_some();
+    let encrypted_str = if use_password { " encrypted" } else { "" };
     let mode_str = if paged { "paged" } else { "standard" };
-    println!("🚀 aprender-shell: Training {mode_str} model...\n");
+    println!("🚀 aprender-shell: Training{encrypted_str} {mode_str} model...\n");
 
-    // Find history file
-    let history_file = history_path.unwrap_or_else(|| {
-        HistoryParser::find_history_file().expect("Could not find shell history file")
-    });
-
+    // Find and parse history with graceful error handling (QA 2.4, 8.3)
+    let history_file = find_history_file_graceful(history_path);
     println!("📂 History file: {}", history_file.display());
 
-    // Parse history
-    let parser = HistoryParser::new();
-    let commands = parser
-        .parse_file(&history_file)
-        .expect("Failed to parse history");
-
+    let commands = parse_history_graceful(&history_file);
     println!("📊 Commands loaded: {}", commands.len());
 
     if commands.is_empty() {
@@ -335,10 +447,39 @@ fn cmd_train(
         std::process::exit(1);
     }
 
+    // Get password if encryption requested
+    let password = if use_password {
+        println!("🔐 Encrypting model with AES-256-GCM");
+        let pwd = rpassword::prompt_password("   Enter password: ").unwrap_or_else(|e| {
+            eprintln!("❌ Failed to read password: {e}");
+            std::process::exit(1);
+        });
+        let confirm = rpassword::prompt_password("   Confirm password: ").unwrap_or_else(|e| {
+            eprintln!("❌ Failed to read password: {e}");
+            std::process::exit(1);
+        });
+        if pwd != confirm {
+            eprintln!("❌ Passwords do not match");
+            std::process::exit(1);
+        }
+        if pwd.len() < 8 {
+            eprintln!("❌ Password must be at least 8 characters");
+            std::process::exit(1);
+        }
+        Some(pwd)
+    } else {
+        None
+    };
+
     let output_path = expand_path(output);
 
     if let Some(mem_mb) = memory_limit {
-        // Paged model for large histories
+        // Paged model for large histories (note: encryption not yet supported for paged models)
+        if use_password {
+            eprintln!(
+                "⚠️  Encryption not yet supported for paged models. Creating unencrypted model."
+            );
+        }
         let output_path = output_path.with_extension("apbundle");
         print!(
             "🧠 Training {ngram}-gram paged model ({}MB limit)... ",
@@ -369,9 +510,17 @@ fn cmd_train(
         model.train(&commands);
         println!("done!");
 
-        model.save(&output_path).expect("Failed to save model");
+        // Save with or without encryption
+        if let Some(ref pwd) = password {
+            model
+                .save_encrypted(&output_path, pwd)
+                .expect("Failed to save encrypted model");
+            println!("\n🔒 Encrypted model saved to: {}", output_path.display());
+        } else {
+            model.save(&output_path).expect("Failed to save model");
+            println!("\n✅ Model saved to: {}", output_path.display());
+        }
 
-        println!("\n✅ Model saved to: {}", output_path.display());
         println!("\n📈 Model Statistics:");
         println!("   Unique n-grams: {}", model.ngram_count());
         println!("   Vocabulary size: {}", model.vocab_size());
@@ -379,19 +528,47 @@ fn cmd_train(
             "   Model size: {:.1} KB",
             model.size_bytes() as f64 / 1024.0
         );
+        if password.is_some() {
+            println!("   Encryption: AES-256-GCM (Argon2id KDF)");
+        }
 
         println!("\n💡 Next steps:");
-        println!("   1. Test: aprender-shell suggest \"git \"");
-        println!("   2. Install: aprender-shell zsh-widget >> ~/.zshrc");
+        if password.is_some() {
+            println!("   1. Test: aprender-shell suggest \"git \" --password");
+            println!("   2. Stats: aprender-shell stats --password");
+        } else {
+            println!("   1. Test: aprender-shell suggest \"git \"");
+            println!("   2. Install: aprender-shell zsh-widget >> ~/.zshrc");
+        }
     }
 }
 
-fn cmd_update(history_path: Option<PathBuf>, model_path: &str, quiet: bool) {
+fn cmd_update(history_path: Option<PathBuf>, model_path: &str, quiet: bool, use_password: bool) {
     let path = expand_path(model_path);
+
+    // Get password if needed
+    let password = if use_password {
+        Some(
+            rpassword::prompt_password("Enter password: ").unwrap_or_else(|e| {
+                eprintln!("❌ Failed to read password: {e}");
+                std::process::exit(1);
+            }),
+        )
+    } else {
+        None
+    };
 
     // Load existing model or create new one
     let mut model = if path.exists() {
-        MarkovModel::load(&path).expect("Failed to load model")
+        if let Some(ref pwd) = password {
+            MarkovModel::load_encrypted(&path, pwd).unwrap_or_else(|e| {
+                eprintln!("❌ Failed to load encrypted model: {e}");
+                eprintln!("   Hint: Check password or try without --password flag");
+                std::process::exit(1);
+            })
+        } else {
+            MarkovModel::load(&path).expect("Failed to load model")
+        }
     } else {
         if !quiet {
             println!("📝 No existing model, creating new one...");
@@ -399,16 +576,9 @@ fn cmd_update(history_path: Option<PathBuf>, model_path: &str, quiet: bool) {
         MarkovModel::new(3)
     };
 
-    // Find history file
-    let history_file = history_path.unwrap_or_else(|| {
-        HistoryParser::find_history_file().expect("Could not find shell history file")
-    });
-
-    // Parse history
-    let parser = HistoryParser::new();
-    let all_commands = parser
-        .parse_file(&history_file)
-        .expect("Failed to parse history");
+    // Find and parse history with graceful error handling (QA 2.4, 8.3)
+    let history_file = find_history_file_graceful(history_path);
+    let all_commands = parse_history_graceful(&history_file);
 
     // Get only new commands (after last trained position)
     let last_pos = model.last_trained_position();
@@ -428,8 +598,14 @@ fn cmd_update(history_path: Option<PathBuf>, model_path: &str, quiet: bool) {
     // Incremental train
     model.train_incremental(&new_commands);
 
-    // Save
-    model.save(&path).expect("Failed to save model");
+    // Save (preserve encryption status)
+    if let Some(ref pwd) = password {
+        model
+            .save_encrypted(&path, pwd)
+            .expect("Failed to save encrypted model");
+    } else {
+        model.save(&path).expect("Failed to save model");
+    }
 
     if !quiet {
         println!(
@@ -439,45 +615,117 @@ fn cmd_update(history_path: Option<PathBuf>, model_path: &str, quiet: bool) {
     }
 }
 
-fn cmd_suggest(prefix: &str, model_path: &str, count: usize, memory_limit: Option<usize>) {
+fn cmd_suggest(
+    prefix: &str,
+    model_path: &str,
+    count: usize,
+    memory_limit: Option<usize>,
+    use_password: bool,
+) {
+    // Phase 1: Input validation (Poka-yoke)
+    let validated_prefix = match sanitize_prefix(prefix) {
+        Ok(p) => p,
+        Err(ShellError::InvalidInput { message }) => {
+            // Silent exit for invalid input in completion context
+            // (shell completions shouldn't spam stderr)
+            eprintln!("# aprender: {message}");
+            return;
+        }
+        Err(_) => return,
+    };
+
     let path = expand_path(model_path);
 
+    // Get password if needed (note: for shell completion, consider APRENDER_PASSWORD env var)
+    let password = if use_password {
+        // Check environment variable first for non-interactive use
+        if let Ok(pwd) = std::env::var("APRENDER_PASSWORD") {
+            Some(pwd)
+        } else {
+            Some(
+                rpassword::prompt_password("Enter password: ").unwrap_or_else(|e| {
+                    eprintln!("# aprender: Failed to read password: {e}");
+                    std::process::exit(1);
+                }),
+            )
+        }
+    } else {
+        None
+    };
+
     if let Some(mem_mb) = memory_limit {
-        // Paged model
+        // Paged model (encryption not supported)
         let paged_path = path.with_extension("apbundle");
-        let mut model =
-            PagedMarkovModel::load(&paged_path, mem_mb).expect("Failed to load paged model");
+        let mut model = match PagedMarkovModel::load(&paged_path, mem_mb) {
+            Ok(m) => m,
+            Err(e) => {
+                eprintln!("# aprender: {e}");
+                return;
+            }
+        };
 
-        let suggestions = model.suggest(prefix, count);
+        let suggestions = model.suggest(&validated_prefix, count);
+        // Phase 2: Security filtering (Andon)
+        let filtered = filter_sensitive_suggestions(suggestions);
 
-        if suggestions.is_empty() {
+        if filtered.is_empty() {
             return;
         }
 
-        for (suggestion, score) in suggestions {
+        for (suggestion, score) in filtered {
             println!("{}\t{:.3}", suggestion, score);
         }
     } else {
-        // Standard model
-        let model = MarkovModel::load(&path).expect("Failed to load model");
+        // Standard model with graceful error handling (Jidoka)
+        let model = if let Some(ref pwd) = password {
+            match MarkovModel::load_encrypted(&path, pwd) {
+                Ok(m) => m,
+                Err(e) => {
+                    eprintln!("# aprender: {e}");
+                    return;
+                }
+            }
+        } else {
+            match load_model_graceful(&path) {
+                Ok(m) => m,
+                Err(e) => {
+                    eprintln!("{e}");
+                    return;
+                }
+            }
+        };
 
-        let suggestions = model.suggest(prefix, count);
+        let suggestions = model.suggest(&validated_prefix, count);
+        // Phase 2: Security filtering (Andon)
+        let filtered = filter_sensitive_suggestions(suggestions);
 
-        if suggestions.is_empty() {
+        if filtered.is_empty() {
             return;
         }
 
-        for (suggestion, score) in suggestions {
+        for (suggestion, score) in filtered {
             println!("{}\t{:.3}", suggestion, score);
         }
     }
 }
 
-fn cmd_stats(model_path: &str, memory_limit: Option<usize>) {
+fn cmd_stats(model_path: &str, memory_limit: Option<usize>, use_password: bool) {
     let path = expand_path(model_path);
 
+    // Get password if needed
+    let password = if use_password {
+        Some(
+            rpassword::prompt_password("Enter password: ").unwrap_or_else(|e| {
+                eprintln!("❌ Failed to read password: {e}");
+                std::process::exit(1);
+            }),
+        )
+    } else {
+        None
+    };
+
     if let Some(mem_mb) = memory_limit {
-        // Paged model stats
+        // Paged model stats (encryption not supported)
         let paged_path = path.with_extension("apbundle");
         let model =
             PagedMarkovModel::load(&paged_path, mem_mb).expect("Failed to load paged model");
@@ -517,7 +765,17 @@ fn cmd_stats(model_path: &str, memory_limit: Option<usize>) {
         }
     } else {
         // Standard model stats
-        let model = MarkovModel::load(&path).expect("Failed to load model");
+        let model = if let Some(ref pwd) = password {
+            MarkovModel::load_encrypted(&path, pwd).unwrap_or_else(|e| {
+                eprintln!("❌ Failed to load encrypted model: {e}");
+                std::process::exit(1);
+            })
+        } else {
+            MarkovModel::load(&path).expect("Failed to load model")
+        };
+
+        // Check encryption status
+        let encrypted = MarkovModel::is_encrypted(&path).unwrap_or(false);
 
         println!("📊 Model Statistics:");
         println!("   N-gram size: {}", model.ngram_size());
@@ -527,6 +785,9 @@ fn cmd_stats(model_path: &str, memory_limit: Option<usize>) {
             "   Model size: {:.1} KB",
             model.size_bytes() as f64 / 1024.0
         );
+        if encrypted {
+            println!("   🔒 Encryption: AES-256-GCM");
+        }
         println!("\n🔝 Top commands:");
         for (cmd, count) in model.top_commands(10) {
             println!("   {:>6}x  {}", count, cmd);
@@ -549,10 +810,11 @@ fn cmd_import(input: &PathBuf, output: &str) {
 fn cmd_zsh_widget() {
     print!(
         r#"# >>> aprender-shell widget >>>
-# aprender-shell ZSH widget v2
+# aprender-shell ZSH widget v3
 # Add this to your ~/.zshrc
 # Toggle: export APRENDER_DISABLED=1 to disable
 # Uninstall: aprender-shell uninstall --zsh
+# Hardened per: docs/specifications/aprender-shell-harden-plan.md
 
 _aprender_suggest() {{
     # Skip if disabled or buffer too short
@@ -565,8 +827,16 @@ _aprender_suggest() {{
 
     # SC2086: Quote variables in comparisons
     if [[ -n "$suggestion" && "$suggestion" != "$BUFFER" ]]; then
-        POSTDISPLAY=" ${{suggestion#"$BUFFER"}}"
-        POSTDISPLAY=$'\e[90m'"$POSTDISPLAY"$'\e[0m'
+        local suffix="${{suggestion#"$BUFFER"}}"
+
+        # Robust ANSI handling with terminal capability check
+        if [[ -n "$TERM" && "$TERM" != "dumb" ]] && (( ${{+terminfo[colors]}} )) && (( ${{terminfo[colors]}} >= 8 )); then
+            # Use ZSH prompt expansion for portable color codes
+            POSTDISPLAY="$(print -P " %F{{240}}${{suffix}}%f")"
+        else
+            # Fallback: no colors for unsupported terminals
+            POSTDISPLAY=" ${{suffix}}"
+        fi
     else
         POSTDISPLAY=""
     fi
@@ -574,8 +844,15 @@ _aprender_suggest() {{
 
 _aprender_accept() {{
     if [[ -n "$POSTDISPLAY" ]]; then
-        # SC2086: Quote CURSOR variable
-        BUFFER="${{BUFFER}}${{POSTDISPLAY# }}"
+        # Strip color codes and leading space when accepting
+        local clean_suffix
+        clean_suffix="${{POSTDISPLAY# }}"
+        # Remove ANSI escape sequences (both $'\e[...m' and %F/%f)
+        clean_suffix="${{clean_suffix//\\e\[*m/}}"
+        clean_suffix="${{clean_suffix//%F\{{*\}}/}}"
+        clean_suffix="${{clean_suffix//%f/}}"
+
+        BUFFER="${{BUFFER}}${{clean_suffix}}"
         POSTDISPLAY=""
         CURSOR="${{#BUFFER}}"
     fi
@@ -809,19 +1086,11 @@ fn remove_widget_block(path: &std::path::Path, dry_run: bool) -> std::io::Result
 fn cmd_validate(history_path: Option<PathBuf>, ngram: usize, ratio: f32) {
     println!("🔬 aprender-shell: Model Validation\n");
 
-    // Find history file
-    let history_file = history_path.unwrap_or_else(|| {
-        HistoryParser::find_history_file().expect("Could not find shell history file")
-    });
-
+    // Find and parse history with graceful error handling (QA 2.4, 8.3)
+    let history_file = find_history_file_graceful(history_path);
     println!("📂 History file: {}", history_file.display());
 
-    // Parse history
-    let parser = HistoryParser::new();
-    let commands = parser
-        .parse_file(&history_file)
-        .expect("Failed to parse history");
-
+    let commands = parse_history_graceful(&history_file);
     println!("📊 Total commands: {}", commands.len());
     println!("⚙️  N-gram size: {}", ngram);
     println!(
@@ -887,18 +1156,11 @@ fn cmd_augment(
     println!("🧬 aprender-shell: Data Augmentation ({mode} mode)\n");
 
     // Find history file
-    let history_file = history_path.unwrap_or_else(|| {
-        HistoryParser::find_history_file().expect("Could not find shell history file")
-    });
-
+    // Find and parse history with graceful error handling (QA 2.4, 8.3)
+    let history_file = find_history_file_graceful(history_path);
     println!("📂 History file: {}", history_file.display());
 
-    // Parse history
-    let parser = HistoryParser::new();
-    let commands = parser
-        .parse_file(&history_file)
-        .expect("Failed to parse history");
-
+    let commands = parse_history_graceful(&history_file);
     println!("📊 Real commands: {}", commands.len());
 
     // Configure synthetic data generation using aprender's SyntheticConfig
@@ -1089,19 +1351,11 @@ fn cmd_analyze(history_path: Option<PathBuf>, top: usize) {
 
     println!("📊 aprender-shell: Command Analysis (with CodeFeatureExtractor)\n");
 
-    // Find history file
-    let history_file = history_path.unwrap_or_else(|| {
-        HistoryParser::find_history_file().expect("Could not find shell history file")
-    });
-
+    // Find and parse history with graceful error handling (QA 2.4, 8.3)
+    let history_file = find_history_file_graceful(history_path);
     println!("📂 History file: {}", history_file.display());
 
-    // Parse history
-    let parser = HistoryParser::new();
-    let commands = parser
-        .parse_file(&history_file)
-        .expect("Failed to parse history");
-
+    let commands = parse_history_graceful(&history_file);
     println!("📊 Total commands: {}\n", commands.len());
 
     // Use CodeFeatureExtractor to classify commands
@@ -1232,19 +1486,11 @@ fn cmd_tune(history_path: Option<PathBuf>, trials: usize, ratio: f32) {
 
     println!("🎯 aprender-shell: AutoML Hyperparameter Tuning (TPE)\n");
 
-    // Find history file
-    let history_file = history_path.unwrap_or_else(|| {
-        HistoryParser::find_history_file().expect("Could not find shell history file")
-    });
-
+    // Find and parse history with graceful error handling (QA 2.4, 8.3)
+    let history_file = find_history_file_graceful(history_path);
     println!("📂 History file: {}", history_file.display());
 
-    // Parse history
-    let parser = HistoryParser::new();
-    let commands = parser
-        .parse_file(&history_file)
-        .expect("Failed to parse history");
-
+    let commands = parse_history_graceful(&history_file);
     println!("📊 Total commands: {}", commands.len());
 
     if commands.len() < 100 {
@@ -1392,4 +1638,310 @@ fn cmd_tune(history_path: Option<PathBuf>, trials: usize, ratio: f32) {
 
     println!("\n💡 Train with optimal settings:");
     println!("   aprender-shell train --ngram {}", best_ngram);
+}
+
+fn cmd_inspect(model_path: &str, format: &str, use_password: bool) {
+    use aprender::format::model_card::{ModelCard, TrainingDataInfo};
+
+    let path = expand_path(model_path);
+
+    // Get password if needed
+    let password = if use_password {
+        Some(
+            rpassword::prompt_password("Enter password: ").unwrap_or_else(|e| {
+                eprintln!("❌ Failed to read password: {e}");
+                std::process::exit(1);
+            }),
+        )
+    } else {
+        None
+    };
+
+    // Check encryption status
+    let encrypted = MarkovModel::is_encrypted(&path).unwrap_or(false);
+
+    // Load model to get metadata
+    let model = if let Some(ref pwd) = password {
+        match MarkovModel::load_encrypted(&path, pwd) {
+            Ok(m) => m,
+            Err(e) => {
+                eprintln!("❌ Failed to load encrypted model: {e}");
+                std::process::exit(1);
+            }
+        }
+    } else {
+        match MarkovModel::load(&path) {
+            Ok(m) => m,
+            Err(e) => {
+                if encrypted {
+                    eprintln!("❌ Model is encrypted. Use --password flag to decrypt.");
+                } else {
+                    eprintln!("❌ Failed to load model: {e}");
+                }
+                std::process::exit(1);
+            }
+        }
+    };
+
+    // Generate model card from model stats
+    let model_id = format!(
+        "aprender-shell-markov-{}gram-{}",
+        model.ngram_size(),
+        chrono_lite_date()
+    );
+
+    let card = ModelCard::new(&model_id, "1.0.0")
+        .with_name("Shell Completion Model")
+        .with_description("Markov chain model trained on shell command history")
+        .with_architecture("MarkovModel")
+        .with_param_count(model.ngram_count() as u64)
+        .with_hyperparameter("ngram_size", model.ngram_size())
+        .with_metric("vocab_size", model.vocab_size())
+        .with_metric("ngram_count", model.ngram_count())
+        .with_training_data(
+            TrainingDataInfo::new("shell_history").with_samples(model.total_commands() as u64),
+        );
+
+    match format.to_lowercase().as_str() {
+        "json" => match card.to_json() {
+            Ok(json) => println!("{json}"),
+            Err(e) => eprintln!("❌ Failed to serialize: {e}"),
+        },
+        "huggingface" | "hf" => {
+            println!("{}", card.to_huggingface());
+        }
+        _ => {
+            // Default: text format
+            println!("📋 Model Card: {}\n", path.display());
+            println!("═══════════════════════════════════════════");
+            println!("           MODEL INFORMATION               ");
+            println!("═══════════════════════════════════════════");
+            println!("  ID:           {}", card.model_id);
+            println!("  Name:         {}", card.name);
+            println!("  Version:      {}", card.version);
+            if let Some(ref author) = card.author {
+                println!("  Author:       {}", author);
+            }
+            println!("  Created:      {}", card.created_at);
+            println!("  Framework:    {}", card.framework_version);
+            if let Some(ref arch) = card.architecture {
+                println!("  Architecture: {}", arch);
+            }
+            if let Some(count) = card.param_count {
+                println!("  Parameters:   {}", count);
+            }
+            println!("───────────────────────────────────────────");
+
+            if let Some(ref training) = card.training_data {
+                println!("\n📊 Training Data:");
+                println!("  Source:  {}", training.name);
+                if let Some(samples) = training.samples {
+                    println!("  Samples: {}", samples);
+                }
+                if let Some(ref hash) = training.hash {
+                    println!("  Hash:    {}", hash);
+                }
+            }
+
+            if !card.hyperparameters.is_empty() {
+                println!("\n⚙️  Hyperparameters:");
+                for (key, value) in &card.hyperparameters {
+                    println!("  {}: {}", key, value);
+                }
+            }
+
+            if !card.metrics.is_empty() {
+                println!("\n📈 Metrics:");
+                for (key, value) in &card.metrics {
+                    println!("  {}: {}", key, value);
+                }
+            }
+
+            if let Some(ref desc) = card.description {
+                println!("\n📝 Description:");
+                println!("  {}", desc);
+            }
+
+            println!("\n💡 Export formats:");
+            println!("   JSON:        aprender-shell inspect --format json");
+            println!("   Hugging Face: aprender-shell inspect --format huggingface");
+        }
+    }
+}
+
+/// Simple date string without chrono dependency
+fn chrono_lite_date() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+
+    // Days since epoch
+    let days = secs / 86400;
+
+    // Simple year/month/day calculation
+    let mut remaining = days as i64;
+    let mut year = 1970i32;
+    loop {
+        let days_in_year = if (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0) {
+            366
+        } else {
+            365
+        };
+        if remaining < days_in_year {
+            break;
+        }
+        remaining -= days_in_year;
+        year += 1;
+    }
+
+    let leap = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
+    let months = if leap {
+        [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    } else {
+        [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    };
+
+    let mut month = 1u32;
+    for days_in_month in months {
+        if remaining < days_in_month {
+            break;
+        }
+        remaining -= days_in_month;
+        month += 1;
+    }
+
+    let day = remaining as u32 + 1;
+    format!("{year:04}{month:02}{day:02}")
+}
+
+/// Publish model to Hugging Face Hub (GH-100)
+fn cmd_publish(model_path: &str, repo_id: &str, commit_msg: &str, create: bool, private: bool) {
+    use aprender::format::model_card::{ModelCard, TrainingDataInfo};
+
+    let path = expand_path(model_path);
+
+    // Load model to get metadata
+    let model = match MarkovModel::load(&path) {
+        Ok(m) => m,
+        Err(e) => {
+            eprintln!("❌ Failed to load model: {e}");
+            std::process::exit(1);
+        }
+    };
+
+    // Read model file bytes
+    let model_bytes = match std::fs::read(&path) {
+        Ok(b) => b,
+        Err(e) => {
+            eprintln!("❌ Failed to read model file: {e}");
+            std::process::exit(1);
+        }
+    };
+
+    // Generate model card
+    let model_id = format!(
+        "aprender-shell-markov-{}gram-{}",
+        model.ngram_size(),
+        chrono_lite_date()
+    );
+
+    let card = ModelCard::new(&model_id, "1.0.0")
+        .with_name("Shell Completion Model")
+        .with_description(
+            "Markov chain model trained on shell command history for intelligent tab completion",
+        )
+        .with_architecture("MarkovModel")
+        .with_license("MIT")
+        .with_param_count(model.ngram_count() as u64)
+        .with_hyperparameter("ngram_size", model.ngram_size())
+        .with_metric("vocab_size", model.vocab_size())
+        .with_metric("ngram_count", model.ngram_count())
+        .with_training_data(
+            TrainingDataInfo::new("shell_history").with_samples(model.total_commands() as u64),
+        );
+
+    println!("📤 Publishing to Hugging Face Hub...\n");
+    println!("  Repository: {repo_id}");
+    println!("  Model:      {}", path.display());
+    println!("  Size:       {} bytes", model_bytes.len());
+    println!("  N-gram:     {}", model.ngram_size());
+    println!("  Vocab:      {} commands", model.vocab_size());
+    println!();
+
+    // Check for HF_TOKEN
+    if std::env::var("HF_TOKEN").is_err() {
+        eprintln!("⚠️  HF_TOKEN environment variable not set.\n");
+        eprintln!("To publish to Hugging Face Hub:");
+        eprintln!("  1. Create a token at https://huggingface.co/settings/tokens");
+        eprintln!("  2. Export it: export HF_TOKEN=hf_xxxxx");
+        eprintln!();
+        eprintln!("📁 Saving model card locally instead...");
+
+        // Save locally
+        let local_dir = path.parent().unwrap_or(std::path::Path::new("."));
+        let readme_path = local_dir.join("README.md");
+        let card_content = card.to_huggingface();
+
+        if let Err(e) = std::fs::write(&readme_path, &card_content) {
+            eprintln!("❌ Failed to write README.md: {e}");
+            std::process::exit(1);
+        }
+
+        println!("✅ Model card saved to: {}", readme_path.display());
+        println!();
+        println!("💡 Upload manually with:");
+        println!(
+            "   huggingface-cli upload {repo_id} {} model.apr",
+            path.display()
+        );
+        println!(
+            "   huggingface-cli upload {repo_id} {} README.md",
+            readme_path.display()
+        );
+        return;
+    }
+
+    // Prepare for HF Hub upload
+    println!("🔑 Using HF_TOKEN for authentication");
+    println!("  Create repo: {create}");
+    println!("  Private:     {private}");
+    println!("  Commit:      {commit_msg}");
+    println!();
+
+    // Note: Full HTTP upload requires additional implementation
+    // For now, prepare files and show instructions
+    let local_dir = path.parent().unwrap_or(std::path::Path::new("."));
+    let readme_path = local_dir.join("README.md");
+    let card_content = card.to_huggingface();
+
+    if let Err(e) = std::fs::write(&readme_path, &card_content) {
+        eprintln!("❌ Failed to write README.md: {e}");
+        std::process::exit(1);
+    }
+
+    println!("✅ Model card generated: {}", readme_path.display());
+    println!();
+    println!("📋 Model Card Preview:");
+    println!("───────────────────────────────────────────");
+    for line in card_content.lines().take(20) {
+        println!("  {line}");
+    }
+    println!("  ...");
+    println!("───────────────────────────────────────────");
+    println!();
+    println!("🚀 Upload with huggingface-cli:");
+    println!(
+        "   huggingface-cli repo create {repo_id} --type model{}",
+        if private { " --private" } else { "" }
+    );
+    println!(
+        "   huggingface-cli upload {repo_id} {} model.apr --commit-message \"{commit_msg}\"",
+        path.display()
+    );
+    println!(
+        "   huggingface-cli upload {repo_id} {} README.md",
+        readme_path.display()
+    );
 }

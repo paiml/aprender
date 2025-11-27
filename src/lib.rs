@@ -67,7 +67,11 @@ pub mod decomposition;
 pub mod error;
 pub mod format;
 pub mod glm;
+
 pub mod graph;
+/// Hugging Face Hub integration (GH-100)
+#[cfg(feature = "hf-hub-integration")]
+pub mod hf_hub;
 pub mod index;
 pub mod linear_model;
 pub mod loss;

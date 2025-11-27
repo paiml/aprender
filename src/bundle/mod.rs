@@ -33,7 +33,7 @@ mod paging;
 
 pub use format::{BundleFormat, BundleReader, BundleWriter};
 pub use manifest::{BundleManifest, ModelEntry, ModelMetadata};
-pub use mmap::{MappedRegion, MemoryMappedFile};
+pub use mmap::{MappedFile, MappedRegion, MemoryMappedFile};
 pub use paging::{PagedBundle, PagingConfig, PagingStats};
 
 use crate::error::Result;

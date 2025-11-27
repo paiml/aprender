@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 80728d4560a094a2e3b23b566c1477267d859da2a4f16c752c03f4101e606445 # shrinks to commands = ["hjivcotx vq", "cargo build --release", "cargo test", "kubectl get pods", "kubectl get pods", "git status", "cargo build --release", "git commit -m 'test'", "geingax -j", "git status", "git status", "kubectl get pods", "npm install", "cargo test", "gptcoj emdzgps", "cargo build --release", "git push origin main", "cargo test", "jxgjqd -u", "kubectl get pods", "docker run -it ubuntu", "npm install"]

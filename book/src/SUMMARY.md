@@ -189,6 +189,8 @@
 - [Case Study: Content-Based Recommendations](./examples/recommend-content.md)
 - [Case Study: AI Shell Completion](./examples/shell-completion.md)
 - [Case Study: Shell Completion Benchmarks](./examples/shell-completion-benchmarks.md)
+- [Case Study: Publishing Shell Models to HF Hub](./examples/shell-hf-hub-publishing.md)
+- [Case Study: Model Encryption Tiers](./examples/shell-encryption-tiers.md)
 - [Developer's Guide: Shell History Models](./examples/shell-history-developer-guide.md)
 - [Building Custom Error Classifiers](./examples/custom-error-classifier.md)
 

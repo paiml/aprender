@@ -27,14 +27,26 @@ name = "recommendation_latency"
 harness = false
 
 [dependencies]
-aprender = "0.10.0"
+# Use path dependency for development (mmap is automatic on native platforms)
+# TODO: Switch to aprender = "0.11" after next release
+aprender = { path = "../..", features = ["format-encryption", "format-compression", "format-homomorphic"] }
 clap = { version = "4", features = ["derive"] }
 dirs = "5"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# For password input without echo
+rpassword = "7"
+
+[features]
+default = ["format-compression", "format-encryption"]
+format-compression = []
+format-encryption = []
 
 [dev-dependencies]
 assert_cmd = "2"
 criterion = "0.5"
 predicates = "3"
+proptest = "1"
 tempfile = "3"
+# Note: Chaos testing uses renacer CLI tool (not library)
+# Install with: cargo install --path ../renacer

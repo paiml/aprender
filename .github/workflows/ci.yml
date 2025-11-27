@@ -172,3 +172,38 @@ jobs:
           cargo run --example boston_housing
           cargo run --example iris_clustering
           cargo run --example dataframe_basics
+
+  chaos:
+    name: Chaos Testing (aprender-shell)
+    runs-on: ubuntu-latest
+    needs: [check, fmt, clippy, test]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Checkout renacer
+        uses: actions/checkout@v4
+        with:
+          repository: paiml/renacer
+          path: ../renacer
+
+      - name: Build renacer
+        run: cargo build --release --manifest-path ../renacer/Cargo.toml
+
+      - name: Add renacer to PATH
+        run: echo "../renacer/target/release" >> $GITHUB_PATH
+
+      - name: Build aprender-shell
+        run: cargo build --release -p aprender-shell
+
+      - name: Run chaos baseline tests
+        run: ./crates/aprender-shell/scripts/chaos-baseline.sh ci
+
+      - name: Upload chaos test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: chaos-results
+          path: /tmp/chaos-results/
+          retention-days: 30
