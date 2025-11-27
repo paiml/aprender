@@ -152,6 +152,7 @@ println!("Signed: {}", info.signed);
 | 0x0020 | NeuralSequential | Deep learning |
 | 0x0021 | NeuralCustom | Custom architectures |
 | 0x0030 | ContentRecommender | Recommendations |
+| 0x0040 | MixtureOfExperts | Sparse/dense MoE ensembles |
 | 0x00FF | Custom | User-defined |
 
 ## Encryption (Feature: `format-encryption`)
@@ -613,6 +614,45 @@ strip = true
 opt-level = "z"
 ```
 
+## Mixture of Experts (MoE)
+
+MoE models use **bundled persistence** - a single `.apr` file contains the gating network and all experts:
+
+```text
+model.apr
+├── Header (ModelType::MixtureOfExperts = 0x0040)
+├── Metadata (MoeConfig)
+└── Payload
+    ├── Gating Network
+    └── Experts[0..n]
+```
+
+```rust
+use aprender::ensemble::{MixtureOfExperts, MoeConfig, SoftmaxGating};
+
+// Build MoE
+let moe = MixtureOfExperts::builder()
+    .gating(SoftmaxGating::new(n_features, n_experts))
+    .expert(expert_0)
+    .expert(expert_1)
+    .expert(expert_2)
+    .config(MoeConfig::default().with_top_k(2))
+    .build()?;
+
+// Save bundled (single file)
+moe.save_apr("model.apr")?;
+
+// Load
+let loaded = MixtureOfExperts::<MyExpert, SoftmaxGating>::load("model.apr")?;
+```
+
+**Benefits:**
+- Atomic save/load (no partial states)
+- Single file deployment
+- Checksummed integrity
+
+See [Case Study: Mixture of Experts](./mixture-of-experts.md) for full API documentation.
+
 ## Specification
 
 Full specification: [docs/specifications/model-format-spec.md](https://github.com/paiml/aprender/blob/main/docs/specifications/model-format-spec.md)
@@ -623,6 +663,7 @@ Full specification: [docs/specifications/model-format-spec.md](https://github.co
 - Single binary deployment (spec §1.1)
 - GGUF-compatible quantization (spec §6.2)
 - Knowledge distillation provenance (spec §6.3)
+- MoE bundled architecture (spec §6.4)
 - 32-byte fixed header for fast scanning
 - MessagePack metadata (compact, fast)
 - bincode payload (zero-copy potential)

@@ -64,6 +64,7 @@ pub mod classification;
 pub mod cluster;
 pub mod data;
 pub mod decomposition;
+pub mod ensemble;
 pub mod error;
 pub mod format;
 pub mod glm;

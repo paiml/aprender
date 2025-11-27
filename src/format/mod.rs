@@ -172,6 +172,8 @@ pub enum ModelType {
     NeuralCustom = 0x0021,
     /// Content-based recommender
     ContentRecommender = 0x0030,
+    /// Mixture of Experts (sparse/dense MoE)
+    MixtureOfExperts = 0x0040,
     /// User-defined model
     Custom = 0x00FF,
 }
@@ -196,6 +198,7 @@ impl ModelType {
             0x0020 => Some(Self::NeuralSequential),
             0x0021 => Some(Self::NeuralCustom),
             0x0030 => Some(Self::ContentRecommender),
+            0x0040 => Some(Self::MixtureOfExperts),
             0x00FF => Some(Self::Custom),
             _ => None,
         }
