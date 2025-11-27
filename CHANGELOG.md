@@ -7,6 +7,72 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] - 2025-11-27
+
+### ✨ **Major Release: Advanced Neural Networks & Program Repair**
+
+This release adds cutting-edge ML capabilities including Graph Neural Networks, RNN/LSTM/GRU, Variational Autoencoders, and a novel Compiler-in-the-Loop Learning system.
+
+### Added
+
+#### Compiler-in-the-Loop Learning (`citl` module)
+- **CITL**: Neural-guided automated program repair
+  - Transformer-based neural encoder for compiler diagnostics
+  - Contrastive learning with InfoNCE loss
+  - Pattern library with 21 Rust-specific fix templates
+  - Iterative fix loop with confidence thresholds
+  - GPU/CPU backend support via Trueno
+
+#### Graph Neural Networks (`gnn` module)
+- **GCN**: Graph Convolutional Networks
+- **GAT**: Graph Attention Networks with multi-head attention
+- **GraphSAGE**: Inductive learning on large graphs
+- Message passing framework with customizable aggregation
+
+#### Recurrent Neural Networks (`nn/rnn` module)
+- **RNN**: Vanilla recurrent networks
+- **LSTM**: Long Short-Term Memory with forget gates
+- **GRU**: Gated Recurrent Units
+- Bidirectional variants for all architectures
+
+#### Variational Autoencoders (`nn/vae` module)
+- **VAE**: Standard variational autoencoder
+- **BetaVAE**: Disentangled representations with β parameter
+- **ConditionalVAE**: Class-conditional generation
+- Reparameterization trick for backpropagation
+
+#### Model Interpretability (`interpret` module)
+- **SHAP**: SHapley Additive exPlanations
+- **LIME**: Local Interpretable Model-agnostic Explanations
+- Feature importance visualization
+- Partial dependence plots
+
+#### Transfer Learning (`transfer` module)
+- Pre-trained model loading
+- Feature extraction mode
+- Fine-tuning with layer freezing
+- Domain adaptation utilities
+
+#### Additional Features
+- **Active Learning** (`active_learning`): Uncertainty sampling, query-by-committee
+- **Probability Calibration** (`calibration`): Platt scaling, isotonic regression
+- **Self-Supervised Learning** (`nn/self_supervised`): Contrastive pretraining
+- **Model Quantization** (`nn/quantization`): INT8 quantization for inference
+- **Text Generation** (`nn/generation`): Autoregressive text generation
+
+### Quality Metrics
+
+**Test Count:** 3,331 tests (unit + property + integration + doc)
+**Test Coverage:** 96.94% line coverage
+**Clippy:** 0 warnings in production code
+**Zero Defects:** Toyota Way compliance maintained
+
+### Documentation
+
+- Book chapters for all new modules
+- CITL automated repair case study
+- Examples for GNN, RNN, VAE usage
+
 ## [0.8.0] - 2025-11-25
 
 ### ✨ **NEW FEATURE: Content-Based Recommendation System**
