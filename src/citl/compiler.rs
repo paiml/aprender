@@ -1148,11 +1148,11 @@ mod tests {
     fn test_rust_compiler_compile_valid_code() {
         let compiler = RustCompiler::new();
         // Use library-compatible code (no main function)
-        let code = r#"
+        let code = r"
 pub fn add(a: i32, b: i32) -> i32 {
     a + b
 }
-"#;
+";
         let result = compiler.compile(code, &CompileOptions::default());
         assert!(result.is_ok());
         let result = result.expect("Should compile");
@@ -1264,7 +1264,7 @@ pub fn add(a: i32, b: i32) -> i32 {
             .write_to_temp()
             .expect("Should write");
 
-        let dir = project.project_dir().expect("Has dir").to_path_buf();
+        let dir = project.project_dir().expect("Has dir").clone();
         assert!(dir.exists());
 
         drop(project);

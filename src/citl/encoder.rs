@@ -666,8 +666,7 @@ mod tests {
         let similarity = e1.cosine_similarity(&e2);
         assert!(
             similarity > 0.5,
-            "Similar errors should have similarity > 0.5, got {}",
-            similarity
+            "Similar errors should have similarity > 0.5, got {similarity}"
         );
     }
 
@@ -701,8 +700,7 @@ mod tests {
         let similarity = e1.cosine_similarity(&e2);
         assert!(
             similarity < 0.9,
-            "Different errors should have similarity < 0.9, got {}",
-            similarity
+            "Different errors should have similarity < 0.9, got {similarity}"
         );
     }
 

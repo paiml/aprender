@@ -1174,7 +1174,7 @@ mod tests {
     #[test]
     fn test_template_borrow_instead_of_move() {
         let template = templates::borrow_instead_of_move();
-        assert!(template.pattern.contains("&"));
+        assert!(template.pattern.contains('&'));
         assert!(template.applies_to("E0382"));
         assert!(template.confidence > 0.7);
     }

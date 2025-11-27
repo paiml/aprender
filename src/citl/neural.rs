@@ -1401,8 +1401,7 @@ mod tests {
         let norm: f32 = embedding.iter().map(|x| x * x).sum::<f32>().sqrt();
         assert!(
             (norm - 1.0).abs() < 0.01,
-            "Embedding norm should be ~1.0, got {}",
-            norm
+            "Embedding norm should be ~1.0, got {norm}"
         );
     }
 
@@ -1436,9 +1435,7 @@ mod tests {
         // Similar errors should have higher similarity
         assert!(
             sim_12 > sim_13,
-            "Similar errors should have higher similarity: sim_12={}, sim_13={}",
-            sim_12,
-            sim_13
+            "Similar errors should have higher similarity: sim_12={sim_12}, sim_13={sim_13}"
         );
     }
 
@@ -1457,7 +1454,7 @@ mod tests {
         // Should still be somewhat similar (both are type errors)
         let sim = cosine_sim(&emb_rust, &emb_python);
         // Just verify it's a valid similarity value
-        assert!(sim >= -1.0 && sim <= 1.0);
+        assert!((-1.0..=1.0).contains(&sim));
     }
 
     // ==================== ContrastiveLoss Tests ====================

@@ -503,7 +503,7 @@ mod tests {
         let p = RandomForestParam::NEstimators;
         let cloned = p;
         assert_eq!(p, cloned);
-        assert!(format!("{:?}", p).contains("NEstimators"));
+        assert!(format!("{p:?}").contains("NEstimators"));
     }
 
     #[test]
@@ -511,7 +511,7 @@ mod tests {
         let p = GradientBoostingParam::LearningRate;
         let cloned = p;
         assert_eq!(p, cloned);
-        assert!(format!("{:?}", p).contains("LearningRate"));
+        assert!(format!("{p:?}").contains("LearningRate"));
     }
 
     #[test]
@@ -519,7 +519,7 @@ mod tests {
         let p = KNNParam::NNeighbors;
         let cloned = p;
         assert_eq!(p, cloned);
-        assert!(format!("{:?}", p).contains("NNeighbors"));
+        assert!(format!("{p:?}").contains("NNeighbors"));
     }
 
     #[test]
@@ -527,7 +527,7 @@ mod tests {
         let p = LinearParam::Alpha;
         let cloned = p;
         assert_eq!(p, cloned);
-        assert!(format!("{:?}", p).contains("Alpha"));
+        assert!(format!("{p:?}").contains("Alpha"));
     }
 
     #[test]
@@ -535,7 +535,7 @@ mod tests {
         let p = DecisionTreeParam::MaxDepth;
         let cloned = p;
         assert_eq!(p, cloned);
-        assert!(format!("{:?}", p).contains("MaxDepth"));
+        assert!(format!("{p:?}").contains("MaxDepth"));
     }
 
     #[test]
@@ -543,6 +543,6 @@ mod tests {
         let p = KMeansParam::NClusters;
         let cloned = p;
         assert_eq!(p, cloned);
-        assert!(format!("{:?}", p).contains("NClusters"));
+        assert!(format!("{p:?}").contains("NClusters"));
     }
 }

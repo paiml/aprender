@@ -1044,7 +1044,7 @@ mod tests {
         let suggestion = citl.suggest_fix(&diag, "let x: String = 42;");
         // Should find a suggestion (may or may not match well depending on embedding)
         // The key is that it doesn't panic and returns Some when pattern exists
-        assert!(suggestion.is_some() || citl.pattern_library.len() > 0);
+        assert!(suggestion.is_some() || !citl.pattern_library.is_empty());
     }
 
     #[test]
@@ -1285,7 +1285,7 @@ pub fn greet(name: &str) -> String {
         });
 
         // Valid code
-        let code = r#"
+        let code = r"
 pub fn multiply(a: f64, b: f64) -> f64 {
     a * b
 }
@@ -1293,7 +1293,7 @@ pub fn multiply(a: f64, b: f64) -> f64 {
 pub fn is_positive(n: i32) -> bool {
     n > 0
 }
-"#;
+";
 
         let result = compiler.compile(code, &CompileOptions::default());
         assert!(result.is_ok());

@@ -32,7 +32,7 @@ mod tests {
         let gating = SoftmaxGating::new(4, 3).with_temperature(0.01);
         let input = vec![1.0, 2.0, 3.0, 4.0];
         let weights = gating.forward(&input);
-        let max_weight = weights.iter().cloned().fold(0.0f32, f32::max);
+        let max_weight = weights.iter().copied().fold(0.0f32, f32::max);
         assert!(max_weight > 0.9);
     }
 
@@ -58,7 +58,7 @@ mod tests {
             .build()
             .expect("build");
         let output = moe.predict(&[1.0, 2.0, 3.0, 4.0]);
-        assert!(output >= 10.0 && output <= 20.0);
+        assert!((10.0..=20.0).contains(&output));
     }
 
     #[test]

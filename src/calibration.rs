@@ -510,8 +510,8 @@ mod tests {
             p2 >= p1,
             "Higher predictions should give higher calibrated values"
         );
-        assert!(p1 >= 0.0 && p1 <= 1.0);
-        assert!(p2 >= 0.0 && p2 <= 1.0);
+        assert!((0.0..=1.0).contains(&p1));
+        assert!((0.0..=1.0).contains(&p2));
     }
 
     #[test]
@@ -530,9 +530,7 @@ mod tests {
             let curr = iso.predict(x);
             assert!(
                 curr >= prev - 1e-6,
-                "Isotonic should be monotonic: {} < {}",
-                curr,
-                prev
+                "Isotonic should be monotonic: {curr} < {prev}"
             );
             prev = curr;
         }

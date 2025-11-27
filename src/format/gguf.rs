@@ -749,7 +749,7 @@ mod tests {
         ];
         for t in types {
             assert_eq!(t, t);
-            assert!(!format!("{:?}", t).is_empty());
+            assert!(!format!("{t:?}").is_empty());
         }
     }
 
@@ -773,7 +773,7 @@ mod tests {
         ];
         for t in types {
             assert_eq!(t, t);
-            assert!(!format!("{:?}", t).is_empty());
+            assert!(!format!("{t:?}").is_empty());
         }
     }
 
@@ -787,7 +787,7 @@ mod tests {
         assert_eq!(t, GgufValueType::Uint8);
         let cloned = t;
         assert_eq!(t, cloned);
-        assert!(format!("{:?}", t).contains("Uint8"));
+        assert!(format!("{t:?}").contains("Uint8"));
     }
 
     #[test]
@@ -796,14 +796,14 @@ mod tests {
         assert_eq!(t, GgmlType::F32);
         let cloned = t;
         assert_eq!(t, cloned);
-        assert!(format!("{:?}", t).contains("F32"));
+        assert!(format!("{t:?}").contains("F32"));
     }
 
     #[test]
     fn test_gguf_value_clone() {
         let v = GgufValue::String("test".to_string());
         let cloned = v.clone();
-        assert!(format!("{:?}", cloned).contains("test"));
+        assert!(format!("{cloned:?}").contains("test"));
     }
 
     #[test]
@@ -816,7 +816,7 @@ mod tests {
         let cloned = h.clone();
         assert_eq!(cloned.version, 3);
         assert_eq!(cloned.tensor_count, 10);
-        assert!(format!("{:?}", cloned).contains("GgufHeader"));
+        assert!(format!("{cloned:?}").contains("GgufHeader"));
     }
 }
 

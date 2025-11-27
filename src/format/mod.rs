@@ -3651,7 +3651,7 @@ mod tests {
         // Use unique values to prevent compression from reducing size
         let model = LargeModel {
             weights: (0..250_000)
-                .map(|i| i as f64 * std::f64::consts::PI)
+                .map(|i| f64::from(i) * std::f64::consts::PI)
                 .collect(),
         };
 
@@ -3714,7 +3714,7 @@ mod tests {
         // Use unique values to prevent compression from reducing size
         let model = LargeModel {
             weights: (0..250_000)
-                .map(|i| i as f64 * std::f64::consts::E)
+                .map(|i| f64::from(i) * std::f64::consts::E)
                 .collect(),
         };
 

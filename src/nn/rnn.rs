@@ -702,7 +702,7 @@ mod tests {
 
         // Hidden state bounded by tanh
         for &val in h_new.data() {
-            assert!(val >= -1.0 && val <= 1.0, "Hidden state bounded");
+            assert!((-1.0..=1.0).contains(&val), "Hidden state bounded");
         }
     }
 }

@@ -1171,7 +1171,7 @@ mod tests {
             Vector::from_slice(&[3.0, 0.0, 0.0]),
             Vector::from_slice(&[4.0, 0.0, 0.0]),
         ];
-        let y: Vec<f32> = x.iter().map(|xi| simple_linear_model(xi)).collect();
+        let y: Vec<f32> = x.iter().map(simple_linear_model).collect();
 
         // MSE scoring (higher = worse)
         let importance =
@@ -1278,9 +1278,7 @@ mod tests {
 
         assert!(
             (sum_attr - delta).abs() < 0.5,
-            "Completeness: sum={}, delta={}",
-            sum_attr,
-            delta
+            "Completeness: sum={sum_attr}, delta={delta}"
         );
     }
 
@@ -1412,13 +1410,7 @@ mod tests {
     #[test]
     fn test_counterfactual_find() {
         // Model: classify as 1 if x[0] + x[1] > 2
-        let model = |x: &Vector<f32>| -> usize {
-            if x[0] + x[1] > 2.0 {
-                1
-            } else {
-                0
-            }
-        };
+        let model = |x: &Vector<f32>| -> usize { usize::from(x[0] + x[1] > 2.0) };
 
         let cf = CounterfactualExplainer::new(500, 0.1);
         let original = Vector::from_slice(&[0.5, 0.5]); // Class 0

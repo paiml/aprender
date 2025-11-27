@@ -657,7 +657,7 @@ mod tests {
 
         // Should be close to original (within quantization error)
         for (orig, quant) in data.iter().zip(quantized.iter()) {
-            assert!((orig - quant).abs() < 0.02, "orig={} quant={}", orig, quant);
+            assert!((orig - quant).abs() < 0.02, "orig={orig} quant={quant}");
         }
     }
 

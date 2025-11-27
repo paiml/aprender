@@ -1188,7 +1188,7 @@ mod tests {
 
         // Should be roughly 50% (allow 10% tolerance)
         let ratio = true_count as f32 / trials as f32;
-        assert!(ratio > 0.4 && ratio < 0.6, "Ratio was {}", ratio);
+        assert!(ratio > 0.4 && ratio < 0.6, "Ratio was {ratio}");
     }
 
     #[test]

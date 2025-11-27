@@ -572,7 +572,7 @@ mod proptests {
 
     /// Strategy for generating valid model IDs
     fn arb_model_id() -> impl Strategy<Value = String> {
-        "[a-z][a-z0-9_-]{0,30}".prop_map(|s| s.to_string())
+        "[a-z][a-z0-9_-]{0,30}".prop_map(|s| s.clone())
     }
 
     /// Strategy for generating semantic versions
@@ -583,12 +583,12 @@ mod proptests {
 
     /// Strategy for generating author names
     fn arb_author() -> impl Strategy<Value = String> {
-        "[a-zA-Z][a-zA-Z0-9 _@.-]{0,50}".prop_map(|s| s.to_string())
+        "[a-zA-Z][a-zA-Z0-9 _@.-]{0,50}".prop_map(|s| s.clone())
     }
 
     /// Strategy for generating descriptions
     fn arb_description() -> impl Strategy<Value = String> {
-        "[a-zA-Z0-9 .,!?-]{0,200}".prop_map(|s| s.to_string())
+        "[a-zA-Z0-9 .,!?-]{0,200}".prop_map(|s| s.clone())
     }
 
     proptest! {
@@ -715,11 +715,11 @@ mod proptests {
             let (year, month, day) = days_to_ymd(days);
 
             // Year in reasonable range (1970 - ~2106)
-            prop_assert!(year >= 1970 && year <= 2200);
+            prop_assert!((1970..=2200).contains(&year));
             // Month 1-12
-            prop_assert!(month >= 1 && month <= 12);
+            prop_assert!((1..=12).contains(&month));
             // Day 1-31
-            prop_assert!(day >= 1 && day <= 31);
+            prop_assert!((1..=31).contains(&day));
         }
 
         /// Property: is_leap_year consistent with days_in_year
