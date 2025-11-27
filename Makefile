@@ -172,7 +172,7 @@ coverage: ## Generate HTML coverage report (target: <5 min)
 	@cargo llvm-cov clean --workspace
 	@mkdir -p target/coverage
 	@echo "🧪 Phase 1: Running tests with instrumentation (no report)..."
-	@cargo llvm-cov --no-report nextest --no-tests=warn --workspace --no-fail-fast
+	@cargo llvm-cov --no-report nextest --no-tests=warn --workspace --no-fail-fast --all-features
 	@echo "📊 Phase 2: Generating coverage reports..."
 	@cargo llvm-cov report --html --output-dir target/coverage/html
 	@cargo llvm-cov report --lcov --output-path target/coverage/lcov.info
