@@ -149,61 +149,61 @@
 
   <!-- trueno Integration (Bottom Left) -->
   <g transform="translate(50, 420)">
-    <rect x="0" y="0" width="350" height="130" rx="10" fill="url(#truenoGrad)" filter="url(#shadow)"/>
-    <text x="175" y="28" text-anchor="middle" fill="#ffffff" font-family="system-ui, sans-serif" font-size="15" font-weight="bold">trueno-native Mode</text>
-    <text x="175" y="48" text-anchor="middle" fill="#ffffffcc" font-family="system-ui, sans-serif" font-size="12">Zero-Copy SIMD Inference</text>
+    <rect x="0" y="0" width="340" height="130" rx="10" fill="url(#truenoGrad)" filter="url(#shadow)"/>
+    <text x="170" y="28" text-anchor="middle" fill="#ffffff" font-family="system-ui, sans-serif" font-size="15" font-weight="bold">trueno-native Mode</text>
+    <text x="170" y="48" text-anchor="middle" fill="#ffffffcc" font-family="system-ui, sans-serif" font-size="12">Zero-Copy SIMD Inference</text>
 
-    <text x="25" y="75" fill="#ffffffdd" font-family="monospace" font-size="11">64-byte aligned tensors</text>
-    <text x="25" y="93" fill="#ffffffdd" font-family="monospace" font-size="11">Memory-mapped loading (mmap)</text>
-    <text x="25" y="111" fill="#ffffffdd" font-family="monospace" font-size="11">AVX-512 / AVX2 / NEON / WASM SIMD</text>
+    <text x="20" y="75" fill="#ffffffdd" font-family="monospace" font-size="11">64-byte aligned tensors</text>
+    <text x="20" y="93" fill="#ffffffdd" font-family="monospace" font-size="11">Memory-mapped loading (mmap)</text>
+    <text x="20" y="111" fill="#ffffffdd" font-family="monospace" font-size="11">AVX-512 / AVX2 / NEON / WASM SIMD</text>
 
     <!-- Performance badge -->
-    <rect x="240" y="70" width="95" height="45" rx="6" fill="#ffffff22"/>
-    <text x="287" y="90" text-anchor="middle" fill="#ffffff" font-family="system-ui, sans-serif" font-size="11" font-weight="bold">600x faster</text>
-    <text x="287" y="105" text-anchor="middle" fill="#ffffffaa" font-family="monospace" font-size="9">vs bincode load</text>
+    <rect x="230" y="70" width="95" height="45" rx="6" fill="#ffffff22"/>
+    <text x="277" y="90" text-anchor="middle" fill="#ffffff" font-family="system-ui, sans-serif" font-size="11" font-weight="bold">600x faster</text>
+    <text x="277" y="105" text-anchor="middle" fill="#ffffffaa" font-family="monospace" font-size="9">vs bincode load</text>
   </g>
 
   <!-- Commercial Features (Bottom Center) -->
-  <g transform="translate(425, 420)">
-    <rect x="0" y="0" width="350" height="130" rx="10" fill="url(#commercialGrad)" filter="url(#shadow)"/>
-    <text x="175" y="28" text-anchor="middle" fill="#ffffff" font-family="system-ui, sans-serif" font-size="15" font-weight="bold">Commercial Licensing</text>
-    <text x="175" y="48" text-anchor="middle" fill="#ffffffcc" font-family="system-ui, sans-serif" font-size="12">Model Marketplace Ready</text>
+  <g transform="translate(410, 420)">
+    <rect x="0" y="0" width="340" height="130" rx="10" fill="url(#commercialGrad)" filter="url(#shadow)"/>
+    <text x="170" y="28" text-anchor="middle" fill="#ffffff" font-family="system-ui, sans-serif" font-size="15" font-weight="bold">Commercial Licensing</text>
+    <text x="170" y="48" text-anchor="middle" fill="#ffffffcc" font-family="system-ui, sans-serif" font-size="12">Model Marketplace Ready</text>
 
-    <text x="25" y="75" fill="#ffffffdd" font-family="monospace" font-size="11">Watermarking (leak traceability)</text>
-    <text x="25" y="93" fill="#ffffffdd" font-family="monospace" font-size="11">Seat limits • Expiration • Inference caps</text>
-    <text x="25" y="111" fill="#ffffffdd" font-family="monospace" font-size="11">Buyer-specific encryption (X25519)</text>
+    <text x="20" y="75" fill="#ffffffdd" font-family="monospace" font-size="11">Watermarking (leak traceability)</text>
+    <text x="20" y="93" fill="#ffffffdd" font-family="monospace" font-size="11">Seat limits • Expiration • Inference caps</text>
+    <text x="20" y="111" fill="#ffffffdd" font-family="monospace" font-size="11">Buyer-specific encryption (X25519)</text>
 
     <!-- DRM badge -->
-    <rect x="255" y="70" width="80" height="45" rx="6" fill="#ffffff22"/>
-    <text x="295" y="90" text-anchor="middle" fill="#ffffff" font-family="system-ui, sans-serif" font-size="11" font-weight="bold">DRM</text>
-    <text x="295" y="105" text-anchor="middle" fill="#ffffffaa" font-family="monospace" font-size="9">built-in</text>
+    <rect x="245" y="70" width="80" height="45" rx="6" fill="#ffffff22"/>
+    <text x="285" y="90" text-anchor="middle" fill="#ffffff" font-family="system-ui, sans-serif" font-size="11" font-weight="bold">DRM</text>
+    <text x="285" y="105" text-anchor="middle" fill="#ffffffaa" font-family="monospace" font-size="9">built-in</text>
   </g>
 
   <!-- Interoperability (Bottom Right) -->
-  <g transform="translate(800, 420)">
-    <rect x="0" y="0" width="350" height="130" rx="10" fill="url(#formatGrad)" filter="url(#shadow)"/>
-    <text x="175" y="28" text-anchor="middle" fill="#ffffff" font-family="system-ui, sans-serif" font-size="15" font-weight="bold">Interoperability</text>
-    <text x="175" y="48" text-anchor="middle" fill="#ffffffcc" font-family="system-ui, sans-serif" font-size="12">Export to Industry Formats</text>
+  <g transform="translate(770, 420)">
+    <rect x="0" y="0" width="380" height="130" rx="10" fill="url(#formatGrad)" filter="url(#shadow)"/>
+    <text x="190" y="28" text-anchor="middle" fill="#ffffff" font-family="system-ui, sans-serif" font-size="15" font-weight="bold">Interoperability</text>
+    <text x="190" y="48" text-anchor="middle" fill="#ffffffcc" font-family="system-ui, sans-serif" font-size="12">Export to Industry Formats</text>
 
-    <g transform="translate(25, 60)">
-      <rect x="0" y="0" width="90" height="55" rx="6" fill="#ffffff15"/>
-      <text x="45" y="22" text-anchor="middle" fill="#ffffff" font-family="system-ui, sans-serif" font-size="12" font-weight="bold">.apr</text>
-      <text x="45" y="38" text-anchor="middle" fill="#ffffffaa" font-family="monospace" font-size="9">Native</text>
-      <text x="45" y="50" text-anchor="middle" fill="#238636" font-family="monospace" font-size="9">R/W</text>
+    <g transform="translate(30, 60)">
+      <rect x="0" y="0" width="95" height="55" rx="6" fill="#ffffff15"/>
+      <text x="47" y="22" text-anchor="middle" fill="#ffffff" font-family="system-ui, sans-serif" font-size="12" font-weight="bold">.apr</text>
+      <text x="47" y="38" text-anchor="middle" fill="#ffffffaa" font-family="monospace" font-size="9">Native</text>
+      <text x="47" y="50" text-anchor="middle" fill="#238636" font-family="monospace" font-size="9">R/W</text>
     </g>
 
-    <g transform="translate(130, 60)">
-      <rect x="0" y="0" width="90" height="55" rx="6" fill="#ffffff15"/>
-      <text x="45" y="22" text-anchor="middle" fill="#ffffff" font-family="system-ui, sans-serif" font-size="12" font-weight="bold">SafeTensors</text>
-      <text x="45" y="38" text-anchor="middle" fill="#ffffffaa" font-family="monospace" font-size="9">HuggingFace</text>
-      <text x="45" y="50" text-anchor="middle" fill="#58a6ff" font-family="monospace" font-size="9">Export</text>
+    <g transform="translate(140, 60)">
+      <rect x="0" y="0" width="95" height="55" rx="6" fill="#ffffff15"/>
+      <text x="47" y="22" text-anchor="middle" fill="#ffffff" font-family="system-ui, sans-serif" font-size="12" font-weight="bold">SafeTensors</text>
+      <text x="47" y="38" text-anchor="middle" fill="#ffffffaa" font-family="monospace" font-size="9">HuggingFace</text>
+      <text x="47" y="50" text-anchor="middle" fill="#58a6ff" font-family="monospace" font-size="9">Export</text>
     </g>
 
-    <g transform="translate(235, 60)">
-      <rect x="0" y="0" width="90" height="55" rx="6" fill="#ffffff15"/>
-      <text x="45" y="22" text-anchor="middle" fill="#ffffff" font-family="system-ui, sans-serif" font-size="12" font-weight="bold">GGUF</text>
-      <text x="45" y="38" text-anchor="middle" fill="#ffffffaa" font-family="monospace" font-size="9">Ollama</text>
-      <text x="45" y="50" text-anchor="middle" fill="#58a6ff" font-family="monospace" font-size="9">Export</text>
+    <g transform="translate(250, 60)">
+      <rect x="0" y="0" width="95" height="55" rx="6" fill="#ffffff15"/>
+      <text x="47" y="22" text-anchor="middle" fill="#ffffff" font-family="system-ui, sans-serif" font-size="12" font-weight="bold">GGUF</text>
+      <text x="47" y="38" text-anchor="middle" fill="#ffffffaa" font-family="monospace" font-size="9">Ollama</text>
+      <text x="47" y="50" text-anchor="middle" fill="#58a6ff" font-family="monospace" font-size="9">Export</text>
     </g>
   </g>
 
