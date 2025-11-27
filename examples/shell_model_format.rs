@@ -12,7 +12,7 @@
 //! ✅ Roundtrip: suggestions match
 //! ```
 
-use aprender::format::{self, Header, ModelType, SaveOptions};
+use aprender::format::{self, ModelType, SaveOptions};
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
@@ -38,7 +38,7 @@ impl TestMarkovModel {
 
     fn train(&mut self, commands: &[&str]) {
         for cmd in commands {
-            *self.command_freq.entry(cmd.to_string()).or_insert(0) += 1;
+            *self.command_freq.entry((*cmd).to_string()).or_insert(0) += 1;
             self.total_commands += 1;
 
             // Build n-grams
@@ -62,9 +62,9 @@ impl TestMarkovModel {
             .command_freq
             .iter()
             .filter(|(cmd, _)| cmd.starts_with(prefix))
-            .map(|(cmd, count)| (cmd.clone(), *count as f64 / total as f64))
+            .map(|(cmd, count)| (cmd.clone(), f64::from(*count) / f64::from(total)))
             .collect();
-        results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+        results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         results.truncate(5);
         results
     }
@@ -109,26 +109,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if magic == b"APRN" {
         println!("   ✅ Magic bytes: APRN");
     } else {
-        println!("   ❌ Magic bytes: {:?} (expected APRN)", magic);
+        println!("   ❌ Magic bytes: {magic:?} (expected APRN)");
         return Err("Invalid magic".into());
     }
 
     // Check version
     let version = u16::from_le_bytes([bytes[4], bytes[5]]);
-    println!("   ✅ Version: {}", version);
+    println!("   ✅ Version: {version}");
 
     // Check model type
     let model_type_raw = u16::from_le_bytes([bytes[6], bytes[7]]);
     if model_type_raw == 0x0010 {
-        println!("   ✅ Model type: NgramLm (0x{:04X})", model_type_raw);
+        println!("   ✅ Model type: NgramLm (0x{model_type_raw:04X})");
     } else if model_type_raw == 0x00FF {
-        println!(
-            "   ❌ Model type: Custom (0x{:04X}) - should be NgramLm",
-            model_type_raw
-        );
+        println!("   ❌ Model type: Custom (0x{model_type_raw:04X}) - should be NgramLm");
         return Err("Wrong model type".into());
     } else {
-        println!("   ❓ Model type: Unknown (0x{:04X})", model_type_raw);
+        println!("   ❓ Model type: Unknown (0x{model_type_raw:04X})");
     }
 
     // 4. Load and verify roundtrip
@@ -153,21 +150,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let suggestions = loaded.suggest("git ");
     println!("   Suggestions for 'git ':");
     for (cmd, score) in &suggestions {
-        println!("      {:.3}  {}", score, cmd);
+        println!("      {score:.3}  {cmd}");
     }
 
-    if !suggestions.is_empty() {
-        println!("   ✅ Suggestions work");
-    } else {
+    if suggestions.is_empty() {
         println!("   ❌ No suggestions returned");
         return Err("Suggestions failed".into());
+    } else {
+        println!("   ✅ Suggestions work");
     }
 
     // 6. Test backward compatibility (loading Custom type should fail gracefully)
     println!("\n6️⃣  Testing type mismatch handling...");
     match format::load::<TestMarkovModel>(test_path, ModelType::Custom) {
         Ok(_) => println!("   ⚠️  Loaded as Custom (unexpected but ok for compat)"),
-        Err(e) => println!("   ✅ Correctly rejected Custom type: {}", e),
+        Err(e) => println!("   ✅ Correctly rejected Custom type: {e}"),
     }
 
     // Cleanup

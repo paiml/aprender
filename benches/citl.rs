@@ -109,9 +109,11 @@ fn bench_error_encoding(c: &mut Criterion) {
 
     // Various source sizes
     for &lines in &[10, 50, 100, 500] {
-        let source: String = (0..lines)
-            .map(|i| format!("let x{i}: i32 = \"hello\"; // line {i}\n"))
-            .collect();
+        let mut source = String::new();
+        for i in 0..lines {
+            use std::fmt::Write;
+            let _ = writeln!(source, "let x{i}: i32 = \"hello\"; // line {i}");
+        }
 
         group.throughput(Throughput::Elements(lines as u64));
 

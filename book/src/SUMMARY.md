@@ -195,6 +195,8 @@
 - [Case Study: Shell Completion Benchmarks](./examples/shell-completion-benchmarks.md)
 - [Case Study: Publishing Shell Models to HF Hub](./examples/shell-hf-hub-publishing.md)
 - [Case Study: Model Encryption Tiers](./examples/shell-encryption-tiers.md)
+- [Case Study: Shell Encryption Demo](./examples/shell-encryption-demo.md)
+- [Case Study: Shell Model Format](./examples/shell-model-format.md)
 - [Case Study: Mixture of Experts (MoE)](./examples/mixture-of-experts.md)
 - [Developer's Guide: Shell History Models](./examples/shell-history-developer-guide.md)
 - [Building Custom Error Classifiers](./examples/custom-error-classifier.md)

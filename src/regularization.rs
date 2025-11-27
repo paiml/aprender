@@ -724,7 +724,7 @@ mod tests {
         let mixup = Mixup::new(1.0);
         for _ in 0..10 {
             let lambda = mixup.sample_lambda();
-            assert!(lambda >= 0.0 && lambda <= 1.0);
+            assert!((0.0..=1.0).contains(&lambda));
         }
     }
 
@@ -846,7 +846,7 @@ mod tests {
         let result = params.apply(&img1, &img2, 1, 3, 4);
         assert_eq!(result.len(), 12);
         // Position (1,1) should be from img2
-        assert_eq!(result[1 * 4 + 1], 2.0);
+        assert_eq!(result[4 + 1], 2.0);
     }
 
     // Stochastic Depth tests
@@ -985,7 +985,8 @@ mod tests {
 
         // Check that entire frequency bands are masked
         let zero_count = result.iter().filter(|&&v| v == 0.0).count();
-        assert!(zero_count >= 0); // May mask 0 width band
+        // zero_count is always >= 0 as usize; just verify we computed something
+        let _ = zero_count; // May mask 0 width band
     }
 
     #[test]

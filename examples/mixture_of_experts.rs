@@ -78,8 +78,8 @@ fn basic_moe_example() {
     let input = [1.0, 2.0, 3.0, 4.0];
     let output = moe.predict(&input);
 
-    println!("  Input: {:?}", input);
-    println!("  Output: {:.2}", output);
+    println!("  Input: {input:?}");
+    println!("  Output: {output:.2}");
     println!("  (Weighted combination of expert outputs)");
 }
 
@@ -102,8 +102,8 @@ fn sparse_moe_example() {
     let input = [1.0, 2.0, 3.0, 4.0];
     let output = moe.predict(&input);
 
-    println!("  Input: {:?}", input);
-    println!("  Output: {:.2}", output);
+    println!("  Input: {input:?}");
+    println!("  Output: {output:.2}");
     println!("  (Single expert output, no averaging)");
 
     // With sparse routing, output should be exactly one expert's value
@@ -134,20 +134,20 @@ fn temperature_example() {
         "    Weights: [{:.3}, {:.3}, {:.3}]",
         sharp_weights[0], sharp_weights[1], sharp_weights[2]
     );
-    let max_sharp = sharp_weights.iter().cloned().fold(0.0f32, f32::max);
-    println!("    Max weight: {:.3} (confident)", max_sharp);
+    let max_sharp = sharp_weights.iter().copied().fold(0.0f32, f32::max);
+    println!("    Max weight: {max_sharp:.3} (confident)");
 
     println!("\n  High temp (10.0) - Uniform distribution:");
     println!(
         "    Weights: [{:.3}, {:.3}, {:.3}]",
         uniform_weights[0], uniform_weights[1], uniform_weights[2]
     );
-    let max_uniform = uniform_weights.iter().cloned().fold(0.0f32, f32::max);
-    println!("    Max weight: {:.3} (uncertain)", max_uniform);
+    let max_uniform = uniform_weights.iter().copied().fold(0.0f32, f32::max);
+    println!("    Max weight: {max_uniform:.3} (uncertain)");
 
     // Verify weights sum to 1.0
     let sum: f32 = sharp_weights.iter().sum();
-    println!("\n  Weights sum to: {:.3} (normalized)", sum);
+    println!("\n  Weights sum to: {sum:.3} (normalized)");
 }
 
 fn persistence_example() {
@@ -175,9 +175,9 @@ fn persistence_example() {
 
     println!("  Binary format (bincode):");
     println!("    File: {}", tmp_path.display());
-    println!("    Size: {} bytes", file_size);
-    println!("    Original output: {:.4}", original_output);
-    println!("    Loaded output:   {:.4}", loaded_output);
+    println!("    Size: {file_size} bytes");
+    println!("    Original output: {original_output:.4}");
+    println!("    Loaded output:   {loaded_output:.4}");
     println!(
         "    Match: {}",
         if (original_output - loaded_output).abs() < 1e-6 {
@@ -211,8 +211,8 @@ fn apr_format_example() {
 
     println!("  APR format (with header):");
     println!("    File: {}", tmp_path.display());
-    println!("    Size: {} bytes", file_size);
-    println!("    Magic: {} (APRN = valid)", magic);
+    println!("    Size: {file_size} bytes");
+    println!("    Magic: {magic} (APRN = valid)");
 
     println!("\n  Bundled Architecture:");
     println!("    model.apr");
