@@ -106,7 +106,7 @@ The example runs all test functions with all optimizers, displaying:
 
 ## Code Location
 
-See [`examples/batch_optimization.rs`](../../examples/batch_optimization.rs) for full implementation.
+See [`examples/batch_optimization.rs`](../../../examples/batch_optimization.rs) for full implementation.
 
 ## Related Topics
 

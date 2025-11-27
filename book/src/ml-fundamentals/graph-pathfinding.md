@@ -417,8 +417,8 @@ Handles graphs with negative edge weights by iterating V-1 times.
 ## See Also
 
 - [Graph Algorithms](./graph-algorithms.md) - Centrality and structural analysis
-- [Graph Examples](../../examples/graph_social_network.rs) - Practical usage examples
-- [Graph Specification](../../docs/specifications/complete-graph-methods-statistics-spec.md) - Complete API reference
+- [Graph Examples](../../../examples/graph_social_network.rs) - Practical usage examples
+- [Graph Specification](../../../docs/specifications/complete-graph-methods-statistics-spec.md) - Complete API reference
 
 ## References
 

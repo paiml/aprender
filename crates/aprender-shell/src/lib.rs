@@ -11,6 +11,7 @@
 //! - **Security filtering**: `is_sensitive_command` for credential protection
 
 pub mod config;
+pub mod corpus;
 pub mod error;
 pub mod history;
 pub mod model;
@@ -34,3 +35,6 @@ pub use quality::{
 pub use security::{filter_sensitive_commands, filter_sensitive_suggestions, is_sensitive_command};
 pub use synthetic::SyntheticPipeline;
 pub use validation::{load_model_graceful, sanitize_prefix};
+
+// Corpus management
+pub use corpus::{Corpus, CorpusError, CorpusResult, CorpusStats};

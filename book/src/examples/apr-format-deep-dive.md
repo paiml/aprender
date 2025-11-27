@@ -565,5 +565,5 @@ fn load_iris_dataset() -> Result<(Matrix<f32>, Vec<usize>), Box<dyn std::error::
 
 - [Model Format Specification](./model-format.md) - Complete technical spec
 - [Shell History Developer Guide](./shell-history-developer-guide.md) - Real-world .apr usage
-- [Encryption Features](../ml-fundamentals/encryption.md) - Security deep dive
+- Encryption Features - Security deep dive (planned)
 - [trueno Documentation](https://docs.rs/trueno) - SIMD tensor library

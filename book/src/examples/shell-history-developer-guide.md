@@ -1069,4 +1069,4 @@ aprender-shell export model.apr   # Export to .apr format
 
 - [`aprender-shell` source code](https://github.com/paiml/aprender/tree/main/crates/aprender-shell)
 - [Model Format Specification](../examples/model-format.md)
-- [Ranking Metrics API](../ml-fundamentals/ranking-metrics.md)
+- Ranking Metrics API (see `aprender::metrics`)

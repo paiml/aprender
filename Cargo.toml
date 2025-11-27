@@ -177,6 +177,14 @@ harness = false
 name = "recommend"
 harness = false
 
+[[bench]]
+name = "citl"
+harness = false
+
+[[example]]
+name = "shell_encryption_demo"
+required-features = ["format-encryption"]
+
 [profile.release]
 lto = true
 codegen-units = 1

@@ -539,6 +539,157 @@ impl Module for GroupNorm {
     }
 }
 
+/// Root Mean Square Layer Normalization (Zhang & Sennrich, 2019).
+///
+/// A simplified version of LayerNorm that only uses the root mean square
+/// for normalization, without centering (no mean subtraction).
+/// This is faster than LayerNorm while achieving similar results.
+///
+/// ```text
+/// y = x / RMS(x) * gamma
+/// RMS(x) = sqrt(mean(x^2) + eps)
+/// ```
+///
+/// Used in LLaMA, Gemma, and other modern transformers.
+///
+/// # Example
+///
+/// ```ignore
+/// use aprender::nn::{RMSNorm, Module};
+/// use aprender::autograd::Tensor;
+///
+/// let norm = RMSNorm::new(&[256]);  // Normalize over 256 features
+/// let x = Tensor::randn(&[32, 10, 256]);  // [batch, seq, features]
+/// let y = norm.forward(&x);  // Normalized
+/// ```
+///
+/// # References
+///
+/// - Zhang, B., & Sennrich, R. (2019). Root Mean Square Layer Normalization.
+///   NeurIPS.
+#[derive(Debug)]
+pub struct RMSNorm {
+    /// Shape of the normalized dimensions
+    normalized_shape: Vec<usize>,
+    /// Small constant for numerical stability
+    eps: f32,
+    /// Learnable scale parameter (gamma)
+    weight: Tensor,
+    /// Whether to use learnable scale parameter
+    elementwise_affine: bool,
+}
+
+impl RMSNorm {
+    /// Create a new RMSNorm layer.
+    ///
+    /// # Arguments
+    ///
+    /// * `normalized_shape` - Shape of the dimensions to normalize over
+    pub fn new(normalized_shape: &[usize]) -> Self {
+        let numel: usize = normalized_shape.iter().product();
+        Self {
+            normalized_shape: normalized_shape.to_vec(),
+            eps: 1e-6, // Smaller default eps than LayerNorm (common in LLMs)
+            weight: constant(&[numel], 1.0).requires_grad(),
+            elementwise_affine: true,
+        }
+    }
+
+    /// Create RMSNorm with custom epsilon.
+    pub fn with_eps(normalized_shape: &[usize], eps: f32) -> Self {
+        let mut layer = Self::new(normalized_shape);
+        layer.eps = eps;
+        layer
+    }
+
+    /// Create RMSNorm without learnable parameters.
+    pub fn without_affine(normalized_shape: &[usize]) -> Self {
+        let numel: usize = normalized_shape.iter().product();
+        Self {
+            normalized_shape: normalized_shape.to_vec(),
+            eps: 1e-6,
+            weight: constant(&[numel], 1.0),
+            elementwise_affine: false,
+        }
+    }
+
+    /// Get the normalized shape.
+    pub fn normalized_shape(&self) -> &[usize] {
+        &self.normalized_shape
+    }
+
+    /// Get the epsilon value.
+    pub fn eps(&self) -> f32 {
+        self.eps
+    }
+}
+
+impl Module for RMSNorm {
+    fn forward(&self, input: &Tensor) -> Tensor {
+        let shape = input.shape();
+        let norm_size: usize = self.normalized_shape.iter().product();
+
+        // Check dimensions
+        assert!(
+            shape.len() >= self.normalized_shape.len(),
+            "Input must have at least as many dimensions as normalized_shape"
+        );
+
+        // Check that the last dimensions match
+        let start_dim = shape.len() - self.normalized_shape.len();
+        for (i, &ns) in self.normalized_shape.iter().enumerate() {
+            assert_eq!(
+                shape[start_dim + i],
+                ns,
+                "Input shape doesn't match normalized_shape at dim {i}"
+            );
+        }
+
+        let batch_dims: usize = shape[..start_dim].iter().product();
+        let input_data = input.data();
+
+        let mut output_data = vec![0.0; input_data.len()];
+
+        for b in 0..batch_dims {
+            let offset = b * norm_size;
+            let slice = &input_data[offset..offset + norm_size];
+
+            // Compute root mean square (no mean subtraction!)
+            let mean_sq: f32 = slice.iter().map(|&x| x * x).sum::<f32>() / norm_size as f32;
+            let rms = (mean_sq + self.eps).sqrt();
+            let rms_inv = 1.0 / rms;
+
+            // Normalize and apply scale
+            for i in 0..norm_size {
+                let normalized = slice[i] * rms_inv;
+                output_data[offset + i] = if self.elementwise_affine {
+                    normalized * self.weight.data()[i]
+                } else {
+                    normalized
+                };
+            }
+        }
+
+        Tensor::new(&output_data, shape)
+    }
+
+    fn parameters(&self) -> Vec<&Tensor> {
+        if self.elementwise_affine {
+            vec![&self.weight]
+        } else {
+            vec![]
+        }
+    }
+
+    fn parameters_mut(&mut self) -> Vec<&mut Tensor> {
+        if self.elementwise_affine {
+            vec![&mut self.weight]
+        } else {
+            vec![]
+        }
+    }
+}
+
 /// Instance Normalization.
 ///
 /// Normalizes each channel independently for each sample.
@@ -747,6 +898,202 @@ mod tests {
                 (a - b).abs() < 1e-5,
                 "InstanceNorm and GroupNorm should match"
             );
+        }
+    }
+
+    // ==========================================================================
+    // RMSNorm Tests
+    // ==========================================================================
+
+    #[test]
+    fn test_rms_norm_shape() {
+        let norm = RMSNorm::new(&[256]);
+        let x = Tensor::ones(&[32, 10, 256]);
+        let y = norm.forward(&x);
+
+        assert_eq!(y.shape(), x.shape());
+    }
+
+    #[test]
+    fn test_rms_norm_basic_normalization() {
+        let norm = RMSNorm::without_affine(&[4]);
+
+        // Input: single sample with known values
+        let x = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[1, 4]);
+        let y = norm.forward(&x);
+
+        // RMS = sqrt(mean(x^2)) = sqrt((1+4+9+16)/4) = sqrt(7.5) ≈ 2.739
+        // Normalized values: x / RMS
+        let expected_rms = (7.5_f32 + 1e-6).sqrt();
+        let y_data = y.data();
+
+        for i in 0..4 {
+            let expected = (i + 1) as f32 / expected_rms;
+            assert!(
+                (y_data[i] - expected).abs() < 1e-5,
+                "Element {i}: expected {expected}, got {}",
+                y_data[i]
+            );
+        }
+    }
+
+    #[test]
+    fn test_rms_norm_unit_vector_preserved() {
+        // A unit vector should be nearly preserved (scaled by ~1)
+        let norm = RMSNorm::without_affine(&[3]);
+
+        // Unit vector: [1/sqrt(3), 1/sqrt(3), 1/sqrt(3)]
+        let val = 1.0 / 3.0_f32.sqrt();
+        let x = Tensor::new(&[val, val, val], &[1, 3]);
+        let y = norm.forward(&x);
+
+        // RMS of unit vector is 1/sqrt(3) ≈ 0.577
+        // Dividing by RMS gives [1, 1, 1]
+        let y_data = y.data();
+        for &v in y_data {
+            assert!(
+                (v - 1.0).abs() < 1e-5,
+                "Unit vector should normalize to 1s, got {v}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_rms_norm_vs_layer_norm_no_centering() {
+        // RMSNorm doesn't center, so mean of output is NOT zero in general
+        let rms_norm = RMSNorm::without_affine(&[4]);
+        let layer_norm = LayerNorm::without_affine(&[4]);
+
+        let x = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[1, 4]);
+
+        let y_rms = rms_norm.forward(&x);
+        let y_layer = layer_norm.forward(&x);
+
+        // LayerNorm output mean should be ~0
+        let layer_mean: f32 = y_layer.data().iter().sum::<f32>() / 4.0;
+        assert!(layer_mean.abs() < 1e-5, "LayerNorm should have zero mean");
+
+        // RMSNorm output mean is NOT zero (no centering)
+        let rms_mean: f32 = y_rms.data().iter().sum::<f32>() / 4.0;
+        assert!(
+            rms_mean > 0.1,
+            "RMSNorm should NOT center, mean should be > 0, got {rms_mean}"
+        );
+
+        // Both should produce different outputs
+        let diff: f32 = y_rms
+            .data()
+            .iter()
+            .zip(y_layer.data().iter())
+            .map(|(a, b)| (a - b).abs())
+            .sum();
+        assert!(
+            diff > 0.1,
+            "RMSNorm and LayerNorm should produce different outputs"
+        );
+    }
+
+    #[test]
+    fn test_rms_norm_parameters() {
+        let norm = RMSNorm::new(&[64]);
+        let params = norm.parameters();
+
+        // RMSNorm has only weight (no bias like LayerNorm)
+        assert_eq!(params.len(), 1);
+        assert_eq!(params[0].numel(), 64);
+    }
+
+    #[test]
+    fn test_rms_norm_without_affine() {
+        let norm = RMSNorm::without_affine(&[64]);
+        let params = norm.parameters();
+
+        assert!(params.is_empty());
+    }
+
+    #[test]
+    fn test_rms_norm_with_custom_eps() {
+        let norm = RMSNorm::with_eps(&[4], 1e-3);
+        assert!((norm.eps() - 1e-3).abs() < 1e-8);
+    }
+
+    #[test]
+    fn test_rms_norm_batch_processing() {
+        let norm = RMSNorm::without_affine(&[4]);
+
+        // Two samples
+        let x = Tensor::new(&[1.0, 1.0, 1.0, 1.0, 2.0, 2.0, 2.0, 2.0], &[2, 4]);
+        let y = norm.forward(&x);
+        let y_data = y.data();
+
+        // First sample: all 1s -> RMS = 1 -> output = 1s
+        for i in 0..4 {
+            assert!((y_data[i] - 1.0).abs() < 1e-5);
+        }
+
+        // Second sample: all 2s -> RMS = 2 -> output = 1s
+        for i in 4..8 {
+            assert!((y_data[i] - 1.0).abs() < 1e-5);
+        }
+    }
+
+    #[test]
+    fn test_rms_norm_3d_input() {
+        let norm = RMSNorm::new(&[256]);
+        let x = Tensor::ones(&[4, 10, 256]); // [batch, seq, features]
+        let y = norm.forward(&x);
+
+        assert_eq!(y.shape(), &[4, 10, 256]);
+    }
+
+    #[test]
+    fn test_rms_norm_scaling_factor() {
+        // RMSNorm scales input by 1/RMS, verify this is consistent
+        let norm = RMSNorm::without_affine(&[4]);
+
+        // If we scale input by 2, RMS doubles, output stays same
+        let x1 = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[1, 4]);
+        let x2 = Tensor::new(&[2.0, 4.0, 6.0, 8.0], &[1, 4]);
+
+        let y1 = norm.forward(&x1);
+        let y2 = norm.forward(&x2);
+
+        // Outputs should be identical (RMSNorm is scale-invariant)
+        for (a, b) in y1.data().iter().zip(y2.data().iter()) {
+            assert!((a - b).abs() < 1e-5, "RMSNorm should be scale-invariant");
+        }
+    }
+
+    #[test]
+    fn test_rms_norm_with_learnable_weight() {
+        let norm = RMSNorm::new(&[4]);
+
+        let x = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[1, 4]);
+        let y = norm.forward(&x);
+
+        // Default weight is 1.0, so output should be same as without_affine
+        let norm_no_affine = RMSNorm::without_affine(&[4]);
+        let y_no_affine = norm_no_affine.forward(&x);
+
+        for (a, b) in y.data().iter().zip(y_no_affine.data().iter()) {
+            assert!(
+                (a - b).abs() < 1e-5,
+                "Default weights should produce same result as no affine"
+            );
+        }
+    }
+
+    #[test]
+    fn test_rms_norm_numerical_stability() {
+        // Test with very small values
+        let norm = RMSNorm::without_affine(&[4]);
+
+        let x = Tensor::new(&[1e-6, 1e-6, 1e-6, 1e-6], &[1, 4]);
+        let y = norm.forward(&x);
+
+        // Should not produce NaN or Inf
+        for &v in y.data() {
+            assert!(v.is_finite(), "Output should be finite");
         }
     }
 }

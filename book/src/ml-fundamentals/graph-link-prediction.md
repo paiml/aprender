@@ -429,8 +429,8 @@ assert!(aa_0_2 > aa_0_3);
 
 - [Graph Algorithms](./graph-algorithms.md) - Centrality and structural analysis
 - [Graph Pathfinding](./graph-pathfinding.md) - Shortest path algorithms
-- [Graph Examples](../../examples/graph_social_network.rs) - Practical usage examples
-- [Graph Specification](../../docs/specifications/complete-graph-methods-statistics-spec.md) - Complete API reference
+- [Graph Examples](../../../examples/graph_social_network.rs) - Practical usage examples
+- [Graph Specification](../../../docs/specifications/complete-graph-methods-statistics-spec.md) - Complete API reference
 
 ## References
 

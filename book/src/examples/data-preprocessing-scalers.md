@@ -241,7 +241,7 @@ Both scalers:
 
 ## Related Examples
 
-- [K-Nearest Neighbors](./knn-classification.md) - Distance-based classification
+- K-Nearest Neighbors - Distance-based classification (planned)
 - [Descriptive Statistics](./descriptive-statistics.md) - Computing mean and std
 - [Linear Regression](./linear-regression.md) - Model that benefits from scaling
 

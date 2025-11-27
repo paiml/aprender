@@ -192,6 +192,6 @@ HE models use the `.apr` v3 format:
 
 ## References
 
-- [Homomorphic Encryption Spec](../../docs/specifications/homomorphic-encryption-spec.md)
+- [Homomorphic Encryption Spec](../../../docs/specifications/homomorphic-encryption-spec.md)
 - [Microsoft SEAL Library](https://github.com/microsoft/SEAL)
 - [CryptoNets Paper](https://proceedings.mlr.press/v48/gilad-bachrach16.html)

@@ -202,4 +202,4 @@ The hidden layer learns intermediate features that make this separable.
 ## Next Steps
 
 - [Classification Training](./classification-training.md) - Multi-class with CrossEntropy
-- [MNIST Digits](./mnist-digits.md) - Real image classification (coming soon)
+- MNIST Digits - Real image classification (planned)

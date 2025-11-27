@@ -379,7 +379,8 @@ fn test_cli_007_invalid_ngram_size() {
             "99", // Invalid - should be 2-5
         ])
         .assert()
-        .success(); // Clamps to valid range, doesn't fail
+        .failure() // Rejects invalid n-gram sizes
+        .stderr(predicate::str::contains("N-gram size must be between 2 and 5"));
 }
 
 // ============================================================================

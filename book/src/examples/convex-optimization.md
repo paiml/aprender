@@ -182,7 +182,7 @@ The examples demonstrate:
 
 ## Code Location
 
-See [`examples/convex_optimization.rs`](../../examples/convex_optimization.rs) for full implementation.
+See [`examples/convex_optimization.rs`](../../../examples/convex_optimization.rs) for full implementation.
 
 ## Related Topics
 

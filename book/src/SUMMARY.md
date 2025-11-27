@@ -101,6 +101,10 @@
 
 - [AutoML: Automated Machine Learning](./ml-fundamentals/automl.md)
 
+## Learning Paradigms
+
+- [Compiler-in-the-Loop Learning](./ml-fundamentals/compiler-in-the-loop.md)
+
 ## Preprocessing
 
 - [Feature Scaling Theory](./ml-fundamentals/feature-scaling.md)
@@ -194,6 +198,7 @@
 - [Case Study: Mixture of Experts (MoE)](./examples/mixture-of-experts.md)
 - [Developer's Guide: Shell History Models](./examples/shell-history-developer-guide.md)
 - [Building Custom Error Classifiers](./examples/custom-error-classifier.md)
+- [Case Study: CITL Automated Program Repair](./examples/citl-automated-repair.md)
 
 # Sprint-Based Development
 

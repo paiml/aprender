@@ -423,6 +423,13 @@ fn parse_history_graceful(history_file: &PathBuf) -> Vec<String> {
     }
 }
 
+fn validate_ngram(n: usize) {
+    if !(2..=5).contains(&n) {
+        eprintln!("❌ Error: N-gram size must be between 2 and 5 (got {})", n);
+        std::process::exit(1);
+    }
+}
+
 fn cmd_train(
     history_path: Option<PathBuf>,
     output: &str,
@@ -430,6 +437,7 @@ fn cmd_train(
     memory_limit: Option<usize>,
     use_password: bool,
 ) {
+    validate_ngram(ngram);
     let paged = memory_limit.is_some();
     let encrypted_str = if use_password { " encrypted" } else { "" };
     let mode_str = if paged { "paged" } else { "standard" };
@@ -1084,6 +1092,7 @@ fn remove_widget_block(path: &std::path::Path, dry_run: bool) -> std::io::Result
 }
 
 fn cmd_validate(history_path: Option<PathBuf>, ngram: usize, ratio: f32) {
+    validate_ngram(ngram);
     println!("🔬 aprender-shell: Model Validation\n");
 
     // Find and parse history with graceful error handling (QA 2.4, 8.3)
@@ -1147,6 +1156,7 @@ fn cmd_augment(
     monitor_diversity: bool,
     use_code_eda: bool,
 ) {
+    validate_ngram(ngram);
     use aprender::synthetic::code_eda::{CodeEda, CodeEdaConfig, CodeLanguage};
     use aprender::synthetic::{
         DiversityMonitor, DiversityScore, SyntheticConfig, SyntheticGenerator,

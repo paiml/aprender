@@ -369,6 +369,6 @@ aprender-shell convert model-plain.apr model-he.apr --homomorphic --public-key k
 
 ## Further Reading
 
-- [Homomorphic Encryption Specification](../../docs/specifications/homomorphic-encryption-spec.md)
+- [Homomorphic Encryption Specification](../../../docs/specifications/homomorphic-encryption-spec.md)
 - [.apr Format Deep Dive](./apr-format-deep-dive.md)
 - [Model Format Case Study](./model-format.md)

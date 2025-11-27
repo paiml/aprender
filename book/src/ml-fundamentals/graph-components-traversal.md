@@ -547,7 +547,7 @@ DFS is inherently sequential (stack-based), but components can be parallelized:
 - [Graph Algorithms](./graph-algorithms.md) - Centrality and structural analysis
 - [Graph Pathfinding](./graph-pathfinding.md) - Shortest path algorithms
 - [Graph Link Prediction](./graph-link-prediction.md) - Community detection and link analysis
-- [Graph Examples](../../examples/graph_social_network.rs) - Practical usage examples
+- [Graph Examples](../../../examples/graph_social_network.rs) - Practical usage examples
 
 ## References
 

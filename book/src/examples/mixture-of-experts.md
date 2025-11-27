@@ -165,4 +165,4 @@ let moe = MixtureOfExperts::builder()
 
 - [Outrageously Large Neural Networks (Shazeer et al., 2017)](https://arxiv.org/abs/1701.06538)
 - [Switch Transformers (Fedus et al., 2022)](https://arxiv.org/abs/2101.03961)
-- [Model Format Spec](../../docs/specifications/model-format-spec.md) - Section 6.4
+- [Model Format Spec](../../../docs/specifications/model-format-spec.md) - Section 6.4

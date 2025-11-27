@@ -262,10 +262,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "aprender"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7e7969c89c4a4792d719736c6d3104d4bc44171a98ca9b3ff8efa79f8cfad74b"
+dependencies = [
+ "aes-gcm",
+ "argon2",
+ "bincode",
+ "getrandom 0.2.16",
+ "hkdf",
+ "memmap2",
+ "nalgebra",
+ "rand 0.8.5",
+ "rayon",
+ "rmp-serde",
+ "serde",
+ "serde_json",
+ "sha2",
+ "trueno",
+ "x25519-dalek",
+ "zstd",
+]
+
+[[package]]
 name = "aprender-shell"
 version = "0.2.0"
 dependencies = [
- "aprender 0.11.0",
+ "aprender 0.11.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "assert_cmd",
  "clap",
  "criterion",

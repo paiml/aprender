@@ -154,7 +154,7 @@ The example demonstrates all five constrained optimization scenarios with detail
 
 ## Code Location
 
-See [`examples/constrained_optimization.rs`](../../examples/constrained_optimization.rs) for full implementation.
+See [`examples/constrained_optimization.rs`](../../../examples/constrained_optimization.rs) for full implementation.
 
 ## Related Topics
 

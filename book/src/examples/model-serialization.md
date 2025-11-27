@@ -675,9 +675,9 @@ RESULT → Production-ready, industry-compatible serialization
 ---
 
 **See Implementation**:
-- Source: [`src/serialization/safetensors.rs`](../../src/serialization/safetensors.rs)
-- Tests: [`tests/github_issue_5_safetensors_tests.rs`](../../tests/github_issue_5_safetensors_tests.rs)
-- Spec: [`docs/specifications/model-format-spec-v1.md`](../../docs/specifications/model-format-spec-v1.md)
+- Source: [`src/serialization/safetensors.rs`](../../../src/serialization/safetensors.rs)
+- Tests: [`tests/github_issue_5_safetensors_tests.rs`](../../../tests/github_issue_5_safetensors_tests.rs)
+- Spec: [`docs/specifications/model-format-spec-v1.md`](../../../docs/specifications/model-format-spec-v1.md)
 
 ---
 

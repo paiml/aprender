@@ -585,6 +585,6 @@ cargo run --example random_forest_regression
 
 ---
 
-**Next**: [Gradient Boosting (Future)](./gradient-boosting-regression.md)
+**Next**: Gradient Boosting (planned)
 
 **Previous**: [Decision Tree Regression](./decision-tree-regression.md)

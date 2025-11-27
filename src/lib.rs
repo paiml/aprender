@@ -55,11 +55,15 @@
 //! - [`bundle`]: Model bundling and memory paging for large models
 //! - [`chaos`]: Chaos engineering configuration (from renacer)
 
+pub mod active_learning;
 pub mod autograd;
 pub mod automl;
 pub mod bayesian;
 pub mod bundle;
+pub mod calibration;
 pub mod chaos;
+/// Compiler-in-the-Loop Learning (CITL) for transpiler support.
+pub mod citl;
 pub mod classification;
 pub mod cluster;
 pub mod data;
@@ -68,12 +72,13 @@ pub mod ensemble;
 pub mod error;
 pub mod format;
 pub mod glm;
-
+pub mod gnn;
 pub mod graph;
 /// Hugging Face Hub integration (GH-100)
 #[cfg(feature = "hf-hub-integration")]
 pub mod hf_hub;
 pub mod index;
+pub mod interpret;
 pub mod linear_model;
 pub mod loss;
 pub mod metaheuristics;
@@ -86,13 +91,16 @@ pub mod prelude;
 pub mod preprocessing;
 pub mod primitives;
 pub mod recommend;
+pub mod regularization;
 pub mod serialization;
 pub mod stats;
 pub mod synthetic;
 pub mod text;
 pub mod time_series;
 pub mod traits;
+pub mod transfer;
 pub mod tree;
+pub mod weak_supervision;
 
 pub use error::{AprenderError, Result};
 pub use primitives::{Matrix, Vector};

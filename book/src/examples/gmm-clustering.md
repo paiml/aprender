@@ -109,5 +109,5 @@ The example demonstrates:
 - [K-Means Clustering](./kmeans-clustering.md)
 - [DBSCAN Clustering](./dbscan-clustering.md)
 - [Hierarchical Clustering](./hierarchical-clustering.md)
-- [UnsupervisedEstimator Trait](../api/traits.md)
+- `UnsupervisedEstimator` trait in `aprender::traits`
 - [What is EXTREME TDD?](../methodology/what-is-extreme-tdd.md)

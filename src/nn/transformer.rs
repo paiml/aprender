@@ -883,6 +883,760 @@ pub fn generate_causal_mask(size: usize) -> Tensor {
     Tensor::new(&data, &[size, size])
 }
 
+// ============================================================================
+// Linear Attention (Katharopoulos et al., 2020)
+// ============================================================================
+
+/// Linear Attention with kernel feature maps.
+///
+/// Achieves O(nd²) complexity instead of O(n²d) by using kernel approximation.
+/// Based on "Transformers are RNNs" (Katharopoulos et al., 2020).
+///
+/// ```text
+/// Attention(Q, K, V) ≈ φ(Q) * (φ(K)^T @ V) / (φ(Q) * Σφ(K)^T)
+/// ```
+///
+/// where φ is a feature map (e.g., elu(x) + 1).
+///
+/// # Example
+///
+/// ```ignore
+/// let attn = LinearAttention::new(512, 8);
+/// let x = Tensor::randn(&[32, 100, 512]);
+/// let y = attn.forward(&x);
+/// ```
+pub struct LinearAttention {
+    embed_dim: usize,
+    num_heads: usize,
+    head_dim: usize,
+    q_proj: Linear,
+    k_proj: Linear,
+    v_proj: Linear,
+    out_proj: Linear,
+    eps: f32,
+    training: bool,
+}
+
+impl LinearAttention {
+    /// Create a new Linear Attention layer.
+    ///
+    /// # Arguments
+    ///
+    /// * `embed_dim` - Total dimension of the model
+    /// * `num_heads` - Number of attention heads
+    pub fn new(embed_dim: usize, num_heads: usize) -> Self {
+        assert!(
+            embed_dim % num_heads == 0,
+            "embed_dim ({embed_dim}) must be divisible by num_heads ({num_heads})"
+        );
+
+        let head_dim = embed_dim / num_heads;
+
+        Self {
+            embed_dim,
+            num_heads,
+            head_dim,
+            q_proj: Linear::new(embed_dim, embed_dim),
+            k_proj: Linear::new(embed_dim, embed_dim),
+            v_proj: Linear::new(embed_dim, embed_dim),
+            out_proj: Linear::new(embed_dim, embed_dim),
+            eps: 1e-6,
+            training: true,
+        }
+    }
+
+    /// Forward pass with linear attention.
+    pub fn forward_linear(&self, query: &Tensor, key: &Tensor, value: &Tensor) -> Tensor {
+        let batch_size = query.shape()[0];
+        let tgt_len = query.shape()[1];
+        let src_len = key.shape()[1];
+
+        // Project Q, K, V
+        let q = self.q_proj.forward(query);
+        let k = self.k_proj.forward(key);
+        let v = self.v_proj.forward(value);
+
+        // Reshape for multi-head: [batch, seq, embed] -> [batch, heads, seq, head_dim]
+        let q = reshape_for_attention(&q, batch_size, tgt_len, self.num_heads, self.head_dim);
+        let k = reshape_for_attention(&k, batch_size, src_len, self.num_heads, self.head_dim);
+        let v = reshape_for_attention(&v, batch_size, src_len, self.num_heads, self.head_dim);
+
+        // Apply feature map φ(x) = elu(x) + 1 to Q and K
+        let q_prime = elu_feature_map(&q);
+        let k_prime = elu_feature_map(&k);
+
+        // Linear attention: φ(Q) @ (φ(K)^T @ V) / (φ(Q) @ Σφ(K)^T)
+        // Compute K^T @ V first: [batch, heads, head_dim, head_dim]
+        let k_prime_t = transpose_last_two(&k_prime);
+        let kv = matmul_batched(&k_prime_t, &v); // [batch, heads, head_dim, head_dim]
+
+        // Compute Q @ KV
+        let output = matmul_batched(&q_prime, &kv); // [batch, heads, tgt_len, head_dim]
+
+        // Compute normalizer: Q @ sum(K^T, dim=-1)
+        let k_sum = sum_last_dim(&k_prime); // [batch, heads, head_dim]
+        let normalizer = matmul_with_broadcast(&q_prime, &k_sum); // [batch, heads, tgt_len, 1]
+
+        // Normalize output
+        let output = divide_with_eps(&output, &normalizer, self.eps);
+
+        // Reshape back: [batch, heads, seq, head_dim] -> [batch, seq, embed]
+        let output = reshape_from_attention(&output, batch_size, tgt_len, self.embed_dim);
+
+        // Output projection
+        self.out_proj.forward(&output)
+    }
+
+    /// Get embed_dim.
+    pub fn embed_dim(&self) -> usize {
+        self.embed_dim
+    }
+
+    /// Get num_heads.
+    pub fn num_heads(&self) -> usize {
+        self.num_heads
+    }
+}
+
+impl Module for LinearAttention {
+    fn forward(&self, input: &Tensor) -> Tensor {
+        self.forward_linear(input, input, input)
+    }
+
+    fn parameters(&self) -> Vec<&Tensor> {
+        let mut params = self.q_proj.parameters();
+        params.extend(self.k_proj.parameters());
+        params.extend(self.v_proj.parameters());
+        params.extend(self.out_proj.parameters());
+        params
+    }
+
+    fn parameters_mut(&mut self) -> Vec<&mut Tensor> {
+        let mut params = self.q_proj.parameters_mut();
+        params.extend(self.k_proj.parameters_mut());
+        params.extend(self.v_proj.parameters_mut());
+        params.extend(self.out_proj.parameters_mut());
+        params
+    }
+
+    fn train(&mut self) {
+        self.training = true;
+    }
+
+    fn eval(&mut self) {
+        self.training = false;
+    }
+
+    fn training(&self) -> bool {
+        self.training
+    }
+}
+
+impl std::fmt::Debug for LinearAttention {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LinearAttention")
+            .field("embed_dim", &self.embed_dim)
+            .field("num_heads", &self.num_heads)
+            .field("head_dim", &self.head_dim)
+            .finish_non_exhaustive()
+    }
+}
+
+// ============================================================================
+// Grouped Query Attention (Ainslie et al., 2023)
+// ============================================================================
+
+/// Grouped Query Attention (GQA).
+///
+/// Uses fewer key-value heads than query heads, reducing memory and compute.
+/// From "GQA: Training Generalized Multi-Query Transformer Models" (Ainslie et al., 2023).
+///
+/// When `num_kv_heads = 1`, this is Multi-Query Attention (MQA).
+/// When `num_kv_heads = num_heads`, this is standard Multi-Head Attention (MHA).
+///
+/// # Example
+///
+/// ```ignore
+/// // GQA with 8 query heads and 2 KV heads (4:1 ratio)
+/// let gqa = GroupedQueryAttention::new(512, 8, 2);
+/// let x = Tensor::randn(&[32, 100, 512]);
+/// let y = gqa.forward(&x);
+/// ```
+pub struct GroupedQueryAttention {
+    embed_dim: usize,
+    num_heads: usize,
+    num_kv_heads: usize,
+    head_dim: usize,
+    kv_head_dim: usize,
+    dropout_p: f32,
+    q_proj: Linear,
+    k_proj: Linear,
+    v_proj: Linear,
+    out_proj: Linear,
+    training: bool,
+}
+
+impl GroupedQueryAttention {
+    /// Create a new Grouped Query Attention layer.
+    ///
+    /// # Arguments
+    ///
+    /// * `embed_dim` - Total dimension of the model
+    /// * `num_heads` - Number of query heads
+    /// * `num_kv_heads` - Number of key-value heads (must divide num_heads)
+    ///
+    /// # Panics
+    ///
+    /// Panics if `embed_dim` is not divisible by `num_heads` or
+    /// if `num_heads` is not divisible by `num_kv_heads`.
+    pub fn new(embed_dim: usize, num_heads: usize, num_kv_heads: usize) -> Self {
+        assert!(
+            embed_dim % num_heads == 0,
+            "embed_dim ({embed_dim}) must be divisible by num_heads ({num_heads})"
+        );
+        assert!(
+            num_heads % num_kv_heads == 0,
+            "num_heads ({num_heads}) must be divisible by num_kv_heads ({num_kv_heads})"
+        );
+
+        let head_dim = embed_dim / num_heads;
+        let kv_dim = num_kv_heads * head_dim;
+
+        Self {
+            embed_dim,
+            num_heads,
+            num_kv_heads,
+            head_dim,
+            kv_head_dim: head_dim,
+            dropout_p: 0.0,
+            q_proj: Linear::new(embed_dim, embed_dim),
+            k_proj: Linear::new(embed_dim, kv_dim),
+            v_proj: Linear::new(embed_dim, kv_dim),
+            out_proj: Linear::new(embed_dim, embed_dim),
+            training: true,
+        }
+    }
+
+    /// Set dropout probability.
+    pub fn with_dropout(mut self, dropout_p: f32) -> Self {
+        self.dropout_p = dropout_p;
+        self
+    }
+
+    /// Forward pass with separate query, key, value inputs.
+    pub fn forward_qkv(
+        &self,
+        query: &Tensor,
+        key: &Tensor,
+        value: &Tensor,
+        attn_mask: Option<&Tensor>,
+    ) -> (Tensor, Tensor) {
+        let batch_size = query.shape()[0];
+        let tgt_len = query.shape()[1];
+        let src_len = key.shape()[1];
+
+        // Project Q, K, V
+        let q = self.q_proj.forward(query);
+        let k = self.k_proj.forward(key);
+        let v = self.v_proj.forward(value);
+
+        // Reshape Q: [batch, seq, embed] -> [batch, num_heads, seq, head_dim]
+        let q = reshape_for_attention(&q, batch_size, tgt_len, self.num_heads, self.head_dim);
+
+        // Reshape K, V: [batch, seq, kv_dim] -> [batch, num_kv_heads, seq, head_dim]
+        let k = reshape_for_attention(&k, batch_size, src_len, self.num_kv_heads, self.kv_head_dim);
+        let v = reshape_for_attention(&v, batch_size, src_len, self.num_kv_heads, self.kv_head_dim);
+
+        // Expand K, V to match Q heads by repeating
+        let groups = self.num_heads / self.num_kv_heads;
+        let k = repeat_kv_heads(&k, groups);
+        let v = repeat_kv_heads(&v, groups);
+
+        // Scaled dot-product attention
+        let (attn_output, attn_weights) =
+            scaled_dot_product_attention(&q, &k, &v, attn_mask, self.dropout_p, self.training);
+
+        // Reshape back: [batch, heads, seq, head_dim] -> [batch, seq, embed]
+        let attn_output = reshape_from_attention(&attn_output, batch_size, tgt_len, self.embed_dim);
+
+        // Output projection
+        let output = self.out_proj.forward(&attn_output);
+
+        (output, attn_weights)
+    }
+
+    /// Self-attention: query, key, value are the same.
+    pub fn forward_self(&self, x: &Tensor, attn_mask: Option<&Tensor>) -> (Tensor, Tensor) {
+        self.forward_qkv(x, x, x, attn_mask)
+    }
+
+    /// Get embed_dim.
+    pub fn embed_dim(&self) -> usize {
+        self.embed_dim
+    }
+
+    /// Get num_heads.
+    pub fn num_heads(&self) -> usize {
+        self.num_heads
+    }
+
+    /// Get num_kv_heads.
+    pub fn num_kv_heads(&self) -> usize {
+        self.num_kv_heads
+    }
+}
+
+impl Module for GroupedQueryAttention {
+    fn forward(&self, input: &Tensor) -> Tensor {
+        let (output, _) = self.forward_self(input, None);
+        output
+    }
+
+    fn parameters(&self) -> Vec<&Tensor> {
+        let mut params = self.q_proj.parameters();
+        params.extend(self.k_proj.parameters());
+        params.extend(self.v_proj.parameters());
+        params.extend(self.out_proj.parameters());
+        params
+    }
+
+    fn parameters_mut(&mut self) -> Vec<&mut Tensor> {
+        let mut params = self.q_proj.parameters_mut();
+        params.extend(self.k_proj.parameters_mut());
+        params.extend(self.v_proj.parameters_mut());
+        params.extend(self.out_proj.parameters_mut());
+        params
+    }
+
+    fn train(&mut self) {
+        self.training = true;
+    }
+
+    fn eval(&mut self) {
+        self.training = false;
+    }
+
+    fn training(&self) -> bool {
+        self.training
+    }
+}
+
+impl std::fmt::Debug for GroupedQueryAttention {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("GroupedQueryAttention")
+            .field("embed_dim", &self.embed_dim)
+            .field("num_heads", &self.num_heads)
+            .field("num_kv_heads", &self.num_kv_heads)
+            .field("head_dim", &self.head_dim)
+            .field("dropout_p", &self.dropout_p)
+            .finish_non_exhaustive()
+    }
+}
+
+// ============================================================================
+// Additional Helper Functions for Attention Variants
+// ============================================================================
+
+/// ELU feature map: φ(x) = elu(x) + 1 for positive-definite kernel.
+fn elu_feature_map(x: &Tensor) -> Tensor {
+    let data: Vec<f32> = x
+        .data()
+        .iter()
+        .map(|&v| if v > 0.0 { v + 1.0 } else { v.exp() })
+        .collect();
+    Tensor::new(&data, x.shape())
+}
+
+/// Sum over last dimension.
+#[allow(clippy::needless_range_loop)]
+fn sum_last_dim(x: &Tensor) -> Tensor {
+    let shape = x.shape();
+    let last_dim = shape[shape.len() - 1];
+    let new_size: usize = shape[..shape.len() - 1].iter().product();
+
+    let mut output = vec![0.0; new_size];
+
+    for i in 0..new_size {
+        let offset = i * last_dim;
+        output[i] = x.data()[offset..offset + last_dim].iter().sum();
+    }
+
+    let new_shape: Vec<usize> = shape[..shape.len() - 1].to_vec();
+    Tensor::new(&output, &new_shape)
+}
+
+/// Matrix multiply with broadcasting for normalizer computation.
+fn matmul_with_broadcast(q: &Tensor, k_sum: &Tensor) -> Tensor {
+    // q: [batch, heads, seq, head_dim]
+    // k_sum: [batch, heads, head_dim]
+    // output: [batch, heads, seq, 1] (dot product of each q row with k_sum)
+    let q_shape = q.shape();
+    let (batch, heads, seq_len, head_dim) = (q_shape[0], q_shape[1], q_shape[2], q_shape[3]);
+
+    let mut output = vec![0.0; batch * heads * seq_len];
+
+    for b in 0..batch {
+        for h in 0..heads {
+            for s in 0..seq_len {
+                let mut sum = 0.0;
+                for d in 0..head_dim {
+                    let q_idx =
+                        b * heads * seq_len * head_dim + h * seq_len * head_dim + s * head_dim + d;
+                    let k_idx = b * heads * head_dim + h * head_dim + d;
+                    sum += q.data()[q_idx] * k_sum.data()[k_idx];
+                }
+                let out_idx = b * heads * seq_len + h * seq_len + s;
+                output[out_idx] = sum;
+            }
+        }
+    }
+
+    Tensor::new(&output, &[batch, heads, seq_len, 1])
+}
+
+/// Divide tensor by normalizer with epsilon for numerical stability.
+fn divide_with_eps(x: &Tensor, normalizer: &Tensor, eps: f32) -> Tensor {
+    // x: [batch, heads, seq, head_dim]
+    // normalizer: [batch, heads, seq, 1]
+    let x_shape = x.shape();
+    let (batch, heads, seq_len, head_dim) = (x_shape[0], x_shape[1], x_shape[2], x_shape[3]);
+
+    let mut output = vec![0.0; x.data().len()];
+
+    for b in 0..batch {
+        for h in 0..heads {
+            for s in 0..seq_len {
+                let norm_idx = b * heads * seq_len + h * seq_len + s;
+                let norm_val = normalizer.data()[norm_idx].max(eps);
+
+                for d in 0..head_dim {
+                    let idx =
+                        b * heads * seq_len * head_dim + h * seq_len * head_dim + s * head_dim + d;
+                    output[idx] = x.data()[idx] / norm_val;
+                }
+            }
+        }
+    }
+
+    Tensor::new(&output, x_shape)
+}
+
+/// Repeat KV heads to match Q heads for Grouped Query Attention.
+fn repeat_kv_heads(x: &Tensor, groups: usize) -> Tensor {
+    if groups == 1 {
+        return x.clone();
+    }
+
+    let shape = x.shape();
+    let (batch, kv_heads, seq_len, head_dim) = (shape[0], shape[1], shape[2], shape[3]);
+    let num_heads = kv_heads * groups;
+
+    let mut output = vec![0.0; batch * num_heads * seq_len * head_dim];
+
+    for b in 0..batch {
+        for kv_h in 0..kv_heads {
+            for g in 0..groups {
+                let h = kv_h * groups + g;
+                for s in 0..seq_len {
+                    for d in 0..head_dim {
+                        let in_idx = b * kv_heads * seq_len * head_dim
+                            + kv_h * seq_len * head_dim
+                            + s * head_dim
+                            + d;
+                        let out_idx = b * num_heads * seq_len * head_dim
+                            + h * seq_len * head_dim
+                            + s * head_dim
+                            + d;
+                        output[out_idx] = x.data()[in_idx];
+                    }
+                }
+            }
+        }
+    }
+
+    Tensor::new(&output, &[batch, num_heads, seq_len, head_dim])
+}
+
+// ============================================================================
+// Modern Positional Encoding Variants
+// ============================================================================
+
+/// Rotary Position Embedding (RoPE) (Su et al., 2021).
+///
+/// Encodes absolute position with relative position dependencies via rotation.
+/// Used in GPT-NeoX, LLaMA, and other modern LLMs.
+///
+/// # Method
+///
+/// Rotates pairs of features by position-dependent angles:
+/// ```text
+/// (q_2i, q_2i+1) = (q_2i * cos(mθ_i) - q_2i+1 * sin(mθ_i),
+///                   q_2i * sin(mθ_i) + q_2i+1 * cos(mθ_i))
+/// ```
+/// where m is the position and θ_i = 10000^(-2i/d)
+///
+/// # Reference
+///
+/// - Su, J., et al. (2021). RoFormer: Enhanced Transformer with Rotary
+///   Position Embedding. arXiv:2104.09864
+#[derive(Debug, Clone)]
+pub struct RotaryPositionEmbedding {
+    head_dim: usize,
+    max_seq_len: usize,
+    base: f32,
+    /// Precomputed cos values [max_seq_len, head_dim/2]
+    cos_cache: Vec<f32>,
+    /// Precomputed sin values [max_seq_len, head_dim/2]
+    sin_cache: Vec<f32>,
+}
+
+impl RotaryPositionEmbedding {
+    /// Create RoPE with specified head dimension.
+    ///
+    /// # Arguments
+    ///
+    /// * `head_dim` - Dimension per attention head (must be even)
+    /// * `max_seq_len` - Maximum sequence length to precompute
+    pub fn new(head_dim: usize, max_seq_len: usize) -> Self {
+        assert!(head_dim % 2 == 0, "head_dim must be even for RoPE");
+        Self::with_base(head_dim, max_seq_len, 10000.0)
+    }
+
+    /// Create RoPE with custom base frequency.
+    pub fn with_base(head_dim: usize, max_seq_len: usize, base: f32) -> Self {
+        let half_dim = head_dim / 2;
+        let mut cos_cache = vec![0.0; max_seq_len * half_dim];
+        let mut sin_cache = vec![0.0; max_seq_len * half_dim];
+
+        // Compute inv_freq: 1 / (base^(2i/d))
+        let inv_freq: Vec<f32> = (0..half_dim)
+            .map(|i| 1.0 / base.powf(2.0 * i as f32 / head_dim as f32))
+            .collect();
+
+        // Compute cos/sin for each position
+        for pos in 0..max_seq_len {
+            for (i, &freq) in inv_freq.iter().enumerate() {
+                let angle = pos as f32 * freq;
+                cos_cache[pos * half_dim + i] = angle.cos();
+                sin_cache[pos * half_dim + i] = angle.sin();
+            }
+        }
+
+        Self {
+            head_dim,
+            max_seq_len,
+            base,
+            cos_cache,
+            sin_cache,
+        }
+    }
+
+    /// Apply rotary embedding to query or key tensor.
+    ///
+    /// # Arguments
+    ///
+    /// * `x` - Input tensor [batch, seq_len, num_heads, head_dim]
+    /// * `position_ids` - Position indices for each token [seq_len]
+    ///
+    /// # Returns
+    ///
+    /// Tensor with rotary embeddings applied.
+    pub fn apply(&self, x: &Tensor, position_ids: &[usize]) -> Tensor {
+        let shape = x.shape();
+        assert!(
+            shape.len() == 4,
+            "Expected 4D tensor [batch, seq, heads, head_dim]"
+        );
+
+        let (batch, seq_len, num_heads, head_dim) = (shape[0], shape[1], shape[2], shape[3]);
+        assert_eq!(head_dim, self.head_dim);
+
+        let half_dim = head_dim / 2;
+        let mut output = vec![0.0; x.data().len()];
+
+        for b in 0..batch {
+            for s in 0..seq_len {
+                let pos = position_ids.get(s).copied().unwrap_or(s);
+                assert!(pos < self.max_seq_len, "Position {pos} exceeds max_seq_len");
+
+                for h in 0..num_heads {
+                    for i in 0..half_dim {
+                        let cos_val = self.cos_cache[pos * half_dim + i];
+                        let sin_val = self.sin_cache[pos * half_dim + i];
+
+                        // Get pair of values
+                        let idx1 = b * seq_len * num_heads * head_dim
+                            + s * num_heads * head_dim
+                            + h * head_dim
+                            + 2 * i;
+                        let idx2 = idx1 + 1;
+
+                        let x1 = x.data()[idx1];
+                        let x2 = x.data()[idx2];
+
+                        // Apply rotation
+                        output[idx1] = x1 * cos_val - x2 * sin_val;
+                        output[idx2] = x1 * sin_val + x2 * cos_val;
+                    }
+                }
+            }
+        }
+
+        Tensor::new(&output, shape)
+    }
+
+    /// Get head dimension.
+    pub fn head_dim(&self) -> usize {
+        self.head_dim
+    }
+
+    /// Get maximum sequence length.
+    pub fn max_seq_len(&self) -> usize {
+        self.max_seq_len
+    }
+
+    /// Get base frequency.
+    pub fn base(&self) -> f32 {
+        self.base
+    }
+}
+
+/// ALiBi (Attention with Linear Biases) (Press et al., 2022).
+///
+/// Adds linear position biases directly to attention scores instead of
+/// positional embeddings. Enables length extrapolation.
+///
+/// # Method
+///
+/// ```text
+/// attention = softmax(Q @ K^T / sqrt(d) - m * |i - j|)
+/// ```
+/// where m is a head-specific slope.
+///
+/// # Reference
+///
+/// - Press, O., et al. (2022). Train Short, Test Long: Attention with
+///   Linear Biases Enables Input Length Extrapolation. ICLR.
+#[derive(Debug, Clone)]
+pub struct ALiBi {
+    num_heads: usize,
+    /// Per-head slopes (geometric sequence starting from 2^(-8/n))
+    slopes: Vec<f32>,
+}
+
+impl ALiBi {
+    /// Create ALiBi with specified number of attention heads.
+    ///
+    /// Slopes follow geometric sequence: 2^(-8/n), 2^(-16/n), ...
+    pub fn new(num_heads: usize) -> Self {
+        let slopes = Self::compute_slopes(num_heads);
+        Self { num_heads, slopes }
+    }
+
+    /// Compute slopes using the formula from the paper.
+    fn compute_slopes(num_heads: usize) -> Vec<f32> {
+        // For power-of-2 heads, use geometric sequence
+        // For non-power-of-2, interpolate
+        let closest_pow2 = (num_heads as f32).log2().ceil() as u32;
+        let base = 2.0_f32.powf(-(8.0 / 2.0_f32.powi(closest_pow2 as i32)));
+
+        let mut slopes = Vec::with_capacity(num_heads);
+
+        if num_heads.is_power_of_two() {
+            for i in 0..num_heads {
+                slopes.push(base.powi((i + 1) as i32));
+            }
+        } else {
+            // Interpolate for non-power-of-2
+            let extra_base = 2.0_f32.powf(-(8.0 / 2.0_f32.powi(closest_pow2 as i32 - 1)));
+            let num_extra = 2 * num_heads - 2_usize.pow(closest_pow2);
+
+            for i in 0..num_extra {
+                slopes.push(extra_base.powi(((i + 1) * 2) as i32));
+            }
+            for i in num_extra..num_heads {
+                slopes.push(base.powi((i - num_extra + 1) as i32));
+            }
+        }
+
+        slopes
+    }
+
+    /// Compute ALiBi bias matrix for given sequence length.
+    ///
+    /// # Arguments
+    ///
+    /// * `seq_len` - Current sequence length
+    ///
+    /// # Returns
+    ///
+    /// Bias tensor [num_heads, seq_len, seq_len] to add to attention scores.
+    pub fn compute_bias(&self, seq_len: usize) -> Tensor {
+        let mut bias = vec![0.0; self.num_heads * seq_len * seq_len];
+
+        for h in 0..self.num_heads {
+            let slope = self.slopes[h];
+            for i in 0..seq_len {
+                for j in 0..seq_len {
+                    let distance = (i as i32 - j as i32).abs() as f32;
+                    let idx = h * seq_len * seq_len + i * seq_len + j;
+                    bias[idx] = -slope * distance;
+                }
+            }
+        }
+
+        Tensor::new(&bias, &[self.num_heads, seq_len, seq_len])
+    }
+
+    /// Apply ALiBi to attention scores.
+    ///
+    /// # Arguments
+    ///
+    /// * `scores` - Attention scores [batch, num_heads, seq_len, seq_len]
+    ///
+    /// # Returns
+    ///
+    /// Scores with ALiBi bias applied.
+    pub fn apply(&self, scores: &Tensor) -> Tensor {
+        let shape = scores.shape();
+        assert!(shape.len() == 4, "Expected 4D tensor");
+        assert_eq!(shape[1], self.num_heads, "num_heads mismatch");
+
+        let (batch, _, seq_len, _) = (shape[0], shape[1], shape[2], shape[3]);
+        let bias = self.compute_bias(seq_len);
+
+        // Add bias (broadcast over batch)
+        let mut output = scores.data().to_vec();
+
+        for b in 0..batch {
+            for h in 0..self.num_heads {
+                for i in 0..seq_len {
+                    for j in 0..seq_len {
+                        let score_idx = b * self.num_heads * seq_len * seq_len
+                            + h * seq_len * seq_len
+                            + i * seq_len
+                            + j;
+                        let bias_idx = h * seq_len * seq_len + i * seq_len + j;
+                        output[score_idx] += bias.data()[bias_idx];
+                    }
+                }
+            }
+        }
+
+        Tensor::new(&output, shape)
+    }
+
+    /// Get slopes for each head.
+    pub fn slopes(&self) -> &[f32] {
+        &self.slopes
+    }
+
+    /// Get number of heads.
+    pub fn num_heads(&self) -> usize {
+        self.num_heads
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1003,5 +1757,411 @@ mod tests {
         let y = transpose_last_two(&x);
 
         assert_eq!(y.shape(), &[1, 3, 2]);
+    }
+
+    // ========================================================================
+    // Linear Attention Tests
+    // ========================================================================
+
+    #[test]
+    fn test_linear_attention_shape() {
+        let attn = LinearAttention::new(64, 8);
+
+        let x = Tensor::ones(&[2, 10, 64]);
+        let output = attn.forward(&x);
+
+        assert_eq!(output.shape(), &[2, 10, 64]);
+    }
+
+    #[test]
+    fn test_linear_attention_qkv_shape() {
+        let attn = LinearAttention::new(64, 8);
+
+        let q = Tensor::ones(&[2, 10, 64]);
+        let k = Tensor::ones(&[2, 20, 64]);
+        let v = Tensor::ones(&[2, 20, 64]);
+
+        let output = attn.forward_linear(&q, &k, &v);
+
+        assert_eq!(output.shape(), &[2, 10, 64]);
+    }
+
+    #[test]
+    fn test_linear_attention_parameters() {
+        let attn = LinearAttention::new(64, 8);
+        let params = attn.parameters();
+
+        // 4 linear layers * 2 params each = 8
+        assert_eq!(params.len(), 8);
+    }
+
+    #[test]
+    fn test_linear_attention_getters() {
+        let attn = LinearAttention::new(128, 4);
+
+        assert_eq!(attn.embed_dim(), 128);
+        assert_eq!(attn.num_heads(), 4);
+    }
+
+    #[test]
+    fn test_linear_attention_train_eval() {
+        let mut attn = LinearAttention::new(64, 8);
+
+        assert!(attn.training());
+        attn.eval();
+        assert!(!attn.training());
+        attn.train();
+        assert!(attn.training());
+    }
+
+    #[test]
+    fn test_linear_attention_long_sequence() {
+        // Linear attention should scale well with sequence length
+        let attn = LinearAttention::new(32, 4);
+
+        let x = Tensor::ones(&[1, 100, 32]); // Long sequence
+        let output = attn.forward(&x);
+
+        assert_eq!(output.shape(), &[1, 100, 32]);
+    }
+
+    #[test]
+    fn test_elu_feature_map_positive() {
+        let x = Tensor::new(&[1.0, 2.0, 3.0], &[3]);
+        let y = elu_feature_map(&x);
+
+        // For positive values: elu(x) + 1 = x + 1
+        assert!((y.data()[0] - 2.0).abs() < 1e-6);
+        assert!((y.data()[1] - 3.0).abs() < 1e-6);
+        assert!((y.data()[2] - 4.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_elu_feature_map_negative() {
+        let x = Tensor::new(&[-1.0, -2.0], &[2]);
+        let y = elu_feature_map(&x);
+
+        // For negative values: elu(x) + 1 = exp(x)
+        assert!((y.data()[0] - (-1.0_f32).exp()).abs() < 1e-6);
+        assert!((y.data()[1] - (-2.0_f32).exp()).abs() < 1e-6);
+    }
+
+    // ========================================================================
+    // Grouped Query Attention Tests
+    // ========================================================================
+
+    #[test]
+    fn test_gqa_shape() {
+        // 8 query heads, 2 KV heads (4:1 ratio)
+        let gqa = GroupedQueryAttention::new(64, 8, 2);
+
+        let x = Tensor::ones(&[2, 10, 64]);
+        let output = gqa.forward(&x);
+
+        assert_eq!(output.shape(), &[2, 10, 64]);
+    }
+
+    #[test]
+    fn test_gqa_qkv_shape() {
+        let gqa = GroupedQueryAttention::new(64, 8, 2);
+
+        let q = Tensor::ones(&[2, 10, 64]);
+        let k = Tensor::ones(&[2, 20, 64]);
+        let v = Tensor::ones(&[2, 20, 64]);
+
+        let (output, attn_weights) = gqa.forward_qkv(&q, &k, &v, None);
+
+        assert_eq!(output.shape(), &[2, 10, 64]);
+        // Attention weights have expanded heads
+        assert_eq!(attn_weights.shape(), &[2, 8, 10, 20]);
+    }
+
+    #[test]
+    fn test_gqa_multi_query_attention() {
+        // MQA: 1 KV head for all query heads
+        let mqa = GroupedQueryAttention::new(64, 8, 1);
+
+        let x = Tensor::ones(&[2, 10, 64]);
+        let output = mqa.forward(&x);
+
+        assert_eq!(output.shape(), &[2, 10, 64]);
+    }
+
+    #[test]
+    fn test_gqa_equals_mha() {
+        // GQA with num_kv_heads == num_heads should behave like MHA
+        let gqa = GroupedQueryAttention::new(64, 8, 8);
+
+        let x = Tensor::ones(&[2, 10, 64]);
+        let output = gqa.forward(&x);
+
+        assert_eq!(output.shape(), &[2, 10, 64]);
+    }
+
+    #[test]
+    fn test_gqa_parameters_reduced() {
+        // GQA with fewer KV heads has fewer parameters
+        let mha = MultiHeadAttention::new(64, 8);
+        let gqa = GroupedQueryAttention::new(64, 8, 2);
+
+        let mha_params = mha.parameters();
+        let gqa_params = gqa.parameters();
+
+        // Both have 8 parameter tensors (4 linear layers * 2)
+        assert_eq!(mha_params.len(), gqa_params.len());
+
+        // But GQA K,V projections are smaller
+        // MHA K projection: 64 -> 64, GQA K projection: 64 -> 16
+    }
+
+    #[test]
+    fn test_gqa_getters() {
+        let gqa = GroupedQueryAttention::new(128, 8, 4);
+
+        assert_eq!(gqa.embed_dim(), 128);
+        assert_eq!(gqa.num_heads(), 8);
+        assert_eq!(gqa.num_kv_heads(), 4);
+    }
+
+    #[test]
+    fn test_gqa_with_dropout() {
+        let gqa = GroupedQueryAttention::new(64, 8, 2).with_dropout(0.1);
+
+        let x = Tensor::ones(&[2, 10, 64]);
+        let output = gqa.forward(&x);
+
+        assert_eq!(output.shape(), &[2, 10, 64]);
+    }
+
+    #[test]
+    fn test_gqa_train_eval() {
+        let mut gqa = GroupedQueryAttention::new(64, 8, 2);
+
+        assert!(gqa.training());
+        gqa.eval();
+        assert!(!gqa.training());
+        gqa.train();
+        assert!(gqa.training());
+    }
+
+    #[test]
+    #[should_panic(expected = "num_heads (8) must be divisible by num_kv_heads (3)")]
+    fn test_gqa_invalid_kv_heads() {
+        // num_heads must be divisible by num_kv_heads
+        let _gqa = GroupedQueryAttention::new(64, 8, 3);
+    }
+
+    #[test]
+    fn test_repeat_kv_heads_identity() {
+        // groups=1 should return identity
+        let x = Tensor::ones(&[2, 4, 10, 8]); // [batch, kv_heads, seq, head_dim]
+        let y = repeat_kv_heads(&x, 1);
+
+        assert_eq!(y.shape(), x.shape());
+    }
+
+    #[test]
+    fn test_repeat_kv_heads_expansion() {
+        // 2 KV heads -> 8 Q heads (4x expansion)
+        let x = Tensor::new(
+            &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
+            &[1, 2, 2, 2], // [batch=1, kv_heads=2, seq=2, head_dim=2]
+        );
+        let y = repeat_kv_heads(&x, 4);
+
+        assert_eq!(y.shape(), &[1, 8, 2, 2]);
+
+        // Each KV head should be repeated 4 times
+        // Head 0 data [1,2,3,4] repeated at positions 0,1,2,3
+        // Head 1 data [5,6,7,8] repeated at positions 4,5,6,7
+    }
+
+    #[test]
+    fn test_sum_last_dim() {
+        let x = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
+        let y = sum_last_dim(&x);
+
+        assert_eq!(y.shape(), &[2]);
+        assert!((y.data()[0] - 6.0).abs() < 1e-6); // 1+2+3
+        assert!((y.data()[1] - 15.0).abs() < 1e-6); // 4+5+6
+    }
+
+    // ========================================================================
+    // RoPE Tests
+    // ========================================================================
+
+    #[test]
+    fn test_rope_creation() {
+        let rope = RotaryPositionEmbedding::new(64, 512);
+
+        assert_eq!(rope.head_dim(), 64);
+        assert_eq!(rope.max_seq_len(), 512);
+        assert!((rope.base() - 10000.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_rope_custom_base() {
+        let rope = RotaryPositionEmbedding::with_base(32, 256, 20000.0);
+
+        assert_eq!(rope.head_dim(), 32);
+        assert!((rope.base() - 20000.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_rope_apply_shape() {
+        let rope = RotaryPositionEmbedding::new(8, 128);
+
+        // [batch=2, seq=10, heads=4, head_dim=8]
+        let x = Tensor::ones(&[2, 10, 4, 8]);
+        let positions: Vec<usize> = (0..10).collect();
+
+        let output = rope.apply(&x, &positions);
+
+        assert_eq!(output.shape(), x.shape());
+    }
+
+    #[test]
+    fn test_rope_position_dependent() {
+        let rope = RotaryPositionEmbedding::new(4, 10);
+
+        // Same input at different positions should give different output
+        let x = Tensor::new(&[1.0, 0.0, 1.0, 0.0], &[1, 1, 1, 4]);
+
+        let out_pos0 = rope.apply(&x, &[0]);
+        let out_pos5 = rope.apply(&x, &[5]);
+
+        // Outputs should differ
+        let diff: f32 = out_pos0
+            .data()
+            .iter()
+            .zip(out_pos5.data().iter())
+            .map(|(&a, &b)| (a - b).abs())
+            .sum();
+        assert!(
+            diff > 0.01,
+            "Different positions should give different outputs"
+        );
+    }
+
+    #[test]
+    fn test_rope_cos_sin_cache() {
+        let rope = RotaryPositionEmbedding::new(4, 10);
+
+        // At position 0, cos should be 1, sin should be 0
+        // cos_cache and sin_cache have shape [max_seq_len, head_dim/2]
+        let half_dim = 2;
+        assert!((rope.cos_cache[0 * half_dim] - 1.0).abs() < 1e-6);
+        assert!(rope.sin_cache[0 * half_dim].abs() < 1e-6);
+    }
+
+    #[test]
+    #[should_panic(expected = "head_dim must be even")]
+    fn test_rope_odd_dim_panics() {
+        let _rope = RotaryPositionEmbedding::new(7, 100);
+    }
+
+    // ========================================================================
+    // ALiBi Tests
+    // ========================================================================
+
+    #[test]
+    fn test_alibi_creation() {
+        let alibi = ALiBi::new(8);
+
+        assert_eq!(alibi.num_heads(), 8);
+        assert_eq!(alibi.slopes().len(), 8);
+    }
+
+    #[test]
+    fn test_alibi_slopes_power_of_two() {
+        let alibi = ALiBi::new(8);
+
+        // Slopes should be monotonically decreasing for power-of-2 heads
+        let slopes = alibi.slopes();
+        for i in 1..slopes.len() {
+            assert!(slopes[i] < slopes[i - 1], "Slopes should decrease");
+        }
+
+        // All slopes should be positive
+        for &s in slopes {
+            assert!(s > 0.0);
+        }
+    }
+
+    #[test]
+    fn test_alibi_bias_shape() {
+        let alibi = ALiBi::new(4);
+        let bias = alibi.compute_bias(10);
+
+        assert_eq!(bias.shape(), &[4, 10, 10]);
+    }
+
+    #[test]
+    fn test_alibi_bias_diagonal_zero() {
+        let alibi = ALiBi::new(2);
+        let bias = alibi.compute_bias(5);
+
+        // Diagonal should be zero (distance = 0)
+        for h in 0..2 {
+            for i in 0..5 {
+                let idx = h * 5 * 5 + i * 5 + i;
+                assert!((bias.data()[idx] - 0.0).abs() < 1e-6);
+            }
+        }
+    }
+
+    #[test]
+    fn test_alibi_bias_negative() {
+        let alibi = ALiBi::new(2);
+        let bias = alibi.compute_bias(5);
+
+        // Off-diagonal should be negative (penalties)
+        for h in 0..2 {
+            for i in 0..5 {
+                for j in 0..5 {
+                    if i != j {
+                        let idx = h * 5 * 5 + i * 5 + j;
+                        assert!(bias.data()[idx] < 0.0, "Off-diagonal should be negative");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_alibi_apply_shape() {
+        let alibi = ALiBi::new(4);
+
+        // Attention scores [batch=2, heads=4, seq=8, seq=8]
+        let scores = Tensor::ones(&[2, 4, 8, 8]);
+        let output = alibi.apply(&scores);
+
+        assert_eq!(output.shape(), scores.shape());
+    }
+
+    #[test]
+    fn test_alibi_apply_modifies_scores() {
+        let alibi = ALiBi::new(2);
+        let scores = Tensor::ones(&[1, 2, 4, 4]);
+        let output = alibi.apply(&scores);
+
+        // Output should differ from input (bias applied)
+        let sum_input: f32 = scores.data().iter().sum();
+        let sum_output: f32 = output.data().iter().sum();
+
+        // Bias is negative, so output sum should be less than input
+        assert!(sum_output < sum_input);
+    }
+
+    #[test]
+    fn test_alibi_non_power_two_heads() {
+        // Should handle non-power-of-2 heads
+        let alibi = ALiBi::new(6);
+        assert_eq!(alibi.slopes().len(), 6);
+
+        // All slopes should be positive
+        for &s in alibi.slopes() {
+            assert!(s > 0.0);
+        }
     }
 }

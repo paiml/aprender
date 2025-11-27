@@ -11,7 +11,7 @@
 //! - **Layers**: [`Linear`], [`Conv1d`], [`Conv2d`], [`Flatten`]
 //! - **Pooling**: [`MaxPool1d`], [`MaxPool2d`], [`AvgPool2d`], [`GlobalAvgPool2d`]
 //! - **Activations**: [`ReLU`], [`Sigmoid`], [`Tanh`], [`GELU`]
-//! - **Normalization**: [`BatchNorm1d`], [`LayerNorm`], [`GroupNorm`], [`InstanceNorm`]
+//! - **Normalization**: [`BatchNorm1d`], [`LayerNorm`], [`GroupNorm`], [`InstanceNorm`], [`RMSNorm`]
 //! - **Regularization**: [`Dropout`], [`Dropout2d`], [`AlphaDropout`]
 //! - **Containers**: [`Sequential`], [`ModuleList`], [`ModuleDict`]
 //!
@@ -48,20 +48,25 @@ mod container;
 mod conv;
 mod dropout;
 pub mod functional;
+pub mod generation;
 mod init;
 mod linear;
 pub mod loss;
 mod module;
 mod normalization;
 pub mod optim;
+pub mod quantization;
+mod rnn;
 pub mod scheduler;
+pub mod self_supervised;
 pub mod serialize;
 mod transformer;
+pub mod vae;
 
 pub use activation::{LeakyReLU, ReLU, Sigmoid, Softmax, Tanh, GELU};
 pub use container::{ModuleDict, ModuleList, Sequential};
 pub use conv::{AvgPool2d, Conv1d, Conv2d, Flatten, GlobalAvgPool2d, MaxPool1d, MaxPool2d};
-pub use dropout::{AlphaDropout, Dropout, Dropout2d};
+pub use dropout::{AlphaDropout, DropBlock, DropConnect, Dropout, Dropout2d};
 pub use functional as F;
 pub use init::{kaiming_normal, kaiming_uniform, xavier_normal, xavier_uniform};
 pub use linear::Linear;
@@ -69,13 +74,14 @@ pub use loss::{
     BCEWithLogitsLoss, CrossEntropyLoss, L1Loss, MSELoss, NLLLoss, Reduction, SmoothL1Loss,
 };
 pub use module::Module;
-pub use normalization::{BatchNorm1d, GroupNorm, InstanceNorm, LayerNorm};
+pub use normalization::{BatchNorm1d, GroupNorm, InstanceNorm, LayerNorm, RMSNorm};
 pub use optim::{Adam, AdamW, Optimizer, RMSprop, SGD};
+pub use rnn::{Bidirectional, GRU, LSTM};
 pub use scheduler::{
     CosineAnnealingLR, ExponentialLR, LRScheduler, LinearWarmup, PlateauMode, ReduceLROnPlateau,
     StepLR, WarmupCosineScheduler,
 };
 pub use transformer::{
-    generate_causal_mask, MultiHeadAttention, PositionalEncoding, TransformerDecoderLayer,
-    TransformerEncoderLayer,
+    generate_causal_mask, ALiBi, GroupedQueryAttention, LinearAttention, MultiHeadAttention,
+    PositionalEncoding, RotaryPositionEmbedding, TransformerDecoderLayer, TransformerEncoderLayer,
 };

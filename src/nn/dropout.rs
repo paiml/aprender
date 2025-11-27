@@ -377,6 +377,272 @@ impl std::fmt::Debug for AlphaDropout {
     }
 }
 
+/// DropBlock regularization (Ghiasi et al., 2018).
+///
+/// Drops contiguous regions (blocks) rather than individual elements.
+/// More effective for convolutional networks than standard dropout.
+///
+/// # Reference
+/// Ghiasi, G., et al. (2018). DropBlock: A regularization technique for CNNs.
+pub struct DropBlock {
+    block_size: usize,
+    p: f32,
+    training: bool,
+    rng: Mutex<StdRng>,
+}
+
+impl DropBlock {
+    /// Create DropBlock with given block size and drop probability.
+    pub fn new(block_size: usize, p: f32) -> Self {
+        assert!(
+            (0.0..1.0).contains(&p),
+            "Drop probability must be in [0, 1)"
+        );
+        assert!(block_size > 0, "Block size must be > 0");
+        Self {
+            block_size,
+            p,
+            training: true,
+            rng: Mutex::new(StdRng::from_entropy()),
+        }
+    }
+
+    /// Create with specific seed.
+    pub fn with_seed(block_size: usize, p: f32, seed: u64) -> Self {
+        assert!(
+            (0.0..1.0).contains(&p),
+            "Drop probability must be in [0, 1)"
+        );
+        Self {
+            block_size,
+            p,
+            training: true,
+            rng: Mutex::new(StdRng::seed_from_u64(seed)),
+        }
+    }
+
+    pub fn block_size(&self) -> usize {
+        self.block_size
+    }
+
+    pub fn p(&self) -> f32 {
+        self.p
+    }
+}
+
+impl Module for DropBlock {
+    #[allow(clippy::range_plus_one)]
+    fn forward(&self, input: &Tensor) -> Tensor {
+        if !self.training || self.p == 0.0 {
+            return input.clone();
+        }
+
+        let shape = input.shape();
+        if shape.len() != 4 {
+            // Not 4D (N, C, H, W), fall back to regular dropout
+            return apply_dropout(input, self.p, &self.rng);
+        }
+
+        let (n, c, h, w) = (shape[0], shape[1], shape[2], shape[3]);
+        let block_size = self.block_size.min(h).min(w);
+
+        // Compute gamma (probability of dropping a center point)
+        let gamma = self.p / (block_size * block_size) as f32 * (h * w) as f32
+            / ((h - block_size + 1) * (w - block_size + 1)) as f32;
+
+        let mut rng = self.rng.lock().expect("DropBlock RNG lock");
+        let mut mask = vec![1.0_f32; n * c * h * w];
+
+        // Sample block centers and create mask
+        for batch in 0..n {
+            for ch in 0..c {
+                for i in 0..(h - block_size + 1) {
+                    for j in 0..(w - block_size + 1) {
+                        if rng.gen::<f32>() < gamma {
+                            // Drop block
+                            for bi in 0..block_size {
+                                for bj in 0..block_size {
+                                    let idx =
+                                        batch * c * h * w + ch * h * w + (i + bi) * w + (j + bj);
+                                    mask[idx] = 0.0;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Normalize by keep ratio
+        let kept: f32 = mask.iter().sum();
+        let total = mask.len() as f32;
+        let norm = total / kept.max(1.0);
+
+        let data: Vec<f32> = input
+            .data()
+            .iter()
+            .zip(mask.iter())
+            .map(|(&x, &m)| x * m * norm)
+            .collect();
+
+        Tensor::new(&data, shape)
+    }
+
+    fn train(&mut self) {
+        self.training = true;
+    }
+    fn eval(&mut self) {
+        self.training = false;
+    }
+    fn training(&self) -> bool {
+        self.training
+    }
+}
+
+impl std::fmt::Debug for DropBlock {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DropBlock")
+            .field("block_size", &self.block_size)
+            .field("p", &self.p)
+            .field("training", &self.training)
+            .finish_non_exhaustive()
+    }
+}
+
+/// DropConnect regularization (Wan et al., 2013).
+///
+/// Drops weights instead of activations. Each weight has probability p
+/// of being set to zero during training.
+///
+/// More general than Dropout - Dropout is DropConnect with identity weight matrix.
+///
+/// # Reference
+/// Wan, L., et al. (2013). Regularization of Neural Networks using DropConnect. ICML.
+pub struct DropConnect {
+    /// Probability of weight being zeroed
+    p: f32,
+    /// Whether in training mode
+    training: bool,
+    /// Random number generator
+    rng: Mutex<StdRng>,
+}
+
+impl DropConnect {
+    /// Create new DropConnect with drop probability.
+    pub fn new(p: f32) -> Self {
+        assert!(
+            (0.0..1.0).contains(&p),
+            "Drop probability must be in [0, 1), got {p}"
+        );
+        Self {
+            p,
+            training: true,
+            rng: Mutex::new(StdRng::from_entropy()),
+        }
+    }
+
+    /// Create DropConnect with specific seed.
+    pub fn with_seed(p: f32, seed: u64) -> Self {
+        assert!(
+            (0.0..1.0).contains(&p),
+            "Drop probability must be in [0, 1), got {p}"
+        );
+        Self {
+            p,
+            training: true,
+            rng: Mutex::new(StdRng::seed_from_u64(seed)),
+        }
+    }
+
+    pub fn probability(&self) -> f32 {
+        self.p
+    }
+
+    /// Apply DropConnect to weight matrix.
+    /// Returns masked weights (zeros some weights during training).
+    pub fn apply_to_weights(&self, weights: &Tensor) -> Tensor {
+        if !self.training || self.p == 0.0 {
+            return weights.clone();
+        }
+
+        let mut rng = self.rng.lock().expect("DropConnect RNG lock");
+        let scale = 1.0 / (1.0 - self.p);
+
+        let data: Vec<f32> = weights
+            .data()
+            .iter()
+            .map(|&w| {
+                if rng.gen::<f32>() < self.p {
+                    0.0
+                } else {
+                    w * scale
+                }
+            })
+            .collect();
+
+        Tensor::new(&data, weights.shape())
+    }
+}
+
+impl Module for DropConnect {
+    fn forward(&self, input: &Tensor) -> Tensor {
+        // DropConnect typically applied to weights, but for Module interface
+        // we apply element-wise like dropout (for flexibility)
+        if !self.training || self.p == 0.0 {
+            return input.clone();
+        }
+
+        let mut rng = self.rng.lock().expect("DropConnect RNG lock");
+        let scale = 1.0 / (1.0 - self.p);
+
+        let data: Vec<f32> = input
+            .data()
+            .iter()
+            .map(|&x| {
+                if rng.gen::<f32>() < self.p {
+                    0.0
+                } else {
+                    x * scale
+                }
+            })
+            .collect();
+
+        Tensor::new(&data, input.shape())
+    }
+
+    fn train(&mut self) {
+        self.training = true;
+    }
+
+    fn eval(&mut self) {
+        self.training = false;
+    }
+
+    fn training(&self) -> bool {
+        self.training
+    }
+}
+
+impl std::fmt::Debug for DropConnect {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DropConnect")
+            .field("p", &self.p)
+            .field("training", &self.training)
+            .finish_non_exhaustive()
+    }
+}
+
+fn apply_dropout(input: &Tensor, p: f32, rng: &Mutex<StdRng>) -> Tensor {
+    let mut rng = rng.lock().expect("RNG lock");
+    let scale = 1.0 / (1.0 - p);
+    let data: Vec<f32> = input
+        .data()
+        .iter()
+        .map(|&x| if rng.gen::<f32>() < p { 0.0 } else { x * scale })
+        .collect();
+    Tensor::new(&data, input.shape())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -604,5 +870,133 @@ mod tests {
 
         dropout.train();
         assert!(dropout.training());
+    }
+
+    // DropBlock tests
+
+    #[test]
+    fn test_dropblock_creation() {
+        let db = DropBlock::new(3, 0.1);
+        assert_eq!(db.block_size(), 3);
+        assert_eq!(db.p(), 0.1);
+    }
+
+    #[test]
+    fn test_dropblock_eval_mode() {
+        let mut db = DropBlock::new(3, 0.5);
+        db.eval();
+
+        let x = Tensor::ones(&[2, 4, 8, 8]);
+        let y = db.forward(&x);
+
+        assert_eq!(y.data(), x.data());
+    }
+
+    #[test]
+    fn test_dropblock_train_mode() {
+        let db = DropBlock::with_seed(3, 0.3, 42);
+
+        let x = Tensor::ones(&[1, 2, 8, 8]);
+        let y = db.forward(&x);
+
+        assert_eq!(y.shape(), x.shape());
+        // Should have some zeros (blocks dropped)
+        let num_zeros = y.data().iter().filter(|&&v| v == 0.0).count();
+        assert!(num_zeros > 0);
+    }
+
+    #[test]
+    fn test_dropblock_train_eval_toggle() {
+        let mut db = DropBlock::new(3, 0.1);
+
+        assert!(db.training());
+        db.eval();
+        assert!(!db.training());
+        db.train();
+        assert!(db.training());
+    }
+
+    #[test]
+    fn test_dropblock_non_4d_fallback() {
+        let db = DropBlock::with_seed(3, 0.3, 42);
+
+        let x = Tensor::ones(&[10, 10]); // 2D, not 4D
+        let y = db.forward(&x);
+
+        assert_eq!(y.shape(), x.shape());
+    }
+
+    #[test]
+    fn test_dropblock_zero_prob() {
+        let db = DropBlock::new(3, 0.0);
+
+        let x = Tensor::ones(&[1, 2, 8, 8]);
+        let y = db.forward(&x);
+
+        assert_eq!(y.data(), x.data());
+    }
+
+    // DropConnect tests
+    #[test]
+    fn test_dropconnect_creation() {
+        let dc = DropConnect::new(0.5);
+        assert_eq!(dc.probability(), 0.5);
+        assert!(dc.training());
+    }
+
+    #[test]
+    fn test_dropconnect_eval_mode() {
+        let mut dc = DropConnect::new(0.5);
+        dc.eval();
+
+        let x = Tensor::ones(&[10, 10]);
+        let y = dc.forward(&x);
+
+        assert_eq!(y.data(), x.data());
+    }
+
+    #[test]
+    fn test_dropconnect_train_mode() {
+        let dc = DropConnect::with_seed(0.5, 42);
+
+        let x = Tensor::ones(&[100]);
+        let y = dc.forward(&x);
+
+        let num_zeros = y.data().iter().filter(|&&v| v == 0.0).count();
+        assert!(num_zeros > 0);
+        assert!(num_zeros < 100);
+    }
+
+    #[test]
+    fn test_dropconnect_apply_to_weights() {
+        let dc = DropConnect::with_seed(0.5, 42);
+
+        let weights = Tensor::ones(&[4, 4]);
+        let masked = dc.apply_to_weights(&weights);
+
+        assert_eq!(masked.shape(), weights.shape());
+        let num_zeros = masked.data().iter().filter(|&&v| v == 0.0).count();
+        assert!(num_zeros > 0);
+    }
+
+    #[test]
+    fn test_dropconnect_zero_prob() {
+        let dc = DropConnect::new(0.0);
+
+        let x = Tensor::ones(&[10]);
+        let y = dc.forward(&x);
+
+        assert_eq!(y.data(), x.data());
+    }
+
+    #[test]
+    fn test_dropconnect_train_eval_toggle() {
+        let mut dc = DropConnect::new(0.5);
+
+        assert!(dc.training());
+        dc.eval();
+        assert!(!dc.training());
+        dc.train();
+        assert!(dc.training());
     }
 }

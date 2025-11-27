@@ -8,7 +8,7 @@ updated: 2025-11-24T22:36:39.711447967+00:00
 
 # Implement Content-Based Recommender with HNSW (Phase 1) Specification
 
-**GitHub Issue**: [#71](https://github.com/YOUR_ORG/YOUR_REPO/issues/71)
+**GitHub Issue**: [#71](https://github.com/paiml/aprender/issues/71)
 **Status**: In Progress
 
 ## Summary

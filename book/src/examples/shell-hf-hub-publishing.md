@@ -2,6 +2,20 @@
 
 Share your trained shell completion models with the community via Hugging Face Hub.
 
+## Official Base Model
+
+A pre-trained base model is available for immediate use:
+
+**[paiml/aprender-shell-base](https://huggingface.co/paiml/aprender-shell-base)**
+
+```bash
+# Download and use
+huggingface-cli download paiml/aprender-shell-base model.apr --local-dir ~/.aprender
+aprender-shell suggest "git " -m ~/.aprender/model.apr
+```
+
+The base model is trained on 401 synthetic developer commands (git, cargo, docker, kubectl, npm, python, aws, terraform) and contains no personal data.
+
 ## Overview
 
 The `publish` command uploads your model to Hugging Face Hub, automatically generating:
@@ -177,11 +191,13 @@ Curate models for specific domains:
 Browse community models:
 
 ```bash
-# Search HF Hub
+# Official base model (recommended starting point)
+huggingface-cli download paiml/aprender-shell-base model.apr
+
+# Search HF Hub for more
 huggingface-cli search aprender shell-completion
 
-# Download
-huggingface-cli download paiml/devops-completions model.apr
+# Use any model
 aprender-shell suggest "kubectl " -m model.apr
 ```
 
@@ -249,5 +265,5 @@ The implementation uses the official `hf-hub` crate by Hugging Face for API comp
 ## Related
 
 - [Shell Completion](./shell-completion.md) - Training and usage
-- [Model Cards](../ml-fundamentals/model-cards.md) - Metadata specification
+- Model Cards - Metadata specification (planned)
 - [Model Format (.apr)](./model-format.md) - Binary format details
