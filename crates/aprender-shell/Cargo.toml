@@ -1,6 +1,6 @@
 [package]
 name = "aprender-shell"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 authors = ["paiml"]
 description = "AI-powered shell completion trained on your history"
@@ -27,9 +27,8 @@ name = "recommendation_latency"
 harness = false
 
 [dependencies]
-# Use path dependency for development (mmap is automatic on native platforms)
-# TODO: Switch to aprender = "0.11" after next release
-aprender = { path = "../..", features = ["format-encryption", "format-compression", "format-homomorphic"] }
+# Use crates.io version for release
+aprender = { version = "0.11", features = ["format-encryption", "format-compression", "format-homomorphic"] }
 clap = { version = "4", features = ["derive"] }
 dirs = "5"
 serde = { version = "1", features = ["derive"] }
