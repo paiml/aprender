@@ -104,6 +104,32 @@ enum Commands {
     /// Generate ZSH widget code
     ZshWidget,
 
+    /// Generate Fish shell widget code
+    FishWidget,
+
+    /// Uninstall widget from shell config
+    Uninstall {
+        /// Target ZSH shell (~/.zshrc)
+        #[arg(long)]
+        zsh: bool,
+
+        /// Target Bash shell (~/.bashrc)
+        #[arg(long)]
+        bash: bool,
+
+        /// Target Fish shell (~/.config/fish/config.fish)
+        #[arg(long)]
+        fish: bool,
+
+        /// Keep model file (don't delete ~/.aprender-shell.model)
+        #[arg(long)]
+        keep_model: bool,
+
+        /// Show what would be removed without doing it
+        #[arg(long)]
+        dry_run: bool,
+    },
+
     /// Validate model accuracy using holdout evaluation
     Validate {
         /// Path to history file (default: auto-detect)
@@ -227,6 +253,18 @@ fn main() {
         }
         Commands::ZshWidget => {
             cmd_zsh_widget();
+        }
+        Commands::FishWidget => {
+            cmd_fish_widget();
+        }
+        Commands::Uninstall {
+            zsh,
+            bash,
+            fish,
+            keep_model,
+            dry_run,
+        } => {
+            cmd_uninstall(zsh, bash, fish, keep_model, dry_run);
         }
         Commands::Validate {
             history,
@@ -510,14 +548,24 @@ fn cmd_import(input: &PathBuf, output: &str) {
 
 fn cmd_zsh_widget() {
     print!(
-        r#"# aprender-shell ZSH widget
+        r#"# >>> aprender-shell widget >>>
+# aprender-shell ZSH widget v2
 # Add this to your ~/.zshrc
+# Toggle: export APRENDER_DISABLED=1 to disable
+# Uninstall: aprender-shell uninstall --zsh
 
 _aprender_suggest() {{
+    # Skip if disabled or buffer too short
+    [[ "${{APRENDER_DISABLED:-0}}" == "1" ]] && return
+    [[ "${{#BUFFER}}" -lt 2 ]] && {{ POSTDISPLAY=''; return; }}
+
     local suggestion
-    suggestion=$(aprender-shell suggest "$BUFFER" 2>/dev/null | head -1 | cut -f1)
-    if [[ -n "$suggestion" ]]; then
-        POSTDISPLAY=" ${{suggestion#$BUFFER}}"
+    # SC2046: Quote command substitution to prevent word splitting
+    suggestion="$(timeout 0.1 aprender-shell suggest "$BUFFER" 2>/dev/null | head -1 | cut -f1)"
+
+    # SC2086: Quote variables in comparisons
+    if [[ -n "$suggestion" && "$suggestion" != "$BUFFER" ]]; then
+        POSTDISPLAY=" ${{suggestion#"$BUFFER"}}"
         POSTDISPLAY=$'\e[90m'"$POSTDISPLAY"$'\e[0m'
     else
         POSTDISPLAY=""
@@ -526,9 +574,10 @@ _aprender_suggest() {{
 
 _aprender_accept() {{
     if [[ -n "$POSTDISPLAY" ]]; then
+        # SC2086: Quote CURSOR variable
         BUFFER="${{BUFFER}}${{POSTDISPLAY# }}"
         POSTDISPLAY=""
-        CURSOR=$#BUFFER
+        CURSOR="${{#BUFFER}}"
     fi
     zle redisplay
 }}
@@ -543,8 +592,218 @@ add-zle-hook-widget line-pre-redraw _aprender_suggest
 # Accept with Tab or Right Arrow
 bindkey '^I' _aprender_accept      # Tab
 bindkey '^[[C' _aprender_accept    # Right arrow
+# <<< aprender-shell widget <<<
 "#
     );
+}
+
+fn cmd_fish_widget() {
+    print!(
+        r#"# >>> aprender-shell widget >>>
+# aprender-shell Fish widget v1
+# Add this to your ~/.config/fish/config.fish
+# Toggle: set -gx APRENDER_DISABLED 1 to disable
+# Uninstall: aprender-shell uninstall --fish
+
+function __aprender_suggest --description "Get AI-powered command suggestions"
+    # Skip if disabled
+    if test "$APRENDER_DISABLED" = "1"
+        return
+    end
+
+    set -l cmd (commandline -b)
+    # Skip if command too short
+    if test (string length "$cmd") -lt 2
+        return
+    end
+
+    # Get suggestion (with timeout for responsiveness)
+    set -l suggestion (timeout 0.1 aprender-shell suggest "$cmd" 2>/dev/null | head -1 | cut -f1)
+
+    if test -n "$suggestion" -a "$suggestion" != "$cmd"
+        echo "$suggestion"
+    end
+end
+
+function __aprender_complete --description "Complete commands for aprender suggestions"
+    set -l cmd (commandline -cp)
+    if test (string length "$cmd") -ge 2
+        aprender-shell suggest "$cmd" 2>/dev/null | while read -l line
+            set -l suggestion (echo "$line" | cut -f1)
+            set -l score (echo "$line" | cut -f2)
+            printf "%s\t%s\n" "$suggestion" "score: $score"
+        end
+    end
+end
+
+# Register completions for all commands
+complete -f -c '*' -a '(__aprender_complete)'
+
+# Fish autosuggestion hook (runs on each keystroke)
+function __aprender_autosuggest --on-event fish_preexec
+    # Optional: Update model incrementally (runs on command execution)
+    # aprender-shell update --quiet 2>/dev/null &
+end
+# <<< aprender-shell widget <<<
+"#
+    );
+}
+
+fn cmd_uninstall(zsh: bool, bash: bool, fish: bool, keep_model: bool, dry_run: bool) {
+    // If no shell specified, try to detect and uninstall from all
+    let detect_all = !zsh && !bash && !fish;
+
+    let home = dirs::home_dir().expect("Could not find home directory");
+    let mut removed_any = false;
+
+    let action = if dry_run { "Would remove" } else { "Removed" };
+
+    // ZSH
+    if zsh || detect_all {
+        let zshrc = home.join(".zshrc");
+        if zshrc.exists() {
+            match remove_widget_block(&zshrc, dry_run) {
+                Ok(true) => {
+                    println!("✓ {} widget from {}", action, zshrc.display());
+                    removed_any = true;
+                }
+                Ok(false) => {
+                    if zsh {
+                        println!("ℹ No widget found in {}", zshrc.display());
+                    }
+                }
+                Err(e) => eprintln!("✗ Error processing {}: {}", zshrc.display(), e),
+            }
+        } else if zsh {
+            println!("ℹ {} does not exist", zshrc.display());
+        }
+    }
+
+    // Bash
+    if bash || detect_all {
+        let bashrc = home.join(".bashrc");
+        if bashrc.exists() {
+            match remove_widget_block(&bashrc, dry_run) {
+                Ok(true) => {
+                    println!("✓ {} widget from {}", action, bashrc.display());
+                    removed_any = true;
+                }
+                Ok(false) => {
+                    if bash {
+                        println!("ℹ No widget found in {}", bashrc.display());
+                    }
+                }
+                Err(e) => eprintln!("✗ Error processing {}: {}", bashrc.display(), e),
+            }
+        } else if bash {
+            println!("ℹ {} does not exist", bashrc.display());
+        }
+    }
+
+    // Fish
+    if fish || detect_all {
+        let fish_config = home.join(".config/fish/config.fish");
+        if fish_config.exists() {
+            match remove_widget_block(&fish_config, dry_run) {
+                Ok(true) => {
+                    println!("✓ {} widget from {}", action, fish_config.display());
+                    removed_any = true;
+                }
+                Ok(false) => {
+                    if fish {
+                        println!("ℹ No widget found in {}", fish_config.display());
+                    }
+                }
+                Err(e) => eprintln!("✗ Error processing {}: {}", fish_config.display(), e),
+            }
+        } else if fish {
+            println!("ℹ {} does not exist", fish_config.display());
+        }
+    }
+
+    // Model file
+    if !keep_model {
+        let model_file = home.join(".aprender-shell.model");
+        if model_file.exists() {
+            if dry_run {
+                println!("✓ Would remove model file {}", model_file.display());
+            } else {
+                match std::fs::remove_file(&model_file) {
+                    Ok(()) => println!("✓ Removed model file {}", model_file.display()),
+                    Err(e) => eprintln!("✗ Error removing model file: {}", e),
+                }
+            }
+            removed_any = true;
+        }
+
+        // Also check for paged model bundle
+        let bundle_file = home.join(".aprender-shell.apbundle");
+        if bundle_file.exists() {
+            if dry_run {
+                println!("✓ Would remove model bundle {}", bundle_file.display());
+            } else {
+                match std::fs::remove_dir_all(&bundle_file) {
+                    Ok(()) => println!("✓ Removed model bundle {}", bundle_file.display()),
+                    Err(e) => eprintln!("✗ Error removing model bundle: {}", e),
+                }
+            }
+            removed_any = true;
+        }
+    }
+
+    if removed_any {
+        if dry_run {
+            println!("\n💡 Run without --dry-run to apply changes");
+        } else {
+            println!("\n✅ Done! Restart your shell or run:");
+            if zsh || detect_all {
+                println!("   source ~/.zshrc");
+            }
+            if bash || detect_all {
+                println!("   source ~/.bashrc");
+            }
+            if fish || detect_all {
+                println!("   source ~/.config/fish/config.fish");
+            }
+        }
+    } else {
+        println!("ℹ No aprender-shell installation found");
+    }
+}
+
+/// Remove widget block between marker comments from a file
+fn remove_widget_block(path: &std::path::Path, dry_run: bool) -> std::io::Result<bool> {
+    let content = std::fs::read_to_string(path)?;
+
+    let start_marker = "# >>> aprender-shell widget >>>";
+    let end_marker = "# <<< aprender-shell widget <<<";
+
+    if let Some(start_idx) = content.find(start_marker) {
+        if let Some(end_idx) = content.find(end_marker) {
+            let end_idx = end_idx + end_marker.len();
+
+            // Find the newline after end marker
+            let end_idx = content[end_idx..]
+                .find('\n')
+                .map(|i| end_idx + i + 1)
+                .unwrap_or(end_idx);
+
+            // Find newline before start marker (to remove blank line)
+            let start_idx = if start_idx > 0 && content.as_bytes()[start_idx - 1] == b'\n' {
+                start_idx - 1
+            } else {
+                start_idx
+            };
+
+            if !dry_run {
+                let new_content = format!("{}{}", &content[..start_idx], &content[end_idx..]);
+                std::fs::write(path, new_content)?;
+            }
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
 }
 
 fn cmd_validate(history_path: Option<PathBuf>, ngram: usize, ratio: f32) {

@@ -4,6 +4,7 @@
 //! to validate production-like scenarios with assert_cmd.
 
 #![allow(clippy::unwrap_used)] // Tests can use unwrap for simplicity
+#![allow(deprecated)] // cargo_bin still works, just deprecated for custom build-dir
 
 use assert_cmd::Command;
 use predicates::prelude::*;

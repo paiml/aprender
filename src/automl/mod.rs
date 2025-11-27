@@ -36,8 +36,8 @@ mod tuner;
 
 pub use params::{GradientBoostingParam, RandomForestParam};
 pub use search::{
-    GridSearch, HyperParam, LogScale, ParamValue, RandomSearch, SearchSpace, SearchStrategy, Trial,
-    TrialResult,
+    ActiveLearningSearch, DESearch, GridSearch, HyperParam, LogScale, ParamValue, RandomSearch,
+    SearchSpace, SearchStrategy, Trial, TrialResult,
 };
 pub use tpe::{TPEConfig, TPE};
 pub use tuner::{AutoTuner, Callback, EarlyStopping, ProgressCallback, TimeBudget, TuneResult};

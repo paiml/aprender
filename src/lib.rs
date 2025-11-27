@@ -71,6 +71,7 @@ pub mod graph;
 pub mod index;
 pub mod linear_model;
 pub mod loss;
+pub mod metaheuristics;
 pub mod metrics;
 pub mod mining;
 pub mod model_selection;

@@ -1190,3 +1190,36 @@ roadmap:
   labels:
   - enhancement
   notes: null
+- id: GH-80
+  github_issue: 80
+  item_type: epic
+  title: 'feat(metaheuristics): Implement derivative-free global optimization for aprender-contrib'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2025-11-27T08:53:16.807707680+00:00
+  updated: 2025-11-27T08:53:16.807707680+00:00
+  spec: null
+  acceptance_criteria:
+  - '`SearchSpace` enum (Continuous, Mixed, Binary, Permutation, Graph)'
+  - '`PerturbativeMetaheuristic` trait'
+  - Differential Evolution (DE/rand/1/bin, JADE, SHADE)
+  - Particle Swarm Optimization (standard, constriction, SPSO 2011)
+  - Simulated Annealing (geometric, adaptive cooling)
+  - Genetic Algorithm (SBX, polynomial mutation)
+  - Harmony Search
+  - CEC 2013 benchmark suite
+  - CMA-ES with eigendecomposition, boundary handling, IPOP restart
+  - Binary GA with BitVec solution type
+  - Feature selection utilities
+  - '`ConstructiveMetaheuristic` trait'
+  - '`NeighborhoodSearch` trait'
+  - Ant Colony Optimization (AS, MMAS, ACS)
+  - Tabu Search
+  - HyperoptSearch wrapper
+  - Neural architecture search primitives
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

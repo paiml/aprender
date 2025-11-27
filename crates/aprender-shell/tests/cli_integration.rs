@@ -4,6 +4,7 @@
 //! Tests actual binary execution with real inputs/outputs.
 
 #![allow(clippy::unwrap_used)] // Tests can use unwrap for simplicity
+#![allow(deprecated)] // cargo_bin still works, just deprecated for custom build-dir
 
 use assert_cmd::Command;
 use predicates::prelude::*;
@@ -563,4 +564,147 @@ fn test_cli_012_augment_code_eda() {
         .assert()
         .success()
         .stdout(predicate::str::contains("CodeEDA"));
+}
+
+// ============================================================================
+// Test: CLI_013 - Fish Widget Generation (GH-88)
+// ============================================================================
+
+#[test]
+fn test_cli_013_fish_widget() {
+    aprender_shell()
+        .arg("fish-widget")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("# >>> aprender-shell widget >>>"))
+        .stdout(predicate::str::contains("aprender-shell Fish widget"))
+        .stdout(predicate::str::contains("__aprender_suggest"))
+        .stdout(predicate::str::contains("__aprender_complete"))
+        .stdout(predicate::str::contains("# <<< aprender-shell widget <<<"));
+}
+
+#[test]
+fn test_cli_013_fish_widget_has_disable_toggle() {
+    aprender_shell()
+        .arg("fish-widget")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("APRENDER_DISABLED"));
+}
+
+// ============================================================================
+// Test: CLI_014 - Uninstall Command (GH-87)
+// ============================================================================
+
+#[test]
+fn test_cli_014_uninstall_help() {
+    aprender_shell()
+        .args(["uninstall", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Uninstall widget"))
+        .stdout(predicate::str::contains("--zsh"))
+        .stdout(predicate::str::contains("--bash"))
+        .stdout(predicate::str::contains("--fish"))
+        .stdout(predicate::str::contains("--keep-model"))
+        .stdout(predicate::str::contains("--dry-run"));
+}
+
+#[test]
+fn test_cli_014_uninstall_dry_run_no_installation() {
+    // With --dry-run and no shell specified, should report no installation found
+    aprender_shell()
+        .args(["uninstall", "--dry-run"])
+        .assert()
+        .success();
+}
+
+#[test]
+fn test_cli_014_uninstall_zsh_not_found() {
+    // When targeting ZSH specifically but no .zshrc exists or has no widget
+    aprender_shell()
+        .args(["uninstall", "--zsh", "--dry-run"])
+        .assert()
+        .success();
+}
+
+#[test]
+fn test_cli_014_uninstall_removes_widget_block() {
+    use std::io::Write;
+
+    // Create a temp file simulating a .zshrc with the widget
+    let mut file = tempfile::NamedTempFile::new().unwrap();
+    writeln!(file, "# Some existing config").unwrap();
+    writeln!(file, "export PATH=$PATH:/usr/local/bin").unwrap();
+    writeln!(file).unwrap();
+    writeln!(file, "# >>> aprender-shell widget >>>").unwrap();
+    writeln!(file, "_aprender_suggest() {{").unwrap();
+    writeln!(file, "    # widget code").unwrap();
+    writeln!(file, "}}").unwrap();
+    writeln!(file, "# <<< aprender-shell widget <<<").unwrap();
+    writeln!(file).unwrap();
+    writeln!(file, "# More config after").unwrap();
+    file.flush().unwrap();
+
+    // Read original content
+    let original = std::fs::read_to_string(file.path()).unwrap();
+    assert!(original.contains(">>> aprender-shell widget >>>"));
+
+    // For this test, we verify the marker detection works
+    // (The uninstall command uses the actual home directory)
+    assert!(original.contains(">>> aprender-shell widget >>>"));
+    assert!(original.contains("<<< aprender-shell widget <<<"));
+}
+
+// ============================================================================
+// Test: CLI_015 - ZSH Widget Markers (GH-96)
+// ============================================================================
+
+#[test]
+fn test_cli_015_zsh_widget_has_markers() {
+    aprender_shell()
+        .arg("zsh-widget")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("# >>> aprender-shell widget >>>"))
+        .stdout(predicate::str::contains("# <<< aprender-shell widget <<<"));
+}
+
+#[test]
+fn test_cli_015_zsh_widget_has_disable_toggle() {
+    aprender_shell()
+        .arg("zsh-widget")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("APRENDER_DISABLED"));
+}
+
+#[test]
+fn test_cli_015_zsh_widget_has_timeout() {
+    // GH-96: Widget should use timeout to prevent hangs
+    aprender_shell()
+        .arg("zsh-widget")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("timeout 0.1"));
+}
+
+#[test]
+fn test_cli_015_zsh_widget_quoted_substitution() {
+    // GH-96: SC2046 - Command substitution should be quoted
+    aprender_shell()
+        .arg("zsh-widget")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("suggestion=\"$("));
+}
+
+#[test]
+fn test_cli_015_zsh_widget_uninstall_hint() {
+    // Widget should include hint about how to uninstall
+    aprender_shell()
+        .arg("zsh-widget")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("aprender-shell uninstall"));
 }

@@ -95,6 +95,7 @@
 
 - [Gradient Descent Theory](./ml-fundamentals/gradient-descent.md)
 - [Advanced Optimizers Theory](./ml-fundamentals/advanced-optimizers.md)
+- [Metaheuristics Theory](./ml-fundamentals/metaheuristics.md)
 
 ## AutoML
 
@@ -161,6 +162,7 @@
 - [Case Study: Convex Optimization (FISTA + Coordinate Descent)](./examples/convex-optimization.md)
 - [Case Study: Constrained Optimization (Projected GD + Augmented Lagrangian + Interior Point)](./examples/constrained-optimization.md)
 - [Case Study: ADMM Optimization (Distributed ML + Federated Learning)](./examples/admm-optimization.md)
+- [Case Study: Differential Evolution (Metaheuristics)](./examples/differential-evolution.md)
 - [Case Study: DataFrame Basics](./examples/dataframe-basics.md)
 - [Case Study: Data Preprocessing with Scalers](./examples/data-preprocessing-scalers.md)
 - [Case Study: Graph Social Network](./examples/graph-social-network.md)
