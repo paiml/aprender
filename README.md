@@ -5,9 +5,6 @@
   <a href="https://github.com/paiml/aprender/actions/workflows/ci.yml">
     <img src="https://github.com/paiml/aprender/actions/workflows/ci.yml/badge.svg" alt="CI">
   </a>
-  <a href="https://codecov.io/gh/paiml/aprender">
-    <img src="https://codecov.io/gh/paiml/aprender/branch/main/graph/badge.svg" alt="codecov">
-  </a>
   <a href="https://opensource.org/licenses/MIT">
     <img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT">
   </a>
