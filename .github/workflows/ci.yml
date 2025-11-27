@@ -11,6 +11,21 @@ env:
   RUSTFLAGS: -Dwarnings
 
 jobs:
+  # Fast sanity check - catches common mistakes
+  makefile-lint:
+    name: Makefile Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify coverage target has --all-features
+        run: |
+          if ! grep -q "llvm-cov.*nextest.*--all-features" Makefile; then
+            echo "::error::Makefile coverage target is missing --all-features flag!"
+            echo "This causes 0% coverage. See commit 4badee1 for context."
+            exit 1
+          fi
+          echo "✅ Makefile coverage target has --all-features"
+
   check:
     name: Check
     runs-on: ubuntu-latest
