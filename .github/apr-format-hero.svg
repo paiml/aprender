@@ -124,7 +124,7 @@
 
   <!-- Model Types (Right) -->
   <g transform="translate(870, 100)">
-    <text x="140" y="0" text-anchor="middle" fill="#79c0ff" font-family="system-ui, sans-serif" font-size="16" font-weight="bold">17 Model Types</text>
+    <text x="140" y="0" text-anchor="middle" fill="#79c0ff" font-family="system-ui, sans-serif" font-size="16" font-weight="bold">18 Model Types</text>
 
     <rect x="0" y="20" width="280" height="190" rx="8" fill="#21262d" filter="url(#shadow)"/>
 
@@ -142,9 +142,9 @@
     <text x="15" y="146" fill="#58a6ff" font-family="system-ui, sans-serif" font-size="11" font-weight="bold">NLP</text>
     <text x="15" y="162" fill="#8b949e" font-family="monospace" font-size="10">NgramLM • TF-IDF • CountVectorizer</text>
 
-    <!-- Neural/Recommenders -->
-    <text x="15" y="184" fill="#58a6ff" font-family="system-ui, sans-serif" font-size="11" font-weight="bold">Neural / Recommenders</text>
-    <text x="15" y="200" fill="#8b949e" font-family="monospace" font-size="10">Sequential • Custom • ContentRecommender</text>
+    <!-- Neural/Ensemble/Recommenders -->
+    <text x="15" y="184" fill="#58a6ff" font-family="system-ui, sans-serif" font-size="11" font-weight="bold">Neural / Ensemble / Recommenders</text>
+    <text x="15" y="200" fill="#8b949e" font-family="monospace" font-size="10">Sequential • MoE • ContentRecommender</text>
   </g>
 
   <!-- trueno Integration (Bottom Left) -->
@@ -208,5 +208,5 @@
   </g>
 
   <!-- Footer -->
-  <text x="600" y="580" text-anchor="middle" fill="#484f58" font-family="system-ui, sans-serif" font-size="11">aprender v0.9 • Spec v1.3.0 • Pure Rust • ONNX out of scope (requires C++)</text>
+  <text x="600" y="580" text-anchor="middle" fill="#484f58" font-family="system-ui, sans-serif" font-size="11">aprender v0.11 • Spec v1.3.0 • Pure Rust • ONNX out of scope (requires C++)</text>
 </svg>

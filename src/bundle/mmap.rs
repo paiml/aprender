@@ -608,7 +608,8 @@ mod tests {
         let mapped = MappedFile::open(file.path()).expect("open");
         assert!(mapped.is_empty());
         assert_eq!(mapped.len(), 0);
-        assert_eq!(mapped.as_slice(), &[] as &[u8]);
+        let empty: &[u8] = &[];
+        assert_eq!(mapped.as_slice(), empty);
     }
 
     #[test]
