@@ -3648,16 +3648,17 @@ mod tests {
         }
 
         // Create a model larger than MMAP_THRESHOLD (1MB)
+        // Use unique values to prevent compression from reducing size
         let model = LargeModel {
-            weights: vec![1.0_f64; 200_000], // ~1.6MB
+            weights: (0..250_000).map(|i| i as f64 * std::f64::consts::PI).collect(),
         };
 
         let dir = tempdir().expect("create temp dir");
         let path = dir.path().join("large_mmap_test.apr");
 
-        // Save
-        save(&model, ModelType::Custom, &path, SaveOptions::default())
-            .expect("save should succeed");
+        // Save without compression to ensure file is large
+        let opts = SaveOptions::default().with_compression(Compression::None);
+        save(&model, ModelType::Custom, &path, opts).expect("save should succeed");
 
         // Verify file is large enough
         let metadata = std::fs::metadata(&path).expect("get metadata");
@@ -3708,16 +3709,17 @@ mod tests {
         }
 
         // Create a model larger than MMAP_THRESHOLD (1MB)
+        // Use unique values to prevent compression from reducing size
         let model = LargeModel {
-            weights: vec![1.0_f64; 200_000], // ~1.6MB
+            weights: (0..250_000).map(|i| i as f64 * std::f64::consts::E).collect(),
         };
 
         let dir = tempdir().expect("create temp dir");
         let path = dir.path().join("large_auto_test.apr");
 
-        // Save
-        save(&model, ModelType::Custom, &path, SaveOptions::default())
-            .expect("save should succeed");
+        // Save without compression to ensure file is large
+        let opts = SaveOptions::default().with_compression(Compression::None);
+        save(&model, ModelType::Custom, &path, opts).expect("save should succeed");
 
         // Verify file is large
         let metadata = std::fs::metadata(&path).expect("get metadata");

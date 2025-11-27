@@ -523,7 +523,7 @@ mod tests {
         let readme_path = temp_dir.join("paiml_readme-test").join("README.md");
         assert!(readme_path.exists());
 
-        let content = std::fs::read_to_string(&readme_path).unwrap();
+        let content = std::fs::read_to_string(&readme_path).expect("README should exist");
         assert!(content.contains("license: mit"));
         assert!(content.contains("Test model"));
 
@@ -636,7 +636,7 @@ mod tests {
         let dir = HfHubClient::default_cache_dir();
         // Should contain "huggingface" and "hub" in path
         let path_str = dir.to_string_lossy();
-        assert!(path_str.contains("huggingface") || path_str.contains("."));
+        assert!(path_str.contains("huggingface") || path_str.contains('.'));
     }
 
     #[test]
@@ -659,7 +659,7 @@ mod tests {
         let model_path = temp_dir.join("org_model-file-test").join("model.apr");
         assert!(model_path.exists());
 
-        let content = std::fs::read(&model_path).unwrap();
+        let content = std::fs::read(&model_path).expect("Model file should be readable");
         assert_eq!(content, b"binary model data");
 
         let _ = std::fs::remove_dir_all(&temp_dir);
@@ -688,7 +688,7 @@ mod tests {
         let readme_path = temp_dir.join("org_auto-card").join("README.md");
         assert!(readme_path.exists());
 
-        let content = std::fs::read_to_string(&readme_path).unwrap();
+        let content = std::fs::read_to_string(&readme_path).expect("README should be readable");
         // Auto-generated card should have aprender tags
         assert!(content.contains("aprender"));
 
@@ -730,7 +730,7 @@ mod proptests {
             let repo_id = format!("{org}/{name}");
             let result = HfHubClient::parse_repo_id(&repo_id);
             prop_assert!(result.is_ok());
-            let (parsed_org, parsed_name) = result.unwrap();
+            let (parsed_org, parsed_name) = result.expect("Valid repo ID should parse");
             prop_assert_eq!(parsed_org, org.as_str());
             prop_assert_eq!(parsed_name, name.as_str());
         }

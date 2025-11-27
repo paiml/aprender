@@ -608,8 +608,8 @@ mod tests {
     // ========== ENGLISH_STOP_WORDS Tests ==========
 
     #[test]
-    fn test_stop_words_list_not_empty() {
-        assert!(!ENGLISH_STOP_WORDS.is_empty());
+    fn test_stop_words_list_has_expected_count() {
+        // Verify exact count of English stop words (NLTK/sklearn-based list)
         assert_eq!(ENGLISH_STOP_WORDS.len(), 171);
     }
 
