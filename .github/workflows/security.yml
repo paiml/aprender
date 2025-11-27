@@ -83,7 +83,7 @@ jobs:
 
       - name: Upload outdated report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: outdated-dependencies-${{ github.sha }}
           path: outdated-summary.md

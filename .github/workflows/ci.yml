@@ -99,7 +99,7 @@ jobs:
         continue-on-error: true
       - name: Upload mutants results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: mutants-results
           path: mutants.out/
@@ -202,7 +202,7 @@ jobs:
 
       - name: Upload chaos test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: chaos-results
           path: /tmp/chaos-results/
