@@ -161,6 +161,8 @@ tier4: tier3
 # Solution: Temporarily move ~/.cargo/config.toml during coverage runs
 
 # Standard coverage (<5 min): Two-phase pattern with nextest
+# CRITICAL: --all-features is REQUIRED or feature-gated code won't compile
+# and coverage will show 0%. DO NOT REMOVE --all-features from the nextest call.
 coverage: ## Generate HTML coverage report (target: <5 min)
 	@echo "📊 Running coverage analysis (target: <5 min)..."
 	@echo "🔍 Checking for cargo-llvm-cov and cargo-nextest..."
