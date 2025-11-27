@@ -1,0 +1,588 @@
+<!DOCTYPE HTML>
+<html lang="en" class="rust" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Case Study: CITL Automated Program Repair - EXTREME TDD - The Aprender Guide to Zero-Defect Machine Learning</title>
+
+
+        <!-- Custom HTML head -->
+        
+        <meta name="description" content="A comprehensive guide to EXTREME TDD methodology: RED-GREEN-REFACTOR cycles, mutation testing, and Toyota Way principles demonstrated through ML library development">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="../favicon.svg">
+        <link rel="shortcut icon" href="../favicon.png">
+        <link rel="stylesheet" href="../css/variables.css">
+        <link rel="stylesheet" href="../css/general.css">
+        <link rel="stylesheet" href="../css/chrome.css">
+        <link rel="stylesheet" href="../css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="../fonts/fonts.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" href="../highlight.css">
+        <link rel="stylesheet" href="../tomorrow-night.css">
+        <link rel="stylesheet" href="../ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+
+    </head>
+    <body class="sidebar-visible no-js">
+    <div id="body-container">
+        <!-- Provide site root to javascript -->
+        <script>
+            var path_to_root = "../";
+            var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "rust";
+        </script>
+
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            var html = document.querySelector('html');
+            html.classList.remove('rust')
+            html.classList.add(theme);
+            var body = document.querySelector('body');
+            body.classList.remove('no-js')
+            body.classList.add('js');
+        </script>
+
+        <input type="checkbox" id="sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            var body = document.querySelector('body');
+            var sidebar = null;
+            var sidebar_toggle = document.getElementById("sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+            }
+            sidebar_toggle.checked = sidebar === 'visible';
+            body.classList.remove('sidebar-visible');
+            body.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <div class="sidebar-scrollbox">
+                <ol class="chapter"><li class="chapter-item expanded affix "><a href="../introduction.html">Introduction</a></li><li class="chapter-item expanded affix "><li class="part-title">Core Methodology</li><li class="chapter-item expanded "><a href="../methodology/what-is-extreme-tdd.html"><strong aria-hidden="true">1.</strong> What is EXTREME TDD?</a></li><li class="chapter-item expanded "><a href="../methodology/red-green-refactor.html"><strong aria-hidden="true">2.</strong> The RED-GREEN-REFACTOR Cycle</a></li><li class="chapter-item expanded "><a href="../methodology/test-first-philosophy.html"><strong aria-hidden="true">3.</strong> Test-First Philosophy</a></li><li class="chapter-item expanded "><a href="../methodology/zero-tolerance.html"><strong aria-hidden="true">4.</strong> Zero Tolerance Quality</a></li><li class="chapter-item expanded affix "><li class="part-title">The RED Phase</li><li class="chapter-item expanded "><a href="../red-phase/failing-tests-first.html"><strong aria-hidden="true">5.</strong> Writing Failing Tests First</a></li><li class="chapter-item expanded "><a href="../red-phase/test-categories.html"><strong aria-hidden="true">6.</strong> Test Categories</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../red-phase/unit-tests.html"><strong aria-hidden="true">6.1.</strong> Unit Tests</a></li><li class="chapter-item expanded "><a href="../red-phase/integration-tests.html"><strong aria-hidden="true">6.2.</strong> Integration Tests</a></li><li class="chapter-item expanded "><a href="../red-phase/property-based-tests.html"><strong aria-hidden="true">6.3.</strong> Property-Based Tests</a></li></ol></li><li class="chapter-item expanded "><a href="../red-phase/verification-strategy.html"><strong aria-hidden="true">7.</strong> Verification Strategy</a></li><li class="chapter-item expanded affix "><li class="part-title">The GREEN Phase</li><li class="chapter-item expanded "><a href="../green-phase/minimal-implementation.html"><strong aria-hidden="true">8.</strong> Minimal Implementation</a></li><li class="chapter-item expanded "><a href="../green-phase/making-tests-pass.html"><strong aria-hidden="true">9.</strong> Making Tests Pass</a></li><li class="chapter-item expanded "><a href="../green-phase/avoiding-over-engineering.html"><strong aria-hidden="true">10.</strong> Avoiding Over-Engineering</a></li><li class="chapter-item expanded "><a href="../green-phase/simplest-thing.html"><strong aria-hidden="true">11.</strong> The Simplest Thing That Works</a></li><li class="chapter-item expanded affix "><li class="part-title">The REFACTOR Phase</li><li class="chapter-item expanded "><a href="../refactor-phase/refactoring-with-confidence.html"><strong aria-hidden="true">12.</strong> Refactoring with Confidence</a></li><li class="chapter-item expanded "><a href="../refactor-phase/code-quality.html"><strong aria-hidden="true">13.</strong> Code Quality Improvements</a></li><li class="chapter-item expanded "><a href="../refactor-phase/performance-optimization.html"><strong aria-hidden="true">14.</strong> Performance Optimization</a></li><li class="chapter-item expanded "><a href="../refactor-phase/documentation.html"><strong aria-hidden="true">15.</strong> Documentation</a></li><li class="chapter-item expanded affix "><li class="part-title">Advanced Testing</li><li class="chapter-item expanded "><a href="../advanced-testing/property-based-testing.html"><strong aria-hidden="true">16.</strong> Property-Based Testing</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../advanced-testing/proptest-fundamentals.html"><strong aria-hidden="true">16.1.</strong> Proptest Fundamentals</a></li><li class="chapter-item expanded "><a href="../advanced-testing/strategies-generators.html"><strong aria-hidden="true">16.2.</strong> Strategies and Generators</a></li><li class="chapter-item expanded "><a href="../advanced-testing/testing-invariants.html"><strong aria-hidden="true">16.3.</strong> Testing Invariants</a></li></ol></li><li class="chapter-item expanded "><a href="../advanced-testing/mutation-testing.html"><strong aria-hidden="true">17.</strong> Mutation Testing</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../advanced-testing/what-is-mutation-testing.html"><strong aria-hidden="true">17.1.</strong> What is Mutation Testing?</a></li><li class="chapter-item expanded "><a href="../advanced-testing/using-cargo-mutants.html"><strong aria-hidden="true">17.2.</strong> Using cargo-mutants</a></li><li class="chapter-item expanded "><a href="../advanced-testing/mutation-score-targets.html"><strong aria-hidden="true">17.3.</strong> Mutation Score Targets</a></li><li class="chapter-item expanded "><a href="../advanced-testing/killing-mutants.html"><strong aria-hidden="true">17.4.</strong> Killing Mutants</a></li></ol></li><li class="chapter-item expanded "><a href="../advanced-testing/fuzzing.html"><strong aria-hidden="true">18.</strong> Fuzzing</a></li><li class="chapter-item expanded "><a href="../advanced-testing/benchmark-testing.html"><strong aria-hidden="true">19.</strong> Benchmark Testing</a></li><li class="chapter-item expanded affix "><li class="part-title">Quality Gates</li><li class="chapter-item expanded "><a href="../quality-gates/pre-commit-hooks.html"><strong aria-hidden="true">20.</strong> Pre-Commit Hooks</a></li><li class="chapter-item expanded "><a href="../quality-gates/continuous-integration.html"><strong aria-hidden="true">21.</strong> Continuous Integration</a></li><li class="chapter-item expanded "><a href="../quality-gates/code-formatting.html"><strong aria-hidden="true">22.</strong> Code Formatting (rustfmt)</a></li><li class="chapter-item expanded "><a href="../quality-gates/linting-clippy.html"><strong aria-hidden="true">23.</strong> Linting (clippy)</a></li><li class="chapter-item expanded "><a href="../quality-gates/coverage-measurement.html"><strong aria-hidden="true">24.</strong> Coverage Measurement</a></li><li class="chapter-item expanded "><a href="../quality-gates/complexity-analysis.html"><strong aria-hidden="true">25.</strong> Complexity Analysis</a></li><li class="chapter-item expanded "><a href="../quality-gates/tdg-score.html"><strong aria-hidden="true">26.</strong> Technical Debt Gradient (TDG)</a></li><li class="chapter-item expanded affix "><li class="part-title">Toyota Way Principles</li><li class="chapter-item expanded "><a href="../toyota-way/overview.html"><strong aria-hidden="true">27.</strong> Overview</a></li><li class="chapter-item expanded "><a href="../toyota-way/kaizen.html"><strong aria-hidden="true">28.</strong> Kaizen (Continuous Improvement)</a></li><li class="chapter-item expanded "><a href="../toyota-way/genchi-genbutsu.html"><strong aria-hidden="true">29.</strong> Genchi Genbutsu (Go and See)</a></li><li class="chapter-item expanded "><a href="../toyota-way/jidoka.html"><strong aria-hidden="true">30.</strong> Jidoka (Built-in Quality)</a></li><li class="chapter-item expanded "><a href="../toyota-way/pdca-cycle.html"><strong aria-hidden="true">31.</strong> PDCA Cycle</a></li><li class="chapter-item expanded "><a href="../toyota-way/respect-for-people.html"><strong aria-hidden="true">32.</strong> Respect for People</a></li><li class="chapter-item expanded affix "><li class="part-title">Machine Learning Fundamentals</li><li class="chapter-item expanded "><a href="../ml-fundamentals/linear-regression.html"><strong aria-hidden="true">33.</strong> Linear Regression Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/regularization.html"><strong aria-hidden="true">34.</strong> Regularization Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/logistic-regression.html"><strong aria-hidden="true">35.</strong> Logistic Regression Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/knn.html"><strong aria-hidden="true">36.</strong> K-Nearest Neighbors (kNN) Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/naive-bayes.html"><strong aria-hidden="true">37.</strong> Naive Bayes Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/bayesian-inference.html"><strong aria-hidden="true">38.</strong> Bayesian Inference Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/svm.html"><strong aria-hidden="true">39.</strong> Support Vector Machines (SVM) Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/decision-trees.html"><strong aria-hidden="true">40.</strong> Decision Trees Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/ensemble-methods.html"><strong aria-hidden="true">41.</strong> Ensemble Methods Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/kmeans-clustering.html"><strong aria-hidden="true">42.</strong> K-Means Clustering Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/pca.html"><strong aria-hidden="true">43.</strong> Principal Component Analysis (PCA) Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/tsne.html"><strong aria-hidden="true">44.</strong> t-SNE (t-Distributed Stochastic Neighbor Embedding) Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/regression-metrics.html"><strong aria-hidden="true">45.</strong> Regression Metrics Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/classification-metrics.html"><strong aria-hidden="true">46.</strong> Classification Metrics Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/cross-validation.html"><strong aria-hidden="true">47.</strong> Cross-Validation Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/gradient-descent.html"><strong aria-hidden="true">48.</strong> Gradient Descent Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/advanced-optimizers.html"><strong aria-hidden="true">49.</strong> Advanced Optimizers Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/metaheuristics.html"><strong aria-hidden="true">50.</strong> Metaheuristics Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/automl.html"><strong aria-hidden="true">51.</strong> AutoML: Automated Machine Learning</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/compiler-in-the-loop.html"><strong aria-hidden="true">52.</strong> Compiler-in-the-Loop Learning</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/feature-scaling.html"><strong aria-hidden="true">53.</strong> Feature Scaling Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/graph-algorithms.html"><strong aria-hidden="true">54.</strong> Graph Algorithms Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/graph-pathfinding.html"><strong aria-hidden="true">55.</strong> Graph Pathfinding Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/graph-components-traversal.html"><strong aria-hidden="true">56.</strong> Graph Components and Traversal</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/graph-link-prediction.html"><strong aria-hidden="true">57.</strong> Graph Link Prediction and Community Detection</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/descriptive-statistics.html"><strong aria-hidden="true">58.</strong> Descriptive Statistics Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/apriori.html"><strong aria-hidden="true">59.</strong> Apriori Algorithm Theory</a></li><li class="chapter-item expanded affix "><li class="part-title">Real-World Examples from Aprender</li><li class="chapter-item expanded "><a href="../examples/linear-regression.html"><strong aria-hidden="true">60.</strong> Case Study: Linear Regression</a></li><li class="chapter-item expanded "><a href="../examples/boston-housing.html"><strong aria-hidden="true">61.</strong> Case Study: Boston Housing</a></li><li class="chapter-item expanded "><a href="../examples/cross-validation.html"><strong aria-hidden="true">62.</strong> Case Study: Cross-Validation</a></li><li class="chapter-item expanded "><a href="../examples/grid-search-tuning.html"><strong aria-hidden="true">63.</strong> Case Study: Grid Search Hyperparameter Tuning</a></li><li class="chapter-item expanded "><a href="../examples/automl-clustering.html"><strong aria-hidden="true">64.</strong> Case Study: AutoML Clustering (TPE)</a></li><li class="chapter-item expanded "><a href="../examples/random-forest.html"><strong aria-hidden="true">65.</strong> Case Study: Random Forest</a></li><li class="chapter-item expanded "><a href="../examples/random-forest-iris.html"><strong aria-hidden="true">66.</strong> Case Study: Random Forest Iris</a></li><li class="chapter-item expanded "><a href="../examples/decision-tree-iris.html"><strong aria-hidden="true">67.</strong> Case Study: Decision Tree Iris</a></li><li class="chapter-item expanded "><a href="../examples/model-serialization.html"><strong aria-hidden="true">68.</strong> Case Study: Model Serialization</a></li><li class="chapter-item expanded "><a href="../examples/model-format.html"><strong aria-hidden="true">69.</strong> Case Study: Model Format (.apr)</a></li><li class="chapter-item expanded "><a href="../examples/apr-format-deep-dive.html"><strong aria-hidden="true">70.</strong> The .apr Format: A Five Whys Deep Dive</a></li><li class="chapter-item expanded "><a href="../examples/model-bundling-paging.html"><strong aria-hidden="true">71.</strong> Case Study: Model Bundling and Memory Paging</a></li><li class="chapter-item expanded "><a href="../examples/tracing-memory-paging.html"><strong aria-hidden="true">72.</strong> Case Study: Tracing Memory Paging with Renacer</a></li><li class="chapter-item expanded "><a href="../examples/bundle-trace-demo.html"><strong aria-hidden="true">73.</strong> Case Study: Bundle Trace Demo</a></li><li class="chapter-item expanded "><a href="../examples/synthetic-data-generation.html"><strong aria-hidden="true">74.</strong> Case Study: Synthetic Data Generation</a></li><li class="chapter-item expanded "><a href="../examples/code-eda.html"><strong aria-hidden="true">75.</strong> Case Study: Code-Aware EDA</a></li><li class="chapter-item expanded "><a href="../examples/code-feature-extractor.html"><strong aria-hidden="true">76.</strong> Case Study: Code Feature Extraction</a></li><li class="chapter-item expanded "><a href="../examples/kmeans-clustering.html"><strong aria-hidden="true">77.</strong> Case Study: KMeans Clustering</a></li><li class="chapter-item expanded "><a href="../examples/dbscan-clustering.html"><strong aria-hidden="true">78.</strong> Case Study: DBSCAN Clustering</a></li><li class="chapter-item expanded "><a href="../examples/hierarchical-clustering.html"><strong aria-hidden="true">79.</strong> Case Study: Hierarchical Clustering</a></li><li class="chapter-item expanded "><a href="../examples/gmm-clustering.html"><strong aria-hidden="true">80.</strong> Case Study: GMM Clustering</a></li><li class="chapter-item expanded "><a href="../examples/iris-clustering.html"><strong aria-hidden="true">81.</strong> Case Study: Iris Clustering</a></li><li class="chapter-item expanded "><a href="../examples/logistic-regression.html"><strong aria-hidden="true">82.</strong> Case Study: Logistic Regression</a></li><li class="chapter-item expanded "><a href="../examples/knn-iris.html"><strong aria-hidden="true">83.</strong> Case Study: KNN Iris</a></li><li class="chapter-item expanded "><a href="../examples/naive-bayes-iris.html"><strong aria-hidden="true">84.</strong> Case Study: Naive Bayes Iris</a></li><li class="chapter-item expanded "><a href="../examples/beta-binomial-inference.html"><strong aria-hidden="true">85.</strong> Case Study: Beta-Binomial Bayesian Inference</a></li><li class="chapter-item expanded "><a href="../examples/gamma-poisson-inference.html"><strong aria-hidden="true">86.</strong> Case Study: Gamma-Poisson Bayesian Inference</a></li><li class="chapter-item expanded "><a href="../examples/normal-inverse-gamma-inference.html"><strong aria-hidden="true">87.</strong> Case Study: Normal-InverseGamma Bayesian Inference</a></li><li class="chapter-item expanded "><a href="../examples/dirichlet-multinomial-inference.html"><strong aria-hidden="true">88.</strong> Case Study: Dirichlet-Multinomial Bayesian Inference</a></li><li class="chapter-item expanded "><a href="../examples/bayesian-linear-regression.html"><strong aria-hidden="true">89.</strong> Case Study: Bayesian Linear Regression</a></li><li class="chapter-item expanded "><a href="../examples/bayesian-logistic-regression.html"><strong aria-hidden="true">90.</strong> Case Study: Bayesian Logistic Regression</a></li><li class="chapter-item expanded "><a href="../examples/negative-binomial-glm.html"><strong aria-hidden="true">91.</strong> Case Study: Negative Binomial GLM (Overdispersed Counts)</a></li><li class="chapter-item expanded "><a href="../examples/svm-iris.html"><strong aria-hidden="true">92.</strong> Case Study: SVM Iris</a></li><li class="chapter-item expanded "><a href="../examples/gbm-iris.html"><strong aria-hidden="true">93.</strong> Case Study: Gradient Boosting Iris</a></li><li class="chapter-item expanded "><a href="../examples/regularized-regression.html"><strong aria-hidden="true">94.</strong> Case Study: Regularized Regression</a></li><li class="chapter-item expanded "><a href="../examples/optimizer-demo.html"><strong aria-hidden="true">95.</strong> Case Study: Optimizer Demo</a></li><li class="chapter-item expanded "><a href="../examples/batch-optimization.html"><strong aria-hidden="true">96.</strong> Case Study: Batch Optimization</a></li><li class="chapter-item expanded "><a href="../examples/convex-optimization.html"><strong aria-hidden="true">97.</strong> Case Study: Convex Optimization (FISTA + Coordinate Descent)</a></li><li class="chapter-item expanded "><a href="../examples/constrained-optimization.html"><strong aria-hidden="true">98.</strong> Case Study: Constrained Optimization (Projected GD + Augmented Lagrangian + Interior Point)</a></li><li class="chapter-item expanded "><a href="../examples/admm-optimization.html"><strong aria-hidden="true">99.</strong> Case Study: ADMM Optimization (Distributed ML + Federated Learning)</a></li><li class="chapter-item expanded "><a href="../examples/differential-evolution.html"><strong aria-hidden="true">100.</strong> Case Study: Differential Evolution (Metaheuristics)</a></li><li class="chapter-item expanded "><a href="../examples/dataframe-basics.html"><strong aria-hidden="true">101.</strong> Case Study: DataFrame Basics</a></li><li class="chapter-item expanded "><a href="../examples/data-preprocessing-scalers.html"><strong aria-hidden="true">102.</strong> Case Study: Data Preprocessing with Scalers</a></li><li class="chapter-item expanded "><a href="../examples/graph-social-network.html"><strong aria-hidden="true">103.</strong> Case Study: Graph Social Network</a></li><li class="chapter-item expanded "><a href="../examples/community-detection.html"><strong aria-hidden="true">104.</strong> Case Study: Community Detection with Louvain</a></li><li class="chapter-item expanded "><a href="../examples/graph-algorithms-comprehensive.html"><strong aria-hidden="true">105.</strong> Case Study: Comprehensive Graph Algorithms</a></li><li class="chapter-item expanded "><a href="../examples/descriptive-statistics.html"><strong aria-hidden="true">106.</strong> Case Study: Descriptive Statistics</a></li><li class="chapter-item expanded "><a href="../examples/bayesian-blocks-histogram.html"><strong aria-hidden="true">107.</strong> Case Study: Bayesian Blocks Histogram</a></li><li class="chapter-item expanded "><a href="../examples/pca-iris.html"><strong aria-hidden="true">108.</strong> Case Study: PCA Iris</a></li><li class="chapter-item expanded "><a href="../examples/isolation-forest-anomaly.html"><strong aria-hidden="true">109.</strong> Case Study: Isolation Forest Anomaly Detection</a></li><li class="chapter-item expanded "><a href="../examples/lof-anomaly.html"><strong aria-hidden="true">110.</strong> Case Study: Local Outlier Factor (LOF)</a></li><li class="chapter-item expanded "><a href="../examples/spectral-clustering.html"><strong aria-hidden="true">111.</strong> Case Study: Spectral Clustering</a></li><li class="chapter-item expanded "><a href="../examples/tsne-visualization.html"><strong aria-hidden="true">112.</strong> Case Study: t-SNE Visualization</a></li><li class="chapter-item expanded "><a href="../examples/market-basket-apriori.html"><strong aria-hidden="true">113.</strong> Case Study: Market Basket Analysis (Apriori)</a></li><li class="chapter-item expanded "><a href="../examples/time-series-forecasting.html"><strong aria-hidden="true">114.</strong> Case Study: ARIMA Time Series Forecasting</a></li><li class="chapter-item expanded "><a href="../examples/text-preprocessing.html"><strong aria-hidden="true">115.</strong> Case Study: Text Preprocessing for NLP</a></li><li class="chapter-item expanded "><a href="../examples/text-classification.html"><strong aria-hidden="true">116.</strong> Case Study: Text Classification with TF-IDF</a></li><li class="chapter-item expanded "><a href="../examples/advanced-nlp.html"><strong aria-hidden="true">117.</strong> Case Study: Advanced NLP (Similarity, Entities, Summarization)</a></li><li class="chapter-item expanded "><a href="../examples/xor-neural-network.html"><strong aria-hidden="true">118.</strong> Case Study: XOR Neural Network (Deep Learning)</a></li><li class="chapter-item expanded "><a href="../examples/xor-training.html"><strong aria-hidden="true">119.</strong> Case Study: XOR Training</a></li><li class="chapter-item expanded "><a href="../examples/neural-network-training.html"><strong aria-hidden="true">120.</strong> Case Study: Neural Network Training Pipeline</a></li><li class="chapter-item expanded "><a href="../examples/classification-training.html"><strong aria-hidden="true">121.</strong> Case Study: Classification Training</a></li><li class="chapter-item expanded "><a href="../examples/nlp-advanced.html"><strong aria-hidden="true">122.</strong> Case Study: Advanced NLP</a></li><li class="chapter-item expanded "><a href="../examples/topic-sentiment-analysis.html"><strong aria-hidden="true">123.</strong> Case Study: Topic & Sentiment Analysis</a></li><li class="chapter-item expanded "><a href="../examples/recommend-content.html"><strong aria-hidden="true">124.</strong> Case Study: Content-Based Recommendations</a></li><li class="chapter-item expanded "><a href="../examples/shell-completion.html"><strong aria-hidden="true">125.</strong> Case Study: AI Shell Completion</a></li><li class="chapter-item expanded "><a href="../examples/shell-completion-benchmarks.html"><strong aria-hidden="true">126.</strong> Case Study: Shell Completion Benchmarks</a></li><li class="chapter-item expanded "><a href="../examples/shell-hf-hub-publishing.html"><strong aria-hidden="true">127.</strong> Case Study: Publishing Shell Models to HF Hub</a></li><li class="chapter-item expanded "><a href="../examples/shell-encryption-tiers.html"><strong aria-hidden="true">128.</strong> Case Study: Model Encryption Tiers</a></li><li class="chapter-item expanded "><a href="../examples/shell-encryption-demo.html"><strong aria-hidden="true">129.</strong> Case Study: Shell Encryption Demo</a></li><li class="chapter-item expanded "><a href="../examples/shell-model-format.html"><strong aria-hidden="true">130.</strong> Case Study: Shell Model Format</a></li><li class="chapter-item expanded "><a href="../examples/mixture-of-experts.html"><strong aria-hidden="true">131.</strong> Case Study: Mixture of Experts (MoE)</a></li><li class="chapter-item expanded "><a href="../examples/shell-history-developer-guide.html"><strong aria-hidden="true">132.</strong> Developer's Guide: Shell History Models</a></li><li class="chapter-item expanded "><a href="../examples/custom-error-classifier.html"><strong aria-hidden="true">133.</strong> Building Custom Error Classifiers</a></li><li class="chapter-item expanded "><a href="../examples/citl-automated-repair.html" class="active"><strong aria-hidden="true">134.</strong> Case Study: CITL Automated Program Repair</a></li><li class="chapter-item expanded affix "><li class="part-title">Sprint-Based Development</li><li class="chapter-item expanded "><a href="../sprints/sprint-planning.html"><strong aria-hidden="true">135.</strong> Sprint Planning</a></li><li class="chapter-item expanded "><a href="../sprints/sprint-execution.html"><strong aria-hidden="true">136.</strong> Sprint Execution</a></li><li class="chapter-item expanded "><a href="../sprints/sprint-review.html"><strong aria-hidden="true">137.</strong> Sprint Review</a></li><li class="chapter-item expanded "><a href="../sprints/sprint-retrospective.html"><strong aria-hidden="true">138.</strong> Sprint Retrospective</a></li><li class="chapter-item expanded "><a href="../sprints/issue-management.html"><strong aria-hidden="true">139.</strong> Issue Management</a></li><li class="chapter-item expanded affix "><li class="part-title">Anti-Hallucination Enforcement</li><li class="chapter-item expanded "><a href="../anti-hallucination/test-backed-examples.html"><strong aria-hidden="true">140.</strong> Test-Backed Examples</a></li><li class="chapter-item expanded "><a href="../anti-hallucination/example-verification.html"><strong aria-hidden="true">141.</strong> Example Verification</a></li><li class="chapter-item expanded "><a href="../anti-hallucination/ci-validation.html"><strong aria-hidden="true">142.</strong> CI Validation</a></li><li class="chapter-item expanded "><a href="../anti-hallucination/documentation-testing.html"><strong aria-hidden="true">143.</strong> Documentation Testing</a></li><li class="chapter-item expanded affix "><li class="part-title">Tools and Setup</li><li class="chapter-item expanded "><a href="../tools/development-environment.html"><strong aria-hidden="true">144.</strong> Development Environment</a></li><li class="chapter-item expanded "><a href="../tools/cargo-test.html"><strong aria-hidden="true">145.</strong> cargo test</a></li><li class="chapter-item expanded "><a href="../tools/cargo-clippy.html"><strong aria-hidden="true">146.</strong> cargo clippy</a></li><li class="chapter-item expanded "><a href="../tools/cargo-fmt.html"><strong aria-hidden="true">147.</strong> cargo fmt</a></li><li class="chapter-item expanded "><a href="../tools/cargo-mutants.html"><strong aria-hidden="true">148.</strong> cargo mutants</a></li><li class="chapter-item expanded "><a href="../tools/proptest.html"><strong aria-hidden="true">149.</strong> proptest</a></li><li class="chapter-item expanded "><a href="../tools/criterion.html"><strong aria-hidden="true">150.</strong> criterion</a></li><li class="chapter-item expanded "><a href="../tools/pmat.html"><strong aria-hidden="true">151.</strong> pmat (Toyota AI Toolkit)</a></li><li class="chapter-item expanded affix "><li class="part-title">Best Practices</li><li class="chapter-item expanded "><a href="../best-practices/error-handling.html"><strong aria-hidden="true">152.</strong> Error Handling</a></li><li class="chapter-item expanded "><a href="../best-practices/api-design.html"><strong aria-hidden="true">153.</strong> API Design</a></li><li class="chapter-item expanded "><a href="../best-practices/builder-pattern.html"><strong aria-hidden="true">154.</strong> Builder Pattern</a></li><li class="chapter-item expanded "><a href="../best-practices/type-safety.html"><strong aria-hidden="true">155.</strong> Type Safety</a></li><li class="chapter-item expanded "><a href="../best-practices/performance.html"><strong aria-hidden="true">156.</strong> Performance Considerations</a></li><li class="chapter-item expanded "><a href="../best-practices/documentation-standards.html"><strong aria-hidden="true">157.</strong> Documentation Standards</a></li><li class="chapter-item expanded affix "><li class="part-title">Metrics and Measurement</li><li class="chapter-item expanded "><a href="../metrics/test-coverage.html"><strong aria-hidden="true">158.</strong> Test Coverage</a></li><li class="chapter-item expanded "><a href="../metrics/mutation-score.html"><strong aria-hidden="true">159.</strong> Mutation Score</a></li><li class="chapter-item expanded "><a href="../metrics/cyclomatic-complexity.html"><strong aria-hidden="true">160.</strong> Cyclomatic Complexity</a></li><li class="chapter-item expanded "><a href="../metrics/code-churn.html"><strong aria-hidden="true">161.</strong> Code Churn</a></li><li class="chapter-item expanded "><a href="../metrics/build-times.html"><strong aria-hidden="true">162.</strong> Build Times</a></li><li class="chapter-item expanded "><a href="../metrics/tdg-breakdown.html"><strong aria-hidden="true">163.</strong> TDG Score Breakdown</a></li><li class="chapter-item expanded affix "><li class="part-title">Common Pitfalls</li><li class="chapter-item expanded "><a href="../pitfalls/skipping-tests.html"><strong aria-hidden="true">164.</strong> Skipping Tests</a></li><li class="chapter-item expanded "><a href="../pitfalls/insufficient-coverage.html"><strong aria-hidden="true">165.</strong> Insufficient Test Coverage</a></li><li class="chapter-item expanded "><a href="../pitfalls/ignoring-warnings.html"><strong aria-hidden="true">166.</strong> Ignoring Warnings</a></li><li class="chapter-item expanded "><a href="../pitfalls/over-mocking.html"><strong aria-hidden="true">167.</strong> Over-Mocking</a></li><li class="chapter-item expanded "><a href="../pitfalls/flaky-tests.html"><strong aria-hidden="true">168.</strong> Flaky Tests</a></li><li class="chapter-item expanded "><a href="../pitfalls/technical-debt.html"><strong aria-hidden="true">169.</strong> Technical Debt Accumulation</a></li><li class="chapter-item expanded affix "><li class="part-title">Appendix</li><li class="chapter-item expanded "><a href="../appendix/glossary.html"><strong aria-hidden="true">170.</strong> Glossary</a></li><li class="chapter-item expanded "><a href="../appendix/references.html"><strong aria-hidden="true">171.</strong> References</a></li><li class="chapter-item expanded "><a href="../appendix/further-reading.html"><strong aria-hidden="true">172.</strong> Further Reading</a></li><li class="chapter-item expanded "><a href="../appendix/contributing.html"><strong aria-hidden="true">173.</strong> Contributing to This Book</a></li></ol>
+            </div>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <!-- Track and set sidebar scroll position -->
+        <script>
+            var sidebarScrollbox = document.querySelector('#sidebar .sidebar-scrollbox');
+            sidebarScrollbox.addEventListener('click', function(e) {
+                if (e.target.tagName === 'A') {
+                    sessionStorage.setItem('sidebar-scroll', sidebarScrollbox.scrollTop);
+                }
+            }, { passive: true });
+            var sidebarScrollTop = sessionStorage.getItem('sidebar-scroll');
+            sessionStorage.removeItem('sidebar-scroll');
+            if (sidebarScrollTop) {
+                // preserve sidebar scroll position when navigating via links within sidebar
+                sidebarScrollbox.scrollTop = sidebarScrollTop;
+            } else {
+                // scroll sidebar to current active section when navigating via "next/previous chapter" buttons
+                var activeSection = document.querySelector('#sidebar .active');
+                if (activeSection) {
+                    activeSection.scrollIntoView({ block: 'center' });
+                }
+            }
+        </script>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="sidebar-toggle" class="icon-button" for="sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </label>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">EXTREME TDD - The Aprender Guide to Zero-Defect Machine Learning</h1>
+
+                    <div class="right-buttons">
+                        <a href="../print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                        <a href="https://github.com/paiml/aprender" title="Git repository" aria-label="Git repository">
+                            <i id="git-repository-button" class="fa fa-github"></i>
+                        </a>
+                        <a href="https://github.com/paiml/aprender/edit/main/book/src/examples/citl-automated-repair.md" title="Suggest an edit" aria-label="Suggest an edit">
+                            <i id="git-edit-button" class="fa fa-edit"></i>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="case-study-citl-automated-program-repair"><a class="header" href="#case-study-citl-automated-program-repair">Case Study: CITL Automated Program Repair</a></h1>
+<p>Using the Compiler-in-the-Loop Learning module for automated Rust code repair.</p>
+<h2 id="overview"><a class="header" href="#overview">Overview</a></h2>
+<p>The <code>aprender::citl</code> module provides a complete system for:</p>
+<ul>
+<li>Parsing compiler diagnostics</li>
+<li>Encoding errors into embeddings for pattern matching</li>
+<li>Suggesting and applying fixes</li>
+<li>Tracking metrics for continuous improvement</li>
+<li><strong>SIMD-accelerated similarity search via trueno</strong></li>
+</ul>
+<h2 id="basic-usage"><a class="header" href="#basic-usage">Basic Usage</a></h2>
+<pre><code class="language-rust">use aprender::citl::{CITL, CITLBuilder, CompilerMode};
+
+// Create CITL instance with Rust compiler
+let citl = CITLBuilder::new()
+    .with_compiler(CompilerMode::Rustc)
+    .max_iterations(5)
+    .confidence_threshold(0.7)
+    .build()
+    .expect(&quot;Failed to create CITL instance&quot;);
+
+// Source code with a type error
+let source = r#&quot;
+fn main() {
+    let x: i32 = &quot;hello&quot;;
+}
+&quot;#;
+
+// Get fix suggestions
+if let Some(suggestion) = citl.suggest_fix(source, source) {
+    println!(&quot;Suggested fix: {}&quot;, suggestion.description);
+    println!(&quot;Confidence: {:.1}%&quot;, suggestion.confidence * 100.0);
+}</code></pre>
+<h2 id="iterative-fix-loop"><a class="header" href="#iterative-fix-loop">Iterative Fix Loop</a></h2>
+<p>The <code>fix_all</code> method attempts to fix all errors iteratively:</p>
+<pre><code class="language-rust">use aprender::citl::{CITL, CITLBuilder, CompilerMode, FixResult};
+
+let citl = CITLBuilder::new()
+    .with_compiler(CompilerMode::Rustc)
+    .max_iterations(10)
+    .build()
+    .expect(&quot;CITL build failed&quot;);
+
+let buggy_code = r#&quot;
+fn add(a: i32, b: i32) -&gt; i32 {
+    a + b
+}
+
+fn main() {
+    let result: String = add(1, 2);
+    println!(&quot;{}&quot;, result);
+}
+&quot;#;
+
+match citl.fix_all(buggy_code) {
+    FixResult::Success { fixed_code, iterations, fixes_applied } =&gt; {
+        println!(&quot;Fixed in {} iterations!&quot;, iterations);
+        println!(&quot;Applied {} fixes&quot;, fixes_applied.len());
+        println!(&quot;Fixed code:\n{}&quot;, fixed_code);
+    }
+    FixResult::Failure { last_code, remaining_errors, .. } =&gt; {
+        println!(&quot;Could not fully fix. {} errors remain.&quot;, remaining_errors);
+    }
+}</code></pre>
+<h2 id="cargo-mode-for-dependencies"><a class="header" href="#cargo-mode-for-dependencies">Cargo Mode for Dependencies</a></h2>
+<p>When code requires external crates, use Cargo mode:</p>
+<pre><code class="language-rust">use aprender::citl::{CITL, CITLBuilder, CompilerMode};
+
+let citl = CITLBuilder::new()
+    .with_compiler(CompilerMode::Cargo)  // Uses cargo check
+    .build()
+    .expect(&quot;CITL build failed&quot;);
+
+let code_with_deps = r#&quot;
+use serde::{Serialize, Deserialize};
+
+#[derive(Serialize, Deserialize)]
+struct Config {
+    name: String,
+    value: i32,
+}
+
+fn main() {
+    let config = Config { name: &quot;test&quot;.into(), value: 42 };
+    println!(&quot;{}&quot;, serde_json::to_string(&amp;config).unwrap());
+}
+&quot;#;
+
+// Cargo mode resolves dependencies automatically
+if let Some(fix) = citl.suggest_fix(code_with_deps, code_with_deps) {
+    println!(&quot;Fix: {}&quot;, fix.description);
+}</code></pre>
+<h2 id="pattern-library"><a class="header" href="#pattern-library">Pattern Library</a></h2>
+<p>The pattern library stores learned error-fix mappings:</p>
+<pre><code class="language-rust">use aprender::citl::{PatternLibrary, ErrorFixPattern, FixTemplate};
+
+let mut library = PatternLibrary::new();
+
+// Add a custom pattern
+let pattern = ErrorFixPattern {
+    error_code: &quot;E0308&quot;.to_string(),
+    error_message_pattern: &quot;expected `i32`, found `String`&quot;.to_string(),
+    context_pattern: &quot;let.*:.*i32.*=&quot;.to_string(),
+    fix_template: FixTemplate::type_conversion(&quot;i32&quot;, &quot;.parse().unwrap()&quot;),
+    success_count: 0,
+    failure_count: 0,
+};
+
+library.add_pattern(pattern);
+
+// Save patterns for persistence
+library.save(&quot;patterns.citl&quot;).expect(&quot;Save failed&quot;);
+
+// Load patterns later
+let loaded = PatternLibrary::load(&quot;patterns.citl&quot;).expect(&quot;Load failed&quot;);</code></pre>
+<h2 id="built-in-fix-templates"><a class="header" href="#built-in-fix-templates">Built-in Fix Templates</a></h2>
+<p>The module includes 21 fix templates for common errors:</p>
+<h3 id="e0308---type-mismatch"><a class="header" href="#e0308---type-mismatch">E0308 - Type Mismatch</a></h3>
+<ul>
+<li><code>type_annotation</code> - Add explicit type annotation</li>
+<li><code>type_conversion</code> - Add conversion method (.into(), .to_string())</li>
+<li><code>reference_conversion</code> - Convert between &amp; and owned types</li>
+</ul>
+<h3 id="e0382---use-of-moved-value"><a class="header" href="#e0382---use-of-moved-value">E0382 - Use of Moved Value</a></h3>
+<ul>
+<li><code>borrow_instead_of_move</code> - Change to borrow</li>
+<li><code>rc_wrap</code> - Wrap in Rc for shared ownership</li>
+<li><code>arc_wrap</code> - Wrap in Arc for thread-safe sharing</li>
+</ul>
+<h3 id="e0277---trait-bound-not-satisfied"><a class="header" href="#e0277---trait-bound-not-satisfied">E0277 - Trait Bound Not Satisfied</a></h3>
+<ul>
+<li><code>derive_debug</code> - Add #[derive(Debug)]</li>
+<li><code>derive_clone_trait</code> - Add #[derive(Clone)]</li>
+<li><code>impl_display</code> - Implement Display trait</li>
+<li><code>impl_from</code> - Implement From trait</li>
+</ul>
+<h3 id="e0515---cannot-return-reference"><a class="header" href="#e0515---cannot-return-reference">E0515 - Cannot Return Reference</a></h3>
+<ul>
+<li><code>return_owned</code> - Return owned value instead</li>
+<li><code>return_cloned</code> - Clone and return</li>
+<li><code>use_cow</code> - Use Cow&lt;'a, T&gt; for flexibility</li>
+</ul>
+<h2 id="metrics-tracking"><a class="header" href="#metrics-tracking">Metrics Tracking</a></h2>
+<p>Track performance with the built-in metrics system:</p>
+<pre><code class="language-rust">use aprender::citl::{MetricsTracker, MetricsSummary};
+use std::time::Duration;
+
+let mut metrics = MetricsTracker::new();
+
+// Record fix attempts
+metrics.record_fix_attempt(true, &quot;E0308&quot;);
+metrics.record_fix_attempt(true, &quot;E0308&quot;);
+metrics.record_fix_attempt(false, &quot;E0382&quot;);
+
+// Record pattern usage
+metrics.record_pattern_use(0, true);  // Pattern 0 succeeded
+metrics.record_pattern_use(1, false); // Pattern 1 failed
+
+// Record compilation times
+metrics.record_compilation_time(Duration::from_millis(150));
+metrics.record_compilation_time(Duration::from_millis(200));
+
+// Record convergence (iterations to fix)
+metrics.record_convergence(2, true);  // Fixed in 2 iterations
+metrics.record_convergence(5, false); // Failed after 5 iterations
+
+// Get summary
+let summary = metrics.summary();
+println!(&quot;{}&quot;, summary.to_report());</code></pre>
+<p>Output:</p>
+<pre><code>=== CITL Metrics Summary ===
+
+Fix Attempts: 3 (success rate: 66.7%)
+Compilations: 2 (avg time: 175.0ms)
+Convergence: 50.0% (avg 3.5 iterations)
+
+Most Common Errors:
+  E0308: 2
+  E0382: 1
+
+Session Duration: 1.2s
+</code></pre>
+<h2 id="error-embedding"><a class="header" href="#error-embedding">Error Embedding</a></h2>
+<p>The encoder converts errors into embeddings for similarity matching:</p>
+<pre><code class="language-rust">use aprender::citl::ErrorEncoder;
+
+let encoder = ErrorEncoder::new();
+
+// Encode a diagnostic
+let diagnostic = &quot;error[E0308]: mismatched types, expected i32 found String&quot;;
+let embedding = encoder.encode(diagnostic, &quot;let x: i32 = get_string();&quot;);
+
+// Embeddings can be compared for similarity
+// Similar errors produce similar embeddings</code></pre>
+<h2 id="integration-test-example"><a class="header" href="#integration-test-example">Integration Test Example</a></h2>
+<pre><code class="language-rust">#[test]
+fn test_citl_fixes_type_mismatch() {
+    let citl = CITLBuilder::new()
+        .with_compiler(CompilerMode::Rustc)
+        .max_iterations(3)
+        .build()
+        .unwrap();
+
+    let source = r#&quot;
+fn main() {
+    let x: i32 = &quot;42&quot;;
+}
+&quot;#;
+
+    let result = citl.fix_all(source);
+    assert!(matches!(result, FixResult::Success { .. }));
+}</code></pre>
+<h2 id="architecture"><a class="header" href="#architecture">Architecture</a></h2>
+<pre><code>┌─────────────────────────────────────────────────────────────────┐
+│                         CITL Module                             │
+│                                                                 │
+│   ┌───────────┐    ┌───────────┐    ┌───────────────────┐      │
+│   │ Compiler  │───►│  Parser   │───►│  Error Encoder    │      │
+│   │ Interface │    │ (JSON)    │    │  (Embeddings)     │      │
+│   └───────────┘    └───────────┘    └─────────┬─────────┘      │
+│                                               │                 │
+│                                               ▼                 │
+│   ┌───────────┐    ┌───────────┐    ┌───────────────────┐      │
+│   │  Apply    │◄───│  Pattern  │◄───│  Pattern Library  │      │
+│   │   Fix     │    │  Matcher  │    │  (21 Templates)   │      │
+│   └───────────┘    └─────┬─────┘    └───────────────────┘      │
+│                          │                                      │
+│                          ▼                                      │
+│   ┌─────────────────────────────────────────────────────┐      │
+│   │                    trueno                            │      │
+│   │         SIMD Vector Operations (CPU/GPU)             │      │
+│   │    dot() • norm_l2() • sub() • normalize()           │      │
+│   └─────────────────────────────────────────────────────┘      │
+│                                                                 │
+│   ┌─────────────────────────────────────────────────────┐      │
+│   │              Metrics Tracker                         │      │
+│   │  (Success Rate, Compilation Time, Convergence)       │      │
+│   └─────────────────────────────────────────────────────┘      │
+└─────────────────────────────────────────────────────────────────┘
+</code></pre>
+<h2 id="neural-encoder-multi-language"><a class="header" href="#neural-encoder-multi-language">Neural Encoder (Multi-Language)</a></h2>
+<p>For cross-language transpilation (Python→Rust, Julia→Rust, etc.), use the neural encoder:</p>
+<pre><code class="language-rust">use aprender::citl::{NeuralErrorEncoder, NeuralEncoderConfig, ContrastiveLoss};
+
+// Create encoder with configuration
+let config = NeuralEncoderConfig::small();  // 128-dim embeddings
+let encoder = NeuralErrorEncoder::with_config(config);
+
+// Encode errors from different languages
+let rust_emb = encoder.encode(
+    &quot;E0308: mismatched types, expected i32 found &amp;str&quot;,
+    &quot;let x: i32 = \&quot;hello\&quot;;&quot;,
+    &quot;rust&quot;,
+);
+
+let python_emb = encoder.encode(
+    &quot;TypeError: expected int, got str&quot;,
+    &quot;x: int = \&quot;hello\&quot;&quot;,
+    &quot;python&quot;,
+);
+
+// Similar type errors cluster together in embedding space</code></pre>
+<h3 id="training-with-contrastive-loss"><a class="header" href="#training-with-contrastive-loss">Training with Contrastive Loss</a></h3>
+<pre><code class="language-rust">let mut encoder = NeuralErrorEncoder::with_config(NeuralEncoderConfig::default());
+encoder.train();  // Enable training mode
+
+// Encode batch of anchors and positives
+let anchors = &amp;[
+    (&quot;E0308: type mismatch&quot;, &quot;let x: i32 = s;&quot;, &quot;rust&quot;),
+    (&quot;E0382: moved value&quot;, &quot;let y = x; let z = x;&quot;, &quot;rust&quot;),
+];
+let positives = &amp;[
+    (&quot;E0308: expected i32&quot;, &quot;let a: i32 = b;&quot;, &quot;rust&quot;),
+    (&quot;E0382: borrow after move&quot;, &quot;let p = q; let r = q;&quot;, &quot;rust&quot;),
+];
+
+let anchor_emb = encoder.encode_batch(anchors);
+let positive_emb = encoder.encode_batch(positives);
+
+// InfoNCE contrastive loss
+let loss_fn = ContrastiveLoss::with_temperature(0.07);
+let loss = loss_fn.forward(&amp;anchor_emb, &amp;positive_emb, None);</code></pre>
+<h3 id="configuration-options"><a class="header" href="#configuration-options">Configuration Options</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Config</th><th>Embed Dim</th><th>Layers</th><th>Encode Time</th></tr></thead><tbody>
+<tr><td><code>minimal()</code></td><td>64</td><td>1</td><td>132 µs</td></tr>
+<tr><td><code>small()</code></td><td>128</td><td>2</td><td>919 µs</td></tr>
+<tr><td><code>default()</code></td><td>256</td><td>2</td><td>~2 ms</td></tr>
+</tbody></table>
+</div>
+<h3 id="architecture-1"><a class="header" href="#architecture-1">Architecture</a></h3>
+<pre><code>┌─────────────┐     ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│ Tokenizer   │────►│  Embedding  │────►│ Transformer │────►│ L2 Norm     │
+│ (8K vocab)  │     │ + Position  │     │ (N layers)  │     │ (SIMD)      │
+└─────────────┘     └─────────────┘     └─────────────┘     └─────────────┘
+</code></pre>
+<p>Supported languages: <code>rust</code>, <code>python</code>, <code>julia</code>, <code>typescript</code>, <code>go</code>, <code>java</code>, <code>cpp</code></p>
+<h2 id="key-types"><a class="header" href="#key-types">Key Types</a></h2>
+<div class="table-wrapper"><table><thead><tr><th>Type</th><th>Purpose</th></tr></thead><tbody>
+<tr><td><code>CITL</code></td><td>Main orchestrator for fix operations</td></tr>
+<tr><td><code>CITLBuilder</code></td><td>Builder pattern for configuration</td></tr>
+<tr><td><code>CompilerMode</code></td><td>Rustc, Cargo, or CargoCheck</td></tr>
+<tr><td><code>PatternLibrary</code></td><td>Stores error-fix patterns</td></tr>
+<tr><td><code>FixTemplate</code></td><td>Describes how to apply a fix</td></tr>
+<tr><td><code>ErrorEncoder</code></td><td>Hand-crafted feature embeddings</td></tr>
+<tr><td><code>NeuralErrorEncoder</code></td><td>Transformer-based embeddings (GPU)</td></tr>
+<tr><td><code>ContrastiveLoss</code></td><td>InfoNCE loss for training</td></tr>
+<tr><td><code>MetricsTracker</code></td><td>Performance tracking</td></tr>
+<tr><td><code>FixResult</code></td><td>Success/Failure with details</td></tr>
+</tbody></table>
+</div>
+<h2 id="performance-characteristics"><a class="header" href="#performance-characteristics">Performance Characteristics</a></h2>
+<p>CITL uses <strong>trueno</strong> for SIMD-accelerated vector operations:</p>
+<div class="table-wrapper"><table><thead><tr><th>Operation</th><th>Time</th><th>Throughput</th></tr></thead><tbody>
+<tr><td>Cosine similarity (256-dim)</td><td>122 ns</td><td>2.1 Gelem/s</td></tr>
+<tr><td>Cosine similarity (1024-dim)</td><td>375 ns</td><td>2.7 Gelem/s</td></tr>
+<tr><td>L2 distance (256-dim)</td><td>147 ns</td><td>1.7 Gelem/s</td></tr>
+<tr><td>Pattern search (100 patterns)</td><td>9.3 µs</td><td>10.7 Melem/s</td></tr>
+<tr><td>Batch similarity (500 comparisons)</td><td>40 µs</td><td>12.4 Melem/s</td></tr>
+</tbody></table>
+</div>
+<p><strong>Complexity:</strong></p>
+<ul>
+<li><strong>Pattern matching</strong>: O(n) where n = number of patterns</li>
+<li><strong>Embedding generation</strong>: O(m) where m = diagnostic length</li>
+<li><strong>Fix application</strong>: O(1) string replacement</li>
+<li><strong>Persistence</strong>: Binary format with CITL magic header</li>
+</ul>
+<p><strong>GPU Acceleration:</strong></p>
+<p>Enable GPU via trueno's wgpu backend:</p>
+<pre><code class="language-bash">cargo build --features gpu
+</code></pre>
+<h3 id="running-benchmarks"><a class="header" href="#running-benchmarks">Running Benchmarks</a></h3>
+<pre><code class="language-bash">cargo bench --bench citl
+</code></pre>
+<p>Benchmark groups:</p>
+<ul>
+<li><code>citl_cosine_similarity</code> - Core SIMD similarity</li>
+<li><code>citl_l2_distance</code> - Euclidean distance</li>
+<li><code>citl_pattern_search</code> - Library search scaling</li>
+<li><code>citl_error_encoding</code> - Full encoding pipeline</li>
+<li><code>citl_batch_similarity</code> - Batch comparison throughput</li>
+<li><code>citl_neural_encoder</code> - Transformer encoding</li>
+<li><code>citl_neural_config</code> - Config comparison</li>
+</ul>
+<h2 id="see-also"><a class="header" href="#see-also">See Also</a></h2>
+<ul>
+<li><a href="../ml-fundamentals/compiler-in-the-loop.html">Compiler-in-the-Loop Learning Theory</a></li>
+<li><a href="./custom-error-classifier.html">Building Custom Error Classifiers</a></li>
+</ul>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../examples/custom-error-classifier.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+
+                            <a rel="next prefetch" href="../sprints/sprint-planning.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../examples/custom-error-classifier.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+
+                    <a rel="next prefetch" href="../sprints/sprint-planning.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+            </nav>
+
+        </div>
+
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+        <script src="../ace.js"></script>
+        <script src="../editor.js"></script>
+        <script src="../mode-rust.js"></script>
+        <script src="../theme-dawn.js"></script>
+        <script src="../theme-tomorrow_night.js"></script>
+
+        <script src="../elasticlunr.min.js"></script>
+        <script src="../mark.min.js"></script>
+        <script src="../searcher.js"></script>
+
+        <script src="../clipboard.min.js"></script>
+        <script src="../highlight.js"></script>
+        <script src="../book.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+    </div>
+    </body>
+</html>
