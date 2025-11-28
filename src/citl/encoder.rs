@@ -4,9 +4,20 @@
 //! - Symbols in source code (variables, types, functions)
 //! - Diagnostic feedback (error codes, messages, spans)
 //! - AST structure (parent-child, sibling relationships)
+//!
+//! # GNN-Based Encoding
+//!
+//! This module provides two encoder types:
+//! - [`ErrorEncoder`]: Simple bag-of-features encoding (fast, CPU-only)
+//! - [`GNNErrorEncoder`]: Graph neural network encoding (higher quality)
+//!
+//! The GNN encoder builds a program-feedback graph and uses message passing
+//! to produce context-aware embeddings that capture code structure.
 
 use super::diagnostic::{CompilerDiagnostic, SourceSpan};
 use super::ErrorCode;
+use crate::autograd::Tensor;
+use crate::nn::gnn::{AdjacencyMatrix, GCNConv, SAGEAggregation, SAGEConv};
 use std::collections::HashMap;
 use trueno::Vector;
 
@@ -446,6 +457,662 @@ impl Default for ErrorEncoder {
     }
 }
 
+/// GNN-based error encoder using program-feedback graphs.
+///
+/// Per Yasunaga & Liang (2020), this encoder:
+/// 1. Builds a heterogeneous graph from source code and diagnostics
+/// 2. Applies GNN message passing to learn context-aware representations
+/// 3. Pools node embeddings to produce a fixed-size error embedding
+///
+/// # Architecture
+///
+/// ```text
+/// Source + Diagnostic → ProgramFeedbackGraph → GCN/SAGE layers → Mean Pool → Embedding
+/// ```
+///
+/// # Example
+///
+/// ```ignore
+/// use aprender::citl::encoder::GNNErrorEncoder;
+///
+/// let encoder = GNNErrorEncoder::new(64, 256);
+/// let graph = encoder.build_graph(&diagnostic, source);
+/// let embedding = encoder.encode_graph(&graph);
+/// ```
+#[derive(Debug)]
+pub struct GNNErrorEncoder {
+    /// Hidden dimension for GNN layers
+    #[allow(dead_code)]
+    hidden_dim: usize,
+    /// Output embedding dimension
+    output_dim: usize,
+    /// First GCN layer (node features → hidden)
+    gcn1: GCNConv,
+    /// Second SAGE layer (hidden → hidden)
+    sage: SAGEConv,
+    /// Final GCN layer (hidden → output)
+    gcn2: GCNConv,
+    /// Node type embedding dimension
+    node_type_dim: usize,
+    /// Base feature extractor for node features
+    #[allow(dead_code)]
+    base_encoder: ErrorEncoder,
+}
+
+impl GNNErrorEncoder {
+    /// Create a new GNN error encoder.
+    ///
+    /// # Arguments
+    /// * `hidden_dim` - Hidden layer dimension (default: 64)
+    /// * `output_dim` - Output embedding dimension (default: 256)
+    #[must_use]
+    pub fn new(hidden_dim: usize, output_dim: usize) -> Self {
+        // Node feature dimension: base features (64) + node type embedding (8)
+        let node_feature_dim = 72;
+
+        Self {
+            hidden_dim,
+            output_dim,
+            gcn1: GCNConv::new(node_feature_dim, hidden_dim),
+            sage: SAGEConv::new(hidden_dim, hidden_dim).with_aggregation(SAGEAggregation::Mean),
+            gcn2: GCNConv::new(hidden_dim, output_dim),
+            node_type_dim: 8,
+            base_encoder: ErrorEncoder::with_dim(64),
+        }
+    }
+
+    /// Create encoder with default dimensions (64 hidden, 256 output).
+    #[must_use]
+    pub fn default_config() -> Self {
+        Self::new(64, 256)
+    }
+
+    /// Get the output embedding dimension.
+    #[must_use]
+    pub fn output_dim(&self) -> usize {
+        self.output_dim
+    }
+
+    /// Build a program-feedback graph from a diagnostic and source code.
+    ///
+    /// The graph includes:
+    /// - AST nodes for key source elements (variables, types, keywords)
+    /// - Diagnostic node for the error itself
+    /// - Type nodes for expected/found types (if present)
+    /// - Edges connecting related nodes
+    #[must_use]
+    pub fn build_graph(
+        &self,
+        diagnostic: &CompilerDiagnostic,
+        source: &str,
+    ) -> ProgramFeedbackGraph {
+        let mut graph = ProgramFeedbackGraph::new();
+
+        // 1. Add diagnostic node (central node)
+        let diag_features = self.extract_diagnostic_features(diagnostic);
+        let diag_idx = graph.add_node(NodeType::Diagnostic, diag_features);
+
+        // 2. Add expected type node if present
+        let expected_idx = diagnostic.expected.as_ref().map(|expected| {
+            let features = self.extract_type_node_features(&expected.base, true);
+            graph.add_node(NodeType::ExpectedType, features)
+        });
+
+        // 3. Add found type node if present
+        let found_idx = diagnostic.found.as_ref().map(|found| {
+            let features = self.extract_type_node_features(&found.base, false);
+            graph.add_node(NodeType::FoundType, features)
+        });
+
+        // 4. Extract AST nodes from source context
+        let ast_indices = self.extract_ast_nodes(&mut graph, source, &diagnostic.span);
+
+        // 5. Add edges
+        // Diagnostic → Type nodes
+        if let Some(exp_idx) = expected_idx {
+            graph.add_edge(diag_idx, exp_idx, EdgeType::Expects);
+        }
+        if let Some(fnd_idx) = found_idx {
+            graph.add_edge(diag_idx, fnd_idx, EdgeType::Found);
+        }
+
+        // Diagnostic → AST nodes at error location
+        for &ast_idx in &ast_indices {
+            graph.add_edge(diag_idx, ast_idx, EdgeType::DiagnosticRefers);
+        }
+
+        // AST → AST edges (sequential context)
+        for window in ast_indices.windows(2) {
+            graph.add_edge(window[0], window[1], EdgeType::AstChild);
+        }
+
+        // Add suggestion node if present
+        if !diagnostic.suggestions.is_empty() {
+            let suggestion = &diagnostic.suggestions[0];
+            let sugg_features = self.extract_suggestion_features(&suggestion.message);
+            let sugg_idx = graph.add_node(NodeType::Suggestion, sugg_features);
+            graph.add_edge(diag_idx, sugg_idx, EdgeType::DiagnosticRefers);
+        }
+
+        graph
+    }
+
+    /// Encode a program-feedback graph into an embedding vector.
+    ///
+    /// # Algorithm
+    /// 1. Convert graph to tensor format
+    /// 2. Apply GCN → SAGE → GCN message passing
+    /// 3. Mean pool node embeddings
+    /// 4. Return normalized embedding
+    #[must_use]
+    pub fn encode_graph(&self, graph: &ProgramFeedbackGraph) -> ErrorEmbedding {
+        if graph.num_nodes() == 0 {
+            // Return zero embedding for empty graphs
+            return ErrorEmbedding::new(
+                vec![0.0; self.output_dim],
+                ErrorCode::new(
+                    "E0000",
+                    super::ErrorCategory::Unknown,
+                    super::Difficulty::Easy,
+                ),
+                0,
+            );
+        }
+
+        // 1. Convert node features to tensor
+        let node_tensor = self.graph_to_tensor(graph);
+        let adj = self.graph_to_adjacency(graph);
+
+        // 2. Apply GNN layers
+        let h1 = self.gcn1.forward(&node_tensor, &adj);
+        let h1_relu = Self::relu(&h1);
+        let h2 = self.sage.forward(&h1_relu, &adj);
+        let h2_relu = Self::relu(&h2);
+        let h3 = self.gcn2.forward(&h2_relu, &adj);
+
+        // 3. Mean pool over all nodes
+        let embedding = self.mean_pool(&h3, graph.num_nodes());
+
+        // 4. Normalize
+        let normalized = self.normalize_embedding(&embedding);
+
+        // Extract error code from graph (diagnostic node)
+        let error_code = self.extract_error_code_from_graph(graph);
+        let context_hash = self.compute_graph_hash(graph);
+
+        ErrorEmbedding::new(normalized, error_code, context_hash)
+    }
+
+    /// Encode a diagnostic directly (convenience method).
+    ///
+    /// This builds the graph and encodes it in one step.
+    #[must_use]
+    pub fn encode(&self, diagnostic: &CompilerDiagnostic, source: &str) -> ErrorEmbedding {
+        let graph = self.build_graph(diagnostic, source);
+        self.encode_graph(&graph)
+    }
+
+    /// Extract features for the diagnostic node.
+    fn extract_diagnostic_features(&self, diagnostic: &CompilerDiagnostic) -> Vec<f32> {
+        let mut features = vec![0.0f32; 64 + self.node_type_dim];
+
+        // Error code features (first 32 dims)
+        let code_hash = Self::simple_hash(&diagnostic.code.code);
+        for (i, feature) in features.iter_mut().take(32).enumerate() {
+            *feature = ((code_hash >> (i % 64)) & 1) as f32;
+        }
+
+        // Message features (next 32 dims)
+        let msg_lower = diagnostic.message.to_lowercase();
+        let keywords = [
+            "type",
+            "borrow",
+            "move",
+            "lifetime",
+            "trait",
+            "impl",
+            "expected",
+            "found",
+            "cannot",
+            "missing",
+            "unknown",
+            "value",
+            "reference",
+            "mutable",
+            "method",
+            "function",
+            "argument",
+            "return",
+            "copy",
+            "clone",
+            "bound",
+            "satisfy",
+            "require",
+            "import",
+            "module",
+            "crate",
+            "use",
+            "struct",
+            "enum",
+            "unsafe",
+            "async",
+            "await",
+        ];
+        for (i, kw) in keywords.iter().enumerate().take(32) {
+            features[32 + i] = if msg_lower.contains(kw) { 1.0 } else { 0.0 };
+        }
+
+        // Node type embedding (last 8 dims) - Diagnostic type
+        features[64] = 1.0; // is_diagnostic
+        features[65] = match diagnostic.code.category {
+            super::ErrorCategory::TypeMismatch => 1.0,
+            _ => 0.0,
+        };
+        features[66] = match diagnostic.code.category {
+            super::ErrorCategory::Ownership => 1.0,
+            _ => 0.0,
+        };
+        features[67] = match diagnostic.code.category {
+            super::ErrorCategory::Lifetime => 1.0,
+            _ => 0.0,
+        };
+        features[68] = match diagnostic.code.category {
+            super::ErrorCategory::TraitBound => 1.0,
+            _ => 0.0,
+        };
+        features[69] = match diagnostic.code.category {
+            super::ErrorCategory::Import => 1.0,
+            _ => 0.0,
+        };
+        features[70] = match diagnostic.code.difficulty {
+            super::Difficulty::Easy => 0.25,
+            super::Difficulty::Medium => 0.5,
+            super::Difficulty::Hard => 0.75,
+            super::Difficulty::Expert => 1.0,
+        };
+
+        features
+    }
+
+    /// Extract features for a type node.
+    fn extract_type_node_features(&self, type_name: &str, is_expected: bool) -> Vec<f32> {
+        let mut features = vec![0.0f32; 64 + self.node_type_dim];
+
+        // Type name features
+        let type_patterns = [
+            ("String", 0),
+            ("str", 1),
+            ("Vec", 2),
+            ("Option", 3),
+            ("Result", 4),
+            ("Box", 5),
+            ("i32", 6),
+            ("i64", 7),
+            ("u32", 8),
+            ("u64", 9),
+            ("f32", 10),
+            ("f64", 11),
+            ("bool", 12),
+            ("char", 13),
+            ("usize", 14),
+            ("isize", 15),
+            ("&", 16),
+            ("mut", 17),
+            ("'", 18),
+            ("<", 19),
+            ("impl", 20),
+            ("dyn", 21),
+            ("Rc", 22),
+            ("Arc", 23),
+            ("Cell", 24),
+            ("RefCell", 25),
+            ("Pin", 26),
+            ("Future", 27),
+            ("Iterator", 28),
+            ("IntoIterator", 29),
+            ("Clone", 30),
+            ("Copy", 31),
+        ];
+
+        for (pattern, idx) in &type_patterns {
+            if type_name.contains(pattern) {
+                features[*idx] = 1.0;
+            }
+        }
+
+        // Type complexity (32-47)
+        features[32] = type_name.len() as f32 / 50.0;
+        features[33] = type_name.matches('<').count() as f32 / 3.0;
+        features[34] = type_name.matches('&').count() as f32 / 2.0;
+        features[35] = type_name.matches('\'').count() as f32 / 2.0;
+
+        // Node type embedding
+        features[64] = 0.0; // not diagnostic
+        features[65] = if is_expected { 1.0 } else { 0.0 };
+        features[66] = if is_expected { 0.0 } else { 1.0 };
+        features[67] = 1.0; // is_type_node
+
+        features
+    }
+
+    /// Extract AST nodes from source context.
+    fn extract_ast_nodes(
+        &self,
+        graph: &mut ProgramFeedbackGraph,
+        source: &str,
+        span: &SourceSpan,
+    ) -> Vec<usize> {
+        let mut indices = Vec::new();
+        let lines: Vec<&str> = source.lines().collect();
+
+        let start_line = span.line_start.saturating_sub(1);
+        let end_line = span.line_end.min(lines.len());
+
+        // Extract tokens from the error region
+        for line in lines.iter().take(end_line).skip(start_line) {
+            for token in Self::tokenize_rust(line) {
+                let features = self.extract_token_features(&token);
+                let idx = graph.add_node(NodeType::Ast, features);
+                indices.push(idx);
+
+                // Limit to avoid huge graphs
+                if indices.len() >= 20 {
+                    return indices;
+                }
+            }
+        }
+
+        indices
+    }
+
+    /// Simple Rust tokenizer for AST extraction.
+    fn tokenize_rust(line: &str) -> Vec<String> {
+        let keywords = [
+            "fn", "let", "mut", "struct", "impl", "trait", "use", "mod", "pub", "self", "Self",
+            "return", "if", "else", "match", "for", "while", "loop", "break", "continue", "async",
+            "await", "move", "ref", "where", "type", "const", "static", "enum", "union",
+        ];
+
+        let mut tokens = Vec::new();
+        let mut current = String::new();
+
+        for c in line.chars() {
+            if c.is_alphanumeric() || c == '_' {
+                current.push(c);
+            } else {
+                if !current.is_empty() {
+                    tokens.push(current.clone());
+                    current.clear();
+                }
+                // Include significant punctuation as tokens
+                if matches!(
+                    c,
+                    ':' | ';'
+                        | ','
+                        | '.'
+                        | '&'
+                        | '*'
+                        | '<'
+                        | '>'
+                        | '('
+                        | ')'
+                        | '{'
+                        | '}'
+                        | '['
+                        | ']'
+                        | '='
+                        | '-'
+                        | '+'
+                        | '!'
+                        | '?'
+                ) {
+                    tokens.push(c.to_string());
+                }
+            }
+        }
+        if !current.is_empty() {
+            tokens.push(current);
+        }
+
+        // Prioritize keywords
+        let keyword_set: std::collections::HashSet<&str> = keywords.iter().copied().collect();
+        tokens.sort_by(|a, b| {
+            let a_is_kw = keyword_set.contains(a.as_str());
+            let b_is_kw = keyword_set.contains(b.as_str());
+            b_is_kw.cmp(&a_is_kw)
+        });
+
+        tokens.into_iter().take(10).collect()
+    }
+
+    /// Extract features for a token node.
+    fn extract_token_features(&self, token: &str) -> Vec<f32> {
+        let mut features = vec![0.0f32; 64 + self.node_type_dim];
+
+        // Token hash features
+        let hash = Self::simple_hash(token);
+        for (i, feature) in features.iter_mut().take(32).enumerate() {
+            *feature = ((hash >> (i % 64)) & 1) as f32;
+        }
+
+        // Token type features
+        let keywords = [
+            "fn", "let", "mut", "struct", "impl", "trait", "use", "mod", "pub", "self", "Self",
+            "return", "if", "else", "match", "for",
+        ];
+        for (i, kw) in keywords.iter().enumerate().take(16) {
+            features[32 + i] = if token == *kw { 1.0 } else { 0.0 };
+        }
+
+        // Token characteristics
+        features[48] = token.len() as f32 / 20.0;
+        features[49] = if token.chars().all(|c| c.is_uppercase() || c == '_') {
+            1.0
+        } else {
+            0.0
+        };
+        features[50] = if token.starts_with(char::is_uppercase) {
+            1.0
+        } else {
+            0.0
+        };
+        features[51] = if token.chars().all(char::is_numeric) {
+            1.0
+        } else {
+            0.0
+        };
+
+        // Node type embedding - AST node
+        features[64] = 0.0; // not diagnostic
+        features[71] = 1.0; // is_ast_node
+
+        features
+    }
+
+    /// Extract features for a suggestion node.
+    fn extract_suggestion_features(&self, suggestion: &str) -> Vec<f32> {
+        let mut features = vec![0.0f32; 64 + self.node_type_dim];
+
+        // Suggestion content features
+        let patterns = [
+            ("add", 0),
+            ("remove", 1),
+            ("change", 2),
+            ("use", 3),
+            ("import", 4),
+            ("borrow", 5),
+            ("clone", 6),
+            ("into", 7),
+            ("as", 8),
+            ("try", 9),
+            ("unwrap", 10),
+            ("expect", 11),
+            ("lifetime", 12),
+            ("'static", 13),
+            ("move", 14),
+            ("ref", 15),
+        ];
+        let sugg_lower = suggestion.to_lowercase();
+        for (pattern, idx) in &patterns {
+            features[*idx] = if sugg_lower.contains(pattern) {
+                1.0
+            } else {
+                0.0
+            };
+        }
+
+        // Node type embedding - Suggestion node
+        features[64] = 0.0;
+        features[68] = 1.0; // is_suggestion
+
+        features
+    }
+
+    /// Convert graph node features to tensor.
+    fn graph_to_tensor(&self, graph: &ProgramFeedbackGraph) -> Tensor {
+        let num_nodes = graph.num_nodes();
+        let feature_dim = 64 + self.node_type_dim;
+
+        let mut data = vec![0.0f32; num_nodes * feature_dim];
+        for (i, features) in graph.node_features.iter().enumerate() {
+            for (j, &val) in features.iter().enumerate().take(feature_dim) {
+                data[i * feature_dim + j] = val;
+            }
+        }
+
+        Tensor::new(&data, &[num_nodes, feature_dim])
+    }
+
+    /// Convert graph edges to adjacency matrix.
+    #[allow(clippy::unused_self)]
+    fn graph_to_adjacency(&self, graph: &ProgramFeedbackGraph) -> AdjacencyMatrix {
+        let edges: Vec<[usize; 2]> = graph.edges.iter().map(|&(s, t)| [s, t]).collect();
+
+        // Make edges bidirectional for message passing
+        let mut all_edges = edges.clone();
+        for &[s, t] in &edges {
+            all_edges.push([t, s]);
+        }
+
+        AdjacencyMatrix::from_edge_index(&all_edges, graph.num_nodes()).add_self_loops()
+    }
+
+    /// Apply ReLU activation.
+    fn relu(tensor: &Tensor) -> Tensor {
+        let data: Vec<f32> = tensor.data().iter().map(|&x| x.max(0.0)).collect();
+        Tensor::new(&data, tensor.shape())
+    }
+
+    /// Mean pool over nodes.
+    fn mean_pool(&self, tensor: &Tensor, num_nodes: usize) -> Vec<f32> {
+        let data = tensor.data();
+        let feature_dim = if num_nodes > 0 {
+            data.len() / num_nodes
+        } else {
+            self.output_dim
+        };
+
+        let mut pooled = vec![0.0f32; feature_dim];
+        if num_nodes == 0 {
+            return pooled;
+        }
+
+        for node in 0..num_nodes {
+            for f in 0..feature_dim {
+                pooled[f] += data[node * feature_dim + f];
+            }
+        }
+
+        for val in &mut pooled {
+            *val /= num_nodes as f32;
+        }
+
+        pooled
+    }
+
+    /// Normalize embedding to unit length.
+    #[allow(clippy::unused_self)]
+    fn normalize_embedding(&self, embedding: &[f32]) -> Vec<f32> {
+        let norm: f32 = embedding.iter().map(|x| x * x).sum::<f32>().sqrt();
+        if norm < 1e-8 {
+            return embedding.to_vec();
+        }
+        embedding.iter().map(|&x| x / norm).collect()
+    }
+
+    /// Extract error code from graph (from diagnostic node).
+    #[allow(clippy::unused_self)]
+    fn extract_error_code_from_graph(&self, graph: &ProgramFeedbackGraph) -> ErrorCode {
+        // Find diagnostic node and infer error category from features
+        for (i, node_type) in graph.node_types.iter().enumerate() {
+            if *node_type == NodeType::Diagnostic {
+                let features = &graph.node_features[i];
+                // Decode category from node type embedding (indices 65-69)
+                let category = if features.get(65).copied().unwrap_or(0.0) > 0.5 {
+                    super::ErrorCategory::TypeMismatch
+                } else if features.get(66).copied().unwrap_or(0.0) > 0.5 {
+                    super::ErrorCategory::Ownership
+                } else if features.get(67).copied().unwrap_or(0.0) > 0.5 {
+                    super::ErrorCategory::Lifetime
+                } else if features.get(68).copied().unwrap_or(0.0) > 0.5 {
+                    super::ErrorCategory::TraitBound
+                } else if features.get(69).copied().unwrap_or(0.0) > 0.5 {
+                    super::ErrorCategory::Import
+                } else {
+                    super::ErrorCategory::Unknown
+                };
+
+                let difficulty = if features.get(70).copied().unwrap_or(0.0) > 0.8 {
+                    super::Difficulty::Expert
+                } else if features.get(70).copied().unwrap_or(0.0) > 0.6 {
+                    super::Difficulty::Hard
+                } else if features.get(70).copied().unwrap_or(0.0) > 0.4 {
+                    super::Difficulty::Medium
+                } else {
+                    super::Difficulty::Easy
+                };
+
+                return ErrorCode::new("E0000", category, difficulty);
+            }
+        }
+
+        ErrorCode::new(
+            "E0000",
+            super::ErrorCategory::Unknown,
+            super::Difficulty::Easy,
+        )
+    }
+
+    /// Compute hash of graph structure for deduplication.
+    #[allow(clippy::unused_self)]
+    fn compute_graph_hash(&self, graph: &ProgramFeedbackGraph) -> u64 {
+        let mut hash: u64 = 5381;
+        hash = hash.wrapping_mul(33).wrapping_add(graph.num_nodes() as u64);
+        hash = hash.wrapping_mul(33).wrapping_add(graph.num_edges() as u64);
+
+        for node_type in &graph.node_types {
+            hash = hash.wrapping_mul(33).wrapping_add(*node_type as u64);
+        }
+
+        hash
+    }
+
+    /// Simple hash function.
+    fn simple_hash(s: &str) -> u64 {
+        let mut hash: u64 = 5381;
+        for byte in s.bytes() {
+            hash = hash.wrapping_mul(33).wrapping_add(u64::from(byte));
+        }
+        hash
+    }
+}
+
+impl Default for GNNErrorEncoder {
+    fn default() -> Self {
+        Self::default_config()
+    }
+}
+
 /// Program-feedback graph structure.
 ///
 /// Per Yasunaga & Liang (2020), this graph connects symbols
@@ -785,5 +1452,320 @@ mod tests {
             EdgeType::Found,
         ];
         assert_eq!(types.len(), 6);
+    }
+
+    // ==================== GNNErrorEncoder Tests ====================
+
+    #[test]
+    fn test_gnn_encoder_new() {
+        let encoder = GNNErrorEncoder::new(64, 256);
+        assert_eq!(encoder.output_dim(), 256);
+    }
+
+    #[test]
+    fn test_gnn_encoder_default_config() {
+        let encoder = GNNErrorEncoder::default_config();
+        assert_eq!(encoder.output_dim(), 256);
+    }
+
+    #[test]
+    fn test_gnn_encoder_default_trait() {
+        let encoder = GNNErrorEncoder::default();
+        assert_eq!(encoder.output_dim(), 256);
+    }
+
+    #[test]
+    fn test_gnn_encoder_build_graph() {
+        let encoder = GNNErrorEncoder::new(32, 128);
+        let code = ErrorCode::new("E0308", ErrorCategory::TypeMismatch, Difficulty::Easy);
+        let span = SourceSpan::single_line("test.rs", 10, 5, 20);
+        let diagnostic =
+            CompilerDiagnostic::new(code, DiagnosticSeverity::Error, "mismatched types", span);
+
+        let source = "fn main() { let x: i32 = \"hello\"; }";
+        let graph = encoder.build_graph(&diagnostic, source);
+
+        // Should have at least 1 node (diagnostic)
+        assert!(graph.num_nodes() >= 1);
+        // Should have diagnostic node
+        assert!(graph.node_types.contains(&NodeType::Diagnostic));
+    }
+
+    #[test]
+    fn test_gnn_encoder_build_graph_with_types() {
+        let encoder = GNNErrorEncoder::new(32, 128);
+        let code = ErrorCode::new("E0308", ErrorCategory::TypeMismatch, Difficulty::Easy);
+        let span = SourceSpan::single_line("test.rs", 10, 5, 20);
+        let diagnostic =
+            CompilerDiagnostic::new(code, DiagnosticSeverity::Error, "mismatched types", span)
+                .with_expected(crate::citl::diagnostic::TypeInfo::new("i32"))
+                .with_found(crate::citl::diagnostic::TypeInfo::new("&str"));
+
+        let source = "fn main() { let x: i32 = \"hello\"; }";
+        let graph = encoder.build_graph(&diagnostic, source);
+
+        // Should have expected and found type nodes
+        assert!(graph.node_types.contains(&NodeType::ExpectedType));
+        assert!(graph.node_types.contains(&NodeType::FoundType));
+        // Should have edges to type nodes
+        assert!(graph.num_edges() >= 2);
+    }
+
+    #[test]
+    fn test_gnn_encoder_encode_graph() {
+        let encoder = GNNErrorEncoder::new(32, 128);
+        let code = ErrorCode::new("E0308", ErrorCategory::TypeMismatch, Difficulty::Easy);
+        let span = SourceSpan::single_line("test.rs", 10, 5, 20);
+        let diagnostic =
+            CompilerDiagnostic::new(code, DiagnosticSeverity::Error, "mismatched types", span);
+
+        let source = "fn main() { let x: i32 = \"hello\"; }";
+        let graph = encoder.build_graph(&diagnostic, source);
+        let embedding = encoder.encode_graph(&graph);
+
+        // Should produce correct dimension
+        assert_eq!(embedding.dim(), 128);
+        // Should be normalized (unit length)
+        let norm: f32 = embedding.vector.iter().map(|x| x * x).sum::<f32>().sqrt();
+        assert!(
+            (norm - 1.0).abs() < 0.01,
+            "Embedding should be normalized, got norm {}",
+            norm
+        );
+    }
+
+    #[test]
+    fn test_gnn_encoder_encode_convenience() {
+        let encoder = GNNErrorEncoder::new(32, 128);
+        let code = ErrorCode::new("E0308", ErrorCategory::TypeMismatch, Difficulty::Easy);
+        let span = SourceSpan::single_line("test.rs", 10, 5, 20);
+        let diagnostic =
+            CompilerDiagnostic::new(code, DiagnosticSeverity::Error, "mismatched types", span);
+
+        let source = "fn main() { let x: i32 = \"hello\"; }";
+        let embedding = encoder.encode(&diagnostic, source);
+
+        assert_eq!(embedding.dim(), 128);
+    }
+
+    #[test]
+    fn test_gnn_encoder_empty_graph() {
+        let encoder = GNNErrorEncoder::new(32, 128);
+        let graph = ProgramFeedbackGraph::new();
+        let embedding = encoder.encode_graph(&graph);
+
+        // Should return zero embedding for empty graph
+        assert_eq!(embedding.dim(), 128);
+        assert!(embedding.vector.iter().all(|&x| x == 0.0));
+    }
+
+    #[test]
+    fn test_gnn_encoder_similar_errors_similar_embeddings() {
+        let encoder = GNNErrorEncoder::new(32, 128);
+
+        // Two similar type mismatch errors
+        let code = ErrorCode::new("E0308", ErrorCategory::TypeMismatch, Difficulty::Easy);
+        let span1 = SourceSpan::single_line("test.rs", 10, 5, 20);
+        let span2 = SourceSpan::single_line("test.rs", 20, 5, 20);
+
+        let diag1 = CompilerDiagnostic::new(
+            code.clone(),
+            DiagnosticSeverity::Error,
+            "mismatched types",
+            span1,
+        );
+        let diag2 =
+            CompilerDiagnostic::new(code, DiagnosticSeverity::Error, "mismatched types", span2);
+
+        let source1 = "fn main() { let x: i32 = \"hello\"; }";
+        let source2 = "fn foo() { let y: i32 = \"world\"; }";
+
+        let e1 = encoder.encode(&diag1, source1);
+        let e2 = encoder.encode(&diag2, source2);
+
+        // Same error type should have non-negative similarity
+        let similarity = e1.cosine_similarity(&e2);
+        assert!(
+            similarity > 0.0,
+            "Similar errors should have positive similarity, got {}",
+            similarity
+        );
+    }
+
+    #[test]
+    fn test_gnn_encoder_different_categories() {
+        let encoder = GNNErrorEncoder::new(32, 128);
+
+        let code1 = ErrorCode::new("E0308", ErrorCategory::TypeMismatch, Difficulty::Easy);
+        let code2 = ErrorCode::new("E0382", ErrorCategory::Ownership, Difficulty::Medium);
+        let span = SourceSpan::single_line("test.rs", 10, 5, 20);
+
+        let diag1 = CompilerDiagnostic::new(
+            code1,
+            DiagnosticSeverity::Error,
+            "mismatched types",
+            span.clone(),
+        );
+        let diag2 = CompilerDiagnostic::new(
+            code2,
+            DiagnosticSeverity::Error,
+            "borrow of moved value",
+            span,
+        );
+
+        let source = "fn main() { let x = 5; }";
+
+        let e1 = encoder.encode(&diag1, source);
+        let e2 = encoder.encode(&diag2, source);
+
+        // Should produce different embeddings
+        let diff: f32 = e1
+            .vector
+            .iter()
+            .zip(e2.vector.iter())
+            .map(|(a, b)| (a - b).abs())
+            .sum();
+        assert!(
+            diff > 0.1,
+            "Different error categories should have different embeddings"
+        );
+    }
+
+    #[test]
+    fn test_gnn_encoder_tokenize_rust() {
+        let tokens = GNNErrorEncoder::tokenize_rust("let x: i32 = 5;");
+        assert!(!tokens.is_empty());
+        assert!(tokens.contains(&"let".to_string()));
+    }
+
+    #[test]
+    fn test_gnn_encoder_tokenize_rust_complex() {
+        let tokens =
+            GNNErrorEncoder::tokenize_rust("fn foo<T: Clone>(x: &mut T) -> Result<(), Error>");
+        assert!(tokens.contains(&"fn".to_string()));
+        // Should capture punctuation
+        assert!(tokens.iter().any(|t| t.contains('<') || t == "<"));
+    }
+
+    #[test]
+    fn test_gnn_encoder_with_suggestion() {
+        use crate::citl::diagnostic::{
+            CodeReplacement, CompilerSuggestion, SuggestionApplicability,
+        };
+
+        let encoder = GNNErrorEncoder::new(32, 128);
+        let code = ErrorCode::new("E0308", ErrorCategory::TypeMismatch, Difficulty::Easy);
+        let span = SourceSpan::single_line("test.rs", 10, 5, 20);
+        let suggestion = CompilerSuggestion::new(
+            "consider using .into() to convert",
+            SuggestionApplicability::MachineApplicable,
+            CodeReplacement::new(span.clone(), ".into()"),
+        );
+        let diagnostic =
+            CompilerDiagnostic::new(code, DiagnosticSeverity::Error, "mismatched types", span)
+                .with_suggestion(suggestion);
+
+        let source = "fn main() { let x: String = \"hello\"; }";
+        let graph = encoder.build_graph(&diagnostic, source);
+
+        // Should have suggestion node
+        assert!(graph.node_types.contains(&NodeType::Suggestion));
+    }
+
+    #[test]
+    fn test_gnn_encoder_graph_hash_consistency() {
+        let encoder = GNNErrorEncoder::new(32, 128);
+
+        let code = ErrorCode::new("E0308", ErrorCategory::TypeMismatch, Difficulty::Easy);
+        let span = SourceSpan::single_line("test.rs", 10, 5, 20);
+
+        let diag =
+            CompilerDiagnostic::new(code, DiagnosticSeverity::Error, "mismatched types", span);
+
+        let source = "fn main() {}";
+
+        // Same input should produce same hash
+        let e1 = encoder.encode(&diag, source);
+        let e2 = encoder.encode(&diag, source);
+
+        assert_eq!(e1.context_hash, e2.context_hash);
+    }
+
+    #[test]
+    fn test_gnn_encoder_graph_hash_varies_with_structure() {
+        let encoder = GNNErrorEncoder::new(32, 128);
+
+        let code = ErrorCode::new("E0308", ErrorCategory::TypeMismatch, Difficulty::Easy);
+        let span = SourceSpan::single_line("test.rs", 10, 5, 20);
+
+        // Simple diagnostic
+        let diag1 = CompilerDiagnostic::new(
+            code.clone(),
+            DiagnosticSeverity::Error,
+            "mismatched types",
+            span.clone(),
+        );
+
+        // Diagnostic with type info (different structure)
+        let diag2 =
+            CompilerDiagnostic::new(code, DiagnosticSeverity::Error, "mismatched types", span)
+                .with_expected(crate::citl::diagnostic::TypeInfo::new("i32"))
+                .with_found(crate::citl::diagnostic::TypeInfo::new("&str"));
+
+        let source = "fn main() {}";
+        let e1 = encoder.encode(&diag1, source);
+        let e2 = encoder.encode(&diag2, source);
+
+        // Different structures should have different hashes
+        assert_ne!(e1.context_hash, e2.context_hash);
+    }
+
+    #[test]
+    fn test_gnn_encoder_large_source() {
+        let encoder = GNNErrorEncoder::new(32, 128);
+        let code = ErrorCode::new("E0308", ErrorCategory::TypeMismatch, Difficulty::Easy);
+        let span = SourceSpan::new("test.rs", 1, 10, 1, 80);
+
+        let diagnostic =
+            CompilerDiagnostic::new(code, DiagnosticSeverity::Error, "mismatched types", span);
+
+        // Large source with many lines
+        let source = (0..50)
+            .map(|i| format!("    let var_{}: i32 = {};", i, i))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        let graph = encoder.build_graph(&diagnostic, &source);
+
+        // Should limit AST nodes to avoid huge graphs
+        assert!(
+            graph.num_nodes() <= 25,
+            "Graph should limit nodes, got {}",
+            graph.num_nodes()
+        );
+
+        // Should still produce valid embedding
+        let embedding = encoder.encode_graph(&graph);
+        assert_eq!(embedding.dim(), 128);
+    }
+
+    #[test]
+    fn test_gnn_encoder_extract_error_code_from_graph() {
+        let encoder = GNNErrorEncoder::new(32, 128);
+        let code = ErrorCode::new("E0382", ErrorCategory::Ownership, Difficulty::Medium);
+        let span = SourceSpan::single_line("test.rs", 10, 5, 20);
+        let diagnostic = CompilerDiagnostic::new(
+            code,
+            DiagnosticSeverity::Error,
+            "borrow of moved value",
+            span,
+        );
+
+        let source = "fn main() { let x = vec![1]; let y = x; x.push(1); }";
+        let graph = encoder.build_graph(&diagnostic, source);
+        let extracted = encoder.extract_error_code_from_graph(&graph);
+
+        // Should extract ownership category
+        assert_eq!(extracted.category, ErrorCategory::Ownership);
     }
 }

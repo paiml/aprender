@@ -58,7 +58,9 @@ pub use diagnostic::{
     CodeReplacement, CompilerDiagnostic, CompilerSuggestion, DiagnosticLabel, DiagnosticSeverity,
     SourceSpan, SuggestionApplicability, TypeInfo,
 };
-pub use encoder::{ErrorEmbedding, ErrorEncoder, ProgramFeedbackGraph};
+pub use encoder::{
+    EdgeType, ErrorEmbedding, ErrorEncoder, GNNErrorEncoder, NodeType, ProgramFeedbackGraph,
+};
 pub use error::{CITLError, CITLResult};
 pub use metrics::{
     CompilationTimeMetrics, ConvergenceMetrics, ErrorFrequencyMetrics, FixAttemptMetrics,
