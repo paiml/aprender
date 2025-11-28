@@ -497,9 +497,16 @@ fn cmd_train(
         model.train(&commands);
         println!("done!");
 
-        model
-            .save(&output_path)
-            .expect("Failed to save paged model");
+        if let Err(e) = model.save(&output_path) {
+            eprintln!("❌ Failed to save paged model: {e}");
+            if e.to_string().contains("ermission") {
+                eprintln!(
+                    "   Hint: Check write permissions for '{}'",
+                    output_path.display()
+                );
+            }
+            std::process::exit(1);
+        }
 
         let stats = model.stats();
         println!("\n✅ Paged model saved to: {}", output_path.display());
@@ -520,12 +527,28 @@ fn cmd_train(
 
         // Save with or without encryption
         if let Some(ref pwd) = password {
-            model
-                .save_encrypted(&output_path, pwd)
-                .expect("Failed to save encrypted model");
+            if let Err(e) = model.save_encrypted(&output_path, pwd) {
+                eprintln!("❌ Failed to save encrypted model: {e}");
+                if e.to_string().contains("ermission") {
+                    eprintln!(
+                        "   Hint: Check write permissions for '{}'",
+                        output_path.display()
+                    );
+                }
+                std::process::exit(1);
+            }
             println!("\n🔒 Encrypted model saved to: {}", output_path.display());
         } else {
-            model.save(&output_path).expect("Failed to save model");
+            if let Err(e) = model.save(&output_path) {
+                eprintln!("❌ Failed to save model: {e}");
+                if e.to_string().contains("ermission") {
+                    eprintln!(
+                        "   Hint: Check write permissions for '{}'",
+                        output_path.display()
+                    );
+                }
+                std::process::exit(1);
+            }
             println!("\n✅ Model saved to: {}", output_path.display());
         }
 
@@ -575,7 +598,18 @@ fn cmd_update(history_path: Option<PathBuf>, model_path: &str, quiet: bool, use_
                 std::process::exit(1);
             })
         } else {
-            MarkovModel::load(&path).expect("Failed to load model")
+            match MarkovModel::load(&path) {
+                Ok(m) => m,
+                Err(e) => {
+                    eprintln!("❌ Failed to load model '{}': {e}", path.display());
+                    if e.to_string().contains("Checksum mismatch") {
+                        eprintln!("   Hint: The model file may be corrupted. Run 'aprender-shell train' to rebuild.");
+                    } else if e.to_string().contains("magic") || e.to_string().contains("invalid") {
+                        eprintln!("   Hint: The file may not be a valid aprender model.");
+                    }
+                    std::process::exit(1);
+                }
+            }
         }
     } else {
         if !quiet {
@@ -608,11 +642,13 @@ fn cmd_update(history_path: Option<PathBuf>, model_path: &str, quiet: bool, use_
 
     // Save (preserve encryption status)
     if let Some(ref pwd) = password {
-        model
-            .save_encrypted(&path, pwd)
-            .expect("Failed to save encrypted model");
-    } else {
-        model.save(&path).expect("Failed to save model");
+        if let Err(e) = model.save_encrypted(&path, pwd) {
+            eprintln!("❌ Failed to save encrypted model: {e}");
+            std::process::exit(1);
+        }
+    } else if let Err(e) = model.save(&path) {
+        eprintln!("❌ Failed to save model: {e}");
+        std::process::exit(1);
     }
 
     if !quiet {
@@ -735,8 +771,21 @@ fn cmd_stats(model_path: &str, memory_limit: Option<usize>, use_password: bool) 
     if let Some(mem_mb) = memory_limit {
         // Paged model stats (encryption not supported)
         let paged_path = path.with_extension("apbundle");
-        let model =
-            PagedMarkovModel::load(&paged_path, mem_mb).expect("Failed to load paged model");
+        let model = match PagedMarkovModel::load(&paged_path, mem_mb) {
+            Ok(m) => m,
+            Err(e) => {
+                eprintln!(
+                    "❌ Failed to load paged model '{}': {e}",
+                    paged_path.display()
+                );
+                if e.to_string().contains("Checksum") || e.to_string().contains("corrupt") {
+                    eprintln!("   Hint: The model may be corrupted. Run 'aprender-shell train --memory-limit {mem_mb}' to rebuild.");
+                } else if !paged_path.exists() {
+                    eprintln!("   Hint: Model file not found. Train a model first with 'aprender-shell train --memory-limit {mem_mb}'");
+                }
+                std::process::exit(1);
+            }
+        };
 
         let stats = model.stats();
         println!("📊 Paged Model Statistics:");
@@ -779,7 +828,20 @@ fn cmd_stats(model_path: &str, memory_limit: Option<usize>, use_password: bool) 
                 std::process::exit(1);
             })
         } else {
-            MarkovModel::load(&path).expect("Failed to load model")
+            match MarkovModel::load(&path) {
+                Ok(m) => m,
+                Err(e) => {
+                    eprintln!("❌ Failed to load model '{}': {e}", path.display());
+                    if e.to_string().contains("Checksum mismatch") {
+                        eprintln!("   Hint: The model file may be corrupted. Run 'aprender-shell train' to rebuild.");
+                    } else if !path.exists() {
+                        eprintln!("   Hint: Model file not found. Train a model first with 'aprender-shell train'");
+                    } else if MarkovModel::is_encrypted(&path).unwrap_or(false) {
+                        eprintln!("   Hint: This model is encrypted. Use --password flag.");
+                    }
+                    std::process::exit(1);
+                }
+            }
         };
 
         // Check encryption status
@@ -805,13 +867,48 @@ fn cmd_stats(model_path: &str, memory_limit: Option<usize>, use_password: bool) 
 
 fn cmd_export(model_path: &str, output: &PathBuf) {
     let path = expand_path(model_path);
-    std::fs::copy(&path, output).expect("Failed to export model");
+
+    if !path.exists() {
+        eprintln!("❌ Model file not found: {}", path.display());
+        eprintln!("   Hint: Train a model first with 'aprender-shell train'");
+        std::process::exit(1);
+    }
+
+    if let Err(e) = std::fs::copy(&path, output) {
+        eprintln!("❌ Failed to export model: {e}");
+        if e.kind() == std::io::ErrorKind::PermissionDenied {
+            eprintln!(
+                "   Hint: Check write permissions for '{}'",
+                output.display()
+            );
+        } else if e.kind() == std::io::ErrorKind::NotFound {
+            eprintln!("   Hint: Destination directory may not exist");
+        }
+        std::process::exit(1);
+    }
+
     println!("✅ Model exported to: {}", output.display());
 }
 
 fn cmd_import(input: &PathBuf, output: &str) {
+    if !input.exists() {
+        eprintln!("❌ Input file not found: {}", input.display());
+        std::process::exit(1);
+    }
+
     let output_path = expand_path(output);
-    std::fs::copy(input, &output_path).expect("Failed to import model");
+
+    if let Err(e) = std::fs::copy(input, &output_path) {
+        eprintln!("❌ Failed to import model: {e}");
+        if e.kind() == std::io::ErrorKind::PermissionDenied {
+            eprintln!(
+                "   Hint: Check write permissions for '{}'",
+                output_path.display()
+            );
+        }
+        std::process::exit(1);
+    }
+
     println!("✅ Model imported to: {}", output_path.display());
 }
 
@@ -938,7 +1035,14 @@ fn cmd_uninstall(zsh: bool, bash: bool, fish: bool, keep_model: bool, dry_run: b
     // If no shell specified, try to detect and uninstall from all
     let detect_all = !zsh && !bash && !fish;
 
-    let home = dirs::home_dir().expect("Could not find home directory");
+    let home = match dirs::home_dir() {
+        Some(h) => h,
+        None => {
+            eprintln!("❌ Could not determine home directory");
+            eprintln!("   Hint: Set HOME environment variable");
+            std::process::exit(1);
+        }
+    };
     let mut removed_any = false;
 
     let action = if dry_run { "Would remove" } else { "Removed" };
@@ -1333,7 +1437,16 @@ fn cmd_augment(
 
     // Save model
     let output_path = expand_path(output);
-    model.save(&output_path).expect("Failed to save model");
+    if let Err(e) = model.save(&output_path) {
+        eprintln!("❌ Failed to save augmented model: {e}");
+        if e.to_string().contains("ermission") {
+            eprintln!(
+                "   Hint: Check write permissions for '{}'",
+                output_path.display()
+            );
+        }
+        std::process::exit(1);
+    }
 
     println!("\n✅ Augmented model saved to: {}", output_path.display());
     println!("\n📊 Model Statistics:");
