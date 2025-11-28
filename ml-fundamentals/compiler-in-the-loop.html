@@ -420,6 +420,100 @@ struct CompilerError {
 </ul>
 </li>
 </ol>
+<h2 id="exporting-training-data-for-ml-pipelines"><a class="header" href="#exporting-training-data-for-ml-pipelines">Exporting Training Data for ML Pipelines</a></h2>
+<p>CITL systems generate valuable training corpora. The <strong>depyler</strong> project supports exporting this data for downstream ML consumption via the <strong>Organizational Intelligence Plugin (OIP)</strong>.</p>
+<h3 id="export-command"><a class="header" href="#export-command">Export Command</a></h3>
+<pre><code class="language-bash"># Export to Parquet (recommended for large corpora)
+depyler oracle export-oip -i ./python_sources -o corpus.parquet --format parquet
+
+# Export to JSONL (human-readable)
+depyler oracle export-oip -i ./python_sources -o corpus.jsonl --format jsonl
+
+# With confidence filtering and reweighting
+depyler oracle export-oip -i ./src \
+    -o training_data.parquet \
+    --min-confidence 0.80 \
+    --include-clippy \
+    --reweight 1.5
+</code></pre>
+<h3 id="oip-training-example-schema"><a class="header" href="#oip-training-example-schema">OIP Training Example Schema</a></h3>
+<p>Each exported sample contains rich diagnostic metadata:</p>
+<pre><code class="language-rust">struct OipTrainingExample {
+    source_file: String,       // Original Python file
+    rust_file: String,         // Generated Rust file
+    error_code: Option&lt;String&gt;, // E0308, E0277, etc.
+    clippy_lint: Option&lt;String&gt;, // Optional Clippy lint
+    level: String,             // error, warning
+    message: String,           // Full diagnostic message
+    oip_category: String,      // DefectCategory taxonomy
+    confidence: f64,           // Mapping confidence (0.0-1.0)
+    line_start: i64,           // Error location
+    line_end: i64,
+    suggestion: Option&lt;String&gt;, // Compiler suggestion
+    python_construct: Option&lt;String&gt;, // Source Python pattern
+    weight: f32,               // Sample weight for training
+}</code></pre>
+<h3 id="error-code-to-defectcategory-mapping"><a class="header" href="#error-code-to-defectcategory-mapping">Error Code to DefectCategory Mapping</a></h3>
+<p>Rust error codes map to OIP's DefectCategory taxonomy:</p>
+<div class="table-wrapper"><table><thead><tr><th>Error Code</th><th>OIP Category</th><th>Confidence</th></tr></thead><tbody>
+<tr><td>E0308</td><td>TypeErrors</td><td>0.95</td></tr>
+<tr><td>E0277</td><td>TraitBounds</td><td>0.95</td></tr>
+<tr><td>E0502, E0503, E0505</td><td>OwnershipBorrow</td><td>0.95</td></tr>
+<tr><td>E0597, E0499, E0716</td><td>LifetimeErrors</td><td>0.90</td></tr>
+<tr><td>E0433, E0412</td><td>ImportResolution</td><td>0.90</td></tr>
+<tr><td>E0425, E0599</td><td>NameResolution</td><td>0.85</td></tr>
+<tr><td>E0428, E0592</td><td>DuplicateDefinitions</td><td>0.85</td></tr>
+</tbody></table>
+</div>
+<h3 id="feldman-long-tail-reweighting"><a class="header" href="#feldman-long-tail-reweighting">Feldman Long-Tail Reweighting</a></h3>
+<p>For imbalanced error distributions, apply reweighting to emphasize rare error classes:</p>
+<pre><code class="language-bash"># Apply 1.5x weight boost to rare categories
+depyler oracle export-oip -i ./src -o corpus.parquet --reweight 1.5
+</code></pre>
+<p>This implements Feldman (2020) long-tail weighting, ensuring rare but important error patterns aren't drowned out by common type mismatches.</p>
+<h3 id="integration-with-alimentar"><a class="header" href="#integration-with-alimentar">Integration with alimentar</a></h3>
+<p>Export uses <strong>alimentar</strong> for efficient Arrow-based serialization:</p>
+<pre><code class="language-rust">use alimentar::ArrowDataset;
+
+// Load exported corpus
+let dataset = ArrowDataset::from_parquet(&quot;corpus.parquet&quot;)?;
+
+// Create batched DataLoader for training
+let loader = dataset
+    .shuffle(true)
+    .batch_size(32)
+    .into_loader()?;
+
+for batch in loader {
+    // Train on batch...
+}</code></pre>
+<h3 id="running-examples"><a class="header" href="#running-examples">Running Examples</a></h3>
+<p>Try alimentar's data loading examples to see the pipeline in action:</p>
+<pre><code class="language-bash"># Clone and run alimentar examples
+cd alimentar
+
+# Basic loading (Parquet, CSV, JSON)
+cargo run --example basic_loading
+
+# Batched DataLoader with shuffling
+cargo run --example dataloader_batching
+
+# Streaming for large corpora (memory-bounded)
+cargo run --example streaming_large
+
+# Data quality validation
+cargo run --example quality_check
+</code></pre>
+<p>End-to-end CITL export workflow:</p>
+<pre><code class="language-bash"># 1. Generate training corpus from Python files
+depyler oracle improve -i ./python_src --export-corpus ./corpus.jsonl
+
+# 2. Export to Parquet for ML consumption
+depyler oracle export-oip -i ./python_src -o ./corpus.parquet --format parquet
+
+# 3. Load in your training script
+cargo run --example basic_loading  # Adapt for corpus.parquet
+</code></pre>
 <h2 id="implementation-in-aprender"><a class="header" href="#implementation-in-aprender">Implementation in Aprender</a></h2>
 <p>Aprender provides building blocks for CITL systems:</p>
 <pre><code class="language-rust">use aprender::nn::{Module, Linear, Sequential};
