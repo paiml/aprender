@@ -1108,3 +1108,264 @@ fn test_cli_020_zsh_widget_socket_config() {
         .success()
         .stdout(predicate::str::contains("APRENDER_SOCKET"));
 }
+
+// ============================================================================
+// Test: CLI_021 - Chaos Resilience (GH-99)
+// ============================================================================
+
+/// Test graceful handling of empty model file
+#[test]
+fn test_cli_021_chaos_empty_model() {
+    let empty_model = NamedTempFile::new().unwrap();
+
+    // Should handle gracefully with error message (may exit 0 with empty suggestions)
+    aprender_shell()
+        .args([
+            "suggest",
+            "-m",
+            empty_model.path().to_str().unwrap(),
+            "git ",
+        ])
+        .assert()
+        .stderr(
+            predicate::str::contains("Invalid")
+                .or(predicate::str::contains("corrupted"))
+                .or(predicate::str::contains("small"))
+                .or(predicate::str::is_empty()), // May also just return empty
+        );
+}
+
+/// Test graceful handling of truncated model file
+#[test]
+fn test_cli_021_chaos_truncated_model() {
+    let mut truncated_model = NamedTempFile::new().unwrap();
+    // Write partial header (magic bytes only, truncated)
+    truncated_model.write_all(b"APRN").unwrap();
+
+    // Should handle gracefully with error message
+    aprender_shell()
+        .args([
+            "suggest",
+            "-m",
+            truncated_model.path().to_str().unwrap(),
+            "git ",
+        ])
+        .assert()
+        .stderr(
+            predicate::str::contains("Invalid")
+                .or(predicate::str::contains("corrupted"))
+                .or(predicate::str::contains("small"))
+                .or(predicate::str::contains("unexpected")),
+        );
+}
+
+/// Test graceful handling of model with wrong magic bytes
+#[test]
+fn test_cli_021_chaos_wrong_magic() {
+    let mut bad_model = NamedTempFile::new().unwrap();
+    // Write wrong magic bytes
+    bad_model.write_all(b"XXXX12345678901234567890").unwrap();
+
+    // Should handle gracefully with error message
+    aprender_shell()
+        .args(["suggest", "-m", bad_model.path().to_str().unwrap(), "git "])
+        .assert()
+        .stderr(
+            predicate::str::contains("Invalid")
+                .or(predicate::str::contains("corrupted"))
+                .or(predicate::str::contains("small"))
+                .or(predicate::str::contains("magic")),
+        );
+}
+
+/// Test graceful handling of very long prefix input
+#[test]
+fn test_cli_021_chaos_long_prefix() {
+    let history = create_temp_history(&["git status", "cargo build"]);
+    let model = NamedTempFile::new().unwrap();
+
+    aprender_shell()
+        .args([
+            "train",
+            "-f",
+            history.path().to_str().unwrap(),
+            "-o",
+            model.path().to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    // Very long prefix (10KB)
+    let long_prefix = "g".repeat(10000);
+
+    aprender_shell()
+        .args([
+            "suggest",
+            "-m",
+            model.path().to_str().unwrap(),
+            &long_prefix,
+        ])
+        .assert()
+        .success(); // Should handle gracefully (returns empty or truncates)
+}
+
+/// Test graceful handling of prefix with special characters
+#[test]
+fn test_cli_021_chaos_special_chars() {
+    let history = create_temp_history(&["git status", "cargo build"]);
+    let model = NamedTempFile::new().unwrap();
+
+    aprender_shell()
+        .args([
+            "train",
+            "-f",
+            history.path().to_str().unwrap(),
+            "-o",
+            model.path().to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    // Test various special character inputs
+    // Note: Null bytes (\0) are excluded because they cannot be passed via command line
+    // (this is a limitation of the test harness, not the binary)
+    let test_cases = [
+        "\x1b[31m",         // ANSI escape
+        "$(whoami)",        // Command substitution
+        "`whoami`",         // Backtick substitution
+        "'; DROP TABLE",    // SQL injection attempt
+        "&&rm -rf /",       // Command chain attempt
+        "|cat /etc/passwd", // Pipe injection
+    ];
+
+    for prefix in test_cases {
+        let result = aprender_shell()
+            .args(["suggest", "-m", model.path().to_str().unwrap(), prefix])
+            .assert();
+
+        // Should either succeed (with sanitized input) or fail gracefully
+        // Must NOT panic or crash
+        let output = result.get_output();
+        assert!(
+            output.status.success() || !output.stderr.is_empty(),
+            "Should handle special chars gracefully: {:?}",
+            prefix
+        );
+    }
+}
+
+/// Test graceful handling of unicode edge cases
+#[test]
+fn test_cli_021_chaos_unicode() {
+    let history = create_temp_history(&["git status", "cargo build"]);
+    let model = NamedTempFile::new().unwrap();
+
+    aprender_shell()
+        .args([
+            "train",
+            "-f",
+            history.path().to_str().unwrap(),
+            "-o",
+            model.path().to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    // Test Unicode edge cases
+    let test_cases = [
+        "🚀",                // Emoji
+        "日本語",            // CJK characters
+        "مرحبا",             // RTL text
+        "\u{FEFF}git",       // BOM
+        "git\u{200B}status", // Zero-width space
+        "git\u{202E}status", // RTL override
+        &"é".repeat(100),    // Many combining marks
+    ];
+
+    for prefix in test_cases {
+        aprender_shell()
+            .args(["suggest", "-m", model.path().to_str().unwrap(), prefix])
+            .assert()
+            .success(); // Should handle gracefully
+    }
+}
+
+/// Test graceful handling of concurrent file access
+#[test]
+fn test_cli_021_chaos_concurrent_read() {
+    use std::thread;
+
+    let history = create_temp_history(&[
+        "git status",
+        "git commit",
+        "git push",
+        "cargo build",
+        "cargo test",
+    ]);
+    let model = NamedTempFile::new().unwrap();
+
+    aprender_shell()
+        .args([
+            "train",
+            "-f",
+            history.path().to_str().unwrap(),
+            "-o",
+            model.path().to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    let model_path = model.path().to_str().unwrap().to_string();
+
+    // Spawn multiple concurrent readers
+    let handles: Vec<_> = (0..5)
+        .map(|_| {
+            let model_path = model_path.clone();
+            thread::spawn(move || {
+                for _ in 0..10 {
+                    Command::cargo_bin("aprender-shell")
+                        .unwrap()
+                        .args(["suggest", "-m", &model_path, "git "])
+                        .assert()
+                        .success();
+                }
+            })
+        })
+        .collect();
+
+    // All threads should complete without issues
+    for handle in handles {
+        handle.join().expect("Thread should complete successfully");
+    }
+}
+
+/// Test graceful handling of rapid sequential calls
+#[test]
+fn test_cli_021_chaos_rapid_calls() {
+    let history = create_temp_history(&["git status", "git commit", "cargo build"]);
+    let model = NamedTempFile::new().unwrap();
+
+    aprender_shell()
+        .args([
+            "train",
+            "-f",
+            history.path().to_str().unwrap(),
+            "-o",
+            model.path().to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    // Rapid sequential calls
+    for i in 0..50 {
+        aprender_shell()
+            .args([
+                "suggest",
+                "-m",
+                model.path().to_str().unwrap(),
+                &format!("git {:02}", i),
+            ])
+            .assert()
+            .success();
+    }
+}
