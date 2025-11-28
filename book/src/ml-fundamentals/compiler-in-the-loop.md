@@ -354,6 +354,40 @@ for batch in loader {
 }
 ```
 
+### Running Examples
+
+Try alimentar's data loading examples to see the pipeline in action:
+
+```bash
+# Clone and run alimentar examples
+cd alimentar
+
+# Basic loading (Parquet, CSV, JSON)
+cargo run --example basic_loading
+
+# Batched DataLoader with shuffling
+cargo run --example dataloader_batching
+
+# Streaming for large corpora (memory-bounded)
+cargo run --example streaming_large
+
+# Data quality validation
+cargo run --example quality_check
+```
+
+End-to-end CITL export workflow:
+
+```bash
+# 1. Generate training corpus from Python files
+depyler oracle improve -i ./python_src --export-corpus ./corpus.jsonl
+
+# 2. Export to Parquet for ML consumption
+depyler oracle export-oip -i ./python_src -o ./corpus.parquet --format parquet
+
+# 3. Load in your training script
+cargo run --example basic_loading  # Adapt for corpus.parquet
+```
+
 ## Implementation in Aprender
 
 Aprender provides building blocks for CITL systems:
