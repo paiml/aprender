@@ -259,6 +259,68 @@ enum Commands {
         #[arg(long)]
         private: bool,
     },
+
+    /// Stream mode: read prefixes from stdin, output suggestions (GH-95)
+    ///
+    /// Keeps model in memory for sub-millisecond latency.
+    /// Use with shell coprocess for zero-latency suggestions.
+    Stream {
+        /// Model file to use
+        #[arg(short, long, default_value = "~/.aprender-shell.model")]
+        model: String,
+
+        /// Number of suggestions per request
+        #[arg(short = 'c', long, default_value = "5")]
+        count: usize,
+
+        /// Output format (lines, json, tab)
+        #[arg(short, long, default_value = "lines")]
+        format: String,
+
+        /// Model is encrypted (will prompt for password)
+        #[arg(short = 'p', long)]
+        password: bool,
+    },
+
+    /// Daemon mode: Unix socket server for sub-ms suggestions (GH-95)
+    ///
+    /// Starts a background server that keeps the model in memory.
+    /// Connect via Unix socket for instant suggestions.
+    Daemon {
+        /// Model file to use
+        #[arg(short, long, default_value = "~/.aprender-shell.model")]
+        model: String,
+
+        /// Unix socket path
+        #[arg(short, long, default_value = "/tmp/aprender-shell.sock")]
+        socket: PathBuf,
+
+        /// Number of suggestions per request
+        #[arg(short = 'c', long, default_value = "5")]
+        count: usize,
+
+        /// Model is encrypted (will prompt for password)
+        #[arg(short = 'p', long)]
+        password: bool,
+
+        /// Run in foreground (don't daemonize)
+        #[arg(long)]
+        foreground: bool,
+    },
+
+    /// Stop the running daemon
+    DaemonStop {
+        /// Unix socket path
+        #[arg(short, long, default_value = "/tmp/aprender-shell.sock")]
+        socket: PathBuf,
+    },
+
+    /// Check daemon status
+    DaemonStatus {
+        /// Unix socket path
+        #[arg(short, long, default_value = "/tmp/aprender-shell.sock")]
+        socket: PathBuf,
+    },
 }
 
 fn expand_path(path: &str) -> PathBuf {
@@ -379,6 +441,29 @@ fn main() {
             private,
         } => {
             cmd_publish(&model, &repo, &commit, create, private);
+        }
+        Commands::Stream {
+            model,
+            count,
+            format,
+            password,
+        } => {
+            cmd_stream(&model, count, &format, password);
+        }
+        Commands::Daemon {
+            model,
+            socket,
+            count,
+            password,
+            foreground,
+        } => {
+            cmd_daemon(&model, &socket, count, password, foreground);
+        }
+        Commands::DaemonStop { socket } => {
+            cmd_daemon_stop(&socket);
+        }
+        Commands::DaemonStatus { socket } => {
+            cmd_daemon_status(&socket);
         }
     }
 }
@@ -915,11 +1000,32 @@ fn cmd_import(input: &PathBuf, output: &str) {
 fn cmd_zsh_widget() {
     print!(
         r#"# >>> aprender-shell widget >>>
-# aprender-shell ZSH widget v3
+# aprender-shell ZSH widget v4 (with daemon support)
 # Add this to your ~/.zshrc
 # Toggle: export APRENDER_DISABLED=1 to disable
+# Daemon: export APRENDER_USE_DAEMON=1 for sub-ms latency
 # Uninstall: aprender-shell uninstall --zsh
 # Hardened per: docs/specifications/aprender-shell-harden-plan.md
+
+# Configuration
+APRENDER_SOCKET="${{APRENDER_SOCKET:-/tmp/aprender-shell.sock}}"
+
+# Check if daemon is running
+_aprender_daemon_available() {{
+    [[ -S "$APRENDER_SOCKET" ]] && nc -z -U "$APRENDER_SOCKET" 2>/dev/null
+}}
+
+# Get suggestion from daemon (sub-ms latency)
+_aprender_suggest_daemon() {{
+    local prefix="$1"
+    echo "$prefix" | nc -U "$APRENDER_SOCKET" 2>/dev/null | head -1
+}}
+
+# Get suggestion via command (fallback, ~10ms)
+_aprender_suggest_cmd() {{
+    local prefix="$1"
+    timeout 0.1 aprender-shell suggest "$prefix" 2>/dev/null | head -1 | cut -f1
+}}
 
 _aprender_suggest() {{
     # Skip if disabled or buffer too short
@@ -927,8 +1033,13 @@ _aprender_suggest() {{
     [[ "${{#BUFFER}}" -lt 2 ]] && {{ POSTDISPLAY=''; return; }}
 
     local suggestion
-    # SC2046: Quote command substitution to prevent word splitting
-    suggestion="$(timeout 0.1 aprender-shell suggest "$BUFFER" 2>/dev/null | head -1 | cut -f1)"
+
+    # Use daemon if available and enabled, otherwise fall back to command
+    if [[ "${{APRENDER_USE_DAEMON:-0}}" == "1" ]] && _aprender_daemon_available; then
+        suggestion="$(_aprender_suggest_daemon "$BUFFER")"
+    else
+        suggestion="$(_aprender_suggest_cmd "$BUFFER")"
+    fi
 
     # SC2086: Quote variables in comparisons
     if [[ -n "$suggestion" && "$suggestion" != "$BUFFER" ]]; then
@@ -974,6 +1085,13 @@ add-zle-hook-widget line-pre-redraw _aprender_suggest
 # Accept with Tab or Right Arrow
 bindkey '^I' _aprender_accept      # Tab
 bindkey '^[[C' _aprender_accept    # Right arrow
+
+# Start daemon automatically if requested
+# Usage: export APRENDER_AUTO_DAEMON=1
+if [[ "${{APRENDER_AUTO_DAEMON:-0}}" == "1" ]] && ! _aprender_daemon_available; then
+    aprender-shell daemon &>/dev/null &
+    disown
+fi
 # <<< aprender-shell widget <<<
 "#
     );
@@ -2067,4 +2185,367 @@ fn cmd_publish(model_path: &str, repo_id: &str, commit_msg: &str, create: bool, 
         "   huggingface-cli upload {repo_id} {} README.md",
         readme_path.display()
     );
+}
+
+// =============================================================================
+// Daemon/Stream Mode Commands (GH-95)
+// =============================================================================
+
+/// Stream mode: read prefixes from stdin, output suggestions to stdout
+///
+/// Model is loaded once and kept in memory for sub-millisecond latency.
+/// Each line of input is treated as a prefix, with suggestions output immediately.
+///
+/// # Protocol
+/// - Input: One prefix per line (UTF-8)
+/// - Output: Suggestions in specified format, followed by empty line
+/// - Special: Empty line or "QUIT" terminates
+fn cmd_stream(model_path: &str, count: usize, format: &str, use_password: bool) {
+    use std::io::{BufRead, Write};
+
+    let path = expand_path(model_path);
+
+    // Load model once
+    let model = if use_password {
+        let password =
+            rpassword::prompt_password("🔐 Model password: ").unwrap_or_else(|_| String::new());
+        match MarkovModel::load_encrypted(&path, &password) {
+            Ok(m) => m,
+            Err(e) => {
+                eprintln!("❌ Failed to load encrypted model: {e}");
+                std::process::exit(1);
+            }
+        }
+    } else {
+        match load_model_graceful(&path) {
+            Ok(m) => m,
+            Err(e) => {
+                eprintln!("{e}");
+                std::process::exit(1);
+            }
+        }
+    };
+
+    eprintln!(
+        "🚀 Stream mode ready (model: {} commands)",
+        model.total_commands()
+    );
+    eprintln!("   Enter prefixes, one per line. Empty line or 'QUIT' to exit.");
+
+    let stdin = std::io::stdin();
+    let mut stdout = std::io::stdout();
+
+    for line in stdin.lock().lines() {
+        let prefix = match line {
+            Ok(p) => p,
+            Err(_) => break,
+        };
+
+        // Exit conditions
+        if prefix.is_empty() || prefix.eq_ignore_ascii_case("QUIT") {
+            break;
+        }
+
+        // Validate and sanitize prefix
+        let prefix = match sanitize_prefix(&prefix) {
+            Ok(p) => p,
+            Err(_) => {
+                writeln!(stdout).ok();
+                continue;
+            }
+        };
+
+        // Get suggestions
+        let suggestions = model.suggest(&prefix, count);
+        let filtered = filter_sensitive_suggestions(suggestions);
+
+        // Output in requested format
+        match format {
+            "json" => {
+                let json_suggestions: Vec<_> = filtered
+                    .iter()
+                    .map(|(s, score)| format!(r#"{{"suggestion":"{}","score":{:.4}}}"#, s, score))
+                    .collect();
+                writeln!(stdout, "[{}]", json_suggestions.join(",")).ok();
+            }
+            "tab" => {
+                let tab_line: Vec<_> = filtered.iter().map(|(s, _)| s.as_str()).collect();
+                writeln!(stdout, "{}", tab_line.join("\t")).ok();
+            }
+            _ => {
+                // "lines" format (default)
+                for (suggestion, _) in &filtered {
+                    writeln!(stdout, "{suggestion}").ok();
+                }
+            }
+        }
+
+        // Empty line delimiter for batch processing
+        writeln!(stdout).ok();
+        stdout.flush().ok();
+    }
+
+    eprintln!("👋 Stream mode exiting");
+}
+
+/// Daemon mode: Unix socket server for sub-ms suggestions
+///
+/// Starts a server that listens on a Unix socket and responds to suggestion requests.
+/// Model is loaded once at startup for maximum performance.
+///
+/// # Protocol (line-based)
+/// - Client sends: prefix\n
+/// - Server responds: suggestion1\nsuggestion2\n...\n\n (empty line terminates)
+/// - Special commands: PING, QUIT, STATS
+#[cfg(unix)]
+fn cmd_daemon(
+    model_path: &str,
+    socket_path: &std::path::Path,
+    count: usize,
+    use_password: bool,
+    foreground: bool,
+) {
+    use std::io::{BufRead, BufReader, Write};
+    use std::os::unix::net::UnixListener;
+
+    let path = expand_path(model_path);
+
+    // Remove stale socket if exists
+    if socket_path.exists() {
+        if let Err(e) = std::fs::remove_file(socket_path) {
+            eprintln!("⚠️  Could not remove stale socket: {e}");
+        }
+    }
+
+    // Load model
+    let model = if use_password {
+        let password =
+            rpassword::prompt_password("🔐 Model password: ").unwrap_or_else(|_| String::new());
+        match MarkovModel::load_encrypted(&path, &password) {
+            Ok(m) => m,
+            Err(e) => {
+                eprintln!("❌ Failed to load encrypted model: {e}");
+                std::process::exit(1);
+            }
+        }
+    } else {
+        match load_model_graceful(&path) {
+            Ok(m) => m,
+            Err(e) => {
+                eprintln!("{e}");
+                std::process::exit(1);
+            }
+        }
+    };
+
+    // Bind socket
+    let listener = match UnixListener::bind(socket_path) {
+        Ok(l) => l,
+        Err(e) => {
+            eprintln!("❌ Failed to bind socket '{}': {e}", socket_path.display());
+            eprintln!("   Hint: Check permissions or use a different path");
+            std::process::exit(1);
+        }
+    };
+
+    if foreground {
+        eprintln!("🚀 Daemon running in foreground");
+    } else {
+        println!("🚀 Daemon started");
+    }
+    println!("   Socket: {}", socket_path.display());
+    println!("   Model:  {} commands", model.total_commands());
+    println!("   PID:    {}", std::process::id());
+
+    // Write PID file for daemon management
+    let pid_path = socket_path.with_extension("pid");
+    if let Err(e) = std::fs::write(&pid_path, std::process::id().to_string()) {
+        eprintln!("⚠️  Could not write PID file: {e}");
+    }
+
+    let mut request_count = 0u64;
+    let start_time = std::time::Instant::now();
+
+    // Accept connections
+    for stream in listener.incoming() {
+        let mut stream = match stream {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("⚠️  Connection error: {e}");
+                continue;
+            }
+        };
+
+        let mut reader = BufReader::new(stream.try_clone().unwrap_or_else(|_| {
+            eprintln!("⚠️  Failed to clone stream");
+            stream.try_clone().expect("clone")
+        }));
+
+        let mut line = String::new();
+        if reader.read_line(&mut line).is_err() {
+            continue;
+        }
+
+        let prefix = line.trim();
+        request_count += 1;
+
+        // Handle special commands
+        match prefix.to_uppercase().as_str() {
+            "PING" => {
+                writeln!(stream, "PONG").ok();
+                writeln!(stream).ok();
+                continue;
+            }
+            "QUIT" | "SHUTDOWN" => {
+                writeln!(stream, "OK").ok();
+                eprintln!("👋 Daemon shutting down (received QUIT)");
+                break;
+            }
+            "STATS" => {
+                let uptime = start_time.elapsed().as_secs();
+                writeln!(stream, "requests: {request_count}").ok();
+                writeln!(stream, "uptime_secs: {uptime}").ok();
+                writeln!(stream, "model_commands: {}", model.total_commands()).ok();
+                writeln!(stream, "model_ngrams: {}", model.ngram_count()).ok();
+                writeln!(stream).ok();
+                continue;
+            }
+            "" => {
+                writeln!(stream).ok();
+                continue;
+            }
+            _ => {}
+        }
+
+        // Validate and get suggestions
+        let suggestions = match sanitize_prefix(prefix) {
+            Ok(p) => {
+                let raw = model.suggest(&p, count);
+                filter_sensitive_suggestions(raw)
+            }
+            Err(_) => vec![],
+        };
+
+        // Send suggestions
+        for (suggestion, _) in &suggestions {
+            writeln!(stream, "{suggestion}").ok();
+        }
+        writeln!(stream).ok(); // Empty line terminates response
+    }
+
+    // Cleanup
+    let _ = std::fs::remove_file(socket_path);
+    let _ = std::fs::remove_file(&pid_path);
+}
+
+#[cfg(not(unix))]
+fn cmd_daemon(
+    _model_path: &str,
+    _socket_path: &std::path::Path,
+    _count: usize,
+    _use_password: bool,
+    _foreground: bool,
+) {
+    eprintln!("❌ Daemon mode is only supported on Unix systems");
+    eprintln!("   Use 'aprender-shell stream' for cross-platform streaming mode");
+    std::process::exit(1);
+}
+
+/// Stop the running daemon
+fn cmd_daemon_stop(socket_path: &std::path::Path) {
+    #[cfg(unix)]
+    {
+        use std::io::{BufRead, BufReader, Write};
+        use std::os::unix::net::UnixStream;
+
+        if !socket_path.exists() {
+            eprintln!("❌ Daemon not running (socket not found)");
+            std::process::exit(1);
+        }
+
+        let mut stream = match UnixStream::connect(socket_path) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("❌ Could not connect to daemon: {e}");
+                std::process::exit(1);
+            }
+        };
+
+        writeln!(stream, "QUIT").ok();
+        stream.flush().ok();
+
+        let mut reader = BufReader::new(&stream);
+        let mut response = String::new();
+        reader.read_line(&mut response).ok();
+
+        if response.trim() == "OK" {
+            println!("✅ Daemon stopped");
+        } else {
+            eprintln!("⚠️  Unexpected response: {response}");
+        }
+    }
+
+    #[cfg(not(unix))]
+    {
+        let _ = socket_path;
+        eprintln!("❌ Daemon mode is only supported on Unix systems");
+        std::process::exit(1);
+    }
+}
+
+/// Check daemon status
+fn cmd_daemon_status(socket_path: &std::path::Path) {
+    #[cfg(unix)]
+    {
+        use std::io::{BufRead, BufReader, Write};
+        use std::os::unix::net::UnixStream;
+
+        if !socket_path.exists() {
+            println!("❌ Daemon not running (socket not found)");
+            std::process::exit(1);
+        }
+
+        let mut stream = match UnixStream::connect(socket_path) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("❌ Could not connect to daemon: {e}");
+                eprintln!("   Socket exists but daemon may have crashed");
+                std::process::exit(1);
+            }
+        };
+
+        // Send STATS command
+        writeln!(stream, "STATS").ok();
+        stream.flush().ok();
+
+        println!("✅ Daemon is running");
+        println!("   Socket: {}", socket_path.display());
+
+        // Read PID if available
+        let pid_path = socket_path.with_extension("pid");
+        if let Ok(pid) = std::fs::read_to_string(&pid_path) {
+            println!("   PID:    {}", pid.trim());
+        }
+
+        // Read stats
+        let reader = BufReader::new(&stream);
+        println!("\n📊 Statistics:");
+        for line in reader.lines() {
+            let line = match line {
+                Ok(l) => l,
+                Err(_) => break,
+            };
+            if line.is_empty() {
+                break;
+            }
+            println!("   {line}");
+        }
+    }
+
+    #[cfg(not(unix))]
+    {
+        let _ = socket_path;
+        eprintln!("❌ Daemon mode is only supported on Unix systems");
+        std::process::exit(1);
+    }
 }

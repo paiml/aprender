@@ -992,3 +992,119 @@ fn test_cli_017_publish_with_custom_commit() {
         .stdout(predicate::str::contains("org/custom"))
         .stdout(predicate::str::contains("Model card saved"));
 }
+
+// ============================================================================
+// Test: CLI_018 - Stream Mode (GH-95)
+// ============================================================================
+
+#[test]
+fn test_cli_018_stream_help() {
+    aprender_shell()
+        .args(["stream", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Stream mode"))
+        .stdout(predicate::str::contains("stdin"))
+        .stdout(predicate::str::contains("--format"));
+}
+
+#[test]
+fn test_cli_018_stream_missing_model() {
+    aprender_shell()
+        .args(["stream", "-m", "/nonexistent/model.apr"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("not found").or(predicate::str::contains("Failed")));
+}
+
+// ============================================================================
+// Test: CLI_019 - Daemon Mode (GH-95)
+// ============================================================================
+
+#[test]
+fn test_cli_019_daemon_help() {
+    aprender_shell()
+        .args(["daemon", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Daemon mode"))
+        .stdout(predicate::str::contains("socket"))
+        .stdout(predicate::str::contains("--foreground"));
+}
+
+#[test]
+fn test_cli_019_daemon_stop_no_daemon() {
+    aprender_shell()
+        .args(["daemon-stop", "-s", "/tmp/nonexistent-test.sock"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("not running").or(predicate::str::contains("not found")));
+}
+
+#[test]
+fn test_cli_019_daemon_status_no_daemon() {
+    aprender_shell()
+        .args(["daemon-status", "-s", "/tmp/nonexistent-test.sock"])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("not running").or(predicate::str::contains("not found")));
+}
+
+#[test]
+fn test_cli_019_daemon_missing_model() {
+    aprender_shell()
+        .args([
+            "daemon",
+            "-m",
+            "/nonexistent/model.apr",
+            "-s",
+            "/tmp/test-daemon.sock",
+            "--foreground",
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("not found").or(predicate::str::contains("Failed")));
+}
+
+// ============================================================================
+// Test: CLI_020 - ZSH Widget with Daemon Support (GH-95)
+// ============================================================================
+
+#[test]
+fn test_cli_020_zsh_widget_v4() {
+    aprender_shell()
+        .arg("zsh-widget")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("aprender-shell ZSH widget v4"))
+        .stdout(predicate::str::contains("daemon support"));
+}
+
+#[test]
+fn test_cli_020_zsh_widget_daemon_functions() {
+    aprender_shell()
+        .arg("zsh-widget")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("_aprender_daemon_available"))
+        .stdout(predicate::str::contains("_aprender_suggest_daemon"))
+        .stdout(predicate::str::contains("APRENDER_USE_DAEMON"));
+}
+
+#[test]
+fn test_cli_020_zsh_widget_auto_daemon() {
+    aprender_shell()
+        .arg("zsh-widget")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("APRENDER_AUTO_DAEMON"));
+}
+
+#[test]
+fn test_cli_020_zsh_widget_socket_config() {
+    aprender_shell()
+        .arg("zsh-widget")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("APRENDER_SOCKET"));
+}
