@@ -2630,12 +2630,199 @@ autocmd BufWritePost *.rs !cargo fmt
 <li><a href="advanced-testing/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
 </ul>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="mutation-testing"><a class="header" href="#mutation-testing">Mutation Testing</a></h1>
-<p>📝 <strong>This chapter is under construction.</strong></p>
-<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
-<p><strong>See also:</strong></p>
+<p>Mutation testing is the most rigorous form of test quality assessment. While code coverage tells you <em>what</em> code your tests execute, mutation testing tells you <em>whether your tests actually verify the code's behavior</em>.</p>
+<h2 id="the-problem-with-coverage-metrics"><a class="header" href="#the-problem-with-coverage-metrics">The Problem with Coverage Metrics</a></h2>
+<p>Consider this code with 100% line coverage:</p>
+<pre><code class="language-rust">pub fn calculate_discount(price: f32, is_member: bool) -&gt; f32 {
+    if is_member {
+        price * 0.9  // 10% discount
+    } else {
+        price
+    }
+}
+
+#[test]
+fn test_discount() {
+    let result = calculate_discount(100.0, true);
+    assert!(result &gt; 0.0);  // Weak assertion!
+}</code></pre>
+<p>This test achieves 100% coverage but would pass even if we changed <code>0.9</code> to <code>0.5</code> or <code>1.0</code>. Mutation testing catches this.</p>
+<h2 id="how-mutation-testing-works"><a class="header" href="#how-mutation-testing-works">How Mutation Testing Works</a></h2>
+<ol>
+<li><strong>Generate Mutants</strong>: The tool creates variations of your code (mutants)</li>
+<li><strong>Run Tests</strong>: Each mutant is tested against your test suite</li>
+<li><strong>Kill or Survive</strong>: If tests fail, the mutant is &quot;killed&quot; (good). If tests pass, it &quot;survives&quot; (bad)</li>
+<li><strong>Calculate Score</strong>: <code>Mutation Score = Killed Mutants / Total Mutants</code></li>
+</ol>
+<h3 id="common-mutation-operators"><a class="header" href="#common-mutation-operators">Common Mutation Operators</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Operator</th><th>Original</th><th>Mutant</th><th>Tests Should Catch</th></tr></thead><tbody>
+<tr><td>Arithmetic</td><td><code>a + b</code></td><td><code>a - b</code></td><td>Value changes</td></tr>
+<tr><td>Relational</td><td><code>a &lt; b</code></td><td><code>a &lt;= b</code></td><td>Boundary conditions</td></tr>
+<tr><td>Logical</td><td><code>a &amp;&amp; b</code></td><td><code>a \|\| b</code></td><td>Boolean logic</td></tr>
+<tr><td>Literal</td><td><code>0.9</code></td><td><code>0.0</code></td><td>Magic numbers</td></tr>
+<tr><td>Return</td><td><code>return x</code></td><td><code>return 0</code></td><td>Return value usage</td></tr>
+</tbody></table>
+</div>
+<h2 id="using-cargo-mutants-in-aprender"><a class="header" href="#using-cargo-mutants-in-aprender">Using cargo-mutants in Aprender</a></h2>
+<h3 id="installation"><a class="header" href="#installation">Installation</a></h3>
+<pre><code class="language-bash">cargo install cargo-mutants --locked
+</code></pre>
+<h3 id="makefile-targets"><a class="header" href="#makefile-targets">Makefile Targets</a></h3>
+<p>Aprender provides tiered mutation testing targets:</p>
+<pre><code class="language-bash"># Quick sample (~5 min) - for rapid feedback
+make mutants-fast
+
+# Full suite (~30-60 min) - for comprehensive analysis
+make mutants
+
+# Single file - for targeted improvements
+make mutants-file FILE=src/metrics/mod.rs
+
+# List potential mutants without running
+make mutants-list
+</code></pre>
+<h3 id="direct-usage"><a class="header" href="#direct-usage">Direct Usage</a></h3>
+<pre><code class="language-bash"># Run on entire crate
+cargo mutants --no-times --timeout 300 -- --all-features
+
+# Run on specific file
+cargo mutants --no-times --timeout 120 --file src/loss/mod.rs
+
+# Run with sharding for CI parallelization
+cargo mutants --no-times --shard 1/4 -- --lib
+</code></pre>
+<h2 id="interpreting-results"><a class="header" href="#interpreting-results">Interpreting Results</a></h2>
+<h3 id="output-format"><a class="header" href="#output-format">Output Format</a></h3>
+<pre><code>src/metrics/mod.rs:42: replace mse -&gt; f32 with 0.0 ... KILLED
+src/metrics/mod.rs:42: replace mse -&gt; f32 with 1.0 ... KILLED
+src/metrics/mod.rs:58: replace mae -&gt; f32 with 0.0 ... SURVIVED  ⚠️
+</code></pre>
+<h3 id="result-categories"><a class="header" href="#result-categories">Result Categories</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Status</th><th>Meaning</th><th>Action</th></tr></thead><tbody>
+<tr><td>KILLED</td><td>Tests caught the mutation</td><td>Good - no action needed</td></tr>
+<tr><td>SURVIVED</td><td>Tests missed the mutation</td><td>Add stronger assertions</td></tr>
+<tr><td>TIMEOUT</td><td>Tests took too long</td><td>May indicate infinite loop</td></tr>
+<tr><td>UNVIABLE</td><td>Mutant doesn't compile</td><td>Normal - skip these</td></tr>
+</tbody></table>
+</div>
+<h2 id="improving-your-mutation-score"><a class="header" href="#improving-your-mutation-score">Improving Your Mutation Score</a></h2>
+<h3 id="1-strengthen-assertions"><a class="header" href="#1-strengthen-assertions">1. Strengthen Assertions</a></h3>
+<pre><code class="language-rust">// ❌ Weak - survives many mutants
+assert!(result &gt; 0.0);
+
+// ✅ Strong - kills most mutants
+assert!((result - expected).abs() &lt; 1e-6);</code></pre>
+<h3 id="2-test-boundary-conditions"><a class="header" href="#2-test-boundary-conditions">2. Test Boundary Conditions</a></h3>
+<pre><code class="language-rust">#[test]
+fn test_boundaries() {
+    // Test exact boundaries, not just general cases
+    assert_eq!(classify(0), Category::Zero);
+    assert_eq!(classify(1), Category::Positive);
+    assert_eq!(classify(-1), Category::Negative);
+}</code></pre>
+<h3 id="3-verify-return-values"><a class="header" href="#3-verify-return-values">3. Verify Return Values</a></h3>
+<pre><code class="language-rust">// ❌ Just calling the function
+let _ = process_data(&amp;input);
+
+// ✅ Verify the actual result
+let result = process_data(&amp;input);
+assert_eq!(result.len(), expected_len);
+assert!(result.iter().all(|x| *x &gt;= 0.0));</code></pre>
+<h3 id="4-test-error-paths"><a class="header" href="#4-test-error-paths">4. Test Error Paths</a></h3>
+<pre><code class="language-rust">#[test]
+fn test_error_handling() {
+    // Verify errors are returned, not just that function doesn't panic
+    let result = parse_config(&quot;invalid&quot;);
+    assert!(result.is_err());
+    assert!(result.unwrap_err().to_string().contains(&quot;invalid&quot;));
+}</code></pre>
+<h2 id="mutation-score-targets"><a class="header" href="#mutation-score-targets">Mutation Score Targets</a></h2>
+<div class="table-wrapper"><table><thead><tr><th>Project Stage</th><th>Target Score</th><th>Rationale</th></tr></thead><tbody>
+<tr><td>Prototype</td><td>50%</td><td>Focus on functionality</td></tr>
+<tr><td>Development</td><td>70%</td><td>Growing confidence</td></tr>
+<tr><td>Production</td><td>80%</td><td>Reliability requirement</td></tr>
+<tr><td>Critical Path</td><td>90%+</td><td>Zero-defect tolerance</td></tr>
+</tbody></table>
+</div>
+<p>Aprender targets <strong>85%+ mutation score</strong> for core algorithms.</p>
+<h2 id="ci-integration"><a class="header" href="#ci-integration">CI Integration</a></h2>
+<h3 id="github-actions-example"><a class="header" href="#github-actions-example">GitHub Actions Example</a></h3>
+<pre><code class="language-yaml">mutation-test:
+  runs-on: ubuntu-latest
+  steps:
+    - uses: actions/checkout@v4
+    - name: Install cargo-mutants
+      run: cargo install cargo-mutants --locked
+    - name: Run mutation tests (sample)
+      run: cargo mutants --no-times --shard 1/4 --timeout 300
+      continue-on-error: true
+    - name: Upload results
+      uses: actions/upload-artifact@v4
+      with:
+        name: mutants-results
+        path: mutants.out/
+</code></pre>
+<h3 id="sharding-for-parallelization"><a class="header" href="#sharding-for-parallelization">Sharding for Parallelization</a></h3>
+<pre><code class="language-bash"># Split across 4 CI jobs
+cargo mutants --shard 1/4  # Job 1
+cargo mutants --shard 2/4  # Job 2
+cargo mutants --shard 3/4  # Job 3
+cargo mutants --shard 4/4  # Job 4
+</code></pre>
+<h2 id="real-example-fixing-a-surviving-mutant"><a class="header" href="#real-example-fixing-a-surviving-mutant">Real Example: Fixing a Surviving Mutant</a></h2>
+<h3 id="the-surviving-mutant"><a class="header" href="#the-surviving-mutant">The Surviving Mutant</a></h3>
+<pre><code>src/loss/mod.rs:85: replace - with + in cross_entropy ... SURVIVED
+</code></pre>
+<h3 id="the-original-test"><a class="header" href="#the-original-test">The Original Test</a></h3>
+<pre><code class="language-rust">#[test]
+fn test_cross_entropy() {
+    let predictions = vec![0.9, 0.1];
+    let targets = vec![1.0, 0.0];
+    let loss = cross_entropy(&amp;predictions, &amp;targets);
+    assert!(loss &gt; 0.0);  // Too weak!
+}</code></pre>
+<h3 id="the-fix"><a class="header" href="#the-fix">The Fix</a></h3>
+<pre><code class="language-rust">#[test]
+fn test_cross_entropy_value() {
+    let predictions = vec![0.9, 0.1];
+    let targets = vec![1.0, 0.0];
+    let loss = cross_entropy(&amp;predictions, &amp;targets);
+
+    // Expected: -1.0 * ln(0.9) - 0.0 * ln(0.1) ≈ 0.105
+    assert!((loss - 0.105).abs() &lt; 0.01);
+}
+
+#[test]
+fn test_cross_entropy_increases_with_wrong_prediction() {
+    let good_pred = cross_entropy(&amp;[0.9], &amp;[1.0]);
+    let bad_pred = cross_entropy(&amp;[0.1], &amp;[1.0]);
+
+    assert!(bad_pred &gt; good_pred);  // Wrong predictions = higher loss
+}</code></pre>
+<h2 id="best-practices"><a class="header" href="#best-practices">Best Practices</a></h2>
+<ol>
+<li><strong>Start Small</strong>: Run <code>mutants-fast</code> during development</li>
+<li><strong>Target High-Risk Code</strong>: Focus on algorithms and business logic</li>
+<li><strong>Skip Test Code</strong>: Don't mutate test files themselves</li>
+<li><strong>Use Timeouts</strong>: Prevent infinite loops from stalling CI</li>
+<li><strong>Review Survivors</strong>: Each surviving mutant is a potential bug</li>
+</ol>
+<h2 id="relationship-to-other-testing"><a class="header" href="#relationship-to-other-testing">Relationship to Other Testing</a></h2>
+<div class="table-wrapper"><table><thead><tr><th>Test Type</th><th>What It Measures</th><th>Speed</th></tr></thead><tbody>
+<tr><td>Unit Tests</td><td>Functionality</td><td>Fast</td></tr>
+<tr><td>Property Tests</td><td>Invariants</td><td>Medium</td></tr>
+<tr><td>Coverage</td><td>Code execution</td><td>Fast</td></tr>
+<tr><td><strong>Mutation Testing</strong></td><td>Test quality</td><td>Slow</td></tr>
+</tbody></table>
+</div>
+<p>Mutation testing is the final arbiter of test suite quality. Use it to validate that your other testing efforts actually catch bugs.</p>
+<h2 id="see-also"><a class="header" href="#see-also">See Also</a></h2>
 <ul>
-<li><a href="advanced-testing/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
-<li><a href="advanced-testing/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+<li><a href="advanced-testing/./what-is-mutation-testing.html">What is Mutation Testing?</a></li>
+<li><a href="advanced-testing/./using-cargo-mutants.html">Using cargo-mutants</a></li>
+<li><a href="advanced-testing/./mutation-score-targets.html">Mutation Score Targets</a></li>
+<li><a href="advanced-testing/./killing-mutants.html">Killing Mutants</a></li>
+<li><a href="advanced-testing/./property-based-testing.html">Property-Based Testing</a></li>
 </ul>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="what-is-mutation-testing"><a class="header" href="#what-is-mutation-testing">What Is Mutation Testing</a></h1>
 <p>📝 <strong>This chapter is under construction.</strong></p>
@@ -2653,7 +2840,7 @@ autocmd BufWritePost *.rs !cargo fmt
 <li><a href="advanced-testing/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
 <li><a href="advanced-testing/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
 </ul>
-<div style="break-before: page; page-break-before: always;"></div><h1 id="mutation-score-targets"><a class="header" href="#mutation-score-targets">Mutation Score Targets</a></h1>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="mutation-score-targets-1"><a class="header" href="#mutation-score-targets-1">Mutation Score Targets</a></h1>
 <p>📝 <strong>This chapter is under construction.</strong></p>
 <p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
 <p><strong>See also:</strong></p>
@@ -6503,7 +6690,7 @@ where H(P_i) = -Σ_j P(j|i) log₂ P(j|i)
 <li>When you need to transform new data</li>
 <li>When global structure matters</li>
 </ul>
-<h2 id="best-practices"><a class="header" href="#best-practices">Best Practices</a></h2>
+<h2 id="best-practices-1"><a class="header" href="#best-practices-1">Best Practices</a></h2>
 <ol>
 <li><strong>Normalize data</strong> before t-SNE (different scales affect distances)</li>
 <li><strong>Try multiple perplexity values</strong> (5, 10, 30, 50) to see different structures</li>
@@ -8838,7 +9025,7 @@ let space = SearchSpace::new()
 <li><strong>Vocabulary Expansion</strong>: +133% vocabulary size</li>
 <li><strong>Joint Optimization</strong>: Augmentation params tuned alongside model</li>
 </ol>
-<h2 id="best-practices-1"><a class="header" href="#best-practices-1">Best Practices</a></h2>
+<h2 id="best-practices-2"><a class="header" href="#best-practices-2">Best Practices</a></h2>
 <h3 id="1-start-with-random-search"><a class="header" href="#1-start-with-random-search">1. Start with Random Search</a></h3>
 <pre><code class="language-rust">// Quick exploration
 let result = AutoTuner::new(RandomSearch::new(20))
@@ -10429,7 +10616,7 @@ println!(&quot;Assortativity: {:.3}&quot;, assortativity);  // Negative (disasso
 <p>With Kahan summation, error consistently &lt;1e-10.</p>
 <h3 id="heijunka-load-balancing"><a class="header" href="#heijunka-load-balancing">Heijunka (Load Balancing)</a></h3>
 <p><strong>Rayon work-stealing</strong>: Automatically balances BFS tasks across cores. Nodes with more edges take longer, but work-stealing prevents idle threads.</p>
-<h2 id="best-practices-2"><a class="header" href="#best-practices-2">Best Practices</a></h2>
+<h2 id="best-practices-3"><a class="header" href="#best-practices-3">Best Practices</a></h2>
 <h3 id="when-to-use-each-centrality"><a class="header" href="#when-to-use-each-centrality">When to Use Each Centrality</a></h3>
 <ul>
 <li><strong>Degree</strong>: Quick analysis, local importance only</li>
@@ -10830,7 +11017,7 @@ All-Pairs:        180 ms
 <li>Detects negative cycles</li>
 </ul>
 <p><strong>Not yet implemented in aprender</strong> (future roadmap item).</p>
-<h2 id="see-also"><a class="header" href="#see-also">See Also</a></h2>
+<h2 id="see-also-1"><a class="header" href="#see-also-1">See Also</a></h2>
 <ul>
 <li><a href="ml-fundamentals/./graph-algorithms.html">Graph Algorithms</a> - Centrality and structural analysis</li>
 <li><a href="ml-fundamentals/../../../examples/graph_social_network.rs">Graph Examples</a> - Practical usage examples</li>
@@ -11311,7 +11498,7 @@ Topological Sort       | 620 ns    | 6.2 µs     | 31 µs      |
 <li><strong>Parallel Topological Sort</strong>: Level-based parallelization</li>
 </ul>
 <p><strong>Not yet implemented</strong> in aprender (future optimization).</p>
-<h2 id="see-also-1"><a class="header" href="#see-also-1">See Also</a></h2>
+<h2 id="see-also-2"><a class="header" href="#see-also-2">See Also</a></h2>
 <ul>
 <li><a href="ml-fundamentals/./graph-algorithms.html">Graph Algorithms</a> - Centrality and structural analysis</li>
 <li><a href="ml-fundamentals/./graph-pathfinding.html">Graph Pathfinding</a> - Shortest path algorithms</li>
@@ -11739,7 +11926,7 @@ assert!(aa_0_2 &gt; aa_0_3);</code></pre>
 <li>Overlapping: nodes can belong to multiple communities</li>
 <li>Use SLPA (Speaker-Listener Label Propagation) variant</li>
 </ul>
-<h2 id="see-also-2"><a class="header" href="#see-also-2">See Also</a></h2>
+<h2 id="see-also-3"><a class="header" href="#see-also-3">See Also</a></h2>
 <ul>
 <li><a href="ml-fundamentals/./graph-algorithms.html">Graph Algorithms</a> - Centrality and structural analysis</li>
 <li><a href="ml-fundamentals/./graph-pathfinding.html">Graph Pathfinding</a> - Shortest path algorithms</li>
@@ -12054,7 +12241,7 @@ for (i, (&amp;lower, &amp;count)) in hist.bins.iter().zip(hist.counts.iter()).en
 </ul>
 <h3 id="heijunka-load-balancing-1"><a class="header" href="#heijunka-load-balancing-1">Heijunka (Load Balancing)</a></h3>
 <p><strong>Adaptive binning</strong>: Methods like Freedman-Diaconis adjust bin count to data characteristics, avoiding over/under-binning.</p>
-<h2 id="best-practices-3"><a class="header" href="#best-practices-3">Best Practices</a></h2>
+<h2 id="best-practices-4"><a class="header" href="#best-practices-4">Best Practices</a></h2>
 <h3 id="quantile-computation"><a class="header" href="#quantile-computation">Quantile Computation</a></h3>
 <pre><code class="language-rust ignore">// ✅ Good: Single quantile with QuickSelect
 let median = stats.quantile(0.5).unwrap();
@@ -12317,7 +12504,7 @@ Support: 1/4 = 25% ✗ (below threshold)
 <li>Gene co-expression: Genes activated together</li>
 <li>Protein interactions: Proteins that interact</li>
 </ul>
-<h2 id="best-practices-4"><a class="header" href="#best-practices-4">Best Practices</a></h2>
+<h2 id="best-practices-5"><a class="header" href="#best-practices-5">Best Practices</a></h2>
 <ol>
 <li>
 <p><strong>Data preprocessing</strong>:</p>
@@ -13207,7 +13394,7 @@ model.fit(&amp;x_train, &amp;y_train).unwrap();</code></pre>
 <ul>
 <li><code>best_index()</code>: Index of best alpha in grid</li>
 </ul>
-<h2 id="best-practices-5"><a class="header" href="#best-practices-5">Best Practices</a></h2>
+<h2 id="best-practices-6"><a class="header" href="#best-practices-6">Best Practices</a></h2>
 <h3 id="1-define-appropriate-grid"><a class="header" href="#1-define-appropriate-grid">1. Define Appropriate Grid</a></h3>
 <pre><code class="language-rust">// ✅ Good: Log-scale grid
 let alphas = vec![0.001, 0.01, 0.1, 1.0, 10.0, 100.0];
@@ -13459,7 +13646,7 @@ Objective: Maximize silhouette score
 <tr><td>&lt; 0</td><td>Samples may be in wrong clusters</td></tr>
 </tbody></table>
 </div>
-<h2 id="best-practices-6"><a class="header" href="#best-practices-6">Best Practices</a></h2>
+<h2 id="best-practices-7"><a class="header" href="#best-practices-7">Best Practices</a></h2>
 <ol>
 <li><strong>Multiple seeds</strong>: Average multiple K-Means runs to reduce variance</li>
 <li><strong>Reasonable search range</strong>: Don't search K &gt; sqrt(n) typically</li>
@@ -15265,7 +15452,7 @@ bundle.clear_cache();</code></pre>
 <tr><td>Pre-fetch</td><td>O(k)</td><td>Background loading</td></tr>
 </tbody></table>
 </div>
-<h2 id="best-practices-7"><a class="header" href="#best-practices-7">Best Practices</a></h2>
+<h2 id="best-practices-8"><a class="header" href="#best-practices-8">Best Practices</a></h2>
 <ol>
 <li><strong>Size models appropriately</strong>: Split large models into logical components</li>
 <li><strong>Choose eviction wisely</strong>: LRU for sequential, LFU for hot/cold</li>
@@ -15546,7 +15733,7 @@ renacer -c -e trace=file -- ./target/debug/examples/bundle_10kb_limit
 <li><strong>Watch for repeated seeks</strong> - Indicates eviction and reload</li>
 <li><strong>Compare configurations</strong> - Measure impact of tuning</li>
 </ol>
-<h2 id="see-also-3"><a class="header" href="#see-also-3">See Also</a></h2>
+<h2 id="see-also-4"><a class="header" href="#see-also-4">See Also</a></h2>
 <ul>
 <li><a href="examples/./model-bundling-paging.html">Model Bundling and Memory Paging</a> - Bundle module API</li>
 <li><a href="examples/./shell-completion.html">AI Shell Completion</a> - Real-world paging usage</li>
@@ -15655,7 +15842,7 @@ fn main() {
 <li><strong>17 reads</strong>: Manifest reads + model data loads</li>
 <li><strong>8 lseek</strong>: Seeking to different model offsets (indicates paging)</li>
 </ul>
-<h2 id="see-also-4"><a class="header" href="#see-also-4">See Also</a></h2>
+<h2 id="see-also-5"><a class="header" href="#see-also-5">See Also</a></h2>
 <ul>
 <li><a href="examples/./tracing-memory-paging.html">Tracing Memory Paging with Renacer</a> - Comprehensive tracing guide</li>
 <li><a href="examples/./model-bundling-paging.html">Model Bundling and Memory Paging</a> - Full bundle API documentation</li>
@@ -15802,7 +15989,7 @@ println!(&quot;Hit rate: {:.1}%&quot;, cache.stats().hit_rate() * 100.0);</code>
     .with_aggregation(AggregationStrategy::MajorityVote)
     .with_min_votes(2)              // Need 2+ LFs to agree
     .with_min_confidence(0.5)       // 50% confidence threshold</code></pre>
-<h2 id="see-also-5"><a class="header" href="#see-also-5">See Also</a></h2>
+<h2 id="see-also-6"><a class="header" href="#see-also-6">See Also</a></h2>
 <ul>
 <li><a href="examples/../ml-fundamentals/automl.html">AutoML Chapter</a> - Automated model tuning</li>
 <li><a href="examples/./text-preprocessing.html">Text Preprocessing</a> - NLP preprocessing</li>
@@ -16022,7 +16209,7 @@ synonyms.add_synonym(
 <li>D'Ambros et al. (2012). &quot;Evaluating Defect Prediction Approaches&quot; (defect prediction context)</li>
 <li><a href="examples/./synthetic-data-generation.html">Synthetic Data Generation</a> - General EDA for text</li>
 </ul>
-<h2 id="see-also-6"><a class="header" href="#see-also-6">See Also</a></h2>
+<h2 id="see-also-7"><a class="header" href="#see-also-7">See Also</a></h2>
 <ul>
 <li><a href="examples/./code-feature-extractor.html">CodeFeatureExtractor</a> - 8-dimensional commit feature extraction</li>
 <li><a href="examples/./shell-completion.html">Shell Completion</a> - AI-powered shell autocomplete</li>
@@ -16265,7 +16452,7 @@ if weekly_delta &gt; 50.0 {
 <li>Mockus &amp; Votta (2000). &quot;Identifying Reasons for Software Changes Using Historic Databases&quot;</li>
 <li>Hassan (2009). &quot;Predicting Faults Using the Complexity of Code Changes&quot;</li>
 </ul>
-<h2 id="see-also-7"><a class="header" href="#see-also-7">See Also</a></h2>
+<h2 id="see-also-8"><a class="header" href="#see-also-8">See Also</a></h2>
 <ul>
 <li><a href="examples/./code-eda.html">CodeEDA</a> - Code-aware data augmentation</li>
 <li><a href="examples/./synthetic-data-generation.html">Synthetic Data Generation</a> - General synthetic data techniques</li>
@@ -19080,7 +19267,7 @@ $$</p>
 <li>Christopher Bishop, <em>Pattern Recognition and Machine Learning</em>, Chapter 3</li>
 <li>Andrew Gelman et al., <em>Bayesian Data Analysis</em>, Chapter 14</li>
 </ul>
-<h2 id="see-also-8"><a class="header" href="#see-also-8">See Also</a></h2>
+<h2 id="see-also-9"><a class="header" href="#see-also-9">See Also</a></h2>
 <ul>
 <li><a href="examples/./normal-inverse-gamma-inference.html">Normal-Inverse-Gamma Inference</a> - Conjugate prior details</li>
 <li><a href="examples/bayesian-linear-regression.html#">Ridge Regression</a> - Frequentist regularization (coming soon)</li>
@@ -19328,7 +19515,7 @@ $$</p>
 <li>Christopher Bishop, <em>Pattern Recognition and Machine Learning</em>, Chapter 4</li>
 <li>Radford Neal, <em>Bayesian Learning for Neural Networks</em> (Laplace approximation)</li>
 </ul>
-<h2 id="see-also-9"><a class="header" href="#see-also-9">See Also</a></h2>
+<h2 id="see-also-10"><a class="header" href="#see-also-10">See Also</a></h2>
 <ul>
 <li><a href="examples/./bayesian-linear-regression.html">Bayesian Linear Regression</a> - Conjugate case with analytical posterior</li>
 <li><a href="examples/bayesian-logistic-regression.html#">Logistic Regression</a> - Maximum likelihood baseline (coming soon)</li>
@@ -20808,7 +20995,7 @@ while !search.should_stop() {
 println!(&quot;Stopped after {} evaluations (uncertainty: {:.4})&quot;,
     all_results.len(), search.uncertainty());</code></pre>
 <p>This eliminates <strong>Muda</strong> (waste) by stopping when confidence saturates.</p>
-<h2 id="best-practices-8"><a class="header" href="#best-practices-8">Best Practices</a></h2>
+<h2 id="best-practices-9"><a class="header" href="#best-practices-9">Best Practices</a></h2>
 <ol>
 <li><strong>Budget Selection</strong>: Start with <code>10,000 × dim</code> evaluations</li>
 <li><strong>Population Size</strong>: Default auto-selection usually works well</li>
@@ -20972,7 +21159,7 @@ let recovered = scaler.inverse_transform(&amp;scaled).unwrap();
 <li>Visualizing scaled data</li>
 <li>Debugging transformations</li>
 </ul>
-<h2 id="best-practices-9"><a class="header" href="#best-practices-9">Best Practices</a></h2>
+<h2 id="best-practices-10"><a class="header" href="#best-practices-10">Best Practices</a></h2>
 <h3 id="1-fit-only-on-training-data"><a class="header" href="#1-fit-only-on-training-data">1. Fit Only on Training Data</a></h3>
 <pre><code class="language-rust">// ✅ Correct
 let mut scaler = StandardScaler::new();
@@ -22503,7 +22690,7 @@ assert!((norm_sq.sqrt() - 1.0).abs() &lt; 1e-6); // ≈ 1</code></pre>
 <li><strong>Standardization required</strong>: Features must be on similar scales</li>
 <li><strong>Orthogonal components</strong>: Each PC independent of others</li>
 </ol>
-<h3 id="best-practices-10"><a class="header" href="#best-practices-10">Best Practices</a></h3>
+<h3 id="best-practices-11"><a class="header" href="#best-practices-11">Best Practices</a></h3>
 <ol>
 <li><strong>Always standardize</strong> before PCA (unless features already scaled)</li>
 <li><strong>Check explained variance</strong>: Aim for 90-95% cumulative</li>
@@ -24397,7 +24584,7 @@ Total reduction: 23.8%
 <li>&quot;analyzing&quot; → &quot;analyz&quot;</li>
 <li>&quot;classification&quot; → &quot;classif&quot;</li>
 </ul>
-<h2 id="best-practices-11"><a class="header" href="#best-practices-11">Best Practices</a></h2>
+<h2 id="best-practices-12"><a class="header" href="#best-practices-12">Best Practices</a></h2>
 <h3 id="when-to-use-each-technique"><a class="header" href="#when-to-use-each-technique">When to Use Each Technique</a></h3>
 <p><strong>Tokenization:</strong></p>
 <ul>
@@ -24770,7 +24957,7 @@ Predictions: [0, 1]
 <li>Requires hyperparameter tuning (learning rate, iterations)</li>
 <li>Sensitive to feature scaling</li>
 </ul>
-<h2 id="best-practices-12"><a class="header" href="#best-practices-12">Best Practices</a></h2>
+<h2 id="best-practices-13"><a class="header" href="#best-practices-13">Best Practices</a></h2>
 <h3 id="feature-extraction"><a class="header" href="#feature-extraction">Feature Extraction</a></h3>
 <p><strong>CountVectorizer (Bag of Words):</strong></p>
 <ul>
@@ -25121,7 +25308,7 @@ Total entities: 5+
 <li><strong>TextRank</strong>: Better captures document structure, good for narratives</li>
 <li><strong>Hybrid</strong>: More robust, balances both approaches</li>
 </ul>
-<h2 id="best-practices-13"><a class="header" href="#best-practices-13">Best Practices</a></h2>
+<h2 id="best-practices-14"><a class="header" href="#best-practices-14">Best Practices</a></h2>
 <ol>
 <li><strong>Preprocessing</strong>: Clean text before similarity computation</li>
 <li><strong>Normalization</strong>: Lowercase, remove punctuation for better matching</li>
@@ -26372,7 +26559,7 @@ kubectl get pods
 
     group.finish();
 }</code></pre>
-<h2 id="ci-integration"><a class="header" href="#ci-integration">CI Integration</a></h2>
+<h2 id="ci-integration-1"><a class="header" href="#ci-integration-1">CI Integration</a></h2>
 <p>Add to <code>.github/workflows/benchmark.yml</code>:</p>
 <pre><code class="language-yaml">- name: Run shell benchmarks
   run: |
@@ -26558,7 +26745,7 @@ huggingface-cli search aprender shell-completion
 # Use any model
 aprender-shell suggest &quot;kubectl &quot; -m model.apr
 </code></pre>
-<h2 id="best-practices-14"><a class="header" href="#best-practices-14">Best Practices</a></h2>
+<h2 id="best-practices-15"><a class="header" href="#best-practices-15">Best Practices</a></h2>
 <h3 id="privacy"><a class="header" href="#privacy">Privacy</a></h3>
 <p>Before publishing, verify no secrets in model:</p>
 <pre><code class="language-bash"># Check for sensitive patterns
@@ -28792,7 +28979,7 @@ let loss = loss_fn.forward(&amp;anchor_emb, &amp;positive_emb, None);</code></pr
 <li><code>citl_neural_encoder</code> - Transformer encoding</li>
 <li><code>citl_neural_config</code> - Config comparison</li>
 </ul>
-<h2 id="see-also-10"><a class="header" href="#see-also-10">See Also</a></h2>
+<h2 id="see-also-11"><a class="header" href="#see-also-11">See Also</a></h2>
 <ul>
 <li><a href="examples/../ml-fundamentals/compiler-in-the-loop.html">Compiler-in-the-Loop Learning Theory</a></li>
 <li><a href="examples/./custom-error-classifier.html">Building Custom Error Classifiers</a></li>
