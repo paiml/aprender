@@ -11,6 +11,7 @@
 //! - [`ParticleSwarm`] - Swarm intelligence with velocity updates
 //! - [`SimulatedAnnealing`] - Single-point, Metropolis acceptance
 //! - [`GeneticAlgorithm`] - Selection, crossover, mutation
+//! - [`HarmonySearch`] - Music-inspired memory-based optimization
 //!
 //! ## Constructive Metaheuristics (Phase 3)
 //! Build solutions incrementally:
@@ -70,11 +71,19 @@
 
 mod budget;
 mod de;
+mod ga;
+mod hs;
+mod pso;
+mod sa;
 mod search_space;
 mod traits;
 
 pub use budget::{Budget, ConvergenceTracker};
 pub use de::{AdaptationStrategy, DEStrategy, DifferentialEvolution};
+pub use ga::GeneticAlgorithm;
+pub use hs::HarmonySearch;
+pub use pso::ParticleSwarm;
+pub use sa::SimulatedAnnealing;
 pub use search_space::SearchSpace;
 pub use traits::{OptimizationResult, PerturbativeMetaheuristic, TerminationReason};
 
