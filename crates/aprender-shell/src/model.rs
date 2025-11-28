@@ -154,16 +154,24 @@ impl MarkovModel {
     }
 
     /// Suggest completions for a prefix
+    ///
+    /// Optimized for minimal allocations (Issue #93):
+    /// - Pre-allocated vectors with capacity
+    /// - HashSet for O(1) duplicate detection
+    /// - Reused string buffers where possible
     pub fn suggest(&self, prefix: &str, count: usize) -> Vec<(String, f32)> {
         let prefix = prefix.trim();
         let tokens: Vec<&str> = prefix.split_whitespace().collect();
         let ends_with_space = prefix.is_empty() || prefix.ends_with(' ');
 
-        let mut suggestions = Vec::new();
+        // Pre-allocate with expected capacity (reduces brk syscalls)
+        let capacity = count * 4;
+        let mut suggestions = Vec::with_capacity(capacity);
+        let mut seen = std::collections::HashSet::with_capacity(capacity);
 
         // Strategy 1: Trie prefix match for exact commands
         if let Some(ref trie) = self.trie {
-            for cmd in trie.find_prefix(prefix, count * 4) {
+            for cmd in trie.find_prefix(prefix, capacity) {
                 // Filter corrupted commands
                 if Self::is_corrupted_command(&cmd) {
                     continue;
@@ -171,6 +179,7 @@ impl MarkovModel {
 
                 let freq = self.command_freq.get(&cmd).copied().unwrap_or(1);
                 let score = freq as f32 / self.total_commands.max(1) as f32;
+                seen.insert(cmd.clone());
                 suggestions.push((cmd, score));
             }
         }
@@ -178,18 +187,29 @@ impl MarkovModel {
         // Strategy 2: N-gram prediction for next token (only when prefix ends with space)
         if !tokens.is_empty() && ends_with_space {
             let context_start = tokens.len().saturating_sub(self.n - 1);
+            // Pre-compute context string once
             let context = tokens[context_start..].join(" ");
+            let prefix_trimmed = prefix.trim();
 
             if let Some(next_tokens) = self.ngrams.get(&context) {
                 let total: u32 = next_tokens.values().sum();
 
+                // Pre-allocate completion buffer
+                let mut completion = String::with_capacity(prefix_trimmed.len() + 32);
+
                 for (token, ngram_count) in next_tokens {
-                    let completion = format!("{} {}", prefix.trim(), token);
+                    // Reuse buffer instead of format!()
+                    completion.clear();
+                    completion.push_str(prefix_trimmed);
+                    completion.push(' ');
+                    completion.push_str(token);
+
                     let score = *ngram_count as f32 / total as f32;
 
-                    // Avoid duplicates
-                    if !suggestions.iter().any(|(s, _)| s == &completion) {
-                        suggestions.push((completion, score * 0.8)); // Slightly lower weight
+                    // O(1) duplicate check with HashSet
+                    if !seen.contains(&completion) {
+                        seen.insert(completion.clone());
+                        suggestions.push((completion.clone(), score * 0.8));
                     }
                 }
             }
@@ -200,21 +220,32 @@ impl MarkovModel {
             let partial_token = tokens.last().unwrap_or(&"");
             let context_tokens = &tokens[..tokens.len() - 1];
             let context_start = context_tokens.len().saturating_sub(self.n - 1);
+            // Pre-compute context strings once
             let context = context_tokens[context_start..].join(" ");
+            let context_prefix = context_tokens.join(" ");
 
             if let Some(next_tokens) = self.ngrams.get(&context) {
                 let total: u32 = next_tokens.values().sum();
+
+                // Pre-allocate completion buffer
+                let mut completion = String::with_capacity(context_prefix.len() + 32);
 
                 for (token, ngram_count) in next_tokens {
                     // Only include tokens that start with the partial input
                     // AND are not corrupted tokens
                     if token.starts_with(partial_token) && !Self::is_corrupted_token(token) {
-                        let completion = format!("{} {}", context_tokens.join(" "), token);
+                        // Reuse buffer instead of format!()
+                        completion.clear();
+                        completion.push_str(&context_prefix);
+                        completion.push(' ');
+                        completion.push_str(token);
+
                         let score = *ngram_count as f32 / total as f32;
 
-                        // Avoid duplicates
-                        if !suggestions.iter().any(|(s, _)| s == &completion) {
-                            suggestions.push((completion, score * 0.9));
+                        // O(1) duplicate check with HashSet
+                        if !seen.contains(&completion) {
+                            seen.insert(completion.clone());
+                            suggestions.push((completion.clone(), score * 0.9));
                         }
                     }
                 }
@@ -419,13 +450,14 @@ impl MarkovModel {
     }
 
     /// Top commands by frequency
+    ///
+    /// Optimized to reduce allocations:
+    /// - Pre-allocated result vector
+    /// - Uses sort_unstable for better cache locality
     pub fn top_commands(&self, count: usize) -> Vec<(String, u32)> {
-        let mut cmds: Vec<_> = self
-            .command_freq
-            .iter()
-            .map(|(k, v)| (k.clone(), *v))
-            .collect();
-        cmds.sort_by(|a, b| b.1.cmp(&a.1));
+        let mut cmds: Vec<_> = Vec::with_capacity(self.command_freq.len());
+        cmds.extend(self.command_freq.iter().map(|(k, v)| (k.clone(), *v)));
+        cmds.sort_unstable_by(|a, b| b.1.cmp(&a.1));
         cmds.truncate(count);
         cmds
     }

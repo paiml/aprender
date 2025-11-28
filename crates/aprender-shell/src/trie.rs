@@ -1,4 +1,8 @@
 //! Trie data structure for fast prefix matching
+//!
+//! Optimized for minimal allocations (Issue #93):
+//! - Pre-allocated result vectors
+//! - Single mutable string buffer for traversal
 
 use std::collections::HashMap;
 
@@ -35,6 +39,10 @@ impl Trie {
     }
 
     /// Find all commands matching a prefix, sorted by frequency
+    ///
+    /// Optimized to reduce allocations:
+    /// - Pre-allocates result vector
+    /// - Uses single mutable buffer for string building
     pub fn find_prefix(&self, prefix: &str, limit: usize) -> Vec<String> {
         // Navigate to prefix node
         let mut node = &self.root;
@@ -42,21 +50,58 @@ impl Trie {
         for ch in prefix.chars() {
             match node.children.get(&ch) {
                 Some(n) => node = n,
-                None => return vec![],
+                None => return Vec::new(),
             }
         }
 
-        // Collect all completions
-        let mut results = Vec::new();
-        self.collect_words(node, prefix.to_string(), &mut results);
+        // Pre-allocate results with expected capacity
+        let mut results = Vec::with_capacity(limit.min(100));
+
+        // Use a single mutable buffer for building strings
+        let mut buffer = String::with_capacity(prefix.len() + 64);
+        buffer.push_str(prefix);
+
+        self.collect_words_optimized(node, &mut buffer, &mut results, limit);
 
         // Sort by count (descending)
-        results.sort_by(|a, b| b.1.cmp(&a.1));
+        results.sort_unstable_by(|a, b| b.1.cmp(&a.1));
 
-        // Return just the strings
-        results.into_iter().take(limit).map(|(s, _)| s).collect()
+        // Return just the strings (pre-allocate output)
+        let take_count = limit.min(results.len());
+        let mut output = Vec::with_capacity(take_count);
+        for (s, _) in results.into_iter().take(take_count) {
+            output.push(s);
+        }
+        output
     }
 
+    /// Optimized collection using a single mutable buffer
+    fn collect_words_optimized(
+        &self,
+        node: &TrieNode,
+        buffer: &mut String,
+        results: &mut Vec<(String, u32)>,
+        limit: usize,
+    ) {
+        if node.is_end {
+            results.push((buffer.clone(), node.count));
+        }
+
+        // Early exit when we have enough results
+        if results.len() >= limit.min(100) {
+            return;
+        }
+
+        for (ch, child) in &node.children {
+            // Push character, recurse, then pop (avoids clone)
+            buffer.push(*ch);
+            self.collect_words_optimized(child, buffer, results, limit);
+            buffer.pop();
+        }
+    }
+
+    /// Legacy method for compatibility (unused but kept for reference)
+    #[allow(dead_code)]
     fn collect_words(&self, node: &TrieNode, current: String, results: &mut Vec<(String, u32)>) {
         if node.is_end {
             results.push((current.clone(), node.count));
