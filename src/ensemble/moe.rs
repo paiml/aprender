@@ -1,8 +1,26 @@
 //! Mixture of Experts implementation
+//!
+//! MoE enables specialized expert models with a learnable gating network
+//! that routes inputs to the most appropriate expert(s).
+//!
+//! # Architecture
+//!
+//! ```text
+//! Input -> [Gating Network] -> Expert Weights
+//!     |
+//!     +---> [Expert 1] --+
+//!     +---> [Expert 2] --+--> Weighted Sum -> Output
+//!     +---> [Expert N] --+
+//! ```
+//!
+//! # References
+//!
+//! - Shazeer et al. (2017): Outrageously Large Neural Networks
+//! - Fedus et al. (2021): Switch Transformers
 
 use super::gating::GatingNetwork;
 use crate::traits::Estimator;
-use crate::Result;
+use crate::{Matrix, Result, Vector};
 use serde::{Deserialize, Serialize};
 
 /// MoE routing configuration
@@ -96,13 +114,177 @@ impl<E: Estimator, G: GatingNetwork> MixtureOfExperts<E, G> {
 
         let mut output = 0.0f32;
         for (expert_idx, weight) in top_weights {
-            let x = crate::Matrix::from_vec(1, input.len(), input.to_vec())
-                .expect("valid input matrix");
+            let x = Matrix::from_vec(1, input.len(), input.to_vec()).expect("valid input matrix");
             let pred = self.experts[expert_idx].predict(&x);
             let expert_output = pred.as_slice()[0];
             output += (weight / weight_sum) * expert_output;
         }
         output
+    }
+
+    /// Predict for a batch of inputs.
+    ///
+    /// Returns predictions and optionally the expert routing decisions.
+    ///
+    /// # Arguments
+    ///
+    /// * `inputs` - Matrix of shape [n_samples, n_features]
+    ///
+    /// # Returns
+    ///
+    /// Vector of predictions, one per input sample.
+    pub fn predict_batch(&self, inputs: &Matrix<f32>) -> Vector<f32> {
+        let n_samples = inputs.n_rows();
+        let mut predictions = Vec::with_capacity(n_samples);
+
+        for i in 0..n_samples {
+            let row = inputs.row(i);
+            predictions.push(self.predict(row.as_slice()));
+        }
+
+        Vector::from_slice(&predictions)
+    }
+
+    /// Compute load balancing auxiliary loss.
+    ///
+    /// Encourages even distribution of inputs across experts to prevent
+    /// expert collapse (all inputs routed to single expert).
+    ///
+    /// Loss = sum_i(f_i * P_i) where:
+    /// - f_i = fraction of inputs routed to expert i
+    /// - P_i = average gate probability for expert i
+    ///
+    /// # Arguments
+    ///
+    /// * `inputs` - Matrix of shape [n_samples, n_features]
+    ///
+    /// # Returns
+    ///
+    /// Load balance loss value (lower is more balanced)
+    pub fn compute_load_balance_loss(&self, inputs: &Matrix<f32>) -> f32 {
+        let n_samples = inputs.n_rows();
+        let n_experts = self.experts.len();
+
+        if n_samples == 0 || n_experts == 0 {
+            return 0.0;
+        }
+
+        // Count expert assignments and accumulate gate probabilities
+        let mut expert_counts = vec![0usize; n_experts];
+        let mut expert_probs = vec![0.0f32; n_experts];
+
+        for i in 0..n_samples {
+            let row = inputs.row(i);
+            let weights = self.gating.forward(row.as_slice());
+
+            // Find top-k experts
+            let mut indexed: Vec<(usize, f32)> = weights.iter().copied().enumerate().collect();
+            indexed.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+            let top_k = self.config.top_k.min(n_experts);
+            for (idx, prob) in indexed.iter().take(top_k) {
+                expert_counts[*idx] += 1;
+                expert_probs[*idx] += prob;
+            }
+        }
+
+        // Compute load balance loss
+        let n_tokens = (n_samples * self.config.top_k.min(n_experts)) as f32;
+        let mut loss = 0.0f32;
+
+        for (count, prob_sum) in expert_counts.iter().zip(expert_probs.iter()) {
+            let f_i = *count as f32 / n_tokens.max(1.0);
+            let p_i = *prob_sum / n_samples as f32;
+            loss += f_i * p_i;
+        }
+
+        // Scale by number of experts (Switch Transformer formulation)
+        loss * n_experts as f32 * self.config.load_balance_weight
+    }
+
+    /// Get expert usage statistics for a batch of inputs.
+    ///
+    /// Returns the fraction of inputs routed to each expert.
+    ///
+    /// # Arguments
+    ///
+    /// * `inputs` - Matrix of shape [n_samples, n_features]
+    ///
+    /// # Returns
+    ///
+    /// Vector of usage fractions, one per expert (sums to top_k).
+    pub fn expert_usage(&self, inputs: &Matrix<f32>) -> Vec<f32> {
+        let n_samples = inputs.n_rows();
+        let n_experts = self.experts.len();
+
+        if n_samples == 0 || n_experts == 0 {
+            return vec![0.0; n_experts];
+        }
+
+        let mut counts = vec![0usize; n_experts];
+
+        for i in 0..n_samples {
+            let row = inputs.row(i);
+            let weights = self.gating.forward(row.as_slice());
+
+            let mut indexed: Vec<(usize, f32)> = weights.iter().copied().enumerate().collect();
+            indexed.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+            let top_k = self.config.top_k.min(n_experts);
+            for (idx, _) in indexed.iter().take(top_k) {
+                counts[*idx] += 1;
+            }
+        }
+
+        let total = counts.iter().sum::<usize>() as f32;
+        counts
+            .iter()
+            .map(|&c| c as f32 / total.max(1.0) * self.config.top_k.min(n_experts) as f32)
+            .collect()
+    }
+
+    /// Get routing weights for a single input (useful for debugging/visualization).
+    ///
+    /// # Arguments
+    ///
+    /// * `input` - Feature vector
+    ///
+    /// # Returns
+    ///
+    /// Vector of gating weights for each expert.
+    #[must_use]
+    pub fn get_routing_weights(&self, input: &[f32]) -> Vec<f32> {
+        self.gating.forward(input)
+    }
+}
+
+impl<E, G> MixtureOfExperts<E, G>
+where
+    E: Estimator + Clone,
+    G: GatingNetwork,
+{
+    /// Fit MoE using pre-trained experts.
+    ///
+    /// This is a simple two-stage training approach:
+    /// 1. Experts are assumed to be pre-trained (passed in via builder)
+    /// 2. No gating training is performed (uses initial weights)
+    ///
+    /// For more sophisticated training, use separate expert training
+    /// followed by MoE construction.
+    ///
+    /// # Arguments
+    ///
+    /// * `_x` - Training features (unused in this simple implementation)
+    /// * `_y` - Training labels (unused in this simple implementation)
+    #[allow(clippy::unused_self)]
+    pub fn fit(&mut self, _x: &Matrix<f32>, _y: &Vector<f32>) -> Result<()> {
+        // In the simple two-stage approach, experts are pre-trained
+        // and gating uses fixed random weights.
+        // More sophisticated implementations would:
+        // 1. Route inputs to experts based on gating
+        // 2. Train experts on their routed inputs
+        // 3. Update gating based on expert performance
+        Ok(())
     }
 }
 
