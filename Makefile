@@ -19,7 +19,7 @@ SHELL := /bin/bash
 # Multi-line recipes execute in same shell
 .ONESHELL:
 
-.PHONY: all build test test-fast test-quick test-full lint fmt clean doc book book-build book-serve book-test tier1 tier2 tier3 tier4 coverage coverage-fast profile hooks-install hooks-verify lint-scripts bashrs-score bashrs-lint-makefile chaos-test fuzz bench dev pre-push ci check run-ci run-bench audit deps-validate deny pmat-score pmat-gates quality-report semantic-search
+.PHONY: all build test test-fast test-quick test-full lint fmt clean doc book book-build book-serve book-test tier1 tier2 tier3 tier4 coverage coverage-fast profile hooks-install hooks-verify lint-scripts bashrs-score bashrs-lint-makefile chaos-test fuzz bench dev pre-push ci check run-ci run-bench audit deps-validate deny pmat-score pmat-gates quality-report semantic-search examples mutants mutants-fast property-test
 
 # Default target
 all: tier2
@@ -353,3 +353,105 @@ semantic-search: ## Interactive semantic code search
 	@echo "🔍 Semantic code search..."
 	@echo "First run will build embeddings (may take a few minutes)..."
 	@pmat semantic || echo "⚠️  pmat semantic search not available"
+
+# ============================================================================
+# EXAMPLES TARGETS
+# ============================================================================
+
+examples: ## Run all examples to verify they work
+	@echo "🎯 Running all examples..."
+	@failed=0; \
+	total=0; \
+	for example in examples/*.rs; do \
+		name=$$(basename "$$example" .rs); \
+		total=$$((total + 1)); \
+		echo "  Running $$name..."; \
+		if cargo run --example "$$name" --quiet 2>/dev/null; then \
+			echo "    ✅ $$name passed"; \
+		else \
+			echo "    ❌ $$name failed"; \
+			failed=$$((failed + 1)); \
+		fi; \
+	done; \
+	echo ""; \
+	echo "📊 Results: $$((total - failed))/$$total examples passed"; \
+	if [ $$failed -gt 0 ]; then exit 1; fi
+	@echo "✅ All examples passed"
+
+examples-fast: ## Run examples with release mode (faster execution)
+	@echo "⚡ Running examples in release mode..."
+	@for example in examples/*.rs; do \
+		name=$$(basename "$$example" .rs); \
+		echo "  Running $$name..."; \
+		cargo run --example "$$name" --release --quiet 2>/dev/null || echo "    ⚠️  $$name failed"; \
+	done
+	@echo "✅ Examples complete"
+
+examples-list: ## List all available examples
+	@echo "📚 Available examples:"
+	@for example in examples/*.rs; do \
+		name=$$(basename "$$example" .rs); \
+		echo "  - $$name"; \
+	done
+	@echo ""
+	@echo "Run with: cargo run --example <name>"
+
+# ============================================================================
+# MUTATION TESTING TARGETS
+# ============================================================================
+
+mutants: ## Run mutation testing (full, ~30-60 min)
+	@echo "🧬 Running mutation testing (full suite)..."
+	@echo "⚠️  This may take 30-60 minutes for full coverage"
+	@which cargo-mutants > /dev/null 2>&1 || (echo "📦 Installing cargo-mutants..." && cargo install cargo-mutants --locked)
+	@cargo mutants --no-times --timeout 300 -- --all-features
+	@echo "✅ Mutation testing complete"
+
+mutants-fast: ## Run mutation testing on a sample (quick feedback, ~5 min)
+	@echo "⚡ Running mutation testing (fast sample)..."
+	@which cargo-mutants > /dev/null 2>&1 || (echo "📦 Installing cargo-mutants..." && cargo install cargo-mutants --locked)
+	@cargo mutants --no-times --timeout 120 --shard 1/10 -- --lib
+	@echo "✅ Mutation sample complete"
+
+mutants-file: ## Run mutation testing on specific file (usage: make mutants-file FILE=src/metrics/mod.rs)
+	@echo "🧬 Running mutation testing on $(FILE)..."
+	@if [ -z "$(FILE)" ]; then \
+		echo "❌ Usage: make mutants-file FILE=src/path/to/file.rs"; \
+		exit 1; \
+	fi
+	@which cargo-mutants > /dev/null 2>&1 || cargo install cargo-mutants --locked
+	@cargo mutants --no-times --timeout 120 --file "$(FILE)" -- --all-features
+	@echo "✅ Mutation testing on $(FILE) complete"
+
+mutants-list: ## List mutants without running tests
+	@echo "📋 Listing potential mutants..."
+	@cargo mutants --list 2>/dev/null | head -100
+	@echo "..."
+	@echo "(showing first 100 mutants)"
+
+# ============================================================================
+# PROPERTY TESTING TARGETS
+# ============================================================================
+
+property-test: ## Run property-based tests with extended cases
+	@echo "🎲 Running property-based tests..."
+	@if command -v cargo-nextest >/dev/null 2>&1; then \
+		PROPTEST_CASES=1000 cargo nextest run --test property_tests --no-fail-fast; \
+	else \
+		PROPTEST_CASES=1000 cargo test --test property_tests; \
+	fi
+	@echo "✅ Property tests passed"
+
+property-test-fast: ## Run property tests with fewer cases (quick feedback)
+	@echo "⚡ Running property tests (fast mode)..."
+	@if command -v cargo-nextest >/dev/null 2>&1; then \
+		cargo nextest run --test property_tests; \
+	else \
+		cargo test --test property_tests; \
+	fi
+	@echo "✅ Property tests passed"
+
+property-test-extensive: ## Run property tests with maximum coverage (10K cases)
+	@echo "🔬 Running extensive property tests (10K cases per test)..."
+	@PROPTEST_CASES=10000 cargo test --test property_tests -- --test-threads=1
+	@echo "✅ Extensive property tests complete"
