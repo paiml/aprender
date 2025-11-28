@@ -265,6 +265,95 @@ struct CompilerError {
 4. **Distribution Shift**: Training errors may differ from production
    - Solution: Diverse training corpus
 
+## Exporting Training Data for ML Pipelines
+
+CITL systems generate valuable training corpora. The **depyler** project supports exporting this data for downstream ML consumption via the **Organizational Intelligence Plugin (OIP)**.
+
+### Export Command
+
+```bash
+# Export to Parquet (recommended for large corpora)
+depyler oracle export-oip -i ./python_sources -o corpus.parquet --format parquet
+
+# Export to JSONL (human-readable)
+depyler oracle export-oip -i ./python_sources -o corpus.jsonl --format jsonl
+
+# With confidence filtering and reweighting
+depyler oracle export-oip -i ./src \
+    -o training_data.parquet \
+    --min-confidence 0.80 \
+    --include-clippy \
+    --reweight 1.5
+```
+
+### OIP Training Example Schema
+
+Each exported sample contains rich diagnostic metadata:
+
+```rust
+struct OipTrainingExample {
+    source_file: String,       // Original Python file
+    rust_file: String,         // Generated Rust file
+    error_code: Option<String>, // E0308, E0277, etc.
+    clippy_lint: Option<String>, // Optional Clippy lint
+    level: String,             // error, warning
+    message: String,           // Full diagnostic message
+    oip_category: String,      // DefectCategory taxonomy
+    confidence: f64,           // Mapping confidence (0.0-1.0)
+    line_start: i64,           // Error location
+    line_end: i64,
+    suggestion: Option<String>, // Compiler suggestion
+    python_construct: Option<String>, // Source Python pattern
+    weight: f32,               // Sample weight for training
+}
+```
+
+### Error Code to DefectCategory Mapping
+
+Rust error codes map to OIP's DefectCategory taxonomy:
+
+| Error Code | OIP Category | Confidence |
+|------------|--------------|------------|
+| E0308 | TypeErrors | 0.95 |
+| E0277 | TraitBounds | 0.95 |
+| E0502, E0503, E0505 | OwnershipBorrow | 0.95 |
+| E0597, E0499, E0716 | LifetimeErrors | 0.90 |
+| E0433, E0412 | ImportResolution | 0.90 |
+| E0425, E0599 | NameResolution | 0.85 |
+| E0428, E0592 | DuplicateDefinitions | 0.85 |
+
+### Feldman Long-Tail Reweighting
+
+For imbalanced error distributions, apply reweighting to emphasize rare error classes:
+
+```bash
+# Apply 1.5x weight boost to rare categories
+depyler oracle export-oip -i ./src -o corpus.parquet --reweight 1.5
+```
+
+This implements Feldman (2020) long-tail weighting, ensuring rare but important error patterns aren't drowned out by common type mismatches.
+
+### Integration with alimentar
+
+Export uses **alimentar** for efficient Arrow-based serialization:
+
+```rust
+use alimentar::ArrowDataset;
+
+// Load exported corpus
+let dataset = ArrowDataset::from_parquet("corpus.parquet")?;
+
+// Create batched DataLoader for training
+let loader = dataset
+    .shuffle(true)
+    .batch_size(32)
+    .into_loader()?;
+
+for batch in loader {
+    // Train on batch...
+}
+```
+
 ## Implementation in Aprender
 
 Aprender provides building blocks for CITL systems:
