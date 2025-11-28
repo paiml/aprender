@@ -658,6 +658,9 @@ impl Default for RandomForestRegressor {
 pub struct DecisionTreeClassifier {
     tree: Option<TreeNode>,
     max_depth: Option<usize>,
+    /// Number of features the model was trained on (for validation)
+    #[serde(default)]
+    n_features: Option<usize>,
 }
 
 impl DecisionTreeClassifier {
@@ -666,6 +669,7 @@ impl DecisionTreeClassifier {
         Self {
             tree: None,
             max_depth: None,
+            n_features: None,
         }
     }
 
@@ -690,7 +694,7 @@ impl DecisionTreeClassifier {
     ///
     /// Returns an error if the data is invalid.
     pub fn fit(&mut self, x: &crate::primitives::Matrix<f32>, y: &[usize]) -> Result<()> {
-        let (n_rows, _n_cols) = x.shape();
+        let (n_rows, n_cols) = x.shape();
         if n_rows != y.len() {
             return Err("Number of samples in X and y must match".into());
         }
@@ -698,6 +702,7 @@ impl DecisionTreeClassifier {
             return Err("Cannot fit with zero samples".into());
         }
 
+        self.n_features = Some(n_cols);
         self.tree = Some(build_tree(x, y, 0, self.max_depth));
         Ok(())
     }
@@ -714,9 +719,18 @@ impl DecisionTreeClassifier {
     ///
     /// # Panics
     ///
-    /// Panics if called before fit()
+    /// Panics if called before fit() or if feature count doesn't match training data
     pub fn predict(&self, x: &crate::primitives::Matrix<f32>) -> Vec<usize> {
         let (n_samples, n_features) = x.shape();
+
+        // Validate feature count matches what we trained on
+        if let Some(expected) = self.n_features {
+            assert!(
+                n_features >= expected,
+                "Feature count mismatch: model was trained with {expected} features but input has {n_features} features"
+            );
+        }
+
         let mut predictions = Vec::with_capacity(n_samples);
 
         for row in 0..n_samples {
@@ -966,7 +980,11 @@ impl DecisionTreeClassifier {
             Some(max_depth_data[0] as usize)
         };
 
-        Ok(Self { tree, max_depth })
+        Ok(Self {
+            tree,
+            max_depth,
+            n_features: None,
+        })
     }
 }
 
@@ -2409,6 +2427,7 @@ impl RandomForestClassifier {
             trees.push(DecisionTreeClassifier {
                 tree: Some(tree_node),
                 max_depth: tree_max_depth,
+                n_features: None,
             });
         }
 
