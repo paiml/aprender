@@ -1105,6 +1105,267 @@ impl Default for ContrastiveLoss {
     }
 }
 
+/// Triplet Loss for metric learning with margin.
+///
+/// Given anchor, positive (similar), and negative (dissimilar) examples,
+/// minimizes: max(0, d(anchor, positive) - d(anchor, negative) + margin)
+///
+/// # Reference
+///
+/// Schroff, F., et al. (2015). FaceNet: A Unified Embedding for Face Recognition and Clustering.
+#[derive(Debug, Clone)]
+pub struct TripletLoss {
+    /// Margin for the triplet loss
+    margin: f32,
+    /// Distance metric to use
+    distance: TripletDistance,
+}
+
+/// Distance metric for triplet loss.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum TripletDistance {
+    /// Euclidean (L2) distance
+    Euclidean,
+    /// Squared Euclidean distance (faster, no sqrt)
+    SquaredEuclidean,
+    /// Cosine distance (1 - cosine_similarity)
+    Cosine,
+}
+
+impl TripletLoss {
+    /// Create a new triplet loss with default margin (1.0) and Euclidean distance.
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            margin: 1.0,
+            distance: TripletDistance::Euclidean,
+        }
+    }
+
+    /// Create triplet loss with custom margin.
+    #[must_use]
+    pub fn with_margin(margin: f32) -> Self {
+        Self {
+            margin,
+            distance: TripletDistance::Euclidean,
+        }
+    }
+
+    /// Set the distance metric.
+    #[must_use]
+    pub fn with_distance(mut self, distance: TripletDistance) -> Self {
+        self.distance = distance;
+        self
+    }
+
+    /// Get the margin value.
+    #[must_use]
+    pub fn margin(&self) -> f32 {
+        self.margin
+    }
+
+    /// Get the distance metric.
+    #[must_use]
+    pub fn distance_metric(&self) -> TripletDistance {
+        self.distance
+    }
+
+    /// Compute triplet loss for a batch.
+    ///
+    /// # Arguments
+    ///
+    /// * `anchor` - Anchor embeddings [batch, dim]
+    /// * `positive` - Positive (similar) embeddings [batch, dim]
+    /// * `negative` - Negative (dissimilar) embeddings [batch, dim]
+    ///
+    /// # Returns
+    ///
+    /// Mean triplet loss over the batch.
+    pub fn forward(&self, anchor: &Tensor, positive: &Tensor, negative: &Tensor) -> Tensor {
+        let batch_size = anchor.shape()[0];
+        let dim = anchor.shape()[1];
+
+        let anchor_data = anchor.data();
+        let positive_data = positive.data();
+        let negative_data = negative.data();
+
+        let mut total_loss = 0.0f32;
+
+        for i in 0..batch_size {
+            let a_slice = &anchor_data[i * dim..(i + 1) * dim];
+            let p_slice = &positive_data[i * dim..(i + 1) * dim];
+            let n_slice = &negative_data[i * dim..(i + 1) * dim];
+
+            let d_ap = self.compute_distance(a_slice, p_slice);
+            let d_an = self.compute_distance(a_slice, n_slice);
+
+            // Triplet loss: max(0, d(a,p) - d(a,n) + margin)
+            let loss = (d_ap - d_an + self.margin).max(0.0);
+            total_loss += loss;
+        }
+
+        Tensor::new(&[total_loss / batch_size as f32], &[1])
+    }
+
+    /// Compute distance between two vectors based on the distance metric.
+    fn compute_distance(&self, a: &[f32], b: &[f32]) -> f32 {
+        match self.distance {
+            TripletDistance::Euclidean => {
+                let va = Vector::from_slice(a);
+                let vb = Vector::from_slice(b);
+                va.sub(&vb).and_then(|diff| diff.norm_l2()).unwrap_or(0.0)
+            }
+            TripletDistance::SquaredEuclidean => {
+                let va = Vector::from_slice(a);
+                let vb = Vector::from_slice(b);
+                va.sub(&vb).and_then(|diff| diff.dot(&diff)).unwrap_or(0.0)
+            }
+            TripletDistance::Cosine => {
+                let va = Vector::from_slice(a);
+                let vb = Vector::from_slice(b);
+                let dot = va.dot(&vb).unwrap_or(0.0);
+                let norm_a = va.norm_l2().unwrap_or(1.0);
+                let norm_b = vb.norm_l2().unwrap_or(1.0);
+                let cosine = dot / (norm_a * norm_b + 1e-8);
+                1.0 - cosine // Cosine distance
+            }
+        }
+    }
+
+    /// Compute pairwise distances for hard negative mining.
+    ///
+    /// Returns a matrix of shape [batch, batch] where entry (i, j) is the
+    /// distance between embedding i and embedding j.
+    pub fn pairwise_distances(&self, embeddings: &Tensor) -> Tensor {
+        let batch_size = embeddings.shape()[0];
+        let dim = embeddings.shape()[1];
+        let data = embeddings.data();
+
+        let mut distances = Vec::with_capacity(batch_size * batch_size);
+
+        for i in 0..batch_size {
+            let a = &data[i * dim..(i + 1) * dim];
+            for j in 0..batch_size {
+                let b = &data[j * dim..(j + 1) * dim];
+                distances.push(self.compute_distance(a, b));
+            }
+        }
+
+        Tensor::new(&distances, &[batch_size, batch_size])
+    }
+
+    /// Select hard negatives: for each anchor, find the closest negative.
+    ///
+    /// # Arguments
+    ///
+    /// * `embeddings` - All embeddings [batch, dim]
+    /// * `labels` - Class labels for each embedding [batch]
+    ///
+    /// # Returns
+    ///
+    /// Vector of (anchor_idx, positive_idx, negative_idx) triplets.
+    pub fn mine_hard_triplets(
+        &self,
+        embeddings: &Tensor,
+        labels: &[usize],
+    ) -> Vec<(usize, usize, usize)> {
+        let batch_size = embeddings.shape()[0];
+        let distances = self.pairwise_distances(embeddings);
+        let dist_data = distances.data();
+
+        let mut triplets = Vec::new();
+
+        for anchor_idx in 0..batch_size {
+            let anchor_label = labels[anchor_idx];
+
+            // Find hardest positive (farthest same-class sample)
+            let mut best_positive_idx = anchor_idx;
+            let mut best_positive_dist = f32::NEG_INFINITY;
+
+            // Find hardest negative (closest different-class sample)
+            let mut best_negative_idx = 0;
+            let mut best_negative_dist = f32::INFINITY;
+
+            for other_idx in 0..batch_size {
+                if other_idx == anchor_idx {
+                    continue;
+                }
+
+                let dist = dist_data[anchor_idx * batch_size + other_idx];
+                let other_label = labels[other_idx];
+
+                if other_label == anchor_label {
+                    // Same class: track hardest positive (farthest)
+                    if dist > best_positive_dist {
+                        best_positive_dist = dist;
+                        best_positive_idx = other_idx;
+                    }
+                } else {
+                    // Different class: track hardest negative (closest)
+                    if dist < best_negative_dist {
+                        best_negative_dist = dist;
+                        best_negative_idx = other_idx;
+                    }
+                }
+            }
+
+            // Only add valid triplets (where we found both positive and negative)
+            if best_positive_idx != anchor_idx && best_negative_dist < f32::INFINITY {
+                triplets.push((anchor_idx, best_positive_idx, best_negative_idx));
+            }
+        }
+
+        triplets
+    }
+
+    /// Compute batch-hard triplet loss with online hard negative mining.
+    ///
+    /// For each anchor in the batch, selects the hardest positive (same class, farthest)
+    /// and hardest negative (different class, closest).
+    pub fn batch_hard_loss(&self, embeddings: &Tensor, labels: &[usize]) -> Tensor {
+        let triplets = self.mine_hard_triplets(embeddings, labels);
+
+        if triplets.is_empty() {
+            return Tensor::new(&[0.0], &[1]);
+        }
+
+        let dim = embeddings.shape()[1];
+        let data = embeddings.data();
+
+        let mut total_loss = 0.0f32;
+        let mut valid_count = 0;
+
+        for (a_idx, p_idx, n_idx) in &triplets {
+            let a = &data[a_idx * dim..(a_idx + 1) * dim];
+            let p = &data[p_idx * dim..(p_idx + 1) * dim];
+            let n = &data[n_idx * dim..(n_idx + 1) * dim];
+
+            let d_ap = self.compute_distance(a, p);
+            let d_an = self.compute_distance(a, n);
+
+            let loss = (d_ap - d_an + self.margin).max(0.0);
+            if loss > 0.0 {
+                total_loss += loss;
+                valid_count += 1;
+            }
+        }
+
+        let mean_loss = if valid_count > 0 {
+            total_loss / valid_count as f32
+        } else {
+            0.0
+        };
+
+        Tensor::new(&[mean_loss], &[1])
+    }
+}
+
+impl Default for TripletLoss {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 fn div_scalar(x: &Tensor, scalar: f32) -> Tensor {
     scale_tensor(x, 1.0 / scalar)
 }
@@ -1469,6 +1730,242 @@ mod tests {
     fn test_contrastive_loss_custom_temperature() {
         let loss = ContrastiveLoss::with_temperature(0.1);
         assert!((loss.temperature - 0.1).abs() < 0.001);
+    }
+
+    // ==================== TripletLoss Tests ====================
+
+    #[test]
+    fn test_triplet_loss_creation() {
+        let loss = TripletLoss::new();
+        assert!((loss.margin() - 1.0).abs() < 0.001);
+        assert_eq!(loss.distance_metric(), TripletDistance::Euclidean);
+    }
+
+    #[test]
+    fn test_triplet_loss_default() {
+        let loss = TripletLoss::default();
+        assert!((loss.margin() - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_triplet_loss_custom_margin() {
+        let loss = TripletLoss::with_margin(0.5);
+        assert!((loss.margin() - 0.5).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_triplet_loss_with_distance() {
+        let loss = TripletLoss::new().with_distance(TripletDistance::Cosine);
+        assert_eq!(loss.distance_metric(), TripletDistance::Cosine);
+    }
+
+    #[test]
+    fn test_triplet_loss_zero_when_satisfied() {
+        // When d(a,p) < d(a,n) by more than margin, loss should be 0
+        let loss = TripletLoss::with_margin(0.1);
+
+        // Anchor close to positive, far from negative
+        let anchor = Tensor::new(&[0.0, 0.0], &[1, 2]);
+        let positive = Tensor::new(&[0.1, 0.0], &[1, 2]); // d = 0.1
+        let negative = Tensor::new(&[5.0, 0.0], &[1, 2]); // d = 5.0
+
+        let loss_val = loss.forward(&anchor, &positive, &negative);
+        // d_ap (0.1) - d_an (5.0) + margin (0.1) = -4.8, max(0, -4.8) = 0
+        assert!(
+            loss_val.data()[0] < 0.01,
+            "Loss should be ~0 when triplet is satisfied"
+        );
+    }
+
+    #[test]
+    fn test_triplet_loss_positive_when_violated() {
+        // When d(a,p) > d(a,n), loss should be positive
+        let loss = TripletLoss::with_margin(0.5);
+
+        // Anchor closer to negative than positive (violation)
+        let anchor = Tensor::new(&[0.0, 0.0], &[1, 2]);
+        let positive = Tensor::new(&[3.0, 0.0], &[1, 2]); // d = 3.0
+        let negative = Tensor::new(&[1.0, 0.0], &[1, 2]); // d = 1.0
+
+        let loss_val = loss.forward(&anchor, &positive, &negative);
+        // d_ap (3.0) - d_an (1.0) + margin (0.5) = 2.5, max(0, 2.5) = 2.5
+        assert!(
+            loss_val.data()[0] > 2.0,
+            "Loss should be positive when triplet is violated"
+        );
+    }
+
+    #[test]
+    fn test_triplet_loss_batch() {
+        let loss = TripletLoss::with_margin(1.0);
+
+        // Batch of 2
+        let anchor = Tensor::new(&[0.0, 0.0, 0.0, 0.0], &[2, 2]);
+        let positive = Tensor::new(&[0.1, 0.0, 0.1, 0.0], &[2, 2]);
+        let negative = Tensor::new(&[5.0, 0.0, 5.0, 0.0], &[2, 2]);
+
+        let loss_val = loss.forward(&anchor, &positive, &negative);
+        assert_eq!(loss_val.shape(), &[1]);
+    }
+
+    #[test]
+    fn test_triplet_loss_squared_euclidean() {
+        let loss = TripletLoss::with_margin(1.0).with_distance(TripletDistance::SquaredEuclidean);
+
+        let anchor = Tensor::new(&[0.0, 0.0], &[1, 2]);
+        let positive = Tensor::new(&[1.0, 0.0], &[1, 2]); // squared_d = 1.0
+        let negative = Tensor::new(&[2.0, 0.0], &[1, 2]); // squared_d = 4.0
+
+        let loss_val = loss.forward(&anchor, &positive, &negative);
+        // d_ap_sq (1) - d_an_sq (4) + margin (1) = -2, max(0, -2) = 0
+        assert!(loss_val.data()[0] < 0.01);
+    }
+
+    #[test]
+    fn test_triplet_loss_cosine() {
+        let loss = TripletLoss::with_margin(0.1).with_distance(TripletDistance::Cosine);
+
+        // Anchor pointing in x direction
+        let anchor = Tensor::new(&[1.0, 0.0], &[1, 2]);
+        // Positive also pointing mostly in x
+        let positive = Tensor::new(&[0.9, 0.1], &[1, 2]);
+        // Negative pointing in y direction
+        let negative = Tensor::new(&[0.0, 1.0], &[1, 2]);
+
+        let loss_val = loss.forward(&anchor, &positive, &negative);
+        // Cosine distance: 1 - cos(angle)
+        // anchor-positive: small angle, small distance
+        // anchor-negative: 90 degrees, distance = 1.0
+        // Loss should be 0 or small
+        assert!(loss_val.data()[0] < 0.5);
+    }
+
+    #[test]
+    fn test_pairwise_distances() {
+        let loss = TripletLoss::new();
+
+        let embeddings = Tensor::new(
+            &[
+                0.0, 0.0, // Point 0 at origin
+                1.0, 0.0, // Point 1 at (1,0)
+                0.0, 1.0, // Point 2 at (0,1)
+            ],
+            &[3, 2],
+        );
+
+        let distances = loss.pairwise_distances(&embeddings);
+        let data = distances.data();
+
+        assert_eq!(distances.shape(), &[3, 3]);
+
+        // Diagonal should be 0 (distance to self)
+        assert!(data[0] < 0.01); // d(0,0)
+        assert!(data[4] < 0.01); // d(1,1)
+        assert!(data[8] < 0.01); // d(2,2)
+
+        // d(0,1) = 1.0 (Euclidean)
+        assert!((data[1] - 1.0).abs() < 0.01);
+        // d(0,2) = 1.0
+        assert!((data[2] - 1.0).abs() < 0.01);
+        // d(1,2) = sqrt(2)
+        assert!((data[5] - std::f32::consts::SQRT_2).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_mine_hard_triplets() {
+        let loss = TripletLoss::new();
+
+        // 4 embeddings: 2 per class
+        let embeddings = Tensor::new(
+            &[
+                0.0, 0.0, // Class 0, sample 0
+                0.1, 0.0, // Class 0, sample 1
+                5.0, 0.0, // Class 1, sample 0
+                5.1, 0.0, // Class 1, sample 1
+            ],
+            &[4, 2],
+        );
+        let labels = vec![0, 0, 1, 1];
+
+        let triplets = loss.mine_hard_triplets(&embeddings, &labels);
+
+        // Should find triplets for each anchor
+        assert!(!triplets.is_empty());
+
+        // Verify triplet structure: (anchor, positive, negative)
+        for (a, p, n) in &triplets {
+            assert_eq!(labels[*a], labels[*p], "Positive should be same class");
+            assert_ne!(labels[*a], labels[*n], "Negative should be different class");
+        }
+    }
+
+    #[test]
+    fn test_mine_hard_triplets_single_class() {
+        let loss = TripletLoss::new();
+
+        // All same class - no valid triplets
+        let embeddings = Tensor::new(&[0.0, 0.0, 1.0, 0.0, 2.0, 0.0], &[3, 2]);
+        let labels = vec![0, 0, 0];
+
+        let triplets = loss.mine_hard_triplets(&embeddings, &labels);
+        assert!(triplets.is_empty(), "No triplets when all same class");
+    }
+
+    #[test]
+    fn test_batch_hard_loss() {
+        let loss = TripletLoss::with_margin(0.5);
+
+        // Well-separated classes
+        let embeddings = Tensor::new(
+            &[
+                0.0, 0.0, // Class 0
+                0.1, 0.1, // Class 0
+                10.0, 0.0, // Class 1
+                10.1, 0.1, // Class 1
+            ],
+            &[4, 2],
+        );
+        let labels = vec![0, 0, 1, 1];
+
+        let loss_val = loss.batch_hard_loss(&embeddings, &labels);
+        // Well-separated: loss should be 0 or very small
+        assert!(loss_val.data()[0] < 1.0);
+    }
+
+    #[test]
+    fn test_batch_hard_loss_overlapping() {
+        let loss = TripletLoss::with_margin(1.0);
+
+        // Overlapping classes - should have higher loss
+        let embeddings = Tensor::new(
+            &[
+                0.0, 0.0, // Class 0
+                0.5, 0.0, // Class 0
+                0.3, 0.0, // Class 1 (between class 0 points!)
+                0.8, 0.0, // Class 1
+            ],
+            &[4, 2],
+        );
+        let labels = vec![0, 0, 1, 1];
+
+        let loss_val = loss.batch_hard_loss(&embeddings, &labels);
+        // Classes overlap: loss should be positive
+        assert!(loss_val.data()[0] > 0.0);
+    }
+
+    #[test]
+    fn test_batch_hard_loss_empty() {
+        let loss = TripletLoss::new();
+
+        // Single sample - no valid triplets
+        let embeddings = Tensor::new(&[0.0, 0.0], &[1, 2]);
+        let labels = vec![0];
+
+        let loss_val = loss.batch_hard_loss(&embeddings, &labels);
+        assert!(
+            loss_val.data()[0].abs() < 0.001,
+            "Loss should be 0 for single sample"
+        );
     }
 
     // ==================== TrainingSample Tests ====================

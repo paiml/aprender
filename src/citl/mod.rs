@@ -65,7 +65,8 @@ pub use metrics::{
     MetricsSummary, MetricsTracker, PatternUsageMetrics,
 };
 pub use neural::{
-    ContrastiveLoss, NeuralEncoderConfig, NeuralErrorEncoder, TrainingSample, Vocabulary,
+    ContrastiveLoss, NeuralEncoderConfig, NeuralErrorEncoder, TrainingSample, TripletDistance,
+    TripletLoss, Vocabulary,
 };
 pub use pattern::{ErrorFixPattern, FixTemplate, PatternLibrary, PatternMatch};
 
