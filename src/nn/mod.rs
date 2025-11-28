@@ -49,6 +49,7 @@ mod conv;
 mod dropout;
 pub mod functional;
 pub mod generation;
+pub mod gnn;
 mod init;
 mod linear;
 pub mod loss;
@@ -68,6 +69,7 @@ pub use container::{ModuleDict, ModuleList, Sequential};
 pub use conv::{AvgPool2d, Conv1d, Conv2d, Flatten, GlobalAvgPool2d, MaxPool1d, MaxPool2d};
 pub use dropout::{AlphaDropout, DropBlock, DropConnect, Dropout, Dropout2d};
 pub use functional as F;
+pub use gnn::{AdjacencyMatrix, GATConv, GCNConv, MessagePassing, SAGEAggregation, SAGEConv};
 pub use init::{kaiming_normal, kaiming_uniform, xavier_normal, xavier_uniform};
 pub use linear::Linear;
 pub use loss::{
