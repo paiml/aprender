@@ -261,10 +261,65 @@ impl MarkovModel {
 
     /// Detect corrupted commands that shouldn't be suggested.
     ///
-    /// Common patterns:
+    /// Common patterns (Issue #92):
     /// - "git commit-m" (missing space before flag)
     /// - "cargo build-r" (missing space before flag)
+    /// - "gitr push" (typo in command - space merged with next word)
+    /// - "cargo-lambda  help" (double spaces)
+    /// - "git rm -r --cached vendor/\\" (trailing backslash)
     fn is_corrupted_command(cmd: &str) -> bool {
+        // Check for double spaces
+        if cmd.contains("  ") {
+            return true;
+        }
+
+        // Check for trailing backslash (incomplete multiline)
+        if cmd.trim_end().ends_with('\\') {
+            return true;
+        }
+
+        // Check for trailing escape sequences
+        if cmd.trim_end().ends_with("\\\\") {
+            return true;
+        }
+
+        // Check first word is a valid command (Issue #92)
+        // Valid commands start with letter and contain only alphanumeric + underscore + hyphen
+        if let Some(first) = cmd.split_whitespace().next() {
+            // Reject if first word is a common command with extra chars (typos)
+            // e.g., "gitr", "giti", "gits", "cargoo"
+            let typo_patterns = [
+                ("git", &["gitr", "giti", "gits", "gitl", "gitp"][..]),
+                ("cargo", &["cargoo", "cargos", "cargob"][..]),
+                ("docker", &["dockerr", "dockers"][..]),
+                ("npm", &["npmi", "npmr"][..]),
+            ];
+
+            for (valid, typos) in typo_patterns {
+                if typos.contains(&first) {
+                    return true;
+                }
+                // Also catch typos where space merged (e.g., "gi tpush" from "git push")
+                if first.len() < valid.len() && valid.starts_with(first) {
+                    // "gi" is valid prefix, but check second word for merged space
+                    let tokens: Vec<&str> = cmd.split_whitespace().collect();
+                    if tokens.len() >= 2 {
+                        let second = tokens[1];
+                        // Check if second word looks like "tpush" (merged space)
+                        if second.len() > 1
+                            && !second.starts_with('-')
+                            && valid.ends_with(&first[first.len().saturating_sub(1)..])
+                        {
+                            let expected_start = &valid[first.len()..];
+                            if second.starts_with(expected_start) && expected_start.len() == 1 {
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         cmd.split_whitespace().any(Self::is_corrupted_token)
     }
 
@@ -725,6 +780,67 @@ mod tests {
         let without_space = model.suggest("git", 5);
         // Should suggest git commands, not grep
         assert!(without_space.iter().all(|(s, _)| s.starts_with("git")));
+    }
+
+    // ==================== Issue #92: Malformed Suggestions ====================
+
+    #[test]
+    fn test_is_corrupted_double_spaces() {
+        // Double spaces indicate corruption
+        assert!(
+            MarkovModel::is_corrupted_command("cargo-lambda  help"),
+            "Should detect double spaces as corrupted"
+        );
+        assert!(
+            MarkovModel::is_corrupted_command("git  status"),
+            "Should detect double spaces as corrupted"
+        );
+        assert!(
+            !MarkovModel::is_corrupted_command("git status"),
+            "Single space is valid"
+        );
+    }
+
+    #[test]
+    fn test_is_corrupted_trailing_backslash() {
+        // Trailing backslashes indicate incomplete multiline
+        assert!(
+            MarkovModel::is_corrupted_command("git rm -r --cached vendor/\\"),
+            "Should detect trailing backslash"
+        );
+        assert!(
+            MarkovModel::is_corrupted_command("cargo lambda deploy \\\\"),
+            "Should detect trailing escape"
+        );
+        assert!(
+            !MarkovModel::is_corrupted_command("git rm -r --cached vendor/"),
+            "Path without backslash is valid"
+        );
+    }
+
+    #[test]
+    fn test_is_corrupted_typos() {
+        // Common typos where space merged with next word
+        assert!(
+            MarkovModel::is_corrupted_command("gitr push"),
+            "Should detect 'gitr' as typo"
+        );
+        assert!(
+            MarkovModel::is_corrupted_command("giti pull"),
+            "Should detect 'giti' as typo"
+        );
+        assert!(
+            MarkovModel::is_corrupted_command("cargoo build"),
+            "Should detect 'cargoo' as typo"
+        );
+        assert!(
+            !MarkovModel::is_corrupted_command("git push"),
+            "Valid command should pass"
+        );
+        assert!(
+            !MarkovModel::is_corrupted_command("cargo build"),
+            "Valid command should pass"
+        );
     }
 }
 
