@@ -937,4 +937,69 @@ mod tests {
         // dL/dB = A^T @ ones = [[1,3],[2,4]] @ [[1,1],[1,1]] = [[4,4],[6,6]]
         assert_eq!(grad_b.data(), &[4.0, 4.0, 6.0, 6.0]);
     }
+
+    #[test]
+    fn test_div_gradient() {
+        // d/dx (x/y) = 1/y
+        // d/dy (x/y) = -x/y²
+        clear_graph();
+        let x = Tensor::from_slice(&[6.0]).requires_grad();
+        let y = Tensor::from_slice(&[2.0]).requires_grad();
+        let x_id = x.id();
+        let y_id = y.id();
+        let z = x.div(&y).sum();
+        z.backward();
+        let grad_x = crate::autograd::get_grad(x_id).expect("grad_x");
+        let grad_y = crate::autograd::get_grad(y_id).expect("grad_y");
+        assert!((grad_x.data()[0] - 0.5).abs() < 1e-5); // 1/2
+        assert!((grad_y.data()[0] - (-1.5)).abs() < 1e-5); // -6/4
+    }
+
+    #[test]
+    fn test_neg_gradient() {
+        // d/dx (-x) = -1
+        clear_graph();
+        let x = Tensor::from_slice(&[3.0]).requires_grad();
+        let x_id = x.id();
+        let z = x.neg().sum();
+        z.backward();
+        let grad = crate::autograd::get_grad(x_id).expect("grad");
+        assert_eq!(grad.data()[0], -1.0);
+    }
+
+    #[test]
+    fn test_pow_gradient_cubic() {
+        // d/dx x^n = n * x^(n-1)
+        clear_graph();
+        let x = Tensor::from_slice(&[2.0]).requires_grad();
+        let x_id = x.id();
+        let z = x.pow(3.0).sum(); // x^3, grad = 3*x^2 = 12
+        z.backward();
+        let grad = crate::autograd::get_grad(x_id).expect("grad");
+        assert!((grad.data()[0] - 12.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn test_exp_gradient_e() {
+        // d/dx exp(x) = exp(x)
+        clear_graph();
+        let x = Tensor::from_slice(&[1.0]).requires_grad();
+        let x_id = x.id();
+        let z = x.exp().sum();
+        z.backward();
+        let grad = crate::autograd::get_grad(x_id).expect("grad");
+        assert!((grad.data()[0] - std::f32::consts::E).abs() < 1e-4);
+    }
+
+    #[test]
+    fn test_log_gradient_half() {
+        // d/dx log(x) = 1/x
+        clear_graph();
+        let x = Tensor::from_slice(&[2.0]).requires_grad();
+        let x_id = x.id();
+        let z = x.log().sum();
+        z.backward();
+        let grad = crate::autograd::get_grad(x_id).expect("grad");
+        assert!((grad.data()[0] - 0.5).abs() < 1e-5);
+    }
 }
