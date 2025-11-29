@@ -170,6 +170,7 @@
 - [Case Study: Metaheuristics Optimization](./examples/metaheuristics-optimization.md)
 - [Case Study: Ant Colony Optimization (TSP)](./examples/aco-tsp.md)
 - [Case Study: Tabu Search (TSP)](./examples/tabu-tsp.md)
+- [Case Study: aprender-tsp Sub-Crate](./examples/tsp-solver-crate.md)
 - [Case Study: Predator-Prey Optimization](./examples/predator-prey-optimization.md)
 - [Case Study: DataFrame Basics](./examples/dataframe-basics.md)
 - [Case Study: Data Preprocessing with Scalers](./examples/data-preprocessing-scalers.md)
