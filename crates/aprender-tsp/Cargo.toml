@@ -1,0 +1,35 @@
+[package]
+name = "aprender-tsp"
+version = "0.1.0"
+edition = "2021"
+authors = ["paiml"]
+description = "Local TSP optimization with personalized .apr models"
+license = "MIT"
+repository = "https://github.com/paiml/aprender"
+keywords = ["tsp", "optimization", "metaheuristics", "solver", "routing"]
+categories = ["algorithms", "command-line-utilities", "science"]
+readme = "README.md"
+
+[lib]
+name = "aprender_tsp"
+path = "src/lib.rs"
+
+[[bin]]
+name = "aprender-tsp"
+path = "src/main.rs"
+
+[dependencies]
+aprender = { version = "0.12", path = "../.." }
+clap = { version = "4", features = ["derive"] }
+rand = "0.8"
+crc32fast = "1.4"
+
+[dev-dependencies]
+assert_cmd = "2"
+criterion = "0.5"
+predicates = "3"
+proptest = "1"
+tempfile = "3"
+
+[lints]
+workspace = true

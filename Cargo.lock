@@ -303,6 +303,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "aprender-tsp"
+version = "0.1.0"
+dependencies = [
+ "aprender 0.12.0",
+ "assert_cmd",
+ "clap",
+ "crc32fast",
+ "criterion",
+ "predicates",
+ "proptest",
+ "rand 0.8.5",
+ "tempfile",
+]
+
+[[package]]
 name = "argon2"
 version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
