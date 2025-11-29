@@ -1008,6 +1008,67 @@ fn test_pr152_within_2_percent() { /* ... */ }
 10. **Kool, W., van Hoof, H., & Welling, M. (2019).** "Attention, Learn to Solve Routing Problems!" *International Conference on Learning Representations (ICLR)*.
     - *Relevance:* State-of-the-art neural TSP solver; attention mechanism for edge scoring.
 
+### 10.5 Architectural & Systems Validation
+
+11. **Shi, W., Cao, J., Zhang, Q., Li, Y., & Xu, L. (2016).** "Edge Computing: Vision and Challenges." *IEEE Internet of Things Journal*, 3(5), 637-646.
+    - *Relevance:* Validates the local-first architecture; supports reducing latency by processing data at the source.
+
+12. **Satyanarayanan, M. (2017).** "The Emergence of Edge Computing." *Computer*, 50(1), 30-39.
+    - *Relevance:* rigorous justification for offline/local capabilities to avoid bandwidth and latency bottlenecks.
+
+13. **Jung, R., Jourdan, J. H., Krebbers, R., & Dreyer, D. (2017).** "RustBelt: Securing the Foundations of the Rust Programming Language." *Proceedings of the ACM on Programming Languages (POPL)*, 2, 66.
+    - *Relevance:* Formally validates the memory safety guarantees of Rust, supporting the *Jidoka* principle (building quality in).
+
+14. **Storn, R., & Price, K. (1997).** "Differential Evolution – A Simple and Efficient Heuristic for Global Optimization over Continuous Spaces." *Journal of Global Optimization*, 11(4), 341-359.
+    - *Relevance:* Theoretical basis for the parameter tuning module; validates the choice of DE for continuous optimization.
+
+15. **Das, S., & Suganthan, P. N. (2011).** "Differential Evolution: A Survey of the State-of-the-Art." *IEEE Transactions on Evolutionary Computation*, 15(1), 4-31.
+    - *Relevance:* Survey confirming DE's robustness across diverse problem landscapes, supporting its use in the `tune_parameters` function.
+
+16. **Blum, C., & Roli, A. (2003).** "Metaheuristics in Combinatorial Optimization: Overview and Conceptual Comparison." *ACM Computing Surveys*, 35(3), 268-308.
+    - *Relevance:* Provides the taxonomy for our multi-backend approach, justifying the need for both intensification (Tabu) and diversification (GA/ACO).
+
+17. **Talbi, E. G. (2002).** "A Taxonomy of Hybrid Metaheuristics." *Journal of Heuristics*, 8(5), 541-564.
+    - *Relevance:* Architectural framework for the `HybridSolver`, specifically the "high-level teamwork" design pattern.
+
+18. **Peterson, W. W., & Brown, D. T. (1961).** "Cyclic Codes for Error Detection." *Proceedings of the IRE*, 49(1), 228-235.
+    - *Relevance:* Foundational work on CRC, validating the use of checksums for model file integrity (Jidoka).
+
+19. **Wolpert, D. H., & Macready, W. G. (1997).** "No Free Lunch Theorems for Optimization." *IEEE Transactions on Evolutionary Computation*, 1(1), 67-82.
+    - *Relevance:* Mathematical proof that no single algorithm is optimal for all problems, necessitating our configurable/trainable model approach.
+
+20. **Merelo, J. J., et al. (2016).** "Cloud-Based Evolutionary Algorithms: An Architectural View." *International Conference on Evolutionary Computation*.
+    - *Relevance:* Analysis of cloud-based EC, providing a counterpoint that highlights the benefits (latency, cost, privacy) of our local-execution model.
+
+---
+
+## 11. Design Validation & Academic Review
+
+This section summarizes the internal code review and academic audit of the proposed specification, applying Toyota Way principles and citing relevant literature to validate architectural decisions.
+
+### 11.1 Architectural Validation
+
+**Local-First & Edge Computing:**
+The decision to process TSP models locally (.apr) rather than in the cloud is strongly supported by the "Edge Computing" paradigm defined by Shi et al. (2016) [11]. By moving computation to the data source, `aprender-tsp` eliminates the latency and bandwidth bottlenecks identified by Satyanarayanan (2017) [12], while respecting the *Respect for People* principle by ensuring user data privacy.
+
+**Safety & Reliability (Jidoka):**
+The choice of Rust as the implementation language is validated by Jung et al. (2017) [13], who formally verified Rust's safety guarantees. This aligns with the *Jidoka* principle of building quality in, preventing entire classes of memory safety errors that plague C/C++ solvers like Concorde. Furthermore, the use of CRC32 checksums for model integrity is a standard error-detection mechanism supported by Peterson & Brown (1961) [18].
+
+### 11.2 Algorithmic Justification
+
+**No Free Lunch:**
+Wolpert & Macready (1997) [19] proved that no single optimization algorithm performs best on all problem classes. This validates our "Hybrid Solver" approach (Talbi, 2002 [17]) and the *Kaizen* principle of continuous improvement through automatic algorithm selection.
+
+**Parameter Tuning:**
+The use of Differential Evolution (DE) for hyperparameter tuning is justified by its robustness in continuous search spaces, as surveyed by Das & Suganthan (2011) [15]. Storn & Price (1997) [14] demonstrate DE's efficiency, making it suitable for the "offline training" phase of our pipeline.
+
+**Metaheuristic Diversity:**
+Blum & Roli (2003) [16] emphasize the importance of combining intensification (Tabu Search) and diversification (GA/ACO) strategies. Our inclusion of all three backends ensures `aprender-tsp` can handle diverse instance topologies, unlike solvers limited to a single heuristic.
+
+### 11.3 Comparison with Cloud Architectures
+
+Merelo et al. (2016) [20] discuss cloud-based evolutionary algorithms. While scalable, they introduce latency and cost. Our architecture consciously rejects this *Muda* (waste) in favor of local execution, ensuring the tool remains accessible and performant even in disconnected environments (e.g., logistics in remote areas).
+
 ---
 
 ## Appendix A: Toyota Way Principles Applied
