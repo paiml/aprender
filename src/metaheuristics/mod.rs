@@ -83,6 +83,7 @@ mod feature_selection;
 mod ga;
 mod hs;
 mod hyperopt;
+pub mod nas;
 mod pso;
 mod sa;
 mod search_space;
@@ -90,7 +91,7 @@ mod traits;
 
 pub use binary_ga::BinaryGA;
 pub use budget::{Budget, ConvergenceTracker};
-pub use cmaes::CmaEs;
+pub use cmaes::{CmaEs, IpopConfig};
 pub use constructive::{
     AntColony, ConstructiveMetaheuristic, NeighborhoodSearch, SwapMove, TabuSearch,
 };

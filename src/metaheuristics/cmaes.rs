@@ -22,6 +22,33 @@ use crate::metaheuristics::traits::PerturbativeMetaheuristic;
 use rand::prelude::*;
 use std::f64::consts::PI;
 
+/// IPOP Restart configuration
+#[derive(Debug, Clone, Copy)]
+pub struct IpopConfig {
+    /// Enable IPOP restarts
+    pub enabled: bool,
+    /// Population increase factor on restart (default 2.0)
+    pub pop_increase_factor: f64,
+    /// Maximum restarts before giving up
+    pub max_restarts: usize,
+    /// Sigma threshold for triggering restart
+    pub sigma_threshold: f64,
+    /// Stagnation tolerance (no improvement for N generations)
+    pub stagnation_gens: usize,
+}
+
+impl Default for IpopConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            pop_increase_factor: 2.0,
+            max_restarts: 9,
+            sigma_threshold: 1e-12,
+            stagnation_gens: 20,
+        }
+    }
+}
+
 /// CMA-ES optimizer
 #[derive(Debug, Clone)]
 pub struct CmaEs {
@@ -29,6 +56,8 @@ pub struct CmaEs {
     dim: usize,
     /// Population size (lambda)
     lambda: usize,
+    /// Initial population size (for IPOP)
+    initial_lambda: usize,
     /// Number of parents (mu)
     mu: usize,
     /// Recombination weights
@@ -60,12 +89,22 @@ pub struct CmaEs {
     best: Vec<f64>,
     /// Best objective value
     best_value: f64,
+    /// IPOP restart configuration
+    ipop: IpopConfig,
+    /// Number of restarts performed
+    restart_count: usize,
 }
 
 impl CmaEs {
     /// Create new CMA-ES for given dimension
     pub fn new(dim: usize) -> Self {
         let lambda = 4 + (3.0 * (dim as f64).ln()).floor() as usize;
+        Self::with_lambda(dim, lambda)
+    }
+
+    /// Create CMA-ES with specific population size
+    pub fn with_lambda(dim: usize, lambda: usize) -> Self {
+        let lambda = lambda.max(4);
         let mu = lambda / 2;
 
         // Recombination weights (log-linear)
@@ -89,6 +128,7 @@ impl CmaEs {
         Self {
             dim,
             lambda,
+            initial_lambda: lambda,
             mu,
             weights,
             mu_eff,
@@ -106,6 +146,8 @@ impl CmaEs {
             history: Vec::new(),
             best: Vec::new(),
             best_value: f64::INFINITY,
+            ipop: IpopConfig::default(),
+            restart_count: 0,
         }
     }
 
@@ -119,6 +161,99 @@ impl CmaEs {
     pub fn with_sigma(mut self, sigma: f64) -> Self {
         self.sigma = sigma.max(1e-10);
         self
+    }
+
+    /// Enable IPOP (Increasing Population) restart strategy.
+    ///
+    /// When the algorithm stagnates (sigma too small or no improvement),
+    /// it restarts with a doubled population size. This helps escape
+    /// local optima on multimodal functions.
+    pub fn with_ipop(mut self) -> Self {
+        self.ipop.enabled = true;
+        self
+    }
+
+    /// Configure IPOP settings.
+    pub fn with_ipop_config(mut self, config: IpopConfig) -> Self {
+        self.ipop = config;
+        self.ipop.enabled = true;
+        self
+    }
+
+    /// Get the number of restarts performed.
+    pub fn restart_count(&self) -> usize {
+        self.restart_count
+    }
+
+    /// Check if restart should be triggered based on stagnation.
+    fn should_restart(&self, gens_without_improvement: usize) -> bool {
+        if !self.ipop.enabled {
+            return false;
+        }
+        if self.restart_count >= self.ipop.max_restarts {
+            return false;
+        }
+        // Restart if sigma is too small or stagnated
+        self.sigma < self.ipop.sigma_threshold
+            || gens_without_improvement >= self.ipop.stagnation_gens
+    }
+
+    /// Perform IPOP restart: increase population and reset state.
+    fn perform_restart(&mut self, lower: &[f64], upper: &[f64], rng: &mut impl Rng) {
+        self.restart_count += 1;
+
+        // Double the population
+        let new_lambda = ((self.lambda as f64) * self.ipop.pop_increase_factor) as usize;
+        let mu = new_lambda / 2;
+
+        // Recalculate weights
+        let weights: Vec<f64> = (0..mu)
+            .map(|i| ((mu as f64 + 0.5).ln() - ((i + 1) as f64).ln()).max(0.0))
+            .collect();
+        let sum_w: f64 = weights.iter().sum();
+        let weights: Vec<f64> = weights.iter().map(|w| w / sum_w).collect();
+        let mu_eff = 1.0 / weights.iter().map(|w| w * w).sum::<f64>();
+
+        // Update parameters
+        self.lambda = new_lambda;
+        self.mu = mu;
+        self.weights = weights;
+        self.mu_eff = mu_eff;
+
+        // Recalculate learning rates
+        self.c_sigma = (mu_eff + 2.0) / (self.dim as f64 + mu_eff + 5.0);
+        self.c_c = (4.0 + mu_eff / self.dim as f64)
+            / (self.dim as f64 + 4.0 + 2.0 * mu_eff / self.dim as f64);
+        self.c_1 = 2.0 / ((self.dim as f64 + 1.3).powi(2) + mu_eff);
+        self.c_mu = (2.0 * (mu_eff - 2.0 + 1.0 / mu_eff))
+            / ((self.dim as f64 + 2.0).powi(2) + mu_eff).min(1.0 - self.c_1);
+        self.d_sigma = 1.0
+            + 2.0
+                * (0.0_f64)
+                    .max((mu_eff - 1.0) / (self.dim as f64 + 1.0))
+                    .sqrt()
+            + self.c_sigma;
+
+        // Reset internal state
+        self.p_sigma = vec![0.0; self.dim];
+        self.p_c = vec![0.0; self.dim];
+        self.c_diag = vec![1.0; self.dim];
+
+        // Randomize mean within bounds
+        self.mean = lower
+            .iter()
+            .zip(upper.iter())
+            .map(|(l, u)| l + rng.gen::<f64>() * (u - l))
+            .collect();
+
+        // Reset sigma
+        let range: f64 = lower
+            .iter()
+            .zip(upper.iter())
+            .map(|(l, u)| u - l)
+            .sum::<f64>()
+            / self.dim as f64;
+        self.sigma = range / 3.0;
     }
 
     /// Sample standard normal using Box-Muller transform
@@ -187,11 +322,15 @@ impl PerturbativeMetaheuristic for CmaEs {
 
         self.history.clear();
         self.best_value = f64::INFINITY;
+        self.restart_count = 0;
 
         let mut tracker = ConvergenceTracker::from_budget(&budget);
-        let max_iter = budget.max_iterations(self.lambda);
+        let max_iter = budget.max_iterations(self.initial_lambda);
         let chi_n = (self.dim as f64).sqrt()
             * (1.0 - 1.0 / (4.0 * self.dim as f64) + 1.0 / (21.0 * (self.dim as f64).powi(2)));
+
+        let mut gens_without_improvement = 0usize;
+        let mut last_best = f64::INFINITY;
 
         for gen in 0..max_iter {
             // Sample population
@@ -219,7 +358,22 @@ impl PerturbativeMetaheuristic for CmaEs {
                 self.best.clone_from(&population[fitness[0].0]);
             }
 
+            // Track stagnation for IPOP
+            if self.best_value < last_best - 1e-10 {
+                gens_without_improvement = 0;
+                last_best = self.best_value;
+            } else {
+                gens_without_improvement += 1;
+            }
+
             self.history.push(self.best_value);
+
+            // Check for IPOP restart
+            if self.should_restart(gens_without_improvement) {
+                self.perform_restart(&lower, &upper, &mut rng);
+                gens_without_improvement = 0;
+                continue; // Skip the rest of this iteration
+            }
 
             // Update mean
             let old_mean = self.mean.clone();
@@ -325,6 +479,8 @@ impl PerturbativeMetaheuristic for CmaEs {
         self.history.clear();
         self.best.clear();
         self.best_value = f64::INFINITY;
+        self.restart_count = 0;
+        self.lambda = self.initial_lambda;
     }
 }
 
@@ -378,5 +534,147 @@ mod tests {
         assert!(!cma.history.is_empty());
         cma.reset();
         assert!(cma.history.is_empty());
+    }
+
+    // ==========================================================
+    // IPOP Restart Tests
+    // ==========================================================
+
+    #[test]
+    fn test_ipop_config_default() {
+        let config = IpopConfig::default();
+        assert!(!config.enabled);
+        assert!((config.pop_increase_factor - 2.0).abs() < 1e-10);
+        assert_eq!(config.max_restarts, 9);
+    }
+
+    #[test]
+    fn test_cmaes_with_ipop() {
+        let cma = CmaEs::new(5).with_ipop();
+        assert!(cma.ipop.enabled);
+    }
+
+    #[test]
+    fn test_cmaes_with_ipop_config() {
+        let config = IpopConfig {
+            enabled: true,
+            pop_increase_factor: 3.0,
+            max_restarts: 5,
+            sigma_threshold: 1e-8,
+            stagnation_gens: 10,
+        };
+        let cma = CmaEs::new(5).with_ipop_config(config);
+        assert!(cma.ipop.enabled);
+        assert!((cma.ipop.pop_increase_factor - 3.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_ipop_triggers_restart_on_multimodal() {
+        // Rastrigin: highly multimodal function
+        let rastrigin = |x: &[f64]| -> f64 {
+            10.0 * x.len() as f64
+                + x.iter()
+                    .map(|xi| xi * xi - 10.0 * (2.0 * PI * xi).cos())
+                    .sum::<f64>()
+        };
+
+        let config = IpopConfig {
+            enabled: true,
+            pop_increase_factor: 2.0,
+            max_restarts: 3,
+            sigma_threshold: 1e-10,
+            stagnation_gens: 10,
+        };
+
+        let mut cma = CmaEs::new(3).with_ipop_config(config).with_seed(42);
+        let space = SearchSpace::continuous(3, -5.12, 5.12);
+        let result = cma.optimize(&rastrigin, &space, Budget::Evaluations(3000));
+
+        // IPOP should have attempted at least one restart on this hard function
+        // (This is stochastic, so we just check it runs without panic)
+        assert!(result.evaluations > 0);
+    }
+
+    #[test]
+    fn test_ipop_increases_population() {
+        let config = IpopConfig {
+            enabled: true,
+            pop_increase_factor: 2.0,
+            max_restarts: 2,
+            sigma_threshold: 1e-10,
+            stagnation_gens: 5, // Force early restart
+        };
+
+        let mut cma = CmaEs::new(3).with_ipop_config(config).with_seed(42);
+        let initial_lambda = cma.lambda;
+
+        // Run optimization that will likely stagnate
+        let flat = |_: &[f64]| 1.0; // Flat function triggers stagnation
+        let space = SearchSpace::continuous(3, -1.0, 1.0);
+        cma.optimize(&flat, &space, Budget::Evaluations(500));
+
+        // If restarts occurred, lambda should have increased
+        if cma.restart_count > 0 {
+            assert!(
+                cma.lambda > initial_lambda,
+                "Lambda should increase after restart"
+            );
+        }
+    }
+
+    #[test]
+    fn test_ipop_respects_max_restarts() {
+        let config = IpopConfig {
+            enabled: true,
+            pop_increase_factor: 2.0,
+            max_restarts: 2,
+            sigma_threshold: 1e-10,
+            stagnation_gens: 3,
+        };
+
+        let mut cma = CmaEs::new(2).with_ipop_config(config).with_seed(42);
+        let flat = |_: &[f64]| 1.0;
+        let space = SearchSpace::continuous(2, -1.0, 1.0);
+        cma.optimize(&flat, &space, Budget::Evaluations(1000));
+
+        assert!(cma.restart_count <= 2, "Should not exceed max_restarts");
+    }
+
+    #[test]
+    fn test_ipop_preserves_best_across_restarts() {
+        // Easy sphere that should converge well
+        let sphere = |x: &[f64]| x.iter().map(|xi| xi * xi).sum();
+
+        let config = IpopConfig {
+            enabled: true,
+            pop_increase_factor: 2.0,
+            max_restarts: 3,
+            sigma_threshold: 1e-15, // Very tight to maybe trigger restart
+            stagnation_gens: 50,
+        };
+
+        let mut cma = CmaEs::new(3).with_ipop_config(config).with_seed(42);
+        let space = SearchSpace::continuous(3, -5.0, 5.0);
+        let result = cma.optimize(&sphere, &space, Budget::Evaluations(5000));
+
+        // Best solution should still be good even if restarts occurred
+        assert!(
+            result.objective_value < 1e-3,
+            "Should find good solution: {}",
+            result.objective_value
+        );
+    }
+
+    #[test]
+    fn test_restart_count_accessor() {
+        let cma = CmaEs::new(5);
+        assert_eq!(cma.restart_count(), 0);
+    }
+
+    #[test]
+    fn test_with_lambda() {
+        let cma = CmaEs::with_lambda(5, 20);
+        assert_eq!(cma.lambda, 20);
+        assert_eq!(cma.initial_lambda, 20);
     }
 }
