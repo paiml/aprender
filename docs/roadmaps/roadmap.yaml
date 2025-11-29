@@ -1198,7 +1198,7 @@ roadmap:
   priority: medium
   assigned_to: null
   created: 2025-11-27T08:53:16.807707680+00:00
-  updated: 2025-11-27T08:53:16.807707680+00:00
+  updated: 2025-11-29T08:27:54.372237151+00:00
   spec: null
   acceptance_criteria:
   - '`SearchSpace` enum (Continuous, Mixed, Binary, Permutation, Graph)'

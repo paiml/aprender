@@ -1076,7 +1076,7 @@ fn test_cli_020_zsh_widget_v4() {
         .arg("zsh-widget")
         .assert()
         .success()
-        .stdout(predicate::str::contains("aprender-shell ZSH widget v4"))
+        .stdout(predicate::str::contains("aprender-shell ZSH widget v5"))
         .stdout(predicate::str::contains("daemon support"));
 }
 
@@ -1107,6 +1107,72 @@ fn test_cli_020_zsh_widget_socket_config() {
         .assert()
         .success()
         .stdout(predicate::str::contains("APRENDER_SOCKET"));
+}
+
+#[test]
+fn test_cli_020_zsh_widget_shellcheck_directive() {
+    // Widget should include shellcheck directive for ZSH-specific syntax
+    aprender_shell()
+        .arg("zsh-widget")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("shellcheck shell=zsh"));
+}
+
+#[test]
+fn test_cli_020_zsh_widget_bashrs_lint() {
+    use std::process::Command as StdCommand;
+
+    // Check if bashrs is available
+    let bashrs_available = StdCommand::new("bashrs")
+        .arg("--version")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+
+    if !bashrs_available {
+        eprintln!("⚠️  bashrs not installed, skipping lint validation");
+        return;
+    }
+
+    // Generate widget
+    let widget_output = aprender_shell()
+        .arg("zsh-widget")
+        .output()
+        .expect("Failed to generate widget");
+
+    assert!(widget_output.status.success());
+
+    // Write to temp file for bashrs
+    let mut widget_file = NamedTempFile::new().unwrap();
+    widget_file.write_all(&widget_output.stdout).unwrap();
+
+    // Run bashrs lint
+    let lint_output = StdCommand::new("bashrs")
+        .args([
+            "lint",
+            "--format",
+            "json",
+            widget_file.path().to_str().unwrap(),
+        ])
+        .output()
+        .expect("Failed to run bashrs lint");
+
+    // Parse result (bashrs outputs JSON with errors/warnings)
+    let stdout = String::from_utf8_lossy(&lint_output.stdout);
+    let stderr = String::from_utf8_lossy(&lint_output.stderr);
+
+    // Check for errors (warnings are acceptable for ZSH-specific syntax)
+    // bashrs lint exits 1 on warnings but 0 on clean
+    // We accept warnings but not errors
+    assert!(
+        !stderr.contains("[error]") && !stdout.contains("\"severity\":\"error\""),
+        "Widget has lint errors: stdout={}, stderr={}",
+        stdout,
+        stderr
+    );
+
+    eprintln!("✅ bashrs lint passed (0 errors)");
 }
 
 // ============================================================================

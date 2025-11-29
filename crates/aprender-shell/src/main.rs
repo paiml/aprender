@@ -65,7 +65,7 @@ enum Commands {
 
     /// Get completions for a prefix
     Suggest {
-        /// The current command prefix (use -- for prefixes starting with -)
+        /// The current command prefix (use `-- PREFIX` for prefixes starting with -)
         #[arg(allow_hyphen_values = true)]
         prefix: String,
 
@@ -123,6 +123,9 @@ enum Commands {
 
     /// Generate ZSH widget code
     ZshWidget,
+
+    /// Generate Bash widget code
+    BashWidget,
 
     /// Generate Fish shell widget code
     FishWidget,
@@ -377,6 +380,9 @@ fn main() {
         }
         Commands::ZshWidget => {
             cmd_zsh_widget();
+        }
+        Commands::BashWidget => {
+            cmd_bash_widget();
         }
         Commands::FishWidget => {
             cmd_fish_widget();
@@ -1000,15 +1006,29 @@ fn cmd_import(input: &PathBuf, output: &str) {
 fn cmd_zsh_widget() {
     print!(
         r#"# >>> aprender-shell widget >>>
-# aprender-shell ZSH widget v4 (with daemon support)
+# shellcheck shell=zsh disable=SC2154,SC2086,SC2089,SC2227,SC2201,SC2067
+# aprender-shell ZSH widget v5 (with daemon support)
+# This script is meant to be sourced, not executed directly
 # Add this to your ~/.zshrc
 # Toggle: export APRENDER_DISABLED=1 to disable
 # Daemon: export APRENDER_USE_DAEMON=1 for sub-ms latency
 # Uninstall: aprender-shell uninstall --zsh
 # Hardened per: docs/specifications/aprender-shell-harden-plan.md
+# Validated with bashrs lint
 
-# Configuration
+# Environment variables (set externally by user, defaults provided)
+APRENDER_DISABLED="${{APRENDER_DISABLED:-0}}"
+APRENDER_USE_DAEMON="${{APRENDER_USE_DAEMON:-0}}"
+APRENDER_AUTO_DAEMON="${{APRENDER_AUTO_DAEMON:-0}}"
 APRENDER_SOCKET="${{APRENDER_SOCKET:-/tmp/aprender-shell.sock}}"
+# Debugging (issue #84)
+APRENDER_TIMING="${{APRENDER_TIMING:-0}}"
+APRENDER_TRACE="${{APRENDER_TRACE:-0}}"
+APRENDER_TRACE_FILE="${{APRENDER_TRACE_FILE:-/tmp/aprender-trace.log}}"
+# Renacer syscall tracing (issue #89)
+APRENDER_RENACER="${{APRENDER_RENACER:-0}}"
+APRENDER_RENACER_OPTS="${{APRENDER_RENACER_OPTS:--c --stats}}"
+APRENDER_RENACER_LOG="${{APRENDER_RENACER_LOG:-/tmp/aprender-renacer.log}}"
 
 # Check if daemon is running
 _aprender_daemon_available() {{
@@ -1024,29 +1044,49 @@ _aprender_suggest_daemon() {{
 # Get suggestion via command (fallback, ~10ms)
 _aprender_suggest_cmd() {{
     local prefix="$1"
-    timeout 0.1 aprender-shell suggest "$prefix" 2>/dev/null | head -1 | cut -f1
+    if [[ "$APRENDER_RENACER" == '1' ]] && command -v renacer &>/dev/null; then
+        # Wrap with renacer for syscall tracing (issue #89)
+        renacer $APRENDER_RENACER_OPTS -- aprender-shell suggest "$prefix" 2>>"$APRENDER_RENACER_LOG" | head -1 | cut -f1
+    else
+        timeout 0.1 aprender-shell suggest "$prefix" 2>/dev/null | head -1 | cut -f1
+    fi
 }}
 
 _aprender_suggest() {{
     # Skip if disabled or buffer too short
-    [[ "${{APRENDER_DISABLED:-0}}" == "1" ]] && return
+    [[ "$APRENDER_DISABLED" == '1' ]] && return
     [[ "${{#BUFFER}}" -lt 2 ]] && {{ POSTDISPLAY=''; return; }}
 
-    local suggestion
+    local suggestion start_ms end_ms elapsed_ms
+
+    # Timing start (issue #84)
+    [[ "$APRENDER_TIMING" == '1' ]] && start_ms=$(($(date +%s%N 2>/dev/null || echo 0)/1000000))
 
     # Use daemon if available and enabled, otherwise fall back to command
-    if [[ "${{APRENDER_USE_DAEMON:-0}}" == "1" ]] && _aprender_daemon_available; then
+    if [[ "$APRENDER_USE_DAEMON" == '1' ]] && _aprender_daemon_available; then
         suggestion="$(_aprender_suggest_daemon "$BUFFER")"
     else
         suggestion="$(_aprender_suggest_cmd "$BUFFER")"
     fi
 
-    # SC2086: Quote variables in comparisons
+    # Timing end (issue #84)
+    if [[ "$APRENDER_TIMING" == '1' ]]; then
+        end_ms=$(($(date +%s%N 2>/dev/null || echo 0)/1000000))
+        elapsed_ms=$((end_ms - start_ms))
+        print -u2 "[aprender] ${{elapsed_ms}}ms: '$BUFFER' -> '$suggestion'"
+    fi
+
+    # Trace logging (issue #84)
+    if [[ "$APRENDER_TRACE" == '1' ]]; then
+        echo "$(date +%Y-%m-%dT%H:%M:%S) prefix='$BUFFER' suggestion='$suggestion'" >> "$APRENDER_TRACE_FILE"
+    fi
+
     if [[ -n "$suggestion" && "$suggestion" != "$BUFFER" ]]; then
         local suffix="${{suggestion#"$BUFFER"}}"
 
         # Robust ANSI handling with terminal capability check
-        if [[ -n "$TERM" && "$TERM" != "dumb" ]] && (( ${{+terminfo[colors]}} )) && (( ${{terminfo[colors]}} >= 8 )); then
+        # terminfo is a ZSH builtin associative array
+        if [[ -n "$TERM" && "$TERM" != 'dumb' ]] && (( ${{+terminfo[colors]}} )) && (( ${{terminfo[colors]:-0}} >= 8 )); then
             # Use ZSH prompt expansion for portable color codes
             POSTDISPLAY="$(print -P " %F{{240}}${{suffix}}%f")"
         else
@@ -1054,7 +1094,7 @@ _aprender_suggest() {{
             POSTDISPLAY=" ${{suffix}}"
         fi
     else
-        POSTDISPLAY=""
+        POSTDISPLAY=''
     fi
 }}
 
@@ -1069,7 +1109,41 @@ _aprender_accept() {{
         clean_suffix="${{clean_suffix//%f/}}"
 
         BUFFER="${{BUFFER}}${{clean_suffix}}"
-        POSTDISPLAY=""
+        POSTDISPLAY=''
+        CURSOR="${{#BUFFER}}"
+        zle redisplay
+    else
+        # No suggestion: fall back to default Tab completion (issue #83)
+        zle expand-or-complete
+    fi
+}}
+
+_aprender_accept_word() {{
+    # Accept next word of suggestion only (issue #85)
+    if [[ -n "$POSTDISPLAY" ]]; then
+        local clean_suffix
+        clean_suffix="${{POSTDISPLAY# }}"
+        # Remove color codes
+        clean_suffix="${{clean_suffix//\\e\[*m/}}"
+        clean_suffix="${{clean_suffix//%F\{{*\}}/}}"
+        clean_suffix="${{clean_suffix//%f/}}"
+
+        # Extract next word (up to first space)
+        local next_word="${{clean_suffix%% *}}"
+        if [[ "$next_word" == "$clean_suffix" ]]; then
+            # No space found - accept entire remaining suggestion
+            BUFFER="${{BUFFER}}${{next_word}}"
+            POSTDISPLAY=''
+        else
+            # Accept word + space, update suggestion
+            BUFFER="${{BUFFER}}${{next_word}} "
+            local remaining="${{clean_suffix#* }}"
+            if [[ -n "$remaining" ]]; then
+                POSTDISPLAY=" ${{remaining}}"
+            else
+                POSTDISPLAY=''
+            fi
+        fi
         CURSOR="${{#BUFFER}}"
     fi
     zle redisplay
@@ -1077,20 +1151,82 @@ _aprender_accept() {{
 
 zle -N _aprender_suggest
 zle -N _aprender_accept
+zle -N _aprender_accept_word
 
 # Trigger on each keystroke
 autoload -Uz add-zle-hook-widget
 add-zle-hook-widget line-pre-redraw _aprender_suggest
 
-# Accept with Tab or Right Arrow
+# Accept with Tab or Right Arrow (full suggestion)
 bindkey '^I' _aprender_accept      # Tab
 bindkey '^[[C' _aprender_accept    # Right arrow
+# Accept next word only (issue #85)
+bindkey '^[[1;5C' _aprender_accept_word  # Ctrl+Right
 
 # Start daemon automatically if requested
-# Usage: export APRENDER_AUTO_DAEMON=1
-if [[ "${{APRENDER_AUTO_DAEMON:-0}}" == "1" ]] && ! _aprender_daemon_available; then
+if [[ "$APRENDER_AUTO_DAEMON" == '1' ]] && ! _aprender_daemon_available; then
     aprender-shell daemon &>/dev/null &
     disown
+fi
+# <<< aprender-shell widget <<<
+"#
+    );
+}
+
+fn cmd_bash_widget() {
+    print!(
+        r#"# >>> aprender-shell widget >>>
+# aprender-shell Bash widget v1 (issue #82)
+# Add this to your ~/.bashrc
+# Toggle: export APRENDER_DISABLED=1 to disable
+# Uninstall: aprender-shell uninstall --bash
+
+# Environment variables
+APRENDER_DISABLED="${{APRENDER_DISABLED:-0}}"
+_APRENDER_SUGGESTION=""
+
+_aprender_get_suggestion() {{
+    local prefix="$1"
+    timeout 0.1 aprender-shell suggest "$prefix" 2>/dev/null | head -1 | cut -f1
+}}
+
+_aprender_suggest() {{
+    [[ "$APRENDER_DISABLED" == "1" ]] && return
+    [[ "${{#READLINE_LINE}}" -lt 2 ]] && return
+
+    local suggestion
+    suggestion=$(_aprender_get_suggestion "$READLINE_LINE")
+
+    if [[ -n "$suggestion" && "$suggestion" != "$READLINE_LINE" ]]; then
+        _APRENDER_SUGGESTION="${{suggestion#$READLINE_LINE}}"
+        # Display ghost text in gray (after cursor position)
+        echo -ne "\e[90m${{_APRENDER_SUGGESTION}}\e[0m\e[${{#_APRENDER_SUGGESTION}}D"
+    else
+        _APRENDER_SUGGESTION=""
+    fi
+}}
+
+_aprender_accept() {{
+    if [[ -n "$_APRENDER_SUGGESTION" ]]; then
+        READLINE_LINE="${{READLINE_LINE}}${{_APRENDER_SUGGESTION}}"
+        READLINE_POINT=${{#READLINE_LINE}}
+        _APRENDER_SUGGESTION=""
+    fi
+}}
+
+_aprender_clear() {{
+    _APRENDER_SUGGESTION=""
+}}
+
+# Bind to readline hooks
+# Note: Bash readline integration is limited compared to ZSH
+# This provides basic suggestion on Tab key
+bind -x '"\C-i": _aprender_accept'  # Tab to accept
+bind -x '"\e[C": _aprender_accept'  # Right arrow to accept
+
+# Show suggestions after each command edit (Bash 4.0+)
+if [[ "${{BASH_VERSINFO[0]}}" -ge 4 ]]; then
+    PROMPT_COMMAND="_aprender_suggest; ${{PROMPT_COMMAND}}"
 fi
 # <<< aprender-shell widget <<<
 "#

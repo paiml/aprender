@@ -203,6 +203,18 @@ impl HistoryParser {
             return true;
         }
 
+        // Commands starting with flags are multiline continuation artifacts (issue #91)
+        // e.g., "--context 3" from "git diff \n  --context 3"
+        if trimmed.starts_with("--")
+            || trimmed.starts_with('-')
+                && trimmed
+                    .chars()
+                    .nth(1)
+                    .is_some_and(|c| c.is_ascii_alphabetic())
+        {
+            return true;
+        }
+
         false
     }
 
