@@ -79,8 +79,10 @@ mod budget;
 mod cmaes;
 mod constructive;
 mod de;
+mod feature_selection;
 mod ga;
 mod hs;
+mod hyperopt;
 mod pso;
 mod sa;
 mod search_space;
@@ -93,8 +95,14 @@ pub use constructive::{
     AntColony, ConstructiveMetaheuristic, NeighborhoodSearch, SwapMove, TabuSearch,
 };
 pub use de::{AdaptationStrategy, DEStrategy, DifferentialEvolution};
+pub use feature_selection::{
+    rank_features, select_features, FeatureSelectionResult, FeatureSelector, SelectionCriterion,
+};
 pub use ga::GeneticAlgorithm;
 pub use hs::HarmonySearch;
+pub use hyperopt::{
+    HyperoptResult, HyperoptSearch, Hyperparameter, HyperparameterSet, SearchAlgorithm,
+};
 pub use pso::ParticleSwarm;
 pub use sa::SimulatedAnnealing;
 pub use search_space::SearchSpace;
