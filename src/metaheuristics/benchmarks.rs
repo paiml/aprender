@@ -370,6 +370,20 @@ mod tests {
     }
 
     #[test]
+    fn test_michalewicz_negative() {
+        // Michalewicz has negative values at optimum
+        let x = vec![2.2, 1.57]; // Near optimum for 2D
+        assert!(michalewicz(&x) < 0.0);
+    }
+
+    #[test]
+    fn test_dixon_price_near_optimum() {
+        // Dixon-Price optimal solution is dimension-dependent
+        let x = vec![1.0, 0.707, 0.595]; // Approximate
+        assert!(dixon_price(&x) < 1.0);
+    }
+
+    #[test]
     fn test_all_benchmarks_count() {
         assert_eq!(all_benchmarks().len(), 10);
     }
@@ -380,5 +394,16 @@ mod tests {
         assert_eq!(benchmarks[0].name, "Sphere");
         assert!(!benchmarks[0].multimodal);
         assert!(benchmarks[0].separable);
+    }
+
+    #[test]
+    fn test_all_benchmarks_have_valid_bounds() {
+        for info in all_benchmarks() {
+            assert!(
+                info.bounds.0 < info.bounds.1,
+                "{} has invalid bounds",
+                info.name
+            );
+        }
     }
 }

@@ -794,4 +794,47 @@ mod tests {
         assert!(de.best().is_none());
         assert!(de.history().is_empty());
     }
+
+    #[test]
+    fn test_de_shade_adaptation() {
+        let mut de = DifferentialEvolution::new().with_shade(10).with_seed(42);
+        let space = SearchSpace::continuous(5, -5.0, 5.0);
+        let result = de.optimize(&sphere, &space, Budget::Evaluations(10_000));
+
+        assert!(
+            result.objective_value < 1e-3,
+            "SHADE should solve sphere, got {}",
+            result.objective_value
+        );
+    }
+
+    #[test]
+    fn test_de_rand2bin_strategy() {
+        let mut de = DifferentialEvolution::new()
+            .with_strategy(DEStrategy::Rand2Bin)
+            .with_seed(42);
+        let space = SearchSpace::continuous(5, -5.0, 5.0);
+        let result = de.optimize(&sphere, &space, Budget::Evaluations(15_000));
+
+        assert!(
+            result.objective_value < 1e-3,
+            "Rand2Bin should solve sphere, got {}",
+            result.objective_value
+        );
+    }
+
+    #[test]
+    fn test_de_current_to_best_strategy() {
+        let mut de = DifferentialEvolution::new()
+            .with_strategy(DEStrategy::CurrentToBest1Bin)
+            .with_seed(42);
+        let space = SearchSpace::continuous(5, -5.0, 5.0);
+        let result = de.optimize(&sphere, &space, Budget::Evaluations(10_000));
+
+        assert!(
+            result.objective_value < 1e-4,
+            "CurrentToBest1Bin should solve sphere, got {}",
+            result.objective_value
+        );
+    }
 }
