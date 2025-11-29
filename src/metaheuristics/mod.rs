@@ -13,6 +13,10 @@
 //! - [`GeneticAlgorithm`] - Selection, crossover, mutation
 //! - [`HarmonySearch`] - Music-inspired memory-based optimization
 //!
+//! ## Benchmark Functions
+//! Standard test functions for algorithm evaluation:
+//! - [`benchmarks`] - CEC 2013 benchmark suite (Sphere, Rosenbrock, Rastrigin, etc.)
+//!
 //! ## Constructive Metaheuristics (Phase 3)
 //! Build solutions incrementally:
 //! - `AntColony` - Pheromone-guided construction
@@ -69,6 +73,7 @@
 //! - Kirkpatrick et al. (1983): Simulated Annealing
 //! - Hansen (2016): CMA-ES Tutorial
 
+pub mod benchmarks;
 mod budget;
 mod de;
 mod ga;
