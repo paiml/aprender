@@ -76,6 +76,7 @@
 pub mod benchmarks;
 mod binary_ga;
 mod budget;
+mod cmaes;
 mod de;
 mod ga;
 mod hs;
@@ -86,6 +87,7 @@ mod traits;
 
 pub use binary_ga::BinaryGA;
 pub use budget::{Budget, ConvergenceTracker};
+pub use cmaes::CmaEs;
 pub use de::{AdaptationStrategy, DEStrategy, DifferentialEvolution};
 pub use ga::GeneticAlgorithm;
 pub use hs::HarmonySearch;
