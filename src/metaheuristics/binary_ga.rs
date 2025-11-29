@@ -21,7 +21,7 @@
 //! let result = ga.optimize(&objective, &space, Budget::Evaluations(1000));
 //!
 //! // Interpret: bits > 0.5 are selected features
-//! let selected: Vec<usize> = result.best_solution.iter()
+//! let selected: Vec<usize> = result.solution.iter()
 //!     .enumerate()
 //!     .filter(|(_, &b)| b > 0.5)
 //!     .map(|(i, _)| i)

@@ -164,6 +164,12 @@ impl ModuleList {
         self
     }
 
+    /// Add a boxed module to the list.
+    pub fn add_boxed(mut self, module: Box<dyn Module>) -> Self {
+        self.modules.push(module);
+        self
+    }
+
     /// Get a module by index.
     pub fn get(&self, index: usize) -> Option<&dyn Module> {
         self.modules.get(index).map(AsRef::as_ref)
@@ -632,5 +638,63 @@ mod tests {
         let x = Tensor::ones(&[2, 10]);
         let y = layer.forward(&x);
         assert_eq!(y.shape(), &[2, 10]); // From the second Linear
+    }
+
+    #[test]
+    fn test_sequential_default() {
+        let model: Sequential = Sequential::default();
+        assert!(model.is_empty());
+    }
+
+    #[test]
+    fn test_sequential_add_boxed() {
+        let linear: Box<dyn Module> = Box::new(Linear::new(10, 5));
+        let model = Sequential::new().add_boxed(linear);
+        assert_eq!(model.len(), 1);
+    }
+
+    #[test]
+    fn test_module_list_default() {
+        let list: ModuleList = ModuleList::default();
+        assert!(list.is_empty());
+    }
+
+    #[test]
+    fn test_module_list_add_boxed() {
+        let linear: Box<dyn Module> = Box::new(Linear::new(10, 5));
+        let list = ModuleList::new().add_boxed(linear);
+        assert_eq!(list.len(), 1);
+    }
+
+    #[test]
+    fn test_module_list_iter() {
+        let list = ModuleList::new().add(Linear::new(10, 5)).add(ReLU::new());
+        let count = list.iter().count();
+        assert_eq!(count, 2);
+    }
+
+    #[test]
+    fn test_module_dict_default() {
+        let dict: ModuleDict = ModuleDict::default();
+        assert!(dict.is_empty());
+    }
+
+    #[test]
+    fn test_module_dict_insert_boxed() {
+        let linear: Box<dyn Module> = Box::new(Linear::new(10, 5));
+        let dict = ModuleDict::new().insert_boxed("layer", linear);
+        assert!(dict.contains("layer"));
+    }
+
+    #[test]
+    fn test_module_dict_keys_iter() {
+        let dict = ModuleDict::new()
+            .insert("a", Linear::new(10, 5))
+            .insert("b", ReLU::new());
+        let keys: Vec<_> = dict.keys().collect();
+        assert_eq!(keys.len(), 2);
+        // Use iter() to verify both modules are accessible
+        let modules: Vec<_> = dict.iter().collect();
+        assert_eq!(modules.len(), 2);
     }
 }
