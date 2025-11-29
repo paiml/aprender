@@ -765,4 +765,136 @@ mod tests {
         // Row 1: [4,5,6] @ [[1,2],[3,4],[5,6]] = [4*1+5*3+6*5, 4*2+5*4+6*6] = [49, 64]
         assert_eq!(c.data(), &[22.0, 28.0, 49.0, 64.0]);
     }
+
+    #[test]
+    fn test_sub_backward() {
+        let grad_fn = SubBackward {
+            x_shape: vec![3],
+            y_shape: vec![3],
+        };
+        let grad_out = Tensor::from_slice(&[1.0, 2.0, 3.0]);
+        let grads = grad_fn.backward(&grad_out);
+
+        assert_eq!(grads.len(), 2);
+        assert_eq!(grads[0].data(), &[1.0, 2.0, 3.0]);
+        assert_eq!(grads[1].data(), &[-1.0, -2.0, -3.0]);
+    }
+
+    #[test]
+    fn test_div_backward() {
+        let x = Tensor::from_slice(&[6.0, 8.0]);
+        let y = Tensor::from_slice(&[2.0, 4.0]);
+        let grad_fn = DivBackward {
+            x: x.clone(),
+            y: y.clone(),
+        };
+
+        let grad_out = Tensor::from_slice(&[1.0, 1.0]);
+        let grads = grad_fn.backward(&grad_out);
+
+        // grad_x = grad_out / y = [1/2, 1/4] = [0.5, 0.25]
+        assert_eq!(grads[0].data(), &[0.5, 0.25]);
+        // grad_y = -grad_out * x / y^2 = [-1*6/4, -1*8/16] = [-1.5, -0.5]
+        assert_eq!(grads[1].data(), &[-1.5, -0.5]);
+    }
+
+    #[test]
+    fn test_pow_backward() {
+        let x = Tensor::from_slice(&[2.0, 3.0]);
+        let grad_fn = PowBackward {
+            x: x.clone(),
+            n: 2.0,
+        };
+
+        let grad_out = Tensor::from_slice(&[1.0, 1.0]);
+        let grads = grad_fn.backward(&grad_out);
+
+        // grad = n * x^(n-1) * grad_out = 2 * [2, 3] = [4, 6]
+        assert_eq!(grads[0].data(), &[4.0, 6.0]);
+    }
+
+    #[test]
+    fn test_exp_backward() {
+        let output = Tensor::from_slice(&[2.718281828, 7.389056099]); // e^1, e^2
+        let grad_fn = ExpBackward { output };
+
+        let grad_out = Tensor::from_slice(&[1.0, 1.0]);
+        let grads = grad_fn.backward(&grad_out);
+
+        // grad = exp(x) * grad_out = output * grad_out
+        assert!((grads[0].data()[0] - 2.718281828).abs() < 1e-5);
+        assert!((grads[0].data()[1] - 7.389056099).abs() < 1e-5);
+    }
+
+    #[test]
+    fn test_log_backward() {
+        let x = Tensor::from_slice(&[1.0, 2.0, 4.0]);
+        let grad_fn = LogBackward { x };
+
+        let grad_out = Tensor::from_slice(&[1.0, 1.0, 1.0]);
+        let grads = grad_fn.backward(&grad_out);
+
+        // grad = 1/x * grad_out
+        assert_eq!(grads[0].data(), &[1.0, 0.5, 0.25]);
+    }
+
+    #[test]
+    fn test_sigmoid_backward() {
+        let output = Tensor::from_slice(&[0.5, 0.731]); // sigmoid values
+        let grad_fn = SigmoidBackward { output };
+
+        let grad_out = Tensor::from_slice(&[1.0, 1.0]);
+        let grads = grad_fn.backward(&grad_out);
+
+        // grad = sigmoid(x) * (1 - sigmoid(x)) * grad_out
+        assert!((grads[0].data()[0] - 0.25).abs() < 1e-5); // 0.5 * 0.5
+    }
+
+    #[test]
+    fn test_tanh_backward() {
+        let output = Tensor::from_slice(&[0.0, 0.7616]); // tanh values
+        let grad_fn = TanhBackward { output };
+
+        let grad_out = Tensor::from_slice(&[1.0, 1.0]);
+        let grads = grad_fn.backward(&grad_out);
+
+        // grad = (1 - tanh(x)^2) * grad_out
+        assert!((grads[0].data()[0] - 1.0).abs() < 1e-5); // 1 - 0^2
+    }
+
+    #[test]
+    fn test_backward_names() {
+        assert_eq!(
+            AddBackward {
+                x_shape: vec![],
+                y_shape: vec![]
+            }
+            .name(),
+            "AddBackward"
+        );
+        assert_eq!(
+            SubBackward {
+                x_shape: vec![],
+                y_shape: vec![]
+            }
+            .name(),
+            "SubBackward"
+        );
+        assert_eq!(
+            MulBackward {
+                x: Tensor::from_slice(&[1.0]),
+                y: Tensor::from_slice(&[1.0])
+            }
+            .name(),
+            "MulBackward"
+        );
+        assert_eq!(
+            DivBackward {
+                x: Tensor::from_slice(&[1.0]),
+                y: Tensor::from_slice(&[1.0])
+            }
+            .name(),
+            "DivBackward"
+        );
+    }
 }

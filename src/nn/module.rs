@@ -130,4 +130,32 @@ mod tests {
         assert_eq!(params.len(), 1);
         assert_eq!(params[0].shape(), &[3, 3]);
     }
+
+    #[test]
+    fn test_module_forward() {
+        let module = DummyModule::new();
+        let input = Tensor::from_slice(&[1.0, 2.0, 3.0]);
+        let output = module.forward(&input);
+        assert_eq!(output.data(), &[1.0, 2.0, 3.0]);
+    }
+
+    #[test]
+    fn test_module_training() {
+        let module = DummyModule::new();
+        assert!(module.training());
+    }
+
+    #[test]
+    fn test_module_zero_grad() {
+        let mut module = DummyModule::new();
+        module.zero_grad();
+        // zero_grad should complete without panic
+    }
+
+    #[test]
+    fn test_module_parameters_mut() {
+        let mut module = DummyModule::new();
+        let params = module.parameters_mut();
+        assert_eq!(params.len(), 1);
+    }
 }
