@@ -74,6 +74,7 @@
 //! - Hansen (2016): CMA-ES Tutorial
 
 pub mod benchmarks;
+mod binary_ga;
 mod budget;
 mod de;
 mod ga;
@@ -83,6 +84,7 @@ mod sa;
 mod search_space;
 mod traits;
 
+pub use binary_ga::BinaryGA;
 pub use budget::{Budget, ConvergenceTracker};
 pub use de::{AdaptationStrategy, DEStrategy, DifferentialEvolution};
 pub use ga::GeneticAlgorithm;
