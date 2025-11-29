@@ -1116,4 +1116,84 @@ mod tests {
         assert_eq!(matrix.n_rows(), 3);
         assert!(vectorizer.vocabulary_size() > 0);
     }
+
+    #[test]
+    fn test_count_vectorizer_stop_words_english() {
+        let docs = vec!["the cat and dog", "a bird is flying"];
+        let mut vectorizer = CountVectorizer::new()
+            .with_tokenizer(Box::new(WhitespaceTokenizer::new()))
+            .with_stop_words_english();
+
+        let _matrix = vectorizer.fit_transform(&docs).expect("fit should succeed");
+        // "the", "and", "a", "is" should be filtered out
+        let vocab = vectorizer.vocabulary();
+        assert!(!vocab.contains_key("the"));
+        assert!(!vocab.contains_key("and"));
+        assert!(vocab.contains_key("cat") || vocab.contains_key("dog"));
+    }
+
+    #[test]
+    fn test_count_vectorizer_custom_stop_words() {
+        let docs = vec!["hello world hello", "world test"];
+        let mut vectorizer = CountVectorizer::new()
+            .with_tokenizer(Box::new(WhitespaceTokenizer::new()))
+            .with_stop_words(&["hello"]);
+
+        let _matrix = vectorizer.fit_transform(&docs).expect("fit should succeed");
+        let vocab = vectorizer.vocabulary();
+        assert!(!vocab.contains_key("hello"));
+        assert!(vocab.contains_key("world"));
+    }
+
+    #[test]
+    fn test_count_vectorizer_strip_accents() {
+        let vectorizer = CountVectorizer::new().with_strip_accents(true);
+        assert!(vectorizer.strip_accents);
+    }
+
+    #[test]
+    fn test_tfidf_stop_words_english() {
+        let docs = vec!["the quick brown fox", "a lazy dog"];
+        let mut vectorizer = TfidfVectorizer::new()
+            .with_tokenizer(Box::new(WhitespaceTokenizer::new()))
+            .with_stop_words_english();
+
+        let _matrix = vectorizer.fit_transform(&docs).expect("fit should succeed");
+        let vocab = vectorizer.vocabulary();
+        assert!(!vocab.contains_key("the"));
+        assert!(!vocab.contains_key("a"));
+    }
+
+    #[test]
+    fn test_tfidf_custom_stop_words() {
+        let docs = vec!["foo bar baz", "bar qux"];
+        let mut vectorizer = TfidfVectorizer::new()
+            .with_tokenizer(Box::new(WhitespaceTokenizer::new()))
+            .with_custom_stop_words(&["foo", "baz"]);
+
+        vectorizer.fit(&docs).expect("fit should succeed");
+        let vocab = vectorizer.vocabulary();
+        assert!(!vocab.contains_key("foo"));
+        assert!(!vocab.contains_key("baz"));
+        assert!(vocab.contains_key("bar"));
+    }
+
+    #[test]
+    fn test_tfidf_strip_accents_builder() {
+        let _vectorizer = TfidfVectorizer::new().with_strip_accents(true);
+        // Just verify it compiles and doesn't panic
+    }
+
+    #[test]
+    fn test_hashing_vectorizer_n_features() {
+        let vectorizer =
+            HashingVectorizer::new(1024).with_tokenizer(Box::new(WhitespaceTokenizer::new()));
+        assert_eq!(vectorizer.n_features, 1024);
+    }
+
+    #[test]
+    fn test_hashing_vectorizer_ngram_range() {
+        let vectorizer = HashingVectorizer::new(2048).with_ngram_range(1, 3);
+        assert_eq!(vectorizer.ngram_range, (1, 3));
+    }
 }

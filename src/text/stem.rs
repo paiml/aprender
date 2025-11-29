@@ -512,4 +512,33 @@ mod tests {
         assert!(!PorterStemmer::ends_with_cvc("hoop"));
         assert!(!PorterStemmer::ends_with_cvc("hi"));
     }
+
+    #[test]
+    fn test_porter_step4_suffixes() {
+        let stemmer = PorterStemmer::new();
+        // Test various -ance, -ence, -er, -ic, -able, -ible, -ant suffixes
+        assert_eq!(stemmer.stem("reliance").expect("stem"), "reli");
+        assert_eq!(stemmer.stem("reference").expect("stem"), "refer");
+        assert_eq!(stemmer.stem("trainer").expect("stem"), "train");
+        assert_eq!(stemmer.stem("electric").expect("stem"), "electr");
+        assert_eq!(stemmer.stem("adjustable").expect("stem"), "adjust");
+        assert_eq!(stemmer.stem("defensible").expect("stem"), "defens");
+        assert_eq!(stemmer.stem("irritant").expect("stem"), "irrit");
+    }
+
+    #[test]
+    fn test_porter_step4_more_suffixes() {
+        let stemmer = PorterStemmer::new();
+        // Test -ement, -ment, -ent, -ion, -ism, -ate, -iti, -ous, -ive, -ize
+        assert_eq!(stemmer.stem("replacement").expect("stem"), "replac");
+        assert_eq!(stemmer.stem("adjustment").expect("stem"), "adjust");
+        assert_eq!(stemmer.stem("dependent").expect("stem"), "depend");
+        assert_eq!(stemmer.stem("adoption").expect("stem"), "adopt");
+        assert_eq!(stemmer.stem("communism").expect("stem"), "commun");
+        assert_eq!(stemmer.stem("activate").expect("stem"), "activ");
+        assert_eq!(stemmer.stem("angulariti").expect("stem"), "angular");
+        assert_eq!(stemmer.stem("homologous").expect("stem"), "homolog");
+        assert_eq!(stemmer.stem("effective").expect("stem"), "effect");
+        assert_eq!(stemmer.stem("bowdlerize").expect("stem"), "bowdler");
+    }
 }

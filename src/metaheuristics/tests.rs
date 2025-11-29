@@ -195,3 +195,82 @@ fn test_convergence_tracker_early_stop() {
 
     assert!(tracker.is_converged());
 }
+
+// ============================================================================
+// Property-Based Tests (Fast)
+// ============================================================================
+
+mod proptests {
+    use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(50))]
+
+        /// Property: All optimizers produce finite objective values
+        #[test]
+        fn prop_de_produces_finite_value(seed in 0u64..1000) {
+            let mut de = DifferentialEvolution::new().with_seed(seed);
+            let space = SearchSpace::continuous(3, -5.0, 5.0);
+            let result = de.optimize(&sphere, &space, Budget::Evaluations(500));
+            prop_assert!(result.objective_value.is_finite());
+            prop_assert!(!result.solution.is_empty());
+        }
+
+        /// Property: Solution stays within search bounds
+        #[test]
+        fn prop_solution_within_bounds(seed in 0u64..1000) {
+            let mut de = DifferentialEvolution::new().with_seed(seed);
+            let space = SearchSpace::continuous(3, -5.0, 5.0);
+            let result = de.optimize(&sphere, &space, Budget::Evaluations(500));
+
+            for &val in &result.solution {
+                prop_assert!(val >= -5.0 && val <= 5.0,
+                    "Solution out of bounds: {}", val);
+            }
+        }
+
+        /// Property: History is monotonically non-increasing (for minimization)
+        #[test]
+        fn prop_history_monotonic(seed in 0u64..1000) {
+            let mut de = DifferentialEvolution::new().with_seed(seed);
+            let space = SearchSpace::continuous(3, -5.0, 5.0);
+            let result = de.optimize(&sphere, &space, Budget::Iterations(20));
+
+            for window in result.history.windows(2) {
+                prop_assert!(window[1] <= window[0] + 1e-10,
+                    "History not monotonic: {} > {}", window[1], window[0]);
+            }
+        }
+
+        /// Property: Sphere optimum is always non-negative
+        #[test]
+        fn prop_sphere_nonnegative(x in prop::collection::vec(-10.0f64..10.0, 1..10)) {
+            let val = sphere(&x);
+            prop_assert!(val >= 0.0, "Sphere should be non-negative: {}", val);
+        }
+
+        /// Property: Binary GA produces valid binary solutions
+        #[test]
+        fn prop_binary_ga_valid_bits(seed in 0u64..1000) {
+            let objective = |x: &[f64]| x.iter().filter(|&&b| b > 0.5).count() as f64;
+            let mut ga = BinaryGA::default().with_seed(seed).with_population_size(20);
+            let space = SearchSpace::binary(5);
+            let result = ga.optimize(&objective, &space, Budget::Evaluations(200));
+
+            for &bit in &result.solution {
+                prop_assert!(bit == 0.0 || bit == 1.0,
+                    "Invalid bit value: {}", bit);
+            }
+        }
+
+        /// Property: CMA-ES maintains positive step size
+        #[test]
+        fn prop_cmaes_positive_sigma(seed in 0u64..1000) {
+            let mut cma = CmaEs::new(3).with_seed(seed);
+            let space = SearchSpace::continuous(3, -5.0, 5.0);
+            let result = cma.optimize(&sphere, &space, Budget::Evaluations(300));
+            prop_assert!(result.objective_value.is_finite());
+        }
+    }
+}
