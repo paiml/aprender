@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] - 2025-11-29
+
+### Added
+
+#### Metaheuristics - Constructive Algorithms
+- **AntColony**: Ant Colony Optimization for combinatorial problems (TSP, routing)
+- **TabuSearch**: Memory-based local search with aspiration criteria
+- **ConstructiveMetaheuristic** trait: Build solutions incrementally
+- **NeighborhoodSearch** trait: Local search with move evaluation
+- **SearchSpace::Graph**: Graph-based search spaces for routing problems
+
+#### aprender-tsp Crate (v0.1.0)
+- TSP solver CLI with train/solve/benchmark/info commands
+- Multiple algorithms: ACO, Tabu Search, Genetic Algorithm, Hybrid
+- TSPLIB format support (.tsp files)
+- Model persistence with `.apr` binary format
+- Pre-trained POC models on Hugging Face: [paiml/aprender-tsp-poc](https://huggingface.co/paiml/aprender-tsp-poc)
+
+### Fixed
+- ATT (pseudo-Euclidean) distance formula in TSPLIB parser: `sqrt((dx²+dy²)/10)` not `sqrt(dx²+dy²)/10`
+
+### Documentation
+- Added ACO-TSP book chapter with aprender-tsp CLI usage
+- Updated README with Related Crates section (aprender-tsp, aprender-shell)
+- Added bashrs-style coverage guidance to CLAUDE.md
+
 ## [0.12.0] - 2025-11-27
 
 ### ✨ **Major Release: Advanced Neural Networks & Program Repair**

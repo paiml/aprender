@@ -19,7 +19,7 @@ name = "aprender-tsp"
 path = "src/main.rs"
 
 [dependencies]
-aprender = { version = "0.12", path = "../.." }
+aprender = { version = "0.13", path = "../.." }
 clap = { version = "4", features = ["derive"] }
 rand = "0.8"
 crc32fast = "1.4"

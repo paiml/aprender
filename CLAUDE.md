@@ -90,20 +90,45 @@ cargo test --doc                        # Doctests
 **Current Achievement: 96.94% line coverage** (Target: ≥95%)
 
 ```bash
-# Generate coverage report (recommended)
+# Generate coverage report (recommended - bashrs-style)
 make coverage                           # Full coverage with HTML + lcov output
 
-# Manual coverage commands
-cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
-cargo llvm-cov report --html --output-dir target/coverage/html
-
 # View results
-open target/coverage/html/html/index.html  # macOS
-xdg-open target/coverage/html/html/index.html  # Linux
+xdg-open target/coverage/html/index.html  # Linux
+open target/coverage/html/index.html      # macOS
 
-# Coverage summary
-cargo llvm-cov report | grep TOTAL
+# Quick summary (after make coverage)
+make coverage-summary
 ```
+
+**bashrs-Style Coverage Pattern (CRITICAL):**
+
+All Makefiles MUST use the following bashrs-style coverage pattern to avoid profraw file conflicts and mold linker issues:
+
+```makefile
+coverage:
+	@echo "📊 Running coverage analysis..."
+	@which cargo-llvm-cov > /dev/null 2>&1 || cargo install cargo-llvm-cov --locked
+	@echo "🧹 Cleaning old coverage data..."
+	@cargo llvm-cov clean --workspace
+	@mkdir -p target/coverage
+	@echo "⚙️  Temporarily disabling global cargo config (mold breaks coverage)..."
+	@test -f ~/.cargo/config.toml && mv ~/.cargo/config.toml ~/.cargo/config.toml.cov-backup || true
+	@echo "🧪 Phase 1: Running tests with instrumentation..."
+	@cargo llvm-cov --no-report --all-features
+	@echo "📊 Phase 2: Generating coverage reports..."
+	@cargo llvm-cov report --html --output-dir target/coverage/html
+	@cargo llvm-cov report --lcov --output-path target/coverage/lcov.info
+	@echo "⚙️  Restoring global cargo config..."
+	@test -f ~/.cargo/config.toml.cov-backup && mv ~/.cargo/config.toml.cov-backup ~/.cargo/config.toml || true
+	@cargo llvm-cov report --summary-only
+```
+
+**Key Elements:**
+1. **Clean workspace first** - `cargo llvm-cov clean --workspace` prevents profraw conflicts
+2. **Disable mold linker** - Move `~/.cargo/config.toml` aside (mold breaks LLVM instrumentation)
+3. **Two-phase report** - `--no-report` first, then separate `report` commands
+4. **Restore config** - Always restore cargo config even if tests fail
 
 **Coverage by Module:**
 - optim/mod.rs: 100.00%

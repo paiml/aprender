@@ -149,13 +149,11 @@ impl TspSolver for HybridSolver {
         }
 
         // Phase 3: Intensification with ACO
+        // Note: ACO starts fresh - pheromone seeding would require core library extension
         let mut aco = AcoSolver::new().with_num_ants(10);
         if let Some(seed) = self.seed {
             aco = aco.with_seed(seed);
         }
-
-        // Seed pheromone from best tour found
-        aco.seed_pheromone_from_tour(&best_tour, instance, 2.0);
 
         let aco_result = aco.solve(instance, Budget::Iterations(aco_iters))?;
         total_evaluations += aco_result.evaluations;

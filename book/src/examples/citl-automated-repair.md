@@ -403,6 +403,187 @@ Benchmark groups:
 - `citl_neural_encoder` - Transformer encoding
 - `citl_neural_config` - Config comparison
 
+## Build-Time Performance Assertions
+
+Beyond correctness, CITL systems enforce **performance contracts** at build time using the renacer.toml DSL.
+
+### renacer.toml Configuration
+
+```toml
+[package]
+name = "my-transpiled-cli"
+version = "0.1.0"
+
+[performance]
+# Fail build if startup exceeds 50ms
+startup_time_ms = 50
+
+# Fail if binary exceeds 5MB
+binary_size_mb = 5
+
+# Memory usage assertions
+[performance.memory]
+peak_rss_mb = 100
+heap_allocations_max = 10000
+
+# Syscall budget per operation
+[performance.syscalls]
+file_read = 50
+file_write = 25
+network_connect = 5
+
+# Regression detection
+[performance.regression]
+baseline = "baseline.json"
+max_regression_percent = 5.0
+```
+
+### Build-Time Validation
+
+```bash
+# Run performance assertions during build
+cargo build --release
+
+# renacer validates assertions automatically
+[PASS] startup_time: 23ms (limit: 50ms)
+[PASS] binary_size: 2.1MB (limit: 5MB)
+[PASS] peak_rss: 24MB (limit: 100MB)
+[PASS] syscalls/file_read: 12 (limit: 50)
+[FAIL] syscalls/network_connect: 8 (limit: 5)
+
+error: Performance assertion failed
+  --> renacer.toml:18:1
+   |
+18 | network_connect = 5
+   | ^^^^^^^^^^^^^^^^^^^ actual: 8, limit: 5
+   |
+   = help: Consider batching network operations or using connection pooling
+```
+
+### Real-World Performance Improvements
+
+The reprorusted-python-cli project demonstrates dramatic improvements achieved through CITL transpilation with performance assertions:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│           REPRORUSTED-PYTHON-CLI BENCHMARK RESULTS              │
+│                                                                 │
+│   Operation          Python      Rust        Improvement        │
+│   ────────────────   ──────      ────        ───────────        │
+│   CSV parse (10MB)   2.3s        0.08s       28.7× faster       │
+│   JSON serialize     890ms       31ms        28.7× faster       │
+│   Regex matching     1.2s        0.11s       10.9× faster       │
+│   HTTP requests      4.5s        0.42s       10.7× faster       │
+│                                                                 │
+│   Resource Usage:                                               │
+│   Total syscalls     185,432     10,073      18.4× fewer        │
+│   Memory allocs      45,231      2,891       15.6× fewer        │
+│   Peak memory        127.4MB     23.8MB      5.4× smaller       │
+│                                                                 │
+│   Binary Size:       N/A         2.1MB       (static linked)    │
+│   Startup Time:      ~500ms      23ms        21.7× faster       │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Syscall Budget Enforcement
+
+The DSL supports fine-grained syscall budgets:
+
+```toml
+[performance.syscalls]
+# I/O operations
+read = 100
+write = 50
+open = 20
+close = 20
+
+# Memory operations
+mmap = 10
+munmap = 10
+brk = 5
+
+# Process operations
+clone = 2
+execve = 1
+fork = 0  # Forbidden
+
+# Network operations
+socket = 5
+connect = 5
+sendto = 100
+recvfrom = 100
+```
+
+### Integration with CI/CD
+
+```yaml
+# .github/workflows/performance.yml
+name: Performance Gates
+
+on: [push, pull_request]
+
+jobs:
+  performance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build with assertions
+        run: cargo build --release
+
+      - name: Run renacer validation
+        run: |
+          renacer validate --config renacer.toml
+          renacer compare --baseline baseline.json --report pr-perf.md
+
+      - name: Upload performance report
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-report
+          path: pr-perf.md
+
+      - name: Comment on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const report = fs.readFileSync('pr-perf.md', 'utf8');
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: report
+            });
+```
+
+### Profiling Integration
+
+Use renacer with profiling tools for detailed analysis:
+
+```bash
+# Generate syscall trace
+renacer profile --trace syscalls ./target/release/my-cli
+
+# Analyze allocation patterns
+renacer profile --trace allocations ./target/release/my-cli
+
+# Compare against baseline
+renacer diff baseline.trace current.trace --format markdown
+```
+
+Output:
+```markdown
+## Syscall Comparison
+
+| Syscall | Baseline | Current | Delta |
+|---------|----------|---------|-------|
+| read    | 45       | 12      | -73%  |
+| write   | 23       | 8       | -65%  |
+| mmap    | 156      | 4       | -97%  |
+| **Total** | **1,203** | **89** | **-93%** |
+```
+
 ## See Also
 
 - [Compiler-in-the-Loop Learning Theory](../ml-fundamentals/compiler-in-the-loop.md)

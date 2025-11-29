@@ -50,6 +50,26 @@ ACO is a swarm intelligence algorithm inspired by how real ants find shortest pa
 cargo run --example aco_tsp
 ```
 
+## Using the aprender-tsp Crate
+
+For production TSP solving, use the dedicated `aprender-tsp` crate which provides a CLI and model persistence:
+
+```bash
+# Install the CLI
+cargo install aprender-tsp
+
+# Train a model on TSPLIB instance
+aprender-tsp train berlin52.tsp -o berlin52.apr --algorithm aco --iterations 2000
+
+# Solve new instances with trained model
+aprender-tsp solve -m berlin52.apr new-instance.tsp
+
+# View model info
+aprender-tsp info berlin52.apr
+```
+
+Pre-trained POC models are available on Hugging Face: [paiml/aprender-tsp-poc](https://huggingface.co/paiml/aprender-tsp-poc)
+
 ## Code Walkthrough
 
 ### Setup

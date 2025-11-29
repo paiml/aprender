@@ -206,6 +206,7 @@
 - [Developer's Guide: Shell History Models](./examples/shell-history-developer-guide.md)
 - [Building Custom Error Classifiers](./examples/custom-error-classifier.md)
 - [Case Study: CITL Automated Program Repair](./examples/citl-automated-repair.md)
+- [Case Study: Batuta - Automated Migration to Aprender](./examples/batuta-integration.md)
 
 # Sprint-Based Development
 

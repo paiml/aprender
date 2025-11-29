@@ -44,14 +44,14 @@ Add aprender to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-aprender = "0.11"
+aprender = "0.13"
 ```
 
 ### Optional Features
 
 ```toml
 [dependencies]
-aprender = { version = "0.11", features = ["format-encryption", "hf-hub-integration"] }
+aprender = { version = "0.13", features = ["format-encryption", "hf-hub-integration"] }
 ```
 
 | Feature | Description |
@@ -118,6 +118,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 - **Time Series** — ARIMA forecasting
 - **Text Processing** — Tokenization, TF-IDF, stemming
 - **Neural Networks** — Sequential models, transformers, mixture of experts
+- **Metaheuristics** — ACO, Tabu Search, DE, PSO, GA, CMA-ES
+
+### Related Crates
+
+| Crate | Description |
+|-------|-------------|
+| [`aprender-tsp`](https://crates.io/crates/aprender-tsp) | TSP solver with CLI and `.apr` model persistence |
+| [`aprender-shell`](https://crates.io/crates/aprender-shell) | AI-powered shell completion trained on your history |
 
 ## Model Persistence
 

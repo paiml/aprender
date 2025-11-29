@@ -322,15 +322,15 @@ fn test_train_save_load_solve_workflow() {
 // ============================================================================
 
 #[test]
-fn test_aco_pheromone_seeding() {
+fn test_aco_solves_instance() {
     let instance = square_instance();
-    let seed_tour = vec![0, 1, 2, 3];
 
-    let mut solver = AcoSolver::new().with_seed(42);
-    solver.seed_pheromone_from_tour(&seed_tour, &instance, 2.0);
-
+    let mut solver = AcoSolver::new().with_seed(42).with_num_ants(10);
     let result = solver.solve(&instance, Budget::Iterations(50)).unwrap();
+
     assert!(instance.validate_tour(&result.tour).is_ok());
+    // Optimal tour around square is 4.0
+    assert!(result.length <= 5.0, "Length {} > 5.0", result.length);
 }
 
 #[test]

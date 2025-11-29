@@ -1,6 +1,6 @@
 NAME: eil51
 TYPE: TSP
-COMMENT: 51-city problem (Christofides/Eilon)
+COMMENT: 51-city problem (Christofides/Eilon). Optimal tour: 426
 DIMENSION: 51
 EDGE_WEIGHT_TYPE: EUC_2D
 NODE_COORD_SECTION

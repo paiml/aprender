@@ -162,6 +162,387 @@ Level 4: Complex trait bounds
 Level 5: Async/concurrent code patterns
 ```
 
+## Tiered Diagnostic Capture
+
+Modern CITL systems employ a **four-tier diagnostic architecture** that captures compiler feedback at multiple granularity levels:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                  FOUR-TIER DIAGNOSTICS                          │
+│                                                                 │
+│   Tier 1: ERROR-LEVEL (Must Fix)                               │
+│   ├── E0308: Type mismatch                                      │
+│   ├── E0382: Use of moved value                                 │
+│   └── E0597: Borrowed value doesn't live long enough            │
+│                                                                 │
+│   Tier 2: WARNING-LEVEL (Should Fix)                           │
+│   ├── unused_variables                                          │
+│   ├── dead_code                                                 │
+│   └── unreachable_patterns                                      │
+│                                                                 │
+│   Tier 3: CLIPPY LINTS (Style/Performance)                     │
+│   ├── clippy::unwrap_used                                       │
+│   ├── clippy::clone_on_copy                                     │
+│   └── clippy::manual_memcpy                                     │
+│                                                                 │
+│   Tier 4: SEMANTIC VALIDATION (Tests/Behavior)                 │
+│   ├── Test failures                                             │
+│   ├── Property violations                                       │
+│   └── Semantic equivalence checks                               │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Adaptive Tier Progression
+
+Training follows curriculum learning with adaptive tier progression:
+
+```rust
+struct TierProgression {
+    current_tier: u8,
+    tier_success_rate: [f64; 4],
+    promotion_threshold: f64,    // Default: 0.85 (85% success)
+}
+
+impl TierProgression {
+    fn should_promote(&self) -> bool {
+        self.tier_success_rate[self.current_tier as usize] >= self.promotion_threshold
+    }
+
+    fn next_tier(&mut self) {
+        if self.current_tier < 3 && self.should_promote() {
+            self.current_tier += 1;
+        }
+    }
+}
+```
+
+This ensures the model masters simpler error patterns before tackling complex scenarios.
+
+## Decision Traces
+
+CITL systems generate **decision traces** - structured records of every transformation decision made during transpilation. These traces enable:
+- Debugging transformation failures
+- Training fix predictors
+- Auditing code generation
+
+### Seven Decision Categories
+
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize)]
+enum DecisionCategory {
+    /// Type inference and mapping decisions
+    TypeMapping {
+        python_type: String,
+        rust_type: String,
+        confidence: f64,
+    },
+
+    /// Borrow vs owned strategy selection
+    BorrowStrategy {
+        variable: String,
+        strategy: BorrowKind,  // Owned, Borrowed, MutBorrowed
+        reason: String,
+    },
+
+    /// Lifetime inference and annotation
+    LifetimeInfer {
+        function: String,
+        inferred: Vec<String>,  // ['a, 'b, ...]
+        elision_applied: bool,
+    },
+
+    /// Error handling transformation
+    ErrorHandling {
+        python_pattern: String,  // try/except, assert, etc.
+        rust_pattern: String,    // Result, Option, panic!, etc.
+    },
+
+    /// Loop transformation decisions
+    LoopTransform {
+        python_construct: String,  // for, while, comprehension
+        rust_construct: String,    // for, loop, iter().map()
+        iterator_type: String,
+    },
+
+    /// Memory allocation strategy
+    MemoryAlloc {
+        pattern: String,        // list, dict, set
+        rust_type: String,      // Vec, HashMap, HashSet
+        capacity_hint: Option<usize>,
+    },
+
+    /// Concurrency model mapping
+    ConcurrencyMap {
+        python_pattern: String,  // threading, asyncio, multiprocessing
+        rust_pattern: String,    // std::thread, tokio, rayon
+    },
+}
+```
+
+### Decision Trace Format
+
+Traces are stored as memory-mapped files for efficient streaming:
+
+```rust
+struct DecisionTrace {
+    /// Lamport timestamp for causal ordering
+    lamport_clock: u64,
+
+    /// Source location (file:line:col)
+    source_span: SourceSpan,
+
+    /// Decision category and details
+    category: DecisionCategory,
+
+    /// Compiler feedback if transformation failed
+    compiler_result: Option<CompilerResult>,
+
+    /// Parent decision (for tree structure)
+    parent_id: Option<TraceId>,
+}
+
+// Efficient binary format for streaming
+impl DecisionTrace {
+    fn to_bytes(&self) -> Vec<u8>;
+    fn from_bytes(data: &[u8]) -> Result<Self, DecodeError>;
+}
+```
+
+### Error-Decision Correlation
+
+The system learns correlations between decisions and compiler errors:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│              ERROR-DECISION CORRELATION                         │
+│                                                                 │
+│   Error E0308 (Type Mismatch) correlates with:                 │
+│     - TypeMapping decisions (92% correlation)                   │
+│     - ErrorHandling decisions (73% correlation)                 │
+│                                                                 │
+│   Error E0382 (Use of Moved Value) correlates with:            │
+│     - BorrowStrategy decisions (89% correlation)               │
+│     - LoopTransform decisions (67% correlation)                │
+│                                                                 │
+│   Error E0597 (Lifetime) correlates with:                      │
+│     - LifetimeInfer decisions (95% correlation)                │
+│     - BorrowStrategy decisions (81% correlation)               │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+## Oracle Query Loop
+
+The **Oracle Query Loop** is a key advancement in CITL systems - it enables models to persist learned patterns and query them for new transformations.
+
+### .apr Model Persistence
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    ORACLE QUERY LOOP                            │
+│                                                                 │
+│   ┌──────────┐    ┌───────────┐    ┌──────────────────┐        │
+│   │  Source  │───►│ Transform │───►│ Query Oracle     │        │
+│   │   Code   │    │           │    │ (trained.apr)    │        │
+│   └──────────┘    └───────────┘    └────────┬─────────┘        │
+│                                              │                  │
+│                         ┌────────────────────┘                  │
+│                         ▼                                       │
+│   ┌─────────────────────────────────────────────────────┐      │
+│   │              .apr Model File                         │      │
+│   │                                                      │      │
+│   │   • Decision pattern embeddings                      │      │
+│   │   • Error→Fix mappings with confidence               │      │
+│   │   • Tier progression state                           │      │
+│   │   • CRC32 integrity checksum                         │      │
+│   └─────────────────────────────────────────────────────┘      │
+│                         │                                       │
+│                         ▼                                       │
+│   ┌──────────────┐    ┌───────────────┐    ┌────────────┐      │
+│   │ Apply Best   │───►│   Compile     │───►│  Success/  │      │
+│   │    Fix       │    │   & Verify    │    │   Retry    │      │
+│   └──────────────┘    └───────────────┘    └────────────┘      │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Oracle File Format
+
+```rust
+/// .apr file structure with versioned header
+struct OracleModel {
+    header: OracleHeader,
+    decision_embeddings: Vec<DecisionEmbedding>,
+    error_fix_mappings: HashMap<ErrorCode, Vec<FixStrategy>>,
+    tier_state: TierProgression,
+    checksum: u32,  // CRC32
+}
+
+struct OracleHeader {
+    magic: [u8; 4],      // "AORC" (Aprender ORaCle)
+    version: u16,        // Format version
+    created_at: u64,     // Unix timestamp
+    training_samples: u64,
+}
+```
+
+### Query API
+
+```rust
+// Query the oracle for fix suggestions
+let oracle = OracleModel::load("trained.apr")?;
+
+let suggestion = oracle.query(
+    error_code: "E0308",
+    error_context: "expected `i32`, found `String`",
+    decision_history: &recent_decisions,
+)?;
+
+// Returns ranked fix strategies
+for fix in suggestion.ranked_fixes {
+    println!("Fix: {} (confidence: {:.1}%)",
+             fix.description,
+             fix.confidence * 100.0);
+}
+```
+
+### Hybrid Retrieval (Sparse + Dense)
+
+For large pattern libraries, the oracle uses hybrid retrieval combining:
+
+1. **Sparse retrieval**: BM25 on error message text
+2. **Dense retrieval**: Cosine similarity on decision embeddings
+
+```rust
+struct HybridRetriever {
+    bm25_index: BM25Index,
+    embedding_index: VectorIndex,
+    alpha: f64,  // Weight for sparse vs dense (default: 0.5)
+}
+
+impl HybridRetriever {
+    fn retrieve(&self, query: &Query, k: usize) -> Vec<FixCandidate> {
+        let sparse_scores = self.bm25_index.search(&query.text, k * 2);
+        let dense_scores = self.embedding_index.search(&query.embedding, k * 2);
+
+        // Reciprocal rank fusion
+        self.fuse_rankings(sparse_scores, dense_scores, k)
+    }
+}
+```
+
+## Golden Traces and Semantic Equivalence
+
+Beyond syntactic compilation, CITL systems validate **semantic equivalence** between source and target programs using golden traces.
+
+### Golden Traces with Lamport Clocks
+
+A **golden trace** captures the complete execution behavior of a program with causal ordering:
+
+```rust
+struct GoldenTrace {
+    /// Lamport timestamp for happens-before ordering
+    lamport_clock: u64,
+
+    /// Program execution events
+    events: Vec<ExecutionEvent>,
+
+    /// Syscall sequence for I/O equivalence
+    syscalls: Vec<SyscallRecord>,
+
+    /// Memory allocation pattern
+    allocations: Vec<AllocationEvent>,
+}
+
+#[derive(Debug)]
+enum ExecutionEvent {
+    FunctionEntry { name: String, args: Vec<Value> },
+    FunctionExit { name: String, result: Value },
+    VariableAssign { name: String, value: Value },
+    BranchTaken { condition: bool, location: SourceSpan },
+}
+
+struct SyscallRecord {
+    number: i64,        // syscall number
+    args: [u64; 6],     // arguments
+    result: i64,        // return value
+    timestamp: u64,     // Lamport clock
+}
+```
+
+### Syscall-Level Semantic Validation
+
+True semantic equivalence requires matching I/O behavior at the syscall level:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│              SYSCALL SEMANTIC VALIDATION                        │
+│                                                                 │
+│   Python Source          Transpiled Rust                        │
+│   ─────────────          ───────────────                        │
+│   open("f.txt")    ═══►  std::fs::File::open("f.txt")          │
+│   ↓                      ↓                                      │
+│   openat(AT_FDCWD,       openat(AT_FDCWD,                       │
+│          "f.txt", ...)           "f.txt", ...)                  │
+│                                                                 │
+│   read(fd, buf, n) ═══►  file.read(&mut buf)                   │
+│   ↓                      ↓                                      │
+│   read(3, ptr, 4096)     read(3, ptr, 4096)                     │
+│                                                                 │
+│   close(fd)        ═══►  drop(file)                            │
+│   ↓                      ↓                                      │
+│   close(3)               close(3)                               │
+│                                                                 │
+│   VERDICT: ✅ SEMANTICALLY EQUIVALENT                           │
+│   (Same syscall sequence with compatible arguments)             │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Performance Metrics from Real-World Transpilation
+
+Syscall-level validation reveals optimization opportunities:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│              REAL-WORLD PERFORMANCE GAINS                       │
+│                                                                 │
+│   Metric                    Python    Rust      Improvement     │
+│   ────────────────────────  ──────    ────      ───────────     │
+│   Total syscalls            185,432   10,073    18.4× fewer     │
+│   Memory allocations        45,231    2,891     15.6× fewer     │
+│   Context switches          1,203     89        13.5× fewer     │
+│   Peak RSS (MB)             127.4     23.8      5.4× smaller    │
+│   Wall clock time (s)       4.23      0.31      13.6× faster    │
+│                                                                 │
+│   Source: reprorusted-python-cli benchmark suite                │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Trace Comparison Algorithm
+
+```rust
+fn compare_traces(golden: &GoldenTrace, actual: &GoldenTrace) -> EquivalenceResult {
+    // 1. Check syscall sequence equivalence (relaxed ordering)
+    let syscall_match = compare_syscalls_relaxed(
+        &golden.syscalls,
+        &actual.syscalls
+    );
+
+    // 2. Check function call/return equivalence
+    let function_match = compare_function_events(
+        &golden.events,
+        &actual.events
+    );
+
+    // 3. Check observable state at program end
+    let state_match = compare_final_state(golden, actual);
+
+    EquivalenceResult {
+        semantically_equivalent: syscall_match && function_match && state_match,
+        syscall_reduction: compute_reduction(&golden.syscalls, &actual.syscalls),
+        performance_improvement: compute_perf_improvement(golden, actual),
+    }
+}
+```
+
 ## Practical Example: Depyler Oracle
 
 The **depyler** Python-to-Rust transpiler demonstrates CITL in practice:

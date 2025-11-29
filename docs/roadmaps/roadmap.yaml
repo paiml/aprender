@@ -1190,6 +1190,34 @@ roadmap:
   labels:
   - enhancement
   notes: null
+- id: aprender-tsp-v0.1.0
+  github_issue: null
+  item_type: task
+  title: 'release: aprender-tsp v0.1.0 - TSP solver with ACO, Tabu, GA, Hybrid and HuggingFace POC models'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2025-11-29T12:00:00.000000000+00:00
+  updated: 2025-11-29T18:00:00.000000000+00:00
+  spec: null
+  acceptance_criteria:
+  - ACO solver using core aprender::metaheuristics::AntColony
+  - Tabu Search with 2-opt moves
+  - Genetic Algorithm with order crossover
+  - Hybrid solver combining GA + Tabu + ACO
+  - TSPLIB parser with ATT distance formula fix
+  - Model persistence with .apr binary format
+  - CLI with train/solve/benchmark/info commands
+  - POC models published to HuggingFace (paiml/aprender-tsp-poc)
+  - 142 tests (105 unit + 22 integration + 15 property)
+  - Published to crates.io
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - release
+  - metaheuristics
+  notes: null
 - id: GH-80
   github_issue: 80
   item_type: epic

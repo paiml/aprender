@@ -39,10 +39,31 @@ fmt:
 fmt-check:
 	cargo fmt --all -- --check
 
-# Generate coverage report (requires cargo-llvm-cov)
+# Generate coverage report (bashrs-style, requires cargo-llvm-cov)
+# This follows the established pattern from bashrs for reliable coverage generation
 coverage:
-	cargo llvm-cov --all-features --html
-	@echo "Coverage report: target/llvm-cov/html/index.html"
+	@echo "📊 Running coverage analysis..."
+	@which cargo-llvm-cov > /dev/null 2>&1 || (echo "📦 Installing cargo-llvm-cov..." && cargo install cargo-llvm-cov --locked)
+	@echo "🧹 Cleaning old coverage data..."
+	@cargo llvm-cov clean --workspace
+	@mkdir -p target/coverage
+	@echo "⚙️  Temporarily disabling global cargo config (mold breaks coverage)..."
+	@test -f ~/.cargo/config.toml && mv ~/.cargo/config.toml ~/.cargo/config.toml.cov-backup || true
+	@echo "🧪 Phase 1: Running tests with instrumentation..."
+	@cargo llvm-cov --no-report --all-features
+	@echo "📊 Phase 2: Generating coverage reports..."
+	@cargo llvm-cov report --html --output-dir target/coverage/html
+	@cargo llvm-cov report --lcov --output-path target/coverage/lcov.info
+	@echo "⚙️  Restoring global cargo config..."
+	@test -f ~/.cargo/config.toml.cov-backup && mv ~/.cargo/config.toml.cov-backup ~/.cargo/config.toml || true
+	@echo ""
+	@echo "📊 Coverage Summary:"
+	@cargo llvm-cov report --summary-only
+	@echo ""
+	@echo "💡 HTML report: target/coverage/html/index.html"
+
+coverage-summary:
+	@cargo llvm-cov report --summary-only 2>/dev/null || echo "Run 'make coverage' first"
 
 # Run criterion benchmarks
 bench:

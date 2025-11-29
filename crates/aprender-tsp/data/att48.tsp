@@ -1,6 +1,6 @@
 NAME: att48
 TYPE: TSP
-COMMENT: 48 capitals of the US (Padberg/Rinaldi)
+COMMENT: 48 capitals of the US (Padberg/Rinaldi). Optimal tour: 10628
 DIMENSION: 48
 EDGE_WEIGHT_TYPE: ATT
 NODE_COORD_SECTION
