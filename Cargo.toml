@@ -63,7 +63,7 @@ large_stack_arrays = "allow"  # ML tests often need large data arrays
 
 [package]
 name = "aprender"
-version = "0.13.0"
+version = "0.14.0"
 edition = "2021"
 rust-version = "1.70"
 authors = ["Noah Gift <noah@paiml.com>"]
@@ -123,7 +123,7 @@ dirs = { version = "6.0", optional = true }
 [dev-dependencies]
 proptest = "1.6"
 criterion = "0.5"
-renacer = "0.6.3"
+renacer = "0.6.6"
 tempfile = "3.14"  # For format module tests
 
 [features]

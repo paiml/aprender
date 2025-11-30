@@ -1,6 +1,6 @@
 [package]
 name = "aprender-tsp"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 authors = ["paiml"]
 description = "Local TSP optimization with personalized .apr models"
@@ -19,7 +19,7 @@ name = "aprender-tsp"
 path = "src/main.rs"
 
 [dependencies]
-aprender = { version = "0.13", path = "../.." }
+aprender = { version = "0.14", path = "../.." }
 clap = { version = "4", features = ["derive"] }
 rand = "0.8"
 crc32fast = "1.4"

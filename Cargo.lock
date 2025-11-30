@@ -4,27 +4,18 @@ version = 3
 
 [[package]]
 name = "addr2line"
-version = "0.24.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dfbe277e56a376000877090da837660b4427aad530e3028d44e0bffe4f89a1c1"
-dependencies = [
- "cpp_demangle",
- "fallible-iterator",
- "gimli 0.31.1",
- "memmap2",
- "object 0.36.7",
- "rustc-demangle",
- "smallvec",
- "typed-arena",
-]
-
-[[package]]
-name = "addr2line"
 version = "0.25.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1b5d307320b3181d6d7954e663bd7c774a838b8220fe0593c86d9fb09f498b4b"
 dependencies = [
- "gimli 0.32.3",
+ "cpp_demangle",
+ "fallible-iterator",
+ "gimli",
+ "memmap2",
+ "object 0.37.3",
+ "rustc-demangle",
+ "smallvec",
+ "typed-arena",
 ]
 
 [[package]]
@@ -232,15 +223,12 @@ dependencies = [
 
 [[package]]
 name = "aprender"
-version = "0.11.0"
+version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7e7969c89c4a4792d719736c6d3104d4bc44171a98ca9b3ff8efa79f8cfad74b"
+checksum = "2226e341203063cf1685ff3721aee5ea3b3d5459a0b658ad0328d244b646a038"
 dependencies = [
- "aes-gcm",
- "argon2",
  "bincode",
  "getrandom 0.2.16",
- "hkdf",
  "memmap2",
  "nalgebra",
  "rand 0.8.5",
@@ -248,15 +236,12 @@ dependencies = [
  "rmp-serde",
  "serde",
  "serde_json",
- "sha2",
  "trueno",
- "x25519-dalek",
- "zstd",
 ]
 
 [[package]]
 name = "aprender"
-version = "0.13.0"
+version = "0.14.0"
 dependencies = [
  "aes-gcm",
  "alimentar",
@@ -287,9 +272,9 @@ dependencies = [
 
 [[package]]
 name = "aprender-shell"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
- "aprender 0.11.0",
+ "aprender 0.14.0",
  "assert_cmd",
  "clap",
  "criterion",
@@ -304,9 +289,9 @@ dependencies = [
 
 [[package]]
 name = "aprender-tsp"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
- "aprender 0.13.0",
+ "aprender 0.14.0",
  "assert_cmd",
  "clap",
  "crc32fast",
@@ -612,7 +597,7 @@ version = "0.3.76"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bb531853791a215d7c62a30daf0dde835f381ab5de4589cfe7c649d2cbe92bd6"
 dependencies = [
- "addr2line 0.25.1",
+ "addr2line",
  "cfg-if",
  "libc",
  "miniz_oxide",
@@ -1558,20 +1543,14 @@ dependencies = [
 
 [[package]]
 name = "gimli"
-version = "0.31.1"
+version = "0.32.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "07e28edb80900c19c28f1072f2e8aeca7fa06b23cd4169cefe1af5aa3260783f"
+checksum = "e629b9b98ef3dd8afe6ca2bd0f89306cec16d43d907889945bc5d6687f2f13c7"
 dependencies = [
  "fallible-iterator",
  "indexmap",
  "stable_deref_trait",
 ]
-
-[[package]]
-name = "gimli"
-version = "0.32.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e629b9b98ef3dd8afe6ca2bd0f89306cec16d43d907889945bc5d6687f2f13c7"
 
 [[package]]
 name = "gl_generator"
@@ -2408,9 +2387,9 @@ dependencies = [
 
 [[package]]
 name = "nix"
-version = "0.29.0"
+version = "0.30.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "71e2746dc3a24dd78b3cfcb7be93368c6de9963d30f43a6a73998a9cf4b17b46"
+checksum = "74523f3a35e05aba87a1d978330aef40f67b0304ac79c1c00b294c9830543db6"
 dependencies = [
  "bitflags 2.10.0",
  "cfg-if",
@@ -2524,24 +2503,24 @@ dependencies = [
 
 [[package]]
 name = "object"
-version = "0.36.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "62948e14d923ea95ea2c7c86c71013138b66525b86bdc08d2dcc262bdb497b87"
-dependencies = [
- "flate2",
- "memchr",
- "ruzstd 0.7.3",
-]
-
-[[package]]
-name = "object"
 version = "0.37.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ff76201f031d8863c38aa7f905eca4f53abbfa15f609db4277d44cd8938f33fe"
 dependencies = [
  "flate2",
  "memchr",
- "ruzstd 0.8.2",
+ "ruzstd",
+]
+
+[[package]]
+name = "object"
+version = "0.38.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b8b28f24bd43920cd8e0bc4f9c6553e8b93221c512cb9a1014987fc89d36f830"
+dependencies = [
+ "flate2",
+ "memchr",
+ "ruzstd",
 ]
 
 [[package]]
@@ -3156,23 +3135,23 @@ checksum = "7a2d987857b319362043e95f5353c0535c1f58eec5336fdfcf626430af7def58"
 
 [[package]]
 name = "renacer"
-version = "0.6.3"
+version = "0.6.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "415e6481e90b7f1642ea53e8f827a13775b83603d784e0dbbe05364ffcc99c71"
+checksum = "25be85c52f0b233dfa5928ef9d26f96b96b08792270d356d3d7fc24dfcfa4f0b"
 dependencies = [
- "addr2line 0.24.2",
+ "addr2line",
  "anyhow",
- "aprender 0.7.1",
+ "aprender 0.13.0",
  "backtrace",
  "clap",
  "crossbeam",
  "fnv",
- "gimli 0.31.1",
+ "gimli",
  "hex",
  "libc",
  "memmap2",
  "nix",
- "object 0.37.3",
+ "object 0.38.0",
  "opentelemetry",
  "opentelemetry-otlp",
  "opentelemetry_sdk",
@@ -3374,15 +3353,6 @@ dependencies = [
  "quick-error",
  "tempfile",
  "wait-timeout",
-]
-
-[[package]]
-name = "ruzstd"
-version = "0.7.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fad02996bfc73da3e301efe90b1837be9ed8f4a462b6ed410aa35d00381de89f"
-dependencies = [
- "twox-hash 1.6.3",
 ]
 
 [[package]]
