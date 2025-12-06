@@ -6,7 +6,7 @@
 //! # Example
 //!
 //! ```
-//! use aprender::metaheuristics::{HyperoptSearch, Hyperparameter, Budget};
+//! use aprender::metaheuristics::{HyperoptSearch, Hyperparameter, HyperparameterSet, Budget};
 //!
 //! // Define hyperparameter search space
 //! let search = HyperoptSearch::new()

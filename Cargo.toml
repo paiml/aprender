@@ -63,7 +63,7 @@ large_stack_arrays = "allow"  # ML tests often need large data arrays
 
 [package]
 name = "aprender"
-version = "0.14.0"
+version = "0.14.1"
 edition = "2021"
 rust-version = "1.70"
 authors = ["Noah Gift <noah@paiml.com>"]
@@ -92,7 +92,7 @@ rand = "0.8"
 rayon = { version = "1.10", optional = true }
 
 # Core compute primitives - SIMD-accelerated tensor operations
-trueno = { version = "0.7.3", default-features = true }
+trueno = { version = "0.7.4", default-features = true }
 
 # Compression for .apr format (optional, spec §3.3)
 zstd = { version = "0.13", optional = true }
@@ -114,7 +114,7 @@ sha2 = { version = "0.10", optional = true }  # For HKDF-SHA256
 nalgebra = "0.33"
 
 # Data loading
-alimentar = { version = "0.1.0", optional = true }
+alimentar = { version = "0.2.2", optional = true }
 
 # Hugging Face Hub integration (optional, spec §11.8)
 hf-hub = { version = "0.4", optional = true, default-features = false, features = ["ureq"] }

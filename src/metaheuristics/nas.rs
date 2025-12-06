@@ -13,7 +13,7 @@
 //!     .with_max_layers(5)
 //!     .with_layer_types(vec![LayerType::Dense, LayerType::Conv2d, LayerType::Dropout])
 //!     .with_units_range(16, 512)
-//!     .with_activation_choices(vec!["relu", "tanh", "sigmoid"]);
+//!     .with_activation_choices(&["relu", "tanh", "sigmoid"]);
 //!
 //! // Create a random architecture
 //! let genome = NasGenome::random(&space, 42);
