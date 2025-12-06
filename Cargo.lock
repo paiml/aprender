@@ -204,24 +204,6 @@ dependencies = [
 
 [[package]]
 name = "aprender"
-version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2226e341203063cf1685ff3721aee5ea3b3d5459a0b658ad0328d244b646a038"
-dependencies = [
- "bincode",
- "getrandom 0.2.16",
- "memmap2",
- "nalgebra",
- "rand 0.8.5",
- "rayon",
- "rmp-serde",
- "serde",
- "serde_json",
- "trueno",
-]
-
-[[package]]
-name = "aprender"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9c2b4fbf4854f8427a8fd256cc8568992acbb678dacdfa4ca0be3427ad433fae"
@@ -3156,13 +3138,13 @@ checksum = "7a2d987857b319362043e95f5353c0535c1f58eec5336fdfcf626430af7def58"
 
 [[package]]
 name = "renacer"
-version = "0.6.6"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "25be85c52f0b233dfa5928ef9d26f96b96b08792270d356d3d7fc24dfcfa4f0b"
+checksum = "5a5e1d030bd7105468f4b9c221dcb76e7ad4e0146f84f70ebc25d3b2e275f0bc"
 dependencies = [
  "addr2line",
  "anyhow",
- "aprender 0.13.0",
+ "aprender 0.14.0",
  "backtrace",
  "clap",
  "crossbeam",

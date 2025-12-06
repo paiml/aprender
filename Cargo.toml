@@ -123,7 +123,7 @@ dirs = { version = "6.0", optional = true }
 [dev-dependencies]
 proptest = "1.6"
 criterion = "0.5"
-renacer = "0.6.6"
+renacer = "0.7.0"
 tempfile = "3.14"  # For format module tests
 
 [features]
