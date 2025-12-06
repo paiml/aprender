@@ -127,6 +127,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 | [`aprender-tsp`](https://crates.io/crates/aprender-tsp) | TSP solver with CLI and `.apr` model persistence |
 | [`aprender-shell`](https://crates.io/crates/aprender-shell) | AI-powered shell completion trained on your history |
 
+### Resources
+
+| Resource | Description |
+|----------|-------------|
+| [apr-cookbook](https://github.com/paiml/apr-cookbook) | 50+ idiomatic Rust examples for `.apr` format, WASM deployment, and SIMD acceleration |
+
 ## Model Persistence
 
 The `.apr` format provides secure, efficient model serialization:
