@@ -111,7 +111,7 @@ hkdf = { version = "0.12", optional = true }
 sha2 = { version = "0.10", optional = true }  # For HKDF-SHA256
 
 # Linear algebra for PCA eigendecomposition
-nalgebra = "0.33"
+nalgebra = "0.34"
 
 # Data loading
 alimentar = { version = "0.2.2", optional = true }
