@@ -19,7 +19,7 @@ name = "aprender-monte-carlo"
 path = "src/main.rs"
 
 [dependencies]
-aprender = { path = "../.." }
+aprender = "0.15"
 clap = { version = "4", features = ["derive"] }
 rand = "0.8"
 rand_chacha = "0.3"
