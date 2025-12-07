@@ -33,16 +33,18 @@ build:
 # ============================================================================
 
 # Fast tests (<30s): Uses nextest for parallelism if available
-# Pattern from bashrs: cargo-nextest + RUST_TEST_THREADS
+# Pattern from bashrs: cargo-nextest + PROPTEST_CASES + exclude slow tests
+# Excludes: prop_gbm_expected_value_convergence (46s alone!)
 test-fast: ## Fast unit tests (<30s target)
 	@echo "⚡ Running fast tests (target: <30s)..."
 	@if command -v cargo-nextest >/dev/null 2>&1; then \
-		time cargo nextest run --workspace --lib \
+		time env PROPTEST_CASES=50 cargo nextest run --workspace --lib \
 			--status-level skip \
-			--failure-output immediate; \
+			--failure-output immediate \
+			-E 'not test(/prop_gbm_expected_value_convergence/)'; \
 	else \
 		echo "💡 Install cargo-nextest for faster tests: cargo install cargo-nextest"; \
-		time cargo test --workspace --lib; \
+		time env PROPTEST_CASES=50 cargo test --workspace --lib -- --skip prop_gbm_expected_value_convergence; \
 	fi
 	@echo "✅ Fast tests passed"
 
@@ -160,9 +162,10 @@ tier4: tier3
 # CRITICAL: mold linker breaks LLVM coverage instrumentation
 # Solution: Temporarily move ~/.cargo/config.toml during coverage runs
 
-# Standard coverage (<5 min): Two-phase pattern with nextest
+# Standard coverage (<5 min): Two-phase pattern with nextest (bashrs style)
 # CRITICAL: --all-features is REQUIRED or feature-gated code won't compile
 # and coverage will show 0%. DO NOT REMOVE --all-features from the nextest call.
+# Uses PROPTEST_CASES=100 to limit property test iterations (bashrs pattern)
 coverage: ## Generate HTML coverage report (target: <5 min)
 	@echo "📊 Running coverage analysis (target: <5 min)..."
 	@echo "🔍 Checking for cargo-llvm-cov and cargo-nextest..."
@@ -174,7 +177,10 @@ coverage: ## Generate HTML coverage report (target: <5 min)
 	@cargo llvm-cov clean --workspace
 	@mkdir -p target/coverage
 	@echo "🧪 Phase 1: Running tests with instrumentation (no report)..."
-	@cargo llvm-cov --no-report nextest --no-tests=warn --workspace --no-fail-fast --all-features
+	@echo "   Using PROPTEST_CASES=100 for faster coverage (bashrs pattern)"
+	@echo "   Excluding slow property tests for faster coverage"
+	@env PROPTEST_CASES=100 cargo llvm-cov --no-report nextest --no-tests=warn --workspace --no-fail-fast --all-features \
+		-E 'not test(/prop_gbm_expected_value_convergence/)'
 	@echo "📊 Phase 2: Generating coverage reports..."
 	@cargo llvm-cov report --html --output-dir target/coverage/html
 	@cargo llvm-cov report --lcov --output-path target/coverage/lcov.info

@@ -1,0 +1,39 @@
+[package]
+name = "aprender-monte-carlo"
+version = "0.1.1"
+edition = "2021"
+authors = ["paiml"]
+description = "Monte Carlo simulations for finance, stock market, and business forecasting"
+license = "MIT"
+repository = "https://github.com/paiml/aprender"
+keywords = ["monte-carlo", "finance", "simulation", "risk", "forecasting"]
+categories = ["algorithms", "command-line-utilities", "science", "simulation"]
+readme = "README.md"
+
+[lib]
+name = "aprender_monte_carlo"
+path = "src/lib.rs"
+
+[[bin]]
+name = "aprender-monte-carlo"
+path = "src/main.rs"
+
+[dependencies]
+aprender = { path = "../.." }
+clap = { version = "4", features = ["derive"] }
+rand = "0.8"
+rand_chacha = "0.3"
+csv = "1.3"
+chrono = { version = "0.4", features = ["serde"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+[dev-dependencies]
+assert_cmd = "2"
+criterion = "0.5"
+predicates = "3"
+proptest = "1"
+tempfile = "3"
+
+[lints]
+workspace = true

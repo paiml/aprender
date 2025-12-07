@@ -680,7 +680,7 @@ impl PCA {
 
 impl Transformer for PCA {
     fn fit(&mut self, x: &Matrix<f32>) -> Result<()> {
-        use nalgebra::{DMatrix, SymmetricEigen};
+        use trueno::SymmetricEigen;
 
         let (n_samples, n_features) = x.shape();
 
@@ -719,30 +719,27 @@ impl Transformer for PCA {
             }
         }
 
-        // Convert to nalgebra for eigendecomposition
-        let cov_matrix = DMatrix::from_row_slice(n_features, n_features, &cov);
-        let eigen = SymmetricEigen::new(cov_matrix);
+        // Convert to trueno Matrix for eigendecomposition
+        let cov_matrix = trueno::Matrix::from_vec(n_features, n_features, cov)
+            .map_err(|e| format!("Failed to create covariance matrix: {e}"))?;
+        let eigen = SymmetricEigen::new(&cov_matrix)
+            .map_err(|e| format!("Eigendecomposition failed: {e}"))?;
 
-        // Get eigenvalues and eigenvectors
-        let eigenvalues = eigen.eigenvalues;
-        let eigenvectors = eigen.eigenvectors;
+        // trueno returns eigenvalues in descending order (largest first) - perfect for PCA
+        let eigenvalues = eigen.eigenvalues();
+        let eigenvectors = eigen.eigenvectors();
 
-        // Sort by eigenvalue (descending)
-        let mut indices: Vec<usize> = (0..n_features).collect();
-        indices.sort_by(|&a, &b| {
-            eigenvalues[b]
-                .partial_cmp(&eigenvalues[a])
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
-
-        // Select top n_components
+        // Select top n_components (already sorted descending)
         let mut components_data = vec![0.0; self.n_components * n_features];
         let mut explained_variance = vec![0.0; self.n_components];
 
-        for (i, &idx) in indices.iter().take(self.n_components).enumerate() {
-            explained_variance[i] = eigenvalues[idx];
+        for i in 0..self.n_components {
+            explained_variance[i] = eigenvalues[i];
             for j in 0..n_features {
-                components_data[i * n_features + j] = eigenvectors[(j, idx)];
+                // trueno eigenvectors: columns are eigenvectors, access with get(row, col)
+                components_data[i * n_features + j] = *eigenvectors
+                    .get(j, i)
+                    .ok_or_else(|| format!("Invalid eigenvector index ({j}, {i})"))?;
             }
         }
 

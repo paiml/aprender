@@ -2490,37 +2490,36 @@ impl SpectralClustering {
 
     /// Compute embedding via eigendecomposition.
     fn compute_embedding(&self, laplacian: &[f32], n_samples: usize) -> Result<Matrix<f32>> {
-        use nalgebra::{DMatrix, SymmetricEigen};
+        use trueno::SymmetricEigen;
 
-        // Convert to nalgebra matrix
-        let laplacian_matrix = DMatrix::from_row_slice(n_samples, n_samples, laplacian);
+        // Convert to trueno Matrix for eigendecomposition
+        let laplacian_matrix = trueno::Matrix::from_vec(n_samples, n_samples, laplacian.to_vec())
+            .map_err(|e| format!("Failed to create Laplacian matrix: {e}"))?;
 
-        // Eigendecomposition
-        let eigen = SymmetricEigen::new(laplacian_matrix);
+        // Eigendecomposition - trueno returns eigenvalues in descending order
+        let eigen = SymmetricEigen::new(&laplacian_matrix)
+            .map_err(|e| format!("Eigendecomposition failed: {e}"))?;
 
-        // Sort eigenvalues and get indices of k smallest
-        let mut eigen_pairs: Vec<(usize, f64)> = eigen
-            .eigenvalues
-            .iter()
-            .enumerate()
-            .map(|(i, &val)| (i, f64::from(val)))
-            .collect();
-        eigen_pairs.sort_by(|a, b| {
-            a.1.partial_cmp(&b.1)
-                .expect("Eigenvalues must be valid floats for comparison")
-        });
+        let eigenvalues = eigen.eigenvalues();
+        let eigenvectors = eigen.eigenvectors();
 
-        // Get k smallest eigenvectors
+        // Spectral clustering needs k smallest eigenvalues
+        // trueno returns descending order, so smallest are at the end
         let k = self.n_clusters;
-        let smallest_indices: Vec<usize> = eigen_pairs.iter().take(k).map(|(i, _)| *i).collect();
+        let n = eigenvalues.len();
+
+        // Indices of k smallest eigenvalues (from end of descending list)
+        let smallest_indices: Vec<usize> = (n.saturating_sub(k)..n).collect();
 
         let mut embedding_data = Vec::with_capacity(n_samples * k);
 
         // Build embedding matrix in row-major order
         for row_idx in 0..n_samples {
             for &col_idx in &smallest_indices {
-                let eigenvector = eigen.eigenvectors.column(col_idx);
-                embedding_data.push(eigenvector[row_idx]);
+                let val = *eigenvectors
+                    .get(row_idx, col_idx)
+                    .ok_or_else(|| format!("Invalid eigenvector index ({row_idx}, {col_idx})"))?;
+                embedding_data.push(val);
             }
         }
 

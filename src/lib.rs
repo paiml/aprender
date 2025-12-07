@@ -33,6 +33,7 @@
 //! - [`data`]: DataFrame for named columns
 //! - [`linear_model`]: Linear regression algorithms
 //! - [`cluster`]: Clustering algorithms (K-Means)
+//! - [`code`]: Code analysis and code2vec embeddings
 //! - [`classification`]: Classification algorithms (Logistic Regression)
 //! - [`tree`]: Decision tree classifiers
 //! - [`metrics`]: Evaluation metrics
@@ -66,6 +67,7 @@ pub mod chaos;
 pub mod citl;
 pub mod classification;
 pub mod cluster;
+pub mod code;
 pub mod data;
 pub mod decomposition;
 pub mod ensemble;
@@ -85,6 +87,7 @@ pub mod metaheuristics;
 pub mod metrics;
 pub mod mining;
 pub mod model_selection;
+pub mod monte_carlo;
 pub mod nn;
 pub mod optim;
 pub mod prelude;

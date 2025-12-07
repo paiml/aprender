@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "crates/aprender-shell", "crates/aprender-tsp"]
+members = [".", "crates/aprender-shell", "crates/aprender-tsp", "crates/aprender-monte-carlo"]
 
 [workspace.lints.rust]
 # Safety
@@ -63,7 +63,7 @@ large_stack_arrays = "allow"  # ML tests often need large data arrays
 
 [package]
 name = "aprender"
-version = "0.14.1"
+version = "0.15.0"
 edition = "2021"
 rust-version = "1.70"
 authors = ["Noah Gift <noah@paiml.com>"]
@@ -87,12 +87,13 @@ rmp-serde = "1.3"  # MessagePack for .apr metadata (spec §2)
 
 # Random number generation for model_selection
 rand = "0.8"
+rand_chacha = "0.3"  # ChaCha20 PRNG for Monte Carlo simulations
 
 # Parallelization for graph algorithms (optional for WASM compatibility)
 rayon = { version = "1.10", optional = true }
 
 # Core compute primitives - SIMD-accelerated tensor operations
-trueno = { version = "0.7.4", default-features = true }
+trueno = { version = "0.8.0", default-features = true }
 
 # Compression for .apr format (optional, spec §3.3)
 zstd = { version = "0.13", optional = true }
@@ -110,9 +111,6 @@ x25519-dalek = { version = "2.0", optional = true, default-features = false, fea
 hkdf = { version = "0.12", optional = true }
 sha2 = { version = "0.10", optional = true }  # For HKDF-SHA256
 
-# Linear algebra for PCA eigendecomposition
-nalgebra = "0.33"
-
 # Data loading
 alimentar = { version = "0.2.2", optional = true }
 
@@ -123,7 +121,7 @@ dirs = { version = "6.0", optional = true }
 [dev-dependencies]
 proptest = "1.6"
 criterion = "0.5"
-renacer = "0.6.6"
+renacer = "0.7"
 tempfile = "3.14"  # For format module tests
 
 [features]

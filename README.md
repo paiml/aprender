@@ -1,3 +1,5 @@
+<div align="center">
+
 <p align="center">
   <img src=".github/apr-format-hero.svg" alt="aprender" width="800">
 </p>
@@ -14,6 +16,8 @@
   <a href="https://github.com/paiml/aprender/actions/workflows/ci.yml"><img src="https://github.com/paiml/aprender/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License"></a>
 </p>
+
+</div>
 
 ---
 

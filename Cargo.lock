@@ -204,49 +204,25 @@ dependencies = [
 
 [[package]]
 name = "aprender"
-version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2226e341203063cf1685ff3721aee5ea3b3d5459a0b658ad0328d244b646a038"
-dependencies = [
- "bincode",
- "getrandom 0.2.16",
- "memmap2",
- "nalgebra",
- "rand 0.8.5",
- "rayon",
- "rmp-serde",
- "serde",
- "serde_json",
- "trueno",
-]
-
-[[package]]
-name = "aprender"
-version = "0.14.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9c2b4fbf4854f8427a8fd256cc8568992acbb678dacdfa4ca0be3427ad433fae"
-dependencies = [
- "aes-gcm",
- "argon2",
- "bincode",
- "getrandom 0.2.16",
- "hkdf",
- "memmap2",
- "nalgebra",
- "rand 0.8.5",
- "rayon",
- "rmp-serde",
- "serde",
- "serde_json",
- "sha2",
- "trueno",
- "x25519-dalek",
- "zstd",
-]
-
-[[package]]
-name = "aprender"
 version = "0.14.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e8e0b13c241caeb17671b3856f245245cefed465b4737d38782addd67c065faf"
+dependencies = [
+ "bincode",
+ "getrandom 0.2.16",
+ "memmap2",
+ "nalgebra",
+ "rand 0.8.5",
+ "rayon",
+ "rmp-serde",
+ "serde",
+ "serde_json",
+ "trueno 0.7.4",
+]
+
+[[package]]
+name = "aprender"
+version = "0.15.0"
 dependencies = [
  "aes-gcm",
  "alimentar",
@@ -260,9 +236,9 @@ dependencies = [
  "hf-hub",
  "hkdf",
  "memmap2",
- "nalgebra",
  "proptest",
  "rand 0.8.5",
+ "rand_chacha 0.3.1",
  "rayon",
  "renacer",
  "rmp-serde",
@@ -270,16 +246,35 @@ dependencies = [
  "serde_json",
  "sha2",
  "tempfile",
- "trueno",
+ "trueno 0.8.0",
  "x25519-dalek",
  "zstd",
 ]
 
 [[package]]
-name = "aprender-shell"
-version = "0.2.1"
+name = "aprender-monte-carlo"
+version = "0.1.1"
 dependencies = [
- "aprender 0.14.0",
+ "aprender 0.15.0",
+ "assert_cmd",
+ "chrono",
+ "clap",
+ "criterion",
+ "csv",
+ "predicates",
+ "proptest",
+ "rand 0.8.5",
+ "rand_chacha 0.3.1",
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
+name = "aprender-shell"
+version = "0.2.2"
+dependencies = [
+ "aprender 0.15.0",
  "assert_cmd",
  "clap",
  "criterion",
@@ -294,9 +289,9 @@ dependencies = [
 
 [[package]]
 name = "aprender-tsp"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
- "aprender 0.14.0",
+ "aprender 0.15.0",
  "assert_cmd",
  "clap",
  "crc32fast",
@@ -613,9 +608,9 @@ checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
 name = "base64ct"
-version = "1.8.0"
+version = "1.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "55248b47b0caf0546f7988906588779981c43bb1bc9d0c44087278f80cdb44ba"
+checksum = "0e050f626429857a27ddccb31e0aca21356bfa709c04041aefddac081a8f068a"
 
 [[package]]
 name = "bincode"
@@ -755,9 +750,9 @@ checksum = "37b2a672a2cb129a2e41c10b1224bb368f9f37a2b16b612598138befd7b37eb5"
 
 [[package]]
 name = "cc"
-version = "1.2.48"
+version = "1.2.49"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c481bdbf0ed3b892f6f806287d72acd515b352a4ec27a208489b8c1bc839633a"
+checksum = "90583009037521a116abf44494efecd645ba48b6622457080f080b85544e2215"
 dependencies = [
  "find-msvc-tools",
  "jobserver",
@@ -1356,9 +1351,9 @@ dependencies = [
 
 [[package]]
 name = "flate2"
-version = "1.1.7"
+version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a2152dbcb980c05735e2a651d96011320a949eb31a0c8b38b72645ce97dec676"
+checksum = "bfe33edd8e85a12a67454e37f8c75e730830d83e313556ab9ebf9ee7fbeb3bfb"
 dependencies = [
  "crc32fast",
  "miniz_oxide",
@@ -3156,13 +3151,13 @@ checksum = "7a2d987857b319362043e95f5353c0535c1f58eec5336fdfcf626430af7def58"
 
 [[package]]
 name = "renacer"
-version = "0.6.6"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "25be85c52f0b233dfa5928ef9d26f96b96b08792270d356d3d7fc24dfcfa4f0b"
+checksum = "5a5e1d030bd7105468f4b9c221dcb76e7ad4e0146f84f70ebc25d3b2e275f0bc"
 dependencies = [
  "addr2line",
  "anyhow",
- "aprender 0.13.0",
+ "aprender 0.14.1",
  "backtrace",
  "clap",
  "crossbeam",
@@ -3187,7 +3182,7 @@ dependencies = [
  "toml",
  "tracing",
  "tracing-subscriber",
- "trueno",
+ "trueno 0.7.4",
  "trueno-db",
  "trueno-graph",
 ]
@@ -3598,9 +3593,9 @@ checksum = "7a2ae44ef20feb57a68b23d846850f861394c2e02dc425a50098ae8c90267589"
 
 [[package]]
 name = "slotmap"
-version = "1.1.0"
+version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "811fec94324ff439b2d5e4a1cf88cc5b6c09d92358715d600b2fe91c0489b5cb"
+checksum = "bdd58c3c93c3d278ca835519292445cb4b0d4dc59ccfdf7ceadaab3f8aeb4038"
 dependencies = [
  "version_check",
 ]
@@ -4084,6 +4079,15 @@ version = "0.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f7aebc0cbf927eb1b4fe90ae21770681c1421f3d72e90d91ab1c4dfedfc125e1"
 dependencies = [
+ "thiserror 2.0.17",
+]
+
+[[package]]
+name = "trueno"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f127ae5346273b160eb01480022bd70a46207ed9ff54b534b78c27977390dc52"
+dependencies = [
  "bytemuck",
  "futures-intrusive",
  "pollster",
@@ -4114,7 +4118,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
- "trueno",
+ "trueno 0.7.4",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
@@ -4127,12 +4131,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f94d040235744a91e756fc23f16dcc0ead90cbd6effe0f3d2144cc95e0c27d32"
 dependencies = [
  "anyhow",
- "aprender 0.14.0",
+ "aprender 0.14.1",
  "arrow",
  "parquet",
  "thiserror 1.0.69",
  "tokio",
- "trueno",
+ "trueno 0.7.4",
  "trueno-db",
 ]
 
