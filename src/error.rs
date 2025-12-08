@@ -197,6 +197,26 @@ impl From<String> for AprenderError {
     }
 }
 
+impl AprenderError {
+    /// Create a dimension mismatch error with descriptive context
+    pub fn dimension_mismatch(context: &str, expected: usize, actual: usize) -> Self {
+        Self::DimensionMismatch {
+            expected: format!("{context}={expected}"),
+            actual: format!("{actual}"),
+        }
+    }
+
+    /// Create an index out of bounds error
+    pub fn index_out_of_bounds(index: usize, len: usize) -> Self {
+        Self::Other(format!("index {index} out of bounds (len={len})"))
+    }
+
+    /// Create an empty input error
+    pub fn empty_input(context: &str) -> Self {
+        Self::Other(format!("empty input: {context}"))
+    }
+}
+
 #[allow(clippy::cmp_owned)]
 impl PartialEq<&str> for AprenderError {
     fn eq(&self, other: &&str) -> bool {

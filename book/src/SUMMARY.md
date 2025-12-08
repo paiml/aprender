@@ -104,6 +104,7 @@
 ## Learning Paradigms
 
 - [Compiler-in-the-Loop Learning](./ml-fundamentals/compiler-in-the-loop.md)
+- [Online Learning Theory](./ml-fundamentals/online-learning.md)
 
 ## Preprocessing
 
@@ -208,6 +209,14 @@
 - [Building Custom Error Classifiers](./examples/custom-error-classifier.md)
 - [Case Study: CITL Automated Program Repair](./examples/citl-automated-repair.md)
 - [Case Study: Batuta - Automated Migration to Aprender](./examples/batuta-integration.md)
+- [Case Study: Online Learning and Dynamic Retraining](./examples/online-learning.md)
+- [Case Study: APR Loading Modes](./examples/apr-loading-modes.md)
+- [Case Study: APR Model Inspection](./examples/apr-inspection.md)
+- [Case Study: APR 100-Point Quality Scoring](./examples/apr-scoring.md)
+- [Case Study: APR Model Cache](./examples/apr-cache.md)
+- [Case Study: APR Data Embedding](./examples/apr-embed.md)
+- [Case Study: Model Zoo](./examples/model-zoo.md)
+- [Case Study: Sovereign AI Stack Integration](./examples/sovereign-stack.md)
 
 # Sprint-Based Development
 

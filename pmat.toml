@@ -24,7 +24,7 @@ warn_on_missing_docs = true
 
 [analysis]
 # Include patterns
-include = ["src/**/*.rs"]
+include = ["src/**/*.rs", "crates/**/*.rs"]
 
-# Exclude patterns
-exclude = ["target/**", "benches/**"]
+# Exclude patterns (generated files, build artifacts)
+exclude = ["target/**", "benches/**", "book/book/**"]

@@ -63,7 +63,7 @@ large_stack_arrays = "allow"  # ML tests often need large data arrays
 
 [package]
 name = "aprender"
-version = "0.15.0"
+version = "0.16.0"
 edition = "2021"
 rust-version = "1.70"
 authors = ["Noah Gift <noah@paiml.com>"]
@@ -93,7 +93,7 @@ rand_chacha = "0.3"  # ChaCha20 PRNG for Monte Carlo simulations
 rayon = { version = "1.10", optional = true }
 
 # Core compute primitives - SIMD-accelerated tensor operations
-trueno = { version = "0.8.0", default-features = true }
+trueno = { version = "0.8.1", default-features = true }
 
 # Compression for .apr format (optional, spec §3.3)
 zstd = { version = "0.13", optional = true }

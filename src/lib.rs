@@ -54,13 +54,25 @@
 //! - [`recommend`]: Recommendation systems (content-based, collaborative filtering)
 //! - [`synthetic`]: Synthetic data generation for AutoML (EDA, back-translation, MixUp)
 //! - [`bundle`]: Model bundling and memory paging for large models
+//! - [`cache`]: Cache hierarchy and model registry for large model management
 //! - [`chaos`]: Chaos engineering configuration (from renacer)
+//! - [`inspect`]: Model inspection tooling (header analysis, diff, quality scoring)
+//! - [`loading`]: Model loading subsystem with WCET and cryptographic agility
+//! - [`scoring`]: 100-point model quality scoring system
+//! - [`zoo`]: Model zoo protocol for sharing and discovery
+//! - [`embed`]: Data embedding with test data and tiny model representations
+//! - [`native`]: SIMD-native model format for zero-copy inference
+//! - [`stack`]: Sovereign AI Stack integration types
+//! - [`online`]: Online learning and dynamic retraining infrastructure
 
 pub mod active_learning;
 pub mod autograd;
 pub mod automl;
 pub mod bayesian;
+/// Model evaluation and benchmarking framework (spec §7.10)
+pub mod bench;
 pub mod bundle;
+pub mod cache;
 pub mod calibration;
 pub mod chaos;
 /// Compiler-in-the-Loop Learning (CITL) for transpiler support.
@@ -70,6 +82,8 @@ pub mod cluster;
 pub mod code;
 pub mod data;
 pub mod decomposition;
+/// Data embedding with test data and tiny model representations (spec §4)
+pub mod embed;
 pub mod ensemble;
 pub mod error;
 pub mod format;
@@ -80,22 +94,36 @@ pub mod graph;
 #[cfg(feature = "hf-hub-integration")]
 pub mod hf_hub;
 pub mod index;
+/// Model inspection tooling (spec §7.2)
+pub mod inspect;
 pub mod interpret;
 pub mod linear_model;
+/// Model loading subsystem with WCET and cryptographic agility (spec §7.1)
+pub mod loading;
 pub mod loss;
 pub mod metaheuristics;
 pub mod metrics;
 pub mod mining;
 pub mod model_selection;
 pub mod monte_carlo;
+/// SIMD-native model format for zero-copy Trueno inference (spec §5)
+pub mod native;
 pub mod nn;
+/// Online learning and dynamic retraining infrastructure
+pub mod online;
 pub mod optim;
 pub mod prelude;
 pub mod preprocessing;
 pub mod primitives;
+/// Model Quality Assurance module (spec §7.9)
+pub mod qa;
 pub mod recommend;
 pub mod regularization;
+/// 100-point model quality scoring system (spec §7)
+pub mod scoring;
 pub mod serialization;
+/// Sovereign AI Stack integration types (spec §9)
+pub mod stack;
 pub mod stats;
 pub mod synthetic;
 pub mod text;
@@ -104,6 +132,8 @@ pub mod traits;
 pub mod transfer;
 pub mod tree;
 pub mod weak_supervision;
+/// Model zoo protocol for sharing and discovery (spec §8)
+pub mod zoo;
 
 pub use error::{AprenderError, Result};
 pub use primitives::{Matrix, Vector};

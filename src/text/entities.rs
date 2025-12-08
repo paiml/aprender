@@ -250,7 +250,7 @@ impl EntityExtractor {
     /// Check if string looks like a phone number.
     #[allow(clippy::unused_self)]
     fn is_phone_number(&self, s: &str) -> bool {
-        // Pattern: XXX-XXX-XXXX or (XXX) XXX-XXXX
+        // Phone formats: 123-456-7890 or (123) 456-7890
         let digits: String = s.chars().filter(char::is_ascii_digit).collect();
 
         // Must have 10 digits

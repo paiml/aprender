@@ -7,6 +7,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.0] - 2025-12-08
+
+### Added
+
+#### Online Learning Module (`online`)
+- **StreamingClassifier**: Incremental learning for classification
+- **StreamingRegressor**: Incremental learning for regression
+- **OnlineLearner** trait: Unified interface for streaming ML
+
+#### Model Inspection & Debugging (`inspect`)
+- **ModelInspector**: Introspect model architecture and weights
+- **DiffViewer**: Compare model versions and track changes
+- **DebugSession**: Interactive debugging for model behavior
+
+#### Model Caching (`cache`)
+- **ModelCache**: LRU cache for loaded models
+- **CachePolicy**: Configurable eviction strategies
+- Reduces memory churn in production deployments
+
+#### Embedding Module (`embed`)
+- **TinyEmbed**: Lightweight text embeddings for NLP
+- Quantized models for edge deployment
+
+#### Model Scoring (`scoring`)
+- **ModelScorer**: Unified scoring interface
+- **ScoringPipeline**: Batch inference optimization
+
+#### Loading Modes (`loading`)
+- **LazyLoader**: On-demand weight loading
+- **StreamingLoader**: Memory-efficient large model loading
+- **MmapLoader**: Memory-mapped model files
+
+#### Sovereign Stack (`stack`)
+- **SovereignStack**: Full ML pipeline abstraction
+- Training, validation, and deployment in one interface
+
+#### Model Zoo (`zoo`)
+- **ModelRegistry**: Browse and load pre-trained models
+- Integration with Hugging Face Hub
+
+#### Benchmarking (`bench`)
+- **ParetoFrontier**: Multi-objective optimization analysis
+- **Py2RsBenchmark**: Compare Python vs Rust performance
+
+### Changed
+- Updated trueno dependency from 0.8.0 to 0.8.1
+
+### Quality
+- 3,782 tests passing
+- Comprehensive QA checklists added (100-point verification)
+- Toyota Way review documentation for new modules
+
+## [0.15.0] - 2025-12-07
+
+### Changed
+- Removed nalgebra dependency in favor of trueno 0.8.0 SymmetricEigen
+- All eigendecomposition now uses trueno's native implementation
+
+## [0.14.1] - 2025-12-06
+
+### Fixed
+- Minor bug fixes and stability improvements
+
 ## [0.13.0] - 2025-11-29
 
 ### Added

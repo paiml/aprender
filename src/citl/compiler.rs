@@ -504,9 +504,8 @@ impl RustCompiler {
         let output = cmd.output()?;
         let duration = start.elapsed();
 
-        // Clean up temp file
-        let _ = std::fs::remove_file(&source_file);
-        let _ = std::fs::remove_file(temp_dir.join("citl_output"));
+        std::fs::remove_file(&source_file).ok();
+        std::fs::remove_file(temp_dir.join("citl_output")).ok();
 
         let stderr = String::from_utf8_lossy(&output.stderr).to_string();
         let (errors, warnings) = self.parse_json_diagnostics(&stderr);

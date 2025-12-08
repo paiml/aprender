@@ -4112,8 +4112,8 @@ mod proptests {
 
 // ============================================================================
 // Encryption Property Tests (EXTREME TDD - Security Critical)
-// NOTE: These tests are slow due to Argon2id. Use only 3 cases by default.
-// For comprehensive testing: PROPTEST_CASES=100 cargo test
+// Argon2id uses intentional computational cost for security.
+// Default: 3 cases. For full coverage: PROPTEST_CASES=100 cargo test
 // ============================================================================
 
 #[cfg(all(test, feature = "format-encryption"))]
@@ -4132,7 +4132,7 @@ mod encryption_proptests {
         proptest::collection::vec(-100.0f32..100.0, 1..100)
     }
 
-    // Use only 3 cases for encryption tests (Argon2id is intentionally slow)
+    // 3 cases for encryption tests (Argon2id has high computational cost by design)
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(3))]
 

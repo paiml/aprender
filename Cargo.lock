@@ -246,7 +246,31 @@ dependencies = [
  "serde_json",
  "sha2",
  "tempfile",
- "trueno 0.8.0",
+ "trueno 0.8.1",
+ "x25519-dalek",
+ "zstd",
+]
+
+[[package]]
+name = "aprender"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "918c5660d9274eafc97ebd08befa3506964e8641985a90fe4c217a692bca27d4"
+dependencies = [
+ "aes-gcm",
+ "argon2",
+ "bincode",
+ "getrandom 0.2.16",
+ "hkdf",
+ "memmap2",
+ "rand 0.8.5",
+ "rand_chacha 0.3.1",
+ "rayon",
+ "rmp-serde",
+ "serde",
+ "serde_json",
+ "sha2",
+ "trueno 0.8.1",
  "x25519-dalek",
  "zstd",
 ]
@@ -255,7 +279,7 @@ dependencies = [
 name = "aprender-monte-carlo"
 version = "0.1.1"
 dependencies = [
- "aprender 0.15.0",
+ "aprender 0.15.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "assert_cmd",
  "chrono",
  "clap",
@@ -274,7 +298,7 @@ dependencies = [
 name = "aprender-shell"
 version = "0.2.2"
 dependencies = [
- "aprender 0.15.0",
+ "aprender 0.15.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "assert_cmd",
  "clap",
  "criterion",
@@ -291,7 +315,7 @@ dependencies = [
 name = "aprender-tsp"
 version = "0.1.2"
 dependencies = [
- "aprender 0.15.0",
+ "aprender 0.15.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "assert_cmd",
  "clap",
  "crc32fast",
@@ -4084,9 +4108,9 @@ dependencies = [
 
 [[package]]
 name = "trueno"
-version = "0.8.0"
+version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f127ae5346273b160eb01480022bd70a46207ed9ff54b534b78c27977390dc52"
+checksum = "74c75705b4166e5bbfdf986abe7051af798832d66c0f4c3581bae4686b0c4e25"
 dependencies = [
  "bytemuck",
  "futures-intrusive",

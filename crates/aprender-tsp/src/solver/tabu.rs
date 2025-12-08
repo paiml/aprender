@@ -202,7 +202,7 @@ impl TabuSolver {
                 current_length,
                 &mut rng,
             ) {
-                // Record edges being broken for tabu
+                // Record edges removed for tabu list
                 let n = current_tour.len();
                 let edge1 = (
                     current_tour[i].min(current_tour[(i + 1) % n]),
