@@ -216,6 +216,20 @@ impl LogisticRegression {
         correct as f32 / y.len() as f32
     }
 
+    /// Get model coefficients (weights).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the model is not fitted.
+    pub fn coefficients(&self) -> &Vector<f32> {
+        self.coefficients.as_ref().expect("Model not fitted")
+    }
+
+    /// Get intercept (bias) term.
+    pub fn intercept(&self) -> f32 {
+        self.intercept
+    }
+
     /// Saves the trained model to SafeTensors format.
     ///
     /// SafeTensors is an industry-standard model serialization format
