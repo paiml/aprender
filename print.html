@@ -32524,7 +32524,39 @@ for (tag, count) in tags.iter().take(5) {
 <li><strong>Pure Rust</strong>: Zero cloud dependencies</li>
 <li><strong>Format Independence</strong>: Each tool has its own binary format</li>
 <li><strong>Toyota Way</strong>: Jidoka, Muda elimination, Kaizen</li>
+<li><strong>Auditability</strong>: Hash-chain provenance for tamper-evident audit trails</li>
 </ul>
+<h2 id="real-time-audit--explainability"><a class="header" href="#real-time-audit--explainability">Real-Time Audit &amp; Explainability</a></h2>
+<p>The entire Sovereign AI Stack now includes unified audit trails with hash-chain provenance:</p>
+<h3 id="stack-wide-integration"><a class="header" href="#stack-wide-integration">Stack-Wide Integration</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Component</th><th>Audit Feature</th><th>Module</th></tr></thead><tbody>
+<tr><td>aprender</td><td>DecisionPath explainability</td><td><code>aprender::explainability</code></td></tr>
+<tr><td>ruchy</td><td>Execution audit trails</td><td><code>ruchy::audit</code></td></tr>
+<tr><td>batuta</td><td>Oracle verification paths</td><td><code>batuta::oracle::audit</code></td></tr>
+<tr><td>verificar</td><td>Transpiler verification</td><td><code>verificar::audit</code></td></tr>
+</tbody></table>
+</div>
+<h3 id="hash-chain-provenance"><a class="header" href="#hash-chain-provenance">Hash Chain Provenance</a></h3>
+<p>Every operation across the stack generates cryptographically-linked audit entries:</p>
+<pre><code class="language-rust">use aprender::explainability::{HashChainCollector, Explainable};
+
+// Create audit collector for ML predictions
+let mut audit = HashChainCollector::new(&quot;sovereign-inference-2025&quot;);
+
+// Each prediction records its decision path
+let (prediction, path) = model.predict_explain(&amp;input)?;
+audit.record(path);
+
+// Verify chain integrity (detects tampering)
+let verification = audit.verify_chain();
+assert!(verification.valid, &quot;Audit chain compromised!&quot;);</code></pre>
+<h3 id="toyota-way-失敗を隠さない-never-hide-failures"><a class="header" href="#toyota-way-失敗を隠さない-never-hide-failures">Toyota Way: 失敗を隠さない (Never Hide Failures)</a></h3>
+<p>The audit system embodies the Toyota Way principle of transparency:</p>
+<ol>
+<li><strong>Jidoka</strong>: Quality built into every prediction with mandatory explainability</li>
+<li><strong>Genchi Genbutsu</strong>: Decision paths let you trace exactly why a model decided what it did</li>
+<li><strong>Shihai wo Kakusanai</strong>: Every decision is auditable, nothing is hidden</li>
+</ol>
 <h2 id="running-the-example-37"><a class="header" href="#running-the-example-37">Running the Example</a></h2>
 <pre><code class="language-bash">cargo run --example sovereign_stack
 </code></pre>
