@@ -217,6 +217,7 @@
 - [Case Study: APR Data Embedding](./examples/apr-embed.md)
 - [Case Study: Model Zoo](./examples/model-zoo.md)
 - [Case Study: Sovereign AI Stack Integration](./examples/sovereign-stack.md)
+- [Case Study: Model Explainability and Audit Trails](./examples/explainability-audit.md)
 
 # Sprint-Based Development
 
