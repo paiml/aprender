@@ -198,8 +198,54 @@ realizar::serve(model, "0.0.0.0:8080")?;
 2. **No Vendor Lock-in** - S3-compatible, runs anywhere
 3. **Air-Gap Ready** - Works fully offline
 4. **WASM Portable** - Run in browser, edge, or embedded
-5. **Auditability** - Pure Rust, no hidden dependencies
+5. **Auditability** - Pure Rust, no hidden dependencies, hash-chain provenance
 6. **Performance** - GPU/SIMD acceleration without cloud latency
+7. **Explainability** - ML model decisions are fully traceable
+
+## Real-Time Audit & Explainability
+
+The stack provides unified tamper-evident audit trails across all components:
+
+### Hash-Chain Provenance
+
+Every ML prediction and transpiler verification generates cryptographically-linked audit entries:
+
+```rust
+use aprender::explainability::{HashChainCollector, DecisionPath};
+
+// Audit collector with session ID
+let mut audit = HashChainCollector::new("sovereign-session-2025");
+
+// Record ML predictions with full decision paths
+for sample in &test_data {
+    let (prediction, path) = model.predict_explain(sample)?;
+    audit.record(path);  // SHA-256 chained entry
+}
+
+// Verify chain integrity (tamper detection)
+let verification = audit.verify_chain();
+assert!(verification.valid);
+
+// Export for compliance
+std::fs::write("audit_trail.json", audit.to_json()?)?;
+```
+
+### Stack-Wide Integration
+
+| Component | Audit Feature | Use Case |
+|-----------|---------------|----------|
+| aprender | DecisionPath (Linear, Tree, Forest, Neural) | ML explainability |
+| ruchy | ExecutionAudit | Script execution tracking |
+| batuta | VerificationPath | Oracle decision trails |
+| verificar | TranspilerAudit | Code generation verification |
+
+### Regulatory Compliance
+
+The audit system supports:
+- **GDPR Article 22** - Automated decision explainability
+- **EU AI Act** - High-risk AI system documentation
+- **SOC 2** - Audit trail requirements
+- **ISO 27001** - Information security audit logs
 
 ## Resources
 

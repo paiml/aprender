@@ -30,6 +30,47 @@ alimentar → aprender → pacha → realizar
 - **Pure Rust**: Zero cloud dependencies
 - **Format Independence**: Each tool has its own binary format
 - **Toyota Way**: Jidoka, Muda elimination, Kaizen
+- **Auditability**: Hash-chain provenance for tamper-evident audit trails
+
+## Real-Time Audit & Explainability
+
+The entire Sovereign AI Stack now includes unified audit trails with hash-chain provenance:
+
+### Stack-Wide Integration
+
+| Component | Audit Feature | Module |
+|-----------|--------------|--------|
+| aprender | DecisionPath explainability | `aprender::explainability` |
+| ruchy | Execution audit trails | `ruchy::audit` |
+| batuta | Oracle verification paths | `batuta::oracle::audit` |
+| verificar | Transpiler verification | `verificar::audit` |
+
+### Hash Chain Provenance
+
+Every operation across the stack generates cryptographically-linked audit entries:
+
+```rust
+use aprender::explainability::{HashChainCollector, Explainable};
+
+// Create audit collector for ML predictions
+let mut audit = HashChainCollector::new("sovereign-inference-2025");
+
+// Each prediction records its decision path
+let (prediction, path) = model.predict_explain(&input)?;
+audit.record(path);
+
+// Verify chain integrity (detects tampering)
+let verification = audit.verify_chain();
+assert!(verification.valid, "Audit chain compromised!");
+```
+
+### Toyota Way: 失敗を隠さない (Never Hide Failures)
+
+The audit system embodies the Toyota Way principle of transparency:
+
+1. **Jidoka**: Quality built into every prediction with mandatory explainability
+2. **Genchi Genbutsu**: Decision paths let you trace exactly why a model decided what it did
+3. **Shihai wo Kakusanai**: Every decision is auditable, nothing is hidden
 
 ## Running the Example
 
