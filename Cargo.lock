@@ -245,14 +245,14 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
- "trueno 0.8.3",
+ "trueno 0.8.4",
  "x25519-dalek",
  "zstd",
 ]
 
 [[package]]
 name = "aprender"
-version = "0.18.0"
+version = "0.18.1"
 dependencies = [
  "aes-gcm",
  "alimentar",
@@ -277,7 +277,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "tempfile",
- "trueno 0.8.3",
+ "trueno 0.8.4",
  "x25519-dalek",
  "zstd",
 ]
@@ -1460,7 +1460,7 @@ dependencies = [
  "sha2",
  "thiserror 2.0.17",
  "toml",
- "trueno 0.8.3",
+ "trueno 0.8.4",
  "trueno-viz",
  "zip",
 ]
@@ -4607,9 +4607,9 @@ dependencies = [
 
 [[package]]
 name = "trueno"
-version = "0.8.3"
+version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "541570c89bc66cd0d5b74b5bd8db30f7edc2357ff895f8182848364f0dbeac75"
+checksum = "95bd86ab8eb85987dba7b53333ca63d7ed8923178e9369b641752d0e42afc9f1"
 dependencies = [
  "bytemuck",
  "futures-intrusive",
@@ -4650,9 +4650,9 @@ dependencies = [
 
 [[package]]
 name = "trueno-gpu"
-version = "0.2.0"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2761541d938f40cfae5300a20ff087e6189ecc244ad9a7cdb297ca8ad83c0fc8"
+checksum = "6b4add4322e7bd3bd4adebdda4a8004a8b4db5f23af8418ccb742c77daa5a476"
 dependencies = [
  "libloading",
  "thiserror 2.0.17",
