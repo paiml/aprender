@@ -321,9 +321,11 @@ pub fn run_edge_case_tests(config: &EdgeCaseConfig) -> (CategoryScore, Vec<QaIss
                 max_size_result.duration,
             ));
         } else {
+            #[allow(clippy::unwrap_or_default)]
+            let err_msg = max_size_result.error.unwrap_or(String::new());
             score.add_result(TestResult::fail(
                 "Max size handling",
-                max_size_result.error.map_or_else(String::new, |e| e),
+                err_msg,
                 max_size_result.duration,
             ));
             issues.push(QaIssue::new(
@@ -586,5 +588,221 @@ mod tests {
         assert_eq!(result.name, "Test");
         assert!(result.passed);
         assert!(result.error.is_none());
+    }
+
+    // Additional tests for coverage
+
+    #[test]
+    fn test_edge_case_behavior_description() {
+        assert_eq!(
+            EdgeCaseBehavior::GracefulError.description(),
+            "Returns graceful error"
+        );
+        assert_eq!(
+            EdgeCaseBehavior::ReturnsDefault.description(),
+            "Returns NaN/default"
+        );
+        assert_eq!(
+            EdgeCaseBehavior::Panics.description(),
+            "Panics (UNACCEPTABLE)"
+        );
+        assert_eq!(
+            EdgeCaseBehavior::Hangs.description(),
+            "Hangs/loops (UNACCEPTABLE)"
+        );
+        assert_eq!(EdgeCaseBehavior::Normal.description(), "Normal execution");
+    }
+
+    #[test]
+    fn test_edge_case_config_custom() {
+        let config = EdgeCaseConfig {
+            test_nan: false,
+            test_inf: false,
+            test_empty: false,
+            test_zero: false,
+            test_max_size: false,
+            max_input_size: 500,
+            allow_panic: true,
+        };
+
+        assert!(!config.test_nan);
+        assert!(config.allow_panic);
+        assert_eq!(config.max_input_size, 500);
+    }
+
+    #[test]
+    fn test_run_edge_case_tests_disabled_all() {
+        let config = EdgeCaseConfig {
+            test_nan: false,
+            test_inf: false,
+            test_empty: false,
+            test_zero: false,
+            test_max_size: false,
+            max_input_size: 1000,
+            allow_panic: false,
+        };
+
+        let (score, issues) = run_edge_case_tests(&config);
+        // No tests run means no passes and no failures
+        assert_eq!(score.tests_passed + score.tests_failed, 0);
+        assert!(issues.is_empty());
+    }
+
+    #[test]
+    fn test_run_edge_case_tests_allow_panic() {
+        let config = EdgeCaseConfig {
+            test_nan: true,
+            test_inf: false,
+            test_empty: false,
+            test_zero: false,
+            test_max_size: false,
+            max_input_size: 1000,
+            allow_panic: true,
+        };
+
+        let (score, issues) = run_edge_case_tests(&config);
+        assert!(score.tests_passed + score.tests_failed > 0);
+        // With allow_panic, no critical issues added
+        assert!(issues
+            .iter()
+            .all(|i| i.severity != super::Severity::Critical));
+    }
+
+    #[test]
+    fn test_inf_handling_with_error() {
+        let predict = |input: &[f32]| -> Result<Vec<f32>, String> {
+            if input.iter().any(|x| x.is_infinite()) {
+                return Err("Infinity not allowed".to_string());
+            }
+            Ok(input.to_vec())
+        };
+
+        let result = test_inf_handling(predict);
+        assert!(result.passed);
+        assert_eq!(result.actual, EdgeCaseBehavior::GracefulError);
+        assert!(result.error.is_some());
+    }
+
+    #[test]
+    fn test_zero_handling_with_error() {
+        let predict = |input: &[f32]| -> Result<Vec<f32>, String> {
+            if input.iter().all(|x| *x == 0.0) {
+                return Err("Zero vector not allowed".to_string());
+            }
+            Ok(input.to_vec())
+        };
+
+        let result = test_zero_handling(predict);
+        assert!(result.passed);
+        assert_eq!(result.actual, EdgeCaseBehavior::GracefulError);
+    }
+
+    #[test]
+    fn test_empty_handling_success() {
+        let predict = |input: &[f32]| -> Result<Vec<f32>, String> {
+            Ok(input.to_vec()) // Accepts empty
+        };
+
+        let result = test_empty_handling(predict);
+        assert!(result.passed);
+        assert_eq!(result.actual, EdgeCaseBehavior::Normal);
+    }
+
+    #[test]
+    fn test_nan_handling_returns_non_nan() {
+        let predict = |input: &[f32]| -> Result<Vec<f32>, String> {
+            // Replace NaN with 0.0
+            Ok(input
+                .iter()
+                .map(|x| if x.is_nan() { 0.0 } else { *x })
+                .collect())
+        };
+
+        let result = test_nan_handling(predict);
+        assert!(result.passed);
+        assert_eq!(result.actual, EdgeCaseBehavior::Normal);
+    }
+
+    #[test]
+    fn test_inf_handling_returns_finite() {
+        let predict = |input: &[f32]| -> Result<Vec<f32>, String> {
+            // Replace Inf with max finite value
+            Ok(input
+                .iter()
+                .map(|x| {
+                    if x.is_infinite() {
+                        f32::MAX * x.signum()
+                    } else {
+                        *x
+                    }
+                })
+                .collect())
+        };
+
+        let result = test_inf_handling(predict);
+        assert!(result.passed);
+        assert_eq!(result.actual, EdgeCaseBehavior::Normal);
+    }
+
+    #[test]
+    fn test_edge_case_result_with_error() {
+        let result = EdgeCaseResult {
+            name: "Error test".to_string(),
+            passed: false,
+            expected: EdgeCaseBehavior::Normal,
+            actual: EdgeCaseBehavior::Panics,
+            error: Some("Something went wrong".to_string()),
+            duration: Duration::from_millis(5),
+        };
+
+        assert!(!result.passed);
+        assert!(result.error.is_some());
+        assert!(!result.actual.is_acceptable());
+    }
+
+    #[test]
+    fn test_edge_case_config_clone() {
+        let config = EdgeCaseConfig::default();
+        let cloned = config.clone();
+        assert_eq!(config.test_nan, cloned.test_nan);
+        assert_eq!(config.max_input_size, cloned.max_input_size);
+    }
+
+    #[test]
+    fn test_edge_case_result_clone() {
+        let result = EdgeCaseResult {
+            name: "Test".to_string(),
+            passed: true,
+            expected: EdgeCaseBehavior::Normal,
+            actual: EdgeCaseBehavior::Normal,
+            error: None,
+            duration: Duration::from_millis(10),
+        };
+
+        let cloned = result.clone();
+        assert_eq!(result.name, cloned.name);
+        assert_eq!(result.passed, cloned.passed);
+    }
+
+    #[test]
+    fn test_edge_case_config_debug() {
+        let config = EdgeCaseConfig::default();
+        let debug = format!("{config:?}");
+        assert!(debug.contains("EdgeCaseConfig"));
+    }
+
+    #[test]
+    fn test_edge_case_result_debug() {
+        let result = EdgeCaseResult {
+            name: "Test".to_string(),
+            passed: true,
+            expected: EdgeCaseBehavior::Normal,
+            actual: EdgeCaseBehavior::Normal,
+            error: None,
+            duration: Duration::from_millis(10),
+        };
+
+        let debug = format!("{result:?}");
+        assert!(debug.contains("EdgeCaseResult"));
     }
 }

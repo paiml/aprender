@@ -225,8 +225,10 @@ pub enum Backend {
     /// CPU with SIMD (AVX2/AVX-512/NEON)
     #[default]
     CpuSimd,
-    /// GPU via compute shaders
+    /// GPU via compute shaders (wgpu/WebGPU)
     Gpu,
+    /// NVIDIA CUDA (requires `cuda` feature and NVIDIA driver)
+    Cuda,
     /// WebAssembly (browser deployment)
     Wasm,
     /// Bare metal embedded (no_std)
@@ -244,6 +246,18 @@ impl Backend {
     #[must_use]
     pub const fn requires_std(&self) -> bool {
         !matches!(self, Self::Embedded)
+    }
+
+    /// Check if this backend uses GPU acceleration
+    #[must_use]
+    pub const fn is_gpu_accelerated(&self) -> bool {
+        matches!(self, Self::Gpu | Self::Cuda)
+    }
+
+    /// Check if this backend requires NVIDIA driver
+    #[must_use]
+    pub const fn requires_nvidia_driver(&self) -> bool {
+        matches!(self, Self::Cuda)
     }
 }
 
@@ -339,6 +353,41 @@ impl LoadConfig {
             time_budget: None,
             streaming: true,
             ring_buffer_size: 512 * 1024,
+        }
+    }
+
+    /// Create configuration for NVIDIA CUDA deployment
+    ///
+    /// Requires the `cuda` feature and NVIDIA driver.
+    /// Uses MappedDemand for efficient GPU memory transfers.
+    #[must_use]
+    pub fn cuda() -> Self {
+        Self {
+            mode: LoadingMode::MappedDemand,
+            max_memory_bytes: None,
+            verification: VerificationLevel::Standard,
+            backend: Backend::Cuda,
+            buffer_pool: None,
+            time_budget: None,
+            streaming: false,
+            ring_buffer_size: 1024 * 1024, // 1MB for GPU transfers
+        }
+    }
+
+    /// Create configuration for GPU deployment (wgpu/WebGPU)
+    ///
+    /// Cross-platform GPU acceleration via compute shaders.
+    #[must_use]
+    pub fn gpu() -> Self {
+        Self {
+            mode: LoadingMode::MappedDemand,
+            max_memory_bytes: None,
+            verification: VerificationLevel::Standard,
+            backend: Backend::Gpu,
+            buffer_pool: None,
+            time_budget: None,
+            streaming: false,
+            ring_buffer_size: 1024 * 1024, // 1MB for GPU transfers
         }
     }
 
@@ -600,5 +649,72 @@ mod tests {
     fn test_load_result_zero_time() {
         let result = LoadResult::new(Duration::ZERO, 1024);
         assert_eq!(result.throughput_mbps(), 0.0);
+    }
+
+    #[test]
+    fn test_backend_gpu_accelerated() {
+        assert!(Backend::Gpu.is_gpu_accelerated());
+        assert!(Backend::Cuda.is_gpu_accelerated());
+        assert!(!Backend::CpuSimd.is_gpu_accelerated());
+        assert!(!Backend::Wasm.is_gpu_accelerated());
+        assert!(!Backend::Embedded.is_gpu_accelerated());
+    }
+
+    #[test]
+    fn test_backend_nvidia_driver_requirement() {
+        assert!(Backend::Cuda.requires_nvidia_driver());
+        assert!(!Backend::Gpu.requires_nvidia_driver());
+        assert!(!Backend::CpuSimd.requires_nvidia_driver());
+        assert!(!Backend::Wasm.requires_nvidia_driver());
+        assert!(!Backend::Embedded.requires_nvidia_driver());
+    }
+
+    #[test]
+    fn test_load_config_cuda() {
+        let config = LoadConfig::cuda();
+        assert_eq!(config.mode, LoadingMode::MappedDemand);
+        assert_eq!(config.backend, Backend::Cuda);
+        assert_eq!(config.verification, VerificationLevel::Standard);
+        assert!(config.max_memory_bytes.is_none());
+        assert!(!config.streaming);
+        assert!(config.backend.requires_nvidia_driver());
+        assert!(config.backend.is_gpu_accelerated());
+    }
+
+    #[test]
+    fn test_load_config_gpu() {
+        let config = LoadConfig::gpu();
+        assert_eq!(config.mode, LoadingMode::MappedDemand);
+        assert_eq!(config.backend, Backend::Gpu);
+        assert_eq!(config.verification, VerificationLevel::Standard);
+        assert!(config.max_memory_bytes.is_none());
+        assert!(!config.streaming);
+        assert!(!config.backend.requires_nvidia_driver());
+        assert!(config.backend.is_gpu_accelerated());
+    }
+
+    #[test]
+    fn test_backend_cuda_properties() {
+        let backend = Backend::Cuda;
+        // CUDA requires std library
+        assert!(backend.requires_std());
+        // CUDA does not use CPU SIMD
+        assert!(!backend.supports_simd());
+        // CUDA is GPU accelerated
+        assert!(backend.is_gpu_accelerated());
+        // CUDA requires NVIDIA driver
+        assert!(backend.requires_nvidia_driver());
+    }
+
+    #[test]
+    fn test_load_config_builder_with_cuda() {
+        let config = LoadConfig::new()
+            .with_backend(Backend::Cuda)
+            .with_mode(LoadingMode::Eager)
+            .with_verification(VerificationLevel::Paranoid);
+
+        assert_eq!(config.backend, Backend::Cuda);
+        assert_eq!(config.mode, LoadingMode::Eager);
+        assert_eq!(config.verification, VerificationLevel::Paranoid);
     }
 }

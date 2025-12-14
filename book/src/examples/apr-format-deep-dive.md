@@ -155,6 +155,74 @@ save_for_recipient(&model, ModelType::Custom, "partner.apr", opts, &partner_publ
 let model: MyModel = load_as_recipient("partner.apr", ModelType::Custom, &my_secret_key)?;
 ```
 
+## Deep Dive: JSON Metadata
+
+### Why Metadata in Model Files?
+
+Models often need more than just weights. Tokenizers, vocabulary, config, and custom data should travel with the model:
+
+| Data Type | Without Metadata | With .apr Metadata |
+|-----------|------------------|-------------------|
+| Vocabulary | Separate `vocab.json` | Embedded in model |
+| Config | Separate `config.yaml` | Embedded in model |
+| Tokenizer | Separate `tokenizer.json` | Embedded in model |
+| Custom | Application-specific files | Single `.apr` file |
+
+### Using JSON Metadata
+
+```rust,ignore
+use aprender::serialization::apr::{AprWriter, AprReader};
+use serde_json::json;
+
+// Create model with metadata
+let mut writer = AprWriter::new();
+
+// Add arbitrary JSON metadata
+writer.set_metadata("model_type", json!("whisper-tiny"));
+writer.set_metadata("n_vocab", json!(51865));
+writer.set_metadata("tokenizer", json!({
+    "tokens": ["<|endoftext|>", "<|startoftranscript|>", "the", "a"],
+    "merges": [["t", "h"], ["th", "e"]],
+    "special_tokens": {"eot": 50256, "sot": 50257}
+}));
+
+// Add tensors
+writer.add_tensor_f32("encoder.weight", vec![384, 80], &weights);
+
+// Write single file
+let bytes = writer.to_bytes()?;
+
+// Read back
+let reader = AprReader::from_bytes(bytes)?;
+let tokenizer = reader.get_metadata("tokenizer").unwrap();
+let weights = reader.read_tensor_f32("encoder.weight")?;
+```
+
+### WASM Deployment with Embedded Vocab
+
+This is the killer feature for browser-based ML:
+
+```rust,ignore
+// Build time: single file with everything
+const MODEL: &[u8] = include_bytes!("whisper-tiny.apr");
+
+// Runtime: no network requests, no additional files
+fn transcribe(audio: &[f32]) -> String {
+    let reader = AprReader::from_bytes(MODEL.to_vec()).unwrap();
+
+    // Vocab embedded in model
+    let vocab = reader.get_metadata("tokenizer").unwrap();
+    let tokens = vocab["tokens"].as_array().unwrap();
+
+    // Weights embedded in model
+    let encoder_weight = reader.read_tensor_f32("encoder.weight").unwrap();
+
+    // ... inference logic
+}
+```
+
+**Example:** `cargo run --example apr_with_metadata`
+
 ## Deep Dive: trueno Integration
 
 ### What is trueno?

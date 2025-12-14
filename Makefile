@@ -179,7 +179,7 @@ coverage: ## Generate HTML coverage report (target: <5 min)
 	@echo "🧪 Phase 1: Running tests with instrumentation (no report)..."
 	@echo "   Using PROPTEST_CASES=100 for faster coverage (bashrs pattern)"
 	@echo "   Excluding slow property tests for faster coverage"
-	@env PROPTEST_CASES=100 cargo llvm-cov --no-report nextest --no-tests=warn --workspace --no-fail-fast --all-features \
+	@env PROPTEST_CASES=100 cargo llvm-cov --no-report --ignore-filename-regex '(crates/|fuzz/|golden_traces/)' nextest --no-tests=warn --workspace --no-fail-fast --all-features \
 		-E 'not test(/prop_gbm_expected_value_convergence/)'
 	@echo "📊 Phase 2: Generating coverage reports..."
 	@cargo llvm-cov report --html --output-dir target/coverage/html
@@ -207,7 +207,7 @@ coverage-full: ## Full coverage report (all features, >10 min)
 	@cargo llvm-cov clean --workspace
 	@mkdir -p target/coverage
 	@test -f ~/.cargo/config.toml && mv ~/.cargo/config.toml ~/.cargo/config.toml.cov-backup || true
-	@cargo llvm-cov --no-report nextest --no-tests=warn --workspace --all-features
+	@cargo llvm-cov --no-report --ignore-filename-regex '(crates/|fuzz/|golden_traces/)' nextest --no-tests=warn --workspace --all-features
 	@cargo llvm-cov report --html --output-dir target/coverage/html
 	@cargo llvm-cov report --lcov --output-path target/coverage/lcov.info
 	@test -f ~/.cargo/config.toml.cov-backup && mv ~/.cargo/config.toml.cov-backup ~/.cargo/config.toml || true

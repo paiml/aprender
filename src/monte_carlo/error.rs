@@ -251,4 +251,127 @@ mod tests {
         assert!(msg.contains("10000"));
         assert!(msg.contains("0.05"));
     }
+
+    #[test]
+    fn test_invalid_value_error() {
+        let err = MonteCarloError::InvalidValue {
+            field: "rate".to_string(),
+            value: "-0.5".to_string(),
+            expected: "positive number".to_string(),
+        };
+        let msg = format!("{err}");
+        assert!(msg.contains("rate"));
+        assert!(msg.contains("-0.5"));
+        assert!(msg.contains("positive"));
+    }
+
+    #[test]
+    fn test_io_error() {
+        let err = MonteCarloError::IoError {
+            path: "/tmp/data.csv".to_string(),
+            message: "file not found".to_string(),
+        };
+        let msg = format!("{err}");
+        assert!(msg.contains("/tmp/data.csv"));
+        assert!(msg.contains("file not found"));
+    }
+
+    #[test]
+    fn test_insufficient_data_error() {
+        let err = MonteCarloError::InsufficientData {
+            provided: 5,
+            required: 100,
+            context: "VaR calculation".to_string(),
+        };
+        let msg = format!("{err}");
+        assert!(msg.contains("5"));
+        assert!(msg.contains("100"));
+        assert!(msg.contains("VaR"));
+    }
+
+    #[test]
+    fn test_invalid_model_params_error() {
+        let err = MonteCarloError::InvalidModelParams {
+            param: "volatility".to_string(),
+            value: -0.2,
+            constraint: "must be non-negative".to_string(),
+        };
+        let msg = format!("{err}");
+        assert!(msg.contains("volatility"));
+        assert!(msg.contains("-0.2"));
+        assert!(msg.contains("non-negative"));
+    }
+
+    #[test]
+    fn test_invalid_correlation_matrix_error() {
+        let err = MonteCarloError::InvalidCorrelationMatrix {
+            reason: "not positive semi-definite".to_string(),
+        };
+        let msg = format!("{err}");
+        assert!(msg.contains("positive semi-definite"));
+    }
+
+    #[test]
+    fn test_invalid_date_error() {
+        let err = MonteCarloError::InvalidDate {
+            value: "2024-13-45".to_string(),
+            expected_format: "YYYY-MM-DD".to_string(),
+        };
+        let msg = format!("{err}");
+        assert!(msg.contains("2024-13-45"));
+        assert!(msg.contains("YYYY-MM-DD"));
+    }
+
+    #[test]
+    fn test_invalid_confidence_level_error() {
+        let err = MonteCarloError::InvalidConfidenceLevel { value: 1.5 };
+        let msg = format!("{err}");
+        assert!(msg.contains("1.5"));
+        assert!(msg.contains("(0, 1)"));
+    }
+
+    #[test]
+    fn test_numerical_error() {
+        let err = MonteCarloError::NumericalError {
+            operation: "matrix inversion".to_string(),
+            message: "singular matrix".to_string(),
+        };
+        let msg = format!("{err}");
+        assert!(msg.contains("matrix inversion"));
+        assert!(msg.contains("singular"));
+    }
+
+    #[test]
+    fn test_empty_data_error() {
+        let err = MonteCarloError::EmptyData {
+            context: "returns vector".to_string(),
+        };
+        let msg = format!("{err}");
+        assert!(msg.contains("Empty data"));
+        assert!(msg.contains("returns vector"));
+    }
+
+    #[test]
+    fn test_error_debug() {
+        let err = MonteCarloError::EmptyData {
+            context: "test".to_string(),
+        };
+        let debug = format!("{err:?}");
+        assert!(debug.contains("EmptyData"));
+    }
+
+    #[test]
+    fn test_error_clone() {
+        let err = MonteCarloError::InvalidConfidenceLevel { value: 0.99 };
+        let cloned = err.clone();
+        assert_eq!(format!("{err}"), format!("{cloned}"));
+    }
+
+    #[test]
+    fn test_error_is_std_error() {
+        let err: Box<dyn std::error::Error> = Box::new(MonteCarloError::EmptyData {
+            context: "test".to_string(),
+        });
+        assert!(err.to_string().contains("Empty data"));
+    }
 }

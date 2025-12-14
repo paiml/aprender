@@ -215,6 +215,7 @@
 - [Case Study: APR 100-Point Quality Scoring](./examples/apr-scoring.md)
 - [Case Study: APR Model Cache](./examples/apr-cache.md)
 - [Case Study: APR Data Embedding](./examples/apr-embed.md)
+- [Case Study: APR with JSON Metadata](./examples/apr-with-metadata.md)
 - [Case Study: Model Zoo](./examples/model-zoo.md)
 - [Case Study: Sovereign AI Stack Integration](./examples/sovereign-stack.md)
 - [Case Study: Model Explainability and Audit Trails](./examples/explainability-audit.md)

@@ -190,10 +190,8 @@ mod tests {
                     .collect();
 
                 let mut values = vec![100.0];
-                let mut current = 100.0;
                 for r in returns.iter().skip(1) {
-                    current = *r;
-                    values.push(current);
+                    values.push(*r);
                 }
 
                 SimulationPath::new(

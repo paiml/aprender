@@ -310,12 +310,12 @@ impl TextSummarizer {
         for i in 0..n {
             for j in 0..n {
                 if i != j {
-                    let intersection: usize = tokenized[i].intersection(&tokenized[j]).count();
+                    let intersection: f64 = tokenized[i].intersection(&tokenized[j]).count() as f64;
 
                     let union_size = tokenized[i].len() + tokenized[j].len();
 
                     if union_size > 0 {
-                        similarity[i][j] = (2.0 * intersection as f64) / union_size as f64;
+                        similarity[i][j] = (2.0 * intersection) / union_size as f64;
                     }
                 }
             }

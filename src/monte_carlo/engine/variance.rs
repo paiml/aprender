@@ -463,8 +463,6 @@ mod tests {
         proptest! {
             #[test]
             fn prop_uniforms_in_range(seed: u64, n in 10..500usize, strata in 2..20usize) {
-                let mut rng = MonteCarloRng::new(seed);
-
                 // Test all variance reduction methods
                 for vr in [
                     VarianceReduction::None,

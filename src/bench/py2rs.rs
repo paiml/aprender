@@ -431,7 +431,10 @@ pub fn compare_models(model_ids: &[(&str, u64)], max_turns: u32) -> ModelCompari
                     format!("L{}", level_result.level),
                     level.difficulty(),
                     max_turns,
-                    level_result.error.clone().map_or_else(String::new, |e| e),
+                    {
+                        #[allow(clippy::unwrap_or_default)]
+                        level_result.error.clone().unwrap_or(String::new())
+                    },
                     vec![100; max_turns as usize],
                     vec![Duration::from_millis(50); max_turns as usize],
                 )
