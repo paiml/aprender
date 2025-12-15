@@ -245,14 +245,14 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
- "trueno 0.8.4",
+ "trueno 0.8.5",
  "x25519-dalek",
  "zstd",
 ]
 
 [[package]]
 name = "aprender"
-version = "0.18.1"
+version = "0.18.2"
 dependencies = [
  "aes-gcm",
  "alimentar",
@@ -277,7 +277,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "tempfile",
- "trueno 0.8.4",
+ "trueno 0.8.5",
  "x25519-dalek",
  "zstd",
 ]
@@ -1460,7 +1460,7 @@ dependencies = [
  "sha2",
  "thiserror 2.0.17",
  "toml",
- "trueno 0.8.4",
+ "trueno 0.8.5",
  "trueno-viz",
  "zip",
 ]
@@ -4607,9 +4607,9 @@ dependencies = [
 
 [[package]]
 name = "trueno"
-version = "0.8.4"
+version = "0.8.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "95bd86ab8eb85987dba7b53333ca63d7ed8923178e9369b641752d0e42afc9f1"
+checksum = "9c6d1b3e3de4ca2e06d881a0653728a10a9102316eb5771ad6ec43d9659457e0"
 dependencies = [
  "bytemuck",
  "futures-intrusive",

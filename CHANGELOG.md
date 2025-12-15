@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.2] - 2025-12-15
+
+### Changed
+- Updated trueno from v0.8.4 to v0.8.5 (simulation testing framework)
+
 ## [0.16.0] - 2025-12-08
 
 ### Added
