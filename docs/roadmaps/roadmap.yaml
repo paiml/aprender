@@ -1315,3 +1315,19 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: APR-VERIFY-001
+  github_issue: null
+  item_type: task
+  title: 'New task: APR-VERIFY-001'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2025-12-16T18:46:36.901960159+00:00
+  updated: 2025-12-16T18:46:36.901960159+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

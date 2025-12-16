@@ -1,0 +1,306 @@
+//! Delta computation for comparing pipeline outputs against ground truth.
+//!
+//! Supports multiple metrics: mean/std difference, cosine similarity,
+//! KL divergence, and Wasserstein distance.
+
+use super::GroundTruth;
+
+/// Statistical divergence metrics for comparison.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Metric {
+    /// Mean squared error
+    MeanSquaredError,
+    /// Cosine similarity between vectors
+    CosineSimilarity,
+    /// Kullback-Leibler divergence for probability distributions
+    KLDivergence,
+    /// Wasserstein (Earth Mover's) distance
+    WassersteinDistance,
+    /// L2 norm of difference
+    L2Norm,
+}
+
+/// Delta represents the divergence between computed output and ground truth.
+#[derive(Debug, Clone)]
+#[allow(clippy::struct_field_names)]
+pub struct Delta {
+    /// Absolute difference in mean
+    mean_delta: f32,
+    /// Absolute difference in standard deviation
+    std_delta: f32,
+    /// Percent divergence (combined metric)
+    percent: f32,
+    /// Whether the sign of the mean is flipped
+    sign_flipped: bool,
+    /// Cosine similarity (if computed)
+    cosine: Option<f32>,
+    /// KL divergence (if computed)
+    kl_div: Option<f32>,
+}
+
+impl Delta {
+    /// Compute delta between two ground truth statistics.
+    pub fn compute(our: &GroundTruth, gt: &GroundTruth) -> Self {
+        let mean_delta = (our.mean() - gt.mean()).abs();
+        let std_delta = (our.std() - gt.std()).abs();
+
+        // Use std as reference since mean can be near zero
+        let ref_val = gt.std().abs().max(0.001);
+        let percent = ((mean_delta + std_delta) / ref_val) * 100.0;
+
+        // Sign flip detection
+        let sign_flipped = our.mean().signum() != gt.mean().signum()
+            && our.mean().abs() > 0.01
+            && gt.mean().abs() > 0.01;
+
+        // Compute cosine similarity if both have data
+        let cosine = match (our.data(), gt.data()) {
+            (Some(a), Some(b)) if !a.is_empty() && !b.is_empty() => {
+                Some(Self::cosine_similarity(a, b))
+            }
+            _ => None,
+        };
+
+        Self {
+            mean_delta,
+            std_delta,
+            percent,
+            sign_flipped,
+            cosine,
+            kl_div: None,
+        }
+    }
+
+    /// Create a delta from a simple percent value (for testing).
+    pub fn from_percent(percent: f32) -> Self {
+        Self {
+            mean_delta: 0.0,
+            std_delta: 0.0,
+            percent,
+            sign_flipped: false,
+            cosine: None,
+            kl_div: None,
+        }
+    }
+
+    /// Create a delta from mean and std differences (for testing).
+    pub fn from_stats(mean_delta: f32, std_delta: f32) -> Self {
+        let percent = (mean_delta + std_delta) * 100.0;
+        Self {
+            mean_delta,
+            std_delta,
+            percent,
+            sign_flipped: false,
+            cosine: None,
+            kl_div: None,
+        }
+    }
+
+    /// Get the absolute difference in mean.
+    pub fn mean_delta(&self) -> f32 {
+        self.mean_delta
+    }
+
+    /// Get the absolute difference in standard deviation.
+    pub fn std_delta(&self) -> f32 {
+        self.std_delta
+    }
+
+    /// Get the percent divergence.
+    pub fn percent(&self) -> f32 {
+        self.percent
+    }
+
+    /// Check if there's a sign flip between our value and ground truth.
+    pub fn is_sign_flipped(&self) -> bool {
+        self.sign_flipped
+    }
+
+    /// Get cosine similarity if computed.
+    pub fn cosine(&self) -> Option<f32> {
+        self.cosine
+    }
+
+    /// Get KL divergence if computed.
+    pub fn kl_divergence_value(&self) -> Option<f32> {
+        self.kl_div
+    }
+
+    /// Compute cosine similarity between two vectors.
+    ///
+    /// Returns a value in [-1, 1]:
+    /// - 1.0: identical direction
+    /// - 0.0: orthogonal
+    /// - -1.0: opposite direction
+    pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
+        if a.len() != b.len() || a.is_empty() {
+            return 0.0;
+        }
+
+        let dot: f32 = a.iter().zip(b.iter()).map(|(x, y)| x * y).sum();
+        let norm_a: f32 = a.iter().map(|x| x * x).sum::<f32>().sqrt();
+        let norm_b: f32 = b.iter().map(|x| x * x).sum::<f32>().sqrt();
+
+        if norm_a < 1e-10 || norm_b < 1e-10 {
+            return 0.0;
+        }
+
+        dot / (norm_a * norm_b)
+    }
+
+    /// Compute KL divergence D(P || Q).
+    ///
+    /// P and Q must be probability distributions (sum to 1, non-negative).
+    /// Returns bits of information lost when using Q to approximate P.
+    pub fn kl_divergence(p: &[f32], q: &[f32]) -> f32 {
+        if p.len() != q.len() || p.is_empty() {
+            return f32::INFINITY;
+        }
+
+        let epsilon = 1e-10;
+        let mut kl = 0.0;
+
+        for (pi, qi) in p.iter().zip(q.iter()) {
+            if *pi > epsilon {
+                let qi_safe = qi.max(epsilon);
+                kl += pi * (pi / qi_safe).ln();
+            }
+        }
+
+        kl
+    }
+
+    /// Compute 1-D Wasserstein distance (Earth Mover's Distance).
+    ///
+    /// For sorted 1-D distributions, this is the sum of absolute differences
+    /// of the cumulative distribution functions.
+    pub fn wasserstein_1d(a: &[f32], b: &[f32]) -> f32 {
+        if a.is_empty() || b.is_empty() {
+            return 0.0;
+        }
+
+        // Sort both arrays
+        let mut a_sorted: Vec<f32> = a.to_vec();
+        let mut b_sorted: Vec<f32> = b.to_vec();
+        a_sorted.sort_by(|x, y| x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal));
+        b_sorted.sort_by(|x, y| x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal));
+
+        // Resample to same length if needed (simple linear interpolation)
+        let n = a_sorted.len().max(b_sorted.len());
+        let a_resampled = Self::resample(&a_sorted, n);
+        let b_resampled = Self::resample(&b_sorted, n);
+
+        // Compute EMD as sum of absolute differences
+        a_resampled
+            .iter()
+            .zip(b_resampled.iter())
+            .map(|(x, y)| (x - y).abs())
+            .sum::<f32>()
+            / n as f32
+    }
+
+    /// Resample an array to a target length.
+    fn resample(data: &[f32], target_len: usize) -> Vec<f32> {
+        if data.len() == target_len {
+            return data.to_vec();
+        }
+
+        let mut result = Vec::with_capacity(target_len);
+        for i in 0..target_len {
+            let t = i as f32 / (target_len - 1) as f32;
+            let idx = t * (data.len() - 1) as f32;
+            let low = idx.floor() as usize;
+            let high = (low + 1).min(data.len() - 1);
+            let frac = idx - low as f32;
+            result.push(data[low] * (1.0 - frac) + data[high] * frac);
+        }
+        result
+    }
+
+    /// Compute all metrics and return the delta with full information.
+    pub fn compute_all(our: &GroundTruth, gt: &GroundTruth) -> Self {
+        let mut delta = Self::compute(our, gt);
+
+        // Compute KL divergence if both have probability-like data
+        if let (Some(our_data), Some(gt_data)) = (our.data(), gt.data()) {
+            // Normalize to probability distributions
+            let our_sum: f32 = our_data.iter().map(|x| x.abs()).sum();
+            let gt_sum: f32 = gt_data.iter().map(|x| x.abs()).sum();
+
+            if our_sum > 1e-10 && gt_sum > 1e-10 {
+                let p: Vec<f32> = our_data.iter().map(|x| x.abs() / our_sum).collect();
+                let q: Vec<f32> = gt_data.iter().map(|x| x.abs() / gt_sum).collect();
+                delta.kl_div = Some(Self::kl_divergence(&p, &q));
+            }
+        }
+
+        delta
+    }
+}
+
+impl Default for Delta {
+    fn default() -> Self {
+        Self::from_percent(0.0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_cosine_identical() {
+        let a = vec![1.0, 2.0, 3.0];
+        let b = vec![1.0, 2.0, 3.0];
+        let cos = Delta::cosine_similarity(&a, &b);
+        assert!((cos - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_cosine_opposite() {
+        let a = vec![1.0, 2.0, 3.0];
+        let b = vec![-1.0, -2.0, -3.0];
+        let cos = Delta::cosine_similarity(&a, &b);
+        assert!((cos - (-1.0)).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_cosine_orthogonal() {
+        let a = vec![1.0, 0.0];
+        let b = vec![0.0, 1.0];
+        let cos = Delta::cosine_similarity(&a, &b);
+        assert!(cos.abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_kl_identical() {
+        let p = vec![0.25, 0.25, 0.25, 0.25];
+        let q = vec![0.25, 0.25, 0.25, 0.25];
+        let kl = Delta::kl_divergence(&p, &q);
+        assert!(kl.abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_kl_different() {
+        let p = vec![0.9, 0.1];
+        let q = vec![0.5, 0.5];
+        let kl = Delta::kl_divergence(&p, &q);
+        assert!(kl > 0.0);
+    }
+
+    #[test]
+    fn test_wasserstein_identical() {
+        let a = vec![1.0, 2.0, 3.0];
+        let b = vec![1.0, 2.0, 3.0];
+        let w = Delta::wasserstein_1d(&a, &b);
+        assert!(w < 1e-6);
+    }
+
+    #[test]
+    fn test_wasserstein_shifted() {
+        let a = vec![0.0, 1.0, 2.0];
+        let b = vec![1.0, 2.0, 3.0];
+        let w = Delta::wasserstein_1d(&a, &b);
+        assert!((w - 1.0).abs() < 1e-6);
+    }
+}

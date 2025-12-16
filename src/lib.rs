@@ -134,6 +134,8 @@ pub mod time_series;
 pub mod traits;
 pub mod transfer;
 pub mod tree;
+/// Pipeline verification & visualization system (APR-VERIFY-001)
+pub mod verify;
 pub mod weak_supervision;
 /// Model zoo protocol for sharing and discovery (spec §8)
 pub mod zoo;
