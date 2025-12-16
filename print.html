@@ -33327,18 +33327,18 @@ This is a **Whisper (Tiny)** model.
 <li><a href="examples/../tools/apr-spec.html">APR Format Specification</a></li>
 </ul>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="case-study-apr-cli-commands-demo"><a class="header" href="#case-study-apr-cli-commands-demo">Case Study: APR CLI Commands Demo</a></h1>
-<p>This case study demonstrates creating test models and using all 9 working apr-cli commands for model inspection, validation, and debugging.</p>
+<p>This case study demonstrates creating test models and using all 15 apr-cli commands for model inspection, validation, transformation, and testing.</p>
 <h2 id="the-problem-4"><a class="header" href="#the-problem-4">The Problem</a></h2>
 <p>APR model files need comprehensive tooling for:</p>
 <div class="table-wrapper"><table><thead><tr><th>Need</th><th>Traditional Approach</th><th>Problem</th></tr></thead><tbody>
 <tr><td>Inspection</td><td>Custom scripts</td><td>No standardization</td></tr>
 <tr><td>Validation</td><td>Manual checksums</td><td>Incomplete coverage</td></tr>
-<tr><td>Debugging</td><td>Hex editors</td><td>Not ML-aware</td></tr>
-<tr><td>Comparison</td><td>File diff</td><td>Ignores structure</td></tr>
+<tr><td>Transformation</td><td>Framework-specific</td><td>Lock-in</td></tr>
+<tr><td>Regression</td><td>Manual testing</td><td>Error-prone</td></tr>
 </tbody></table>
 </div>
 <h2 id="the-solution-apr-cli"><a class="header" href="#the-solution-apr-cli">The Solution: apr-cli</a></h2>
-<p>The <code>apr</code> CLI provides 9 working commands for complete model lifecycle management:</p>
+<p>The <code>apr</code> CLI provides 15 commands for complete model lifecycle management:</p>
 <pre><code class="language-bash"># Build the CLI
 cargo build -p apr-cli
 
@@ -33348,8 +33348,8 @@ cargo build -p apr-cli
 # Validate integrity (100-point QA)
 ./target/debug/apr validate model.apr --quality
 
-# Debug tensor data
-./target/debug/apr debug model.apr --drama
+# Quantize model
+./target/debug/apr convert model.apr --quantize int8 -o model-int8.apr
 </code></pre>
 <h2 id="complete-example-2"><a class="header" href="#complete-example-2">Complete Example</a></h2>
 <p>Run: <code>cargo run --example apr_cli_commands</code></p>
@@ -33541,121 +33541,208 @@ fn print_cli_commands(model_path: &amp;Path, model_v2_path: &amp;Path) {
     println!(&quot;Build the CLI first:&quot;);
     println!(&quot;  cargo build -p apr-cli\n&quot;);
 
-    println!(&quot;=== 9 Working CLI Commands ===\n&quot;);
+    println!(&quot;=== 15 APR CLI Commands ===\n&quot;);
+
+    println!(&quot;--- Model Inspection ---\n&quot;);
 
     println!(&quot;1. INSPECT - View model metadata:&quot;);
     println!(&quot;   ./target/debug/apr inspect {model}&quot;);
     println!(&quot;   ./target/debug/apr inspect {model} --json&quot;);
     println!(&quot;   ./target/debug/apr inspect {model} --weights\n&quot;);
 
-    println!(&quot;2. VALIDATE - Check model integrity:&quot;);
-    println!(&quot;   ./target/debug/apr validate {model}&quot;);
-    println!(&quot;   ./target/debug/apr validate {model} --quality&quot;);
-    println!(&quot;   ./target/debug/apr validate {model} --strict\n&quot;);
-
-    println!(&quot;3. DEBUG - Debug output:&quot;);
-    println!(&quot;   ./target/debug/apr debug {model}&quot;);
-    println!(&quot;   ./target/debug/apr debug {model} --drama&quot;);
-    println!(&quot;   ./target/debug/apr debug {model} --hex --limit 64\n&quot;);
-
-    println!(&quot;4. TENSORS - List tensor info:&quot;);
+    println!(&quot;2. TENSORS - List tensor info:&quot;);
     println!(&quot;   ./target/debug/apr tensors {model}&quot;);
     println!(&quot;   ./target/debug/apr tensors {model} --stats&quot;);
     println!(&quot;   ./target/debug/apr tensors {model} --json\n&quot;);
 
-    println!(&quot;5. TRACE - Layer-by-layer analysis:&quot;);
+    println!(&quot;3. TRACE - Layer-by-layer analysis:&quot;);
     println!(&quot;   ./target/debug/apr trace {model}&quot;);
     println!(&quot;   ./target/debug/apr trace {model} --verbose&quot;);
     println!(&quot;   ./target/debug/apr trace {model} --json\n&quot;);
 
-    println!(&quot;6. DIFF - Compare two models:&quot;);
+    println!(&quot;4. DEBUG - Debug output:&quot;);
+    println!(&quot;   ./target/debug/apr debug {model}&quot;);
+    println!(&quot;   ./target/debug/apr debug {model} --drama&quot;);
+    println!(&quot;   ./target/debug/apr debug {model} --hex --limit 64\n&quot;);
+
+    println!(&quot;--- Quality &amp; Validation ---\n&quot;);
+
+    println!(&quot;5. VALIDATE - Check model integrity (100-point QA):&quot;);
+    println!(&quot;   ./target/debug/apr validate {model}&quot;);
+    println!(&quot;   ./target/debug/apr validate {model} --quality&quot;);
+    println!(&quot;   ./target/debug/apr validate {model} --strict\n&quot;);
+
+    println!(&quot;6. LINT - Best practices check:&quot;);
+    println!(&quot;   ./target/debug/apr lint {model}\n&quot;);
+
+    println!(&quot;7. DIFF - Compare two models:&quot;);
     println!(&quot;   ./target/debug/apr diff {model} {model_v2}&quot;);
     println!(&quot;   ./target/debug/apr diff {model} {model_v2} --json\n&quot;);
 
-    println!(&quot;7. PROBAR - Visual regression testing export:&quot;);
-    println!(&quot;   ./target/debug/apr probar {model} -o {demo_dir}/probar_output&quot;);
-    println!(&quot;   ./target/debug/apr probar {model} -o {demo_dir}/probar_output --format json\n&quot;);
+    println!(&quot;--- Model Transformation ---\n&quot;);
 
-    println!(&quot;8. IMPORT - Import external models:&quot;);
-    println!(&quot;   ./target/debug/apr import ./external.safetensors -o imported.apr&quot;);
-    println!(&quot;   ./target/debug/apr import hf://org/repo -o model.apr --arch whisper\n&quot;);
+    println!(&quot;8. CONVERT - Quantization/optimization:&quot;);
+    println!(&quot;   ./target/debug/apr convert {model} --quantize int8 -o {demo_dir}/model-int8.apr&quot;);
+    println!(
+        &quot;   ./target/debug/apr convert {model} --quantize fp16 -o {demo_dir}/model-fp16.apr\n&quot;
+    );
 
-    println!(&quot;9. EXPLAIN - Get explanations:&quot;);
-    println!(&quot;   ./target/debug/apr explain E002&quot;);
-    println!(&quot;   ./target/debug/apr explain --tensor encoder.conv1.weight&quot;);
-    println!(&quot;   ./target/debug/apr explain --file {model}\n&quot;);
+    println!(&quot;9. EXPORT - Export to other formats:&quot;);
+    println!(
+        &quot;   ./target/debug/apr export {model} --format safetensors -o {demo_dir}/model.safetensors&quot;
+    );
+    println!(&quot;   ./target/debug/apr export {model} --format gguf -o {demo_dir}/model.gguf\n&quot;);
 
-    println!(&quot;=== Stub Commands (team finishing) ===\n&quot;);
-    println!(&quot;   - convert: Quantization/optimization&quot;);
-    println!(&quot;   - export: Export to safetensors/gguf&quot;);
-    println!(&quot;   - merge: Model merging&quot;);
-    println!(&quot;   - lint: Best practices check&quot;);
-    println!(&quot;   - tui: Interactive terminal UI&quot;);
-    println!(&quot;   - canary: Regression testing&quot;);
+    println!(&quot;10. MERGE - Merge models:&quot;);
+    println!(&quot;    ./target/debug/apr merge {model} {model_v2} --strategy average -o {demo_dir}/merged.apr&quot;);
+    println!(&quot;    ./target/debug/apr merge {model} {model_v2} --strategy weighted -o {demo_dir}/merged.apr\n&quot;);
+
+    println!(&quot;--- Import &amp; Interop ---\n&quot;);
+
+    println!(&quot;11. IMPORT - Import external models:&quot;);
+    println!(&quot;    ./target/debug/apr import ./external.safetensors -o imported.apr&quot;);
+    println!(&quot;    ./target/debug/apr import hf://org/repo -o model.apr --arch whisper\n&quot;);
+
+    println!(&quot;--- Testing &amp; Regression ---\n&quot;);
+
+    println!(&quot;12. CANARY - Regression testing:&quot;);
+    println!(&quot;    ./target/debug/apr canary create {model} --input ref.wav --output {demo_dir}/canary.json&quot;);
+    println!(&quot;    ./target/debug/apr canary check {model_v2} --canary {demo_dir}/canary.json\n&quot;);
+
+    println!(&quot;13. PROBAR - Visual regression testing export:&quot;);
+    println!(&quot;    ./target/debug/apr probar {model} -o {demo_dir}/probar_output&quot;);
+    println!(&quot;    ./target/debug/apr probar {model} -o {demo_dir}/probar_output --format json\n&quot;);
+
+    println!(&quot;--- Help &amp; Documentation ---\n&quot;);
+
+    println!(&quot;14. EXPLAIN - Get explanations:&quot;);
+    println!(&quot;    ./target/debug/apr explain E002&quot;);
+    println!(&quot;    ./target/debug/apr explain --tensor encoder.conv1.weight&quot;);
+    println!(&quot;    ./target/debug/apr explain --file {model}\n&quot;);
+
+    println!(&quot;--- Interactive (Stub) ---\n&quot;);
+
+    println!(&quot;15. TUI - Interactive terminal UI (coming soon):&quot;);
+    println!(&quot;    ./target/debug/apr tui {model}\n&quot;);
 }</code></pre>
-<h2 id="the-9-working-commands"><a class="header" href="#the-9-working-commands">The 9 Working Commands</a></h2>
-<h3 id="1-inspect---view-model-metadata"><a class="header" href="#1-inspect---view-model-metadata">1. INSPECT - View Model Metadata</a></h3>
+<h2 id="all-15-commands"><a class="header" href="#all-15-commands">All 15 Commands</a></h2>
+<h3 id="model-inspection-1"><a class="header" href="#model-inspection-1">Model Inspection</a></h3>
+<h4 id="1-inspect---view-model-metadata"><a class="header" href="#1-inspect---view-model-metadata">1. INSPECT - View Model Metadata</a></h4>
 <pre><code class="language-bash">apr inspect model.apr              # Basic info
 apr inspect model.apr --json       # JSON output
 apr inspect model.apr --weights    # Include tensor info
 </code></pre>
 <p>Shows model type, framework, hyperparameters, and training info.</p>
-<h3 id="2-validate---check-model-integrity"><a class="header" href="#2-validate---check-model-integrity">2. VALIDATE - Check Model Integrity</a></h3>
-<pre><code class="language-bash">apr validate model.apr             # Basic validation
-apr validate model.apr --quality   # 100-point QA checklist
-apr validate model.apr --strict    # Strict mode
-</code></pre>
-<p>Runs the 100-point quality assessment with grades A+ to F.</p>
-<h3 id="3-debug---debug-output"><a class="header" href="#3-debug---debug-output">3. DEBUG - Debug Output</a></h3>
-<pre><code class="language-bash">apr debug model.apr                # Standard debug
-apr debug model.apr --drama        # Detailed drama mode
-apr debug model.apr --hex --limit 64  # Hex dump
-</code></pre>
-<p>Provides detailed tensor inspection for debugging.</p>
-<h3 id="4-tensors---list-tensor-info"><a class="header" href="#4-tensors---list-tensor-info">4. TENSORS - List Tensor Info</a></h3>
+<h4 id="2-tensors---list-tensor-info"><a class="header" href="#2-tensors---list-tensor-info">2. TENSORS - List Tensor Info</a></h4>
 <pre><code class="language-bash">apr tensors model.apr              # List all tensors
 apr tensors model.apr --stats      # Include statistics
 apr tensors model.apr --json       # JSON output
 </code></pre>
 <p>Lists tensor names, shapes, dtypes, and statistics.</p>
-<h3 id="5-trace---layer-by-layer-analysis"><a class="header" href="#5-trace---layer-by-layer-analysis">5. TRACE - Layer-by-Layer Analysis</a></h3>
+<h4 id="3-trace---layer-by-layer-analysis"><a class="header" href="#3-trace---layer-by-layer-analysis">3. TRACE - Layer-by-Layer Analysis</a></h4>
 <pre><code class="language-bash">apr trace model.apr                # Basic trace
 apr trace model.apr --verbose      # Detailed trace
 apr trace model.apr --json         # JSON output
 </code></pre>
 <p>Analyzes model layer by layer for debugging inference.</p>
-<h3 id="6-diff---compare-two-models"><a class="header" href="#6-diff---compare-two-models">6. DIFF - Compare Two Models</a></h3>
+<h4 id="4-debug---debug-output"><a class="header" href="#4-debug---debug-output">4. DEBUG - Debug Output</a></h4>
+<pre><code class="language-bash">apr debug model.apr                # Standard debug
+apr debug model.apr --drama        # Detailed drama mode
+apr debug model.apr --hex --limit 64  # Hex dump
+</code></pre>
+<p>Provides detailed tensor inspection for debugging.</p>
+<h3 id="quality--validation"><a class="header" href="#quality--validation">Quality &amp; Validation</a></h3>
+<h4 id="5-validate---check-model-integrity"><a class="header" href="#5-validate---check-model-integrity">5. VALIDATE - Check Model Integrity</a></h4>
+<pre><code class="language-bash">apr validate model.apr             # Basic validation
+apr validate model.apr --quality   # 100-point QA checklist
+apr validate model.apr --strict    # Strict mode
+</code></pre>
+<p>Runs the 100-point quality assessment with grades A+ to F.</p>
+<h4 id="6-lint---best-practices-check"><a class="header" href="#6-lint---best-practices-check">6. LINT - Best Practices Check</a></h4>
+<pre><code class="language-bash">apr lint model.apr                 # Check best practices
+</code></pre>
+<p>Static analysis for naming conventions, metadata completeness, and efficiency.</p>
+<p>Checks:</p>
+<ul>
+<li>Standard tensor naming patterns (layer.0.weight, not l0_w)</li>
+<li>Required metadata (author, license, provenance)</li>
+<li>Tensor alignment (64-byte boundaries)</li>
+<li>Compression for large tensors (&gt;1MB)</li>
+</ul>
+<h4 id="7-diff---compare-two-models"><a class="header" href="#7-diff---compare-two-models">7. DIFF - Compare Two Models</a></h4>
 <pre><code class="language-bash">apr diff model_v1.apr model_v2.apr       # Compare models
 apr diff model_v1.apr model_v2.apr --json  # JSON output
 </code></pre>
 <p>Shows metadata and tensor differences between model versions.</p>
-<h3 id="7-probar---visual-regression-testing"><a class="header" href="#7-probar---visual-regression-testing">7. PROBAR - Visual Regression Testing</a></h3>
-<pre><code class="language-bash">apr probar model.apr -o probar_output         # Create probar suite
-apr probar model.apr -o output --format json  # JSON format
+<h3 id="model-transformation"><a class="header" href="#model-transformation">Model Transformation</a></h3>
+<h4 id="8-convert---quantizationoptimization"><a class="header" href="#8-convert---quantizationoptimization">8. CONVERT - Quantization/Optimization</a></h4>
+<pre><code class="language-bash">apr convert model.apr --quantize int8 -o model-int8.apr
+apr convert model.apr --quantize int4 -o model-int4.apr
+apr convert model.apr --quantize fp16 -o model-fp16.apr
 </code></pre>
-<p>Exports model data for visual regression testing.</p>
-<h3 id="8-import---import-external-models"><a class="header" href="#8-import---import-external-models">8. IMPORT - Import External Models</a></h3>
+<p>Applies quantization for reduced model size and faster inference.</p>
+<div class="table-wrapper"><table><thead><tr><th>Quantization</th><th>Size Reduction</th><th>Accuracy Impact</th></tr></thead><tbody>
+<tr><td>fp16</td><td>50%</td><td>Minimal</td></tr>
+<tr><td>int8</td><td>75%</td><td>Small</td></tr>
+<tr><td>int4</td><td>87.5%</td><td>Moderate</td></tr>
+</tbody></table>
+</div>
+<h4 id="9-export---export-to-other-formats"><a class="header" href="#9-export---export-to-other-formats">9. EXPORT - Export to Other Formats</a></h4>
+<pre><code class="language-bash">apr export model.apr --format safetensors -o model.safetensors
+apr export model.apr --format gguf -o model.gguf
+</code></pre>
+<p>Exports APR models to other ecosystems:</p>
+<ul>
+<li><strong>SafeTensors</strong> - HuggingFace ecosystem</li>
+<li><strong>GGUF</strong> - llama.cpp / local inference</li>
+</ul>
+<h4 id="10-merge---merge-models"><a class="header" href="#10-merge---merge-models">10. MERGE - Merge Models</a></h4>
+<pre><code class="language-bash">apr merge model1.apr model2.apr --strategy average -o merged.apr
+apr merge model1.apr model2.apr --strategy weighted -o merged.apr
+</code></pre>
+<p>Combines multiple models using different strategies:</p>
+<ul>
+<li><strong>average</strong> - Simple tensor averaging</li>
+<li><strong>weighted</strong> - Weighted combination</li>
+</ul>
+<h3 id="import--interop"><a class="header" href="#import--interop">Import &amp; Interop</a></h3>
+<h4 id="11-import---import-external-models"><a class="header" href="#11-import---import-external-models">11. IMPORT - Import External Models</a></h4>
 <pre><code class="language-bash">apr import external.safetensors -o imported.apr
 apr import hf://org/repo -o model.apr --arch whisper
 </code></pre>
 <p>Imports from SafeTensors, HuggingFace Hub, and other formats.</p>
-<h3 id="9-explain---get-explanations"><a class="header" href="#9-explain---get-explanations">9. EXPLAIN - Get Explanations</a></h3>
+<h3 id="testing--regression"><a class="header" href="#testing--regression">Testing &amp; Regression</a></h3>
+<h4 id="12-canary---regression-testing"><a class="header" href="#12-canary---regression-testing">12. CANARY - Regression Testing</a></h4>
+<pre><code class="language-bash"># Create canary from original model
+apr canary create model.apr --input ref.wav --output canary.json
+
+# Check optimized model against canary
+apr canary check model-optimized.apr --canary canary.json
+</code></pre>
+<p>Captures tensor statistics for regression testing after transformations (quantization, pruning).</p>
+<p>Canary data includes:</p>
+<ul>
+<li>Tensor shapes and counts</li>
+<li>Mean, std, min, max for each tensor</li>
+<li>Drift tolerance checking</li>
+</ul>
+<h4 id="13-probar---visual-regression-testing"><a class="header" href="#13-probar---visual-regression-testing">13. PROBAR - Visual Regression Testing</a></h4>
+<pre><code class="language-bash">apr probar model.apr -o probar_output         # Create probar suite
+apr probar model.apr -o output --format json  # JSON format
+</code></pre>
+<p>Exports model data for visual regression testing.</p>
+<h3 id="help--documentation"><a class="header" href="#help--documentation">Help &amp; Documentation</a></h3>
+<h4 id="14-explain---get-explanations"><a class="header" href="#14-explain---get-explanations">14. EXPLAIN - Get Explanations</a></h4>
 <pre><code class="language-bash">apr explain E002                           # Explain error code
 apr explain --tensor encoder.conv1.weight  # Explain tensor name
 apr explain --file model.apr               # Analyze file
 </code></pre>
 <p>Provides context-aware explanations for errors and tensor patterns.</p>
-<h2 id="stub-commands-team-finishing"><a class="header" href="#stub-commands-team-finishing">Stub Commands (Team Finishing)</a></h2>
-<p>Six additional commands are being implemented:</p>
-<div class="table-wrapper"><table><thead><tr><th>Command</th><th>Purpose</th><th>Status</th></tr></thead><tbody>
-<tr><td>convert</td><td>Quantization/optimization</td><td>Stub</td></tr>
-<tr><td>export</td><td>Export to safetensors/gguf</td><td>Stub</td></tr>
-<tr><td>merge</td><td>Model merging</td><td>Stub</td></tr>
-<tr><td>lint</td><td>Best practices check</td><td>Stub</td></tr>
-<tr><td>tui</td><td>Interactive terminal UI</td><td>Stub</td></tr>
-<tr><td>canary</td><td>Regression testing</td><td>Implemented</td></tr>
-</tbody></table>
-</div>
+<h3 id="interactive"><a class="header" href="#interactive">Interactive</a></h3>
+<h4 id="15-tui---interactive-terminal-ui"><a class="header" href="#15-tui---interactive-terminal-ui">15. TUI - Interactive Terminal UI</a></h4>
+<pre><code class="language-bash">apr tui model.apr                          # Launch interactive UI
+</code></pre>
+<p>Interactive terminal interface for model exploration (coming soon).</p>
 <h2 id="example-output-4"><a class="header" href="#example-output-4">Example Output</a></h2>
 <p>Running the example creates demo models:</p>
 <pre><code>=== APR CLI Commands Demo ===
@@ -33673,33 +33760,25 @@ Created: /tmp/apr_cli_demo/demo_model.apr
   Size: 1707 bytes
 Created: /tmp/apr_cli_demo/demo_model_v2.apr
 </code></pre>
-<p>Then use the CLI:</p>
-<pre><code class="language-bash">$ apr validate /tmp/apr_cli_demo/demo_model.apr --quality
-
-  1. Magic Number Check                 [PASS]
-  2. Version Check                      [PASS]
-  ...
- 25. Tensor Checksum                    [PASS]
-
-Result: VALID (100/100 points)
-
-=== 100-Point Quality Assessment ===
-
-A. Format &amp; Structural Integrity       25/25 [████████████████████]
-B. Tensor Physics &amp; Statistics         25/25 [████████████████████]
-C. Tooling &amp; Operations                25/25 [████████████████████]
-D. Conversion &amp; Interoperability       25/25 [████████████████████]
-
-TOTAL: 100/100 (Grade: A+)
-</code></pre>
 <h2 id="use-cases-23"><a class="header" href="#use-cases-23">Use Cases</a></h2>
 <h3 id="cicd-model-validation"><a class="header" href="#cicd-model-validation">CI/CD Model Validation</a></h3>
 <pre><code class="language-bash"># In CI pipeline
-apr validate model.apr --strict --min-score 90
+apr validate model.apr --strict --min-score 90 &amp;&amp; apr lint model.apr
 if [ $? -ne 0 ]; then
     echo &quot;Model validation failed&quot;
     exit 1
 fi
+</code></pre>
+<h3 id="model-optimization-pipeline"><a class="header" href="#model-optimization-pipeline">Model Optimization Pipeline</a></h3>
+<pre><code class="language-bash"># Quantize for production
+apr convert model.apr --quantize int8 -o model-int8.apr
+
+# Verify no regression
+apr canary create model.apr --input test.wav --output canary.json
+apr canary check model-int8.apr --canary canary.json
+
+# Export for deployment
+apr export model-int8.apr --format gguf -o model.gguf
 </code></pre>
 <h3 id="model-version-comparison"><a class="header" href="#model-version-comparison">Model Version Comparison</a></h3>
 <pre><code class="language-bash"># Compare before/after optimization
@@ -33708,14 +33787,19 @@ apr diff original.apr quantized.apr --json | jq '.tensor_changes'
 <h3 id="debugging-inference-issues"><a class="header" href="#debugging-inference-issues">Debugging Inference Issues</a></h3>
 <pre><code class="language-bash"># Layer-by-layer trace
 apr trace model.apr --verbose | grep -i &quot;nan\|inf&quot;
+
+# Drama mode for detailed analysis
+apr debug model.apr --drama
 </code></pre>
 <h2 id="benefits-2"><a class="header" href="#benefits-2">Benefits</a></h2>
 <div class="table-wrapper"><table><thead><tr><th>Benefit</th><th>Description</th></tr></thead><tbody>
 <tr><td>Standardized</td><td>Consistent CLI for all APR models</td></tr>
-<tr><td>Comprehensive</td><td>9 commands cover full lifecycle</td></tr>
+<tr><td>Comprehensive</td><td>15 commands cover full lifecycle</td></tr>
 <tr><td>Scriptable</td><td>JSON output for automation</td></tr>
 <tr><td>Debuggable</td><td>Deep inspection with drama mode</td></tr>
 <tr><td>Validatable</td><td>100-point QA with grades</td></tr>
+<tr><td>Transformable</td><td>Quantization and format conversion</td></tr>
+<tr><td>Testable</td><td>Canary regression testing</td></tr>
 </tbody></table>
 </div>
 <h2 id="related-resources-1"><a class="header" href="#related-resources-1">Related Resources</a></h2>
@@ -33723,6 +33807,7 @@ apr trace model.apr --verbose | grep -i &quot;nan\|inf&quot;
 <li><a href="examples/./apr-with-metadata.html">Case Study: APR with JSON Metadata</a></li>
 <li><a href="examples/./apr-format-deep-dive.html">The .apr Format: A Five Whys Deep Dive</a></li>
 <li><a href="examples/./apr-loading-modes.html">APR Loading Modes</a></li>
+<li><a href="examples/../tools/apr-cli.html">apr (APR Model Operations CLI)</a></li>
 </ul>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="case-study-model-zoo"><a class="header" href="#case-study-model-zoo">Case Study: Model Zoo</a></h1>
 <p>This example demonstrates the Model Zoo protocol for model sharing and discovery, providing standardized metadata and quality scoring.</p>
