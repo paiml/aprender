@@ -45,7 +45,7 @@ pub(crate) fn run(
     println!("Output: {}", output.display());
 
     // Parse merge strategy
-    let merge_strategy = MergeStrategy::from_str(strategy).ok_or_else(|| {
+    let merge_strategy: MergeStrategy = strategy.parse().map_err(|_| {
         CliError::ValidationFailed(format!(
             "Unknown merge strategy: {strategy}. Supported: average, weighted"
         ))

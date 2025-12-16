@@ -218,6 +218,7 @@
 - [Case Study: APR with JSON Metadata](./examples/apr-with-metadata.md)
 - [Case Study: CUDA and GPU Backends](./examples/cuda-backend.md)
 - [Case Study: APR CLI Tool Demo](./examples/apr-cli-demo.md)
+- [Case Study: APR CLI Commands Demo](./examples/apr-cli-commands.md)
 - [Case Study: Model Zoo](./examples/model-zoo.md)
 - [Case Study: Sovereign AI Stack Integration](./examples/sovereign-stack.md)
 - [Case Study: Model Explainability and Audit Trails](./examples/explainability-audit.md)
