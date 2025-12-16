@@ -1051,6 +1051,482 @@ fn save_model_tensors(
 }
 
 // ============================================================================
+// EXPORT FUNCTIONALITY (APR-SPEC §4.6)
+// ============================================================================
+
+/// Export format options
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExportFormat {
+    /// SafeTensors format (.safetensors) - HuggingFace ecosystem
+    SafeTensors,
+    /// GGUF format (.gguf) - llama.cpp / local inference
+    Gguf,
+    /// ONNX format (.onnx) - Cross-framework inference (not yet implemented)
+    Onnx,
+    /// TorchScript format (.pt) - PyTorch deployment (not yet implemented)
+    TorchScript,
+}
+
+impl std::str::FromStr for ExportFormat {
+    type Err = String;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "safetensors" | "st" => Ok(Self::SafeTensors),
+            "gguf" => Ok(Self::Gguf),
+            "onnx" => Ok(Self::Onnx),
+            "torchscript" | "pt" | "torch" => Ok(Self::TorchScript),
+            _ => Err(format!("Unknown export format: {s}")),
+        }
+    }
+}
+
+impl ExportFormat {
+    /// Get default file extension
+    #[must_use]
+    pub fn extension(&self) -> &'static str {
+        match self {
+            Self::SafeTensors => "safetensors",
+            Self::Gguf => "gguf",
+            Self::Onnx => "onnx",
+            Self::TorchScript => "pt",
+        }
+    }
+
+    /// Check if format is supported
+    #[must_use]
+    pub fn is_supported(&self) -> bool {
+        matches!(self, Self::SafeTensors | Self::Gguf)
+    }
+}
+
+/// Options for model export
+#[derive(Debug, Clone)]
+pub struct ExportOptions {
+    /// Target format
+    pub format: ExportFormat,
+    /// Optional quantization
+    pub quantize: Option<QuantizationType>,
+}
+
+impl Default for ExportOptions {
+    fn default() -> Self {
+        Self {
+            format: ExportFormat::SafeTensors,
+            quantize: None,
+        }
+    }
+}
+
+/// Report from export operation
+#[derive(Debug, Clone)]
+pub struct ExportReport {
+    /// Original size in bytes
+    pub original_size: usize,
+    /// Exported size in bytes
+    pub exported_size: usize,
+    /// Number of tensors exported
+    pub tensor_count: usize,
+    /// Export format used
+    pub format: ExportFormat,
+    /// Quantization applied
+    pub quantization: Option<QuantizationType>,
+}
+
+/// Export APR/SafeTensors model to another format
+///
+/// # Arguments
+///
+/// * `input` - Input model path (.apr or .safetensors)
+/// * `output` - Output file path
+/// * `options` - Export options
+///
+/// # Returns
+///
+/// Export report with size and format information
+///
+/// # Errors
+///
+/// Returns error if:
+/// - Input file doesn't exist
+/// - Format not supported
+/// - Export fails
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use aprender::format::{apr_export, ExportOptions, ExportFormat};
+///
+/// let options = ExportOptions {
+///     format: ExportFormat::Gguf,
+///     quantize: None,
+/// };
+/// let report = apr_export("model.apr", "model.gguf", options)?;
+/// ```
+pub fn apr_export<P: AsRef<Path>>(
+    input: P,
+    output: P,
+    options: ExportOptions,
+) -> Result<ExportReport> {
+    let input_path = input.as_ref();
+    let output_path = output.as_ref();
+
+    // Validate input exists
+    if !input_path.exists() {
+        return Err(AprenderError::FormatError {
+            message: format!("Input file not found: {}", input_path.display()),
+        });
+    }
+
+    // Check if format is supported
+    if !options.format.is_supported() {
+        return Err(AprenderError::FormatError {
+            message: format!(
+                "Export format {:?} is not yet supported. Use 'safetensors' or 'gguf'.",
+                options.format
+            ),
+        });
+    }
+
+    // Load tensors
+    let tensors = load_model_tensors(input_path)?;
+    let original_size = calculate_tensor_size(&tensors);
+    let original_count = tensors.len();
+
+    // Apply quantization if requested
+    let tensors = if let Some(ref quant_type) = options.quantize {
+        quantize_tensors(&tensors, quant_type)?
+    } else {
+        tensors
+    };
+
+    // Export to target format
+    match options.format {
+        ExportFormat::SafeTensors => {
+            save_safetensors(output_path, &tensors).map_err(|e| AprenderError::FormatError {
+                message: format!("Failed to export to SafeTensors: {e}"),
+            })?;
+        }
+        ExportFormat::Gguf => {
+            export_to_gguf(&tensors, output_path)?;
+        }
+        ExportFormat::Onnx | ExportFormat::TorchScript => {
+            return Err(AprenderError::FormatError {
+                message: format!("Export format {:?} is not yet implemented", options.format),
+            });
+        }
+    }
+
+    // Get exported file size
+    let exported_size = fs::metadata(output_path)
+        .map(|m| m.len() as usize)
+        .unwrap_or(0);
+
+    Ok(ExportReport {
+        original_size,
+        exported_size,
+        tensor_count: original_count,
+        format: options.format,
+        quantization: options.quantize,
+    })
+}
+
+/// Export tensors to GGUF format
+fn export_to_gguf(tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>, output: &Path) -> Result<()> {
+    use crate::format::gguf::{export_tensors_to_gguf, GgmlType, GgufTensor, GgufValue};
+    use std::fs::File;
+    use std::io::BufWriter;
+
+    // Convert tensors to GGUF format
+    let gguf_tensors: Vec<GgufTensor> = tensors
+        .iter()
+        .map(|(name, (data, shape))| {
+            // Convert f32 data to bytes
+            let bytes: Vec<u8> = data.iter().flat_map(|f| f.to_le_bytes()).collect();
+
+            GgufTensor {
+                name: name.clone(),
+                shape: shape.iter().map(|&d| d as u64).collect(),
+                dtype: GgmlType::F32,
+                data: bytes,
+            }
+        })
+        .collect();
+
+    // Basic metadata
+    let metadata = vec![
+        (
+            "general.name".to_string(),
+            GgufValue::String("model".to_string()),
+        ),
+        (
+            "general.quantization_version".to_string(),
+            GgufValue::Uint32(1),
+        ),
+    ];
+
+    // Write to file
+    let file = File::create(output).map_err(|e| AprenderError::FormatError {
+        message: format!("Failed to create output file: {e}"),
+    })?;
+    let mut writer = BufWriter::new(file);
+
+    export_tensors_to_gguf(&mut writer, &gguf_tensors, &metadata)
+}
+
+// ============================================================================
+// MERGE FUNCTIONALITY (APR-SPEC §4.9)
+// ============================================================================
+
+/// Merge strategy options
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MergeStrategy {
+    /// Average weights (simple ensemble)
+    Average,
+    /// Weighted average by performance
+    Weighted,
+    /// TIES merging (trim, elect, sign) - advanced
+    Ties,
+    /// DARE merging (drop and rescale) - advanced
+    Dare,
+    /// Spherical linear interpolation - advanced
+    Slerp,
+}
+
+impl std::str::FromStr for MergeStrategy {
+    type Err = String;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "average" | "avg" => Ok(Self::Average),
+            "weighted" => Ok(Self::Weighted),
+            "ties" => Ok(Self::Ties),
+            "dare" => Ok(Self::Dare),
+            "slerp" => Ok(Self::Slerp),
+            _ => Err(format!("Unknown merge strategy: {s}")),
+        }
+    }
+}
+
+impl MergeStrategy {
+    /// Check if strategy is currently supported
+    #[must_use]
+    pub fn is_supported(&self) -> bool {
+        matches!(self, Self::Average | Self::Weighted)
+    }
+}
+
+/// Options for model merging
+#[derive(Debug, Clone)]
+pub struct MergeOptions {
+    /// Merge strategy to use
+    pub strategy: MergeStrategy,
+    /// Weights for weighted merging (must match number of models)
+    pub weights: Option<Vec<f32>>,
+}
+
+impl Default for MergeOptions {
+    fn default() -> Self {
+        Self {
+            strategy: MergeStrategy::Average,
+            weights: None,
+        }
+    }
+}
+
+/// Report from merge operation
+#[derive(Debug, Clone)]
+pub struct MergeReport {
+    /// Number of models merged
+    pub model_count: usize,
+    /// Number of tensors in merged model
+    pub tensor_count: usize,
+    /// Output file size in bytes
+    pub output_size: usize,
+    /// Strategy used
+    pub strategy: MergeStrategy,
+    /// Weights used (if weighted merge)
+    pub weights_used: Option<Vec<f32>>,
+}
+
+/// Merge multiple models into one
+///
+/// # Arguments
+///
+/// * `inputs` - Input model paths (.apr or .safetensors)
+/// * `output` - Output file path
+/// * `options` - Merge options
+///
+/// # Returns
+///
+/// Merge report with statistics
+///
+/// # Errors
+///
+/// Returns error if:
+/// - Less than 2 input files
+/// - Input files don't exist
+/// - Models have incompatible tensor shapes
+/// - Strategy not supported
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use aprender::format::{apr_merge, MergeOptions, MergeStrategy};
+///
+/// let options = MergeOptions {
+///     strategy: MergeStrategy::Average,
+///     weights: None,
+/// };
+/// let report = apr_merge(&["model1.apr", "model2.apr"], "merged.apr", options)?;
+/// ```
+#[allow(clippy::too_many_lines)]
+pub fn apr_merge<P: AsRef<Path>>(
+    inputs: &[P],
+    output: P,
+    options: MergeOptions,
+) -> Result<MergeReport> {
+    // Validate inputs
+    if inputs.len() < 2 {
+        return Err(AprenderError::FormatError {
+            message: "Merge requires at least 2 input models".to_string(),
+        });
+    }
+
+    // Check strategy is supported
+    if !options.strategy.is_supported() {
+        return Err(AprenderError::FormatError {
+            message: format!(
+                "Merge strategy {:?} is not yet supported. Use 'average' or 'weighted'.",
+                options.strategy
+            ),
+        });
+    }
+
+    // Validate weights for weighted merge
+    if options.strategy == MergeStrategy::Weighted {
+        match &options.weights {
+            Some(weights) if weights.len() != inputs.len() => {
+                return Err(AprenderError::FormatError {
+                    message: format!(
+                        "Weighted merge requires {} weights, got {}",
+                        inputs.len(),
+                        weights.len()
+                    ),
+                });
+            }
+            None => {
+                return Err(AprenderError::FormatError {
+                    message: "Weighted merge requires weights to be specified".to_string(),
+                });
+            }
+            _ => {}
+        }
+    }
+
+    // Load all models
+    let mut all_tensors: Vec<BTreeMap<String, (Vec<f32>, Vec<usize>)>> = Vec::new();
+    for input_path in inputs {
+        let path = input_path.as_ref();
+        if !path.exists() {
+            return Err(AprenderError::FormatError {
+                message: format!("Input file not found: {}", path.display()),
+            });
+        }
+        let tensors = load_model_tensors(path)?;
+        all_tensors.push(tensors);
+    }
+
+    // Verify all models have same tensors
+    let reference = &all_tensors[0];
+    for (i, tensors) in all_tensors.iter().enumerate().skip(1) {
+        if tensors.len() != reference.len() {
+            return Err(AprenderError::FormatError {
+                message: format!(
+                    "Model {} has {} tensors, but model 0 has {}",
+                    i,
+                    tensors.len(),
+                    reference.len()
+                ),
+            });
+        }
+        for (name, (_, shape)) in reference {
+            match tensors.get(name) {
+                None => {
+                    return Err(AprenderError::FormatError {
+                        message: format!("Model {} is missing tensor '{}'", i, name),
+                    });
+                }
+                Some((_, other_shape)) if other_shape != shape => {
+                    return Err(AprenderError::FormatError {
+                        message: format!(
+                            "Tensor '{}' has shape {:?} in model 0 but {:?} in model {}",
+                            name, shape, other_shape, i
+                        ),
+                    });
+                }
+                _ => {}
+            }
+        }
+    }
+
+    // Calculate weights (normalize to sum to 1.0)
+    let weights = match options.strategy {
+        MergeStrategy::Average => {
+            let w = 1.0 / inputs.len() as f32;
+            vec![w; inputs.len()]
+        }
+        MergeStrategy::Weighted => {
+            let raw_weights = options.weights.as_ref().expect("validated above");
+            let sum: f32 = raw_weights.iter().sum();
+            if sum <= 0.0 {
+                return Err(AprenderError::FormatError {
+                    message: "Weights must sum to a positive value".to_string(),
+                });
+            }
+            raw_weights.iter().map(|w| w / sum).collect()
+        }
+        _ => unreachable!("unsupported strategies filtered above"),
+    };
+
+    // Merge tensors
+    let mut merged: BTreeMap<String, (Vec<f32>, Vec<usize>)> = BTreeMap::new();
+    for (name, (_, shape)) in reference {
+        let data_len = all_tensors[0].get(name).map(|(d, _)| d.len()).unwrap_or(0);
+        let mut merged_data = vec![0.0f32; data_len];
+
+        for (model_idx, model_tensors) in all_tensors.iter().enumerate() {
+            let (data, _) = model_tensors.get(name).expect("validated above");
+            let weight = weights[model_idx];
+            for (i, &val) in data.iter().enumerate() {
+                merged_data[i] += val * weight;
+            }
+        }
+
+        merged.insert(name.clone(), (merged_data, shape.clone()));
+    }
+
+    // Save merged model
+    let output_path = output.as_ref();
+    save_safetensors(output_path, &merged).map_err(|e| AprenderError::FormatError {
+        message: format!("Failed to save merged model: {e}"),
+    })?;
+
+    // Get output file size
+    let output_size = fs::metadata(output_path)
+        .map(|m| m.len() as usize)
+        .unwrap_or(0);
+
+    Ok(MergeReport {
+        model_count: inputs.len(),
+        tensor_count: merged.len(),
+        output_size,
+        strategy: options.strategy,
+        weights_used: Some(weights),
+    })
+}
+
+// ============================================================================
 // TESTS - EXTREME TDD
 // ============================================================================
 

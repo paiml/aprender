@@ -86,6 +86,15 @@ pub mod validation;
 )]
 pub mod converter;
 
+// Lint module (spec §4.11 - Best Practices & Conventions)
+#[allow(
+    clippy::struct_excessive_bools,
+    clippy::field_reassign_with_default,
+    clippy::uninlined_format_args,
+    dead_code
+)]
+pub mod lint;
+
 // Re-export model card types
 pub use model_card::{ModelCard, TrainingDataInfo};
 
@@ -96,8 +105,16 @@ pub use validation::{
 
 // Re-export converter types (spec §13 - Import/Convert Pipeline)
 pub use converter::{
-    apr_convert, apr_import, AprConverter, Architecture, ConvertOptions, ConvertReport,
-    ImportError, ImportOptions, QuantizationType, Source, TensorExpectation, ValidationConfig,
+    apr_convert, apr_export, apr_import, apr_merge, AprConverter, Architecture, ConvertOptions,
+    ConvertReport, ExportFormat, ExportOptions, ExportReport, ImportError, ImportOptions,
+    MergeOptions, MergeReport, MergeStrategy, QuantizationType, Source, TensorExpectation,
+    ValidationConfig,
+};
+
+// Re-export lint types (spec §4.11 - Best Practices & Conventions)
+pub use lint::{
+    lint_apr_file, lint_model, LintCategory, LintIssue, LintLevel, LintReport, ModelLintInfo,
+    TensorLintInfo,
 };
 
 // Re-export quantization types when feature is enabled

@@ -72,10 +72,11 @@ fn print_check_results(report: &ValidationReport) {
     }
 }
 
-fn print_summary(report: &ValidationReport, strict: bool) -> Result<(), CliError> {
+fn print_summary(report: &ValidationReport, _strict: bool) -> Result<(), CliError> {
     println!();
 
     let failed_checks = report.failed_checks();
+
     if failed_checks.is_empty() {
         println!(
             "Result: {} ({}/100 points)",
@@ -89,14 +90,11 @@ fn print_summary(report: &ValidationReport, strict: bool) -> Result<(), CliError
             "INVALID".red().bold(),
             failed_checks.len()
         );
-        if strict {
-            Err(CliError::ValidationFailed(format!(
-                "{} validation checks failed",
-                failed_checks.len()
-            )))
-        } else {
-            Ok(())
-        }
+        // Always fail when there are failed checks (corrupted files etc.)
+        Err(CliError::ValidationFailed(format!(
+            "{} validation checks failed",
+            failed_checks.len()
+        )))
     }
 }
 

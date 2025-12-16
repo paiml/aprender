@@ -237,6 +237,10 @@ enum Commands {
         /// Output file path
         #[arg(short, long)]
         output: PathBuf,
+
+        /// Apply quantization during export (int8, int4, fp16)
+        #[arg(long)]
+        quantize: Option<String>,
     },
 
     /// Import from external formats (hf://org/repo, local files, URLs)
@@ -290,6 +294,10 @@ enum Commands {
         /// Output file path
         #[arg(short, long)]
         output: PathBuf,
+
+        /// Weights for weighted merge (comma-separated, e.g., "0.7,0.3")
+        #[arg(long, value_delimiter = ',')]
+        weights: Option<Vec<f32>>,
     },
 
     /// Interactive terminal UI
@@ -420,7 +428,8 @@ fn main() -> ExitCode {
             file,
             format,
             output,
-        } => export::run(&file, &format, &output),
+            quantize,
+        } => export::run(&file, &format, &output, quantize),
         Commands::Import {
             source,
             output,
@@ -443,7 +452,8 @@ fn main() -> ExitCode {
             files,
             strategy,
             output,
-        } => merge::run(&files, &strategy, &output),
+            weights,
+        } => merge::run(&files, &strategy, &output, weights),
         Commands::Tui { file } => tui::run(file),
 
         Commands::Probar {
