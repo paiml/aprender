@@ -186,7 +186,33 @@ pub(crate) fn run(
     reference: Option<&Path>,
     json_output: bool,
     verbose: bool,
+    payload: bool,
+    diff: bool,
+    interactive: bool,
 ) -> Result<(), CliError> {
+    if interactive {
+        println!("Starting interactive trace (TUI) for {}", path.display());
+        println!("(TUI mode not yet fully implemented)");
+        return Ok(());
+    }
+
+    if payload {
+        println!("Tracing payload through model: {}", path.display());
+        // Stub for payload trace
+    }
+
+    if diff {
+        if let Some(ref_path) = reference {
+            println!(
+                "Diffing trace between {} and {}",
+                path.display(),
+                ref_path.display()
+            );
+        } else {
+            println!("Diff mode requires --reference");
+        }
+    }
+
     validate_path(path)?;
 
     let file = File::open(path)?;

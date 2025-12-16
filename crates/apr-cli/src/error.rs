@@ -6,6 +6,8 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 use thiserror::Error;
 
+pub(crate) type Result<T> = std::result::Result<T, CliError>;
+
 /// CLI error types
 #[derive(Error, Debug)]
 pub(crate) enum CliError {

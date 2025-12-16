@@ -248,6 +248,7 @@
 - [criterion](./tools/criterion.md)
 - [pmat (Toyota AI Toolkit)](./tools/pmat.md)
 - [apr (APR Model Operations CLI)](./tools/apr-cli.md)
+- [APR Format Specification](./tools/apr-spec.md)
 
 # Best Practices
 
