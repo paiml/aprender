@@ -1,0 +1,773 @@
+<!DOCTYPE HTML>
+<html lang="en" class="rust" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Case Study: Pipeline Verification - EXTREME TDD - The Aprender Guide to Zero-Defect Machine Learning</title>
+
+
+        <!-- Custom HTML head -->
+        
+        <meta name="description" content="A comprehensive guide to EXTREME TDD methodology: RED-GREEN-REFACTOR cycles, mutation testing, and Toyota Way principles demonstrated through ML library development">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="../favicon.svg">
+        <link rel="shortcut icon" href="../favicon.png">
+        <link rel="stylesheet" href="../css/variables.css">
+        <link rel="stylesheet" href="../css/general.css">
+        <link rel="stylesheet" href="../css/chrome.css">
+        <link rel="stylesheet" href="../css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="../fonts/fonts.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" href="../highlight.css">
+        <link rel="stylesheet" href="../tomorrow-night.css">
+        <link rel="stylesheet" href="../ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+
+    </head>
+    <body class="sidebar-visible no-js">
+    <div id="body-container">
+        <!-- Provide site root to javascript -->
+        <script>
+            var path_to_root = "../";
+            var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "rust";
+        </script>
+
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            var html = document.querySelector('html');
+            html.classList.remove('rust')
+            html.classList.add(theme);
+            var body = document.querySelector('body');
+            body.classList.remove('no-js')
+            body.classList.add('js');
+        </script>
+
+        <input type="checkbox" id="sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            var body = document.querySelector('body');
+            var sidebar = null;
+            var sidebar_toggle = document.getElementById("sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+            }
+            sidebar_toggle.checked = sidebar === 'visible';
+            body.classList.remove('sidebar-visible');
+            body.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <div class="sidebar-scrollbox">
+                <ol class="chapter"><li class="chapter-item expanded affix "><a href="../introduction.html">Introduction</a></li><li class="chapter-item expanded affix "><li class="part-title">Core Methodology</li><li class="chapter-item expanded "><a href="../methodology/what-is-extreme-tdd.html"><strong aria-hidden="true">1.</strong> What is EXTREME TDD?</a></li><li class="chapter-item expanded "><a href="../methodology/red-green-refactor.html"><strong aria-hidden="true">2.</strong> The RED-GREEN-REFACTOR Cycle</a></li><li class="chapter-item expanded "><a href="../methodology/test-first-philosophy.html"><strong aria-hidden="true">3.</strong> Test-First Philosophy</a></li><li class="chapter-item expanded "><a href="../methodology/zero-tolerance.html"><strong aria-hidden="true">4.</strong> Zero Tolerance Quality</a></li><li class="chapter-item expanded affix "><li class="part-title">The RED Phase</li><li class="chapter-item expanded "><a href="../red-phase/failing-tests-first.html"><strong aria-hidden="true">5.</strong> Writing Failing Tests First</a></li><li class="chapter-item expanded "><a href="../red-phase/test-categories.html"><strong aria-hidden="true">6.</strong> Test Categories</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../red-phase/unit-tests.html"><strong aria-hidden="true">6.1.</strong> Unit Tests</a></li><li class="chapter-item expanded "><a href="../red-phase/integration-tests.html"><strong aria-hidden="true">6.2.</strong> Integration Tests</a></li><li class="chapter-item expanded "><a href="../red-phase/property-based-tests.html"><strong aria-hidden="true">6.3.</strong> Property-Based Tests</a></li></ol></li><li class="chapter-item expanded "><a href="../red-phase/verification-strategy.html"><strong aria-hidden="true">7.</strong> Verification Strategy</a></li><li class="chapter-item expanded affix "><li class="part-title">The GREEN Phase</li><li class="chapter-item expanded "><a href="../green-phase/minimal-implementation.html"><strong aria-hidden="true">8.</strong> Minimal Implementation</a></li><li class="chapter-item expanded "><a href="../green-phase/making-tests-pass.html"><strong aria-hidden="true">9.</strong> Making Tests Pass</a></li><li class="chapter-item expanded "><a href="../green-phase/avoiding-over-engineering.html"><strong aria-hidden="true">10.</strong> Avoiding Over-Engineering</a></li><li class="chapter-item expanded "><a href="../green-phase/simplest-thing.html"><strong aria-hidden="true">11.</strong> The Simplest Thing That Works</a></li><li class="chapter-item expanded affix "><li class="part-title">The REFACTOR Phase</li><li class="chapter-item expanded "><a href="../refactor-phase/refactoring-with-confidence.html"><strong aria-hidden="true">12.</strong> Refactoring with Confidence</a></li><li class="chapter-item expanded "><a href="../refactor-phase/code-quality.html"><strong aria-hidden="true">13.</strong> Code Quality Improvements</a></li><li class="chapter-item expanded "><a href="../refactor-phase/performance-optimization.html"><strong aria-hidden="true">14.</strong> Performance Optimization</a></li><li class="chapter-item expanded "><a href="../refactor-phase/documentation.html"><strong aria-hidden="true">15.</strong> Documentation</a></li><li class="chapter-item expanded affix "><li class="part-title">Advanced Testing</li><li class="chapter-item expanded "><a href="../advanced-testing/property-based-testing.html"><strong aria-hidden="true">16.</strong> Property-Based Testing</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../advanced-testing/proptest-fundamentals.html"><strong aria-hidden="true">16.1.</strong> Proptest Fundamentals</a></li><li class="chapter-item expanded "><a href="../advanced-testing/strategies-generators.html"><strong aria-hidden="true">16.2.</strong> Strategies and Generators</a></li><li class="chapter-item expanded "><a href="../advanced-testing/testing-invariants.html"><strong aria-hidden="true">16.3.</strong> Testing Invariants</a></li></ol></li><li class="chapter-item expanded "><a href="../advanced-testing/mutation-testing.html"><strong aria-hidden="true">17.</strong> Mutation Testing</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../advanced-testing/what-is-mutation-testing.html"><strong aria-hidden="true">17.1.</strong> What is Mutation Testing?</a></li><li class="chapter-item expanded "><a href="../advanced-testing/using-cargo-mutants.html"><strong aria-hidden="true">17.2.</strong> Using cargo-mutants</a></li><li class="chapter-item expanded "><a href="../advanced-testing/mutation-score-targets.html"><strong aria-hidden="true">17.3.</strong> Mutation Score Targets</a></li><li class="chapter-item expanded "><a href="../advanced-testing/killing-mutants.html"><strong aria-hidden="true">17.4.</strong> Killing Mutants</a></li></ol></li><li class="chapter-item expanded "><a href="../advanced-testing/fuzzing.html"><strong aria-hidden="true">18.</strong> Fuzzing</a></li><li class="chapter-item expanded "><a href="../advanced-testing/benchmark-testing.html"><strong aria-hidden="true">19.</strong> Benchmark Testing</a></li><li class="chapter-item expanded affix "><li class="part-title">Quality Gates</li><li class="chapter-item expanded "><a href="../quality-gates/pre-commit-hooks.html"><strong aria-hidden="true">20.</strong> Pre-Commit Hooks</a></li><li class="chapter-item expanded "><a href="../quality-gates/continuous-integration.html"><strong aria-hidden="true">21.</strong> Continuous Integration</a></li><li class="chapter-item expanded "><a href="../quality-gates/code-formatting.html"><strong aria-hidden="true">22.</strong> Code Formatting (rustfmt)</a></li><li class="chapter-item expanded "><a href="../quality-gates/linting-clippy.html"><strong aria-hidden="true">23.</strong> Linting (clippy)</a></li><li class="chapter-item expanded "><a href="../quality-gates/coverage-measurement.html"><strong aria-hidden="true">24.</strong> Coverage Measurement</a></li><li class="chapter-item expanded "><a href="../quality-gates/complexity-analysis.html"><strong aria-hidden="true">25.</strong> Complexity Analysis</a></li><li class="chapter-item expanded "><a href="../quality-gates/tdg-score.html"><strong aria-hidden="true">26.</strong> Technical Debt Gradient (TDG)</a></li><li class="chapter-item expanded affix "><li class="part-title">Toyota Way Principles</li><li class="chapter-item expanded "><a href="../toyota-way/overview.html"><strong aria-hidden="true">27.</strong> Overview</a></li><li class="chapter-item expanded "><a href="../toyota-way/kaizen.html"><strong aria-hidden="true">28.</strong> Kaizen (Continuous Improvement)</a></li><li class="chapter-item expanded "><a href="../toyota-way/genchi-genbutsu.html"><strong aria-hidden="true">29.</strong> Genchi Genbutsu (Go and See)</a></li><li class="chapter-item expanded "><a href="../toyota-way/jidoka.html"><strong aria-hidden="true">30.</strong> Jidoka (Built-in Quality)</a></li><li class="chapter-item expanded "><a href="../toyota-way/pdca-cycle.html"><strong aria-hidden="true">31.</strong> PDCA Cycle</a></li><li class="chapter-item expanded "><a href="../toyota-way/respect-for-people.html"><strong aria-hidden="true">32.</strong> Respect for People</a></li><li class="chapter-item expanded affix "><li class="part-title">Machine Learning Fundamentals</li><li class="chapter-item expanded "><a href="../ml-fundamentals/linear-regression.html"><strong aria-hidden="true">33.</strong> Linear Regression Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/regularization.html"><strong aria-hidden="true">34.</strong> Regularization Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/logistic-regression.html"><strong aria-hidden="true">35.</strong> Logistic Regression Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/knn.html"><strong aria-hidden="true">36.</strong> K-Nearest Neighbors (kNN) Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/naive-bayes.html"><strong aria-hidden="true">37.</strong> Naive Bayes Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/bayesian-inference.html"><strong aria-hidden="true">38.</strong> Bayesian Inference Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/svm.html"><strong aria-hidden="true">39.</strong> Support Vector Machines (SVM) Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/decision-trees.html"><strong aria-hidden="true">40.</strong> Decision Trees Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/ensemble-methods.html"><strong aria-hidden="true">41.</strong> Ensemble Methods Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/kmeans-clustering.html"><strong aria-hidden="true">42.</strong> K-Means Clustering Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/pca.html"><strong aria-hidden="true">43.</strong> Principal Component Analysis (PCA) Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/tsne.html"><strong aria-hidden="true">44.</strong> t-SNE (t-Distributed Stochastic Neighbor Embedding) Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/regression-metrics.html"><strong aria-hidden="true">45.</strong> Regression Metrics Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/classification-metrics.html"><strong aria-hidden="true">46.</strong> Classification Metrics Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/cross-validation.html"><strong aria-hidden="true">47.</strong> Cross-Validation Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/gradient-descent.html"><strong aria-hidden="true">48.</strong> Gradient Descent Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/advanced-optimizers.html"><strong aria-hidden="true">49.</strong> Advanced Optimizers Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/metaheuristics.html"><strong aria-hidden="true">50.</strong> Metaheuristics Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/automl.html"><strong aria-hidden="true">51.</strong> AutoML: Automated Machine Learning</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/compiler-in-the-loop.html"><strong aria-hidden="true">52.</strong> Compiler-in-the-Loop Learning</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/online-learning.html"><strong aria-hidden="true">53.</strong> Online Learning Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/feature-scaling.html"><strong aria-hidden="true">54.</strong> Feature Scaling Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/graph-algorithms.html"><strong aria-hidden="true">55.</strong> Graph Algorithms Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/graph-pathfinding.html"><strong aria-hidden="true">56.</strong> Graph Pathfinding Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/graph-components-traversal.html"><strong aria-hidden="true">57.</strong> Graph Components and Traversal</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/graph-link-prediction.html"><strong aria-hidden="true">58.</strong> Graph Link Prediction and Community Detection</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/descriptive-statistics.html"><strong aria-hidden="true">59.</strong> Descriptive Statistics Theory</a></li><li class="chapter-item expanded "><a href="../ml-fundamentals/apriori.html"><strong aria-hidden="true">60.</strong> Apriori Algorithm Theory</a></li><li class="chapter-item expanded affix "><li class="part-title">Real-World Examples from Aprender</li><li class="chapter-item expanded "><a href="../examples/linear-regression.html"><strong aria-hidden="true">61.</strong> Case Study: Linear Regression</a></li><li class="chapter-item expanded "><a href="../examples/boston-housing.html"><strong aria-hidden="true">62.</strong> Case Study: Boston Housing</a></li><li class="chapter-item expanded "><a href="../examples/cross-validation.html"><strong aria-hidden="true">63.</strong> Case Study: Cross-Validation</a></li><li class="chapter-item expanded "><a href="../examples/grid-search-tuning.html"><strong aria-hidden="true">64.</strong> Case Study: Grid Search Hyperparameter Tuning</a></li><li class="chapter-item expanded "><a href="../examples/automl-clustering.html"><strong aria-hidden="true">65.</strong> Case Study: AutoML Clustering (TPE)</a></li><li class="chapter-item expanded "><a href="../examples/random-forest.html"><strong aria-hidden="true">66.</strong> Case Study: Random Forest</a></li><li class="chapter-item expanded "><a href="../examples/random-forest-iris.html"><strong aria-hidden="true">67.</strong> Case Study: Random Forest Iris</a></li><li class="chapter-item expanded "><a href="../examples/random-forest-regression.html"><strong aria-hidden="true">68.</strong> Case Study: Random Forest Regression</a></li><li class="chapter-item expanded "><a href="../examples/decision-tree-iris.html"><strong aria-hidden="true">69.</strong> Case Study: Decision Tree Iris</a></li><li class="chapter-item expanded "><a href="../examples/decision-tree-regression.html"><strong aria-hidden="true">70.</strong> Case Study: Decision Tree Regression</a></li><li class="chapter-item expanded "><a href="../examples/model-serialization.html"><strong aria-hidden="true">71.</strong> Case Study: Model Serialization</a></li><li class="chapter-item expanded "><a href="../examples/model-format.html"><strong aria-hidden="true">72.</strong> Case Study: Model Format (.apr)</a></li><li class="chapter-item expanded "><a href="../examples/apr-format-deep-dive.html"><strong aria-hidden="true">73.</strong> The .apr Format: A Five Whys Deep Dive</a></li><li class="chapter-item expanded "><a href="../examples/model-bundling-paging.html"><strong aria-hidden="true">74.</strong> Case Study: Model Bundling and Memory Paging</a></li><li class="chapter-item expanded "><a href="../examples/tracing-memory-paging.html"><strong aria-hidden="true">75.</strong> Case Study: Tracing Memory Paging with Renacer</a></li><li class="chapter-item expanded "><a href="../examples/bundle-trace-demo.html"><strong aria-hidden="true">76.</strong> Case Study: Bundle Trace Demo</a></li><li class="chapter-item expanded "><a href="../examples/synthetic-data-generation.html"><strong aria-hidden="true">77.</strong> Case Study: Synthetic Data Generation</a></li><li class="chapter-item expanded "><a href="../examples/code-eda.html"><strong aria-hidden="true">78.</strong> Case Study: Code-Aware EDA</a></li><li class="chapter-item expanded "><a href="../examples/code-feature-extractor.html"><strong aria-hidden="true">79.</strong> Case Study: Code Feature Extraction</a></li><li class="chapter-item expanded "><a href="../examples/code-analysis.html"><strong aria-hidden="true">80.</strong> Case Study: Code Analysis with Code2Vec and MPNN</a></li><li class="chapter-item expanded "><a href="../examples/kmeans-clustering.html"><strong aria-hidden="true">81.</strong> Case Study: KMeans Clustering</a></li><li class="chapter-item expanded "><a href="../examples/dbscan-clustering.html"><strong aria-hidden="true">82.</strong> Case Study: DBSCAN Clustering</a></li><li class="chapter-item expanded "><a href="../examples/hierarchical-clustering.html"><strong aria-hidden="true">83.</strong> Case Study: Hierarchical Clustering</a></li><li class="chapter-item expanded "><a href="../examples/gmm-clustering.html"><strong aria-hidden="true">84.</strong> Case Study: GMM Clustering</a></li><li class="chapter-item expanded "><a href="../examples/iris-clustering.html"><strong aria-hidden="true">85.</strong> Case Study: Iris Clustering</a></li><li class="chapter-item expanded "><a href="../examples/logistic-regression.html"><strong aria-hidden="true">86.</strong> Case Study: Logistic Regression</a></li><li class="chapter-item expanded "><a href="../examples/knn-iris.html"><strong aria-hidden="true">87.</strong> Case Study: KNN Iris</a></li><li class="chapter-item expanded "><a href="../examples/naive-bayes-iris.html"><strong aria-hidden="true">88.</strong> Case Study: Naive Bayes Iris</a></li><li class="chapter-item expanded "><a href="../examples/beta-binomial-inference.html"><strong aria-hidden="true">89.</strong> Case Study: Beta-Binomial Bayesian Inference</a></li><li class="chapter-item expanded "><a href="../examples/gamma-poisson-inference.html"><strong aria-hidden="true">90.</strong> Case Study: Gamma-Poisson Bayesian Inference</a></li><li class="chapter-item expanded "><a href="../examples/normal-inverse-gamma-inference.html"><strong aria-hidden="true">91.</strong> Case Study: Normal-InverseGamma Bayesian Inference</a></li><li class="chapter-item expanded "><a href="../examples/dirichlet-multinomial-inference.html"><strong aria-hidden="true">92.</strong> Case Study: Dirichlet-Multinomial Bayesian Inference</a></li><li class="chapter-item expanded "><a href="../examples/bayesian-linear-regression.html"><strong aria-hidden="true">93.</strong> Case Study: Bayesian Linear Regression</a></li><li class="chapter-item expanded "><a href="../examples/bayesian-logistic-regression.html"><strong aria-hidden="true">94.</strong> Case Study: Bayesian Logistic Regression</a></li><li class="chapter-item expanded "><a href="../examples/negative-binomial-glm.html"><strong aria-hidden="true">95.</strong> Case Study: Negative Binomial GLM (Overdispersed Counts)</a></li><li class="chapter-item expanded "><a href="../examples/svm-iris.html"><strong aria-hidden="true">96.</strong> Case Study: SVM Iris</a></li><li class="chapter-item expanded "><a href="../examples/gbm-iris.html"><strong aria-hidden="true">97.</strong> Case Study: Gradient Boosting Iris</a></li><li class="chapter-item expanded "><a href="../examples/regularized-regression.html"><strong aria-hidden="true">98.</strong> Case Study: Regularized Regression</a></li><li class="chapter-item expanded "><a href="../examples/optimizer-demo.html"><strong aria-hidden="true">99.</strong> Case Study: Optimizer Demo</a></li><li class="chapter-item expanded "><a href="../examples/batch-optimization.html"><strong aria-hidden="true">100.</strong> Case Study: Batch Optimization</a></li><li class="chapter-item expanded "><a href="../examples/convex-optimization.html"><strong aria-hidden="true">101.</strong> Case Study: Convex Optimization (FISTA + Coordinate Descent)</a></li><li class="chapter-item expanded "><a href="../examples/constrained-optimization.html"><strong aria-hidden="true">102.</strong> Case Study: Constrained Optimization (Projected GD + Augmented Lagrangian + Interior Point)</a></li><li class="chapter-item expanded "><a href="../examples/admm-optimization.html"><strong aria-hidden="true">103.</strong> Case Study: ADMM Optimization (Distributed ML + Federated Learning)</a></li><li class="chapter-item expanded "><a href="../examples/differential-evolution.html"><strong aria-hidden="true">104.</strong> Case Study: Differential Evolution (Metaheuristics)</a></li><li class="chapter-item expanded "><a href="../examples/metaheuristics-optimization.html"><strong aria-hidden="true">105.</strong> Case Study: Metaheuristics Optimization</a></li><li class="chapter-item expanded "><a href="../examples/aco-tsp.html"><strong aria-hidden="true">106.</strong> Case Study: Ant Colony Optimization (TSP)</a></li><li class="chapter-item expanded "><a href="../examples/tabu-tsp.html"><strong aria-hidden="true">107.</strong> Case Study: Tabu Search (TSP)</a></li><li class="chapter-item expanded "><a href="../examples/tsp-solver-crate.html"><strong aria-hidden="true">108.</strong> Case Study: aprender-tsp Sub-Crate</a></li><li class="chapter-item expanded "><a href="../examples/predator-prey-optimization.html"><strong aria-hidden="true">109.</strong> Case Study: Predator-Prey Optimization</a></li><li class="chapter-item expanded "><a href="../examples/dataframe-basics.html"><strong aria-hidden="true">110.</strong> Case Study: DataFrame Basics</a></li><li class="chapter-item expanded "><a href="../examples/data-preprocessing-scalers.html"><strong aria-hidden="true">111.</strong> Case Study: Data Preprocessing with Scalers</a></li><li class="chapter-item expanded "><a href="../examples/graph-social-network.html"><strong aria-hidden="true">112.</strong> Case Study: Graph Social Network</a></li><li class="chapter-item expanded "><a href="../examples/community-detection.html"><strong aria-hidden="true">113.</strong> Case Study: Community Detection with Louvain</a></li><li class="chapter-item expanded "><a href="../examples/graph-algorithms-comprehensive.html"><strong aria-hidden="true">114.</strong> Case Study: Comprehensive Graph Algorithms</a></li><li class="chapter-item expanded "><a href="../examples/descriptive-statistics.html"><strong aria-hidden="true">115.</strong> Case Study: Descriptive Statistics</a></li><li class="chapter-item expanded "><a href="../examples/bayesian-blocks-histogram.html"><strong aria-hidden="true">116.</strong> Case Study: Bayesian Blocks Histogram</a></li><li class="chapter-item expanded "><a href="../examples/pca-iris.html"><strong aria-hidden="true">117.</strong> Case Study: PCA Iris</a></li><li class="chapter-item expanded "><a href="../examples/isolation-forest-anomaly.html"><strong aria-hidden="true">118.</strong> Case Study: Isolation Forest Anomaly Detection</a></li><li class="chapter-item expanded "><a href="../examples/lof-anomaly.html"><strong aria-hidden="true">119.</strong> Case Study: Local Outlier Factor (LOF)</a></li><li class="chapter-item expanded "><a href="../examples/spectral-clustering.html"><strong aria-hidden="true">120.</strong> Case Study: Spectral Clustering</a></li><li class="chapter-item expanded "><a href="../examples/tsne-visualization.html"><strong aria-hidden="true">121.</strong> Case Study: t-SNE Visualization</a></li><li class="chapter-item expanded "><a href="../examples/market-basket-apriori.html"><strong aria-hidden="true">122.</strong> Case Study: Market Basket Analysis (Apriori)</a></li><li class="chapter-item expanded "><a href="../examples/time-series-forecasting.html"><strong aria-hidden="true">123.</strong> Case Study: ARIMA Time Series Forecasting</a></li><li class="chapter-item expanded "><a href="../examples/text-preprocessing.html"><strong aria-hidden="true">124.</strong> Case Study: Text Preprocessing for NLP</a></li><li class="chapter-item expanded "><a href="../examples/text-classification.html"><strong aria-hidden="true">125.</strong> Case Study: Text Classification with TF-IDF</a></li><li class="chapter-item expanded "><a href="../examples/advanced-nlp.html"><strong aria-hidden="true">126.</strong> Case Study: Advanced NLP (Similarity, Entities, Summarization)</a></li><li class="chapter-item expanded "><a href="../examples/xor-neural-network.html"><strong aria-hidden="true">127.</strong> Case Study: XOR Neural Network (Deep Learning)</a></li><li class="chapter-item expanded "><a href="../examples/xor-training.html"><strong aria-hidden="true">128.</strong> Case Study: XOR Training</a></li><li class="chapter-item expanded "><a href="../examples/neural-network-training.html"><strong aria-hidden="true">129.</strong> Case Study: Neural Network Training Pipeline</a></li><li class="chapter-item expanded "><a href="../examples/classification-training.html"><strong aria-hidden="true">130.</strong> Case Study: Classification Training</a></li><li class="chapter-item expanded "><a href="../examples/nlp-advanced.html"><strong aria-hidden="true">131.</strong> Case Study: Advanced NLP</a></li><li class="chapter-item expanded "><a href="../examples/topic-sentiment-analysis.html"><strong aria-hidden="true">132.</strong> Case Study: Topic & Sentiment Analysis</a></li><li class="chapter-item expanded "><a href="../examples/recommend-content.html"><strong aria-hidden="true">133.</strong> Case Study: Content-Based Recommendations</a></li><li class="chapter-item expanded "><a href="../examples/content-recommender.html"><strong aria-hidden="true">134.</strong> Case Study: Content-Based Recommender System</a></li><li class="chapter-item expanded "><a href="../examples/shell-completion.html"><strong aria-hidden="true">135.</strong> Case Study: AI Shell Completion</a></li><li class="chapter-item expanded "><a href="../examples/shell-completion-benchmarks.html"><strong aria-hidden="true">136.</strong> Case Study: Shell Completion Benchmarks</a></li><li class="chapter-item expanded "><a href="../examples/shell-hf-hub-publishing.html"><strong aria-hidden="true">137.</strong> Case Study: Publishing Shell Models to HF Hub</a></li><li class="chapter-item expanded "><a href="../examples/shell-encryption-tiers.html"><strong aria-hidden="true">138.</strong> Case Study: Model Encryption Tiers</a></li><li class="chapter-item expanded "><a href="../examples/shell-encryption-demo.html"><strong aria-hidden="true">139.</strong> Case Study: Shell Encryption Demo</a></li><li class="chapter-item expanded "><a href="../examples/shell-homomorphic-encryption.html"><strong aria-hidden="true">140.</strong> Case Study: Shell Homomorphic Encryption</a></li><li class="chapter-item expanded "><a href="../examples/shell-model-format.html"><strong aria-hidden="true">141.</strong> Case Study: Shell Model Format</a></li><li class="chapter-item expanded "><a href="../examples/mixture-of-experts.html"><strong aria-hidden="true">142.</strong> Case Study: Mixture of Experts (MoE)</a></li><li class="chapter-item expanded "><a href="../examples/shell-history-developer-guide.html"><strong aria-hidden="true">143.</strong> Developer's Guide: Shell History Models</a></li><li class="chapter-item expanded "><a href="../examples/custom-error-classifier.html"><strong aria-hidden="true">144.</strong> Building Custom Error Classifiers</a></li><li class="chapter-item expanded "><a href="../examples/citl-automated-repair.html"><strong aria-hidden="true">145.</strong> Case Study: CITL Automated Program Repair</a></li><li class="chapter-item expanded "><a href="../examples/batuta-integration.html"><strong aria-hidden="true">146.</strong> Case Study: Batuta - Automated Migration to Aprender</a></li><li class="chapter-item expanded "><a href="../examples/online-learning.html"><strong aria-hidden="true">147.</strong> Case Study: Online Learning and Dynamic Retraining</a></li><li class="chapter-item expanded "><a href="../examples/apr-loading-modes.html"><strong aria-hidden="true">148.</strong> Case Study: APR Loading Modes</a></li><li class="chapter-item expanded "><a href="../examples/apr-inspection.html"><strong aria-hidden="true">149.</strong> Case Study: APR Model Inspection</a></li><li class="chapter-item expanded "><a href="../examples/apr-scoring.html"><strong aria-hidden="true">150.</strong> Case Study: APR 100-Point Quality Scoring</a></li><li class="chapter-item expanded "><a href="../examples/apr-cache.html"><strong aria-hidden="true">151.</strong> Case Study: APR Model Cache</a></li><li class="chapter-item expanded "><a href="../examples/apr-embed.html"><strong aria-hidden="true">152.</strong> Case Study: APR Data Embedding</a></li><li class="chapter-item expanded "><a href="../examples/apr-with-metadata.html"><strong aria-hidden="true">153.</strong> Case Study: APR with JSON Metadata</a></li><li class="chapter-item expanded "><a href="../examples/cuda-backend.html"><strong aria-hidden="true">154.</strong> Case Study: CUDA and GPU Backends</a></li><li class="chapter-item expanded "><a href="../examples/apr-cli-demo.html"><strong aria-hidden="true">155.</strong> Case Study: APR CLI Tool Demo</a></li><li class="chapter-item expanded "><a href="../examples/create-test-apr.html"><strong aria-hidden="true">156.</strong> Case Study: Create Test APR Files</a></li><li class="chapter-item expanded "><a href="../examples/apr-cli-commands.html"><strong aria-hidden="true">157.</strong> Case Study: APR CLI Commands Demo</a></li><li class="chapter-item expanded "><a href="../examples/model-zoo.html"><strong aria-hidden="true">158.</strong> Case Study: Model Zoo</a></li><li class="chapter-item expanded "><a href="../examples/sovereign-stack.html"><strong aria-hidden="true">159.</strong> Case Study: Sovereign AI Stack Integration</a></li><li class="chapter-item expanded "><a href="../examples/explainability-audit.html"><strong aria-hidden="true">160.</strong> Case Study: Model Explainability and Audit Trails</a></li><li class="chapter-item expanded "><a href="../examples/model-serving.html"><strong aria-hidden="true">161.</strong> Case Study: Model Serving</a></li><li class="chapter-item expanded "><a href="../examples/federation-gateway.html"><strong aria-hidden="true">162.</strong> Case Study: Federation Gateway</a></li><li class="chapter-item expanded "><a href="../examples/federation-routing.html"><strong aria-hidden="true">163.</strong> Case Study: Federation Routing Policies</a></li><li class="chapter-item expanded "><a href="../examples/probar-tui-testing.html"><strong aria-hidden="true">164.</strong> Case Study: Probar TUI Testing</a></li><li class="chapter-item expanded "><a href="../examples/pipeline-verification.html" class="active"><strong aria-hidden="true">165.</strong> Case Study: Pipeline Verification</a></li><li class="chapter-item expanded "><a href="../examples/state-machine-playbooks.html"><strong aria-hidden="true">166.</strong> Case Study: State Machine Playbooks</a></li><li class="chapter-item expanded affix "><li class="part-title">Sprint-Based Development</li><li class="chapter-item expanded "><a href="../sprints/sprint-planning.html"><strong aria-hidden="true">167.</strong> Sprint Planning</a></li><li class="chapter-item expanded "><a href="../sprints/sprint-execution.html"><strong aria-hidden="true">168.</strong> Sprint Execution</a></li><li class="chapter-item expanded "><a href="../sprints/sprint-review.html"><strong aria-hidden="true">169.</strong> Sprint Review</a></li><li class="chapter-item expanded "><a href="../sprints/sprint-retrospective.html"><strong aria-hidden="true">170.</strong> Sprint Retrospective</a></li><li class="chapter-item expanded "><a href="../sprints/issue-management.html"><strong aria-hidden="true">171.</strong> Issue Management</a></li><li class="chapter-item expanded affix "><li class="part-title">Anti-Hallucination Enforcement</li><li class="chapter-item expanded "><a href="../anti-hallucination/test-backed-examples.html"><strong aria-hidden="true">172.</strong> Test-Backed Examples</a></li><li class="chapter-item expanded "><a href="../anti-hallucination/example-verification.html"><strong aria-hidden="true">173.</strong> Example Verification</a></li><li class="chapter-item expanded "><a href="../anti-hallucination/ci-validation.html"><strong aria-hidden="true">174.</strong> CI Validation</a></li><li class="chapter-item expanded "><a href="../anti-hallucination/documentation-testing.html"><strong aria-hidden="true">175.</strong> Documentation Testing</a></li><li class="chapter-item expanded affix "><li class="part-title">Tools and Setup</li><li class="chapter-item expanded "><a href="../tools/development-environment.html"><strong aria-hidden="true">176.</strong> Development Environment</a></li><li class="chapter-item expanded "><a href="../tools/cargo-test.html"><strong aria-hidden="true">177.</strong> cargo test</a></li><li class="chapter-item expanded "><a href="../tools/cargo-clippy.html"><strong aria-hidden="true">178.</strong> cargo clippy</a></li><li class="chapter-item expanded "><a href="../tools/cargo-fmt.html"><strong aria-hidden="true">179.</strong> cargo fmt</a></li><li class="chapter-item expanded "><a href="../tools/cargo-mutants.html"><strong aria-hidden="true">180.</strong> cargo mutants</a></li><li class="chapter-item expanded "><a href="../tools/proptest.html"><strong aria-hidden="true">181.</strong> proptest</a></li><li class="chapter-item expanded "><a href="../tools/criterion.html"><strong aria-hidden="true">182.</strong> criterion</a></li><li class="chapter-item expanded "><a href="../tools/pmat.html"><strong aria-hidden="true">183.</strong> pmat (Toyota AI Toolkit)</a></li><li class="chapter-item expanded "><a href="../tools/apr-cli.html"><strong aria-hidden="true">184.</strong> apr (APR Model Operations CLI)</a></li><li class="chapter-item expanded "><a href="../tools/apr-spec.html"><strong aria-hidden="true">185.</strong> APR Format Specification</a></li><li class="chapter-item expanded affix "><li class="part-title">Best Practices</li><li class="chapter-item expanded "><a href="../best-practices/error-handling.html"><strong aria-hidden="true">186.</strong> Error Handling</a></li><li class="chapter-item expanded "><a href="../best-practices/api-design.html"><strong aria-hidden="true">187.</strong> API Design</a></li><li class="chapter-item expanded "><a href="../best-practices/builder-pattern.html"><strong aria-hidden="true">188.</strong> Builder Pattern</a></li><li class="chapter-item expanded "><a href="../best-practices/type-safety.html"><strong aria-hidden="true">189.</strong> Type Safety</a></li><li class="chapter-item expanded "><a href="../best-practices/performance.html"><strong aria-hidden="true">190.</strong> Performance Considerations</a></li><li class="chapter-item expanded "><a href="../best-practices/documentation-standards.html"><strong aria-hidden="true">191.</strong> Documentation Standards</a></li><li class="chapter-item expanded affix "><li class="part-title">Metrics and Measurement</li><li class="chapter-item expanded "><a href="../metrics/test-coverage.html"><strong aria-hidden="true">192.</strong> Test Coverage</a></li><li class="chapter-item expanded "><a href="../metrics/mutation-score.html"><strong aria-hidden="true">193.</strong> Mutation Score</a></li><li class="chapter-item expanded "><a href="../metrics/cyclomatic-complexity.html"><strong aria-hidden="true">194.</strong> Cyclomatic Complexity</a></li><li class="chapter-item expanded "><a href="../metrics/code-churn.html"><strong aria-hidden="true">195.</strong> Code Churn</a></li><li class="chapter-item expanded "><a href="../metrics/build-times.html"><strong aria-hidden="true">196.</strong> Build Times</a></li><li class="chapter-item expanded "><a href="../metrics/tdg-breakdown.html"><strong aria-hidden="true">197.</strong> TDG Score Breakdown</a></li><li class="chapter-item expanded affix "><li class="part-title">Common Pitfalls</li><li class="chapter-item expanded "><a href="../pitfalls/skipping-tests.html"><strong aria-hidden="true">198.</strong> Skipping Tests</a></li><li class="chapter-item expanded "><a href="../pitfalls/insufficient-coverage.html"><strong aria-hidden="true">199.</strong> Insufficient Test Coverage</a></li><li class="chapter-item expanded "><a href="../pitfalls/ignoring-warnings.html"><strong aria-hidden="true">200.</strong> Ignoring Warnings</a></li><li class="chapter-item expanded "><a href="../pitfalls/over-mocking.html"><strong aria-hidden="true">201.</strong> Over-Mocking</a></li><li class="chapter-item expanded "><a href="../pitfalls/flaky-tests.html"><strong aria-hidden="true">202.</strong> Flaky Tests</a></li><li class="chapter-item expanded "><a href="../pitfalls/technical-debt.html"><strong aria-hidden="true">203.</strong> Technical Debt Accumulation</a></li><li class="chapter-item expanded affix "><li class="part-title">Appendix</li><li class="chapter-item expanded "><a href="../appendix/glossary.html"><strong aria-hidden="true">204.</strong> Glossary</a></li><li class="chapter-item expanded "><a href="../appendix/references.html"><strong aria-hidden="true">205.</strong> References</a></li><li class="chapter-item expanded "><a href="../appendix/further-reading.html"><strong aria-hidden="true">206.</strong> Further Reading</a></li><li class="chapter-item expanded "><a href="../appendix/contributing.html"><strong aria-hidden="true">207.</strong> Contributing to This Book</a></li></ol>
+            </div>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <!-- Track and set sidebar scroll position -->
+        <script>
+            var sidebarScrollbox = document.querySelector('#sidebar .sidebar-scrollbox');
+            sidebarScrollbox.addEventListener('click', function(e) {
+                if (e.target.tagName === 'A') {
+                    sessionStorage.setItem('sidebar-scroll', sidebarScrollbox.scrollTop);
+                }
+            }, { passive: true });
+            var sidebarScrollTop = sessionStorage.getItem('sidebar-scroll');
+            sessionStorage.removeItem('sidebar-scroll');
+            if (sidebarScrollTop) {
+                // preserve sidebar scroll position when navigating via links within sidebar
+                sidebarScrollbox.scrollTop = sidebarScrollTop;
+            } else {
+                // scroll sidebar to current active section when navigating via "next/previous chapter" buttons
+                var activeSection = document.querySelector('#sidebar .active');
+                if (activeSection) {
+                    activeSection.scrollIntoView({ block: 'center' });
+                }
+            }
+        </script>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="sidebar-toggle" class="icon-button" for="sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </label>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">EXTREME TDD - The Aprender Guide to Zero-Defect Machine Learning</h1>
+
+                    <div class="right-buttons">
+                        <a href="../print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                        <a href="https://github.com/paiml/aprender" title="Git repository" aria-label="Git repository">
+                            <i id="git-repository-button" class="fa fa-github"></i>
+                        </a>
+                        <a href="https://github.com/paiml/aprender/edit/main/book/src/examples/pipeline-verification.md" title="Suggest an edit" aria-label="Suggest an edit">
+                            <i id="git-edit-button" class="fa fa-edit"></i>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="case-study-pipeline-verification-system"><a class="header" href="#case-study-pipeline-verification-system">Case Study: Pipeline Verification System</a></h1>
+<p>This case study demonstrates aprender's pipeline verification system for ML model debugging, implementing Toyota Way's Jidoka principle: built-in quality with automatic stop on first defect.</p>
+<h2 id="the-problem"><a class="header" href="#the-problem">The Problem</a></h2>
+<p>When porting ML models between frameworks (PyTorch to Rust, ONNX to native, etc.), subtle numerical differences can cascade through the pipeline:</p>
+<div class="table-wrapper"><table><thead><tr><th>Stage</th><th>Issue</th><th>Symptom</th></tr></thead><tbody>
+<tr><td>Preprocessing</td><td>Normalization sign flip</td><td>Complete output inversion</td></tr>
+<tr><td>Encoder</td><td>Precision loss</td><td>Gradual drift in deeper layers</td></tr>
+<tr><td>Attention</td><td>Softmax overflow</td><td>NaN propagation</td></tr>
+<tr><td>Output</td><td>Quantization error</td><td>Wrong predictions</td></tr>
+</tbody></table>
+</div>
+<p><strong>Finding the root cause is like debugging a 10-stage pipeline with a single &quot;wrong output&quot; error message.</strong></p>
+<h2 id="the-solution-stage-by-stage-ground-truth-verification"><a class="header" href="#the-solution-stage-by-stage-ground-truth-verification">The Solution: Stage-by-Stage Ground Truth Verification</a></h2>
+<p>The <code>verify</code> module provides systematic comparison at each pipeline stage:</p>
+<pre><code class="language-rust ignore">use aprender::verify::{Pipeline, GroundTruth, Tolerance};
+
+let pipeline = Pipeline::builder(&quot;whisper-tiny&quot;)
+    .stage(&quot;mel&quot;)
+        .ground_truth_stats(-0.215, 0.448)  // Expected mean, std
+        .tolerance(Tolerance::percent(5.0)) // 5% tolerance
+        .build_stage()
+    .stage(&quot;encoder&quot;)
+        .ground_truth_stats(0.0, 0.8)
+        .tolerance(Tolerance::percent(10.0))
+        .build_stage()
+    .build()
+    .expect(&quot;Pipeline definition error&quot;);
+
+// Verify outputs against ground truth
+let report = pipeline.verify(|stage_name| {
+    match stage_name {
+        &quot;mel&quot; =&gt; Some(GroundTruth::from_stats(-0.210, 0.450)),
+        &quot;encoder&quot; =&gt; Some(GroundTruth::from_stats(0.01, 0.78)),
+        _ =&gt; None,
+    }
+});
+
+assert!(report.all_passed());</code></pre>
+<h2 id="complete-example"><a class="header" href="#complete-example">Complete Example</a></h2>
+<p>Run: <code>cargo run --example pipeline_verification</code></p>
+<pre><code class="language-rust ignore">//! Pipeline Verification Example
+//!
+//! Demonstrates the verify module for ML pipeline debugging with:
+//! - Stage-by-stage ground truth comparison
+//! - Multiple tolerance types (percent, stats, KL divergence)
+//! - Jidoka-style stop-on-failure behavior
+//! - Detailed diagnostic output for failures
+//!
+//! Run with: `cargo run --example pipeline_verification`
+
+use aprender::verify::{Delta, GroundTruth, Pipeline, StageStatus, Tolerance, VerifyReport};
+
+fn main() {
+    println!(&quot;=== Pipeline Verification System ===\n&quot;);
+    println!(&quot;Toyota Way: Jidoka - Built-in quality with automatic stop on defect\n&quot;);
+
+    demo_basic_pipeline();
+    demo_failure_detection();
+    demo_continue_on_failure();
+    demo_stats_tolerance();
+    demo_ground_truth_from_data();
+    demo_cosine_similarity();
+    demo_kl_divergence();
+    demo_whisper_pipeline();
+
+    print_summary();
+}
+
+/// Part 1: Basic Pipeline with Percent Tolerance
+fn demo_basic_pipeline() {
+    println!(&quot;--- Part 1: Basic Pipeline (Percent Tolerance) ---\n&quot;);
+
+    let pipeline = Pipeline::builder(&quot;audio-encoder&quot;)
+        .stage(&quot;mel_spectrogram&quot;)
+        .ground_truth_stats(-0.215, 0.448)
+        .tolerance(Tolerance::percent(5.0))
+        .description(&quot;Mel spectrogram extraction&quot;)
+        .build_stage()
+        .stage(&quot;encoder_layer_1&quot;)
+        .ground_truth_stats(0.0, 1.0)
+        .tolerance(Tolerance::percent(10.0))
+        .description(&quot;First encoder transformer layer&quot;)
+        .build_stage()
+        .stage(&quot;encoder_layer_2&quot;)
+        .ground_truth_stats(0.0, 1.0)
+        .tolerance(Tolerance::percent(10.0))
+        .description(&quot;Second encoder transformer layer&quot;)
+        .build_stage()
+        .build()
+        .expect(&quot;Failed to build pipeline&quot;);
+
+    println!(&quot;Pipeline: {}&quot;, pipeline.name());
+    println!(&quot;Stages: {}\n&quot;, pipeline.stages().len());
+
+    // Simulate outputs that pass verification
+    let report = pipeline.verify(|stage_name| match stage_name {
+        &quot;mel_spectrogram&quot; =&gt; Some(GroundTruth::from_stats(-0.210, 0.450)),
+        &quot;encoder_layer_1&quot; =&gt; Some(GroundTruth::from_stats(0.02, 0.98)),
+        &quot;encoder_layer_2&quot; =&gt; Some(GroundTruth::from_stats(-0.01, 1.02)),
+        _ =&gt; None,
+    });
+
+    print_report(&amp;report);
+}
+
+/// Part 2: Detecting Sign Flip Errors
+fn demo_failure_detection() {
+    println!(&quot;\n--- Part 2: Detecting Sign Flip Errors ---\n&quot;);
+
+    let pipeline = Pipeline::builder(&quot;audio-encoder&quot;)
+        .stage(&quot;mel_spectrogram&quot;)
+        .ground_truth_stats(-0.215, 0.448)
+        .tolerance(Tolerance::percent(5.0))
+        .build_stage()
+        .stage(&quot;encoder_layer_1&quot;)
+        .ground_truth_stats(0.0, 1.0)
+        .tolerance(Tolerance::percent(10.0))
+        .build_stage()
+        .stage(&quot;encoder_layer_2&quot;)
+        .ground_truth_stats(0.0, 1.0)
+        .tolerance(Tolerance::percent(10.0))
+        .build_stage()
+        .build()
+        .expect(&quot;Failed to build pipeline&quot;);
+
+    // Simulate a sign flip error in mel spectrogram
+    let report = pipeline.verify(|stage_name| match stage_name {
+        &quot;mel_spectrogram&quot; =&gt; Some(GroundTruth::from_stats(0.184, 0.448)), // SIGN FLIPPED!
+        &quot;encoder_layer_1&quot; | &quot;encoder_layer_2&quot; =&gt; Some(GroundTruth::from_stats(0.0, 1.0)),
+        _ =&gt; None,
+    });
+
+    print_report(&amp;report);
+
+    // Show diagnosis for the failure
+    if let Some(failure) = report.first_failure() {
+        println!(&quot;\nDiagnosis for '{}' failure:&quot;, failure.name());
+        for diag in failure.diagnose() {
+            println!(&quot;  - {diag}&quot;);
+        }
+    }
+}
+
+/// Part 3: Continue-on-Failure Mode
+fn demo_continue_on_failure() {
+    println!(&quot;\n--- Part 3: Continue-on-Failure Mode ---\n&quot;);
+
+    let pipeline = Pipeline::builder(&quot;full-analysis&quot;)
+        .stage(&quot;stage_a&quot;)
+        .ground_truth_stats(0.0, 1.0)
+        .tolerance(Tolerance::percent(5.0))
+        .build_stage()
+        .stage(&quot;stage_b&quot;)
+        .ground_truth_stats(0.0, 1.0)
+        .tolerance(Tolerance::percent(5.0))
+        .build_stage()
+        .stage(&quot;stage_c&quot;)
+        .ground_truth_stats(0.0, 1.0)
+        .tolerance(Tolerance::percent(5.0))
+        .build_stage()
+        .continue_on_failure() // Disable Jidoka for full analysis
+        .build()
+        .expect(&quot;Failed to build pipeline&quot;);
+
+    let report = pipeline.verify(|stage_name| match stage_name {
+        &quot;stage_a&quot; =&gt; Some(GroundTruth::from_stats(0.5, 1.0)), // FAIL
+        &quot;stage_b&quot; =&gt; Some(GroundTruth::from_stats(0.0, 0.98)), // PASS
+        &quot;stage_c&quot; =&gt; Some(GroundTruth::from_stats(0.3, 1.0)), // FAIL
+        _ =&gt; None,
+    });
+
+    println!(&quot;With continue_on_failure(), all stages are evaluated:&quot;);
+    print_report(&amp;report);
+}
+
+/// Part 4: Stats-Based Tolerance
+fn demo_stats_tolerance() {
+    println!(&quot;\n--- Part 4: Stats-Based Tolerance ---\n&quot;);
+
+    let pipeline = Pipeline::builder(&quot;precision-check&quot;)
+        .stage(&quot;high_precision&quot;)
+        .ground_truth_stats(0.0, 1.0)
+        .tolerance(Tolerance::stats(0.01, 0.02)) // Very tight
+        .build_stage()
+        .stage(&quot;normal_precision&quot;)
+        .ground_truth_stats(0.0, 1.0)
+        .tolerance(Tolerance::stats(0.1, 0.1)) // Normal tolerance
+        .build_stage()
+        .build()
+        .expect(&quot;Failed to build pipeline&quot;);
+
+    let report = pipeline.verify(|stage_name| match stage_name {
+        &quot;high_precision&quot; =&gt; Some(GroundTruth::from_stats(0.005, 1.01)),
+        &quot;normal_precision&quot; =&gt; Some(GroundTruth::from_stats(0.05, 0.95)),
+        _ =&gt; None,
+    });
+
+    print_report(&amp;report);
+}
+
+/// Part 5: Ground Truth from Raw Data
+fn demo_ground_truth_from_data() {
+    println!(&quot;\n--- Part 5: Ground Truth from Raw Data ---\n&quot;);
+
+    let reference_output = vec![0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0];
+    let gt = GroundTruth::from_slice(&amp;reference_output);
+
+    println!(&quot;Ground truth computed from raw data:&quot;);
+    println!(&quot;  Mean: {:.4}&quot;, gt.mean());
+    println!(&quot;  Std:  {:.4}&quot;, gt.std());
+    println!(&quot;  Min:  {:.4}&quot;, gt.min());
+    println!(&quot;  Max:  {:.4}&quot;, gt.max());
+
+    let our_output = vec![0.12, 0.19, 0.31, 0.38, 0.52, 0.58, 0.71, 0.79, 0.91, 0.98];
+    let our = GroundTruth::from_slice(&amp;our_output);
+
+    let delta = Delta::compute(&amp;our, &amp;gt);
+    println!(&quot;\nDelta analysis:&quot;);
+    println!(&quot;  Mean delta: {:.4}&quot;, delta.mean_delta());
+    println!(&quot;  Std delta:  {:.4}&quot;, delta.std_delta());
+    println!(&quot;  Percent:    {:.2}%&quot;, delta.percent());
+    println!(&quot;  Sign flip:  {}&quot;, delta.is_sign_flipped());
+    if let Some(cos) = delta.cosine() {
+        println!(&quot;  Cosine sim: {cos:.4}&quot;);
+    }
+}
+
+/// Part 6: Cosine Similarity Tolerance
+fn demo_cosine_similarity() {
+    println!(&quot;\n--- Part 6: Cosine Similarity Tolerance ---\n&quot;);
+
+    let vec_a = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+    let vec_b = vec![1.1, 1.9, 3.1, 3.9, 5.1];
+    let vec_c = vec![-1.0, -2.0, -3.0, -4.0, -5.0];
+
+    println!(&quot;Cosine similarity comparisons:&quot;);
+    println!(
+        &quot;  vec_a vs vec_b (similar):   {:.4}&quot;,
+        Delta::cosine_similarity(&amp;vec_a, &amp;vec_b)
+    );
+    println!(
+        &quot;  vec_a vs vec_c (opposite):  {:.4}&quot;,
+        Delta::cosine_similarity(&amp;vec_a, &amp;vec_c)
+    );
+    println!(
+        &quot;  vec_a vs vec_a (identical): {:.4}&quot;,
+        Delta::cosine_similarity(&amp;vec_a, &amp;vec_a)
+    );
+}
+
+/// Part 7: KL Divergence for Probability Distributions
+fn demo_kl_divergence() {
+    println!(&quot;\n--- Part 7: KL Divergence ---\n&quot;);
+
+    let p = vec![0.25, 0.25, 0.25, 0.25]; // Uniform
+    let q = vec![0.5, 0.25, 0.125, 0.125]; // Skewed
+
+    println!(&quot;KL divergence (distribution comparison):&quot;);
+    println!(&quot;  Uniform vs Uniform: {:.4}&quot;, Delta::kl_divergence(&amp;p, &amp;p));
+    println!(&quot;  Uniform vs Skewed:  {:.4}&quot;, Delta::kl_divergence(&amp;p, &amp;q));
+}
+
+/// Part 8: Real-World Whisper Pipeline Example
+fn demo_whisper_pipeline() {
+    println!(&quot;\n--- Part 8: Whisper Pipeline (Real-World) ---\n&quot;);
+
+    let pipeline = Pipeline::builder(&quot;whisper-tiny&quot;)
+        .stage(&quot;mel&quot;)
+        .ground_truth_stats(-0.215, 0.448)
+        .tolerance(Tolerance::percent(5.0))
+        .description(&quot;Log-mel spectrogram (80 mel bins)&quot;)
+        .build_stage()
+        .stage(&quot;encoder_out&quot;)
+        .ground_truth_stats(0.0, 0.8)
+        .tolerance(Tolerance::percent(10.0))
+        .description(&quot;Encoder final output&quot;)
+        .build_stage()
+        .stage(&quot;decoder_logits&quot;)
+        .ground_truth_stats(0.0, 15.0)
+        .tolerance(Tolerance::percent(15.0))
+        .description(&quot;Decoder output logits&quot;)
+        .build_stage()
+        .stage(&quot;probs&quot;)
+        .ground_truth_stats(0.0001, 0.01)
+        .tolerance(Tolerance::percent(20.0))
+        .description(&quot;Softmax probabilities&quot;)
+        .build_stage()
+        .build()
+        .expect(&quot;Failed to build Whisper pipeline&quot;);
+
+    let report = pipeline.verify(|stage| match stage {
+        &quot;mel&quot; =&gt; Some(GroundTruth::from_stats(-0.220, 0.445)),
+        &quot;encoder_out&quot; =&gt; Some(GroundTruth::from_stats(0.01, 0.78)),
+        &quot;decoder_logits&quot; =&gt; Some(GroundTruth::from_stats(-0.5, 14.2)),
+        &quot;probs&quot; =&gt; Some(GroundTruth::from_stats(0.00012, 0.009)),
+        _ =&gt; None,
+    });
+
+    println!(&quot;Whisper-tiny pipeline verification:&quot;);
+    print_report(&amp;report);
+}
+
+fn print_summary() {
+    println!(&quot;\n=== Summary ===\n&quot;);
+    println!(&quot;Pipeline verification enables:&quot;);
+    println!(&quot;  1. Stage-by-stage ground truth comparison&quot;);
+    println!(&quot;  2. Multiple tolerance types (percent, stats, cosine, KL)&quot;);
+    println!(&quot;  3. Jidoka: Stop on first failure (or continue for full analysis)&quot;);
+    println!(&quot;  4. Automatic diagnosis (sign flips, distribution shifts)&quot;);
+    println!(&quot;  5. Visual reporting with pass/fail/skip status&quot;);
+    println!(&quot;\nUse cases:&quot;);
+    println!(&quot;  - ML model porting (PyTorch -&gt; Rust)&quot;);
+    println!(&quot;  - Quantization validation&quot;);
+    println!(&quot;  - CI/CD regression testing&quot;);
+    println!(&quot;  - Audio/vision pipeline debugging&quot;);
+    println!(&quot;\n=== Done ===&quot;);
+}
+
+/// Print a verification report with colored output
+fn print_report(report: &amp;VerifyReport) {
+    println!(&quot;{}&quot;, report.summary());
+    println!();
+
+    for result in report.results() {
+        let status = result.status();
+        let icon = status.icon();
+        let color = status.color();
+        let reset = &quot;\x1b[0m&quot;;
+
+        print!(&quot;  {color}{icon}{reset} {}&quot;, result.name());
+
+        if let Some(delta) = result.delta() {
+            print!(&quot; (delta: {:.2}%)&quot;, delta.percent());
+        }
+
+        if status == StageStatus::Skipped {
+            print!(&quot; [skipped due to prior failure]&quot;);
+        }
+
+        println!();
+    }
+}</code></pre>
+<h2 id="key-features"><a class="header" href="#key-features">Key Features</a></h2>
+<h3 id="1-jidoka-stop-on-first-failure"><a class="header" href="#1-jidoka-stop-on-first-failure">1. Jidoka: Stop-on-First-Failure</a></h3>
+<p>By default, verification stops at the first failure (Toyota Way: stop the line when defect is detected):</p>
+<pre><code class="language-rust ignore">// Default: Jidoka enabled
+let pipeline = Pipeline::builder(&quot;model&quot;)
+    .stage(&quot;a&quot;).ground_truth_stats(0.0, 1.0).tolerance(Tolerance::percent(5.0)).build_stage()
+    .stage(&quot;b&quot;).ground_truth_stats(0.0, 1.0).tolerance(Tolerance::percent(5.0)).build_stage()
+    .stage(&quot;c&quot;).ground_truth_stats(0.0, 1.0).tolerance(Tolerance::percent(5.0)).build_stage()
+    .build()?;
+
+// If stage &quot;a&quot; fails, &quot;b&quot; and &quot;c&quot; are skipped
+// This prevents cascading failures from obscuring the root cause</code></pre>
+<p>For full analysis of all stages:</p>
+<pre><code class="language-rust ignore">let pipeline = Pipeline::builder(&quot;full-analysis&quot;)
+    .stage(&quot;a&quot;).build_stage()
+    .stage(&quot;b&quot;).build_stage()
+    .stage(&quot;c&quot;).build_stage()
+    .continue_on_failure()  // Evaluate ALL stages regardless of failures
+    .build()?;</code></pre>
+<h3 id="2-multiple-tolerance-types"><a class="header" href="#2-multiple-tolerance-types">2. Multiple Tolerance Types</a></h3>
+<pre><code class="language-rust ignore">// Simple percent tolerance
+Tolerance::percent(5.0)
+
+// Separate mean/std thresholds (for high-precision stages)
+Tolerance::stats(0.01, 0.02)  // mean &lt;= 0.01, std &lt;= 0.02
+
+// Cosine similarity minimum (for embedding comparisons)
+Tolerance::cosine(0.99)  // Require 99% similarity
+
+// KL divergence threshold (for probability distributions)
+Tolerance::kl_divergence(0.1)
+
+// Custom multi-criteria tolerance
+Tolerance::custom()
+    .percent(10.0)
+    .mean_delta(0.1)
+    .cosine_min(0.95)
+    .build()</code></pre>
+<h3 id="3-ground-truth-from-multiple-sources"><a class="header" href="#3-ground-truth-from-multiple-sources">3. Ground Truth from Multiple Sources</a></h3>
+<pre><code class="language-rust ignore">// From known statistics (e.g., from reference implementation docs)
+let gt = GroundTruth::from_stats(mean, std);
+
+// From raw data (computed automatically)
+let reference_output = vec![0.1, 0.2, 0.3, 0.4, 0.5];
+let gt = GroundTruth::from_slice(&amp;reference_output);
+
+// Full statistics available
+println!(&quot;Mean: {}, Std: {}, Min: {}, Max: {}&quot;,
+         gt.mean(), gt.std(), gt.min(), gt.max());</code></pre>
+<h3 id="4-delta-analysis"><a class="header" href="#4-delta-analysis">4. Delta Analysis</a></h3>
+<pre><code class="language-rust ignore">use aprender::verify::Delta;
+
+let our = GroundTruth::from_slice(&amp;our_output);
+let reference = GroundTruth::from_slice(&amp;ref_output);
+let delta = Delta::compute(&amp;our, &amp;reference);
+
+// Statistical deltas
+println!(&quot;Mean delta: {:.4}&quot;, delta.mean_delta());
+println!(&quot;Std delta:  {:.4}&quot;, delta.std_delta());
+println!(&quot;Percent:    {:.2}%&quot;, delta.percent());
+
+// Sign flip detection (common bug in normalization)
+if delta.is_sign_flipped() {
+    println!(&quot;WARNING: Sign flip detected!&quot;);
+}
+
+// Vector similarity
+if let Some(cos) = delta.cosine() {
+    println!(&quot;Cosine similarity: {:.4}&quot;, cos);
+}</code></pre>
+<h3 id="5-distribution-comparison"><a class="header" href="#5-distribution-comparison">5. Distribution Comparison</a></h3>
+<pre><code class="language-rust ignore">// Cosine similarity for direction comparison
+let cos = Delta::cosine_similarity(&amp;vec_a, &amp;vec_b);
+
+// KL divergence for probability distributions
+let kl = Delta::kl_divergence(&amp;probs_a, &amp;probs_b);</code></pre>
+<h3 id="6-automatic-diagnosis"><a class="header" href="#6-automatic-diagnosis">6. Automatic Diagnosis</a></h3>
+<p>When a stage fails, the system provides diagnostic hints:</p>
+<pre><code class="language-rust ignore">if let Some(failure) = report.first_failure() {
+    println!(&quot;Failed stage: {}&quot;, failure.name());
+
+    for diagnosis in failure.diagnose() {
+        println!(&quot;  - {}&quot;, diagnosis);
+    }
+}</code></pre>
+<p>Example output:</p>
+<pre><code>Diagnosis for 'mel_spectrogram' failure:
+  - Stage 'mel_spectrogram' failed with delta 89.1%
+  - Sign is FLIPPED (positive vs negative)
+  - Likely cause: Normalization formula error
+  - Check: Log base, subtraction order, sign convention
+</code></pre>
+<h2 id="real-world-use-case-whisper-model-porting"><a class="header" href="#real-world-use-case-whisper-model-porting">Real-World Use Case: Whisper Model Porting</a></h2>
+<pre><code class="language-rust ignore">let whisper = Pipeline::builder(&quot;whisper-tiny&quot;)
+    .stage(&quot;mel&quot;)
+        .ground_truth_stats(-0.215, 0.448)
+        .tolerance(Tolerance::percent(5.0))
+        .description(&quot;Log-mel spectrogram (80 mel bins)&quot;)
+        .build_stage()
+    .stage(&quot;encoder_out&quot;)
+        .ground_truth_stats(0.0, 0.8)
+        .tolerance(Tolerance::percent(10.0))
+        .description(&quot;Encoder final output&quot;)
+        .build_stage()
+    .stage(&quot;decoder_logits&quot;)
+        .ground_truth_stats(0.0, 15.0)
+        .tolerance(Tolerance::percent(15.0))
+        .description(&quot;Decoder output logits&quot;)
+        .build_stage()
+    .stage(&quot;probs&quot;)
+        .ground_truth_stats(0.0001, 0.01)
+        .tolerance(Tolerance::percent(20.0))
+        .description(&quot;Softmax probabilities&quot;)
+        .build_stage()
+    .build()?;
+
+// Run verification against reference implementation
+let report = whisper.verify(|stage| {
+    get_stage_output_from_our_implementation(stage)
+});
+
+if !report.all_passed() {
+    eprintln!(&quot;Verification failed!&quot;);
+    eprintln!(&quot;{}&quot;, report.summary());
+
+    if let Some(first_fail) = report.first_failure() {
+        eprintln!(&quot;\nFirst failure at: {}&quot;, first_fail.name());
+        for diag in first_fail.diagnose() {
+            eprintln!(&quot;  {}&quot;, diag);
+        }
+    }
+}</code></pre>
+<h2 id="pipeline-verification-in-cicd"><a class="header" href="#pipeline-verification-in-cicd">Pipeline Verification in CI/CD</a></h2>
+<pre><code class="language-rust ignore">#[test]
+fn test_model_regression() {
+    let pipeline = load_verification_pipeline();
+    let report = pipeline.verify(|stage| {
+        run_inference_stage(stage)
+    });
+
+    assert!(
+        report.all_passed(),
+        &quot;Model regression detected: {}&quot;,
+        report.summary()
+    );
+}</code></pre>
+<h2 id="api-reference"><a class="header" href="#api-reference">API Reference</a></h2>
+<h3 id="pipeline-builder"><a class="header" href="#pipeline-builder">Pipeline Builder</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Method</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>Pipeline::builder(name)</code></td><td>Create new pipeline</td></tr>
+<tr><td><code>.stage(name)</code></td><td>Add a stage</td></tr>
+<tr><td><code>.ground_truth_stats(mean, std)</code></td><td>Set expected statistics</td></tr>
+<tr><td><code>.ground_truth(gt)</code></td><td>Set full ground truth</td></tr>
+<tr><td><code>.tolerance(t)</code></td><td>Set tolerance threshold</td></tr>
+<tr><td><code>.description(desc)</code></td><td>Add human-readable description</td></tr>
+<tr><td><code>.build_stage()</code></td><td>Finish stage, return to pipeline</td></tr>
+<tr><td><code>.continue_on_failure()</code></td><td>Disable Jidoka</td></tr>
+<tr><td><code>.build()</code></td><td>Build the pipeline</td></tr>
+</tbody></table>
+</div>
+<h3 id="tolerance-types"><a class="header" href="#tolerance-types">Tolerance Types</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Type</th><th>Use Case</th></tr></thead><tbody>
+<tr><td><code>Tolerance::percent(n)</code></td><td>General purpose, % deviation</td></tr>
+<tr><td><code>Tolerance::stats(m, s)</code></td><td>Precision-critical stages</td></tr>
+<tr><td><code>Tolerance::cosine(min)</code></td><td>Embedding/vector comparisons</td></tr>
+<tr><td><code>Tolerance::kl_divergence(max)</code></td><td>Probability distributions</td></tr>
+<tr><td><code>Tolerance::custom()</code></td><td>Multi-criteria validation</td></tr>
+</tbody></table>
+</div>
+<h3 id="report-methods"><a class="header" href="#report-methods">Report Methods</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Method</th><th>Returns</th></tr></thead><tbody>
+<tr><td><code>report.all_passed()</code></td><td><code>bool</code></td></tr>
+<tr><td><code>report.first_failure()</code></td><td><code>Option&lt;&amp;StageResult&gt;</code></td></tr>
+<tr><td><code>report.passed_count()</code></td><td><code>usize</code></td></tr>
+<tr><td><code>report.failed_count()</code></td><td><code>usize</code></td></tr>
+<tr><td><code>report.skipped_count()</code></td><td><code>usize</code></td></tr>
+<tr><td><code>report.summary()</code></td><td><code>String</code> (colored)</td></tr>
+<tr><td><code>report.results()</code></td><td><code>&amp;[StageResult]</code></td></tr>
+</tbody></table>
+</div>
+<h2 id="toyota-way-principles-applied"><a class="header" href="#toyota-way-principles-applied">Toyota Way Principles Applied</a></h2>
+<ol>
+<li><strong>Jidoka (Built-in Quality)</strong>: Stop-on-first-failure prevents cascading errors</li>
+<li><strong>Genchi Genbutsu (Go and See)</strong>: Stage-by-stage inspection reveals actual divergence points</li>
+<li><strong>Kaizen (Continuous Improvement)</strong>: CI/CD integration catches regressions early</li>
+<li><strong>Visual Management</strong>: Colored output with pass/fail/skip icons</li>
+</ol>
+<h2 id="see-also"><a class="header" href="#see-also">See Also</a></h2>
+<ul>
+<li><a href="../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
+<li><a href="../toyota-way/jidoka.html">Jidoka (Built-in Quality)</a></li>
+<li><a href="./model-format.html">Case Study: Model Format (.apr)</a></li>
+</ul>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../examples/probar-tui-testing.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+
+                            <a rel="next prefetch" href="../examples/state-machine-playbooks.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../examples/probar-tui-testing.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+
+                    <a rel="next prefetch" href="../examples/state-machine-playbooks.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+            </nav>
+
+        </div>
+
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+        <script src="../ace.js"></script>
+        <script src="../editor.js"></script>
+        <script src="../mode-rust.js"></script>
+        <script src="../theme-dawn.js"></script>
+        <script src="../theme-tomorrow_night.js"></script>
+
+        <script src="../elasticlunr.min.js"></script>
+        <script src="../mark.min.js"></script>
+        <script src="../searcher.js"></script>
+
+        <script src="../clipboard.min.js"></script>
+        <script src="../highlight.js"></script>
+        <script src="../book.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+    </div>
+    </body>
+</html>
