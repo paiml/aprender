@@ -897,6 +897,103 @@ fn crc32(data: &[u8]) -> u32 {
     !crc
 }
 
+// ============================================================================
+// FILE LOADING HELPER FUNCTIONS (Refactored for reduced complexity)
+// ============================================================================
+
+/// Read entire file content into a buffer.
+#[cfg(any(feature = "format-signing", feature = "format-encryption"))]
+fn read_file_content(path: &Path) -> Result<Vec<u8>> {
+    let file = File::open(path)?;
+    let mut reader = BufReader::new(file);
+    let mut content = Vec::new();
+    reader.read_to_end(&mut content)?;
+    Ok(content)
+}
+
+/// Verify CRC32 checksum at end of file content.
+#[cfg(any(feature = "format-signing", feature = "format-encryption"))]
+fn verify_file_checksum(content: &[u8]) -> Result<()> {
+    if content.len() < 4 {
+        return Err(AprenderError::FormatError {
+            message: "File too small for checksum".to_string(),
+        });
+    }
+    let stored_checksum = u32::from_le_bytes([
+        content[content.len() - 4],
+        content[content.len() - 3],
+        content[content.len() - 2],
+        content[content.len() - 1],
+    ]);
+    let computed_checksum = crc32(&content[..content.len() - 4]);
+    if stored_checksum != computed_checksum {
+        return Err(AprenderError::ChecksumMismatch {
+            expected: stored_checksum,
+            actual: computed_checksum,
+        });
+    }
+    Ok(())
+}
+
+/// Parse header and validate model type.
+#[cfg(any(feature = "format-signing", feature = "format-encryption"))]
+fn parse_and_validate_header(content: &[u8], expected_type: ModelType) -> Result<Header> {
+    let header = Header::from_bytes(&content[..HEADER_SIZE])?;
+    if header.model_type != expected_type {
+        return Err(AprenderError::FormatError {
+            message: format!(
+                "Model type mismatch: file contains {:?}, expected {:?}",
+                header.model_type, expected_type
+            ),
+        });
+    }
+    Ok(header)
+}
+
+/// Verify header flag is set for signed files.
+#[cfg(feature = "format-signing")]
+fn verify_signed_flag(header: &Header) -> Result<()> {
+    if !header.flags.is_signed() {
+        return Err(AprenderError::FormatError {
+            message: "File is not signed (SIGNED flag not set)".to_string(),
+        });
+    }
+    Ok(())
+}
+
+/// Verify header flag is set for encrypted files.
+#[cfg(feature = "format-encryption")]
+fn verify_encrypted_flag(header: &Header) -> Result<()> {
+    if !header.flags.is_encrypted() {
+        return Err(AprenderError::FormatError {
+            message: "File is not encrypted (ENCRYPTED flag not set)".to_string(),
+        });
+    }
+    Ok(())
+}
+
+/// Verify payload boundary is within file content.
+#[cfg(any(feature = "format-signing", feature = "format-encryption"))]
+fn verify_payload_boundary(payload_end: usize, content_len: usize) -> Result<()> {
+    if payload_end > content_len - 4 {
+        return Err(AprenderError::FormatError {
+            message: "Payload extends beyond file boundary".to_string(),
+        });
+    }
+    Ok(())
+}
+
+/// Decompress and deserialize payload.
+#[cfg(feature = "format-signing")]
+fn decompress_and_deserialize<M: DeserializeOwned>(
+    payload_compressed: &[u8],
+    compression: Compression,
+) -> Result<M> {
+    let payload_uncompressed = decompress_payload(payload_compressed, compression)?;
+    bincode::deserialize(&payload_uncompressed)
+        .map_err(|e| AprenderError::Serialization(format!("Failed to deserialize model: {e}")))
+}
+
 /// Save a model to .apr format
 ///
 /// # Arguments
@@ -1199,6 +1296,119 @@ pub fn load_auto<M: DeserializeOwned>(
     }
 }
 
+/// Verify encrypted data has minimum required size.
+#[cfg(feature = "format-encryption")]
+fn verify_encrypted_data_size(data: &[u8]) -> Result<()> {
+    if data.len() < HEADER_SIZE + SALT_SIZE + NONCE_SIZE + 4 {
+        return Err(AprenderError::FormatError {
+            message: format!("Data too small for encrypted model: {} bytes", data.len()),
+        });
+    }
+    Ok(())
+}
+
+/// Verify encrypted data checksum.
+#[cfg(feature = "format-encryption")]
+fn verify_encrypted_checksum(data: &[u8]) -> Result<()> {
+    let stored_checksum = u32::from_le_bytes([
+        data[data.len() - 4],
+        data[data.len() - 3],
+        data[data.len() - 2],
+        data[data.len() - 1],
+    ]);
+    let computed_checksum = crc32(&data[..data.len() - 4]);
+    if stored_checksum != computed_checksum {
+        return Err(AprenderError::ChecksumMismatch {
+            expected: stored_checksum,
+            actual: computed_checksum,
+        });
+    }
+    Ok(())
+}
+
+/// Verify header has ENCRYPTED flag and correct model type.
+#[cfg(feature = "format-encryption")]
+fn verify_encrypted_header(header: &Header, expected_type: ModelType) -> Result<()> {
+    if !header.flags.is_encrypted() {
+        return Err(AprenderError::FormatError {
+            message: "Data is not encrypted (ENCRYPTED flag not set)".to_string(),
+        });
+    }
+    if header.model_type != expected_type {
+        return Err(AprenderError::FormatError {
+            message: format!(
+                "Model type mismatch: data contains {:?}, expected {:?}",
+                header.model_type, expected_type
+            ),
+        });
+    }
+    Ok(())
+}
+
+/// Extract salt, nonce, and ciphertext from encrypted data.
+#[cfg(feature = "format-encryption")]
+fn extract_encrypted_components<'a>(
+    data: &'a [u8],
+    header: &Header,
+) -> Result<([u8; SALT_SIZE], [u8; NONCE_SIZE], &'a [u8])> {
+    let metadata_end = HEADER_SIZE + header.metadata_size as usize;
+    let salt_end = metadata_end + SALT_SIZE;
+    let nonce_end = salt_end + NONCE_SIZE;
+    let payload_end = metadata_end + header.payload_size as usize;
+
+    if payload_end > data.len() - 4 {
+        return Err(AprenderError::FormatError {
+            message: "Encrypted payload extends beyond data boundary".to_string(),
+        });
+    }
+
+    let salt: [u8; SALT_SIZE] =
+        data[metadata_end..salt_end]
+            .try_into()
+            .map_err(|_| AprenderError::FormatError {
+                message: "Invalid salt size".to_string(),
+            })?;
+    let nonce: [u8; NONCE_SIZE] =
+        data[salt_end..nonce_end]
+            .try_into()
+            .map_err(|_| AprenderError::FormatError {
+                message: "Invalid nonce size".to_string(),
+            })?;
+    let ciphertext = &data[nonce_end..payload_end];
+
+    Ok((salt, nonce, ciphertext))
+}
+
+/// Decrypt payload using password and extracted components.
+#[cfg(feature = "format-encryption")]
+fn decrypt_encrypted_payload(
+    password: &str,
+    salt: &[u8; SALT_SIZE],
+    nonce_bytes: &[u8; NONCE_SIZE],
+    ciphertext: &[u8],
+) -> Result<Vec<u8>> {
+    use aes_gcm::{
+        aead::{Aead, KeyInit},
+        Aes256Gcm, Nonce,
+    };
+    use argon2::Argon2;
+
+    let mut key = [0u8; KEY_SIZE];
+    Argon2::default()
+        .hash_password_into(password.as_bytes(), salt, &mut key)
+        .map_err(|e| AprenderError::Other(format!("Key derivation failed: {e}")))?;
+
+    let cipher = Aes256Gcm::new_from_slice(&key)
+        .map_err(|e| AprenderError::Other(format!("Failed to create cipher: {e}")))?;
+    let nonce = Nonce::from_slice(nonce_bytes);
+
+    cipher
+        .decrypt(nonce, ciphertext)
+        .map_err(|_| AprenderError::DecryptionFailed {
+            message: "Decryption failed (wrong password or corrupted data)".to_string(),
+        })
+}
+
 /// Load an encrypted model from a byte slice (spec §1.1 + §4.1.2)
 ///
 /// Enables the `include_bytes!()` pattern for embedding encrypted models.
@@ -1235,102 +1445,20 @@ pub fn load_from_bytes_encrypted<M: DeserializeOwned>(
     expected_type: ModelType,
     password: &str,
 ) -> Result<M> {
-    use aes_gcm::{
-        aead::{Aead, KeyInit},
-        Aes256Gcm, Nonce,
-    };
-    use argon2::Argon2;
+    // Validate data integrity (Jidoka: stop the line on corruption)
+    verify_encrypted_data_size(data)?;
+    verify_encrypted_checksum(data)?;
 
-    // Verify minimum size
-    if data.len() < HEADER_SIZE + SALT_SIZE + NONCE_SIZE + 4 {
-        return Err(AprenderError::FormatError {
-            message: format!("Data too small for encrypted model: {} bytes", data.len()),
-        });
-    }
-
-    // Verify checksum (Jidoka: stop the line on corruption)
-    let stored_checksum = u32::from_le_bytes([
-        data[data.len() - 4],
-        data[data.len() - 3],
-        data[data.len() - 2],
-        data[data.len() - 1],
-    ]);
-    let computed_checksum = crc32(&data[..data.len() - 4]);
-    if stored_checksum != computed_checksum {
-        return Err(AprenderError::ChecksumMismatch {
-            expected: stored_checksum,
-            actual: computed_checksum,
-        });
-    }
-
-    // Parse header
+    // Parse and verify header
     let header = Header::from_bytes(&data[..HEADER_SIZE])?;
+    verify_encrypted_header(&header, expected_type)?;
 
-    // Verify ENCRYPTED flag is set
-    if !header.flags.is_encrypted() {
-        return Err(AprenderError::FormatError {
-            message: "Data is not encrypted (ENCRYPTED flag not set)".to_string(),
-        });
-    }
+    // Extract encryption components and decrypt
+    let (salt, nonce, ciphertext) = extract_encrypted_components(data, &header)?;
+    let payload_compressed = decrypt_encrypted_payload(password, &salt, &nonce, ciphertext)?;
 
-    // Verify model type
-    if header.model_type != expected_type {
-        return Err(AprenderError::FormatError {
-            message: format!(
-                "Model type mismatch: data contains {:?}, expected {:?}",
-                header.model_type, expected_type
-            ),
-        });
-    }
-
-    // Calculate content boundaries
-    let metadata_end = HEADER_SIZE + header.metadata_size as usize;
-    let salt_end = metadata_end + SALT_SIZE;
-    let nonce_end = salt_end + NONCE_SIZE;
-    let payload_end = metadata_end + header.payload_size as usize;
-
-    if payload_end > data.len() - 4 {
-        return Err(AprenderError::FormatError {
-            message: "Encrypted payload extends beyond data boundary".to_string(),
-        });
-    }
-
-    // Extract salt, nonce, and ciphertext
-    let salt: [u8; SALT_SIZE] =
-        data[metadata_end..salt_end]
-            .try_into()
-            .map_err(|_| AprenderError::FormatError {
-                message: "Invalid salt size".to_string(),
-            })?;
-    let nonce_bytes: [u8; NONCE_SIZE] =
-        data[salt_end..nonce_end]
-            .try_into()
-            .map_err(|_| AprenderError::FormatError {
-                message: "Invalid nonce size".to_string(),
-            })?;
-    let ciphertext = &data[nonce_end..payload_end];
-
-    // Derive key using Argon2id (same parameters as encryption)
-    let mut key = [0u8; KEY_SIZE];
-    Argon2::default()
-        .hash_password_into(password.as_bytes(), &salt, &mut key)
-        .map_err(|e| AprenderError::Other(format!("Key derivation failed: {e}")))?;
-
-    // Decrypt payload with AES-256-GCM
-    let cipher = Aes256Gcm::new_from_slice(&key)
-        .map_err(|e| AprenderError::Other(format!("Failed to create cipher: {e}")))?;
-    let nonce = Nonce::from_slice(&nonce_bytes);
-    let payload_compressed =
-        cipher
-            .decrypt(nonce, ciphertext)
-            .map_err(|_| AprenderError::DecryptionFailed {
-                message: "Decryption failed (wrong password or corrupted data)".to_string(),
-            })?;
-
-    // Decompress payload
+    // Decompress and deserialize
     let payload_uncompressed = decompress_payload(&payload_compressed, header.compression)?;
-
-    // Deserialize model
     bincode::deserialize(&payload_uncompressed)
         .map_err(|e| AprenderError::Serialization(format!("Failed to deserialize model: {e}")))
 }
@@ -1519,58 +1647,16 @@ pub fn load_verified<M: DeserializeOwned>(
     expected_type: ModelType,
     trusted_key: Option<&VerifyingKey>,
 ) -> Result<M> {
-    use ed25519_dalek::{Signature, Verifier};
-
     let path = path.as_ref();
 
-    // Read entire file
-    let file = File::open(path)?;
-    let mut reader = BufReader::new(file);
-    let mut content = Vec::new();
-    reader.read_to_end(&mut content)?;
+    // Read and validate file
+    let content = read_file_content(path)?;
+    verify_signed_file_size(&content)?;
+    verify_file_checksum(&content)?;
 
-    // Verify minimum size (header + signature block + checksum)
-    const SIGNATURE_BLOCK_SIZE: usize = SIGNATURE_SIZE + PUBLIC_KEY_SIZE; // 96 bytes
-    if content.len() < HEADER_SIZE + SIGNATURE_BLOCK_SIZE + 4 {
-        return Err(AprenderError::FormatError {
-            message: format!("File too small for signed model: {} bytes", content.len()),
-        });
-    }
-
-    // Verify checksum (Jidoka: stop the line on corruption)
-    let stored_checksum = u32::from_le_bytes([
-        content[content.len() - 4],
-        content[content.len() - 3],
-        content[content.len() - 2],
-        content[content.len() - 1],
-    ]);
-    let computed_checksum = crc32(&content[..content.len() - 4]);
-    if stored_checksum != computed_checksum {
-        return Err(AprenderError::ChecksumMismatch {
-            expected: stored_checksum,
-            actual: computed_checksum,
-        });
-    }
-
-    // Parse header
-    let header = Header::from_bytes(&content[..HEADER_SIZE])?;
-
-    // Verify SIGNED flag is set
-    if !header.flags.is_signed() {
-        return Err(AprenderError::FormatError {
-            message: "File is not signed (SIGNED flag not set)".to_string(),
-        });
-    }
-
-    // Verify model type
-    if header.model_type != expected_type {
-        return Err(AprenderError::FormatError {
-            message: format!(
-                "Model type mismatch: file contains {:?}, expected {:?}",
-                header.model_type, expected_type
-            ),
-        });
-    }
+    // Parse and validate header
+    let header = parse_and_validate_header(&content, expected_type)?;
+    verify_signed_flag(&header)?;
 
     // Calculate content boundaries
     let metadata_end = HEADER_SIZE + header.metadata_size as usize;
@@ -1579,13 +1665,41 @@ pub fn load_verified<M: DeserializeOwned>(
     let pubkey_start = signature_start + SIGNATURE_SIZE;
     let pubkey_end = pubkey_start + PUBLIC_KEY_SIZE;
 
-    if pubkey_end > content.len() - 4 {
+    verify_payload_boundary(pubkey_end, content.len())?;
+
+    // Extract and verify signature
+    let (signature, embedded_key) =
+        extract_signature_and_key(&content, signature_start, pubkey_start, pubkey_end)?;
+    let verifying_key = trusted_key.unwrap_or(&embedded_key);
+    let signable_content = &content[..payload_end];
+    verify_signature(verifying_key, signable_content, &signature)?;
+
+    // Extract and deserialize payload
+    decompress_and_deserialize(&content[metadata_end..payload_end], header.compression)
+}
+
+/// Verify minimum file size for signed files.
+#[cfg(feature = "format-signing")]
+fn verify_signed_file_size(content: &[u8]) -> Result<()> {
+    const SIGNATURE_BLOCK_SIZE: usize = SIGNATURE_SIZE + PUBLIC_KEY_SIZE;
+    if content.len() < HEADER_SIZE + SIGNATURE_BLOCK_SIZE + 4 {
         return Err(AprenderError::FormatError {
-            message: "Signature block extends beyond file boundary".to_string(),
+            message: format!("File too small for signed model: {} bytes", content.len()),
         });
     }
+    Ok(())
+}
 
-    // Extract signature and public key
+/// Extract signature and public key from file content.
+#[cfg(feature = "format-signing")]
+fn extract_signature_and_key(
+    content: &[u8],
+    signature_start: usize,
+    pubkey_start: usize,
+    pubkey_end: usize,
+) -> Result<(ed25519_dalek::Signature, VerifyingKey)> {
+    use ed25519_dalek::Signature;
+
     let signature_bytes: [u8; 64] =
         content[signature_start..pubkey_start]
             .try_into()
@@ -1605,26 +1719,23 @@ pub fn load_verified<M: DeserializeOwned>(
             message: format!("Invalid public key: {e}"),
         })?;
 
-    // Use trusted key if provided, otherwise use embedded key
-    let verifying_key = trusted_key.unwrap_or(&embedded_key);
+    Ok((signature, embedded_key))
+}
 
-    // Extract signable content (header + metadata + payload)
-    let signable_content = &content[..payload_end];
+/// Verify Ed25519 signature.
+#[cfg(feature = "format-signing")]
+fn verify_signature(
+    verifying_key: &VerifyingKey,
+    signable_content: &[u8],
+    signature: &ed25519_dalek::Signature,
+) -> Result<()> {
+    use ed25519_dalek::Verifier;
 
-    // Verify signature (Jidoka: halt on verification failure)
     verifying_key
-        .verify(signable_content, &signature)
+        .verify(signable_content, signature)
         .map_err(|e| AprenderError::SignatureInvalid {
             reason: format!("Signature verification failed: {e}"),
-        })?;
-
-    // Extract and decompress payload
-    let payload_compressed = &content[metadata_end..payload_end];
-    let payload_uncompressed = decompress_payload(payload_compressed, header.compression)?;
-
-    // Deserialize model
-    bincode::deserialize(&payload_uncompressed)
-        .map_err(|e| AprenderError::Serialization(format!("Failed to deserialize model: {e}")))
+        })
 }
 
 /// Save a model with password-based encryption (spec §4.1.2)
@@ -1740,21 +1851,44 @@ pub fn load_encrypted<M: DeserializeOwned>(
     expected_type: ModelType,
     password: &str,
 ) -> Result<M> {
-    use aes_gcm::{
-        aead::{Aead, KeyInit},
-        Aes256Gcm, Nonce,
-    };
-    use argon2::Argon2;
-
     let path = path.as_ref();
 
-    // Read entire file
-    let file = File::open(path)?;
-    let mut reader = BufReader::new(file);
-    let mut content = Vec::new();
-    reader.read_to_end(&mut content)?;
+    // Read and validate file
+    let content = read_file_content(path)?;
+    verify_password_encrypted_file_size(&content)?;
+    verify_file_checksum(&content)?;
 
-    // Verify minimum size
+    // Parse and validate header
+    let header = parse_and_validate_header(&content, expected_type)?;
+    verify_encrypted_flag(&header)?;
+
+    // Calculate content boundaries
+    let metadata_end = HEADER_SIZE + header.metadata_size as usize;
+    let salt_end = metadata_end + SALT_SIZE;
+    let nonce_end = salt_end + NONCE_SIZE;
+    let payload_end = metadata_end + header.payload_size as usize;
+
+    verify_payload_boundary(payload_end, content.len())?;
+
+    // Extract encryption components and decrypt
+    let (salt, nonce_bytes, ciphertext) = extract_password_encryption_components(
+        &content,
+        metadata_end,
+        salt_end,
+        nonce_end,
+        payload_end,
+    )?;
+    let payload_compressed = decrypt_password_payload(password, &salt, &nonce_bytes, ciphertext)?;
+
+    // Decompress and deserialize
+    let payload_uncompressed = decompress_payload(&payload_compressed, header.compression)?;
+    bincode::deserialize(&payload_uncompressed)
+        .map_err(|e| AprenderError::Serialization(format!("Failed to deserialize model: {e}")))
+}
+
+/// Verify minimum file size for password-encrypted files.
+#[cfg(feature = "format-encryption")]
+fn verify_password_encrypted_file_size(content: &[u8]) -> Result<()> {
     if content.len() < HEADER_SIZE + SALT_SIZE + NONCE_SIZE + 4 {
         return Err(AprenderError::FormatError {
             message: format!(
@@ -1763,55 +1897,18 @@ pub fn load_encrypted<M: DeserializeOwned>(
             ),
         });
     }
+    Ok(())
+}
 
-    // Verify checksum (Jidoka: stop the line on corruption)
-    let stored_checksum = u32::from_le_bytes([
-        content[content.len() - 4],
-        content[content.len() - 3],
-        content[content.len() - 2],
-        content[content.len() - 1],
-    ]);
-    let computed_checksum = crc32(&content[..content.len() - 4]);
-    if stored_checksum != computed_checksum {
-        return Err(AprenderError::ChecksumMismatch {
-            expected: stored_checksum,
-            actual: computed_checksum,
-        });
-    }
-
-    // Parse header
-    let header = Header::from_bytes(&content[..HEADER_SIZE])?;
-
-    // Verify ENCRYPTED flag is set
-    if !header.flags.is_encrypted() {
-        return Err(AprenderError::FormatError {
-            message: "File is not encrypted (ENCRYPTED flag not set)".to_string(),
-        });
-    }
-
-    // Verify model type
-    if header.model_type != expected_type {
-        return Err(AprenderError::FormatError {
-            message: format!(
-                "Model type mismatch: file contains {:?}, expected {:?}",
-                header.model_type, expected_type
-            ),
-        });
-    }
-
-    // Calculate content boundaries
-    let metadata_end = HEADER_SIZE + header.metadata_size as usize;
-    let salt_end = metadata_end + SALT_SIZE;
-    let nonce_end = salt_end + NONCE_SIZE;
-    let payload_end = metadata_end + header.payload_size as usize;
-
-    if payload_end > content.len() - 4 {
-        return Err(AprenderError::FormatError {
-            message: "Encrypted payload extends beyond file boundary".to_string(),
-        });
-    }
-
-    // Extract salt, nonce, and ciphertext
+/// Extract salt, nonce, and ciphertext from password-encrypted file.
+#[cfg(feature = "format-encryption")]
+fn extract_password_encryption_components(
+    content: &[u8],
+    metadata_end: usize,
+    salt_end: usize,
+    nonce_end: usize,
+    payload_end: usize,
+) -> Result<([u8; SALT_SIZE], [u8; NONCE_SIZE], &[u8])> {
     let salt: [u8; SALT_SIZE] =
         content[metadata_end..salt_end]
             .try_into()
@@ -1825,30 +1922,38 @@ pub fn load_encrypted<M: DeserializeOwned>(
                 message: "Invalid nonce size".to_string(),
             })?;
     let ciphertext = &content[nonce_end..payload_end];
+    Ok((salt, nonce_bytes, ciphertext))
+}
 
-    // Derive key using Argon2id (same parameters as encryption)
+/// Derive key from password and decrypt payload.
+#[cfg(feature = "format-encryption")]
+fn decrypt_password_payload(
+    password: &str,
+    salt: &[u8; SALT_SIZE],
+    nonce_bytes: &[u8; NONCE_SIZE],
+    ciphertext: &[u8],
+) -> Result<Vec<u8>> {
+    use aes_gcm::{
+        aead::{Aead, KeyInit},
+        Aes256Gcm, Nonce,
+    };
+    use argon2::Argon2;
+
+    // Derive key using Argon2id
     let mut key = [0u8; KEY_SIZE];
     Argon2::default()
-        .hash_password_into(password.as_bytes(), &salt, &mut key)
+        .hash_password_into(password.as_bytes(), salt, &mut key)
         .map_err(|e| AprenderError::Other(format!("Key derivation failed: {e}")))?;
 
-    // Decrypt payload with AES-256-GCM
+    // Decrypt with AES-256-GCM
     let cipher = Aes256Gcm::new_from_slice(&key)
         .map_err(|e| AprenderError::Other(format!("Failed to create cipher: {e}")))?;
-    let nonce = Nonce::from_slice(&nonce_bytes);
-    let payload_compressed =
-        cipher
-            .decrypt(nonce, ciphertext)
-            .map_err(|_| AprenderError::DecryptionFailed {
-                message: "Decryption failed (wrong password or corrupted data)".to_string(),
-            })?;
-
-    // Decompress payload
-    let payload_uncompressed = decompress_payload(&payload_compressed, header.compression)?;
-
-    // Deserialize model
-    bincode::deserialize(&payload_uncompressed)
-        .map_err(|e| AprenderError::Serialization(format!("Failed to deserialize model: {e}")))
+    let nonce = Nonce::from_slice(nonce_bytes);
+    cipher
+        .decrypt(nonce, ciphertext)
+        .map_err(|_| AprenderError::DecryptionFailed {
+            message: "Decryption failed (wrong password or corrupted data)".to_string(),
+        })
 }
 
 /// Save a model encrypted for a specific recipient (spec §4.1.3)
@@ -1973,28 +2078,59 @@ pub fn save_for_recipient<M: Serialize>(
 /// # Errors
 /// Returns error on I/O failure, format error, type mismatch, or decryption failure
 #[cfg(feature = "format-encryption")]
-#[allow(clippy::too_many_lines)]
 pub fn load_as_recipient<M: DeserializeOwned>(
     path: impl AsRef<Path>,
     expected_type: ModelType,
     recipient_secret_key: &X25519SecretKey,
 ) -> Result<M> {
-    use aes_gcm::{
-        aead::{Aead, KeyInit},
-        Aes256Gcm, Nonce,
-    };
-    use hkdf::Hkdf;
-    use sha2::Sha256;
-
     let path = path.as_ref();
 
-    // Read entire file
-    let file = File::open(path)?;
-    let mut reader = BufReader::new(file);
-    let mut content = Vec::new();
-    reader.read_to_end(&mut content)?;
+    // Read and validate file
+    let content = read_file_content(path)?;
+    verify_x25519_encrypted_file_size(&content)?;
+    verify_file_checksum(&content)?;
 
-    // Calculate minimum size for X25519 encrypted file
+    // Parse and validate header
+    let header = parse_and_validate_header(&content, expected_type)?;
+    verify_encrypted_flag(&header)?;
+
+    // Calculate content boundaries
+    let metadata_end = HEADER_SIZE + header.metadata_size as usize;
+    let ephemeral_pub_end = metadata_end + X25519_PUBLIC_KEY_SIZE;
+    let recipient_hash_end = ephemeral_pub_end + RECIPIENT_HASH_SIZE;
+    let nonce_end = recipient_hash_end + NONCE_SIZE;
+    let payload_end = metadata_end + header.payload_size as usize;
+
+    verify_payload_boundary(payload_end, content.len())?;
+
+    // Extract and verify recipient components
+    let (ephemeral_public, stored_recipient_hash) = extract_x25519_recipient_info(
+        &content,
+        metadata_end,
+        ephemeral_pub_end,
+        recipient_hash_end,
+    )?;
+    verify_recipient(recipient_secret_key, stored_recipient_hash)?;
+
+    // Extract nonce and ciphertext, then decrypt
+    let (nonce_bytes, ciphertext) =
+        extract_nonce_and_ciphertext(&content, recipient_hash_end, nonce_end, payload_end)?;
+    let payload_compressed = decrypt_x25519_payload(
+        recipient_secret_key,
+        &ephemeral_public,
+        &nonce_bytes,
+        ciphertext,
+    )?;
+
+    // Decompress and deserialize
+    let payload_uncompressed = decompress_payload(&payload_compressed, header.compression)?;
+    bincode::deserialize(&payload_uncompressed)
+        .map_err(|e| AprenderError::Serialization(format!("Failed to deserialize model: {e}")))
+}
+
+/// Verify minimum file size for X25519-encrypted files.
+#[cfg(feature = "format-encryption")]
+fn verify_x25519_encrypted_file_size(content: &[u8]) -> Result<()> {
     const MIN_PAYLOAD_SIZE: usize = X25519_PUBLIC_KEY_SIZE + RECIPIENT_HASH_SIZE + NONCE_SIZE;
     if content.len() < HEADER_SIZE + MIN_PAYLOAD_SIZE + 4 {
         return Err(AprenderError::FormatError {
@@ -2004,56 +2140,17 @@ pub fn load_as_recipient<M: DeserializeOwned>(
             ),
         });
     }
+    Ok(())
+}
 
-    // Verify checksum (Jidoka: stop the line on corruption)
-    let stored_checksum = u32::from_le_bytes([
-        content[content.len() - 4],
-        content[content.len() - 3],
-        content[content.len() - 2],
-        content[content.len() - 1],
-    ]);
-    let computed_checksum = crc32(&content[..content.len() - 4]);
-    if stored_checksum != computed_checksum {
-        return Err(AprenderError::ChecksumMismatch {
-            expected: stored_checksum,
-            actual: computed_checksum,
-        });
-    }
-
-    // Parse header
-    let header = Header::from_bytes(&content[..HEADER_SIZE])?;
-
-    // Verify ENCRYPTED flag is set
-    if !header.flags.is_encrypted() {
-        return Err(AprenderError::FormatError {
-            message: "File is not encrypted (ENCRYPTED flag not set)".to_string(),
-        });
-    }
-
-    // Verify model type
-    if header.model_type != expected_type {
-        return Err(AprenderError::FormatError {
-            message: format!(
-                "Model type mismatch: file contains {:?}, expected {:?}",
-                header.model_type, expected_type
-            ),
-        });
-    }
-
-    // Calculate content boundaries
-    let metadata_end = HEADER_SIZE + header.metadata_size as usize;
-    let ephemeral_pub_end = metadata_end + X25519_PUBLIC_KEY_SIZE;
-    let recipient_hash_end = ephemeral_pub_end + RECIPIENT_HASH_SIZE;
-    let nonce_end = recipient_hash_end + NONCE_SIZE;
-    let payload_end = metadata_end + header.payload_size as usize;
-
-    if payload_end > content.len() - 4 {
-        return Err(AprenderError::FormatError {
-            message: "Encrypted payload extends beyond file boundary".to_string(),
-        });
-    }
-
-    // Extract ephemeral public key
+/// Extract ephemeral public key and recipient hash from X25519-encrypted file.
+#[cfg(feature = "format-encryption")]
+fn extract_x25519_recipient_info(
+    content: &[u8],
+    metadata_end: usize,
+    ephemeral_pub_end: usize,
+    recipient_hash_end: usize,
+) -> Result<(X25519PublicKey, [u8; RECIPIENT_HASH_SIZE])> {
     let ephemeral_pub_bytes: [u8; X25519_PUBLIC_KEY_SIZE] = content
         [metadata_end..ephemeral_pub_end]
         .try_into()
@@ -2062,7 +2159,6 @@ pub fn load_as_recipient<M: DeserializeOwned>(
         })?;
     let ephemeral_public = X25519PublicKey::from(ephemeral_pub_bytes);
 
-    // Extract and verify recipient hash
     let stored_recipient_hash: [u8; RECIPIENT_HASH_SIZE] = content
         [ephemeral_pub_end..recipient_hash_end]
         .try_into()
@@ -2070,7 +2166,15 @@ pub fn load_as_recipient<M: DeserializeOwned>(
             message: "Invalid recipient hash size".to_string(),
         })?;
 
-    // Verify this file is for us
+    Ok((ephemeral_public, stored_recipient_hash))
+}
+
+/// Verify this file was encrypted for the given recipient.
+#[cfg(feature = "format-encryption")]
+fn verify_recipient(
+    recipient_secret_key: &X25519SecretKey,
+    stored_recipient_hash: [u8; RECIPIENT_HASH_SIZE],
+) -> Result<()> {
     let our_public = X25519PublicKey::from(recipient_secret_key);
     let our_hash: [u8; RECIPIENT_HASH_SIZE] = our_public.as_bytes()[..RECIPIENT_HASH_SIZE]
         .try_into()
@@ -2081,8 +2185,17 @@ pub fn load_as_recipient<M: DeserializeOwned>(
             message: "This file was encrypted for a different recipient".to_string(),
         });
     }
+    Ok(())
+}
 
-    // Extract nonce and ciphertext
+/// Extract nonce and ciphertext from encrypted content.
+#[cfg(feature = "format-encryption")]
+fn extract_nonce_and_ciphertext(
+    content: &[u8],
+    recipient_hash_end: usize,
+    nonce_end: usize,
+    payload_end: usize,
+) -> Result<([u8; NONCE_SIZE], &[u8])> {
     let nonce_bytes: [u8; NONCE_SIZE] =
         content[recipient_hash_end..nonce_end]
             .try_into()
@@ -2090,33 +2203,42 @@ pub fn load_as_recipient<M: DeserializeOwned>(
                 message: "Invalid nonce size".to_string(),
             })?;
     let ciphertext = &content[nonce_end..payload_end];
+    Ok((nonce_bytes, ciphertext))
+}
+
+/// Perform X25519 key agreement and decrypt payload.
+#[cfg(feature = "format-encryption")]
+fn decrypt_x25519_payload(
+    recipient_secret_key: &X25519SecretKey,
+    ephemeral_public: &X25519PublicKey,
+    nonce_bytes: &[u8; NONCE_SIZE],
+    ciphertext: &[u8],
+) -> Result<Vec<u8>> {
+    use aes_gcm::{
+        aead::{Aead, KeyInit},
+        Aes256Gcm, Nonce,
+    };
+    use hkdf::Hkdf;
+    use sha2::Sha256;
 
     // Perform X25519 key agreement
-    let shared_secret = recipient_secret_key.diffie_hellman(&ephemeral_public);
+    let shared_secret = recipient_secret_key.diffie_hellman(ephemeral_public);
 
-    // Derive encryption key using HKDF-SHA256 (same as encryption)
+    // Derive encryption key using HKDF-SHA256
     let hkdf = Hkdf::<Sha256>::new(None, shared_secret.as_bytes());
     let mut key = [0u8; KEY_SIZE];
     hkdf.expand(HKDF_INFO, &mut key)
         .map_err(|_| AprenderError::Other("HKDF expansion failed".to_string()))?;
 
-    // Decrypt payload with AES-256-GCM
+    // Decrypt with AES-256-GCM
     let cipher = Aes256Gcm::new_from_slice(&key)
         .map_err(|e| AprenderError::Other(format!("Failed to create cipher: {e}")))?;
-    let nonce = Nonce::from_slice(&nonce_bytes);
-    let payload_compressed =
-        cipher
-            .decrypt(nonce, ciphertext)
-            .map_err(|_| AprenderError::DecryptionFailed {
-                message: "Decryption failed (wrong recipient key or corrupted data)".to_string(),
-            })?;
-
-    // Decompress payload
-    let payload_uncompressed = decompress_payload(&payload_compressed, header.compression)?;
-
-    // Deserialize model
-    bincode::deserialize(&payload_uncompressed)
-        .map_err(|e| AprenderError::Serialization(format!("Failed to deserialize model: {e}")))
+    let nonce = Nonce::from_slice(nonce_bytes);
+    cipher
+        .decrypt(nonce, ciphertext)
+        .map_err(|_| AprenderError::DecryptionFailed {
+            message: "Decryption failed (wrong recipient key or corrupted data)".to_string(),
+        })
 }
 
 #[cfg(test)]

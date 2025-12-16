@@ -1564,6 +1564,75 @@ fn compute_mse(y_left: &[f32], y_right: &[f32]) -> f32 {
     (n_left / n_total) * var_left + (n_right / n_total) * var_right
 }
 
+/// Get unique sorted feature values for splitting.
+fn get_unique_feature_values(
+    x: &crate::primitives::Matrix<f32>,
+    feature_idx: usize,
+    n_samples: usize,
+) -> Vec<f32> {
+    let mut values: Vec<f32> = (0..n_samples).map(|i| x.get(i, feature_idx)).collect();
+    values.sort_by(|a, b| a.partial_cmp(b).expect("f32 values should be comparable"));
+    values.dedup();
+    values
+}
+
+/// Split y values by a threshold on a feature.
+fn split_by_threshold(
+    x: &crate::primitives::Matrix<f32>,
+    y: &[f32],
+    feature_idx: usize,
+    threshold: f32,
+) -> (Vec<f32>, Vec<f32>) {
+    let mut y_left = Vec::new();
+    let mut y_right = Vec::new();
+
+    for (row, &y_val) in y.iter().enumerate() {
+        if x.get(row, feature_idx) <= threshold {
+            y_left.push(y_val);
+        } else {
+            y_right.push(y_val);
+        }
+    }
+    (y_left, y_right)
+}
+
+/// Evaluate a single split and return gain if valid.
+fn evaluate_split_gain(y_left: &[f32], y_right: &[f32], current_variance: f32) -> Option<f32> {
+    if y_left.is_empty() || y_right.is_empty() {
+        return None;
+    }
+    let split_mse = compute_mse(y_left, y_right);
+    let gain = current_variance - split_mse;
+    (gain > 0.0).then_some(gain)
+}
+
+/// Find the best split for a single feature.
+fn find_best_regression_split_for_feature(
+    x: &crate::primitives::Matrix<f32>,
+    y: &[f32],
+    feature_idx: usize,
+    n_samples: usize,
+    current_variance: f32,
+) -> Option<(f32, f32)> {
+    let feature_values = get_unique_feature_values(x, feature_idx, n_samples);
+    let mut best_threshold = 0.0;
+    let mut best_gain = 0.0;
+
+    for i in 0..feature_values.len().saturating_sub(1) {
+        let threshold = (feature_values[i] + feature_values[i + 1]) / 2.0;
+        let (y_left, y_right) = split_by_threshold(x, y, feature_idx, threshold);
+
+        if let Some(gain) = evaluate_split_gain(&y_left, &y_right, current_variance) {
+            if gain > best_gain {
+                best_gain = gain;
+                best_threshold = threshold;
+            }
+        }
+    }
+
+    (best_gain > 0.0).then_some((best_threshold, best_gain))
+}
+
 /// Find the best split for regression using MSE criterion.
 ///
 /// Returns (feature_idx, threshold, mse_reduction) if a valid split exists.
@@ -1582,38 +1651,10 @@ fn find_best_regression_split(
     let mut best_feature = 0;
     let mut best_threshold = 0.0;
 
-    // Try each feature
     for feature_idx in 0..n_features {
-        // Get unique values for this feature to use as potential split points
-        let mut feature_values: Vec<f32> = (0..n_samples).map(|i| x.get(i, feature_idx)).collect();
-        feature_values.sort_by(|a, b| a.partial_cmp(b).expect("f32 values should be comparable"));
-        feature_values.dedup();
-
-        // Try each pair of adjacent values as split point
-        for i in 0..feature_values.len().saturating_sub(1) {
-            let threshold = (feature_values[i] + feature_values[i + 1]) / 2.0;
-
-            // Split the data
-            let mut y_left = Vec::new();
-            let mut y_right = Vec::new();
-
-            for (row, &y_val) in y.iter().enumerate() {
-                if x.get(row, feature_idx) <= threshold {
-                    y_left.push(y_val);
-                } else {
-                    y_right.push(y_val);
-                }
-            }
-
-            // Skip if split is invalid
-            if y_left.is_empty() || y_right.is_empty() {
-                continue;
-            }
-
-            // Compute MSE for this split
-            let split_mse = compute_mse(&y_left, &y_right);
-            let gain = current_variance - split_mse;
-
+        if let Some((threshold, gain)) =
+            find_best_regression_split_for_feature(x, y, feature_idx, n_samples, current_variance)
+        {
             if gain > best_gain {
                 best_gain = gain;
                 best_feature = feature_idx;
@@ -1622,11 +1663,7 @@ fn find_best_regression_split(
         }
     }
 
-    if best_gain > 0.0 {
-        Some((best_feature, best_threshold, best_gain))
-    } else {
-        None
-    }
+    (best_gain > 0.0).then_some((best_feature, best_threshold, best_gain))
 }
 
 /// Split regression data by indices.
@@ -1657,6 +1694,38 @@ fn split_regression_data_by_indices(
     (subset_matrix, subset_labels)
 }
 
+/// Create a regression leaf node from y values.
+fn make_regression_leaf(y_slice: &[f32], n_samples: usize) -> RegressionTreeNode {
+    RegressionTreeNode::Leaf(RegressionLeaf {
+        value: mean_f32(y_slice),
+        n_samples,
+    })
+}
+
+/// Check if we've reached max depth.
+fn at_max_depth(depth: usize, max_depth: Option<usize>) -> bool {
+    max_depth.is_some_and(|max_d| depth >= max_d)
+}
+
+/// Partition sample indices based on feature threshold.
+fn partition_by_threshold(
+    x: &crate::primitives::Matrix<f32>,
+    n_samples: usize,
+    feature_idx: usize,
+    threshold: f32,
+) -> (Vec<usize>, Vec<usize>) {
+    let mut left = Vec::new();
+    let mut right = Vec::new();
+    for row in 0..n_samples {
+        if x.get(row, feature_idx) <= threshold {
+            left.push(row);
+        } else {
+            right.push(row);
+        }
+    }
+    (left, right)
+}
+
 /// Build a regression decision tree recursively.
 ///
 /// # Arguments
@@ -1680,69 +1749,35 @@ fn build_regression_tree(
     min_samples_leaf: usize,
 ) -> RegressionTreeNode {
     let n_samples = y.len();
-
-    // Convert Vector to slice for easier manipulation
     let y_slice: Vec<f32> = y.as_slice().to_vec();
 
-    // Check stopping criteria
-    if n_samples < min_samples_split {
-        return RegressionTreeNode::Leaf(RegressionLeaf {
-            value: mean_f32(&y_slice),
-            n_samples,
-        });
-    }
-
-    if let Some(max_d) = max_depth {
-        if depth >= max_d {
-            return RegressionTreeNode::Leaf(RegressionLeaf {
-                value: mean_f32(&y_slice),
-                n_samples,
-            });
-        }
-    }
-
-    // All y values are the same (variance == 0)
-    if variance_f32(&y_slice) < 1e-10 {
-        return RegressionTreeNode::Leaf(RegressionLeaf {
-            value: mean_f32(&y_slice),
-            n_samples,
-        });
+    // Early stopping checks
+    if n_samples < min_samples_split
+        || at_max_depth(depth, max_depth)
+        || variance_f32(&y_slice) < 1e-10
+    {
+        return make_regression_leaf(&y_slice, n_samples);
     }
 
     // Try to find best split
     let Some((feature_idx, threshold, _gain)) = find_best_regression_split(x, &y_slice) else {
-        return RegressionTreeNode::Leaf(RegressionLeaf {
-            value: mean_f32(&y_slice),
-            n_samples,
-        });
+        return make_regression_leaf(&y_slice, n_samples);
     };
 
-    // Split data based on threshold
-    let mut left_indices = Vec::new();
-    let mut right_indices = Vec::new();
-
-    for row in 0..n_samples {
-        if x.get(row, feature_idx) <= threshold {
-            left_indices.push(row);
-        } else {
-            right_indices.push(row);
-        }
-    }
+    // Partition samples
+    let (left_indices, right_indices) =
+        partition_by_threshold(x, n_samples, feature_idx, threshold);
 
     // Check min_samples_leaf constraint
     if left_indices.len() < min_samples_leaf || right_indices.len() < min_samples_leaf {
-        return RegressionTreeNode::Leaf(RegressionLeaf {
-            value: mean_f32(&y_slice),
-            n_samples,
-        });
+        return make_regression_leaf(&y_slice, n_samples);
     }
 
-    // Create left and right datasets
+    // Build subtrees
     let (left_matrix, left_labels) = split_regression_data_by_indices(x, &y_slice, &left_indices);
     let (right_matrix, right_labels) =
         split_regression_data_by_indices(x, &y_slice, &right_indices);
 
-    // Recursively build subtrees
     let left_child = build_regression_tree(
         &left_matrix,
         &crate::primitives::Vector::from_vec(left_labels),

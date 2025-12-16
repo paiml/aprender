@@ -586,11 +586,11 @@ impl Rng for XorShift64 {
 /// Random search optimizer.
 ///
 /// Random search is surprisingly effective, achieving equivalent results to
-/// grid search with 60x fewer trials in many cases [1].
+/// grid search with 60x fewer trials in many cases (see reference below).
 ///
 /// # References
 ///
-/// [1] Bergstra & Bengio (2012). Random Search for Hyper-Parameter Optimization. JMLR.
+/// Bergstra & Bengio (2012). Random Search for Hyper-Parameter Optimization. JMLR.
 ///
 /// # Example
 ///

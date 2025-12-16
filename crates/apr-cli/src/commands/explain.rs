@@ -1,13 +1,18 @@
 use crate::error::Result;
 use std::path::PathBuf;
 
+/// Explain command - provides documentation about errors, tensors, and models.
+///
+/// Returns Result for consistency with other CLI commands and to enable
+/// future error handling (e.g., file read failures, network errors).
+#[allow(clippy::unnecessary_wraps)]
 pub(crate) fn run(
     code: Option<String>,
     file: Option<PathBuf>,
     tensor: Option<String>,
 ) -> Result<()> {
     if let Some(c) = code {
-        println!("Explain error code: {}", c);
+        println!("Explain error code: {c}");
         if c == "E002" {
             println!("**E002: Corrupted Data**");
             println!("The payload checksum does not match the header.");
@@ -19,7 +24,7 @@ pub(crate) fn run(
             println!("Unknown Error Code");
         }
     } else if let Some(t) = tensor {
-        println!("Explain tensor: {}", t);
+        println!("Explain tensor: {t}");
         if t == "encoder.conv1.weight" {
             println!("**encoder.conv1.weight**");
             println!("- **Role**: Initial feature extraction (Audio -> Latent)");

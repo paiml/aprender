@@ -9,15 +9,25 @@
 
 use aprender::prelude::*;
 
-#[allow(clippy::needless_range_loop)]
-#[allow(clippy::too_many_lines)]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("=== Local Outlier Factor (LOF) Anomaly Detection ===\n");
 
-    // Example 1: Basic anomaly detection
-    println!("--- Example 1: Basic Anomaly Detection ---");
+    let data = create_sample_data()?;
+    let lof = example_basic_detection(&data)?;
+    example_lof_scores(&lof, &data);
+    example_varying_density()?;
+    example_n_neighbors_effect()?;
+    example_contamination_parameter(&data)?;
+    example_lof_vs_iforest()?;
+    example_negative_outlier_factor(&lof);
+    example_reproducibility(&data)?;
 
-    let data = Matrix::from_vec(
+    print_takeaways();
+    Ok(())
+}
+
+fn create_sample_data() -> Result<Matrix<f32>, Box<dyn std::error::Error>> {
+    Matrix::from_vec(
         10,
         2,
         vec![
@@ -26,8 +36,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             // Two obvious outliers
             10.0, 10.0, -10.0, -10.0,
         ],
-    )?;
+    )
+    .map_err(Into::into)
+}
 
+fn example_basic_detection(
+    data: &Matrix<f32>,
+) -> Result<LocalOutlierFactor, Box<dyn std::error::Error>> {
+    println!("--- Example 1: Basic Anomaly Detection ---");
     println!(
         "Dataset: {} samples, {} features\n",
         data.shape().0,
@@ -37,10 +53,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut lof = LocalOutlierFactor::new()
         .with_n_neighbors(5)
         .with_contamination(0.2);
+    lof.fit(data)?;
 
-    lof.fit(&data)?;
-
-    let predictions = lof.predict(&data);
+    let predictions = lof.predict(data);
     println!("Predictions (1=normal, -1=anomaly):");
     for (i, &pred) in predictions.iter().enumerate() {
         let label = if pred == 1 { "NORMAL" } else { "ANOMALY" };
@@ -49,11 +64,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let n_anomalies = predictions.iter().filter(|&&p| p == -1).count();
     println!("\nDetected {} anomalies out of {} points", n_anomalies, 10);
+    Ok(lof)
+}
 
-    // Example 2: LOF scores interpretation
+fn example_lof_scores(lof: &LocalOutlierFactor, data: &Matrix<f32>) {
     println!("\n--- Example 2: LOF Scores Interpretation ---");
 
-    let scores = lof.score_samples(&data);
+    let scores = lof.score_samples(data);
     println!("\nLOF scores (higher = more anomalous):");
     println!("  LOF ≈ 1: Similar density to neighbors (normal)");
     println!("  LOF >> 1: Lower density than neighbors (outlier)\n");
@@ -68,8 +85,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         };
         println!("  Point {i}: {score:.3} ({interpretation})");
     }
+}
 
-    // Example 3: Varying density clusters (LOF's key advantage!)
+fn example_varying_density() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n--- Example 3: Varying Density Clusters ---");
     println!("LOF excels at finding outliers in regions with different densities\n");
 
@@ -80,9 +98,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             // Dense cluster: 5 points very close together
             0.0, 0.0, 0.05, 0.05, -0.05, -0.05, 0.0, 0.05, -0.05, 0.0,
             // Sparse cluster: 4 points far apart
-            10.0, 10.0, 12.0, 12.0, 11.0, 9.0, 13.0, 11.0, // Outlier between clusters
-            5.0, 5.0, // Outlier near sparse cluster (but still anomalous)
-            15.0, 8.0,
+            10.0, 10.0, 12.0, 12.0, 11.0, 9.0, 13.0, 11.0, // Outliers
+            5.0, 5.0, 15.0, 8.0,
         ],
     )?;
 
@@ -110,8 +127,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let n_detected = varied_preds.iter().filter(|&&p| p == -1).count();
     println!("\nLOF correctly identifies {n_detected} local outliers!");
+    Ok(())
+}
 
-    // Example 4: Effect of n_neighbors
+fn example_n_neighbors_effect() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n--- Example 4: Effect of n_neighbors Parameter ---");
 
     let test_data = Matrix::from_vec(
@@ -139,38 +158,49 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "  Outlier scores: {:.3}, {:.3}",
         scores_many[6], scores_many[7]
     );
+    Ok(())
+}
 
-    // Example 5: Contamination parameter
+fn example_contamination_parameter(data: &Matrix<f32>) -> Result<(), Box<dyn std::error::Error>> {
     println!("\n--- Example 5: Contamination Parameter ---");
 
-    println!("\nLow contamination (10%):");
-    let mut lof_low = LocalOutlierFactor::new()
-        .with_n_neighbors(5)
-        .with_contamination(0.1);
-    lof_low.fit(&data)?;
-    let pred_low = lof_low.predict(&data);
-    let anomalies_low = pred_low.iter().filter(|&&p| p == -1).count();
-    println!("  Detected {anomalies_low} anomalies");
+    for (label, contamination) in [("Low (10%)", 0.1), ("High (30%)", 0.3)] {
+        println!("\n{label} contamination:");
+        let mut lof = LocalOutlierFactor::new()
+            .with_n_neighbors(5)
+            .with_contamination(contamination);
+        lof.fit(data)?;
+        let preds = lof.predict(data);
+        let n_anomalies = preds.iter().filter(|&&p| p == -1).count();
+        println!("  Detected {n_anomalies} anomalies");
+    }
+    Ok(())
+}
 
-    println!("\nHigh contamination (30%):");
-    let mut lof_high = LocalOutlierFactor::new()
-        .with_n_neighbors(5)
-        .with_contamination(0.3);
-    lof_high.fit(&data)?;
-    let pred_high = lof_high.predict(&data);
-    let anomalies_high = pred_high.iter().filter(|&&p| p == -1).count();
-    println!("  Detected {anomalies_high} anomalies");
-
-    // Example 6: LOF vs Isolation Forest comparison
+fn example_lof_vs_iforest() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n--- Example 6: LOF vs Isolation Forest ---");
     println!("Testing on varying density dataset:\n");
 
-    // LOF results (already computed above)
+    let mixed_density = Matrix::from_vec(
+        11,
+        2,
+        vec![
+            0.0, 0.0, 0.05, 0.05, -0.05, -0.05, 0.0, 0.05, -0.05, 0.0, 10.0, 10.0, 12.0, 12.0,
+            11.0, 9.0, 13.0, 11.0, 5.0, 5.0, 15.0, 8.0,
+        ],
+    )?;
+
+    let mut lof = LocalOutlierFactor::new()
+        .with_n_neighbors(4)
+        .with_contamination(0.2);
+    lof.fit(&mixed_density)?;
+    let lof_preds = lof.predict(&mixed_density);
+    let lof_anomalies = lof_preds.iter().filter(|&&p| p == -1).count();
+
     println!("LOF (local density-based):");
     println!("  Handles varying density: ✓");
-    println!("  Detected {n_detected} outliers in mixed-density data");
+    println!("  Detected {lof_anomalies} outliers in mixed-density data");
 
-    // Isolation Forest for comparison
     let mut iforest = IsolationForest::new()
         .with_n_estimators(100)
         .with_contamination(0.2)
@@ -186,8 +216,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("\nKey difference:");
     println!("  LOF: Compares density locally → better for varying densities");
     println!("  Isolation Forest: Global isolation → better for overall anomalies");
+    Ok(())
+}
 
-    // Example 7: Negative Outlier Factor (sklearn compatibility)
+fn example_negative_outlier_factor(lof: &LocalOutlierFactor) {
     println!("\n--- Example 7: Negative Outlier Factor ---");
 
     let nof = lof.negative_outlier_factor();
@@ -198,21 +230,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for i in 0..3 {
         println!("  Point {}: NOF={:.3}", i, nof[i]);
     }
+}
 
-    // Example 8: Reproducibility
+fn example_reproducibility(data: &Matrix<f32>) -> Result<(), Box<dyn std::error::Error>> {
     println!("\n--- Example 8: Reproducibility ---");
 
     let mut lof1 = LocalOutlierFactor::new().with_n_neighbors(5);
-    lof1.fit(&data)?;
-    let pred1 = lof1.predict(&data);
+    lof1.fit(data)?;
+    let pred1 = lof1.predict(data);
 
     let mut lof2 = LocalOutlierFactor::new().with_n_neighbors(5);
-    lof2.fit(&data)?;
-    let pred2 = lof2.predict(&data);
+    lof2.fit(data)?;
+    let pred2 = lof2.predict(data);
 
     println!("Results are reproducible: {}", pred1 == pred2);
     println!("(Deterministic k-NN produces consistent results)");
+    Ok(())
+}
 
+fn print_takeaways() {
     println!("\n=== Example Complete ===");
     println!("\nKey takeaways:");
     println!("✓ LOF detects local outliers based on density deviation");
@@ -221,6 +257,4 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("✓ n_neighbors controls local vs global context");
     println!("✓ contamination sets expected anomaly proportion");
     println!("✓ Complements Isolation Forest for comprehensive detection");
-
-    Ok(())
 }

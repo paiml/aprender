@@ -58,11 +58,11 @@ pub(crate) fn run(
         )));
     }
 
-    println!("Strategy: {:?}", merge_strategy);
+    println!("Strategy: {merge_strategy:?}");
 
     // Show weights if weighted merge
     if let Some(ref w) = weights {
-        println!("Weights: {:?}", w);
+        println!("Weights: {w:?}");
     }
     println!();
 
@@ -106,7 +106,7 @@ fn display_report(report: &MergeReport) {
             "Weights used:   {:?}",
             weights
                 .iter()
-                .map(|w| format!("{:.3}", w))
+                .map(|w| format!("{w:.3}"))
                 .collect::<Vec<_>>()
         );
     }

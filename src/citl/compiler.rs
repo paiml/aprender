@@ -837,64 +837,41 @@ impl CompilerInterface for RustCompiler {
 
 // ==================== Helper Functions ====================
 
+/// Check if an environment variable points to an existing binary.
+fn check_env_binary(env_var: &str) -> Option<PathBuf> {
+    std::env::var(env_var)
+        .ok()
+        .map(PathBuf::from)
+        .filter(|p| p.exists())
+}
+
+/// Check for a binary in the user's cargo bin directory.
+fn check_cargo_bin(binary_name: &str) -> Option<PathBuf> {
+    std::env::var("HOME")
+        .ok()
+        .map(|h| PathBuf::from(h).join(".cargo/bin").join(binary_name))
+        .filter(|p| p.exists())
+}
+
+/// Check common system paths for a binary.
+fn check_system_paths(paths: &[&str]) -> Option<PathBuf> {
+    paths.iter().map(PathBuf::from).find(|p| p.exists())
+}
+
 /// Find rustc binary.
 fn which_rustc() -> PathBuf {
-    // Check RUSTC env var first, then common paths
-    if let Ok(rustc) = std::env::var("RUSTC") {
-        let path = PathBuf::from(&rustc);
-        if path.exists() {
-            return path;
-        }
-    }
-
-    // Check home directory .cargo/bin
-    if let Ok(home) = std::env::var("HOME") {
-        let cargo_bin = PathBuf::from(home).join(".cargo/bin/rustc");
-        if cargo_bin.exists() {
-            return cargo_bin;
-        }
-    }
-
-    // Common system paths
-    for path in ["/usr/bin/rustc", "/usr/local/bin/rustc"] {
-        let p = PathBuf::from(path);
-        if p.exists() {
-            return p;
-        }
-    }
-
-    // Fall back to relying on PATH
-    PathBuf::from("rustc")
+    check_env_binary("RUSTC")
+        .or_else(|| check_cargo_bin("rustc"))
+        .or_else(|| check_system_paths(&["/usr/bin/rustc", "/usr/local/bin/rustc"]))
+        .unwrap_or_else(|| PathBuf::from("rustc"))
 }
 
 /// Find cargo binary.
 fn which_cargo() -> PathBuf {
-    // Check CARGO env var first
-    if let Ok(cargo) = std::env::var("CARGO") {
-        let path = PathBuf::from(&cargo);
-        if path.exists() {
-            return path;
-        }
-    }
-
-    // Check home directory .cargo/bin
-    if let Ok(home) = std::env::var("HOME") {
-        let cargo_bin = PathBuf::from(home).join(".cargo/bin/cargo");
-        if cargo_bin.exists() {
-            return cargo_bin;
-        }
-    }
-
-    // Common system paths
-    for path in ["/usr/bin/cargo", "/usr/local/bin/cargo"] {
-        let p = PathBuf::from(path);
-        if p.exists() {
-            return p;
-        }
-    }
-
-    // Fall back to relying on PATH
-    PathBuf::from("cargo")
+    check_env_binary("CARGO")
+        .or_else(|| check_cargo_bin("cargo"))
+        .or_else(|| check_system_paths(&["/usr/bin/cargo", "/usr/local/bin/cargo"]))
+        .unwrap_or_else(|| PathBuf::from("cargo"))
 }
 
 /// Look up error code metadata.
@@ -906,6 +883,51 @@ fn lookup_error_code(code: &str) -> ErrorCode {
         .unwrap_or_else(|| ErrorCode::from_code(code))
 }
 
+/// Extract a quoted string value from a JSON segment given a pattern.
+fn extract_value_from_segment(segment: &str, pattern: &str) -> Option<String> {
+    let start = segment.find(pattern)? + pattern.len();
+    let rest = &segment[start..];
+    let end = rest.find('"')?;
+    Some(rest[..end].to_string())
+}
+
+/// Find the end index of the children array in JSON.
+fn find_children_array_end(json: &str, children_start: usize) -> usize {
+    let offset = children_start + 12; // length of "\"children\":["
+    let mut depth = 0;
+    for (i, c) in json[offset..].char_indices() {
+        match c {
+            '[' => depth += 1,
+            ']' => {
+                if depth == 0 {
+                    return offset + i + 1;
+                }
+                depth -= 1;
+            }
+            _ => {}
+        }
+    }
+    json.len()
+}
+
+/// Extract a top-level JSON value, avoiding nested children values.
+fn extract_top_level_json_value(
+    json: &str,
+    pattern: &str,
+    children_start: usize,
+) -> Option<String> {
+    // Check if the key exists BEFORE children (rustc format)
+    let before = &json[..children_start];
+    if let Some(value) = extract_value_from_segment(before, pattern) {
+        return Some(value);
+    }
+
+    // Find the end of children array and search AFTER (cargo format)
+    let children_end = find_children_array_end(json, children_start);
+    let after = &json[children_end..];
+    extract_value_from_segment(after, pattern)
+}
+
 /// Extract a string value from JSON (simple parsing without serde).
 ///
 /// For "level" and "message" keys, searches for the top-level value,
@@ -915,59 +937,14 @@ fn extract_json_string(json: &str, key: &str) -> Option<String> {
 
     // For "level" and "message" keys, we need to find the TOP-LEVEL value,
     // not one from nested "children" diagnostics.
-    //
-    // Formats differ:
-    // - rustc standalone: "level":"error",...,"children":[...]
-    // - cargo inner msg:  "children":[{"level":"help",...}],...,"level":"error"
-    //
-    // Strategy: Try finding the key both before and after "children",
-    // prefer the one that's at the top level (not inside children array)
     if key == "level" || key == "message" {
         if let Some(children_start) = json.find("\"children\":[") {
-            // Check if the key exists BEFORE children (rustc format)
-            let before = &json[..children_start];
-            if let Some(start) = before.find(&pattern) {
-                let start = start + pattern.len();
-                let rest = &before[start..];
-                if let Some(end) = rest.find('"') {
-                    return Some(rest[..end].to_string());
-                }
-            }
-
-            // Find the end of children array and search AFTER (cargo format)
-            let mut depth = 0;
-            let mut children_end = children_start + 12;
-            for (i, c) in json[children_start + 12..].char_indices() {
-                match c {
-                    '[' => depth += 1,
-                    ']' => {
-                        if depth == 0 {
-                            children_end = children_start + 12 + i + 1;
-                            break;
-                        }
-                        depth -= 1;
-                    }
-                    _ => {}
-                }
-            }
-
-            let after = &json[children_end..];
-            if let Some(start) = after.find(&pattern) {
-                let start = start + pattern.len();
-                let rest = &after[start..];
-                if let Some(end) = rest.find('"') {
-                    return Some(rest[..end].to_string());
-                }
-            }
-            return None;
+            return extract_top_level_json_value(json, &pattern, children_start);
         }
     }
 
     // Default: search entire string
-    let start = json.find(&pattern)? + pattern.len();
-    let rest = &json[start..];
-    let end = rest.find('"')?;
-    Some(rest[..end].to_string())
+    extract_value_from_segment(json, &pattern)
 }
 
 /// Extract a nested string value from JSON.

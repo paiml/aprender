@@ -30,7 +30,7 @@ pub(crate) fn run(
     println!();
     println!("Input:  {}", file.display());
     println!("Output: {}", output.display());
-    println!("Format: {}", format);
+    println!("Format: {format}");
 
     // Parse export format
     let export_format: ExportFormat = format.parse().map_err(|_| {
@@ -60,7 +60,7 @@ pub(crate) fn run(
     };
 
     if let Some(ref q) = quant_type {
-        println!("Quantization: {:?}", q);
+        println!("Quantization: {q:?}");
     }
     println!();
 
@@ -103,7 +103,7 @@ fn display_report(report: &ExportReport) {
     println!("Format:         {:?}", report.format);
 
     if let Some(ref quant) = report.quantization {
-        println!("Quantization:   {:?}", quant);
+        println!("Quantization:   {quant:?}");
     }
 
     println!();

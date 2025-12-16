@@ -176,6 +176,7 @@ cargo install apr-cli
 | Command | Description |
 |---------|-------------|
 | `apr run` | Run model directly (auto-download, cache, execute) |
+| `apr serve` | Start inference server (REST API, streaming, metrics) |
 | `apr compile` | Build standalone executable with embedded model |
 | `apr inspect` | Inspect model metadata, vocab, and structure |
 | `apr debug` | Simple debugging output ("drama" mode available) |

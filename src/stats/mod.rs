@@ -88,7 +88,7 @@ impl<'a> DescriptiveStats<'a> {
     /// Create a new DescriptiveStats instance from a data vector.
     ///
     /// # Arguments
-    /// * `data` - Reference to a Vector<f32> containing the data
+    /// * `data` - Reference to a `Vector<f32>` containing the data
     ///
     /// # Examples
     /// ```

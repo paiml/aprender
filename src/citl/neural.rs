@@ -1258,8 +1258,8 @@ impl TripletLoss {
     ///
     /// # Arguments
     ///
-    /// * `embeddings` - All embeddings [batch, dim]
-    /// * `labels` - Class labels for each embedding [batch]
+    /// * `embeddings` - All embeddings `[batch, dim]`
+    /// * `labels` - Class labels for each embedding `[batch]`
     ///
     /// # Returns
     ///

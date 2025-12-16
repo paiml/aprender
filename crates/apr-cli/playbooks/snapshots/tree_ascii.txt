@@ -1,0 +1,83 @@
+test.apr (32 tensors, 31.50 MB)
+├── decoder [20 tensors, 18.00 MB]
+│   └── layers [20 tensors, 18.00 MB]
+│       ├── 0 [10 tensors, 9.00 MB]
+│       │   ├── cross_attn [4 tensors, 2.25 MB]
+│       │   │   ├── k_proj [1 tensors, 576.00 KB]
+│       │   │   │   └── weight [384, 384] ━━━ 576.00 KB
+│       │   │   ├── out_proj [1 tensors, 576.00 KB]
+│       │   │   │   └── weight [384, 384] ━━━ 576.00 KB
+│       │   │   ├── q_proj [1 tensors, 576.00 KB]
+│       │   │   │   └── weight [384, 384] ━━━ 576.00 KB
+│       │   │   └── v_proj [1 tensors, 576.00 KB]
+│       │   │       └── weight [384, 384] ━━━ 576.00 KB
+│       │   ├── mlp [2 tensors, 4.50 MB]
+│       │   │   ├── fc1 [1 tensors, 2.25 MB]
+│       │   │   │   └── weight [1536, 384] ━━━ 2.25 MB
+│       │   │   └── fc2 [1 tensors, 2.25 MB]
+│       │   │       └── weight [384, 1536] ━━━ 2.25 MB
+│       │   └── self_attn [4 tensors, 2.25 MB]
+│       │       ├── k_proj [1 tensors, 576.00 KB]
+│       │       │   └── weight [384, 384] ━━━ 576.00 KB
+│       │       ├── out_proj [1 tensors, 576.00 KB]
+│       │       │   └── weight [384, 384] ━━━ 576.00 KB
+│       │       ├── q_proj [1 tensors, 576.00 KB]
+│       │       │   └── weight [384, 384] ━━━ 576.00 KB
+│       │       └── v_proj [1 tensors, 576.00 KB]
+│       │           └── weight [384, 384] ━━━ 576.00 KB
+│       └── 1 [10 tensors, 9.00 MB]
+│           ├── cross_attn [4 tensors, 2.25 MB]
+│           │   ├── k_proj [1 tensors, 576.00 KB]
+│           │   │   └── weight [384, 384] ━━━ 576.00 KB
+│           │   ├── out_proj [1 tensors, 576.00 KB]
+│           │   │   └── weight [384, 384] ━━━ 576.00 KB
+│           │   ├── q_proj [1 tensors, 576.00 KB]
+│           │   │   └── weight [384, 384] ━━━ 576.00 KB
+│           │   └── v_proj [1 tensors, 576.00 KB]
+│           │       └── weight [384, 384] ━━━ 576.00 KB
+│           ├── mlp [2 tensors, 4.50 MB]
+│           │   ├── fc1 [1 tensors, 2.25 MB]
+│           │   │   └── weight [1536, 384] ━━━ 2.25 MB
+│           │   └── fc2 [1 tensors, 2.25 MB]
+│           │       └── weight [384, 1536] ━━━ 2.25 MB
+│           └── self_attn [4 tensors, 2.25 MB]
+│               ├── k_proj [1 tensors, 576.00 KB]
+│               │   └── weight [384, 384] ━━━ 576.00 KB
+│               ├── out_proj [1 tensors, 576.00 KB]
+│               │   └── weight [384, 384] ━━━ 576.00 KB
+│               ├── q_proj [1 tensors, 576.00 KB]
+│               │   └── weight [384, 384] ━━━ 576.00 KB
+│               └── v_proj [1 tensors, 576.00 KB]
+│                   └── weight [384, 384] ━━━ 576.00 KB
+└── encoder [12 tensors, 13.50 MB]
+    └── layers [12 tensors, 13.50 MB]
+        ├── 0 [6 tensors, 6.75 MB]
+        │   ├── mlp [2 tensors, 4.50 MB]
+        │   │   ├── fc1 [1 tensors, 2.25 MB]
+        │   │   │   └── weight [1536, 384] ━━━ 2.25 MB
+        │   │   └── fc2 [1 tensors, 2.25 MB]
+        │   │       └── weight [384, 1536] ━━━ 2.25 MB
+        │   └── self_attn [4 tensors, 2.25 MB]
+        │       ├── k_proj [1 tensors, 576.00 KB]
+        │       │   └── weight [384, 384] ━━━ 576.00 KB
+        │       ├── out_proj [1 tensors, 576.00 KB]
+        │       │   └── weight [384, 384] ━━━ 576.00 KB
+        │       ├── q_proj [1 tensors, 576.00 KB]
+        │       │   └── weight [384, 384] ━━━ 576.00 KB
+        │       └── v_proj [1 tensors, 576.00 KB]
+        │           └── weight [384, 384] ━━━ 576.00 KB
+        └── 1 [6 tensors, 6.75 MB]
+            ├── mlp [2 tensors, 4.50 MB]
+            │   ├── fc1 [1 tensors, 2.25 MB]
+            │   │   └── weight [1536, 384] ━━━ 2.25 MB
+            │   └── fc2 [1 tensors, 2.25 MB]
+            │       └── weight [384, 1536] ━━━ 2.25 MB
+            └── self_attn [4 tensors, 2.25 MB]
+                ├── k_proj [1 tensors, 576.00 KB]
+                │   └── weight [384, 384] ━━━ 576.00 KB
+                ├── out_proj [1 tensors, 576.00 KB]
+                │   └── weight [384, 384] ━━━ 576.00 KB
+                ├── q_proj [1 tensors, 576.00 KB]
+                │   └── weight [384, 384] ━━━ 576.00 KB
+                └── v_proj [1 tensors, 576.00 KB]
+                    └── weight [384, 384] ━━━ 576.00 KB

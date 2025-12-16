@@ -401,3 +401,383 @@ fn test_perf_inspect_latency() {
         elapsed.as_millis()
     );
 }
+
+// ============================================================================
+// Helper: Create APR1 format file for hex/tree/flow tests
+// ============================================================================
+
+/// Create a valid APR1 format file with test tensors
+fn create_apr1_test_file() -> NamedTempFile {
+    use aprender::serialization::apr::AprWriter;
+    use serde_json::json;
+
+    let file = NamedTempFile::new().expect("Failed to create temp file");
+
+    let mut writer = AprWriter::new();
+
+    // Model metadata
+    writer.set_metadata("model_type", json!("test"));
+    writer.set_metadata("n_layers", json!(2));
+
+    // Add test tensors mimicking Whisper structure
+    writer.add_tensor_f32(
+        "encoder.layers.0.self_attn.q_proj.weight",
+        vec![64, 64],
+        &vec![0.01; 64 * 64],
+    );
+    writer.add_tensor_f32(
+        "encoder.layers.0.self_attn.k_proj.weight",
+        vec![64, 64],
+        &vec![0.02; 64 * 64],
+    );
+    writer.add_tensor_f32(
+        "decoder.layers.0.cross_attn.q_proj.weight",
+        vec![64, 64],
+        &vec![0.03; 64 * 64],
+    );
+    writer.add_tensor_f32(
+        "decoder.layers.0.cross_attn.k_proj.weight",
+        vec![64, 64],
+        &vec![0.04; 64 * 64],
+    );
+
+    writer
+        .write(file.path())
+        .expect("Failed to write APR1 test file");
+
+    file
+}
+
+// ============================================================================
+// GH-122: Hex Command Tests
+// ============================================================================
+
+#[test]
+fn test_gh122_hex_help() {
+    apr()
+        .args(["hex", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Hex"))
+        .stdout(predicate::str::contains("tensor"));
+}
+
+#[test]
+fn test_gh122_hex_list_tensors() {
+    let file = create_apr1_test_file();
+
+    apr()
+        .args(["hex", file.path().to_str().unwrap(), "--list"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "encoder.layers.0.self_attn.q_proj.weight",
+        ))
+        .stdout(predicate::str::contains("decoder.layers.0.cross_attn"));
+}
+
+#[test]
+fn test_gh122_hex_with_filter() {
+    let file = create_apr1_test_file();
+
+    apr()
+        .args([
+            "hex",
+            file.path().to_str().unwrap(),
+            "--tensor",
+            "cross_attn",
+            "--list",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("cross_attn"))
+        .stdout(predicate::str::contains("2 tensors").or(predicate::str::contains("tensors")));
+}
+
+#[test]
+fn test_gh122_hex_with_stats() {
+    let file = create_apr1_test_file();
+
+    apr()
+        .args([
+            "hex",
+            file.path().to_str().unwrap(),
+            "--tensor",
+            "encoder.layers.0.self_attn.q_proj.weight",
+            "--stats",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("min="))
+        .stdout(predicate::str::contains("max="))
+        .stdout(predicate::str::contains("mean="))
+        .stdout(predicate::str::contains("std="));
+}
+
+#[test]
+fn test_gh122_hex_json_output() {
+    let file = create_apr1_test_file();
+
+    apr()
+        .args([
+            "hex",
+            file.path().to_str().unwrap(),
+            "--tensor",
+            "encoder",
+            "--json",
+            "--stats",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"name\""))
+        .stdout(predicate::str::contains("\"shape\""))
+        .stdout(predicate::str::contains("\"stats\""));
+}
+
+#[test]
+fn test_gh122_hex_dump_display() {
+    let file = create_apr1_test_file();
+
+    apr()
+        .args([
+            "hex",
+            file.path().to_str().unwrap(),
+            "--tensor",
+            "encoder.layers.0.self_attn.q_proj.weight",
+            "--limit",
+            "8",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Hex dump"))
+        .stdout(predicate::str::contains("00000000:")); // Hex offset
+}
+
+#[test]
+fn test_gh122_hex_no_match() {
+    let file = create_apr1_test_file();
+
+    apr()
+        .args([
+            "hex",
+            file.path().to_str().unwrap(),
+            "--tensor",
+            "nonexistent_tensor",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("No tensors match"));
+}
+
+// ============================================================================
+// GH-122: Tree Command Tests
+// ============================================================================
+
+#[test]
+fn test_gh122_tree_help() {
+    apr()
+        .args(["tree", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("tree"))
+        .stdout(predicate::str::contains("format"));
+}
+
+#[test]
+fn test_gh122_tree_ascii_default() {
+    let file = create_apr1_test_file();
+
+    apr()
+        .args(["tree", file.path().to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("encoder"))
+        .stdout(predicate::str::contains("decoder"))
+        .stdout(predicate::str::contains("tensors"));
+}
+
+#[test]
+fn test_gh122_tree_with_sizes() {
+    let file = create_apr1_test_file();
+
+    apr()
+        .args(["tree", file.path().to_str().unwrap(), "--sizes"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("KB").or(predicate::str::contains("MB")));
+}
+
+#[test]
+fn test_gh122_tree_with_filter() {
+    let file = create_apr1_test_file();
+
+    apr()
+        .args(["tree", file.path().to_str().unwrap(), "--filter", "encoder"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("encoder"));
+}
+
+#[test]
+fn test_gh122_tree_depth_limit() {
+    let file = create_apr1_test_file();
+
+    apr()
+        .args(["tree", file.path().to_str().unwrap(), "--depth", "2"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("encoder"))
+        .stdout(predicate::str::contains("layers"));
+}
+
+#[test]
+fn test_gh122_tree_mermaid_format() {
+    let file = create_apr1_test_file();
+
+    apr()
+        .args(["tree", file.path().to_str().unwrap(), "--format", "mermaid"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("```mermaid"))
+        .stdout(predicate::str::contains("graph TD"));
+}
+
+#[test]
+fn test_gh122_tree_dot_format() {
+    let file = create_apr1_test_file();
+
+    apr()
+        .args(["tree", file.path().to_str().unwrap(), "--format", "dot"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("digraph"))
+        .stdout(predicate::str::contains("rankdir"));
+}
+
+#[test]
+fn test_gh122_tree_json_format() {
+    let file = create_apr1_test_file();
+
+    apr()
+        .args(["tree", file.path().to_str().unwrap(), "--format", "json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"name\""))
+        .stdout(predicate::str::contains("\"children\""));
+}
+
+// ============================================================================
+// GH-122: Flow Command Tests
+// ============================================================================
+
+#[test]
+fn test_gh122_flow_help() {
+    apr()
+        .args(["flow", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("flow"))
+        .stdout(predicate::str::contains("component"));
+}
+
+#[test]
+fn test_gh122_flow_full_model() {
+    let file = create_apr1_test_file();
+
+    apr()
+        .args(["flow", file.path().to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("encoder-decoder").or(predicate::str::contains("Model")));
+}
+
+#[test]
+fn test_gh122_flow_cross_attn() {
+    let file = create_apr1_test_file();
+
+    apr()
+        .args([
+            "flow",
+            file.path().to_str().unwrap(),
+            "--component",
+            "cross_attn",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("CROSS-ATTENTION"))
+        .stdout(predicate::str::contains("encoder_output"))
+        .stdout(predicate::str::contains("softmax"));
+}
+
+#[test]
+fn test_gh122_flow_self_attn() {
+    let file = create_apr1_test_file();
+
+    apr()
+        .args([
+            "flow",
+            file.path().to_str().unwrap(),
+            "--component",
+            "self_attn",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("SELF-ATTENTION"));
+}
+
+#[test]
+fn test_gh122_flow_encoder() {
+    let file = create_apr1_test_file();
+
+    apr()
+        .args([
+            "flow",
+            file.path().to_str().unwrap(),
+            "--component",
+            "encoder",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("ENCODER"));
+}
+
+#[test]
+fn test_gh122_flow_decoder() {
+    let file = create_apr1_test_file();
+
+    apr()
+        .args([
+            "flow",
+            file.path().to_str().unwrap(),
+            "--component",
+            "decoder",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("DECODER"));
+}
+
+#[test]
+fn test_gh122_flow_verbose() {
+    let file = create_apr1_test_file();
+
+    apr()
+        .args(["flow", file.path().to_str().unwrap(), "--verbose"])
+        .assert()
+        .success();
+}
+
+#[test]
+fn test_gh122_flow_with_layer_filter() {
+    let file = create_apr1_test_file();
+
+    apr()
+        .args([
+            "flow",
+            file.path().to_str().unwrap(),
+            "--layer",
+            "decoder.layers.0",
+        ])
+        .assert()
+        .success();
+}

@@ -598,6 +598,30 @@ impl GradFn for MatmulBackward {
 // Helper Functions
 // ============================================================================
 
+/// Reduce gradient to scalar by summing all elements.
+fn reduce_to_scalar(grad: &Tensor, target_shape: &[usize]) -> Tensor {
+    let sum: f32 = grad.data().iter().sum();
+    Tensor::new(&[sum], target_shape)
+}
+
+/// Reduce 2D gradient to 1D by summing over batch dimension.
+fn reduce_batch_to_features(grad: &Tensor, target_shape: &[usize]) -> Tensor {
+    let (rows, cols) = (grad.shape()[0], grad.shape()[1]);
+    let mut reduced = vec![0.0; cols];
+    let grad_data = grad.data();
+    for i in 0..rows {
+        for (j, r) in reduced.iter_mut().enumerate() {
+            *r += grad_data[i * cols + j];
+        }
+    }
+    Tensor::new(&reduced, target_shape)
+}
+
+/// Check if gradient needs 2D -> 1D reduction.
+fn needs_batch_reduction(grad: &Tensor, target_shape: &[usize]) -> bool {
+    grad.ndim() == 2 && target_shape.len() == 1 && grad.shape()[1] == target_shape[0]
+}
+
 /// Reduce gradient if shapes don't match (for broadcasting).
 fn maybe_reduce_grad(grad: &Tensor, target_shape: &[usize]) -> Tensor {
     if grad.shape() == target_shape {
@@ -606,22 +630,12 @@ fn maybe_reduce_grad(grad: &Tensor, target_shape: &[usize]) -> Tensor {
 
     // Simple case: target is scalar
     if target_shape.is_empty() || target_shape == [1] {
-        let sum: f32 = grad.data().iter().sum();
-        return Tensor::new(&[sum], target_shape);
+        return reduce_to_scalar(grad, target_shape);
     }
 
     // Handle 2D -> 1D case: sum over batch dimension (for bias gradients)
-    // grad shape: [batch, features], target shape: [features]
-    if grad.ndim() == 2 && target_shape.len() == 1 && grad.shape()[1] == target_shape[0] {
-        let (rows, cols) = (grad.shape()[0], grad.shape()[1]);
-        let mut reduced = vec![0.0; cols];
-        let grad_data = grad.data();
-        for i in 0..rows {
-            for (j, r) in reduced.iter_mut().enumerate() {
-                *r += grad_data[i * cols + j];
-            }
-        }
-        return Tensor::new(&reduced, target_shape);
+    if needs_batch_reduction(grad, target_shape) {
+        return reduce_batch_to_features(grad, target_shape);
     }
 
     // If shapes match in size, just reshape
@@ -896,5 +910,218 @@ mod tests {
             .name(),
             "DivBackward"
         );
+    }
+
+    #[test]
+    fn test_neg_backward() {
+        let grad_fn = NegBackward;
+        let grad_out = Tensor::from_slice(&[1.0, 2.0, 3.0]);
+        let grads = grad_fn.backward(&grad_out);
+
+        assert_eq!(grads.len(), 1);
+        assert_eq!(grads[0].data(), &[-1.0, -2.0, -3.0]);
+        assert_eq!(grad_fn.name(), "NegBackward");
+    }
+
+    #[test]
+    fn test_sqrt_backward() {
+        // sqrt(4) = 2, sqrt(9) = 3, sqrt(16) = 4
+        let output = Tensor::from_slice(&[2.0, 3.0, 4.0]);
+        let grad_fn = SqrtBackward { output };
+        let grad_out = Tensor::from_slice(&[1.0, 1.0, 1.0]);
+        let grads = grad_fn.backward(&grad_out);
+
+        // grad = grad_out / (2 * sqrt(x)) = 1 / (2 * output)
+        assert_eq!(grads.len(), 1);
+        assert!((grads[0].data()[0] - 0.25).abs() < 1e-5); // 1/(2*2)
+        assert!((grads[0].data()[1] - (1.0 / 6.0)).abs() < 1e-5); // 1/(2*3)
+        assert!((grads[0].data()[2] - 0.125).abs() < 1e-5); // 1/(2*4)
+        assert_eq!(grad_fn.name(), "SqrtBackward");
+    }
+
+    #[test]
+    fn test_leaky_relu_backward() {
+        let x = Tensor::from_slice(&[1.0, -1.0, 0.0, 2.0]);
+        let grad_fn = LeakyReluBackward {
+            x,
+            negative_slope: 0.01,
+        };
+        let grad_out = Tensor::from_slice(&[1.0, 1.0, 1.0, 1.0]);
+        let grads = grad_fn.backward(&grad_out);
+
+        assert_eq!(grads.len(), 1);
+        // For x > 0: grad = 1.0, for x <= 0: grad = negative_slope
+        assert!((grads[0].data()[0] - 1.0).abs() < 1e-5); // x = 1.0 > 0
+        assert!((grads[0].data()[1] - 0.01).abs() < 1e-5); // x = -1.0 <= 0
+        assert!((grads[0].data()[2] - 0.01).abs() < 1e-5); // x = 0.0 <= 0
+        assert!((grads[0].data()[3] - 1.0).abs() < 1e-5); // x = 2.0 > 0
+        assert_eq!(grad_fn.name(), "LeakyReluBackward");
+    }
+
+    #[test]
+    fn test_gelu_backward() {
+        let x = Tensor::from_slice(&[0.0, 1.0, -1.0]);
+        let grad_fn = GeluBackward { x };
+        let grad_out = Tensor::from_slice(&[1.0, 1.0, 1.0]);
+        let grads = grad_fn.backward(&grad_out);
+
+        assert_eq!(grads.len(), 1);
+        // GELU'(0) ≈ 0.5
+        assert!((grads[0].data()[0] - 0.5).abs() < 0.01);
+        assert_eq!(grad_fn.name(), "GeluBackward");
+    }
+
+    #[test]
+    fn test_softmax_backward() {
+        // SoftmaxBackward expects 2D tensor (batch, features)
+        let output = Tensor::new(&[0.5, 0.5], &[1, 2]);
+        let grad_fn = SoftmaxBackward { output };
+        let grad_out = Tensor::new(&[1.0, 0.0], &[1, 2]);
+        let grads = grad_fn.backward(&grad_out);
+
+        assert_eq!(grads.len(), 1);
+        assert_eq!(grads[0].shape(), &[1, 2]);
+        assert_eq!(grad_fn.name(), "SoftmaxBackward");
+    }
+
+    #[test]
+    fn test_cross_entropy_backward() {
+        // CrossEntropyBackward expects 2D tensor (batch, num_classes)
+        let softmax_output = Tensor::new(&[0.7, 0.2, 0.1], &[1, 3]);
+        let targets = vec![0_usize]; // target class index (one per batch item)
+        let grad_fn = CrossEntropyBackward {
+            softmax_output,
+            targets,
+        };
+        let grad_out = Tensor::from_slice(&[1.0]); // scalar after mean reduction
+        let grads = grad_fn.backward(&grad_out);
+
+        assert_eq!(grads.len(), 1);
+        assert_eq!(grads[0].shape(), &[1, 3]);
+        assert_eq!(grad_fn.name(), "CrossEntropyBackward");
+    }
+
+    #[test]
+    fn test_broadcast_add_backward() {
+        let grad_fn = BroadcastAddBackward {
+            x_shape: vec![2, 3],
+            y_shape: vec![3],
+        };
+        let grad_out = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
+        let grads = grad_fn.backward(&grad_out);
+
+        assert_eq!(grads.len(), 2);
+        assert_eq!(grads[0].shape(), &[2, 3]); // x grad unchanged
+        assert_eq!(grads[1].shape(), &[3]); // y grad reduced
+        assert_eq!(grad_fn.name(), "BroadcastAddBackward");
+    }
+
+    #[test]
+    fn test_view_backward() {
+        let grad_fn = ViewBackward {
+            input_shape: vec![2, 3],
+        };
+        let grad_out = Tensor::from_slice(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+        let grads = grad_fn.backward(&grad_out);
+
+        assert_eq!(grads.len(), 1);
+        assert_eq!(grads[0].shape(), &[2, 3]); // Reshaped back
+        assert_eq!(grad_fn.name(), "ViewBackward");
+    }
+
+    #[test]
+    fn test_transpose_backward_fn() {
+        let grad_fn = TransposeBackward;
+        let grad_out = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2]);
+        let grads = grad_fn.backward(&grad_out);
+
+        assert_eq!(grads.len(), 1);
+        assert_eq!(grads[0].shape(), &[2, 3]); // Transposed back
+        assert_eq!(grad_fn.name(), "TransposeBackward");
+    }
+
+    #[test]
+    fn test_all_backward_names() {
+        // Ensure all backward functions have unique, descriptive names
+        let names = vec![
+            NegBackward.name(),
+            ExpBackward {
+                output: Tensor::from_slice(&[1.0]),
+            }
+            .name(),
+            LogBackward {
+                x: Tensor::from_slice(&[1.0]),
+            }
+            .name(),
+            SqrtBackward {
+                output: Tensor::from_slice(&[1.0]),
+            }
+            .name(),
+            SumBackward {
+                input_shape: vec![1],
+            }
+            .name(),
+            MeanBackward {
+                input_shape: vec![1],
+            }
+            .name(),
+            ReluBackward {
+                x: Tensor::from_slice(&[1.0]),
+            }
+            .name(),
+            LeakyReluBackward {
+                x: Tensor::from_slice(&[1.0]),
+                negative_slope: 0.01,
+            }
+            .name(),
+            GeluBackward {
+                x: Tensor::from_slice(&[1.0]),
+            }
+            .name(),
+            SoftmaxBackward {
+                output: Tensor::from_slice(&[1.0]),
+            }
+            .name(),
+            CrossEntropyBackward {
+                softmax_output: Tensor::from_slice(&[1.0]),
+                targets: vec![0],
+            }
+            .name(),
+            SigmoidBackward {
+                output: Tensor::from_slice(&[1.0]),
+            }
+            .name(),
+            TanhBackward {
+                output: Tensor::from_slice(&[1.0]),
+            }
+            .name(),
+            TransposeBackward.name(),
+            ViewBackward {
+                input_shape: vec![1],
+            }
+            .name(),
+            BroadcastAddBackward {
+                x_shape: vec![1],
+                y_shape: vec![1],
+            }
+            .name(),
+        ];
+
+        // All names should be unique
+        let unique: std::collections::HashSet<_> = names.iter().collect();
+        assert_eq!(
+            unique.len(),
+            names.len(),
+            "All backward names should be unique"
+        );
+
+        // All names should end with "Backward"
+        for name in &names {
+            assert!(
+                name.ends_with("Backward"),
+                "Name {} should end with 'Backward'",
+                name
+            );
+        }
     }
 }

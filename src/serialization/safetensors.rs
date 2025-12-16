@@ -117,10 +117,14 @@ pub fn save_safetensors<P: AsRef<Path>>(
 /// - JSON parsing fails
 /// - Data section is truncated
 pub fn load_safetensors<P: AsRef<Path>>(path: P) -> Result<(SafeTensorsMetadata, Vec<u8>), String> {
-    // Read file
     let bytes = fs::read(path).map_err(|e| format!("File read failed: {e}"))?;
+    let metadata_len = validate_and_read_header(&bytes)?;
+    let metadata = parse_metadata(&bytes, metadata_len)?;
+    let raw_data = bytes[8 + metadata_len..].to_vec();
+    Ok((metadata, raw_data))
+}
 
-    // Validate minimum size (8-byte header)
+fn validate_and_read_header(bytes: &[u8]) -> Result<usize, String> {
     if bytes.len() < 8 {
         return Err(format!(
             "Invalid SafeTensors file: file is {} bytes, need at least 8 bytes for header",
@@ -128,13 +132,11 @@ pub fn load_safetensors<P: AsRef<Path>>(path: P) -> Result<(SafeTensorsMetadata,
         ));
     }
 
-    // Read header (8-byte u64 little-endian)
     let header_bytes: [u8; 8] = bytes[0..8]
         .try_into()
         .map_err(|_| "Failed to read header bytes".to_string())?;
     let metadata_len = u64::from_le_bytes(header_bytes) as usize;
 
-    // Validate metadata length
     if metadata_len == 0 {
         return Err("Invalid SafeTensors file: metadata length is 0".to_string());
     }
@@ -145,35 +147,30 @@ pub fn load_safetensors<P: AsRef<Path>>(path: P) -> Result<(SafeTensorsMetadata,
         ));
     }
 
-    // Extract metadata JSON
+    Ok(metadata_len)
+}
+
+fn parse_metadata(bytes: &[u8], metadata_len: usize) -> Result<SafeTensorsMetadata, String> {
     let metadata_json = &bytes[8..8 + metadata_len];
     let metadata_str = std::str::from_utf8(metadata_json)
         .map_err(|e| format!("Metadata is not valid UTF-8: {e}"))?;
 
-    // Parse metadata JSON as generic Value first (handles __metadata__ and tensor entries)
     let raw_metadata: serde_json::Value =
         serde_json::from_str(metadata_str).map_err(|e| format!("JSON parsing failed: {e}"))?;
 
-    // Extract tensor metadata only (skip __metadata__ and other non-tensor entries)
     let mut metadata = SafeTensorsMetadata::new();
     if let serde_json::Value::Object(map) = raw_metadata {
         for (key, value) in map {
-            // Skip special keys like __metadata__
             if key.starts_with("__") {
                 continue;
             }
-
-            // Try to parse as TensorMetadata
             if let Ok(tensor_meta) = serde_json::from_value::<TensorMetadata>(value) {
                 metadata.insert(key, tensor_meta);
             }
         }
     }
 
-    // Extract raw data section
-    let raw_data = bytes[8 + metadata_len..].to_vec();
-
-    Ok((metadata, raw_data))
+    Ok(metadata)
 }
 
 /// Extracts a tensor from raw SafeTensors data.

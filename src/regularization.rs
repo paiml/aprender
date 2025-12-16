@@ -203,7 +203,7 @@ pub struct CutMixParams {
 }
 
 impl CutMixParams {
-    /// Apply cutmix to two flat image vectors [C*H*W].
+    /// Apply cutmix to two flat image vectors `[C*H*W]`.
     pub fn apply(
         &self,
         img1: &[f32],
@@ -606,7 +606,7 @@ impl RandAugment {
     ///
     /// # Arguments
     ///
-    /// * `image` - Flat image vector [C*H*W]
+    /// * `image` - Flat image vector `[C*H*W]`
     /// * `aug` - Augmentation type
     /// * `h` - Image height
     /// * `w` - Image width

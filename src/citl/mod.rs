@@ -7,11 +7,11 @@
 //!
 //! The CITL module is organized around these core abstractions:
 //!
-//! - [`CompilerInterface`]: Universal interface for any compiler backend
-//! - [`CompilerDiagnostic`]: Structured representation of compiler errors
-//! - [`ErrorEncoder`]: Encodes errors into embeddings for pattern matching
-//! - [`PatternLibrary`]: Stores learned error-fix patterns with HNSW index
-//! - [`FixGenerator`]: Generates fixes using retrieval-augmented generation
+//! - `CompilerInterface`: Universal interface for any compiler backend
+//! - `CompilerDiagnostic`: Structured representation of compiler errors
+//! - `ErrorEncoder`: Encodes errors into embeddings for pattern matching
+//! - `PatternLibrary`: Stores learned error-fix patterns with HNSW index
+//! - `FixGenerator`: Generates fixes using retrieval-augmented generation
 //!
 //! # Example
 //!

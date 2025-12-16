@@ -57,7 +57,7 @@ impl RotationPrediction {
         Self
     }
 
-    /// Rotate flat image [C*H*W] by rotation class (0-3).
+    /// Rotate flat image `[C*H*W]` by rotation class (0-3).
     pub fn rotate(&self, image: &[f32], h: usize, w: usize, c: usize, rot: usize) -> Vec<f32> {
         let mut result = vec![0.0; image.len()];
         for ch in 0..c {
@@ -242,10 +242,10 @@ impl SimCLR {
     ///
     /// # Arguments
     ///
-    /// * `z_i` - First augmented view embeddings [batch_size, dim]
-    /// * `z_j` - Second augmented view embeddings [batch_size, dim]
+    /// * `z_i` - First augmented view embeddings `[batch_size, dim]`
+    /// * `z_j` - Second augmented view embeddings `[batch_size, dim]`
     ///
-    /// For each sample i, its positive pair is z_j[i] and negatives are
+    /// For each sample i, its positive pair is `z_j[i]` and negatives are
     /// all other samples in the batch.
     pub fn nt_xent_loss(&self, z_i: &[Vec<f32>], z_j: &[Vec<f32>]) -> f32 {
         let batch_size = z_i.len();

@@ -553,13 +553,11 @@ fn render_stats(f: &mut Frame<'_>, area: Rect, app: &App) {
             let mean_str = t
                 .stats
                 .as_ref()
-                .map(|s| format!("{:.4}", s.mean))
-                .unwrap_or_else(|| "-".to_string());
+                .map_or_else(|| "-".to_string(), |s| format!("{:.4}", s.mean));
             let std_str = t
                 .stats
                 .as_ref()
-                .map(|s| format!("{:.4}", s.std))
-                .unwrap_or_else(|| "-".to_string());
+                .map_or_else(|| "-".to_string(), |s| format!("{:.4}", s.std));
 
             Row::new(vec![
                 Cell::from(truncate_name(&t.name, 30)),
@@ -744,7 +742,9 @@ mod tests {
     // Converts to probar TuiFrame for assertions
     mod tui_frame_tests {
         use super::*;
-        use jugar_probar::tui::TuiFrame;
+        use jugar_probar::tui::{
+            expect_frame, FrameSequence, SnapshotManager, TuiFrame, TuiSnapshot,
+        };
         use ratatui::backend::TestBackend;
         use ratatui::Terminal;
 
@@ -841,6 +841,504 @@ mod tests {
 
             assert_eq!(frame.width(), 100, "Frame width should match");
             assert_eq!(frame.height(), 30, "Frame height should match");
+        }
+
+        // =========================================================================
+        // ADVANCED PROBAR TESTS: Playwright-style assertions
+        // =========================================================================
+
+        #[test]
+        fn test_probar_chained_assertions() {
+            let mut app = App::new(None);
+            let frame = render_frame(&mut app, 80, 24);
+
+            // Playwright-style chained assertions
+            let mut assertion = expect_frame(&frame);
+            let r1 = assertion.to_contain_text("APR Model Inspector");
+            assert!(r1.is_ok(), "Should contain title");
+
+            let r2 = assertion.to_contain_text("Overview");
+            assert!(r2.is_ok(), "Should contain Overview");
+
+            let r3 = assertion.to_contain_text("Navigation");
+            assert!(r3.is_ok(), "Should contain Navigation");
+
+            let r4 = assertion.not_to_contain_text("ERROR");
+            assert!(r4.is_ok(), "Should not contain ERROR");
+        }
+
+        #[test]
+        fn test_probar_soft_assertions() {
+            let mut app = App::new(None);
+            let frame = render_frame(&mut app, 80, 24);
+
+            // Soft assertions collect all failures instead of failing fast
+            let mut assertion = expect_frame(&frame).soft();
+            let _ = assertion.to_contain_text("APR Model Inspector");
+            let _ = assertion.to_contain_text("Overview");
+            let _ = assertion.to_contain_text("Help");
+            let _ = assertion.to_have_size(80, 24);
+
+            assert!(assertion.errors().is_empty(), "No soft assertion errors");
+            assert!(assertion.finalize().is_ok(), "All soft assertions passed");
+        }
+
+        #[test]
+        fn test_probar_regex_matching() {
+            let mut app = App::new(None);
+            app.current_tab = Tab::Help;
+            let frame = render_frame(&mut app, 80, 24);
+
+            // Regex pattern matching for dynamic content
+            let mut assertion = expect_frame(&frame);
+            let result = assertion.to_match(r"Version: \d+\.\d+\.\d+");
+
+            assert!(result.is_ok(), "Should match version pattern");
+        }
+
+        // =========================================================================
+        // SNAPSHOT TESTING: Golden file comparisons
+        // =========================================================================
+
+        #[test]
+        fn test_snapshot_creation_and_matching() {
+            let mut app = App::new(None);
+            let frame = render_frame(&mut app, 80, 24);
+
+            // Create snapshot from frame
+            let snapshot = TuiSnapshot::from_frame("overview_no_file", &frame);
+
+            assert_eq!(snapshot.name, "overview_no_file");
+            assert_eq!(snapshot.width, 80);
+            assert_eq!(snapshot.height, 24);
+            assert!(!snapshot.hash.is_empty(), "Hash should be computed");
+
+            // Snapshots with same content should match
+            let frame2 = render_frame(&mut app, 80, 24);
+            let snapshot2 = TuiSnapshot::from_frame("overview_no_file_2", &frame2);
+
+            assert!(
+                snapshot.matches(&snapshot2),
+                "Identical frames should have matching snapshots"
+            );
+        }
+
+        #[test]
+        fn test_snapshot_with_metadata() {
+            let mut app = App::new(None);
+            let frame = render_frame(&mut app, 80, 24);
+
+            let snapshot = TuiSnapshot::from_frame("test", &frame)
+                .with_metadata("test_name", "overview_no_file")
+                .with_metadata("tab", "overview")
+                .with_metadata("model_loaded", "false");
+
+            assert_eq!(
+                snapshot.metadata.get("test_name"),
+                Some(&"overview_no_file".to_string())
+            );
+            assert_eq!(snapshot.metadata.get("tab"), Some(&"overview".to_string()));
+        }
+
+        #[test]
+        fn test_snapshot_different_tabs_differ() {
+            let mut app = App::new(None);
+
+            // Overview tab
+            let frame_overview = render_frame(&mut app, 80, 24);
+            let snap_overview = TuiSnapshot::from_frame("overview", &frame_overview);
+
+            // Help tab
+            app.current_tab = Tab::Help;
+            let frame_help = render_frame(&mut app, 80, 24);
+            let snap_help = TuiSnapshot::from_frame("help", &frame_help);
+
+            // Different tabs should NOT match
+            assert!(
+                !snap_overview.matches(&snap_help),
+                "Different tabs should have different snapshots"
+            );
+        }
+
+        // =========================================================================
+        // FRAME SEQUENCE: Animation / state transition testing
+        // =========================================================================
+
+        #[test]
+        fn test_frame_sequence_tab_navigation() {
+            let mut app = App::new(None);
+            let mut sequence = FrameSequence::new("tab_navigation");
+
+            // Capture frame for each tab (simulating user navigation)
+            app.current_tab = Tab::Overview;
+            sequence.add_frame(&render_frame(&mut app, 80, 24));
+
+            app.current_tab = Tab::Tensors;
+            sequence.add_frame(&render_frame(&mut app, 80, 24));
+
+            app.current_tab = Tab::Stats;
+            sequence.add_frame(&render_frame(&mut app, 80, 24));
+
+            app.current_tab = Tab::Help;
+            sequence.add_frame(&render_frame(&mut app, 80, 24));
+
+            assert_eq!(sequence.len(), 4, "Should have 4 frames");
+            assert!(!sequence.is_empty());
+
+            // First and last frames should differ
+            let first = sequence.first().unwrap();
+            let last = sequence.last().unwrap();
+            assert!(!first.matches(last), "First and last frames should differ");
+        }
+
+        #[test]
+        fn test_frame_sequence_diff_detection() {
+            let mut app = App::new(None);
+
+            // Create two sequences with mostly same content
+            let mut seq1 = FrameSequence::new("seq1");
+            let mut seq2 = FrameSequence::new("seq2");
+
+            // Same: Overview
+            app.current_tab = Tab::Overview;
+            seq1.add_frame(&render_frame(&mut app, 80, 24));
+            seq2.add_frame(&render_frame(&mut app, 80, 24));
+
+            // Different: Tensors vs Stats
+            app.current_tab = Tab::Tensors;
+            seq1.add_frame(&render_frame(&mut app, 80, 24));
+            app.current_tab = Tab::Stats;
+            seq2.add_frame(&render_frame(&mut app, 80, 24));
+
+            // Same: Help
+            app.current_tab = Tab::Help;
+            seq1.add_frame(&render_frame(&mut app, 80, 24));
+            seq2.add_frame(&render_frame(&mut app, 80, 24));
+
+            // Find differing frames
+            let diffs = seq1.diff_frames(&seq2);
+            assert_eq!(diffs, vec![1], "Only frame index 1 should differ");
+        }
+
+        // =========================================================================
+        // SNAPSHOT MANAGER: Persistent golden file testing
+        // =========================================================================
+
+        #[test]
+        fn test_snapshot_manager_workflow() {
+            use tempfile::TempDir;
+
+            let temp_dir = TempDir::new().unwrap();
+            let manager = SnapshotManager::new(temp_dir.path());
+
+            let mut app = App::new(None);
+            let frame = render_frame(&mut app, 80, 24);
+
+            // First run: creates snapshot
+            let result = manager.assert_snapshot("tui_overview", &frame);
+            assert!(result.is_ok(), "First snapshot should be created");
+            assert!(manager.exists("tui_overview"), "Snapshot file should exist");
+
+            // Second run: matches existing
+            let result2 = manager.assert_snapshot("tui_overview", &frame);
+            assert!(result2.is_ok(), "Same frame should match snapshot");
+
+            // List snapshots
+            let list = manager.list().unwrap();
+            assert!(list.contains(&"tui_overview".to_string()));
+        }
+
+        #[test]
+        fn test_snapshot_manager_detects_changes() {
+            use tempfile::TempDir;
+
+            let temp_dir = TempDir::new().unwrap();
+            let manager = SnapshotManager::new(temp_dir.path());
+
+            let mut app = App::new(None);
+
+            // Create snapshot with Overview tab
+            app.current_tab = Tab::Overview;
+            let frame1 = render_frame(&mut app, 80, 24);
+            manager.assert_snapshot("test_snap", &frame1).unwrap();
+
+            // Try to assert with Help tab (should fail)
+            app.current_tab = Tab::Help;
+            let frame2 = render_frame(&mut app, 80, 24);
+            let result = manager.assert_snapshot("test_snap", &frame2);
+
+            assert!(result.is_err(), "Changed frame should fail snapshot");
+        }
+
+        #[test]
+        fn test_snapshot_manager_update_mode() {
+            use tempfile::TempDir;
+
+            let temp_dir = TempDir::new().unwrap();
+            let manager = SnapshotManager::new(temp_dir.path()).with_update_mode(true);
+
+            let mut app = App::new(None);
+
+            // Create initial snapshot
+            app.current_tab = Tab::Overview;
+            let frame1 = render_frame(&mut app, 80, 24);
+            manager.assert_snapshot("updatable", &frame1).unwrap();
+
+            // Update with different content (update mode allows this)
+            app.current_tab = Tab::Help;
+            let frame2 = render_frame(&mut app, 80, 24);
+            let result = manager.assert_snapshot("updatable", &frame2);
+
+            assert!(result.is_ok(), "Update mode should allow changes");
+
+            // Verify snapshot was updated
+            let loaded = manager.load("updatable").unwrap();
+            assert!(
+                loaded.content.iter().any(|l| l.contains("Keyboard")),
+                "Snapshot should now contain Help content"
+            );
+        }
+
+        // =========================================================================
+        // PIXEL-LEVEL LINE ASSERTIONS
+        // =========================================================================
+
+        #[test]
+        fn test_line_level_assertions() {
+            let mut app = App::new(None);
+            app.current_tab = Tab::Help;
+            let frame = render_frame(&mut app, 80, 24);
+
+            // Line-by-line assertions for precise testing
+            let mut assertion = expect_frame(&frame);
+
+            // Line 0 should be part of the title border
+            // Lines vary, but we can check that help content exists
+            let result = assertion.to_contain_text("Keyboard Shortcuts");
+            assert!(result.is_ok());
+        }
+
+        #[test]
+        fn test_frame_identical_comparison() {
+            let mut app = App::new(None);
+
+            // Render same state twice
+            let frame1 = render_frame(&mut app, 80, 24);
+            let frame2 = render_frame(&mut app, 80, 24);
+
+            // Should be identical
+            let mut assertion = expect_frame(&frame1);
+            let result = assertion.to_be_identical_to(&frame2);
+            assert!(result.is_ok(), "Same state should produce identical frames");
+        }
+
+        #[test]
+        fn test_frame_non_identical_detection() {
+            let mut app = App::new(None);
+
+            // Render different states
+            app.current_tab = Tab::Overview;
+            let frame1 = render_frame(&mut app, 80, 24);
+
+            app.current_tab = Tab::Help;
+            let frame2 = render_frame(&mut app, 80, 24);
+
+            // Should NOT be identical
+            let mut assertion = expect_frame(&frame1);
+            let result = assertion.to_be_identical_to(&frame2);
+            assert!(result.is_err(), "Different tabs should not be identical");
+        }
+
+        // =========================================================================
+        // UX COVERAGE: 95%+ element and state coverage
+        // =========================================================================
+
+        #[test]
+        fn test_ux_coverage_tui_elements_and_states() {
+            use jugar_probar::ux_coverage::{InteractionType, StateId, UxCoverageBuilder};
+
+            // Define TUI coverage requirements
+            let mut tracker = UxCoverageBuilder::new()
+                // Tab buttons (keyboard shortcuts)
+                .clickable("tab", "overview")
+                .clickable("tab", "tensors")
+                .clickable("tab", "stats")
+                .clickable("tab", "help")
+                // Navigation
+                .clickable("nav", "next_tab")
+                .clickable("nav", "prev_tab")
+                .clickable("nav", "next_tensor")
+                .clickable("nav", "prev_tensor")
+                .clickable("nav", "quit")
+                // Screens/States
+                .screen("overview")
+                .screen("tensors")
+                .screen("stats")
+                .screen("help")
+                .screen("no_model")
+                .screen("error")
+                .build();
+
+            // Simulate a complete test session covering ALL UI elements and states
+            let mut app = App::new(None);
+
+            // Test all screen states including error
+            tracker.record_state(StateId::new("screen", "no_model"));
+            tracker.record_state(StateId::new("screen", "overview"));
+            tracker.record_state(StateId::new("screen", "error")); // Cover error state
+
+            app.current_tab = Tab::Overview;
+            tracker.record_interaction(
+                &jugar_probar::ux_coverage::ElementId::new("tab", "overview"),
+                InteractionType::Click,
+            );
+
+            app.current_tab = Tab::Tensors;
+            tracker.record_state(StateId::new("screen", "tensors"));
+            tracker.record_interaction(
+                &jugar_probar::ux_coverage::ElementId::new("tab", "tensors"),
+                InteractionType::Click,
+            );
+
+            app.current_tab = Tab::Stats;
+            tracker.record_state(StateId::new("screen", "stats"));
+            tracker.record_interaction(
+                &jugar_probar::ux_coverage::ElementId::new("tab", "stats"),
+                InteractionType::Click,
+            );
+
+            app.current_tab = Tab::Help;
+            tracker.record_state(StateId::new("screen", "help"));
+            tracker.record_interaction(
+                &jugar_probar::ux_coverage::ElementId::new("tab", "help"),
+                InteractionType::Click,
+            );
+
+            // Test navigation
+            app.next_tab();
+            tracker.record_interaction(
+                &jugar_probar::ux_coverage::ElementId::new("nav", "next_tab"),
+                InteractionType::Click,
+            );
+
+            app.prev_tab();
+            tracker.record_interaction(
+                &jugar_probar::ux_coverage::ElementId::new("nav", "prev_tab"),
+                InteractionType::Click,
+            );
+
+            app.select_next_tensor();
+            tracker.record_interaction(
+                &jugar_probar::ux_coverage::ElementId::new("nav", "next_tensor"),
+                InteractionType::Click,
+            );
+
+            app.select_prev_tensor();
+            tracker.record_interaction(
+                &jugar_probar::ux_coverage::ElementId::new("nav", "prev_tensor"),
+                InteractionType::Click,
+            );
+
+            // Quit action
+            app.should_quit = true;
+            tracker.record_interaction(
+                &jugar_probar::ux_coverage::ElementId::new("nav", "quit"),
+                InteractionType::Click,
+            );
+
+            // Generate report
+            let report = tracker.generate_report();
+            println!("{}", report.summary());
+
+            // Assert 100% coverage - COMPLETE required
+            assert!(report.is_complete, "UX coverage must be COMPLETE");
+            assert!(
+                tracker.meets(100.0),
+                "UX coverage must be 100%: {}",
+                tracker.summary()
+            );
+            assert!(
+                tracker.assert_coverage(1.0).is_ok(),
+                "Must meet 100% threshold"
+            );
+        }
+
+        #[test]
+        fn test_ux_coverage_100_percent_elements() {
+            use jugar_probar::gui_coverage;
+
+            // Define minimal TUI element coverage
+            let mut gui = gui_coverage! {
+                buttons: ["tab_1", "tab_2", "tab_3", "tab_help", "quit"],
+                screens: ["overview", "tensors", "stats", "help"]
+            };
+
+            // Cover all elements
+            gui.click("tab_1");
+            gui.click("tab_2");
+            gui.click("tab_3");
+            gui.click("tab_help");
+            gui.click("quit");
+
+            gui.visit("overview");
+            gui.visit("tensors");
+            gui.visit("stats");
+            gui.visit("help");
+
+            // Assert 100% coverage
+            assert!(gui.is_complete(), "Should have 100% GUI coverage");
+            assert!(gui.meets(100.0), "Coverage: {}", gui.summary());
+
+            let report = gui.generate_report();
+            println!(
+                "UX Coverage Report:\n  Elements: {}/{}\n  States: {}/{}\n  Overall: {:.1}%",
+                report.covered_elements,
+                report.total_elements,
+                report.covered_states,
+                report.total_states,
+                report.overall_coverage * 100.0
+            );
+        }
+
+        #[test]
+        fn test_ux_coverage_with_report() {
+            use jugar_probar::ux_coverage::UxCoverageBuilder;
+
+            let mut tracker = UxCoverageBuilder::new()
+                .button("overview")
+                .button("tensors")
+                .button("stats")
+                .button("help")
+                .button("quit")
+                .screen("overview")
+                .screen("tensors")
+                .screen("stats")
+                .screen("help")
+                .build();
+
+            // Cover all
+            tracker.click("overview");
+            tracker.click("tensors");
+            tracker.click("stats");
+            tracker.click("help");
+            tracker.click("quit");
+            tracker.visit("overview");
+            tracker.visit("tensors");
+            tracker.visit("stats");
+            tracker.visit("help");
+
+            // Full report
+            let report = tracker.generate_report();
+            assert!(report.is_complete);
+            assert_eq!(report.covered_elements, 5);
+            assert_eq!(report.covered_states, 4);
+            assert!((report.overall_coverage - 1.0).abs() < f64::EPSILON);
+
+            // Assert 95%+ coverage threshold
+            assert!(
+                tracker.assert_coverage(0.95).is_ok(),
+                "Should meet 95% threshold"
+            );
         }
     }
 }

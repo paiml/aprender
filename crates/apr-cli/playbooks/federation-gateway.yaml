@@ -1,0 +1,448 @@
+# APR Federation Gateway - State Machine Playbook
+# EXTREME TDD: Specification written FIRST, tests derive from this
+#
+# Run: probar playbook playbooks/federation-gateway.yaml --validate
+#
+# This playbook defines the state machine for enterprise model federation:
+# - Multi-region model routing
+# - Health monitoring with circuit breakers
+# - Policy-based node selection
+# - Streaming inference
+
+version: "1.0"
+name: "APR Federation Gateway"
+description: "WAPR-FED: Enterprise model federation state machine"
+
+machine:
+  id: "federation_gateway"
+  initial: "initializing"
+
+  states:
+    initializing:
+      id: "initializing"
+      invariants:
+        - description: "No models registered"
+          condition: "catalog_count() == 0"
+        - description: "No active requests"
+          condition: "active_requests() == 0"
+        - description: "Health checker inactive"
+          condition: "!health_monitoring_active()"
+
+    ready:
+      id: "ready"
+      invariants:
+        - description: "At least one model registered"
+          condition: "catalog_count() > 0"
+        - description: "At least one healthy node"
+          condition: "healthy_node_count() > 0"
+        - description: "Gateway accepting requests"
+          condition: "gateway_status() == 'ready'"
+
+    routing:
+      id: "routing"
+      invariants:
+        - description: "Request in progress"
+          condition: "active_requests() > 0"
+        - description: "Candidate evaluation active"
+          condition: "has_candidates()"
+
+    inferring:
+      id: "inferring"
+      invariants:
+        - description: "Target node selected"
+          condition: "has_selected_node()"
+        - description: "Circuit breaker allows request"
+          condition: "!circuit_open_for_target()"
+
+    streaming:
+      id: "streaming"
+      invariants:
+        - description: "Stream active"
+          condition: "active_streams() > 0"
+        - description: "Tokens being generated"
+          condition: "tokens_generated() >= 0"
+
+    retrying:
+      id: "retrying"
+      invariants:
+        - description: "Retry count < max"
+          condition: "retry_count() < max_retries()"
+        - description: "Previous node excluded"
+          condition: "excluded_nodes_count() > 0"
+
+    completed:
+      id: "completed"
+      invariants:
+        - description: "Response available"
+          condition: "has_response()"
+        - description: "Stats updated"
+          condition: "stats_total() > 0"
+
+    circuit_open:
+      id: "circuit_open"
+      invariants:
+        - description: "Node marked unhealthy"
+          condition: "circuit_state() == 'open'"
+        - description: "Reset timeout pending"
+          condition: "reset_timeout_remaining() > 0"
+
+    circuit_half_open:
+      id: "circuit_half_open"
+      invariants:
+        - description: "Probe request allowed"
+          condition: "circuit_state() == 'half_open'"
+        - description: "Single request permitted"
+          condition: "probe_requests_allowed() == 1"
+
+    degraded:
+      id: "degraded"
+      invariants:
+        - description: "Some nodes unhealthy"
+          condition: "unhealthy_node_count() > 0"
+        - description: "Still operational"
+          condition: "healthy_node_count() > 0"
+
+    failed:
+      id: "failed"
+      invariants:
+        - description: "All retries exhausted"
+          condition: "retry_count() >= max_retries()"
+        - description: "Error message set"
+          condition: "has_error_message()"
+
+  transitions:
+    # Initialization flow
+    - id: "register_model"
+      from: "initializing"
+      to: "ready"
+      event: "model_registered"
+      guard: "catalog_count() >= 1"
+
+    - id: "start_health_monitoring"
+      from: "ready"
+      to: "ready"
+      event: "health_monitoring_started"
+
+    # Request flow
+    - id: "receive_request"
+      from: "ready"
+      to: "routing"
+      event: "inference_requested"
+
+    - id: "select_node"
+      from: "routing"
+      to: "inferring"
+      event: "node_selected"
+      guard: "has_candidates() && !all_circuits_open()"
+
+    - id: "no_capacity"
+      from: "routing"
+      to: "failed"
+      event: "no_nodes_available"
+      guard: "!has_candidates() || all_circuits_open()"
+
+    - id: "start_inference"
+      from: "inferring"
+      to: "inferring"
+      event: "inference_started"
+
+    - id: "start_stream"
+      from: "inferring"
+      to: "streaming"
+      event: "stream_started"
+
+    - id: "complete_inference"
+      from: "inferring"
+      to: "completed"
+      event: "inference_complete"
+
+    - id: "complete_stream"
+      from: "streaming"
+      to: "completed"
+      event: "stream_complete"
+
+    - id: "return_to_ready"
+      from: "completed"
+      to: "ready"
+      event: "response_sent"
+
+    # Retry flow
+    - id: "inference_failed"
+      from: "inferring"
+      to: "retrying"
+      event: "node_error"
+      guard: "retry_count() < max_retries()"
+
+    - id: "retry_routing"
+      from: "retrying"
+      to: "routing"
+      event: "retry_initiated"
+
+    - id: "max_retries_exceeded"
+      from: "retrying"
+      to: "failed"
+      event: "retry_limit"
+      guard: "retry_count() >= max_retries()"
+
+    # Circuit breaker flow
+    - id: "open_circuit"
+      from: "*"
+      to: "circuit_open"
+      event: "failure_threshold_exceeded"
+      guard: "consecutive_failures() >= failure_threshold()"
+
+    - id: "half_open_circuit"
+      from: "circuit_open"
+      to: "circuit_half_open"
+      event: "reset_timeout_elapsed"
+
+    - id: "close_circuit"
+      from: "circuit_half_open"
+      to: "ready"
+      event: "probe_succeeded"
+
+    - id: "reopen_circuit"
+      from: "circuit_half_open"
+      to: "circuit_open"
+      event: "probe_failed"
+
+    # Degradation flow
+    - id: "node_degraded"
+      from: "ready"
+      to: "degraded"
+      event: "health_check_degraded"
+      guard: "unhealthy_node_count() > 0 && healthy_node_count() > 0"
+
+    - id: "recover_from_degraded"
+      from: "degraded"
+      to: "ready"
+      event: "all_nodes_healthy"
+      guard: "unhealthy_node_count() == 0"
+
+    # Error recovery
+    - id: "recover_from_failed"
+      from: "failed"
+      to: "ready"
+      event: "error_acknowledged"
+
+  forbidden:
+    - from: "initializing"
+      to: "inferring"
+      reason: "Cannot infer without registered models"
+
+    - from: "circuit_open"
+      to: "inferring"
+      reason: "Cannot infer through open circuit"
+
+    - from: "streaming"
+      to: "routing"
+      reason: "Cannot re-route during active stream"
+
+    - from: "failed"
+      to: "inferring"
+      reason: "Must acknowledge failure before new inference"
+
+# Health monitoring configuration
+health:
+  check_interval_ms: 10000
+  probe_timeout_ms: 5000
+  failure_threshold: 3
+  recovery_threshold: 2
+  degraded_latency_ms: 1000
+
+# Circuit breaker configuration
+circuit_breaker:
+  failure_threshold: 5
+  reset_timeout_ms: 30000
+  half_open_successes: 3
+
+# Routing policy configuration
+routing_policies:
+  - name: "health"
+    weight: 2.0
+    description: "Strongly penalize unhealthy nodes"
+
+  - name: "latency"
+    weight: 1.0
+    max_latency_ms: 5000
+    description: "Prefer low-latency nodes"
+
+  - name: "privacy"
+    weight: 1.0
+    default_level: "internal"
+    description: "Enforce data sovereignty"
+
+  - name: "locality"
+    weight: 1.0
+    same_region_boost: 0.3
+    description: "Prefer same-region nodes"
+
+  - name: "cost"
+    weight: 1.0
+    description: "Balance cost vs performance"
+
+# Load balancing strategies
+load_balance_strategies:
+  - id: "least_latency"
+    description: "Route to fastest responding node"
+    default: true
+
+  - id: "round_robin"
+    description: "Distribute evenly across nodes"
+
+  - id: "weighted_random"
+    description: "Random selection weighted by score"
+
+  - id: "consistent_hash"
+    description: "Sticky sessions via request ID hash"
+
+  - id: "least_connections"
+    description: "Route to least loaded node"
+
+# Performance budgets
+performance:
+  max_routing_ms: 10
+  max_retry_backoff_ms: 1000
+  max_total_latency_ms: 30000
+  target_success_rate: 0.99
+
+# Performance assertions
+performance_assertions:
+  - name: "routing_latency"
+    condition: "routing_latency_ms() <= 10"
+    critical: "routing_latency_ms() <= 50"
+    failure_reason: "Routing decision too slow"
+
+  - name: "success_rate"
+    condition: "success_rate() >= 0.99"
+    critical: "success_rate() >= 0.95"
+    failure_reason: "Success rate below threshold"
+
+  - name: "circuit_recovery"
+    condition: "mean_recovery_time_ms() <= 60000"
+    failure_reason: "Circuit recovery too slow"
+
+  - name: "retry_effectiveness"
+    condition: "retry_success_rate() >= 0.8"
+    failure_reason: "Retries not effective enough"
+
+# Test scenarios
+scenarios:
+  - name: "happy_path"
+    description: "Normal request flow"
+    steps:
+      - action: "register_model"
+        params: { model: "whisper-v3", node: "us-west-1", capability: "transcribe" }
+      - action: "start_health_monitoring"
+      - action: "send_request"
+        params: { capability: "transcribe" }
+      - assert: "state == 'completed'"
+      - assert: "stats_total() == 1"
+
+  - name: "retry_success"
+    description: "Request succeeds after retry"
+    steps:
+      - action: "register_model"
+        params: { model: "llama-70b", node: "us-east-1", capability: "generate" }
+      - action: "register_model"
+        params: { model: "llama-70b", node: "eu-west-1", capability: "generate" }
+      - action: "fail_node"
+        params: { node: "us-east-1" }
+      - action: "send_request"
+        params: { capability: "generate" }
+      - assert: "retry_count() == 1"
+      - assert: "state == 'completed'"
+
+  - name: "circuit_breaker_trip"
+    description: "Circuit opens after failures"
+    steps:
+      - action: "register_model"
+        params: { model: "embed", node: "node-1", capability: "embed" }
+      - repeat: 5
+        action: "record_failure"
+        params: { node: "node-1" }
+      - assert: "circuit_state('node-1') == 'open'"
+      - assert: "circuit_is_open('node-1')"
+
+  - name: "multi_region_routing"
+    description: "Routes to fastest healthy region"
+    steps:
+      - action: "register_model"
+        params: { model: "whisper", node: "us-west", capability: "transcribe", latency_ms: 50 }
+      - action: "register_model"
+        params: { model: "whisper", node: "eu-west", capability: "transcribe", latency_ms: 120 }
+      - action: "send_request"
+        params: { capability: "transcribe" }
+      - assert: "selected_node() == 'us-west'"
+      - assert: "routing_reason() contains 'latency'"
+
+  - name: "privacy_routing"
+    description: "Routes respecting privacy requirements"
+    steps:
+      - action: "register_model"
+        params: { model: "llm", node: "public-cloud", capability: "generate", privacy: "public" }
+      - action: "register_model"
+        params: { model: "llm", node: "private-dc", capability: "generate", privacy: "confidential" }
+      - action: "send_request"
+        params: { capability: "generate", privacy: "confidential" }
+      - assert: "selected_node() == 'private-dc'"
+
+  - name: "graceful_degradation"
+    description: "Continues operating with partial failures"
+    steps:
+      - action: "register_model"
+        params: { model: "asr", node: "node-1", capability: "transcribe" }
+      - action: "register_model"
+        params: { model: "asr", node: "node-2", capability: "transcribe" }
+      - action: "register_model"
+        params: { model: "asr", node: "node-3", capability: "transcribe" }
+      - action: "fail_node"
+        params: { node: "node-1" }
+      - action: "fail_node"
+        params: { node: "node-2" }
+      - action: "send_request"
+        params: { capability: "transcribe" }
+      - assert: "state == 'completed'"
+      - assert: "selected_node() == 'node-3'"
+
+# TUI Dashboard configuration
+tui:
+  refresh_rate_ms: 100
+
+  panels:
+    - id: "catalog"
+      title: "MODEL CATALOG"
+      columns: ["Model", "Node", "Region", "Capabilities", "Status"]
+
+    - id: "health"
+      title: "NODE HEALTH"
+      columns: ["Node", "State", "Latency P50", "Latency P99", "Queue"]
+
+    - id: "routing"
+      title: "ROUTING DECISIONS"
+      columns: ["Request", "Capability", "Selected", "Score", "Reason"]
+
+    - id: "circuits"
+      title: "CIRCUIT BREAKERS"
+      columns: ["Node", "State", "Failures", "Last Failure", "Reset In"]
+
+    - id: "stats"
+      title: "GATEWAY STATS"
+      metrics: ["total_requests", "success_rate", "avg_latency", "active_streams"]
+
+    - id: "policies"
+      title: "ACTIVE POLICIES"
+      columns: ["Policy", "Weight", "Status"]
+
+  status_bar:
+    left: "Federation Gateway v1.0"
+    center: "{{healthy_nodes}}/{{total_nodes}} nodes healthy"
+    right: "{{requests_per_sec}} req/s | {{success_rate}}% success"
+
+  keybindings:
+    q: "quit"
+    r: "refresh"
+    h: "toggle_health_panel"
+    c: "toggle_circuit_panel"
+    s: "toggle_stats_panel"
+    "?": "help"

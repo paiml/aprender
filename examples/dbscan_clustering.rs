@@ -9,12 +9,25 @@
 
 use aprender::prelude::*;
 
-#[allow(clippy::too_many_lines)]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("=== DBSCAN Clustering Example ===\n");
 
-    // Create dataset with 2 clusters and noise points
-    let data = Matrix::from_vec(
+    let data = create_sample_data()?;
+    print_dataset_info(&data);
+
+    let labels = example_standard_dbscan(&data)?;
+    let (n_clusters, n_noise) = count_clusters_and_noise(&labels);
+    example_eps_effects(&data)?;
+    example_min_samples_effects(&data)?;
+    example_vs_kmeans(&data, n_clusters, n_noise)?;
+    example_anomaly_detection(&data, &labels);
+
+    println!("\n=== Example Complete ===");
+    Ok(())
+}
+
+fn create_sample_data() -> Result<Matrix<f32>, Box<dyn std::error::Error>> {
+    Matrix::from_vec(
         15,
         2,
         vec![
@@ -29,8 +42,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             2.5, 2.5, // between clusters
             7.5, 2.5, // isolated
         ],
-    )?;
+    )
+    .map_err(Into::into)
+}
 
+fn print_dataset_info(data: &Matrix<f32>) {
     println!(
         "Dataset: {} samples, {} features",
         data.shape().0,
@@ -45,31 +61,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             data.get(i, 1)
         );
     }
+}
 
-    // Example 1: Standard DBSCAN
+fn example_standard_dbscan(data: &Matrix<f32>) -> Result<Vec<i32>, Box<dyn std::error::Error>> {
     println!("\n--- Example 1: Standard DBSCAN ---");
     println!("Parameters: eps=0.5, min_samples=3");
 
     let mut dbscan = DBSCAN::new(0.5, 3);
-    dbscan.fit(&data)?;
+    dbscan.fit(data)?;
 
-    let labels = dbscan.labels();
+    let labels = dbscan.labels().clone();
     println!("\nCluster assignments:");
     for (i, &label) in labels.iter().enumerate() {
         let status = if label == -1 { "Noise" } else { "Cluster" };
-        println!(
-            "  Point {}: {} {}",
-            i,
-            status,
-            if label == -1 {
-                String::new()
-            } else {
-                label.to_string()
-            }
-        );
+        let label_str = if label == -1 {
+            String::new()
+        } else {
+            label.to_string()
+        };
+        println!("  Point {}: {} {}", i, status, label_str);
     }
+    Ok(labels)
+}
 
-    // Count clusters and noise
+fn count_clusters_and_noise(labels: &[i32]) -> (usize, usize) {
     let n_clusters = labels
         .iter()
         .filter(|&&l| l != -1)
@@ -80,87 +95,52 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("\nSummary:");
     println!("  Clusters found: {n_clusters}");
     println!("  Noise points: {n_noise}");
+    (n_clusters, n_noise)
+}
 
-    // Example 2: Effect of eps parameter
+fn example_eps_effects(data: &Matrix<f32>) -> Result<(), Box<dyn std::error::Error>> {
     println!("\n--- Example 2: Effect of eps (neighborhood size) ---");
 
-    // Small eps: tight neighborhoods
-    let mut dbscan_small = DBSCAN::new(0.2, 3);
-    dbscan_small.fit(&data)?;
-    let labels_small = dbscan_small.labels();
-    let clusters_small = labels_small
-        .iter()
-        .filter(|&&l| l != -1)
-        .copied()
-        .max()
-        .map_or(0, |m| (m + 1) as usize);
-    let noise_small = labels_small.iter().filter(|&&l| l == -1).count();
-
-    println!("eps=0.2, min_samples=3:");
-    println!("  Clusters: {clusters_small}, Noise: {noise_small}");
-
-    // Medium eps: balanced
-    let mut dbscan_medium = DBSCAN::new(0.5, 3);
-    dbscan_medium.fit(&data)?;
-    let labels_medium = dbscan_medium.labels();
-    let clusters_medium = labels_medium
-        .iter()
-        .filter(|&&l| l != -1)
-        .copied()
-        .max()
-        .map_or(0, |m| (m + 1) as usize);
-    let noise_medium = labels_medium.iter().filter(|&&l| l == -1).count();
-
-    println!("eps=0.5, min_samples=3:");
-    println!("  Clusters: {clusters_medium}, Noise: {noise_medium}");
-
-    // Large eps: loose neighborhoods
-    let mut dbscan_large = DBSCAN::new(2.0, 3);
-    dbscan_large.fit(&data)?;
-    let labels_large = dbscan_large.labels();
-    let clusters_large = labels_large
-        .iter()
-        .filter(|&&l| l != -1)
-        .copied()
-        .max()
-        .map_or(0, |m| (m + 1) as usize);
-    let noise_large = labels_large.iter().filter(|&&l| l == -1).count();
-
-    println!("eps=2.0, min_samples=3:");
-    println!("  Clusters: {clusters_large}, Noise: {noise_large}");
-
+    for (eps, desc) in [(0.2, "small"), (0.5, "medium"), (2.0, "large")] {
+        let mut dbscan = DBSCAN::new(eps, 3);
+        dbscan.fit(data)?;
+        let labels = dbscan.labels();
+        let clusters = labels
+            .iter()
+            .filter(|&&l| l != -1)
+            .copied()
+            .max()
+            .map_or(0, |m| (m + 1) as usize);
+        let noise = labels.iter().filter(|&&l| l == -1).count();
+        println!("eps={eps} ({desc}), min_samples=3: Clusters: {clusters}, Noise: {noise}");
+    }
     println!("\nObservation: Smaller eps → more noise, larger eps → fewer clusters");
+    Ok(())
+}
 
-    // Example 3: Effect of min_samples parameter
+fn example_min_samples_effects(data: &Matrix<f32>) -> Result<(), Box<dyn std::error::Error>> {
     println!("\n--- Example 3: Effect of min_samples (density threshold) ---");
 
-    // Low min_samples: more points are core
-    let mut dbscan_low = DBSCAN::new(0.5, 2);
-    dbscan_low.fit(&data)?;
-    let labels_low = dbscan_low.labels();
-    let noise_low = labels_low.iter().filter(|&&l| l == -1).count();
-
-    println!("eps=0.5, min_samples=2:");
-    println!("  Noise: {noise_low}");
-
-    // High min_samples: stricter density requirement
-    let mut dbscan_high = DBSCAN::new(0.5, 5);
-    dbscan_high.fit(&data)?;
-    let labels_high = dbscan_high.labels();
-    let noise_high = labels_high.iter().filter(|&&l| l == -1).count();
-
-    println!("eps=0.5, min_samples=5:");
-    println!("  Noise: {noise_high}");
-
+    for (min_samples, desc) in [(2, "low"), (5, "high")] {
+        let mut dbscan = DBSCAN::new(0.5, min_samples);
+        dbscan.fit(data)?;
+        let noise = dbscan.labels().iter().filter(|&&l| l == -1).count();
+        println!("eps=0.5, min_samples={min_samples} ({desc}): Noise: {noise}");
+    }
     println!("\nObservation: Higher min_samples → stricter density → more noise");
+    Ok(())
+}
 
-    // Example 4: Comparison with K-Means
+fn example_vs_kmeans(
+    data: &Matrix<f32>,
+    n_clusters: usize,
+    n_noise: usize,
+) -> Result<(), Box<dyn std::error::Error>> {
     println!("\n--- Example 4: DBSCAN vs K-Means ---");
 
-    // K-Means (requires specifying k)
     let mut kmeans = KMeans::new(3).with_random_state(42);
-    kmeans.fit(&data)?;
-    let _kmeans_labels = kmeans.predict(&data);
+    kmeans.fit(data)?;
+    let _kmeans_labels = kmeans.predict(data);
 
     println!("K-Means (k=3):");
     println!("  Assigns all {} points to 3 clusters", data.shape().0);
@@ -173,8 +153,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("\nKey differences:");
     println!("  - K-Means: must specify k, assigns all points");
     println!("  - DBSCAN: discovers k, identifies outliers");
+    Ok(())
+}
 
-    // Example 5: Practical use case - Anomaly detection
+fn example_anomaly_detection(data: &Matrix<f32>, labels: &[i32]) {
     println!("\n--- Example 5: Anomaly Detection ---");
 
     println!("\nUse DBSCAN for outlier detection:");
@@ -193,7 +175,4 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             );
         }
     }
-
-    println!("\n=== Example Complete ===");
-    Ok(())
 }

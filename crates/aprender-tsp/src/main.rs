@@ -105,7 +105,6 @@ fn main() {
     }
 }
 
-#[allow(clippy::too_many_lines)]
 fn cmd_train(
     instances: &[PathBuf],
     algorithm: &str,
@@ -116,15 +115,32 @@ fn cmd_train(
     let algo =
         TspAlgorithm::parse(algorithm).ok_or_else(|| format!("Unknown algorithm: {algorithm}"))?;
 
+    print_train_header(algo, instances.len(), iterations);
+
+    let (loaded_instances, avg_size) = load_instances(instances)?;
+
+    let start = Instant::now();
+    let params = train_with_algorithm(algo, &loaded_instances, iterations, seed)?;
+    let elapsed = start.elapsed();
+
+    save_trained_model(algo, params, &loaded_instances, avg_size, elapsed, output)?;
+
+    Ok(())
+}
+
+fn print_train_header(algo: TspAlgorithm, num_instances: usize, iterations: usize) {
     println!("Training TSP Model");
     println!("==================");
     println!("Algorithm:    {}", algo.as_str().to_uppercase());
-    println!("Instances:    {}", instances.len());
+    println!("Instances:    {num_instances}");
     println!("Iterations:   {iterations}");
     println!();
+}
 
-    // Load instances
-    let mut loaded_instances = Vec::new();
+fn load_instances(
+    instances: &[PathBuf],
+) -> Result<(Vec<TspInstance>, usize), Box<dyn std::error::Error>> {
+    let mut loaded = Vec::new();
     let mut total_cities = 0;
 
     for path in instances {
@@ -134,115 +150,132 @@ fn cmd_train(
             instance.name, instance.dimension
         );
         total_cities += instance.dimension;
-        loaded_instances.push(instance);
+        loaded.push(instance);
     }
 
-    let avg_size = if loaded_instances.is_empty() {
+    let avg_size = if loaded.is_empty() {
         0
     } else {
-        total_cities / loaded_instances.len()
+        total_cities / loaded.len()
     };
-
     println!();
+    Ok((loaded, avg_size))
+}
 
-    // Train on each instance and average parameters
-    let start = Instant::now();
-    let mut best_gap = f64::INFINITY;
-
-    // Create solver based on algorithm
+fn train_with_algorithm(
+    algo: TspAlgorithm,
+    instances: &[TspInstance],
+    iterations: usize,
+    seed: Option<u64>,
+) -> Result<TspParams, Box<dyn std::error::Error>> {
     let params = match algo {
-        TspAlgorithm::Aco => {
-            let mut solver = AcoSolver::new();
-            if let Some(s) = seed {
-                solver = solver.with_seed(s);
-            }
-
-            for instance in &loaded_instances {
-                let solution = solver.solve(instance, Budget::Iterations(iterations))?;
-                print_progress(&instance.name, solution.length);
-
-                if let Some(optimal) = instance.best_known {
-                    let gap = (solution.length - optimal) / optimal * 100.0;
-                    if gap < best_gap {
-                        best_gap = gap;
-                    }
-                }
-            }
-
-            TspParams::Aco {
-                alpha: solver.alpha,
-                beta: solver.beta,
-                rho: solver.rho,
-                q0: solver.q0,
-                num_ants: solver.num_ants,
-            }
-        }
-        TspAlgorithm::Tabu => {
-            let mut solver = TabuSolver::new();
-            if let Some(s) = seed {
-                solver = solver.with_seed(s);
-            }
-
-            for instance in &loaded_instances {
-                let solution = solver.solve(instance, Budget::Iterations(iterations))?;
-                print_progress(&instance.name, solution.length);
-            }
-
-            TspParams::Tabu {
-                tenure: solver.tenure,
-                max_neighbors: solver.max_neighbors,
-            }
-        }
-        TspAlgorithm::Ga => {
-            let mut solver = GaSolver::new();
-            if let Some(s) = seed {
-                solver = solver.with_seed(s);
-            }
-
-            for instance in &loaded_instances {
-                let solution = solver.solve(instance, Budget::Iterations(iterations))?;
-                print_progress(&instance.name, solution.length);
-            }
-
-            TspParams::Ga {
-                population_size: solver.population_size,
-                crossover_rate: solver.crossover_rate,
-                mutation_rate: solver.mutation_rate,
-            }
-        }
-        TspAlgorithm::Hybrid => {
-            let mut solver = HybridSolver::new();
-            if let Some(s) = seed {
-                solver = solver.with_seed(s);
-            }
-
-            for instance in &loaded_instances {
-                let solution = solver.solve(instance, Budget::Iterations(iterations))?;
-                print_progress(&instance.name, solution.length);
-            }
-
-            TspParams::Hybrid {
-                ga_fraction: solver.ga_fraction,
-                tabu_fraction: solver.tabu_fraction,
-                aco_fraction: solver.aco_fraction,
-            }
-        }
+        TspAlgorithm::Aco => train_aco(instances, iterations, seed)?,
+        TspAlgorithm::Tabu => train_tabu(instances, iterations, seed)?,
+        TspAlgorithm::Ga => train_ga(instances, iterations, seed)?,
+        TspAlgorithm::Hybrid => train_hybrid(instances, iterations, seed)?,
     };
+    Ok(params)
+}
 
-    let elapsed = start.elapsed();
+fn train_aco(
+    instances: &[TspInstance],
+    iterations: usize,
+    seed: Option<u64>,
+) -> Result<TspParams, Box<dyn std::error::Error>> {
+    let mut solver = AcoSolver::new();
+    if let Some(s) = seed {
+        solver = solver.with_seed(s);
+    }
+    run_solver(&mut solver, instances, iterations)?;
+    Ok(TspParams::Aco {
+        alpha: solver.alpha,
+        beta: solver.beta,
+        rho: solver.rho,
+        q0: solver.q0,
+        num_ants: solver.num_ants,
+    })
+}
 
-    // Create and save model
+fn train_tabu(
+    instances: &[TspInstance],
+    iterations: usize,
+    seed: Option<u64>,
+) -> Result<TspParams, Box<dyn std::error::Error>> {
+    let mut solver = TabuSolver::new();
+    if let Some(s) = seed {
+        solver = solver.with_seed(s);
+    }
+    run_solver(&mut solver, instances, iterations)?;
+    Ok(TspParams::Tabu {
+        tenure: solver.tenure,
+        max_neighbors: solver.max_neighbors,
+    })
+}
+
+fn train_ga(
+    instances: &[TspInstance],
+    iterations: usize,
+    seed: Option<u64>,
+) -> Result<TspParams, Box<dyn std::error::Error>> {
+    let mut solver = GaSolver::new();
+    if let Some(s) = seed {
+        solver = solver.with_seed(s);
+    }
+    run_solver(&mut solver, instances, iterations)?;
+    Ok(TspParams::Ga {
+        population_size: solver.population_size,
+        crossover_rate: solver.crossover_rate,
+        mutation_rate: solver.mutation_rate,
+    })
+}
+
+fn train_hybrid(
+    instances: &[TspInstance],
+    iterations: usize,
+    seed: Option<u64>,
+) -> Result<TspParams, Box<dyn std::error::Error>> {
+    let mut solver = HybridSolver::new();
+    if let Some(s) = seed {
+        solver = solver.with_seed(s);
+    }
+    run_solver(&mut solver, instances, iterations)?;
+    Ok(TspParams::Hybrid {
+        ga_fraction: solver.ga_fraction,
+        tabu_fraction: solver.tabu_fraction,
+        aco_fraction: solver.aco_fraction,
+    })
+}
+
+fn run_solver<S: TspSolver>(
+    solver: &mut S,
+    instances: &[TspInstance],
+    iterations: usize,
+) -> Result<(), Box<dyn std::error::Error>> {
+    for instance in instances {
+        let solution = solver.solve(instance, Budget::Iterations(iterations))?;
+        print_progress(&instance.name, solution.length);
+    }
+    Ok(())
+}
+
+fn save_trained_model(
+    algo: TspAlgorithm,
+    params: TspParams,
+    instances: &[TspInstance],
+    avg_size: usize,
+    elapsed: std::time::Duration,
+    output: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
     let metadata = TspModelMetadata {
-        trained_instances: loaded_instances.len() as u32,
+        trained_instances: instances.len() as u32,
         avg_instance_size: avg_size as u32,
-        best_known_gap: if best_gap.is_finite() { best_gap } else { 0.0 },
+        best_known_gap: 0.0,
         training_time_secs: elapsed.as_secs_f64(),
     };
 
     let model = TspModel::new(algo)
         .with_params(params)
         .with_metadata(metadata);
-
     model.save(output)?;
 
     println!();
@@ -254,7 +287,6 @@ fn cmd_train(
         output.display(),
         std::fs::metadata(output)?.len()
     );
-
     Ok(())
 }
 

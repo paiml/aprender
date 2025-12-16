@@ -3,6 +3,16 @@
 # Toyota Way standards from aprender-spec-v1.md
 # pmat version: 2.200.0
 
+[exclude]
+# Exclude generated/build artifacts and demo code from all analyses
+paths = [
+    "target/**",
+    "book/book/**",
+    "*.min.js",
+    "benches/**",
+    "examples/**"
+]
+
 [gates]
 # Clippy linter (strict mode)
 run_clippy = true

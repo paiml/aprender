@@ -9,7 +9,7 @@
 
 /// Calculate Sharpe Ratio
 ///
-/// Sharpe = (E[R] - Rf) / σ(R)
+/// `Sharpe = (E[R] - Rf) / σ(R)`
 ///
 /// Measures excess return per unit of total risk.
 ///
@@ -84,7 +84,7 @@ pub fn sharpe_ratio_annualized(returns: &[f64], risk_free_rate: f64, periods_per
 
 /// Calculate Sortino Ratio
 ///
-/// Sortino = (E[R] - Rf) / σ_d(R)
+/// `Sortino = (E[R] - Rf) / σ_d(R)`
 ///
 /// Uses downside deviation instead of total standard deviation.
 /// Only penalizes negative volatility.
@@ -164,7 +164,7 @@ pub fn calmar_ratio(annualized_return: f64, max_drawdown: f64) -> f64 {
 
 /// Calculate Treynor Ratio
 ///
-/// Treynor = (E[R] - Rf) / β
+/// `Treynor = (E[R] - Rf) / β`
 ///
 /// Measures excess return per unit of systematic risk (beta).
 ///
@@ -192,7 +192,7 @@ pub fn treynor_ratio(returns: &[f64], benchmark_returns: &[f64], risk_free_rate:
 
 /// Calculate Information Ratio
 ///
-/// IR = (E[R] - E[Rb]) / σ(R - Rb)
+/// `IR = (E[R] - E[Rb]) / σ(R - Rb)`
 ///
 /// Measures active return per unit of tracking error.
 ///
@@ -301,7 +301,7 @@ fn calculate_beta(returns: &[f64], benchmark_returns: &[f64]) -> f64 {
 
 /// Calculate Alpha (Jensen's Alpha)
 ///
-/// α = E[R] - (Rf + β × (E[Rm] - Rf))
+/// `α = E[R] - (Rf + β × (E[Rm] - Rf))`
 #[must_use]
 pub fn jensens_alpha(returns: &[f64], benchmark_returns: &[f64], risk_free_rate: f64) -> f64 {
     if returns.is_empty() || benchmark_returns.is_empty() {

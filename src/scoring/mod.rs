@@ -799,64 +799,13 @@ fn score_generalization_robustness(
     let mut dim = DimensionScore::new(20.0);
 
     // 2.1 Train/test split used (5 points)
-    if metadata
-        .training
-        .as_ref()
-        .is_some_and(|t| t.test_size.is_some())
-    {
-        dim.add_score("train_test_split", 5.0, 5.0);
-    }
+    score_train_test_split(metadata, &mut dim);
 
     // 2.2 Regularization applied (5 points, if applicable)
-    let model_type = metadata.model_type.unwrap_or(ScoredModelType::Other);
-    let needs_reg = model_type.needs_regularization();
-
-    if needs_reg {
-        let has_reg = metadata.hyperparameters.contains_key("alpha")
-            || metadata.hyperparameters.contains_key("lambda")
-            || metadata.hyperparameters.contains_key("l2_penalty")
-            || metadata.hyperparameters.contains_key("weight_decay");
-
-        if has_reg {
-            dim.add_score("regularization", 5.0, 5.0);
-        } else {
-            findings.push(Finding::Warning {
-                message: "No regularization detected for linear/neural model".to_string(),
-                recommendation: "Consider adding L2 regularization to prevent overfitting"
-                    .to_string(),
-            });
-        }
-    } else {
-        // N/A, give full points
-        dim.add_score("regularization", 5.0, 5.0);
-    }
+    score_regularization(metadata, &mut dim, findings);
 
     // 2.3 Training/test performance gap (5 points)
-    let train_score = metadata.metrics.get("train_score").copied();
-    let test_score = metadata.metrics.get("test_score").copied();
-
-    if let (Some(train), Some(test)) = (train_score, test_score) {
-        let gap = train - test;
-        let gap_score = if gap < 0.05 {
-            5.0
-        } else if gap < 0.1 {
-            3.0
-        } else if gap < 0.2 {
-            1.0
-        } else {
-            0.0
-        };
-        dim.add_score("generalization_gap", gap_score, 5.0);
-
-        if gap >= f64::from(config.max_train_test_gap) {
-            findings.push(Finding::Warning {
-                message: format!("High train/test gap detected: {:.1}%", gap * 100.0),
-                recommendation:
-                    "Model may be overfitting. Consider regularization or simpler model."
-                        .to_string(),
-            });
-        }
-    }
+    score_generalization_gap(metadata, config, &mut dim, findings);
 
     // 2.4 Handles edge cases (5 points)
     if metadata.flags.has_edge_case_tests {
@@ -866,44 +815,158 @@ fn score_generalization_robustness(
     dim
 }
 
+/// Score train/test split usage.
+fn score_train_test_split(metadata: &ModelMetadata, dim: &mut DimensionScore) {
+    if metadata
+        .training
+        .as_ref()
+        .is_some_and(|t| t.test_size.is_some())
+    {
+        dim.add_score("train_test_split", 5.0, 5.0);
+    }
+}
+
+/// Score regularization usage.
+fn score_regularization(
+    metadata: &ModelMetadata,
+    dim: &mut DimensionScore,
+    findings: &mut Vec<Finding>,
+) {
+    let model_type = metadata.model_type.unwrap_or(ScoredModelType::Other);
+
+    if !model_type.needs_regularization() {
+        dim.add_score("regularization", 5.0, 5.0);
+        return;
+    }
+
+    let has_reg = has_regularization_params(&metadata.hyperparameters);
+    if has_reg {
+        dim.add_score("regularization", 5.0, 5.0);
+    } else {
+        findings.push(Finding::Warning {
+            message: "No regularization detected for linear/neural model".to_string(),
+            recommendation: "Consider adding L2 regularization to prevent overfitting".to_string(),
+        });
+    }
+}
+
+/// Check if hyperparameters contain regularization settings.
+fn has_regularization_params(hyperparameters: &HashMap<String, String>) -> bool {
+    hyperparameters.contains_key("alpha")
+        || hyperparameters.contains_key("lambda")
+        || hyperparameters.contains_key("l2_penalty")
+        || hyperparameters.contains_key("weight_decay")
+}
+
+/// Score generalization gap between train and test performance.
+fn score_generalization_gap(
+    metadata: &ModelMetadata,
+    config: &ScoringConfig,
+    dim: &mut DimensionScore,
+    findings: &mut Vec<Finding>,
+) {
+    let train_score = metadata.metrics.get("train_score").copied();
+    let test_score = metadata.metrics.get("test_score").copied();
+
+    let Some((train, test)) = train_score.zip(test_score) else {
+        return;
+    };
+
+    let gap = train - test;
+    let gap_score = compute_gap_score(gap);
+    dim.add_score("generalization_gap", gap_score, 5.0);
+
+    if gap >= f64::from(config.max_train_test_gap) {
+        findings.push(Finding::Warning {
+            message: format!("High train/test gap detected: {:.1}%", gap * 100.0),
+            recommendation: "Model may be overfitting. Consider regularization or simpler model."
+                .to_string(),
+        });
+    }
+}
+
+/// Compute score based on generalization gap.
+fn compute_gap_score(gap: f64) -> f32 {
+    if gap < 0.05 {
+        5.0
+    } else if gap < 0.1 {
+        3.0
+    } else if gap < 0.2 {
+        1.0
+    } else {
+        0.0
+    }
+}
+
 /// Score Dimension 3: Model Complexity (15 points)
 fn score_model_complexity(metadata: &ModelMetadata, findings: &mut Vec<Finding>) -> DimensionScore {
     let mut dim = DimensionScore::new(15.0);
 
     // 3.1 Parameter efficiency (5 points)
-    if let (Some(n_params), Some(training)) = (metadata.n_parameters, &metadata.training) {
-        if let Some(n_samples) = training.n_samples {
-            let params_per_sample = n_params as f64 / n_samples as f64;
-
-            // Rule of thumb: < 0.1 params/sample is efficient
-            let efficiency_score = if params_per_sample < 0.1 {
-                5.0
-            } else if params_per_sample < 0.5 {
-                4.0
-            } else if params_per_sample < 1.0 {
-                3.0
-            } else if params_per_sample < 5.0 {
-                2.0
-            } else {
-                1.0
-            };
-            dim.add_score("parameter_efficiency", efficiency_score, 5.0);
-
-            if params_per_sample > 1.0 {
-                findings.push(Finding::Info {
-                    message: format!("High parameter count relative to data: {params_per_sample:.2} params/sample"),
-                    recommendation: "Consider feature selection or simpler model architecture".to_string(),
-                });
-            }
-        }
-    }
+    score_parameter_efficiency(metadata, &mut dim, findings);
 
     // 3.2 Model interpretability (5 points)
     let model_type = metadata.model_type.unwrap_or(ScoredModelType::Other);
-    let interpretability = model_type.interpretability_score();
-    dim.add_score("interpretability", interpretability, 5.0);
+    dim.add_score("interpretability", model_type.interpretability_score(), 5.0);
 
     // 3.3 Feature importance available (5 points)
+    score_feature_importance(metadata, &mut dim, findings);
+
+    dim
+}
+
+/// Score parameter efficiency based on params/sample ratio.
+fn score_parameter_efficiency(
+    metadata: &ModelMetadata,
+    dim: &mut DimensionScore,
+    findings: &mut Vec<Finding>,
+) {
+    let Some(n_params) = metadata.n_parameters else {
+        return;
+    };
+    let Some(training) = &metadata.training else {
+        return;
+    };
+    let Some(n_samples) = training.n_samples else {
+        return;
+    };
+
+    let params_per_sample = n_params as f64 / n_samples as f64;
+    let efficiency_score = compute_efficiency_score(params_per_sample);
+    dim.add_score("parameter_efficiency", efficiency_score, 5.0);
+
+    if params_per_sample > 1.0 {
+        findings.push(Finding::Info {
+            message: format!(
+                "High parameter count relative to data: {params_per_sample:.2} params/sample"
+            ),
+            recommendation: "Consider feature selection or simpler model architecture".to_string(),
+        });
+    }
+}
+
+/// Compute efficiency score from params/sample ratio.
+fn compute_efficiency_score(params_per_sample: f64) -> f32 {
+    // Rule of thumb: < 0.1 params/sample is efficient
+    if params_per_sample < 0.1 {
+        5.0
+    } else if params_per_sample < 0.5 {
+        4.0
+    } else if params_per_sample < 1.0 {
+        3.0
+    } else if params_per_sample < 5.0 {
+        2.0
+    } else {
+        1.0
+    }
+}
+
+/// Score feature importance availability.
+fn score_feature_importance(
+    metadata: &ModelMetadata,
+    dim: &mut DimensionScore,
+    findings: &mut Vec<Finding>,
+) {
     if metadata.flags.has_feature_importance {
         dim.add_score("feature_importance", 5.0, 5.0);
     } else {
@@ -912,8 +975,6 @@ fn score_model_complexity(metadata: &ModelMetadata, findings: &mut Vec<Finding>)
             recommendation: "Include feature importance for model interpretability".to_string(),
         });
     }
-
-    dim
 }
 
 /// Score Dimension 4: Documentation & Provenance (15 points)

@@ -505,13 +505,9 @@ fn write_pattern<W: IoWrite>(
     Ok(())
 }
 
-/// Read a pattern and its embedding from a reader.
-fn read_pattern<R: IoRead>(reader: &mut R) -> CITLResult<(ErrorFixPattern, Vec<f32>)> {
-    // Error code
-    let code_str = read_string(reader)?;
-    let mut category_byte = [0u8; 1];
-    reader.read_exact(&mut category_byte)?;
-    let category = match category_byte[0] {
+/// Convert a byte to an ErrorCategory.
+fn parse_error_category(byte: u8) -> ErrorCategory {
+    match byte {
         1 => ErrorCategory::TraitBound,
         2 => ErrorCategory::Unresolved,
         3 => ErrorCategory::Ownership,
@@ -522,23 +518,44 @@ fn read_pattern<R: IoRead>(reader: &mut R) -> CITLResult<(ErrorFixPattern, Vec<f
         8 => ErrorCategory::MethodNotFound,
         9 => ErrorCategory::Import,
         _ => ErrorCategory::TypeMismatch, // 0 and unknown default to TypeMismatch
-    };
-    let mut difficulty_byte = [0u8; 1];
-    reader.read_exact(&mut difficulty_byte)?;
-    let difficulty = match difficulty_byte[0] {
+    }
+}
+
+/// Convert a byte to a Difficulty.
+fn parse_difficulty(byte: u8) -> Difficulty {
+    match byte {
         0 => Difficulty::Easy,
         2 => Difficulty::Hard,
         3 => Difficulty::Expert,
         _ => Difficulty::Medium, // 1 and unknown default to Medium
-    };
-    let error_code = ErrorCode::new(&code_str, category, difficulty);
+    }
+}
 
-    // Context hash
-    let mut hash_bytes = [0u8; 8];
-    reader.read_exact(&mut hash_bytes)?;
-    let context_hash = u64::from_le_bytes(hash_bytes);
+/// Convert a byte to a PlaceholderConstraint.
+fn parse_placeholder_constraint(byte: u8) -> PlaceholderConstraint {
+    match byte {
+        0 => PlaceholderConstraint::Expression,
+        1 => PlaceholderConstraint::Type,
+        2 => PlaceholderConstraint::Identifier,
+        3 => PlaceholderConstraint::Literal,
+        _ => PlaceholderConstraint::Any,
+    }
+}
 
-    // Success/failure counts
+/// Read an error code from a reader.
+fn read_error_code<R: IoRead>(reader: &mut R) -> CITLResult<ErrorCode> {
+    let code_str = read_string(reader)?;
+    let mut category_byte = [0u8; 1];
+    reader.read_exact(&mut category_byte)?;
+    let category = parse_error_category(category_byte[0]);
+    let mut difficulty_byte = [0u8; 1];
+    reader.read_exact(&mut difficulty_byte)?;
+    let difficulty = parse_difficulty(difficulty_byte[0]);
+    Ok(ErrorCode::new(&code_str, category, difficulty))
+}
+
+/// Read counts (success/failure) from a reader.
+fn read_counts<R: IoRead>(reader: &mut R) -> CITLResult<(u64, u64)> {
     let mut success_bytes = [0u8; 8];
     reader.read_exact(&mut success_bytes)?;
     let success_count = u64::from_le_bytes(success_bytes);
@@ -547,10 +564,11 @@ fn read_pattern<R: IoRead>(reader: &mut R) -> CITLResult<(ErrorFixPattern, Vec<f
     reader.read_exact(&mut failure_bytes)?;
     let failure_count = u64::from_le_bytes(failure_bytes);
 
-    // Fix template
-    let fix_template = read_fix_template(reader)?;
+    Ok((success_count, failure_count))
+}
 
-    // Embedding
+/// Read an embedding vector from a reader.
+fn read_embedding<R: IoRead>(reader: &mut R) -> CITLResult<Vec<f32>> {
     let mut dim_bytes = [0u8; 4];
     reader.read_exact(&mut dim_bytes)?;
     let dim = u32::from_le_bytes(dim_bytes) as usize;
@@ -561,6 +579,57 @@ fn read_pattern<R: IoRead>(reader: &mut R) -> CITLResult<(ErrorFixPattern, Vec<f
         reader.read_exact(&mut val_bytes)?;
         embedding.push(f32::from_le_bytes(val_bytes));
     }
+    Ok(embedding)
+}
+
+/// Read a single placeholder from a reader.
+fn read_placeholder<R: IoRead>(reader: &mut R) -> CITLResult<Placeholder> {
+    let name = read_string(reader)?;
+    let desc = read_string(reader)?;
+    let mut constraint_byte = [0u8; 1];
+    reader.read_exact(&mut constraint_byte)?;
+    let constraint = parse_placeholder_constraint(constraint_byte[0]);
+    Ok(Placeholder::new(&name, &desc, constraint))
+}
+
+/// Read a vector of placeholders from a reader.
+fn read_placeholders<R: IoRead>(reader: &mut R) -> CITLResult<Vec<Placeholder>> {
+    let mut ph_count_bytes = [0u8; 2];
+    reader.read_exact(&mut ph_count_bytes)?;
+    let ph_count = u16::from_le_bytes(ph_count_bytes) as usize;
+
+    let mut placeholders = Vec::with_capacity(ph_count);
+    for _ in 0..ph_count {
+        placeholders.push(read_placeholder(reader)?);
+    }
+    Ok(placeholders)
+}
+
+/// Read a vector of strings from a reader.
+fn read_string_vec<R: IoRead>(reader: &mut R) -> CITLResult<Vec<String>> {
+    let mut count_bytes = [0u8; 2];
+    reader.read_exact(&mut count_bytes)?;
+    let count = u16::from_le_bytes(count_bytes) as usize;
+
+    let mut strings = Vec::with_capacity(count);
+    for _ in 0..count {
+        strings.push(read_string(reader)?);
+    }
+    Ok(strings)
+}
+
+/// Read a pattern and its embedding from a reader.
+fn read_pattern<R: IoRead>(reader: &mut R) -> CITLResult<(ErrorFixPattern, Vec<f32>)> {
+    let error_code = read_error_code(reader)?;
+
+    // Context hash
+    let mut hash_bytes = [0u8; 8];
+    reader.read_exact(&mut hash_bytes)?;
+    let context_hash = u64::from_le_bytes(hash_bytes);
+
+    let (success_count, failure_count) = read_counts(reader)?;
+    let fix_template = read_fix_template(reader)?;
+    let embedding = read_embedding(reader)?;
 
     let pattern = ErrorFixPattern {
         error_code,
@@ -607,36 +676,8 @@ fn read_fix_template<R: IoRead>(reader: &mut R) -> CITLResult<FixTemplate> {
     reader.read_exact(&mut confidence_bytes)?;
     let confidence = f32::from_le_bytes(confidence_bytes);
 
-    // Placeholders
-    let mut ph_count_bytes = [0u8; 2];
-    reader.read_exact(&mut ph_count_bytes)?;
-    let ph_count = u16::from_le_bytes(ph_count_bytes) as usize;
-
-    let mut placeholders = Vec::with_capacity(ph_count);
-    for _ in 0..ph_count {
-        let name = read_string(reader)?;
-        let desc = read_string(reader)?;
-        let mut constraint_byte = [0u8; 1];
-        reader.read_exact(&mut constraint_byte)?;
-        let constraint = match constraint_byte[0] {
-            0 => PlaceholderConstraint::Expression,
-            1 => PlaceholderConstraint::Type,
-            2 => PlaceholderConstraint::Identifier,
-            3 => PlaceholderConstraint::Literal,
-            _ => PlaceholderConstraint::Any,
-        };
-        placeholders.push(Placeholder::new(&name, &desc, constraint));
-    }
-
-    // Applicable codes
-    let mut codes_count_bytes = [0u8; 2];
-    reader.read_exact(&mut codes_count_bytes)?;
-    let codes_count = u16::from_le_bytes(codes_count_bytes) as usize;
-
-    let mut applicable_codes = Vec::with_capacity(codes_count);
-    for _ in 0..codes_count {
-        applicable_codes.push(read_string(reader)?);
-    }
+    let placeholders = read_placeholders(reader)?;
+    let applicable_codes = read_string_vec(reader)?;
 
     Ok(FixTemplate {
         pattern,

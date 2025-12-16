@@ -228,56 +228,68 @@ pub fn suggest_with_fallback(
     model: Option<&MarkovModel>,
     config: &ShellConfig,
 ) -> Vec<(String, f32)> {
-    // If no model, return empty (silent failure)
     let model = match model {
         Some(m) => m,
         None => return vec![],
     };
 
-    // If prefix too short, return empty
-    if prefix.len() < config.min_prefix_length {
+    if !is_prefix_processable(prefix, config) {
         return vec![];
     }
 
-    // If prefix too long, truncate
     let prefix = config.truncate_prefix(prefix);
-
-    // Timeout wrapper
-    let deadline = Instant::now() + config.suggest_timeout();
-
-    // Get more suggestions than needed for filtering
     let raw_suggestions = model.suggest(prefix, config.max_suggestions * 2);
 
+    filter_suggestions(raw_suggestions, config)
+}
+
+/// Check if prefix meets minimum length requirements.
+fn is_prefix_processable(prefix: &str, config: &ShellConfig) -> bool {
+    prefix.len() >= config.min_prefix_length
+}
+
+/// Filter and score suggestions with timeout, security, and quality checks.
+fn filter_suggestions(
+    raw_suggestions: Vec<(String, f32)>,
+    config: &ShellConfig,
+) -> Vec<(String, f32)> {
+    let deadline = Instant::now() + config.suggest_timeout();
     let mut results = Vec::with_capacity(config.max_suggestions);
 
     for (suggestion, score) in raw_suggestions {
-        // Check timeout
-        if Instant::now() > deadline {
-            break; // Timeout - return partial results
-        }
-
-        // Security filter
-        if is_sensitive_command(&suggestion) {
-            continue;
-        }
-
-        // Quality filter
-        let quality = suggestion_quality_score(&suggestion);
-        if quality < config.min_quality_score {
-            continue;
-        }
-
-        // Combine model score with quality
-        let combined_score = score * quality;
-        results.push((suggestion, combined_score));
-
-        // Limit results
-        if results.len() >= config.max_suggestions {
+        if should_stop_filtering(&results, &deadline, config) {
             break;
+        }
+
+        if let Some(scored) = process_suggestion(&suggestion, score, config) {
+            results.push(scored);
         }
     }
 
     results
+}
+
+/// Check if filtering should stop due to timeout or result limit.
+fn should_stop_filtering(
+    results: &[(String, f32)],
+    deadline: &Instant,
+    config: &ShellConfig,
+) -> bool {
+    Instant::now() > *deadline || results.len() >= config.max_suggestions
+}
+
+/// Process a single suggestion: security and quality filtering.
+fn process_suggestion(suggestion: &str, score: f32, config: &ShellConfig) -> Option<(String, f32)> {
+    if is_sensitive_command(suggestion) {
+        return None;
+    }
+
+    let quality = suggestion_quality_score(suggestion);
+    if quality < config.min_quality_score {
+        return None;
+    }
+
+    Some((suggestion.to_string(), score * quality))
 }
 
 #[cfg(test)]

@@ -8,7 +8,7 @@ use aprender_shell::{
     MarkovModel, PagedMarkovModel, ShellError, SyntheticPipeline,
 };
 use clap::{Parser, Subcommand};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Parser)]
 #[command(name = "aprender-shell")]
@@ -529,12 +529,26 @@ fn cmd_train(
     use_password: bool,
 ) {
     validate_ngram(ngram);
-    let paged = memory_limit.is_some();
+    print_train_header(use_password, memory_limit.is_some());
+
+    let commands = load_history_commands(history_path);
+    let password = get_train_password(use_password);
+    let output_path = expand_path(output);
+
+    if let Some(mem_mb) = memory_limit {
+        train_paged_model(&commands, &output_path, ngram, mem_mb, use_password);
+    } else {
+        train_standard_model(&commands, &output_path, ngram, password.as_deref());
+    }
+}
+
+fn print_train_header(use_password: bool, paged: bool) {
     let encrypted_str = if use_password { " encrypted" } else { "" };
     let mode_str = if paged { "paged" } else { "standard" };
     println!("🚀 aprender-shell: Training{encrypted_str} {mode_str} model...\n");
+}
 
-    // Find and parse history with graceful error handling (QA 2.4, 8.3)
+fn load_history_commands(history_path: Option<PathBuf>) -> Vec<String> {
     let history_file = find_history_file_graceful(history_path);
     println!("📂 History file: {}", history_file.display());
 
@@ -545,123 +559,124 @@ fn cmd_train(
         eprintln!("❌ No commands found in history file");
         std::process::exit(1);
     }
+    commands
+}
 
-    // Get password if encryption requested
-    let password = if use_password {
-        println!("🔐 Encrypting model with AES-256-GCM");
-        let pwd = rpassword::prompt_password("   Enter password: ").unwrap_or_else(|e| {
-            eprintln!("❌ Failed to read password: {e}");
-            std::process::exit(1);
-        });
-        let confirm = rpassword::prompt_password("   Confirm password: ").unwrap_or_else(|e| {
-            eprintln!("❌ Failed to read password: {e}");
-            std::process::exit(1);
-        });
-        if pwd != confirm {
-            eprintln!("❌ Passwords do not match");
-            std::process::exit(1);
-        }
-        if pwd.len() < 8 {
-            eprintln!("❌ Password must be at least 8 characters");
-            std::process::exit(1);
-        }
-        Some(pwd)
-    } else {
-        None
-    };
+fn get_train_password(use_password: bool) -> Option<String> {
+    if !use_password {
+        return None;
+    }
+    println!("🔐 Encrypting model with AES-256-GCM");
+    let pwd = prompt_password_or_exit("   Enter password: ");
+    let confirm = prompt_password_or_exit("   Confirm password: ");
+    if pwd != confirm {
+        eprintln!("❌ Passwords do not match");
+        std::process::exit(1);
+    }
+    if pwd.len() < 8 {
+        eprintln!("❌ Password must be at least 8 characters");
+        std::process::exit(1);
+    }
+    Some(pwd)
+}
 
-    let output_path = expand_path(output);
+fn prompt_password_or_exit(prompt: &str) -> String {
+    rpassword::prompt_password(prompt).unwrap_or_else(|e| {
+        eprintln!("❌ Failed to read password: {e}");
+        std::process::exit(1);
+    })
+}
 
-    if let Some(mem_mb) = memory_limit {
-        // Paged model for large histories (note: encryption not yet supported for paged models)
-        if use_password {
-            eprintln!(
-                "⚠️  Encryption not yet supported for paged models. Creating unencrypted model."
-            );
-        }
-        let output_path = output_path.with_extension("apbundle");
-        print!(
-            "🧠 Training {ngram}-gram paged model ({}MB limit)... ",
-            mem_mb
+fn train_paged_model(
+    commands: &[String],
+    output_path: &Path,
+    ngram: usize,
+    mem_mb: usize,
+    use_password: bool,
+) {
+    if use_password {
+        eprintln!("⚠️  Encryption not yet supported for paged models. Creating unencrypted model.");
+    }
+    let output_path = output_path.with_extension("apbundle");
+    print!(
+        "🧠 Training {ngram}-gram paged model ({}MB limit)... ",
+        mem_mb
+    );
+    let mut model = PagedMarkovModel::new(ngram, mem_mb);
+    model.train(commands);
+    println!("done!");
+
+    save_model_or_exit(|| model.save(&output_path), &output_path, "paged model");
+
+    let stats = model.stats();
+    println!("\n✅ Paged model saved to: {}", output_path.display());
+    println!("\n📈 Model Statistics:");
+    println!("   Segments:        {}", stats.total_segments);
+    println!("   Vocabulary size: {}", stats.vocab_size);
+    println!("   Memory limit:    {} MB", mem_mb);
+    println!("\n💡 Next steps:");
+    println!("   1. Test: aprender-shell suggest \"git \" --memory-limit {mem_mb}");
+    println!("   2. Stats: aprender-shell stats --memory-limit {mem_mb}");
+}
+
+fn train_standard_model(
+    commands: &[String],
+    output_path: &Path,
+    ngram: usize,
+    password: Option<&str>,
+) {
+    print!("🧠 Training {ngram}-gram model... ");
+    let mut model = MarkovModel::new(ngram);
+    model.train(commands);
+    println!("done!");
+
+    if let Some(pwd) = password {
+        save_model_or_exit(
+            || model.save_encrypted(output_path, pwd),
+            output_path,
+            "encrypted model",
         );
-        let mut model = PagedMarkovModel::new(ngram, mem_mb);
-        model.train(&commands);
-        println!("done!");
-
-        if let Err(e) = model.save(&output_path) {
-            eprintln!("❌ Failed to save paged model: {e}");
-            if e.to_string().contains("ermission") {
-                eprintln!(
-                    "   Hint: Check write permissions for '{}'",
-                    output_path.display()
-                );
-            }
-            std::process::exit(1);
-        }
-
-        let stats = model.stats();
-        println!("\n✅ Paged model saved to: {}", output_path.display());
-        println!("\n📈 Model Statistics:");
-        println!("   Segments:        {}", stats.total_segments);
-        println!("   Vocabulary size: {}", stats.vocab_size);
-        println!("   Memory limit:    {} MB", mem_mb);
-
-        println!("\n💡 Next steps:");
-        println!("   1. Test: aprender-shell suggest \"git \" --memory-limit {mem_mb}");
-        println!("   2. Stats: aprender-shell stats --memory-limit {mem_mb}");
+        println!("\n🔒 Encrypted model saved to: {}", output_path.display());
     } else {
-        // Standard in-memory model
-        print!("🧠 Training {ngram}-gram model... ");
-        let mut model = MarkovModel::new(ngram);
-        model.train(&commands);
-        println!("done!");
+        save_model_or_exit(|| model.save(output_path), output_path, "model");
+        println!("\n✅ Model saved to: {}", output_path.display());
+    }
 
-        // Save with or without encryption
-        if let Some(ref pwd) = password {
-            if let Err(e) = model.save_encrypted(&output_path, pwd) {
-                eprintln!("❌ Failed to save encrypted model: {e}");
-                if e.to_string().contains("ermission") {
-                    eprintln!(
-                        "   Hint: Check write permissions for '{}'",
-                        output_path.display()
-                    );
-                }
-                std::process::exit(1);
-            }
-            println!("\n🔒 Encrypted model saved to: {}", output_path.display());
-        } else {
-            if let Err(e) = model.save(&output_path) {
-                eprintln!("❌ Failed to save model: {e}");
-                if e.to_string().contains("ermission") {
-                    eprintln!(
-                        "   Hint: Check write permissions for '{}'",
-                        output_path.display()
-                    );
-                }
-                std::process::exit(1);
-            }
-            println!("\n✅ Model saved to: {}", output_path.display());
-        }
+    print_standard_model_stats(&model, password.is_some());
+}
 
-        println!("\n📈 Model Statistics:");
-        println!("   Unique n-grams: {}", model.ngram_count());
-        println!("   Vocabulary size: {}", model.vocab_size());
-        println!(
-            "   Model size: {:.1} KB",
-            model.size_bytes() as f64 / 1024.0
-        );
-        if password.is_some() {
-            println!("   Encryption: AES-256-GCM (Argon2id KDF)");
+fn save_model_or_exit<F, E: std::fmt::Display>(save_fn: F, path: &Path, model_type: &str)
+where
+    F: FnOnce() -> Result<(), E>,
+{
+    if let Err(e) = save_fn() {
+        eprintln!("❌ Failed to save {model_type}: {e}");
+        if e.to_string().contains("ermission") {
+            eprintln!("   Hint: Check write permissions for '{}'", path.display());
         }
+        std::process::exit(1);
+    }
+}
 
-        println!("\n💡 Next steps:");
-        if password.is_some() {
-            println!("   1. Test: aprender-shell suggest \"git \" --password");
-            println!("   2. Stats: aprender-shell stats --password");
-        } else {
-            println!("   1. Test: aprender-shell suggest \"git \"");
-            println!("   2. Install: aprender-shell zsh-widget >> ~/.zshrc");
-        }
+fn print_standard_model_stats(model: &MarkovModel, encrypted: bool) {
+    println!("\n📈 Model Statistics:");
+    println!("   Unique n-grams: {}", model.ngram_count());
+    println!("   Vocabulary size: {}", model.vocab_size());
+    println!(
+        "   Model size: {:.1} KB",
+        model.size_bytes() as f64 / 1024.0
+    );
+    if encrypted {
+        println!("   Encryption: AES-256-GCM (Argon2id KDF)");
+    }
+
+    println!("\n💡 Next steps:");
+    if encrypted {
+        println!("   1. Test: aprender-shell suggest \"git \" --password");
+        println!("   2. Stats: aprender-shell stats --password");
+    } else {
+        println!("   1. Test: aprender-shell suggest \"git \"");
+        println!("   2. Install: aprender-shell zsh-widget >> ~/.zshrc");
     }
 }
 
@@ -750,6 +765,64 @@ fn cmd_update(history_path: Option<PathBuf>, model_path: &str, quiet: bool, use_
     }
 }
 
+/// Get password from environment or prompt.
+fn get_password_or_prompt(use_password: bool, error_prefix: &str) -> Option<String> {
+    if !use_password {
+        return None;
+    }
+    std::env::var("APRENDER_PASSWORD").ok().or_else(|| {
+        Some(
+            rpassword::prompt_password("Enter password: ").unwrap_or_else(|e| {
+                eprintln!("{error_prefix}Failed to read password: {e}");
+                std::process::exit(1);
+            }),
+        )
+    })
+}
+
+/// Output filtered suggestions.
+fn output_suggestions(suggestions: Vec<(String, f32)>) {
+    let filtered = filter_sensitive_suggestions(suggestions);
+    for (suggestion, score) in filtered {
+        println!("{}\t{:.3}", suggestion, score);
+    }
+}
+
+/// Handle paged model suggestion.
+fn suggest_paged(path: &std::path::Path, prefix: &str, count: usize, mem_mb: usize) {
+    let paged_path = path.with_extension("apbundle");
+    let mut model = match PagedMarkovModel::load(&paged_path, mem_mb) {
+        Ok(m) => m,
+        Err(e) => {
+            eprintln!("# aprender: {e}");
+            return;
+        }
+    };
+    output_suggestions(model.suggest(prefix, count));
+}
+
+/// Handle standard model suggestion.
+fn suggest_standard(path: &std::path::Path, prefix: &str, count: usize, password: Option<&str>) {
+    let model = if let Some(pwd) = password {
+        match MarkovModel::load_encrypted(path, pwd) {
+            Ok(m) => m,
+            Err(e) => {
+                eprintln!("# aprender: {e}");
+                return;
+            }
+        }
+    } else {
+        match load_model_graceful(path) {
+            Ok(m) => m,
+            Err(e) => {
+                eprintln!("{e}");
+                return;
+            }
+        }
+    };
+    output_suggestions(model.suggest(prefix, count));
+}
+
 fn cmd_suggest(
     prefix: &str,
     model_path: &str,
@@ -761,8 +834,6 @@ fn cmd_suggest(
     let validated_prefix = match sanitize_prefix(prefix) {
         Ok(p) => p,
         Err(ShellError::InvalidInput { message }) => {
-            // Silent exit for invalid input in completion context
-            // (shell completions shouldn't spam stderr)
             eprintln!("# aprender: {message}");
             return;
         }
@@ -770,189 +841,139 @@ fn cmd_suggest(
     };
 
     let path = expand_path(model_path);
-
-    // Get password if needed (note: for shell completion, consider APRENDER_PASSWORD env var)
-    let password = if use_password {
-        // Check environment variable first for non-interactive use
-        if let Ok(pwd) = std::env::var("APRENDER_PASSWORD") {
-            Some(pwd)
-        } else {
-            Some(
-                rpassword::prompt_password("Enter password: ").unwrap_or_else(|e| {
-                    eprintln!("# aprender: Failed to read password: {e}");
-                    std::process::exit(1);
-                }),
-            )
-        }
-    } else {
-        None
-    };
+    let password = get_password_or_prompt(use_password, "# aprender: ");
 
     if let Some(mem_mb) = memory_limit {
-        // Paged model (encryption not supported)
-        let paged_path = path.with_extension("apbundle");
-        let mut model = match PagedMarkovModel::load(&paged_path, mem_mb) {
-            Ok(m) => m,
-            Err(e) => {
-                eprintln!("# aprender: {e}");
-                return;
-            }
-        };
-
-        let suggestions = model.suggest(&validated_prefix, count);
-        // Phase 2: Security filtering (Andon)
-        let filtered = filter_sensitive_suggestions(suggestions);
-
-        if filtered.is_empty() {
-            return;
-        }
-
-        for (suggestion, score) in filtered {
-            println!("{}\t{:.3}", suggestion, score);
-        }
+        suggest_paged(&path, &validated_prefix, count, mem_mb);
     } else {
-        // Standard model with graceful error handling (Jidoka)
-        let model = if let Some(ref pwd) = password {
-            match MarkovModel::load_encrypted(&path, pwd) {
-                Ok(m) => m,
-                Err(e) => {
-                    eprintln!("# aprender: {e}");
-                    return;
-                }
-            }
-        } else {
-            match load_model_graceful(&path) {
-                Ok(m) => m,
-                Err(e) => {
-                    eprintln!("{e}");
-                    return;
-                }
-            }
-        };
+        suggest_standard(&path, &validated_prefix, count, password.as_deref());
+    }
+}
 
-        let suggestions = model.suggest(&validated_prefix, count);
-        // Phase 2: Security filtering (Andon)
-        let filtered = filter_sensitive_suggestions(suggestions);
+/// Print paged model error hints.
+fn print_paged_model_error_hint(e: &std::io::Error, paged_path: &std::path::Path, mem_mb: usize) {
+    let err_str = e.to_string();
+    if err_str.contains("Checksum") || err_str.contains("corrupt") {
+        eprintln!("   Hint: The model may be corrupted. Run 'aprender-shell train --memory-limit {mem_mb}' to rebuild.");
+    } else if !paged_path.exists() {
+        eprintln!("   Hint: Model file not found. Train a model first with 'aprender-shell train --memory-limit {mem_mb}'");
+    }
+}
 
-        if filtered.is_empty() {
-            return;
-        }
+/// Print standard model error hints.
+fn print_standard_model_error_hint(e: &std::io::Error, path: &std::path::Path) {
+    let err_str = e.to_string();
+    if err_str.contains("Checksum mismatch") {
+        eprintln!(
+            "   Hint: The model file may be corrupted. Run 'aprender-shell train' to rebuild."
+        );
+    } else if !path.exists() {
+        eprintln!("   Hint: Model file not found. Train a model first with 'aprender-shell train'");
+    } else if MarkovModel::is_encrypted(path).unwrap_or(false) {
+        eprintln!("   Hint: This model is encrypted. Use --password flag.");
+    }
+}
 
-        for (suggestion, score) in filtered {
-            println!("{}\t{:.3}", suggestion, score);
+/// Print paging statistics if available.
+fn print_paging_stats(model: &PagedMarkovModel) {
+    if let Some(paging_stats) = model.paging_stats() {
+        println!("\n📈 Paging Statistics:");
+        println!("   Page hits:       {}", paging_stats.hits);
+        println!("   Page misses:     {}", paging_stats.misses);
+        println!("   Evictions:       {}", paging_stats.evictions);
+        let total = paging_stats.hits + paging_stats.misses;
+        if total > 0 {
+            let hit_rate = paging_stats.hits as f64 / total as f64 * 100.0;
+            println!("   Hit rate:        {:.1}%", hit_rate);
         }
     }
 }
 
-fn cmd_stats(model_path: &str, memory_limit: Option<usize>, use_password: bool) {
-    let path = expand_path(model_path);
+/// Print top commands from a model.
+fn print_top_commands(commands: Vec<(String, u32)>) {
+    println!("\n🔝 Top commands:");
+    for (cmd, count) in commands {
+        println!("   {:>6}x  {}", count, cmd);
+    }
+}
 
-    // Get password if needed
-    let password = if use_password {
-        Some(
-            rpassword::prompt_password("Enter password: ").unwrap_or_else(|e| {
-                eprintln!("❌ Failed to read password: {e}");
-                std::process::exit(1);
-            }),
-        )
-    } else {
-        None
+/// Handle paged model stats display.
+fn stats_paged(path: &std::path::Path, mem_mb: usize) {
+    let paged_path = path.with_extension("apbundle");
+    let model = match PagedMarkovModel::load(&paged_path, mem_mb) {
+        Ok(m) => m,
+        Err(e) => {
+            eprintln!(
+                "❌ Failed to load paged model '{}': {e}",
+                paged_path.display()
+            );
+            print_paged_model_error_hint(&e, &paged_path, mem_mb);
+            std::process::exit(1);
+        }
     };
 
-    if let Some(mem_mb) = memory_limit {
-        // Paged model stats (encryption not supported)
-        let paged_path = path.with_extension("apbundle");
-        let model = match PagedMarkovModel::load(&paged_path, mem_mb) {
+    let stats = model.stats();
+    println!("📊 Paged Model Statistics:");
+    println!("   N-gram size:     {}", stats.n);
+    println!("   Total commands:  {}", stats.total_commands);
+    println!("   Vocabulary size: {}", stats.vocab_size);
+    println!("   Total segments:  {}", stats.total_segments);
+    println!("   Loaded segments: {}", stats.loaded_segments);
+    println!(
+        "   Memory limit:    {:.1} MB",
+        stats.memory_limit as f64 / 1024.0 / 1024.0
+    );
+    println!(
+        "   Loaded bytes:    {:.1} KB",
+        stats.loaded_bytes as f64 / 1024.0
+    );
+
+    print_paging_stats(&model);
+    print_top_commands(model.top_commands(10));
+}
+
+/// Handle standard model stats display.
+fn stats_standard(path: &std::path::Path, password: Option<&str>) {
+    let model = if let Some(pwd) = password {
+        MarkovModel::load_encrypted(path, pwd).unwrap_or_else(|e| {
+            eprintln!("❌ Failed to load encrypted model: {e}");
+            std::process::exit(1);
+        })
+    } else {
+        match MarkovModel::load(path) {
             Ok(m) => m,
             Err(e) => {
-                eprintln!(
-                    "❌ Failed to load paged model '{}': {e}",
-                    paged_path.display()
-                );
-                if e.to_string().contains("Checksum") || e.to_string().contains("corrupt") {
-                    eprintln!("   Hint: The model may be corrupted. Run 'aprender-shell train --memory-limit {mem_mb}' to rebuild.");
-                } else if !paged_path.exists() {
-                    eprintln!("   Hint: Model file not found. Train a model first with 'aprender-shell train --memory-limit {mem_mb}'");
-                }
+                eprintln!("❌ Failed to load model '{}': {e}", path.display());
+                print_standard_model_error_hint(&e, path);
                 std::process::exit(1);
             }
-        };
-
-        let stats = model.stats();
-        println!("📊 Paged Model Statistics:");
-        println!("   N-gram size:     {}", stats.n);
-        println!("   Total commands:  {}", stats.total_commands);
-        println!("   Vocabulary size: {}", stats.vocab_size);
-        println!("   Total segments:  {}", stats.total_segments);
-        println!("   Loaded segments: {}", stats.loaded_segments);
-        println!(
-            "   Memory limit:    {:.1} MB",
-            stats.memory_limit as f64 / 1024.0 / 1024.0
-        );
-        println!(
-            "   Loaded bytes:    {:.1} KB",
-            stats.loaded_bytes as f64 / 1024.0
-        );
-
-        if let Some(paging_stats) = model.paging_stats() {
-            println!("\n📈 Paging Statistics:");
-            println!("   Page hits:       {}", paging_stats.hits);
-            println!("   Page misses:     {}", paging_stats.misses);
-            println!("   Evictions:       {}", paging_stats.evictions);
-            if paging_stats.hits + paging_stats.misses > 0 {
-                let hit_rate = paging_stats.hits as f64
-                    / (paging_stats.hits + paging_stats.misses) as f64
-                    * 100.0;
-                println!("   Hit rate:        {:.1}%", hit_rate);
-            }
         }
+    };
 
-        println!("\n🔝 Top commands:");
-        for (cmd, count) in model.top_commands(10) {
-            println!("   {:>6}x  {}", count, cmd);
-        }
+    let encrypted = MarkovModel::is_encrypted(path).unwrap_or(false);
+
+    println!("📊 Model Statistics:");
+    println!("   N-gram size: {}", model.ngram_size());
+    println!("   Unique n-grams: {}", model.ngram_count());
+    println!("   Vocabulary size: {}", model.vocab_size());
+    println!(
+        "   Model size: {:.1} KB",
+        model.size_bytes() as f64 / 1024.0
+    );
+    if encrypted {
+        println!("   🔒 Encryption: AES-256-GCM");
+    }
+    print_top_commands(model.top_commands(10));
+}
+
+fn cmd_stats(model_path: &str, memory_limit: Option<usize>, use_password: bool) {
+    let path = expand_path(model_path);
+    let password = get_password_or_prompt(use_password, "❌ ");
+
+    if let Some(mem_mb) = memory_limit {
+        stats_paged(&path, mem_mb);
     } else {
-        // Standard model stats
-        let model = if let Some(ref pwd) = password {
-            MarkovModel::load_encrypted(&path, pwd).unwrap_or_else(|e| {
-                eprintln!("❌ Failed to load encrypted model: {e}");
-                std::process::exit(1);
-            })
-        } else {
-            match MarkovModel::load(&path) {
-                Ok(m) => m,
-                Err(e) => {
-                    eprintln!("❌ Failed to load model '{}': {e}", path.display());
-                    if e.to_string().contains("Checksum mismatch") {
-                        eprintln!("   Hint: The model file may be corrupted. Run 'aprender-shell train' to rebuild.");
-                    } else if !path.exists() {
-                        eprintln!("   Hint: Model file not found. Train a model first with 'aprender-shell train'");
-                    } else if MarkovModel::is_encrypted(&path).unwrap_or(false) {
-                        eprintln!("   Hint: This model is encrypted. Use --password flag.");
-                    }
-                    std::process::exit(1);
-                }
-            }
-        };
-
-        // Check encryption status
-        let encrypted = MarkovModel::is_encrypted(&path).unwrap_or(false);
-
-        println!("📊 Model Statistics:");
-        println!("   N-gram size: {}", model.ngram_size());
-        println!("   Unique n-grams: {}", model.ngram_count());
-        println!("   Vocabulary size: {}", model.vocab_size());
-        println!(
-            "   Model size: {:.1} KB",
-            model.size_bytes() as f64 / 1024.0
-        );
-        if encrypted {
-            println!("   🔒 Encryption: AES-256-GCM");
-        }
-        println!("\n🔝 Top commands:");
-        for (cmd, count) in model.top_commands(10) {
-            println!("   {:>6}x  {}", count, cmd);
-        }
+        stats_standard(&path, password.as_deref());
     }
 }
 
@@ -1286,7 +1307,6 @@ end
 }
 
 fn cmd_uninstall(zsh: bool, bash: bool, fish: bool, keep_model: bool, dry_run: bool) {
-    // If no shell specified, try to detect and uninstall from all
     let detect_all = !zsh && !bash && !fish;
 
     let home = match dirs::home_dir() {
@@ -1297,120 +1317,155 @@ fn cmd_uninstall(zsh: bool, bash: bool, fish: bool, keep_model: bool, dry_run: b
             std::process::exit(1);
         }
     };
-    let mut removed_any = false;
 
     let action = if dry_run { "Would remove" } else { "Removed" };
+    let mut removed_any = false;
 
-    // ZSH
-    if zsh || detect_all {
-        let zshrc = home.join(".zshrc");
-        if zshrc.exists() {
-            match remove_widget_block(&zshrc, dry_run) {
-                Ok(true) => {
-                    println!("✓ {} widget from {}", action, zshrc.display());
-                    removed_any = true;
-                }
-                Ok(false) => {
-                    if zsh {
-                        println!("ℹ No widget found in {}", zshrc.display());
-                    }
-                }
-                Err(e) => eprintln!("✗ Error processing {}: {}", zshrc.display(), e),
-            }
-        } else if zsh {
-            println!("ℹ {} does not exist", zshrc.display());
+    // Uninstall from each shell config
+    let shells = [
+        (zsh, ".zshrc", "source ~/.zshrc"),
+        (bash, ".bashrc", "source ~/.bashrc"),
+        (
+            fish,
+            ".config/fish/config.fish",
+            "source ~/.config/fish/config.fish",
+        ),
+    ];
+
+    for (requested, config_path, _reload_cmd) in &shells {
+        if *requested || detect_all {
+            removed_any |= uninstall_shell_widget(&home, config_path, *requested, action, dry_run);
         }
     }
 
-    // Bash
-    if bash || detect_all {
-        let bashrc = home.join(".bashrc");
-        if bashrc.exists() {
-            match remove_widget_block(&bashrc, dry_run) {
-                Ok(true) => {
-                    println!("✓ {} widget from {}", action, bashrc.display());
-                    removed_any = true;
-                }
-                Ok(false) => {
-                    if bash {
-                        println!("ℹ No widget found in {}", bashrc.display());
-                    }
-                }
-                Err(e) => eprintln!("✗ Error processing {}: {}", bashrc.display(), e),
-            }
-        } else if bash {
-            println!("ℹ {} does not exist", bashrc.display());
-        }
-    }
-
-    // Fish
-    if fish || detect_all {
-        let fish_config = home.join(".config/fish/config.fish");
-        if fish_config.exists() {
-            match remove_widget_block(&fish_config, dry_run) {
-                Ok(true) => {
-                    println!("✓ {} widget from {}", action, fish_config.display());
-                    removed_any = true;
-                }
-                Ok(false) => {
-                    if fish {
-                        println!("ℹ No widget found in {}", fish_config.display());
-                    }
-                }
-                Err(e) => eprintln!("✗ Error processing {}: {}", fish_config.display(), e),
-            }
-        } else if fish {
-            println!("ℹ {} does not exist", fish_config.display());
-        }
-    }
-
-    // Model file
+    // Remove model files
     if !keep_model {
-        let model_file = home.join(".aprender-shell.model");
-        if model_file.exists() {
-            if dry_run {
-                println!("✓ Would remove model file {}", model_file.display());
-            } else {
-                match std::fs::remove_file(&model_file) {
-                    Ok(()) => println!("✓ Removed model file {}", model_file.display()),
-                    Err(e) => eprintln!("✗ Error removing model file: {}", e),
-                }
-            }
-            removed_any = true;
-        }
-
-        // Also check for paged model bundle
-        let bundle_file = home.join(".aprender-shell.apbundle");
-        if bundle_file.exists() {
-            if dry_run {
-                println!("✓ Would remove model bundle {}", bundle_file.display());
-            } else {
-                match std::fs::remove_dir_all(&bundle_file) {
-                    Ok(()) => println!("✓ Removed model bundle {}", bundle_file.display()),
-                    Err(e) => eprintln!("✗ Error removing model bundle: {}", e),
-                }
-            }
-            removed_any = true;
-        }
+        removed_any |= remove_model_files(&home, dry_run);
     }
 
-    if removed_any {
-        if dry_run {
-            println!("\n💡 Run without --dry-run to apply changes");
-        } else {
-            println!("\n✅ Done! Restart your shell or run:");
-            if zsh || detect_all {
-                println!("   source ~/.zshrc");
-            }
-            if bash || detect_all {
-                println!("   source ~/.bashrc");
-            }
-            if fish || detect_all {
-                println!("   source ~/.config/fish/config.fish");
-            }
+    print_uninstall_summary(removed_any, dry_run, zsh, bash, fish, detect_all);
+}
+
+/// Uninstall widget from a shell config file.
+fn uninstall_shell_widget(
+    home: &std::path::Path,
+    config_path: &str,
+    explicitly_requested: bool,
+    action: &str,
+    dry_run: bool,
+) -> bool {
+    let config_file = home.join(config_path);
+
+    if !config_file.exists() {
+        if explicitly_requested {
+            println!("ℹ {} does not exist", config_file.display());
         }
-    } else {
+        return false;
+    }
+
+    match remove_widget_block(&config_file, dry_run) {
+        Ok(true) => {
+            println!("✓ {} widget from {}", action, config_file.display());
+            true
+        }
+        Ok(false) => {
+            if explicitly_requested {
+                println!("ℹ No widget found in {}", config_file.display());
+            }
+            false
+        }
+        Err(e) => {
+            eprintln!("✗ Error processing {}: {}", config_file.display(), e);
+            false
+        }
+    }
+}
+
+/// Remove model and bundle files.
+fn remove_model_files(home: &std::path::Path, dry_run: bool) -> bool {
+    let mut removed = false;
+
+    // Standard model file
+    let model_file = home.join(".aprender-shell.model");
+    if model_file.exists() {
+        removed |= remove_single_file(&model_file, "model file", dry_run);
+    }
+
+    // Paged model bundle
+    let bundle_file = home.join(".aprender-shell.apbundle");
+    if bundle_file.exists() {
+        removed |= remove_directory(&bundle_file, "model bundle", dry_run);
+    }
+
+    removed
+}
+
+/// Remove a single file with appropriate messaging.
+fn remove_single_file(path: &std::path::Path, description: &str, dry_run: bool) -> bool {
+    if dry_run {
+        println!("✓ Would remove {} {}", description, path.display());
+        return true;
+    }
+
+    match std::fs::remove_file(path) {
+        Ok(()) => {
+            println!("✓ Removed {} {}", description, path.display());
+            true
+        }
+        Err(e) => {
+            eprintln!("✗ Error removing {}: {}", description, e);
+            false
+        }
+    }
+}
+
+/// Remove a directory with appropriate messaging.
+fn remove_directory(path: &std::path::Path, description: &str, dry_run: bool) -> bool {
+    if dry_run {
+        println!("✓ Would remove {} {}", description, path.display());
+        return true;
+    }
+
+    match std::fs::remove_dir_all(path) {
+        Ok(()) => {
+            println!("✓ Removed {} {}", description, path.display());
+            true
+        }
+        Err(e) => {
+            eprintln!("✗ Error removing {}: {}", description, e);
+            false
+        }
+    }
+}
+
+/// Print summary after uninstall.
+fn print_uninstall_summary(
+    removed_any: bool,
+    dry_run: bool,
+    zsh: bool,
+    bash: bool,
+    fish: bool,
+    detect_all: bool,
+) {
+    if !removed_any {
         println!("ℹ No aprender-shell installation found");
+        return;
+    }
+
+    if dry_run {
+        println!("\n💡 Run without --dry-run to apply changes");
+        return;
+    }
+
+    println!("\n✅ Done! Restart your shell or run:");
+    if zsh || detect_all {
+        println!("   source ~/.zshrc");
+    }
+    if bash || detect_all {
+        println!("   source ~/.bashrc");
+    }
+    if fish || detect_all {
+        println!("   source ~/.config/fish/config.fish");
     }
 }
 

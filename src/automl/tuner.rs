@@ -416,4 +416,112 @@ mod tests {
 
         assert_eq!(count.load(Ordering::SeqCst), 5);
     }
+
+    #[test]
+    fn test_minimize() {
+        let space: SearchSpace<RF> = SearchSpace::new().add(RF::NEstimators, 10..100);
+
+        let result =
+            AutoTuner::new(RandomSearch::new(10).with_seed(42)).minimize(&space, |trial| {
+                let n = trial.get_usize(&RF::NEstimators).unwrap_or(50);
+                n as f64 // minimize number of estimators
+            });
+
+        assert_eq!(result.n_trials, 10);
+        // Best score should be negative (since minimize negates)
+        assert!(result.best_score < 0.0);
+    }
+
+    #[test]
+    fn test_time_limit_mins() {
+        let space: SearchSpace<RF> = SearchSpace::new().add(RF::NEstimators, 10..100);
+
+        // Use 0 minutes which should stop immediately after first trial
+        let result = AutoTuner::new(RandomSearch::new(1000))
+            .time_limit_mins(0)
+            .maximize(&space, |_| 1.0);
+
+        // Should complete very quickly
+        assert!(result.n_trials <= 1);
+    }
+
+    #[test]
+    fn test_verbose_callback() {
+        let space: SearchSpace<RF> = SearchSpace::new().add(RF::NEstimators, 10..100);
+
+        // Just verify it doesn't panic
+        let result = AutoTuner::new(RandomSearch::new(2))
+            .verbose()
+            .maximize(&space, |_| 1.0);
+
+        assert_eq!(result.n_trials, 2);
+    }
+
+    #[test]
+    fn test_early_stopping_min_delta() {
+        let space: SearchSpace<RF> = SearchSpace::new().add(RF::NEstimators, 10..100);
+
+        // Create early stopping with high min_delta - small improvements won't reset counter
+        let early_stop = EarlyStopping::new(2).min_delta(0.5);
+
+        let result = AutoTuner::new(RandomSearch::new(100))
+            .callback(early_stop)
+            .maximize(&space, |trial| {
+                // Very small increments
+                let n = trial.get_usize(&RF::NEstimators).unwrap_or(50);
+                (n as f64) * 0.001
+            });
+
+        // Should stop early due to no significant improvement
+        assert!(result.n_trials < 100);
+    }
+
+    #[test]
+    fn test_time_budget_elapsed_remaining() {
+        let mut budget = TimeBudget::seconds(10);
+
+        // Before start, elapsed is zero
+        assert_eq!(budget.elapsed(), Duration::ZERO);
+        assert_eq!(budget.remaining(), Duration::from_secs(10));
+
+        // Simulate start
+        let space: SearchSpace<RF> = SearchSpace::new();
+        budget.on_start(&space);
+
+        // After start, elapsed > 0
+        std::thread::sleep(Duration::from_millis(10));
+        assert!(budget.elapsed() > Duration::ZERO);
+        assert!(budget.remaining() < Duration::from_secs(10));
+    }
+
+    #[test]
+    fn test_progress_callback_default() {
+        let _cb = ProgressCallback::default();
+        // Should not panic - just tests Default impl
+    }
+
+    #[test]
+    fn test_callback_default_methods() {
+        // Test default implementations of Callback trait methods
+        struct NoOpCallback;
+        impl Callback<RF> for NoOpCallback {}
+
+        let mut cb = NoOpCallback;
+        let space: SearchSpace<RF> = SearchSpace::new();
+        let trial: Trial<RF> = Trial {
+            values: std::collections::HashMap::new(),
+        };
+        let result: TrialResult<RF> = TrialResult {
+            trial: trial.clone(),
+            score: 0.5,
+            metrics: std::collections::HashMap::new(),
+        };
+
+        // Call all default methods - should not panic
+        cb.on_start(&space);
+        cb.on_trial_start(1, &trial);
+        cb.on_trial_end(1, &result);
+        cb.on_end(Some(&result));
+        assert!(!cb.should_stop());
+    }
 }

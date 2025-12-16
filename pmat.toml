@@ -23,8 +23,8 @@ fail_on_satd = true
 warn_on_missing_docs = true
 
 [analysis]
-# Include patterns
+# Include patterns (library code only for strict analysis)
 include = ["src/**/*.rs", "crates/**/*.rs"]
 
-# Exclude patterns (generated files, build artifacts)
-exclude = ["target/**", "benches/**", "book/book/**"]
+# Exclude patterns (generated files, build artifacts, demo code)
+exclude = ["target/**", "benches/**", "book/**", "examples/**"]

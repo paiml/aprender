@@ -176,40 +176,55 @@ pub fn check_andon<A: AndonHandler>(
     }
 
     let rejection_rate = 1.0 - (accepted as f32 / total as f32);
-
-    // Check rejection rate
-    if config.andon.exceeds_rejection_threshold(rejection_rate) {
-        let event = AndonEvent::HighRejectionRate {
-            rate: rejection_rate,
-            threshold: config.andon.rejection_threshold,
-        };
-
-        if let Some(handler) = andon {
-            handler.on_event(&event);
-            if handler.should_halt(&event) {
-                return Err(crate::error::AprenderError::Other(format!(
-                    "ANDON HALT: Rejection rate {:.1}% exceeds threshold {:.1}%",
-                    rejection_rate * 100.0,
-                    config.andon.rejection_threshold * 100.0
-                )));
-            }
-        }
-    }
-
-    // Check diversity collapse
-    if config.andon.has_diversity_collapse(diversity) {
-        let event = AndonEvent::DiversityCollapse {
-            score: diversity,
-            minimum: config.andon.diversity_minimum,
-        };
-
-        if let Some(handler) = andon {
-            handler.on_event(&event);
-            // Diversity collapse is warning, not halt
-        }
-    }
+    check_rejection_rate(rejection_rate, config, andon)?;
+    check_diversity(diversity, config, andon);
 
     Ok(())
+}
+
+/// Check rejection rate and trigger Andon event if threshold exceeded.
+fn check_rejection_rate<A: AndonHandler>(
+    rejection_rate: f32,
+    config: &SyntheticConfig,
+    andon: Option<&A>,
+) -> Result<()> {
+    if !config.andon.exceeds_rejection_threshold(rejection_rate) {
+        return Ok(());
+    }
+
+    let event = AndonEvent::HighRejectionRate {
+        rate: rejection_rate,
+        threshold: config.andon.rejection_threshold,
+    };
+
+    if let Some(handler) = andon {
+        handler.on_event(&event);
+        if handler.should_halt(&event) {
+            return Err(crate::error::AprenderError::Other(format!(
+                "ANDON HALT: Rejection rate {:.1}% exceeds threshold {:.1}%",
+                rejection_rate * 100.0,
+                config.andon.rejection_threshold * 100.0
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// Check diversity and trigger Andon event if collapsed.
+fn check_diversity<A: AndonHandler>(diversity: f32, config: &SyntheticConfig, andon: Option<&A>) {
+    if !config.andon.has_diversity_collapse(diversity) {
+        return;
+    }
+
+    let event = AndonEvent::DiversityCollapse {
+        score: diversity,
+        minimum: config.andon.diversity_minimum,
+    };
+
+    if let Some(handler) = andon {
+        handler.on_event(&event);
+        // Diversity collapse is warning, not halt
+    }
 }
 
 /// Generate synthetic data in batches to manage memory.

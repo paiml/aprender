@@ -88,10 +88,10 @@ pub enum TerminationReason {
 /// ```
 ///
 /// # Implementors
-/// - [`DifferentialEvolution`] - Population-based, continuous
-/// - [`ParticleSwarm`] - Swarm intelligence
-/// - [`SimulatedAnnealing`] - Single-point trajectory
-/// - [`GeneticAlgorithm`] - Selection/crossover/mutation
+/// - `DifferentialEvolution` - Population-based, continuous
+/// - `ParticleSwarm` - Swarm intelligence
+/// - `SimulatedAnnealing` - Single-point trajectory
+/// - `GeneticAlgorithm` - Selection/crossover/mutation
 ///
 /// # Example
 /// ```ignore

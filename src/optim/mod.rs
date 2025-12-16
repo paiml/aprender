@@ -210,32 +210,29 @@ pub fn safe_cholesky_solve(
     if let Ok(x) = a.cholesky_solve(b) {
         return Ok(x);
     }
-    // Matrix not positive definite, try with regularization
 
+    // Matrix not positive definite, try with regularization
+    solve_with_regularization(a, b, initial_lambda, max_attempts)
+}
+
+/// Solve linear system with Tikhonov regularization (A + λI)x = b.
+fn solve_with_regularization(
+    a: &Matrix<f32>,
+    b: &Vector<f32>,
+    initial_lambda: f32,
+    max_attempts: usize,
+) -> Result<Vector<f32>, &'static str> {
     let n = a.n_rows();
-    let identity = Matrix::eye(n);
     let mut lambda = initial_lambda;
 
     for _attempt in 0..max_attempts {
-        // Create regularized matrix: A_reg = A + λI
-        let mut a_reg_data = vec![0.0; n * n];
-        for i in 0..n {
-            for j in 0..n {
-                a_reg_data[i * n + j] = a.get(i, j) + lambda * identity.get(i, j);
-            }
-        }
+        let a_reg = create_regularized_matrix(a, n, lambda);
 
-        let a_reg = Matrix::from_vec(n, n, a_reg_data)
-            .expect("Matrix dimensions should be valid after construction");
-
-        // Try Cholesky solve with regularized matrix
         if let Ok(x) = a_reg.cholesky_solve(b) {
             return Ok(x);
         }
-        // Increase regularization and try again
-        lambda *= 10.0;
 
-        // Prevent lambda from becoming too large
+        lambda *= 10.0;
         if lambda > 1e6 {
             return Err(
                 "Cholesky solve failed: matrix too ill-conditioned even with regularization",
@@ -244,6 +241,18 @@ pub fn safe_cholesky_solve(
     }
 
     Err("Cholesky solve failed after maximum regularization attempts")
+}
+
+/// Create regularized matrix A_reg = A + λI.
+fn create_regularized_matrix(a: &Matrix<f32>, n: usize, lambda: f32) -> Matrix<f32> {
+    let mut a_reg_data = vec![0.0; n * n];
+    for i in 0..n {
+        for j in 0..n {
+            let diagonal_term = if i == j { lambda } else { 0.0 };
+            a_reg_data[i * n + j] = a.get(i, j) + diagonal_term;
+        }
+    }
+    Matrix::from_vec(n, n, a_reg_data).expect("Matrix dimensions should be valid")
 }
 
 /// Line search strategy for determining step size in batch optimization.

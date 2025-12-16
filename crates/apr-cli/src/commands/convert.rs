@@ -11,7 +11,7 @@ use humansize::{format_size, BINARY};
 use std::path::Path;
 
 /// Run the convert command
-pub(crate) fn run(file: &Path, quantize: Option<String>, output: &Path) -> Result<()> {
+pub(crate) fn run(file: &Path, quantize: Option<&str>, output: &Path) -> Result<()> {
     // Validate input exists
     if !file.exists() {
         return Err(CliError::FileNotFound(file.to_path_buf()));
@@ -23,7 +23,7 @@ pub(crate) fn run(file: &Path, quantize: Option<String>, output: &Path) -> Resul
     println!("Output: {}", output.display());
 
     // Parse quantization option
-    let quant_type = match quantize.as_deref() {
+    let quant_type = match quantize {
         Some("int8") => Some(QuantizationType::Int8),
         Some("int4") => Some(QuantizationType::Int4),
         Some("fp16") => Some(QuantizationType::Fp16),
@@ -36,7 +36,7 @@ pub(crate) fn run(file: &Path, quantize: Option<String>, output: &Path) -> Resul
     };
 
     if let Some(ref q) = quant_type {
-        println!("Quantization: {:?}", q);
+        println!("Quantization: {q:?}");
     } else {
         println!("Quantization: None (copy)");
     }

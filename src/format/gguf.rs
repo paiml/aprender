@@ -20,7 +20,7 @@
 //! └─────────────────────────────────────────┘
 //! ```
 //!
-//! Reference: [GGUF2023] Gerganov, G. (2023). GGUF Format.
+//! Reference: Gerganov, G. (2023). GGUF Format.
 
 use std::io::{self, Write};
 
@@ -264,94 +264,77 @@ pub fn write_metadata_kv<W: Write>(writer: &mut W, key: &str, value: &GgufValue)
     Ok(())
 }
 
+/// Helper to write bytes with error mapping.
+fn write_bytes<W: Write>(writer: &mut W, bytes: &[u8]) -> Result<()> {
+    writer
+        .write_all(bytes)
+        .map_err(|e| AprenderError::Io(io::Error::new(e.kind(), e.to_string())))
+}
+
+/// Helper to write array header (type + length).
+fn write_array_header<W: Write>(
+    writer: &mut W,
+    element_type: GgufValueType,
+    len: usize,
+) -> Result<()> {
+    write_bytes(writer, &(element_type as u32).to_le_bytes())?;
+    write_bytes(writer, &(len as u64).to_le_bytes())
+}
+
 /// Write a GGUF value
 fn write_value<W: Write>(writer: &mut W, value: &GgufValue) -> Result<()> {
     match value {
-        GgufValue::Uint8(v) => writer
-            .write_all(&[*v])
-            .map_err(|e| AprenderError::Io(io::Error::new(e.kind(), e.to_string())))?,
-        GgufValue::Int8(v) => writer
-            .write_all(&v.to_le_bytes())
-            .map_err(|e| AprenderError::Io(io::Error::new(e.kind(), e.to_string())))?,
-        GgufValue::Uint16(v) => writer
-            .write_all(&v.to_le_bytes())
-            .map_err(|e| AprenderError::Io(io::Error::new(e.kind(), e.to_string())))?,
-        GgufValue::Int16(v) => writer
-            .write_all(&v.to_le_bytes())
-            .map_err(|e| AprenderError::Io(io::Error::new(e.kind(), e.to_string())))?,
-        GgufValue::Uint32(v) => writer
-            .write_all(&v.to_le_bytes())
-            .map_err(|e| AprenderError::Io(io::Error::new(e.kind(), e.to_string())))?,
-        GgufValue::Int32(v) => writer
-            .write_all(&v.to_le_bytes())
-            .map_err(|e| AprenderError::Io(io::Error::new(e.kind(), e.to_string())))?,
-        GgufValue::Float32(v) => writer
-            .write_all(&v.to_le_bytes())
-            .map_err(|e| AprenderError::Io(io::Error::new(e.kind(), e.to_string())))?,
-        GgufValue::Bool(v) => writer
-            .write_all(&[u8::from(*v)])
-            .map_err(|e| AprenderError::Io(io::Error::new(e.kind(), e.to_string())))?,
-        GgufValue::String(v) => write_string(writer, v)?,
-        GgufValue::Uint64(v) => writer
-            .write_all(&v.to_le_bytes())
-            .map_err(|e| AprenderError::Io(io::Error::new(e.kind(), e.to_string())))?,
-        GgufValue::Int64(v) => writer
-            .write_all(&v.to_le_bytes())
-            .map_err(|e| AprenderError::Io(io::Error::new(e.kind(), e.to_string())))?,
-        GgufValue::Float64(v) => writer
-            .write_all(&v.to_le_bytes())
-            .map_err(|e| AprenderError::Io(io::Error::new(e.kind(), e.to_string())))?,
-        GgufValue::ArrayUint32(arr) => {
-            // Array type + length + elements
-            writer
-                .write_all(&(GgufValueType::Uint32 as u32).to_le_bytes())
-                .map_err(|e| AprenderError::Io(io::Error::new(e.kind(), e.to_string())))?;
-            writer
-                .write_all(&(arr.len() as u64).to_le_bytes())
-                .map_err(|e| AprenderError::Io(io::Error::new(e.kind(), e.to_string())))?;
-            for v in arr {
-                writer
-                    .write_all(&v.to_le_bytes())
-                    .map_err(|e| AprenderError::Io(io::Error::new(e.kind(), e.to_string())))?;
-            }
-        }
-        GgufValue::ArrayInt32(arr) => {
-            writer
-                .write_all(&(GgufValueType::Int32 as u32).to_le_bytes())
-                .map_err(|e| AprenderError::Io(io::Error::new(e.kind(), e.to_string())))?;
-            writer
-                .write_all(&(arr.len() as u64).to_le_bytes())
-                .map_err(|e| AprenderError::Io(io::Error::new(e.kind(), e.to_string())))?;
-            for v in arr {
-                writer
-                    .write_all(&v.to_le_bytes())
-                    .map_err(|e| AprenderError::Io(io::Error::new(e.kind(), e.to_string())))?;
-            }
-        }
-        GgufValue::ArrayFloat32(arr) => {
-            writer
-                .write_all(&(GgufValueType::Float32 as u32).to_le_bytes())
-                .map_err(|e| AprenderError::Io(io::Error::new(e.kind(), e.to_string())))?;
-            writer
-                .write_all(&(arr.len() as u64).to_le_bytes())
-                .map_err(|e| AprenderError::Io(io::Error::new(e.kind(), e.to_string())))?;
-            for v in arr {
-                writer
-                    .write_all(&v.to_le_bytes())
-                    .map_err(|e| AprenderError::Io(io::Error::new(e.kind(), e.to_string())))?;
-            }
-        }
-        GgufValue::ArrayString(arr) => {
-            writer
-                .write_all(&(GgufValueType::String as u32).to_le_bytes())
-                .map_err(|e| AprenderError::Io(io::Error::new(e.kind(), e.to_string())))?;
-            writer
-                .write_all(&(arr.len() as u64).to_le_bytes())
-                .map_err(|e| AprenderError::Io(io::Error::new(e.kind(), e.to_string())))?;
-            for s in arr {
-                write_string(writer, s)?;
-            }
-        }
+        GgufValue::Uint8(v) => write_bytes(writer, &[*v]),
+        GgufValue::Int8(v) => write_bytes(writer, &v.to_le_bytes()),
+        GgufValue::Uint16(v) => write_bytes(writer, &v.to_le_bytes()),
+        GgufValue::Int16(v) => write_bytes(writer, &v.to_le_bytes()),
+        GgufValue::Uint32(v) => write_bytes(writer, &v.to_le_bytes()),
+        GgufValue::Int32(v) => write_bytes(writer, &v.to_le_bytes()),
+        GgufValue::Float32(v) => write_bytes(writer, &v.to_le_bytes()),
+        GgufValue::Bool(v) => write_bytes(writer, &[u8::from(*v)]),
+        GgufValue::String(v) => write_string(writer, v),
+        GgufValue::Uint64(v) => write_bytes(writer, &v.to_le_bytes()),
+        GgufValue::Int64(v) => write_bytes(writer, &v.to_le_bytes()),
+        GgufValue::Float64(v) => write_bytes(writer, &v.to_le_bytes()),
+        GgufValue::ArrayUint32(arr) => write_array_u32(writer, arr),
+        GgufValue::ArrayInt32(arr) => write_array_i32(writer, arr),
+        GgufValue::ArrayFloat32(arr) => write_array_f32(writer, arr),
+        GgufValue::ArrayString(arr) => write_array_string(writer, arr),
+    }
+}
+
+/// Write u32 array.
+fn write_array_u32<W: Write>(writer: &mut W, arr: &[u32]) -> Result<()> {
+    write_array_header(writer, GgufValueType::Uint32, arr.len())?;
+    for v in arr {
+        write_bytes(writer, &v.to_le_bytes())?;
+    }
+    Ok(())
+}
+
+/// Write i32 array.
+fn write_array_i32<W: Write>(writer: &mut W, arr: &[i32]) -> Result<()> {
+    write_array_header(writer, GgufValueType::Int32, arr.len())?;
+    for v in arr {
+        write_bytes(writer, &v.to_le_bytes())?;
+    }
+    Ok(())
+}
+
+/// Write f32 array.
+fn write_array_f32<W: Write>(writer: &mut W, arr: &[f32]) -> Result<()> {
+    write_array_header(writer, GgufValueType::Float32, arr.len())?;
+    for v in arr {
+        write_bytes(writer, &v.to_le_bytes())?;
+    }
+    Ok(())
+}
+
+/// Write string array.
+fn write_array_string<W: Write>(writer: &mut W, arr: &[String]) -> Result<()> {
+    write_array_header(writer, GgufValueType::String, arr.len())?;
+    for s in arr {
+        write_string(writer, s)?;
     }
     Ok(())
 }

@@ -9,12 +9,26 @@
 
 use aprender::prelude::*;
 
-#[allow(clippy::too_many_lines)]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("=== Gaussian Mixture Model (GMM) Clustering Example ===\n");
 
-    // Create dataset with 2 overlapping clusters
-    let data = Matrix::from_vec(
+    let data = create_sample_data()?;
+    print_dataset_info(&data);
+
+    let (gmm, labels) = example_basic_gmm(&data)?;
+    example_soft_assignments(&gmm, &data);
+    example_model_parameters(&gmm);
+    example_model_quality(&gmm, &data);
+    example_covariance_types(&data)?;
+    example_gmm_vs_kmeans(&data, &labels)?;
+    example_reproducibility(&data)?;
+
+    println!("\n=== Example Complete ===");
+    Ok(())
+}
+
+fn create_sample_data() -> Result<Matrix<f32>, Box<dyn std::error::Error>> {
+    Matrix::from_vec(
         8,
         2,
         vec![
@@ -22,8 +36,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             1.8, 2.0, 2.0, 2.2, 2.1, 1.9, 2.2, 2.0, // Cluster 2 (around 5,5)
             5.0, 5.0, 5.1, 5.2, 5.2, 4.9, 4.8, 5.1,
         ],
-    )?;
+    )
+    .map_err(Into::into)
+}
 
+fn print_dataset_info(data: &Matrix<f32>) {
     println!(
         "Dataset: {} samples, {} features",
         data.shape().0,
@@ -38,29 +55,35 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             data.get(i, 1)
         );
     }
+}
 
-    // Example 1: Basic GMM with Full covariance
+fn example_basic_gmm(
+    data: &Matrix<f32>,
+) -> Result<(GaussianMixture, Vec<usize>), Box<dyn std::error::Error>> {
     println!("\n--- Example 1: GMM with Full Covariance ---");
     let mut gmm = GaussianMixture::new(2, CovarianceType::Full).with_random_state(42);
-    gmm.fit(&data)?;
+    gmm.fit(data)?;
 
-    let labels = gmm.predict(&data);
+    let labels = gmm.predict(data);
     println!("\nHard cluster assignments:");
     for (i, &label) in labels.iter().enumerate() {
         println!("  Point {i}: Cluster {label}");
     }
+    Ok((gmm, labels))
+}
 
-    // Example 2: Soft assignments (probabilities)
+fn example_soft_assignments(gmm: &GaussianMixture, data: &Matrix<f32>) {
     println!("\n--- Example 2: Soft Assignments (Probabilities) ---");
-    let proba = gmm.predict_proba(&data);
+    let proba = gmm.predict_proba(data);
     println!("\nProbability of belonging to each cluster:");
     for i in 0..data.shape().0 {
         let p0 = proba.get(i, 0);
         let p1 = proba.get(i, 1);
         println!("  Point {i}: Cluster 0: {p0:.3}, Cluster 1: {p1:.3}");
     }
+}
 
-    // Example 3: Model parameters
+fn example_model_parameters(gmm: &GaussianMixture) {
     println!("\n--- Example 3: Model Parameters ---");
     let means = gmm.means();
     println!("\nComponent means:");
@@ -78,43 +101,51 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for (k, &weight) in weights.as_slice().iter().enumerate() {
         println!("  Component {k}: {weight:.3}");
     }
+}
 
-    // Example 4: Log-likelihood (model fit quality)
+fn example_model_quality(gmm: &GaussianMixture, data: &Matrix<f32>) {
     println!("\n--- Example 4: Model Quality ---");
-    let log_likelihood = gmm.score(&data);
+    let log_likelihood = gmm.score(data);
     println!("Average log-likelihood: {log_likelihood:.3}");
     println!("(Higher is better)");
+}
 
-    // Example 5: Different covariance types
+fn example_covariance_types(data: &Matrix<f32>) -> Result<(), Box<dyn std::error::Error>> {
     println!("\n--- Example 5: Covariance Types Comparison ---");
 
-    println!("\nFull covariance (most flexible):");
-    let mut gmm_full = GaussianMixture::new(2, CovarianceType::Full).with_random_state(42);
-    gmm_full.fit(&data)?;
-    println!("  Log-likelihood: {:.3}", gmm_full.score(&data));
+    for (name, cov_type) in [
+        ("Full covariance (most flexible)", CovarianceType::Full),
+        (
+            "Diagonal covariance (assumes independence)",
+            CovarianceType::Diag,
+        ),
+        (
+            "Spherical covariance (like K-Means)",
+            CovarianceType::Spherical,
+        ),
+        (
+            "Tied covariance (shared across components)",
+            CovarianceType::Tied,
+        ),
+    ] {
+        println!("\n{name}:");
+        let mut gmm = GaussianMixture::new(2, cov_type).with_random_state(42);
+        gmm.fit(data)?;
+        println!("  Log-likelihood: {:.3}", gmm.score(data));
+    }
+    Ok(())
+}
 
-    println!("\nDiagonal covariance (assumes independence):");
-    let mut gmm_diag = GaussianMixture::new(2, CovarianceType::Diag).with_random_state(42);
-    gmm_diag.fit(&data)?;
-    println!("  Log-likelihood: {:.3}", gmm_diag.score(&data));
-
-    println!("\nSpherical covariance (like K-Means):");
-    let mut gmm_spher = GaussianMixture::new(2, CovarianceType::Spherical).with_random_state(42);
-    gmm_spher.fit(&data)?;
-    println!("  Log-likelihood: {:.3}", gmm_spher.score(&data));
-
-    println!("\nTied covariance (shared across components):");
-    let mut gmm_tied = GaussianMixture::new(2, CovarianceType::Tied).with_random_state(42);
-    gmm_tied.fit(&data)?;
-    println!("  Log-likelihood: {:.3}", gmm_tied.score(&data));
-
-    // Example 6: GMM vs K-Means
+fn example_gmm_vs_kmeans(
+    data: &Matrix<f32>,
+    labels: &[usize],
+) -> Result<(), Box<dyn std::error::Error>> {
     println!("\n--- Example 6: GMM vs K-Means ---");
 
     println!("\nK-Means (hard assignments only):");
     let mut kmeans = KMeans::new(2).with_random_state(42);
-    kmeans.fit(&data)?;
-    let kmeans_labels = kmeans.predict(&data);
+    kmeans.fit(data)?;
+    let kmeans_labels = kmeans.predict(data);
     println!("  Hard assignments: {kmeans_labels:?}");
 
     println!("\nGMM (soft + hard assignments):");
@@ -127,20 +158,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  - Handles elliptical clusters");
     println!("  - Provides uncertainty quantification");
     println!("  - Probabilistic framework");
+    Ok(())
+}
 
-    // Example 7: Reproducibility
+fn example_reproducibility(data: &Matrix<f32>) -> Result<(), Box<dyn std::error::Error>> {
     println!("\n--- Example 7: Reproducibility ---");
     let mut gmm1 = GaussianMixture::new(2, CovarianceType::Full).with_random_state(42);
-    gmm1.fit(&data)?;
-    let labels1 = gmm1.predict(&data);
+    gmm1.fit(data)?;
+    let labels1 = gmm1.predict(data);
 
     let mut gmm2 = GaussianMixture::new(2, CovarianceType::Full).with_random_state(42);
-    gmm2.fit(&data)?;
-    let labels2 = gmm2.predict(&data);
+    gmm2.fit(data)?;
+    let labels2 = gmm2.predict(data);
 
     println!("Results are reproducible: {}", labels1 == labels2);
     println!("(Same random seed produces same clustering)");
-
-    println!("\n=== Example Complete ===");
     Ok(())
 }

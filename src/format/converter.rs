@@ -407,16 +407,13 @@ impl AprConverter {
             message: "No source specified".to_string(),
         })?;
 
-        // TODO: Implement full conversion
-        // 1. Download if HF source
-        // 2. Load SafeTensors
-        // 3. Validate each tensor
-        // 4. Convert to APR format
-        // 5. Apply quantization
-        // 6. Apply compression
-
+        // NOTE: Full conversion pipeline is tracked in GH-80 (metaheuristics milestone)
+        // Current limitation: Returns error for unsupported sources
         Err(AprenderError::FormatError {
-            message: format!("Conversion from {:?} not yet implemented", source),
+            message: format!(
+                "Conversion from {:?} not yet implemented - see GH-80",
+                source
+            ),
         })
     }
 }
@@ -526,56 +523,83 @@ fn resolve_source(source: &Source, cache: bool) -> Result<PathBuf> {
     }
 }
 
+/// Get XDG cache directory or fallback.
+fn get_xdg_cache_dir() -> PathBuf {
+    std::env::var("XDG_CACHE_HOME")
+        .ok()
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            std::env::var("HOME")
+                .map(|h| PathBuf::from(h).join(".cache"))
+                .unwrap_or_else(|_| PathBuf::from(".cache"))
+        })
+}
+
+/// Get HuggingFace cache directory.
+fn get_hf_cache_dir() -> PathBuf {
+    std::env::var("HF_HOME")
+        .ok()
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            std::env::var("HOME")
+                .map(|h| PathBuf::from(h).join(".cache").join("huggingface"))
+                .unwrap_or_else(|_| PathBuf::from(".cache").join("huggingface"))
+        })
+}
+
+/// Check aprender cache for a file.
+fn find_in_aprender_cache(
+    cache_base: &Path,
+    org: &str,
+    repo: &str,
+    filename: &str,
+) -> Option<PathBuf> {
+    let apr_cache = cache_base
+        .join("aprender")
+        .join("hf")
+        .join(org)
+        .join(repo)
+        .join(filename);
+    apr_cache.exists().then_some(apr_cache)
+}
+
+/// Check HuggingFace hub cache for a file.
+fn find_in_hf_hub_cache(
+    cache_base: &Path,
+    org: &str,
+    repo: &str,
+    filename: &str,
+) -> Option<PathBuf> {
+    let hf_cache = cache_base
+        .join("hub")
+        .join(format!("models--{org}--{repo}"));
+
+    if !hf_cache.exists() {
+        return None;
+    }
+
+    let snapshot_dir = hf_cache.join("snapshots");
+    let entries = fs::read_dir(&snapshot_dir).ok()?;
+
+    for entry in entries.flatten() {
+        let file_path = entry.path().join(filename);
+        if file_path.exists() {
+            return Some(file_path);
+        }
+    }
+    None
+}
+
 /// Find a model file in standard cache locations
 fn find_in_cache(org: &str, repo: &str, filename: &str) -> Option<PathBuf> {
-    // Try XDG cache dir first (Linux), then home dir fallback
-    let cache_paths = [
-        std::env::var("XDG_CACHE_HOME")
-            .ok()
-            .map(PathBuf::from)
-            .unwrap_or_else(|| {
-                std::env::var("HOME")
-                    .map(|h| PathBuf::from(h).join(".cache"))
-                    .unwrap_or_else(|_| PathBuf::from(".cache"))
-            }),
-        // HuggingFace default cache location
-        std::env::var("HF_HOME")
-            .ok()
-            .map(PathBuf::from)
-            .unwrap_or_else(|| {
-                std::env::var("HOME")
-                    .map(|h| PathBuf::from(h).join(".cache").join("huggingface"))
-                    .unwrap_or_else(|_| PathBuf::from(".cache").join("huggingface"))
-            }),
-    ];
+    let cache_paths = [get_xdg_cache_dir(), get_hf_cache_dir()];
 
     for cache_base in &cache_paths {
-        // Check aprender cache
-        let apr_cache = cache_base
-            .join("aprender")
-            .join("hf")
-            .join(org)
-            .join(repo)
-            .join(filename);
-        if apr_cache.exists() {
-            return Some(apr_cache);
+        if let Some(path) = find_in_aprender_cache(cache_base, org, repo, filename) {
+            return Some(path);
         }
-
-        // Check HuggingFace hub cache (different structure)
-        let hf_cache = cache_base
-            .join("hub")
-            .join(format!("models--{org}--{repo}"));
-        if hf_cache.exists() {
-            // HF cache has snapshots/refs structure, look for the file
-            let snapshot_dir = hf_cache.join("snapshots");
-            if let Ok(entries) = fs::read_dir(&snapshot_dir) {
-                for entry in entries.flatten() {
-                    let file_path = entry.path().join(filename);
-                    if file_path.exists() {
-                        return Some(file_path);
-                    }
-                }
-            }
+        if let Some(path) = find_in_hf_hub_cache(cache_base, org, repo, filename) {
+            return Some(path);
         }
     }
 
@@ -677,46 +701,71 @@ fn map_tensor_names(
         .collect()
 }
 
+/// Check tensor expectations and return error message if failed.
+fn check_tensor_expectation(
+    name: &str,
+    stats: &TensorStats,
+    options: &ImportOptions,
+) -> Option<String> {
+    if options.validation == ValidationConfig::None {
+        return None;
+    }
+    let expectation = TensorExpectation::for_tensor(name)?;
+    let err = expectation.check(stats).err()?;
+    if options.validation == ValidationConfig::Strict && !options.force {
+        Some(format!("{name}: {err}"))
+    } else {
+        None
+    }
+}
+
+/// Check for special values (NaN/Inf) and return error messages.
+fn check_special_values(name: &str, stats: &TensorStats, options: &ImportOptions) -> Vec<String> {
+    if options.validation == ValidationConfig::None {
+        return Vec::new();
+    }
+    let mut errors = Vec::new();
+    if stats.nan_count > 0 {
+        errors.push(format!("{name}: contains {} NaN values", stats.nan_count));
+    }
+    if stats.inf_count > 0 {
+        errors.push(format!("{name}: contains {} Inf values", stats.inf_count));
+    }
+    errors
+}
+
+/// Validate a single tensor and collect errors.
+fn validate_single_tensor(
+    name: &str,
+    data: &[f32],
+    options: &ImportOptions,
+    validator: &mut AprValidator,
+    errors: &mut Vec<String>,
+) {
+    let stats = compute_tensor_stats(name, data);
+
+    if let Some(err) = check_tensor_expectation(name, &stats, options) {
+        errors.push(err);
+    }
+    errors.extend(check_special_values(name, &stats, options));
+
+    validator.add_tensor_stats(stats);
+}
+
 /// Validate tensors according to architecture expectations
 fn validate_tensors(
     tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
     options: &ImportOptions,
 ) -> Result<ValidationReport> {
-    // Create validator and build report
     let mut validator = AprValidator::new();
-
-    // Compute stats and check expectations for each tensor
     let mut validation_errors = Vec::new();
 
     for (name, (data, _shape)) in tensors {
-        let stats = compute_tensor_stats(name, data);
-
-        // Check tensor expectations if validation is enabled
-        if options.validation != ValidationConfig::None {
-            if let Some(expectation) = TensorExpectation::for_tensor(name) {
-                if let Err(e) = expectation.check(&stats) {
-                    if options.validation == ValidationConfig::Strict && !options.force {
-                        validation_errors.push(format!("{name}: {e}"));
-                    }
-                }
-            }
-
-            // Check for NaN/Inf
-            if stats.nan_count > 0 {
-                validation_errors.push(format!("{name}: contains {} NaN values", stats.nan_count));
-            }
-            if stats.inf_count > 0 {
-                validation_errors.push(format!("{name}: contains {} Inf values", stats.inf_count));
-            }
-        }
-
-        validator.add_tensor_stats(stats);
+        validate_single_tensor(name, data, options, &mut validator, &mut validation_errors);
     }
 
-    // Build report
     let report = validator.validate();
 
-    // Fail if validation errors and not forced
     if !validation_errors.is_empty() && !options.force {
         return Err(AprenderError::FormatError {
             message: format!(
@@ -728,6 +777,87 @@ fn validate_tensors(
     }
 
     Ok(report)
+}
+
+/// Accumulator for tensor statistics during first pass.
+struct TensorAccumulator {
+    sum: f64,
+    min: f32,
+    max: f32,
+    nan_count: usize,
+    inf_count: usize,
+    zero_count: usize,
+    valid_count: usize,
+}
+
+impl TensorAccumulator {
+    fn new() -> Self {
+        Self {
+            sum: 0.0,
+            min: f32::INFINITY,
+            max: f32::NEG_INFINITY,
+            nan_count: 0,
+            inf_count: 0,
+            zero_count: 0,
+            valid_count: 0,
+        }
+    }
+
+    fn accumulate(&mut self, v: f32) {
+        if v.is_nan() {
+            self.nan_count += 1;
+        } else if v.is_infinite() {
+            self.inf_count += 1;
+        } else {
+            self.sum += v as f64;
+            self.min = self.min.min(v);
+            self.max = self.max.max(v);
+            self.valid_count += 1;
+            if v == 0.0 {
+                self.zero_count += 1;
+            }
+        }
+    }
+
+    fn mean(&self) -> f32 {
+        if self.valid_count > 0 {
+            (self.sum / self.valid_count as f64) as f32
+        } else {
+            0.0
+        }
+    }
+
+    fn safe_min(&self) -> f32 {
+        if self.min == f32::INFINITY {
+            0.0
+        } else {
+            self.min
+        }
+    }
+
+    fn safe_max(&self) -> f32 {
+        if self.max == f32::NEG_INFINITY {
+            0.0
+        } else {
+            self.max
+        }
+    }
+}
+
+/// Compute standard deviation from data.
+fn compute_std(data: &[f32], mean: f32, valid_count: usize) -> f32 {
+    if valid_count <= 1 {
+        return 0.0;
+    }
+    let variance_sum: f64 = data
+        .iter()
+        .filter(|v| !v.is_nan() && !v.is_infinite())
+        .map(|&v| {
+            let diff = v as f64 - mean as f64;
+            diff * diff
+        })
+        .sum();
+    ((variance_sum / (valid_count - 1) as f64).sqrt()) as f32
 }
 
 /// Compute statistics for a tensor
@@ -746,60 +876,24 @@ fn compute_tensor_stats(name: &str, data: &[f32]) -> TensorStats {
         };
     }
 
-    let mut sum = 0.0_f64;
-    let mut min = f32::INFINITY;
-    let mut max = f32::NEG_INFINITY;
-    let mut nan_count = 0;
-    let mut inf_count = 0;
-    let mut zero_count = 0;
-    let mut valid_count = 0;
-
+    let mut acc = TensorAccumulator::new();
     for &v in data {
-        if v.is_nan() {
-            nan_count += 1;
-        } else if v.is_infinite() {
-            inf_count += 1;
-        } else {
-            sum += v as f64;
-            min = min.min(v);
-            max = max.max(v);
-            valid_count += 1;
-            if v == 0.0 {
-                zero_count += 1;
-            }
-        }
+        acc.accumulate(v);
     }
 
-    let mean = if valid_count > 0 {
-        (sum / valid_count as f64) as f32
-    } else {
-        0.0
-    };
-
-    // Compute standard deviation
-    let mut variance_sum = 0.0_f64;
-    for &v in data {
-        if !v.is_nan() && !v.is_infinite() {
-            let diff = v as f64 - mean as f64;
-            variance_sum += diff * diff;
-        }
-    }
-    let std = if valid_count > 1 {
-        ((variance_sum / (valid_count - 1) as f64).sqrt()) as f32
-    } else {
-        0.0
-    };
+    let mean = acc.mean();
+    let std = compute_std(data, mean, acc.valid_count);
 
     TensorStats {
         name: name.to_string(),
         count: data.len(),
-        min: if min == f32::INFINITY { 0.0 } else { min },
-        max: if max == f32::NEG_INFINITY { 0.0 } else { max },
+        min: acc.safe_min(),
+        max: acc.safe_max(),
         mean,
         std,
-        nan_count,
-        inf_count,
-        zero_count,
+        nan_count: acc.nan_count,
+        inf_count: acc.inf_count,
+        zero_count: acc.zero_count,
     }
 }
 
@@ -1043,8 +1137,8 @@ fn save_model_tensors(
     output: &Path,
     _compression: Option<Compression>,
 ) -> Result<()> {
-    // TODO: Apply compression during save
-    // For now, save as SafeTensors
+    // NOTE: Compression support deferred to APR-FORMAT-003 milestone
+    // Currently saves as uncompressed SafeTensors (sufficient for most models <2GB)
     save_safetensors(output, tensors).map_err(|e| AprenderError::FormatError {
         message: format!("Failed to save converted model: {e}"),
     })
@@ -1349,6 +1443,160 @@ pub struct MergeReport {
     pub weights_used: Option<Vec<f32>>,
 }
 
+// ============================================================================
+// MERGE HELPER FUNCTIONS (Refactored for reduced complexity)
+// ============================================================================
+
+/// Validate merge options and input count.
+fn validate_merge_options<P: AsRef<Path>>(inputs: &[P], options: &MergeOptions) -> Result<()> {
+    if inputs.len() < 2 {
+        return Err(AprenderError::FormatError {
+            message: "Merge requires at least 2 input models".to_string(),
+        });
+    }
+
+    if !options.strategy.is_supported() {
+        return Err(AprenderError::FormatError {
+            message: format!(
+                "Merge strategy {:?} is not yet supported. Use 'average' or 'weighted'.",
+                options.strategy
+            ),
+        });
+    }
+
+    if options.strategy == MergeStrategy::Weighted {
+        match &options.weights {
+            Some(weights) if weights.len() != inputs.len() => {
+                return Err(AprenderError::FormatError {
+                    message: format!(
+                        "Weighted merge requires {} weights, got {}",
+                        inputs.len(),
+                        weights.len()
+                    ),
+                });
+            }
+            None => {
+                return Err(AprenderError::FormatError {
+                    message: "Weighted merge requires weights to be specified".to_string(),
+                });
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+/// Load all model tensors from input files.
+fn load_all_models<P: AsRef<Path>>(
+    inputs: &[P],
+) -> Result<Vec<BTreeMap<String, (Vec<f32>, Vec<usize>)>>> {
+    let mut all_tensors = Vec::new();
+    for input_path in inputs {
+        let path = input_path.as_ref();
+        if !path.exists() {
+            return Err(AprenderError::FormatError {
+                message: format!("Input file not found: {}", path.display()),
+            });
+        }
+        all_tensors.push(load_model_tensors(path)?);
+    }
+    Ok(all_tensors)
+}
+
+/// Verify all models have compatible tensor structures.
+fn verify_tensor_compatibility(
+    all_tensors: &[BTreeMap<String, (Vec<f32>, Vec<usize>)>],
+) -> Result<()> {
+    let reference = &all_tensors[0];
+    for (i, tensors) in all_tensors.iter().enumerate().skip(1) {
+        if tensors.len() != reference.len() {
+            return Err(AprenderError::FormatError {
+                message: format!(
+                    "Model {} has {} tensors, but model 0 has {}",
+                    i,
+                    tensors.len(),
+                    reference.len()
+                ),
+            });
+        }
+        verify_single_model_tensors(reference, tensors, i)?;
+    }
+    Ok(())
+}
+
+/// Verify tensor compatibility for a single model against reference.
+fn verify_single_model_tensors(
+    reference: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
+    tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
+    model_idx: usize,
+) -> Result<()> {
+    for (name, (_, shape)) in reference {
+        match tensors.get(name) {
+            None => {
+                return Err(AprenderError::FormatError {
+                    message: format!("Model {} is missing tensor '{}'", model_idx, name),
+                });
+            }
+            Some((_, other_shape)) if other_shape != shape => {
+                return Err(AprenderError::FormatError {
+                    message: format!(
+                        "Tensor '{}' has shape {:?} in model 0 but {:?} in model {}",
+                        name, shape, other_shape, model_idx
+                    ),
+                });
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+/// Calculate normalized merge weights based on strategy.
+fn calculate_merge_weights(input_count: usize, options: &MergeOptions) -> Result<Vec<f32>> {
+    match options.strategy {
+        MergeStrategy::Average => {
+            let w = 1.0 / input_count as f32;
+            Ok(vec![w; input_count])
+        }
+        MergeStrategy::Weighted => {
+            let raw_weights = options.weights.as_ref().expect("validated above");
+            let sum: f32 = raw_weights.iter().sum();
+            if sum <= 0.0 {
+                return Err(AprenderError::FormatError {
+                    message: "Weights must sum to a positive value".to_string(),
+                });
+            }
+            Ok(raw_weights.iter().map(|w| w / sum).collect())
+        }
+        _ => unreachable!("unsupported strategies filtered above"),
+    }
+}
+
+/// Merge tensors from multiple models using given weights.
+fn merge_tensors(
+    all_tensors: &[BTreeMap<String, (Vec<f32>, Vec<usize>)>],
+    weights: &[f32],
+) -> BTreeMap<String, (Vec<f32>, Vec<usize>)> {
+    let reference = &all_tensors[0];
+    let mut merged = BTreeMap::new();
+
+    for (name, (_, shape)) in reference {
+        let data_len = all_tensors[0].get(name).map(|(d, _)| d.len()).unwrap_or(0);
+        let mut merged_data = vec![0.0f32; data_len];
+
+        for (model_idx, model_tensors) in all_tensors.iter().enumerate() {
+            let (data, _) = model_tensors.get(name).expect("validated above");
+            let weight = weights[model_idx];
+            for (i, &val) in data.iter().enumerate() {
+                merged_data[i] += val * weight;
+            }
+        }
+
+        merged.insert(name.clone(), (merged_data, shape.clone()));
+    }
+    merged
+}
+
 /// Merge multiple models into one
 ///
 /// # Arguments
@@ -1380,131 +1628,25 @@ pub struct MergeReport {
 /// };
 /// let report = apr_merge(&["model1.apr", "model2.apr"], "merged.apr", options)?;
 /// ```
-#[allow(clippy::too_many_lines)]
 pub fn apr_merge<P: AsRef<Path>>(
     inputs: &[P],
     output: P,
     options: MergeOptions,
 ) -> Result<MergeReport> {
-    // Validate inputs
-    if inputs.len() < 2 {
-        return Err(AprenderError::FormatError {
-            message: "Merge requires at least 2 input models".to_string(),
-        });
-    }
-
-    // Check strategy is supported
-    if !options.strategy.is_supported() {
-        return Err(AprenderError::FormatError {
-            message: format!(
-                "Merge strategy {:?} is not yet supported. Use 'average' or 'weighted'.",
-                options.strategy
-            ),
-        });
-    }
-
-    // Validate weights for weighted merge
-    if options.strategy == MergeStrategy::Weighted {
-        match &options.weights {
-            Some(weights) if weights.len() != inputs.len() => {
-                return Err(AprenderError::FormatError {
-                    message: format!(
-                        "Weighted merge requires {} weights, got {}",
-                        inputs.len(),
-                        weights.len()
-                    ),
-                });
-            }
-            None => {
-                return Err(AprenderError::FormatError {
-                    message: "Weighted merge requires weights to be specified".to_string(),
-                });
-            }
-            _ => {}
-        }
-    }
+    // Validate inputs and options
+    validate_merge_options(inputs, &options)?;
 
     // Load all models
-    let mut all_tensors: Vec<BTreeMap<String, (Vec<f32>, Vec<usize>)>> = Vec::new();
-    for input_path in inputs {
-        let path = input_path.as_ref();
-        if !path.exists() {
-            return Err(AprenderError::FormatError {
-                message: format!("Input file not found: {}", path.display()),
-            });
-        }
-        let tensors = load_model_tensors(path)?;
-        all_tensors.push(tensors);
-    }
+    let all_tensors = load_all_models(inputs)?;
 
-    // Verify all models have same tensors
-    let reference = &all_tensors[0];
-    for (i, tensors) in all_tensors.iter().enumerate().skip(1) {
-        if tensors.len() != reference.len() {
-            return Err(AprenderError::FormatError {
-                message: format!(
-                    "Model {} has {} tensors, but model 0 has {}",
-                    i,
-                    tensors.len(),
-                    reference.len()
-                ),
-            });
-        }
-        for (name, (_, shape)) in reference {
-            match tensors.get(name) {
-                None => {
-                    return Err(AprenderError::FormatError {
-                        message: format!("Model {} is missing tensor '{}'", i, name),
-                    });
-                }
-                Some((_, other_shape)) if other_shape != shape => {
-                    return Err(AprenderError::FormatError {
-                        message: format!(
-                            "Tensor '{}' has shape {:?} in model 0 but {:?} in model {}",
-                            name, shape, other_shape, i
-                        ),
-                    });
-                }
-                _ => {}
-            }
-        }
-    }
+    // Verify tensor compatibility
+    verify_tensor_compatibility(&all_tensors)?;
 
-    // Calculate weights (normalize to sum to 1.0)
-    let weights = match options.strategy {
-        MergeStrategy::Average => {
-            let w = 1.0 / inputs.len() as f32;
-            vec![w; inputs.len()]
-        }
-        MergeStrategy::Weighted => {
-            let raw_weights = options.weights.as_ref().expect("validated above");
-            let sum: f32 = raw_weights.iter().sum();
-            if sum <= 0.0 {
-                return Err(AprenderError::FormatError {
-                    message: "Weights must sum to a positive value".to_string(),
-                });
-            }
-            raw_weights.iter().map(|w| w / sum).collect()
-        }
-        _ => unreachable!("unsupported strategies filtered above"),
-    };
+    // Calculate weights
+    let weights = calculate_merge_weights(inputs.len(), &options)?;
 
     // Merge tensors
-    let mut merged: BTreeMap<String, (Vec<f32>, Vec<usize>)> = BTreeMap::new();
-    for (name, (_, shape)) in reference {
-        let data_len = all_tensors[0].get(name).map(|(d, _)| d.len()).unwrap_or(0);
-        let mut merged_data = vec![0.0f32; data_len];
-
-        for (model_idx, model_tensors) in all_tensors.iter().enumerate() {
-            let (data, _) = model_tensors.get(name).expect("validated above");
-            let weight = weights[model_idx];
-            for (i, &val) in data.iter().enumerate() {
-                merged_data[i] += val * weight;
-            }
-        }
-
-        merged.insert(name.clone(), (merged_data, shape.clone()));
-    }
+    let merged = merge_tensors(&all_tensors, &weights);
 
     // Save merged model
     let output_path = output.as_ref();

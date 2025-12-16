@@ -268,7 +268,7 @@ pub fn chisquare(observed: &[f32], expected: &[f32]) -> Result<ChiSquareResult> 
 ///
 /// # Arguments
 ///
-/// * `groups` - Vector of samples (each group is a Vec<f32>)
+/// * `groups` - Vector of samples (each group is a `Vec<f32>`)
 ///
 /// # Returns
 ///

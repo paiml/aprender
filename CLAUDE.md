@@ -396,6 +396,7 @@ The `apr` CLI provides comprehensive model operations. Located in `crates/apr-cl
 | Command | Description | Implementation |
 |---------|-------------|----------------|
 | `run` | Run model directly (auto-download, cache, execute) | `commands/run.rs` (planned) |
+| `serve` | Start inference server (REST API, streaming, metrics) | `commands/serve.rs` (planned) |
 | `compile` | Build standalone executable with embedded model | `commands/compile.rs` (planned) |
 | `inspect` | Inspect model metadata, vocab, structure | `commands/inspect.rs` (329 lines) |
 | `debug` | Simple debugging output, "drama" mode | `commands/debug.rs` (322 lines) |
@@ -451,6 +452,10 @@ apr run whisper.apr < audio.wav > transcript.txt
 # Build standalone executable with embedded model
 apr compile whisper.apr --quantize int8 -o whisper-cli
 apr compile whisper.apr --target wasm32-unknown-unknown -o whisper.wasm
+
+# Start inference server (REST API, streaming, Prometheus metrics)
+apr serve whisper.apr --port 8080
+curl -X POST http://localhost:8080/transcribe -F "audio=@recording.wav"
 
 # Validate model integrity
 apr validate model.apr --quality

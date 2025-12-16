@@ -203,8 +203,8 @@ impl Default for SmoothL1Loss {
 ///
 /// # Arguments
 ///
-/// * `logits` - Raw model outputs, shape [batch, num_classes]
-/// * `targets` - Target class indices, shape [batch]
+/// * `logits` - Raw model outputs, shape `[batch, num_classes]`
+/// * `targets` - Target class indices, shape `[batch]`
 #[derive(Debug, Clone, Default)]
 pub struct CrossEntropyLoss {
     reduction: Reduction,
@@ -238,8 +238,8 @@ impl CrossEntropyLoss {
     ///
     /// # Arguments
     ///
-    /// * `logits` - Shape [batch, num_classes]
-    /// * `targets` - Shape [batch], integer class indices (as f32)
+    /// * `logits` - Shape `[batch, num_classes]`
+    /// * `targets` - Shape `[batch]`, integer class indices (as f32)
     pub fn forward(&self, logits: &Tensor, targets: &Tensor) -> Tensor {
         assert_eq!(logits.ndim(), 2, "Logits must be 2D [batch, classes]");
         assert_eq!(targets.ndim(), 1, "Targets must be 1D [batch]");

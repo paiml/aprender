@@ -33,7 +33,7 @@
 //! "Distributed Optimization and Statistical Learning via ADMM"
 //! Foundations and Trends in Machine Learning, 3(1), 1-122.
 
-use aprender::optim::{prox, ADMM};
+use aprender::optim::{prox, OptimizationResult, ADMM};
 use aprender::primitives::{Matrix, Vector};
 
 /// Example 1: Distributed Lasso Regression
@@ -309,120 +309,149 @@ fn quadratic_programming_admm() {
     println!("=== Example 3: Quadratic Programming with ADMM ===\n");
 
     let n = 6;
-
-    // Create positive definite Q matrix
-    let mut q_data = vec![0.0; n * n];
-    for i in 0..n {
-        for j in 0..n {
-            if i == j {
-                q_data[i * n + j] = 2.0 + (i as f32) * 0.3;
-            } else {
-                let val = ((i + j) as f32 * 0.25).sin() * 0.15;
-                q_data[i * n + j] = val;
-            }
-        }
-    }
-    let Q = Matrix::from_vec(n, n, q_data).expect("Valid Q matrix");
-
-    // Linear term
-    let c_vec = Vector::from_slice(&[1.0, -0.5, 0.8, -0.3, 0.6, -0.2]);
+    let (Q, c_vec) = create_qp_problem(n);
 
     println!("Quadratic Programming:");
     println!("minimize ½xᵀQx + cᵀx");
     println!("subject to: x ≥ 0");
     println!("Variables: {n}\n");
 
-    // Consensus: x = z
+    let (A, B, c_constraint) = create_consensus_constraints(n);
+    let (x_minimizer, z_minimizer) = create_qp_minimizers(n, Q.clone(), c_vec.clone());
+
+    let mut admm = ADMM::new(300, 1.0, 1e-5).with_adaptive_rho(true);
+    println!("Running ADMM for QP...\n");
+
+    let result = admm.minimize_consensus(
+        x_minimizer,
+        z_minimizer,
+        &A,
+        &B,
+        &c_constraint,
+        Vector::ones(n),
+        Vector::ones(n),
+    );
+
+    print_qp_results(&result, &Q, &c_vec, n);
+    println!();
+}
+
+/// Create the QP problem matrices (Q and c).
+fn create_qp_problem(n: usize) -> (Matrix<f32>, Vector<f32>) {
+    let q_data: Vec<f32> = (0..n)
+        .flat_map(|i| {
+            (0..n).map(move |j| {
+                if i == j {
+                    2.0 + (i as f32) * 0.3
+                } else {
+                    ((i + j) as f32 * 0.25).sin() * 0.15
+                }
+            })
+        })
+        .collect();
+    let Q = Matrix::from_vec(n, n, q_data).expect("Valid Q matrix");
+    let c_vec = Vector::from_slice(&[1.0, -0.5, 0.8, -0.3, 0.6, -0.2]);
+    (Q, c_vec)
+}
+
+/// Create consensus constraints (A, B, c) for x = z form.
+fn create_consensus_constraints(n: usize) -> (Matrix<f32>, Matrix<f32>, Vector<f32>) {
     let A = Matrix::eye(n);
     let mut B = Matrix::from_vec(n, n, vec![0.0; n * n]).expect("Valid matrix");
     for i in 0..n {
         B.set(i, i, -1.0);
     }
-    let c_constraint = Vector::zeros(n);
+    (A, B, Vector::zeros(n))
+}
 
-    // x-minimizer: (Q + ρI)x = -c + ρ(z - u)
-    let q_clone = Q.clone();
-    let c_clone = c_vec.clone();
+/// Create x-minimizer and z-minimizer closures for QP.
+fn create_qp_minimizers(
+    n: usize,
+    Q: Matrix<f32>,
+    c_vec: Vector<f32>,
+) -> (
+    impl Fn(&Vector<f32>, &Vector<f32>, &Vector<f32>, f32) -> Vector<f32>,
+    impl Fn(&Vector<f32>, &Vector<f32>, &Vector<f32>, f32) -> Vector<f32>,
+) {
     let x_minimizer = move |z: &Vector<f32>, u: &Vector<f32>, _c: &Vector<f32>, rho: f32| {
-        // Build (Q + ρI)
-        let mut lhs_data = vec![0.0; n * n];
-        for i in 0..n {
-            for j in 0..n {
-                let val = q_clone.get(i, j);
-                lhs_data[i * n + j] = if i == j { val + rho } else { val };
-            }
-        }
-        let lhs = Matrix::from_vec(n, n, lhs_data).expect("Valid matrix");
-
-        // Build rhs: -c + ρ(z - u)
-        let mut rhs = Vector::zeros(n);
-        for i in 0..n {
-            rhs[i] = -c_clone[i] + rho * (z[i] - u[i]);
-        }
-
-        // Solve
-        if let Ok(x) = lhs.cholesky_solve(&rhs) {
-            x
-        } else {
-            // Fallback
-            let mut x_new = Vector::zeros(n);
-            for i in 0..n {
-                x_new[i] = (-c_clone[i] + rho * (z[i] - u[i])) / (q_clone.get(i, i) + rho);
-            }
-            x_new
-        }
+        solve_qp_x_subproblem(&Q, &c_vec, z, u, rho, n)
     };
 
-    // z-minimizer: Project onto x ≥ 0
-    let z_minimizer = |ax: &Vector<f32>, u: &Vector<f32>, _c: &Vector<f32>, _rho: f32| {
-        // z = max(-(Ax + u), 0)
-        let mut z = Vector::zeros(n);
-        for i in 0..n {
-            z[i] = (-(ax[i] + u[i])).max(0.0);
-        }
-        z
+    let z_minimizer = move |ax: &Vector<f32>, u: &Vector<f32>, _c: &Vector<f32>, _rho: f32| {
+        project_nonnegative(ax, u, n)
     };
 
-    let mut admm = ADMM::new(300, 1.0, 1e-5).with_adaptive_rho(true);
-    let x0 = Vector::ones(n);
-    let z0 = Vector::ones(n);
+    (x_minimizer, z_minimizer)
+}
 
-    println!("Running ADMM for QP...\n");
+/// Solve x-subproblem: (Q + ρI)x = -c + ρ(z - u).
+fn solve_qp_x_subproblem(
+    Q: &Matrix<f32>,
+    c: &Vector<f32>,
+    z: &Vector<f32>,
+    u: &Vector<f32>,
+    rho: f32,
+    n: usize,
+) -> Vector<f32> {
+    let lhs_data: Vec<f32> = (0..n)
+        .flat_map(|i| {
+            (0..n).map(move |j| {
+                let val = Q.get(i, j);
+                if i == j {
+                    val + rho
+                } else {
+                    val
+                }
+            })
+        })
+        .collect();
+    let lhs = Matrix::from_vec(n, n, lhs_data).expect("Valid matrix");
 
-    let result = admm.minimize_consensus(x_minimizer, z_minimizer, &A, &B, &c_constraint, x0, z0);
+    let rhs_data: Vec<f32> = (0..n).map(|i| -c[i] + rho * (z[i] - u[i])).collect();
+    let rhs = Vector::from_slice(&rhs_data);
 
+    lhs.cholesky_solve(&rhs).unwrap_or_else(|_| {
+        // Fallback: diagonal approximation
+        Vector::from_slice(
+            &(0..n)
+                .map(|i| (-c[i] + rho * (z[i] - u[i])) / (Q.get(i, i) + rho))
+                .collect::<Vec<_>>(),
+        )
+    })
+}
+
+/// Project onto non-negative orthant: z = max(-(Ax + u), 0).
+fn project_nonnegative(ax: &Vector<f32>, u: &Vector<f32>, n: usize) -> Vector<f32> {
+    Vector::from_slice(
+        &(0..n)
+            .map(|i| (-(ax[i] + u[i])).max(0.0))
+            .collect::<Vec<_>>(),
+    )
+}
+
+/// Print QP optimization results.
+fn print_qp_results(result: &OptimizationResult, Q: &Matrix<f32>, c_vec: &Vector<f32>, n: usize) {
     println!("Convergence: {:?}", result.status);
     println!("Iterations: {}", result.iterations);
     println!("Constraint violation: {:.6}", result.constraint_violation);
     println!("Elapsed time: {:?}", result.elapsed_time);
 
+    let solution_str: Vec<String> = (0..n)
+        .map(|i| format!("{:.3}", result.solution[i]))
+        .collect();
     println!("\nOptimal solution:");
-    print!("  x = [");
-    for i in 0..n {
-        print!("{:.3}", result.solution[i]);
-        if i < n - 1 {
-            print!(", ");
-        }
-    }
-    println!("]");
+    println!("  x = [{}]", solution_str.join(", "));
 
-    // Compute objective value
     let qx = Q
         .matvec(&result.solution)
         .expect("Matrix-vector multiplication");
     let obj = 0.5 * result.solution.dot(&qx) + c_vec.dot(&result.solution);
     println!("\nObjective value: {obj:.6}");
 
-    // Check constraints
-    let mut min_val = f32::INFINITY;
-    for i in 0..n {
-        if result.solution[i] < min_val {
-            min_val = result.solution[i];
-        }
-    }
+    let min_val = (0..n)
+        .map(|i| result.solution[i])
+        .fold(f32::INFINITY, f32::min);
     println!("Minimum coefficient: {min_val:.6} (should be ≥ 0)");
-
-    println!();
 }
 
 /// Example 4: ADMM vs FISTA Comparison

@@ -1,0 +1,473 @@
+# APR Visualization Tools - State Machine Playbook (GH-122)
+# EXTREME TDD: Specification written FIRST, tests derive from this
+#
+# Run: probar playbook playbooks/visualization-tools.yaml --validate
+#
+# This playbook defines the state machine for model visualization tools:
+# - apr hex: Tensor byte-level inspection
+# - apr tree: Model architecture visualization
+# - apr flow: Data flow diagrams
+#
+# Toyota Way: Genchi Genbutsu (Go and See) - See the actual bytes
+
+version: "1.0"
+name: "APR Visualization Tools"
+description: "GH-122: Hex dump, tree view, and flow visualization"
+
+machine:
+  id: "visualization_tools"
+  initial: "idle"
+
+  states:
+    idle:
+      id: "idle"
+      invariants:
+        - description: "No model loaded"
+          condition: "model_loaded() == false"
+        - description: "No active visualization"
+          condition: "active_viz() == null"
+
+    loading:
+      id: "loading"
+      invariants:
+        - description: "Model path provided"
+          condition: "model_path() != null"
+        - description: "Loading in progress"
+          condition: "loading_progress() < 1.0"
+
+    loaded:
+      id: "loaded"
+      invariants:
+        - description: "Model successfully loaded"
+          condition: "model_loaded() == true"
+        - description: "Tensor index available"
+          condition: "tensor_count() > 0"
+        - description: "Metadata parsed"
+          condition: "metadata_valid() == true"
+
+    visualizing_hex:
+      id: "visualizing_hex"
+      invariants:
+        - description: "Tensor filter applied"
+          condition: "hex_filter() != null || all_tensors()"
+        - description: "Byte limit set"
+          condition: "hex_limit() > 0"
+
+    visualizing_tree:
+      id: "visualizing_tree"
+      invariants:
+        - description: "Tree format selected"
+          condition: "tree_format() in ['ascii', 'dot', 'mermaid', 'json']"
+        - description: "Depth limit valid"
+          condition: "tree_depth() == null || tree_depth() > 0"
+
+    visualizing_flow:
+      id: "visualizing_flow"
+      invariants:
+        - description: "Component selected"
+          condition: "flow_component() in ['full', 'encoder', 'decoder', 'self_attn', 'cross_attn', 'ffn']"
+
+    rendering:
+      id: "rendering"
+      invariants:
+        - description: "Output format determined"
+          condition: "output_format() != null"
+        - description: "Rendering in progress"
+          condition: "render_progress() >= 0"
+
+    completed:
+      id: "completed"
+      invariants:
+        - description: "Output generated"
+          condition: "output_content() != null"
+        - description: "No errors"
+          condition: "error_count() == 0"
+
+    error:
+      id: "error"
+      invariants:
+        - description: "Error message set"
+          condition: "error_message() != null"
+        - description: "Exit code non-zero"
+          condition: "exit_code() != 0"
+
+  transitions:
+    # Model loading
+    - id: "start_loading"
+      from: "idle"
+      to: "loading"
+      event: "model_path_provided"
+
+    - id: "load_success"
+      from: "loading"
+      to: "loaded"
+      event: "model_parsed"
+      guard: "tensor_count() > 0"
+
+    - id: "load_failed"
+      from: "loading"
+      to: "error"
+      event: "parse_failed"
+
+    # Hex visualization
+    - id: "start_hex"
+      from: "loaded"
+      to: "visualizing_hex"
+      event: "hex_command"
+
+    - id: "hex_to_render"
+      from: "visualizing_hex"
+      to: "rendering"
+      event: "hex_prepared"
+
+    # Tree visualization
+    - id: "start_tree"
+      from: "loaded"
+      to: "visualizing_tree"
+      event: "tree_command"
+
+    - id: "tree_to_render"
+      from: "visualizing_tree"
+      to: "rendering"
+      event: "tree_prepared"
+
+    # Flow visualization
+    - id: "start_flow"
+      from: "loaded"
+      to: "visualizing_flow"
+      event: "flow_command"
+
+    - id: "flow_to_render"
+      from: "visualizing_flow"
+      to: "rendering"
+      event: "flow_prepared"
+
+    # Rendering completion
+    - id: "render_complete"
+      from: "rendering"
+      to: "completed"
+      event: "output_written"
+
+    - id: "render_failed"
+      from: "rendering"
+      to: "error"
+      event: "render_error"
+
+    # Return to loaded for next command
+    - id: "reset_for_next"
+      from: "completed"
+      to: "loaded"
+      event: "next_command"
+
+  forbidden:
+    - from: "idle"
+      to: "visualizing_hex"
+      reason: "Cannot visualize without loaded model"
+
+    - from: "idle"
+      to: "visualizing_tree"
+      reason: "Cannot visualize without loaded model"
+
+    - from: "idle"
+      to: "visualizing_flow"
+      reason: "Cannot visualize without loaded model"
+
+# Test scenarios for each command
+scenarios:
+  # ============================================================================
+  # Hex Command Scenarios
+  # ============================================================================
+  - name: "hex_list_tensors"
+    description: "List all tensor names"
+    steps:
+      - action: "run_command"
+        params: { cmd: "apr hex model.apr --list" }
+      - assert: "exit_code() == 0"
+      - assert: "output_contains('tensors')"
+      - assert: "output_contains('encoder') || output_contains('decoder')"
+
+  - name: "hex_filter_tensors"
+    description: "Filter tensors by pattern"
+    steps:
+      - action: "run_command"
+        params: { cmd: "apr hex model.apr --tensor cross_attn --list" }
+      - assert: "exit_code() == 0"
+      - assert: "output_contains('cross_attn')"
+      - assert: "!output_contains('self_attn')"
+
+  - name: "hex_with_stats"
+    description: "Show tensor statistics"
+    steps:
+      - action: "run_command"
+        params: { cmd: "apr hex model.apr --tensor encoder --stats" }
+      - assert: "exit_code() == 0"
+      - assert: "output_contains('min=')"
+      - assert: "output_contains('max=')"
+      - assert: "output_contains('mean=')"
+      - assert: "output_contains('std=')"
+
+  - name: "hex_detect_anomalies"
+    description: "Detect weight anomalies (NaN, Inf, collapsed)"
+    steps:
+      - action: "run_command"
+        params: { cmd: "apr hex model_with_issues.apr --stats" }
+      - assert: "output_contains('⚠') || output_contains('warning')"
+
+  - name: "hex_json_output"
+    description: "Output as JSON"
+    steps:
+      - action: "run_command"
+        params: { cmd: "apr hex model.apr --tensor encoder --json" }
+      - assert: "exit_code() == 0"
+      - assert: "valid_json(output())"
+      - assert: "json_has_key(output(), 'name')"
+      - assert: "json_has_key(output(), 'shape')"
+
+  - name: "hex_byte_dump"
+    description: "Show hex dump with limit"
+    steps:
+      - action: "run_command"
+        params: { cmd: "apr hex model.apr --tensor encoder.layers.0 --limit 32" }
+      - assert: "exit_code() == 0"
+      - assert: "output_contains('00000000:')"
+      - assert: "output_contains('Hex dump')"
+
+  # ============================================================================
+  # Tree Command Scenarios
+  # ============================================================================
+  - name: "tree_ascii_default"
+    description: "ASCII tree output (default)"
+    steps:
+      - action: "run_command"
+        params: { cmd: "apr tree model.apr" }
+      - assert: "exit_code() == 0"
+      - assert: "output_contains('├──') || output_contains('└──')"
+      - assert: "output_contains('tensors')"
+
+  - name: "tree_with_sizes"
+    description: "Show tensor sizes in tree"
+    steps:
+      - action: "run_command"
+        params: { cmd: "apr tree model.apr --sizes" }
+      - assert: "exit_code() == 0"
+      - assert: "output_contains('KB') || output_contains('MB') || output_contains('GB')"
+
+  - name: "tree_with_filter"
+    description: "Filter tree by pattern"
+    steps:
+      - action: "run_command"
+        params: { cmd: "apr tree model.apr --filter decoder" }
+      - assert: "exit_code() == 0"
+      - assert: "output_contains('decoder')"
+
+  - name: "tree_depth_limit"
+    description: "Limit tree depth"
+    steps:
+      - action: "run_command"
+        params: { cmd: "apr tree model.apr --depth 2" }
+      - assert: "exit_code() == 0"
+      - assert: "tree_depth_max(output()) <= 2"
+
+  - name: "tree_mermaid_format"
+    description: "Output as Mermaid diagram"
+    steps:
+      - action: "run_command"
+        params: { cmd: "apr tree model.apr --format mermaid" }
+      - assert: "exit_code() == 0"
+      - assert: "output_contains('```mermaid')"
+      - assert: "output_contains('graph TD')"
+      - assert: "output_contains('```')"
+
+  - name: "tree_dot_format"
+    description: "Output as Graphviz DOT"
+    steps:
+      - action: "run_command"
+        params: { cmd: "apr tree model.apr --format dot" }
+      - assert: "exit_code() == 0"
+      - assert: "output_contains('digraph')"
+      - assert: "output_contains('rankdir')"
+      - assert: "output_contains('->')"
+
+  - name: "tree_json_format"
+    description: "Output as JSON"
+    steps:
+      - action: "run_command"
+        params: { cmd: "apr tree model.apr --format json" }
+      - assert: "exit_code() == 0"
+      - assert: "valid_json(output())"
+      - assert: "json_has_key(output(), 'children')"
+
+  # ============================================================================
+  # Flow Command Scenarios
+  # ============================================================================
+  - name: "flow_full_model"
+    description: "Full model data flow"
+    steps:
+      - action: "run_command"
+        params: { cmd: "apr flow model.apr" }
+      - assert: "exit_code() == 0"
+      - assert: "output_contains('Model:')"
+
+  - name: "flow_cross_attention"
+    description: "Cross-attention data flow (Posterior Collapse debugging)"
+    steps:
+      - action: "run_command"
+        params: { cmd: "apr flow model.apr --component cross_attn" }
+      - assert: "exit_code() == 0"
+      - assert: "output_contains('CROSS-ATTENTION')"
+      - assert: "output_contains('encoder_output')"
+      - assert: "output_contains('Q @ K^T')"
+      - assert: "output_contains('softmax')"
+      - assert: "output_contains('CRITICAL')"
+
+  - name: "flow_self_attention"
+    description: "Self-attention data flow"
+    steps:
+      - action: "run_command"
+        params: { cmd: "apr flow model.apr --component self_attn" }
+      - assert: "exit_code() == 0"
+      - assert: "output_contains('SELF-ATTENTION')"
+
+  - name: "flow_encoder"
+    description: "Encoder data flow"
+    steps:
+      - action: "run_command"
+        params: { cmd: "apr flow model.apr --component encoder" }
+      - assert: "exit_code() == 0"
+      - assert: "output_contains('ENCODER')"
+
+  - name: "flow_decoder"
+    description: "Decoder data flow"
+    steps:
+      - action: "run_command"
+        params: { cmd: "apr flow model.apr --component decoder" }
+      - assert: "exit_code() == 0"
+      - assert: "output_contains('DECODER')"
+
+  - name: "flow_ffn"
+    description: "FFN data flow"
+    steps:
+      - action: "run_command"
+        params: { cmd: "apr flow model.apr --component ffn" }
+      - assert: "exit_code() == 0"
+      - assert: "output_contains('FFN') || output_contains('Feed-Forward')"
+
+  - name: "flow_verbose"
+    description: "Verbose flow output"
+    steps:
+      - action: "run_command"
+        params: { cmd: "apr flow model.apr --verbose" }
+      - assert: "exit_code() == 0"
+
+  # ============================================================================
+  # Error Handling Scenarios
+  # ============================================================================
+  - name: "error_file_not_found"
+    description: "Handle missing file"
+    steps:
+      - action: "run_command"
+        params: { cmd: "apr hex nonexistent.apr" }
+      - assert: "exit_code() != 0"
+      - assert: "output_contains('not found') || output_contains('No such file')"
+
+  - name: "error_invalid_format"
+    description: "Handle invalid APR format"
+    steps:
+      - action: "run_command"
+        params: { cmd: "apr tree invalid.bin" }
+      - assert: "exit_code() != 0"
+      - assert: "output_contains('Invalid') || output_contains('magic')"
+
+  - name: "error_no_match"
+    description: "Handle no matching tensors"
+    steps:
+      - action: "run_command"
+        params: { cmd: "apr hex model.apr --tensor nonexistent_layer" }
+      - assert: "output_contains('No tensors match')"
+
+# TUI Panel configurations for pixel testing
+tui:
+  refresh_rate_ms: 100
+
+  panels:
+    - id: "hex_panel"
+      title: "TENSOR HEX DUMP"
+      columns: ["Offset", "Hex Bytes", "Float Values"]
+      width: 80
+      height: 24
+
+    - id: "tree_panel"
+      title: "MODEL ARCHITECTURE"
+      type: "tree"
+      width: 60
+      height: 40
+
+    - id: "flow_panel"
+      title: "DATA FLOW"
+      type: "ascii_art"
+      width: 80
+      height: 60
+
+    - id: "stats_panel"
+      title: "TENSOR STATISTICS"
+      columns: ["Metric", "Value"]
+      width: 40
+      height: 10
+
+  keybindings:
+    q: "quit"
+    h: "toggle_hex"
+    t: "toggle_tree"
+    f: "toggle_flow"
+    s: "toggle_stats"
+    j: "scroll_down"
+    k: "scroll_up"
+    "/": "filter"
+    "?": "help"
+
+# Performance budgets
+performance:
+  max_load_ms: 1000
+  max_render_ms: 100
+  max_memory_mb: 256
+
+# Performance assertions
+performance_assertions:
+  - name: "hex_latency"
+    condition: "hex_render_ms() <= 100"
+    failure_reason: "Hex dump too slow"
+
+  - name: "tree_latency"
+    condition: "tree_render_ms() <= 100"
+    failure_reason: "Tree rendering too slow"
+
+  - name: "flow_latency"
+    condition: "flow_render_ms() <= 50"
+    failure_reason: "Flow diagram too slow"
+
+# Pixel regression test configurations
+pixel_tests:
+  - name: "hex_dump_golden"
+    command: "apr hex test.apr --tensor encoder.layers.0 --limit 16"
+    golden: "snapshots/hex_dump.txt"
+    tolerance: 0
+
+  - name: "tree_ascii_golden"
+    command: "apr tree test.apr --sizes"
+    golden: "snapshots/tree_ascii.txt"
+    tolerance: 0
+
+  - name: "tree_mermaid_golden"
+    command: "apr tree test.apr --format mermaid"
+    golden: "snapshots/tree_mermaid.md"
+    tolerance: 0
+
+  - name: "flow_cross_attn_golden"
+    command: "apr flow test.apr --component cross_attn"
+    golden: "snapshots/flow_cross_attn.txt"
+    tolerance: 0
+
+  - name: "flow_full_golden"
+    command: "apr flow test.apr"
+    golden: "snapshots/flow_full.txt"
+    tolerance: 0

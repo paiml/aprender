@@ -1902,7 +1902,7 @@ impl Graph {
     /// Only valid for DAGs. If the graph contains a cycle, returns None.
     ///
     /// # Returns
-    /// Some(Vec<NodeId>) with nodes in topological order, or None if graph has cycles
+    /// `Some(Vec<NodeId>)` with nodes in topological order, or `None` if graph has cycles
     ///
     /// # Time Complexity
     /// O(n + m) - DFS-based approach

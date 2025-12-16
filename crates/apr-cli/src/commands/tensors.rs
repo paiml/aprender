@@ -106,95 +106,108 @@ fn extract_tensor_info(
     filter: Option<&str>,
     limit: usize,
 ) -> Vec<TensorInfo> {
-    // Try to parse metadata as MessagePack
     let metadata: HashMap<String, serde_json::Value> =
         rmp_serde::from_slice(metadata_bytes).unwrap_or_else(|_| HashMap::new());
 
-    let mut tensors = Vec::new();
+    // Try tensor_shapes first, then hyperparameters, then placeholder
+    let mut tensors = extract_from_tensor_shapes(&metadata, filter, limit);
 
-    // Look for tensor_shapes or similar metadata
-    if let Some(shapes) = metadata.get("tensor_shapes") {
-        if let Some(shapes_map) = shapes.as_object() {
-            for (name, shape_val) in shapes_map {
-                if let Some(filter_str) = filter {
-                    if !name.contains(filter_str) {
-                        continue;
-                    }
-                }
-
-                let shape: Vec<usize> = shape_val.as_array().map_or(Vec::new(), |arr| {
-                    arr.iter()
-                        .filter_map(|v| v.as_u64().map(|n| n as usize))
-                        .collect()
-                });
-
-                let size_bytes = shape.iter().product::<usize>() * 4; // Assume f32
-
-                tensors.push(TensorInfo {
-                    name: name.clone(),
-                    shape,
-                    dtype: "f32".to_string(),
-                    size_bytes,
-                    mean: None,
-                    std: None,
-                    min: None,
-                    max: None,
-                });
-
-                if tensors.len() >= limit {
-                    break;
-                }
-            }
-        }
+    if tensors.is_empty() {
+        tensors = extract_from_hyperparameters(&metadata);
     }
 
-    // Also check for hyperparameters that might indicate tensor structure
     if tensors.is_empty() {
-        if let Some(hp) = metadata.get("hyperparameters") {
-            if let Some(hp_obj) = hp.as_object() {
-                // Extract structural info from hyperparameters
-                let mut info = TensorInfo {
-                    name: "(model structure from hyperparameters)".to_string(),
-                    shape: vec![],
-                    dtype: "mixed".to_string(),
-                    size_bytes: 0,
-                    mean: None,
-                    std: None,
-                    min: None,
-                    max: None,
-                };
-
-                // Look for dimension info
-                for (key, val) in hp_obj {
-                    if key.contains("dim") || key.contains("size") || key.contains("layers") {
-                        if let Some(n) = val.as_u64() {
-                            info.shape.push(n as usize);
-                        }
-                    }
-                }
-
-                if !info.shape.is_empty() {
-                    tensors.push(info);
-                }
-            }
-        }
-    }
-
-    // If still empty, report that tensor info isn't available
-    if tensors.is_empty() {
-        tensors.push(TensorInfo {
-            name: "(tensor metadata not available in this APR file)".to_string(),
-            shape: vec![],
-            dtype: "unknown".to_string(),
-            size_bytes: 0,
-            mean: None,
-            std: None,
-            min: None,
-            max: None,
-        });
+        tensors.push(create_unavailable_tensor_info());
     }
 
     tensors
+}
+
+/// Extract tensor info from tensor_shapes metadata.
+fn extract_from_tensor_shapes(
+    metadata: &HashMap<String, serde_json::Value>,
+    filter: Option<&str>,
+    limit: usize,
+) -> Vec<TensorInfo> {
+    let shapes = match metadata.get("tensor_shapes").and_then(|s| s.as_object()) {
+        Some(s) => s,
+        None => return Vec::new(),
+    };
+
+    shapes
+        .iter()
+        .filter(|(name, _)| filter.map_or(true, |f| name.contains(f)))
+        .take(limit)
+        .map(|(name, shape_val)| {
+            let shape = parse_shape_array(shape_val);
+            let size_bytes = shape.iter().product::<usize>() * 4; // Assume f32
+            TensorInfo {
+                name: name.clone(),
+                shape,
+                dtype: "f32".to_string(),
+                size_bytes,
+                mean: None,
+                std: None,
+                min: None,
+                max: None,
+            }
+        })
+        .collect()
+}
+
+/// Parse shape array from JSON value.
+fn parse_shape_array(shape_val: &serde_json::Value) -> Vec<usize> {
+    shape_val.as_array().map_or(Vec::new(), |arr| {
+        arr.iter()
+            .filter_map(|v| v.as_u64().map(|n| n as usize))
+            .collect()
+    })
+}
+
+/// Extract tensor info from hyperparameters as fallback.
+fn extract_from_hyperparameters(metadata: &HashMap<String, serde_json::Value>) -> Vec<TensorInfo> {
+    let hp_obj = match metadata
+        .get("hyperparameters")
+        .and_then(|hp| hp.as_object())
+    {
+        Some(obj) => obj,
+        None => return Vec::new(),
+    };
+
+    let shape: Vec<usize> = hp_obj
+        .iter()
+        .filter(|(key, _)| key.contains("dim") || key.contains("size") || key.contains("layers"))
+        .filter_map(|(_, val)| val.as_u64().map(|n| n as usize))
+        .collect();
+
+    if shape.is_empty() {
+        return Vec::new();
+    }
+
+    vec![TensorInfo {
+        name: "(model structure from hyperparameters)".to_string(),
+        shape,
+        dtype: "mixed".to_string(),
+        size_bytes: 0,
+        mean: None,
+        std: None,
+        min: None,
+        max: None,
+    }]
+}
+
+/// Create placeholder tensor info when no metadata is available.
+fn create_unavailable_tensor_info() -> TensorInfo {
+    TensorInfo {
+        name: "(tensor metadata not available in this APR file)".to_string(),
+        shape: vec![],
+        dtype: "unknown".to_string(),
+        size_bytes: 0,
+        mean: None,
+        std: None,
+        min: None,
+        max: None,
+    }
 }
 
 fn output_json(path: &Path, tensors: &[TensorInfo]) {

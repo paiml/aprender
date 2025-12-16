@@ -287,8 +287,8 @@ pub fn corr(x: &Vector<f32>, y: &Vector<f32>) -> Result<f32> {
 /// assert!((corr_mat.get(0, 0) - 1.0).abs() < 1e-6); // Diagonal is 1.0
 /// ```
 pub fn corr_matrix(data: &Matrix<f32>) -> Result<Matrix<f32>> {
-    let n = data.n_rows(); // samples
-    let p = data.n_cols(); // features
+    let n = data.n_rows();
+    let p = data.n_cols();
 
     if n == 0 || p == 0 {
         return Err(AprenderError::Other(
@@ -296,22 +296,22 @@ pub fn corr_matrix(data: &Matrix<f32>) -> Result<Matrix<f32>> {
         ));
     }
 
-    // Compute means and standard deviations for each feature
+    let (means, stds) = compute_feature_stats(data, n, p)?;
+    let corr_data = compute_correlation_values(data, &means, &stds, n, p);
+
+    Matrix::from_vec(p, p, corr_data)
+        .map_err(|e| AprenderError::Other(format!("Failed to create correlation matrix: {e}")))
+}
+
+fn compute_feature_stats(data: &Matrix<f32>, n: usize, p: usize) -> Result<(Vec<f32>, Vec<f32>)> {
     let mut means = vec![0.0_f32; p];
     let mut stds = vec![0.0_f32; p];
 
     for j in 0..p {
-        let mut sum = 0.0;
-        for i in 0..n {
-            sum += data.get(i, j);
-        }
+        let sum: f32 = (0..n).map(|i| data.get(i, j)).sum();
         means[j] = sum / n as f32;
 
-        let mut var_sum = 0.0;
-        for i in 0..n {
-            let diff = data.get(i, j) - means[j];
-            var_sum += diff * diff;
-        }
+        let var_sum: f32 = (0..n).map(|i| (data.get(i, j) - means[j]).powi(2)).sum();
         stds[j] = (var_sum / n as f32).sqrt();
 
         if stds[j] < 1e-10 {
@@ -320,31 +320,29 @@ pub fn corr_matrix(data: &Matrix<f32>) -> Result<Matrix<f32>> {
             )));
         }
     }
+    Ok((means, stds))
+}
 
-    // Compute correlation matrix
+fn compute_correlation_values(
+    data: &Matrix<f32>,
+    means: &[f32],
+    stds: &[f32],
+    n: usize,
+    p: usize,
+) -> Vec<f32> {
     let mut corr_data = vec![0.0_f32; p * p];
     for i in 0..p {
-        for j in 0..=i {
-            if i == j {
-                // Diagonal is 1.0
-                corr_data[i * p + j] = 1.0;
-            } else {
-                // Compute correlation
-                let mut cov_sum = 0.0;
-                for k in 0..n {
-                    cov_sum += (data.get(k, i) - means[i]) * (data.get(k, j) - means[j]);
-                }
-                let corr_val = cov_sum / (n as f32 * stds[i] * stds[j]);
-
-                // Fill both (i,j) and (j,i) for symmetry
-                corr_data[i * p + j] = corr_val;
-                corr_data[j * p + i] = corr_val;
-            }
+        corr_data[i * p + i] = 1.0; // Diagonal is 1.0
+        for j in 0..i {
+            let cov_sum: f32 = (0..n)
+                .map(|k| (data.get(k, i) - means[i]) * (data.get(k, j) - means[j]))
+                .sum();
+            let corr_val = cov_sum / (n as f32 * stds[i] * stds[j]);
+            corr_data[i * p + j] = corr_val;
+            corr_data[j * p + i] = corr_val;
         }
     }
-
-    Matrix::from_vec(p, p, corr_data)
-        .map_err(|e| AprenderError::Other(format!("Failed to create correlation matrix: {e}")))
+    corr_data
 }
 
 #[cfg(test)]

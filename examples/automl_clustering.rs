@@ -40,12 +40,10 @@ impl std::fmt::Display for KMeansParam {
     }
 }
 
-#[allow(clippy::too_many_lines)]
 fn main() {
     println!("AutoML Clustering - TPE Optimization");
     println!("=====================================\n");
 
-    // Generate synthetic data with 4 true clusters
     let (data, true_k) = generate_clustered_data();
     println!(
         "Generated {} samples with {} true clusters\n",
@@ -53,65 +51,41 @@ fn main() {
         true_k
     );
 
-    // Define search space: K from 2 to 10
-    let space: SearchSpace<KMeansParam> = SearchSpace::new().add(KMeansParam::NClusters, 2..11); // Search K in [2, 10]
-
+    let space: SearchSpace<KMeansParam> = SearchSpace::new().add(KMeansParam::NClusters, 2..11);
     println!("Search Space: K ∈ [2, 10]");
     println!("Objective: Maximize silhouette score\n");
 
-    // Track results for final report
+    let (tune_result, results) = run_tpe_optimization(&data, &space, true_k);
+
+    print_summary_by_k(&results, &tune_result, true_k);
+    print_optimization_results(&tune_result, true_k);
+    verify_final_model(&data, &tune_result, true_k);
+}
+
+fn run_tpe_optimization(
+    data: &Matrix<f32>,
+    space: &SearchSpace<KMeansParam>,
+    true_k: usize,
+) -> (aprender::automl::TuneResult<KMeansParam>, Vec<(usize, f64)>) {
     let mut results: Vec<(usize, f64)> = Vec::new();
 
     println!("═══════════════════════════════════════════");
     println!(" Trial │   K   │ Silhouette │   Status   ");
     println!("═══════╪═══════╪════════════╪════════════");
 
-    // Use TPE optimizer
     let tpe = TPE::new(15)
         .with_seed(42)
-        .with_startup_trials(3)  // Random exploration first
-        .with_gamma(0.25); // Top 25% as "good"
+        .with_startup_trials(3)
+        .with_gamma(0.25);
 
     let tune_result = AutoTuner::new(tpe)
-        .early_stopping(5)  // Stop if no improvement for 5 trials
-        .maximize(&space, |trial| {
+        .early_stopping(5)
+        .maximize(space, |trial| {
             let k = trial.get_usize(&KMeansParam::NClusters).unwrap_or(3);
-
-            // Run K-Means multiple times and average (reduce variance)
-            let mut scores = Vec::new();
-            for seed in [42, 123, 456] {
-                let mut kmeans = KMeans::new(k)
-                    .with_max_iter(100)
-                    .with_random_state(seed);
-
-                if kmeans.fit(&data).is_ok() {
-                    let labels = kmeans.predict(&data);
-                    let score = silhouette_score(&data, &labels);
-                    if score.is_finite() {
-                        scores.push(score);
-                    }
-                }
-            }
-
-            let avg_score = if scores.is_empty() {
-                -1.0  // Penalty for failed clustering
-            } else {
-                f64::from(scores.iter().sum::<f32>() / scores.len() as f32)
-            };
-
-            // Determine status
-            let status = if k == true_k {
-                "← TRUE K"
-            } else if avg_score > 0.5 {
-                "good"
-            } else if avg_score > 0.25 {
-                "moderate"
-            } else {
-                "poor"
-            };
+            let avg_score = evaluate_kmeans(data, k);
+            let status = determine_status(k, avg_score, true_k);
 
             results.push((k, avg_score));
-
             println!(
                 "  {:>3}  │  {:>3}  │   {:>6.3}   │ {}",
                 results.len(),
@@ -119,13 +93,49 @@ fn main() {
                 avg_score,
                 status
             );
-
             avg_score
         });
 
     println!("═══════════════════════════════════════════\n");
+    (tune_result, results)
+}
 
-    // Summary by K value
+fn evaluate_kmeans(data: &Matrix<f32>, k: usize) -> f64 {
+    let scores: Vec<f32> = [42, 123, 456]
+        .iter()
+        .filter_map(|&seed| {
+            let mut kmeans = KMeans::new(k).with_max_iter(100).with_random_state(seed);
+            kmeans.fit(data).ok()?;
+            let labels = kmeans.predict(data);
+            let score = silhouette_score(data, &labels);
+            score.is_finite().then_some(score)
+        })
+        .collect();
+
+    if scores.is_empty() {
+        -1.0
+    } else {
+        f64::from(scores.iter().sum::<f32>() / scores.len() as f32)
+    }
+}
+
+fn determine_status(k: usize, score: f64, true_k: usize) -> &'static str {
+    if k == true_k {
+        "← TRUE K"
+    } else if score > 0.5 {
+        "good"
+    } else if score > 0.25 {
+        "moderate"
+    } else {
+        "poor"
+    }
+}
+
+fn print_summary_by_k(
+    results: &[(usize, f64)],
+    tune_result: &aprender::automl::TuneResult<KMeansParam>,
+    true_k: usize,
+) {
     println!("📊 Summary by K:");
     for k in 2..=10 {
         let k_results: Vec<_> = results.iter().filter(|(kk, _)| *kk == k).collect();
@@ -148,13 +158,16 @@ fn main() {
             );
         }
     }
+}
 
-    // Final results
+fn print_optimization_results(
+    tune_result: &aprender::automl::TuneResult<KMeansParam>,
+    true_k: usize,
+) {
     let best_k = tune_result
         .best_trial
         .get_usize(&KMeansParam::NClusters)
         .unwrap_or(0);
-
     println!("\n🏆 TPE Optimization Results:");
     println!("   Best K:          {best_k}");
     println!("   Best silhouette: {:.4}", tune_result.best_score);
@@ -164,20 +177,33 @@ fn main() {
         "   Time elapsed:    {:.2}s",
         tune_result.elapsed.as_secs_f64()
     );
+}
 
-    // Verify with final model
+fn verify_final_model(
+    data: &Matrix<f32>,
+    tune_result: &aprender::automl::TuneResult<KMeansParam>,
+    true_k: usize,
+) {
+    let best_k = tune_result
+        .best_trial
+        .get_usize(&KMeansParam::NClusters)
+        .unwrap_or(0);
+
     println!("\n🔍 Final Model Verification:");
     let mut final_kmeans = KMeans::new(best_k).with_max_iter(100).with_random_state(42);
-    final_kmeans.fit(&data).expect("Final fit should succeed");
-    let final_labels = final_kmeans.predict(&data);
-    let final_silhouette = silhouette_score(&data, &final_labels);
+    final_kmeans.fit(data).expect("Final fit should succeed");
+    let final_labels = final_kmeans.predict(data);
+    let final_silhouette = silhouette_score(data, &final_labels);
     let final_inertia = final_kmeans.inertia();
 
     println!("   Silhouette score: {final_silhouette:.4}");
     println!("   Inertia:          {final_inertia:.2}");
     println!("   Iterations:       {}", final_kmeans.n_iter());
 
-    // Interpretation
+    print_interpretation(best_k, true_k, final_silhouette);
+}
+
+fn print_interpretation(best_k: usize, true_k: usize, silhouette: f32) {
     println!("\n📈 Interpretation:");
     if best_k == true_k {
         println!("   ✅ TPE found the true number of clusters!");
@@ -187,9 +213,9 @@ fn main() {
         println!("   ⚠ TPE found a different K (data may have ambiguous structure)");
     }
 
-    if final_silhouette > 0.5 {
+    if silhouette > 0.5 {
         println!("   ✅ Excellent cluster separation (silhouette > 0.5)");
-    } else if final_silhouette > 0.25 {
+    } else if silhouette > 0.25 {
         println!("   ✓ Reasonable cluster structure");
     } else {
         println!("   ⚠ Weak cluster structure - consider different features");

@@ -202,7 +202,7 @@ impl BeamSearch {
     ///
     /// # Arguments
     ///
-    /// * `log_probs` - Log probabilities for each token [vocab_size]
+    /// * `log_probs` - Log probabilities for each token `[vocab_size]`
     /// * `current_beams` - Current beam hypotheses
     ///
     /// # Returns
@@ -351,7 +351,7 @@ impl NucleusSampler {
     ///
     /// # Arguments
     ///
-    /// * `logits` - Raw logits from the model [vocab_size]
+    /// * `logits` - Raw logits from the model `[vocab_size]`
     ///
     /// # Returns
     ///
@@ -410,7 +410,7 @@ impl NucleusSampler {
     ///
     /// # Arguments
     ///
-    /// * `logits` - Raw logits from the model [vocab_size]
+    /// * `logits` - Raw logits from the model `[vocab_size]`
     ///
     /// # Returns
     ///
@@ -546,7 +546,7 @@ impl GreedyDecoder {
 ///
 /// # Arguments
 ///
-/// * `logits` - Raw logits [vocab_size]
+/// * `logits` - Raw logits `[vocab_size]`
 /// * `generated_tokens` - Previously generated token IDs
 /// * `penalty` - Repetition penalty (>1 reduces probability of repeated tokens)
 ///

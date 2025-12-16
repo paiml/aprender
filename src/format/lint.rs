@@ -346,6 +346,14 @@ fn check_tensor_naming(report: &mut LintReport, info: &ModelLintInfo) {
     }
 }
 
+/// Check if position in string is at a word boundary (end of string or followed by separator).
+fn is_at_word_boundary(name: &str, position: usize) -> bool {
+    if position >= name.len() {
+        return true;
+    }
+    matches!(name.chars().nth(position), Some('.' | '_' | '-'))
+}
+
 /// Check if a name contains an abbreviation that should be expanded
 /// Returns false if the full form is already present
 fn is_abbreviated(name: &str, abbrev: &str, full: &str) -> bool {
@@ -354,47 +362,33 @@ fn is_abbreviated(name: &str, abbrev: &str, full: &str) -> bool {
         return false;
     }
 
-    // Check if the abbreviation appears in the name
-    if !name.contains(abbrev) {
-        return false;
-    }
+    // Check if the abbreviation appears in the name at a word boundary
+    name.find(abbrev)
+        .is_some_and(|pos| is_at_word_boundary(name, pos + abbrev.len()))
+}
 
-    // Additional check: abbreviation should be at word boundary
-    // e.g., ".w" should be at end or followed by "." or "_"
-    if let Some(pos) = name.find(abbrev) {
-        let after_abbrev = pos + abbrev.len();
-        if after_abbrev >= name.len() {
-            // At end of string - definitely abbreviated
-            return true;
-        }
-        let next_char = name.chars().nth(after_abbrev);
-        match next_char {
-            Some('.' | '_' | '-') => true,
-            // If followed by letters, check if it's the start of the full word
-            _ => false,
-        }
-    } else {
-        false
-    }
+/// Known patterns where numeric suffixes are acceptable.
+const STANDARD_NUMERIC_PATTERNS: &[&str] = &["layers.", "conv1", "conv2", "fc1", "fc2"];
+
+/// Check if name contains numbers in a standard pattern.
+fn has_standard_numbering(name: &str) -> bool {
+    STANDARD_NUMERIC_PATTERNS.iter().any(|p| name.contains(p))
+}
+
+/// Check if name has unusual separator sequences.
+fn has_unusual_separators(name: &str) -> bool {
+    name.contains("__") || name.contains("--") || name.contains("..")
 }
 
 /// Check if tensor name has non-standard pattern
 fn is_nonstandard_pattern(name: &str) -> bool {
-    // Names with numbers not in layers.N pattern
-    let has_odd_numbers = name.chars().any(|c| c.is_ascii_digit())
-        && !name.contains("layers.")
-        && !name.contains("conv1")
-        && !name.contains("conv2")
-        && !name.contains("fc1")
-        && !name.contains("fc2");
-
-    // Names with unusual separators
-    let has_unusual_sep = name.contains("__") || name.contains("--") || name.contains("..");
+    // Numbers not in standard patterns
+    let has_odd_numbers = name.chars().any(|c| c.is_ascii_digit()) && !has_standard_numbering(name);
 
     // Names that are too short (likely abbreviated)
-    let too_short = name.len() < 5 && !name.is_empty();
+    let too_short = !name.is_empty() && name.len() < 5;
 
-    has_odd_numbers || has_unusual_sep || too_short
+    has_odd_numbers || has_unusual_separators(name) || too_short
 }
 
 /// Check efficiency requirements
@@ -432,6 +426,29 @@ fn check_efficiency(report: &mut LintReport, info: &ModelLintInfo) {
     }
 }
 
+/// Check if license info exists in header/metadata.
+fn has_license_info(header: &crate::format::Header, metadata: &crate::format::Metadata) -> bool {
+    metadata.license.is_some()
+        || metadata.custom.contains_key("license")
+        || header.flags.is_licensed()
+}
+
+/// Check if model card info exists in header/metadata.
+fn has_model_card_info(header: &crate::format::Header, metadata: &crate::format::Metadata) -> bool {
+    metadata.model_card.is_some()
+        || metadata.custom.contains_key("model_card")
+        || header.flags.has_model_card()
+}
+
+/// Check if provenance info exists in metadata.
+fn has_provenance_info(metadata: &crate::format::Metadata) -> bool {
+    metadata.distillation.is_some()
+        || metadata.distillation_info.is_some()
+        || metadata.training.is_some()
+        || metadata.custom.contains_key("provenance")
+        || metadata.custom.contains_key("author")
+}
+
 /// Lint an APR file from disk
 pub fn lint_apr_file(path: impl AsRef<Path>) -> Result<LintReport> {
     use crate::format::{Header, Metadata, HEADER_SIZE};
@@ -454,27 +471,12 @@ pub fn lint_apr_file(path: impl AsRef<Path>) -> Result<LintReport> {
 
     // Build lint info from header/metadata
     let mut info = ModelLintInfo::default();
-
-    // Check metadata fields
-    info.has_license = metadata.license.is_some()
-        || metadata.custom.contains_key("license")
-        || header.flags.is_licensed();
-
-    info.has_model_card = metadata.model_card.is_some()
-        || metadata.custom.contains_key("model_card")
-        || header.flags.has_model_card();
-
-    info.has_provenance = metadata.distillation.is_some()
-        || metadata.distillation_info.is_some()
-        || metadata.training.is_some()
-        || metadata.custom.contains_key("provenance")
-        || metadata.custom.contains_key("author");
-
-    // Check compression
+    info.has_license = has_license_info(&header, &metadata);
+    info.has_model_card = has_model_card_info(&header, &metadata);
+    info.has_provenance = has_provenance_info(&metadata);
     info.is_compressed = header.compression != crate::format::Compression::None;
 
     // For tensor info, we need to read tensor index
-    // For now, we estimate based on payload size
     let payload_size = header.payload_size as usize;
     if payload_size > 0 {
         info.tensors.push(TensorLintInfo {

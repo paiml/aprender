@@ -40,42 +40,35 @@ pub(crate) fn run(file: &Path) -> Result<()> {
     }
 }
 
-/// Display lint report
-fn display_report(report: &LintReport) {
-    if report.issues.is_empty() {
-        println!("{}", "No issues found.".green().bold());
-        println!();
-        return;
+/// Format lint level as colored string.
+fn format_level(level: LintLevel) -> colored::ColoredString {
+    match level {
+        LintLevel::Info => format!("[{}]", level.as_str()).blue(),
+        LintLevel::Warn => format!("[{}]", level.as_str()).yellow(),
+        LintLevel::Error => format!("[{}]", level.as_str()).red(),
     }
+}
 
-    // Group by category
-    for category in [
-        LintCategory::Metadata,
-        LintCategory::Naming,
-        LintCategory::Efficiency,
-    ] {
-        let issues = report.issues_in_category(category);
-        if !issues.is_empty() {
-            // Print category issues
-            for issue in &issues {
-                let level_str = match issue.level {
-                    LintLevel::Info => format!("[{}]", issue.level.as_str()).blue(),
-                    LintLevel::Warn => format!("[{}]", issue.level.as_str()).yellow(),
-                    LintLevel::Error => format!("[{}]", issue.level.as_str()).red(),
-                };
+/// Print a single lint issue.
+fn print_issue(issue: &aprender::format::LintIssue, category: LintCategory) {
+    let level_str = format_level(issue.level);
+    println!("{} {}: {}", level_str, category.name(), issue.message);
 
-                println!("{} {}: {}", level_str, category.name(), issue.message);
-
-                if let Some(ref suggestion) = issue.suggestion {
-                    println!("       {}", suggestion.dimmed());
-                }
-            }
-        }
+    if let Some(ref suggestion) = issue.suggestion {
+        println!("       {}", suggestion.dimmed());
     }
+}
 
-    println!();
+/// Print issues for a category.
+fn print_category_issues(report: &LintReport, category: LintCategory) {
+    let issues = report.issues_in_category(category);
+    for issue in &issues {
+        print_issue(issue, category);
+    }
+}
 
-    // Summary
+/// Print summary and final status.
+fn print_summary(report: &LintReport) {
     let total = report.total_issues();
     let summary = format!(
         "Found {} issue(s): {} error(s), {} warning(s), {} info(s)",
@@ -89,4 +82,21 @@ fn display_report(report: &LintReport) {
         println!("{}", summary.yellow());
         println!("{}", "Lint failed (has warnings or errors)".red().bold());
     }
+}
+
+/// Display lint report
+fn display_report(report: &LintReport) {
+    if report.issues.is_empty() {
+        println!("{}", "No issues found.".green().bold());
+        println!();
+        return;
+    }
+
+    // Print issues grouped by category
+    print_category_issues(report, LintCategory::Metadata);
+    print_category_issues(report, LintCategory::Naming);
+    print_category_issues(report, LintCategory::Efficiency);
+
+    println!();
+    print_summary(report);
 }

@@ -75,7 +75,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let test_path = Path::new("/tmp/shell_model_format_test.apr");
 
-    // 1. Create and train model
+    let model = create_and_train_model();
+    save_model(&model, test_path)?;
+    verify_header(test_path)?;
+    test_roundtrip(&model, test_path)?;
+    test_suggestions(test_path)?;
+    test_type_mismatch(test_path);
+
+    fs::remove_file(test_path)?;
+
+    println!("\n════════════════════════════════════════");
+    println!("✅ All format verification checks passed!");
+    println!("════════════════════════════════════════");
+
+    Ok(())
+}
+
+fn create_and_train_model() -> TestMarkovModel {
     println!("1️⃣  Creating test model...");
     let mut model = TestMarkovModel::new(3);
     model.train(&[
@@ -90,21 +106,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "kubectl get pods",
     ]);
     println!("   Trained on {} commands", model.total_commands);
+    model
+}
 
-    // 2. Save with NgramLm type
+fn save_model(model: &TestMarkovModel, path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     println!("\n2️⃣  Saving with ModelType::NgramLm...");
     let options = SaveOptions::default()
         .with_name("shell-format-test")
         .with_description("Test model for format verification");
+    format::save(model, ModelType::NgramLm, path, options)?;
+    println!("   Saved to: {}", path.display());
+    Ok(())
+}
 
-    format::save(&model, ModelType::NgramLm, test_path, options)?;
-    println!("   Saved to: {}", test_path.display());
-
-    // 3. Verify header
+fn verify_header(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     println!("\n3️⃣  Verifying header...");
-    let bytes = fs::read(test_path)?;
+    let bytes = fs::read(path)?;
 
-    // Check magic
     let magic = &bytes[0..4];
     if magic == b"APRN" {
         println!("   ✅ Magic bytes: APRN");
@@ -113,26 +131,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Err("Invalid magic".into());
     }
 
-    // Check version
     let version = u16::from_le_bytes([bytes[4], bytes[5]]);
     println!("   ✅ Version: {version}");
 
-    // Check model type
     let model_type_raw = u16::from_le_bytes([bytes[6], bytes[7]]);
-    if model_type_raw == 0x0010 {
-        println!("   ✅ Model type: NgramLm (0x{model_type_raw:04X})");
-    } else if model_type_raw == 0x00FF {
-        println!("   ❌ Model type: Custom (0x{model_type_raw:04X}) - should be NgramLm");
-        return Err("Wrong model type".into());
-    } else {
-        println!("   ❓ Model type: Unknown (0x{model_type_raw:04X})");
+    match model_type_raw {
+        0x0010 => println!("   ✅ Model type: NgramLm (0x{model_type_raw:04X})"),
+        0x00FF => {
+            println!("   ❌ Model type: Custom (0x{model_type_raw:04X}) - should be NgramLm");
+            return Err("Wrong model type".into());
+        }
+        _ => println!("   ❓ Model type: Unknown (0x{model_type_raw:04X})"),
     }
+    Ok(())
+}
 
-    // 4. Load and verify roundtrip
+fn test_roundtrip(model: &TestMarkovModel, path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     println!("\n4️⃣  Testing roundtrip...");
-    let loaded: TestMarkovModel = format::load(test_path, ModelType::NgramLm)?;
+    let loaded: TestMarkovModel = format::load(path, ModelType::NgramLm)?;
 
-    // Verify data integrity
     assert_eq!(loaded.n, model.n, "n-gram size mismatch");
     assert_eq!(
         loaded.total_commands, model.total_commands,
@@ -144,9 +161,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "vocab size mismatch"
     );
     println!("   ✅ Data integrity verified");
+    Ok(())
+}
 
-    // 5. Test suggestions
+fn test_suggestions(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     println!("\n5️⃣  Testing suggestions...");
+    let loaded: TestMarkovModel = format::load(path, ModelType::NgramLm)?;
     let suggestions = loaded.suggest("git ");
     println!("   Suggestions for 'git ':");
     for (cmd, score) in &suggestions {
@@ -156,23 +176,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if suggestions.is_empty() {
         println!("   ❌ No suggestions returned");
         return Err("Suggestions failed".into());
-    } else {
-        println!("   ✅ Suggestions work");
     }
+    println!("   ✅ Suggestions work");
+    Ok(())
+}
 
-    // 6. Test backward compatibility (loading Custom type should fail gracefully)
+fn test_type_mismatch(path: &Path) {
     println!("\n6️⃣  Testing type mismatch handling...");
-    match format::load::<TestMarkovModel>(test_path, ModelType::Custom) {
+    match format::load::<TestMarkovModel>(path, ModelType::Custom) {
         Ok(_) => println!("   ⚠️  Loaded as Custom (unexpected but ok for compat)"),
         Err(e) => println!("   ✅ Correctly rejected Custom type: {e}"),
     }
-
-    // Cleanup
-    fs::remove_file(test_path)?;
-
-    println!("\n════════════════════════════════════════");
-    println!("✅ All format verification checks passed!");
-    println!("════════════════════════════════════════");
-
-    Ok(())
 }

@@ -12,9 +12,9 @@
 //!
 //! # References
 //!
-//! [1] Malkov & Yashunin (2018). "Efficient and robust approximate nearest
-//!     neighbor search using Hierarchical Navigable Small World graphs."
-//!     IEEE TPAMI. https://arxiv.org/abs/1603.09320
+//! Malkov & Yashunin (2018). "Efficient and robust approximate nearest
+//! neighbor search using Hierarchical Navigable Small World graphs."
+//! IEEE TPAMI. <https://arxiv.org/abs/1603.09320>
 //!
 //! # Examples
 //!

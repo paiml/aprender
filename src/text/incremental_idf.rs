@@ -18,8 +18,8 @@
 //!
 //! # References
 //!
-//! [1] Sculley et al. (2015). "Hidden Technical Debt in Machine Learning Systems."
-//!     NIPS 2015. https://papers.nips.cc/paper/2015/file/86df7dcfd896fcaf2674f757a2463eba-Paper.pdf
+//! Sculley et al. (2015). "Hidden Technical Debt in Machine Learning Systems."
+//! NIPS 2015. <https://papers.nips.cc/paper/2015/file/86df7dcfd896fcaf2674f757a2463eba-Paper.pdf>
 //!
 //! # Examples
 //!

@@ -179,26 +179,23 @@ struct TraceSummary {
     anomalies: Vec<String>,
 }
 
-/// Run the trace command
-pub(crate) fn run(
+/// Handle special trace modes (interactive, payload, diff).
+/// Returns `Some(Ok(()))` if a mode handled the request, `None` to continue.
+fn handle_special_modes(
     path: &Path,
-    layer_filter: Option<&str>,
     reference: Option<&Path>,
-    json_output: bool,
-    verbose: bool,
     payload: bool,
     diff: bool,
     interactive: bool,
-) -> Result<(), CliError> {
+) -> Option<Result<(), CliError>> {
     if interactive {
         println!("Starting interactive trace (TUI) for {}", path.display());
         println!("(TUI mode not yet fully implemented)");
-        return Ok(());
+        return Some(Ok(()));
     }
 
     if payload {
         println!("Tracing payload through model: {}", path.display());
-        // Stub for payload trace
     }
 
     if diff {
@@ -213,15 +210,18 @@ pub(crate) fn run(
         }
     }
 
+    None
+}
+
+/// Read and parse model metadata from an APR file.
+fn read_model_metadata(path: &Path) -> Result<(String, Vec<u8>), CliError> {
     validate_path(path)?;
 
     let file = File::open(path)?;
     let mut reader = BufReader::new(file);
 
-    // Read and validate header
     let format_name = validate_header(&mut reader)?;
 
-    // Read metadata
     let mut size_buf = [0u8; 4];
     reader.seek(SeekFrom::Start(8))?;
     reader.read_exact(&mut size_buf)?;
@@ -231,10 +231,11 @@ pub(crate) fn run(
     let mut metadata_bytes = vec![0u8; metadata_size];
     reader.read_exact(&mut metadata_bytes)?;
 
-    // Parse metadata and extract layer information
-    let layers = trace_layers(&metadata_bytes, layer_filter, verbose);
+    Ok((format_name, metadata_bytes))
+}
 
-    // Compute summary
+/// Compute trace summary from layer information.
+fn compute_trace_summary(layers: &[LayerTrace]) -> TraceSummary {
     let all_anomalies: Vec<String> = layers.iter().flat_map(|l| l.anomalies.clone()).collect();
 
     let total_params: usize = layers
@@ -242,17 +243,35 @@ pub(crate) fn run(
         .filter_map(|l| l.weight_stats.as_ref().map(|s| s.count))
         .sum();
 
-    let summary = TraceSummary {
+    TraceSummary {
         total_layers: layers.len(),
         total_parameters: total_params,
         anomaly_count: all_anomalies.len(),
         anomalies: all_anomalies,
-    };
+    }
+}
 
-    // Handle reference comparison
+/// Run the trace command
+pub(crate) fn run(
+    path: &Path,
+    layer_filter: Option<&str>,
+    reference: Option<&Path>,
+    json_output: bool,
+    verbose: bool,
+    payload: bool,
+    diff: bool,
+    interactive: bool,
+) -> Result<(), CliError> {
+    if let Some(result) = handle_special_modes(path, reference, payload, diff, interactive) {
+        return result;
+    }
+
+    let (format_name, metadata_bytes) = read_model_metadata(path)?;
+    let layers = trace_layers(&metadata_bytes, layer_filter, verbose);
+    let summary = compute_trace_summary(&layers);
+
     if let Some(ref_path) = reference {
-        compare_with_reference(path, ref_path, &layers, json_output)?;
-        return Ok(());
+        return compare_with_reference(path, ref_path, &layers, json_output);
     }
 
     if json_output {
@@ -289,113 +308,117 @@ fn validate_header(reader: &mut BufReader<File>) -> Result<String, CliError> {
     Ok(output::format_name(&magic).to_string())
 }
 
-fn trace_layers(metadata_bytes: &[u8], filter: Option<&str>, _verbose: bool) -> Vec<LayerTrace> {
-    // Parse metadata as MessagePack
-    let metadata: BTreeMap<String, serde_json::Value> =
-        rmp_serde::from_slice(metadata_bytes).unwrap_or_else(|_| BTreeMap::new());
+/// Extract layer count from hyperparameters.
+fn extract_layer_count(hp: &serde_json::Map<String, serde_json::Value>) -> usize {
+    hp.get("n_layer")
+        .or_else(|| hp.get("n_layers"))
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(0) as usize
+}
 
-    let mut layers = Vec::new();
+/// Extract model dimension from hyperparameters.
+fn extract_model_dimension(hp: &serde_json::Map<String, serde_json::Value>) -> usize {
+    hp.get("n_embd")
+        .or_else(|| hp.get("d_model"))
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(0) as usize
+}
 
-    // Extract layer info from hyperparameters if available
-    if let Some(hp) = metadata.get("hyperparameters") {
-        if let Some(hp_obj) = hp.as_object() {
-            // Create synthetic layer trace from model architecture
-            let n_layers = hp_obj
-                .get("n_layer")
-                .or_else(|| hp_obj.get("n_layers"))
-                .and_then(serde_json::Value::as_u64)
-                .unwrap_or(0) as usize;
+/// Create an embedding layer trace.
+fn create_embedding_layer(d_model: usize) -> LayerTrace {
+    LayerTrace {
+        name: "embedding".to_string(),
+        index: None,
+        input_stats: None,
+        output_stats: Some(TensorStats {
+            count: d_model,
+            mean: 0.0,
+            std: 0.0,
+            l2_norm: 0.0,
+            min: 0.0,
+            max: 0.0,
+            max_abs: 0.0,
+            nan_count: 0,
+            inf_count: 0,
+        }),
+        weight_stats: None,
+        anomalies: vec![],
+    }
+}
 
-            let d_model = hp_obj
-                .get("n_embd")
-                .or_else(|| hp_obj.get("d_model"))
-                .and_then(serde_json::Value::as_u64)
-                .unwrap_or(0) as usize;
-
-            // Add embedding layer
-            layers.push(LayerTrace {
-                name: "embedding".to_string(),
-                index: None,
-                input_stats: None,
-                output_stats: Some(TensorStats {
-                    count: d_model,
-                    mean: 0.0,
-                    std: 0.0,
-                    l2_norm: 0.0,
-                    min: 0.0,
-                    max: 0.0,
-                    max_abs: 0.0,
-                    nan_count: 0,
-                    inf_count: 0,
-                }),
-                weight_stats: None,
-                anomalies: vec![],
-            });
-
-            // Add transformer layers
-            for i in 0..n_layers {
-                let layer_name = format!("transformer_block_{i}");
-
-                if let Some(f) = filter {
-                    if !layer_name.contains(f) {
-                        continue;
-                    }
-                }
-
-                layers.push(LayerTrace {
-                    name: layer_name,
-                    index: Some(i),
-                    input_stats: None,
-                    output_stats: None,
-                    weight_stats: None,
-                    anomalies: vec![],
-                });
+/// Create transformer layer traces with optional filtering.
+fn create_transformer_layers(n_layers: usize, filter: Option<&str>) -> Vec<LayerTrace> {
+    (0..n_layers)
+        .filter_map(|i| {
+            let layer_name = format!("transformer_block_{i}");
+            if filter.is_some_and(|f| !layer_name.contains(f)) {
+                return None;
             }
-
-            // Add final layer norm
-            layers.push(LayerTrace {
-                name: "final_layer_norm".to_string(),
-                index: None,
+            Some(LayerTrace {
+                name: layer_name,
+                index: Some(i),
                 input_stats: None,
                 output_stats: None,
                 weight_stats: None,
                 anomalies: vec![],
-            });
-        }
-    }
+            })
+        })
+        .collect()
+}
 
-    // Also check tensor_shapes for actual weight info
-    // This section can be extended to extract more layer information from tensor shapes
-    if let Some(shapes) = metadata.get("tensor_shapes") {
-        if let Some(shapes_map) = shapes.as_object() {
-            // Count tensors that match the filter (for potential future use)
-            let _matching_tensors: Vec<_> = shapes_map
-                .keys()
-                .filter(|name| {
-                    if let Some(f) = filter {
-                        name.contains(f)
-                    } else {
-                        true
-                    }
-                })
-                .filter(|name| !name.contains("layer") && !name.contains("block"))
-                .collect();
-            // Future: use _matching_tensors to add more layer info
-        }
+/// Create final layer norm trace.
+fn create_final_layer_norm() -> LayerTrace {
+    LayerTrace {
+        name: "final_layer_norm".to_string(),
+        index: None,
+        input_stats: None,
+        output_stats: None,
+        weight_stats: None,
+        anomalies: vec![],
     }
+}
+
+/// Create default layer trace when no metadata available.
+fn create_default_layer() -> LayerTrace {
+    LayerTrace {
+        name: "(layer trace metadata not available)".to_string(),
+        index: None,
+        input_stats: None,
+        output_stats: None,
+        weight_stats: None,
+        anomalies: vec!["No layer information in metadata".to_string()],
+    }
+}
+
+/// Extract layers from hyperparameters metadata.
+fn extract_layers_from_hyperparameters(
+    hp: &serde_json::Map<String, serde_json::Value>,
+    filter: Option<&str>,
+) -> Vec<LayerTrace> {
+    let n_layers = extract_layer_count(hp);
+    let d_model = extract_model_dimension(hp);
+
+    let mut layers = vec![create_embedding_layer(d_model)];
+    layers.extend(create_transformer_layers(n_layers, filter));
+    layers.push(create_final_layer_norm());
+    layers
+}
+
+fn trace_layers(metadata_bytes: &[u8], filter: Option<&str>, _verbose: bool) -> Vec<LayerTrace> {
+    let metadata: BTreeMap<String, serde_json::Value> =
+        rmp_serde::from_slice(metadata_bytes).unwrap_or_else(|_| BTreeMap::new());
+
+    let layers: Vec<LayerTrace> = metadata
+        .get("hyperparameters")
+        .and_then(|hp| hp.as_object())
+        .map(|hp_obj| extract_layers_from_hyperparameters(hp_obj, filter))
+        .unwrap_or_default();
 
     if layers.is_empty() {
-        layers.push(LayerTrace {
-            name: "(layer trace metadata not available)".to_string(),
-            index: None,
-            input_stats: None,
-            output_stats: None,
-            weight_stats: None,
-            anomalies: vec!["No layer information in metadata".to_string()],
-        });
+        vec![create_default_layer()]
+    } else {
+        layers
     }
-
-    layers
 }
 
 fn compare_with_reference(

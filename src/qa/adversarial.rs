@@ -245,7 +245,7 @@ impl GaussianNoiseAttack {
 /// Run all adversarial robustness tests
 ///
 /// # Returns
-/// Tuple of (CategoryScore, Vec<QaIssue>)
+/// Tuple of (`CategoryScore`, `Vec<QaIssue>`)
 pub fn run_robustness_tests(config: &AdversarialConfig) -> (CategoryScore, Vec<QaIssue>) {
     let start = Instant::now();
     let mut score = CategoryScore::new(20); // 20 points for robustness

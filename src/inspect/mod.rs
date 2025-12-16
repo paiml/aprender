@@ -10,11 +10,18 @@
 //! - **Weight statistics**: Min/max/mean/std for model parameters
 //! - **Diff comparison**: Compare two model versions
 //! - **Quality scoring**: 100-point model assessment
+//! - **SafeTensors comparison**: Compare against HuggingFace models (GH-121)
 //!
 //! # Toyota Way Alignment
 //!
 //! - **Genchi Genbutsu**: Go and see - inspect actual model data
 //! - **Visualization**: Make problems visible for debugging
+
+#[cfg(feature = "safetensors-compare")]
+pub mod safetensors;
+
+#[cfg(feature = "safetensors-compare")]
+pub use safetensors::{BatchComparison, HfSafetensors, TensorComparison, TensorData};
 
 use std::collections::HashMap;
 use std::fmt;

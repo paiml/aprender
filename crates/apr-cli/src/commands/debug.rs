@@ -12,6 +12,22 @@ use std::fs::File;
 use std::io::{BufReader, Read};
 use std::path::Path;
 
+/// Parsed header information for debug output.
+///
+/// These flags represent independent header properties that are naturally
+/// expressed as booleans. A state machine would over-complicate this simple
+/// debug data structure.
+#[allow(clippy::struct_excessive_bools)]
+struct HeaderInfo {
+    magic_valid: bool,
+    magic_str: String,
+    version: (u8, u8),
+    model_type: u16,
+    compressed: bool,
+    signed: bool,
+    encrypted: bool,
+}
+
 /// Run the debug command
 pub(crate) fn run(
     path: &Path,
@@ -20,93 +36,123 @@ pub(crate) fn run(
     strings: bool,
     limit: usize,
 ) -> Result<(), CliError> {
-    // Validate path
+    validate_path(path)?;
+
+    // Dispatch to appropriate mode
+    if hex {
+        return run_hex_mode(path, limit);
+    }
+    if strings {
+        return run_strings_mode(path, limit);
+    }
+
+    // Read and parse header for drama/basic modes
+    let (header_bytes, file_size) = read_header(path)?;
+    let info = parse_header(&header_bytes);
+
+    if drama {
+        run_drama_mode(path, &header_bytes, file_size, info.magic_valid);
+    } else {
+        run_basic_mode(path, file_size, &info);
+    }
+
+    Ok(())
+}
+
+/// Validate the input path.
+fn validate_path(path: &Path) -> Result<(), CliError> {
     if !path.exists() {
         return Err(CliError::FileNotFound(path.to_path_buf()));
     }
     if !path.is_file() {
         return Err(CliError::NotAFile(path.to_path_buf()));
     }
+    Ok(())
+}
 
+/// Read header bytes from file.
+fn read_header(path: &Path) -> Result<([u8; HEADER_SIZE], u64), CliError> {
     let file = File::open(path)?;
     let file_size = file.metadata()?.len();
     let mut reader = BufReader::new(file);
 
-    // Read header
     let mut header_bytes = [0u8; HEADER_SIZE];
     reader
         .read_exact(&mut header_bytes)
         .map_err(|_| CliError::InvalidFormat("File too small".to_string()))?;
 
-    // Parse basic info
-    let magic_valid = output::is_valid_magic(&header_bytes[0..4]);
-    let magic_str = String::from_utf8_lossy(&header_bytes[0..4]);
-    let version = (header_bytes[4], header_bytes[5]);
-    let model_type = u16::from_le_bytes([header_bytes[6], header_bytes[7]]);
-    let flags = header_bytes[21];
+    Ok((header_bytes, file_size))
+}
 
-    let compressed = flags & 0x01 != 0 || header_bytes[20] != 0;
-    let signed = flags & 0x02 != 0;
-    let encrypted = flags & 0x04 != 0;
+/// Parse header bytes into structured info.
+fn parse_header(header: &[u8; HEADER_SIZE]) -> HeaderInfo {
+    let flags = header[21];
+    HeaderInfo {
+        magic_valid: output::is_valid_magic(&header[0..4]),
+        magic_str: String::from_utf8_lossy(&header[0..4]).to_string(),
+        version: (header[4], header[5]),
+        model_type: u16::from_le_bytes([header[6], header[7]]),
+        compressed: flags & 0x01 != 0 || header[20] != 0,
+        signed: flags & 0x02 != 0,
+        encrypted: flags & 0x04 != 0,
+    }
+}
 
-    if drama {
-        run_drama_mode(path, &header_bytes, file_size, magic_valid);
-    } else if hex {
-        run_hex_mode(path, limit)?;
-    } else if strings {
-        run_strings_mode(path, limit)?;
-    } else {
-        // Basic debug output
-        let filename = path
-            .file_name()
-            .unwrap_or(OsStr::new("unknown"))
-            .to_string_lossy();
+/// Run basic debug output mode.
+fn run_basic_mode(path: &Path, file_size: u64, info: &HeaderInfo) {
+    let filename = path
+        .file_name()
+        .unwrap_or(OsStr::new("unknown"))
+        .to_string_lossy();
 
-        println!(
-            "{}: APR v{}.{} {} ({})",
-            filename.cyan().bold(),
-            version.0,
-            version.1,
-            format_model_type(model_type),
-            humansize::format_size(file_size, humansize::BINARY)
-        );
+    println!(
+        "{}: APR v{}.{} {} ({})",
+        filename.cyan().bold(),
+        info.version.0,
+        info.version.1,
+        format_model_type(info.model_type),
+        humansize::format_size(file_size, humansize::BINARY)
+    );
 
-        println!(
-            "  magic: {magic_str} ({})",
-            if magic_valid {
-                "valid".green()
-            } else {
-                "INVALID".red().bold()
-            }
-        );
-
-        // Flags
-        let mut flag_list = Vec::new();
-        if compressed {
-            flag_list.push("compressed");
+    println!(
+        "  magic: {} ({})",
+        info.magic_str,
+        if info.magic_valid {
+            "valid".green()
+        } else {
+            "INVALID".red().bold()
         }
-        if signed {
-            flag_list.push("signed");
-        }
-        if encrypted {
-            flag_list.push("encrypted");
-        }
+    );
 
-        if !flag_list.is_empty() {
-            println!("  flags: {}", flag_list.join(", "));
-        }
-
-        println!(
-            "  health: {}",
-            if magic_valid {
-                "OK".green().bold()
-            } else {
-                "CORRUPTED".red().bold()
-            }
-        );
+    // Flags
+    let flag_list = collect_flags(info);
+    if !flag_list.is_empty() {
+        println!("  flags: {}", flag_list.join(", "));
     }
 
-    Ok(())
+    println!(
+        "  health: {}",
+        if info.magic_valid {
+            "OK".green().bold()
+        } else {
+            "CORRUPTED".red().bold()
+        }
+    );
+}
+
+/// Collect active flags into a list.
+fn collect_flags(info: &HeaderInfo) -> Vec<&'static str> {
+    let mut flags = Vec::new();
+    if info.compressed {
+        flags.push("compressed");
+    }
+    if info.signed {
+        flags.push("signed");
+    }
+    if info.encrypted {
+        flags.push("encrypted");
+    }
+    flags
 }
 
 /// Drama mode - theatrical debugging output

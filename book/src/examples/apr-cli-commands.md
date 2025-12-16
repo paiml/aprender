@@ -1,6 +1,6 @@
 # Case Study: APR CLI Commands Demo
 
-This case study demonstrates creating test models and using all 15 apr-cli commands for model inspection, validation, transformation, and testing.
+This case study demonstrates creating test models and using all 17 apr-cli commands for model inspection, validation, transformation, testing, and inference.
 
 ## The Problem
 
@@ -15,7 +15,7 @@ APR model files need comprehensive tooling for:
 
 ## The Solution: apr-cli
 
-The `apr` CLI provides 15 commands for complete model lifecycle management:
+The `apr` CLI provides 17 commands for complete model lifecycle management:
 
 ```bash
 # Build the CLI
@@ -39,7 +39,7 @@ Run: `cargo run --example apr_cli_commands`
 {{#include ../../../examples/apr_cli_commands.rs}}
 ```
 
-## All 15 Commands
+## All 17 Commands
 
 ### Model Inspection
 
@@ -217,7 +217,76 @@ Provides context-aware explanations for errors and tensor patterns.
 apr tui model.apr                          # Launch interactive UI
 ```
 
-Interactive terminal interface for model exploration (coming soon).
+Interactive terminal interface for model exploration with four tabs:
+
+| Tab | Key | Description |
+|-----|-----|-------------|
+| Overview | `1` | Model metadata, hyperparameters, training info |
+| Tensors | `2` | Tensor list with shapes, dtypes, sizes |
+| Stats | `3` | Tensor statistics (mean, std, min, max, zeros, NaNs) |
+| Help | `?` | Keyboard shortcuts and navigation help |
+
+**Keyboard Navigation:**
+- `1`, `2`, `3`, `?` - Switch tabs directly
+- `Tab` / `Shift+Tab` - Cycle through tabs
+- `j` / `↓` - Next item in list
+- `k` / `↑` - Previous item in list
+- `q` / `Esc` - Quit
+
+### Inference (requires `--features inference`)
+
+Build with inference support:
+
+```bash
+cargo build -p apr-cli --features inference
+```
+
+#### 16. RUN - Run Model Inference
+
+```bash
+apr run model.apr --input "[1.0, 2.0]"       # JSON array input
+apr run model.apr --input "1.0,2.0"          # CSV input
+apr run model.apr --input "[1.0, 2.0]" --json  # JSON output
+```
+
+Runs inference on APR, SafeTensors, or GGUF models:
+
+| Format | Inference Type |
+|--------|----------------|
+| APR (.apr) | Full ML inference via realizar |
+| SafeTensors (.safetensors) | Tensor inspection |
+| GGUF (.gguf) | Model inspection (mmap) |
+
+**Input Formats:**
+- JSON array: `"[1.0, 2.0, 3.0]"`
+- CSV: `"1.0,2.0,3.0"`
+
+#### 17. SERVE - Start Inference Server
+
+```bash
+apr serve model.apr --port 8080              # Start on port 8080
+apr serve model.apr --host 0.0.0.0 --port 3000  # Bind to all interfaces
+```
+
+Starts a REST API server for model inference:
+
+**APR Models (full inference):**
+```bash
+# Health check
+curl http://localhost:8080/health
+
+# Run inference
+curl -X POST http://localhost:8080/predict \
+  -H "Content-Type: application/json" \
+  -d '{"input": [1.0, 2.0]}'
+```
+
+**Server Features:**
+- `/health` - Health check endpoint
+- `/predict` - Inference endpoint (APR models)
+- `/model` - Model info endpoint (GGUF/SafeTensors)
+- `/tensors` - Tensor listing (SafeTensors)
+- Graceful shutdown via Ctrl+C
 
 ## Example Output
 
@@ -289,12 +358,13 @@ apr debug model.apr --drama
 | Benefit | Description |
 |---------|-------------|
 | Standardized | Consistent CLI for all APR models |
-| Comprehensive | 15 commands cover full lifecycle |
+| Comprehensive | 17 commands cover full lifecycle |
 | Scriptable | JSON output for automation |
 | Debuggable | Deep inspection with drama mode |
 | Validatable | 100-point QA with grades |
 | Transformable | Quantization and format conversion |
 | Testable | Canary regression testing |
+| Inference | Run predictions and serve REST APIs |
 
 ## Related Resources
 

@@ -12,20 +12,28 @@
 
 use aprender::graph::Graph;
 
-#[allow(clippy::too_many_lines)]
 fn main() {
     println!("═══════════════════════════════════════════════════════");
     println!("  Social Network Analysis with Aprender");
     println!("═══════════════════════════════════════════════════════\n");
 
-    // Build a social network with 10 people
-    // Network structure:
-    //   Tech Community: Alice (0) - Bob (1) - Charlie (2) - Diana (3)
-    //   Art Community:  Eve (4) - Frank (5) - Grace (6)
-    //   Bridge: Diana (3) connects to Eve (4)
-    //   Isolated group: Henry (7) - Iris (8) - Jack (9)
-    //   Bridge: Grace (6) connects to Henry (7)
+    let (graph, names) = build_social_network();
 
+    let degree_with_names = analyze_degree_centrality(&graph, &names);
+    let pagerank_with_names = analyze_pagerank(&graph, &names);
+    let betweenness_with_names = analyze_betweenness(&graph, &names);
+    analyze_closeness(&graph, &names);
+    analyze_eigenvector(&graph, &names);
+    analyze_network_structure(&graph);
+    print_summary(
+        &degree_with_names,
+        &pagerank_with_names,
+        &betweenness_with_names,
+        &graph,
+    );
+}
+
+fn build_social_network() -> (Graph, Vec<&'static str>) {
     let edges = vec![
         // Tech community (densely connected)
         (0, 1), // Alice - Bob
@@ -58,119 +66,95 @@ fn main() {
     println!("   - {} friendships total\n", edges.len());
 
     let graph = Graph::from_edges(&edges, false);
+    (graph, names)
+}
 
-    // ========================================================================
-    // Degree Centrality: Who has the most friends?
-    // ========================================================================
+fn analyze_degree_centrality<'a>(graph: &Graph, names: &[&'a str]) -> Vec<(&'a str, f64)> {
     println!("═══════════════════════════════════════════════════════");
     println!("  1. Degree Centrality (Most Connected People)");
     println!("═══════════════════════════════════════════════════════\n");
 
     let degree_scores = graph.degree_centrality();
-    let mut degree_with_names: Vec<(&str, f64)> = Vec::new();
-    for (node_id, score) in &degree_scores {
-        degree_with_names.push((names[*node_id], *score));
-    }
-    degree_with_names.sort_by(|a, b| b.1.partial_cmp(&a.1).expect("Example data should be valid"));
+    let mut result: Vec<(&str, f64)> = degree_scores
+        .iter()
+        .map(|(id, score)| (names[*id], *score))
+        .collect();
+    result.sort_by(|a, b| b.1.partial_cmp(&a.1).expect("Example data should be valid"));
 
-    println!("Top 5 Most Connected People:");
-    for (i, (name, score)) in degree_with_names.iter().take(5).enumerate() {
-        println!(
-            "  {}. {} - {:.3} (normalized degree centrality)",
-            i + 1,
-            name,
-            score
-        );
-    }
+    print_top_5(
+        &result,
+        "Most Connected People",
+        "normalized degree centrality",
+    );
     println!("\n💡 Interpretation:");
     println!("   Higher scores = more direct friendships");
     println!("   These people are the \"social butterflies\"\n");
+    result
+}
 
-    // ========================================================================
-    // PageRank: Who is most influential?
-    // ========================================================================
+fn analyze_pagerank<'a>(graph: &Graph, names: &[&'a str]) -> Vec<(&'a str, f64)> {
     println!("═══════════════════════════════════════════════════════");
     println!("  2. PageRank (Influence Scores)");
     println!("═══════════════════════════════════════════════════════\n");
 
     let pagerank_scores = graph.pagerank(0.85, 100, 1e-6).expect("PageRank failed");
-    let mut pagerank_with_names: Vec<(&str, f64)> = Vec::new();
-    for (i, &score) in pagerank_scores.iter().enumerate() {
-        pagerank_with_names.push((names[i], score));
-    }
-    pagerank_with_names
-        .sort_by(|a, b| b.1.partial_cmp(&a.1).expect("Example data should be valid"));
+    let mut result: Vec<(&str, f64)> = pagerank_scores
+        .iter()
+        .enumerate()
+        .map(|(i, &s)| (names[i], s))
+        .collect();
+    result.sort_by(|a, b| b.1.partial_cmp(&a.1).expect("Example data should be valid"));
 
-    println!("Top 5 Most Influential People:");
-    for (i, (name, score)) in pagerank_with_names.iter().take(5).enumerate() {
-        println!("  {}. {} - {:.4} (PageRank score)", i + 1, name, score);
-    }
+    print_top_5(&result, "Most Influential People", "PageRank score");
     println!("\n💡 Interpretation:");
     println!("   PageRank considers both quantity and quality of connections");
     println!("   Being connected to influential people boosts your score");
     println!("   Similar to how Google ranks web pages\n");
+    result
+}
 
-    // ========================================================================
-    // Betweenness Centrality: Who bridges communities?
-    // ========================================================================
+fn analyze_betweenness<'a>(graph: &Graph, names: &[&'a str]) -> Vec<(&'a str, f64)> {
     println!("═══════════════════════════════════════════════════════");
     println!("  3. Betweenness Centrality (Bridges Between Groups)");
     println!("═══════════════════════════════════════════════════════\n");
 
     let betweenness_scores = graph.betweenness_centrality();
-    let mut betweenness_with_names: Vec<(&str, f64)> = Vec::new();
-    for (i, &score) in betweenness_scores.iter().enumerate() {
-        betweenness_with_names.push((names[i], score));
-    }
-    betweenness_with_names
-        .sort_by(|a, b| b.1.partial_cmp(&a.1).expect("Example data should be valid"));
+    let mut result: Vec<(&str, f64)> = betweenness_scores
+        .iter()
+        .enumerate()
+        .map(|(i, &s)| (names[i], s))
+        .collect();
+    result.sort_by(|a, b| b.1.partial_cmp(&a.1).expect("Example data should be valid"));
 
-    println!("Top 5 Bridge People:");
-    for (i, (name, score)) in betweenness_with_names.iter().take(5).enumerate() {
-        println!(
-            "  {}. {} - {:.2} (betweenness centrality)",
-            i + 1,
-            name,
-            score
-        );
-    }
+    print_top_5(&result, "Bridge People", "betweenness centrality");
     println!("\n💡 Interpretation:");
     println!("   High scores = many shortest paths pass through this person");
     println!("   These people connect different communities");
     println!("   Removing them would fragment the network\n");
+    result
+}
 
-    // ========================================================================
-    // Closeness Centrality: Who can reach everyone quickly?
-    // ========================================================================
+fn analyze_closeness(graph: &Graph, names: &[&str]) {
     println!("═══════════════════════════════════════════════════════");
     println!("  4. Closeness Centrality (Reachability)");
     println!("═══════════════════════════════════════════════════════\n");
 
     let closeness_scores = graph.closeness_centrality();
-    let mut closeness_with_names: Vec<(&str, f64)> = Vec::new();
-    for (i, &score) in closeness_scores.iter().enumerate() {
-        closeness_with_names.push((names[i], score));
-    }
-    closeness_with_names
-        .sort_by(|a, b| b.1.partial_cmp(&a.1).expect("Example data should be valid"));
+    let mut result: Vec<(&str, f64)> = closeness_scores
+        .iter()
+        .enumerate()
+        .map(|(i, &s)| (names[i], s))
+        .collect();
+    result.sort_by(|a, b| b.1.partial_cmp(&a.1).expect("Example data should be valid"));
 
-    println!("Top 5 Most Reachable People:");
-    for (i, (name, score)) in closeness_with_names.iter().take(5).enumerate() {
-        println!(
-            "  {}. {} - {:.4} (closeness centrality)",
-            i + 1,
-            name,
-            score
-        );
-    }
+    print_top_5(&result, "Most Reachable People", "closeness centrality");
     println!("\n💡 Interpretation:");
     println!("   High scores = can reach others via short paths");
     println!("   These people can spread information quickly");
     println!("   Based on average shortest path distance\n");
+}
 
-    // ========================================================================
-    // Eigenvector Centrality: Who is connected to important people?
-    // ========================================================================
+fn analyze_eigenvector(graph: &Graph, names: &[&str]) {
     println!("═══════════════════════════════════════════════════════");
     println!("  5. Eigenvector Centrality (Quality of Connections)");
     println!("═══════════════════════════════════════════════════════\n");
@@ -178,30 +162,28 @@ fn main() {
     let eigenvector_scores = graph
         .eigenvector_centrality(100, 1e-6)
         .expect("Eigenvector computation failed");
-    let mut eigenvector_with_names: Vec<(&str, f64)> = Vec::new();
-    for (i, &score) in eigenvector_scores.iter().enumerate() {
-        eigenvector_with_names.push((names[i], score));
-    }
-    eigenvector_with_names
-        .sort_by(|a, b| b.1.partial_cmp(&a.1).expect("Example data should be valid"));
+    let mut result: Vec<(&str, f64)> = eigenvector_scores
+        .iter()
+        .enumerate()
+        .map(|(i, &s)| (names[i], s))
+        .collect();
+    result.sort_by(|a, b| b.1.partial_cmp(&a.1).expect("Example data should be valid"));
 
-    println!("Top 5 by Connection Quality:");
-    for (i, (name, score)) in eigenvector_with_names.iter().take(5).enumerate() {
-        println!(
-            "  {}. {} - {:.4} (eigenvector centrality)",
-            i + 1,
-            name,
-            score
-        );
-    }
+    print_top_5(&result, "by Connection Quality", "eigenvector centrality");
     println!("\n💡 Interpretation:");
     println!("   High scores = connected to other well-connected people");
     println!("   Quality matters more than quantity of connections");
     println!("   Uses power iteration method\n");
+}
 
-    // ========================================================================
-    // Network Structural Properties
-    // ========================================================================
+fn print_top_5(data: &[(&str, f64)], label: &str, metric: &str) {
+    println!("Top 5 {label}:");
+    for (i, (name, score)) in data.iter().take(5).enumerate() {
+        println!("  {}. {} - {:.4} ({metric})", i + 1, name, score);
+    }
+}
+
+fn analyze_network_structure(graph: &Graph) {
     println!("═══════════════════════════════════════════════════════");
     println!("  6. Network Structural Statistics");
     println!("═══════════════════════════════════════════════════════\n");
@@ -214,16 +196,13 @@ fn main() {
     println!("Network Metrics:");
     println!("  • Density: {density:.4}");
     println!("    (Ratio of actual to possible edges)");
-
     match diameter {
         Some(d) => println!("  • Diameter: {d} hops"),
         None => println!("  • Diameter: ∞ (disconnected graph)"),
     }
     println!("    (Longest shortest path in network)");
-
     println!("  • Clustering Coefficient: {clustering:.4}");
     println!("    (Probability that your friends are friends)");
-
     println!("  • Degree Assortativity: {assortativity:.4}");
     println!("    (Do popular people connect with popular people?)");
 
@@ -243,26 +222,27 @@ fn main() {
         println!("   Low clustering: Sparse friend-of-friend connections");
     }
     println!();
+}
 
-    // ========================================================================
-    // Analysis Summary
-    // ========================================================================
+fn print_summary(
+    degree: &[(&str, f64)],
+    pagerank: &[(&str, f64)],
+    betweenness: &[(&str, f64)],
+    graph: &Graph,
+) {
     println!("═══════════════════════════════════════════════════════");
     println!("  Analysis Summary");
     println!("═══════════════════════════════════════════════════════\n");
 
     println!("Key Insights:");
-    println!(
-        "  • {} is well-connected in their community",
-        degree_with_names[0].0
-    );
+    println!("  • {} is well-connected in their community", degree[0].0);
     println!(
         "  • {} is the most influential person overall",
-        pagerank_with_names[0].0
+        pagerank[0].0
     );
     println!(
         "  • {} is a critical bridge between groups",
-        betweenness_with_names[0].0
+        betweenness[0].0
     );
     println!("\nNetwork Properties:");
     println!("  • Nodes: {}", graph.num_nodes());

@@ -55,7 +55,7 @@ pub(crate) fn run(
 
     println!("Architecture: {:?}", options.architecture);
     if let Some(q) = &options.quantize {
-        println!("Quantization: {:?}", q);
+        println!("Quantization: {q:?}");
     }
     println!("Validation: {:?}", options.validation);
     println!();
@@ -104,7 +104,7 @@ fn print_source_info(source: &Source) {
             println!("Source: {} (Local)", path.display());
         }
         Source::Url(url) => {
-            println!("Source: {} (URL)", url);
+            println!("Source: {url} (URL)");
         }
     }
 }

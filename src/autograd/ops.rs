@@ -591,9 +591,9 @@ impl Tensor {
     ///
     /// # Shape
     ///
-    /// - self: [N, M] (2D matrix)
-    /// - other: [M] (1D vector)
-    /// - output: [N, M]
+    /// - self: `[N, M]` (2D matrix)
+    /// - other: `[M]` (1D vector)
+    /// - output: `[N, M]`
     ///
     /// # Example
     ///

@@ -225,6 +225,19 @@ where
     }
 }
 
+/// Process an edge case result and update the score.
+fn process_edge_case_result(result: &EdgeCaseResult, score: &mut CategoryScore) {
+    if result.passed && result.actual.is_acceptable() {
+        score.add_result(TestResult::pass(&result.name, result.duration));
+    } else {
+        let error_msg = result
+            .error
+            .clone()
+            .unwrap_or_else(|| result.actual.description().to_string());
+        score.add_result(TestResult::fail(&result.name, error_msg, result.duration));
+    }
+}
+
 /// Run all edge case tests
 pub fn run_edge_case_tests(config: &EdgeCaseConfig) -> (CategoryScore, Vec<QaIssue>) {
     let start = Instant::now();
@@ -243,91 +256,41 @@ pub fn run_edge_case_tests(config: &EdgeCaseConfig) -> (CategoryScore, Vec<QaIss
     // Test 1: NaN handling
     if config.test_nan {
         let result = test_nan_handling(mock_predict);
-        if result.passed && result.actual.is_acceptable() {
-            score.add_result(TestResult::pass(&result.name, result.duration));
-        } else {
-            score.add_result(TestResult::fail(
-                &result.name,
-                result
-                    .error
-                    .unwrap_or_else(|| result.actual.description().to_string()),
-                result.duration,
+        let is_failure = !result.passed || !result.actual.is_acceptable();
+        process_edge_case_result(&result, &mut score);
+        if is_failure && !config.allow_panic {
+            issues.push(QaIssue::new(
+                QaCategory::EdgeCases,
+                Severity::Critical,
+                "Model panics on NaN input",
+                "Add input validation or use NaN-safe operations",
             ));
-            if !config.allow_panic {
-                issues.push(QaIssue::new(
-                    QaCategory::EdgeCases,
-                    Severity::Critical,
-                    "Model panics on NaN input",
-                    "Add input validation or use NaN-safe operations",
-                ));
-            }
         }
     }
 
     // Test 2: Infinity handling
     if config.test_inf {
         let result = test_inf_handling(mock_predict);
-        if result.passed && result.actual.is_acceptable() {
-            score.add_result(TestResult::pass(&result.name, result.duration));
-        } else {
-            score.add_result(TestResult::fail(
-                &result.name,
-                result
-                    .error
-                    .unwrap_or_else(|| result.actual.description().to_string()),
-                result.duration,
-            ));
-        }
+        process_edge_case_result(&result, &mut score);
     }
 
     // Test 3: Empty input handling
     if config.test_empty {
         let result = test_empty_handling(mock_predict);
-        if result.passed && result.actual.is_acceptable() {
-            score.add_result(TestResult::pass(&result.name, result.duration));
-        } else {
-            score.add_result(TestResult::fail(
-                &result.name,
-                result
-                    .error
-                    .unwrap_or_else(|| result.actual.description().to_string()),
-                result.duration,
-            ));
-        }
+        process_edge_case_result(&result, &mut score);
     }
 
     // Test 4: Zero vector handling
     if config.test_zero {
         let result = test_zero_handling(mock_predict);
-        if result.passed && result.actual.is_acceptable() {
-            score.add_result(TestResult::pass(&result.name, result.duration));
-        } else {
-            score.add_result(TestResult::fail(
-                &result.name,
-                result
-                    .error
-                    .unwrap_or_else(|| result.actual.description().to_string()),
-                result.duration,
-            ));
-        }
+        process_edge_case_result(&result, &mut score);
     }
 
     // Test 5: Max size handling
     if config.test_max_size {
-        let max_size_result = test_max_size_handling(config.max_input_size);
-        if max_size_result.passed {
-            score.add_result(TestResult::pass(
-                "Max size handling",
-                max_size_result.duration,
-            ));
-        } else {
-            #[allow(clippy::unwrap_or_default)]
-            let err_msg = max_size_result.error.unwrap_or(String::new());
-            score.add_result(TestResult::fail(
-                "Max size handling",
-                err_msg,
-                max_size_result.duration,
-            ));
+        let result = test_max_size_handling(config.max_input_size);
+        process_edge_case_result(&result, &mut score);
+        if !result.passed {
             issues.push(QaIssue::new(
                 QaCategory::EdgeCases,
                 Severity::Warning,

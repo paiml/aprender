@@ -9,14 +9,24 @@
 
 use aprender::prelude::*;
 
-#[allow(clippy::too_many_lines)]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("=== t-SNE Dimensionality Reduction Example ===\n");
 
-    // Example 1: Basic usage - reduce 4D to 2D
-    println!("--- Example 1: Basic 4D → 2D Reduction ---");
+    let data_4d = create_4d_data()?;
+    let small_data = create_small_data()?;
 
-    let data_4d = Matrix::from_vec(
+    example_basic_reduction(&data_4d)?;
+    example_perplexity_effects(&small_data)?;
+    example_3d_embedding(&data_4d)?;
+    example_learning_rate(&small_data)?;
+    example_reproducibility(&small_data)?;
+    print_comparison_info();
+
+    Ok(())
+}
+
+fn create_4d_data() -> Result<Matrix<f32>, Box<dyn std::error::Error>> {
+    Matrix::from_vec(
         12,
         4,
         vec![
@@ -28,8 +38,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             10.0, 10.0, 10.0, 10.0, 10.1, 10.1, 10.1, 10.1, 9.9, 9.9, 9.9, 9.9, 10.2, 10.2, 10.2,
             10.2,
         ],
-    )?;
+    )
+    .map_err(Into::into)
+}
 
+fn create_small_data() -> Result<Matrix<f32>, Box<dyn std::error::Error>> {
+    Matrix::from_vec(
+        8,
+        3,
+        vec![
+            1.0, 1.0, 1.0, 1.1, 1.1, 1.1, 5.0, 5.0, 5.0, 5.1, 5.1, 5.1, 10.0, 10.0, 10.0, 10.1,
+            10.1, 10.1, 15.0, 15.0, 15.0, 15.1, 15.1, 15.1,
+        ],
+    )
+    .map_err(Into::into)
+}
+
+fn example_basic_reduction(data_4d: &Matrix<f32>) -> Result<(), Box<dyn std::error::Error>> {
+    println!("--- Example 1: Basic 4D → 2D Reduction ---");
     println!(
         "Input data: {} samples, {} dimensions",
         data_4d.shape().0,
@@ -41,7 +67,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_n_iter(300)
         .with_random_state(42);
 
-    let embedding_2d = tsne.fit_transform(&data_4d)?;
+    let embedding_2d = tsne.fit_transform(data_4d)?;
     println!(
         "Output embedding: {} samples, {} dimensions\n",
         embedding_2d.shape().0,
@@ -57,38 +83,33 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             embedding_2d.get(i, 1)
         );
     }
+    Ok(())
+}
 
-    // Example 2: Perplexity parameter effects
+fn example_perplexity_effects(small_data: &Matrix<f32>) -> Result<(), Box<dyn std::error::Error>> {
     println!("\n--- Example 2: Perplexity Effects ---");
     println!("Perplexity balances local vs global structure:");
     println!("  - Low perplexity (5-10): Focus on very local structure");
     println!("  - Medium perplexity (20-30): Balanced (default)");
     println!("  - High perplexity (50+): More global structure\n");
 
-    let small_data = Matrix::from_vec(
-        8,
-        3,
-        vec![
-            1.0, 1.0, 1.0, 1.1, 1.1, 1.1, 5.0, 5.0, 5.0, 5.1, 5.1, 5.1, 10.0, 10.0, 10.0, 10.1,
-            10.1, 10.1, 15.0, 15.0, 15.0, 15.1, 15.1, 15.1,
-        ],
-    )?;
-
     let mut tsne_low_perp = TSNE::new(2)
         .with_perplexity(2.0)
         .with_n_iter(200)
         .with_random_state(42);
-    tsne_low_perp.fit_transform(&small_data)?;
+    tsne_low_perp.fit_transform(small_data)?;
     println!("✓ Low perplexity (2.0): Fitted successfully");
 
     let mut tsne_high_perp = TSNE::new(2)
         .with_perplexity(5.0)
         .with_n_iter(200)
         .with_random_state(42);
-    tsne_high_perp.fit_transform(&small_data)?;
+    tsne_high_perp.fit_transform(small_data)?;
     println!("✓ High perplexity (5.0): Fitted successfully");
+    Ok(())
+}
 
-    // Example 3: 3D embedding for volumetric visualization
+fn example_3d_embedding(data_4d: &Matrix<f32>) -> Result<(), Box<dyn std::error::Error>> {
     println!("\n--- Example 3: 3D Embedding ---");
 
     let mut tsne_3d = TSNE::new(3)
@@ -96,7 +117,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_n_iter(250)
         .with_random_state(42);
 
-    let embedding_3d = tsne_3d.fit_transform(&data_4d)?;
+    let embedding_3d = tsne_3d.fit_transform(data_4d)?;
     println!("3D Embedding shape: {:?}", embedding_3d.shape());
     println!(
         "First point in 3D: ({:.3}, {:.3}, {:.3})",
@@ -104,8 +125,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         embedding_3d.get(0, 1),
         embedding_3d.get(0, 2)
     );
+    Ok(())
+}
 
-    // Example 4: Learning rate and convergence
+fn example_learning_rate(small_data: &Matrix<f32>) -> Result<(), Box<dyn std::error::Error>> {
     println!("\n--- Example 4: Learning Rate Effects ---");
     println!("Learning rate controls convergence speed:");
     println!("  - Too low: Slow convergence, may get stuck");
@@ -116,38 +139,44 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_learning_rate(50.0)
         .with_n_iter(100)
         .with_random_state(42);
-    tsne_slow.fit_transform(&small_data)?;
+    tsne_slow.fit_transform(small_data)?;
     println!("✓ Slow learning rate (50.0): Fitted");
 
     let mut tsne_fast = TSNE::new(2)
         .with_learning_rate(500.0)
         .with_n_iter(100)
         .with_random_state(42);
-    tsne_fast.fit_transform(&small_data)?;
+    tsne_fast.fit_transform(small_data)?;
     println!("✓ Fast learning rate (500.0): Fitted");
+    Ok(())
+}
 
-    // Example 5: Reproducibility with random_state
+fn example_reproducibility(small_data: &Matrix<f32>) -> Result<(), Box<dyn std::error::Error>> {
     println!("\n--- Example 5: Reproducibility ---");
 
     let mut tsne1 = TSNE::new(2).with_random_state(42).with_n_iter(200);
-    let result1 = tsne1.fit_transform(&small_data)?;
+    let result1 = tsne1.fit_transform(small_data)?;
 
     let mut tsne2 = TSNE::new(2).with_random_state(42).with_n_iter(200);
-    let result2 = tsne2.fit_transform(&small_data)?;
+    let result2 = tsne2.fit_transform(small_data)?;
 
-    let mut identical = true;
-    for i in 0..result1.shape().0 {
-        for j in 0..result1.shape().1 {
-            if (result1.get(i, j) - result2.get(i, j)).abs() > 1e-6 {
-                identical = false;
-                break;
+    let identical = check_matrices_identical(&result1, &result2);
+    println!("Results identical with same random_state: {identical}");
+    Ok(())
+}
+
+fn check_matrices_identical(m1: &Matrix<f32>, m2: &Matrix<f32>) -> bool {
+    for i in 0..m1.shape().0 {
+        for j in 0..m1.shape().1 {
+            if (m1.get(i, j) - m2.get(i, j)).abs() > 1e-6 {
+                return false;
             }
         }
     }
+    true
+}
 
-    println!("Results identical with same random_state: {identical}");
-
-    // Example 6: t-SNE vs PCA comparison
+fn print_comparison_info() {
     println!("\n--- Example 6: t-SNE vs PCA ---\n");
 
     println!("t-SNE:");
@@ -176,6 +205,4 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("✓ Use random_state for reproducibility");
     println!("✓ More iterations = better convergence (but slower)");
     println!("✓ Excellent for finding clusters and patterns visually");
-
-    Ok(())
 }

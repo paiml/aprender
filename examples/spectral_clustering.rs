@@ -9,14 +9,22 @@
 
 use aprender::prelude::*;
 
-#[allow(clippy::too_many_lines)]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("=== Spectral Clustering Example ===\n");
 
-    // Example 1: Basic clustering with RBF affinity
-    println!("--- Example 1: Basic RBF Affinity Clustering ---");
+    let data = create_basic_data()?;
+    example_basic_rbf(&data)?;
+    example_knn_affinity()?;
+    example_gamma_effects(&data)?;
+    example_multiple_clusters()?;
+    example_vs_kmeans()?;
+    print_affinity_info();
 
-    let data = Matrix::from_vec(
+    Ok(())
+}
+
+fn create_basic_data() -> Result<Matrix<f32>, Box<dyn std::error::Error>> {
+    Matrix::from_vec(
         6,
         2,
         vec![
@@ -24,8 +32,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             1.0, 1.0, 1.1, 1.0, 0.9, 1.1, // Cluster 2: around (5, 5)
             5.0, 5.0, 5.1, 5.0, 4.9, 5.1,
         ],
-    )?;
+    )
+    .map_err(Into::into)
+}
 
+fn example_basic_rbf(data: &Matrix<f32>) -> Result<(), Box<dyn std::error::Error>> {
+    println!("--- Example 1: Basic RBF Affinity Clustering ---");
     println!(
         "Dataset: {} samples, {} features",
         data.shape().0,
@@ -33,17 +45,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     let mut sc = SpectralClustering::new(2);
-    sc.fit(&data)?;
+    sc.fit(data)?;
 
-    let labels = sc.predict(&data);
+    let labels = sc.predict(data);
     println!("Cluster labels: {labels:?}");
 
-    // Verify clustering
     let cluster_0_points = labels.iter().filter(|&&l| l == 0).count();
     let cluster_1_points = labels.iter().filter(|&&l| l == 1).count();
     println!("Cluster 0: {cluster_0_points} points, Cluster 1: {cluster_1_points} points\n");
+    Ok(())
+}
 
-    // Example 2: K-NN Affinity for graph-based clustering
+fn example_knn_affinity() -> Result<(), Box<dyn std::error::Error>> {
     println!("--- Example 2: K-NN Affinity ---");
     println!("K-NN creates a graph by connecting each point to its k nearest neighbors\n");
 
@@ -64,29 +77,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let labels_knn = sc_knn.predict(&data2);
     println!("K-NN Cluster labels: {labels_knn:?}");
+    Ok(())
+}
 
-    // Example 3: Gamma parameter effects (RBF affinity)
+fn example_gamma_effects(data: &Matrix<f32>) -> Result<(), Box<dyn std::error::Error>> {
     println!("\n--- Example 3: Gamma Parameter Effects ---");
     println!("Gamma controls the scale of the RBF kernel:");
     println!("  - Small gamma: More global similarity");
     println!("  - Large gamma: More local similarity\n");
 
-    // Small gamma
-    let mut sc_small = SpectralClustering::new(2).with_gamma(0.1);
-    sc_small.fit(&data)?;
-    println!("Small gamma (0.1): {:?}", sc_small.predict(&data));
+    for (gamma, desc) in [(0.1, "Small"), (1.0, "Default"), (5.0, "Large")] {
+        let mut sc = SpectralClustering::new(2).with_gamma(gamma);
+        sc.fit(data)?;
+        println!("{desc} gamma ({gamma}): {:?}", sc.predict(data));
+    }
+    Ok(())
+}
 
-    // Default gamma
-    let mut sc_default = SpectralClustering::new(2).with_gamma(1.0);
-    sc_default.fit(&data)?;
-    println!("Default gamma (1.0): {:?}", sc_default.predict(&data));
-
-    // Large gamma
-    let mut sc_large = SpectralClustering::new(2).with_gamma(5.0);
-    sc_large.fit(&data)?;
-    println!("Large gamma (5.0): {:?}", sc_large.predict(&data));
-
-    // Example 4: Multiple clusters (3 clusters)
+fn example_multiple_clusters() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n--- Example 4: Multiple Clusters (k=3) ---");
 
     let data3 = Matrix::from_vec(
@@ -106,17 +114,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let labels3 = sc3.predict(&data3);
     println!("Three-cluster labels: {labels3:?}");
 
-    // Count points per cluster
     for cluster in 0..3 {
         let count = labels3.iter().filter(|&&l| l == cluster).count();
         println!("  Cluster {cluster}: {count} points");
     }
+    Ok(())
+}
 
-    // Example 5: Spectral Clustering vs K-Means on non-convex data
+fn example_vs_kmeans() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n--- Example 5: Spectral Clustering vs K-Means ---");
     println!("Testing on non-convex (chain-like) clusters:\n");
 
-    // Create elongated clusters
     let elongated = Matrix::from_vec(
         10,
         2,
@@ -127,20 +135,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ],
     )?;
 
-    // Spectral Clustering with K-NN
     let mut sc_knn_test = SpectralClustering::new(2)
         .with_affinity(Affinity::KNN)
         .with_n_neighbors(2);
     sc_knn_test.fit(&elongated)?;
     let sc_labels = sc_knn_test.predict(&elongated);
 
-    // K-Means for comparison
     let mut kmeans = KMeans::new(2).with_random_state(42);
     kmeans.fit(&elongated)?;
     let km_labels = kmeans.predict(&elongated);
 
     println!("Spectral (K-NN): {sc_labels:?}");
     println!("K-Means:         {km_labels:?}");
+    print_comparison_notes();
+    Ok(())
+}
+
+fn print_comparison_notes() {
     println!("\nSpectral Clustering works better for:");
     println!("  ✓ Non-convex cluster shapes");
     println!("  ✓ Clusters with varying densities");
@@ -149,8 +160,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  ✓ Convex, spherical clusters");
     println!("  ✓ Large datasets (faster)");
     println!("  ✓ When cluster sizes are similar");
+}
 
-    // Example 6: Affinity matrix demonstration
+fn print_affinity_info() {
     println!("\n--- Example 6: Understanding Affinity Matrices ---");
     println!("RBF Affinity: W[i,j] = exp(-gamma * ||x_i - x_j||^2)");
     println!("  - Nearby points have high similarity (close to 1)");
@@ -166,6 +178,4 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("✓ K-NN affinity: Good for non-convex clusters");
     println!("✓ Gamma controls locality in RBF kernel");
     println!("✓ Works well for graph-structured data");
-
-    Ok(())
 }

@@ -221,4 +221,61 @@ mod tests {
         assert!(graph.requires_grad.contains(&id1));
         assert!(!graph.requires_grad.contains(&id2));
     }
+
+    #[test]
+    fn test_graph_default() {
+        let graph = ComputationGraph::default();
+        assert!(graph.is_empty());
+    }
+
+    #[test]
+    fn test_get_tensor_mut() {
+        let mut graph = ComputationGraph::new();
+        let t = Tensor::from_slice(&[1.0, 2.0]);
+        let id = t.id();
+        graph.register_tensor(t);
+
+        // Modify tensor through mutable reference
+        if let Some(tensor) = graph.get_tensor_mut(id) {
+            // Just verify we can get mutable access
+            assert_eq!(tensor.data(), &[1.0, 2.0]);
+        }
+
+        // Non-existent tensor - use ID from a tensor not in graph
+        let other = Tensor::from_slice(&[3.0]);
+        assert!(graph.get_tensor_mut(other.id()).is_none());
+    }
+
+    #[test]
+    fn test_record_operation() {
+        use crate::autograd::grad_fn::NegBackward;
+
+        let mut graph = ComputationGraph::new();
+        let t1 = Tensor::from_slice(&[1.0, 2.0]);
+        let output = Tensor::from_slice(&[-1.0, -2.0]);
+        let output_id = output.id();
+
+        graph.record(output_id, Arc::new(NegBackward), vec![t1.id()]);
+
+        assert_eq!(graph.len(), 1);
+        assert!(!graph.is_empty());
+    }
+
+    #[test]
+    fn test_get_grad_and_clear_grad() {
+        let mut graph = ComputationGraph::new();
+        let t = Tensor::from_slice(&[1.0, 2.0]).requires_grad();
+        let id = t.id();
+        graph.register_tensor(t);
+
+        // Initially no gradient
+        assert!(graph.get_grad(id).is_none());
+
+        // Non-existent tensor
+        let other = Tensor::from_slice(&[3.0]);
+        assert!(graph.get_grad(other.id()).is_none());
+
+        // Clear grad on non-existent tensor (should not panic)
+        graph.clear_grad(other.id());
+    }
 }

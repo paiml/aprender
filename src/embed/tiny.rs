@@ -70,21 +70,21 @@ pub enum TinyModelRepr {
     NaiveBayes {
         /// Prior probabilities for each class
         class_priors: Vec<f32>,
-        /// Mean values per class per feature [n_classes][n_features]
+        /// Mean values per class per feature `[n_classes][n_features]`
         means: Vec<Vec<f32>>,
-        /// Variance values per class per feature [n_classes][n_features]
+        /// Variance values per class per feature `[n_classes][n_features]`
         variances: Vec<Vec<f32>>,
     },
 
     /// K-Means: cluster centroids (< 100 KB typical)
     KMeans {
-        /// Centroid coordinates [n_clusters][n_features]
+        /// Centroid coordinates `[n_clusters][n_features]`
         centroids: Vec<Vec<f32>>,
     },
 
     /// Logistic regression: coefficients per class
     LogisticRegression {
-        /// Coefficients [n_classes][n_features] or [n_features] for binary
+        /// Coefficients `[n_classes][n_features]` or `[n_features]` for binary
         coefficients: Vec<Vec<f32>>,
         /// Intercepts per class
         intercepts: Vec<f32>,
@@ -92,7 +92,7 @@ pub enum TinyModelRepr {
 
     /// k-Nearest Neighbors: stored reference points
     KNN {
-        /// Reference points [n_samples][n_features]
+        /// Reference points `[n_samples][n_features]`
         reference_points: Vec<Vec<f32>>,
         /// Labels for reference points
         labels: Vec<u32>,
@@ -151,8 +151,8 @@ impl TinyModelRepr {
     ///
     /// # Arguments
     /// * `class_priors` - Prior probability for each class
-    /// * `means` - Mean values [n_classes][n_features]
-    /// * `variances` - Variance values [n_classes][n_features]
+    /// * `means` - Mean values `[n_classes][n_features]`
+    /// * `variances` - Variance values `[n_classes][n_features]`
     #[must_use]
     pub fn naive_bayes(
         class_priors: Vec<f32>,
@@ -169,7 +169,7 @@ impl TinyModelRepr {
     /// Create a K-Means model representation
     ///
     /// # Arguments
-    /// * `centroids` - Cluster centroids [n_clusters][n_features]
+    /// * `centroids` - Cluster centroids `[n_clusters][n_features]`
     #[must_use]
     pub fn kmeans(centroids: Vec<Vec<f32>>) -> Self {
         Self::KMeans { centroids }
@@ -178,7 +178,7 @@ impl TinyModelRepr {
     /// Create a logistic regression representation
     ///
     /// # Arguments
-    /// * `coefficients` - Coefficients [n_classes][n_features]
+    /// * `coefficients` - Coefficients `[n_classes][n_features]`
     /// * `intercepts` - Intercept per class
     #[must_use]
     pub fn logistic_regression(coefficients: Vec<Vec<f32>>, intercepts: Vec<f32>) -> Self {

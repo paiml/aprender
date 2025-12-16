@@ -43,12 +43,17 @@ use aprender::primitives::{Matrix, Vector};
 fn lasso_with_fista() {
     println!("=== Example 1: Lasso Regression with FISTA ===\n");
 
-    // Create sparse linear system: y = Ax + noise
-    // True sparse solution has only 3 non-zero coefficients
-    let n = 20; // Number of features
-    let m = 50; // Number of samples
+    let n = 20;
+    let m = 50;
+    let lambda = 0.5;
 
-    // Design matrix A (m × n)
+    let (A, x_true_data, b) = create_lasso_problem(n, m);
+    let result = run_lasso_fista(&A, &b, n, m, lambda);
+    print_lasso_results(&A, &b, &result, &x_true_data, n, m);
+    println!();
+}
+
+fn create_lasso_problem(n: usize, m: usize) -> (Matrix<f32>, Vec<f32>, Vector<f32>) {
     let mut a_data = vec![0.0; m * n];
     for i in 0..m {
         for j in 0..n {
@@ -57,14 +62,12 @@ fn lasso_with_fista() {
     }
     let A = Matrix::from_vec(m, n, a_data).expect("Valid matrix dimensions");
 
-    // True sparse solution (only 3 non-zero entries)
     let mut x_true_data = vec![0.0; n];
     x_true_data[5] = 2.0;
     x_true_data[10] = -1.5;
     x_true_data[15] = 1.0;
     let x_true = Vector::from_slice(&x_true_data);
 
-    // Generate observations: b = Ax_true + noise
     let b_exact = A.matvec(&x_true).expect("Matrix-vector multiplication");
     let mut b_data = vec![0.0; m];
     for i in 0..m {
@@ -72,56 +75,59 @@ fn lasso_with_fista() {
     }
     let b = Vector::from_slice(&b_data);
 
-    // Lasso parameter (controls sparsity)
-    let lambda = 0.5;
+    (A, x_true_data, b)
+}
 
-    // Define smooth part: f(x) = ½‖Ax - b‖²
+fn run_lasso_fista(
+    A: &Matrix<f32>,
+    b: &Vector<f32>,
+    n: usize,
+    m: usize,
+    lambda: f32,
+) -> aprender::optim::OptimizationResult {
     let smooth = |x: &Vector<f32>| -> f32 {
         let ax = A.matvec(x).expect("Matrix-vector multiplication");
-        let residual = &ax - &b;
+        let residual = &ax - b;
         0.5 * residual.dot(&residual)
     };
 
-    // Gradient of smooth part: ∇f(x) = Aᵀ(Ax - b)
     let grad_smooth = |x: &Vector<f32>| -> Vector<f32> {
         let ax = A.matvec(x).expect("Matrix-vector multiplication");
-        let residual = &ax - &b;
+        let residual = &ax - b;
         A.transpose()
             .matvec(&residual)
             .expect("Matrix-vector multiplication")
     };
 
-    // Proximal operator for L1 norm: prox_{λ‖·‖₁}(v) = soft_threshold(v, λα)
     let prox_l1 =
         |v: &Vector<f32>, alpha: f32| -> Vector<f32> { prox::soft_threshold(v, lambda * alpha) };
-
-    // Run FISTA
-    let mut fista = FISTA::new(1000, 0.01, 1e-4); // max_iter, step_size, tol
-    let x0 = Vector::zeros(n);
 
     println!("Running FISTA for Lasso regression...");
     println!("Problem size: {m} samples, {n} features");
     println!("True sparsity: 3 non-zero coefficients");
     println!("Regularization parameter λ = {lambda}\n");
 
-    let result = fista.minimize(smooth, grad_smooth, prox_l1, x0);
+    let mut fista = FISTA::new(1000, 0.01, 1e-4);
+    fista.minimize(smooth, grad_smooth, prox_l1, Vector::zeros(n))
+}
 
+fn print_lasso_results(
+    A: &Matrix<f32>,
+    b: &Vector<f32>,
+    result: &aprender::optim::OptimizationResult,
+    x_true_data: &[f32],
+    n: usize,
+    m: usize,
+) {
     println!("Convergence status: {:?}", result.status);
     println!("Iterations: {}", result.iterations);
     println!("Final objective: {:.6}", result.objective_value);
     println!("Elapsed time: {:?}", result.elapsed_time);
 
-    // Analyze sparsity
-    let mut nnz = 0;
-    for i in 0..n {
-        if result.solution[i].abs() > 1e-3 {
-            nnz += 1;
-        }
-    }
+    let nnz = (0..n).filter(|&i| result.solution[i].abs() > 1e-3).count();
     println!("\nSparsity analysis:");
     println!("Non-zero coefficients found: {nnz}/{n}");
 
-    // Show recovered coefficients at true non-zero locations
     println!("\nRecovered values at true non-zero locations:");
     println!(
         "  x[5]:  true = {:.3}, recovered = {:.3}",
@@ -136,19 +142,11 @@ fn lasso_with_fista() {
         x_true_data[15], result.solution[15]
     );
 
-    // Prediction error
     let y_pred = A
         .matvec(&result.solution)
         .expect("Matrix-vector multiplication");
-    let mut pred_error = 0.0_f32;
-    for i in 0..m {
-        let diff = y_pred[i] - b[i];
-        pred_error += diff * diff;
-    }
-    pred_error = (pred_error / m as f32).sqrt();
-    println!("\nPrediction RMSE: {pred_error:.6}");
-
-    println!();
+    let pred_error: f32 = (0..m).map(|i| (y_pred[i] - b[i]).powi(2)).sum::<f32>() / m as f32;
+    println!("\nPrediction RMSE: {:.6}", pred_error.sqrt());
 }
 
 /// Example 2: Non-Negative Least Squares with FISTA
@@ -247,10 +245,17 @@ fn nonnegative_least_squares() {
 fn high_dimensional_lasso_cd() {
     println!("=== Example 3: High-Dimensional Lasso with Coordinate Descent ===\n");
 
-    let n = 100; // High-dimensional feature space
-    let m = 30; // Fewer samples
+    let n = 100;
+    let m = 30;
+    let lambda = 0.3;
 
-    // Create design matrix
+    let (A, x_true_data, b) = create_high_dim_problem(n, m);
+    let result = run_cd_lasso(&A, &b, n, m, lambda);
+    print_cd_results(&A, &b, &result, &x_true_data, n, m);
+    println!();
+}
+
+fn create_high_dim_problem(n: usize, m: usize) -> (Matrix<f32>, Vec<f32>, Vector<f32>) {
     let mut a_data = vec![0.0; m * n];
     for i in 0..m {
         for j in 0..n {
@@ -259,7 +264,6 @@ fn high_dimensional_lasso_cd() {
     }
     let A = Matrix::from_vec(m, n, a_data).expect("Valid matrix dimensions");
 
-    // True sparse solution (only 5 non-zero out of 100)
     let mut x_true_data = vec![0.0; n];
     x_true_data[10] = 1.5;
     x_true_data[25] = -1.0;
@@ -268,21 +272,11 @@ fn high_dimensional_lasso_cd() {
     x_true_data[90] = 1.0;
     let x_true = Vector::from_slice(&x_true_data);
 
-    // Generate observations
     let b = A.matvec(&x_true).expect("Matrix-vector multiplication");
+    (A, x_true_data, b)
+}
 
-    let lambda = 0.3;
-
-    println!("Running Coordinate Descent for high-dimensional Lasso...");
-    println!("Problem size: {m} samples, {n} features (n >> m)");
-    println!("True sparsity: 5 non-zero coefficients");
-    println!("Regularization parameter λ = {lambda}\n");
-
-    // Coordinate Descent update for Lasso
-    // For coordinate i: x_i = soft_threshold(r_i, λ) / a_ii
-    // where r_i = b_i - Σ_{j≠i} A_ij * x_j
-
-    // Precompute A_ij^2 for each column
+fn compute_column_norms(A: &Matrix<f32>, n: usize, m: usize) -> Vec<f32> {
     let mut a_sq = vec![0.0; n];
     for (j, item) in a_sq.iter_mut().enumerate().take(n) {
         let mut sum = 0.0;
@@ -292,14 +286,26 @@ fn high_dimensional_lasso_cd() {
         }
         *item = sum;
     }
+    a_sq
+}
 
-    // Clone data for closure
+fn run_cd_lasso(
+    A: &Matrix<f32>,
+    b: &Vector<f32>,
+    n: usize,
+    m: usize,
+    lambda: f32,
+) -> aprender::optim::OptimizationResult {
+    println!("Running Coordinate Descent for high-dimensional Lasso...");
+    println!("Problem size: {m} samples, {n} features (n >> m)");
+    println!("True sparsity: 5 non-zero coefficients");
+    println!("Regularization parameter λ = {lambda}\n");
+
+    let a_sq = compute_column_norms(A, n, m);
     let A_clone = A.clone();
     let b_clone = b.clone();
-    let a_sq_clone = a_sq.clone();
 
     let update = move |x: &mut Vector<f32>, coord: usize| {
-        // Compute residual contribution from other coordinates
         let mut r = 0.0_f32;
         for i in 0..m {
             let mut sum = b_clone[i];
@@ -311,50 +317,54 @@ fn high_dimensional_lasso_cd() {
             r += A_clone.get(i, coord) * sum;
         }
 
-        // Soft-thresholding update
-        let z = if r > lambda {
-            r - lambda
-        } else if r < -lambda {
-            r + lambda
+        let z = soft_threshold_scalar(r, lambda);
+        x[coord] = if a_sq[coord] > 1e-10 {
+            z / a_sq[coord]
         } else {
             0.0
         };
-
-        // Normalize by squared column norm
-        if a_sq_clone[coord] > 1e-10 {
-            x[coord] = z / a_sq_clone[coord];
-        } else {
-            x[coord] = 0.0;
-        }
     };
 
     let mut cd = CoordinateDescent::new(200, 1e-4);
-    let x0 = Vector::zeros(n);
+    cd.minimize(update, Vector::zeros(n))
+}
 
-    let result = cd.minimize(update, x0);
+fn soft_threshold_scalar(r: f32, lambda: f32) -> f32 {
+    if r > lambda {
+        r - lambda
+    } else if r < -lambda {
+        r + lambda
+    } else {
+        0.0
+    }
+}
 
+fn print_cd_results(
+    A: &Matrix<f32>,
+    b: &Vector<f32>,
+    result: &aprender::optim::OptimizationResult,
+    x_true_data: &[f32],
+    n: usize,
+    m: usize,
+) {
     println!("Convergence status: {:?}", result.status);
     println!("Iterations: {}", result.iterations);
     println!("Elapsed time: {:?}", result.elapsed_time);
 
-    // Analyze sparsity
-    let mut nnz = 0;
-    let mut recovered_indices = Vec::new();
-    for i in 0..n {
-        if result.solution[i].abs() > 1e-3 {
-            nnz += 1;
-            recovered_indices.push(i);
-        }
-    }
+    let recovered_indices: Vec<usize> = (0..n)
+        .filter(|&i| result.solution[i].abs() > 1e-3)
+        .collect();
 
     println!("\nSparsity analysis:");
-    println!("Non-zero coefficients found: {nnz}/{n}");
+    println!(
+        "Non-zero coefficients found: {}/{n}",
+        recovered_indices.len()
+    );
     println!(
         "Recovered non-zero indices: {:?}",
-        &recovered_indices[..nnz.min(10)]
+        &recovered_indices[..recovered_indices.len().min(10)]
     );
 
-    // Check true non-zero locations
     println!("\nRecovered values at true non-zero locations:");
     for &idx in &[10, 25, 50, 75, 90] {
         println!(
@@ -363,19 +373,11 @@ fn high_dimensional_lasso_cd() {
         );
     }
 
-    // Prediction error
     let y_pred = A
         .matvec(&result.solution)
         .expect("Matrix-vector multiplication");
-    let mut pred_error = 0.0_f32;
-    for i in 0..m {
-        let diff = y_pred[i] - b[i];
-        pred_error += diff * diff;
-    }
-    pred_error = (pred_error / m as f32).sqrt();
-    println!("\nPrediction RMSE: {pred_error:.6}");
-
-    println!();
+    let pred_error: f32 = (0..m).map(|i| (y_pred[i] - b[i]).powi(2)).sum::<f32>() / m as f32;
+    println!("\nPrediction RMSE: {:.6}", pred_error.sqrt());
 }
 
 /// Example 4: Box-Constrained Quadratic with Coordinate Descent
@@ -499,14 +501,27 @@ fn box_constrained_quadratic() {
 ///
 /// Compare both methods on the same Lasso problem to demonstrate
 /// convergence behavior and computational tradeoffs.
-#[allow(clippy::too_many_lines)]
 fn comparison_fista_vs_cd() {
     println!("=== Example 5: FISTA vs Coordinate Descent Comparison ===\n");
 
     let n = 30;
     let m = 50;
+    let lambda = 0.4;
 
-    // Create problem
+    let (A, b) = create_comparison_problem(n, m);
+
+    println!("Comparing FISTA and Coordinate Descent on Lasso problem");
+    println!("Problem size: {m} samples, {n} features");
+    println!("True sparsity: 3 non-zero coefficients\n");
+
+    let result_fista = run_comparison_fista(&A, &b, n, lambda);
+    let result_cd = run_comparison_cd(&A, &b, n, m, lambda);
+    print_comparison_results(&result_fista, &result_cd, n);
+
+    println!();
+}
+
+fn create_comparison_problem(n: usize, m: usize) -> (Matrix<f32>, Vector<f32>) {
     let mut a_data = vec![0.0; m * n];
     for i in 0..m {
         for j in 0..n {
@@ -522,24 +537,26 @@ fn comparison_fista_vs_cd() {
     let x_true = Vector::from_slice(&x_true_data);
 
     let b = A.matvec(&x_true).expect("Matrix-vector multiplication");
-    let lambda = 0.4;
+    (A, b)
+}
 
-    println!("Comparing FISTA and Coordinate Descent on Lasso problem");
-    println!("Problem size: {m} samples, {n} features");
-    println!("True sparsity: 3 non-zero coefficients\n");
-
-    // ===== FISTA =====
+fn run_comparison_fista(
+    A: &Matrix<f32>,
+    b: &Vector<f32>,
+    n: usize,
+    lambda: f32,
+) -> aprender::optim::OptimizationResult {
     println!("--- FISTA ---");
 
     let smooth = |x: &Vector<f32>| -> f32 {
         let ax = A.matvec(x).expect("Matrix-vector multiplication");
-        let residual = &ax - &b;
+        let residual = &ax - b;
         0.5 * residual.dot(&residual)
     };
 
     let grad_smooth = |x: &Vector<f32>| -> Vector<f32> {
         let ax = A.matvec(x).expect("Matrix-vector multiplication");
-        let residual = &ax - &b;
+        let residual = &ax - b;
         A.transpose()
             .matvec(&residual)
             .expect("Matrix-vector multiplication")
@@ -549,39 +566,30 @@ fn comparison_fista_vs_cd() {
         |v: &Vector<f32>, alpha: f32| -> Vector<f32> { prox::soft_threshold(v, lambda * alpha) };
 
     let mut fista = FISTA::new(500, 0.01, 1e-5);
-    let x0_fista = Vector::zeros(n);
+    let result = fista.minimize(smooth, grad_smooth, prox_l1, Vector::zeros(n));
 
-    let result_fista = fista.minimize(smooth, grad_smooth, prox_l1, x0_fista);
+    let nnz = (0..n).filter(|&i| result.solution[i].abs() > 1e-3).count();
+    println!("Status: {:?}", result.status);
+    println!("Iterations: {}", result.iterations);
+    println!("Objective: {:.6}", result.objective_value);
+    println!("Time: {:?}", result.elapsed_time);
+    println!("Non-zero coefficients: {nnz}");
 
-    println!("Status: {:?}", result_fista.status);
-    println!("Iterations: {}", result_fista.iterations);
-    println!("Objective: {:.6}", result_fista.objective_value);
-    println!("Time: {:?}", result_fista.elapsed_time);
+    result
+}
 
-    let mut nnz_fista = 0;
-    for i in 0..n {
-        if result_fista.solution[i].abs() > 1e-3 {
-            nnz_fista += 1;
-        }
-    }
-    println!("Non-zero coefficients: {nnz_fista}");
-
-    // ===== Coordinate Descent =====
+fn run_comparison_cd(
+    A: &Matrix<f32>,
+    b: &Vector<f32>,
+    n: usize,
+    m: usize,
+    lambda: f32,
+) -> aprender::optim::OptimizationResult {
     println!("\n--- Coordinate Descent ---");
 
-    let mut a_sq = vec![0.0; n];
-    for (j, item) in a_sq.iter_mut().enumerate().take(n) {
-        let mut sum = 0.0;
-        for i in 0..m {
-            let val = A.get(i, j);
-            sum += val * val;
-        }
-        *item = sum;
-    }
-
+    let a_sq = compute_column_norms(A, n, m);
     let A_clone = A.clone();
     let b_clone = b.clone();
-    let a_sq_clone = a_sq.clone();
 
     let update = move |x: &mut Vector<f32>, coord: usize| {
         let mut r = 0.0_f32;
@@ -595,47 +603,40 @@ fn comparison_fista_vs_cd() {
             r += A_clone.get(i, coord) * sum;
         }
 
-        let z = if r > lambda {
-            r - lambda
-        } else if r < -lambda {
-            r + lambda
+        let z = soft_threshold_scalar(r, lambda);
+        x[coord] = if a_sq[coord] > 1e-10 {
+            z / a_sq[coord]
         } else {
             0.0
         };
-
-        if a_sq_clone[coord] > 1e-10 {
-            x[coord] = z / a_sq_clone[coord];
-        } else {
-            x[coord] = 0.0;
-        }
     };
 
     let mut cd = CoordinateDescent::new(500, 1e-5);
-    let x0_cd = Vector::zeros(n);
+    let result = cd.minimize(update, Vector::zeros(n));
 
-    let result_cd = cd.minimize(update, x0_cd);
+    let nnz = (0..n).filter(|&i| result.solution[i].abs() > 1e-3).count();
+    println!("Status: {:?}", result.status);
+    println!("Iterations: {}", result.iterations);
+    println!("Time: {:?}", result.elapsed_time);
+    println!("Non-zero coefficients: {nnz}");
 
-    println!("Status: {:?}", result_cd.status);
-    println!("Iterations: {}", result_cd.iterations);
-    println!("Time: {:?}", result_cd.elapsed_time);
+    result
+}
 
-    let mut nnz_cd = 0;
-    for i in 0..n {
-        if result_cd.solution[i].abs() > 1e-3 {
-            nnz_cd += 1;
-        }
-    }
-    println!("Non-zero coefficients: {nnz_cd}");
-
-    // ===== Comparison =====
+fn print_comparison_results(
+    result_fista: &aprender::optim::OptimizationResult,
+    result_cd: &aprender::optim::OptimizationResult,
+    n: usize,
+) {
     println!("\n--- Solution Comparison ---");
 
-    let mut solution_diff = 0.0;
-    for i in 0..n {
-        let diff = result_fista.solution[i] - result_cd.solution[i];
-        solution_diff += diff * diff;
-    }
-    solution_diff = solution_diff.sqrt();
+    let solution_diff: f32 = (0..n)
+        .map(|i| (result_fista.solution[i] - result_cd.solution[i]).powi(2))
+        .sum::<f32>()
+        .sqrt();
+    let nnz = (0..n)
+        .filter(|&i| result_fista.solution[i].abs() > 1e-3)
+        .count();
 
     println!("‖x_FISTA - x_CD‖: {solution_diff:.6}");
 
@@ -648,13 +649,11 @@ fn comparison_fista_vs_cd() {
         "• Coordinate Descent: {} iterations, {:.1?}",
         result_cd.iterations, result_cd.elapsed_time
     );
-    println!("• Both methods found {nnz_fista} non-zero coefficients (true: 3)");
+    println!("• Both methods found {nnz} non-zero coefficients (true: 3)");
     println!("• Solutions are very close (difference: {solution_diff:.6})");
     println!("\nWhen to use each:");
     println!("• FISTA: General composite optimization, fast convergence O(1/k²)");
     println!("• CD: High-dimensional problems (n >> m), simple coordinate updates");
-
-    println!();
 }
 
 fn main() {

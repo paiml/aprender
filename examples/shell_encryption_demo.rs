@@ -105,7 +105,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let encrypted_path = Path::new("/tmp/shell_demo_encrypted.apr");
     let password = "demo_password_123";
 
-    // 1. Create and train model
+    let model = create_and_train_model();
+    save_models(&model, unencrypted_path, encrypted_path, password)?;
+    verify_headers(unencrypted_path, encrypted_path)?;
+    let (loaded_unenc, loaded_enc) = load_models(unencrypted_path, encrypted_path, password)?;
+    verify_suggestions(&loaded_unenc, &loaded_enc);
+    test_error_handling(encrypted_path)?;
+    cleanup_and_print_usage(unencrypted_path, encrypted_path)?;
+
+    Ok(())
+}
+
+fn create_and_train_model() -> TestMarkovModel {
     println!("1️⃣  Creating and training model...");
     let mut model = TestMarkovModel::new(3);
     model.train(&[
@@ -123,26 +134,36 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "kubectl logs -f deployment/app",
     ]);
     println!("   Trained on {} commands\n", model.total_commands);
+    model
+}
 
-    // 2. Save as unencrypted
+fn save_models(
+    model: &TestMarkovModel,
+    unencrypted_path: &Path,
+    encrypted_path: &Path,
+    password: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
     println!("2️⃣  Saving UNENCRYPTED model...");
     model.save(unencrypted_path)?;
     let unenc_size = fs::metadata(unencrypted_path)?.len();
     println!("   ✅ Saved to: {}", unencrypted_path.display());
     println!("   📦 Size: {} bytes\n", unenc_size);
 
-    // 3. Save as encrypted
     println!("3️⃣  Saving ENCRYPTED model (AES-256-GCM)...");
     model.save_encrypted(encrypted_path, password)?;
     let enc_size = fs::metadata(encrypted_path)?.len();
     println!("   ✅ Saved to: {}", encrypted_path.display());
     println!("   📦 Size: {} bytes", enc_size);
     println!("   🔒 Encryption: AES-256-GCM with Argon2id KDF\n");
+    Ok(())
+}
 
-    // 4. Verify headers
+fn verify_headers(
+    unencrypted_path: &Path,
+    encrypted_path: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
     println!("4️⃣  Verifying file headers...");
 
-    // Unencrypted header
     let unenc_bytes = fs::read(unencrypted_path)?;
     let unenc_magic = &unenc_bytes[0..4];
     let unenc_type = u16::from_le_bytes([unenc_bytes[6], unenc_bytes[7]]);
@@ -154,11 +175,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     println!("      Type:  0x{:04X} (NgramLm)", unenc_type);
 
-    // Encrypted header
     let enc_bytes = fs::read(encrypted_path)?;
     let enc_magic = &enc_bytes[0..4];
     let enc_type = u16::from_le_bytes([enc_bytes[6], enc_bytes[7]]);
-    // Check encryption flag (in header flags at offset 8)
     let enc_flags = u32::from_le_bytes([enc_bytes[8], enc_bytes[9], enc_bytes[10], enc_bytes[11]]);
     let is_encrypted = (enc_flags & 0x01) != 0;
     println!("   Encrypted:");
@@ -172,8 +191,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "      Flags: 0x{:08X} (encrypted={})\n",
         enc_flags, is_encrypted
     );
+    Ok(())
+}
 
-    // 5. Load unencrypted
+fn load_models(
+    unencrypted_path: &Path,
+    encrypted_path: &Path,
+    password: &str,
+) -> Result<(TestMarkovModel, TestMarkovModel), Box<dyn std::error::Error>> {
     println!("5️⃣  Loading UNENCRYPTED model...");
     let loaded_unenc = TestMarkovModel::load(unencrypted_path)?;
     println!(
@@ -182,7 +207,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         loaded_unenc.ngrams.len()
     );
 
-    // 6. Load encrypted
     println!("6️⃣  Loading ENCRYPTED model...");
     let loaded_enc = TestMarkovModel::load_encrypted(encrypted_path, password)?;
     println!(
@@ -190,15 +214,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         loaded_enc.total_commands,
         loaded_enc.ngrams.len()
     );
+    Ok((loaded_unenc, loaded_enc))
+}
 
-    // 7. Verify suggestions match
+fn verify_suggestions(loaded_unenc: &TestMarkovModel, loaded_enc: &TestMarkovModel) {
     println!("7️⃣  Verifying suggestions are identical...");
     let prefixes = ["git ", "cargo ", "docker "];
     for prefix in prefixes {
         let unenc_suggestions = loaded_unenc.suggest(prefix);
         let enc_suggestions = loaded_enc.suggest(prefix);
 
-        // Compare as sets (HashMap ordering may differ)
         let unenc_set: std::collections::HashSet<_> = unenc_suggestions
             .iter()
             .map(|(cmd, _)| cmd.as_str())
@@ -220,22 +245,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("      Encrypted:   {:?}", enc_suggestions);
         }
     }
+}
 
-    // 8. Try loading encrypted without password (should fail)
+fn test_error_handling(encrypted_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     println!("\n8️⃣  Testing wrong password handling...");
     match TestMarkovModel::load_encrypted(encrypted_path, "wrong_password") {
         Ok(_) => println!("   ⚠️  Unexpected: Model loaded with wrong password!"),
         Err(e) => println!("   ✅ Correctly rejected wrong password: {}", e),
     }
 
-    // 9. Try loading encrypted as unencrypted (should fail)
     println!("\n9️⃣  Testing encrypted model without password...");
     match TestMarkovModel::load(encrypted_path) {
         Ok(_) => println!("   ⚠️  Unexpected: Encrypted model loaded without password!"),
         Err(e) => println!("   ✅ Correctly rejected: {}", e),
     }
+    Ok(())
+}
 
-    // Cleanup
+fn cleanup_and_print_usage(
+    unencrypted_path: &Path,
+    encrypted_path: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
     fs::remove_file(unencrypted_path)?;
     fs::remove_file(encrypted_path)?;
 
@@ -245,16 +275,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n📚 Usage in aprender-shell:");
     println!("   # Train with encryption");
     println!("   aprender-shell train --password");
-    println!("");
+    println!();
     println!("   # Load encrypted model for suggestions");
     println!("   aprender-shell suggest \"git \" --password");
-    println!("");
+    println!();
     println!("   # Or use environment variable");
     println!("   export APRENDER_PASSWORD=your_password");
     println!("   aprender-shell suggest \"git \" --password");
-    println!("");
+    println!();
     println!("   # View encrypted model stats");
     println!("   aprender-shell stats --password");
-
     Ok(())
 }

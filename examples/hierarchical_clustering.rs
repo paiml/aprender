@@ -9,12 +9,25 @@
 
 use aprender::prelude::*;
 
-#[allow(clippy::too_many_lines)]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("=== Hierarchical Clustering Example ===\n");
 
-    // Create dataset with 3 natural clusters
-    let data = Matrix::from_vec(
+    let data = create_sample_data()?;
+    print_dataset_info(&data);
+
+    example_average_linkage(&data)?;
+    example_dendrogram(&data)?;
+    example_compare_linkages(&data)?;
+    example_n_clusters_effect(&data)?;
+    example_practical_use_cases();
+    example_reproducibility(&data)?;
+
+    println!("\n=== Example Complete ===");
+    Ok(())
+}
+
+fn create_sample_data() -> Result<Matrix<f32>, Box<dyn std::error::Error>> {
+    Matrix::from_vec(
         9,
         2,
         vec![
@@ -23,8 +36,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             5.0, 5.0, 5.1, 5.1, 5.0, 5.2, // Cluster 3 (middle): 3 points
             3.0, 3.0, 3.1, 3.0, 3.0, 3.1,
         ],
-    )?;
+    )
+    .map_err(Into::into)
+}
 
+fn print_dataset_info(data: &Matrix<f32>) {
     println!(
         "Dataset: {} samples, {} features",
         data.shape().0,
@@ -39,13 +55,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             data.get(i, 1)
         );
     }
+}
 
-    // Example 1: Standard hierarchical clustering with Average linkage
+fn example_average_linkage(data: &Matrix<f32>) -> Result<(), Box<dyn std::error::Error>> {
     println!("\n--- Example 1: Average Linkage Clustering ---");
     println!("Parameters: n_clusters=3, linkage=Average");
 
     let mut hc = AgglomerativeClustering::new(3, Linkage::Average);
-    hc.fit(&data)?;
+    hc.fit(data)?;
 
     let labels = hc.labels();
     println!("\nCluster assignments:");
@@ -53,7 +70,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("  Point {i}: Cluster {label}");
     }
 
-    // Count points per cluster
     let mut cluster_counts = [0; 3];
     for &label in labels {
         cluster_counts[label] += 1;
@@ -62,9 +78,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for (i, count) in cluster_counts.iter().enumerate() {
         println!("  Cluster {i}: {count} points");
     }
+    Ok(())
+}
 
-    // Example 2: Dendrogram (merge history)
+fn example_dendrogram(data: &Matrix<f32>) -> Result<(), Box<dyn std::error::Error>> {
     println!("\n--- Example 2: Dendrogram (Merge History) ---");
+
+    let mut hc = AgglomerativeClustering::new(3, Linkage::Average);
+    hc.fit(data)?;
+
     let dendrogram = hc.dendrogram();
     println!("Number of merges: {}", dendrogram.len());
     println!("\nMerge history:");
@@ -78,64 +100,51 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             merge.size
         );
     }
+    Ok(())
+}
 
-    // Example 3: Comparing linkage methods
+fn example_compare_linkages(data: &Matrix<f32>) -> Result<(), Box<dyn std::error::Error>> {
     println!("\n--- Example 3: Comparing Linkage Methods ---");
 
-    println!("\n3a. Single Linkage (minimum distance):");
-    let mut hc_single = AgglomerativeClustering::new(3, Linkage::Single);
-    hc_single.fit(&data)?;
-    let labels_single = hc_single.labels();
-    print_cluster_summary(labels_single, 3);
-
-    println!("\n3b. Complete Linkage (maximum distance):");
-    let mut hc_complete = AgglomerativeClustering::new(3, Linkage::Complete);
-    hc_complete.fit(&data)?;
-    let labels_complete = hc_complete.labels();
-    print_cluster_summary(labels_complete, 3);
-
-    println!("\n3c. Average Linkage (mean distance):");
-    let mut hc_average = AgglomerativeClustering::new(3, Linkage::Average);
-    hc_average.fit(&data)?;
-    let labels_average = hc_average.labels();
-    print_cluster_summary(labels_average, 3);
-
-    println!("\n3d. Ward Linkage (minimize variance):");
-    let mut hc_ward = AgglomerativeClustering::new(3, Linkage::Ward);
-    hc_ward.fit(&data)?;
-    let labels_ward = hc_ward.labels();
-    print_cluster_summary(labels_ward, 3);
+    for (name, linkage) in [
+        ("3a. Single Linkage (minimum distance)", Linkage::Single),
+        ("3b. Complete Linkage (maximum distance)", Linkage::Complete),
+        ("3c. Average Linkage (mean distance)", Linkage::Average),
+        ("3d. Ward Linkage (minimize variance)", Linkage::Ward),
+    ] {
+        println!("\n{name}:");
+        let mut hc = AgglomerativeClustering::new(3, linkage);
+        hc.fit(data)?;
+        print_cluster_summary(hc.labels(), 3);
+    }
 
     println!("\nObservation: Different linkage methods may produce different clusterings");
     println!("  - Single: tends to create chain-like clusters");
     println!("  - Complete: tends to create compact clusters");
     println!("  - Average: balanced between single and complete");
     println!("  - Ward: minimizes within-cluster variance");
+    Ok(())
+}
 
-    // Example 4: Effect of n_clusters parameter
+fn example_n_clusters_effect(data: &Matrix<f32>) -> Result<(), Box<dyn std::error::Error>> {
     println!("\n--- Example 4: Effect of n_clusters Parameter ---");
 
-    println!("\nn_clusters=2 (two large groups):");
-    let mut hc2 = AgglomerativeClustering::new(2, Linkage::Average);
-    hc2.fit(&data)?;
-    let labels2 = hc2.labels();
-    print_cluster_summary(labels2, 2);
-
-    println!("\nn_clusters=5 (more granular):");
-    let mut hc5 = AgglomerativeClustering::new(5, Linkage::Average);
-    hc5.fit(&data)?;
-    let labels5 = hc5.labels();
-    print_cluster_summary(labels5, 5);
-
-    println!("\nn_clusters=9 (each point is its own cluster):");
-    let mut hc9 = AgglomerativeClustering::new(9, Linkage::Average);
-    hc9.fit(&data)?;
-    let labels9 = hc9.labels();
-    print_cluster_summary(labels9, 9);
+    for (n, desc) in [
+        (2, "two large groups"),
+        (5, "more granular"),
+        (9, "each point is its own cluster"),
+    ] {
+        println!("\nn_clusters={n} ({desc}):");
+        let mut hc = AgglomerativeClustering::new(n, Linkage::Average);
+        hc.fit(data)?;
+        print_cluster_summary(hc.labels(), n);
+    }
 
     println!("\nObservation: n_clusters controls granularity of clustering");
+    Ok(())
+}
 
-    // Example 5: Practical use case - Building a taxonomy
+fn example_practical_use_cases() {
     println!("\n--- Example 5: Practical Use Case - Document Taxonomy ---");
     println!("\nHierarchical clustering is ideal for:");
     println!("  1. Building taxonomies (biology, document organization)");
@@ -147,22 +156,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  - Can examine dendrogram to choose optimal cut point");
     println!("  - Provides hierarchy of relationships");
     println!("  - Deterministic results (same input → same output)");
+}
 
-    // Example 6: Reproducibility
+fn example_reproducibility(data: &Matrix<f32>) -> Result<(), Box<dyn std::error::Error>> {
     println!("\n--- Example 6: Reproducibility ---");
+
     let mut hc_test1 = AgglomerativeClustering::new(3, Linkage::Average);
-    hc_test1.fit(&data)?;
+    hc_test1.fit(data)?;
     let labels_test1 = hc_test1.labels().clone();
 
     let mut hc_test2 = AgglomerativeClustering::new(3, Linkage::Average);
-    hc_test2.fit(&data)?;
+    hc_test2.fit(data)?;
     let labels_test2 = hc_test2.labels().clone();
 
     let reproducible = labels_test1 == labels_test2;
     println!("Results are reproducible: {reproducible}");
     println!("(Same data and parameters always produce same clustering)");
-
-    println!("\n=== Example Complete ===");
     Ok(())
 }
 

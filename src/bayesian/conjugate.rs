@@ -11,7 +11,7 @@ use crate::{AprenderError, Result};
 
 /// Beta-Binomial conjugate prior for Bernoulli/Binomial likelihood.
 ///
-/// Models a probability parameter θ ∈ [0,1] for binary outcomes.
+/// Models a probability parameter θ in the range `[0,1]` for binary outcomes.
 ///
 /// **Prior**: Beta(α, β)
 /// **Likelihood**: Binomial(n, θ) or Bernoulli(θ)
@@ -54,7 +54,7 @@ pub struct BetaBinomial {
 impl BetaBinomial {
     /// Creates a uniform prior Beta(1, 1).
     ///
-    /// This represents complete ignorance: all probabilities θ ∈ [0,1] are equally likely.
+    /// This represents complete ignorance: all probabilities θ in `[0,1]` are equally likely.
     ///
     /// # Example
     ///
@@ -1188,11 +1188,11 @@ impl DirichletMultinomial {
         }
     }
 
-    /// Computes the posterior variance Var[θᵢ|data] for all categories.
+    /// Computes the posterior variance `Var[θᵢ|data]` for all categories.
     ///
     /// Returns a vector where element i is:
-    /// Var[θᵢ] = αᵢ(α₀ - αᵢ) / (α₀²(α₀ + 1))
-    /// where α₀ = Σαⱼ
+    /// `Var[θᵢ] = αᵢ(α₀ - αᵢ) / (α₀²(α₀ + 1))`
+    /// where `α₀ = Σαⱼ`
     ///
     /// # Example
     ///

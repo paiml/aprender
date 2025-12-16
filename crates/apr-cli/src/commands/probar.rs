@@ -52,7 +52,7 @@ struct ProbarManifest {
 }
 
 /// Probar export format
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub(crate) enum ExportFormat {
     /// JSON manifest for programmatic access
     Json,
@@ -84,17 +84,31 @@ pub(crate) fn run(
     layer_filter: Option<&str>,
 ) -> Result<(), CliError> {
     validate_path(path)?;
-
-    // Create output directory
     fs::create_dir_all(output_dir)?;
 
+    let (model_format, metadata_bytes) = read_model_metadata(path)?;
+    let layers = generate_snapshots(&metadata_bytes, layer_filter);
+    let manifest = create_manifest(path, &model_format, &layers, golden);
+
+    export_by_format(format, &manifest, &layers, output_dir)?;
+
+    if let Some(golden_path) = golden {
+        generate_diff(golden_path, &manifest, output_dir)?;
+    }
+
+    print_summary(path, output_dir, &model_format, &layers, golden);
+    print_generated_files(format, output_dir, &layers);
+    print_integration_guide();
+
+    Ok(())
+}
+
+fn read_model_metadata(path: &Path) -> Result<(String, Vec<u8>), CliError> {
     let file = File::open(path)?;
     let mut reader = BufReader::new(file);
 
-    // Validate and get format
     let model_format = validate_header(&mut reader)?;
 
-    // Read metadata
     let mut size_buf = [0u8; 4];
     reader.seek(SeekFrom::Start(8))?;
     reader.read_exact(&mut size_buf)?;
@@ -104,38 +118,47 @@ pub(crate) fn run(
     let mut metadata_bytes = vec![0u8; metadata_size];
     reader.read_exact(&mut metadata_bytes)?;
 
-    // Generate layer snapshots
-    let layers = generate_snapshots(&metadata_bytes, layer_filter);
+    Ok((model_format, metadata_bytes))
+}
 
-    // Create manifest
-    let manifest = ProbarManifest {
+fn create_manifest(
+    path: &Path,
+    model_format: &str,
+    layers: &[LayerSnapshot],
+    golden: Option<&Path>,
+) -> ProbarManifest {
+    ProbarManifest {
         source_model: path.display().to_string(),
         timestamp: chrono::Utc::now().to_rfc3339(),
-        format: model_format.clone(),
-        layers: layers.clone(),
+        format: model_format.to_string(),
+        layers: layers.to_vec(),
         golden_reference: golden.map(|p| p.display().to_string()),
-    };
+    }
+}
 
-    // Export based on format
+fn export_by_format(
+    format: ExportFormat,
+    manifest: &ProbarManifest,
+    layers: &[LayerSnapshot],
+    output_dir: &Path,
+) -> Result<(), CliError> {
     match format {
-        ExportFormat::Json => {
-            export_json(&manifest, output_dir)?;
-        }
-        ExportFormat::Png => {
-            export_png(&layers, output_dir)?;
-        }
+        ExportFormat::Json => export_json(manifest, output_dir),
+        ExportFormat::Png => export_png(layers, output_dir),
         ExportFormat::Both => {
-            export_json(&manifest, output_dir)?;
-            export_png(&layers, output_dir)?;
+            export_json(manifest, output_dir)?;
+            export_png(layers, output_dir)
         }
     }
+}
 
-    // If golden reference provided, generate diff
-    if let Some(golden_path) = golden {
-        generate_diff(golden_path, &manifest, output_dir)?;
-    }
-
-    // Print summary
+fn print_summary(
+    path: &Path,
+    output_dir: &Path,
+    model_format: &str,
+    layers: &[LayerSnapshot],
+    golden: Option<&Path>,
+) {
     output::section("Probar Export Complete");
     println!();
     output::kv("Source", path.display());
@@ -147,38 +170,34 @@ pub(crate) fn run(
         println!();
         println!("{}", "Golden reference comparison generated".green());
     }
+}
 
+fn print_generated_files(format: ExportFormat, output_dir: &Path, layers: &[LayerSnapshot]) {
     println!();
     println!("{}", "Generated files:".white().bold());
 
-    match format {
-        ExportFormat::Json | ExportFormat::Both => {
-            println!("  - {}/manifest.json", output_dir.display());
-        }
-        ExportFormat::Png => {}
+    if matches!(format, ExportFormat::Json | ExportFormat::Both) {
+        println!("  - {}/manifest.json", output_dir.display());
     }
 
-    match format {
-        ExportFormat::Png | ExportFormat::Both => {
-            for layer in &layers {
-                println!(
-                    "  - {}/layer_{:03}_{}.png",
-                    output_dir.display(),
-                    layer.index,
-                    layer.name
-                );
-            }
+    if matches!(format, ExportFormat::Png | ExportFormat::Both) {
+        for layer in layers {
+            println!(
+                "  - {}/layer_{:03}_{}.png",
+                output_dir.display(),
+                layer.index,
+                layer.name
+            );
         }
-        ExportFormat::Json => {}
     }
+}
 
+fn print_integration_guide() {
     println!();
     println!("{}", "Integration with probar:".cyan().bold());
     println!("  1. Copy output to probar test fixtures");
     println!("  2. Use VisualRegressionTester to compare snapshots");
     println!("  3. Run: probar test --visual-diff");
-
-    Ok(())
 }
 
 fn validate_path(path: &Path) -> Result<(), CliError> {

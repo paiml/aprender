@@ -291,6 +291,7 @@ apr - APR Model Operations Tool
 
 COMMANDS:
     run         Run model directly (auto-download, cache, execute)
+    serve       Start inference server (REST API, streaming, metrics)
     compile     Build standalone executable with embedded model
     inspect     Inspect model metadata, vocab, and structure
     debug       Simple debugging output ("drama" mode)
@@ -313,6 +314,7 @@ COMMANDS:
 EXAMPLES:
     apr run hf://openai/whisper-tiny --input audio.wav
     apr run whisper.apr < audio.wav > transcript.txt
+    apr serve whisper.apr --port 8080           # Start inference server
     apr compile whisper.apr --quantize int8 -o whisper-cli
     apr transcribe recording.wav    # Run task from apr.toml
 ```
@@ -1407,7 +1409,120 @@ Output:
 Completed in 3.4s (RTF: 0.34x)
 ```
 
-#### 4.15.8 Falsifiable Guarantees
+#### 4.15.8 Runtime Inference Engine (realizar Integration)
+
+The `apr run` command leverages **realizar** [11] for high-performance inference with automatic optimizations — no configuration required.
+
+**"Just Works" Inference Features**:
+
+| Feature | Description | Automatic Trigger |
+|---------|-------------|-------------------|
+| **mmap Loading** | Memory-mapped model files, zero-copy tensor access | Models >50MB |
+| **KV Cache** | Cached key-value pairs for autoregressive generation | Transformer models |
+| **Flash Attention** | O(N) memory attention (vs O(N²) naive) | Sequences >512 tokens |
+| **Streaming Output** | Token-by-token SSE streaming | `--stream` flag or API |
+| **Quantized Inference** | Native Q4_K, Q8_0 execution | Quantized models |
+
+**Memory-Mapped Loading (mmap)**:
+
+```rust
+// Automatic for large models - no configuration needed
+apr run whisper-large.apr --input audio.wav
+
+// Under the hood: zero-copy tensor access via memmap2
+// - Model stays on disk, pages loaded on demand
+// - 10-100x faster cold start for large models
+// - Memory usage = active tensors only (not full model)
+```
+
+**Performance by Model Size**:
+
+| Model Size | Load Strategy | Cold Start | Memory |
+|------------|---------------|------------|--------|
+| <50MB | Full load | ~10ms | Full model |
+| 50MB-1GB | mmap | ~1ms | On-demand |
+| >1GB | mmap + lazy | <1ms | Minimal |
+
+**KV Cache (Transformer Models)**:
+
+```
+Without KV Cache (naive):              With KV Cache (optimized):
+┌─────────────────────────────┐       ┌─────────────────────────────┐
+│ Token 1: Compute K,V        │       │ Token 1: Compute K,V → Cache│
+│ Token 2: Recompute ALL K,V  │       │ Token 2: Lookup + New only  │
+│ Token 3: Recompute ALL K,V  │       │ Token 3: Lookup + New only  │
+│ ...                         │       │ ...                         │
+│ O(N²) compute per token     │       │ O(N) compute per token      │
+└─────────────────────────────┘       └─────────────────────────────┘
+```
+
+**Speedup**: 10-100x for autoregressive generation (LLMs, ASR decoders)
+
+**Flash Attention**:
+
+For long sequences, Flash Attention reduces memory from O(N²) to O(N):
+
+| Sequence Length | Naive Memory | Flash Memory | Savings |
+|-----------------|--------------|--------------|---------|
+| 512 tokens | 2 MB | 0.5 MB | 4x |
+| 2048 tokens | 32 MB | 2 MB | 16x |
+| 8192 tokens | 512 MB | 8 MB | 64x |
+
+**Streaming Inference**:
+
+```bash
+# CLI streaming (token-by-token output)
+apr run llm.apr --stream --prompt "Write a story"
+
+# Server mode with SSE streaming
+apr serve llm.apr --port 8080
+curl -N http://localhost:8080/generate \
+  -d '{"prompt": "Hello", "stream": true}'
+
+# Output: Server-Sent Events
+data: {"token": "Hello"}
+data: {"token": ","}
+data: {"token": " world"}
+data: {"token": "!"}
+data: [DONE]
+```
+
+**Server Mode**:
+
+```bash
+# Start inference server
+apr serve whisper.apr --port 8080
+
+# Endpoints:
+#   POST /transcribe     - Audio transcription
+#   POST /generate       - Text generation (LLMs)
+#   GET  /health         - Health check
+#   GET  /metrics        - Prometheus metrics
+
+# Prometheus metrics include:
+#   - apr_inference_duration_seconds
+#   - apr_tokens_generated_total
+#   - apr_model_load_duration_seconds
+#   - apr_cache_hit_ratio
+```
+
+**Environment Variable Overrides**:
+
+```bash
+# Disable mmap (force full load)
+APR_DISABLE_MMAP=1 apr run model.apr
+
+# Set KV cache size (default: auto-sized)
+APR_KV_CACHE_SIZE=1GB apr run llm.apr
+
+# Disable Flash Attention (debugging)
+APR_DISABLE_FLASH_ATTENTION=1 apr run model.apr
+
+# Set batch size for streaming
+APR_BATCH_SIZE=32 apr serve model.apr
+```
+
+#### 4.15.9 Falsifiable Guarantees
 
 | Behavior | Guarantee |
 |----------|-----------|
@@ -1416,8 +1531,11 @@ Completed in 3.4s (RTF: 0.34x)
 | Reproducibility | Same `apr.lock` + same input = identical output |
 | Progress | Downloads >1MB must show progress bar |
 | Exit codes | 0=success, 1=model error, 2=input error, 3=network error |
+| mmap threshold | Models >50MB use memory-mapped loading automatically |
+| KV cache | Transformer models enable KV cache by default |
+| Streaming latency | First token <100ms for cached models |
 
-#### 4.15.9 References
+#### 4.15.10 References
 
 [1] **uv** - "An extremely fast Python package installer and resolver, written in Rust."
     https://github.com/astral-sh/uv
@@ -1438,6 +1556,11 @@ Completed in 3.4s (RTF: 0.34x)
 [5] **Cargo** - "The Rust package manager."
     https://doc.rust-lang.org/cargo/
     Key influence: Progressive disclosure, lockfiles, workspace management
+
+[11] **realizar** - "Pure Rust ML inference engine."
+    https://github.com/paiml/realizar
+    Key influence: mmap zero-copy loading, KV cache, Flash Attention, streaming inference,
+    quantized execution (Q4_K, Q8_0), REST API with Prometheus metrics
 
 ---
 

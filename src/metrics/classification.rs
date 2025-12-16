@@ -230,6 +230,40 @@ pub fn recall(y_pred: &[usize], y_true: &[usize], average: Average) -> f32 {
     }
 }
 
+/// Compute precision for a class given true positives and false positives.
+fn class_precision(tp: usize, fp: usize) -> f32 {
+    if tp + fp == 0 {
+        0.0
+    } else {
+        tp as f32 / (tp + fp) as f32
+    }
+}
+
+/// Compute recall for a class given true positives and false negatives.
+fn class_recall(tp: usize, fn_count: usize) -> f32 {
+    if tp + fn_count == 0 {
+        0.0
+    } else {
+        tp as f32 / (tp + fn_count) as f32
+    }
+}
+
+/// Compute F1 score from precision and recall.
+fn f1_from_prec_rec(precision: f32, recall: f32) -> f32 {
+    if precision + recall == 0.0 {
+        0.0
+    } else {
+        2.0 * precision * recall / (precision + recall)
+    }
+}
+
+/// Compute F1 score for a single class.
+fn class_f1(tp: usize, fp: usize, fn_count: usize) -> f32 {
+    let prec = class_precision(tp, fp);
+    let rec = class_recall(tp, fn_count);
+    f1_from_prec_rec(prec, rec)
+}
+
 /// Compute F1 score (harmonic mean of precision and recall).
 ///
 /// F1 = 2 * (precision * recall) / (precision + recall)
@@ -280,45 +314,13 @@ pub fn f1_score(y_pred: &[usize], y_true: &[usize], average: Average) -> f32 {
             let total_tp: usize = tp.iter().sum();
             let total_fp: usize = fp.iter().sum();
             let total_fn: usize = fn_counts.iter().sum();
-
-            let prec = if total_tp + total_fp == 0 {
-                0.0
-            } else {
-                total_tp as f32 / (total_tp + total_fp) as f32
-            };
-            let rec = if total_tp + total_fn == 0 {
-                0.0
-            } else {
-                total_tp as f32 / (total_tp + total_fn) as f32
-            };
-
-            if prec + rec == 0.0 {
-                0.0
-            } else {
-                2.0 * prec * rec / (prec + rec)
-            }
+            class_f1(total_tp, total_fp, total_fn)
         }
         Average::Macro => {
-            let f1s: Vec<f32> = (0..n_classes)
-                .map(|i| {
-                    let prec = if tp[i] + fp[i] == 0 {
-                        0.0
-                    } else {
-                        tp[i] as f32 / (tp[i] + fp[i]) as f32
-                    };
-                    let rec = if tp[i] + fn_counts[i] == 0 {
-                        0.0
-                    } else {
-                        tp[i] as f32 / (tp[i] + fn_counts[i]) as f32
-                    };
-                    if prec + rec == 0.0 {
-                        0.0
-                    } else {
-                        2.0 * prec * rec / (prec + rec)
-                    }
-                })
-                .collect();
-            f1s.iter().sum::<f32>() / n_classes as f32
+            let f1_sum: f32 = (0..n_classes)
+                .map(|i| class_f1(tp[i], fp[i], fn_counts[i]))
+                .sum();
+            f1_sum / n_classes as f32
         }
         Average::Weighted => {
             let total_support: usize = support.iter().sum();
@@ -327,21 +329,7 @@ pub fn f1_score(y_pred: &[usize], y_true: &[usize], average: Average) -> f32 {
             }
             (0..n_classes)
                 .map(|i| {
-                    let prec = if tp[i] + fp[i] == 0 {
-                        0.0
-                    } else {
-                        tp[i] as f32 / (tp[i] + fp[i]) as f32
-                    };
-                    let rec = if tp[i] + fn_counts[i] == 0 {
-                        0.0
-                    } else {
-                        tp[i] as f32 / (tp[i] + fn_counts[i]) as f32
-                    };
-                    let f1 = if prec + rec == 0.0 {
-                        0.0
-                    } else {
-                        2.0 * prec * rec / (prec + rec)
-                    };
+                    let f1 = class_f1(tp[i], fp[i], fn_counts[i]);
                     f1 * support[i] as f32 / total_support as f32
                 })
                 .sum()
@@ -351,7 +339,7 @@ pub fn f1_score(y_pred: &[usize], y_true: &[usize], average: Average) -> f32 {
 
 /// Compute confusion matrix.
 ///
-/// Returns a matrix where element [i,j] is the count of samples
+/// Returns a matrix where element `[i,j]` is the count of samples
 /// with true label i and predicted label j.
 ///
 /// # Arguments
@@ -361,7 +349,7 @@ pub fn f1_score(y_pred: &[usize], y_true: &[usize], average: Average) -> f32 {
 ///
 /// # Returns
 ///
-/// Confusion matrix as Matrix<usize>
+/// Confusion matrix as `Matrix<usize>`
 ///
 /// # Panics
 ///

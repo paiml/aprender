@@ -636,6 +636,53 @@ fn transpose_last_two(x: &Tensor) -> Tensor {
     Tensor::new(&output, &new_shape)
 }
 
+/// Dimensions for batched matmul operations.
+#[derive(Clone, Copy)]
+struct MatmulDims {
+    heads: usize,
+    m: usize,
+    k: usize,
+    n: usize,
+}
+
+/// Compute dot product for single element in batched matmul.
+#[inline]
+fn batched_dot_product(
+    a_data: &[f32],
+    b_data: &[f32],
+    ba: usize,
+    h: usize,
+    i: usize,
+    j: usize,
+    dims: MatmulDims,
+) -> f32 {
+    let mut sum = 0.0;
+    for ki in 0..dims.k {
+        let a_idx = ba * dims.heads * dims.m * dims.k + h * dims.m * dims.k + i * dims.k + ki;
+        let b_idx = ba * dims.heads * dims.k * dims.n + h * dims.k * dims.n + ki * dims.n + j;
+        sum += a_data[a_idx] * b_data[b_idx];
+    }
+    sum
+}
+
+/// Compute single head matmul for one batch.
+fn compute_head_matmul(
+    a_data: &[f32],
+    b_data: &[f32],
+    output: &mut [f32],
+    ba: usize,
+    h: usize,
+    dims: MatmulDims,
+) {
+    for i in 0..dims.m {
+        for j in 0..dims.n {
+            let sum = batched_dot_product(a_data, b_data, ba, h, i, j, dims);
+            let out_idx = ba * dims.heads * dims.m * dims.n + h * dims.m * dims.n + i * dims.n + j;
+            output[out_idx] = sum;
+        }
+    }
+}
+
 /// Batched matrix multiplication.
 fn matmul_batched(a: &Tensor, b: &Tensor) -> Tensor {
     let a_shape = a.shape();
@@ -649,22 +696,12 @@ fn matmul_batched(a: &Tensor, b: &Tensor) -> Tensor {
 
         assert_eq!(k1, k2, "Inner dimensions must match for matmul");
 
+        let dims = MatmulDims { heads, m, k: k1, n };
         let mut output = vec![0.0; batch * heads * m * n];
 
         for ba in 0..batch {
             for h in 0..heads {
-                for i in 0..m {
-                    for j in 0..n {
-                        let mut sum = 0.0;
-                        for k in 0..k1 {
-                            let a_idx = ba * heads * m * k1 + h * m * k1 + i * k1 + k;
-                            let b_idx = ba * heads * k2 * n + h * k2 * n + k * n + j;
-                            sum += a.data()[a_idx] * b.data()[b_idx];
-                        }
-                        let out_idx = ba * heads * m * n + h * m * n + i * n + j;
-                        output[out_idx] = sum;
-                    }
-                }
+                compute_head_matmul(a.data(), b.data(), &mut output, ba, h, dims);
             }
         }
 
@@ -1321,6 +1358,53 @@ fn divide_with_eps(x: &Tensor, normalizer: &Tensor, eps: f32) -> Tensor {
     Tensor::new(&output, x_shape)
 }
 
+/// Dimensions for KV head repetition.
+#[derive(Clone, Copy)]
+struct KvHeadDims {
+    kv_heads: usize,
+    num_heads: usize,
+    seq_len: usize,
+    head_dim: usize,
+}
+
+/// Copy a single sequence position for head repetition.
+#[inline]
+fn copy_kv_head_seq(
+    x_data: &[f32],
+    output: &mut [f32],
+    b: usize,
+    kv_h: usize,
+    h: usize,
+    s: usize,
+    dims: KvHeadDims,
+) {
+    let in_base = b * dims.kv_heads * dims.seq_len * dims.head_dim
+        + kv_h * dims.seq_len * dims.head_dim
+        + s * dims.head_dim;
+    let out_base = b * dims.num_heads * dims.seq_len * dims.head_dim
+        + h * dims.seq_len * dims.head_dim
+        + s * dims.head_dim;
+    output[out_base..out_base + dims.head_dim]
+        .copy_from_slice(&x_data[in_base..in_base + dims.head_dim]);
+}
+
+/// Repeat a single KV head across groups.
+fn repeat_single_kv_head(
+    x_data: &[f32],
+    output: &mut [f32],
+    b: usize,
+    kv_h: usize,
+    groups: usize,
+    dims: KvHeadDims,
+) {
+    for g in 0..groups {
+        let h = kv_h * groups + g;
+        for s in 0..dims.seq_len {
+            copy_kv_head_seq(x_data, output, b, kv_h, h, s, dims);
+        }
+    }
+}
+
 /// Repeat KV heads to match Q heads for Grouped Query Attention.
 fn repeat_kv_heads(x: &Tensor, groups: usize) -> Tensor {
     if groups == 1 {
@@ -1330,27 +1414,18 @@ fn repeat_kv_heads(x: &Tensor, groups: usize) -> Tensor {
     let shape = x.shape();
     let (batch, kv_heads, seq_len, head_dim) = (shape[0], shape[1], shape[2], shape[3]);
     let num_heads = kv_heads * groups;
+    let dims = KvHeadDims {
+        kv_heads,
+        num_heads,
+        seq_len,
+        head_dim,
+    };
 
     let mut output = vec![0.0; batch * num_heads * seq_len * head_dim];
 
     for b in 0..batch {
         for kv_h in 0..kv_heads {
-            for g in 0..groups {
-                let h = kv_h * groups + g;
-                for s in 0..seq_len {
-                    for d in 0..head_dim {
-                        let in_idx = b * kv_heads * seq_len * head_dim
-                            + kv_h * seq_len * head_dim
-                            + s * head_dim
-                            + d;
-                        let out_idx = b * num_heads * seq_len * head_dim
-                            + h * seq_len * head_dim
-                            + s * head_dim
-                            + d;
-                        output[out_idx] = x.data()[in_idx];
-                    }
-                }
-            }
+            repeat_single_kv_head(x.data(), &mut output, b, kv_h, groups, dims);
         }
     }
 
@@ -1435,8 +1510,8 @@ impl RotaryPositionEmbedding {
     ///
     /// # Arguments
     ///
-    /// * `x` - Input tensor [batch, seq_len, num_heads, head_dim]
-    /// * `position_ids` - Position indices for each token [seq_len]
+    /// * `x` - Input tensor `[batch, seq_len, num_heads, head_dim]`
+    /// * `position_ids` - Position indices for each token `[seq_len]`
     ///
     /// # Returns
     ///

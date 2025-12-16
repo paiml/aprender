@@ -60,42 +60,51 @@ const SENSITIVE_PATTERNS: &[&str] = &[
 /// assert!(!is_sensitive_command("git status"));
 /// ```
 pub fn is_sensitive_command(cmd: &str) -> bool {
+    check_known_patterns(cmd)
+        || check_export_secrets(cmd)
+        || check_database_inline_password(cmd)
+        || check_inline_key_value(cmd)
+}
+
+/// Check against known sensitive patterns (credentials, auth commands, etc.)
+fn check_known_patterns(cmd: &str) -> bool {
     let upper = cmd.to_uppercase();
+    SENSITIVE_PATTERNS
+        .iter()
+        .any(|pattern| upper.contains(&pattern.to_uppercase()))
+}
 
-    // Check against known patterns
-    for pattern in SENSITIVE_PATTERNS {
-        let pattern_upper = pattern.to_uppercase();
-        if upper.contains(&pattern_upper) {
-            return true;
-        }
+/// Check for export commands with secret-like variable names.
+fn check_export_secrets(cmd: &str) -> bool {
+    let upper = cmd.to_uppercase();
+    if !upper.contains("EXPORT") || !upper.contains('=') {
+        return false;
     }
 
-    // Check for export commands with secret-like variable names
-    if upper.contains("EXPORT") {
-        let secret_keywords = ["SECRET", "TOKEN", "KEY", "PASSWORD", "CREDENTIAL", "AUTH"];
-        for keyword in secret_keywords {
-            if upper.contains(keyword) && upper.contains('=') {
-                return true;
-            }
-        }
-    }
+    const SECRET_KEYWORDS: &[&str] = &["SECRET", "TOKEN", "KEY", "PASSWORD", "CREDENTIAL", "AUTH"];
+    SECRET_KEYWORDS.iter().any(|kw| upper.contains(kw))
+}
 
-    // Check for mysql/psql inline passwords (e.g., mysql -pMyPassword)
-    // MySQL allows -p immediately followed by password without space
+/// Check for database clients with inline passwords (e.g., mysql -pMyPassword).
+fn check_database_inline_password(cmd: &str) -> bool {
     let lower = cmd.to_lowercase();
-    if lower.contains("mysql") || lower.contains("psql") || lower.contains("mongo") {
-        // Check for -p followed directly by non-space characters
-        if let Some(pos) = lower.find("-p") {
-            let after_p = &lower[pos + 2..];
-            // If -p is followed by non-space, non-empty content, it's likely a password
-            if !after_p.is_empty() && !after_p.starts_with(' ') && !after_p.starts_with('\t') {
-                return true;
-            }
-        }
+    let is_db_command =
+        lower.contains("mysql") || lower.contains("psql") || lower.contains("mongo");
+
+    if !is_db_command {
+        return false;
     }
 
-    // Check for inline key=value patterns with suspicious keys
-    let suspicious_keys = [
+    // Check for -p followed directly by non-space characters
+    lower.find("-p").is_some_and(|pos| {
+        let after_p = &lower[pos + 2..];
+        !after_p.is_empty() && !after_p.starts_with(' ') && !after_p.starts_with('\t')
+    })
+}
+
+/// Check for inline key=value patterns with suspicious keys (password=, token=, etc.)
+fn check_inline_key_value(cmd: &str) -> bool {
+    const SUSPICIOUS_KEYS: &[&str] = &[
         "password",
         "passwd",
         "secret",
@@ -104,28 +113,28 @@ pub fn is_sensitive_command(cmd: &str) -> bool {
         "credential",
         "auth",
     ];
+    let lower = cmd.to_lowercase();
 
-    for key in suspicious_keys {
-        // Match patterns like "password=something" or "password = something"
-        let pattern1 = format!("{key}=");
-        let pattern2 = format!("{key} =");
-        if cmd.to_lowercase().contains(&pattern1) || cmd.to_lowercase().contains(&pattern2) {
-            // Exclude false positives like "git config user.password" without value
-            // Check if there's an actual value after the =
-            if let Some(pos) = cmd.to_lowercase().find(&pattern1) {
-                let after_eq = &cmd[pos + pattern1.len()..];
-                if !after_eq.trim().is_empty()
-                    && !after_eq.trim().starts_with('-')
-                    && after_eq.trim() != "\""
-                    && after_eq.trim() != "'"
-                {
-                    return true;
-                }
-            }
+    SUSPICIOUS_KEYS.iter().any(|key| {
+        let pattern = format!("{key}=");
+        let pattern_spaced = format!("{key} =");
+
+        if !lower.contains(&pattern) && !lower.contains(&pattern_spaced) {
+            return false;
         }
-    }
 
-    false
+        // Check if there's an actual value after the =
+        lower.find(&pattern).is_some_and(|pos| {
+            let after_eq = &cmd[pos + pattern.len()..];
+            has_actual_value(after_eq)
+        })
+    })
+}
+
+/// Check if the string after `=` contains an actual value (not empty or just quotes).
+fn has_actual_value(after_eq: &str) -> bool {
+    let trimmed = after_eq.trim();
+    !trimmed.is_empty() && !trimmed.starts_with('-') && trimmed != "\"" && trimmed != "'"
 }
 
 /// Filter sensitive commands from a list.

@@ -20,11 +20,13 @@ use std::process::ExitCode;
 
 mod commands;
 mod error;
+#[cfg(feature = "inference")]
+pub mod federation;
 mod output;
 
 use commands::{
-    canary, convert, debug, diff, explain, export, import, inspect, lint, merge, probar, tensors,
-    trace, tui, validate,
+    canary, canary::CanaryCommands, compare_hf, convert, debug, diff, explain, export, flow, hex,
+    import, inspect, lint, merge, probar, run, serve, tensors, trace, tree, tui, validate,
 };
 
 /// apr - APR Model Operations Tool
@@ -54,6 +56,64 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Run model directly (auto-download, cache, execute)
+    Run {
+        /// Model source: local path, hf://org/repo, or URL
+        #[arg(value_name = "SOURCE")]
+        source: String,
+
+        /// Input file (audio, text, etc.)
+        #[arg(short, long)]
+        input: Option<PathBuf>,
+
+        /// Enable streaming output
+        #[arg(long)]
+        stream: bool,
+
+        /// Language code (for ASR models)
+        #[arg(short, long)]
+        language: Option<String>,
+
+        /// Task (transcribe, translate)
+        #[arg(short, long)]
+        task: Option<String>,
+
+        /// Output format (text, json, srt, vtt)
+        #[arg(short = 'f', long, default_value = "text")]
+        format: String,
+
+        /// Disable GPU acceleration
+        #[arg(long)]
+        no_gpu: bool,
+    },
+
+    /// Start inference server (REST API, streaming, metrics)
+    Serve {
+        /// Path to model file
+        #[arg(value_name = "FILE")]
+        file: PathBuf,
+
+        /// Port to listen on
+        #[arg(short, long, default_value = "8080")]
+        port: u16,
+
+        /// Host to bind to
+        #[arg(long, default_value = "127.0.0.1")]
+        host: String,
+
+        /// Disable CORS
+        #[arg(long)]
+        no_cors: bool,
+
+        /// Disable Prometheus metrics endpoint
+        #[arg(long)]
+        no_metrics: bool,
+
+        /// Disable GPU acceleration
+        #[arg(long)]
+        no_gpu: bool,
+    },
+
     /// Inspect model metadata, vocab, and structure
     Inspect {
         /// Path to .apr model file
@@ -329,47 +389,148 @@ enum Commands {
         #[arg(long)]
         layer: Option<String>,
     },
-}
 
-#[derive(Subcommand)]
-enum CanaryCommands {
-    /// Create a canary test
-    Create {
-        /// Model file
+    /// Compare APR model against HuggingFace source
+    #[command(name = "compare-hf")]
+    CompareHf {
+        /// Path to .apr model file
         #[arg(value_name = "FILE")]
         file: PathBuf,
 
-        /// Input file (e.g. wav)
+        /// HuggingFace repo ID (e.g., openai/whisper-tiny)
         #[arg(long)]
-        input: PathBuf,
+        hf: String,
 
-        /// Output json file
+        /// Filter tensors by name pattern
         #[arg(long)]
-        output: PathBuf,
+        tensor: Option<String>,
+
+        /// Comparison threshold (default: 1e-5)
+        #[arg(long, default_value = "1e-5")]
+        threshold: f64,
+
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
     },
-    /// Check against a canary test
-    Check {
-        /// Model file
+
+    /// Hex dump tensor data (GH-122)
+    Hex {
+        /// Path to .apr model file
         #[arg(value_name = "FILE")]
         file: PathBuf,
 
-        /// Canary json file
+        /// Filter tensors by name pattern
         #[arg(long)]
-        canary: PathBuf,
+        tensor: Option<String>,
+
+        /// Limit bytes to display
+        #[arg(long, default_value = "64")]
+        limit: usize,
+
+        /// Show tensor statistics
+        #[arg(long)]
+        stats: bool,
+
+        /// List tensor names only
+        #[arg(long)]
+        list: bool,
+
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Model architecture tree view (GH-122)
+    Tree {
+        /// Path to .apr model file
+        #[arg(value_name = "FILE")]
+        file: PathBuf,
+
+        /// Filter by component pattern
+        #[arg(long)]
+        filter: Option<String>,
+
+        /// Output format: ascii, dot, mermaid, json
+        #[arg(long, default_value = "ascii")]
+        format: String,
+
+        /// Show tensor sizes
+        #[arg(long)]
+        sizes: bool,
+
+        /// Maximum tree depth
+        #[arg(long)]
+        depth: Option<usize>,
+    },
+
+    /// Data flow visualization (GH-122)
+    Flow {
+        /// Path to .apr model file
+        #[arg(value_name = "FILE")]
+        file: PathBuf,
+
+        /// Filter by layer pattern
+        #[arg(long)]
+        layer: Option<String>,
+
+        /// Component to visualize: full, encoder, decoder, cross_attn, self_attn, ffn
+        #[arg(long, default_value = "full")]
+        component: String,
+
+        /// Verbose output with statistics
+        #[arg(short, long)]
+        verbose: bool,
     },
 }
 
-fn main() -> ExitCode {
-    let cli = Cli::parse();
+/// Execute the CLI command and return the result.
+fn execute_command(cli: &Cli) -> Result<(), error::CliError> {
+    match &cli.command {
+        Commands::Run {
+            source,
+            input,
+            stream,
+            language,
+            task,
+            format,
+            no_gpu,
+        } => run::run(
+            source,
+            input.as_deref(),
+            *stream,
+            language.as_deref(),
+            task.as_deref(),
+            format,
+            *no_gpu,
+        ),
 
-    let result = match cli.command {
+        Commands::Serve {
+            file,
+            port,
+            host,
+            no_cors,
+            no_metrics,
+            no_gpu,
+        } => {
+            let config = serve::ServerConfig {
+                port: *port,
+                host: host.clone(),
+                cors: !no_cors,
+                metrics: !no_metrics,
+                no_gpu: *no_gpu,
+                ..Default::default()
+            };
+            serve::run(file, config)
+        }
+
         Commands::Inspect {
             file,
             vocab,
             filters,
             weights,
             json,
-        } => inspect::run(&file, vocab, filters, weights, json || cli.json),
+        } => inspect::run(file, *vocab, *filters, *weights, *json || cli.json),
 
         Commands::Debug {
             file,
@@ -377,21 +538,21 @@ fn main() -> ExitCode {
             hex,
             strings,
             limit,
-        } => debug::run(&file, drama, hex, strings, limit),
+        } => debug::run(file, *drama, *hex, *strings, *limit),
 
         Commands::Validate {
             file,
             quality,
             strict,
             min_score,
-        } => validate::run(&file, quality, strict, min_score),
+        } => validate::run(file, *quality, *strict, *min_score),
 
         Commands::Diff {
             file1,
             file2,
             weights,
             json,
-        } => diff::run(&file1, &file2, weights, json || cli.json),
+        } => diff::run(file1, file2, *weights, *json || cli.json),
 
         Commands::Tensors {
             file,
@@ -399,7 +560,7 @@ fn main() -> ExitCode {
             filter,
             limit,
             json,
-        } => tensors::run(&file, stats, filter.as_deref(), json || cli.json, limit),
+        } => tensors::run(file, *stats, filter.as_deref(), *json || cli.json, *limit),
 
         Commands::Trace {
             file,
@@ -411,25 +572,27 @@ fn main() -> ExitCode {
             diff,
             interactive,
         } => trace::run(
-            &file,
+            file,
             layer.as_deref(),
             reference.as_deref(),
-            json || cli.json,
-            verbose || cli.verbose,
-            payload,
-            diff,
-            interactive,
+            *json || cli.json,
+            *verbose || cli.verbose,
+            *payload,
+            *diff,
+            *interactive,
         ),
 
-        Commands::Lint { file } => lint::run(&file),
-        Commands::Explain { code, file, tensor } => explain::run(code, file, tensor),
-        Commands::Canary { command } => canary::run(command),
+        Commands::Lint { file } => lint::run(file),
+        Commands::Explain { code, file, tensor } => {
+            explain::run(code.clone(), file.clone(), tensor.clone())
+        }
+        Commands::Canary { command } => canary::run(command.clone()),
         Commands::Export {
             file,
             format,
             output,
             quantize,
-        } => export::run(&file, &format, &output, quantize),
+        } => export::run(file, format, output, quantize.clone()),
         Commands::Import {
             source,
             output,
@@ -437,24 +600,24 @@ fn main() -> ExitCode {
             quantize,
             force,
         } => import::run(
-            &source,
-            &output,
+            source,
+            output,
             Some(arch.as_str()),
             quantize.as_deref(),
-            force,
+            *force,
         ),
         Commands::Convert {
             file,
             quantize,
             output,
-        } => convert::run(&file, quantize, &output),
+        } => convert::run(file, quantize.as_deref(), output),
         Commands::Merge {
             files,
             strategy,
             output,
             weights,
-        } => merge::run(&files, &strategy, &output, weights),
-        Commands::Tui { file } => tui::run(file),
+        } => merge::run(files, strategy, output, weights.clone()),
+        Commands::Tui { file } => tui::run(file.clone()),
 
         Commands::Probar {
             file,
@@ -465,16 +628,70 @@ fn main() -> ExitCode {
         } => {
             let export_format = format.parse().unwrap_or(probar::ExportFormat::Both);
             probar::run(
-                &file,
-                &output,
+                file,
+                output,
                 export_format,
                 golden.as_deref(),
                 layer.as_deref(),
             )
         }
-    };
 
-    match result {
+        Commands::CompareHf {
+            file,
+            hf,
+            tensor,
+            threshold,
+            json,
+        } => compare_hf::run(file, hf, tensor.as_deref(), *threshold, *json || cli.json),
+
+        Commands::Hex {
+            file,
+            tensor,
+            limit,
+            stats,
+            list,
+            json,
+        } => hex::run(
+            file,
+            tensor.as_deref(),
+            *limit,
+            *stats,
+            *list,
+            *json || cli.json,
+        ),
+
+        Commands::Tree {
+            file,
+            filter,
+            format,
+            sizes,
+            depth,
+        } => {
+            let tree_format = format.parse().unwrap_or(tree::TreeFormat::Ascii);
+            tree::run(file, filter.as_deref(), tree_format, *sizes, *depth)
+        }
+
+        Commands::Flow {
+            file,
+            layer,
+            component,
+            verbose,
+        } => {
+            let flow_component = component.parse().unwrap_or(flow::FlowComponent::Full);
+            flow::run(
+                file,
+                layer.as_deref(),
+                flow_component,
+                *verbose || cli.verbose,
+            )
+        }
+    }
+}
+
+fn main() -> ExitCode {
+    let cli = Cli::parse();
+
+    match execute_command(&cli) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("error: {e}");

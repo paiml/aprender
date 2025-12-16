@@ -1,7 +1,7 @@
 //! APR CLI Commands Demo
 //!
 //! Demonstrates creating test models and using the apr-cli commands.
-//! This example creates model files that work with all 9 apr-cli commands.
+//! This example creates model files that work with all 17 apr-cli commands.
 //!
 //! Toyota Way Alignment:
 //! - **Genchi Genbutsu**: Go and see - inspect actual model data
@@ -21,6 +21,11 @@
 //! ./target/debug/apr diff /tmp/apr_cli_demo/demo_model.apr /tmp/apr_cli_demo/demo_model_v2.apr
 //! ./target/debug/apr probar /tmp/apr_cli_demo/demo_model.apr -o /tmp/apr_cli_demo/probar
 //! ./target/debug/apr explain E002
+//!
+//! # Inference commands (requires --features inference):
+//! cargo build -p apr-cli --features inference
+//! ./target/debug/apr run /tmp/apr_cli_demo/demo_model.apr --input "[1.0, 2.0]"
+//! ./target/debug/apr serve /tmp/apr_cli_demo/demo_model.apr --port 8080
 //! ```
 
 use aprender::serialization::apr::AprWriter;
@@ -185,8 +190,10 @@ fn print_cli_commands(model_path: &Path, model_v2_path: &Path) {
 
     println!("Build the CLI first:");
     println!("  cargo build -p apr-cli\n");
+    println!("For inference commands (run, serve):");
+    println!("  cargo build -p apr-cli --features inference\n");
 
-    println!("=== 15 APR CLI Commands ===\n");
+    println!("=== 17 APR CLI Commands ===\n");
 
     println!("--- Model Inspection ---\n");
 
@@ -265,8 +272,25 @@ fn print_cli_commands(model_path: &Path, model_v2_path: &Path) {
     println!("    ./target/debug/apr explain --tensor encoder.conv1.weight");
     println!("    ./target/debug/apr explain --file {model}\n");
 
-    println!("--- Interactive (Stub) ---\n");
+    println!("--- Interactive ---\n");
 
-    println!("15. TUI - Interactive terminal UI (coming soon):");
-    println!("    ./target/debug/apr tui {model}\n");
+    println!("15. TUI - Interactive terminal UI:");
+    println!("    ./target/debug/apr tui {model}");
+    println!("    Tabs: Overview [1], Tensors [2], Stats [3], Help [?]");
+    println!("    Navigation: j/k or arrows, Tab to switch, q to quit\n");
+
+    println!("--- Inference (requires --features inference) ---\n");
+
+    println!("16. RUN - Run inference on a model:");
+    println!("    ./target/debug/apr run {model} --input \"[1.0, 2.0]\"");
+    println!("    ./target/debug/apr run {model} --input \"1.0,2.0\"");
+    println!("    ./target/debug/apr run {model} --input \"[1.0, 2.0]\" --json\n");
+
+    println!("17. SERVE - Start inference server:");
+    println!("    ./target/debug/apr serve {model} --port 8080");
+    println!("    ./target/debug/apr serve {model} --host 0.0.0.0 --port 3000");
+    println!("    # Then: curl http://localhost:8080/health");
+    println!(
+        "    # Then: curl -X POST http://localhost:8080/predict -d '{{\"input\": [1.0, 2.0]}}'\n"
+    );
 }

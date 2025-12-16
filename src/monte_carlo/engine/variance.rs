@@ -24,7 +24,7 @@ pub enum VarianceReduction {
 
     /// Stratified sampling with K strata
     ///
-    /// Partitions [0,1] into K equal intervals and samples from each.
+    /// Partitions `[0,1]` into K equal intervals and samples from each.
     /// Guarantees representation across the entire range.
     Stratified {
         /// Number of strata

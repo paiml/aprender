@@ -439,63 +439,73 @@ pub fn mutate_genome(
     rng: &mut impl Rng,
 ) {
     match mutation {
-        NasMutation::AddLayer => {
-            if genome.len() < space.max_layers {
-                let layer_type = space.layer_types[rng.gen_range(0..space.layer_types.len())];
-                let mut config = LayerConfig::new(layer_type);
+        NasMutation::AddLayer => mutate_add_layer(genome, space, rng),
+        NasMutation::RemoveLayer => mutate_remove_layer(genome, space, rng),
+        NasMutation::ChangeType => mutate_change_type(genome, space, rng),
+        NasMutation::ModifyParams => mutate_modify_params(genome, space, rng),
+        NasMutation::ToggleActive => mutate_toggle_active(genome, rng),
+    }
+}
 
-                if matches!(layer_type, LayerType::Dense | LayerType::Lstm) {
-                    config.units = Some(rng.gen_range(space.units_range.0..=space.units_range.1));
-                }
-                if !space.activations.is_empty() {
-                    config.activation =
-                        Some(space.activations[rng.gen_range(0..space.activations.len())].clone());
-                }
+fn mutate_add_layer(genome: &mut NasGenome, space: &NasSearchSpace, rng: &mut impl Rng) {
+    if genome.len() >= space.max_layers {
+        return;
+    }
+    let layer_type = space.layer_types[rng.gen_range(0..space.layer_types.len())];
+    let mut config = LayerConfig::new(layer_type);
 
-                let pos = rng.gen_range(0..=genome.len());
-                genome.layers_mut().insert(pos, config);
-            }
-        }
-        NasMutation::RemoveLayer => {
-            if genome.len() > space.min_layers {
-                let idx = rng.gen_range(0..genome.len());
-                genome.layers_mut().remove(idx);
-            }
-        }
-        NasMutation::ChangeType => {
-            if !genome.is_empty() && !space.layer_types.is_empty() {
-                let idx = rng.gen_range(0..genome.len());
-                let new_type = space.layer_types[rng.gen_range(0..space.layer_types.len())];
-                genome.layers_mut()[idx].layer_type = new_type;
-            }
-        }
-        NasMutation::ModifyParams => {
-            if !genome.is_empty() {
-                let idx = rng.gen_range(0..genome.len());
-                let layer = &mut genome.layers_mut()[idx];
+    if matches!(layer_type, LayerType::Dense | LayerType::Lstm) {
+        config.units = Some(rng.gen_range(space.units_range.0..=space.units_range.1));
+    }
+    if !space.activations.is_empty() {
+        config.activation =
+            Some(space.activations[rng.gen_range(0..space.activations.len())].clone());
+    }
 
-                // Modify units with some probability
-                if let Some(units) = layer.units {
-                    let delta = rng.gen_range(-32i64..=32);
-                    let new_units = (units as i64 + delta)
-                        .clamp(space.units_range.0 as i64, space.units_range.1 as i64);
-                    layer.units = Some(new_units as usize);
-                }
+    let pos = rng.gen_range(0..=genome.len());
+    genome.layers_mut().insert(pos, config);
+}
 
-                // Maybe change activation
-                if rng.gen_bool(0.3) && !space.activations.is_empty() {
-                    layer.activation =
-                        Some(space.activations[rng.gen_range(0..space.activations.len())].clone());
-                }
-            }
-        }
-        NasMutation::ToggleActive => {
-            if !genome.is_empty() {
-                let idx = rng.gen_range(0..genome.len());
-                let layer = &mut genome.layers_mut()[idx];
-                layer.active = !layer.active;
-            }
-        }
+fn mutate_remove_layer(genome: &mut NasGenome, space: &NasSearchSpace, rng: &mut impl Rng) {
+    if genome.len() > space.min_layers {
+        let idx = rng.gen_range(0..genome.len());
+        genome.layers_mut().remove(idx);
+    }
+}
+
+fn mutate_change_type(genome: &mut NasGenome, space: &NasSearchSpace, rng: &mut impl Rng) {
+    if !genome.is_empty() && !space.layer_types.is_empty() {
+        let idx = rng.gen_range(0..genome.len());
+        let new_type = space.layer_types[rng.gen_range(0..space.layer_types.len())];
+        genome.layers_mut()[idx].layer_type = new_type;
+    }
+}
+
+fn mutate_modify_params(genome: &mut NasGenome, space: &NasSearchSpace, rng: &mut impl Rng) {
+    if genome.is_empty() {
+        return;
+    }
+    let idx = rng.gen_range(0..genome.len());
+    let layer = &mut genome.layers_mut()[idx];
+
+    if let Some(units) = layer.units {
+        let delta = rng.gen_range(-32i64..=32);
+        let new_units =
+            (units as i64 + delta).clamp(space.units_range.0 as i64, space.units_range.1 as i64);
+        layer.units = Some(new_units as usize);
+    }
+
+    if rng.gen_bool(0.3) && !space.activations.is_empty() {
+        layer.activation =
+            Some(space.activations[rng.gen_range(0..space.activations.len())].clone());
+    }
+}
+
+fn mutate_toggle_active(genome: &mut NasGenome, rng: &mut impl Rng) {
+    if !genome.is_empty() {
+        let idx = rng.gen_range(0..genome.len());
+        let layer = &mut genome.layers_mut()[idx];
+        layer.active = !layer.active;
     }
 }
 

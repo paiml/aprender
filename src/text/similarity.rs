@@ -255,24 +255,40 @@ pub fn edit_distance_similarity(a: &str, b: &str) -> Result<f64, AprenderError> 
 /// assert_eq!(similarities.len(), 3); // 3 documents
 /// assert_eq!(similarities[0].len(), 3); // 3 similarities per doc
 /// ```
+/// Initialize similarity matrix with self-similarity on diagonal.
+fn init_similarity_matrix(n: usize) -> Vec<Vec<f64>> {
+    let mut matrix = vec![vec![0.0; n]; n];
+    for (i, row) in matrix.iter_mut().enumerate() {
+        row[i] = 1.0;
+    }
+    matrix
+}
+
+/// Compute and store symmetric similarity for a pair.
+fn store_symmetric_similarity(
+    similarities: &mut [Vec<f64>],
+    vectors: &[Vector<f64>],
+    i: usize,
+    j: usize,
+) -> Result<(), AprenderError> {
+    let sim = cosine_similarity(&vectors[i], &vectors[j])?;
+    similarities[i][j] = sim;
+    similarities[j][i] = sim;
+    Ok(())
+}
+
 pub fn pairwise_cosine_similarity(vectors: &[Vector<f64>]) -> Result<Vec<Vec<f64>>, AprenderError> {
     if vectors.is_empty() {
         return Ok(Vec::new());
     }
 
     let n = vectors.len();
-    let mut similarities = vec![vec![0.0; n]; n];
+    let mut similarities = init_similarity_matrix(n);
 
+    // Compute upper triangle only (use symmetry)
     for i in 0..n {
-        for j in 0..n {
-            if i == j {
-                similarities[i][j] = 1.0; // Self-similarity is 1.0
-            } else if i < j {
-                // Compute once, use symmetry
-                let sim = cosine_similarity(&vectors[i], &vectors[j])?;
-                similarities[i][j] = sim;
-                similarities[j][i] = sim;
-            }
+        for j in (i + 1)..n {
+            store_symmetric_similarity(&mut similarities, vectors, i, j)?;
         }
     }
 
@@ -396,5 +412,90 @@ mod tests {
         let top = top_k_similar(&query, &docs, 2).expect("should succeed");
         assert_eq!(top.len(), 2);
         assert!(top[0].1 > top[1].1); // Sorted by similarity
+    }
+
+    #[test]
+    fn test_cosine_similarity_different_lengths() {
+        let v1 = Vector::from_slice(&[1.0, 2.0]);
+        let v2 = Vector::from_slice(&[1.0, 2.0, 3.0]);
+        assert!(cosine_similarity(&v1, &v2).is_err());
+    }
+
+    #[test]
+    fn test_cosine_similarity_empty() {
+        let v1 = Vector::from_slice(&[]);
+        let v2 = Vector::from_slice(&[]);
+        assert!(cosine_similarity(&v1, &v2).is_err());
+    }
+
+    #[test]
+    fn test_cosine_similarity_zero_vector() {
+        let v1 = Vector::from_slice(&[0.0, 0.0, 0.0]);
+        let v2 = Vector::from_slice(&[1.0, 2.0, 3.0]);
+        let sim = cosine_similarity(&v1, &v2).expect("should succeed");
+        assert_eq!(sim, 0.0); // Zero vector is orthogonal
+    }
+
+    #[test]
+    fn test_jaccard_similarity_both_empty() {
+        let a: Vec<&str> = vec![];
+        let b: Vec<&str> = vec![];
+        let sim = jaccard_similarity(&a, &b).expect("should succeed");
+        assert_eq!(sim, 1.0); // Empty sets are identical
+    }
+
+    #[test]
+    fn test_jaccard_similarity_one_empty() {
+        let a = vec!["word"];
+        let b: Vec<&str> = vec![];
+        let sim = jaccard_similarity(&a, &b).expect("should succeed");
+        assert_eq!(sim, 0.0); // No overlap possible
+    }
+
+    #[test]
+    fn test_edit_distance_empty_second() {
+        let dist = edit_distance("abc", "").expect("should succeed");
+        assert_eq!(dist, 3);
+    }
+
+    #[test]
+    fn test_edit_distance_similarity_empty() {
+        let sim = edit_distance_similarity("", "").expect("should succeed");
+        assert_eq!(sim, 1.0); // Empty strings are identical
+    }
+
+    #[test]
+    fn test_pairwise_cosine_similarity() {
+        let docs = vec![
+            Vector::from_slice(&[1.0, 0.0]),
+            Vector::from_slice(&[0.0, 1.0]),
+            Vector::from_slice(&[1.0, 1.0]),
+        ];
+
+        let sim_matrix = pairwise_cosine_similarity(&docs).expect("should succeed");
+        assert_eq!(sim_matrix.len(), 3);
+        assert_eq!(sim_matrix[0].len(), 3);
+
+        // Diagonal should be 1.0 (self-similarity)
+        assert!((sim_matrix[0][0] - 1.0).abs() < 1e-10);
+        assert!((sim_matrix[1][1] - 1.0).abs() < 1e-10);
+
+        // Symmetric
+        assert!((sim_matrix[0][1] - sim_matrix[1][0]).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_pairwise_cosine_similarity_empty() {
+        let docs: Vec<Vector<f64>> = vec![];
+        let sim_matrix = pairwise_cosine_similarity(&docs).expect("should succeed");
+        assert!(sim_matrix.is_empty());
+    }
+
+    #[test]
+    fn test_top_k_similar_empty_docs() {
+        let query = Vector::from_slice(&[1.0, 2.0]);
+        let docs: Vec<Vector<f64>> = vec![];
+        let top = top_k_similar(&query, &docs, 5).expect("should succeed");
+        assert!(top.is_empty());
     }
 }

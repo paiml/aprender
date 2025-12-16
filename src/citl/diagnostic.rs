@@ -380,7 +380,7 @@ impl CodeReplacement {
 /// Type information extracted from type errors.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TypeInfo {
-    /// Full type string (e.g., "Vec<String>")
+    /// Full type string (e.g., `Vec<String>`)
     pub full: String,
     /// Base type without generics (e.g., "Vec")
     pub base: String,
