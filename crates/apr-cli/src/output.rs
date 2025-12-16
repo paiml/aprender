@@ -31,22 +31,28 @@ pub(crate) fn section(title: &str) {
     println!("\n{}", format!("=== {title} ===").cyan().bold());
 }
 
+// Note: These functions are used by various commands and may appear unused
+// when only some commands are being compiled/used.
+
 /// Print a key-value pair
 pub(crate) fn kv(key: &str, value: impl std::fmt::Display) {
     println!("  {}: {}", key.white().bold(), value);
 }
 
 /// Print a success message
+#[allow(dead_code)]
 pub(crate) fn success(msg: &str) {
     println!("{} {}", "[PASS]".green().bold(), msg);
 }
 
 /// Print a warning message
+#[allow(dead_code)]
 pub(crate) fn warning(msg: &str) {
     println!("{} {}", "[WARN]".yellow().bold(), msg);
 }
 
 /// Print a failure message
+#[allow(dead_code)]
 pub(crate) fn fail(msg: &str) {
     println!("{} {}", "[FAIL]".red().bold(), msg);
 }

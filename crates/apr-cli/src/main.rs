@@ -110,6 +110,10 @@ enum Commands {
         /// Strict validation (fail on warnings)
         #[arg(long)]
         strict: bool,
+
+        /// Minimum score to pass (0-100)
+        #[arg(long)]
+        min_score: Option<u8>,
     },
 
     /// Compare two models
@@ -225,7 +229,8 @@ fn main() -> ExitCode {
             file,
             quality,
             strict,
-        } => validate::run(&file, quality, strict),
+            min_score,
+        } => validate::run(&file, quality, strict, min_score),
 
         Commands::Diff {
             file1,

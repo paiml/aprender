@@ -67,8 +67,16 @@ pub mod gguf;
 // Model card module (spec §11)
 pub mod model_card;
 
+// Validation module (spec §11 - 100-Point QA Checklist)
+pub mod validation;
+
 // Re-export model card types
 pub use model_card::{ModelCard, TrainingDataInfo};
+
+// Re-export validation types (spec §11 - 100-Point QA Checklist)
+pub use validation::{
+    AprHeader, AprValidator, Category, CheckStatus, TensorStats, ValidationCheck, ValidationReport,
+};
 
 // Re-export quantization types when feature is enabled
 #[cfg(feature = "format-quantize")]
