@@ -6,6 +6,7 @@
 //! Toyota Way: Jidoka - Build quality in through testing.
 
 #![allow(clippy::unwrap_used)] // Tests can use unwrap
+#![allow(deprecated)] // cargo_bin still works, just deprecated for custom build-dir
 
 use assert_cmd::Command;
 use predicates::prelude::*;
