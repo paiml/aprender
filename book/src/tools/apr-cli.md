@@ -25,6 +25,10 @@ The binary will be available at `target/release/apr`.
 | `validate` | Validate integrity with quality scoring | Jidoka (Built-in Quality) |
 | `diff` | Compare two models | Kaizen (Continuous Improvement) |
 | `tensors` | List tensor names, shapes, and statistics | Genchi Genbutsu (Go to the Source) |
+| `trace` | Layer-by-layer analysis with anomaly detection | Visualization |
+| `probar` | Export for visual regression testing | Standardization |
+| `import` | Import from HuggingFace, local files, or URLs | Automation |
+| `explain` | Explain errors, architecture, and tensors | Knowledge Sharing |
 
 ## Inspect Command
 
@@ -246,6 +250,275 @@ apr tensors model.apr --stats
     Range: [-0.1823, 0.1756]
 ```
 
+## Trace Command
+
+Layer-by-layer analysis with anomaly detection. Useful for debugging model behavior and identifying numerical issues.
+
+```bash
+# Basic layer trace
+apr trace model.apr
+
+# Verbose with per-layer statistics
+apr trace model.apr --verbose
+
+# Filter by layer name pattern
+apr trace model.apr --layer encoder
+
+# Compare with reference model
+apr trace model.apr --reference baseline.apr
+
+# JSON output for automation
+apr trace model.apr --json
+
+# Payload tracing through model
+apr trace model.apr --payload
+
+# Diff mode with reference
+apr trace model.apr --diff --reference old.apr
+```
+
+### Example Output
+
+```
+=== Layer Trace: model.apr ===
+
+  Format: APR v1.0
+  Layers: 6
+  Parameters: 39680000
+
+Layer Breakdown:
+  embedding
+  transformer_block_0 [0]
+  transformer_block_1 [1]
+  transformer_block_2 [2]
+  transformer_block_3 [3]
+  final_layer_norm
+```
+
+### Verbose Output
+
+```bash
+apr trace model.apr --verbose
+```
+
+```
+=== Layer Trace: model.apr ===
+
+Layer Breakdown:
+  embedding
+  transformer_block_0 [0]
+    weights: 768000 params, mean=0.0012, std=0.0534, L2=45.2
+    output:  mean=0.0001, std=0.9832, range=[-2.34, 2.45]
+  transformer_block_1 [1]
+    weights: 768000 params, mean=0.0008, std=0.0521, L2=44.8
+```
+
+### Anomaly Detection
+
+The trace command automatically detects numerical issues:
+
+```
+⚠ 2 anomalies detected:
+  - transformer_block_2: 5/1024 NaN values
+  - transformer_block_3: large values (max_abs=156.7)
+```
+
+## Probar Command
+
+Export layer-by-layer data for visual regression testing with the probar framework.
+
+```bash
+# Basic export (JSON + PNG)
+apr probar model.apr -o ./probar-export
+
+# JSON only
+apr probar model.apr -o ./probar-export --format json
+
+# PNG histograms only
+apr probar model.apr -o ./probar-export --format png
+
+# Compare with golden reference
+apr probar model.apr -o ./probar-export --golden ./golden-ref
+
+# Filter specific layers
+apr probar model.apr -o ./probar-export --layer encoder
+```
+
+### Example Output
+
+```
+=== Probar Export Complete ===
+
+  Source: model.apr
+  Output: ./probar-export
+  Format: APR v1.0
+  Layers: 4
+
+Golden reference comparison generated
+
+Generated files:
+  - ./probar-export/manifest.json
+  - ./probar-export/layer_000_block_0.pgm
+  - ./probar-export/layer_000_block_0.meta.json
+  - ./probar-export/layer_001_block_1.pgm
+  - ./probar-export/layer_001_block_1.meta.json
+
+Integration with probar:
+  1. Copy output to probar test fixtures
+  2. Use VisualRegressionTester to compare snapshots
+  3. Run: probar test --visual-diff
+```
+
+### Manifest Format
+
+The generated `manifest.json` contains:
+
+```json
+{
+  "source_model": "model.apr",
+  "timestamp": "2025-01-15T12:00:00Z",
+  "format": "APR v1.0",
+  "layers": [
+    {
+      "name": "block_0",
+      "index": 0,
+      "histogram": [100, 100, ...],
+      "mean": 0.0,
+      "std": 1.0,
+      "min": -3.0,
+      "max": 3.0
+    }
+  ],
+  "golden_reference": null
+}
+```
+
+## Import Command
+
+Import models from HuggingFace, local files, or URLs into APR format.
+
+```bash
+# Import from HuggingFace
+apr import hf://openai/whisper-tiny -o whisper.apr
+
+# Import with specific architecture
+apr import hf://meta-llama/Llama-2-7b -o llama.apr --arch llama
+
+# Import from local safetensors file
+apr import ./model.safetensors -o converted.apr
+
+# Import with quantization
+apr import hf://org/repo -o model.apr --quantize int8
+
+# Force import (skip validation)
+apr import ./model.bin -o model.apr --force
+```
+
+### Supported Sources
+
+| Source Type | Format | Example |
+|-------------|--------|---------|
+| HuggingFace | `hf://org/repo` | `hf://openai/whisper-tiny` |
+| Local File | Path | `./model.safetensors` |
+| URL | HTTP(S) | `https://example.com/model.bin` |
+
+### Architectures
+
+| Architecture | Flag | Auto-Detection |
+|--------------|------|----------------|
+| Whisper | `--arch whisper` | ✓ |
+| LLaMA | `--arch llama` | ✓ |
+| BERT | `--arch bert` | ✓ |
+| Auto | `--arch auto` (default) | ✓ |
+
+### Quantization Options
+
+| Option | Description |
+|--------|-------------|
+| `--quantize int8` | 8-bit integer quantization |
+| `--quantize int4` | 4-bit integer quantization |
+| `--quantize fp16` | 16-bit floating point |
+
+### Example Output
+
+```
+=== APR Import Pipeline ===
+
+Source: hf:// (HuggingFace)
+  Organization: openai
+  Repository: whisper-tiny
+Output: whisper.apr
+
+Architecture: Whisper
+Validation: Strict
+
+Importing...
+
+=== Validation Report ===
+Score: 98/100 (Grade: A+)
+
+✓ Import successful
+```
+
+## Explain Command
+
+Get explanations for error codes, tensor names, and model architectures.
+
+```bash
+# Explain an error code
+apr explain E002
+
+# Explain a specific tensor
+apr explain --tensor encoder.conv1.weight
+
+# Explain model architecture
+apr explain --file model.apr
+```
+
+### Error Code Explanations
+
+```bash
+apr explain E002
+```
+
+```
+Explain error code: E002
+**E002: Corrupted Data**
+The payload checksum does not match the header.
+- **Common Causes**: Interrupted download, bit rot, disk error.
+- **Troubleshooting**:
+  1. Run `apr validate --checksum` to verify.
+  2. Check source file integrity (MD5/SHA256).
+```
+
+### Tensor Explanations
+
+```bash
+apr explain --tensor encoder.conv1.weight
+```
+
+```
+**encoder.conv1.weight**
+- **Role**: Initial feature extraction (Audio -> Latent)
+- **Shape**: [384, 80, 3] (Filters, Input Channels, Kernel Size)
+- **Stats**: Mean 0.002, Std 0.04 (Healthy)
+```
+
+### Architecture Explanations
+
+```bash
+apr explain --file whisper.apr
+```
+
+```
+Explain model architecture: whisper.apr
+This is a **Whisper (Tiny)** model.
+- **Purpose**: Automatic Speech Recognition (ASR)
+- **Architecture**: Encoder-Decoder Transformer
+- **Input**: 80-channel Mel spectrograms
+- **Output**: Text tokens (multilingual)
+```
+
 ## Exit Codes
 
 | Code | Meaning |
@@ -274,6 +547,10 @@ Use `apr validate --strict` in CI pipelines to ensure model quality:
 3. **Jidoka (Built-in Quality)**: `apr validate` stops on quality issues with clear feedback
 4. **Visualization**: `apr debug --drama` makes problems visible and understandable
 5. **Kaizen (Continuous Improvement)**: `apr diff` enables comparing models for improvement
+6. **Visualization**: `apr trace` makes layer-by-layer behavior visible with anomaly detection
+7. **Standardization**: `apr probar` creates repeatable visual regression tests
+8. **Automation**: `apr import` automates model conversion with inline validation
+9. **Knowledge Sharing**: `apr explain` documents errors, tensors, and architectures
 
 ## See Also
 

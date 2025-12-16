@@ -24,7 +24,7 @@ pub(crate) fn run(
 
     // Run validation
     let mut validator = AprValidator::new();
-    let report = validator.validate(&data);
+    let report = validator.validate_bytes(&data);
 
     // Print detailed check results
     print_check_results(report);

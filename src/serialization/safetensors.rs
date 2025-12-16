@@ -150,9 +150,25 @@ pub fn load_safetensors<P: AsRef<Path>>(path: P) -> Result<(SafeTensorsMetadata,
     let metadata_str = std::str::from_utf8(metadata_json)
         .map_err(|e| format!("Metadata is not valid UTF-8: {e}"))?;
 
-    // Parse metadata JSON
-    let metadata: SafeTensorsMetadata =
+    // Parse metadata JSON as generic Value first (handles __metadata__ and tensor entries)
+    let raw_metadata: serde_json::Value =
         serde_json::from_str(metadata_str).map_err(|e| format!("JSON parsing failed: {e}"))?;
+
+    // Extract tensor metadata only (skip __metadata__ and other non-tensor entries)
+    let mut metadata = SafeTensorsMetadata::new();
+    if let serde_json::Value::Object(map) = raw_metadata {
+        for (key, value) in map {
+            // Skip special keys like __metadata__
+            if key.starts_with("__") {
+                continue;
+            }
+
+            // Try to parse as TensorMetadata
+            if let Ok(tensor_meta) = serde_json::from_value::<TensorMetadata>(value) {
+                metadata.insert(key, tensor_meta);
+            }
+        }
+    }
 
     // Extract raw data section
     let raw_data = bytes[8 + metadata_len..].to_vec();

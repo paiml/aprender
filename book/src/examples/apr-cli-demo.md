@@ -303,6 +303,181 @@ Add to your GitHub Actions workflow:
     # Fail if score < 90
 ```
 
+## Layer-by-Layer Tracing
+
+The `trace` command provides deep visibility into model structure with anomaly detection:
+
+```bash
+$ apr trace demo_model.apr
+
+=== Layer Trace: demo_model.apr ===
+
+  Format: APR v1.0
+  Layers: 3
+  Parameters: 5
+
+Layer Breakdown:
+  embedding
+  linear_layer [0]
+  final_layer_norm
+```
+
+### Verbose Trace with Statistics
+
+```bash
+$ apr trace demo_model.apr --verbose
+
+=== Layer Trace: demo_model.apr ===
+
+Layer Breakdown:
+  embedding
+  linear_layer [0]
+    weights: 2 params, mean=2.0000, std=0.0000, L2=2.83
+    output:  mean=0.0000, std=0.0000, range=[0.00, 0.00]
+  final_layer_norm
+```
+
+### Detecting Anomalies
+
+If your model has numerical issues, trace will flag them:
+
+```bash
+$ apr trace problematic_model.apr
+
+⚠ 2 anomalies detected:
+  - layer_3: 10/1024 NaN values
+  - layer_5: large values (max_abs=1234.5)
+```
+
+## Visual Regression Testing with Probar
+
+Export model layer data for visual regression testing:
+
+```bash
+$ apr probar demo_model.apr -o ./probar-export
+
+=== Probar Export Complete ===
+
+  Source: demo_model.apr
+  Output: ./probar-export
+  Format: APR v1.0
+  Layers: 1
+
+Generated files:
+  - ./probar-export/manifest.json
+  - ./probar-export/layer_000_placeholder.pgm
+  - ./probar-export/layer_000_placeholder.meta.json
+
+Integration with probar:
+  1. Copy output to probar test fixtures
+  2. Use VisualRegressionTester to compare snapshots
+  3. Run: probar test --visual-diff
+```
+
+### Comparing Against Golden Reference
+
+```bash
+# First, create golden reference from known-good model
+apr probar baseline.apr -o ./golden-ref
+
+# Then compare new model against golden
+apr probar updated.apr -o ./test-output --golden ./golden-ref
+```
+
+This generates a `diff_report.json` with any statistical divergences.
+
+## Importing External Models
+
+Import models from various sources:
+
+### From Local Safetensors File
+
+```bash
+$ apr import ./external_model.safetensors -o converted.apr
+
+=== APR Import Pipeline ===
+
+Source: ./external_model.safetensors (Local)
+Output: converted.apr
+
+Architecture: Auto
+Validation: Strict
+
+Importing...
+
+=== Validation Report ===
+Score: 95/100 (Grade: A+)
+
+✓ Import successful
+```
+
+### From HuggingFace (when available)
+
+```bash
+$ apr import hf://openai/whisper-tiny -o whisper.apr --arch whisper
+
+=== APR Import Pipeline ===
+
+Source: hf:// (HuggingFace)
+  Organization: openai
+  Repository: whisper-tiny
+Output: whisper.apr
+
+Architecture: Whisper
+Validation: Strict
+
+Importing...
+
+✓ Import successful
+```
+
+### With Quantization
+
+```bash
+$ apr import ./large_model.safetensors -o quantized.apr --quantize int8
+```
+
+## Explaining Errors and Tensors
+
+The `explain` command provides context for debugging:
+
+### Error Codes
+
+```bash
+$ apr explain E002
+
+Explain error code: E002
+**E002: Corrupted Data**
+The payload checksum does not match the header.
+- **Common Causes**: Interrupted download, bit rot, disk error.
+- **Troubleshooting**:
+  1. Run `apr validate --checksum` to verify.
+  2. Check source file integrity (MD5/SHA256).
+```
+
+### Tensor Names
+
+```bash
+$ apr explain --tensor encoder.conv1.weight
+
+**encoder.conv1.weight**
+- **Role**: Initial feature extraction (Audio -> Latent)
+- **Shape**: [384, 80, 3] (Filters, Input Channels, Kernel Size)
+- **Stats**: Mean 0.002, Std 0.04 (Healthy)
+```
+
+### Model Architecture
+
+```bash
+$ apr explain --file whisper.apr
+
+This is a **Whisper (Tiny)** model.
+- **Purpose**: Automatic Speech Recognition (ASR)
+- **Architecture**: Encoder-Decoder Transformer
+- **Input**: 80-channel Mel spectrograms
+- **Output**: Text tokens (multilingual)
+```
+
 ## Key Takeaways
 
 1. **Genchi Genbutsu**: `apr inspect` lets you see actual model data
@@ -310,9 +485,14 @@ Add to your GitHub Actions workflow:
 3. **Jidoka**: `apr validate --strict` enforces quality gates
 4. **Visualization**: `apr debug --drama` makes debugging memorable
 5. **Kaizen**: `apr diff` enables tracking model evolution
+6. **Visualization**: `apr trace` makes layer behavior visible with anomaly detection
+7. **Standardization**: `apr probar` creates repeatable visual regression tests
+8. **Automation**: `apr import` simplifies model conversion workflows
+9. **Knowledge Sharing**: `apr explain` provides instant documentation
 
 ## See Also
 
 - [apr CLI Tool Reference](../tools/apr-cli.md)
 - [APR Model Format](./model-format.md)
 - [APR 100-Point Quality Scoring](./apr-scoring.md)
+- [APR Format Specification](../tools/apr-spec.md)

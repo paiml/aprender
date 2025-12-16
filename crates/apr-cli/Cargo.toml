@@ -19,6 +19,10 @@ workspace = true
 name = "apr"
 path = "src/main.rs"
 
+[features]
+default = ["hf-hub"]
+hf-hub = ["aprender/hf-hub-integration"]
+
 [dependencies]
 # Core aprender library
 aprender = { path = "../..", default-features = true, features = ["format-compression"] }

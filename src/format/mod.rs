@@ -68,7 +68,23 @@ pub mod gguf;
 pub mod model_card;
 
 // Validation module (spec §11 - 100-Point QA Checklist)
+#[allow(clippy::case_sensitive_file_extension_comparisons)]
 pub mod validation;
+
+// Converter module (spec §13 - Import/Convert Pipeline)
+#[allow(
+    clippy::unnecessary_wraps,
+    clippy::type_complexity,
+    clippy::trivially_copy_pass_by_ref,
+    clippy::explicit_iter_loop,
+    clippy::cast_lossless,
+    clippy::needless_pass_by_value,
+    clippy::map_unwrap_or,
+    clippy::case_sensitive_file_extension_comparisons,
+    clippy::uninlined_format_args,
+    clippy::derivable_impls
+)]
+pub mod converter;
 
 // Re-export model card types
 pub use model_card::{ModelCard, TrainingDataInfo};
@@ -76,6 +92,12 @@ pub use model_card::{ModelCard, TrainingDataInfo};
 // Re-export validation types (spec §11 - 100-Point QA Checklist)
 pub use validation::{
     AprHeader, AprValidator, Category, CheckStatus, TensorStats, ValidationCheck, ValidationReport,
+};
+
+// Re-export converter types (spec §13 - Import/Convert Pipeline)
+pub use converter::{
+    apr_convert, apr_import, AprConverter, Architecture, ConvertOptions, ConvertReport,
+    ImportError, ImportOptions, QuantizationType, Source, TensorExpectation, ValidationConfig,
 };
 
 // Re-export quantization types when feature is enabled

@@ -239,15 +239,27 @@ enum Commands {
         output: PathBuf,
     },
 
-    /// Import from external formats
+    /// Import from external formats (hf://org/repo, local files, URLs)
     Import {
-        /// Source file or URL
+        /// Source: hf://org/repo, local file, or URL
         #[arg(value_name = "SOURCE")]
         source: String,
 
         /// Output .apr file path
         #[arg(short, long)]
         output: PathBuf,
+
+        /// Model architecture (whisper, llama, bert, auto)
+        #[arg(long, default_value = "auto")]
+        arch: String,
+
+        /// Quantization (int8, int4, fp16)
+        #[arg(long)]
+        quantize: Option<String>,
+
+        /// Force import even if validation fails
+        #[arg(long)]
+        force: bool,
     },
 
     /// Convert/optimize model
@@ -409,7 +421,19 @@ fn main() -> ExitCode {
             format,
             output,
         } => export::run(&file, &format, &output),
-        Commands::Import { source, output } => import::run(&source, &output),
+        Commands::Import {
+            source,
+            output,
+            arch,
+            quantize,
+            force,
+        } => import::run(
+            &source,
+            &output,
+            Some(arch.as_str()),
+            quantize.as_deref(),
+            force,
+        ),
         Commands::Convert {
             file,
             quantize,

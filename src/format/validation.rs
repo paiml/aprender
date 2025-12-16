@@ -383,6 +383,8 @@ impl AprHeader {
 pub struct AprValidator {
     /// Validation report
     report: ValidationReport,
+    /// Tensor statistics collected during validation
+    tensor_stats: Vec<TensorStats>,
 }
 
 impl AprValidator {
@@ -391,13 +393,119 @@ impl AprValidator {
     pub fn new() -> Self {
         Self {
             report: ValidationReport::new(),
+            tensor_stats: Vec::new(),
         }
     }
 
-    /// Run all validation checks
-    pub fn validate(&mut self, data: &[u8]) -> &ValidationReport {
+    /// Add tensor stats for validation
+    pub fn add_tensor_stats(&mut self, stats: TensorStats) {
+        self.tensor_stats.push(stats);
+    }
+
+    /// Run validation on file bytes
+    pub fn validate_bytes(&mut self, data: &[u8]) -> &ValidationReport {
         self.validate_structure(data);
         &self.report
+    }
+
+    /// Run all validation checks (tensor-based)
+    pub fn validate(&mut self) -> ValidationReport {
+        self.validate_tensors();
+        std::mem::take(&mut self.report)
+    }
+
+    /// Validate tensor statistics (Section B)
+    fn validate_tensors(&mut self) {
+        // Check 26: No NaNs
+        let nan_count: usize = self.tensor_stats.iter().map(|s| s.nan_count).sum();
+        let status = if nan_count == 0 {
+            CheckStatus::Pass
+        } else {
+            CheckStatus::Fail(format!("{nan_count} NaN values found across tensors"))
+        };
+        self.add_check(26, "No NaN values", Category::Physics, status);
+
+        // Check 27: No Infs
+        let inf_count: usize = self.tensor_stats.iter().map(|s| s.inf_count).sum();
+        let status = if inf_count == 0 {
+            CheckStatus::Pass
+        } else {
+            CheckStatus::Fail(format!("{inf_count} Inf values found across tensors"))
+        };
+        self.add_check(27, "No Inf values", Category::Physics, status);
+
+        // Check 28: LayerNorm weights valid
+        let invalid_ln: Vec<_> = self
+            .tensor_stats
+            .iter()
+            .filter(|s| {
+                (s.name.contains("layer_norm") || s.name.contains("ln_"))
+                    && (s.name.ends_with(".weight") || s.name.ends_with(".gamma"))
+                    && !s.is_valid_layernorm_weight()
+            })
+            .collect();
+
+        let status = if invalid_ln.is_empty() {
+            CheckStatus::Pass
+        } else {
+            let names: Vec<_> = invalid_ln
+                .iter()
+                .map(|s| format!("{} (mean={:.4})", s.name, s.mean))
+                .collect();
+            CheckStatus::Fail(format!("Invalid LayerNorm weights: {}", names.join(", ")))
+        };
+        self.add_check(28, "LayerNorm weights valid", Category::Physics, status);
+
+        // Check 31: No all-zero tensors
+        let zero_tensors: Vec<_> = self
+            .tensor_stats
+            .iter()
+            .filter(|s| !s.is_not_all_zeros())
+            .collect();
+
+        let status = if zero_tensors.is_empty() {
+            CheckStatus::Pass
+        } else {
+            let names: Vec<_> = zero_tensors.iter().map(|s| s.name.clone()).collect();
+            CheckStatus::Fail(format!("All-zero tensors: {}", names.join(", ")))
+        };
+        self.add_check(31, "No all-zero tensors", Category::Physics, status);
+
+        // Checks 29-30, 32-50 placeholders
+        for id in [29, 30] {
+            self.add_check(
+                id,
+                "Physics check",
+                Category::Physics,
+                CheckStatus::Skip("Not implemented".to_string()),
+            );
+        }
+        for id in 32..=50 {
+            self.add_check(
+                id,
+                "Physics/Tooling check",
+                if id <= 35 {
+                    Category::Physics
+                } else {
+                    Category::Tooling
+                },
+                CheckStatus::Skip("Not implemented".to_string()),
+            );
+        }
+
+        // Checks 51-100 placeholders
+        for id in 51..=100 {
+            self.add_check(
+                id,
+                "Advanced check",
+                if id <= 75 {
+                    Category::Tooling
+                } else {
+                    Category::Conversion
+                },
+                CheckStatus::Skip("Not implemented".to_string()),
+            );
+        }
     }
 
     /// Run Section A: Format & Structural Integrity checks (1-25)
@@ -530,7 +638,7 @@ mod tests_section_a {
         let mut data = vec![0u8; 32];
         data[0..4].copy_from_slice(b"APRN");
         let mut validator = AprValidator::new();
-        validator.validate(&data);
+        validator.validate_bytes(&data);
         let check = validator
             .report()
             .checks
@@ -545,7 +653,7 @@ mod tests_section_a {
         let mut data = vec![0u8; 32];
         data[0..4].copy_from_slice(b"APR2");
         let mut validator = AprValidator::new();
-        validator.validate(&data);
+        validator.validate_bytes(&data);
         let check = validator
             .report()
             .checks
@@ -560,7 +668,7 @@ mod tests_section_a {
         let mut data = vec![0u8; 32];
         data[0..4].copy_from_slice(b"BAD!");
         let mut validator = AprValidator::new();
-        validator.validate(&data);
+        validator.validate_bytes(&data);
         let check = validator
             .report()
             .checks
@@ -575,7 +683,7 @@ mod tests_section_a {
     fn test_check_2_header_complete() {
         let data = vec![0u8; 32];
         let mut validator = AprValidator::new();
-        validator.validate(&data);
+        validator.validate_bytes(&data);
         let check = validator
             .report()
             .checks
@@ -589,7 +697,7 @@ mod tests_section_a {
     fn test_check_2_header_too_small() {
         let data = vec![0u8; 16]; // Only 16 bytes
         let mut validator = AprValidator::new();
-        validator.validate(&data);
+        validator.validate_bytes(&data);
         let check = validator
             .report()
             .checks
@@ -607,7 +715,7 @@ mod tests_section_a {
         data[4] = 1; // major
         data[5] = 0; // minor
         let mut validator = AprValidator::new();
-        validator.validate(&data);
+        validator.validate_bytes(&data);
         let check = validator
             .report()
             .checks
@@ -624,7 +732,7 @@ mod tests_section_a {
         data[4] = 2; // major
         data[5] = 0; // minor
         let mut validator = AprValidator::new();
-        validator.validate(&data);
+        validator.validate_bytes(&data);
         let check = validator
             .report()
             .checks
@@ -641,7 +749,7 @@ mod tests_section_a {
         data[4] = 3; // major (unsupported)
         data[5] = 0;
         let mut validator = AprValidator::new();
-        validator.validate(&data);
+        validator.validate_bytes(&data);
         let check = validator
             .report()
             .checks
@@ -659,7 +767,7 @@ mod tests_section_a {
         data[4] = 1;
         data[8] = 0x01; // COMPRESSED flag
         let mut validator = AprValidator::new();
-        validator.validate(&data);
+        validator.validate_bytes(&data);
         let check = validator
             .report()
             .checks
