@@ -161,6 +161,61 @@ let model: LinearRegression = load("model.apr", ModelType::LinearRegression)?;
 - **Integrity** — CRC32 checksums with automatic corruption detection
 - **Commercial** — License blocks, watermarking, buyer-specific encryption
 
+## APR CLI Tool
+
+The `apr` CLI provides comprehensive model operations for the `.apr` format.
+
+### Installation
+
+```bash
+cargo install apr-cli
+```
+
+### Commands
+
+| Command | Description |
+|---------|-------------|
+| `apr inspect` | Inspect model metadata, vocab, and structure |
+| `apr debug` | Simple debugging output ("drama" mode available) |
+| `apr validate` | Validate model integrity and quality |
+| `apr diff` | Compare two models |
+| `apr tensors` | List tensor names, shapes, and statistics |
+| `apr trace` | Layer-by-layer trace analysis |
+| `apr lint` | Check for best practices and conventions |
+| `apr explain` | Explain errors, architecture, and tensors |
+| `apr canary` | Regression testing via tensor statistics |
+| `apr export` | Export to SafeTensors, GGUF formats |
+| `apr import` | Import from HuggingFace, SafeTensors |
+| `apr convert` | Quantization (int8, int4, fp16) and optimization |
+| `apr merge` | Merge models (average, weighted strategies) |
+| `apr tui` | Interactive terminal UI |
+| `apr probar` | Export for visual testing |
+
+### Quick Examples
+
+```bash
+# Validate model integrity
+apr validate model.apr --quality
+
+# Convert with quantization
+apr convert model.safetensors --quantize int8 -o model-int8.apr
+
+# Lint for best practices
+apr lint model.apr
+
+# Export to GGUF (llama.cpp compatible)
+apr export model.apr --format gguf -o model.gguf
+
+# Merge models (ensemble)
+apr merge model1.apr model2.apr --strategy average -o ensemble.apr
+
+# Create regression test
+apr canary create model.apr --input ref.wav --output canary.json
+
+# Check model against canary
+apr canary check optimized.apr --canary canary.json
+```
+
 ## Documentation
 
 | Resource | Link |
@@ -168,7 +223,7 @@ let model: LinearRegression = load("model.apr", ModelType::LinearRegression)?;
 | API Reference | [docs.rs/aprender](https://docs.rs/aprender) |
 | User Guide | [paiml.github.io/aprender](https://paiml.github.io/aprender/) |
 | Examples | [`examples/`](examples/) |
-| Model Format Spec | [`docs/specifications/model-format-spec.md`](docs/specifications/model-format-spec.md) |
+| APR Format Spec | [`docs/specifications/APR-SPEC.md`](docs/specifications/APR-SPEC.md) |
 
 ## Contributing
 

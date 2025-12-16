@@ -186,55 +186,87 @@ fn print_cli_commands(model_path: &Path, model_v2_path: &Path) {
     println!("Build the CLI first:");
     println!("  cargo build -p apr-cli\n");
 
-    println!("=== 9 Working CLI Commands ===\n");
+    println!("=== 15 APR CLI Commands ===\n");
+
+    println!("--- Model Inspection ---\n");
 
     println!("1. INSPECT - View model metadata:");
     println!("   ./target/debug/apr inspect {model}");
     println!("   ./target/debug/apr inspect {model} --json");
     println!("   ./target/debug/apr inspect {model} --weights\n");
 
-    println!("2. VALIDATE - Check model integrity:");
-    println!("   ./target/debug/apr validate {model}");
-    println!("   ./target/debug/apr validate {model} --quality");
-    println!("   ./target/debug/apr validate {model} --strict\n");
-
-    println!("3. DEBUG - Debug output:");
-    println!("   ./target/debug/apr debug {model}");
-    println!("   ./target/debug/apr debug {model} --drama");
-    println!("   ./target/debug/apr debug {model} --hex --limit 64\n");
-
-    println!("4. TENSORS - List tensor info:");
+    println!("2. TENSORS - List tensor info:");
     println!("   ./target/debug/apr tensors {model}");
     println!("   ./target/debug/apr tensors {model} --stats");
     println!("   ./target/debug/apr tensors {model} --json\n");
 
-    println!("5. TRACE - Layer-by-layer analysis:");
+    println!("3. TRACE - Layer-by-layer analysis:");
     println!("   ./target/debug/apr trace {model}");
     println!("   ./target/debug/apr trace {model} --verbose");
     println!("   ./target/debug/apr trace {model} --json\n");
 
-    println!("6. DIFF - Compare two models:");
+    println!("4. DEBUG - Debug output:");
+    println!("   ./target/debug/apr debug {model}");
+    println!("   ./target/debug/apr debug {model} --drama");
+    println!("   ./target/debug/apr debug {model} --hex --limit 64\n");
+
+    println!("--- Quality & Validation ---\n");
+
+    println!("5. VALIDATE - Check model integrity (100-point QA):");
+    println!("   ./target/debug/apr validate {model}");
+    println!("   ./target/debug/apr validate {model} --quality");
+    println!("   ./target/debug/apr validate {model} --strict\n");
+
+    println!("6. LINT - Best practices check:");
+    println!("   ./target/debug/apr lint {model}\n");
+
+    println!("7. DIFF - Compare two models:");
     println!("   ./target/debug/apr diff {model} {model_v2}");
     println!("   ./target/debug/apr diff {model} {model_v2} --json\n");
 
-    println!("7. PROBAR - Visual regression testing export:");
-    println!("   ./target/debug/apr probar {model} -o {demo_dir}/probar_output");
-    println!("   ./target/debug/apr probar {model} -o {demo_dir}/probar_output --format json\n");
+    println!("--- Model Transformation ---\n");
 
-    println!("8. IMPORT - Import external models:");
-    println!("   ./target/debug/apr import ./external.safetensors -o imported.apr");
-    println!("   ./target/debug/apr import hf://org/repo -o model.apr --arch whisper\n");
+    println!("8. CONVERT - Quantization/optimization:");
+    println!("   ./target/debug/apr convert {model} --quantize int8 -o {demo_dir}/model-int8.apr");
+    println!(
+        "   ./target/debug/apr convert {model} --quantize fp16 -o {demo_dir}/model-fp16.apr\n"
+    );
 
-    println!("9. EXPLAIN - Get explanations:");
-    println!("   ./target/debug/apr explain E002");
-    println!("   ./target/debug/apr explain --tensor encoder.conv1.weight");
-    println!("   ./target/debug/apr explain --file {model}\n");
+    println!("9. EXPORT - Export to other formats:");
+    println!(
+        "   ./target/debug/apr export {model} --format safetensors -o {demo_dir}/model.safetensors"
+    );
+    println!("   ./target/debug/apr export {model} --format gguf -o {demo_dir}/model.gguf\n");
 
-    println!("=== Stub Commands (team finishing) ===\n");
-    println!("   - convert: Quantization/optimization");
-    println!("   - export: Export to safetensors/gguf");
-    println!("   - merge: Model merging");
-    println!("   - lint: Best practices check");
-    println!("   - tui: Interactive terminal UI");
-    println!("   - canary: Regression testing");
+    println!("10. MERGE - Merge models:");
+    println!("    ./target/debug/apr merge {model} {model_v2} --strategy average -o {demo_dir}/merged.apr");
+    println!("    ./target/debug/apr merge {model} {model_v2} --strategy weighted -o {demo_dir}/merged.apr\n");
+
+    println!("--- Import & Interop ---\n");
+
+    println!("11. IMPORT - Import external models:");
+    println!("    ./target/debug/apr import ./external.safetensors -o imported.apr");
+    println!("    ./target/debug/apr import hf://org/repo -o model.apr --arch whisper\n");
+
+    println!("--- Testing & Regression ---\n");
+
+    println!("12. CANARY - Regression testing:");
+    println!("    ./target/debug/apr canary create {model} --input ref.wav --output {demo_dir}/canary.json");
+    println!("    ./target/debug/apr canary check {model_v2} --canary {demo_dir}/canary.json\n");
+
+    println!("13. PROBAR - Visual regression testing export:");
+    println!("    ./target/debug/apr probar {model} -o {demo_dir}/probar_output");
+    println!("    ./target/debug/apr probar {model} -o {demo_dir}/probar_output --format json\n");
+
+    println!("--- Help & Documentation ---\n");
+
+    println!("14. EXPLAIN - Get explanations:");
+    println!("    ./target/debug/apr explain E002");
+    println!("    ./target/debug/apr explain --tensor encoder.conv1.weight");
+    println!("    ./target/debug/apr explain --file {model}\n");
+
+    println!("--- Interactive (Stub) ---\n");
+
+    println!("15. TUI - Interactive terminal UI (coming soon):");
+    println!("    ./target/debug/apr tui {model}\n");
 }

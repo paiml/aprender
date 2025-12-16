@@ -383,7 +383,90 @@ Automated releases on version tags.
 - `src/glm/` - Generalized Linear Models
 - `src/graph/` - Graph algorithms and analysis
 - `src/decomposition/` - PCA, ICA matrix decomposition
-- `docs/specifications/aprender-spec-v1.md` - Full v1.0 specification
+- `src/format/` - APR format, validation, lint, converter, export
+- `crates/apr-cli/` - CLI tool for model operations
+- `docs/specifications/APR-SPEC.md` - Full APR format specification
+
+## APR CLI Tool (apr-cli)
+
+The `apr` CLI provides comprehensive model operations. Located in `crates/apr-cli/`.
+
+### All Commands
+
+| Command | Description | Implementation |
+|---------|-------------|----------------|
+| `inspect` | Inspect model metadata, vocab, structure | `commands/inspect.rs` (329 lines) |
+| `debug` | Simple debugging output, "drama" mode | `commands/debug.rs` (322 lines) |
+| `validate` | Validate model integrity and quality | `commands/validate.rs` (166 lines) |
+| `diff` | Compare two models | `commands/diff.rs` (332 lines) |
+| `tensors` | List tensor names, shapes, statistics | `commands/tensors.rs` (248 lines) |
+| `trace` | Layer-by-layer trace analysis | `commands/trace.rs` (569 lines) |
+| `lint` | Check for best practices and conventions | `commands/lint.rs` + `src/format/lint.rs` |
+| `explain` | Explain errors, architecture, tensors | `commands/explain.rs` (42 lines) |
+| `canary` | Regression testing via tensor statistics | `commands/canary.rs` |
+| `export` | Export to SafeTensors, GGUF formats | `commands/export.rs` + `src/format/converter.rs` |
+| `import` | Import from HuggingFace, SafeTensors | `commands/import.rs` (123 lines) |
+| `convert` | Quantization (int8, int4, fp16) | `commands/convert.rs` + `src/format/converter.rs` |
+| `merge` | Merge models (average, weighted) | `commands/merge.rs` + `src/format/converter.rs` |
+| `tui` | Interactive terminal UI | `commands/tui.rs` (stub) |
+| `probar` | Export for visual testing | `commands/probar.rs` (445 lines) |
+
+### Key Library Functions (src/format/)
+
+```rust
+// Lint - Best practices checking
+use aprender::format::{lint_apr_file, LintReport, LintLevel, LintCategory};
+let report = lint_apr_file("model.apr")?;
+
+// Convert - Quantization
+use aprender::format::{apr_convert, ConvertOptions, QuantizationType};
+let options = ConvertOptions { quantize: Some(QuantizationType::Int8), .. };
+let report = apr_convert("input.apr", "output.apr", options)?;
+
+// Export - Format conversion
+use aprender::format::{apr_export, ExportOptions, ExportFormat};
+let options = ExportOptions { format: ExportFormat::Gguf, .. };
+let report = apr_export("model.apr", "model.gguf", options)?;
+
+// Merge - Model ensembling
+use aprender::format::{apr_merge, MergeOptions, MergeStrategy};
+let options = MergeOptions { strategy: MergeStrategy::Average, .. };
+let report = apr_merge(&["m1.apr", "m2.apr"], "merged.apr", options)?;
+
+// Import - From HuggingFace/SafeTensors
+use aprender::format::{apr_import, ImportOptions, Source};
+let source = Source::parse("hf://openai/whisper-tiny")?;
+apr_import(&source, "whisper.apr", ImportOptions::default())?;
+```
+
+### CLI Usage Examples
+
+```bash
+# Validate model integrity
+apr validate model.apr --quality
+
+# Convert with quantization
+apr convert model.safetensors --quantize int8 -o model-int8.apr
+
+# Lint for best practices
+apr lint model.apr
+
+# Export to GGUF (llama.cpp compatible)
+apr export model.apr --format gguf -o model.gguf
+
+# Merge models (ensemble)
+apr merge model1.apr model2.apr --strategy average -o ensemble.apr
+apr merge model1.apr model2.apr --strategy weighted --weights 0.7,0.3 -o merged.apr
+
+# Create regression test
+apr canary create model.apr --input ref.wav --output canary.json
+
+# Check model against canary
+apr canary check optimized.apr --canary canary.json
+
+# Import from HuggingFace
+apr import hf://openai/whisper-tiny -o whisper.apr --arch whisper
+```
 
 ## Integration
 
