@@ -397,4 +397,156 @@ mod tests {
         let data = reader.read_model(entry).expect("Failed to read model");
         assert_eq!(data, vec![10, 20, 30, 40, 50]);
     }
+
+    // ============================================================================
+    // Additional Coverage Tests
+    // ============================================================================
+
+    #[test]
+    fn test_bundle_format_read_version_short_header() {
+        // Header too short for version
+        let header = vec![0u8; 8];
+        assert_eq!(BundleFormat::read_version(&header), None);
+    }
+
+    #[test]
+    fn test_bundle_format_read_manifest_length_short_header() {
+        // Header too short for manifest length
+        let header = vec![0u8; 15];
+        assert_eq!(BundleFormat::read_manifest_length(&header), None);
+    }
+
+    #[test]
+    fn test_bundle_reader_debug() {
+        let temp = NamedTempFile::new().expect("Failed to create temp file");
+        let path = temp.path();
+
+        // Create a valid bundle
+        let manifest = BundleManifest::new();
+        let models = HashMap::new();
+        let writer = BundleWriter::create(path).expect("Failed to create writer");
+        writer
+            .write_bundle(&manifest, &models)
+            .expect("Failed to write");
+
+        let reader = BundleReader::open(path).expect("Failed to open");
+        let debug_str = format!("{:?}", reader);
+        assert!(debug_str.contains("BundleReader"));
+        assert!(debug_str.contains("header_version"));
+    }
+
+    #[test]
+    fn test_bundle_writer_debug() {
+        let temp = NamedTempFile::new().expect("Failed to create temp file");
+        let path = temp.path();
+
+        let writer = BundleWriter::create(path).expect("Failed to create writer");
+        let debug_str = format!("{:?}", writer);
+        assert!(debug_str.contains("BundleWriter"));
+    }
+
+    #[test]
+    fn test_bundle_reader_data_offset() {
+        let temp = NamedTempFile::new().expect("Failed to create temp file");
+        let path = temp.path();
+
+        let manifest = BundleManifest::new().with_description("Test offset");
+        let models = HashMap::new();
+        let writer = BundleWriter::create(path).expect("Failed to create writer");
+        writer
+            .write_bundle(&manifest, &models)
+            .expect("Failed to write");
+
+        let reader = BundleReader::open(path).expect("Failed to open");
+        let offset = reader.data_offset();
+        // Header is 20 bytes, manifest follows
+        assert!(offset >= BundleFormat::HEADER_SIZE as u64);
+    }
+
+    #[test]
+    fn test_bundle_format_header_size_constant() {
+        assert_eq!(BundleFormat::HEADER_SIZE, 20);
+    }
+
+    #[test]
+    fn test_bundle_format_copy_clone() {
+        let format = BundleFormat;
+        let _cloned = format;
+        let _copied = format;
+        // Just testing that Copy + Clone derive works
+    }
+
+    #[test]
+    fn test_bundle_reader_open_nonexistent() {
+        let result = BundleReader::open("/nonexistent/path/bundle.apbundle");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_bundle_reader_truncated_header() {
+        let temp = NamedTempFile::new().expect("Failed to create temp file");
+        let path = temp.path();
+
+        // Write only magic, no version or manifest length
+        std::fs::write(path, BUNDLE_MAGIC).expect("Failed to write");
+
+        let result = BundleReader::open(path);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_bundle_writer_create_invalid_path() {
+        let result = BundleWriter::create("/nonexistent/directory/bundle.apbundle");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_bundle_empty_manifest() {
+        let temp = NamedTempFile::new().expect("Failed to create temp file");
+        let path = temp.path();
+
+        let manifest = BundleManifest::new();
+        let models = HashMap::new();
+
+        let writer = BundleWriter::create(path).expect("Failed to create writer");
+        writer
+            .write_bundle(&manifest, &models)
+            .expect("Failed to write empty bundle");
+
+        let mut reader = BundleReader::open(path).expect("Failed to open");
+        let read_manifest = reader.read_manifest().expect("Failed to read manifest");
+        assert_eq!(read_manifest.len(), 0);
+    }
+
+    #[test]
+    fn test_bundle_multiple_models_order() {
+        let temp = NamedTempFile::new().expect("Failed to create temp file");
+        let path = temp.path();
+
+        let mut manifest = BundleManifest::new();
+        manifest.add_model(ModelEntry::new("first", 3));
+        manifest.add_model(ModelEntry::new("second", 4));
+        manifest.add_model(ModelEntry::new("third", 5));
+
+        let mut models = HashMap::new();
+        models.insert("first".to_string(), vec![1, 2, 3]);
+        models.insert("second".to_string(), vec![4, 5, 6, 7]);
+        models.insert("third".to_string(), vec![8, 9, 10, 11, 12]);
+
+        let writer = BundleWriter::create(path).expect("Failed to create writer");
+        writer
+            .write_bundle(&manifest, &models)
+            .expect("Failed to write");
+
+        let mut reader = BundleReader::open(path).expect("Failed to open");
+        let manifest = reader.read_manifest().expect("Failed to read manifest");
+        let all = reader
+            .read_all_models(&manifest)
+            .expect("Failed to read all");
+
+        assert_eq!(all.len(), 3);
+        assert_eq!(all.get("first"), Some(&vec![1, 2, 3]));
+        assert_eq!(all.get("second"), Some(&vec![4, 5, 6, 7]));
+        assert_eq!(all.get("third"), Some(&vec![8, 9, 10, 11, 12]));
+    }
 }

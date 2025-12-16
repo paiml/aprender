@@ -802,4 +802,382 @@ mod tests {
         sgd.set_lr(0.01);
         assert!((sgd.lr() - 0.01).abs() < 1e-6);
     }
+
+    #[test]
+    fn test_sgd_nesterov() {
+        clear_graph();
+
+        let mut param = Tensor::from_slice(&[2.0]).requires_grad();
+
+        let loss = param.pow(2.0).sum();
+        loss.backward();
+
+        let mut sgd = SGD::with_momentum(vec![&mut param], 0.1, 0.9).nesterov();
+        sgd.step_with_params(&mut [&mut param]);
+
+        // Nesterov should apply a "look ahead" update
+        // With nesterov: param = param - lr * (momentum * velocity + grad)
+        // v = 0.9 * 0 + 4 = 4 (grad = 2 * 2 = 4)
+        // param = 2 - 0.1 * (0.9 * 4 + 4) = 2 - 0.1 * 7.6 = 1.24
+        assert!(
+            (param.data()[0] - 1.24).abs() < 1e-5,
+            "Nesterov update failed: {}",
+            param.data()[0]
+        );
+    }
+
+    #[test]
+    fn test_sgd_weight_decay() {
+        clear_graph();
+
+        let mut param = Tensor::from_slice(&[5.0]).requires_grad();
+
+        let loss = param.pow(2.0).sum();
+        loss.backward();
+
+        let mut sgd = SGD::new(vec![&mut param], 0.1).weight_decay(0.1);
+        sgd.step_with_params(&mut [&mut param]);
+
+        // grad = 2 * 5 = 10, with weight_decay: g = 10 + 0.1 * 5 = 10.5
+        // param = 5 - 0.1 * 10.5 = 3.95
+        assert!(
+            (param.data()[0] - 3.95).abs() < 1e-5,
+            "Weight decay update failed: {}",
+            param.data()[0]
+        );
+    }
+
+    #[test]
+    fn test_adam_with_custom_betas() {
+        clear_graph();
+
+        let mut param = Tensor::from_slice(&[1.0]).requires_grad();
+
+        let loss = param.pow(2.0).sum();
+        loss.backward();
+
+        let mut adam = Adam::new(vec![&mut param], 0.1).betas(0.8, 0.99);
+        adam.step_with_params(&mut [&mut param]);
+
+        // Param should decrease with custom betas
+        assert!(param.data()[0] < 1.0);
+    }
+
+    #[test]
+    fn test_adam_with_eps() {
+        clear_graph();
+
+        let mut param = Tensor::from_slice(&[1.0]).requires_grad();
+
+        let loss = param.pow(2.0).sum();
+        loss.backward();
+
+        let mut adam = Adam::new(vec![&mut param], 0.1).eps(1e-6);
+        adam.step_with_params(&mut [&mut param]);
+
+        assert!(param.data()[0] < 1.0);
+    }
+
+    #[test]
+    fn test_adam_with_weight_decay() {
+        clear_graph();
+
+        let mut param = Tensor::from_slice(&[10.0]).requires_grad();
+
+        let loss = param.pow(2.0).sum();
+        loss.backward();
+
+        // Compare with and without weight decay
+        let mut adam_wd = Adam::new(vec![&mut param], 0.1).weight_decay(0.1);
+        adam_wd.step_with_params(&mut [&mut param]);
+
+        // With weight decay, the update should be larger
+        assert!(param.data()[0] < 10.0);
+    }
+
+    #[test]
+    fn test_adamw_with_custom_betas_and_eps() {
+        clear_graph();
+
+        let mut param = Tensor::from_slice(&[3.0]).requires_grad();
+
+        let loss = param.pow(2.0).sum();
+        loss.backward();
+
+        let mut adamw = AdamW::new(vec![&mut param], 0.1)
+            .betas(0.85, 0.995)
+            .eps(1e-7);
+        adamw.step_with_params(&mut [&mut param]);
+
+        assert!(param.data()[0] < 3.0);
+    }
+
+    #[test]
+    fn test_adamw_lr_methods() {
+        let mut param = Tensor::from_slice(&[1.0]).requires_grad();
+        let mut adamw = AdamW::new(vec![&mut param], 0.01);
+
+        assert!((adamw.lr() - 0.01).abs() < 1e-6);
+        adamw.set_lr(0.001);
+        assert!((adamw.lr() - 0.001).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_adamw_zero_grad() {
+        clear_graph();
+
+        let mut param = Tensor::from_slice(&[2.0]).requires_grad();
+        let param_id = param.id();
+
+        let loss = param.pow(2.0).sum();
+        loss.backward();
+
+        assert!(get_grad(param_id).is_some());
+
+        let mut adamw = AdamW::new(vec![&mut param], 0.1);
+        adamw.zero_grad();
+
+        assert!(get_grad(param_id).is_none());
+    }
+
+    #[test]
+    fn test_adamw_step_trait() {
+        let mut param = Tensor::from_slice(&[1.0]).requires_grad();
+        let mut adamw = AdamW::new(vec![&mut param], 0.1);
+
+        // Test the Optimizer trait step method
+        adamw.step();
+        assert!(adamw.initialized);
+        assert_eq!(adamw.t, 1);
+    }
+
+    #[test]
+    fn test_rmsprop_with_alpha() {
+        clear_graph();
+
+        let mut param = Tensor::from_slice(&[2.0]).requires_grad();
+
+        let loss = param.pow(2.0).sum();
+        loss.backward();
+
+        let mut rmsprop = RMSprop::new(vec![&mut param], 0.1).alpha(0.9);
+        rmsprop.step_with_params(&mut [&mut param]);
+
+        assert!(param.data()[0] < 2.0);
+    }
+
+    #[test]
+    fn test_rmsprop_with_eps() {
+        clear_graph();
+
+        let mut param = Tensor::from_slice(&[2.0]).requires_grad();
+
+        let loss = param.pow(2.0).sum();
+        loss.backward();
+
+        let mut rmsprop = RMSprop::new(vec![&mut param], 0.1).eps(1e-6);
+        rmsprop.step_with_params(&mut [&mut param]);
+
+        assert!(param.data()[0] < 2.0);
+    }
+
+    #[test]
+    fn test_rmsprop_with_momentum() {
+        clear_graph();
+
+        let mut param = Tensor::from_slice(&[3.0]).requires_grad();
+
+        // First step
+        let loss = param.pow(2.0).sum();
+        loss.backward();
+
+        let mut rmsprop = RMSprop::new(vec![&mut param], 0.1).momentum(0.9);
+        rmsprop.step_with_params(&mut [&mut param]);
+
+        let after_first = param.data()[0];
+        assert!(after_first < 3.0);
+
+        // Second step with momentum accumulation
+        clear_graph();
+        let loss = param.pow(2.0).sum();
+        loss.backward();
+
+        rmsprop.step_with_params(&mut [&mut param]);
+
+        assert!(param.data()[0] < after_first);
+    }
+
+    #[test]
+    fn test_rmsprop_with_weight_decay() {
+        clear_graph();
+
+        let mut param = Tensor::from_slice(&[5.0]).requires_grad();
+
+        let loss = param.pow(2.0).sum();
+        loss.backward();
+
+        let mut rmsprop = RMSprop::new(vec![&mut param], 0.1).weight_decay(0.1);
+        rmsprop.step_with_params(&mut [&mut param]);
+
+        assert!(param.data()[0] < 5.0);
+    }
+
+    #[test]
+    fn test_rmsprop_lr_methods() {
+        let mut param = Tensor::from_slice(&[1.0]).requires_grad();
+        let mut rmsprop = RMSprop::new(vec![&mut param], 0.01);
+
+        assert!((rmsprop.lr() - 0.01).abs() < 1e-6);
+        rmsprop.set_lr(0.001);
+        assert!((rmsprop.lr() - 0.001).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_rmsprop_zero_grad() {
+        clear_graph();
+
+        let mut param = Tensor::from_slice(&[2.0]).requires_grad();
+        let param_id = param.id();
+
+        let loss = param.pow(2.0).sum();
+        loss.backward();
+
+        assert!(get_grad(param_id).is_some());
+
+        let mut rmsprop = RMSprop::new(vec![&mut param], 0.1);
+        rmsprop.zero_grad();
+
+        assert!(get_grad(param_id).is_none());
+    }
+
+    #[test]
+    fn test_rmsprop_step_trait() {
+        let mut param = Tensor::from_slice(&[1.0]).requires_grad();
+        let mut rmsprop = RMSprop::new(vec![&mut param], 0.1);
+
+        rmsprop.step();
+        assert!(rmsprop.initialized);
+    }
+
+    #[test]
+    fn test_sgd_step_trait() {
+        let mut param = Tensor::from_slice(&[1.0]).requires_grad();
+        let mut sgd = SGD::new(vec![&mut param], 0.1);
+
+        sgd.step();
+        assert!(sgd.initialized);
+    }
+
+    #[test]
+    fn test_adam_step_trait() {
+        let mut param = Tensor::from_slice(&[1.0]).requires_grad();
+        let mut adam = Adam::new(vec![&mut param], 0.1);
+
+        adam.step();
+        assert!(adam.initialized);
+        assert_eq!(adam.t, 1);
+    }
+
+    #[test]
+    fn test_adam_lr_methods() {
+        let mut param = Tensor::from_slice(&[1.0]).requires_grad();
+        let mut adam = Adam::new(vec![&mut param], 0.01);
+
+        assert!((adam.lr() - 0.01).abs() < 1e-6);
+        adam.set_lr(0.001);
+        assert!((adam.lr() - 0.001).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_adam_zero_grad() {
+        clear_graph();
+
+        let mut param = Tensor::from_slice(&[2.0]).requires_grad();
+        let param_id = param.id();
+
+        let loss = param.pow(2.0).sum();
+        loss.backward();
+
+        assert!(get_grad(param_id).is_some());
+
+        let mut adam = Adam::new(vec![&mut param], 0.1);
+        adam.zero_grad();
+
+        assert!(get_grad(param_id).is_none());
+    }
+
+    #[test]
+    fn test_sgd_multi_element_tensor() {
+        clear_graph();
+
+        let mut param = Tensor::from_slice(&[1.0, 2.0, 3.0, 4.0]).requires_grad();
+
+        let loss = param.pow(2.0).sum();
+        loss.backward();
+
+        let mut sgd = SGD::new(vec![&mut param], 0.1);
+        sgd.step_with_params(&mut [&mut param]);
+
+        // All elements should have decreased
+        assert!(param.data()[0] < 1.0);
+        assert!(param.data()[1] < 2.0);
+        assert!(param.data()[2] < 3.0);
+        assert!(param.data()[3] < 4.0);
+    }
+
+    #[test]
+    fn test_adam_multi_element_tensor() {
+        clear_graph();
+
+        let mut param = Tensor::from_slice(&[1.0, 2.0, 3.0]).requires_grad();
+
+        let loss = param.pow(2.0).sum();
+        loss.backward();
+
+        let mut adam = Adam::new(vec![&mut param], 0.1);
+        adam.step_with_params(&mut [&mut param]);
+
+        // All elements should have decreased
+        assert!(param.data()[0] < 1.0);
+        assert!(param.data()[1] < 2.0);
+        assert!(param.data()[2] < 3.0);
+    }
+
+    #[test]
+    fn test_adamw_multi_step() {
+        clear_graph();
+
+        let mut param = Tensor::from_slice(&[5.0]).requires_grad();
+        let mut adamw = AdamW::new(vec![&mut param], 0.5).weight_decay(0.01);
+
+        // Multiple steps to test convergence
+        for _ in 0..10 {
+            clear_graph();
+            let loss = param.pow(2.0).sum();
+            loss.backward();
+            adamw.step_with_params(&mut [&mut param]);
+        }
+
+        // Should have decreased significantly
+        assert!(param.data()[0] < 1.0);
+    }
+
+    #[test]
+    fn test_rmsprop_convergence() {
+        clear_graph();
+
+        let mut param = Tensor::from_slice(&[5.0]).requires_grad();
+        let mut rmsprop = RMSprop::new(vec![&mut param], 0.5);
+
+        // Multiple steps to test convergence
+        for _ in 0..10 {
+            clear_graph();
+            let loss = param.pow(2.0).sum();
+            loss.backward();
+            rmsprop.step_with_params(&mut [&mut param]);
+        }
+
+        // Should have decreased significantly
+        assert!(param.data()[0] < 1.0);
+    }
 }

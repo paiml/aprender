@@ -217,6 +217,7 @@
 - [Case Study: APR Data Embedding](./examples/apr-embed.md)
 - [Case Study: APR with JSON Metadata](./examples/apr-with-metadata.md)
 - [Case Study: CUDA and GPU Backends](./examples/cuda-backend.md)
+- [Case Study: APR CLI Tool Demo](./examples/apr-cli-demo.md)
 - [Case Study: Model Zoo](./examples/model-zoo.md)
 - [Case Study: Sovereign AI Stack Integration](./examples/sovereign-stack.md)
 - [Case Study: Model Explainability and Audit Trails](./examples/explainability-audit.md)
@@ -246,6 +247,7 @@
 - [proptest](./tools/proptest.md)
 - [criterion](./tools/criterion.md)
 - [pmat (Toyota AI Toolkit)](./tools/pmat.md)
+- [apr (APR Model Operations CLI)](./tools/apr-cli.md)
 
 # Best Practices
 

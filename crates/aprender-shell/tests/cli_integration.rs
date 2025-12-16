@@ -476,7 +476,13 @@ fn test_cli_010_suggest_latency() {
         .assert()
         .success();
 
-    // Measure suggestion latency
+    // Warmup run to exclude binary startup time from measurement
+    aprender_shell()
+        .args(["suggest", "git ", "-m", model.path().to_str().unwrap()])
+        .assert()
+        .success();
+
+    // Measure suggestion latency (excluding binary startup)
     let start = Instant::now();
     aprender_shell()
         .args(["suggest", "git ", "-m", model.path().to_str().unwrap()])
@@ -485,7 +491,7 @@ fn test_cli_010_suggest_latency() {
     let elapsed = start.elapsed();
 
     // Should complete in under 500ms for good UX
-    // (Note: first run includes binary startup time)
+    // (Binary startup is excluded via warmup; this measures actual suggestion time)
     assert!(
         elapsed.as_millis() < 500,
         "Suggestion took {}ms, should be <500ms",

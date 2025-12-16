@@ -888,4 +888,331 @@ mod tests {
             Err(TinyModelError::ShapeMismatch { .. })
         ));
     }
+
+    // ============================================================================
+    // Additional Coverage Tests
+    // ============================================================================
+
+    #[test]
+    fn test_kmeans_predict_empty_centroids() {
+        let model = TinyModelRepr::kmeans(vec![]);
+        assert!(model.predict_kmeans(&[1.0, 2.0]).is_none());
+    }
+
+    #[test]
+    fn test_logistic_regression_size_bytes() {
+        let model = TinyModelRepr::logistic_regression(
+            vec![vec![0.1, 0.2, 0.3], vec![0.4, 0.5, 0.6]],
+            vec![0.7, 0.8],
+        );
+
+        // 2 classes * 3 features * 4 bytes + 2 intercepts * 4 bytes = 24 + 8 = 32
+        assert_eq!(model.size_bytes(), 32);
+    }
+
+    #[test]
+    fn test_knn_size_bytes() {
+        let model = TinyModelRepr::knn(
+            vec![vec![1.0, 2.0], vec![3.0, 4.0], vec![5.0, 6.0]],
+            vec![0, 1, 0],
+            2,
+        );
+
+        // 3 points * 2 features * 4 bytes + 3 labels * 4 bytes + 4 (k)
+        // = 24 + 12 + 4 = 40
+        assert_eq!(model.size_bytes(), 40);
+    }
+
+    #[test]
+    fn test_compressed_summary() {
+        let model = TinyModelRepr::compressed(DataCompression::None, vec![1, 2, 3, 4, 5], 100);
+
+        let summary = model.summary();
+        assert!(summary.contains("Compressed"));
+        assert!(summary.contains("5 bytes"));
+        assert!(summary.contains("ratio"));
+    }
+
+    #[test]
+    fn test_compressed_summary_empty() {
+        let model = TinyModelRepr::compressed(DataCompression::zstd(), vec![], 0);
+
+        let summary = model.summary();
+        assert!(summary.contains("Compressed"));
+        // Should handle empty data without panicking
+    }
+
+    #[test]
+    fn test_logistic_regression_summary() {
+        let model = TinyModelRepr::logistic_regression(
+            vec![vec![0.1, 0.2], vec![0.3, 0.4], vec![0.5, 0.6]],
+            vec![0.1, 0.2, 0.3],
+        );
+
+        let summary = model.summary();
+        assert!(summary.contains("LogisticRegression"));
+        assert!(summary.contains("3 classes"));
+        assert!(summary.contains("2 features"));
+    }
+
+    #[test]
+    fn test_knn_summary() {
+        let model = TinyModelRepr::knn(
+            vec![vec![1.0, 2.0], vec![3.0, 4.0], vec![5.0, 6.0]],
+            vec![0, 1, 0],
+            2,
+        );
+
+        let summary = model.summary();
+        assert!(summary.contains("KNN"));
+        assert!(summary.contains("k=2"));
+        assert!(summary.contains("3 samples"));
+        assert!(summary.contains("2 features"));
+    }
+
+    #[test]
+    fn test_naive_bayes_summary() {
+        let model = TinyModelRepr::naive_bayes(
+            vec![0.3, 0.7],
+            vec![vec![1.0, 2.0, 3.0], vec![4.0, 5.0, 6.0]],
+            vec![vec![0.1, 0.2, 0.3], vec![0.4, 0.5, 0.6]],
+        );
+
+        let summary = model.summary();
+        assert!(summary.contains("NaiveBayes"));
+        assert!(summary.contains("2 classes"));
+        assert!(summary.contains("3 features"));
+    }
+
+    #[test]
+    fn test_feature_mismatch_error_display() {
+        let err = TinyModelError::FeatureMismatch {
+            expected: 10,
+            got: 5,
+        };
+        let msg = format!("{err}");
+        assert!(msg.contains("10"));
+        assert!(msg.contains("5"));
+    }
+
+    #[test]
+    fn test_invalid_coefficient_display() {
+        let err = TinyModelError::InvalidCoefficient {
+            index: 3,
+            value: f32::NAN,
+        };
+        let msg = format!("{err}");
+        assert!(msg.contains("3"));
+        assert!(msg.contains("NaN"));
+    }
+
+    #[test]
+    fn test_invalid_variance_display() {
+        let err = TinyModelError::InvalidVariance {
+            class: 1,
+            feature: 2,
+            value: -0.5,
+        };
+        let msg = format!("{err}");
+        assert!(msg.contains("class 1"));
+        assert!(msg.contains("feature 2"));
+        assert!(msg.contains("-0.5"));
+    }
+
+    #[test]
+    fn test_shape_mismatch_display() {
+        let err = TinyModelError::ShapeMismatch {
+            message: "test error".into(),
+        };
+        let msg = format!("{err}");
+        assert!(msg.contains("test error"));
+    }
+
+    #[test]
+    fn test_n_features_stump() {
+        let model = TinyModelRepr::stump(5, 0.5, -1.0, 1.0);
+        assert!(model.n_features().is_none());
+    }
+
+    #[test]
+    fn test_n_features_compressed() {
+        let model = TinyModelRepr::compressed(DataCompression::None, vec![1, 2, 3], 100);
+        assert!(model.n_features().is_none());
+    }
+
+    #[test]
+    fn test_n_parameters_compressed() {
+        let model = TinyModelRepr::compressed(DataCompression::None, vec![0; 40], 160);
+        // original_size / 4 = 160 / 4 = 40
+        assert_eq!(model.n_parameters(), 40);
+    }
+
+    #[test]
+    fn test_naive_bayes_size_bytes() {
+        let model = TinyModelRepr::naive_bayes(
+            vec![0.5, 0.5],
+            vec![vec![1.0, 2.0], vec![3.0, 4.0]],
+            vec![vec![0.1, 0.2], vec![0.3, 0.4]],
+        );
+
+        // 2 priors * 4 + 2 classes * 2 features * 8 (means + variances) = 8 + 32 = 40
+        assert_eq!(model.size_bytes(), 40);
+    }
+
+    #[test]
+    fn test_naive_bayes_empty_means() {
+        let model = TinyModelRepr::naive_bayes(vec![1.0], vec![], vec![]);
+
+        // With empty means, n_features should be 0
+        assert_eq!(model.n_features(), None);
+    }
+
+    #[test]
+    fn test_knn_k_zero() {
+        let model = TinyModelRepr::knn(
+            vec![vec![1.0, 2.0], vec![3.0, 4.0]],
+            vec![0, 1],
+            0, // k = 0
+        );
+
+        assert!(matches!(
+            model.validate(),
+            Err(TinyModelError::InvalidK { k: 0, .. })
+        ));
+    }
+
+    #[test]
+    fn test_knn_empty_reference_points() {
+        let model = TinyModelRepr::knn(vec![], vec![], 1);
+
+        assert!(matches!(model.validate(), Err(TinyModelError::EmptyModel)));
+    }
+
+    #[test]
+    fn test_naive_bayes_empty_priors() {
+        let model = TinyModelRepr::naive_bayes(vec![], vec![], vec![]);
+
+        assert!(matches!(model.validate(), Err(TinyModelError::EmptyModel)));
+    }
+
+    #[test]
+    fn test_linear_predict_on_non_linear() {
+        let model = TinyModelRepr::stump(0, 0.5, -1.0, 1.0);
+        assert!(model.predict_linear(&[1.0, 2.0]).is_none());
+    }
+
+    #[test]
+    fn test_stump_predict_on_non_stump() {
+        let model = TinyModelRepr::linear(vec![1.0, 2.0], 0.0);
+        assert!(model.predict_stump(&[1.0, 2.0]).is_none());
+    }
+
+    #[test]
+    fn test_kmeans_predict_on_non_kmeans() {
+        let model = TinyModelRepr::linear(vec![1.0, 2.0], 0.0);
+        assert!(model.predict_kmeans(&[1.0, 2.0]).is_none());
+    }
+
+    #[test]
+    fn test_stump_validate_always_ok() {
+        let model = TinyModelRepr::stump(0, 0.5, -1.0, 1.0);
+        assert!(model.validate().is_ok());
+    }
+
+    #[test]
+    fn test_logistic_regression_validate_always_ok() {
+        let model = TinyModelRepr::logistic_regression(vec![vec![0.1, 0.2]], vec![0.3]);
+        assert!(model.validate().is_ok());
+    }
+
+    #[test]
+    fn test_compressed_validate_always_ok() {
+        let model = TinyModelRepr::compressed(DataCompression::zstd(), vec![1, 2, 3], 10);
+        assert!(model.validate().is_ok());
+    }
+
+    #[test]
+    fn test_model_partial_eq() {
+        let model1 = TinyModelRepr::linear(vec![1.0, 2.0], 0.5);
+        let model2 = TinyModelRepr::linear(vec![1.0, 2.0], 0.5);
+        let model3 = TinyModelRepr::linear(vec![1.0, 2.0], 0.6);
+
+        assert_eq!(model1, model2);
+        assert_ne!(model1, model3);
+    }
+
+    #[test]
+    fn test_logistic_regression_n_parameters() {
+        let model = TinyModelRepr::logistic_regression(
+            vec![vec![0.1, 0.2, 0.3], vec![0.4, 0.5, 0.6]],
+            vec![0.7, 0.8],
+        );
+
+        // 2 classes * 3 features + 2 intercepts = 6 + 2 = 8
+        assert_eq!(model.n_parameters(), 8);
+    }
+
+    #[test]
+    fn test_knn_n_parameters() {
+        let model = TinyModelRepr::knn(
+            vec![vec![1.0, 2.0], vec![3.0, 4.0], vec![5.0, 6.0]],
+            vec![0, 1, 0],
+            2,
+        );
+
+        // 3 points * 2 features = 6
+        assert_eq!(model.n_parameters(), 6);
+    }
+
+    #[test]
+    fn test_error_source() {
+        let err = TinyModelError::EmptyModel;
+        // Test that std::error::Error is implemented
+        let _source = std::error::Error::source(&err);
+    }
+
+    #[test]
+    fn test_tiny_model_clone() {
+        let model = TinyModelRepr::linear(vec![1.0, 2.0], 0.5);
+        let cloned = model.clone();
+        assert_eq!(model, cloned);
+    }
+
+    #[test]
+    fn test_tiny_model_debug() {
+        let model = TinyModelRepr::linear(vec![1.0, 2.0], 0.5);
+        let debug_str = format!("{:?}", model);
+        assert!(debug_str.contains("Linear"));
+        assert!(debug_str.contains("coefficients"));
+    }
+
+    #[test]
+    fn test_naive_bayes_n_parameters() {
+        let model = TinyModelRepr::naive_bayes(
+            vec![0.3, 0.7],
+            vec![vec![1.0, 2.0], vec![3.0, 4.0]],
+            vec![vec![0.1, 0.2], vec![0.3, 0.4]],
+        );
+
+        // 2 priors + 2*2 means + 2*2 variances = 2 + 4 + 4 = 10
+        assert_eq!(model.n_parameters(), 10);
+    }
+
+    #[test]
+    fn test_kmeans_n_features_empty() {
+        let model = TinyModelRepr::kmeans(vec![]);
+        assert!(model.n_features().is_none());
+    }
+
+    #[test]
+    fn test_logistic_regression_n_features_empty() {
+        let model = TinyModelRepr::logistic_regression(vec![], vec![]);
+        assert!(model.n_features().is_none());
+    }
+
+    #[test]
+    fn test_knn_n_features_empty() {
+        let model = TinyModelRepr::knn(vec![], vec![], 1);
+        assert!(model.n_features().is_none());
+    }
 }

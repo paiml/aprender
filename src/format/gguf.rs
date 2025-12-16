@@ -818,6 +818,228 @@ mod tests {
         assert_eq!(cloned.tensor_count, 10);
         assert!(format!("{cloned:?}").contains("GgufHeader"));
     }
+
+    // ========================================================================
+    // GgufTensor tests
+    // ========================================================================
+
+    #[test]
+    fn test_gguf_tensor_byte_size_f32() {
+        let tensor = GgufTensor {
+            name: "weights".to_string(),
+            shape: vec![10, 20],
+            dtype: GgmlType::F32,
+            data: vec![0; 800], // 10 * 20 * 4
+        };
+        let size = tensor.byte_size();
+        assert!(size > 0);
+    }
+
+    #[test]
+    fn test_gguf_tensor_byte_size_f16() {
+        let tensor = GgufTensor {
+            name: "weights".to_string(),
+            shape: vec![10, 20],
+            dtype: GgmlType::F16,
+            data: vec![0; 400], // 10 * 20 * 2
+        };
+        let size = tensor.byte_size();
+        assert!(size > 0);
+    }
+
+    #[test]
+    fn test_gguf_tensor_byte_size_i8() {
+        let tensor = GgufTensor {
+            name: "weights".to_string(),
+            shape: vec![10, 20],
+            dtype: GgmlType::I8,
+            data: vec![0; 200], // 10 * 20 * 1
+        };
+        let size = tensor.byte_size();
+        assert!(size > 0);
+    }
+
+    #[test]
+    fn test_gguf_tensor_byte_size_i16() {
+        let tensor = GgufTensor {
+            name: "weights".to_string(),
+            shape: vec![10, 20],
+            dtype: GgmlType::I16,
+            data: vec![0; 400],
+        };
+        let size = tensor.byte_size();
+        assert!(size > 0);
+    }
+
+    #[test]
+    fn test_gguf_tensor_byte_size_i32() {
+        let tensor = GgufTensor {
+            name: "weights".to_string(),
+            shape: vec![10, 20],
+            dtype: GgmlType::I32,
+            data: vec![0; 800],
+        };
+        let size = tensor.byte_size();
+        assert!(size > 0);
+    }
+
+    #[test]
+    fn test_gguf_tensor_byte_size_i64() {
+        let tensor = GgufTensor {
+            name: "weights".to_string(),
+            shape: vec![10, 20],
+            dtype: GgmlType::I64,
+            data: vec![0; 1600],
+        };
+        let size = tensor.byte_size();
+        assert!(size > 0);
+    }
+
+    #[test]
+    fn test_gguf_tensor_byte_size_f64() {
+        let tensor = GgufTensor {
+            name: "weights".to_string(),
+            shape: vec![10, 20],
+            dtype: GgmlType::F64,
+            data: vec![0; 1600],
+        };
+        let size = tensor.byte_size();
+        assert!(size > 0);
+    }
+
+    #[test]
+    fn test_gguf_tensor_byte_size_q4_0() {
+        let tensor = GgufTensor {
+            name: "quantized".to_string(),
+            shape: vec![64],
+            dtype: GgmlType::Q4_0,
+            data: vec![0; 100],
+        };
+        let size = tensor.byte_size();
+        assert!(size > 0);
+    }
+
+    #[test]
+    fn test_gguf_tensor_byte_size_q4_1() {
+        let tensor = GgufTensor {
+            name: "quantized".to_string(),
+            shape: vec![64],
+            dtype: GgmlType::Q4_1,
+            data: vec![0; 100],
+        };
+        let size = tensor.byte_size();
+        assert!(size > 0);
+    }
+
+    #[test]
+    fn test_gguf_tensor_byte_size_q8_0() {
+        let tensor = GgufTensor {
+            name: "quantized".to_string(),
+            shape: vec![64],
+            dtype: GgmlType::Q8_0,
+            data: vec![0; 100],
+        };
+        let size = tensor.byte_size();
+        assert!(size > 0);
+    }
+
+    #[test]
+    fn test_gguf_tensor_clone_debug() {
+        let tensor = GgufTensor {
+            name: "test".to_string(),
+            shape: vec![10],
+            dtype: GgmlType::F32,
+            data: vec![1, 2, 3, 4],
+        };
+        let cloned = tensor.clone();
+        assert_eq!(cloned.name, "test");
+        assert!(format!("{cloned:?}").contains("GgufTensor"));
+    }
+
+    // ========================================================================
+    // export_tensors_to_gguf tests
+    // ========================================================================
+
+    #[test]
+    fn test_export_tensors_to_gguf_empty() {
+        let mut buf = Vec::new();
+        export_tensors_to_gguf(&mut buf, &[], &[]).expect("export should succeed");
+        // Should have header at minimum
+        assert!(buf.len() >= 24);
+    }
+
+    #[test]
+    fn test_export_tensors_to_gguf_with_metadata() {
+        let mut buf = Vec::new();
+        let metadata = vec![
+            (
+                "model.name".to_string(),
+                GgufValue::String("test".to_string()),
+            ),
+            ("model.version".to_string(), GgufValue::Uint32(1)),
+        ];
+        export_tensors_to_gguf(&mut buf, &[], &metadata).expect("export should succeed");
+        assert!(buf.len() > 24);
+    }
+
+    #[test]
+    fn test_export_tensors_to_gguf_with_tensors() {
+        let mut buf = Vec::new();
+        let tensors = vec![GgufTensor {
+            name: "weights".to_string(),
+            shape: vec![4],
+            dtype: GgmlType::F32,
+            data: vec![0; 16], // 4 * 4 bytes
+        }];
+        export_tensors_to_gguf(&mut buf, &tensors, &[]).expect("export should succeed");
+        assert!(buf.len() > 24);
+    }
+
+    #[test]
+    fn test_export_tensors_to_gguf_full() {
+        let mut buf = Vec::new();
+        let tensors = vec![
+            GgufTensor {
+                name: "layer.0.weight".to_string(),
+                shape: vec![10, 10],
+                dtype: GgmlType::F32,
+                data: vec![0; 400],
+            },
+            GgufTensor {
+                name: "layer.0.bias".to_string(),
+                shape: vec![10],
+                dtype: GgmlType::F32,
+                data: vec![0; 40],
+            },
+        ];
+        let metadata = vec![
+            (
+                "general.architecture".to_string(),
+                GgufValue::String("test".to_string()),
+            ),
+            (
+                "general.quantization_version".to_string(),
+                GgufValue::Uint32(2),
+            ),
+        ];
+        export_tensors_to_gguf(&mut buf, &tensors, &metadata).expect("export should succeed");
+        // Verify header magic
+        assert_eq!(&buf[0..4], b"GGUF");
+    }
+
+    #[test]
+    fn test_gguf_tensor_info_clone_debug() {
+        let info = GgufTensorInfo {
+            name: "test".to_string(),
+            n_dims: 2,
+            dims: vec![10, 20],
+            dtype: GgmlType::F32,
+            offset: 0,
+        };
+        let cloned = info.clone();
+        assert_eq!(cloned.name, "test");
+        assert!(format!("{cloned:?}").contains("GgufTensorInfo"));
+    }
 }
 
 // ============================================================================

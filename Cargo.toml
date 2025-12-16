@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "crates/aprender-shell", "crates/aprender-tsp", "crates/aprender-monte-carlo"]
+members = [".", "crates/aprender-shell", "crates/aprender-tsp", "crates/aprender-monte-carlo", "crates/apr-cli"]
 
 [workspace.lints.rust]
 # Safety
@@ -93,7 +93,7 @@ rand_chacha = "0.3"  # ChaCha20 PRNG for Monte Carlo simulations
 rayon = { version = "1.10", optional = true }
 
 # Core compute primitives - SIMD-accelerated tensor operations
-trueno = { version = "0.8.5", default-features = true }
+trueno = { version = "0.8.6", default-features = true }
 
 # Compression for .apr format (optional, spec §3.3)
 zstd = { version = "0.13", optional = true }

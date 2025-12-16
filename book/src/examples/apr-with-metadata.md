@@ -139,6 +139,46 @@ writer.set_metadata("preprocessing", json!({
 }));
 ```
 
+### Audio Models (Mel Filterbank)
+
+For speech recognition models like Whisper, embedding the exact mel filterbank used during training is **critical** for correct transcription. Computing filterbanks at runtime produces different values due to normalization differences.
+
+```rust,ignore
+// Store filterbank as a named tensor (most efficient for 64KB+ data)
+writer.add_tensor_f32(
+    "audio.mel_filterbank",
+    vec![80, 201],  // n_mels x n_freqs
+    &filterbank_data,
+);
+
+// Store audio preprocessing config in metadata
+writer.set_metadata("audio", json!({
+    "sample_rate": 16000,
+    "n_fft": 400,
+    "hop_length": 160,
+    "n_mels": 80
+}));
+```
+
+Reading back:
+
+```rust,ignore
+let reader = AprReader::from_bytes(model_bytes)?;
+
+// Read filterbank tensor
+let filterbank = reader.read_tensor_f32("audio.mel_filterbank")?;
+
+// Get audio config
+let audio_config = reader.get_metadata("audio").unwrap();
+let n_mels = audio_config["n_mels"].as_u64().unwrap() as usize;
+let n_freqs = filterbank.len() / n_mels;
+
+// Use filterbank for mel spectrogram computation
+let mel_spectrogram = compute_mel(&audio_samples, &filterbank, n_mels, n_freqs);
+```
+
+**Why this matters:** Whisper was trained with librosa's slaney-normalized filterbank where row sums are ~0.025. Computing from scratch produces peak-normalized filterbanks with row sums of ~1.0+. This mismatch causes the "rererer" hallucination bug.
+
 ## Benefits
 
 | Benefit | Description |
@@ -148,6 +188,22 @@ writer.set_metadata("preprocessing", json!({
 | WASM-ready | Embed entire model in binary |
 | Type-safe | CRC32 checksum for integrity |
 | Flexible | Any JSON structure supported |
+
+## Binary Data: Metadata vs Tensor
+
+When storing binary data (filterbanks, embeddings), choose the right approach:
+
+| Data Size | JSON Metadata | Named Tensor |
+|-----------|---------------|--------------|
+| < 100KB | Preferred | Overkill |
+| 100KB - 1MB | Acceptable | Recommended |
+| > 1MB | Avoid (slow JSON parsing) | Required |
+
+**Mel filterbank (64KB):** Both work; tensor is more efficient.
+
+**Vocabulary (1-5MB):** Use JSON for string arrays, tensor for embedding matrices.
+
+**Large embeddings (>10MB):** Always use tensors.
 
 ## Related Resources
 
