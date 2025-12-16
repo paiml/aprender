@@ -61,6 +61,8 @@ pub(crate) fn run(
 }
 
 /// List tensor names only
+#[allow(clippy::unnecessary_wraps)] // Consistent with other command functions
+#[allow(clippy::disallowed_methods)] // json! macro uses infallible unwrap internally
 fn list_tensors(tensors: &[&AprTensorDescriptor], json_output: bool) -> Result<(), CliError> {
     if json_output {
         let names: Vec<&str> = tensors.iter().map(|t| t.name.as_str()).collect();
@@ -223,21 +225,23 @@ fn compute_stats(data: &[f32]) -> (f32, f32, f32, f32) {
 
     let mean = (sum / data.len() as f64) as f32;
 
-    let variance: f64 = data
+    let variance: f32 = (data
         .iter()
         .map(|&x| {
             let diff = f64::from(x) - f64::from(mean);
             diff * diff
         })
         .sum::<f64>()
-        / data.len() as f64;
+        / data.len() as f64) as f32;
 
-    let std = (variance as f32).sqrt();
+    let std = variance.sqrt();
 
     (min, max, mean, std)
 }
 
 /// Output as JSON
+#[allow(clippy::unnecessary_wraps)] // Consistent with other command functions
+#[allow(clippy::disallowed_methods)] // unwrap_or_default is safe for empty vec
 fn output_json(
     reader: &AprReader,
     tensors: &[&AprTensorDescriptor],

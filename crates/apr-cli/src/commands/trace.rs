@@ -252,6 +252,8 @@ fn compute_trace_summary(layers: &[LayerTrace]) -> TraceSummary {
 }
 
 /// Run the trace command
+#[allow(clippy::too_many_arguments)] // CLI command needs these distinct options
+#[allow(clippy::fn_params_excessive_bools)] // CLI flags are naturally boolean
 pub(crate) fn run(
     path: &Path,
     layer_filter: Option<&str>,
@@ -404,6 +406,7 @@ fn extract_layers_from_hyperparameters(
     layers
 }
 
+#[allow(clippy::disallowed_methods)] // unwrap_or_default is safe here for empty vec
 fn trace_layers(metadata_bytes: &[u8], filter: Option<&str>, _verbose: bool) -> Vec<LayerTrace> {
     let metadata: BTreeMap<String, serde_json::Value> =
         rmp_serde::from_slice(metadata_bytes).unwrap_or_else(|_| BTreeMap::new());

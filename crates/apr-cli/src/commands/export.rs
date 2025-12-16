@@ -15,12 +15,7 @@ use humansize::{format_size, BINARY};
 use std::path::Path;
 
 /// Run the export command
-pub(crate) fn run(
-    file: &Path,
-    format: &str,
-    output: &Path,
-    quantize: Option<String>,
-) -> Result<()> {
+pub(crate) fn run(file: &Path, format: &str, output: &Path, quantize: Option<&str>) -> Result<()> {
     // Validate input exists
     if !file.exists() {
         return Err(CliError::FileNotFound(file.to_path_buf()));
@@ -47,7 +42,7 @@ pub(crate) fn run(
     }
 
     // Parse quantization option
-    let quant_type = match quantize.as_deref() {
+    let quant_type = match quantize {
         Some("int8") => Some(QuantizationType::Int8),
         Some("int4") => Some(QuantizationType::Int4),
         Some("fp16") => Some(QuantizationType::Fp16),

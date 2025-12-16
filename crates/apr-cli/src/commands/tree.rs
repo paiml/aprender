@@ -168,6 +168,7 @@ fn print_ascii_tree(root: &TreeNode, path: &Path, show_sizes: bool, max_depth: O
     }
 }
 
+#[allow(clippy::disallowed_methods)] // unwrap_or_default is safe for formatting
 fn print_tree_node(
     node: &TreeNode,
     prefix: &str,
@@ -250,6 +251,7 @@ fn print_dot_graph(root: &TreeNode) {
     println!("}}");
 }
 
+#[allow(clippy::disallowed_methods)] // unwrap_or_default is safe for formatting
 fn print_dot_nodes(node: &TreeNode, parent_id: &str) {
     for (name, child) in &node.children {
         let node_id = format!("{}_{}", parent_id, name.replace('.', "_"));
@@ -293,6 +295,7 @@ fn print_mermaid_graph(root: &TreeNode) {
     println!("```");
 }
 
+#[allow(clippy::disallowed_methods)] // unwrap_or_default is safe for formatting
 fn print_mermaid_nodes(node: &TreeNode, parent_id: &str, parent_label: &str) {
     if parent_id == "root" {
         println!("  {parent_id}[{parent_label}]");
@@ -326,6 +329,7 @@ fn print_mermaid_nodes(node: &TreeNode, parent_id: &str, parent_label: &str) {
 }
 
 /// Print JSON tree
+#[allow(clippy::disallowed_methods)] // json! macro uses infallible unwrap internally
 fn print_json_tree(root: &TreeNode) {
     fn to_json(node: &TreeNode) -> serde_json::Value {
         if node.is_leaf {

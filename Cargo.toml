@@ -127,7 +127,7 @@ safetensors = { version = "0.4", optional = true }
 [dev-dependencies]
 proptest = "1.6"
 criterion = "0.5"
-renacer = "0.7"
+renacer = "0.8"
 tempfile = "3.14"  # For format module tests
 
 [features]

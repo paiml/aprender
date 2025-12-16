@@ -16,9 +16,7 @@ HISTORY := /tmp/aprender-test-history
 DOCKER_IMAGE := aprender-shell-test
 DOCKER_TAG := latest
 
-.PHONY: all build test bench lint \
-        docker-build docker-test docker-test-all docker-shell docker-clean \
-        chaos-test chaos-gentle chaos-aggressive chaos-memory chaos-cpu clean
+.PHONY: all build test bench lint docker-build docker-test docker-test-all docker-shell docker-clean chaos-test chaos-gentle chaos-aggressive chaos-memory chaos-cpu clean
 
 all: build test
 

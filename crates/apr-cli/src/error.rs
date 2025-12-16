@@ -7,11 +7,11 @@ use std::process::ExitCode;
 use thiserror::Error;
 
 /// Result type alias for CLI operations
-pub type Result<T> = std::result::Result<T, CliError>;
+pub(crate) type Result<T> = std::result::Result<T, CliError>;
 
 /// CLI error types
 #[derive(Error, Debug)]
-pub enum CliError {
+pub(crate) enum CliError {
     /// File not found
     #[error("File not found: {0}")]
     FileNotFound(PathBuf),
@@ -58,7 +58,7 @@ pub enum CliError {
 
 impl CliError {
     /// Get exit code for this error
-    pub fn exit_code(&self) -> ExitCode {
+    pub(crate) fn exit_code(&self) -> ExitCode {
         match self {
             Self::FileNotFound(_) | Self::NotAFile(_) => ExitCode::from(3),
             Self::InvalidFormat(_) => ExitCode::from(4),

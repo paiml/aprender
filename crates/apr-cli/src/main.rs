@@ -485,6 +485,7 @@ enum Commands {
 }
 
 /// Execute the CLI command and return the result.
+#[allow(clippy::too_many_lines)] // CLI dispatch naturally has many command branches
 fn execute_command(cli: &Cli) -> Result<(), error::CliError> {
     match &cli.command {
         Commands::Run {
@@ -521,7 +522,7 @@ fn execute_command(cli: &Cli) -> Result<(), error::CliError> {
                 no_gpu: *no_gpu,
                 ..Default::default()
             };
-            serve::run(file, config)
+            serve::run(file, &config)
         }
 
         Commands::Inspect {
@@ -592,7 +593,7 @@ fn execute_command(cli: &Cli) -> Result<(), error::CliError> {
             format,
             output,
             quantize,
-        } => export::run(file, format, output, quantize.clone()),
+        } => export::run(file, format, output, quantize.as_deref()),
         Commands::Import {
             source,
             output,

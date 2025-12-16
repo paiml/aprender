@@ -12,7 +12,9 @@
 use crate::error::{CliError, Result};
 use colored::Colorize;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::AtomicU64;
+#[cfg(test)]
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 /// Server configuration
@@ -207,7 +209,7 @@ pub fn health_check(state: &ServerState, uptime_secs: u64) -> HealthResponse {
 }
 
 /// Serve command entry point (blocking)
-pub(crate) fn run(model_path: &Path, config: ServerConfig) -> Result<()> {
+pub(crate) fn run(model_path: &Path, config: &ServerConfig) -> Result<()> {
     println!("{}", "=== APR Serve ===".cyan().bold());
     println!();
     println!("Model: {}", model_path.display());

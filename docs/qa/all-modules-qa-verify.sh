@@ -32,6 +32,7 @@ fail() {
     ((FAIL_COUNT+=1)) || true
 }
 
+# shellcheck disable=SC2317  # Reserved for future use
 warn() {
     echo -e "${YELLOW}WARN${NC}"
     ((WARN_COUNT+=1)) || true

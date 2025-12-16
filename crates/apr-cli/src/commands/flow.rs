@@ -333,6 +333,7 @@ fn print_decoder_block(tensor_names: &[String], _verbose: bool) {
 }
 
 /// Print cross-attention flow (critical for debugging Posterior Collapse)
+#[allow(clippy::too_many_lines)] // Visual debugging output requires detailed formatting
 fn print_cross_attention_flow(
     reader: &AprReader,
     tensor_names: &[String],
@@ -625,16 +626,16 @@ fn compute_stats(data: &[f32]) -> (f32, f32, f32, f32) {
 
     let mean = (sum / data.len() as f64) as f32;
 
-    let variance: f64 = data
+    let variance: f32 = (data
         .iter()
         .map(|&x| {
             let diff = f64::from(x) - f64::from(mean);
             diff * diff
         })
         .sum::<f64>()
-        / data.len() as f64;
+        / data.len() as f64) as f32;
 
-    let std = (variance as f32).sqrt();
+    let std = variance.sqrt();
 
     (min, max, mean, std)
 }

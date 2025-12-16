@@ -248,7 +248,7 @@ echo ""
 echo "Traces saved to: $TRACES_DIR/"
 echo ""
 echo "Files generated:"
-ls -lh "$TRACES_DIR"/*.json "$TRACES_DIR"/*.txt 2>/dev/null | awk '{print "  " $9 " (" $5 ")"}'
+find "$TRACES_DIR" \( -name '*.json' -o -name '*.txt' \) -type f -exec stat --printf='  %n (%s bytes)\n' {} \; 2>/dev/null
 echo ""
 echo -e "${GREEN}Next steps:${NC}"
 echo "  1. Review traces: cat golden_traces/iris_clustering_summary.txt"

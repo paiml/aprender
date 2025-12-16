@@ -641,8 +641,7 @@ fn render_status(f: &mut Frame<'_>, area: Rect, app: &App) {
     let status = match app.current_tab {
         Tab::Overview => "Press Tab to switch views | q to quit",
         Tab::Tensors => "j/k to navigate | Tab to switch views | q to quit",
-        Tab::Stats => "Tab to switch views | q to quit",
-        Tab::Help => "Tab to switch views | q to quit",
+        Tab::Stats | Tab::Help => "Tab to switch views | q to quit",
     };
 
     let status_bar = Paragraph::new(status).style(Style::default().fg(Color::DarkGray));

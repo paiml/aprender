@@ -222,6 +222,7 @@
 - [Case Study: APR with JSON Metadata](./examples/apr-with-metadata.md)
 - [Case Study: CUDA and GPU Backends](./examples/cuda-backend.md)
 - [Case Study: APR CLI Tool Demo](./examples/apr-cli-demo.md)
+- [Case Study: Create Test APR Files](./examples/create-test-apr.md)
 - [Case Study: APR CLI Commands Demo](./examples/apr-cli-commands.md)
 - [Case Study: Model Zoo](./examples/model-zoo.md)
 - [Case Study: Sovereign AI Stack Integration](./examples/sovereign-stack.md)
@@ -230,6 +231,7 @@
 - [Case Study: Federation Gateway](./examples/federation-gateway.md)
 - [Case Study: Federation Routing Policies](./examples/federation-routing.md)
 - [Case Study: Probar TUI Testing](./examples/probar-tui-testing.md)
+- [Case Study: Pipeline Verification](./examples/pipeline-verification.md)
 - [Case Study: State Machine Playbooks](./examples/state-machine-playbooks.md)
 
 # Sprint-Based Development

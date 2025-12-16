@@ -1331,3 +1331,19 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: APR-POKA-001
+  github_issue: null
+  item_type: task
+  title: 'New task: APR-POKA-001'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2025-12-16T19:25:20.831662792+00:00
+  updated: 2025-12-16T19:25:20.831662792+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

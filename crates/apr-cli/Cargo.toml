@@ -33,7 +33,7 @@ inference = ["realizar", "tokio", "axum"]
 # Core aprender library
 aprender = { path = "../..", default-features = true, features = ["format-compression"] }
 
-# Inference engine (optional) - local path for development
+# Inference engine (optional) - local path for development until API stabilizes
 realizar = { path = "../../../realizar", optional = true, default-features = false, features = ["server", "aprender-serve"] }
 
 # Async runtime for server

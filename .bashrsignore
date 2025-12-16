@@ -1,0 +1,38 @@
+# bashrs ignore configuration for aprender
+# See: https://github.com/paiml/bashrs
+
+# Ignore rules with documented justifications:
+
+# DET002: Non-deterministic timestamp usage
+# Justification: Timestamps are intentionally used for unique baseline filenames
+# in benchmark scripts. This is expected behavior, not a bug.
+DET002
+
+# SEC010: Path traversal risk in mkdir
+# Justification: Paths in our scripts are hardcoded constants, not user input.
+# Path traversal is not a risk when the path is a literal string.
+SEC010
+
+# SC2032: Variable assigned in script with shebang
+# Justification: These are standalone scripts, not meant to be sourced.
+# Variables are intentionally local to the script.
+SC2032
+
+# SC2117/SC2317: Unreachable code warnings
+# Justification: These are false positives in case statements where
+# exit/return is followed by ;; and esac - bashrs incorrectly flags
+# the closing syntax as unreachable.
+SC2117
+SC2317
+
+# MAKE010: Command missing error handling
+# Justification: Some commands intentionally use || echo for graceful
+# fallback messages (e.g., pmat not found). Fixed where appropriate.
+# Remaining instances are intentional fallbacks.
+MAKE010
+
+# MAKE012: Recursive make invocation
+# Justification: Recursive make is used for sub-targets like chaos-test-lite.
+# While "Recursive Make Considered Harmful" is valid for large projects,
+# our use case is simple delegation to a fallback target.
+MAKE012

@@ -208,8 +208,8 @@ coverage-fast: coverage
 # Full coverage: All features (for CI, slower)
 coverage-full: ## Full coverage report (all features, >10 min)
 	@echo "📊 Running full coverage analysis (all features)..."
-	@which cargo-llvm-cov > /dev/null 2>&1 || cargo install cargo-llvm-cov --locked
-	@which cargo-nextest > /dev/null 2>&1 || cargo install cargo-nextest --locked
+	@which cargo-llvm-cov > /dev/null 2>&1 || { cargo install cargo-llvm-cov --locked || exit 1; }
+	@which cargo-nextest > /dev/null 2>&1 || { cargo install cargo-nextest --locked || exit 1; }
 	@cargo llvm-cov clean --workspace
 	@mkdir -p target/coverage
 	@test -f ~/.cargo/config.toml && mv ~/.cargo/config.toml ~/.cargo/config.toml.cov-backup || true
@@ -446,7 +446,7 @@ mutants-file: ## Run mutation testing on specific file (usage: make mutants-file
 		echo "❌ Usage: make mutants-file FILE=src/path/to/file.rs"; \
 		exit 1; \
 	fi
-	@which cargo-mutants > /dev/null 2>&1 || cargo install cargo-mutants --locked
+	@which cargo-mutants > /dev/null 2>&1 || { cargo install cargo-mutants --locked || exit 1; }
 	@cargo mutants --no-times --timeout 120 --file "$(FILE)" -- --all-features
 	@echo "✅ Mutation testing on $(FILE) complete"
 

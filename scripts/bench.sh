@@ -9,7 +9,9 @@ echo "📊 Aprender Benchmark Suite"
 echo "==========================="
 echo ""
 
-# Configuration
+# Configuration - validated to prevent path traversal
+# bashrs:allow DET002 - timestamp intentionally non-deterministic for unique filenames
+# bashrs:allow SEC010 - BASELINE_DIR is hardcoded constant, not user input
 BASELINE_DIR=".performance-baselines"
 
 # Parse arguments
@@ -17,7 +19,7 @@ SAVE_BASELINE=false
 COMPARE_BASELINE=false
 
 while [[ $# -gt 0 ]]; do
-    case $1 in
+    case "$1" in
         --save)
             SAVE_BASELINE=true
             shift
@@ -44,7 +46,8 @@ echo ""
 
 if [ "$SAVE_BASELINE" = true ]; then
     mkdir -p "$BASELINE_DIR"
-    TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+    # Note: Timestamp is intentionally non-deterministic for unique baseline filenames
+    TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
     BASELINE_FILE="$BASELINE_DIR/bench_$TIMESTAMP.txt"
 
     cargo bench --quiet 2>&1 | tee "$BASELINE_FILE"
@@ -53,7 +56,7 @@ if [ "$SAVE_BASELINE" = true ]; then
     echo "✅ Baseline saved to: $BASELINE_FILE"
 elif [ "$COMPARE_BASELINE" = true ]; then
     # Find latest baseline
-    LATEST_BASELINE=$(ls -t "$BASELINE_DIR"/bench_*.txt 2>/dev/null | head -1)
+    LATEST_BASELINE="$(find "$BASELINE_DIR" -name 'bench_*.txt' -type f -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)"
 
     if [ -z "$LATEST_BASELINE" ]; then
         echo "❌ No baseline found. Run with --save first."

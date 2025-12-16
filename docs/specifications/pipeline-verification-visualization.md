@@ -1,6 +1,6 @@
 # APR-VERIFY-001: Pipeline Verification & Visualization System
 
-**Status**: DRAFT - Review Complete
+**Status**: Phase 1 IMPLEMENTED (Core Infrastructure + Whisper.apr Case Study)
 **Author**: Aprender Team
 **Date**: 2025-12-16
 **PMAT Ticket**: APR-VERIFY-001
@@ -16,6 +16,33 @@ A deterministic, visual pipeline verification system for ML model debugging that
 - **Popperian falsification** for rigorous validation
 
 This differentiates from existing MLOps tools (MLflow, Weights & Biases, Neptune) by focusing on **deterministic debugging** and **differential testing** rather than experiment tracking.
+
+---
+
+## ⚠️ CRITICAL CONSTRAINTS
+
+### NO PYTHON - RUST ONLY
+
+**This project is 100% Rust. Python is NEVER used.**
+
+- ❌ **NEVER** create Python scripts for ground truth extraction
+- ❌ **NEVER** use `uv run`, `pip`, `torch`, `transformers`, or any Python tooling
+- ❌ **NEVER** suggest "just use Python for this one thing"
+- ✅ **ALWAYS** use Rust for all tooling, extraction, and verification
+- ✅ **ALWAYS** use existing JSON/binary ground truth files already extracted
+- ✅ **ALWAYS** load reference data via `aprender::verify::GroundTruth::from_json_file()`
+
+**Ground Truth Workflow (Rust-Only):**
+1. Reference values are pre-extracted and stored in `test_data/*.json` or `golden_traces/*.bin`
+2. Rust code loads these via `GroundTruth::from_json_file()` or `GroundTruth::from_bin_file()`
+3. If new ground truth is needed, create a Rust example that calls the reference implementation
+4. The aprender crate has `safetensors-compare` feature for loading reference weights
+
+**Why No Python:**
+- WASM-first architecture requires pure Rust
+- Deterministic builds require single-language toolchain
+- probar/jugar test ecosystem is Rust-native
+- Avoids "works on my machine" Python environment issues
 
 ---
 
@@ -407,6 +434,59 @@ impl StageResult {
 
 ### Phase 4: Integration (Sprint 4)
 - APR-CLI, PMAT, Documentation
+
+---
+
+## 11. Case Study: Whisper.apr Mel Spectrogram Fix
+
+### 11.1 Problem Discovery
+
+During WAPR-TRANS-001 debugging, APR-VERIFY identified a critical issue:
+
+```
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  │  A  │ audio           │   ✓    │ μ=+0.0005 σ=0.0711 │ μ=+0.0002 σ=0.0696 │   2.5% │
+║  │  B  │ mel             │   ✗    │ μ=+0.1841 σ=0.4466 │ μ=-0.2148 σ=0.4479 │  89.4% │
+╚══════════════════════════════════════════════════════════════════════════════╝
+```
+
+**Key Finding**: Sign is FLIPPED (our mean positive, GT negative), but std is nearly identical.
+
+### 11.2 Root Cause Analysis (5-Whys)
+
+1. **Why is mean flipped?** Constant offset of +0.3989
+2. **Why is there an offset?** Mel energies are ~55x larger than expected
+3. **Why are energies larger?** Filterbank weights are 38x too large
+4. **Why are weights wrong?** Model doesn't embed filterbank, uses fallback computation
+5. **Why is fallback wrong?** Missing **Slaney normalization** in `compute_filterbank()`
+
+### 11.3 Fix Applied
+
+Added Slaney normalization to `src/audio/mel.rs`:
+
+```rust
+// Slaney normalization: divide by bandwidth to get equal-area filters
+let bandwidth_hz = hz_points[m + 2] - hz_points[m];
+let slaney_norm = if bandwidth_hz > 0.0 { 2.0 / bandwidth_hz } else { 1.0 };
+```
+
+### 11.4 Verification After Fix
+
+```
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  │  A  │ audio           │   ✓    │ μ=+0.0005 σ=0.0711 │ μ=+0.0002 σ=0.0696 │   2.5% │
+║  │  B  │ mel             │   ✓    │ μ=-0.2424 σ=0.4436 │ μ=-0.2148 σ=0.4479 │   7.1% │
+╚══════════════════════════════════════════════════════════════════════════════╝
+✓ All 2 stages passed
+```
+
+### 11.5 Methodology Validation
+
+This case demonstrates APR-VERIFY's value:
+- **Systematic**: Ground truth comparison at each stage
+- **Visual**: TUI shows exactly where divergence occurs
+- **Diagnostic**: 5-Whys tracing from symptoms to root cause
+- **Rust-Only**: No Python scripts, all JSON ground truth pre-extracted
 
 ---
 

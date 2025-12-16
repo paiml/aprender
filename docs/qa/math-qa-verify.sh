@@ -50,6 +50,7 @@ S12_SCORE=0; S12_MAX=5
 
 # Options
 JSON_OUTPUT='false'
+# shellcheck disable=SC2034  # Reserved for future verbose output
 VERBOSE='false'
 SECTION_FILTER=''
 GENERATE_REPORT='false'

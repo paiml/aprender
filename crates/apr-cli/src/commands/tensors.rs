@@ -129,9 +129,8 @@ fn extract_from_tensor_shapes(
     filter: Option<&str>,
     limit: usize,
 ) -> Vec<TensorInfo> {
-    let shapes = match metadata.get("tensor_shapes").and_then(|s| s.as_object()) {
-        Some(s) => s,
-        None => return Vec::new(),
+    let Some(shapes) = metadata.get("tensor_shapes").and_then(|s| s.as_object()) else {
+        return Vec::new();
     };
 
     shapes
@@ -166,12 +165,11 @@ fn parse_shape_array(shape_val: &serde_json::Value) -> Vec<usize> {
 
 /// Extract tensor info from hyperparameters as fallback.
 fn extract_from_hyperparameters(metadata: &HashMap<String, serde_json::Value>) -> Vec<TensorInfo> {
-    let hp_obj = match metadata
+    let Some(hp_obj) = metadata
         .get("hyperparameters")
         .and_then(|hp| hp.as_object())
-    {
-        Some(obj) => obj,
-        None => return Vec::new(),
+    else {
+        return Vec::new();
     };
 
     let shape: Vec<usize> = hp_obj

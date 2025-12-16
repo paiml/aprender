@@ -71,6 +71,41 @@ pmat tdg . --include-components              # TDG score (target: A+ = 95.0+)
 ### Banned Dependencies
 serde, rayon, tokio, thiserror, ndarray, polars, arrow - see spec for rationale
 
+### Shell Script Quality (bashrs)
+
+**CRITICAL: Use bashrs, NOT shellcheck for shell script linting.**
+
+```bash
+# Install bashrs (required)
+cargo install bashrs
+
+# Lint shell scripts
+bashrs lint scripts/*.sh
+
+# Purify scripts (determinism + idempotency + safety)
+bashrs purify scripts/ci.sh
+
+# Lint and purify Makefiles
+bashrs make lint Makefile
+bashrs make purify Makefile
+
+# Full quality gate
+bashrs gate --strict .
+```
+
+**Why bashrs over shellcheck:**
+- Rust-native tooling (consistent with project stack)
+- Determinism checking (idempotent scripts)
+- Makefile support (bashrs make lint/purify)
+- Formal verification integration
+- Safety-focused (beyond style linting)
+
+**Required for all .sh files and Makefiles:**
+- `set -euo pipefail` at script start
+- No `ls` for file iteration (use `find`)
+- Quoted variables in all contexts
+- Explicit error handling
+
 ## Testing Strategy
 
 Target distribution: 60% unit, 30% property tests, 10% integration
@@ -249,7 +284,7 @@ Runs on every push and PR to main:
 - **Mutation Testing**: `cargo mutants` (sample run, continue-on-error)
 - **Security**: `cargo audit` and `cargo deny` checks
 - **Docs**: `cargo doc` with -Dwarnings
-- **Shellcheck**: Script linting
+- **bashrs**: Shell script linting and purification (NOT shellcheck)
 - **Build**: Release build + example runs
 
 ### benchmark.yml - Performance Monitoring

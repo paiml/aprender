@@ -176,6 +176,7 @@ fn resolve_model(source: &ModelSource, _force: bool) -> Result<PathBuf> {
 }
 
 /// Find model file in directory
+#[allow(clippy::unnecessary_wraps)] // Consistent with error-returning callers
 fn find_model_in_dir(dir: &Path) -> Result<PathBuf> {
     for ext in &["apr", "safetensors", "gguf"] {
         let pattern = dir.join(format!("*.{ext}"));
