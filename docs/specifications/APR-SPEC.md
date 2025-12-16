@@ -35,6 +35,9 @@
    - [4.11 Lint Command](#411-lint-command)
    - [4.12 Explain Command](#412-explain-command)
    - [4.13 TUI Command](#413-tui-command)
+   - [4.14 Canary Command](#414-canary-command)
+   - [4.15 Run Command](#415-run-command)
+   - [4.16 Compile Command](#416-compile-command)
 5. [Auxiliary Data Patterns](#5-auxiliary-data-patterns)
    - [5.1 JSON Metadata Pattern](#51-json-metadata-pattern)
    - [5.2 Common Auxiliary Data Types](#52-common-auxiliary-data-types)
@@ -287,19 +290,31 @@ pub trait StreamingLoader {
 apr - APR Model Operations Tool
 
 COMMANDS:
+    run         Run model directly (auto-download, cache, execute)
+    compile     Build standalone executable with embedded model
     inspect     Inspect model metadata, vocab, and structure
     debug       Simple debugging output ("drama" mode)
     validate    Validate model integrity
     diff        Compare two models
     tensors     List tensor information
-    export      Export model to other formats
-    import      Import from external formats
-    convert     Convert between model types
-    merge       Merge multiple models
+    export      Export model to other formats (SafeTensors, GGUF)
+    import      Import from external formats (HuggingFace, SafeTensors)
+    convert     Convert/optimize model (quantization: int8, int4, fp16)
+    merge       Merge multiple models (average, weighted strategies)
     trace       Trace model operations with renacer
     lint        Check for best practices and conventions
     explain     Explain errors, architecture, and tensors
+    canary      Regression testing via tensor statistics
     tui         Interactive terminal UI for exploration
+    probar      Export for visual testing
+    tasks       List available tasks from apr.toml
+    lock        Generate/verify apr.lock for reproducibility
+
+EXAMPLES:
+    apr run hf://openai/whisper-tiny --input audio.wav
+    apr run whisper.apr < audio.wav > transcript.txt
+    apr compile whisper.apr --quantize int8 -o whisper-cli
+    apr transcribe recording.wav    # Run task from apr.toml
 ```
 
 ### 4.2 Inspect Command
@@ -1100,6 +1115,738 @@ Per-tensor distribution visualization with sparklines:
 [features]
 tui = ["ratatui", "crossterm"]
 ```
+
+### 4.14 Canary Command
+
+Regression testing via tensor statistics. Creates reference snapshots of model weights and validates that optimized/converted models stay within tolerance.
+
+#### 4.14.1 Create Canary
+
+```bash
+$ apr canary create model.apr --input reference.wav --output canary.json
+
+=== APR Canary Create ===
+
+Model: model.apr
+Output: canary.json
+
+Loading model...
+Computing tensor statistics...
+
+=== Canary Created ===
+Tensors captured: 167
+Output file: canary.json
+
+Canary test created successfully
+```
+
+**Output Format (canary.json)**:
+```json
+{
+  "model_name": "model.apr",
+  "tensor_count": 167,
+  "created_at": "2025-12-16T12:00:00Z",
+  "tensors": {
+    "encoder.conv1.weight": {
+      "shape": [384, 80, 3],
+      "count": 92160,
+      "mean": 0.0023,
+      "std": 0.0412,
+      "min": -0.1234,
+      "max": 0.1567
+    }
+  }
+}
+```
+
+#### 4.14.2 Check Canary
+
+```bash
+$ apr canary check model-optimized.apr --canary canary.json
+
+=== APR Canary Check ===
+
+Model: model-optimized.apr
+Canary: canary.json
+
+Loading model...
+Comparing tensors...
+
+=== Canary Check Results ===
+
+[PASS] encoder.conv1.weight
+[PASS] encoder.conv2.weight
+[FAIL] decoder.layer_norm.weight
+       Mean drift 15.2% exceeds threshold 10.0%
+
+Results: 165 passed, 2 failed out of 167 tensors
+
+Canary check FAILED - model drifted beyond tolerance
+```
+
+#### 4.14.3 Falsifiable Guarantees
+
+| Check | Threshold | Failure Condition |
+|-------|-----------|-------------------|
+| Mean drift | 10% | `abs(new_mean - old_mean) / old_mean > 0.10` |
+| Std drift | 20% | `abs(new_std - old_std) / old_std > 0.20` |
+| Shape match | exact | `new_shape != old_shape` |
+| Tensor exists | required | Tensor missing from model |
+
+#### 4.14.4 Integration with Convert
+
+```bash
+# Fail optimization if canary check fails
+apr convert model.apr --quantize int4 \
+  --canary canary.json \
+  -o model-optimized.apr
+
+# Output on failure:
+# ERROR: Canary check failed
+#   - decoder.layer_norm.weight: Mean drift 15.2% (max: 10.0%)
+# Use --force to ignore canary check
+```
+
+### 4.15 Run Command
+
+The `apr run` command provides a modern, zero-friction experience for running models directly. Inspired by contemporary CLI tools that prioritize developer ergonomics and "just works" behavior.
+
+#### 4.15.1 Design Philosophy
+
+Modern CLI tools have established new standards for user experience:
+
+> "The best CLI tools get out of your way. They should do what you mean, not what you say." — **uv documentation** [1]
+
+| Inspiration | Tool | Key Innovation |
+|-------------|------|----------------|
+| Zero-config execution | uv [1] | `uv run script.py` auto-resolves dependencies |
+| Task-based workflows | just [2] | Simple task definitions without Makefile complexity |
+| URL-based imports | Deno [3] | `deno run https://...` runs remote code directly |
+| Content-addressed caching | Nix [4] | Reproducible builds via hash-based storage |
+| Progressive disclosure | cargo [5] | Simple defaults, powerful options when needed |
+
+#### 4.15.2 Basic Usage
+
+```bash
+# Run model directly - auto-downloads, caches, executes
+apr run hf://openai/whisper-tiny --input audio.wav
+
+# Run local model
+apr run whisper.apr --input audio.wav
+
+# Smart inference - detects input type from extension
+apr run model.apr audio.wav
+
+# Pipeline style (Unix philosophy)
+apr run hf://openai/whisper-tiny < audio.wav > transcript.txt
+
+# Interactive mode - REPL for audio input
+apr run whisper.apr --interactive
+> [Recording... speak now]
+> "Hello world"
+```
+
+#### 4.15.3 Remote Model Resolution
+
+Like `uv` and `deno`, `apr run` supports URL-based model references with automatic caching:
+
+```bash
+# HuggingFace Hub
+apr run hf://openai/whisper-tiny
+
+# Direct URL (like deno)
+apr run https://models.example.com/whisper-tiny.apr
+
+# Git repository
+apr run git+https://github.com/org/models#whisper-tiny.apr
+
+# Local path (explicit)
+apr run ./models/whisper.apr
+apr run /absolute/path/model.apr
+```
+
+**Cache Location**: `~/.apr/cache/` (content-addressed, like Nix)
+
+```
+~/.apr/cache/
+├── hf/
+│   └── openai/
+│       └── whisper-tiny/
+│           └── v1.0.0/
+│               ├── model.apr
+│               └── config.json
+└── urls/
+    └── sha256-abc123.../
+        └── model.apr
+```
+
+#### 4.15.4 Task Configuration (`apr.toml`)
+
+Inspired by `just` [2] and `pyproject.toml`, define reusable tasks:
+
+```toml
+# apr.toml - Project-level model configuration
+
+[model]
+source = "hf://openai/whisper-tiny"
+quantize = "int8"
+cache = true
+
+[model.options]
+language = "en"
+task = "transcribe"
+
+# Named tasks (like justfile recipes)
+[tasks.transcribe]
+description = "Transcribe audio files to text"
+input = "*.wav"
+output = "transcripts/{stem}.txt"
+
+[tasks.translate]
+description = "Translate audio to English"
+input = "*.wav"
+output = "translations/{stem}.txt"
+options = { task = "translate", language = "en" }
+
+[tasks.batch]
+description = "Process all recordings"
+input = "recordings/**/*.wav"
+output = "output/{relative_dir}/{stem}.json"
+parallel = true
+```
+
+**Usage**:
+```bash
+# Run named task
+apr transcribe recording.wav
+apr translate meeting.wav
+
+# List available tasks
+apr tasks
+  transcribe  Transcribe audio files to text
+  translate   Translate audio to English
+  batch       Process all recordings
+
+# Run with overrides
+apr transcribe --language fr audio.wav
+```
+
+#### 4.15.5 Lockfile (`apr.lock`)
+
+For reproducible model versions (inspired by `uv.lock` [1] and `Cargo.lock` [5]):
+
+```toml
+# apr.lock - Auto-generated, do not edit
+
+[[models]]
+name = "whisper-tiny"
+source = "hf://openai/whisper-tiny"
+version = "1.0.0"
+revision = "abc123def456"
+sha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+downloaded = "2025-12-16T12:00:00Z"
+
+[[models.tensors]]
+name = "encoder.conv1.weight"
+shape = [384, 80, 3]
+dtype = "f32"
+checksum = "crc32:deadbeef"
+```
+
+**Commands**:
+```bash
+# Generate lockfile from apr.toml
+apr lock
+
+# Verify models match lockfile
+apr lock --check
+
+# Update to latest versions
+apr lock --upgrade
+```
+
+#### 4.15.6 Environment Variables
+
+```bash
+# Cache directory (default: ~/.apr/cache)
+APR_CACHE_DIR=/path/to/cache
+
+# Offline mode (fail if model not cached)
+APR_OFFLINE=1
+
+# HuggingFace token for private models
+HF_TOKEN=hf_xxx
+
+# Parallelism for batch processing
+APR_PARALLEL=4
+
+# Quiet mode (no progress bars)
+APR_QUIET=1
+```
+
+#### 4.15.7 Progress and Output
+
+Modern progress indication (like cargo/uv):
+
+```bash
+$ apr run hf://openai/whisper-tiny --input audio.wav
+
+Resolving hf://openai/whisper-tiny...
+  Found: whisper-tiny v1.0.0 (145 MB)
+
+Downloading ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 100% 145/145 MB
+
+Cached: ~/.apr/cache/hf/openai/whisper-tiny/v1.0.0/model.apr
+
+Loading model... done (1.2s)
+Processing audio.wav...
+
+Output:
+  "The quick brown fox jumps over the lazy dog."
+
+Completed in 3.4s (RTF: 0.34x)
+```
+
+#### 4.15.8 Falsifiable Guarantees
+
+| Behavior | Guarantee |
+|----------|-----------|
+| Cache hit | If `apr.lock` matches cached model, no network request |
+| Offline mode | `APR_OFFLINE=1` must fail immediately if model not cached |
+| Reproducibility | Same `apr.lock` + same input = identical output |
+| Progress | Downloads >1MB must show progress bar |
+| Exit codes | 0=success, 1=model error, 2=input error, 3=network error |
+
+#### 4.15.9 References
+
+[1] **uv** - "An extremely fast Python package installer and resolver, written in Rust."
+    https://github.com/astral-sh/uv
+    Key influence: Zero-config execution, lockfiles, content-addressed caching
+
+[2] **just** - "A handy way to save and run project-specific commands."
+    https://github.com/casey/just
+    Key influence: Simple task definitions, recipe-based workflows
+
+[3] **Deno** - "A modern runtime for JavaScript and TypeScript."
+    https://deno.land/
+    Key influence: URL-based imports, secure-by-default execution
+
+[4] **Nix** - "Reproducible builds and deployments."
+    https://nixos.org/
+    Key influence: Content-addressed storage, reproducibility guarantees
+
+[5] **Cargo** - "The Rust package manager."
+    https://doc.rust-lang.org/cargo/
+    Key influence: Progressive disclosure, lockfiles, workspace management
+
+---
+
+### 4.16 Compile Command
+
+The `apr compile` command builds optimized standalone executables with embedded models. This enables zero-dependency deployment where the model weights are bundled directly into the binary.
+
+#### 4.16.1 Design Philosophy
+
+Many production use cases require deploying ML models as self-contained executables:
+
+- **Edge deployment**: Single binary for IoT devices, embedded systems
+- **Air-gapped environments**: No network access to download models
+- **Distribution simplicity**: Ship one file, not model + runtime
+- **Startup optimization**: No model loading overhead at runtime
+- **IP protection**: Model weights embedded in binary (harder to extract)
+
+> "The best deployment is no deployment. Just copy one file." — **Single-binary philosophy**
+
+| Inspiration | Tool | Key Innovation |
+|-------------|------|----------------|
+| Static linking | Go [6] | Single static binary with no dependencies |
+| Embedded resources | Rust `include_bytes!` | Compile-time asset embedding |
+| AOT compilation | GraalVM Native Image [7] | Ahead-of-time compilation for instant startup |
+| WASM components | wasm-tools [8] | Self-contained WASM modules |
+| Tree-shaking | esbuild [9] | Dead code elimination for smaller bundles |
+
+#### 4.16.2 Basic Usage
+
+```bash
+# Compile model into standalone executable
+apr compile whisper.apr -o whisper-cli
+
+# Compile with specific target
+apr compile whisper.apr --target x86_64-unknown-linux-gnu -o whisper-cli
+
+# Compile to WASM module
+apr compile whisper.apr --target wasm32-unknown-unknown -o whisper.wasm
+
+# Compile with quantization for smaller binary
+apr compile whisper.apr --quantize int8 -o whisper-cli
+
+# Compile with custom entrypoint
+apr compile whisper.apr --entrypoint transcribe -o transcribe
+```
+
+#### 4.16.3 Output Formats
+
+| Format | Flag | Description |
+|--------|------|-------------|
+| Native executable | (default) | Platform-specific binary (ELF, Mach-O, PE) |
+| WASM module | `--target wasm32-*` | Self-contained `.wasm` file |
+| Static library | `--lib` | `.a`/`.lib` for embedding in other projects |
+| Shared library | `--shared` | `.so`/`.dylib`/`.dll` |
+| WASM component | `--component` | WASI component model format |
+
+#### 4.16.4 Target Platforms
+
+```bash
+# List available targets
+apr compile --list-targets
+
+Targets:
+  Native:
+    x86_64-unknown-linux-gnu      Linux x86_64 (glibc)
+    x86_64-unknown-linux-musl     Linux x86_64 (musl, fully static)
+    aarch64-unknown-linux-gnu     Linux ARM64
+    x86_64-apple-darwin           macOS x86_64
+    aarch64-apple-darwin          macOS ARM64 (Apple Silicon)
+    x86_64-pc-windows-msvc        Windows x86_64
+
+  WebAssembly:
+    wasm32-unknown-unknown        Pure WASM (browser)
+    wasm32-wasi                   WASM + WASI (server-side)
+    wasm32-wasip1                 WASM + WASI Preview 1
+    wasm32-wasip2                 WASM + WASI Preview 2 (component model)
+
+# Cross-compile for different platform
+apr compile whisper.apr --target aarch64-unknown-linux-gnu -o whisper-arm64
+```
+
+#### 4.16.5 Size Optimization
+
+Multiple strategies to minimize binary size:
+
+```bash
+# Aggressive optimization (slower compile, smaller binary)
+apr compile whisper.apr --optimize size -o whisper-small
+
+# Strip debug symbols
+apr compile whisper.apr --strip -o whisper-stripped
+
+# Quantize weights (significant size reduction)
+apr compile whisper.apr --quantize int4 -o whisper-tiny
+#   fp32: 145 MB → int8: 39 MB → int4: 20 MB
+
+# Enable LTO (Link-Time Optimization)
+apr compile whisper.apr --lto -o whisper-lto
+
+# All optimizations combined
+apr compile whisper.apr --release --quantize int8 --strip --lto -o whisper-prod
+```
+
+**Size breakdown example**:
+```bash
+$ apr compile whisper-tiny.apr --quantize int8 --strip --lto -o whisper
+
+Binary composition:
+  Model weights:    38.2 MB (94.1%)
+  Runtime code:      2.1 MB (5.2%)
+  Metadata:          0.3 MB (0.7%)
+  ─────────────────────────────
+  Total:            40.6 MB
+
+Optimization savings:
+  Original fp32:    145.0 MB
+  After int8:        39.0 MB  (-73%)
+  After strip:       38.5 MB  (-1%)
+  After LTO:         38.2 MB  (-1%)
+```
+
+#### 4.16.6 Runtime Configuration
+
+Compiled binaries accept runtime arguments:
+
+```bash
+# Generated CLI interface
+$ ./whisper --help
+whisper-cli 1.0.0
+Compiled from: whisper-tiny.apr
+Model: openai/whisper-tiny (39M parameters, int8)
+
+USAGE:
+    whisper [OPTIONS] <INPUT>
+
+ARGS:
+    <INPUT>    Audio file to transcribe
+
+OPTIONS:
+    -l, --language <LANG>     Language code (default: auto)
+    -t, --task <TASK>         Task: transcribe|translate (default: transcribe)
+    -o, --output <FILE>       Output file (default: stdout)
+    -f, --format <FMT>        Output format: text|json|srt|vtt (default: text)
+    --timestamps              Include word-level timestamps
+    --no-gpu                  Disable GPU acceleration
+    -v, --verbose             Verbose output
+    -h, --help                Print help
+
+# Example usage
+$ ./whisper audio.wav
+Hello world, this is a test.
+
+$ ./whisper --format json --timestamps audio.wav > result.json
+```
+
+#### 4.16.7 Embedding Configuration
+
+Control what gets embedded in the binary:
+
+```toml
+# apr-compile.toml - Build configuration
+
+[model]
+path = "whisper-tiny.apr"
+quantize = "int8"
+
+[embed]
+# What to include in binary
+vocabulary = true           # Required for tokenization
+mel_filterbank = true       # Required for audio processing
+language_tokens = ["en", "es", "fr"]  # Subset of supported languages
+
+[exclude]
+# Remove unused components
+translation_head = true     # If only transcription needed
+language_detection = false  # Keep this
+
+[runtime]
+# Runtime defaults (overridable via CLI)
+default_language = "en"
+default_task = "transcribe"
+max_audio_length = 30       # Seconds
+
+[binary]
+name = "whisper"
+version = "1.0.0"
+entrypoint = "transcribe"   # Main function
+```
+
+#### 4.16.8 Build Pipeline
+
+```bash
+# Development build (fast compile, larger binary)
+apr compile whisper.apr -o whisper-dev
+
+# Release build (optimized)
+apr compile whisper.apr --release -o whisper
+
+# Production build (all optimizations + signing)
+apr compile whisper.apr --release --sign key.pem -o whisper-prod
+
+# Reproducible build (deterministic output)
+apr compile whisper.apr --reproducible -o whisper
+sha256sum whisper  # Always same hash for same inputs
+```
+
+#### 4.16.9 WASM-Specific Options
+
+```bash
+# Browser-optimized WASM
+apr compile whisper.apr --target wasm32-unknown-unknown \
+    --wasm-opt \
+    --no-threads \
+    -o whisper.wasm
+
+# WASI with filesystem access
+apr compile whisper.apr --target wasm32-wasi \
+    --wasi-snapshot preview1 \
+    -o whisper.wasm
+
+# WASM component (composable)
+apr compile whisper.apr --target wasm32-wasip2 \
+    --component \
+    --wit interface.wit \
+    -o whisper.component.wasm
+```
+
+**Generated WASM interface**:
+```typescript
+// TypeScript bindings auto-generated
+export interface Whisper {
+  transcribe(audio: Float32Array): Promise<TranscriptionResult>;
+  translate(audio: Float32Array, targetLang: string): Promise<TranslationResult>;
+  detectLanguage(audio: Float32Array): Promise<LanguageDetection>;
+}
+```
+
+#### 4.16.10 Library Mode
+
+Generate libraries for embedding in other applications:
+
+```bash
+# Static library
+apr compile whisper.apr --lib --target x86_64-unknown-linux-gnu -o libwhisper.a
+
+# Shared library with C ABI
+apr compile whisper.apr --shared --cabi -o libwhisper.so
+
+# Generate header file
+apr compile whisper.apr --header -o whisper.h
+```
+
+**Generated C header**:
+```c
+// whisper.h - Auto-generated C bindings
+#ifndef WHISPER_H
+#define WHISPER_H
+
+#include <stdint.h>
+
+typedef struct WhisperContext WhisperContext;
+
+// Initialize (model weights already embedded)
+WhisperContext* whisper_init(void);
+void whisper_free(WhisperContext* ctx);
+
+// Transcription
+typedef struct {
+    const char* text;
+    float confidence;
+    // ...
+} WhisperResult;
+
+WhisperResult* whisper_transcribe(
+    WhisperContext* ctx,
+    const float* audio,
+    size_t audio_len
+);
+
+void whisper_result_free(WhisperResult* result);
+
+#endif
+```
+
+#### 4.16.11 Runtime Acceleration (trueno Integration)
+
+Compiled binaries automatically leverage optimal SIMD/GPU acceleration via **trueno** [10] — no configuration required.
+
+**"Just Works" Philosophy**:
+
+```rust
+// Same code, optimal execution everywhere
+let result = matrix.matmul(&weights);  // Auto-selects best backend
+```
+
+At runtime, trueno automatically detects and uses the best available backend:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    Runtime Backend Selection                     │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  CPU Feature Detection (x86_64):                                │
+│    AVX-512 → AVX2 → AVX → SSE2 → Scalar                        │
+│                                                                  │
+│  CPU Feature Detection (ARM):                                   │
+│    NEON (AArch64) → NEON (ARMv7) → Scalar                       │
+│                                                                  │
+│  GPU Detection (via wgpu):                                      │
+│    Vulkan → Metal → DX12 → WebGPU → CPU fallback               │
+│                                                                  │
+│  WASM (browser):                                                │
+│    SIMD128 (all modern browsers) → Scalar fallback             │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Operation-Specific Dispatch**:
+
+| Operation | CPU SIMD | GPU | Notes |
+|-----------|----------|-----|-------|
+| Matrix multiply | ✅ AVX2/NEON | ✅ Beneficial | GPU for 500×500+ |
+| Dot product | ✅ 3-11x speedup | ❌ Overhead | CPU always faster |
+| Element-wise | ✅ Memory-bound | ❌ Transfer cost | CPU preferred |
+| Convolution | ✅ Small kernels | ✅ Large images | Threshold-based |
+| Attention | ✅ Cache-blocked | ✅ Large batches | Adaptive |
+
+**Compile-Time Options**:
+
+```bash
+# Force specific backend (override auto-selection)
+apr compile whisper.apr --backend avx2 -o whisper-avx2
+apr compile whisper.apr --backend gpu -o whisper-gpu
+
+# Disable GPU (smaller binary, CPU only)
+apr compile whisper.apr --no-gpu -o whisper-cpu-only
+
+# WASM with SIMD128 (browser deployment)
+apr compile whisper.apr --target wasm32-unknown-unknown -o whisper.wasm
+# Note: WASM SIMD128 enabled by default, supported in all modern browsers
+```
+
+**Runtime Override**:
+
+```bash
+# Override backend at runtime (compiled binary)
+./whisper --backend scalar audio.wav    # Force scalar (debugging)
+./whisper --backend avx2 audio.wav      # Force AVX2
+./whisper --no-gpu audio.wav            # Disable GPU acceleration
+
+# Environment variable override
+TRUENO_BACKEND=avx2 ./whisper audio.wav
+TRUENO_DISABLE_GPU=1 ./whisper audio.wav
+```
+
+**Performance Characteristics**:
+
+| Target | Backend | Typical Speedup | Memory |
+|--------|---------|-----------------|--------|
+| x86_64 server | AVX-512 | 8-16x vs scalar | Same |
+| x86_64 laptop | AVX2 | 4-8x vs scalar | Same |
+| Apple Silicon | NEON | 4-8x vs scalar | Same |
+| GPU (discrete) | wgpu | 2-10x for matmul | +VRAM |
+| WASM browser | SIMD128 | 2-4x vs scalar | Same |
+
+**Zero Configuration Required**:
+
+The "just works" guarantee means:
+1. No `--enable-simd` flags needed
+2. No runtime configuration files
+3. No environment variables required
+4. Graceful fallback if features unavailable
+5. Identical results across all backends (bit-exact for deterministic ops)
+
+#### 4.16.12 Falsifiable Guarantees
+
+| Behavior | Guarantee |
+|----------|-----------|
+| Self-contained | Binary runs without external model files |
+| Reproducible | `--reproducible` flag produces identical binary for identical inputs |
+| Cross-compile | All listed targets produce working binaries |
+| Size bounds | `--quantize int8` reduces model size by ≥70% |
+| Startup time | Compiled binary starts in <100ms (model already loaded) |
+| Runtime parity | Compiled binary produces identical output to `apr run` |
+| SIMD auto-select | Correct backend selected without user configuration |
+| GPU threshold | GPU only used when beneficial (>500×500 matrices) |
+
+#### 4.16.13 References
+
+[6] **Go static binaries** - "Go programs compile to a single binary with no external dependencies."
+    https://go.dev/doc/install/source
+    Key influence: Zero-dependency deployment philosophy
+
+[7] **GraalVM Native Image** - "Ahead-of-time compilation for Java applications."
+    https://www.graalvm.org/native-image/
+    Key influence: AOT compilation for instant startup
+
+[8] **wasm-tools** - "Low-level tooling for WebAssembly."
+    https://github.com/bytecodealliance/wasm-tools
+    Key influence: WASM component model, composability
+
+[9] **esbuild** - "An extremely fast bundler for the web."
+    https://esbuild.github.io/
+    Key influence: Tree-shaking, dead code elimination, size optimization
+
+[10] **trueno** - "Multi-target high-performance compute library."
+    https://github.com/paiml/trueno
+    Key influence: Runtime SIMD auto-selection (AVX-512/AVX2/NEON/WASM), GPU dispatch via wgpu,
+    "just works" acceleration with zero configuration
 
 ---
 

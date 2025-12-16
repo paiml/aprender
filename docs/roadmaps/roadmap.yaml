@@ -1299,3 +1299,19 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: Implement apr-cli TUI command
+  github_issue: null
+  item_type: task
+  title: 'New task: Implement apr-cli TUI command'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2025-12-16T10:23:26.469253952+00:00
+  updated: 2025-12-16T10:23:26.469253952+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

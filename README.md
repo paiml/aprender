@@ -175,6 +175,8 @@ cargo install apr-cli
 
 | Command | Description |
 |---------|-------------|
+| `apr run` | Run model directly (auto-download, cache, execute) |
+| `apr compile` | Build standalone executable with embedded model |
 | `apr inspect` | Inspect model metadata, vocab, and structure |
 | `apr debug` | Simple debugging output ("drama" mode available) |
 | `apr validate` | Validate model integrity and quality |
@@ -194,6 +196,12 @@ cargo install apr-cli
 ### Quick Examples
 
 ```bash
+# Run model directly (auto-downloads if needed)
+apr run hf://openai/whisper-tiny --input audio.wav
+
+# Build standalone executable with embedded model
+apr compile whisper.apr --quantize int8 -o whisper-cli
+
 # Validate model integrity
 apr validate model.apr --quality
 

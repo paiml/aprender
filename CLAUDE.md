@@ -395,6 +395,8 @@ The `apr` CLI provides comprehensive model operations. Located in `crates/apr-cl
 
 | Command | Description | Implementation |
 |---------|-------------|----------------|
+| `run` | Run model directly (auto-download, cache, execute) | `commands/run.rs` (planned) |
+| `compile` | Build standalone executable with embedded model | `commands/compile.rs` (planned) |
 | `inspect` | Inspect model metadata, vocab, structure | `commands/inspect.rs` (329 lines) |
 | `debug` | Simple debugging output, "drama" mode | `commands/debug.rs` (322 lines) |
 | `validate` | Validate model integrity and quality | `commands/validate.rs` (166 lines) |
@@ -442,6 +444,14 @@ apr_import(&source, "whisper.apr", ImportOptions::default())?;
 ### CLI Usage Examples
 
 ```bash
+# Run model directly (auto-downloads if needed)
+apr run hf://openai/whisper-tiny --input audio.wav
+apr run whisper.apr < audio.wav > transcript.txt
+
+# Build standalone executable with embedded model
+apr compile whisper.apr --quantize int8 -o whisper-cli
+apr compile whisper.apr --target wasm32-unknown-unknown -o whisper.wasm
+
 # Validate model integrity
 apr validate model.apr --quality
 

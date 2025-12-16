@@ -46,8 +46,13 @@ chrono = { version = "0.4", default-features = false, features = ["std", "clock"
 # Human-readable sizes
 humansize = "2.1"
 
+# TUI
+ratatui = { version = "0.29", default-features = true }
+crossterm = "0.28"
+
 [dev-dependencies]
 assert_cmd = "2.0"
 predicates = "3.1"
 tempfile = "3.14"
 proptest = "1.6"
+jugar-probar = { version = "0.3", features = ["tui"] }
