@@ -230,7 +230,7 @@ dependencies = [
 name = "apr-cli"
 version = "0.1.0"
 dependencies = [
- "aprender 0.19.0",
+ "aprender 0.19.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "assert_cmd",
  "axum",
  "chrono",
@@ -345,6 +345,29 @@ dependencies = [
  "tempfile",
  "trueno 0.8.8",
  "x25519-dalek",
+ "zstd",
+]
+
+[[package]]
+name = "aprender"
+version = "0.19.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c996d5e1fba70e6cfe1909831e3ffb10e24434c647a86b1b085a784db3302c1c"
+dependencies = [
+ "bincode",
+ "dirs 6.0.0",
+ "getrandom 0.2.16",
+ "half",
+ "hf-hub",
+ "memmap2",
+ "rand 0.8.5",
+ "rand_chacha 0.3.1",
+ "rayon",
+ "rmp-serde",
+ "safetensors 0.4.5",
+ "serde",
+ "serde_json",
+ "trueno 0.8.8",
  "zstd",
 ]
 
@@ -4447,7 +4470,9 @@ dependencies = [
 
 [[package]]
 name = "realizar"
-version = "0.2.3"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9219059acd02f6494e79af7565f94f939e78a7ee6c813d6c3658bf1aa791e228"
 dependencies = [
  "anyhow",
  "aprender 0.14.1",
