@@ -80,6 +80,8 @@ pub mod citl;
 pub mod classification;
 pub mod cluster;
 pub mod code;
+/// Compute infrastructure integration (trueno 0.8.7+)
+pub mod compute;
 pub mod data;
 pub mod decomposition;
 /// Data embedding with test data and tiny model representations (spec §4)

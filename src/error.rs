@@ -102,6 +102,12 @@ pub enum AprenderError {
         /// Error details
         message: String,
     },
+
+    /// Poka-yoke validation failed (APR-POKA-001 - Jidoka gate).
+    ValidationError {
+        /// Validation failure message
+        message: String,
+    },
 }
 
 impl fmt::Display for AprenderError {
@@ -165,6 +171,9 @@ impl fmt::Display for AprenderError {
             }
             AprenderError::DecryptionFailed { message } => {
                 write!(f, "Decryption failed: {message}")
+            }
+            AprenderError::ValidationError { message } => {
+                write!(f, "Validation failed: {message}")
             }
         }
     }

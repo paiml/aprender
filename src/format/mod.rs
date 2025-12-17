@@ -103,6 +103,11 @@ pub use validation::{
     AprHeader, AprValidator, Category, CheckStatus, TensorStats, ValidationCheck, ValidationReport,
 };
 
+// Re-export Poka-yoke types (APR-POKA-001 - Toyota Way mistake-proofing)
+#[allow(deprecated)]
+pub use validation::no_validation_result;
+pub use validation::{fail_no_validation_rules, Gate, PokaYoke, PokaYokeResult};
+
 // Re-export converter types (spec §13 - Import/Convert Pipeline)
 pub use converter::{
     apr_convert, apr_export, apr_import, apr_merge, AprConverter, Architecture, ConvertOptions,
@@ -412,6 +417,9 @@ pub struct Header {
     pub compression: Compression,
     /// Feature flags
     pub flags: Flags,
+    /// Quality score (0-100, Poka-yoke validation) - APR-POKA-001
+    /// 0 = no validation (F), 1-59 = failing, 60-100 = passing grades
+    pub quality_score: u8,
 }
 
 impl Header {
@@ -426,6 +434,7 @@ impl Header {
             uncompressed_size: 0,
             compression: Compression::default(),
             flags: Flags::default(),
+            quality_score: 0, // Must be set via PokaYoke validation
         }
     }
 
@@ -459,7 +468,10 @@ impl Header {
         // Flags (21)
         bytes[21] = self.flags.bits();
 
-        // Reserved (22-31) - already zero
+        // Quality score (22) - APR-POKA-001
+        bytes[22] = self.quality_score;
+
+        // Reserved (23-31) - already zero
 
         bytes
     }
@@ -526,6 +538,9 @@ impl Header {
         // Parse flags
         let flags = Flags::from_bits(bytes[21]);
 
+        // Parse quality score (byte 22) - APR-POKA-001
+        let quality_score = bytes[22];
+
         Ok(Self {
             magic,
             version,
@@ -535,6 +550,7 @@ impl Header {
             uncompressed_size,
             compression,
             flags,
+            quality_score,
         })
     }
 }
@@ -740,6 +756,12 @@ pub struct SaveOptions {
     pub compression: Compression,
     /// Additional metadata
     pub metadata: Metadata,
+    /// Quality score from Poka-yoke validation (APR-POKA-001)
+    /// - None: no validation performed (score=0 in file)
+    /// - Some(0): explicit failure - save will be REFUSED (Jidoka)
+    /// - Some(1-59): validation failed but allowed to save
+    /// - Some(60-100): validation passed
+    pub quality_score: Option<u8>,
 }
 
 impl SaveOptions {
@@ -781,6 +803,23 @@ impl SaveOptions {
     /// Set model card (spec §11)
     pub fn with_model_card(mut self, card: ModelCard) -> Self {
         self.metadata.model_card = Some(card);
+        self
+    }
+
+    /// Set quality score from Poka-yoke validation (APR-POKA-001)
+    ///
+    /// # Jidoka (Stop the Line)
+    /// - Score 0 will cause save() to REFUSE the write
+    /// - Score 1-59 allows save with warning
+    /// - Score 60-100 is passing
+    pub fn with_quality_score(mut self, score: u8) -> Self {
+        self.quality_score = Some(score);
+        self
+    }
+
+    /// Set quality score from PokaYokeResult (APR-POKA-001)
+    pub fn with_poka_yoke_result(mut self, result: &PokaYokeResult) -> Self {
+        self.quality_score = Some(result.score);
         self
     }
 }
@@ -1013,6 +1052,16 @@ pub fn save<M: Serialize>(
 ) -> Result<()> {
     let path = path.as_ref();
 
+    // APR-POKA-001: Jidoka gate - refuse to write if validation explicitly failed
+    // Score 0 means "validation rules exist but model failed all of them"
+    if options.quality_score == Some(0) {
+        return Err(AprenderError::ValidationError {
+            message: "Jidoka: Refusing to save model with quality_score=0. \
+                      Fix validation errors or use score=None to skip validation."
+                .to_string(),
+        });
+    }
+
     // Serialize payload with bincode
     let payload_uncompressed = bincode::serialize(model)
         .map_err(|e| AprenderError::Serialization(format!("Failed to serialize model: {e}")))?;
@@ -1037,6 +1086,9 @@ pub fn save<M: Serialize>(
     if options.metadata.license.is_some() {
         header.flags = header.flags.with_licensed();
     }
+
+    // APR-POKA-001: Set quality score in header (0 = no validation performed)
+    header.quality_score = options.quality_score.unwrap_or(0);
 
     // Assemble file content (without checksum)
     let mut content = Vec::new();
@@ -4019,6 +4071,7 @@ mod proptests {
                         uncompressed_size,
                         compression,
                         flags,
+                        quality_score: 0, // APR-POKA-001: default for tests
                     }
                 },
             )

@@ -625,6 +625,364 @@ impl Default for AprValidator {
 }
 
 // ============================================================================
+// POKA-YOKE: Extensible Model Validation (APR-POKA-001)
+// Toyota Way - Mistake-proofing with self-describing quality scores
+// ============================================================================
+
+/// Poka-yoke gate result
+#[derive(Debug, Clone)]
+pub struct Gate {
+    /// Gate name (e.g., "filterbank_present")
+    pub name: &'static str,
+    /// Whether gate passed
+    pub passed: bool,
+    /// Points awarded (0 if failed)
+    pub points: u8,
+    /// Max points possible
+    pub max_points: u8,
+    /// Error message if failed
+    pub error: Option<String>,
+}
+
+impl Gate {
+    /// Create a passing gate
+    #[must_use]
+    pub fn pass(name: &'static str, points: u8) -> Self {
+        Self {
+            name,
+            passed: true,
+            points,
+            max_points: points,
+            error: None,
+        }
+    }
+
+    /// Create a failing gate with actionable error
+    #[must_use]
+    pub fn fail(name: &'static str, max_points: u8, error: impl Into<String>) -> Self {
+        Self {
+            name,
+            passed: false,
+            points: 0,
+            max_points,
+            error: Some(error.into()),
+        }
+    }
+}
+
+/// Poka-yoke validation result
+#[derive(Debug, Clone, Default)]
+pub struct PokaYokeResult {
+    /// All gates evaluated
+    pub gates: Vec<Gate>,
+    /// Total score (0-100)
+    pub score: u8,
+    /// Maximum possible score
+    pub max_score: u8,
+}
+
+impl PokaYokeResult {
+    /// Create empty result
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Create result from a vector of gates (bulk construction)
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use aprender::format::validation::{Gate, PokaYokeResult};
+    ///
+    /// let gates = vec![
+    ///     Gate::pass("check_a", 30),
+    ///     Gate::pass("check_b", 40),
+    ///     Gate::fail("check_c", 30, "Fix: implement check_c"),
+    /// ];
+    /// let result = PokaYokeResult::from_gates(gates);
+    /// assert_eq!(result.score, 70); // 70/100
+    /// assert_eq!(result.grade(), "C");
+    /// ```
+    #[must_use]
+    pub fn from_gates(gates: Vec<Gate>) -> Self {
+        let max_score: u8 = gates
+            .iter()
+            .map(|g| g.max_points)
+            .fold(0u8, u8::saturating_add);
+        let total_points: u16 = gates.iter().map(|g| u16::from(g.points)).sum();
+        let max_points: u16 = gates.iter().map(|g| u16::from(g.max_points)).sum();
+        let score = if max_points > 0 {
+            ((total_points * 100) / max_points).min(100) as u8
+        } else {
+            0
+        };
+        Self {
+            gates,
+            score,
+            max_score,
+        }
+    }
+
+    /// Add a gate result
+    pub fn add_gate(&mut self, gate: Gate) {
+        self.max_score = self.max_score.saturating_add(gate.max_points);
+        self.gates.push(gate);
+        self.recalculate_score();
+    }
+
+    /// Recalculate score from gates
+    fn recalculate_score(&mut self) {
+        let total_points: u16 = self.gates.iter().map(|g| u16::from(g.points)).sum();
+        let max_points: u16 = self.gates.iter().map(|g| u16::from(g.max_points)).sum();
+        self.score = if max_points > 0 {
+            ((total_points * 100) / max_points).min(100) as u8
+        } else {
+            0
+        };
+    }
+
+    /// Get letter grade
+    #[must_use]
+    pub fn grade(&self) -> &'static str {
+        match self.score {
+            95..=100 => "A+",
+            90..=94 => "A",
+            85..=89 => "B+",
+            80..=84 => "B",
+            75..=79 => "C+",
+            70..=74 => "C",
+            60..=69 => "D",
+            _ => "F",
+        }
+    }
+
+    /// Check if validation passed (score >= 60)
+    #[must_use]
+    pub fn passed(&self) -> bool {
+        self.score >= 60
+    }
+
+    /// Get all failed gates
+    #[must_use]
+    pub fn failed_gates(&self) -> Vec<&Gate> {
+        self.gates.iter().filter(|g| !g.passed).collect()
+    }
+
+    /// Get actionable error summary
+    #[must_use]
+    pub fn error_summary(&self) -> String {
+        let errors: Vec<String> = self
+            .failed_gates()
+            .iter()
+            .filter_map(|g| g.error.as_ref().map(|e| format!("- {}: {}", g.name, e)))
+            .collect();
+        if errors.is_empty() {
+            String::new()
+        } else {
+            format!("Poka-yoke validation failed:\n{}", errors.join("\n"))
+        }
+    }
+}
+
+/// Extensible Poka-yoke validation trait (implement per model type)
+///
+/// # Example
+///
+/// ```rust,ignore
+/// impl PokaYoke for WhisperModel {
+///     fn validate(&self) -> PokaYokeResult {
+///         let mut result = PokaYokeResult::new();
+///
+///         // Gate 1: Filterbank must be embedded
+///         if self.has_filterbank() {
+///             result.add_gate(Gate::pass("filterbank_present", 20));
+///         } else {
+///             result.add_gate(Gate::fail("filterbank_present", 20,
+///                 "Fix: Embed Slaney-normalized filterbank via MelFilterbankData::mel_80()"));
+///         }
+///
+///         // Gate 2: Filterbank must be Slaney-normalized
+///         if let Some(fb) = self.filterbank() {
+///             let max = fb.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+///             if max < 0.1 {
+///                 result.add_gate(Gate::pass("filterbank_normalized", 30));
+///             } else {
+///                 result.add_gate(Gate::fail("filterbank_normalized", 30,
+///                     format!("Fix: Apply 2.0/bandwidth normalization (max={max:.4}, expected <0.1)")));
+///             }
+///         }
+///
+///         result
+///     }
+/// }
+/// ```
+pub trait PokaYoke {
+    /// Validate model and return quality score (0-100)
+    fn poka_yoke_validate(&self) -> PokaYokeResult;
+
+    /// Get quality score (convenience method)
+    fn quality_score(&self) -> u8 {
+        self.poka_yoke_validate().score
+    }
+}
+
+/// Create a failing result for models without PokaYoke implementation.
+///
+/// Use this when saving models that don't implement the trait.
+/// Returns a result with score=0 and a single failing gate.
+///
+/// # Example
+///
+/// ```rust
+/// use aprender::format::validation::fail_no_validation_rules;
+///
+/// let result = fail_no_validation_rules();
+/// assert_eq!(result.score, 0);
+/// assert_eq!(result.grade(), "F");
+/// assert!(!result.passed());
+/// ```
+#[must_use]
+pub fn fail_no_validation_rules() -> PokaYokeResult {
+    let mut result = PokaYokeResult::new();
+    result.add_gate(Gate::fail(
+        "no_validation_rules",
+        100,
+        "Fix: Implement PokaYoke trait for this model type",
+    ));
+    result
+}
+
+/// Alias for backwards compatibility
+#[deprecated(since = "0.19.0", note = "Use fail_no_validation_rules() instead")]
+#[must_use]
+pub fn no_validation_result() -> PokaYokeResult {
+    fail_no_validation_rules()
+}
+
+// ============================================================================
+// Poka-yoke Tests (APR-POKA-001)
+// ============================================================================
+
+#[cfg(test)]
+mod tests_poka_yoke {
+    use super::*;
+
+    #[test]
+    fn test_gate_pass() {
+        let gate = Gate::pass("test", 10);
+        assert!(gate.passed);
+        assert_eq!(gate.points, 10);
+        assert!(gate.error.is_none());
+    }
+
+    #[test]
+    fn test_gate_fail() {
+        let gate = Gate::fail("test", 10, "Fix: do something");
+        assert!(!gate.passed);
+        assert_eq!(gate.points, 0);
+        assert!(gate.error.is_some());
+        assert!(gate.error.unwrap().contains("Fix:"));
+    }
+
+    #[test]
+    fn test_result_score_calculation() {
+        let mut result = PokaYokeResult::new();
+        result.add_gate(Gate::pass("a", 50));
+        result.add_gate(Gate::fail("b", 50, "error"));
+        assert_eq!(result.score, 50);
+        assert_eq!(result.grade(), "F");
+    }
+
+    #[test]
+    fn test_result_all_pass() {
+        let mut result = PokaYokeResult::new();
+        result.add_gate(Gate::pass("a", 50));
+        result.add_gate(Gate::pass("b", 50));
+        assert_eq!(result.score, 100);
+        assert_eq!(result.grade(), "A+");
+        assert!(result.passed());
+    }
+
+    #[test]
+    fn test_result_error_summary() {
+        let mut result = PokaYokeResult::new();
+        result.add_gate(Gate::fail("gate1", 50, "Fix: action1"));
+        result.add_gate(Gate::fail("gate2", 50, "Fix: action2"));
+        let summary = result.error_summary();
+        assert!(summary.contains("gate1"));
+        assert!(summary.contains("action1"));
+        assert!(summary.contains("gate2"));
+    }
+
+    #[test]
+    fn test_grade_boundaries() {
+        let grades = [
+            (100, "A+"),
+            (95, "A+"),
+            (94, "A"),
+            (90, "A"),
+            (89, "B+"),
+            (85, "B+"),
+            (84, "B"),
+            (80, "B"),
+            (79, "C+"),
+            (75, "C+"),
+            (74, "C"),
+            (70, "C"),
+            (69, "D"),
+            (60, "D"),
+            (59, "F"),
+            (0, "F"),
+        ];
+        for (score, expected_grade) in grades {
+            let mut result = PokaYokeResult::new();
+            // Hack to set score directly for testing
+            result.score = score;
+            assert_eq!(result.grade(), expected_grade, "score {score}");
+        }
+    }
+
+    #[test]
+    fn test_from_gates_bulk_construction() {
+        let gates = vec![
+            Gate::pass("check_a", 30),
+            Gate::pass("check_b", 40),
+            Gate::fail("check_c", 30, "Fix: implement check_c"),
+        ];
+        let result = PokaYokeResult::from_gates(gates);
+        assert_eq!(result.score, 70); // 70/100
+        assert_eq!(result.max_score, 100);
+        assert_eq!(result.grade(), "C");
+        assert!(result.passed());
+        assert_eq!(result.gates.len(), 3);
+    }
+
+    #[test]
+    fn test_from_gates_empty() {
+        let result = PokaYokeResult::from_gates(vec![]);
+        assert_eq!(result.score, 0);
+        assert_eq!(result.max_score, 0);
+        assert_eq!(result.grade(), "F");
+    }
+
+    #[test]
+    fn test_fail_no_validation_rules() {
+        let result = fail_no_validation_rules();
+        assert_eq!(result.score, 0);
+        assert_eq!(result.grade(), "F");
+        assert!(!result.passed());
+        assert_eq!(result.gates.len(), 1);
+        assert_eq!(result.gates[0].name, "no_validation_rules");
+        assert!(result.gates[0]
+            .error
+            .as_ref()
+            .unwrap()
+            .contains("Implement PokaYoke"));
+    }
+}
+
+// ============================================================================
 // SECTION A: Format & Structural Integrity (25 Points) - TESTS FIRST
 // ============================================================================
 
