@@ -36,3 +36,28 @@ MAKE010
 # While "Recursive Make Considered Harmful" is valid for large projects,
 # our use case is simple delegation to a fallback target.
 MAKE012
+
+# SC2006/SC2046/SC2092/SC2099: Backtick-related warnings
+# Justification: These are false positives in heredocs with quoted delimiters
+# (<< 'EOF'). Backticks inside such heredocs are literal markdown code blocks,
+# not command substitutions. bashrs incorrectly parses heredoc content.
+SC2006
+SC2046
+SC2092
+SC2099
+
+# SC2140: Word is split between quotes
+# Justification: False positive for valid quote nesting like:
+# echo '{"json":"content"}' > "$VAR/file.json"
+# The single-quoted JSON and double-quoted path are correctly quoted.
+SC2140
+
+# SC2035: Use ./* so names with dashes won't become options
+# Justification: False positive when patterns are quoted arguments to find -name.
+# In `find -name '*.json'`, the pattern is passed to find, not the shell.
+SC2035
+
+# SC2062: Quote the grep pattern
+# Justification: False positive when regex patterns are already single-quoted.
+# In `grep -qE '^[0-9]+\.[0-9]+$'`, the pattern is already quoted.
+SC2062

@@ -6,7 +6,7 @@
 #
 # Usage: ./scripts/capture_golden_traces.sh
 
-set -e
+set -euo pipefail
 
 # Colors for output
 GREEN='\033[0;32m'
