@@ -66,6 +66,9 @@
 //! - [`online`]: Online learning and dynamic retraining infrastructure
 
 pub mod active_learning;
+/// Audio I/O and signal processing (mel spectrogram, resampling, capture)
+#[cfg(feature = "audio")]
+pub mod audio;
 pub mod autograd;
 pub mod automl;
 pub mod bayesian;
