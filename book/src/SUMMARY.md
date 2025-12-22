@@ -105,6 +105,7 @@
 
 - [Compiler-in-the-Loop Learning](./ml-fundamentals/compiler-in-the-loop.md)
 - [Online Learning Theory](./ml-fundamentals/online-learning.md)
+- [Neuro-Symbolic Reasoning Theory](./ml-fundamentals/neuro-symbolic.md)
 
 ## Preprocessing
 
@@ -235,6 +236,7 @@
 - [Case Study: Probar TUI Testing](./examples/probar-tui-testing.md)
 - [Case Study: Pipeline Verification](./examples/pipeline-verification.md)
 - [Case Study: State Machine Playbooks](./examples/state-machine-playbooks.md)
+- [Case Study: TensorLogic Neuro-Symbolic Reasoning](./examples/tensorlogic-reasoning.md)
 
 # Sprint-Based Development
 
