@@ -111,6 +111,10 @@
 
 - [Feature Scaling Theory](./ml-fundamentals/feature-scaling.md)
 
+## Audio Processing
+
+- [Audio Processing Theory](./ml-fundamentals/audio-processing.md)
+
 ## Graph Algorithms
 
 - [Graph Algorithms Theory](./ml-fundamentals/graph-algorithms.md)
@@ -237,6 +241,7 @@
 - [Case Study: Pipeline Verification](./examples/pipeline-verification.md)
 - [Case Study: State Machine Playbooks](./examples/state-machine-playbooks.md)
 - [Case Study: TensorLogic Neuro-Symbolic Reasoning](./examples/tensorlogic-reasoning.md)
+- [Case Study: Audio Mel Spectrogram Processing](./examples/audio-mel-spectrogram.md)
 
 # Sprint-Based Development
 
