@@ -394,6 +394,67 @@ impl std::fmt::Display for ImportError {
 
 impl std::error::Error for ImportError {}
 
+impl From<ImportError> for AprenderError {
+    fn from(err: ImportError) -> Self {
+        AprenderError::FormatError {
+            message: err.to_string(),
+        }
+    }
+}
+
+/// Parse error message to detect specific error types (GH-129)
+#[cfg(feature = "hf-hub-integration")]
+fn parse_import_error(error_msg: &str, resource: &str) -> ImportError {
+    let msg_lower = error_msg.to_lowercase();
+
+    // Check for 404 / not found
+    if msg_lower.contains("404")
+        || msg_lower.contains("not found")
+        || msg_lower.contains("does not exist")
+        || msg_lower.contains("no such")
+    {
+        return ImportError::NotFound {
+            resource: resource.to_string(),
+            status: 404,
+        };
+    }
+
+    // Check for authentication / 401 / 403
+    if msg_lower.contains("401")
+        || msg_lower.contains("403")
+        || msg_lower.contains("unauthorized")
+        || msg_lower.contains("forbidden")
+        || msg_lower.contains("gated")
+        || msg_lower.contains("access denied")
+    {
+        return ImportError::AuthRequired {
+            resource: resource.to_string(),
+        };
+    }
+
+    // Check for rate limiting / 429
+    if msg_lower.contains("429")
+        || msg_lower.contains("rate limit")
+        || msg_lower.contains("too many requests")
+    {
+        // Try to extract retry-after
+        let retry_after = if let Some(pos) = msg_lower.find("retry") {
+            msg_lower[pos..]
+                .split_whitespace()
+                .find_map(|s| s.parse::<u64>().ok())
+        } else {
+            None
+        };
+        return ImportError::RateLimited { retry_after };
+    }
+
+    // Default to download failed
+    ImportError::DownloadFailed {
+        source: resource.to_string(),
+        reason: error_msg.to_string(),
+    }
+}
+
 // ============================================================================
 // GH-127: Sharded Model Support
 // ============================================================================
@@ -702,9 +763,12 @@ fn resolve_source(source: &Source, cache: bool) -> Result<PathBuf> {
     match source {
         Source::Local(path) => {
             if !path.exists() {
-                return Err(AprenderError::FormatError {
-                    message: format!("Source file not found: {}", path.display()),
-                });
+                // GH-129: Use ImportError for actionable message
+                let err = ImportError::NotFound {
+                    resource: path.display().to_string(),
+                    status: 0, // Local file, not HTTP
+                };
+                return Err(AprenderError::from(err));
             }
             Ok(path.clone())
         }
@@ -840,16 +904,20 @@ fn download_from_hf(repo_id: &str, filename: &str) -> Result<PathBuf> {
         builder = builder.with_token(Some(t));
     }
 
-    let api = builder.build().map_err(|e| AprenderError::FormatError {
-        message: format!("Failed to initialize HF Hub API: {e}"),
+    let api = builder.build().map_err(|e| {
+        let resource = format!("{repo_id}/{filename}");
+        let err = parse_import_error(&e.to_string(), &resource);
+        AprenderError::from(err)
     })?;
 
     // Get repo handle
     let repo = api.model(repo_id.to_string());
 
-    // Download the file
-    let path = repo.get(filename).map_err(|e| AprenderError::FormatError {
-        message: format!("Failed to download {filename} from {repo_id}: {e}"),
+    // Download the file (GH-129: parse error for actionable messages)
+    let path = repo.get(filename).map_err(|e| {
+        let resource = format!("{repo_id}/{filename}");
+        let err = parse_import_error(&e.to_string(), &resource);
+        AprenderError::from(err)
     })?;
 
     Ok(path)
@@ -2801,5 +2869,121 @@ mod tests_import_errors {
         let msg = err.to_string();
         assert!(msg.contains("14"), "Should include size");
         assert!(msg.contains("7"), "Should include shard count");
+    }
+
+    // GH-129: Tests for parse_import_error (only when hf-hub-integration enabled)
+    #[cfg(feature = "hf-hub-integration")]
+    #[test]
+    fn test_parse_import_error_404() {
+        let err = parse_import_error(
+            "HTTP 404: Repository not found",
+            "openai/whisper-tiny",
+        );
+        match err {
+            ImportError::NotFound { resource, status } => {
+                assert_eq!(resource, "openai/whisper-tiny");
+                assert_eq!(status, 404);
+            }
+            _ => panic!("Expected NotFound error, got {:?}", err),
+        }
+    }
+
+    #[cfg(feature = "hf-hub-integration")]
+    #[test]
+    fn test_parse_import_error_not_found_text() {
+        let err = parse_import_error(
+            "The requested resource does not exist",
+            "test/model",
+        );
+        match err {
+            ImportError::NotFound { .. } => {}
+            _ => panic!("Expected NotFound error, got {:?}", err),
+        }
+    }
+
+    #[cfg(feature = "hf-hub-integration")]
+    #[test]
+    fn test_parse_import_error_401() {
+        let err = parse_import_error(
+            "HTTP 401: Unauthorized access",
+            "meta-llama/Llama-2-7b",
+        );
+        match err {
+            ImportError::AuthRequired { resource } => {
+                assert_eq!(resource, "meta-llama/Llama-2-7b");
+            }
+            _ => panic!("Expected AuthRequired error, got {:?}", err),
+        }
+    }
+
+    #[cfg(feature = "hf-hub-integration")]
+    #[test]
+    fn test_parse_import_error_gated_model() {
+        let err = parse_import_error(
+            "This model is gated. Access requires acceptance.",
+            "meta-llama/Llama-2-7b",
+        );
+        match err {
+            ImportError::AuthRequired { .. } => {}
+            _ => panic!("Expected AuthRequired error, got {:?}", err),
+        }
+    }
+
+    #[cfg(feature = "hf-hub-integration")]
+    #[test]
+    fn test_parse_import_error_429() {
+        let err = parse_import_error(
+            "HTTP 429: Too many requests. Retry after 60 seconds.",
+            "test/model",
+        );
+        match err {
+            ImportError::RateLimited { retry_after } => {
+                assert_eq!(retry_after, Some(60));
+            }
+            _ => panic!("Expected RateLimited error, got {:?}", err),
+        }
+    }
+
+    #[cfg(feature = "hf-hub-integration")]
+    #[test]
+    fn test_parse_import_error_rate_limit_no_retry() {
+        let err = parse_import_error(
+            "Rate limit exceeded",
+            "test/model",
+        );
+        match err {
+            ImportError::RateLimited { retry_after } => {
+                assert_eq!(retry_after, None);
+            }
+            _ => panic!("Expected RateLimited error, got {:?}", err),
+        }
+    }
+
+    #[cfg(feature = "hf-hub-integration")]
+    #[test]
+    fn test_parse_import_error_generic() {
+        let err = parse_import_error(
+            "Connection timeout",
+            "test/model",
+        );
+        match err {
+            ImportError::DownloadFailed { source, reason } => {
+                assert_eq!(source, "test/model");
+                assert_eq!(reason, "Connection timeout");
+            }
+            _ => panic!("Expected DownloadFailed error, got {:?}", err),
+        }
+    }
+
+    #[test]
+    fn test_import_error_from_conversion() {
+        let import_err = ImportError::NotFound {
+            resource: "test".to_string(),
+            status: 404,
+        };
+        let aprender_err: AprenderError = import_err.into();
+        let msg = aprender_err.to_string();
+        assert!(msg.contains("404"));
+        assert!(msg.contains("test"));
     }
 }

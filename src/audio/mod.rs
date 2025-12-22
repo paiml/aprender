@@ -49,8 +49,12 @@ pub mod codec;
 pub mod stream;
 
 // Re-exports for convenience
-pub use capture::{AudioCapture, AudioDevice, CaptureConfig};
-pub use mel::{MelConfig, MelFilterbank};
+pub use capture::{
+    AudioCapture, AudioDevice, BufferCaptureSource, CaptureConfig, MockCaptureSource, MockSignal,
+};
+pub use mel::{
+    detect_clipping, has_nan, validate_audio, ClippingReport, MelConfig, MelFilterbank,
+};
 pub use resample::resample;
 
 use thiserror::Error;

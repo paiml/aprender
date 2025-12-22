@@ -214,6 +214,262 @@ impl AudioCapture {
 }
 
 // ============================================================================
+// GH-130: Mock Audio Capture Source
+// ============================================================================
+
+/// Signal type for mock audio generation
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum MockSignal {
+    /// Silence (all zeros)
+    #[default]
+    Silence,
+    /// Sine wave at given frequency
+    Sine { frequency: f32, amplitude: f32 },
+    /// White noise with given amplitude
+    WhiteNoise { amplitude: f32 },
+    /// Impulse (single sample at 1.0, rest zeros)
+    Impulse,
+    /// Square wave at given frequency
+    Square { frequency: f32, amplitude: f32 },
+}
+
+/// Mock audio capture source for testing (GH-130)
+///
+/// Generates deterministic test signals without requiring real audio hardware.
+/// Useful for:
+/// - Unit testing audio pipelines
+/// - Integration testing without microphone
+/// - Benchmarking audio processing code
+///
+/// # Example
+///
+/// ```rust
+/// use aprender::audio::capture::{MockCaptureSource, MockSignal, CaptureConfig};
+///
+/// let config = CaptureConfig::default();
+/// let mut mock = MockCaptureSource::new(config, MockSignal::Sine {
+///     frequency: 440.0,
+///     amplitude: 0.5,
+/// });
+///
+/// let mut buffer = vec![0.0f32; 160];
+/// let n = mock.read(&mut buffer).unwrap();
+/// assert_eq!(n, 160);
+/// assert!(buffer[0].abs() <= 0.5); // Amplitude bounded
+/// ```
+#[derive(Debug)]
+pub struct MockCaptureSource {
+    config: CaptureConfig,
+    signal: MockSignal,
+    sample_index: u64,
+    /// Random state for white noise (LCG)
+    rng_state: u64,
+}
+
+impl MockCaptureSource {
+    /// Create a new mock capture source
+    ///
+    /// # Arguments
+    /// * `config` - Audio configuration (sample rate determines signal timing)
+    /// * `signal` - Type of signal to generate
+    #[must_use]
+    pub fn new(config: CaptureConfig, signal: MockSignal) -> Self {
+        Self {
+            config,
+            signal,
+            sample_index: 0,
+            rng_state: 0x5DEECE66D, // LCG seed
+        }
+    }
+
+    /// Create with silence signal
+    #[must_use]
+    pub fn silence(config: CaptureConfig) -> Self {
+        Self::new(config, MockSignal::Silence)
+    }
+
+    /// Create with 440Hz sine wave (A4 note)
+    #[must_use]
+    pub fn a440(config: CaptureConfig) -> Self {
+        Self::new(
+            config,
+            MockSignal::Sine {
+                frequency: 440.0,
+                amplitude: 0.5,
+            },
+        )
+    }
+
+    /// Create with white noise
+    #[must_use]
+    pub fn white_noise(config: CaptureConfig, amplitude: f32) -> Self {
+        Self::new(config, MockSignal::WhiteNoise { amplitude })
+    }
+
+    /// Read samples into buffer
+    ///
+    /// # Arguments
+    /// * `buffer` - Output buffer for samples
+    ///
+    /// # Returns
+    /// Number of samples written (always fills the buffer)
+    pub fn read(&mut self, buffer: &mut [f32]) -> Result<usize, AudioError> {
+        let sample_rate = f64::from(self.config.sample_rate);
+
+        for sample in buffer.iter_mut() {
+            *sample = self.generate_sample(sample_rate);
+            self.sample_index += 1;
+        }
+
+        Ok(buffer.len())
+    }
+
+    /// Generate a single sample based on signal type
+    fn generate_sample(&mut self, sample_rate: f64) -> f32 {
+        let t = self.sample_index as f64 / sample_rate;
+
+        match self.signal {
+            MockSignal::Silence => 0.0,
+
+            MockSignal::Sine {
+                frequency,
+                amplitude,
+            } => {
+                let phase = 2.0 * std::f64::consts::PI * f64::from(frequency) * t;
+                (phase.sin() * f64::from(amplitude)) as f32
+            }
+
+            MockSignal::WhiteNoise { amplitude } => {
+                // Linear congruential generator for deterministic "random" noise
+                self.rng_state = self.rng_state.wrapping_mul(0x5DEECE66D).wrapping_add(11);
+                // Take upper 32 bits and normalize to [0, 1]
+                let upper_bits = (self.rng_state >> 32) as u32;
+                let normalized = f64::from(upper_bits) / f64::from(u32::MAX);
+                ((normalized * 2.0 - 1.0) * f64::from(amplitude)) as f32
+            }
+
+            MockSignal::Impulse => {
+                if self.sample_index == 0 {
+                    1.0
+                } else {
+                    0.0
+                }
+            }
+
+            MockSignal::Square {
+                frequency,
+                amplitude,
+            } => {
+                let phase = 2.0 * std::f64::consts::PI * f64::from(frequency) * t;
+                let value = if phase.sin() >= 0.0 { 1.0 } else { -1.0 };
+                value * f64::from(amplitude) as f32
+            }
+        }
+    }
+
+    /// Reset the sample counter to start from beginning
+    pub fn reset(&mut self) {
+        self.sample_index = 0;
+        self.rng_state = 0x5DEECE66D; // Reset RNG seed
+    }
+
+    /// Get current sample position
+    #[must_use]
+    pub fn position(&self) -> u64 {
+        self.sample_index
+    }
+
+    /// Get configuration
+    #[must_use]
+    pub fn config(&self) -> &CaptureConfig {
+        &self.config
+    }
+
+    /// Get signal type
+    #[must_use]
+    pub fn signal(&self) -> MockSignal {
+        self.signal
+    }
+
+    /// Change signal type
+    pub fn set_signal(&mut self, signal: MockSignal) {
+        self.signal = signal;
+    }
+}
+
+/// Mock capture source that reads from a pre-recorded buffer
+///
+/// Useful for testing with specific audio content.
+#[derive(Debug)]
+pub struct BufferCaptureSource {
+    samples: Vec<f32>,
+    position: usize,
+    loop_playback: bool,
+}
+
+impl BufferCaptureSource {
+    /// Create from a sample buffer
+    #[must_use]
+    pub fn new(samples: Vec<f32>) -> Self {
+        Self {
+            samples,
+            position: 0,
+            loop_playback: false,
+        }
+    }
+
+    /// Enable looping (replay from start when buffer exhausted)
+    #[must_use]
+    pub fn with_loop(mut self, loop_playback: bool) -> Self {
+        self.loop_playback = loop_playback;
+        self
+    }
+
+    /// Read samples into buffer
+    ///
+    /// # Returns
+    /// Number of samples read (may be less than buffer size if not looping)
+    pub fn read(&mut self, buffer: &mut [f32]) -> Result<usize, AudioError> {
+        if self.samples.is_empty() {
+            return Ok(0);
+        }
+
+        let mut written = 0;
+        for sample in buffer.iter_mut() {
+            if self.position >= self.samples.len() {
+                if self.loop_playback {
+                    self.position = 0;
+                } else {
+                    break;
+                }
+            }
+            *sample = self.samples[self.position];
+            self.position += 1;
+            written += 1;
+        }
+
+        Ok(written)
+    }
+
+    /// Reset position to start
+    pub fn reset(&mut self) {
+        self.position = 0;
+    }
+
+    /// Get current position
+    #[must_use]
+    pub fn position(&self) -> usize {
+        self.position
+    }
+
+    /// Check if exhausted (for non-looping sources)
+    #[must_use]
+    pub fn is_exhausted(&self) -> bool {
+        !self.loop_playback && self.position >= self.samples.len()
+    }
+}
+
+// ============================================================================
 // Tests
 // ============================================================================
 
@@ -275,5 +531,251 @@ mod tests {
         let config = CaptureConfig::default();
         let result = AudioCapture::open(None, &config);
         assert!(result.is_err());
+    }
+
+    // GH-130: Mock capture source tests
+
+    #[test]
+    fn test_mock_signal_default() {
+        let signal = MockSignal::default();
+        assert_eq!(signal, MockSignal::Silence);
+    }
+
+    #[test]
+    fn test_mock_capture_silence() {
+        let config = CaptureConfig::default();
+        let mut mock = MockCaptureSource::silence(config);
+
+        let mut buffer = vec![0.5f32; 100]; // Non-zero initial values
+        let n = mock.read(&mut buffer).expect("read should succeed");
+
+        assert_eq!(n, 100);
+        for sample in &buffer {
+            assert_eq!(*sample, 0.0, "Silence should produce zeros");
+        }
+    }
+
+    #[test]
+    fn test_mock_capture_sine_bounded() {
+        let config = CaptureConfig::default();
+        let mut mock = MockCaptureSource::new(
+            config,
+            MockSignal::Sine {
+                frequency: 440.0,
+                amplitude: 0.8,
+            },
+        );
+
+        let mut buffer = vec![0.0f32; 1000];
+        mock.read(&mut buffer).expect("read should succeed");
+
+        // All samples should be within amplitude bounds
+        for sample in &buffer {
+            assert!(
+                sample.abs() <= 0.8 + 1e-6,
+                "Sample {} exceeds amplitude 0.8",
+                sample
+            );
+        }
+
+        // Sine wave should have non-zero samples (not all silence)
+        let non_zero_count = buffer.iter().filter(|s| s.abs() > 1e-6).count();
+        assert!(non_zero_count > 0, "Sine wave should produce non-zero samples");
+    }
+
+    #[test]
+    fn test_mock_capture_sine_deterministic() {
+        let config = CaptureConfig::default();
+        let mut mock1 = MockCaptureSource::a440(config.clone());
+        let mut mock2 = MockCaptureSource::a440(config);
+
+        let mut buffer1 = vec![0.0f32; 100];
+        let mut buffer2 = vec![0.0f32; 100];
+
+        mock1.read(&mut buffer1).expect("read should succeed");
+        mock2.read(&mut buffer2).expect("read should succeed");
+
+        // Same configuration should produce identical output
+        for (s1, s2) in buffer1.iter().zip(buffer2.iter()) {
+            assert!(
+                (s1 - s2).abs() < 1e-6,
+                "Deterministic signal should be reproducible"
+            );
+        }
+    }
+
+    #[test]
+    fn test_mock_capture_white_noise_bounded() {
+        let config = CaptureConfig::default();
+        let mut mock = MockCaptureSource::white_noise(config, 0.5);
+
+        let mut buffer = vec![0.0f32; 1000];
+        mock.read(&mut buffer).expect("read should succeed");
+
+        // All samples should be within bounds
+        for sample in &buffer {
+            assert!(
+                sample.abs() <= 0.5 + 0.01,
+                "Noise sample {} exceeds amplitude 0.5",
+                sample
+            );
+        }
+
+        // Should have variance (not all same value)
+        let mean: f32 = buffer.iter().sum::<f32>() / buffer.len() as f32;
+        let variance: f32 = buffer.iter().map(|s| (s - mean).powi(2)).sum::<f32>() / buffer.len() as f32;
+        assert!(variance > 0.001, "White noise should have variance, got {}", variance);
+    }
+
+    #[test]
+    fn test_mock_capture_impulse() {
+        let config = CaptureConfig::default();
+        let mut mock = MockCaptureSource::new(config, MockSignal::Impulse);
+
+        let mut buffer = vec![0.0f32; 100];
+        mock.read(&mut buffer).expect("read should succeed");
+
+        // First sample should be 1.0, rest should be 0.0
+        assert_eq!(buffer[0], 1.0, "First sample should be impulse");
+        for sample in &buffer[1..] {
+            assert_eq!(*sample, 0.0, "Non-first samples should be zero");
+        }
+    }
+
+    #[test]
+    fn test_mock_capture_square_wave() {
+        let config = CaptureConfig::default();
+        let mut mock = MockCaptureSource::new(
+            config,
+            MockSignal::Square {
+                frequency: 100.0,
+                amplitude: 1.0,
+            },
+        );
+
+        let mut buffer = vec![0.0f32; 320]; // Multiple cycles at 16kHz
+        mock.read(&mut buffer).expect("read should succeed");
+
+        // Square wave should only have +1 or -1 values
+        for sample in &buffer {
+            assert!(
+                (*sample - 1.0).abs() < 1e-6 || (*sample + 1.0).abs() < 1e-6,
+                "Square wave sample {} should be ±1",
+                sample
+            );
+        }
+    }
+
+    #[test]
+    fn test_mock_capture_reset() {
+        let config = CaptureConfig::default();
+        let mut mock = MockCaptureSource::a440(config);
+
+        let mut buffer1 = vec![0.0f32; 100];
+        let mut buffer2 = vec![0.0f32; 100];
+
+        mock.read(&mut buffer1).expect("read should succeed");
+        mock.reset();
+        mock.read(&mut buffer2).expect("read should succeed");
+
+        // After reset, should produce same output
+        for (s1, s2) in buffer1.iter().zip(buffer2.iter()) {
+            assert!(
+                (s1 - s2).abs() < 1e-6,
+                "Reset should restart signal from beginning"
+            );
+        }
+    }
+
+    #[test]
+    fn test_mock_capture_position() {
+        let config = CaptureConfig::default();
+        let mut mock = MockCaptureSource::silence(config);
+
+        assert_eq!(mock.position(), 0);
+
+        let mut buffer = vec![0.0f32; 100];
+        mock.read(&mut buffer).expect("read should succeed");
+
+        assert_eq!(mock.position(), 100);
+
+        mock.reset();
+        assert_eq!(mock.position(), 0);
+    }
+
+    #[test]
+    fn test_mock_capture_set_signal() {
+        let config = CaptureConfig::default();
+        let mut mock = MockCaptureSource::silence(config);
+
+        assert_eq!(mock.signal(), MockSignal::Silence);
+
+        mock.set_signal(MockSignal::Impulse);
+        assert_eq!(mock.signal(), MockSignal::Impulse);
+    }
+
+    #[test]
+    fn test_buffer_capture_source_basic() {
+        let samples = vec![0.1, 0.2, 0.3, 0.4, 0.5];
+        let mut source = BufferCaptureSource::new(samples);
+
+        let mut buffer = vec![0.0f32; 3];
+        let n = source.read(&mut buffer).expect("read should succeed");
+
+        assert_eq!(n, 3);
+        assert_eq!(buffer, vec![0.1, 0.2, 0.3]);
+        assert_eq!(source.position(), 3);
+    }
+
+    #[test]
+    fn test_buffer_capture_source_exhausted() {
+        let samples = vec![0.1, 0.2, 0.3];
+        let mut source = BufferCaptureSource::new(samples);
+
+        let mut buffer = vec![0.0f32; 5];
+        let n = source.read(&mut buffer).expect("read should succeed");
+
+        // Only 3 samples available
+        assert_eq!(n, 3);
+        assert!(source.is_exhausted());
+    }
+
+    #[test]
+    fn test_buffer_capture_source_loop() {
+        let samples = vec![0.1, 0.2, 0.3];
+        let mut source = BufferCaptureSource::new(samples).with_loop(true);
+
+        let mut buffer = vec![0.0f32; 7];
+        let n = source.read(&mut buffer).expect("read should succeed");
+
+        assert_eq!(n, 7);
+        // Should loop: [0.1, 0.2, 0.3, 0.1, 0.2, 0.3, 0.1]
+        assert!((buffer[0] - 0.1).abs() < 1e-6);
+        assert!((buffer[3] - 0.1).abs() < 1e-6);
+        assert!((buffer[6] - 0.1).abs() < 1e-6);
+        assert!(!source.is_exhausted());
+    }
+
+    #[test]
+    fn test_buffer_capture_source_empty() {
+        let mut source = BufferCaptureSource::new(vec![]);
+
+        let mut buffer = vec![0.0f32; 10];
+        let n = source.read(&mut buffer).expect("read should succeed");
+
+        assert_eq!(n, 0);
+    }
+
+    #[test]
+    fn test_buffer_capture_source_reset() {
+        let samples = vec![0.1, 0.2, 0.3];
+        let mut source = BufferCaptureSource::new(samples);
+
+        let mut buffer = vec![0.0f32; 2];
+        source.read(&mut buffer).expect("read should succeed");
+        assert_eq!(source.position(), 2);
+
+        source.reset();
+        assert_eq!(source.position(), 0);
     }
 }

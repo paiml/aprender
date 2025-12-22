@@ -32,6 +32,156 @@
 use super::{AudioError, AudioResult};
 use std::f32::consts::PI;
 
+// ============================================================================
+// A11: Audio Clipping Detection
+// ============================================================================
+
+/// Result of audio clipping detection
+#[derive(Debug, Clone, PartialEq)]
+pub struct ClippingReport {
+    /// Number of samples that exceed +1.0
+    pub positive_clipped: usize,
+    /// Number of samples that exceed -1.0
+    pub negative_clipped: usize,
+    /// Maximum sample value found
+    pub max_value: f32,
+    /// Minimum sample value found
+    pub min_value: f32,
+    /// Total number of samples analyzed
+    pub total_samples: usize,
+    /// Whether clipping was detected
+    pub has_clipping: bool,
+}
+
+impl ClippingReport {
+    /// Percentage of samples that are clipped
+    #[must_use]
+    pub fn clipping_percentage(&self) -> f32 {
+        if self.total_samples == 0 {
+            return 0.0;
+        }
+        let clipped = self.positive_clipped + self.negative_clipped;
+        (clipped as f32 / self.total_samples as f32) * 100.0
+    }
+}
+
+/// Detect audio clipping in samples (A11)
+///
+/// Audio samples should be normalized to the range [-1.0, 1.0].
+/// Samples outside this range indicate clipping or improper normalization.
+///
+/// # Arguments
+/// * `samples` - Audio samples to analyze
+///
+/// # Returns
+/// Report containing clipping statistics
+///
+/// # Example
+///
+/// ```rust
+/// use aprender::audio::mel::detect_clipping;
+///
+/// let samples = vec![0.5, 0.8, 1.2, -0.3, -1.5];
+/// let report = detect_clipping(&samples);
+/// assert!(report.has_clipping);
+/// assert_eq!(report.positive_clipped, 1);
+/// assert_eq!(report.negative_clipped, 1);
+/// ```
+#[must_use]
+pub fn detect_clipping(samples: &[f32]) -> ClippingReport {
+    if samples.is_empty() {
+        return ClippingReport {
+            positive_clipped: 0,
+            negative_clipped: 0,
+            max_value: 0.0,
+            min_value: 0.0,
+            total_samples: 0,
+            has_clipping: false,
+        };
+    }
+
+    let mut positive_clipped = 0_usize;
+    let mut negative_clipped = 0_usize;
+    let mut max_value = f32::NEG_INFINITY;
+    let mut min_value = f32::INFINITY;
+
+    for &sample in samples {
+        if sample > max_value {
+            max_value = sample;
+        }
+        if sample < min_value {
+            min_value = sample;
+        }
+        if sample > 1.0 {
+            positive_clipped += 1;
+        } else if sample < -1.0 {
+            negative_clipped += 1;
+        }
+    }
+
+    let has_clipping = positive_clipped > 0 || negative_clipped > 0;
+
+    ClippingReport {
+        positive_clipped,
+        negative_clipped,
+        max_value,
+        min_value,
+        total_samples: samples.len(),
+        has_clipping,
+    }
+}
+
+/// Check if any sample contains NaN (A14)
+///
+/// # Arguments
+/// * `samples` - Audio samples to check
+///
+/// # Returns
+/// True if any sample is NaN
+#[must_use]
+pub fn has_nan(samples: &[f32]) -> bool {
+    samples.iter().any(|s| s.is_nan())
+}
+
+/// Validate audio samples for common issues
+///
+/// Checks for:
+/// - Clipping (samples outside [-1.0, 1.0])
+/// - NaN values
+/// - Empty audio
+///
+/// # Arguments
+/// * `samples` - Audio samples to validate
+///
+/// # Returns
+/// Ok(()) if audio is valid, Err with description otherwise
+pub fn validate_audio(samples: &[f32]) -> AudioResult<()> {
+    if samples.is_empty() {
+        return Err(AudioError::InvalidParameters(
+            "Audio cannot be empty".to_string(),
+        ));
+    }
+
+    if has_nan(samples) {
+        return Err(AudioError::InvalidParameters(
+            "Audio contains NaN values".to_string(),
+        ));
+    }
+
+    let report = detect_clipping(samples);
+    if report.has_clipping {
+        return Err(AudioError::InvalidParameters(format!(
+            "Audio clipping detected: {} samples exceed ±1.0 (max={:.3}, min={:.3}). \
+             Normalize audio to [-1.0, 1.0] range.",
+            report.positive_clipped + report.negative_clipped,
+            report.max_value,
+            report.min_value
+        )));
+    }
+
+    Ok(())
+}
+
 /// Configuration for mel spectrogram computation
 #[derive(Debug, Clone)]
 pub struct MelConfig {
@@ -747,5 +897,128 @@ mod tests {
                 "Zero input should give zero output"
             );
         }
+    }
+
+    // ============================================================
+    // A11: Audio Clipping Detection Tests
+    // ============================================================
+
+    #[test]
+    fn test_detect_clipping_no_clipping() {
+        let samples = vec![0.0, 0.5, -0.5, 0.99, -0.99];
+        let report = detect_clipping(&samples);
+        assert!(!report.has_clipping);
+        assert_eq!(report.positive_clipped, 0);
+        assert_eq!(report.negative_clipped, 0);
+        assert!((report.max_value - 0.99).abs() < 1e-6);
+        assert!((report.min_value - (-0.99)).abs() < 1e-6);
+        assert_eq!(report.total_samples, 5);
+    }
+
+    #[test]
+    fn test_detect_clipping_positive() {
+        let samples = vec![0.5, 1.5, 0.8, 2.0, 0.9];
+        let report = detect_clipping(&samples);
+        assert!(report.has_clipping);
+        assert_eq!(report.positive_clipped, 2);
+        assert_eq!(report.negative_clipped, 0);
+        assert!((report.max_value - 2.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_detect_clipping_negative() {
+        let samples = vec![-0.5, -1.5, -0.8, -2.0, -0.9];
+        let report = detect_clipping(&samples);
+        assert!(report.has_clipping);
+        assert_eq!(report.positive_clipped, 0);
+        assert_eq!(report.negative_clipped, 2);
+        assert!((report.min_value - (-2.0)).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_detect_clipping_both() {
+        let samples = vec![1.5, -1.5, 0.5, 2.0, -2.0];
+        let report = detect_clipping(&samples);
+        assert!(report.has_clipping);
+        assert_eq!(report.positive_clipped, 2);
+        assert_eq!(report.negative_clipped, 2);
+    }
+
+    #[test]
+    fn test_detect_clipping_empty() {
+        let samples: Vec<f32> = vec![];
+        let report = detect_clipping(&samples);
+        assert!(!report.has_clipping);
+        assert_eq!(report.total_samples, 0);
+        assert!((report.clipping_percentage() - 0.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_detect_clipping_exactly_one() {
+        let samples = vec![1.0, -1.0, 0.5];
+        let report = detect_clipping(&samples);
+        // Exactly 1.0 and -1.0 should NOT be clipped
+        assert!(!report.has_clipping);
+        assert_eq!(report.positive_clipped, 0);
+        assert_eq!(report.negative_clipped, 0);
+    }
+
+    #[test]
+    fn test_clipping_percentage() {
+        let samples = vec![1.5, -1.5, 0.5, 0.3, 0.2];
+        let report = detect_clipping(&samples);
+        // 2 out of 5 = 40%
+        assert!((report.clipping_percentage() - 40.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_has_nan_false() {
+        let samples = vec![0.0, 0.5, -0.5, 1.0, -1.0];
+        assert!(!has_nan(&samples));
+    }
+
+    #[test]
+    fn test_has_nan_true() {
+        let samples = vec![0.0, 0.5, f32::NAN, 1.0];
+        assert!(has_nan(&samples));
+    }
+
+    #[test]
+    fn test_has_nan_empty() {
+        let samples: Vec<f32> = vec![];
+        assert!(!has_nan(&samples));
+    }
+
+    #[test]
+    fn test_validate_audio_valid() {
+        let samples = vec![0.0, 0.5, -0.5, 0.99, -0.99];
+        assert!(validate_audio(&samples).is_ok());
+    }
+
+    #[test]
+    fn test_validate_audio_empty() {
+        let samples: Vec<f32> = vec![];
+        let result = validate_audio(&samples);
+        assert!(result.is_err());
+        let msg = result.err().map(|e| e.to_string()).unwrap_or_default();
+        assert!(msg.contains("empty"), "Error should mention empty: {}", msg);
+    }
+
+    #[test]
+    fn test_validate_audio_nan() {
+        let samples = vec![0.0, f32::NAN, 0.5];
+        let result = validate_audio(&samples);
+        assert!(result.is_err());
+        let msg = result.err().map(|e| e.to_string()).unwrap_or_default();
+        assert!(msg.contains("NaN"), "Error should mention NaN: {}", msg);
+    }
+
+    #[test]
+    fn test_validate_audio_clipping() {
+        let samples = vec![0.0, 1.5, -0.5];
+        let result = validate_audio(&samples);
+        assert!(result.is_err());
+        let msg = result.err().map(|e| e.to_string()).unwrap_or_default();
+        assert!(msg.contains("clipping") || msg.contains("Clipping"), "Error should mention clipping: {}", msg);
     }
 }
