@@ -108,6 +108,8 @@ pub mod interpret;
 pub mod linear_model;
 /// Model loading subsystem with WCET and cryptographic agility (spec §7.1)
 pub mod loading;
+/// TensorLogic: Neuro-symbolic reasoning via tensor operations (Domingos, 2025)
+pub mod logic;
 pub mod loss;
 pub mod metaheuristics;
 pub mod metrics;
