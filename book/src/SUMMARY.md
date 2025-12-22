@@ -106,6 +106,31 @@
 - [Compiler-in-the-Loop Learning](./ml-fundamentals/compiler-in-the-loop.md)
 - [Online Learning Theory](./ml-fundamentals/online-learning.md)
 - [Neuro-Symbolic Reasoning Theory](./ml-fundamentals/neuro-symbolic.md)
+- [Transfer Learning Theory](./ml-fundamentals/transfer-learning.md)
+- [Active Learning Theory](./ml-fundamentals/active-learning.md)
+- [Weak Supervision Theory](./ml-fundamentals/weak-supervision.md)
+
+## Deep Learning
+
+- [Automatic Differentiation Theory](./ml-fundamentals/automatic-differentiation.md)
+- [Graph Neural Networks Theory](./ml-fundamentals/graph-neural-networks.md)
+
+## Simulation and Risk
+
+- [Monte Carlo Simulation Theory](./ml-fundamentals/monte-carlo.md)
+
+## Speech and Voice
+
+- [Speech and Voice Processing Theory](./ml-fundamentals/speech-voice-processing.md)
+
+## Model Quality
+
+- [Probability Calibration Theory](./ml-fundamentals/probability-calibration.md)
+- [Chaos Engineering for ML](./ml-fundamentals/chaos-engineering.md)
+
+## Deployment
+
+- [WebAssembly for ML](./ml-fundamentals/webassembly-ml.md)
 
 ## Preprocessing
 
@@ -242,6 +267,9 @@
 - [Case Study: State Machine Playbooks](./examples/state-machine-playbooks.md)
 - [Case Study: TensorLogic Neuro-Symbolic Reasoning](./examples/tensorlogic-reasoning.md)
 - [Case Study: Audio Mel Spectrogram Processing](./examples/audio-mel-spectrogram.md)
+- [Case Study: Monte Carlo Financial Simulation](./examples/monte-carlo-simulation.md)
+- [Case Study: Automatic Differentiation Training](./examples/autograd-training.md)
+- [Case Study: Graph Neural Networks](./examples/gnn-node-classification.md)
 
 # Sprint-Based Development
 
