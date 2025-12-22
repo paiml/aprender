@@ -36,8 +36,8 @@
 pub mod mel;
 pub mod resample;
 
-// Platform-specific modules (feature-gated)
-#[cfg(feature = "audio-capture")]
+// Platform-specific modules
+// Note: capture provides stubs by default, real backends require platform features
 pub mod capture;
 
 #[cfg(feature = "audio-playback")]
@@ -49,6 +49,7 @@ pub mod codec;
 pub mod stream;
 
 // Re-exports for convenience
+pub use capture::{AudioCapture, AudioDevice, CaptureConfig};
 pub use mel::{MelConfig, MelFilterbank};
 pub use resample::resample;
 
@@ -60,6 +61,18 @@ pub enum AudioError {
     /// Invalid audio parameters
     #[error("Invalid audio parameters: {0}")]
     InvalidParameters(String),
+
+    /// Invalid configuration
+    #[error("Invalid configuration: {0}")]
+    InvalidConfig(String),
+
+    /// Feature not implemented
+    #[error("Not implemented: {0}")]
+    NotImplemented(String),
+
+    /// Capture/playback not running
+    #[error("Audio stream not running")]
+    NotRunning,
 
     /// Audio capture error
     #[error("Audio capture error: {0}")]
@@ -103,7 +116,7 @@ impl DecodedAudio {
     #[must_use]
     pub fn new(samples: Vec<f32>, sample_rate: u32, channels: u8) -> Self {
         let duration_ms = if sample_rate > 0 {
-            (samples.len() as u64 * 1000) / (sample_rate as u64 * channels as u64)
+            (samples.len() as u64 * 1000) / (u64::from(sample_rate) * u64::from(channels))
         } else {
             0
         };

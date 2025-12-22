@@ -60,7 +60,7 @@ impl ChunkConfig {
     #[must_use]
     pub fn chunk_duration_ms(&self) -> u64 {
         if self.sample_rate > 0 {
-            (self.chunk_size as u64 * 1000) / self.sample_rate as u64
+            (self.chunk_size as u64 * 1000) / u64::from(self.sample_rate)
         } else {
             0
         }

@@ -861,6 +861,186 @@ pub fn no_validation_result() -> PokaYokeResult {
 }
 
 // ============================================================================
+// Whisper Model Poka-yoke Validation (APR-POKA-001, D11, D12)
+// Toyota Way: Jidoka - Stop and fix quality issues at the source
+// ============================================================================
+
+/// Whisper model validation context
+///
+/// Provides poka-yoke validation for Whisper ASR models:
+/// - D11: Filterbank must be embedded for mel models
+/// - D12: Filterbank must be Slaney-normalized (max < 0.1)
+///
+/// # Example
+///
+/// ```rust
+/// use aprender::format::validation::WhisperValidation;
+///
+/// // Valid Slaney-normalized filterbank (80 bins x 201 FFT bins)
+/// let filterbank: Vec<f32> = vec![0.05; 80 * 201];
+/// let result = WhisperValidation::validate_filterbank(Some(&filterbank));
+/// assert!(result.passed());
+/// assert_eq!(result.grade(), "A+");
+/// ```
+#[derive(Debug, Clone, Default)]
+pub struct WhisperValidation;
+
+impl WhisperValidation {
+    /// Validate Whisper filterbank (D11: present, D12: Slaney-normalized)
+    ///
+    /// # Arguments
+    /// * `filterbank` - Optional filterbank data (80 mel bins × n_fft bins)
+    ///
+    /// # Returns
+    /// `PokaYokeResult` with gates:
+    /// - `filterbank_present` (50 pts): Filterbank must be embedded
+    /// - `filterbank_normalized` (50 pts): Max value < 0.1 (Slaney normalization)
+    #[must_use]
+    pub fn validate_filterbank(filterbank: Option<&[f32]>) -> PokaYokeResult {
+        let mut gates = Vec::with_capacity(2);
+
+        // D11: Filterbank must be embedded
+        match filterbank {
+            Some(fb) if !fb.is_empty() => {
+                gates.push(Gate::pass("filterbank_present", 50));
+
+                // D12: Filterbank must be Slaney-normalized (max < 0.1)
+                let max_val = fb.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+                if max_val < 0.1 {
+                    gates.push(Gate::pass("filterbank_normalized", 50));
+                } else {
+                    gates.push(Gate::fail(
+                        "filterbank_normalized",
+                        50,
+                        format!(
+                            "Fix: Apply 2.0/bandwidth Slaney normalization (max={max_val:.4}, expected <0.1)"
+                        ),
+                    ));
+                }
+            }
+            _ => {
+                gates.push(Gate::fail(
+                    "filterbank_present",
+                    50,
+                    "Fix: Embed mel filterbank via MelFilterbankData::mel_80()",
+                ));
+                gates.push(Gate::fail(
+                    "filterbank_normalized",
+                    50,
+                    "Fix: Cannot verify normalization - filterbank missing",
+                ));
+            }
+        }
+
+        PokaYokeResult::from_gates(gates)
+    }
+
+    /// Validate encoder/decoder tensor statistics
+    ///
+    /// Checks for common conversion bugs:
+    /// - LayerNorm weights should have mean ≈ 1.0
+    /// - Linear weights should have mean ≈ 0.0
+    /// - No NaN/Inf values
+    #[must_use]
+    pub fn validate_tensor_stats(stats: &[TensorStats]) -> PokaYokeResult {
+        let mut gates = Vec::new();
+
+        // Check for NaN values (catastrophic)
+        let nan_count: usize = stats.iter().map(|s| s.nan_count).sum();
+        if nan_count == 0 {
+            gates.push(Gate::pass("no_nan_values", 30));
+        } else {
+            gates.push(Gate::fail(
+                "no_nan_values",
+                30,
+                format!("Fix: {nan_count} NaN values found - check conversion pipeline"),
+            ));
+        }
+
+        // Check for Inf values (catastrophic)
+        let inf_count: usize = stats.iter().map(|s| s.inf_count).sum();
+        if inf_count == 0 {
+            gates.push(Gate::pass("no_inf_values", 20));
+        } else {
+            gates.push(Gate::fail(
+                "no_inf_values",
+                20,
+                format!("Fix: {inf_count} Inf values found - check overflow in conversion"),
+            ));
+        }
+
+        // Check LayerNorm weights
+        let invalid_ln: Vec<_> = stats
+            .iter()
+            .filter(|s| {
+                (s.name.contains("layer_norm") || s.name.contains("ln_"))
+                    && (s.name.ends_with(".weight") || s.name.ends_with(".gamma"))
+                    && !s.is_valid_layernorm_weight()
+            })
+            .collect();
+
+        if invalid_ln.is_empty() {
+            gates.push(Gate::pass("layernorm_weights_valid", 25));
+        } else {
+            let names: Vec<_> = invalid_ln
+                .iter()
+                .take(3)
+                .map(|s| format!("{} (mean={:.4})", s.name, s.mean))
+                .collect();
+            gates.push(Gate::fail(
+                "layernorm_weights_valid",
+                25,
+                format!(
+                    "Fix: LayerNorm weights should have mean in [0.5, 3.0]: {}",
+                    names.join(", ")
+                ),
+            ));
+        }
+
+        // Check for all-zero tensors (dead weights)
+        let zero_tensors: Vec<_> = stats.iter().filter(|s| !s.is_not_all_zeros()).collect();
+
+        if zero_tensors.is_empty() {
+            gates.push(Gate::pass("no_zero_tensors", 25));
+        } else {
+            let names: Vec<_> = zero_tensors
+                .iter()
+                .take(3)
+                .map(|s| s.name.clone())
+                .collect();
+            gates.push(Gate::fail(
+                "no_zero_tensors",
+                25,
+                format!(
+                    "Fix: All-zero tensors found (dead weights): {}",
+                    names.join(", ")
+                ),
+            ));
+        }
+
+        PokaYokeResult::from_gates(gates)
+    }
+
+    /// Full Whisper model validation
+    ///
+    /// Combines filterbank and tensor validation into single result.
+    #[must_use]
+    pub fn validate_full(
+        filterbank: Option<&[f32]>,
+        tensor_stats: &[TensorStats],
+    ) -> PokaYokeResult {
+        let fb_result = Self::validate_filterbank(filterbank);
+        let tensor_result = Self::validate_tensor_stats(tensor_stats);
+
+        // Combine gates with weighted scoring
+        let mut all_gates = fb_result.gates;
+        all_gates.extend(tensor_result.gates);
+
+        PokaYokeResult::from_gates(all_gates)
+    }
+}
+
+// ============================================================================
 // Poka-yoke Tests (APR-POKA-001)
 // ============================================================================
 
@@ -979,6 +1159,205 @@ mod tests_poka_yoke {
             .as_ref()
             .unwrap()
             .contains("Implement PokaYoke"));
+    }
+}
+
+// ============================================================================
+// Whisper Validation Tests (APR-POKA-001, D11, D12)
+// ============================================================================
+
+#[cfg(test)]
+mod tests_whisper_validation {
+    use super::*;
+
+    // D11: Filterbank must be embedded
+    #[test]
+    fn test_filterbank_present_pass() {
+        let fb: Vec<f32> = vec![0.05; 80 * 201];
+        let result = WhisperValidation::validate_filterbank(Some(&fb));
+        let gate = result.gates.iter().find(|g| g.name == "filterbank_present");
+        assert!(gate.is_some());
+        assert!(
+            gate.unwrap().passed,
+            "Filterbank should be detected as present"
+        );
+    }
+
+    #[test]
+    fn test_filterbank_missing_fail() {
+        let result = WhisperValidation::validate_filterbank(None);
+        let gate = result.gates.iter().find(|g| g.name == "filterbank_present");
+        assert!(gate.is_some());
+        assert!(!gate.unwrap().passed, "Missing filterbank should fail");
+        assert!(gate
+            .unwrap()
+            .error
+            .as_ref()
+            .unwrap()
+            .contains("MelFilterbankData"));
+    }
+
+    #[test]
+    fn test_filterbank_empty_fail() {
+        let fb: Vec<f32> = vec![];
+        let result = WhisperValidation::validate_filterbank(Some(&fb));
+        let gate = result.gates.iter().find(|g| g.name == "filterbank_present");
+        assert!(!gate.unwrap().passed, "Empty filterbank should fail");
+    }
+
+    // D12: Filterbank must be Slaney-normalized (max < 0.1)
+    #[test]
+    fn test_filterbank_normalized_pass() {
+        // Slaney-normalized filterbank has max < 0.1
+        let fb: Vec<f32> = vec![0.05; 80 * 201];
+        let result = WhisperValidation::validate_filterbank(Some(&fb));
+        let gate = result
+            .gates
+            .iter()
+            .find(|g| g.name == "filterbank_normalized");
+        assert!(
+            gate.unwrap().passed,
+            "Slaney-normalized filterbank should pass"
+        );
+    }
+
+    #[test]
+    fn test_filterbank_not_normalized_fail() {
+        // Non-normalized filterbank has max >= 0.1
+        let mut fb: Vec<f32> = vec![0.05; 80 * 201];
+        fb[0] = 1.0; // Bug: unnormalized value
+        let result = WhisperValidation::validate_filterbank(Some(&fb));
+        let gate = result
+            .gates
+            .iter()
+            .find(|g| g.name == "filterbank_normalized");
+        assert!(!gate.unwrap().passed, "Unnormalized filterbank should fail");
+        assert!(gate.unwrap().error.as_ref().unwrap().contains("Slaney"));
+    }
+
+    #[test]
+    fn test_filterbank_boundary_value() {
+        // Exactly 0.1 should fail (must be < 0.1)
+        let fb: Vec<f32> = vec![0.1; 80 * 201];
+        let result = WhisperValidation::validate_filterbank(Some(&fb));
+        let gate = result
+            .gates
+            .iter()
+            .find(|g| g.name == "filterbank_normalized");
+        assert!(
+            !gate.unwrap().passed,
+            "max=0.1 exactly should fail (need < 0.1)"
+        );
+    }
+
+    #[test]
+    fn test_filterbank_full_validation_score() {
+        // Valid filterbank: 100 points
+        let fb: Vec<f32> = vec![0.05; 80 * 201];
+        let result = WhisperValidation::validate_filterbank(Some(&fb));
+        assert_eq!(result.score, 100);
+        assert_eq!(result.grade(), "A+");
+        assert!(result.passed());
+    }
+
+    #[test]
+    fn test_filterbank_missing_score() {
+        // Missing filterbank: 0 points
+        let result = WhisperValidation::validate_filterbank(None);
+        assert_eq!(result.score, 0);
+        assert_eq!(result.grade(), "F");
+        assert!(!result.passed());
+    }
+
+    // Tensor validation tests
+    #[test]
+    fn test_tensor_stats_all_valid() {
+        let stats = vec![
+            TensorStats::compute("encoder.layer_norm.weight", &vec![1.0f32; 384]),
+            TensorStats::compute("decoder.fc1.weight", &vec![0.01f32, -0.01, 0.02, -0.02]),
+        ];
+        let result = WhisperValidation::validate_tensor_stats(&stats);
+        assert!(result.passed());
+        assert!(result.score >= 80);
+    }
+
+    #[test]
+    fn test_tensor_stats_nan_detected() {
+        let stats = vec![TensorStats::compute("broken", &[1.0f32, f32::NAN, 3.0])];
+        let result = WhisperValidation::validate_tensor_stats(&stats);
+        let gate = result.gates.iter().find(|g| g.name == "no_nan_values");
+        assert!(!gate.unwrap().passed, "NaN should be detected");
+    }
+
+    #[test]
+    fn test_tensor_stats_inf_detected() {
+        let stats = vec![TensorStats::compute("broken", &[1.0f32, f32::INFINITY])];
+        let result = WhisperValidation::validate_tensor_stats(&stats);
+        let gate = result.gates.iter().find(|g| g.name == "no_inf_values");
+        assert!(!gate.unwrap().passed, "Inf should be detected");
+    }
+
+    #[test]
+    fn test_tensor_stats_invalid_layernorm() {
+        // LayerNorm weight with mean=11.0 (10x too high - the bug we're catching)
+        let stats = vec![TensorStats::compute(
+            "encoder.layer_norm.weight",
+            &vec![11.0f32; 384],
+        )];
+        let result = WhisperValidation::validate_tensor_stats(&stats);
+        let gate = result
+            .gates
+            .iter()
+            .find(|g| g.name == "layernorm_weights_valid");
+        assert!(!gate.unwrap().passed, "Invalid LayerNorm mean should fail");
+    }
+
+    #[test]
+    fn test_tensor_stats_all_zeros() {
+        let stats = vec![TensorStats::compute("dead_weight", &vec![0.0f32; 100])];
+        let result = WhisperValidation::validate_tensor_stats(&stats);
+        let gate = result.gates.iter().find(|g| g.name == "no_zero_tensors");
+        assert!(!gate.unwrap().passed, "All-zero tensor should fail");
+    }
+
+    // Full validation tests
+    #[test]
+    fn test_full_validation_all_pass() {
+        let fb: Vec<f32> = vec![0.05; 80 * 201];
+        let stats = vec![
+            TensorStats::compute("encoder.layer_norm.weight", &vec![1.0f32; 384]),
+            TensorStats::compute("decoder.fc1.weight", &vec![0.01f32; 100]),
+        ];
+        let result = WhisperValidation::validate_full(Some(&fb), &stats);
+        assert!(result.passed());
+        assert!(result.score >= 90, "Full valid model should score >= 90");
+    }
+
+    #[test]
+    fn test_full_validation_missing_filterbank() {
+        let stats = vec![TensorStats::compute(
+            "encoder.layer_norm.weight",
+            &vec![1.0f32; 384],
+        )];
+        let result = WhisperValidation::validate_full(None, &stats);
+        assert!(
+            result.score < 60,
+            "Missing filterbank should significantly reduce score"
+        );
+    }
+
+    #[test]
+    fn test_actionable_error_messages() {
+        let result = WhisperValidation::validate_filterbank(None);
+        let summary = result.error_summary();
+        assert!(
+            summary.contains("Fix:"),
+            "Error should be actionable with Fix:"
+        );
+        assert!(
+            summary.contains("MelFilterbankData"),
+            "Error should provide solution"
+        );
     }
 }
 

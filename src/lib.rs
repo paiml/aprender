@@ -130,6 +130,8 @@ pub mod regularization;
 /// 100-point model quality scoring system (spec §7)
 pub mod scoring;
 pub mod serialization;
+/// Speech processing: VAD, ASR, TTS, diarization (spec §5, GH-133)
+pub mod speech;
 /// Sovereign AI Stack integration types (spec §9)
 pub mod stack;
 pub mod stats;
@@ -141,6 +143,8 @@ pub mod transfer;
 pub mod tree;
 /// Pipeline verification & visualization system (APR-VERIFY-001)
 pub mod verify;
+/// Voice processing: embeddings, style transfer, cloning (GH-132)
+pub mod voice;
 pub mod weak_supervision;
 /// Model zoo protocol for sharing and discovery (spec §8)
 pub mod zoo;

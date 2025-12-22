@@ -61,8 +61,14 @@ pub mod quantize;
 #[cfg(feature = "format-homomorphic")]
 pub mod homomorphic;
 
+// Weight comparison module (GH-121, HuggingFace/SafeTensors comparison)
+pub mod compare;
+
 // GGUF export module (spec §7.2)
 pub mod gguf;
+
+// Hex dump and data flow visualization (GH-122, Toyota Principle 12: Genchi Genbutsu)
+pub mod hexdump;
 
 // Model card module (spec §11)
 pub mod model_card;

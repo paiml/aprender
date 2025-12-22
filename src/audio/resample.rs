@@ -45,7 +45,7 @@ pub fn resample(audio: &[f32], from_rate: u32, to_rate: u32) -> AudioResult<Vec<
     }
 
     // Calculate output length
-    let ratio = to_rate as f64 / from_rate as f64;
+    let ratio = f64::from(to_rate) / f64::from(from_rate);
     let output_len = (audio.len() as f64 * ratio).ceil() as usize;
 
     if output_len == 0 {

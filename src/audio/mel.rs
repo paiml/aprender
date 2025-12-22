@@ -369,11 +369,12 @@ impl MelFilterbank {
         fft_input
             .iter()
             .take(self.n_freqs)
-            .map(|c| c.norm_sqr())
+            .map(Complex::norm_sqr)
             .collect()
     }
 
     /// Apply Whisper-style normalization
+    #[allow(clippy::unused_self)]
     fn normalize_whisper(&self, mel_spec: &mut [f32]) {
         if mel_spec.is_empty() {
             return;
@@ -452,12 +453,12 @@ impl MelFilterbank {
         let mut mel_energies = vec![0.0_f32; self.config.n_mels];
         let spec_len = power_spec.len().min(self.n_freqs);
 
-        for mel_idx in 0..self.config.n_mels {
+        for (mel_idx, mel_energy) in mel_energies.iter_mut().enumerate() {
             let mut energy = 0.0_f32;
-            for freq_idx in 0..spec_len {
-                energy += self.filters[mel_idx * self.n_freqs + freq_idx] * power_spec[freq_idx];
+            for (freq_idx, &spec_val) in power_spec.iter().take(spec_len).enumerate() {
+                energy += self.filters[mel_idx * self.n_freqs + freq_idx] * spec_val;
             }
-            mel_energies[mel_idx] = energy;
+            *mel_energy = energy;
         }
 
         mel_energies
@@ -741,7 +742,10 @@ mod tests {
         let power_spec = vec![0.0; mel.n_freqs()];
         let result = mel.apply_filterbank(&power_spec);
         for &val in &result {
-            assert!((val - 0.0).abs() < 1e-10, "Zero input should give zero output");
+            assert!(
+                (val - 0.0).abs() < 1e-10,
+                "Zero input should give zero output"
+            );
         }
     }
 }

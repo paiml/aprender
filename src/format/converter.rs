@@ -306,7 +306,7 @@ impl Default for ImportOptions {
 // Import Error
 // ============================================================================
 
-/// Import-specific errors
+/// Import-specific errors (GH-129: actionable error messages)
 #[derive(Debug, Clone)]
 pub enum ImportError {
     /// Download failed
@@ -319,6 +319,14 @@ pub enum ImportError {
     UnknownTensor { source_name: String },
     /// Missing required tensor
     MissingTensor { name: String },
+    /// Resource not found (404)
+    NotFound { resource: String, status: u16 },
+    /// Rate limited by server
+    RateLimited { retry_after: Option<u64> },
+    /// Authentication required (gated model)
+    AuthRequired { resource: String },
+    /// Model requires sharded loading (GH-127)
+    ShardingRequired { model_size: u64, shard_count: usize },
 }
 
 impl std::fmt::Display for ImportError {
@@ -339,11 +347,225 @@ impl std::fmt::Display for ImportError {
             Self::MissingTensor { name } => {
                 write!(f, "Missing required tensor: {name}")
             }
+            // GH-129: Actionable error messages
+            Self::NotFound { resource, status } => {
+                write!(
+                    f,
+                    "Resource not found ({status}): {resource}. \
+                     Fix: verify the model name exists on huggingface.co/models"
+                )
+            }
+            Self::RateLimited { retry_after } => {
+                if let Some(secs) = retry_after {
+                    write!(
+                        f,
+                        "Rate limited by server. Retry after {secs} seconds. \
+                         Fix: wait and retry, or use --cache to avoid re-downloads"
+                    )
+                } else {
+                    write!(
+                        f,
+                        "Rate limited by server. \
+                         Fix: wait a few minutes and retry"
+                    )
+                }
+            }
+            Self::AuthRequired { resource } => {
+                write!(
+                    f,
+                    "Authentication required for {resource}. \
+                     Fix: set HF_TOKEN environment variable with your HuggingFace token"
+                )
+            }
+            Self::ShardingRequired {
+                model_size,
+                shard_count,
+            } => {
+                let size_gb = *model_size as f64 / 1_000_000_000.0;
+                write!(
+                    f,
+                    "Model too large ({size_gb:.1} GB, {shard_count} shards) for single-file loading. \
+                     Fix: use streaming import with --sharded flag"
+                )
+            }
         }
     }
 }
 
 impl std::error::Error for ImportError {}
+
+// ============================================================================
+// GH-127: Sharded Model Support
+// ============================================================================
+
+/// Parsed sharded model index (model.safetensors.index.json)
+///
+/// HuggingFace uses this format for large models split across multiple shards.
+/// Example: Llama-2-7b has 2 shards, Llama-2-70b has 15 shards.
+#[derive(Debug, Clone)]
+pub struct ShardedIndex {
+    /// Map of tensor name → shard filename
+    weight_map: std::collections::HashMap<String, String>,
+    /// Optional total size in bytes
+    total_size: Option<u64>,
+}
+
+impl ShardedIndex {
+    /// Parse a sharded index from JSON string
+    ///
+    /// # Example JSON format
+    /// ```json
+    /// {
+    ///   "metadata": {"total_size": 14000000000},
+    ///   "weight_map": {
+    ///     "model.encoder.weight": "model-00001-of-00002.safetensors",
+    ///     "model.decoder.weight": "model-00002-of-00002.safetensors"
+    ///   }
+    /// }
+    /// ```
+    pub fn parse(json: &str) -> Result<Self> {
+        // Minimal JSON parsing without serde dependency
+        // Look for "weight_map" key and parse the object
+
+        let json = json.trim();
+        if !json.starts_with('{') || !json.ends_with('}') {
+            return Err(AprenderError::FormatError {
+                message: "Invalid JSON: expected object".to_string(),
+            });
+        }
+
+        // Find weight_map section
+        let weight_map_start =
+            json.find("\"weight_map\"")
+                .ok_or_else(|| AprenderError::FormatError {
+                    message: "Missing 'weight_map' key in index.json".to_string(),
+                })?;
+
+        // Parse weight_map object
+        let after_key = &json[weight_map_start + 12..]; // Skip "weight_map"
+        let obj_start = after_key
+            .find('{')
+            .ok_or_else(|| AprenderError::FormatError {
+                message: "Invalid weight_map: expected object".to_string(),
+            })?;
+
+        let obj_content = &after_key[obj_start..];
+        let mut weight_map = std::collections::HashMap::new();
+        let mut depth = 0;
+        let mut obj_end = 0;
+
+        for (i, c) in obj_content.char_indices() {
+            match c {
+                '{' => depth += 1,
+                '}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        obj_end = i;
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        let inner = &obj_content[1..obj_end];
+
+        // Parse key-value pairs: "tensor_name": "shard_file"
+        for pair in inner.split(',') {
+            let pair = pair.trim();
+            if pair.is_empty() {
+                continue;
+            }
+
+            let parts: Vec<&str> = pair.splitn(2, ':').collect();
+            if parts.len() == 2 {
+                let key = parts[0].trim().trim_matches('"');
+                let val = parts[1].trim().trim_matches('"');
+                if !key.is_empty() && !val.is_empty() {
+                    weight_map.insert(key.to_string(), val.to_string());
+                }
+            }
+        }
+
+        // Parse optional total_size from metadata
+        let total_size = json.find("\"total_size\"").and_then(|pos| {
+            let after = &json[pos + 12..];
+            let colon = after.find(':')?;
+            let after_colon = after[colon + 1..].trim_start();
+            let end = after_colon.find(|c: char| !c.is_ascii_digit())?;
+            after_colon[..end].parse::<u64>().ok()
+        });
+
+        Ok(Self {
+            weight_map,
+            total_size,
+        })
+    }
+
+    /// Number of unique shard files
+    #[must_use]
+    pub fn shard_count(&self) -> usize {
+        let unique: std::collections::HashSet<_> = self.weight_map.values().collect();
+        unique.len()
+    }
+
+    /// Number of tensors in the index
+    #[must_use]
+    pub fn tensor_count(&self) -> usize {
+        self.weight_map.len()
+    }
+
+    /// Total model size in bytes (if available)
+    #[must_use]
+    pub fn total_size(&self) -> Option<u64> {
+        self.total_size
+    }
+
+    /// Get the shard file containing a specific tensor
+    #[must_use]
+    pub fn shard_for_tensor(&self, tensor_name: &str) -> Option<&str> {
+        self.weight_map.get(tensor_name).map(String::as_str)
+    }
+
+    /// Get all tensor names in a specific shard
+    #[must_use]
+    pub fn tensors_in_shard(&self, shard_file: &str) -> Vec<&str> {
+        self.weight_map
+            .iter()
+            .filter(|(_, v)| v.as_str() == shard_file)
+            .map(|(k, _)| k.as_str())
+            .collect()
+    }
+
+    /// Get sorted list of shard files
+    #[must_use]
+    pub fn shard_files(&self) -> Vec<&str> {
+        let mut files: Vec<_> = self
+            .weight_map
+            .values()
+            .map(String::as_str)
+            .collect::<std::collections::HashSet<_>>()
+            .into_iter()
+            .collect();
+        files.sort_unstable();
+        files
+    }
+}
+
+/// Detect if a model directory contains a sharded model
+///
+/// Checks for `model.safetensors.index.json` which indicates sharding.
+#[must_use]
+pub fn detect_sharded_model(dir: &Path, base_name: &str) -> Option<PathBuf> {
+    let index_name = format!("{base_name}.index.json");
+    let index_path = dir.join(&index_name);
+
+    if index_path.exists() {
+        Some(index_path)
+    } else {
+        None
+    }
+}
 
 // ============================================================================
 // Converter
@@ -2396,5 +2618,188 @@ mod tests_convert {
         assert!(options.quantize.is_none());
         assert!(options.compress.is_none());
         assert!(options.validate);
+    }
+}
+
+// ============================================================================
+// GH-127: Multi-tensor (sharded) model import tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests_sharded_import {
+    use super::*;
+
+    #[test]
+    fn test_sharded_index_parse_valid() {
+        let json = r#"{
+            "metadata": {"total_size": 1000000},
+            "weight_map": {
+                "encoder.conv1.weight": "model-00001-of-00002.safetensors",
+                "encoder.conv2.weight": "model-00001-of-00002.safetensors",
+                "decoder.fc.weight": "model-00002-of-00002.safetensors"
+            }
+        }"#;
+
+        let index = ShardedIndex::parse(json).expect("Valid index should parse");
+        assert_eq!(index.shard_count(), 2);
+        assert_eq!(index.tensor_count(), 3);
+        assert!(index.total_size().is_some());
+    }
+
+    #[test]
+    fn test_sharded_index_shard_for_tensor() {
+        let json = r#"{
+            "weight_map": {
+                "encoder.weight": "shard-00001.safetensors",
+                "decoder.weight": "shard-00002.safetensors"
+            }
+        }"#;
+
+        let index = ShardedIndex::parse(json).unwrap();
+        assert_eq!(
+            index.shard_for_tensor("encoder.weight"),
+            Some("shard-00001.safetensors")
+        );
+        assert_eq!(
+            index.shard_for_tensor("decoder.weight"),
+            Some("shard-00002.safetensors")
+        );
+        assert_eq!(index.shard_for_tensor("unknown"), None);
+    }
+
+    #[test]
+    fn test_sharded_index_tensors_in_shard() {
+        let json = r#"{
+            "weight_map": {
+                "a": "shard1.safetensors",
+                "b": "shard1.safetensors",
+                "c": "shard2.safetensors"
+            }
+        }"#;
+
+        let index = ShardedIndex::parse(json).unwrap();
+        let shard1_tensors = index.tensors_in_shard("shard1.safetensors");
+        assert_eq!(shard1_tensors.len(), 2);
+        assert!(shard1_tensors.contains(&"a"));
+        assert!(shard1_tensors.contains(&"b"));
+    }
+
+    #[test]
+    fn test_sharded_index_parse_invalid_json() {
+        let result = ShardedIndex::parse("not valid json");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_sharded_index_parse_missing_weight_map() {
+        let result = ShardedIndex::parse(r#"{"metadata": {}}"#);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_detect_sharded_model_index_exists() {
+        // Create a temp dir with index.json
+        let dir = tempfile::tempdir().unwrap();
+        let index_path = dir.path().join("model.safetensors.index.json");
+        fs::write(&index_path, r#"{"weight_map": {"a": "shard.safetensors"}}"#).unwrap();
+
+        let result = detect_sharded_model(dir.path(), "model.safetensors");
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn test_detect_sharded_model_single_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let model_path = dir.path().join("model.safetensors");
+        fs::write(&model_path, &[0u8; 8]).unwrap(); // Minimal file
+
+        let result = detect_sharded_model(dir.path(), "model.safetensors");
+        assert!(result.is_none(), "Single file should not be sharded");
+    }
+
+    #[test]
+    fn test_sharded_index_shard_files_sorted() {
+        let json = r#"{
+            "weight_map": {
+                "a": "model-00002-of-00003.safetensors",
+                "b": "model-00001-of-00003.safetensors",
+                "c": "model-00003-of-00003.safetensors"
+            }
+        }"#;
+
+        let index = ShardedIndex::parse(json).unwrap();
+        let shards = index.shard_files();
+        assert_eq!(shards[0], "model-00001-of-00003.safetensors");
+        assert_eq!(shards[1], "model-00002-of-00003.safetensors");
+        assert_eq!(shards[2], "model-00003-of-00003.safetensors");
+    }
+}
+
+// ============================================================================
+// GH-129: Import error message tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests_import_errors {
+    use super::*;
+
+    #[test]
+    fn test_import_error_not_found_message() {
+        let err = ImportError::NotFound {
+            resource: "openai/whisper-tiny".to_string(),
+            status: 404,
+        };
+        let msg = err.to_string();
+        assert!(msg.contains("404"), "Should include status code");
+        assert!(msg.contains("whisper-tiny"), "Should include resource");
+    }
+
+    #[test]
+    fn test_import_error_rate_limited_message() {
+        let err = ImportError::RateLimited {
+            retry_after: Some(60),
+        };
+        let msg = err.to_string();
+        assert!(
+            msg.to_lowercase().contains("rate"),
+            "Should mention rate limit"
+        );
+        assert!(msg.contains("60"), "Should include retry time");
+    }
+
+    #[test]
+    fn test_import_error_auth_required_message() {
+        let err = ImportError::AuthRequired {
+            resource: "meta-llama/Llama-2-7b".to_string(),
+        };
+        let msg = err.to_string();
+        assert!(msg.contains("HF_TOKEN"), "Should suggest HF_TOKEN");
+        assert!(msg.contains("Llama-2-7b"), "Should include resource");
+    }
+
+    #[test]
+    fn test_import_error_actionable_suggestions() {
+        let err = ImportError::NotFound {
+            resource: "openai/whisper-tiny".to_string(),
+            status: 404,
+        };
+
+        // Error should provide actionable fix
+        let msg = err.to_string();
+        assert!(
+            msg.contains("Fix:") || msg.contains("check") || msg.contains("verify"),
+            "Error should be actionable"
+        );
+    }
+
+    #[test]
+    fn test_import_error_sharding_oom() {
+        let err = ImportError::ShardingRequired {
+            model_size: 14_000_000_000, // 14GB
+            shard_count: 7,
+        };
+        let msg = err.to_string();
+        assert!(msg.contains("14"), "Should include size");
+        assert!(msg.contains("7"), "Should include shard count");
     }
 }
