@@ -1,6 +1,6 @@
 # APR Whisper & Cookbook Support: End of Year 2025 Specification
 
-**Version**: 1.14.0
+**Version**: 1.15.0
 **Status**: Verified (208/210 points, All Sections Complete)
 **Created**: 2025-12-21
 **Updated**: 2025-12-22
@@ -16,12 +16,15 @@ This specification consolidates all open GitHub issues and recent development wo
 **Scope**:
 - 19 open GitHub issues (#80-#133)
 - Recent audio module implementation (32a96e8)
-- APR format v2 and CLI tooling enhancements
+- APR format v2 and CLI tooling enhancements (Fixed in v0.20.1)
 - Speech processing infrastructure (ASR, TTS, VAD)
 - Integration with trueno ecosystem
 - **First-class end-to-end demo support** (Qwen2-0.5B-Instruct reference model)
 - WASM/SIMD browser inference demonstration
 - **TensorLogic neuro-symbolic reasoning** (Domingos, 2025)
+
+**Recent Releases**:
+- **v0.20.1**: Added comprehensive TensorLogic and Audio Processing chapters to the Book; fixed APR v2 native import format.
 
 ---
 
@@ -982,6 +985,11 @@ This specification is not merely a collection of features but a realization of p
 - **N1-N20**: ✅ RESOLVED - Security verification complete. Path traversal fixed. Verified in src/qa/security.rs.
 - **M7-M10**: ✅ RESOLVED - Neuro-symbolic training integration complete. Verified in src/logic/mod.rs tests.
 - **O1-O20**: ✅ RESOLVED - Documentation verification complete. Examples compile and run. Verified in src/qa/docs.rs.
+
+### Resolved Defects (v0.20.1 - Post-QA Polish)
+- **O19/O20**: ✅ COMPLETED - Added "Audio Processing" and "TensorLogic" chapters to the Aprender Book (commits 0e2256d, 1ebe332).
+- **E7/H1**: ✅ FIXED - `apr import` now correctly defaults to APR v2 native format instead of SafeTensors (commit 6a9d0d9).
+- **Release**: v0.20.1 tagged and released to crates.io.
 
 ### Deferred Items (2 points)
 - **C8**: macOS CoreAudio - Deferred (Linux-only target).
