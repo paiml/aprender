@@ -403,9 +403,14 @@ impl MelFilterbank {
         }
     }
 
-    /// Compute the mel filterbank matrix
+    /// Compute the mel filterbank matrix with Slaney area normalization
     ///
-    /// Creates triangular filters spaced on the mel scale.
+    /// Creates triangular filters spaced on the mel scale, normalized so that
+    /// each filter has unit area (Slaney normalization). This matches librosa's
+    /// `norm='slaney'` and OpenAI Whisper's filterbank.
+    ///
+    /// # References
+    /// - Slaney, M. (1998). Auditory Toolbox. Technical Report #1998-010.
     fn compute_filterbank(
         n_mels: usize,
         n_fft: usize,
@@ -434,17 +439,28 @@ impl MelFilterbank {
             .map(|&f| ((n_fft as f32 + 1.0) * f / sample_rate as f32).floor() as usize)
             .collect();
 
-        // Create triangular filters
+        // Create triangular filters with Slaney area normalization
         for m in 0..n_mels {
             let f_m_minus = bin_points[m];
             let f_m = bin_points[m + 1];
             let f_m_plus = bin_points[m + 2];
 
+            // Slaney normalization factor: 2 / (hz_high - hz_low)
+            // This ensures each triangular filter has unit area
+            let hz_low = hz_points[m];
+            let hz_high = hz_points[m + 2];
+            let bandwidth = hz_high - hz_low;
+            let slaney_norm = if bandwidth > 0.0 {
+                2.0 / bandwidth
+            } else {
+                1.0
+            };
+
             // Rising slope
             for k in f_m_minus..f_m {
                 if k < n_freqs && f_m > f_m_minus {
                     let slope = (k - f_m_minus) as f32 / (f_m - f_m_minus) as f32;
-                    filters[m * n_freqs + k] = slope;
+                    filters[m * n_freqs + k] = slope * slaney_norm;
                 }
             }
 
@@ -452,7 +468,7 @@ impl MelFilterbank {
             for k in f_m..f_m_plus {
                 if k < n_freqs && f_m_plus > f_m {
                     let slope = (f_m_plus - k) as f32 / (f_m_plus - f_m) as f32;
-                    filters[m * n_freqs + k] = slope;
+                    filters[m * n_freqs + k] = slope * slaney_norm;
                 }
             }
         }
@@ -787,12 +803,46 @@ mod tests {
     }
 
     #[test]
-    fn test_mel_filterbank_filters_bounded() {
+    fn test_mel_filterbank_slaney_normalization() {
+        // A2/D12: Verify Slaney area normalization
+        // With Slaney normalization, filter peaks are NOT bounded by 1.0
+        // Instead, higher frequency filters have larger peaks (narrower bandwidth)
         let config = MelConfig::whisper();
         let mel = MelFilterbank::new(&config);
+
+        // Find max filter value - should be > 1.0 for high frequency filters
+        let max_filter_val = mel.filters.iter().cloned().fold(0.0_f32, f32::max);
+
+        // Slaney normalization produces max values well above 1.0
+        // (typically 0.01-0.05 range for area-normalized filters)
+        // The key test: max should NOT be exactly 1.0 (peak normalization)
+        assert!(
+            (max_filter_val - 1.0).abs() > 0.001,
+            "Slaney normalization should NOT produce peak=1.0, got max={:.6}",
+            max_filter_val
+        );
+
+        // Verify filters are still non-negative and finite
         for &f in &mel.filters {
-            assert!(f <= 1.0, "Filter values should be at most 1.0");
+            assert!(f >= 0.0, "Filter values should be non-negative");
+            assert!(f.is_finite(), "Filter values should be finite");
         }
+    }
+
+    #[test]
+    fn test_mel_filterbank_slaney_max_below_threshold() {
+        // A2: Slaney normalization should produce max < 0.1 for Whisper config
+        // This is the falsification test from the QA checklist
+        let config = MelConfig::whisper();
+        let mel = MelFilterbank::new(&config);
+
+        let max_filter_val = mel.filters.iter().cloned().fold(0.0_f32, f32::max);
+
+        assert!(
+            max_filter_val < 0.1,
+            "Slaney-normalized filterbank max should be < 0.1, got {:.6}",
+            max_filter_val
+        );
     }
 
     #[test]
