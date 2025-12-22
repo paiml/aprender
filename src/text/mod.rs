@@ -2,6 +2,7 @@
 //!
 //! This module provides text preprocessing tools for Natural Language Processing:
 //! - Tokenization (word-level, character-level)
+//! - BPE tokenization (Byte Pair Encoding for LLMs/speech models)
 //! - Stop words filtering
 //! - Stemming (Porter stemmer)
 //! - Vectorization (Bag of Words, TF-IDF)
@@ -36,6 +37,7 @@
 //! Based on the comprehensive NLP specification:
 //! `docs/specifications/nlp-models-techniques-spec.md`
 
+pub mod bpe;
 pub mod entities;
 pub mod incremental_idf;
 pub mod sentiment;

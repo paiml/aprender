@@ -8,7 +8,7 @@
 //! - [`vad`]: Voice Activity Detection (Silero-style or energy-based)
 //! - [`asr`]: Automatic Speech Recognition primitives
 //! - [`diarization`]: Speaker diarization
-//! - `tts`: Text-to-Speech primitives (planned)
+//! - [`tts`]: Text-to-Speech primitives
 //!
 //! # Example
 //!
@@ -41,11 +41,17 @@
 
 pub mod asr;
 pub mod diarization;
+pub mod tts;
 pub mod vad;
 
 // Re-exports
 pub use asr::{AsrConfig, AsrModel, AsrSession, Segment, Transcription, WordTiming};
 pub use diarization::{DiarizationConfig, DiarizationResult, Speaker, SpeakerSegment};
+pub use tts::{
+    estimate_duration, normalize_text, split_sentences, AlignmentInfo, FastSpeech2Synthesizer,
+    HifiGanVocoder, SpeechSynthesizer, SynthesisRequest, SynthesisResult, TtsConfig,
+    VitsSynthesizer, Vocoder,
+};
 pub use vad::{Vad, VadConfig, VoiceSegment};
 
 /// Speech processing error type

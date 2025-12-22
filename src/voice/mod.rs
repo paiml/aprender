@@ -30,11 +30,33 @@
 //! - All public APIs return `Result<T, E>`
 //! - Real-time safe where noted
 
+pub mod clone;
+pub mod conversion;
 pub mod embedding;
+pub mod isolation;
+pub mod style;
 
 // Re-exports
+pub use clone::{
+    estimate_quality, merge_profiles, verify_same_speaker, CloningConfig, SpeakerEncoder,
+    Sv2TtsSpeakerEncoder, VoiceCloner, VoiceProfile, YourTtsCloner,
+};
+pub use conversion::{
+    convert_f0, conversion_quality, f0_statistics, ratio_to_semitones, semitones_to_ratio,
+    AutoVcConverter, BottleneckType, ConversionMode, ConversionResult, PpgConverter,
+    VoiceConversionConfig, VoiceConverter,
+};
 pub use embedding::{
     cosine_similarity, normalize_embedding, EmbeddingConfig, EmbeddingExtractor, SpeakerEmbedding,
+};
+pub use isolation::{
+    detect_voice_activity, estimate_snr, spectral_entropy, IsolationConfig, IsolationMethod,
+    IsolationResult, NoiseEstimation, NoiseProfile, SpectralSubtractionIsolator, VoiceIsolator,
+    WienerFilterIsolator,
+};
+pub use style::{
+    average_styles, prosody_distance, style_distance, style_from_embedding, timbre_distance,
+    AutoVcTransfer, GstEncoder, StyleConfig, StyleEncoder, StyleTransfer, StyleVector,
 };
 
 /// Voice processing error type

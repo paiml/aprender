@@ -64,6 +64,9 @@ pub mod homomorphic;
 // Weight comparison module (GH-121, HuggingFace/SafeTensors comparison)
 pub mod compare;
 
+// APR v2 format module (GH-119, 64-byte alignment, JSON metadata, sharding)
+pub mod v2;
+
 // GGUF export module (spec §7.2)
 pub mod gguf;
 
@@ -101,6 +104,9 @@ pub mod converter;
 )]
 pub mod lint;
 
+// Sharded model import module (GH-127 - multi-tensor repos, streaming import)
+pub mod sharded;
+
 // Re-export model card types
 pub use model_card::{ModelCard, TrainingDataInfo};
 
@@ -126,6 +132,13 @@ pub use converter::{
 pub use lint::{
     lint_apr_file, lint_model, LintCategory, LintIssue, LintLevel, LintReport, ModelLintInfo,
     TensorLintInfo,
+};
+
+// Re-export sharded import types (GH-127 - multi-tensor repos)
+pub use sharded::{
+    estimate_shard_memory, get_shard_files, is_sharded_model, CacheStats, CachedShard,
+    ImportPhase, ImportProgress, ImportReport, ShardCache, ShardIndex, ShardedImportConfig,
+    ShardedImporter,
 };
 
 // Re-export quantization types when feature is enabled
