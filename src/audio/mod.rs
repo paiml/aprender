@@ -53,7 +53,8 @@ pub use capture::{
     AudioCapture, AudioDevice, BufferCaptureSource, CaptureConfig, MockCaptureSource, MockSignal,
 };
 pub use mel::{
-    detect_clipping, has_nan, validate_audio, ClippingReport, MelConfig, MelFilterbank,
+    detect_clipping, has_inf, has_nan, stereo_to_mono, validate_audio, ClippingReport, MelConfig,
+    MelFilterbank,
 };
 pub use resample::resample;
 

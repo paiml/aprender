@@ -143,12 +143,60 @@ pub fn has_nan(samples: &[f32]) -> bool {
     samples.iter().any(|s| s.is_nan())
 }
 
+/// Check if any sample contains Infinity (A15)
+///
+/// # Arguments
+/// * `samples` - Audio samples to check
+///
+/// # Returns
+/// True if any sample is positive or negative infinity
+#[must_use]
+pub fn has_inf(samples: &[f32]) -> bool {
+    samples.iter().any(|s| s.is_infinite())
+}
+
+/// Convert stereo audio to mono by averaging channels (A12)
+///
+/// # Arguments
+/// * `stereo` - Interleaved stereo samples [L0, R0, L1, R1, ...]
+///
+/// # Returns
+/// Mono samples where each sample is (left + right) / 2
+///
+/// # Example
+///
+/// ```rust
+/// use aprender::audio::mel::stereo_to_mono;
+///
+/// let stereo = vec![0.5, 0.3, 0.6, 0.4];  // 2 stereo frames
+/// let mono = stereo_to_mono(&stereo);
+/// assert_eq!(mono.len(), 2);
+/// assert!((mono[0] - 0.4).abs() < 1e-6);  // (0.5 + 0.3) / 2
+/// ```
+#[must_use]
+pub fn stereo_to_mono(stereo: &[f32]) -> Vec<f32> {
+    if stereo.is_empty() {
+        return Vec::new();
+    }
+    stereo
+        .chunks(2)
+        .map(|chunk| {
+            if chunk.len() == 2 {
+                (chunk[0] + chunk[1]) / 2.0
+            } else {
+                chunk[0] // Handle odd-length arrays (last sample is mono)
+            }
+        })
+        .collect()
+}
+
 /// Validate audio samples for common issues
 ///
 /// Checks for:
 /// - Clipping (samples outside [-1.0, 1.0])
-/// - NaN values
-/// - Empty audio
+/// - NaN values (A14)
+/// - Infinity values (A15)
+/// - Empty audio (A13)
 ///
 /// # Arguments
 /// * `samples` - Audio samples to validate
@@ -165,6 +213,12 @@ pub fn validate_audio(samples: &[f32]) -> AudioResult<()> {
     if has_nan(samples) {
         return Err(AudioError::InvalidParameters(
             "Audio contains NaN values".to_string(),
+        ));
+    }
+
+    if has_inf(samples) {
+        return Err(AudioError::InvalidParameters(
+            "Audio contains Infinity values".to_string(),
         ));
     }
 
@@ -1020,5 +1074,108 @@ mod tests {
         assert!(result.is_err());
         let msg = result.err().map(|e| e.to_string()).unwrap_or_default();
         assert!(msg.contains("clipping") || msg.contains("Clipping"), "Error should mention clipping: {}", msg);
+    }
+
+    // ============================================================
+    // A15: Infinity Detection Tests
+    // ============================================================
+
+    #[test]
+    fn test_has_inf_false() {
+        let samples = vec![0.0, 0.5, -0.5, 1.0, -1.0, f32::MAX, f32::MIN];
+        assert!(!has_inf(&samples));
+    }
+
+    #[test]
+    fn test_has_inf_positive() {
+        let samples = vec![0.0, f32::INFINITY, 0.5];
+        assert!(has_inf(&samples));
+    }
+
+    #[test]
+    fn test_has_inf_negative() {
+        let samples = vec![0.0, f32::NEG_INFINITY, 0.5];
+        assert!(has_inf(&samples));
+    }
+
+    #[test]
+    fn test_has_inf_empty() {
+        let samples: Vec<f32> = vec![];
+        assert!(!has_inf(&samples));
+    }
+
+    #[test]
+    fn test_validate_audio_inf() {
+        let samples = vec![0.0, f32::INFINITY, 0.5];
+        let result = validate_audio(&samples);
+        assert!(result.is_err());
+        let msg = result.err().map(|e| e.to_string()).unwrap_or_default();
+        assert!(msg.contains("Infinity"), "Error should mention Infinity: {}", msg);
+    }
+
+    #[test]
+    fn test_validate_audio_neg_inf() {
+        let samples = vec![0.0, f32::NEG_INFINITY, 0.5];
+        let result = validate_audio(&samples);
+        assert!(result.is_err());
+        let msg = result.err().map(|e| e.to_string()).unwrap_or_default();
+        assert!(msg.contains("Infinity"), "Error should mention Infinity: {}", msg);
+    }
+
+    // ============================================================
+    // A12: Stereo to Mono Conversion Tests
+    // ============================================================
+
+    #[test]
+    fn test_stereo_to_mono_basic() {
+        let stereo = vec![0.5, 0.3, 0.6, 0.4];
+        let mono = stereo_to_mono(&stereo);
+        assert_eq!(mono.len(), 2);
+        assert!((mono[0] - 0.4).abs() < 1e-6, "Expected 0.4, got {}", mono[0]);
+        assert!((mono[1] - 0.5).abs() < 1e-6, "Expected 0.5, got {}", mono[1]);
+    }
+
+    #[test]
+    fn test_stereo_to_mono_identical_channels() {
+        let stereo = vec![0.5, 0.5, 0.3, 0.3, 0.8, 0.8];
+        let mono = stereo_to_mono(&stereo);
+        assert_eq!(mono.len(), 3);
+        assert!((mono[0] - 0.5).abs() < 1e-6);
+        assert!((mono[1] - 0.3).abs() < 1e-6);
+        assert!((mono[2] - 0.8).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_stereo_to_mono_empty() {
+        let stereo: Vec<f32> = vec![];
+        let mono = stereo_to_mono(&stereo);
+        assert!(mono.is_empty());
+    }
+
+    #[test]
+    fn test_stereo_to_mono_single_sample() {
+        let stereo = vec![0.5];
+        let mono = stereo_to_mono(&stereo);
+        assert_eq!(mono.len(), 1);
+        assert!((mono[0] - 0.5).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_stereo_to_mono_opposite_polarity() {
+        // Left = +0.8, Right = -0.8 → average = 0.0
+        let stereo = vec![0.8, -0.8, 0.4, -0.4];
+        let mono = stereo_to_mono(&stereo);
+        assert_eq!(mono.len(), 2);
+        assert!((mono[0] - 0.0).abs() < 1e-6, "Opposite polarity should cancel");
+        assert!((mono[1] - 0.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_stereo_to_mono_preserves_amplitude() {
+        // Both channels at 0.6 → mono should be 0.6
+        let stereo = vec![0.6, 0.6];
+        let mono = stereo_to_mono(&stereo);
+        assert_eq!(mono.len(), 1);
+        assert!((mono[0] - 0.6).abs() < 1e-6, "Equal channels should preserve amplitude");
     }
 }
