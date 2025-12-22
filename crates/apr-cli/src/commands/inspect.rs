@@ -116,7 +116,7 @@ fn read_and_parse_header(reader: &mut BufReader<File>) -> Result<HeaderData, Cli
 
     if !output::is_valid_magic(&header_bytes[0..4]) {
         return Err(CliError::InvalidFormat(format!(
-            "Invalid magic bytes: expected APRN or APR1, got {:?}",
+            "Invalid magic bytes: expected APRN, APR1, or APR2, got {:?}",
             &header_bytes[0..4]
         )));
     }

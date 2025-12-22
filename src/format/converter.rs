@@ -9,11 +9,13 @@
 //! - Quantization and compression
 
 use crate::error::{AprenderError, Result};
+use crate::format::v2::{AprV2Metadata, AprV2Writer};
 use crate::format::validation::{AprValidator, TensorStats, ValidationReport};
 use crate::format::Compression;
 use crate::serialization::safetensors::{extract_tensor, load_safetensors, save_safetensors};
 use std::collections::BTreeMap;
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 // HF Hub integration is used via hf_hub::api::sync::ApiBuilder in download_from_hf()
@@ -1187,17 +1189,48 @@ fn compute_tensor_stats(name: &str, data: &[f32]) -> TensorStats {
     }
 }
 
-/// Write tensors to APR format
+/// Write tensors to native APR v2 format
 fn write_apr_file(
     tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
     output: &Path,
-    _options: &ImportOptions,
+    options: &ImportOptions,
 ) -> Result<()> {
-    // For now, write as SafeTensors format (simpler, still valid)
-    // Full APR format with compression/quantization comes next
-    save_safetensors(output, tensors).map_err(|e| AprenderError::FormatError {
+    // Create metadata with architecture info
+    let mut metadata = AprV2Metadata::default();
+    metadata.model_type = format!("{:?}", options.architecture);
+    metadata.name = Some(output.file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("model")
+        .to_string());
+
+    // Calculate total parameter count
+    let param_count: u64 = tensors.values()
+        .map(|(data, _)| data.len() as u64)
+        .sum();
+    metadata.param_count = param_count;
+
+    // Create APR v2 writer
+    let mut writer = AprV2Writer::new(metadata);
+
+    // Add all tensors
+    for (name, (data, shape)) in tensors {
+        writer.add_f32_tensor(name, shape.clone(), data);
+    }
+
+    // Write to file
+    let bytes = writer.write().map_err(|e| AprenderError::FormatError {
+        message: format!("Failed to serialize APR format: {e}"),
+    })?;
+
+    let mut file = fs::File::create(output).map_err(|e| AprenderError::FormatError {
+        message: format!("Failed to create output file: {e}"),
+    })?;
+
+    file.write_all(&bytes).map_err(|e| AprenderError::FormatError {
         message: format!("Failed to write APR file: {e}"),
-    })
+    })?;
+
+    Ok(())
 }
 
 // ============================================================================

@@ -93,7 +93,7 @@ fn validate_header(reader: &mut BufReader<File>) -> Result<(), CliError> {
 
     if !output::is_valid_magic(&magic) {
         return Err(CliError::InvalidFormat(format!(
-            "Invalid magic bytes: expected APRN or APR1, got {magic:?}"
+            "Invalid magic bytes: expected APRN, APR1, or APR2, got {magic:?}"
         )));
     }
 
