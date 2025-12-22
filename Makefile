@@ -19,7 +19,7 @@ SHELL := /bin/bash
 # Multi-line recipes execute in same shell
 .ONESHELL:
 
-.PHONY: all build test test-fast test-quick test-full lint fmt clean doc book book-build book-serve book-test tier1 tier2 tier3 tier4 coverage coverage-fast profile hooks-install hooks-verify lint-scripts bashrs-score bashrs-lint-makefile chaos-test chaos-test-full chaos-test-lite fuzz bench dev pre-push ci check run-ci run-bench audit deps-validate deny pmat-score pmat-gates quality-report semantic-search examples mutants mutants-fast property-test
+.PHONY: all build test test-fast test-quick test-full lint fmt clean doc book book-build book-serve book-test tier1 tier2 tier3 tier4 coverage coverage-fast profile hooks-install hooks-verify lint-scripts bashrs-score bashrs-lint-makefile chaos-test chaos-test-full chaos-test-lite fuzz bench dev pre-push ci check run-ci run-bench audit deps-validate deny pmat-score pmat-gates quality-report semantic-search examples mutants mutants-fast property-test install-alsa test-alsa test-audio-full
 
 # Default target
 all: tier2
@@ -482,3 +482,60 @@ property-test-extensive: ## Run property tests with maximum coverage (10K cases)
 	@echo "🔬 Running extensive property tests (10K cases per test)..."
 	@PROPTEST_CASES=10000 cargo test --test property_tests -- --test-threads=1
 	@echo "✅ Extensive property tests complete"
+
+# ============================================================================
+# SYSTEM DEPENDENCIES (Native Audio, etc.)
+# ============================================================================
+
+install-alsa: ## Install ALSA development libraries (Linux only)
+	@echo "🔊 Installing ALSA development libraries..."
+	@if [ "$$(uname)" = "Linux" ]; then \
+		if command -v apt-get >/dev/null 2>&1; then \
+			echo "  Detected: Debian/Ubuntu"; \
+			sudo apt-get update && sudo apt-get install -y libasound2-dev; \
+		elif command -v dnf >/dev/null 2>&1; then \
+			echo "  Detected: Fedora/RHEL"; \
+			sudo dnf install -y alsa-lib-devel; \
+		elif command -v pacman >/dev/null 2>&1; then \
+			echo "  Detected: Arch Linux"; \
+			sudo pacman -S --noconfirm alsa-lib; \
+		elif command -v zypper >/dev/null 2>&1; then \
+			echo "  Detected: openSUSE"; \
+			sudo zypper install -y alsa-devel; \
+		else \
+			echo "❌ Unknown package manager. Please install ALSA dev libraries manually:"; \
+			echo "   - Debian/Ubuntu: sudo apt-get install libasound2-dev"; \
+			echo "   - Fedora/RHEL: sudo dnf install alsa-lib-devel"; \
+			echo "   - Arch: sudo pacman -S alsa-lib"; \
+			exit 1; \
+		fi; \
+		echo "✅ ALSA development libraries installed"; \
+	else \
+		echo "⚠️  ALSA is Linux-only. Current OS: $$(uname)"; \
+	fi
+
+test-alsa: ## Run tests with ALSA audio capture feature (Linux only)
+	@echo "🔊 Running tests with audio-alsa feature..."
+	@if [ "$$(uname)" = "Linux" ]; then \
+		if pkg-config --exists alsa 2>/dev/null; then \
+			cargo test --features audio-alsa; \
+		else \
+			echo "❌ ALSA not installed. Run: make install-alsa"; \
+			exit 1; \
+		fi; \
+	else \
+		echo "⚠️  ALSA is Linux-only. Running standard audio tests..."; \
+		cargo test --features audio; \
+	fi
+	@echo "✅ ALSA tests complete"
+
+test-audio-full: ## Run all audio tests including ALSA (if available)
+	@echo "🎵 Running full audio test suite..."
+	@if [ "$$(uname)" = "Linux" ] && pkg-config --exists alsa 2>/dev/null; then \
+		echo "  ALSA available - running with audio-alsa feature"; \
+		cargo test --features audio-alsa audio::; \
+	else \
+		echo "  Running standard audio tests"; \
+		cargo test --features audio audio::; \
+	fi
+	@echo "✅ Audio tests complete"
