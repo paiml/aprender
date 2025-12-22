@@ -16,8 +16,10 @@
 //! ```
 
 pub mod adversarial;
+pub mod docs;
 pub mod fairness;
 pub mod robustness;
+pub mod security;
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
