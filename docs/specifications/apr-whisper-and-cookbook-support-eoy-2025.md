@@ -1,6 +1,6 @@
 # APR Whisper & Cookbook Support: End of Year 2025 Specification
 
-**Version**: 1.7.0
+**Version**: 1.8.0
 **Status**: Verified (98/100)
 **Created**: 2025-12-21
 **Updated**: 2025-12-22
@@ -21,6 +21,7 @@ This specification consolidates all open GitHub issues and recent development wo
 - Integration with trueno ecosystem
 - **First-class end-to-end demo support** (Qwen2-0.5B-Instruct reference model)
 - WASM/SIMD browser inference demonstration
+- **TensorLogic neuro-symbolic reasoning** (Domingos, 2025)
 
 ---
 
@@ -30,17 +31,18 @@ This specification consolidates all open GitHub issues and recent development wo
 2. [Open Issues Analysis](#2-open-issues-analysis)
 3. [Whisper Support Architecture](#3-whisper-support-architecture)
 4. [End-to-End Demo Architecture](#4-end-to-end-demo-architecture)
-5. [Cookbook Features](#5-cookbook-features)
-6. [Infrastructure Requirements](#6-infrastructure-requirements)
-7. [Learnings from llamafile](#7-learnings-from-llamafile)
-8. [Sovereign AI Stack Compliance](#8-sovereign-ai-stack-compliance)
-9. [Implementation Roadmap](#9-implementation-roadmap)
-10. [Peer-Reviewed Citations](#10-peer-reviewed-citations)
-11. [Toyota Way Alignment](#11-toyota-way-alignment)
-12. [100-Point Popperian Falsification QA Checklist](#12-100-point-popperian-falsification-qa-checklist)
-13. [Verification Findings](#13-verification-findings)
-14. [Open Issues Backlog](#14-open-issues-backlog)
-15. [References](#15-references)
+5. [TensorLogic Neuro-Symbolic Reasoning](#5-tensorlogic-neuro-symbolic-reasoning)
+6. [Cookbook Features](#6-cookbook-features)
+7. [Infrastructure Requirements](#7-infrastructure-requirements)
+8. [Learnings from llamafile](#8-learnings-from-llamafile)
+9. [Sovereign AI Stack Compliance](#9-sovereign-ai-stack-compliance)
+10. [Implementation Roadmap](#10-implementation-roadmap)
+11. [Peer-Reviewed Citations](#11-peer-reviewed-citations)
+12. [Toyota Way Alignment](#12-toyota-way-alignment)
+13. [100-Point Popperian Falsification QA Checklist](#13-100-point-popperian-falsification-qa-checklist)
+14. [Verification Findings](#14-verification-findings)
+15. [Open Issues Backlog](#15-open-issues-backlog)
+16. [References](#16-references)
 
 ---
 
@@ -238,7 +240,195 @@ Deploy to CDN → Browser loads WASM + APR → User types prompt → Streaming o
 
 ---
 
-## 12. 100-Point Popperian Falsification QA Checklist
+## 5. TensorLogic Neuro-Symbolic Reasoning
+
+### 5.1 Theoretical Foundation
+
+TensorLogic implements the neuro-symbolic AI paradigm described in Domingos (2025), where neural networks and symbolic reasoning are unified through tensor operations. This addresses the fundamental limitation that pure neural networks lack interpretability and guaranteed correctness, while pure symbolic systems lack learning capability (Marcus, 2020; Garcez et al., 2019).
+
+**Core Insight**: All logical operations (AND, OR, NOT, existential/universal quantification) can be expressed as tensor contractions via Einstein summation, enabling:
+- Differentiable logical inference (backpropagation through reasoning)
+- Dual-mode operation (Boolean for correctness, continuous for learning)
+- Unified representation of facts, rules, and learned knowledge
+
+### 5.2 Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    TensorLogic Architecture                      │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  ┌──────────────┐     ┌──────────────┐     ┌──────────────┐    │
+│  │    Facts     │     │    Rules     │     │   Weights    │    │
+│  │  (Tensors)   │     │  (Einsum)    │     │ (Learnable)  │    │
+│  └──────┬───────┘     └──────┬───────┘     └──────┬───────┘    │
+│         │                    │                    │             │
+│         └────────────────────┼────────────────────┘             │
+│                              ▼                                  │
+│                    ┌─────────────────┐                          │
+│                    │  TensorProgram  │                          │
+│                    │  (nn.Module)    │                          │
+│                    └────────┬────────┘                          │
+│                             │                                   │
+│              ┌──────────────┴──────────────┐                    │
+│              ▼                              ▼                   │
+│    ┌─────────────────┐            ┌─────────────────┐          │
+│    │  Boolean Mode   │            │ Continuous Mode │          │
+│    │  (Guaranteed)   │            │  (Learnable)    │          │
+│    └─────────────────┘            └─────────────────┘          │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 5.3 Logical Operations as Tensor Equations
+
+| Logical Operation | Tensor Equation | Example |
+|-------------------|-----------------|---------|
+| **Join (AND)** | `einsum('ij,jk->ik', A, B)` | `Grandparent = Parent @ Parent` |
+| **Project (∃)** | `max(tensor, dim=d)` / `sum(tensor, dim=d)` | `HasChild(X) = ∃Y: Parent(X,Y)` |
+| **Union (OR)** | `max(A, B)` / `A + B - A*B` | `Ancestor = Parent ∪ Grandparent` |
+| **Negation (NOT)** | `1 - tensor` | `NotParent = ¬Parent` |
+| **Select (WHERE)** | `tensor * condition` | `Parent(X,Y) WHERE Age(X) > 30` |
+
+### 5.4 Dual-Mode Operation
+
+| Mode | Behavior | Use Case | Guarantee |
+|------|----------|----------|-----------|
+| **Boolean** | Hard thresholding (>0.5 → 1) | Audits, compliance, rules | Zero hallucinations |
+| **Continuous** | Fuzzy/probabilistic values | Learning, inference | Differentiable |
+
+**Key Insight** (Domingos, 2025): The same tensor program can run in either mode, enabling training in continuous mode and deployment in Boolean mode for guaranteed correctness.
+
+### 5.5 Integration with Trueno
+
+TensorLogic operations map directly to trueno primitives:
+
+```rust
+// Logical join via trueno einsum
+pub fn logical_join<T: TensorOps>(
+    t1: &Tensor<T>,
+    t2: &Tensor<T>,
+    equation: &str,
+    mode: LogicMode,
+) -> Tensor<T> {
+    let result = trueno::einsum(equation, &[t1, t2]);
+    match mode {
+        LogicMode::Boolean => result.map(|x| if x > 0.5 { 1.0 } else { 0.0 }),
+        LogicMode::Continuous => result,
+    }
+}
+
+// Existential projection
+pub fn logical_project<T: TensorOps>(
+    tensor: &Tensor<T>,
+    dim: usize,
+    mode: LogicMode,
+) -> Tensor<T> {
+    match mode {
+        LogicMode::Boolean => tensor.max(dim),
+        LogicMode::Continuous => tensor.sum(dim),
+    }
+}
+```
+
+### 5.6 Knowledge Representation
+
+**Embedding Space**: Objects and relations as learned vectors/matrices (Bordes et al., 2013):
+
+```
+score(subject, relation, object) = subject^T × W_relation × object
+```
+
+**RESCAL Factorization** (Nickel et al., 2011): Tensor decomposition for predicate invention:
+
+```
+X_k ≈ A × R_k × A^T
+```
+
+Where:
+- `X_k` is the adjacency tensor for relation k
+- `A` contains entity embeddings
+- `R_k` is the relation-specific core tensor
+
+### 5.7 Attention as Tensor Logic
+
+Transformers can be expressed as tensor logic programs (Domingos, 2025):
+
+```
+// Attention scores
+scores = einsum('bhid,bhjd->bhij', Q, K) / sqrt(d)
+
+// Attention weights (Boolean: argmax, Continuous: softmax)
+weights = mode == Boolean ? one_hot(argmax(scores)) : softmax(scores)
+
+// Apply attention
+output = einsum('bhij,bhjd->bhid', weights, V)
+```
+
+This enables:
+- **Interpretable attention**: Boolean mode shows exactly which tokens attend to which
+- **Constrained attention**: Knowledge graph masks can restrict attention patterns
+- **Hybrid reasoning**: Combine learned attention with symbolic constraints
+
+### 5.8 Peer-Reviewed Citations for TensorLogic
+
+| Citation | Relevance | Key Finding |
+|----------|-----------|-------------|
+| **(Domingos, 2025)** | TensorLogic foundation | Unifies neural and symbolic via tensor equations |
+| **(Marcus, 2020)** | Neuro-symbolic motivation | Pure neural networks lack systematic generalization |
+| **(Garcez et al., 2019)** | Neural-symbolic survey | Integration approaches and benchmarks |
+| **(Bordes et al., 2013)** | TransE embeddings | Knowledge graph embeddings via translation |
+| **(Nickel et al., 2011)** | RESCAL factorization | Tensor factorization for relational learning |
+| **(Yang et al., 2017)** | DistMult/ComplEx | Bilinear models for knowledge completion |
+| **(Trouillon et al., 2016)** | ComplEx | Complex embeddings for asymmetric relations |
+| **(Rocktäschel & Riedel, 2017)** | End-to-end differentiable proving | Neural theorem proving |
+| **(Evans & Grefenstette, 2018)** | Learning explanatory rules | Differentiable Inductive Logic Programming |
+| **(Serafini & Garcez, 2016)** | Logic Tensor Networks | First-order logic with tensor networks |
+| **(Manhaeve et al., 2018)** | DeepProbLog | Neural probabilistic logic programming |
+| **(De Raedt et al., 2020)** | Neuro-symbolic AI survey | From neural to neuro-symbolic AI |
+
+### 5.9 Implementation Roadmap
+
+| Phase | Component | Priority | Dependency |
+|-------|-----------|----------|------------|
+| **P1** | `logic::ops` - Einsum-based logical ops | P0 | trueno |
+| **P2** | `logic::program` - TensorProgram abstraction | P0 | logic::ops |
+| **P3** | `logic::embed` - Embedding space reasoning | P1 | logic::program |
+| **P4** | `logic::composer` - Multi-hop composition | P1 | logic::embed |
+| **P5** | `logic::invention` - RESCAL predicate invention | P2 | logic::embed |
+| **P6** | Boolean attention for transformers | P2 | logic::ops |
+
+### 5.10 Falsifiable Claims (Popperian Criteria)
+
+| Claim | Falsification Condition |
+|-------|------------------------|
+| Boolean mode produces no hallucinations | Output contains value not derivable from facts/rules |
+| Einsum operations match symbolic inference | Logical_join(Parent, Parent) ≠ Grandparent |
+| RESCAL discovers hidden predicates | Invented predicates have zero predictive value |
+| Continuous mode is differentiable | Gradient computation fails or returns NaN |
+| Attention as tensor logic is equivalent | Boolean attention differs from standard softmax on test cases |
+| Trueno integration achieves SIMD speedup | Logic ops slower than naive implementation |
+
+---
+
+## 13. 100-Point Popperian Falsification QA Checklist
+
+### Section K: TensorLogic (10 points) — NEW
+
+**Verification Status**: Pending implementation.
+
+| # | Claim | Status | Note |
+|---|-------|--------|------|
+| K1 | logical_join computes einsum correctly | ⏳ Pending | `einsum('ij,jk->ik', Parent, Parent) = Grandparent` |
+| K2 | logical_project (∃) works in Boolean mode | ⏳ Pending | Max over dimension |
+| K3 | logical_project (∃) works in continuous mode | ⏳ Pending | Sum over dimension |
+| K4 | logical_union implements OR correctly | ⏳ Pending | Boolean: max, Continuous: P(A)+P(B)-P(A)P(B) |
+| K5 | Boolean mode produces 0/1 outputs only | ⏳ Pending | Threshold at 0.5 |
+| K6 | Continuous mode is differentiable | ⏳ Pending | Gradients flow through all ops |
+| K7 | TensorProgram executes equations in order | ⏳ Pending | Forward chaining |
+| K8 | Embedding space bilinear scoring works | ⏳ Pending | s^T W_r o produces scalar |
+| K9 | Boolean attention equals argmax selection | ⏳ Pending | One-hot from argmax |
+| K10 | Trueno SIMD accelerates logic ops | ⏳ Pending | >2x vs naive loop |
 
 ### Section J: End-to-End Demo (10 points) — NEW
 
@@ -422,7 +612,7 @@ Deploy to CDN → Browser loads WASM + APR → User types prompt → Streaming o
 
 ---
 
-## 13. Verification Findings
+## 14. Verification Findings
 
 **Date**: 2025-12-22
 **Tester**: Aprender CI (CLI Agent)
@@ -447,11 +637,11 @@ Deploy to CDN → Browser loads WASM + APR → User types prompt → Streaming o
 
 ---
 
-## 14. Open Issues Backlog
+## 15. Open Issues Backlog
 
 The following 4 issues remain open for post-EOY 2025 work:
 
-### 14.1 #124: trueno-viz Integration (P2)
+### 15.1 #124: trueno-viz Integration (P2)
 
 **Status**: Backlog
 **Priority**: P2 (Medium)
@@ -462,7 +652,7 @@ Integration with trueno-viz for tensor visualization and debugging. Requires:
 - TUI integration for visual tensor inspection
 - Export hooks for external visualization tools
 
-### 14.2 #125: trueno-rag Integration (P2)
+### 15.2 #125: trueno-rag Integration (P2)
 
 **Status**: Backlog
 **Priority**: P2 (Medium)
@@ -473,7 +663,7 @@ Integration with trueno-rag for retrieval-augmented generation workflows. Requir
 - Vector store integration
 - RAG pipeline primitives
 
-### 14.3 #127: Multi-Tensor Repository OOM (P1)
+### 15.3 #127: Multi-Tensor Repository OOM (P1)
 
 **Status**: Backlog
 **Priority**: P1 (High)
@@ -484,7 +674,7 @@ Large multi-tensor HuggingFace repositories (e.g., Llama-70B with 30+ shards) ca
 - Memory-mapped shard processing
 - Progress reporting for large imports
 
-### 14.4 #129: Import Error Message Improvements (P1)
+### 15.4 #129: Import Error Message Improvements (P1)
 
 **Status**: Backlog
 **Priority**: P1 (High)
@@ -497,7 +687,7 @@ Error messages during `apr import` failures need improvement:
 
 ---
 
-## 15. References
+## 16. References
 
 ### Peer-Reviewed Publications
 
@@ -548,3 +738,31 @@ Error messages during `apr import` failures need improvement:
 21. **ISO/IEC 23094-1:2020.** "Essential video coding." International Organization for Standardization.
 
 22. **RFC 6716.** (2012). "Definition of the Opus Audio Codec." Internet Engineering Task Force.
+
+### Neuro-Symbolic AI (TensorLogic)
+
+23. **Domingos, P.** (2025). "Tensor Logic: The Language of AI." *arXiv preprint*. https://arxiv.org/abs/2510.12269
+
+24. **Marcus, G.** (2020). "The Next Decade in AI: Four Steps Towards Robust Artificial Intelligence." *arXiv preprint*. https://arxiv.org/abs/2002.06177
+
+25. **Garcez, A. d'A., Gori, M., Lamb, L. C., et al.** (2019). "Neural-Symbolic Computing: An Effective Methodology for Principled Integration of Machine Learning and Reasoning." *Journal of Applied Logic*, 6(4). https://arxiv.org/abs/1905.06088
+
+26. **Bordes, A., Usunier, N., Garcia-Durán, A., et al.** (2013). "Translating Embeddings for Modeling Multi-relational Data." *Advances in Neural Information Processing Systems (NeurIPS)*, 26. https://papers.nips.cc/paper/5071-translating-embeddings-for-modeling-multi-relational-data
+
+27. **Nickel, M., Tresp, V., & Kriegel, H.-P.** (2011). "A Three-Way Model for Collective Learning on Multi-Relational Data." *International Conference on Machine Learning (ICML)*. https://icml.cc/2011/papers/438_icmlpaper.pdf
+
+28. **Yang, B., Yih, W., He, X., et al.** (2017). "Embedding Entities and Relations for Learning and Inference in Knowledge Bases." *International Conference on Learning Representations (ICLR)*. https://arxiv.org/abs/1412.6575
+
+29. **Trouillon, T., Welbl, J., Riedel, S., et al.** (2016). "Complex Embeddings for Simple Link Prediction." *International Conference on Machine Learning (ICML)*. https://arxiv.org/abs/1606.06357
+
+30. **Rocktäschel, T., & Riedel, S.** (2017). "End-to-end Differentiable Proving." *Advances in Neural Information Processing Systems (NeurIPS)*, 30. https://arxiv.org/abs/1705.11040
+
+31. **Evans, R., & Grefenstette, E.** (2018). "Learning Explanatory Rules from Noisy Data." *Journal of Artificial Intelligence Research*, 61. https://arxiv.org/abs/1711.04574
+
+32. **Serafini, L., & Garcez, A. d'A.** (2016). "Logic Tensor Networks: Deep Learning and Logical Reasoning from First Principles to Machines." *arXiv preprint*. https://arxiv.org/abs/1606.04422
+
+33. **Manhaeve, R., Dumančić, S., Kimmig, A., et al.** (2018). "DeepProbLog: Neural Probabilistic Logic Programming." *Advances in Neural Information Processing Systems (NeurIPS)*, 31. https://arxiv.org/abs/1805.10872
+
+34. **De Raedt, L., Dumančić, S., Manhaeve, R., & Marra, G.** (2020). "From Statistical Relational to Neuro-Symbolic Artificial Intelligence." *International Joint Conference on Artificial Intelligence (IJCAI)*. https://arxiv.org/abs/2003.08316
+
+35. **Kautz, H.** (2022). "The Third AI Summer." *AAAI Robert S. Engelmore Memorial Lecture*. https://www.cs.rochester.edu/u/kautz/talks/engelmore-v9-with-notes.pdf
