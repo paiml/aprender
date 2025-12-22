@@ -128,6 +128,16 @@ pub struct AlsaBackend {
 }
 
 #[cfg(all(target_os = "linux", feature = "audio-alsa"))]
+impl std::fmt::Debug for AlsaBackend {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AlsaBackend")
+            .field("config", &self.config)
+            .field("buffer_size", &self.i16_buffer.len())
+            .finish_non_exhaustive()
+    }
+}
+
+#[cfg(all(target_os = "linux", feature = "audio-alsa"))]
 impl AlsaBackend {
     /// List available ALSA capture devices
     ///
@@ -135,11 +145,14 @@ impl AlsaBackend {
     /// Vector of device names suitable for `open()`
     pub fn list_devices() -> Result<Vec<AudioDevice>, AudioError> {
         use alsa::device_name::HintIter;
+        use std::ffi::CStr;
 
         let mut devices = Vec::new();
 
-        // Iterate over PCM devices
-        let hints = HintIter::new(None, b"pcm")
+        // Iterate over PCM devices - use safe CStr creation
+        let pcm_cstr = CStr::from_bytes_with_nul(b"pcm\0")
+            .map_err(|e| AudioError::CaptureError(format!("Invalid CStr: {e}")))?;
+        let hints = HintIter::new(None, pcm_cstr)
             .map_err(|e| AudioError::CaptureError(format!("Failed to enumerate devices: {e}")))?;
 
         for hint in hints {
@@ -244,8 +257,6 @@ impl CaptureBackend for AlsaBackend {
     }
 
     fn read(&mut self, buffer: &mut [f32]) -> Result<usize, AudioError> {
-        use alsa::pcm::IO;
-
         // Ensure our intermediate buffer is large enough
         let samples_needed = buffer.len();
         if self.i16_buffer.len() < samples_needed {
@@ -256,15 +267,14 @@ impl CaptureBackend for AlsaBackend {
         let io = self.pcm.io_i16()
             .map_err(|e| AudioError::CaptureError(format!("Failed to get IO interface: {e}")))?;
 
-        // Calculate frames (samples / channels)
-        let frames = samples_needed / self.config.channels as usize;
-
         // Read from ALSA (blocking)
+        // EPIPE (-32) indicates xrun (buffer overrun) - try to recover
         let frames_read = match io.readi(&mut self.i16_buffer[..samples_needed]) {
             Ok(n) => n,
             Err(e) => {
-                // Try to recover from xrun (buffer overrun) - error code -32 (EPIPE)
-                if e.errno() == alsa::nix::errno::Errno::EPIPE as i32 {
+                // Try to recover from xrun (buffer overrun)
+                // ALSA error codes: -EPIPE = -32 for xrun
+                if e.errno() == -32 {
                     self.pcm.prepare()
                         .map_err(|e| AudioError::CaptureError(format!("Failed to recover from xrun: {e}")))?;
                     // Retry the read
@@ -1025,23 +1035,45 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(all(target_os = "linux", feature = "audio-alsa")))]
     fn test_list_devices_stub() {
-        // Stub returns empty list
+        // Stub returns empty list when no native backend
         let devices = list_devices().unwrap();
         assert!(devices.is_empty());
     }
 
     #[test]
+    #[cfg(all(target_os = "linux", feature = "audio-alsa"))]
+    fn test_list_devices_alsa() {
+        // ALSA returns devices (may be empty on systems without audio hardware)
+        let devices = list_devices();
+        assert!(devices.is_ok(), "list_devices should succeed: {:?}", devices);
+    }
+
+    #[test]
+    #[cfg(not(all(target_os = "linux", feature = "audio-alsa")))]
     fn test_default_device_stub() {
         let device = default_device().unwrap();
         assert!(device.is_none());
     }
 
     #[test]
+    #[cfg(not(all(target_os = "linux", feature = "audio-alsa")))]
     fn test_audio_capture_open_not_implemented() {
         let config = CaptureConfig::default();
         let result = AudioCapture::open(None, &config);
         assert!(result.is_err());
+    }
+
+    #[test]
+    #[cfg(all(target_os = "linux", feature = "audio-alsa"))]
+    fn test_audio_capture_open_alsa() {
+        // ALSA capture may fail on systems without audio hardware, but shouldn't panic
+        let config = CaptureConfig::default();
+        let result = AudioCapture::open(None, &config);
+        // Result can be Ok or Err depending on hardware availability
+        // The important thing is it doesn't panic
+        let _ = result;
     }
 
     // GH-130: Mock capture source tests
