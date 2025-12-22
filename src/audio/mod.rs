@@ -50,7 +50,8 @@ pub mod stream;
 
 // Re-exports for convenience
 pub use capture::{
-    AudioCapture, AudioDevice, BufferCaptureSource, CaptureConfig, MockCaptureSource, MockSignal,
+    available_backend, has_native_backend, AudioCapture, AudioDevice, BufferCaptureSource,
+    CaptureBackend, CaptureConfig, MockCaptureSource, MockSignal,
 };
 pub use mel::{
     detect_clipping, has_inf, has_nan, stereo_to_mono, validate_audio, ClippingReport, MelConfig,

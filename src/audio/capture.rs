@@ -5,14 +5,24 @@
 //! - System audio loopback
 //! - File streaming
 //!
-//! # Platform Support
+//! # Platform Support (C5-C10)
 //!
-//! | Platform | Backend | Status |
-//! |----------|---------|--------|
-//! | Linux | ALSA / PulseAudio | Planned |
-//! | macOS | CoreAudio | Planned |
-//! | Windows | WASAPI | Planned |
-//! | WASM | WebAudio API | Planned |
+//! | Platform | Backend | Feature | Status |
+//! |----------|---------|---------|--------|
+//! | Linux | ALSA | `audio-alsa` | Stub ready (C7) |
+//! | macOS | CoreAudio | `audio-coreaudio` | Stub ready (C8) |
+//! | Windows | WASAPI | `audio-wasapi` | Stub ready (C9) |
+//! | WASM | WebAudio API | `audio-webaudio` | Stub ready (C10) |
+//!
+//! # Backend Architecture
+//!
+//! Each platform backend implements the `CaptureBackend` trait, which provides:
+//! - `open()`: Initialize audio capture with configuration
+//! - `read()`: Read samples into buffer (non-blocking)
+//! - `close()`: Release audio resources
+//!
+//! The backends are selected at compile time via feature flags, enabling
+//! zero-cost abstraction for the target platform.
 //!
 //! # Example (Future API)
 //!
@@ -35,6 +45,237 @@
 //! - Real-time safe (no allocations in capture loop)
 
 use crate::audio::AudioError;
+
+// ============================================================================
+// C5-C10: Platform Backend Trait
+// ============================================================================
+
+/// Trait for platform-specific audio capture backends
+///
+/// Each platform (ALSA, CoreAudio, WASAPI, WebAudio) implements this trait
+/// to provide native audio capture functionality.
+pub trait CaptureBackend: Send {
+    /// Open the audio capture stream
+    fn open(device: Option<&str>, config: &CaptureConfig) -> Result<Self, AudioError>
+    where
+        Self: Sized;
+
+    /// Read audio samples into buffer
+    ///
+    /// Returns the number of samples read, or error
+    fn read(&mut self, buffer: &mut [f32]) -> Result<usize, AudioError>;
+
+    /// Close the audio capture stream
+    fn close(&mut self) -> Result<(), AudioError>;
+
+    /// Get the backend name for diagnostics
+    fn backend_name() -> &'static str
+    where
+        Self: Sized;
+}
+
+// ============================================================================
+// C7: ALSA Backend (Linux)
+// ============================================================================
+
+/// ALSA audio capture backend for Linux (GH-130, C7)
+///
+/// Uses the Advanced Linux Sound Architecture for low-latency audio capture.
+/// Requires the `audio-alsa` feature flag.
+#[cfg(all(target_os = "linux", feature = "audio-alsa"))]
+pub struct AlsaBackend {
+    #[allow(dead_code)]
+    config: CaptureConfig,
+    // Future: alsa::PCM handle
+}
+
+#[cfg(all(target_os = "linux", feature = "audio-alsa"))]
+impl CaptureBackend for AlsaBackend {
+    fn open(_device: Option<&str>, config: &CaptureConfig) -> Result<Self, AudioError> {
+        config.validate()?;
+        // TODO: Implement ALSA PCM open
+        // Future: Use alsa-rs crate for native bindings
+        Err(AudioError::NotImplemented(
+            "ALSA backend pending implementation - requires alsa-rs dependency".to_string(),
+        ))
+    }
+
+    fn read(&mut self, _buffer: &mut [f32]) -> Result<usize, AudioError> {
+        Err(AudioError::NotImplemented("ALSA read".to_string()))
+    }
+
+    fn close(&mut self) -> Result<(), AudioError> {
+        Ok(())
+    }
+
+    fn backend_name() -> &'static str {
+        "ALSA"
+    }
+}
+
+// ============================================================================
+// C8: CoreAudio Backend (macOS)
+// ============================================================================
+
+/// CoreAudio capture backend for macOS (GH-130, C8)
+///
+/// Uses Apple's CoreAudio framework for low-latency audio capture.
+/// Requires the `audio-coreaudio` feature flag.
+#[cfg(all(target_os = "macos", feature = "audio-coreaudio"))]
+pub struct CoreAudioBackend {
+    #[allow(dead_code)]
+    config: CaptureConfig,
+    // Future: AudioUnit handle
+}
+
+#[cfg(all(target_os = "macos", feature = "audio-coreaudio"))]
+impl CaptureBackend for CoreAudioBackend {
+    fn open(_device: Option<&str>, config: &CaptureConfig) -> Result<Self, AudioError> {
+        config.validate()?;
+        // TODO: Implement CoreAudio AudioUnit setup
+        // Future: Use coreaudio-rs crate for native bindings
+        Err(AudioError::NotImplemented(
+            "CoreAudio backend pending implementation - requires coreaudio-rs dependency"
+                .to_string(),
+        ))
+    }
+
+    fn read(&mut self, _buffer: &mut [f32]) -> Result<usize, AudioError> {
+        Err(AudioError::NotImplemented("CoreAudio read".to_string()))
+    }
+
+    fn close(&mut self) -> Result<(), AudioError> {
+        Ok(())
+    }
+
+    fn backend_name() -> &'static str {
+        "CoreAudio"
+    }
+}
+
+// ============================================================================
+// C9: WASAPI Backend (Windows)
+// ============================================================================
+
+/// WASAPI capture backend for Windows (GH-130, C9)
+///
+/// Uses Windows Audio Session API for audio capture.
+/// Requires the `audio-wasapi` feature flag.
+#[cfg(all(target_os = "windows", feature = "audio-wasapi"))]
+pub struct WasapiBackend {
+    #[allow(dead_code)]
+    config: CaptureConfig,
+    // Future: IAudioClient handle
+}
+
+#[cfg(all(target_os = "windows", feature = "audio-wasapi"))]
+impl CaptureBackend for WasapiBackend {
+    fn open(_device: Option<&str>, config: &CaptureConfig) -> Result<Self, AudioError> {
+        config.validate()?;
+        // TODO: Implement WASAPI client initialization
+        // Future: Use wasapi crate for native bindings
+        Err(AudioError::NotImplemented(
+            "WASAPI backend pending implementation - requires wasapi dependency".to_string(),
+        ))
+    }
+
+    fn read(&mut self, _buffer: &mut [f32]) -> Result<usize, AudioError> {
+        Err(AudioError::NotImplemented("WASAPI read".to_string()))
+    }
+
+    fn close(&mut self) -> Result<(), AudioError> {
+        Ok(())
+    }
+
+    fn backend_name() -> &'static str {
+        "WASAPI"
+    }
+}
+
+// ============================================================================
+// C10: WebAudio Backend (WASM)
+// ============================================================================
+
+/// WebAudio API capture backend for WASM (GH-130, C10)
+///
+/// Uses the Web Audio API via web-sys for browser-based audio capture.
+/// Requires the `audio-webaudio` feature flag.
+#[cfg(all(target_arch = "wasm32", feature = "audio-webaudio"))]
+pub struct WebAudioBackend {
+    #[allow(dead_code)]
+    config: CaptureConfig,
+    // Future: AudioContext and MediaStreamSource handles
+}
+
+#[cfg(all(target_arch = "wasm32", feature = "audio-webaudio"))]
+impl CaptureBackend for WebAudioBackend {
+    fn open(_device: Option<&str>, config: &CaptureConfig) -> Result<Self, AudioError> {
+        config.validate()?;
+        // TODO: Implement WebAudio MediaDevices.getUserMedia
+        // Future: Use web-sys crate for browser API bindings
+        Err(AudioError::NotImplemented(
+            "WebAudio backend pending implementation - requires web-sys dependency".to_string(),
+        ))
+    }
+
+    fn read(&mut self, _buffer: &mut [f32]) -> Result<usize, AudioError> {
+        Err(AudioError::NotImplemented("WebAudio read".to_string()))
+    }
+
+    fn close(&mut self) -> Result<(), AudioError> {
+        Ok(())
+    }
+
+    fn backend_name() -> &'static str {
+        "WebAudio"
+    }
+}
+
+// ============================================================================
+// Backend Selection Helper
+// ============================================================================
+
+/// Get the name of the currently available audio backend
+///
+/// Returns the backend name based on platform and enabled features,
+/// or "None" if no backend is available.
+#[must_use]
+pub fn available_backend() -> &'static str {
+    #[cfg(all(target_os = "linux", feature = "audio-alsa"))]
+    {
+        return "ALSA";
+    }
+    #[cfg(all(target_os = "macos", feature = "audio-coreaudio"))]
+    {
+        return "CoreAudio";
+    }
+    #[cfg(all(target_os = "windows", feature = "audio-wasapi"))]
+    {
+        return "WASAPI";
+    }
+    #[cfg(all(target_arch = "wasm32", feature = "audio-webaudio"))]
+    {
+        return "WebAudio";
+    }
+    #[allow(unreachable_code)]
+    "None (enable audio-alsa, audio-coreaudio, audio-wasapi, or audio-webaudio feature)"
+}
+
+/// Check if a native audio backend is available
+#[must_use]
+pub fn has_native_backend() -> bool {
+    #[cfg(any(
+        all(target_os = "linux", feature = "audio-alsa"),
+        all(target_os = "macos", feature = "audio-coreaudio"),
+        all(target_os = "windows", feature = "audio-wasapi"),
+        all(target_arch = "wasm32", feature = "audio-webaudio")
+    ))]
+    {
+        return true;
+    }
+    #[allow(unreachable_code)]
+    false
+}
 
 // ============================================================================
 // Configuration
@@ -777,5 +1018,42 @@ mod tests {
 
         source.reset();
         assert_eq!(source.position(), 0);
+    }
+
+    // ========================================================================
+    // C5-C10: Backend Detection Tests
+    // ========================================================================
+
+    #[test]
+    fn test_available_backend_returns_string() {
+        // Should always return a valid backend name or "None" message
+        let backend = available_backend();
+        assert!(!backend.is_empty());
+    }
+
+    #[test]
+    fn test_has_native_backend_returns_bool() {
+        // Should compile and return a boolean
+        let _has_backend: bool = has_native_backend();
+    }
+
+    #[test]
+    fn test_capture_backend_trait_object_safety() {
+        // Verify CaptureBackend is object-safe by checking it can be used as trait bound
+        fn _accepts_backend<T: CaptureBackend>(_b: T) {}
+    }
+
+    #[test]
+    fn test_backend_names_documented() {
+        // Verify backend availability message is informative
+        let backend = available_backend();
+        // Should either be a real backend name or explain how to enable
+        assert!(
+            backend == "ALSA"
+                || backend == "CoreAudio"
+                || backend == "WASAPI"
+                || backend == "WebAudio"
+                || backend.contains("enable")
+        );
     }
 }

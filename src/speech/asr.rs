@@ -179,6 +179,336 @@ pub struct Transcription {
     pub language: Option<String>,
     /// Processing duration in milliseconds
     pub processing_time_ms: u64,
+    /// Cross-attention weights for alignment (G5)
+    /// Shape: [decoder_layers, decoder_tokens, encoder_frames]
+    pub cross_attention_weights: Option<CrossAttentionWeights>,
+}
+
+// ============================================================================
+// G5: Cross-Attention Weights
+// ============================================================================
+
+/// Cross-attention weights for encoder-decoder alignment (G5)
+///
+/// These weights show how the decoder attends to encoder frames,
+/// useful for:
+/// - Word-audio alignment
+/// - Detecting hallucination (low attention entropy)
+/// - Debugging transcription issues
+///
+/// # Example
+///
+/// ```rust
+/// use aprender::speech::asr::CrossAttentionWeights;
+///
+/// // 6 layers, 10 decoder tokens, 100 encoder frames
+/// let weights = CrossAttentionWeights::zeros(6, 10, 100);
+/// assert_eq!(weights.shape(), (6, 10, 100));
+/// ```
+#[derive(Debug, Clone)]
+pub struct CrossAttentionWeights {
+    /// Flattened attention weights [layers × tokens × frames]
+    weights: Vec<f32>,
+    /// Number of decoder layers
+    n_layers: usize,
+    /// Number of decoder tokens
+    n_tokens: usize,
+    /// Number of encoder frames
+    n_frames: usize,
+}
+
+impl CrossAttentionWeights {
+    /// Create cross-attention weights from flat data
+    ///
+    /// # Arguments
+    /// * `weights` - Flattened weights of shape [n_layers × n_tokens × n_frames]
+    /// * `n_layers` - Number of decoder layers
+    /// * `n_tokens` - Number of decoder tokens
+    /// * `n_frames` - Number of encoder frames
+    pub fn new(
+        weights: Vec<f32>,
+        n_layers: usize,
+        n_tokens: usize,
+        n_frames: usize,
+    ) -> Result<Self, SpeechError> {
+        let expected_len = n_layers * n_tokens * n_frames;
+        if weights.len() != expected_len {
+            return Err(SpeechError::InvalidAudio(format!(
+                "Cross-attention weight length {} doesn't match shape [{}, {}, {}] (expected {})",
+                weights.len(),
+                n_layers,
+                n_tokens,
+                n_frames,
+                expected_len
+            )));
+        }
+        Ok(Self {
+            weights,
+            n_layers,
+            n_tokens,
+            n_frames,
+        })
+    }
+
+    /// Create zeros-initialized weights
+    #[must_use]
+    pub fn zeros(n_layers: usize, n_tokens: usize, n_frames: usize) -> Self {
+        Self {
+            weights: vec![0.0; n_layers * n_tokens * n_frames],
+            n_layers,
+            n_tokens,
+            n_frames,
+        }
+    }
+
+    /// Get the shape as (n_layers, n_tokens, n_frames)
+    #[must_use]
+    pub fn shape(&self) -> (usize, usize, usize) {
+        (self.n_layers, self.n_tokens, self.n_frames)
+    }
+
+    /// Get attention weights for a specific layer and token
+    ///
+    /// Returns attention distribution over encoder frames
+    #[must_use]
+    pub fn get_attention(&self, layer: usize, token: usize) -> Option<&[f32]> {
+        if layer >= self.n_layers || token >= self.n_tokens {
+            return None;
+        }
+        let start = (layer * self.n_tokens + token) * self.n_frames;
+        let end = start + self.n_frames;
+        Some(&self.weights[start..end])
+    }
+
+    /// Get the peak attention frame for a token (averaged across layers)
+    ///
+    /// Useful for rough word-audio alignment
+    #[must_use]
+    pub fn peak_frame(&self, token: usize) -> Option<usize> {
+        if token >= self.n_tokens || self.n_frames == 0 {
+            return None;
+        }
+
+        let mut avg_attention = vec![0.0f32; self.n_frames];
+
+        // Average attention across layers
+        for layer in 0..self.n_layers {
+            if let Some(attn) = self.get_attention(layer, token) {
+                for (i, &w) in attn.iter().enumerate() {
+                    avg_attention[i] += w;
+                }
+            }
+        }
+
+        // Find peak
+        avg_attention
+            .iter()
+            .enumerate()
+            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+            .map(|(idx, _)| idx)
+    }
+
+    /// Calculate entropy of attention distribution for a token
+    ///
+    /// Low entropy (< 1.0) may indicate hallucination or poor alignment
+    #[must_use]
+    pub fn attention_entropy(&self, layer: usize, token: usize) -> Option<f32> {
+        let attn = self.get_attention(layer, token)?;
+
+        // Shannon entropy: -sum(p * log(p))
+        let mut entropy = 0.0f32;
+        for &p in attn {
+            if p > 1e-10 {
+                entropy -= p * p.ln();
+            }
+        }
+
+        Some(entropy)
+    }
+
+    /// Check if attention is well-distributed (not collapsed)
+    ///
+    /// Returns false if standard deviation is too low (G10 check)
+    #[must_use]
+    pub fn is_healthy(&self) -> bool {
+        if self.weights.is_empty() {
+            return true;
+        }
+
+        // Calculate std across all weights
+        let n = self.weights.len() as f32;
+        let mean: f32 = self.weights.iter().sum::<f32>() / n;
+        let variance: f32 = self.weights.iter().map(|x| (x - mean).powi(2)).sum::<f32>() / n;
+        let std = variance.sqrt();
+
+        // G10: std should be > 0.01 to indicate non-collapsed attention
+        std > 0.01
+    }
+
+    /// Get the raw weights
+    #[must_use]
+    pub fn as_slice(&self) -> &[f32] {
+        &self.weights
+    }
+}
+
+// ============================================================================
+// G2: Language Detection
+// ============================================================================
+
+/// Language detection result (G2)
+///
+/// Provides detected language with confidence scores for alternatives.
+///
+/// # Example
+///
+/// ```rust
+/// use aprender::speech::asr::LanguageDetection;
+///
+/// let detection = LanguageDetection::new("en", 0.95)
+///     .with_alternative("de", 0.03)
+///     .with_alternative("fr", 0.02);
+///
+/// assert_eq!(detection.language(), "en");
+/// assert!(detection.confidence() > 0.9);
+/// ```
+#[derive(Debug, Clone)]
+pub struct LanguageDetection {
+    /// Detected language code (ISO 639-1)
+    language: String,
+    /// Confidence score for detected language (0.0-1.0)
+    confidence: f32,
+    /// Alternative language candidates with scores
+    alternatives: Vec<(String, f32)>,
+}
+
+impl LanguageDetection {
+    /// Create a new language detection result
+    #[must_use]
+    pub fn new(language: impl Into<String>, confidence: f32) -> Self {
+        Self {
+            language: language.into(),
+            confidence: confidence.clamp(0.0, 1.0),
+            alternatives: Vec::new(),
+        }
+    }
+
+    /// Add an alternative language candidate
+    #[must_use]
+    pub fn with_alternative(mut self, language: impl Into<String>, confidence: f32) -> Self {
+        self.alternatives
+            .push((language.into(), confidence.clamp(0.0, 1.0)));
+        self
+    }
+
+    /// Get the detected language code
+    #[must_use]
+    pub fn language(&self) -> &str {
+        &self.language
+    }
+
+    /// Get confidence score for the detected language
+    #[must_use]
+    pub fn confidence(&self) -> f32 {
+        self.confidence
+    }
+
+    /// Get alternative language candidates
+    #[must_use]
+    pub fn alternatives(&self) -> &[(String, f32)] {
+        &self.alternatives
+    }
+
+    /// Check if detection is confident (> threshold)
+    #[must_use]
+    pub fn is_confident(&self, threshold: f32) -> bool {
+        self.confidence >= threshold
+    }
+
+    /// Get top N languages by confidence
+    #[must_use]
+    pub fn top_languages(&self, n: usize) -> Vec<(&str, f32)> {
+        let mut all: Vec<(&str, f32)> = vec![(&self.language, self.confidence)];
+        all.extend(self.alternatives.iter().map(|(l, c)| (l.as_str(), *c)));
+        all.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        all.truncate(n);
+        all
+    }
+}
+
+impl Default for LanguageDetection {
+    fn default() -> Self {
+        Self::new("en", 1.0) // Default to English with full confidence
+    }
+}
+
+/// Detect language from audio features (G2)
+///
+/// Uses encoder outputs to classify the spoken language.
+/// Supports 99 languages following Whisper's language detection.
+///
+/// # Arguments
+/// * `encoder_output` - Encoder hidden states
+/// * `encoder_shape` - Shape as [batch, frames, hidden_dim]
+///
+/// # Returns
+/// Language detection result with confidence scores
+///
+/// # Note
+/// This is a placeholder that returns a default result.
+/// Real implementation requires language detection head weights.
+pub fn detect_language(
+    encoder_output: &[f32],
+    encoder_shape: &[usize],
+) -> SpeechResult<LanguageDetection> {
+    // Validate input
+    if encoder_shape.len() != 3 {
+        return Err(SpeechError::InvalidAudio(
+            "encoder_shape must be [batch, frames, hidden_dim]".to_string(),
+        ));
+    }
+
+    let expected_len = encoder_shape.iter().product::<usize>();
+    if encoder_output.len() != expected_len {
+        return Err(SpeechError::InvalidAudio(format!(
+            "encoder_output length {} doesn't match shape {:?}",
+            encoder_output.len(),
+            encoder_shape
+        )));
+    }
+
+    // Placeholder: Real implementation would:
+    // 1. Pool encoder outputs (e.g., mean over time)
+    // 2. Apply language classification head
+    // 3. Softmax over 99 language logits
+    // 4. Return top languages with scores
+
+    // For now, return English as default with alternatives
+    Ok(LanguageDetection::new("en", 0.85)
+        .with_alternative("de", 0.05)
+        .with_alternative("fr", 0.04)
+        .with_alternative("es", 0.03)
+        .with_alternative("it", 0.02)
+        .with_alternative("unknown", 0.01))
+}
+
+/// List of supported language codes (ISO 639-1)
+///
+/// Whisper supports 99 languages. This list includes the most common ones.
+pub const SUPPORTED_LANGUAGES: &[&str] = &[
+    "en", "zh", "de", "es", "ru", "ko", "fr", "ja", "pt", "tr", "pl", "ca", "nl", "ar", "sv", "it",
+    "id", "hi", "fi", "vi", "he", "uk", "el", "ms", "cs", "ro", "da", "hu", "ta", "no", "th", "ur",
+    "hr", "bg", "lt", "la", "mi", "ml", "cy", "sk", "te", "fa", "lv", "bn", "sr", "az", "sl", "kn",
+    "et", "mk", "br", "eu", "is", "hy", "ne", "mn", "bs", "kk", "sq", "sw", "gl", "mr", "pa", "si",
+    "km", "sn", "yo", "so", "af", "oc", "ka", "be", "tg", "sd", "gu", "am", "yi", "lo", "uz", "fo",
+    "ht", "ps", "tk", "nn", "mt", "sa", "lb", "my", "bo", "tl", "mg", "as", "tt", "haw", "ln", "ha",
+    "ba", "jw", "su",
+];
+
+/// Check if a language code is supported
+#[must_use]
+pub fn is_language_supported(code: &str) -> bool {
+    SUPPORTED_LANGUAGES.contains(&code)
 }
 
 impl Transcription {
@@ -201,6 +531,7 @@ impl Transcription {
             segments,
             language: None,
             processing_time_ms: 0,
+            cross_attention_weights: None,
         }
     }
 
@@ -330,6 +661,7 @@ impl<M: AsrModel> AsrSession<M> {
             segments: vec![Segment::new(text, 0, duration_ms)],
             language: self.config.language.clone(),
             processing_time_ms: 0, // Would be measured in real impl
+            cross_attention_weights: None, // G5: Would be extracted from model in real impl
         })
     }
 }
@@ -502,6 +834,7 @@ mod tests {
             segments: vec![],
             language: None,
             processing_time_ms: 0,
+            cross_attention_weights: None,
         };
         assert_eq!(t.word_count(), 5);
     }
@@ -606,5 +939,207 @@ mod tests {
         let model = MockAsrModel;
         assert_eq!(model.model_id(), "mock-model");
         assert!(model.supported_languages().is_some());
+    }
+
+    // ========================================================================
+    // G5: Cross-Attention Weights Tests
+    // ========================================================================
+
+    #[test]
+    fn test_cross_attention_weights_zeros() {
+        let weights = CrossAttentionWeights::zeros(6, 10, 100);
+        assert_eq!(weights.shape(), (6, 10, 100));
+        assert_eq!(weights.as_slice().len(), 6 * 10 * 100);
+    }
+
+    #[test]
+    fn test_cross_attention_weights_new_valid() {
+        let data = vec![0.1f32; 6 * 10 * 100];
+        let weights = CrossAttentionWeights::new(data, 6, 10, 100);
+        assert!(weights.is_ok());
+    }
+
+    #[test]
+    fn test_cross_attention_weights_new_invalid_size() {
+        let data = vec![0.1f32; 100]; // Wrong size
+        let weights = CrossAttentionWeights::new(data, 6, 10, 100);
+        assert!(weights.is_err());
+    }
+
+    #[test]
+    fn test_cross_attention_get_attention() {
+        let mut data = vec![0.0f32; 2 * 3 * 4]; // 2 layers, 3 tokens, 4 frames
+        // Set specific values
+        data[0..4].copy_from_slice(&[0.1, 0.2, 0.3, 0.4]); // layer 0, token 0
+        data[4..8].copy_from_slice(&[0.5, 0.6, 0.7, 0.8]); // layer 0, token 1
+
+        let weights = CrossAttentionWeights::new(data, 2, 3, 4).unwrap();
+
+        let attn = weights.get_attention(0, 0);
+        assert!(attn.is_some());
+        assert_eq!(attn.unwrap(), &[0.1, 0.2, 0.3, 0.4]);
+
+        let attn = weights.get_attention(0, 1);
+        assert!(attn.is_some());
+        assert_eq!(attn.unwrap(), &[0.5, 0.6, 0.7, 0.8]);
+
+        // Out of bounds
+        assert!(weights.get_attention(10, 0).is_none());
+        assert!(weights.get_attention(0, 10).is_none());
+    }
+
+    #[test]
+    fn test_cross_attention_peak_frame() {
+        let mut data = vec![0.0f32; 2 * 1 * 5]; // 2 layers, 1 token, 5 frames
+        // Layer 0: peak at frame 2
+        data[0..5].copy_from_slice(&[0.1, 0.2, 0.9, 0.1, 0.1]);
+        // Layer 1: peak at frame 2
+        data[5..10].copy_from_slice(&[0.1, 0.1, 0.8, 0.2, 0.1]);
+
+        let weights = CrossAttentionWeights::new(data, 2, 1, 5).unwrap();
+
+        let peak = weights.peak_frame(0);
+        assert_eq!(peak, Some(2)); // Both layers peak at frame 2
+    }
+
+    #[test]
+    fn test_cross_attention_entropy() {
+        // Create uniform distribution (high entropy)
+        let mut data = vec![0.0f32; 1 * 1 * 4]; // 1 layer, 1 token, 4 frames
+        data[0..4].copy_from_slice(&[0.25, 0.25, 0.25, 0.25]);
+
+        let weights = CrossAttentionWeights::new(data, 1, 1, 4).unwrap();
+
+        let entropy = weights.attention_entropy(0, 0);
+        assert!(entropy.is_some());
+        // Uniform distribution of 4 elements has entropy = ln(4) ≈ 1.386
+        assert!(entropy.unwrap() > 1.0);
+    }
+
+    #[test]
+    fn test_cross_attention_is_healthy() {
+        // Well-distributed weights (should be healthy)
+        let data: Vec<f32> = (0..100).map(|i| (i as f32) / 100.0).collect();
+        let weights = CrossAttentionWeights::new(data, 1, 10, 10).unwrap();
+        assert!(weights.is_healthy());
+
+        // Collapsed weights (all same value, std near 0)
+        let collapsed = vec![0.5f32; 100];
+        let collapsed_weights = CrossAttentionWeights::new(collapsed, 1, 10, 10).unwrap();
+        assert!(!collapsed_weights.is_healthy());
+    }
+
+    #[test]
+    fn test_cross_attention_empty_healthy() {
+        let weights = CrossAttentionWeights::zeros(0, 0, 0);
+        assert!(weights.is_healthy()); // Empty is considered healthy
+    }
+
+    // ========================================================================
+    // G2: Language Detection Tests
+    // ========================================================================
+
+    #[test]
+    fn test_language_detection_new() {
+        let detection = LanguageDetection::new("en", 0.95);
+        assert_eq!(detection.language(), "en");
+        assert!((detection.confidence() - 0.95).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_language_detection_confidence_clamped() {
+        let detection = LanguageDetection::new("en", 1.5); // Above 1.0
+        assert!((detection.confidence() - 1.0).abs() < 0.001);
+
+        let detection = LanguageDetection::new("en", -0.5); // Below 0.0
+        assert!((detection.confidence() - 0.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_language_detection_with_alternatives() {
+        let detection = LanguageDetection::new("en", 0.85)
+            .with_alternative("de", 0.08)
+            .with_alternative("fr", 0.05);
+
+        assert_eq!(detection.alternatives().len(), 2);
+        assert_eq!(detection.alternatives()[0].0, "de");
+    }
+
+    #[test]
+    fn test_language_detection_is_confident() {
+        let detection = LanguageDetection::new("en", 0.85);
+        assert!(detection.is_confident(0.8));
+        assert!(!detection.is_confident(0.9));
+    }
+
+    #[test]
+    fn test_language_detection_top_languages() {
+        let detection = LanguageDetection::new("en", 0.80)
+            .with_alternative("de", 0.10)
+            .with_alternative("fr", 0.05)
+            .with_alternative("es", 0.03);
+
+        let top2 = detection.top_languages(2);
+        assert_eq!(top2.len(), 2);
+        assert_eq!(top2[0].0, "en");
+        assert_eq!(top2[1].0, "de");
+    }
+
+    #[test]
+    fn test_language_detection_default() {
+        let detection = LanguageDetection::default();
+        assert_eq!(detection.language(), "en");
+        assert!((detection.confidence() - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_detect_language_valid() {
+        let encoder_output = vec![0.0f32; 1 * 100 * 512]; // [1, 100, 512]
+        let result = detect_language(&encoder_output, &[1, 100, 512]);
+        assert!(result.is_ok());
+
+        let detection = result.unwrap();
+        assert!(!detection.language().is_empty());
+        assert!(detection.confidence() > 0.0);
+    }
+
+    #[test]
+    fn test_detect_language_invalid_shape() {
+        let encoder_output = vec![0.0f32; 1000];
+        let result = detect_language(&encoder_output, &[1000]); // 1D, should be 3D
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_detect_language_size_mismatch() {
+        let encoder_output = vec![0.0f32; 100];
+        let result = detect_language(&encoder_output, &[1, 100, 512]); // Mismatch
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_is_language_supported() {
+        assert!(is_language_supported("en"));
+        assert!(is_language_supported("de"));
+        assert!(is_language_supported("ja"));
+        assert!(!is_language_supported("xyz"));
+        assert!(!is_language_supported(""));
+    }
+
+    #[test]
+    fn test_supported_languages_count() {
+        // Whisper supports 99 languages
+        assert_eq!(SUPPORTED_LANGUAGES.len(), 99);
+    }
+
+    #[test]
+    fn test_transcription_with_cross_attention() {
+        let weights = CrossAttentionWeights::zeros(6, 10, 100);
+        let mut t = Transcription::new();
+        t.cross_attention_weights = Some(weights);
+
+        assert!(t.cross_attention_weights.is_some());
+        let w = t.cross_attention_weights.as_ref().unwrap();
+        assert_eq!(w.shape(), (6, 10, 100));
     }
 }
