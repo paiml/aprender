@@ -1820,12 +1820,12 @@ dependencies = [
 
 [[package]]
 name = "entrenar"
-version = "0.2.9"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "85a20d11b00a175132d8b026c7f319c2ee9a808dfb616f983fafe4da23509dab"
+checksum = "7f1ba2495ace8daa4bc0dc148b73384416920f8cb0cfae31c3b34aaf65f92911"
 dependencies = [
  "alimentar",
- "aprender 0.18.2",
+ "aprender 0.19.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "bytemuck",
  "chrono",
  "clap",
@@ -5914,14 +5914,14 @@ dependencies = [
 
 [[package]]
 name = "trueno-viz"
-version = "0.1.4"
+version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "76ea63dd422edc8b5206484502e424f02ad82948a75a81b1768d9aace5809b3e"
+checksum = "b606c159bf34300e4cc7bc0f3d5ee4f9bee6ad7c5576ae9d711641e1cc089d4f"
 dependencies = [
  "base64",
  "png 0.17.16",
- "thiserror 1.0.69",
- "trueno 0.7.4",
+ "thiserror 2.0.17",
+ "trueno 0.8.8",
 ]
 
 [[package]]
