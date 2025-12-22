@@ -87,6 +87,8 @@ pub mod code;
 pub mod compute;
 pub mod data;
 pub mod decomposition;
+/// End-to-end demo infrastructure for Qwen2-0.5B WASM demo (spec §J)
+pub mod demo;
 /// Data embedding with test data and tiny model representations (spec §4)
 pub mod embed;
 pub mod ensemble;
@@ -147,6 +149,8 @@ pub mod tree;
 pub mod verify;
 /// Voice processing: embeddings, style transfer, cloning (GH-132)
 pub mod voice;
+/// WASM/SIMD integration for browser-based inference (spec §L)
+pub mod wasm;
 pub mod weak_supervision;
 /// Model zoo protocol for sharing and discovery (spec §8)
 pub mod zoo;

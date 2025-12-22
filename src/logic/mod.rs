@@ -440,6 +440,6 @@ mod tests {
         nonlinearity: Nonlinearity,
         temperature: f64,
     ) -> Vec<Vec<f64>> {
-        ops::apply_nonlinearity_with_temperature(scores, nonlinearity, temperature)
+        apply_nonlinearity_with_temperature(scores, nonlinearity, temperature)
     }
 }

@@ -299,10 +299,15 @@ impl ShardCache {
         }
     }
 
-    /// Default cache for large model import (2 shards, 4GB max)
+    /// Default cache for large model import (2 shards, platform-appropriate max)
     #[must_use]
     pub fn default_for_import() -> Self {
-        Self::new(2, 4 * 1024 * 1024 * 1024) // 4GB
+        // WASM32 has 32-bit address space, use 256MB; native uses 4GB
+        #[cfg(target_arch = "wasm32")]
+        let max_bytes = 256 * 1024 * 1024; // 256MB for WASM
+        #[cfg(not(target_arch = "wasm32"))]
+        let max_bytes = 4_usize * 1024 * 1024 * 1024; // 4GB for native
+        Self::new(2, max_bytes)
     }
 
     /// Get cached shard, returning None if not cached
@@ -448,9 +453,15 @@ pub struct ShardedImportConfig {
 
 impl Default for ShardedImportConfig {
     fn default() -> Self {
+        // WASM32 has 32-bit address space, use smaller defaults
+        #[cfg(target_arch = "wasm32")]
+        let max_cache_bytes = 256 * 1024 * 1024; // 256MB for WASM
+        #[cfg(not(target_arch = "wasm32"))]
+        let max_cache_bytes = 4_usize * 1024 * 1024 * 1024; // 4GB for native
+
         Self {
             max_cached_shards: 2,
-            max_cache_bytes: 4 * 1024 * 1024 * 1024, // 4GB
+            max_cache_bytes,
             sort_tensors: true,
             verify_checksums: true,
             buffer_size: 8 * 1024 * 1024, // 8MB
@@ -470,13 +481,19 @@ impl ShardedImportConfig {
         }
     }
 
-    /// Config for high-memory systems (8GB cache)
+    /// Config for high-memory systems (8GB cache on native, 512MB on WASM)
     #[must_use]
     pub fn high_memory() -> Self {
+        // WASM32 has 32-bit address space
+        #[cfg(target_arch = "wasm32")]
+        let max_cache_bytes = 512 * 1024 * 1024; // 512MB for WASM
+        #[cfg(not(target_arch = "wasm32"))]
+        let max_cache_bytes = 8_usize * 1024 * 1024 * 1024; // 8GB for native
+
         Self {
             max_cached_shards: 4,
-            max_cache_bytes: 8 * 1024 * 1024 * 1024, // 8GB
-            buffer_size: 16 * 1024 * 1024,           // 16MB
+            max_cache_bytes,
+            buffer_size: 16 * 1024 * 1024, // 16MB
             ..Self::default()
         }
     }
