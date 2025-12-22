@@ -63,7 +63,7 @@ large_stack_arrays = "allow"  # ML tests often need large data arrays
 
 [package]
 name = "aprender"
-version = "0.20.0"
+version = "0.20.1"
 edition = "2021"
 rust-version = "1.70"
 authors = ["Noah Gift <noah@paiml.com>"]

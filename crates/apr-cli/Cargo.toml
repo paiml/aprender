@@ -1,6 +1,6 @@
 [package]
 name = "apr-cli"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 rust-version = "1.70"
 authors = ["Noah Gift <noah@paiml.com>"]
@@ -31,7 +31,7 @@ inference = ["realizar", "tokio", "axum"]
 
 [dependencies]
 # Core aprender library
-aprender = { path = "../..", version = "0.20.0", default-features = true, features = ["format-compression"] }
+aprender = { path = "../..", version = "0.20.1", default-features = true, features = ["format-compression"] }
 
 # Inference engine (optional)
 realizar = { version = "0.3.0", optional = true, default-features = false, features = ["server", "aprender-serve"] }
