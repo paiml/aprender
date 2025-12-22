@@ -2419,8 +2419,10 @@ mod tests_conversion {
 
     #[test]
     fn test_name_mapping_whisper() {
+        use crate::format::v2::AprV2Reader;
+
         let input = "/tmp/test_whisper_input.safetensors";
-        let output = "/tmp/test_whisper_output.safetensors";
+        let output = "/tmp/test_whisper_output.apr";
 
         // Create tensors with HuggingFace-style names
         let mut tensors = BTreeMap::new();
@@ -2446,15 +2448,20 @@ mod tests_conversion {
             result.err()
         );
 
-        // Load output and verify names are mapped
-        let (metadata, _) = load_safetensors(output).expect("Failed to load output");
+        // Load output as APR v2 and verify names are mapped
+        let data = fs::read(output).expect("Failed to read output");
+        let reader = AprV2Reader::from_bytes(&data).expect("Failed to parse APR v2");
+        let tensor_names = reader.tensor_names();
+
         assert!(
-            metadata.contains_key("encoder.conv1.weight"),
-            "Should strip 'model.' prefix"
+            tensor_names.contains(&"encoder.conv1.weight"),
+            "Should strip 'model.' prefix, got: {:?}",
+            tensor_names
         );
         assert!(
-            metadata.contains_key("decoder.layer_norm.weight"),
-            "Should strip 'model.' prefix"
+            tensor_names.contains(&"decoder.layer_norm.weight"),
+            "Should strip 'model.' prefix, got: {:?}",
+            tensor_names
         );
 
         // Cleanup
