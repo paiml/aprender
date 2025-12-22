@@ -1,8 +1,9 @@
 # APR Whisper & Cookbook Support: End of Year 2025 Specification
 
-**Version**: 1.5.0
-**Status**: Verified
+**Version**: 1.6.0
+**Status**: Verified (98/100)
 **Created**: 2025-12-21
+**Updated**: 2025-12-22
 **Target Completion**: 2025-12-31
 **Authors**: Aprender Core Team
 
@@ -35,7 +36,8 @@ This specification consolidates all open GitHub issues and recent development wo
 10. [Toyota Way Alignment](#10-toyota-way-alignment)
 11. [100-Point Popperian Falsification QA Checklist](#11-100-point-popperian-falsification-qa-checklist)
 12. [Verification Findings](#12-verification-findings)
-13. [References](#13-references)
+13. [Open Issues Backlog](#13-open-issues-backlog)
+14. [References](#14-references)
 
 ---
 
@@ -107,12 +109,12 @@ aprender/
 
 ### Section A: Audio Module (15 points)
 
-**Verification Status**: 14/15 Passed.
+**Verification Status**: 15/15 Passed.
 
 | # | Claim | Status | Note |
 |---|-------|--------|------|
 | A1 | Mel spectrogram produces 80 bins | ✅ Pass | Verified in tests/verify_audio_checklist.rs |
-| A2 | Mel spectrogram uses Slaney normalization | ❌ **FAIL** | Implementation uses Peak-1 normalization (max=1.0) |
+| A2 | Mel spectrogram uses Slaney normalization | ✅ Pass | Fixed in c5da57b: Area normalization (2.0/bandwidth) |
 | A3 | Silence input produces negative mel mean | ✅ Pass | Verified in tests/verify_audio_checklist.rs |
 | A4 | Resample preserves audio duration | ✅ Pass | Verified in tests/verify_audio_checklist.rs |
 | A5 | 16kHz is supported sample rate | ✅ Pass | Verified in tests/verify_audio_checklist.rs |
@@ -146,20 +148,20 @@ aprender/
 
 ### Section C: Native Audio Capture (10 points)
 
-**Verification Status**: 4/10 Passed (Stubs implemented).
+**Verification Status**: 8/10 Passed (Linux ALSA implemented, Windows/macOS deferred).
 
 | # | Claim | Status | Note |
 |---|-------|--------|------|
-| C1 | list_devices returns devices | ⚠️ STUB | Returns empty list in stub |
+| C1 | list_devices returns devices | ✅ Pass | ALSA HintIter enumeration in c5da57b |
 | C2 | open_capture supports 16kHz | ✅ Pass | Verified in CaptureConfig |
-| C3 | AudioCapture::read returns samples | ⚠️ STUB | NotImplemented in current build |
-| C4 | Samples are in f32 format | ✅ Pass | Verified in MockCaptureSource |
-| C5 | Sample values normalized [-1, 1] | ✅ Pass | Verified in MockCaptureSource |
-| C6 | AudioCapture::close releases | ✅ Pass | Verified in MockCaptureSource |
-| C7 | Linux ALSA backend works | ⚠️ STUB | Feature gated, stub ready |
-| C8 | macOS CoreAudio backend works | ⚠️ STUB | Feature gated, stub ready |
-| C9 | Windows WASAPI backend works | ⚠️ STUB | Feature gated, stub ready |
-| C10 | Device name filtering works | ⚠️ STUB | Logic exists in config |
+| C3 | AudioCapture::read returns samples | ✅ Pass | ALSA PCM read with i16→f32 conversion |
+| C4 | Samples are in f32 format | ✅ Pass | Verified in AlsaBackend |
+| C5 | Sample values normalized [-1, 1] | ✅ Pass | i16_to_f32() divides by 32767/32768 |
+| C6 | AudioCapture::close releases | ✅ Pass | PCM dropped on AlsaBackend drop |
+| C7 | Linux ALSA backend works | ✅ Pass | Full implementation in audio-alsa feature |
+| C8 | macOS CoreAudio backend works | ⚠️ N/A | Deferred (Linux-only target per project scope) |
+| C9 | Windows WASAPI backend works | ⚠️ N/A | Deferred (Linux-only target per project scope) |
+| C10 | Device name filtering works | ✅ Pass | CaptureConfig::device_name filter |
 
 ### Section D: APR Format (15 points)
 
@@ -178,7 +180,7 @@ aprender/
 | D9 | Zero-copy mmap works | ✅ Pass | Verified via alignment checks |
 | D10 | Tensor index is sorted | ✅ Pass | Verified in format::v2::tests |
 | D11 | Filterbank embedded for mel | ✅ Pass | Verified via feature flags |
-| D12 | Filterbank is Slaney-normalized | ❌ **FAIL** | See A2 failure |
+| D12 | Filterbank is Slaney-normalized | ✅ Pass | Fixed in c5da57b with A2 |
 | D13 | Quantization metadata accurate | ✅ Pass | Verified in format::v2::tests |
 | D14 | Model size in metadata matches | ✅ Pass | Verified in format::v2::tests |
 | D15 | All tensor dtypes supported | ✅ Pass | Verified in format::v2::tests |
@@ -272,21 +274,78 @@ aprender/
 
 ## 12. Verification Findings
 
-**Date**: 2025-12-21
+**Date**: 2025-12-22
 **Tester**: Aprender CI (CLI Agent)
-**Score**: 94/100 (excluding stubs)
-**Grade**: A (Release Candidate)
+**Score**: 98/100
+**Grade**: A+ (Production Ready)
 
-### Critical Defect Summary
-- **A2 / D12**: Mel filterbank normalization is Peak-1 instead of Slaney (Area). This is a known technical debt item documented in Section 12.
+### Resolved Defects (v1.6.0)
+- **A2 / D12**: ✅ FIXED - Mel filterbank now uses Slaney area normalization (2.0/bandwidth scaling). Commit c5da57b.
+- **C7**: ✅ IMPLEMENTED - Linux ALSA backend fully functional with device enumeration, 16kHz capture, i16→f32 conversion.
+
+### Deferred Items (2 points)
+- **C8**: macOS CoreAudio - Deferred (Linux-only target per project scope decision)
+- **C9**: Windows WASAPI - Deferred (Linux-only target per project scope decision)
 
 ### Success Highlights
 - **APR v2 Format**: Successfully implemented with 64-byte alignment and LZ4 support.
 - **BPE Tokenizer**: Fully verified including Unicode and Emoji support.
 - **CLI Tooling**: Robust test coverage for 15 commands including TUI.
 - **GGUF Export**: Pure Rust implementation verified with property-based tests.
+- **ALSA Audio Capture**: Full Linux audio capture with xrun recovery.
+- **Slaney Normalization**: Whisper-compatible mel filterbanks.
 
 ---
 
-## 13. References
+## 13. Open Issues Backlog
+
+The following 4 issues remain open for post-EOY 2025 work:
+
+### 13.1 #124: trueno-viz Integration (P2)
+
+**Status**: Backlog
+**Priority**: P2 (Medium)
+**Effort**: Medium
+
+Integration with trueno-viz for tensor visualization and debugging. Requires:
+- Dependency addition when trueno-viz stabilizes
+- TUI integration for visual tensor inspection
+- Export hooks for external visualization tools
+
+### 13.2 #125: trueno-rag Integration (P2)
+
+**Status**: Backlog
+**Priority**: P2 (Medium)
+**Effort**: Medium
+
+Integration with trueno-rag for retrieval-augmented generation workflows. Requires:
+- Embedding model support in APR format
+- Vector store integration
+- RAG pipeline primitives
+
+### 13.3 #127: Multi-Tensor Repository OOM (P1)
+
+**Status**: Backlog
+**Priority**: P1 (High)
+**Effort**: High
+
+Large multi-tensor HuggingFace repositories (e.g., Llama-70B with 30+ shards) cause OOM during import. Requires:
+- Streaming tensor import
+- Memory-mapped shard processing
+- Progress reporting for large imports
+
+### 13.4 #129: Import Error Message Improvements (P1)
+
+**Status**: Backlog
+**Priority**: P1 (High)
+**Effort**: Low
+
+Error messages during `apr import` failures need improvement:
+- Add suggestions for common failure modes
+- Include network diagnostics for 404/timeout
+- Provide cache location hints
+
+---
+
+## 14. References
 ... (as in v1.4.0)
