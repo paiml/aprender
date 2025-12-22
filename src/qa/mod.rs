@@ -20,6 +20,7 @@ pub mod docs;
 pub mod fairness;
 pub mod robustness;
 pub mod security;
+pub mod velocity;
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
