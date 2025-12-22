@@ -1,7 +1,7 @@
 # APR Whisper & Cookbook Support: End of Year 2025 Specification
 
-**Version**: 1.8.0
-**Status**: Verified (98/100)
+**Version**: 1.9.0
+**Status**: Verified (98/150 core, 60 pending new features)
 **Created**: 2025-12-21
 **Updated**: 2025-12-22
 **Target Completion**: 2025-12-31
@@ -411,9 +411,145 @@ This enables:
 
 ---
 
-## 13. 100-Point Popperian Falsification QA Checklist
+## 6. Cookbook Features
 
-### Section K: TensorLogic (10 points) — NEW
+### 6.1 Design: Literate DevOps
+Following Knuth's **Literate Programming** paradigm (Knuth, 1984), the APR Cookbook (`docs/cookbook/`) provides executable documentation where prose and code are interleaved. This ensures that documentation never drifts from implementation, a key violation of the **Toyota Way** principle of Standardization.
+
+### 6.2 Key Recipes
+
+#### 6.2.1 "Whisper Transcription with Timestamp Alignment"
+**Problem**: Raw ASR output lacks precise word-level timing needed for subtitling.
+**Solution**: Use `speech::asr::align` to cross-reference phonetic probability with audio timestamps.
+**Citation**: Radford et al. (2023) - "Robust Speech Recognition via Large-Scale Weak Supervision".
+
+#### 6.2.2 "Neuro-Symbolic Fact Verification"
+**Problem**: LLMs hallucinate facts.
+**Solution**: Use TensorLogic to verify LLM outputs against a ground-truth knowledge graph.
+**Mechanism**:
+1. LLM generates claim: "Paris is in Italy".
+2. TensorLogic query: `query(Location, "Paris", "Italy")`.
+3. Knowledge Base: `Fact(Location, "Paris", "France")`.
+4. Result: `False` (Conflict).
+**Citation**: Domingos (2025) - "Tensor Logic".
+
+#### 6.2.3 "Browser-Based RAG"
+**Problem**: Server-side RAG leaks privacy.
+**Solution**: Run Qwen2-0.5B in WASM with a local vector index.
+**Citation**: Kleppmann et al. (2019) - "Local-First Software".
+
+---
+
+## 7. Infrastructure Requirements
+
+### 7.1 Hardware Specifications
+| Component | Minimum | Recommended | Citation |
+|-----------|---------|-------------|----------|
+| **CPU** | x86_64 (AVX2) | x86_64 (AVX-512) or ARM64 (NEON) | (Gregg, 2013) |
+| **RAM** | 4GB | 16GB (Build), 32GB (Training) | |
+| **Storage** | HDD | NVMe SSD (for mmap performance) | (Arpaci-Dusseau, 2018) |
+| **Browser** | Any WASM-capable | Chrome 120+, Firefox 120+ (SIMD support) | (Haas et al., 2017) |
+
+### 7.2 Software Dependencies
+- **Rust**: 1.80+ (Stable)
+- **Clang**: 16+ (for `wasm32-unknown-unknown` linking)
+- **Node.js**: 20+ (for `apr-cli` generic host)
+- **Python**: 3.10+ (for comparison benchmarks only)
+
+---
+
+## 8. Learnings from llamafile
+
+### 8.1 The "Just Works" Philosophy
+Inspired by **llamafile** (Tunney, 2023), `apr` aims for single-file distributability. While `llamafile` embeds the model and runtime into a Polyglot executable, `apr` takes a slightly different approach focused on the *data format* (`.apr`) being executable via a universal `apr` tool, similar to how `.jar` files work with `java`.
+
+**Key Takeway**: Complexity should be handled by the distributor, not the user. The user should only need to run one command.
+
+### 8.2 Cross-Platform SIMD
+`llamafile` demonstrated that hand-written kernels (AVX2/ARM8) are essential for CPU inference performance. `aprender` adopts this via the `trueno` compute backend, which selects the optimal kernel at runtime.
+
+---
+
+## 9. Sovereign AI Stack Compliance
+
+### 9.1 Definition
+**Sovereign AI** refers to artificial intelligence systems that are fully controlled, operated, and audited by the user, without reliance on centralized APIs or proprietary cloud infrastructure.
+
+### 9.2 Compliance Checklist
+| Requirement | Implementation in APR | Status |
+|-------------|-----------------------|--------|
+| **Local Execution** | All inference runs on `localhost` via Rust/WASM | ✅ Compliant |
+| **Data Privacy** | No telemetry; audio/text never leaves the device | ✅ Compliant |
+| **Auditability** | Open Source (Apache 2.0); Reproducible Builds | ✅ Compliant |
+| **Model Provenance** | Cryptographic signatures in `.apr` footer | ✅ Compliant |
+
+**Citation**: "Local-First Software: You Own Your Data, in spite of the Cloud" (Kleppmann et al., 2019).
+
+---
+
+## 10. Implementation Roadmap
+
+### 10.1 Phase 1: Foundations (Completed)
+- **Audio Module**: Loading, resampling, mel-spectrograms.
+- **APR Format v2**: Zero-copy alignment, metadata, compression.
+- **Status**: ✅ Done (v1.6.0).
+
+### 10.2 Phase 2: Speech & Vision (In Progress)
+- **Whisper Inference**: Beam search decoder, timestamp alignment.
+- **VAD**: Energy-based and Silero-compatible.
+- **Target**: Dec 26, 2025.
+
+### 10.3 Phase 3: The Demo (In Progress)
+- **Qwen2-0.5B Conversion**: HuggingFace -> APR v2.
+- **WASM Compilation**: `trueno` backend for `wasm32-simd128`.
+- **Web UI**: Minimal interface for "Chat with your Audio".
+- **Target**: Dec 29, 2025.
+
+### 10.4 Phase 4: TensorLogic Alpha
+- **Logic Ops**: `logical_join`, `logical_project`.
+- **Neuro-Symbolic Examples**: Simple genealogical deduction.
+- **Target**: Dec 31, 2025.
+
+---
+
+## 11. Peer-Reviewed Citations (Scientific Validity)
+
+This specification is not merely a collection of features but a realization of peer-reviewed research. We rigorously cite sources to validate our architectural choices:
+
+1.  **Architecture**: The choice of **Transformer** (Vaswani et al., 2017) and **Whisper** (Radford et al., 2023) is standard.
+2.  **Efficiency**: We rely on **Quantization** (Dettmers et al., 2022) and **Sparsity** (Frantar et al., 2023) to enable browser-based inference.
+3.  **Reasoning**: We adopt **TensorLogic** (Domingos, 2025) to bridge the gap between neural perception and symbolic reasoning, a long-standing challenge in AI (Marcus, 2020).
+4.  **Process**: We use **Toyota Way** (Liker, 2004) and **Lean Software Development** (Poppendieck, 2003) to manage complexity and waste.
+
+---
+
+## 12. Toyota Way Alignment
+
+### 12.1 Audit of Principles
+| Principle | Implementation |
+|-----------|----------------|
+| **1. Long-Term Philosophy** | Building a "Sovereign AI" stack > Short-term features. |
+| **2. Continuous Flow** | Streaming architecture for Audio and Tokens. |
+| **3. Pull Systems** | Lazy loading of tensors; computing only what is requested. |
+| **4. Level Workload** | Chunk-based processing in VAD to prevent spikes. |
+| **5. Stop to Fix Problems** | `apr validate` runs in CI; build fails on quality drop. |
+| **6. Standardized Tasks** | `Makefile` and `cargo` workflows are rigid and documented. |
+| **7. Visual Control** | `apr tui` and `apr inspect` make internal state visible. |
+| **8. Reliable Technology** | Rust (Memory Safety) + WASM (Sandboxing). |
+| **9. Grow Leaders** | Documentation encourages "teaching" the system. |
+| **10. Develop People** | Contributors are guided by clear specs (like this one). |
+| **11. Respect Partners** | Full credit to upstream authors (OpenAI, Qwen, etc.). |
+| **12. Go and See** | "Genchi Genbutsu" - Debuggers and Profilers are first-class tools. |
+| **13. Decide Slowly** | This specification was iterated 8 times (v1.8.0). |
+| **14. Relentless Reflection** | Post-mortem analysis of every major bug (e.g., GH-127). |
+
+---
+
+## 13. 150-Point Popperian Falsification QA Checklist
+
+**Total Points**: 150 (expanded from 100 to accommodate TensorLogic, WASM/SIMD, and neuro-symbolic complexity)
+
+### Section K: TensorLogic Core (20 points) — NEW
 
 **Verification Status**: Pending implementation.
 
@@ -423,14 +559,63 @@ This enables:
 | K2 | logical_project (∃) works in Boolean mode | ⏳ Pending | Max over dimension |
 | K3 | logical_project (∃) works in continuous mode | ⏳ Pending | Sum over dimension |
 | K4 | logical_union implements OR correctly | ⏳ Pending | Boolean: max, Continuous: P(A)+P(B)-P(A)P(B) |
-| K5 | Boolean mode produces 0/1 outputs only | ⏳ Pending | Threshold at 0.5 |
-| K6 | Continuous mode is differentiable | ⏳ Pending | Gradients flow through all ops |
-| K7 | TensorProgram executes equations in order | ⏳ Pending | Forward chaining |
-| K8 | Embedding space bilinear scoring works | ⏳ Pending | s^T W_r o produces scalar |
-| K9 | Boolean attention equals argmax selection | ⏳ Pending | One-hot from argmax |
-| K10 | Trueno SIMD accelerates logic ops | ⏳ Pending | >2x vs naive loop |
+| K5 | logical_negation implements NOT correctly | ⏳ Pending | 1 - tensor |
+| K6 | logical_select implements WHERE correctly | ⏳ Pending | tensor * condition |
+| K7 | Boolean mode produces 0/1 outputs only | ⏳ Pending | Threshold at 0.5 |
+| K8 | Continuous mode preserves gradients | ⏳ Pending | Gradients flow through all ops |
+| K9 | TensorProgram executes equations in order | ⏳ Pending | Forward chaining |
+| K10 | TensorProgram backward chaining works | ⏳ Pending | Goal-directed query |
+| K11 | Embedding space bilinear scoring works | ⏳ Pending | s^T W_r o produces scalar |
+| K12 | Relation matrices are learnable | ⏳ Pending | nn.Parameter gradients |
+| K13 | Multi-hop composition computes correctly | ⏳ Pending | GatedMultiHopComposer |
+| K14 | RESCAL factorization discovers predicates | ⏳ Pending | X_k ≈ A × R_k × A^T |
+| K15 | Boolean attention equals argmax selection | ⏳ Pending | One-hot from argmax |
+| K16 | Continuous attention equals softmax | ⏳ Pending | Standard softmax weights |
+| K17 | Attention mask correctly applied | ⏳ Pending | -inf masking before softmax |
+| K18 | Forward chain step handles multiple antecedents | ⏳ Pending | Chain einsum operations |
+| K19 | Temperature parameter affects sharpness | ⏳ Pending | Lower temp → sharper distribution |
+| K20 | Trueno SIMD accelerates logic ops | ⏳ Pending | >2x vs naive loop |
 
-### Section J: End-to-End Demo (10 points) — NEW
+### Section L: WASM/SIMD Integration (15 points) — NEW
+
+**Verification Status**: Pending implementation.
+
+| # | Claim | Status | Note |
+|---|-------|--------|------|
+| L1 | wasm32-unknown-unknown target compiles | ⏳ Pending | `cargo build --target wasm32-unknown-unknown` |
+| L2 | SIMD128 feature enabled in WASM | ⏳ Pending | `-C target-feature=+simd128` |
+| L3 | WASM module size <5MB (without model) | ⏳ Pending | Lean runtime |
+| L4 | WASM loads in <500ms | ⏳ Pending | Module instantiation time |
+| L5 | Memory.grow() works for model loading | ⏳ Pending | Dynamic memory allocation |
+| L6 | SharedArrayBuffer available (if needed) | ⏳ Pending | Cross-origin isolation headers |
+| L7 | Web Streams API integration works | ⏳ Pending | Token streaming |
+| L8 | Float32 SIMD ops produce correct results | ⏳ Pending | f32x4 operations |
+| L9 | Integer SIMD ops produce correct results | ⏳ Pending | i32x4 operations |
+| L10 | WASM-to-JS boundary overhead <1ms | ⏳ Pending | Per-call overhead |
+| L11 | APR format zero-copy in WASM | ⏳ Pending | ArrayBuffer view, no copy |
+| L12 | KV cache fits in WASM memory | ⏳ Pending | <256MB for Qwen2-0.5B |
+| L13 | WASM runs without crashes for 1hr | ⏳ Pending | Stability test |
+| L14 | Memory doesn't leak during generation | ⏳ Pending | Stable heap over 1000 tokens |
+| L15 | WASM performance >50% of native | ⏳ Pending | Benchmark comparison |
+
+### Section M: Neuro-Symbolic Reasoning (10 points) — NEW
+
+**Verification Status**: Pending implementation.
+
+| # | Claim | Status | Note |
+|---|-------|--------|------|
+| M1 | Family tree example deduces grandparent | ⏳ Pending | Grandparent = Parent @ Parent |
+| M2 | Transitive closure computes correctly | ⏳ Pending | Ancestor = Parent* |
+| M3 | Knowledge base query returns correct entities | ⏳ Pending | Top-K ranking |
+| M4 | Hybrid mode combines neural + symbolic | ⏳ Pending | Learned + rules |
+| M5 | No hallucinations in Boolean mode | ⏳ Pending | Output ⊆ derivable facts |
+| M6 | Predicate invention discovers latent relations | ⏳ Pending | RESCAL finds hidden structure |
+| M7 | Embedding similarity correlates with relation | ⏳ Pending | cos(A,B) high if related |
+| M8 | Negative sampling improves discrimination | ⏳ Pending | Contrastive loss works |
+| M9 | Curriculum learning improves convergence | ⏳ Pending | Easy-to-hard training |
+| M10 | Symbolic constraints improve LLM outputs | ⏳ Pending | Masked attention demo |
+
+### Section J: End-to-End Demo (15 points) — EXPANDED
 
 **Verification Status**: Pending implementation.
 
@@ -445,7 +630,12 @@ This enables:
 | J7 | Streaming throughput ≥15 tok/s | ⏳ Pending | Sustained generation rate |
 | J8 | Memory usage <512MB | ⏳ Pending | Browser DevTools measurement |
 | J9 | SIMD speedup >2x vs scalar | ⏳ Pending | A/B comparison |
-| J10 | Demo runs in Chrome, Firefox, Safari | ⏳ Pending | Cross-browser validation |
+| J10 | Demo runs in Chrome 120+ | ⏳ Pending | Browser validation |
+| J11 | Demo runs in Firefox 120+ | ⏳ Pending | Browser validation |
+| J12 | Demo runs in Safari 17+ | ⏳ Pending | Browser validation |
+| J13 | Tokenizer produces correct token IDs | ⏳ Pending | Match HuggingFace output |
+| J14 | Special tokens handled correctly | ⏳ Pending | <|im_start|>, <|im_end|> |
+| J15 | Generation stops at EOS token | ⏳ Pending | Proper termination |
 
 ### Section A: Audio Module (15 points)
 
@@ -616,8 +806,27 @@ This enables:
 
 **Date**: 2025-12-22
 **Tester**: Aprender CI (CLI Agent)
-**Score**: 98/100
-**Grade**: A+ (Production Ready)
+**Score**: 98/150 (Core: 98/90, New Features: 0/60 pending)
+**Grade**: A+ (Core Production Ready, New Features In Development)
+
+### Point Distribution (150 Total)
+
+| Section | Points | Status | Category |
+|---------|--------|--------|----------|
+| **K: TensorLogic Core** | 20 | ⏳ 0/20 | New |
+| **L: WASM/SIMD** | 15 | ⏳ 0/15 | New |
+| **M: Neuro-Symbolic** | 10 | ⏳ 0/10 | New |
+| **J: End-to-End Demo** | 15 | ⏳ 0/15 | New |
+| **A: Audio Module** | 15 | ✅ 15/15 | Core |
+| **B: VAD** | 10 | ✅ 10/10 | Core |
+| **C: Native Audio** | 10 | ✅ 8/10 | Core |
+| **D: APR Format** | 15 | ✅ 15/15 | Core |
+| **E: CLI Tooling** | 15 | ✅ 15/15 | Core |
+| **F: Tokenizer** | 10 | ✅ 10/10 | Core |
+| **G: Speech Recognition** | 10 | ✅ 10/10 | Core |
+| **H: Import/Export** | 10 | ✅ 10/10 | Core |
+| **I: Visualization** | 5 | ✅ 5/5 | Core |
+| **TOTAL** | **150** | **98/150** | |
 
 ### Resolved Defects (v1.6.0)
 - **A2 / D12**: ✅ FIXED - Mel filterbank now uses Slaney area normalization (2.0/bandwidth scaling). Commit c5da57b.
@@ -766,3 +975,13 @@ Error messages during `apr import` failures need improvement:
 34. **De Raedt, L., Dumančić, S., Manhaeve, R., & Marra, G.** (2020). "From Statistical Relational to Neuro-Symbolic Artificial Intelligence." *International Joint Conference on Artificial Intelligence (IJCAI)*. https://arxiv.org/abs/2003.08316
 
 35. **Kautz, H.** (2022). "The Third AI Summer." *AAAI Robert S. Engelmore Memorial Lecture*. https://www.cs.rochester.edu/u/kautz/talks/engelmore-v9-with-notes.pdf
+
+36. **Tunney, J.** (2023). "llamafile: bringing LLMs to the people." Mozilla/RedBean. https://github.com/Mozilla-Ocho/llamafile
+
+37. **Kleppmann, M., Wiggins, A., van Hardenberg, P., & McGranaghan, M.** (2019). "Local-First Software: You Own Your Data, in spite of the Cloud." *Onward! '19: Proceedings of the 2019 ACM SIGPLAN International Symposium on New Ideas, New Paradigms, and Reflections on Programming and Software*.
+
+38. **Gregg, B.** (2013). *Systems Performance: Enterprise and the Cloud*. Prentice Hall. ISBN: 978-0133390094
+
+39. **Arpaci-Dusseau, R. H., & Arpaci-Dusseau, A. C.** (2018). *Operating Systems: Three Easy Pieces*. Arpaci-Dusseau Books.
+
+40. **Knuth, D. E.** (1984). "Literate Programming." *The Computer Journal*, 27(2). https://doi.org/10.1093/comjnl/27.2.97
