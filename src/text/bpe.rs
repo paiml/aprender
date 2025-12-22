@@ -19,11 +19,18 @@
 //! ```rust
 //! use aprender::text::bpe::{BpeTokenizer, BpeConfig};
 //!
+//! // Create tokenizer with empty vocabulary (default)
 //! let config = BpeConfig::default();
 //! let tokenizer = BpeTokenizer::new(config);
-//! let text = "Hello world";
-//! let tokens = tokenizer.encode(text);
-//! assert!(!tokens.is_empty());
+//!
+//! // Empty vocab returns empty tokens - real usage requires loading vocab
+//! let tokens = tokenizer.encode("Hello");
+//! assert!(tokens.is_empty()); // No vocab loaded yet
+//!
+//! // For real tokenization, load from HuggingFace:
+//! // let tokenizer = BpeTokenizer::from_huggingface("path/to/tokenizer.json")?;
+//! // let tokens = tokenizer.encode("Hello world");
+//! // assert!(!tokens.is_empty());
 //! ```
 //!
 //! # References

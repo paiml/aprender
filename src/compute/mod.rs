@@ -21,14 +21,18 @@
 //! ```rust
 //! use aprender::compute::{TrainingGuard, select_backend, BackendCategory};
 //!
-//! // Auto-select backend based on data size
-//! let backend = select_backend(data.len(), gpu_available);
+//! // Auto-select backend based on data size (100k+ → GPU, 1k+ → SimdParallel)
+//! let data_size = 50_000;
+//! let gpu_available = false;
+//! let backend = select_backend(data_size, gpu_available);
+//! assert_eq!(backend, BackendCategory::SimdParallel);
 //!
 //! // Create training guard for NaN/Inf detection
 //! let guard = TrainingGuard::new("gradient_update");
 //!
-//! // Check weights after update
-//! guard.check_weights(&weights)?;
+//! // Check weights after update (detects NaN/Inf)
+//! let weights = vec![1.0f32, 2.0, 3.0];
+//! assert!(guard.check_weights(&weights).is_ok());
 //! ```
 
 use crate::error::{AprenderError, Result};
