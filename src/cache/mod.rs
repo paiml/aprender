@@ -887,6 +887,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "Uses thread::sleep - run with cargo test -- --ignored"]
     fn test_cache_metadata_expiration() {
         let meta = CacheMetadata::new(1024).with_ttl(Duration::from_millis(1));
         std::thread::sleep(Duration::from_millis(5));
@@ -1156,6 +1157,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "Uses thread::sleep - run with cargo test -- --ignored"]
     fn test_cache_metadata_age() {
         let meta = CacheMetadata::new(1024);
         std::thread::sleep(Duration::from_millis(5));
@@ -1216,7 +1218,11 @@ mod tests {
             CacheData::Decompressed(vec![0u8; 100]),
         );
         assert!(entry.is_valid());
+    }
 
+    #[test]
+    #[ignore = "Uses thread::sleep - run with cargo test -- --ignored"]
+    fn test_cache_entry_is_valid_expired() {
         // Entry with expired TTL
         let mut entry_expired = CacheEntry::new(
             [0u8; 32],

@@ -375,6 +375,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "Uses thread::sleep - run with cargo test -- --ignored"]
     fn test_time_budget() {
         let space: SearchSpace<RF> = SearchSpace::new().add(RF::NEstimators, 10..100);
 
@@ -477,6 +478,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "Uses thread::sleep - run with cargo test -- --ignored"]
     fn test_time_budget_elapsed_remaining() {
         let mut budget = TimeBudget::seconds(10);
 

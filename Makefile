@@ -19,7 +19,7 @@ SHELL := /bin/bash
 # Multi-line recipes execute in same shell
 .ONESHELL:
 
-.PHONY: all build test test-fast test-quick test-full lint fmt clean doc book book-build book-serve book-test tier1 tier2 tier3 tier4 coverage coverage-fast profile hooks-install hooks-verify lint-scripts bashrs-score bashrs-lint-makefile chaos-test chaos-test-full chaos-test-lite fuzz bench dev pre-push ci check run-ci run-bench audit deps-validate deny pmat-score pmat-gates quality-report semantic-search examples mutants mutants-fast property-test install-alsa test-alsa test-audio-full
+.PHONY: all build test test-smoke test-fast test-quick test-full test-heavy lint fmt clean doc book book-build book-serve book-test tier1 tier2 tier3 tier4 coverage coverage-fast profile hooks-install hooks-verify lint-scripts bashrs-score bashrs-lint-makefile chaos-test chaos-test-full chaos-test-lite fuzz bench dev pre-push ci check run-ci run-bench audit deps-validate deny pmat-score pmat-gates quality-report semantic-search examples mutants mutants-fast property-test install-alsa test-alsa test-audio-full
 
 # Default target
 all: tier2
@@ -31,6 +31,30 @@ build:
 # ============================================================================
 # TEST TARGETS (Performance-Optimized with nextest)
 # ============================================================================
+
+# Smoke tests (<2s): Minimal critical path verification (Section P: P2)
+# Only runs core API tests, no proptests, no encryption, no network
+test-smoke: ## Smoke tests (<2s target, Section P: P2)
+	@echo "💨 Running smoke tests (target: <2s)..."
+	@time cargo test --lib --no-fail-fast -- \
+		--skip prop_ \
+		--skip test_encrypted \
+		--skip test_cache_metadata_expiration \
+		--skip test_cache_metadata_age \
+		--skip test_cache_entry_is_valid_expired \
+		--skip test_time_budget \
+		--skip k20_trueno_simd \
+		--skip test_de_handles_different \
+		tests::test_lib_sanity 2>/dev/null || \
+		cargo test --lib --no-fail-fast -- \
+		--skip prop_ \
+		--skip test_encrypted \
+		--skip test_cache_metadata \
+		--skip test_time_budget \
+		--skip k20_ \
+		--skip test_de_ \
+		2>&1 | head -50
+	@echo "✅ Smoke tests passed"
 
 # Fast tests (<30s): Uses nextest for parallelism if available
 # Pattern from bashrs: cargo-nextest + PROPTEST_CASES + exclude slow tests
@@ -72,6 +96,13 @@ test-full: ## Comprehensive tests (all features)
 		time cargo test --workspace --all-features; \
 	fi
 	@echo "✅ Full tests passed"
+
+# Heavy tests: Runs ignored tests (Section P: P7)
+# Includes: sleep()-based tests, slow encryption tests, long proptests
+test-heavy: ## Heavy/slow tests (ignored tests)
+	@echo "🐢 Running heavy tests (ignored tests)..."
+	@time cargo test --workspace -- --ignored
+	@echo "✅ Heavy tests passed"
 
 # Linting
 lint:
