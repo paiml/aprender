@@ -31,7 +31,7 @@ inference = ["realizar", "tokio", "axum"]
 
 [dependencies]
 # Core aprender library
-aprender = { version = "0.19.0", default-features = true, features = ["format-compression"] }
+aprender = { path = "../..", version = "0.20.0", default-features = true, features = ["format-compression"] }
 
 # Inference engine (optional)
 realizar = { version = "0.3.0", optional = true, default-features = false, features = ["server", "aprender-serve"] }

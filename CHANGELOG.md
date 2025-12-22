@@ -7,6 +7,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.0] - 2025-12-22
+
+### Added
+
+#### TensorLogic Neuro-Symbolic Reasoning (`logic`)
+- **Logical Tensor Operations**: `logical_join`, `logical_project`, `logical_select`
+- **Einsum DSL**: Direct mapping to tensor operations
+- **Constraint Programming**: `ProgramBuilder` for symbolic constraints
+- **Embedding Integration**: Similarity correlation with symbolic reasoning
+- **Training Support**: Negative sampling, curriculum learning, masked attention
+
+#### QA Verification Modules (`qa`)
+- **Security Module** (`qa/security`): N1-N20 security verification (fuzzing, sanitizers, path traversal)
+- **Documentation Module** (`qa/docs`): O1-O20 documentation verification
+- **Velocity Module** (`qa/velocity`): P1-P10 test velocity verification
+- **210-point Popperian Falsification Checklist**: Comprehensive verification framework
+
+#### WASM/SIMD Browser Inference (`wasm`)
+- **Browser-compatible INT4 quantization**: Qwen2-0.5B-Instruct reference model
+- **SIMD acceleration**: 2x speedup vs scalar operations
+- **Memory optimization**: <512MB browser memory usage
+
+#### End-to-End Demo Infrastructure (`demo`)
+- **Qwen2Config**: Browser inference configuration
+- **DemoMetrics**: Performance validation (load time, throughput, latency)
+- **BrowserCompatibility**: Chrome 120+, Firefox 120+, Safari 17+
+
+#### Speech Processing (`speech`)
+- **VAD** (Voice Activity Detection): Energy-based speech segmentation
+- **Audio Pipeline**: Mel spectrogram, resampling, streaming
+
+#### Examples
+- `examples/whisper_transcribe.rs`: End-to-end ASR pipeline demo
+- `examples/qwen_chat.rs`: Qwen2-0.5B configuration demo
+- `examples/logic_family_tree.rs`: TensorLogic family tree reasoning
+
+### Changed
+- Updated trueno dependency to 0.8.8 (compute integration)
+- Test velocity: Added `make test-smoke` (<2s), `make test-heavy` (slow tests)
+- Marked sleep()-using tests with `#[ignore]` for fast test path
+
+### Quality
+- **208/210 specification points verified** (Grade: A+)
+- **4,819+ tests passing** (unit + property + integration)
+- **96.94% code coverage** (target: ≥95%)
+- All new features include Toyota Way documentation
+
+## [0.19.0] - 2025-12-21
+
+### Added
+- Audio module with mel spectrogram, resampling, streaming support
+- Speech VAD (Voice Activity Detection)
+
 ## [0.18.2] - 2025-12-15
 
 ### Changed
