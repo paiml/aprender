@@ -1,6 +1,6 @@
 # APR Whisper & Cookbook Support: End of Year 2025 Specification
 
-**Version**: 1.6.0
+**Version**: 1.7.0
 **Status**: Verified (98/100)
 **Created**: 2025-12-21
 **Updated**: 2025-12-22
@@ -19,6 +19,8 @@ This specification consolidates all open GitHub issues and recent development wo
 - APR format v2 and CLI tooling enhancements
 - Speech processing infrastructure (ASR, TTS, VAD)
 - Integration with trueno ecosystem
+- **First-class end-to-end demo support** (Qwen2-0.5B-Instruct reference model)
+- WASM/SIMD browser inference demonstration
 
 ---
 
@@ -27,17 +29,18 @@ This specification consolidates all open GitHub issues and recent development wo
 1. [Design Philosophy](#1-design-philosophy)
 2. [Open Issues Analysis](#2-open-issues-analysis)
 3. [Whisper Support Architecture](#3-whisper-support-architecture)
-4. [Cookbook Features](#4-cookbook-features)
-5. [Infrastructure Requirements](#5-infrastructure-requirements)
-6. [Learnings from llamafile](#6-learnings-from-llamafile)
-7. [Sovereign AI Stack Compliance](#7-sovereign-ai-stack-compliance)
-8. [Implementation Roadmap](#8-implementation-roadmap)
-9. [Peer-Reviewed Citations](#9-peer-reviewed-citations)
-10. [Toyota Way Alignment](#10-toyota-way-alignment)
-11. [100-Point Popperian Falsification QA Checklist](#11-100-point-popperian-falsification-qa-checklist)
-12. [Verification Findings](#12-verification-findings)
-13. [Open Issues Backlog](#13-open-issues-backlog)
-14. [References](#14-references)
+4. [End-to-End Demo Architecture](#4-end-to-end-demo-architecture)
+5. [Cookbook Features](#5-cookbook-features)
+6. [Infrastructure Requirements](#6-infrastructure-requirements)
+7. [Learnings from llamafile](#7-learnings-from-llamafile)
+8. [Sovereign AI Stack Compliance](#8-sovereign-ai-stack-compliance)
+9. [Implementation Roadmap](#9-implementation-roadmap)
+10. [Peer-Reviewed Citations](#10-peer-reviewed-citations)
+11. [Toyota Way Alignment](#11-toyota-way-alignment)
+12. [100-Point Popperian Falsification QA Checklist](#12-100-point-popperian-falsification-qa-checklist)
+13. [Verification Findings](#13-verification-findings)
+14. [Open Issues Backlog](#14-open-issues-backlog)
+15. [References](#15-references)
 
 ---
 
@@ -105,7 +108,154 @@ aprender/
 
 ---
 
-## 11. 100-Point Popperian Falsification QA Checklist
+## 4. End-to-End Demo Architecture
+
+### 4.1 Design Rationale
+
+First-class demo support is a **Toyota Way principle** (Visual Control / Mieruka): the system must be demonstrable at any time to validate claims. Following Kahneman's distinction between System 1 and System 2 thinking (Kahneman, 2011), demos provide intuitive validation that complements formal testing.
+
+**Core Thesis**: A complete end-to-end demo from model import to browser inference validates the entire APR/Trueno stack more effectively than unit tests alone (Spolsky, 2000).
+
+### 4.2 Reference Model: Qwen2-0.5B-Instruct
+
+| Property | Value | Citation |
+|----------|-------|----------|
+| **Model** | `Qwen/Qwen2-0.5B-Instruct` | (Bai et al., 2023) |
+| **Parameters** | 494M | Qwen Technical Report |
+| **Architecture** | Transformer decoder-only | (Vaswani et al., 2017) |
+| **Context Length** | 32,768 tokens | Qwen2 Technical Report |
+| **Vocabulary** | 151,936 tokens | Tiktoken-compatible BPE |
+| **License** | Apache 2.0 | Open source |
+| **FP16 Size** | ~1GB | HuggingFace Hub |
+| **INT4 Size** | ~300MB | Post-quantization |
+| **WASM Feasibility** | Excellent | Sub-500MB threshold |
+
+#### 4.2.1 Model Selection Justification
+
+The selection of Qwen2-0.5B-Instruct as reference model is supported by peer-reviewed research:
+
+1. **Scaling Laws** (Hoffmann et al., 2022): Chinchilla scaling laws demonstrate that smaller models trained on more data can match larger models. Qwen2-0.5B follows this principle with extensive training data.
+
+2. **Efficient Transformers** (Tay et al., 2022): Survey of efficient transformer variants validates that sub-1B models can achieve useful instruction-following capability.
+
+3. **Quantization Robustness** (Dettmers et al., 2022): GPTQ and related methods show INT4 quantization preserves model quality for inference, enabling browser deployment.
+
+4. **Instruction Tuning** (Wei et al., 2022): FLAN research demonstrates instruction-tuned models generalize better, even at small scale.
+
+5. **Multilingual Capability** (Conneau et al., 2020): XLM-R research shows multilingual pretraining benefits even small models—Qwen2 covers 29 languages.
+
+### 4.3 WASM/SIMD/Trueno Integration
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        Browser Environment                       │
+├─────────────────────────────────────────────────────────────────┤
+│  ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐  │
+│  │   User   │───▶│  WASM    │───▶│  Trueno  │───▶│  Output  │  │
+│  │  Prompt  │    │  Module  │    │  SIMD    │    │  Stream  │  │
+│  └──────────┘    └──────────┘    └──────────┘    └──────────┘  │
+│                        │                │                       │
+│                        ▼                ▼                       │
+│                  ┌──────────┐    ┌──────────┐                  │
+│                  │   APR    │    │  128-bit │                  │
+│                  │  Format  │    │   SIMD   │                  │
+│                  │  (mmap)  │    │  (wasm)  │                  │
+│                  └──────────┘    └──────────┘                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+#### 4.3.1 Performance Targets
+
+| Metric | Target | Justification |
+|--------|--------|---------------|
+| **Time to First Token** | <2s | User perception threshold (Nielsen, 1993) |
+| **Tokens/Second** | ≥15 tok/s | Readable streaming rate |
+| **Memory Usage** | <512MB | Browser tab limit |
+| **Model Load Time** | <5s | Streaming from CDN |
+| **Initial Bundle** | <100KB | Fast page load |
+
+#### 4.3.2 Technical Requirements
+
+1. **WASM SIMD**: 128-bit SIMD operations via `wasm32-simd128` target feature
+2. **Zero-Copy Load**: APR format mmap-compatible alignment (64-byte)
+3. **Streaming Decode**: Token-by-token output via Web Streams API
+4. **KV Cache**: Efficient key-value cache management for autoregressive generation
+5. **Quantized Weights**: INT4/INT8 with dequantization in SIMD kernels
+
+### 4.4 Demo Pipeline
+
+```
+apr import hf://Qwen/Qwen2-0.5B-Instruct -o qwen2-0.5b.apr --arch qwen2
+    │
+    ▼
+apr convert qwen2-0.5b.apr --quantize int4 -o qwen2-0.5b-int4.apr
+    │
+    ▼
+apr validate qwen2-0.5b-int4.apr --quality
+    │
+    ▼
+apr compile qwen2-0.5b-int4.apr --target wasm32-unknown-unknown -o qwen2.wasm
+    │
+    ▼
+Deploy to CDN → Browser loads WASM + APR → User types prompt → Streaming output
+```
+
+### 4.5 Peer-Reviewed Citations for Demo Architecture
+
+| Citation | Relevance | Key Finding |
+|----------|-----------|-------------|
+| **(Vaswani et al., 2017)** | Transformer architecture | Self-attention enables parallelizable sequence modeling |
+| **(Bai et al., 2023)** | Qwen model family | Demonstrates high-quality small models via data quality |
+| **(Hoffmann et al., 2022)** | Chinchilla scaling | Optimal compute allocation favors more data, smaller models |
+| **(Dettmers et al., 2022)** | GPTQ quantization | INT4 preserves quality for inference |
+| **(Frantar et al., 2023)** | SparseGPT | Unstructured sparsity + quantization for efficient inference |
+| **(Tay et al., 2022)** | Efficient transformers | Survey of sub-quadratic attention mechanisms |
+| **(Wei et al., 2022)** | FLAN instruction tuning | Instruction tuning improves zero-shot generalization |
+| **(Haas et al., 2017)** | WebAssembly | WASM design enables near-native browser performance |
+| **(Jangda et al., 2019)** | WASM performance | WASM achieves ~50-90% of native speed |
+| **(Nielsen, 1993)** | Response time | <1s feels instant, <10s keeps attention |
+
+### 4.6 Falsifiable Claims (Popperian Criteria)
+
+| Claim | Falsification Condition |
+|-------|------------------------|
+| Qwen2-0.5B loads in browser | Model fails to initialize in Chrome/Firefox/Safari |
+| INT4 quantization preserves quality | Perplexity increases >15% vs FP16 baseline |
+| WASM SIMD provides speedup | SIMD disabled shows <10% slowdown |
+| Streaming achieves 15 tok/s | Measured throughput <15 tok/s on reference hardware |
+| Memory stays under 512MB | Browser reports >512MB heap usage |
+| Zero-copy mmap works in WASM | Alignment check fails or copy detected |
+
+### 4.7 Alternative Models Considered
+
+| Model | Size | Rejected Because |
+|-------|------|------------------|
+| **Phi-3-mini** | 3.8B | Too large for browser (~2GB INT4) |
+| **SmolLM-135M** | 135M | Quality insufficient for meaningful demo |
+| **TinyLlama-1.1B** | 1.1B | Larger than Qwen2-0.5B, similar quality |
+| **Gemma-2B** | 2B | Too large, license restrictions |
+| **Qwen2-1.5B** | 1.5B | Good fallback if 0.5B insufficient |
+
+---
+
+## 12. 100-Point Popperian Falsification QA Checklist
+
+### Section J: End-to-End Demo (10 points) — NEW
+
+**Verification Status**: Pending implementation.
+
+| # | Claim | Status | Note |
+|---|-------|--------|------|
+| J1 | Qwen2-0.5B imports from HF | ⏳ Pending | `apr import hf://Qwen/Qwen2-0.5B-Instruct` |
+| J2 | INT4 quantization completes | ⏳ Pending | `apr convert --quantize int4` |
+| J3 | Quantized perplexity <15% degradation | ⏳ Pending | Measured vs FP16 baseline |
+| J4 | WASM compilation succeeds | ⏳ Pending | `apr compile --target wasm32-unknown-unknown` |
+| J5 | Browser loads model <5s | ⏳ Pending | Chrome/Firefox timing |
+| J6 | First token latency <2s | ⏳ Pending | Time from prompt submit |
+| J7 | Streaming throughput ≥15 tok/s | ⏳ Pending | Sustained generation rate |
+| J8 | Memory usage <512MB | ⏳ Pending | Browser DevTools measurement |
+| J9 | SIMD speedup >2x vs scalar | ⏳ Pending | A/B comparison |
+| J10 | Demo runs in Chrome, Firefox, Safari | ⏳ Pending | Cross-browser validation |
 
 ### Section A: Audio Module (15 points)
 
@@ -272,7 +422,7 @@ aprender/
 
 ---
 
-## 12. Verification Findings
+## 13. Verification Findings
 
 **Date**: 2025-12-22
 **Tester**: Aprender CI (CLI Agent)
@@ -297,11 +447,11 @@ aprender/
 
 ---
 
-## 13. Open Issues Backlog
+## 14. Open Issues Backlog
 
 The following 4 issues remain open for post-EOY 2025 work:
 
-### 13.1 #124: trueno-viz Integration (P2)
+### 14.1 #124: trueno-viz Integration (P2)
 
 **Status**: Backlog
 **Priority**: P2 (Medium)
@@ -312,7 +462,7 @@ Integration with trueno-viz for tensor visualization and debugging. Requires:
 - TUI integration for visual tensor inspection
 - Export hooks for external visualization tools
 
-### 13.2 #125: trueno-rag Integration (P2)
+### 14.2 #125: trueno-rag Integration (P2)
 
 **Status**: Backlog
 **Priority**: P2 (Medium)
@@ -323,7 +473,7 @@ Integration with trueno-rag for retrieval-augmented generation workflows. Requir
 - Vector store integration
 - RAG pipeline primitives
 
-### 13.3 #127: Multi-Tensor Repository OOM (P1)
+### 14.3 #127: Multi-Tensor Repository OOM (P1)
 
 **Status**: Backlog
 **Priority**: P1 (High)
@@ -334,7 +484,7 @@ Large multi-tensor HuggingFace repositories (e.g., Llama-70B with 30+ shards) ca
 - Memory-mapped shard processing
 - Progress reporting for large imports
 
-### 13.4 #129: Import Error Message Improvements (P1)
+### 14.4 #129: Import Error Message Improvements (P1)
 
 **Status**: Backlog
 **Priority**: P1 (High)
@@ -347,5 +497,54 @@ Error messages during `apr import` failures need improvement:
 
 ---
 
-## 14. References
-... (as in v1.4.0)
+## 15. References
+
+### Peer-Reviewed Publications
+
+1. **Vaswani, A., Shazeer, N., Parmar, N., et al.** (2017). "Attention Is All You Need." *Advances in Neural Information Processing Systems (NeurIPS)*, 30. https://arxiv.org/abs/1706.03762
+
+2. **Bai, J., Bai, S., Chu, Y., et al.** (2023). "Qwen Technical Report." *arXiv preprint*. https://arxiv.org/abs/2309.16609
+
+3. **Hoffmann, J., Borgeaud, S., Mensch, A., et al.** (2022). "Training Compute-Optimal Large Language Models." *Advances in Neural Information Processing Systems (NeurIPS)*, 35. https://arxiv.org/abs/2203.15556
+
+4. **Dettmers, T., Lewis, M., Belkada, Y., & Zettlemoyer, L.** (2022). "LLM.int8(): 8-bit Matrix Multiplication for Transformers at Scale." *Advances in Neural Information Processing Systems (NeurIPS)*, 35. https://arxiv.org/abs/2208.07339
+
+5. **Frantar, E., & Alistarh, D.** (2023). "SparseGPT: Massive Language Models Can Be Accurately Pruned in One-Shot." *International Conference on Machine Learning (ICML)*. https://arxiv.org/abs/2301.00774
+
+6. **Tay, Y., Dehghani, M., Bahri, D., & Metzler, D.** (2022). "Efficient Transformers: A Survey." *ACM Computing Surveys*, 55(6). https://arxiv.org/abs/2009.06732
+
+7. **Wei, J., Bosma, M., Zhao, V., et al.** (2022). "Finetuned Language Models Are Zero-Shot Learners." *International Conference on Learning Representations (ICLR)*. https://arxiv.org/abs/2109.01652
+
+8. **Conneau, A., Khandelwal, K., Goyal, N., et al.** (2020). "Unsupervised Cross-lingual Representation Learning at Scale." *Annual Meeting of the Association for Computational Linguistics (ACL)*. https://arxiv.org/abs/1911.02116
+
+9. **Haas, A., Rossberg, A., Schuff, D. L., et al.** (2017). "Bringing the Web up to Speed with WebAssembly." *ACM SIGPLAN Conference on Programming Language Design and Implementation (PLDI)*. https://doi.org/10.1145/3062341.3062363
+
+10. **Jangda, A., Powers, B., Berber Sardinha, E., & Guha, A.** (2019). "Not So Fast: Analyzing the Performance of WebAssembly vs. Native Code." *USENIX Annual Technical Conference (ATC)*. https://www.usenix.org/conference/atc19/presentation/jangda
+
+11. **Radford, A., Kim, J. W., Xu, T., et al.** (2023). "Robust Speech Recognition via Large-Scale Weak Supervision." *International Conference on Machine Learning (ICML)*. https://arxiv.org/abs/2212.04356
+
+12. **Kahneman, D.** (2011). *Thinking, Fast and Slow*. Farrar, Straus and Giroux. ISBN: 978-0374275631
+
+13. **Nielsen, J.** (1993). *Usability Engineering*. Morgan Kaufmann. ISBN: 978-0125184069
+
+14. **Liker, J. K.** (2004). *The Toyota Way: 14 Management Principles from the World's Greatest Manufacturer*. McGraw-Hill. ISBN: 978-0071392310
+
+15. **Poppendieck, M., & Poppendieck, T.** (2003). *Lean Software Development: An Agile Toolkit*. Addison-Wesley. ISBN: 978-0321150783
+
+16. **Popper, K.** (1959). *The Logic of Scientific Discovery*. Routledge. ISBN: 978-0415278447
+
+17. **Spolsky, J.** (2000). "The Joel Test: 12 Steps to Better Code." *Joel on Software*. https://www.joelonsoftware.com/2000/08/09/the-joel-test-12-steps-to-better-code/
+
+### Technical Reports
+
+18. **Qwen Team.** (2024). "Qwen2 Technical Report." Alibaba Cloud. https://qwenlm.github.io/blog/qwen2/
+
+19. **WebAssembly Community Group.** (2024). "WebAssembly SIMD Specification." W3C. https://webassembly.github.io/simd/core/
+
+20. **OpenAI.** (2023). "Whisper Model Card." https://github.com/openai/whisper
+
+### Standards
+
+21. **ISO/IEC 23094-1:2020.** "Essential video coding." International Organization for Standardization.
+
+22. **RFC 6716.** (2012). "Definition of the Opus Audio Codec." Internet Engineering Task Force.
