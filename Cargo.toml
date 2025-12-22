@@ -93,6 +93,9 @@ rand_chacha = "0.3"  # ChaCha20 PRNG for Monte Carlo simulations
 rustfft = { version = "6.2", optional = true }  # FFT for mel spectrogram computation
 thiserror = { version = "2.0", optional = true }  # Error handling for audio module
 
+# Native audio capture (Linux ALSA)
+alsa = { version = "0.9", optional = true }  # ALSA bindings for Linux audio capture
+
 # Parallelization for graph algorithms (optional for WASM compatibility)
 rayon = { version = "1.10", optional = true }
 
@@ -146,7 +149,8 @@ format-homomorphic = []  # Enable homomorphic encryption for .apr format (spec: 
 # Note: mmap is automatic on native platforms, no feature needed (spec: bundle-mmap-spec.md)
 hf-hub-integration = ["hf-hub", "dirs"]  # Enable Hugging Face Hub integration (GH-100)
 audio = ["rustfft", "thiserror"]  # Enable audio processing (mel spectrogram, resampling)
-audio-capture = ["audio"]  # Enable audio capture (ALSA, CoreAudio, WASAPI, WebAudio)
+audio-capture = ["audio"]  # Enable audio capture base functionality
+audio-alsa = ["audio-capture", "alsa"]  # Enable ALSA audio capture (Linux only)
 audio-playback = ["audio"]  # Enable audio playback
 audio-codec = ["audio"]  # Enable audio codec decoding (WAV, MP3, AAC, FLAC, Opus)
 safetensors-compare = ["safetensors", "hf-hub-integration", "half"]  # Enable SafeTensors comparison (GH-121)

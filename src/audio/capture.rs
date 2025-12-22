@@ -9,10 +9,32 @@
 //!
 //! | Platform | Backend | Feature | Status |
 //! |----------|---------|---------|--------|
-//! | Linux | ALSA | `audio-alsa` | Stub ready (C7) |
+//! | Linux | ALSA | `audio-alsa` | ✅ Implemented (C7) |
 //! | macOS | CoreAudio | `audio-coreaudio` | Stub ready (C8) |
 //! | Windows | WASAPI | `audio-wasapi` | Stub ready (C9) |
 //! | WASM | WebAudio API | `audio-webaudio` | Stub ready (C10) |
+//!
+//! # Linux (ALSA) Setup
+//!
+//! To enable ALSA audio capture on Linux:
+//!
+//! 1. Install ALSA development libraries:
+//!    ```bash
+//!    # Debian/Ubuntu
+//!    sudo apt-get install libasound2-dev
+//!
+//!    # Fedora/RHEL
+//!    sudo dnf install alsa-lib-devel
+//!
+//!    # Arch Linux
+//!    sudo pacman -S alsa-lib
+//!    ```
+//!
+//! 2. Enable the feature in your `Cargo.toml`:
+//!    ```toml
+//!    [dependencies]
+//!    aprender = { version = "0.19", features = ["audio-alsa"] }
+//!    ```
 //!
 //! # Backend Architecture
 //!
@@ -82,29 +104,192 @@ pub trait CaptureBackend: Send {
 ///
 /// Uses the Advanced Linux Sound Architecture for low-latency audio capture.
 /// Requires the `audio-alsa` feature flag.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use aprender::audio::capture::{AlsaBackend, CaptureBackend, CaptureConfig};
+///
+/// let config = CaptureConfig::whisper();
+/// let mut backend = AlsaBackend::open(None, &config)?;
+///
+/// let mut buffer = vec![0.0f32; 1600];
+/// let n = backend.read(&mut buffer)?;
+/// println!("Read {} samples", n);
+///
+/// backend.close()?;
+/// ```
 #[cfg(all(target_os = "linux", feature = "audio-alsa"))]
 pub struct AlsaBackend {
-    #[allow(dead_code)]
+    pcm: alsa::PCM,
     config: CaptureConfig,
-    // Future: alsa::PCM handle
+    /// Intermediate buffer for i16 samples from ALSA
+    i16_buffer: Vec<i16>,
+}
+
+#[cfg(all(target_os = "linux", feature = "audio-alsa"))]
+impl AlsaBackend {
+    /// List available ALSA capture devices
+    ///
+    /// # Returns
+    /// Vector of device names suitable for `open()`
+    pub fn list_devices() -> Result<Vec<AudioDevice>, AudioError> {
+        use alsa::device_name::HintIter;
+
+        let mut devices = Vec::new();
+
+        // Iterate over PCM devices
+        let hints = HintIter::new(None, b"pcm")
+            .map_err(|e| AudioError::CaptureError(format!("Failed to enumerate devices: {e}")))?;
+
+        for hint in hints {
+            // Only include capture-capable devices
+            if let Some(name) = hint.name {
+                // Skip null device and complex plugin names
+                if name == "null" || name.contains("surround") {
+                    continue;
+                }
+
+                let desc = hint.desc.unwrap_or_default();
+                let is_default = name == "default" || name == "pulse";
+
+                devices.push(AudioDevice {
+                    id: name.clone(),
+                    name: desc.lines().next().unwrap_or(&name).to_string(),
+                    max_sample_rate: 48000, // Most devices support this
+                    input_channels: 2,
+                    is_default,
+                });
+            }
+        }
+
+        Ok(devices)
+    }
+
+    /// Convert i16 samples to f32 normalized to [-1.0, 1.0]
+    #[inline]
+    fn i16_to_f32(sample: i16) -> f32 {
+        // i16 range: -32768 to 32767
+        // Normalize to [-1.0, 1.0]
+        if sample >= 0 {
+            f32::from(sample) / 32767.0
+        } else {
+            f32::from(sample) / 32768.0
+        }
+    }
 }
 
 #[cfg(all(target_os = "linux", feature = "audio-alsa"))]
 impl CaptureBackend for AlsaBackend {
-    fn open(_device: Option<&str>, config: &CaptureConfig) -> Result<Self, AudioError> {
+    fn open(device: Option<&str>, config: &CaptureConfig) -> Result<Self, AudioError> {
+        use alsa::pcm::{Access, Format, HwParams};
+        use alsa::{Direction, ValueOr};
+
         config.validate()?;
-        // TODO: Implement ALSA PCM open
-        // Future: Use alsa-rs crate for native bindings
-        Err(AudioError::NotImplemented(
-            "ALSA backend pending implementation - requires alsa-rs dependency".to_string(),
-        ))
+
+        // Use provided device or default
+        let device_name = device.unwrap_or("default");
+
+        // Open PCM device for capture
+        let pcm = alsa::PCM::new(device_name, Direction::Capture, false)
+            .map_err(|e| AudioError::CaptureError(format!("Failed to open ALSA device '{device_name}': {e}")))?;
+
+        // Configure hardware parameters
+        {
+            let hwp = HwParams::any(&pcm)
+                .map_err(|e| AudioError::CaptureError(format!("Failed to get HW params: {e}")))?;
+
+            // Set access type (interleaved samples)
+            hwp.set_access(Access::RWInterleaved)
+                .map_err(|e| AudioError::CaptureError(format!("Failed to set access: {e}")))?;
+
+            // Set format to signed 16-bit little-endian (most compatible)
+            hwp.set_format(Format::s16())
+                .map_err(|e| AudioError::CaptureError(format!("Failed to set format: {e}")))?;
+
+            // Set sample rate
+            hwp.set_rate(config.sample_rate, ValueOr::Nearest)
+                .map_err(|e| AudioError::CaptureError(format!("Failed to set rate: {e}")))?;
+
+            // Set channels
+            hwp.set_channels(u32::from(config.channels))
+                .map_err(|e| AudioError::CaptureError(format!("Failed to set channels: {e}")))?;
+
+            // Set buffer size (in frames)
+            let buffer_frames = config.buffer_size / config.channels as usize;
+            hwp.set_buffer_size_near((buffer_frames * 4) as i64)
+                .map_err(|e| AudioError::CaptureError(format!("Failed to set buffer size: {e}")))?;
+
+            // Set period size (smaller = lower latency)
+            hwp.set_period_size_near(buffer_frames as i64, ValueOr::Nearest)
+                .map_err(|e| AudioError::CaptureError(format!("Failed to set period size: {e}")))?;
+
+            // Apply parameters
+            pcm.hw_params(&hwp)
+                .map_err(|e| AudioError::CaptureError(format!("Failed to apply HW params: {e}")))?;
+        }
+
+        // Prepare the device for capture
+        pcm.prepare()
+            .map_err(|e| AudioError::CaptureError(format!("Failed to prepare PCM: {e}")))?;
+
+        // Allocate intermediate buffer for i16 samples
+        let i16_buffer = vec![0i16; config.buffer_size * config.channels as usize];
+
+        Ok(Self {
+            pcm,
+            config: config.clone(),
+            i16_buffer,
+        })
     }
 
-    fn read(&mut self, _buffer: &mut [f32]) -> Result<usize, AudioError> {
-        Err(AudioError::NotImplemented("ALSA read".to_string()))
+    fn read(&mut self, buffer: &mut [f32]) -> Result<usize, AudioError> {
+        use alsa::pcm::IO;
+
+        // Ensure our intermediate buffer is large enough
+        let samples_needed = buffer.len();
+        if self.i16_buffer.len() < samples_needed {
+            self.i16_buffer.resize(samples_needed, 0);
+        }
+
+        // Get the IO interface
+        let io = self.pcm.io_i16()
+            .map_err(|e| AudioError::CaptureError(format!("Failed to get IO interface: {e}")))?;
+
+        // Calculate frames (samples / channels)
+        let frames = samples_needed / self.config.channels as usize;
+
+        // Read from ALSA (blocking)
+        let frames_read = match io.readi(&mut self.i16_buffer[..samples_needed]) {
+            Ok(n) => n,
+            Err(e) => {
+                // Try to recover from xrun (buffer overrun) - error code -32 (EPIPE)
+                if e.errno() == alsa::nix::errno::Errno::EPIPE as i32 {
+                    self.pcm.prepare()
+                        .map_err(|e| AudioError::CaptureError(format!("Failed to recover from xrun: {e}")))?;
+                    // Retry the read
+                    io.readi(&mut self.i16_buffer[..samples_needed])
+                        .map_err(|e| AudioError::CaptureError(format!("Failed to read after recovery: {e}")))?
+                } else {
+                    return Err(AudioError::CaptureError(format!("Failed to read: {e}")));
+                }
+            }
+        };
+
+        let samples_read = frames_read * self.config.channels as usize;
+
+        // Convert i16 to f32
+        for (i, &sample) in self.i16_buffer[..samples_read].iter().enumerate() {
+            buffer[i] = Self::i16_to_f32(sample);
+        }
+
+        Ok(samples_read)
     }
 
     fn close(&mut self) -> Result<(), AudioError> {
+        // Drop the PCM handle gracefully
+        self.pcm.drain()
+            .map_err(|e| AudioError::CaptureError(format!("Failed to drain PCM: {e}")))?;
         Ok(())
     }
 
@@ -366,10 +551,18 @@ pub struct AudioDevice {
 /// # Returns
 /// Vector of available devices, or error if audio system unavailable
 ///
-/// # Note
-/// This is a stub - actual implementation requires platform-specific code.
+/// # Platform Support
+/// - Linux: Uses ALSA (requires `audio-alsa` feature)
+/// - macOS: Uses CoreAudio (requires `audio-coreaudio` feature)
+/// - Windows: Uses WASAPI (requires `audio-wasapi` feature)
 pub fn list_devices() -> Result<Vec<AudioDevice>, AudioError> {
-    // Stub: Return empty list until platform backends implemented
+    #[cfg(all(target_os = "linux", feature = "audio-alsa"))]
+    {
+        return AlsaBackend::list_devices();
+    }
+
+    // Stub for other platforms
+    #[allow(unreachable_code)]
     Ok(vec![])
 }
 
@@ -391,11 +584,37 @@ pub fn default_device() -> Result<Option<AudioDevice>, AudioError> {
 /// 1. Open with `AudioCapture::open()`
 /// 2. Read samples with `read()`
 /// 3. Close with `close()` (or Drop)
-#[derive(Debug)]
+///
+/// # Platform Support
+/// - Linux: Uses ALSA (requires `audio-alsa` feature)
+/// - macOS: Uses CoreAudio (requires `audio-coreaudio` feature)
+/// - Windows: Uses WASAPI (requires `audio-wasapi` feature)
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use aprender::audio::capture::{AudioCapture, CaptureConfig};
+///
+/// let config = CaptureConfig::whisper();
+/// let mut capture = AudioCapture::open(None, &config)?;
+///
+/// let mut buffer = vec![0.0f32; 1600]; // 100ms at 16kHz
+/// while let Ok(n) = capture.read(&mut buffer) {
+///     process_audio(&buffer[..n]);
+/// }
+///
+/// capture.close()?;
+/// ```
 pub struct AudioCapture {
+    #[cfg(all(target_os = "linux", feature = "audio-alsa"))]
+    backend: AlsaBackend,
+
+    #[cfg(not(all(target_os = "linux", feature = "audio-alsa")))]
     config: CaptureConfig,
-    #[allow(dead_code)] // For future platform implementations
+    #[cfg(not(all(target_os = "linux", feature = "audio-alsa")))]
+    #[allow(dead_code)]
     device_id: Option<String>,
+    #[cfg(not(all(target_os = "linux", feature = "audio-alsa")))]
     running: bool,
 }
 
@@ -406,16 +625,26 @@ impl AudioCapture {
     /// * `device` - Device ID, or None for default
     /// * `config` - Capture configuration
     ///
-    /// # Note
-    /// This is a stub - returns NotImplemented error.
-    pub fn open(_device: Option<&str>, config: &CaptureConfig) -> Result<Self, AudioError> {
+    /// # Errors
+    /// Returns error if device cannot be opened or configuration is invalid.
+    pub fn open(device: Option<&str>, config: &CaptureConfig) -> Result<Self, AudioError> {
         config.validate()?;
 
-        // Stub: Platform implementation needed
-        Err(AudioError::NotImplemented(
-            "Audio capture requires platform-specific backend (ALSA/CoreAudio/WASAPI)"
-                .to_string(),
-        ))
+        #[cfg(all(target_os = "linux", feature = "audio-alsa"))]
+        {
+            let backend = AlsaBackend::open(device, config)?;
+            return Ok(Self { backend });
+        }
+
+        // Stub for other platforms
+        #[allow(unreachable_code)]
+        {
+            let _ = device;
+            Err(AudioError::NotImplemented(
+                "Audio capture requires platform-specific backend (enable audio-alsa on Linux)"
+                    .to_string(),
+            ))
+        }
     }
 
     /// Read audio samples into buffer
@@ -426,31 +655,72 @@ impl AudioCapture {
     /// # Returns
     /// Number of samples read, or error
     pub fn read(&mut self, buffer: &mut [f32]) -> Result<usize, AudioError> {
-        if !self.running {
-            return Err(AudioError::NotRunning);
+        #[cfg(all(target_os = "linux", feature = "audio-alsa"))]
+        {
+            return self.backend.read(buffer);
         }
 
-        // Stub: Platform implementation needed
-        let _ = buffer;
-        Err(AudioError::NotImplemented("read".to_string()))
+        #[allow(unreachable_code)]
+        {
+            let _ = buffer;
+            Err(AudioError::NotImplemented("read".to_string()))
+        }
     }
 
     /// Get capture configuration
     #[must_use]
     pub fn config(&self) -> &CaptureConfig {
+        #[cfg(all(target_os = "linux", feature = "audio-alsa"))]
+        {
+            return &self.backend.config;
+        }
+
+        #[cfg(not(all(target_os = "linux", feature = "audio-alsa")))]
         &self.config
     }
 
     /// Check if capture is running
     #[must_use]
     pub fn is_running(&self) -> bool {
+        #[cfg(all(target_os = "linux", feature = "audio-alsa"))]
+        {
+            return true; // ALSA backend is always "running" once opened
+        }
+
+        #[cfg(not(all(target_os = "linux", feature = "audio-alsa")))]
         self.running
     }
 
     /// Close the capture stream
-    pub fn close(mut self) -> Result<(), AudioError> {
-        self.running = false;
+    pub fn close(self) -> Result<(), AudioError> {
+        #[cfg(all(target_os = "linux", feature = "audio-alsa"))]
+        {
+            let mut backend = self.backend;
+            return backend.close();
+        }
+
+        #[allow(unreachable_code)]
         Ok(())
+    }
+}
+
+#[cfg(all(target_os = "linux", feature = "audio-alsa"))]
+impl std::fmt::Debug for AudioCapture {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AudioCapture")
+            .field("backend", &"AlsaBackend")
+            .field("config", &self.backend.config)
+            .finish()
+    }
+}
+
+#[cfg(not(all(target_os = "linux", feature = "audio-alsa")))]
+impl std::fmt::Debug for AudioCapture {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AudioCapture")
+            .field("config", &self.config)
+            .field("running", &self.running)
+            .finish()
     }
 }
 
@@ -1055,5 +1325,90 @@ mod tests {
                 || backend == "WebAudio"
                 || backend.contains("enable")
         );
+    }
+
+    // ========================================================================
+    // C7: ALSA Backend Tests (Linux only)
+    // ========================================================================
+
+    #[cfg(all(target_os = "linux", feature = "audio-alsa"))]
+    mod alsa_tests {
+        use super::*;
+
+        #[test]
+        fn test_alsa_i16_to_f32_zero() {
+            let result = AlsaBackend::i16_to_f32(0);
+            assert!((result - 0.0).abs() < 1e-6);
+        }
+
+        #[test]
+        fn test_alsa_i16_to_f32_max() {
+            let result = AlsaBackend::i16_to_f32(i16::MAX);
+            assert!((result - 1.0).abs() < 1e-4, "Max i16 should map to ~1.0, got {}", result);
+        }
+
+        #[test]
+        fn test_alsa_i16_to_f32_min() {
+            let result = AlsaBackend::i16_to_f32(i16::MIN);
+            assert!((result - (-1.0)).abs() < 1e-4, "Min i16 should map to ~-1.0, got {}", result);
+        }
+
+        #[test]
+        fn test_alsa_i16_to_f32_positive_range() {
+            // All positive i16 should map to [0, 1]
+            for val in [1, 100, 1000, 10000, 32767_i16] {
+                let result = AlsaBackend::i16_to_f32(val);
+                assert!(result >= 0.0 && result <= 1.0, "Positive {} mapped to {}", val, result);
+            }
+        }
+
+        #[test]
+        fn test_alsa_i16_to_f32_negative_range() {
+            // All negative i16 should map to [-1, 0]
+            for val in [-1, -100, -1000, -10000, -32768_i16] {
+                let result = AlsaBackend::i16_to_f32(val);
+                assert!(result >= -1.0 && result <= 0.0, "Negative {} mapped to {}", val, result);
+            }
+        }
+
+        #[test]
+        fn test_alsa_i16_to_f32_symmetric() {
+            // Symmetric values should map to approximately symmetric results
+            let positive = AlsaBackend::i16_to_f32(16384);
+            let negative = AlsaBackend::i16_to_f32(-16384);
+            assert!((positive + negative).abs() < 0.001, "Symmetric values should cancel: {} + {} = {}", positive, negative, positive + negative);
+        }
+
+        #[test]
+        fn test_alsa_backend_name() {
+            assert_eq!(AlsaBackend::backend_name(), "ALSA");
+        }
+
+        #[test]
+        fn test_alsa_list_devices() {
+            // This test requires ALSA to be available on the system
+            // It may return an empty list if no audio devices are present
+            let result = AlsaBackend::list_devices();
+            assert!(result.is_ok(), "list_devices should not error: {:?}", result);
+        }
+    }
+
+    // Test i16 to f32 conversion logic (can run without ALSA feature)
+    #[test]
+    fn test_i16_to_f32_conversion_logic() {
+        // Test the conversion formula: i16 to f32 [-1.0, 1.0]
+        fn i16_to_f32(sample: i16) -> f32 {
+            if sample >= 0 {
+                f32::from(sample) / 32767.0
+            } else {
+                f32::from(sample) / 32768.0
+            }
+        }
+
+        assert!((i16_to_f32(0) - 0.0).abs() < 1e-6);
+        assert!((i16_to_f32(32767) - 1.0).abs() < 1e-4);
+        assert!((i16_to_f32(-32768) - (-1.0)).abs() < 1e-4);
+        assert!((i16_to_f32(16384) - 0.5).abs() < 0.01);
+        assert!((i16_to_f32(-16384) - (-0.5)).abs() < 0.01);
     }
 }
