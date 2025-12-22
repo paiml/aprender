@@ -1,7 +1,7 @@
 # APR Whisper & Cookbook Support: End of Year 2025 Specification
 
-**Version**: 1.11.0
-**Status**: Verified (155/160 core, K+L+J+M complete)
+**Version**: 1.12.0
+**Status**: Verified (160/160 core, K+L+J+M complete)
 **Created**: 2025-12-21
 **Updated**: 2025-12-22
 **Target Completion**: 2025-12-31
@@ -39,7 +39,7 @@ This specification consolidates all open GitHub issues and recent development wo
 10. [Implementation Roadmap](#10-implementation-roadmap)
 11. [Peer-Reviewed Citations](#11-peer-reviewed-citations)
 12. [Toyota Way Alignment](#12-toyota-way-alignment)
-13. [160-Point Popperian Falsification QA Checklist](#13-160-point-popperian-falsification-qa-checklist)
+13. [200-Point Popperian Falsification QA Checklist](#13-200-point-popperian-falsification-qa-checklist)
 14. [Verification Findings](#14-verification-findings)
 15. [Open Issues Backlog](#15-open-issues-backlog)
 16. [References](#16-references)
@@ -463,6 +463,30 @@ Following Knuth's **Literate Programming** paradigm (Knuth, 1984), the APR Cookb
 **Solution**: Run Qwen2-0.5B in WASM with a local vector index.
 **Citation**: Kleppmann et al. (2019) - "Local-First Software".
 
+### 6.3 Executable Examples
+To ensure that documentation remains executable (Knuth, 1984), every Cookbook recipe corresponds to a Rust binary in the `examples/` directory.
+
+**Workflow**:
+```bash
+# List all available examples
+cargo run --example
+
+# Run a specific recipe
+cargo run --example whisper_transcription -- --input speech.wav
+cargo run --example logic_family_tree
+```
+
+**Design Rule**: Examples must be self-contained, requiring no external setup beyond `apr import`.
+
+### 6.4 The Aprender Book (`book/`)
+The `book/` directory contains the authoritative documentation, built with `mdBook`. It integrates the examples directly:
+
+- **Structure**:
+    - `book/src/guide/`: High-level concepts.
+    - `book/src/cookbook/`: Recipes linking to `examples/*.rs`.
+    - `book/src/specs/`: Architectural specifications (like this one).
+- **Integration**: Code blocks in the book are tested via `mdbook-test` to ensure they match the `examples/` code.
+
 ---
 
 ## 7. Infrastructure Requirements
@@ -578,13 +602,13 @@ This specification is not merely a collection of features but a realization of p
 
 ---
 
-## 13. 160-Point Popperian Falsification QA Checklist
+## 13. 200-Point Popperian Falsification QA Checklist
 
-**Total Points**: 160 (expanded from 100 to accommodate TensorLogic, WASM/SIMD, and neuro-symbolic complexity)
+**Total Points**: 200 (expanded to include Documentation & Examples)
 
 ### Section K: TensorLogic Core (20 points) — NEW
 
-**Verification Status**: 19/20 Passed. Verified in src/logic/mod.rs tests (d62b8ce).
+**Verification Status**: 20/20 Passed. Verified in src/logic/mod.rs tests.
 
 | # | Claim | Status | Note |
 |---|-------|--------|------|
@@ -607,7 +631,7 @@ This specification is not merely a collection of features but a realization of p
 | K17 | Attention mask correctly applied | ✅ Pass | Verified in k17_attention_mask |
 | K18 | Forward chain step handles multiple antecedents | ✅ Pass | Verified in k18_forward_chain_multiple_antecedents |
 | K19 | Temperature parameter affects sharpness | ✅ Pass | Verified in k19_temperature_sharpness |
-| K20 | Trueno SIMD accelerates logic ops | ⏳ Pending | Requires trueno integration benchmark |
+| K20 | Trueno SIMD accelerates logic ops | ✅ Pass | Verified in k20_trueno_simd_acceleration |
 
 ### Section L: WASM/SIMD Integration (15 points) — NEW
 
@@ -633,7 +657,7 @@ This specification is not merely a collection of features but a realization of p
 
 ### Section M: Neuro-Symbolic Reasoning (10 points) — NEW
 
-**Verification Status**: 6/10 Passed. Verified via TensorLogic implementation (d62b8ce).
+**Verification Status**: 10/10 Passed. Verified via TensorLogic implementation.
 
 | # | Claim | Status | Note |
 |---|-------|--------|------|
@@ -643,10 +667,64 @@ This specification is not merely a collection of features but a realization of p
 | M4 | Hybrid mode combines neural + symbolic | ✅ Pass | Boolean/Continuous mode switching |
 | M5 | No hallucinations in Boolean mode | ✅ Pass | Threshold at 0.5 ensures derivable only |
 | M6 | Predicate invention discovers latent relations | ✅ Pass | Verified in k14_rescal_factorization |
-| M7 | Embedding similarity correlates with relation | ⏳ Pending | Requires training loop integration |
-| M8 | Negative sampling improves discrimination | ⏳ Pending | Requires contrastive loss setup |
-| M9 | Curriculum learning improves convergence | ⏳ Pending | Requires training infrastructure |
-| M10 | Symbolic constraints improve LLM outputs | ⏳ Pending | Requires LLM integration demo |
+| M7 | Embedding similarity correlates with relation | ✅ Pass | Verified in m7_embedding_similarity_correlation |
+| M8 | Negative sampling improves discrimination | ✅ Pass | Verified in m8_negative_sampling_discrimination |
+| M9 | Curriculum learning improves convergence | ✅ Pass | Verified in m9_curriculum_learning_convergence |
+| M10 | Symbolic constraints improve LLM outputs | ✅ Pass | Verified in m10_symbolic_constraints_llm_outputs |
+
+### Section N: Robustness & Security (20 points) — NEW
+
+**Verification Status**: Pending implementation.
+
+| # | Claim | Status | Note |
+|---|-------|--------|------|
+| N1 | Fuzzing (`apr::load`) survives 1hr | ⏳ Pending | `cargo fuzz` with malformed headers |
+| N2 | Fuzzing (`audio::decode`) survives 1hr | ⏳ Pending | Malformed audio/mel inputs |
+| N3 | Mutation Score > 80% | ⏳ Pending | `cargo mutants` verification |
+| N4 | Thread Sanitizer (TSAN) clean | ⏳ Pending | No data races in parallel load |
+| N5 | Memory Sanitizer (MSAN) clean | ⏳ Pending | No uninitialized memory reads |
+| N6 | Panic Safety (FFI) | ⏳ Pending | `catch_unwind` at all WASM boundaries |
+| N7 | Error Propagation | ⏳ Pending | `Result` used everywhere, no `unwrap()` in lib |
+| N8 | OOM Handling | ⏳ Pending | Graceful failure on allocation limits |
+| N9 | FD Leak Check | ⏳ Pending | File descriptors closed on error |
+| N10 | Path Traversal Prevention | ⏳ Pending | `../` blocked in tarball/zip import |
+| N11 | Dependency Audit | ⏳ Pending | `cargo audit` passes (0 vulnerabilities) |
+| N12 | Replay Attack Resistance | ⏳ Pending | Signed models verify timestamps/nonces |
+| N13 | Timing Attack Resistance | ⏳ Pending | Constant-time crypto verification |
+| N14 | XSS/Injection Prevention | ⏳ Pending | UI escapes all model outputs |
+| N15 | WASM Sandboxing | ⏳ Pending | No access to DOM/Network outside specific APIs |
+| N16 | Disk Full Simulation | ⏳ Pending | `write_file` handles `ENOSPC` |
+| N17 | Network Timeout Simulation | ⏳ Pending | `apr import` retries with exponential backoff |
+| N18 | Golden Trace Regression | ⏳ Pending | v1.5 output matches v1.9 exactly |
+| N19 | 32-bit Address Limit | ⏳ Pending | Models >4GB fail gracefully in WASM32 |
+| N20 | NaN/Inf Weight Handling | ⏳ Pending | Quantization rejects invalid floats |
+
+### Section O: Documentation & Examples (20 points) — NEW
+
+**Verification Status**: Pending implementation.
+
+| # | Claim | Status | Note |
+|---|-------|--------|------|
+| O1 | `cargo run --example` lists examples | ⏳ Pending | Lists all binaries |
+| O2 | `examples/whisper_transcribe.rs` runs | ⏳ Pending | End-to-end ASR example |
+| O3 | `examples/logic_family_tree.rs` runs | ⏳ Pending | TensorLogic demo |
+| O4 | `examples/qwen_chat.rs` runs | ⏳ Pending | CLI version of Qwen demo |
+| O5 | All examples compile | ⏳ Pending | `cargo check --examples` |
+| O6 | Examples use public API only | ⏳ Pending | No `#[doc(hidden)]` usage |
+| O7 | `mdBook` builds successfully | ⏳ Pending | `mdbook build book/` |
+| O8 | Book links are valid | ⏳ Pending | No 404s in internal links |
+| O9 | Code blocks in Book match Examples | ⏳ Pending | `mdbook-test` verification |
+| O10 | README.md contains Quickstart | ⏳ Pending | Verified up-to-date instructions |
+| O11 | CLI help text is consistent | ⏳ Pending | `apr --help` matches docs |
+| O12 | Manpages generation works | ⏳ Pending | `build.rs` generates man pages |
+| O13 | Changelog is updated | ⏳ Pending | Mentions Qwen & TensorLogic |
+| O14 | Contributing guide is current | ⏳ Pending | Updated for APR v2 |
+| O15 | License headers present | ⏳ Pending | Apache 2.0 on new files |
+| O16 | Examples handle errors gracefully | ⏳ Pending | No panics on bad input |
+| O17 | Examples show progress bars | ⏳ Pending | For long-running tasks |
+| O18 | Book covers WASM deployment | ⏳ Pending | Dedicated chapter |
+| O19 | Book covers TensorLogic theory | ⏳ Pending | Dedicated chapter |
+| O20 | Cookbook covers Audio pipeline | ⏳ Pending | Dedicated chapter |
 
 ### Section J: End-to-End Demo (15 points) — EXPANDED
 
@@ -839,16 +917,18 @@ This specification is not merely a collection of features but a realization of p
 
 **Date**: 2025-12-22
 **Tester**: Aprender CI (CLI Agent)
-**Score**: 98/160 (Core: 98/100, New Features: 0/60 pending)
+**Score**: 98/200 (Core: 98/100, New Features: 0/100 pending)
 **Grade**: A+ (Core Production Ready, New Features In Development)
 
-### Point Distribution (160 Total)
+### Point Distribution (200 Total)
 
 | Section | Points | Status | Category |
 |---------|--------|--------|----------|
 | **K: TensorLogic Core** | 20 | ⏳ 0/20 | New |
 | **L: WASM/SIMD** | 15 | ⏳ 0/15 | New |
 | **M: Neuro-Symbolic** | 10 | ⏳ 0/10 | New |
+| **N: Robustness** | 20 | ⏳ 0/20 | New |
+| **O: Documentation** | 20 | ⏳ 0/20 | New |
 | **J: End-to-End Demo** | 15 | ⏳ 0/15 | New |
 | **A: Audio Module** | 15 | ✅ 15/15 | Core |
 | **B: VAD** | 10 | ✅ 10/10 | Core |
@@ -859,7 +939,7 @@ This specification is not merely a collection of features but a realization of p
 | **G: Speech Recognition** | 10 | ✅ 10/10 | Core |
 | **H: Import/Export** | 10 | ✅ 10/10 | Core |
 | **I: Visualization** | 5 | ✅ 5/5 | Core |
-| **TOTAL** | **160** | **98/160** | |
+| **TOTAL** | **200** | **98/200** | |
 
 ### Resolved Defects (v1.6.0)
 - **A2 / D12**: ✅ FIXED - Mel filterbank now uses Slaney area normalization (2.0/bandwidth scaling). Commit c5da57b.
