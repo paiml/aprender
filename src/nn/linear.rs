@@ -126,6 +126,30 @@ impl Linear {
     pub fn has_bias(&self) -> bool {
         self.bias.is_some()
     }
+
+    /// Set weight tensor from external data.
+    ///
+    /// Used for loading pre-trained weights from SafeTensors or other formats.
+    pub fn set_weight(&mut self, weight: Tensor) {
+        self.weight = weight;
+    }
+
+    /// Set bias tensor from external data.
+    ///
+    /// Used for loading pre-trained weights.
+    pub fn set_bias(&mut self, bias: Tensor) {
+        self.bias = Some(bias);
+    }
+
+    /// Get reference to weight tensor.
+    pub fn weight(&self) -> &Tensor {
+        &self.weight
+    }
+
+    /// Get reference to bias tensor if present.
+    pub fn bias(&self) -> Option<&Tensor> {
+        self.bias.as_ref()
+    }
 }
 
 impl Module for Linear {

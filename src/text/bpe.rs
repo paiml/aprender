@@ -44,6 +44,7 @@
 //! - All public APIs return `Result<T, E>` where fallible
 
 use crate::error::{AprenderError, Result};
+use serde::Deserialize;
 use std::collections::HashMap;
 
 // ============================================================================
@@ -628,34 +629,106 @@ pub fn bytes_to_unicode() -> (HashMap<u8, char>, HashMap<char, u8>) {
     (encoder, decoder)
 }
 
+// ============================================================================
+// HuggingFace tokenizer.json Parsing Structures
+// ============================================================================
+
+/// HuggingFace tokenizer.json root structure.
+#[derive(Debug, Deserialize)]
+struct HfTokenizerJson {
+    model: HfModel,
+    #[serde(default)]
+    added_tokens: Vec<HfAddedToken>,
+}
+
+/// BPE model section in tokenizer.json.
+#[derive(Debug, Deserialize)]
+struct HfModel {
+    vocab: HashMap<String, u32>,
+    merges: Vec<String>,
+}
+
+/// Added token entry.
+#[derive(Debug, Deserialize)]
+struct HfAddedToken {
+    id: u32,
+    content: String,
+    #[serde(default)]
+    special: bool,
+}
+
 /// Load tokenizer from HuggingFace tokenizer.json format.
 ///
 /// # Arguments
 /// * `json` - JSON string of tokenizer configuration
 ///
 /// # Returns
-/// Loaded tokenizer
+/// Loaded tokenizer with vocabulary and merge rules
 ///
 /// # Errors
 /// Returns error if parsing fails.
 pub fn load_from_json(json: &str) -> Result<BpeTokenizer> {
-    // Parse JSON (simplified - real impl would use serde_json)
     if json.is_empty() {
         return Err(AprenderError::FormatError {
             message: "Empty tokenizer JSON".to_string(),
         });
     }
 
-    // For now, return a default tokenizer
-    // Real implementation would parse the JSON and populate vocab/merges
-    Ok(BpeTokenizer::gpt2_base())
+    // Parse the JSON
+    let hf_tokenizer: HfTokenizerJson =
+        serde_json::from_str(json).map_err(|e| AprenderError::FormatError {
+            message: format!("Failed to parse tokenizer JSON: {e}"),
+        })?;
+
+    // Determine config based on vocab size
+    let vocab_size = hf_tokenizer.model.vocab.len();
+    let config = if vocab_size > 150000 {
+        BpeConfig::qwen2()
+    } else if vocab_size > 50000 {
+        BpeConfig::whisper()
+    } else if vocab_size > 40000 {
+        BpeConfig::gpt2()
+    } else {
+        BpeConfig::llama()
+    };
+
+    let mut tokenizer = BpeTokenizer::new(config);
+
+    // Load vocabulary
+    for (token, id) in &hf_tokenizer.model.vocab {
+        tokenizer.vocab.insert(token.clone(), *id);
+        tokenizer.id_to_token.insert(*id, token.clone());
+    }
+
+    // Load merge rules
+    for merge_str in &hf_tokenizer.model.merges {
+        let parts: Vec<&str> = merge_str.split(' ').collect();
+        if parts.len() >= 2 {
+            tokenizer.add_merge(parts[0], parts[1]);
+        }
+    }
+
+    // Load special/added tokens
+    for added in &hf_tokenizer.added_tokens {
+        if added.special {
+            tokenizer.add_special_token(&added.content, added.id);
+        } else {
+            tokenizer.vocab.insert(added.content.clone(), added.id);
+            tokenizer.id_to_token.insert(added.id, added.content.clone());
+        }
+    }
+
+    Ok(tokenizer)
 }
 
 /// Load tokenizer from vocab.json and merges.txt files.
 ///
 /// # Arguments
-/// * `vocab_json` - JSON string of vocabulary mapping
-/// * `merges_txt` - Text file with merge rules
+/// * `vocab_json` - JSON string of vocabulary mapping (token -> id)
+/// * `merges_txt` - Text file with merge rules (one "pair1 pair2" per line)
+///
+/// # Returns
+/// Loaded tokenizer
 ///
 /// # Errors
 /// Returns error if parsing fails.
@@ -666,10 +739,33 @@ pub fn load_from_files(vocab_json: &str, merges_txt: &str) -> Result<BpeTokenize
         });
     }
 
-    let config = BpeConfig::default();
+    // Parse vocabulary JSON
+    let vocab: HashMap<String, u32> =
+        serde_json::from_str(vocab_json).map_err(|e| AprenderError::FormatError {
+            message: format!("Failed to parse vocabulary JSON: {e}"),
+        })?;
+
+    // Determine config based on vocab size
+    let vocab_size = vocab.len();
+    let config = if vocab_size > 150000 {
+        BpeConfig::qwen2()
+    } else if vocab_size > 50000 {
+        BpeConfig::whisper()
+    } else if vocab_size > 40000 {
+        BpeConfig::gpt2()
+    } else {
+        BpeConfig::llama()
+    };
+
     let mut tokenizer = BpeTokenizer::new(config);
 
-    // Parse merges (simplified)
+    // Load vocabulary
+    for (token, id) in &vocab {
+        tokenizer.vocab.insert(token.clone(), *id);
+        tokenizer.id_to_token.insert(*id, token.clone());
+    }
+
+    // Parse and load merges
     for line in merges_txt.lines() {
         let line = line.trim();
         if line.is_empty() || line.starts_with('#') {
@@ -881,8 +977,27 @@ mod tests {
 
     #[test]
     fn test_load_from_json_basic() {
-        let result = load_from_json("{}");
+        // Valid HuggingFace tokenizer.json structure
+        let json = r#"{
+            "model": {
+                "vocab": {"hello": 0, "world": 1},
+                "merges": ["he llo", "wor ld"]
+            },
+            "added_tokens": []
+        }"#;
+        let result = load_from_json(json);
         assert!(result.is_ok());
+
+        let tokenizer = result.expect("load failed");
+        assert_eq!(tokenizer.vocab_size(), 2);
+        assert_eq!(tokenizer.merges.len(), 2);
+    }
+
+    #[test]
+    fn test_load_from_json_invalid() {
+        // Invalid JSON (missing model field) should fail
+        let result = load_from_json("{}");
+        assert!(result.is_err());
     }
 
     #[test]

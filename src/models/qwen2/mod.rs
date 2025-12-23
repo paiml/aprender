@@ -145,6 +145,21 @@ impl Qwen2MLP {
         let hidden = elementwise_mul(&gate_activated, &up);
         self.down_proj.forward(&hidden)
     }
+
+    /// Get mutable reference to gate projection layer.
+    pub fn gate_proj_mut(&mut self) -> &mut Linear {
+        &mut self.gate_proj
+    }
+
+    /// Get mutable reference to up projection layer.
+    pub fn up_proj_mut(&mut self) -> &mut Linear {
+        &mut self.up_proj
+    }
+
+    /// Get mutable reference to down projection layer.
+    pub fn down_proj_mut(&mut self) -> &mut Linear {
+        &mut self.down_proj
+    }
 }
 
 // ============================================================================
@@ -206,6 +221,26 @@ impl Qwen2DecoderLayer {
         let hidden = self.post_attention_layernorm.forward(&hidden);
         let mlp_output = self.mlp.forward(&hidden);
         add_tensors(&residual, &mlp_output)
+    }
+
+    /// Get mutable reference to self-attention layer.
+    pub fn self_attn_mut(&mut self) -> &mut GroupedQueryAttention {
+        &mut self.self_attn
+    }
+
+    /// Get mutable reference to MLP layer.
+    pub fn mlp_mut(&mut self) -> &mut Qwen2MLP {
+        &mut self.mlp
+    }
+
+    /// Get mutable reference to input layernorm.
+    pub fn input_layernorm_mut(&mut self) -> &mut RMSNorm {
+        &mut self.input_layernorm
+    }
+
+    /// Get mutable reference to post-attention layernorm.
+    pub fn post_attention_layernorm_mut(&mut self) -> &mut RMSNorm {
+        &mut self.post_attention_layernorm
     }
 }
 
@@ -535,6 +570,146 @@ impl Qwen2Model {
         info.values()
             .map(|shape| shape.iter().product::<usize>())
             .sum()
+    }
+
+    // ========================================================================
+    // Mutable Accessors for Weight Loading
+    // ========================================================================
+
+    /// Get mutable reference to embedding layer.
+    pub fn embed_tokens_mut(&mut self) -> &mut Embedding {
+        &mut self.embed_tokens
+    }
+
+    /// Get mutable reference to decoder layer at index.
+    pub fn layer_mut(&mut self, idx: usize) -> Option<&mut Qwen2DecoderLayer> {
+        self.layers.get_mut(idx)
+    }
+
+    /// Get mutable reference to final norm layer.
+    pub fn norm_mut(&mut self) -> &mut RMSNorm {
+        &mut self.norm
+    }
+
+    /// Get mutable reference to language model head.
+    pub fn lm_head_mut(&mut self) -> &mut Linear {
+        &mut self.lm_head
+    }
+
+    // ========================================================================
+    // SafeTensors Loading (Section A: Model Loading)
+    // ========================================================================
+
+    /// Load weights from SafeTensors format.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Path to .safetensors file
+    ///
+    /// # Returns
+    ///
+    /// Number of weights loaded
+    ///
+    /// # Errors
+    ///
+    /// Returns error if file cannot be read or weights don't match.
+    pub fn load_from_safetensors(
+        &mut self,
+        path: &std::path::Path,
+    ) -> Result<usize, String> {
+        use crate::serialization::safetensors::{load_safetensors, extract_tensor};
+
+        let (metadata, raw_data) = load_safetensors(path)?;
+        let mut loaded_count = 0;
+
+        // Helper to load a tensor by name
+        let load_tensor = |name: &str| -> Result<Tensor, String> {
+            let meta = metadata.get(name).ok_or_else(|| {
+                format!("Weight '{name}' not found in SafeTensors file")
+            })?;
+            let data = extract_tensor(&raw_data, meta)?;
+            Ok(Tensor::new(&data, &meta.shape))
+        };
+
+        // Load embedding weights
+        if let Ok(t) = load_tensor("model.embed_tokens.weight") {
+            self.embed_tokens.set_weight(t);
+            loaded_count += 1;
+        }
+
+        // Load decoder layer weights
+        for i in 0..self.layers.len() {
+            let prefix = format!("model.layers.{i}");
+            let layer = self.layers.get_mut(i).ok_or("Layer index out of bounds")?;
+
+            // Attention projections
+            if let Ok(t) = load_tensor(&format!("{prefix}.self_attn.q_proj.weight")) {
+                layer.self_attn_mut().q_proj_mut().set_weight(t);
+                loaded_count += 1;
+            }
+            if let Ok(t) = load_tensor(&format!("{prefix}.self_attn.k_proj.weight")) {
+                layer.self_attn_mut().k_proj_mut().set_weight(t);
+                loaded_count += 1;
+            }
+            if let Ok(t) = load_tensor(&format!("{prefix}.self_attn.v_proj.weight")) {
+                layer.self_attn_mut().v_proj_mut().set_weight(t);
+                loaded_count += 1;
+            }
+            if let Ok(t) = load_tensor(&format!("{prefix}.self_attn.o_proj.weight")) {
+                layer.self_attn_mut().out_proj_mut().set_weight(t);
+                loaded_count += 1;
+            }
+
+            // MLP projections
+            if let Ok(t) = load_tensor(&format!("{prefix}.mlp.gate_proj.weight")) {
+                layer.mlp_mut().gate_proj_mut().set_weight(t);
+                loaded_count += 1;
+            }
+            if let Ok(t) = load_tensor(&format!("{prefix}.mlp.up_proj.weight")) {
+                layer.mlp_mut().up_proj_mut().set_weight(t);
+                loaded_count += 1;
+            }
+            if let Ok(t) = load_tensor(&format!("{prefix}.mlp.down_proj.weight")) {
+                layer.mlp_mut().down_proj_mut().set_weight(t);
+                loaded_count += 1;
+            }
+
+            // Layer norms
+            if let Ok(t) = load_tensor(&format!("{prefix}.input_layernorm.weight")) {
+                layer.input_layernorm_mut().set_weight(t);
+                loaded_count += 1;
+            }
+            if let Ok(t) = load_tensor(&format!("{prefix}.post_attention_layernorm.weight")) {
+                layer.post_attention_layernorm_mut().set_weight(t);
+                loaded_count += 1;
+            }
+        }
+
+        // Final norm
+        if let Ok(t) = load_tensor("model.norm.weight") {
+            self.norm.set_weight(t);
+            loaded_count += 1;
+        }
+
+        // LM head
+        if let Ok(t) = load_tensor("lm_head.weight") {
+            self.lm_head.set_weight(t);
+            loaded_count += 1;
+        }
+
+        Ok(loaded_count)
+    }
+
+    /// Load model from SafeTensors file.
+    ///
+    /// Creates a new model with the given config and loads weights from file.
+    pub fn from_safetensors(
+        config: &Qwen2Config,
+        path: &std::path::Path,
+    ) -> Result<Self, String> {
+        let mut model = Self::new(config);
+        model.load_from_safetensors(path)?;
+        Ok(model)
     }
 }
 

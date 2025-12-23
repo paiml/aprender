@@ -622,6 +622,18 @@ impl RMSNorm {
     pub fn eps(&self) -> f32 {
         self.eps
     }
+
+    /// Set weight tensor from external data.
+    ///
+    /// Used for loading pre-trained weights.
+    pub fn set_weight(&mut self, weight: Tensor) {
+        self.weight = weight;
+    }
+
+    /// Get reference to weight tensor.
+    pub fn weight(&self) -> &Tensor {
+        &self.weight
+    }
 }
 
 impl Module for RMSNorm {

@@ -1221,6 +1221,26 @@ impl GroupedQueryAttention {
     pub fn num_kv_heads(&self) -> usize {
         self.num_kv_heads
     }
+
+    /// Get mutable reference to Q projection layer.
+    pub fn q_proj_mut(&mut self) -> &mut Linear {
+        &mut self.q_proj
+    }
+
+    /// Get mutable reference to K projection layer.
+    pub fn k_proj_mut(&mut self) -> &mut Linear {
+        &mut self.k_proj
+    }
+
+    /// Get mutable reference to V projection layer.
+    pub fn v_proj_mut(&mut self) -> &mut Linear {
+        &mut self.v_proj
+    }
+
+    /// Get mutable reference to output projection layer.
+    pub fn out_proj_mut(&mut self) -> &mut Linear {
+        &mut self.out_proj
+    }
 }
 
 impl Module for GroupedQueryAttention {

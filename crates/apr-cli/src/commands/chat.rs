@@ -9,16 +9,20 @@
 //! # Example
 //!
 //! ```bash
-//! apr chat model.apr
-//! apr chat model.apr --inspect        # Show top-k probabilities
-//! apr chat model.apr --temperature 0.7 --top-p 0.9
+//! apr chat model.safetensors
+//! apr chat model.safetensors --inspect        # Show top-k probabilities
+//! apr chat model.safetensors --temperature 0.7 --top-p 0.9
 //! ```
 
 use crate::error::CliError;
 use crate::output;
+use aprender::demo::Qwen2Config;
+use aprender::models::Qwen2Model;
+use aprender::text::bpe::Qwen2BpeTokenizer;
 use colored::Colorize;
 use std::io::{self, Write};
 use std::path::Path;
+use std::time::Instant;
 
 /// Chat configuration options
 pub(crate) struct ChatConfig {
@@ -102,8 +106,130 @@ fn print_welcome_banner(path: &Path, config: &ChatConfig) {
     println!();
 }
 
+/// Chat session state holding model and tokenizer
+struct ChatSession {
+    model: Qwen2Model,
+    tokenizer: Qwen2BpeTokenizer,
+    history: Vec<String>,
+}
+
+impl ChatSession {
+    fn new(path: &Path) -> Result<Self, CliError> {
+        println!("{}", "Loading model...".cyan());
+        let start = Instant::now();
+
+        // Use tiny config for testing (full model would use Qwen2Config::qwen2_0_5b_instruct())
+        let config = Qwen2Config {
+            hidden_size: 896,
+            num_attention_heads: 14,
+            num_kv_heads: 2,
+            num_layers: 24,
+            vocab_size: 151936,
+            max_seq_len: 32768,
+            intermediate_size: 4864,
+            rope_theta: 1_000_000.0,
+        };
+
+        let mut model = Qwen2Model::new(&config);
+
+        // Try to load weights from SafeTensors file
+        if path.extension().map_or(false, |e| e == "safetensors") {
+            match model.load_from_safetensors(path) {
+                Ok(count) => {
+                    println!("{} {}", "Loaded".green(), format!("{count} weight tensors"));
+                }
+                Err(e) => {
+                    println!("{} {}", "Warning:".yellow(), format!("Could not load weights: {e}"));
+                    println!("{}", "Using randomly initialized weights".yellow());
+                }
+            }
+        } else {
+            println!("{}", "Note: Using randomly initialized weights (no .safetensors file)".yellow());
+        }
+
+        model.eval();
+        let elapsed = start.elapsed();
+        println!("{} {:.2}s", "Model ready in".green(), elapsed.as_secs_f32());
+
+        Ok(Self {
+            model,
+            tokenizer: Qwen2BpeTokenizer::new(),
+            history: Vec::new(),
+        })
+    }
+
+    fn generate(&mut self, user_input: &str, config: &ChatConfig) -> String {
+        // Build conversation with chat template
+        let mut messages: Vec<(&str, &str)> = Vec::new();
+
+        // Add system prompt if configured
+        if let Some(ref system) = config.system {
+            messages.push(("system", system.as_str()));
+        }
+
+        // Add history
+        for msg in &self.history {
+            if let Some(content) = msg.strip_prefix("user: ") {
+                messages.push(("user", content));
+            } else if let Some(content) = msg.strip_prefix("assistant: ") {
+                messages.push(("assistant", content));
+            }
+        }
+
+        // Add current user message
+        messages.push(("user", user_input));
+
+        // Format conversation
+        let prompt = self.tokenizer.format_conversation(
+            &messages.iter().map(|(r, c)| (*r, *c)).collect::<Vec<_>>()
+        );
+
+        // Encode prompt (using byte-level encoding since we don't have full vocab loaded)
+        let input_ids = self.tokenizer.encode(&prompt);
+
+        // Limit prompt length
+        let max_prompt = 256;
+        let input_ids: Vec<u32> = if input_ids.len() > max_prompt {
+            input_ids[input_ids.len() - max_prompt..].to_vec()
+        } else {
+            input_ids
+        };
+
+        // Generate
+        let start = Instant::now();
+        let output_ids = self.model.generate(
+            &input_ids,
+            config.max_tokens.min(128), // Limit for speed
+            config.temperature,
+            config.top_p,
+        );
+        let gen_time = start.elapsed();
+
+        // Decode only the generated tokens
+        let new_tokens = &output_ids[input_ids.len()..];
+        let response = self.tokenizer.decode(new_tokens);
+
+        // Print generation stats if inspect mode
+        if config.inspect {
+            let tokens_per_sec = new_tokens.len() as f32 / gen_time.as_secs_f32();
+            println!(
+                "{}",
+                format!(
+                    "[{} tokens in {:.2}s = {:.1} tok/s]",
+                    new_tokens.len(),
+                    gen_time.as_secs_f32(),
+                    tokens_per_sec
+                )
+                .dimmed()
+            );
+        }
+
+        response
+    }
+}
+
 fn run_repl(path: &Path, config: &ChatConfig) -> Result<(), CliError> {
-    let mut history: Vec<String> = Vec::new();
+    let mut session = ChatSession::new(path)?;
 
     loop {
         // Print prompt
@@ -127,26 +253,24 @@ fn run_repl(path: &Path, config: &ChatConfig) -> Result<(), CliError> {
 
         // Handle commands
         if input.starts_with('/') {
-            match handle_command(input, &mut history)? {
+            match handle_command(input, &mut session.history)? {
                 CommandResult::Continue => continue,
                 CommandResult::Quit => break,
             }
         }
 
-        // Add user message to history
-        history.push(format!("user: {input}"));
+        // Generate response using real model inference
+        let response = session.generate(input, config);
 
-        // Generate response
-        let response = generate_response(path, config, &history)?;
-
-        // Add assistant response to history
-        history.push(format!("assistant: {response}"));
+        // Add to history
+        session.history.push(format!("user: {input}"));
+        session.history.push(format!("assistant: {response}"));
 
         // Print response
         println!("{} {}", "Assistant:".blue().bold(), response);
 
         if config.inspect {
-            print_inspection_info();
+            print_inspection_info(&session);
         }
 
         println!();
@@ -197,74 +321,39 @@ fn handle_command(input: &str, history: &mut Vec<String>) -> Result<CommandResul
     Ok(CommandResult::Continue)
 }
 
-fn generate_response(
-    _path: &Path,
-    config: &ChatConfig,
-    history: &[String],
-) -> Result<String, CliError> {
-    // PLACEHOLDER: This is a stub implementation.
-    // Once the model is properly integrated, this will:
-    // 1. Load the model (cached)
-    // 2. Format the conversation using chat template (with system prompt)
-    // 3. Run inference
-    // 4. Decode and return the response
-
-    // System prompt would be prepended to conversation in real implementation
-    let _system_prompt = config.system.as_deref().unwrap_or("You are a helpful assistant.");
-
-    // For now, provide informative placeholder responses
-    let last_user = history
-        .iter()
-        .rev()
-        .find(|m| m.starts_with("user: "))
-        .map(|m| &m[6..])
-        .unwrap_or("");
-
-    // Simple pattern matching for demo purposes
-    let response = if last_user.to_lowercase().contains("hello")
-        || last_user.to_lowercase().contains("hi ")
-        || last_user.to_lowercase() == "hi"
-    {
-        "Hello! I'm Qwen2-0.5B-Instruct running locally via APR. How can I help you today?"
-    } else if last_user.contains("2+2") || last_user.contains("2 + 2") {
-        "4"
-    } else if last_user.to_lowercase().contains("what") && last_user.to_lowercase().contains("you")
-    {
-        "I'm Qwen2-0.5B-Instruct, a 494 million parameter language model running locally on your machine using the APR format. I can help with questions, analysis, and creative tasks."
-    } else {
-        // Generic response with model info
-        "[Model inference not yet implemented]\n\n\
-         This is a placeholder response. Once the model weights are loaded,\n\
-         I will generate actual responses using transformer inference.\n\n\
-         Implementation status:\n\
-         ✓ Qwen2Model struct (src/models/qwen2/mod.rs)\n\
-         ✓ GQA attention\n\
-         ✓ RoPE embeddings\n\
-         ✓ RMSNorm\n\
-         ✓ SwiGLU MLP\n\
-         ⏳ BPE Tokenizer\n\
-         ⏳ Weight loading from .apr"
-    };
-
-    Ok(response.to_string())
+fn print_inspection_info(session: &ChatSession) {
+    println!();
+    println!("{}", "[DEBUG] Session info:".dimmed());
+    println!(
+        "{}",
+        format!(
+            "  Model: {} layers, {} params",
+            session.model.num_layers(),
+            format_params(session.model.num_parameters())
+        )
+        .dimmed()
+    );
+    println!(
+        "{}",
+        format!("  History: {} messages", session.history.len()).dimmed()
+    );
+    println!(
+        "{}",
+        format!("  Vocab: {} tokens", session.tokenizer.vocab_size()).dimmed()
+    );
 }
 
-fn print_inspection_info() {
-    // Placeholder for inspection info
-    println!();
-    println!("{}", "[DEBUG] Token info:".dimmed());
-    println!(
-        "{}",
-        "  Tokenized: <placeholder>".dimmed()
-    );
-    println!(
-        "{}",
-        "  Top-3: (placeholder) (0.98), ... ".dimmed()
-    );
-    println!(
-        "{}",
-        "  Stats: -- tok/s | PPL: -- | Mem: --MB".dimmed()
-    );
+/// Format parameter count in human-readable form
+fn format_params(count: usize) -> String {
+    if count >= 1_000_000_000 {
+        format!("{:.1}B", count as f64 / 1_000_000_000.0)
+    } else if count >= 1_000_000 {
+        format!("{:.1}M", count as f64 / 1_000_000.0)
+    } else if count >= 1_000 {
+        format!("{:.1}K", count as f64 / 1_000.0)
+    } else {
+        format!("{count}")
+    }
 }
 
 #[cfg(test)]
