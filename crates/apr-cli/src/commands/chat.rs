@@ -79,7 +79,9 @@ pub(crate) fn run(
 }
 
 fn print_welcome_banner(path: &Path, config: &ChatConfig) {
-    output::section("Qwen2-0.5B-Instruct Chat");
+    output::section("Qwen2 Chat Demo (Tiny Model)");
+    println!();
+    println!("{}", "Note: Using tiny demo model (~50MB). Full Qwen2-0.5B requires ~4GB RAM.".yellow());
     println!();
     output::kv("Model", path.display());
     output::kv("Temperature", config.temperature);
@@ -118,16 +120,17 @@ impl ChatSession {
         println!("{}", "Loading model...".cyan());
         let start = Instant::now();
 
-        // Use tiny config for testing (full model would use Qwen2Config::qwen2_0_5b_instruct())
+        // Use tiny config to avoid OOM - full Qwen2-0.5B (494M params) requires ~4GB RAM
+        // This demo config uses ~50MB RAM and demonstrates the architecture
         let config = Qwen2Config {
-            hidden_size: 896,
-            num_attention_heads: 14,
+            hidden_size: 64,
+            num_attention_heads: 4,
             num_kv_heads: 2,
-            num_layers: 24,
-            vocab_size: 151936,
-            max_seq_len: 32768,
-            intermediate_size: 4864,
-            rope_theta: 1_000_000.0,
+            num_layers: 2,
+            vocab_size: 1000,        // Tiny vocab for memory efficiency
+            max_seq_len: 512,
+            intermediate_size: 256,
+            rope_theta: 10000.0,
         };
 
         let mut model = Qwen2Model::new(&config);
