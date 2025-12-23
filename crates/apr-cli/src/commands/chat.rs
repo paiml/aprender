@@ -82,6 +82,10 @@ fn print_welcome_banner(path: &Path, config: &ChatConfig) {
     output::kv("Top-P", config.top_p);
     output::kv("Max Tokens", config.max_tokens);
 
+    if let Some(system) = &config.system {
+        output::kv("System", system);
+    }
+
     if config.inspect {
         println!();
         println!("{}", "Inspection mode enabled - showing token probabilities".cyan());
@@ -195,15 +199,18 @@ fn handle_command(input: &str, history: &mut Vec<String>) -> Result<CommandResul
 
 fn generate_response(
     _path: &Path,
-    _config: &ChatConfig,
+    config: &ChatConfig,
     history: &[String],
 ) -> Result<String, CliError> {
     // PLACEHOLDER: This is a stub implementation.
     // Once the model is properly integrated, this will:
     // 1. Load the model (cached)
-    // 2. Format the conversation using chat template
+    // 2. Format the conversation using chat template (with system prompt)
     // 3. Run inference
     // 4. Decode and return the response
+
+    // System prompt would be prepended to conversation in real implementation
+    let _system_prompt = config.system.as_deref().unwrap_or("You are a helpful assistant.");
 
     // For now, provide informative placeholder responses
     let last_user = history
