@@ -112,6 +112,21 @@ impl BpeConfig {
             vocab_size: 32000,
         }
     }
+
+    /// Create config for Qwen2 tokenizer (GH-128)
+    ///
+    /// Qwen2 uses a 151936 token vocabulary with special chat tokens.
+    #[must_use]
+    pub fn qwen2() -> Self {
+        Self {
+            unk_token: "<|endoftext|>".to_string(),
+            bos_token: Some("<|im_start|>".to_string()),
+            eos_token: Some("<|im_end|>".to_string()),
+            pad_token: Some("<|endoftext|>".to_string()),
+            add_prefix_space: false,
+            vocab_size: 151936,
+        }
+    }
 }
 
 // ============================================================================
@@ -430,6 +445,151 @@ impl BpeTokenizer {
 impl Default for BpeTokenizer {
     fn default() -> Self {
         Self::new(BpeConfig::default())
+    }
+}
+
+// ============================================================================
+// Qwen2 BPE Tokenizer
+// ============================================================================
+
+/// Qwen2-specific BPE tokenizer with chat template support.
+///
+/// Extends the base BPE tokenizer with Qwen2's special tokens and
+/// chat formatting conventions.
+///
+/// # Example
+///
+/// ```rust
+/// use aprender::text::bpe::Qwen2BpeTokenizer;
+///
+/// let tokenizer = Qwen2BpeTokenizer::new();
+///
+/// // Check special tokens
+/// assert!(tokenizer.is_eos(151645)); // <|im_end|>
+///
+/// // Format a chat message
+/// let formatted = tokenizer.format_chat("user", "Hello, world!");
+/// assert!(formatted.contains("<|im_start|>user"));
+/// ```
+#[derive(Debug, Clone)]
+pub struct Qwen2BpeTokenizer {
+    /// Base tokenizer
+    base: BpeTokenizer,
+    /// Special token IDs
+    im_start_id: u32,
+    im_end_id: u32,
+    endoftext_id: u32,
+}
+
+impl Qwen2BpeTokenizer {
+    /// Special token: <|im_start|>
+    pub const IM_START_ID: u32 = 151644;
+    /// Special token: <|im_end|>
+    pub const IM_END_ID: u32 = 151645;
+    /// Special token: <|endoftext|>
+    pub const ENDOFTEXT_ID: u32 = 151643;
+
+    /// Create a new Qwen2 tokenizer.
+    #[must_use]
+    pub fn new() -> Self {
+        let config = BpeConfig::qwen2();
+        let mut base = BpeTokenizer::new(config);
+
+        // Add Qwen2 special tokens
+        base.add_special_token("<|endoftext|>", Self::ENDOFTEXT_ID);
+        base.add_special_token("<|im_start|>", Self::IM_START_ID);
+        base.add_special_token("<|im_end|>", Self::IM_END_ID);
+
+        // Add basic byte vocabulary (will be replaced when loading from file)
+        for i in 0..=255u8 {
+            if let Some(&c) = base.byte_encoder.get(&i) {
+                let token = c.to_string();
+                let id = u32::from(i);
+                base.vocab.insert(token.clone(), id);
+                base.id_to_token.insert(id, token);
+            }
+        }
+
+        Self {
+            base,
+            im_start_id: Self::IM_START_ID,
+            im_end_id: Self::IM_END_ID,
+            endoftext_id: Self::ENDOFTEXT_ID,
+        }
+    }
+
+    /// Check if token is EOS (end of sequence).
+    #[must_use]
+    pub fn is_eos(&self, token_id: u32) -> bool {
+        token_id == self.im_end_id || token_id == self.endoftext_id
+    }
+
+    /// Check if token is BOS (beginning of sequence).
+    #[must_use]
+    pub fn is_bos(&self, token_id: u32) -> bool {
+        token_id == self.im_start_id
+    }
+
+    /// Get vocabulary size.
+    #[must_use]
+    pub fn vocab_size(&self) -> usize {
+        151936 // Qwen2 fixed vocab size
+    }
+
+    /// Encode text to token IDs.
+    #[must_use]
+    pub fn encode(&self, text: &str) -> Vec<u32> {
+        self.base.encode(text)
+    }
+
+    /// Decode token IDs to text.
+    #[must_use]
+    pub fn decode(&self, ids: &[u32]) -> String {
+        self.base.decode(ids)
+    }
+
+    /// Format a chat message with Qwen2 template.
+    ///
+    /// Format: `<|im_start|>role\nmessage<|im_end|>\n`
+    #[must_use]
+    pub fn format_chat(&self, role: &str, content: &str) -> String {
+        format!("<|im_start|>{role}\n{content}<|im_end|>\n")
+    }
+
+    /// Format a complete chat conversation.
+    ///
+    /// # Arguments
+    /// * `messages` - List of (role, content) pairs
+    ///
+    /// # Returns
+    /// Formatted conversation string with chat template applied.
+    #[must_use]
+    pub fn format_conversation(&self, messages: &[(&str, &str)]) -> String {
+        let mut result = String::new();
+        for (role, content) in messages {
+            result.push_str(&self.format_chat(role, content));
+        }
+        // Add assistant prefix for generation
+        result.push_str("<|im_start|>assistant\n");
+        result
+    }
+
+    /// Get the im_start token ID.
+    #[must_use]
+    pub fn im_start_id(&self) -> u32 {
+        self.im_start_id
+    }
+
+    /// Get the im_end token ID.
+    #[must_use]
+    pub fn im_end_id(&self) -> u32 {
+        self.im_end_id
+    }
+}
+
+impl Default for Qwen2BpeTokenizer {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -778,5 +938,83 @@ mod tests {
         // Whitespace should produce tokens
         assert!(!tokens1.is_empty());
         assert!(!tokens2.is_empty());
+    }
+
+    // ========================================================================
+    // Qwen2 BPE Tokenizer Tests
+    // ========================================================================
+
+    #[test]
+    fn test_qwen2_config() {
+        let config = BpeConfig::qwen2();
+        assert_eq!(config.vocab_size, 151936);
+        assert_eq!(config.eos_token, Some("<|im_end|>".to_string()));
+        assert_eq!(config.bos_token, Some("<|im_start|>".to_string()));
+        assert!(!config.add_prefix_space);
+    }
+
+    #[test]
+    fn test_qwen2_tokenizer_new() {
+        let tokenizer = Qwen2BpeTokenizer::new();
+        assert_eq!(tokenizer.vocab_size(), 151936);
+    }
+
+    #[test]
+    fn test_qwen2_special_tokens() {
+        let tokenizer = Qwen2BpeTokenizer::new();
+
+        assert!(tokenizer.is_eos(Qwen2BpeTokenizer::IM_END_ID));
+        assert!(tokenizer.is_eos(Qwen2BpeTokenizer::ENDOFTEXT_ID));
+        assert!(!tokenizer.is_eos(0));
+
+        assert!(tokenizer.is_bos(Qwen2BpeTokenizer::IM_START_ID));
+        assert!(!tokenizer.is_bos(0));
+    }
+
+    #[test]
+    fn test_qwen2_format_chat() {
+        let tokenizer = Qwen2BpeTokenizer::new();
+        let formatted = tokenizer.format_chat("user", "Hello!");
+
+        assert!(formatted.starts_with("<|im_start|>user"));
+        assert!(formatted.contains("Hello!"));
+        assert!(formatted.ends_with("<|im_end|>\n"));
+    }
+
+    #[test]
+    fn test_qwen2_format_conversation() {
+        let tokenizer = Qwen2BpeTokenizer::new();
+        let messages = vec![
+            ("system", "You are a helpful assistant."),
+            ("user", "Hello!"),
+        ];
+        let formatted = tokenizer.format_conversation(&messages);
+
+        assert!(formatted.contains("<|im_start|>system"));
+        assert!(formatted.contains("You are a helpful assistant."));
+        assert!(formatted.contains("<|im_start|>user"));
+        assert!(formatted.contains("Hello!"));
+        assert!(formatted.ends_with("<|im_start|>assistant\n"));
+    }
+
+    #[test]
+    fn test_qwen2_encode_decode() {
+        let tokenizer = Qwen2BpeTokenizer::new();
+
+        // Basic encode (without real vocab, just byte-level)
+        let tokens = tokenizer.encode("Hi");
+        assert!(!tokens.is_empty());
+
+        // Decode back
+        let decoded = tokenizer.decode(&tokens);
+        assert!(decoded.contains("Hi") || decoded.trim() == "Hi");
+    }
+
+    #[test]
+    fn test_qwen2_token_ids() {
+        let tokenizer = Qwen2BpeTokenizer::new();
+
+        assert_eq!(tokenizer.im_start_id(), 151644);
+        assert_eq!(tokenizer.im_end_id(), 151645);
     }
 }

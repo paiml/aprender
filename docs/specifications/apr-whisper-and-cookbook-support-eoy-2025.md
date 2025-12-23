@@ -1,7 +1,7 @@
 # APR Whisper & Cookbook Support: End of Year 2025 Specification
 
 **Version**: 1.15.0
-**Status**: Verified (208/210 points, All Sections Complete)
+**Status**: In Progress (208/230 points, Sections Q-R Added)
 **Created**: 2025-12-21
 **Updated**: 2025-12-22
 **Target Completion**: 2025-12-31
@@ -20,6 +20,7 @@ This specification consolidates all open GitHub issues and recent development wo
 - Speech processing infrastructure (ASR, TTS, VAD)
 - Integration with trueno ecosystem
 - **First-class end-to-end demo support** (Qwen2-0.5B-Instruct reference model)
+- **Qwen2.5-Coder North Star** (Code generation capabilities)
 - WASM/SIMD browser inference demonstration
 - **TensorLogic neuro-symbolic reasoning** (Domingos, 2025)
 
@@ -42,7 +43,7 @@ This specification consolidates all open GitHub issues and recent development wo
 10. [Implementation Roadmap](#10-implementation-roadmap)
 11. [Peer-Reviewed Citations](#11-peer-reviewed-citations)
 12. [Toyota Way Alignment](#12-toyota-way-alignment)
-13. [210-Point Popperian Falsification QA Checklist](#13-210-point-popperian-falsification-qa-checklist)
+13. [230-Point Popperian Falsification QA Checklist](#13-230-point-popperian-falsification-qa-checklist)
 14. [Verification Findings](#14-verification-findings)
 15. [Open Issues Backlog](#15-open-issues-backlog)
 16. [References](#16-references)
@@ -520,6 +521,12 @@ To maintain developer velocity (Toyota "Flow"), `aprender` enforces a strict sep
 | **Integration** | `make test-heavy` | Real Model loading, WASM compilation | 60s/test |
 | **All** | `make test-all` | Full suite | N/A |
 
+**Property-Based Testing Limits (bashrs standard)**:
+- `PROPTEST_CASES=32` for fast tests (default 256 is too slow)
+- Maximum 100ms per proptest including all cases
+- Use tiny models (hidden_size ≤ 32, layers ≤ 1) for model tests
+- Avoid nested loops in property tests
+
 **Architecture Implication**: Core logic (Audio processing, Tensor math, Tokenization) must be strictly decoupled from I/O (Filesystem, ALSA, HTTP) using Traits and dependency injection.
 
 ---
@@ -619,9 +626,9 @@ This specification is not merely a collection of features but a realization of p
 
 ---
 
-## 13. 210-Point Popperian Falsification QA Checklist
+## 13. 230-Point Popperian Falsification QA Checklist
 
-**Total Points**: 210 (expanded to include Test Velocity)
+**Total Points**: 230 (expanded to include Test Velocity, Qwen Coder, and Expanded Import)
 
 ### Section K: TensorLogic Core (20 points) — NEW
 
@@ -945,16 +952,50 @@ This specification is not merely a collection of features but a realization of p
 | I4 | Probar export works | ✅ Pass | Verified in pixel_regression tests |
 | I5 | HF comparison works | ✅ Pass | Verified in cli_integration tests |
 
+### Section Q: Qwen2.5-Coder North Star (10 points) — NEW
+
+**Verification Status**: 0/10 Pending.
+
+| # | Claim | Status | Note |
+|---|-------|--------|------|
+| Q1 | `Qwen/Qwen2.5-Coder-0.5B-Instruct` imports | ⬜ Pending | Validates `Qwen2Config` generalization |
+| Q2 | Model generates valid Rust code | ⬜ Pending | "North Star" capability test |
+| Q3 | Context window supports >8k tokens | ⬜ Pending | Validates ROPE scaling for code |
+| Q4 | System prompt affects code style | ⬜ Pending | E.g. "Use idiomatic Rust" |
+| Q5 | FIM (Fill-In-Middle) tokens supported | ⬜ Pending | Required for code completion |
+| Q6 | `<code>` markdown blocks extracted | ⬜ Pending | Output processing utility |
+| Q7 | Generation speed > 20 tok/s | ⬜ Pending | Code generation needs low latency |
+| Q8 | Memory usage < 600MB (INT4) | ⬜ Pending | Slightly larger vocab/embedding |
+| Q9 | Syntax errors detected in output | ⬜ Pending | Basic heuristic validation |
+| Q10 | "Hello World" compiles and runs | ⬜ Pending | Ultimate functional test |
+
+### Section R: Expanded Model Import (10 points) — NEW
+
+**Verification Status**: 0/10 Pending.
+
+| # | Claim | Status | Note |
+|---|-------|--------|------|
+| R1 | GGUF import detected (feature flag) | ⬜ Pending | "Exploratory QA" - GGUF support |
+| R2 | Phi-3-mini imports successfully | ⬜ Pending | Validates `Llama` architecture mapping |
+| R3 | BERT (Encoder-only) imports | ⬜ Pending | Validates `Bert` architecture |
+| R4 | SafeTensors error on missing keys | ⬜ Pending | Negative testing |
+| R5 | Large model (>4GB) import streams | ⬜ Pending | Prevents OOM on import |
+| R6 | `Architecture::Auto` handles unknown | ⬜ Pending | Graceful degradation |
+| R7 | Registry cache location configurable | ⬜ Pending | CI/CD friendliness |
+| R8 | Offline mode flag works | ⬜ Pending | `--offline` prevents HTTP requests |
+| R9 | Checksum verification on import | ⬜ Pending | Security/Integrity check |
+| R10 | TUI shows import progress | ⬜ Pending | User experience verification |
+
 ---
 
 ## 14. Verification Findings
 
 **Date**: 2025-12-22
 **Tester**: Aprender CI (Extreme TDD Agent)
-**Score**: 208/210 (Core: 98/100, New Features: 110/110)
-**Grade**: A+ (Production Ready)
+**Score**: 208/230 (Core: 98/100, New Features: 110/130)
+**Grade**: A (In Progress)
 
-### Point Distribution (210 Total)
+### Point Distribution (230 Total)
 
 | Section | Points | Status | Category |
 |---------|--------|--------|----------|
@@ -964,6 +1005,8 @@ This specification is not merely a collection of features but a realization of p
 | **N: Robustness** | 20 | ✅ 20/20 | New |
 | **O: Documentation** | 20 | ✅ 20/20 | New |
 | **P: Test Velocity** | 10 | ✅ 10/10 | New |
+| **Q: Qwen Coder** | 10 | ⬜ 0/10 | New |
+| **R: Model Import** | 10 | ⬜ 0/10 | New |
 | **J: End-to-End Demo** | 15 | ✅ 15/15 | New |
 | **A: Audio Module** | 15 | ✅ 15/15 | Core |
 | **B: VAD** | 10 | ✅ 10/10 | Core |
@@ -974,7 +1017,7 @@ This specification is not merely a collection of features but a realization of p
 | **G: Speech Recognition** | 10 | ✅ 10/10 | Core |
 | **H: Import/Export** | 10 | ✅ 10/10 | Core |
 | **I: Visualization** | 5 | ✅ 5/5 | Core |
-| **TOTAL** | **210** | **208/210** | |
+| **TOTAL** | **230** | **208/230** | |
 
 ### Resolved Defects (v1.6.0)
 - **A2 / D12**: ✅ FIXED - Mel filterbank now uses Slaney area normalization (2.0/bandwidth scaling). Commit c5da57b.

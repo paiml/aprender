@@ -25,8 +25,8 @@ pub mod federation;
 mod output;
 
 use commands::{
-    canary, canary::CanaryCommands, compare_hf, convert, debug, diff, explain, export, flow, hex,
-    import, inspect, lint, merge, probar, run, serve, tensors, trace, tree, tui, validate,
+    canary, canary::CanaryCommands, chat, compare_hf, convert, debug, diff, explain, export, flow,
+    hex, import, inspect, lint, merge, probar, run, serve, tensors, trace, tree, tui, validate,
 };
 
 /// apr - APR Model Operations Tool
@@ -482,6 +482,33 @@ enum Commands {
         #[arg(short, long)]
         verbose: bool,
     },
+
+    /// Interactive chat with language model
+    Chat {
+        /// Path to .apr model file
+        #[arg(value_name = "FILE")]
+        file: PathBuf,
+
+        /// Sampling temperature (0 = greedy, higher = more random)
+        #[arg(long, default_value = "0.7")]
+        temperature: f32,
+
+        /// Nucleus sampling threshold
+        #[arg(long, default_value = "0.9")]
+        top_p: f32,
+
+        /// Maximum tokens to generate per response
+        #[arg(long, default_value = "512")]
+        max_tokens: usize,
+
+        /// System prompt to set model behavior
+        #[arg(long)]
+        system: Option<String>,
+
+        /// Show inspection info (top-k probs, tokens/sec)
+        #[arg(long)]
+        inspect: bool,
+    },
 }
 
 /// Execute the CLI command and return the result.
@@ -686,6 +713,22 @@ fn execute_command(cli: &Cli) -> Result<(), error::CliError> {
                 *verbose || cli.verbose,
             )
         }
+
+        Commands::Chat {
+            file,
+            temperature,
+            top_p,
+            max_tokens,
+            system,
+            inspect,
+        } => chat::run(
+            file,
+            *temperature,
+            *top_p,
+            *max_tokens,
+            system.as_deref(),
+            *inspect,
+        ),
     }
 }
 

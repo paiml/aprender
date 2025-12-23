@@ -6,6 +6,7 @@
 //! - Visualization: Make problems visible
 
 pub(crate) mod canary;
+pub(crate) mod chat;
 pub(crate) mod compare_hf;
 pub(crate) mod convert;
 pub(crate) mod debug;

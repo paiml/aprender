@@ -1,0 +1,1486 @@
+# Qwen2-0.5B-Instruct Interactive Chat Demo Specification
+
+**Version**: 1.3.0
+**Status**: North Star Demo Specification (Full Lifecycle + Probador)
+**Created**: 2025-12-23
+**Authors**: Aprender Core Team
+**GitHub Issue**: https://github.com/paiml/interactive.paiml.com/issues/19
+**Upstream Dependency**: https://github.com/paiml/aprender
+
+---
+
+## Executive Summary
+
+This specification defines the implementation plan for a **real, functional** Qwen2-0.5B-Instruct interactive chat demo running in the browser via WebAssembly. The current implementation at `interactive.paiml.com/wasm/qwen-demo/` is a non-functional stub that pattern-matches keywords and returns canned responses. This specification replaces that stub with actual transformer inference.
+
+**Critical Finding**: The existing demo is deceptive—it simulates intelligence without performing any inference. This violates the Toyota Way principle of *Genchi Genbutsu* (go and see the real thing) and must be remediated. We are adopting a **"Zero Stub Policy"** for this deliverable.
+
+### Scope
+
+| Component | Current State | Target State |
+|-----------|---------------|--------------|
+| Model Loading | ❌ Fake (no .apr file) | ✅ Real APR v2 loading with Checksum Verification |
+| Tokenization | ❌ None | ✅ BPE encode/decode with Vocabulary Validation |
+| Forward Pass | ❌ Pattern matching | ✅ Real transformer inference verified against Golden Traces |
+| Generation | ❌ Canned responses | ✅ Autoregressive sampling with Perplexity Monitoring |
+| CLI Interface | ❌ None | ✅ `apr chat` REPL command with Introspection |
+| Visual Control | ❌ None | ✅ Logit & Attention Inspection (Glass Box) |
+| Deployment | ❌ None | ✅ CLI Binary, WASM, Server — all from single .apr |
+
+---
+
+## North Star: The Complete APR Lifecycle
+
+This demo serves as the **"North Star"** for the entire APR ecosystem, demonstrating the complete workflow that users expect: **Download → Convert → Tune → Shrink → Deploy**.
+
+### The Vision: Sovereign AI in Your Hands
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        APR: One Format, Many Targets                         │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│   ┌─────────────┐      ┌─────────────┐      ┌─────────────┐                 │
+│   │ HuggingFace │      │ SafeTensors │      │    GGUF     │                 │
+│   │   (Cloud)   │      │   (Local)   │      │ (llama.cpp) │                 │
+│   └──────┬──────┘      └──────┬──────┘      └──────┬──────┘                 │
+│          │                    │                    │                         │
+│          └────────────────────┼────────────────────┘                         │
+│                               ▼                                              │
+│                    ┌─────────────────────┐                                   │
+│                    │    apr import       │  ← Single entry point             │
+│                    └──────────┬──────────┘                                   │
+│                               ▼                                              │
+│                    ┌─────────────────────┐                                   │
+│                    │   model.apr (v2)    │  ← Universal format               │
+│                    │   • Zero-copy mmap  │                                   │
+│                    │   • 64-byte aligned │                                   │
+│                    │   • Signed metadata │                                   │
+│                    └──────────┬──────────┘                                   │
+│                               │                                              │
+│          ┌────────────────────┼────────────────────┐                         │
+│          ▼                    ▼                    ▼                         │
+│   ┌─────────────┐      ┌─────────────┐      ┌─────────────┐                 │
+│   │ apr convert │      │  apr tune   │      │ apr inspect │                 │
+│   │ (quantize)  │      │ (fine-tune) │      │ (validate)  │                 │
+│   └──────┬──────┘      └──────┬──────┘      └─────────────┘                 │
+│          │                    │                                              │
+│          └────────────────────┤                                              │
+│                               ▼                                              │
+│                    ┌─────────────────────┐                                   │
+│                    │  model-int4.apr     │  ← Optimized for deployment       │
+│                    │   • 4x smaller      │                                   │
+│                    │   • <15% PPL loss   │                                   │
+│                    └──────────┬──────────┘                                   │
+│                               │                                              │
+│          ┌────────────────────┼────────────────────┐                         │
+│          ▼                    ▼                    ▼                         │
+│   ┌─────────────┐      ┌─────────────┐      ┌─────────────┐                 │
+│   │ apr compile │      │  apr serve  │      │ WASM Build  │                 │
+│   │ (binary)    │      │  (server)   │      │ (browser)   │                 │
+│   └──────┬──────┘      └──────┬──────┘      └──────┬──────┘                 │
+│          ▼                    ▼                    ▼                         │
+│   ┌─────────────┐      ┌─────────────┐      ┌─────────────┐                 │
+│   │ ./qwen-cli  │      │ :8080/chat  │      │ Browser Tab │                 │
+│   │ (portable)  │      │ (REST API)  │      │ (offline)   │                 │
+│   └─────────────┘      └─────────────┘      └─────────────┘                 │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Complete CLI Workflow Demonstration
+
+```bash
+# ═══════════════════════════════════════════════════════════════════════════
+# STAGE 1: ACQUIRE — Get the model from any source
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Option A: Import from HuggingFace Hub (most common)
+apr import hf://Qwen/Qwen2-0.5B-Instruct -o qwen2-0.5b.apr
+# ✓ Downloaded 1.2GB from HuggingFace
+# ✓ Converted SafeTensors → APR v2
+# ✓ Embedded tokenizer.json
+# ✓ Model saved: qwen2-0.5b.apr (1.18 GB)
+
+# Option B: Import from local SafeTensors
+apr import ./model.safetensors -o qwen2-0.5b.apr --arch qwen2
+
+# Option C: Import from GGUF (llama.cpp format)
+apr import ./qwen2-0.5b-q4_k_m.gguf -o qwen2-0.5b.apr
+
+# ═══════════════════════════════════════════════════════════════════════════
+# STAGE 2: INSPECT — Understand what you have
+# ═══════════════════════════════════════════════════════════════════════════
+
+# View model metadata and architecture
+apr inspect qwen2-0.5b.apr
+# Model: Qwen2-0.5B-Instruct
+# Architecture: qwen2 (decoder-only)
+# Parameters: 494M
+# Layers: 24
+# Hidden: 896
+# Heads: 14 (2 KV)
+# Vocab: 151,936
+# Context: 32,768
+# Dtype: float16
+# Size: 1.18 GB
+
+# Validate model integrity
+apr validate qwen2-0.5b.apr --quality
+# ✓ Checksum: VALID (sha256: a1b2c3...)
+# ✓ Tensors: 194/194 present
+# ✓ Shapes: All match config
+# ✓ Values: No NaN/Inf detected
+# ✓ Quality Score: 98/100
+
+# List all tensors with statistics
+apr tensors qwen2-0.5b.apr --stats
+# model.embed_tokens.weight    [151936, 896]  mean=-0.001  std=0.041
+# model.layers.0.self_attn...  [896, 896]     mean=0.000   std=0.023
+# ... (194 tensors)
+
+# Compare against HuggingFace reference
+apr compare-hf qwen2-0.5b.apr --hf Qwen/Qwen2-0.5B-Instruct
+# ✓ All 194 tensors match within 1e-6
+
+# ═══════════════════════════════════════════════════════════════════════════
+# STAGE 3: OPTIMIZE — Shrink for deployment
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Quantize to INT8 (2x smaller, minimal quality loss)
+apr convert qwen2-0.5b.apr --quantize int8 -o qwen2-0.5b-int8.apr
+# ✓ Quantized: float16 → int8
+# ✓ Size: 1.18 GB → 590 MB (2.0x reduction)
+# ✓ Estimated PPL increase: <2%
+
+# Quantize to INT4 (4x smaller, for edge/browser)
+apr convert qwen2-0.5b.apr --quantize int4 -o qwen2-0.5b-int4.apr
+# ✓ Quantized: float16 → int4 (GPTQ)
+# ✓ Size: 1.18 GB → 316 MB (3.7x reduction)
+# ✓ Estimated PPL increase: <8%
+
+# Verify quantization quality against golden trace
+apr test-model qwen2-0.5b-int4.apr --golden-trace golden/qwen2_reference.json
+# ✓ Logit deviation: 0.0023 (threshold: 0.01)
+# ✓ Perplexity: 9.2 (baseline: 8.5, +8.2%)
+# ✓ PASSED: Quality within acceptable bounds
+
+# ═══════════════════════════════════════════════════════════════════════════
+# STAGE 4: CUSTOMIZE — Fine-tune for your use case (optional)
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Fine-tune with LoRA adapter
+apr tune qwen2-0.5b.apr \
+    --method lora \
+    --rank 16 \
+    --data ./my_dataset.jsonl \
+    --epochs 3 \
+    -o qwen2-0.5b-finetuned.apr
+# ✓ LoRA adapter trained: 2.4M parameters
+# ✓ Base model unchanged
+# ✓ Merged into: qwen2-0.5b-finetuned.apr
+
+# Merge multiple models (ensemble)
+apr merge model1.apr model2.apr --strategy weighted --weights 0.7,0.3 -o merged.apr
+
+# ═══════════════════════════════════════════════════════════════════════════
+# STAGE 5: TEST — Verify before deployment
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Interactive chat (quick test)
+apr chat qwen2-0.5b-int4.apr
+# You: What is 2+2?
+# Assistant: 4
+
+# Chat with inspection mode (see the "brain")
+apr chat qwen2-0.5b-int4.apr --inspect
+# [DEBUG] Tokenized: [234, 12, 553]
+# [DEBUG] Top-5: "4" (0.98), "Four" (0.01), ...
+
+# Run benchmark suite
+apr bench qwen2-0.5b-int4.apr
+# Prefill (512 tokens): 89 tok/s
+# Decode: 24 tok/s
+# Memory: 412 MB peak
+# First token: 1.2s
+
+# Run perplexity evaluation
+apr eval qwen2-0.5b-int4.apr --dataset wikitext-2
+# Perplexity: 9.18
+
+# Create canary test for regression detection
+apr canary create qwen2-0.5b-int4.apr \
+    --prompts canary_prompts.txt \
+    -o canary.json
+
+# ═══════════════════════════════════════════════════════════════════════════
+# STAGE 6: DEPLOY — Ship to your target platform
+# ═══════════════════════════════════════════════════════════════════════════
+
+# ─────────────────────────────────────────────────────────────────────────────
+# OPTION A: Standalone CLI Binary (like llamafile)
+# ─────────────────────────────────────────────────────────────────────────────
+apr compile qwen2-0.5b-int4.apr -o qwen-chat
+# ✓ Embedded model (316 MB)
+# ✓ Embedded tokenizer
+# ✓ Embedded runtime
+# ✓ Binary: qwen-chat (318 MB, portable)
+
+# Run anywhere (no dependencies!)
+./qwen-chat "What is Rust?"
+# Rust is a systems programming language focused on safety...
+
+./qwen-chat --interactive
+# You: Hello!
+# Assistant: Hello! How can I help you today?
+
+# Cross-compile for other platforms
+apr compile qwen2-0.5b-int4.apr --target x86_64-unknown-linux-musl -o qwen-linux
+apr compile qwen2-0.5b-int4.apr --target aarch64-apple-darwin -o qwen-mac-arm
+apr compile qwen2-0.5b-int4.apr --target x86_64-pc-windows-msvc -o qwen.exe
+
+# ─────────────────────────────────────────────────────────────────────────────
+# OPTION B: REST API Server
+# ─────────────────────────────────────────────────────────────────────────────
+apr serve qwen2-0.5b-int4.apr --port 8080
+# ✓ Server running at http://localhost:8080
+# ✓ Endpoints:
+#   POST /v1/chat/completions (OpenAI-compatible)
+#   POST /v1/completions
+#   GET  /health
+#   GET  /metrics (Prometheus)
+
+# Client usage
+curl -X POST http://localhost:8080/v1/chat/completions \
+    -H "Content-Type: application/json" \
+    -d '{"messages": [{"role": "user", "content": "Hello!"}]}'
+
+# ─────────────────────────────────────────────────────────────────────────────
+# OPTION C: WebAssembly for Browser
+# ─────────────────────────────────────────────────────────────────────────────
+apr compile qwen2-0.5b-int4.apr --target wasm32-unknown-unknown -o qwen.wasm
+# ✓ WASM module: qwen.wasm (4.2 MB)
+# ✓ Model: qwen2-0.5b-int4.apr (316 MB, served separately)
+# ✓ Bindings: qwen_bg.js, qwen.d.ts
+
+# Host files
+aws s3 cp qwen.wasm s3://cdn/wasm/
+aws s3 cp qwen2-0.5b-int4.apr s3://cdn/models/
+
+# ─────────────────────────────────────────────────────────────────────────────
+# OPTION D: Export for Other Runtimes
+# ─────────────────────────────────────────────────────────────────────────────
+# Export to GGUF (for llama.cpp, ollama)
+apr export qwen2-0.5b-int4.apr --format gguf -o qwen2.gguf
+
+# Export to SafeTensors (for HuggingFace ecosystem)
+apr export qwen2-0.5b-int4.apr --format safetensors -o model.safetensors
+
+# Export to ONNX (for ONNX Runtime)
+apr export qwen2-0.5b-int4.apr --format onnx -o model.onnx
+```
+
+### Deployment Target Comparison
+
+| Target | Command | Output | Size | Latency | Use Case |
+|--------|---------|--------|------|---------|----------|
+| **CLI Binary** | `apr compile` | `./qwen-chat` | 318 MB | 1.2s | Desktop apps, scripts |
+| **REST Server** | `apr serve` | `:8080/v1/...` | N/A | 0.8s | Backend services |
+| **WASM Browser** | `apr compile --target wasm32` | `.wasm` + `.apr` | 320 MB | 1.8s | Web apps, offline |
+| **GGUF Export** | `apr export --format gguf` | `.gguf` | 316 MB | varies | llama.cpp, ollama |
+| **Edge/Mobile** | `apr compile --target aarch64` | binary | 318 MB | 2.5s | iOS, Android, RPi |
+
+### Why This Matters: Sovereign AI
+
+| Property | Traditional Cloud | APR Sovereign Stack |
+|----------|-------------------|---------------------|
+| **Data Privacy** | Prompts sent to API | All local, zero telemetry |
+| **Offline** | Requires internet | Works airplane mode |
+| **Cost** | Per-token billing | One-time download |
+| **Customization** | Limited/none | Full fine-tuning |
+| **Reproducibility** | Model changes silently | Checksummed, versioned |
+| **Auditability** | Black box | Open source, inspectable |
+
+---
+
+## Table of Contents
+
+0. [North Star: The Complete APR Lifecycle](#north-star-the-complete-apr-lifecycle)
+1. [Problem Statement](#1-problem-statement)
+2. [Design Philosophy](#2-design-philosophy)
+3. [Architecture Overview](#3-architecture-overview)
+4. [Implementation Components](#4-implementation-components)
+5. [CLI Interactive Mode](#5-cli-interactive-mode)
+6. [Browser WASM Demo](#6-browser-wasm-demo)
+7. [Deep Probador Testing: WASM at 100%](#7-deep-probador-testing-wasm-at-100)
+8. [Performance Requirements](#8-performance-requirements)
+9. [Peer-Reviewed Citations](#9-peer-reviewed-citations)
+10. [Toyota Way Alignment](#10-toyota-way-alignment)
+11. [150-Point Popperian Falsification Checklist](#11-150-point-popperian-falsification-checklist)
+12. [Implementation Roadmap](#12-implementation-roadmap)
+13. [Risk Analysis](#13-risk-analysis)
+14. [References](#14-references)
+
+---
+
+## 1. Problem Statement
+
+### 1.1 Current State Analysis
+
+**Location**: `interactive.paiml.com/wasm/qwen-demo/src/lib.rs` lines 252-267
+
+```rust
+// CURRENT IMPLEMENTATION (BROKEN/DECEPTIVE)
+fn generate_demo_response(&self, prompt: &str) -> String {
+    let prompt_lower = prompt.to_lowercase();
+    // DECEPTION: Pattern matching simulates intelligence
+    if prompt_lower.contains("capital") && prompt_lower.contains("france") {
+        "The capital of France is Paris...".to_string()
+    } 
+    // ...
+}
+```
+
+**Deficiencies**:
+
+| Issue | Severity | Impact |
+|-------|----------|--------|
+| No .apr model loading | Critical | Demo is non-functional |
+| No transformer forward pass | Critical | No actual inference |
+| Pattern matching only | Critical | Deterministic, non-intelligent, fragile |
+| Canned responses | Critical | Misleading to users; violates Trust |
+| Lack of Visual Control | High | Impossible to verify internal state |
+
+### 1.2 What EXISTS in aprender (Building Blocks)
+
+| Component | Location | Status | Citation |
+|-----------|----------|--------|----------|
+| `GroupedQueryAttention` | `src/nn/transformer.rs` | ✅ Implemented | (Ainslie et al., 2023) |
+| `RotaryPositionEmbedding` | `src/nn/transformer.rs` | ✅ Implemented | (Su et al., 2021) |
+| `TransformerDecoderLayer` | `src/nn/transformer.rs` | ✅ Implemented | (Vaswani et al., 2017) |
+| `RMSNorm` | `src/nn/normalization.rs` | ✅ Implemented | (Zhang & Sennrich, 2019) |
+| `NucleusSampler` | `src/nn/generation.rs` | ✅ Implemented | (Holtzman et al., 2020) |
+| `TopKSampler` | `src/nn/generation.rs` | ✅ Implemented | (Fan et al., 2018) |
+| `Qwen2Config` | `src/demo/mod.rs` | ✅ Correct architecture | (Bai et al., 2023) |
+| `AprReader` | `src/serialization/apr.rs` | ✅ APR v2 loading | APR-SPEC v2.0 |
+| WASM/SIMD | `src/wasm/mod.rs` | ✅ Configured | (Haas et al., 2017) |
+
+### 1.3 What's MISSING for Real Inference
+
+1. **Qwen2Model struct** - Assembly of layers into complete model
+2. **Weight loading pipeline** - HuggingFace → APR conversion + hosting + **Verification**
+3. **BPE Tokenizer integration** - Qwen2's 151,936 token vocabulary
+4. **Forward pass implementation** - Actual matrix operations verified against **Golden Traces**
+5. **CLI `apr chat` command** - Interactive REPL interface with **Inspector Mode**
+
+---
+
+## 2. Design Philosophy
+
+### 2.1 Popperian Falsificationism
+
+Following Popper's criterion of demarcation (Popper, 1959), each claim in this specification is accompanied by a **falsifiable test condition**. We do not attempt to prove correctness; instead, we specify conditions under which claims would be proven false.
+
+**Core Falsifiable Claim**: "The Qwen2-0.5B demo performs real transformer inference."
+
+**Strong Falsification Conditions**:
+- Output logits do not match reference implementation (PyTorch) within `1e-4`.
+- Perplexity on held-out text > 20 (indicates random or broken weights).
+- Visual inspection of attention maps shows uniform distribution (no learning).
+- Altering a single weight does not change the output (indicates code is not using the weights).
+
+### 2.2 Toyota Production System Alignment
+
+| Principle | Application |
+|-----------|-------------|
+| **Genchi Genbutsu** | Go and See: Verify logic by inspecting internal tensors, not just reading code. |
+| **Jidoka** | Automation with a Human Touch: If PPL > Threshold, build fails immediately (Andon). |
+| **Poka-Yoke** | Mistake Proofing: Type system prevents mixing text and tokens. |
+| **Heijunka** | Leveling: Streaming token generation to smooth user experience. |
+| **Visual Control** | "Glass Box" UI: Show top-k probs and attention to prove calculation. |
+
+### 2.3 Sovereign AI Compliance
+
+Per Kleppmann et al. (2019) "Local-First Software":
+
+| Requirement | Implementation |
+|-------------|----------------|
+| **Local Execution** | All inference runs on user device |
+| **Data Privacy** | No telemetry; prompts never leave device |
+| **Auditability** | Open source (Apache 2.0); Reproducible builds |
+| **Model Provenance** | Cryptographic signatures in .apr footer |
+
+---
+
+## 3. Architecture Overview
+
+### 3.1 System Diagram
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                     Qwen2-0.5B Interactive Chat                          │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  ┌────────────────────────────────────────────────────────────────────┐ │
+│  │                        User Interface Layer                         │ │
+│  │                                                                      │ │
+│  │   ┌─────────────┐              ┌─────────────────────────────────┐  │ │
+│  │   │ CLI REPL    │              │   Browser WASM Demo             │  │ │
+│  │   │ `apr chat`  │              │   interactive.paiml.com         │  │ │
+│  │   └──────┬──────┘              └───────────────┬─────────────────┘  │ │
+│  │          │                                      │                    │ │
+│  └──────────┼──────────────────────────────────────┼────────────────────┘ │
+│             │                                      │                      │
+│             ▼                                      ▼                      │
+│  ┌────────────────────────────────────────────────────────────────────┐  │
+│  │                      Inference Engine                               │  │
+│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────────┐  │  │
+│  │  │  BPE         │  │  Qwen2Model  │  │  Sampling                │  │  │
+│  │  │  Tokenizer   │─▶│  Forward     │─▶│  (Nucleus/TopK)          │  │  │
+│  │  │              │  │  Pass        │  │                          │  │  │
+│  │  └──────────────┘  └──────┬───────┘  └──────────────────────────┘  │  │
+│  │                           │                                         │  │
+│  │                           ▼                                         │  │
+│  │                  ┌──────────────────┐                               │  │
+│  │                  │ Inspection Probe │ (For Visual Control)          │  │
+│  │                  │ (Logits/Attn)    │                               │  │
+│  │                  └──────────────────┘                               │  │
+│  └────────────────────────────────────────────────────────────────────┘  │
+│                                    │                                      │
+│                                    ▼                                      │
+│  ┌────────────────────────────────────────────────────────────────────┐  │
+│  │                      APR Model Storage                              │  │
+│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────────┐  │  │
+│  │  │  .apr File   │  │  Zero-Copy   │  │  INT4 Quantized          │  │  │
+│  │  │  (CDN/Local) │─▶│  mmap        │─▶│  Weights (~300MB)        │  │  │
+│  │  └──────────────┘  └──────────────┘  └──────────────────────────┘  │  │
+│  └────────────────────────────────────────────────────────────────────┘  │
+│                                    │                                      │
+│                                    ▼                                      │
+│  ┌────────────────────────────────────────────────────────────────────┐  │
+│  │                      Trueno Compute Backend                         │  │
+│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────────┐  │  │
+│  │  │  CPU SIMD    │  │  WASM SIMD   │  │  GPU (future)            │  │  │
+│  │  │  AVX2/AVX512 │  │  SIMD128     │  │  wgpu                    │  │  │
+│  │  └──────────────┘  └──────────────┘  └──────────────────────────┘  │  │
+│  └────────────────────────────────────────────────────────────────────┘  │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 4. Implementation Components
+
+### 4.1 Qwen2Model Struct
+
+```rust
+/// Complete Qwen2-0.5B model for inference
+///
+/// Architecture per Bai et al. (2023) "Qwen Technical Report"
+pub struct Qwen2Model {
+    /// Token embeddings [151936, 896]
+    embed_tokens: Embedding,
+
+    /// 24 decoder layers
+    layers: Vec<Qwen2DecoderLayer>,
+
+    /// Final RMSNorm
+    norm: RMSNorm,
+
+    /// Language model head [896, 151936]
+    lm_head: Linear,
+
+    /// Rotary position embeddings
+    rope: RotaryPositionEmbedding,
+
+    /// Model configuration
+    config: Qwen2Config,
+
+    /// KV cache for efficient generation
+    kv_cache: Option<KVCache>,
+
+    /// Inspection probe for visual control (optional)
+    pub probe: Option<Box<dyn InferenceProbe>>,
+}
+```
+
+### 4.2 Forward Pass (Verified)
+
+```rust
+impl Qwen2Model {
+    /// Single forward pass through the model
+    pub fn forward(
+        &mut self,
+        input_ids: &[u32],
+        position_ids: &[usize],
+    ) -> Tensor {
+        // ... implementation ...
+        
+        // VISUAL CONTROL: Probe hook
+        if let Some(probe) = &mut self.probe {
+            probe.on_layer_activations(&hidden);
+        }
+
+        self.lm_head.forward(&hidden)
+    }
+}
+```
+
+### 4.3 Weight Conversion with Validation
+
+```bash
+# Step 1: Import from HuggingFace
+apr import hf://Qwen/Qwen2-0.5B-Instruct -o qwen2-0.5b-fp16.apr --arch qwen2
+
+# Step 2: Quantize to INT4
+apr convert qwen2-0.5b-fp16.apr --quantize int4 -o qwen2-0.5b-int4.apr
+
+# Step 3: VERIFY against Golden Trace (Critical Step)
+# Runs a standard prompt and compares logits against reference PyTorch output
+apr test-model qwen2-0.5b-int4.apr --golden-trace golden_traces/qwen2_reference.json
+```
+
+---
+
+## 5. CLI Interactive Mode
+
+### 5.1 REPL Interface with Visual Control
+
+```
+$ apr chat qwen2-0.5b-int4.apr --inspect
+
+=== Qwen2-0.5B-Instruct Chat (Inspection Mode) ===
+Model: qwen2-0.5b-int4.apr (316 MB, INT4)
+Validation: PASSED (Checksum: a1b2...)
+
+You: What is 2+2?
+
+[DEBUG] Tokenized: [234, 12, 553, 11]
+
+Assistant: 4
+[DEBUG] Top-3 Candidates:
+  1. "4" (0.98)
+  2. "Four" (0.01)
+  3. "\n" (0.005)
+
+[Stats: 24.1 tok/s | PPL: 1.2 | Mem: 340MB]
+```
+
+---
+
+## 6. Browser WASM Demo
+
+### 6.2 WASM Bindings (Enhanced)
+
+```rust
+#[wasm_bindgen]
+impl Qwen2WASM {
+    /// Generate with introspection
+    #[wasm_bindgen]
+    pub fn generate_debug(&mut self, prompt: &str, callback: &js_sys::Function) {
+        // ...
+        for token_id in self.model.generate_iter(&ids, &self.config) {
+            // Return not just text, but top-k probabilities for UI visualization
+            let info = self.model.get_last_token_info(); 
+            let _ = callback.call1(&JsValue::NULL, &JsValue::from_serde(&info).unwrap());
+        }
+    }
+}
+```
+
+---
+
+## 7. Deep Probador Testing: WASM at 100%
+
+This section specifies the **probador** (tester) methodology for achieving 100% verified WASM functionality through coverage, playbooks, and pixel-level visual regression.
+
+### 7.1 Testing Philosophy: The Three Pillars
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                     PROBADOR: Three Pillars of WASM Testing                  │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│   ┌─────────────────────┐   ┌─────────────────────┐   ┌─────────────────┐   │
+│   │   PILAR 1: CÓDIGO   │   │   PILAR 2: FLUJO    │   │  PILAR 3: PIXEL │   │
+│   │   (Code Coverage)   │   │    (Playbooks)      │   │   (Visual Reg)  │   │
+│   ├─────────────────────┤   ├─────────────────────┤   ├─────────────────┤   │
+│   │ • 100% line coverage│   │ • Scripted scenarios│   │ • Screenshot diff│   │
+│   │ • Branch coverage   │   │ • User journeys     │   │ • Heatmap compare│   │
+│   │ • Mutation testing  │   │ • Error paths       │   │ • Animation check│   │
+│   │ • Dead code removal │   │ • Edge cases        │   │ • Responsiveness │   │
+│   └─────────────────────┘   └─────────────────────┘   └─────────────────┘   │
+│            │                         │                         │             │
+│            └─────────────────────────┼─────────────────────────┘             │
+│                                      ▼                                       │
+│                         ┌─────────────────────────┐                          │
+│                         │   PROBADOR REPORT       │                          │
+│                         │   ✅ Coverage: 100%     │                          │
+│                         │   ✅ Playbooks: 50/50   │                          │
+│                         │   ✅ Pixels: 0 diff     │                          │
+│                         └─────────────────────────┘                          │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 7.2 Pilar 1: Code Coverage (100% Requirement)
+
+**Target**: 100% line coverage for all WASM-compiled Rust code.
+
+#### Coverage Configuration
+
+```toml
+# wasm/qwen-demo/Cargo.toml
+[package.metadata.cargo-llvm-cov]
+target = "wasm32-unknown-unknown"
+branch = true
+fail-under-lines = 100
+fail-under-branches = 95
+```
+
+#### Coverage Commands
+
+```bash
+# Generate WASM coverage report
+cargo llvm-cov --target wasm32-unknown-unknown --html -o coverage/
+
+# Enforce 100% threshold (CI gate)
+cargo llvm-cov --target wasm32-unknown-unknown --fail-under-lines 100
+
+# View uncovered lines
+cargo llvm-cov --target wasm32-unknown-unknown --show-missing-lines
+```
+
+#### Coverage Exclusions (Must Be Justified)
+
+```rust
+// ONLY these patterns may be excluded, with mandatory justification:
+
+#[cfg(not(tarpaulin_include))]  // Unreachable panic handlers
+fn unreachable_panic() -> ! {
+    // JUSTIFICATION: WASM traps on panic, this is dead code by design
+    unreachable!()
+}
+
+// NO exclusions allowed for:
+// - Model inference paths
+// - Tokenization
+// - Sampling logic
+// - Error handling
+```
+
+#### Mutation Testing for WASM
+
+```bash
+# Run mutation testing on WASM module
+cargo mutants --target wasm32-unknown-unknown --timeout 300
+
+# Minimum mutation score: 90%
+# Any surviving mutant in inference path = build failure
+```
+
+### 7.3 Pilar 2: Playbook Testing (Scripted Scenarios)
+
+**Playbooks** are deterministic, reproducible test scenarios that exercise complete user journeys.
+
+#### Playbook Format
+
+```yaml
+# playbooks/qwen-chat-happy-path.yaml
+name: "Qwen Chat Happy Path"
+description: "Complete chat session with model loading and generation"
+timeout: 60s
+browser: chromium
+
+steps:
+  - name: "Load Demo Page"
+    action: navigate
+    url: "http://localhost:3000/wasm/qwen-demo/"
+    wait_for: "#model-status:contains('Ready')"
+    timeout: 30s
+
+  - name: "Verify Model Loaded"
+    action: assert
+    selector: "#model-info"
+    contains: "Qwen2-0.5B-Instruct"
+
+  - name: "Enter Prompt"
+    action: type
+    selector: "#prompt-input"
+    text: "What is 2+2?"
+
+  - name: "Submit Prompt"
+    action: click
+    selector: "#submit-btn"
+
+  - name: "Wait for Response"
+    action: wait_for
+    selector: "#response-text"
+    timeout: 10s
+
+  - name: "Verify Response Contains Answer"
+    action: assert
+    selector: "#response-text"
+    matches: "4|four|Four"
+
+  - name: "Verify Top-K Display"
+    action: assert
+    selector: "#top-k-probs"
+    exists: true
+    min_children: 3
+
+  - name: "Verify Metrics Displayed"
+    action: assert
+    selector: "#metrics"
+    contains: "tok/s"
+
+  - name: "Screenshot Final State"
+    action: screenshot
+    path: "artifacts/happy-path-final.png"
+```
+
+#### Playbook Categories (50 Required)
+
+| Category | Count | Description |
+|----------|-------|-------------|
+| **Happy Path** | 10 | Normal user flows (chat, inspect, settings) |
+| **Error Handling** | 10 | OOM, network failure, invalid input |
+| **Edge Cases** | 10 | Empty prompt, max tokens, special chars, Unicode |
+| **Performance** | 5 | Load time, generation speed, memory |
+| **Accessibility** | 5 | Keyboard nav, screen reader, contrast |
+| **Browser Compat** | 5 | Chrome, Firefox, Safari, Edge, mobile |
+| **Regression** | 5 | Previously fixed bugs must not recur |
+| **TOTAL** | **50** | |
+
+#### Playbook Execution
+
+```bash
+# Run all playbooks
+make playbooks
+
+# Run specific category
+make playbooks CATEGORY=error-handling
+
+# Generate HTML report
+make playbooks-report
+
+# CI gate: all 50 must pass
+make playbooks-gate  # Exits non-zero if any fail
+```
+
+#### Example Playbooks
+
+```yaml
+# playbooks/error-oom.yaml
+name: "OOM Handling"
+steps:
+  - action: navigate
+    url: "http://localhost:3000/wasm/qwen-demo/?force_oom=true"
+  - action: wait_for
+    selector: "#error-banner"
+    timeout: 15s
+  - action: assert
+    selector: "#error-banner"
+    contains: "memory"
+  - action: assert
+    selector: "#retry-btn"
+    exists: true
+
+# playbooks/edge-unicode.yaml
+name: "Unicode Input"
+steps:
+  - action: type
+    selector: "#prompt-input"
+    text: "日本語で返答してください 🇯🇵"
+  - action: click
+    selector: "#submit-btn"
+  - action: wait_for
+    selector: "#response-text"
+  - action: assert
+    selector: "#response-text"
+    not_empty: true
+
+# playbooks/perf-first-token.yaml
+name: "First Token Latency"
+steps:
+  - action: navigate
+    url: "http://localhost:3000/wasm/qwen-demo/"
+  - action: wait_for
+    selector: "#model-status:contains('Ready')"
+  - action: type
+    selector: "#prompt-input"
+    text: "Hello"
+  - action: start_timer
+    name: "first_token"
+  - action: click
+    selector: "#submit-btn"
+  - action: wait_for
+    selector: "#response-text:not(:empty)"
+  - action: stop_timer
+    name: "first_token"
+  - action: assert_timer
+    name: "first_token"
+    max_ms: 2000
+```
+
+### 7.4 Pilar 3: Pixel-Level Visual Regression
+
+**Goal**: Detect any unintended visual changes at the pixel level.
+
+#### Probar Integration
+
+```bash
+# Generate golden screenshots (baseline)
+apr probar golden wasm/qwen-demo/ -o golden/
+
+# Compare current against golden
+apr probar compare wasm/qwen-demo/ --golden golden/ -o diff/
+
+# View diff report
+open diff/report.html
+```
+
+#### Visual Test Categories
+
+| Test | Golden File | Tolerance | Description |
+|------|-------------|-----------|-------------|
+| **Initial Load** | `golden/initial-load.png` | 0.0% | Empty state before model loads |
+| **Model Ready** | `golden/model-ready.png` | 0.1% | Model loaded, ready to chat |
+| **Generating** | `golden/generating.png` | 0.5% | Animation during generation |
+| **Response** | `golden/response.png` | 0.1% | Chat response displayed |
+| **Top-K Viz** | `golden/top-k.png` | 0.0% | Probability visualization |
+| **Attention Map** | `golden/attention.png` | 1.0% | Attention heatmap |
+| **Error State** | `golden/error.png` | 0.0% | Error banner display |
+| **Mobile View** | `golden/mobile.png` | 0.5% | Responsive mobile layout |
+
+#### Heatmap Comparison (Tensor Visualization)
+
+```bash
+# Export layer activations as heatmaps
+apr probar model.apr --export-heatmaps -o heatmaps/
+
+# Compare heatmaps (for regression in model behavior)
+apr probar diff heatmaps/v1/ heatmaps/v2/ --tolerance 0.01
+
+# Output:
+# Layer 0: ✅ 0.002% deviation
+# Layer 1: ✅ 0.001% deviation
+# ...
+# Layer 23: ✅ 0.003% deviation
+# Attention: ✅ 0.005% deviation
+# PASSED: All layers within 0.01 tolerance
+```
+
+#### Pixel Diff Configuration
+
+```yaml
+# probar.yaml
+visual_regression:
+  tool: pixelmatch  # or playwright, percy, chromatic
+
+  thresholds:
+    default: 0.1%        # Max 0.1% pixel difference
+    animation: 0.5%      # Allow animation variance
+    heatmap: 1.0%        # Slight variance in visualizations
+
+  viewports:
+    - name: desktop
+      width: 1920
+      height: 1080
+    - name: laptop
+      width: 1366
+      height: 768
+    - name: tablet
+      width: 768
+      height: 1024
+    - name: mobile
+      width: 375
+      height: 812
+
+  browsers:
+    - chromium
+    - firefox
+    - webkit
+
+  ignore_regions:
+    - selector: "#timestamp"    # Dynamic content
+    - selector: "#tok-per-sec"  # Varies by hardware
+```
+
+#### CI/CD Integration
+
+```yaml
+# .github/workflows/visual-regression.yml
+name: Visual Regression
+on: [push, pull_request]
+
+jobs:
+  visual-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build WASM
+        run: make build-wasm
+
+      - name: Start Dev Server
+        run: make serve &
+
+      - name: Run Playbooks
+        run: make playbooks
+
+      - name: Run Visual Regression
+        run: apr probar compare --golden golden/ --ci
+
+      - name: Upload Diff Artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-diff
+          path: diff/
+```
+
+### 7.5 Probador Command Reference
+
+```bash
+# ═══════════════════════════════════════════════════════════════════════════
+# COVERAGE
+# ═══════════════════════════════════════════════════════════════════════════
+apr probador coverage                    # Run coverage, show summary
+apr probador coverage --html             # Generate HTML report
+apr probador coverage --fail-under 100   # CI gate at 100%
+
+# ═══════════════════════════════════════════════════════════════════════════
+# PLAYBOOKS
+# ═══════════════════════════════════════════════════════════════════════════
+apr probador playbook run playbooks/     # Run all playbooks
+apr probador playbook run playbooks/happy-path.yaml  # Single playbook
+apr probador playbook list               # List all playbooks
+apr probador playbook validate           # Check playbook syntax
+apr probador playbook record             # Record new playbook from browser
+
+# ═══════════════════════════════════════════════════════════════════════════
+# VISUAL REGRESSION
+# ═══════════════════════════════════════════════════════════════════════════
+apr probador golden create               # Create golden screenshots
+apr probador golden update               # Update specific golden
+apr probador visual compare              # Compare against golden
+apr probador visual diff                 # Generate diff report
+apr probador visual approve              # Approve new baseline
+
+# ═══════════════════════════════════════════════════════════════════════════
+# HEATMAPS (Tensor Visualization)
+# ═══════════════════════════════════════════════════════════════════════════
+apr probador heatmap export model.apr    # Export layer heatmaps
+apr probador heatmap compare v1/ v2/     # Compare two versions
+apr probador heatmap animate model.apr   # Generate layer animation
+
+# ═══════════════════════════════════════════════════════════════════════════
+# FULL SUITE
+# ═══════════════════════════════════════════════════════════════════════════
+apr probador full                        # Run all three pillars
+apr probador report                      # Generate combined report
+apr probador ci                          # CI mode (strict, no-color)
+```
+
+### 7.6 Probador Report Format
+
+```
+═══════════════════════════════════════════════════════════════════════════════
+                         PROBADOR VERIFICATION REPORT
+                         Qwen2-0.5B WASM Demo v1.2.0
+═══════════════════════════════════════════════════════════════════════════════
+
+PILAR 1: CODE COVERAGE
+──────────────────────────────────────────────────────────────────────────────
+  Lines:     2,847 / 2,847  (100.00%) ✅
+  Branches:  1,203 / 1,250  ( 96.24%) ✅
+  Functions:   187 /   187  (100.00%) ✅
+  Mutations:   412 /   458  ( 89.96%) ⚠️  (target: 90%)
+
+  Uncovered Branches:
+    - src/lib.rs:234 (unreachable match arm)
+    - src/sampling.rs:89 (NaN check, cannot trigger in WASM)
+
+PILAR 2: PLAYBOOK EXECUTION
+──────────────────────────────────────────────────────────────────────────────
+  Total:      50 playbooks
+  Passed:     50 ✅
+  Failed:      0
+  Skipped:     0
+
+  By Category:
+    Happy Path:      10/10 ✅
+    Error Handling:  10/10 ✅
+    Edge Cases:      10/10 ✅
+    Performance:      5/5  ✅
+    Accessibility:    5/5  ✅
+    Browser Compat:   5/5  ✅
+    Regression:       5/5  ✅
+
+PILAR 3: VISUAL REGRESSION
+──────────────────────────────────────────────────────────────────────────────
+  Golden Files:  12
+  Compared:      12
+  Passed:        12 ✅
+  Failed:         0
+
+  Max Pixel Diff: 0.03% (attention-map.png)
+
+  Viewports Tested:
+    ✅ Desktop (1920×1080)
+    ✅ Laptop (1366×768)
+    ✅ Tablet (768×1024)
+    ✅ Mobile (375×812)
+
+TENSOR HEATMAP COMPARISON
+──────────────────────────────────────────────────────────────────────────────
+  Reference: golden/heatmaps/v1.0.0/
+  Current:   output/heatmaps/current/
+
+  Layer-by-Layer:
+    embed_tokens:  0.001% deviation ✅
+    layer.0.attn:  0.002% deviation ✅
+    layer.0.mlp:   0.001% deviation ✅
+    ...
+    layer.23.mlp:  0.003% deviation ✅
+    lm_head:       0.002% deviation ✅
+
+═══════════════════════════════════════════════════════════════════════════════
+                            OVERALL: PASSED ✅
+                      All three pillars verified at 100%
+═══════════════════════════════════════════════════════════════════════════════
+```
+
+### 7.7 Integration with CI/CD
+
+```makefile
+# Makefile targets for probador
+
+.PHONY: probador probador-coverage probador-playbooks probador-visual probador-report
+
+probador: probador-coverage probador-playbooks probador-visual probador-report
+	@echo "✅ All three pillars passed"
+
+probador-coverage:
+	@echo "📊 Running WASM coverage..."
+	cargo llvm-cov --target wasm32-unknown-unknown --fail-under-lines 100
+	cargo mutants --target wasm32-unknown-unknown --timeout 300
+
+probador-playbooks:
+	@echo "📋 Running playbooks..."
+	apr probador playbook run playbooks/ --parallel 4
+	@test $$(apr probador playbook summary | grep PASSED | wc -l) -eq 50
+
+probador-visual:
+	@echo "🖼️  Running visual regression..."
+	apr probador visual compare --golden golden/ --strict
+
+probador-report:
+	@echo "📄 Generating report..."
+	apr probador report --format html --output probador-report.html
+	apr probador report --format json --output probador-report.json
+```
+
+---
+
+## 8. Performance Requirements
+
+*(Renumbered from Section 7)*
+
+---
+
+## 10. Toyota Way Alignment
+
+### 9.1 Principle Mapping
+
+| # | Toyota Principle | Implementation |
+|---|------------------|----------------|
+| 1 | Long-term philosophy | Building a foundation for verified, sovereign AI, not just a flashy demo. |
+| 2 | Continuous flow | Streaming generation; Continuous Integration of model quality. |
+| 3 | Pull system | Model weights loaded on demand (mmap) / Lazy loading in WASM. |
+| 4 | Level workload | Consistent batch sizes; Heijunka in token generation. |
+| 5 | **Stop to fix problems (Jidoka)** | **CI pipeline FAILS if Perplexity > Threshold. No broken models shipped.** |
+| 6 | Standardized tasks | `apr` CLI is the standard way to interact, WASM is just a view. |
+| 7 | **Visual control** | **The demo MUST show internal probabilities to prove it's not a canned response.** |
+| 8 | Reliable technology | Rust/WASM, Verified against PyTorch Golden Traces. |
+| 12 | **Go and see (Genchi Genbutsu)** | **We verify the *actual* logits, not just the text output.** |
+
+### 9.2 Root Cause Analysis: Stub Demo Failure
+
+**Problem**: The previous demo was a fake stub.
+**Root Cause**: Lack of automated verification of the *inference mechanics*.
+**Countermeasure**: Introduce **Golden Trace Verification**. The system must mathematically match a known-good reference (PyTorch) for a set of inputs before release.
+
+---
+
+## 10. 100-Point Popperian Falsification Checklist
+
+**Methodology**: Claims must be falsifiable. We specify the condition that PROVES the system is broken/fake.
+
+### Section A: Model Loading (10 points)
+
+| # | Claim | Falsification Condition (Fail if...) | Status |
+|---|-------|------------------------|--------|
+| A1 | APR loads | `Qwen2Model::load()` returns error | ⬜ |
+| A2 | Weights Verified | Weight distribution mean/stddev deviation > 1% from ref | ⬜ |
+| A3 | Checksum Valid | File checksum does not match signed manifest | ⬜ |
+| A4 | Metadata Correct | Architecture/Vocab size mismatch config | ⬜ |
+| A5 | INT4 Size | File size > 400MB (indicates inefficient packing) | ⬜ |
+
+### Section B: Tokenization (10 points)
+
+| # | Claim | Falsification Condition (Fail if...) | Status |
+|---|-------|------------------------|--------|
+| B1 | Vocab Size | `vocab_size != 151936` | ⬜ |
+| B2 | Roundtrip | `decode(encode(x)) != x` for random unicode strings | ⬜ |
+| B3 | Special Tokens | `<|im_start|>` not mapped to 151644 | ⬜ |
+| B4 | Chat Template | Template injection attacks succeed | ⬜ |
+| B5 | Whitespace | Leading/trailing whitespace handling mismatches TikToken | ⬜ |
+
+### Section C: Forward Pass - The "No Fake" Zone (25 points)
+
+| # | Claim | Falsification Condition (Fail if...) | Status |
+|---|-------|------------------------|--------|
+| C1 | **Golden Trace** | **Logits deviate > 1e-4 from PyTorch reference on Test Set** | ⬜ |
+| C2 | Context Awareness | Changing token T-1 does not affect logits at T | ⬜ |
+| C3 | Determinism | Same input + fixed seed produces different logits | ⬜ |
+| C4 | Causal Mask | Token T attends to T+1 (information leak) | ⬜ |
+| C5 | KV Cache | Cache enabled result != Cache disabled result | ⬜ |
+| C6 | RoPE | Output is invariant to absolute position changes | ⬜ |
+| C7 | RMSNorm | Output scale diverges to Inf/NaN | ⬜ |
+| C8 | SwiGLU | Activations are all positive (Swish is non-monotonic) | ⬜ |
+
+### Section D: Generation & Quality (20 points)
+
+| # | Claim | Falsification Condition (Fail if...) | Status |
+|---|-------|------------------------|--------|
+| D1 | **Intelligence** | **Perplexity > 20 on WikiText-2 (indicates garbage model)** | ⬜ |
+| D2 | Diversity | Temp=1.0 generates identical sequence twice | ⬜ |
+| D3 | EOS Respect | Generation continues past `<|im_end|>` | ⬜ |
+| D4 | Repetition | 4-gram repetition rate > 30% (indicates sampling bug) | ⬜ |
+| D5 | Speed | Throughput < 10 tok/s on reference hardware | ⬜ |
+
+### Section E: Visual Control & Inspection (15 points)
+
+| # | Claim | Falsification Condition (Fail if...) | Status |
+|---|-------|------------------------|--------|
+| E1 | Logit Vis | UI fails to display Top-5 candidates | ⬜ |
+| E2 | Attn Vis | UI fails to display attention heatmap | ⬜ |
+| E3 | Stats | Token/sec counter is static/fake | ⬜ |
+| E4 | Mem Usage | Usage reported matches OS monitor ±10% | ⬜ |
+
+### Section F: WASM/Browser (10 points)
+
+| # | Claim | Falsification Condition (Fail if...) | Status |
+|---|-------|------------------------|--------|
+| F1 | Integration | Web Worker crash on model load | ⬜ |
+| F2 | Responsiveness | Main thread blocked > 16ms (UI jank) | ⬜ |
+| F3 | Streaming | Text appears in chunks > 50ms | ⬜ |
+| F4 | Fallback | No error message if WebGPU/SIMD missing | ⬜ |
+
+### Section G: Code Quality (10 points)
+
+| # | Claim | Falsification Condition (Fail if...) | Status |
+|---|-------|------------------------|--------|
+| G1 | Coverage | Code coverage < 85% | ⬜ |
+| G2 | Safety | `unsafe` block used without justification comment | ⬜ |
+| G3 | Linting | `clippy` has warnings | ⬜ |
+
+### Section H: Full Lifecycle — The North Star (20 points)
+
+*This section validates the complete APR workflow: Download → Convert → Tune → Shrink → Deploy*
+
+| # | Claim | Falsification Condition (Fail if...) | Status |
+|---|-------|------------------------|--------|
+| **H1** | **HF Import** | `apr import hf://Qwen/Qwen2-0.5B-Instruct` fails | ⬜ |
+| H2 | SafeTensors Import | `apr import model.safetensors` fails | ⬜ |
+| H3 | GGUF Import | `apr import model.gguf` fails | ⬜ |
+| **H4** | **INT4 Quantize** | `apr convert --quantize int4` fails or PPL > 15% | ⬜ |
+| H5 | INT8 Quantize | `apr convert --quantize int8` fails or PPL > 5% | ⬜ |
+| H6 | Inspect | `apr inspect` missing architecture/params/vocab | ⬜ |
+| H7 | Validate | `apr validate --quality` fails on valid model | ⬜ |
+| H8 | Tensors Stats | `apr tensors --stats` shows NaN mean/std | ⬜ |
+| H9 | Compare HF | `apr compare-hf` deviation > 1e-5 | ⬜ |
+| **H10** | **Chat REPL** | `apr chat` fails to generate coherent response | ⬜ |
+| H11 | Chat Inspect | `apr chat --inspect` fails to show top-k probs | ⬜ |
+| H12 | Bench | `apr bench` throughput < 10 tok/s | ⬜ |
+| H13 | Eval PPL | `apr eval --dataset wikitext-2` PPL > 20 | ⬜ |
+| H14 | Canary Create | `apr canary create` fails to generate | ⬜ |
+| **H15** | **Compile Binary** | `apr compile -o qwen-chat` fails to produce executable | ⬜ |
+| H16 | Binary Runs | `./qwen-chat "test"` fails to produce output | ⬜ |
+| **H17** | **Serve API** | `apr serve` fails to start or /health returns error | ⬜ |
+| H18 | OpenAI Compat | `/v1/chat/completions` returns invalid response | ⬜ |
+| **H19** | **WASM Compile** | `apr compile --target wasm32` fails | ⬜ |
+| H20 | WASM Loads | WASM module fails to initialize in browser | ⬜ |
+| H21 | Export GGUF | `apr export --format gguf` fails | ⬜ |
+| H22 | Export SafeTensors | `apr export --format safetensors` fails | ⬜ |
+| H23 | Merge Models | `apr merge` fails to produce valid output | ⬜ |
+| H24 | Cross-Compile | `--target aarch64-apple-darwin` fails | ⬜ |
+| **H25** | **E2E Workflow** | Full 6-stage demo script fails anywhere | ⬜ |
+
+### Section I: Deep Probador Testing — The Three Pillars (25 points)
+
+*This section validates WASM quality through coverage, playbooks, and pixel-level regression.*
+
+#### Pilar 1: Code Coverage (10 points)
+
+| # | Claim | Falsification Condition (Fail if...) | Status |
+|---|-------|------------------------|--------|
+| **I1** | **100% Line Coverage** | `cargo llvm-cov` reports < 100% lines | ⬜ |
+| I2 | Branch Coverage | Branch coverage < 95% | ⬜ |
+| I3 | Function Coverage | Any public function uncovered | ⬜ |
+| **I4** | **Mutation Score** | `cargo mutants` score < 90% | ⬜ |
+| I5 | Dead Code | Any unreachable code without justification | ⬜ |
+
+#### Pilar 2: Playbook Execution (10 points)
+
+| # | Claim | Falsification Condition (Fail if...) | Status |
+|---|-------|------------------------|--------|
+| **I6** | **50 Playbooks Pass** | Any of 50 playbooks fail | ⬜ |
+| I7 | Happy Path (10) | Any happy path scenario fails | ⬜ |
+| I8 | Error Handling (10) | Error states not properly displayed | ⬜ |
+| I9 | Edge Cases (10) | Unicode, empty input, max tokens fail | ⬜ |
+| I10 | Browser Compat (5) | Chrome, Firefox, or Safari fails | ⬜ |
+| I11 | Performance (5) | First token > 2s in playbook timer | ⬜ |
+| I12 | Accessibility (5) | Keyboard nav or screen reader fails | ⬜ |
+| I13 | Regression (5) | Previously fixed bug recurs | ⬜ |
+
+#### Pilar 3: Visual Regression (5 points)
+
+| # | Claim | Falsification Condition (Fail if...) | Status |
+|---|-------|------------------------|--------|
+| **I14** | **Zero Pixel Diff** | Any screenshot diff > threshold | ⬜ |
+| I15 | Golden Baseline | Golden screenshots missing or stale | ⬜ |
+| I16 | Responsive Views | Mobile/tablet views differ from golden | ⬜ |
+| I17 | Heatmap Match | Layer heatmaps deviate > 1% from reference | ⬜ |
+| **I18** | **Cross-Browser** | Visual diff between Chrome/Firefox/Safari | ⬜ |
+
+#### Probador Integration (Bonus, not counted)
+
+| # | Claim | Falsification Condition (Fail if...) | Status |
+|---|-------|------------------------|--------|
+| I19 | Report Generated | `apr probador report` fails | ⬜ |
+| I20 | CI Integration | GitHub Actions workflow fails | ⬜ |
+
+### Checklist Summary
+
+| Section | Points | Focus |
+|---------|--------|-------|
+| A: Model Loading | 10 | APR file integrity |
+| B: Tokenization | 10 | BPE correctness |
+| C: Forward Pass | 25 | **"No Fake" Zone** — Golden trace verification |
+| D: Generation | 20 | Quality & perplexity |
+| E: Visual Control | 15 | Inspection & transparency |
+| F: WASM/Browser | 10 | Web deployment |
+| G: Code Quality | 10 | Engineering standards |
+| **H: Full Lifecycle** | **25** | **North Star workflow** |
+| **I: Probador Testing** | **25** | **Three Pillars: Coverage, Playbooks, Pixels** |
+| **TOTAL** | **150** | |
+
+**Passing Threshold**: 150/150 (Zero Defects / Zero Stubs / Complete Workflow / Full Probador)
+
+---
+
+## 11. Implementation Roadmap
+
+### 11.1 Phase 1: The "No Fake" Core (Days 1-4)
+*Goal: Mathematically verified forward pass.*
+1. Implement `Qwen2Model` struct.
+2. Create **Golden Trace** generator script (using PyTorch).
+3. Implement Forward Pass and verify against trace. **(Gatekeeper: Cannot proceed until C1 passes)**.
+
+### 11.2 Phase 2: Tokenization & Generation (Days 5-7)
+1. Port TikToken BPE logic.
+2. Implement Samplers (Nucleus/TopK).
+3. Verify Perplexity on small corpus. **(Gatekeeper: Cannot proceed until D1 passes)**.
+
+### 11.3 Phase 3: Interactive & Visual (Days 8-10)
+1. Build `apr chat` with Inspection Mode.
+2. Build WASM bindings with state introspection.
+3. Update UI to visualize the "Brain".
+
+### 11.4 Phase 4: Deployment Targets (Days 11-14)
+*Goal: One .apr, many deployment options.*
+
+1. **`apr compile` (Standalone Binary)**
+   - Embed model + tokenizer + runtime into single executable
+   - Cross-compilation targets: linux-musl, darwin-arm64, windows
+   - Verify: `./qwen-chat "test"` produces valid output
+
+2. **`apr serve` (REST API Server)**
+   - OpenAI-compatible `/v1/chat/completions` endpoint
+   - Prometheus metrics at `/metrics`
+   - Health check at `/health`
+   - Verify: curl test returns valid JSON response
+
+3. **WASM Browser Module**
+   - `apr compile --target wasm32-unknown-unknown`
+   - Web Worker isolation for non-blocking UI
+   - SharedArrayBuffer for zero-copy model loading
+   - Verify: Loads in Chrome/Firefox/Safari
+
+4. **Export Formats**
+   - `apr export --format gguf` (llama.cpp compatible)
+   - `apr export --format safetensors` (HuggingFace ecosystem)
+   - `apr export --format onnx` (ONNX Runtime)
+   - Verify: Exported files load in target runtime
+
+### 11.5 Phase 5: E2E Validation & Polish (Days 15-17)
+*Goal: Complete North Star demo works end-to-end.*
+
+1. **Create E2E Test Script**
+   ```bash
+   # automated_demo.sh — Must pass 100%
+   apr import hf://Qwen/Qwen2-0.5B-Instruct -o model.apr
+   apr validate model.apr --quality
+   apr convert model.apr --quantize int4 -o model-int4.apr
+   apr test-model model-int4.apr --golden-trace golden/qwen2.json
+   apr compile model-int4.apr -o qwen-chat
+   ./qwen-chat "What is 2+2?" | grep -q "4"
+   apr serve model-int4.apr --port 8080 &
+   curl localhost:8080/health | grep -q "ok"
+   # All steps must succeed
+   ```
+
+2. **Documentation**
+   - Update README with full workflow
+   - Record demo video showing all stages
+   - Create "5-minute quickstart" guide
+
+3. **CI Integration**
+   - Add `make north-star-demo` target
+   - Weekly scheduled run to catch regressions
+   - Artifact storage for compiled binaries
+
+---
+
+## 12. Risk Analysis
+
+| Risk | Impact | Mitigation |
+|------|--------|------------|
+| **Fake Stub Regression** | Critical | **Jidoka**: CI fails on perplexity regression. **Visual Control**: UI shows logits. |
+| **Quantization Quality** | High | Evaluate PPL loss; Allow 8-bit fallback. |
+| **Browser Memory OOM** | High | Streaming loading; Aggressive GC; 4-bit strict. |
+| **Cross-compile Failures** | Medium | Pre-built binaries in CI; Docker build containers. |
+| **OpenAI API Incompatibility** | Medium | Test against official OpenAI Python client. |
+| **GGUF Format Drift** | Low | Pin to llama.cpp release version; regression tests. |
+
+---
+
+## Appendix A: Verification Checklist Summary
+
+**Total Points**: 150
+
+| Section | Points | Status |
+|---------|--------|--------|
+| A: Model Loading | 10 | ⬜ |
+| B: Tokenization | 10 | ⬜ |
+| C: Forward Pass ("No Fake") | 25 | ⬜ |
+| D: Generation & Quality | 20 | ⬜ |
+| E: Visual Control | 15 | ⬜ |
+| F: WASM/Browser | 10 | ⬜ |
+| G: Code Quality | 10 | ⬜ |
+| **H: Full Lifecycle (North Star)** | **25** | ⬜ |
+| **I: Probador (Three Pillars)** | **25** | ⬜ |
+| **TOTAL** | **150** | **⬜ 0/150** |
+
+**Passing Threshold**: 150/150 (Zero Defects / Zero Stubs / Complete Workflow / Full Probador)
+
+---
+
+## Appendix B: Quick Reference — APR Commands
+
+```bash
+# ACQUIRE
+apr import hf://org/model -o model.apr    # From HuggingFace
+apr import model.safetensors -o model.apr # From SafeTensors
+apr import model.gguf -o model.apr        # From GGUF
+
+# INSPECT
+apr inspect model.apr                     # View metadata
+apr validate model.apr --quality          # Verify integrity
+apr tensors model.apr --stats             # List tensors
+apr compare-hf model.apr --hf org/model   # Compare to HF
+
+# OPTIMIZE
+apr convert model.apr --quantize int4 -o out.apr  # Quantize
+apr merge a.apr b.apr -o merged.apr               # Merge models
+apr tune model.apr --method lora -o tuned.apr     # Fine-tune
+
+# TEST
+apr chat model.apr                        # Interactive REPL
+apr chat model.apr --inspect              # With introspection
+apr bench model.apr                       # Benchmark
+apr eval model.apr --dataset wikitext-2   # Perplexity
+apr test-model model.apr --golden-trace   # Verify vs reference
+apr canary create model.apr -o canary.json # Regression test
+
+# DEPLOY
+apr compile model.apr -o chat             # Standalone binary
+apr serve model.apr --port 8080           # REST API server
+apr compile model.apr --target wasm32     # WASM module
+apr export model.apr --format gguf        # Export to GGUF
+apr export model.apr --format safetensors # Export to SafeTensors
+```
+
+---
+
+## Appendix C: Probador Quick Reference
+
+```bash
+# ═══════════════════════════════════════════════════════════════════════════
+# PILAR 1: CODE COVERAGE
+# ═══════════════════════════════════════════════════════════════════════════
+apr probador coverage                        # Run coverage analysis
+apr probador coverage --html -o coverage/    # Generate HTML report
+apr probador coverage --fail-under 100       # CI gate (100% required)
+apr probador mutants                         # Run mutation testing
+apr probador mutants --fail-under 90         # CI gate (90% required)
+
+# ═══════════════════════════════════════════════════════════════════════════
+# PILAR 2: PLAYBOOK EXECUTION
+# ═══════════════════════════════════════════════════════════════════════════
+apr probador playbook list                   # List all 50 playbooks
+apr probador playbook run playbooks/         # Run all playbooks
+apr probador playbook run happy-path.yaml    # Run single playbook
+apr probador playbook record                 # Record new from browser
+apr probador playbook validate               # Check YAML syntax
+
+# ═══════════════════════════════════════════════════════════════════════════
+# PILAR 3: VISUAL REGRESSION
+# ═══════════════════════════════════════════════════════════════════════════
+apr probador golden create                   # Create baseline screenshots
+apr probador golden update                   # Update specific golden
+apr probador visual compare                  # Compare against baseline
+apr probador visual diff -o diff/            # Generate diff report
+apr probador visual approve                  # Approve new baseline
+
+# ═══════════════════════════════════════════════════════════════════════════
+# HEATMAPS (Tensor Visualization)
+# ═══════════════════════════════════════════════════════════════════════════
+apr probador heatmap export model.apr        # Export layer activations
+apr probador heatmap compare v1/ v2/         # Compare two versions
+apr probador heatmap animate                 # Generate layer animation
+
+# ═══════════════════════════════════════════════════════════════════════════
+# FULL SUITE
+# ═══════════════════════════════════════════════════════════════════════════
+apr probador full                            # Run all three pillars
+apr probador report --html                   # Generate combined report
+apr probador ci --strict                     # CI mode (strict, no-color)
+
+# ═══════════════════════════════════════════════════════════════════════════
+# MAKEFILE TARGETS
+# ═══════════════════════════════════════════════════════════════════════════
+make probador                                # Full suite
+make probador-coverage                       # Coverage only
+make probador-playbooks                      # Playbooks only
+make probador-visual                         # Visual regression only
+make probador-report                         # Generate report
+```
+
+---
+
+*This specification enforces the "Toyota Way": Do it right, verify it's right, show it's right, deploy it everywhere, test it completely.*
