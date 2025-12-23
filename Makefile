@@ -197,15 +197,15 @@ tier4: tier3
 # Excludes: crates/, fuzz/, golden_traces/, external path deps (realizar/, trueno/)
 COVERAGE_EXCLUDE := --ignore-filename-regex='(crates/|fuzz/|golden_traces/|realizar/|trueno/)'
 
-# Fast coverage (<2 min): Core lib only, no prop tests (bashrs style)
-coverage: ## Generate HTML coverage report (target: <2 min, 95%+ required)
-	@echo "📊 Running fast coverage (bashrs style, target: <2 min)..."
+# Fast coverage (<2 min): Lib tests only, skip slow tests (bashrs style)
+coverage: ## Generate HTML coverage report (target: <2 min, 92%+)
+	@echo "📊 Running coverage (bashrs style, target: <2 min)..."
 	@which cargo-llvm-cov > /dev/null 2>&1 || cargo install cargo-llvm-cov --locked
 	@echo "⚙️  Disabling sccache/mold (breaks coverage instrumentation)..."
 	@test -f ~/.cargo/config.toml && mv ~/.cargo/config.toml ~/.cargo/config.toml.bak || true
 	@cargo llvm-cov clean --workspace 2>/dev/null || true
 	@mkdir -p target/coverage
-	@echo "🧪 Running lib tests only (no prop_, no encryption, no compression)..."
+	@echo "🧪 Running lib tests (skip prop_, encryption, compression)..."
 	@cargo llvm-cov --no-report --lib \
 		-- --skip prop_ --skip encryption --skip compressed
 	@echo "📊 Generating report..."

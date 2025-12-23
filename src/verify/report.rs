@@ -281,4 +281,42 @@ mod tests {
         assert!(line.contains("○"));
         assert!(line.contains("FAIL"));
     }
+
+    #[test]
+    fn test_summary() {
+        let mut report = VerifyReport::new("test");
+        report.add_result(StageResult::passed("a", Delta::from_percent(1.0)));
+        report.add_result(StageResult::passed("b", Delta::from_percent(2.0)));
+
+        let summary = report.summary();
+        assert!(summary.contains("passed"));
+        assert!(summary.contains("2"));
+    }
+
+    #[test]
+    fn test_render() {
+        use std::time::Duration;
+
+        let mut report = VerifyReport::new("test-pipeline");
+        report.add_result(StageResult::passed("stage_a", Delta::from_percent(1.0)));
+        report.add_result(StageResult::failed("stage_b", Delta::from_percent(50.0)));
+        report.set_duration(Duration::from_millis(100));
+
+        let rendered = report.render();
+        assert!(rendered.contains("APRENDER PIPELINE VERIFICATION"));
+        assert!(rendered.contains("test-pipeline"));
+        assert!(rendered.contains("stage_a"));
+        assert!(rendered.contains("stage_b"));
+        assert!(rendered.contains("Duration"));
+    }
+
+    #[test]
+    fn test_render_all_passed() {
+        let mut report = VerifyReport::new("success-pipeline");
+        report.add_result(StageResult::passed("a", Delta::from_percent(0.5)));
+
+        let rendered = report.render();
+        assert!(rendered.contains("success-pipeline"));
+        assert!(!rendered.contains("DIAGNOSIS")); // No failures
+    }
 }
