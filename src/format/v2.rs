@@ -880,13 +880,36 @@ impl AprV2Writer {
 // Reader
 // ============================================================================
 
-/// APR v2 format reader
+/// APR v2 format reader (owns data - copies input)
 #[derive(Debug)]
 pub struct AprV2Reader {
     header: AprV2Header,
     metadata: AprV2Metadata,
     tensor_index: Vec<TensorIndexEntry>,
     data: Vec<u8>,
+}
+
+/// APR v2 format reader with zero-copy (borrows data - for mmap)
+///
+/// This reader borrows the data slice instead of copying it, enabling
+/// true zero-copy access when used with memory-mapped files.
+///
+/// # Example
+///
+/// ```ignore
+/// use aprender::bundle::MappedFile;
+/// use aprender::format::v2::AprV2ReaderRef;
+///
+/// let mmap = MappedFile::open("model.apr")?;
+/// let reader = AprV2ReaderRef::from_bytes(mmap.as_slice())?;
+/// let weights = reader.get_f32_tensor("embed_tokens.weight")?;
+/// ```
+#[derive(Debug)]
+pub struct AprV2ReaderRef<'a> {
+    header: AprV2Header,
+    metadata: AprV2Metadata,
+    tensor_index: Vec<TensorIndexEntry>,
+    data: &'a [u8],
 }
 
 impl AprV2Reader {
@@ -1000,6 +1023,137 @@ impl AprV2Reader {
     }
 
     /// Get tensor as f32 slice
+    #[must_use]
+    pub fn get_f32_tensor(&self, name: &str) -> Option<Vec<f32>> {
+        let entry = self.get_tensor(name)?;
+        if entry.dtype != TensorDType::F32 {
+            return None;
+        }
+
+        let data = self.get_tensor_data(name)?;
+        let floats: Vec<f32> = data
+            .chunks_exact(4)
+            .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+            .collect();
+
+        Some(floats)
+    }
+
+    /// Check if all tensors are 64-byte aligned
+    #[must_use]
+    pub fn verify_alignment(&self) -> bool {
+        let data_offset = self.header.data_offset as usize;
+        self.tensor_index
+            .iter()
+            .all(|e| is_aligned_64(data_offset + e.offset as usize))
+    }
+}
+
+impl<'a> AprV2ReaderRef<'a> {
+    /// Read from bytes (zero-copy - borrows data)
+    ///
+    /// Unlike `AprV2Reader::from_bytes`, this does NOT copy the input data.
+    /// The reader borrows the slice, making it ideal for use with mmap.
+    ///
+    /// # Errors
+    /// Returns error if parsing fails.
+    pub fn from_bytes(data: &'a [u8]) -> Result<Self, V2FormatError> {
+        if data.len() < HEADER_SIZE_V2 {
+            return Err(V2FormatError::InvalidHeader(
+                "file too small".to_string(),
+            ));
+        }
+
+        // Parse header
+        let header = AprV2Header::from_bytes(data)?;
+
+        // Verify checksum
+        if !header.verify_checksum() {
+            return Err(V2FormatError::ChecksumMismatch);
+        }
+
+        // Parse metadata
+        let metadata_start = header.metadata_offset as usize;
+        let metadata_end = metadata_start + header.metadata_size as usize;
+
+        if data.len() < metadata_end {
+            return Err(V2FormatError::InvalidHeader(
+                "file too small for metadata".to_string(),
+            ));
+        }
+
+        let metadata = AprV2Metadata::from_json(&data[metadata_start..metadata_end])?;
+
+        // Parse tensor index
+        let index_start = header.tensor_index_offset as usize;
+        let mut tensor_index = Vec::with_capacity(header.tensor_count as usize);
+        let mut pos = index_start;
+
+        for _ in 0..header.tensor_count {
+            let (entry, consumed) = TensorIndexEntry::from_bytes(&data[pos..])?;
+            tensor_index.push(entry);
+            pos += consumed;
+        }
+
+        // Verify tensor names are sorted
+        for i in 1..tensor_index.len() {
+            if tensor_index[i].name < tensor_index[i - 1].name {
+                return Err(V2FormatError::InvalidTensorIndex(
+                    "tensor index not sorted".to_string(),
+                ));
+            }
+        }
+
+        Ok(Self {
+            header,
+            metadata,
+            tensor_index,
+            data, // Borrow, no copy!
+        })
+    }
+
+    /// Get header
+    #[must_use]
+    pub fn header(&self) -> &AprV2Header {
+        &self.header
+    }
+
+    /// Get metadata
+    #[must_use]
+    pub fn metadata(&self) -> &AprV2Metadata {
+        &self.metadata
+    }
+
+    /// Get tensor names
+    #[must_use]
+    pub fn tensor_names(&self) -> Vec<&str> {
+        self.tensor_index.iter().map(|e| e.name.as_str()).collect()
+    }
+
+    /// Get tensor by name
+    #[must_use]
+    pub fn get_tensor(&self, name: &str) -> Option<&TensorIndexEntry> {
+        self.tensor_index.iter().find(|e| e.name == name)
+    }
+
+    /// Get tensor data by name (zero-copy slice into mmap)
+    #[must_use]
+    pub fn get_tensor_data(&self, name: &str) -> Option<&[u8]> {
+        let entry = self.get_tensor(name)?;
+        let start = (self.header.data_offset + entry.offset) as usize;
+        let end = start + entry.size as usize;
+
+        if end <= self.data.len() {
+            Some(&self.data[start..end])
+        } else {
+            None
+        }
+    }
+
+    /// Get tensor as f32 Vec (copies data from mmap to Vec<f32>)
+    ///
+    /// Note: This allocates memory for the f32 values. For very large tensors,
+    /// consider using `get_tensor_data` and processing in chunks.
     #[must_use]
     pub fn get_f32_tensor(&self, name: &str) -> Option<Vec<f32>> {
         let entry = self.get_tensor(name)?;

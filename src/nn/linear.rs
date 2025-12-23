@@ -141,6 +141,24 @@ impl Linear {
         self.bias = Some(bias);
     }
 
+    /// Create a placeholder Linear layer with minimal memory allocation.
+    ///
+    /// Used for lazy initialization when loading pre-trained weights.
+    /// The placeholder uses 1-element tensors instead of full matrices,
+    /// reducing memory from O(in*out) to O(1).
+    ///
+    /// **IMPORTANT**: This layer will NOT work for inference until
+    /// `set_weight()` is called with real weights.
+    pub fn placeholder(in_features: usize, out_features: usize) -> Self {
+        // Use 1-element placeholder tensors to save memory
+        Self {
+            weight: Tensor::new(&[0.0], &[1]),
+            bias: None,
+            in_features,
+            out_features,
+        }
+    }
+
     /// Get reference to weight tensor.
     pub fn weight(&self) -> &Tensor {
         &self.weight

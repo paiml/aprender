@@ -181,7 +181,7 @@ impl MappedSafeTensors {
         self.metadata.keys().map(String::as_str).collect()
     }
 
-    /// Extract tensor data as f32 slice (zero-copy for aligned data).
+    /// Extract tensor data as f32 values (BF16/F16 are converted to F32).
     ///
     /// # Errors
     ///
@@ -205,23 +205,13 @@ impl MappedSafeTensors {
 
         let tensor_bytes = &bytes[abs_start..abs_end];
 
-        // Parse F32 values (little-endian)
-        if tensor_bytes.len() % 4 != 0 {
-            return Err(format!(
-                "Tensor '{name}' size {} not multiple of 4",
-                tensor_bytes.len()
-            ));
+        // Handle different dtypes
+        match meta.dtype.as_str() {
+            "F32" => extract_f32(tensor_bytes),
+            "BF16" => extract_bf16_to_f32(tensor_bytes),
+            "F16" => extract_f16_to_f32(tensor_bytes),
+            other => Err(format!("Unsupported dtype for '{name}': {other}")),
         }
-
-        let values: Vec<f32> = tensor_bytes
-            .chunks_exact(4)
-            .map(|chunk| {
-                let arr: [u8; 4] = chunk.try_into().expect("chunk is 4 bytes");
-                f32::from_le_bytes(arr)
-            })
-            .collect();
-
-        Ok(values)
     }
 
     /// Get raw tensor bytes (zero-copy).
@@ -306,13 +296,14 @@ fn parse_metadata(bytes: &[u8], metadata_len: usize) -> Result<SafeTensorsMetada
 ///
 /// # Returns
 ///
-/// Vector of F32 values
+/// Vector of F32 values (BF16/F16 are converted to F32)
 ///
 /// # Errors
 ///
 /// Returns an error if:
 /// - Data offsets are invalid
-/// - Data is not a multiple of 4 bytes (F32 size)
+/// - Data size doesn't match dtype requirements
+/// - Unsupported dtype
 pub fn extract_tensor(raw_data: &[u8], tensor_meta: &TensorMetadata) -> Result<Vec<f32>, String> {
     let [start, end] = tensor_meta.data_offsets;
 
@@ -332,24 +323,126 @@ pub fn extract_tensor(raw_data: &[u8], tensor_meta: &TensorMetadata) -> Result<V
     // Extract bytes
     let tensor_bytes = &raw_data[start..end];
 
-    // Validate size (must be multiple of 4 for F32)
+    // Handle different dtypes
+    match tensor_meta.dtype.as_str() {
+        "F32" => extract_f32(tensor_bytes),
+        "BF16" => extract_bf16_to_f32(tensor_bytes),
+        "F16" => extract_f16_to_f32(tensor_bytes),
+        other => Err(format!("Unsupported dtype: {other}. Supported: F32, BF16, F16")),
+    }
+}
+
+/// Extract F32 tensor data
+fn extract_f32(tensor_bytes: &[u8]) -> Result<Vec<f32>, String> {
     if tensor_bytes.len() % 4 != 0 {
         return Err(format!(
-            "Invalid tensor data: size {} is not a multiple of 4 bytes (F32)",
+            "Invalid F32 tensor data: size {} is not a multiple of 4 bytes",
             tensor_bytes.len()
         ));
     }
 
-    // Parse F32 values (little-endian)
-    let mut values = Vec::new();
-    for chunk in tensor_bytes.chunks_exact(4) {
-        let f32_bytes: [u8; 4] = chunk
-            .try_into()
-            .map_err(|_| "Failed to read F32 bytes".to_string())?;
-        values.push(f32::from_le_bytes(f32_bytes));
-    }
+    let values: Vec<f32> = tensor_bytes
+        .chunks_exact(4)
+        .map(|chunk| {
+            let bytes: [u8; 4] = chunk.try_into().expect("chunk is 4 bytes");
+            f32::from_le_bytes(bytes)
+        })
+        .collect();
 
     Ok(values)
+}
+
+/// Extract BF16 tensor data and convert to F32
+fn extract_bf16_to_f32(tensor_bytes: &[u8]) -> Result<Vec<f32>, String> {
+    if tensor_bytes.len() % 2 != 0 {
+        return Err(format!(
+            "Invalid BF16 tensor data: size {} is not a multiple of 2 bytes",
+            tensor_bytes.len()
+        ));
+    }
+
+    let values: Vec<f32> = tensor_bytes
+        .chunks_exact(2)
+        .map(|chunk| {
+            let bytes: [u8; 2] = chunk.try_into().expect("chunk is 2 bytes");
+            bf16_to_f32(bytes)
+        })
+        .collect();
+
+    Ok(values)
+}
+
+/// Extract F16 tensor data and convert to F32
+fn extract_f16_to_f32(tensor_bytes: &[u8]) -> Result<Vec<f32>, String> {
+    if tensor_bytes.len() % 2 != 0 {
+        return Err(format!(
+            "Invalid F16 tensor data: size {} is not a multiple of 2 bytes",
+            tensor_bytes.len()
+        ));
+    }
+
+    let values: Vec<f32> = tensor_bytes
+        .chunks_exact(2)
+        .map(|chunk| {
+            let bytes: [u8; 2] = chunk.try_into().expect("chunk is 2 bytes");
+            f16_to_f32(bytes)
+        })
+        .collect();
+
+    Ok(values)
+}
+
+/// Convert BF16 (Brain Float 16) to F32
+///
+/// BF16 has the same exponent range as F32 (8 bits) but only 7 mantissa bits.
+/// Conversion is done by zero-padding the mantissa.
+#[inline]
+fn bf16_to_f32(bytes: [u8; 2]) -> f32 {
+    // BF16 is the upper 16 bits of an F32
+    let bits = u32::from_le_bytes([0, 0, bytes[0], bytes[1]]);
+    f32::from_bits(bits)
+}
+
+/// Convert F16 (IEEE 754 half-precision) to F32
+///
+/// F16 has 5 exponent bits and 10 mantissa bits.
+#[inline]
+fn f16_to_f32(bytes: [u8; 2]) -> f32 {
+    let h = u16::from_le_bytes(bytes);
+
+    // Extract components
+    let sign = (h >> 15) & 1;
+    let exp = (h >> 10) & 0x1F;
+    let mant = h & 0x3FF;
+
+    let f32_bits = if exp == 0 {
+        if mant == 0 {
+            // Zero (positive or negative)
+            (sign as u32) << 31
+        } else {
+            // Subnormal: convert to normalized F32
+            let mut m = mant;
+            let mut e: i32 = -14; // F16 subnormal exponent bias adjustment
+            while (m & 0x400) == 0 {
+                m <<= 1;
+                e -= 1;
+            }
+            m &= 0x3FF; // Remove implicit 1
+            let exp32 = (e + 127) as u32; // F32 bias
+            ((sign as u32) << 31) | (exp32 << 23) | ((m as u32) << 13)
+        }
+    } else if exp == 31 {
+        // Inf or NaN
+        let mant32 = (mant as u32) << 13;
+        ((sign as u32) << 31) | (0xFF << 23) | mant32
+    } else {
+        // Normal number
+        let exp32 = (exp as u32) - 15 + 127; // Adjust bias
+        let mant32 = (mant as u32) << 13;
+        ((sign as u32) << 31) | (exp32 << 23) | mant32
+    };
+
+    f32::from_bits(f32_bits)
 }
 
 #[cfg(test)]

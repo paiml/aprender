@@ -634,6 +634,23 @@ impl RMSNorm {
     pub fn weight(&self) -> &Tensor {
         &self.weight
     }
+
+    /// Create a placeholder RMSNorm layer with minimal memory allocation.
+    ///
+    /// Used for lazy initialization when loading pre-trained weights.
+    /// The placeholder uses 1-element tensors instead of full vectors,
+    /// reducing memory from O(n) to O(1).
+    ///
+    /// **IMPORTANT**: This layer will NOT work for inference until
+    /// `set_weight()` is called with real weights.
+    pub fn placeholder(normalized_shape: &[usize]) -> Self {
+        Self {
+            normalized_shape: normalized_shape.to_vec(),
+            eps: 1e-6,
+            weight: Tensor::new(&[1.0], &[1]),
+            elementwise_affine: true,
+        }
+    }
 }
 
 impl Module for RMSNorm {

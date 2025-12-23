@@ -1154,6 +1154,32 @@ impl GroupedQueryAttention {
         }
     }
 
+    /// Create a placeholder GQA layer with minimal memory allocation.
+    ///
+    /// Used for lazy initialization when loading pre-trained weights.
+    /// Uses Linear::placeholder() internally to minimize memory usage.
+    ///
+    /// **IMPORTANT**: This layer will NOT work for inference until
+    /// all projection weights are loaded via `*_proj_mut().set_weight()`.
+    pub fn placeholder(embed_dim: usize, num_heads: usize, num_kv_heads: usize) -> Self {
+        let head_dim = embed_dim / num_heads;
+        let kv_dim = num_kv_heads * head_dim;
+
+        Self {
+            embed_dim,
+            num_heads,
+            num_kv_heads,
+            head_dim,
+            kv_head_dim: head_dim,
+            dropout_p: 0.0,
+            q_proj: Linear::placeholder(embed_dim, embed_dim),
+            k_proj: Linear::placeholder(embed_dim, kv_dim),
+            v_proj: Linear::placeholder(embed_dim, kv_dim),
+            out_proj: Linear::placeholder(embed_dim, embed_dim),
+            training: true,
+        }
+    }
+
     /// Set dropout probability.
     pub fn with_dropout(mut self, dropout_p: f32) -> Self {
         self.dropout_p = dropout_p;

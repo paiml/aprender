@@ -78,16 +78,43 @@ pub(crate) fn run(
     run_repl(path, &config)
 }
 
+/// Detect model format from file extension
+fn detect_format(path: &Path) -> ModelFormat {
+    match path.extension().and_then(|e| e.to_str()) {
+        Some("apr") => ModelFormat::Apr,
+        Some("safetensors") => ModelFormat::SafeTensors,
+        _ => ModelFormat::Demo,
+    }
+}
+
+/// Model format variants
+enum ModelFormat {
+    /// Native APR v2 format (preferred per Native Library Mandate)
+    Apr,
+    /// HuggingFace SafeTensors format
+    SafeTensors,
+    /// Demo mode with tiny random weights
+    Demo,
+}
+
 fn print_welcome_banner(path: &Path, config: &ChatConfig) {
-    let is_safetensors = path.extension().map_or(false, |e| e == "safetensors");
-    if is_safetensors {
-        output::section("Qwen2-0.5B-Instruct Chat");
-        println!();
-        println!("{}", "Using mmap for zero-copy weight loading (Native Library Mandate)".cyan());
-    } else {
-        output::section("Qwen2 Chat Demo (Tiny Model)");
-        println!();
-        println!("{}", "Note: Using tiny demo model. Pass .safetensors file for full model.".yellow());
+    let format = detect_format(path);
+    match format {
+        ModelFormat::Apr => {
+            output::section("Qwen2-0.5B-Instruct Chat");
+            println!();
+            println!("{}", "Using APR v2 format with mmap (Native Library Mandate)".cyan());
+        }
+        ModelFormat::SafeTensors => {
+            output::section("Qwen2-0.5B-Instruct Chat");
+            println!();
+            println!("{}", "Using SafeTensors with mmap (Native Library Mandate)".cyan());
+        }
+        ModelFormat::Demo => {
+            output::section("Qwen2 Chat Demo (Tiny Model)");
+            println!();
+            println!("{}", "Note: Using tiny demo model. Pass .apr or .safetensors file for full model.".yellow());
+        }
     }
     println!();
     output::kv("Model", path.display());
@@ -127,42 +154,61 @@ impl ChatSession {
         println!("{}", "Loading model...".cyan());
         let start = Instant::now();
 
-        // Check if loading real weights from SafeTensors
-        let is_safetensors = path.extension().map_or(false, |e| e == "safetensors");
+        let format = detect_format(path);
 
         // Use full config for real weights, tiny config for demo
-        let config = if is_safetensors {
-            // Full Qwen2-0.5B config - mmap loading won't OOM
-            Qwen2Config::qwen2_0_5b_instruct()
-        } else {
-            // Tiny demo config (~50MB RAM)
-            Qwen2Config {
-                hidden_size: 64,
-                num_attention_heads: 4,
-                num_kv_heads: 2,
-                num_layers: 2,
-                vocab_size: 1000,
-                max_seq_len: 512,
-                intermediate_size: 256,
-                rope_theta: 10000.0,
+        let config = match format {
+            ModelFormat::Apr | ModelFormat::SafeTensors => {
+                // Full Qwen2-0.5B config - mmap loading won't OOM
+                Qwen2Config::qwen2_0_5b_instruct()
+            }
+            ModelFormat::Demo => {
+                // Tiny demo config (~50MB RAM)
+                Qwen2Config {
+                    hidden_size: 64,
+                    num_attention_heads: 4,
+                    num_kv_heads: 2,
+                    num_layers: 2,
+                    vocab_size: 1000,
+                    max_seq_len: 512,
+                    intermediate_size: 256,
+                    rope_theta: 10000.0,
+                }
             }
         };
 
-        let mut model = Qwen2Model::new(&config);
+        // Use uninitialized model for APR/SafeTensors to avoid OOM
+        // Per Native Library Mandate: placeholder tensors = ~1KB vs ~2.5GB
+        let mut model = match format {
+            ModelFormat::Apr | ModelFormat::SafeTensors => Qwen2Model::new_uninitialized(&config),
+            ModelFormat::Demo => Qwen2Model::new(&config),
+        };
 
         // Load weights using mmap (Native Library Mandate - zero-copy)
-        if is_safetensors {
-            match model.load_from_safetensors(path) {
-                Ok(count) => {
-                    println!("{} {}", "Loaded".green(), format!("{count} tensors via mmap"));
-                }
-                Err(e) => {
-                    println!("{} {}", "Warning:".yellow(), format!("Could not load weights: {e}"));
-                    println!("{}", "Using randomly initialized weights".yellow());
-                }
+        // Per Spec §2.4: Random weight fallbacks are FORBIDDEN
+        match format {
+            ModelFormat::Apr => {
+                // Native APR v2 format (preferred)
+                let count = model.load_from_apr(path).map_err(|e| {
+                    CliError::ValidationFailed(format!(
+                        "Failed to load APR weights (random fallback FORBIDDEN per spec): {e}"
+                    ))
+                })?;
+                println!("{} {}", "Loaded".green(), format!("{count} tensors via APR mmap"));
             }
-        } else {
-            println!("{}", "Using randomly initialized weights (demo mode)".yellow());
+            ModelFormat::SafeTensors => {
+                // SafeTensors format (also uses mmap)
+                let count = model.load_from_safetensors(path).map_err(|e| {
+                    CliError::ValidationFailed(format!(
+                        "Failed to load SafeTensors weights (random fallback FORBIDDEN per spec): {e}"
+                    ))
+                })?;
+                println!("{} {}", "Loaded".green(), format!("{count} tensors via mmap"));
+            }
+            ModelFormat::Demo => {
+                // Demo mode: tiny model with random weights for testing only
+                println!("{}", "Using randomly initialized weights (demo mode only)".yellow());
+            }
         }
 
         model.eval();

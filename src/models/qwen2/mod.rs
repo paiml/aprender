@@ -76,6 +76,21 @@ impl Embedding {
         }
     }
 
+    /// Create a placeholder embedding with minimal memory allocation.
+    ///
+    /// Used for lazy initialization when loading pre-trained weights.
+    /// Uses 1-element tensor instead of vocab_size * hidden_size.
+    ///
+    /// **IMPORTANT**: This layer will NOT work for inference until
+    /// `set_weight()` is called with real weights.
+    pub fn placeholder(vocab_size: usize, hidden_size: usize) -> Self {
+        Self {
+            weight: Tensor::new(&[0.0], &[1]),
+            vocab_size,
+            hidden_size,
+        }
+    }
+
     /// Look up embeddings for token IDs.
     pub fn forward(&self, input_ids: &[u32]) -> Tensor {
         let batch_size = 1; // For now, single batch
@@ -134,6 +149,17 @@ impl Qwen2MLP {
             gate_proj: Linear::new(hidden_size, intermediate_size),
             up_proj: Linear::new(hidden_size, intermediate_size),
             down_proj: Linear::new(intermediate_size, hidden_size),
+        }
+    }
+
+    /// Create a placeholder MLP with minimal memory allocation.
+    ///
+    /// Used for lazy initialization when loading pre-trained weights.
+    pub fn placeholder(hidden_size: usize, intermediate_size: usize) -> Self {
+        Self {
+            gate_proj: Linear::placeholder(hidden_size, intermediate_size),
+            up_proj: Linear::placeholder(hidden_size, intermediate_size),
+            down_proj: Linear::placeholder(intermediate_size, hidden_size),
         }
     }
 
@@ -197,6 +223,22 @@ impl Qwen2DecoderLayer {
             mlp: Qwen2MLP::new(config.hidden_size, config.intermediate_size),
             input_layernorm: RMSNorm::new(&[config.hidden_size]),
             post_attention_layernorm: RMSNorm::new(&[config.hidden_size]),
+        }
+    }
+
+    /// Create a placeholder decoder layer with minimal memory allocation.
+    ///
+    /// Used for lazy initialization when loading pre-trained weights.
+    pub fn placeholder(config: &Qwen2Config) -> Self {
+        Self {
+            self_attn: GroupedQueryAttention::placeholder(
+                config.hidden_size,
+                config.num_attention_heads,
+                config.num_kv_heads,
+            ),
+            mlp: Qwen2MLP::placeholder(config.hidden_size, config.intermediate_size),
+            input_layernorm: RMSNorm::placeholder(&[config.hidden_size]),
+            post_attention_layernorm: RMSNorm::placeholder(&[config.hidden_size]),
         }
     }
 
@@ -322,6 +364,37 @@ impl Qwen2Model {
                 .collect(),
             norm: RMSNorm::new(&[config.hidden_size]),
             lm_head: Linear::new(config.hidden_size, config.vocab_size),
+            rope: RotaryPositionEmbedding::with_base(
+                head_dim,
+                config.max_seq_len,
+                config.rope_theta as f32,
+            ),
+            config: config.clone(),
+            kv_cache: None,
+            training: false,
+        }
+    }
+
+    /// Create an uninitialized Qwen2 model with minimal memory allocation.
+    ///
+    /// This uses placeholder tensors (1 element each) instead of full weight
+    /// matrices, reducing memory from ~2.5GB to ~1KB for Qwen2-0.5B.
+    ///
+    /// **IMPORTANT**: This model will NOT work for inference until weights
+    /// are loaded via `load_from_apr()` or `load_from_safetensors()`.
+    ///
+    /// Per Native Library Mandate (Spec §2.4): Use this constructor when
+    /// loading pre-trained weights to avoid OOM from double allocation.
+    pub fn new_uninitialized(config: &Qwen2Config) -> Self {
+        let head_dim = config.hidden_size / config.num_attention_heads;
+
+        Self {
+            embed_tokens: Embedding::placeholder(config.vocab_size, config.hidden_size),
+            layers: (0..config.num_layers)
+                .map(|_| Qwen2DecoderLayer::placeholder(config))
+                .collect(),
+            norm: RMSNorm::placeholder(&[config.hidden_size]),
+            lm_head: Linear::placeholder(config.hidden_size, config.vocab_size),
             rope: RotaryPositionEmbedding::with_base(
                 head_dim,
                 config.max_seq_len,
@@ -710,6 +783,131 @@ impl Qwen2Model {
     ) -> Result<Self, String> {
         let mut model = Self::new(config);
         model.load_from_safetensors(path)?;
+        Ok(model)
+    }
+
+    /// Load weights from APR v2 format file.
+    ///
+    /// Per Native Library Mandate (Spec §2.4): Uses mmap via `bundle::MappedFile`
+    /// for zero-copy tensor access. This is the REQUIRED approach for APR files.
+    ///
+    /// Note: APR canonical names don't have the "model." prefix (it's stripped
+    /// during import per format/converter.rs). We look for names without prefix.
+    ///
+    /// # Returns
+    ///
+    /// Number of weights loaded
+    ///
+    /// # Errors
+    ///
+    /// Returns error if file cannot be read or weights don't match.
+    pub fn load_from_apr(&mut self, path: &std::path::Path) -> Result<usize, String> {
+        use crate::bundle::MappedFile;
+        use crate::format::v2::AprV2ReaderRef;
+
+        // Use mmap for zero-copy loading (per Native Library Mandate)
+        let mapped = MappedFile::open(path).map_err(|e| format!("mmap failed: {e}"))?;
+        // Use AprV2ReaderRef for zero-copy - does NOT copy the mmap data!
+        let reader = AprV2ReaderRef::from_bytes(mapped.as_slice())
+            .map_err(|e| format!("APR parse failed: {e}"))?;
+
+        let mut loaded_count = 0;
+
+        // Helper to load a tensor by name
+        // APR uses canonical names without "model." prefix
+        let load_tensor = |name: &str| -> Result<Tensor, String> {
+            let entry = reader.get_tensor(name).ok_or_else(|| {
+                format!("Weight '{name}' not found in APR file")
+            })?;
+            let data = reader.get_f32_tensor(name).ok_or_else(|| {
+                format!("Failed to read f32 data for '{name}'")
+            })?;
+            Ok(Tensor::new(&data, &entry.shape))
+        };
+
+        // Load embedding weights (APR uses "embed_tokens.weight" not "model.embed_tokens.weight")
+        if let Ok(t) = load_tensor("embed_tokens.weight") {
+            self.embed_tokens.set_weight(t);
+            loaded_count += 1;
+        }
+
+        // Load decoder layer weights (APR uses "layers.N" not "model.layers.N")
+        for i in 0..self.layers.len() {
+            let prefix = format!("layers.{i}");
+            let layer = self.layers.get_mut(i).ok_or("Layer index out of bounds")?;
+
+            // Attention projections
+            if let Ok(t) = load_tensor(&format!("{prefix}.self_attn.q_proj.weight")) {
+                layer.self_attn_mut().q_proj_mut().set_weight(t);
+                loaded_count += 1;
+            }
+            if let Ok(t) = load_tensor(&format!("{prefix}.self_attn.k_proj.weight")) {
+                layer.self_attn_mut().k_proj_mut().set_weight(t);
+                loaded_count += 1;
+            }
+            if let Ok(t) = load_tensor(&format!("{prefix}.self_attn.v_proj.weight")) {
+                layer.self_attn_mut().v_proj_mut().set_weight(t);
+                loaded_count += 1;
+            }
+            if let Ok(t) = load_tensor(&format!("{prefix}.self_attn.o_proj.weight")) {
+                layer.self_attn_mut().out_proj_mut().set_weight(t);
+                loaded_count += 1;
+            }
+
+            // MLP projections
+            if let Ok(t) = load_tensor(&format!("{prefix}.mlp.gate_proj.weight")) {
+                layer.mlp_mut().gate_proj_mut().set_weight(t);
+                loaded_count += 1;
+            }
+            if let Ok(t) = load_tensor(&format!("{prefix}.mlp.up_proj.weight")) {
+                layer.mlp_mut().up_proj_mut().set_weight(t);
+                loaded_count += 1;
+            }
+            if let Ok(t) = load_tensor(&format!("{prefix}.mlp.down_proj.weight")) {
+                layer.mlp_mut().down_proj_mut().set_weight(t);
+                loaded_count += 1;
+            }
+
+            // Layer norms
+            if let Ok(t) = load_tensor(&format!("{prefix}.input_layernorm.weight")) {
+                layer.input_layernorm_mut().set_weight(t);
+                loaded_count += 1;
+            }
+            if let Ok(t) = load_tensor(&format!("{prefix}.post_attention_layernorm.weight")) {
+                layer.post_attention_layernorm_mut().set_weight(t);
+                loaded_count += 1;
+            }
+        }
+
+        // Final norm (APR uses "norm.weight" not "model.norm.weight")
+        if let Ok(t) = load_tensor("norm.weight") {
+            self.norm.set_weight(t);
+            loaded_count += 1;
+        }
+
+        // LM head (this one doesn't have "model." prefix even in SafeTensors)
+        // Note: Qwen2 uses weight tying - lm_head shares weights with embed_tokens
+        if let Ok(t) = load_tensor("lm_head.weight") {
+            self.lm_head.set_weight(t);
+            loaded_count += 1;
+        } else {
+            // Weight tying: use embed_tokens.weight for lm_head
+            // This is common in Qwen2 and many transformer models
+            if let Ok(t) = load_tensor("embed_tokens.weight") {
+                self.lm_head.set_weight(t);
+                loaded_count += 1;
+            }
+        }
+
+        Ok(loaded_count)
+    }
+
+    /// Load model from APR v2 format file.
+    ///
+    /// Creates a new model with the given config and loads weights from file.
+    pub fn from_apr(config: &Qwen2Config, path: &std::path::Path) -> Result<Self, String> {
+        let mut model = Self::new(config);
+        model.load_from_apr(path)?;
         Ok(model)
     }
 }
