@@ -1,6 +1,8 @@
 #![cfg(feature = "audio")]
 
-use aprender::audio::mel::{MelFilterbank, MelConfig, detect_clipping, stereo_to_mono, validate_audio};
+use aprender::audio::mel::{
+    detect_clipping, stereo_to_mono, validate_audio, MelConfig, MelFilterbank,
+};
 use aprender::audio::resample::resample;
 use aprender::audio::stream::{AudioChunker, ChunkConfig};
 
@@ -16,7 +18,11 @@ fn verify_a2_slaney_normalization() {
     let config = MelConfig::whisper();
     let mel = MelFilterbank::new(&config);
     let max_filter_val = mel.filters().iter().fold(0.0f32, |a, &b| f32::max(a, b));
-    assert!(max_filter_val < 0.1, "A2: Filterbank must use Slaney normalization (max < 0.1), got {}", max_filter_val);
+    assert!(
+        max_filter_val < 0.1,
+        "A2: Filterbank must use Slaney normalization (max < 0.1), got {}",
+        max_filter_val
+    );
 }
 
 #[test]
@@ -26,7 +32,10 @@ fn verify_a3_silence_negative_mean() {
     let silence = vec![0.0; 16000];
     let spec = mel.compute(&silence).unwrap();
     let mean: f32 = spec.iter().sum::<f32>() / spec.len() as f32;
-    assert!(mean < 0.0, "A3: Silence input must produce negative mel mean");
+    assert!(
+        mean < 0.0,
+        "A3: Silence input must produce negative mel mean"
+    );
 }
 
 #[test]
@@ -38,18 +47,28 @@ fn verify_a4_resample_preserves_duration() {
     let input = vec![0.0; input_len];
     let output = resample(&input, sr_in, sr_out).unwrap();
     let output_duration = output.len() as f32 / sr_out as f32;
-    assert!((output_duration - duration_sec).abs() < 0.001, "A4: Resample must preserve duration");
+    assert!(
+        (output_duration - duration_sec).abs() < 0.001,
+        "A4: Resample must preserve duration"
+    );
 }
 
 #[test]
 fn verify_a5_16khz_supported() {
     let config = MelConfig::whisper();
-    assert_eq!(config.sample_rate, 16000, "A5: 16kHz must be supported sample rate");
+    assert_eq!(
+        config.sample_rate, 16000,
+        "A5: 16kHz must be supported sample rate"
+    );
 }
 
 #[test]
 fn verify_a6_streaming_chunker() {
-    let chunk_config = ChunkConfig { chunk_size: 16000, overlap: 1600, sample_rate: 16000 };
+    let chunk_config = ChunkConfig {
+        chunk_size: 16000,
+        overlap: 1600,
+        sample_rate: 16000,
+    };
     let mut chunker = AudioChunker::new(chunk_config);
     let audio = vec![0.0; 32000];
     chunker.push(&audio);

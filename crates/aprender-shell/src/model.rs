@@ -1312,13 +1312,17 @@ mod corpus_training_tests {
 
     #[test]
     fn test_corpus_loads_successfully() {
-        let Some(corpus) = load_corpus_or_skip() else { return };
+        let Some(corpus) = load_corpus_or_skip() else {
+            return;
+        };
         assert!(!corpus.is_empty(), "corpus should not be empty");
     }
 
     #[test]
     fn test_corpus_has_expected_size() {
-        let Some(corpus) = load_corpus_or_skip() else { return };
+        let Some(corpus) = load_corpus_or_skip() else {
+            return;
+        };
         // Should have at least 400 commands (current is ~480)
         assert!(
             corpus.len() >= 400,
@@ -1329,7 +1333,9 @@ mod corpus_training_tests {
 
     #[test]
     fn test_corpus_has_diverse_prefixes() {
-        let Some(corpus) = load_corpus_or_skip() else { return };
+        let Some(corpus) = load_corpus_or_skip() else {
+            return;
+        };
         // Should have git, cargo, docker, kubectl, npm, python, aws, etc.
         let expected_prefixes = ["git", "cargo", "docker", "kubectl", "npm", "python", "make"];
         for prefix in expected_prefixes {
@@ -1347,7 +1353,9 @@ mod corpus_training_tests {
 
     #[test]
     fn test_train_from_corpus() {
-        let Some(corpus) = load_corpus_or_skip() else { return };
+        let Some(corpus) = load_corpus_or_skip() else {
+            return;
+        };
         let mut model = MarkovModel::new(3);
         model.train(corpus.commands());
 
@@ -1360,7 +1368,9 @@ mod corpus_training_tests {
 
     #[test]
     fn test_corpus_trained_model_has_ngrams() {
-        let Some(corpus) = load_corpus_or_skip() else { return };
+        let Some(corpus) = load_corpus_or_skip() else {
+            return;
+        };
         let mut model = MarkovModel::new(3);
         model.train(corpus.commands());
 
@@ -1374,7 +1384,9 @@ mod corpus_training_tests {
 
     #[test]
     fn test_corpus_trained_model_has_vocab() {
-        let Some(corpus) = load_corpus_or_skip() else { return };
+        let Some(corpus) = load_corpus_or_skip() else {
+            return;
+        };
         let mut model = MarkovModel::new(3);
         model.train(corpus.commands());
 
@@ -1394,7 +1406,9 @@ mod corpus_training_tests {
 
     #[test]
     fn test_git_suggestions_from_corpus() {
-        let Some(corpus) = load_corpus_or_skip() else { return };
+        let Some(corpus) = load_corpus_or_skip() else {
+            return;
+        };
         let mut model = MarkovModel::new(3);
         model.train(corpus.commands());
 
@@ -1417,7 +1431,9 @@ mod corpus_training_tests {
 
     #[test]
     fn test_cargo_suggestions_from_corpus() {
-        let Some(corpus) = load_corpus_or_skip() else { return };
+        let Some(corpus) = load_corpus_or_skip() else {
+            return;
+        };
         let mut model = MarkovModel::new(3);
         model.train(corpus.commands());
 
@@ -1437,7 +1453,9 @@ mod corpus_training_tests {
 
     #[test]
     fn test_docker_suggestions_from_corpus() {
-        let Some(corpus) = load_corpus_or_skip() else { return };
+        let Some(corpus) = load_corpus_or_skip() else {
+            return;
+        };
         let mut model = MarkovModel::new(3);
         model.train(corpus.commands());
 
@@ -1457,7 +1475,9 @@ mod corpus_training_tests {
 
     #[test]
     fn test_kubectl_suggestions_from_corpus() {
-        let Some(corpus) = load_corpus_or_skip() else { return };
+        let Some(corpus) = load_corpus_or_skip() else {
+            return;
+        };
         let mut model = MarkovModel::new(3);
         model.train(corpus.commands());
 
@@ -1481,7 +1501,9 @@ mod corpus_training_tests {
 
     #[test]
     fn test_partial_git_c_from_corpus() {
-        let Some(corpus) = load_corpus_or_skip() else { return };
+        let Some(corpus) = load_corpus_or_skip() else {
+            return;
+        };
         let mut model = MarkovModel::new(3);
         model.train(corpus.commands());
 
@@ -1502,7 +1524,9 @@ mod corpus_training_tests {
 
     #[test]
     fn test_partial_cargo_b_from_corpus() {
-        let Some(corpus) = load_corpus_or_skip() else { return };
+        let Some(corpus) = load_corpus_or_skip() else {
+            return;
+        };
         let mut model = MarkovModel::new(3);
         model.train(corpus.commands());
 
@@ -1521,7 +1545,9 @@ mod corpus_training_tests {
 
     #[test]
     fn test_corpus_model_save_load_roundtrip() {
-        let Some(corpus) = load_corpus_or_skip() else { return };
+        let Some(corpus) = load_corpus_or_skip() else {
+            return;
+        };
         let mut model = MarkovModel::new(3);
         model.train(corpus.commands());
 
@@ -1537,7 +1563,9 @@ mod corpus_training_tests {
 
     #[test]
     fn test_corpus_model_suggestions_preserved_after_save() {
-        let Some(corpus) = load_corpus_or_skip() else { return };
+        let Some(corpus) = load_corpus_or_skip() else {
+            return;
+        };
         let mut model = MarkovModel::new(3);
         model.train(corpus.commands());
 
@@ -1598,7 +1626,9 @@ mod corpus_training_tests {
 
     #[test]
     fn test_corpus_validation_metrics() {
-        let Some(corpus) = load_corpus_or_skip() else { return };
+        let Some(corpus) = load_corpus_or_skip() else {
+            return;
+        };
         let result = MarkovModel::validate(corpus.commands(), 3, 0.8);
 
         // Should have reasonable metrics
@@ -1621,7 +1651,9 @@ mod corpus_training_tests {
 
     #[test]
     fn test_corpus_validation_80_20_split() {
-        let Some(corpus) = load_corpus_or_skip() else { return };
+        let Some(corpus) = load_corpus_or_skip() else {
+            return;
+        };
         let result = MarkovModel::validate(corpus.commands(), 3, 0.8);
 
         // 80/20 split
@@ -1638,7 +1670,9 @@ mod corpus_training_tests {
 
     #[test]
     fn test_corpus_model_size_reasonable() {
-        let Some(corpus) = load_corpus_or_skip() else { return };
+        let Some(corpus) = load_corpus_or_skip() else {
+            return;
+        };
         let mut model = MarkovModel::new(3);
         model.train(corpus.commands());
 
@@ -1659,7 +1693,9 @@ mod corpus_training_tests {
 
     #[test]
     fn test_corpus_top_commands() {
-        let Some(corpus) = load_corpus_or_skip() else { return };
+        let Some(corpus) = load_corpus_or_skip() else {
+            return;
+        };
         let mut model = MarkovModel::new(3);
         model.train(corpus.commands());
 

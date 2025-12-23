@@ -1195,19 +1195,22 @@ fn write_apr_file(
     output: &Path,
     options: &ImportOptions,
 ) -> Result<()> {
-    // Create metadata with architecture info
-    let mut metadata = AprV2Metadata::default();
-    metadata.model_type = format!("{:?}", options.architecture);
-    metadata.name = Some(output.file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("model")
-        .to_string());
-
     // Calculate total parameter count
-    let param_count: u64 = tensors.values()
-        .map(|(data, _)| data.len() as u64)
-        .sum();
-    metadata.param_count = param_count;
+    let param_count: u64 = tensors.values().map(|(data, _)| data.len() as u64).sum();
+
+    // Create metadata with architecture info using struct init
+    let metadata = AprV2Metadata {
+        model_type: format!("{:?}", options.architecture),
+        name: Some(
+            output
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("model")
+                .to_string(),
+        ),
+        param_count,
+        ..Default::default()
+    };
 
     // Create APR v2 writer
     let mut writer = AprV2Writer::new(metadata);
@@ -1226,9 +1229,10 @@ fn write_apr_file(
         message: format!("Failed to create output file: {e}"),
     })?;
 
-    file.write_all(&bytes).map_err(|e| AprenderError::FormatError {
-        message: format!("Failed to write APR file: {e}"),
-    })?;
+    file.write_all(&bytes)
+        .map_err(|e| AprenderError::FormatError {
+            message: format!("Failed to write APR file: {e}"),
+        })?;
 
     Ok(())
 }
@@ -2915,10 +2919,7 @@ mod tests_import_errors {
     #[cfg(feature = "hf-hub-integration")]
     #[test]
     fn test_parse_import_error_404() {
-        let err = parse_import_error(
-            "HTTP 404: Repository not found",
-            "openai/whisper-tiny",
-        );
+        let err = parse_import_error("HTTP 404: Repository not found", "openai/whisper-tiny");
         match err {
             ImportError::NotFound { resource, status } => {
                 assert_eq!(resource, "openai/whisper-tiny");
@@ -2931,10 +2932,7 @@ mod tests_import_errors {
     #[cfg(feature = "hf-hub-integration")]
     #[test]
     fn test_parse_import_error_not_found_text() {
-        let err = parse_import_error(
-            "The requested resource does not exist",
-            "test/model",
-        );
+        let err = parse_import_error("The requested resource does not exist", "test/model");
         match err {
             ImportError::NotFound { .. } => {}
             _ => panic!("Expected NotFound error, got {:?}", err),
@@ -2944,10 +2942,7 @@ mod tests_import_errors {
     #[cfg(feature = "hf-hub-integration")]
     #[test]
     fn test_parse_import_error_401() {
-        let err = parse_import_error(
-            "HTTP 401: Unauthorized access",
-            "meta-llama/Llama-2-7b",
-        );
+        let err = parse_import_error("HTTP 401: Unauthorized access", "meta-llama/Llama-2-7b");
         match err {
             ImportError::AuthRequired { resource } => {
                 assert_eq!(resource, "meta-llama/Llama-2-7b");
@@ -2987,10 +2982,7 @@ mod tests_import_errors {
     #[cfg(feature = "hf-hub-integration")]
     #[test]
     fn test_parse_import_error_rate_limit_no_retry() {
-        let err = parse_import_error(
-            "Rate limit exceeded",
-            "test/model",
-        );
+        let err = parse_import_error("Rate limit exceeded", "test/model");
         match err {
             ImportError::RateLimited { retry_after } => {
                 assert_eq!(retry_after, None);
@@ -3002,10 +2994,7 @@ mod tests_import_errors {
     #[cfg(feature = "hf-hub-integration")]
     #[test]
     fn test_parse_import_error_generic() {
-        let err = parse_import_error(
-            "Connection timeout",
-            "test/model",
-        );
+        let err = parse_import_error("Connection timeout", "test/model");
         match err {
             ImportError::DownloadFailed { source, reason } => {
                 assert_eq!(source, "test/model");

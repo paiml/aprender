@@ -282,7 +282,11 @@ pub fn data_flow_diagram(layers: &[LayerInfo]) -> String {
 
     // Find max widths for alignment
     let max_name_len = layers.iter().map(|l| l.name.len()).max().unwrap_or(10);
-    let max_type_len = layers.iter().map(|l| l.layer_type.len()).max().unwrap_or(10);
+    let max_type_len = layers
+        .iter()
+        .map(|l| l.layer_type.len())
+        .max()
+        .unwrap_or(10);
 
     for (i, layer) in layers.iter().enumerate() {
         let input_str = LayerInfo::format_shape(&layer.input_shape);
@@ -328,7 +332,10 @@ pub fn data_flow_diagram(layers: &[LayerInfo]) -> String {
 
     // Summary
     let total_params: usize = layers.iter().map(|l| l.params).sum();
-    result.push_str(&format!("\nTotal parameters: {}\n", format_params(total_params)));
+    result.push_str(&format!(
+        "\nTotal parameters: {}\n",
+        format_params(total_params)
+    ));
 
     result
 }
@@ -380,11 +387,7 @@ impl TreeNode {
 
     /// Create leaf node (tensor)
     #[must_use]
-    pub fn tensor(
-        name: impl Into<String>,
-        shape: Vec<usize>,
-        dtype: impl Into<String>,
-    ) -> Self {
+    pub fn tensor(name: impl Into<String>, shape: Vec<usize>, dtype: impl Into<String>) -> Self {
         Self {
             name: name.into(),
             node_type: "Tensor".to_string(),
@@ -402,7 +405,11 @@ impl TreeNode {
     /// Count total nodes
     #[must_use]
     pub fn count_nodes(&self) -> usize {
-        1 + self.children.iter().map(TreeNode::count_nodes).sum::<usize>()
+        1 + self
+            .children
+            .iter()
+            .map(TreeNode::count_nodes)
+            .sum::<usize>()
     }
 }
 
@@ -426,7 +433,10 @@ fn tree_view_recursive(node: &TreeNode, prefix: &str, is_last: bool, result: &mu
         .as_ref()
         .map_or(String::new(), |s| LayerInfo::format_shape(s));
 
-    let dtype_str = node.dtype.as_ref().map_or(String::new(), |d| format!(" <{d}>"));
+    let dtype_str = node
+        .dtype
+        .as_ref()
+        .map_or(String::new(), |d| format!(" <{d}>"));
 
     if node.shape.is_some() {
         result.push_str(&format!(
@@ -434,7 +444,10 @@ fn tree_view_recursive(node: &TreeNode, prefix: &str, is_last: bool, result: &mu
             node.name
         ));
     } else {
-        result.push_str(&format!("{prefix}{branch}{} [{}]\n", node.name, node.node_type));
+        result.push_str(&format!(
+            "{prefix}{branch}{} [{}]\n",
+            node.name, node.node_type
+        ));
     }
 
     // Children
@@ -528,8 +541,16 @@ impl TensorStatistics {
             name: name.into(),
             shape,
             dtype: "f32".to_string(),
-            min: if min.is_infinite() { 0.0 } else { f64::from(min) },
-            max: if max.is_infinite() { 0.0 } else { f64::from(max) },
+            min: if min.is_infinite() {
+                0.0
+            } else {
+                f64::from(min)
+            },
+            max: if max.is_infinite() {
+                0.0
+            } else {
+                f64::from(max)
+            },
             mean,
             std,
             nan_count,
@@ -675,9 +696,27 @@ mod tests {
     #[test]
     fn test_data_flow_diagram() {
         let layers = vec![
-            LayerInfo::new("conv1", "Conv2d", vec![1, 3, 224, 224], vec![1, 64, 112, 112], 9408),
-            LayerInfo::new("pool1", "MaxPool", vec![1, 64, 112, 112], vec![1, 64, 56, 56], 0),
-            LayerInfo::new("fc", "Linear", vec![1, 64, 56, 56], vec![1, 1000], 200704000),
+            LayerInfo::new(
+                "conv1",
+                "Conv2d",
+                vec![1, 3, 224, 224],
+                vec![1, 64, 112, 112],
+                9408,
+            ),
+            LayerInfo::new(
+                "pool1",
+                "MaxPool",
+                vec![1, 64, 112, 112],
+                vec![1, 64, 56, 56],
+                0,
+            ),
+            LayerInfo::new(
+                "fc",
+                "Linear",
+                vec![1, 64, 56, 56],
+                vec![1, 1000],
+                200704000,
+            ),
         ];
         let diagram = data_flow_diagram(&layers);
         assert!(diagram.contains("conv1"));

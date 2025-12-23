@@ -714,7 +714,9 @@ pub fn load_from_json(json: &str) -> Result<BpeTokenizer> {
             tokenizer.add_special_token(&added.content, added.id);
         } else {
             tokenizer.vocab.insert(added.content.clone(), added.id);
-            tokenizer.id_to_token.insert(added.id, added.content.clone());
+            tokenizer
+                .id_to_token
+                .insert(added.id, added.content.clone());
         }
     }
 
@@ -853,11 +855,15 @@ mod tests {
 
         assert_eq!(tokenizer.merges.len(), 2);
         assert_eq!(
-            tokenizer.merge_ranks.get(&("a".to_string(), "b".to_string())),
+            tokenizer
+                .merge_ranks
+                .get(&("a".to_string(), "b".to_string())),
             Some(&0)
         );
         assert_eq!(
-            tokenizer.merge_ranks.get(&("ab".to_string(), "c".to_string())),
+            tokenizer
+                .merge_ranks
+                .get(&("ab".to_string(), "c".to_string())),
             Some(&1)
         );
     }

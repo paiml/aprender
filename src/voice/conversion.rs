@@ -252,12 +252,7 @@ impl ConversionResult {
 
     /// Set quality metrics
     #[must_use]
-    pub fn with_metrics(
-        mut self,
-        confidence: f32,
-        source_sim: f32,
-        target_sim: f32,
-    ) -> Self {
+    pub fn with_metrics(mut self, confidence: f32, source_sim: f32, target_sim: f32) -> Self {
         self.confidence = confidence.clamp(0.0, 1.0);
         self.source_similarity = source_sim.clamp(0.0, 1.0);
         self.target_similarity = target_sim.clamp(0.0, 1.0);
@@ -300,11 +295,8 @@ pub trait VoiceConverter: Send + Sync {
     ///
     /// # Errors
     /// Returns error if synthesis fails.
-    fn synthesize(
-        &self,
-        content: &[Vec<f32>],
-        speaker: &SpeakerEmbedding,
-    ) -> VoiceResult<Vec<f32>>;
+    fn synthesize(&self, content: &[Vec<f32>], speaker: &SpeakerEmbedding)
+        -> VoiceResult<Vec<f32>>;
 }
 
 // ============================================================================
@@ -433,7 +425,9 @@ impl VoiceConverter for AutoVcConverter {
         _speaker: &SpeakerEmbedding,
     ) -> VoiceResult<Vec<f32>> {
         if content.is_empty() {
-            return Err(VoiceError::InvalidAudio("Empty content features".to_string()));
+            return Err(VoiceError::InvalidAudio(
+                "Empty content features".to_string(),
+            ));
         }
 
         // Simulated synthesis (would use neural vocoder)
@@ -448,7 +442,11 @@ impl VoiceConverter for AutoVcConverter {
                 let frame_idx = frame_idx.min(content.len().saturating_sub(1));
 
                 // Use content energy to modulate output
-                let energy = content.get(frame_idx).and_then(|f| f.first()).copied().unwrap_or(0.0);
+                let energy = content
+                    .get(frame_idx)
+                    .and_then(|f| f.first())
+                    .copied()
+                    .unwrap_or(0.0);
 
                 // Generate simple sine wave modulated by energy
                 let t = i as f32 / self.config.sample_rate as f32;
@@ -552,8 +550,7 @@ impl VoiceConverter for PpgConverter {
 
                 // Simple energy-based placeholder
                 let energy = if end > start {
-                    audio[start..end].iter().map(|x| x.abs()).sum::<f32>()
-                        / (end - start) as f32
+                    audio[start..end].iter().map(|x| x.abs()).sum::<f32>() / (end - start) as f32
                 } else {
                     0.0
                 };
@@ -644,7 +641,11 @@ pub fn convert_f0(
         return f0_contour.to_vec();
     }
 
-    let target_std = if target_std <= 0.0 { source_std } else { target_std };
+    let target_std = if target_std <= 0.0 {
+        source_std
+    } else {
+        target_std
+    };
 
     f0_contour
         .iter()
@@ -855,8 +856,7 @@ mod tests {
 
     #[test]
     fn test_conversion_result_with_metrics() {
-        let result = ConversionResult::new(vec![0.1; 1600], 16000)
-            .with_metrics(0.9, 0.1, 0.85);
+        let result = ConversionResult::new(vec![0.1; 1600], 16000).with_metrics(0.9, 0.1, 0.85);
         assert_eq!(result.confidence, 0.9);
         assert_eq!(result.source_similarity, 0.1);
         assert_eq!(result.target_similarity, 0.85);

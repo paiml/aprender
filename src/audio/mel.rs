@@ -1123,7 +1123,11 @@ mod tests {
         let result = validate_audio(&samples);
         assert!(result.is_err());
         let msg = result.err().map(|e| e.to_string()).unwrap_or_default();
-        assert!(msg.contains("clipping") || msg.contains("Clipping"), "Error should mention clipping: {}", msg);
+        assert!(
+            msg.contains("clipping") || msg.contains("Clipping"),
+            "Error should mention clipping: {}",
+            msg
+        );
     }
 
     // ============================================================
@@ -1160,7 +1164,11 @@ mod tests {
         let result = validate_audio(&samples);
         assert!(result.is_err());
         let msg = result.err().map(|e| e.to_string()).unwrap_or_default();
-        assert!(msg.contains("Infinity"), "Error should mention Infinity: {}", msg);
+        assert!(
+            msg.contains("Infinity"),
+            "Error should mention Infinity: {}",
+            msg
+        );
     }
 
     #[test]
@@ -1169,7 +1177,11 @@ mod tests {
         let result = validate_audio(&samples);
         assert!(result.is_err());
         let msg = result.err().map(|e| e.to_string()).unwrap_or_default();
-        assert!(msg.contains("Infinity"), "Error should mention Infinity: {}", msg);
+        assert!(
+            msg.contains("Infinity"),
+            "Error should mention Infinity: {}",
+            msg
+        );
     }
 
     // ============================================================
@@ -1181,8 +1193,16 @@ mod tests {
         let stereo = vec![0.5, 0.3, 0.6, 0.4];
         let mono = stereo_to_mono(&stereo);
         assert_eq!(mono.len(), 2);
-        assert!((mono[0] - 0.4).abs() < 1e-6, "Expected 0.4, got {}", mono[0]);
-        assert!((mono[1] - 0.5).abs() < 1e-6, "Expected 0.5, got {}", mono[1]);
+        assert!(
+            (mono[0] - 0.4).abs() < 1e-6,
+            "Expected 0.4, got {}",
+            mono[0]
+        );
+        assert!(
+            (mono[1] - 0.5).abs() < 1e-6,
+            "Expected 0.5, got {}",
+            mono[1]
+        );
     }
 
     #[test]
@@ -1216,7 +1236,10 @@ mod tests {
         let stereo = vec![0.8, -0.8, 0.4, -0.4];
         let mono = stereo_to_mono(&stereo);
         assert_eq!(mono.len(), 2);
-        assert!((mono[0] - 0.0).abs() < 1e-6, "Opposite polarity should cancel");
+        assert!(
+            (mono[0] - 0.0).abs() < 1e-6,
+            "Opposite polarity should cancel"
+        );
         assert!((mono[1] - 0.0).abs() < 1e-6);
     }
 
@@ -1226,6 +1249,9 @@ mod tests {
         let stereo = vec![0.6, 0.6];
         let mono = stereo_to_mono(&stereo);
         assert_eq!(mono.len(), 1);
-        assert!((mono[0] - 0.6).abs() < 1e-6, "Equal channels should preserve amplitude");
+        assert!(
+            (mono[0] - 0.6).abs() < 1e-6,
+            "Equal channels should preserve amplitude"
+        );
     }
 }

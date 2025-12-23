@@ -12,9 +12,7 @@
 //! cargo run --example logic_family_tree
 //! ```
 
-use aprender::logic::{
-    logical_join, logical_project, LogicMode, ProgramBuilder, Equation,
-};
+use aprender::logic::{logical_join, logical_project, Equation, LogicMode, ProgramBuilder};
 
 fn main() {
     println!("=== TensorLogic Family Tree Demo ===\n");
@@ -87,18 +85,32 @@ fn main() {
 
     let mut program = ProgramBuilder::new(LogicMode::Boolean)
         .add_fact("parent", parent.clone())
-        .add_rule("grandparent", Equation::Join("parent".into(), "parent".into()))
-        .add_rule("great_grandparent", Equation::Join("grandparent".into(), "parent".into()))
+        .add_rule(
+            "grandparent",
+            Equation::Join("parent".into(), "parent".into()),
+        )
+        .add_rule(
+            "great_grandparent",
+            Equation::Join("grandparent".into(), "parent".into()),
+        )
         .build();
 
     let results = program.forward();
 
     println!("Forward chaining results:");
     if let Some(gp) = results.get("grandparent") {
-        println!("  grandparent relation computed: {}x{} matrix", gp.len(), gp[0].len());
+        println!(
+            "  grandparent relation computed: {}x{} matrix",
+            gp.len(),
+            gp[0].len()
+        );
     }
     if let Some(ggp) = results.get("great_grandparent") {
-        println!("  great_grandparent relation computed: {}x{} matrix", ggp.len(), ggp[0].len());
+        println!(
+            "  great_grandparent relation computed: {}x{} matrix",
+            ggp.len(),
+            ggp[0].len()
+        );
     }
 
     // Demonstrate continuous mode for "soft" reasoning
@@ -113,13 +125,17 @@ fn main() {
         vec![0.0, 0.0, 0.0, 0.0],
     ];
 
-    let uncertain_grandparent = logical_join(&uncertain_parent, &uncertain_parent, LogicMode::Continuous);
+    let uncertain_grandparent =
+        logical_join(&uncertain_parent, &uncertain_parent, LogicMode::Continuous);
 
     println!("\nUncertain grandparent probabilities:");
     for (i, row) in uncertain_grandparent.iter().enumerate() {
         for (j, &val) in row.iter().enumerate() {
             if val > 0.1 {
-                println!("  P({} is grandparent of {}) = {:.2}", names[i], names[j], val);
+                println!(
+                    "  P({} is grandparent of {}) = {:.2}",
+                    names[i], names[j], val
+                );
             }
         }
     }

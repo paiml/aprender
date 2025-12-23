@@ -46,9 +46,9 @@ pub mod vad;
 
 // Re-exports
 pub use asr::{
-    detect_language, is_language_supported, AsrConfig, AsrModel, AsrSession,
-    CrossAttentionWeights, LanguageDetection, Segment, StreamingTranscription,
-    Transcription, WordTiming, SUPPORTED_LANGUAGES,
+    detect_language, is_language_supported, AsrConfig, AsrModel, AsrSession, CrossAttentionWeights,
+    LanguageDetection, Segment, StreamingTranscription, Transcription, WordTiming,
+    SUPPORTED_LANGUAGES,
 };
 pub use diarization::{DiarizationConfig, DiarizationResult, Speaker, SpeakerSegment};
 pub use tts::{

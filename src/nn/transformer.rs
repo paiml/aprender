@@ -26,6 +26,7 @@ use super::linear::Linear;
 use super::module::Module;
 use super::normalization::LayerNorm;
 use crate::autograd::Tensor;
+use trueno::Matrix;
 
 /// Scaled Dot-Product Attention.
 ///
@@ -636,41 +637,11 @@ fn transpose_last_two(x: &Tensor) -> Tensor {
     Tensor::new(&output, &new_shape)
 }
 
-/// Dimensions for batched matmul operations.
-#[derive(Clone, Copy)]
-struct MatmulDims {
-    heads: usize,
-    m: usize,
-    k: usize,
-    n: usize,
-}
-
-/// Compute dot product for single element in batched matmul.
-#[inline]
-fn batched_dot_product(
-    a_data: &[f32],
-    b_data: &[f32],
-    ba: usize,
-    h: usize,
-    i: usize,
-    j: usize,
-    dims: MatmulDims,
-) -> f32 {
-    let mut sum = 0.0;
-    for ki in 0..dims.k {
-        let a_idx = ba * dims.heads * dims.m * dims.k + h * dims.m * dims.k + i * dims.k + ki;
-        let b_idx = ba * dims.heads * dims.k * dims.n + h * dims.k * dims.n + ki * dims.n + j;
-        sum += a_data[a_idx] * b_data[b_idx];
-    }
-    sum
-}
-
-/// Batched matrix multiplication.
+/// Batched matrix multiplication using SIMD-accelerated Trueno.
 /// For 4D tensors [batch, heads, m, k] @ [batch, heads, k, n] -> [batch, heads, m, n]
 ///
-/// TODO(perf): This uses naive loops. Need Trueno-level batched matmul for SIMD.
-/// Current bottleneck: copy overhead when slicing for 2D SIMD matmul exceeds gains.
-/// See spec §2.4.2 for performance requirements.
+/// Uses `trueno::Matrix::batched_matmul_4d` for efficient SIMD computation.
+/// Per spec §2.4.1 Compute Backend Hierarchy: SIMD before naive loops.
 fn matmul_batched(a: &Tensor, b: &Tensor) -> Tensor {
     let a_shape = a.shape();
     let b_shape = b.shape();
@@ -683,37 +654,14 @@ fn matmul_batched(a: &Tensor, b: &Tensor) -> Tensor {
 
         assert_eq!(k1, k2, "Inner dimensions must match for matmul");
 
-        let dims = MatmulDims { heads, m, k: k1, n };
-        let mut output = vec![0.0; batch * heads * m * n];
-
-        for ba in 0..batch {
-            for h in 0..heads {
-                compute_head_matmul(a.data(), b.data(), &mut output, ba, h, dims);
-            }
-        }
+        // Use Trueno's SIMD batched matmul for 4D attention tensors
+        let output = Matrix::batched_matmul_4d(a.data(), b.data(), batch, heads, m, k1, n)
+            .expect("batched_matmul_4d failed");
 
         Tensor::new(&output, &[batch, heads, m, n])
     } else {
-        // Fallback for 2D/3D - uses SIMD
+        // Fallback for 2D/3D - uses Tensor's SIMD matmul
         a.matmul(b)
-    }
-}
-
-/// Compute single head matmul for one batch (naive, needs Trueno batched matmul).
-fn compute_head_matmul(
-    a_data: &[f32],
-    b_data: &[f32],
-    output: &mut [f32],
-    ba: usize,
-    h: usize,
-    dims: MatmulDims,
-) {
-    for i in 0..dims.m {
-        for j in 0..dims.n {
-            let sum = batched_dot_product(a_data, b_data, ba, h, i, j, dims);
-            let out_idx = ba * dims.heads * dims.m * dims.n + h * dims.m * dims.n + i * dims.n + j;
-            output[out_idx] = sum;
-        }
     }
 }
 

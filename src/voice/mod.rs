@@ -42,7 +42,7 @@ pub use clone::{
     Sv2TtsSpeakerEncoder, VoiceCloner, VoiceProfile, YourTtsCloner,
 };
 pub use conversion::{
-    convert_f0, conversion_quality, f0_statistics, ratio_to_semitones, semitones_to_ratio,
+    conversion_quality, convert_f0, f0_statistics, ratio_to_semitones, semitones_to_ratio,
     AutoVcConverter, BottleneckType, ConversionMode, ConversionResult, PpgConverter,
     VoiceConversionConfig, VoiceConverter,
 };

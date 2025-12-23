@@ -185,27 +185,15 @@ impl CompareReport {
         result.push_str("Weight Comparison Report\n");
         result.push_str("========================\n\n");
 
-        result.push_str(&format!(
-            "Tensors compared: {}\n",
-            self.tensors.len()
-        ));
+        result.push_str(&format!("Tensors compared: {}\n", self.tensors.len()));
         result.push_str(&format!("  Matching: {}\n", self.match_count()));
         result.push_str(&format!("  Mismatched: {}\n", self.mismatch_count()));
         result.push_str(&format!("  Source only: {}\n", self.source_only.len()));
         result.push_str(&format!("  Target only: {}\n", self.target_only.len()));
         result.push('\n');
-        result.push_str(&format!(
-            "Total L2 diff: {:.6e}\n",
-            self.total_l2_diff
-        ));
-        result.push_str(&format!(
-            "Global max diff: {:.6e}\n",
-            self.global_max_diff
-        ));
-        result.push_str(&format!(
-            "L2 tolerance: {:.6e}\n",
-            self.config.l2_tolerance
-        ));
+        result.push_str(&format!("Total L2 diff: {:.6e}\n", self.total_l2_diff));
+        result.push_str(&format!("Global max diff: {:.6e}\n", self.global_max_diff));
+        result.push_str(&format!("L2 tolerance: {:.6e}\n", self.config.l2_tolerance));
         result.push_str(&format!(
             "Max tolerance: {:.6e}\n",
             self.config.max_tolerance
@@ -241,10 +229,9 @@ impl CompareReport {
                 } else {
                     format!("{:?} vs {:?}", t.source_shape, t.target_shape)
                 };
-                let diff_info = t.l2_diff.map_or_else(
-                    || "shape mismatch".to_string(),
-                    |d| format!("L2={:.6e}", d),
-                );
+                let diff_info = t
+                    .l2_diff
+                    .map_or_else(|| "shape mismatch".to_string(), |d| format!("L2={:.6e}", d));
                 result.push_str(&format!("  - {} [{}]: {}\n", t.name, shape_info, diff_info));
             }
         }
@@ -302,13 +289,13 @@ impl WeightComparer {
     ) -> TensorComparison {
         let shape_match = source_shape == target_shape;
 
-        let (l2_diff, max_diff, mean_diff) = if shape_match && source_data.len() == target_data.len()
-        {
-            let diff_stats = self.compute_diff_stats(source_data, target_data);
-            (Some(diff_stats.0), Some(diff_stats.1), Some(diff_stats.2))
-        } else {
-            (None, None, None)
-        };
+        let (l2_diff, max_diff, mean_diff) =
+            if shape_match && source_data.len() == target_data.len() {
+                let diff_stats = self.compute_diff_stats(source_data, target_data);
+                (Some(diff_stats.0), Some(diff_stats.1), Some(diff_stats.2))
+            } else {
+                (None, None, None)
+            };
 
         TensorComparison {
             name: name.to_string(),
@@ -394,8 +381,7 @@ impl WeightComparer {
             let (source_data, source_shape) = source.get(name).expect("checked intersection");
             let (target_data, target_shape) = target.get(name).expect("checked intersection");
 
-            let normalized_name =
-                normalize_name(name, &self.config.source_prefix);
+            let normalized_name = normalize_name(name, &self.config.source_prefix);
 
             let comparison = self.compare_tensors(
                 &normalized_name,

@@ -113,12 +113,12 @@ pub mod loading;
 /// TensorLogic: Neuro-symbolic reasoning via tensor operations (Domingos, 2025)
 pub mod logic;
 pub mod loss;
-/// Pre-trained model architectures (Qwen2, etc.)
-pub mod models;
 pub mod metaheuristics;
 pub mod metrics;
 pub mod mining;
 pub mod model_selection;
+/// Pre-trained model architectures (Qwen2, etc.)
+pub mod models;
 pub mod monte_carlo;
 /// SIMD-native model format for zero-copy Trueno inference (spec §5)
 pub mod native;

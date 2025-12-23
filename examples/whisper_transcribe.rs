@@ -8,7 +8,7 @@
 //! cargo run --example whisper_transcribe
 //! ```
 
-use aprender::speech::vad::{VadConfig, Vad};
+use aprender::speech::vad::{Vad, VadConfig};
 
 fn main() {
     println!("=== Whisper Transcription Demo ===\n");
@@ -45,7 +45,10 @@ fn main() {
         })
         .collect();
 
-    println!("  Peak amplitude: {:.4}", audio.iter().map(|x| x.abs()).fold(0.0_f32, f32::max));
+    println!(
+        "  Peak amplitude: {:.4}",
+        audio.iter().map(|x| x.abs()).fold(0.0_f32, f32::max)
+    );
     println!();
 
     // Voice Activity Detection
@@ -61,35 +64,40 @@ fn main() {
 
     println!("VAD Configuration:");
     println!("  Energy threshold: {}", vad_config.energy_threshold);
-    println!("  Min speech duration: {} ms", vad_config.min_speech_duration_ms);
-    println!("  Min silence duration: {} ms", vad_config.min_silence_duration_ms);
+    println!(
+        "  Min speech duration: {} ms",
+        vad_config.min_speech_duration_ms
+    );
+    println!(
+        "  Min silence duration: {} ms",
+        vad_config.min_silence_duration_ms
+    );
     println!("  Frame size: {} samples", vad_config.frame_size);
     println!("  Hop size: {} samples", vad_config.hop_size);
     println!();
 
     match Vad::new(vad_config) {
-        Ok(vad) => {
-            match vad.detect(&audio, sample_rate) {
-                Ok(segments) => {
-                    println!("Detected speech segments:");
-                    if segments.is_empty() {
-                        println!("  No speech detected (synthetic audio may not trigger VAD)");
-                    } else {
-                        for (i, segment) in segments.iter().enumerate() {
-                            println!("  Segment {}: {:.2}s - {:.2}s (energy: {:.4})",
-                                i + 1,
-                                segment.start,
-                                segment.end,
-                                segment.energy,
-                            );
-                        }
+        Ok(vad) => match vad.detect(&audio, sample_rate) {
+            Ok(segments) => {
+                println!("Detected speech segments:");
+                if segments.is_empty() {
+                    println!("  No speech detected (synthetic audio may not trigger VAD)");
+                } else {
+                    for (i, segment) in segments.iter().enumerate() {
+                        println!(
+                            "  Segment {}: {:.2}s - {:.2}s (energy: {:.4})",
+                            i + 1,
+                            segment.start,
+                            segment.end,
+                            segment.energy,
+                        );
                     }
                 }
-                Err(e) => {
-                    println!("  VAD detection error: {}", e);
-                }
             }
-        }
+            Err(e) => {
+                println!("  VAD detection error: {}", e);
+            }
+        },
         Err(e) => {
             println!("  VAD configuration error: {}", e);
         }
@@ -118,7 +126,10 @@ fn main() {
 
     println!("Audio Statistics:");
     println!("  RMS energy: {:.6}", rms);
-    println!("  Duration: {:.2}s", audio.len() as f64 / sample_rate as f64);
+    println!(
+        "  Duration: {:.2}s",
+        audio.len() as f64 / sample_rate as f64
+    );
     println!();
 
     // Whisper model info

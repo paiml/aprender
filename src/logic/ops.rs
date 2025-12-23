@@ -95,7 +95,11 @@ pub fn logical_project(tensor: &[Vec<f64>], dim: usize, mode: LogicMode) -> Vec<
     match dim {
         0 => {
             // Project over rows (result has cols elements)
-            let cols = if tensor.is_empty() { 0 } else { tensor[0].len() };
+            let cols = if tensor.is_empty() {
+                0
+            } else {
+                tensor[0].len()
+            };
             let mut result = vec![0.0; cols];
 
             for j in 0..cols {
@@ -171,7 +175,11 @@ pub fn logical_union(t1: &[Vec<f64>], t2: &[Vec<f64>], mode: LogicMode) -> Vec<V
 /// result[i][j] = 1 - tensor[i][j]
 pub fn logical_negation(tensor: &[Vec<f64>], mode: LogicMode) -> Vec<Vec<f64>> {
     let rows = tensor.len();
-    let cols = if tensor.is_empty() { 0 } else { tensor[0].len() };
+    let cols = if tensor.is_empty() {
+        0
+    } else {
+        tensor[0].len()
+    };
 
     let mut result = vec![vec![0.0; cols]; rows];
 
@@ -201,7 +209,11 @@ pub fn logical_select(
     mode: LogicMode,
 ) -> Vec<Vec<f64>> {
     let rows = tensor.len();
-    let cols = if tensor.is_empty() { 0 } else { tensor[0].len() };
+    let cols = if tensor.is_empty() {
+        0
+    } else {
+        tensor[0].len()
+    };
 
     let mut result = vec![vec![0.0; cols]; rows];
 
@@ -209,7 +221,11 @@ pub fn logical_select(
         for j in 0..cols {
             let cond = match mode {
                 LogicMode::Boolean => {
-                    if condition[i][j] > 0.5 { 1.0 } else { 0.0 }
+                    if condition[i][j] > 0.5 {
+                        1.0
+                    } else {
+                        0.0
+                    }
                 }
                 LogicMode::Continuous => condition[i][j],
             };
@@ -231,29 +247,32 @@ pub fn apply_nonlinearity_with_temperature(
     func: Nonlinearity,
     temperature: f64,
 ) -> Vec<Vec<f64>> {
-    tensor.iter().map(|row| {
-        match func {
-            Nonlinearity::Softmax => {
-                // Recompute with temperature
-                let scaled: Vec<f64> = row.iter().map(|x| x / temperature).collect();
-                softmax_row(&scaled)
+    tensor
+        .iter()
+        .map(|row| {
+            match func {
+                Nonlinearity::Softmax => {
+                    // Recompute with temperature
+                    let scaled: Vec<f64> = row.iter().map(|x| x / temperature).collect();
+                    softmax_row(&scaled)
+                }
+                Nonlinearity::BooleanAttention => {
+                    // One-hot at argmax (temperature doesn't affect argmax)
+                    let max_idx = row
+                        .iter()
+                        .enumerate()
+                        .max_by(|(_, a), (_, b)| {
+                            a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
+                        })
+                        .map_or(0, |(i, _)| i);
+                    let mut result = vec![0.0; row.len()];
+                    result[max_idx] = 1.0;
+                    result
+                }
+                _ => apply_nonlinearity_row(row, func, None),
             }
-            Nonlinearity::BooleanAttention => {
-                // One-hot at argmax (temperature doesn't affect argmax)
-                let max_idx = row
-                    .iter()
-                    .enumerate()
-                    .max_by(|(_, a), (_, b)| {
-                        a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
-                    })
-                    .map_or(0, |(i, _)| i);
-                let mut result = vec![0.0; row.len()];
-                result[max_idx] = 1.0;
-                result
-            }
-            _ => apply_nonlinearity_row(row, func, None),
-        }
-    }).collect()
+        })
+        .collect()
 }
 
 /// Apply nonlinearity with optional mask
@@ -274,7 +293,10 @@ pub fn apply_nonlinearity_with_mask(
 
 fn apply_nonlinearity_row(row: &[f64], func: Nonlinearity, mask: Option<&Vec<bool>>) -> Vec<f64> {
     match func {
-        Nonlinearity::Step => row.iter().map(|&x| if x > 0.0 { 1.0 } else { 0.0 }).collect(),
+        Nonlinearity::Step => row
+            .iter()
+            .map(|&x| if x > 0.0 { 1.0 } else { 0.0 })
+            .collect(),
         Nonlinearity::Sigmoid => row.iter().map(|&x| 1.0 / (1.0 + (-x).exp())).collect(),
         Nonlinearity::Relu => row.iter().map(|&x| f64::max(0.0, x)).collect(),
         Nonlinearity::Tanh => row.iter().map(|&x| x.tanh()).collect(),
@@ -304,9 +326,7 @@ fn apply_nonlinearity_row(row: &[f64], func: Nonlinearity, mask: Option<&Vec<boo
             let max_idx = masked_row
                 .iter()
                 .enumerate()
-                .max_by(|(_, a), (_, b)| {
-                    a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
-                })
+                .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
                 .map_or(0, |(i, _)| i);
 
             let mut result = vec![0.0; row.len()];

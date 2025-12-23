@@ -82,7 +82,10 @@ fn d4_greedy_is_deterministic_same_model() {
     let out1 = model.generate(&prompt, 3, 0.0, 1.0);
     let out2 = model.generate(&prompt, 3, 0.0, 1.0);
 
-    assert_eq!(out1, out2, "Greedy decoding must be deterministic on same model");
+    assert_eq!(
+        out1, out2,
+        "Greedy decoding must be deterministic on same model"
+    );
 }
 
 /// D5: All generated tokens are within vocabulary range.
@@ -171,7 +174,10 @@ fn d10_different_prompts_different_outputs() {
     let out2 = model.generate(&[10u32, 20, 30], 3, 0.0, 1.0);
 
     // With different prompts, outputs should differ (unless model is broken)
-    assert_ne!(out1, out2, "Different prompts should produce different outputs");
+    assert_ne!(
+        out1, out2,
+        "Different prompts should produce different outputs"
+    );
 }
 
 // ============================================================================

@@ -24,8 +24,8 @@
 //! assert_eq!(grandparent[0][2], 1.0); // Alice is grandparent of Charlie
 //! ```
 
+use super::ops::{logical_join, logical_negation, logical_project, logical_union, LogicMode};
 use std::collections::HashMap;
-use super::ops::{LogicMode, logical_join, logical_project, logical_union, logical_negation};
 
 /// An equation defines how to compute a derived tensor
 #[derive(Debug, Clone)]
@@ -218,7 +218,10 @@ mod tests {
 
         let mut program = ProgramBuilder::new(LogicMode::Boolean)
             .add_fact("parent", parent)
-            .add_rule("grandparent", Equation::Join("parent".into(), "parent".into()))
+            .add_rule(
+                "grandparent",
+                Equation::Join("parent".into(), "parent".into()),
+            )
             .add_rule("has_child", Equation::Project("parent".into(), 1))
             .build();
 
@@ -240,14 +243,14 @@ mod tests {
 
     #[test]
     fn test_query_backward_chaining() {
-        let parent = vec![
-            vec![0.0, 1.0],
-            vec![0.0, 0.0],
-        ];
+        let parent = vec![vec![0.0, 1.0], vec![0.0, 0.0]];
 
         let mut program = ProgramBuilder::new(LogicMode::Boolean)
             .add_fact("parent", parent)
-            .add_rule("grandparent", Equation::Join("parent".into(), "parent".into()))
+            .add_rule(
+                "grandparent",
+                Equation::Join("parent".into(), "parent".into()),
+            )
             .build();
 
         // Query should trigger computation
@@ -299,7 +302,10 @@ mod tests {
 
         let mut program = ProgramBuilder::new(LogicMode::Continuous)
             .add_fact("parent", parent)
-            .add_rule("grandparent", Equation::Join("parent".into(), "parent".into()))
+            .add_rule(
+                "grandparent",
+                Equation::Join("parent".into(), "parent".into()),
+            )
             .build();
 
         let results = program.forward();

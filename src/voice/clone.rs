@@ -130,9 +130,7 @@ impl CloningConfig {
             ));
         }
         if self.n_mels == 0 {
-            return Err(VoiceError::InvalidConfig(
-                "n_mels must be > 0".to_string(),
-            ));
+            return Err(VoiceError::InvalidConfig("n_mels must be > 0".to_string()));
         }
         if !(0.0..=1.0).contains(&self.similarity_threshold) {
             return Err(VoiceError::InvalidConfig(
@@ -768,10 +766,8 @@ mod tests {
     #[test]
     fn test_voice_profile_similarity_missing_embedding() {
         let profile1 = VoiceProfile::new("a".to_string());
-        let profile2 = VoiceProfile::with_embedding(
-            "b".to_string(),
-            SpeakerEmbedding::from_vec(vec![1.0]),
-        );
+        let profile2 =
+            VoiceProfile::with_embedding("b".to_string(), SpeakerEmbedding::from_vec(vec![1.0]));
 
         assert!(profile1.similarity(&profile2).is_err());
         assert!(profile2.similarity(&profile1).is_err());
@@ -867,7 +863,10 @@ mod tests {
     #[test]
     fn test_sv2tts_encoder_empty() {
         let encoder = Sv2TtsSpeakerEncoder::default_config();
-        assert!(matches!(encoder.encode(&[]), Err(VoiceError::InvalidAudio(_))));
+        assert!(matches!(
+            encoder.encode(&[]),
+            Err(VoiceError::InvalidAudio(_))
+        ));
     }
 
     #[test]

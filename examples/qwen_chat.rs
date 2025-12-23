@@ -9,7 +9,7 @@
 //! ```
 
 use aprender::demo::{
-    Qwen2Config, Qwen2Tokenizer, DemoMetrics, PerplexityChecker, BrowserCompatibility,
+    BrowserCompatibility, DemoMetrics, PerplexityChecker, Qwen2Config, Qwen2Tokenizer,
 };
 
 fn main() {
@@ -63,8 +63,14 @@ fn main() {
     println!("Demo Metrics:");
     println!("  Load time: {} ms", metrics.load_time_ms);
     println!("  First token latency: {} ms", metrics.first_token_ms);
-    println!("  Generation speed: {:.1} tokens/sec", metrics.tokens_per_sec);
-    println!("  Peak memory: {:.1} MB", metrics.peak_memory_bytes as f64 / 1024.0 / 1024.0);
+    println!(
+        "  Generation speed: {:.1} tokens/sec",
+        metrics.tokens_per_sec
+    );
+    println!(
+        "  Peak memory: {:.1} MB",
+        metrics.peak_memory_bytes as f64 / 1024.0 / 1024.0
+    );
 
     // Validate against targets
     println!("\n=== Target Validation ===");
@@ -72,7 +78,10 @@ fn main() {
         ("Load time < 5s", metrics.load_time_ms < 5000),
         ("First token < 2s", metrics.first_token_ms < 2000),
         ("Speed >= 15 tok/s", metrics.tokens_per_sec >= 15.0),
-        ("Memory < 512 MB", metrics.peak_memory_bytes < 512 * 1024 * 1024),
+        (
+            "Memory < 512 MB",
+            metrics.peak_memory_bytes < 512 * 1024 * 1024,
+        ),
     ];
 
     for (check, passed) in &validations {
@@ -90,23 +99,54 @@ fn main() {
 
     println!("  FP16 perplexity: {:.2}", fp16_perplexity);
     println!("  INT4 perplexity: {:.2}", int4_perplexity);
-    println!("  Degradation: {:.1}%", checker.degradation_pct(int4_perplexity));
-    println!("  Within tolerance: {}", if checker.is_acceptable(int4_perplexity) { "YES" } else { "NO" });
+    println!(
+        "  Degradation: {:.1}%",
+        checker.degradation_pct(int4_perplexity)
+    );
+    println!(
+        "  Within tolerance: {}",
+        if checker.is_acceptable(int4_perplexity) {
+            "YES"
+        } else {
+            "NO"
+        }
+    );
 
     // Browser compatibility
     println!("\n=== Browser Compatibility ===");
     let compat = BrowserCompatibility::default();
 
     println!("Minimum Browser Versions:");
-    println!("  Chrome: {} (supported: {})", compat.chrome_min, compat.supports_chrome(120));
-    println!("  Firefox: {} (supported: {})", compat.firefox_min, compat.supports_firefox(120));
-    println!("  Safari: {} (supported: {})", compat.safari_min, compat.supports_safari(17));
+    println!(
+        "  Chrome: {} (supported: {})",
+        compat.chrome_min,
+        compat.supports_chrome(120)
+    );
+    println!(
+        "  Firefox: {} (supported: {})",
+        compat.firefox_min,
+        compat.supports_firefox(120)
+    );
+    println!(
+        "  Safari: {} (supported: {})",
+        compat.safari_min,
+        compat.supports_safari(17)
+    );
 
     // Model size estimates
     println!("\n=== Model Size Estimates ===");
-    println!("  FP16 size: {:.1} MB", config.model_size_fp16() as f64 / 1024.0 / 1024.0);
-    println!("  INT4 size: {:.1} MB", config.model_size_int4() as f64 / 1024.0 / 1024.0);
-    println!("  KV cache (2K seq): {:.1} MB", config.kv_cache_size(2048) as f64 / 1024.0 / 1024.0);
+    println!(
+        "  FP16 size: {:.1} MB",
+        config.model_size_fp16() as f64 / 1024.0 / 1024.0
+    );
+    println!(
+        "  INT4 size: {:.1} MB",
+        config.model_size_int4() as f64 / 1024.0 / 1024.0
+    );
+    println!(
+        "  KV cache (2K seq): {:.1} MB",
+        config.kv_cache_size(2048) as f64 / 1024.0 / 1024.0
+    );
 
     // Simulated generation
     println!("\n=== Simulated Generation ===");

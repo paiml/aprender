@@ -51,6 +51,14 @@ pub trait Module: Send + Sync {
         vec![]
     }
 
+    /// Refresh any cached computations after parameters have been modified.
+    ///
+    /// Called after loading weights via `parameters_mut()` to ensure
+    /// derived values (like transposed weight matrices) are up-to-date.
+    fn refresh_caches(&mut self) {
+        // Default: no-op for modules without caches
+    }
+
     /// Set the module to training mode.
     ///
     /// This affects layers like Dropout (active during training)

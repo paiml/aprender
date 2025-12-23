@@ -448,6 +448,7 @@ The `apr` CLI provides comprehensive model operations. Located in `crates/apr-cl
 | `merge` | Merge models (average, weighted) | `commands/merge.rs` + `src/format/converter.rs` |
 | `tui` | Interactive terminal UI | `commands/tui.rs` (stub) |
 | `probar` | Export for visual testing | `commands/probar.rs` (445 lines) |
+| `profile` | Deep profiling with Roofline analysis | `commands/profile.rs` (planned) |
 
 ### Key Library Functions (src/format/)
 

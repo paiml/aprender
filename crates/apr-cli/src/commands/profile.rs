@@ -276,7 +276,14 @@ pub(crate) fn run(
 
     // Perform profiling
     let start = Instant::now();
-    let results = profile_model(path, granular, focus, detect_naive, naive_threshold, perf_grade)?;
+    let results = profile_model(
+        path,
+        granular,
+        focus,
+        detect_naive,
+        naive_threshold,
+        perf_grade,
+    )?;
     let profile_time = start.elapsed();
 
     // Output results based on format
@@ -476,7 +483,9 @@ fn compute_performance_grade(_path: &Path) -> Result<PerformanceGrade, CliError>
         max: 4,
         issues: vec![],
     };
-    detected_patterns.good.push("extend() over push() loop".to_string());
+    detected_patterns
+        .good
+        .push("extend() over push() loop".to_string());
     categories.insert("algorithmic_efficiency".to_string(), algo_score);
 
     // Synchronization Quality (3 pts)
@@ -493,7 +502,9 @@ fn compute_performance_grade(_path: &Path) -> Result<PerformanceGrade, CliError>
         max: 2,
         issues: vec![],
     };
-    detected_patterns.good.push("#[cold] on error handlers".to_string());
+    detected_patterns
+        .good
+        .push("#[cold] on error handlers".to_string());
     categories.insert("code_size".to_string(), code_score);
 
     let total_score: u32 = categories.values().map(|c| c.score).sum();
@@ -542,11 +553,7 @@ fn print_human_results(
         };
 
         let bar_width = ((hotspot.percent / 100.0) * 20.0) as usize;
-        let bar = format!(
-            "{}{}",
-            "█".repeat(bar_width),
-            "░".repeat(20 - bar_width)
-        );
+        let bar = format!("{}{}", "█".repeat(bar_width), "░".repeat(20 - bar_width));
 
         println!(
             "  #{} {:<20} {:>7.1}ms ({:>5.1}%)  {}  {}",
@@ -569,7 +576,10 @@ fn print_human_results(
     println!();
 
     // Roofline analysis
-    println!("{}", "ROOFLINE ANALYSIS (Williams et al., 2009)".white().bold());
+    println!(
+        "{}",
+        "ROOFLINE ANALYSIS (Williams et al., 2009)".white().bold()
+    );
     println!("{}", "═".repeat(60));
     println!();
     println!(
@@ -635,7 +645,10 @@ fn print_human_results(
     println!("{}", "═".repeat(60));
     println!();
     println!("  Total forward pass: {:.1}ms", results.total_ms);
-    println!("  Throughput:         {:.2} tok/s", results.throughput_tok_s);
+    println!(
+        "  Throughput:         {:.2} tok/s",
+        results.throughput_tok_s
+    );
     println!(
         "  Memory peak:        {:.1} GB",
         results.memory_peak_bytes as f64 / 1_073_741_824.0
@@ -669,24 +682,44 @@ fn print_callgraph(results: &ProfileResults) -> Result<(), CliError> {
     println!();
     println!("forward() [{:.0}ms, 100%]", results.total_ms);
     println!("  ├── embed_tokens() [4ms, 0.1%]");
-    println!("  ├── layers[0..23].forward() [{:.0}ms, {:.1}%]",
-        results.hotspots.iter().filter(|h| h.name != "lm_head" && h.name != "embedding").map(|h| h.time_ms).sum::<f64>(),
-        results.hotspots.iter().filter(|h| h.name != "lm_head" && h.name != "embedding").map(|h| h.percent).sum::<f64>()
+    println!(
+        "  ├── layers[0..23].forward() [{:.0}ms, {:.1}%]",
+        results
+            .hotspots
+            .iter()
+            .filter(|h| h.name != "lm_head" && h.name != "embedding")
+            .map(|h| h.time_ms)
+            .sum::<f64>(),
+        results
+            .hotspots
+            .iter()
+            .filter(|h| h.name != "lm_head" && h.name != "embedding")
+            .map(|h| h.percent)
+            .sum::<f64>()
     );
     println!("  │     ├── input_layernorm() [1ms]");
 
     if let Some(attn) = results.hotspots.iter().find(|h| h.name == "attention") {
-        println!("  │     ├── self_attn() [{:.0}ms, {:.1}%]", attn.time_ms, attn.percent);
+        println!(
+            "  │     ├── self_attn() [{:.0}ms, {:.1}%]",
+            attn.time_ms, attn.percent
+        );
     }
 
     if let Some(mlp) = results.hotspots.iter().find(|h| h.name == "mlp") {
-        println!("  │     └── mlp() [{:.0}ms, {:.1}%]  ← HOTSPOT", mlp.time_ms, mlp.percent);
+        println!(
+            "  │     └── mlp() [{:.0}ms, {:.1}%]  ← HOTSPOT",
+            mlp.time_ms, mlp.percent
+        );
     }
 
     println!("  ├── norm() [3ms, 0.1%]");
 
     if let Some(lm) = results.hotspots.iter().find(|h| h.name == "lm_head") {
-        println!("  └── lm_head() [{:.0}ms, {:.1}%]  ← HOTSPOT", lm.time_ms, lm.percent);
+        println!(
+            "  └── lm_head() [{:.0}ms, {:.1}%]  ← HOTSPOT",
+            lm.time_ms, lm.percent
+        );
     }
 
     println!();
@@ -698,7 +731,9 @@ fn print_hf_comparison(_results: &ProfileResults, hf_repo: &str) -> Result<(), C
     println!();
     println!(
         "{}",
-        format!("DIFFERENTIAL PROFILING vs {hf_repo}").white().bold()
+        format!("DIFFERENTIAL PROFILING vs {hf_repo}")
+            .white()
+            .bold()
     );
     println!("{}", "═".repeat(60));
     println!();
@@ -741,7 +776,10 @@ fn print_json_results(results: &ProfileResults) -> Result<(), CliError> {
     // Build JSON manually to avoid serde dependency
     let mut json = String::from("{\n");
     json.push_str(&format!("  \"model\": \"{}\",\n", results.model_path));
-    json.push_str(&format!("  \"architecture\": \"{}\",\n", results.architecture));
+    json.push_str(&format!(
+        "  \"architecture\": \"{}\",\n",
+        results.architecture
+    ));
     json.push_str(&format!("  \"backend\": \"{}\",\n", results.backend));
     json.push_str("  \"summary\": {\n");
     json.push_str(&format!("    \"total_ms\": {:.2},\n", results.total_ms));
@@ -873,8 +911,14 @@ mod tests {
 
     #[test]
     fn test_output_format_parse() {
-        assert!(matches!("json".parse::<OutputFormat>().unwrap(), OutputFormat::Json));
-        assert!(matches!("human".parse::<OutputFormat>().unwrap(), OutputFormat::Human));
+        assert!(matches!(
+            "json".parse::<OutputFormat>().unwrap(),
+            OutputFormat::Json
+        ));
+        assert!(matches!(
+            "human".parse::<OutputFormat>().unwrap(),
+            OutputFormat::Human
+        ));
         assert!(matches!(
             "flamegraph".parse::<OutputFormat>().unwrap(),
             OutputFormat::Flamegraph
@@ -883,9 +927,18 @@ mod tests {
 
     #[test]
     fn test_profile_focus_parse() {
-        assert!(matches!("attention".parse::<ProfileFocus>().unwrap(), ProfileFocus::Attention));
-        assert!(matches!("mlp".parse::<ProfileFocus>().unwrap(), ProfileFocus::Mlp));
-        assert!(matches!("all".parse::<ProfileFocus>().unwrap(), ProfileFocus::All));
+        assert!(matches!(
+            "attention".parse::<ProfileFocus>().unwrap(),
+            ProfileFocus::Attention
+        ));
+        assert!(matches!(
+            "mlp".parse::<ProfileFocus>().unwrap(),
+            ProfileFocus::Mlp
+        ));
+        assert!(matches!(
+            "all".parse::<ProfileFocus>().unwrap(),
+            ProfileFocus::All
+        ));
     }
 
     #[test]

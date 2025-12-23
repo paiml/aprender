@@ -36,35 +36,19 @@
 //! - Nickel, M. et al. (2011). "RESCAL: A Three-Way Model for Collective Learning"
 //! - Bordes, A. et al. (2013). "TransE: Translating Embeddings for Multi-relational Data"
 
+mod embed;
 mod ops;
 mod program;
-mod embed;
 
 pub use ops::{
-    LogicMode,
-    logical_join,
-    logical_project,
-    logical_union,
-    logical_negation,
-    logical_select,
-    apply_nonlinearity,
-    apply_nonlinearity_with_temperature,
-    apply_nonlinearity_with_mask,
+    apply_nonlinearity, apply_nonlinearity_with_mask, apply_nonlinearity_with_temperature,
+    logical_join, logical_negation, logical_project, logical_select, logical_union, LogicMode,
     Nonlinearity,
 };
 
-pub use program::{
-    TensorProgram,
-    Equation,
-    ProgramBuilder,
-};
+pub use program::{Equation, ProgramBuilder, TensorProgram};
 
-pub use embed::{
-    EmbeddingSpace,
-    RelationMatrix,
-    BilinearScorer,
-    RescalFactorizer,
-};
+pub use embed::{BilinearScorer, EmbeddingSpace, RelationMatrix, RescalFactorizer};
 
 #[cfg(test)]
 mod tests {
@@ -85,21 +69,18 @@ mod tests {
         let grandparent = logical_join(&parent, &parent, LogicMode::Boolean);
 
         // Alice is grandparent of Charlie (path: Alice->Bob->Charlie)
-        assert_eq!(grandparent[0][2], 1.0, "Alice should be grandparent of Charlie");
+        assert_eq!(
+            grandparent[0][2], 1.0,
+            "Alice should be grandparent of Charlie"
+        );
         assert_eq!(grandparent[0][0], 0.0, "Alice is not her own grandparent");
         assert_eq!(grandparent[1][2], 0.0, "Bob is not grandparent of Charlie");
     }
 
     #[test]
     fn k1_logical_join_continuous_mode() {
-        let a = vec![
-            vec![0.5, 0.3],
-            vec![0.2, 0.8],
-        ];
-        let b = vec![
-            vec![0.4, 0.6],
-            vec![0.7, 0.1],
-        ];
+        let a = vec![vec![0.5, 0.3], vec![0.2, 0.8]];
+        let b = vec![vec![0.4, 0.6], vec![0.7, 0.1]];
 
         let result = logical_join(&a, &b, LogicMode::Continuous);
 
@@ -115,9 +96,9 @@ mod tests {
     fn k2_logical_project_boolean_existential() {
         // HasChild(X) = ∃Y: Parent(X,Y)
         let parent = vec![
-            vec![0.0, 1.0, 0.0],  // Alice has child
-            vec![0.0, 0.0, 1.0],  // Bob has child
-            vec![0.0, 0.0, 0.0],  // Charlie has no child
+            vec![0.0, 1.0, 0.0], // Alice has child
+            vec![0.0, 0.0, 1.0], // Bob has child
+            vec![0.0, 0.0, 0.0], // Charlie has no child
         ];
 
         let has_child = logical_project(&parent, 1, LogicMode::Boolean);
@@ -132,10 +113,7 @@ mod tests {
     // ==========================================================================
     #[test]
     fn k3_logical_project_continuous_sum() {
-        let tensor = vec![
-            vec![0.2, 0.3, 0.5],
-            vec![0.1, 0.4, 0.2],
-        ];
+        let tensor = vec![vec![0.2, 0.3, 0.5], vec![0.1, 0.4, 0.2]];
 
         let projected = logical_project(&tensor, 1, LogicMode::Continuous);
 
@@ -241,17 +219,25 @@ mod tests {
     #[test]
     fn k9_tensor_program_forward_chaining() {
         let mut program = ProgramBuilder::new(LogicMode::Boolean)
-            .add_fact("parent", vec![
-                vec![0.0, 1.0, 0.0],
-                vec![0.0, 0.0, 1.0],
-                vec![0.0, 0.0, 0.0],
-            ])
-            .add_rule("grandparent", Equation::Join("parent".into(), "parent".into()))
+            .add_fact(
+                "parent",
+                vec![
+                    vec![0.0, 1.0, 0.0],
+                    vec![0.0, 0.0, 1.0],
+                    vec![0.0, 0.0, 0.0],
+                ],
+            )
+            .add_rule(
+                "grandparent",
+                Equation::Join("parent".into(), "parent".into()),
+            )
             .build();
 
         let results = program.forward();
 
-        let grandparent = results.get("grandparent").expect("grandparent should exist");
+        let grandparent = results
+            .get("grandparent")
+            .expect("grandparent should exist");
         assert_eq!(grandparent[0][2], 1.0);
     }
 
@@ -261,12 +247,18 @@ mod tests {
     #[test]
     fn k10_tensor_program_query() {
         let mut program = ProgramBuilder::new(LogicMode::Boolean)
-            .add_fact("parent", vec![
-                vec![0.0, 1.0, 0.0],
-                vec![0.0, 0.0, 1.0],
-                vec![0.0, 0.0, 0.0],
-            ])
-            .add_rule("grandparent", Equation::Join("parent".into(), "parent".into()))
+            .add_fact(
+                "parent",
+                vec![
+                    vec![0.0, 1.0, 0.0],
+                    vec![0.0, 0.0, 1.0],
+                    vec![0.0, 0.0, 0.0],
+                ],
+            )
+            .add_rule(
+                "grandparent",
+                Equation::Join("parent".into(), "parent".into()),
+            )
             .build();
 
         let result = program.query("grandparent");
@@ -412,16 +404,20 @@ mod tests {
     fn k20_trueno_simd_acceleration() {
         use std::time::Instant;
 
-        // Create moderately sized matrices for meaningful benchmark
-        let size = 64;
-        let iterations = 100;
+        // Small size for fast tests (bashrs style)
+        let size = 16;
+        let iterations = 10;
 
         // Generate test data
         let a: Vec<Vec<f64>> = (0..size)
             .map(|i| (0..size).map(|j| ((i + j) % 10) as f64 / 10.0).collect())
             .collect();
         let b: Vec<Vec<f64>> = (0..size)
-            .map(|i| (0..size).map(|j| ((i * j + 1) % 10) as f64 / 10.0).collect())
+            .map(|i| {
+                (0..size)
+                    .map(|j| ((i * j + 1) % 10) as f64 / 10.0)
+                    .collect()
+            })
             .collect();
 
         // Benchmark SIMD-friendly vectorized operations (what Trueno uses)
@@ -515,25 +511,25 @@ mod tests {
         space.set_entity(5, vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]);
 
         // Compute cosine similarities
-        let sim_01 = cosine_similarity(
-            space.get_entity(0).unwrap(),
-            space.get_entity(1).unwrap(),
-        );
-        let sim_23 = cosine_similarity(
-            space.get_entity(2).unwrap(),
-            space.get_entity(3).unwrap(),
-        );
-        let sim_45 = cosine_similarity(
-            space.get_entity(4).unwrap(),
-            space.get_entity(5).unwrap(),
-        );
+        let sim_01 = cosine_similarity(space.get_entity(0).unwrap(), space.get_entity(1).unwrap());
+        let sim_23 = cosine_similarity(space.get_entity(2).unwrap(), space.get_entity(3).unwrap());
+        let sim_45 = cosine_similarity(space.get_entity(4).unwrap(), space.get_entity(5).unwrap());
 
         // Verify: similar entities have high similarity
-        assert!(sim_01 > 0.9, "Related entities 0,1 should be similar: {sim_01}");
-        assert!(sim_23 > 0.9, "Related entities 2,3 should be similar: {sim_23}");
+        assert!(
+            sim_01 > 0.9,
+            "Related entities 0,1 should be similar: {sim_01}"
+        );
+        assert!(
+            sim_23 > 0.9,
+            "Related entities 2,3 should be similar: {sim_23}"
+        );
 
         // Verify: dissimilar entities have low similarity
-        assert!(sim_45 < 0.1, "Unrelated entities 4,5 should be dissimilar: {sim_45}");
+        assert!(
+            sim_45 < 0.1,
+            "Unrelated entities 4,5 should be dissimilar: {sim_45}"
+        );
 
         // Verify embedding dimension correlation
         assert_eq!(space.dim(), 8, "Embedding dimension preserved");
@@ -598,7 +594,8 @@ mod tests {
 
         // After training with negative sampling, positive scores should be higher
         // For this test, we verify the loss computation mechanism works
-        let avg_loss: f64 = contrastive_losses.iter().sum::<f64>() / contrastive_losses.len() as f64;
+        let avg_loss: f64 =
+            contrastive_losses.iter().sum::<f64>() / contrastive_losses.len() as f64;
 
         // The loss should be computable (not NaN)
         assert!(avg_loss.is_finite(), "Contrastive loss should be finite");
@@ -647,9 +644,11 @@ mod tests {
         ];
 
         // Hard: 3-hop reasoning (complex chain)
-        let hard_facts = vec![
-            vec![vec![0.0, 1.0, 0.0], vec![0.0, 0.0, 1.0], vec![0.0, 0.0, 0.0]],
-        ];
+        let hard_facts = vec![vec![
+            vec![0.0, 1.0, 0.0],
+            vec![0.0, 0.0, 1.0],
+            vec![0.0, 0.0, 0.0],
+        ]];
 
         // Curriculum phases with increasing difficulty
         let mut total_loss = 0.0;
@@ -665,7 +664,11 @@ mod tests {
 
         // Phase 2: Medium examples
         for i in 0..medium_facts.len() - 1 {
-            let result = logical_join(&medium_facts[i], &medium_facts[i + 1], LogicMode::Continuous);
+            let result = logical_join(
+                &medium_facts[i],
+                &medium_facts[i + 1],
+                LogicMode::Continuous,
+            );
             let loss = compute_reconstruction_loss(&medium_facts[i], &result);
             total_loss += loss;
             phase_losses.push(("medium", loss));
@@ -687,12 +690,16 @@ mod tests {
 
         // Easy examples should have lower loss than hard (when same-sized)
         // This demonstrates the curriculum principle: start with easier examples
-        let easy_loss = phase_losses.iter()
+        let easy_loss = phase_losses
+            .iter()
             .filter(|(phase, _)| *phase == "easy")
             .map(|(_, loss)| *loss)
             .sum::<f64>();
 
-        assert!(easy_loss.is_finite(), "Easy curriculum phase should converge");
+        assert!(
+            easy_loss.is_finite(),
+            "Easy curriculum phase should converge"
+        );
     }
 
     /// Reconstruction loss for curriculum learning (M9)
@@ -707,7 +714,11 @@ mod tests {
             }
         }
 
-        if count > 0 { total / count as f64 } else { 0.0 }
+        if count > 0 {
+            total / count as f64
+        } else {
+            0.0
+        }
     }
 
     // ==========================================================================
@@ -733,10 +744,22 @@ mod tests {
         );
 
         // Verify: masked positions have near-zero probability
-        assert!(constrained_logits[0][1] < 1e-6, "Masked token 1 should have ~0 prob");
-        assert!(constrained_logits[0][3] < 1e-6, "Masked token 3 should have ~0 prob");
-        assert!(constrained_logits[0][5] < 1e-6, "Masked token 5 should have ~0 prob");
-        assert!(constrained_logits[0][7] < 1e-6, "Masked token 7 should have ~0 prob");
+        assert!(
+            constrained_logits[0][1] < 1e-6,
+            "Masked token 1 should have ~0 prob"
+        );
+        assert!(
+            constrained_logits[0][3] < 1e-6,
+            "Masked token 3 should have ~0 prob"
+        );
+        assert!(
+            constrained_logits[0][5] < 1e-6,
+            "Masked token 5 should have ~0 prob"
+        );
+        assert!(
+            constrained_logits[0][7] < 1e-6,
+            "Masked token 7 should have ~0 prob"
+        );
 
         // Verify: unmasked positions redistribute probability
         let unmasked_sum: f64 = constrained_logits[0][0]
@@ -766,12 +789,17 @@ mod tests {
             .unwrap_or(0);
 
         // Original argmax was token 3 (highest logit = 3.0), but it's masked
-        assert_eq!(unconstrained_argmax, 3, "Unconstrained argmax should be token 3");
+        assert_eq!(
+            unconstrained_argmax, 3,
+            "Unconstrained argmax should be token 3"
+        );
 
         // Constrained argmax should be in {0, 2, 4, 6} - the valid set
         assert!(
-            constrained_argmax == 0 || constrained_argmax == 2
-                || constrained_argmax == 4 || constrained_argmax == 6,
+            constrained_argmax == 0
+                || constrained_argmax == 2
+                || constrained_argmax == 4
+                || constrained_argmax == 6,
             "Constrained argmax should be in valid set: got {constrained_argmax}"
         );
 

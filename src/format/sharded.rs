@@ -581,9 +581,12 @@ impl ShardedImporter {
     pub fn load_shard(&mut self, shard_file: &str) -> Result<&CachedShard> {
         // Check cache first
         if self.cache.get(shard_file).is_some() {
-            return self.cache.get(shard_file).ok_or_else(|| AprenderError::FormatError {
-                message: "Cache inconsistency".to_string(),
-            });
+            return self
+                .cache
+                .get(shard_file)
+                .ok_or_else(|| AprenderError::FormatError {
+                    message: "Cache inconsistency".to_string(),
+                });
         }
 
         // Load from disk
@@ -598,9 +601,11 @@ impl ShardedImporter {
 
         self.cache.insert(shard);
 
-        self.cache.get(shard_file).ok_or_else(|| AprenderError::FormatError {
-            message: "Failed to retrieve cached shard".to_string(),
-        })
+        self.cache
+            .get(shard_file)
+            .ok_or_else(|| AprenderError::FormatError {
+                message: "Failed to retrieve cached shard".to_string(),
+            })
     }
 
     /// Stream merge multiple shards into single output.
@@ -611,7 +616,11 @@ impl ShardedImporter {
     ///
     /// # Errors
     /// Returns error if merge fails.
-    pub fn stream_merge(&mut self, index: &ShardIndex, _output_path: &Path) -> Result<ImportReport> {
+    pub fn stream_merge(
+        &mut self,
+        index: &ShardIndex,
+        _output_path: &Path,
+    ) -> Result<ImportReport> {
         self.config.validate()?;
 
         let start_time = std::time::Instant::now();

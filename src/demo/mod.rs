@@ -161,9 +161,7 @@ impl Qwen2Tokenizer {
     /// Format instruction prompt
     #[must_use]
     pub fn format_instruction(&self, instruction: &str) -> String {
-        format!(
-            "<|im_start|>user\n{instruction}<|im_end|>\n<|im_start|>assistant\n"
-        )
+        format!("<|im_start|>user\n{instruction}<|im_end|>\n<|im_start|>assistant\n")
     }
 }
 
@@ -333,7 +331,11 @@ mod tests {
         let int4_size = config.model_size_int4();
 
         // INT4 should be ~300MB or less
-        assert!(int4_size < 400 * 1024 * 1024, "INT4 size: {} bytes", int4_size);
+        assert!(
+            int4_size < 400 * 1024 * 1024,
+            "INT4 size: {} bytes",
+            int4_size
+        );
     }
 
     // =========================================================================

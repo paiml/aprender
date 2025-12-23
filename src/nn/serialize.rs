@@ -114,6 +114,9 @@ pub fn load_state_dict_into<M: Module + ?Sized>(
         *param = Tensor::new(data, shape).requires_grad();
     }
 
+    // Refresh any cached computations (e.g., transposed weights in Linear)
+    module.refresh_caches();
+
     Ok(())
 }
 

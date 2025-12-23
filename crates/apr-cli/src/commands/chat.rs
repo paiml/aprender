@@ -103,17 +103,27 @@ fn print_welcome_banner(path: &Path, config: &ChatConfig) {
         ModelFormat::Apr => {
             output::section("Qwen2-0.5B-Instruct Chat");
             println!();
-            println!("{}", "Using APR v2 format with mmap (Native Library Mandate)".cyan());
+            println!(
+                "{}",
+                "Using APR v2 format with mmap (Native Library Mandate)".cyan()
+            );
         }
         ModelFormat::SafeTensors => {
             output::section("Qwen2-0.5B-Instruct Chat");
             println!();
-            println!("{}", "Using SafeTensors with mmap (Native Library Mandate)".cyan());
+            println!(
+                "{}",
+                "Using SafeTensors with mmap (Native Library Mandate)".cyan()
+            );
         }
         ModelFormat::Demo => {
             output::section("Qwen2 Chat Demo (Tiny Model)");
             println!();
-            println!("{}", "Note: Using tiny demo model. Pass .apr or .safetensors file for full model.".yellow());
+            println!(
+                "{}",
+                "Note: Using tiny demo model. Pass .apr or .safetensors file for full model."
+                    .yellow()
+            );
         }
     }
     println!();
@@ -128,7 +138,10 @@ fn print_welcome_banner(path: &Path, config: &ChatConfig) {
 
     if config.inspect {
         println!();
-        println!("{}", "Inspection mode enabled - showing token probabilities".cyan());
+        println!(
+            "{}",
+            "Inspection mode enabled - showing token probabilities".cyan()
+        );
     }
 
     println!();
@@ -194,7 +207,11 @@ impl ChatSession {
                         "Failed to load APR weights (random fallback FORBIDDEN per spec): {e}"
                     ))
                 })?;
-                println!("{} {}", "Loaded".green(), format!("{count} tensors via APR mmap"));
+                println!(
+                    "{} {}",
+                    "Loaded".green(),
+                    format!("{count} tensors via APR mmap")
+                );
             }
             ModelFormat::SafeTensors => {
                 // SafeTensors format (also uses mmap)
@@ -203,11 +220,18 @@ impl ChatSession {
                         "Failed to load SafeTensors weights (random fallback FORBIDDEN per spec): {e}"
                     ))
                 })?;
-                println!("{} {}", "Loaded".green(), format!("{count} tensors via mmap"));
+                println!(
+                    "{} {}",
+                    "Loaded".green(),
+                    format!("{count} tensors via mmap")
+                );
             }
             ModelFormat::Demo => {
                 // Demo mode: tiny model with random weights for testing only
-                println!("{}", "Using randomly initialized weights (demo mode only)".yellow());
+                println!(
+                    "{}",
+                    "Using randomly initialized weights (demo mode only)".yellow()
+                );
             }
         }
 
@@ -244,9 +268,9 @@ impl ChatSession {
         messages.push(("user", user_input));
 
         // Format conversation
-        let prompt = self.tokenizer.format_conversation(
-            &messages.iter().map(|(r, c)| (*r, *c)).collect::<Vec<_>>()
-        );
+        let prompt = self
+            .tokenizer
+            .format_conversation(&messages.iter().map(|(r, c)| (*r, *c)).collect::<Vec<_>>());
 
         // Encode prompt (using byte-level encoding since we don't have full vocab loaded)
         let input_ids = self.tokenizer.encode(&prompt);
@@ -259,14 +283,22 @@ impl ChatSession {
             input_ids
         };
 
-        // Generate
+        // Generate (use profiled version in inspect mode)
         let start = Instant::now();
-        let output_ids = self.model.generate(
-            &input_ids,
-            config.max_tokens.min(128), // Limit for speed
-            config.temperature,
-            config.top_p,
-        );
+        let output_ids = if config.inspect {
+            self.model.generate_profiled(
+                &input_ids,
+                config.max_tokens.min(128), // Limit for speed
+                config.temperature,
+            )
+        } else {
+            self.model.generate(
+                &input_ids,
+                config.max_tokens.min(128), // Limit for speed
+                config.temperature,
+                config.top_p,
+            )
+        };
         let gen_time = start.elapsed();
 
         // Decode only the generated tokens
@@ -286,6 +318,17 @@ impl ChatSession {
                 )
                 .dimmed()
             );
+
+            // Get logits for the last position to show top-k candidates
+            if !output_ids.is_empty() {
+                let position_ids: Vec<usize> = (0..output_ids.len()).collect();
+                let logits = self.model.forward(&output_ids, &position_ids);
+                let logits_data = logits.data();
+                let vocab_size = self.model.config().vocab_size;
+                let last_pos = output_ids.len() - 1;
+                let last_logits = &logits_data[last_pos * vocab_size..(last_pos + 1) * vocab_size];
+                print_top_k(last_logits, &self.tokenizer, 5);
+            }
         }
 
         response
@@ -405,6 +448,42 @@ fn print_inspection_info(session: &ChatSession) {
         "{}",
         format!("  Vocab: {} tokens", session.tokenizer.vocab_size()).dimmed()
     );
+}
+
+/// Display top-k token probabilities (spec E1)
+fn print_top_k(logits: &[f32], tokenizer: &Qwen2BpeTokenizer, k: usize) {
+    println!();
+    println!("{}", "[TOP-K CANDIDATES]".cyan().bold());
+
+    // Compute softmax
+    let max_val = logits.iter().fold(f32::NEG_INFINITY, |a, &b| a.max(b));
+    let exp_vals: Vec<f32> = logits.iter().map(|&v| (v - max_val).exp()).collect();
+    let sum: f32 = exp_vals.iter().sum();
+    let probs: Vec<f32> = exp_vals.iter().map(|&v| v / sum).collect();
+
+    // Get top-k indices
+    let mut indexed: Vec<(usize, f32)> = probs.iter().copied().enumerate().collect();
+    indexed.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+    for (i, (token_id, prob)) in indexed.iter().take(k).enumerate() {
+        let token_str = tokenizer.decode(&[*token_id as u32]);
+        let display = if token_str.trim().is_empty() {
+            format!("<token_{}>", token_id)
+        } else {
+            format!("\"{}\"", token_str.escape_debug())
+        };
+
+        let bar_len = (prob * 50.0) as usize;
+        let bar = "█".repeat(bar_len);
+
+        println!(
+            "  {}. {} {:>6.2}% {}",
+            i + 1,
+            display.yellow(),
+            prob * 100.0,
+            bar.green()
+        );
+    }
 }
 
 /// Format parameter count in human-readable form

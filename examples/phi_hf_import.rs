@@ -20,9 +20,7 @@
 //! apr import hf://microsoft/phi-1_5 -o phi-1.5.apr --arch llama
 //! ```
 
-use aprender::format::{
-    apr_import, Architecture, ImportOptions, Source, ValidationConfig,
-};
+use aprender::format::{apr_import, Architecture, ImportOptions, Source, ValidationConfig};
 use std::path::PathBuf;
 
 fn main() {
@@ -153,8 +151,15 @@ fn main() {
     match apr_import(source_str, &output_path, options) {
         Ok(report) => {
             println!("Import successful!");
-            println!("  Score: {}/100 (Grade: {})", report.total_score, report.grade());
-            println!("  Checks passed: {}", report.checks.iter().filter(|c| c.status.is_pass()).count());
+            println!(
+                "  Score: {}/100 (Grade: {})",
+                report.total_score,
+                report.grade()
+            );
+            println!(
+                "  Checks passed: {}",
+                report.checks.iter().filter(|c| c.status.is_pass()).count()
+            );
         }
         Err(e) => {
             println!("Import not available in demo mode:");

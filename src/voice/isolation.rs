@@ -695,8 +695,7 @@ impl VoiceIsolator for WienerFilterIsolator {
         let input_snr = estimate_snr(audio);
         let output_snr = estimate_snr(&output);
 
-        Ok(IsolationResult::new(output, self.config.sample_rate)
-            .with_snr(input_snr, output_snr))
+        Ok(IsolationResult::new(output, self.config.sample_rate).with_snr(input_snr, output_snr))
     }
 
     fn estimate_noise(&self, noise_audio: &[f32]) -> VoiceResult<NoiseProfile> {
@@ -1036,7 +1035,10 @@ mod tests {
     #[test]
     fn test_wiener_filter_new() {
         let isolator = WienerFilterIsolator::default();
-        assert_eq!(isolator.config().method, IsolationMethod::SpectralSubtraction);
+        assert_eq!(
+            isolator.config().method,
+            IsolationMethod::SpectralSubtraction
+        );
     }
 
     #[test]

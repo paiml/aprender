@@ -128,7 +128,10 @@ fn create_apr_demo() {
         vec![demo_vocab, demo_hidden],
         &vec![0.01_f32; embed_size],
     );
-    println!("  model.embed_tokens.weight      [{}, {}]", demo_vocab, demo_hidden);
+    println!(
+        "  model.embed_tokens.weight      [{}, {}]",
+        demo_vocab, demo_hidden
+    );
 
     // Transformer layers
     for i in 0..demo_layers {
@@ -211,7 +214,10 @@ fn create_apr_demo() {
         vec![demo_vocab, demo_hidden],
         &vec![0.01_f32; embed_size],
     );
-    println!("  lm_head.weight                 [{}, {}]", demo_vocab, demo_hidden);
+    println!(
+        "  lm_head.weight                 [{}, {}]",
+        demo_vocab, demo_hidden
+    );
 
     // Write file
     match writer.write(output_path) {
@@ -258,10 +264,7 @@ fn loading_demo() {
     let server_config = LoadConfig::server();
     println!("\nServer (full resources):");
     println!("  Mode: {:?}", server_config.mode);
-    println!(
-        "  Verification: {:?}",
-        server_config.verification
-    );
+    println!("  Verification: {:?}", server_config.verification);
     println!(
         "  Backend: {:?} (SIMD: {})",
         server_config.backend,
@@ -351,14 +354,24 @@ fn browser_demo() {
         ("Load time < 5s", metrics.load_time_ms < 5000),
         ("First token < 2s", metrics.first_token_ms < 2000),
         ("Speed >= 15 tok/s", metrics.tokens_per_sec >= 15.0),
-        ("Memory < 512 MB", metrics.peak_memory_bytes < 512 * 1024 * 1024),
+        (
+            "Memory < 512 MB",
+            metrics.peak_memory_bytes < 512 * 1024 * 1024,
+        ),
     ];
 
     for (check, passed) in &checks {
         let status = if *passed { "PASS" } else { "FAIL" };
         println!("  [{}] {}", status, check);
     }
-    println!("  All targets: {}", if metrics.meets_targets() { "MET" } else { "NOT MET" });
+    println!(
+        "  All targets: {}",
+        if metrics.meets_targets() {
+            "MET"
+        } else {
+            "NOT MET"
+        }
+    );
     println!();
 
     // Perplexity check
@@ -374,7 +387,11 @@ fn browser_demo() {
     );
     println!(
         "  Acceptable: {}",
-        if checker.is_acceptable(int4_ppl) { "YES" } else { "NO" }
+        if checker.is_acceptable(int4_ppl) {
+            "YES"
+        } else {
+            "NO"
+        }
     );
     println!();
 

@@ -11,8 +11,8 @@
 //! - Nickel et al. (2011): "RESCAL: A Three-Way Model for Collective Learning"
 //! - Bordes et al. (2013): "TransE: Translating Embeddings for Multi-relational Data"
 
-use std::collections::HashMap;
 use rand::Rng;
+use std::collections::HashMap;
 
 /// Embedding space for knowledge graph reasoning
 #[derive(Debug)]
@@ -183,9 +183,7 @@ impl BilinearScorer {
     pub fn predict_tails(&self, subject: usize, relation: &str, k: usize) -> Vec<(usize, f64)> {
         let scores = self.score_tails(subject, relation);
         let mut indexed: Vec<(usize, f64)> = scores.into_iter().enumerate().collect();
-        indexed.sort_by(|a, b| {
-            b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal)
-        });
+        indexed.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         indexed.truncate(k);
         indexed
     }
@@ -252,7 +250,8 @@ impl RescalFactorizer {
             .collect();
 
         // Build adjacency tensors from triples
-        let mut x: Vec<Vec<Vec<f64>>> = vec![vec![vec![0.0; self.num_entities]; self.num_entities]; self.num_relations];
+        let mut x: Vec<Vec<Vec<f64>>> =
+            vec![vec![vec![0.0; self.num_entities]; self.num_entities]; self.num_relations];
         for &(h, rel, t) in triples {
             if rel < self.num_relations && h < self.num_entities && t < self.num_entities {
                 x[rel][h][t] = 1.0;
@@ -357,11 +356,7 @@ mod tests {
     fn test_rescal_factorization() {
         let factorizer = RescalFactorizer::new(5, 4, 2);
 
-        let triples = vec![
-            (0, 0, 1),
-            (1, 0, 2),
-            (2, 1, 3),
-        ];
+        let triples = vec![(0, 0, 1), (1, 0, 2), (2, 1, 3)];
 
         let result = factorizer.factorize(&triples, 5);
 

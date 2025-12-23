@@ -25,9 +25,9 @@ pub mod federation;
 mod output;
 
 use commands::{
-    canary, canary::CanaryCommands, chat, compare_hf, convert, debug, diff, explain, export, flow,
-    hex, import, inspect, lint, merge, probar, profile, run, serve, tensors, trace, tree, tui,
-    validate,
+    bench, canary, canary::CanaryCommands, chat, compare_hf, convert, debug, diff, eval, explain,
+    export, flow, hex, import, inspect, lint, merge, probar, profile, run, serve, tensors, trace,
+    tree, tui, validate,
 };
 
 /// apr - APR Model Operations Tool
@@ -511,6 +511,52 @@ enum Commands {
         inspect: bool,
     },
 
+    /// Benchmark throughput (spec H12: >= 10 tok/s)
+    Bench {
+        /// Path to model file
+        #[arg(value_name = "FILE")]
+        file: PathBuf,
+
+        /// Number of warmup iterations
+        #[arg(long, default_value = "3")]
+        warmup: usize,
+
+        /// Number of measurement iterations
+        #[arg(long, default_value = "5")]
+        iterations: usize,
+
+        /// Max tokens to generate per iteration
+        #[arg(long, default_value = "32")]
+        max_tokens: usize,
+
+        /// Test prompt
+        #[arg(long)]
+        prompt: Option<String>,
+    },
+
+    /// Evaluate model perplexity (spec H13: PPL <= 20)
+    Eval {
+        /// Path to model file
+        #[arg(value_name = "FILE")]
+        file: PathBuf,
+
+        /// Dataset: wikitext-2, lambada, or custom
+        #[arg(long, default_value = "wikitext-2")]
+        dataset: String,
+
+        /// Custom text (when dataset=custom)
+        #[arg(long)]
+        text: Option<String>,
+
+        /// Maximum tokens to evaluate
+        #[arg(long, default_value = "512")]
+        max_tokens: usize,
+
+        /// Perplexity threshold for pass/fail
+        #[arg(long, default_value = "20.0")]
+        threshold: f32,
+    },
+
     /// Deep profiling with Roofline analysis (Williams et al., 2009)
     Profile {
         /// Path to model file (.apr, .safetensors, .gguf)
@@ -776,6 +822,28 @@ fn execute_command(cli: &Cli) -> Result<(), error::CliError> {
             *max_tokens,
             system.as_deref(),
             *inspect,
+        ),
+
+        Commands::Bench {
+            file,
+            warmup,
+            iterations,
+            max_tokens,
+            prompt,
+        } => bench::run(file, *warmup, *iterations, *max_tokens, prompt.as_deref()),
+
+        Commands::Eval {
+            file,
+            dataset,
+            text,
+            max_tokens,
+            threshold,
+        } => eval::run(
+            file,
+            dataset,
+            text.as_deref(),
+            Some(*max_tokens),
+            Some(*threshold),
         ),
 
         Commands::Profile {

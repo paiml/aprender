@@ -143,7 +143,8 @@ fn a7_weight_naming_convention() {
     for name in &weight_names {
         // Names should be lowercase with dots
         assert!(
-            name.chars().all(|c| c.is_lowercase() || c.is_numeric() || c == '.' || c == '_'),
+            name.chars()
+                .all(|c| c.is_lowercase() || c.is_numeric() || c == '.' || c == '_'),
             "Weight name '{}' should be lowercase with dots/underscores",
             name
         );

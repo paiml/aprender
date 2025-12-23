@@ -8,6 +8,7 @@
 use crate::error::CliError;
 use crate::output;
 use aprender::format::HEADER_SIZE;
+use colored::Colorize;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::fs::File;
@@ -25,6 +26,10 @@ struct TensorInfo {
     std: Option<f32>,
     min: Option<f32>,
     max: Option<f32>,
+    /// NaN count (spec H8: should be 0)
+    nan_count: Option<usize>,
+    /// Inf count
+    inf_count: Option<usize>,
 }
 
 /// Tensors listing result
@@ -149,6 +154,8 @@ fn extract_from_tensor_shapes(
                 std: None,
                 min: None,
                 max: None,
+                nan_count: None,
+                inf_count: None,
             }
         })
         .collect()
@@ -191,6 +198,8 @@ fn extract_from_hyperparameters(metadata: &HashMap<String, serde_json::Value>) -
         std: None,
         min: None,
         max: None,
+        nan_count: None,
+        inf_count: None,
     }]
 }
 
@@ -205,6 +214,8 @@ fn create_unavailable_tensor_info() -> TensorInfo {
         std: None,
         min: None,
         max: None,
+        nan_count: None,
+        inf_count: None,
     }
 }
 
@@ -249,10 +260,37 @@ fn output_text(path: &Path, tensors: &[TensorInfo], show_stats: bool) {
 
         if show_stats {
             if let (Some(mean), Some(std)) = (tensor.mean, tensor.std) {
-                println!("    Stats: mean={mean:.4}, std={std:.4}");
+                // Check for NaN stats (spec H8)
+                if mean.is_nan() || std.is_nan() {
+                    println!(
+                        "    Stats: {} (FAIL: NaN detected per spec H8)",
+                        "NaN".red()
+                    );
+                } else {
+                    println!("    Stats: mean={mean:.4}, std={std:.4}");
+                }
             }
             if let (Some(min), Some(max)) = (tensor.min, tensor.max) {
                 println!("    Range: [{min:.4}, {max:.4}]");
+            }
+            // Display NaN/Inf count warnings
+            if let Some(nan_count) = tensor.nan_count {
+                if nan_count > 0 {
+                    println!(
+                        "    {} {} NaN values detected (spec H8 violation)",
+                        "WARNING:".red().bold(),
+                        nan_count
+                    );
+                }
+            }
+            if let Some(inf_count) = tensor.inf_count {
+                if inf_count > 0 {
+                    println!(
+                        "    {} {} Inf values detected",
+                        "WARNING:".yellow().bold(),
+                        inf_count
+                    );
+                }
             }
         }
     }

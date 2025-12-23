@@ -204,8 +204,9 @@ impl CaptureBackend for AlsaBackend {
         let device_name = device.unwrap_or("default");
 
         // Open PCM device for capture
-        let pcm = alsa::PCM::new(device_name, Direction::Capture, false)
-            .map_err(|e| AudioError::CaptureError(format!("Failed to open ALSA device '{device_name}': {e}")))?;
+        let pcm = alsa::PCM::new(device_name, Direction::Capture, false).map_err(|e| {
+            AudioError::CaptureError(format!("Failed to open ALSA device '{device_name}': {e}"))
+        })?;
 
         // Configure hardware parameters
         {
@@ -264,7 +265,9 @@ impl CaptureBackend for AlsaBackend {
         }
 
         // Get the IO interface
-        let io = self.pcm.io_i16()
+        let io = self
+            .pcm
+            .io_i16()
             .map_err(|e| AudioError::CaptureError(format!("Failed to get IO interface: {e}")))?;
 
         // Read from ALSA (blocking)
@@ -275,11 +278,14 @@ impl CaptureBackend for AlsaBackend {
                 // Try to recover from xrun (buffer overrun)
                 // ALSA error codes: -EPIPE = -32 for xrun
                 if e.errno() == -32 {
-                    self.pcm.prepare()
-                        .map_err(|e| AudioError::CaptureError(format!("Failed to recover from xrun: {e}")))?;
+                    self.pcm.prepare().map_err(|e| {
+                        AudioError::CaptureError(format!("Failed to recover from xrun: {e}"))
+                    })?;
                     // Retry the read
                     io.readi(&mut self.i16_buffer[..samples_needed])
-                        .map_err(|e| AudioError::CaptureError(format!("Failed to read after recovery: {e}")))?
+                        .map_err(|e| {
+                            AudioError::CaptureError(format!("Failed to read after recovery: {e}"))
+                        })?
                 } else {
                     return Err(AudioError::CaptureError(format!("Failed to read: {e}")));
                 }
@@ -298,7 +304,8 @@ impl CaptureBackend for AlsaBackend {
 
     fn close(&mut self) -> Result<(), AudioError> {
         // Drop the PCM handle gracefully
-        self.pcm.drain()
+        self.pcm
+            .drain()
             .map_err(|e| AudioError::CaptureError(format!("Failed to drain PCM: {e}")))?;
         Ok(())
     }
@@ -493,8 +500,8 @@ impl Default for CaptureConfig {
     fn default() -> Self {
         Self {
             sample_rate: 16000, // Whisper native rate
-            channels: 1,       // Mono for ASR
-            buffer_size: 1600, // 100ms at 16kHz
+            channels: 1,        // Mono for ASR
+            buffer_size: 1600,  // 100ms at 16kHz
             exclusive: false,
         }
     }
@@ -1047,7 +1054,11 @@ mod tests {
     fn test_list_devices_alsa() {
         // ALSA returns devices (may be empty on systems without audio hardware)
         let devices = list_devices();
-        assert!(devices.is_ok(), "list_devices should succeed: {:?}", devices);
+        assert!(
+            devices.is_ok(),
+            "list_devices should succeed: {:?}",
+            devices
+        );
     }
 
     #[test]
@@ -1123,7 +1134,10 @@ mod tests {
 
         // Sine wave should have non-zero samples (not all silence)
         let non_zero_count = buffer.iter().filter(|s| s.abs() > 1e-6).count();
-        assert!(non_zero_count > 0, "Sine wave should produce non-zero samples");
+        assert!(
+            non_zero_count > 0,
+            "Sine wave should produce non-zero samples"
+        );
     }
 
     #[test]
@@ -1166,8 +1180,13 @@ mod tests {
 
         // Should have variance (not all same value)
         let mean: f32 = buffer.iter().sum::<f32>() / buffer.len() as f32;
-        let variance: f32 = buffer.iter().map(|s| (s - mean).powi(2)).sum::<f32>() / buffer.len() as f32;
-        assert!(variance > 0.001, "White noise should have variance, got {}", variance);
+        let variance: f32 =
+            buffer.iter().map(|s| (s - mean).powi(2)).sum::<f32>() / buffer.len() as f32;
+        assert!(
+            variance > 0.001,
+            "White noise should have variance, got {}",
+            variance
+        );
     }
 
     #[test]
@@ -1376,13 +1395,21 @@ mod tests {
         #[test]
         fn test_alsa_i16_to_f32_max() {
             let result = AlsaBackend::i16_to_f32(i16::MAX);
-            assert!((result - 1.0).abs() < 1e-4, "Max i16 should map to ~1.0, got {}", result);
+            assert!(
+                (result - 1.0).abs() < 1e-4,
+                "Max i16 should map to ~1.0, got {}",
+                result
+            );
         }
 
         #[test]
         fn test_alsa_i16_to_f32_min() {
             let result = AlsaBackend::i16_to_f32(i16::MIN);
-            assert!((result - (-1.0)).abs() < 1e-4, "Min i16 should map to ~-1.0, got {}", result);
+            assert!(
+                (result - (-1.0)).abs() < 1e-4,
+                "Min i16 should map to ~-1.0, got {}",
+                result
+            );
         }
 
         #[test]
@@ -1390,7 +1417,12 @@ mod tests {
             // All positive i16 should map to [0, 1]
             for val in [1, 100, 1000, 10000, 32767_i16] {
                 let result = AlsaBackend::i16_to_f32(val);
-                assert!(result >= 0.0 && result <= 1.0, "Positive {} mapped to {}", val, result);
+                assert!(
+                    result >= 0.0 && result <= 1.0,
+                    "Positive {} mapped to {}",
+                    val,
+                    result
+                );
             }
         }
 
@@ -1399,7 +1431,12 @@ mod tests {
             // All negative i16 should map to [-1, 0]
             for val in [-1, -100, -1000, -10000, -32768_i16] {
                 let result = AlsaBackend::i16_to_f32(val);
-                assert!(result >= -1.0 && result <= 0.0, "Negative {} mapped to {}", val, result);
+                assert!(
+                    result >= -1.0 && result <= 0.0,
+                    "Negative {} mapped to {}",
+                    val,
+                    result
+                );
             }
         }
 
@@ -1408,7 +1445,13 @@ mod tests {
             // Symmetric values should map to approximately symmetric results
             let positive = AlsaBackend::i16_to_f32(16384);
             let negative = AlsaBackend::i16_to_f32(-16384);
-            assert!((positive + negative).abs() < 0.001, "Symmetric values should cancel: {} + {} = {}", positive, negative, positive + negative);
+            assert!(
+                (positive + negative).abs() < 0.001,
+                "Symmetric values should cancel: {} + {} = {}",
+                positive,
+                negative,
+                positive + negative
+            );
         }
 
         #[test]
@@ -1421,7 +1464,11 @@ mod tests {
             // This test requires ALSA to be available on the system
             // It may return an empty list if no audio devices are present
             let result = AlsaBackend::list_devices();
-            assert!(result.is_ok(), "list_devices should not error: {:?}", result);
+            assert!(
+                result.is_ok(),
+                "list_devices should not error: {:?}",
+                result
+            );
         }
     }
 

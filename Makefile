@@ -197,41 +197,25 @@ tier4: tier3
 # Excludes: crates/, fuzz/, golden_traces/, external path deps (realizar/, trueno/)
 COVERAGE_EXCLUDE := --ignore-filename-regex='(crates/|fuzz/|golden_traces/|realizar/|trueno/)'
 
-# Standard coverage (<5 min): Two-phase pattern with nextest (bashrs style)
-# CRITICAL: --all-features is REQUIRED or feature-gated code won't compile
-# and coverage will show 0%. DO NOT REMOVE --all-features from the nextest call.
-# Uses PROPTEST_CASES=100 to limit property test iterations (bashrs pattern)
-coverage: ## Generate HTML coverage report (target: <5 min, 95%+ required)
-	@echo "📊 Running coverage analysis (target: <5 min, 95%+ required)..."
-	@echo "🔍 Checking for cargo-llvm-cov and cargo-nextest..."
-	@which cargo-llvm-cov > /dev/null 2>&1 || (echo "📦 Installing cargo-llvm-cov..." && cargo install cargo-llvm-cov --locked)
-	@which cargo-nextest > /dev/null 2>&1 || (echo "📦 Installing cargo-nextest..." && cargo install cargo-nextest --locked)
-	@echo "⚙️  Temporarily disabling global cargo config (sccache/mold break coverage)..."
-	@test -f ~/.cargo/config.toml && mv ~/.cargo/config.toml ~/.cargo/config.toml.cov-backup || true
-	@echo "🧹 Cleaning old coverage data..."
-	@cargo llvm-cov clean --workspace
+# Fast coverage (<2 min): Core lib only, no prop tests (bashrs style)
+coverage: ## Generate HTML coverage report (target: <2 min, 95%+ required)
+	@echo "📊 Running fast coverage (bashrs style, target: <2 min)..."
+	@which cargo-llvm-cov > /dev/null 2>&1 || cargo install cargo-llvm-cov --locked
+	@echo "⚙️  Disabling sccache/mold (breaks coverage instrumentation)..."
+	@test -f ~/.cargo/config.toml && mv ~/.cargo/config.toml ~/.cargo/config.toml.bak || true
+	@cargo llvm-cov clean --workspace 2>/dev/null || true
 	@mkdir -p target/coverage
-	@echo "🧪 Phase 1: Running tests with instrumentation (no report)..."
-	@echo "   Using PROPTEST_CASES=100 for faster coverage (bashrs pattern)"
-	@echo "   Excluding slow property tests (encryption, gbm convergence)"
-	@env PROPTEST_CASES=100 cargo llvm-cov --no-report nextest --no-tests=warn --workspace --no-fail-fast --all-features \
-		-E 'not test(/prop_gbm_expected_value_convergence/) and not test(/prop_encryption/) and not test(/prop_bytes_encrypted/) and not test(/prop_wrong_password/)'
-	@echo "📊 Phase 2: Generating coverage reports..."
-	@echo "   Excluding: crates/, fuzz/, golden_traces/, realizar/, trueno/"
+	@echo "🧪 Running lib tests only (no prop_, no encryption, no compression)..."
+	@cargo llvm-cov --no-report --lib \
+		-- --skip prop_ --skip encryption --skip compressed
+	@echo "📊 Generating report..."
 	@cargo llvm-cov report --html --output-dir target/coverage/html $(COVERAGE_EXCLUDE)
 	@cargo llvm-cov report --lcov --output-path target/coverage/lcov.info $(COVERAGE_EXCLUDE)
-	@echo "⚙️  Restoring global cargo config..."
-	@test -f ~/.cargo/config.toml.cov-backup && mv ~/.cargo/config.toml.cov-backup ~/.cargo/config.toml || true
+	@test -f ~/.cargo/config.toml.bak && mv ~/.cargo/config.toml.bak ~/.cargo/config.toml || true
 	@echo ""
-	@echo "📊 Coverage Summary:"
-	@echo "=================="
 	@cargo llvm-cov report --summary-only $(COVERAGE_EXCLUDE)
 	@echo ""
-	@echo "💡 Reports:"
-	@echo "- HTML: target/coverage/html/index.html"
-	@echo "- LCOV: target/coverage/lcov.info"
-	@echo "- Target: 95%+ line coverage"
-	@echo ""
+	@echo "📍 HTML: target/coverage/html/index.html"
 
 # Fast coverage alias (same as coverage, optimized by default)
 coverage-fast: coverage

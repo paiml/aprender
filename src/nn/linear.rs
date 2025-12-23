@@ -37,6 +37,10 @@ pub struct Linear {
     /// Weight matrix, shape: [out_features, in_features]
     weight: Tensor,
 
+    /// Cached transposed weight [in_features, out_features] for fast forward
+    /// Computed once when weight is set, avoids transpose overhead every forward.
+    weight_t: Option<Tensor>,
+
     /// Bias vector, shape: [out_features], or None if bias=false
     bias: Option<Tensor>,
 
@@ -73,10 +77,12 @@ impl Linear {
             seed,
         )
         .requires_grad();
+        let weight_t = Some(weight.transpose());
         let bias = zeros(&[out_features]).requires_grad();
 
         Self {
             weight,
+            weight_t,
             bias: Some(bias),
             in_features,
             out_features,
@@ -103,9 +109,11 @@ impl Linear {
             seed,
         )
         .requires_grad();
+        let weight_t = Some(weight.transpose());
 
         Self {
             weight,
+            weight_t,
             bias: None,
             in_features,
             out_features,
@@ -130,7 +138,10 @@ impl Linear {
     /// Set weight tensor from external data.
     ///
     /// Used for loading pre-trained weights from SafeTensors or other formats.
+    /// Automatically computes and caches the transposed weight for fast forward.
     pub fn set_weight(&mut self, weight: Tensor) {
+        // Pre-compute transpose once during loading (not every forward pass)
+        self.weight_t = Some(weight.transpose());
         self.weight = weight;
     }
 
@@ -153,6 +164,7 @@ impl Linear {
         // Use 1-element placeholder tensors to save memory
         Self {
             weight: Tensor::new(&[0.0], &[1]),
+            weight_t: None, // Will be set when set_weight() is called
             bias: None,
             in_features,
             out_features,
@@ -192,9 +204,12 @@ impl Module for Linear {
             (input.clone(), None)
         };
 
-        // Perform matmul with autograd: [batch, in_features] @ [in_features, out_features]
-        let weight_t = self.weight.transpose();
-        let output = reshaped.matmul(&weight_t);
+        // Use cached transposed weight (computed once during set_weight, not every forward)
+        // This eliminates ~450M element copies per forward pass for Qwen2-0.5B
+        let weight_t = self.weight_t.as_ref().unwrap_or_else(|| {
+            panic!("Linear layer has no cached weight_t. Call set_weight() first or use new().");
+        });
+        let output = reshaped.matmul(weight_t);
 
         // Add bias with autograd
         let output = match &self.bias {
@@ -224,6 +239,11 @@ impl Module for Linear {
             Some(b) => vec![&mut self.weight, b],
             None => vec![&mut self.weight],
         }
+    }
+
+    fn refresh_caches(&mut self) {
+        // Recompute cached transposed weight after parameters were modified
+        self.weight_t = Some(self.weight.transpose());
     }
 }
 
@@ -289,12 +309,12 @@ mod tests {
         // Create a layer with known weights to verify computation
         let mut layer = Linear::with_seed(3, 3, Some(42));
 
-        // Set weight to identity, bias to zero
+        // Set weight to identity, bias to zero (use set_weight to update cached transpose)
         let identity = Tensor::new(&[1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0], &[3, 3]);
         let zero_bias = Tensor::zeros(&[3]);
 
-        layer.weight = identity.requires_grad();
-        layer.bias = Some(zero_bias.requires_grad());
+        layer.set_weight(identity.requires_grad());
+        layer.set_bias(zero_bias.requires_grad());
 
         let x = Tensor::new(&[1.0, 2.0, 3.0], &[1, 3]);
         let output = layer.forward(&x);
@@ -312,9 +332,9 @@ mod tests {
     fn test_linear_with_bias() {
         let mut layer = Linear::with_seed(2, 2, Some(42));
 
-        // Set known weights
-        layer.weight = Tensor::new(&[1.0, 0.0, 0.0, 1.0], &[2, 2]).requires_grad();
-        layer.bias = Some(Tensor::new(&[10.0, 20.0], &[2]).requires_grad());
+        // Set known weights (use set_weight to update cached transpose)
+        layer.set_weight(Tensor::new(&[1.0, 0.0, 0.0, 1.0], &[2, 2]).requires_grad());
+        layer.set_bias(Tensor::new(&[10.0, 20.0], &[2]).requires_grad());
 
         let x = Tensor::new(&[1.0, 2.0], &[1, 2]);
         let output = layer.forward(&x);

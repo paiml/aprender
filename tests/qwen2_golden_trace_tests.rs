@@ -172,7 +172,7 @@ fn c6_rope_position_encoding() {
 
     // Same tokens but different positions
     let _input_ids = vec![42u32; 5];
-    let position_ids_start: Vec<usize> = (0..5).collect();   // [0,1,2,3,4]
+    let position_ids_start: Vec<usize> = (0..5).collect(); // [0,1,2,3,4]
     let position_ids_offset: Vec<usize> = (10..15).collect(); // [10,11,12,13,14]
 
     // let model = Qwen2Model::new(&config);
@@ -191,9 +191,9 @@ fn c6_rope_position_encoding() {
 /// Falsification: Output scale diverges.
 #[test]
 fn c7_rmsnorm_numerical_stability() {
-    use aprender::nn::RMSNorm;
     use aprender::autograd::Tensor;
     use aprender::nn::Module;
+    use aprender::nn::RMSNorm;
 
     // Test with extreme values
     let norm = RMSNorm::new(&[64]);
@@ -231,7 +231,10 @@ fn c8_swiglu_activation_properties() {
     let test_values = [-2.0_f32, -1.0, -0.5, 0.0, 0.5, 1.0, 2.0];
     let has_negative = test_values.iter().any(|&x| silu(x) < 0.0);
 
-    assert!(has_negative, "SiLU must produce negative values for some inputs");
+    assert!(
+        has_negative,
+        "SiLU must produce negative values for some inputs"
+    );
 
     // SiLU minimum is around x ≈ -1.28
     let minimum_region = silu(-1.28);
@@ -280,7 +283,7 @@ fn d3_eos_token_stops_generation() {
 
     // Verify EOS detection
     assert!(tokenizer.is_eos(151645)); // im_end
-    assert!(!tokenizer.is_eos(1));     // Regular token
+    assert!(!tokenizer.is_eos(1)); // Regular token
 }
 
 // ============================================================================
@@ -297,7 +300,9 @@ fn h10_chat_response_coherence() {
 
     assert!(!response.is_empty(), "Response must not be empty");
     assert!(
-        response.chars().all(|c| c.is_alphanumeric() || c.is_whitespace() || c.is_ascii_punctuation()),
+        response
+            .chars()
+            .all(|c| c.is_alphanumeric() || c.is_whitespace() || c.is_ascii_punctuation()),
         "Response must be readable text"
     );
 }

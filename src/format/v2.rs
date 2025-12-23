@@ -304,14 +304,12 @@ impl AprV2Header {
     /// Returns error if buffer is too small or magic is invalid.
     pub fn from_bytes(buf: &[u8]) -> Result<Self, V2FormatError> {
         if buf.len() < HEADER_SIZE_V2 {
-            return Err(V2FormatError::InvalidHeader(
-                "buffer too small".to_string(),
-            ));
+            return Err(V2FormatError::InvalidHeader("buffer too small".to_string()));
         }
 
-        let magic: [u8; 4] = buf[0..4].try_into().map_err(|_| {
-            V2FormatError::InvalidHeader("failed to read magic".to_string())
-        })?;
+        let magic: [u8; 4] = buf[0..4]
+            .try_into()
+            .map_err(|_| V2FormatError::InvalidHeader("failed to read magic".to_string()))?;
 
         // Check for v1 or v2 magic
         if magic != MAGIC_V2 && magic != MAGIC_V1 {
@@ -439,8 +437,7 @@ impl AprV2Metadata {
     /// # Errors
     /// Returns error if serialization fails.
     pub fn to_json(&self) -> Result<Vec<u8>, V2FormatError> {
-        serde_json::to_vec(self)
-            .map_err(|e| V2FormatError::MetadataError(e.to_string()))
+        serde_json::to_vec(self).map_err(|e| V2FormatError::MetadataError(e.to_string()))
     }
 
     /// Serialize to pretty JSON string
@@ -448,8 +445,7 @@ impl AprV2Metadata {
     /// # Errors
     /// Returns error if serialization fails.
     pub fn to_json_pretty(&self) -> Result<String, V2FormatError> {
-        serde_json::to_string_pretty(self)
-            .map_err(|e| V2FormatError::MetadataError(e.to_string()))
+        serde_json::to_string_pretty(self).map_err(|e| V2FormatError::MetadataError(e.to_string()))
     }
 
     /// Deserialize from JSON bytes
@@ -457,8 +453,7 @@ impl AprV2Metadata {
     /// # Errors
     /// Returns error if deserialization fails.
     pub fn from_json(data: &[u8]) -> Result<Self, V2FormatError> {
-        serde_json::from_slice(data)
-            .map_err(|e| V2FormatError::MetadataError(e.to_string()))
+        serde_json::from_slice(data).map_err(|e| V2FormatError::MetadataError(e.to_string()))
     }
 }
 
@@ -919,9 +914,7 @@ impl AprV2Reader {
     /// Returns error if parsing fails.
     pub fn from_bytes(data: &[u8]) -> Result<Self, V2FormatError> {
         if data.len() < HEADER_SIZE_V2 {
-            return Err(V2FormatError::InvalidHeader(
-                "file too small".to_string(),
-            ));
+            return Err(V2FormatError::InvalidHeader("file too small".to_string()));
         }
 
         // Parse header
@@ -1059,9 +1052,7 @@ impl<'a> AprV2ReaderRef<'a> {
     /// Returns error if parsing fails.
     pub fn from_bytes(data: &'a [u8]) -> Result<Self, V2FormatError> {
         if data.len() < HEADER_SIZE_V2 {
-            return Err(V2FormatError::InvalidHeader(
-                "file too small".to_string(),
-            ));
+            return Err(V2FormatError::InvalidHeader("file too small".to_string()));
         }
 
         // Parse header
@@ -1249,8 +1240,7 @@ impl ShardManifest {
     /// # Errors
     /// Returns error if serialization fails.
     pub fn to_json(&self) -> Result<String, V2FormatError> {
-        serde_json::to_string_pretty(self)
-            .map_err(|e| V2FormatError::MetadataError(e.to_string()))
+        serde_json::to_string_pretty(self).map_err(|e| V2FormatError::MetadataError(e.to_string()))
     }
 
     /// Deserialize from JSON
@@ -1258,8 +1248,7 @@ impl ShardManifest {
     /// # Errors
     /// Returns error if deserialization fails.
     pub fn from_json(json: &str) -> Result<Self, V2FormatError> {
-        serde_json::from_str(json)
-            .map_err(|e| V2FormatError::MetadataError(e.to_string()))
+        serde_json::from_str(json).map_err(|e| V2FormatError::MetadataError(e.to_string()))
     }
 }
 
@@ -1292,8 +1281,11 @@ impl std::fmt::Display for V2FormatError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::InvalidMagic(magic) => {
-                write!(f, "Invalid magic: {:02x}{:02x}{:02x}{:02x}",
-                    magic[0], magic[1], magic[2], magic[3])
+                write!(
+                    f,
+                    "Invalid magic: {:02x}{:02x}{:02x}{:02x}",
+                    magic[0], magic[1], magic[2], magic[3]
+                )
             }
             Self::InvalidHeader(msg) => write!(f, "Invalid header: {msg}"),
             Self::InvalidTensorIndex(msg) => write!(f, "Invalid tensor index: {msg}"),
@@ -1582,10 +1574,9 @@ mod tests {
             "custom_field".to_string(),
             serde_json::json!("custom_value"),
         );
-        metadata.custom.insert(
-            "nested".to_string(),
-            serde_json::json!({"key": "value"}),
-        );
+        metadata
+            .custom
+            .insert("nested".to_string(), serde_json::json!({"key": "value"}));
 
         let json = metadata.to_json().unwrap();
         let parsed = AprV2Metadata::from_json(&json).unwrap();

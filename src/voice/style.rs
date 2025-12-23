@@ -572,8 +572,9 @@ pub fn style_from_embedding(embedding: &SpeakerEmbedding, config: &StyleConfig) 
     }
 
     if rhythm_len > 0 {
-        rhythm[..rhythm_len]
-            .copy_from_slice(&emb_slice[prosody_len + timbre_len..prosody_len + timbre_len + rhythm_len]);
+        rhythm[..rhythm_len].copy_from_slice(
+            &emb_slice[prosody_len + timbre_len..prosody_len + timbre_len + rhythm_len],
+        );
     }
 
     StyleVector::new(prosody, timbre, rhythm)
@@ -735,16 +736,22 @@ mod tests {
         let style_a = StyleVector::new(vec![0.0, 0.0], vec![0.0, 0.0, 0.0], vec![0.0]);
         let style_b = StyleVector::new(vec![1.0, 1.0], vec![1.0, 1.0, 1.0], vec![1.0]);
 
-        let mid = style_a.interpolate(&style_b, 0.5).expect("interpolate failed");
+        let mid = style_a
+            .interpolate(&style_b, 0.5)
+            .expect("interpolate failed");
         assert!((mid.prosody()[0] - 0.5).abs() < 1e-6);
         assert!((mid.timbre()[0] - 0.5).abs() < 1e-6);
         assert!((mid.rhythm()[0] - 0.5).abs() < 1e-6);
 
         // Edge cases
-        let start = style_a.interpolate(&style_b, 0.0).expect("interpolate 0 failed");
+        let start = style_a
+            .interpolate(&style_b, 0.0)
+            .expect("interpolate 0 failed");
         assert!((start.prosody()[0] - 0.0).abs() < 1e-6);
 
-        let end = style_a.interpolate(&style_b, 1.0).expect("interpolate 1 failed");
+        let end = style_a
+            .interpolate(&style_b, 1.0)
+            .expect("interpolate 1 failed");
         assert!((end.prosody()[0] - 1.0).abs() < 1e-6);
     }
 
@@ -889,7 +896,9 @@ mod tests {
         let transfer = AutoVcTransfer::default_config();
         let source = vec![0.0_f32; 16000];
         let reference = vec![0.0_f32; 16000];
-        assert!(transfer.transfer_from_reference(&source, &reference).is_err());
+        assert!(transfer
+            .transfer_from_reference(&source, &reference)
+            .is_err());
     }
 
     #[test]

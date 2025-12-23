@@ -120,9 +120,7 @@ impl TtsConfig {
             ));
         }
         if self.n_mels == 0 {
-            return Err(SpeechError::InvalidConfig(
-                "n_mels must be > 0".to_string(),
-            ));
+            return Err(SpeechError::InvalidConfig("n_mels must be > 0".to_string()));
         }
         if self.hop_size == 0 {
             return Err(SpeechError::InvalidConfig(
@@ -608,7 +606,10 @@ impl HifiGanVocoder {
     /// Create new HiFi-GAN vocoder
     #[must_use]
     pub fn new(sample_rate: u32, n_mels: usize) -> Self {
-        Self { sample_rate, n_mels }
+        Self {
+            sample_rate,
+            n_mels,
+        }
     }
 
     /// Create with default settings (22050Hz, 80 mels)
@@ -907,8 +908,7 @@ mod tests {
     #[test]
     fn test_vits_unsupported_language() {
         let synth = VitsSynthesizer::default_config();
-        let request =
-            SynthesisRequest::new("Hello".to_string()).with_language("fr".to_string());
+        let request = SynthesisRequest::new("Hello".to_string()).with_language("fr".to_string());
         let result = synth.synthesize(&request);
         assert!(matches!(result, Err(SpeechError::InvalidConfig(_))));
     }

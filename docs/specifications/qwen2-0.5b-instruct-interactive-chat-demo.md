@@ -1,17 +1,16 @@
 # Qwen2-0.5B-Instruct Interactive Chat Demo Specification
 
-**Version**: 1.3.1
-**Status**: North Star Demo Specification (Full Lifecycle + Probador)
+**Version**: 1.6.0
+**Status**: North Star Demo Specification (Full Lifecycle + Probador + Deep Profiling + Performance Grading)
 **Created**: 2025-12-23
 **Authors**: Aprender Core Team
-**GitHub Issue**: https://github.com/paiml/interactive.paiml.com/issues/19
 **Upstream Dependency**: https://github.com/paiml/aprender
 
 ---
 
 ## Executive Summary
 
-This specification defines the implementation plan for a **real, functional** Qwen2-0.5B-Instruct interactive chat demo running in the browser via WebAssembly. The current implementation at `interactive.paiml.com/wasm/qwen-demo/` is a non-functional stub that pattern-matches keywords and returns canned responses. This specification replaces that stub with actual transformer inference.
+This specification defines the implementation plan for a **real, functional** Qwen2-0.5B-Instruct interactive chat demo running locally via CLI. Optional WASM compilation target for portable execution via `wasmtime` (zero JavaScript). This ensures **Sovereign AI**: your model, your hardware, your data.
 
 **Critical Finding**: The existing demo is deceptive—it simulates intelligence without performing any inference. This violates the Toyota Way principle of *Genchi Genbutsu* (go and see the real thing) and must be remediated. We are adopting a **"Zero Stub Policy"** for this deliverable.
 
@@ -31,7 +30,7 @@ This specification defines the implementation plan for a **real, functional** Qw
 | Generation | ❌ Canned responses | ✅ Autoregressive sampling with Perplexity Monitoring |
 | CLI Interface | ❌ None | ✅ `apr chat` REPL command with Introspection |
 | Visual Control | ❌ None | ✅ Logit & Attention Inspection (Glass Box) |
-| Deployment | ❌ None | ✅ CLI Binary, WASM, Server — all from single .apr |
+| Deployment | ❌ None | ✅ CLI Binary, WASM Module, REST Server — all from single .apr |
 
 ---
 
@@ -83,12 +82,12 @@ This demo serves as the **"North Star"** for the entire APR ecosystem, demonstra
 │          ▼                    ▼                    ▼                         │
 │   ┌─────────────┐      ┌─────────────┐      ┌─────────────┐                 │
 │   │ apr compile │      │  apr serve  │      │ WASM Build  │                 │
-│   │ (binary)    │      │  (server)   │      │ (browser)   │                 │
+│   │ (binary)    │      │  (server)   │      │ (wasmtime)  │                 │
 │   └──────┬──────┘      └──────┬──────┘      └──────┬──────┘                 │
 │          ▼                    ▼                    ▼                         │
 │   ┌─────────────┐      ┌─────────────┐      ┌─────────────┐                 │
-│   │ ./qwen-cli  │      │ :8080/chat  │      │ Browser Tab │                 │
-│   │ (portable)  │      │ (REST API)  │      │ (offline)   │                 │
+│   │ ./qwen-cli  │      │ :8080/chat  │      │ wasmtime    │                 │
+│   │ (native)    │      │ (REST API)  │      │ qwen.wasm   │                 │
 │   └─────────────┘      └─────────────┘      └─────────────┘                 │
 │                                                                              │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -159,7 +158,7 @@ apr convert qwen2-0.5b.apr --quantize int8 -o qwen2-0.5b-int8.apr
 # ✓ Size: 1.18 GB → 590 MB (2.0x reduction)
 # ✓ Estimated PPL increase: <2%
 
-# Quantize to INT4 (4x smaller, for edge/browser)
+# Quantize to INT4 (4x smaller, for edge devices)
 apr convert qwen2-0.5b.apr --quantize int4 -o qwen2-0.5b-int4.apr
 # ✓ Quantized: float16 → int4 (GPTQ)
 # ✓ Size: 1.18 GB → 316 MB (3.7x reduction)
@@ -262,16 +261,15 @@ curl -X POST http://localhost:8080/v1/chat/completions \
     -d '{"messages": [{"role": "user", "content": "Hello!"}]}'
 
 # ─────────────────────────────────────────────────────────────────────────────
-# OPTION C: WebAssembly for Browser
+# OPTION C: WebAssembly for Portable Execution (Zero JavaScript)
 # ─────────────────────────────────────────────────────────────────────────────
-apr compile qwen2-0.5b-int4.apr --target wasm32-unknown-unknown -o qwen.wasm
+apr compile qwen2-0.5b-int4.apr --target wasm32-wasi -o qwen.wasm
 # ✓ WASM module: qwen.wasm (4.2 MB)
-# ✓ Model: qwen2-0.5b-int4.apr (316 MB, served separately)
-# ✓ Bindings: qwen_bg.js, qwen.d.ts
+# ✓ Pure Rust → WASM (no JS bindings)
+# ✓ Runs via wasmtime, wasmer, or any WASI-compatible runtime
 
-# Host files
-aws s3 cp qwen.wasm s3://cdn/wasm/
-aws s3 cp qwen2-0.5b-int4.apr s3://cdn/models/
+# Run with wasmtime (portable across Linux/macOS/Windows)
+wasmtime qwen.wasm --dir=. -- --model qwen2-0.5b-int4.apr "Hello!"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # OPTION D: Export for Other Runtimes
@@ -292,7 +290,8 @@ apr export qwen2-0.5b-int4.apr --format onnx -o model.onnx
 |--------|---------|--------|------|---------|----------|
 | **CLI Binary** | `apr compile` | `./qwen-chat` | 318 MB | 1.2s | Desktop apps, scripts |
 | **REST Server** | `apr serve` | `:8080/v1/...` | N/A | 0.8s | Backend services |
-| **WASM Browser** | `apr compile --target wasm32` | `.wasm` + `.apr` | 320 MB | 1.8s | Web apps, offline |
+| **WASM (WASI)** | `apr compile --target wasm32-wasi` | `.wasm` | 4 MB | 2.0s | Portable CLI, sandboxed |
+| **Local Web** | `apr serve --web` | `localhost:8080` | 4 MB | 2.0s | Browser UI, offline demo |
 | **GGUF Export** | `apr export --format gguf` | `.gguf` | 316 MB | varies | llama.cpp, ollama |
 | **Edge/Mobile** | `apr compile --target aarch64` | binary | 318 MB | 2.5s | iOS, Android, RPi |
 
@@ -317,12 +316,12 @@ apr export qwen2-0.5b-int4.apr --format onnx -o model.onnx
 3. [Architecture Overview](#3-architecture-overview)
 4. [Implementation Components](#4-implementation-components)
 5. [CLI Interactive Mode](#5-cli-interactive-mode)
-6. [Browser WASM Demo](#6-browser-wasm-demo)
-7. [Deep Probador Testing: WASM at 100%](#7-deep-probador-testing-wasm-at-100)
+6. [WASM Portable Build](#6-wasm-portable-build)
+7. [Deep Probador Testing](#7-deep-probador-testing)
 8. [Performance Requirements](#8-performance-requirements)
 9. [Peer-Reviewed Citations](#9-peer-reviewed-citations)
 10. [Toyota Way Alignment](#10-toyota-way-alignment)
-11. [155-Point Popperian Falsification Checklist](#11-155-point-popperian-falsification-checklist)
+11. [180-Point Popperian Falsification Checklist](#11-180-point-popperian-falsification-checklist)
 12. [Implementation Roadmap](#12-implementation-roadmap)
 13. [Risk Analysis](#13-risk-analysis)
 14. [References](#14-references)
@@ -333,21 +332,23 @@ apr export qwen2-0.5b-int4.apr --format onnx -o model.onnx
 
 ### 1.1 Current State Analysis
 
-**Location**: `interactive.paiml.com/wasm/qwen-demo/src/lib.rs` lines 252-267
+**Goal**: Build a local-first chat demo that runs real Qwen2 inference on localhost.
+
+**Anti-Pattern to Avoid** (stub implementations):
 
 ```rust
-// CURRENT IMPLEMENTATION (BROKEN/DECEPTIVE)
+// ANTI-PATTERN: Pattern matching simulates intelligence (FORBIDDEN)
 fn generate_demo_response(&self, prompt: &str) -> String {
     let prompt_lower = prompt.to_lowercase();
-    // DECEPTION: Pattern matching simulates intelligence
+    // DECEPTION: Pattern matching is NOT inference
     if prompt_lower.contains("capital") && prompt_lower.contains("france") {
         "The capital of France is Paris...".to_string()
-    } 
+    }
     // ...
 }
 ```
 
-**Deficiencies**:
+**Deficiencies of Stub Approach**:
 
 | Issue | Severity | Impact |
 |-------|----------|--------|
@@ -449,7 +450,7 @@ Per Kleppmann et al. (2019) "Local-First Software":
 │       └─ Methods: Tensor::add/mul/matmul/sigmoid/exp            │
 │                                                                  │
 │   Priority 3: WASM SIMD128                                      │
-│       └─ Use when: Browser/WASM target                          │
+│       └─ Use when: WASM target (wasm32-wasi)                     │
 │       └─ Auto-selected by Trueno for wasm32 target              │
 │                                                                  │
 │   ❌ FORBIDDEN: Naive Rust iterators                            │
@@ -600,6 +601,595 @@ renacer detect-naive model.apr
 - Mutation testing covers native paths
 - **Build fails if no `.apr` file is present (no fallback)**
 
+#### 2.4.3 apr profile — Deep Idiomatic Profiling (Any Model)
+
+**MANDATE**: The `apr profile` command provides deep, architecture-aware profiling that works on ANY model format, leveraging the sovereign AI stack's knowledge of compute hierarchies to identify true hotspots.
+
+**Instrumentation & Observability Mandate**:
+To support this command, the codebase MUST implement deep instrumentation:
+1.  **Span Emission**: Every logical block (Attention, MLP, RMSNorm, MatMul) MUST emit a `renacer::span!`.
+2.  **Metadata**: Spans MUST attach input tensor shapes `(B, T, D)` to enable Roofline efficiency calculations.
+3.  **Context**: The `apr chat` REPL must initialize a new Trace ID for each user turn.
+
+**Why a Dedicated Profile Command**:
+- **Model-Agnostic**: Works with `.apr`, `.safetensors`, `.gguf` — not just our format
+- **Stack-Aware**: Understands Trueno's SIMD/GPU dispatch to identify REAL bottlenecks
+- **Renacer Integration**: Uses battle-tested profiling primitives from renacer
+- **Falsifiable Output**: Produces machine-readable reports for CI enforcement
+- **Green AI**: Measures energy consumption (Joules/Token) via RAPL/PowerCap
+
+**Command Syntax**:
+```bash
+# Basic profiling (identifies top 5 hotspots)
+apr profile model.apr
+apr profile model.safetensors
+apr profile model.gguf
+
+# Granular layer-by-layer analysis
+apr profile model.apr --granular
+
+# Enable Energy/Power profiling (requires sudo or capabilities)
+apr profile model.apr --energy
+
+# Compare against HuggingFace baseline (differential profiling)
+apr profile model.apr --compare-hf Qwen/Qwen2-0.5B-Instruct
+
+# Output formats
+apr profile model.apr --format json > profile.json
+apr profile model.apr --format flamegraph > profile.svg
+
+# Profile specific operations
+apr profile model.apr --focus attention
+apr profile model.apr --focus mlp
+apr profile model.apr --focus matmul
+
+# Detect naive implementations (GFLOPS threshold check)
+apr profile model.apr --detect-naive --threshold 10
+```
+
+**Output Format (Human-Readable)**:
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│                      apr profile: model.apr                               │
+│                      Architecture: qwen2 (24 layers)                      │
+│                      Backend: Trueno SIMD (AVX2)                          │
+├──────────────────────────────────────────────────────────────────────────┤
+│                                                                           │
+│  HOTSPOT ANALYSIS (Forward Pass, seq_len=128)                            │
+│  ════════════════════════════════════════════                            │
+│                                                                           │
+│  #1 MLP Projections       2199ms (57.1%)  ██████████████████░░░░  BOUND  │
+│     └─ gate_up_proj:      1450ms          Compute-bound (42 GFLOPS)      │
+│     └─ down_proj:          749ms          Compute-bound (48 GFLOPS)      │
+│                                                                           │
+│  #2 LM Head               1311ms (34.0%)  ███████████░░░░░░░░░░░  BOUND  │
+│     └─ matmul [H,V]:      1311ms          Memory-bound (12 GFLOPS)       │
+│                                                                           │
+│  #3 Attention              338ms  (8.8%)  ███░░░░░░░░░░░░░░░░░░░  OK     │
+│     └─ QKV proj:           201ms          Compute-bound (45 GFLOPS)      │
+│     └─ softmax:             42ms          Memory-bound (8 GFLOPS)        │
+│     └─ attn matmul:         95ms          Compute-bound (52 GFLOPS)      │
+│                                                                           │
+│  #4 Embedding                4ms  (0.1%)  ░░░░░░░░░░░░░░░░░░░░░░  OK     │
+│  #5 RMSNorm                  3ms  (0.1%)  ░░░░░░░░░░░░░░░░░░░░░░  OK     │
+│                                                                           │
+├──────────────────────────────────────────────────────────────────────────┤
+│  ROOFLINE ANALYSIS (Williams et al., 2009)                               │
+│  ═════════════════════════════════════════                               │
+│                                                                           │
+│  Peak Theoretical: 256 GFLOPS (AVX2 @ 3.2GHz)                            │
+│  Achieved:         42 GFLOPS (16.4% efficiency)                          │
+│  Bottleneck:       Memory bandwidth (LM head is vocabulary-bound)        │
+│                                                                           │
+│  ⚠ WARNING: LM head at 12 GFLOPS (memory-bound)                          │
+│     Recommendation: Vocabulary pruning or speculative decoding           │
+│                                                                           │
+├──────────────────────────────────────────────────────────────────────────┤
+│  ENERGY EFFICIENCY (Green AI)                                            │
+│  ════════════════════════════                                            │
+│                                                                           │
+│  Total Energy:     15.4 J                                                │
+│  Efficiency:       5.2 J/token                                           │
+│  Carbon Impact:    ~0.01g CO2e (grid estimate)                           │
+│  Method:           RAPL (CPU Package + DRAM)                             │
+│                                                                           │
+├──────────────────────────────────────────────────────────────────────────┤
+│  NAIVE DETECTION (Graham et al., 1982)                                   │
+│  ═════════════════════════════════════                                   │
+│                                                                           │
+│  ✓ No naive loops detected in hot path                                   │
+│  ✓ All matmul operations use SIMD backend                                │
+│  ✓ No .data().iter() patterns in inference code                          │
+│                                                                           │
+├──────────────────────────────────────────────────────────────────────────┤
+│  SUMMARY                                                                  │
+│  ═══════                                                                  │
+│  Total forward pass:  3855ms                                             │
+│  Throughput:          0.26 tok/s                                         │
+│  Memory peak:         2.1 GB                                             │
+│  Efficiency grade:    B (compute-bound, not naive)                       │
+│                                                                           │
+│  Top optimization targets:                                                │
+│  1. MLP gate_up_proj: Consider fused kernel                              │
+│  2. LM head: Vocabulary sharding or speculative decode                   │
+│  3. Attention softmax: Fused attention (FlashAttention)                  │
+│                                                                           │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+**JSON Output Schema** (for CI integration):
+```json
+{
+  "model": "model.apr",
+  "architecture": "qwen2",
+  "backend": "trueno_simd_avx2",
+  "timestamp": "2025-12-23T10:30:00Z",
+  "config": {
+    "seq_len": 128,
+    "batch_size": 1
+  },
+  "summary": {
+    "total_ms": 3855.2,
+    "throughput_tok_s": 0.26,
+    "memory_peak_bytes": 2147483648,
+    "efficiency_grade": "B"
+  },
+  "energy": {
+    "total_joules": 15.4,
+    "joules_per_token": 5.2,
+    "co2_grams": 0.01,
+    "method": "rapl"
+  },
+  "hotspots": [
+    {
+      "name": "mlp",
+      "time_ms": 2199.95,
+      "percent": 57.1,
+      "gflops": 42.3,
+      "bound": "compute",
+      "status": "ok"
+    },
+    {
+      "name": "lm_head",
+      "time_ms": 1311.55,
+      "percent": 34.0,
+      "gflops": 12.1,
+      "bound": "memory",
+      "status": "warning"
+    }
+  ],
+  "roofline": {
+    "peak_gflops": 256,
+    "achieved_gflops": 42,
+    "efficiency_percent": 16.4,
+    "bottleneck": "memory_bandwidth"
+  },
+  "naive_detected": false,
+  "recommendations": [
+    "MLP gate_up_proj: Consider fused kernel",
+    "LM head: Vocabulary sharding or speculative decode"
+  ]
+}
+```
+
+**Roofline Model Integration (Williams et al., 2009)**:
+
+The `apr profile` command implements Roofline analysis to distinguish between:
+- **Compute-bound operations**: GFLOPS limited by CPU/GPU compute capacity
+- **Memory-bound operations**: GFLOPS limited by memory bandwidth
+
+```
+                    ROOFLINE MODEL
+    GFLOPS │
+       256 ├─────────────────────────────────┬─ Peak (AVX2)
+           │                              ╱  │
+           │                           ╱     │
+       128 │                        ╱        │  ← Compute ceiling
+           │                     ╱           │
+           │                  ╱ ┌────────────┤
+        64 │               ╱    │ MLP (42)   │  ← Actual ops
+           │            ╱       ├────────────┤
+        32 │         ╱          │            │
+           │      ╱             │            │
+        16 │   ╱   ┌────────────┤            │
+           │╱      │ LM Head(12)│            │  ← Memory bound
+         0 └───────┴────────────┴────────────┴───────────────
+           0       1       2       4       8      16
+                  Arithmetic Intensity (FLOPS/byte)
+```
+
+**Gprof-Style Call Graph (Graham et al., 1982)**:
+```bash
+apr profile model.apr --callgraph
+
+# Output:
+# forward() [3855ms, 100%]
+#   ├── embed_tokens() [4ms, 0.1%]
+#   ├── layers[0..23].forward() [2543ms, 66.0%]
+#   │     ├── input_layernorm() [1ms]
+#   │     ├── self_attn() [338ms, 8.8%]
+#   │     │     ├── qkv_proj() [201ms]
+#   │     │     ├── attention() [95ms]
+#   │     │     └── out_proj() [42ms]
+#   │     ├── post_attention_layernorm() [1ms]
+#   │     └── mlp() [2199ms, 57.1%]          ← HOTSPOT
+#   │           ├── gate_up_proj() [1450ms]  ← OPTIMIZE
+#   │           └── down_proj() [749ms]
+#   ├── norm() [3ms, 0.1%]
+#   └── lm_head() [1311ms, 34.0%]            ← HOTSPOT
+```
+
+**Differential Profiling (McKeeman, 1998)**:
+```bash
+# Compare performance against HuggingFace baseline
+apr profile model.apr --compare-hf Qwen/Qwen2-0.5B-Instruct
+
+# Output:
+# ┌─────────────────────────────────────────────────────────────────┐
+# │ Operation          │ HF (ms) │ APR (ms) │ Ratio │ Status       │
+# ├─────────────────────────────────────────────────────────────────┤
+# │ embed_lookup       │    1.8  │    2.3   │ 1.28x │ ✅ PASS      │
+# │ attention (avg)    │   28.4  │   30.8   │ 1.08x │ ✅ PASS      │
+# │ mlp (avg)          │   32.1  │   35.5   │ 1.11x │ ✅ PASS      │
+# │ lm_head            │   45.2  │   54.6   │ 1.21x │ ✅ PASS      │
+# │ total forward      │  185.0  │  191.2   │ 1.03x │ ✅ PASS      │
+# └─────────────────────────────────────────────────────────────────┘
+# All operations within 2x threshold ✓
+```
+
+**CI Integration**:
+```yaml
+# .github/workflows/performance.yml
+- name: Profile Model Performance
+  run: |
+    apr profile model.apr --format json > profile.json
+
+    # Fail if any operation is naive (< 10 GFLOPS on matmul)
+    apr profile model.apr --detect-naive --threshold 10 --fail-on-naive
+
+    # Fail if > 2x slower than HuggingFace baseline
+    apr profile model.apr --compare-hf Qwen/Qwen2-0.5B-Instruct --fail-threshold 2x
+
+- name: Upload Profile Artifacts
+  uses: actions/upload-artifact@v4
+  with:
+    name: profile-report
+    path: profile.json
+```
+
+**Profiling Methodology Citations**:
+| Method | Citation | Application |
+|--------|----------|-------------|
+| **Roofline Model** | Williams et al. (2009) | Compute vs memory bound classification |
+| **Call Graph Profiling** | Graham et al. (1982) | Hierarchical time attribution |
+| **Differential Testing** | McKeeman (1998) | Baseline comparison methodology |
+| **Statistical Profiling** | Anderson & Lazowska (1990) | Sampling-based overhead reduction |
+| **Performance Counters** | Eyerman & Eeckhout (2008) | Hardware event instrumentation |
+| **Performance Hints** | Dean & Ghemawat (2025) | Allocation patterns, data structure selection |
+
+#### 2.4.4 Performance Grading (Dean & Ghemawat, 2025)
+
+**MANDATE**: `apr profile` implements performance pattern detection based on Google's battle-tested [Abseil Performance Hints](https://abseil.io/fast/hints.html) by Jeff Dean & Sanjay Ghemawat.
+
+**Static Performance Grade Categories (Code Quality - 20 points)**:
+
+*Evaluated via AST analysis of the source code.*
+
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│  STATIC PERFORMANCE GRADE (Dean & Ghemawat, 2025)                        │
+│  ════════════════════════════════════════════════                        │
+│                                                                           │
+│  Category                          Score   Status                        │
+│  ─────────────────────────────────────────────────────────               │
+│  1. Memory Allocation Patterns     5/6     ⚠ Missing arena allocation   │
+│     ├─ Inlined storage (SmallVec)  ✓ 2/2                                │
+│     ├─ Arena allocation            ✗ 0/2   Use bumpalo for batch ops    │
+│     └─ Pre-allocation              ✓ 2/2   with_capacity() detected     │
+│                                                                           │
+│  2. Data Structure Selection       5/5     ✓ Optimal                    │
+│     ├─ Compact representations     ✓ 2/2   #[repr(C)] on Tensor         │
+│     ├─ Batched storage             ✓ 2/2   Vec over LinkedList          │
+│     └─ Index vs pointer            ✓ 1/1   Index-based graphs           │
+│                                                                           │
+│  3. Algorithmic Efficiency         4/4     ✓ Optimal                    │
+│     ├─ Bulk API patterns           ✓ 2/2   extend() over push() loop    │
+│     └─ Fast path annotations       ✓ 2/2   #[cold] on error paths       │
+│                                                                           │
+│  4. Synchronization Quality        2/3     ⚠ Lock granularity          │
+│     ├─ Lock granularity            ✗ 0/1   Global mutex detected        │
+│     ├─ Lock-free patterns          ✓ 1/1   atomic usage correct         │
+│     └─ Critical section            ✓ 1/1   No I/O inside locks          │
+│                                                                           │
+│  5. Code Size Awareness            2/2     ✓ Optimal                    │
+│     ├─ Inline discipline           ✓ 1/1   No large #[inline(always)]   │
+│     └─ Generic bloat               ✓ 1/1   Monomorphization controlled  │
+│                                                                           │
+│  ─────────────────────────────────────────────────────────               │
+│  TOTAL PERFORMANCE GRADE:          18/20   Grade: A (90%)               │
+│                                                                           │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+**Detection Patterns (AST-Based)**:
+
+```rust
+// ═══════════════════════════════════════════════════════════════════════
+// 1. MEMORY ALLOCATION PATTERNS (6 pts)
+// ═══════════════════════════════════════════════════════════════════════
+
+// GOOD: Inlined storage (2 pts) - avoids heap for small collections
+use smallvec::SmallVec;
+let tags: SmallVec<[Tag; 4]> = SmallVec::new();  // ✓ Detected
+
+// GOOD: Arena allocation (2 pts) - batch allocations
+use bumpalo::Bump;
+let arena = Bump::new();
+let nodes: &mut [Node] = arena.alloc_slice_fill_default(1000);  // ✓ Detected
+
+// GOOD: Pre-allocation (2 pts) - avoids realloc
+let mut results = Vec::with_capacity(items.len());  // ✓ Detected
+
+// BAD: Repeated allocation (0 pts)
+let mut results = Vec::new();
+for item in items {
+    results.push(process(item));  // ✗ Flagged: realloc in loop
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 2. DATA STRUCTURE SELECTION (5 pts)
+// ═══════════════════════════════════════════════════════════════════════
+
+// GOOD: Compact representation (2 pts)
+#[repr(C)]
+struct Tensor {
+    data: *const f32,
+    shape: [usize; 4],
+    strides: [usize; 4],
+}  // ✓ Detected: #[repr(C)]
+
+// GOOD: Batched storage (2 pts) - flat over pointer-heavy
+let items: Vec<Item> = vec![];  // ✓ Preferred
+// vs
+let items: LinkedList<Item> = LinkedList::new();  // ✗ Flagged: pointer-heavy
+
+// GOOD: Index-based graphs (1 pt)
+struct Graph {
+    nodes: Vec<Node>,
+    edges: Vec<(usize, usize)>,  // ✓ Index-based
+}
+// vs
+struct GraphBad {
+    root: Box<Node>,  // ✗ Flagged: Box<Node> pattern
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 3. ALGORITHMIC EFFICIENCY (4 pts)
+// ═══════════════════════════════════════════════════════════════════════
+
+// GOOD: Bulk API (2 pts)
+results.extend(items.iter().map(process));  // ✓ Detected: extend()
+
+// BAD: Single-element in loop (0 pts)
+for item in items {
+    results.push(process(item));  // ✗ Flagged: push in loop
+}
+
+// GOOD: Fast path annotation (2 pts)
+#[cold]
+#[inline(never)]
+fn handle_error(e: Error) -> ! {
+    panic!("Critical error: {e}");
+}  // ✓ Detected: #[cold] on error path
+
+// ═══════════════════════════════════════════════════════════════════════
+// 4. SYNCHRONIZATION QUALITY (3 pts)
+// ═══════════════════════════════════════════════════════════════════════
+
+// GOOD: Sharded locks (1 pt)
+use dashmap::DashMap;
+let cache: DashMap<K, V> = DashMap::new();  // ✓ Detected: DashMap
+
+// GOOD: Lock-free (1 pt)
+use crossbeam::queue::ArrayQueue;
+let queue: ArrayQueue<Task> = ArrayQueue::new(1024);  // ✓ Detected
+
+// BAD: I/O inside critical section (0 pts)
+{
+    let guard = mutex.lock();
+    std::fs::write("log.txt", data)?;  // ✗ Flagged: I/O inside lock
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 5. CODE SIZE AWARENESS (2 pts)
+// ═══════════════════════════════════════════════════════════════════════
+
+// WARNING: Large inline function (deduct 1 pt)
+#[inline(always)]
+fn process_megabytes(data: &[u8]) -> Vec<u8> {
+    // 200+ lines of code
+}  // ✗ Warning: #[inline(always)] on large function
+
+// GOOD: Controlled monomorphization
+fn process<T: AsRef<[u8]>>(data: T) -> Vec<u8> {
+    process_bytes(data.as_ref())  // ✓ Delegates to concrete impl
+}
+fn process_bytes(data: &[u8]) -> Vec<u8> { ... }  // Concrete, not generic
+```
+
+**Performance Crate Detection**:
+
+`apr profile` awards points for adoption of performance-oriented crates:
+
+| Crate | Category | Points | Rationale |
+|-------|----------|--------|-----------|
+| `smallvec` | Inlined storage | +2 | Avoid heap for <N elements |
+| `arrayvec` | Inlined storage | +2 | Stack-allocated Vec |
+| `tinyvec` | Inlined storage | +2 | Zero-dependency small vec |
+| `bumpalo` | Arena allocation | +2 | Batch allocations |
+| `typed-arena` | Arena allocation | +2 | Type-safe arenas |
+| `dashmap` | Lock sharding | +1 | Concurrent HashMap |
+| `parking_lot` | Synchronization | +1 | Faster mutexes |
+| `crossbeam` | Lock-free | +1 | Lock-free data structures |
+
+**JSON Output Extension**:
+
+```json
+{
+  "performance_grade": {
+    "total_score": 35,
+    "max_score": 40,
+    "grade": "A",
+    "percent": 87.5,
+    "static_grade": {
+      "score": 18,
+      "max": 20,
+      "grade": "A",
+      "categories": {
+        "memory_allocation": {
+          "score": 5,
+          "max": 6,
+          "issues": ["Missing arena allocation for batch tensor ops"]
+        },
+        "data_structures": {
+          "score": 5,
+          "max": 5,
+          "issues": []
+        },
+        "algorithmic_efficiency": {
+          "score": 4,
+          "max": 4,
+          "issues": []
+        },
+        "synchronization": {
+          "score": 2,
+          "max": 3,
+          "issues": ["Global mutex in KVCache - consider sharding"]
+        },
+        "code_size": {
+          "score": 2,
+          "max": 2,
+          "issues": []
+        }
+      },
+      "detected_patterns": {
+        "good": [
+          "Vec::with_capacity() in 12 locations",
+          "#[repr(C)] on Tensor struct",
+          "#[cold] on 5 error handlers"
+        ],
+        "warnings": [
+          "push() in loop at src/models/qwen2/mod.rs:234",
+          "Global Mutex at src/cache.rs:45"
+        ]
+      }
+    },
+    "runtime_grade": {
+      "score": 17,
+      "max": 20,
+      "grade": "A-",
+      "categories": {
+        "roofline_efficiency": {
+          "score": 3,
+          "max": 4,
+          "value": "42%",
+          "target": ">60%"
+        },
+        "throughput": {
+          "score": 3,
+          "max": 4,
+          "value": "24 tok/s",
+          "target": ">30 tok/s"
+        },
+        "latency_ttft": {
+          "score": 4,
+          "max": 4,
+          "value": "450ms",
+          "target": "<500ms"
+        },
+        "memory_fragmentation": {
+          "score": 4,
+          "max": 4,
+          "value": "5%",
+          "target": "<10%"
+        },
+        "energy_efficiency": {
+          "score": 3,
+          "max": 4,
+          "value": "2.5 J/tok",
+          "target": "<2 J/tok"
+        }
+      }
+    }
+  }
+}
+```
+
+**Runtime Performance Grade Categories (Execution Quality - 20 points)**:
+
+*Evaluated via dynamic profiling of the running model.*
+
+| Category | Weight | Criteria (Grade A / 4pts) | Criteria (Grade F / 0pts) |
+|----------|--------|---------------------------|---------------------------|
+| **1. Roofline Efficiency** | 4 pts | > 60% of theoretical peak | < 10% of theoretical peak |
+| **2. Throughput (Tok/s)** | 4 pts | > 30 tok/s (CPU), > 100 (GPU) | < 5 tok/s |
+| **3. Latency (TTFT)** | 4 pts | < 500 ms | > 2000 ms |
+| **4. Memory Fragmentation** | 4 pts | < 10% overhead | > 50% overhead |
+| **5. Energy Efficiency** | 4 pts | < 2 J/token | > 10 J/token |
+
+**Composite Score Calculation**:
+`Total Score = (Static Score * 0.5) + (Runtime Score * 0.5)`
+- **A+**: 38-40 points (State of the Art)
+- **A**: 35-37 points (Production Grade)
+- **B**: 30-34 points (Solid)
+- **C**: 20-29 points (Needs Optimization)
+- **F**: < 20 points (Failed)
+
+**Latency Reference Table (Dean & Ghemawat, 2025)**:
+
+For context, `apr profile` includes these latency numbers in recommendations:
+
+| Operation | Latency | Implication |
+|-----------|---------|-------------|
+| L1 cache reference | 1 ns | Target for hot data |
+| L2 cache reference | 4 ns | Acceptable for warm data |
+| L3 cache reference | 40 ns | Consider prefetch |
+| Main memory | 100 ns | Avoid random access |
+| SSD read | 100 μs | Batch I/O operations |
+| HDD seek | 10 ms | Absolutely avoid in hot path |
+| Network round trip | 500 μs - 150 ms | Async/batch all network |
+
+**Model-Agnostic Architecture Detection**:
+
+`apr profile` auto-detects model architecture from any format:
+
+```rust
+// Architecture detection priority:
+// 1. Explicit metadata in .apr files
+// 2. Tensor name patterns (e.g., "model.layers.0.self_attn.q_proj")
+// 3. Shape inference (hidden_size, num_heads, etc.)
+// 4. Config files (config.json for SafeTensors)
+
+fn detect_architecture(path: &Path) -> Architecture {
+    match path.extension() {
+        Some("apr") => Architecture::from_apr_metadata(path),
+        Some("safetensors") => Architecture::from_tensor_names(path),
+        Some("gguf") => Architecture::from_gguf_metadata(path),
+        _ => Architecture::Unknown
+    }
+}
+```
+
+**Supported Architectures**:
+| Architecture | Tensor Pattern | Layer Components |
+|--------------|---------------|------------------|
+| `qwen2` | `model.layers.*.self_attn.*` | Attention + MLP + RMSNorm |
+| `llama` | `model.layers.*.self_attn.*` | Attention + MLP + RMSNorm |
+| `mistral` | `model.layers.*.self_attn.*` | Attention + MLP + RMSNorm |
+| `gpt2` | `h.*.attn.*` | Attention + MLP + LayerNorm |
+| `bert` | `encoder.layer.*.attention.*` | Attention + FFN + LayerNorm |
+| `whisper` | `encoder.layers.*.self_attn.*` | Encoder-Decoder + Cross-Attn |
+
 ---
 
 ## 3. Architecture Overview
@@ -615,8 +1205,8 @@ renacer detect-naive model.apr
 │  │                        User Interface Layer                         │ │
 │  │                                                                      │ │
 │  │   ┌─────────────┐              ┌─────────────────────────────────┐  │ │
-│  │   │ CLI REPL    │              │   Browser WASM Demo             │  │ │
-│  │   │ `apr chat`  │              │   interactive.paiml.com         │  │ │
+│  │   │ CLI REPL    │              │   WASM Module (wasmtime)        │  │ │
+│  │   │ `apr chat`  │              │   Zero JavaScript               │  │ │
 │  │   └──────┬──────┘              └───────────────┬─────────────────┘  │ │
 │  │          │                                      │                    │ │
 │  └──────────┼──────────────────────────────────────┼────────────────────┘ │
@@ -759,81 +1349,268 @@ Assistant: 4
 
 ---
 
-## 6. Browser WASM Demo
+## 6. WASM Portable Build
 
-### 6.2 WASM Bindings (Enhanced)
+**Target**: `wasm32-wasi` for portable execution via wasmtime/wasmer. Zero JavaScript.
+
+### 6.1 Building WASM Module
+
+```bash
+# Build WASM module (WASI target, not browser)
+apr compile model.apr --target wasm32-wasi -o qwen.wasm
+
+# Run with wasmtime (sandboxed, portable)
+wasmtime qwen.wasm --dir=. -- "What is 2+2?"
+
+# Or with wasmer
+wasmer run qwen.wasm --dir=. -- "What is 2+2?"
+```
+
+### 6.2 WASI Interface
 
 ```rust
-#[wasm_bindgen]
-impl Qwen2WASM {
-    /// Generate with introspection
-    #[wasm_bindgen]
-    pub fn generate_debug(&mut self, prompt: &str, callback: &js_sys::Function) {
-        // ...
-        for token_id in self.model.generate_iter(&ids, &self.config) {
-            // Return not just text, but top-k probabilities for UI visualization
-            let info = self.model.get_last_token_info(); 
-            let _ = callback.call1(&JsValue::NULL, &JsValue::from_serde(&info).unwrap());
+// Pure Rust, no wasm_bindgen, no JavaScript
+fn main() {
+    let args: Vec<String> = std::env::args().collect();
+    let prompt = args.get(1).expect("Usage: qwen.wasm <prompt>");
+
+    let model = Qwen2Model::load("model.apr").expect("Failed to load model");
+    let response = model.generate(prompt, &GenerationConfig::default());
+
+    println!("{}", response);
+}
+```
+
+### 6.3 Why WASI over Browser WASM
+
+| Aspect | Browser WASM | WASI (wasmtime) |
+|--------|--------------|-----------------|
+| JavaScript | Required (wasm-bindgen) | None |
+| File I/O | Emulated/limited | Native via WASI |
+| Sandboxing | Browser sandbox | Capability-based |
+| Portability | Browser-only | Any WASI runtime |
+| Complexity | High (JS glue) | Low (pure Rust) |
+
+### 6.4 WASM Component Model (wasip2)
+
+For advanced component composition, use the WASM Component Model:
+
+```bash
+# Build as WASM Component (wasip2 target)
+cargo build --target wasm32-wasip2 --release
+
+# Component produces: target/wasm32-wasip2/release/qwen_chat.wasm
+```
+
+**WIT Interface Definition** (`wit/qwen.wit`):
+
+```wit
+package aprender:qwen;
+
+interface model {
+    record generation-config {
+        max-tokens: u32,
+        temperature: f32,
+        top-k: u32,
+    }
+
+    resource model {
+        constructor(path: string);
+        generate: func(prompt: string, config: generation-config) -> string;
+        tokenize: func(text: string) -> list<u32>;
+    }
+}
+
+world qwen-chat {
+    import wasi:filesystem/types;
+    import wasi:cli/stdin;
+    import wasi:cli/stdout;
+
+    export model;
+}
+```
+
+### 6.5 Probador WASM Runner
+
+Probador embeds wasmtime to execute and verify WASM components directly:
+
+```bash
+# Run WASM component via probador
+apr probador wasm run qwen.wasm --input "What is 2+2?"
+
+# Verify against golden traces
+apr probador wasm verify qwen.wasm --golden golden/
+
+# Profile WASM execution
+apr probador wasm profile qwen.wasm --input "Hello" --warmup 3 --iterations 10
+
+# Component testing with assertions
+apr probador wasm test qwen.wasm --playbook playbooks/qwen-happy-path.yaml
+```
+
+**Probador WASM Runner Implementation** (like probar/simular):
+
+```rust
+// crates/apr-cli/src/commands/probador/wasm.rs
+use wasmtime::{Config, Engine, Linker, Module, Store};
+use wasmtime_wasi::WasiCtxBuilder;
+
+pub struct WasmRunner {
+    engine: Engine,
+    linker: Linker<WasiState>,
+}
+
+impl WasmRunner {
+    pub fn new() -> Result<Self> {
+        let mut config = Config::new();
+        config.wasm_component_model(true);
+
+        let engine = Engine::new(&config)?;
+        let mut linker = Linker::new(&engine);
+        wasmtime_wasi::add_to_linker(&mut linker)?;
+
+        Ok(Self { engine, linker })
+    }
+
+    /// Run WASM component with input prompt
+    pub fn run(&self, wasm_path: &Path, input: &str) -> Result<String> {
+        let module = Module::from_file(&self.engine, wasm_path)?;
+
+        let wasi = WasiCtxBuilder::new()
+            .inherit_stdio()
+            .args(&[wasm_path.to_str().unwrap(), input])?
+            .preopened_dir(".", ".")?
+            .build();
+
+        let mut store = Store::new(&self.engine, WasiState { wasi });
+        let instance = self.linker.instantiate(&mut store, &module)?;
+
+        // Call _start (WASI entry point)
+        let start = instance.get_typed_func::<(), ()>(&mut store, "_start")?;
+        start.call(&mut store, ())?;
+
+        Ok(store.data().output.clone())
+    }
+
+    /// Verify WASM output against golden traces
+    pub fn verify(&self, wasm_path: &Path, golden_dir: &Path) -> Result<VerifyReport> {
+        let golden_inputs = load_golden_inputs(golden_dir)?;
+        let mut report = VerifyReport::new();
+
+        for (input, expected_output) in golden_inputs {
+            let actual = self.run(wasm_path, &input)?;
+            report.add_case(&input, &expected_output, &actual);
         }
+
+        Ok(report)
     }
 }
 ```
 
+**Playbook Example for WASM Testing**:
+
+```yaml
+# playbooks/qwen-wasm-verify.yaml
+name: "Qwen WASM Component Verification"
+runner: wasm
+component: qwen.wasm
+
+setup:
+  - action: load
+    path: "model.apr"
+    dir_mount: "."
+
+cases:
+  - name: "Basic arithmetic"
+    input: "What is 2+2?"
+    expect_contains: "4"
+    max_latency_ms: 5000
+
+  - name: "Greeting response"
+    input: "Hello!"
+    expect_not_empty: true
+
+  - name: "Golden trace match"
+    input: "Explain quantum computing"
+    golden: "golden/quantum-computing.txt"
+    tolerance: 0.01  # Allow 1% logit deviation
+
+assertions:
+  - all_cases_pass: true
+  - avg_latency_ms: "<3000"
+  - memory_mb: "<512"
+```
+
+**Running Playbook**:
+
+```bash
+# Execute WASM playbook via probador
+apr probador run playbooks/qwen-wasm-verify.yaml
+
+# Output:
+# ✓ Basic arithmetic: PASS (1.2s)
+# ✓ Greeting response: PASS (0.8s)
+# ✓ Golden trace match: PASS (2.1s, deviation: 0.003)
+#
+# Summary: 3/3 passed
+# Avg latency: 1.37s
+# Peak memory: 342MB
+```
+
 ---
 
-## 7. Deep Probador Testing: WASM at 100%
+## 7. Deep Probador Testing
 
-This section specifies the **probador** (tester) methodology for achieving 100% verified WASM functionality through coverage, playbooks, and pixel-level visual regression.
+This section specifies the **probador** (tester) methodology for achieving 100% verified functionality through coverage, integration tests, and golden trace verification.
 
 ### 7.1 Testing Philosophy: The Three Pillars
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                     PROBADOR: Three Pillars of WASM Testing                  │
+│                     PROBADOR: Three Pillars of Testing                       │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                              │
 │   ┌─────────────────────┐   ┌─────────────────────┐   ┌─────────────────┐   │
-│   │   PILAR 1: CÓDIGO   │   │   PILAR 2: FLUJO    │   │  PILAR 3: PIXEL │   │
-│   │   (Code Coverage)   │   │    (Playbooks)      │   │   (Visual Reg)  │   │
+│   │   PILAR 1: CÓDIGO   │   │   PILAR 2: GOLDEN   │   │  PILAR 3: INTEG │   │
+│   │   (Code Coverage)   │   │    (Trace Verify)   │   │   (E2E Tests)   │   │
 │   ├─────────────────────┤   ├─────────────────────┤   ├─────────────────┤   │
-│   │ • 100% line coverage│   │ • Scripted scenarios│   │ • Screenshot diff│   │
-│   │ • Branch coverage   │   │ • User journeys     │   │ • Heatmap compare│   │
-│   │ • Mutation testing  │   │ • Dead code removal │   │ • Animation check│   │
-│   │ • Dead code removal │   │ • Edge cases        │   │ • Responsiveness │   │
+│   │ • 95%+ line coverage│   │ • PyTorch reference │   │ • CLI workflows │   │
+│   │ • Branch coverage   │   │ • Logit comparison  │   │ • WASI execution│   │
+│   │ • Mutation testing  │   │ • Perplexity check  │   │ • Server API    │   │
+│   │ • Dead code removal │   │ • Tensor checksums  │   │ • Import/Export │   │
 │   └─────────────────────┘   └─────────────────────┘   └─────────────────┘   │
 │            │                         │                         │             │
 │            └─────────────────────────┼─────────────────────────┘             │
 │                                      ▼                                       │
 │                         ┌─────────────────────────┐                          │
 │                         │   PROBADOR REPORT       │                          │
-│                         │   ✅ Coverage: 100%     │                          │
-│                         │   ✅ Playbooks: 50/50   │                          │
-│                         │   ✅ Pixels: 0 diff     │                          │
+│                         │   ✅ Coverage: 95%+     │                          │
+│                         │   ✅ Golden: MATCH      │                          │
+│                         │   ✅ E2E: 50/50 PASS    │                          │
 │                         └─────────────────────────┘                          │
 │                                                                              │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 7.2 Pilar 1: Code Coverage (100% Requirement)
+### 7.2 Pilar 1: Code Coverage (95%+ Requirement)
 
-**Target**: 100% line coverage for all WASM-compiled Rust code.
+**Target**: 95%+ line coverage for all Rust code.
 
 #### Coverage Configuration
 
 ```toml
-# wasm/qwen-demo/Cargo.toml
+# Cargo.toml
 [package.metadata.cargo-llvm-cov]
-target = "wasm32-unknown-unknown"
 branch = true
-fail-under-lines = 100
-fail-under-branches = 95
+fail-under-lines = 95
+fail-under-branches = 90
 ```
 
 #### Coverage Commands
 
 ```bash
-# Generate WASM coverage report
-cargo llvm-cov --target wasm32-unknown-unknown --html -o coverage/
+# Generate coverage report
+cargo llvm-cov --html -o coverage/
 
 # Enforce 100% threshold (CI gate)
 cargo llvm-cov --target wasm32-unknown-unknown --fail-under-lines 100
@@ -881,65 +1658,48 @@ cargo mutants --target wasm32-unknown-unknown --timeout 300
 name: "Qwen Chat Happy Path"
 description: "Complete chat session with model loading and generation"
 timeout: 60s
-browser: chromium
+runner: cli
 
 steps:
-  - name: "Load Demo Page"
-    action: navigate
-    url: "http://localhost:3000/wasm/qwen-demo/"
-    wait_for: "#model-status:contains('Ready')"
+  - name: "Validate Model"
+    action: run
+    command: "apr validate model.apr"
+    expect_exit: 0
+    expect_output: "VALID"
+
+  - name: "Run Chat Generation"
+    action: run
+    command: "apr chat model.apr --max-tokens 50"
+    stdin: "What is 2+2?"
     timeout: 30s
-
-  - name: "Verify Model Loaded"
-    action: assert
-    selector: "#model-info"
-    contains: "Qwen2-0.5B-Instruct"
-
-  - name: "Enter Prompt"
-    action: type
-    selector: "#prompt-input"
-    text: "What is 2+2?"
-
-  - name: "Submit Prompt"
-    action: click
-    selector: "#submit-btn"
-
-  - name: "Wait for Response"
-    action: wait_for
-    selector: "#response-text"
-    timeout: 10s
+    expect_exit: 0
 
   - name: "Verify Response Contains Answer"
     action: assert
-    selector: "#response-text"
-    matches: "4|four|Four"
+    output_matches: "4|four|Four"
 
-  - name: "Verify Top-K Display"
-    action: assert
-    selector: "#top-k-probs"
-    exists: true
-    min_children: 3
+  - name: "Run WASI Version"
+    action: run
+    command: "wasmtime qwen.wasm --dir=. -- 'What is 2+2?'"
+    expect_exit: 0
+    expect_output: "4"
 
-  - name: "Verify Metrics Displayed"
-    action: assert
-    selector: "#metrics"
-    contains: "tok/s"
-
-  - name: "Screenshot Final State"
-    action: screenshot
-    path: "artifacts/happy-path-final.png"
+  - name: "Verify Inspect Mode"
+    action: run
+    command: "apr chat model.apr --inspect --max-tokens 10"
+    stdin: "Hello"
+    expect_output: "tok/s"
 ```
 
 #### Playbook Categories (50 Required)
 
 | Category | Count | Description |
 |----------|-------|-------------|
-| **Happy Path** | 10 | Normal user flows (chat, inspect, settings) |
-| **Error Handling** | 10 | OOM, network failure, invalid input |
+| **Happy Path** | 10 | Normal CLI flows (chat, inspect, validate) |
+| **Error Handling** | 10 | OOM, missing file, invalid input |
 | **Edge Cases** | 10 | Empty prompt, max tokens, special chars, Unicode |
-| **Performance** | 5 | Load time, generation speed, memory |
-| **Accessibility** | 5 | Keyboard nav, screen reader, contrast |
-| **Browser Compat** | 5 | Chrome, Firefox, Safari, Edge, mobile |
+| **Performance** | 10 | Generation speed, memory, throughput |
+| **WASI Execution** | 5 | wasmtime, wasmer compatibility |
 | **Regression** | 5 | Previously fixed bugs must not recur |
 | **TOTAL** | **50** | |
 
@@ -964,171 +1724,143 @@ make playbooks-gate  # Exits non-zero if any fail
 ```yaml
 # playbooks/error-oom.yaml
 name: "OOM Handling"
+runner: cli
 steps:
-  - action: navigate
-    url: "http://localhost:3000/wasm/qwen-demo/?force_oom=true"
-  - action: wait_for
-    selector: "#error-banner"
-    timeout: 15s
-  - action: assert
-    selector: "#error-banner"
-    contains: "memory"
-  - action: assert
-    selector: "#retry-btn"
-    exists: true
+  - name: "Trigger OOM condition"
+    action: run
+    command: "apr chat model.apr --max-tokens 100000"
+    stdin: "Generate a very long response"
+    expect_exit: 1
+    expect_stderr: "memory"
 
 # playbooks/edge-unicode.yaml
 name: "Unicode Input"
+runner: cli
 steps:
-  - action: type
-    selector: "#prompt-input"
-    text: "日本語で返答してください 🇯🇵"
-  - action: click
-    selector: "#submit-btn"
-  - action: wait_for
-    selector: "#response-text"
+  - name: "Unicode prompt"
+    action: run
+    command: "apr chat model.apr --max-tokens 20"
+    stdin: "日本語で返答してください 🇯🇵"
+    expect_exit: 0
   - action: assert
-    selector: "#response-text"
-    not_empty: true
+    output_not_empty: true
 
 # playbooks/perf-first-token.yaml
 name: "First Token Latency"
+runner: cli
 steps:
-  - action: navigate
-    url: "http://localhost:3000/wasm/qwen-demo/"
-  - action: wait_for
-    selector: "#model-status:contains('Ready')"
-  - action: type
-    selector: "#prompt-input"
-    text: "Hello"
-  - action: start_timer
-    name: "first_token"
-  - action: click
-    selector: "#submit-btn"
-  - action: wait_for
-    selector: "#response-text:not(:empty)"
-  - action: stop_timer
-    name: "first_token"
-  - action: assert_timer
-    name: "first_token"
-    max_ms: 2000
+  - name: "Measure TTFT"
+    action: run
+    command: "apr chat model.apr --max-tokens 1 --inspect"
+    stdin: "Hello"
+    timeout: 5s
+    expect_exit: 0
+  - action: assert
+    output_contains: "tok/s"
 ```
 
-### 7.4 Pilar 3: Pixel-Level Visual Regression
+### 7.4 Pilar 3: Golden Trace Verification
 
-**Goal**: Detect any unintended visual changes at the pixel level.
+**Goal**: Verify inference output matches PyTorch reference implementation.
 
-#### Probar Integration
+#### Golden Trace Generation
 
 ```bash
-# Generate golden screenshots (baseline)
-apr probar golden wasm/qwen-demo/ -o golden/
+# Generate golden traces from PyTorch (reference)
+python scripts/generate_golden_traces.py \
+    --model Qwen/Qwen2-0.5B-Instruct \
+    --prompts test_prompts.txt \
+    --output golden/
 
-# Compare current against golden
-apr probar compare wasm/qwen-demo/ --golden golden/ -o diff/
-
-# View diff report
-open diff/report.html
+# Compare Rust implementation against golden
+apr test-model model.apr --golden-trace golden/trace.json
 ```
 
-#### Visual Test Categories
+#### Verification Categories
 
 | Test | Golden File | Tolerance | Description |
 |------|-------------|-----------|-------------|
-| **Initial Load** | `golden/initial-load.png` | 0.0% | Empty state before model loads |
-| **Model Ready** | `golden/model-ready.png` | 0.1% | Model loaded, ready to chat |
-| **Generating** | `golden/generating.png` | 0.5% | Animation during generation |
-| **Response** | `golden/response.png` | 0.1% | Chat response displayed |
-| **Top-K Viz** | `golden/top-k.png` | 0.0% | Probability visualization |
-| **Attention Map** | `golden/attention.png` | 1.0% | Attention heatmap |
-| **Error State** | `golden/error.png` | 0.0% | Error banner display |
-| **Mobile View** | `golden/mobile.png` | 0.5% | Responsive mobile layout |
+| **Embedding** | `golden/embed.json` | 1e-5 | Token embedding vectors |
+| **Layer 0 Output** | `golden/layer_0.json` | 1e-4 | First transformer layer |
+| **Attention Scores** | `golden/attn_scores.json` | 1e-4 | QK^T / sqrt(d) values |
+| **Final Logits** | `golden/logits.json` | 1e-3 | Output probability distribution |
+| **Perplexity** | `golden/ppl.json` | 5% | Generation quality metric |
+| **Top-K Tokens** | `golden/top_k.json` | exact | Token IDs must match |
 
-#### Heatmap Comparison (Tensor Visualization)
+#### Tensor Comparison
 
 ```bash
-# Export layer activations as heatmaps
-apr probar model.apr --export-heatmaps -o heatmaps/
+# Export intermediate tensors during inference
+apr trace model.apr --prompt "Hello" --export tensors/
 
-# Compare heatmaps (for regression in model behavior)
-apr probar diff heatmaps/v1/ heatmaps/v2/ --tolerance 0.01
+# Compare against golden reference
+apr diff tensors/ golden/ --tolerance 1e-4
 
 # Output:
-# Layer 0: ✅ 0.002% deviation
-# Layer 1: ✅ 0.001% deviation
+# embed_tokens:    ✅ max_diff=2.3e-6 (tol: 1e-5)
+# layer.0.attn:    ✅ max_diff=8.1e-5 (tol: 1e-4)
+# layer.0.mlp:     ✅ max_diff=4.2e-5 (tol: 1e-4)
 # ...
-# Layer 23: ✅ 0.003% deviation
-# Attention: ✅ 0.005% deviation
-# PASSED: All layers within 0.01 tolerance
+# layer.23.output: ✅ max_diff=9.8e-4 (tol: 1e-3)
+# lm_head.logits:  ✅ max_diff=1.2e-3 (tol: 1e-3)
+# PASSED: All tensors within tolerance
 ```
 
-#### Pixel Diff Configuration
+#### Golden Trace Configuration
 
 ```yaml
-# probar.yaml
-visual_regression:
-  tool: pixelmatch  # or playwright, percy, chromatic
+# golden-trace.yaml
+verification:
+  prompts:
+    - "What is 2+2?"
+    - "Hello, how are you?"
+    - "The capital of France is"
 
-  thresholds:
-    default: 0.1%        # Max 0.1% pixel difference
-    animation: 0.5%      # Allow animation variance
-    heatmap: 1.0%        # Slight variance in visualizations
+  checkpoints:
+    - layer: embedding
+      tolerance: 1e-5
+    - layer: "layers.*.output"
+      tolerance: 1e-4
+    - layer: logits
+      tolerance: 1e-3
 
-  viewports:
-    - name: desktop
-      width: 1920
-      height: 1080
-    - name: laptop
-      width: 1366
-      height: 768
-    - name: tablet
-      width: 768
-      height: 1024
-    - name: mobile
-      width: 375
-      height: 812
-
-  browsers:
-    - chromium
-    - firefox
-    - webkit
-
-  ignore_regions:
-    - selector: "#timestamp"    # Dynamic content
-    - selector: "#tok-per-sec"  # Varies by hardware
+  metrics:
+    perplexity:
+      baseline: 8.5
+      max_deviation: 5%
+    top_k_accuracy:
+      k: 5
+      threshold: 0.95
 ```
 
 #### CI/CD Integration
 
 ```yaml
-# .github/workflows/visual-regression.yml
-name: Visual Regression
+# .github/workflows/golden-trace.yml
+name: Golden Trace Verification
 on: [push, pull_request]
 
 jobs:
-  visual-test:
+  verify:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build WASM
-        run: make build-wasm
-
-      - name: Start Dev Server
-        run: make serve &
+      - name: Build
+        run: cargo build --release -p apr-cli
 
       - name: Run Playbooks
         run: make playbooks
 
-      - name: Run Visual Regression
-        run: apr probar compare --golden golden/ --ci
+      - name: Verify Golden Traces
+        run: apr test-model model.apr --golden-trace golden/
 
-      - name: Upload Diff Artifacts
+      - name: Upload Trace Artifacts
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: visual-diff
-          path: diff/
+          name: trace-diff
+          path: trace-diff/
 ```
 
 ### 7.5 Probador Command Reference
@@ -1148,23 +1880,22 @@ apr probador playbook run playbooks/     # Run all playbooks
 apr probador playbook run playbooks/happy-path.yaml  # Single playbook
 apr probador playbook list               # List all playbooks
 apr probador playbook validate           # Check playbook syntax
-apr probador playbook record             # Record new playbook from browser
+apr probador playbook create             # Create new playbook template
 
 # ═══════════════════════════════════════════════════════════════════════════
-# VISUAL REGRESSION
+# GOLDEN TRACE VERIFICATION
 # ═══════════════════════════════════════════════════════════════════════════
-apr probador golden create               # Create golden screenshots
-apr probador golden update               # Update specific golden
-apr probador visual compare              # Compare against golden
-apr probador visual diff                 # Generate diff report
-apr probador visual approve                  # Approve new baseline
+apr probador golden generate             # Generate golden traces from PyTorch
+apr probador golden verify               # Verify against golden traces
+apr probador golden update               # Update golden after approved change
+apr probador trace diff                  # Show tensor differences
 
 # ═══════════════════════════════════════════════════════════════════════════
-# HEATMAPS (Tensor Visualization)
+# TENSOR ANALYSIS
 # ═══════════════════════════════════════════════════════════════════════════
-apr probador heatmap export model.apr    # Export layer heatmaps
-apr probador heatmap compare v1/ v2/     # Compare two versions
-apr probador heatmap animate model.apr   # Generate layer animation
+apr probador tensor export model.apr     # Export layer tensors
+apr probador tensor compare v1/ v2/      # Compare two versions
+apr probador tensor stats model.apr      # Show tensor statistics
 
 # ═══════════════════════════════════════════════════════════════════════════
 # FULL SUITE
@@ -1179,7 +1910,7 @@ apr probador ci                          # CI mode (strict, no-color)
 make probador                                # Full suite
 make probador-coverage                       # Coverage only
 make probador-playbooks                      # Playbooks only
-make probador-visual                         # Visual regression only
+make probador-golden                         # Golden trace verification only
 make probador-report                         # Generate report
 ```
 
@@ -1233,6 +1964,9 @@ In the spirit of Karl Popper, we do not simply "believe" our code works. We veri
 | **WASM SIMD** | Haas et al. (2017) | **Instruction Check**: Verify usage of `v128.load` and `f32x4.mul` in hot loops. |
 | **Optimized Compute** | Williams et al. (2009) | **Roofline Analysis**: Verify GFLOPS > 80% of theoretical peak for given arithmetic intensity. |
 | **Correctness** | McKeeman (1998) | **Differential Testing**: Compare `apr` output vs `PyTorch` output for identical inputs. |
+| **Call Graph Profiling** | Graham et al. (1982) | **Time Attribution**: Verify hierarchical timing sums to 100% of measured wall time. |
+| **Statistical Sampling** | Anderson & Lazowska (1990) | **Low Overhead**: Sampling must add < 5% overhead to baseline execution time. |
+| **Hardware Counters** | Eyerman & Eeckhout (2008) | **Counter Accuracy**: Performance counters must correlate with wall-clock measurements (r > 0.95). |
 
 ### 9.2 The Role of "Golden Traces"
 Golden traces serve as our **falsifiers**. A golden trace is a serialized recording of every intermediate tensor value from a known-correct implementation (e.g., the official HuggingFace implementation). If our implementation deviates from the golden trace (beyond floating-point noise), our implementation is **proven false** and must be rejected.
@@ -1263,7 +1997,7 @@ Golden traces serve as our **falsifiers**. A golden trace is a serialized record
 
 ---
 
-## 11. 155-Point Popperian Falsification Checklist
+## 11. 180-Point Popperian Falsification Checklist
 
 **Methodology**: Claims must be falsifiable. We specify the condition that PROVES the system is broken/fake.
 
@@ -1320,14 +2054,20 @@ Golden traces serve as our **falsifiers**. A golden trace is a serialized record
 | E3 | Stats | Token/sec counter is static/fake | ⬜ |
 | E4 | Mem Usage | Usage reported matches OS monitor ±10% | ⬜ |
 
-### Section F: WASM/Browser (10 points)
+### Section F: WASM/WASI & Probador (20 points)
 
 | # | Claim | Falsification Condition (Fail if...) | Status |
 |---|-------|------------------------|--------|
-| F1 | Integration | Web Worker crash on model load | ⬜ |
-| F2 | Responsiveness | Main thread blocked > 16ms (UI jank) | ⬜ |
-| F3 | Streaming | Text appears in chunks > 50ms | ⬜ |
-| F4 | Fallback | No error message if WebGPU/SIMD missing | ⬜ |
+| F1 | WASI Build | `cargo build --target wasm32-wasi` fails | ⬜ |
+| F2 | Wasmtime Run | `wasmtime qwen.wasm` fails to execute | ⬜ |
+| F3 | File I/O | WASI cannot read model.apr from `--dir` | ⬜ |
+| F4 | Output | WASM module fails to produce valid text output | ⬜ |
+| **F5** | **Component Build** | `cargo build --target wasm32-wasip2` fails | ⬜ |
+| **F6** | **WIT Interface** | WIT file missing or invalid | ⬜ |
+| **F7** | **Probador Run** | `apr probador wasm run qwen.wasm` fails | ⬜ |
+| **F8** | **Probador Verify** | `apr probador wasm verify --golden` deviation > tolerance | ⬜ |
+| **F9** | **Playbook Execute** | `apr probador run playbook.yaml` fails to parse/execute | ⬜ |
+| **F10** | **WASM Perf** | WASM inference > 3x slower than native | ⬜ |
 
 ### Section G: Code Quality (15 points)
 
@@ -1369,7 +2109,7 @@ Golden traces serve as our **falsifiers**. A golden trace is a serialized record
 | **H17** | **Serve API** | `apr serve` fails to start or /health returns error | ⬜ |
 | H18 | OpenAI Compat | `/v1/chat/completions` returns invalid response | ⬜ |
 | **H19** | **WASM Compile** | `apr compile --target wasm32` fails | ⬜ |
-| H20 | WASM Loads | WASM module fails to initialize in browser | ⬜ |
+| H20 | WASM Runs | `wasmtime qwen.wasm` fails to run | ⬜ |
 | H21 | Export GGUF | `apr export --format gguf` fails | ⬜ |
 | H22 | Export SafeTensors | `apr export --format safetensors` fails | ⬜ |
 | H23 | Merge Models | `apr merge` fails to produce valid output | ⬜ |
@@ -1398,20 +2138,20 @@ Golden traces serve as our **falsifiers**. A golden trace is a serialized record
 | I7 | Happy Path (10) | Any happy path scenario fails | ⬜ |
 | I8 | Error Handling (10) | Error states not properly displayed | ⬜ |
 | I9 | Edge Cases (10) | Unicode, empty input, max tokens fail | ⬜ |
-| I10 | Browser Compat (5) | Chrome, Firefox, or Safari fails | ⬜ |
+| I10 | WASI Compat (5) | wasmtime or wasmer fails to run WASM | ⬜ |
 | I11 | Performance (5) | First token > 2s in playbook timer | ⬜ |
 | I12 | Accessibility (5) | Keyboard nav or screen reader fails | ⬜ |
 | I13 | Regression (5) | Previously fixed bug recurs | ⬜ |
 
-#### Pilar 3: Visual Regression (5 points)
+#### Pilar 3: Golden Trace Verification (5 points)
 
 | # | Claim | Falsification Condition (Fail if...) | Status |
 |---|-------|------------------------|--------|
-| **I14** | **Zero Pixel Diff** | Any screenshot diff > threshold | ⬜ |
-| I15 | Golden Baseline | Golden screenshots missing or stale | ⬜ |
-| I16 | Responsive Views | Mobile/tablet views differ from golden | ⬜ |
-| I17 | Heatmap Match | Layer heatmaps deviate > 1% from reference | ⬜ |
-| **I18** | **Cross-Browser** | Visual diff between Chrome/Firefox/Safari | ⬜ |
+| **I14** | **Golden Trace Match** | Any tensor diff > tolerance | ⬜ |
+| I15 | Golden Baseline | Golden traces missing or stale | ⬜ |
+| I16 | Perplexity Check | Perplexity deviates > 5% from baseline | ⬜ |
+| I17 | Logit Match | Final logits deviate > 1e-3 from reference | ⬜ |
+| **I18** | **Cross-Runtime** | Output differs between native and wasmtime | ⬜ |
 
 #### Probador Integration (Bonus, not counted)
 
@@ -1419,6 +2159,60 @@ Golden traces serve as our **falsifiers**. A golden trace is a serialized record
 |---|-------|------------------------|--------|
 | I19 | Report Generated | `apr probador report` fails | ⬜ |
 | I20 | CI Integration | GitHub Actions workflow fails | ⬜ |
+
+### Section J: Deep Profiling — `apr profile` Verification (15 points)
+
+*This section validates the `apr profile` command for model-agnostic performance analysis.*
+
+#### J1: Command Execution (5 points)
+
+| # | Claim | Falsification Condition (Fail if...) | Status |
+|---|-------|------------------------|--------|
+| **J1** | **Profile Runs** | `apr profile model.apr` exits non-zero or produces empty output | ⬜ |
+| J2 | Multi-Format | `apr profile model.safetensors` or `apr profile model.gguf` fails | ⬜ |
+| J3 | JSON Output | `apr profile --format json` produces invalid JSON | ⬜ |
+| J4 | Flamegraph | `apr profile --format flamegraph` produces invalid SVG | ⬜ |
+| J5 | Architecture Detection | Auto-detected architecture mismatches actual model type | ⬜ |
+
+#### J2: Roofline Analysis (Graham et al., Williams et al.) (5 points)
+
+| # | Claim | Falsification Condition (Fail if...) | Status |
+|---|-------|------------------------|--------|
+| **J6** | **GFLOPS Computation** | Reported GFLOPS differs > 20% from manual calculation | ⬜ |
+| J7 | Bound Classification | Compute-bound op classified as memory-bound or vice versa | ⬜ |
+| J8 | Peak Detection | Peak theoretical GFLOPS doesn't match hardware spec | ⬜ |
+| J9 | Efficiency Grade | Grade doesn't reflect actual compute utilization | ⬜ |
+| **J10** | **Naive Detection** | `.data().iter()` loop not flagged as naive (< 10 GFLOPS threshold) | ⬜ |
+
+#### J3: Differential Profiling (McKeeman, 1998) (5 points)
+
+| # | Claim | Falsification Condition (Fail if...) | Status |
+|---|-------|------------------------|--------|
+| **J11** | **HF Baseline Compare** | `apr profile --compare-hf` fails to produce comparison table | ⬜ |
+| J12 | Threshold Enforcement | 3x slowdown not flagged as failure (threshold: 2x) | ⬜ |
+| J13 | Time Attribution | Layer times don't sum to total (±5% tolerance) | ⬜ |
+| J14 | Call Graph | `--callgraph` output missing parent-child relationships | ⬜ |
+| **J15** | **CI Integration** | `--fail-on-naive` doesn't exit non-zero when naive detected | ⬜ |
+
+#### J4: Energy Efficiency / Green AI (5 points)
+
+| # | Claim | Falsification Condition (Fail if...) | Status |
+|---|-------|------------------------|--------|
+| **J16** | **Energy Measurement** | `apr profile --energy` fails on Linux with RAPL support | ⬜ |
+| J17 | J/Token Calculation | Reported J/token differs > 30% from wall-power meter | ⬜ |
+| J18 | Graceful Degradation | `--energy` crashes on unsupported platform (should warn) | ⬜ |
+| J19 | JSON Energy Fields | `energy` object missing from JSON when `--energy` specified | ⬜ |
+| **J20** | **Reproducibility** | Same workload produces > 20% variance in energy across runs | ⬜ |
+
+#### J5: Performance Grading — Dean & Ghemawat (5 points)
+
+| # | Claim | Falsification Condition (Fail if...) | Status |
+|---|-------|------------------------|--------|
+| **J21** | **Grade Computation** | `apr profile --perf-grade` fails or produces invalid grade | ⬜ |
+| J22 | Pre-allocation Detection | `Vec::with_capacity()` not detected in codebase | ⬜ |
+| J23 | Naive Loop Detection | `push() in loop` pattern not flagged as warning | ⬜ |
+| J24 | Crate Detection | Performance crates (smallvec, bumpalo) not detected in Cargo.toml | ⬜ |
+| **J25** | **JSON Performance Fields** | `performance_grade` object missing from JSON output | ⬜ |
 
 ### Checklist Summary
 
@@ -1429,13 +2223,14 @@ Golden traces serve as our **falsifiers**. A golden trace is a serialized record
 | C: Forward Pass | 25 | **"No Fake" Zone** — Golden trace verification |
 | D: Generation | 20 | Quality & perplexity |
 | E: Visual Control | 15 | Inspection & transparency |
-| F: WASM/Browser | 10 | Web deployment |
+| F: WASM/WASI | 10 | Portable execution |
 | G: Code Quality | 15 | Engineering standards + Native Library Mandate |
 | **H: Full Lifecycle** | **25** | **North Star workflow** |
-| **I: Probador Testing** | **25** | **Three Pillars: Coverage, Playbooks, Pixels** |
-| **TOTAL** | **155** | |
+| **I: Probador Testing** | **25** | **Three Pillars: Coverage, Golden Traces, E2E** |
+| **J: Deep Profiling** | **25** | **Roofline + Differential + Naive + Energy + Perf Grade** |
+| **TOTAL** | **180** | |
 
-**Passing Threshold**: 155/155 (Zero Defects / Zero Stubs / Zero Ad-Hoc / Complete Workflow / Full Probador)
+**Passing Threshold**: 180/180 (Zero Defects / Zero Stubs / Zero Ad-Hoc / Complete Workflow / Full Probador / Verified Profiling / Green AI / Performance Grading)
 
 ---
 
@@ -1471,11 +2266,11 @@ Golden traces serve as our **falsifiers**. A golden trace is a serialized record
    - Health check at `/health`
    - Verify: curl test returns valid JSON response
 
-3. **WASM Browser Module**
-   - `apr compile --target wasm32-unknown-unknown`
-   - Web Worker isolation for non-blocking UI
-   - SharedArrayBuffer for zero-copy model loading
-   - Verify: Loads in Chrome/Firefox/Safari
+3. **WASM Module (WASI)**
+   - `apr compile --target wasm32-wasi`
+   - Pure Rust, zero JavaScript dependencies
+   - WASI filesystem access for model loading
+   - Verify: Runs in wasmtime/wasmer
 
 4. **Export Formats**
    - `apr export --format gguf` (llama.cpp compatible)
@@ -1518,7 +2313,7 @@ Golden traces serve as our **falsifiers**. A golden trace is a serialized record
 |------|--------|------------|
 | **Fake Stub Regression** | Critical | **Jidoka**: CI fails on perplexity regression. **Visual Control**: UI shows logits. |
 | **Quantization Quality** | High | Evaluate PPL loss; Allow 8-bit fallback. |
-| **Browser Memory OOM** | High | Streaming loading; Aggressive GC; 4-bit strict. |
+| **WASM Memory OOM** | High | Streaming loading; Memory limits; 4-bit strict. |
 | **Cross-compile Failures** | Medium | Pre-built binaries in CI; Docker build containers. |
 | **OpenAI API Incompatibility** | Medium | Test against official OpenAI Python client. |
 | **GGUF Format Drift** | Low | Pin to llama.cpp release version; regression tests. |
@@ -1541,12 +2336,16 @@ Golden traces serve as our **falsifiers**. A golden trace is a serialized record
 12. **Zhang, B., & Sennrich, R.** (2019). *Root Mean Square Layer Normalization*. NeurIPS 2019.
 13. **McKeeman, W. M.** (1998). *Differential Testing for Software*. Digital Technical Journal.
 14. **Williams, S., Waterman, A., & Patterson, D.** (2009). *Roofline: an insightful visual performance model for multicore architectures*. CACM.
+15. **Graham, S. L., Kessler, P. B., & McKusick, M. K.** (1982). *gprof: A Call Graph Execution Profiler*. SIGPLAN Symposium on Compiler Construction.
+16. **Anderson, T. E., & Lazowska, E. D.** (1990). *Quartz: A Tool for Tuning Parallel Program Performance*. SIGMETRICS.
+17. **Eyerman, S., & Eeckhout, L.** (2008). *System-Level Performance Metrics for Multiprogram Workloads*. IEEE Micro.
+18. **Dean, J., & Ghemawat, S.** (2025). *Performance Hints*. Abseil, Google. https://abseil.io/fast/hints.html
 
 ---
 
 ## Appendix A: Verification Checklist Summary
 
-**Total Points**: 155
+**Total Points**: 180
 
 | Section | Points | Status |
 |---------|--------|--------|
@@ -1555,13 +2354,14 @@ Golden traces serve as our **falsifiers**. A golden trace is a serialized record
 | C: Forward Pass ("No Fake") | 25 | ⬜ |
 | D: Generation & Quality | 20 | ⬜ |
 | E: Visual Control | 15 | ⬜ |
-| F: WASM/Browser | 10 | ⬜ |
+| F: WASM/WASI | 10 | ⬜ |
 | G: Code Quality | 15 | ⬜ |
 | **H: Full Lifecycle (North Star)** | **25** | ⬜ |
 | **I: Probador (Three Pillars)** | **25** | ⬜ |
-| **TOTAL** | **155** | **⬜ 0/155** |
+| **J: Deep Profiling** | **25** | ⬜ |
+| **TOTAL** | **180** | **⬜ 0/180** |
 
-**Passing Threshold**: 155/155 (Zero Defects / Zero Stubs / Zero Ad-Hoc / Complete Workflow / Full Probador)
+**Passing Threshold**: 180/180 (Zero Defects / Zero Stubs / Zero Ad-Hoc / Complete Workflow / Full Probador / Verified Profiling / Green AI / Performance Grading)
 
 ---
 
@@ -1592,6 +2392,14 @@ apr eval model.apr --dataset wikitext-2   # Perplexity
 apr test-model model.apr --golden-trace   # Verify vs reference
 apr canary create model.apr -o canary.json # Regression test
 
+# PROFILE (Roofline + Differential + Naive Detection)
+apr profile model.apr                     # Identify hotspots
+apr profile model.apr --granular          # Layer-by-layer
+apr profile model.apr --compare-hf org/m  # vs HuggingFace baseline
+apr profile model.apr --detect-naive      # Find naive loops
+apr profile model.apr --format json       # CI-friendly output
+apr profile model.apr --callgraph         # gprof-style tree
+
 # DEPLOY
 apr compile model.apr -o chat             # Standalone binary
 apr serve model.apr --port 8080           # REST API server
@@ -1620,24 +2428,23 @@ apr probador mutants --fail-under 90         # CI gate (90% required)
 apr probador playbook list                   # List all 50 playbooks
 apr probador playbook run playbooks/         # Run all playbooks
 apr probador playbook run happy-path.yaml    # Run single playbook
-apr probador playbook record                 # Record new from browser
+apr probador playbook create                 # Create new playbook template
 apr probador playbook validate               # Check YAML syntax
 
 # ═══════════════════════════════════════════════════════════════════════════
-# PILAR 3: VISUAL REGRESSION
+# PILAR 3: GOLDEN TRACE VERIFICATION
 # ═══════════════════════════════════════════════════════════════════════════
-apr probador golden create                   # Create baseline screenshots
-apr probador golden update                   # Update specific golden
-apr probador visual compare                  # Compare against baseline
-apr probador visual diff -o diff/            # Generate diff report
-apr probador visual approve                  # Approve new baseline
+apr probador golden generate                 # Generate golden traces from PyTorch
+apr probador golden verify                   # Verify against golden traces
+apr probador golden update                   # Update golden after approved change
+apr probador trace diff -o diff/             # Generate diff report
 
 # ═══════════════════════════════════════════════════════════════════════════
-# HEATMAPS (Tensor Visualization)
+# TENSOR ANALYSIS
 # ═══════════════════════════════════════════════════════════════════════════
-apr probador heatmap export model.apr        # Export layer activations
-apr probador heatmap compare v1/ v2/         # Compare two versions
-apr probador heatmap animate                 # Generate layer animation
+apr probador tensor export model.apr         # Export layer tensors
+apr probador tensor compare v1/ v2/          # Compare two versions
+apr probador tensor stats model.apr          # Show tensor statistics
 
 # ═══════════════════════════════════════════════════════════════════════════
 # FULL SUITE

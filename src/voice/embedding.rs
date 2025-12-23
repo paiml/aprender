@@ -119,9 +119,7 @@ impl EmbeddingConfig {
             ));
         }
         if self.n_mels == 0 {
-            return Err(VoiceError::InvalidConfig(
-                "n_mels must be > 0".to_string(),
-            ));
+            return Err(VoiceError::InvalidConfig("n_mels must be > 0".to_string()));
         }
         Ok(())
     }

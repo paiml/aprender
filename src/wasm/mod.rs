@@ -37,8 +37,8 @@ pub struct WasmMemoryConfig {
 impl Default for WasmMemoryConfig {
     fn default() -> Self {
         Self {
-            initial_pages: 256,      // 16MB initial
-            max_pages: Some(16384),  // 1GB max
+            initial_pages: 256,     // 16MB initial
+            max_pages: Some(16384), // 1GB max
             shared: false,
         }
     }
@@ -49,8 +49,8 @@ impl WasmMemoryConfig {
     #[must_use]
     pub fn small_model() -> Self {
         Self {
-            initial_pages: 512,      // 32MB initial
-            max_pages: Some(4096),   // 256MB max
+            initial_pages: 512,    // 32MB initial
+            max_pages: Some(4096), // 256MB max
             shared: false,
         }
     }
@@ -59,8 +59,8 @@ impl WasmMemoryConfig {
     #[must_use]
     pub fn medium_model() -> Self {
         Self {
-            initial_pages: 2048,     // 128MB initial
-            max_pages: Some(8192),   // 512MB max
+            initial_pages: 2048,   // 128MB initial
+            max_pages: Some(8192), // 512MB max
             shared: false,
         }
     }
@@ -69,8 +69,8 @@ impl WasmMemoryConfig {
     #[must_use]
     pub fn qwen2_0_5b() -> Self {
         Self {
-            initial_pages: 4096,     // 256MB initial
-            max_pages: Some(8192),   // 512MB max
+            initial_pages: 4096,   // 256MB initial
+            max_pages: Some(8192), // 512MB max
             shared: false,
         }
     }
@@ -470,12 +470,14 @@ mod tests {
     // =========================================================================
     #[test]
     fn l15_simd_friendly_matmul() {
-        let a = MatrixF64::from_vec(4, 4, vec![
-            1.0, 0.0, 0.0, 0.0,
-            0.0, 1.0, 0.0, 0.0,
-            0.0, 0.0, 1.0, 0.0,
-            0.0, 0.0, 0.0, 1.0,
-        ]).unwrap();
+        let a = MatrixF64::from_vec(
+            4,
+            4,
+            vec![
+                1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+            ],
+        )
+        .unwrap();
 
         let result = matmul_simd_friendly(&a, &a);
         assert!(result.is_some());
