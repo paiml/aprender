@@ -617,17 +617,18 @@ impl Qwen2Model {
         &mut self,
         path: &std::path::Path,
     ) -> Result<usize, String> {
-        use crate::serialization::safetensors::{load_safetensors, extract_tensor};
+        use crate::serialization::safetensors::MappedSafeTensors;
 
-        let (metadata, raw_data) = load_safetensors(path)?;
+        // Use mmap for zero-copy loading (per Native Library Mandate)
+        let mapped = MappedSafeTensors::open(path)?;
         let mut loaded_count = 0;
 
         // Helper to load a tensor by name
         let load_tensor = |name: &str| -> Result<Tensor, String> {
-            let meta = metadata.get(name).ok_or_else(|| {
+            let meta = mapped.get_metadata(name).ok_or_else(|| {
                 format!("Weight '{name}' not found in SafeTensors file")
             })?;
-            let data = extract_tensor(&raw_data, meta)?;
+            let data = mapped.get_tensor(name)?;
             Ok(Tensor::new(&data, &meta.shape))
         };
 

@@ -79,9 +79,16 @@ pub(crate) fn run(
 }
 
 fn print_welcome_banner(path: &Path, config: &ChatConfig) {
-    output::section("Qwen2 Chat Demo (Tiny Model)");
-    println!();
-    println!("{}", "Note: Using tiny demo model (~50MB). Full Qwen2-0.5B requires ~4GB RAM.".yellow());
+    let is_safetensors = path.extension().map_or(false, |e| e == "safetensors");
+    if is_safetensors {
+        output::section("Qwen2-0.5B-Instruct Chat");
+        println!();
+        println!("{}", "Using mmap for zero-copy weight loading (Native Library Mandate)".cyan());
+    } else {
+        output::section("Qwen2 Chat Demo (Tiny Model)");
+        println!();
+        println!("{}", "Note: Using tiny demo model. Pass .safetensors file for full model.".yellow());
+    }
     println!();
     output::kv("Model", path.display());
     output::kv("Temperature", config.temperature);
@@ -120,26 +127,43 @@ impl ChatSession {
         println!("{}", "Loading model...".cyan());
         let start = Instant::now();
 
-        // Use tiny config to avoid OOM - full Qwen2-0.5B (494M params) requires ~4GB RAM
-        // This demo config uses ~50MB RAM and demonstrates the architecture
-        let config = Qwen2Config {
-            hidden_size: 64,
-            num_attention_heads: 4,
-            num_kv_heads: 2,
-            num_layers: 2,
-            vocab_size: 1000,        // Tiny vocab for memory efficiency
-            max_seq_len: 512,
-            intermediate_size: 256,
-            rope_theta: 10000.0,
+        // Check if loading real weights from SafeTensors
+        let is_safetensors = path.extension().map_or(false, |e| e == "safetensors");
+
+        // Use full config for real weights, tiny config for demo
+        let config = if is_safetensors {
+            // Full Qwen2-0.5B config - mmap loading won't OOM
+            Qwen2Config::qwen2_0_5b_instruct()
+        } else {
+            // Tiny demo config (~50MB RAM)
+            Qwen2Config {
+                hidden_size: 64,
+                num_attention_heads: 4,
+                num_kv_heads: 2,
+                num_layers: 2,
+                vocab_size: 1000,
+                max_seq_len: 512,
+                intermediate_size: 256,
+                rope_theta: 10000.0,
+            }
         };
 
         let mut model = Qwen2Model::new(&config);
 
-        // Skip weight loading - tiny demo model uses random weights
-        // Loading real Qwen2-0.5B weights requires ~4GB RAM and matching config
-        // Path is accepted for API compatibility but not used in demo mode
-        let _ = path;
-        println!("{}", "Using randomly initialized weights (demo mode)".yellow());
+        // Load weights using mmap (Native Library Mandate - zero-copy)
+        if is_safetensors {
+            match model.load_from_safetensors(path) {
+                Ok(count) => {
+                    println!("{} {}", "Loaded".green(), format!("{count} tensors via mmap"));
+                }
+                Err(e) => {
+                    println!("{} {}", "Warning:".yellow(), format!("Could not load weights: {e}"));
+                    println!("{}", "Using randomly initialized weights".yellow());
+                }
+            }
+        } else {
+            println!("{}", "Using randomly initialized weights (demo mode)".yellow());
+        }
 
         model.eval();
         let elapsed = start.elapsed();

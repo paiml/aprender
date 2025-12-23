@@ -13,6 +13,7 @@
 //! - PyTorch, TensorFlow
 //! - realizar inference engine
 
+use crate::bundle::MappedFile;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fs;
@@ -122,6 +123,129 @@ pub fn load_safetensors<P: AsRef<Path>>(path: P) -> Result<(SafeTensorsMetadata,
     let metadata = parse_metadata(&bytes, metadata_len)?;
     let raw_data = bytes[8 + metadata_len..].to_vec();
     Ok((metadata, raw_data))
+}
+
+/// Memory-mapped SafeTensors file for zero-copy tensor access.
+///
+/// Uses `bundle::MappedFile` for efficient large model loading.
+/// Tensors are accessed directly from the mapped memory without copying.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use aprender::serialization::safetensors::MappedSafeTensors;
+///
+/// let mapped = MappedSafeTensors::open("model.safetensors")?;
+/// let weight = mapped.get_tensor("model.embed_tokens.weight")?;
+/// ```
+#[derive(Debug)]
+pub struct MappedSafeTensors {
+    /// Memory-mapped file
+    mmap: MappedFile,
+    /// Parsed metadata
+    metadata: SafeTensorsMetadata,
+    /// Offset where tensor data begins (after header + metadata JSON)
+    data_offset: usize,
+}
+
+impl MappedSafeTensors {
+    /// Open a SafeTensors file with memory mapping.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if file cannot be opened or format is invalid.
+    pub fn open<P: AsRef<Path>>(path: P) -> Result<Self, String> {
+        let mmap = MappedFile::open(path).map_err(|e| format!("mmap failed: {e}"))?;
+        let bytes = mmap.as_slice();
+
+        let metadata_len = validate_and_read_header(bytes)?;
+        let metadata = parse_metadata(bytes, metadata_len)?;
+        let data_offset = 8 + metadata_len;
+
+        Ok(Self {
+            mmap,
+            metadata,
+            data_offset,
+        })
+    }
+
+    /// Get tensor metadata by name.
+    #[must_use]
+    pub fn get_metadata(&self, name: &str) -> Option<&TensorMetadata> {
+        self.metadata.get(name)
+    }
+
+    /// Get all tensor names.
+    #[must_use]
+    pub fn tensor_names(&self) -> Vec<&str> {
+        self.metadata.keys().map(String::as_str).collect()
+    }
+
+    /// Extract tensor data as f32 slice (zero-copy for aligned data).
+    ///
+    /// # Errors
+    ///
+    /// Returns error if tensor not found or data is invalid.
+    pub fn get_tensor(&self, name: &str) -> Result<Vec<f32>, String> {
+        let meta = self.metadata.get(name).ok_or_else(|| {
+            format!("Tensor '{name}' not found")
+        })?;
+
+        let bytes = self.mmap.as_slice();
+        let [start, end] = meta.data_offsets;
+        let abs_start = self.data_offset + start;
+        let abs_end = self.data_offset + end;
+
+        if abs_end > bytes.len() {
+            return Err(format!(
+                "Tensor '{name}' data out of bounds: {abs_end} > {}",
+                bytes.len()
+            ));
+        }
+
+        let tensor_bytes = &bytes[abs_start..abs_end];
+
+        // Parse F32 values (little-endian)
+        if tensor_bytes.len() % 4 != 0 {
+            return Err(format!(
+                "Tensor '{name}' size {} not multiple of 4",
+                tensor_bytes.len()
+            ));
+        }
+
+        let values: Vec<f32> = tensor_bytes
+            .chunks_exact(4)
+            .map(|chunk| {
+                let arr: [u8; 4] = chunk.try_into().expect("chunk is 4 bytes");
+                f32::from_le_bytes(arr)
+            })
+            .collect();
+
+        Ok(values)
+    }
+
+    /// Get raw tensor bytes (zero-copy).
+    #[must_use]
+    pub fn get_tensor_bytes(&self, name: &str) -> Option<&[u8]> {
+        let meta = self.metadata.get(name)?;
+        let [start, end] = meta.data_offsets;
+        let abs_start = self.data_offset + start;
+        let abs_end = self.data_offset + end;
+
+        self.mmap.slice(abs_start, abs_end)
+    }
+
+    /// Number of tensors in the file.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.metadata.len()
+    }
+
+    /// Check if file has no tensors.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.metadata.is_empty()
+    }
 }
 
 fn validate_and_read_header(bytes: &[u8]) -> Result<usize, String> {
