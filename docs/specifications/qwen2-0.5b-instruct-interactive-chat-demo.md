@@ -429,6 +429,162 @@ Per Kleppmann et al. (2019) "Local-First Software":
 | **Error Handling** | `String` errors | `AprenderError` |
 | **NN Layers** | Custom implementations | `nn::*` module |
 | **Initialization** | **Random Weights** | **ONLY Loaded from .apr** |
+| **Tensor Ops** | **Naive iterators** | **`Tensor::add/mul/exp/sigmoid` (SIMD)** |
+
+#### 2.4.1 Compute Backend Hierarchy (Zero Naive Loops)
+
+**CRITICAL**: Never reimplement tensor operations with naive Rust iterators. Use the Trueno compute backend hierarchy.
+
+**Compute Backend Priority** (use highest available):
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    COMPUTE BACKEND HIERARCHY                     │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│   Priority 1: trueno-gpu (wgpu)     ← GPU acceleration          │
+│       └─ Use when: GPU available, large batches                 │
+│                                                                  │
+│   Priority 2: Trueno SIMD (AVX2/AVX512/NEON)                    │
+│       └─ Use when: CPU, always available                        │
+│       └─ Methods: Tensor::add/mul/matmul/sigmoid/exp            │
+│                                                                  │
+│   Priority 3: WASM SIMD128                                      │
+│       └─ Use when: Browser/WASM target                          │
+│       └─ Auto-selected by Trueno for wasm32 target              │
+│                                                                  │
+│   ❌ FORBIDDEN: Naive Rust iterators                            │
+│       └─ .data().iter().map().collect() = 10-50x SLOWER         │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Heuristic**: `Trueno/SIMD/WGPU + trueno-gpu when available`
+
+```rust
+// ❌ FORBIDDEN: Naive iterator (10-50x slower, no SIMD)
+fn silu_bad(x: &Tensor) -> Tensor {
+    let data: Vec<f32> = x.data().iter()
+        .map(|&v| v * (1.0 / (1.0 + (-v).exp())))
+        .collect();
+    Tensor::new(&data, x.shape())
+}
+
+// ✅ REQUIRED: Use Tensor SIMD methods (auto-dispatches to best backend)
+fn silu_good(x: &Tensor) -> Tensor {
+    x.mul(&x.sigmoid())  // Trueno SIMD or GPU
+}
+
+// ❌ FORBIDDEN: Manual elementwise ops
+fn add_bad(a: &Tensor, b: &Tensor) -> Tensor {
+    let data: Vec<f32> = a.data().iter().zip(b.data()).map(|(x,y)| x+y).collect();
+    Tensor::new(&data, a.shape())
+}
+
+// ✅ REQUIRED: Use Tensor methods (auto-dispatches)
+fn add_good(a: &Tensor, b: &Tensor) -> Tensor {
+    a.add(b)  // Trueno handles SIMD/GPU dispatch
+}
+```
+
+**Available Accelerated Tensor Methods** (auto-dispatch to best backend):
+| Category | Methods | Backend |
+|----------|---------|---------|
+| Arithmetic | `add`, `sub`, `mul`, `div`, `mul_scalar` | SIMD/GPU |
+| Activations | `exp`, `sigmoid`, `tanh`, `relu` | SIMD/GPU |
+| Matrix | `matmul`, `transpose` | SIMD/GPU (critical path) |
+| Reduction | `sum`, `mean` | SIMD/GPU |
+
+**Why This Matters**:
+- **matmul** is 90%+ of inference time → MUST use SIMD/GPU
+- Naive `for` loop matmul: ~0.1 GFLOPS
+- SIMD matmul (AVX2): ~50 GFLOPS (500x faster)
+- GPU matmul (wgpu): ~1000+ GFLOPS (10,000x faster)
+
+**Enforcement**:
+- CI grep check for `.data().iter()` in model inference paths
+- Code review checklist: "Uses Tensor methods (not manual loops)?"
+- Performance regression tests catch naive implementations
+- `cargo bench` baseline: >10 tok/s on CPU, >100 tok/s on GPU
+
+#### 2.4.2 Granular Performance Testing (Renacer + HuggingFace Ground Truth)
+
+**MANDATE**: All inference code MUST be profiled with `renacer` and benchmarked against HuggingFace ground truth.
+
+**Renacer Profiling Requirements**:
+```bash
+# Profile every layer of the forward pass
+renacer profile apr chat model.apr --granular
+
+# Expected output:
+# ┌────────────────────────────────────────────────────────────┐
+# │ Layer                    │ Time (ms) │ % Total │ GFLOPS   │
+# ├────────────────────────────────────────────────────────────┤
+# │ embed_tokens             │     2.3   │   1.2%  │   12.4   │
+# │ layers.0.self_attn.qkv   │    18.7   │   9.8%  │   45.2   │  ← If <10 GFLOPS = BUG
+# │ layers.0.self_attn.attn  │    12.1   │   6.3%  │   38.9   │
+# │ layers.0.mlp.gate_up     │    24.3   │  12.7%  │   52.1   │
+# │ layers.0.mlp.down        │    11.2   │   5.9%  │   48.7   │
+# │ ...                      │           │         │          │
+# │ lm_head                  │    31.4   │  16.4%  │   41.3   │
+# └────────────────────────────────────────────────────────────┘
+# Total: 191.2ms (5.2 tok/s)
+```
+
+**Ground Truth Benchmarking vs HuggingFace**:
+```bash
+# Generate HuggingFace baseline (Python)
+python scripts/hf_baseline.py --model Qwen/Qwen2-0.5B-Instruct --output baseline.json
+
+# Compare aprender performance against baseline
+renacer compare baseline.json --tolerance 2x
+
+# Expected output:
+# ┌─────────────────────────────────────────────────────────────────┐
+# │ Operation          │ HF (ms) │ APR (ms) │ Ratio │ Status       │
+# ├─────────────────────────────────────────────────────────────────┤
+# │ embed_lookup       │    1.8  │    2.3   │ 1.28x │ ✅ PASS      │
+# │ attention (per L)  │   28.4  │   30.8   │ 1.08x │ ✅ PASS      │
+# │ mlp (per layer)    │   32.1  │   35.5   │ 1.11x │ ✅ PASS      │
+# │ matmul (avg)       │    8.2  │    9.1   │ 1.11x │ ✅ PASS      │
+# │ softmax            │    2.1  │   18.7   │ 8.90x │ ❌ FAIL      │  ← Bug found!
+# │ total forward      │  185.0  │  191.2   │ 1.03x │ ✅ PASS      │
+# └─────────────────────────────────────────────────────────────────┘
+```
+
+**Performance Thresholds** (fail CI if exceeded):
+| Operation | Max Slowdown vs HF | Rationale |
+|-----------|-------------------|-----------|
+| `matmul` | 1.5x | Core operation, SIMD critical |
+| `attention` | 2.0x | Complex, some overhead OK |
+| `softmax` | 2.0x | Numerically sensitive |
+| `layernorm/rmsnorm` | 2.0x | Simple reduction |
+| `total forward` | 2.0x | Overall budget |
+| `tok/s` | 0.5x (min 50%) | User-facing metric |
+
+**Detecting Naive Implementations**:
+```bash
+# If GFLOPS < 10 on any matmul, it's likely naive
+renacer detect-naive model.apr
+
+# Output:
+# ❌ NAIVE DETECTED: layers.5.mlp.gate_proj.matmul
+#    GFLOPS: 2.3 (expected >40)
+#    Likely cause: .data().iter() loop instead of Tensor::matmul
+#    File: src/models/qwen2/mod.rs:167
+```
+
+**CI Integration**:
+```yaml
+# .github/workflows/performance.yml
+- name: Profile with Renacer
+  run: |
+    renacer profile apr chat model.apr --granular --json > profile.json
+    renacer compare baseline.json profile.json --fail-threshold 2x
+
+- name: Detect Naive Implementations
+  run: |
+    renacer detect-naive model.apr --fail-on-naive
+```
 
 **Rationale (Toyota Way: Standardized Work)**:
 - Native libraries are tested (96.94% coverage)
@@ -1181,6 +1337,9 @@ Golden traces serve as our **falsifiers**. A golden trace is a serialized record
 | **G5** | **Native Format** | **Raw SafeTensors used instead of `.apr` format** | ⬜ |
 | G6 | Native Errors | `String` errors used instead of `AprenderError` | ⬜ |
 | **G7** | **No Stubs** | **Any "fake" response logic detected in AST** | ⬜ |
+| **G8** | **SIMD Ops** | **`.data().iter()` found in inference hot path (use Tensor methods)** | ⬜ |
+| **G9** | **Renacer Profile** | **Any operation <10 GFLOPS (indicates naive loop)** | ⬜ |
+| **G10** | **HF Ground Truth** | **Any operation >2x slower than HuggingFace baseline** | ⬜ |
 
 ### Section H: Full Lifecycle — The North Star (20 points)
 

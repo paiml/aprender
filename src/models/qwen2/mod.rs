@@ -917,37 +917,20 @@ impl Qwen2Model {
 // ============================================================================
 
 /// SiLU (Swish) activation: x * sigmoid(x)
+/// Uses SIMD-accelerated Tensor ops instead of naive iterators.
 fn silu(x: &Tensor) -> Tensor {
-    let data: Vec<f32> = x
-        .data()
-        .iter()
-        .map(|&v| v * (1.0 / (1.0 + (-v).exp())))
-        .collect();
-    Tensor::new(&data, x.shape())
+    // SiLU(x) = x * sigmoid(x)
+    x.mul(&x.sigmoid())
 }
 
-/// Element-wise multiplication.
+/// Element-wise multiplication (SIMD-accelerated).
 fn elementwise_mul(a: &Tensor, b: &Tensor) -> Tensor {
-    assert_eq!(a.shape(), b.shape(), "Shapes must match for multiplication");
-    let data: Vec<f32> = a
-        .data()
-        .iter()
-        .zip(b.data().iter())
-        .map(|(&x, &y)| x * y)
-        .collect();
-    Tensor::new(&data, a.shape())
+    a.mul(b)
 }
 
-/// Element-wise addition.
+/// Element-wise addition (SIMD-accelerated).
 fn add_tensors(a: &Tensor, b: &Tensor) -> Tensor {
-    assert_eq!(a.shape(), b.shape(), "Shapes must match for addition");
-    let data: Vec<f32> = a
-        .data()
-        .iter()
-        .zip(b.data().iter())
-        .map(|(&x, &y)| x + y)
-        .collect();
-    Tensor::new(&data, a.shape())
+    a.add(b)
 }
 
 /// Generate causal attention mask.
