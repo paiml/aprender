@@ -496,7 +496,8 @@ fn add_good(a: &Tensor, b: &Tensor) -> Tensor {
 
 **Why This Matters**:
 - **matmul** is 90%+ of inference time → MUST use SIMD/GPU
-- Naive `for` loop matmul: ~0.1 GFLOPS
+- **Roofline Model (Williams et al., 2009)**: Naive iteration fails to achieve sufficient arithmetic intensity, falling far below the hardware's compute ceiling.
+- Naive `for` loop matmul: ~0.1 GFLOPS (Memory Bound)
 - SIMD matmul (AVX2): ~50 GFLOPS (500x faster)
 - GPU matmul (wgpu): ~1000+ GFLOPS (10,000x faster)
 
@@ -508,7 +509,7 @@ fn add_good(a: &Tensor, b: &Tensor) -> Tensor {
 
 #### 2.4.2 Granular Performance Testing (Renacer + HuggingFace Ground Truth)
 
-**MANDATE**: All inference code MUST be profiled with `renacer` and benchmarked against HuggingFace ground truth.
+**MANDATE**: All inference code MUST be profiled with `renacer` and benchmarked against HuggingFace ground truth, applying **Differential Testing (McKeeman, 1998)** principles to tensor operations.
 
 **Renacer Profiling Requirements**:
 ```bash
@@ -1230,6 +1231,8 @@ In the spirit of Karl Popper, we do not simply "believe" our code works. We veri
 | **Qwen2 Arch** | Bai et al. (2023) | **Shape Check**: Validate layer counts, head dims against Tech Report Table 1. |
 | **Nucleus** | Holtzman et al. (2020) | **Stat Check**: Verify CDF truncation logic excludes tail mass correctly. |
 | **WASM SIMD** | Haas et al. (2017) | **Instruction Check**: Verify usage of `v128.load` and `f32x4.mul` in hot loops. |
+| **Optimized Compute** | Williams et al. (2009) | **Roofline Analysis**: Verify GFLOPS > 80% of theoretical peak for given arithmetic intensity. |
+| **Correctness** | McKeeman (1998) | **Differential Testing**: Compare `apr` output vs `PyTorch` output for identical inputs. |
 
 ### 9.2 The Role of "Golden Traces"
 Golden traces serve as our **falsifiers**. A golden trace is a serialized recording of every intermediate tensor value from a known-correct implementation (e.g., the official HuggingFace implementation). If our implementation deviates from the golden trace (beyond floating-point noise), our implementation is **proven false** and must be rejected.
@@ -1338,7 +1341,7 @@ Golden traces serve as our **falsifiers**. A golden trace is a serialized record
 | G6 | Native Errors | `String` errors used instead of `AprenderError` | ⬜ |
 | **G7** | **No Stubs** | **Any "fake" response logic detected in AST** | ⬜ |
 | **G8** | **SIMD Ops** | **`.data().iter()` found in inference hot path (use Tensor methods)** | ⬜ |
-| **G9** | **Renacer Profile** | **Any operation <10 GFLOPS (indicates naive loop)** | ⬜ |
+| **G9** | **Roofline Check** | **Any operation falls below Roofline (Williams et al., 2009) efficiency zone** | ⬜ |
 | **G10** | **HF Ground Truth** | **Any operation >2x slower than HuggingFace baseline** | ⬜ |
 
 ### Section H: Full Lifecycle — The North Star (20 points)
@@ -1536,6 +1539,8 @@ Golden traces serve as our **falsifiers**. A golden trace is a serialized record
 10. **Su, J., et al.** (2024). *RoFormer: Enhanced Transformer with Rotary Position Embedding*. Neurocomputing.
 11. **Vaswani, A., et al.** (2017). *Attention Is All You Need*. NIPS 2017.
 12. **Zhang, B., & Sennrich, R.** (2019). *Root Mean Square Layer Normalization*. NeurIPS 2019.
+13. **McKeeman, W. M.** (1998). *Differential Testing for Software*. Digital Technical Journal.
+14. **Williams, S., Waterman, A., & Patterson, D.** (2009). *Roofline: an insightful visual performance model for multicore architectures*. CACM.
 
 ---
 

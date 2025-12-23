@@ -665,25 +665,12 @@ fn batched_dot_product(
     sum
 }
 
-/// Compute single head matmul for one batch.
-fn compute_head_matmul(
-    a_data: &[f32],
-    b_data: &[f32],
-    output: &mut [f32],
-    ba: usize,
-    h: usize,
-    dims: MatmulDims,
-) {
-    for i in 0..dims.m {
-        for j in 0..dims.n {
-            let sum = batched_dot_product(a_data, b_data, ba, h, i, j, dims);
-            let out_idx = ba * dims.heads * dims.m * dims.n + h * dims.m * dims.n + i * dims.n + j;
-            output[out_idx] = sum;
-        }
-    }
-}
-
 /// Batched matrix multiplication.
+/// For 4D tensors [batch, heads, m, k] @ [batch, heads, k, n] -> [batch, heads, m, n]
+///
+/// TODO(perf): This uses naive loops. Need Trueno-level batched matmul for SIMD.
+/// Current bottleneck: copy overhead when slicing for 2D SIMD matmul exceeds gains.
+/// See spec §2.4.2 for performance requirements.
 fn matmul_batched(a: &Tensor, b: &Tensor) -> Tensor {
     let a_shape = a.shape();
     let b_shape = b.shape();
@@ -707,20 +694,42 @@ fn matmul_batched(a: &Tensor, b: &Tensor) -> Tensor {
 
         Tensor::new(&output, &[batch, heads, m, n])
     } else {
-        // Fallback for 2D/3D
+        // Fallback for 2D/3D - uses SIMD
         a.matmul(b)
     }
 }
 
-/// Scale tensor by scalar.
-fn scale_tensor(x: &Tensor, scale: f32) -> Tensor {
-    let data: Vec<f32> = x.data().iter().map(|&v| v * scale).collect();
-    Tensor::new(&data, x.shape())
+/// Compute single head matmul for one batch (naive, needs Trueno batched matmul).
+fn compute_head_matmul(
+    a_data: &[f32],
+    b_data: &[f32],
+    output: &mut [f32],
+    ba: usize,
+    h: usize,
+    dims: MatmulDims,
+) {
+    for i in 0..dims.m {
+        for j in 0..dims.n {
+            let sum = batched_dot_product(a_data, b_data, ba, h, i, j, dims);
+            let out_idx = ba * dims.heads * dims.m * dims.n + h * dims.m * dims.n + i * dims.n + j;
+            output[out_idx] = sum;
+        }
+    }
 }
 
-/// Add attention mask to scores.
+/// Scale tensor by scalar (SIMD-accelerated).
+fn scale_tensor(x: &Tensor, scale: f32) -> Tensor {
+    x.mul_scalar(scale)
+}
+
+/// Add attention mask to scores (SIMD-accelerated).
 fn add_mask(scores: &Tensor, mask: &Tensor) -> Tensor {
     // Mask contains 0 for valid positions and -inf for masked positions
+    // Use SIMD-accelerated add if shapes match, otherwise broadcast
+    if scores.shape() == mask.shape() {
+        return scores.add(mask);
+    }
+    // Fallback for broadcast (TODO: implement SIMD broadcast_add)
     let data: Vec<f32> = scores
         .data()
         .iter()
