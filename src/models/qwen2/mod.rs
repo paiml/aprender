@@ -64,8 +64,7 @@ impl Embedding {
         let data: Vec<f32> = (0..vocab_size * hidden_size)
             .map(|i| {
                 // Deterministic pseudo-random initialization
-                let x = (i as f32 * 0.0001).sin() * 0.02;
-                x
+                (i as f32 * 0.0001).sin() * 0.02
             })
             .collect();
 
@@ -136,6 +135,7 @@ impl Embedding {
 /// output = down_proj(SiLU(gate_proj(x)) * up_proj(x))
 /// ```
 #[derive(Debug)]
+#[allow(clippy::struct_field_names)] // Standard ML naming convention
 pub struct Qwen2MLP {
     gate_proj: Linear,
     up_proj: Linear,
@@ -263,6 +263,37 @@ impl Qwen2DecoderLayer {
         let hidden = self.post_attention_layernorm.forward(&hidden);
         let mlp_output = self.mlp.forward(&hidden);
         add_tensors(&residual, &mlp_output)
+    }
+
+    /// Forward pass with detailed profiling output.
+    pub fn forward_profiled(
+        &self,
+        hidden_states: &Tensor,
+        _position_ids: &[usize],
+        _rope: &RotaryPositionEmbedding,
+        _attention_mask: Option<&Tensor>,
+    ) -> (Tensor, std::time::Duration, std::time::Duration) {
+        use std::time::Instant;
+
+        // Self-attention with pre-norm
+        let residual = hidden_states.clone();
+        let hidden = self.input_layernorm.forward(hidden_states);
+
+        let attn_start = Instant::now();
+        let (attn_output, _attn_weights) = self.self_attn.forward_self(&hidden, None);
+        let attn_time = attn_start.elapsed();
+
+        let hidden = add_tensors(&residual, &attn_output);
+
+        // MLP with pre-norm
+        let residual = hidden.clone();
+        let hidden = self.post_attention_layernorm.forward(&hidden);
+
+        let mlp_start = Instant::now();
+        let mlp_output = self.mlp.forward(&hidden);
+        let mlp_time = mlp_start.elapsed();
+
+        (add_tensors(&residual, &mlp_output), attn_time, mlp_time)
     }
 
     /// Get mutable reference to self-attention layer.
@@ -436,6 +467,89 @@ impl Qwen2Model {
         self.lm_head.forward(&hidden)
     }
 
+    /// Forward with detailed profiling output.
+    /// Prints timing breakdown for each component.
+    pub fn forward_profiled(&mut self, input_ids: &[u32], position_ids: &[usize]) -> Tensor {
+        use std::time::Instant;
+
+        let total_start = Instant::now();
+
+        // Embed tokens
+        let embed_start = Instant::now();
+        let mut hidden = self.embed_tokens.forward(input_ids);
+        let embed_time = embed_start.elapsed();
+
+        // Generate causal mask
+        let seq_len = input_ids.len();
+        let attention_mask = generate_causal_mask(seq_len);
+
+        // Pass through decoder layers with profiling
+        let mut total_attn = std::time::Duration::ZERO;
+        let mut total_mlp = std::time::Duration::ZERO;
+
+        let layers_start = Instant::now();
+        for layer in &self.layers {
+            let (output, attn_time, mlp_time) =
+                layer.forward_profiled(&hidden, position_ids, &self.rope, Some(&attention_mask));
+            hidden = output;
+            total_attn += attn_time;
+            total_mlp += mlp_time;
+        }
+        let layers_time = layers_start.elapsed();
+
+        // Final normalization
+        let norm_start = Instant::now();
+        hidden = self.norm.forward(&hidden);
+        let norm_time = norm_start.elapsed();
+
+        // Project to vocabulary
+        let lm_head_start = Instant::now();
+        let output = self.lm_head.forward(&hidden);
+        let lm_head_time = lm_head_start.elapsed();
+
+        let total_time = total_start.elapsed();
+
+        // Print profiling results
+        eprintln!("\n=== Forward Pass Profile (seq_len={seq_len}) ===");
+        eprintln!(
+            "  Embedding:     {:>8.2}ms ({:>5.1}%)",
+            embed_time.as_secs_f64() * 1000.0,
+            embed_time.as_secs_f64() / total_time.as_secs_f64() * 100.0
+        );
+        eprintln!(
+            "  Layers total:  {:>8.2}ms ({:>5.1}%)",
+            layers_time.as_secs_f64() * 1000.0,
+            layers_time.as_secs_f64() / total_time.as_secs_f64() * 100.0
+        );
+        eprintln!(
+            "    - Attention: {:>8.2}ms ({:>5.1}%)",
+            total_attn.as_secs_f64() * 1000.0,
+            total_attn.as_secs_f64() / total_time.as_secs_f64() * 100.0
+        );
+        eprintln!(
+            "    - MLP:       {:>8.2}ms ({:>5.1}%)",
+            total_mlp.as_secs_f64() * 1000.0,
+            total_mlp.as_secs_f64() / total_time.as_secs_f64() * 100.0
+        );
+        eprintln!(
+            "  Final norm:    {:>8.2}ms ({:>5.1}%)",
+            norm_time.as_secs_f64() * 1000.0,
+            norm_time.as_secs_f64() / total_time.as_secs_f64() * 100.0
+        );
+        eprintln!(
+            "  LM head:       {:>8.2}ms ({:>5.1}%)",
+            lm_head_time.as_secs_f64() * 1000.0,
+            lm_head_time.as_secs_f64() / total_time.as_secs_f64() * 100.0
+        );
+        eprintln!(
+            "  TOTAL:         {:>8.2}ms",
+            total_time.as_secs_f64() * 1000.0
+        );
+        eprintln!("==========================================\n");
+
+        output
+    }
+
     /// Generate tokens autoregressively.
     ///
     /// # Arguments
@@ -455,17 +569,41 @@ impl Qwen2Model {
         temperature: f32,
         _top_p: f32,
     ) -> Vec<u32> {
+        self.generate_internal(prompt_ids, max_new_tokens, temperature, false)
+    }
+
+    /// Generate with profiling output (prints timing breakdown).
+    pub fn generate_profiled(
+        &mut self,
+        prompt_ids: &[u32],
+        max_new_tokens: usize,
+        temperature: f32,
+    ) -> Vec<u32> {
+        self.generate_internal(prompt_ids, max_new_tokens, temperature, true)
+    }
+
+    fn generate_internal(
+        &mut self,
+        prompt_ids: &[u32],
+        max_new_tokens: usize,
+        temperature: f32,
+        profile: bool,
+    ) -> Vec<u32> {
         let mut output_ids = prompt_ids.to_vec();
 
-        for _ in 0..max_new_tokens {
+        for i in 0..max_new_tokens {
             let position_ids: Vec<usize> = (0..output_ids.len()).collect();
-            let logits = self.forward(&output_ids, &position_ids);
+            // Only profile first token to avoid spam
+            let logits = if profile && i == 0 {
+                self.forward_profiled(&output_ids, &position_ids)
+            } else {
+                self.forward(&output_ids, &position_ids)
+            };
 
             // Get last token logits
             let vocab_size = self.config.vocab_size;
             let last_pos = output_ids.len() - 1;
-            let logits_slice = &logits.data()
-                [last_pos * vocab_size..(last_pos + 1) * vocab_size];
+            let logits_slice = &logits.data()[last_pos * vocab_size..(last_pos + 1) * vocab_size];
 
             // Sample next token
             let next_token = if temperature == 0.0 {
@@ -686,10 +824,7 @@ impl Qwen2Model {
     /// # Errors
     ///
     /// Returns error if file cannot be read or weights don't match.
-    pub fn load_from_safetensors(
-        &mut self,
-        path: &std::path::Path,
-    ) -> Result<usize, String> {
+    pub fn load_from_safetensors(&mut self, path: &std::path::Path) -> Result<usize, String> {
         use crate::serialization::safetensors::MappedSafeTensors;
 
         // Use mmap for zero-copy loading (per Native Library Mandate)
@@ -698,9 +833,9 @@ impl Qwen2Model {
 
         // Helper to load a tensor by name
         let load_tensor = |name: &str| -> Result<Tensor, String> {
-            let meta = mapped.get_metadata(name).ok_or_else(|| {
-                format!("Weight '{name}' not found in SafeTensors file")
-            })?;
+            let meta = mapped
+                .get_metadata(name)
+                .ok_or_else(|| format!("Weight '{name}' not found in SafeTensors file"))?;
             let data = mapped.get_tensor(name)?;
             Ok(Tensor::new(&data, &meta.shape))
         };
@@ -777,10 +912,7 @@ impl Qwen2Model {
     /// Load model from SafeTensors file.
     ///
     /// Creates a new model with the given config and loads weights from file.
-    pub fn from_safetensors(
-        config: &Qwen2Config,
-        path: &std::path::Path,
-    ) -> Result<Self, String> {
+    pub fn from_safetensors(config: &Qwen2Config, path: &std::path::Path) -> Result<Self, String> {
         let mut model = Self::new(config);
         model.load_from_safetensors(path)?;
         Ok(model)
@@ -816,12 +948,12 @@ impl Qwen2Model {
         // Helper to load a tensor by name
         // APR uses canonical names without "model." prefix
         let load_tensor = |name: &str| -> Result<Tensor, String> {
-            let entry = reader.get_tensor(name).ok_or_else(|| {
-                format!("Weight '{name}' not found in APR file")
-            })?;
-            let data = reader.get_f32_tensor(name).ok_or_else(|| {
-                format!("Failed to read f32 data for '{name}'")
-            })?;
+            let entry = reader
+                .get_tensor(name)
+                .ok_or_else(|| format!("Weight '{name}' not found in APR file"))?;
+            let data = reader
+                .get_f32_tensor(name)
+                .ok_or_else(|| format!("Failed to read f32 data for '{name}'"))?;
             Ok(Tensor::new(&data, &entry.shape))
         };
 
@@ -954,8 +1086,7 @@ fn argmax(slice: &[f32]) -> usize {
         .iter()
         .enumerate()
         .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
-        .map(|(i, _)| i)
-        .unwrap_or(0)
+        .map_or(0, |(i, _)| i)
 }
 
 /// Sample from logits with temperature.

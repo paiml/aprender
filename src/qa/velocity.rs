@@ -75,9 +75,17 @@ pub fn p1_test_fast_exists() -> VelocityResult {
     let has_test_fast = content.contains("test-fast:") || content.contains("test-fast :");
 
     if has_test_fast {
-        VelocityResult::pass("P1", "test-fast exists", "make test-fast target found in Makefile")
+        VelocityResult::pass(
+            "P1",
+            "test-fast exists",
+            "make test-fast target found in Makefile",
+        )
     } else {
-        VelocityResult::fail("P1", "test-fast exists", "test-fast target not found in Makefile")
+        VelocityResult::fail(
+            "P1",
+            "test-fast exists",
+            "test-fast target not found in Makefile",
+        )
     }
 }
 
@@ -127,13 +135,13 @@ pub fn p3_test_fast_coverage() -> VelocityResult {
         VelocityResult::pass(
             "P3",
             "test-fast > 95% coverage",
-            &format!("Coverage: {:.2}% (target: {:.0}%)", coverage_achieved, coverage_target),
+            &format!("Coverage: {coverage_achieved:.2}% (target: {coverage_target:.0}%)"),
         )
     } else {
         VelocityResult::fail(
             "P3",
             "test-fast > 95% coverage",
-            &format!("Coverage: {:.2}% < {:.0}% target", coverage_achieved, coverage_target),
+            &format!("Coverage: {coverage_achieved:.2}% < {coverage_target:.0}% target"),
         )
     }
 }
@@ -158,7 +166,11 @@ pub fn p4_no_network_calls() -> VelocityResult {
             "Unit tests make no network calls; HF imports are integration tests",
         )
     } else {
-        VelocityResult::fail("P4", "0 network calls", "Network calls detected in unit tests")
+        VelocityResult::fail(
+            "P4",
+            "0 network calls",
+            "Network calls detected in unit tests",
+        )
     }
 }
 
@@ -280,9 +292,9 @@ pub fn p9_ci_fast_first() -> VelocityResult {
     let content = std::fs::read_to_string(ci_path).unwrap_or_default();
 
     // CI should run check/fmt/clippy before full tests
-    let has_fast_checks = content.contains("cargo check") ||
-                          content.contains("cargo fmt") ||
-                          content.contains("cargo clippy");
+    let has_fast_checks = content.contains("cargo check")
+        || content.contains("cargo fmt")
+        || content.contains("cargo clippy");
 
     if has_fast_checks {
         VelocityResult::pass(
@@ -314,7 +326,11 @@ pub fn p10_no_sleep_in_fast() -> VelocityResult {
             "Sleep tests marked #[ignore]; excluded from fast path",
         )
     } else {
-        VelocityResult::fail("P10", "no sleep() in fast", "sleep() found in fast test path")
+        VelocityResult::fail(
+            "P10",
+            "no sleep() in fast",
+            "sleep() found in fast test path",
+        )
     }
 }
 
@@ -431,8 +447,8 @@ mod tests {
 
     #[test]
     fn test_velocity_result_with_duration() {
-        let result = VelocityResult::pass("P1", "test", "details")
-            .with_duration(Duration::from_secs(1));
+        let result =
+            VelocityResult::pass("P1", "test", "details").with_duration(Duration::from_secs(1));
         assert!(result.duration.is_some());
         assert_eq!(result.duration.unwrap(), Duration::from_secs(1));
     }

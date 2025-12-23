@@ -74,13 +74,17 @@ impl DocsResult {
 #[must_use]
 pub fn o1_example_listing() -> DocsResult {
     // Cargo can list examples via cargo run --example
-    let examples_exist = Path::new("examples").exists() ||
-        std::env::current_dir()
+    let examples_exist = Path::new("examples").exists()
+        || std::env::current_dir()
             .map(|p| p.join("examples").exists())
             .unwrap_or(false);
 
     if examples_exist {
-        DocsResult::pass("O1", "Example listing", "cargo run --example lists all examples")
+        DocsResult::pass(
+            "O1",
+            "Example listing",
+            "cargo run --example lists all examples",
+        )
     } else {
         DocsResult::fail("O1", "Example listing", "Examples directory not found")
     }
@@ -96,7 +100,11 @@ pub fn o2_whisper_transcribe_example() -> DocsResult {
     let example_exists = example_file_exists("whisper_transcribe.rs");
 
     if example_exists {
-        DocsResult::pass("O2", "whisper_transcribe.rs", "End-to-end ASR example exists")
+        DocsResult::pass(
+            "O2",
+            "whisper_transcribe.rs",
+            "End-to-end ASR example exists",
+        )
     } else {
         DocsResult::fail("O2", "whisper_transcribe.rs", "Example file not found")
     }
@@ -162,7 +170,11 @@ pub fn o6_public_api_only() -> DocsResult {
     let uses_public_api = true; // Verified by compilation
 
     if uses_public_api {
-        DocsResult::pass("O6", "Public API only", "No #[doc(hidden)] usage in examples")
+        DocsResult::pass(
+            "O6",
+            "Public API only",
+            "No #[doc(hidden)] usage in examples",
+        )
     } else {
         DocsResult::fail("O6", "Public API only", "Examples use private API")
     }
@@ -175,8 +187,7 @@ pub fn o6_public_api_only() -> DocsResult {
 /// Verify mdbook builds
 #[must_use]
 pub fn o7_mdbook_builds() -> DocsResult {
-    let book_exists = Path::new("book").exists() ||
-        Path::new("docs/book").exists();
+    let book_exists = Path::new("book").exists() || Path::new("docs/book").exists();
 
     if book_exists {
         DocsResult::pass("O7", "mdBook builds", "mdbook build succeeds")
@@ -218,7 +229,11 @@ pub fn o10_readme_quickstart() -> DocsResult {
     let readme_exists = Path::new("README.md").exists();
 
     if readme_exists {
-        DocsResult::pass("O10", "README quickstart", "README.md contains quickstart guide")
+        DocsResult::pass(
+            "O10",
+            "README quickstart",
+            "README.md contains quickstart guide",
+        )
     } else {
         DocsResult::fail("O10", "README quickstart", "README.md not found")
     }
@@ -243,7 +258,11 @@ pub fn o11_cli_help_consistent() -> DocsResult {
 #[must_use]
 pub fn o12_manpages_generation() -> DocsResult {
     // build.rs can generate man pages
-    DocsResult::pass("O12", "Manpages generation", "Man page generation infrastructure ready")
+    DocsResult::pass(
+        "O12",
+        "Manpages generation",
+        "Man page generation infrastructure ready",
+    )
 }
 
 // =============================================================================
@@ -256,7 +275,11 @@ pub fn o13_changelog_updated() -> DocsResult {
     let changelog_exists = Path::new("CHANGELOG.md").exists();
 
     if changelog_exists {
-        DocsResult::pass("O13", "Changelog updated", "CHANGELOG.md mentions Qwen & TensorLogic")
+        DocsResult::pass(
+            "O13",
+            "Changelog updated",
+            "CHANGELOG.md mentions Qwen & TensorLogic",
+        )
     } else {
         DocsResult::pass("O13", "Changelog updated", "Changelog infrastructure ready")
     }
@@ -272,9 +295,17 @@ pub fn o14_contributing_guide() -> DocsResult {
     let contributing_exists = Path::new("CONTRIBUTING.md").exists();
 
     if contributing_exists {
-        DocsResult::pass("O14", "Contributing guide", "CONTRIBUTING.md updated for APR v2")
+        DocsResult::pass(
+            "O14",
+            "Contributing guide",
+            "CONTRIBUTING.md updated for APR v2",
+        )
     } else {
-        DocsResult::pass("O14", "Contributing guide", "Contributing documentation ready")
+        DocsResult::pass(
+            "O14",
+            "Contributing guide",
+            "Contributing documentation ready",
+        )
     }
 }
 
@@ -285,8 +316,7 @@ pub fn o14_contributing_guide() -> DocsResult {
 /// Verify Apache 2.0 license headers
 #[must_use]
 pub fn o15_license_headers() -> DocsResult {
-    let license_exists = Path::new("LICENSE").exists() ||
-        Path::new("LICENSE-APACHE").exists();
+    let license_exists = Path::new("LICENSE").exists() || Path::new("LICENSE-APACHE").exists();
 
     if license_exists {
         DocsResult::pass("O15", "License headers", "Apache 2.0 license present")
@@ -325,7 +355,11 @@ pub fn o17_progress_bars() -> DocsResult {
 #[must_use]
 pub fn o18_wasm_documentation() -> DocsResult {
     // WASM chapter in book or dedicated docs
-    DocsResult::pass("O18", "WASM documentation", "WASM deployment covered in docs")
+    DocsResult::pass(
+        "O18",
+        "WASM documentation",
+        "WASM deployment covered in docs",
+    )
 }
 
 // =============================================================================
@@ -357,8 +391,8 @@ pub fn o20_audio_documentation() -> DocsResult {
 /// Check if an example file exists
 fn example_file_exists(filename: &str) -> bool {
     let paths = [
-        format!("examples/{}", filename),
-        format!("./examples/{}", filename),
+        format!("examples/{filename}"),
+        format!("./examples/{filename}"),
     ];
 
     paths.iter().any(|p| Path::new(p).exists())

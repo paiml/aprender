@@ -176,11 +176,7 @@ pub fn n4_thread_sanitizer_clean() -> SecurityResult {
             "No data races in parallel load operations",
         )
     } else {
-        SecurityResult::fail(
-            "N4",
-            "Thread Sanitizer (TSAN) clean",
-            "Data races detected",
-        )
+        SecurityResult::fail("N4", "Thread Sanitizer (TSAN) clean", "Data races detected")
     }
 }
 
@@ -283,11 +279,7 @@ pub fn n8_oom_handling() -> SecurityResult {
             "Graceful failure on allocation limits",
         )
     } else {
-        SecurityResult::fail(
-            "N8",
-            "OOM Handling",
-            "OOM causes panic instead of error",
-        )
+        SecurityResult::fail("N8", "OOM Handling", "OOM causes panic instead of error")
     }
 }
 
@@ -319,11 +311,7 @@ pub fn n9_fd_leak_check() -> SecurityResult {
             "File descriptors properly closed via RAII",
         )
     } else {
-        SecurityResult::fail(
-            "N9",
-            "FD Leak Check",
-            "File descriptor leak detected",
-        )
+        SecurityResult::fail("N9", "FD Leak Check", "File descriptor leak detected")
     }
 }
 
@@ -365,10 +353,9 @@ fn test_path_traversal_blocked() -> bool {
     for path in &malicious_paths {
         if !is_path_safe(path) {
             continue; // Correctly blocked
-        } else {
-            eprintln!("FAILED TO BLOCK MALICIOUS PATH: {}", path);
-            return false; // Failed to block
         }
+        eprintln!("FAILED TO BLOCK MALICIOUS PATH: {path}");
+        return false; // Failed to block
     }
     true
 }
@@ -541,11 +528,7 @@ pub fn n15_wasm_sandboxing() -> SecurityResult {
             "No DOM/Network access outside specific APIs",
         )
     } else {
-        SecurityResult::fail(
-            "N15",
-            "WASM Sandboxing",
-            "WASM sandbox violation",
-        )
+        SecurityResult::fail("N15", "WASM Sandboxing", "WASM sandbox violation")
     }
 }
 
@@ -566,11 +549,7 @@ pub fn n16_disk_full_handling() -> SecurityResult {
             "write_file handles ENOSPC gracefully",
         )
     } else {
-        SecurityResult::fail(
-            "N16",
-            "Disk Full Simulation",
-            "Disk full causes panic",
-        )
+        SecurityResult::fail("N16", "Disk Full Simulation", "Disk full causes panic")
     }
 }
 
@@ -699,7 +678,7 @@ pub fn n20_nan_inf_weight_handling() -> SecurityResult {
 
 /// Test weight validation
 fn test_weight_validation() -> bool {
-    let weights = vec![1.0_f32, f32::NAN, 2.0, f32::INFINITY, 3.0];
+    let weights = [1.0_f32, f32::NAN, 2.0, f32::INFINITY, 3.0];
 
     // Validate weights
     let has_invalid = weights.iter().any(|w| w.is_nan() || w.is_infinite());

@@ -187,9 +187,10 @@ impl MappedSafeTensors {
     ///
     /// Returns error if tensor not found or data is invalid.
     pub fn get_tensor(&self, name: &str) -> Result<Vec<f32>, String> {
-        let meta = self.metadata.get(name).ok_or_else(|| {
-            format!("Tensor '{name}' not found")
-        })?;
+        let meta = self
+            .metadata
+            .get(name)
+            .ok_or_else(|| format!("Tensor '{name}' not found"))?;
 
         let bytes = self.mmap.as_slice();
         let [start, end] = meta.data_offsets;
@@ -328,7 +329,9 @@ pub fn extract_tensor(raw_data: &[u8], tensor_meta: &TensorMetadata) -> Result<V
         "F32" => extract_f32(tensor_bytes),
         "BF16" => extract_bf16_to_f32(tensor_bytes),
         "F16" => extract_f16_to_f32(tensor_bytes),
-        other => Err(format!("Unsupported dtype: {other}. Supported: F32, BF16, F16")),
+        other => Err(format!(
+            "Unsupported dtype: {other}. Supported: F32, BF16, F16"
+        )),
     }
 }
 
@@ -418,7 +421,7 @@ fn f16_to_f32(bytes: [u8; 2]) -> f32 {
     let f32_bits = if exp == 0 {
         if mant == 0 {
             // Zero (positive or negative)
-            (sign as u32) << 31
+            u32::from(sign) << 31
         } else {
             // Subnormal: convert to normalized F32
             let mut m = mant;
@@ -429,17 +432,17 @@ fn f16_to_f32(bytes: [u8; 2]) -> f32 {
             }
             m &= 0x3FF; // Remove implicit 1
             let exp32 = (e + 127) as u32; // F32 bias
-            ((sign as u32) << 31) | (exp32 << 23) | ((m as u32) << 13)
+            (u32::from(sign) << 31) | (exp32 << 23) | (u32::from(m) << 13)
         }
     } else if exp == 31 {
         // Inf or NaN
-        let mant32 = (mant as u32) << 13;
-        ((sign as u32) << 31) | (0xFF << 23) | mant32
+        let mant32 = u32::from(mant) << 13;
+        (u32::from(sign) << 31) | (0xFF << 23) | mant32
     } else {
         // Normal number
-        let exp32 = (exp as u32) - 15 + 127; // Adjust bias
-        let mant32 = (mant as u32) << 13;
-        ((sign as u32) << 31) | (exp32 << 23) | mant32
+        let exp32 = u32::from(exp) - 15 + 127; // Adjust bias
+        let mant32 = u32::from(mant) << 13;
+        (u32::from(sign) << 31) | (exp32 << 23) | mant32
     };
 
     f32::from_bits(f32_bits)
