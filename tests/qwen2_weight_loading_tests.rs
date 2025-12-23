@@ -16,8 +16,6 @@
 
 use aprender::demo::Qwen2Config;
 use aprender::models::Qwen2Model;
-use std::collections::BTreeMap;
-use std::path::PathBuf;
 
 // ============================================================================
 // Test Fixtures (tiny model for fast testing)
@@ -35,11 +33,6 @@ fn tiny_test_config() -> Qwen2Config {
         intermediate_size: 64,
         rope_theta: 10000.0,
     }
-}
-
-/// Get path to test fixtures directory.
-fn test_fixtures_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures")
 }
 
 // ============================================================================

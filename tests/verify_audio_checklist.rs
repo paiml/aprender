@@ -1,3 +1,5 @@
+#![cfg(feature = "audio")]
+
 use aprender::audio::mel::{MelFilterbank, MelConfig, detect_clipping, stereo_to_mono, validate_audio};
 use aprender::audio::resample::resample;
 use aprender::audio::stream::{AudioChunker, ChunkConfig};
