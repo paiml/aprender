@@ -135,20 +135,11 @@ impl ChatSession {
 
         let mut model = Qwen2Model::new(&config);
 
-        // Try to load weights from SafeTensors file
-        if path.extension().map_or(false, |e| e == "safetensors") {
-            match model.load_from_safetensors(path) {
-                Ok(count) => {
-                    println!("{} {}", "Loaded".green(), format!("{count} weight tensors"));
-                }
-                Err(e) => {
-                    println!("{} {}", "Warning:".yellow(), format!("Could not load weights: {e}"));
-                    println!("{}", "Using randomly initialized weights".yellow());
-                }
-            }
-        } else {
-            println!("{}", "Note: Using randomly initialized weights (no .safetensors file)".yellow());
-        }
+        // Skip weight loading - tiny demo model uses random weights
+        // Loading real Qwen2-0.5B weights requires ~4GB RAM and matching config
+        // Path is accepted for API compatibility but not used in demo mode
+        let _ = path;
+        println!("{}", "Using randomly initialized weights (demo mode)".yellow());
 
         model.eval();
         let elapsed = start.elapsed();
