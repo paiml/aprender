@@ -20,6 +20,7 @@ pub(crate) mod inspect;
 pub(crate) mod lint;
 pub(crate) mod merge;
 pub(crate) mod probar;
+pub(crate) mod profile;
 pub(crate) mod run;
 pub(crate) mod serve;
 pub(crate) mod tensors;

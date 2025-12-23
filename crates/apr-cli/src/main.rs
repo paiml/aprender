@@ -26,7 +26,8 @@ mod output;
 
 use commands::{
     canary, canary::CanaryCommands, chat, compare_hf, convert, debug, diff, explain, export, flow,
-    hex, import, inspect, lint, merge, probar, run, serve, tensors, trace, tree, tui, validate,
+    hex, import, inspect, lint, merge, probar, profile, run, serve, tensors, trace, tree, tui,
+    validate,
 };
 
 /// apr - APR Model Operations Tool
@@ -509,6 +510,53 @@ enum Commands {
         #[arg(long)]
         inspect: bool,
     },
+
+    /// Deep profiling with Roofline analysis (Williams et al., 2009)
+    Profile {
+        /// Path to model file (.apr, .safetensors, .gguf)
+        #[arg(value_name = "FILE")]
+        file: PathBuf,
+
+        /// Layer-by-layer granular analysis
+        #[arg(long)]
+        granular: bool,
+
+        /// Output format (human, json, flamegraph)
+        #[arg(long, default_value = "human")]
+        format: String,
+
+        /// Focus on specific operation (attention, mlp, matmul, embedding)
+        #[arg(long)]
+        focus: Option<String>,
+
+        /// Detect naive implementations (< threshold GFLOPS)
+        #[arg(long)]
+        detect_naive: bool,
+
+        /// GFLOPS threshold for naive detection
+        #[arg(long, default_value = "10.0")]
+        threshold: f64,
+
+        /// Compare against HuggingFace baseline
+        #[arg(long)]
+        compare_hf: Option<String>,
+
+        /// Measure energy consumption (requires RAPL)
+        #[arg(long)]
+        energy: bool,
+
+        /// Compute performance grade (Dean & Ghemawat, 2025)
+        #[arg(long)]
+        perf_grade: bool,
+
+        /// Show call graph (Graham et al., 1982)
+        #[arg(long)]
+        callgraph: bool,
+
+        /// Exit non-zero if naive implementation detected
+        #[arg(long)]
+        fail_on_naive: bool,
+    },
 }
 
 /// Execute the CLI command and return the result.
@@ -729,6 +777,39 @@ fn execute_command(cli: &Cli) -> Result<(), error::CliError> {
             system.as_deref(),
             *inspect,
         ),
+
+        Commands::Profile {
+            file,
+            granular,
+            format,
+            focus,
+            detect_naive,
+            threshold,
+            compare_hf,
+            energy,
+            perf_grade,
+            callgraph,
+            fail_on_naive,
+        } => {
+            let output_format = format.parse().unwrap_or(profile::OutputFormat::Human);
+            let profile_focus = focus
+                .as_ref()
+                .and_then(|f| f.parse().ok())
+                .unwrap_or(profile::ProfileFocus::All);
+            profile::run(
+                file,
+                *granular,
+                output_format,
+                profile_focus,
+                *detect_naive,
+                *threshold,
+                compare_hf.as_deref(),
+                *energy,
+                *perf_grade,
+                *callgraph,
+                *fail_on_naive,
+            )
+        }
     }
 }
 
