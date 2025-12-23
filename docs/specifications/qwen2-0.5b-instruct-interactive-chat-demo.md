@@ -316,7 +316,7 @@ apr export qwen2-0.5b-int4.apr --format onnx -o model.onnx
 8. [Performance Requirements](#8-performance-requirements)
 9. [Peer-Reviewed Citations](#9-peer-reviewed-citations)
 10. [Toyota Way Alignment](#10-toyota-way-alignment)
-11. [150-Point Popperian Falsification Checklist](#11-150-point-popperian-falsification-checklist)
+11. [155-Point Popperian Falsification Checklist](#11-155-point-popperian-falsification-checklist)
 12. [Implementation Roadmap](#12-implementation-roadmap)
 13. [Risk Analysis](#13-risk-analysis)
 14. [References](#14-references)
@@ -409,6 +409,30 @@ Per Kleppmann et al. (2019) "Local-First Software":
 | **Data Privacy** | No telemetry; prompts never leave device |
 | **Auditability** | Open source (Apache 2.0); Reproducible builds |
 | **Model Provenance** | Cryptographic signatures in .apr footer |
+
+### 2.4 Native Library Mandate (Zero Ad-Hoc)
+
+**CRITICAL**: All implementations MUST use existing aprender infrastructure. Ad-hoc implementations are a major bug vector.
+
+| Component | ❌ Ad-Hoc (FORBIDDEN) | ✅ Native (REQUIRED) |
+|-----------|----------------------|---------------------|
+| **File I/O** | `fs::read()` | `bundle::MappedFile` (mmap) |
+| **Tensor Storage** | Custom Vec<f32> | `autograd::Tensor` |
+| **Model Format** | Raw SafeTensors | `.apr` format via `format::load_mmap` |
+| **Serialization** | Manual JSON | `serialization::apr` module |
+| **Error Handling** | `String` errors | `AprenderError` |
+| **NN Layers** | Custom implementations | `nn::*` module |
+
+**Rationale (Toyota Way: Standardized Work)**:
+- Native libraries are tested (96.94% coverage)
+- Native libraries use mmap (zero-copy, low memory)
+- Native libraries handle edge cases (NaN, Inf, OOM)
+- Ad-hoc code duplicates effort and introduces bugs
+
+**Enforcement**:
+- CI lint check for `fs::read` in model loading paths
+- PR review checklist: "Uses native aprender infrastructure?"
+- Mutation testing covers native paths
 
 ---
 
@@ -1115,7 +1139,7 @@ probador-report:
 
 ---
 
-## 10. 100-Point Popperian Falsification Checklist
+## 10. 155-Point Popperian Falsification Checklist
 
 **Methodology**: Claims must be falsifiable. We specify the condition that PROVES the system is broken/fake.
 
@@ -1180,13 +1204,16 @@ probador-report:
 | F3 | Streaming | Text appears in chunks > 50ms | ⬜ |
 | F4 | Fallback | No error message if WebGPU/SIMD missing | ⬜ |
 
-### Section G: Code Quality (10 points)
+### Section G: Code Quality (15 points)
 
 | # | Claim | Falsification Condition (Fail if...) | Status |
 |---|-------|------------------------|--------|
 | G1 | Coverage | Code coverage < 85% | ⬜ |
 | G2 | Safety | `unsafe` block used without justification comment | ⬜ |
 | G3 | Linting | `clippy` has warnings | ⬜ |
+| **G4** | **Native I/O** | **`fs::read()` used instead of `bundle::MappedFile`** | ⬜ |
+| **G5** | **Native Format** | **Raw SafeTensors used instead of `.apr` format** | ⬜ |
+| G6 | Native Errors | `String` errors used instead of `AprenderError` | ⬜ |
 
 ### Section H: Full Lifecycle — The North Star (20 points)
 
@@ -1274,12 +1301,12 @@ probador-report:
 | D: Generation | 20 | Quality & perplexity |
 | E: Visual Control | 15 | Inspection & transparency |
 | F: WASM/Browser | 10 | Web deployment |
-| G: Code Quality | 10 | Engineering standards |
+| G: Code Quality | 15 | Engineering standards + Native Library Mandate |
 | **H: Full Lifecycle** | **25** | **North Star workflow** |
 | **I: Probador Testing** | **25** | **Three Pillars: Coverage, Playbooks, Pixels** |
-| **TOTAL** | **150** | |
+| **TOTAL** | **155** | |
 
-**Passing Threshold**: 150/150 (Zero Defects / Zero Stubs / Complete Workflow / Full Probador)
+**Passing Threshold**: 155/155 (Zero Defects / Zero Stubs / Zero Ad-Hoc / Complete Workflow / Full Probador)
 
 ---
 
@@ -1371,7 +1398,7 @@ probador-report:
 
 ## Appendix A: Verification Checklist Summary
 
-**Total Points**: 150
+**Total Points**: 155
 
 | Section | Points | Status |
 |---------|--------|--------|
@@ -1381,12 +1408,12 @@ probador-report:
 | D: Generation & Quality | 20 | ⬜ |
 | E: Visual Control | 15 | ⬜ |
 | F: WASM/Browser | 10 | ⬜ |
-| G: Code Quality | 10 | ⬜ |
+| G: Code Quality | 15 | ⬜ |
 | **H: Full Lifecycle (North Star)** | **25** | ⬜ |
 | **I: Probador (Three Pillars)** | **25** | ⬜ |
-| **TOTAL** | **150** | **⬜ 0/150** |
+| **TOTAL** | **155** | **⬜ 0/155** |
 
-**Passing Threshold**: 150/150 (Zero Defects / Zero Stubs / Complete Workflow / Full Probador)
+**Passing Threshold**: 155/155 (Zero Defects / Zero Stubs / Zero Ad-Hoc / Complete Workflow / Full Probador)
 
 ---
 
