@@ -303,4 +303,118 @@ mod tests {
         let w = Delta::wasserstein_1d(&a, &b);
         assert!((w - 1.0).abs() < 1e-6);
     }
+
+    #[test]
+    fn test_delta_compute_with_data() {
+        let our = GroundTruth::from_slice(&[1.0, 2.0, 3.0]);
+        let gt = GroundTruth::from_slice(&[1.0, 2.0, 3.0]);
+        let delta = Delta::compute(&our, &gt);
+        assert!(delta.cosine().is_some());
+        assert!((delta.cosine().unwrap() - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_delta_compute_sign_flip() {
+        let our = GroundTruth::from_stats(0.5, 1.0);
+        let gt = GroundTruth::from_stats(-0.5, 1.0);
+        let delta = Delta::compute(&our, &gt);
+        assert!(delta.is_sign_flipped());
+    }
+
+    #[test]
+    fn test_delta_compute_no_sign_flip() {
+        let our = GroundTruth::from_stats(0.5, 1.0);
+        let gt = GroundTruth::from_stats(0.6, 1.0);
+        let delta = Delta::compute(&our, &gt);
+        assert!(!delta.is_sign_flipped());
+    }
+
+    #[test]
+    fn test_delta_from_percent() {
+        let delta = Delta::from_percent(42.5);
+        assert!((delta.percent() - 42.5).abs() < 1e-6);
+        assert!((delta.mean_delta() - 0.0).abs() < 1e-6);
+        assert!((delta.std_delta() - 0.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_delta_from_stats() {
+        let delta = Delta::from_stats(0.1, 0.2);
+        assert!((delta.mean_delta() - 0.1).abs() < 1e-5);
+        assert!((delta.std_delta() - 0.2).abs() < 1e-5);
+        // percent = (0.1 + 0.2) * 100 = 30
+        assert!((delta.percent() - 30.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn test_delta_default() {
+        let delta = Delta::default();
+        assert!((delta.percent() - 0.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_delta_kl_divergence_value() {
+        let delta = Delta::from_percent(5.0);
+        assert!(delta.kl_divergence_value().is_none());
+    }
+
+    #[test]
+    fn test_delta_compute_all_with_kl() {
+        let our = GroundTruth::from_slice(&[0.1, 0.2, 0.3, 0.4]);
+        let gt = GroundTruth::from_slice(&[0.1, 0.2, 0.3, 0.4]);
+        let delta = Delta::compute_all(&our, &gt);
+        assert!(delta.kl_divergence_value().is_some());
+        // KL divergence of identical distributions should be ~0
+        assert!(delta.kl_divergence_value().unwrap().abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_cosine_empty() {
+        let cos = Delta::cosine_similarity(&[], &[]);
+        assert!((cos - 0.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_cosine_different_lengths() {
+        let a = vec![1.0, 2.0];
+        let b = vec![1.0, 2.0, 3.0];
+        let cos = Delta::cosine_similarity(&a, &b);
+        assert!((cos - 0.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_cosine_zero_norm() {
+        let a = vec![0.0, 0.0, 0.0];
+        let b = vec![1.0, 2.0, 3.0];
+        let cos = Delta::cosine_similarity(&a, &b);
+        assert!((cos - 0.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_kl_empty() {
+        let kl = Delta::kl_divergence(&[], &[]);
+        assert!(kl.is_infinite());
+    }
+
+    #[test]
+    fn test_kl_different_lengths() {
+        let p = vec![0.5, 0.5];
+        let q = vec![0.33, 0.33, 0.34];
+        let kl = Delta::kl_divergence(&p, &q);
+        assert!(kl.is_infinite());
+    }
+
+    #[test]
+    fn test_wasserstein_empty() {
+        let w = Delta::wasserstein_1d(&[], &[1.0]);
+        assert!((w - 0.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_wasserstein_different_lengths() {
+        let a = vec![1.0, 2.0];
+        let b = vec![1.0, 2.0, 3.0, 4.0];
+        let w = Delta::wasserstein_1d(&a, &b);
+        assert!(w.is_finite());
+    }
 }

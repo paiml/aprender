@@ -342,4 +342,135 @@ mod tests {
         assert_eq!(results[0].status(), StageStatus::Failed);
         assert_eq!(results[1].status(), StageStatus::Passed); // Not skipped
     }
+
+    #[test]
+    fn test_get_stage_found() {
+        let pipeline = Pipeline::builder("test")
+            .stage("mel")
+            .ground_truth_stats(0.0, 1.0)
+            .build_stage()
+            .build()
+            .unwrap();
+
+        let stage = pipeline.get_stage("mel");
+        assert!(stage.is_some());
+        assert_eq!(stage.unwrap().name(), "mel");
+    }
+
+    #[test]
+    fn test_get_stage_not_found() {
+        let pipeline = Pipeline::builder("test")
+            .stage("mel")
+            .build_stage()
+            .build()
+            .unwrap();
+
+        let stage = pipeline.get_stage("nonexistent");
+        assert!(stage.is_none());
+    }
+
+    #[test]
+    fn test_verify_stage_success() {
+        let pipeline = Pipeline::builder("test")
+            .stage("mel")
+            .ground_truth_stats(0.0, 1.0)
+            .tolerance(Tolerance::percent(10.0))
+            .build_stage()
+            .build()
+            .unwrap();
+
+        let output = GroundTruth::from_stats(0.05, 1.02);
+        let result = pipeline.verify_stage("mel", &output).unwrap();
+        assert!(result.status().is_passed());
+    }
+
+    #[test]
+    fn test_verify_stage_not_found() {
+        let pipeline = Pipeline::builder("test")
+            .stage("mel")
+            .build_stage()
+            .build()
+            .unwrap();
+
+        let output = GroundTruth::from_stats(0.0, 1.0);
+        let result = pipeline.verify_stage("nonexistent", &output);
+        assert!(matches!(result, Err(PipelineError::StageNotFound(_))));
+    }
+
+    #[test]
+    fn test_pipeline_error_display() {
+        let empty_name = PipelineError::EmptyName;
+        assert!(empty_name.to_string().contains("empty"));
+
+        let duplicate = PipelineError::DuplicateStageName("test".to_string());
+        assert!(duplicate.to_string().contains("Duplicate"));
+        assert!(duplicate.to_string().contains("test"));
+
+        let no_stages = PipelineError::NoStages;
+        assert!(no_stages.to_string().contains("no stages"));
+
+        let not_found = PipelineError::StageNotFound("missing".to_string());
+        assert!(not_found.to_string().contains("not found"));
+        assert!(not_found.to_string().contains("missing"));
+    }
+
+    #[test]
+    fn test_pipeline_error_is_error() {
+        let err: Box<dyn std::error::Error> = Box::new(PipelineError::EmptyName);
+        assert!(!err.to_string().is_empty());
+    }
+
+    #[test]
+    fn test_pipeline_stage_builder_with_ground_truth() {
+        let gt = GroundTruth::from_slice(&[1.0, 2.0, 3.0]);
+        let pipeline = Pipeline::builder("test")
+            .stage("mel")
+            .ground_truth(gt)
+            .build_stage()
+            .build()
+            .unwrap();
+
+        let stage = pipeline.get_stage("mel").unwrap();
+        assert!(stage.ground_truth().is_some());
+        assert!(stage.ground_truth().unwrap().has_data());
+    }
+
+    #[test]
+    fn test_pipeline_stage_builder_with_description() {
+        let pipeline = Pipeline::builder("test")
+            .stage("mel")
+            .description("Mel spectrogram computation")
+            .build_stage()
+            .build()
+            .unwrap();
+
+        let stage = pipeline.get_stage("mel").unwrap();
+        assert!(stage.description().is_some());
+        assert!(stage.description().unwrap().contains("Mel"));
+    }
+
+    #[test]
+    fn test_verify_with_none_output() {
+        let pipeline = Pipeline::builder("test")
+            .stage("mel")
+            .ground_truth_stats(0.0, 1.0)
+            .build_stage()
+            .build()
+            .unwrap();
+
+        let report = pipeline.verify(|_| None);
+        let results = report.results();
+        assert_eq!(results[0].status(), StageStatus::Skipped);
+    }
+
+    #[test]
+    fn test_add_stage_directly() {
+        let stage = StageBuilder::new("encoder")
+            .ground_truth_stats(0.0, 1.0)
+            .build();
+        let pipeline = Pipeline::builder("test").add_stage(stage).build().unwrap();
+
+        assert_eq!(pipeline.stages().len(), 1);
+        assert_eq!(pipeline.stages()[0].name(), "encoder");
+    }
 }

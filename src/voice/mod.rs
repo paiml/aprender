@@ -118,4 +118,25 @@ mod tests {
         let err2 = VoiceError::ModelNotLoaded;
         assert_eq!(err1, err2);
     }
+
+    #[test]
+    fn test_voice_error_all_variants() {
+        let invalid_audio = VoiceError::InvalidAudio("bad audio".to_string());
+        assert!(invalid_audio.to_string().contains("Invalid audio"));
+
+        let extraction_failed = VoiceError::ExtractionFailed("failed".to_string());
+        assert!(extraction_failed.to_string().contains("extraction failed"));
+
+        let not_loaded = VoiceError::ModelNotLoaded;
+        assert!(not_loaded.to_string().contains("not loaded"));
+
+        let not_impl = VoiceError::NotImplemented("feature".to_string());
+        assert!(not_impl.to_string().contains("Not implemented"));
+    }
+
+    #[test]
+    fn test_voice_error_is_error_trait() {
+        let err: Box<dyn std::error::Error> = Box::new(VoiceError::ModelNotLoaded);
+        assert!(!err.to_string().is_empty());
+    }
 }

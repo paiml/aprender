@@ -186,6 +186,7 @@ impl ToleranceBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::verify::GroundTruth;
 
     #[test]
     fn test_percent_pass() {
@@ -229,5 +230,121 @@ mod tests {
         // percent = 30% passes percent check (30 <= 50)
         let delta = Delta::from_stats(0.3, 0.0);
         assert!(tol.is_satisfied(&delta));
+    }
+
+    #[test]
+    fn test_kl_divergence_tolerance() {
+        let tol = Tolerance::kl_divergence(0.1);
+        let delta = Delta::from_percent(50.0); // No KL value, passes vacuously
+        assert!(tol.is_satisfied(&delta));
+    }
+
+    #[test]
+    fn test_cosine_similarity_tolerance() {
+        let tol = Tolerance::cosine(0.95);
+        let delta = Delta::from_percent(5.0); // No cosine value, passes vacuously
+        assert!(tol.is_satisfied(&delta));
+    }
+
+    #[test]
+    fn test_cosine_tolerance_with_data() {
+        let tol = Tolerance::cosine(0.99);
+        let our = GroundTruth::from_slice(&[1.0, 2.0, 3.0]);
+        let gt = GroundTruth::from_slice(&[1.0, 2.0, 3.0]);
+        let delta = Delta::compute(&our, &gt);
+        assert!(tol.is_satisfied(&delta));
+    }
+
+    #[test]
+    fn test_cosine_tolerance_fail() {
+        let tol = Tolerance::cosine(0.99);
+        let our = GroundTruth::from_slice(&[1.0, 0.0, 0.0]);
+        let gt = GroundTruth::from_slice(&[0.0, 1.0, 0.0]);
+        let delta = Delta::compute(&our, &gt);
+        assert!(!tol.is_satisfied(&delta));
+    }
+
+    #[test]
+    fn test_stats_fail_std() {
+        let tol = Tolerance::stats(0.1, 0.1);
+        let delta = Delta::from_stats(0.05, 0.2);
+        assert!(!tol.is_satisfied(&delta));
+    }
+
+    #[test]
+    fn test_custom_with_std_delta() {
+        let tol = Tolerance::custom().std_delta(0.1).build();
+        let delta = Delta::from_stats(0.5, 0.05);
+        assert!(tol.is_satisfied(&delta));
+    }
+
+    #[test]
+    fn test_custom_with_kl_divergence() {
+        let tol = Tolerance::custom().kl_divergence(1.0).build();
+        let delta = Delta::from_percent(50.0);
+        assert!(tol.is_satisfied(&delta));
+    }
+
+    #[test]
+    fn test_custom_with_cosine_min() {
+        let tol = Tolerance::custom().cosine_min(0.9).build();
+        let delta = Delta::from_percent(5.0);
+        assert!(tol.is_satisfied(&delta));
+    }
+
+    #[test]
+    fn test_custom_all_criteria() {
+        let tol = Tolerance::custom()
+            .percent(10.0)
+            .mean_delta(0.1)
+            .std_delta(0.1)
+            .kl_divergence(1.0)
+            .cosine_min(0.9)
+            .build();
+        let delta = Delta::from_stats(0.05, 0.05);
+        assert!(tol.is_satisfied(&delta));
+    }
+
+    #[test]
+    fn test_custom_fail_percent() {
+        let tol = Tolerance::custom().percent(5.0).build();
+        let delta = Delta::from_percent(10.0);
+        assert!(!tol.is_satisfied(&delta));
+    }
+
+    #[test]
+    fn test_description_percent() {
+        let tol = Tolerance::percent(5.0);
+        let desc = tol.description();
+        assert!(desc.contains("5.0%"));
+    }
+
+    #[test]
+    fn test_description_stats() {
+        let tol = Tolerance::stats(0.1, 0.2);
+        let desc = tol.description();
+        assert!(desc.contains("mean"));
+        assert!(desc.contains("std"));
+    }
+
+    #[test]
+    fn test_description_kl() {
+        let tol = Tolerance::kl_divergence(0.5);
+        let desc = tol.description();
+        assert!(desc.contains("KL"));
+    }
+
+    #[test]
+    fn test_description_cosine() {
+        let tol = Tolerance::cosine(0.95);
+        let desc = tol.description();
+        assert!(desc.contains("cos"));
+    }
+
+    #[test]
+    fn test_description_custom() {
+        let tol = Tolerance::custom().percent(5.0).build();
+        let desc = tol.description();
+        assert_eq!(desc, "custom");
     }
 }

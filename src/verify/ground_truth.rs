@@ -219,4 +219,143 @@ mod tests {
         assert_eq!(gt.mean(), 0.0);
         assert_eq!(gt.std(), 0.0);
     }
+
+    #[test]
+    fn test_from_slice_with_shape() {
+        let data = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
+        let gt = GroundTruth::from_slice_with_shape(&data, vec![2, 3]);
+        assert_eq!(gt.shape(), &[2, 3]);
+        assert!(gt.has_data());
+        assert_eq!(gt.data().unwrap().len(), 6);
+    }
+
+    #[test]
+    fn test_has_data() {
+        let gt_with_data = GroundTruth::from_slice(&[1.0, 2.0, 3.0]);
+        let gt_stats_only = GroundTruth::from_stats(1.0, 0.5);
+        assert!(gt_with_data.has_data());
+        assert!(!gt_stats_only.has_data());
+    }
+
+    #[test]
+    fn test_data_accessor() {
+        let data = vec![1.0, 2.0, 3.0];
+        let gt = GroundTruth::from_slice(&data);
+        assert!(gt.data().is_some());
+        assert_eq!(gt.data().unwrap(), &[1.0, 2.0, 3.0]);
+    }
+
+    #[test]
+    fn test_shape_accessor() {
+        let gt = GroundTruth::from_slice(&[1.0, 2.0, 3.0, 4.0]);
+        assert_eq!(gt.shape(), &[4]);
+    }
+
+    #[test]
+    fn test_default() {
+        let gt = GroundTruth::default();
+        assert!((gt.mean() - 0.0).abs() < 1e-6);
+        assert!((gt.std() - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_from_stats_min_max_defaults() {
+        let gt = GroundTruth::from_stats(0.0, 1.0);
+        assert!(gt.min().is_infinite() && gt.min().is_sign_negative());
+        assert!(gt.max().is_infinite() && gt.max().is_sign_positive());
+    }
+
+    #[test]
+    fn test_from_bin_file() {
+        use std::io::Write;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.bin");
+        let data: Vec<f32> = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+        let bytes: Vec<u8> = data.iter().flat_map(|f| f.to_le_bytes()).collect();
+        std::fs::File::create(&path)
+            .unwrap()
+            .write_all(&bytes)
+            .unwrap();
+
+        let gt = GroundTruth::from_bin_file(&path).unwrap();
+        assert!((gt.mean() - 3.0).abs() < 1e-6);
+        assert!(gt.has_data());
+    }
+
+    #[test]
+    fn test_from_bin_file_not_found() {
+        let result = GroundTruth::from_bin_file("/nonexistent/path.bin");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_from_json_file() {
+        use std::io::Write;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.json");
+        let json = r#"{"mean": 0.5, "std": 1.2, "min": -0.1, "max": 2.0}"#;
+        std::fs::File::create(&path)
+            .unwrap()
+            .write_all(json.as_bytes())
+            .unwrap();
+
+        let gt = GroundTruth::from_json_file(&path).unwrap();
+        assert!((gt.mean() - 0.5).abs() < 1e-6);
+        assert!((gt.std() - 1.2).abs() < 1e-6);
+        assert!((gt.min() - (-0.1)).abs() < 1e-6);
+        assert!((gt.max() - 2.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_from_json_file_partial() {
+        use std::io::Write;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("partial.json");
+        let json = r#"{"mean": 0.5, "std": 1.2}"#;
+        std::fs::File::create(&path)
+            .unwrap()
+            .write_all(json.as_bytes())
+            .unwrap();
+
+        let gt = GroundTruth::from_json_file(&path).unwrap();
+        assert!((gt.mean() - 0.5).abs() < 1e-6);
+        assert!(gt.min().is_infinite()); // Default
+        assert!(gt.max().is_infinite()); // Default
+    }
+
+    #[test]
+    fn test_from_json_file_not_found() {
+        let result = GroundTruth::from_json_file("/nonexistent/path.json");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_from_json_file_missing_key() {
+        use std::io::Write;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("missing.json");
+        let json = r#"{"std": 1.2}"#; // Missing "mean"
+        std::fs::File::create(&path)
+            .unwrap()
+            .write_all(json.as_bytes())
+            .unwrap();
+
+        let result = GroundTruth::from_json_file(&path);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_from_json_file_invalid_value() {
+        use std::io::Write;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("invalid.json");
+        let json = r#"{"mean": "not_a_number", "std": 1.2}"#;
+        std::fs::File::create(&path)
+            .unwrap()
+            .write_all(json.as_bytes())
+            .unwrap();
+
+        let result = GroundTruth::from_json_file(&path);
+        assert!(result.is_err());
+    }
 }

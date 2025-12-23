@@ -319,4 +319,73 @@ mod tests {
         assert!(rendered.contains("success-pipeline"));
         assert!(!rendered.contains("DIAGNOSIS")); // No failures
     }
+
+    #[test]
+    fn test_render_with_diagnosis() {
+        use crate::verify::GroundTruth;
+
+        let mut report = VerifyReport::new("failing-pipeline");
+
+        // Create a failed result with diagnosis info
+        let our = GroundTruth::from_stats(0.5, 1.0);
+        let gt = GroundTruth::from_stats(-0.5, 1.0);
+        let delta = Delta::compute(&our, &gt);
+        let failed = StageResult::failed("bad_stage", delta);
+        report.add_result(failed);
+
+        let rendered = report.render();
+        assert!(rendered.contains("DIAGNOSIS"));
+        assert!(rendered.contains("bad_stage"));
+    }
+
+    #[test]
+    fn test_render_with_stats() {
+        use crate::verify::GroundTruth;
+
+        let mut report = VerifyReport::new("stats-pipeline");
+
+        let our = GroundTruth::from_stats(0.1, 0.5);
+        let gt = GroundTruth::from_stats(0.0, 0.5);
+        let delta = Delta::compute(&our, &gt);
+
+        let result = StageResult::passed("stage_a", delta);
+        report.add_result(result);
+
+        let rendered = report.render();
+        assert!(rendered.contains("stage_a"));
+        // Stats are rendered - check for μ= and σ=
+        // The render method accesses our_stats and gt_stats
+    }
+
+    #[test]
+    fn test_display_trait() {
+        let mut report = VerifyReport::new("display-test");
+        report.add_result(StageResult::passed("a", Delta::from_percent(1.0)));
+
+        let display_output = format!("{}", report);
+        assert!(display_output.contains("APRENDER PIPELINE VERIFICATION"));
+    }
+
+    #[test]
+    fn test_all_passed_only_skipped() {
+        let mut report = VerifyReport::new("only-skipped");
+        report.add_result(StageResult::skipped("a"));
+        report.add_result(StageResult::skipped("b"));
+
+        // all_passed should be false if only skipped (no passes)
+        assert!(!report.all_passed());
+    }
+
+    #[test]
+    fn test_summary_with_failure() {
+        let mut report = VerifyReport::new("fail-summary");
+        report.add_result(StageResult::passed("a", Delta::from_percent(1.0)));
+        report.add_result(StageResult::failed("b", Delta::from_percent(50.0)));
+        report.add_result(StageResult::skipped("c"));
+
+        let summary = report.summary();
+        assert!(summary.contains("failed"));
+        assert!(summary.contains("1")); // 1 failed
+        assert!(summary.contains("skipped"));
+    }
 }
