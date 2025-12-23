@@ -107,6 +107,14 @@ pub mod lint;
 // Sharded model import module (GH-127 - multi-tensor repos, streaming import)
 pub mod sharded;
 
+// Golden trace verification (spec §7.6.3 - prove model authenticity)
+pub mod golden;
+
+// Re-export golden trace types
+pub use golden::{
+    verify_logits, GoldenTrace, GoldenTraceSet, GoldenVerifyReport, LogitStats, TraceVerifyResult,
+};
+
 // Re-export model card types
 pub use model_card::{ModelCard, TrainingDataInfo};
 
@@ -136,9 +144,8 @@ pub use lint::{
 
 // Re-export sharded import types (GH-127 - multi-tensor repos)
 pub use sharded::{
-    estimate_shard_memory, get_shard_files, is_sharded_model, CacheStats, CachedShard,
-    ImportPhase, ImportProgress, ImportReport, ShardCache, ShardIndex, ShardedImportConfig,
-    ShardedImporter,
+    estimate_shard_memory, get_shard_files, is_sharded_model, CacheStats, CachedShard, ImportPhase,
+    ImportProgress, ImportReport, ShardCache, ShardIndex, ShardedImportConfig, ShardedImporter,
 };
 
 // Re-export quantization types when feature is enabled

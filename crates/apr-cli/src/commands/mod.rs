@@ -5,12 +5,14 @@
 //! - Jidoka: Stop on quality issues
 //! - Visualization: Make problems visible
 
+pub(crate) mod bench;
 pub(crate) mod canary;
 pub(crate) mod chat;
 pub(crate) mod compare_hf;
 pub(crate) mod convert;
 pub(crate) mod debug;
 pub(crate) mod diff;
+pub(crate) mod eval;
 pub(crate) mod explain;
 pub(crate) mod export;
 pub(crate) mod flow;
