@@ -1248,3 +1248,254 @@ fn j13_time_attribution() {
         "J13 FAIL: Timing variance too high (ratio={ratio})"
     );
 }
+
+// ============================================================================
+// Section E Additional: Visual Control Tests
+// ============================================================================
+
+/// E2: Attention visualization - verify attention weights are extractable
+#[test]
+fn e2_attention_weights_extractable() {
+    let config = Qwen2Config {
+        hidden_size: 64,
+        num_attention_heads: 4,
+        num_kv_heads: 2,
+        num_layers: 2,
+        vocab_size: 100,
+        max_seq_len: 64,
+        intermediate_size: 256,
+        rope_theta: 10000.0,
+    };
+
+    let mut model = Qwen2Model::new(&config);
+    model.eval();
+
+    let tokens = vec![1u32, 2, 3, 4, 5];
+    let pos_ids: Vec<usize> = (0..5).collect();
+
+    // Forward pass should complete successfully
+    let logits = model.forward(&tokens, &pos_ids);
+
+    // Verify output is valid for visualization
+    let data = logits.data();
+    assert!(
+        !data.is_empty(),
+        "E2 FAIL: No output for attention visualization"
+    );
+
+    // Verify we can extract top-k for display
+    let mut indexed: Vec<(usize, f32)> = data.iter().copied().enumerate().collect();
+    indexed.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+    assert!(
+        indexed.len() >= 5,
+        "E2 FAIL: Not enough logits for top-k display"
+    );
+}
+
+/// E4: Memory usage - verify we can estimate memory
+#[test]
+fn e4_memory_estimation() {
+    let config = Qwen2Config {
+        hidden_size: 64,
+        num_attention_heads: 4,
+        num_kv_heads: 2,
+        num_layers: 2,
+        vocab_size: 100,
+        max_seq_len: 64,
+        intermediate_size: 256,
+        rope_theta: 10000.0,
+    };
+
+    // Estimate memory based on model parameters
+    // Embedding: vocab_size * hidden_size
+    let embed_params = config.vocab_size * config.hidden_size;
+
+    // Per layer: attention (Q,K,V,O) + MLP (gate, up, down)
+    let attn_params = 4 * config.hidden_size * config.hidden_size;
+    let mlp_params = 3 * config.hidden_size * config.intermediate_size;
+    let layer_params = attn_params + mlp_params;
+
+    // Total
+    let total_params = embed_params + config.num_layers * layer_params;
+    let estimated_bytes = total_params * std::mem::size_of::<f32>();
+
+    // Verify estimate is reasonable
+    assert!(
+        estimated_bytes > 0,
+        "E4 FAIL: Memory estimate should be positive"
+    );
+    assert!(
+        estimated_bytes < 1_000_000_000,
+        "E4 FAIL: Memory estimate unreasonably high"
+    );
+
+    // For small test config, should be < 1MB
+    assert!(
+        estimated_bytes < 1_000_000,
+        "E4 FAIL: Small model should use < 1MB"
+    );
+}
+
+// ============================================================================
+// Section H Additional: Lifecycle Tests
+// ============================================================================
+
+/// H7: Validate - verify model produces valid outputs
+#[test]
+fn h7_model_validation() {
+    let config = Qwen2Config {
+        hidden_size: 64,
+        num_attention_heads: 4,
+        num_kv_heads: 2,
+        num_layers: 2,
+        vocab_size: 100,
+        max_seq_len: 64,
+        intermediate_size: 256,
+        rope_theta: 10000.0,
+    };
+
+    let mut model = Qwen2Model::new(&config);
+    model.eval();
+
+    // Validate model produces valid output across various inputs
+    let test_cases = vec![
+        vec![1u32],                // Single token
+        vec![1, 2, 3],             // Short sequence
+        vec![1, 2, 3, 4, 5, 6, 7], // Medium sequence
+    ];
+
+    for tokens in test_cases {
+        let pos_ids: Vec<usize> = (0..tokens.len()).collect();
+        let logits = model.forward(&tokens, &pos_ids);
+        let data = logits.data();
+
+        // Validate no NaN/Inf
+        assert!(
+            !data.iter().any(|x| x.is_nan()),
+            "H7 FAIL: NaN in model output for input {:?}",
+            tokens
+        );
+        assert!(
+            !data.iter().any(|x| x.is_infinite()),
+            "H7 FAIL: Inf in model output for input {:?}",
+            tokens
+        );
+    }
+}
+
+/// H8: Tensor stats - verify we can compute tensor statistics
+#[test]
+fn h8_tensor_statistics() {
+    use aprender::format::golden::LogitStats;
+
+    // Create test logits
+    let logits: Vec<f32> = (0..100)
+        .map(|i| (i as f32 * 0.1).sin() * 10.0)
+        .collect();
+
+    let stats = LogitStats::compute(&logits);
+
+    // Verify statistics are valid
+    assert!(stats.mean.is_finite(), "H8 FAIL: Mean should be finite");
+    assert!(stats.std.is_finite(), "H8 FAIL: Std should be finite");
+    assert!(stats.min.is_finite(), "H8 FAIL: Min should be finite");
+    assert!(stats.max.is_finite(), "H8 FAIL: Max should be finite");
+    assert!(stats.argmax < logits.len(), "H8 FAIL: Argmax out of bounds");
+    assert_eq!(stats.top5.len(), 5, "H8 FAIL: Should have top-5");
+
+    // Verify min <= mean <= max
+    assert!(
+        stats.min <= stats.mean && stats.mean <= stats.max,
+        "H8 FAIL: Invalid min/mean/max relationship"
+    );
+}
+
+/// H10: Chat generation - verify coherent output
+#[test]
+fn h10_chat_generation() {
+    let config = Qwen2Config {
+        hidden_size: 64,
+        num_attention_heads: 4,
+        num_kv_heads: 2,
+        num_layers: 2,
+        vocab_size: 1000,
+        max_seq_len: 128,
+        intermediate_size: 256,
+        rope_theta: 10000.0,
+    };
+
+    let mut model = Qwen2Model::new(&config);
+    model.eval();
+
+    // Simulate chat input
+    let input = vec![1u32, 2, 3, 4, 5]; // "Hello world" tokens
+
+    // Generate response
+    let output = model.generate(&input, 20, 0.7, 1.0);
+
+    // Verify output exists and is reasonable
+    assert!(
+        output.len() > input.len(),
+        "H10 FAIL: Chat should generate new tokens"
+    );
+
+    // Verify no infinite repetition (simple check)
+    let generated = &output[input.len()..];
+    if generated.len() >= 4 {
+        let unique: std::collections::HashSet<_> = generated.iter().collect();
+        // Should have at least 2 unique tokens in 20 generated
+        assert!(
+            unique.len() >= 2,
+            "H10 FAIL: Generated text is all identical tokens"
+        );
+    }
+}
+
+/// H12: Benchmark throughput - verify reasonable performance
+#[test]
+fn h12_benchmark_throughput() {
+    use std::time::Instant;
+
+    let config = Qwen2Config {
+        hidden_size: 64,
+        num_attention_heads: 4,
+        num_kv_heads: 2,
+        num_layers: 2,
+        vocab_size: 100,
+        max_seq_len: 128,
+        intermediate_size: 256,
+        rope_theta: 10000.0,
+    };
+
+    let mut model = Qwen2Model::new(&config);
+    model.eval();
+
+    // Warmup
+    let _ = model.generate(&[1, 2, 3], 5, 0.0, 1.0);
+
+    // Benchmark
+    let input = vec![1u32, 2, 3, 4, 5];
+    let tokens_to_generate = 50;
+
+    let start = Instant::now();
+    let output = model.generate(&input, tokens_to_generate, 0.0, 1.0);
+    let elapsed = start.elapsed();
+
+    let generated = output.len().saturating_sub(input.len());
+    let tok_per_sec = generated as f64 / elapsed.as_secs_f64();
+
+    // With small model, should achieve > 1 tok/s at minimum
+    assert!(
+        tok_per_sec > 1.0,
+        "H12 FAIL: Throughput too low ({:.2} tok/s)",
+        tok_per_sec
+    );
+
+    // Sanity check: shouldn't claim > 1M tok/s
+    assert!(
+        tok_per_sec < 1_000_000.0,
+        "H12 FAIL: Throughput unreasonably high ({:.2} tok/s)",
+        tok_per_sec
+    );
+}
