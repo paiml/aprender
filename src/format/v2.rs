@@ -1586,4 +1586,193 @@ mod tests {
             Some(&serde_json::json!("custom_value"))
         );
     }
+
+    // =========================================================================
+    // Additional Coverage Tests
+    // =========================================================================
+
+    #[test]
+    fn test_tensor_dtype_from_u8() {
+        assert_eq!(TensorDType::from_u8(0), Some(TensorDType::F32));
+        assert_eq!(TensorDType::from_u8(1), Some(TensorDType::F16));
+        assert_eq!(TensorDType::from_u8(2), Some(TensorDType::BF16));
+        assert_eq!(TensorDType::from_u8(3), Some(TensorDType::F64));
+        assert_eq!(TensorDType::from_u8(4), Some(TensorDType::I32));
+        assert_eq!(TensorDType::from_u8(5), Some(TensorDType::I64));
+        assert_eq!(TensorDType::from_u8(6), Some(TensorDType::I8));
+        assert_eq!(TensorDType::from_u8(7), Some(TensorDType::U8));
+        assert_eq!(TensorDType::from_u8(99), None);
+    }
+
+    #[test]
+    fn test_v2_format_error_variants() {
+        let err = V2FormatError::InvalidHeader("bad header".to_string());
+        assert!(err.to_string().contains("bad header") || err.to_string().contains("Invalid"));
+
+        let err = V2FormatError::InvalidTensorIndex("corrupt index".to_string());
+        assert!(err.to_string().contains("corrupt") || err.to_string().contains("index"));
+
+        let err = V2FormatError::MetadataError("invalid metadata".to_string());
+        assert!(err.to_string().contains("metadata") || err.to_string().contains("Metadata"));
+
+        let err = V2FormatError::AlignmentError("alignment off".to_string());
+        assert!(err.to_string().contains("alignment") || err.to_string().contains("Alignment"));
+
+        let err = V2FormatError::IoError("read failed".to_string());
+        assert!(err.to_string().contains("read failed") || err.to_string().contains("I/O"));
+
+        let err = V2FormatError::CompressionError("decompress failed".to_string());
+        assert!(err.to_string().contains("decompress") || err.to_string().contains("Compression"));
+    }
+
+    #[test]
+    fn test_header_checksum_compute() {
+        let mut header = AprV2Header::new();
+        header.version = (2, 0);
+        let checksum = header.compute_checksum();
+        assert!(checksum != 0);
+    }
+
+    #[test]
+    fn test_header_update_checksum() {
+        let mut header = AprV2Header::new();
+        header.checksum = 0;
+        header.update_checksum();
+        assert!(header.checksum != 0);
+    }
+
+    #[test]
+    fn test_header_verify_checksum() {
+        let mut header = AprV2Header::new();
+        header.update_checksum();
+        assert!(header.verify_checksum());
+        header.version = (99, 0);
+        assert!(!header.verify_checksum());
+    }
+
+    #[test]
+    fn test_metadata_to_json_pretty() {
+        let metadata = AprV2Metadata::new("llama");
+        let json = metadata.to_json_pretty().unwrap();
+        assert!(json.contains("llama"));
+        assert!(json.contains('\n')); // Pretty format has newlines
+    }
+
+    #[test]
+    fn test_tensor_index_entry_element_count() {
+        let entry = TensorIndexEntry::new(
+            "test",
+            TensorDType::F32,
+            vec![2, 3, 4],
+            0,
+            96, // 2*3*4*4 bytes
+        );
+        assert_eq!(entry.element_count(), 24);
+    }
+
+    #[test]
+    fn test_tensor_index_entry_to_bytes() {
+        let entry = TensorIndexEntry::new("t", TensorDType::F32, vec![10], 0, 40);
+        let bytes = entry.to_bytes();
+        assert!(!bytes.is_empty());
+    }
+
+    #[test]
+    fn test_writer_with_lz4() {
+        let metadata = AprV2Metadata::new("test");
+        let mut writer = AprV2Writer::new(metadata);
+        writer.with_lz4_compression();
+        // Just verify it doesn't panic
+    }
+
+    #[test]
+    fn test_writer_with_sharding() {
+        let metadata = AprV2Metadata::new("test");
+        let mut writer = AprV2Writer::new(metadata);
+        writer.with_sharding(4, 0);
+        // Just verify it doesn't panic
+    }
+
+    #[test]
+    fn test_reader_ref_from_bytes() {
+        let metadata = AprV2Metadata::new("test");
+        let mut writer = AprV2Writer::new(metadata);
+        writer.add_f32_tensor("w", vec![2, 2], &[1.0, 2.0, 3.0, 4.0]);
+        let bytes = writer.write().unwrap();
+
+        let reader = AprV2ReaderRef::from_bytes(&bytes).unwrap();
+        assert_eq!(reader.header().version.0, 2);
+        assert_eq!(reader.metadata().model_type, "test");
+        assert_eq!(reader.tensor_names().len(), 1);
+        assert!(reader.get_tensor("w").is_some());
+        assert!(reader.verify_alignment());
+    }
+
+    #[test]
+    fn test_reader_ref_get_tensor_data() {
+        let metadata = AprV2Metadata::new("test");
+        let mut writer = AprV2Writer::new(metadata);
+        writer.add_f32_tensor("w", vec![2], &[1.0, 2.0]);
+        let bytes = writer.write().unwrap();
+
+        let reader = AprV2ReaderRef::from_bytes(&bytes).unwrap();
+        let data = reader.get_tensor_data("w");
+        assert!(data.is_some());
+    }
+
+    #[test]
+    fn test_reader_ref_get_f32_tensor() {
+        let metadata = AprV2Metadata::new("test");
+        let mut writer = AprV2Writer::new(metadata);
+        writer.add_f32_tensor("w", vec![3], &[1.0, 2.0, 3.0]);
+        let bytes = writer.write().unwrap();
+
+        let reader = AprV2ReaderRef::from_bytes(&bytes).unwrap();
+        let tensor = reader.get_f32_tensor("w").unwrap();
+        assert_eq!(tensor.len(), 3);
+        assert!((tensor[0] - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_sharding_metadata() {
+        let shard = ShardingMetadata {
+            shard_count: 4,
+            shard_index: 0,
+            total_size: 10_000_000,
+            pattern: Some("model-{:05d}-of-{:05d}.apr".to_string()),
+        };
+        assert_eq!(shard.shard_count, 4);
+        assert_eq!(shard.total_size, 10_000_000);
+        assert!(shard.pattern.is_some());
+    }
+
+    #[test]
+    fn test_flags_all_bits() {
+        let flags = AprV2Flags::new()
+            .with(AprV2Flags::LZ4_COMPRESSED)
+            .with(AprV2Flags::ENCRYPTED)
+            .with(AprV2Flags::SIGNED)
+            .with(AprV2Flags::SHARDED)
+            .with(AprV2Flags::HAS_VOCAB)
+            .with(AprV2Flags::QUANTIZED);
+
+        assert!(flags.is_lz4_compressed());
+        assert!(flags.is_encrypted());
+        assert!(flags.contains(AprV2Flags::SIGNED));
+        assert!(flags.is_sharded());
+        assert!(flags.contains(AprV2Flags::HAS_VOCAB));
+        assert!(flags.is_quantized());
+    }
+
+    #[test]
+    fn test_shard_info_creation() {
+        let info = ShardInfo {
+            filename: "shard.apr".to_string(),
+            index: 0,
+            size: 1024,
+            tensors: vec!["a".to_string(), "b".to_string()],
+        };
+        assert_eq!(info.filename, "shard.apr");
+        assert_eq!(info.tensors.len(), 2);
+    }
 }
