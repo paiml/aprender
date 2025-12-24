@@ -1082,4 +1082,247 @@ mod tests {
         assert_eq!(AugmentationType::Rotate, AugmentationType::Rotate);
         assert_ne!(AugmentationType::Rotate, AugmentationType::Brightness);
     }
+
+    // =========================================================================
+    // Additional coverage tests
+    // =========================================================================
+
+    #[test]
+    fn test_stochastic_depth_mode() {
+        let sd_batch = StochasticDepth::new(0.1, DropMode::Batch);
+        assert_eq!(sd_batch.mode(), DropMode::Batch);
+
+        let sd_row = StochasticDepth::new(0.1, DropMode::Row);
+        assert_eq!(sd_row.mode(), DropMode::Row);
+    }
+
+    #[test]
+    fn test_drop_mode_eq() {
+        assert_eq!(DropMode::Batch, DropMode::Batch);
+        assert_ne!(DropMode::Batch, DropMode::Row);
+    }
+
+    #[test]
+    fn test_specaugment_default() {
+        let sa = SpecAugment::default();
+        assert_eq!(sa.num_freq_masks(), 2);
+        assert_eq!(sa.num_time_masks(), 2);
+    }
+
+    #[test]
+    fn test_specaugment_with_mask_value() {
+        let sa = SpecAugment::new().with_mask_value(-1.0);
+        // Just verify it compiles and works
+        let spec = vec![1.0; 100];
+        let result = sa.apply(&spec, 10, 10);
+        assert_eq!(result.len(), 100);
+    }
+
+    #[test]
+    fn test_randaugment_apply_rotate() {
+        let ra = RandAugment::new(1, 20); // mag > 0.5
+        let image = vec![1.0, 2.0, 3.0, 4.0];
+        let result = ra.apply_single(&image, AugmentationType::Rotate, 2, 2);
+        // High magnitude should reverse
+        assert_eq!(result, vec![4.0, 3.0, 2.0, 1.0]);
+    }
+
+    #[test]
+    fn test_randaugment_apply_rotate_low_mag() {
+        let ra = RandAugment::new(1, 5); // mag = 5/30 < 0.5
+        let image = vec![1.0, 2.0, 3.0, 4.0];
+        let result = ra.apply_single(&image, AugmentationType::Rotate, 2, 2);
+        // Low magnitude shouldn't reverse
+        assert_eq!(result, image);
+    }
+
+    #[test]
+    fn test_randaugment_apply_translate_x() {
+        let ra = RandAugment::new(1, 15);
+        let image = vec![1.0; 16];
+        let result = ra.apply_single(&image, AugmentationType::TranslateX, 4, 4);
+        assert_eq!(result.len(), 16);
+    }
+
+    #[test]
+    fn test_randaugment_apply_translate_y() {
+        let ra = RandAugment::new(1, 15);
+        let image = vec![1.0; 16];
+        let result = ra.apply_single(&image, AugmentationType::TranslateY, 4, 4);
+        assert_eq!(result.len(), 16);
+    }
+
+    #[test]
+    fn test_randaugment_apply_shear_x() {
+        let ra = RandAugment::new(1, 15);
+        let image = vec![0.5; 16];
+        let result = ra.apply_single(&image, AugmentationType::ShearX, 4, 4);
+        assert_eq!(result.len(), 16);
+    }
+
+    #[test]
+    fn test_randaugment_apply_shear_y() {
+        let ra = RandAugment::new(1, 15);
+        let image = vec![0.5; 16];
+        let result = ra.apply_single(&image, AugmentationType::ShearY, 4, 4);
+        assert_eq!(result.len(), 16);
+    }
+
+    #[test]
+    fn test_randaugment_apply_sharpness() {
+        let ra = RandAugment::new(1, 15);
+        let image = vec![0.5; 16];
+        let result = ra.apply_single(&image, AugmentationType::Sharpness, 4, 4);
+        assert_eq!(result.len(), 16);
+    }
+
+    #[test]
+    fn test_randaugment_apply_posterize() {
+        let ra = RandAugment::new(1, 15);
+        let image = vec![0.5; 16];
+        let result = ra.apply_single(&image, AugmentationType::Posterize, 4, 4);
+        assert_eq!(result.len(), 16);
+    }
+
+    #[test]
+    fn test_randaugment_apply_solarize() {
+        let ra = RandAugment::new(1, 15);
+        let image = vec![0.3, 0.7, 0.5, 0.9];
+        let result = ra.apply_single(&image, AugmentationType::Solarize, 2, 2);
+        assert_eq!(result.len(), 4);
+    }
+
+    #[test]
+    fn test_randaugment_apply_equalize() {
+        let ra = RandAugment::new(1, 15);
+        let image = vec![0.1, 0.5, 0.9, 0.3];
+        let result = ra.apply_single(&image, AugmentationType::Equalize, 2, 2);
+        assert_eq!(result.len(), 4);
+    }
+
+    #[test]
+    fn test_mixup_mix_labels() {
+        let mixup = Mixup::new(1.0);
+        let y1 = Vector::from_slice(&[1.0, 0.0, 0.0]);
+        let y2 = Vector::from_slice(&[0.0, 1.0, 0.0]);
+        let mixed = mixup.mix_labels(&y1, &y2, 0.7);
+        assert!((mixed.as_slice()[0] - 0.7).abs() < 1e-6);
+        assert!((mixed.as_slice()[1] - 0.3).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_mixup_alpha_negative() {
+        let mixup = Mixup::new(-0.5);
+        // Should return 1.0 when alpha <= 0
+        assert_eq!(mixup.sample_lambda(), 1.0);
+    }
+
+    #[test]
+    fn test_cutmix_params_debug() {
+        let params = CutMixParams {
+            lambda: 0.5,
+            x1: 0,
+            y1: 0,
+            x2: 2,
+            y2: 2,
+        };
+        let debug_str = format!("{:?}", params);
+        assert!(debug_str.contains("CutMixParams"));
+    }
+
+    #[test]
+    fn test_cutmix_sample_edge_cases() {
+        let cm = CutMix::new(0.0);
+        // Alpha 0 means lambda = 1.0 always
+        let params = cm.sample(10, 10);
+        assert_eq!(params.lambda, 1.0);
+    }
+
+    #[test]
+    fn test_stochastic_depth_clone() {
+        let sd = StochasticDepth::new(0.3, DropMode::Row);
+        let cloned = sd.clone();
+        assert_eq!(cloned.drop_prob(), sd.drop_prob());
+        assert_eq!(cloned.mode(), sd.mode());
+    }
+
+    #[test]
+    fn test_rdrop_clone() {
+        let rdrop = RDrop::new(1.5);
+        let cloned = rdrop.clone();
+        assert_eq!(cloned.alpha(), rdrop.alpha());
+    }
+
+    #[test]
+    fn test_specaugment_clone() {
+        let sa = SpecAugment::with_params(3, 20, 4, 80);
+        let cloned = sa.clone();
+        assert_eq!(cloned.num_freq_masks(), 3);
+        assert_eq!(cloned.num_time_masks(), 4);
+    }
+
+    #[test]
+    fn test_randaugment_clone() {
+        let ra = RandAugment::new(3, 12);
+        let cloned = ra.clone();
+        assert_eq!(cloned.n(), ra.n());
+        assert_eq!(cloned.m(), ra.m());
+    }
+
+    #[test]
+    fn test_mixup_debug() {
+        let mixup = Mixup::new(0.5);
+        let debug_str = format!("{:?}", mixup);
+        assert!(debug_str.contains("Mixup"));
+    }
+
+    #[test]
+    fn test_label_smoothing_debug() {
+        let ls = LabelSmoothing::new(0.1);
+        let debug_str = format!("{:?}", ls);
+        assert!(debug_str.contains("LabelSmoothing"));
+    }
+
+    #[test]
+    fn test_cutmix_debug() {
+        let cm = CutMix::new(1.0);
+        let debug_str = format!("{:?}", cm);
+        assert!(debug_str.contains("CutMix"));
+    }
+
+    #[test]
+    fn test_stochastic_depth_debug() {
+        let sd = StochasticDepth::new(0.2, DropMode::Batch);
+        let debug_str = format!("{:?}", sd);
+        assert!(debug_str.contains("StochasticDepth"));
+    }
+
+    #[test]
+    fn test_rdrop_debug() {
+        let rdrop = RDrop::new(0.5);
+        let debug_str = format!("{:?}", rdrop);
+        assert!(debug_str.contains("RDrop"));
+    }
+
+    #[test]
+    fn test_specaugment_debug() {
+        let sa = SpecAugment::new();
+        let debug_str = format!("{:?}", sa);
+        assert!(debug_str.contains("SpecAugment"));
+    }
+
+    #[test]
+    fn test_randaugment_debug() {
+        let ra = RandAugment::new(2, 10);
+        let debug_str = format!("{:?}", ra);
+        assert!(debug_str.contains("RandAugment"));
+    }
+
+    #[test]
+    fn test_augmentation_type_debug_copy() {
+        let aug = AugmentationType::Posterize;
+        let copied = aug;
+        let debug_str = format!("{:?}", copied);
+        assert!(debug_str.contains("Posterize"));
+    }
 }
