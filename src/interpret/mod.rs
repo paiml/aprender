@@ -1457,4 +1457,173 @@ mod tests {
         assert_eq!(top[0].0, 2); // Largest change: 3.0 - 1.0 = 2.0
         assert_eq!(top[1].0, 0); // Second: 2.0 - 1.0 = 1.0
     }
+
+    // =========================================================================
+    // Additional coverage tests
+    // =========================================================================
+
+    #[test]
+    fn test_saliency_map_default() {
+        let sm = SaliencyMap::default();
+        assert!((sm.epsilon() - 1e-4).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_saliency_map_clone() {
+        let sm = SaliencyMap::with_epsilon(1e-5);
+        let cloned = sm.clone();
+        assert_eq!(cloned.epsilon(), sm.epsilon());
+    }
+
+    #[test]
+    fn test_counterfactual_not_found() {
+        // Impossible to change: model always returns 0
+        let impossible_model = |_: &Vector<f32>| -> usize { 0 };
+
+        let cf = CounterfactualExplainer::new(10, 0.1);
+        let original = Vector::from_slice(&[1.0, 1.0]);
+
+        let result = cf.find(&original, 1, impossible_model);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_permutation_importance_scores() {
+        let importance = PermutationImportance {
+            importance: Vector::from_slice(&[0.1, 0.2, 0.3]),
+            baseline_score: 0.5,
+        };
+
+        // Test scores() getter
+        assert_eq!(importance.scores().len(), 3);
+        assert!((importance.baseline_score - 0.5).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_feature_contributions_bias() {
+        let fc = FeatureContributions {
+            contributions: Vector::from_slice(&[1.0, 2.0, 3.0]),
+            bias: 1.0,
+            prediction: 7.0,
+        };
+        assert_eq!(fc.contributions.len(), 3);
+        assert_eq!(fc.prediction, 7.0);
+        assert_eq!(fc.bias, 1.0);
+    }
+
+    #[test]
+    fn test_integrated_gradients_steps() {
+        let ig = IntegratedGradients::new(100);
+        assert_eq!(ig.n_steps, 100);
+    }
+
+    #[test]
+    fn test_shap_explainer_debug() {
+        let background = vec![Vector::from_slice(&[1.0, 2.0, 3.0])];
+        let explainer = ShapExplainer::new(&background, simple_linear_model);
+        let debug_str = format!("{:?}", explainer);
+        assert!(debug_str.contains("ShapExplainer"));
+    }
+
+    #[test]
+    fn test_integrated_gradients_debug() {
+        let ig = IntegratedGradients::new(50);
+        let debug_str = format!("{:?}", ig);
+        assert!(debug_str.contains("IntegratedGradients"));
+    }
+
+    #[test]
+    fn test_lime_debug() {
+        let lime = LIME::new(100, 0.5);
+        let debug_str = format!("{:?}", lime);
+        assert!(debug_str.contains("LIME"));
+    }
+
+    #[test]
+    fn test_saliency_map_debug() {
+        let sm = SaliencyMap::new();
+        let debug_str = format!("{:?}", sm);
+        assert!(debug_str.contains("SaliencyMap"));
+    }
+
+    #[test]
+    fn test_counterfactual_explainer_debug() {
+        let cf = CounterfactualExplainer::new(100, 0.01);
+        let debug_str = format!("{:?}", cf);
+        assert!(debug_str.contains("CounterfactualExplainer"));
+    }
+
+    #[test]
+    fn test_counterfactual_result_debug() {
+        let result = CounterfactualResult {
+            counterfactual: Vector::from_slice(&[1.0]),
+            original: Vector::from_slice(&[0.0]),
+            target_class: 1,
+            distance: 1.0,
+        };
+        let debug_str = format!("{:?}", result);
+        assert!(debug_str.contains("CounterfactualResult"));
+    }
+
+    #[test]
+    fn test_counterfactual_result_clone() {
+        let result = CounterfactualResult {
+            counterfactual: Vector::from_slice(&[1.0, 2.0]),
+            original: Vector::from_slice(&[0.0, 0.0]),
+            target_class: 1,
+            distance: 2.0,
+        };
+        let cloned = result.clone();
+        assert_eq!(cloned.target_class, result.target_class);
+        assert!((cloned.distance - result.distance).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_lime_explanation_debug() {
+        let exp = LIMEExplanation {
+            coefficients: Vector::from_slice(&[0.1, 0.2]),
+            intercept: 1.0,
+            original_prediction: 2.0,
+        };
+        let debug_str = format!("{:?}", exp);
+        assert!(debug_str.contains("LIMEExplanation"));
+    }
+
+    #[test]
+    fn test_lime_explanation_clone() {
+        let exp = LIMEExplanation {
+            coefficients: Vector::from_slice(&[0.1, 0.2]),
+            intercept: 1.0,
+            original_prediction: 2.0,
+        };
+        let cloned = exp.clone();
+        assert!((cloned.intercept - exp.intercept).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_feature_contributions_verify_sum() {
+        let fc = FeatureContributions {
+            contributions: Vector::from_slice(&[1.0, 2.0, 3.0]),
+            prediction: 7.5, // sum + bias = 6 + 1.5 = 7.5
+            bias: 1.5,
+        };
+        assert!(fc.verify_sum(1e-6));
+    }
+
+    #[test]
+    fn test_permutation_importance_debug() {
+        let pi = PermutationImportance {
+            importance: Vector::from_slice(&[0.1, 0.2]),
+            baseline_score: 1.0,
+        };
+        let debug_str = format!("{:?}", pi);
+        assert!(debug_str.contains("PermutationImportance"));
+    }
+
+    #[test]
+    fn test_feature_contributions_debug() {
+        let fc = FeatureContributions::new(Vector::from_slice(&[1.0, 2.0]), 3.0);
+        let debug_str = format!("{:?}", fc);
+        assert!(debug_str.contains("FeatureContributions"));
+    }
 }
