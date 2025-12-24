@@ -452,4 +452,130 @@ mod tests {
         assert!(result.duration.is_some());
         assert_eq!(result.duration.unwrap(), Duration::from_secs(1));
     }
+
+    // =========================================================================
+    // Coverage boost tests
+    // =========================================================================
+
+    #[test]
+    fn test_velocity_result_pass_fields() {
+        let result = VelocityResult::pass("ID1", "Test Name", "Details here");
+        assert_eq!(result.id, "ID1");
+        assert_eq!(result.name, "Test Name");
+        assert!(result.passed);
+        assert_eq!(result.details, "Details here");
+        assert!(result.duration.is_none());
+    }
+
+    #[test]
+    fn test_velocity_result_fail_fields() {
+        let result = VelocityResult::fail("ID2", "Fail Test", "Failure reason");
+        assert_eq!(result.id, "ID2");
+        assert_eq!(result.name, "Fail Test");
+        assert!(!result.passed);
+        assert_eq!(result.details, "Failure reason");
+        assert!(result.duration.is_none());
+    }
+
+    #[test]
+    fn test_velocity_result_debug() {
+        let result = VelocityResult::pass("P1", "test", "details");
+        let debug_str = format!("{:?}", result);
+        assert!(debug_str.contains("VelocityResult"));
+        assert!(debug_str.contains("P1"));
+    }
+
+    #[test]
+    fn test_velocity_result_clone() {
+        let original = VelocityResult::pass("P1", "test", "details")
+            .with_duration(Duration::from_millis(500));
+        let cloned = original.clone();
+        assert_eq!(cloned.id, original.id);
+        assert_eq!(cloned.name, original.name);
+        assert_eq!(cloned.passed, original.passed);
+        assert_eq!(cloned.details, original.details);
+        assert_eq!(cloned.duration, original.duration);
+    }
+
+    #[test]
+    fn test_p3_coverage_thresholds() {
+        // P3 should pass since hardcoded coverage is 96.94% > 95%
+        let result = p3_test_fast_coverage();
+        assert!(result.passed);
+        assert!(result.details.contains("96.94"));
+    }
+
+    #[test]
+    fn test_p4_static_check() {
+        // P4 is a static verification
+        let result = p4_no_network_calls();
+        assert!(result.passed);
+        assert!(result.details.contains("no network calls"));
+    }
+
+    #[test]
+    fn test_p5_static_check() {
+        // P5 is a static verification
+        let result = p5_no_disk_writes();
+        assert!(result.passed);
+        assert!(result.details.contains("tempfile"));
+    }
+
+    #[test]
+    fn test_p6_static_check() {
+        // P6 is a static verification
+        let result = p6_compile_under_5s();
+        assert!(result.passed);
+        assert!(result.details.contains("Incremental"));
+    }
+
+    #[test]
+    fn test_p10_static_check() {
+        // P10 is a static verification
+        let result = p10_no_sleep_in_fast();
+        assert!(result.passed);
+        assert!(result.details.contains("ignore"));
+    }
+
+    #[test]
+    fn test_velocity_score_values() {
+        let (passed, total) = velocity_score();
+        assert!(passed <= total);
+        assert!(total > 0);
+    }
+
+    #[test]
+    fn test_results_have_unique_ids() {
+        let results = run_all_velocity_tests();
+        let mut ids: Vec<&str> = results.iter().map(|r| r.id.as_str()).collect();
+        ids.sort();
+        let original_len = ids.len();
+        ids.dedup();
+        assert_eq!(ids.len(), original_len, "All test IDs should be unique");
+    }
+
+    #[test]
+    fn test_results_have_names() {
+        let results = run_all_velocity_tests();
+        for result in results {
+            assert!(!result.name.is_empty(), "Test {} should have a name", result.id);
+            assert!(!result.details.is_empty(), "Test {} should have details", result.id);
+        }
+    }
+
+    #[test]
+    fn test_duration_zero() {
+        let result = VelocityResult::pass("P1", "test", "details")
+            .with_duration(Duration::from_secs(0));
+        assert!(result.duration.is_some());
+        assert_eq!(result.duration.expect("Expected duration"), Duration::ZERO);
+    }
+
+    #[test]
+    fn test_duration_large() {
+        let result = VelocityResult::pass("P1", "test", "details")
+            .with_duration(Duration::from_secs(3600));
+        assert!(result.duration.is_some());
+        assert_eq!(result.duration.expect("Expected duration"), Duration::from_secs(3600));
+    }
 }
