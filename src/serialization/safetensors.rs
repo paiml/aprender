@@ -576,4 +576,222 @@ mod tests {
         fs::remove_file(path1).ok();
         fs::remove_file(path2).ok();
     }
+
+    // =========================================================================
+    // Coverage boost: MappedSafeTensors API tests
+    // =========================================================================
+
+    #[test]
+    fn test_mapped_safetensors_full_api() {
+        let path = "/tmp/test_mapped_api.safetensors";
+
+        // Create multi-tensor file
+        let mut tensors = BTreeMap::new();
+        tensors.insert("weight".to_string(), (vec![1.0, 2.0, 3.0, 4.0], vec![2, 2]));
+        tensors.insert("bias".to_string(), (vec![0.5, 0.5], vec![2]));
+        tensors.insert("scale".to_string(), (vec![1.0], vec![1]));
+
+        save_safetensors(path, &tensors).expect("save");
+
+        // Test MappedSafeTensors API
+        let mapped = MappedSafeTensors::open(path).expect("open");
+
+        // len/is_empty
+        assert_eq!(mapped.len(), 3);
+        assert!(!mapped.is_empty());
+
+        // tensor_names
+        let names = mapped.tensor_names();
+        assert!(names.contains(&"weight"));
+        assert!(names.contains(&"bias"));
+        assert!(names.contains(&"scale"));
+
+        // get_metadata
+        let meta = mapped.get_metadata("weight").expect("metadata");
+        assert_eq!(meta.dtype, "F32");
+        assert_eq!(meta.shape, vec![2, 2]);
+
+        assert!(mapped.get_metadata("nonexistent").is_none());
+
+        // get_tensor
+        let weight = mapped.get_tensor("weight").expect("tensor");
+        assert_eq!(weight, vec![1.0, 2.0, 3.0, 4.0]);
+
+        // get_tensor_bytes
+        let bytes = mapped.get_tensor_bytes("bias").expect("bytes");
+        assert_eq!(bytes.len(), 8); // 2 f32 = 8 bytes
+
+        // Error: tensor not found
+        let err = mapped.get_tensor("missing").unwrap_err();
+        assert!(err.contains("not found"));
+
+        fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn test_mapped_safetensors_empty_file() {
+        let path = "/tmp/test_empty_tensors.safetensors";
+
+        let tensors = BTreeMap::new();
+        save_safetensors(path, &tensors).expect("save empty");
+
+        let mapped = MappedSafeTensors::open(path).expect("open empty");
+        assert!(mapped.is_empty());
+        assert_eq!(mapped.len(), 0);
+        assert!(mapped.tensor_names().is_empty());
+
+        fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn test_validate_header_metadata_zero() {
+        let path = "/tmp/test_zero_meta.safetensors";
+
+        // Create file with 0 metadata length
+        let bytes: Vec<u8> = vec![0, 0, 0, 0, 0, 0, 0, 0];
+        fs::write(path, &bytes).expect("write");
+
+        let result = MappedSafeTensors::open(path);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("metadata length is 0"));
+
+        fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn test_validate_header_metadata_exceeds_file() {
+        let path = "/tmp/test_exceed_meta.safetensors";
+
+        // Create file with metadata length > file size
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&1000u64.to_le_bytes()); // claim 1000 bytes
+        bytes.extend_from_slice(b"{}"); // only 2 bytes of metadata
+        fs::write(path, &bytes).expect("write");
+
+        let result = MappedSafeTensors::open(path);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("exceeds file size"));
+
+        fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn test_parse_metadata_with_dunder_keys() {
+        let path = "/tmp/test_dunder.safetensors";
+
+        // Manually create file with __metadata__ key (should be skipped)
+        let metadata = r#"{"__metadata__":{"format":"pt"},"tensor":{"dtype":"F32","shape":[1],"data_offsets":[0,4]}}"#;
+        let meta_bytes = metadata.as_bytes();
+
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&(meta_bytes.len() as u64).to_le_bytes());
+        bytes.extend_from_slice(meta_bytes);
+        bytes.extend_from_slice(&1.0f32.to_le_bytes());
+        fs::write(path, &bytes).expect("write");
+
+        let mapped = MappedSafeTensors::open(path).expect("open");
+        assert_eq!(mapped.len(), 1); // only "tensor", not "__metadata__"
+        assert!(mapped.get_metadata("__metadata__").is_none());
+        assert!(mapped.get_metadata("tensor").is_some());
+
+        fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn test_extract_bf16() {
+        // BF16: 0x3F80 = 1.0 in BF16
+        let bf16_bytes = vec![0x80, 0x3F, 0x00, 0x40]; // 1.0, 2.0
+        let result = extract_bf16_to_f32(&bf16_bytes).expect("bf16");
+        assert_eq!(result.len(), 2);
+        assert!((result[0] - 1.0).abs() < 0.01);
+        assert!((result[1] - 2.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_extract_f16() {
+        // F16: 0x3C00 = 1.0 in F16
+        let f16_bytes = vec![0x00, 0x3C, 0x00, 0x40]; // 1.0, 2.0
+        let result = extract_f16_to_f32(&f16_bytes).expect("f16");
+        assert_eq!(result.len(), 2);
+        assert!((result[0] - 1.0).abs() < 0.01);
+        assert!((result[1] - 2.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_unsupported_dtype() {
+        let path = "/tmp/test_unsupported.safetensors";
+
+        // Create file with unsupported dtype
+        let metadata = r#"{"tensor":{"dtype":"INT8","shape":[1],"data_offsets":[0,1]}}"#;
+        let meta_bytes = metadata.as_bytes();
+
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&(meta_bytes.len() as u64).to_le_bytes());
+        bytes.extend_from_slice(meta_bytes);
+        bytes.push(42); // 1 byte of data
+        fs::write(path, &bytes).expect("write");
+
+        let mapped = MappedSafeTensors::open(path).expect("open");
+        let result = mapped.get_tensor("tensor");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Unsupported dtype"));
+
+        fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn test_tensor_out_of_bounds() {
+        let path = "/tmp/test_oob.safetensors";
+
+        // Create file with tensor pointing past end
+        let metadata = r#"{"tensor":{"dtype":"F32","shape":[100],"data_offsets":[0,400]}}"#;
+        let meta_bytes = metadata.as_bytes();
+
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&(meta_bytes.len() as u64).to_le_bytes());
+        bytes.extend_from_slice(meta_bytes);
+        bytes.extend_from_slice(&[0u8; 16]); // only 16 bytes, not 400
+        fs::write(path, &bytes).expect("write");
+
+        let mapped = MappedSafeTensors::open(path).expect("open");
+        let result = mapped.get_tensor("tensor");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("out of bounds"));
+
+        fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn test_invalid_utf8_metadata() {
+        let path = "/tmp/test_invalid_utf8.safetensors";
+
+        // Create file with invalid UTF-8 in metadata
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&4u64.to_le_bytes());
+        bytes.extend_from_slice(&[0xFF, 0xFE, 0x00, 0x01]); // Invalid UTF-8
+        fs::write(path, &bytes).expect("write");
+
+        let result = MappedSafeTensors::open(path);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("UTF-8"));
+
+        fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn test_invalid_json_metadata() {
+        let path = "/tmp/test_invalid_json.safetensors";
+
+        let invalid_json = b"not valid json{";
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&(invalid_json.len() as u64).to_le_bytes());
+        bytes.extend_from_slice(invalid_json);
+        fs::write(path, &bytes).expect("write");
+
+        let result = MappedSafeTensors::open(path);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("JSON"));
+
+        fs::remove_file(path).ok();
+    }
 }
