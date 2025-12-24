@@ -30,7 +30,7 @@ harness = false
 # Use crates.io version for release
 aprender = { version = "0.15", features = ["format-encryption", "format-compression", "format-homomorphic"] }
 clap = { version = "4", features = ["derive"] }
-dirs = "5"
+dirs = "6"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # For password input without echo
