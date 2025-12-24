@@ -458,4 +458,159 @@ mod tests {
         // Should be positive (frontier dominates some area)
         assert!(hv >= 0.0);
     }
+
+    // =========================================================================
+    // Additional coverage tests
+    // =========================================================================
+
+    #[test]
+    fn test_hypervolume_empty() {
+        let frontier: Vec<ParetoPoint> = vec![];
+        let hv = compute_hypervolume(&frontier, (5000, 0.5));
+        assert!((hv - 0.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_hypervolume_better_than_reference() {
+        // Point with success rate higher than reference - should skip
+        let frontier = vec![ParetoPoint {
+            model_id: "p1".to_string(),
+            size_bytes: 1000,
+            success_rate: 0.9, // Higher than ref_success of 0.5
+            avg_turns: 1.0,
+            is_pareto_optimal: true,
+        }];
+
+        let reference = (5000, 0.5);
+        let hv = compute_hypervolume(&frontier, reference);
+        assert!(hv >= 0.0); // Should still work
+    }
+
+    #[test]
+    fn test_find_knee_point_two_points() {
+        let frontier = vec![
+            ParetoPoint {
+                model_id: "p1".to_string(),
+                size_bytes: 1000,
+                success_rate: 0.7,
+                avg_turns: 1.0,
+                is_pareto_optimal: true,
+            },
+            ParetoPoint {
+                model_id: "p2".to_string(),
+                size_bytes: 2000,
+                success_rate: 0.9,
+                avg_turns: 1.0,
+                is_pareto_optimal: true,
+            },
+        ];
+
+        let knee = find_knee_point(&frontier);
+        assert!(knee.is_some());
+        // With 2 points, returns first
+        assert_eq!(knee.unwrap().model_id, "p1");
+    }
+
+    #[test]
+    fn test_find_knee_point_empty() {
+        let frontier: Vec<ParetoPoint> = vec![];
+        let knee = find_knee_point(&frontier);
+        assert!(knee.is_none());
+    }
+
+    #[test]
+    fn test_find_knee_uniform_size() {
+        // All same size - size_range is 0
+        let frontier = vec![
+            ParetoPoint {
+                model_id: "p1".to_string(),
+                size_bytes: 1000,
+                success_rate: 0.7,
+                avg_turns: 1.0,
+                is_pareto_optimal: true,
+            },
+            ParetoPoint {
+                model_id: "p2".to_string(),
+                size_bytes: 1000,
+                success_rate: 0.8,
+                avg_turns: 1.0,
+                is_pareto_optimal: true,
+            },
+            ParetoPoint {
+                model_id: "p3".to_string(),
+                size_bytes: 1000,
+                success_rate: 0.9,
+                avg_turns: 1.0,
+                is_pareto_optimal: true,
+            },
+        ];
+
+        let knee = find_knee_point(&frontier);
+        assert!(knee.is_some());
+        // Should return first due to tiny range
+        assert_eq!(knee.unwrap().model_id, "p1");
+    }
+
+    #[test]
+    fn test_generate_recommendations_empty() {
+        let frontier: Vec<ParetoPoint> = vec![];
+        let thresholds = vec![0.8, 0.9];
+        let recs = generate_recommendations(&frontier, &thresholds);
+
+        assert!(recs.smallest.is_none());
+        assert!(recs.most_accurate.is_none());
+        assert!(recs.best_tradeoff.is_none());
+    }
+
+    #[test]
+    fn test_dominates_edge_cases() {
+        let a = ParetoPoint {
+            model_id: "a".to_string(),
+            size_bytes: 1000,
+            success_rate: 0.9,
+            avg_turns: 1.0,
+            is_pareto_optimal: false,
+        };
+        let same = ParetoPoint {
+            model_id: "same".to_string(),
+            size_bytes: 1000,
+            success_rate: 0.9,
+            avg_turns: 1.0,
+            is_pareto_optimal: false,
+        };
+
+        // Equal points don't dominate each other
+        assert!(!dominates(&a, &same));
+        assert!(!dominates(&same, &a));
+    }
+
+    #[test]
+    fn test_model_recommendations_debug() {
+        let recs = ModelRecommendations {
+            smallest: None,
+            most_accurate: None,
+            best_tradeoff: None,
+            by_threshold: vec![],
+        };
+        let debug_str = format!("{:?}", recs);
+        assert!(debug_str.contains("ModelRecommendations"));
+    }
+
+    #[test]
+    fn test_model_recommendations_clone() {
+        let recs = ModelRecommendations {
+            smallest: Some(ParetoPoint {
+                model_id: "test".to_string(),
+                size_bytes: 1000,
+                success_rate: 0.9,
+                avg_turns: 1.0,
+                is_pareto_optimal: true,
+            }),
+            most_accurate: None,
+            best_tradeoff: None,
+            by_threshold: vec![(0.8, None)],
+        };
+        let cloned = recs.clone();
+        assert_eq!(cloned.smallest.as_ref().unwrap().model_id, "test");
+    }
 }

@@ -664,4 +664,156 @@ mod tests {
         assert!(table.contains("large"));
         assert!(table.contains("Legend"));
     }
+
+    // =========================================================================
+    // Additional coverage tests
+    // =========================================================================
+
+    #[test]
+    fn test_level_names() {
+        assert_eq!(Py2RsLevel::Hello.name(), "Hello");
+        assert_eq!(Py2RsLevel::Variables.name(), "Variables");
+        assert_eq!(Py2RsLevel::Functions.name(), "Functions");
+        assert_eq!(Py2RsLevel::Collections.name(), "Collections");
+        assert_eq!(Py2RsLevel::ControlFlow.name(), "ControlFlow");
+        assert_eq!(Py2RsLevel::ErrorHandling.name(), "ErrorHandling");
+        assert_eq!(Py2RsLevel::OopTraits.name(), "OOP→Traits");
+        assert_eq!(Py2RsLevel::Concurrency.name(), "Concurrency");
+        assert_eq!(Py2RsLevel::FfiUnsafe.name(), "FFI/Unsafe");
+        assert_eq!(Py2RsLevel::Metaprogramming.name(), "Metaprogramming");
+    }
+
+    #[test]
+    fn test_level_difficulty_all() {
+        assert_eq!(Py2RsLevel::Variables.difficulty(), Difficulty::Trivial);
+        assert_eq!(Py2RsLevel::Functions.difficulty(), Difficulty::Easy);
+        assert_eq!(Py2RsLevel::Collections.difficulty(), Difficulty::Easy);
+        assert_eq!(Py2RsLevel::ControlFlow.difficulty(), Difficulty::Medium);
+        assert_eq!(Py2RsLevel::ErrorHandling.difficulty(), Difficulty::Medium);
+        assert_eq!(Py2RsLevel::OopTraits.difficulty(), Difficulty::Hard);
+        assert_eq!(Py2RsLevel::Concurrency.difficulty(), Difficulty::Hard);
+        assert_eq!(Py2RsLevel::FfiUnsafe.difficulty(), Difficulty::Expert);
+    }
+
+    #[test]
+    fn test_level_weight_all() {
+        assert!((Py2RsLevel::Variables.weight() - 1.5).abs() < 0.01);
+        assert!((Py2RsLevel::Functions.weight() - 2.0).abs() < 0.01);
+        assert!((Py2RsLevel::Collections.weight() - 3.0).abs() < 0.01);
+        assert!((Py2RsLevel::ControlFlow.weight() - 4.0).abs() < 0.01);
+        assert!((Py2RsLevel::ErrorHandling.weight() - 5.0).abs() < 0.01);
+        assert!((Py2RsLevel::OopTraits.weight() - 7.0).abs() < 0.01);
+        assert!((Py2RsLevel::Concurrency.weight() - 10.0).abs() < 0.01);
+        assert!((Py2RsLevel::FfiUnsafe.weight() - 15.0).abs() < 0.01);
+        assert!((Py2RsLevel::Metaprogramming.weight() - 20.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_level_symbol_missing() {
+        let score = Py2RsScore::new("empty");
+        // No level results added
+        assert_eq!(score.level_symbol(1), '○');
+        assert_eq!(score.level_symbol(10), '○');
+    }
+
+    #[test]
+    fn test_score_add_failed_level() {
+        let mut score = Py2RsScore::new("test");
+        score.add_level(LevelResult::failed(
+            Py2RsLevel::Metaprogramming,
+            5,
+            "too hard",
+            Duration::from_secs(1),
+        ));
+
+        assert_eq!(score.max_level, 0); // Failed doesn't update max
+        assert!(score.single_shot_levels.is_empty());
+    }
+
+    #[test]
+    fn test_score_zero_composite() {
+        let mut score = Py2RsScore::new("fail");
+        // Add only failed levels (no turn 1 successes)
+        for level in Py2RsLevel::all() {
+            score.add_level(LevelResult::failed(level, 5, "error", Duration::ZERO));
+        }
+        score.finalize();
+
+        assert!((score.composite - 0.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_mock_model_result_variations() {
+        // Test different model sizes
+        let (passed_2b, _) = mock_model_result(Py2RsLevel::Hello, "model-2b");
+        let (passed_large, _) = mock_model_result(Py2RsLevel::Hello, "model-large");
+        let (passed_unknown, _) = mock_model_result(Py2RsLevel::Hello, "random");
+
+        assert!(passed_2b);
+        assert!(passed_large);
+        assert!(passed_unknown);
+    }
+
+    #[test]
+    fn test_mock_model_high_level() {
+        // Level 8 (Concurrency) is hard for small models but achievable for large
+        let (passed_small, _) = mock_model_result(Py2RsLevel::Concurrency, "model-2b");
+        let (passed_large, _) = mock_model_result(Py2RsLevel::Concurrency, "model-16b");
+
+        assert!(!passed_small); // 2b can't do level 8 (capability 5)
+        assert!(passed_large); // 16b can do level 8 (capability 9)
+    }
+
+    #[test]
+    fn test_level_hash() {
+        use std::collections::HashSet;
+        let mut set = HashSet::new();
+        set.insert(Py2RsLevel::Hello);
+        set.insert(Py2RsLevel::Variables);
+        assert!(set.contains(&Py2RsLevel::Hello));
+        assert!(!set.contains(&Py2RsLevel::Functions));
+    }
+
+    #[test]
+    fn test_level_clone_copy() {
+        let level = Py2RsLevel::Concurrency;
+        let copied = level;
+        let cloned = level.clone();
+        assert_eq!(level, copied);
+        assert_eq!(level, cloned);
+    }
+
+    #[test]
+    fn test_py2rs_score_debug() {
+        let score = Py2RsScore::new("debug-test");
+        let debug_str = format!("{:?}", score);
+        assert!(debug_str.contains("Py2RsScore"));
+        assert!(debug_str.contains("debug-test"));
+    }
+
+    #[test]
+    fn test_level_result_debug() {
+        let result = LevelResult::passed(Py2RsLevel::Hello, 1, Duration::from_millis(100));
+        let debug_str = format!("{:?}", result);
+        assert!(debug_str.contains("LevelResult"));
+    }
+
+    #[test]
+    fn test_py2rs_score_clone() {
+        let mut score = Py2RsScore::new("clone-test");
+        score.add_level(LevelResult::passed(Py2RsLevel::Hello, 1, Duration::ZERO));
+        score.finalize();
+
+        let cloned = score.clone();
+        assert_eq!(cloned.model_id, score.model_id);
+        assert_eq!(cloned.max_level, score.max_level);
+    }
+
+    #[test]
+    fn test_level_result_clone() {
+        let result = LevelResult::passed(Py2RsLevel::Functions, 2, Duration::from_millis(50));
+        let cloned = result.clone();
+        assert_eq!(cloned.level, result.level);
+        assert_eq!(cloned.passed, result.passed);
+    }
 }
