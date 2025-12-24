@@ -411,4 +411,63 @@ mod tests {
         // (commented out as std::io::Error is not Sync)
         // assert_send::<AprenderError>();
     }
+
+    // =========================================================================
+    // Additional coverage tests for convenience methods and traits
+    // =========================================================================
+
+    #[test]
+    fn test_dimension_mismatch_helper() {
+        let err = AprenderError::dimension_mismatch("rows", 100, 50);
+        let msg = err.to_string();
+        assert!(msg.contains("rows=100"));
+        assert!(msg.contains("50"));
+    }
+
+    #[test]
+    fn test_index_out_of_bounds_helper() {
+        let err = AprenderError::index_out_of_bounds(10, 5);
+        let msg = err.to_string();
+        assert!(msg.contains("index 10"));
+        assert!(msg.contains("len=5"));
+    }
+
+    #[test]
+    fn test_empty_input_helper() {
+        let err = AprenderError::empty_input("training data");
+        let msg = err.to_string();
+        assert!(msg.contains("empty input"));
+        assert!(msg.contains("training data"));
+    }
+
+    #[test]
+    fn test_error_eq_str() {
+        let err = AprenderError::Other("test error".to_string());
+        assert!(err == "test error");
+        assert!("test error" == err);
+    }
+
+    #[test]
+    fn test_error_source_io() {
+        use std::error::Error;
+        let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "file not found");
+        let err = AprenderError::Io(io_err);
+        assert!(err.source().is_some());
+    }
+
+    #[test]
+    fn test_error_source_other() {
+        use std::error::Error;
+        let err = AprenderError::Other("test".to_string());
+        assert!(err.source().is_none());
+    }
+
+    #[test]
+    fn test_error_source_validation() {
+        use std::error::Error;
+        let err = AprenderError::ValidationError {
+            message: "test".to_string(),
+        };
+        assert!(err.source().is_none());
+    }
 }
