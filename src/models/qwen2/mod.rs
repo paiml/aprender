@@ -1246,4 +1246,316 @@ mod tests {
         let slice2 = [0.0_f32, -1.0, -2.0];
         assert_eq!(argmax(&slice2), 0);
     }
+
+    // ========== Additional Coverage Tests ==========
+
+    #[test]
+    fn test_embedding_placeholder() {
+        let emb = Embedding::placeholder(1000, 64);
+        assert_eq!(emb.vocab_size, 1000);
+        assert_eq!(emb.hidden_size, 64);
+        // Placeholder has minimal weight
+        assert_eq!(emb.weight.data().len(), 1);
+    }
+
+    #[test]
+    fn test_embedding_set_weight() {
+        let mut emb = Embedding::placeholder(10, 4);
+        let new_weight = Tensor::ones(&[10, 4]);
+        emb.set_weight(new_weight);
+        assert_eq!(emb.weight().data().len(), 40);
+    }
+
+    #[test]
+    fn test_embedding_weight_accessor() {
+        let emb = Embedding::new(10, 4);
+        let weight = emb.weight();
+        assert_eq!(weight.shape(), &[10, 4]);
+    }
+
+    #[test]
+    fn test_embedding_out_of_vocab() {
+        let emb = Embedding::new(10, 4);
+        // Token 100 is out of vocabulary (vocab_size=10)
+        let output = emb.forward(&[0, 100, 2]);
+        // Should still produce output (OOV token gets zeros)
+        assert_eq!(output.shape(), &[1, 3, 4]);
+    }
+
+    #[test]
+    fn test_qwen2_mlp_placeholder() {
+        let _mlp = Qwen2MLP::placeholder(64, 128);
+        // Placeholder MLPs should exist but have minimal weights
+        // Note: Cannot do forward pass on placeholder (no weights set)
+    }
+
+    #[test]
+    fn test_qwen2_mlp_mut_accessors() {
+        let mut mlp = Qwen2MLP::new(64, 128);
+        let gate = mlp.gate_proj_mut();
+        assert!(gate.weight().shape().len() > 0);
+        let up = mlp.up_proj_mut();
+        assert!(up.weight().shape().len() > 0);
+        let down = mlp.down_proj_mut();
+        assert!(down.weight().shape().len() > 0);
+    }
+
+    #[test]
+    fn test_qwen2_decoder_layer_placeholder() {
+        let config = create_tiny_config();
+        let _layer = Qwen2DecoderLayer::placeholder(&config);
+        // Just verify placeholder can be created without panic
+    }
+
+    #[test]
+    fn test_qwen2_decoder_layer_mut_accessors() {
+        let config = create_tiny_config();
+        let mut layer = Qwen2DecoderLayer::new(&config);
+
+        let _attn = layer.self_attn_mut();
+        let _mlp = layer.mlp_mut();
+        let _input_norm = layer.input_layernorm_mut();
+        let _post_norm = layer.post_attention_layernorm_mut();
+    }
+
+    #[test]
+    fn test_kv_cache_new() {
+        let cache = KVCache::new(4);
+        assert_eq!(cache.keys.len(), 4);
+        assert_eq!(cache.values.len(), 4);
+        assert_eq!(cache.cached_len, 0);
+        assert!(cache.keys.iter().all(|k| k.is_none()));
+        assert!(cache.values.iter().all(|v| v.is_none()));
+    }
+
+    #[test]
+    fn test_kv_cache_clear() {
+        let mut cache = KVCache::new(2);
+        cache.cached_len = 10;
+        cache.keys[0] = Some(Tensor::ones(&[1, 2, 3]));
+        cache.values[0] = Some(Tensor::ones(&[1, 2, 3]));
+
+        cache.clear();
+
+        assert_eq!(cache.cached_len, 0);
+        assert!(cache.keys.iter().all(|k| k.is_none()));
+        assert!(cache.values.iter().all(|v| v.is_none()));
+    }
+
+    #[test]
+    fn test_qwen2_model_uninitialized() {
+        let config = create_tiny_config();
+        let model = Qwen2Model::new_uninitialized(&config);
+        assert_eq!(model.num_layers(), 2);
+        // Uninitialized model has placeholder weights
+    }
+
+    #[test]
+    fn test_qwen2_model_train_eval() {
+        let config = create_tiny_config();
+        let mut model = Qwen2Model::new(&config);
+
+        model.train();
+        assert!(model.training);
+
+        model.eval();
+        assert!(!model.training);
+    }
+
+    #[test]
+    fn test_qwen2_model_cache_operations() {
+        let config = create_tiny_config();
+        let mut model = Qwen2Model::new(&config);
+
+        // Initially no cache
+        assert!(model.kv_cache.is_none());
+
+        // Enable cache
+        model.enable_cache();
+        assert!(model.kv_cache.is_some());
+
+        // Clear cache (should not panic even if empty)
+        model.clear_cache();
+
+        // Disable cache
+        model.disable_cache();
+        assert!(model.kv_cache.is_none());
+
+        // Clear on disabled cache should not panic
+        model.clear_cache();
+    }
+
+    #[test]
+    fn test_qwen2_model_weight_names() {
+        let config = create_tiny_config();
+        let model = Qwen2Model::new(&config);
+
+        let names = model.weight_names();
+        assert!(names.contains(&"model.embed_tokens.weight".to_string()));
+        assert!(names.contains(&"model.norm.weight".to_string()));
+        assert!(names.contains(&"lm_head.weight".to_string()));
+        // Should have layer-specific names
+        assert!(names.contains(&"model.layers.0.self_attn.q_proj.weight".to_string()));
+        assert!(names.contains(&"model.layers.1.mlp.gate_proj.weight".to_string()));
+    }
+
+    #[test]
+    fn test_qwen2_model_weight_info() {
+        let config = create_tiny_config();
+        let model = Qwen2Model::new(&config);
+
+        let info = model.weight_info();
+        assert!(info.contains_key("model.embed_tokens.weight"));
+        assert_eq!(info["model.embed_tokens.weight"], vec![1000, 64]);
+        assert!(info.contains_key("model.norm.weight"));
+        assert_eq!(info["model.norm.weight"], vec![64]);
+    }
+
+    #[test]
+    fn test_qwen2_model_weights() {
+        let config = create_tiny_config();
+        let model = Qwen2Model::new(&config);
+
+        let weights = model.weights();
+        assert!(weights.contains_key("model.embed_tokens.weight"));
+        assert_eq!(weights["model.embed_tokens.weight"].len(), 1000 * 64);
+    }
+
+    #[test]
+    fn test_qwen2_model_num_parameters() {
+        let config = create_tiny_config();
+        let model = Qwen2Model::new(&config);
+
+        let num_params = model.num_parameters();
+        // Should have embedding + layers + norm + lm_head
+        assert!(num_params > 0);
+        // Embedding alone is 1000 * 64 = 64000
+        assert!(num_params >= 64000);
+    }
+
+    #[test]
+    fn test_qwen2_model_mut_accessors() {
+        let config = create_tiny_config();
+        let mut model = Qwen2Model::new(&config);
+
+        let _embed = model.embed_tokens_mut();
+        let layer = model.layer_mut(0);
+        assert!(layer.is_some());
+        let bad_layer = model.layer_mut(100);
+        assert!(bad_layer.is_none());
+        let _norm = model.norm_mut();
+        let _lm_head = model.lm_head_mut();
+    }
+
+    #[test]
+    fn test_qwen2_model_generate_greedy() {
+        let config = create_tiny_config();
+        let mut model = Qwen2Model::new(&config);
+        model.eval();
+
+        let prompt = vec![1u32, 2, 3];
+        // Generate with temperature=0 (greedy)
+        let output = model.generate(&prompt, 2, 0.0, 1.0);
+
+        // Should have prompt + new tokens
+        assert!(output.len() >= prompt.len());
+        assert!(output.len() <= prompt.len() + 2);
+        // Prompt should be preserved
+        assert_eq!(&output[..3], &[1, 2, 3]);
+    }
+
+    #[test]
+    fn test_qwen2_model_generate_with_temperature() {
+        let config = create_tiny_config();
+        let mut model = Qwen2Model::new(&config);
+        model.eval();
+
+        let prompt = vec![1u32, 2, 3];
+        // Generate with temperature > 0
+        let output = model.generate(&prompt, 2, 0.8, 1.0);
+
+        assert!(output.len() >= prompt.len());
+    }
+
+    #[test]
+    fn test_sample_with_temperature() {
+        let logits = vec![10.0f32, 1.0, 0.0, -1.0];
+
+        // With low temperature, should mostly pick index 0
+        let mut count_0 = 0;
+        for _ in 0..10 {
+            let sample = sample_with_temperature(&logits, 0.1);
+            if sample == 0 {
+                count_0 += 1;
+            }
+        }
+        // With temperature 0.1, should heavily favor index 0
+        assert!(count_0 >= 5, "Expected mostly 0s, got {count_0}/10");
+    }
+
+    #[test]
+    fn test_sample_with_high_temperature() {
+        let logits = vec![1.0f32, 1.0, 1.0, 1.0];
+
+        // With uniform logits, all indices should be possible
+        let mut seen = [false; 4];
+        for _ in 0..100 {
+            let sample = sample_with_temperature(&logits, 1.0) as usize;
+            if sample < 4 {
+                seen[sample] = true;
+            }
+        }
+        // Should see at least some variety
+        let variety = seen.iter().filter(|&&x| x).count();
+        assert!(variety >= 2, "Expected variety, but only saw {variety} different values");
+    }
+
+    #[test]
+    fn test_elementwise_mul() {
+        let a = Tensor::new(&[1.0, 2.0, 3.0], &[3]);
+        let b = Tensor::new(&[2.0, 3.0, 4.0], &[3]);
+        let c = elementwise_mul(&a, &b);
+        assert_eq!(c.data(), &[2.0, 6.0, 12.0]);
+    }
+
+    #[test]
+    fn test_add_tensors() {
+        let a = Tensor::new(&[1.0, 2.0, 3.0], &[3]);
+        let b = Tensor::new(&[4.0, 5.0, 6.0], &[3]);
+        let c = add_tensors(&a, &b);
+        assert_eq!(c.data(), &[5.0, 7.0, 9.0]);
+    }
+
+    #[test]
+    fn test_argmax_empty() {
+        let slice: [f32; 0] = [];
+        // Should return 0 for empty slice
+        assert_eq!(argmax(&slice), 0);
+    }
+
+    #[test]
+    fn test_argmax_single() {
+        let slice = [42.0f32];
+        assert_eq!(argmax(&slice), 0);
+    }
+
+    #[test]
+    fn test_causal_mask_size_1() {
+        let mask = generate_causal_mask(1);
+        assert_eq!(mask.shape(), &[1, 1]);
+        assert_eq!(mask.data()[0], 0.0);
+    }
+
+    #[test]
+    fn test_qwen2_decoder_layer_forward() {
+        let config = create_tiny_config();
+        let layer = Qwen2DecoderLayer::new(&config);
+        let rope = RotaryPositionEmbedding::with_base(16, 128, 10000.0);
+
+        let hidden = Tensor::ones(&[1, 5, 64]);
+        let position_ids: Vec<usize> = (0..5).collect();
+
+        let output = layer.forward(&hidden, &position_ids, &rope, None);
+        assert_eq!(output.shape(), &[1, 5, 64]);
+    }
 }

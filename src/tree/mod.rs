@@ -4982,4 +4982,438 @@ mod tests {
             }
         }
     }
+
+    // ========== Additional Coverage Tests ==========
+
+    #[test]
+    fn test_decision_tree_regressor_new() {
+        let tree = DecisionTreeRegressor::new();
+        assert!(tree.tree.is_none());
+        assert!(tree.max_depth.is_none());
+    }
+
+    #[test]
+    fn test_decision_tree_regressor_default() {
+        let tree = DecisionTreeRegressor::default();
+        assert!(tree.tree.is_none());
+    }
+
+    #[test]
+    fn test_decision_tree_regressor_with_max_depth() {
+        let tree = DecisionTreeRegressor::new().with_max_depth(5);
+        assert_eq!(tree.max_depth, Some(5));
+    }
+
+    #[test]
+    fn test_decision_tree_regressor_with_min_samples_split() {
+        let tree = DecisionTreeRegressor::new().with_min_samples_split(5);
+        assert_eq!(tree.min_samples_split, 5);
+    }
+
+    #[test]
+    fn test_decision_tree_regressor_with_min_samples_leaf() {
+        let tree = DecisionTreeRegressor::new().with_min_samples_leaf(3);
+        assert_eq!(tree.min_samples_leaf, 3);
+    }
+
+    #[test]
+    fn test_decision_tree_regressor_fit_predict() {
+        let x = Matrix::from_vec(5, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0])
+            .expect("Matrix creation should succeed");
+        let y = Vector::from_slice(&[2.0, 4.0, 6.0, 8.0, 10.0]);
+
+        let mut tree = DecisionTreeRegressor::new().with_max_depth(3);
+        tree.fit(&x, &y).expect("fit should succeed");
+
+        let predictions = tree.predict(&x);
+        assert_eq!(predictions.len(), 5);
+    }
+
+    #[test]
+    fn test_decision_tree_regressor_score() {
+        let x = Matrix::from_vec(5, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0])
+            .expect("Matrix creation should succeed");
+        let y = Vector::from_slice(&[2.0, 4.0, 6.0, 8.0, 10.0]);
+
+        let mut tree = DecisionTreeRegressor::new().with_max_depth(5);
+        tree.fit(&x, &y).expect("fit should succeed");
+
+        let score = tree.score(&x, &y);
+        // R² should be reasonably high for this simple linear data
+        assert!(score > 0.5, "R² should be > 0.5, got {score}");
+    }
+
+    #[test]
+    fn test_decision_tree_regressor_fit_mismatch_error() {
+        let x = Matrix::from_vec(5, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0])
+            .expect("Matrix creation should succeed");
+        let y = Vector::from_slice(&[2.0, 4.0, 6.0]); // Mismatched length
+
+        let mut tree = DecisionTreeRegressor::new();
+        let result = tree.fit(&x, &y);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_decision_tree_regressor_fit_empty_error() {
+        let x = Matrix::from_vec(0, 1, vec![]).expect("Matrix creation should succeed");
+        let y = Vector::from_slice(&[]);
+
+        let mut tree = DecisionTreeRegressor::new();
+        let result = tree.fit(&x, &y);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_random_forest_regressor_new() {
+        let rf = RandomForestRegressor::new(10);
+        assert_eq!(rf.n_estimators, 10);
+        assert!(rf.trees.is_empty());
+    }
+
+    #[test]
+    fn test_random_forest_regressor_default_values() {
+        let rf = RandomForestRegressor::default();
+        assert!(rf.trees.is_empty());
+    }
+
+    #[test]
+    fn test_random_forest_regressor_fit_mismatch_error() {
+        let x = Matrix::from_vec(5, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0])
+            .expect("Matrix creation should succeed");
+        let y = Vector::from_slice(&[2.0, 4.0]); // Mismatched length
+
+        let mut rf = RandomForestRegressor::new(5);
+        let result = rf.fit(&x, &y);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_random_forest_regressor_fit_empty_error() {
+        let x = Matrix::from_vec(0, 1, vec![]).expect("Matrix creation should succeed");
+        let y = Vector::from_slice(&[]);
+
+        let mut rf = RandomForestRegressor::new(5);
+        let result = rf.fit(&x, &y);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_random_forest_regressor_oob_methods() {
+        let rf = RandomForestRegressor::new(10);
+        assert!(rf.oob_prediction().is_none());
+        assert!(rf.oob_score().is_none());
+    }
+
+    #[test]
+    fn test_random_forest_regressor_oob_methods_after_fit() {
+        let x = Matrix::from_vec(10, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0])
+            .expect("Matrix creation should succeed");
+        let y = Vector::from_slice(&[2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0, 20.0]);
+
+        let mut rf = RandomForestRegressor::new(10).with_random_state(42);
+        rf.fit(&x, &y).expect("fit should succeed");
+
+        let oob_pred = rf.oob_prediction();
+        assert!(oob_pred.is_some());
+        assert_eq!(oob_pred.as_ref().map(|v| v.len()), Some(10));
+
+        let oob_score = rf.oob_score();
+        assert!(oob_score.is_some());
+    }
+
+    #[test]
+    fn test_regression_tree_node_depth() {
+        let leaf = RegressionTreeNode::Leaf(RegressionLeaf {
+            value: 5.0,
+            n_samples: 10,
+        });
+        assert_eq!(leaf.depth(), 0);
+
+        let node = RegressionTreeNode::Node(RegressionNode {
+            feature_idx: 0,
+            threshold: 0.5,
+            left: Box::new(RegressionTreeNode::Leaf(RegressionLeaf {
+                value: 3.0,
+                n_samples: 5,
+            })),
+            right: Box::new(RegressionTreeNode::Leaf(RegressionLeaf {
+                value: 7.0,
+                n_samples: 5,
+            })),
+        });
+        assert_eq!(node.depth(), 1);
+    }
+
+    #[test]
+    fn test_gradient_boosting_classifier_new() {
+        let gb = GradientBoostingClassifier::new();
+        assert!(gb.estimators.is_empty());
+        assert_eq!(gb.n_estimators, 100); // Config value, not fitted count
+    }
+
+    #[test]
+    fn test_gradient_boosting_classifier_default() {
+        let gb = GradientBoostingClassifier::default();
+        assert!(gb.estimators.is_empty());
+    }
+
+    #[test]
+    fn test_gradient_boosting_classifier_builders() {
+        let gb = GradientBoostingClassifier::new()
+            .with_n_estimators(50)
+            .with_learning_rate(0.05)
+            .with_max_depth(5);
+
+        assert_eq!(gb.n_estimators, 50); // Config value, not fitted count
+    }
+
+    #[test]
+    fn test_gradient_boosting_classifier_fit_predict() {
+        let x = Matrix::from_vec(
+            8,
+            2,
+            vec![0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0, 2.0, 2.0, 2.0, 3.0, 3.0, 2.0, 3.0, 3.0],
+        )
+        .expect("Matrix creation should succeed");
+        let y = vec![0, 0, 1, 1, 0, 0, 1, 1];
+
+        let mut gb = GradientBoostingClassifier::new()
+            .with_n_estimators(10)
+            .with_max_depth(3);
+
+        gb.fit(&x, &y).expect("fit should succeed");
+
+        let predictions = gb.predict(&x).expect("predict should succeed");
+        assert_eq!(predictions.len(), 8);
+    }
+
+    #[test]
+    fn test_gradient_boosting_classifier_predict_proba() {
+        let x = Matrix::from_vec(
+            8,
+            2,
+            vec![0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0, 2.0, 2.0, 2.0, 3.0, 3.0, 2.0, 3.0, 3.0],
+        )
+        .expect("Matrix creation should succeed");
+        let y = vec![0, 0, 1, 1, 0, 0, 1, 1];
+
+        let mut gb = GradientBoostingClassifier::new()
+            .with_n_estimators(10)
+            .with_max_depth(3);
+
+        gb.fit(&x, &y).expect("fit should succeed");
+
+        let proba = gb.predict_proba(&x).expect("predict_proba should succeed");
+        assert_eq!(proba.len(), 8);
+
+        // Each row should be a probability distribution
+        for row_proba in &proba {
+            let sum: f32 = row_proba.iter().sum();
+            assert!(
+                (sum - 1.0).abs() < 1e-5,
+                "Probabilities should sum to 1.0, got {sum}"
+            );
+            for &p in row_proba {
+                assert!((0.0..=1.0).contains(&p), "Probability should be in [0,1]");
+            }
+        }
+    }
+
+    #[test]
+    fn test_random_forest_classifier_oob_methods() {
+        let rf = RandomForestClassifier::new(10);
+        assert!(rf.oob_prediction().is_none());
+        assert!(rf.oob_score().is_none());
+        assert!(rf.feature_importances().is_none());
+    }
+
+    #[test]
+    fn test_decision_tree_classifier_fit_mismatch() {
+        let x = Matrix::from_vec(4, 2, vec![0.0, 0.0, 1.0, 1.0, 2.0, 2.0, 3.0, 3.0])
+            .expect("Matrix creation should succeed");
+        let y = vec![0, 1]; // Mismatched length
+
+        let mut tree = DecisionTreeClassifier::new();
+        let result = tree.fit(&x, &y);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_gradient_boosting_classifier_fit_mismatch() {
+        let x = Matrix::from_vec(4, 2, vec![0.0, 0.0, 1.0, 1.0, 2.0, 2.0, 3.0, 3.0])
+            .expect("Matrix creation should succeed");
+        let y = vec![0, 1]; // Mismatched length
+
+        let mut gb = GradientBoostingClassifier::new();
+        let result = gb.fit(&x, &y);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_gradient_boosting_classifier_fit_empty() {
+        let x = Matrix::from_vec(0, 2, vec![]).expect("Matrix creation should succeed");
+        let y: Vec<usize> = vec![];
+
+        let mut gb = GradientBoostingClassifier::new();
+        let result = gb.fit(&x, &y);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_decision_tree_classifier_score() {
+        let x = Matrix::from_vec(
+            6,
+            2,
+            vec![0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0, 2.0, 2.0, 3.0, 3.0],
+        )
+        .expect("Matrix creation should succeed");
+        let y = vec![0, 0, 1, 1, 0, 1];
+
+        let mut tree = DecisionTreeClassifier::new().with_max_depth(5);
+        tree.fit(&x, &y).expect("fit should succeed");
+
+        let score = tree.score(&x, &y);
+        assert!(score >= 0.0 && score <= 1.0);
+    }
+
+    #[test]
+    fn test_random_forest_classifier_score() {
+        let x = Matrix::from_vec(
+            6,
+            2,
+            vec![0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0, 2.0, 2.0, 3.0, 3.0],
+        )
+        .expect("Matrix creation should succeed");
+        let y = vec![0, 0, 1, 1, 0, 1];
+
+        let mut rf = RandomForestClassifier::new(10).with_random_state(42);
+        rf.fit(&x, &y).expect("fit should succeed");
+
+        let score = rf.score(&x, &y);
+        assert!(score >= 0.0 && score <= 1.0);
+    }
+
+    #[test]
+    fn test_random_forest_regressor_score_r2() {
+        let x = Matrix::from_vec(5, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0])
+            .expect("Matrix creation should succeed");
+        let y = Vector::from_slice(&[2.0, 4.0, 6.0, 8.0, 10.0]);
+
+        let mut rf = RandomForestRegressor::new(10).with_random_state(42);
+        rf.fit(&x, &y).expect("fit should succeed");
+
+        let score = rf.score(&x, &y);
+        assert!(score > 0.0, "R² should be positive, got {score}");
+    }
+
+    #[test]
+    fn test_leaf_struct_fields() {
+        let leaf = Leaf {
+            class_label: 2,
+            n_samples: 50,
+        };
+        assert_eq!(leaf.class_label, 2);
+        assert_eq!(leaf.n_samples, 50);
+    }
+
+    #[test]
+    fn test_regression_leaf_struct_fields() {
+        let leaf = RegressionLeaf {
+            value: 3.14,
+            n_samples: 25,
+        };
+        assert!((leaf.value - 3.14).abs() < 1e-6);
+        assert_eq!(leaf.n_samples, 25);
+    }
+
+    #[test]
+    fn test_node_struct_fields() {
+        let left = TreeNode::Leaf(Leaf {
+            class_label: 0,
+            n_samples: 5,
+        });
+        let right = TreeNode::Leaf(Leaf {
+            class_label: 1,
+            n_samples: 5,
+        });
+
+        let node = Node {
+            feature_idx: 2,
+            threshold: 1.5,
+            left: Box::new(left),
+            right: Box::new(right),
+        };
+
+        assert_eq!(node.feature_idx, 2);
+        assert!((node.threshold - 1.5).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_regression_node_struct_fields() {
+        let left = RegressionTreeNode::Leaf(RegressionLeaf {
+            value: 1.0,
+            n_samples: 5,
+        });
+        let right = RegressionTreeNode::Leaf(RegressionLeaf {
+            value: 2.0,
+            n_samples: 5,
+        });
+
+        let node = RegressionNode {
+            feature_idx: 1,
+            threshold: 0.75,
+            left: Box::new(left),
+            right: Box::new(right),
+        };
+
+        assert_eq!(node.feature_idx, 1);
+        assert!((node.threshold - 0.75).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_tree_node_variants() {
+        let leaf_node = TreeNode::Leaf(Leaf {
+            class_label: 0,
+            n_samples: 10,
+        });
+        assert_eq!(leaf_node.depth(), 0);
+
+        let internal_node = TreeNode::Node(Node {
+            feature_idx: 0,
+            threshold: 0.5,
+            left: Box::new(TreeNode::Leaf(Leaf {
+                class_label: 0,
+                n_samples: 5,
+            })),
+            right: Box::new(TreeNode::Leaf(Leaf {
+                class_label: 1,
+                n_samples: 5,
+            })),
+        });
+        assert_eq!(internal_node.depth(), 1);
+    }
+
+    #[test]
+    fn test_regression_tree_node_variants() {
+        let leaf = RegressionTreeNode::Leaf(RegressionLeaf {
+            value: 5.0,
+            n_samples: 10,
+        });
+        assert_eq!(leaf.depth(), 0);
+
+        let internal = RegressionTreeNode::Node(RegressionNode {
+            feature_idx: 0,
+            threshold: 0.5,
+            left: Box::new(RegressionTreeNode::Leaf(RegressionLeaf {
+                value: 3.0,
+                n_samples: 5,
+            })),
+            right: Box::new(RegressionTreeNode::Leaf(RegressionLeaf {
+                value: 7.0,
+                n_samples: 5,
+            })),
+        });
+        assert_eq!(internal.depth(), 1);
+    }
 }

@@ -150,3 +150,151 @@ impl DecodedAudio {
         Self::new(mono_samples, self.sample_rate, 1)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_decoded_audio_new() {
+        let samples = vec![0.0, 0.5, 1.0, -0.5];
+        let audio = DecodedAudio::new(samples.clone(), 44100, 1);
+
+        assert_eq!(audio.samples.len(), 4);
+        assert_eq!(audio.sample_rate, 44100);
+        assert_eq!(audio.channels, 1);
+        // 4 samples / 44100 Hz = ~0.09ms
+        assert!(audio.duration_ms < 1);
+    }
+
+    #[test]
+    fn test_decoded_audio_stereo() {
+        // Stereo: left, right, left, right
+        let samples = vec![0.0, 1.0, 0.5, 0.5];
+        let audio = DecodedAudio::new(samples.clone(), 44100, 2);
+
+        assert_eq!(audio.channels, 2);
+        assert_eq!(audio.samples.len(), 4);
+    }
+
+    #[test]
+    fn test_decoded_audio_to_mono_from_stereo() {
+        // Stereo samples: (L=0.0, R=1.0), (L=0.5, R=0.5)
+        let samples = vec![0.0, 1.0, 0.5, 0.5];
+        let stereo = DecodedAudio::new(samples, 44100, 2);
+        let mono = stereo.to_mono();
+
+        assert_eq!(mono.channels, 1);
+        assert_eq!(mono.samples.len(), 2);
+        // First sample: (0.0 + 1.0) / 2 = 0.5
+        assert!((mono.samples[0] - 0.5).abs() < 0.001);
+        // Second sample: (0.5 + 0.5) / 2 = 0.5
+        assert!((mono.samples[1] - 0.5).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_decoded_audio_to_mono_already_mono() {
+        let samples = vec![0.0, 0.5, 1.0];
+        let mono = DecodedAudio::new(samples.clone(), 16000, 1);
+        let result = mono.to_mono();
+
+        // Should return clone
+        assert_eq!(result.channels, 1);
+        assert_eq!(result.samples.len(), 3);
+        assert_eq!(result.samples, mono.samples);
+    }
+
+    #[test]
+    fn test_decoded_audio_zero_sample_rate() {
+        let samples = vec![0.0, 0.5];
+        let audio = DecodedAudio::new(samples, 0, 1);
+
+        assert_eq!(audio.duration_ms, 0);
+    }
+
+    #[test]
+    fn test_audio_error_invalid_parameters() {
+        let err = AudioError::InvalidParameters("bad param".to_string());
+        let msg = err.to_string();
+        assert!(msg.contains("Invalid audio parameters"));
+        assert!(msg.contains("bad param"));
+    }
+
+    #[test]
+    fn test_audio_error_invalid_config() {
+        let err = AudioError::InvalidConfig("bad config".to_string());
+        let msg = err.to_string();
+        assert!(msg.contains("Invalid configuration"));
+    }
+
+    #[test]
+    fn test_audio_error_not_implemented() {
+        let err = AudioError::NotImplemented("feature X".to_string());
+        let msg = err.to_string();
+        assert!(msg.contains("Not implemented"));
+        assert!(msg.contains("feature X"));
+    }
+
+    #[test]
+    fn test_audio_error_not_running() {
+        let err = AudioError::NotRunning;
+        let msg = err.to_string();
+        assert!(msg.contains("not running"));
+    }
+
+    #[test]
+    fn test_audio_error_capture() {
+        let err = AudioError::CaptureError("mic error".to_string());
+        let msg = err.to_string();
+        assert!(msg.contains("capture error"));
+    }
+
+    #[test]
+    fn test_audio_error_playback() {
+        let err = AudioError::PlaybackError("speaker error".to_string());
+        let msg = err.to_string();
+        assert!(msg.contains("playback error"));
+    }
+
+    #[test]
+    fn test_audio_error_codec() {
+        let err = AudioError::CodecError("decode failed".to_string());
+        let msg = err.to_string();
+        assert!(msg.contains("Codec error"));
+    }
+
+    #[test]
+    fn test_audio_error_unsupported_format() {
+        let err = AudioError::UnsupportedFormat("AIFF".to_string());
+        let msg = err.to_string();
+        assert!(msg.contains("Unsupported audio format"));
+        assert!(msg.contains("AIFF"));
+    }
+
+    #[test]
+    fn test_audio_error_io() {
+        let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "file not found");
+        let err: AudioError = io_err.into();
+        let msg = err.to_string();
+        assert!(msg.contains("I/O error"));
+    }
+
+    #[test]
+    fn test_decoded_audio_clone() {
+        let samples = vec![0.1, 0.2, 0.3];
+        let audio = DecodedAudio::new(samples, 16000, 1);
+        let cloned = audio.clone();
+
+        assert_eq!(audio.samples, cloned.samples);
+        assert_eq!(audio.sample_rate, cloned.sample_rate);
+        assert_eq!(audio.channels, cloned.channels);
+        assert_eq!(audio.duration_ms, cloned.duration_ms);
+    }
+
+    #[test]
+    fn test_decoded_audio_debug() {
+        let audio = DecodedAudio::new(vec![0.0], 16000, 1);
+        let debug_str = format!("{:?}", audio);
+        assert!(debug_str.contains("DecodedAudio"));
+    }
+}

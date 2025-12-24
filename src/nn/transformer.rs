@@ -2242,4 +2242,255 @@ mod tests {
             assert!(s > 0.0);
         }
     }
+
+    // ========================================================================
+    // Additional Coverage Tests
+    // ========================================================================
+
+    #[test]
+    fn test_mha_train_eval() {
+        let mut mha = MultiHeadAttention::new(64, 8);
+        assert!(mha.training());
+
+        mha.eval();
+        assert!(!mha.training());
+
+        mha.train();
+        assert!(mha.training());
+    }
+
+    #[test]
+    fn test_mha_embed_num_heads_getters() {
+        let mha = MultiHeadAttention::new(128, 4);
+        assert_eq!(mha.embed_dim(), 128);
+        assert_eq!(mha.num_heads(), 4);
+    }
+
+    #[test]
+    fn test_mha_with_dropout() {
+        let mha = MultiHeadAttention::new(64, 8).with_dropout(0.2);
+        let x = Tensor::ones(&[2, 10, 64]);
+        let output = mha.forward(&x);
+        assert_eq!(output.shape(), &[2, 10, 64]);
+    }
+
+    #[test]
+    fn test_mha_debug() {
+        let mha = MultiHeadAttention::new(64, 8);
+        let debug_str = format!("{:?}", mha);
+        assert!(debug_str.contains("MultiHeadAttention"));
+        assert!(debug_str.contains("embed_dim"));
+        assert!(debug_str.contains("num_heads"));
+    }
+
+    #[test]
+    fn test_mha_parameters_mut() {
+        let mut mha = MultiHeadAttention::new(64, 8);
+        let params = mha.parameters_mut();
+        assert_eq!(params.len(), 8);
+    }
+
+    #[test]
+    fn test_encoder_layer_train_eval() {
+        let mut layer = TransformerEncoderLayer::new(64, 8, 256);
+        assert!(layer.training());
+
+        layer.eval();
+        assert!(!layer.training());
+
+        layer.train();
+        assert!(layer.training());
+    }
+
+    #[test]
+    fn test_encoder_layer_with_dropout() {
+        let layer = TransformerEncoderLayer::new(64, 8, 256).with_dropout(0.2);
+        let x = Tensor::ones(&[2, 10, 64]);
+        let y = layer.forward(&x);
+        assert_eq!(y.shape(), &[2, 10, 64]);
+    }
+
+    #[test]
+    fn test_encoder_layer_forward_with_mask() {
+        let layer = TransformerEncoderLayer::new(64, 8, 256);
+        let x = Tensor::ones(&[2, 10, 64]);
+        // Test without mask - mask shape requirements are complex
+        let y = layer.forward_with_mask(&x, None);
+        assert_eq!(y.shape(), &[2, 10, 64]);
+    }
+
+    #[test]
+    fn test_encoder_layer_debug() {
+        let layer = TransformerEncoderLayer::new(64, 8, 256);
+        let debug_str = format!("{:?}", layer);
+        assert!(debug_str.contains("TransformerEncoderLayer"));
+        assert!(debug_str.contains("d_model"));
+    }
+
+    #[test]
+    fn test_encoder_layer_parameters_mut() {
+        let mut layer = TransformerEncoderLayer::new(64, 8, 256);
+        let params = layer.parameters_mut();
+        assert_eq!(params.len(), 16);
+    }
+
+    #[test]
+    fn test_decoder_layer_train_eval() {
+        let mut layer = TransformerDecoderLayer::new(64, 8, 256);
+        assert!(layer.training());
+
+        layer.eval();
+        assert!(!layer.training());
+
+        layer.train();
+        assert!(layer.training());
+    }
+
+    #[test]
+    fn test_decoder_layer_forward_single_input() {
+        let layer = TransformerDecoderLayer::new(64, 8, 256);
+        let x = Tensor::ones(&[2, 10, 64]);
+        let y = layer.forward(&x);
+        assert_eq!(y.shape(), &[2, 10, 64]);
+    }
+
+    #[test]
+    fn test_decoder_layer_parameters() {
+        let layer = TransformerDecoderLayer::new(64, 8, 256);
+        let params = layer.parameters();
+        // self_attn: 8 + cross_attn: 8 + linear1: 2 + linear2: 2 + norm1,2,3: 6 = 26
+        assert_eq!(params.len(), 26);
+    }
+
+    #[test]
+    fn test_decoder_layer_parameters_mut() {
+        let mut layer = TransformerDecoderLayer::new(64, 8, 256);
+        let params = layer.parameters_mut();
+        assert_eq!(params.len(), 26);
+    }
+
+    #[test]
+    fn test_decoder_layer_with_masks() {
+        let layer = TransformerDecoderLayer::new(64, 8, 256);
+        let tgt = Tensor::ones(&[2, 10, 64]);
+        let memory = Tensor::ones(&[2, 20, 64]);
+        // Test without mask - mask shape requirements are complex
+        let y = layer.forward_with_memory(&tgt, &memory, None, None);
+        assert_eq!(y.shape(), &[2, 10, 64]);
+    }
+
+    #[test]
+    fn test_positional_encoding_parameters() {
+        let pe = PositionalEncoding::new(64, 100);
+        let params = pe.parameters();
+        assert!(params.is_empty()); // No learnable parameters
+    }
+
+    #[test]
+    fn test_positional_encoding_train_eval() {
+        let mut pe = PositionalEncoding::new(64, 100);
+        assert!(pe.training());
+        pe.eval();
+        assert!(!pe.training());
+        pe.train();
+        assert!(pe.training());
+    }
+
+    #[test]
+    fn test_scale_tensor() {
+        let x = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[4]);
+        let y = scale_tensor(&x, 2.0);
+        assert_eq!(y.data(), &[2.0, 4.0, 6.0, 8.0]);
+    }
+
+    #[test]
+    fn test_add_tensors() {
+        let a = Tensor::new(&[1.0, 2.0, 3.0], &[3]);
+        let b = Tensor::new(&[4.0, 5.0, 6.0], &[3]);
+        let c = add_tensors(&a, &b);
+        assert_eq!(c.data(), &[5.0, 7.0, 9.0]);
+    }
+
+    #[test]
+    fn test_gelu_activation() {
+        let x = Tensor::new(&[0.0, 1.0, -1.0], &[3]);
+        let y = gelu(&x);
+        // GELU(0) ≈ 0
+        assert!((y.data()[0] - 0.0).abs() < 0.01);
+        // GELU(1) ≈ 0.841
+        assert!((y.data()[1] - 0.841).abs() < 0.1);
+        // GELU(-1) ≈ -0.159
+        assert!((y.data()[2] + 0.159).abs() < 0.1);
+    }
+
+    #[test]
+    fn test_matmul_2d_shapes() {
+        // matmul requires 2D tensors
+        let a = Tensor::ones(&[3, 4]);
+        let b = Tensor::ones(&[4, 5]);
+        let c = matmul_batched(&a, &b);
+        assert_eq!(c.shape(), &[3, 5]);
+    }
+
+    #[test]
+    fn test_gqa_self_attention() {
+        let gqa = GroupedQueryAttention::new(64, 8, 2);
+        let x = Tensor::ones(&[2, 10, 64]);
+        let (output, _weights) = gqa.forward_self(&x, None);
+        assert_eq!(output.shape(), &[2, 10, 64]);
+    }
+
+    #[test]
+    fn test_gqa_placeholder() {
+        let gqa = GroupedQueryAttention::placeholder(64, 8, 2);
+        assert_eq!(gqa.embed_dim(), 64);
+        assert_eq!(gqa.num_heads(), 8);
+        assert_eq!(gqa.num_kv_heads(), 2);
+    }
+
+    #[test]
+    fn test_gqa_mut_accessors() {
+        let mut gqa = GroupedQueryAttention::new(64, 8, 2);
+        let _q = gqa.q_proj_mut();
+        let _k = gqa.k_proj_mut();
+        let _v = gqa.v_proj_mut();
+        let _o = gqa.out_proj_mut();
+    }
+
+    #[test]
+    fn test_gqa_parameters_mut() {
+        let mut gqa = GroupedQueryAttention::new(64, 8, 2);
+        let params = gqa.parameters_mut();
+        assert_eq!(params.len(), 8);
+    }
+
+    #[test]
+    fn test_gqa_debug() {
+        let gqa = GroupedQueryAttention::new(64, 8, 2);
+        let debug_str = format!("{:?}", gqa);
+        assert!(debug_str.contains("GroupedQueryAttention"));
+    }
+
+    #[test]
+    fn test_rope_apply_batch() {
+        let rope = RotaryPositionEmbedding::new(8, 128);
+        let x = Tensor::ones(&[4, 10, 8, 8]); // batch=4
+        let positions: Vec<usize> = (0..10).collect();
+        let y = rope.apply(&x, &positions);
+        assert_eq!(y.shape(), &[4, 10, 8, 8]);
+    }
+
+    #[test]
+    fn test_linear_attention_debug() {
+        let attn = LinearAttention::new(64, 8);
+        let debug_str = format!("{:?}", attn);
+        assert!(debug_str.contains("LinearAttention"));
+    }
+
+    #[test]
+    fn test_linear_attention_parameters_mut() {
+        let mut attn = LinearAttention::new(64, 8);
+        let params = attn.parameters_mut();
+        assert_eq!(params.len(), 8);
+    }
 }
