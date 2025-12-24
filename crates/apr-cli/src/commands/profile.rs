@@ -398,7 +398,11 @@ fn profile_real_operations(
     });
 
     // Sort by time descending
-    hotspots.sort_by(|a, b| b.time_ms.partial_cmp(&a.time_ms).unwrap_or(std::cmp::Ordering::Equal));
+    hotspots.sort_by(|a, b| {
+        b.time_ms
+            .partial_cmp(&a.time_ms)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     let avg_gflops = if total_time_ns > 0 {
         (total_flops as f64 / total_time_ns as f64) * 1e9 / 1e9
@@ -447,9 +451,7 @@ fn profile_matmul_operation(size: usize, num_ops: usize) -> (u64, u64) {
 /// Profile memory-bound operation (embedding lookup)
 fn profile_memory_operation(size: usize) -> (u64, u64) {
     let data: Vec<f32> = (0..size).map(|i| i as f32 * 0.001).collect();
-    let indices: Vec<usize> = (0..size.min(1024))
-        .map(|i| (i * 7) % size)
-        .collect();
+    let indices: Vec<usize> = (0..size.min(1024)).map(|i| (i * 7) % size).collect();
 
     let start = Instant::now();
     let mut sum = 0.0f32;

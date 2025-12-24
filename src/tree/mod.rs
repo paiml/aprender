@@ -5107,8 +5107,12 @@ mod tests {
 
     #[test]
     fn test_random_forest_regressor_oob_methods_after_fit() {
-        let x = Matrix::from_vec(10, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0])
-            .expect("Matrix creation should succeed");
+        let x = Matrix::from_vec(
+            10,
+            1,
+            vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0],
+        )
+        .expect("Matrix creation should succeed");
         let y = Vector::from_slice(&[2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0, 20.0]);
 
         let mut rf = RandomForestRegressor::new(10).with_random_state(42);
@@ -5173,7 +5177,9 @@ mod tests {
         let x = Matrix::from_vec(
             8,
             2,
-            vec![0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0, 2.0, 2.0, 2.0, 3.0, 3.0, 2.0, 3.0, 3.0],
+            vec![
+                0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0, 2.0, 2.0, 2.0, 3.0, 3.0, 2.0, 3.0, 3.0,
+            ],
         )
         .expect("Matrix creation should succeed");
         let y = vec![0, 0, 1, 1, 0, 0, 1, 1];
@@ -5193,7 +5199,9 @@ mod tests {
         let x = Matrix::from_vec(
             8,
             2,
-            vec![0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0, 2.0, 2.0, 2.0, 3.0, 3.0, 2.0, 3.0, 3.0],
+            vec![
+                0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0, 2.0, 2.0, 2.0, 3.0, 3.0, 2.0, 3.0, 3.0,
+            ],
         )
         .expect("Matrix creation should succeed");
         let y = vec![0, 0, 1, 1, 0, 0, 1, 1];

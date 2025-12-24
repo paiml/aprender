@@ -1888,8 +1888,16 @@ mod tests {
         assert!((sum - 1.0).abs() < 1e-5);
 
         // Class 0 should have higher probability than class 1
-        let class_0_prob = probs.iter().find(|(c, _)| *c == 0).map(|(_, p)| *p).unwrap_or(0.0);
-        let class_1_prob = probs.iter().find(|(c, _)| *c == 1).map(|(_, p)| *p).unwrap_or(0.0);
+        let class_0_prob = probs
+            .iter()
+            .find(|(c, _)| *c == 0)
+            .map(|(_, p)| *p)
+            .unwrap_or(0.0);
+        let class_1_prob = probs
+            .iter()
+            .find(|(c, _)| *c == 1)
+            .map(|(_, p)| *p)
+            .unwrap_or(0.0);
         assert!(class_0_prob > class_1_prob);
     }
 
@@ -1961,10 +1969,7 @@ mod tests {
         let mn_low = MatchingNetwork::new(0.1); // Low temp = sharper
         let mn_high = MatchingNetwork::new(10.0); // High temp = softer
 
-        let support = vec![
-            (vec![1.0, 0.0], 0),
-            (vec![0.0, 1.0], 1),
-        ];
+        let support = vec![(vec![1.0, 0.0], 0), (vec![0.0, 1.0], 1)];
         let query = vec![0.6, 0.4]; // Slightly closer to class 0
 
         // Both should predict class 0, but low temp is more confident

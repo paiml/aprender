@@ -1167,10 +1167,7 @@ mod tests {
             peak_memory_bytes: 1024 * 1024 * 1024,
             cache_hit_rate: 0.5,
             duration_ms: 1000,
-            warnings: vec![
-                "Some warning".to_string(),
-                "Another warning".to_string(),
-            ],
+            warnings: vec!["Some warning".to_string(), "Another warning".to_string()],
         };
 
         assert_eq!(report.warnings.len(), 2);

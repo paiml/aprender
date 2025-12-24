@@ -446,9 +446,7 @@ mod tests {
     #[test]
     fn test_stage_builder_with_ground_truth() {
         let gt = GroundTruth::from_slice(&[1.0, 2.0, 3.0]);
-        let stage = StageBuilder::new("test")
-            .ground_truth(gt)
-            .build();
+        let stage = StageBuilder::new("test").ground_truth(gt).build();
         assert!(stage.ground_truth().is_some());
         assert!(stage.ground_truth().unwrap().has_data());
     }

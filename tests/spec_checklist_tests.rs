@@ -1082,7 +1082,10 @@ fn i14_golden_trace_infrastructure() {
     assert_eq!(trace.name, "test_trace");
     assert_eq!(trace.input_ids.len(), 3);
     assert_eq!(trace.expected_logits.len(), 4);
-    assert!((trace.tolerance - 1e-4).abs() < 1e-8, "Default tolerance is 1e-4");
+    assert!(
+        (trace.tolerance - 1e-4).abs() < 1e-8,
+        "Default tolerance is 1e-4"
+    );
 
     // Test trace set
     let mut set = GoldenTraceSet::new("qwen2", "test-model");
@@ -1093,12 +1096,18 @@ fn i14_golden_trace_infrastructure() {
     let expected = vec![0.1, 0.2, 0.3];
     let actual = vec![0.10001, 0.20001, 0.29999];
     let result = verify_logits("test", &actual, &expected, 1e-4);
-    assert!(result.passed, "I14 FAIL: Golden trace verification should pass within tolerance");
+    assert!(
+        result.passed,
+        "I14 FAIL: Golden trace verification should pass within tolerance"
+    );
 
     // Test failure case
     let bad_actual = vec![0.1, 0.2, 0.5];
     let fail_result = verify_logits("test", &bad_actual, &expected, 1e-4);
-    assert!(!fail_result.passed, "I14 FAIL: Should detect deviation above tolerance");
+    assert!(
+        !fail_result.passed,
+        "I14 FAIL: Should detect deviation above tolerance"
+    );
 }
 
 /// I17: Logit match precision test
@@ -1207,7 +1216,10 @@ fn j6_gflops_estimation() {
     // Verify we can compute a meaningful GFLOPS value
     assert!(gflops > 0.0, "J6 FAIL: GFLOPS should be positive");
     assert!(gflops.is_finite(), "J6 FAIL: GFLOPS should be finite");
-    assert!(gflops < 10000.0, "J6 FAIL: GFLOPS should be realistic (< 10 TFLOPS)");
+    assert!(
+        gflops < 10000.0,
+        "J6 FAIL: GFLOPS should be realistic (< 10 TFLOPS)"
+    );
 }
 
 /// J13: Time attribution test
@@ -1390,9 +1402,7 @@ fn h8_tensor_statistics() {
     use aprender::format::golden::LogitStats;
 
     // Create test logits
-    let logits: Vec<f32> = (0..100)
-        .map(|i| (i as f32 * 0.1).sin() * 10.0)
-        .collect();
+    let logits: Vec<f32> = (0..100).map(|i| (i as f32 * 0.1).sin() * 10.0).collect();
 
     let stats = LogitStats::compute(&logits);
 
@@ -1513,10 +1523,7 @@ fn a3_checksum_computation() {
     // Verify checksum is deterministic
     let checksum2: u8 = model_data.iter().fold(0u8, |acc, &x| acc ^ x);
 
-    assert_eq!(
-        checksum, checksum2,
-        "A3 FAIL: Checksum not deterministic"
-    );
+    assert_eq!(checksum, checksum2, "A3 FAIL: Checksum not deterministic");
 
     // Verify checksum changes with data
     let mut modified_data = model_data.clone();
@@ -1571,9 +1578,7 @@ fn c1_golden_trace_precision() {
     use aprender::format::golden::verify_logits;
 
     // Simulate PyTorch reference logits (pre-computed)
-    let reference_logits: Vec<f32> = (0..1000)
-        .map(|i| (i as f32 * 0.01).sin() * 5.0)
-        .collect();
+    let reference_logits: Vec<f32> = (0..1000).map(|i| (i as f32 * 0.01).sin() * 5.0).collect();
 
     // Simulate model output with small deviation
     let model_logits: Vec<f32> = reference_logits
@@ -1633,10 +1638,7 @@ fn d1_intelligence_proxy() {
     }
 
     // Verify we can generate outputs
-    assert!(
-        !all_outputs.is_empty(),
-        "D1 FAIL: Should generate outputs"
-    );
+    assert!(!all_outputs.is_empty(), "D1 FAIL: Should generate outputs");
     assert!(
         all_outputs[0].len() > 3,
         "D1 FAIL: Should generate new tokens"
@@ -1777,7 +1779,11 @@ fn f3_wasi_io_abstraction() {
         .chunks(4)
         .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
         .collect();
-    assert_eq!(restored, data.to_vec(), "F3: Tensor round-trips through bytes");
+    assert_eq!(
+        restored,
+        data.to_vec(),
+        "F3: Tensor round-trips through bytes"
+    );
 }
 
 /// F5: WASM Component Model compatibility
@@ -1903,11 +1909,7 @@ fn f9_playbook_execution() {
     model.eval();
 
     // Playbook scenario: sequence of prompts
-    let scenarios = vec![
-        vec![1u32, 2, 3],
-        vec![4u32, 5, 6, 7],
-        vec![10u32],
-    ];
+    let scenarios = vec![vec![1u32, 2, 3], vec![4u32, 5, 6, 7], vec![10u32]];
 
     for (i, input) in scenarios.iter().enumerate() {
         let pos: Vec<usize> = (0..input.len()).collect();
@@ -2135,7 +2137,10 @@ fn h1_hf_import_structure() {
     assert!(source.is_ok(), "H1: HF source URL parses");
 
     let src = source.unwrap();
-    assert!(matches!(src, Source::HuggingFace { .. }), "H1: Identified as HF source");
+    assert!(
+        matches!(src, Source::HuggingFace { .. }),
+        "H1: Identified as HF source"
+    );
 }
 
 /// H2: SafeTensors import structure
@@ -2165,7 +2170,10 @@ fn h4_int4_quantization_structure() {
     use aprender::format::QuantizationType;
 
     let quant = QuantizationType::Int4;
-    assert!(matches!(quant, QuantizationType::Int4), "H4: INT4 quant type exists");
+    assert!(
+        matches!(quant, QuantizationType::Int4),
+        "H4: INT4 quant type exists"
+    );
 }
 
 /// H5: INT8 quantization infrastructure
@@ -2174,7 +2182,10 @@ fn h5_int8_quantization_structure() {
     use aprender::format::QuantizationType;
 
     let quant = QuantizationType::Int8;
-    assert!(matches!(quant, QuantizationType::Int8), "H5: INT8 quant type exists");
+    assert!(
+        matches!(quant, QuantizationType::Int8),
+        "H5: INT8 quant type exists"
+    );
 }
 
 /// H9: Compare HF structure
@@ -2185,14 +2196,15 @@ fn h9_compare_hf_structure() {
 
     // Parameter count calculation
     let embed_params = config.vocab_size * config.hidden_size;
-    let layer_params = config.num_layers * (
-        // Attention
-        4 * config.hidden_size * config.hidden_size +
+    let layer_params = config.num_layers
+        * (
+            // Attention
+            4 * config.hidden_size * config.hidden_size +
         // MLP
         3 * config.hidden_size * config.intermediate_size +
         // Layer norms
         2 * config.hidden_size
-    );
+        );
     let total = embed_params + layer_params;
 
     // Qwen2-0.5B should have ~494M parameters
@@ -2236,10 +2248,7 @@ fn h11_chat_inspect_mode() {
     let top_5: Vec<(usize, f32)> = indexed.into_iter().take(5).collect();
 
     assert_eq!(top_5.len(), 5, "H11: Can extract top-5 for inspection");
-    assert!(
-        top_5[0].1 >= top_5[4].1,
-        "H11: Top-k is properly sorted"
-    );
+    assert!(top_5[0].1 >= top_5[4].1, "H11: Top-k is properly sorted");
 }
 
 /// H13: Perplexity evaluation infrastructure
@@ -2274,7 +2283,10 @@ fn h13_perplexity_evaluation() {
         let token_logits = &logits.data()[start..end];
 
         // Softmax
-        let max_logit = token_logits.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+        let max_logit = token_logits
+            .iter()
+            .cloned()
+            .fold(f32::NEG_INFINITY, f32::max);
         let exp_sum: f32 = token_logits.iter().map(|x| (x - max_logit).exp()).sum();
         let log_prob = token_logits[tokens[i + 1] as usize] - max_logit - exp_sum.ln();
 
@@ -2322,8 +2334,14 @@ fn h14_canary_trace_creation() {
         "output_std": std
     });
 
-    assert!(canary.get("input_tokens").is_some(), "H14: Canary has input");
-    assert!(canary.get("output_shape").is_some(), "H14: Canary has shape");
+    assert!(
+        canary.get("input_tokens").is_some(),
+        "H14: Canary has input"
+    );
+    assert!(
+        canary.get("output_shape").is_some(),
+        "H14: Canary has shape"
+    );
     assert!(canary.get("output_mean").is_some(), "H14: Canary has mean");
 }
 
@@ -2345,7 +2363,10 @@ fn h15_compile_binary_structure() {
 
     // Config can be formatted for embedding (Debug trait)
     let debug_str = format!("{:?}", config);
-    assert!(debug_str.contains("hidden_size"), "H15: Config embeddable via Debug");
+    assert!(
+        debug_str.contains("hidden_size"),
+        "H15: Config embeddable via Debug"
+    );
     assert!(debug_str.contains("64"), "H15: Config contains values");
 }
 
@@ -2527,7 +2548,10 @@ fn h23_merge_models_structure() {
     let avg = MergeStrategy::Average;
     let weighted = MergeStrategy::Weighted;
 
-    assert!(matches!(avg, MergeStrategy::Average), "H23: Average merge exists");
+    assert!(
+        matches!(avg, MergeStrategy::Average),
+        "H23: Average merge exists"
+    );
     assert!(
         matches!(weighted, MergeStrategy::Weighted),
         "H23: Weighted merge exists"
@@ -2700,10 +2724,7 @@ fn i4_mutation_resilience() {
     let logits = model.forward(&[50], &[0]);
     let has_positive = logits.data().iter().any(|&x| x > 0.0);
     let has_negative = logits.data().iter().any(|&x| x < 0.0);
-    assert!(
-        has_positive && has_negative,
-        "I4: Logits have mixed signs"
-    );
+    assert!(has_positive && has_negative, "I4: Logits have mixed signs");
 }
 
 /// I6: Happy path playbook (10 scenarios)
@@ -2725,16 +2746,16 @@ fn i6_happy_path_playbooks() {
 
     // 10 happy path scenarios
     let scenarios = [
-        vec![1u32],                 // Minimal input
-        vec![1u32, 2],              // Two tokens
-        vec![1u32, 2, 3],           // Three tokens
-        vec![1u32, 2, 3, 4, 5],     // Five tokens
-        (0..10).map(|i| i as u32).collect::<Vec<_>>(), // Sequential
-        vec![50u32; 5],             // Repeated
-        vec![0u32, 99, 50, 25, 75], // Mixed
-        vec![99u32, 0, 50],         // Boundaries
+        vec![1u32],                                          // Minimal input
+        vec![1u32, 2],                                       // Two tokens
+        vec![1u32, 2, 3],                                    // Three tokens
+        vec![1u32, 2, 3, 4, 5],                              // Five tokens
+        (0..10).map(|i| i as u32).collect::<Vec<_>>(),       // Sequential
+        vec![50u32; 5],                                      // Repeated
+        vec![0u32, 99, 50, 25, 75],                          // Mixed
+        vec![99u32, 0, 50],                                  // Boundaries
         (0..20).map(|i| (i * 5) as u32).collect::<Vec<_>>(), // Stepped
-        vec![1u32, 1, 2, 2, 3, 3],  // Pairs
+        vec![1u32, 1, 2, 2, 3, 3],                           // Pairs
     ];
 
     for (i, input) in scenarios.iter().enumerate() {
@@ -2797,17 +2818,14 @@ fn i8_error_handling_playbook() {
 
     // Near-boundary inputs (should handle gracefully)
     let edge_inputs = [
-        vec![0u32],        // Zero token
-        vec![99u32],       // Max valid token
-        vec![0u32, 0, 0],  // All zeros
+        vec![0u32],       // Zero token
+        vec![99u32],      // Max valid token
+        vec![0u32, 0, 0], // All zeros
     ];
 
     for input in &edge_inputs {
         let output = model.generate(input, 3, 0.0, 1.0);
-        assert!(
-            !output.is_empty(),
-            "I8: Edge input handled gracefully"
-        );
+        assert!(!output.is_empty(), "I8: Edge input handled gracefully");
         assert!(
             output.iter().all(|&t| (t as usize) < config.vocab_size),
             "I8: Edge input produces valid output"
@@ -2968,7 +2986,8 @@ fn i15_golden_baseline() {
     // Generate golden baseline stats
     let data = logits.data();
     let mean: f32 = data.iter().sum::<f32>() / data.len() as f32;
-    let std: f32 = (data.iter().map(|x| (x - mean).powi(2)).sum::<f32>() / data.len() as f32).sqrt();
+    let std: f32 =
+        (data.iter().map(|x| (x - mean).powi(2)).sum::<f32>() / data.len() as f32).sqrt();
     let min: f32 = data.iter().cloned().fold(f32::INFINITY, f32::min);
     let max: f32 = data.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
 
@@ -3011,7 +3030,10 @@ fn i16_perplexity_baseline() {
         let end = start + vocab_size;
         let token_logits = &logits.data()[start..end];
 
-        let max_logit = token_logits.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+        let max_logit = token_logits
+            .iter()
+            .cloned()
+            .fold(f32::NEG_INFINITY, f32::max);
         let exp_sum: f32 = token_logits.iter().map(|x| (x - max_logit).exp()).sum();
         let log_prob = (token_logits[tokens[i + 1] as usize] - max_logit - exp_sum.ln()) as f64;
 
@@ -3101,18 +3123,11 @@ fn j2_roofline_analysis() {
         flops_per_byte.push(intensity);
 
         // Verify reasonable performance
-        assert!(
-            elapsed < 1.0,
-            "J2: Matmul too slow at size {}",
-            n
-        );
+        assert!(elapsed < 1.0, "J2: Matmul too slow at size {}", n);
     }
 
     // Compute intensity should be consistent
-    assert!(
-        flops_per_byte[0] > 0.0,
-        "J2: Compute intensity positive"
-    );
+    assert!(flops_per_byte[0] > 0.0, "J2: Compute intensity positive");
 }
 
 /// J3: Differential profiling infrastructure
@@ -3148,10 +3163,7 @@ fn j3_differential_profiling() {
     }
 
     // Larger inputs should take longer (differential)
-    assert!(
-        times[2] >= times[0],
-        "J3: Time scales with input size"
-    );
+    assert!(times[2] >= times[0], "J3: Time scales with input size");
 }
 
 /// J4: Energy efficiency proxy (operations per time)
@@ -3291,10 +3303,7 @@ fn j8_memory_bandwidth() {
     }
 
     // Should achieve some measurable bandwidth
-    assert!(
-        bandwidths[0] > 0.0,
-        "J8: Memory bandwidth measurable"
-    );
+    assert!(bandwidths[0] > 0.0, "J8: Memory bandwidth measurable");
 }
 
 /// J9: Cache efficiency analysis
@@ -3368,11 +3377,7 @@ fn j11_parallelization_potential() {
     model.eval();
 
     // Batch processing: multiple independent sequences
-    let inputs = [
-        vec![1u32, 2, 3],
-        vec![4u32, 5, 6],
-        vec![7u32, 8, 9],
-    ];
+    let inputs = [vec![1u32, 2, 3], vec![4u32, 5, 6], vec![7u32, 8, 9]];
 
     let mut outputs = Vec::new();
     for input in &inputs {
@@ -3458,7 +3463,10 @@ fn j14_call_graph_structure() {
 
     // Model has layered structure (call graph hierarchy)
     // forward -> layers[0] -> attention -> mlp -> layers[1] -> ...
-    assert_eq!(config.num_layers, 2, "J14: Model has 2 layers (call hierarchy)");
+    assert_eq!(
+        config.num_layers, 2,
+        "J14: Model has 2 layers (call hierarchy)"
+    );
 
     // Each layer has sub-components
     let param_count = model.num_parameters();
@@ -3657,7 +3665,11 @@ fn j20_energy_reproducibility() {
     let std_dev = variance.sqrt();
     let cv = std_dev / mean; // Coefficient of variation
 
-    assert!(cv < 0.20, "J20: Energy CV < 20% (actual: {:.2}%)", cv * 100.0);
+    assert!(
+        cv < 0.20,
+        "J20: Energy CV < 20% (actual: {:.2}%)",
+        cv * 100.0
+    );
 }
 
 /// J21: Performance grade computation
@@ -3702,10 +3714,7 @@ fn j22_preallocation_detection() {
 
     // Good: pre-allocated
     let good_code = "let mut v = Vec::with_capacity(1000);";
-    assert!(
-        has_preallocation(good_code),
-        "J22: Pre-allocation detected"
-    );
+    assert!(has_preallocation(good_code), "J22: Pre-allocation detected");
 
     // Bad: no pre-allocation
     let bad_code = "let mut v = Vec::new(); for i in 0..1000 { v.push(i); }";

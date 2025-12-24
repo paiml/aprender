@@ -180,6 +180,15 @@ impl Linear {
     pub fn bias(&self) -> Option<&Tensor> {
         self.bias.as_ref()
     }
+
+    /// Check if this layer is ready for inference (weight_t is cached).
+    ///
+    /// Returns false for placeholder layers that haven't had set_weight() called.
+    /// This is useful for verifying all layers are properly initialized before forward.
+    #[must_use]
+    pub fn is_ready(&self) -> bool {
+        self.weight_t.is_some()
+    }
 }
 
 impl Module for Linear {
@@ -343,5 +352,57 @@ mod tests {
         let out_data = output.data();
         assert!((out_data[0] - 11.0).abs() < 1e-5);
         assert!((out_data[1] - 22.0).abs() < 1e-5);
+    }
+
+    // =========================================================================
+    // Property tests: weight_t cache invariant
+    // =========================================================================
+
+    #[test]
+    fn test_placeholder_is_not_ready() {
+        // PROPERTY: Linear::placeholder() always creates a layer that is_ready() == false
+        let layer = Linear::placeholder(64, 128);
+        assert!(!layer.is_ready(), "Placeholder must not be ready");
+    }
+
+    #[test]
+    fn test_new_is_ready() {
+        // PROPERTY: Linear::new() always creates a layer that is_ready() == true
+        let layer = Linear::new(64, 128);
+        assert!(layer.is_ready(), "Linear::new() must be ready");
+    }
+
+    #[test]
+    fn test_set_weight_makes_ready() {
+        // PROPERTY: For any placeholder, set_weight() makes is_ready() == true
+        let mut layer = Linear::placeholder(32, 64);
+        assert!(!layer.is_ready(), "Precondition");
+
+        let weight = Tensor::ones(&[64, 32]);
+        layer.set_weight(weight);
+
+        assert!(layer.is_ready(), "set_weight must make layer ready");
+    }
+
+    #[test]
+    fn test_is_ready_implies_forward_succeeds() {
+        // PROPERTY: If is_ready() == true, forward() does not panic
+        let layer = Linear::new(8, 4);
+        assert!(layer.is_ready());
+
+        let x = Tensor::ones(&[2, 8]);
+        let output = layer.forward(&x); // Should not panic
+        assert_eq!(output.shape(), &[2, 4]);
+    }
+
+    #[test]
+    #[should_panic(expected = "weight_t")]
+    fn test_not_ready_forward_panics() {
+        // PROPERTY: If is_ready() == false, forward() panics
+        let layer = Linear::placeholder(8, 4);
+        assert!(!layer.is_ready());
+
+        let x = Tensor::ones(&[2, 8]);
+        let _ = layer.forward(&x); // Should panic
     }
 }

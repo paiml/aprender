@@ -807,6 +807,11 @@ impl Qwen2Model {
         &mut self.lm_head
     }
 
+    /// Get reference to language model head (for testing/inspection).
+    pub fn lm_head(&self) -> &Linear {
+        &self.lm_head
+    }
+
     // ========================================================================
     // SafeTensors Loading (Section A: Model Loading)
     // ========================================================================
@@ -901,7 +906,13 @@ impl Qwen2Model {
         }
 
         // LM head
+        // Note: Qwen2 uses weight tying - lm_head shares weights with embed_tokens
         if let Ok(t) = load_tensor("lm_head.weight") {
+            self.lm_head.set_weight(t);
+            loaded_count += 1;
+        } else if let Ok(t) = load_tensor("model.embed_tokens.weight") {
+            // Weight tying fallback: use embed_tokens.weight for lm_head
+            // This is common in Qwen2 and many transformer models
             self.lm_head.set_weight(t);
             loaded_count += 1;
         }
@@ -1507,7 +1518,10 @@ mod tests {
         }
         // Should see at least some variety
         let variety = seen.iter().filter(|&&x| x).count();
-        assert!(variety >= 2, "Expected variety, but only saw {variety} different values");
+        assert!(
+            variety >= 2,
+            "Expected variety, but only saw {variety} different values"
+        );
     }
 
     #[test]
@@ -1557,5 +1571,93 @@ mod tests {
 
         let output = layer.forward(&hidden, &position_ids, &rope, None);
         assert_eq!(output.shape(), &[1, 5, 64]);
+    }
+
+    // =========================================================================
+    // Regression test: lm_head weight tying (GH-XXX)
+    // =========================================================================
+
+    #[test]
+    fn test_linear_placeholder_not_ready() {
+        // GIVEN: a placeholder Linear layer (simulating uninitialized model)
+        let linear = Linear::placeholder(64, 128);
+
+        // THEN: it should NOT be ready for inference
+        assert!(
+            !linear.is_ready(),
+            "Placeholder Linear should not be ready (weight_t is None)"
+        );
+    }
+
+    #[test]
+    fn test_linear_after_set_weight_is_ready() {
+        // GIVEN: a placeholder Linear layer
+        let mut linear = Linear::placeholder(64, 128);
+        assert!(!linear.is_ready(), "Precondition: placeholder not ready");
+
+        // WHEN: set_weight is called
+        let weight = Tensor::ones(&[128, 64]);
+        linear.set_weight(weight);
+
+        // THEN: it should be ready for inference
+        assert!(
+            linear.is_ready(),
+            "Linear should be ready after set_weight (weight_t cached)"
+        );
+    }
+
+    #[test]
+    fn test_uninitialized_model_lm_head_not_ready() {
+        // GIVEN: an uninitialized model (using placeholder constructors)
+        let config = create_tiny_config();
+        let model = Qwen2Model::new_uninitialized(&config);
+
+        // THEN: lm_head should NOT be ready (no weights loaded)
+        assert!(
+            !model.lm_head().is_ready(),
+            "Uninitialized model's lm_head should not be ready"
+        );
+    }
+
+    /// Regression test for weight tying bug in load_from_safetensors.
+    ///
+    /// When SafeTensors file uses weight tying (lm_head shares weights with
+    /// embed_tokens), there is no "lm_head.weight" tensor. The loader must
+    /// fall back to using "model.embed_tokens.weight" for lm_head.
+    ///
+    /// Without this fix, lm_head.weight_t remains None and forward() panics.
+    #[test]
+    fn test_safetensors_weight_tying_lm_head_ready() {
+        // This test verifies the INVARIANT: after load_from_safetensors,
+        // ALL Linear layers must be ready (weight_t is Some).
+        //
+        // We test this by loading a real SafeTensors file if available,
+        // or skip if not (integration test covers this).
+        let safetensors_path = std::path::Path::new(
+            "/home/noah/.cache/huggingface/hub/models--Qwen--Qwen2-0.5B-Instruct/snapshots/c540970f9e29518b1d8f06ab8b24cba66ad77b6d/model.safetensors"
+        );
+
+        if !safetensors_path.exists() {
+            // Skip if model not downloaded (CI may not have it)
+            eprintln!("Skipping weight tying test: SafeTensors file not found");
+            return;
+        }
+
+        // GIVEN: Qwen2 config matching the SafeTensors file
+        let config = Qwen2Config::qwen2_0_5b_instruct();
+
+        // WHEN: loading with new_uninitialized + load_from_safetensors
+        let mut model = Qwen2Model::new_uninitialized(&config);
+        let loaded = model
+            .load_from_safetensors(safetensors_path)
+            .expect("Should load SafeTensors");
+
+        // THEN: lm_head must be ready (weight_t cached via weight tying)
+        assert!(
+            model.lm_head().is_ready(),
+            "BUG: lm_head not ready after load_from_safetensors! \
+             Weight tying fallback not implemented. Loaded {} tensors.",
+            loaded
+        );
     }
 }

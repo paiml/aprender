@@ -1240,10 +1240,7 @@ mod tests {
         // So output should be (x - 0) / 1 * gamma + beta = x * 1 + 0 = x
         for (i, &v) in y.data().iter().enumerate() {
             let expected = (i + 1) as f32;
-            assert!(
-                (v - expected).abs() < 1e-4,
-                "Expected {expected}, got {v}"
-            );
+            assert!((v - expected).abs() < 1e-4, "Expected {expected}, got {v}");
         }
     }
 

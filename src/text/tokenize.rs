@@ -2699,7 +2699,8 @@ mod tests {
     #[test]
     fn test_sentence_tokenizer_mixed_abbreviations() {
         let tokenizer = SentenceTokenizer::new();
-        let sentences = tokenizer.split("Inc. and Ltd. are abbreviations. They don't end sentences.");
+        let sentences =
+            tokenizer.split("Inc. and Ltd. are abbreviations. They don't end sentences.");
         assert_eq!(sentences.len(), 2);
     }
 
@@ -2818,8 +2819,8 @@ mod tests {
         let vocab_json = r#"{ "hello world" : 0 , "test" : 1 }"#;
         let merges_txt = "";
 
-        let tokenizer = BpeTokenizer::from_huggingface(vocab_json, merges_txt)
-            .expect("loading should succeed");
+        let tokenizer =
+            BpeTokenizer::from_huggingface(vocab_json, merges_txt).expect("loading should succeed");
 
         assert!(tokenizer.contains("hello world"));
     }
@@ -2829,8 +2830,8 @@ mod tests {
         let vocab_json = r#"{"a": 0}"#;
         let merges_txt = "single_token\na b\ninvalid";
 
-        let tokenizer = BpeTokenizer::from_huggingface(vocab_json, merges_txt)
-            .expect("loading should succeed");
+        let tokenizer =
+            BpeTokenizer::from_huggingface(vocab_json, merges_txt).expect("loading should succeed");
 
         // Should only parse "a b" as valid merge
         assert_eq!(tokenizer.merges().len(), 1);
