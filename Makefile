@@ -205,10 +205,11 @@ coverage: ## Generate HTML coverage report (target: <2 min, 95%+)
 	@test -f ~/.cargo/config.toml && mv ~/.cargo/config.toml ~/.cargo/config.toml.bak || true
 	@cargo llvm-cov clean --workspace 2>/dev/null || true
 	@mkdir -p target/coverage
-	@echo "🧪 Running lib + integration tests (skip prop_, encryption, compression)..."
+	@echo "🧪 Running lib + integration tests (skip slow/benchmark tests)..."
 	@echo "   Using -j 8 to limit memory (LLVM instrumentation ~2x overhead)"
 	@cargo llvm-cov --no-report --lib --tests -j 8 \
-		-- --skip prop_ --skip encryption --skip compressed --skip slow
+		-- --skip prop_ --skip encryption --skip compressed --skip slow \
+		--skip h12_benchmark --skip j2_roofline --skip benchmark
 	@echo "📊 Generating report..."
 	@cargo llvm-cov report --html --output-dir target/coverage/html $(COVERAGE_EXCLUDE)
 	@cargo llvm-cov report --lcov --output-path target/coverage/lcov.info $(COVERAGE_EXCLUDE)
