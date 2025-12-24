@@ -291,4 +291,130 @@ mod tests {
         let sum: f32 = y.data().iter().sum();
         assert!((sum - 1.0).abs() < 1e-5);
     }
+
+    // =========================================================================
+    // Additional coverage tests for Default impls and Debug
+    // =========================================================================
+
+    #[test]
+    fn test_relu_default() {
+        let relu = ReLU::default();
+        let x = Tensor::from_slice(&[-1.0, 1.0]);
+        let y = relu.forward(&x);
+        assert_eq!(y.data(), &[0.0, 1.0]);
+    }
+
+    #[test]
+    fn test_relu_debug_clone_copy() {
+        let relu = ReLU::new();
+        let debug_str = format!("{:?}", relu);
+        assert!(debug_str.contains("ReLU"));
+
+        let cloned = relu.clone();
+        let copied = relu;
+        let _ = cloned.forward(&Tensor::from_slice(&[1.0]));
+        let _ = copied.forward(&Tensor::from_slice(&[1.0]));
+    }
+
+    #[test]
+    fn test_leaky_relu_default() {
+        let lrelu = LeakyReLU::default();
+        let x = Tensor::from_slice(&[-100.0]);
+        let y = lrelu.forward(&x);
+        // Default slope is 0.01
+        assert!((y.data()[0] - (-1.0)).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_leaky_relu_debug_clone_copy() {
+        let lrelu = LeakyReLU::new();
+        let debug_str = format!("{:?}", lrelu);
+        assert!(debug_str.contains("LeakyReLU"));
+
+        let cloned = lrelu.clone();
+        let copied = lrelu;
+        let _ = cloned.forward(&Tensor::from_slice(&[1.0]));
+        let _ = copied.forward(&Tensor::from_slice(&[1.0]));
+    }
+
+    #[test]
+    fn test_sigmoid_default() {
+        let sigmoid = Sigmoid::default();
+        let x = Tensor::from_slice(&[0.0]);
+        let y = sigmoid.forward(&x);
+        assert!((y.data()[0] - 0.5).abs() < 1e-5);
+    }
+
+    #[test]
+    fn test_sigmoid_debug_clone_copy() {
+        let sigmoid = Sigmoid::new();
+        let debug_str = format!("{:?}", sigmoid);
+        assert!(debug_str.contains("Sigmoid"));
+
+        let cloned = sigmoid.clone();
+        let copied = sigmoid;
+        let _ = cloned.forward(&Tensor::from_slice(&[0.0]));
+        let _ = copied.forward(&Tensor::from_slice(&[0.0]));
+    }
+
+    #[test]
+    fn test_tanh_default() {
+        let tanh = Tanh::default();
+        let x = Tensor::from_slice(&[0.0]);
+        let y = tanh.forward(&x);
+        assert!((y.data()[0]).abs() < 1e-5);
+    }
+
+    #[test]
+    fn test_tanh_debug_clone_copy() {
+        let tanh = Tanh::new();
+        let debug_str = format!("{:?}", tanh);
+        assert!(debug_str.contains("Tanh"));
+
+        let cloned = tanh.clone();
+        let copied = tanh;
+        let _ = cloned.forward(&Tensor::from_slice(&[0.0]));
+        let _ = copied.forward(&Tensor::from_slice(&[0.0]));
+    }
+
+    #[test]
+    fn test_gelu_default() {
+        let gelu = GELU::default();
+        let x = Tensor::from_slice(&[0.0]);
+        let y = gelu.forward(&x);
+        assert!((y.data()[0]).abs() < 1e-5);
+    }
+
+    #[test]
+    fn test_gelu_debug_clone_copy() {
+        let gelu = GELU::new();
+        let debug_str = format!("{:?}", gelu);
+        assert!(debug_str.contains("GELU"));
+
+        let cloned = gelu.clone();
+        let copied = gelu;
+        let _ = cloned.forward(&Tensor::from_slice(&[1.0]));
+        let _ = copied.forward(&Tensor::from_slice(&[1.0]));
+    }
+
+    #[test]
+    fn test_softmax_default() {
+        let softmax = Softmax::default(); // dim = -1
+        let x = Tensor::new(&[1.0, 2.0, 3.0], &[1, 3]);
+        let y = softmax.forward(&x);
+        let sum: f32 = y.data().iter().sum();
+        assert!((sum - 1.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn test_softmax_debug_clone_copy() {
+        let softmax = Softmax::new(-1);
+        let debug_str = format!("{:?}", softmax);
+        assert!(debug_str.contains("Softmax"));
+
+        let cloned = softmax.clone();
+        let copied = softmax;
+        let _ = cloned.forward(&Tensor::new(&[1.0, 2.0], &[1, 2]));
+        let _ = copied.forward(&Tensor::new(&[1.0, 2.0], &[1, 2]));
+    }
 }

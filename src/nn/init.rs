@@ -186,4 +186,87 @@ mod tests {
         let o = ones(&[3, 3]);
         assert!(o.data().iter().all(|&x| x == 1.0));
     }
+
+    // =========================================================================
+    // Additional coverage tests
+    // =========================================================================
+
+    #[test]
+    fn test_xavier_normal_distribution() {
+        let t = xavier_normal(&[1000], 100, 100, Some(42));
+        let std = (2.0 / 200.0_f32).sqrt();
+
+        // Check mean is close to 0
+        let mean: f32 = t.data().iter().sum::<f32>() / t.numel() as f32;
+        assert!((mean).abs() < 0.1, "Mean {mean} too far from 0");
+
+        // Check std is reasonable
+        let variance: f32 =
+            t.data().iter().map(|x| (x - mean).powi(2)).sum::<f32>() / t.numel() as f32;
+        let actual_std = variance.sqrt();
+        assert!(
+            (actual_std - std).abs() < 0.05,
+            "Std {actual_std} too far from {std}"
+        );
+    }
+
+    #[test]
+    fn test_xavier_normal_reproducible() {
+        let t1 = xavier_normal(&[10, 10], 10, 10, Some(42));
+        let t2 = xavier_normal(&[10, 10], 10, 10, Some(42));
+        assert_eq!(t1.data(), t2.data());
+    }
+
+    #[test]
+    fn test_kaiming_normal_distribution() {
+        let t = kaiming_normal(&[1000], 100, Some(42));
+        let expected_std = (2.0 / 100.0_f32).sqrt();
+
+        let mean: f32 = t.data().iter().sum::<f32>() / t.numel() as f32;
+        assert!((mean).abs() < 0.1, "Mean {mean} too far from 0");
+
+        let variance: f32 =
+            t.data().iter().map(|x| (x - mean).powi(2)).sum::<f32>() / t.numel() as f32;
+        let actual_std = variance.sqrt();
+        assert!(
+            (actual_std - expected_std).abs() < 0.05,
+            "Std {actual_std} too far from {expected_std}"
+        );
+    }
+
+    #[test]
+    fn test_constant_initialization() {
+        let t = constant(&[5, 5], 3.14);
+        assert!(t.data().iter().all(|&x| (x - 3.14).abs() < 1e-6));
+        assert_eq!(t.numel(), 25);
+    }
+
+    #[test]
+    fn test_uniform_no_seed() {
+        // Without seed, should still work (entropy-based)
+        let t1 = uniform(&[100], 0.0, 1.0, None);
+        let t2 = uniform(&[100], 0.0, 1.0, None);
+
+        // Very unlikely to be identical
+        let same = t1
+            .data()
+            .iter()
+            .zip(t2.data())
+            .all(|(a, b)| (a - b).abs() < 1e-10);
+        assert!(!same, "Two entropy-seeded tensors should differ");
+    }
+
+    #[test]
+    fn test_normal_no_seed() {
+        // Without seed, should still work (entropy-based)
+        let t1 = normal(&[100], 0.0, 1.0, None);
+        let t2 = normal(&[100], 0.0, 1.0, None);
+
+        let same = t1
+            .data()
+            .iter()
+            .zip(t2.data())
+            .all(|(a, b)| (a - b).abs() < 1e-10);
+        assert!(!same, "Two entropy-seeded tensors should differ");
+    }
 }
