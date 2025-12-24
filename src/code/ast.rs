@@ -357,4 +357,137 @@ mod tests {
         assert_eq!(root.depth(), 4);
         assert_eq!(root.node_count(), 4);
     }
+
+    // =========================================================================
+    // Additional coverage tests
+    // =========================================================================
+
+    #[test]
+    fn test_ast_node_type_all_variants_display() {
+        assert_eq!(AstNodeType::Variable.to_string(), "Var");
+        assert_eq!(AstNodeType::Assignment.to_string(), "Assign");
+        assert_eq!(AstNodeType::BinaryOp.to_string(), "BinOp");
+        assert_eq!(AstNodeType::UnaryOp.to_string(), "UnOp");
+        assert_eq!(AstNodeType::Conditional.to_string(), "Cond");
+        assert_eq!(AstNodeType::Loop.to_string(), "Loop");
+        assert_eq!(AstNodeType::Call.to_string(), "Call");
+        assert_eq!(AstNodeType::Literal.to_string(), "Lit");
+        assert_eq!(AstNodeType::Index.to_string(), "Idx");
+        assert_eq!(AstNodeType::FieldAccess.to_string(), "Field");
+        assert_eq!(AstNodeType::Block.to_string(), "Block");
+        assert_eq!(AstNodeType::TypeAnnotation.to_string(), "Type");
+        assert_eq!(AstNodeType::Generic.to_string(), "Gen");
+        assert_eq!(AstNodeType::Match.to_string(), "Match");
+        assert_eq!(AstNodeType::MatchArm.to_string(), "Arm");
+        assert_eq!(AstNodeType::Struct.to_string(), "Struct");
+        assert_eq!(AstNodeType::Enum.to_string(), "Enum");
+        assert_eq!(AstNodeType::Trait.to_string(), "Trait");
+        assert_eq!(AstNodeType::Impl.to_string(), "Impl");
+        assert_eq!(AstNodeType::Module.to_string(), "Mod");
+        assert_eq!(AstNodeType::Import.to_string(), "Import");
+    }
+
+    #[test]
+    fn test_token_type_all_variants_display() {
+        assert_eq!(TokenType::Boolean.to_string(), "Bool");
+        assert_eq!(TokenType::Keyword.to_string(), "Kw");
+        assert_eq!(TokenType::Operator.to_string(), "Op");
+        assert_eq!(TokenType::Punctuation.to_string(), "Punct");
+        assert_eq!(TokenType::TypeName.to_string(), "Type");
+        assert_eq!(TokenType::Comment.to_string(), "Comment");
+    }
+
+    #[test]
+    fn test_ast_node_children_mut() {
+        let mut node = AstNode::new(AstNodeType::Block, "body");
+        node.add_child(AstNode::new(AstNodeType::Return, "r1"));
+
+        let children = node.children_mut();
+        children.push(AstNode::new(AstNodeType::Return, "r2"));
+
+        assert_eq!(node.children().len(), 2);
+    }
+
+    #[test]
+    fn test_token_clone_eq_hash() {
+        let t1 = Token::new(TokenType::Identifier, "test");
+        let t2 = t1.clone();
+
+        assert_eq!(t1, t2);
+        assert_eq!(t1.token_type(), t2.token_type());
+        assert_eq!(t1.value(), t2.value());
+
+        // Test hash by inserting into HashSet
+        use std::collections::HashSet;
+        let mut set = HashSet::new();
+        set.insert(t1.clone());
+        assert!(set.contains(&t2));
+    }
+
+    #[test]
+    fn test_ast_node_clone() {
+        let mut node = AstNode::new(AstNodeType::Function, "test");
+        node.add_child(AstNode::new(AstNodeType::Parameter, "x"));
+
+        let cloned = node.clone();
+        assert_eq!(cloned.value(), node.value());
+        assert_eq!(cloned.children().len(), node.children().len());
+    }
+
+    #[test]
+    fn test_ast_node_display() {
+        let node = AstNode::new(AstNodeType::Function, "calculate");
+        assert_eq!(format!("{}", node), "Func:calculate");
+    }
+
+    #[test]
+    fn test_ast_node_type_copy_eq_hash() {
+        let t1 = AstNodeType::Function;
+        let t2 = t1; // Copy
+
+        assert_eq!(t1, t2);
+
+        use std::collections::HashSet;
+        let mut set = HashSet::new();
+        set.insert(t1);
+        assert!(set.contains(&t2));
+    }
+
+    #[test]
+    fn test_token_type_copy_eq_hash() {
+        let t1 = TokenType::Identifier;
+        let t2 = t1; // Copy
+
+        assert_eq!(t1, t2);
+
+        use std::collections::HashSet;
+        let mut set = HashSet::new();
+        set.insert(t1);
+        assert!(set.contains(&t2));
+    }
+
+    #[test]
+    fn test_ast_node_empty_depth() {
+        let node = AstNode::new(AstNodeType::Literal, "42");
+        assert_eq!(node.depth(), 1);
+    }
+
+    #[test]
+    fn test_terminal_without_token() {
+        let node = AstNode::new(AstNodeType::Literal, "value");
+        assert!(node.is_terminal());
+        assert!(node.token().is_none()); // No token attached
+    }
+
+    #[test]
+    fn test_terminals_from_nested() {
+        let mut root = AstNode::new(AstNodeType::Function, "fn");
+        let mut block = AstNode::new(AstNodeType::Block, "body");
+        block.add_child(AstNode::new(AstNodeType::Literal, "1"));
+        block.add_child(AstNode::new(AstNodeType::Literal, "2"));
+        root.add_child(block);
+
+        let terminals = root.terminals();
+        assert_eq!(terminals.len(), 2);
+    }
 }
