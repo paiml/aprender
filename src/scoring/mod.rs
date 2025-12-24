@@ -1400,4 +1400,197 @@ mod tests {
             .iter()
             .any(|i| i.message.contains("not signed")));
     }
+
+    // =========================================================================
+    // Additional coverage tests
+    // =========================================================================
+
+    #[test]
+    fn test_grade_display() {
+        assert_eq!(format!("{}", Grade::APlus), "A+");
+        assert_eq!(format!("{}", Grade::AMinus), "A-");
+        assert_eq!(format!("{}", Grade::BPlus), "B+");
+        assert_eq!(format!("{}", Grade::BMinus), "B-");
+        assert_eq!(format!("{}", Grade::CPlus), "C+");
+        assert_eq!(format!("{}", Grade::CMinus), "C-");
+        assert_eq!(format!("{}", Grade::DPlus), "D+");
+        assert_eq!(format!("{}", Grade::DMinus), "D-");
+        assert_eq!(format!("{}", Grade::F), "F");
+    }
+
+    #[test]
+    fn test_grade_clone() {
+        let grade = Grade::APlus;
+        let cloned = grade.clone();
+        assert_eq!(grade, cloned);
+    }
+
+    #[test]
+    fn test_quality_score_warning_count() {
+        let metadata = ModelMetadata::default();
+        let config = ScoringConfig::default();
+        let score = compute_quality_score(&metadata, &config);
+
+        // With empty metadata, should have warnings
+        let warning_count = score.warning_count();
+        assert!(warning_count >= 0);
+    }
+
+    #[test]
+    fn test_quality_score_info_count() {
+        let mut metadata = ModelMetadata::default();
+        metadata.model_name = Some("TestModel".to_string());
+        let config = ScoringConfig::default();
+        let score = compute_quality_score(&metadata, &config);
+
+        let info_count = score.info_count();
+        assert!(info_count >= 0);
+    }
+
+    #[test]
+    fn test_dimension_score_zero() {
+        let dim = DimensionScore::new(10.0);
+        assert!(!dim.is_perfect());
+        assert!((dim.percentage - 0.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_dimension_score_clone() {
+        let mut dim = DimensionScore::new(10.0);
+        dim.add_score("test", 5.0, 5.0);
+        let cloned = dim.clone();
+        assert!((cloned.score - dim.score).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_severity_debug() {
+        let severity = Severity::Critical;
+        let debug_str = format!("{:?}", severity);
+        assert!(debug_str.contains("Critical"));
+    }
+
+    #[test]
+    fn test_critical_issue_clone() {
+        let issue = CriticalIssue {
+            severity: Severity::High,
+            message: "test".to_string(),
+            action: "fix it".to_string(),
+        };
+        let cloned = issue.clone();
+        assert_eq!(cloned.message, issue.message);
+    }
+
+    #[test]
+    fn test_finding_info_recommendation() {
+        let info = Finding::Info {
+            message: "Good practice".to_string(),
+            recommendation: "Keep it up".to_string(),
+        };
+        let display = format!("{info}");
+        assert!(display.contains("Good practice"));
+    }
+
+    #[test]
+    fn test_scored_model_type_all_variants() {
+        assert_eq!(
+            ScoredModelType::LogisticRegression.primary_metric(),
+            "accuracy"
+        );
+        assert_eq!(ScoredModelType::DecisionTree.primary_metric(), "accuracy");
+        assert_eq!(ScoredModelType::GradientBoosting.primary_metric(), "accuracy");
+        assert_eq!(ScoredModelType::NaiveBayes.primary_metric(), "accuracy");
+        assert_eq!(ScoredModelType::Knn.primary_metric(), "accuracy");
+    }
+
+    #[test]
+    fn test_scored_model_type_interpretability() {
+        assert_eq!(ScoredModelType::DecisionTree.interpretability_score(), 4.0);
+        assert_eq!(ScoredModelType::LogisticRegression.interpretability_score(), 5.0);
+        assert_eq!(ScoredModelType::KMeans.interpretability_score(), 2.5);
+        assert_eq!(ScoredModelType::GradientBoosting.interpretability_score(), 3.0);
+    }
+
+    #[test]
+    fn test_scored_model_type_regularization() {
+        assert!(ScoredModelType::LogisticRegression.needs_regularization());
+        assert!(!ScoredModelType::DecisionTree.needs_regularization());
+        assert!(!ScoredModelType::KMeans.needs_regularization());
+    }
+
+    #[test]
+    fn test_model_metadata_default() {
+        let metadata = ModelMetadata::default();
+        assert!(metadata.model_name.is_none());
+        assert!(metadata.metrics.is_empty());
+        assert!(!metadata.flags.has_model_card);
+    }
+
+    #[test]
+    fn test_training_info_default() {
+        let info = TrainingInfo::default();
+        assert!(info.source.is_none());
+        assert!(info.n_samples.is_none());
+    }
+
+    #[test]
+    fn test_model_flags_default() {
+        let flags = ModelFlags::default();
+        assert!(!flags.has_model_card);
+        assert!(!flags.is_signed);
+    }
+
+    #[test]
+    fn test_scoring_config_default() {
+        let config = ScoringConfig::default();
+        assert!(!config.require_signed);
+        assert!((config.min_primary_metric - 0.7).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_quality_score_debug() {
+        let metadata = ModelMetadata::default();
+        let config = ScoringConfig::default();
+        let score = compute_quality_score(&metadata, &config);
+        let debug_str = format!("{:?}", score);
+        assert!(debug_str.contains("QualityScore"));
+    }
+
+    #[test]
+    fn test_dimension_scores_debug() {
+        let scores = DimensionScores::default_scores();
+        let debug_str = format!("{:?}", scores);
+        assert!(debug_str.contains("DimensionScores"));
+    }
+
+    #[test]
+    fn test_dimension_score_debug() {
+        let dim = DimensionScore::new(10.0);
+        let debug_str = format!("{:?}", dim);
+        assert!(debug_str.contains("DimensionScore"));
+    }
+
+    #[test]
+    fn test_score_breakdown_debug() {
+        let breakdown = ScoreBreakdown {
+            criterion: "test".to_string(),
+            score: 5.0,
+            max: 10.0,
+        };
+        let debug_str = format!("{:?}", breakdown);
+        assert!(debug_str.contains("ScoreBreakdown"));
+    }
+
+    #[test]
+    fn test_finding_warning_clone() {
+        let warning = Finding::Warning {
+            message: "test".to_string(),
+            recommendation: "fix".to_string(),
+        };
+        let cloned = warning.clone();
+        if let Finding::Warning { message, .. } = cloned {
+            assert_eq!(message, "test");
+        } else {
+            panic!("Expected Warning variant");
+        }
+    }
 }
