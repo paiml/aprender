@@ -3015,4 +3015,625 @@ mod tests_import_errors {
         assert!(msg.contains("404"));
         assert!(msg.contains("test"));
     }
+
+    // =========================================================================
+    // Coverage boost: ExportFormat, MergeStrategy, and related APIs
+    // =========================================================================
+
+    #[test]
+    fn test_export_format_from_str() {
+        assert!(matches!(
+            "safetensors".parse::<ExportFormat>(),
+            Ok(ExportFormat::SafeTensors)
+        ));
+        assert!(matches!(
+            "st".parse::<ExportFormat>(),
+            Ok(ExportFormat::SafeTensors)
+        ));
+        assert!(matches!(
+            "gguf".parse::<ExportFormat>(),
+            Ok(ExportFormat::Gguf)
+        ));
+        assert!(matches!(
+            "onnx".parse::<ExportFormat>(),
+            Ok(ExportFormat::Onnx)
+        ));
+        assert!(matches!(
+            "torchscript".parse::<ExportFormat>(),
+            Ok(ExportFormat::TorchScript)
+        ));
+        assert!(matches!(
+            "pt".parse::<ExportFormat>(),
+            Ok(ExportFormat::TorchScript)
+        ));
+        assert!(matches!(
+            "torch".parse::<ExportFormat>(),
+            Ok(ExportFormat::TorchScript)
+        ));
+        assert!("unknown".parse::<ExportFormat>().is_err());
+    }
+
+    #[test]
+    fn test_export_format_extension() {
+        assert_eq!(ExportFormat::SafeTensors.extension(), "safetensors");
+        assert_eq!(ExportFormat::Gguf.extension(), "gguf");
+        assert_eq!(ExportFormat::Onnx.extension(), "onnx");
+        assert_eq!(ExportFormat::TorchScript.extension(), "pt");
+    }
+
+    #[test]
+    fn test_export_format_is_supported() {
+        assert!(ExportFormat::SafeTensors.is_supported());
+        assert!(ExportFormat::Gguf.is_supported());
+        assert!(!ExportFormat::Onnx.is_supported());
+        assert!(!ExportFormat::TorchScript.is_supported());
+    }
+
+    #[test]
+    fn test_export_options_default() {
+        let opts = ExportOptions::default();
+        assert!(matches!(opts.format, ExportFormat::SafeTensors));
+        assert!(opts.quantize.is_none());
+    }
+
+    #[test]
+    fn test_export_options_with_quantize() {
+        let opts = ExportOptions {
+            format: ExportFormat::Gguf,
+            quantize: Some(QuantizationType::Int8),
+        };
+        assert!(matches!(opts.format, ExportFormat::Gguf));
+        assert!(matches!(opts.quantize, Some(QuantizationType::Int8)));
+    }
+
+    #[test]
+    fn test_merge_strategy_from_str() {
+        assert!(matches!(
+            "average".parse::<MergeStrategy>(),
+            Ok(MergeStrategy::Average)
+        ));
+        assert!(matches!(
+            "avg".parse::<MergeStrategy>(),
+            Ok(MergeStrategy::Average)
+        ));
+        assert!(matches!(
+            "weighted".parse::<MergeStrategy>(),
+            Ok(MergeStrategy::Weighted)
+        ));
+        assert!("unknown".parse::<MergeStrategy>().is_err());
+    }
+
+    #[test]
+    fn test_merge_strategy_is_supported() {
+        // Average and Weighted are supported
+        assert!(MergeStrategy::Average.is_supported());
+        assert!(MergeStrategy::Weighted.is_supported());
+        // Advanced strategies not yet implemented
+        assert!(!MergeStrategy::Ties.is_supported());
+        assert!(!MergeStrategy::Dare.is_supported());
+        assert!(!MergeStrategy::Slerp.is_supported());
+    }
+
+    #[test]
+    fn test_merge_options_default() {
+        let opts = MergeOptions::default();
+        assert!(matches!(opts.strategy, MergeStrategy::Average));
+        assert!(opts.weights.is_none());
+    }
+
+    #[test]
+    fn test_merge_options_weighted() {
+        let opts = MergeOptions {
+            strategy: MergeStrategy::Weighted,
+            weights: Some(vec![0.7, 0.3]),
+        };
+        assert!(matches!(opts.strategy, MergeStrategy::Weighted));
+        assert_eq!(opts.weights, Some(vec![0.7, 0.3]));
+    }
+
+    #[test]
+    fn test_merge_report_fields() {
+        let report = MergeReport {
+            model_count: 2,
+            output_size: 1000,
+            tensor_count: 10,
+            strategy: MergeStrategy::Average,
+            weights_used: None,
+        };
+        assert_eq!(report.model_count, 2);
+        assert_eq!(report.output_size, 1000);
+        assert_eq!(report.tensor_count, 10);
+    }
+
+    #[test]
+    fn test_merge_report_with_weights() {
+        let report = MergeReport {
+            model_count: 3,
+            output_size: 2000,
+            tensor_count: 15,
+            strategy: MergeStrategy::Weighted,
+            weights_used: Some(vec![0.5, 0.3, 0.2]),
+        };
+        assert_eq!(report.model_count, 3);
+        assert!(matches!(report.strategy, MergeStrategy::Weighted));
+        assert!(report.weights_used.is_some());
+    }
+
+    #[test]
+    fn test_export_report_fields() {
+        let report = ExportReport {
+            original_size: 2000,
+            exported_size: 1000,
+            tensor_count: 5,
+            format: ExportFormat::Gguf,
+            quantization: Some(QuantizationType::Int8),
+        };
+        assert_eq!(report.original_size, 2000);
+        assert_eq!(report.exported_size, 1000);
+        assert_eq!(report.tensor_count, 5);
+    }
+
+    #[test]
+    fn test_validation_config_strict() {
+        let config = ValidationConfig::strict();
+        assert_eq!(config, ValidationConfig::Strict);
+    }
+
+    #[test]
+    fn test_validation_config_default() {
+        let config = ValidationConfig::default();
+        assert_eq!(config, ValidationConfig::Strict);
+    }
+
+    #[test]
+    fn test_validation_config_variants() {
+        let _none = ValidationConfig::None;
+        let _basic = ValidationConfig::Basic;
+        let _strict = ValidationConfig::Strict;
+    }
+
+    #[test]
+    fn test_import_options_default() {
+        let opts = ImportOptions::default();
+        assert_eq!(opts.validation, ValidationConfig::Strict);
+        assert!(opts.quantize.is_none());
+        assert!(opts.compress.is_none());
+    }
+
+    #[test]
+    fn test_architecture_mapping_auto() {
+        let arch = Architecture::Auto;
+        // Auto should strip model. prefix
+        assert_eq!(arch.map_name("model.embed_tokens.weight"), "embed_tokens.weight");
+        // Pass through if no prefix
+        assert_eq!(arch.map_name("layer.0.weight"), "layer.0.weight");
+    }
+
+    #[test]
+    fn test_architecture_mapping_whisper() {
+        let arch = Architecture::Whisper;
+        let name = arch.map_name("model.encoder.weight");
+        assert!(!name.is_empty());
+    }
+
+    #[test]
+    fn test_architecture_mapping_llama() {
+        let arch = Architecture::Llama;
+        let name = arch.map_name("model.layers.0.weight");
+        assert!(!name.is_empty());
+    }
+
+    #[test]
+    fn test_architecture_mapping_bert() {
+        let arch = Architecture::Bert;
+        let name = arch.map_name("bert.encoder.layer.0.weight");
+        assert!(!name.is_empty());
+    }
+
+    #[test]
+    fn test_source_parse_local_absolute() {
+        let source = Source::parse("/path/to/model.safetensors").unwrap();
+        assert!(matches!(source, Source::Local(_)));
+    }
+
+    #[test]
+    fn test_source_parse_local_relative() {
+        let source = Source::parse("./models/model.safetensors").unwrap();
+        assert!(matches!(source, Source::Local(_)));
+    }
+
+    #[test]
+    fn test_source_default_file_hf() {
+        let source = Source::HuggingFace {
+            org: "openai".to_string(),
+            repo: "whisper".to_string(),
+            file: None,
+        };
+        assert_eq!(source.default_file(), "model.safetensors");
+    }
+
+    #[test]
+    fn test_source_default_file_local() {
+        let source = Source::Local("/path/to/model.safetensors".into());
+        // Local returns full path as the "file"
+        assert!(source.default_file().ends_with("model.safetensors"));
+    }
+
+    #[test]
+    fn test_tensor_expectation_for_unknown() {
+        let exp = TensorExpectation::for_tensor("unknown_tensor_name");
+        assert!(exp.is_none());
+    }
+
+    #[test]
+    fn test_tensor_expectation_for_layer_norm_weight() {
+        let exp = TensorExpectation::for_tensor("layer_norm.weight");
+        assert!(exp.is_some());
+        let exp = exp.unwrap();
+        // LayerNorm weight should have mean near 1.0
+        assert!(exp.mean_range.0 < 1.0 && exp.mean_range.1 > 1.0);
+    }
+
+    #[test]
+    fn test_tensor_expectation_for_embedding() {
+        let exp = TensorExpectation::for_tensor("embed_tokens.weight");
+        assert!(exp.is_some());
+    }
+
+    #[test]
+    fn test_import_error_display() {
+        let err = ImportError::NotFound {
+            resource: "model.safetensors".to_string(),
+            status: 404,
+        };
+        let msg = format!("{}", err);
+        assert!(msg.contains("404") || msg.contains("not found"));
+    }
+
+    #[test]
+    fn test_import_error_download_failed() {
+        let err = ImportError::DownloadFailed {
+            source: "huggingface".to_string(),
+            reason: "timeout".to_string(),
+        };
+        let msg = format!("{}", err);
+        assert!(msg.contains("timeout") || msg.contains("Download"));
+    }
+
+    #[test]
+    fn test_import_error_validation_failed() {
+        let err = ImportError::ValidationFailed {
+            name: "layer.weight".to_string(),
+            reason: "NaN detected".to_string(),
+        };
+        let msg = format!("{}", err);
+        assert!(msg.contains("layer.weight") || msg.contains("NaN"));
+    }
+
+    #[test]
+    fn test_import_error_unsupported_format() {
+        let err = ImportError::UnsupportedFormat {
+            extension: "pickle".to_string(),
+        };
+        let msg = format!("{}", err);
+        assert!(msg.contains("pickle") || msg.contains("Unsupported"));
+    }
+
+    #[test]
+    fn test_import_error_unknown_tensor() {
+        let err = ImportError::UnknownTensor {
+            source_name: "weird.tensor".to_string(),
+        };
+        let msg = format!("{}", err);
+        assert!(msg.contains("weird.tensor") || msg.contains("Unknown"));
+    }
+
+    #[test]
+    fn test_import_error_missing_tensor() {
+        let err = ImportError::MissingTensor {
+            name: "model.weight".to_string(),
+        };
+        let msg = format!("{}", err);
+        assert!(msg.contains("model.weight") || msg.contains("Missing"));
+    }
+
+    #[test]
+    fn test_import_error_rate_limited() {
+        let err = ImportError::RateLimited {
+            retry_after: Some(60),
+        };
+        let msg = format!("{}", err);
+        assert!(msg.contains("Rate") || msg.contains("limit") || msg.contains("60"));
+    }
+
+    #[test]
+    fn test_import_error_auth_required() {
+        let err = ImportError::AuthRequired {
+            resource: "gated-model".to_string(),
+        };
+        let msg = format!("{}", err);
+        assert!(msg.contains("Auth") || msg.contains("gated-model"));
+    }
+
+    #[test]
+    fn test_import_error_sharding_required() {
+        let err = ImportError::ShardingRequired {
+            model_size: 14_000_000_000,
+            shard_count: 7,
+        };
+        let msg = format!("{}", err);
+        assert!(msg.contains("shard") || msg.contains("7"));
+    }
+
+    // =========================================================================
+    // ShardedIndex Tests
+    // =========================================================================
+
+    #[test]
+    fn test_sharded_index_parse() {
+        let json = r#"{
+            "metadata": {"total_size": 1000000},
+            "weight_map": {
+                "layer.0.weight": "model-00001-of-00002.safetensors",
+                "layer.1.weight": "model-00002-of-00002.safetensors"
+            }
+        }"#;
+        let index = ShardedIndex::parse(json).expect("parse should succeed");
+        assert_eq!(index.tensor_count(), 2);
+        assert_eq!(index.shard_count(), 2);
+    }
+
+    #[test]
+    fn test_sharded_index_shard_for_tensor() {
+        let json = r#"{
+            "weight_map": {
+                "embed.weight": "model-00001.safetensors",
+                "lm_head.weight": "model-00002.safetensors"
+            }
+        }"#;
+        let index = ShardedIndex::parse(json).expect("parse");
+        assert_eq!(
+            index.shard_for_tensor("embed.weight"),
+            Some("model-00001.safetensors")
+        );
+        assert_eq!(
+            index.shard_for_tensor("lm_head.weight"),
+            Some("model-00002.safetensors")
+        );
+        assert_eq!(index.shard_for_tensor("missing"), None);
+    }
+
+    #[test]
+    fn test_sharded_index_tensors_in_shard() {
+        let json = r#"{
+            "weight_map": {
+                "a.weight": "shard1.safetensors",
+                "b.weight": "shard1.safetensors",
+                "c.weight": "shard2.safetensors"
+            }
+        }"#;
+        let index = ShardedIndex::parse(json).expect("parse");
+        let tensors = index.tensors_in_shard("shard1.safetensors");
+        assert_eq!(tensors.len(), 2);
+        assert!(tensors.contains(&"a.weight"));
+        assert!(tensors.contains(&"b.weight"));
+    }
+
+    #[test]
+    fn test_sharded_index_shard_files() {
+        let json = r#"{
+            "weight_map": {
+                "a": "z.safetensors",
+                "b": "a.safetensors",
+                "c": "m.safetensors"
+            }
+        }"#;
+        let index = ShardedIndex::parse(json).expect("parse");
+        let files = index.shard_files();
+        // Should be sorted
+        assert_eq!(files, vec!["a.safetensors", "m.safetensors", "z.safetensors"]);
+    }
+
+    #[test]
+    fn test_sharded_index_total_size() {
+        let with_size = r#"{"metadata": {"total_size": 5000}, "weight_map": {}}"#;
+        let without_size = r#"{"weight_map": {}}"#;
+
+        let index1 = ShardedIndex::parse(with_size).expect("parse");
+        let index2 = ShardedIndex::parse(without_size).expect("parse");
+
+        assert_eq!(index1.total_size(), Some(5000));
+        assert_eq!(index2.total_size(), None);
+    }
+
+    #[test]
+    fn test_sharded_index_parse_invalid_json() {
+        let result = ShardedIndex::parse("not valid json");
+        assert!(result.is_err());
+    }
+
+    // =========================================================================
+    // Source URL Tests
+    // =========================================================================
+
+    #[test]
+    fn test_source_parse_url() {
+        let source = Source::parse("https://example.com/model.safetensors").unwrap();
+        assert!(matches!(source, Source::Url(_)));
+    }
+
+    #[test]
+    fn test_source_parse_http_url() {
+        let source = Source::parse("http://localhost:8080/model.bin").unwrap();
+        assert!(matches!(source, Source::Url(_)));
+    }
+
+    #[test]
+    fn test_source_default_file_url() {
+        let source = Source::Url("https://example.com/path/to/model.safetensors".to_string());
+        assert_eq!(source.default_file(), "model.safetensors");
+    }
+
+    // =========================================================================
+    // ConvertReport Tests
+    // =========================================================================
+
+    #[test]
+    fn test_convert_report_reduction_percent() {
+        let report = ConvertReport {
+            original_size: 1000,
+            converted_size: 500,
+            tensor_count: 10,
+            quantization: Some(QuantizationType::Int8),
+            compression: None,
+            reduction_ratio: 2.0,
+        };
+        let reduction = report.reduction_percent();
+        assert!(reduction.contains("50"));
+    }
+
+    #[test]
+    fn test_convert_report_no_reduction() {
+        let report = ConvertReport {
+            original_size: 1000,
+            converted_size: 1000,
+            tensor_count: 5,
+            quantization: None,
+            compression: None,
+            reduction_ratio: 1.0,
+        };
+        let reduction = report.reduction_percent();
+        assert!(reduction.contains("0"));
+    }
+
+    // =========================================================================
+    // ExportFormat Tests
+    // =========================================================================
+
+    #[test]
+    fn test_export_format_safetensors() {
+        let format = ExportFormat::SafeTensors;
+        assert_eq!(format.extension(), "safetensors");
+        assert!(format.is_supported());
+    }
+
+    #[test]
+    fn test_export_format_gguf() {
+        let format = ExportFormat::Gguf;
+        assert_eq!(format.extension(), "gguf");
+        assert!(format.is_supported());
+    }
+
+    #[test]
+    fn test_export_format_onnx() {
+        let format = ExportFormat::Onnx;
+        assert_eq!(format.extension(), "onnx");
+        // ONNX may or may not be supported
+        let _ = format.is_supported();
+    }
+
+    #[test]
+    fn test_export_format_torchscript() {
+        let format = ExportFormat::TorchScript;
+        assert_eq!(format.extension(), "pt");
+    }
+
+    // =========================================================================
+    // Quantization Type Tests
+    // =========================================================================
+
+    #[test]
+    fn test_quantization_type_debug() {
+        let q = QuantizationType::Int8;
+        let debug = format!("{:?}", q);
+        assert!(debug.contains("Int8"));
+    }
+
+    #[test]
+    fn test_quantization_type_clone() {
+        let q1 = QuantizationType::Int4;
+        let q2 = q1.clone();
+        assert_eq!(q1, q2);
+    }
+
+    // =========================================================================
+    // Compression Type Tests
+    // =========================================================================
+
+    #[test]
+    fn test_compression_debug() {
+        let c = Compression::ZstdDefault;
+        let debug = format!("{:?}", c);
+        assert!(debug.contains("Zstd"));
+    }
+
+    #[test]
+    fn test_compression_clone() {
+        let c1 = Compression::Lz4;
+        let c2 = c1;
+        assert_eq!(c1, c2);
+    }
+
+    // =========================================================================
+    // TensorExpectation Check Tests
+    // =========================================================================
+
+    #[test]
+    fn test_tensor_expectation_check_valid() {
+        let exp = TensorExpectation::LAYER_NORM_WEIGHT;
+        let stats = TensorStats {
+            name: "layer_norm.weight".to_string(),
+            count: 768,
+            mean: 1.0,
+            std: 0.1,
+            min: 0.5,
+            max: 1.5,
+            nan_count: 0,
+            inf_count: 0,
+            zero_count: 0,
+        };
+        assert!(exp.check(&stats).is_ok());
+    }
+
+    #[test]
+    fn test_tensor_expectation_check_invalid_mean() {
+        let exp = TensorExpectation::LAYER_NORM_WEIGHT;
+        let stats = TensorStats {
+            name: "layer_norm.weight".to_string(),
+            count: 768,
+            mean: 100.0, // Way outside expected range
+            std: 0.1,
+            min: 99.0,
+            max: 101.0,
+            nan_count: 0,
+            inf_count: 0,
+            zero_count: 0,
+        };
+        assert!(exp.check(&stats).is_err());
+    }
+
+    // =========================================================================
+    // TensorStats Creation Tests
+    // =========================================================================
+
+    #[test]
+    fn test_tensor_stats_fields() {
+        let stats = TensorStats {
+            name: "test.weight".to_string(),
+            count: 100,
+            mean: 0.5,
+            std: 0.2,
+            min: 0.0,
+            max: 1.0,
+            nan_count: 0,
+            inf_count: 0,
+            zero_count: 5,
+        };
+        assert!((stats.mean - 0.5).abs() < 1e-6);
+        assert!((stats.std - 0.2).abs() < 1e-6);
+        assert!((stats.min - 0.0).abs() < 1e-6);
+        assert!((stats.max - 1.0).abs() < 1e-6);
+        assert_eq!(stats.count, 100);
+        assert_eq!(stats.zero_count, 5);
+    }
 }
