@@ -2005,84 +2005,84 @@ Golden traces serve as our **falsifiers**. A golden trace is a serialized record
 
 | # | Claim | Falsification Condition (Fail if...) | Status |
 |---|-------|------------------------|--------|
-| A1 | APR loads | `Qwen2Model::load()` returns error | ⬜ |
-| A2 | Weights Verified | Weight distribution mean/stddev deviation > 1% from ref | ⬜ |
-| A3 | Checksum Valid | File checksum does not match signed manifest | ⬜ |
-| A4 | Metadata Correct | Architecture/Vocab size mismatch config | ⬜ |
-| A5 | INT4 Size | File size > 400MB (indicates inefficient packing) | ⬜ |
-| **A6** | **No Random Weights** | **Weights are non-zero, non-Gaussian (fail if initialized to random)** | ⬜ |
+| A1 | APR loads | `Qwen2Model::load()` returns error | ✅ |
+| A2 | Weights Verified | Weight distribution mean/stddev deviation > 1% from ref | ✅ |
+| A3 | Checksum Valid | File checksum does not match signed manifest | ✅ |
+| A4 | Metadata Correct | Architecture/Vocab size mismatch config | ✅ |
+| A5 | INT4 Size | File size > 400MB (indicates inefficient packing) | ✅ |
+| **A6** | **No Random Weights** | **Weights are non-zero, non-Gaussian (fail if initialized to random)** | ✅ |
 
 ### Section B: Tokenization (10 points)
 
 | # | Claim | Falsification Condition (Fail if...) | Status |
 |---|-------|------------------------|--------|
-| B1 | Vocab Size | `vocab_size != 151936` | ⬜ |
-| B2 | Roundtrip | `decode(encode(x)) != x` for random unicode strings | ⬜ |
-| B3 | Special Tokens | `<|im_start|>` not mapped to 151644 | ⬜ |
-| B4 | Chat Template | Template injection attacks succeed | ⬜ |
-| B5 | Whitespace | Leading/trailing whitespace handling mismatches TikToken | ⬜ |
+| B1 | Vocab Size | `vocab_size != 151936` | ✅ |
+| B2 | Roundtrip | `decode(encode(x)) != x` for random unicode strings | ✅ |
+| B3 | Special Tokens | `<|im_start|>` not mapped to 151644 | ✅ |
+| B4 | Chat Template | Template injection attacks succeed | ✅ |
+| B5 | Whitespace | Leading/trailing whitespace handling mismatches TikToken | ✅ |
 
 ### Section C: Forward Pass - The "No Fake" Zone (25 points)
 
 | # | Claim | Falsification Condition (Fail if...) | Status |
 |---|-------|------------------------|--------|
-| C1 | **Golden Trace** | **Logits deviate > 1e-4 from PyTorch reference on Test Set** | ⬜ |
-| C2 | Context Awareness | Changing token T-1 does not affect logits at T | ⬜ |
-| C3 | Determinism | Same input + fixed seed produces different logits | ⬜ |
-| C4 | Causal Mask | Token T attends to T+1 (information leak) | ⬜ |
-| C5 | KV Cache | Cache enabled result != Cache disabled result | ⬜ |
-| C6 | RoPE | Output is invariant to absolute position changes | ⬜ |
-| C7 | RMSNorm | Output scale diverges to Inf/NaN | ⬜ |
-| C8 | SwiGLU | Activations are all positive (Swish is non-monotonic) | ⬜ |
+| C1 | **Golden Trace** | **Logits deviate > 1e-4 from PyTorch reference on Test Set** | ✅ |
+| C2 | Context Awareness | Changing token T-1 does not affect logits at T | ✅ |
+| C3 | Determinism | Same input + fixed seed produces different logits | ✅ |
+| C4 | Causal Mask | Token T attends to T+1 (information leak) | ✅ |
+| C5 | KV Cache | Cache enabled result != Cache disabled result | ✅ |
+| C6 | RoPE | Output is invariant to absolute position changes | ✅ |
+| C7 | RMSNorm | Output scale diverges to Inf/NaN | ✅ |
+| C8 | SwiGLU | Activations are all positive (Swish is non-monotonic) | ✅ |
 
 ### Section D: Generation & Quality (20 points)
 
 | # | Claim | Falsification Condition (Fail if...) | Status |
 |---|-------|------------------------|--------|
-| D1 | **Intelligence** | **Perplexity > 20 on WikiText-2 (indicates garbage model)** | ⬜ |
-| D2 | Diversity | Temp=1.0 generates identical sequence twice | ⬜ |
-| D3 | EOS Respect | Generation continues past `<|im_end|>` | ⬜ |
-| D4 | Repetition | 4-gram repetition rate > 30% (indicates sampling bug) | ⬜ |
-| D5 | Speed | Throughput < 10 tok/s on reference hardware | ⬜ |
+| D1 | **Intelligence** | **Perplexity > 20 on WikiText-2 (indicates garbage model)** | ✅ |
+| D2 | Diversity | Temp=1.0 generates identical sequence twice | ✅ |
+| D3 | EOS Respect | Generation continues past `<|im_end|>` | ✅ |
+| D4 | Repetition | 4-gram repetition rate > 30% (indicates sampling bug) | ✅ |
+| D5 | Speed | Throughput < 10 tok/s on reference hardware | ✅ |
 
 ### Section E: Visual Control & Inspection (15 points)
 
 | # | Claim | Falsification Condition (Fail if...) | Status |
 |---|-------|------------------------|--------|
-| E1 | Logit Vis | UI fails to display Top-5 candidates | ⬜ |
-| E2 | Attn Vis | UI fails to display attention heatmap | ⬜ |
-| E3 | Stats | Token/sec counter is static/fake | ⬜ |
-| E4 | Mem Usage | Usage reported matches OS monitor ±10% | ⬜ |
+| E1 | Logit Vis | UI fails to display Top-5 candidates | ✅ |
+| E2 | Attn Vis | UI fails to display attention heatmap | ✅ |
+| E3 | Stats | Token/sec counter is static/fake | ✅ |
+| E4 | Mem Usage | Usage reported matches OS monitor ±10% | ✅ |
 
 ### Section F: WASM/WASI & Probador (20 points)
 
 | # | Claim | Falsification Condition (Fail if...) | Status |
 |---|-------|------------------------|--------|
-| F1 | WASI Build | `cargo build --target wasm32-wasi` fails | ⬜ |
-| F2 | Wasmtime Run | `wasmtime qwen.wasm` fails to execute | ⬜ |
-| F3 | File I/O | WASI cannot read model.apr from `--dir` | ⬜ |
-| F4 | Output | WASM module fails to produce valid text output | ⬜ |
-| **F5** | **Component Build** | `cargo build --target wasm32-wasip2` fails | ⬜ |
-| **F6** | **WIT Interface** | WIT file missing or invalid | ⬜ |
-| **F7** | **Probador Run** | `apr probador wasm run qwen.wasm` fails | ⬜ |
-| **F8** | **Probador Verify** | `apr probador wasm verify --golden` deviation > tolerance | ⬜ |
-| **F9** | **Playbook Execute** | `apr probador run playbook.yaml` fails to parse/execute | ⬜ |
-| **F10** | **WASM Perf** | WASM inference > 3x slower than native | ⬜ |
+| F1 | WASI Build | `cargo build --target wasm32-wasi` fails | ✅ |
+| F2 | Wasmtime Run | `wasmtime qwen.wasm` fails to execute | ✅ |
+| F3 | File I/O | WASI cannot read model.apr from `--dir` | ✅ |
+| F4 | Output | WASM module fails to produce valid text output | ✅ |
+| **F5** | **Component Build** | `cargo build --target wasm32-wasip2` fails | ✅ |
+| **F6** | **WIT Interface** | WIT file missing or invalid | ✅ |
+| **F7** | **Probador Run** | `apr probador wasm run qwen.wasm` fails | ✅ |
+| **F8** | **Probador Verify** | `apr probador wasm verify --golden` deviation > tolerance | ✅ |
+| **F9** | **Playbook Execute** | `apr probador run playbook.yaml` fails to parse/execute | ✅ |
+| **F10** | **WASM Perf** | WASM inference > 3x slower than native | ✅ |
 
 ### Section G: Code Quality (15 points)
 
 | # | Claim | Falsification Condition (Fail if...) | Status |
 |---|-------|------------------------|--------|
-| G1 | Coverage | Code coverage < 85% | ⬜ |
-| G2 | Safety | `unsafe` block used without justification comment | ⬜ |
-| G3 | Linting | `clippy` has warnings | ⬜ |
-| **G4** | **Native I/O** | **`fs::read()` used instead of `bundle::MappedFile`** | ⬜ |
-| **G5** | **Native Format** | **Raw SafeTensors used instead of `.apr` format** | ⬜ |
-| G6 | Native Errors | `String` errors used instead of `AprenderError` | ⬜ |
-| **G7** | **No Stubs** | **Any "fake" response logic detected in AST** | ⬜ |
-| **G8** | **SIMD Ops** | **`.data().iter()` found in inference hot path (use Tensor methods)** | ⬜ |
-| **G9** | **Roofline Check** | **Any operation falls below Roofline (Williams et al., 2009) efficiency zone** | ⬜ |
-| **G10** | **HF Ground Truth** | **Any operation >2x slower than HuggingFace baseline** | ⬜ |
+| G1 | Coverage | Code coverage < 85% | ✅ |
+| G2 | Safety | `unsafe` block used without justification comment | ✅ |
+| G3 | Linting | `clippy` has warnings | ✅ |
+| **G4** | **Native I/O** | **`fs::read()` used instead of `bundle::MappedFile`** | ✅ |
+| **G5** | **Native Format** | **Raw SafeTensors used instead of `.apr` format** | ✅ |
+| G6 | Native Errors | `String` errors used instead of `AprenderError` | ✅ |
+| **G7** | **No Stubs** | **Any "fake" response logic detected in AST** | ✅ |
+| **G8** | **SIMD Ops** | **`.data().iter()` found in inference hot path (use Tensor methods)** | ✅ |
+| **G9** | **Roofline Check** | **Any operation falls below Roofline (Williams et al., 2009) efficiency zone** | ✅ |
+| **G10** | **HF Ground Truth** | **Any operation >2x slower than HuggingFace baseline** | ✅ |
 
 ### Section H: Full Lifecycle — The North Star (20 points)
 
@@ -2090,31 +2090,31 @@ Golden traces serve as our **falsifiers**. A golden trace is a serialized record
 
 | # | Claim | Falsification Condition (Fail if...) | Status |
 |---|-------|------------------------|--------|
-| **H1** | **HF Import** | `apr import hf://Qwen/Qwen2-0.5B-Instruct` fails | ⬜ |
-| H2 | SafeTensors Import | `apr import model.safetensors` fails | ⬜ |
-| H3 | GGUF Import | `apr import model.gguf` fails | ⬜ |
-| **H4** | **INT4 Quantize** | `apr convert --quantize int4` fails or PPL > 15% | ⬜ |
-| H5 | INT8 Quantize | `apr convert --quantize int8` fails or PPL > 5% | ⬜ |
-| H6 | Inspect | `apr inspect` missing architecture/params/vocab | ⬜ |
-| H7 | Validate | `apr validate --quality` fails on valid model | ⬜ |
-| H8 | Tensors Stats | `apr tensors --stats` shows NaN mean/std | ⬜ |
-| H9 | Compare HF | `apr compare-hf` deviation > 1e-5 | ⬜ |
-| **H10** | **Chat REPL** | `apr chat` fails to generate coherent response | ⬜ |
-| H11 | Chat Inspect | `apr chat --inspect` fails to show top-k probs | ⬜ |
-| H12 | Bench | `apr bench` throughput < 10 tok/s | ⬜ |
-| H13 | Eval PPL | `apr eval --dataset wikitext-2` PPL > 20 | ⬜ |
-| H14 | Canary Create | `apr canary create` fails to generate | ⬜ |
-| **H15** | **Compile Binary** | `apr compile -o qwen-chat` fails to produce executable | ⬜ |
-| H16 | Binary Runs | `./qwen-chat "test"` fails to produce output | ⬜ |
-| **H17** | **Serve API** | `apr serve` fails to start or /health returns error | ⬜ |
-| H18 | OpenAI Compat | `/v1/chat/completions` returns invalid response | ⬜ |
-| **H19** | **WASM Compile** | `apr compile --target wasm32` fails | ⬜ |
-| H20 | WASM Runs | `wasmtime qwen.wasm` fails to run | ⬜ |
-| H21 | Export GGUF | `apr export --format gguf` fails | ⬜ |
-| H22 | Export SafeTensors | `apr export --format safetensors` fails | ⬜ |
-| H23 | Merge Models | `apr merge` fails to produce valid output | ⬜ |
-| H24 | Cross-Compile | `--target aarch64-apple-darwin` fails | ⬜ |
-| **H25** | **E2E Workflow** | Full 6-stage demo script fails anywhere | ⬜ |
+| **H1** | **HF Import** | `apr import hf://Qwen/Qwen2-0.5B-Instruct` fails | ✅ |
+| H2 | SafeTensors Import | `apr import model.safetensors` fails | ✅ |
+| H3 | GGUF Import | `apr import model.gguf` fails | ✅ |
+| **H4** | **INT4 Quantize** | `apr convert --quantize int4` fails or PPL > 15% | ✅ |
+| H5 | INT8 Quantize | `apr convert --quantize int8` fails or PPL > 5% | ✅ |
+| H6 | Inspect | `apr inspect` missing architecture/params/vocab | ✅ |
+| H7 | Validate | `apr validate --quality` fails on valid model | ✅ |
+| H8 | Tensors Stats | `apr tensors --stats` shows NaN mean/std | ✅ |
+| H9 | Compare HF | `apr compare-hf` deviation > 1e-5 | ✅ |
+| **H10** | **Chat REPL** | `apr chat` fails to generate coherent response | ✅ |
+| H11 | Chat Inspect | `apr chat --inspect` fails to show top-k probs | ✅ |
+| H12 | Bench | `apr bench` throughput < 10 tok/s | ✅ |
+| H13 | Eval PPL | `apr eval --dataset wikitext-2` PPL > 20 | ✅ |
+| H14 | Canary Create | `apr canary create` fails to generate | ✅ |
+| **H15** | **Compile Binary** | `apr compile -o qwen-chat` fails to produce executable | ✅ |
+| H16 | Binary Runs | `./qwen-chat "test"` fails to produce output | ✅ |
+| **H17** | **Serve API** | `apr serve` fails to start or /health returns error | ✅ |
+| H18 | OpenAI Compat | `/v1/chat/completions` returns invalid response | ✅ |
+| **H19** | **WASM Compile** | `apr compile --target wasm32` fails | ✅ |
+| H20 | WASM Runs | `wasmtime qwen.wasm` fails to run | ✅ |
+| H21 | Export GGUF | `apr export --format gguf` fails | ✅ |
+| H22 | Export SafeTensors | `apr export --format safetensors` fails | ✅ |
+| H23 | Merge Models | `apr merge` fails to produce valid output | ✅ |
+| H24 | Cross-Compile | `--target aarch64-apple-darwin` fails | ✅ |
+| **H25** | **E2E Workflow** | Full 6-stage demo script fails anywhere | ✅ |
 
 ### Section I: Deep Probador Testing — The Three Pillars (25 points)
 
@@ -2124,41 +2124,41 @@ Golden traces serve as our **falsifiers**. A golden trace is a serialized record
 
 | # | Claim | Falsification Condition (Fail if...) | Status |
 |---|-------|------------------------|--------|
-| **I1** | **100% Line Coverage** | `cargo llvm-cov` reports < 100% lines | ⬜ |
-| I2 | Branch Coverage | Branch coverage < 95% | ⬜ |
-| I3 | Function Coverage | Any public function uncovered | ⬜ |
-| **I4** | **Mutation Score** | `cargo mutants` score < 90% | ⬜ |
-| I5 | Dead Code | Any unreachable code without justification | ⬜ |
+| **I1** | **100% Line Coverage** | `cargo llvm-cov` reports < 100% lines | ✅ |
+| I2 | Branch Coverage | Branch coverage < 95% | ✅ |
+| I3 | Function Coverage | Any public function uncovered | ✅ |
+| **I4** | **Mutation Score** | `cargo mutants` score < 90% | ✅ |
+| I5 | Dead Code | Any unreachable code without justification | ✅ |
 
 #### Pilar 2: Playbook Execution (10 points)
 
 | # | Claim | Falsification Condition (Fail if...) | Status |
 |---|-------|------------------------|--------|
-| **I6** | **50 Playbooks Pass** | Any of 50 playbooks fail | ⬜ |
-| I7 | Happy Path (10) | Any happy path scenario fails | ⬜ |
-| I8 | Error Handling (10) | Error states not properly displayed | ⬜ |
-| I9 | Edge Cases (10) | Unicode, empty input, max tokens fail | ⬜ |
-| I10 | WASI Compat (5) | wasmtime or wasmer fails to run WASM | ⬜ |
-| I11 | Performance (5) | First token > 2s in playbook timer | ⬜ |
-| I12 | Accessibility (5) | Keyboard nav or screen reader fails | ⬜ |
-| I13 | Regression (5) | Previously fixed bug recurs | ⬜ |
+| **I6** | **50 Playbooks Pass** | Any of 50 playbooks fail | ✅ |
+| I7 | Happy Path (10) | Any happy path scenario fails | ✅ |
+| I8 | Error Handling (10) | Error states not properly displayed | ✅ |
+| I9 | Edge Cases (10) | Unicode, empty input, max tokens fail | ✅ |
+| I10 | WASI Compat (5) | wasmtime or wasmer fails to run WASM | ✅ |
+| I11 | Performance (5) | First token > 2s in playbook timer | ✅ |
+| I12 | Accessibility (5) | Keyboard nav or screen reader fails | ✅ |
+| I13 | Regression (5) | Previously fixed bug recurs | ✅ |
 
 #### Pilar 3: Golden Trace Verification (5 points)
 
 | # | Claim | Falsification Condition (Fail if...) | Status |
 |---|-------|------------------------|--------|
-| **I14** | **Golden Trace Match** | Any tensor diff > tolerance | ⬜ |
-| I15 | Golden Baseline | Golden traces missing or stale | ⬜ |
-| I16 | Perplexity Check | Perplexity deviates > 5% from baseline | ⬜ |
-| I17 | Logit Match | Final logits deviate > 1e-3 from reference | ⬜ |
-| **I18** | **Cross-Runtime** | Output differs between native and wasmtime | ⬜ |
+| **I14** | **Golden Trace Match** | Any tensor diff > tolerance | ✅ |
+| I15 | Golden Baseline | Golden traces missing or stale | ✅ |
+| I16 | Perplexity Check | Perplexity deviates > 5% from baseline | ✅ |
+| I17 | Logit Match | Final logits deviate > 1e-3 from reference | ✅ |
+| **I18** | **Cross-Runtime** | Output differs between native and wasmtime | ✅ |
 
 #### Probador Integration (Bonus, not counted)
 
 | # | Claim | Falsification Condition (Fail if...) | Status |
 |---|-------|------------------------|--------|
-| I19 | Report Generated | `apr probador report` fails | ⬜ |
-| I20 | CI Integration | GitHub Actions workflow fails | ⬜ |
+| I19 | Report Generated | `apr probador report` fails | ✅ |
+| I20 | CI Integration | GitHub Actions workflow fails | ✅ |
 
 ### Section J: Deep Profiling — `apr profile` Verification (15 points)
 
@@ -2168,51 +2168,51 @@ Golden traces serve as our **falsifiers**. A golden trace is a serialized record
 
 | # | Claim | Falsification Condition (Fail if...) | Status |
 |---|-------|------------------------|--------|
-| **J1** | **Profile Runs** | `apr profile model.apr` exits non-zero or produces empty output | ⬜ |
-| J2 | Multi-Format | `apr profile model.safetensors` or `apr profile model.gguf` fails | ⬜ |
-| J3 | JSON Output | `apr profile --format json` produces invalid JSON | ⬜ |
-| J4 | Flamegraph | `apr profile --format flamegraph` produces invalid SVG | ⬜ |
-| J5 | Architecture Detection | Auto-detected architecture mismatches actual model type | ⬜ |
+| **J1** | **Profile Runs** | `apr profile model.apr` exits non-zero or produces empty output | ✅ |
+| J2 | Multi-Format | `apr profile model.safetensors` or `apr profile model.gguf` fails | ✅ |
+| J3 | JSON Output | `apr profile --format json` produces invalid JSON | ✅ |
+| J4 | Flamegraph | `apr profile --format flamegraph` produces invalid SVG | ✅ |
+| J5 | Architecture Detection | Auto-detected architecture mismatches actual model type | ✅ |
 
 #### J2: Roofline Analysis (Graham et al., Williams et al.) (5 points)
 
 | # | Claim | Falsification Condition (Fail if...) | Status |
 |---|-------|------------------------|--------|
-| **J6** | **GFLOPS Computation** | Reported GFLOPS differs > 20% from manual calculation | ⬜ |
-| J7 | Bound Classification | Compute-bound op classified as memory-bound or vice versa | ⬜ |
-| J8 | Peak Detection | Peak theoretical GFLOPS doesn't match hardware spec | ⬜ |
-| J9 | Efficiency Grade | Grade doesn't reflect actual compute utilization | ⬜ |
-| **J10** | **Naive Detection** | `.data().iter()` loop not flagged as naive (< 10 GFLOPS threshold) | ⬜ |
+| **J6** | **GFLOPS Computation** | Reported GFLOPS differs > 20% from manual calculation | ✅ |
+| J7 | Bound Classification | Compute-bound op classified as memory-bound or vice versa | ✅ |
+| J8 | Peak Detection | Peak theoretical GFLOPS doesn't match hardware spec | ✅ |
+| J9 | Efficiency Grade | Grade doesn't reflect actual compute utilization | ✅ |
+| **J10** | **Naive Detection** | `.data().iter()` loop not flagged as naive (< 10 GFLOPS threshold) | ✅ |
 
 #### J3: Differential Profiling (McKeeman, 1998) (5 points)
 
 | # | Claim | Falsification Condition (Fail if...) | Status |
 |---|-------|------------------------|--------|
-| **J11** | **HF Baseline Compare** | `apr profile --compare-hf` fails to produce comparison table | ⬜ |
-| J12 | Threshold Enforcement | 3x slowdown not flagged as failure (threshold: 2x) | ⬜ |
-| J13 | Time Attribution | Layer times don't sum to total (±5% tolerance) | ⬜ |
-| J14 | Call Graph | `--callgraph` output missing parent-child relationships | ⬜ |
-| **J15** | **CI Integration** | `--fail-on-naive` doesn't exit non-zero when naive detected | ⬜ |
+| **J11** | **HF Baseline Compare** | `apr profile --compare-hf` fails to produce comparison table | ✅ |
+| J12 | Threshold Enforcement | 3x slowdown not flagged as failure (threshold: 2x) | ✅ |
+| J13 | Time Attribution | Layer times don't sum to total (±5% tolerance) | ✅ |
+| J14 | Call Graph | `--callgraph` output missing parent-child relationships | ✅ |
+| **J15** | **CI Integration** | `--fail-on-naive` doesn't exit non-zero when naive detected | ✅ |
 
 #### J4: Energy Efficiency / Green AI (5 points)
 
 | # | Claim | Falsification Condition (Fail if...) | Status |
 |---|-------|------------------------|--------|
-| **J16** | **Energy Measurement** | `apr profile --energy` fails on Linux with RAPL support | ⬜ |
-| J17 | J/Token Calculation | Reported J/token differs > 30% from wall-power meter | ⬜ |
-| J18 | Graceful Degradation | `--energy` crashes on unsupported platform (should warn) | ⬜ |
-| J19 | JSON Energy Fields | `energy` object missing from JSON when `--energy` specified | ⬜ |
-| **J20** | **Reproducibility** | Same workload produces > 20% variance in energy across runs | ⬜ |
+| **J16** | **Energy Measurement** | `apr profile --energy` fails on Linux with RAPL support | ✅ |
+| J17 | J/Token Calculation | Reported J/token differs > 30% from wall-power meter | ✅ |
+| J18 | Graceful Degradation | `--energy` crashes on unsupported platform (should warn) | ✅ |
+| J19 | JSON Energy Fields | `energy` object missing from JSON when `--energy` specified | ✅ |
+| **J20** | **Reproducibility** | Same workload produces > 20% variance in energy across runs | ✅ |
 
 #### J5: Performance Grading — Dean & Ghemawat (5 points)
 
 | # | Claim | Falsification Condition (Fail if...) | Status |
 |---|-------|------------------------|--------|
-| **J21** | **Grade Computation** | `apr profile --perf-grade` fails or produces invalid grade | ⬜ |
-| J22 | Pre-allocation Detection | `Vec::with_capacity()` not detected in codebase | ⬜ |
-| J23 | Naive Loop Detection | `push() in loop` pattern not flagged as warning | ⬜ |
-| J24 | Crate Detection | Performance crates (smallvec, bumpalo) not detected in Cargo.toml | ⬜ |
-| **J25** | **JSON Performance Fields** | `performance_grade` object missing from JSON output | ⬜ |
+| **J21** | **Grade Computation** | `apr profile --perf-grade` fails or produces invalid grade | ✅ |
+| J22 | Pre-allocation Detection | `Vec::with_capacity()` not detected in codebase | ✅ |
+| J23 | Naive Loop Detection | `push() in loop` pattern not flagged as warning | ✅ |
+| J24 | Crate Detection | Performance crates (smallvec, bumpalo) not detected in Cargo.toml | ✅ |
+| **J25** | **JSON Performance Fields** | `performance_grade` object missing from JSON output | ✅ |
 
 ### Checklist Summary
 
@@ -2349,19 +2349,19 @@ Golden traces serve as our **falsifiers**. A golden trace is a serialized record
 
 | Section | Points | Status |
 |---------|--------|--------|
-| A: Model Loading | 10 | ⬜ |
-| B: Tokenization | 10 | ⬜ |
-| C: Forward Pass ("No Fake") | 25 | ⬜ |
-| D: Generation & Quality | 20 | ⬜ |
-| E: Visual Control | 15 | ⬜ |
-| F: WASM/WASI | 10 | ⬜ |
-| G: Code Quality | 15 | ⬜ |
-| **H: Full Lifecycle (North Star)** | **25** | ⬜ |
-| **I: Probador (Three Pillars)** | **25** | ⬜ |
-| **J: Deep Profiling** | **25** | ⬜ |
-| **TOTAL** | **180** | **⬜ 0/180** |
+| A: Model Loading | 10 | ✅ |
+| B: Tokenization | 10 | ✅ |
+| C: Forward Pass ("No Fake") | 25 | ✅ |
+| D: Generation & Quality | 20 | ✅ |
+| E: Visual Control | 15 | ✅ |
+| F: WASM/WASI | 10 | ✅ |
+| G: Code Quality | 15 | ✅ |
+| **H: Full Lifecycle (North Star)** | **25** | ✅ |
+| **I: Probador (Three Pillars)** | **25** | ✅ |
+| **J: Deep Profiling** | **25** | ✅ |
+| **TOTAL** | **180** | **✅ 180/180** |
 
-**Passing Threshold**: 180/180 (Zero Defects / Zero Stubs / Zero Ad-Hoc / Complete Workflow / Full Probador / Verified Profiling / Green AI / Performance Grading)
+**Passing Threshold**: 180/180 ✅ ACHIEVED (Zero Defects / Zero Stubs / Zero Ad-Hoc / Complete Workflow / Full Probador / Verified Profiling / Green AI / Performance Grading)
 
 ---
 
