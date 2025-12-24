@@ -732,4 +732,173 @@ mod tests {
 
         assert_eq!(data.compression, DataCompression::Zstd { level: 3 });
     }
+
+    // =========================================================================
+    // Additional coverage tests
+    // =========================================================================
+
+    #[test]
+    fn test_data_provenance_default() {
+        let prov = DataProvenance::default();
+        assert_eq!(prov.source, "unknown");
+        assert!(!prov.is_complete()); // no license
+    }
+
+    #[test]
+    fn test_data_provenance_with_preprocessing_steps() {
+        let prov = DataProvenance::new("test")
+            .with_preprocessing_steps(vec!["step1".into(), "step2".into()]);
+        assert_eq!(prov.preprocessing.len(), 2);
+    }
+
+    #[test]
+    fn test_data_compression_delta_zstd_high_level() {
+        let comp = DataCompression::DeltaZstd { level: 10 };
+        assert_eq!(comp.name(), "delta-zstd");
+        assert!((comp.estimated_ratio() - 12.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn test_data_compression_zstd_high_level() {
+        let comp = DataCompression::zstd_level(12);
+        assert!((comp.estimated_ratio() - 6.0).abs() < 0.1);
+
+        let comp_medium = DataCompression::zstd_level(7);
+        assert!((comp_medium.estimated_ratio() - 4.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn test_data_compression_quantized_16bit() {
+        let comp = DataCompression::quantized(16);
+        assert!((comp.estimated_ratio() - 2.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn test_embed_error_compression_failed_display() {
+        let err = EmbedError::CompressionFailed {
+            strategy: "zstd",
+            message: "out of memory".into(),
+        };
+        let msg = format!("{}", err);
+        assert!(msg.contains("zstd"));
+        assert!(msg.contains("out of memory"));
+    }
+
+    #[test]
+    fn test_embed_error_decompression_failed_display() {
+        let err = EmbedError::DecompressionFailed {
+            strategy: "delta-zstd",
+            message: "corrupt data".into(),
+        };
+        let msg = format!("{}", err);
+        assert!(msg.contains("delta-zstd"));
+        assert!(msg.contains("corrupt data"));
+    }
+
+    #[test]
+    fn test_embed_error_target_mismatch_display() {
+        let err = EmbedError::TargetMismatch {
+            expected: 10,
+            actual: 5,
+        };
+        let msg = format!("{}", err);
+        assert!(msg.contains("10"));
+        assert!(msg.contains("5"));
+    }
+
+    #[test]
+    fn test_embedded_test_data_validate_target_nan() {
+        let mut data = EmbeddedTestData::new(vec![1.0, 2.0], (1, 2))
+            .with_targets(vec![0.0]);
+        data.y_data = Some(vec![f32::NAN]);
+
+        let err = data.validate();
+        assert!(matches!(err, Err(EmbedError::InvalidValue { .. })));
+    }
+
+    #[test]
+    fn test_embedded_test_data_validate_target_inf() {
+        let mut data = EmbeddedTestData::new(vec![1.0, 2.0], (1, 2))
+            .with_targets(vec![0.0]);
+        data.y_data = Some(vec![f32::INFINITY]);
+
+        let err = data.validate();
+        assert!(matches!(err, Err(EmbedError::InvalidValue { .. })));
+    }
+
+    #[test]
+    fn test_embedded_test_data_validate_target_mismatch() {
+        let mut data = EmbeddedTestData::new(vec![1.0, 2.0, 3.0, 4.0], (2, 2));
+        // Manually set mismatched targets
+        data.y_data = Some(vec![0.0, 1.0, 2.0]); // 3 targets for 2 samples
+
+        let err = data.validate();
+        assert!(matches!(err, Err(EmbedError::TargetMismatch { .. })));
+    }
+
+    #[test]
+    fn test_embedded_test_data_clone() {
+        let data = EmbeddedTestData::new(vec![1.0, 2.0], (1, 2))
+            .with_targets(vec![1.0]);
+        let cloned = data.clone();
+        assert_eq!(cloned.x_data, data.x_data);
+        assert_eq!(cloned.y_data, data.y_data);
+    }
+
+    #[test]
+    fn test_data_provenance_clone() {
+        let prov = DataProvenance::new("test").with_license("MIT");
+        let cloned = prov.clone();
+        assert_eq!(cloned.source, prov.source);
+        assert_eq!(cloned.license, prov.license);
+    }
+
+    #[test]
+    fn test_data_compression_copy() {
+        let comp = DataCompression::zstd();
+        let copied = comp;
+        assert_eq!(copied.name(), "zstd");
+    }
+
+    #[test]
+    fn test_embed_error_clone() {
+        let err = EmbedError::ShapeMismatch { expected: 10, actual: 5 };
+        let cloned = err.clone();
+        let msg = format!("{}", cloned);
+        assert!(msg.contains("10"));
+    }
+
+    #[test]
+    #[should_panic(expected = "Feature names length")]
+    fn test_embedded_test_data_feature_names_mismatch() {
+        let _ = EmbeddedTestData::new(vec![1.0, 2.0, 3.0, 4.0], (2, 2))
+            .with_feature_names(vec!["a".into(), "b".into(), "c".into()]); // 3 != 2
+    }
+
+    #[test]
+    #[should_panic(expected = "Sample IDs length")]
+    fn test_embedded_test_data_sample_ids_mismatch() {
+        let _ = EmbeddedTestData::new(vec![1.0, 2.0, 3.0, 4.0], (2, 2))
+            .with_sample_ids(vec!["a".into(), "b".into(), "c".into()]); // 3 != 2
+    }
+
+    #[test]
+    fn test_embedded_test_data_partial_eq() {
+        let data1 = EmbeddedTestData::new(vec![1.0, 2.0], (1, 2));
+        let data2 = EmbeddedTestData::new(vec![1.0, 2.0], (1, 2));
+        let data3 = EmbeddedTestData::new(vec![1.0, 3.0], (1, 2));
+
+        assert_eq!(data1, data2);
+        assert_ne!(data1, data3);
+    }
+
+    #[test]
+    fn test_data_provenance_partial_eq() {
+        let prov1 = DataProvenance::new("test");
+        let prov2 = DataProvenance::new("test");
+        let prov3 = DataProvenance::new("other");
+
+        assert_eq!(prov1.source, prov2.source);
+        assert_ne!(prov1.source, prov3.source);
+    }
 }
