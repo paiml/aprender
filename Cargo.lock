@@ -4482,8 +4482,6 @@ dependencies = [
 [[package]]
 name = "realizar"
 version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9219059acd02f6494e79af7565f94f939e78a7ee6c813d6c3658bf1aa791e228"
 dependencies = [
  "anyhow",
  "aprender 0.14.1",
