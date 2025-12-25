@@ -1,7 +1,7 @@
 # APR Whisper & Cookbook Support: End of Year 2025 Specification
 
-**Version**: 2.2.0
-**Status**: Complete (300/300 points, All Popperian Tests Verified)
+**Version**: 2.3.0
+**Status**: In Progress (300/310 points verified, Section Y: Format Parity pending)
 **Created**: 2025-12-21
 **Updated**: 2025-12-25
 **Target Completion**: 2025-12-31 (Achieved)
@@ -45,7 +45,7 @@ This specification consolidates all open GitHub issues and recent development wo
 12. [Implementation Roadmap](#12-implementation-roadmap)
 13. [Peer-Reviewed Citations](#13-peer-reviewed-citations)
 14. [Toyota Way Alignment](#14-toyota-way-alignment)
-15. [300-Point Popperian Falsification QA Checklist](#15-300-point-popperian-falsification-qa-checklist)
+15. [310-Point Popperian Falsification QA Checklist](#15-310-point-popperian-falsification-qa-checklist)
 16. [Verification Findings](#16-verification-findings)
 17. [Open Issues Backlog](#17-open-issues-backlog)
 18. [References](#18-references)
@@ -122,19 +122,38 @@ To ensure robustness beyond example-based tests, we employ **Property-Based Test
 | **Model Training** | ✅ Primary | ❌ Never | Compute backend |
 | **Autograd/Backprop** | ✅ Primary | ❌ Never | ❌ Never |
 | **Loss Functions** | ✅ Primary | ❌ Never | ❌ Never |
-| **.apr Format R/W** | ✅ Primary | Read-only | ❌ Never |
+| **.apr Format R/W** | ✅ Primary | ✅ **First-Class** | ❌ Never |
 | **Model Serving** | ❌ **DELETED** | ✅ Primary | Compute backend |
 | **HTTP/REST API** | ❌ Never | ✅ Primary | ❌ Never |
 | **KV Cache** | ❌ Never | ✅ Primary | Storage backend |
 | **Quantization (Inference)** | ❌ Never | ✅ Primary | Dequant kernels |
-| **GGUF/SafeTensors Loading** | ❌ Never | ✅ Primary | ❌ Never |
+| **APR/GGUF/SafeTensors Inference** | ❌ Never | ✅ Primary | ❌ Never |
 | **Tokenizers (BPE/SPM)** | Read-only | ✅ Primary | ❌ Never |
 | **CUDA/GPU Inference** | ❌ Never | ✅ Primary | ✅ Kernels |
 | **WASM Inference** | ❌ Never | ✅ Primary | ✅ SIMD128 |
 | **Matmul (Inference)** | ❌ Never | ❌ Never | ✅ Primary |
 | **Kernel Auto-Tuning** | ❌ Never | ❌ Never | ✅ Primary |
 
-### 2.3 Code Deletion Mandate
+### 2.3 Format Parity Mandate (NEW v2.3)
+
+**CRITICAL**: APR format MUST have performance parity with GGUF for inference. APR is the sovereign format.
+
+| Format | Inference Support | Performance Target | Status |
+|--------|------------------|-------------------|--------|
+| **.apr** | ✅ First-Class | ≥50 tok/s CPU, ≥200 tok/s GPU | ⬜ Required |
+| **.gguf** | ✅ First-Class | ≥50 tok/s CPU, ≥200 tok/s GPU | ✅ Implemented |
+| **.safetensors** | ⚠️ Convert to APR | N/A (convert first) | ✅ Implemented |
+
+**Rationale**: The APR format is the native sovereign format. Users should not need to convert to GGUF for fast inference. Realizar MUST optimize APR inference to match GGUF performance.
+
+**Implementation Requirements**:
+1. `realizar::apr::AprTransformer` - Optimized transformer for APR format
+2. `apr convert model.safetensors -o model.apr` - Convert SafeTensors to APR
+3. `apr bench model.apr` - Benchmark APR inference (must match GGUF)
+4. Zero-copy mmap loading for APR tensors
+5. SIMD-accelerated attention, matmul, activations for APR
+
+### 2.4 Code Deletion Mandate
 
 The following code paths in `aprender` are **DEPRECATED** and scheduled for deletion:
 
@@ -889,9 +908,9 @@ This specification is not merely a collection of features but a realization of p
 
 ---
 
-## 13. 300-Point Popperian Falsification QA Checklist
+## 13. 310-Point Popperian Falsification QA Checklist
 
-**Total Points**: 300 (expanded to include Realizar-First Architecture, Deep Performance Profiling, and Sovereign Enforcement)
+**Total Points**: 310 (expanded to include Realizar-First Architecture, Deep Performance Profiling, Sovereign Enforcement, and Format Parity)
 
 ### Section T: Realizar-First Architecture (25 points) — NEW v2.0
 
@@ -1495,9 +1514,66 @@ User: What is 2+2?
 Assistant: 2+2 is 4.
 ```
 
+### Section Y: Format Parity (10 points) — NEW v2.3
+
+**Verification Status**: ⬜ 0/10 Pending. APR format parity with GGUF required per Section 2.3.
+
+This section defines **Popperian falsifiable** criteria for APR format achieving performance parity with GGUF. Per the Format Parity Mandate (Section 2.3), APR is the sovereign format and MUST match GGUF inference speed.
+
+#### Y.1 APR Inference Implementation (5 points)
+
+| # | Claim | Falsification Condition | Status | Note |
+|---|-------|------------------------|--------|------|
+| Y1 | APR loads via realizar mmap | `realizar::apr::load()` fails or copies data | ⬜ Pending | Requires AprTransformer |
+| Y2 | APR tensors zero-copy | RSS grows beyond model file size during load | ⬜ Pending | Requires mmap impl |
+| Y3 | APR forward pass via trueno | Non-trueno ops in profile hotspots | ⬜ Pending | Requires APR adapter |
+| Y4 | APR KV cache optimized | KV cache allocations during decode | ⬜ Pending | Requires KV cache |
+| Y5 | APR quantization supported | INT8/INT4 APR inference fails | ⬜ Pending | Requires quant support |
+
+#### Y.2 APR Performance Parity (5 points)
+
+| # | Claim | Falsification Condition | Status | Note |
+|---|-------|------------------------|--------|------|
+| Y6 | APR decode ≥ 50 tok/s (CPU) | APR < 50 tok/s when GGUF ≥ 50 tok/s | ⬜ Pending | Must match GGUF |
+| Y7 | APR decode ≥ 200 tok/s (GPU) | APR < 200 tok/s when GGUF ≥ 200 tok/s | ⬜ Pending | Must match GGUF |
+| Y8 | APR prefill ≥ 100 tok/s | APR prefill < 100 tok/s | ⬜ Pending | Must match GGUF |
+| Y9 | APR load time ≤ GGUF load time | APR load > 1.2x GGUF load time | ⬜ Pending | Zero-copy required |
+| Y10 | APR peak memory ≤ GGUF | APR memory > 1.1x GGUF memory | ⬜ Pending | Efficient format |
+
+#### Y.3 Test Strategy
+
+```rust
+// tests/format_parity_tests.rs
+
+#[test]
+fn y6_apr_decode_speed_parity() {
+    // Load same model in APR and GGUF formats
+    let apr_model = realizar::Model::load("model.apr")?;
+    let gguf_model = realizar::Model::load("model.gguf")?;
+
+    let apr_speed = bench_decode(&apr_model, 100);
+    let gguf_speed = bench_decode(&gguf_model, 100);
+
+    assert!(
+        apr_speed >= gguf_speed * 0.95,
+        "FALSIFIED: APR {:.1} tok/s < 95% of GGUF {:.1} tok/s",
+        apr_speed, gguf_speed
+    );
+}
+
+#[test]
+fn y1_apr_loads_via_realizar_mmap() {
+    use realizar::apr::AprModel;
+    let model = AprModel::from_file("model.apr")
+        .expect("FALSIFIED: APR load via realizar failed");
+    assert!(model.is_mmap(), "FALSIFIED: APR not using mmap");
+}
+```
+
 ### 16. Verification Findings
 *(This section is updated by the CI/CD pipeline)*
 - **2025-12-25**: ✅ **COMPLETE: 300/300 points verified**. All Popperian falsification tests pass.
+- **2025-12-25**: ⬜ Section Y (Format Parity): 0/10 pending - requires realizar APR implementation.
 - **2025-12-25**: Added 92 new tests for Sections T, X, U, V, W, Q, R in `tests/spec_checklist_tests.rs`.
 - **2025-12-25**: Verified Section T (25/25): Realizar-First Architecture mandate.
 - **2025-12-25**: Verified Section X (10/10): Anti-Stub & Architecture Integrity.
