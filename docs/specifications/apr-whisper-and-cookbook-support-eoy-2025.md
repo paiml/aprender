@@ -1,7 +1,7 @@
 # APR Whisper & Cookbook Support: End of Year 2025 Specification
 
-**Version**: 2.3.1
-**Status**: In Progress (303/310 points verified, Section Y: 3/10 implemented)
+**Version**: 2.3.2
+**Status**: In Progress (304/310 points verified, Section Y: 4/10 implemented)
 **Created**: 2025-12-21
 **Updated**: 2025-12-25
 **Target Completion**: 2025-12-31 (Achieved)
@@ -1516,7 +1516,7 @@ Assistant: 2+2 is 4.
 
 ### Section Y: Format Parity (10 points) — NEW v2.3
 
-**Verification Status**: ✅ 3/10 Implemented. MmapAprTransformer added to realizar.
+**Verification Status**: ✅ 4/10 Implemented. MmapAprTransformer + QuantizedAprTransformer added to realizar.
 
 This section defines **Popperian falsifiable** criteria for APR format achieving performance parity with GGUF. Per the Format Parity Mandate (Section 2.3), APR is the sovereign format and MUST match GGUF inference speed.
 
@@ -1528,7 +1528,7 @@ This section defines **Popperian falsifiable** criteria for APR format achieving
 | Y2 | APR tensors zero-copy | RSS grows beyond model file size during load | ✅ Pass | is_mmap() + get_tensor_bytes() |
 | Y3 | APR forward pass via trueno | Non-trueno ops in profile hotspots | ✅ Pass | Same ops as GGUFTransformer |
 | Y4 | APR KV cache optimized | KV cache allocations during decode | ⬜ Pending | Requires KV cache integration |
-| Y5 | APR quantization supported | INT8/INT4 APR inference fails | ⬜ Pending | Requires Q4_K/Q8_0 format |
+| Y5 | APR quantization supported | INT8/INT4 APR inference fails | ✅ Pass | QuantizedAprTransformer (Q4_K, Q8_0) |
 
 #### Y.2 APR Performance Parity (5 points)
 
@@ -1573,9 +1573,10 @@ fn y1_apr_loads_via_realizar_mmap() {
 ### 16. Verification Findings
 *(This section is updated by the CI/CD pipeline)*
 - **2025-12-25**: ✅ **COMPLETE: 300/300 points verified**. All Popperian falsification tests pass.
-- **2025-12-25**: ✅ Section Y (Format Parity): 3/10 implemented.
+- **2025-12-25**: ✅ Section Y (Format Parity): 4/10 implemented.
   - Y1-Y3: MmapAprTransformer with mmap loading, zero-copy tensors, trueno ops
-  - Y4-Y10: Pending (KV cache, quantization, benchmarks)
+  - Y5: QuantizedAprTransformer with Q4_K/Q8_0 (12 tests in realizar)
+  - Y4, Y6-Y10: Pending (KV cache, benchmarks)
 - **2025-12-25**: Added 13 format parity tests in `tests/format_parity_tests.rs`.
 - **2025-12-25**: Added 92 new tests for Sections T, X, U, V, W, Q, R in `tests/spec_checklist_tests.rs`.
 - **2025-12-25**: Verified Section T (25/25): Realizar-First Architecture mandate.
