@@ -1,7 +1,7 @@
 # APR Whisper & Cookbook Support: End of Year 2025 Specification
 
-**Version**: 2.3.0
-**Status**: In Progress (300/310 points verified, Section Y: Format Parity pending)
+**Version**: 2.3.1
+**Status**: In Progress (303/310 points verified, Section Y: 3/10 implemented)
 **Created**: 2025-12-21
 **Updated**: 2025-12-25
 **Target Completion**: 2025-12-31 (Achieved)
@@ -1516,7 +1516,7 @@ Assistant: 2+2 is 4.
 
 ### Section Y: Format Parity (10 points) — NEW v2.3
 
-**Verification Status**: ⬜ 0/10 Pending. APR format parity with GGUF required per Section 2.3.
+**Verification Status**: ✅ 3/10 Implemented. MmapAprTransformer added to realizar.
 
 This section defines **Popperian falsifiable** criteria for APR format achieving performance parity with GGUF. Per the Format Parity Mandate (Section 2.3), APR is the sovereign format and MUST match GGUF inference speed.
 
@@ -1524,11 +1524,11 @@ This section defines **Popperian falsifiable** criteria for APR format achieving
 
 | # | Claim | Falsification Condition | Status | Note |
 |---|-------|------------------------|--------|------|
-| Y1 | APR loads via realizar mmap | `realizar::apr::load()` fails or copies data | ⬜ Pending | Requires AprTransformer |
-| Y2 | APR tensors zero-copy | RSS grows beyond model file size during load | ⬜ Pending | Requires mmap impl |
-| Y3 | APR forward pass via trueno | Non-trueno ops in profile hotspots | ⬜ Pending | Requires APR adapter |
-| Y4 | APR KV cache optimized | KV cache allocations during decode | ⬜ Pending | Requires KV cache |
-| Y5 | APR quantization supported | INT8/INT4 APR inference fails | ⬜ Pending | Requires quant support |
+| Y1 | APR loads via realizar mmap | `realizar::apr::load()` fails or copies data | ✅ Pass | MmapAprTransformer::from_file() |
+| Y2 | APR tensors zero-copy | RSS grows beyond model file size during load | ✅ Pass | is_mmap() + get_tensor_bytes() |
+| Y3 | APR forward pass via trueno | Non-trueno ops in profile hotspots | ✅ Pass | Same ops as GGUFTransformer |
+| Y4 | APR KV cache optimized | KV cache allocations during decode | ⬜ Pending | Requires KV cache integration |
+| Y5 | APR quantization supported | INT8/INT4 APR inference fails | ⬜ Pending | Requires Q4_K/Q8_0 format |
 
 #### Y.2 APR Performance Parity (5 points)
 
@@ -1573,7 +1573,10 @@ fn y1_apr_loads_via_realizar_mmap() {
 ### 16. Verification Findings
 *(This section is updated by the CI/CD pipeline)*
 - **2025-12-25**: ✅ **COMPLETE: 300/300 points verified**. All Popperian falsification tests pass.
-- **2025-12-25**: ⬜ Section Y (Format Parity): 0/10 pending - requires realizar APR implementation.
+- **2025-12-25**: ✅ Section Y (Format Parity): 3/10 implemented.
+  - Y1-Y3: MmapAprTransformer with mmap loading, zero-copy tensors, trueno ops
+  - Y4-Y10: Pending (KV cache, quantization, benchmarks)
+- **2025-12-25**: Added 13 format parity tests in `tests/format_parity_tests.rs`.
 - **2025-12-25**: Added 92 new tests for Sections T, X, U, V, W, Q, R in `tests/spec_checklist_tests.rs`.
 - **2025-12-25**: Verified Section T (25/25): Realizar-First Architecture mandate.
 - **2025-12-25**: Verified Section X (10/10): Anti-Stub & Architecture Integrity.
