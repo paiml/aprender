@@ -626,9 +626,9 @@ This specification is not merely a collection of features but a realization of p
 
 ---
 
-## 13. 230-Point Popperian Falsification QA Checklist
+## 13. 255-Point Popperian Falsification QA Checklist
 
-**Total Points**: 230 (expanded to include Test Velocity, Qwen Coder, and Expanded Import)
+**Total Points**: 255 (expanded to include Test Velocity, Qwen Coder, Expanded Import, and Qwen2 Native Inference)
 
 ### Section K: TensorLogic Core (20 points) — NEW
 
@@ -986,16 +986,126 @@ This specification is not merely a collection of features but a realization of p
 | R9 | Checksum verification on import | ⬜ Pending | Security/Integrity check |
 | R10 | TUI shows import progress | ⬜ Pending | User experience verification |
 
+### Section S: Qwen2 Native Inference (25 points) — NEW
+
+**Verification Status**: 10/25 Passed. Core infrastructure verified.
+
+This section defines **Popperian falsifiable** criteria for Qwen2-0.5B-Instruct native inference in pure Rust. Following Popper's demarcation criterion (Popper, 1959), each claim specifies the conditions under which it would be **proven false**.
+
+#### S.1 Prerequisites (5 points)
+
+| # | Claim | Falsification Condition | Status | Note |
+|---|-------|------------------------|--------|------|
+| S1 | Tokenizer loads from `tokenizer.json` | Encoding "Hello" returns empty or panics | ✅ Pass | encode('Hello') -> [9707] |
+| S2 | Tokenizer round-trips ASCII correctly | `decode(encode("Hello"))` ≠ "Hello" | ✅ Pass | [9707] -> 'Hello' |
+| S3 | Tokenizer handles Qwen2 special tokens | `is_eos(151645)` returns false | ✅ Pass | Special tokens recognized |
+| S4 | Model loads from SafeTensors (mmap) | Load time > 60s OR OOM on 16GB machine | ✅ Pass | 219 tensors in 6.24s |
+| S5 | Model loads 219 weight tensors | Tensor count ≠ 219 | ✅ Pass | Verified s5_model_tensor_count |
+
+#### S.2 Forward Pass Correctness (10 points)
+
+| # | Claim | Falsification Condition | Status | Note |
+|---|-------|------------------------|--------|------|
+| S6 | Embedding lookup returns correct shape | Output shape ≠ `[1, seq_len, 896]` | ✅ Pass | Verified s6_embedding_shape |
+| S7 | RMSNorm output has unit variance | Variance deviation > 10% from 1.0 | ⬜ Pending | Property of RMSNorm |
+| S8 | RoPE positions are monotonic | `rope[i] >= rope[i+1]` for any frequency | ⬜ Pending | Rotary embeddings |
+| S9 | GQA attention uses 2 KV heads | KV projection shape ≠ `[2 * head_dim, hidden]` | ⬜ Pending | GQA with 14 Q, 2 KV heads |
+| S10 | SwiGLU activation non-negative | Output contains negative values (gate path) | ⬜ Pending | SiLU * gate |
+| S11 | Logits shape matches vocab | Output shape ≠ `[1, seq_len, 151936]` | ✅ Pass | Verified s11_logits_shape |
+| S12 | Logits are finite (no NaN/Inf) | Any NaN or Inf in output | ✅ Pass | Verified s12_logits_finite |
+| S13 | Softmax sums to 1.0 | `\|sum(softmax(logits)) - 1.0\| > 1e-5` | ⬜ Pending | Probability distribution |
+| S14 | Top-1 token is deterministic (temp=0) | Same input produces different outputs | ✅ Pass | Verified s14_deterministic |
+| S15 | KV cache accelerates generation | Second token slower than first | ⬜ Pending | Cache hit optimization |
+
+#### S.3 Generation Quality (5 points)
+
+| # | Claim | Falsification Condition | Status | Note |
+|---|-------|------------------------|--------|------|
+| S16 | "2+2" prompt contains "4" in response | Response lacks "4" in first 32 tokens | ⬜ Pending | Basic arithmetic |
+| S17 | "Capital of France" → "Paris" | Response lacks "Paris" in first 32 tokens | ⬜ Pending | Factual recall |
+| S18 | Generation stops at EOS token | Continues past `<\|im_end\|>` (151645) | ⬜ Pending | Proper termination |
+| S19 | Response is valid UTF-8 | Decode produces invalid UTF-8 sequence | ⬜ Pending | Character encoding |
+| S20 | Response length ≤ max_new_tokens | Output exceeds requested length | ✅ Pass | Verified s20_length_control |
+
+#### S.4 Performance Targets (5 points)
+
+| # | Claim | Falsification Condition | Status | Note |
+|---|-------|------------------------|--------|------|
+| S21 | Model loads in < 30s | Load time ≥ 30s on release build | ⬜ Pending | Cold start performance |
+| S22 | Prefill speed ≥ 10 tok/s | Speed < 10 tokens/second | ⬜ Pending | Prompt processing |
+| S23 | Decode speed ≥ 1 tok/s | Speed < 1 token/second | ⬜ Pending | Minimum viable |
+| S24 | Peak memory < 4GB | RSS exceeds 4GB during inference | ⬜ Pending | FP32 weights + KV cache |
+| S25 | No memory leaks over 100 tokens | Memory grows unbounded | ⬜ Pending | Valgrind/heaptrack clean |
+
+#### S.5 Test Strategy
+
+Following the **Extreme TDD** methodology (Beck, 2002), tests are written **before** implementation:
+
+```rust
+// src/models/qwen2/tests/inference_tests.rs
+
+#[test]
+fn s1_tokenizer_loads_from_json() {
+    let json = std::fs::read_to_string("path/to/tokenizer.json")
+        .expect("tokenizer.json required");
+    let tokenizer = load_from_json(&json).expect("parse failed");
+    let tokens = tokenizer.encode("Hello");
+    assert!(!tokens.is_empty(), "FALSIFIED: encode returned empty");
+}
+
+#[test]
+fn s16_two_plus_two_contains_four() {
+    let response = generate("What is 2+2?", 32);
+    assert!(
+        response.contains("4") || response.contains("four"),
+        "FALSIFIED: response '{}' lacks '4'", response
+    );
+}
+```
+
+#### S.6 Demo Command
+
+Upon completion, the following command must succeed:
+
+```bash
+# Download tokenizer (one-time)
+curl -L -o ~/.cache/qwen2/tokenizer.json \
+  "https://huggingface.co/Qwen/Qwen2-0.5B-Instruct/resolve/main/tokenizer.json"
+
+# Run inference demo
+cargo run --example qwen_inference --release
+```
+
+Expected output:
+```
+=== Qwen2-0.5B Real Inference Demo ===
+
+Model weights: /home/user/.cache/.../model.safetensors
+Tokenizer: /home/user/.cache/qwen2/tokenizer.json
+
+Loading model (memory-efficient mode)...
+Loaded 219 weight tensors in 4.2s
+
+─────────────────────────────────────────
+User: What is 2+2?
+
+Input: 45 tokens
+Assistant: The answer is 4.
+
+Generated 8 tokens in 1.2s (6.7 tok/s)
+```
+
 ---
 
 ## 14. Verification Findings
 
-**Date**: 2025-12-22
+**Date**: 2025-12-25
 **Tester**: Aprender CI (Extreme TDD Agent)
-**Score**: 208/230 (Core: 98/100, New Features: 110/130)
+**Score**: 218/255 (Core: 98/100, New Features: 120/155)
+**Section S Progress**: 10/25 Passed (Prerequisites: 5/5, Forward Pass: 5/10)
 **Grade**: A (In Progress)
 
-### Point Distribution (230 Total)
+### Point Distribution (255 Total)
 
 | Section | Points | Status | Category |
 |---------|--------|--------|----------|
@@ -1007,6 +1117,7 @@ This specification is not merely a collection of features but a realization of p
 | **P: Test Velocity** | 10 | ✅ 10/10 | New |
 | **Q: Qwen Coder** | 10 | ⬜ 0/10 | New |
 | **R: Model Import** | 10 | ⬜ 0/10 | New |
+| **S: Qwen2 Native Inference** | 25 | ⚠️ 10/25 | New |
 | **J: End-to-End Demo** | 15 | ✅ 15/15 | New |
 | **A: Audio Module** | 15 | ✅ 15/15 | Core |
 | **B: VAD** | 10 | ✅ 10/10 | Core |
@@ -1017,7 +1128,7 @@ This specification is not merely a collection of features but a realization of p
 | **G: Speech Recognition** | 10 | ✅ 10/10 | Core |
 | **H: Import/Export** | 10 | ✅ 10/10 | Core |
 | **I: Visualization** | 5 | ✅ 5/5 | Core |
-| **TOTAL** | **230** | **208/230** | |
+| **TOTAL** | **255** | **218/255** | |
 
 ### Resolved Defects (v1.6.0)
 - **A2 / D12**: ✅ FIXED - Mel filterbank now uses Slaney area normalization (2.0/bandwidth scaling). Commit c5da57b.

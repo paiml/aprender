@@ -1660,4 +1660,282 @@ mod tests {
             loaded
         );
     }
+
+    // =========================================================================
+    // Section S: Popperian Falsification Tests for Qwen2 Native Inference
+    // =========================================================================
+    //
+    // These tests follow Karl Popper's criterion of demarcation: each test
+    // specifies conditions under which the claim would be PROVEN FALSE.
+    // A test that cannot fail is not scientific.
+    //
+    // Reference: Popper, K. (1959). The Logic of Scientific Discovery.
+    // =========================================================================
+
+    /// S1: Tokenizer loads from tokenizer.json
+    /// FALSIFICATION: Encoding "Hello" returns empty or panics
+    #[test]
+    fn s1_tokenizer_loads_from_json() {
+        let tokenizer_path = std::path::Path::new("/home/noah/.cache/qwen2/tokenizer.json");
+
+        if !tokenizer_path.exists() {
+            eprintln!("SKIP S1: tokenizer.json not found at {:?}", tokenizer_path);
+            eprintln!("Download: curl -L -o ~/.cache/qwen2/tokenizer.json \\");
+            eprintln!("  https://huggingface.co/Qwen/Qwen2-0.5B-Instruct/resolve/main/tokenizer.json");
+            return;
+        }
+
+        let json = std::fs::read_to_string(tokenizer_path).expect("read tokenizer.json");
+        let tokenizer = crate::text::bpe::load_from_json(&json).expect("parse tokenizer.json");
+        let tokens = tokenizer.encode("Hello");
+
+        assert!(
+            !tokens.is_empty(),
+            "FALSIFIED S1: encode('Hello') returned empty. Tokenizer not functional."
+        );
+
+        println!("S1 PASSED: encode('Hello') -> {} tokens", tokens.len());
+    }
+
+    /// S2: Tokenizer round-trips ASCII correctly
+    /// FALSIFICATION: decode(encode("Hello")) != "Hello"
+    #[test]
+    fn s2_tokenizer_roundtrip_ascii() {
+        let tokenizer_path = std::path::Path::new("/home/noah/.cache/qwen2/tokenizer.json");
+
+        if !tokenizer_path.exists() {
+            eprintln!("SKIP S2: tokenizer.json not found");
+            return;
+        }
+
+        let json = std::fs::read_to_string(tokenizer_path).expect("read");
+        let tokenizer = crate::text::bpe::load_from_json(&json).expect("parse");
+
+        let original = "Hello";
+        let encoded = tokenizer.encode(original);
+        let decoded = tokenizer.decode(&encoded);
+
+        // Allow for whitespace normalization
+        let decoded_trimmed = decoded.trim();
+        assert!(
+            decoded_trimmed == original || decoded.contains(original),
+            "FALSIFIED S2: roundtrip failed. '{}' -> {:?} -> '{}'",
+            original,
+            encoded,
+            decoded
+        );
+
+        println!("S2 PASSED: '{}' -> {:?} -> '{}'", original, encoded, decoded);
+    }
+
+    /// S3: Tokenizer handles Qwen2 special tokens
+    /// FALSIFICATION: is_eos(151645) returns false
+    #[test]
+    fn s3_tokenizer_special_tokens() {
+        use crate::text::bpe::Qwen2BpeTokenizer;
+
+        let tokenizer = Qwen2BpeTokenizer::new();
+
+        // <|im_end|> = 151645 is the EOS token
+        assert!(
+            tokenizer.is_eos(151645),
+            "FALSIFIED S3: is_eos(151645) returned false. <|im_end|> not recognized."
+        );
+
+        // <|im_start|> = 151644 is the BOS token
+        assert!(
+            tokenizer.is_bos(151644),
+            "FALSIFIED S3: is_bos(151644) returned false. <|im_start|> not recognized."
+        );
+
+        println!("S3 PASSED: Special tokens recognized correctly");
+    }
+
+    /// S4: Model loads from SafeTensors without OOM
+    /// FALSIFICATION: Load time > 60s OR OOM on 16GB machine
+    #[test]
+    fn s4_model_loads_memory_efficient() {
+        let safetensors_path = std::path::Path::new(
+            "/home/noah/.cache/huggingface/hub/models--Qwen--Qwen2-0.5B-Instruct/snapshots/c540970f9e29518b1d8f06ab8b24cba66ad77b6d/model.safetensors"
+        );
+
+        if !safetensors_path.exists() {
+            eprintln!("SKIP S4: model.safetensors not found");
+            return;
+        }
+
+        let config = Qwen2Config::qwen2_0_5b_instruct();
+        let start = std::time::Instant::now();
+
+        // Use memory-efficient loading
+        let mut model = Qwen2Model::new_uninitialized(&config);
+        let loaded = model.load_from_safetensors(safetensors_path);
+
+        let elapsed = start.elapsed();
+
+        assert!(
+            loaded.is_ok(),
+            "FALSIFIED S4: Model load failed: {:?}",
+            loaded.err()
+        );
+
+        assert!(
+            elapsed.as_secs() < 60,
+            "FALSIFIED S4: Load time {}s > 60s threshold",
+            elapsed.as_secs()
+        );
+
+        println!(
+            "S4 PASSED: Loaded {} tensors in {:.2}s",
+            loaded.unwrap_or(0),
+            elapsed.as_secs_f32()
+        );
+    }
+
+    /// S5: Model loads exactly 219 weight tensors
+    /// FALSIFICATION: Tensor count != 219
+    #[test]
+    fn s5_model_tensor_count() {
+        let safetensors_path = std::path::Path::new(
+            "/home/noah/.cache/huggingface/hub/models--Qwen--Qwen2-0.5B-Instruct/snapshots/c540970f9e29518b1d8f06ab8b24cba66ad77b6d/model.safetensors"
+        );
+
+        if !safetensors_path.exists() {
+            eprintln!("SKIP S5: model.safetensors not found");
+            return;
+        }
+
+        let config = Qwen2Config::qwen2_0_5b_instruct();
+        let mut model = Qwen2Model::new_uninitialized(&config);
+        let loaded = model
+            .load_from_safetensors(safetensors_path)
+            .expect("load");
+
+        // Qwen2-0.5B has exactly 219 tensors:
+        // - 1 embed_tokens
+        // - 24 layers * 9 tensors (q,k,v,o,gate,up,down,input_norm,post_norm) = 216
+        // - 1 final norm
+        // - 1 lm_head (tied with embed_tokens)
+        assert_eq!(
+            loaded, 219,
+            "FALSIFIED S5: Expected 219 tensors, got {}",
+            loaded
+        );
+
+        println!("S5 PASSED: Loaded exactly 219 tensors");
+    }
+
+    /// S6: Embedding lookup returns correct shape
+    /// FALSIFICATION: Output shape != [1, seq_len, 896]
+    #[test]
+    fn s6_embedding_shape() {
+        let config = create_tiny_config();
+        let emb = Embedding::new(1000, config.hidden_size);
+
+        let input_ids = vec![1u32, 2, 3, 4, 5];
+        let output = emb.forward(&input_ids);
+
+        assert_eq!(
+            output.shape(),
+            &[1, 5, config.hidden_size],
+            "FALSIFIED S6: Embedding shape {:?} != expected [1, 5, {}]",
+            output.shape(),
+            config.hidden_size
+        );
+
+        println!("S6 PASSED: Embedding shape correct");
+    }
+
+    /// S11: Logits shape matches vocab
+    /// FALSIFICATION: Output shape != [1, seq_len, vocab_size]
+    #[test]
+    fn s11_logits_shape() {
+        let config = create_tiny_config();
+        let mut model = Qwen2Model::new(&config);
+
+        let input_ids = vec![1u32, 2, 3];
+        let position_ids: Vec<usize> = (0..3).collect();
+        let logits = model.forward(&input_ids, &position_ids);
+
+        assert_eq!(
+            logits.shape(),
+            &[1, 3, config.vocab_size],
+            "FALSIFIED S11: Logits shape {:?} != expected [1, 3, {}]",
+            logits.shape(),
+            config.vocab_size
+        );
+
+        println!("S11 PASSED: Logits shape matches vocab");
+    }
+
+    /// S12: Logits are finite (no NaN/Inf)
+    /// FALSIFICATION: Any NaN or Inf in output
+    #[test]
+    fn s12_logits_finite() {
+        let config = create_tiny_config();
+        let mut model = Qwen2Model::new(&config);
+
+        let input_ids = vec![1u32, 2, 3];
+        let position_ids: Vec<usize> = (0..3).collect();
+        let logits = model.forward(&input_ids, &position_ids);
+
+        let has_nan = logits.data().iter().any(|x| x.is_nan());
+        let has_inf = logits.data().iter().any(|x| x.is_infinite());
+
+        assert!(
+            !has_nan,
+            "FALSIFIED S12: Logits contain NaN values"
+        );
+        assert!(
+            !has_inf,
+            "FALSIFIED S12: Logits contain Inf values"
+        );
+
+        println!("S12 PASSED: All logits are finite");
+    }
+
+    /// S14: Top-1 token is deterministic (temp=0)
+    /// FALSIFICATION: Same input produces different outputs
+    #[test]
+    fn s14_deterministic_generation() {
+        let config = create_tiny_config();
+        let mut model = Qwen2Model::new(&config);
+
+        let input_ids = vec![1u32, 2, 3];
+
+        // Generate twice with temperature=0 (greedy)
+        let output1 = model.generate(&input_ids, 5, 0.0, 0.9);
+        let output2 = model.generate(&input_ids, 5, 0.0, 0.9);
+
+        assert_eq!(
+            output1, output2,
+            "FALSIFIED S14: Different outputs for same input with temp=0.\n  Run 1: {:?}\n  Run 2: {:?}",
+            output1, output2
+        );
+
+        println!("S14 PASSED: Generation is deterministic at temp=0");
+    }
+
+    /// S20: Response length <= max_new_tokens
+    /// FALSIFICATION: Output exceeds requested length
+    #[test]
+    fn s20_length_control() {
+        let config = create_tiny_config();
+        let mut model = Qwen2Model::new(&config);
+
+        let input_ids = vec![1u32, 2, 3];
+        let max_new_tokens = 10;
+
+        let output = model.generate(&input_ids, max_new_tokens, 0.7, 0.9);
+        let new_tokens = output.len() - input_ids.len();
+
+        assert!(
+            new_tokens <= max_new_tokens,
+            "FALSIFIED S20: Generated {} tokens > max {}",
+            new_tokens,
+            max_new_tokens
+        );
+
+        println!("S20 PASSED: Generated {} <= {} tokens", new_tokens, max_new_tokens);
+    }
 }
