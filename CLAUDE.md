@@ -71,6 +71,92 @@ pmat tdg . --include-components              # TDG score (target: A+ = 95.0+)
 ### Banned Dependencies
 serde, rayon, tokio, thiserror, ndarray, polars, arrow - see spec for rationale
 
+## ⚠️ CRITICAL: Realizar-First Architecture (v2.0.0)
+
+**ALL inference and serving code MUST use the `realizar` crate. The `aprender` crate is for TRAINING ONLY.**
+
+### Responsibility Matrix
+
+| Responsibility | aprender | realizar | trueno |
+|---------------|----------|----------|--------|
+| **Model Training** | ✅ Primary | ❌ Never | Compute |
+| **Autograd/Backprop** | ✅ Primary | ❌ Never | ❌ |
+| **.apr Format R/W** | ✅ Primary | Read-only | ❌ |
+| **Model Serving** | ❌ **FORBIDDEN** | ✅ Primary | Compute |
+| **HTTP/REST API** | ❌ Never | ✅ Primary | ❌ |
+| **KV Cache** | ❌ Never | ✅ Primary | Storage |
+| **GGUF/SafeTensors Loading** | ❌ Never | ✅ Primary | ❌ |
+| **CUDA/GPU Inference** | ❌ Never | ✅ Primary | Kernels |
+| **Tokenizers (Inference)** | ❌ Never | ✅ Primary | ❌ |
+
+### ❌ WRONG - DO NOT DO THIS
+
+```rust
+// ❌ FORBIDDEN - bypasses realizar, 0.3 tok/s
+use aprender::models::Qwen2Model;
+let model = Qwen2Model::new_uninitialized(&config);
+model.load_from_safetensors(&path)?;
+let output = model.generate(&input_ids, 32, 0.7, 0.9);  // SLOW!
+```
+
+### ✅ CORRECT - Use realizar
+
+```rust
+// ✅ CORRECT - uses realizar, 225+ tok/s
+use realizar::Model;
+let model = Model::load_safetensors(&path)?;
+let output = model.generate(&input_ids, config)?;  // FAST!
+```
+
+### ✅ BEST - Use apr CLI
+
+```bash
+# ✅ BEST - apr CLI uses realizar automatically
+cargo run --bin apr --features inference -- run model.safetensors \
+    --prompt "What is 2+2?" --max-tokens 32
+```
+
+### Feature Flag Requirement
+
+The `inference` feature MUST be enabled for any serving/inference:
+
+```toml
+# crates/apr-cli/Cargo.toml
+[features]
+default = ["hf-hub", "safetensors-compare", "inference"]  # inference NOW DEFAULT
+inference = ["realizar", "tokio", "axum"]
+```
+
+### Performance Targets
+
+| Path | Throughput | Status |
+|------|------------|--------|
+| aprender (autograd) | 0.3 tok/s | ❌ FORBIDDEN for inference |
+| realizar (optimized) | 225+ tok/s | ✅ REQUIRED |
+| realizar + CUDA | 500+ tok/s | ✅ RECOMMENDED |
+
+### Profiling Before Optimization
+
+**MANDATORY**: Always profile with `apr profile` before optimizing:
+
+```bash
+apr profile model.safetensors  # Shows Roofline analysis
+apr bench model.safetensors    # Shows tok/s throughput
+apr trace model.safetensors    # Shows per-layer timing
+```
+
+If profiler shows "aprender" in hotspots, you're using the WRONG path.
+
+### Code Scheduled for Deletion
+
+| Module | Status |
+|--------|--------|
+| `src/models/qwen2/mod.rs::generate()` | ⚠️ DELETE |
+| `src/models/qwen2/mod.rs::forward()` | ⚠️ DELETE |
+| `examples/qwen_inference.rs` (direct) | ⚠️ REWRITE to use apr CLI |
+
+See `docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md` Section 2 for full details.
+
 ### Shell Script Quality (bashrs)
 
 **CRITICAL: Use bashrs, NOT shellcheck for shell script linting.**
