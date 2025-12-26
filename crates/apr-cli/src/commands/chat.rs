@@ -355,30 +355,32 @@ mod realizar_chat {
         }
 
         fn generate_gguf(&self, prompt: &[u32], config: &ChatConfig) -> Result<Vec<u32>, String> {
-            use realizar::gguf::{GGUFModel, QuantizedGGUFTransformer, QuantizedGenerateConfig};
+            use realizar::gguf::{MappedGGUFModel, OwnedQuantizedModel, QuantizedGenerateConfig};
 
-            // Note: OwnedQuantizedModel has proper attention but panics on GQA models (TinyLlama)
-            // The causal_attention function doesn't handle num_kv_heads != num_heads correctly
-            // Fall back to QuantizedGGUFTransformer which has simplified attention but works
-            let gguf = GGUFModel::from_bytes(&self.model_bytes)
-                .map_err(|e| format!("Failed to parse GGUF: {e}"))?;
+            // Use MappedGGUFModel -> OwnedQuantizedModel for proper attention
+            // This has RoPE position encoding, causal mask, and GQA support
+            let mapped = MappedGGUFModel::from_path(&self.model_path)
+                .map_err(|e| format!("Failed to mmap GGUF: {e}"))?;
 
-            let transformer = QuantizedGGUFTransformer::from_gguf(&gguf, &self.model_bytes)
-                .map_err(|e| format!("Failed to create GGUF transformer: {e}"))?;
+            let model = OwnedQuantizedModel::from_mapped(&mapped)
+                .map_err(|e| format!("Failed to create GGUF model: {e}"))?;
 
             // TinyLlama-1.1B without KV cache is O(n²) - limit tokens for CPU inference
-            // Note: Simplified attention (no RoPE/causal mask) - output quality is limited
             let practical_max = config.max_tokens.min(16); // Limit to 16 tokens on CPU
 
-            let is_gqa = transformer.config.num_kv_heads < transformer.config.num_heads;
-            let gqa_note = if is_gqa { " (GQA model - simplified attention)" } else { "" };
+            let is_gqa = model.config.num_kv_heads < model.config.num_heads;
+            let gqa_note = if is_gqa {
+                format!(" (GQA: {} kv_heads)", model.config.num_kv_heads)
+            } else {
+                String::new()
+            };
 
             println!(
                 "{}",
                 format!(
                     "[GGUF: {} layers, {} hidden - generating up to {} tokens (CPU){}...]",
-                    transformer.config.num_layers,
-                    transformer.config.hidden_dim,
+                    model.config.num_layers,
+                    model.config.hidden_dim,
                     practical_max,
                     gqa_note
                 )
@@ -392,7 +394,7 @@ mod realizar_chat {
                 ..Default::default()
             };
 
-            transformer
+            model
                 .generate(prompt, &gen_config)
                 .map_err(|e| format!("GGUF generate failed: {e}"))
         }
