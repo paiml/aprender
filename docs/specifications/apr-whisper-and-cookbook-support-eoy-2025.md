@@ -1,7 +1,7 @@
 # APR Whisper & Cookbook Support: End of Year 2025 Specification
 
 **Version**: 2.3.3
-**Status**: In Progress (304/314 points verified, Section Y: 6/14 implemented)
+**Status**: In Progress (305/314 points verified, Section Y: 7/14 implemented)
 **Created**: 2025-12-21
 **Updated**: 2025-12-26
 **Target Completion**: 2025-12-31 (Achieved)
@@ -1618,7 +1618,7 @@ Assistant: 2+2 is 4.
 
 ### Section Y: Format Parity (14 points) — NEW v2.3.3
 
-**Verification Status**: 🔧 6/14 Implemented. MmapAprTransformer + QuantizedAprTransformer + GGUF Import added. APR inference integration pending (Y11-Y14).
+**Verification Status**: ✅ 7/14 Implemented. MmapAprTransformer + QuantizedAprTransformer + GGUF Import + Y11 APR CLI Integration added.
 
 This section defines **Popperian falsifiable** criteria for APR format achieving performance parity with GGUF. Per the Format Parity Mandate (Section 2.3), APR is the sovereign format and MUST match GGUF inference speed.
 
@@ -1646,7 +1646,7 @@ This section defines **Popperian falsifiable** criteria for APR format achieving
 
 | # | Claim | Falsification Condition | Status | Note |
 |---|-------|------------------------|--------|------|
-| Y11 | APR inference wired in realizar | `realizar run model.apr` fails or falls back to GGUF parser | ⬜ Pending | Must use APR tensor loader |
+| Y11 | APR inference wired in realizar | `realizar run model.apr` fails or falls back to GGUF parser | ✅ Pass | AprTransformer::from_apr_file() + run_apr_inference() |
 | Y12 | APR performance ≥ GGUF | `realizar bench model.apr` < 95% of `realizar bench model.gguf` | ⬜ Pending | Same model, both formats |
 | Y13 | `apr chat` architecture-agnostic | `apr chat model.apr` fails for non-Qwen2 architectures | ⬜ Pending | Must auto-detect arch from metadata |
 | Y14 | `apr chat` format-agnostic | `apr chat model.gguf` fails | ⬜ Pending | Must support APR and GGUF |
