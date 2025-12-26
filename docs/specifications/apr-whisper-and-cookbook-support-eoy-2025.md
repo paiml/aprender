@@ -1,7 +1,7 @@
 # APR Whisper & Cookbook Support: End of Year 2025 Specification
 
-**Version**: 2.3.2
-**Status**: In Progress (304/310 points verified, Section Y: 6/10 implemented)
+**Version**: 2.3.3
+**Status**: In Progress (304/314 points verified, Section Y: 6/14 implemented)
 **Created**: 2025-12-21
 **Updated**: 2025-12-26
 **Target Completion**: 2025-12-31 (Achieved)
@@ -1616,9 +1616,9 @@ User: What is 2+2?
 Assistant: 2+2 is 4.
 ```
 
-### Section Y: Format Parity (10 points) — NEW v2.3
+### Section Y: Format Parity (14 points) — NEW v2.3.3
 
-**Verification Status**: ✅ 6/10 Implemented. MmapAprTransformer + QuantizedAprTransformer + GGUF Import added.
+**Verification Status**: 🔧 6/14 Implemented. MmapAprTransformer + QuantizedAprTransformer + GGUF Import added. APR inference integration pending (Y11-Y14).
 
 This section defines **Popperian falsifiable** criteria for APR format achieving performance parity with GGUF. Per the Format Parity Mandate (Section 2.3), APR is the sovereign format and MUST match GGUF inference speed.
 
@@ -1642,7 +1642,32 @@ This section defines **Popperian falsifiable** criteria for APR format achieving
 | Y9 | APR load time ≤ GGUF load time | APR load > 1.2x GGUF load time | 🔧 Infra | benchmark_load() ready |
 | Y10 | APR peak memory ≤ GGUF | APR memory > 1.1x GGUF memory | 🔧 Infra | memory measurement ready |
 
-#### Y.3 Test Strategy
+#### Y.3 APR Inference Integration (4 points) — NEW v2.3.3
+
+| # | Claim | Falsification Condition | Status | Note |
+|---|-------|------------------------|--------|------|
+| Y11 | APR inference wired in realizar | `realizar run model.apr` fails or falls back to GGUF parser | ⬜ Pending | Must use APR tensor loader |
+| Y12 | APR performance ≥ GGUF | `realizar bench model.apr` < 95% of `realizar bench model.gguf` | ⬜ Pending | Same model, both formats |
+| Y13 | `apr chat` architecture-agnostic | `apr chat model.apr` fails for non-Qwen2 architectures | ⬜ Pending | Must auto-detect arch from metadata |
+| Y14 | `apr chat` format-agnostic | `apr chat model.gguf` fails | ⬜ Pending | Must support APR and GGUF |
+
+**Rationale**: Currently `apr chat` is hardcoded to Qwen2 and only APR. `realizar run` only supports GGUF inference (APR falls back to GGUF parser and fails). For sovereign APR format to be viable:
+
+1. **Y11**: `realizar` must have native APR inference path (not fallback to GGUF)
+2. **Y12**: APR must match or exceed GGUF performance (sovereign format cannot be slower)
+3. **Y13**: `apr chat` must detect architecture from model metadata (llama, qwen2, whisper, etc.)
+4. **Y14**: `apr chat` must support both formats seamlessly (user shouldn't care about format)
+
+```bash
+# All of these MUST work:
+apr chat tinyllama.apr "Hello"           # APR + Llama arch
+apr chat qwen.apr "Hello"                # APR + Qwen2 arch
+apr chat model.gguf "Hello"              # GGUF + auto-detect arch
+realizar run model.apr "Hello"           # Native APR inference
+realizar run model.gguf "Hello"          # Native GGUF inference
+```
+
+#### Y.4 Test Strategy
 
 ```rust
 // tests/format_parity_tests.rs
