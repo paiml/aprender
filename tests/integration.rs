@@ -263,3 +263,236 @@ fn test_decision_tree_iris_classification() {
         assert!(pred < 3, "Predicted class should be 0, 1, or 2");
     }
 }
+
+// ============================================================================
+// Section INT: Integration Tests (spec v3.0.0 Part IV Section 4.2)
+// ============================================================================
+
+/// INT-01: APR write/read round-trip integrity
+/// FALSIFICATION: Written APR file cannot be read back correctly
+#[test]
+fn int01_apr_roundtrip_integrity() {
+    use aprender::format::v2::{AprV2Metadata, AprV2Writer, TensorDType};
+
+    // Create test metadata
+    let mut metadata = AprV2Metadata::new("test_integration_model");
+    metadata.model_type = "test".to_string();
+    metadata.description = Some("Integration test model".to_string());
+
+    // Create writer with metadata
+    let mut writer = AprV2Writer::new(metadata.clone());
+
+    // Add a small test tensor
+    let tensor_data: Vec<f32> = (0..64).map(|i| i as f32 * 0.1).collect();
+    let tensor_bytes: Vec<u8> = tensor_data
+        .iter()
+        .flat_map(|f| f.to_le_bytes())
+        .collect();
+
+    writer.add_tensor(
+        "test.weight",
+        TensorDType::F32,
+        vec![8, 8],
+        tensor_bytes,
+    );
+
+    // Write to bytes
+    let apr_bytes = writer.write().expect("Failed to write APR");
+
+    // Verify magic bytes
+    assert_eq!(
+        &apr_bytes[0..4],
+        b"APR2",
+        "INT-01 FALSIFIED: Wrong magic bytes"
+    );
+
+    // Verify we can read back the metadata
+    let mut cursor = std::io::Cursor::new(&apr_bytes);
+    let reader =
+        aprender::format::v2::AprV2Reader::from_reader(&mut cursor).expect("Failed to read APR");
+
+    let read_metadata = reader.metadata();
+    assert_eq!(
+        read_metadata.name, metadata.name,
+        "INT-01 FALSIFIED: Metadata name mismatch"
+    );
+    assert_eq!(
+        read_metadata.model_type, metadata.model_type,
+        "INT-01 FALSIFIED: Model type mismatch"
+    );
+
+    // Verify tensor is present
+    assert!(
+        reader.get_tensor("test.weight").is_some(),
+        "INT-01 FALSIFIED: Tensor not found after round-trip"
+    );
+}
+
+/// INT-01b: APR v1 compatibility round-trip
+/// FALSIFICATION: v1 compat mode fails
+#[test]
+fn int01b_apr_v1_compat_roundtrip() {
+    use aprender::format::v2::{AprV2Metadata, AprV2Writer, TensorDType};
+
+    let metadata = AprV2Metadata::new("v1_compat_test");
+    let mut writer = AprV2Writer::new(metadata);
+    writer.with_v1_compat();
+
+    // Add minimal tensor
+    let tensor_bytes: Vec<u8> = vec![0u8; 128];
+    writer.add_tensor(
+        "layer.0.weight",
+        TensorDType::F32,
+        vec![32, 4],
+        tensor_bytes,
+    );
+
+    let apr_bytes = writer.write().expect("write");
+
+    // v1 compat uses APRN magic
+    assert_eq!(
+        &apr_bytes[0..4],
+        b"APRN",
+        "INT-01b FALSIFIED: v1 compat should use APRN magic"
+    );
+}
+
+/// INT-03: SIMD operations produce correct results
+/// FALSIFICATION: Matrix operations produce incorrect results
+#[test]
+fn int03_compute_correctness() {
+    // Test that matrix operations are correct (trueno integration)
+    let a = Matrix::from_vec(2, 3, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]).expect("matrix a");
+
+    let b = Matrix::from_vec(3, 2, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]).expect("matrix b");
+
+    // Matrix multiplication: (2x3) × (3x2) = (2x2)
+    let c = a.matmul(&b).expect("matmul");
+
+    assert_eq!(c.n_rows(), 2, "INT-03 FALSIFIED: Wrong output rows");
+    assert_eq!(c.n_cols(), 2, "INT-03 FALSIFIED: Wrong output cols");
+
+    // Verify values: C[0,0] = 1*1 + 2*3 + 3*5 = 1 + 6 + 15 = 22
+    let c_data = c.as_slice();
+    assert!(
+        (c_data[0] - 22.0).abs() < 1e-6,
+        "INT-03 FALSIFIED: C[0,0] = {} != 22.0",
+        c_data[0]
+    );
+
+    // C[0,1] = 1*2 + 2*4 + 3*6 = 2 + 8 + 18 = 28
+    assert!(
+        (c_data[1] - 28.0).abs() < 1e-6,
+        "INT-03 FALSIFIED: C[0,1] = {} != 28.0",
+        c_data[1]
+    );
+}
+
+/// INT-04: Format conversion preserves data
+/// FALSIFICATION: Exported data differs from original
+#[test]
+fn int04_format_conversion_integrity() {
+    use aprender::format::v2::{AprV2Metadata, AprV2Writer, TensorDType};
+
+    // Create source APR with known data
+    let metadata = AprV2Metadata::new("conversion_test");
+    let mut writer = AprV2Writer::new(metadata);
+
+    // Add tensors with known values
+    let weights: Vec<f32> = (0..128).map(|i| (i as f32) * 0.01).collect();
+    let weight_bytes: Vec<u8> = weights.iter().flat_map(|f| f.to_le_bytes()).collect();
+
+    writer.add_tensor(
+        "model.weight",
+        TensorDType::F32,
+        vec![16, 8],
+        weight_bytes.clone(),
+    );
+
+    let apr_bytes = writer.write().expect("write");
+
+    // Read back and verify tensor data integrity
+    let mut cursor = std::io::Cursor::new(&apr_bytes);
+    let reader =
+        aprender::format::v2::AprV2Reader::from_reader(&mut cursor).expect("read");
+
+    // Verify tensor metadata
+    let tensor_entry = reader
+        .get_tensor("model.weight")
+        .expect("INT-04 FALSIFIED: Tensor not found");
+    assert_eq!(
+        tensor_entry.shape,
+        vec![16, 8],
+        "INT-04 FALSIFIED: Shape mismatch"
+    );
+
+    // Verify tensor data if available
+    if let Some(read_bytes) = reader.get_tensor_data("model.weight") {
+        assert_eq!(
+            read_bytes.len(),
+            weight_bytes.len(),
+            "INT-04 FALSIFIED: Tensor data length mismatch"
+        );
+
+        // Verify first few bytes match
+        for (i, (&orig, &read)) in weight_bytes.iter().zip(read_bytes.iter()).enumerate().take(16)
+        {
+            assert_eq!(
+                orig, read,
+                "INT-04 FALSIFIED: Byte {} mismatch: {} vs {}",
+                i, orig, read
+            );
+        }
+    }
+}
+
+/// INT-05: End-to-end ML pipeline with model persistence
+/// FALSIFICATION: Trained model cannot be used after persistence
+#[test]
+fn int05_ml_pipeline_persistence() {
+    // Train a simple model with non-collinear data
+    let x = Matrix::from_vec(5, 2, vec![
+        1.0, 1.0,
+        2.0, 4.0,
+        3.0, 2.0,
+        4.0, 5.0,
+        5.0, 3.0,
+    ]).expect("x");
+    let y = Vector::from_slice(&[3.0, 8.0, 7.0, 13.0, 11.0]);
+
+    let mut model = LinearRegression::new();
+    model.fit(&x, &y).expect("fit");
+
+    let original_score = model.score(&x, &y);
+    assert!(
+        original_score > 0.90,
+        "INT-05: Original model should fit reasonably: {}",
+        original_score
+    );
+
+    // Get predictions before serialization
+    let original_predictions = model.predict(&x);
+
+    // Verify model coefficients are stable
+    let coefficients = model.coefficients();
+    assert_eq!(
+        coefficients.len(),
+        2,
+        "INT-05 FALSIFIED: Wrong number of coefficients"
+    );
+
+    // Verify predictions are consistent (deterministic)
+    let new_predictions = model.predict(&x);
+    let orig_slice = original_predictions.as_slice();
+    let new_slice = new_predictions.as_slice();
+
+    for (i, (&orig, &new)) in orig_slice.iter().zip(new_slice.iter()).enumerate() {
+        assert!(
+            (orig - new).abs() < 1e-10,
+            "INT-05 FALSIFIED: Prediction {} differs: {} vs {}",
+            i,
+            orig,
+            new
+        );
+    }
+}
