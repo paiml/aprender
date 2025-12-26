@@ -2386,18 +2386,16 @@ fn y1_apr_loads_via_realizar_mmap() {
   - Fix: `apply_rope()` now takes `num_heads_in_x` param for GQA-aware RoPE
   - TinyLlama 1.1B (32 q_heads, 4 kv_heads) no longer panics
   - **Root cause was**: `k[k_start + d]` used hidden_dim (2048) but k only has kv_dim (256) per position
-- **2025-12-26**: ⚠️ **FFN Gate (SwiGLU) missing in OwnedQuantizedModel** (known limitation)
-  - **Status**: BLOCKING for text quality - model runs but produces garbage output
-  - **Issue**: LLaMA/TinyLlama use SwiGLU FFN: `down(gate(x) * SiLU(up(x)))`
-  - **Current**: `OwnedQuantizedLayer` only has `ffn_up_weight` and `ffn_down_weight`
-  - **Missing**: `ffn_gate_weight` field and gated activation in forward()
-  - **Fix required**:
-    1. Add `ffn_gate_weight: Option<OwnedQuantizedTensor>` to `OwnedQuantizedLayer`
-    2. Load `blk.*.ffn_gate.weight` from GGUF
-    3. Update forward: `let gate = self.ffn_gate_weight.as_ref().map(|g| matmul(hidden, g))`
-    4. Apply SiLU activation: `let activated = gate * silu(up)`
-    5. Final: `output = matmul(activated, down)`
-  - **Workaround**: Use `QuantizedGGUFTransformer` which delegates to trueno FFN ops
+- **2025-12-26**: ✅ **FFN Gate (SwiGLU) FIXED** (realizar commit d58633d)
+  - **EXTREME TDD**: 8 Popperian falsification tests written before implementation
+  - Added `ffn_gate_weight` and `ffn_gate_bias` to `OwnedQuantizedLayer`
+  - Added `ffn_gate_weight` and `ffn_gate_bias` to `QuantizedGGUFTransformerLayer`
+  - Loads `blk.*.ffn_gate.weight` from GGUF metadata
+  - Implemented SiLU activation: `silu(x) = x * sigmoid(x)`
+  - Forward now uses SwiGLU when gate present: `output = down(gate(x) * silu(up(x)))`
+  - Falls back to GELU for non-SwiGLU models (phi-2, GPT-2)
+  - Tests: FFN-01 to FFN-08 in `tests/swiglu_ffn_tests.rs`
+  - TinyLlama-1.1B and other LLaMA-family models now produce coherent output
 - **2025-12-26**: ✅ **SPEC COMPLETE: 313/313 points verified**
   - GPU benchmarks deferred to [GH-141](https://github.com/paiml/aprender/issues/141)
   - Section Y renumbered: Y7 (GPU) removed, Y8-Y14 → Y7-Y13
