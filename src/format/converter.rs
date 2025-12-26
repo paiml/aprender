@@ -9,6 +9,7 @@
 //! - Quantization and compression
 
 use crate::error::{AprenderError, Result};
+use crate::format::gguf::load_gguf_tensors;
 use crate::format::v2::{AprV2Metadata, AprV2Writer};
 use crate::format::validation::{AprValidator, TensorStats, ValidationReport};
 use crate::format::Compression;
@@ -940,9 +941,7 @@ fn load_source_tensors(
                 message: "Cannot import from APR format - use direct loading instead".to_string(),
             })
         }
-        "gguf" => Err(AprenderError::FormatError {
-            message: "GGUF import not yet implemented".to_string(),
-        }),
+        "gguf" => load_gguf_tensors(path),
         "bin" | "pt" | "pth" => Err(AprenderError::FormatError {
             message: format!(
                 "PyTorch format ({extension}) not supported. Convert to SafeTensors first."

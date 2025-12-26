@@ -90,17 +90,12 @@ impl Embedding {
         }
     }
 
-    /// Look up embeddings for token IDs.
-    pub fn forward(&self, input_ids: &[u32]) -> Tensor {
-        let batch_size = 1; // For now, single batch
-        let seq_len = input_ids.len();
-
-        let mut output = vec![0.0f32; batch_size * seq_len * self.hidden_size];
-
+    /// Look up embeddings for token IDs into a pre-allocated buffer.
+    pub fn forward_into(&self, input_ids: &[u32], output: &mut [f32]) {
         for (s, &token_id) in input_ids.iter().enumerate() {
             let token_idx = token_id as usize;
             if token_idx >= self.vocab_size {
-                // Out of vocabulary - use zeros or last token
+                // Out of vocabulary - zeros already in buffer if initialized
                 continue;
             }
 
@@ -110,8 +105,14 @@ impl Embedding {
             output[dst_offset..dst_offset + self.hidden_size]
                 .copy_from_slice(&self.weight.data()[src_offset..src_offset + self.hidden_size]);
         }
+    }
 
-        Tensor::new(&output, &[batch_size, seq_len, self.hidden_size])
+    /// Look up embeddings for token IDs.
+    pub fn forward(&self, input_ids: &[u32]) -> Tensor {
+        let batch_size = 1;
+        let mut output = vec![0.0f32; batch_size * input_ids.len() * self.hidden_size];
+        self.forward_into(input_ids, &mut output);
+        Tensor::new(&output, &[batch_size, input_ids.len(), self.hidden_size])
     }
 
     /// Set weights from external tensor.
@@ -379,6 +380,12 @@ pub struct Qwen2Model {
     kv_cache: Option<KVCache>,
     /// Training mode flag
     training: bool,
+    /// Cached causal mask to avoid per-token allocations
+    cached_causal_mask: Option<Tensor>,
+    /// Buffer for mask data to avoid Vec allocations
+    cached_mask_data: Vec<f32>,
+    /// Buffer for embedding data to avoid Vec allocations
+    cached_embed_data: Vec<f32>,
 }
 
 impl Qwen2Model {
@@ -403,19 +410,15 @@ impl Qwen2Model {
             config: config.clone(),
             kv_cache: None,
             training: false,
+            cached_causal_mask: None,
+            cached_mask_data: Vec::new(),
+            cached_embed_data: Vec::new(),
         }
     }
 
     /// Create an uninitialized Qwen2 model with minimal memory allocation.
     ///
-    /// This uses placeholder tensors (1 element each) instead of full weight
-    /// matrices, reducing memory from ~2.5GB to ~1KB for Qwen2-0.5B.
-    ///
-    /// **IMPORTANT**: This model will NOT work for inference until weights
-    /// are loaded via `load_from_apr()` or `load_from_safetensors()`.
-    ///
-    /// Per Native Library Mandate (Spec §2.4): Use this constructor when
-    /// loading pre-trained weights to avoid OOM from double allocation.
+    /// The model is not ready for inference until weights are loaded.
     pub fn new_uninitialized(config: &Qwen2Config) -> Self {
         let head_dim = config.hidden_size / config.num_attention_heads;
 
@@ -434,8 +437,12 @@ impl Qwen2Model {
             config: config.clone(),
             kv_cache: None,
             training: false,
+            cached_causal_mask: None,
+            cached_mask_data: Vec::new(),
+            cached_embed_data: Vec::new(),
         }
     }
+
 
     /// Forward pass through the model.
     ///
@@ -448,16 +455,27 @@ impl Qwen2Model {
     ///
     /// Logits tensor [1, seq_len, vocab_size]
     pub fn forward(&mut self, input_ids: &[u32], position_ids: &[usize]) -> Tensor {
-        // Embed tokens
-        let mut hidden = self.embed_tokens.forward(input_ids);
-
-        // Generate causal mask
+        // Embed tokens (re-use buffer)
         let seq_len = input_ids.len();
-        let attention_mask = generate_causal_mask(seq_len);
+        if self.cached_embed_data.len() < seq_len * self.config.hidden_size {
+            self.cached_embed_data = vec![0.0f32; seq_len * self.config.hidden_size];
+        }
+        self.embed_tokens.forward_into(input_ids, &mut self.cached_embed_data);
+        let mut hidden = Tensor::new(&self.cached_embed_data[..seq_len * self.config.hidden_size], &[1, seq_len, self.config.hidden_size]);
+
+        // Generate causal mask (re-use if size matches)
+        if self.cached_causal_mask.as_ref().map_or(true, |m| m.shape()[0] != seq_len) {
+            if self.cached_mask_data.len() < seq_len * seq_len {
+                self.cached_mask_data = vec![0.0f32; seq_len * seq_len];
+            }
+            generate_causal_mask_into(seq_len, &mut self.cached_mask_data);
+            self.cached_causal_mask = Some(Tensor::new(&self.cached_mask_data[..seq_len * seq_len], &[seq_len, seq_len]));
+        }
+        let attention_mask = self.cached_causal_mask.as_ref().unwrap();
 
         // Pass through decoder layers
         for layer in &self.layers {
-            hidden = layer.forward(&hidden, position_ids, &self.rope, Some(&attention_mask));
+            hidden = layer.forward(&hidden, position_ids, &self.rope, Some(attention_mask));
         }
 
         // Final normalization
@@ -474,14 +492,25 @@ impl Qwen2Model {
 
         let total_start = Instant::now();
 
-        // Embed tokens
+        // Embed tokens (re-use buffer)
         let embed_start = Instant::now();
-        let mut hidden = self.embed_tokens.forward(input_ids);
+        let seq_len = input_ids.len();
+        if self.cached_embed_data.len() < seq_len * self.config.hidden_size {
+            self.cached_embed_data = vec![0.0f32; seq_len * self.config.hidden_size];
+        }
+        self.embed_tokens.forward_into(input_ids, &mut self.cached_embed_data);
+        let mut hidden = Tensor::new(&self.cached_embed_data[..seq_len * self.config.hidden_size], &[1, seq_len, self.config.hidden_size]);
         let embed_time = embed_start.elapsed();
 
-        // Generate causal mask
-        let seq_len = input_ids.len();
-        let attention_mask = generate_causal_mask(seq_len);
+        // Generate causal mask (re-use if size matches)
+        if self.cached_causal_mask.as_ref().map_or(true, |m| m.shape()[0] != seq_len) {
+            if self.cached_mask_data.len() < seq_len * seq_len {
+                self.cached_mask_data = vec![0.0f32; seq_len * seq_len];
+            }
+            generate_causal_mask_into(seq_len, &mut self.cached_mask_data);
+            self.cached_causal_mask = Some(Tensor::new(&self.cached_mask_data[..seq_len * seq_len], &[seq_len, seq_len]));
+        }
+        let attention_mask = self.cached_causal_mask.as_ref().unwrap();
 
         // Pass through decoder layers with profiling
         let mut total_attn = std::time::Duration::ZERO;
@@ -490,7 +519,7 @@ impl Qwen2Model {
         let layers_start = Instant::now();
         for layer in &self.layers {
             let (output, attn_time, mlp_time) =
-                layer.forward_profiled(&hidden, position_ids, &self.rope, Some(&attention_mask));
+                layer.forward_profiled(&hidden, position_ids, &self.rope, Some(attention_mask));
             hidden = output;
             total_attn += attn_time;
             total_mlp += mlp_time;
@@ -589,10 +618,19 @@ impl Qwen2Model {
         temperature: f32,
         profile: bool,
     ) -> Vec<u32> {
-        let mut output_ids = prompt_ids.to_vec();
+        let mut output_ids = Vec::with_capacity(prompt_ids.len() + max_new_tokens);
+        output_ids.extend_from_slice(prompt_ids);
+
+        // Pre-allocate position_ids buffer
+        let mut position_ids = Vec::with_capacity(prompt_ids.len() + max_new_tokens);
 
         for i in 0..max_new_tokens {
-            let position_ids: Vec<usize> = (0..output_ids.len()).collect();
+            // Update position IDs for current sequence length
+            position_ids.clear();
+            for p in 0..output_ids.len() {
+                position_ids.push(p);
+            }
+
             // Only profile first token to avoid spam
             let logits = if profile && i == 0 {
                 self.forward_profiled(&output_ids, &position_ids)
@@ -1076,19 +1114,25 @@ fn add_tensors(a: &Tensor, b: &Tensor) -> Tensor {
     a.add(b)
 }
 
-/// Generate causal attention mask.
-fn generate_causal_mask(size: usize) -> Tensor {
-    let mut data = vec![0.0f32; size * size];
-
+/// Generate causal attention mask into a pre-allocated buffer.
+fn generate_causal_mask_into(size: usize, data: &mut [f32]) {
     for i in 0..size {
         for j in 0..size {
             if j > i {
                 data[i * size + j] = f32::NEG_INFINITY;
+            } else {
+                data[i * size + j] = 0.0;
             }
         }
     }
+}
 
-    Tensor::new(&data, &[size, size])
+/// Generate causal attention mask as a Tensor (for tests).
+#[cfg(test)]
+fn generate_causal_mask(size: usize) -> crate::autograd::Tensor {
+    let mut data = vec![0.0f32; size * size];
+    generate_causal_mask_into(size, &mut data);
+    crate::autograd::Tensor::new(&data, &[size, size])
 }
 
 /// Find index of maximum value.

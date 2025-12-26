@@ -1,6 +1,6 @@
-//! GGUF Export (spec §7.2)
+//! GGUF Import/Export (spec §7.2)
 //!
-//! Pure Rust writer for GGUF format (llama.cpp compatible).
+//! Pure Rust reader/writer for GGUF format (llama.cpp compatible).
 //! WASM compatible - no C/C++ dependencies.
 //!
 //! # Format Structure
@@ -22,7 +22,10 @@
 //!
 //! Reference: Gerganov, G. (2023). GGUF Format.
 
-use std::io::{self, Write};
+use std::collections::BTreeMap;
+use std::fs::File;
+use std::io::{self, Read, Write};
+use std::path::Path;
 
 use crate::error::{AprenderError, Result};
 
@@ -463,6 +466,413 @@ pub fn export_tensors_to_gguf<W: Write>(
     }
 
     Ok(())
+}
+
+// ============================================================================
+// GGUF Reading/Import API
+// ============================================================================
+
+/// Read a u32 from bytes at offset
+fn read_u32(data: &[u8], offset: usize) -> Result<u32> {
+    if offset + 4 > data.len() {
+        return Err(AprenderError::FormatError {
+            message: format!("Unexpected EOF reading u32 at offset {offset}"),
+        });
+    }
+    Ok(u32::from_le_bytes([
+        data[offset],
+        data[offset + 1],
+        data[offset + 2],
+        data[offset + 3],
+    ]))
+}
+
+/// Read a u64 from bytes at offset
+fn read_u64(data: &[u8], offset: usize) -> Result<u64> {
+    if offset + 8 > data.len() {
+        return Err(AprenderError::FormatError {
+            message: format!("Unexpected EOF reading u64 at offset {offset}"),
+        });
+    }
+    Ok(u64::from_le_bytes([
+        data[offset],
+        data[offset + 1],
+        data[offset + 2],
+        data[offset + 3],
+        data[offset + 4],
+        data[offset + 5],
+        data[offset + 6],
+        data[offset + 7],
+    ]))
+}
+
+/// Read a length-prefixed string from bytes
+fn read_string(data: &[u8], offset: usize) -> Result<(String, usize)> {
+    let len = read_u64(data, offset)? as usize;
+    let str_start = offset + 8;
+    if str_start + len > data.len() {
+        return Err(AprenderError::FormatError {
+            message: format!("String length {len} exceeds data at offset {offset}"),
+        });
+    }
+    let s = String::from_utf8_lossy(&data[str_start..str_start + len]).to_string();
+    Ok((s, 8 + len))
+}
+
+/// Skip a metadata value (we don't need to parse all metadata types)
+fn skip_metadata_value(data: &[u8], offset: usize, value_type: u32) -> Result<usize> {
+    match value_type {
+        0 => Ok(1),  // Uint8
+        1 => Ok(1),  // Int8
+        2 => Ok(2),  // Uint16
+        3 => Ok(2),  // Int16
+        4 => Ok(4),  // Uint32
+        5 => Ok(4),  // Int32
+        6 => Ok(4),  // Float32
+        7 => Ok(1),  // Bool
+        8 => {
+            // String
+            let len = read_u64(data, offset)? as usize;
+            Ok(8 + len)
+        }
+        9 => {
+            // Array - need to read element type and count, then skip elements
+            let elem_type = read_u32(data, offset)?;
+            let count = read_u64(data, offset + 4)? as usize;
+            let elem_size = match elem_type {
+                0 | 1 | 7 => 1,
+                2 | 3 => 2,
+                4 | 5 | 6 => 4,
+                8 => {
+                    // Array of strings - need to iterate
+                    let mut skip = 12; // type (4) + count (8)
+                    for _ in 0..count {
+                        let (_, slen) = read_string(data, offset + skip)?;
+                        skip += slen;
+                    }
+                    return Ok(skip);
+                }
+                10 | 11 | 12 => 8,
+                _ => 4, // Default to 4
+            };
+            Ok(12 + count * elem_size)
+        }
+        10 => Ok(8), // Uint64
+        11 => Ok(8), // Int64
+        12 => Ok(8), // Float64
+        _ => Ok(4),  // Unknown, assume 4 bytes
+    }
+}
+
+/// Parsed GGUF file for import
+#[derive(Debug)]
+pub struct GgufReader {
+    /// Raw file data
+    data: Vec<u8>,
+    /// Format version
+    pub version: u32,
+    /// Number of tensors
+    pub tensor_count: u64,
+    /// Tensor infos (name, dims, dtype, data_offset)
+    pub tensors: Vec<GgufTensorMeta>,
+    /// Offset where tensor data section starts
+    pub data_offset: usize,
+}
+
+/// Tensor metadata from GGUF file
+#[derive(Debug, Clone)]
+pub struct GgufTensorMeta {
+    /// Tensor name
+    pub name: String,
+    /// Dimensions
+    pub dims: Vec<u64>,
+    /// Data type (GgmlType as u32)
+    pub dtype: u32,
+    /// Offset within tensor data section
+    pub offset: u64,
+}
+
+impl GgufReader {
+    /// Load and parse a GGUF file
+    pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self> {
+        let mut file = File::open(path.as_ref()).map_err(|e| AprenderError::Io(e))?;
+        let mut data = Vec::new();
+        file.read_to_end(&mut data).map_err(|e| AprenderError::Io(e))?;
+        Self::from_bytes(data)
+    }
+
+    /// Parse GGUF from bytes
+    pub fn from_bytes(data: Vec<u8>) -> Result<Self> {
+        if data.len() < 24 {
+            return Err(AprenderError::FormatError {
+                message: "GGUF file too small (< 24 bytes)".to_string(),
+            });
+        }
+
+        // Check magic
+        let magic = read_u32(&data, 0)?;
+        if magic != GGUF_MAGIC {
+            return Err(AprenderError::FormatError {
+                message: format!("Invalid GGUF magic: 0x{magic:08X}, expected 0x{GGUF_MAGIC:08X}"),
+            });
+        }
+
+        let version = read_u32(&data, 4)?;
+        let tensor_count = read_u64(&data, 8)?;
+        let metadata_kv_count = read_u64(&data, 16)?;
+
+        // Skip metadata section
+        let mut offset = 24;
+        for _ in 0..metadata_kv_count {
+            // Read key
+            let (_, key_len) = read_string(&data, offset)?;
+            offset += key_len;
+
+            // Read value type
+            let value_type = read_u32(&data, offset)?;
+            offset += 4;
+
+            // Skip value
+            let value_len = skip_metadata_value(&data, offset, value_type)?;
+            offset += value_len;
+        }
+
+        // Parse tensor infos
+        let mut tensors = Vec::with_capacity(tensor_count as usize);
+        for _ in 0..tensor_count {
+            // Read name
+            let (name, name_len) = read_string(&data, offset)?;
+            offset += name_len;
+
+            // Read n_dims
+            let n_dims = read_u32(&data, offset)? as usize;
+            offset += 4;
+
+            // Read dimensions
+            let mut dims = Vec::with_capacity(n_dims);
+            for _ in 0..n_dims {
+                dims.push(read_u64(&data, offset)?);
+                offset += 8;
+            }
+
+            // Read dtype
+            let dtype = read_u32(&data, offset)?;
+            offset += 4;
+
+            // Read offset
+            let tensor_offset = read_u64(&data, offset)?;
+            offset += 8;
+
+            tensors.push(GgufTensorMeta {
+                name,
+                dims,
+                dtype,
+                offset: tensor_offset,
+            });
+        }
+
+        // Align to GGUF_DEFAULT_ALIGNMENT for tensor data
+        let padding = padding_for_alignment(offset, GGUF_DEFAULT_ALIGNMENT);
+        let data_offset = offset + padding;
+
+        Ok(Self {
+            data,
+            version,
+            tensor_count,
+            tensors,
+            data_offset,
+        })
+    }
+
+    /// Extract a tensor as F32 data (dequantizing if needed)
+    pub fn get_tensor_f32(&self, name: &str) -> Result<(Vec<f32>, Vec<usize>)> {
+        let meta = self.tensors.iter().find(|t| t.name == name).ok_or_else(|| {
+            AprenderError::FormatError {
+                message: format!("Tensor '{name}' not found in GGUF"),
+            }
+        })?;
+
+        let shape: Vec<usize> = meta.dims.iter().map(|&d| d as usize).collect();
+        let num_elements: usize = shape.iter().product();
+        let tensor_start = self.data_offset + meta.offset as usize;
+
+        let data = match meta.dtype {
+            0 => {
+                // F32 - direct copy
+                let byte_size = num_elements * 4;
+                if tensor_start + byte_size > self.data.len() {
+                    return Err(AprenderError::FormatError {
+                        message: format!("Tensor '{name}' data exceeds file size"),
+                    });
+                }
+                let bytes = &self.data[tensor_start..tensor_start + byte_size];
+                bytes
+                    .chunks_exact(4)
+                    .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+                    .collect()
+            }
+            1 => {
+                // F16 - convert to F32
+                let byte_size = num_elements * 2;
+                if tensor_start + byte_size > self.data.len() {
+                    return Err(AprenderError::FormatError {
+                        message: format!("Tensor '{name}' data exceeds file size"),
+                    });
+                }
+                let bytes = &self.data[tensor_start..tensor_start + byte_size];
+                bytes
+                    .chunks_exact(2)
+                    .map(|c| f16_to_f32(u16::from_le_bytes([c[0], c[1]])))
+                    .collect()
+            }
+            2 => {
+                // Q4_0 - dequantize
+                dequantize_q4_0(&self.data, tensor_start, num_elements)?
+            }
+            8 => {
+                // Q8_0 - dequantize
+                dequantize_q8_0(&self.data, tensor_start, num_elements)?
+            }
+            _ => {
+                return Err(AprenderError::FormatError {
+                    message: format!("Unsupported GGUF dtype {} for tensor '{name}'", meta.dtype),
+                });
+            }
+        };
+
+        Ok((data, shape))
+    }
+
+    /// Get all tensors as F32
+    pub fn get_all_tensors_f32(&self) -> Result<BTreeMap<String, (Vec<f32>, Vec<usize>)>> {
+        let mut result = BTreeMap::new();
+        for meta in &self.tensors {
+            let (data, shape) = self.get_tensor_f32(&meta.name)?;
+            result.insert(meta.name.clone(), (data, shape));
+        }
+        Ok(result)
+    }
+}
+
+/// Convert F16 (IEEE 754 half-precision) to F32
+fn f16_to_f32(bits: u16) -> f32 {
+    let sign = ((bits >> 15) & 1) as u32;
+    let exp = ((bits >> 10) & 0x1F) as u32;
+    let mant = (bits & 0x3FF) as u32;
+
+    if exp == 0 {
+        if mant == 0 {
+            // Zero
+            f32::from_bits(sign << 31)
+        } else {
+            // Subnormal - convert to normalized f32
+            let mut m = mant;
+            let mut e = 0i32;
+            while (m & 0x400) == 0 {
+                m <<= 1;
+                e -= 1;
+            }
+            m &= 0x3FF;
+            let f32_exp = (127 - 15 + 1 + e) as u32;
+            f32::from_bits((sign << 31) | (f32_exp << 23) | (m << 13))
+        }
+    } else if exp == 31 {
+        // Inf or NaN
+        if mant == 0 {
+            f32::from_bits((sign << 31) | (0xFF << 23))
+        } else {
+            f32::from_bits((sign << 31) | (0xFF << 23) | (mant << 13))
+        }
+    } else {
+        // Normal number
+        let f32_exp = (exp as i32 - 15 + 127) as u32;
+        f32::from_bits((sign << 31) | (f32_exp << 23) | (mant << 13))
+    }
+}
+
+/// Dequantize Q4_0 format
+/// Q4_0: blocks of 32 elements, each block has 2-byte f16 scale + 16 bytes of 4-bit quants
+fn dequantize_q4_0(data: &[u8], start: usize, num_elements: usize) -> Result<Vec<f32>> {
+    const BLOCK_SIZE: usize = 32;
+    const BLOCK_BYTES: usize = 2 + 16; // f16 scale + 16 bytes of 4-bit values
+
+    let num_blocks = (num_elements + BLOCK_SIZE - 1) / BLOCK_SIZE;
+    let total_bytes = num_blocks * BLOCK_BYTES;
+
+    if start + total_bytes > data.len() {
+        return Err(AprenderError::FormatError {
+            message: "Q4_0 data exceeds file size".to_string(),
+        });
+    }
+
+    let mut result = Vec::with_capacity(num_elements);
+    let mut offset = start;
+
+    for _ in 0..num_blocks {
+        // Read scale (f16)
+        let scale_bits = u16::from_le_bytes([data[offset], data[offset + 1]]);
+        let scale = f16_to_f32(scale_bits);
+        offset += 2;
+
+        // Read 16 bytes = 32 4-bit values
+        for i in 0..16 {
+            let byte = data[offset + i];
+            // Lower 4 bits (subtract 8 to center around 0)
+            let v0 = ((byte & 0x0F) as i8 - 8) as f32;
+            // Upper 4 bits
+            let v1 = ((byte >> 4) as i8 - 8) as f32;
+            result.push(v0 * scale);
+            result.push(v1 * scale);
+        }
+        offset += 16;
+    }
+
+    // Truncate to exact element count
+    result.truncate(num_elements);
+    Ok(result)
+}
+
+/// Dequantize Q8_0 format
+/// Q8_0: blocks of 32 elements, each block has 2-byte f16 scale + 32 bytes of int8 quants
+fn dequantize_q8_0(data: &[u8], start: usize, num_elements: usize) -> Result<Vec<f32>> {
+    const BLOCK_SIZE: usize = 32;
+    const BLOCK_BYTES: usize = 2 + 32; // f16 scale + 32 bytes of int8 values
+
+    let num_blocks = (num_elements + BLOCK_SIZE - 1) / BLOCK_SIZE;
+    let total_bytes = num_blocks * BLOCK_BYTES;
+
+    if start + total_bytes > data.len() {
+        return Err(AprenderError::FormatError {
+            message: "Q8_0 data exceeds file size".to_string(),
+        });
+    }
+
+    let mut result = Vec::with_capacity(num_elements);
+    let mut offset = start;
+
+    for _ in 0..num_blocks {
+        // Read scale (f16)
+        let scale_bits = u16::from_le_bytes([data[offset], data[offset + 1]]);
+        let scale = f16_to_f32(scale_bits);
+        offset += 2;
+
+        // Read 32 int8 values
+        for i in 0..32 {
+            let v = data[offset + i] as i8 as f32;
+            result.push(v * scale);
+        }
+        offset += 32;
+    }
+
+    // Truncate to exact element count
+    result.truncate(num_elements);
+    Ok(result)
+}
+
+/// Load GGUF file and extract all tensors as F32
+pub fn load_gguf_tensors<P: AsRef<Path>>(path: P) -> Result<BTreeMap<String, (Vec<f32>, Vec<usize>)>> {
+    let reader = GgufReader::from_file(path)?;
+    reader.get_all_tensors_f32()
 }
 
 #[cfg(test)]
