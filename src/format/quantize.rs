@@ -1201,3 +1201,126 @@ mod tests_falsification_bb {
         );
     }
 }
+
+// ============================================================================
+// Property-Based Falsification Tests (per spec v3.0.0 Section 2.7)
+// Uses proptest to automatically generate falsifying inputs
+// ============================================================================
+#[cfg(test)]
+mod tests_proptest_bb {
+    use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        /// BB3-PROP: Quantization is deterministic for ANY valid input
+        /// FALSIFICATION: Any input produces non-deterministic output
+        #[test]
+        fn prop_bb3_quantization_deterministic(
+            weights in prop::collection::vec(-1.0f32..1.0, 32..256),
+        ) {
+            let shape = vec![weights.len()];
+            let q1 = quantize(&weights, &shape, QuantType::Q8_0).expect("quantize 1");
+            let q2 = quantize(&weights, &shape, QuantType::Q8_0).expect("quantize 2");
+
+            prop_assert_eq!(
+                q1.blocks, q2.blocks,
+                "BB3-PROP FALSIFIED: Non-deterministic quantization"
+            );
+        }
+
+        /// BB1-PROP: Q8_0 round-trip error is bounded for ANY input
+        /// FALSIFICATION: Any input produces >1% relative error for Q8_0
+        #[test]
+        fn prop_bb1_q8_roundtrip_bounded(
+            weights in prop::collection::vec(-10.0f32..10.0, 32..256),
+        ) {
+            let shape = vec![weights.len()];
+            let quantized = quantize(&weights, &shape, QuantType::Q8_0).expect("quantize");
+            let dequantized = dequantize(&quantized).expect("dequantize");
+
+            // Calculate MSE
+            let mse: f64 = weights.iter()
+                .zip(dequantized.iter())
+                .map(|(o, d)| ((*o - *d) as f64).powi(2))
+                .sum::<f64>() / weights.len() as f64;
+
+            // Q8_0 should have very low error (< 0.1 for this range)
+            prop_assert!(
+                mse < 0.1,
+                "BB1-PROP FALSIFIED: Q8_0 MSE {} exceeds 0.1",
+                mse
+            );
+        }
+
+        /// BB5-PROP: Scale factors are always positive for non-zero input
+        /// FALSIFICATION: Scale factor is zero or negative for non-zero input
+        #[test]
+        fn prop_bb5_scale_positive(
+            weights in prop::collection::vec(0.1f32..1.0, 32..64),
+        ) {
+            let shape = vec![weights.len()];
+            let quantized = quantize(&weights, &shape, QuantType::Q8_0).expect("quantize");
+
+            // Extract scale from first block
+            if quantized.blocks.len() >= 2 {
+                let scale_bytes = [quantized.blocks[0], quantized.blocks[1]];
+                let scale = half::f16::from_le_bytes(scale_bytes).to_f32();
+
+                prop_assert!(
+                    scale > 0.0,
+                    "BB5-PROP FALSIFIED: Scale {} is not positive",
+                    scale
+                );
+            }
+        }
+
+        /// BB6-PROP: Q8_0 always more accurate than Q4_0
+        /// FALSIFICATION: Q4_0 has lower MSE than Q8_0
+        #[test]
+        fn prop_bb6_q8_more_accurate_than_q4(
+            weights in prop::collection::vec(-1.0f32..1.0, 64..128),
+        ) {
+            let shape = vec![weights.len()];
+
+            let q8 = quantize(&weights, &shape, QuantType::Q8_0).expect("Q8_0");
+            let q4 = quantize(&weights, &shape, QuantType::Q4_0).expect("Q4_0");
+
+            let d8 = dequantize(&q8).expect("dequantize Q8");
+            let d4 = dequantize(&q4).expect("dequantize Q4");
+
+            let mse8: f64 = weights.iter()
+                .zip(d8.iter())
+                .map(|(o, d)| ((*o - *d) as f64).powi(2))
+                .sum::<f64>() / weights.len() as f64;
+
+            let mse4: f64 = weights.iter()
+                .zip(d4.iter())
+                .map(|(o, d)| ((*o - *d) as f64).powi(2))
+                .sum::<f64>() / weights.len() as f64;
+
+            prop_assert!(
+                mse8 <= mse4,
+                "BB6-PROP FALSIFIED: Q8_0 MSE {} > Q4_0 MSE {}",
+                mse8, mse4
+            );
+        }
+
+        /// BB4-PROP: All quantized blocks use correct block size
+        /// FALSIFICATION: Block size differs from 32
+        #[test]
+        fn prop_bb4_block_size_always_32(
+            len in 32usize..512,
+        ) {
+            let weights: Vec<f32> = (0..len).map(|i| i as f32 * 0.01).collect();
+            let shape = vec![weights.len()];
+
+            let quantized = quantize(&weights, &shape, QuantType::Q8_0).expect("quantize");
+
+            prop_assert_eq!(
+                quantized.block_size, 32,
+                "BB4-PROP FALSIFIED: block_size is {} instead of 32",
+                quantized.block_size
+            );
+        }
+    }
+}

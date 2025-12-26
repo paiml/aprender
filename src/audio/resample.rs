@@ -163,3 +163,135 @@ mod tests {
         assert!((config.cutoff - 0.95).abs() < 0.01);
     }
 }
+
+// ============================================================================
+// Section AA: Audio Resampling Popperian Falsification Tests
+// Per spec v3.0.0 Part II Section 2.3
+// ============================================================================
+#[cfg(test)]
+mod tests_falsification_aa_resample {
+    use super::*;
+
+    /// AA1: Resampling preserves sample integrity (no NaN/Inf)
+    /// FALSIFICATION: Output contains NaN or Inf values
+    #[test]
+    fn test_aa1_resample_no_nan_inf() {
+        // Generate test signal
+        let audio: Vec<f32> = (0..4410)
+            .map(|i| (2.0 * std::f32::consts::PI * 440.0 * i as f32 / 44100.0).sin())
+            .collect();
+
+        let result = resample(&audio, 44100, 16000).expect("resample should succeed");
+
+        // Check for NaN
+        let has_nan = result.iter().any(|x| x.is_nan());
+        assert!(
+            !has_nan,
+            "AA1 FALSIFIED: Resample output contains NaN values"
+        );
+
+        // Check for Inf
+        let has_inf = result.iter().any(|x| x.is_infinite());
+        assert!(
+            !has_inf,
+            "AA1 FALSIFIED: Resample output contains Inf values"
+        );
+    }
+
+    /// AA3: Resampling is deterministic
+    /// FALSIFICATION: Same input produces different output
+    #[test]
+    fn test_aa3_resample_deterministic() {
+        let audio: Vec<f32> = (0..1000)
+            .map(|i| (i as f32 * 0.01).sin())
+            .collect();
+
+        // Resample 5 times
+        let results: Vec<Vec<f32>> = (0..5)
+            .map(|_| resample(&audio, 44100, 16000).expect("resample"))
+            .collect();
+
+        // All must be identical
+        for (i, result) in results.iter().enumerate().skip(1) {
+            assert_eq!(
+                &results[0], result,
+                "AA3 FALSIFIED: Resample is non-deterministic (run {} differs)",
+                i
+            );
+        }
+    }
+
+    /// AA4: Sample rate ratio is preserved
+    /// FALSIFICATION: Output length doesn't match expected ratio
+    #[test]
+    fn test_aa4_resample_length_ratio() {
+        // 44100 samples at 44100Hz = 1 second
+        // Resampled to 16000Hz = 16000 samples
+        let audio: Vec<f32> = (0..44100)
+            .map(|i| (i as f32 * 0.0001).sin())
+            .collect();
+
+        let result = resample(&audio, 44100, 16000).expect("resample");
+
+        let expected_len = (44100.0_f64 * 16000.0 / 44100.0).ceil() as usize;
+        assert_eq!(
+            result.len(),
+            expected_len,
+            "AA4 FALSIFIED: Output length {} doesn't match expected {}",
+            result.len(),
+            expected_len
+        );
+    }
+
+    /// AA5: Downsampling reduces length
+    /// FALSIFICATION: Downsample produces equal or longer output
+    #[test]
+    fn test_aa5_downsample_reduces_length() {
+        let audio: Vec<f32> = (0..48000)
+            .map(|i| (i as f32 * 0.0001).sin())
+            .collect();
+
+        let result = resample(&audio, 48000, 16000).expect("resample");
+
+        assert!(
+            result.len() < audio.len(),
+            "AA5 FALSIFIED: Downsampling did not reduce length. Input: {}, Output: {}",
+            audio.len(),
+            result.len()
+        );
+    }
+
+    /// AA6: Upsampling increases length
+    /// FALSIFICATION: Upsample produces equal or shorter output
+    #[test]
+    fn test_aa6_upsample_increases_length() {
+        let audio: Vec<f32> = (0..8000)
+            .map(|i| (i as f32 * 0.0001).sin())
+            .collect();
+
+        let result = resample(&audio, 8000, 16000).expect("resample");
+
+        assert!(
+            result.len() > audio.len(),
+            "AA6 FALSIFIED: Upsampling did not increase length. Input: {}, Output: {}",
+            audio.len(),
+            result.len()
+        );
+    }
+
+    /// AA7: Same rate returns identical samples
+    /// FALSIFICATION: Same rate changes samples
+    #[test]
+    fn test_aa7_same_rate_identity() {
+        let audio: Vec<f32> = (0..1000)
+            .map(|i| (i as f32 * 0.01).sin())
+            .collect();
+
+        let result = resample(&audio, 16000, 16000).expect("resample");
+
+        assert_eq!(
+            result, audio,
+            "AA7 FALSIFIED: Same rate resample modified samples"
+        );
+    }
+}
