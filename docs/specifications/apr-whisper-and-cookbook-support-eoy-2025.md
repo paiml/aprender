@@ -398,15 +398,117 @@ Deploy to CDN → Browser loads WASM + APR → User types prompt → Streaming o
 | Memory stays under 512MB | Browser reports >512MB heap usage |
 | Zero-copy mmap works in WASM | Alignment check fails or copy detected |
 
-### 4.7 Alternative Models Considered
+### 4.7 Demo Model Matrix
+
+The APR demo supports multiple models for different use cases:
+
+| Model | Parameters | Use Case | Format | Status |
+|-------|------------|----------|--------|--------|
+| **TinyLlama-5M-F16** | 5M | Fast validation, CI/CD testing | GGUF → APR | ✅ Verified |
+| **Qwen2-0.5B-Instruct** | 494M | General chat, North Star demo | HF → APR | 🔧 In Progress |
+| **Qwen2.5-Coder-0.5B** | 494M | Code generation, IDE integration | HF → APR | ⬜ Planned |
+
+#### 4.7.1 TinyLlama Demo (Validation)
+
+TinyLlama serves as the **fast validation model** for the APR pipeline:
+
+```bash
+# GGUF to APR conversion (verified working)
+apr import /path/to/TinyLLama-v0.1-5M-F16.gguf --output tinyllama.apr --arch llama --force
+
+# Quick inference test
+realizar run tinyllama.apr "Hello, world!" --max-tokens 32
+
+# Benchmark
+realizar bench --model tinyllama.apr
+```
+
+**Verified Performance** (2025-12-26):
+- GGUF loading: 80ms
+- APR import: 18MB output from 9.6MB GGUF (F16 → F32 dequantization)
+- Inference: 185-352 tok/s (CPU)
+
+#### 4.7.2 Qwen2.5-Coder Demo (Code Generation)
+
+Qwen2.5-Coder enables **code generation capabilities** for IDE integration:
+
+```bash
+# Import from HuggingFace
+apr import hf://Qwen/Qwen2.5-Coder-0.5B-Instruct -o qwen-coder.apr --arch qwen2
+
+# Code completion example
+realizar chat qwen-coder.apr --system "You are a helpful coding assistant"
+> Complete this Rust function: fn fibonacci(n: u32) ->
+```
+
+**Target Use Cases**:
+- VS Code extension integration
+- CLI code completion
+- Documentation generation
+
+#### 4.7.3 Alternative Models Considered
 
 | Model | Size | Rejected Because |
 |-------|------|------------------|
 | **Phi-3-mini** | 3.8B | Too large for browser (~2GB INT4) |
 | **SmolLM-135M** | 135M | Quality insufficient for meaningful demo |
-| **TinyLlama-1.1B** | 1.1B | Larger than Qwen2-0.5B, similar quality |
 | **Gemma-2B** | 2B | Too large, license restrictions |
-| **Qwen2-1.5B** | 1.5B | Good fallback if 0.5B insufficient |
+
+### 4.8 APR Performance Benchmarking
+
+Performance benchmarking is critical for validating the APR format achieves parity with GGUF.
+
+#### 4.8.1 Benchmark Commands
+
+```bash
+# CPU decode benchmark (spec: ≥50 tok/s)
+apr bench model.apr --suite decode --output results.json
+
+# Prefill benchmark (spec: ≥100 tok/s)
+apr bench model.apr --suite prefill --output results.json
+
+# Full benchmark suite
+apr bench model.apr --all --output results.json
+
+# Compare APR vs GGUF
+apr bench --compare model.apr model.gguf --output comparison.json
+```
+
+#### 4.8.2 Performance Targets
+
+| Metric | APR Target | GGUF Baseline | Parity Threshold |
+|--------|------------|---------------|------------------|
+| **Decode (CPU)** | ≥50 tok/s | 50+ tok/s | ≥95% of GGUF |
+| **Decode (GPU)** | ≥200 tok/s | 200+ tok/s | ≥95% of GGUF |
+| **Prefill** | ≥100 tok/s | 100+ tok/s | ≥95% of GGUF |
+| **Load Time** | ≤1.2x GGUF | baseline | ≤120% of GGUF |
+| **Peak Memory** | ≤1.1x GGUF | baseline | ≤110% of GGUF |
+
+#### 4.8.3 Benchmark Infrastructure (Implemented)
+
+The `AprBenchmarkRunner` in realizar provides:
+
+```rust
+use realizar::apr_transformer::{AprBenchmarkRunner, AprTransformer};
+
+let transformer = AprTransformer::new(config);
+let mut runner = AprBenchmarkRunner::new(transformer);
+
+// Decode benchmark
+let result = runner.benchmark_decode(&prompt, num_tokens)?;
+println!("Throughput: {:.1} tok/s", result.tokens_per_second);
+
+// Prefill benchmark
+let prefill_result = runner.benchmark_prefill(&prompt)?;
+
+// Memory measurement
+let memory = runner.measure_memory()?;
+```
+
+**Current Results** (2025-12-26):
+- Small model (256 hidden, 4 layers): **83.3 tok/s** ✅ (target: ≥50 tok/s)
+- TinyLlama via realizar: **185-352 tok/s** ✅
+- 12 benchmark tests passing in realizar
 
 ### 4.8 User Experience Specification
 
