@@ -537,6 +537,10 @@ enum Commands {
         /// Test prompt
         #[arg(long)]
         prompt: Option<String>,
+
+        /// Use realizar for fast inference (vs aprender baseline)
+        #[arg(long)]
+        fast: bool,
     },
 
     /// Evaluate model perplexity (spec H13: PPL <= 20)
@@ -837,7 +841,8 @@ fn execute_command(cli: &Cli) -> Result<(), error::CliError> {
             iterations,
             max_tokens,
             prompt,
-        } => bench::run(file, *warmup, *iterations, *max_tokens, prompt.as_deref()),
+            fast,
+        } => bench::run(file, *warmup, *iterations, *max_tokens, prompt.as_deref(), *fast),
 
         Commands::Eval {
             file,

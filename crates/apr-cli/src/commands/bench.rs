@@ -76,6 +76,7 @@ pub(crate) fn run(
     iterations: usize,
     max_tokens: usize,
     prompt: Option<&str>,
+    fast: bool,
 ) -> Result<()> {
     let config = BenchConfig {
         warmup,
@@ -86,17 +87,39 @@ pub(crate) fn run(
 
     print_header(path, &config);
 
-    // Run benchmark
-    let result = run_benchmark(path, &config)?;
+    // Route to appropriate benchmark implementation
+    let result = if fast {
+        #[cfg(feature = "inference")]
+        {
+            println!("{}", "Using realizar (fast mode)".cyan());
+            println!();
+            run_realizar_benchmark(path, &config)?
+        }
+        #[cfg(not(feature = "inference"))]
+        {
+            return Err(CliError::ValidationFailed(
+                "--fast requires the 'inference' feature. Build with: cargo build --features inference".to_string()
+            ));
+        }
+    } else {
+        println!("{}", "Using aprender (baseline mode)".yellow());
+        println!();
+        run_benchmark(path, &config)?
+    };
 
     // Print results
     print_results(&result);
 
-    // Return error if threshold not met
-    if !result.passed {
+    // Threshold depends on mode
+    let threshold = if fast { 60.0 } else { 10.0 };
+    let passed = result.tokens_per_second >= threshold;
+
+    if !passed {
         return Err(CliError::ValidationFailed(format!(
-            "Throughput {:.1} tok/s below minimum 10 tok/s (spec H12)",
-            result.tokens_per_second
+            "Throughput {:.1} tok/s below minimum {:.0} tok/s (spec {})",
+            result.tokens_per_second,
+            threshold,
+            if fast { "Z5/Z6" } else { "H12" }
         )));
     }
 
@@ -320,6 +343,142 @@ fn print_results(result: &BenchResult) {
         "F (Below Threshold)".red()
     };
     output::kv("Performance Grade", grade);
+}
+
+/// Realizar-based benchmark for fast inference (spec Z5/Z6: 60-70 tok/s)
+#[cfg(feature = "inference")]
+fn run_realizar_benchmark(path: &Path, config: &BenchConfig) -> Result<BenchResult> {
+    use realizar::format::{detect_format, ModelFormat};
+    use realizar::gguf::{GGUFModel, QuantizedGGUFTransformer, QuantizedGenerateConfig};
+
+    println!("{}", "Loading model with realizar...".yellow());
+    let start = Instant::now();
+
+    // Read model file
+    let model_bytes = std::fs::read(path)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to read model: {e}")))?;
+
+    // Detect format
+    let format = detect_format(&model_bytes[..8.min(model_bytes.len())])
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to detect format: {e}")))?;
+
+    // Currently only GGUF is fully optimized in realizar
+    if format != ModelFormat::Gguf {
+        return Err(CliError::ValidationFailed(format!(
+            "Fast benchmark currently requires GGUF format. Got: {:?}. \
+             Convert with: apr convert model.safetensors --format gguf -o model.gguf",
+            format
+        )));
+    }
+
+    let gguf = GGUFModel::from_bytes(&model_bytes)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to parse GGUF: {e}")))?;
+
+    let transformer = QuantizedGGUFTransformer::from_gguf(&gguf, &model_bytes)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to create transformer: {e}")))?;
+
+    let load_time = start.elapsed();
+    println!(
+        "{} in {:.2}s",
+        "Model ready".green(),
+        load_time.as_secs_f32()
+    );
+    println!();
+
+    // Simple tokenization (space-split for benchmark, not production)
+    let prompt_tokens: Vec<u32> = config
+        .prompt
+        .split_whitespace()
+        .enumerate()
+        .map(|(i, _)| i as u32 + 100)
+        .collect();
+
+    let gen_config = QuantizedGenerateConfig {
+        max_tokens: config.max_tokens.min(128),
+        temperature: 0.7,
+        top_k: 40,
+        ..Default::default()
+    };
+
+    // Warmup
+    println!("{}", "Running warmup...".yellow());
+    for i in 0..config.warmup {
+        let _ = transformer.generate(&prompt_tokens, &gen_config);
+        print!("  Warmup {}/{}\r", i + 1, config.warmup);
+        std::io::Write::flush(&mut std::io::stdout()).ok();
+    }
+    println!("  Warmup complete        ");
+    println!();
+
+    // Measurement
+    println!("{}", "Running benchmark...".yellow());
+    let mut iteration_times = Vec::with_capacity(config.iterations);
+    let mut total_tokens = 0usize;
+    let mut first_token_time = Duration::ZERO;
+
+    for i in 0..config.iterations {
+        let iter_start = Instant::now();
+
+        let output = transformer
+            .generate(&prompt_tokens, &gen_config)
+            .unwrap_or_default();
+        let tokens_generated = output.len().saturating_sub(prompt_tokens.len());
+
+        let iter_time = iter_start.elapsed();
+        iteration_times.push(iter_time);
+        total_tokens += tokens_generated;
+
+        if i == 0 {
+            first_token_time =
+                Duration::from_secs_f64(iter_time.as_secs_f64() / tokens_generated.max(1) as f64);
+        }
+
+        print!(
+            "  Iteration {}/{}: {} tokens in {:.2}s\r",
+            i + 1,
+            config.iterations,
+            tokens_generated,
+            iter_time.as_secs_f32()
+        );
+        std::io::Write::flush(&mut std::io::stdout()).ok();
+    }
+    println!();
+    println!();
+
+    // Calculate statistics
+    let total_time: Duration = iteration_times.iter().sum();
+    let tokens_per_second = total_tokens as f64 / total_time.as_secs_f64();
+    let mean_time = total_time / config.iterations as u32;
+
+    let mut sorted_times = iteration_times.clone();
+    sorted_times.sort();
+    let median_time = sorted_times[config.iterations / 2];
+
+    let mean_ms = mean_time.as_secs_f64() * 1000.0;
+    let variance: f64 = iteration_times
+        .iter()
+        .map(|t| {
+            let diff = t.as_secs_f64() * 1000.0 - mean_ms;
+            diff * diff
+        })
+        .sum::<f64>()
+        / config.iterations as f64;
+    let std_dev = Duration::from_secs_f64(variance.sqrt() / 1000.0);
+
+    // Fast mode: spec Z5/Z6 requires >= 60 tok/s
+    let passed = tokens_per_second >= 60.0;
+
+    Ok(BenchResult {
+        total_tokens,
+        total_time,
+        tokens_per_second,
+        time_to_first_token: first_token_time,
+        iteration_times,
+        mean_time,
+        median_time,
+        std_dev,
+        passed,
+    })
 }
 
 #[cfg(test)]

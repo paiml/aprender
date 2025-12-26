@@ -278,6 +278,11 @@ impl AprV2Header {
         self.magic == MAGIC_V1
     }
 
+    /// Set v1 magic for backward compatibility with realizar
+    pub fn set_v1_magic(&mut self) {
+        self.magic = MAGIC_V1;
+    }
+
     /// Serialize header to bytes
     #[must_use]
     pub fn to_bytes(&self) -> [u8; HEADER_SIZE_V2] {
@@ -790,6 +795,12 @@ impl AprV2Writer {
             total_size: 0,
             pattern: None,
         });
+        self
+    }
+
+    /// Enable v1 compatibility mode (APRN magic for realizar support)
+    pub fn with_v1_compat(&mut self) -> &mut Self {
+        self.header.set_v1_magic();
         self
     }
 
@@ -1460,6 +1471,24 @@ mod tests {
 
         // Verify alignment
         assert!(reader.verify_alignment());
+    }
+
+    #[test]
+    fn test_v1_compat_magic() {
+        let metadata = AprV2Metadata::new("test");
+        let mut writer = AprV2Writer::new(metadata);
+        writer.with_v1_compat(); // Use APRN magic for backward compatibility
+
+        writer.add_f32_tensor("weight", vec![2, 3], &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+
+        let bytes = writer.write().unwrap();
+
+        // Check magic bytes are APRN (v1) not APR2 (v2)
+        assert_eq!(&bytes[0..4], b"APRN", "Magic should be APRN for v1 compat");
+
+        // Reader should still work
+        let reader = AprV2Reader::from_bytes(&bytes).unwrap();
+        assert_eq!(reader.metadata().model_type, "test");
     }
 
     #[test]

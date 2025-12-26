@@ -32,10 +32,11 @@ pub(crate) fn run(
         Some("whisper") => Architecture::Whisper,
         Some("llama") => Architecture::Llama,
         Some("bert") => Architecture::Bert,
+        Some("qwen2") => Architecture::Qwen2,
         Some("auto") | None => Architecture::Auto,
         Some(other) => {
             return Err(CliError::ValidationFailed(format!(
-                "Unknown architecture: {other}. Supported: whisper, llama, bert, auto"
+                "Unknown architecture: {other}. Supported: whisper, llama, bert, qwen2, auto"
             )));
         }
     };

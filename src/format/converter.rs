@@ -100,6 +100,8 @@ pub enum Architecture {
     Llama,
     /// Google BERT
     Bert,
+    /// Alibaba Qwen2 (includes Qwen2.5, QwenCoder)
+    Qwen2,
 }
 
 impl Architecture {
@@ -110,6 +112,7 @@ impl Architecture {
             Self::Whisper => Self::whisper_map_name(source_name),
             Self::Llama => Self::llama_map_name(source_name),
             Self::Bert => Self::bert_map_name(source_name),
+            Self::Qwen2 => Self::qwen2_map_name(source_name),
         }
     }
 
@@ -134,6 +137,12 @@ impl Architecture {
     fn bert_map_name(name: &str) -> String {
         // BERT uses "bert." prefix
         let name = name.strip_prefix("bert.").unwrap_or(name);
+        name.to_string()
+    }
+
+    fn qwen2_map_name(name: &str) -> String {
+        // Qwen2/Qwen2.5 uses "model." prefix like LLaMA
+        let name = name.strip_prefix("model.").unwrap_or(name);
         name.to_string()
     }
 }
@@ -182,8 +191,28 @@ impl TensorExpectation {
         description: "Embedding",
     };
 
+    /// RMSNorm weight: gamma initialized to ~1.0 but varies after training
+    /// Trained models show means from ~0.0 to ~2.0 (TinyLlama: 0.005-0.5)
+    pub const RMSNORM_WEIGHT: Self = Self {
+        mean_range: (-0.5, 3.0), // Wide range for trained models
+        std_range: Some((0.0, 2.0)),
+        description: "RMSNorm weight (gamma)",
+    };
+
     /// Get expectation for a tensor name
     pub fn for_tensor(name: &str) -> Option<Self> {
+        // RMSNorm patterns (LLaMA, Qwen2, TinyLlama) - check BEFORE generic LayerNorm
+        // These use gamma initialized to 1.0, not the 0-centered LayerNorm
+        if name.contains("input_layernorm")
+            || name.contains("post_attention_layernorm")
+            || name.contains("rms_norm")
+        {
+            if name.ends_with(".weight") {
+                return Some(Self::RMSNORM_WEIGHT);
+            }
+        }
+
+        // Traditional LayerNorm patterns (BERT, older models)
         if name.contains("layer_norm") || name.contains("ln_") {
             if name.ends_with(".weight") || name.ends_with(".gamma") {
                 return Some(Self::LAYER_NORM_WEIGHT);
@@ -191,6 +220,11 @@ impl TensorExpectation {
             if name.ends_with(".bias") || name.ends_with(".beta") {
                 return Some(Self::LAYER_NORM_BIAS);
             }
+        }
+
+        // Final norm layer (often RMSNorm in modern LLMs)
+        if name == "norm.weight" || name.ends_with(".norm.weight") {
+            return Some(Self::RMSNORM_WEIGHT);
         }
 
         if name.contains("embed") {
@@ -1211,8 +1245,9 @@ fn write_apr_file(
         ..Default::default()
     };
 
-    // Create APR v2 writer
+    // Create APR v2 writer with v1 compatibility (APRN magic for realizar)
     let mut writer = AprV2Writer::new(metadata);
+    writer.with_v1_compat(); // Use APRN magic for backward compatibility
 
     // Add all tensors
     for (name, (data, shape)) in tensors {
@@ -2124,6 +2159,13 @@ mod tests_name_mapping {
             Architecture::Bert.map_name("bert.encoder.layer.0.attention.self.query.weight");
         assert_eq!(mapped, "encoder.layer.0.attention.self.query.weight");
     }
+
+    #[test]
+    fn test_qwen2_mapping() {
+        // Qwen2/Qwen2.5-Coder uses model. prefix like LLaMA
+        let mapped = Architecture::Qwen2.map_name("model.layers.0.self_attn.q_proj.weight");
+        assert_eq!(mapped, "layers.0.self_attn.q_proj.weight");
+    }
 }
 
 #[cfg(test)]
@@ -2199,6 +2241,43 @@ mod tests_tensor_expectations {
         let err = result.unwrap_err().to_string();
         assert!(err.contains("mean=11"));
         assert!(err.contains("outside expected range"));
+    }
+
+    #[test]
+    fn test_rmsnorm_weight_detection() {
+        // LLaMA-style input_layernorm
+        let exp = TensorExpectation::for_tensor("model.layers.0.input_layernorm.weight");
+        assert!(exp.is_some());
+        assert_eq!(exp.unwrap().mean_range, (-0.5, 3.0));
+
+        // LLaMA-style post_attention_layernorm
+        let exp = TensorExpectation::for_tensor("model.layers.5.post_attention_layernorm.weight");
+        assert!(exp.is_some());
+        assert_eq!(exp.unwrap().mean_range, (-0.5, 3.0));
+
+        // Final norm
+        let exp = TensorExpectation::for_tensor("model.norm.weight");
+        assert!(exp.is_some());
+        assert_eq!(exp.unwrap().mean_range, (-0.5, 3.0));
+    }
+
+    #[test]
+    fn test_rmsnorm_accepts_trained_weights() {
+        // TinyLlama trained model has means from 0.005 to 0.5
+        let stats = TensorStats {
+            name: "model.layers.0.input_layernorm.weight".to_string(),
+            count: 2048,
+            min: -0.2,
+            max: 0.8,
+            mean: 0.05, // Trained weight, NOT near 1.0
+            std: 0.15,
+            nan_count: 0,
+            inf_count: 0,
+            zero_count: 0,
+        };
+
+        let exp = TensorExpectation::RMSNORM_WEIGHT;
+        assert!(exp.check(&stats).is_ok());
     }
 }
 
