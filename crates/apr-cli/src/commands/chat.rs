@@ -24,6 +24,7 @@
 
 use crate::error::CliError;
 use crate::output;
+use aprender::text::llama_tokenizer::LlamaTokenizer;
 use colored::Colorize;
 use std::io::{self, Write};
 use std::path::Path;
@@ -224,6 +225,8 @@ mod realizar_chat {
         format: ModelFormat,
         /// Conversation history
         history: Vec<String>,
+        /// LLaMA tokenizer (for GGUF format)
+        tokenizer: Option<LlamaTokenizer>,
     }
 
     impl ChatSession {
@@ -258,18 +261,47 @@ mod realizar_chat {
                 model_bytes.len() as f32 / 1_000_000.0
             );
 
+            // Load tokenizer for GGUF format
+            let tokenizer = if format == ModelFormat::Gguf {
+                match LlamaTokenizer::from_gguf_bytes(&model_bytes) {
+                    Ok(tok) => {
+                        println!(
+                            "{} tokenizer with {} tokens",
+                            "Loaded".green(),
+                            tok.vocab_size()
+                        );
+                        Some(tok)
+                    }
+                    Err(e) => {
+                        println!(
+                            "{} Failed to load tokenizer: {} (using byte fallback)",
+                            "Warning:".yellow(),
+                            e
+                        );
+                        None
+                    }
+                }
+            } else {
+                None
+            };
+
             Ok(Self {
                 model_bytes,
                 format,
                 history: Vec::new(),
+                tokenizer,
             })
         }
 
         pub(super) fn generate(&mut self, user_input: &str, config: &ChatConfig) -> String {
             let start = Instant::now();
 
-            // Simple byte-level tokenization for now
-            let prompt_tokens: Vec<u32> = user_input.chars().map(|c| c as u32).collect();
+            // Tokenize input using LLaMA tokenizer if available, else fall back to char-level
+            let prompt_tokens: Vec<u32> = if let Some(ref tokenizer) = self.tokenizer {
+                tokenizer.encode_with_bos(user_input)
+            } else {
+                user_input.chars().map(|c| c as u32).collect()
+            };
 
             let result = match self.format {
                 ModelFormat::Apr => self.generate_apr(&prompt_tokens, config),
@@ -294,11 +326,15 @@ mod realizar_chat {
                             .dimmed()
                         );
                     }
-                    // Decode output tokens back to string
-                    output_tokens
-                        .iter()
-                        .filter_map(|&t| char::from_u32(t))
-                        .collect()
+                    // Decode output tokens using LLaMA tokenizer if available
+                    if let Some(ref tokenizer) = self.tokenizer {
+                        tokenizer.decode(&output_tokens)
+                    } else {
+                        output_tokens
+                            .iter()
+                            .filter_map(|&t| char::from_u32(t))
+                            .collect()
+                    }
                 }
                 Err(e) => format!("[Error: {}]", e),
             }

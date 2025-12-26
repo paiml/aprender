@@ -40,6 +40,7 @@
 pub mod bpe;
 pub mod entities;
 pub mod incremental_idf;
+pub mod llama_tokenizer;
 pub mod sentiment;
 pub mod similarity;
 pub mod stem;
