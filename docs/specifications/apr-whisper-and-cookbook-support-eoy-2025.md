@@ -2373,7 +2373,8 @@ fn y1_apr_loads_via_realizar_mmap() {
     - Added GPU batch helpers: `batch_qkv_matmul_gpu`, `batch_qkv_matmul_gpu_with_scheduler`
   - Q4_0 block size corrected (18 bytes: 2-byte scale + 16 bytes data, not 20)
   - GQA dimension handling fixed for separate Q/K/V
-  - Status: In progress (feature-gating cleanup remaining)
+  - **Verified**: TinyLlama-1.1B Q4_0 GGUF loads (637.7 MB in 0.28s) and generates
+  - Remaining: Proper LLaMA tokenizer needed (current char→u32 produces garbled output)
 - **2025-12-26**: ✅ **SPEC COMPLETE: 313/313 points verified**
   - GPU benchmarks deferred to [GH-141](https://github.com/paiml/aprender/issues/141)
   - Section Y renumbered: Y7 (GPU) removed, Y8-Y14 → Y7-Y13
