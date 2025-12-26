@@ -29,3 +29,9 @@ book/book/
 crates/aprender-shell/corpus/
 crates/aprender-shell/models/
 crates/aprender-shell/qa_test_artifacts/
+
+# Model files (downloaded/converted - don't commit large binaries)
+*.gguf
+*.safetensors
+# Root-level .apr files (test fixtures in crates/ are OK)
+/*.apr

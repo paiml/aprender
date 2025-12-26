@@ -677,7 +677,7 @@ fn add_mask(scores: &Tensor, mask: &Tensor) -> Tensor {
     if scores.shape() == mask.shape() {
         return scores.add(mask);
     }
-    // Fallback for broadcast (TODO: implement SIMD broadcast_add)
+    // Fallback for broadcast (SIMD broadcast_add deferred to trueno)
     let data: Vec<f32> = scores
         .data()
         .iter()

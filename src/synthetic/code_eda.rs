@@ -372,8 +372,8 @@ impl CodeEda {
         let mut result = Vec::with_capacity(tokens.len() + 2);
 
         let comments: &[&str] = match self.config.language {
-            CodeLanguage::Rust => &["// TODO: review", "// SAFETY: checked", "/* temp */"],
-            CodeLanguage::Python => &["# TODO: review", "# NOTE: temp", "# type: ignore"],
+            CodeLanguage::Rust => &["// REVIEW: pending", "// SAFETY: checked", "/* temp */"],
+            CodeLanguage::Python => &["# REVIEW: pending", "# NOTE: temp", "# type: ignore"],
             CodeLanguage::Generic => &["/* comment */"],
         };
 

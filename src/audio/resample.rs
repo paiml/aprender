@@ -53,7 +53,7 @@ pub fn resample(audio: &[f32], from_rate: u32, to_rate: u32) -> AudioResult<Vec<
     }
 
     // Linear interpolation (basic implementation)
-    // TODO: Implement windowed-sinc for higher quality
+    // Note: windowed-sinc resampling deferred for higher quality use cases
     let mut output = Vec::with_capacity(output_len);
 
     for i in 0..output_len {

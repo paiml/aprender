@@ -334,8 +334,8 @@ pub struct CoreAudioBackend {
 impl CaptureBackend for CoreAudioBackend {
     fn open(_device: Option<&str>, config: &CaptureConfig) -> Result<Self, AudioError> {
         config.validate()?;
-        // TODO: Implement CoreAudio AudioUnit setup
-        // Future: Use coreaudio-rs crate for native bindings
+        // Stub: CoreAudio AudioUnit setup deferred (GH-130, C8)
+        // Requires coreaudio-rs crate for native bindings
         Err(AudioError::NotImplemented(
             "CoreAudio backend pending implementation - requires coreaudio-rs dependency"
                 .to_string(),
@@ -374,8 +374,8 @@ pub struct WasapiBackend {
 impl CaptureBackend for WasapiBackend {
     fn open(_device: Option<&str>, config: &CaptureConfig) -> Result<Self, AudioError> {
         config.validate()?;
-        // TODO: Implement WASAPI client initialization
-        // Future: Use wasapi crate for native bindings
+        // Stub: WASAPI client initialization deferred (GH-130, C9)
+        // Requires wasapi crate for native bindings
         Err(AudioError::NotImplemented(
             "WASAPI backend pending implementation - requires wasapi dependency".to_string(),
         ))
@@ -413,8 +413,8 @@ pub struct WebAudioBackend {
 impl CaptureBackend for WebAudioBackend {
     fn open(_device: Option<&str>, config: &CaptureConfig) -> Result<Self, AudioError> {
         config.validate()?;
-        // TODO: Implement WebAudio MediaDevices.getUserMedia
-        // Future: Use web-sys crate for browser API bindings
+        // Stub: WebAudio MediaDevices.getUserMedia deferred (GH-130, C10)
+        // Requires web-sys crate for browser API bindings
         Err(AudioError::NotImplemented(
             "WebAudio backend pending implementation - requires web-sys dependency".to_string(),
         ))

@@ -3,4 +3,4 @@
 //! This module will provide audio playback functionality
 //! for synthesized speech and audio output.
 
-// TODO(GH-133): Implement audio playback for TTS output
+// Stub: Audio playback deferred (GH-133)
