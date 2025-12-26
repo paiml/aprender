@@ -634,15 +634,17 @@ Surviving Mutant Analysis (GH-142):
 | DD: Sovereign Compliance | 7 | ✅ Complete (3310ed1) |
 | Toyota Principles P1-P14 | 14 | ⬜ Documented |
 | Property-Based Tests | 5 | ✅ Complete (proptest BB tests) |
-| Integration Tests | 12 | ⬜ Pending |
+| Integration Tests | 5 | ✅ Complete (215bad6) |
 | Mutation Testing | 15 | ⬜ CI Configured |
 
 **Total Enhanced Points**: 313 + 87 = **400 verification points**
 
-**Implementation Status**: 54/87 tests implemented (62%)
+**Implementation Status**: 59/87 tests implemented (68%)
 - AA/BB/CC/DD: 37 tests passing
 - Y-section: 17 tests passing (format_parity_tests.rs)
+- INT-section: 5 tests passing (integration.rs)
 - Run: `cargo test --features "format-quantize,audio" falsification`
+- Run: `cargo test --test integration int0`
 
 ---
 
