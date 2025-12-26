@@ -2374,7 +2374,19 @@ fn y1_apr_loads_via_realizar_mmap() {
   - Q4_0 block size corrected (18 bytes: 2-byte scale + 16 bytes data, not 20)
   - GQA dimension handling fixed for separate Q/K/V
   - **Verified**: TinyLlama-1.1B Q4_0 GGUF loads (637.7 MB in 0.28s) and generates
-  - Remaining: Proper LLaMA tokenizer needed (current char→u32 produces garbled output)
+- **2025-12-26**: ✅ **LlamaTokenizer implemented** (commit 364591d)
+  - SentencePiece-style BPE tokenizer for GGUF models
+  - Loads vocabulary from GGUF metadata (tokenizer.ggml.tokens)
+  - 8 Popperian falsification tests (LT-01 to LT-08)
+  - Encodes "Hello" → [15043] (correct, was broken char→u32 = [72, 101, ...])
+  - Decodes correctly with ▁ → space conversion
+- **2025-12-26**: ⚠️ **GQA attention bug in realizar** (realized during chat testing)
+  - `OwnedQuantizedModel::causal_attention()` panics on GQA models
+  - Issue: Assumes num_kv_heads == num_heads (TinyLlama: 4 kv_heads vs 32 q_heads)
+  - Workaround: Fall back to `QuantizedGGUFTransformer` (simplified attention)
+  - Impact: Output quality is garbage (no RoPE/causal mask in simplified path)
+  - Root cause: `k[k_start + d]` access with hidden_dim offset, but k has kv_dim
+  - Fix needed: realizar/src/gguf.rs causal_attention must handle GQA dimensions
 - **2025-12-26**: ✅ **SPEC COMPLETE: 313/313 points verified**
   - GPU benchmarks deferred to [GH-141](https://github.com/paiml/aprender/issues/141)
   - Section Y renumbered: Y7 (GPU) removed, Y8-Y14 → Y7-Y13
