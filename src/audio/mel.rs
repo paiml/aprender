@@ -1277,7 +1277,9 @@ mod tests_falsification_aa {
             .map(|i| (2.0 * std::f32::consts::PI * 440.0 * i as f32 / sample_rate as f32).sin())
             .collect();
 
-        let mel = filterbank.compute(&samples).expect("compute should succeed");
+        let mel = filterbank
+            .compute(&samples)
+            .expect("compute should succeed");
 
         // Check for NaN
         let has_nan = mel.iter().any(|x| x.is_nan());
@@ -1302,9 +1304,7 @@ mod tests_falsification_aa {
         let filterbank = MelFilterbank::new(&config);
 
         // Fixed test signal
-        let samples: Vec<f32> = (0..1600)
-            .map(|i| (i as f32 * 0.01).sin())
-            .collect();
+        let samples: Vec<f32> = (0..1600).map(|i| (i as f32 * 0.01).sin()).collect();
 
         // Compute 5 times
         let results: Vec<Vec<f32>> = (0..5)
@@ -1337,9 +1337,7 @@ mod tests_falsification_aa {
     #[test]
     fn test_aa4_stereo_to_mono_sample_count() {
         // 1000 stereo samples = 500 mono samples
-        let stereo: Vec<f32> = (0..2000)
-            .map(|i| (i as f32 * 0.001).sin())
-            .collect();
+        let stereo: Vec<f32> = (0..2000).map(|i| (i as f32 * 0.001).sin()).collect();
 
         let mono = stereo_to_mono(&stereo);
 

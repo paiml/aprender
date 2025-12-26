@@ -1761,7 +1761,10 @@ mod tests {
         assert_eq!(format!("{}", ParamValue::Float(1.5)), "1.500000");
         assert_eq!(format!("{}", ParamValue::Int(42)), "42");
         assert_eq!(format!("{}", ParamValue::Bool(true)), "true");
-        assert_eq!(format!("{}", ParamValue::String("test".to_string())), "test");
+        assert_eq!(
+            format!("{}", ParamValue::String("test".to_string())),
+            "test"
+        );
     }
 
     #[test]
@@ -1876,8 +1879,8 @@ mod tests {
 
     #[test]
     fn test_de_search_with_categorical() {
-        let space: SearchSpace<RF> = SearchSpace::new()
-            .add_categorical(RF::MaxFeatures, ["sqrt", "log2", "auto"]);
+        let space: SearchSpace<RF> =
+            SearchSpace::new().add_categorical(RF::MaxFeatures, ["sqrt", "log2", "auto"]);
 
         let mut search = DESearch::new(50).with_seed(42);
         let trials = search.suggest(&space, 10);
@@ -1891,8 +1894,8 @@ mod tests {
 
     #[test]
     fn test_active_learning_sample_count() {
-        let space: SearchSpace<RF> = SearchSpace::new()
-            .add_continuous(RF::NEstimators, 10.0, 500.0);
+        let space: SearchSpace<RF> =
+            SearchSpace::new().add_continuous(RF::NEstimators, 10.0, 500.0);
 
         let base = RandomSearch::new(100).with_seed(42);
         let mut search = ActiveLearningSearch::new(base);
@@ -1915,8 +1918,8 @@ mod tests {
 
     #[test]
     fn test_active_learning_returns_empty_when_should_stop() {
-        let space: SearchSpace<RF> = SearchSpace::new()
-            .add_continuous(RF::NEstimators, 10.0, 500.0);
+        let space: SearchSpace<RF> =
+            SearchSpace::new().add_continuous(RF::NEstimators, 10.0, 500.0);
 
         let base = RandomSearch::new(1000).with_seed(42);
         let mut search = ActiveLearningSearch::new(base)
@@ -1944,8 +1947,8 @@ mod tests {
 
     #[test]
     fn test_active_learning_near_zero_mean() {
-        let space: SearchSpace<RF> = SearchSpace::new()
-            .add_continuous(RF::NEstimators, 10.0, 500.0);
+        let space: SearchSpace<RF> =
+            SearchSpace::new().add_continuous(RF::NEstimators, 10.0, 500.0);
 
         let base = RandomSearch::new(100).with_seed(42);
         let mut search = ActiveLearningSearch::new(base);
@@ -1972,8 +1975,8 @@ mod tests {
 
     #[test]
     fn test_active_learning_single_sample() {
-        let space: SearchSpace<RF> = SearchSpace::new()
-            .add_continuous(RF::NEstimators, 10.0, 500.0);
+        let space: SearchSpace<RF> =
+            SearchSpace::new().add_continuous(RF::NEstimators, 10.0, 500.0);
 
         let base = RandomSearch::new(100).with_seed(42);
         let mut search = ActiveLearningSearch::new(base);
@@ -2028,8 +2031,8 @@ mod tests {
 
     #[test]
     fn test_de_update_empty_results() {
-        let space: SearchSpace<RF> = SearchSpace::new()
-            .add_continuous(RF::NEstimators, 10.0, 500.0);
+        let space: SearchSpace<RF> =
+            SearchSpace::new().add_continuous(RF::NEstimators, 10.0, 500.0);
 
         let mut search = DESearch::new(50).with_seed(42);
         let _trials = search.suggest(&space, 10);
@@ -2041,8 +2044,8 @@ mod tests {
 
     #[test]
     fn test_grid_search_position_tracking() {
-        let space: SearchSpace<RF> = SearchSpace::new()
-            .add_categorical(RF::Bootstrap, [true, false]);
+        let space: SearchSpace<RF> =
+            SearchSpace::new().add_categorical(RF::Bootstrap, [true, false]);
 
         let mut search = GridSearch::new(5);
 

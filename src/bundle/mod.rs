@@ -540,8 +540,7 @@ mod tests {
         let temp = NamedTempFile::new().expect("Failed to create temp file");
         let path = temp.path().to_string_lossy().to_string();
 
-        let metadata = ModelMetadata::new(100)
-            .with_version("1.0.0");
+        let metadata = ModelMetadata::new(100).with_version("1.0.0");
 
         let bundle = BundleBuilder::new(&path)
             .add_model_with_metadata("model1", vec![1, 2, 3], metadata)

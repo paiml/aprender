@@ -136,7 +136,10 @@ fn mut03_logical_mutation_detection() {
     );
 
     // NOT - if mutated to identity, this fails
-    assert!(!false_val, "MUT-03 FALSIFIED: NOT false mutation not caught");
+    assert!(
+        !false_val,
+        "MUT-03 FALSIFIED: NOT false mutation not caught"
+    );
     assert!(
         !(!true_val),
         "MUT-03 FALSIFIED: NOT true mutation not caught"
@@ -202,10 +205,7 @@ fn mut05_ci_mutation_workflow_exists() {
 
     // Should have mutation testing job
     let has_mutants_job = ci_content.contains("mutants:");
-    assert!(
-        has_mutants_job,
-        "MUT-05 FALSIFIED: No mutants job in CI"
-    );
+    assert!(has_mutants_job, "MUT-05 FALSIFIED: No mutants job in CI");
 
     // Should install cargo-mutants
     let has_cargo_mutants = ci_content.contains("cargo-mutants");
@@ -231,8 +231,8 @@ fn mut06_mutation_artifacts_captured() {
 
     // Should upload mutation results
     let has_upload = ci_content.contains("upload-artifact");
-    let has_mutants_results = ci_content.contains("mutants-results")
-        || ci_content.contains("mutants.out");
+    let has_mutants_results =
+        ci_content.contains("mutants-results") || ci_content.contains("mutants.out");
 
     assert!(
         has_upload && has_mutants_results,
@@ -328,8 +328,8 @@ fn mut09_loss_function_mutations() {
 /// FALSIFICATION: Metric calculation mutations not caught
 #[test]
 fn mut10_metrics_mutations() {
-    use aprender::metrics::{mae, mse, r_squared};
     use aprender::metrics::classification::accuracy;
+    use aprender::metrics::{mae, mse, r_squared};
     use aprender::primitives::Vector;
 
     // R² score mutations
@@ -386,7 +386,12 @@ fn mut11_training_loop_mutations() {
     // Predictions should be close to actual
     let predictions = model.predict(&x);
 
-    for (i, (pred, actual)) in predictions.as_slice().iter().zip(y.as_slice().iter()).enumerate() {
+    for (i, (pred, actual)) in predictions
+        .as_slice()
+        .iter()
+        .zip(y.as_slice().iter())
+        .enumerate()
+    {
         assert!(
             (pred - actual).abs() < 0.5,
             "MUT-11 FALSIFIED: Training mutation not caught at index {}",
@@ -432,11 +437,7 @@ fn mut12_boundary_mutations() {
         arr[4], 5,
         "MUT-12 FALSIFIED: Last element mutation not caught"
     );
-    assert_eq!(
-        arr.len(),
-        5,
-        "MUT-12 FALSIFIED: Length mutation not caught"
-    );
+    assert_eq!(arr.len(), 5, "MUT-12 FALSIFIED: Length mutation not caught");
 
     // Empty vs non-empty checks
     let empty: Vec<i32> = vec![];
@@ -482,10 +483,7 @@ fn mut13_increment_mutations() {
         total += i;
     }
     // 0 + 2 + 4 + 6 + 8 = 20
-    assert_eq!(
-        total, 20,
-        "MUT-13 FALSIFIED: Step mutation not caught"
-    );
+    assert_eq!(total, 20, "MUT-13 FALSIFIED: Step mutation not caught");
 }
 
 /// MUT-14: Constant value mutations caught
@@ -604,5 +602,9 @@ fn mutation_testing_summary() {
         eprintln!("{}", point);
     }
 
-    assert_eq!(points.len(), 15, "Should verify all 15 mutation testing points");
+    assert_eq!(
+        points.len(),
+        15,
+        "Should verify all 15 mutation testing points"
+    );
 }

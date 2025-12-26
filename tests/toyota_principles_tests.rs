@@ -113,9 +113,8 @@ fn p4_heijunka_level_workload() {
 
     if has_mel {
         let mel_rs = include_str!("../src/audio/mel.rs");
-        let has_chunking = mel_rs.contains("chunk")
-            || mel_rs.contains("hop_length")
-            || mel_rs.contains("frame");
+        let has_chunking =
+            mel_rs.contains("chunk") || mel_rs.contains("hop_length") || mel_rs.contains("frame");
 
         assert!(
             has_chunking,

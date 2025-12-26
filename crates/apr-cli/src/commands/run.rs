@@ -766,7 +766,10 @@ mod tests {
         // Offline mode MUST reject non-cached URL sources
         let result = resolve_model(&source, false, true);
 
-        assert!(result.is_err(), "FALSIFIED: Offline mode allowed URL source");
+        assert!(
+            result.is_err(),
+            "FALSIFIED: Offline mode allowed URL source"
+        );
         let err = result.unwrap_err().to_string();
         assert!(
             err.contains("OFFLINE MODE"),

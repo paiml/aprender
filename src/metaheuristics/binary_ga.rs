@@ -429,7 +429,12 @@ mod tests {
         assert!(!history.is_empty());
         // History should be monotonically non-increasing (we're minimizing)
         for w in history.windows(2) {
-            assert!(w[1] <= w[0] + 0.001, "History should not increase: {} > {}", w[1], w[0]);
+            assert!(
+                w[1] <= w[0] + 0.001,
+                "History should not increase: {} > {}",
+                w[1],
+                w[0]
+            );
         }
     }
 

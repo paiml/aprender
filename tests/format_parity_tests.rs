@@ -168,10 +168,7 @@ fn y8_apr_load_time_parity() {
     // Full GGUF comparison test in realizar/tests/y6_y10_performance_parity.rs
     // Run with: cargo test --release --test y6_y10_performance_parity y8
 
-    assert!(
-        true,
-        "Y8 PASS: APR load time 6.27ms (verified via CLI)"
-    );
+    assert!(true, "Y8 PASS: APR load time 6.27ms (verified via CLI)");
 }
 
 /// Y9: APR peak memory <= GGUF
@@ -276,10 +273,7 @@ fn y13_apr_chat_format_agnostic() {
     //
     // Requires: cargo build -p apr-cli --features inference
 
-    assert!(
-        true,
-        "Y13 PASS: apr chat supports APR and GGUF formats"
-    );
+    assert!(true, "Y13 PASS: apr chat supports APR and GGUF formats");
 }
 
 // ============================================================================
@@ -445,7 +439,8 @@ fn cc1_apr_format_constants_match() {
     // Magic bytes should be APRN (ASCII: A=0x41, P=0x50, R=0x52, N=0x4E)
     let magic_v1 = aprender::format::v2::MAGIC_V1;
     assert_eq!(
-        magic_v1, [0x41, 0x50, 0x52, 0x4E], // "APRN"
+        magic_v1,
+        [0x41, 0x50, 0x52, 0x4E], // "APRN"
         "CC1 FALSIFIED: MAGIC_V1 should be [0x41, 0x50, 0x52, 0x4E] (APRN)"
     );
 
@@ -501,16 +496,38 @@ fn cc1_apr_roundtrip_integrity() {
     let read_meta = reader.metadata();
 
     // Verify all metadata fields preserved
-    assert_eq!(read_meta.model_type, "test_model", "CC1 FALSIFIED: model_type corrupted");
-    assert_eq!(read_meta.name, Some("Test Model".to_string()), "CC1 FALSIFIED: name corrupted");
-    assert_eq!(read_meta.author, Some("Test Author".to_string()), "CC1 FALSIFIED: author corrupted");
-    assert_eq!(read_meta.license, Some("MIT".to_string()), "CC1 FALSIFIED: license corrupted");
-    assert_eq!(read_meta.source, Some("hf://test/model".to_string()), "CC1 FALSIFIED: source corrupted");
+    assert_eq!(
+        read_meta.model_type, "test_model",
+        "CC1 FALSIFIED: model_type corrupted"
+    );
+    assert_eq!(
+        read_meta.name,
+        Some("Test Model".to_string()),
+        "CC1 FALSIFIED: name corrupted"
+    );
+    assert_eq!(
+        read_meta.author,
+        Some("Test Author".to_string()),
+        "CC1 FALSIFIED: author corrupted"
+    );
+    assert_eq!(
+        read_meta.license,
+        Some("MIT".to_string()),
+        "CC1 FALSIFIED: license corrupted"
+    );
+    assert_eq!(
+        read_meta.source,
+        Some("hf://test/model".to_string()),
+        "CC1 FALSIFIED: source corrupted"
+    );
 
     // Verify tensors preserved
     let weight = reader.get_f32_tensor("weight").expect("get weight");
     assert_eq!(weight.len(), 6, "CC1 FALSIFIED: weight tensor length wrong");
-    assert!((weight[0] - 1.0).abs() < 1e-6, "CC1 FALSIFIED: weight data corrupted");
+    assert!(
+        (weight[0] - 1.0).abs() < 1e-6,
+        "CC1 FALSIFIED: weight data corrupted"
+    );
 
     let bias = reader.get_f32_tensor("bias").expect("get bias");
     assert_eq!(bias.len(), 3, "CC1 FALSIFIED: bias tensor length wrong");
@@ -619,7 +636,8 @@ fn dd1_no_network_dependencies_in_core() {
 
     // Core inference should not require network crates as hard dependencies
     // hf-hub is optional and used for download, not inference
-    let has_optional_hf_hub = cargo_toml.contains("hf-hub") && cargo_toml.contains("optional = true");
+    let has_optional_hf_hub =
+        cargo_toml.contains("hf-hub") && cargo_toml.contains("optional = true");
 
     // If hf-hub is present, it should be optional
     if cargo_toml.contains("hf-hub") {
@@ -633,7 +651,10 @@ fn dd1_no_network_dependencies_in_core() {
     if cargo_toml.contains("reqwest") {
         let reqwest_section = cargo_toml.find("reqwest");
         if let Some(pos) = reqwest_section {
-            let section_end = cargo_toml[pos..].find('\n').map(|p| pos + p).unwrap_or(cargo_toml.len());
+            let section_end = cargo_toml[pos..]
+                .find('\n')
+                .map(|p| pos + p)
+                .unwrap_or(cargo_toml.len());
             let reqwest_line = &cargo_toml[pos..section_end];
             assert!(
                 reqwest_line.contains("optional") || cargo_toml.contains("[dev-dependencies]"),
@@ -657,13 +678,16 @@ fn dd2_reproducible_build_requirements() {
 
     for pattern in &problematic_deps {
         // Check if it's in [dependencies] section (not dev-dependencies)
-        let in_deps = cargo_toml.find("[dependencies]").map(|start| {
-            let end = cargo_toml[start..]
-                .find("[dev-dependencies]")
-                .map(|p| start + p)
-                .unwrap_or(cargo_toml.len());
-            cargo_toml[start..end].contains(pattern)
-        }).unwrap_or(false);
+        let in_deps = cargo_toml
+            .find("[dependencies]")
+            .map(|start| {
+                let end = cargo_toml[start..]
+                    .find("[dev-dependencies]")
+                    .map(|p| start + p)
+                    .unwrap_or(cargo_toml.len());
+                cargo_toml[start..end].contains(pattern)
+            })
+            .unwrap_or(false);
 
         assert!(
             !in_deps,

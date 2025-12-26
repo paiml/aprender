@@ -591,7 +591,10 @@ mod tests {
     fn test_variance_reduction_clone() {
         let vr = VarianceReduction::Stratified { strata: 10 };
         let cloned = vr.clone();
-        assert!(matches!(cloned, VarianceReduction::Stratified { strata: 10 }));
+        assert!(matches!(
+            cloned,
+            VarianceReduction::Stratified { strata: 10 }
+        ));
     }
 
     #[test]

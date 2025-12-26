@@ -3915,8 +3915,7 @@ jobs:
 #[test]
 fn t1_apr_run_uses_realizar() {
     // Verify architecture documentation mandates realizar-first
-    let claude_md = std::fs::read_to_string("CLAUDE.md")
-        .expect("CLAUDE.md should exist");
+    let claude_md = std::fs::read_to_string("CLAUDE.md").expect("CLAUDE.md should exist");
 
     assert!(
         claude_md.contains("realizar"),
@@ -3938,8 +3937,7 @@ fn t1_apr_run_uses_realizar() {
 fn t2_apr_serve_uses_realizar() {
     // Check architecture documentation specifies realizar for serving
     let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path)
-        .expect("Specification should exist");
+    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
         spec.contains("Model Serving") && spec.contains("realizar") && spec.contains("Primary"),
@@ -3957,8 +3955,7 @@ fn t2_apr_serve_uses_realizar() {
 fn t3_apr_profile_delegates_to_realizar() {
     // Verify profiling architecture is documented
     let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path)
-        .expect("Specification should exist");
+    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
         spec.contains("apr profile") && spec.contains("Roofline"),
@@ -3976,8 +3973,7 @@ fn t3_apr_profile_delegates_to_realizar() {
 fn t4_apr_bench_measures_realizar_throughput() {
     // Performance targets must be documented
     let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path)
-        .expect("Specification should exist");
+    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
         spec.contains("225") && spec.contains("tok/s"),
@@ -3995,8 +3991,7 @@ fn t4_apr_bench_measures_realizar_throughput() {
 fn t5_inference_feature_enables_realizar() {
     // Check that inference feature is documented
     let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path)
-        .expect("Specification should exist");
+    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
         spec.contains("inference") && spec.contains("realizar"),
@@ -4014,8 +4009,7 @@ fn t5_inference_feature_enables_realizar() {
 fn t6_default_features_include_inference() {
     // Check spec mandates inference as default
     let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path)
-        .expect("Specification should exist");
+    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
         spec.contains("default = [") && spec.contains("inference"),
@@ -4029,8 +4023,7 @@ fn t6_default_features_include_inference() {
 fn t7_safetensors_via_realizar() {
     // Check responsibility matrix - SafeTensors loading assigned to realizar
     let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path)
-        .expect("Specification should exist");
+    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     // Spec has "APR/GGUF/SafeTensors Inference | ❌ Never | ✅ Primary | ❌ Never"
     assert!(
@@ -4045,8 +4038,7 @@ fn t7_safetensors_via_realizar() {
 fn t8_gguf_via_realizar() {
     // Check responsibility matrix for GGUF
     let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path)
-        .expect("Specification should exist");
+    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
         spec.contains("GGUF") && spec.contains("realizar"),
@@ -4060,8 +4052,7 @@ fn t8_gguf_via_realizar() {
 fn t9_kv_cache_from_realizar() {
     // Check KV cache responsibility
     let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path)
-        .expect("Specification should exist");
+    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
         spec.contains("KV Cache") && spec.contains("realizar") && spec.contains("Primary"),
@@ -4075,8 +4066,7 @@ fn t9_kv_cache_from_realizar() {
 fn t10_quantization_via_trueno() {
     // Check quantization responsibility
     let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path)
-        .expect("Specification should exist");
+    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
         spec.contains("Quantization") && spec.contains("trueno"),
@@ -4090,8 +4080,7 @@ fn t10_quantization_via_trueno() {
 fn t11_no_generate_in_aprender_for_production() {
     // Check deletion mandate
     let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path)
-        .expect("Specification should exist");
+    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
         spec.contains("generate()") && spec.contains("DELETE"),
@@ -4105,8 +4094,7 @@ fn t11_no_generate_in_aprender_for_production() {
 fn t12_no_forward_in_aprender_inference() {
     // Check deletion mandate for forward
     let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path)
-        .expect("Specification should exist");
+    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
         spec.contains("forward()") && spec.contains("DELETE"),
@@ -4120,8 +4108,7 @@ fn t12_no_forward_in_aprender_inference() {
 fn t13_tokenizer_from_realizar() {
     // Check tokenizer responsibility
     let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path)
-        .expect("Specification should exist");
+    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
         spec.contains("Tokenizers") && spec.contains("realizar") && spec.contains("Primary"),
@@ -4135,8 +4122,7 @@ fn t13_tokenizer_from_realizar() {
 fn t14_gpu_inference_via_trueno() {
     // Check GPU responsibility
     let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path)
-        .expect("Specification should exist");
+    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
         spec.contains("CUDA/GPU") && spec.contains("realizar"),
@@ -4150,8 +4136,7 @@ fn t14_gpu_inference_via_trueno() {
 fn t15_wasm_inference_via_realizar() {
     // Check WASM responsibility
     let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path)
-        .expect("Specification should exist");
+    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
         spec.contains("WASM Inference") && spec.contains("realizar"),
@@ -4165,8 +4150,7 @@ fn t15_wasm_inference_via_realizar() {
 fn t16_throughput_target_gpu() {
     // Check performance targets
     let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path)
-        .expect("Specification should exist");
+    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
         spec.contains("225") || spec.contains("200"),
@@ -4180,8 +4164,7 @@ fn t16_throughput_target_gpu() {
 fn t17_throughput_target_cpu() {
     // Check CPU performance targets
     let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path)
-        .expect("Specification should exist");
+    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
         spec.contains("15 tok/s") || spec.contains("tok/s"),
@@ -4195,11 +4178,11 @@ fn t17_throughput_target_cpu() {
 fn t18_memory_efficiency() {
     // Check memory efficiency targets
     let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path)
-        .expect("Specification should exist");
+    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
-        spec.contains("Memory") && (spec.contains("1.2x") || spec.contains("1.5x") || spec.contains("efficiency")),
+        spec.contains("Memory")
+            && (spec.contains("1.2x") || spec.contains("1.5x") || spec.contains("efficiency")),
         "T18: Spec must state memory efficiency target"
     );
 }
@@ -4210,8 +4193,7 @@ fn t18_memory_efficiency() {
 fn t19_no_gradient_tracking_in_inference() {
     // Check autograd separation
     let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path)
-        .expect("Specification should exist");
+    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
         spec.contains("Autograd") && spec.contains("aprender") && spec.contains("Primary"),
@@ -4229,8 +4211,7 @@ fn t19_no_gradient_tracking_in_inference() {
 fn t20_examples_use_apr_cli() {
     // Check example migration mandate
     let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path)
-        .expect("Specification should exist");
+    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
         spec.contains("qwen_inference.rs") && spec.contains("REWRITE"),
@@ -4243,8 +4224,7 @@ fn t20_examples_use_apr_cli() {
 #[test]
 fn t21_documentation_states_realizar_first() {
     // Check CLAUDE.md contains mandate
-    let claude_md = std::fs::read_to_string("CLAUDE.md")
-        .expect("CLAUDE.md should exist");
+    let claude_md = std::fs::read_to_string("CLAUDE.md").expect("CLAUDE.md should exist");
 
     assert!(
         claude_md.contains("Realizar-First"),
@@ -4271,8 +4251,7 @@ fn t22_ci_tests_realizar() {
     } else {
         // CI file may be in different location - just verify spec mentions CI
         let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
-        let spec = std::fs::read_to_string(spec_path)
-            .expect("Specification should exist");
+        let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
         assert!(
             spec.contains("CI") || spec.contains("GitHub Actions"),
             "T22: Spec must mention CI integration"
@@ -4286,8 +4265,7 @@ fn t22_ci_tests_realizar() {
 fn t23_error_messages_mention_realizar() {
     // Check spec mentions proper error messaging
     let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path)
-        .expect("Specification should exist");
+    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
         spec.contains("CORRECT") && spec.contains("realizar"),
@@ -4305,8 +4283,7 @@ fn t23_error_messages_mention_realizar() {
 fn t24_apr_explain_describes_architecture() {
     // Check apr explain command documentation
     let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path)
-        .expect("Specification should exist");
+    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
         spec.contains("explain"),
@@ -4320,8 +4297,7 @@ fn t24_apr_explain_describes_architecture() {
 fn t25_trueno_kernels_invoked() {
     // Check trueno kernel responsibility
     let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path)
-        .expect("Specification should exist");
+    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
         spec.contains("trueno") && spec.contains("Compute"),
@@ -4397,8 +4373,7 @@ fn x2_no_unimplemented_in_public_api() {
 #[test]
 fn x3_trueno_dependency_documented() {
     // Verify trueno is a mandatory dependency in Cargo.toml
-    let cargo_toml = std::fs::read_to_string("Cargo.toml")
-        .expect("Cargo.toml should exist");
+    let cargo_toml = std::fs::read_to_string("Cargo.toml").expect("Cargo.toml should exist");
 
     assert!(
         cargo_toml.contains("trueno"),
@@ -4434,8 +4409,7 @@ fn x3_trueno_dependency_documented() {
 fn x4_architecture_layers_documented() {
     // Check spec documents layer separation
     let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path)
-        .expect("Specification should exist");
+    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
         spec.contains("aprender") && spec.contains("realizar") && spec.contains("trueno"),
@@ -4460,8 +4434,7 @@ fn x5_no_duplicate_http_server() {
 #[test]
 fn x6_no_axum_in_aprender() {
     // Check Cargo.toml doesn't have axum in core deps
-    let cargo_toml = std::fs::read_to_string("Cargo.toml")
-        .expect("Cargo.toml should exist");
+    let cargo_toml = std::fs::read_to_string("Cargo.toml").expect("Cargo.toml should exist");
 
     // axum should be in apr-cli with inference feature, not in aprender core
     let lines: Vec<&str> = cargo_toml.lines().collect();
@@ -4492,8 +4465,7 @@ fn x6_no_axum_in_aprender() {
 fn x7_tests_detect_logic_errors() {
     // Verify test coverage is meaningful
     let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path)
-        .expect("Specification should exist");
+    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
         spec.contains("96.94%") || spec.contains("coverage"),
@@ -4536,8 +4508,7 @@ fn x8_benchmarks_vary_with_input() {
 fn x9_profile_metrics_vary_with_model() {
     // This is a specification check - actual profiling is implementation-dependent
     let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path)
-        .expect("Specification should exist");
+    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
         spec.contains("GFLOPS") || spec.contains("Roofline"),
@@ -4550,16 +4521,15 @@ fn x9_profile_metrics_vary_with_model() {
 #[test]
 fn x10_binary_size_realistic() {
     // Check that we have substantial dependencies
-    let cargo_toml = std::fs::read_to_string("Cargo.toml")
-        .expect("Cargo.toml should exist");
+    let cargo_toml = std::fs::read_to_string("Cargo.toml").expect("Cargo.toml should exist");
 
     let dep_count = cargo_toml.matches("[dependencies]").count()
-        + cargo_toml.lines().filter(|l| l.starts_with("trueno") || l.starts_with("serde")).count();
+        + cargo_toml
+            .lines()
+            .filter(|l| l.starts_with("trueno") || l.starts_with("serde"))
+            .count();
 
-    assert!(
-        dep_count > 0,
-        "X10: Should have dependencies listed"
-    );
+    assert!(dep_count > 0, "X10: Should have dependencies listed");
 }
 
 // ============================================================================
@@ -4573,8 +4543,7 @@ fn x10_binary_size_realistic() {
 fn u1_profile_roofline_output() {
     // Verify Roofline model is documented
     let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path)
-        .expect("Specification should exist");
+    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
         spec.contains("Roofline Model"),
@@ -4595,8 +4564,7 @@ fn u1_profile_roofline_output() {
 #[test]
 fn u2_bench_shows_throughput() {
     let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path)
-        .expect("Specification should exist");
+    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
         spec.contains("tok/s") && spec.contains("bench"),
@@ -4609,8 +4577,7 @@ fn u2_bench_shows_throughput() {
 #[test]
 fn u3_trace_shows_layer_timing() {
     let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path)
-        .expect("Specification should exist");
+    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
         spec.contains("trace") && spec.contains("Layer-by-layer"),
@@ -4623,8 +4590,7 @@ fn u3_trace_shows_layer_timing() {
 #[test]
 fn u4_profiler_identifies_bottleneck() {
     let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path)
-        .expect("Specification should exist");
+    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
         spec.contains("memory-bandwidth bound") || spec.contains("Memory-bound"),
@@ -4637,8 +4603,7 @@ fn u4_profiler_identifies_bottleneck() {
 #[test]
 fn u5_hotspot_analysis() {
     let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path)
-        .expect("Specification should exist");
+    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
         spec.contains("hotspot") || spec.contains("Hotspot"),
@@ -4651,8 +4616,7 @@ fn u5_hotspot_analysis() {
 #[test]
 fn u6_efficiency_percentage() {
     let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path)
-        .expect("Specification should exist");
+    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
         spec.contains("efficiency") || spec.contains("peak"),
@@ -4665,8 +4629,7 @@ fn u6_efficiency_percentage() {
 #[test]
 fn u7_cuda_profiling_supported() {
     let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path)
-        .expect("Specification should exist");
+    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
         spec.contains("CUDA") && (spec.contains("profil") || spec.contains("Nsight")),
@@ -4714,8 +4677,7 @@ fn u8_memory_tracking_accurate() {
 fn u9_warmup_configurable() {
     // Check CLI documentation mentions warmup
     let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path)
-        .expect("Specification should exist");
+    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     // Warmup is a standard profiling practice
     assert!(
@@ -4761,8 +4723,7 @@ fn u11_json_output_format() {
     profile.insert("efficiency_percent", 75.0);
 
     // Should serialize to valid JSON
-    let json = serde_json::to_string(&profile)
-        .expect("U11: Profile should serialize to JSON");
+    let json = serde_json::to_string(&profile).expect("U11: Profile should serialize to JSON");
     assert!(
         json.contains("throughput"),
         "U11: JSON should contain throughput"
@@ -4807,8 +4768,7 @@ fn u12_comparison_mode() {
 fn u13_regression_detection() {
     // Verify spec mentions regression detection
     let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path)
-        .expect("Specification should exist");
+    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
         spec.contains("regression") || spec.contains("Regression"),
@@ -4822,8 +4782,7 @@ fn u13_regression_detection() {
 fn u14_anti_pattern_detection() {
     // Verify spec documents anti-patterns
     let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path)
-        .expect("Specification should exist");
+    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
         spec.contains("Anti-Pattern") || spec.contains("anti-pattern"),
@@ -4837,8 +4796,7 @@ fn u14_anti_pattern_detection() {
 fn u15_profiler_api_accessible() {
     // Verify profiler API is documented
     let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path)
-        .expect("Specification should exist");
+    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
         spec.contains("Profiler") && spec.contains("API"),
@@ -4859,7 +4817,9 @@ fn v1_offline_mode_works() {
     if let Ok(content) = std::fs::read_to_string(run_path) {
         // We check for 'offline' or logic that skips network
         assert!(
-            content.contains("offline") || content.contains("force") || content.contains("resolve_model"),
+            content.contains("offline")
+                || content.contains("force")
+                || content.contains("resolve_model"),
             "V1: {} must implement offline/cache-first resolution",
             run_path
         );
@@ -4877,7 +4837,15 @@ fn v2_no_telemetry() {
     for dir in &scan_dirs {
         // We use a simple string match on the whole directory's files (conceptually)
         // For this test, we scan Cargo.toml for telemetry dependencies
-        let cargo_toml = std::fs::read_to_string(format!("{}/../Cargo.toml", if dir.contains("/") { dir.split('/').next().unwrap() } else { "." })).unwrap_or_default();
+        let cargo_toml = std::fs::read_to_string(format!(
+            "{}/../Cargo.toml",
+            if dir.contains("/") {
+                dir.split('/').next().unwrap()
+            } else {
+                "."
+            }
+        ))
+        .unwrap_or_default();
         for &term in &forbidden {
             assert!(
                 !cargo_toml.contains(term),
@@ -4917,7 +4885,10 @@ fn v3_inference_no_network() {
 fn v7_no_crash_reports() {
     // Similar to V2, ensure no crash reporting crates
     let cargo_toml = std::fs::read_to_string("Cargo.toml").unwrap_or_default();
-    assert!(!cargo_toml.contains("sentry-rust"), "V7: Sentry found in core");
+    assert!(
+        !cargo_toml.contains("sentry-rust"),
+        "V7: Sentry found in core"
+    );
     assert!(!cargo_toml.contains("bugsnag"), "V7: Bugsnag found in core");
 }
 
@@ -4938,7 +4909,10 @@ fn w1_zero_alloc_inference() {
         if let Some(gen_pos) = content.find("fn generate") {
             // Extract just the generate function (to next "fn " or end)
             let gen_onwards = &content[gen_pos..];
-            let end_pos = gen_onwards[3..].find("\nfn ").map(|p| p + 3).unwrap_or(gen_onwards.len());
+            let end_pos = gen_onwards[3..]
+                .find("\nfn ")
+                .map(|p| p + 3)
+                .unwrap_or(gen_onwards.len());
             let gen_fn = &gen_onwards[..end_pos];
 
             // Core generation function should minimize allocations
@@ -5017,7 +4991,10 @@ fn w11_simd_set_verified() {
 
     // On many CI systems this might fail if they use very old CPUs,
     // but for world-class performance we must target modern SIMD.
-    assert!(feature_detected || cfg!(not(target_arch = "x86_64")), "W11: Modern SIMD features (AVX2/NEON) should be detectable on target hardware");
+    assert!(
+        feature_detected || cfg!(not(target_arch = "x86_64")),
+        "W11: Modern SIMD features (AVX2/NEON) should be detectable on target hardware"
+    );
 }
 
 // ============================================================================
@@ -5031,14 +5008,14 @@ fn w11_simd_set_verified() {
 fn q1_qwen25_coder_imports() {
     // Verify Qwen2 architecture supports Coder variant
     let config = Qwen2Config {
-        hidden_size: 896,  // Qwen2.5-Coder-0.5B spec
+        hidden_size: 896, // Qwen2.5-Coder-0.5B spec
         num_attention_heads: 14,
         num_kv_heads: 2,
         num_layers: 24,
-        vocab_size: 151936,  // Same vocab as Qwen2
-        max_seq_len: 32768,  // Longer context for code
+        vocab_size: 151936, // Same vocab as Qwen2
+        max_seq_len: 32768, // Longer context for code
         intermediate_size: 4864,
-        rope_theta: 1000000.0,  // Higher for longer context
+        rope_theta: 1000000.0, // Higher for longer context
     };
 
     let model = Qwen2Model::new(&config);
@@ -5094,7 +5071,7 @@ fn q3_context_window_8k() {
         num_kv_heads: 2,
         num_layers: 1,
         vocab_size: 100,
-        max_seq_len: 16384,  // > 8k
+        max_seq_len: 16384, // > 8k
         intermediate_size: 128,
         rope_theta: 10000.0,
     };
@@ -5111,8 +5088,7 @@ fn q3_context_window_8k() {
 fn q4_system_prompt_affects_style() {
     // This is a behavioral test - verify architecture supports it
     let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path)
-        .expect("Specification should exist");
+    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
         spec.contains("Instruct") || spec.contains("chat"),
@@ -5152,8 +5128,7 @@ fn q6_code_blocks_extracted() {
 fn q7_generation_speed() {
     // Check performance targets
     let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path)
-        .expect("Specification should exist");
+    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
         spec.contains("tok/s"),
@@ -5167,8 +5142,7 @@ fn q7_generation_speed() {
 fn q8_memory_usage() {
     // Check memory constraints
     let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path)
-        .expect("Specification should exist");
+    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
         spec.contains("512MB") || spec.contains("Memory"),
@@ -5229,13 +5203,9 @@ fn q10_hello_world_compiles() {
 fn r1_gguf_import_feature() {
     // Check GGUF support is documented
     let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path)
-        .expect("Specification should exist");
+    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
-    assert!(
-        spec.contains("GGUF"),
-        "R1: Spec must mention GGUF format"
-    );
+    assert!(spec.contains("GGUF"), "R1: Spec must mention GGUF format");
 }
 
 /// R2: Phi-3-mini imports successfully
@@ -5244,8 +5214,7 @@ fn r1_gguf_import_feature() {
 fn r2_phi3_imports() {
     // Verify architecture flexibility
     let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path)
-        .expect("Specification should exist");
+    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
         spec.contains("Phi") || spec.contains("architecture"),
@@ -5259,8 +5228,7 @@ fn r2_phi3_imports() {
 fn r3_bert_imports() {
     // Check for encoder model support
     let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path)
-        .expect("Specification should exist");
+    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     // Whisper has encoder - so encoder models are supported
     assert!(
@@ -5275,8 +5243,7 @@ fn r3_bert_imports() {
 fn r4_safetensors_error_handling() {
     // Verify error handling is documented
     let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path)
-        .expect("Specification should exist");
+    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
         spec.contains("error") || spec.contains("Error") || spec.contains("validation"),
@@ -5290,8 +5257,7 @@ fn r4_safetensors_error_handling() {
 fn r5_large_model_streaming() {
     // Check for streaming import
     let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path)
-        .expect("Specification should exist");
+    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
         spec.contains("mmap") || spec.contains("streaming") || spec.contains("Streaming"),
@@ -5305,8 +5271,7 @@ fn r5_large_model_streaming() {
 fn r6_auto_architecture() {
     // Check for graceful handling
     let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path)
-        .expect("Specification should exist");
+    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
         spec.contains("arch") || spec.contains("Architecture"),
@@ -5320,8 +5285,7 @@ fn r6_auto_architecture() {
 fn r7_cache_configurable() {
     // Check for cache configuration
     let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path)
-        .expect("Specification should exist");
+    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
         spec.contains("cache") || spec.contains("Cache"),
@@ -5335,8 +5299,7 @@ fn r7_cache_configurable() {
 fn r8_offline_flag() {
     // Already verified in V1, cross-check here
     let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path)
-        .expect("Specification should exist");
+    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
         spec.contains("offline"),
@@ -5350,8 +5313,7 @@ fn r8_offline_flag() {
 fn r9_checksum_verification() {
     // Check for checksum verification
     let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path)
-        .expect("Specification should exist");
+    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
         spec.contains("checksum") || spec.contains("Checksum") || spec.contains("signature"),
@@ -5365,8 +5327,7 @@ fn r9_checksum_verification() {
 fn r10_import_progress() {
     // Check for progress indication
     let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path)
-        .expect("Specification should exist");
+    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
         spec.contains("TUI") || spec.contains("progress"),
@@ -5384,8 +5345,7 @@ fn r10_import_progress() {
 fn v4_model_loading_respects_offline() {
     // Verify architecture mandates offline mode
     let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path)
-        .expect("Specification should exist");
+    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
         spec.contains("offline") || spec.contains("Offline"),
@@ -5399,8 +5359,7 @@ fn v4_model_loading_respects_offline() {
 fn v5_cli_warns_on_network() {
     // Verify CLI guidelines
     let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path)
-        .expect("Specification should exist");
+    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
         spec.contains("warn") || spec.contains("explicit"),
@@ -5414,8 +5373,7 @@ fn v5_cli_warns_on_network() {
 fn v6_air_gapped_operation() {
     // Verify mandate for air-gapped operation
     let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path)
-        .expect("Specification should exist");
+    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
         spec.contains("Air-Gapped") || spec.contains("no internet"),
@@ -5429,8 +5387,7 @@ fn v6_air_gapped_operation() {
 fn v8_update_checks_respect_config() {
     // Verify update check policy
     let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path)
-        .expect("Specification should exist");
+    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     // Should mention updates or telemetry (which covers this)
     assert!(
@@ -5445,8 +5402,7 @@ fn v8_update_checks_respect_config() {
 fn v9_remote_execution_disabled() {
     // Verify default bind address policy
     let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path)
-        .expect("Specification should exist");
+    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
         spec.contains("localhost") || spec.contains("127.0.0.1"),
@@ -5460,8 +5416,7 @@ fn v9_remote_execution_disabled() {
 fn v10_wasm_sandbox_no_fetch() {
     // Verify WASM sandbox restrictions
     let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path)
-        .expect("Specification should exist");
+    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
         spec.contains("Sandbox") || spec.contains("sandboxing"),
@@ -5484,8 +5439,7 @@ fn v10_wasm_sandbox_no_fetch() {
 fn v11_offline_rejects_uncached_hf() {
     // Verify the offline mode implementation exists with proper rejection
     let run_path = "crates/apr-cli/src/commands/run.rs";
-    let content = std::fs::read_to_string(run_path)
-        .expect("run.rs should exist");
+    let content = std::fs::read_to_string(run_path).expect("run.rs should exist");
 
     // Must contain OFFLINE MODE rejection logic
     assert!(
@@ -5505,8 +5459,7 @@ fn v11_offline_rejects_uncached_hf() {
 #[test]
 fn v12_offline_rejects_uncached_url() {
     let run_path = "crates/apr-cli/src/commands/run.rs";
-    let content = std::fs::read_to_string(run_path)
-        .expect("run.rs should exist");
+    let content = std::fs::read_to_string(run_path).expect("run.rs should exist");
 
     // Must handle URL sources with offline check
     assert!(
@@ -5559,8 +5512,7 @@ fn v13_inference_loop_no_network_imports() {
 #[test]
 fn v14_network_isolation_spec_mandate() {
     let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path)
-        .expect("Specification should exist");
+    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     // Must have network isolation section
     assert!(
@@ -5586,8 +5538,7 @@ fn v14_network_isolation_spec_mandate() {
 #[test]
 fn v15_offline_flag_exists_in_cli() {
     let main_path = "crates/apr-cli/src/main.rs";
-    let content = std::fs::read_to_string(main_path)
-        .expect("main.rs should exist");
+    let content = std::fs::read_to_string(main_path).expect("main.rs should exist");
 
     // Must have offline flag definition
     assert!(
@@ -5612,8 +5563,7 @@ fn v15_offline_flag_exists_in_cli() {
 fn w2_kernel_autotuning() {
     // Verify auto-tuning mandate
     let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path)
-        .expect("Specification should exist");
+    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
         spec.contains("tuning") || spec.contains("Auto-Tuning"),
@@ -5627,8 +5577,7 @@ fn w2_kernel_autotuning() {
 fn w3_optimal_kernel_selection() {
     // Verify selection logic description
     let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path)
-        .expect("Specification should exist");
+    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
         spec.contains("optimal") || spec.contains("selection"),
@@ -5642,8 +5591,7 @@ fn w3_optimal_kernel_selection() {
 fn w4_tuning_cache() {
     // Verify caching mandate
     let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path)
-        .expect("Specification should exist");
+    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
         spec.contains("cache") || spec.contains("tuning.json"),
@@ -5657,8 +5605,7 @@ fn w4_tuning_cache() {
 fn w5_arena_allocator() {
     // Verify arena allocator usage
     let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path)
-        .expect("Specification should exist");
+    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
         spec.contains("Arena") || spec.contains("allocator"),
@@ -5672,8 +5619,7 @@ fn w5_arena_allocator() {
 fn w6_preallocation_worst_case() {
     // Verify pre-allocation strategy
     let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path)
-        .expect("Specification should exist");
+    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
         spec.contains("Pre-allocation") || spec.contains("pre-allocated"),
@@ -5687,8 +5633,7 @@ fn w6_preallocation_worst_case() {
 fn w7_speculative_decoding() {
     // Verify speculative decoding mentions
     let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path)
-        .expect("Specification should exist");
+    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     // Speculative decoding might be a planned feature or advanced optimization
     // Check if mentioned
@@ -5706,8 +5651,7 @@ fn w7_speculative_decoding() {
 fn w8_pgo_build_profile() {
     // Verify PGO support
     let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path)
-        .expect("Specification should exist");
+    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
         spec.contains("PGO") || spec.contains("Profile-Guided"),
@@ -5721,8 +5665,7 @@ fn w8_pgo_build_profile() {
 fn w12_huge_pages_support() {
     // Verify huge pages support
     let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path)
-        .expect("Specification should exist");
+    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
         spec.contains("Huge pages") || spec.contains("madvise"),

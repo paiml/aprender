@@ -57,7 +57,10 @@ fn main() {
             std::process::exit(1);
         }
     };
-    println!("Tokenizer loaded: {} tokens in vocabulary\n", tokenizer.vocab_size());
+    println!(
+        "Tokenizer loaded: {} tokens in vocabulary\n",
+        tokenizer.vocab_size()
+    );
 
     // Find model weights
     let model_path = find_model_weights();
@@ -126,10 +129,9 @@ fn main() {
         // Generate
         let gen_start = Instant::now();
         let output_ids = model.generate(
-            &input_ids,
-            32,   // max_new_tokens
-            0.7,  // temperature
-            0.9,  // top_p (not used currently)
+            &input_ids, 32,  // max_new_tokens
+            0.7, // temperature
+            0.9, // top_p (not used currently)
         );
         let gen_time = gen_start.elapsed();
 
@@ -164,9 +166,8 @@ fn load_tokenizer() -> Option<BpeTokenizer> {
         // Custom cache location
         home_dir().map(|h| h.join(".cache/qwen2/tokenizer.json")),
         // HuggingFace cache
-        home_dir().map(|h| {
-            h.join(".cache/huggingface/hub/models--Qwen--Qwen2-0.5B-Instruct/snapshots")
-        }),
+        home_dir()
+            .map(|h| h.join(".cache/huggingface/hub/models--Qwen--Qwen2-0.5B-Instruct/snapshots")),
     ];
 
     for candidate in candidates.iter().flatten() {

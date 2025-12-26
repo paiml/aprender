@@ -1497,7 +1497,10 @@ mod tests {
             "accuracy"
         );
         assert_eq!(ScoredModelType::DecisionTree.primary_metric(), "accuracy");
-        assert_eq!(ScoredModelType::GradientBoosting.primary_metric(), "accuracy");
+        assert_eq!(
+            ScoredModelType::GradientBoosting.primary_metric(),
+            "accuracy"
+        );
         assert_eq!(ScoredModelType::NaiveBayes.primary_metric(), "accuracy");
         assert_eq!(ScoredModelType::Knn.primary_metric(), "accuracy");
     }
@@ -1505,9 +1508,15 @@ mod tests {
     #[test]
     fn test_scored_model_type_interpretability() {
         assert_eq!(ScoredModelType::DecisionTree.interpretability_score(), 4.0);
-        assert_eq!(ScoredModelType::LogisticRegression.interpretability_score(), 5.0);
+        assert_eq!(
+            ScoredModelType::LogisticRegression.interpretability_score(),
+            5.0
+        );
         assert_eq!(ScoredModelType::KMeans.interpretability_score(), 2.5);
-        assert_eq!(ScoredModelType::GradientBoosting.interpretability_score(), 3.0);
+        assert_eq!(
+            ScoredModelType::GradientBoosting.interpretability_score(),
+            3.0
+        );
     }
 
     #[test]

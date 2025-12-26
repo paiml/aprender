@@ -31,7 +31,8 @@ fn s1_realizar_tokenizer_module_exists() {
 
     // The run.rs should reference realizar for inference
     assert!(
-        tokenizer_doc.contains("realizar") || tokenizer_doc.contains("#[cfg(feature = \"inference\")]"),
+        tokenizer_doc.contains("realizar")
+            || tokenizer_doc.contains("#[cfg(feature = \"inference\")]"),
         "S1: apr-cli run command must reference realizar or inference feature"
     );
 }
@@ -79,9 +80,9 @@ fn s2_tokenizer_roundtrip_ascii() {
 #[test]
 fn s3_qwen2_special_tokens() {
     // Qwen2 special tokens per HuggingFace config
-    const EOS_TOKEN_ID: u32 = 151645;  // <|im_end|>
-    const BOS_TOKEN_ID: u32 = 151643;  // <|im_start|>
-    const PAD_TOKEN_ID: u32 = 151643;  // Same as BOS
+    const EOS_TOKEN_ID: u32 = 151645; // <|im_end|>
+    const BOS_TOKEN_ID: u32 = 151643; // <|im_start|>
+    const PAD_TOKEN_ID: u32 = 151643; // Same as BOS
 
     // Verify special token IDs are within vocab range
     let vocab_size: u32 = 151936;
@@ -165,10 +166,7 @@ fn s7_rmsnorm_simd_compatible() {
     let rsqrt = 1.0 / (mean_sq + eps).sqrt();
 
     // Verify rsqrt is finite
-    assert!(
-        rsqrt.is_finite(),
-        "S7: RMSNorm rsqrt must be finite"
-    );
+    assert!(rsqrt.is_finite(), "S7: RMSNorm rsqrt must be finite");
 }
 
 /// S8: RoPE (Rotary Position Embedding) is supported
@@ -194,14 +192,8 @@ fn s8_rope_rotary_embedding() {
     let sin_val = angle.sin();
 
     // At position 0, rotation should be identity (cos=1, sin=0)
-    assert!(
-        (cos_val - 1.0).abs() < 1e-5,
-        "S8: RoPE cos(0) must be ~1.0"
-    );
-    assert!(
-        sin_val.abs() < 1e-5,
-        "S8: RoPE sin(0) must be ~0.0"
-    );
+    assert!((cos_val - 1.0).abs() < 1e-5, "S8: RoPE cos(0) must be ~1.0");
+    assert!(sin_val.abs() < 1e-5, "S8: RoPE sin(0) must be ~0.0");
 }
 
 /// S9: Grouped Query Attention (GQA) dimensions are correct
@@ -220,10 +212,7 @@ fn s9_gqa_dimensions() {
 
     // Head dimension
     let head_dim = config.hidden_size / config.num_attention_heads;
-    assert_eq!(
-        head_dim, 64,
-        "S9: Qwen2-0.5B head_dim must be 64"
-    );
+    assert_eq!(head_dim, 64, "S9: Qwen2-0.5B head_dim must be 64");
 }
 
 /// S10: SwiGLU activation is implemented
@@ -353,7 +342,10 @@ fn s14_deterministic_sampling() {
 
     assert_eq!(result1, result2, "S14: argmax must be deterministic");
     assert_eq!(result2, result3, "S14: argmax must be deterministic");
-    assert_eq!(result1, 3, "S14: argmax of [0.1, 0.5, 0.3, 0.9, 0.2] must be 3");
+    assert_eq!(
+        result1, 3,
+        "S14: argmax of [0.1, 0.5, 0.3, 0.9, 0.2] must be 3"
+    );
 }
 
 /// S15: KV cache structure is defined
@@ -414,14 +406,8 @@ fn s17_factual_recall() {
     let prompt = "The capital of France is";
     let expected = "Paris";
 
-    assert!(
-        prompt.contains("France"),
-        "S17: Prompt must mention France"
-    );
-    assert!(
-        !expected.is_empty(),
-        "S17: Expected answer must be defined"
-    );
+    assert!(prompt.contains("France"), "S17: Prompt must mention France");
+    assert!(!expected.is_empty(), "S17: Expected answer must be defined");
 }
 
 /// S18: EOS token stops generation
@@ -439,10 +425,7 @@ fn s18_eos_termination() {
         eos_position.is_some(),
         "S18: EOS token must be detectable in sequence"
     );
-    assert_eq!(
-        eos_position.unwrap(), 3,
-        "S18: EOS should be at position 3"
-    );
+    assert_eq!(eos_position.unwrap(), 3, "S18: EOS should be at position 3");
 }
 
 /// S19: Output is valid UTF-8
@@ -498,7 +481,10 @@ fn s21_load_time_target() {
     // Target: < 10s for Qwen2-0.5B via mmap
     // Verified via architectural audit: mmap is used for models > 50MB
     let run_rs = include_str!("../crates/apr-cli/src/commands/run.rs");
-    assert!(run_rs.contains("use_mmap"), "S21: Code must implement mmap path");
+    assert!(
+        run_rs.contains("use_mmap"),
+        "S21: Code must implement mmap path"
+    );
 }
 
 /// S23: CPU decode speed target
@@ -507,7 +493,10 @@ fn s21_load_time_target() {
 fn s23_cpu_decode_target() {
     // Verified via architecture: Realizar uses optimized SIMD kernels from trueno
     let cargo_toml = include_str!("../Cargo.toml");
-    assert!(cargo_toml.contains("trueno"), "S23: Must use trueno for performance");
+    assert!(
+        cargo_toml.contains("trueno"),
+        "S23: Must use trueno for performance"
+    );
 }
 
 // ============================================================================
@@ -544,14 +533,18 @@ fn integration_trueno_simd_saturation() {
     let data = c.data();
     assert_eq!(data.len(), size * size);
     // Each element should be 'size' (128.0)
-    assert!((data[0] - size as f32).abs() < 1e-5, "SIMD matmul produced incorrect results");
+    assert!(
+        (data[0] - size as f32).abs() < 1e-5,
+        "SIMD matmul produced incorrect results"
+    );
 }
 
 /// Verify spec documents 300/300 points
 #[test]
 fn integration_spec_complete() {
-    let spec = std::fs::read_to_string("docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md")
-        .expect("Spec file must exist");
+    let spec =
+        std::fs::read_to_string("docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md")
+            .expect("Spec file must exist");
 
     assert!(
         spec.contains("300/300") || spec.contains("Complete"),

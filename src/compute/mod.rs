@@ -557,7 +557,7 @@ mod tests {
     #[test]
     fn test_experiment_seed_clone() {
         let seed = ExperimentSeed::from_master(42);
-        let cloned = seed;  // Copy
+        let cloned = seed; // Copy
         assert_eq!(cloned.master, seed.master);
     }
 

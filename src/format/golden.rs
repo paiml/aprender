@@ -478,8 +478,7 @@ mod tests {
 
     #[test]
     fn test_golden_trace_with_tolerance() {
-        let trace = GoldenTrace::new("test", vec![1, 2, 3], vec![0.1, 0.2])
-            .with_tolerance(1e-6);
+        let trace = GoldenTrace::new("test", vec![1, 2, 3], vec![0.1, 0.2]).with_tolerance(1e-6);
         assert!((trace.tolerance - 1e-6).abs() < 1e-10);
     }
 
@@ -532,7 +531,11 @@ mod tests {
     #[test]
     fn test_golden_trace_set_to_json() {
         let mut set = GoldenTraceSet::new("qwen2", "Qwen2-0.5B");
-        set.add_trace(GoldenTrace::new("trace1", vec![1, 2, 3], vec![0.1, 0.2, 0.3]));
+        set.add_trace(GoldenTrace::new(
+            "trace1",
+            vec![1, 2, 3],
+            vec![0.1, 0.2, 0.3],
+        ));
         set.add_trace(GoldenTrace::new("trace2", vec![4, 5], vec![0.4, 0.5]));
 
         let json = set.to_json().expect("JSON serialization should work");

@@ -641,16 +641,14 @@ mod tests {
 
     #[test]
     fn test_batch_comparison_with_shape_mismatches() {
-        let comparisons = vec![
-            TensorComparison {
-                name: "mismatch".to_string(),
-                shape_match: false,
-                shape_a: vec![3],
-                shape_b: vec![2],
-                weight_diff: None,
-                passes_threshold: false,
-            },
-        ];
+        let comparisons = vec![TensorComparison {
+            name: "mismatch".to_string(),
+            shape_match: false,
+            shape_a: vec![3],
+            shape_b: vec![2],
+            weight_diff: None,
+            passes_threshold: false,
+        }];
 
         let batch = BatchComparison::from_comparisons(comparisons);
         assert_eq!(batch.shape_mismatches, 1);
@@ -670,22 +668,20 @@ mod tests {
 
     #[test]
     fn test_batch_comparison_summary() {
-        let comparisons = vec![
-            TensorComparison {
-                name: "tensor1".to_string(),
-                shape_match: true,
-                shape_a: vec![3],
-                shape_b: vec![3],
-                weight_diff: Some(WeightDiff {
-                    changed_count: 0,
-                    max_diff: 0.001,
-                    mean_diff: 0.0005,
-                    l2_distance: 0.002,
-                    cosine_similarity: 0.999,
-                }),
-                passes_threshold: true,
-            },
-        ];
+        let comparisons = vec![TensorComparison {
+            name: "tensor1".to_string(),
+            shape_match: true,
+            shape_a: vec![3],
+            shape_b: vec![3],
+            weight_diff: Some(WeightDiff {
+                changed_count: 0,
+                max_diff: 0.001,
+                mean_diff: 0.0005,
+                l2_distance: 0.002,
+                cosine_similarity: 0.999,
+            }),
+            passes_threshold: true,
+        }];
 
         let batch = BatchComparison::from_comparisons(comparisons);
         let summary = batch.summary();
@@ -697,16 +693,14 @@ mod tests {
 
     #[test]
     fn test_batch_comparison_summary_no_worst() {
-        let comparisons = vec![
-            TensorComparison {
-                name: "no_diff".to_string(),
-                shape_match: false,
-                shape_a: vec![3],
-                shape_b: vec![2],
-                weight_diff: None,
-                passes_threshold: false,
-            },
-        ];
+        let comparisons = vec![TensorComparison {
+            name: "no_diff".to_string(),
+            shape_match: false,
+            shape_a: vec![3],
+            shape_b: vec![2],
+            weight_diff: None,
+            passes_threshold: false,
+        }];
 
         let batch = BatchComparison::from_comparisons(comparisons);
         let summary = batch.summary();

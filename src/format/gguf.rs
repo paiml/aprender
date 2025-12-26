@@ -29,6 +29,9 @@ use std::path::Path;
 
 use crate::error::{AprenderError, Result};
 
+/// Type alias for tensor data map (name -> (data, shape))
+pub type TensorDataMap = BTreeMap<String, (Vec<f32>, Vec<usize>)>;
+
 /// GGUF magic number: "GGUF" in little-endian
 pub const GGUF_MAGIC: u32 = 0x4655_4747; // "GGUF" as little-endian u32
 
@@ -522,14 +525,8 @@ fn read_string(data: &[u8], offset: usize) -> Result<(String, usize)> {
 /// Skip a metadata value (we don't need to parse all metadata types)
 fn skip_metadata_value(data: &[u8], offset: usize, value_type: u32) -> Result<usize> {
     match value_type {
-        0 => Ok(1),  // Uint8
-        1 => Ok(1),  // Int8
-        2 => Ok(2),  // Uint16
-        3 => Ok(2),  // Int16
-        4 => Ok(4),  // Uint32
-        5 => Ok(4),  // Int32
-        6 => Ok(4),  // Float32
-        7 => Ok(1),  // Bool
+        0..=1 | 7 => Ok(1), // Uint8, Int8, Bool
+        2..=3 => Ok(2),     // Uint16, Int16
         8 => {
             // String
             let len = read_u64(data, offset)? as usize;
@@ -540,9 +537,8 @@ fn skip_metadata_value(data: &[u8], offset: usize, value_type: u32) -> Result<us
             let elem_type = read_u32(data, offset)?;
             let count = read_u64(data, offset + 4)? as usize;
             let elem_size = match elem_type {
-                0 | 1 | 7 => 1,
-                2 | 3 => 2,
-                4 | 5 | 6 => 4,
+                0..=1 | 7 => 1, // Uint8, Int8, Bool
+                2..=3 => 2,     // Uint16, Int16
                 8 => {
                     // Array of strings - need to iterate
                     let mut skip = 12; // type (4) + count (8)
@@ -552,15 +548,13 @@ fn skip_metadata_value(data: &[u8], offset: usize, value_type: u32) -> Result<us
                     }
                     return Ok(skip);
                 }
-                10 | 11 | 12 => 8,
-                _ => 4, // Default to 4
+                10..=12 => 8, // Uint64, Int64, Float64
+                _ => 4,       // Uint32, Int32, Float32, Unknown
             };
             Ok(12 + count * elem_size)
         }
-        10 => Ok(8), // Uint64
-        11 => Ok(8), // Int64
-        12 => Ok(8), // Float64
-        _ => Ok(4),  // Unknown, assume 4 bytes
+        10..=12 => Ok(8), // Uint64, Int64, Float64
+        _ => Ok(4),       // Uint32, Int32, Float32, Unknown (4 bytes default)
     }
 }
 
@@ -595,9 +589,9 @@ pub struct GgufTensorMeta {
 impl GgufReader {
     /// Load and parse a GGUF file
     pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self> {
-        let mut file = File::open(path.as_ref()).map_err(|e| AprenderError::Io(e))?;
+        let mut file = File::open(path.as_ref()).map_err(AprenderError::Io)?;
         let mut data = Vec::new();
-        file.read_to_end(&mut data).map_err(|e| AprenderError::Io(e))?;
+        file.read_to_end(&mut data).map_err(AprenderError::Io)?;
         Self::from_bytes(data)
     }
 
@@ -686,11 +680,13 @@ impl GgufReader {
 
     /// Extract a tensor as F32 data (dequantizing if needed)
     pub fn get_tensor_f32(&self, name: &str) -> Result<(Vec<f32>, Vec<usize>)> {
-        let meta = self.tensors.iter().find(|t| t.name == name).ok_or_else(|| {
-            AprenderError::FormatError {
+        let meta = self
+            .tensors
+            .iter()
+            .find(|t| t.name == name)
+            .ok_or_else(|| AprenderError::FormatError {
                 message: format!("Tensor '{name}' not found in GGUF"),
-            }
-        })?;
+            })?;
 
         let shape: Vec<usize> = meta.dims.iter().map(|&d| d as usize).collect();
         let num_elements: usize = shape.iter().product();
@@ -744,7 +740,7 @@ impl GgufReader {
     }
 
     /// Get all tensors as F32
-    pub fn get_all_tensors_f32(&self) -> Result<BTreeMap<String, (Vec<f32>, Vec<usize>)>> {
+    pub fn get_all_tensors_f32(&self) -> Result<TensorDataMap> {
         let mut result = BTreeMap::new();
         for meta in &self.tensors {
             let (data, shape) = self.get_tensor_f32(&meta.name)?;
@@ -756,9 +752,9 @@ impl GgufReader {
 
 /// Convert F16 (IEEE 754 half-precision) to F32
 fn f16_to_f32(bits: u16) -> f32 {
-    let sign = ((bits >> 15) & 1) as u32;
-    let exp = ((bits >> 10) & 0x1F) as u32;
-    let mant = (bits & 0x3FF) as u32;
+    let sign = u32::from((bits >> 15) & 1);
+    let exp = u32::from((bits >> 10) & 0x1F);
+    let mant = u32::from(bits & 0x3FF);
 
     if exp == 0 {
         if mant == 0 {
@@ -818,9 +814,9 @@ fn dequantize_q4_0(data: &[u8], start: usize, num_elements: usize) -> Result<Vec
         for i in 0..16 {
             let byte = data[offset + i];
             // Lower 4 bits (subtract 8 to center around 0)
-            let v0 = ((byte & 0x0F) as i8 - 8) as f32;
+            let v0 = f32::from((byte & 0x0F) as i8 - 8);
             // Upper 4 bits
-            let v1 = ((byte >> 4) as i8 - 8) as f32;
+            let v1 = f32::from((byte >> 4) as i8 - 8);
             result.push(v0 * scale);
             result.push(v1 * scale);
         }
@@ -858,7 +854,7 @@ fn dequantize_q8_0(data: &[u8], start: usize, num_elements: usize) -> Result<Vec
 
         // Read 32 int8 values
         for i in 0..32 {
-            let v = data[offset + i] as i8 as f32;
+            let v = f32::from(data[offset + i] as i8);
             result.push(v * scale);
         }
         offset += 32;
@@ -870,7 +866,7 @@ fn dequantize_q8_0(data: &[u8], start: usize, num_elements: usize) -> Result<Vec
 }
 
 /// Load GGUF file and extract all tensors as F32
-pub fn load_gguf_tensors<P: AsRef<Path>>(path: P) -> Result<BTreeMap<String, (Vec<f32>, Vec<usize>)>> {
+pub fn load_gguf_tensors<P: AsRef<Path>>(path: P) -> Result<TensorDataMap> {
     let reader = GgufReader::from_file(path)?;
     reader.get_all_tensors_f32()
 }

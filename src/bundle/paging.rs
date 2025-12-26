@@ -842,11 +842,7 @@ mod tests {
 
     #[test]
     fn test_model_names() {
-        let temp = create_test_bundle(&[
-            ("alpha", vec![1]),
-            ("beta", vec![2]),
-            ("gamma", vec![3]),
-        ]);
+        let temp = create_test_bundle(&[("alpha", vec![1]), ("beta", vec![2]), ("gamma", vec![3])]);
 
         let bundle =
             PagedBundle::open(temp.path(), PagingConfig::default()).expect("Failed to open");
@@ -888,10 +884,7 @@ mod tests {
 
     #[test]
     fn test_bytes_loaded_tracking() {
-        let temp = create_test_bundle(&[
-            ("model1", vec![1; 100]),
-            ("model2", vec![2; 200]),
-        ]);
+        let temp = create_test_bundle(&[("model1", vec![1; 100]), ("model2", vec![2; 200])]);
 
         let mut bundle = PagedBundle::open(temp.path(), PagingConfig::new().with_prefetch(false))
             .expect("Failed to open");

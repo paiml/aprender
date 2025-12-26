@@ -284,17 +284,9 @@ fn int01_apr_roundtrip_integrity() {
 
     // Add a small test tensor
     let tensor_data: Vec<f32> = (0..64).map(|i| i as f32 * 0.1).collect();
-    let tensor_bytes: Vec<u8> = tensor_data
-        .iter()
-        .flat_map(|f| f.to_le_bytes())
-        .collect();
+    let tensor_bytes: Vec<u8> = tensor_data.iter().flat_map(|f| f.to_le_bytes()).collect();
 
-    writer.add_tensor(
-        "test.weight",
-        TensorDType::F32,
-        vec![8, 8],
-        tensor_bytes,
-    );
+    writer.add_tensor("test.weight", TensorDType::F32, vec![8, 8], tensor_bytes);
 
     // Write to bytes
     let apr_bytes = writer.write().expect("Failed to write APR");
@@ -413,8 +405,7 @@ fn int04_format_conversion_integrity() {
 
     // Read back and verify tensor data integrity
     let mut cursor = std::io::Cursor::new(&apr_bytes);
-    let reader =
-        aprender::format::v2::AprV2Reader::from_reader(&mut cursor).expect("read");
+    let reader = aprender::format::v2::AprV2Reader::from_reader(&mut cursor).expect("read");
 
     // Verify tensor metadata
     let tensor_entry = reader
@@ -435,7 +426,11 @@ fn int04_format_conversion_integrity() {
         );
 
         // Verify first few bytes match
-        for (i, (&orig, &read)) in weight_bytes.iter().zip(read_bytes.iter()).enumerate().take(16)
+        for (i, (&orig, &read)) in weight_bytes
+            .iter()
+            .zip(read_bytes.iter())
+            .enumerate()
+            .take(16)
         {
             assert_eq!(
                 orig, read,
@@ -451,13 +446,8 @@ fn int04_format_conversion_integrity() {
 #[test]
 fn int05_ml_pipeline_persistence() {
     // Train a simple model with non-collinear data
-    let x = Matrix::from_vec(5, 2, vec![
-        1.0, 1.0,
-        2.0, 4.0,
-        3.0, 2.0,
-        4.0, 5.0,
-        5.0, 3.0,
-    ]).expect("x");
+    let x =
+        Matrix::from_vec(5, 2, vec![1.0, 1.0, 2.0, 4.0, 3.0, 2.0, 4.0, 5.0, 5.0, 3.0]).expect("x");
     let y = Vector::from_slice(&[3.0, 8.0, 7.0, 13.0, 11.0]);
 
     let mut model = LinearRegression::new();

@@ -1827,8 +1827,7 @@ mod tests {
 
         // Verify provenance is preserved in serialization
         let json = metadata.to_json().expect("serialize");
-        let parsed: AprV2Metadata =
-            serde_json::from_slice(&json).expect("deserialize");
+        let parsed: AprV2Metadata = serde_json::from_slice(&json).expect("deserialize");
 
         assert_eq!(
             parsed.source,

@@ -487,8 +487,8 @@ mod tests {
 
     #[test]
     fn test_velocity_result_clone() {
-        let original = VelocityResult::pass("P1", "test", "details")
-            .with_duration(Duration::from_millis(500));
+        let original =
+            VelocityResult::pass("P1", "test", "details").with_duration(Duration::from_millis(500));
         let cloned = original.clone();
         assert_eq!(cloned.id, original.id);
         assert_eq!(cloned.name, original.name);
@@ -558,24 +558,35 @@ mod tests {
     fn test_results_have_names() {
         let results = run_all_velocity_tests();
         for result in results {
-            assert!(!result.name.is_empty(), "Test {} should have a name", result.id);
-            assert!(!result.details.is_empty(), "Test {} should have details", result.id);
+            assert!(
+                !result.name.is_empty(),
+                "Test {} should have a name",
+                result.id
+            );
+            assert!(
+                !result.details.is_empty(),
+                "Test {} should have details",
+                result.id
+            );
         }
     }
 
     #[test]
     fn test_duration_zero() {
-        let result = VelocityResult::pass("P1", "test", "details")
-            .with_duration(Duration::from_secs(0));
+        let result =
+            VelocityResult::pass("P1", "test", "details").with_duration(Duration::from_secs(0));
         assert!(result.duration.is_some());
         assert_eq!(result.duration.expect("Expected duration"), Duration::ZERO);
     }
 
     #[test]
     fn test_duration_large() {
-        let result = VelocityResult::pass("P1", "test", "details")
-            .with_duration(Duration::from_secs(3600));
+        let result =
+            VelocityResult::pass("P1", "test", "details").with_duration(Duration::from_secs(3600));
         assert!(result.duration.is_some());
-        assert_eq!(result.duration.expect("Expected duration"), Duration::from_secs(3600));
+        assert_eq!(
+            result.duration.expect("Expected duration"),
+            Duration::from_secs(3600)
+        );
     }
 }

@@ -304,11 +304,7 @@ mod realizar_chat {
             }
         }
 
-        fn generate_apr(
-            &self,
-            prompt: &[u32],
-            config: &ChatConfig,
-        ) -> Result<Vec<u32>, String> {
+        fn generate_apr(&self, prompt: &[u32], config: &ChatConfig) -> Result<Vec<u32>, String> {
             use realizar::apr_transformer::AprTransformer;
 
             let transformer = AprTransformer::from_apr_bytes(&self.model_bytes)
@@ -319,11 +315,7 @@ mod realizar_chat {
                 .map_err(|e| format!("APR generate failed: {e}"))
         }
 
-        fn generate_gguf(
-            &self,
-            prompt: &[u32],
-            config: &ChatConfig,
-        ) -> Result<Vec<u32>, String> {
+        fn generate_gguf(&self, prompt: &[u32], config: &ChatConfig) -> Result<Vec<u32>, String> {
             use realizar::gguf::{GGUFModel, QuantizedGGUFTransformer, QuantizedGenerateConfig};
 
             let gguf = GGUFModel::from_bytes(&self.model_bytes)
@@ -670,10 +662,7 @@ fn handle_command_inference(
 fn print_inspection_info_inference(session: &ChatSession) {
     println!();
     println!("{}", "[DEBUG] Session info:".dimmed());
-    println!(
-        "{}",
-        format!("  Format: {:?}", session.format()).dimmed()
-    );
+    println!("{}", format!("  Format: {:?}", session.format()).dimmed());
     println!(
         "{}",
         format!("  History: {} messages", session.history().len()).dimmed()

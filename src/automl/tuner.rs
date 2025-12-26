@@ -534,8 +534,7 @@ mod tests {
     #[test]
     fn test_tune_result_clone() {
         let space: SearchSpace<RF> = SearchSpace::new().add(RF::NEstimators, 10..100);
-        let result =
-            AutoTuner::new(RandomSearch::new(3).with_seed(42)).maximize(&space, |_| 0.5);
+        let result = AutoTuner::new(RandomSearch::new(3).with_seed(42)).maximize(&space, |_| 0.5);
 
         let cloned = result.clone();
         assert_eq!(cloned.n_trials, result.n_trials);
@@ -546,8 +545,7 @@ mod tests {
     #[test]
     fn test_tune_result_debug() {
         let space: SearchSpace<RF> = SearchSpace::new().add(RF::NEstimators, 10..100);
-        let result =
-            AutoTuner::new(RandomSearch::new(2).with_seed(42)).maximize(&space, |_| 0.5);
+        let result = AutoTuner::new(RandomSearch::new(2).with_seed(42)).maximize(&space, |_| 0.5);
 
         let debug_str = format!("{:?}", result);
         assert!(debug_str.contains("TuneResult"));
@@ -709,9 +707,10 @@ mod tests {
         let space: SearchSpace<RF> = SearchSpace::new().add(RF::NEstimators, 10..100);
 
         // Objective increases with estimators
-        let result = AutoTuner::new(RandomSearch::new(20).with_seed(42)).maximize(&space, |trial| {
-            trial.get_usize(&RF::NEstimators).unwrap_or(50) as f64
-        });
+        let result = AutoTuner::new(RandomSearch::new(20).with_seed(42))
+            .maximize(&space, |trial| {
+                trial.get_usize(&RF::NEstimators).unwrap_or(50) as f64
+            });
 
         // Best trial should have the highest n_estimators
         assert!(result.best_score >= 10.0);
@@ -835,8 +834,7 @@ mod tests {
     #[test]
     fn test_tune_result_elapsed_duration() {
         let space: SearchSpace<RF> = SearchSpace::new().add(RF::NEstimators, 10..100);
-        let result =
-            AutoTuner::new(RandomSearch::new(5).with_seed(42)).maximize(&space, |_| 0.5);
+        let result = AutoTuner::new(RandomSearch::new(5).with_seed(42)).maximize(&space, |_| 0.5);
 
         // Elapsed should be non-zero but small
         assert!(result.elapsed.as_nanos() > 0);
@@ -845,8 +843,7 @@ mod tests {
     #[test]
     fn test_tune_result_history_scores() {
         let space: SearchSpace<RF> = SearchSpace::new().add(RF::NEstimators, 10..100);
-        let result =
-            AutoTuner::new(RandomSearch::new(5).with_seed(42)).maximize(&space, |_| 0.5);
+        let result = AutoTuner::new(RandomSearch::new(5).with_seed(42)).maximize(&space, |_| 0.5);
 
         // All history entries should have the same score
         for entry in &result.history {

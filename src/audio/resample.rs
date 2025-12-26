@@ -202,9 +202,7 @@ mod tests_falsification_aa_resample {
     /// FALSIFICATION: Same input produces different output
     #[test]
     fn test_aa3_resample_deterministic() {
-        let audio: Vec<f32> = (0..1000)
-            .map(|i| (i as f32 * 0.01).sin())
-            .collect();
+        let audio: Vec<f32> = (0..1000).map(|i| (i as f32 * 0.01).sin()).collect();
 
         // Resample 5 times
         let results: Vec<Vec<f32>> = (0..5)
@@ -227,9 +225,7 @@ mod tests_falsification_aa_resample {
     fn test_aa4_resample_length_ratio() {
         // 44100 samples at 44100Hz = 1 second
         // Resampled to 16000Hz = 16000 samples
-        let audio: Vec<f32> = (0..44100)
-            .map(|i| (i as f32 * 0.0001).sin())
-            .collect();
+        let audio: Vec<f32> = (0..44100).map(|i| (i as f32 * 0.0001).sin()).collect();
 
         let result = resample(&audio, 44100, 16000).expect("resample");
 
@@ -247,9 +243,7 @@ mod tests_falsification_aa_resample {
     /// FALSIFICATION: Downsample produces equal or longer output
     #[test]
     fn test_aa5_downsample_reduces_length() {
-        let audio: Vec<f32> = (0..48000)
-            .map(|i| (i as f32 * 0.0001).sin())
-            .collect();
+        let audio: Vec<f32> = (0..48000).map(|i| (i as f32 * 0.0001).sin()).collect();
 
         let result = resample(&audio, 48000, 16000).expect("resample");
 
@@ -265,9 +259,7 @@ mod tests_falsification_aa_resample {
     /// FALSIFICATION: Upsample produces equal or shorter output
     #[test]
     fn test_aa6_upsample_increases_length() {
-        let audio: Vec<f32> = (0..8000)
-            .map(|i| (i as f32 * 0.0001).sin())
-            .collect();
+        let audio: Vec<f32> = (0..8000).map(|i| (i as f32 * 0.0001).sin()).collect();
 
         let result = resample(&audio, 8000, 16000).expect("resample");
 
@@ -283,9 +275,7 @@ mod tests_falsification_aa_resample {
     /// FALSIFICATION: Same rate changes samples
     #[test]
     fn test_aa7_same_rate_identity() {
-        let audio: Vec<f32> = (0..1000)
-            .map(|i| (i as f32 * 0.01).sin())
-            .collect();
+        let audio: Vec<f32> = (0..1000).map(|i| (i as f32 * 0.01).sin()).collect();
 
         let result = resample(&audio, 16000, 16000).expect("resample");
 

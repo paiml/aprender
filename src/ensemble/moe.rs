@@ -469,8 +469,7 @@ mod tests {
         let mut expert2 = LinearRegression::new();
 
         // Use more samples than features for valid OLS
-        let x = Matrix::from_vec(5, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0])
-            .expect("valid matrix");
+        let x = Matrix::from_vec(5, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0]).expect("valid matrix");
         let y = Vector::from_slice(&[2.0, 4.0, 6.0, 8.0, 10.0]);
         expert1.fit(&x, &y).expect("fit expert1");
         expert2.fit(&x, &y).expect("fit expert2");
@@ -491,8 +490,7 @@ mod tests {
         let mut expert1 = LinearRegression::new();
         let mut expert2 = LinearRegression::new();
 
-        let x = Matrix::from_vec(5, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0])
-            .expect("valid matrix");
+        let x = Matrix::from_vec(5, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0]).expect("valid matrix");
         let y = Vector::from_slice(&[2.0, 4.0, 6.0, 8.0, 10.0]);
         expert1.fit(&x, &y).expect("fit expert1");
         expert2.fit(&x, &y).expect("fit expert2");
@@ -514,8 +512,7 @@ mod tests {
     #[test]
     fn test_moe_predict_batch() {
         let mut expert = LinearRegression::new();
-        let x = Matrix::from_vec(5, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0])
-            .expect("valid matrix");
+        let x = Matrix::from_vec(5, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0]).expect("valid matrix");
         let y = Vector::from_slice(&[2.0, 4.0, 6.0, 8.0, 10.0]);
         expert.fit(&x, &y).expect("fit expert");
 
@@ -591,8 +588,7 @@ mod tests {
     #[test]
     fn test_moe_expert_usage() {
         let mut expert = LinearRegression::new();
-        let x = Matrix::from_vec(5, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0])
-            .expect("valid matrix");
+        let x = Matrix::from_vec(5, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0]).expect("valid matrix");
         let y = Vector::from_slice(&[2.0, 4.0, 6.0, 8.0, 10.0]);
         expert.fit(&x, &y).expect("fit");
 
@@ -631,8 +627,7 @@ mod tests {
     #[test]
     fn test_moe_fit() {
         let mut expert = LinearRegression::new();
-        let x = Matrix::from_vec(5, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0])
-            .expect("valid matrix");
+        let x = Matrix::from_vec(5, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0]).expect("valid matrix");
         let y = Vector::from_slice(&[2.0, 4.0, 6.0, 8.0, 10.0]);
         expert.fit(&x, &y).expect("fit");
 

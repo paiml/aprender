@@ -285,11 +285,21 @@ mod tests {
         let y = dropout(&x, 0.5, true);
 
         let zeros = y.data().iter().filter(|&&v| v == 0.0).count();
-        let scaled = y.data().iter().filter(|&&v| (v - 2.0).abs() < 0.001).count();
+        let scaled = y
+            .data()
+            .iter()
+            .filter(|&&v| (v - 2.0).abs() < 0.001)
+            .count();
 
         // With p=0.5, roughly half should be zero, half should be scaled by 2
-        assert!(zeros > 300 && zeros < 700, "Expected ~500 zeros, got {zeros}");
-        assert!(scaled > 300 && scaled < 700, "Expected ~500 scaled, got {scaled}");
+        assert!(
+            zeros > 300 && zeros < 700,
+            "Expected ~500 zeros, got {zeros}"
+        );
+        assert!(
+            scaled > 300 && scaled < 700,
+            "Expected ~500 scaled, got {scaled}"
+        );
     }
 
     #[test]

@@ -5506,13 +5506,16 @@ mod tests {
 
     #[test]
     fn test_get_unique_feature_values() {
-        let x = Matrix::from_vec(5, 2, vec![
-            1.0, 10.0,
-            2.0, 20.0,
-            1.0, 30.0,  // duplicate for feature 0
-            3.0, 20.0,  // duplicate for feature 1
-            2.0, 40.0,  // duplicate for feature 0
-        ]).expect("Matrix creation should succeed");
+        let x = Matrix::from_vec(
+            5,
+            2,
+            vec![
+                1.0, 10.0, 2.0, 20.0, 1.0, 30.0, // duplicate for feature 0
+                3.0, 20.0, // duplicate for feature 1
+                2.0, 40.0, // duplicate for feature 0
+            ],
+        )
+        .expect("Matrix creation should succeed");
 
         let unique_feat0 = get_unique_feature_values(&x, 0, 5);
         assert_eq!(unique_feat0, vec![1.0, 2.0, 3.0]);
@@ -5556,7 +5559,7 @@ mod tests {
             .expect("Matrix creation should succeed");
         let (left, right) = partition_by_threshold(&x, 5, 0, 3.5);
         assert_eq!(left, vec![0, 2, 4]); // indices with values <= 3.5
-        assert_eq!(right, vec![1, 3]);   // indices with values > 3.5
+        assert_eq!(right, vec![1, 3]); // indices with values > 3.5
     }
 
     #[test]
@@ -5604,12 +5607,8 @@ mod tests {
 
     #[test]
     fn test_split_data_by_indices() {
-        let x = Matrix::from_vec(4, 2, vec![
-            0.0, 1.0,
-            2.0, 3.0,
-            4.0, 5.0,
-            6.0, 7.0,
-        ]).expect("Matrix creation should succeed");
+        let x = Matrix::from_vec(4, 2, vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0])
+            .expect("Matrix creation should succeed");
         let y = vec![10, 20, 30, 40];
         let indices = vec![1, 3];
 
@@ -5647,8 +5646,8 @@ mod tests {
 
     #[test]
     fn test_split_indices_by_threshold_empty() {
-        let x = Matrix::from_vec(3, 1, vec![1.0, 2.0, 3.0])
-            .expect("Matrix creation should succeed");
+        let x =
+            Matrix::from_vec(3, 1, vec![1.0, 2.0, 3.0]).expect("Matrix creation should succeed");
         // All values <= threshold
         assert!(split_indices_by_threshold(&x, 0, 10.0, 3).is_none());
         // All values > threshold
@@ -5666,8 +5665,14 @@ mod tests {
         let node = TreeNode::Node(Node {
             feature_idx: 0,
             threshold: 0.5,
-            left: Box::new(TreeNode::Leaf(Leaf { class_label: 0, n_samples: 10 })),
-            right: Box::new(TreeNode::Leaf(Leaf { class_label: 1, n_samples: 20 })),
+            left: Box::new(TreeNode::Leaf(Leaf {
+                class_label: 0,
+                n_samples: 10,
+            })),
+            right: Box::new(TreeNode::Leaf(Leaf {
+                class_label: 1,
+                n_samples: 20,
+            })),
         });
         assert_eq!(count_tree_samples(&node), 30);
     }
@@ -5683,8 +5688,14 @@ mod tests {
         let node = RegressionTreeNode::Node(RegressionNode {
             feature_idx: 0,
             threshold: 0.5,
-            left: Box::new(RegressionTreeNode::Leaf(RegressionLeaf { value: 1.0, n_samples: 5 })),
-            right: Box::new(RegressionTreeNode::Leaf(RegressionLeaf { value: 2.0, n_samples: 8 })),
+            left: Box::new(RegressionTreeNode::Leaf(RegressionLeaf {
+                value: 1.0,
+                n_samples: 5,
+            })),
+            right: Box::new(RegressionTreeNode::Leaf(RegressionLeaf {
+                value: 2.0,
+                n_samples: 8,
+            })),
         });
         assert_eq!(count_regression_tree_samples(&node), 13);
     }
@@ -5695,13 +5706,17 @@ mod tests {
 
     #[test]
     fn test_random_forest_classifier_oob_score() {
-        let x = Matrix::from_vec(20, 2, vec![
-            0.0, 0.0, 0.1, 0.1, 0.2, 0.2, 0.0, 0.3, 0.1, 0.4,
-            0.2, 0.0, 0.3, 0.1, 0.0, 0.2, 0.1, 0.3, 0.2, 0.1,
-            // Class 1 samples
-            1.0, 1.0, 0.9, 0.9, 1.0, 0.8, 0.8, 1.0, 0.9, 1.1,
-            1.1, 0.9, 0.8, 0.8, 1.0, 0.9, 0.9, 1.0, 1.0, 0.8,
-        ]).expect("Matrix creation should succeed");
+        let x = Matrix::from_vec(
+            20,
+            2,
+            vec![
+                0.0, 0.0, 0.1, 0.1, 0.2, 0.2, 0.0, 0.3, 0.1, 0.4, 0.2, 0.0, 0.3, 0.1, 0.0, 0.2,
+                0.1, 0.3, 0.2, 0.1, // Class 1 samples
+                1.0, 1.0, 0.9, 0.9, 1.0, 0.8, 0.8, 1.0, 0.9, 1.1, 1.1, 0.9, 0.8, 0.8, 1.0, 0.9,
+                0.9, 1.0, 1.0, 0.8,
+            ],
+        )
+        .expect("Matrix creation should succeed");
         let y: Vec<usize> = (0..10).map(|_| 0).chain((0..10).map(|_| 1)).collect();
 
         let mut rf = RandomForestClassifier::new(10)
@@ -5730,18 +5745,15 @@ mod tests {
 
     #[test]
     fn test_random_forest_classifier_feature_importances() {
-        let x = Matrix::from_vec(10, 3, vec![
-            0.0, 0.5, 0.1,
-            0.1, 0.5, 0.2,
-            0.0, 0.5, 0.0,
-            0.2, 0.5, 0.1,
-            0.1, 0.5, 0.3,
-            1.0, 0.5, 0.8,
-            0.9, 0.5, 0.9,
-            1.0, 0.5, 1.0,
-            0.8, 0.5, 0.7,
-            0.9, 0.5, 0.8,
-        ]).expect("Matrix creation should succeed");
+        let x = Matrix::from_vec(
+            10,
+            3,
+            vec![
+                0.0, 0.5, 0.1, 0.1, 0.5, 0.2, 0.0, 0.5, 0.0, 0.2, 0.5, 0.1, 0.1, 0.5, 0.3, 1.0,
+                0.5, 0.8, 0.9, 0.5, 0.9, 1.0, 0.5, 1.0, 0.8, 0.5, 0.7, 0.9, 0.5, 0.8,
+            ],
+        )
+        .expect("Matrix creation should succeed");
         let y = vec![0, 0, 0, 0, 0, 1, 1, 1, 1, 1];
 
         let mut rf = RandomForestClassifier::new(10)
@@ -5791,10 +5803,15 @@ mod tests {
 
     #[test]
     fn test_random_forest_regressor_feature_importances() {
-        let x = Matrix::from_vec(10, 2, vec![
-            1.0, 0.5, 2.0, 0.5, 3.0, 0.5, 4.0, 0.5, 5.0, 0.5,
-            6.0, 0.5, 7.0, 0.5, 8.0, 0.5, 9.0, 0.5, 10.0, 0.5,
-        ]).expect("Matrix creation should succeed");
+        let x = Matrix::from_vec(
+            10,
+            2,
+            vec![
+                1.0, 0.5, 2.0, 0.5, 3.0, 0.5, 4.0, 0.5, 5.0, 0.5, 6.0, 0.5, 7.0, 0.5, 8.0, 0.5,
+                9.0, 0.5, 10.0, 0.5,
+            ],
+        )
+        .expect("Matrix creation should succeed");
         let y = Vector::from_slice(&[2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0, 20.0]);
 
         let mut rf = RandomForestRegressor::new(10)
@@ -5904,31 +5921,27 @@ mod tests {
 
     #[test]
     fn test_decision_tree_regressor_min_samples_split_coverage() {
-        let tree = DecisionTreeRegressor::new()
-            .with_min_samples_split(5);
+        let tree = DecisionTreeRegressor::new().with_min_samples_split(5);
         assert_eq!(tree.min_samples_split, 5);
     }
 
     #[test]
     fn test_decision_tree_regressor_min_samples_split_floor_coverage() {
         // min_samples_split should be at least 2
-        let tree = DecisionTreeRegressor::new()
-            .with_min_samples_split(1);
+        let tree = DecisionTreeRegressor::new().with_min_samples_split(1);
         assert_eq!(tree.min_samples_split, 2);
     }
 
     #[test]
     fn test_decision_tree_regressor_min_samples_leaf_coverage() {
-        let tree = DecisionTreeRegressor::new()
-            .with_min_samples_leaf(3);
+        let tree = DecisionTreeRegressor::new().with_min_samples_leaf(3);
         assert_eq!(tree.min_samples_leaf, 3);
     }
 
     #[test]
     fn test_decision_tree_regressor_min_samples_leaf_floor_coverage() {
         // min_samples_leaf should be at least 1
-        let tree = DecisionTreeRegressor::new()
-            .with_min_samples_leaf(0);
+        let tree = DecisionTreeRegressor::new().with_min_samples_leaf(0);
         assert_eq!(tree.min_samples_leaf, 1);
     }
 
@@ -5972,10 +5985,12 @@ mod tests {
 
     #[test]
     fn test_random_forest_predict_proba() {
-        let x = Matrix::from_vec(6, 2, vec![
-            0.0, 0.0, 0.1, 0.1, 0.0, 0.2,
-            1.0, 1.0, 0.9, 0.9, 1.0, 0.8,
-        ]).expect("Matrix creation should succeed");
+        let x = Matrix::from_vec(
+            6,
+            2,
+            vec![0.0, 0.0, 0.1, 0.1, 0.0, 0.2, 1.0, 1.0, 0.9, 0.9, 1.0, 0.8],
+        )
+        .expect("Matrix creation should succeed");
         let y = vec![0, 0, 0, 1, 1, 1];
 
         let mut rf = RandomForestClassifier::new(10)
@@ -6025,9 +6040,8 @@ mod tests {
     fn test_decision_tree_save_load_safetensors() {
         use std::fs;
 
-        let x = Matrix::from_vec(4, 2, vec![
-            0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0,
-        ]).expect("Matrix creation should succeed");
+        let x = Matrix::from_vec(4, 2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0])
+            .expect("Matrix creation should succeed");
         let y = vec![0, 0, 1, 1];
 
         let mut tree = DecisionTreeClassifier::new().with_max_depth(3);
@@ -6036,8 +6050,7 @@ mod tests {
         let path = "/tmp/test_tree_safetensors.safetensors";
         tree.save_safetensors(path).expect("Save should succeed");
 
-        let loaded = DecisionTreeClassifier::load_safetensors(path)
-            .expect("Load should succeed");
+        let loaded = DecisionTreeClassifier::load_safetensors(path).expect("Load should succeed");
 
         // Verify predictions match
         let orig_pred = tree.predict(&x);
@@ -6058,10 +6071,12 @@ mod tests {
     fn test_random_forest_save_load_safetensors() {
         use std::fs;
 
-        let x = Matrix::from_vec(6, 2, vec![
-            0.0, 0.0, 0.1, 0.1, 0.0, 0.2,
-            1.0, 1.0, 0.9, 0.9, 1.0, 0.8,
-        ]).expect("Matrix creation should succeed");
+        let x = Matrix::from_vec(
+            6,
+            2,
+            vec![0.0, 0.0, 0.1, 0.1, 0.0, 0.2, 1.0, 1.0, 0.9, 0.9, 1.0, 0.8],
+        )
+        .expect("Matrix creation should succeed");
         let y = vec![0, 0, 0, 1, 1, 1];
 
         let mut rf = RandomForestClassifier::new(3)
@@ -6072,8 +6087,7 @@ mod tests {
         let path = "/tmp/test_rf_safetensors.safetensors";
         rf.save_safetensors(path).expect("Save should succeed");
 
-        let loaded = RandomForestClassifier::load_safetensors(path)
-            .expect("Load should succeed");
+        let loaded = RandomForestClassifier::load_safetensors(path).expect("Load should succeed");
 
         // Verify structure
         assert_eq!(loaded.n_estimators, 3);
@@ -6098,12 +6112,21 @@ mod tests {
         let original = TreeNode::Node(Node {
             feature_idx: 0,
             threshold: 0.5,
-            left: Box::new(TreeNode::Leaf(Leaf { class_label: 0, n_samples: 5 })),
+            left: Box::new(TreeNode::Leaf(Leaf {
+                class_label: 0,
+                n_samples: 5,
+            })),
             right: Box::new(TreeNode::Node(Node {
                 feature_idx: 1,
                 threshold: 0.3,
-                left: Box::new(TreeNode::Leaf(Leaf { class_label: 1, n_samples: 3 })),
-                right: Box::new(TreeNode::Leaf(Leaf { class_label: 2, n_samples: 2 })),
+                left: Box::new(TreeNode::Leaf(Leaf {
+                    class_label: 1,
+                    n_samples: 3,
+                })),
+                right: Box::new(TreeNode::Leaf(Leaf {
+                    class_label: 2,
+                    n_samples: 2,
+                })),
             })),
         });
 
@@ -6146,12 +6169,21 @@ mod tests {
         let tree = TreeNode::Node(Node {
             feature_idx: 0,
             threshold: 0.5,
-            left: Box::new(TreeNode::Leaf(Leaf { class_label: 0, n_samples: 10 })),
+            left: Box::new(TreeNode::Leaf(Leaf {
+                class_label: 0,
+                n_samples: 10,
+            })),
             right: Box::new(TreeNode::Node(Node {
                 feature_idx: 1,
                 threshold: 0.3,
-                left: Box::new(TreeNode::Leaf(Leaf { class_label: 1, n_samples: 5 })),
-                right: Box::new(TreeNode::Leaf(Leaf { class_label: 2, n_samples: 5 })),
+                left: Box::new(TreeNode::Leaf(Leaf {
+                    class_label: 1,
+                    n_samples: 5,
+                })),
+                right: Box::new(TreeNode::Leaf(Leaf {
+                    class_label: 2,
+                    n_samples: 5,
+                })),
             })),
         });
 
@@ -6168,8 +6200,14 @@ mod tests {
         let tree = RegressionTreeNode::Node(RegressionNode {
             feature_idx: 0,
             threshold: 0.5,
-            left: Box::new(RegressionTreeNode::Leaf(RegressionLeaf { value: 1.0, n_samples: 10 })),
-            right: Box::new(RegressionTreeNode::Leaf(RegressionLeaf { value: 2.0, n_samples: 10 })),
+            left: Box::new(RegressionTreeNode::Leaf(RegressionLeaf {
+                value: 1.0,
+                n_samples: 10,
+            })),
+            right: Box::new(RegressionTreeNode::Leaf(RegressionLeaf {
+                value: 2.0,
+                n_samples: 10,
+            })),
         });
 
         let mut importances = vec![0.0; 2];
@@ -6185,9 +6223,8 @@ mod tests {
 
     #[test]
     fn test_split_regression_data_by_indices() {
-        let x = Matrix::from_vec(4, 2, vec![
-            1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0,
-        ]).expect("Matrix creation should succeed");
+        let x = Matrix::from_vec(4, 2, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0])
+            .expect("Matrix creation should succeed");
         let y = vec![10.0, 20.0, 30.0, 40.0];
         let indices = vec![0, 2];
 
@@ -6225,8 +6262,7 @@ mod tests {
 
     #[test]
     fn test_find_best_regression_split_no_samples() {
-        let x = Matrix::from_vec(1, 1, vec![1.0])
-            .expect("Matrix creation should succeed");
+        let x = Matrix::from_vec(1, 1, vec![1.0]).expect("Matrix creation should succeed");
         let y = vec![1.0];
 
         let result = find_best_regression_split(&x, &y);

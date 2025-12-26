@@ -1071,9 +1071,7 @@ mod tests_falsification_bb {
     /// Falsification: Same input produces different output
     #[test]
     fn test_bb3_quantization_deterministic() {
-        let data: Vec<f32> = (0..128)
-            .map(|i| (i as f32 - 64.0) * 0.01)
-            .collect();
+        let data: Vec<f32> = (0..128).map(|i| (i as f32 - 64.0) * 0.01).collect();
         let shape = vec![128];
 
         // Run quantization 10 times
@@ -1097,9 +1095,7 @@ mod tests_falsification_bb {
     /// BB3b: Q4_0 quantization must also be deterministic
     #[test]
     fn test_bb3_q4_0_deterministic() {
-        let data: Vec<f32> = (0..128)
-            .map(|i| (i as f32 - 64.0) * 0.01)
-            .collect();
+        let data: Vec<f32> = (0..128).map(|i| (i as f32 - 64.0) * 0.01).collect();
         let shape = vec![128];
 
         let q1 = quantize(&data, &shape, QuantType::Q4_0).expect("quantize 1");

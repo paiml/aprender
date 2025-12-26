@@ -516,8 +516,12 @@ mod tests {
     #[test]
     fn test_cipher_suite_pq_and_hybrid_algorithms() {
         // PostQuantum2030
-        assert!(CipherSuite::PostQuantum2030.hash_algorithm().contains("SHA3"));
-        assert!(CipherSuite::PostQuantum2030.kdf_algorithm().contains("SHA3"));
+        assert!(CipherSuite::PostQuantum2030
+            .hash_algorithm()
+            .contains("SHA3"));
+        assert!(CipherSuite::PostQuantum2030
+            .kdf_algorithm()
+            .contains("SHA3"));
 
         // Hybrid2028
         assert!(CipherSuite::Hybrid2028.hash_algorithm().contains("SHA3"));

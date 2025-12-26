@@ -842,7 +842,14 @@ fn execute_command(cli: &Cli) -> Result<(), error::CliError> {
             max_tokens,
             prompt,
             fast,
-        } => bench::run(file, *warmup, *iterations, *max_tokens, prompt.as_deref(), *fast),
+        } => bench::run(
+            file,
+            *warmup,
+            *iterations,
+            *max_tokens,
+            prompt.as_deref(),
+            *fast,
+        ),
 
         Commands::Eval {
             file,

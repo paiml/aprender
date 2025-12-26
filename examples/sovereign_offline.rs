@@ -77,8 +77,18 @@ fn demonstrate_offline_resolution() {
     let test_cases = [
         ("/tmp/model.apr", true, true, "Local file always works"),
         ("hf://org/repo", true, false, "Cached HF works offline"),
-        ("hf://org/repo", false, false, "Uncached HF rejected offline"),
-        ("https://example.com/m.apr", false, false, "Uncached URL rejected offline"),
+        (
+            "hf://org/repo",
+            false,
+            false,
+            "Uncached HF rejected offline",
+        ),
+        (
+            "https://example.com/m.apr",
+            false,
+            false,
+            "Uncached URL rejected offline",
+        ),
     ];
 
     println!("   Test Cases (offline=true):");

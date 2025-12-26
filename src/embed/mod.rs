@@ -808,8 +808,7 @@ mod tests {
 
     #[test]
     fn test_embedded_test_data_validate_target_nan() {
-        let mut data = EmbeddedTestData::new(vec![1.0, 2.0], (1, 2))
-            .with_targets(vec![0.0]);
+        let mut data = EmbeddedTestData::new(vec![1.0, 2.0], (1, 2)).with_targets(vec![0.0]);
         data.y_data = Some(vec![f32::NAN]);
 
         let err = data.validate();
@@ -818,8 +817,7 @@ mod tests {
 
     #[test]
     fn test_embedded_test_data_validate_target_inf() {
-        let mut data = EmbeddedTestData::new(vec![1.0, 2.0], (1, 2))
-            .with_targets(vec![0.0]);
+        let mut data = EmbeddedTestData::new(vec![1.0, 2.0], (1, 2)).with_targets(vec![0.0]);
         data.y_data = Some(vec![f32::INFINITY]);
 
         let err = data.validate();
@@ -838,8 +836,7 @@ mod tests {
 
     #[test]
     fn test_embedded_test_data_clone() {
-        let data = EmbeddedTestData::new(vec![1.0, 2.0], (1, 2))
-            .with_targets(vec![1.0]);
+        let data = EmbeddedTestData::new(vec![1.0, 2.0], (1, 2)).with_targets(vec![1.0]);
         let cloned = data.clone();
         assert_eq!(cloned.x_data, data.x_data);
         assert_eq!(cloned.y_data, data.y_data);
@@ -862,7 +859,10 @@ mod tests {
 
     #[test]
     fn test_embed_error_clone() {
-        let err = EmbedError::ShapeMismatch { expected: 10, actual: 5 };
+        let err = EmbedError::ShapeMismatch {
+            expected: 10,
+            actual: 5,
+        };
         let cloned = err.clone();
         let msg = format!("{}", cloned);
         assert!(msg.contains("10"));
@@ -871,15 +871,21 @@ mod tests {
     #[test]
     #[should_panic(expected = "Feature names length")]
     fn test_embedded_test_data_feature_names_mismatch() {
-        let _ = EmbeddedTestData::new(vec![1.0, 2.0, 3.0, 4.0], (2, 2))
-            .with_feature_names(vec!["a".into(), "b".into(), "c".into()]); // 3 != 2
+        let _ = EmbeddedTestData::new(vec![1.0, 2.0, 3.0, 4.0], (2, 2)).with_feature_names(vec![
+            "a".into(),
+            "b".into(),
+            "c".into(),
+        ]); // 3 != 2
     }
 
     #[test]
     #[should_panic(expected = "Sample IDs length")]
     fn test_embedded_test_data_sample_ids_mismatch() {
-        let _ = EmbeddedTestData::new(vec![1.0, 2.0, 3.0, 4.0], (2, 2))
-            .with_sample_ids(vec!["a".into(), "b".into(), "c".into()]); // 3 != 2
+        let _ = EmbeddedTestData::new(vec![1.0, 2.0, 3.0, 4.0], (2, 2)).with_sample_ids(vec![
+            "a".into(),
+            "b".into(),
+            "c".into(),
+        ]); // 3 != 2
     }
 
     #[test]

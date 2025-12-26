@@ -203,13 +203,12 @@ impl TensorExpectation {
     pub fn for_tensor(name: &str) -> Option<Self> {
         // RMSNorm patterns (LLaMA, Qwen2, TinyLlama) - check BEFORE generic LayerNorm
         // These use gamma initialized to 1.0, not the 0-centered LayerNorm
-        if name.contains("input_layernorm")
+        if (name.contains("input_layernorm")
             || name.contains("post_attention_layernorm")
-            || name.contains("rms_norm")
+            || name.contains("rms_norm"))
+            && name.ends_with(".weight")
         {
-            if name.ends_with(".weight") {
-                return Some(Self::RMSNORM_WEIGHT);
-            }
+            return Some(Self::RMSNORM_WEIGHT);
         }
 
         // Traditional LayerNorm patterns (BERT, older models)
@@ -3282,7 +3281,10 @@ mod tests_import_errors {
     fn test_architecture_mapping_auto() {
         let arch = Architecture::Auto;
         // Auto should strip model. prefix
-        assert_eq!(arch.map_name("model.embed_tokens.weight"), "embed_tokens.weight");
+        assert_eq!(
+            arch.map_name("model.embed_tokens.weight"),
+            "embed_tokens.weight"
+        );
         // Pass through if no prefix
         assert_eq!(arch.map_name("layer.0.weight"), "layer.0.weight");
     }
@@ -3509,7 +3511,10 @@ mod tests_import_errors {
         let index = ShardedIndex::parse(json).expect("parse");
         let files = index.shard_files();
         // Should be sorted
-        assert_eq!(files, vec!["a.safetensors", "m.safetensors", "z.safetensors"]);
+        assert_eq!(
+            files,
+            vec!["a.safetensors", "m.safetensors", "z.safetensors"]
+        );
     }
 
     #[test]

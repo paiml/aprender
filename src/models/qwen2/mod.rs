@@ -443,7 +443,6 @@ impl Qwen2Model {
         }
     }
 
-
     /// Forward pass through the model.
     ///
     /// # Arguments
@@ -460,18 +459,32 @@ impl Qwen2Model {
         if self.cached_embed_data.len() < seq_len * self.config.hidden_size {
             self.cached_embed_data = vec![0.0f32; seq_len * self.config.hidden_size];
         }
-        self.embed_tokens.forward_into(input_ids, &mut self.cached_embed_data);
-        let mut hidden = Tensor::new(&self.cached_embed_data[..seq_len * self.config.hidden_size], &[1, seq_len, self.config.hidden_size]);
+        self.embed_tokens
+            .forward_into(input_ids, &mut self.cached_embed_data);
+        let mut hidden = Tensor::new(
+            &self.cached_embed_data[..seq_len * self.config.hidden_size],
+            &[1, seq_len, self.config.hidden_size],
+        );
 
         // Generate causal mask (re-use if size matches)
-        if self.cached_causal_mask.as_ref().map_or(true, |m| m.shape()[0] != seq_len) {
+        if self
+            .cached_causal_mask
+            .as_ref()
+            .map_or(true, |m| m.shape()[0] != seq_len)
+        {
             if self.cached_mask_data.len() < seq_len * seq_len {
                 self.cached_mask_data = vec![0.0f32; seq_len * seq_len];
             }
             generate_causal_mask_into(seq_len, &mut self.cached_mask_data);
-            self.cached_causal_mask = Some(Tensor::new(&self.cached_mask_data[..seq_len * seq_len], &[seq_len, seq_len]));
+            self.cached_causal_mask = Some(Tensor::new(
+                &self.cached_mask_data[..seq_len * seq_len],
+                &[seq_len, seq_len],
+            ));
         }
-        let attention_mask = self.cached_causal_mask.as_ref().unwrap();
+        let attention_mask = self
+            .cached_causal_mask
+            .as_ref()
+            .expect("causal mask must be initialized before forward pass");
 
         // Pass through decoder layers
         for layer in &self.layers {
@@ -498,19 +511,33 @@ impl Qwen2Model {
         if self.cached_embed_data.len() < seq_len * self.config.hidden_size {
             self.cached_embed_data = vec![0.0f32; seq_len * self.config.hidden_size];
         }
-        self.embed_tokens.forward_into(input_ids, &mut self.cached_embed_data);
-        let mut hidden = Tensor::new(&self.cached_embed_data[..seq_len * self.config.hidden_size], &[1, seq_len, self.config.hidden_size]);
+        self.embed_tokens
+            .forward_into(input_ids, &mut self.cached_embed_data);
+        let mut hidden = Tensor::new(
+            &self.cached_embed_data[..seq_len * self.config.hidden_size],
+            &[1, seq_len, self.config.hidden_size],
+        );
         let embed_time = embed_start.elapsed();
 
         // Generate causal mask (re-use if size matches)
-        if self.cached_causal_mask.as_ref().map_or(true, |m| m.shape()[0] != seq_len) {
+        if self
+            .cached_causal_mask
+            .as_ref()
+            .map_or(true, |m| m.shape()[0] != seq_len)
+        {
             if self.cached_mask_data.len() < seq_len * seq_len {
                 self.cached_mask_data = vec![0.0f32; seq_len * seq_len];
             }
             generate_causal_mask_into(seq_len, &mut self.cached_mask_data);
-            self.cached_causal_mask = Some(Tensor::new(&self.cached_mask_data[..seq_len * seq_len], &[seq_len, seq_len]));
+            self.cached_causal_mask = Some(Tensor::new(
+                &self.cached_mask_data[..seq_len * seq_len],
+                &[seq_len, seq_len],
+            ));
         }
-        let attention_mask = self.cached_causal_mask.as_ref().unwrap();
+        let attention_mask = self
+            .cached_causal_mask
+            .as_ref()
+            .expect("causal mask must be initialized before profiled forward pass");
 
         // Pass through decoder layers with profiling
         let mut total_attn = std::time::Duration::ZERO;
@@ -1725,7 +1752,9 @@ mod tests {
         if !tokenizer_path.exists() {
             eprintln!("SKIP S1: tokenizer.json not found at {:?}", tokenizer_path);
             eprintln!("Download: curl -L -o ~/.cache/qwen2/tokenizer.json \\");
-            eprintln!("  https://huggingface.co/Qwen/Qwen2-0.5B-Instruct/resolve/main/tokenizer.json");
+            eprintln!(
+                "  https://huggingface.co/Qwen/Qwen2-0.5B-Instruct/resolve/main/tokenizer.json"
+            );
             return;
         }
 
@@ -1769,7 +1798,10 @@ mod tests {
             decoded
         );
 
-        println!("S2 PASSED: '{}' -> {:?} -> '{}'", original, encoded, decoded);
+        println!(
+            "S2 PASSED: '{}' -> {:?} -> '{}'",
+            original, encoded, decoded
+        );
     }
 
     /// S3: Tokenizer handles Qwen2 special tokens
@@ -1847,9 +1879,7 @@ mod tests {
 
         let config = Qwen2Config::qwen2_0_5b_instruct();
         let mut model = Qwen2Model::new_uninitialized(&config);
-        let loaded = model
-            .load_from_safetensors(safetensors_path)
-            .expect("load");
+        let loaded = model.load_from_safetensors(safetensors_path).expect("load");
 
         // Qwen2-0.5B has exactly 219 tensors:
         // - 1 embed_tokens
@@ -1922,14 +1952,8 @@ mod tests {
         let has_nan = logits.data().iter().any(|x| x.is_nan());
         let has_inf = logits.data().iter().any(|x| x.is_infinite());
 
-        assert!(
-            !has_nan,
-            "FALSIFIED S12: Logits contain NaN values"
-        );
-        assert!(
-            !has_inf,
-            "FALSIFIED S12: Logits contain Inf values"
-        );
+        assert!(!has_nan, "FALSIFIED S12: Logits contain NaN values");
+        assert!(!has_inf, "FALSIFIED S12: Logits contain Inf values");
 
         println!("S12 PASSED: All logits are finite");
     }
@@ -1976,6 +2000,9 @@ mod tests {
             max_new_tokens
         );
 
-        println!("S20 PASSED: Generated {} <= {} tokens", new_tokens, max_new_tokens);
+        println!(
+            "S20 PASSED: Generated {} <= {} tokens",
+            new_tokens, max_new_tokens
+        );
     }
 }
