@@ -172,9 +172,9 @@ impl LlamaTokenizer {
     /// Encode text to token IDs.
     ///
     /// Uses SentencePiece-style BPE encoding:
-    /// 1. Convert text to bytes
-    /// 2. Look up byte tokens or multi-byte tokens
-    /// 3. Apply BPE merges based on scores
+    /// 1. Add space prefix to indicate word boundaries
+    /// 2. Look up tokens with longest-match greedy algorithm
+    /// 3. Fall back to byte tokens for unknown characters
     ///
     /// # Arguments
     /// * `text` - Input text to tokenize
@@ -187,18 +187,19 @@ impl LlamaTokenizer {
             return Vec::new();
         }
 
-        // Start with character/byte-level tokens
-        let mut tokens: Vec<u32> = Vec::with_capacity(text.len());
+        // SentencePiece prepends space to input and uses ▁ as word boundary marker
+        // "Hello, world!" becomes "▁Hello▁,▁world▁!"
+        let normalized = format!("▁{}", text.replace(' ', "▁"));
+        let chars: Vec<char> = normalized.chars().collect();
 
-        // Try to match longest tokens first (greedy)
-        let chars: Vec<char> = text.chars().collect();
+        let mut tokens: Vec<u32> = Vec::with_capacity(text.len());
         let mut i = 0;
 
         while i < chars.len() {
             let mut best_len = 0;
             let mut best_token_id = self.unk_token_id;
 
-            // Try matching increasingly longer substrings
+            // Try matching increasingly longer substrings (greedy longest match)
             for end in (i + 1)..=chars.len().min(i + 32) {
                 let substr: String = chars[i..end].iter().collect();
 
@@ -206,15 +207,6 @@ impl LlamaTokenizer {
                 if let Some(&token_id) = self.vocab.get(&substr) {
                     best_len = end - i;
                     best_token_id = token_id;
-                }
-
-                // Also try with SentencePiece space prefix
-                if i == 0 || chars.get(i.saturating_sub(1)) == Some(&' ') {
-                    let with_space = format!("▁{}", substr);
-                    if let Some(&token_id) = self.vocab.get(&with_space) {
-                        best_len = end - i;
-                        best_token_id = token_id;
-                    }
                 }
             }
 
