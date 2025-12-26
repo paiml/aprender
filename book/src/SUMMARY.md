@@ -258,6 +258,7 @@
 - [Case Study: APR CLI Commands Demo](./examples/apr-cli-commands.md)
 - [Case Study: Model Zoo](./examples/model-zoo.md)
 - [Case Study: Sovereign AI Stack Integration](./examples/sovereign-stack.md)
+- [Case Study: Sovereign AI Offline Mode](./examples/sovereign-offline.md)
 - [Case Study: Model Explainability and Audit Trails](./examples/explainability-audit.md)
 - [Case Study: Model Serving](./examples/model-serving.md)
 - [Case Study: Federation Gateway](./examples/federation-gateway.md)

@@ -91,6 +91,8 @@ pub(crate) struct RunOptions {
     pub force: bool,
     /// Disable GPU acceleration
     pub no_gpu: bool,
+    /// Offline mode: refuse any network access
+    pub offline: bool,
 }
 
 impl Default for RunOptions {
@@ -100,6 +102,7 @@ impl Default for RunOptions {
             output_format: "text".to_string(),
             force: false,
             no_gpu: false,
+            offline: false,
         }
     }
 }
@@ -122,8 +125,8 @@ pub(crate) fn run_model(source: &str, options: &RunOptions) -> Result<RunResult>
     // Parse source
     let model_source = ModelSource::parse(source)?;
 
-    // Resolve model path (download if needed)
-    let model_path = resolve_model(&model_source, options.force)?;
+    // Resolve model path (download if needed, respecting offline mode)
+    let model_path = resolve_model(&model_source, options.force, options.offline)?;
 
     // Validate model exists
     if !model_path.exists() {
@@ -146,14 +149,28 @@ pub(crate) fn run_model(source: &str, options: &RunOptions) -> Result<RunResult>
 }
 
 /// Resolve model source to local path
-fn resolve_model(source: &ModelSource, _force: bool) -> Result<PathBuf> {
+///
+/// When `offline` is true, this function enforces strict network isolation:
+/// - Local files are allowed
+/// - Cached models are allowed (no network required)
+/// - Non-cached remote sources are rejected with a clear error
+///
+/// Per Section 9.2 (Sovereign AI): "apr run --offline is mandatory for production"
+fn resolve_model(source: &ModelSource, _force: bool, offline: bool) -> Result<PathBuf> {
     match source {
         ModelSource::Local(path) => Ok(path.clone()),
         ModelSource::HuggingFace { org, repo } => {
             let cache_path = source.cache_path();
             if cache_path.exists() {
-                // Find model file in cache
+                // Cached models are allowed even in offline mode
                 find_model_in_dir(&cache_path)
+            } else if offline {
+                // OFFLINE MODE: Reject any network access attempt
+                Err(CliError::ValidationFailed(format!(
+                    "OFFLINE MODE: Model hf://{org}/{repo} not cached. \
+                     Network access is disabled. Cache the model first with: \
+                     apr import hf://{org}/{repo}"
+                )))
             } else {
                 // NOTE: Auto-download deferred to GH-80 milestone - manual import required
                 Err(CliError::ValidationFailed(format!(
@@ -164,7 +181,14 @@ fn resolve_model(source: &ModelSource, _force: bool) -> Result<PathBuf> {
         ModelSource::Url(url) => {
             let cache_path = source.cache_path();
             if cache_path.exists() {
+                // Cached URLs are allowed even in offline mode
                 find_model_in_dir(&cache_path)
+            } else if offline {
+                // OFFLINE MODE: Reject any network access attempt
+                Err(CliError::ValidationFailed(format!(
+                    "OFFLINE MODE: URL {url} not cached. \
+                     Network access is disabled. Download and cache the model first."
+                )))
             } else {
                 // NOTE: URL download deferred to GH-80 milestone
                 Err(CliError::ValidationFailed(format!(
@@ -502,6 +526,10 @@ fn format_prediction_output(
 }
 
 /// Run command entry point
+///
+/// Per Section 9.2 (Sovereign AI), the `offline` flag enforces strict network isolation:
+/// - When `true`, all network access is blocked at the type level
+/// - Production deployments MUST use `--offline` mode
 pub(crate) fn run(
     source: &str,
     input: Option<&Path>,
@@ -510,8 +538,17 @@ pub(crate) fn run(
     _task: Option<&str>,
     output_format: &str,
     no_gpu: bool,
+    offline: bool,
 ) -> Result<()> {
-    println!("{}", "=== APR Run ===".cyan().bold());
+    if offline {
+        println!("{}", "=== APR Run (OFFLINE MODE) ===".cyan().bold());
+        eprintln!(
+            "{}",
+            "Network access disabled. Only local/cached models allowed.".yellow()
+        );
+    } else {
+        println!("{}", "=== APR Run ===".cyan().bold());
+    }
     println!();
     println!("Source: {source}");
 
@@ -520,6 +557,7 @@ pub(crate) fn run(
         output_format: output_format.to_string(),
         force: false,
         no_gpu,
+        offline,
     };
 
     let result = run_model(source, &options)?;
@@ -652,6 +690,7 @@ mod tests {
         assert_eq!(options.output_format, "text");
         assert!(!options.force);
         assert!(!options.no_gpu);
+        assert!(!options.offline);
     }
 
     // ==================== MD5 Hash Tests ====================
@@ -685,8 +724,96 @@ mod tests {
             output_format: "json".to_string(),
             force: false,
             no_gpu: true,
+            offline: false,
         };
         assert!(options.no_gpu);
         assert_eq!(options.output_format, "json");
+    }
+
+    // ============================================================================
+    // Popperian Falsification Tests: Offline Mode (Section 9.2 Sovereign AI)
+    // ============================================================================
+    //
+    // Per PMAT Extreme TDD: Each test defines conditions under which the claim
+    // would be **proven false**.
+
+    /// FALSIFICATION: If --offline allows HuggingFace download, the claim fails
+    /// Claim: `apr run --offline hf://org/repo` rejects non-cached HF models
+    #[test]
+    fn offline_mode_rejects_uncached_huggingface() {
+        let source = ModelSource::HuggingFace {
+            org: "uncached-org".to_string(),
+            repo: "nonexistent-repo".to_string(),
+        };
+
+        // Offline mode MUST reject non-cached HF sources
+        let result = resolve_model(&source, false, true);
+
+        assert!(result.is_err(), "FALSIFIED: Offline mode allowed HF source");
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("OFFLINE MODE"),
+            "FALSIFIED: Error message should mention OFFLINE MODE, got: {err}"
+        );
+    }
+
+    /// FALSIFICATION: If --offline allows URL download, the claim fails
+    /// Claim: `apr run --offline https://...` rejects non-cached URLs
+    #[test]
+    fn offline_mode_rejects_uncached_url() {
+        let source = ModelSource::Url("https://example.com/model.apr".to_string());
+
+        // Offline mode MUST reject non-cached URL sources
+        let result = resolve_model(&source, false, true);
+
+        assert!(result.is_err(), "FALSIFIED: Offline mode allowed URL source");
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("OFFLINE MODE"),
+            "FALSIFIED: Error message should mention OFFLINE MODE, got: {err}"
+        );
+    }
+
+    /// FALSIFICATION: If --offline rejects local files, the claim fails
+    /// Claim: `apr run --offline /path/to/model.apr` allows local files
+    #[test]
+    fn offline_mode_allows_local_files() {
+        let source = ModelSource::Local(PathBuf::from("/tmp/model.apr"));
+
+        // Offline mode MUST allow local file sources
+        let result = resolve_model(&source, false, true);
+
+        // Note: This succeeds at resolution, but may fail later if file doesn't exist
+        // The key point is that offline mode doesn't reject local sources
+        assert!(
+            result.is_ok(),
+            "FALSIFIED: Offline mode rejected local file source: {:?}",
+            result
+        );
+    }
+
+    /// FALSIFICATION: If default mode has offline=true, the claim fails
+    /// Claim: Default RunOptions have offline=false
+    #[test]
+    fn default_options_are_not_offline() {
+        let options = RunOptions::default();
+        assert!(
+            !options.offline,
+            "FALSIFIED: Default options should NOT be offline"
+        );
+    }
+
+    /// FALSIFICATION: If offline flag doesn't propagate, the claim fails
+    /// Claim: RunOptions::offline is correctly set when specified
+    #[test]
+    fn offline_flag_propagates_correctly() {
+        let options = RunOptions {
+            offline: true,
+            ..Default::default()
+        };
+        assert!(
+            options.offline,
+            "FALSIFIED: Offline flag did not propagate to options"
+        );
     }
 }

@@ -86,6 +86,11 @@ enum Commands {
         /// Disable GPU acceleration
         #[arg(long)]
         no_gpu: bool,
+
+        /// Offline mode: block all network access (Sovereign AI compliance)
+        /// Per Section 9.2: "apr run --offline is mandatory for production"
+        #[arg(long)]
+        offline: bool,
     },
 
     /// Start inference server (REST API, streaming, metrics)
@@ -617,6 +622,7 @@ fn execute_command(cli: &Cli) -> Result<(), error::CliError> {
             task,
             format,
             no_gpu,
+            offline,
         } => run::run(
             source,
             input.as_deref(),
@@ -625,6 +631,7 @@ fn execute_command(cli: &Cli) -> Result<(), error::CliError> {
             task.as_deref(),
             format,
             *no_gpu,
+            *offline,
         ),
 
         Commands::Serve {
