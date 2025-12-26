@@ -221,6 +221,8 @@ mod realizar_chat {
     pub struct ChatSession {
         /// Model bytes (kept for regeneration if needed)
         model_bytes: Vec<u8>,
+        /// Model path (for mmap-based loading)
+        model_path: std::path::PathBuf,
         /// Detected format
         format: ModelFormat,
         /// Conversation history
@@ -287,6 +289,7 @@ mod realizar_chat {
 
             Ok(Self {
                 model_bytes,
+                model_path: path.to_path_buf(),
                 format,
                 history: Vec::new(),
                 tokenizer,
@@ -354,16 +357,38 @@ mod realizar_chat {
         fn generate_gguf(&self, prompt: &[u32], config: &ChatConfig) -> Result<Vec<u32>, String> {
             use realizar::gguf::{GGUFModel, QuantizedGGUFTransformer, QuantizedGenerateConfig};
 
+            // Note: OwnedQuantizedModel has proper attention but panics on GQA models (TinyLlama)
+            // The causal_attention function doesn't handle num_kv_heads != num_heads correctly
+            // Fall back to QuantizedGGUFTransformer which has simplified attention but works
             let gguf = GGUFModel::from_bytes(&self.model_bytes)
                 .map_err(|e| format!("Failed to parse GGUF: {e}"))?;
 
             let transformer = QuantizedGGUFTransformer::from_gguf(&gguf, &self.model_bytes)
                 .map_err(|e| format!("Failed to create GGUF transformer: {e}"))?;
 
+            // TinyLlama-1.1B without KV cache is O(n²) - limit tokens for CPU inference
+            // Note: Simplified attention (no RoPE/causal mask) - output quality is limited
+            let practical_max = config.max_tokens.min(16); // Limit to 16 tokens on CPU
+
+            let is_gqa = transformer.config.num_kv_heads < transformer.config.num_heads;
+            let gqa_note = if is_gqa { " (GQA model - simplified attention)" } else { "" };
+
+            println!(
+                "{}",
+                format!(
+                    "[GGUF: {} layers, {} hidden - generating up to {} tokens (CPU){}...]",
+                    transformer.config.num_layers,
+                    transformer.config.hidden_dim,
+                    practical_max,
+                    gqa_note
+                )
+                .dimmed()
+            );
+
             let gen_config = QuantizedGenerateConfig {
-                max_tokens: config.max_tokens.min(128),
+                max_tokens: practical_max,
                 temperature: config.temperature,
-                top_k: 40, // Default top_k (config.top_p not used in GGUF)
+                top_k: 40, // Default top_k
                 ..Default::default()
             };
 
