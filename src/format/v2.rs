@@ -402,6 +402,16 @@ pub struct AprV2Metadata {
     #[serde(default)]
     pub version: Option<String>,
 
+    /// Source/provenance URI (DD6: Model provenance tracking)
+    /// Examples: "hf://openai/whisper-tiny", "local://path/to/model.safetensors"
+    #[serde(default)]
+    pub source: Option<String>,
+
+    /// Original format before conversion
+    /// Examples: "safetensors", "gguf", "pytorch"
+    #[serde(default)]
+    pub original_format: Option<String>,
+
     /// Creation timestamp (ISO 8601)
     #[serde(default)]
     pub created_at: Option<String>,
@@ -1803,5 +1813,63 @@ mod tests {
         };
         assert_eq!(info.filename, "shard.apr");
         assert_eq!(info.tensors.len(), 2);
+    }
+
+    /// DD6: Model provenance must be tracked in APR metadata
+    /// Falsification: If source/origin is lost after conversion, provenance tracking fails
+    #[test]
+    fn test_dd6_provenance_tracked() {
+        let mut metadata = AprV2Metadata::new("test_model");
+
+        // Set provenance information
+        metadata.source = Some("hf://openai/whisper-tiny".to_string());
+        metadata.original_format = Some("safetensors".to_string());
+
+        // Verify provenance is preserved in serialization
+        let json = metadata.to_json().expect("serialize");
+        let parsed: AprV2Metadata =
+            serde_json::from_slice(&json).expect("deserialize");
+
+        assert_eq!(
+            parsed.source,
+            Some("hf://openai/whisper-tiny".to_string()),
+            "DD6 FALSIFIED: Source provenance lost after serialization"
+        );
+        assert_eq!(
+            parsed.original_format,
+            Some("safetensors".to_string()),
+            "DD6 FALSIFIED: Original format lost after serialization"
+        );
+    }
+
+    /// DD6b: Verify provenance survives full APR write/read cycle
+    #[test]
+    fn test_dd6_provenance_roundtrip() {
+        let mut metadata = AprV2Metadata::new("whisper");
+        metadata.source = Some("local:///models/whisper-tiny.safetensors".to_string());
+        metadata.original_format = Some("safetensors".to_string());
+        metadata.author = Some("OpenAI".to_string());
+
+        let mut writer = AprV2Writer::new(metadata);
+        writer.add_f32_tensor("test", vec![4], &[1.0, 2.0, 3.0, 4.0]);
+
+        let bytes = writer.write().expect("write");
+        let reader = AprV2Reader::from_bytes(&bytes).expect("read");
+
+        let read_meta = reader.metadata();
+        assert!(
+            read_meta.source.is_some(),
+            "DD6 FALSIFIED: Source provenance not preserved in APR file"
+        );
+        assert_eq!(
+            read_meta.source.as_deref(),
+            Some("local:///models/whisper-tiny.safetensors"),
+            "DD6 FALSIFIED: Source URI corrupted"
+        );
+        assert_eq!(
+            read_meta.original_format.as_deref(),
+            Some("safetensors"),
+            "DD6 FALSIFIED: Original format corrupted"
+        );
     }
 }

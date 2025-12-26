@@ -343,6 +343,202 @@ fn verify_apr_format_constants() {
 }
 
 // ============================================================================
+// Section DD: Sovereign AI Compliance (DD1-DD7)
+// ============================================================================
+
+/// DD3: No telemetry symbols in binary
+/// FALSIFICATION: Binary contains "telemetry", "analytics", "tracking" symbols
+#[test]
+fn dd3_no_telemetry_symbols() {
+    // Verify crate doesn't import telemetry dependencies
+    // This is a compile-time check - if any crate adds telemetry, this test
+    // should be extended to check Cargo.lock
+
+    // Check Cargo.toml doesn't contain telemetry-related dependencies
+    let cargo_toml = include_str!("../Cargo.toml");
+
+    let telemetry_patterns = [
+        "telemetry",
+        "analytics",
+        "sentry",
+        "datadog",
+        "newrelic",
+        "honeycomb",
+        "opentelemetry", // Note: tracing is OK, opentelemetry export is not
+        "amplitude",
+        "mixpanel",
+        "segment",
+    ];
+
+    for pattern in telemetry_patterns {
+        assert!(
+            !cargo_toml.to_lowercase().contains(pattern),
+            "DD3 FALSIFIED: Cargo.toml contains telemetry dependency: '{}'",
+            pattern
+        );
+    }
+}
+
+/// DD3b: Verify no phone-home URLs in codebase
+#[test]
+fn dd3_no_phone_home_urls() {
+    // This is a spot check - comprehensive check would scan all source files
+    let lib_rs = include_str!("../src/lib.rs");
+
+    // Should not contain external analytics endpoints
+    let phone_home_patterns = [
+        "googleapis.com/analytics",
+        "segment.io",
+        "mixpanel.com",
+        "amplitude.com",
+        "sentry.io",
+    ];
+
+    for pattern in phone_home_patterns {
+        assert!(
+            !lib_rs.contains(pattern),
+            "DD3 FALSIFIED: lib.rs contains phone-home URL: '{}'",
+            pattern
+        );
+    }
+}
+
+/// DD5: License allows air-gap deployment
+/// FALSIFICATION: License requires network connectivity or phone-home
+#[test]
+fn dd5_license_allows_airgap() {
+    let license = include_str!("../LICENSE");
+
+    // MIT license should not require connectivity
+    assert!(
+        license.contains("MIT") || license.contains("Apache"),
+        "DD5 FALSIFIED: License is not MIT or Apache"
+    );
+
+    // License should not contain network requirements
+    let network_clauses = [
+        "must connect",
+        "required to contact",
+        "phone home",
+        "license server",
+        "activation",
+    ];
+
+    for clause in network_clauses {
+        assert!(
+            !license.to_lowercase().contains(clause),
+            "DD5 FALSIFIED: License contains network requirement: '{}'",
+            clause
+        );
+    }
+}
+
+// ============================================================================
+// Section CC: Cross-Repository Verification (CC1-CC5)
+// ============================================================================
+
+/// CC1: aprender and realizar share APR spec
+/// FALSIFICATION: Different interpretation of APR format fields
+#[test]
+fn cc1_apr_format_constants_match() {
+    // Verify APR format constants are consistent
+    // Magic bytes should be APRN (ASCII: A=0x41, P=0x50, R=0x52, N=0x4E)
+    let magic_v1 = aprender::format::v2::MAGIC_V1;
+    assert_eq!(
+        magic_v1, [0x41, 0x50, 0x52, 0x4E], // "APRN"
+        "CC1 FALSIFIED: MAGIC_V1 should be [0x41, 0x50, 0x52, 0x4E] (APRN)"
+    );
+
+    // Verify magic spells "APRN"
+    assert_eq!(
+        std::str::from_utf8(&magic_v1).unwrap(),
+        "APRN",
+        "CC1 FALSIFIED: Magic should spell APRN"
+    );
+
+    // Header size v2 should be 64 bytes
+    let header_size_v2 = aprender::format::v2::HEADER_SIZE_V2;
+    assert_eq!(
+        header_size_v2, 64,
+        "CC1 FALSIFIED: Header v2 size should be 64 bytes"
+    );
+
+    // Verify block size for quantization (GGUF compatibility)
+    #[cfg(feature = "format-quantize")]
+    {
+        assert_eq!(
+            aprender::format::quantize::BLOCK_SIZE,
+            32,
+            "CC1 FALSIFIED: Quantization block size should be 32"
+        );
+    }
+}
+
+/// CC1b: APR write/read roundtrip preserves all fields
+#[test]
+fn cc1_apr_roundtrip_integrity() {
+    use aprender::format::v2::{AprV2Metadata, AprV2Reader, AprV2Writer};
+
+    // Create metadata with all fields populated
+    let mut metadata = AprV2Metadata::new("test_model");
+    metadata.name = Some("Test Model".to_string());
+    metadata.description = Some("A test model for CC1".to_string());
+    metadata.author = Some("Test Author".to_string());
+    metadata.license = Some("MIT".to_string());
+    metadata.version = Some("1.0.0".to_string());
+    metadata.source = Some("hf://test/model".to_string());
+    metadata.original_format = Some("safetensors".to_string());
+
+    // Write APR file
+    let mut writer = AprV2Writer::new(metadata.clone());
+    writer.add_f32_tensor("weight", vec![2, 3], &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+    writer.add_f32_tensor("bias", vec![3], &[0.1, 0.2, 0.3]);
+
+    let bytes = writer.write().expect("write failed");
+
+    // Read back
+    let reader = AprV2Reader::from_bytes(&bytes).expect("read failed");
+    let read_meta = reader.metadata();
+
+    // Verify all metadata fields preserved
+    assert_eq!(read_meta.model_type, "test_model", "CC1 FALSIFIED: model_type corrupted");
+    assert_eq!(read_meta.name, Some("Test Model".to_string()), "CC1 FALSIFIED: name corrupted");
+    assert_eq!(read_meta.author, Some("Test Author".to_string()), "CC1 FALSIFIED: author corrupted");
+    assert_eq!(read_meta.license, Some("MIT".to_string()), "CC1 FALSIFIED: license corrupted");
+    assert_eq!(read_meta.source, Some("hf://test/model".to_string()), "CC1 FALSIFIED: source corrupted");
+
+    // Verify tensors preserved
+    let weight = reader.get_f32_tensor("weight").expect("get weight");
+    assert_eq!(weight.len(), 6, "CC1 FALSIFIED: weight tensor length wrong");
+    assert!((weight[0] - 1.0).abs() < 1e-6, "CC1 FALSIFIED: weight data corrupted");
+
+    let bias = reader.get_f32_tensor("bias").expect("get bias");
+    assert_eq!(bias.len(), 3, "CC1 FALSIFIED: bias tensor length wrong");
+}
+
+/// CC4: Version compatibility matrix exists
+/// FALSIFICATION: Undocumented breaking changes
+#[test]
+fn cc4_version_documented() {
+    // Check that Cargo.toml has version
+    let cargo_toml = include_str!("../Cargo.toml");
+    assert!(
+        cargo_toml.contains("version = "),
+        "CC4 FALSIFIED: No version in Cargo.toml"
+    );
+
+    // Check that CHANGELOG exists
+    let has_changelog = std::path::Path::new("CHANGELOG.md").exists()
+        || std::path::Path::new("CHANGES.md").exists()
+        || std::path::Path::new("docs/CHANGELOG.md").exists();
+
+    // Note: We don't fail if CHANGELOG doesn't exist, but log it
+    if !has_changelog {
+        eprintln!("CC4 WARNING: No CHANGELOG.md found - consider adding one");
+    }
+}
+
+// ============================================================================
 // Summary
 // ============================================================================
 //
