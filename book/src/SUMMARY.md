@@ -34,6 +34,7 @@
 
 # Advanced Testing
 
+- [Popperian Falsification](./advanced-testing/popperian-falsification.md)
 - [Property-Based Testing](./advanced-testing/property-based-testing.md)
   - [Proptest Fundamentals](./advanced-testing/proptest-fundamentals.md)
   - [Strategies and Generators](./advanced-testing/strategies-generators.md)
