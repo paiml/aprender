@@ -2396,6 +2396,23 @@ fn y1_apr_loads_via_realizar_mmap() {
   - Falls back to GELU for non-SwiGLU models (phi-2, GPT-2)
   - Tests: FFN-01 to FFN-08 in `tests/swiglu_ffn_tests.rs`
   - TinyLlama-1.1B and other LLaMA-family models now produce coherent output
+- **2025-12-27**: ✅ **Layer Norm Delta Parameterization FIXED** (realizar commit 09ec92a)
+  - **EXTREME TDD**: 36 debug examples created during investigation
+  - **Root cause**: GGUF stores layer norm weights as (gamma - 1), not gamma directly
+  - Without `1.0 + weight` transformation, Q/K magnitudes 30x smaller than expected
+  - Result: uniform 50/50 attention weights across all heads (broken attention)
+  - **Five Whys Analysis**:
+    1. Why were multi-token outputs 98.5% similar to [BOS]? → Uniform attention weights
+    2. Why uniform weights? → Q/K dot products ~0 due to tiny magnitudes
+    3. Why tiny Q/K? → Layer norm output RMS ~0.05 instead of ~1.0
+    4. Why wrong RMS? → Weights used directly (RMS ~0.046) instead of as deltas
+    5. Why deltas? → GGUF format stores gamma = 1 + stored_value for layer norms
+  - **Fix**: Apply `gamma = 1.0 + stored_weight` during loading
+  - Before: [BOS] vs [BOS,Hello] cosine = 0.9850 (nearly identical)
+  - After: [BOS] vs [BOS,Hello] cosine = 0.1199 (properly different)
+  - Added RMSNorm implementation for LLaMA-family models
+  - Fixed SwiGLU order: `down(silu(gate(x)) * up(x))` not `down(gate(x) * silu(up(x)))`
+  - Tests: FFN-09, FFN-10 in `tests/swiglu_ffn_tests.rs`
 - **2025-12-26**: ✅ **SPEC COMPLETE: 313/313 points verified**
   - GPU benchmarks deferred to [GH-141](https://github.com/paiml/aprender/issues/141)
   - Section Y renumbered: Y7 (GPU) removed, Y8-Y14 → Y7-Y13
