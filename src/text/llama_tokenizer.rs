@@ -66,6 +66,7 @@ pub struct LlamaTokenizer {
     /// ID to token string mapping
     id_to_token: HashMap<u32, String>,
     /// Token scores (priorities for merging)
+    #[allow(dead_code)]
     scores: Vec<f32>,
     /// BOS token ID
     bos_token_id: u32,
@@ -74,6 +75,7 @@ pub struct LlamaTokenizer {
     /// Unknown token ID
     unk_token_id: u32,
     /// Padding token ID (optional)
+    #[allow(dead_code)]
     pad_token_id: Option<u32>,
     /// Vocabulary size
     vocab_size: usize,
@@ -121,8 +123,7 @@ impl LlamaTokenizer {
             if id as usize >= vocab_size {
                 return Err(AprenderError::ValidationError {
                     message: format!(
-                        "{} token ID {} out of range (vocab_size={})",
-                        name, id, vocab_size
+                        "{name} token ID {id} out of range (vocab_size={vocab_size})"
                     ),
                 });
             }
@@ -217,7 +218,7 @@ impl LlamaTokenizer {
                 // Fall back to byte tokens for unknown characters
                 let c = chars[i];
                 for byte in c.to_string().as_bytes() {
-                    let byte_token = format!("<0x{:02X}>", byte);
+                    let byte_token = format!("<0x{byte:02X}>");
                     if let Some(&token_id) = self.vocab.get(&byte_token) {
                         tokens.push(token_id);
                     } else {
@@ -441,7 +442,7 @@ impl LlamaTokenizer {
                 }
                 _ => {
                     // Skip other values
-                    offset = Self::skip_value(data, offset, val_type)?;
+                    offset = Self::skip_value(data, offset, val_type);
                 }
             }
         }
@@ -467,7 +468,7 @@ impl LlamaTokenizer {
 
         if elem_type != 8 {
             return Err(AprenderError::FormatError {
-                message: format!("Expected string array (type 8), got type {}", elem_type),
+                message: format!("Expected string array (type 8), got type {elem_type}"),
             });
         }
 
@@ -510,7 +511,7 @@ impl LlamaTokenizer {
 
         if elem_type != 6 {
             return Err(AprenderError::FormatError {
-                message: format!("Expected f32 array (type 6), got type {}", elem_type),
+                message: format!("Expected f32 array (type 6), got type {elem_type}"),
             });
         }
 
@@ -535,15 +536,15 @@ impl LlamaTokenizer {
         Ok((result, offset))
     }
 
-    fn skip_value(data: &[u8], mut offset: usize, val_type: u32) -> Result<usize> {
+    fn skip_value(data: &[u8], mut offset: usize, val_type: u32) -> usize {
         match val_type {
             0 | 1 | 7 => offset += 1,  // u8, i8, bool
             2 | 3 => offset += 2,       // u16, i16
-            4 | 5 | 6 => offset += 4,   // u32, i32, f32
+            4..=6 => offset += 4,       // u32, i32, f32
             8 => {
                 // string
                 if offset + 8 > data.len() {
-                    return Ok(offset);
+                    return offset;
                 }
                 let len = u64::from_le_bytes(
                     data[offset..offset + 8].try_into().unwrap_or([0; 8]),
@@ -553,7 +554,7 @@ impl LlamaTokenizer {
             9 => {
                 // array
                 if offset + 12 > data.len() {
-                    return Ok(offset);
+                    return offset;
                 }
                 let elem_type = u32::from_le_bytes(
                     data[offset..offset + 4].try_into().unwrap_or([0; 4]),
@@ -567,7 +568,7 @@ impl LlamaTokenizer {
                 match elem_type {
                     0 | 1 | 7 => offset += count,
                     2 | 3 => offset += count * 2,
-                    4 | 5 | 6 => offset += count * 4,
+                    4..=6 => offset += count * 4,
                     8 => {
                         for _ in 0..count {
                             if offset + 8 > data.len() {
@@ -579,14 +580,14 @@ impl LlamaTokenizer {
                             offset += 8 + len;
                         }
                     }
-                    10 | 11 | 12 => offset += count * 8,
+                    10..=12 => offset += count * 8,
                     _ => {}
                 }
             }
-            10 | 11 | 12 => offset += 8, // u64, i64, f64
+            10..=12 => offset += 8, // u64, i64, f64
             _ => {}
         }
-        Ok(offset)
+        offset
     }
 }
 

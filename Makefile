@@ -60,15 +60,15 @@ test-smoke: ## Smoke tests (<2s target, Section P: P2)
 # Pattern from bashrs: cargo-nextest + PROPTEST_CASES + exclude slow tests
 # Excludes: prop_gbm_expected_value_convergence (46s alone!)
 test-fast: ## Fast unit tests (<30s target)
-	@echo "⚡ Running fast tests (target: <30s)..."
+	@echo "⚡ Running fast tests (target: <30s, -j2 to prevent OOM)..."
 	@if command -v cargo-nextest >/dev/null 2>&1; then \
-		time env PROPTEST_CASES=50 cargo nextest run --workspace --lib \
+		time env PROPTEST_CASES=50 cargo nextest run --workspace --lib -j 2 \
 			--status-level skip \
 			--failure-output immediate \
 			-E 'not test(/prop_gbm_expected_value_convergence/)'; \
 	else \
 		echo "💡 Install cargo-nextest for faster tests: cargo install cargo-nextest"; \
-		time env PROPTEST_CASES=50 cargo test --workspace --lib -- --skip prop_gbm_expected_value_convergence; \
+		time env PROPTEST_CASES=50 cargo test --workspace --lib -- --test-threads=2 --skip prop_gbm_expected_value_convergence; \
 	fi
 	@echo "✅ Fast tests passed"
 
@@ -77,13 +77,13 @@ test-quick: test-fast
 
 # Standard tests (<2min): All tests including integration
 test: ## Standard tests (<2min target)
-	@echo "🧪 Running standard tests (target: <2min)..."
+	@echo "🧪 Running standard tests (target: <2min, -j2 to prevent OOM)..."
 	@if command -v cargo-nextest >/dev/null 2>&1; then \
-		time cargo nextest run --workspace \
+		time cargo nextest run --workspace -j 2 \
 			--status-level skip \
 			--failure-output immediate; \
 	else \
-		time cargo test --workspace; \
+		time cargo test --workspace -- --test-threads=2; \
 	fi
 	@echo "✅ Standard tests passed"
 
@@ -206,8 +206,8 @@ coverage: ## Generate HTML coverage report (target: <2 min, 95%+)
 	@cargo llvm-cov clean --workspace 2>/dev/null || true
 	@mkdir -p target/coverage
 	@echo "🧪 Running lib + integration tests (skip slow/benchmark tests)..."
-	@echo "   Using -j 8 to limit memory (LLVM instrumentation ~2x overhead)"
-	@cargo llvm-cov --no-report --lib --tests -j 8 \
+	@echo "   Using -j 2 to prevent OOM (LLVM instrumentation ~2x overhead)"
+	@cargo llvm-cov --no-report --lib --tests -j 2 \
 		-- --skip prop_ --skip encryption --skip compressed --skip slow \
 		--skip h12_benchmark --skip j2_roofline --skip benchmark
 	@echo "📊 Generating report..."
@@ -230,7 +230,7 @@ coverage-full: ## Full coverage report (all features, >10 min)
 	@cargo llvm-cov clean --workspace
 	@mkdir -p target/coverage
 	@test -f ~/.cargo/config.toml && mv ~/.cargo/config.toml ~/.cargo/config.toml.cov-backup || true
-	@cargo llvm-cov --no-report nextest --no-tests=warn --workspace --all-features -j 8
+	@cargo llvm-cov --no-report nextest --no-tests=warn --workspace --all-features -j 2
 	@cargo llvm-cov report --html --output-dir target/coverage/html $(COVERAGE_EXCLUDE)
 	@cargo llvm-cov report --lcov --output-path target/coverage/lcov.info $(COVERAGE_EXCLUDE)
 	@test -f ~/.cargo/config.toml.cov-backup && mv ~/.cargo/config.toml.cov-backup ~/.cargo/config.toml || true
