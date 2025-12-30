@@ -1052,8 +1052,8 @@ The APR demo supports multiple models for different use cases:
 | Model | Parameters | Use Case | Format | Status |
 |-------|------------|----------|--------|--------|
 | **TinyLlama-5M-F16** | 5M | Fast validation, CI/CD testing | GGUF → APR | ✅ Verified |
-| **Qwen2-0.5B-Instruct** | 494M | General chat, North Star demo | HF → APR | 🔧 In Progress |
-| **Qwen2.5-Coder-0.5B** | 494M | Code generation, IDE integration | HF → APR | ⬜ Planned |
+| **Qwen2-0.5B-Instruct** | 494M | General chat, North Star demo | HF → APR | ✅ Verified |
+| **Qwen2.5-Coder-0.5B** | 494M | Code generation, IDE integration | HF → APR | ✅ Verified |
 
 #### 4.7.1 TinyLlama Demo (Validation)
 

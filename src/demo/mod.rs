@@ -67,6 +67,16 @@ impl Qwen2Config {
         }
     }
 
+    /// Configuration for Qwen2.5-Coder-0.5B-Instruct
+    ///
+    /// Same architecture as Qwen2-0.5B-Instruct (shared base model).
+    /// Both use: 896 hidden, 14 heads, 2 KV heads, 24 layers, 151936 vocab.
+    #[must_use]
+    pub fn qwen25_coder_0_5b_instruct() -> Self {
+        // Qwen2.5-Coder shares architecture with Qwen2-0.5B
+        Self::qwen2_0_5b_instruct()
+    }
+
     /// Calculate model size in bytes (FP16)
     #[must_use]
     pub fn model_size_fp16(&self) -> usize {

@@ -5006,18 +5006,18 @@ fn w11_simd_set_verified() {
 /// Falsification: Qwen2Config cannot handle Coder variant
 #[test]
 fn q1_qwen25_coder_imports() {
-    // Verify Qwen2 architecture supports Coder variant
-    let config = Qwen2Config {
-        hidden_size: 896, // Qwen2.5-Coder-0.5B spec
-        num_attention_heads: 14,
-        num_kv_heads: 2,
-        num_layers: 24,
-        vocab_size: 151936, // Same vocab as Qwen2
-        max_seq_len: 32768, // Longer context for code
-        intermediate_size: 4864,
-        rope_theta: 1000000.0, // Higher for longer context
-    };
+    // Verify Qwen2.5-Coder config is available via dedicated method
+    let config = Qwen2Config::qwen25_coder_0_5b_instruct();
 
+    // Qwen2.5-Coder-0.5B shares architecture with Qwen2-0.5B
+    assert_eq!(config.hidden_size, 896, "Q1: Coder hidden_size");
+    assert_eq!(config.num_attention_heads, 14, "Q1: Coder num_heads");
+    assert_eq!(config.num_kv_heads, 2, "Q1: Coder num_kv_heads");
+    assert_eq!(config.num_layers, 24, "Q1: Coder num_layers");
+    assert_eq!(config.vocab_size, 151936, "Q1: Coder vocab_size");
+    assert_eq!(config.max_seq_len, 32768, "Q1: Coder max_seq_len");
+
+    // Verify model can be created
     let model = Qwen2Model::new(&config);
     assert_eq!(
         model.config().hidden_size,
@@ -5028,6 +5028,14 @@ fn q1_qwen25_coder_imports() {
         model.config().num_layers,
         24,
         "Q1: Qwen2.5-Coder should have 24 layers"
+    );
+
+    // Verify Architecture::Qwen2 supports import
+    use aprender::format::Architecture;
+    let mapped = Architecture::Qwen2.map_name("model.layers.0.self_attn.q_proj.weight");
+    assert!(
+        mapped.contains("self_attn.q_proj.weight"),
+        "Q1: Qwen2 architecture maps tensor names"
     );
 }
 
@@ -5919,6 +5927,114 @@ fn z10_zero_overhead_serving() {
         spec.contains("apr bench") || spec.contains("benchmark"),
         "Z10: Spec must document benchmark comparison"
     );
+}
+
+// ============================================================================
+// Section 19 Import Infrastructure Tests
+// Verify complete import pipeline code without requiring model files
+// ============================================================================
+
+/// Verify Qwen2-0.5B-Instruct import infrastructure is complete
+#[test]
+fn z_import_qwen2_0_5b_instruct_infra() {
+    use aprender::format::{Architecture, ImportOptions, Source, ValidationConfig};
+
+    // 1. Source parsing for HuggingFace URL
+    let source = Source::parse("hf://Qwen/Qwen2-0.5B-Instruct").unwrap();
+    match source {
+        Source::HuggingFace { org, repo, .. } => {
+            assert_eq!(org, "Qwen", "HF org should be Qwen");
+            assert_eq!(repo, "Qwen2-0.5B-Instruct", "HF repo should match");
+        }
+        _ => panic!("Should parse as HuggingFace source"),
+    }
+
+    // 2. Architecture support
+    let arch = Architecture::Qwen2;
+    let mapped = arch.map_name("model.embed_tokens.weight");
+    assert_eq!(mapped, "embed_tokens.weight", "Qwen2 strips model. prefix");
+
+    // 3. Import options
+    let options = ImportOptions {
+        architecture: Architecture::Qwen2,
+        validation: ValidationConfig::Strict,
+        quantize: None,
+        compress: None,
+        force: false,
+        cache: true,
+    };
+    assert_eq!(options.architecture, Architecture::Qwen2);
+
+    // 4. Config verification
+    let config = Qwen2Config::qwen2_0_5b_instruct();
+    assert_eq!(config.hidden_size, 896);
+    assert_eq!(config.vocab_size, 151936);
+}
+
+/// Verify Qwen2.5-Coder-0.5B import infrastructure is complete
+#[test]
+fn z_import_qwen25_coder_0_5b_infra() {
+    use aprender::format::{Architecture, ImportOptions, Source, ValidationConfig};
+
+    // 1. Source parsing for HuggingFace URL
+    let source = Source::parse("hf://Qwen/Qwen2.5-Coder-0.5B-Instruct").unwrap();
+    match source {
+        Source::HuggingFace { org, repo, .. } => {
+            assert_eq!(org, "Qwen", "HF org should be Qwen");
+            assert_eq!(repo, "Qwen2.5-Coder-0.5B-Instruct", "HF repo should match");
+        }
+        _ => panic!("Should parse as HuggingFace source"),
+    }
+
+    // 2. Architecture support (same as Qwen2)
+    let arch = Architecture::Qwen2;
+    let mapped = arch.map_name("model.layers.0.mlp.gate_proj.weight");
+    assert!(mapped.contains("mlp.gate_proj.weight"), "Qwen2 maps MLP names");
+
+    // 3. Import options with quantization
+    let options = ImportOptions {
+        architecture: Architecture::Qwen2,
+        validation: ValidationConfig::Basic,
+        quantize: Some(aprender::format::converter::QuantizationType::Int4),
+        compress: None,
+        force: true,
+        cache: false,
+    };
+    assert!(options.quantize.is_some(), "INT4 quantization supported");
+
+    // 4. Config verification (shares architecture with Qwen2-0.5B)
+    let config = Qwen2Config::qwen25_coder_0_5b_instruct();
+    assert_eq!(config.hidden_size, 896, "Same hidden_size as Qwen2-0.5B");
+    assert_eq!(config.num_layers, 24, "Same num_layers as Qwen2-0.5B");
+}
+
+/// Verify all Qwen2 tensor name mappings
+#[test]
+fn z_import_qwen2_tensor_mappings() {
+    use aprender::format::Architecture;
+
+    let arch = Architecture::Qwen2;
+
+    // Test all expected tensor patterns
+    let patterns = [
+        ("model.embed_tokens.weight", "embed_tokens.weight"),
+        ("model.layers.0.self_attn.q_proj.weight", "layers.0.self_attn.q_proj.weight"),
+        ("model.layers.0.self_attn.k_proj.weight", "layers.0.self_attn.k_proj.weight"),
+        ("model.layers.0.self_attn.v_proj.weight", "layers.0.self_attn.v_proj.weight"),
+        ("model.layers.0.self_attn.o_proj.weight", "layers.0.self_attn.o_proj.weight"),
+        ("model.layers.0.mlp.gate_proj.weight", "layers.0.mlp.gate_proj.weight"),
+        ("model.layers.0.mlp.up_proj.weight", "layers.0.mlp.up_proj.weight"),
+        ("model.layers.0.mlp.down_proj.weight", "layers.0.mlp.down_proj.weight"),
+        ("model.layers.0.input_layernorm.weight", "layers.0.input_layernorm.weight"),
+        ("model.layers.0.post_attention_layernorm.weight", "layers.0.post_attention_layernorm.weight"),
+        ("model.norm.weight", "norm.weight"),
+        ("lm_head.weight", "lm_head.weight"),
+    ];
+
+    for (input, expected) in patterns {
+        let mapped = arch.map_name(input);
+        assert_eq!(mapped, expected, "Mapping for {input} should match");
+    }
 }
 
 // ============================================================================
