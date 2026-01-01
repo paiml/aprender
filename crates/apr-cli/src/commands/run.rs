@@ -285,44 +285,75 @@ fn execute_with_realizar(
     }
 }
 
-/// Execute APR model inference (classical ML)
+/// Execute APR model inference (APR v2 format)
 ///
-/// Uses realizar's AprModel for real inference on .apr format models.
+/// APR v2 is tensor-based - for LLM inference, use SafeTensors or GGUF formats.
+/// This function loads the model and displays metadata.
 #[cfg(feature = "inference")]
 fn execute_apr_inference(
     model_path: &Path,
-    input_path: Option<&PathBuf>,
-    options: &RunOptions,
+    _input_path: Option<&PathBuf>,
+    _options: &RunOptions,
 ) -> Result<String> {
     use realizar::apr::AprModel;
     use std::time::Instant;
 
-    // Load the APR model
+    // Load the APR v2 model
+    let start = Instant::now();
     let model = AprModel::load(model_path)
         .map_err(|e| CliError::ModelLoadFailed(format!("Failed to load APR model: {e}")))?;
+    let load_time = start.elapsed();
+
+    // Display model info
+    let model_type = model
+        .metadata()
+        .model_type
+        .clone()
+        .unwrap_or_else(|| "unknown".to_string());
+    let architecture = model
+        .metadata()
+        .architecture
+        .clone()
+        .unwrap_or_else(|| "unknown".to_string());
 
     eprintln!(
         "{}",
         format!(
-            "Loaded {:?} model ({} parameters)",
-            model.model_type(),
-            model.num_parameters()
+            "Loaded {} model (arch: {}, {} tensors, ~{} parameters)",
+            model_type,
+            architecture,
+            model.tensor_count(),
+            model.estimated_parameters()
         )
         .dimmed()
     );
 
-    // Parse input features
-    let input_features = parse_input_features(input_path)?;
+    // List available tensors
+    let tensor_names = model.tensor_names();
+    let mut output = format!(
+        "APR v2 Model: {}\n\
+         Architecture: {}\n\
+         Tensors: {}\n\
+         Load time: {:.2}ms\n\n",
+        model_type,
+        architecture,
+        model.tensor_count(),
+        load_time.as_secs_f64() * 1000.0
+    );
 
-    // Run inference
-    let start = Instant::now();
-    let output = model
-        .predict(&input_features)
-        .map_err(|e| CliError::InferenceFailed(format!("APR prediction failed: {e}")))?;
-    let inference_time = start.elapsed();
+    output.push_str("Available tensors:\n");
+    for name in tensor_names.iter().take(20) {
+        output.push_str(&format!("  - {name}\n"));
+    }
+    if tensor_names.len() > 20 {
+        output.push_str(&format!("  ... and {} more\n", tensor_names.len() - 20));
+    }
 
-    // Format output based on options
-    format_prediction_output(&output, inference_time, options)
+    output.push_str(
+        "\nNote: APR v2 is tensor-based. For LLM inference, use SafeTensors or GGUF format.",
+    );
+
+    Ok(output)
 }
 
 /// Execute SafeTensors model inference

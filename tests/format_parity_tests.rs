@@ -436,19 +436,19 @@ fn dd5_license_allows_airgap() {
 #[test]
 fn cc1_apr_format_constants_match() {
     // Verify APR format constants are consistent
-    // Magic bytes should be APRN (ASCII: A=0x41, P=0x50, R=0x52, N=0x4E)
-    let magic_v1 = aprender::format::v2::MAGIC_V1;
+    // Magic bytes should be APR2 (ASCII: A=0x41, P=0x50, R=0x52, 2=0x32)
+    let magic_v2 = aprender::format::v2::MAGIC_V2;
     assert_eq!(
-        magic_v1,
-        [0x41, 0x50, 0x52, 0x4E], // "APRN"
-        "CC1 FALSIFIED: MAGIC_V1 should be [0x41, 0x50, 0x52, 0x4E] (APRN)"
+        magic_v2,
+        [0x41, 0x50, 0x52, 0x32], // "APR2"
+        "CC1 FALSIFIED: MAGIC_V2 should be [0x41, 0x50, 0x52, 0x32] (APR2)"
     );
 
-    // Verify magic spells "APRN"
+    // Verify magic spells "APR2"
     assert_eq!(
-        std::str::from_utf8(&magic_v1).unwrap(),
-        "APRN",
-        "CC1 FALSIFIED: Magic should spell APRN"
+        std::str::from_utf8(&magic_v2).unwrap(),
+        "APR2",
+        "CC1 FALSIFIED: Magic should spell APR2"
     );
 
     // Header size v2 should be 64 bytes

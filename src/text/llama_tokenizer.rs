@@ -122,9 +122,7 @@ impl LlamaTokenizer {
         let validate_id = |id: u32, name: &str| -> Result<()> {
             if id as usize >= vocab_size {
                 return Err(AprenderError::ValidationError {
-                    message: format!(
-                        "{name} token ID {id} out of range (vocab_size={vocab_size})"
-                    ),
+                    message: format!("{name} token ID {id} out of range (vocab_size={vocab_size})"),
                 });
             }
             Ok(())
@@ -353,11 +351,14 @@ impl LlamaTokenizer {
         }
 
         // Parse header
-        let metadata_count = u64::from_le_bytes(
-            data[16..24]
-                .try_into()
-                .map_err(|_| AprenderError::FormatError { message: "Failed to read metadata count".to_string() })?,
-        ) as usize;
+        let metadata_count =
+            u64::from_le_bytes(
+                data[16..24]
+                    .try_into()
+                    .map_err(|_| AprenderError::FormatError {
+                        message: "Failed to read metadata count".to_string(),
+                    })?,
+            ) as usize;
 
         // Parse metadata
         let mut offset = 24usize;
@@ -373,11 +374,11 @@ impl LlamaTokenizer {
             }
 
             // Read key
-            let key_len = u64::from_le_bytes(
-                data[offset..offset + 8]
-                    .try_into()
-                    .map_err(|_| AprenderError::FormatError { message: "Failed to read key length".to_string() })?,
-            ) as usize;
+            let key_len = u64::from_le_bytes(data[offset..offset + 8].try_into().map_err(|_| {
+                AprenderError::FormatError {
+                    message: "Failed to read key length".to_string(),
+                }
+            })?) as usize;
             offset += 8;
 
             if offset + key_len > data.len() {
@@ -391,11 +392,12 @@ impl LlamaTokenizer {
             }
 
             // Read value type
-            let val_type = u32::from_le_bytes(
-                data[offset..offset + 4]
-                    .try_into()
-                    .map_err(|_| AprenderError::FormatError { message: "Failed to read value type".to_string() })?,
-            );
+            let val_type =
+                u32::from_le_bytes(data[offset..offset + 4].try_into().map_err(|_| {
+                    AprenderError::FormatError {
+                        message: "Failed to read value type".to_string(),
+                    }
+                })?);
             offset += 4;
 
             // Parse value based on type and key
@@ -447,8 +449,8 @@ impl LlamaTokenizer {
             }
         }
 
-        let tokens = tokens.ok_or_else(|| {
-            AprenderError::FormatError { message: "Missing tokenizer.ggml.tokens in GGUF".to_string() }
+        let tokens = tokens.ok_or_else(|| AprenderError::FormatError {
+            message: "Missing tokenizer.ggml.tokens in GGUF".to_string(),
         })?;
 
         let scores = scores.unwrap_or_else(|| vec![0.0; tokens.len()]);
@@ -458,12 +460,12 @@ impl LlamaTokenizer {
 
     fn parse_string_array(data: &[u8], mut offset: usize) -> Result<(Vec<String>, usize)> {
         if offset + 12 > data.len() {
-            return Err(AprenderError::FormatError { message: "Array header too short".to_string() });
+            return Err(AprenderError::FormatError {
+                message: "Array header too short".to_string(),
+            });
         }
 
-        let elem_type = u32::from_le_bytes(
-            data[offset..offset + 4].try_into().unwrap_or([0; 4]),
-        );
+        let elem_type = u32::from_le_bytes(data[offset..offset + 4].try_into().unwrap_or([0; 4]));
         offset += 4;
 
         if elem_type != 8 {
@@ -472,9 +474,8 @@ impl LlamaTokenizer {
             });
         }
 
-        let count = u64::from_le_bytes(
-            data[offset..offset + 8].try_into().unwrap_or([0; 8]),
-        ) as usize;
+        let count =
+            u64::from_le_bytes(data[offset..offset + 8].try_into().unwrap_or([0; 8])) as usize;
         offset += 8;
 
         let mut result = Vec::with_capacity(count);
@@ -483,9 +484,8 @@ impl LlamaTokenizer {
             if offset + 8 > data.len() {
                 break;
             }
-            let str_len = u64::from_le_bytes(
-                data[offset..offset + 8].try_into().unwrap_or([0; 8]),
-            ) as usize;
+            let str_len =
+                u64::from_le_bytes(data[offset..offset + 8].try_into().unwrap_or([0; 8])) as usize;
             offset += 8;
 
             if offset + str_len > data.len() {
@@ -501,12 +501,12 @@ impl LlamaTokenizer {
 
     fn parse_f32_array(data: &[u8], mut offset: usize) -> Result<(Vec<f32>, usize)> {
         if offset + 12 > data.len() {
-            return Err(AprenderError::FormatError { message: "Array header too short".to_string() });
+            return Err(AprenderError::FormatError {
+                message: "Array header too short".to_string(),
+            });
         }
 
-        let elem_type = u32::from_le_bytes(
-            data[offset..offset + 4].try_into().unwrap_or([0; 4]),
-        );
+        let elem_type = u32::from_le_bytes(data[offset..offset + 4].try_into().unwrap_or([0; 4]));
         offset += 4;
 
         if elem_type != 6 {
@@ -515,9 +515,8 @@ impl LlamaTokenizer {
             });
         }
 
-        let count = u64::from_le_bytes(
-            data[offset..offset + 8].try_into().unwrap_or([0; 8]),
-        ) as usize;
+        let count =
+            u64::from_le_bytes(data[offset..offset + 8].try_into().unwrap_or([0; 8])) as usize;
         offset += 8;
 
         let mut result = Vec::with_capacity(count);
@@ -526,9 +525,7 @@ impl LlamaTokenizer {
             if offset + 4 > data.len() {
                 break;
             }
-            let f = f32::from_le_bytes(
-                data[offset..offset + 4].try_into().unwrap_or([0; 4]),
-            );
+            let f = f32::from_le_bytes(data[offset..offset + 4].try_into().unwrap_or([0; 4]));
             offset += 4;
             result.push(f);
         }
@@ -538,17 +535,16 @@ impl LlamaTokenizer {
 
     fn skip_value(data: &[u8], mut offset: usize, val_type: u32) -> usize {
         match val_type {
-            0 | 1 | 7 => offset += 1,  // u8, i8, bool
-            2 | 3 => offset += 2,       // u16, i16
-            4..=6 => offset += 4,       // u32, i32, f32
+            0 | 1 | 7 => offset += 1, // u8, i8, bool
+            2 | 3 => offset += 2,     // u16, i16
+            4..=6 => offset += 4,     // u32, i32, f32
             8 => {
                 // string
                 if offset + 8 > data.len() {
                     return offset;
                 }
-                let len = u64::from_le_bytes(
-                    data[offset..offset + 8].try_into().unwrap_or([0; 8]),
-                ) as usize;
+                let len = u64::from_le_bytes(data[offset..offset + 8].try_into().unwrap_or([0; 8]))
+                    as usize;
                 offset += 8 + len;
             }
             9 => {
@@ -556,13 +552,12 @@ impl LlamaTokenizer {
                 if offset + 12 > data.len() {
                     return offset;
                 }
-                let elem_type = u32::from_le_bytes(
-                    data[offset..offset + 4].try_into().unwrap_or([0; 4]),
-                );
+                let elem_type =
+                    u32::from_le_bytes(data[offset..offset + 4].try_into().unwrap_or([0; 4]));
                 offset += 4;
-                let count = u64::from_le_bytes(
-                    data[offset..offset + 8].try_into().unwrap_or([0; 8]),
-                ) as usize;
+                let count =
+                    u64::from_le_bytes(data[offset..offset + 8].try_into().unwrap_or([0; 8]))
+                        as usize;
                 offset += 8;
 
                 match elem_type {
@@ -618,10 +613,7 @@ mod tests {
         );
 
         let tokenizer = tokenizer.expect("already checked");
-        assert!(
-            tokenizer.vocab_size() > 0,
-            "FALSIFIED: Vocabulary is empty"
-        );
+        assert!(tokenizer.vocab_size() > 0, "FALSIFIED: Vocabulary is empty");
     }
 
     /// LT-02: Tokenizer MUST encode text to non-empty tokens
@@ -719,10 +711,7 @@ mod tests {
         let invalid_data = b"NOTGGUF0000000000000000";
         let result = LlamaTokenizer::from_gguf_bytes(invalid_data);
 
-        assert!(
-            result.is_err(),
-            "FALSIFIED: Accepted invalid GGUF magic"
-        );
+        assert!(result.is_err(), "FALSIFIED: Accepted invalid GGUF magic");
     }
 
     // ========================================================================
@@ -745,18 +734,17 @@ mod tests {
         ];
         let scores = vec![0.0; tokens.len()];
 
-        LlamaTokenizer::new(tokens, scores, 1, 2, 0)
-            .expect("Failed to create test tokenizer")
+        LlamaTokenizer::new(tokens, scores, 1, 2, 0).expect("Failed to create test tokenizer")
     }
 
     fn create_test_gguf() -> Vec<u8> {
         let mut data = Vec::new();
 
         // GGUF header
-        data.extend_from_slice(b"GGUF");              // magic
-        data.extend_from_slice(&3u32.to_le_bytes());  // version
-        data.extend_from_slice(&0u64.to_le_bytes());  // tensor_count
-        data.extend_from_slice(&5u64.to_le_bytes());  // metadata_count
+        data.extend_from_slice(b"GGUF"); // magic
+        data.extend_from_slice(&3u32.to_le_bytes()); // version
+        data.extend_from_slice(&0u64.to_le_bytes()); // tensor_count
+        data.extend_from_slice(&5u64.to_le_bytes()); // metadata_count
 
         // Metadata 1: tokenizer.ggml.tokens (string array)
         let key1 = b"tokenizer.ggml.tokens";

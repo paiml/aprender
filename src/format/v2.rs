@@ -94,9 +94,6 @@ fn crc32(data: &[u8]) -> u32 {
 /// APR v2 magic number: "APR2" in ASCII (0x41505232)
 pub const MAGIC_V2: [u8; 4] = [0x41, 0x50, 0x52, 0x32];
 
-/// APR v1 magic number for backward compatibility
-pub const MAGIC_V1: [u8; 4] = [0x41, 0x50, 0x52, 0x4E];
-
 /// Format version 2.0
 pub const VERSION_V2: (u8, u8) = (2, 0);
 
@@ -272,17 +269,6 @@ impl AprV2Header {
         self.magic == MAGIC_V2
     }
 
-    /// Check if this is a v1 file (for backward compatibility)
-    #[must_use]
-    pub fn is_v1(&self) -> bool {
-        self.magic == MAGIC_V1
-    }
-
-    /// Set v1 magic for backward compatibility with realizar
-    pub fn set_v1_magic(&mut self) {
-        self.magic = MAGIC_V1;
-    }
-
     /// Serialize header to bytes
     #[must_use]
     pub fn to_bytes(&self) -> [u8; HEADER_SIZE_V2] {
@@ -316,8 +302,8 @@ impl AprV2Header {
             .try_into()
             .map_err(|_| V2FormatError::InvalidHeader("failed to read magic".to_string()))?;
 
-        // Check for v1 or v2 magic
-        if magic != MAGIC_V2 && magic != MAGIC_V1 {
+        // Check for v2 magic only
+        if magic != MAGIC_V2 {
             return Err(V2FormatError::InvalidMagic(magic));
         }
 
@@ -805,12 +791,6 @@ impl AprV2Writer {
             total_size: 0,
             pattern: None,
         });
-        self
-    }
-
-    /// Enable v1 compatibility mode (APRN magic for realizar support)
-    pub fn with_v1_compat(&mut self) -> &mut Self {
-        self.header.set_v1_magic();
         self
     }
 
@@ -1359,7 +1339,6 @@ mod tests {
         assert_eq!(header.magic, MAGIC_V2);
         assert_eq!(header.version, VERSION_V2);
         assert!(header.is_valid());
-        assert!(!header.is_v1());
     }
 
     #[test]
@@ -1484,24 +1463,6 @@ mod tests {
     }
 
     #[test]
-    fn test_v1_compat_magic() {
-        let metadata = AprV2Metadata::new("test");
-        let mut writer = AprV2Writer::new(metadata);
-        writer.with_v1_compat(); // Use APRN magic for backward compatibility
-
-        writer.add_f32_tensor("weight", vec![2, 3], &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
-
-        let bytes = writer.write().unwrap();
-
-        // Check magic bytes are APRN (v1) not APR2 (v2)
-        assert_eq!(&bytes[0..4], b"APRN", "Magic should be APRN for v1 compat");
-
-        // Reader should still work
-        let reader = AprV2Reader::from_bytes(&bytes).unwrap();
-        assert_eq!(reader.metadata().model_type, "test");
-    }
-
-    #[test]
     fn test_writer_alignment() {
         let metadata = AprV2Metadata::new("test");
         let mut writer = AprV2Writer::new(metadata);
@@ -1576,17 +1537,6 @@ mod tests {
         assert_eq!(quant.quant_type, "int8");
         assert_eq!(quant.bits, 8);
         assert_eq!(quant.block_size, Some(32));
-    }
-
-    #[test]
-    fn test_backward_compat_v1_magic() {
-        // Create bytes with v1 magic
-        let mut bytes = [0u8; HEADER_SIZE_V2];
-        bytes[0..4].copy_from_slice(&MAGIC_V1);
-
-        let header = AprV2Header::from_bytes(&bytes).unwrap();
-        assert!(header.is_v1());
-        assert!(!header.is_valid()); // is_valid only returns true for v2
     }
 
     #[test]

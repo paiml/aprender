@@ -63,7 +63,7 @@ large_stack_arrays = "allow"  # ML tests often need large data arrays
 
 [package]
 name = "aprender"
-version = "0.20.1"
+version = "0.20.2"
 edition = "2021"
 rust-version = "1.70"
 authors = ["Noah Gift <noah@paiml.com>"]
@@ -100,7 +100,7 @@ alsa = { version = "0.9", optional = true }  # ALSA bindings for Linux audio cap
 rayon = { version = "1.10", optional = true }
 
 # Core compute primitives - SIMD-accelerated tensor operations
-trueno = "0.9.0"
+trueno = "0.10.1"
 
 # Compression for .apr format (optional, spec §3.3)
 zstd = { version = "0.13", optional = true }
@@ -134,7 +134,7 @@ safetensors = { version = "0.4", optional = true }
 [dev-dependencies]
 proptest = "1.6"
 criterion = "0.5"
-renacer = "0.8"
+renacer = "0.9.1"
 tempfile = "3.14"  # For format module tests
 
 [features]

@@ -302,16 +302,40 @@ fn start_realizar_server(model_path: &Path, config: &ServerConfig) -> Result<()>
     }
 }
 
-/// Start APR model server using realizar's serve module
+/// Start APR v2 model server
 #[cfg(feature = "inference")]
 fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
-    use realizar::serve::{create_serve_router, ServeState};
+    use axum::{routing::get, Json, Router};
+    use realizar::apr::AprV2Model;
+    use serde::Serialize;
 
-    // Load APR model using realizar's ServeState
-    let serve_state = ServeState::load_apr(model_path, "v1.0".to_string(), 0)
-        .map_err(|e| CliError::ModelLoadFailed(format!("Failed to load APR model: {e}")))?;
+    // Load APR v2 model
+    println!("{}", "Loading APR v2 model...".dimmed());
+    let model = AprV2Model::load(model_path)
+        .map_err(|e| CliError::ModelLoadFailed(format!("Failed to load APR v2 model: {e}")))?;
 
-    println!("{}", "APR model loaded successfully".green());
+    let model_type = model
+        .metadata()
+        .model_type
+        .clone()
+        .unwrap_or_else(|| "unknown".to_string());
+    let architecture = model
+        .metadata()
+        .architecture
+        .clone()
+        .unwrap_or_else(|| "unknown".to_string());
+    let tensor_count = model.tensor_count();
+    let param_count = model.estimated_parameters();
+    let tensor_names: Vec<String> = model.tensor_names().iter().map(|s| s.to_string()).collect();
+
+    println!(
+        "{}",
+        format!(
+            "Loaded {} model (arch: {}, {} tensors, ~{} params)",
+            model_type, architecture, tensor_count, param_count
+        )
+        .green()
+    );
 
     // Create tokio runtime and run server
     let runtime = tokio::runtime::Runtime::new()
@@ -320,11 +344,48 @@ fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
     let bind_addr = config.bind_addr();
     let enable_metrics = config.metrics;
 
-    runtime.block_on(async move {
-        // Create router
-        let app = create_serve_router(serve_state);
+    #[derive(Clone, Serialize)]
+    struct ModelInfo {
+        model_type: String,
+        architecture: String,
+        tensor_count: u32,
+        estimated_parameters: usize,
+        tensors: Vec<String>,
+    }
 
-        // Bind and serve
+    #[derive(Clone, Serialize)]
+    struct HealthResponse {
+        status: String,
+        model_type: String,
+        architecture: String,
+    }
+
+    let model_info = ModelInfo {
+        model_type: model_type.clone(),
+        architecture: architecture.clone(),
+        tensor_count,
+        estimated_parameters: param_count,
+        tensors: tensor_names.into_iter().take(50).collect(),
+    };
+
+    let health_info = HealthResponse {
+        status: "healthy".to_string(),
+        model_type: model_type.clone(),
+        architecture: architecture.clone(),
+    };
+
+    runtime.block_on(async move {
+        let app = Router::new()
+            .route(
+                "/health",
+                get(move || async move { Json(health_info.clone()) }),
+            )
+            .route("/model", get(move || async move { Json(model_info) }))
+            .route(
+                "/",
+                get(|| async { "APR v2 Model Server - GET /health, /model" }),
+            );
+
         let listener = tokio::net::TcpListener::bind(&bind_addr)
             .await
             .map_err(|e| CliError::InferenceFailed(format!("Failed to bind: {e}")))?;
@@ -338,18 +399,19 @@ fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
         );
         println!();
         println!("{}", "Endpoints:".cyan());
-        println!("  POST /predict        - Single prediction");
-        println!("  POST /predict/batch  - Batch prediction");
         println!("  GET  /health         - Health check");
-        println!("  GET  /ready          - Readiness check");
-        println!("  GET  /models         - List models");
+        println!("  GET  /model          - Model info (tensors, metadata)");
         if enable_metrics {
-            println!("  GET  /metrics        - Prometheus metrics");
+            println!("  GET  /metrics        - Prometheus metrics (TODO)");
         }
+        println!();
+        println!(
+            "{}",
+            "Note: APR v2 is tensor-based. For LLM inference, use GGUF or SafeTensors.".yellow()
+        );
         println!();
         println!("{}", "Press Ctrl+C to stop".dimmed());
 
-        // Serve with graceful shutdown
         axum::serve(listener, app)
             .with_graceful_shutdown(shutdown_signal())
             .await

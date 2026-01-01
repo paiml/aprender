@@ -320,15 +320,14 @@ fn int01_apr_roundtrip_integrity() {
     );
 }
 
-/// INT-01b: APR v1 compatibility round-trip
-/// FALSIFICATION: v1 compat mode fails
+/// INT-01b: APR v2 format round-trip
+/// FALSIFICATION: v2 format fails to write
 #[test]
-fn int01b_apr_v1_compat_roundtrip() {
+fn int01b_apr_v2_roundtrip() {
     use aprender::format::v2::{AprV2Metadata, AprV2Writer, TensorDType};
 
-    let metadata = AprV2Metadata::new("v1_compat_test");
+    let metadata = AprV2Metadata::new("v2_test");
     let mut writer = AprV2Writer::new(metadata);
-    writer.with_v1_compat();
 
     // Add minimal tensor
     let tensor_bytes: Vec<u8> = vec![0u8; 128];
@@ -341,11 +340,11 @@ fn int01b_apr_v1_compat_roundtrip() {
 
     let apr_bytes = writer.write().expect("write");
 
-    // v1 compat uses APRN magic
+    // v2 uses APR2 magic
     assert_eq!(
         &apr_bytes[0..4],
-        b"APRN",
-        "INT-01b FALSIFIED: v1 compat should use APRN magic"
+        b"APR2",
+        "INT-01b FALSIFIED: v2 should use APR2 magic"
     );
 }
 

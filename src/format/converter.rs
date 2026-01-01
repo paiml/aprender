@@ -1244,9 +1244,8 @@ fn write_apr_file(
         ..Default::default()
     };
 
-    // Create APR v2 writer with v1 compatibility (APRN magic for realizar)
+    // Create APR v2 writer (APR2 magic)
     let mut writer = AprV2Writer::new(metadata);
-    writer.with_v1_compat(); // Use APRN magic for backward compatibility
 
     // Add all tensors
     for (name, (data, shape)) in tensors {

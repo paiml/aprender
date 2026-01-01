@@ -379,10 +379,7 @@ mod realizar_chat {
                 "{}",
                 format!(
                     "[GGUF: {} layers, {} hidden - generating up to {} tokens (CPU){}...]",
-                    model.config.num_layers,
-                    model.config.hidden_dim,
-                    practical_max,
-                    gqa_note
+                    model.config.num_layers, model.config.hidden_dim, practical_max, gqa_note
                 )
                 .dimmed()
             );

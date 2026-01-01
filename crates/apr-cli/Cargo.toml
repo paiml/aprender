@@ -28,13 +28,14 @@ default = ["hf-hub", "safetensors-compare"]
 hf-hub = ["aprender/hf-hub-integration"]
 safetensors-compare = ["aprender/safetensors-compare"]
 inference = ["realizar", "tokio", "axum"]
+cuda = ["inference", "realizar/cuda"]
 
 [dependencies]
 # Core aprender library
 aprender = { path = "../..", version = "0.20.1", default-features = true, features = ["format-compression"] }
 
 # Inference engine (optional) - use local path for development
-realizar = { path = "../../../realizar", optional = true, default-features = false, features = ["server", "aprender-serve"] }
+realizar = { path = "../../../realizar", optional = true, default-features = false, features = ["server", "aprender-serve", "gpu"] }
 
 # Async runtime for server
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal"], optional = true }

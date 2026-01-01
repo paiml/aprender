@@ -5989,7 +5989,10 @@ fn z_import_qwen25_coder_0_5b_infra() {
     // 2. Architecture support (same as Qwen2)
     let arch = Architecture::Qwen2;
     let mapped = arch.map_name("model.layers.0.mlp.gate_proj.weight");
-    assert!(mapped.contains("mlp.gate_proj.weight"), "Qwen2 maps MLP names");
+    assert!(
+        mapped.contains("mlp.gate_proj.weight"),
+        "Qwen2 maps MLP names"
+    );
 
     // 3. Import options with quantization
     let options = ImportOptions {
@@ -6018,15 +6021,42 @@ fn z_import_qwen2_tensor_mappings() {
     // Test all expected tensor patterns
     let patterns = [
         ("model.embed_tokens.weight", "embed_tokens.weight"),
-        ("model.layers.0.self_attn.q_proj.weight", "layers.0.self_attn.q_proj.weight"),
-        ("model.layers.0.self_attn.k_proj.weight", "layers.0.self_attn.k_proj.weight"),
-        ("model.layers.0.self_attn.v_proj.weight", "layers.0.self_attn.v_proj.weight"),
-        ("model.layers.0.self_attn.o_proj.weight", "layers.0.self_attn.o_proj.weight"),
-        ("model.layers.0.mlp.gate_proj.weight", "layers.0.mlp.gate_proj.weight"),
-        ("model.layers.0.mlp.up_proj.weight", "layers.0.mlp.up_proj.weight"),
-        ("model.layers.0.mlp.down_proj.weight", "layers.0.mlp.down_proj.weight"),
-        ("model.layers.0.input_layernorm.weight", "layers.0.input_layernorm.weight"),
-        ("model.layers.0.post_attention_layernorm.weight", "layers.0.post_attention_layernorm.weight"),
+        (
+            "model.layers.0.self_attn.q_proj.weight",
+            "layers.0.self_attn.q_proj.weight",
+        ),
+        (
+            "model.layers.0.self_attn.k_proj.weight",
+            "layers.0.self_attn.k_proj.weight",
+        ),
+        (
+            "model.layers.0.self_attn.v_proj.weight",
+            "layers.0.self_attn.v_proj.weight",
+        ),
+        (
+            "model.layers.0.self_attn.o_proj.weight",
+            "layers.0.self_attn.o_proj.weight",
+        ),
+        (
+            "model.layers.0.mlp.gate_proj.weight",
+            "layers.0.mlp.gate_proj.weight",
+        ),
+        (
+            "model.layers.0.mlp.up_proj.weight",
+            "layers.0.mlp.up_proj.weight",
+        ),
+        (
+            "model.layers.0.mlp.down_proj.weight",
+            "layers.0.mlp.down_proj.weight",
+        ),
+        (
+            "model.layers.0.input_layernorm.weight",
+            "layers.0.input_layernorm.weight",
+        ),
+        (
+            "model.layers.0.post_attention_layernorm.weight",
+            "layers.0.post_attention_layernorm.weight",
+        ),
         ("model.norm.weight", "norm.weight"),
         ("lm_head.weight", "lm_head.weight"),
     ];
