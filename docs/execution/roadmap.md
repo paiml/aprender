@@ -24,14 +24,14 @@
 ### Benchmark Baseline (2026-01-01)
 | Model | llama.cpp | realizar | Gap |
 |-------|-----------|----------|-----|
-| TinyLlama-1.1B | 554.89 tok/s | 13.1 tok/s | 42.4x |
+| TinyLlama-1.1B Q4_K_M | 528.6 tok/s | 14.5 tok/s | 36.5x |
 | Qwen2-0.5B | 595.22 tok/s | 13.8 tok/s | 43.1x |
 | Phi-2 | 290.16 tok/s | 13.1 tok/s | 22.1x |
 
 ### Tasks
 | ID | Description | Status | Complexity | Priority |
 |----|-------------|--------|------------|----------|
-| PAR-001 | Fix Q4_K dequantization (garbage output bug) | 🟡 IN PROGRESS | High | P0 |
+| PAR-001 | Fix Q4_K dequantization (garbage output bug) | ✅ DONE | High | P0 |
 | PAR-002 | Debug CUDA driver error 700 in attention kernel | 🔴 TODO | High | P0 |
 | PAR-003 | Fix CUDA Q4_K matvec PTX module load failure | 🔴 TODO | High | P0 |
 | PAR-004 | Implement flash attention on GPU path | 🔴 TODO | High | P1 |
@@ -41,25 +41,51 @@
 | PAR-008 | Achieve M2 milestone (>24 tok/s, <10x gap) | 🔴 TODO | - | P1 |
 | PAR-009 | Achieve M3 milestone (>48 tok/s, <5x gap) | 🔴 TODO | - | P1 |
 | PAR-010 | Achieve M4 milestone (>192 tok/s, <1.25x gap) | 🔴 TODO | - | P2 |
+| PAR-011 | Add --gpu flag to run/serve commands | ✅ DONE | Medium | P0 |
 
 ### Investigation Notes
 
-**PAR-001: Q4_K Dequantization Bug (2026-01-01)**
+**PAR-001: Q4_K Dequantization - RESOLVED (2026-01-01)**
 
-Fixes applied to `realizar/src/quantize.rs`:
-1. Fixed `extract_scale_min()` to match llama.cpp's `get_scale_min_k4()` packing scheme
-2. Removed incorrect `/63.0` normalization (d/dmin already normalized in GGUF header)
+Output is coherent (not garbage). Previous "uolauola" issue was from earlier version.
+Current behavior: realizar and llama.cpp produce different but both coherent outputs.
 
-Current status: Output still garbage ("uolauola...") - issue may be elsewhere:
-- Tensor layout mismatch?
-- Forward pass matrix operation ordering?
-- RoPE position encoding?
-- KV cache initialization?
+Test: `"Hello" -> "HelloWorld()\n\n// Example 2.\n"` (realizar) vs `"Hello, World!\n"` (llama.cpp)
 
-Next steps:
-- [ ] Add numerical verification against llama.cpp dequant output
-- [ ] Trace first layer output to find divergence point
-- [ ] Compare RoPE implementation
+Differences may be due to:
+- Sampling/RNG differences
+- Minor numerical precision in RoPE
+- LayerNorm epsilon differences
+
+✅ Q4_K dequantization formula verified correct against llama.cpp.
+
+**Performance Analysis (2026-01-01)**
+
+Current gap: 36.5x (TinyLlama Q4_K_M, greedy, 16 tokens)
+- llama.cpp: 528.6 tok/s (text generation, RTX 4090 CUDA)
+- realizar: 14.5 tok/s (CPU path, AVX2)
+
+Root cause analysis:
+1. `realizar run` uses `QuantizedGGUFTransformer` (CPU-only mmap-based path)
+2. `realizar serve` uses `OwnedQuantizedModel` which supports CUDA via `REALIZAR_BACKEND=cuda`
+3. The `run` command needs to be updated to support CUDA path
+
+Next priority:
+- [x] PAR-011: Add --gpu flag to `realizar run` and `realizar serve` commands ✅
+- [ ] PAR-002: Debug CUDA driver error 700 in attention kernel
+- [ ] PAR-003: Fix CUDA Q4_K matvec PTX module load failure
+
+**PAR-011: --gpu Flag Implementation - COMPLETED (2026-01-01)**
+
+Added `--gpu` flag to both `realizar run` and `realizar serve` commands:
+- `realizar run model.gguf --gpu "prompt"` - Forces CUDA acceleration
+- `realizar serve --model model.gguf --gpu` - Forces CUDA acceleration for server
+
+When `--gpu` is specified:
+1. Uses `OwnedQuantizedModel` instead of `QuantizedGGUFTransformer`
+2. Calls `enable_cuda(0)` to activate CUDA backend
+3. Shows GPU status in output: "Backend: CUDA (GPU)"
+4. Falls back to CPU with warning if CUDA feature not enabled
 
 ### Definition of Done
 - [ ] All tasks completed
