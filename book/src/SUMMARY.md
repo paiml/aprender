@@ -158,6 +158,7 @@
 
 # Real-World Examples from Aprender
 
+- [Examples Reference](./examples/examples-reference.md)
 - [Case Study: Linear Regression](./examples/linear-regression.md)
 - [Case Study: Boston Housing](./examples/boston-housing.md)
 - [Case Study: Cross-Validation](./examples/cross-validation.md)
