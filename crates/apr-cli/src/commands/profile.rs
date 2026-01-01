@@ -962,6 +962,7 @@ fn print_callgraph(results: &ProfileResults) -> Result<(), CliError> {
 }
 
 /// Print HuggingFace comparison
+#[allow(clippy::uninlined_format_args, clippy::unnecessary_wraps)]
 fn print_hf_comparison(_results: &ProfileResults, hf_repo: &str) -> Result<(), CliError> {
     println!();
     println!(
@@ -1007,6 +1008,7 @@ fn print_hf_comparison(_results: &ProfileResults, hf_repo: &str) -> Result<(), C
 }
 
 /// Print JSON output
+#[allow(clippy::format_push_string, clippy::unnecessary_wraps)]
 fn print_json_results(results: &ProfileResults) -> Result<(), CliError> {
     // Build JSON manually to avoid serde dependency
     let mut json = String::from("{\n");
@@ -1093,6 +1095,7 @@ fn print_json_results(results: &ProfileResults) -> Result<(), CliError> {
 }
 
 /// Print flamegraph SVG
+#[allow(clippy::format_push_string, clippy::unnecessary_wraps)]
 fn print_flamegraph(results: &ProfileResults) -> Result<(), CliError> {
     // Generate simple SVG flamegraph
     let mut svg = String::new();

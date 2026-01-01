@@ -24,6 +24,7 @@
 
 use crate::error::CliError;
 use crate::output;
+#[cfg(feature = "inference")]
 use aprender::text::llama_tokenizer::LlamaTokenizer;
 use colored::Colorize;
 use std::io::{self, Write};

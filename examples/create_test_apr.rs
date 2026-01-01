@@ -124,5 +124,8 @@ fn main() {
 
     let apr_bytes = writer.write().expect("Failed to write APR");
     std::fs::write("/tmp/test-whisper-v2.apr", &apr_bytes).expect("Failed to save");
-    println!("Created /tmp/test-whisper-v2.apr ({} bytes)", apr_bytes.len());
+    println!(
+        "Created /tmp/test-whisper-v2.apr ({} bytes)",
+        apr_bytes.len()
+    );
 }

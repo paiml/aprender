@@ -12,8 +12,43 @@ readme = "README.md"
 keywords = ["machine-learning", "model-inspection", "cli", "debugging"]
 categories = ["command-line-utilities", "science"]
 
-[lints]
-workspace = true
+[lints.rust]
+# Safety
+unsafe_code = "deny"
+
+[lints.clippy]
+# Base level
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+
+# CLI-specific allows (relaxed for development velocity)
+too_many_lines = "allow"
+unnecessary_wraps = "allow"
+uninlined_format_args = "allow"
+needless_raw_string_hashes = "allow"
+format_in_format_args = "allow"
+cast_lossless = "allow"
+cast_precision_loss = "allow"
+cast_possible_truncation = "allow"
+cast_possible_wrap = "allow"
+cast_sign_loss = "allow"
+fn_params_excessive_bools = "allow"
+match_same_arms = "allow"
+used_underscore_binding = "allow"
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+doc_markdown = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+items_after_statements = "allow"
+similar_names = "allow"
+too_many_arguments = "allow"
+struct_excessive_bools = "allow"
+single_match_else = "allow"
+wildcard_imports = "allow"
+enum_glob_use = "allow"
+unreadable_literal = "allow"
+no_effect_underscore_binding = "allow"
 
 [lib]
 name = "apr_cli"

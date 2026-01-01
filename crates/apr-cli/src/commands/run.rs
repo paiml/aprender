@@ -561,6 +561,7 @@ fn format_prediction_output(
 /// Per Section 9.2 (Sovereign AI), the `offline` flag enforces strict network isolation:
 /// - When `true`, all network access is blocked at the type level
 /// - Production deployments MUST use `--offline` mode
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn run(
     source: &str,
     input: Option<&Path>,
