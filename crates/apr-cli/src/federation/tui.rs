@@ -187,6 +187,7 @@ impl FederationApp {
     }
 
     /// Attach a gateway for stats
+    #[must_use]
     pub fn with_gateway(mut self, gateway: Arc<FederationGateway>) -> Self {
         self.gateway = Some(gateway);
         self
@@ -237,25 +238,21 @@ impl FederationApp {
 
     /// Get success rate
     pub fn success_rate(&self) -> f64 {
-        self.gateway
-            .as_ref()
-            .map(|g| {
-                let stats = g.stats();
-                if stats.total_requests == 0 {
-                    1.0
-                } else {
-                    stats.successful_requests as f64 / stats.total_requests as f64
-                }
-            })
-            .unwrap_or(1.0)
+        self.gateway.as_ref().map_or(1.0, |g| {
+            let stats = g.stats();
+            if stats.total_requests == 0 {
+                1.0
+            } else {
+                stats.successful_requests as f64 / stats.total_requests as f64
+            }
+        })
     }
 
     /// Get requests per second (mock for now)
     pub fn requests_per_sec(&self) -> f64 {
         self.gateway
             .as_ref()
-            .map(|g| g.stats().total_requests as f64 / 60.0) // Approximation
-            .unwrap_or(0.0)
+            .map_or(0.0, |g| g.stats().total_requests as f64 / 60.0) // Approximation
     }
 }
 
@@ -587,7 +584,10 @@ fn render_stats(f: &mut Frame<'_>, area: Rect, app: &FederationApp) {
         .borders(Borders::ALL)
         .title(" GATEWAY STATS ");
 
-    let stats = app.gateway.as_ref().map(|g| g.stats()).unwrap_or_default();
+    let stats = app
+        .gateway
+        .as_ref()
+        .map_or_else(GatewayStats::default, |g| g.stats());
 
     // Split area for metrics and gauges
     let chunks = Layout::default()
@@ -781,7 +781,7 @@ fn render_help(f: &mut Frame<'_>, area: Rect) {
 }
 
 fn render_status_bar(f: &mut Frame<'_>, area: Rect, app: &FederationApp) {
-    let status = app
+    let _status = app
         .status_message
         .as_deref()
         .unwrap_or("Tab to switch views │ q to quit │ ? for help");

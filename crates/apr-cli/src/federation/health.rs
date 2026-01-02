@@ -213,7 +213,7 @@ impl HealthCheckerTrait for HealthChecker {
             states
                 .get(&node_id)
                 .map(|s| s.health.clone())
-                .ok_or_else(|| FederationError::NodeUnreachable(node_id))
+                .ok_or(FederationError::NodeUnreachable(node_id))
         })
     }
 

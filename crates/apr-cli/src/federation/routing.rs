@@ -73,6 +73,7 @@ impl Router {
     }
 
     /// Create router with custom policy
+    #[must_use]
     pub fn with_policy(mut self, policy: CompositePolicy) -> Self {
         self.policy = policy;
         self
@@ -305,26 +306,31 @@ impl RouterBuilder {
         }
     }
 
+    #[must_use]
     pub fn config(mut self, config: RouterConfig) -> Self {
         self.config = config;
         self
     }
 
+    #[must_use]
     pub fn catalog(mut self, catalog: Arc<ModelCatalog>) -> Self {
         self.catalog = Some(catalog);
         self
     }
 
+    #[must_use]
     pub fn health(mut self, health: Arc<HealthChecker>) -> Self {
         self.health = Some(health);
         self
     }
 
+    #[must_use]
     pub fn circuit_breaker(mut self, cb: Arc<CircuitBreaker>) -> Self {
         self.circuit_breaker = Some(cb);
         self
     }
 
+    #[must_use]
     pub fn policy(mut self, policy: CompositePolicy) -> Self {
         self.policy = Some(policy);
         self

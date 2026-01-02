@@ -141,10 +141,7 @@ impl ModelCatalogTrait for ModelCatalog {
                 // Index by capability
                 for cap in &capabilities {
                     let key = Self::capability_key(cap);
-                    by_cap
-                        .entry(key)
-                        .or_insert_with(Vec::new)
-                        .push(model_id.clone());
+                    by_cap.entry(key).or_default().push(model_id.clone());
                 }
             }
 

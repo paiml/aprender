@@ -269,6 +269,7 @@ dependencies = [
  "thiserror 2.0.17",
  "tokio",
  "tower 0.5.2",
+ "ureq",
 ]
 
 [[package]]
@@ -4551,7 +4552,9 @@ dependencies = [
 
 [[package]]
 name = "realizar"
-version = "0.3.2"
+version = "0.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "abf1f176633d8795c1033c3fb161c62350966c30937efab896f7a321d956e7d4"
 dependencies = [
  "anyhow",
  "aprender 0.20.1",
@@ -4576,7 +4579,7 @@ dependencies = [
  "tower 0.4.13",
  "tracing",
  "trueno 0.10.1",
- "trueno-gpu 0.4.3",
+ "trueno-gpu",
  "uuid",
 ]
 
@@ -5938,7 +5941,7 @@ dependencies = [
  "futures-intrusive",
  "pollster",
  "thiserror 2.0.17",
- "trueno-gpu 0.4.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "trueno-gpu",
  "wgpu",
 ]
 
@@ -5973,17 +5976,9 @@ dependencies = [
 
 [[package]]
 name = "trueno-gpu"
-version = "0.4.3"
-dependencies = [
- "libloading",
- "thiserror 2.0.17",
-]
-
-[[package]]
-name = "trueno-gpu"
-version = "0.4.3"
+version = "0.4.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "535c0c50a9ba85479ef1932f5144f4eb39d5171259f1fab810572e7470b63d24"
+checksum = "58a93aae7e6303d958694da406458eb787f6d6bbc6f92b8f2a20e3462fe7eb4f"
 dependencies = [
  "libloading",
  "thiserror 2.0.17",

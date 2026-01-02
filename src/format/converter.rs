@@ -13,7 +13,7 @@ use crate::format::gguf::load_gguf_tensors;
 use crate::format::v2::{AprV2Metadata, AprV2Writer};
 use crate::format::validation::{AprValidator, TensorStats, ValidationReport};
 use crate::format::Compression;
-use crate::serialization::safetensors::{extract_tensor, load_safetensors, save_safetensors};
+use crate::serialization::safetensors::{save_safetensors, MappedSafeTensors};
 use std::collections::BTreeMap;
 use std::fs;
 use std::io::Write;
@@ -986,26 +986,39 @@ fn load_source_tensors(
     }
 }
 
-/// Load tensors from SafeTensors file
+/// Load tensors from SafeTensors file using memory-mapped I/O for efficiency
 fn load_safetensors_tensors(path: &Path) -> Result<BTreeMap<String, (Vec<f32>, Vec<usize>)>> {
-    let (metadata, raw_data) = load_safetensors(path).map_err(|e| AprenderError::FormatError {
-        message: format!("Failed to load SafeTensors: {e}"),
+    // Use MappedSafeTensors for zero-copy mmap access (much faster for large models)
+    let mapped = MappedSafeTensors::open(path).map_err(|e| AprenderError::FormatError {
+        message: format!("Failed to mmap SafeTensors: {e}"),
     })?;
 
     let mut tensors = BTreeMap::new();
+    let names: Vec<String> = mapped
+        .tensor_names()
+        .iter()
+        .map(|&s| (*s).to_string())
+        .collect();
 
-    for (name, tensor_meta) in metadata.iter() {
+    for name in &names {
         // Skip __metadata__ key if present
         if name.starts_with("__") {
             continue;
         }
 
-        let data =
-            extract_tensor(&raw_data, tensor_meta).map_err(|e| AprenderError::FormatError {
+        let meta = mapped
+            .get_metadata(name)
+            .ok_or_else(|| AprenderError::FormatError {
+                message: format!("Tensor metadata not found for '{name}'"),
+            })?;
+
+        let data = mapped
+            .get_tensor(name)
+            .map_err(|e| AprenderError::FormatError {
                 message: format!("Failed to extract tensor '{name}': {e}"),
             })?;
 
-        tensors.insert(name.clone(), (data, tensor_meta.shape.clone()));
+        tensors.insert(name.clone(), (data, meta.shape.clone()));
     }
 
     Ok(tensors)
@@ -1230,7 +1243,25 @@ fn write_apr_file(
     // Calculate total parameter count
     let param_count: u64 = tensors.values().map(|(data, _)| data.len() as u64).sum();
 
-    // Create metadata with architecture info using struct init
+    // Build tensor_shapes map for metadata (used by `apr tensors` command)
+    let tensor_shapes: serde_json::Map<String, serde_json::Value> = tensors
+        .iter()
+        .map(|(name, (_, shape))| {
+            let shape_array: Vec<serde_json::Value> = shape
+                .iter()
+                .map(|&dim| serde_json::Value::Number(serde_json::Number::from(dim as u64)))
+                .collect();
+            (name.clone(), serde_json::Value::Array(shape_array))
+        })
+        .collect();
+
+    // Create metadata with architecture info and tensor shapes
+    let mut custom = std::collections::HashMap::new();
+    custom.insert(
+        "tensor_shapes".to_string(),
+        serde_json::Value::Object(tensor_shapes),
+    );
+
     let metadata = AprV2Metadata {
         model_type: format!("{:?}", options.architecture),
         name: Some(
@@ -1241,6 +1272,7 @@ fn write_apr_file(
                 .to_string(),
         ),
         param_count,
+        custom,
         ..Default::default()
     };
 

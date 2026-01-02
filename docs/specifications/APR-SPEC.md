@@ -1,8 +1,9 @@
 # APR Complete Specification
 
-**Version**: 2.0.0-draft
+**Version**: 2.1.0-draft
 **Status**: Draft
 **Created**: 2025-12-16
+**Last Updated**: 2026-01-02
 **GitHub Issue**: https://github.com/paiml/aprender/issues/119
 
 ---
@@ -59,14 +60,13 @@
     - [10.9 Expected Tensor Statistics](#109-expected-tensor-statistics)
     - [10.10 Conversion Validation Requirements](#1010-conversion-validation-requirements)
     - [10.11 Known Failure Modes](#1011-known-failure-modes)
-11. [Conversion QA Checklist (25 Points)](#11-conversion-qa-checklist-25-points)
-    - [A. Structural Integrity](#a-structural-integrity-5-points)
-    - [B. Layer Norm Validation](#b-layer-norm-validation-5-points)
-    - [C. Attention/Linear Validation](#c-attentionlinear-validation-5-points)
-    - [D. Embedding Validation](#d-embedding-validation-5-points)
-    - [E. Functional Validation](#e-functional-validation-5-points)
-12. [Automated Conversion Validation](#12-automated-conversion-validation)
-13. [Falsification QA Checklist (Legacy)](#13-falsification-qa-checklist-legacy)
+11. [Master Falsification QA Checklist (100 Points)](#11-master-falsification-qa-checklist-100-points)
+    - [A. Format & Structural Integrity](#a-format--structural-integrity-25-points)
+    - [B. Tensor Physics & Statistics](#b-tensor-physics--statistics-25-points)
+    - [C. Tooling & Operations](#c-tooling--operations-25-points)
+    - [D. Conversion & Interoperability](#d-conversion--interoperability-25-points)
+12. [Automated Validation Script](#12-automated-validation-script)
+13. [Import/Convert Pipeline](#13-importconvert-pipeline)
 14. [Implementation Roadmap](#14-implementation-roadmap)
 15. [References](#15-references)
 16. [Appendices](#16-appendices)
@@ -1411,56 +1411,407 @@ Completed in 3.4s (RTF: 0.34x)
 
 #### 4.15.8 Runtime Inference Engine (realizar Integration)
 
-The `apr run` command leverages **realizar** [11] for high-performance inference with automatic optimizations — no configuration required.
+The `apr serve` command provides a production-ready HTTP inference server leveraging **realizar** for high-performance inference. This specification defines the complete API contract, performance guarantees, and observability requirements.
 
-**"Just Works" Inference Features**:
+##### 4.15.8.1 Design Principles
 
-| Feature | Description | Automatic Trigger |
-|---------|-------------|-------------------|
-| **mmap Loading** | Memory-mapped model files, zero-copy tensor access | Models >50MB |
-| **KV Cache** | Cached key-value pairs for autoregressive generation | Transformer models |
-| **Flash Attention** | O(N) memory attention (vs O(N²) naive) | Sequences >512 tokens |
-| **Streaming Output** | Token-by-token SSE streaming | `--stream` flag or API |
-| **Quantized Inference** | Native Q4_K, Q8_0 execution | Quantized models |
+| Principle | Citation | Application |
+|-----------|----------|-------------|
+| Latency SLOs | Clipper [R1], Clockwork [R2] | p99 < 500ms guarantee |
+| Dynamic Batching | μ-Serve [R3] | Automatic batch coalescing |
+| Memory Efficiency | mmap [R4] | Zero-copy tensor access for models >50MB |
+| Streaming | TGI [R5] | SSE token-by-token output |
+| Attention | FlashAttention [R6] | O(N) memory for long sequences |
+| Quantization | Jacob et al. [R9] | INT8/INT4 inference within 1% accuracy |
 
-**Memory-Mapped Loading (mmap)**:
-
-```rust
-// Automatic for large models - no configuration needed
-apr run whisper-large.apr --input audio.wav
-
-// Under the hood: zero-copy tensor access via memmap2
-// - Model stays on disk, pages loaded on demand
-// - 10-100x faster cold start for large models
-// - Memory usage = active tensors only (not full model)
-```
-
-**Performance by Model Size**:
-
-| Model Size | Load Strategy | Cold Start | Memory |
-|------------|---------------|------------|--------|
-| <50MB | Full load | ~10ms | Full model |
-| 50MB-1GB | mmap | ~1ms | On-demand |
-| >1GB | mmap + lazy | <1ms | Minimal |
-
-**KV Cache (Transformer Models)**:
+##### 4.15.8.2 Server Architecture
 
 ```
-Without KV Cache (naive):              With KV Cache (optimized):
-┌─────────────────────────────┐       ┌─────────────────────────────┐
-│ Token 1: Compute K,V        │       │ Token 1: Compute K,V → Cache│
-│ Token 2: Recompute ALL K,V  │       │ Token 2: Lookup + New only  │
-│ Token 3: Recompute ALL K,V  │       │ Token 3: Lookup + New only  │
-│ ...                         │       │ ...                         │
-│ O(N²) compute per token     │       │ O(N) compute per token      │
-└─────────────────────────────┘       └─────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                        apr serve                                 │
+├─────────────────────────────────────────────────────────────────┤
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐              │
+│  │ HTTP Server │  │   Metrics   │  │   Health    │              │
+│  │   (axum)    │  │ (Prometheus)│  │   Probes    │              │
+│  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘              │
+│         │                │                │                      │
+│  ┌──────┴────────────────┴────────────────┴──────┐              │
+│  │              Request Router                    │              │
+│  │  /generate  /transcribe  /predict  /health    │              │
+│  └──────────────────────┬────────────────────────┘              │
+│                         │                                        │
+│  ┌──────────────────────┴────────────────────────┐              │
+│  │           Inference Engine (realizar)          │              │
+│  │  ┌─────────┐ ┌─────────┐ ┌─────────┐          │              │
+│  │  │  mmap   │ │KV Cache │ │  Flash  │          │              │
+│  │  │ Loader  │ │ Manager │ │Attention│          │              │
+│  │  └─────────┘ └─────────┘ └─────────┘          │              │
+│  └───────────────────────────────────────────────┘              │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-**Speedup**: 10-100x for autoregressive generation (LLMs, ASR decoders)
+##### 4.15.8.3 REST API Specification (OpenAPI 3.0.3)
 
-**Flash Attention**:
+```yaml
+openapi: 3.0.3
+info:
+  title: APR Inference API
+  version: 1.0.0
+  description: Production ML inference server for APR models
 
-For long sequences, Flash Attention reduces memory from O(N²) to O(N):
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+
+paths:
+  /:
+    get:
+      summary: Server information
+      responses:
+        '200':
+          description: Server version and status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  name: { type: string, example: "apr-serve" }
+                  version: { type: string, example: "1.0.0" }
+                  model_id: { type: string }
+
+  /health:
+    get:
+      summary: Health check with model metadata
+      responses:
+        '200':
+          description: Server is healthy and ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '503':
+          description: Server not ready (model loading)
+
+  /generate:
+    post:
+      summary: Text generation (LLMs)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenerateRequest'
+      responses:
+        '200':
+          description: Generation complete
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenerateResponse'
+            text/event-stream:
+              schema:
+                $ref: '#/components/schemas/StreamEvent'
+        '400':
+          description: Invalid request
+        '503':
+          description: Server overloaded
+
+  /transcribe:
+    post:
+      summary: Audio transcription (Whisper models)
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TranscribeRequest'
+      responses:
+        '200':
+          description: Transcription complete
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TranscribeResponse'
+
+  /predict:
+    post:
+      summary: Generic APR model inference
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PredictRequest'
+      responses:
+        '200':
+          description: Prediction complete
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PredictResponse'
+
+  /metrics:
+    get:
+      summary: Prometheus metrics endpoint
+      responses:
+        '200':
+          description: Metrics in Prometheus exposition format
+          content:
+            text/plain:
+              schema:
+                type: string
+
+components:
+  schemas:
+    HealthResponse:
+      type: object
+      required: [status, model_id, version]
+      properties:
+        status:
+          type: string
+          enum: [healthy, degraded, unhealthy]
+        model_id:
+          type: string
+          description: Loaded model identifier
+        version:
+          type: string
+          description: Server version (semver)
+        uptime_seconds:
+          type: number
+          description: Server uptime
+        requests_total:
+          type: integer
+          description: Total requests processed
+        gpu_available:
+          type: boolean
+          description: GPU acceleration status
+
+    GenerateRequest:
+      type: object
+      required: [prompt]
+      properties:
+        prompt:
+          type: string
+          minLength: 1
+          description: Input text prompt
+        max_tokens:
+          type: integer
+          default: 256
+          minimum: 1
+          maximum: 4096
+        temperature:
+          type: number
+          default: 1.0
+          minimum: 0.0
+          maximum: 2.0
+        top_p:
+          type: number
+          default: 1.0
+          minimum: 0.0
+          maximum: 1.0
+        stream:
+          type: boolean
+          default: false
+          description: Enable SSE streaming
+        stop:
+          type: array
+          items:
+            type: string
+          description: Stop sequences
+
+    GenerateResponse:
+      type: object
+      required: [text, tokens_generated, finish_reason]
+      properties:
+        text:
+          type: string
+          description: Generated text
+        tokens_generated:
+          type: integer
+          description: Number of tokens produced
+        finish_reason:
+          type: string
+          enum: [stop, length, error]
+        latency_ms:
+          type: number
+          description: Server-side latency
+
+    StreamEvent:
+      type: object
+      properties:
+        event:
+          type: string
+          enum: [token, done, error]
+        data:
+          type: string
+          description: Token text or error message
+        token_id:
+          type: integer
+          description: Token ID in vocabulary
+
+    TranscribeRequest:
+      type: object
+      required: [audio]
+      properties:
+        audio:
+          type: string
+          format: binary
+          description: Audio file (wav, mp3, flac, m4a)
+        language:
+          type: string
+          description: ISO 639-1 language code (optional, auto-detect)
+        task:
+          type: string
+          enum: [transcribe, translate]
+          default: transcribe
+
+    TranscribeResponse:
+      type: object
+      required: [text]
+      properties:
+        text:
+          type: string
+          description: Full transcription
+        segments:
+          type: array
+          items:
+            type: object
+            properties:
+              start: { type: number }
+              end: { type: number }
+              text: { type: string }
+        language:
+          type: string
+          description: Detected language
+        duration_seconds:
+          type: number
+
+    PredictRequest:
+      type: object
+      required: [inputs]
+      properties:
+        inputs:
+          type: object
+          description: Model-specific input tensors
+
+    PredictResponse:
+      type: object
+      required: [outputs]
+      properties:
+        outputs:
+          type: object
+          description: Model-specific output tensors
+        latency_ms:
+          type: number
+
+    ErrorResponse:
+      type: object
+      required: [error, message]
+      properties:
+        error:
+          type: string
+          enum: [invalid_request, model_error, server_error, rate_limited]
+        message:
+          type: string
+        request_id:
+          type: string
+```
+
+##### 4.15.8.4 Streaming Protocol (Server-Sent Events)
+
+**HTTP Headers**:
+```
+Content-Type: text/event-stream
+Cache-Control: no-cache
+Connection: keep-alive
+X-Request-ID: <uuid>
+```
+
+**Event Format**:
+```
+event: token
+data: {"token": "Hello", "id": 0}
+
+event: token
+data: {"token": ",", "id": 1}
+
+event: token
+data: {"token": " world", "id": 2}
+
+event: done
+data: {"finish_reason": "stop", "tokens_generated": 3, "latency_ms": 45.2}
+```
+
+**Error Event**:
+```
+event: error
+data: {"error": "model_error", "message": "KV cache exhausted"}
+```
+
+**Client Reconnection**: Clients MAY send `Last-Event-ID` header to resume interrupted streams.
+
+##### 4.15.8.5 Prometheus Metrics
+
+```prometheus
+# HELP apr_inference_duration_seconds Inference latency histogram
+# TYPE apr_inference_duration_seconds histogram
+apr_inference_duration_seconds_bucket{model="whisper-large",endpoint="/transcribe",le="0.1"} 950
+apr_inference_duration_seconds_bucket{model="whisper-large",endpoint="/transcribe",le="0.5"} 990
+apr_inference_duration_seconds_bucket{model="whisper-large",endpoint="/transcribe",le="1.0"} 999
+apr_inference_duration_seconds_bucket{model="whisper-large",endpoint="/transcribe",le="5.0"} 1000
+apr_inference_duration_seconds_bucket{model="whisper-large",endpoint="/transcribe",le="+Inf"} 1000
+apr_inference_duration_seconds_sum{model="whisper-large",endpoint="/transcribe"} 45.2
+apr_inference_duration_seconds_count{model="whisper-large",endpoint="/transcribe"} 1000
+
+# HELP apr_tokens_generated_total Total tokens generated
+# TYPE apr_tokens_generated_total counter
+apr_tokens_generated_total{model="llama-7b"} 1234567
+
+# HELP apr_model_load_duration_seconds Time to load model
+# TYPE apr_model_load_duration_seconds gauge
+apr_model_load_duration_seconds{model="whisper-large"} 2.5
+
+# HELP apr_requests_active Current in-flight requests
+# TYPE apr_requests_active gauge
+apr_requests_active{model="whisper-large"} 5
+
+# HELP apr_requests_total Total requests by status
+# TYPE apr_requests_total counter
+apr_requests_total{model="whisper-large",status="200"} 9850
+apr_requests_total{model="whisper-large",status="400"} 100
+apr_requests_total{model="whisper-large",status="500"} 50
+
+# HELP apr_cache_hit_ratio KV cache hit ratio
+# TYPE apr_cache_hit_ratio gauge
+apr_cache_hit_ratio{model="llama-7b"} 0.85
+
+# HELP apr_memory_bytes Memory usage by type
+# TYPE apr_memory_bytes gauge
+apr_memory_bytes{model="llama-7b",type="model"} 4294967296
+apr_memory_bytes{model="llama-7b",type="kv_cache"} 1073741824
+apr_memory_bytes{model="llama-7b",type="activations"} 268435456
+
+# HELP apr_batch_size_current Current batch size
+# TYPE apr_batch_size_current gauge
+apr_batch_size_current{model="llama-7b"} 8
+```
+
+##### 4.15.8.6 Performance Characteristics
+
+**Memory-Mapped Loading**:
+
+| Model Size | Load Strategy | Cold Start | Memory Usage |
+|------------|---------------|------------|--------------|
+| <50MB | Full heap load | ~10ms | Full model |
+| 50MB-1GB | mmap | ~1ms | On-demand pages |
+| >1GB | mmap + lazy | <1ms | Active tensors only |
+
+**KV Cache**:
+- Automatic for transformer architectures
+- Reduces O(N²) to O(N) per-token compute
+- Speedup: 10-100x for autoregressive generation
+
+**Flash Attention** (sequences >512 tokens):
 
 | Sequence Length | Naive Memory | Flash Memory | Savings |
 |-----------------|--------------|--------------|---------|
@@ -1468,99 +1819,293 @@ For long sequences, Flash Attention reduces memory from O(N²) to O(N):
 | 2048 tokens | 32 MB | 2 MB | 16x |
 | 8192 tokens | 512 MB | 8 MB | 64x |
 
-**Streaming Inference**:
+##### 4.15.8.7 Error Codes
 
+| HTTP Status | Error Type | Description |
+|-------------|------------|-------------|
+| 400 | `invalid_request` | Malformed JSON, missing required fields |
+| 404 | `not_found` | Unknown endpoint |
+| 405 | `method_not_allowed` | Wrong HTTP method |
+| 413 | `payload_too_large` | Request exceeds 10MB limit |
+| 415 | `unsupported_media_type` | Wrong Content-Type |
+| 429 | `rate_limited` | Too many requests |
+| 500 | `server_error` | Internal error |
+| 503 | `unavailable` | Model loading or overloaded |
+
+##### 4.15.8.8 Configuration
+
+**CLI Flags**:
 ```bash
-# CLI streaming (token-by-token output)
-apr run llm.apr --stream --prompt "Write a story"
-
-# Server mode with SSE streaming
-apr serve llm.apr --port 8080
-curl -N http://localhost:8080/generate \
-  -d '{"prompt": "Hello", "stream": true}'
-
-# Output: Server-Sent Events
-data: {"token": "Hello"}
-data: {"token": ","}
-data: {"token": " world"}
-data: {"token": "!"}
-data: [DONE]
+apr serve model.apr \
+  --port 8080 \
+  --host 0.0.0.0 \
+  --max-concurrent 32 \
+  --timeout 30s \
+  --cors-origin "*" \
+  --rate-limit 100/min
 ```
 
-**Server Mode**:
-
+**Environment Variables**:
 ```bash
-# Start inference server
-apr serve whisper.apr --port 8080
-
-# Endpoints:
-#   POST /transcribe     - Audio transcription
-#   POST /generate       - Text generation (LLMs)
-#   GET  /health         - Health check
-#   GET  /metrics        - Prometheus metrics
-
-# Prometheus metrics include:
-#   - apr_inference_duration_seconds
-#   - apr_tokens_generated_total
-#   - apr_model_load_duration_seconds
-#   - apr_cache_hit_ratio
+APR_DISABLE_MMAP=1          # Force full heap load
+APR_KV_CACHE_SIZE=2GB       # Override KV cache size
+APR_DISABLE_FLASH_ATTENTION=1  # Disable Flash Attention
+APR_BATCH_SIZE=16           # Max batch size
+APR_LOG_LEVEL=info          # Logging verbosity
 ```
 
-**Environment Variable Overrides**:
+---
 
-```bash
-# Disable mmap (force full load)
-APR_DISABLE_MMAP=1 apr run model.apr
+#### 4.15.9 Falsification Checklist (100 Points)
 
-# Set KV cache size (default: auto-sized)
-APR_KV_CACHE_SIZE=1GB apr run llm.apr
+This checklist defines **testable guarantees** following Popperian falsifiability principles. Each item specifies a concrete test that can disprove the guarantee.
 
-# Disable Flash Attention (debugging)
-APR_DISABLE_FLASH_ATTENTION=1 apr run model.apr
+##### A. Server Lifecycle (SL01-SL10) — 10 Points
 
-# Set batch size for streaming
-APR_BATCH_SIZE=32 apr serve model.apr
-```
+| ID | Guarantee | Falsification Test |
+|----|-----------|-------------------|
+| SL01 | Server starts within 5s (no model) | `timeout 5 apr serve --dry-run` must succeed |
+| SL02 | Model <1GB loads within 30s | Measure `apr_model_load_duration_seconds` ≤ 30 |
+| SL03 | mmap models >50MB load <1s | Cold start timing for 100MB model |
+| SL04 | Graceful shutdown completes in-flight | SIGTERM during request → response completes |
+| SL05 | Port conflict returns clear error | Start on occupied port → exit 1 with message |
+| SL06 | Invalid model path returns exit 1 | `apr serve /nonexistent.apr` → exit 1 |
+| SL07 | SIGINT triggers clean shutdown | Ctrl+C → no zombie processes |
+| SL08 | Multiple models rejected | `apr serve a.apr b.apr` → error |
+| SL09 | Root endpoint returns semver | `GET /` → `{"version": "X.Y.Z"}` |
+| SL10 | Ready only after model loaded | `/health` returns 503 until model ready |
 
-#### 4.15.9 Falsifiable Guarantees
+##### B. Health & Readiness (HR01-HR10) — 10 Points
 
-| Behavior | Guarantee |
-|----------|-----------|
-| Cache hit | If `apr.lock` matches cached model, no network request |
-| Offline mode | `APR_OFFLINE=1` must fail immediately if model not cached |
-| Reproducibility | Same `apr.lock` + same input = identical output |
-| Progress | Downloads >1MB must show progress bar |
-| Exit codes | 0=success, 1=model error, 2=input error, 3=network error |
-| mmap threshold | Models >50MB use memory-mapped loading automatically |
-| KV cache | Transformer models enable KV cache by default |
-| Streaming latency | First token <100ms for cached models |
+| ID | Guarantee | Falsification Test |
+|----|-----------|-------------------|
+| HR01 | `/health` returns 200 when ready | HTTP 200 after startup |
+| HR02 | `/health` returns 503 during load | Request during model load → 503 |
+| HR03 | Health includes `model_id` | JSON schema validation |
+| HR04 | `uptime_seconds` monotonically increases | Two requests 1s apart → delta ≥ 1 |
+| HR05 | `requests_total` accurate | N requests → counter = N |
+| HR06 | Degraded status on high latency | p99 > 1s → status = "degraded" |
+| HR07 | Unhealthy on OOM condition | Memory exhaustion → status = "unhealthy" |
+| HR08 | GPU status accurate | `gpu_available` matches `nvidia-smi` |
+| HR09 | Health latency <10ms | Benchmark 1000 requests → p99 < 10ms |
+| HR10 | Health never blocks on inference | Concurrent load → health still responsive |
 
-#### 4.15.10 References
+##### C. Inference Correctness (IC01-IC15) — 15 Points
 
-[1] **uv** - "An extremely fast Python package installer and resolver, written in Rust."
-    https://github.com/astral-sh/uv
-    Key influence: Zero-config execution, lockfiles, content-addressed caching
+| ID | Guarantee | Falsification Test |
+|----|-----------|-------------------|
+| IC01 | Deterministic at temp=0 | Same prompt 10x → identical output |
+| IC02 | `max_tokens` enforced | `max_tokens: 10` → output ≤ 10 tokens |
+| IC03 | Stop sequence terminates | Include stop word → generation stops |
+| IC04 | Temperature 0 = greedy decoding | Output matches argmax |
+| IC05 | Empty prompt → 400 error | `{"prompt": ""}` → HTTP 400 |
+| IC06 | Unicode preserved | 日本語 input → 日本語 output |
+| IC07 | No NaN/Inf in output | Parse all logits → finite values |
+| IC08 | Token IDs in vocabulary range | All IDs < vocab_size |
+| IC09 | Batch = sequential output | Batch of N = N sequential requests |
+| IC10 | Quantized ≈ float (±1%) | Q8 vs FP32 cosine similarity > 0.99 |
+| IC11 | KV cache gives identical output | With/without cache → same output |
+| IC12 | Flash Attention = naive | Output matches naive attention |
+| IC13 | Padding doesn't affect output | Variable padding → same result |
+| IC14 | BOS/EOS tokens handled | Special tokens in expected positions |
+| IC15 | Vocabulary size matches metadata | tokenizer.vocab_size = model.vocab_size |
 
-[2] **just** - "A handy way to save and run project-specific commands."
-    https://github.com/casey/just
-    Key influence: Simple task definitions, recipe-based workflows
+##### D. Streaming Protocol (SP01-SP10) — 10 Points
 
-[3] **Deno** - "A modern runtime for JavaScript and TypeScript."
-    https://deno.land/
-    Key influence: URL-based imports, secure-by-default execution
+| ID | Guarantee | Falsification Test |
+|----|-----------|-------------------|
+| SP01 | First token <100ms (cached) | Time to first `event: token` ≤ 100ms |
+| SP02 | Valid SSE format | All lines match `event:` or `data:` |
+| SP03 | `event: done` on completion | Stream ends with done event |
+| SP04 | `event: error` on failure | Inject OOM → error event sent |
+| SP05 | Connection closes after done | No TCP keepalive after done |
+| SP06 | Client disconnect stops generation | Close connection → server stops |
+| SP07 | Token order preserved | Token IDs are sequential |
+| SP08 | No duplicate token IDs | All IDs unique |
+| SP09 | Backpressure handled | Slow client → no server OOM |
+| SP10 | Reconnect resumes (optional) | `Last-Event-ID` → resume from ID |
 
-[4] **Nix** - "Reproducible builds and deployments."
-    https://nixos.org/
-    Key influence: Content-addressed storage, reproducibility guarantees
+##### E. Latency Guarantees (LG01-LG10) — 10 Points
 
-[5] **Cargo** - "The Rust package manager."
-    https://doc.rust-lang.org/cargo/
-    Key influence: Progressive disclosure, lockfiles, workspace management
+| ID | Guarantee | Falsification Test |
+|----|-----------|-------------------|
+| LG01 | p50 < 50ms (short prompt) | 1000 requests → median < 50ms |
+| LG02 | p99 < 500ms | 1000 requests → p99 < 500ms |
+| LG03 | `latency_ms` in response | All responses include latency field |
+| LG04 | Histogram exported | `/metrics` includes histogram buckets |
+| LG05 | Batch latency sub-linear | 2x batch size ≠ 2x latency |
+| LG06 | Cold start <30s (1GB model) | First request latency ≤ 30s |
+| LG07 | Warm 10x faster than cold | Second request << first request |
+| LG08 | GPU faster than CPU | Same model, GPU latency < CPU |
+| LG09 | Timeout enforced (30s) | Infinite loop model → 503 at 30s |
+| LG10 | Metrics don't affect latency | Concurrent `/metrics` → same p99 |
 
-[11] **realizar** - "Pure Rust ML inference engine."
-    https://github.com/paiml/realizar
-    Key influence: mmap zero-copy loading, KV cache, Flash Attention, streaming inference,
-    quantized execution (Q4_K, Q8_0), REST API with Prometheus metrics
+##### F. Memory Management (MM01-MM10) — 10 Points
+
+| ID | Guarantee | Falsification Test |
+|----|-----------|-------------------|
+| MM01 | Model memory in metrics | `apr_memory_bytes{type="model"}` > 0 |
+| MM02 | KV cache bounded | Cache size ≤ configured max |
+| MM03 | No leak over 1000 requests | RSS delta < 10% after 1000 requests |
+| MM04 | mmap released on shutdown | File descriptors closed |
+| MM05 | OOM returns 503, not crash | Memory pressure → 503 response |
+| MM06 | Batch size respects memory | Auto-sizing prevents OOM |
+| MM07 | Tensors 64-byte aligned | Memory layout inspection |
+| MM08 | Zero-copy for mmap | No memcpy in inference hot path |
+| MM09 | WASM heap stable | wasm32 memory doesn't grow unbounded |
+| MM10 | Peak memory predictable | Actual ≤ 1.2 × predicted |
+
+##### G. Concurrency (CC01-CC10) — 10 Points
+
+| ID | Guarantee | Falsification Test |
+|----|-----------|-------------------|
+| CC01 | Handles 10 concurrent requests | 10 parallel → all succeed |
+| CC02 | Request queue bounded | `max_concurrent` enforced |
+| CC03 | Queue full → 429 | Exceed limit → HTTP 429 |
+| CC04 | Fair scheduling | Mixed sizes → no starvation |
+| CC05 | Thread-safe | ThreadSanitizer clean |
+| CC06 | Atomic metric updates | Concurrent increments correct |
+| CC07 | Connection limit enforced | Max connections respected |
+| CC08 | Graceful degradation | Overload → latency increase, not crash |
+| CC09 | Request isolation | One error ≠ cascade failure |
+| CC10 | Batch coalescing works | Small requests batched |
+
+##### H. Error Handling (EH01-EH10) — 10 Points
+
+| ID | Guarantee | Falsification Test |
+|----|-----------|-------------------|
+| EH01 | Invalid JSON → 400 | `{invalid` → HTTP 400 |
+| EH02 | Missing field → 400 | `{}` → HTTP 400 |
+| EH03 | Unknown endpoint → 404 | `GET /unknown` → HTTP 404 |
+| EH04 | Wrong method → 405 | `GET /generate` → HTTP 405 |
+| EH05 | Oversized → 413 | 11MB body → HTTP 413 |
+| EH06 | Wrong content-type → 415 | `text/plain` → HTTP 415 |
+| EH07 | Internal error → 500 with message | Crash → 500 + error JSON |
+| EH08 | Loading → 503 | Request during load → 503 |
+| EH09 | Error response valid JSON | All errors parse as JSON |
+| EH10 | Errors have request ID | `X-Request-ID` in error response |
+
+##### I. Metrics Accuracy (MA01-MA10) — 10 Points
+
+| ID | Guarantee | Falsification Test |
+|----|-----------|-------------------|
+| MA01 | Request counter increments | N requests → counter += N |
+| MA02 | Latency histogram accurate | Histogram mean ≈ client mean |
+| MA03 | Token counter correct | Sum of tokens = counter value |
+| MA04 | Error counter increments | 4xx/5xx → error counter += 1 |
+| MA05 | `/metrics` latency <10ms | Scrape latency < 10ms |
+| MA06 | Valid Prometheus format | `promtool check metrics` passes |
+| MA07 | Histogram buckets sensible | Buckets span 10ms to 30s |
+| MA08 | Gauges are current | Values update in real-time |
+| MA09 | Labels consistent | Same labels across metrics |
+| MA10 | No cardinality explosion | Label values bounded |
+
+##### J. Security (SE01-SE05) — 5 Points
+
+| ID | Guarantee | Falsification Test |
+|----|-----------|-------------------|
+| SE01 | No path traversal | `../../../etc/passwd` → rejected |
+| SE02 | Request size limited | Default 10MB max enforced |
+| SE03 | No sensitive data in errors | Stack traces filtered |
+| SE04 | CORS configurable | `--cors-origin` respected |
+| SE05 | Rate limiting available | `--rate-limit` enforced |
+
+---
+
+#### 4.15.10 Peer-Reviewed References
+
+##### Model Serving Systems
+
+[R1] D. Crankshaw, X. Wang, G. Zhou, M. J. Franklin, J. E. Gonzalez, and I. Stoica,
+     "Clipper: A Low-Latency Online Prediction Serving System,"
+     *USENIX NSDI*, 2017.
+     https://www.usenix.org/conference/nsdi17/technical-sessions/presentation/crankshaw
+
+[R2] A. Gujarati, R. Karber, S. Sohail, et al.,
+     "Serving DNNs like Clockwork: Performance Predictability from the Bottom Up,"
+     *USENIX OSDI*, 2020.
+     https://www.usenix.org/conference/osdi20/presentation/gujarati
+
+[R3] M. Qiu, Y. Chen, W. Zeng, et al.,
+     "μ-Serve: Power-aware Deep Learning Model Serving with Microarchitecture Awareness,"
+     *USENIX ATC*, 2024.
+     https://www.usenix.org/conference/atc24/presentation/qiu
+
+[R4] S. Choi, H. Kang, and M. Lee,
+     "Efficient Memory Mapped File I/O for In-Memory File Systems,"
+     *USENIX HotStorage*, 2017.
+     https://www.usenix.org/conference/hotstorage17/program/presentation/choi
+
+##### Attention Mechanisms
+
+[R5] Hugging Face, "Text Generation Inference (TGI),"
+     https://github.com/huggingface/text-generation-inference
+
+[R6] T. Dao, D. Fu, S. Ermon, A. Rudra, and C. Ré,
+     "FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness,"
+     *NeurIPS*, 2022. arXiv:2205.14135
+
+[R7] T. Dao,
+     "FlashAttention-2: Faster Attention with Better Parallelism and Work Partitioning,"
+     arXiv:2307.08691, 2023.
+
+[R8] Z. Ye, L. Zheng, Y. Huang, et al.,
+     "FlashInfer: Efficient and Customizable Attention Engine for LLM Inference Serving,"
+     arXiv:2501.01005, 2025.
+
+##### Quantization
+
+[R9] B. Jacob, S. Kligys, B. Chen, et al.,
+     "Quantization and Training of Neural Networks for Efficient Integer-Arithmetic-Only Inference,"
+     *CVPR*, 2018. arXiv:1712.05877
+
+[R10] H. Wu, P. Judd, X. Zhang, M. Isaev, and P. Micikevicius,
+      "Integer Quantization for Deep Learning Inference: Principles and Empirical Evaluation,"
+      arXiv:2004.09602, 2020.
+
+[R11] Y. Lin, H. Tang, S. Yang, et al.,
+      "QServe: W4A8KV4 Quantization and System Co-design for Efficient LLM Serving,"
+      arXiv:2405.04532, 2024.
+
+[R12] A. Gholami, S. Kim, Z. Dong, et al.,
+      "A Survey of Quantization Methods for Efficient Neural Network Inference,"
+      arXiv:2103.13630, 2021.
+
+##### Audio/Speech
+
+[R13] A. Radford, J. W. Kim, T. Xu, G. Brockman, C. McLeavey, and I. Sutskever,
+      "Robust Speech Recognition via Large-Scale Weak Supervision,"
+      OpenAI, 2022. https://github.com/openai/whisper
+
+##### API Standards
+
+[R14] OpenAPI Initiative,
+      "OpenAPI Specification v3.0.3,"
+      https://spec.openapis.org/oas/v3.0.3, 2021.
+
+[R15] Prometheus Authors,
+      "Prometheus Exposition Formats,"
+      https://prometheus.io/docs/instrumenting/exposition_formats/
+
+##### Efficiency Surveys
+
+[R16] X. Miao, G. Oliaro, Z. Zhang, et al.,
+      "Towards Efficient Generative Large Language Model Serving: A Survey from Algorithms to Systems,"
+      *ACM Computing Surveys*, 2024. DOI:10.1145/3754448
+
+##### Legacy Tool References
+
+[R17] **uv** - "An extremely fast Python package installer and resolver, written in Rust."
+      https://github.com/astral-sh/uv
+
+[R18] **just** - "A handy way to save and run project-specific commands."
+      https://github.com/casey/just
+
+[R19] **Deno** - "A modern runtime for JavaScript and TypeScript."
+      https://deno.land/
+
+[R20] **realizar** - "Pure Rust ML inference engine."
+      https://github.com/paiml/realizar
 
 ---
 
@@ -2845,16 +3390,31 @@ fn test_whisper_tiny_import() {
 - 64-byte tensor alignment
 - Binary tensor index
 - Backward-compatible reader
+- **Status**: ✅ Completed
 
 ### Phase 2: Compression (v2.1)
 - LZ4 block compression
 - Per-tensor compression flag
 - Streaming decompression
+- **Status**: ✅ Completed
 
 ### Phase 3: Sharding (v2.2)
 - Manifest file format
 - Multi-file loader
 - Tensor-level demand loading
+- **Status**: 🚧 In Progress
+
+### Phase 4: Runtime & Observability (v2.3)
+- `apr serve` with `realizar` integration
+- `apr trace` with payload tracing
+- 100-point Falsification Checklist
+- **Target**: Sprint 52
+
+### Phase 5: Native Compilation (v2.4)
+- `apr compile` for standalone binaries
+- WASM component generation
+- SIMD/GPU auto-dispatch (trueno)
+- **Target**: Sprint 54
 
 ---
 
@@ -2895,6 +3455,28 @@ fn test_whisper_tiny_import() {
 | `APR_CACHE` | Cache directory | `~/.cache/apr` |
 | `APR_LOG_LEVEL` | Log level | `info` |
 | `APR_COLOR` | Enable colors | `auto` |
+
+### C. Documentation Integration Strategy
+
+To ensure documentation never drifts from implementation ("The Map is the Territory"):
+
+1.  **Verified Examples**: All code examples in documentation MUST be sourced from compilable, tested Rust files using the `{{#include ...}}` directive.
+2.  **No Naked Code Blocks**: Avoid manually typing code blocks in Markdown.
+3.  **Falsifiability**: Every requirement in this spec must be mapped to a test case in `tests/falsification/`.
+4.  **Version Lock**: This specification version matches the crate version.
+
+**Example**:
+```markdown
+<!-- GOOD -->
+```rust
+{{#include ../examples/apr_loading_modes.rs:20:30}}
+```
+
+```markdown
+<!-- BAD -->
+```rust
+let model = Apr::load("model.apr"); // Might not compile!
+```
 
 ---
 

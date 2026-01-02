@@ -385,7 +385,7 @@ pub trait RoutingPolicyTrait: Send + Sync {
     fn is_eligible(&self, candidate: &RouteCandidate, request: &InferenceRequest) -> bool;
 
     /// Get policy name for logging
-    fn name(&self) -> &str;
+    fn name(&self) -> &'static str;
 }
 
 /// Load balancing strategy
@@ -427,31 +427,37 @@ impl FederationBuilder {
         }
     }
 
+    #[must_use]
     pub fn with_catalog(mut self, catalog: impl ModelCatalogTrait + 'static) -> Self {
         self.catalog = Some(Box::new(catalog));
         self
     }
 
+    #[must_use]
     pub fn with_health_checker(mut self, checker: impl HealthCheckerTrait + 'static) -> Self {
         self.health_checker = Some(Box::new(checker));
         self
     }
 
+    #[must_use]
     pub fn with_router(mut self, router: impl RouterTrait + 'static) -> Self {
         self.router = Some(Box::new(router));
         self
     }
 
+    #[must_use]
     pub fn with_policy(mut self, policy: impl RoutingPolicyTrait + 'static) -> Self {
         self.policies.push(Box::new(policy));
         self
     }
 
+    #[must_use]
     pub fn with_middleware(mut self, middleware: impl GatewayMiddleware + 'static) -> Self {
         self.middlewares.push(Box::new(middleware));
         self
     }
 
+    #[must_use]
     pub fn with_load_balance(mut self, strategy: LoadBalanceStrategy) -> Self {
         self.load_balance = strategy;
         self

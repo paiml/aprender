@@ -213,6 +213,9 @@ fn print_welcome_banner(path: &Path, config: &ChatConfig) {
 #[cfg(feature = "inference")]
 mod realizar_chat {
     use super::*;
+    use aprender::demo::Qwen2Config;
+    use aprender::models::Qwen2Model;
+    use aprender::text::bpe::Qwen2BpeTokenizer;
     use std::fs::File;
     use std::io::Read;
 
@@ -229,7 +232,11 @@ mod realizar_chat {
         /// Conversation history
         history: Vec<String>,
         /// LLaMA tokenizer (for GGUF format)
-        tokenizer: Option<LlamaTokenizer>,
+        llama_tokenizer: Option<LlamaTokenizer>,
+        /// Qwen2 BPE tokenizer (for SafeTensors/APR format)
+        qwen_tokenizer: Option<Qwen2BpeTokenizer>,
+        /// Qwen2 model (for SafeTensors inference)
+        qwen_model: Option<Qwen2Model>,
     }
 
     impl ChatSession {
@@ -264,23 +271,136 @@ mod realizar_chat {
                 model_bytes.len() as f32 / 1_000_000.0
             );
 
-            // Load tokenizer for GGUF format
-            let tokenizer = if format == ModelFormat::Gguf {
-                match LlamaTokenizer::from_gguf_bytes(&model_bytes) {
-                    Ok(tok) => {
-                        println!(
-                            "{} tokenizer with {} tokens",
-                            "Loaded".green(),
-                            tok.vocab_size()
-                        );
-                        Some(tok)
+            // Load tokenizer based on format
+            let (llama_tokenizer, qwen_tokenizer) = match format {
+                ModelFormat::Gguf => {
+                    // Load LLaMA tokenizer from GGUF
+                    let tok = match LlamaTokenizer::from_gguf_bytes(&model_bytes) {
+                        Ok(tok) => {
+                            println!(
+                                "{} tokenizer with {} tokens",
+                                "Loaded".green(),
+                                tok.vocab_size()
+                            );
+                            Some(tok)
+                        }
+                        Err(e) => {
+                            println!(
+                                "{} Failed to load GGUF tokenizer: {} (using byte fallback)",
+                                "Warning:".yellow(),
+                                e
+                            );
+                            None
+                        }
+                    };
+                    (tok, None)
+                }
+                ModelFormat::SafeTensors | ModelFormat::Apr => {
+                    // Load Qwen tokenizer from tokenizer.json in model directory
+                    let tok = if let Some(parent) = path.parent() {
+                        let tokenizer_path = parent.join("tokenizer.json");
+                        if tokenizer_path.exists() {
+                            match Qwen2BpeTokenizer::from_file(&tokenizer_path) {
+                                Ok(tok) => {
+                                    println!(
+                                        "{} {} ({})",
+                                        "Loaded tokenizer:".green(),
+                                        tokenizer_path.display(),
+                                        format!("{} tokens", tok.vocab_size()).dimmed()
+                                    );
+                                    Some(tok)
+                                }
+                                Err(e) => {
+                                    println!(
+                                        "{} {}",
+                                        "Warning: Failed to load tokenizer:".yellow(),
+                                        e
+                                    );
+                                    None
+                                }
+                            }
+                        } else {
+                            println!(
+                                "{}",
+                                "Warning: No tokenizer.json found, using byte fallback".yellow()
+                            );
+                            None
+                        }
+                    } else {
+                        None
+                    };
+                    (None, tok)
+                }
+                ModelFormat::Demo => (None, None),
+            };
+
+            // Load Qwen2Model for SafeTensors format
+            let qwen_model = if format == ModelFormat::SafeTensors {
+                // Try to load config.json for model architecture
+                let config_path = path.parent().map(|p| p.join("config.json"));
+                let qwen_config = if let Some(ref cp) = config_path {
+                    if cp.exists() {
+                        // Parse config.json to get model parameters
+                        match std::fs::read_to_string(cp) {
+                            Ok(json) => {
+                                // Parse the config - extract key fields
+                                if let Ok(v) = serde_json::from_str::<serde_json::Value>(&json) {
+                                    let hidden_size =
+                                        v["hidden_size"].as_u64().unwrap_or(896) as usize;
+                                    let num_heads =
+                                        v["num_attention_heads"].as_u64().unwrap_or(14) as usize;
+                                    let num_kv_heads =
+                                        v["num_key_value_heads"].as_u64().unwrap_or(2) as usize;
+                                    let num_layers =
+                                        v["num_hidden_layers"].as_u64().unwrap_or(24) as usize;
+                                    let vocab_size =
+                                        v["vocab_size"].as_u64().unwrap_or(151936) as usize;
+                                    let intermediate_size =
+                                        v["intermediate_size"].as_u64().unwrap_or(4864) as usize;
+                                    let rope_theta =
+                                        v["rope_theta"].as_f64().unwrap_or(1_000_000.0);
+
+                                    println!(
+                                        "{} config: {} layers, {} hidden, {} heads",
+                                        "Loaded".green(),
+                                        num_layers,
+                                        hidden_size,
+                                        num_heads
+                                    );
+
+                                    Qwen2Config {
+                                        hidden_size,
+                                        num_attention_heads: num_heads,
+                                        num_kv_heads,
+                                        num_layers,
+                                        vocab_size,
+                                        max_seq_len: 32768,
+                                        intermediate_size,
+                                        rope_theta,
+                                    }
+                                } else {
+                                    Qwen2Config::qwen2_0_5b_instruct()
+                                }
+                            }
+                            Err(_) => Qwen2Config::qwen2_0_5b_instruct(),
+                        }
+                    } else {
+                        Qwen2Config::qwen2_0_5b_instruct()
+                    }
+                } else {
+                    Qwen2Config::qwen2_0_5b_instruct()
+                };
+
+                // Create model and load weights
+                let mut model = Qwen2Model::new_uninitialized(&qwen_config);
+                match model.load_from_safetensors(path) {
+                    Ok(count) => {
+                        println!("{} {} tensors from SafeTensors", "Loaded".green(), count);
+                        model.eval();
+                        Some(model)
                     }
                     Err(e) => {
-                        println!(
-                            "{} Failed to load tokenizer: {} (using byte fallback)",
-                            "Warning:".yellow(),
-                            e
-                        );
+                        println!("{} Failed to load weights: {}", "Warning:".yellow(), e);
                         None
                     }
                 }
@@ -293,16 +413,20 @@ mod realizar_chat {
                 model_path: path.to_path_buf(),
                 format,
                 history: Vec::new(),
-                tokenizer,
+                llama_tokenizer,
+                qwen_tokenizer,
+                qwen_model,
             })
         }
 
         pub(super) fn generate(&mut self, user_input: &str, config: &ChatConfig) -> String {
             let start = Instant::now();
 
-            // Tokenize input using LLaMA tokenizer if available, else fall back to char-level
-            let prompt_tokens: Vec<u32> = if let Some(ref tokenizer) = self.tokenizer {
+            // Tokenize input using appropriate tokenizer
+            let prompt_tokens: Vec<u32> = if let Some(ref tokenizer) = self.llama_tokenizer {
                 tokenizer.encode_with_bos(user_input)
+            } else if let Some(ref tokenizer) = self.qwen_tokenizer {
+                tokenizer.encode(user_input)
             } else {
                 user_input.chars().map(|c| c as u32).collect()
             };
@@ -330,8 +454,10 @@ mod realizar_chat {
                             .dimmed()
                         );
                     }
-                    // Decode output tokens using LLaMA tokenizer if available
-                    if let Some(ref tokenizer) = self.tokenizer {
+                    // Decode output tokens using appropriate tokenizer
+                    if let Some(ref tokenizer) = self.llama_tokenizer {
+                        tokenizer.decode(&output_tokens)
+                    } else if let Some(ref tokenizer) = self.qwen_tokenizer {
                         tokenizer.decode(&output_tokens)
                     } else {
                         output_tokens
@@ -366,8 +492,8 @@ mod realizar_chat {
             let model = OwnedQuantizedModel::from_mapped(&mapped)
                 .map_err(|e| format!("Failed to create GGUF model: {e}"))?;
 
-            // TinyLlama-1.1B without KV cache is O(n²) - limit tokens for CPU inference
-            let practical_max = config.max_tokens.min(16); // Limit to 16 tokens on CPU
+            // With KV cache, we can generate more tokens efficiently
+            let practical_max = config.max_tokens.min(128);
 
             let is_gqa = model.config.num_kv_heads < model.config.num_heads;
             let gqa_note = if is_gqa {
@@ -376,35 +502,117 @@ mod realizar_chat {
                 String::new()
             };
 
+            let gen_config = QuantizedGenerateConfig {
+                max_tokens: practical_max,
+                temperature: config.temperature,
+                top_k: 40,
+                ..Default::default()
+            };
+
+            // Try CUDA GPU path first (200+ tok/s target)
+            #[cfg(feature = "cuda")]
+            {
+                use realizar::gguf::OwnedQuantizedModelCuda;
+                if OwnedQuantizedModelCuda::is_available() {
+                    // Print model info before attempting CUDA (model consumed on success)
+                    let num_layers = model.config.num_layers;
+                    let hidden_dim = model.config.hidden_dim;
+
+                    match OwnedQuantizedModelCuda::new(model, 0) {
+                        Ok(mut cuda_model) => {
+                            let gpu_name = cuda_model.device_name().to_string();
+                            let vram_mb = cuda_model.vram_mb();
+                            println!(
+                                "{}",
+                                format!(
+                                    "[GGUF CUDA: {} ({} MB VRAM), {} layers, {} tokens{}]",
+                                    gpu_name, vram_mb, num_layers, practical_max, gqa_note
+                                )
+                                .bright_green()
+                            );
+                            return cuda_model
+                                .generate_full_cuda_with_cache(prompt, &gen_config)
+                                .map_err(|e| format!("CUDA generate failed: {e}"));
+                        }
+                        Err(e) => {
+                            println!(
+                                "{}",
+                                format!("[CUDA init failed: {}, falling back to CPU]", e).yellow()
+                            );
+                            // Re-create model for CPU fallback (model was consumed)
+                            let model = OwnedQuantizedModel::from_mapped(&mapped)
+                                .map_err(|e| format!("Failed to recreate model: {e}"))?;
+
+                            println!(
+                                "{}",
+                                format!(
+                                    "[GGUF CPU: {} layers, {} hidden, {} tokens (KV cache){}]",
+                                    num_layers, hidden_dim, practical_max, gqa_note
+                                )
+                                .dimmed()
+                            );
+
+                            return model
+                                .generate_with_cache(prompt, &gen_config)
+                                .map_err(|e| format!("GGUF generate failed: {e}"));
+                        }
+                    }
+                }
+            }
+
+            // CPU path with KV cache (12+ tok/s) - used when CUDA feature disabled or unavailable
             println!(
                 "{}",
                 format!(
-                    "[GGUF: {} layers, {} hidden - generating up to {} tokens (CPU){}...]",
+                    "[GGUF CPU: {} layers, {} hidden, {} tokens (KV cache){}]",
                     model.config.num_layers, model.config.hidden_dim, practical_max, gqa_note
                 )
                 .dimmed()
             );
 
-            let gen_config = QuantizedGenerateConfig {
-                max_tokens: practical_max,
-                temperature: config.temperature,
-                top_k: 40, // Default top_k
-                ..Default::default()
-            };
-
+            // Use KV cache path for O(n) instead of O(n²)
             model
-                .generate(prompt, &gen_config)
+                .generate_with_cache(prompt, &gen_config)
                 .map_err(|e| format!("GGUF generate failed: {e}"))
         }
 
         fn generate_safetensors(
-            &self,
-            _prompt: &[u32],
-            _config: &ChatConfig,
+            &mut self,
+            prompt: &[u32],
+            config: &ChatConfig,
         ) -> Result<Vec<u32>, String> {
-            // SafeTensors requires architecture detection from config.json
-            // For now, return a placeholder - full implementation pending
-            Err("SafeTensors inference requires config.json for architecture detection. Use APR or GGUF format.".to_string())
+            // Use loaded Qwen2Model for SafeTensors inference
+            let model = self.qwen_model.as_mut().ok_or_else(|| {
+                "SafeTensors model not loaded. Check config.json and model weights.".to_string()
+            })?;
+
+            // Limit tokens for reasonable CPU inference speed
+            let max_tokens = config.max_tokens.min(32);
+
+            let params = model.num_parameters();
+            let params_str = if params >= 1_000_000_000 {
+                format!("{:.1}B", params as f64 / 1_000_000_000.0)
+            } else if params >= 1_000_000 {
+                format!("{:.1}M", params as f64 / 1_000_000.0)
+            } else {
+                format!("{params}")
+            };
+            println!(
+                "{}",
+                format!(
+                    "[SafeTensors: {} layers, {} params - generating up to {} tokens...]",
+                    model.num_layers(),
+                    params_str,
+                    max_tokens
+                )
+                .dimmed()
+            );
+
+            // Generate using the model
+            let output = model.generate(prompt, max_tokens, config.temperature, config.top_p);
+
+            // Return only the newly generated tokens (after prompt)
+            Ok(output[prompt.len()..].to_vec())
         }
 
         pub(super) fn history(&self) -> &[String] {
@@ -526,11 +734,46 @@ impl ChatSession {
         let elapsed = start.elapsed();
         println!("{} {:.2}s", "Model ready in".green(), elapsed.as_secs_f32());
 
+        // Load tokenizer from same directory as model
+        let tokenizer = Self::load_tokenizer(path);
+
         Ok(Self {
             model,
-            tokenizer: Qwen2BpeTokenizer::new(),
+            tokenizer,
             history: Vec::new(),
         })
+    }
+
+    /// Load tokenizer from model directory
+    fn load_tokenizer(model_path: &Path) -> Qwen2BpeTokenizer {
+        // Try to find tokenizer.json in same directory as model
+        if let Some(parent) = model_path.parent() {
+            let tokenizer_path = parent.join("tokenizer.json");
+            if tokenizer_path.exists() {
+                match Qwen2BpeTokenizer::from_file(&tokenizer_path) {
+                    Ok(tok) => {
+                        println!(
+                            "{} {} ({})",
+                            "Loaded tokenizer:".green(),
+                            tokenizer_path.display(),
+                            format!("{} tokens", tok.vocab_size()).dimmed()
+                        );
+                        return tok;
+                    }
+                    Err(e) => {
+                        eprintln!("{} {}", "Warning: Failed to load tokenizer:".yellow(), e);
+                    }
+                }
+            }
+        }
+
+        // Fallback to basic byte-level tokenizer
+        eprintln!(
+            "{}",
+            "Using basic byte-level tokenizer (download tokenizer.json for better results)"
+                .yellow()
+        );
+        Qwen2BpeTokenizer::new()
     }
 
     fn generate(&mut self, user_input: &str, config: &ChatConfig) -> String {

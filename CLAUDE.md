@@ -147,6 +147,46 @@ apr trace model.safetensors    # Shows per-layer timing
 
 If profiler shows "aprender" in hotspots, you're using the WRONG path.
 
+### Ollama-Parity Performance Architecture
+
+The aprender ecosystem achieves Ollama-parity performance through:
+
+**1. Trueno SIMD Backend (CPU)**
+- All matmul operations use trueno's SIMD-accelerated kernels
+- Backward pass uses trueno (not naive loops) for training
+- Cache-blocked tiled matrix multiplication
+
+**2. Realizar Inference Engine (Production)**
+- Fused Q4_K/Q5_K/Q6_K dequant+matmul kernels
+- Dynamic thread allocation (prefill vs decode)
+- PagedAttention KV cache (vLLM-style)
+- Pre-computed f16→f32 LUT for hot paths
+
+**3. GPU Acceleration (Optional)**
+- wgpu compute shaders for large matrices
+- CUDA PTX generation (pure Rust, no nvcc)
+- Automatic CPU/GPU dispatch based on workload
+
+**Performance Targets (Ollama Parity):**
+
+| Model | CPU (tok/s) | GPU (tok/s) | Memory |
+|-------|-------------|-------------|--------|
+| 1B Q4_K | 100+ | 500+ | 600MB |
+| 7B Q4_K | 30+ | 150+ | 4GB |
+| 13B Q4_K | 15+ | 80+ | 8GB |
+
+**Benchmarking:**
+```bash
+# Run Ollama-parity benchmarks
+cargo bench --bench ollama_parity --features format-quantize
+
+# Key metrics:
+# - matmul_simd: trueno SIMD matmul throughput
+# - quantized_matmul: Q4/Q8 dequant+matmul
+# - attention: scaled dot-product attention
+# - mlp_forward: end-to-end MLP layer
+```
+
 ### Code Scheduled for Deletion
 
 | Module | Status |

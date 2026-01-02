@@ -586,6 +586,62 @@ impl Qwen2BpeTokenizer {
     pub fn im_end_id(&self) -> u32 {
         self.im_end_id
     }
+
+    /// Load tokenizer from tokenizer.json file path.
+    ///
+    /// # Arguments
+    /// * `path` - Path to tokenizer.json file
+    ///
+    /// # Returns
+    /// Loaded Qwen2 tokenizer with full vocabulary
+    ///
+    /// # Errors
+    /// Returns error if file cannot be read or parsed.
+    pub fn from_file<P: AsRef<std::path::Path>>(path: P) -> Result<Self> {
+        let json =
+            std::fs::read_to_string(path.as_ref()).map_err(|e| AprenderError::FormatError {
+                message: format!("Failed to read tokenizer file: {e}"),
+            })?;
+        Self::from_json(&json)
+    }
+
+    /// Load tokenizer from JSON string.
+    ///
+    /// # Arguments
+    /// * `json` - JSON string containing HuggingFace tokenizer format
+    ///
+    /// # Returns
+    /// Loaded Qwen2 tokenizer with full vocabulary
+    ///
+    /// # Errors
+    /// Returns error if JSON parsing fails.
+    pub fn from_json(json: &str) -> Result<Self> {
+        let base = load_from_json(json)?;
+
+        // Find special token IDs from the loaded vocabulary
+        let im_start_id = base
+            .vocab
+            .get("<|im_start|>")
+            .copied()
+            .unwrap_or(Self::IM_START_ID);
+        let im_end_id = base
+            .vocab
+            .get("<|im_end|>")
+            .copied()
+            .unwrap_or(Self::IM_END_ID);
+        let endoftext_id = base
+            .vocab
+            .get("<|endoftext|>")
+            .copied()
+            .unwrap_or(Self::ENDOFTEXT_ID);
+
+        Ok(Self {
+            base,
+            im_start_id,
+            im_end_id,
+            endoftext_id,
+        })
+    }
 }
 
 impl Default for Qwen2BpeTokenizer {

@@ -82,7 +82,7 @@ impl RoutingPolicyTrait for LatencyPolicy {
         candidate.target.estimated_latency <= self.max_latency
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "latency"
     }
 }
@@ -124,7 +124,7 @@ impl RoutingPolicyTrait for LocalityPolicy {
         true // Locality is a preference, not a hard requirement
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "locality"
     }
 }
@@ -132,21 +132,15 @@ impl RoutingPolicyTrait for LocalityPolicy {
 /// Privacy-based routing policy
 ///
 /// Enforces data sovereignty by filtering nodes based on privacy level.
+#[derive(Default)]
 pub struct PrivacyPolicy {
     /// Region privacy levels
     pub region_privacy: std::collections::HashMap<RegionId, PrivacyLevel>,
 }
 
-impl Default for PrivacyPolicy {
-    fn default() -> Self {
-        Self {
-            region_privacy: std::collections::HashMap::new(),
-        }
-    }
-}
-
 impl PrivacyPolicy {
     /// Add a region with its privacy level
+    #[must_use]
     pub fn with_region(mut self, region: RegionId, level: PrivacyLevel) -> Self {
         self.region_privacy.insert(region, level);
         self
@@ -170,7 +164,7 @@ impl RoutingPolicyTrait for PrivacyPolicy {
         region_level >= request.qos.privacy
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "privacy"
     }
 }
@@ -195,6 +189,7 @@ impl Default for CostPolicy {
 }
 
 impl CostPolicy {
+    #[must_use]
     pub fn with_region_cost(mut self, region: RegionId, cost: f64) -> Self {
         self.region_costs.insert(region, cost.clamp(0.0, 1.0));
         self
@@ -228,7 +223,7 @@ impl RoutingPolicyTrait for CostPolicy {
         true
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "cost"
     }
 }
@@ -265,7 +260,7 @@ impl RoutingPolicyTrait for HealthPolicy {
         candidate.scores.health_score > 0.0
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "health"
     }
 }
@@ -284,6 +279,7 @@ impl CompositePolicy {
         Self { policies: vec![] }
     }
 
+    #[must_use]
     pub fn with_policy(mut self, policy: impl RoutingPolicyTrait + 'static) -> Self {
         self.policies.push(Box::new(policy));
         self
@@ -328,7 +324,7 @@ impl RoutingPolicyTrait for CompositePolicy {
             .all(|p| p.is_eligible(candidate, request))
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "composite"
     }
 }
@@ -339,6 +335,7 @@ impl RoutingPolicyTrait for CompositePolicy {
 
 /// Routing policy configuration
 pub struct RoutingPolicy {
+    #[allow(dead_code)]
     inner: Box<dyn RoutingPolicyTrait>,
 }
 

@@ -40,12 +40,18 @@ pub struct SecurityConfig {
 
 impl Default for SecurityConfig {
     fn default() -> Self {
+        // WASM32 has 32-bit usize, can't represent 4GB
+        #[cfg(target_arch = "wasm32")]
+        let wasm_memory_limit = 256 * 1024 * 1024; // 256MB for WASM
+        #[cfg(not(target_arch = "wasm32"))]
+        let wasm_memory_limit = 4 * 1024 * 1024 * 1024; // 4GB for native
+
         Self {
             enable_fuzzing: false, // Disabled by default (requires setup)
             fuzz_duration_secs: 60,
             enable_sanitizers: false, // Disabled by default (requires nightly)
             max_file_size: 100 * 1024 * 1024, // 100MB
-            wasm_memory_limit: 4 * 1024 * 1024 * 1024, // 4GB
+            wasm_memory_limit,
         }
     }
 }

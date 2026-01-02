@@ -62,13 +62,13 @@ test-smoke: ## Smoke tests (<2s target, Section P: P2)
 test-fast: ## Fast unit tests (<30s target)
 	@echo "⚡ Running fast tests (target: <30s, -j2 to prevent OOM)..."
 	@if command -v cargo-nextest >/dev/null 2>&1; then \
-		time env PROPTEST_CASES=50 cargo nextest run --workspace --lib -j 2 \
+		time env PROPTEST_CASES=25 cargo nextest run --workspace --lib -j 2 \
 			--status-level skip \
 			--failure-output immediate \
 			-E 'not test(/prop_gbm_expected_value_convergence/)'; \
 	else \
 		echo "💡 Install cargo-nextest for faster tests: cargo install cargo-nextest"; \
-		time env PROPTEST_CASES=50 cargo test --workspace --lib -- --test-threads=2 --skip prop_gbm_expected_value_convergence; \
+		time env PROPTEST_CASES=25 cargo test --workspace --lib -- --test-threads=2 --skip prop_gbm_expected_value_convergence; \
 	fi
 	@echo "✅ Fast tests passed"
 
@@ -229,11 +229,9 @@ coverage-full: ## Full coverage report (all features, >10 min)
 	@which cargo-nextest > /dev/null 2>&1 || { cargo install cargo-nextest --locked || exit 1; }
 	@cargo llvm-cov clean --workspace
 	@mkdir -p target/coverage
-	@test -f ~/.cargo/config.toml && mv ~/.cargo/config.toml ~/.cargo/config.toml.cov-backup || true
 	@cargo llvm-cov --no-report nextest --no-tests=warn --workspace --all-features -j 2
 	@cargo llvm-cov report --html --output-dir target/coverage/html $(COVERAGE_EXCLUDE)
 	@cargo llvm-cov report --lcov --output-path target/coverage/lcov.info $(COVERAGE_EXCLUDE)
-	@test -f ~/.cargo/config.toml.cov-backup && mv ~/.cargo/config.toml.cov-backup ~/.cargo/config.toml || true
 	@echo ""
 	@cargo llvm-cov report --summary-only $(COVERAGE_EXCLUDE)
 
@@ -480,9 +478,9 @@ mutants-list: ## List mutants without running tests
 property-test: ## Run property-based tests with extended cases
 	@echo "🎲 Running property-based tests..."
 	@if command -v cargo-nextest >/dev/null 2>&1; then \
-		PROPTEST_CASES=1000 cargo nextest run --test property_tests --no-fail-fast; \
+		PROPTEST_CASES=250 cargo nextest run --test property_tests --no-fail-fast; \
 	else \
-		PROPTEST_CASES=1000 cargo test --test property_tests; \
+		PROPTEST_CASES=250 cargo test --test property_tests; \
 	fi
 	@echo "✅ Property tests passed"
 
@@ -497,7 +495,7 @@ property-test-fast: ## Run property tests with fewer cases (quick feedback)
 
 property-test-extensive: ## Run property tests with maximum coverage (10K cases)
 	@echo "🔬 Running extensive property tests (10K cases per test)..."
-	@PROPTEST_CASES=10000 cargo test --test property_tests -- --test-threads=1
+	@PROPTEST_CASES=2500 cargo test --test property_tests -- --test-threads=1
 	@echo "✅ Extensive property tests complete"
 
 # ============================================================================

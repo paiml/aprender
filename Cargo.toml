@@ -60,6 +60,16 @@ float_cmp = "allow"  # ML algorithms often compare floats
 unreadable_literal = "allow"  # Test data often has long numeric literals
 items_after_statements = "allow"  # ML algorithms often need mid-function declarations
 large_stack_arrays = "allow"  # ML tests often need large data arrays
+too_many_arguments = "allow"  # ML training functions often need many parameters
+too_many_lines = "allow"  # ML algorithms can be long
+needless_range_loop = "allow"  # Explicit indexing often clearer in ML code
+assigning_clones = "allow"  # Common pattern in state reset
+missing_fields_in_debug = "allow"  # Some fields intentionally omitted
+derivable_impls = "allow"  # Sometimes explicit impls are clearer
+uninlined_format_args = "allow"  # Format string style preference
+type_complexity = "allow"  # Complex types common in ML
+cloned_instead_of_copied = "allow"  # Style preference
+unused_self = "allow"  # Method stubs common during development
 
 [package]
 name = "aprender"
@@ -86,7 +96,7 @@ bincode = "1.3"
 rmp-serde = "1.3"  # MessagePack for .apr metadata (spec §2)
 
 # Random number generation for model_selection
-rand = "0.8"
+rand = { version = "0.8", features = ["small_rng"] }
 rand_chacha = "0.3"  # ChaCha20 PRNG for Monte Carlo simulations
 
 # Audio processing
@@ -131,6 +141,10 @@ dirs = { version = "6.0", optional = true }
 # SafeTensors format parsing (optional, for HF model comparison)
 safetensors = { version = "0.4", optional = true }
 
+# WASM bindings for noise generator (optional, spec: noise-generator-apr-wasm-spec.md)
+wasm-bindgen = { version = "0.2", optional = true }
+js-sys = { version = "0.3", optional = true }
+
 [dev-dependencies]
 proptest = "1.6"
 criterion = "0.5"
@@ -156,6 +170,8 @@ audio-wasapi = ["audio-capture"]  # Enable WASAPI capture (Windows only)
 audio-webaudio = ["audio-capture"]  # Enable WebAudio capture (WASM only)
 audio-playback = ["audio"]  # Enable audio playback
 audio-codec = ["audio"]  # Enable audio codec decoding (WAV, MP3, AAC, FLAC, Opus)
+audio-noise = ["audio"]  # Enable ML-based noise generation (GH-144)
+audio-noise-wasm = ["audio-noise", "wasm-bindgen", "js-sys"]  # Enable WASM bindings for noise generator
 safetensors-compare = ["safetensors", "hf-hub-integration", "half"]  # Enable SafeTensors comparison (GH-121)
 inference-monitoring = ["entrenar"]  # Enable inference monitoring and explainability
 gpu = ["trueno/gpu"]  # Enable GPU acceleration via trueno wgpu backend
@@ -202,6 +218,11 @@ harness = false
 [[bench]]
 name = "citl"
 harness = false
+
+[[bench]]
+name = "ollama_parity"
+harness = false
+required-features = ["format-quantize"]
 
 [[example]]
 name = "shell_encryption_demo"

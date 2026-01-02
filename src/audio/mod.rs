@@ -40,6 +40,10 @@ pub mod resample;
 // Note: capture provides stubs by default, real backends require platform features
 pub mod capture;
 
+// Noise generation module (ML-based spectral synthesis)
+#[cfg(feature = "audio-noise")]
+pub mod noise;
+
 #[cfg(feature = "audio-playback")]
 pub mod playback;
 

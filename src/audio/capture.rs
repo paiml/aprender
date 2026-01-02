@@ -163,7 +163,7 @@ impl AlsaBackend {
                     continue;
                 }
 
-                let desc = hint.desc.unwrap_or_default();
+                let desc = hint.desc.unwrap_or_else(String::new);
                 let is_default = name == "default" || name == "pulse";
 
                 devices.push(AudioDevice {
@@ -686,6 +686,7 @@ impl AudioCapture {
 
     /// Get capture configuration
     #[must_use]
+    #[allow(clippy::needless_return)] // cfg blocks require explicit return
     pub fn config(&self) -> &CaptureConfig {
         #[cfg(all(target_os = "linux", feature = "audio-alsa"))]
         {
@@ -698,6 +699,7 @@ impl AudioCapture {
 
     /// Check if capture is running
     #[must_use]
+    #[allow(clippy::needless_return)] // cfg blocks require explicit return
     pub fn is_running(&self) -> bool {
         #[cfg(all(target_os = "linux", feature = "audio-alsa"))]
         {

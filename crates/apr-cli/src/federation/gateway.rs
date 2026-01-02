@@ -79,10 +79,12 @@ impl StatsTracker {
         self.failed_requests.fetch_add(1, Ordering::SeqCst);
     }
 
+    #[allow(dead_code)]
     fn increment_streams(&self) {
         self.active_streams.fetch_add(1, Ordering::SeqCst);
     }
 
+    #[allow(dead_code)]
     fn decrement_streams(&self) {
         self.active_streams.fetch_sub(1, Ordering::SeqCst);
     }
@@ -147,6 +149,7 @@ impl FederationGateway {
     }
 
     /// Add middleware to the gateway
+    #[must_use]
     pub fn with_middleware(mut self, middleware: impl GatewayMiddleware + 'static) -> Self {
         self.middlewares.push(Box::new(middleware));
         self
@@ -229,6 +232,7 @@ impl FederationGateway {
     }
 
     /// Execute inference on a specific node
+    #[allow(clippy::unused_async)] // Will be async when HTTP calls implemented
     async fn execute_on_node(
         &self,
         target: &RouteTarget,
@@ -385,31 +389,37 @@ impl GatewayBuilder {
         }
     }
 
+    #[must_use]
     pub fn config(mut self, config: GatewayConfig) -> Self {
         self.config = config;
         self
     }
 
+    #[must_use]
     pub fn catalog(mut self, catalog: Arc<ModelCatalog>) -> Self {
         self.catalog = Some(catalog);
         self
     }
 
+    #[must_use]
     pub fn health(mut self, health: Arc<HealthChecker>) -> Self {
         self.health = Some(health);
         self
     }
 
+    #[must_use]
     pub fn circuit_breaker(mut self, cb: Arc<CircuitBreaker>) -> Self {
         self.circuit_breaker = Some(cb);
         self
     }
 
+    #[must_use]
     pub fn router(mut self, router: Arc<Router>) -> Self {
         self.router = Some(router);
         self
     }
 
+    #[must_use]
     pub fn middleware(mut self, middleware: impl GatewayMiddleware + 'static) -> Self {
         self.middlewares.push(Box::new(middleware));
         self
@@ -499,6 +509,7 @@ impl GatewayMiddleware for LoggingMiddleware {
 
 /// Rate limiting middleware
 pub struct RateLimitMiddleware {
+    #[allow(dead_code)]
     requests_per_second: u32,
     // In production, would use a token bucket or sliding window
 }

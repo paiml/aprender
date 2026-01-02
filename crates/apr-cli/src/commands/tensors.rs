@@ -54,17 +54,22 @@ pub(crate) fn run(
     let file = File::open(path)?;
     let mut reader = BufReader::new(file);
 
-    // Validate header
-    validate_header(&mut reader)?;
+    // Validate header and detect format version
+    let magic = validate_header(&mut reader)?;
+    let is_v2 = &magic == b"APR2";
 
-    // Read metadata size
+    // Read metadata size and offset based on format version
+    // APR v1 layout: offset 8 = metadata_size, header = 32 bytes
+    // APR v2 layout: offset 20 = metadata_size, header = 64 bytes
+    let (metadata_size_offset, header_size) = if is_v2 { (20, 64) } else { (8, HEADER_SIZE) };
+
     let mut size_buf = [0u8; 4];
-    reader.seek(SeekFrom::Start(8))?;
+    reader.seek(SeekFrom::Start(metadata_size_offset))?;
     reader.read_exact(&mut size_buf)?;
     let metadata_size = u32::from_le_bytes(size_buf) as usize;
 
     // Read metadata
-    reader.seek(SeekFrom::Start(HEADER_SIZE as u64))?;
+    reader.seek(SeekFrom::Start(header_size as u64))?;
     let mut metadata_bytes = vec![0u8; metadata_size];
     reader.read_exact(&mut metadata_bytes)?;
 
@@ -90,7 +95,7 @@ fn validate_path(path: &Path) -> Result<(), CliError> {
     Ok(())
 }
 
-fn validate_header(reader: &mut BufReader<File>) -> Result<(), CliError> {
+fn validate_header(reader: &mut BufReader<File>) -> Result<[u8; 4], CliError> {
     let mut magic = [0u8; 4];
     reader.read_exact(&mut magic).map_err(|_| {
         CliError::InvalidFormat("File too small to contain valid header".to_string())
@@ -102,7 +107,7 @@ fn validate_header(reader: &mut BufReader<File>) -> Result<(), CliError> {
         )));
     }
 
-    Ok(())
+    Ok(magic)
 }
 
 fn extract_tensor_info(
@@ -111,8 +116,10 @@ fn extract_tensor_info(
     filter: Option<&str>,
     limit: usize,
 ) -> Vec<TensorInfo> {
-    let metadata: HashMap<String, serde_json::Value> =
-        rmp_serde::from_slice(metadata_bytes).unwrap_or_else(|_| HashMap::new());
+    // APR v2 uses JSON, APR v1 uses msgpack - try both
+    let metadata: HashMap<String, serde_json::Value> = serde_json::from_slice(metadata_bytes)
+        .or_else(|_| rmp_serde::from_slice(metadata_bytes))
+        .unwrap_or_else(|_| HashMap::new());
 
     // Try tensor_shapes first, then hyperparameters, then placeholder
     let mut tensors = extract_from_tensor_shapes(&metadata, filter, limit);

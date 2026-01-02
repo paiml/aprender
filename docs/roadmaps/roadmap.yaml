@@ -1347,3 +1347,41 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: APRENDER-METAL-001
+  github_issue: null
+  item_type: task
+  title: 'Metal Backend Integration: AMD GPU Tensor Ops via Intel Mac'
+  status: pending
+  priority: medium
+  assigned_to: null
+  created: 2026-01-02T12:00:00+00:00
+  updated: 2026-01-02T12:00:00+00:00
+  spec: null
+  acceptance_criteria:
+  - 'trueno Metal backend available for tensor operations'
+  - 'Neural network forward pass works on AMD GPU (Metal)'
+  - 'Training backward pass validated on Metal'
+  - 'Cross-platform model inference (CUDA/Metal) produces identical results'
+  - 'Performance within 30% of CUDA for common ML workloads'
+  - 'CI integration via self-hosted Intel Mac runner'
+  phases: []
+  subtasks:
+  - Integrate trueno Metal backend when TRUENO-METAL-001 completes
+  - Add Metal feature flag to Cargo.toml
+  - Implement Metal-specific tensor allocator
+  - Cross-validate layer outputs (CUDA vs Metal)
+  - Add examples/metal_inference.rs
+  - Document Metal setup in book/
+  estimated_effort: 1 week
+  labels:
+  - metal
+  - amd-gpu
+  - cross-platform
+  - intel-mac
+  - depends-on-trueno
+  notes: |
+    Depends on TRUENO-METAL-001 completion.
+    Uses lambda-lab-rust-development Intel Mac integration:
+    - Host: mac (Intel Mac Pro with AMD Radeon Pro W5700X, 16GB VRAM)
+    - Metal 3 support, 60 Compute Units
+    - Run health check: make mac-health (from lambda-lab-rust-development)
