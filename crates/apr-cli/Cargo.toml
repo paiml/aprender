@@ -67,7 +67,7 @@ cuda = ["inference", "realizar/cuda"]
 
 [dependencies]
 # Core aprender library
-aprender = { path = "../..", version = "0.20.2", default-features = true, features = ["format-compression"] }
+aprender = { path = "../..", version = "0.21.0", default-features = true, features = ["format-compression"] }
 
 # Inference engine (crates.io) - Ollama-parity performance
 realizar = { version = "0.3.3", optional = true, default-features = false, features = ["server", "aprender-serve", "gpu"] }
