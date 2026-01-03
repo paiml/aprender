@@ -1,0 +1,830 @@
+# Synthetic Noise Generator .apr Model Specification
+
+**Issue**: https://github.com/paiml/aprender/issues/144
+**Status**: Draft
+**Author**: Claude Code
+**Created**: 2026-01-01
+
+## 1. Overview
+
+This specification defines a WASM-first `.apr` model for ML-based synthetic noise generation with infinite customization. The implementation uses a spectral MLP architecture with iFFT synthesis for real-time audio generation.
+
+### 1.1 Goals
+
+- **G1**: Generate continuous white/brown/pink/blue/violet noise via ML inference
+- **G2**: WASM-first architecture for browser deployment (<5MB, <2s load)
+- **G3**: Real-time parameter adjustment without model reload (<50ms latency)
+- **G4**: Binaural beat support for sleep/focus applications
+- **G5**: Infinite customization via spectral slope, texture, and modulation
+- **G6**: Training infrastructure for model generation
+
+### 1.2 Non-Goals
+
+- Real-time audio capture (use existing `audio::capture`)
+- Music generation or melodic synthesis
+- Spatial audio / 3D positioning (use `jugar-audio`)
+- Lossy audio compression
+
+## 2. Architecture
+
+### 2.1 System Overview
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                  NoiseGenerator .apr                     │
+├─────────────────────────────────────────────────────────┤
+│  Input: NoiseConfig                                      │
+│    - spectral_slope: f32 (-12 to +12 dB/octave)         │
+│    - texture: f32 (0.0-1.0)                             │
+│    - modulation_depth: f32 (0.0-1.0)                    │
+│    - modulation_rate: f32 (0.1-10.0 Hz)                 │
+│    - binaural_offset: f32 (0-40 Hz)                     │
+│                          ↓                               │
+│  ┌─────────────────────────────────────────────────┐    │
+│  │  SpectralMLP (3-layer, 64 hidden)               │    │
+│  │  [config_dim=8] → [64] → [64] → [n_freqs=513]   │    │
+│  └─────────────────────────────────────────────────┘    │
+│                          ↓                               │
+│  Magnitude spectrum [n_freqs] + random phase [n_freqs]  │
+│                          ↓                               │
+│  iFFT (rustfft) → time-domain samples [buffer_size]     │
+│                          ↓                               │
+│  Output: f32 audio buffer, normalized to [-1.0, 1.0]    │
+└─────────────────────────────────────────────────────────┘
+```
+
+### 2.2 Component Diagram
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                        audio::noise module                        │
+├──────────────────────────────────────────────────────────────────┤
+│                                                                   │
+│  ┌─────────────┐    ┌─────────────┐    ┌─────────────────────┐   │
+│  │ NoiseConfig │───>│ SpectralMLP │───>│   NoiseGenerator    │   │
+│  │  (config)   │    │ (spectral)  │    │    (generator)      │   │
+│  └─────────────┘    └─────────────┘    └─────────────────────┘   │
+│        │                   │                      │               │
+│        v                   v                      v               │
+│  ┌─────────────┐    ┌─────────────┐    ┌─────────────────────┐   │
+│  │  NoiseType  │    │    Phase    │    │  BinauralGenerator  │   │
+│  │   (enum)    │    │ Generator   │    │    (binaural)       │   │
+│  └─────────────┘    │   (phase)   │    └─────────────────────┘   │
+│                     └─────────────┘              │               │
+│                                                  v               │
+│                                        ┌─────────────────────┐   │
+│                                        │  NoiseTrainer       │   │
+│                                        │    (train)          │   │
+│                                        └─────────────────────┘   │
+│                                                                   │
+│  ┌────────────────────────────────────────────────────────────┐  │
+│  │                    WASM Layer (wasm.rs)                     │  │
+│  │  #[cfg(feature = "wasm")] NoiseGeneratorWasm                │  │
+│  └────────────────────────────────────────────────────────────┘  │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+## 3. Data Structures
+
+### 3.1 NoiseType Enumeration
+
+```rust
+/// Predefined noise color profiles
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub enum NoiseType {
+    /// Flat frequency spectrum (0 dB/octave)
+    White,
+    /// -3 dB/octave roll-off (1/f noise)
+    Pink,
+    /// -6 dB/octave roll-off (1/f² noise, Brownian motion)
+    Brown,
+    /// +3 dB/octave (differentiated pink)
+    Blue,
+    /// +6 dB/octave (differentiated brown)
+    Violet,
+    /// User-defined spectral slope in dB/octave
+    Custom(f32),
+}
+
+impl NoiseType {
+    /// Returns the spectral slope in dB/octave
+    pub fn spectral_slope(&self) -> f32 {
+        match self {
+            NoiseType::White => 0.0,
+            NoiseType::Pink => -3.0,
+            NoiseType::Brown => -6.0,
+            NoiseType::Blue => 3.0,
+            NoiseType::Violet => 6.0,
+            NoiseType::Custom(slope) => *slope,
+        }
+    }
+}
+```
+
+### 3.2 NoiseConfig Structure
+
+```rust
+/// Configuration for noise generation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NoiseConfig {
+    /// Base noise type/color
+    pub noise_type: NoiseType,
+
+    /// Spectral slope override in dB/octave (-12.0 to +12.0)
+    /// If None, uses noise_type.spectral_slope()
+    pub spectral_slope: Option<f32>,
+
+    /// Texture/grain control (0.0 = smooth, 1.0 = grainy)
+    pub texture: f32,
+
+    /// LFO modulation depth (0.0 = none, 1.0 = full)
+    pub modulation_depth: f32,
+
+    /// LFO modulation rate in Hz (0.1 to 10.0)
+    pub modulation_rate: f32,
+
+    /// Sample rate in Hz (typically 44100 or 48000)
+    pub sample_rate: u32,
+
+    /// FFT/buffer size (256, 512, 1024, 2048)
+    pub buffer_size: usize,
+}
+
+impl NoiseConfig {
+    /// Validate configuration parameters
+    pub fn validate(&self) -> Result<(), NoiseError> {
+        if let Some(slope) = self.spectral_slope {
+            if !(-12.0..=12.0).contains(&slope) {
+                return Err(NoiseError::InvalidConfig(
+                    "spectral_slope must be in [-12, 12]".into()
+                ));
+            }
+        }
+        if !(0.0..=1.0).contains(&self.texture) {
+            return Err(NoiseError::InvalidConfig(
+                "texture must be in [0, 1]".into()
+            ));
+        }
+        if !(0.0..=1.0).contains(&self.modulation_depth) {
+            return Err(NoiseError::InvalidConfig(
+                "modulation_depth must be in [0, 1]".into()
+            ));
+        }
+        if !(0.1..=10.0).contains(&self.modulation_rate) {
+            return Err(NoiseError::InvalidConfig(
+                "modulation_rate must be in [0.1, 10]".into()
+            ));
+        }
+        if ![256, 512, 1024, 2048].contains(&self.buffer_size) {
+            return Err(NoiseError::InvalidConfig(
+                "buffer_size must be 256, 512, 1024, or 2048".into()
+            ));
+        }
+        Ok(())
+    }
+
+    /// Preset for brown noise (sleep)
+    pub fn brown() -> Self { /* ... */ }
+
+    /// Preset for white noise
+    pub fn white() -> Self { /* ... */ }
+
+    /// Preset for pink noise
+    pub fn pink() -> Self { /* ... */ }
+}
+```
+
+### 3.3 BinauralPreset Enumeration
+
+```rust
+/// Brainwave entrainment frequency presets
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum BinauralPreset {
+    /// Delta waves: 0.5-4 Hz (deep sleep, healing)
+    Delta,
+    /// Theta waves: 4-8 Hz (meditation, creativity)
+    Theta,
+    /// Alpha waves: 8-13 Hz (relaxation, calm focus)
+    Alpha,
+    /// Beta waves: 13-30 Hz (active thinking, focus)
+    Beta,
+    /// Gamma waves: 30-100 Hz (high cognition, peak awareness)
+    Gamma,
+}
+
+impl BinauralPreset {
+    /// Returns the center frequency for this brainwave band
+    pub fn frequency(&self) -> f32 {
+        match self {
+            BinauralPreset::Delta => 2.0,
+            BinauralPreset::Theta => 6.0,
+            BinauralPreset::Alpha => 10.0,
+            BinauralPreset::Beta => 20.0,
+            BinauralPreset::Gamma => 40.0,
+        }
+    }
+}
+```
+
+### 3.4 SpectralMLP Structure
+
+```rust
+/// Small MLP for spectral magnitude prediction
+/// Architecture: [config_dim] → [64] → [64] → [n_freqs]
+pub struct SpectralMLP {
+    /// Layer 1: config_dim × 64
+    weights_1: Vec<f32>,
+    bias_1: Vec<f32>,
+
+    /// Layer 2: 64 × 64
+    weights_2: Vec<f32>,
+    bias_2: Vec<f32>,
+
+    /// Layer 3: 64 × n_freqs
+    weights_3: Vec<f32>,
+    bias_3: Vec<f32>,
+
+    /// Input dimension (config encoding size)
+    config_dim: usize,
+
+    /// Hidden layer dimension
+    hidden_dim: usize,
+
+    /// Output dimension (number of frequency bins)
+    n_freqs: usize,
+}
+
+impl SpectralMLP {
+    /// Forward pass: config → magnitude spectrum
+    /// Uses ReLU activation for hidden layers, softplus for output (positive magnitudes)
+    pub fn forward(&self, config: &[f32]) -> Vec<f32>;
+
+    /// Initialize with random weights (for training)
+    pub fn random_init(config_dim: usize, hidden_dim: usize, n_freqs: usize, seed: u64) -> Self;
+
+    /// Save to .apr format
+    pub fn save_apr(&self, path: &Path) -> Result<(), NoiseError>;
+
+    /// Load from .apr format
+    pub fn load_apr(path: &Path) -> Result<Self, NoiseError>;
+}
+```
+
+## 4. Core Algorithms
+
+### 4.1 Noise Generation Pipeline
+
+```
+1. Encode NoiseConfig → [f32; config_dim]
+   - spectral_slope / 12.0 (normalized to [-1, 1])
+   - texture
+   - modulation_depth
+   - modulation_rate / 10.0
+   - sin(time * modulation_rate * 2π) (LFO phase)
+   - cos(time * modulation_rate * 2π)
+   - buffer_size / 2048.0
+   - sample_rate / 48000.0
+
+2. SpectralMLP.forward(config) → magnitudes[n_freqs]
+   - Layer 1: ReLU(W1 @ config + b1)
+   - Layer 2: ReLU(W2 @ h1 + b2)
+   - Layer 3: Softplus(W3 @ h2 + b3)  // Ensure positive magnitudes
+
+3. PhaseGenerator.generate(n_freqs) → phases[n_freqs]
+   - Random phases in [-π, π]
+   - Optional coherence blending with previous frame
+
+4. Combine: complex[i] = magnitude[i] * e^(j * phase[i])
+   - Convert polar to rectangular: (mag * cos(phase), mag * sin(phase))
+
+5. iFFT(complex) → time_samples[buffer_size]
+   - rustfft inverse FFT
+   - Take real part
+
+6. Normalize to [-1.0, 1.0]
+   - Clamp and scale
+```
+
+### 4.2 Binaural Beat Generation
+
+```
+For stereo output with binaural beats:
+
+1. Generate base noise mono signal: noise[t]
+
+2. Generate carrier tone for left/right:
+   - Left:  carrier_l[t] = sin(2π * f_base * t)
+   - Right: carrier_r[t] = sin(2π * (f_base + offset) * t)
+
+   Where offset is the binaural frequency (e.g., 4 Hz for delta)
+
+3. Modulate noise with carriers:
+   - output_l[t] = noise[t] * (1 + 0.1 * carrier_l[t])
+   - output_r[t] = noise[t] * (1 + 0.1 * carrier_r[t])
+
+4. The perceived "beat" frequency = |f_right - f_left| = offset
+```
+
+### 4.3 Spectral Slope Formula
+
+Target magnitude for frequency bin `f`:
+```
+magnitude(f) = base_amplitude / f^(slope/6)
+
+Where:
+- slope is in dB/octave
+- Division by 6 converts dB/octave to power law exponent
+- White (slope=0): flat spectrum
+- Brown (slope=-6): 1/f² spectrum
+- Pink (slope=-3): 1/f spectrum
+```
+
+## 5. API Design
+
+### 5.1 NoiseGenerator (Core API)
+
+```rust
+pub struct NoiseGenerator {
+    config: NoiseConfig,
+    mlp: SpectralMLP,
+    phase_gen: PhaseGenerator,
+    fft_planner: FftPlanner<f32>,
+    time: f64,
+}
+
+impl NoiseGenerator {
+    /// Create new generator with configuration
+    pub fn new(config: NoiseConfig) -> Result<Self, NoiseError>;
+
+    /// Load from .apr model file
+    pub fn from_apr(path: &Path) -> Result<Self, NoiseError>;
+
+    /// Generate audio samples into output buffer
+    pub fn generate(&mut self, output: &mut [f32]) -> Result<(), NoiseError>;
+
+    /// Update configuration in real-time
+    pub fn update_config(&mut self, config: NoiseConfig) -> Result<(), NoiseError>;
+
+    /// Get current configuration
+    pub fn config(&self) -> &NoiseConfig;
+}
+
+impl Iterator for NoiseGenerator {
+    type Item = Vec<f32>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let mut buffer = vec![0.0; self.config.buffer_size];
+        self.generate(&mut buffer).ok()?;
+        Some(buffer)
+    }
+}
+```
+
+### 5.2 BinauralGenerator (Stereo API)
+
+```rust
+pub struct BinauralGenerator {
+    generator: NoiseGenerator,
+    frequency_offset: f32,
+    carrier_freq: f32,
+    phase_l: f32,
+    phase_r: f32,
+}
+
+impl BinauralGenerator {
+    /// Create binaural generator with frequency offset
+    pub fn new(config: NoiseConfig, frequency_offset: f32) -> Result<Self, NoiseError>;
+
+    /// Create from preset
+    pub fn from_preset(config: NoiseConfig, preset: BinauralPreset) -> Result<Self, NoiseError>;
+
+    /// Generate stereo samples (separate L/R buffers)
+    pub fn generate_stereo(
+        &mut self,
+        output_l: &mut [f32],
+        output_r: &mut [f32]
+    ) -> Result<(), NoiseError>;
+
+    /// Generate interleaved stereo samples [L, R, L, R, ...]
+    pub fn generate_interleaved(&mut self, output: &mut [f32]) -> Result<(), NoiseError>;
+
+    /// Update binaural frequency offset in real-time
+    pub fn set_frequency_offset(&mut self, hz: f32);
+}
+```
+
+### 5.3 NoiseTrainer (Training API)
+
+```rust
+pub struct NoiseTrainer {
+    model: SpectralMLP,
+    learning_rate: f32,
+    batch_size: usize,
+}
+
+pub struct TrainingResult {
+    pub final_loss: f32,
+    pub epochs: usize,
+    pub loss_history: Vec<f32>,
+}
+
+impl NoiseTrainer {
+    /// Create trainer with random model initialization
+    pub fn new(model: SpectralMLP) -> Self;
+
+    /// Generate target spectrum using analytical DSP formula
+    pub fn generate_target_spectrum(noise_type: NoiseType, n_freqs: usize) -> Vec<f32>;
+
+    /// Single training step, returns loss
+    pub fn train_step(
+        &mut self,
+        configs: &[NoiseConfig],
+        targets: &[Vec<f32>]
+    ) -> f32;
+
+    /// Full training loop
+    pub fn train(&mut self, epochs: usize) -> TrainingResult;
+
+    /// Get trained model
+    pub fn into_model(self) -> SpectralMLP;
+}
+
+/// Spectral loss function with perceptual weighting
+pub fn spectral_loss(predicted: &[f32], target: &[f32]) -> f32 {
+    predicted.iter()
+        .zip(target.iter())
+        .enumerate()
+        .map(|(i, (p, t))| {
+            let weight = 1.0 / (1.0 + i as f32 * 0.01); // Low-freq emphasis
+            let p_log = (p + 1e-10).ln();
+            let t_log = (t + 1e-10).ln();
+            weight * (p_log - t_log).powi(2)
+        })
+        .sum::<f32>() / predicted.len() as f32
+}
+```
+
+### 5.4 WASM API
+
+```rust
+#[cfg(feature = "wasm")]
+#[wasm_bindgen]
+pub struct NoiseGeneratorWasm {
+    inner: BinauralGenerator,
+}
+
+#[cfg(feature = "wasm")]
+#[wasm_bindgen]
+impl NoiseGeneratorWasm {
+    /// Create generator with noise type name
+    #[wasm_bindgen(constructor)]
+    pub fn new(noise_type: &str) -> Result<NoiseGeneratorWasm, JsValue>;
+
+    /// Generate mono samples
+    pub fn generate(&mut self, length: usize) -> Vec<f32>;
+
+    /// Generate interleaved stereo samples
+    pub fn generate_stereo(&mut self, length: usize) -> Vec<f32>;
+
+    /// Set spectral slope in dB/octave
+    pub fn set_spectral_slope(&mut self, slope: f32);
+
+    /// Set texture (0.0-1.0)
+    pub fn set_texture(&mut self, texture: f32);
+
+    /// Set modulation parameters
+    pub fn set_modulation(&mut self, depth: f32, rate: f32);
+
+    /// Set binaural beat offset in Hz
+    pub fn set_binaural_offset(&mut self, hz: f32);
+
+    /// Serialize current config to JSON
+    pub fn to_json(&self) -> String;
+}
+
+#[cfg(feature = "wasm")]
+#[wasm_bindgen]
+pub fn noise_version() -> String {
+    env!("CARGO_PKG_VERSION").to_string()
+}
+```
+
+## 6. File Format
+
+### 6.1 .apr Model Structure
+
+```
+noise_generator_v1.apr:
+┌─────────────────────────────────────────┐
+│ Magic: "APR1" (4 bytes)                 │
+├─────────────────────────────────────────┤
+│ Metadata length: u32                    │
+├─────────────────────────────────────────┤
+│ JSON Metadata:                          │
+│ {                                       │
+│   "model_type": "noise_generator",      │
+│   "version": "1.0.0",                   │
+│   "config_dim": 8,                      │
+│   "hidden_dim": 64,                     │
+│   "n_freqs": 513,                       │
+│   "sample_rate": 44100,                 │
+│   "training_epochs": 1000,              │
+│   "final_loss": 0.00123                 │
+│ }                                       │
+├─────────────────────────────────────────┤
+│ Tensor count: u32 (6 tensors)           │
+├─────────────────────────────────────────┤
+│ Tensor descriptors:                     │
+│   - weights_1: [8, 64], f32, offset, sz │
+│   - bias_1: [64], f32, offset, sz       │
+│   - weights_2: [64, 64], f32, ...       │
+│   - bias_2: [64], f32, ...              │
+│   - weights_3: [64, 513], f32, ...      │
+│   - bias_3: [513], f32, ...             │
+├─────────────────────────────────────────┤
+│ Tensor data (little-endian f32)         │
+├─────────────────────────────────────────┤
+│ CRC32 checksum (4 bytes)                │
+└─────────────────────────────────────────┘
+
+Estimated size: ~140KB uncompressed
+  - weights_1: 8 × 64 × 4 = 2,048 bytes
+  - bias_1: 64 × 4 = 256 bytes
+  - weights_2: 64 × 64 × 4 = 16,384 bytes
+  - bias_2: 64 × 4 = 256 bytes
+  - weights_3: 64 × 513 × 4 = 131,328 bytes
+  - bias_3: 513 × 4 = 2,052 bytes
+  - Metadata + overhead: ~1KB
+```
+
+## 7. WASM Demo
+
+### 7.1 Demo Structure
+
+```
+examples/wasm-noise/
+├── index.html         # Pure HTML/CSS/JS demo (Batuta-style)
+├── README.md          # Usage instructions
+└── (generated by build)
+    ├── aprender_noise.js        # wasm-bindgen glue
+    └── aprender_noise_bg.wasm   # WASM binary
+```
+
+### 7.2 UI Components
+
+| Component | Description |
+|-----------|-------------|
+| Noise Type Selector | Dropdown: White, Pink, Brown, Blue, Violet |
+| Spectral Slope Slider | Range: -12 to +12 dB/octave |
+| Texture Slider | Range: 0-100% |
+| Modulation Slider | Range: 0-100% depth |
+| Binaural Slider | Range: 0-40 Hz offset |
+| Binaural Presets | Buttons: Delta (4Hz), Alpha (10Hz), Beta (20Hz) |
+| Play/Pause Button | Controls Web Audio playback |
+| Status Display | Shows version and state |
+
+### 7.3 Build Script
+
+```bash
+#!/bin/bash
+# scripts/build-wasm-noise.sh
+set -e
+
+TARGET="wasm32-unknown-unknown"
+FEATURES="audio-noise-wasm"
+OUT_DIR="examples/wasm-noise"
+
+cargo build --target $TARGET --features $FEATURES --release --lib
+wasm-bindgen target/$TARGET/release/aprender.wasm \
+    --out-dir $OUT_DIR \
+    --target web \
+    --out-name aprender_noise
+wasm-opt -Oz $OUT_DIR/aprender_noise_bg.wasm -o $OUT_DIR/aprender_noise_bg.wasm
+
+echo "WASM demo ready: python3 -m http.server 8080 --directory $OUT_DIR"
+```
+
+## 8. Feature Flags
+
+```toml
+[features]
+# Core noise generation (requires audio for rustfft)
+audio-noise = ["audio"]
+
+# WASM bindings for browser deployment
+audio-noise-wasm = ["audio-noise", "wasm-bindgen", "js-sys"]
+
+# Training infrastructure (larger dependency footprint)
+audio-noise-train = ["audio-noise"]
+```
+
+## 9. Test Specification
+
+### 9.1 Test Matrix
+
+| ID | Category | Test Description | Type |
+|----|----------|-----------------|------|
+| NG1 | Config | Validation rejects invalid ranges | Unit |
+| NG2 | Config | Preset configs have correct slopes | Unit |
+| NG3 | Config | NoiseType serde round-trip | Unit |
+| NG4 | Model | Forward pass deterministic | Unit |
+| NG5 | Model | Output dimensions match n_freqs | Unit |
+| NG6 | Model | All outputs non-negative | Unit |
+| NG7 | Model | APR round-trip exact | Unit |
+| NG8 | Phase | Values bounded [-π, π] | Property |
+| NG9 | Phase | Deterministic with seed | Property |
+| NG10 | Phase | Uniform distribution | Property |
+| NG11 | Generator | Output length matches request | Falsification |
+| NG12 | Generator | Output bounded [-1, 1] | Falsification |
+| NG13 | Generator | No NaN/Inf | Falsification |
+| NG14 | Generator | Config update effective | Falsification |
+| NG15 | Generator | No clicks in continuous gen | Falsification |
+| NG16 | Spectral | White noise flat spectrum | Property |
+| NG17 | Spectral | Brown noise -6dB/oct | Property |
+| NG18 | Spectral | Pink noise -3dB/oct | Property |
+| NG19 | Modulation | depth=0 no variation | Unit |
+| NG20 | Modulation | Rate matches config | Unit |
+| NG21 | Binaural | Correct freq difference | Unit |
+| NG22 | Binaural | Phase-coherent with noise | Property |
+| NG23 | Binaural | offset=0 → mono-equivalent | Unit |
+| NG24 | Binaural | Presets match brainwave ranges | Unit |
+| NG25 | Training | Loss decreases | Integration |
+| NG26 | Training | Correct slopes after training | Integration |
+| NG27 | Training | Generalizes to custom slopes | Integration |
+| NG28 | Training | Deterministic with seed | Integration |
+
+### 9.2 Falsification Tests (Popperian)
+
+```rust
+#[cfg(test)]
+mod tests_falsification {
+    /// NG-F1: Cannot produce NaN or Infinity
+    #[test]
+    fn test_ng_f1_no_nan_inf() {
+        let mut gen = NoiseGenerator::new(NoiseConfig::brown()).unwrap();
+        for _ in 0..1000 {
+            let mut buf = vec![0.0; 1024];
+            gen.generate(&mut buf).unwrap();
+            for &sample in &buf {
+                assert!(!sample.is_nan(), "NaN detected");
+                assert!(!sample.is_infinite(), "Infinity detected");
+            }
+        }
+    }
+
+    /// NG-F2: Cannot exceed [-1, 1] amplitude
+    #[test]
+    fn test_ng_f2_bounded_amplitude() {
+        let mut gen = NoiseGenerator::new(NoiseConfig::white()).unwrap();
+        for _ in 0..1000 {
+            let mut buf = vec![0.0; 1024];
+            gen.generate(&mut buf).unwrap();
+            for &sample in &buf {
+                assert!((-1.0..=1.0).contains(&sample),
+                    "Sample {} outside [-1, 1]", sample);
+            }
+        }
+    }
+
+    /// NG-F3: Cannot have discontinuities > threshold
+    #[test]
+    fn test_ng_f3_no_clicks() {
+        let mut gen = NoiseGenerator::new(NoiseConfig::brown()).unwrap();
+        let mut prev_sample = 0.0;
+        for _ in 0..100 {
+            let mut buf = vec![0.0; 1024];
+            gen.generate(&mut buf).unwrap();
+            let delta = (buf[0] - prev_sample).abs();
+            assert!(delta < 0.5, "Click detected: delta={}", delta);
+            prev_sample = *buf.last().unwrap();
+        }
+    }
+
+    /// NG-F5: Cannot produce silent output
+    #[test]
+    fn test_ng_f5_not_silent() {
+        let mut gen = NoiseGenerator::new(NoiseConfig::white()).unwrap();
+        let mut buf = vec![0.0; 1024];
+        gen.generate(&mut buf).unwrap();
+        let energy: f32 = buf.iter().map(|x| x * x).sum();
+        assert!(energy > 0.01, "Output is silent");
+    }
+
+    /// NG-F6: L/R channels differ when binaural enabled
+    #[test]
+    fn test_ng_f6_binaural_stereo_differs() {
+        let mut gen = BinauralGenerator::new(NoiseConfig::brown(), 4.0).unwrap();
+        let mut left = vec![0.0; 1024];
+        let mut right = vec![0.0; 1024];
+        gen.generate_stereo(&mut left, &mut right).unwrap();
+        assert_ne!(left, right, "Binaural channels should differ");
+    }
+}
+```
+
+### 9.3 Property Tests
+
+```rust
+use proptest::prelude::*;
+
+proptest! {
+    /// Any valid config produces bounded output
+    #[test]
+    fn prop_valid_config_bounded_output(
+        slope in -12.0f32..12.0,
+        texture in 0.0f32..1.0,
+        mod_depth in 0.0f32..1.0,
+    ) {
+        let config = NoiseConfig {
+            noise_type: NoiseType::Custom(slope),
+            spectral_slope: None,
+            texture,
+            modulation_depth: mod_depth,
+            modulation_rate: 1.0,
+            sample_rate: 44100,
+            buffer_size: 1024,
+        };
+        let mut gen = NoiseGenerator::new(config).unwrap();
+        let mut buf = vec![0.0; 1024];
+        gen.generate(&mut buf).unwrap();
+
+        for &sample in &buf {
+            prop_assert!((-1.0..=1.0).contains(&sample));
+            prop_assert!(!sample.is_nan());
+        }
+    }
+
+    /// Phase values always in valid range
+    #[test]
+    fn prop_phase_bounded(n_freqs in 1usize..2048) {
+        let mut phase_gen = PhaseGenerator::new(42);
+        let phases = phase_gen.generate(n_freqs);
+
+        for &phase in &phases {
+            prop_assert!((-std::f32::consts::PI..=std::f32::consts::PI).contains(&phase));
+        }
+    }
+}
+```
+
+## 10. Quality Gates
+
+### 10.1 Pre-Merge Requirements
+
+| Gate | Command | Target |
+|------|---------|--------|
+| Unit tests | `cargo test --lib audio::noise` | 100% pass |
+| Property tests | `cargo test --test property_tests noise` | 100% pass |
+| Coverage | `make coverage` | ≥95% on new code |
+| Mutation | `cargo mutants --file src/audio/noise/` | ≥80% killed |
+| WASM build | `cargo build --target wasm32-unknown-unknown --features audio-noise-wasm` | Success |
+| Clippy | `cargo clippy --features audio-noise -- -D warnings` | 0 warnings |
+
+### 10.2 Mutation Testing Targets
+
+Critical mutations to catch:
+- Spectral slope calculation: `slope / 6.0` → `slope / 3.0`
+- Phase bounds: `[-PI, PI]` → `[0, PI]`
+- Config validation: `<= 12.0` → `< 12.0`
+- iFFT normalization factor
+- Binaural frequency offset sign
+
+## 11. Implementation Order
+
+Following TDD (tests first):
+
+1. **config.rs**: Tests NG1-NG3, then NoiseConfig/NoiseType
+2. **phase.rs**: Tests NG8-NG10, then PhaseGenerator
+3. **spectral.rs**: Tests NG4-NG7, then SpectralMLP
+4. **generator.rs**: Tests NG11-NG15, then NoiseGenerator
+5. **binaural.rs**: Tests NG21-NG24, then BinauralGenerator
+6. **train.rs**: Tests NG25-NG28, then NoiseTrainer
+7. **wasm.rs**: Feature-gated WASM bindings
+8. **index.html**: Pure HTML/CSS/JS demo
+9. **PMAT**: Coverage, mutation testing, quality gates
+
+## 12. Dependencies
+
+```toml
+[dependencies]
+# Already present
+rustfft = "6.2"
+thiserror = "2.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# New
+rand = { version = "0.8", features = ["small_rng"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = { version = "0.2", optional = true }
+js-sys = { version = "0.3", optional = true }
+```
+
+## 13. References
+
+- [Noise Colors](https://en.wikipedia.org/wiki/Colors_of_noise) - Wikipedia
+- [Binaural Beats](https://en.wikipedia.org/wiki/Binaural_beats) - Wikipedia
+- [rustfft Documentation](https://docs.rs/rustfft)
+- [APR Format Specification](./APR-SPEC.md)
+- [Batuta WASM Pattern](https://github.com/paiml/batuta/blob/main/src/wasm.rs)

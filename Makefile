@@ -203,7 +203,6 @@ coverage: ## Generate HTML coverage report (target: <2 min, 95%+)
 	@which cargo-llvm-cov > /dev/null 2>&1 || cargo install cargo-llvm-cov --locked
 	@echo "⚙️  Disabling sccache/mold (breaks coverage instrumentation)..."
 	@test -f ~/.cargo/config.toml && mv ~/.cargo/config.toml ~/.cargo/config.toml.bak || true
-	@cargo llvm-cov clean --workspace 2>/dev/null || true
 	@mkdir -p target/coverage
 	@echo "🧪 Running lib + integration tests (skip slow/benchmark tests)..."
 	@echo "   Using -j 2 to prevent OOM (LLVM instrumentation ~2x overhead)"
@@ -227,7 +226,6 @@ coverage-full: ## Full coverage report (all features, >10 min)
 	@echo "📊 Running full coverage analysis (all features)..."
 	@which cargo-llvm-cov > /dev/null 2>&1 || { cargo install cargo-llvm-cov --locked || exit 1; }
 	@which cargo-nextest > /dev/null 2>&1 || { cargo install cargo-nextest --locked || exit 1; }
-	@cargo llvm-cov clean --workspace
 	@mkdir -p target/coverage
 	@cargo llvm-cov --no-report nextest --no-tests=warn --workspace --all-features -j 2
 	@cargo llvm-cov report --html --output-dir target/coverage/html $(COVERAGE_EXCLUDE)

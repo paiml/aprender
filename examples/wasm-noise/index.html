@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Noise Generator - Aprender WASM</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f0f23 100%);
+            min-height: 100vh;
+            color: #e8e8e8;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        h1 {
+            font-size: 2rem;
+            margin-bottom: 8px;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .subtitle {
+            color: #888;
+            font-size: 0.9rem;
+        }
+
+        .card {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 16px;
+            backdrop-filter: blur(10px);
+        }
+
+        .card h2 {
+            font-size: 1rem;
+            color: #aaa;
+            margin-bottom: 16px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .noise-types {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 8px;
+        }
+
+        .noise-btn {
+            padding: 12px 8px;
+            border: 2px solid rgba(102, 126, 234, 0.3);
+            border-radius: 8px;
+            background: transparent;
+            color: #e8e8e8;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-size: 0.85rem;
+        }
+
+        .noise-btn:hover {
+            border-color: #667eea;
+            background: rgba(102, 126, 234, 0.1);
+        }
+
+        .noise-btn.active {
+            border-color: #667eea;
+            background: rgba(102, 126, 234, 0.2);
+            color: #667eea;
+        }
+
+        .slider-group {
+            margin-bottom: 16px;
+        }
+
+        .slider-group:last-child {
+            margin-bottom: 0;
+        }
+
+        .slider-label {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-size: 0.9rem;
+        }
+
+        .slider-label span:last-child {
+            color: #667eea;
+            font-family: monospace;
+        }
+
+        input[type="range"] {
+            width: 100%;
+            height: 6px;
+            border-radius: 3px;
+            background: rgba(255, 255, 255, 0.1);
+            outline: none;
+            -webkit-appearance: none;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #667eea;
+            cursor: pointer;
+            transition: transform 0.1s;
+        }
+
+        input[type="range"]::-webkit-slider-thumb:hover {
+            transform: scale(1.2);
+        }
+
+        input[type="range"]::-moz-range-thumb {
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #667eea;
+            cursor: pointer;
+            border: none;
+        }
+
+        .binaural-presets {
+            display: flex;
+            gap: 8px;
+            margin-top: 12px;
+            flex-wrap: wrap;
+        }
+
+        .preset-btn {
+            padding: 6px 12px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 20px;
+            background: transparent;
+            color: #ccc;
+            cursor: pointer;
+            font-size: 0.8rem;
+            transition: all 0.2s;
+        }
+
+        .preset-btn:hover {
+            border-color: #667eea;
+            color: #667eea;
+        }
+
+        .controls {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        #play-btn {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            border: none;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            font-size: 1.5rem;
+            cursor: pointer;
+            transition: transform 0.1s, box-shadow 0.2s;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        #play-btn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.5);
+        }
+
+        #play-btn:active {
+            transform: scale(0.95);
+        }
+
+        .status {
+            flex: 1;
+        }
+
+        .status-text {
+            font-size: 0.9rem;
+            color: #888;
+        }
+
+        .status-detail {
+            font-size: 0.75rem;
+            color: #666;
+            margin-top: 4px;
+            font-family: monospace;
+        }
+
+        .visualizer {
+            height: 80px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 8px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        #waveform {
+            width: 100%;
+            height: 100%;
+        }
+
+        footer {
+            text-align: center;
+            margin-top: 30px;
+            color: #666;
+            font-size: 0.8rem;
+        }
+
+        footer a {
+            color: #667eea;
+            text-decoration: none;
+        }
+
+        footer a:hover {
+            text-decoration: underline;
+        }
+
+        .loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 20px;
+            color: #888;
+        }
+
+        .spinner {
+            width: 20px;
+            height: 20px;
+            border: 2px solid rgba(102, 126, 234, 0.3);
+            border-top-color: #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .error {
+            background: rgba(255, 100, 100, 0.1);
+            border: 1px solid rgba(255, 100, 100, 0.3);
+            color: #ff6b6b;
+            padding: 16px;
+            border-radius: 8px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Noise Generator</h1>
+            <p class="subtitle">ML-Powered Spectral Synthesis | Pure Rust WASM</p>
+        </header>
+
+        <div id="app">
+            <div class="loading">
+                <div class="spinner"></div>
+                <span>Loading WASM module...</span>
+            </div>
+        </div>
+
+        <footer>
+            <p>Built with <a href="https://github.com/paiml/aprender">Aprender</a> |
+               Part of the <a href="https://github.com/paiml">Sovereign AI Stack</a></p>
+        </footer>
+    </div>
+
+    <script type="module">
+        // State
+        let generator = null;
+        let audioCtx = null;
+        let scriptNode = null;
+        let isPlaying = false;
+        let noiseType = 'brown';
+        let analyser = null;
+        let canvasCtx = null;
+
+        // Try to load WASM module
+        async function initWasm() {
+            try {
+                const { default: init, NoiseGeneratorWasm, noise_version } = await import('./aprender_noise.js');
+                await init();
+
+                generator = new NoiseGeneratorWasm(noiseType);
+                renderApp(noise_version());
+                return true;
+            } catch (e) {
+                console.error('WASM load error:', e);
+                renderError(e.message);
+                return false;
+            }
+        }
+
+        function renderError(message) {
+            document.getElementById('app').innerHTML = `
+                <div class="error">
+                    <p><strong>WASM Module Not Found</strong></p>
+                    <p style="margin-top:8px;font-size:0.9rem;">
+                        Build with: <code>./scripts/build-wasm-noise.sh</code>
+                    </p>
+                    <p style="margin-top:8px;font-size:0.8rem;color:#999;">${message}</p>
+                </div>
+            `;
+        }
+
+        function renderApp(version) {
+            document.getElementById('app').innerHTML = `
+                <!-- Noise Type Selection -->
+                <div class="card">
+                    <h2>Noise Type</h2>
+                    <div class="noise-types">
+                        <button class="noise-btn" data-type="white">White</button>
+                        <button class="noise-btn" data-type="pink">Pink</button>
+                        <button class="noise-btn active" data-type="brown">Brown</button>
+                        <button class="noise-btn" data-type="blue">Blue</button>
+                        <button class="noise-btn" data-type="violet">Violet</button>
+                    </div>
+                </div>
+
+                <!-- Spectral Controls -->
+                <div class="card">
+                    <h2>Customize</h2>
+                    <div class="slider-group">
+                        <div class="slider-label">
+                            <span>Spectral Slope</span>
+                            <span id="slope-val">-6.0 dB/oct</span>
+                        </div>
+                        <input type="range" id="slope" min="-12" max="12" step="0.5" value="-6">
+                    </div>
+                    <div class="slider-group">
+                        <div class="slider-label">
+                            <span>Texture</span>
+                            <span id="texture-val">50%</span>
+                        </div>
+                        <input type="range" id="texture" min="0" max="100" value="50">
+                    </div>
+                    <div class="slider-group">
+                        <div class="slider-label">
+                            <span>Modulation</span>
+                            <span id="mod-depth-val">0%</span>
+                        </div>
+                        <input type="range" id="mod-depth" min="0" max="100" value="0">
+                    </div>
+                </div>
+
+                <!-- Binaural Beats -->
+                <div class="card">
+                    <h2>Binaural Beats</h2>
+                    <div class="slider-group">
+                        <div class="slider-label">
+                            <span>Frequency Offset</span>
+                            <span id="binaural-val">0 Hz</span>
+                        </div>
+                        <input type="range" id="binaural" min="0" max="40" step="0.5" value="0">
+                    </div>
+                    <div class="binaural-presets">
+                        <button class="preset-btn" data-preset="delta">Delta (2Hz)</button>
+                        <button class="preset-btn" data-preset="theta">Theta (6Hz)</button>
+                        <button class="preset-btn" data-preset="alpha">Alpha (10Hz)</button>
+                        <button class="preset-btn" data-preset="beta">Beta (20Hz)</button>
+                        <button class="preset-btn" data-preset="gamma">Gamma (40Hz)</button>
+                    </div>
+                </div>
+
+                <!-- Visualizer -->
+                <div class="card">
+                    <h2>Waveform</h2>
+                    <div class="visualizer">
+                        <canvas id="waveform"></canvas>
+                    </div>
+                </div>
+
+                <!-- Play Controls -->
+                <div class="card">
+                    <div class="controls">
+                        <button id="play-btn">&#9658;</button>
+                        <div class="status">
+                            <div class="status-text" id="status">Ready</div>
+                            <div class="status-detail">v${version} | 44.1kHz Stereo</div>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            setupEventListeners();
+            setupVisualizer();
+        }
+
+        function setupEventListeners() {
+            // Noise type buttons
+            document.querySelectorAll('.noise-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    document.querySelectorAll('.noise-btn').forEach(b => b.classList.remove('active'));
+                    e.target.classList.add('active');
+                    noiseType = e.target.dataset.type;
+
+                    if (generator) {
+                        // Recreate generator with new type
+                        try {
+                            generator = new (generator.constructor)(noiseType);
+                        } catch (err) {
+                            console.error('Failed to change noise type:', err);
+                        }
+                    }
+                });
+            });
+
+            // Sliders
+            document.getElementById('slope').addEventListener('input', (e) => {
+                const val = parseFloat(e.target.value);
+                document.getElementById('slope-val').textContent = `${val.toFixed(1)} dB/oct`;
+                if (generator) generator.set_spectral_slope(val);
+            });
+
+            document.getElementById('texture').addEventListener('input', (e) => {
+                const val = parseInt(e.target.value);
+                document.getElementById('texture-val').textContent = `${val}%`;
+                if (generator) generator.set_texture(val / 100);
+            });
+
+            document.getElementById('mod-depth').addEventListener('input', (e) => {
+                const val = parseInt(e.target.value);
+                document.getElementById('mod-depth-val').textContent = `${val}%`;
+                if (generator) generator.set_modulation(val / 100, 2.0);
+            });
+
+            document.getElementById('binaural').addEventListener('input', (e) => {
+                const val = parseFloat(e.target.value);
+                document.getElementById('binaural-val').textContent = `${val.toFixed(1)} Hz`;
+                if (generator) generator.set_binaural_offset(val);
+            });
+
+            // Binaural presets
+            document.querySelectorAll('.preset-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    const preset = e.target.dataset.preset;
+                    if (generator) generator.set_binaural_preset(preset);
+
+                    // Update slider to show preset value
+                    const presetValues = { delta: 2, theta: 6, alpha: 10, beta: 20, gamma: 40 };
+                    const val = presetValues[preset] || 0;
+                    document.getElementById('binaural').value = val;
+                    document.getElementById('binaural-val').textContent = `${val} Hz`;
+                });
+            });
+
+            // Play button
+            document.getElementById('play-btn').addEventListener('click', togglePlay);
+        }
+
+        function setupVisualizer() {
+            const canvas = document.getElementById('waveform');
+            canvas.width = canvas.offsetWidth * 2;
+            canvas.height = canvas.offsetHeight * 2;
+            canvasCtx = canvas.getContext('2d');
+            canvasCtx.scale(2, 2);
+            drawWaveform(new Float32Array(256));
+        }
+
+        function drawWaveform(data) {
+            if (!canvasCtx) return;
+
+            const canvas = canvasCtx.canvas;
+            const width = canvas.width / 2;
+            const height = canvas.height / 2;
+
+            canvasCtx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+            canvasCtx.fillRect(0, 0, width, height);
+
+            canvasCtx.lineWidth = 1.5;
+            canvasCtx.strokeStyle = '#667eea';
+            canvasCtx.beginPath();
+
+            const sliceWidth = width / data.length;
+            let x = 0;
+
+            for (let i = 0; i < data.length; i++) {
+                const v = data[i] * 0.5 + 0.5;
+                const y = v * height;
+
+                if (i === 0) {
+                    canvasCtx.moveTo(x, y);
+                } else {
+                    canvasCtx.lineTo(x, y);
+                }
+                x += sliceWidth;
+            }
+
+            canvasCtx.stroke();
+        }
+
+        async function togglePlay() {
+            const btn = document.getElementById('play-btn');
+            const status = document.getElementById('status');
+
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 44100 });
+                analyser = audioCtx.createAnalyser();
+                analyser.fftSize = 512;
+                analyser.connect(audioCtx.destination);
+            }
+
+            if (isPlaying) {
+                // Stop
+                if (scriptNode) {
+                    scriptNode.disconnect();
+                    scriptNode = null;
+                }
+                isPlaying = false;
+                btn.innerHTML = '&#9658;';
+                status.textContent = 'Stopped';
+            } else {
+                // Start
+                await audioCtx.resume();
+
+                scriptNode = audioCtx.createScriptProcessor(2048, 0, 2);
+                scriptNode.onaudioprocess = (e) => {
+                    if (!generator) return;
+
+                    const samples = generator.generate_stereo(2048);
+                    const left = e.outputBuffer.getChannelData(0);
+                    const right = e.outputBuffer.getChannelData(1);
+
+                    for (let i = 0; i < 2048; i++) {
+                        left[i] = samples[i * 2] * 0.5; // Reduce volume
+                        right[i] = samples[i * 2 + 1] * 0.5;
+                    }
+
+                    // Update visualizer with left channel
+                    drawWaveform(left.slice(0, 256));
+                };
+
+                scriptNode.connect(analyser);
+                isPlaying = true;
+                btn.innerHTML = '&#10074;&#10074;';
+                status.textContent = 'Playing';
+            }
+        }
+
+        // Initialize
+        initWasm();
+    </script>
+</body>
+</html>

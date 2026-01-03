@@ -73,7 +73,7 @@ unused_self = "allow"  # Method stubs common during development
 
 [package]
 name = "aprender"
-version = "0.20.2"
+version = "0.21.0"
 edition = "2021"
 rust-version = "1.70"
 authors = ["Noah Gift <noah@paiml.com>"]
@@ -110,7 +110,7 @@ alsa = { version = "0.9", optional = true }  # ALSA bindings for Linux audio cap
 rayon = { version = "1.10", optional = true }
 
 # Core compute primitives - SIMD-accelerated tensor operations
-trueno = "0.10.1"
+trueno = "0.11.0"
 
 # Compression for .apr format (optional, spec §3.3)
 zstd = { version = "0.13", optional = true }

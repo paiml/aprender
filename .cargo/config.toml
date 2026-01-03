@@ -1,0 +1,3 @@
+# ZRAM build acceleration
+[build]
+target-dir = "/mnt/zram/targets/aprender"
