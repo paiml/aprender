@@ -243,7 +243,7 @@ checksum = "a23eb6b1614318a8071c9b2521f36b424b2c83db5eb3a0fead4a6c0809af6e61"
 name = "apr-cli"
 version = "0.2.2"
 dependencies = [
- "aprender 0.20.2",
+ "aprender 0.21.0",
  "assert_cmd",
  "axum",
  "axum-test",
@@ -317,6 +317,24 @@ dependencies = [
 [[package]]
 name = "aprender"
 version = "0.20.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f846cd5143d27f1b31b0068fb0124b026a236a30894b171f7a82f64641b69b9f"
+dependencies = [
+ "bincode",
+ "getrandom 0.2.16",
+ "memmap2",
+ "rand 0.8.5",
+ "rand_chacha 0.3.1",
+ "rayon",
+ "rmp-serde",
+ "serde",
+ "serde_json",
+ "trueno 0.10.1",
+]
+
+[[package]]
+name = "aprender"
+version = "0.21.0"
 dependencies = [
  "aes-gcm",
  "alimentar",
@@ -346,28 +364,10 @@ dependencies = [
  "sha2",
  "tempfile",
  "thiserror 2.0.17",
- "trueno 0.10.1",
+ "trueno 0.11.0",
  "wasm-bindgen",
  "x25519-dalek",
  "zstd",
-]
-
-[[package]]
-name = "aprender"
-version = "0.20.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f846cd5143d27f1b31b0068fb0124b026a236a30894b171f7a82f64641b69b9f"
-dependencies = [
- "bincode",
- "getrandom 0.2.16",
- "memmap2",
- "rand 0.8.5",
- "rand_chacha 0.3.1",
- "rayon",
- "rmp-serde",
- "serde",
- "serde_json",
- "trueno 0.10.1",
 ]
 
 [[package]]
@@ -4557,7 +4557,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "abf1f176633d8795c1033c3fb161c62350966c30937efab896f7a321d956e7d4"
 dependencies = [
  "anyhow",
- "aprender 0.20.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "aprender 0.20.2",
  "arc-swap",
  "async-stream",
  "axum",
@@ -5939,6 +5939,21 @@ checksum = "27f3dcb4168729183188125bd1c4591b7e435b68a9527c6b6258e42d955b2cad"
 dependencies = [
  "bytemuck",
  "futures-intrusive",
+ "pollster",
+ "thiserror 2.0.17",
+ "wgpu",
+]
+
+[[package]]
+name = "trueno"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4a0756605a19a0b79f5dca9b61fba7e428c497abe9ebeac2ef91b39d90b6da91"
+dependencies = [
+ "anyhow",
+ "bytemuck",
+ "futures-intrusive",
+ "num_cpus",
  "pollster",
  "thiserror 2.0.17",
  "trueno-gpu",
