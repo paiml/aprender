@@ -113,6 +113,7 @@ rayon = { version = "1.10", optional = true }
 trueno = "0.11.0"
 
 # Compression for .apr format (optional, spec §3.3)
+lz4_flex = { version = "0.11", optional = true }
 zstd = { version = "0.13", optional = true }
 
 # Half-precision floats for quantization (spec §6.2)
@@ -155,7 +156,7 @@ tempfile = "3.14"  # For format module tests
 default = ["parallel"]
 parallel = ["rayon"]  # Enable parallel graph algorithms (disable for WASM)
 datasets = ["alimentar"]  # Enable data loading from alimentar
-format-compression = ["zstd"]  # Enable zstd compression for .apr format (spec §3.3)
+format-compression = ["lz4_flex", "zstd"]  # Enable LZ4/ZSTD compression for .apr format (spec §3.3, GH-146)
 format-signing = ["ed25519-dalek"]  # Enable Ed25519 signatures for .apr format (spec §4.2)
 format-encryption = ["aes-gcm", "argon2", "x25519-dalek", "hkdf", "sha2"]  # Enable encryption for .apr format (spec §4.1)
 format-quantize = ["half"]  # Enable quantization for .apr format (spec §6.2)

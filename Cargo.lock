@@ -350,6 +350,7 @@ dependencies = [
  "hf-hub",
  "hkdf",
  "js-sys",
+ "lz4_flex",
  "memmap2",
  "proptest",
  "rand 0.8.5",

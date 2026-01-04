@@ -1,11 +1,11 @@
 //! APR (Aprender) binary format with JSON metadata.
 //!
 //! A compact binary format optimized for WASM deployment with:
-//! - LZ4 compression support
+//! - LZ4/ZSTD compression support (GH-146)
 //! - JSON metadata section (vocab, config, tokenizer, etc.)
 //! - Streaming decompression capability
 //!
-//! Format:
+//! Format (uncompressed - APR1):
 //! ```text
 //! [4-byte magic: "APR1"]
 //! [4-byte metadata_len: u32 little-endian]
@@ -15,6 +15,14 @@
 //! [Raw tensor data: values in little-endian]
 //! [4-byte CRC32: checksum of all preceding bytes]
 //! ```
+//!
+//! Format (compressed - APR2):
+//! ```text
+//! [4-byte magic: "APR2"]
+//! [1-byte compression: 0=None, 1=LZ4, 2=ZSTD]
+//! [4-byte uncompressed_len: u32 little-endian]
+//! [compressed payload: LZ4/ZSTD compressed APR1 data]
+//! ```
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
@@ -22,8 +30,52 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
-/// Magic bytes for APR format
+/// Magic bytes for APR format (uncompressed)
 pub const APR_MAGIC: [u8; 4] = [b'A', b'P', b'R', b'1'];
+
+/// Magic bytes for APR format (compressed)
+pub const APR_MAGIC_COMPRESSED: [u8; 4] = [b'A', b'P', b'R', b'2'];
+
+/// Compression algorithm for .apr files
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Compression {
+    /// No compression (default, backward compatible)
+    #[default]
+    None,
+    /// LZ4 compression - fast, good for real-time (GH-146)
+    #[cfg(feature = "format-compression")]
+    Lz4,
+    /// ZSTD compression - better ratio, slower
+    #[cfg(feature = "format-compression")]
+    Zstd,
+}
+
+impl Compression {
+    /// Get compression type byte for header
+    #[must_use]
+    pub const fn as_byte(self) -> u8 {
+        match self {
+            Self::None => 0,
+            #[cfg(feature = "format-compression")]
+            Self::Lz4 => 1,
+            #[cfg(feature = "format-compression")]
+            Self::Zstd => 2,
+        }
+    }
+
+    /// Parse compression type from byte
+    #[must_use]
+    pub const fn from_byte(byte: u8) -> Option<Self> {
+        match byte {
+            0 => Some(Self::None),
+            #[cfg(feature = "format-compression")]
+            1 => Some(Self::Lz4),
+            #[cfg(feature = "format-compression")]
+            2 => Some(Self::Zstd),
+            _ => None,
+        }
+    }
+}
 
 /// Tensor descriptor in the index
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -68,13 +120,80 @@ impl AprReader {
 
     /// Parse APR format from bytes
     ///
+    /// Automatically detects APR1 (uncompressed) or APR2 (compressed) format.
+    ///
     /// # Errors
     /// Returns error if format is invalid
     pub fn from_bytes(data: Vec<u8>) -> Result<Self, String> {
-        // Validate magic
+        // Validate minimum size for magic
         if data.len() < 8 {
             return Err("File too short".to_string());
         }
+
+        // Check for APR2 (compressed) format first
+        if data[0..4] == APR_MAGIC_COMPRESSED {
+            return Self::from_bytes_compressed(&data);
+        }
+
+        // Check for APR1 (uncompressed) format
+        if data[0..4] != APR_MAGIC {
+            return Err(format!(
+                "Invalid magic: expected APR1 or APR2, got {:?}",
+                &data[0..4]
+            ));
+        }
+
+        Self::from_bytes_uncompressed(data)
+    }
+
+    /// Parse compressed APR2 format
+    fn from_bytes_compressed(data: &[u8]) -> Result<Self, String> {
+        if data.len() < 9 {
+            return Err("APR2 file too short for header".to_string());
+        }
+
+        let compression_byte = data[4];
+        let compression = Compression::from_byte(compression_byte)
+            .ok_or_else(|| format!("Unknown compression type: {compression_byte}"))?;
+
+        let uncompressed_len = u32::from_le_bytes([data[5], data[6], data[7], data[8]]) as usize;
+        let compressed_payload = &data[9..];
+
+        // Decompress based on algorithm
+        let decompressed =
+            Self::decompress_payload(compression, compressed_payload, uncompressed_len)?;
+
+        // Parse the decompressed APR1 data
+        Self::from_bytes_uncompressed(decompressed)
+    }
+
+    /// Decompress payload using detected algorithm
+    #[allow(unreachable_patterns)] // Pattern varies based on format-compression feature
+    fn decompress_payload(
+        compression: Compression,
+        data: &[u8],
+        _expected_len: usize,
+    ) -> Result<Vec<u8>, String> {
+        match compression {
+            Compression::None => Ok(data.to_vec()),
+            #[cfg(feature = "format-compression")]
+            Compression::Lz4 => lz4_flex::decompress_size_prepended(data)
+                .map_err(|e| format!("LZ4 decompression failed: {e}")),
+            #[cfg(feature = "format-compression")]
+            Compression::Zstd => {
+                zstd::decode_all(data).map_err(|e| format!("ZSTD decompression failed: {e}"))
+            }
+            #[cfg(not(feature = "format-compression"))]
+            _ => Err(format!(
+                "Compressed APR file requires 'format-compression' feature (compression type: {})",
+                compression.as_byte()
+            )),
+        }
+    }
+
+    /// Parse uncompressed APR1 format
+    fn from_bytes_uncompressed(data: Vec<u8>) -> Result<Self, String> {
+        // Validate APR1 magic
         if data[0..4] != APR_MAGIC {
             return Err(format!(
                 "Invalid magic: expected APR1, got {:?}",
@@ -176,6 +295,8 @@ pub struct AprWriter {
     metadata: AprMetadata,
     /// Tensors to write
     tensors: Vec<(AprTensorDescriptor, Vec<u8>)>,
+    /// Compression algorithm (default: None for backward compatibility)
+    compression: Compression,
 }
 
 impl AprWriter {
@@ -183,6 +304,16 @@ impl AprWriter {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Set compression algorithm for output
+    ///
+    /// Default is `Compression::None` for backward compatibility with APR1 format.
+    /// When compression is enabled, writes APR2 format with compressed payload.
+    #[must_use]
+    pub fn with_compression(mut self, compression: Compression) -> Self {
+        self.compression = compression;
+        self
     }
 
     /// Set metadata key-value pair
@@ -215,6 +346,37 @@ impl AprWriter {
     /// # Errors
     /// Returns error if serialization fails
     pub fn to_bytes(&self) -> Result<Vec<u8>, String> {
+        // Generate APR1 (uncompressed) payload first
+        let apr1_data = self.to_bytes_uncompressed()?;
+
+        // If no compression, return APR1 format directly
+        if matches!(self.compression, Compression::None) {
+            return Ok(apr1_data);
+        }
+
+        // Compress and wrap in APR2 format
+        #[cfg(feature = "format-compression")]
+        {
+            let compressed = self.compress_payload(&apr1_data)?;
+
+            let mut output = Vec::with_capacity(9 + compressed.len());
+            output.extend_from_slice(&APR_MAGIC_COMPRESSED); // APR2 magic
+            output.push(self.compression.as_byte()); // compression type
+            output.extend_from_slice(&(apr1_data.len() as u32).to_le_bytes()); // uncompressed size
+            output.extend_from_slice(&compressed);
+
+            Ok(output)
+        }
+
+        #[cfg(not(feature = "format-compression"))]
+        {
+            // Compression requested but feature not enabled
+            Err("Compression requested but 'format-compression' feature not enabled".to_string())
+        }
+    }
+
+    /// Generate uncompressed APR1 format
+    fn to_bytes_uncompressed(&self) -> Result<Vec<u8>, String> {
         let mut output = Vec::new();
 
         // 1. Magic
@@ -248,6 +410,18 @@ impl AprWriter {
         output.extend_from_slice(&crc.to_le_bytes());
 
         Ok(output)
+    }
+
+    /// Compress payload using selected algorithm
+    #[cfg(feature = "format-compression")]
+    fn compress_payload(&self, data: &[u8]) -> Result<Vec<u8>, String> {
+        match self.compression {
+            Compression::None => Ok(data.to_vec()),
+            Compression::Lz4 => Ok(lz4_flex::compress_prepend_size(data)),
+            Compression::Zstd => {
+                zstd::encode_all(data, 3).map_err(|e| format!("ZSTD compression failed: {e}"))
+            }
+        }
     }
 
     /// Write to file
@@ -779,5 +953,138 @@ mod tests {
 
         let embed = reader.read_tensor_f32("embed").unwrap();
         assert_eq!(embed.len(), 6400);
+    }
+
+    // =========================================================================
+    // Compression Tests (GH-146)
+    // =========================================================================
+
+    #[test]
+    fn test_apr2_magic() {
+        assert_eq!(APR_MAGIC_COMPRESSED, [b'A', b'P', b'R', b'2']);
+    }
+
+    #[test]
+    fn test_compression_byte_roundtrip() {
+        assert_eq!(Compression::None.as_byte(), 0);
+        assert_eq!(Compression::from_byte(0), Some(Compression::None));
+
+        #[cfg(feature = "format-compression")]
+        {
+            assert_eq!(Compression::Lz4.as_byte(), 1);
+            assert_eq!(Compression::from_byte(1), Some(Compression::Lz4));
+            assert_eq!(Compression::Zstd.as_byte(), 2);
+            assert_eq!(Compression::from_byte(2), Some(Compression::Zstd));
+        }
+
+        assert_eq!(Compression::from_byte(255), None);
+    }
+
+    #[test]
+    fn test_with_compression_builder() {
+        let writer = AprWriter::new().with_compression(Compression::None);
+        let bytes = writer.to_bytes().unwrap();
+        // Should produce APR1 format (no compression)
+        assert_eq!(&bytes[0..4], &APR_MAGIC);
+    }
+
+    #[cfg(feature = "format-compression")]
+    #[test]
+    fn test_lz4_compression_roundtrip() {
+        let mut writer = AprWriter::new().with_compression(Compression::Lz4);
+        writer.set_metadata("model", JsonValue::String("test-lz4".into()));
+        writer.add_tensor_f32("weights", vec![100], &vec![0.5; 100]);
+
+        let bytes = writer.to_bytes().unwrap();
+
+        // Should produce APR2 format
+        assert_eq!(&bytes[0..4], &APR_MAGIC_COMPRESSED);
+        assert_eq!(bytes[4], 1); // LZ4 compression byte
+
+        // Reader should auto-detect and decompress
+        let reader = AprReader::from_bytes(bytes).unwrap();
+        assert_eq!(
+            reader.get_metadata("model"),
+            Some(&JsonValue::String("test-lz4".into()))
+        );
+        let data = reader.read_tensor_f32("weights").unwrap();
+        assert_eq!(data, vec![0.5; 100]);
+    }
+
+    #[cfg(feature = "format-compression")]
+    #[test]
+    fn test_zstd_compression_roundtrip() {
+        let mut writer = AprWriter::new().with_compression(Compression::Zstd);
+        writer.set_metadata("model", JsonValue::String("test-zstd".into()));
+        writer.add_tensor_f32("bias", vec![50], &vec![0.1; 50]);
+
+        let bytes = writer.to_bytes().unwrap();
+
+        // Should produce APR2 format
+        assert_eq!(&bytes[0..4], &APR_MAGIC_COMPRESSED);
+        assert_eq!(bytes[4], 2); // ZSTD compression byte
+
+        // Reader should auto-detect and decompress
+        let reader = AprReader::from_bytes(bytes).unwrap();
+        assert_eq!(
+            reader.get_metadata("model"),
+            Some(&JsonValue::String("test-zstd".into()))
+        );
+        let data = reader.read_tensor_f32("bias").unwrap();
+        assert_eq!(data, vec![0.1; 50]);
+    }
+
+    #[cfg(feature = "format-compression")]
+    #[test]
+    fn test_compression_reduces_size() {
+        // Create data with high compressibility (repeated values)
+        let mut writer_uncompressed = AprWriter::new();
+        writer_uncompressed.add_tensor_f32("data", vec![10000], &vec![0.0; 10000]);
+        let uncompressed = writer_uncompressed.to_bytes().unwrap();
+
+        let mut writer_lz4 = AprWriter::new().with_compression(Compression::Lz4);
+        writer_lz4.add_tensor_f32("data", vec![10000], &vec![0.0; 10000]);
+        let compressed = writer_lz4.to_bytes().unwrap();
+
+        // LZ4 should compress repeated zeros very well
+        assert!(
+            compressed.len() < uncompressed.len() / 10,
+            "LZ4 should compress repeated data significantly: {} vs {}",
+            compressed.len(),
+            uncompressed.len()
+        );
+    }
+
+    #[cfg(feature = "format-compression")]
+    #[test]
+    fn test_large_model_compression_roundtrip() {
+        // Simulate a small ML model
+        let mut writer = AprWriter::new().with_compression(Compression::Lz4);
+
+        writer.set_metadata("model_type", JsonValue::String("whisper-tiny".into()));
+        writer.set_metadata("n_vocab", JsonValue::Number(51865.into()));
+
+        // Add multiple tensors like a real model
+        writer.add_tensor_f32("encoder.embed", vec![384, 80], &vec![0.01; 384 * 80]);
+        writer.add_tensor_f32(
+            "encoder.conv1.weight",
+            vec![384, 80, 3],
+            &vec![0.02; 384 * 80 * 3],
+        );
+        writer.add_tensor_f32("decoder.embed", vec![51865, 384], &vec![0.001; 51865 * 384]);
+
+        let bytes = writer.to_bytes().unwrap();
+        let reader = AprReader::from_bytes(bytes).unwrap();
+
+        // Verify metadata
+        assert_eq!(
+            reader.get_metadata("model_type"),
+            Some(&JsonValue::String("whisper-tiny".into()))
+        );
+
+        // Verify tensors
+        assert_eq!(reader.tensors.len(), 3);
+        let embed = reader.read_tensor_f32("encoder.embed").unwrap();
+        assert_eq!(embed.len(), 384 * 80);
     }
 }
