@@ -102,9 +102,9 @@ dependencies = [
 
 [[package]]
 name = "alimentar"
-version = "0.2.2"
+version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fb38b589457ad7cba76776f650966320806d97ad7cd63643bf4041c6ea514cac"
+checksum = "e42e7ab820dc2dbc06c7490c1eb329931f681d0006d8b2d15b7c7c4284bb8597"
 dependencies = [
  "arrow",
  "arrow-csv",
@@ -243,7 +243,7 @@ checksum = "a23eb6b1614318a8071c9b2521f36b424b2c83db5eb3a0fead4a6c0809af6e61"
 name = "apr-cli"
 version = "0.2.2"
 dependencies = [
- "aprender 0.21.0",
+ "aprender 0.22.0",
  "assert_cmd",
  "axum",
  "axum-test",
@@ -334,7 +334,7 @@ dependencies = [
 
 [[package]]
 name = "aprender"
-version = "0.21.0"
+version = "0.22.0"
 dependencies = [
  "aes-gcm",
  "alimentar",
@@ -4655,9 +4655,9 @@ checksum = "7a2d987857b319362043e95f5353c0535c1f58eec5336fdfcf626430af7def58"
 
 [[package]]
 name = "renacer"
-version = "0.9.1"
+version = "0.9.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ca4e3c7e921ac5a503b289b2dee245dd854d2d8cbd1c429b9d68ef6d0e3ae769"
+checksum = "9612bd4101de39ae6c06dc66729e523cb411f307130c4204ffde30029852c957"
 dependencies = [
  "addr2line",
  "anyhow",
@@ -6018,9 +6018,9 @@ dependencies = [
 
 [[package]]
 name = "trueno-viz"
-version = "0.1.8"
+version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "572cf6d159130f95f2117051ea6b32e517c00496ff4df8aa9914dd7b09b29e9e"
+checksum = "c7e46e0d7027e514a7253d981461e313c70599c3e76cb53375a22ff61395e8b8"
 dependencies = [
  "base64",
  "libc",

@@ -258,7 +258,7 @@ impl WasmInferenceSession {
 /// Matrix multiplication using SIMD-friendly layout
 ///
 /// This function is designed to be vectorized by LLVM for WASM SIMD.
-#[must_use] 
+#[must_use]
 pub fn matmul_simd_friendly(a: &MatrixF64, b: &MatrixF64) -> Option<MatrixF64> {
     if a.n_cols() != b.n_rows() {
         return None;
@@ -285,7 +285,7 @@ pub fn matmul_simd_friendly(a: &MatrixF64, b: &MatrixF64) -> Option<MatrixF64> {
 }
 
 /// Dot product using SIMD-friendly accumulation
-#[must_use] 
+#[must_use]
 pub fn dot_simd_friendly(a: &VectorF64, b: &VectorF64) -> f64 {
     if a.len() != b.len() {
         return 0.0;

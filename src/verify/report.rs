@@ -39,19 +39,19 @@ impl VerifyReport {
     }
 
     /// Get the pipeline name.
-    #[must_use] 
+    #[must_use]
     pub fn pipeline_name(&self) -> &str {
         &self.pipeline_name
     }
 
     /// Get all results.
-    #[must_use] 
+    #[must_use]
     pub fn results(&self) -> &[StageResult] {
         &self.results
     }
 
     /// Check if all stages passed.
-    #[must_use] 
+    #[must_use]
     pub fn all_passed(&self) -> bool {
         self.results
             .iter()
@@ -60,13 +60,13 @@ impl VerifyReport {
     }
 
     /// Get the first failure, if any.
-    #[must_use] 
+    #[must_use]
     pub fn first_failure(&self) -> Option<&StageResult> {
         self.results.iter().find(|r| r.status().is_failed())
     }
 
     /// Count passed stages.
-    #[must_use] 
+    #[must_use]
     pub fn passed_count(&self) -> usize {
         self.results
             .iter()
@@ -75,7 +75,7 @@ impl VerifyReport {
     }
 
     /// Count failed stages.
-    #[must_use] 
+    #[must_use]
     pub fn failed_count(&self) -> usize {
         self.results
             .iter()
@@ -84,7 +84,7 @@ impl VerifyReport {
     }
 
     /// Count skipped stages.
-    #[must_use] 
+    #[must_use]
     pub fn skipped_count(&self) -> usize {
         self.results
             .iter()
@@ -93,7 +93,7 @@ impl VerifyReport {
     }
 
     /// Generate a summary line.
-    #[must_use] 
+    #[must_use]
     pub fn summary(&self) -> String {
         let total = self.results.len();
         let passed = self.passed_count();
@@ -113,7 +113,7 @@ impl VerifyReport {
     ///
     /// This produces output suitable for terminal display with
     /// Unicode box drawing characters and ANSI color codes.
-    #[must_use] 
+    #[must_use]
     pub fn render(&self) -> String {
         let mut output = String::new();
 
@@ -212,7 +212,7 @@ impl VerifyReport {
     }
 
     /// Render as minimal one-line summary.
-    #[must_use] 
+    #[must_use]
     pub fn render_oneline(&self) -> String {
         let icons: String = self
             .results

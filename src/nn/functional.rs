@@ -18,13 +18,13 @@
 use crate::autograd::Tensor;
 
 /// `ReLU` activation: max(0, x)
-#[must_use] 
+#[must_use]
 pub fn relu(x: &Tensor) -> Tensor {
     x.relu()
 }
 
 /// Leaky `ReLU` activation: `max(negative_slope` * x, x)
-#[must_use] 
+#[must_use]
 pub fn leaky_relu(x: &Tensor, negative_slope: f32) -> Tensor {
     let data: Vec<f32> = x
         .data()
@@ -35,19 +35,19 @@ pub fn leaky_relu(x: &Tensor, negative_slope: f32) -> Tensor {
 }
 
 /// Sigmoid activation: 1 / (1 + exp(-x))
-#[must_use] 
+#[must_use]
 pub fn sigmoid(x: &Tensor) -> Tensor {
     x.sigmoid()
 }
 
 /// Tanh activation
-#[must_use] 
+#[must_use]
 pub fn tanh(x: &Tensor) -> Tensor {
     x.tanh_()
 }
 
 /// GELU activation (Gaussian Error Linear Unit)
-#[must_use] 
+#[must_use]
 pub fn gelu(x: &Tensor) -> Tensor {
     let sqrt_2_over_pi = (2.0_f32 / std::f32::consts::PI).sqrt();
 
@@ -66,7 +66,7 @@ pub fn gelu(x: &Tensor) -> Tensor {
 /// Softmax along a dimension
 ///
 /// Currently only supports 2D tensors with dim=-1 (last dimension).
-#[must_use] 
+#[must_use]
 pub fn softmax(x: &Tensor, _dim: i32) -> Tensor {
     assert_eq!(x.ndim(), 2, "softmax currently only supports 2D tensors");
 
@@ -101,7 +101,7 @@ pub fn softmax(x: &Tensor, _dim: i32) -> Tensor {
 /// Log softmax along a dimension
 ///
 /// More numerically stable than log(softmax(x)).
-#[must_use] 
+#[must_use]
 pub fn log_softmax(x: &Tensor, _dim: i32) -> Tensor {
     assert_eq!(
         x.ndim(),
@@ -137,7 +137,7 @@ pub fn log_softmax(x: &Tensor, _dim: i32) -> Tensor {
 }
 
 /// Dropout (must be called with training flag)
-#[must_use] 
+#[must_use]
 pub fn dropout(x: &Tensor, p: f32, training: bool) -> Tensor {
     if !training || p == 0.0 {
         return x.clone();
@@ -157,7 +157,7 @@ pub fn dropout(x: &Tensor, p: f32, training: bool) -> Tensor {
 }
 
 /// Linear transformation: y = x @ weight^T + bias
-#[must_use] 
+#[must_use]
 pub fn linear(x: &Tensor, weight: &Tensor, bias: Option<&Tensor>) -> Tensor {
     let weight_t = weight.transpose();
     let output = x.matmul(&weight_t);

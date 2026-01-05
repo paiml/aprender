@@ -39,7 +39,7 @@ pub struct WidthPruningResult {
 
 impl WidthPruningResult {
     /// Create a new width pruning result.
-    #[must_use] 
+    #[must_use]
     pub fn new(
         original_hidden_dim: usize,
         final_hidden_dim: usize,
@@ -59,7 +59,7 @@ impl WidthPruningResult {
     }
 
     /// Get hidden dimension compression ratio.
-    #[must_use] 
+    #[must_use]
     pub fn hidden_compression_ratio(&self) -> f32 {
         if self.final_hidden_dim == 0 {
             f32::INFINITY
@@ -69,7 +69,7 @@ impl WidthPruningResult {
     }
 
     /// Get intermediate dimension compression ratio.
-    #[must_use] 
+    #[must_use]
     pub fn intermediate_compression_ratio(&self) -> f32 {
         if self.final_intermediate_dim == 0 {
             f32::INFINITY
@@ -79,7 +79,7 @@ impl WidthPruningResult {
     }
 
     /// Get percentage of hidden channels removed.
-    #[must_use] 
+    #[must_use]
     pub fn hidden_removal_percentage(&self) -> f32 {
         if self.original_hidden_dim == 0 {
             0.0
@@ -90,7 +90,7 @@ impl WidthPruningResult {
     }
 
     /// Get percentage of intermediate channels removed.
-    #[must_use] 
+    #[must_use]
     pub fn intermediate_removal_percentage(&self) -> f32 {
         if self.original_intermediate_dim == 0 {
             0.0
@@ -114,7 +114,7 @@ pub struct ChannelImportance {
 
 impl ChannelImportance {
     /// Create new channel importance scores.
-    #[must_use] 
+    #[must_use]
     pub fn new(hidden: Tensor, intermediate: Tensor, num_samples: usize) -> Self {
         Self {
             hidden,
@@ -124,25 +124,25 @@ impl ChannelImportance {
     }
 
     /// Get hidden dimension size.
-    #[must_use] 
+    #[must_use]
     pub fn hidden_dim(&self) -> usize {
         self.hidden.data().len()
     }
 
     /// Get intermediate dimension size.
-    #[must_use] 
+    #[must_use]
     pub fn intermediate_dim(&self) -> usize {
         self.intermediate.data().len()
     }
 
     /// Get top-k hidden channel indices by importance.
-    #[must_use] 
+    #[must_use]
     pub fn top_hidden_channels(&self, k: usize) -> Vec<usize> {
         top_k_indices(self.hidden.data(), k)
     }
 
     /// Get top-k intermediate channel indices by importance.
-    #[must_use] 
+    #[must_use]
     pub fn top_intermediate_channels(&self, k: usize) -> Vec<usize> {
         top_k_indices(self.intermediate.data(), k)
     }
@@ -184,7 +184,7 @@ impl WidthPruner {
     /// * `target_hidden_dim` - Target hidden dimension (must be divisible by `num_heads`)
     /// * `target_intermediate_dim` - Target intermediate (FFN) dimension
     /// * `num_attention_heads` - Number of attention heads
-    #[must_use] 
+    #[must_use]
     pub fn new(
         target_hidden_dim: usize,
         target_intermediate_dim: usize,
@@ -198,19 +198,19 @@ impl WidthPruner {
     }
 
     /// Get target hidden dimension.
-    #[must_use] 
+    #[must_use]
     pub fn target_hidden_dim(&self) -> usize {
         self.target_hidden_dim
     }
 
     /// Get target intermediate dimension.
-    #[must_use] 
+    #[must_use]
     pub fn target_intermediate_dim(&self) -> usize {
         self.target_intermediate_dim
     }
 
     /// Get number of attention heads.
-    #[must_use] 
+    #[must_use]
     pub fn num_attention_heads(&self) -> usize {
         self.num_attention_heads
     }
@@ -374,7 +374,7 @@ impl WidthPruner {
     ///
     /// # Returns
     /// Binary mask tensor [`original_dim`]
-    #[must_use] 
+    #[must_use]
     pub fn generate_hidden_mask(&self, original_dim: usize, channels_to_keep: &[usize]) -> Tensor {
         let mut mask = vec![0.0f32; original_dim];
         for &idx in channels_to_keep {
@@ -386,7 +386,7 @@ impl WidthPruner {
     }
 
     /// Compute head dimension after pruning.
-    #[must_use] 
+    #[must_use]
     pub fn head_dim_after_pruning(&self) -> usize {
         if self.num_attention_heads == 0 {
             0

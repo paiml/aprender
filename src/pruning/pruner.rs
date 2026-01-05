@@ -33,7 +33,7 @@ pub struct PruningResult {
 
 impl PruningResult {
     /// Create a new pruning result.
-    #[must_use] 
+    #[must_use]
     pub fn new(achieved_sparsity: f32, parameters_pruned: usize, total_parameters: usize) -> Self {
         Self {
             achieved_sparsity,
@@ -45,14 +45,14 @@ impl PruningResult {
     }
 
     /// Add layer sparsity information.
-    #[must_use] 
+    #[must_use]
     pub fn with_layer_sparsity(mut self, layer_name: String, sparsity: f32) -> Self {
         self.layer_sparsity.insert(layer_name, sparsity);
         self
     }
 
     /// Get compression ratio (original / pruned size).
-    #[must_use] 
+    #[must_use]
     pub fn compression_ratio(&self) -> f32 {
         if self.total_parameters == 0 || self.achieved_sparsity >= 1.0 {
             return f32::INFINITY;
@@ -129,7 +129,7 @@ pub struct MagnitudePruner {
 
 impl MagnitudePruner {
     /// Create a new magnitude pruner with L2 norm.
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             importance: super::magnitude::MagnitudeImportance::l2(),
@@ -137,7 +137,7 @@ impl MagnitudePruner {
     }
 
     /// Create a magnitude pruner with L1 norm.
-    #[must_use] 
+    #[must_use]
     pub fn l1() -> Self {
         Self {
             importance: super::magnitude::MagnitudeImportance::l1(),
@@ -145,7 +145,7 @@ impl MagnitudePruner {
     }
 
     /// Create a magnitude pruner with L2 norm.
-    #[must_use] 
+    #[must_use]
     pub fn l2() -> Self {
         Self {
             importance: super::magnitude::MagnitudeImportance::l2(),

@@ -78,7 +78,7 @@ impl TextSummarizer {
     ///
     /// let summarizer = TextSummarizer::new(SummarizationMethod::TextRank, 3);
     /// ```
-    #[must_use] 
+    #[must_use]
     pub fn new(method: SummarizationMethod, max_sentences: usize) -> Self {
         Self {
             method,
@@ -99,7 +99,7 @@ impl TextSummarizer {
     /// let summarizer = TextSummarizer::new(SummarizationMethod::TextRank, 2)
     ///     .with_damping_factor(0.9);
     /// ```
-    #[must_use] 
+    #[must_use]
     pub fn with_damping_factor(mut self, factor: f64) -> Self {
         self.damping_factor = factor;
         self
@@ -115,7 +115,7 @@ impl TextSummarizer {
     /// let summarizer = TextSummarizer::new(SummarizationMethod::TextRank, 2)
     ///     .with_max_iterations(50);
     /// ```
-    #[must_use] 
+    #[must_use]
     pub fn with_max_iterations(mut self, max_iter: usize) -> Self {
         self.max_iterations = max_iter;
         self

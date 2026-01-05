@@ -773,7 +773,7 @@ pub struct AgglomerativeClustering {
 
 impl AgglomerativeClustering {
     /// Create new `AgglomerativeClustering` with target number of clusters and linkage method.
-    #[must_use] 
+    #[must_use]
     pub fn new(n_clusters: usize, linkage: Linkage) -> Self {
         Self {
             n_clusters,
@@ -784,25 +784,25 @@ impl AgglomerativeClustering {
     }
 
     /// Get target number of clusters.
-    #[must_use] 
+    #[must_use]
     pub fn n_clusters(&self) -> usize {
         self.n_clusters
     }
 
     /// Get linkage method.
-    #[must_use] 
+    #[must_use]
     pub fn linkage(&self) -> Linkage {
         self.linkage
     }
 
     /// Check if model has been fitted.
-    #[must_use] 
+    #[must_use]
     pub fn is_fitted(&self) -> bool {
         self.labels.is_some()
     }
 
     /// Get cluster labels (panic if not fitted).
-    #[must_use] 
+    #[must_use]
     pub fn labels(&self) -> &Vec<usize> {
         self.labels
             .as_ref()
@@ -810,7 +810,7 @@ impl AgglomerativeClustering {
     }
 
     /// Get dendrogram merge history (panic if not fitted).
-    #[must_use] 
+    #[must_use]
     pub fn dendrogram(&self) -> &Vec<Merge> {
         self.dendrogram
             .as_ref()
@@ -1112,7 +1112,7 @@ pub struct GaussianMixture {
 
 impl GaussianMixture {
     /// Create new `GaussianMixture` with specified number of components and covariance type.
-    #[must_use] 
+    #[must_use]
     pub fn new(n_components: usize, covariance_type: CovarianceType) -> Self {
         Self {
             n_components,
@@ -1128,46 +1128,46 @@ impl GaussianMixture {
     }
 
     /// Set maximum number of EM iterations.
-    #[must_use] 
+    #[must_use]
     pub fn with_max_iter(mut self, max_iter: usize) -> Self {
         self.max_iter = max_iter;
         self
     }
 
     /// Set convergence tolerance.
-    #[must_use] 
+    #[must_use]
     pub fn with_tol(mut self, tol: f32) -> Self {
         self.tol = tol;
         self
     }
 
     /// Set random seed for reproducibility.
-    #[must_use] 
+    #[must_use]
     pub fn with_random_state(mut self, seed: u64) -> Self {
         self.random_state = Some(seed);
         self
     }
 
     /// Get number of components.
-    #[must_use] 
+    #[must_use]
     pub fn n_components(&self) -> usize {
         self.n_components
     }
 
     /// Get covariance type.
-    #[must_use] 
+    #[must_use]
     pub fn covariance_type(&self) -> CovarianceType {
         self.covariance_type
     }
 
     /// Check if model has been fitted.
-    #[must_use] 
+    #[must_use]
     pub fn is_fitted(&self) -> bool {
         self.means.is_some()
     }
 
     /// Get component means (panic if not fitted).
-    #[must_use] 
+    #[must_use]
     pub fn means(&self) -> &Matrix<f32> {
         self.means
             .as_ref()
@@ -1175,7 +1175,7 @@ impl GaussianMixture {
     }
 
     /// Get mixing weights (panic if not fitted).
-    #[must_use] 
+    #[must_use]
     pub fn weights(&self) -> &Vector<f32> {
         self.weights
             .as_ref()
@@ -1183,7 +1183,7 @@ impl GaussianMixture {
     }
 
     /// Get cluster labels (panic if not fitted).
-    #[must_use] 
+    #[must_use]
     pub fn labels(&self) -> &Vec<usize> {
         self.labels
             .as_ref()
@@ -1191,7 +1191,7 @@ impl GaussianMixture {
     }
 
     /// Compute log probability of data under the model.
-    #[must_use] 
+    #[must_use]
     pub fn score(&self, x: &Matrix<f32>) -> f32 {
         assert!(self.is_fitted(), "Model not fitted. Call fit() first.");
         let responsibilities = self.compute_responsibilities(x);
@@ -1212,7 +1212,7 @@ impl GaussianMixture {
     }
 
     /// Predict cluster probabilities for each sample (soft assignment).
-    #[must_use] 
+    #[must_use]
     pub fn predict_proba(&self, x: &Matrix<f32>) -> Matrix<f32> {
         assert!(self.is_fitted(), "Model not fitted. Call fit() first.");
         self.compute_responsibilities(x)
@@ -1716,7 +1716,7 @@ impl IsolationForest {
     /// Create a new Isolation Forest with default parameters.
     ///
     /// Default: 100 trees, auto `max_samples`, 0.1 contamination
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             n_estimators: 100,
@@ -1731,35 +1731,35 @@ impl IsolationForest {
     }
 
     /// Set the number of trees in the ensemble.
-    #[must_use] 
+    #[must_use]
     pub fn with_n_estimators(mut self, n_estimators: usize) -> Self {
         self.n_estimators = n_estimators;
         self
     }
 
     /// Set the number of samples to draw for each tree.
-    #[must_use] 
+    #[must_use]
     pub fn with_max_samples(mut self, max_samples: usize) -> Self {
         self.max_samples = Some(max_samples);
         self
     }
 
     /// Set the expected proportion of anomalies (0 to 0.5).
-    #[must_use] 
+    #[must_use]
     pub fn with_contamination(mut self, contamination: f32) -> Self {
         self.contamination = contamination.clamp(0.0, 0.5);
         self
     }
 
     /// Set random seed for reproducibility.
-    #[must_use] 
+    #[must_use]
     pub fn with_random_state(mut self, seed: u64) -> Self {
         self.random_state = Some(seed);
         self
     }
 
     /// Check if model has been fitted.
-    #[must_use] 
+    #[must_use]
     pub fn is_fitted(&self) -> bool {
         !self.trees.is_empty()
     }
@@ -1837,7 +1837,7 @@ impl IsolationForest {
     ///
     /// Returns a vector of scores where lower scores indicate higher anomaly likelihood.
     #[allow(clippy::needless_range_loop)]
-    #[must_use] 
+    #[must_use]
     pub fn score_samples(&self, x: &Matrix<f32>) -> Vec<f32> {
         assert!(self.is_fitted(), "Model not fitted. Call fit() first.");
 
@@ -1870,7 +1870,7 @@ impl IsolationForest {
     /// Predict anomaly labels for samples.
     ///
     /// Returns 1 for normal points and -1 for anomalies.
-    #[must_use] 
+    #[must_use]
     pub fn predict(&self, x: &Matrix<f32>) -> Vec<i32> {
         assert!(self.is_fitted(), "Model not fitted. Call fit() first.");
 
@@ -1972,7 +1972,7 @@ impl LocalOutlierFactor {
     /// Create a new Local Outlier Factor with default parameters.
     ///
     /// Default: 20 neighbors, 0.1 contamination
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             n_neighbors: 20,
@@ -1988,21 +1988,21 @@ impl LocalOutlierFactor {
     }
 
     /// Set the number of neighbors.
-    #[must_use] 
+    #[must_use]
     pub fn with_n_neighbors(mut self, n_neighbors: usize) -> Self {
         self.n_neighbors = n_neighbors;
         self
     }
 
     /// Set the expected proportion of anomalies (0 to 0.5).
-    #[must_use] 
+    #[must_use]
     pub fn with_contamination(mut self, contamination: f32) -> Self {
         self.contamination = contamination.clamp(0.0, 0.5);
         self
     }
 
     /// Check if model has been fitted.
-    #[must_use] 
+    #[must_use]
     pub fn is_fitted(&self) -> bool {
         self.lof_scores.is_some()
     }
@@ -2181,7 +2181,7 @@ impl LocalOutlierFactor {
     /// Compute LOF scores for samples.
     ///
     /// Returns a vector of LOF scores where higher scores indicate anomalies.
-    #[must_use] 
+    #[must_use]
     pub fn score_samples(&self, x: &Matrix<f32>) -> Vec<f32> {
         assert!(self.is_fitted(), "Model not fitted. Call fit() first.");
 
@@ -2231,7 +2231,7 @@ impl LocalOutlierFactor {
     /// Predict anomaly labels for samples.
     ///
     /// Returns 1 for normal points and -1 for anomalies.
-    #[must_use] 
+    #[must_use]
     pub fn predict(&self, x: &Matrix<f32>) -> Vec<i32> {
         assert!(self.is_fitted(), "Model not fitted. Call fit() first.");
 
@@ -2249,7 +2249,7 @@ impl LocalOutlierFactor {
     /// Get the negative outlier factor for training samples.
     ///
     /// Returns negative of LOF scores (sklearn compatibility).
-    #[must_use] 
+    #[must_use]
     pub fn negative_outlier_factor(&self) -> &[f32] {
         assert!(self.is_fitted(), "Model not fitted. Call fit() first.");
 
@@ -2334,7 +2334,7 @@ impl SpectralClustering {
     /// Create a new Spectral Clustering with default parameters.
     ///
     /// Default: RBF affinity, gamma=1.0, `n_neighbors=10`
-    #[must_use] 
+    #[must_use]
     pub fn new(n_clusters: usize) -> Self {
         Self {
             n_clusters,
@@ -2346,34 +2346,34 @@ impl SpectralClustering {
     }
 
     /// Set the affinity type.
-    #[must_use] 
+    #[must_use]
     pub fn with_affinity(mut self, affinity: Affinity) -> Self {
         self.affinity = affinity;
         self
     }
 
     /// Set gamma for RBF kernel (higher = more local similarity).
-    #[must_use] 
+    #[must_use]
     pub fn with_gamma(mut self, gamma: f32) -> Self {
         self.gamma = gamma;
         self
     }
 
     /// Set number of neighbors for KNN affinity.
-    #[must_use] 
+    #[must_use]
     pub fn with_n_neighbors(mut self, n_neighbors: usize) -> Self {
         self.n_neighbors = n_neighbors;
         self
     }
 
     /// Check if model has been fitted.
-    #[must_use] 
+    #[must_use]
     pub fn is_fitted(&self) -> bool {
         self.labels.is_some()
     }
 
     /// Get cluster labels (panics if not fitted).
-    #[must_use] 
+    #[must_use]
     pub fn labels(&self) -> &Vec<usize> {
         assert!(self.is_fitted(), "Model not fitted. Call fit() first.");
         self.labels

@@ -98,7 +98,7 @@ impl<'a> DescriptiveStats<'a> {
     /// let data = Vector::from_slice(&[1.0, 2.0, 3.0]);
     /// let stats = DescriptiveStats::new(&data);
     /// ```
-    #[must_use] 
+    #[must_use]
     pub fn new(data: &'a Vector<f32>) -> Self {
         Self { data }
     }

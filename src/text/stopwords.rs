@@ -97,7 +97,7 @@ impl StopWordsFilter {
     /// let filtered = filter.filter(&tokens).expect("filter should succeed");
     /// assert_eq!(filtered, vec!["machine", "learning", "awesome"]);
     /// ```
-    #[must_use] 
+    #[must_use]
     pub fn english() -> Self {
         Self::new(ENGLISH_STOP_WORDS)
     }
@@ -198,7 +198,7 @@ impl StopWordsFilter {
     /// assert!(filter.is_stop_word("THE"));
     /// assert!(!filter.is_stop_word("machine"));
     /// ```
-    #[must_use] 
+    #[must_use]
     pub fn is_stop_word(&self, word: &str) -> bool {
         self.stop_words.contains(&word.to_lowercase())
     }
@@ -216,7 +216,7 @@ impl StopWordsFilter {
     /// let custom = StopWordsFilter::new(vec!["foo", "bar"]);
     /// assert_eq!(custom.len(), 2);
     /// ```
-    #[must_use] 
+    #[must_use]
     pub fn len(&self) -> usize {
         self.stop_words.len()
     }
@@ -234,7 +234,7 @@ impl StopWordsFilter {
     /// let english = StopWordsFilter::english();
     /// assert!(!english.is_empty());
     /// ```
-    #[must_use] 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.stop_words.is_empty()
     }

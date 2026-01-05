@@ -80,28 +80,28 @@ impl Default for BinaryGA {
 
 impl BinaryGA {
     /// Set population size
-    #[must_use] 
+    #[must_use]
     pub fn with_population_size(mut self, size: usize) -> Self {
         self.population_size = size.max(4);
         self
     }
 
     /// Set random seed for reproducibility
-    #[must_use] 
+    #[must_use]
     pub fn with_seed(mut self, seed: u64) -> Self {
         self.seed = Some(seed);
         self
     }
 
     /// Set mutation probability per bit
-    #[must_use] 
+    #[must_use]
     pub fn with_mutation_prob(mut self, prob: f64) -> Self {
         self.mutation_prob = prob.clamp(0.0, 1.0);
         self
     }
 
     /// Set crossover probability
-    #[must_use] 
+    #[must_use]
     pub fn with_crossover_prob(mut self, prob: f64) -> Self {
         self.crossover_prob = prob.clamp(0.0, 1.0);
         self
@@ -149,7 +149,7 @@ impl BinaryGA {
     }
 
     /// Get selected feature indices from solution
-    #[must_use] 
+    #[must_use]
     pub fn selected_features(solution: &[f64]) -> Vec<usize> {
         solution
             .iter()

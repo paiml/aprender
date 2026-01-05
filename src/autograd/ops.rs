@@ -23,7 +23,7 @@ use super::{is_grad_enabled, with_graph};
 
 impl Tensor {
     /// Element-wise addition: z = self + other
-    #[must_use] 
+    #[must_use]
     pub fn add(&self, other: &Tensor) -> Tensor {
         let data: Vec<f32> = self
             .data()
@@ -54,7 +54,7 @@ impl Tensor {
     }
 
     /// Element-wise subtraction: z = self - other
-    #[must_use] 
+    #[must_use]
     pub fn sub(&self, other: &Tensor) -> Tensor {
         let data: Vec<f32> = self
             .data()
@@ -84,7 +84,7 @@ impl Tensor {
     }
 
     /// Element-wise multiplication: z = self * other
-    #[must_use] 
+    #[must_use]
     pub fn mul(&self, other: &Tensor) -> Tensor {
         let data: Vec<f32> = self
             .data()
@@ -114,7 +114,7 @@ impl Tensor {
     }
 
     /// Element-wise division: z = self / other
-    #[must_use] 
+    #[must_use]
     pub fn div(&self, other: &Tensor) -> Tensor {
         let data: Vec<f32> = self
             .data()
@@ -144,7 +144,7 @@ impl Tensor {
     }
 
     /// Element-wise negation: z = -self
-    #[must_use] 
+    #[must_use]
     pub fn neg(&self) -> Tensor {
         let data: Vec<f32> = self.data().iter().map(|&a| -a).collect();
 
@@ -165,7 +165,7 @@ impl Tensor {
     }
 
     /// Scalar multiplication: z = self * scalar
-    #[must_use] 
+    #[must_use]
     pub fn mul_scalar(&self, scalar: f32) -> Tensor {
         // Broadcast scalar to match self shape
         let broadcast: Vec<f32> = self.data().iter().map(|&a| a * scalar).collect();
@@ -196,7 +196,7 @@ impl Tensor {
 
 impl Tensor {
     /// Element-wise exponential: z = exp(self)
-    #[must_use] 
+    #[must_use]
     pub fn exp(&self) -> Tensor {
         let data: Vec<f32> = self.data().iter().map(|&a| a.exp()).collect();
         let mut result = Tensor::new(&data, self.shape());
@@ -218,7 +218,7 @@ impl Tensor {
     }
 
     /// Element-wise natural logarithm: z = log(self)
-    #[must_use] 
+    #[must_use]
     pub fn log(&self) -> Tensor {
         let data: Vec<f32> = self.data().iter().map(|&a| a.ln()).collect();
         let mut result = Tensor::new(&data, self.shape());
@@ -238,7 +238,7 @@ impl Tensor {
     }
 
     /// Element-wise power: z = self^n
-    #[must_use] 
+    #[must_use]
     pub fn pow(&self, n: f32) -> Tensor {
         let data: Vec<f32> = self.data().iter().map(|&a| a.powf(n)).collect();
         let mut result = Tensor::new(&data, self.shape());
@@ -258,7 +258,7 @@ impl Tensor {
     }
 
     /// Element-wise square root: z = sqrt(self)
-    #[must_use] 
+    #[must_use]
     pub fn sqrt(&self) -> Tensor {
         let data: Vec<f32> = self.data().iter().map(|&a| a.sqrt()).collect();
         let mut result = Tensor::new(&data, self.shape());
@@ -286,7 +286,7 @@ impl Tensor {
 
 impl Tensor {
     /// Sum all elements: z = sum(self)
-    #[must_use] 
+    #[must_use]
     pub fn sum(&self) -> Tensor {
         let sum: f32 = self.data().iter().sum();
         let mut result = Tensor::new(&[sum], &[1]);
@@ -308,7 +308,7 @@ impl Tensor {
     }
 
     /// Mean of all elements: z = mean(self)
-    #[must_use] 
+    #[must_use]
     pub fn mean(&self) -> Tensor {
         let sum: f32 = self.data().iter().sum();
         let mean = sum / self.numel() as f32;
@@ -337,7 +337,7 @@ impl Tensor {
 
 impl Tensor {
     /// `ReLU` activation: z = max(0, self)
-    #[must_use] 
+    #[must_use]
     pub fn relu(&self) -> Tensor {
         let data: Vec<f32> = self.data().iter().map(|&a| a.max(0.0)).collect();
         let mut result = Tensor::new(&data, self.shape());
@@ -357,7 +357,7 @@ impl Tensor {
     }
 
     /// Sigmoid activation: z = 1 / (1 + exp(-self))
-    #[must_use] 
+    #[must_use]
     pub fn sigmoid(&self) -> Tensor {
         let data: Vec<f32> = self
             .data()
@@ -383,7 +383,7 @@ impl Tensor {
     }
 
     /// Tanh activation
-    #[must_use] 
+    #[must_use]
     pub fn tanh_(&self) -> Tensor {
         let data: Vec<f32> = self.data().iter().map(|&a| a.tanh()).collect();
         let mut result = Tensor::new(&data, self.shape());
@@ -409,7 +409,7 @@ impl Tensor {
     /// # Arguments
     ///
     /// * `negative_slope` - Controls the angle of the negative slope (default: 0.01)
-    #[must_use] 
+    #[must_use]
     pub fn leaky_relu(&self, negative_slope: f32) -> Tensor {
         let data: Vec<f32> = self
             .data()
@@ -439,7 +439,7 @@ impl Tensor {
     ///
     /// Uses the tanh approximation:
     /// GELU(x) ≈ 0.5 * x * (1 + tanh(sqrt(2/π) * (x + 0.044715 * x³)))
-    #[must_use] 
+    #[must_use]
     pub fn gelu(&self) -> Tensor {
         let sqrt_2_over_pi = (2.0_f32 / std::f32::consts::PI).sqrt();
 
@@ -472,7 +472,7 @@ impl Tensor {
     /// softmax(x)_i = `exp(x_i)` / `Σ_j` `exp(x_j)`
     ///
     /// Uses numerically stable computation with max subtraction.
-    #[must_use] 
+    #[must_use]
     pub fn softmax(&self) -> Tensor {
         assert_eq!(self.ndim(), 2, "softmax currently only supports 2D tensors");
 
@@ -529,7 +529,7 @@ impl Tensor {
     ///
     /// Currently supports 2D tensors only. Batched matmul (3D+ tensors) can be
     /// added by iterating over batch dimensions and calling 2D matmul.
-    #[must_use] 
+    #[must_use]
     pub fn matmul(&self, other: &Tensor) -> Tensor {
         assert_eq!(self.ndim(), 2, "matmul requires 2D tensors");
         assert_eq!(other.ndim(), 2, "matmul requires 2D tensors");
@@ -575,7 +575,7 @@ impl Tensor {
     /// let a_t = a.transpose();
     /// // a_t = [[1, 3], [2, 4]]
     /// ```
-    #[must_use] 
+    #[must_use]
     pub fn transpose(&self) -> Tensor {
         assert_eq!(self.ndim(), 2, "transpose requires 2D tensor");
 
@@ -623,7 +623,7 @@ impl Tensor {
     /// let result = matrix.broadcast_add(&bias);
     /// // result = [[11, 22], [13, 24]]
     /// ```
-    #[must_use] 
+    #[must_use]
     pub fn broadcast_add(&self, other: &Tensor) -> Tensor {
         assert_eq!(self.ndim(), 2, "broadcast_add requires 2D matrix");
         assert_eq!(other.ndim(), 1, "broadcast_add requires 1D vector");
@@ -675,7 +675,7 @@ impl Tensor {
     /// let b = a.view(&[3, 2]);
     /// // b = [[1, 2], [3, 4], [5, 6]]
     /// ```
-    #[must_use] 
+    #[must_use]
     pub fn view(&self, new_shape: &[usize]) -> Tensor {
         let old_numel: usize = self.shape().iter().product();
         let new_numel: usize = new_shape.iter().product();

@@ -64,13 +64,13 @@ impl Linear {
     /// ```ignore
     /// let layer = Linear::new(784, 256);
     /// ```
-    #[must_use] 
+    #[must_use]
     pub fn new(in_features: usize, out_features: usize) -> Self {
         Self::with_seed(in_features, out_features, None)
     }
 
     /// Create a Linear layer with a specific random seed.
-    #[must_use] 
+    #[must_use]
     pub fn with_seed(in_features: usize, out_features: usize, seed: Option<u64>) -> Self {
         let weight = xavier_uniform(
             &[out_features, in_features],
@@ -94,13 +94,13 @@ impl Linear {
     /// Create a Linear layer without bias.
     ///
     /// Useful when followed by `BatchNorm` which has its own bias.
-    #[must_use] 
+    #[must_use]
     pub fn without_bias(in_features: usize, out_features: usize) -> Self {
         Self::without_bias_with_seed(in_features, out_features, None)
     }
 
     /// Create a Linear layer without bias with a specific random seed.
-    #[must_use] 
+    #[must_use]
     pub fn without_bias_with_seed(
         in_features: usize,
         out_features: usize,
@@ -125,19 +125,19 @@ impl Linear {
     }
 
     /// Get the input feature dimension.
-    #[must_use] 
+    #[must_use]
     pub fn in_features(&self) -> usize {
         self.in_features
     }
 
     /// Get the output feature dimension.
-    #[must_use] 
+    #[must_use]
     pub fn out_features(&self) -> usize {
         self.out_features
     }
 
     /// Check if this layer has a bias term.
-    #[must_use] 
+    #[must_use]
     pub fn has_bias(&self) -> bool {
         self.bias.is_some()
     }
@@ -167,7 +167,7 @@ impl Linear {
     ///
     /// **IMPORTANT**: This layer will NOT work for inference until
     /// `set_weight()` is called with real weights.
-    #[must_use] 
+    #[must_use]
     pub fn placeholder(in_features: usize, out_features: usize) -> Self {
         // Use 1-element placeholder tensors to save memory
         Self {
@@ -180,13 +180,13 @@ impl Linear {
     }
 
     /// Get reference to weight tensor.
-    #[must_use] 
+    #[must_use]
     pub fn weight(&self) -> &Tensor {
         &self.weight
     }
 
     /// Get reference to bias tensor if present.
-    #[must_use] 
+    #[must_use]
     pub fn bias(&self) -> Option<&Tensor> {
         self.bias.as_ref()
     }

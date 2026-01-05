@@ -129,7 +129,7 @@ impl PorterStemmer {
     ///
     /// let stemmer = PorterStemmer::new();
     /// ```
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self
     }

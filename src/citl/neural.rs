@@ -684,7 +684,7 @@ impl Vocabulary {
     }
 
     /// Tokenize a string into token IDs.
-    #[must_use] 
+    #[must_use]
     pub fn tokenize(&self, text: &str) -> Vec<usize> {
         // Simple whitespace + punctuation tokenization
         let mut tokens = Vec::new();
@@ -1074,7 +1074,7 @@ impl ContrastiveLoss {
     /// # Returns
     ///
     /// Scalar loss value.
-    #[must_use] 
+    #[must_use]
     pub fn forward(
         &self,
         anchor: &Tensor,
@@ -1183,7 +1183,7 @@ impl TripletLoss {
     /// # Returns
     ///
     /// Mean triplet loss over the batch.
-    #[must_use] 
+    #[must_use]
     pub fn forward(&self, anchor: &Tensor, positive: &Tensor, negative: &Tensor) -> Tensor {
         let batch_size = anchor.shape()[0];
         let dim = anchor.shape()[1];
@@ -1239,7 +1239,7 @@ impl TripletLoss {
     ///
     /// Returns a matrix of shape [batch, batch] where entry (i, j) is the
     /// distance between embedding i and embedding j.
-    #[must_use] 
+    #[must_use]
     pub fn pairwise_distances(&self, embeddings: &Tensor) -> Tensor {
         let batch_size = embeddings.shape()[0];
         let dim = embeddings.shape()[1];
@@ -1268,7 +1268,7 @@ impl TripletLoss {
     /// # Returns
     ///
     /// Vector of (`anchor_idx`, `positive_idx`, `negative_idx`) triplets.
-    #[must_use] 
+    #[must_use]
     pub fn mine_hard_triplets(
         &self,
         embeddings: &Tensor,
@@ -1327,7 +1327,7 @@ impl TripletLoss {
     ///
     /// For each anchor in the batch, selects the hardest positive (same class, farthest)
     /// and hardest negative (different class, closest).
-    #[must_use] 
+    #[must_use]
     pub fn batch_hard_loss(&self, embeddings: &Tensor, labels: &[usize]) -> Tensor {
         let triplets = self.mine_hard_triplets(embeddings, labels);
 

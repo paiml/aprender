@@ -682,7 +682,7 @@ impl Default for ScoringConfig {
 /// # Returns
 ///
 /// Quality score with detailed breakdown
-#[must_use] 
+#[must_use]
 pub fn compute_quality_score(metadata: &ModelMetadata, config: &ScoringConfig) -> QualityScore {
     let mut findings = Vec::new();
     let mut critical_issues = Vec::new();

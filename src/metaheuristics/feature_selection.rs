@@ -101,7 +101,7 @@ pub struct FeatureSelector {
 
 impl FeatureSelector {
     /// Create new feature selector for given number of features.
-    #[must_use] 
+    #[must_use]
     pub fn new(n_features: usize) -> Self {
         Self {
             n_features,
@@ -113,28 +113,28 @@ impl FeatureSelector {
     }
 
     /// Set selection criterion.
-    #[must_use] 
+    #[must_use]
     pub fn with_criterion(mut self, criterion: SelectionCriterion) -> Self {
         self.criterion = criterion;
         self
     }
 
     /// Set population size for Binary GA.
-    #[must_use] 
+    #[must_use]
     pub fn with_population_size(mut self, size: usize) -> Self {
         self.population_size = size.max(10);
         self
     }
 
     /// Set mutation probability.
-    #[must_use] 
+    #[must_use]
     pub fn with_mutation_prob(mut self, prob: f64) -> Self {
         self.mutation_prob = prob.clamp(0.001, 0.5);
         self
     }
 
     /// Set random seed for reproducibility.
-    #[must_use] 
+    #[must_use]
     pub fn with_seed(mut self, seed: u64) -> Self {
         self.seed = Some(seed);
         self

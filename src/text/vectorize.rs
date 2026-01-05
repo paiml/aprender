@@ -91,7 +91,7 @@ impl CountVectorizer {
     ///
     /// let vectorizer = CountVectorizer::new();
     /// ```
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             tokenizer: None,
@@ -107,21 +107,21 @@ impl CountVectorizer {
     }
 
     /// Use English stop words (removes common words like "the", "and", "is").
-    #[must_use] 
+    #[must_use]
     pub fn with_stop_words_english(mut self) -> Self {
         self.stop_words = Some(StopWordsFilter::english());
         self
     }
 
     /// Use custom stop words.
-    #[must_use] 
+    #[must_use]
     pub fn with_stop_words(mut self, words: &[&str]) -> Self {
         self.stop_words = Some(StopWordsFilter::new(words));
         self
     }
 
     /// Strip accents/diacritics (e.g., "café" → "cafe").
-    #[must_use] 
+    #[must_use]
     pub fn with_strip_accents(mut self, enable: bool) -> Self {
         self.strip_accents = enable;
         self
@@ -137,7 +137,7 @@ impl CountVectorizer {
     /// // Extract unigrams, bigrams, and trigrams
     /// let vectorizer = CountVectorizer::new().with_ngram_range(1, 3);
     /// ```
-    #[must_use] 
+    #[must_use]
     pub fn with_ngram_range(mut self, min_n: usize, max_n: usize) -> Self {
         self.ngram_range = (min_n.max(1), max_n.max(1));
         self
@@ -146,7 +146,7 @@ impl CountVectorizer {
     /// Set minimum document frequency threshold.
     ///
     /// Terms appearing in fewer than `min_df` documents are ignored.
-    #[must_use] 
+    #[must_use]
     pub fn with_min_df(mut self, min_df: usize) -> Self {
         self.min_df = min_df;
         self
@@ -155,7 +155,7 @@ impl CountVectorizer {
     /// Set maximum document frequency threshold (0.0-1.0).
     ///
     /// Terms appearing in more than `max_df` fraction of documents are ignored.
-    #[must_use] 
+    #[must_use]
     pub fn with_max_df(mut self, max_df: f32) -> Self {
         self.max_df = max_df.clamp(0.0, 1.0);
         self
@@ -172,7 +172,7 @@ impl CountVectorizer {
     /// let vectorizer = CountVectorizer::new()
     ///     .with_tokenizer(Box::new(WhitespaceTokenizer::new()));
     /// ```
-    #[must_use] 
+    #[must_use]
     pub fn with_tokenizer(mut self, tokenizer: Box<dyn Tokenizer>) -> Self {
         self.tokenizer = Some(tokenizer);
         self
@@ -187,7 +187,7 @@ impl CountVectorizer {
     ///
     /// let vectorizer = CountVectorizer::new().with_lowercase(false);
     /// ```
-    #[must_use] 
+    #[must_use]
     pub fn with_lowercase(mut self, lowercase: bool) -> Self {
         self.lowercase = lowercase;
         self
@@ -202,7 +202,7 @@ impl CountVectorizer {
     ///
     /// let vectorizer = CountVectorizer::new().with_max_features(1000);
     /// ```
-    #[must_use] 
+    #[must_use]
     pub fn with_max_features(mut self, max_features: usize) -> Self {
         self.max_features = Some(max_features);
         self
@@ -443,7 +443,7 @@ impl CountVectorizer {
     /// assert!(vocab.contains_key("hello"));
     /// assert!(vocab.contains_key("world"));
     /// ```
-    #[must_use] 
+    #[must_use]
     pub fn vocabulary(&self) -> &HashMap<String, usize> {
         &self.vocabulary
     }
@@ -463,7 +463,7 @@ impl CountVectorizer {
     /// vectorizer.fit(&docs).unwrap();
     /// assert_eq!(vectorizer.vocabulary_size(), 3);
     /// ```
-    #[must_use] 
+    #[must_use]
     pub fn vocabulary_size(&self) -> usize {
         self.vocabulary.len()
     }
@@ -525,7 +525,7 @@ impl TfidfVectorizer {
     ///
     /// let vectorizer = TfidfVectorizer::new();
     /// ```
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             count_vectorizer: CountVectorizer::new(),
@@ -537,49 +537,49 @@ impl TfidfVectorizer {
     /// Enable sublinear TF scaling: tf = 1 + log(tf) if tf > 0.
     ///
     /// Dampens the effect of high term frequencies.
-    #[must_use] 
+    #[must_use]
     pub fn with_sublinear_tf(mut self, enable: bool) -> Self {
         self.sublinear_tf = enable;
         self
     }
 
     /// Set n-gram range for feature extraction.
-    #[must_use] 
+    #[must_use]
     pub fn with_ngram_range(mut self, min_n: usize, max_n: usize) -> Self {
         self.count_vectorizer = self.count_vectorizer.with_ngram_range(min_n, max_n);
         self
     }
 
     /// Set minimum document frequency threshold.
-    #[must_use] 
+    #[must_use]
     pub fn with_min_df(mut self, min_df: usize) -> Self {
         self.count_vectorizer = self.count_vectorizer.with_min_df(min_df);
         self
     }
 
     /// Set maximum document frequency threshold (0.0-1.0).
-    #[must_use] 
+    #[must_use]
     pub fn with_max_df(mut self, max_df: f32) -> Self {
         self.count_vectorizer = self.count_vectorizer.with_max_df(max_df);
         self
     }
 
     /// Use English stop words.
-    #[must_use] 
+    #[must_use]
     pub fn with_stop_words_english(mut self) -> Self {
         self.count_vectorizer = self.count_vectorizer.with_stop_words_english();
         self
     }
 
     /// Use custom stop words.
-    #[must_use] 
+    #[must_use]
     pub fn with_custom_stop_words(mut self, words: &[&str]) -> Self {
         self.count_vectorizer = self.count_vectorizer.with_stop_words(words);
         self
     }
 
     /// Strip accents/diacritics.
-    #[must_use] 
+    #[must_use]
     pub fn with_strip_accents(mut self, enable: bool) -> Self {
         self.count_vectorizer = self.count_vectorizer.with_strip_accents(enable);
         self
@@ -596,7 +596,7 @@ impl TfidfVectorizer {
     /// let vectorizer = TfidfVectorizer::new()
     ///     .with_tokenizer(Box::new(WhitespaceTokenizer::new()));
     /// ```
-    #[must_use] 
+    #[must_use]
     pub fn with_tokenizer(mut self, tokenizer: Box<dyn Tokenizer>) -> Self {
         self.count_vectorizer = self.count_vectorizer.with_tokenizer(tokenizer);
         self
@@ -611,7 +611,7 @@ impl TfidfVectorizer {
     ///
     /// let vectorizer = TfidfVectorizer::new().with_lowercase(false);
     /// ```
-    #[must_use] 
+    #[must_use]
     pub fn with_lowercase(mut self, lowercase: bool) -> Self {
         self.count_vectorizer = self.count_vectorizer.with_lowercase(lowercase);
         self
@@ -626,7 +626,7 @@ impl TfidfVectorizer {
     ///
     /// let vectorizer = TfidfVectorizer::new().with_max_features(1000);
     /// ```
-    #[must_use] 
+    #[must_use]
     pub fn with_max_features(mut self, max_features: usize) -> Self {
         self.count_vectorizer = self.count_vectorizer.with_max_features(max_features);
         self
@@ -789,7 +789,7 @@ impl TfidfVectorizer {
     /// let vocab = vectorizer.vocabulary();
     /// assert!(vocab.contains_key("hello"));
     /// ```
-    #[must_use] 
+    #[must_use]
     pub fn vocabulary(&self) -> &HashMap<String, usize> {
         self.count_vectorizer.vocabulary()
     }
@@ -809,7 +809,7 @@ impl TfidfVectorizer {
     /// vectorizer.fit(&docs).unwrap();
     /// assert_eq!(vectorizer.vocabulary_size(), 3);
     /// ```
-    #[must_use] 
+    #[must_use]
     pub fn vocabulary_size(&self) -> usize {
         self.count_vectorizer.vocabulary_size()
     }
@@ -829,7 +829,7 @@ impl TfidfVectorizer {
     /// vectorizer.fit(&docs).unwrap();
     /// assert_eq!(vectorizer.idf_values().len(), 3);  // 3 unique words
     /// ```
-    #[must_use] 
+    #[must_use]
     pub fn idf_values(&self) -> &[f64] {
         &self.idf_values
     }
@@ -902,7 +902,7 @@ pub struct HashingVectorizer {
 
 impl HashingVectorizer {
     /// Create a new `HashingVectorizer` with specified number of features.
-    #[must_use] 
+    #[must_use]
     pub fn new(n_features: usize) -> Self {
         Self {
             tokenizer: None,
@@ -914,28 +914,28 @@ impl HashingVectorizer {
     }
 
     /// Set the tokenizer.
-    #[must_use] 
+    #[must_use]
     pub fn with_tokenizer(mut self, tokenizer: Box<dyn Tokenizer>) -> Self {
         self.tokenizer = Some(tokenizer);
         self
     }
 
     /// Set lowercase.
-    #[must_use] 
+    #[must_use]
     pub fn with_lowercase(mut self, lowercase: bool) -> Self {
         self.lowercase = lowercase;
         self
     }
 
     /// Set n-gram range.
-    #[must_use] 
+    #[must_use]
     pub fn with_ngram_range(mut self, min_n: usize, max_n: usize) -> Self {
         self.ngram_range = (min_n.max(1), max_n.max(1));
         self
     }
 
     /// Use English stop words.
-    #[must_use] 
+    #[must_use]
     pub fn with_stop_words_english(mut self) -> Self {
         self.stop_words = Some(StopWordsFilter::english());
         self

@@ -258,7 +258,7 @@ pub enum ModelType {
 
 impl ModelType {
     /// Convert from u16 value
-    #[must_use] 
+    #[must_use]
     pub fn from_u16(value: u16) -> Option<Self> {
         match value {
             0x0001 => Some(Self::LinearRegression),
@@ -301,7 +301,7 @@ pub enum Compression {
 
 impl Compression {
     /// Convert from u8 value
-    #[must_use] 
+    #[must_use]
     pub fn from_u8(value: u8) -> Option<Self> {
         match value {
             0x00 => Some(Self::None),
@@ -334,110 +334,110 @@ impl Flags {
     pub const HAS_MODEL_CARD: u8 = 0b0100_0000;
 
     /// Create new flags
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self(0)
     }
 
     /// Set encrypted flag
-    #[must_use] 
+    #[must_use]
     pub fn with_encrypted(mut self) -> Self {
         self.0 |= Self::ENCRYPTED;
         self
     }
 
     /// Set signed flag
-    #[must_use] 
+    #[must_use]
     pub fn with_signed(mut self) -> Self {
         self.0 |= Self::SIGNED;
         self
     }
 
     /// Set streaming flag
-    #[must_use] 
+    #[must_use]
     pub fn with_streaming(mut self) -> Self {
         self.0 |= Self::STREAMING;
         self
     }
 
     /// Set licensed flag
-    #[must_use] 
+    #[must_use]
     pub fn with_licensed(mut self) -> Self {
         self.0 |= Self::LICENSED;
         self
     }
 
     /// Set trueno-native flag
-    #[must_use] 
+    #[must_use]
     pub fn with_trueno_native(mut self) -> Self {
         self.0 |= Self::TRUENO_NATIVE;
         self
     }
 
     /// Set quantized flag
-    #[must_use] 
+    #[must_use]
     pub fn with_quantized(mut self) -> Self {
         self.0 |= Self::QUANTIZED;
         self
     }
 
     /// Set model card flag
-    #[must_use] 
+    #[must_use]
     pub fn with_model_card(mut self) -> Self {
         self.0 |= Self::HAS_MODEL_CARD;
         self
     }
 
     /// Check if encrypted
-    #[must_use] 
+    #[must_use]
     pub fn is_encrypted(self) -> bool {
         self.0 & Self::ENCRYPTED != 0
     }
 
     /// Check if signed
-    #[must_use] 
+    #[must_use]
     pub fn is_signed(self) -> bool {
         self.0 & Self::SIGNED != 0
     }
 
     /// Check if streaming
-    #[must_use] 
+    #[must_use]
     pub fn is_streaming(self) -> bool {
         self.0 & Self::STREAMING != 0
     }
 
     /// Check if licensed
-    #[must_use] 
+    #[must_use]
     pub fn is_licensed(self) -> bool {
         self.0 & Self::LICENSED != 0
     }
 
     /// Check if trueno-native
-    #[must_use] 
+    #[must_use]
     pub fn is_trueno_native(self) -> bool {
         self.0 & Self::TRUENO_NATIVE != 0
     }
 
     /// Check if quantized
-    #[must_use] 
+    #[must_use]
     pub fn is_quantized(self) -> bool {
         self.0 & Self::QUANTIZED != 0
     }
 
     /// Check if has model card
-    #[must_use] 
+    #[must_use]
     pub fn has_model_card(self) -> bool {
         self.0 & Self::HAS_MODEL_CARD != 0
     }
 
     /// Get raw value
-    #[must_use] 
+    #[must_use]
     pub fn bits(self) -> u8 {
         self.0
     }
 
     /// Create from raw value
-    #[must_use] 
+    #[must_use]
     pub fn from_bits(bits: u8) -> Self {
         Self(bits & 0b0111_1111) // Mask reserved bit (7 only)
     }
@@ -469,7 +469,7 @@ pub struct Header {
 
 impl Header {
     /// Create a new header
-    #[must_use] 
+    #[must_use]
     pub fn new(model_type: ModelType) -> Self {
         Self {
             magic: MAGIC,
@@ -485,7 +485,7 @@ impl Header {
     }
 
     /// Serialize header to bytes (32 bytes)
-    #[must_use] 
+    #[must_use]
     pub fn to_bytes(&self) -> [u8; HEADER_SIZE] {
         let mut bytes = [0u8; HEADER_SIZE];
 
@@ -813,13 +813,13 @@ pub struct SaveOptions {
 
 impl SaveOptions {
     /// Create with default compression
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
     /// Set compression algorithm
-    #[must_use] 
+    #[must_use]
     pub fn with_compression(mut self, compression: Compression) -> Self {
         self.compression = compression;
         self
@@ -838,21 +838,21 @@ impl SaveOptions {
     }
 
     /// Set distillation info (spec §6.3)
-    #[must_use] 
+    #[must_use]
     pub fn with_distillation_info(mut self, info: DistillationInfo) -> Self {
         self.metadata.distillation_info = Some(info);
         self
     }
 
     /// Set license info (spec §9.1)
-    #[must_use] 
+    #[must_use]
     pub fn with_license(mut self, license: LicenseInfo) -> Self {
         self.metadata.license = Some(license);
         self
     }
 
     /// Set model card (spec §11)
-    #[must_use] 
+    #[must_use]
     pub fn with_model_card(mut self, card: ModelCard) -> Self {
         self.metadata.model_card = Some(card);
         self
@@ -864,14 +864,14 @@ impl SaveOptions {
     /// - Score 0 will cause `save()` to REFUSE the write
     /// - Score 1-59 allows save with warning
     /// - Score 60-100 is passing
-    #[must_use] 
+    #[must_use]
     pub fn with_quality_score(mut self, score: u8) -> Self {
         self.quality_score = Some(score);
         self
     }
 
     /// Set quality score from `PokaYokeResult` (APR-POKA-001)
-    #[must_use] 
+    #[must_use]
     pub fn with_poka_yoke_result(mut self, result: &PokaYokeResult) -> Self {
         self.quality_score = Some(result.score);
         self

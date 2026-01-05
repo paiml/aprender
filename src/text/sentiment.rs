@@ -68,7 +68,7 @@ impl SentimentAnalyzer {
     ///
     /// let analyzer = SentimentAnalyzer::new();
     /// ```
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             lexicon: Self::default_lexicon(),
@@ -94,7 +94,7 @@ impl SentimentAnalyzer {
     ///
     /// let analyzer = SentimentAnalyzer::with_lexicon(lexicon);
     /// ```
-    #[must_use] 
+    #[must_use]
     pub fn with_lexicon(lexicon: HashMap<String, f64>) -> Self {
         Self {
             lexicon,
@@ -113,7 +113,7 @@ impl SentimentAnalyzer {
     ///
     /// let analyzer = SentimentAnalyzer::new().with_neutral_threshold(0.1);
     /// ```
-    #[must_use] 
+    #[must_use]
     pub fn with_neutral_threshold(mut self, threshold: f64) -> Self {
         self.neutral_threshold = threshold;
         self
@@ -213,7 +213,7 @@ impl SentimentAnalyzer {
     /// let analyzer = SentimentAnalyzer::default();
     /// assert!(analyzer.lexicon_size() > 0);
     /// ```
-    #[must_use] 
+    #[must_use]
     pub fn lexicon_size(&self) -> usize {
         self.lexicon.len()
     }

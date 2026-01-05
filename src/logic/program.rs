@@ -59,7 +59,7 @@ pub struct TensorProgram {
 
 impl TensorProgram {
     /// Create a new empty program
-    #[must_use] 
+    #[must_use]
     pub fn new(mode: LogicMode) -> Self {
         Self {
             mode,
@@ -116,13 +116,13 @@ impl TensorProgram {
     }
 
     /// Get a tensor by name (fact or derived)
-    #[must_use] 
+    #[must_use]
     pub fn get(&self, name: &str) -> Option<&Vec<Vec<f64>>> {
         self.facts.get(name).or_else(|| self.derived.get(name))
     }
 
     /// Get all computed results
-    #[must_use] 
+    #[must_use]
     pub fn results(&self) -> HashMap<String, Vec<Vec<f64>>> {
         let mut all = self.facts.clone();
         all.extend(self.derived.clone());
@@ -182,7 +182,7 @@ pub struct ProgramBuilder {
 
 impl ProgramBuilder {
     /// Create a new builder with the specified mode
-    #[must_use] 
+    #[must_use]
     pub fn new(mode: LogicMode) -> Self {
         Self {
             program: TensorProgram::new(mode),
@@ -190,21 +190,21 @@ impl ProgramBuilder {
     }
 
     /// Add a fact to the program
-    #[must_use] 
+    #[must_use]
     pub fn add_fact(mut self, name: &str, tensor: Vec<Vec<f64>>) -> Self {
         self.program.add_fact(name, tensor);
         self
     }
 
     /// Add a rule to the program
-    #[must_use] 
+    #[must_use]
     pub fn add_rule(mut self, name: &str, equation: Equation) -> Self {
         self.program.add_rule(name, equation);
         self
     }
 
     /// Build the final program
-    #[must_use] 
+    #[must_use]
     pub fn build(self) -> TensorProgram {
         self.program
     }

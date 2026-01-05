@@ -133,7 +133,7 @@ impl ShapExplainer {
     /// Set the number of samples for Monte Carlo approximation.
     ///
     /// Higher values give more accurate SHAP values but take longer.
-    #[must_use] 
+    #[must_use]
     pub fn with_n_samples(mut self, n_samples: usize) -> Self {
         self.n_samples = n_samples;
         self
@@ -199,19 +199,19 @@ impl ShapExplainer {
     }
 
     /// Get the background dataset.
-    #[must_use] 
+    #[must_use]
     pub fn background(&self) -> &[Vector<f32>] {
         &self.background
     }
 
     /// Get the expected value.
-    #[must_use] 
+    #[must_use]
     pub fn expected_value(&self) -> f32 {
         self.expected_value
     }
 
     /// Get the number of features.
-    #[must_use] 
+    #[must_use]
     pub fn n_features(&self) -> usize {
         self.n_features
     }
@@ -310,13 +310,13 @@ impl PermutationImportance {
     }
 
     /// Get importance scores.
-    #[must_use] 
+    #[must_use]
     pub fn scores(&self) -> &Vector<f32> {
         &self.importance
     }
 
     /// Get feature ranking (indices sorted by importance, descending).
-    #[must_use] 
+    #[must_use]
     pub fn ranking(&self) -> Vec<usize> {
         let mut indices: Vec<usize> = (0..self.importance.len()).collect();
         indices.sort_by(|&a, &b| {
@@ -354,7 +354,7 @@ impl FeatureContributions {
     /// * `weights` - Model weights (coefficients)
     /// * `features` - Input features
     /// * `bias` - Model bias/intercept
-    #[must_use] 
+    #[must_use]
     pub fn from_linear(weights: &Vector<f32>, features: &Vector<f32>, bias: f32) -> Self {
         assert_eq!(
             weights.len(),
@@ -379,7 +379,7 @@ impl FeatureContributions {
     }
 
     /// Create from pre-computed contributions.
-    #[must_use] 
+    #[must_use]
     pub fn new(contributions: Vector<f32>, bias: f32) -> Self {
         let prediction = bias + contributions.sum();
         Self {
@@ -392,7 +392,7 @@ impl FeatureContributions {
     /// Get top contributing features.
     ///
     /// Returns indices of features with highest absolute contributions.
-    #[must_use] 
+    #[must_use]
     pub fn top_features(&self, k: usize) -> Vec<(usize, f32)> {
         let mut indexed: Vec<(usize, f32)> = self
             .contributions
@@ -413,7 +413,7 @@ impl FeatureContributions {
     /// Verify that contributions sum to prediction.
     ///
     /// Returns true if `bias + sum(contributions) ≈ prediction`.
-    #[must_use] 
+    #[must_use]
     pub fn verify_sum(&self, tolerance: f32) -> bool {
         let reconstructed = self.bias + self.contributions.sum();
         (reconstructed - self.prediction).abs() < tolerance
@@ -446,7 +446,7 @@ impl IntegratedGradients {
     /// # Arguments
     ///
     /// * `n_steps` - Number of steps for Riemann approximation (default: 50)
-    #[must_use] 
+    #[must_use]
     pub fn new(n_steps: usize) -> Self {
         Self { n_steps }
     }
@@ -554,7 +554,7 @@ impl LIME {
     ///
     /// * `n_samples` - Number of perturbations to generate (default: 1000)
     /// * `kernel_width` - Width of exponential kernel (default: 0.75)
-    #[must_use] 
+    #[must_use]
     pub fn new(n_samples: usize, kernel_width: f32) -> Self {
         Self {
             n_samples,
@@ -735,12 +735,12 @@ impl LIME {
         x
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn n_samples(&self) -> usize {
         self.n_samples
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn kernel_width(&self) -> f32 {
         self.kernel_width
     }
@@ -776,19 +776,19 @@ pub struct SaliencyMap {
 
 impl SaliencyMap {
     /// Create a new saliency map calculator.
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self { epsilon: 1e-4 }
     }
 
     /// Create with custom epsilon.
-    #[must_use] 
+    #[must_use]
     pub fn with_epsilon(epsilon: f32) -> Self {
         Self { epsilon }
     }
 
     /// Get epsilon value.
-    #[must_use] 
+    #[must_use]
     pub fn epsilon(&self) -> f32 {
         self.epsilon
     }
@@ -930,7 +930,7 @@ impl CounterfactualExplainer {
     ///
     /// * `max_iter` - Maximum iterations for optimization
     /// * `step_size` - Learning rate for gradient descent
-    #[must_use] 
+    #[must_use]
     pub fn new(max_iter: usize, step_size: f32) -> Self {
         Self {
             max_iter,
@@ -940,13 +940,13 @@ impl CounterfactualExplainer {
     }
 
     /// Get max iterations.
-    #[must_use] 
+    #[must_use]
     pub fn max_iter(&self) -> usize {
         self.max_iter
     }
 
     /// Get step size.
-    #[must_use] 
+    #[must_use]
     pub fn step_size(&self) -> f32 {
         self.step_size
     }
@@ -1065,7 +1065,7 @@ pub struct CounterfactualResult {
 
 impl CounterfactualResult {
     /// Get feature changes (counterfactual - original).
-    #[must_use] 
+    #[must_use]
     pub fn feature_changes(&self) -> Vec<f32> {
         self.counterfactual
             .as_slice()
@@ -1076,7 +1076,7 @@ impl CounterfactualResult {
     }
 
     /// Get top k features with largest absolute changes.
-    #[must_use] 
+    #[must_use]
     pub fn top_changed_features(&self, k: usize) -> Vec<(usize, f32)> {
         let changes = self.feature_changes();
         let mut indexed: Vec<(usize, f32)> = changes.into_iter().enumerate().collect();
@@ -1103,7 +1103,7 @@ pub struct LIMEExplanation {
 
 impl LIMEExplanation {
     /// Get top influential features.
-    #[must_use] 
+    #[must_use]
     pub fn top_features(&self, k: usize) -> Vec<(usize, f32)> {
         let mut indexed: Vec<(usize, f32)> = self
             .coefficients
@@ -1122,7 +1122,7 @@ impl LIMEExplanation {
     }
 
     /// Local prediction using the linear model.
-    #[must_use] 
+    #[must_use]
     pub fn local_prediction(&self, sample: &Vector<f32>) -> f32 {
         self.intercept
             + self

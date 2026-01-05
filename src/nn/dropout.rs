@@ -58,7 +58,7 @@ impl Dropout {
     /// # Panics
     ///
     /// Panics if `p` is not in [0, 1).
-    #[must_use] 
+    #[must_use]
     pub fn new(p: f32) -> Self {
         assert!(
             (0.0..1.0).contains(&p),
@@ -73,7 +73,7 @@ impl Dropout {
     }
 
     /// Create a new Dropout layer with a specific seed for reproducibility.
-    #[must_use] 
+    #[must_use]
     pub fn with_seed(p: f32, seed: u64) -> Self {
         assert!(
             (0.0..1.0).contains(&p),
@@ -181,7 +181,7 @@ impl Dropout2d {
     /// # Arguments
     ///
     /// * `p` - Probability of channel being zeroed (must be in [0, 1))
-    #[must_use] 
+    #[must_use]
     pub fn new(p: f32) -> Self {
         assert!(
             (0.0..1.0).contains(&p),
@@ -196,7 +196,7 @@ impl Dropout2d {
     }
 
     /// Create Dropout2d with a specific seed for reproducibility.
-    #[must_use] 
+    #[must_use]
     pub fn with_seed(p: f32, seed: u64) -> Self {
         assert!(
             (0.0..1.0).contains(&p),
@@ -303,7 +303,7 @@ const SCALE: f32 = 1.050_701;
 
 impl AlphaDropout {
     /// Create a new `AlphaDropout` layer.
-    #[must_use] 
+    #[must_use]
     pub fn new(p: f32) -> Self {
         assert!(
             (0.0..1.0).contains(&p),
@@ -318,7 +318,7 @@ impl AlphaDropout {
     }
 
     /// Create `AlphaDropout` with a specific seed.
-    #[must_use] 
+    #[must_use]
     pub fn with_seed(p: f32, seed: u64) -> Self {
         assert!(
             (0.0..1.0).contains(&p),
@@ -399,7 +399,7 @@ pub struct DropBlock {
 
 impl DropBlock {
     /// Create `DropBlock` with given block size and drop probability.
-    #[must_use] 
+    #[must_use]
     pub fn new(block_size: usize, p: f32) -> Self {
         assert!(
             (0.0..1.0).contains(&p),
@@ -415,7 +415,7 @@ impl DropBlock {
     }
 
     /// Create with specific seed.
-    #[must_use] 
+    #[must_use]
     pub fn with_seed(block_size: usize, p: f32, seed: u64) -> Self {
         assert!(
             (0.0..1.0).contains(&p),
@@ -537,7 +537,7 @@ pub struct DropConnect {
 
 impl DropConnect {
     /// Create new `DropConnect` with drop probability.
-    #[must_use] 
+    #[must_use]
     pub fn new(p: f32) -> Self {
         assert!(
             (0.0..1.0).contains(&p),
@@ -551,7 +551,7 @@ impl DropConnect {
     }
 
     /// Create `DropConnect` with specific seed.
-    #[must_use] 
+    #[must_use]
     pub fn with_seed(p: f32, seed: u64) -> Self {
         assert!(
             (0.0..1.0).contains(&p),

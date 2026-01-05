@@ -166,7 +166,7 @@ pub fn satisfies_four_fifths_rule(dir: f32) -> bool {
 }
 
 /// Run fairness tests on model predictions
-#[must_use] 
+#[must_use]
 pub fn run_fairness_tests(config: &FairnessConfig) -> (CategoryScore, Vec<QaIssue>) {
     let start = Instant::now();
     let mut score = CategoryScore::new(15); // 15 points for fairness

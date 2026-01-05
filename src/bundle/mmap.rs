@@ -268,7 +268,7 @@ pub struct MappedRegion {
 
 impl MappedRegion {
     /// Create a new mapped region.
-    #[must_use] 
+    #[must_use]
     pub fn new(data: Vec<u8>, offset: u64) -> Self {
         let length = data.len();
         Self {

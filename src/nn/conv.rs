@@ -57,7 +57,7 @@ impl Conv1d {
     /// * `in_channels` - Number of input channels
     /// * `out_channels` - Number of output channels
     /// * `kernel_size` - Size of the convolving kernel
-    #[must_use] 
+    #[must_use]
     pub fn new(in_channels: usize, out_channels: usize, kernel_size: usize) -> Self {
         Self::with_options(in_channels, out_channels, kernel_size, 1, 0, true)
     }
@@ -72,7 +72,7 @@ impl Conv1d {
     /// * `stride` - Stride of the convolution
     /// * `padding` - Zero-padding added to both sides
     /// * `bias` - If true, adds a learnable bias
-    #[must_use] 
+    #[must_use]
     pub fn with_options(
         in_channels: usize,
         out_channels: usize,
@@ -104,7 +104,7 @@ impl Conv1d {
     }
 
     /// Create Conv1d with specific stride.
-    #[must_use] 
+    #[must_use]
     pub fn with_stride(
         in_channels: usize,
         out_channels: usize,
@@ -115,7 +115,7 @@ impl Conv1d {
     }
 
     /// Create Conv1d with padding.
-    #[must_use] 
+    #[must_use]
     pub fn with_padding(
         in_channels: usize,
         out_channels: usize,
@@ -126,19 +126,19 @@ impl Conv1d {
     }
 
     /// Get kernel size.
-    #[must_use] 
+    #[must_use]
     pub fn kernel_size(&self) -> usize {
         self.kernel_size
     }
 
     /// Get stride.
-    #[must_use] 
+    #[must_use]
     pub fn stride(&self) -> usize {
         self.stride
     }
 
     /// Get padding.
-    #[must_use] 
+    #[must_use]
     pub fn padding(&self) -> usize {
         self.padding
     }
@@ -286,7 +286,7 @@ impl Conv2d {
     /// * `in_channels` - Number of input channels
     /// * `out_channels` - Number of output channels
     /// * `kernel_size` - Size of the square convolving kernel
-    #[must_use] 
+    #[must_use]
     pub fn new(in_channels: usize, out_channels: usize, kernel_size: usize) -> Self {
         Self::with_options(
             in_channels,
@@ -308,7 +308,7 @@ impl Conv2d {
     /// * `stride` - (height, width) stride
     /// * `padding` - (height, width) padding
     /// * `bias` - If true, adds a learnable bias
-    #[must_use] 
+    #[must_use]
     pub fn with_options(
         in_channels: usize,
         out_channels: usize,
@@ -349,7 +349,7 @@ impl Conv2d {
     }
 
     /// Create Conv2d with stride.
-    #[must_use] 
+    #[must_use]
     pub fn with_stride(
         in_channels: usize,
         out_channels: usize,
@@ -367,7 +367,7 @@ impl Conv2d {
     }
 
     /// Create Conv2d with padding.
-    #[must_use] 
+    #[must_use]
     pub fn with_padding(
         in_channels: usize,
         out_channels: usize,
@@ -385,19 +385,19 @@ impl Conv2d {
     }
 
     /// Get kernel size as (height, width).
-    #[must_use] 
+    #[must_use]
     pub fn kernel_size(&self) -> (usize, usize) {
         (self.kernel_h, self.kernel_w)
     }
 
     /// Get stride as (height, width).
-    #[must_use] 
+    #[must_use]
     pub fn stride(&self) -> (usize, usize) {
         (self.stride_h, self.stride_w)
     }
 
     /// Get padding as (height, width).
-    #[must_use] 
+    #[must_use]
     pub fn padding(&self) -> (usize, usize) {
         (self.padding_h, self.padding_w)
     }
@@ -530,7 +530,7 @@ pub struct MaxPool1d {
 
 impl MaxPool1d {
     /// Create a new `MaxPool1d` layer.
-    #[must_use] 
+    #[must_use]
     pub fn new(kernel_size: usize) -> Self {
         Self {
             kernel_size,
@@ -539,7 +539,7 @@ impl MaxPool1d {
     }
 
     /// Create `MaxPool1d` with custom stride.
-    #[must_use] 
+    #[must_use]
     pub fn with_stride(kernel_size: usize, stride: usize) -> Self {
         Self {
             kernel_size,
@@ -598,7 +598,7 @@ pub struct MaxPool2d {
 
 impl MaxPool2d {
     /// Create a new `MaxPool2d` layer with square kernel.
-    #[must_use] 
+    #[must_use]
     pub fn new(kernel_size: usize) -> Self {
         Self {
             kernel_h: kernel_size,
@@ -609,7 +609,7 @@ impl MaxPool2d {
     }
 
     /// Create `MaxPool2d` with custom stride.
-    #[must_use] 
+    #[must_use]
     pub fn with_stride(kernel_size: usize, stride: usize) -> Self {
         Self {
             kernel_h: kernel_size,
@@ -620,7 +620,7 @@ impl MaxPool2d {
     }
 
     /// Create `MaxPool2d` with rectangular kernel and stride.
-    #[must_use] 
+    #[must_use]
     pub fn with_options(kernel_size: (usize, usize), stride: (usize, usize)) -> Self {
         Self {
             kernel_h: kernel_size.0,
@@ -686,7 +686,7 @@ pub struct AvgPool2d {
 
 impl AvgPool2d {
     /// Create a new `AvgPool2d` layer with square kernel.
-    #[must_use] 
+    #[must_use]
     pub fn new(kernel_size: usize) -> Self {
         Self {
             kernel_h: kernel_size,
@@ -697,7 +697,7 @@ impl AvgPool2d {
     }
 
     /// Create `AvgPool2d` with custom stride.
-    #[must_use] 
+    #[must_use]
     pub fn with_stride(kernel_size: usize, stride: usize) -> Self {
         Self {
             kernel_h: kernel_size,
@@ -763,7 +763,7 @@ pub struct GlobalAvgPool2d;
 
 impl GlobalAvgPool2d {
     /// Create a new `GlobalAvgPool2d` layer.
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self
     }
@@ -817,13 +817,13 @@ impl Flatten {
     /// Create a new Flatten layer.
     ///
     /// By default, flattens from dimension 1 onwards (preserving batch).
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self { start_dim: 1 }
     }
 
     /// Create Flatten with custom start dimension.
-    #[must_use] 
+    #[must_use]
     pub fn from_dim(start_dim: usize) -> Self {
         Self { start_dim }
     }

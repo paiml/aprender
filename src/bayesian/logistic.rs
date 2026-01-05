@@ -72,7 +72,7 @@ impl BayesianLogisticRegression {
     ///
     /// let model = BayesianLogisticRegression::new(1.0);
     /// ```
-    #[must_use] 
+    #[must_use]
     pub fn new(prior_precision: f32) -> Self {
         Self {
             prior_precision,
@@ -111,13 +111,13 @@ impl BayesianLogisticRegression {
     }
 
     /// Returns the MAP estimate of coefficients (available after fitting).
-    #[must_use] 
+    #[must_use]
     pub fn coefficients_map(&self) -> Option<&[f32]> {
         self.coefficients_map.as_deref()
     }
 
     /// Returns the posterior covariance matrix (available after fitting).
-    #[must_use] 
+    #[must_use]
     pub fn posterior_covariance(&self) -> Option<&[Vec<f32>]> {
         self.posterior_covariance.as_deref()
     }

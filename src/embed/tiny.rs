@@ -317,7 +317,7 @@ impl TinyModelRepr {
     ///
     /// # Returns
     /// Prediction or None if model type doesn't support direct prediction
-    #[must_use] 
+    #[must_use]
     pub fn predict_linear(&self, features: &[f32]) -> Option<f32> {
         match self {
             Self::Linear {
@@ -345,7 +345,7 @@ impl TinyModelRepr {
     ///
     /// # Returns
     /// Prediction or None if model type is not stump
-    #[must_use] 
+    #[must_use]
     pub fn predict_stump(&self, features: &[f32]) -> Option<f32> {
         match self {
             Self::Stump {
@@ -374,7 +374,7 @@ impl TinyModelRepr {
     ///
     /// # Returns
     /// Index of nearest centroid or None if not K-Means
-    #[must_use] 
+    #[must_use]
     pub fn predict_kmeans(&self, features: &[f32]) -> Option<usize> {
         match self {
             Self::KMeans { centroids } => {

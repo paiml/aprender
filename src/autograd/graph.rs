@@ -47,7 +47,7 @@ pub struct ComputationGraph {
 
 impl ComputationGraph {
     /// Create a new empty computation graph.
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             tape: Vec::new(),
@@ -86,7 +86,7 @@ impl ComputationGraph {
     }
 
     /// Get a tensor by ID.
-    #[must_use] 
+    #[must_use]
     pub fn get_tensor(&self, id: TensorId) -> Option<&Tensor> {
         self.tensors.get(&id)
     }
@@ -153,19 +153,19 @@ impl ComputationGraph {
     }
 
     /// Get the number of recorded operations.
-    #[must_use] 
+    #[must_use]
     pub fn len(&self) -> usize {
         self.tape.len()
     }
 
     /// Check if the tape is empty.
-    #[must_use] 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.tape.is_empty()
     }
 
     /// Get gradient for a tensor by ID (after backward).
-    #[must_use] 
+    #[must_use]
     pub fn get_grad(&self, id: TensorId) -> Option<Tensor> {
         self.tensors.get(&id).and_then(|t| t.grad().cloned())
     }

@@ -29,13 +29,13 @@ impl Tolerance {
     /// Create a simple percent tolerance.
     ///
     /// The stage passes if `delta.percent()` <= threshold.
-    #[must_use] 
+    #[must_use]
     pub fn percent(threshold: f32) -> Self {
         Tolerance::Percent(threshold)
     }
 
     /// Create tolerance with separate mean and std thresholds.
-    #[must_use] 
+    #[must_use]
     pub fn stats(mean_delta: f32, std_delta: f32) -> Self {
         Tolerance::Stats {
             mean_delta,
@@ -44,7 +44,7 @@ impl Tolerance {
     }
 
     /// Create a KL divergence tolerance.
-    #[must_use] 
+    #[must_use]
     pub fn kl_divergence(threshold: f32) -> Self {
         Tolerance::KLDivergence(threshold)
     }
@@ -52,19 +52,19 @@ impl Tolerance {
     /// Create a cosine similarity minimum tolerance.
     ///
     /// The stage passes if cosine similarity >= threshold.
-    #[must_use] 
+    #[must_use]
     pub fn cosine(min_similarity: f32) -> Self {
         Tolerance::CosineSimilarity(min_similarity)
     }
 
     /// Create a custom tolerance with multiple criteria.
-    #[must_use] 
+    #[must_use]
     pub fn custom() -> ToleranceBuilder {
         ToleranceBuilder::new()
     }
 
     /// Check if a delta satisfies this tolerance.
-    #[must_use] 
+    #[must_use]
     pub fn is_satisfied(&self, delta: &Delta) -> bool {
         match self {
             Tolerance::Percent(threshold) => delta.percent() <= *threshold,
@@ -105,7 +105,7 @@ impl Tolerance {
     }
 
     /// Get a human-readable description of this tolerance.
-    #[must_use] 
+    #[must_use]
     pub fn description(&self) -> String {
         match self {
             Tolerance::Percent(p) => format!("≤{p:.1}%"),

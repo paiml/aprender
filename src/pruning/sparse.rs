@@ -171,7 +171,7 @@ impl CSRTensor {
     }
 
     /// Convert CSR tensor back to dense tensor.
-    #[must_use] 
+    #[must_use]
     pub fn to_dense(&self) -> Tensor {
         let mut data = vec![0.0f32; self.nrows * self.ncols];
 
@@ -190,13 +190,13 @@ impl CSRTensor {
     }
 
     /// Get number of non-zero elements.
-    #[must_use] 
+    #[must_use]
     pub fn nnz(&self) -> usize {
         self.values.len()
     }
 
     /// Get sparsity ratio (fraction of zeros).
-    #[must_use] 
+    #[must_use]
     pub fn sparsity(&self) -> f32 {
         let total = self.nrows * self.ncols;
         if total == 0 {
@@ -206,13 +206,13 @@ impl CSRTensor {
     }
 
     /// Get shape as [rows, cols].
-    #[must_use] 
+    #[must_use]
     pub fn shape(&self) -> [usize; 2] {
         [self.nrows, self.ncols]
     }
 
     /// Get value at (row, col), or 0 if not present.
-    #[must_use] 
+    #[must_use]
     pub fn get(&self, row: usize, col: usize) -> f32 {
         if row >= self.nrows || col >= self.ncols {
             return 0.0;
@@ -263,7 +263,7 @@ impl CSRTensor {
     }
 
     /// Memory usage in bytes (approximate).
-    #[must_use] 
+    #[must_use]
     pub fn memory_bytes(&self) -> usize {
         let values_bytes = self.values.len() * size_of::<f32>();
         let col_indices_bytes = self.col_indices.len() * size_of::<usize>();
@@ -272,13 +272,13 @@ impl CSRTensor {
     }
 
     /// Dense memory usage for comparison.
-    #[must_use] 
+    #[must_use]
     pub fn dense_memory_bytes(&self) -> usize {
         self.nrows * self.ncols * size_of::<f32>()
     }
 
     /// Memory savings ratio (dense / sparse).
-    #[must_use] 
+    #[must_use]
     pub fn memory_savings_ratio(&self) -> f32 {
         let sparse = self.memory_bytes();
         let dense = self.dense_memory_bytes();
@@ -313,7 +313,7 @@ pub struct COOTensor {
 
 impl COOTensor {
     /// Create a new empty COO tensor.
-    #[must_use] 
+    #[must_use]
     pub fn new(nrows: usize, ncols: usize) -> Self {
         Self {
             values: Vec::new(),
@@ -360,7 +360,7 @@ impl COOTensor {
     }
 
     /// Convert to dense tensor.
-    #[must_use] 
+    #[must_use]
     pub fn to_dense(&self) -> Tensor {
         let mut data = vec![0.0f32; self.nrows * self.ncols];
 
@@ -413,13 +413,13 @@ impl COOTensor {
     }
 
     /// Get number of non-zero elements.
-    #[must_use] 
+    #[must_use]
     pub fn nnz(&self) -> usize {
         self.values.len()
     }
 
     /// Get sparsity ratio.
-    #[must_use] 
+    #[must_use]
     pub fn sparsity(&self) -> f32 {
         let total = self.nrows * self.ncols;
         if total == 0 {
@@ -429,7 +429,7 @@ impl COOTensor {
     }
 
     /// Get shape as [rows, cols].
-    #[must_use] 
+    #[must_use]
     pub fn shape(&self) -> [usize; 2] {
         [self.nrows, self.ncols]
     }
@@ -482,7 +482,7 @@ pub enum SparseTensor {
 
 impl SparseTensor {
     /// Convert to dense tensor.
-    #[must_use] 
+    #[must_use]
     pub fn to_dense(&self) -> Tensor {
         match self {
             SparseTensor::CSR(csr) => csr.to_dense(),
@@ -492,7 +492,7 @@ impl SparseTensor {
     }
 
     /// Get number of non-zero elements.
-    #[must_use] 
+    #[must_use]
     pub fn nnz(&self) -> usize {
         match self {
             SparseTensor::CSR(csr) => csr.nnz(),
@@ -502,7 +502,7 @@ impl SparseTensor {
     }
 
     /// Get sparsity ratio.
-    #[must_use] 
+    #[must_use]
     pub fn sparsity(&self) -> f32 {
         match self {
             SparseTensor::CSR(csr) => csr.sparsity(),
@@ -512,7 +512,7 @@ impl SparseTensor {
     }
 
     /// Get format type.
-    #[must_use] 
+    #[must_use]
     pub fn format(&self) -> SparseFormat {
         match self {
             SparseTensor::CSR(_) => SparseFormat::CSR,
@@ -625,7 +625,7 @@ impl BlockSparseTensor {
     }
 
     /// Convert to dense tensor.
-    #[must_use] 
+    #[must_use]
     pub fn to_dense(&self) -> Tensor {
         let nrows = self.nblock_rows * self.block_height;
         let ncols = self.nblock_cols * self.block_width;
@@ -650,7 +650,7 @@ impl BlockSparseTensor {
     }
 
     /// Get number of non-zero elements.
-    #[must_use] 
+    #[must_use]
     pub fn nnz(&self) -> usize {
         self.blocks
             .iter()
@@ -660,7 +660,7 @@ impl BlockSparseTensor {
     }
 
     /// Get sparsity ratio.
-    #[must_use] 
+    #[must_use]
     pub fn sparsity(&self) -> f32 {
         let total = self.nblock_rows * self.block_height * self.nblock_cols * self.block_width;
         if total == 0 {
@@ -670,13 +670,13 @@ impl BlockSparseTensor {
     }
 
     /// Get number of non-zero blocks.
-    #[must_use] 
+    #[must_use]
     pub fn num_blocks(&self) -> usize {
         self.blocks.len()
     }
 
     /// Get shape as [rows, cols].
-    #[must_use] 
+    #[must_use]
     pub fn shape(&self) -> [usize; 2] {
         [
             self.nblock_rows * self.block_height,

@@ -2271,7 +2271,7 @@ impl ADMM {
     ///
     /// let admm = ADMM::new(100, 1.0, 1e-4);
     /// ```
-    #[must_use] 
+    #[must_use]
     pub fn new(max_iter: usize, rho: f32, tol: f32) -> Self {
         Self {
             max_iter,
@@ -2296,7 +2296,7 @@ impl ADMM {
     ///
     /// let admm = ADMM::new(100, 1.0, 1e-4).with_adaptive_rho(true);
     /// ```
-    #[must_use] 
+    #[must_use]
     pub fn with_adaptive_rho(mut self, adaptive: bool) -> Self {
         self.adaptive_rho = adaptive;
         self
@@ -2308,7 +2308,7 @@ impl ADMM {
     ///
     /// - `increase`: Factor to multiply rho when primal residual is large (default: 2.0)
     /// - `decrease`: Factor to divide rho when dual residual is large (default: 2.0)
-    #[must_use] 
+    #[must_use]
     pub fn with_rho_factors(mut self, increase: f32, decrease: f32) -> Self {
         self.rho_increase = increase;
         self.rho_decrease = decrease;

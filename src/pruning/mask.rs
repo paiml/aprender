@@ -61,7 +61,7 @@ impl SparsityPattern {
     ///
     /// # Returns
     /// `true` if the pattern parameters are valid.
-    #[must_use] 
+    #[must_use]
     pub fn is_valid(&self) -> bool {
         match self {
             SparsityPattern::NM { n, m } => *n <= *m && *m > 0,
@@ -74,7 +74,7 @@ impl SparsityPattern {
     ///
     /// # Returns
     /// Sparsity ratio (0.0 = dense, 1.0 = fully sparse)
-    #[must_use] 
+    #[must_use]
     pub fn theoretical_sparsity(&self) -> Option<f32> {
         match self {
             SparsityPattern::NM { n, m } => Some(1.0 - (*n as f32 / *m as f32)),
@@ -277,7 +277,7 @@ impl SparsityMask {
     ///
     /// # Arguments
     /// * `shape` - Shape of the mask
-    #[must_use] 
+    #[must_use]
     pub fn dense(shape: &[usize]) -> Self {
         let mask = Tensor::ones(shape);
         Self {
@@ -288,25 +288,25 @@ impl SparsityMask {
     }
 
     /// Get the sparsity ratio (0.0 = dense, 1.0 = all zeros).
-    #[must_use] 
+    #[must_use]
     pub fn sparsity(&self) -> f32 {
         self.sparsity
     }
 
     /// Get the pattern used for this mask.
-    #[must_use] 
+    #[must_use]
     pub fn pattern(&self) -> SparsityPattern {
         self.pattern
     }
 
     /// Get the underlying mask tensor.
-    #[must_use] 
+    #[must_use]
     pub fn tensor(&self) -> &Tensor {
         &self.mask
     }
 
     /// Get the shape of the mask.
-    #[must_use] 
+    #[must_use]
     pub fn shape(&self) -> &[usize] {
         self.mask.shape()
     }
@@ -341,13 +341,13 @@ impl SparsityMask {
     }
 
     /// Count the number of non-zero elements.
-    #[must_use] 
+    #[must_use]
     pub fn nnz(&self) -> usize {
         self.mask.data().iter().filter(|&&v| v > 0.5).count()
     }
 
     /// Count the number of zero elements.
-    #[must_use] 
+    #[must_use]
     pub fn num_zeros(&self) -> usize {
         self.mask.data().iter().filter(|&&v| v < 0.5).count()
     }

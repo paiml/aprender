@@ -239,7 +239,7 @@ fn process_edge_case_result(result: &EdgeCaseResult, score: &mut CategoryScore) 
 }
 
 /// Run all edge case tests
-#[must_use] 
+#[must_use]
 pub fn run_edge_case_tests(config: &EdgeCaseConfig) -> (CategoryScore, Vec<QaIssue>) {
     let start = Instant::now();
     let mut score = CategoryScore::new(15); // 15 points for edge cases

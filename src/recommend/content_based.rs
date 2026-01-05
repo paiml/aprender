@@ -83,7 +83,7 @@ impl ContentRecommender {
     ///
     /// let rec = ContentRecommender::new(16, 200, 0.95);
     /// ```
-    #[must_use] 
+    #[must_use]
     pub fn new(m: usize, ef_construction: usize, decay_factor: f64) -> Self {
         Self {
             hnsw: HNSWIndex::new(m, ef_construction, 0.0),
@@ -216,7 +216,7 @@ impl ContentRecommender {
     /// rec.add_item("item1", "content");
     /// assert_eq!(rec.len(), 1);
     /// ```
-    #[must_use] 
+    #[must_use]
     pub fn len(&self) -> usize {
         self.item_content.len()
     }
@@ -231,7 +231,7 @@ impl ContentRecommender {
     /// let rec = ContentRecommender::new(16, 200, 0.95);
     /// assert!(rec.is_empty());
     /// ```
-    #[must_use] 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.item_content.is_empty()
     }

@@ -92,7 +92,7 @@ impl SGD {
     /// * `params` - Mutable references to parameter tensors
     /// * `lr` - Learning rate
     #[allow(clippy::needless_pass_by_value)]
-    #[must_use] 
+    #[must_use]
     pub fn new(params: Vec<&mut Tensor>, lr: f32) -> Self {
         let param_ids: Vec<TensorId> = params.iter().map(|p| p.id()).collect();
         Self {
@@ -108,7 +108,7 @@ impl SGD {
 
     /// Create SGD with momentum.
     #[allow(clippy::needless_pass_by_value)]
-    #[must_use] 
+    #[must_use]
     pub fn with_momentum(params: Vec<&mut Tensor>, lr: f32, momentum: f32) -> Self {
         let param_ids: Vec<TensorId> = params.iter().map(|p| p.id()).collect();
         Self {
@@ -123,14 +123,14 @@ impl SGD {
     }
 
     /// Enable Nesterov momentum.
-    #[must_use] 
+    #[must_use]
     pub fn nesterov(mut self) -> Self {
         self.nesterov = true;
         self
     }
 
     /// Set weight decay (L2 regularization).
-    #[must_use] 
+    #[must_use]
     pub fn weight_decay(mut self, wd: f32) -> Self {
         self.weight_decay = wd;
         self
@@ -253,7 +253,7 @@ impl Adam {
     ///
     /// Default: β₁=0.9, β₂=0.999, ε=1e-8
     #[allow(clippy::needless_pass_by_value)]
-    #[must_use] 
+    #[must_use]
     pub fn new(params: Vec<&mut Tensor>, lr: f32) -> Self {
         let param_ids: Vec<TensorId> = params.iter().map(|p| p.id()).collect();
         Self {
@@ -271,7 +271,7 @@ impl Adam {
     }
 
     /// Set beta parameters.
-    #[must_use] 
+    #[must_use]
     pub fn betas(mut self, beta1: f32, beta2: f32) -> Self {
         self.beta1 = beta1;
         self.beta2 = beta2;
@@ -279,14 +279,14 @@ impl Adam {
     }
 
     /// Set epsilon for numerical stability.
-    #[must_use] 
+    #[must_use]
     pub fn eps(mut self, eps: f32) -> Self {
         self.eps = eps;
         self
     }
 
     /// Set weight decay (L2 regularization, applied to gradient).
-    #[must_use] 
+    #[must_use]
     pub fn weight_decay(mut self, wd: f32) -> Self {
         self.weight_decay = wd;
         self
@@ -400,7 +400,7 @@ impl AdamW {
     ///
     /// Default: β₁=0.9, β₂=0.999, ε=1e-8, `weight_decay=0.01`
     #[allow(clippy::needless_pass_by_value)]
-    #[must_use] 
+    #[must_use]
     pub fn new(params: Vec<&mut Tensor>, lr: f32) -> Self {
         let param_ids: Vec<TensorId> = params.iter().map(|p| p.id()).collect();
         Self {
@@ -417,20 +417,20 @@ impl AdamW {
         }
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn betas(mut self, beta1: f32, beta2: f32) -> Self {
         self.beta1 = beta1;
         self.beta2 = beta2;
         self
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn eps(mut self, eps: f32) -> Self {
         self.eps = eps;
         self
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn weight_decay(mut self, wd: f32) -> Self {
         self.weight_decay = wd;
         self
@@ -537,7 +537,7 @@ impl RMSprop {
     ///
     /// Default: α=0.99, ε=1e-8
     #[allow(clippy::needless_pass_by_value)]
-    #[must_use] 
+    #[must_use]
     pub fn new(params: Vec<&mut Tensor>, lr: f32) -> Self {
         let param_ids: Vec<TensorId> = params.iter().map(|p| p.id()).collect();
         Self {
@@ -553,25 +553,25 @@ impl RMSprop {
         }
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn alpha(mut self, alpha: f32) -> Self {
         self.alpha = alpha;
         self
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn eps(mut self, eps: f32) -> Self {
         self.eps = eps;
         self
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn momentum(mut self, momentum: f32) -> Self {
         self.momentum = momentum;
         self
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn weight_decay(mut self, wd: f32) -> Self {
         self.weight_decay = wd;
         self

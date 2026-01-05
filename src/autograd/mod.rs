@@ -87,7 +87,7 @@ where
 }
 
 /// Check if gradient tracking is currently enabled.
-#[must_use] 
+#[must_use]
 pub fn is_grad_enabled() -> bool {
     GRAD_ENABLED.with(|enabled| *enabled.borrow())
 }
@@ -106,7 +106,7 @@ pub fn clear_graph() {
 }
 
 /// Get gradient for a tensor by ID from the graph.
-#[must_use] 
+#[must_use]
 pub fn get_grad(id: TensorId) -> Option<Tensor> {
     with_graph(|graph| graph.get_grad(id))
 }

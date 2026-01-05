@@ -62,7 +62,7 @@ impl WandaImportance {
     ///
     /// # Arguments
     /// * `pattern` - N:M pattern or other structural constraint
-    #[must_use] 
+    #[must_use]
     pub fn with_pattern(mut self, pattern: SparsityPattern) -> Self {
         self.pattern = Some(pattern);
         self
@@ -72,20 +72,20 @@ impl WandaImportance {
     ///
     /// # Arguments
     /// * `eps` - Small value to prevent division by zero (default: 1e-8)
-    #[must_use] 
+    #[must_use]
     pub fn with_eps(mut self, eps: f32) -> Self {
         self.eps = eps;
         self
     }
 
     /// Get the layer name.
-    #[must_use] 
+    #[must_use]
     pub fn layer_name(&self) -> &str {
         &self.layer_name
     }
 
     /// Get the pattern if set.
-    #[must_use] 
+    #[must_use]
     pub fn pattern(&self) -> Option<SparsityPattern> {
         self.pattern
     }

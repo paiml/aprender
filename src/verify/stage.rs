@@ -20,7 +20,7 @@ pub enum StageStatus {
 
 impl StageStatus {
     /// Get the Unicode icon for this status.
-    #[must_use] 
+    #[must_use]
     pub fn icon(&self) -> &'static str {
         match self {
             StageStatus::Passed => "✓",
@@ -31,7 +31,7 @@ impl StageStatus {
     }
 
     /// Get the ANSI color code for this status.
-    #[must_use] 
+    #[must_use]
     pub fn color(&self) -> &'static str {
         match self {
             StageStatus::Passed => "\x1b[32m",  // Green
@@ -42,13 +42,13 @@ impl StageStatus {
     }
 
     /// Check if this is a passing status.
-    #[must_use] 
+    #[must_use]
     pub fn is_passed(&self) -> bool {
         matches!(self, StageStatus::Passed)
     }
 
     /// Check if this is a failing status.
-    #[must_use] 
+    #[must_use]
     pub fn is_failed(&self) -> bool {
         matches!(self, StageStatus::Failed)
     }
@@ -79,25 +79,25 @@ impl Stage {
     }
 
     /// Get the stage name.
-    #[must_use] 
+    #[must_use]
     pub fn name(&self) -> &str {
         &self.name
     }
 
     /// Get the ground truth for this stage.
-    #[must_use] 
+    #[must_use]
     pub fn ground_truth(&self) -> Option<&GroundTruth> {
         self.ground_truth.as_ref()
     }
 
     /// Get the tolerance for this stage.
-    #[must_use] 
+    #[must_use]
     pub fn tolerance(&self) -> &Tolerance {
         &self.tolerance
     }
 
     /// Get the description.
-    #[must_use] 
+    #[must_use]
     pub fn description(&self) -> Option<&str> {
         self.description.as_deref()
     }
@@ -105,7 +105,7 @@ impl Stage {
     /// Verify output against ground truth.
     ///
     /// Returns a `StageResult` indicating pass/fail and computed delta.
-    #[must_use] 
+    #[must_use]
     pub fn verify(&self, output: &GroundTruth) -> StageResult {
         match &self.ground_truth {
             Some(gt) => {
@@ -155,21 +155,21 @@ impl StageBuilder {
     }
 
     /// Set the ground truth from statistics.
-    #[must_use] 
+    #[must_use]
     pub fn ground_truth_stats(mut self, mean: f32, std: f32) -> Self {
         self.ground_truth = Some(GroundTruth::from_stats(mean, std));
         self
     }
 
     /// Set the ground truth from a `GroundTruth` instance.
-    #[must_use] 
+    #[must_use]
     pub fn ground_truth(mut self, gt: GroundTruth) -> Self {
         self.ground_truth = Some(gt);
         self
     }
 
     /// Set the tolerance.
-    #[must_use] 
+    #[must_use]
     pub fn tolerance(mut self, tolerance: Tolerance) -> Self {
         self.tolerance = tolerance;
         self
@@ -182,7 +182,7 @@ impl StageBuilder {
     }
 
     /// Build the stage.
-    #[must_use] 
+    #[must_use]
     pub fn build(self) -> Stage {
         Stage {
             name: self.name,
@@ -195,7 +195,7 @@ impl StageBuilder {
     /// Build the stage and return control to the pipeline builder.
     ///
     /// This is for fluent API usage with `PipelineBuilder`.
-    #[must_use] 
+    #[must_use]
     pub fn build_stage(self) -> Stage {
         self.build()
     }
@@ -251,31 +251,31 @@ impl StageResult {
     }
 
     /// Get the stage name.
-    #[must_use] 
+    #[must_use]
     pub fn name(&self) -> &str {
         &self.name
     }
 
     /// Get the verification status.
-    #[must_use] 
+    #[must_use]
     pub fn status(&self) -> StageStatus {
         self.status
     }
 
     /// Get the delta if available.
-    #[must_use] 
+    #[must_use]
     pub fn delta(&self) -> Option<&Delta> {
         self.delta.as_ref()
     }
 
     /// Get our computed statistics.
-    #[must_use] 
+    #[must_use]
     pub fn our_stats(&self) -> Option<&GroundTruth> {
         self.our_stats.as_ref()
     }
 
     /// Get ground truth statistics.
-    #[must_use] 
+    #[must_use]
     pub fn gt_stats(&self) -> Option<&GroundTruth> {
         self.gt_stats.as_ref()
     }
@@ -283,7 +283,7 @@ impl StageResult {
     /// Generate 5-Whys style diagnosis for failures.
     ///
     /// Returns a list of diagnostic messages based on the delta.
-    #[must_use] 
+    #[must_use]
     pub fn diagnose(&self) -> Vec<String> {
         let mut diagnosis = Vec::new();
 
@@ -335,7 +335,7 @@ impl StageResult {
     }
 
     /// Format this result as a table row.
-    #[must_use] 
+    #[must_use]
     pub fn format_row(&self) -> String {
         let status_icon = self.status.icon();
         let our_mean = self

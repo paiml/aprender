@@ -30,7 +30,7 @@ pub struct GRU {
 }
 
 impl GRU {
-    #[must_use] 
+    #[must_use]
     pub fn new(input_size: usize, hidden_size: usize) -> Self {
         Self {
             input_size,
@@ -46,7 +46,7 @@ impl GRU {
     }
 
     /// Forward pass for single timestep.
-    #[must_use] 
+    #[must_use]
     pub fn forward_step(&self, x: &Tensor, h: &Tensor) -> Tensor {
         // Reset gate
         let r = sigmoid_tensor(&add_tensors(&self.w_ir.forward(x), &self.w_hr.forward(h)));
@@ -66,7 +66,7 @@ impl GRU {
     }
 
     /// Forward pass for sequence [batch, `seq_len`, `input_size`].
-    #[must_use] 
+    #[must_use]
     pub fn forward_sequence(&self, x: &Tensor, h0: Option<&Tensor>) -> (Tensor, Tensor) {
         let batch = x.shape()[0];
         let seq_len = x.shape()[1];
@@ -88,12 +88,12 @@ impl GRU {
         (output, h)
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn input_size(&self) -> usize {
         self.input_size
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn hidden_size(&self) -> usize {
         self.hidden_size
     }
@@ -207,7 +207,7 @@ pub struct Bidirectional {
 }
 
 impl Bidirectional {
-    #[must_use] 
+    #[must_use]
     pub fn new(input_size: usize, hidden_size: usize) -> Self {
         Self {
             forward_rnn: GRU::new(input_size, hidden_size),
@@ -219,7 +219,7 @@ impl Bidirectional {
     }
 
     /// Forward pass returns concatenated [forward; backward] outputs.
-    #[must_use] 
+    #[must_use]
     pub fn forward_sequence(&self, x: &Tensor) -> (Tensor, Tensor, Tensor) {
         let batch = x.shape()[0];
         let seq_len = x.shape()[1];
@@ -238,12 +238,12 @@ impl Bidirectional {
         (output, fwd_h, bwd_h)
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn output_size(&self) -> usize {
         self.hidden_size * 2
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn hidden_size(&self) -> usize {
         self.hidden_size
     }
@@ -356,7 +356,7 @@ pub struct LSTM {
 }
 
 impl LSTM {
-    #[must_use] 
+    #[must_use]
     pub fn new(input_size: usize, hidden_size: usize) -> Self {
         Self {
             input_size,
@@ -374,7 +374,7 @@ impl LSTM {
     }
 
     /// Forward pass for single timestep.
-    #[must_use] 
+    #[must_use]
     pub fn forward_step(&self, x: &Tensor, h: &Tensor, c: &Tensor) -> (Tensor, Tensor) {
         // Forget gate
         let f = sigmoid_tensor(&add_tensors(&self.w_if.forward(x), &self.w_hf.forward(h)));
@@ -398,7 +398,7 @@ impl LSTM {
     }
 
     /// Forward pass for sequence [batch, `seq_len`, `input_size`].
-    #[must_use] 
+    #[must_use]
     pub fn forward_sequence(
         &self,
         x: &Tensor,
@@ -432,12 +432,12 @@ impl LSTM {
         (output, h, c)
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn input_size(&self) -> usize {
         self.input_size
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn hidden_size(&self) -> usize {
         self.hidden_size
     }

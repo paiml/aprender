@@ -75,7 +75,7 @@ pub enum Link {
 
 impl Family {
     /// Returns the canonical link function for this family.
-    #[must_use] 
+    #[must_use]
     pub const fn canonical_link(&self) -> Link {
         match self {
             Self::Poisson | Self::NegativeBinomial => Link::Log,
@@ -205,7 +205,7 @@ pub struct GLM {
 
 impl GLM {
     /// Creates a new GLM with the specified family and its canonical link.
-    #[must_use] 
+    #[must_use]
     pub fn new(family: Family) -> Self {
         Self {
             family,
@@ -219,7 +219,7 @@ impl GLM {
     }
 
     /// Creates a GLM with a custom link function.
-    #[must_use] 
+    #[must_use]
     pub fn with_link(mut self, link: Link) -> Self {
         self.link = link;
         self
@@ -250,13 +250,13 @@ impl GLM {
     }
 
     /// Returns the fitted coefficients.
-    #[must_use] 
+    #[must_use]
     pub fn coefficients(&self) -> Option<&[f32]> {
         self.coefficients.as_deref()
     }
 
     /// Returns the intercept.
-    #[must_use] 
+    #[must_use]
     pub fn intercept(&self) -> Option<f32> {
         self.intercept
     }

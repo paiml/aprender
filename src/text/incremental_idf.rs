@@ -75,7 +75,7 @@ impl IncrementalIDF {
     ///
     /// let idf = IncrementalIDF::new(0.95);
     /// ```
-    #[must_use] 
+    #[must_use]
     pub fn new(decay_factor: f64) -> Self {
         assert!(
             (0.0..1.0).contains(&decay_factor),
@@ -139,7 +139,7 @@ impl IncrementalIDF {
     /// let hello_idf = idf.idf("hello");
     /// assert!(hello_idf > 0.0);
     /// ```
-    #[must_use] 
+    #[must_use]
     pub fn idf(&self, term: &str) -> f64 {
         let df = self.doc_freq.get(term).copied().unwrap_or(0.0);
         ((self.total_docs + 1.0) / (df + 1.0)).ln() + 1.0
@@ -159,7 +159,7 @@ impl IncrementalIDF {
     /// assert!(terms.contains_key("hello"));
     /// assert!(terms.contains_key("world"));
     /// ```
-    #[must_use] 
+    #[must_use]
     pub fn terms(&self) -> HashMap<String, f64> {
         self.doc_freq
             .keys()
@@ -180,7 +180,7 @@ impl IncrementalIDF {
     /// idf.update(&["hello", "world"]);
     /// assert_eq!(idf.len(), 2);
     /// ```
-    #[must_use] 
+    #[must_use]
     pub fn len(&self) -> usize {
         self.doc_freq.len()
     }
@@ -195,7 +195,7 @@ impl IncrementalIDF {
     /// let idf = IncrementalIDF::new(0.95);
     /// assert!(idf.is_empty());
     /// ```
-    #[must_use] 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.doc_freq.is_empty()
     }
@@ -214,7 +214,7 @@ impl IncrementalIDF {
     /// // With decay=0.95, total_docs = 1*0.95 + 1 = 1.95
     /// assert!((idf.total_docs() - 1.95).abs() < 0.01);
     /// ```
-    #[must_use] 
+    #[must_use]
     pub fn total_docs(&self) -> f64 {
         self.total_docs
     }

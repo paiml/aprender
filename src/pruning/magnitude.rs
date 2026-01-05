@@ -49,7 +49,7 @@ impl MagnitudeImportance {
     ///
     /// # Formula
     /// `importance = |w|`
-    #[must_use] 
+    #[must_use]
     pub fn l1() -> Self {
         Self { norm: NormType::L1 }
     }
@@ -58,19 +58,19 @@ impl MagnitudeImportance {
     ///
     /// # Formula
     /// `importance = w²`
-    #[must_use] 
+    #[must_use]
     pub fn l2() -> Self {
         Self { norm: NormType::L2 }
     }
 
     /// Create magnitude importance with specified norm.
-    #[must_use] 
+    #[must_use]
     pub fn with_norm(norm: NormType) -> Self {
         Self { norm }
     }
 
     /// Get the norm type.
-    #[must_use] 
+    #[must_use]
     pub fn norm(&self) -> NormType {
         self.norm
     }

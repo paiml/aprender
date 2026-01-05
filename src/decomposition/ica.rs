@@ -84,7 +84,7 @@ impl ICA {
     ///
     /// let ica = ICA::new(3); // Extract 3 components
     /// ```
-    #[must_use] 
+    #[must_use]
     pub fn new(n_components: usize) -> Self {
         Self {
             n_components,

@@ -74,7 +74,7 @@ impl Source {
     }
 
     /// Get the default model file for this source
-    #[must_use] 
+    #[must_use]
     pub fn default_file(&self) -> &str {
         match self {
             Self::HuggingFace { file: Some(f), .. } => f,
@@ -107,7 +107,7 @@ pub enum Architecture {
 
 impl Architecture {
     /// Map a source tensor name to APR canonical name
-    #[must_use] 
+    #[must_use]
     pub fn map_name(&self, source_name: &str) -> String {
         match self {
             Self::Auto => Self::auto_map_name(source_name),
@@ -202,7 +202,7 @@ impl TensorExpectation {
     };
 
     /// Get expectation for a tensor name
-    #[must_use] 
+    #[must_use]
     pub fn for_tensor(name: &str) -> Option<Self> {
         // RMSNorm patterns (LLaMA, Qwen2, TinyLlama) - check BEFORE generic LayerNorm
         // These use gamma initialized to 1.0, not the 0-centered LayerNorm
@@ -291,7 +291,7 @@ impl Default for ValidationConfig {
 
 impl ValidationConfig {
     /// Create strict validation config
-    #[must_use] 
+    #[must_use]
     pub fn strict() -> Self {
         Self::Strict
     }
@@ -684,7 +684,7 @@ pub struct AprConverter {
 
 impl AprConverter {
     /// Create a new converter
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             source: None,
@@ -702,28 +702,28 @@ impl AprConverter {
     }
 
     /// Set the architecture
-    #[must_use] 
+    #[must_use]
     pub fn architecture(mut self, arch: Architecture) -> Self {
         self.architecture = arch;
         self
     }
 
     /// Set validation config
-    #[must_use] 
+    #[must_use]
     pub fn validate(mut self, config: ValidationConfig) -> Self {
         self.validation = config;
         self
     }
 
     /// Set quantization
-    #[must_use] 
+    #[must_use]
     pub fn quantize(mut self, quant: QuantizationType) -> Self {
         self.quantize = Some(quant);
         self
     }
 
     /// Set compression
-    #[must_use] 
+    #[must_use]
     pub fn compress(mut self, comp: Compression) -> Self {
         self.compress = Some(comp);
         self
@@ -1417,7 +1417,7 @@ pub struct ConvertReport {
 
 impl ConvertReport {
     /// Format reduction as percentage string
-    #[must_use] 
+    #[must_use]
     pub fn reduction_percent(&self) -> String {
         if self.original_size > 0 && self.converted_size > 0 {
             let reduction = 100.0 * (1.0 - self.converted_size as f64 / self.original_size as f64);

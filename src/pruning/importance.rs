@@ -38,7 +38,7 @@ impl ImportanceStats {
     ///
     /// # Returns
     /// Statistics computed over all values in the tensor.
-    #[must_use] 
+    #[must_use]
     pub fn from_tensor(values: &Tensor) -> Self {
         let data = values.data();
 
@@ -86,7 +86,7 @@ impl ImportanceStats {
     /// Compute sparsity at given threshold.
     ///
     /// Sparsity is the fraction of values below the threshold.
-    #[must_use] 
+    #[must_use]
     pub fn sparsity_at(&self, values: &Tensor, threshold: f32) -> f32 {
         let data = values.data();
         if data.is_empty() {
@@ -129,7 +129,7 @@ impl ImportanceScores {
     /// # Arguments
     /// * `values` - Tensor of importance scores
     /// * `method` - Name of the method that computed these scores
-    #[must_use] 
+    #[must_use]
     pub fn new(values: Tensor, method: String) -> Self {
         let stats = ImportanceStats::from_tensor(&values);
         Self {
@@ -140,19 +140,19 @@ impl ImportanceScores {
     }
 
     /// Get the shape of the importance tensor.
-    #[must_use] 
+    #[must_use]
     pub fn shape(&self) -> &[usize] {
         self.values.shape()
     }
 
     /// Get the number of elements.
-    #[must_use] 
+    #[must_use]
     pub fn len(&self) -> usize {
         self.values.data().len()
     }
 
     /// Check if empty.
-    #[must_use] 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.values.data().is_empty()
     }

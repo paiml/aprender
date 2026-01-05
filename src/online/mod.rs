@@ -146,7 +146,7 @@ impl OnlineLinearRegression {
     ///
     /// # Arguments
     /// * `n_features` - Number of input features
-    #[must_use] 
+    #[must_use]
     pub fn new(n_features: usize) -> Self {
         Self {
             weights: vec![0.0; n_features],
@@ -158,7 +158,7 @@ impl OnlineLinearRegression {
     }
 
     /// Create with custom configuration
-    #[must_use] 
+    #[must_use]
     pub fn with_config(n_features: usize, config: OnlineLearnerConfig) -> Self {
         Self {
             weights: vec![0.0; n_features],
@@ -170,13 +170,13 @@ impl OnlineLinearRegression {
     }
 
     /// Get model weights
-    #[must_use] 
+    #[must_use]
     pub fn weights(&self) -> &[f64] {
         &self.weights
     }
 
     /// Get bias term
-    #[must_use] 
+    #[must_use]
     pub fn bias(&self) -> f64 {
         self.bias
     }
@@ -316,7 +316,7 @@ impl OnlineLogisticRegression {
     ///
     /// # Arguments
     /// * `n_features` - Number of input features
-    #[must_use] 
+    #[must_use]
     pub fn new(n_features: usize) -> Self {
         Self {
             weights: vec![0.0; n_features],
@@ -328,7 +328,7 @@ impl OnlineLogisticRegression {
     }
 
     /// Create with custom configuration
-    #[must_use] 
+    #[must_use]
     pub fn with_config(n_features: usize, config: OnlineLearnerConfig) -> Self {
         Self {
             weights: vec![0.0; n_features],
@@ -340,13 +340,13 @@ impl OnlineLogisticRegression {
     }
 
     /// Get model weights
-    #[must_use] 
+    #[must_use]
     pub fn weights(&self) -> &[f64] {
         &self.weights
     }
 
     /// Get bias term
-    #[must_use] 
+    #[must_use]
     pub fn bias(&self) -> f64 {
         self.bias
     }

@@ -47,7 +47,7 @@ pub enum LayerType {
 
 impl LayerType {
     /// Get all standard layer types.
-    #[must_use] 
+    #[must_use]
     pub fn all() -> Vec<Self> {
         vec![
             Self::Dense,
@@ -82,7 +82,7 @@ pub struct LayerConfig {
 
 impl LayerConfig {
     /// Create a new layer configuration.
-    #[must_use] 
+    #[must_use]
     pub fn new(layer_type: LayerType) -> Self {
         Self {
             layer_type,
@@ -95,28 +95,28 @@ impl LayerConfig {
     }
 
     /// Set number of units/filters.
-    #[must_use] 
+    #[must_use]
     pub fn with_units(mut self, units: usize) -> Self {
         self.units = Some(units);
         self
     }
 
     /// Set kernel size.
-    #[must_use] 
+    #[must_use]
     pub fn with_kernel_size(mut self, size: usize) -> Self {
         self.kernel_size = Some(size);
         self
     }
 
     /// Set activation function.
-    #[must_use] 
+    #[must_use]
     pub fn with_activation(mut self, activation: &str) -> Self {
         self.activation = Some(activation.to_string());
         self
     }
 
     /// Set dropout rate.
-    #[must_use] 
+    #[must_use]
     pub fn with_dropout_rate(mut self, rate: f64) -> Self {
         self.dropout_rate = Some(rate.clamp(0.0, 1.0));
         self
@@ -161,27 +161,27 @@ impl Default for NasSearchSpace {
 
 impl NasSearchSpace {
     /// Create a new NAS search space with defaults.
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
     /// Set maximum layers.
-    #[must_use] 
+    #[must_use]
     pub fn with_max_layers(mut self, max: usize) -> Self {
         self.max_layers = max.max(1);
         self
     }
 
     /// Set minimum layers.
-    #[must_use] 
+    #[must_use]
     pub fn with_min_layers(mut self, min: usize) -> Self {
         self.min_layers = min.max(1);
         self
     }
 
     /// Set allowed layer types.
-    #[must_use] 
+    #[must_use]
     pub fn with_layer_types(mut self, types: Vec<LayerType>) -> Self {
         if !types.is_empty() {
             self.layer_types = types;
@@ -190,21 +190,21 @@ impl NasSearchSpace {
     }
 
     /// Set units range for Dense layers.
-    #[must_use] 
+    #[must_use]
     pub fn with_units_range(mut self, min: usize, max: usize) -> Self {
         self.units_range = (min.max(1), max.max(min + 1));
         self
     }
 
     /// Set filters range for Conv layers.
-    #[must_use] 
+    #[must_use]
     pub fn with_filters_range(mut self, min: usize, max: usize) -> Self {
         self.filters_range = (min.max(1), max.max(min + 1));
         self
     }
 
     /// Set allowed kernel sizes.
-    #[must_use] 
+    #[must_use]
     pub fn with_kernel_sizes(mut self, sizes: Vec<usize>) -> Self {
         if !sizes.is_empty() {
             self.kernel_sizes = sizes;
@@ -213,7 +213,7 @@ impl NasSearchSpace {
     }
 
     /// Set allowed activation functions.
-    #[must_use] 
+    #[must_use]
     pub fn with_activation_choices(mut self, activations: &[&str]) -> Self {
         if !activations.is_empty() {
             self.activations = activations.iter().map(|s| (*s).to_string()).collect();
@@ -222,7 +222,7 @@ impl NasSearchSpace {
     }
 
     /// Set dropout rate range.
-    #[must_use] 
+    #[must_use]
     pub fn with_dropout_range(mut self, min: f64, max: f64) -> Self {
         self.dropout_range = (min.clamp(0.0, 1.0), max.clamp(min, 1.0));
         self
@@ -240,7 +240,7 @@ pub struct NasGenome {
 
 impl NasGenome {
     /// Create empty genome.
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             layers: Vec::new(),
@@ -249,7 +249,7 @@ impl NasGenome {
     }
 
     /// Create genome from layers.
-    #[must_use] 
+    #[must_use]
     pub fn from_layers(layers: Vec<LayerConfig>) -> Self {
         Self {
             layers,
@@ -258,7 +258,7 @@ impl NasGenome {
     }
 
     /// Generate a random architecture within the search space.
-    #[must_use] 
+    #[must_use]
     pub fn random(space: &NasSearchSpace, seed: u64) -> Self {
         let mut rng = StdRng::seed_from_u64(seed);
 
@@ -303,7 +303,7 @@ impl NasGenome {
     }
 
     /// Get the layers.
-    #[must_use] 
+    #[must_use]
     pub fn layers(&self) -> &[LayerConfig] {
         &self.layers
     }
@@ -314,19 +314,19 @@ impl NasGenome {
     }
 
     /// Get number of layers.
-    #[must_use] 
+    #[must_use]
     pub fn len(&self) -> usize {
         self.layers.len()
     }
 
     /// Check if genome is empty.
-    #[must_use] 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.layers.is_empty()
     }
 
     /// Get fitness score.
-    #[must_use] 
+    #[must_use]
     pub fn fitness(&self) -> Option<f64> {
         self.fitness
     }
@@ -337,13 +337,13 @@ impl NasGenome {
     }
 
     /// Count active layers.
-    #[must_use] 
+    #[must_use]
     pub fn active_layers(&self) -> usize {
         self.layers.iter().filter(|l| l.active).count()
     }
 
     /// Encode genome to continuous vector for optimization.
-    #[must_use] 
+    #[must_use]
     pub fn encode(&self, space: &NasSearchSpace) -> Vec<f64> {
         let mut encoding = Vec::new();
 
@@ -387,7 +387,7 @@ impl NasGenome {
     }
 
     /// Decode continuous vector back to genome.
-    #[must_use] 
+    #[must_use]
     pub fn decode(encoding: &[f64], space: &NasSearchSpace, n_layers: usize) -> Self {
         let mut layers = Vec::with_capacity(n_layers);
         let stride = 5; // 5 values per layer
@@ -563,7 +563,7 @@ pub fn crossover_genomes(
 }
 
 /// Evaluate architecture complexity (proxy for compute cost).
-#[must_use] 
+#[must_use]
 pub fn architecture_complexity(genome: &NasGenome) -> f64 {
     let mut complexity = 0.0;
 

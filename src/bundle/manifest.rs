@@ -248,7 +248,7 @@ impl BundleManifest {
     }
 
     /// Deserialize manifest from bytes.
-    #[must_use] 
+    #[must_use]
     pub fn from_bytes(data: &[u8]) -> Option<Self> {
         if data.len() < 16 {
             return None;

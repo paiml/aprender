@@ -134,7 +134,7 @@ pub struct AntColony {
 
 impl AntColony {
     /// Create new ACO with specified number of ants.
-    #[must_use] 
+    #[must_use]
     pub fn new(num_ants: usize) -> Self {
         Self {
             num_ants: num_ants.max(1),
@@ -151,28 +151,28 @@ impl AntColony {
     }
 
     /// Set pheromone importance (α).
-    #[must_use] 
+    #[must_use]
     pub fn with_alpha(mut self, alpha: f64) -> Self {
         self.alpha = alpha.max(0.0);
         self
     }
 
     /// Set heuristic importance (β).
-    #[must_use] 
+    #[must_use]
     pub fn with_beta(mut self, beta: f64) -> Self {
         self.beta = beta.max(0.0);
         self
     }
 
     /// Set evaporation rate (ρ).
-    #[must_use] 
+    #[must_use]
     pub fn with_rho(mut self, rho: f64) -> Self {
         self.rho = rho.clamp(0.0, 1.0);
         self
     }
 
     /// Set random seed.
-    #[must_use] 
+    #[must_use]
     pub fn with_seed(mut self, seed: u64) -> Self {
         self.seed = Some(seed);
         self
@@ -450,7 +450,7 @@ pub struct SwapMove {
 
 impl TabuSearch {
     /// Create new Tabu Search with given tenure.
-    #[must_use] 
+    #[must_use]
     pub fn new(tenure: usize) -> Self {
         Self {
             tenure: tenure.max(1),
@@ -463,21 +463,21 @@ impl TabuSearch {
     }
 
     /// Set tabu tenure.
-    #[must_use] 
+    #[must_use]
     pub fn with_tenure(mut self, tenure: usize) -> Self {
         self.tenure = tenure.max(1);
         self
     }
 
     /// Set maximum neighbors to explore per iteration.
-    #[must_use] 
+    #[must_use]
     pub fn with_max_neighbors(mut self, max_neighbors: usize) -> Self {
         self.max_neighbors = max_neighbors.max(1);
         self
     }
 
     /// Set random seed.
-    #[must_use] 
+    #[must_use]
     pub fn with_seed(mut self, seed: u64) -> Self {
         self.seed = Some(seed);
         self

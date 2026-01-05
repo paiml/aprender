@@ -71,7 +71,7 @@ impl ChaosConfig {
     /// assert_eq!(config.timeout, Duration::from_secs(60));
     /// assert_eq!(config.signal_injection, false);
     /// ```
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -86,7 +86,7 @@ impl ChaosConfig {
     /// let config = ChaosConfig::new().with_memory_limit(512 * 1024 * 1024);
     /// assert_eq!(config.memory_limit, 512 * 1024 * 1024);
     /// ```
-    #[must_use] 
+    #[must_use]
     pub fn with_memory_limit(mut self, bytes: usize) -> Self {
         self.memory_limit = bytes;
         self
@@ -108,7 +108,7 @@ impl ChaosConfig {
     /// let clamped = ChaosConfig::new().with_cpu_limit(1.5);
     /// assert_eq!(clamped.cpu_limit, 1.0);
     /// ```
-    #[must_use] 
+    #[must_use]
     pub fn with_cpu_limit(mut self, fraction: f64) -> Self {
         self.cpu_limit = fraction.clamp(0.0, 1.0);
         self
@@ -125,7 +125,7 @@ impl ChaosConfig {
     /// let config = ChaosConfig::new().with_timeout(Duration::from_secs(120));
     /// assert_eq!(config.timeout, Duration::from_secs(120));
     /// ```
-    #[must_use] 
+    #[must_use]
     pub fn with_timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
         self
@@ -141,7 +141,7 @@ impl ChaosConfig {
     /// let config = ChaosConfig::new().with_signal_injection(true);
     /// assert!(config.signal_injection);
     /// ```
-    #[must_use] 
+    #[must_use]
     pub fn with_signal_injection(mut self, enabled: bool) -> Self {
         self.signal_injection = enabled;
         self
@@ -159,7 +159,7 @@ impl ChaosConfig {
     ///     .build();
     /// assert_eq!(config.memory_limit, 100 * 1024 * 1024);
     /// ```
-    #[must_use] 
+    #[must_use]
     pub fn build(self) -> Self {
         self
     }
@@ -183,7 +183,7 @@ impl ChaosConfig {
     /// assert_eq!(gentle.timeout, Duration::from_secs(120));
     /// assert!(!gentle.signal_injection);
     /// ```
-    #[must_use] 
+    #[must_use]
     pub fn gentle() -> Self {
         Self::new()
             .with_memory_limit(512 * 1024 * 1024)
@@ -210,7 +210,7 @@ impl ChaosConfig {
     /// assert_eq!(aggressive.timeout, Duration::from_secs(10));
     /// assert!(aggressive.signal_injection);
     /// ```
-    #[must_use] 
+    #[must_use]
     pub fn aggressive() -> Self {
         Self::new()
             .with_memory_limit(64 * 1024 * 1024)

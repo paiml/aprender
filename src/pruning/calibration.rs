@@ -31,7 +31,7 @@ impl ActivationStats {
     ///
     /// # Arguments
     /// * `input_features` - Number of input channels/features
-    #[must_use] 
+    #[must_use]
     pub fn new(input_features: usize) -> Self {
         Self {
             input_norms: Tensor::zeros(&[input_features]),
@@ -126,7 +126,7 @@ impl ActivationStats {
     }
 
     /// Get the number of input features.
-    #[must_use] 
+    #[must_use]
     pub fn input_features(&self) -> usize {
         self.input_norms.data().len()
     }
@@ -151,7 +151,7 @@ impl CalibrationContext {
     ///
     /// # Arguments
     /// * `dataset` - Identifier for the calibration dataset (e.g., "c4", "wikitext")
-    #[must_use] 
+    #[must_use]
     pub fn new(dataset: String) -> Self {
         Self {
             activation_stats: HashMap::new(),
@@ -170,7 +170,7 @@ impl CalibrationContext {
     }
 
     /// Get statistics for a layer if available.
-    #[must_use] 
+    #[must_use]
     pub fn get_stats(&self, layer_name: &str) -> Option<&ActivationStats> {
         self.activation_stats.get(layer_name)
     }
@@ -195,7 +195,7 @@ impl CalibrationContext {
     }
 
     /// Check if stats exist for a layer.
-    #[must_use] 
+    #[must_use]
     pub fn has_stats(&self, layer_name: &str) -> bool {
         self.activation_stats.contains_key(layer_name)
     }

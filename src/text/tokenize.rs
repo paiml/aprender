@@ -78,7 +78,7 @@ impl WhitespaceTokenizer {
     ///
     /// let tokenizer = WhitespaceTokenizer::new();
     /// ```
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self
     }
@@ -128,7 +128,7 @@ impl WordTokenizer {
     ///
     /// let tokenizer = WordTokenizer::new();
     /// ```
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self
     }
@@ -203,7 +203,7 @@ impl CharTokenizer {
     ///
     /// let tokenizer = CharTokenizer::new();
     /// ```
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self
     }
@@ -239,7 +239,7 @@ pub struct SentenceTokenizer {
 
 impl SentenceTokenizer {
     /// Create a new sentence tokenizer with default abbreviations.
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             abbreviations: vec![
@@ -253,7 +253,7 @@ impl SentenceTokenizer {
     }
 
     /// Split text into sentences.
-    #[must_use] 
+    #[must_use]
     pub fn split(&self, text: &str) -> Vec<String> {
         if text.is_empty() {
             return Vec::new();
@@ -576,7 +576,7 @@ impl BpeTokenizer {
     ///
     /// * `vocab` - Token to ID mapping
     /// * `merges` - Ordered list of merge rules
-    #[must_use] 
+    #[must_use]
     pub fn from_vocab(vocab: HashMap<String, u32>, merges: Vec<(String, String)>) -> Self {
         let inverse_vocab: HashMap<u32, String> =
             vocab.iter().map(|(k, v)| (*v, k.clone())).collect();
@@ -1284,7 +1284,7 @@ impl WordPieceTokenizer {
     }
 
     /// Create from pre-built vocabulary.
-    #[must_use] 
+    #[must_use]
     pub fn from_vocab(vocab: HashMap<String, u32>) -> Self {
         let inverse_vocab: HashMap<u32, String> =
             vocab.iter().map(|(k, v)| (*v, k.clone())).collect();
@@ -1576,7 +1576,7 @@ impl UnigramTokenizer {
     }
 
     /// Create from pre-built vocabulary with probabilities.
-    #[must_use] 
+    #[must_use]
     pub fn from_vocab(vocab: HashMap<String, (u32, f64)>) -> Self {
         let inverse_vocab: HashMap<u32, String> =
             vocab.iter().map(|(k, (id, _))| (*id, k.clone())).collect();

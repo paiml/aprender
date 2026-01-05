@@ -72,7 +72,7 @@ impl LatentDirichletAllocation {
     ///
     /// let lda = LatentDirichletAllocation::new(5);  // 5 topics
     /// ```
-    #[must_use] 
+    #[must_use]
     pub fn new(n_topics: usize) -> Self {
         Self {
             n_topics,
@@ -91,7 +91,7 @@ impl LatentDirichletAllocation {
     ///
     /// let lda = LatentDirichletAllocation::new(3).with_random_seed(123);
     /// ```
-    #[must_use] 
+    #[must_use]
     pub fn with_random_seed(mut self, seed: u64) -> Self {
         self.random_seed = seed;
         self

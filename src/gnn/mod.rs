@@ -114,7 +114,7 @@ impl GCNConv {
     ///
     /// * `in_features` - Input feature dimension
     /// * `out_features` - Output feature dimension
-    #[must_use] 
+    #[must_use]
     pub fn new(in_features: usize, out_features: usize) -> Self {
         Self {
             linear: Linear::new(in_features, out_features),
@@ -126,7 +126,7 @@ impl GCNConv {
     }
 
     /// Create GCN without self-loops.
-    #[must_use] 
+    #[must_use]
     pub fn without_self_loops(in_features: usize, out_features: usize) -> Self {
         Self {
             linear: Linear::new(in_features, out_features),
@@ -138,13 +138,13 @@ impl GCNConv {
     }
 
     /// Get input feature dimension.
-    #[must_use] 
+    #[must_use]
     pub fn in_features(&self) -> usize {
         self.in_features
     }
 
     /// Get output feature dimension.
-    #[must_use] 
+    #[must_use]
     pub fn out_features(&self) -> usize {
         self.out_features
     }
@@ -275,7 +275,7 @@ impl GATConv {
     /// * `in_features` - Input feature dimension
     /// * `out_features` - Output feature dimension per attention head
     /// * `num_heads` - Number of attention heads
-    #[must_use] 
+    #[must_use]
     pub fn new(in_features: usize, out_features: usize, num_heads: usize) -> Self {
         let total_out = out_features * num_heads;
 
@@ -297,19 +297,19 @@ impl GATConv {
     }
 
     /// Get number of attention heads.
-    #[must_use] 
+    #[must_use]
     pub fn num_heads(&self) -> usize {
         self.num_heads
     }
 
     /// Get output dimension per head.
-    #[must_use] 
+    #[must_use]
     pub fn out_features(&self) -> usize {
         self.out_features
     }
 
     /// Total output dimension (`out_features` * `num_heads`).
-    #[must_use] 
+    #[must_use]
     pub fn total_out_features(&self) -> usize {
         self.out_features * self.num_heads
     }
@@ -462,7 +462,7 @@ impl GINConv {
     /// * `in_features` - Input feature dimension
     /// * `hidden_features` - Hidden layer dimension
     /// * `out_features` - Output feature dimension
-    #[must_use] 
+    #[must_use]
     pub fn new(in_features: usize, hidden_features: usize, out_features: usize) -> Self {
         Self {
             linear1: Linear::new(in_features, hidden_features),
@@ -476,7 +476,7 @@ impl GINConv {
     }
 
     /// Get epsilon value.
-    #[must_use] 
+    #[must_use]
     pub fn eps(&self) -> f32 {
         self.eps
     }
@@ -487,25 +487,25 @@ impl GINConv {
     }
 
     /// Check if epsilon is trainable.
-    #[must_use] 
+    #[must_use]
     pub fn train_eps(&self) -> bool {
         self.train_eps
     }
 
     /// Get input feature dimension.
-    #[must_use] 
+    #[must_use]
     pub fn in_features(&self) -> usize {
         self.in_features
     }
 
     /// Get hidden feature dimension.
-    #[must_use] 
+    #[must_use]
     pub fn hidden_features(&self) -> usize {
         self.hidden_features
     }
 
     /// Get output feature dimension.
-    #[must_use] 
+    #[must_use]
     pub fn out_features(&self) -> usize {
         self.out_features
     }
@@ -621,7 +621,7 @@ pub enum SAGEAggregation {
 
 impl GraphSAGEConv {
     /// Create a new `GraphSAGE` layer with mean aggregation.
-    #[must_use] 
+    #[must_use]
     pub fn new(in_features: usize, out_features: usize) -> Self {
         Self {
             // CONCAT(self, agg) doubles input
@@ -635,34 +635,34 @@ impl GraphSAGEConv {
     }
 
     /// Set aggregation type.
-    #[must_use] 
+    #[must_use]
     pub fn with_aggregation(mut self, agg: SAGEAggregation) -> Self {
         self.aggregation = agg;
         self
     }
 
     /// Set neighbor sample size.
-    #[must_use] 
+    #[must_use]
     pub fn with_sample_size(mut self, size: usize) -> Self {
         self.sample_size = Some(size);
         self
     }
 
     /// Disable output normalization.
-    #[must_use] 
+    #[must_use]
     pub fn without_normalize(mut self) -> Self {
         self.normalize = false;
         self
     }
 
     /// Get aggregation type.
-    #[must_use] 
+    #[must_use]
     pub fn aggregation(&self) -> SAGEAggregation {
         self.aggregation
     }
 
     /// Get sample size.
-    #[must_use] 
+    #[must_use]
     pub fn sample_size(&self) -> Option<usize> {
         self.sample_size
     }
@@ -820,7 +820,7 @@ pub struct EdgeConv {
 
 impl EdgeConv {
     /// Create new `EdgeConv` layer.
-    #[must_use] 
+    #[must_use]
     pub fn new(in_features: usize, hidden_features: usize, out_features: usize) -> Self {
         Self {
             // Input is CONCAT(h_i, h_j - h_i) = 2 * in_features
@@ -833,13 +833,13 @@ impl EdgeConv {
     }
 
     /// Get input feature dimension.
-    #[must_use] 
+    #[must_use]
     pub fn in_features(&self) -> usize {
         self.in_features
     }
 
     /// Get output feature dimension.
-    #[must_use] 
+    #[must_use]
     pub fn out_features(&self) -> usize {
         self.out_features
     }
@@ -1035,7 +1035,7 @@ fn accumulate_mean_single(x_data: &[f32], num_nodes: usize, num_features: usize)
 ///
 /// Aggregates all node features into a single graph representation
 /// by computing the mean across nodes.
-#[must_use] 
+#[must_use]
 pub fn global_mean_pool(x: &Tensor, batch: Option<&[usize]>) -> Tensor {
     let num_nodes = x.shape()[0];
     let num_features = x.shape()[1];
@@ -1053,7 +1053,7 @@ pub fn global_mean_pool(x: &Tensor, batch: Option<&[usize]>) -> Tensor {
 }
 
 /// Global sum pooling for graph-level predictions.
-#[must_use] 
+#[must_use]
 pub fn global_sum_pool(x: &Tensor, batch: Option<&[usize]>) -> Tensor {
     let num_nodes = x.shape()[0];
     let num_features = x.shape()[1];

@@ -55,19 +55,19 @@ impl Pipeline {
     }
 
     /// Get the pipeline name.
-    #[must_use] 
+    #[must_use]
     pub fn name(&self) -> &str {
         &self.name
     }
 
     /// Get all stages.
-    #[must_use] 
+    #[must_use]
     pub fn stages(&self) -> &[Stage] {
         &self.stages
     }
 
     /// Get a stage by name.
-    #[must_use] 
+    #[must_use]
     pub fn get_stage(&self, name: &str) -> Option<&Stage> {
         self.stages.iter().find(|s| s.name() == name)
     }
@@ -149,14 +149,14 @@ impl PipelineBuilder {
     }
 
     /// Add a pre-built stage.
-    #[must_use] 
+    #[must_use]
     pub fn add_stage(mut self, stage: Stage) -> Self {
         self.stages.push(stage);
         self
     }
 
     /// Disable stop-on-failure behavior.
-    #[must_use] 
+    #[must_use]
     pub fn continue_on_failure(mut self) -> Self {
         self.stop_on_failure = false;
         self

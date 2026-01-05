@@ -89,7 +89,7 @@ impl<E: Estimator + std::fmt::Debug, G: GatingNetwork + std::fmt::Debug> std::fm
 }
 
 impl<E: Estimator, G: GatingNetwork> MixtureOfExperts<E, G> {
-    #[must_use] 
+    #[must_use]
     pub fn builder() -> MoeBuilder<E, G> {
         MoeBuilder::new()
     }

@@ -317,7 +317,7 @@ impl GCNConv {
     ///
     /// # Returns
     /// Output features [`num_nodes`, `out_features`]
-    #[must_use] 
+    #[must_use]
     pub fn forward(&self, x: &Tensor, adj: &AdjacencyMatrix) -> Tensor {
         let num_nodes = x.shape()[0];
         let in_feat = x.shape()[1];
@@ -563,7 +563,7 @@ impl SAGEConv {
     ///
     /// # Returns
     /// Output features [`num_nodes`, `out_features`]
-    #[must_use] 
+    #[must_use]
     pub fn forward(&self, x: &Tensor, adj: &AdjacencyMatrix) -> Tensor {
         let num_nodes = x.shape()[0];
         let in_feat = x.shape()[1];

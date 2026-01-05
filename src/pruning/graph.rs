@@ -65,7 +65,7 @@ impl GraphNode {
     }
 
     /// Set dimensions.
-    #[must_use] 
+    #[must_use]
     pub fn with_dims(mut self, input_dim: usize, output_dim: usize) -> Self {
         self.input_dim = input_dim;
         self.output_dim = output_dim;
@@ -73,7 +73,7 @@ impl GraphNode {
     }
 
     /// Set prunable flag.
-    #[must_use] 
+    #[must_use]
     pub fn with_prunable(mut self, prunable: bool) -> Self {
         self.prunable = prunable;
         self
@@ -134,7 +134,7 @@ impl GraphEdge {
     }
 
     /// Set dimension index.
-    #[must_use] 
+    #[must_use]
     pub fn with_dim_index(mut self, dim_index: usize) -> Self {
         self.dim_index = dim_index;
         self
@@ -158,7 +158,7 @@ pub struct DependencyGraph {
 
 impl DependencyGraph {
     /// Create a new empty dependency graph.
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             nodes: HashMap::new(),
@@ -199,7 +199,7 @@ impl DependencyGraph {
     }
 
     /// Get a node by ID.
-    #[must_use] 
+    #[must_use]
     pub fn get_node(&self, id: &str) -> Option<&GraphNode> {
         self.nodes.get(id)
     }
@@ -225,7 +225,7 @@ impl DependencyGraph {
     }
 
     /// Get number of nodes.
-    #[must_use] 
+    #[must_use]
     pub fn num_nodes(&self) -> usize {
         self.nodes.len()
     }
@@ -238,7 +238,7 @@ impl DependencyGraph {
     /// Find all nodes that would be affected by pruning a given node's output channels.
     ///
     /// Returns set of node IDs that need their input dimensions updated.
-    #[must_use] 
+    #[must_use]
     pub fn downstream_dependents(&self, node_id: &str) -> HashSet<String> {
         let mut dependents = HashSet::new();
         let mut visited = HashSet::new();
@@ -262,7 +262,7 @@ impl DependencyGraph {
     /// Find all nodes that would be affected by pruning a given node's input channels.
     ///
     /// Returns set of node IDs that need their output dimensions updated.
-    #[must_use] 
+    #[must_use]
     pub fn upstream_dependents(&self, node_id: &str) -> HashSet<String> {
         let mut dependents = HashSet::new();
         let mut visited = HashSet::new();
@@ -284,7 +284,7 @@ impl DependencyGraph {
     }
 
     /// Get all prunable nodes.
-    #[must_use] 
+    #[must_use]
     pub fn prunable_nodes(&self) -> Vec<&GraphNode> {
         self.nodes.values().filter(|n| n.prunable).collect()
     }
@@ -335,7 +335,7 @@ impl DependencyGraph {
     /// Create a simple linear chain graph.
     ///
     /// Useful for testing and simple sequential models.
-    #[must_use] 
+    #[must_use]
     pub fn linear_chain(layer_dims: &[(usize, usize)], names: &[&str]) -> Self {
         let mut graph = Self::new();
 
@@ -378,7 +378,7 @@ pub struct PruningPlan {
 
 impl PruningPlan {
     /// Create a new empty pruning plan.
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             channel_removals: HashMap::new(),
@@ -400,13 +400,13 @@ impl PruningPlan {
     }
 
     /// Get channels to remove from a layer.
-    #[must_use] 
+    #[must_use]
     pub fn channels_to_remove(&self, layer_id: &str) -> Option<&Vec<usize>> {
         self.channel_removals.get(layer_id)
     }
 
     /// Check if a layer should be removed.
-    #[must_use] 
+    #[must_use]
     pub fn is_layer_removed(&self, layer_id: &str) -> bool {
         self.layer_removals.contains(&layer_id.to_string())
     }
@@ -457,7 +457,7 @@ impl PruningPlan {
     }
 
     /// Check if plan is validated.
-    #[must_use] 
+    #[must_use]
     pub fn is_validated(&self) -> bool {
         self.validated
     }
@@ -468,7 +468,7 @@ impl PruningPlan {
     }
 
     /// Get number of layers being removed.
-    #[must_use] 
+    #[must_use]
     pub fn total_layers_removed(&self) -> usize {
         self.layer_removals.len()
     }
@@ -492,7 +492,7 @@ impl Default for PruningPlan {
 ///
 /// # Returns
 /// Map of `layer_id` -> input channels to remove
-#[must_use] 
+#[must_use]
 pub fn propagate_channel_pruning(
     graph: &DependencyGraph,
     source_layer: &str,

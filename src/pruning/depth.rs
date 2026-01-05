@@ -36,7 +36,7 @@ pub struct DepthPruningResult {
 
 impl DepthPruningResult {
     /// Create a new depth pruning result.
-    #[must_use] 
+    #[must_use]
     pub fn new(removed_layers: Vec<(usize, f32)>, original_depth: usize) -> Self {
         let final_depth = original_depth.saturating_sub(removed_layers.len());
         Self {
@@ -47,7 +47,7 @@ impl DepthPruningResult {
     }
 
     /// Get compression ratio (original / final).
-    #[must_use] 
+    #[must_use]
     pub fn compression_ratio(&self) -> f32 {
         if self.final_depth == 0 {
             f32::INFINITY
@@ -57,7 +57,7 @@ impl DepthPruningResult {
     }
 
     /// Get percentage of layers removed.
-    #[must_use] 
+    #[must_use]
     pub fn removal_percentage(&self) -> f32 {
         if self.original_depth == 0 {
             0.0
@@ -78,7 +78,7 @@ pub struct BlockImportanceScores {
 
 impl BlockImportanceScores {
     /// Create new block importance scores.
-    #[must_use] 
+    #[must_use]
     pub fn new(scores: Vec<(usize, f32)>, num_samples: usize) -> Self {
         Self {
             scores,
@@ -87,7 +87,7 @@ impl BlockImportanceScores {
     }
 
     /// Get score for a specific layer.
-    #[must_use] 
+    #[must_use]
     pub fn get(&self, layer_idx: usize) -> Option<f32> {
         self.scores
             .iter()
@@ -96,7 +96,7 @@ impl BlockImportanceScores {
     }
 
     /// Get layers sorted by importance (ascending - least important first).
-    #[must_use] 
+    #[must_use]
     pub fn sorted_by_importance(&self) -> Vec<(usize, f32)> {
         let mut sorted = self.scores.clone();
         sorted.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
@@ -104,7 +104,7 @@ impl BlockImportanceScores {
     }
 
     /// Get the N least important layers.
-    #[must_use] 
+    #[must_use]
     pub fn least_important(&self, n: usize) -> Vec<(usize, f32)> {
         self.sorted_by_importance().into_iter().take(n).collect()
     }
@@ -134,7 +134,7 @@ impl DepthPruner {
     ///
     /// # Arguments
     /// * `num_layers_to_remove` - Number of layers to remove
-    #[must_use] 
+    #[must_use]
     pub fn new(num_layers_to_remove: usize) -> Self {
         Self {
             num_layers_to_remove,
@@ -147,27 +147,27 @@ impl DepthPruner {
     ///
     /// Iterative: Recompute BI after each layer removal (more accurate, slower).
     /// One-shot: Compute BI once and remove all at once (faster, may be less optimal).
-    #[must_use] 
+    #[must_use]
     pub fn with_iterative(mut self, iterative: bool) -> Self {
         self.iterative = iterative;
         self
     }
 
     /// Set minimum number of layers to keep.
-    #[must_use] 
+    #[must_use]
     pub fn with_min_layers(mut self, min_layers: usize) -> Self {
         self.min_layers = min_layers;
         self
     }
 
     /// Get number of layers to remove.
-    #[must_use] 
+    #[must_use]
     pub fn num_layers_to_remove(&self) -> usize {
         self.num_layers_to_remove
     }
 
     /// Check if iterative mode is enabled.
-    #[must_use] 
+    #[must_use]
     pub fn is_iterative(&self) -> bool {
         self.iterative
     }

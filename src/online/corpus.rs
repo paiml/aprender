@@ -66,7 +66,7 @@ pub struct Sample {
 
 impl Sample {
     /// Create a new sample
-    #[must_use] 
+    #[must_use]
     pub fn new(features: Vec<f64>, target: Vec<f64>) -> Self {
         Self {
             features,
@@ -78,7 +78,7 @@ impl Sample {
     }
 
     /// Create with weight
-    #[must_use] 
+    #[must_use]
     pub fn with_weight(features: Vec<f64>, target: Vec<f64>, weight: f64) -> Self {
         Self {
             features,
@@ -90,7 +90,7 @@ impl Sample {
     }
 
     /// Create with source
-    #[must_use] 
+    #[must_use]
     pub fn with_source(features: Vec<f64>, target: Vec<f64>, source: SampleSource) -> Self {
         Self {
             features,
@@ -166,7 +166,7 @@ pub struct CorpusBuffer {
 
 impl CorpusBuffer {
     /// Create a new corpus buffer with default config
-    #[must_use] 
+    #[must_use]
     pub fn new(max_size: usize) -> Self {
         Self::with_config(CorpusBufferConfig {
             max_size,
@@ -175,7 +175,7 @@ impl CorpusBuffer {
     }
 
     /// Create with custom configuration
-    #[must_use] 
+    #[must_use]
     pub fn with_config(config: CorpusBufferConfig) -> Self {
         let rng_state = config.seed.unwrap_or(12345);
         Self {
@@ -198,19 +198,19 @@ impl CorpusBuffer {
     }
 
     /// Get number of samples in buffer
-    #[must_use] 
+    #[must_use]
     pub fn len(&self) -> usize {
         self.samples.len()
     }
 
     /// Check if buffer is empty
-    #[must_use] 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.samples.is_empty()
     }
 
     /// Check if buffer is full
-    #[must_use] 
+    #[must_use]
     pub fn is_full(&self) -> bool {
         self.samples.len() >= self.config.max_size
     }
@@ -324,13 +324,13 @@ impl CorpusBuffer {
     }
 
     /// Get all samples
-    #[must_use] 
+    #[must_use]
     pub fn samples(&self) -> &[Sample] {
         &self.samples
     }
 
     /// Export corpus as (features, targets)
-    #[must_use] 
+    #[must_use]
     pub fn to_dataset(&self) -> (Vec<f64>, Vec<f64>, usize, usize) {
         if self.samples.is_empty() {
             return (vec![], vec![], 0, 0);
@@ -359,7 +359,7 @@ impl CorpusBuffer {
     }
 
     /// Get sample weights
-    #[must_use] 
+    #[must_use]
     pub fn weights(&self) -> Vec<f64> {
         self.samples.iter().map(|s| s.weight).collect()
     }
@@ -374,7 +374,7 @@ impl CorpusBuffer {
     }
 
     /// Get samples by source
-    #[must_use] 
+    #[must_use]
     pub fn samples_by_source(&self, source: &SampleSource) -> Vec<&Sample> {
         self.samples
             .iter()
@@ -408,14 +408,14 @@ impl CorpusSource {
     }
 
     /// Set weight multiplier
-    #[must_use] 
+    #[must_use]
     pub fn with_weight(mut self, weight: f64) -> Self {
         self.weight = weight;
         self
     }
 
     /// Set priority
-    #[must_use] 
+    #[must_use]
     pub fn with_priority(mut self, priority: u8) -> Self {
         self.priority = priority;
         self
@@ -435,7 +435,7 @@ pub struct CorpusProvenance {
 
 impl CorpusProvenance {
     /// Create new provenance tracker
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             sources: HashMap::new(),
@@ -480,7 +480,7 @@ pub struct CorpusMerger {
 
 impl CorpusMerger {
     /// Create a new corpus merger
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             sources: Vec::new(),
@@ -496,14 +496,14 @@ impl CorpusMerger {
     }
 
     /// Set deduplication flag
-    #[must_use] 
+    #[must_use]
     pub fn deduplicate(mut self, enable: bool) -> Self {
         self.deduplicate = enable;
         self
     }
 
     /// Set shuffle seed
-    #[must_use] 
+    #[must_use]
     pub fn shuffle_seed(mut self, seed: u64) -> Self {
         self.shuffle_seed = Some(seed);
         self

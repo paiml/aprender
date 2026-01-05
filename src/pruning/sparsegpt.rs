@@ -61,7 +61,7 @@ impl SparseGPTImportance {
     /// Set block size for block-wise processing.
     ///
     /// Smaller blocks use less memory but may be less accurate.
-    #[must_use] 
+    #[must_use]
     pub fn with_block_size(mut self, block_size: usize) -> Self {
         self.block_size = block_size;
         self
@@ -71,7 +71,7 @@ impl SparseGPTImportance {
     ///
     /// # Arguments
     /// * `damp` - Value added to diagonal of Hessian for stability
-    #[must_use] 
+    #[must_use]
     pub fn with_damp(mut self, damp: f32) -> Self {
         self.damp = damp;
         self.damp_relative = false;
@@ -82,7 +82,7 @@ impl SparseGPTImportance {
     ///
     /// # Arguments
     /// * `damp` - Percentage of mean diagonal to add (e.g., 0.01 = 1%)
-    #[must_use] 
+    #[must_use]
     pub fn with_relative_damp(mut self, damp: f32) -> Self {
         self.damp = damp;
         self.damp_relative = true;
@@ -90,19 +90,19 @@ impl SparseGPTImportance {
     }
 
     /// Get the layer name.
-    #[must_use] 
+    #[must_use]
     pub fn layer_name(&self) -> &str {
         &self.layer_name
     }
 
     /// Get the block size.
-    #[must_use] 
+    #[must_use]
     pub fn block_size(&self) -> usize {
         self.block_size
     }
 
     /// Get the damping factor.
-    #[must_use] 
+    #[must_use]
     pub fn damp(&self) -> f32 {
         self.damp
     }

@@ -114,7 +114,7 @@ impl MultiHeadAttention {
     /// # Panics
     ///
     /// Panics if `embed_dim` is not divisible by `num_heads`.
-    #[must_use] 
+    #[must_use]
     pub fn new(embed_dim: usize, num_heads: usize) -> Self {
         assert!(
             embed_dim % num_heads == 0,
@@ -137,7 +137,7 @@ impl MultiHeadAttention {
     }
 
     /// Set dropout probability.
-    #[must_use] 
+    #[must_use]
     pub fn with_dropout(mut self, dropout_p: f32) -> Self {
         self.dropout_p = dropout_p;
         self
@@ -155,7 +155,7 @@ impl MultiHeadAttention {
     /// # Returns
     ///
     /// Tuple of (output, `attention_weights`)
-    #[must_use] 
+    #[must_use]
     pub fn forward_qkv(
         &self,
         query: &Tensor,
@@ -191,19 +191,19 @@ impl MultiHeadAttention {
     }
 
     /// Self-attention: query, key, value are the same.
-    #[must_use] 
+    #[must_use]
     pub fn forward_self(&self, x: &Tensor, attn_mask: Option<&Tensor>) -> (Tensor, Tensor) {
         self.forward_qkv(x, x, x, attn_mask)
     }
 
     /// Get `embed_dim`.
-    #[must_use] 
+    #[must_use]
     pub fn embed_dim(&self) -> usize {
         self.embed_dim
     }
 
     /// Get `num_heads`.
-    #[must_use] 
+    #[must_use]
     pub fn num_heads(&self) -> usize {
         self.num_heads
     }
@@ -285,7 +285,7 @@ impl TransformerEncoderLayer {
     /// * `d_model` - Dimension of the model
     /// * `nhead` - Number of attention heads
     /// * `dim_feedforward` - Dimension of the feedforward network (typically 4 * `d_model`)
-    #[must_use] 
+    #[must_use]
     pub fn new(d_model: usize, nhead: usize, dim_feedforward: usize) -> Self {
         Self {
             self_attn: MultiHeadAttention::new(d_model, nhead),
@@ -405,7 +405,7 @@ pub struct TransformerDecoderLayer {
 
 impl TransformerDecoderLayer {
     /// Create a new Transformer Decoder Layer.
-    #[must_use] 
+    #[must_use]
     pub fn new(d_model: usize, nhead: usize, dim_feedforward: usize) -> Self {
         Self {
             self_attn: MultiHeadAttention::new(d_model, nhead),
@@ -554,7 +554,7 @@ impl PositionalEncoding {
     ///
     /// * `d_model` - Dimension of the model
     /// * `max_len` - Maximum sequence length to pre-compute
-    #[must_use] 
+    #[must_use]
     pub fn new(d_model: usize, max_len: usize) -> Self {
         let pe = compute_positional_encoding(d_model, max_len);
 
@@ -872,7 +872,7 @@ fn add_positional_encoding(x: &Tensor, pe: &Tensor) -> Tensor {
 /// Generate causal (triangular) attention mask.
 ///
 /// Returns a mask where positions can only attend to earlier positions.
-#[must_use] 
+#[must_use]
 pub fn generate_causal_mask(size: usize) -> Tensor {
     let mut data = vec![0.0; size * size];
 
@@ -928,7 +928,7 @@ impl LinearAttention {
     ///
     /// * `embed_dim` - Total dimension of the model
     /// * `num_heads` - Number of attention heads
-    #[must_use] 
+    #[must_use]
     pub fn new(embed_dim: usize, num_heads: usize) -> Self {
         assert!(
             embed_dim % num_heads == 0,
@@ -951,7 +951,7 @@ impl LinearAttention {
     }
 
     /// Forward pass with linear attention.
-    #[must_use] 
+    #[must_use]
     pub fn forward_linear(&self, query: &Tensor, key: &Tensor, value: &Tensor) -> Tensor {
         let batch_size = query.shape()[0];
         let tgt_len = query.shape()[1];
@@ -994,13 +994,13 @@ impl LinearAttention {
     }
 
     /// Get `embed_dim`.
-    #[must_use] 
+    #[must_use]
     pub fn embed_dim(&self) -> usize {
         self.embed_dim
     }
 
     /// Get `num_heads`.
-    #[must_use] 
+    #[must_use]
     pub fn num_heads(&self) -> usize {
         self.num_heads
     }
@@ -1097,7 +1097,7 @@ impl GroupedQueryAttention {
     ///
     /// Panics if `embed_dim` is not divisible by `num_heads` or
     /// if `num_heads` is not divisible by `num_kv_heads`.
-    #[must_use] 
+    #[must_use]
     pub fn new(embed_dim: usize, num_heads: usize, num_kv_heads: usize) -> Self {
         assert!(
             embed_dim % num_heads == 0,
@@ -1133,7 +1133,7 @@ impl GroupedQueryAttention {
     ///
     /// **IMPORTANT**: This layer will NOT work for inference until
     /// all projection weights are loaded via `*_proj_mut().set_weight()`.
-    #[must_use] 
+    #[must_use]
     pub fn placeholder(embed_dim: usize, num_heads: usize, num_kv_heads: usize) -> Self {
         let head_dim = embed_dim / num_heads;
         let kv_dim = num_kv_heads * head_dim;
@@ -1154,14 +1154,14 @@ impl GroupedQueryAttention {
     }
 
     /// Set dropout probability.
-    #[must_use] 
+    #[must_use]
     pub fn with_dropout(mut self, dropout_p: f32) -> Self {
         self.dropout_p = dropout_p;
         self
     }
 
     /// Forward pass with separate query, key, value inputs.
-    #[must_use] 
+    #[must_use]
     pub fn forward_qkv(
         &self,
         query: &Tensor,
@@ -1204,25 +1204,25 @@ impl GroupedQueryAttention {
     }
 
     /// Self-attention: query, key, value are the same.
-    #[must_use] 
+    #[must_use]
     pub fn forward_self(&self, x: &Tensor, attn_mask: Option<&Tensor>) -> (Tensor, Tensor) {
         self.forward_qkv(x, x, x, attn_mask)
     }
 
     /// Get `embed_dim`.
-    #[must_use] 
+    #[must_use]
     pub fn embed_dim(&self) -> usize {
         self.embed_dim
     }
 
     /// Get `num_heads`.
-    #[must_use] 
+    #[must_use]
     pub fn num_heads(&self) -> usize {
         self.num_heads
     }
 
     /// Get `num_kv_heads`.
-    #[must_use] 
+    #[must_use]
     pub fn num_kv_heads(&self) -> usize {
         self.num_kv_heads
     }
@@ -1497,14 +1497,14 @@ impl RotaryPositionEmbedding {
     ///
     /// * `head_dim` - Dimension per attention head (must be even)
     /// * `max_seq_len` - Maximum sequence length to precompute
-    #[must_use] 
+    #[must_use]
     pub fn new(head_dim: usize, max_seq_len: usize) -> Self {
         assert!(head_dim % 2 == 0, "head_dim must be even for RoPE");
         Self::with_base(head_dim, max_seq_len, 10000.0)
     }
 
     /// Create `RoPE` with custom base frequency.
-    #[must_use] 
+    #[must_use]
     pub fn with_base(head_dim: usize, max_seq_len: usize, base: f32) -> Self {
         let half_dim = head_dim / 2;
         let mut cos_cache = vec![0.0; max_seq_len * half_dim];
@@ -1543,7 +1543,7 @@ impl RotaryPositionEmbedding {
     /// # Returns
     ///
     /// Tensor with rotary embeddings applied.
-    #[must_use] 
+    #[must_use]
     pub fn apply(&self, x: &Tensor, position_ids: &[usize]) -> Tensor {
         let shape = x.shape();
         assert!(
@@ -1589,19 +1589,19 @@ impl RotaryPositionEmbedding {
     }
 
     /// Get head dimension.
-    #[must_use] 
+    #[must_use]
     pub fn head_dim(&self) -> usize {
         self.head_dim
     }
 
     /// Get maximum sequence length.
-    #[must_use] 
+    #[must_use]
     pub fn max_seq_len(&self) -> usize {
         self.max_seq_len
     }
 
     /// Get base frequency.
-    #[must_use] 
+    #[must_use]
     pub fn base(&self) -> f32 {
         self.base
     }
@@ -1634,7 +1634,7 @@ impl ALiBi {
     /// Create `ALiBi` with specified number of attention heads.
     ///
     /// Slopes follow geometric sequence: 2^(-8/n), 2^(-16/n), ...
-    #[must_use] 
+    #[must_use]
     pub fn new(num_heads: usize) -> Self {
         let slopes = Self::compute_slopes(num_heads);
         Self { num_heads, slopes }
@@ -1678,7 +1678,7 @@ impl ALiBi {
     /// # Returns
     ///
     /// Bias tensor [`num_heads`, `seq_len`, `seq_len`] to add to attention scores.
-    #[must_use] 
+    #[must_use]
     pub fn compute_bias(&self, seq_len: usize) -> Tensor {
         let mut bias = vec![0.0; self.num_heads * seq_len * seq_len];
 
@@ -1705,7 +1705,7 @@ impl ALiBi {
     /// # Returns
     ///
     /// Scores with `ALiBi` bias applied.
-    #[must_use] 
+    #[must_use]
     pub fn apply(&self, scores: &Tensor) -> Tensor {
         let shape = scores.shape();
         assert!(shape.len() == 4, "Expected 4D tensor");
@@ -1736,13 +1736,13 @@ impl ALiBi {
     }
 
     /// Get slopes for each head.
-    #[must_use] 
+    #[must_use]
     pub fn slopes(&self) -> &[f32] {
         &self.slopes
     }
 
     /// Get number of heads.
-    #[must_use] 
+    #[must_use]
     pub fn num_heads(&self) -> usize {
         self.num_heads
     }

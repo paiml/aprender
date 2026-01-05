@@ -77,7 +77,7 @@ impl TreeNode {
     /// Returns the depth of the tree rooted at this node.
     ///
     /// Leaf nodes have depth 0, internal nodes have depth 1 + max(left, right).
-    #[must_use] 
+    #[must_use]
     pub fn depth(&self) -> usize {
         match self {
             TreeNode::Leaf(_) => 0,
@@ -131,7 +131,7 @@ impl RegressionTreeNode {
     /// Returns the depth of the tree rooted at this node.
     ///
     /// Leaf nodes have depth 0, internal nodes have depth 1 + max(left, right).
-    #[must_use] 
+    #[must_use]
     pub fn depth(&self) -> usize {
         match self {
             RegressionTreeNode::Leaf(_) => 0,
@@ -154,7 +154,7 @@ pub struct DecisionTreeRegressor {
 
 impl DecisionTreeRegressor {
     /// Creates a new decision tree regressor with default parameters.
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             tree: None,
@@ -169,7 +169,7 @@ impl DecisionTreeRegressor {
     /// # Arguments
     ///
     /// * `depth` - Maximum depth (root has depth 0)
-    #[must_use] 
+    #[must_use]
     pub fn with_max_depth(mut self, depth: usize) -> Self {
         self.max_depth = Some(depth);
         self
@@ -180,7 +180,7 @@ impl DecisionTreeRegressor {
     /// # Arguments
     ///
     /// * `min_samples` - Minimum samples to split (must be >= 2)
-    #[must_use] 
+    #[must_use]
     pub fn with_min_samples_split(mut self, min_samples: usize) -> Self {
         self.min_samples_split = min_samples.max(2);
         self
@@ -191,7 +191,7 @@ impl DecisionTreeRegressor {
     /// # Arguments
     ///
     /// * `min_samples` - Minimum samples per leaf (must be >= 1)
-    #[must_use] 
+    #[must_use]
     pub fn with_min_samples_leaf(mut self, min_samples: usize) -> Self {
         self.min_samples_leaf = min_samples.max(1);
         self
@@ -244,7 +244,7 @@ impl DecisionTreeRegressor {
     /// # Panics
     ///
     /// Panics if called before `fit()`
-    #[must_use] 
+    #[must_use]
     pub fn predict(&self, x: &crate::primitives::Matrix<f32>) -> crate::primitives::Vector<f32> {
         let (n_samples, n_features) = x.shape();
         let mut predictions = Vec::with_capacity(n_samples);
@@ -297,7 +297,7 @@ impl DecisionTreeRegressor {
     /// # Returns
     ///
     /// R² coefficient of determination
-    #[must_use] 
+    #[must_use]
     pub fn score(
         &self,
         x: &crate::primitives::Matrix<f32>,
@@ -357,7 +357,7 @@ impl RandomForestRegressor {
     /// # Arguments
     ///
     /// * `n_estimators` - Number of trees in the forest
-    #[must_use] 
+    #[must_use]
     pub fn new(n_estimators: usize) -> Self {
         Self {
             trees: Vec::new(),
@@ -371,14 +371,14 @@ impl RandomForestRegressor {
     }
 
     /// Sets the maximum depth for each tree.
-    #[must_use] 
+    #[must_use]
     pub fn with_max_depth(mut self, max_depth: usize) -> Self {
         self.max_depth = Some(max_depth);
         self
     }
 
     /// Sets the random state for reproducibility.
-    #[must_use] 
+    #[must_use]
     pub fn with_random_state(mut self, random_state: u64) -> Self {
         self.random_state = Some(random_state);
         self
@@ -460,7 +460,7 @@ impl RandomForestRegressor {
     /// # Panics
     ///
     /// Panics if the model hasn't been fitted yet.
-    #[must_use] 
+    #[must_use]
     pub fn predict(&self, x: &crate::primitives::Matrix<f32>) -> crate::primitives::Vector<f32> {
         assert!(
             !self.trees.is_empty(),
@@ -497,7 +497,7 @@ impl RandomForestRegressor {
     /// # Returns
     ///
     /// R² coefficient of determination
-    #[must_use] 
+    #[must_use]
     pub fn score(
         &self,
         x: &crate::primitives::Matrix<f32>,
@@ -516,7 +516,7 @@ impl RandomForestRegressor {
     ///
     /// `Some(Vector<f32>)` if the model has been fitted, `None` otherwise.
     /// The vector has the same length as the training data.
-    #[must_use] 
+    #[must_use]
     pub fn oob_prediction(&self) -> Option<crate::primitives::Vector<f32>> {
         // Return None if model not fitted
         if self.trees.is_empty() || self.y_train.is_none() || self.x_train.is_none() {
@@ -582,7 +582,7 @@ impl RandomForestRegressor {
     /// # Returns
     ///
     /// `Some(f32)` with R² score if model has been fitted, `None` otherwise.
-    #[must_use] 
+    #[must_use]
     pub fn oob_score(&self) -> Option<f32> {
         let oob_preds = self.oob_prediction()?;
         let y_train = self.y_train.as_ref()?;
@@ -612,7 +612,7 @@ impl RandomForestRegressor {
     ///     }
     /// }
     /// ```
-    #[must_use] 
+    #[must_use]
     pub fn feature_importances(&self) -> Option<Vec<f32>> {
         if self.trees.is_empty() || self.x_train.is_none() {
             return None;
@@ -681,7 +681,7 @@ pub struct DecisionTreeClassifier {
 
 impl DecisionTreeClassifier {
     /// Creates a new decision tree classifier with default parameters.
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             tree: None,
@@ -695,7 +695,7 @@ impl DecisionTreeClassifier {
     /// # Arguments
     ///
     /// * `depth` - Maximum depth (root has depth 0)
-    #[must_use] 
+    #[must_use]
     pub fn with_max_depth(mut self, depth: usize) -> Self {
         self.max_depth = Some(depth);
         self
@@ -738,7 +738,7 @@ impl DecisionTreeClassifier {
     /// # Panics
     ///
     /// Panics if called before `fit()` or if feature count doesn't match training data
-    #[must_use] 
+    #[must_use]
     pub fn predict(&self, x: &crate::primitives::Matrix<f32>) -> Vec<usize> {
         let (n_samples, n_features) = x.shape();
 
@@ -800,7 +800,7 @@ impl DecisionTreeClassifier {
     /// # Returns
     ///
     /// Accuracy (fraction of correct predictions)
-    #[must_use] 
+    #[must_use]
     pub fn score(&self, x: &crate::primitives::Matrix<f32>, y: &[usize]) -> f32 {
         let predictions = self.predict(x);
         let correct = predictions
@@ -1920,7 +1920,7 @@ impl RandomForestClassifier {
     /// # Arguments
     ///
     /// * `n_estimators` - Number of trees in the forest
-    #[must_use] 
+    #[must_use]
     pub fn new(n_estimators: usize) -> Self {
         Self {
             trees: Vec::new(),
@@ -1934,14 +1934,14 @@ impl RandomForestClassifier {
     }
 
     /// Sets the maximum depth for each tree.
-    #[must_use] 
+    #[must_use]
     pub fn with_max_depth(mut self, max_depth: usize) -> Self {
         self.max_depth = Some(max_depth);
         self
     }
 
     /// Sets the random state for reproducibility.
-    #[must_use] 
+    #[must_use]
     pub fn with_random_state(mut self, random_state: u64) -> Self {
         self.random_state = Some(random_state);
         self
@@ -2006,7 +2006,7 @@ impl RandomForestClassifier {
 
     /// Makes predictions for input data.
     #[allow(clippy::needless_range_loop)]
-    #[must_use] 
+    #[must_use]
     pub fn predict(&self, x: &crate::primitives::Matrix<f32>) -> Vec<usize> {
         let n_samples = x.shape().0;
         let mut predictions = vec![0; n_samples];
@@ -2039,7 +2039,7 @@ impl RandomForestClassifier {
     }
 
     /// Calculates accuracy score on test data.
-    #[must_use] 
+    #[must_use]
     pub fn score(&self, x: &crate::primitives::Matrix<f32>, y: &[usize]) -> f32 {
         let predictions = self.predict(x);
         let correct = predictions
@@ -2060,7 +2060,7 @@ impl RandomForestClassifier {
     /// `Matrix<f32>` with shape `(n_samples, n_classes)` where each row
     /// sums to 1.0.
     #[allow(clippy::needless_range_loop)]
-    #[must_use] 
+    #[must_use]
     pub fn predict_proba(
         &self,
         x: &crate::primitives::Matrix<f32>,
@@ -2107,7 +2107,7 @@ impl RandomForestClassifier {
     ///
     /// `Some(Vec<usize>)` if the model has been fitted, `None` otherwise.
     /// The vector has the same length as the training data.
-    #[must_use] 
+    #[must_use]
     pub fn oob_prediction(&self) -> Option<Vec<usize>> {
         // Return None if model not fitted
         if self.trees.is_empty() || self.y_train.is_none() || self.x_train.is_none() {
@@ -2185,7 +2185,7 @@ impl RandomForestClassifier {
     /// # Returns
     ///
     /// `Some(f32)` with accuracy in [0, 1] if model has been fitted, `None` otherwise.
-    #[must_use] 
+    #[must_use]
     pub fn oob_score(&self) -> Option<f32> {
         let oob_preds = self.oob_prediction()?;
         let y_train = self.y_train.as_ref()?;
@@ -2221,7 +2221,7 @@ impl RandomForestClassifier {
     ///     }
     /// }
     /// ```
-    #[must_use] 
+    #[must_use]
     pub fn feature_importances(&self) -> Option<Vec<f32>> {
         if self.trees.is_empty() || self.x_train.is_none() {
             return None;
@@ -2591,7 +2591,7 @@ impl GradientBoostingClassifier {
     /// - `n_estimators`: 100
     /// - `learning_rate`: 0.1
     /// - `max_depth`: 3
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             n_estimators: 100,
@@ -2603,7 +2603,7 @@ impl GradientBoostingClassifier {
     }
 
     /// Sets the number of boosting iterations (trees).
-    #[must_use] 
+    #[must_use]
     pub fn with_n_estimators(mut self, n_estimators: usize) -> Self {
         self.n_estimators = n_estimators;
         self
@@ -2613,7 +2613,7 @@ impl GradientBoostingClassifier {
     ///
     /// Lower values require more trees but often lead to better generalization.
     /// Typical values: 0.01 - 0.3
-    #[must_use] 
+    #[must_use]
     pub fn with_learning_rate(mut self, learning_rate: f32) -> Self {
         self.learning_rate = learning_rate;
         self
@@ -2622,7 +2622,7 @@ impl GradientBoostingClassifier {
     /// Sets the maximum depth of each tree.
     ///
     /// Smaller depths prevent overfitting. Typical values: 3-8
-    #[must_use] 
+    #[must_use]
     pub fn with_max_depth(mut self, max_depth: usize) -> Self {
         self.max_depth = max_depth;
         self
@@ -2787,7 +2787,7 @@ impl GradientBoostingClassifier {
     }
 
     /// Returns the number of estimators (trees) in the ensemble.
-    #[must_use] 
+    #[must_use]
     pub fn n_estimators(&self) -> usize {
         self.estimators.len()
     }

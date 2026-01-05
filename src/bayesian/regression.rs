@@ -83,7 +83,7 @@ impl BayesianLinearRegression {
     ///
     /// let model = BayesianLinearRegression::new(3); // 3 features
     /// ```
-    #[must_use] 
+    #[must_use]
     pub fn new(n_features: usize) -> Self {
         Self {
             n_features,
@@ -164,19 +164,19 @@ impl BayesianLinearRegression {
     }
 
     /// Number of features (excluding intercept).
-    #[must_use] 
+    #[must_use]
     pub fn n_features(&self) -> usize {
         self.n_features
     }
 
     /// Posterior mean coefficients (available after fitting).
-    #[must_use] 
+    #[must_use]
     pub fn posterior_mean(&self) -> Option<&[f32]> {
         self.posterior_mean.as_deref()
     }
 
     /// Estimated noise variance σ² (available after fitting).
-    #[must_use] 
+    #[must_use]
     pub fn noise_variance(&self) -> Option<f32> {
         self.noise_variance
     }

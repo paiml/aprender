@@ -114,7 +114,7 @@ pub struct TensorComparison {
 
 impl TensorComparison {
     /// Check if tensors match within tolerance
-    #[must_use] 
+    #[must_use]
     pub fn is_match_with_tolerance(&self, l2_tol: f64, max_tol: f64) -> bool {
         self.shape_match
             && self.l2_diff.is_some_and(|d| d <= l2_tol)

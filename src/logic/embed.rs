@@ -29,7 +29,7 @@ pub struct EmbeddingSpace {
 
 impl EmbeddingSpace {
     /// Create a new embedding space with random initialization
-    #[must_use] 
+    #[must_use]
     pub fn new(num_entities: usize, dim: usize) -> Self {
         let mut rng = rand::thread_rng();
 
@@ -59,7 +59,7 @@ impl EmbeddingSpace {
     }
 
     /// Get a relation matrix by name
-    #[must_use] 
+    #[must_use]
     pub fn get_relation_matrix(&self, name: &str) -> Option<&Vec<Vec<f64>>> {
         self.relation_matrices.get(name)
     }
@@ -67,7 +67,7 @@ impl EmbeddingSpace {
     /// Score a triple (subject, relation, object) using bilinear scoring
     ///
     /// score = subject^T × `W_relation` × object
-    #[must_use] 
+    #[must_use]
     pub fn score(&self, subject: usize, relation: &str, object: usize) -> f64 {
         let s = &self.entity_embeddings[subject];
         let o = &self.entity_embeddings[object];
@@ -89,7 +89,7 @@ impl EmbeddingSpace {
     /// Compose multiple relations by matrix multiplication
     ///
     /// Example: `grandparent = compose(&[parent, parent])`
-    #[must_use] 
+    #[must_use]
     pub fn compose_relations(&self, relations: &[&str]) -> Vec<Vec<f64>> {
         if relations.is_empty() {
             return vec![vec![0.0; self.dim]; self.dim];
@@ -111,7 +111,7 @@ impl EmbeddingSpace {
     }
 
     /// Get entity embedding
-    #[must_use] 
+    #[must_use]
     pub fn get_entity(&self, idx: usize) -> Option<&Vec<f64>> {
         self.entity_embeddings.get(idx)
     }
@@ -124,13 +124,13 @@ impl EmbeddingSpace {
     }
 
     /// Number of entities
-    #[must_use] 
+    #[must_use]
     pub fn num_entities(&self) -> usize {
         self.num_entities
     }
 
     /// Embedding dimension
-    #[must_use] 
+    #[must_use]
     pub fn dim(&self) -> usize {
         self.dim
     }
@@ -145,19 +145,19 @@ pub struct RelationMatrix {
 
 impl RelationMatrix {
     /// Create from data
-    #[must_use] 
+    #[must_use]
     pub fn new(data: Vec<Vec<f64>>) -> Self {
         Self { data }
     }
 
     /// Get dimension
-    #[must_use] 
+    #[must_use]
     pub fn len(&self) -> usize {
         self.data.len()
     }
 
     /// Check if empty
-    #[must_use] 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.data.is_empty()
     }
@@ -171,13 +171,13 @@ pub struct BilinearScorer {
 
 impl BilinearScorer {
     /// Create a new scorer
-    #[must_use] 
+    #[must_use]
     pub fn new(space: EmbeddingSpace) -> Self {
         Self { space }
     }
 
     /// Score all entities as objects for (subject, relation, ?)
-    #[must_use] 
+    #[must_use]
     pub fn score_tails(&self, subject: usize, relation: &str) -> Vec<f64> {
         (0..self.space.num_entities)
             .map(|o| self.space.score(subject, relation, o))
@@ -185,7 +185,7 @@ impl BilinearScorer {
     }
 
     /// Score all entities as subjects for (?, relation, object)
-    #[must_use] 
+    #[must_use]
     pub fn score_heads(&self, relation: &str, object: usize) -> Vec<f64> {
         (0..self.space.num_entities)
             .map(|s| self.space.score(s, relation, object))
@@ -193,7 +193,7 @@ impl BilinearScorer {
     }
 
     /// Get top-K predictions for (subject, relation, ?)
-    #[must_use] 
+    #[must_use]
     pub fn predict_tails(&self, subject: usize, relation: &str, k: usize) -> Vec<(usize, f64)> {
         let scores = self.score_tails(subject, relation);
         let mut indexed: Vec<(usize, f64)> = scores.into_iter().enumerate().collect();
@@ -233,7 +233,7 @@ pub struct RescalResult {
 
 impl RescalFactorizer {
     /// Create a new factorizer
-    #[must_use] 
+    #[must_use]
     pub fn new(num_entities: usize, dim: usize, num_relations: usize) -> Self {
         Self {
             num_entities,
@@ -247,7 +247,7 @@ impl RescalFactorizer {
     /// # Arguments
     /// * `triples` - List of (head, relation, tail) indices
     /// * `iterations` - Number of ALS iterations
-    #[must_use] 
+    #[must_use]
     pub fn factorize(&self, triples: &[(usize, usize, usize)], iterations: usize) -> RescalResult {
         let mut rng = rand::thread_rng();
 
