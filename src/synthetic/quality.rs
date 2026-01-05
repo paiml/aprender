@@ -132,7 +132,7 @@ impl QualityDegradationDetector {
 
     /// Check if synthetic data should be disabled.
     ///
-    /// Returns true if recent mean score is below baseline - min_improvement.
+    /// Returns true if recent mean score is below baseline - `min_improvement`.
     #[must_use]
     pub fn should_disable_synthetic(&self) -> bool {
         if self.recent_scores.is_empty() {
@@ -143,7 +143,7 @@ impl QualityDegradationDetector {
 
     /// Check if synthetic data is providing improvement.
     ///
-    /// Returns true if recent mean score is above baseline + min_improvement.
+    /// Returns true if recent mean score is above baseline + `min_improvement`.
     #[must_use]
     pub fn is_improving(&self) -> bool {
         if self.recent_scores.is_empty() {

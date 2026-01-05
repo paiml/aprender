@@ -19,7 +19,7 @@
 //!
 //! # References
 //!
-//! - Vaswani, A., et al. (2017). Attention is all you need. NeurIPS.
+//! - Vaswani, A., et al. (2017). Attention is all you need. `NeurIPS`.
 
 use super::dropout::Dropout;
 use super::linear::Linear;
@@ -108,12 +108,13 @@ impl MultiHeadAttention {
     ///
     /// # Arguments
     ///
-    /// * `embed_dim` - Total dimension of the model (must be divisible by num_heads)
+    /// * `embed_dim` - Total dimension of the model (must be divisible by `num_heads`)
     /// * `num_heads` - Number of attention heads
     ///
     /// # Panics
     ///
     /// Panics if `embed_dim` is not divisible by `num_heads`.
+    #[must_use] 
     pub fn new(embed_dim: usize, num_heads: usize) -> Self {
         assert!(
             embed_dim % num_heads == 0,
@@ -136,6 +137,7 @@ impl MultiHeadAttention {
     }
 
     /// Set dropout probability.
+    #[must_use] 
     pub fn with_dropout(mut self, dropout_p: f32) -> Self {
         self.dropout_p = dropout_p;
         self
@@ -145,14 +147,15 @@ impl MultiHeadAttention {
     ///
     /// # Arguments
     ///
-    /// * `query` - Query tensor [batch, target_len, embed_dim]
-    /// * `key` - Key tensor [batch, source_len, embed_dim]
-    /// * `value` - Value tensor [batch, source_len, embed_dim]
-    /// * `attn_mask` - Optional attention mask [batch, target_len, source_len]
+    /// * `query` - Query tensor [batch, `target_len`, `embed_dim`]
+    /// * `key` - Key tensor [batch, `source_len`, `embed_dim`]
+    /// * `value` - Value tensor [batch, `source_len`, `embed_dim`]
+    /// * `attn_mask` - Optional attention mask [batch, `target_len`, `source_len`]
     ///
     /// # Returns
     ///
-    /// Tuple of (output, attention_weights)
+    /// Tuple of (output, `attention_weights`)
+    #[must_use] 
     pub fn forward_qkv(
         &self,
         query: &Tensor,
@@ -188,16 +191,19 @@ impl MultiHeadAttention {
     }
 
     /// Self-attention: query, key, value are the same.
+    #[must_use] 
     pub fn forward_self(&self, x: &Tensor, attn_mask: Option<&Tensor>) -> (Tensor, Tensor) {
         self.forward_qkv(x, x, x, attn_mask)
     }
 
-    /// Get embed_dim.
+    /// Get `embed_dim`.
+    #[must_use] 
     pub fn embed_dim(&self) -> usize {
         self.embed_dim
     }
 
-    /// Get num_heads.
+    /// Get `num_heads`.
+    #[must_use] 
     pub fn num_heads(&self) -> usize {
         self.num_heads
     }
@@ -278,7 +284,8 @@ impl TransformerEncoderLayer {
     ///
     /// * `d_model` - Dimension of the model
     /// * `nhead` - Number of attention heads
-    /// * `dim_feedforward` - Dimension of the feedforward network (typically 4 * d_model)
+    /// * `dim_feedforward` - Dimension of the feedforward network (typically 4 * `d_model`)
+    #[must_use] 
     pub fn new(d_model: usize, nhead: usize, dim_feedforward: usize) -> Self {
         Self {
             self_attn: MultiHeadAttention::new(d_model, nhead),
@@ -398,6 +405,7 @@ pub struct TransformerDecoderLayer {
 
 impl TransformerDecoderLayer {
     /// Create a new Transformer Decoder Layer.
+    #[must_use] 
     pub fn new(d_model: usize, nhead: usize, dim_feedforward: usize) -> Self {
         Self {
             self_attn: MultiHeadAttention::new(d_model, nhead),
@@ -420,8 +428,8 @@ impl TransformerDecoderLayer {
     ///
     /// # Arguments
     ///
-    /// * `tgt` - Target sequence [batch, tgt_len, d_model]
-    /// * `memory` - Encoder output [batch, src_len, d_model]
+    /// * `tgt` - Target sequence [batch, `tgt_len`, `d_model`]
+    /// * `memory` - Encoder output [batch, `src_len`, `d_model`]
     /// * `tgt_mask` - Optional causal mask for target
     /// * `memory_mask` - Optional mask for encoder-decoder attention
     pub fn forward_with_memory(
@@ -546,6 +554,7 @@ impl PositionalEncoding {
     ///
     /// * `d_model` - Dimension of the model
     /// * `max_len` - Maximum sequence length to pre-compute
+    #[must_use] 
     pub fn new(d_model: usize, max_len: usize) -> Self {
         let pe = compute_positional_encoding(d_model, max_len);
 
@@ -730,7 +739,7 @@ fn apply_dropout(x: &Tensor, p: f32) -> Tensor {
     Tensor::new(&data, x.shape())
 }
 
-/// Reshape for multi-head attention: [batch, seq, embed] -> [batch, heads, seq, head_dim]
+/// Reshape for multi-head attention: [batch, seq, embed] -> [batch, heads, seq, `head_dim`]
 fn reshape_for_attention(
     x: &Tensor,
     batch: usize,
@@ -763,7 +772,7 @@ fn reshape_for_attention(
     Tensor::new(&output, &[batch, num_heads, seq_len, head_dim])
 }
 
-/// Reshape from multi-head attention: [batch, heads, seq, head_dim] -> [batch, seq, embed]
+/// Reshape from multi-head attention: [batch, heads, seq, `head_dim`] -> [batch, seq, embed]
 fn reshape_from_attention(x: &Tensor, batch: usize, seq_len: usize, embed_dim: usize) -> Tensor {
     let num_heads = x.shape()[1];
     let head_dim = x.shape()[3];
@@ -863,6 +872,7 @@ fn add_positional_encoding(x: &Tensor, pe: &Tensor) -> Tensor {
 /// Generate causal (triangular) attention mask.
 ///
 /// Returns a mask where positions can only attend to earlier positions.
+#[must_use] 
 pub fn generate_causal_mask(size: usize) -> Tensor {
     let mut data = vec![0.0; size * size];
 
@@ -918,6 +928,7 @@ impl LinearAttention {
     ///
     /// * `embed_dim` - Total dimension of the model
     /// * `num_heads` - Number of attention heads
+    #[must_use] 
     pub fn new(embed_dim: usize, num_heads: usize) -> Self {
         assert!(
             embed_dim % num_heads == 0,
@@ -940,6 +951,7 @@ impl LinearAttention {
     }
 
     /// Forward pass with linear attention.
+    #[must_use] 
     pub fn forward_linear(&self, query: &Tensor, key: &Tensor, value: &Tensor) -> Tensor {
         let batch_size = query.shape()[0];
         let tgt_len = query.shape()[1];
@@ -981,12 +993,14 @@ impl LinearAttention {
         self.out_proj.forward(&output)
     }
 
-    /// Get embed_dim.
+    /// Get `embed_dim`.
+    #[must_use] 
     pub fn embed_dim(&self) -> usize {
         self.embed_dim
     }
 
-    /// Get num_heads.
+    /// Get `num_heads`.
+    #[must_use] 
     pub fn num_heads(&self) -> usize {
         self.num_heads
     }
@@ -1077,12 +1091,13 @@ impl GroupedQueryAttention {
     ///
     /// * `embed_dim` - Total dimension of the model
     /// * `num_heads` - Number of query heads
-    /// * `num_kv_heads` - Number of key-value heads (must divide num_heads)
+    /// * `num_kv_heads` - Number of key-value heads (must divide `num_heads`)
     ///
     /// # Panics
     ///
     /// Panics if `embed_dim` is not divisible by `num_heads` or
     /// if `num_heads` is not divisible by `num_kv_heads`.
+    #[must_use] 
     pub fn new(embed_dim: usize, num_heads: usize, num_kv_heads: usize) -> Self {
         assert!(
             embed_dim % num_heads == 0,
@@ -1114,10 +1129,11 @@ impl GroupedQueryAttention {
     /// Create a placeholder GQA layer with minimal memory allocation.
     ///
     /// Used for lazy initialization when loading pre-trained weights.
-    /// Uses Linear::placeholder() internally to minimize memory usage.
+    /// Uses `Linear::placeholder()` internally to minimize memory usage.
     ///
     /// **IMPORTANT**: This layer will NOT work for inference until
     /// all projection weights are loaded via `*_proj_mut().set_weight()`.
+    #[must_use] 
     pub fn placeholder(embed_dim: usize, num_heads: usize, num_kv_heads: usize) -> Self {
         let head_dim = embed_dim / num_heads;
         let kv_dim = num_kv_heads * head_dim;
@@ -1138,12 +1154,14 @@ impl GroupedQueryAttention {
     }
 
     /// Set dropout probability.
+    #[must_use] 
     pub fn with_dropout(mut self, dropout_p: f32) -> Self {
         self.dropout_p = dropout_p;
         self
     }
 
     /// Forward pass with separate query, key, value inputs.
+    #[must_use] 
     pub fn forward_qkv(
         &self,
         query: &Tensor,
@@ -1186,21 +1204,25 @@ impl GroupedQueryAttention {
     }
 
     /// Self-attention: query, key, value are the same.
+    #[must_use] 
     pub fn forward_self(&self, x: &Tensor, attn_mask: Option<&Tensor>) -> (Tensor, Tensor) {
         self.forward_qkv(x, x, x, attn_mask)
     }
 
-    /// Get embed_dim.
+    /// Get `embed_dim`.
+    #[must_use] 
     pub fn embed_dim(&self) -> usize {
         self.embed_dim
     }
 
-    /// Get num_heads.
+    /// Get `num_heads`.
+    #[must_use] 
     pub fn num_heads(&self) -> usize {
         self.num_heads
     }
 
-    /// Get num_kv_heads.
+    /// Get `num_kv_heads`.
+    #[must_use] 
     pub fn num_kv_heads(&self) -> usize {
         self.num_kv_heads
     }
@@ -1439,10 +1461,10 @@ fn repeat_kv_heads(x: &Tensor, groups: usize) -> Tensor {
 // Modern Positional Encoding Variants
 // ============================================================================
 
-/// Rotary Position Embedding (RoPE) (Su et al., 2021).
+/// Rotary Position Embedding (`RoPE`) (Su et al., 2021).
 ///
 /// Encodes absolute position with relative position dependencies via rotation.
-/// Used in GPT-NeoX, LLaMA, and other modern LLMs.
+/// Used in GPT-NeoX, `LLaMA`, and other modern LLMs.
 ///
 /// # Method
 ///
@@ -1451,36 +1473,38 @@ fn repeat_kv_heads(x: &Tensor, groups: usize) -> Tensor {
 /// (q_2i, q_2i+1) = (q_2i * cos(mθ_i) - q_2i+1 * sin(mθ_i),
 ///                   q_2i * sin(mθ_i) + q_2i+1 * cos(mθ_i))
 /// ```
-/// where m is the position and θ_i = 10000^(-2i/d)
+/// where m is the position and `θ_i` = 10000^(-2i/d)
 ///
 /// # Reference
 ///
-/// - Su, J., et al. (2021). RoFormer: Enhanced Transformer with Rotary
+/// - Su, J., et al. (2021). `RoFormer`: Enhanced Transformer with Rotary
 ///   Position Embedding. arXiv:2104.09864
 #[derive(Debug, Clone)]
 pub struct RotaryPositionEmbedding {
     head_dim: usize,
     max_seq_len: usize,
     base: f32,
-    /// Precomputed cos values [max_seq_len, head_dim/2]
+    /// Precomputed cos values [`max_seq_len`, `head_dim/2`]
     cos_cache: Vec<f32>,
-    /// Precomputed sin values [max_seq_len, head_dim/2]
+    /// Precomputed sin values [`max_seq_len`, `head_dim/2`]
     sin_cache: Vec<f32>,
 }
 
 impl RotaryPositionEmbedding {
-    /// Create RoPE with specified head dimension.
+    /// Create `RoPE` with specified head dimension.
     ///
     /// # Arguments
     ///
     /// * `head_dim` - Dimension per attention head (must be even)
     /// * `max_seq_len` - Maximum sequence length to precompute
+    #[must_use] 
     pub fn new(head_dim: usize, max_seq_len: usize) -> Self {
         assert!(head_dim % 2 == 0, "head_dim must be even for RoPE");
         Self::with_base(head_dim, max_seq_len, 10000.0)
     }
 
-    /// Create RoPE with custom base frequency.
+    /// Create `RoPE` with custom base frequency.
+    #[must_use] 
     pub fn with_base(head_dim: usize, max_seq_len: usize, base: f32) -> Self {
         let half_dim = head_dim / 2;
         let mut cos_cache = vec![0.0; max_seq_len * half_dim];
@@ -1519,6 +1543,7 @@ impl RotaryPositionEmbedding {
     /// # Returns
     ///
     /// Tensor with rotary embeddings applied.
+    #[must_use] 
     pub fn apply(&self, x: &Tensor, position_ids: &[usize]) -> Tensor {
         let shape = x.shape();
         assert!(
@@ -1564,22 +1589,25 @@ impl RotaryPositionEmbedding {
     }
 
     /// Get head dimension.
+    #[must_use] 
     pub fn head_dim(&self) -> usize {
         self.head_dim
     }
 
     /// Get maximum sequence length.
+    #[must_use] 
     pub fn max_seq_len(&self) -> usize {
         self.max_seq_len
     }
 
     /// Get base frequency.
+    #[must_use] 
     pub fn base(&self) -> f32 {
         self.base
     }
 }
 
-/// ALiBi (Attention with Linear Biases) (Press et al., 2022).
+/// `ALiBi` (Attention with Linear Biases) (Press et al., 2022).
 ///
 /// Adds linear position biases directly to attention scores instead of
 /// positional embeddings. Enables length extrapolation.
@@ -1603,9 +1631,10 @@ pub struct ALiBi {
 }
 
 impl ALiBi {
-    /// Create ALiBi with specified number of attention heads.
+    /// Create `ALiBi` with specified number of attention heads.
     ///
     /// Slopes follow geometric sequence: 2^(-8/n), 2^(-16/n), ...
+    #[must_use] 
     pub fn new(num_heads: usize) -> Self {
         let slopes = Self::compute_slopes(num_heads);
         Self { num_heads, slopes }
@@ -1640,7 +1669,7 @@ impl ALiBi {
         slopes
     }
 
-    /// Compute ALiBi bias matrix for given sequence length.
+    /// Compute `ALiBi` bias matrix for given sequence length.
     ///
     /// # Arguments
     ///
@@ -1648,7 +1677,8 @@ impl ALiBi {
     ///
     /// # Returns
     ///
-    /// Bias tensor [num_heads, seq_len, seq_len] to add to attention scores.
+    /// Bias tensor [`num_heads`, `seq_len`, `seq_len`] to add to attention scores.
+    #[must_use] 
     pub fn compute_bias(&self, seq_len: usize) -> Tensor {
         let mut bias = vec![0.0; self.num_heads * seq_len * seq_len];
 
@@ -1666,15 +1696,16 @@ impl ALiBi {
         Tensor::new(&bias, &[self.num_heads, seq_len, seq_len])
     }
 
-    /// Apply ALiBi to attention scores.
+    /// Apply `ALiBi` to attention scores.
     ///
     /// # Arguments
     ///
-    /// * `scores` - Attention scores [batch, num_heads, seq_len, seq_len]
+    /// * `scores` - Attention scores [batch, `num_heads`, `seq_len`, `seq_len`]
     ///
     /// # Returns
     ///
-    /// Scores with ALiBi bias applied.
+    /// Scores with `ALiBi` bias applied.
+    #[must_use] 
     pub fn apply(&self, scores: &Tensor) -> Tensor {
         let shape = scores.shape();
         assert!(shape.len() == 4, "Expected 4D tensor");
@@ -1705,11 +1736,13 @@ impl ALiBi {
     }
 
     /// Get slopes for each head.
+    #[must_use] 
     pub fn slopes(&self) -> &[f32] {
         &self.slopes
     }
 
     /// Get number of heads.
+    #[must_use] 
     pub fn num_heads(&self) -> usize {
         self.num_heads
     }

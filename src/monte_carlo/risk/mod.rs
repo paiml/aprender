@@ -1,6 +1,6 @@
 //! Risk metrics for Monte Carlo simulations
 //!
-//! Implements Value-at-Risk (VaR), Conditional VaR (CVaR/Expected Shortfall),
+//! Implements Value-at-Risk (`VaR`), Conditional `VaR` (CVaR/Expected Shortfall),
 //! maximum drawdown, and risk-adjusted return metrics.
 //!
 //! References:
@@ -28,16 +28,16 @@ use crate::monte_carlo::error::{MonteCarloError, Result};
 pub struct RiskReport {
     /// Value at Risk at various confidence levels
     pub var_90: f64,
-    /// VaR at 95% confidence
+    /// `VaR` at 95% confidence
     pub var_95: f64,
-    /// VaR at 99% confidence
+    /// `VaR` at 99% confidence
     pub var_99: f64,
 
-    /// Conditional VaR (Expected Shortfall) at 90%
+    /// Conditional `VaR` (Expected Shortfall) at 90%
     pub cvar_90: f64,
-    /// CVaR at 95% confidence
+    /// `CVaR` at 95% confidence
     pub cvar_95: f64,
-    /// CVaR at 99% confidence
+    /// `CVaR` at 99% confidence
     pub cvar_99: f64,
 
     /// Drawdown statistics

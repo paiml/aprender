@@ -19,7 +19,7 @@ pub enum Average {
 
 /// Compute classification accuracy.
 ///
-/// accuracy = correct_predictions / total_predictions
+/// accuracy = `correct_predictions` / `total_predictions`
 ///
 /// # Arguments
 ///

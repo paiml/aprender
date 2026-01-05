@@ -19,6 +19,7 @@ use std::f64::consts::PI;
 /// let x = vec![0.0, 0.0, 0.0];
 /// assert!((sphere(&x) - 0.0).abs() < 1e-10);
 /// ```
+#[must_use] 
 pub fn sphere(x: &[f64]) -> f64 {
     x.iter().map(|xi| xi * xi).sum()
 }
@@ -34,6 +35,7 @@ pub fn sphere(x: &[f64]) -> f64 {
 /// let x = vec![1.0, 1.0, 1.0];
 /// assert!((rosenbrock(&x) - 0.0).abs() < 1e-10);
 /// ```
+#[must_use] 
 pub fn rosenbrock(x: &[f64]) -> f64 {
     x.windows(2)
         .map(|w| {
@@ -56,6 +58,7 @@ pub fn rosenbrock(x: &[f64]) -> f64 {
 /// let x = vec![0.0, 0.0, 0.0];
 /// assert!((rastrigin(&x) - 0.0).abs() < 1e-10);
 /// ```
+#[must_use] 
 pub fn rastrigin(x: &[f64]) -> f64 {
     let n = x.len() as f64;
     10.0 * n
@@ -75,6 +78,7 @@ pub fn rastrigin(x: &[f64]) -> f64 {
 /// let x = vec![0.0, 0.0, 0.0];
 /// assert!(ackley(&x).abs() < 1e-10);
 /// ```
+#[must_use] 
 pub fn ackley(x: &[f64]) -> f64 {
     let n = x.len() as f64;
     let sum_sq: f64 = x.iter().map(|xi| xi * xi).sum();
@@ -95,6 +99,7 @@ pub fn ackley(x: &[f64]) -> f64 {
 /// let x = vec![420.9687, 420.9687, 420.9687];
 /// assert!(schwefel(&x).abs() < 1.0);
 /// ```
+#[must_use] 
 pub fn schwefel(x: &[f64]) -> f64 {
     let n = x.len() as f64;
     418.9829 * n - x.iter().map(|xi| xi * (xi.abs().sqrt()).sin()).sum::<f64>()
@@ -111,6 +116,7 @@ pub fn schwefel(x: &[f64]) -> f64 {
 /// let x = vec![0.0, 0.0, 0.0];
 /// assert!(griewank(&x).abs() < 1e-10);
 /// ```
+#[must_use] 
 pub fn griewank(x: &[f64]) -> f64 {
     let sum: f64 = x.iter().map(|xi| xi * xi).sum::<f64>() / 4000.0;
     let prod: f64 = x
@@ -132,6 +138,7 @@ pub fn griewank(x: &[f64]) -> f64 {
 /// let x = vec![1.0, 1.0, 1.0];
 /// assert!(levy(&x).abs() < 1e-10);
 /// ```
+#[must_use] 
 pub fn levy(x: &[f64]) -> f64 {
     let w: Vec<f64> = x.iter().map(|xi| 1.0 + (xi - 1.0) / 4.0).collect();
     let n = w.len();
@@ -159,6 +166,7 @@ pub fn levy(x: &[f64]) -> f64 {
 /// use aprender::metaheuristics::benchmarks::michalewicz;
 /// // Optimal for D=2 is approximately -1.8013
 /// ```
+#[must_use] 
 pub fn michalewicz(x: &[f64]) -> f64 {
     let m = 10.0;
     -x.iter()
@@ -178,6 +186,7 @@ pub fn michalewicz(x: &[f64]) -> f64 {
 /// let x = vec![0.0, 0.0, 0.0];
 /// assert!(zakharov(&x).abs() < 1e-10);
 /// ```
+#[must_use] 
 pub fn zakharov(x: &[f64]) -> f64 {
     let sum1: f64 = x.iter().map(|xi| xi * xi).sum();
     let sum2: f64 = x
@@ -190,7 +199,7 @@ pub fn zakharov(x: &[f64]) -> f64 {
 
 /// Dixon-Price function (f10) - Unimodal, non-separable
 ///
-/// Global minimum: f(x*) = 0 where x_i = 2^(-(2^i - 2) / 2^i)
+/// Global minimum: f(x*) = 0 where `x_i` = 2^(-(2^i - 2) / 2^i)
 /// Search domain: [-10, 10]^D
 ///
 /// # Example
@@ -198,6 +207,7 @@ pub fn zakharov(x: &[f64]) -> f64 {
 /// use aprender::metaheuristics::benchmarks::dixon_price;
 /// // Optimal solution is dimension-dependent
 /// ```
+#[must_use] 
 pub fn dixon_price(x: &[f64]) -> f64 {
     let term1 = (x[0] - 1.0).powi(2);
     let term2: f64 = x
@@ -226,6 +236,7 @@ pub struct BenchmarkInfo {
 }
 
 /// Get metadata for all benchmark functions
+#[must_use] 
 pub fn all_benchmarks() -> Vec<BenchmarkInfo> {
     vec![
         BenchmarkInfo {

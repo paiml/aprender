@@ -55,23 +55,26 @@ impl Pipeline {
     }
 
     /// Get the pipeline name.
+    #[must_use] 
     pub fn name(&self) -> &str {
         &self.name
     }
 
     /// Get all stages.
+    #[must_use] 
     pub fn stages(&self) -> &[Stage] {
         &self.stages
     }
 
     /// Get a stage by name.
+    #[must_use] 
     pub fn get_stage(&self, name: &str) -> Option<&Stage> {
         self.stages.iter().find(|s| s.name() == name)
     }
 
     /// Verify all stages with provided outputs.
     ///
-    /// `outputs` is a function that produces the GroundTruth for each stage name.
+    /// `outputs` is a function that produces the `GroundTruth` for each stage name.
     /// Verification proceeds in order; if `stop_on_failure` is true, stages
     /// after a failure are marked as skipped.
     pub fn verify<F>(&self, mut outputs: F) -> VerifyReport
@@ -137,7 +140,7 @@ impl PipelineBuilder {
 
     /// Add a stage using the fluent builder API.
     ///
-    /// Returns a StageBuilder that will add the stage when build_stage() is called.
+    /// Returns a `StageBuilder` that will add the stage when `build_stage()` is called.
     pub fn stage(self, name: impl Into<String>) -> PipelineStageBuilder {
         PipelineStageBuilder {
             pipeline: self,
@@ -146,12 +149,14 @@ impl PipelineBuilder {
     }
 
     /// Add a pre-built stage.
+    #[must_use] 
     pub fn add_stage(mut self, stage: Stage) -> Self {
         self.stages.push(stage);
         self
     }
 
     /// Disable stop-on-failure behavior.
+    #[must_use] 
     pub fn continue_on_failure(mut self) -> Self {
         self.stop_on_failure = false;
         self

@@ -82,7 +82,7 @@ impl AttackResult {
 /// FGSM attack implementation
 ///
 /// Generates adversarial examples using the Fast Gradient Sign Method.
-/// x_adv = x + epsilon * sign(grad_x(loss))
+/// `x_adv` = x + epsilon * `sign(grad_x(loss))`
 #[derive(Debug, Clone)]
 pub struct FgsmAttack {
     /// Perturbation magnitude
@@ -246,6 +246,7 @@ impl GaussianNoiseAttack {
 ///
 /// # Returns
 /// Tuple of (`CategoryScore`, `Vec<QaIssue>`)
+#[must_use] 
 pub fn run_robustness_tests(config: &AdversarialConfig) -> (CategoryScore, Vec<QaIssue>) {
     let start = Instant::now();
     let mut score = CategoryScore::new(20); // 20 points for robustness

@@ -1,4 +1,4 @@
-//! Code2Vec embedding encoder
+//! `Code2Vec` embedding encoder
 //!
 //! Implements the embedding layer from code2vec:
 //! - Maps tokens to dense vectors
@@ -94,7 +94,7 @@ impl CodeEmbedding {
     }
 }
 
-/// Code2Vec encoder for generating embeddings from AST paths
+/// `Code2Vec` encoder for generating embeddings from AST paths
 #[derive(Debug)]
 pub struct Code2VecEncoder {
     /// Embedding dimension
@@ -108,7 +108,7 @@ pub struct Code2VecEncoder {
 }
 
 impl Code2VecEncoder {
-    /// Create a new Code2Vec encoder
+    /// Create a new `Code2Vec` encoder
     #[must_use]
     pub fn new(dim: usize) -> Self {
         Self {

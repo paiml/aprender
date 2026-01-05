@@ -326,7 +326,7 @@ impl EdaGenerator {
 
     /// Augment a single text input.
     ///
-    /// Returns multiple augmented versions based on config.num_augments.
+    /// Returns multiple augmented versions based on `config.num_augments`.
     #[must_use]
     pub fn augment(&self, text: &str, seed: u64) -> Vec<String> {
         let words: Vec<&str> = text.split_whitespace().collect();

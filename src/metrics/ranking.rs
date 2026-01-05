@@ -129,7 +129,7 @@ pub fn mrr<T: PartialEq + Clone>(predictions: &[Vec<T>], targets: &[T]) -> f32 {
 /// Discounted Cumulative Gain at K (DCG@K).
 ///
 /// DCG weights relevant items by their position (higher positions are better).
-/// Uses the formula: rel_i / log2(i + 1)
+/// Uses the formula: `rel_i` / log2(i + 1)
 ///
 /// # Arguments
 ///

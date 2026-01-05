@@ -311,7 +311,7 @@ pub fn p9_ci_fast_first() -> VelocityResult {
 // P10: No sleep() in fast tests
 // =============================================================================
 
-/// Verify no sleep() calls in fast test path
+/// Verify no `sleep()` calls in fast test path
 #[must_use]
 pub fn p10_no_sleep_in_fast() -> VelocityResult {
     // Sleep-using tests are marked with #[ignore]

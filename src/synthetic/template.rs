@@ -25,7 +25,7 @@ use std::collections::HashMap;
 /// A template with named slots for variation.
 #[derive(Debug, Clone)]
 pub struct Template {
-    /// Template pattern with {slot_name} placeholders.
+    /// Template pattern with {`slot_name`} placeholders.
     pattern: String,
     /// Slot name -> possible values.
     slots: HashMap<String, Vec<String>>,

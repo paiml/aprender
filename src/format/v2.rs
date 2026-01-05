@@ -389,7 +389,7 @@ pub struct AprV2Metadata {
     pub version: Option<String>,
 
     /// Source/provenance URI (DD6: Model provenance tracking)
-    /// Examples: "hf://openai/whisper-tiny", "local://path/to/model.safetensors"
+    /// Examples: "<hf://openai/whisper-tiny>", "<local://path/to/model.safetensors>"
     #[serde(default)]
     pub source: Option<String>,
 

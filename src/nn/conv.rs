@@ -1,13 +1,13 @@
 //! Convolutional layers for neural networks.
 //!
-//! Implements 1D and 2D convolutions following the PyTorch API.
+//! Implements 1D and 2D convolutions following the `PyTorch` API.
 //!
 //! # References
 //!
-//! - LeCun, Y., et al. (1998). Gradient-based learning applied to document
+//! - `LeCun`, Y., et al. (1998). Gradient-based learning applied to document
 //!   recognition. Proceedings of the IEEE.
 //! - He, K., et al. (2015). Delving deep into rectifiers: Surpassing
-//!   human-level performance on ImageNet classification. ICCV.
+//!   human-level performance on `ImageNet` classification. ICCV.
 
 use super::init::{kaiming_uniform, zeros};
 use super::module::Module;
@@ -19,8 +19,8 @@ use crate::autograd::Tensor;
 ///
 /// # Shape
 ///
-/// - Input: `(N, C_in, L)` where N is batch size, C_in is input channels, L is length
-/// - Output: `(N, C_out, L_out)` where L_out = (L + 2*padding - kernel_size) / stride + 1
+/// - Input: `(N, C_in, L)` where N is batch size, `C_in` is input channels, L is length
+/// - Output: `(N, C_out, L_out)` where `L_out` = (L + 2*padding - `kernel_size`) / stride + 1
 ///
 /// # Example
 ///
@@ -33,9 +33,9 @@ use crate::autograd::Tensor;
 /// let y = conv.forward(&x);  // [4, 32, 98]
 /// ```
 pub struct Conv1d {
-    /// Weight tensor, shape: [out_channels, in_channels, kernel_size]
+    /// Weight tensor, shape: [`out_channels`, `in_channels`, `kernel_size`]
     weight: Tensor,
-    /// Bias tensor, shape: [out_channels], or None
+    /// Bias tensor, shape: [`out_channels`], or None
     bias: Option<Tensor>,
     /// Number of input channels
     in_channels: usize,
@@ -57,6 +57,7 @@ impl Conv1d {
     /// * `in_channels` - Number of input channels
     /// * `out_channels` - Number of output channels
     /// * `kernel_size` - Size of the convolving kernel
+    #[must_use] 
     pub fn new(in_channels: usize, out_channels: usize, kernel_size: usize) -> Self {
         Self::with_options(in_channels, out_channels, kernel_size, 1, 0, true)
     }
@@ -71,6 +72,7 @@ impl Conv1d {
     /// * `stride` - Stride of the convolution
     /// * `padding` - Zero-padding added to both sides
     /// * `bias` - If true, adds a learnable bias
+    #[must_use] 
     pub fn with_options(
         in_channels: usize,
         out_channels: usize,
@@ -102,6 +104,7 @@ impl Conv1d {
     }
 
     /// Create Conv1d with specific stride.
+    #[must_use] 
     pub fn with_stride(
         in_channels: usize,
         out_channels: usize,
@@ -112,6 +115,7 @@ impl Conv1d {
     }
 
     /// Create Conv1d with padding.
+    #[must_use] 
     pub fn with_padding(
         in_channels: usize,
         out_channels: usize,
@@ -122,16 +126,19 @@ impl Conv1d {
     }
 
     /// Get kernel size.
+    #[must_use] 
     pub fn kernel_size(&self) -> usize {
         self.kernel_size
     }
 
     /// Get stride.
+    #[must_use] 
     pub fn stride(&self) -> usize {
         self.stride
     }
 
     /// Get padding.
+    #[must_use] 
     pub fn padding(&self) -> usize {
         self.padding
     }
@@ -235,7 +242,7 @@ impl std::fmt::Debug for Conv1d {
 ///
 /// # Shape
 ///
-/// - Input: `(N, C_in, H, W)` where N is batch, C_in is channels, H is height, W is width
+/// - Input: `(N, C_in, H, W)` where N is batch, `C_in` is channels, H is height, W is width
 /// - Output: `(N, C_out, H_out, W_out)`
 ///
 /// # Example
@@ -249,9 +256,9 @@ impl std::fmt::Debug for Conv1d {
 /// let y = conv.forward(&x);  // [4, 64, 30, 30]
 /// ```
 pub struct Conv2d {
-    /// Weight tensor, shape: [out_channels, in_channels, kernel_h, kernel_w]
+    /// Weight tensor, shape: [`out_channels`, `in_channels`, `kernel_h`, `kernel_w`]
     weight: Tensor,
-    /// Bias tensor, shape: [out_channels], or None
+    /// Bias tensor, shape: [`out_channels`], or None
     bias: Option<Tensor>,
     /// Number of input channels
     in_channels: usize,
@@ -279,6 +286,7 @@ impl Conv2d {
     /// * `in_channels` - Number of input channels
     /// * `out_channels` - Number of output channels
     /// * `kernel_size` - Size of the square convolving kernel
+    #[must_use] 
     pub fn new(in_channels: usize, out_channels: usize, kernel_size: usize) -> Self {
         Self::with_options(
             in_channels,
@@ -300,6 +308,7 @@ impl Conv2d {
     /// * `stride` - (height, width) stride
     /// * `padding` - (height, width) padding
     /// * `bias` - If true, adds a learnable bias
+    #[must_use] 
     pub fn with_options(
         in_channels: usize,
         out_channels: usize,
@@ -340,6 +349,7 @@ impl Conv2d {
     }
 
     /// Create Conv2d with stride.
+    #[must_use] 
     pub fn with_stride(
         in_channels: usize,
         out_channels: usize,
@@ -357,6 +367,7 @@ impl Conv2d {
     }
 
     /// Create Conv2d with padding.
+    #[must_use] 
     pub fn with_padding(
         in_channels: usize,
         out_channels: usize,
@@ -374,16 +385,19 @@ impl Conv2d {
     }
 
     /// Get kernel size as (height, width).
+    #[must_use] 
     pub fn kernel_size(&self) -> (usize, usize) {
         (self.kernel_h, self.kernel_w)
     }
 
     /// Get stride as (height, width).
+    #[must_use] 
     pub fn stride(&self) -> (usize, usize) {
         (self.stride_h, self.stride_w)
     }
 
     /// Get padding as (height, width).
+    #[must_use] 
     pub fn padding(&self) -> (usize, usize) {
         (self.padding_h, self.padding_w)
     }
@@ -507,7 +521,7 @@ impl std::fmt::Debug for Conv2d {
 /// # Shape
 ///
 /// - Input: `(N, C, L)`
-/// - Output: `(N, C, L_out)` where L_out = (L - kernel_size) / stride + 1
+/// - Output: `(N, C, L_out)` where `L_out` = (L - `kernel_size`) / stride + 1
 #[derive(Debug)]
 pub struct MaxPool1d {
     kernel_size: usize,
@@ -515,7 +529,8 @@ pub struct MaxPool1d {
 }
 
 impl MaxPool1d {
-    /// Create a new MaxPool1d layer.
+    /// Create a new `MaxPool1d` layer.
+    #[must_use] 
     pub fn new(kernel_size: usize) -> Self {
         Self {
             kernel_size,
@@ -523,7 +538,8 @@ impl MaxPool1d {
         }
     }
 
-    /// Create MaxPool1d with custom stride.
+    /// Create `MaxPool1d` with custom stride.
+    #[must_use] 
     pub fn with_stride(kernel_size: usize, stride: usize) -> Self {
         Self {
             kernel_size,
@@ -581,7 +597,8 @@ pub struct MaxPool2d {
 }
 
 impl MaxPool2d {
-    /// Create a new MaxPool2d layer with square kernel.
+    /// Create a new `MaxPool2d` layer with square kernel.
+    #[must_use] 
     pub fn new(kernel_size: usize) -> Self {
         Self {
             kernel_h: kernel_size,
@@ -591,7 +608,8 @@ impl MaxPool2d {
         }
     }
 
-    /// Create MaxPool2d with custom stride.
+    /// Create `MaxPool2d` with custom stride.
+    #[must_use] 
     pub fn with_stride(kernel_size: usize, stride: usize) -> Self {
         Self {
             kernel_h: kernel_size,
@@ -601,7 +619,8 @@ impl MaxPool2d {
         }
     }
 
-    /// Create MaxPool2d with rectangular kernel and stride.
+    /// Create `MaxPool2d` with rectangular kernel and stride.
+    #[must_use] 
     pub fn with_options(kernel_size: (usize, usize), stride: (usize, usize)) -> Self {
         Self {
             kernel_h: kernel_size.0,
@@ -666,7 +685,8 @@ pub struct AvgPool2d {
 }
 
 impl AvgPool2d {
-    /// Create a new AvgPool2d layer with square kernel.
+    /// Create a new `AvgPool2d` layer with square kernel.
+    #[must_use] 
     pub fn new(kernel_size: usize) -> Self {
         Self {
             kernel_h: kernel_size,
@@ -676,7 +696,8 @@ impl AvgPool2d {
         }
     }
 
-    /// Create AvgPool2d with custom stride.
+    /// Create `AvgPool2d` with custom stride.
+    #[must_use] 
     pub fn with_stride(kernel_size: usize, stride: usize) -> Self {
         Self {
             kernel_h: kernel_size,
@@ -741,7 +762,8 @@ impl Module for AvgPool2d {
 pub struct GlobalAvgPool2d;
 
 impl GlobalAvgPool2d {
-    /// Create a new GlobalAvgPool2d layer.
+    /// Create a new `GlobalAvgPool2d` layer.
+    #[must_use] 
     pub fn new() -> Self {
         Self
     }
@@ -795,11 +817,13 @@ impl Flatten {
     /// Create a new Flatten layer.
     ///
     /// By default, flattens from dimension 1 onwards (preserving batch).
+    #[must_use] 
     pub fn new() -> Self {
         Self { start_dim: 1 }
     }
 
     /// Create Flatten with custom start dimension.
+    #[must_use] 
     pub fn from_dim(start_dim: usize) -> Self {
         Self { start_dim }
     }

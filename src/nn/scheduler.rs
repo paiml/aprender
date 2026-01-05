@@ -25,7 +25,7 @@
 //! - Loshchilov, I., & Hutter, F. (2017). SGDR: Stochastic gradient descent
 //!   with warm restarts. ICLR.
 //! - Goyal, P., et al. (2017). Accurate, large minibatch SGD: Training
-//!   ImageNet in 1 hour. arXiv.
+//!   `ImageNet` in 1 hour. arXiv.
 
 use super::optim::Optimizer;
 
@@ -58,12 +58,13 @@ pub struct StepLR {
 }
 
 impl StepLR {
-    /// Create a new StepLR scheduler.
+    /// Create a new `StepLR` scheduler.
     ///
     /// # Arguments
     ///
     /// * `step_size` - Number of epochs between LR decays
     /// * `gamma` - Multiplicative factor of LR decay (e.g., 0.1)
+    #[must_use] 
     pub fn new(step_size: usize, gamma: f32) -> Self {
         Self {
             initial_lr: 0.0, // Will be set on first step
@@ -75,6 +76,7 @@ impl StepLR {
     }
 
     /// Create with initial learning rate already known.
+    #[must_use] 
     pub fn with_lr(initial_lr: f32, step_size: usize, gamma: f32) -> Self {
         Self {
             initial_lr,
@@ -128,11 +130,12 @@ pub struct ExponentialLR {
 }
 
 impl ExponentialLR {
-    /// Create a new ExponentialLR scheduler.
+    /// Create a new `ExponentialLR` scheduler.
     ///
     /// # Arguments
     ///
     /// * `gamma` - Multiplicative factor (e.g., 0.99)
+    #[must_use] 
     pub fn new(gamma: f32) -> Self {
         Self {
             initial_lr: 0.0,
@@ -142,6 +145,7 @@ impl ExponentialLR {
         }
     }
 
+    #[must_use] 
     pub fn with_lr(initial_lr: f32, gamma: f32) -> Self {
         Self {
             initial_lr,
@@ -190,12 +194,13 @@ pub struct CosineAnnealingLR {
 }
 
 impl CosineAnnealingLR {
-    /// Create a new CosineAnnealingLR scheduler.
+    /// Create a new `CosineAnnealingLR` scheduler.
     ///
     /// # Arguments
     ///
     /// * `t_max` - Maximum number of epochs
     /// * `min_lr` - Minimum learning rate (default: 0)
+    #[must_use] 
     pub fn new(t_max: usize) -> Self {
         Self {
             initial_lr: 0.0,
@@ -206,6 +211,7 @@ impl CosineAnnealingLR {
         }
     }
 
+    #[must_use] 
     pub fn with_min_lr(t_max: usize, min_lr: f32) -> Self {
         Self {
             initial_lr: 0.0,
@@ -216,6 +222,7 @@ impl CosineAnnealingLR {
         }
     }
 
+    #[must_use] 
     pub fn with_lr(initial_lr: f32, t_max: usize, min_lr: f32) -> Self {
         Self {
             initial_lr,
@@ -255,7 +262,7 @@ impl LRScheduler for CosineAnnealingLR {
 
 /// Linear warmup scheduler.
 ///
-/// Linearly increases learning rate from 0 to initial_lr over warmup_steps.
+/// Linearly increases learning rate from 0 to `initial_lr` over `warmup_steps`.
 ///
 /// ```text
 /// if epoch < warmup_steps:
@@ -272,11 +279,12 @@ pub struct LinearWarmup {
 }
 
 impl LinearWarmup {
-    /// Create a new LinearWarmup scheduler.
+    /// Create a new `LinearWarmup` scheduler.
     ///
     /// # Arguments
     ///
     /// * `warmup_steps` - Number of warmup epochs
+    #[must_use] 
     pub fn new(warmup_steps: usize) -> Self {
         Self {
             initial_lr: 0.0,
@@ -286,6 +294,7 @@ impl LinearWarmup {
         }
     }
 
+    #[must_use] 
     pub fn with_lr(initial_lr: f32, warmup_steps: usize) -> Self {
         Self {
             initial_lr,
@@ -345,12 +354,13 @@ pub struct WarmupCosineScheduler {
 }
 
 impl WarmupCosineScheduler {
-    /// Create a new WarmupCosineScheduler.
+    /// Create a new `WarmupCosineScheduler`.
     ///
     /// # Arguments
     ///
     /// * `warmup_steps` - Number of warmup epochs
     /// * `total_steps` - Total number of training epochs
+    #[must_use] 
     pub fn new(warmup_steps: usize, total_steps: usize) -> Self {
         Self {
             initial_lr: 0.0,
@@ -362,6 +372,7 @@ impl WarmupCosineScheduler {
         }
     }
 
+    #[must_use] 
     pub fn with_min_lr(warmup_steps: usize, total_steps: usize, min_lr: f32) -> Self {
         Self {
             initial_lr: 0.0,
@@ -432,13 +443,14 @@ pub enum PlateauMode {
 }
 
 impl ReduceLROnPlateau {
-    /// Create a new ReduceLROnPlateau scheduler.
+    /// Create a new `ReduceLROnPlateau` scheduler.
     ///
     /// # Arguments
     ///
     /// * `mode` - Whether to minimize or maximize the metric
     /// * `factor` - Factor to reduce LR by (e.g., 0.1)
     /// * `patience` - Number of epochs with no improvement before reducing
+    #[must_use] 
     pub fn new(mode: PlateauMode, factor: f32, patience: usize) -> Self {
         let best_metric = match mode {
             PlateauMode::Min => f32::INFINITY,
@@ -459,12 +471,14 @@ impl ReduceLROnPlateau {
     }
 
     /// Set minimum learning rate.
+    #[must_use] 
     pub fn min_lr(mut self, min_lr: f32) -> Self {
         self.min_lr = min_lr;
         self
     }
 
     /// Set threshold for measuring improvement.
+    #[must_use] 
     pub fn threshold(mut self, threshold: f32) -> Self {
         self.threshold = threshold;
         self

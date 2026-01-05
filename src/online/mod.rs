@@ -43,8 +43,8 @@ pub trait OnlineLearner {
     /// Update model with single sample (or mini-batch)
     ///
     /// # Arguments
-    /// * `x` - Feature matrix (n_samples × n_features)
-    /// * `y` - Target vector (n_samples)
+    /// * `x` - Feature matrix (`n_samples` × `n_features`)
+    /// * `y` - Target vector (`n_samples`)
     /// * `learning_rate` - Optional step size (uses adaptive if None)
     ///
     /// # Returns
@@ -113,12 +113,12 @@ impl Default for OnlineLearnerConfig {
 pub enum LearningRateDecay {
     /// No decay (constant learning rate)
     Constant,
-    /// lr = lr_0 / sqrt(t)
+    /// lr = `lr_0` / sqrt(t)
     #[default]
     InverseSqrt,
-    /// lr = lr_0 / t
+    /// lr = `lr_0` / t
     Inverse,
-    /// lr = lr_0 / (1 + decay_rate * t)
+    /// lr = `lr_0` / (1 + `decay_rate` * t)
     Step { decay_rate: f64 },
     /// AdaGrad-style per-parameter adaptive decay
     AdaGrad { epsilon: f64 },
@@ -133,7 +133,7 @@ pub struct OnlineLinearRegression {
     weights: Vec<f64>,
     /// Bias term
     bias: f64,
-    /// Accumulated squared gradients (for AdaGrad)
+    /// Accumulated squared gradients (for `AdaGrad`)
     accum_grad: Vec<f64>,
     /// Number of samples processed
     n_samples: u64,
@@ -146,6 +146,7 @@ impl OnlineLinearRegression {
     ///
     /// # Arguments
     /// * `n_features` - Number of input features
+    #[must_use] 
     pub fn new(n_features: usize) -> Self {
         Self {
             weights: vec![0.0; n_features],
@@ -157,6 +158,7 @@ impl OnlineLinearRegression {
     }
 
     /// Create with custom configuration
+    #[must_use] 
     pub fn with_config(n_features: usize, config: OnlineLearnerConfig) -> Self {
         Self {
             weights: vec![0.0; n_features],
@@ -168,11 +170,13 @@ impl OnlineLinearRegression {
     }
 
     /// Get model weights
+    #[must_use] 
     pub fn weights(&self) -> &[f64] {
         &self.weights
     }
 
     /// Get bias term
+    #[must_use] 
     pub fn bias(&self) -> f64 {
         self.bias
     }
@@ -292,14 +296,14 @@ impl OnlineLearner for OnlineLinearRegression {
 ///
 /// Implements `OnlineLearner` for binary classification.
 ///
-/// Reference: [Duchi et al. 2011] AdaGrad for adaptive learning rates
+/// Reference: [Duchi et al. 2011] `AdaGrad` for adaptive learning rates
 #[derive(Debug, Clone)]
 pub struct OnlineLogisticRegression {
     /// Model weights
     weights: Vec<f64>,
     /// Bias term
     bias: f64,
-    /// Accumulated squared gradients (for AdaGrad)
+    /// Accumulated squared gradients (for `AdaGrad`)
     accum_grad: Vec<f64>,
     /// Number of samples processed
     n_samples: u64,
@@ -312,6 +316,7 @@ impl OnlineLogisticRegression {
     ///
     /// # Arguments
     /// * `n_features` - Number of input features
+    #[must_use] 
     pub fn new(n_features: usize) -> Self {
         Self {
             weights: vec![0.0; n_features],
@@ -323,6 +328,7 @@ impl OnlineLogisticRegression {
     }
 
     /// Create with custom configuration
+    #[must_use] 
     pub fn with_config(n_features: usize, config: OnlineLearnerConfig) -> Self {
         Self {
             weights: vec![0.0; n_features],
@@ -334,11 +340,13 @@ impl OnlineLogisticRegression {
     }
 
     /// Get model weights
+    #[must_use] 
     pub fn weights(&self) -> &[f64] {
         &self.weights
     }
 
     /// Get bias term
+    #[must_use] 
     pub fn bias(&self) -> f64 {
         self.bias
     }

@@ -1,6 +1,6 @@
 //! Sharded model import module (GH-127).
 //!
-//! Handles multi-tensor/multi-shard model imports from HuggingFace and other sources.
+//! Handles multi-tensor/multi-shard model imports from `HuggingFace` and other sources.
 //! Optimizes memory usage for 10B+ parameter models using streaming and LRU caching.
 //!
 //! # Problem
@@ -35,7 +35,7 @@
 //!
 //! # References
 //!
-//! - HuggingFace safetensors: https://huggingface.co/docs/safetensors
+//! - `HuggingFace` safetensors: <https://huggingface.co/docs/safetensors>
 //! - Memory-efficient model loading patterns
 //!
 //! # PMAT Compliance
@@ -51,7 +51,7 @@ use std::path::{Path, PathBuf};
 // Shard Index (from model.safetensors.index.json)
 // ============================================================================
 
-/// Parsed shard index from HuggingFace format.
+/// Parsed shard index from `HuggingFace` format.
 ///
 /// Represents the `model.safetensors.index.json` file structure:
 /// ```json
@@ -82,7 +82,7 @@ impl ShardIndex {
         Self::default()
     }
 
-    /// Parse from HuggingFace index.json format.
+    /// Parse from `HuggingFace` index.json format.
     ///
     /// # Errors
     /// Returns error if JSON parsing fails.
@@ -735,7 +735,7 @@ pub fn get_shard_files(dir: &Path) -> Result<Vec<PathBuf>> {
 
 /// Estimate memory required for loading a shard.
 ///
-/// Based on file size and typical SafeTensors overhead.
+/// Based on file size and typical `SafeTensors` overhead.
 #[must_use]
 pub fn estimate_shard_memory(file_size: u64) -> u64 {
     // SafeTensors has ~8 bytes header overhead per tensor

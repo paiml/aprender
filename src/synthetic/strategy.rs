@@ -19,13 +19,13 @@ use std::fmt;
 ///
 /// # References
 ///
-/// - Template: Cubuk et al. (2019). AutoAugment. CVPR.
+/// - Template: Cubuk et al. (2019). `AutoAugment`. CVPR.
 /// - EDA: Wei & Zou (2019). Easy Data Augmentation. EMNLP.
-/// - BackTranslation: Sennrich et al. (2016). Back-translation. ACL.
-/// - MixUp: Zhang et al. (2018). MixUp. ICLR.
-/// - GrammarBased: Jia & Liang (2016). Data Recombination. ACL.
-/// - SelfTraining: Xie et al. (2020). Noisy Student. CVPR.
-/// - WeakSupervision: Ratner et al. (2017). Snorkel. VLDB.
+/// - `BackTranslation`: Sennrich et al. (2016). Back-translation. ACL.
+/// - `MixUp`: Zhang et al. (2018). `MixUp`. ICLR.
+/// - `GrammarBased`: Jia & Liang (2016). Data Recombination. ACL.
+/// - `SelfTraining`: Xie et al. (2020). Noisy Student. CVPR.
+/// - `WeakSupervision`: Ratner et al. (2017). Snorkel. VLDB.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum GenerationStrategy {
     /// Template-based generation with slot filling.
@@ -46,7 +46,7 @@ pub enum GenerationStrategy {
     /// High quality but requires translation models or intermediate formats.
     BackTranslation,
 
-    /// MixUp interpolation in embedding space.
+    /// `MixUp` interpolation in embedding space.
     ///
     /// Creates virtual examples by interpolating between existing samples
     /// in latent space. Improves generalization and decision boundaries.

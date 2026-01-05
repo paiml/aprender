@@ -66,8 +66,8 @@ pub trait DriftDetector: Send + Sync {
 /// DDM (Drift Detection Method) implementation
 ///
 /// Reference: [Gama et al. 2004]
-/// - Warning: p + s > p_min + 2*s_min
-/// - Drift: p + s > p_min + 3*s_min
+/// - Warning: p + s > `p_min` + 2*`s_min`
+/// - Drift: p + s > `p_min` + 3*`s_min`
 ///
 /// Suitable for detecting sudden concept drift.
 #[derive(Debug, Clone)]
@@ -102,6 +102,7 @@ impl DDM {
     /// Create a new DDM detector with default thresholds
     ///
     /// Default: warning at 2σ, drift at 3σ (as per Gama et al.)
+    #[must_use] 
     pub fn new() -> Self {
         Self {
             min_samples: 30,
@@ -122,6 +123,7 @@ impl DDM {
     /// * `min_samples` - Minimum samples before detection
     /// * `warning_level` - Standard deviations for warning
     /// * `drift_level` - Standard deviations for drift
+    #[must_use] 
     pub fn with_thresholds(min_samples: u64, warning_level: f64, drift_level: f64) -> Self {
         Self {
             min_samples,
@@ -220,6 +222,7 @@ impl Default for PageHinkley {
 
 impl PageHinkley {
     /// Create a new Page-Hinkley detector with default thresholds
+    #[must_use] 
     pub fn new() -> Self {
         Self {
             delta: 0.005,
@@ -237,6 +240,7 @@ impl PageHinkley {
     /// # Arguments
     /// * `delta` - Minimum magnitude of change to detect
     /// * `lambda` - Detection threshold
+    #[must_use] 
     pub fn with_thresholds(delta: f64, lambda: f64) -> Self {
         Self {
             delta,
@@ -345,6 +349,7 @@ impl ADWIN {
     ///
     /// The default delta provides good balance between sensitivity and
     /// false positive rate.
+    #[must_use] 
     pub fn new() -> Self {
         Self::with_delta(0.002)
     }
@@ -353,6 +358,7 @@ impl ADWIN {
     ///
     /// # Arguments
     /// * `delta` - Confidence parameter (smaller = more sensitive, typical: 0.001-0.1)
+    #[must_use] 
     pub fn with_delta(delta: f64) -> Self {
         Self {
             delta,
@@ -367,11 +373,13 @@ impl ADWIN {
     }
 
     /// Get current window size
+    #[must_use] 
     pub fn window_size(&self) -> usize {
         self.width
     }
 
     /// Get current mean of window
+    #[must_use] 
     pub fn mean(&self) -> f64 {
         if self.count == 0 {
             0.0
@@ -530,21 +538,25 @@ impl DriftDetectorFactory {
     ///
     /// Per Toyota Way review: "Use ADWIN as default. While DDM is simpler,
     /// it struggles with gradual drift."
+    #[must_use] 
     pub fn recommended() -> Box<dyn DriftDetector> {
         Box::new(ADWIN::new())
     }
 
     /// Create a DDM detector
+    #[must_use] 
     pub fn ddm() -> Box<dyn DriftDetector> {
         Box::new(DDM::new())
     }
 
     /// Create a Page-Hinkley detector
+    #[must_use] 
     pub fn page_hinkley() -> Box<dyn DriftDetector> {
         Box::new(PageHinkley::new())
     }
 
     /// Create an ADWIN detector
+    #[must_use] 
     pub fn adwin() -> Box<dyn DriftDetector> {
         Box::new(ADWIN::new())
     }

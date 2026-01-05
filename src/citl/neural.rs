@@ -21,7 +21,7 @@
 //! # References
 //!
 //! - Chen, T., et al. (2020). A simple framework for contrastive learning. ICML.
-//! - Gao, T., et al. (2021). SimCSE: Simple contrastive learning of sentence embeddings.
+//! - Gao, T., et al. (2021). `SimCSE`: Simple contrastive learning of sentence embeddings.
 
 use crate::autograd::{no_grad, Tensor};
 use crate::nn::{Dropout, Linear, Module};
@@ -214,11 +214,11 @@ impl NeuralErrorEncoder {
     ///
     /// # Arguments
     ///
-    /// * `batch` - Vector of (error_message, source_context, source_lang) tuples
+    /// * `batch` - Vector of (`error_message`, `source_context`, `source_lang`) tuples
     ///
     /// # Returns
     ///
-    /// Tensor of shape [batch_size, output_dim]
+    /// Tensor of shape [`batch_size`, `output_dim`]
     pub fn encode_batch(&self, batch: &[(&str, &str, &str)]) -> Tensor {
         let batch_size = batch.len();
         let max_len = self.config.max_seq_len;
@@ -684,6 +684,7 @@ impl Vocabulary {
     }
 
     /// Tokenize a string into token IDs.
+    #[must_use] 
     pub fn tokenize(&self, text: &str) -> Vec<usize> {
         // Simple whitespace + punctuation tokenization
         let mut tokens = Vec::new();
@@ -1035,7 +1036,7 @@ fn layer_norm(x: &Tensor, weight: &Tensor, bias: &Tensor, eps: f32) -> Tensor {
 
 // ==================== Contrastive Loss ====================
 
-/// InfoNCE contrastive loss for learning embeddings.
+/// `InfoNCE` contrastive loss for learning embeddings.
 ///
 /// Given anchor, positive, and negative examples, learns embeddings
 /// where similar items are close and dissimilar items are far.
@@ -1062,17 +1063,18 @@ impl ContrastiveLoss {
         Self { temperature }
     }
 
-    /// Compute InfoNCE loss.
+    /// Compute `InfoNCE` loss.
     ///
     /// # Arguments
     ///
     /// * `anchor` - Anchor embeddings [batch, dim]
     /// * `positive` - Positive (similar) embeddings [batch, dim]
-    /// * `negatives` - Negative embeddings [batch, num_negatives, dim] (optional, uses in-batch)
+    /// * `negatives` - Negative embeddings [batch, `num_negatives`, dim] (optional, uses in-batch)
     ///
     /// # Returns
     ///
     /// Scalar loss value.
+    #[must_use] 
     pub fn forward(
         &self,
         anchor: &Tensor,
@@ -1112,7 +1114,7 @@ impl Default for ContrastiveLoss {
 ///
 /// # Reference
 ///
-/// Schroff, F., et al. (2015). FaceNet: A Unified Embedding for Face Recognition and Clustering.
+/// Schroff, F., et al. (2015). `FaceNet`: A Unified Embedding for Face Recognition and Clustering.
 #[derive(Debug, Clone)]
 pub struct TripletLoss {
     /// Margin for the triplet loss
@@ -1128,7 +1130,7 @@ pub enum TripletDistance {
     Euclidean,
     /// Squared Euclidean distance (faster, no sqrt)
     SquaredEuclidean,
-    /// Cosine distance (1 - cosine_similarity)
+    /// Cosine distance (1 - `cosine_similarity`)
     Cosine,
 }
 
@@ -1181,6 +1183,7 @@ impl TripletLoss {
     /// # Returns
     ///
     /// Mean triplet loss over the batch.
+    #[must_use] 
     pub fn forward(&self, anchor: &Tensor, positive: &Tensor, negative: &Tensor) -> Tensor {
         let batch_size = anchor.shape()[0];
         let dim = anchor.shape()[1];
@@ -1236,6 +1239,7 @@ impl TripletLoss {
     ///
     /// Returns a matrix of shape [batch, batch] where entry (i, j) is the
     /// distance between embedding i and embedding j.
+    #[must_use] 
     pub fn pairwise_distances(&self, embeddings: &Tensor) -> Tensor {
         let batch_size = embeddings.shape()[0];
         let dim = embeddings.shape()[1];
@@ -1263,7 +1267,8 @@ impl TripletLoss {
     ///
     /// # Returns
     ///
-    /// Vector of (anchor_idx, positive_idx, negative_idx) triplets.
+    /// Vector of (`anchor_idx`, `positive_idx`, `negative_idx`) triplets.
+    #[must_use] 
     pub fn mine_hard_triplets(
         &self,
         embeddings: &Tensor,
@@ -1322,6 +1327,7 @@ impl TripletLoss {
     ///
     /// For each anchor in the batch, selects the hardest positive (same class, farthest)
     /// and hardest negative (different class, closest).
+    #[must_use] 
     pub fn batch_hard_loss(&self, embeddings: &Tensor, labels: &[usize]) -> Tensor {
         let triplets = self.mine_hard_triplets(embeddings, labels);
 

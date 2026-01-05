@@ -428,7 +428,7 @@ impl<M: OnlineLearner + std::fmt::Debug, D: DriftDetector + std::fmt::Debug>
     }
 }
 
-/// Builder for RetrainOrchestrator
+/// Builder for `RetrainOrchestrator`
 #[derive(Debug)]
 pub struct OrchestratorBuilder<M: OnlineLearner + std::fmt::Debug> {
     model: M,

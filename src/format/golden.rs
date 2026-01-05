@@ -33,7 +33,7 @@ pub struct GoldenTrace {
     pub name: String,
     /// Input token IDs
     pub input_ids: Vec<u32>,
-    /// Expected logits for the last position [vocab_size]
+    /// Expected logits for the last position [`vocab_size`]
     pub expected_logits: Vec<f32>,
     /// Maximum allowed deviation (default: 1e-4 per spec C1)
     pub tolerance: f32,
@@ -51,6 +51,7 @@ impl GoldenTrace {
     }
 
     /// Set custom tolerance.
+    #[must_use] 
     pub fn with_tolerance(mut self, tolerance: f32) -> Self {
         self.tolerance = tolerance;
         self
@@ -181,6 +182,7 @@ pub struct TraceVerifyResult {
 
 impl TraceVerifyResult {
     /// Create a passing result.
+    #[must_use] 
     pub fn pass(name: &str, max_dev: f32, mean_dev: f32, count: usize, tol: f32) -> Self {
         Self {
             name: name.to_string(),
@@ -222,6 +224,7 @@ pub struct GoldenVerifyReport {
 
 impl GoldenVerifyReport {
     /// Create a new report from results.
+    #[must_use] 
     pub fn from_results(results: Vec<TraceVerifyResult>) -> Self {
         let passed_count = results.iter().filter(|r| r.passed).count();
         let total_count = results.len();
@@ -239,6 +242,7 @@ impl GoldenVerifyReport {
 /// Verify actual logits against expected golden trace.
 ///
 /// Per spec C1: Logits must match within tolerance (default 1e-4).
+#[must_use] 
 pub fn verify_logits(
     name: &str,
     actual: &[f32],
@@ -303,6 +307,7 @@ pub struct LogitStats {
 
 impl LogitStats {
     /// Compute statistics from logits slice.
+    #[must_use] 
     pub fn compute(logits: &[f32]) -> Self {
         if logits.is_empty() {
             return Self {

@@ -208,7 +208,7 @@ impl Vector<f32> {
     /// Computes Gini coefficient (inequality measure).
     ///
     /// The Gini coefficient measures inequality in a distribution.
-    /// Formula: G = Σ Σ |x_i - x_j| / (2n² * mean)
+    /// Formula: G = Σ Σ |`x_i` - `x_j`| / (2n² * mean)
     ///
     /// # Returns
     /// - 0.0: Perfect equality (all values are the same)

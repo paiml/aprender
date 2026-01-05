@@ -8,7 +8,7 @@
 //! - Histograms with multiple bin selection methods
 //! - Hypothesis testing (t-tests, chi-square, ANOVA)
 //! - Covariance and correlation matrices
-//! - Optimized with Toyota Way principles (QuickSelect for O(n) quantiles)
+//! - Optimized with Toyota Way principles (`QuickSelect` for O(n) quantiles)
 //!
 //! # Examples
 //!
@@ -59,11 +59,11 @@ pub struct FiveNumberSummary {
 /// Histogram representation with bin edges and counts.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Histogram {
-    /// Bin edges (length = n_bins + 1)
+    /// Bin edges (length = `n_bins` + 1)
     pub bins: Vec<f32>,
-    /// Bin counts (length = n_bins)
+    /// Bin counts (length = `n_bins`)
     pub counts: Vec<usize>,
-    /// Normalized density (optional, length = n_bins)
+    /// Normalized density (optional, length = `n_bins`)
     pub density: Option<Vec<f64>>,
 }
 
@@ -85,7 +85,7 @@ pub enum BinMethod {
 }
 
 impl<'a> DescriptiveStats<'a> {
-    /// Create a new DescriptiveStats instance from a data vector.
+    /// Create a new `DescriptiveStats` instance from a data vector.
     ///
     /// # Arguments
     /// * `data` - Reference to a `Vector<f32>` containing the data
@@ -98,6 +98,7 @@ impl<'a> DescriptiveStats<'a> {
     /// let data = Vector::from_slice(&[1.0, 2.0, 3.0]);
     /// let stats = DescriptiveStats::new(&data);
     /// ```
+    #[must_use] 
     pub fn new(data: &'a Vector<f32>) -> Self {
         Self { data }
     }
@@ -105,10 +106,10 @@ impl<'a> DescriptiveStats<'a> {
     /// Compute quantile using linear interpolation (R-7 method).
     ///
     /// Uses the method from Hyndman & Fan (1996) commonly used in
-    /// statistical packages (R, NumPy, Pandas).
+    /// statistical packages (R, `NumPy`, Pandas).
     ///
     /// # Performance
-    /// Uses QuickSelect (`select_nth_unstable`) for O(n) average-case
+    /// Uses `QuickSelect` (`select_nth_unstable`) for O(n) average-case
     /// performance instead of full sort O(n log n). This is a Toyota Way
     /// Muda elimination optimization (Floyd & Rivest 1975).
     ///
@@ -313,7 +314,7 @@ impl<'a> DescriptiveStats<'a> {
 
     /// Compute histogram with automatic bin selection (Freedman-Diaconis rule).
     ///
-    /// Uses Freedman-Diaconis rule: bin_width = 2 * IQR / n^(1/3)
+    /// Uses Freedman-Diaconis rule: `bin_width` = 2 * IQR / n^(1/3)
     /// This is optimal for unimodal, symmetric distributions.
     ///
     /// # Examples

@@ -37,8 +37,8 @@
 //!
 //! # References
 //!
-//! - Paszke, A., et al. (2019). PyTorch: An imperative style, high-performance
-//!   deep learning library. NeurIPS.
+//! - Paszke, A., et al. (2019). `PyTorch`: An imperative style, high-performance
+//!   deep learning library. `NeurIPS`.
 //! - Glorot, X., & Bengio, Y. (2010). Understanding the difficulty of training
 //!   deep feedforward neural networks. AISTATS.
 //! - He, K., et al. (2015). Delving deep into rectifiers. ICCV.

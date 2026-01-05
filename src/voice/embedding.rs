@@ -294,7 +294,7 @@ impl EcapaTdnn {
     /// Create new ECAPA-TDNN extractor
     ///
     /// # Note
-    /// This is a stub - returns NotImplemented on extract().
+    /// This is a stub - returns `NotImplemented` on `extract()`.
     #[must_use]
     pub fn new(config: EmbeddingConfig) -> Self {
         Self { config }
@@ -456,7 +456,7 @@ pub fn average_embeddings(embeddings: &[SpeakerEmbedding]) -> VoiceResult<Speake
 
 /// Compute pairwise similarity matrix for embeddings.
 ///
-/// Returns NxN matrix where entry [i][j] is cosine similarity
+/// Returns `NxN` matrix where entry [i][j] is cosine similarity
 /// between embedding i and embedding j.
 #[must_use]
 pub fn similarity_matrix(embeddings: &[SpeakerEmbedding]) -> Vec<Vec<f32>> {

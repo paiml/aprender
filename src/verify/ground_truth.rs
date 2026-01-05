@@ -1,7 +1,7 @@
 //! Ground Truth data structures for pipeline verification.
 //!
 //! Ground truth represents the expected output at a pipeline stage,
-//! extracted from a reference implementation (whisper.cpp, HuggingFace, etc.)
+//! extracted from a reference implementation (whisper.cpp, `HuggingFace`, etc.)
 
 use std::io;
 use std::path::Path;
@@ -29,6 +29,7 @@ impl GroundTruth {
     /// # Arguments
     /// * `mean` - Expected mean value
     /// * `std` - Expected standard deviation
+    #[must_use] 
     pub fn from_stats(mean: f32, std: f32) -> Self {
         Self {
             mean,
@@ -73,6 +74,7 @@ impl GroundTruth {
     }
 
     /// Create ground truth with shape information.
+    #[must_use] 
     pub fn from_slice_with_shape(data: &[f32], shape: Vec<usize>) -> Self {
         let mut gt = Self::from_slice(data);
         gt.shape = shape;
@@ -136,36 +138,43 @@ impl GroundTruth {
     }
 
     /// Get the mean value.
+    #[must_use] 
     pub fn mean(&self) -> f32 {
         self.mean
     }
 
     /// Get the standard deviation.
+    #[must_use] 
     pub fn std(&self) -> f32 {
         self.std
     }
 
     /// Get the minimum value.
+    #[must_use] 
     pub fn min(&self) -> f32 {
         self.min
     }
 
     /// Get the maximum value.
+    #[must_use] 
     pub fn max(&self) -> f32 {
         self.max
     }
 
     /// Get the raw data if available.
+    #[must_use] 
     pub fn data(&self) -> Option<&[f32]> {
         self.data.as_deref()
     }
 
     /// Get the shape.
+    #[must_use] 
     pub fn shape(&self) -> &[usize] {
         &self.shape
     }
 
     /// Check if raw data is available for detailed comparison.
+    #[must_use] 
     pub fn has_data(&self) -> bool {
         self.data.is_some()
     }

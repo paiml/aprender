@@ -58,6 +58,7 @@ impl Dropout {
     /// # Panics
     ///
     /// Panics if `p` is not in [0, 1).
+    #[must_use] 
     pub fn new(p: f32) -> Self {
         assert!(
             (0.0..1.0).contains(&p),
@@ -72,6 +73,7 @@ impl Dropout {
     }
 
     /// Create a new Dropout layer with a specific seed for reproducibility.
+    #[must_use] 
     pub fn with_seed(p: f32, seed: u64) -> Self {
         assert!(
             (0.0..1.0).contains(&p),
@@ -179,6 +181,7 @@ impl Dropout2d {
     /// # Arguments
     ///
     /// * `p` - Probability of channel being zeroed (must be in [0, 1))
+    #[must_use] 
     pub fn new(p: f32) -> Self {
         assert!(
             (0.0..1.0).contains(&p),
@@ -193,6 +196,7 @@ impl Dropout2d {
     }
 
     /// Create Dropout2d with a specific seed for reproducibility.
+    #[must_use] 
     pub fn with_seed(p: f32, seed: u64) -> Self {
         assert!(
             (0.0..1.0).contains(&p),
@@ -283,7 +287,7 @@ impl std::fmt::Debug for Dropout2d {
 ///
 /// # Reference
 ///
-/// - Klambauer, G., et al. (2017). Self-Normalizing Neural Networks. NeurIPS.
+/// - Klambauer, G., et al. (2017). Self-Normalizing Neural Networks. `NeurIPS`.
 pub struct AlphaDropout {
     /// Probability of element being dropped
     p: f32,
@@ -298,7 +302,8 @@ const ALPHA: f32 = 1.673_263_2;
 const SCALE: f32 = 1.050_701;
 
 impl AlphaDropout {
-    /// Create a new AlphaDropout layer.
+    /// Create a new `AlphaDropout` layer.
+    #[must_use] 
     pub fn new(p: f32) -> Self {
         assert!(
             (0.0..1.0).contains(&p),
@@ -312,7 +317,8 @@ impl AlphaDropout {
         }
     }
 
-    /// Create AlphaDropout with a specific seed.
+    /// Create `AlphaDropout` with a specific seed.
+    #[must_use] 
     pub fn with_seed(p: f32, seed: u64) -> Self {
         assert!(
             (0.0..1.0).contains(&p),
@@ -377,13 +383,13 @@ impl std::fmt::Debug for AlphaDropout {
     }
 }
 
-/// DropBlock regularization (Ghiasi et al., 2018).
+/// `DropBlock` regularization (Ghiasi et al., 2018).
 ///
 /// Drops contiguous regions (blocks) rather than individual elements.
 /// More effective for convolutional networks than standard dropout.
 ///
 /// # Reference
-/// Ghiasi, G., et al. (2018). DropBlock: A regularization technique for CNNs.
+/// Ghiasi, G., et al. (2018). `DropBlock`: A regularization technique for CNNs.
 pub struct DropBlock {
     block_size: usize,
     p: f32,
@@ -392,7 +398,8 @@ pub struct DropBlock {
 }
 
 impl DropBlock {
-    /// Create DropBlock with given block size and drop probability.
+    /// Create `DropBlock` with given block size and drop probability.
+    #[must_use] 
     pub fn new(block_size: usize, p: f32) -> Self {
         assert!(
             (0.0..1.0).contains(&p),
@@ -408,6 +415,7 @@ impl DropBlock {
     }
 
     /// Create with specific seed.
+    #[must_use] 
     pub fn with_seed(block_size: usize, p: f32, seed: u64) -> Self {
         assert!(
             (0.0..1.0).contains(&p),
@@ -509,15 +517,15 @@ impl std::fmt::Debug for DropBlock {
     }
 }
 
-/// DropConnect regularization (Wan et al., 2013).
+/// `DropConnect` regularization (Wan et al., 2013).
 ///
 /// Drops weights instead of activations. Each weight has probability p
 /// of being set to zero during training.
 ///
-/// More general than Dropout - Dropout is DropConnect with identity weight matrix.
+/// More general than Dropout - Dropout is `DropConnect` with identity weight matrix.
 ///
 /// # Reference
-/// Wan, L., et al. (2013). Regularization of Neural Networks using DropConnect. ICML.
+/// Wan, L., et al. (2013). Regularization of Neural Networks using `DropConnect`. ICML.
 pub struct DropConnect {
     /// Probability of weight being zeroed
     p: f32,
@@ -528,7 +536,8 @@ pub struct DropConnect {
 }
 
 impl DropConnect {
-    /// Create new DropConnect with drop probability.
+    /// Create new `DropConnect` with drop probability.
+    #[must_use] 
     pub fn new(p: f32) -> Self {
         assert!(
             (0.0..1.0).contains(&p),
@@ -541,7 +550,8 @@ impl DropConnect {
         }
     }
 
-    /// Create DropConnect with specific seed.
+    /// Create `DropConnect` with specific seed.
+    #[must_use] 
     pub fn with_seed(p: f32, seed: u64) -> Self {
         assert!(
             (0.0..1.0).contains(&p),
@@ -558,7 +568,7 @@ impl DropConnect {
         self.p
     }
 
-    /// Apply DropConnect to weight matrix.
+    /// Apply `DropConnect` to weight matrix.
     /// Returns masked weights (zeros some weights during training).
     pub fn apply_to_weights(&self, weights: &Tensor) -> Tensor {
         if !self.training || self.p == 0.0 {

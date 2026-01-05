@@ -10,7 +10,7 @@
 //! - Topic modeling (LDA)
 //! - Document similarity (cosine, Jaccard, edit distance)
 //! - Entity extraction (emails, URLs, mentions, hashtags)
-//! - Text summarization (TextRank, TF-IDF extractive)
+//! - Text summarization (`TextRank`, TF-IDF extractive)
 //!
 //! # Design Principles
 //!

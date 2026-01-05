@@ -1,9 +1,9 @@
 //! Reproducible random number generation for Monte Carlo simulations
 //!
-//! Uses ChaCha20 PRNG for cryptographic-quality randomness with
+//! Uses `ChaCha20` PRNG for cryptographic-quality randomness with
 //! explicit seeding for reproducibility.
 //!
-//! Reference: Bernstein (2008), "ChaCha, a variant of Salsa20"
+//! Reference: Bernstein (2008), "`ChaCha`, a variant of Salsa20"
 
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;

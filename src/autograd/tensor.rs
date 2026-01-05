@@ -54,7 +54,7 @@ pub struct Tensor {
     /// Shape of the tensor
     shape: Vec<usize>,
 
-    /// Gradient (populated after backward())
+    /// Gradient (populated after `backward()`)
     grad: Option<Box<Tensor>>,
 
     /// Whether this tensor requires gradient computation
@@ -78,6 +78,7 @@ impl Tensor {
     /// # Panics
     ///
     /// Panics if the data length doesn't match the product of shape dimensions.
+    #[must_use] 
     pub fn new(data: &[f32], shape: &[usize]) -> Self {
         let expected_len: usize = shape.iter().product();
         assert_eq!(
@@ -101,28 +102,33 @@ impl Tensor {
     }
 
     /// Create a tensor from a 1D slice (vector).
+    #[must_use] 
     pub fn from_slice(data: &[f32]) -> Self {
         Self::new(data, &[data.len()])
     }
 
     /// Create a tensor filled with zeros.
+    #[must_use] 
     pub fn zeros(shape: &[usize]) -> Self {
         let len: usize = shape.iter().product();
         Self::new(&vec![0.0; len], shape)
     }
 
     /// Create a tensor filled with ones.
+    #[must_use] 
     pub fn ones(shape: &[usize]) -> Self {
         let len: usize = shape.iter().product();
         Self::new(&vec![1.0; len], shape)
     }
 
     /// Create a tensor with the same shape as another, filled with zeros.
+    #[must_use] 
     pub fn zeros_like(other: &Tensor) -> Self {
         Self::zeros(&other.shape)
     }
 
     /// Create a tensor with the same shape as another, filled with ones.
+    #[must_use] 
     pub fn ones_like(other: &Tensor) -> Self {
         Self::ones(&other.shape)
     }
@@ -130,6 +136,7 @@ impl Tensor {
     /// Enable gradient tracking for this tensor.
     ///
     /// Returns self for method chaining.
+    #[must_use] 
     pub fn requires_grad(mut self) -> Self {
         self.requires_grad = true;
         self
@@ -142,36 +149,43 @@ impl Tensor {
     }
 
     /// Check if this tensor requires gradient computation.
+    #[must_use] 
     pub fn requires_grad_enabled(&self) -> bool {
         self.requires_grad
     }
 
     /// Check if this is a leaf tensor (not created by an operation).
+    #[must_use] 
     pub fn is_leaf(&self) -> bool {
         self.is_leaf
     }
 
     /// Get the tensor's unique identifier.
+    #[must_use] 
     pub fn id(&self) -> TensorId {
         self.id
     }
 
     /// Get the shape of the tensor.
+    #[must_use] 
     pub fn shape(&self) -> &[usize] {
         &self.shape
     }
 
     /// Get the total number of elements.
+    #[must_use] 
     pub fn numel(&self) -> usize {
         self.shape.iter().product()
     }
 
     /// Get the number of dimensions.
+    #[must_use] 
     pub fn ndim(&self) -> usize {
         self.shape.len()
     }
 
     /// Get a reference to the underlying data.
+    #[must_use] 
     pub fn data(&self) -> &[f32] {
         self.data.as_slice()
     }
@@ -186,6 +200,7 @@ impl Tensor {
     }
 
     /// Get the gradient tensor (if computed).
+    #[must_use] 
     pub fn grad(&self) -> Option<&Tensor> {
         self.grad.as_deref()
     }
@@ -195,7 +210,7 @@ impl Tensor {
         self.grad = None;
     }
 
-    /// Clear the gradient (alias for zero_grad_).
+    /// Clear the gradient (alias for `zero_grad`_).
     pub fn clear_grad(&mut self) {
         self.grad = None;
     }
@@ -234,6 +249,7 @@ impl Tensor {
     /// Detach tensor from computation graph.
     ///
     /// Returns a new tensor with the same data but no gradient tracking.
+    #[must_use] 
     pub fn detach(&self) -> Tensor {
         Tensor {
             data: self.data.clone(),
@@ -251,6 +267,7 @@ impl Tensor {
     /// # Panics
     ///
     /// Panics if the tensor has more than one element.
+    #[must_use] 
     pub fn item(&self) -> f32 {
         assert_eq!(
             self.numel(),

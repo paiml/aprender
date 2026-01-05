@@ -19,7 +19,7 @@ const FORMAT_VERSION: u8 = 1;
 /// Pattern library with similarity search.
 ///
 /// Stores learned error-fix patterns for retrieval-augmented generation.
-/// In production, this would use HNSW from aprender::index.
+/// In production, this would use HNSW from `aprender::index`.
 #[derive(Debug)]
 pub struct PatternLibrary {
     /// Stored patterns
@@ -127,7 +127,7 @@ impl PatternLibrary {
     /// Search for similar error patterns.
     ///
     /// Uses linear scan with partial sort for top-k.
-    /// For large libraries (10K+), consider HNSW from aprender::index.
+    /// For large libraries (10K+), consider HNSW from `aprender::index`.
     #[must_use]
     pub fn search(&self, query: &ErrorEmbedding, k: usize) -> Vec<PatternMatch> {
         if self.patterns.is_empty() {
@@ -264,7 +264,7 @@ impl ErrorFixPattern {
 /// Templates capture the essence of fixes while allowing variable binding.
 #[derive(Debug, Clone)]
 pub struct FixTemplate {
-    /// Template pattern with placeholders (e.g., "$expr.to_string()")
+    /// Template pattern with placeholders (e.g., "$`expr.to_string()`")
     pub pattern: String,
     /// Placeholder definitions
     pub placeholders: Vec<Placeholder>,
@@ -395,7 +395,7 @@ pub struct PatternMatch {
 }
 
 impl PatternMatch {
-    /// Get combined score (similarity * success_rate).
+    /// Get combined score (similarity * `success_rate`).
     #[must_use]
     pub fn combined_score(&self) -> f64 {
         f64::from(self.similarity) * self.success_rate
@@ -505,7 +505,7 @@ fn write_pattern<W: IoWrite>(
     Ok(())
 }
 
-/// Convert a byte to an ErrorCategory.
+/// Convert a byte to an `ErrorCategory`.
 fn parse_error_category(byte: u8) -> ErrorCategory {
     match byte {
         1 => ErrorCategory::TraitBound,
@@ -531,7 +531,7 @@ fn parse_difficulty(byte: u8) -> Difficulty {
     }
 }
 
-/// Convert a byte to a PlaceholderConstraint.
+/// Convert a byte to a `PlaceholderConstraint`.
 fn parse_placeholder_constraint(byte: u8) -> PlaceholderConstraint {
     match byte {
         0 => PlaceholderConstraint::Expression,
@@ -720,7 +720,7 @@ fn read_string<R: IoRead>(reader: &mut R) -> CITLResult<String> {
 pub(super) mod templates {
     use super::{FixTemplate, Placeholder};
 
-    /// Template: Add .to_string() for String/&str conversion
+    /// Template: Add .`to_string()` for String/&str conversion
     #[must_use]
     pub(crate) fn to_string_conversion() -> FixTemplate {
         FixTemplate::new("$expr.to_string()", "Convert &str to String")
@@ -729,7 +729,7 @@ pub(super) mod templates {
             .with_confidence(0.9)
     }
 
-    /// Template: Add .as_str() for String/&str conversion
+    /// Template: Add .`as_str()` for String/&str conversion
     #[must_use]
     pub(crate) fn as_str_conversion() -> FixTemplate {
         FixTemplate::new("$expr.as_str()", "Convert String to &str")
@@ -738,7 +738,7 @@ pub(super) mod templates {
             .with_confidence(0.85)
     }
 
-    /// Template: Add .clone() for ownership
+    /// Template: Add .`clone()` for ownership
     #[must_use]
     pub(crate) fn clone_value() -> FixTemplate {
         FixTemplate::new("$expr.clone()", "Clone the value to avoid move")
@@ -774,7 +774,7 @@ pub(super) mod templates {
             .with_confidence(0.6)
     }
 
-    /// Template: Add .into() for type conversion
+    /// Template: Add .`into()` for type conversion
     #[must_use]
     pub(crate) fn into_conversion() -> FixTemplate {
         FixTemplate::new("$expr.into()", "Use Into trait for conversion")
@@ -783,7 +783,7 @@ pub(super) mod templates {
             .with_confidence(0.75)
     }
 
-    /// Template: Vec::new() for empty vector
+    /// Template: `Vec::new()` for empty vector
     #[must_use]
     pub(crate) fn vec_new() -> FixTemplate {
         FixTemplate::new("Vec::new()", "Create empty Vec")
@@ -791,7 +791,7 @@ pub(super) mod templates {
             .with_confidence(0.8)
     }
 
-    /// Template: String::new() for empty string
+    /// Template: `String::new()` for empty string
     #[must_use]
     pub(crate) fn string_new() -> FixTemplate {
         FixTemplate::new("String::new()", "Create empty String")
@@ -799,7 +799,7 @@ pub(super) mod templates {
             .with_confidence(0.8)
     }
 
-    /// Template: Option::unwrap_or_default()
+    /// Template: `Option::unwrap_or_default()`
     #[must_use]
     pub(crate) fn unwrap_or_default() -> FixTemplate {
         FixTemplate::new(

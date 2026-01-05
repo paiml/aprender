@@ -3,13 +3,13 @@
 //! # Techniques
 //! - Mixup: Interpolate between training samples
 //! - Label Smoothing: Soft targets instead of hard labels
-//! - CutMix: Cut and paste patches between images
+//! - `CutMix`: Cut and paste patches between images
 
 use crate::primitives::Vector;
 use rand::Rng;
 
 /// Mixup data augmentation (Zhang et al., 2018).
-/// Creates virtual training examples: x' = λx_i + (1-λ)x_j
+/// Creates virtual training examples: x' = `λx_i` + (1-λ)x_j
 #[derive(Debug, Clone)]
 pub struct Mixup {
     alpha: f32,
@@ -17,11 +17,13 @@ pub struct Mixup {
 
 impl Mixup {
     /// Create new Mixup with alpha parameter for Beta distribution.
+    #[must_use] 
     pub fn new(alpha: f32) -> Self {
         Self { alpha }
     }
 
     /// Sample mixing coefficient from Beta(alpha, alpha).
+    #[must_use] 
     pub fn sample_lambda(&self) -> f32 {
         if self.alpha <= 0.0 {
             return 1.0;
@@ -30,6 +32,7 @@ impl Mixup {
     }
 
     /// Mix two samples: x' = λ*x1 + (1-λ)*x2
+    #[must_use] 
     pub fn mix_samples(&self, x1: &Vector<f32>, x2: &Vector<f32>, lambda: f32) -> Vector<f32> {
         let mixed: Vec<f32> = x1
             .as_slice()
@@ -41,10 +44,12 @@ impl Mixup {
     }
 
     /// Mix labels: y' = λ*y1 + (1-λ)*y2
+    #[must_use] 
     pub fn mix_labels(&self, y1: &Vector<f32>, y2: &Vector<f32>, lambda: f32) -> Vector<f32> {
         self.mix_samples(y1, y2, lambda)
     }
 
+    #[must_use] 
     pub fn alpha(&self) -> f32 {
         self.alpha
     }
@@ -59,12 +64,14 @@ pub struct LabelSmoothing {
 
 impl LabelSmoothing {
     /// Create label smoothing with smoothing factor ε.
+    #[must_use] 
     pub fn new(epsilon: f32) -> Self {
         assert!((0.0..1.0).contains(&epsilon));
         Self { epsilon }
     }
 
     /// Smooth a one-hot label vector.
+    #[must_use] 
     pub fn smooth(&self, label: &Vector<f32>) -> Vector<f32> {
         let n_classes = label.len();
         let smoothed: Vec<f32> = label
@@ -76,18 +83,21 @@ impl LabelSmoothing {
     }
 
     /// Create smoothed one-hot from class index.
+    #[must_use] 
     pub fn smooth_index(&self, class_idx: usize, n_classes: usize) -> Vector<f32> {
         let mut result = vec![self.epsilon / n_classes as f32; n_classes];
         result[class_idx] = 1.0 - self.epsilon + self.epsilon / n_classes as f32;
         Vector::from_slice(&result)
     }
 
+    #[must_use] 
     pub fn epsilon(&self) -> f32 {
         self.epsilon
     }
 }
 
 /// Cross-entropy loss with label smoothing.
+#[must_use] 
 pub fn cross_entropy_with_smoothing(logits: &Vector<f32>, target_idx: usize, epsilon: f32) -> f32 {
     let n_classes = logits.len();
     let probs = softmax(logits.as_slice());
@@ -144,7 +154,7 @@ fn softmax(logits: &[f32]) -> Vec<f32> {
     exp.iter().map(|&x| x / sum).collect()
 }
 
-/// CutMix data augmentation (Yun et al., 2019).
+/// `CutMix` data augmentation (Yun et al., 2019).
 ///
 /// Cuts a rectangular region from one image and pastes onto another.
 #[derive(Debug, Clone)]
@@ -153,11 +163,13 @@ pub struct CutMix {
 }
 
 impl CutMix {
+    #[must_use] 
     pub fn new(alpha: f32) -> Self {
         Self { alpha }
     }
 
     /// Sample lambda and bounding box for cutmix.
+    #[must_use] 
     pub fn sample(&self, height: usize, width: usize) -> CutMixParams {
         let lambda = sample_beta(self.alpha, self.alpha);
 
@@ -187,12 +199,13 @@ impl CutMix {
         }
     }
 
+    #[must_use] 
     pub fn alpha(&self) -> f32 {
         self.alpha
     }
 }
 
-/// Parameters for a CutMix operation.
+/// Parameters for a `CutMix` operation.
 #[derive(Debug, Clone)]
 pub struct CutMixParams {
     pub lambda: f32,
@@ -204,6 +217,7 @@ pub struct CutMixParams {
 
 impl CutMixParams {
     /// Apply cutmix to two flat image vectors `[C*H*W]`.
+    #[must_use] 
     pub fn apply(
         &self,
         img1: &[f32],
@@ -246,12 +260,14 @@ pub enum DropMode {
 }
 
 impl StochasticDepth {
+    #[must_use] 
     pub fn new(drop_prob: f32, mode: DropMode) -> Self {
         assert!((0.0..1.0).contains(&drop_prob));
         Self { drop_prob, mode }
     }
 
     /// Apply stochastic depth: returns true if should keep (not drop).
+    #[must_use] 
     pub fn should_keep(&self, training: bool) -> bool {
         if !training || self.drop_prob == 0.0 {
             return true;
@@ -260,14 +276,17 @@ impl StochasticDepth {
     }
 
     /// Compute survival probability for linear decay schedule.
+    #[must_use] 
     pub fn linear_decay(depth: usize, total_depth: usize, max_drop: f32) -> f32 {
         1.0 - (depth as f32 / total_depth as f32) * max_drop
     }
 
+    #[must_use] 
     pub fn drop_prob(&self) -> f32 {
         self.drop_prob
     }
 
+    #[must_use] 
     pub fn mode(&self) -> DropMode {
         self.mode
     }
@@ -289,16 +308,19 @@ pub struct RDrop {
 
 impl RDrop {
     /// Create R-Drop with regularization weight alpha.
+    #[must_use] 
     pub fn new(alpha: f32) -> Self {
         assert!(alpha >= 0.0, "Alpha must be non-negative");
         Self { alpha }
     }
 
+    #[must_use] 
     pub fn alpha(&self) -> f32 {
         self.alpha
     }
 
     /// Compute KL divergence: KL(p || q) = Σ p * log(p / q)
+    #[must_use] 
     pub fn kl_divergence(&self, p: &[f32], q: &[f32]) -> f32 {
         assert_eq!(p.len(), q.len());
         let eps = 1e-10;
@@ -313,11 +335,13 @@ impl RDrop {
     }
 
     /// Compute bidirectional KL divergence (symmetric).
+    #[must_use] 
     pub fn symmetric_kl(&self, p: &[f32], q: &[f32]) -> f32 {
         (self.kl_divergence(p, q) + self.kl_divergence(q, p)) / 2.0
     }
 
     /// Compute R-Drop regularization loss between two forward passes.
+    #[must_use] 
     pub fn compute_loss(&self, logits1: &[f32], logits2: &[f32]) -> f32 {
         let p1 = softmax_slice(logits1);
         let p2 = softmax_slice(logits2);
@@ -332,7 +356,7 @@ fn softmax_slice(logits: &[f32]) -> Vec<f32> {
     exp.iter().map(|&x| x / sum).collect()
 }
 
-/// SpecAugment: Data augmentation for speech recognition (Park et al., 2019).
+/// `SpecAugment`: Data augmentation for speech recognition (Park et al., 2019).
 ///
 /// Applies time warping, frequency masking, and time masking to spectrograms.
 ///
@@ -344,7 +368,7 @@ fn softmax_slice(logits: &[f32]) -> Vec<f32> {
 ///
 /// # Reference
 ///
-/// - Park, D., et al. (2019). SpecAugment: A Simple Data Augmentation Method
+/// - Park, D., et al. (2019). `SpecAugment`: A Simple Data Augmentation Method
 ///   for Automatic Speech Recognition. Interspeech.
 #[derive(Debug, Clone)]
 pub struct SpecAugment {
@@ -367,9 +391,10 @@ impl Default for SpecAugment {
 }
 
 impl SpecAugment {
-    /// Create SpecAugment with default parameters.
+    /// Create `SpecAugment` with default parameters.
     ///
     /// Default: 2 frequency masks (F=27), 2 time masks (T=100)
+    #[must_use] 
     pub fn new() -> Self {
         Self {
             num_freq_masks: 2,
@@ -381,6 +406,7 @@ impl SpecAugment {
     }
 
     /// Create with custom parameters.
+    #[must_use] 
     pub fn with_params(
         num_freq_masks: usize,
         freq_mask_param: usize,
@@ -397,22 +423,24 @@ impl SpecAugment {
     }
 
     /// Set the mask value.
+    #[must_use] 
     pub fn with_mask_value(mut self, value: f32) -> Self {
         self.mask_value = value;
         self
     }
 
-    /// Apply SpecAugment to a spectrogram.
+    /// Apply `SpecAugment` to a spectrogram.
     ///
     /// # Arguments
     ///
-    /// * `spec` - Spectrogram as flat vector [freq_bins * time_steps]
+    /// * `spec` - Spectrogram as flat vector [`freq_bins` * `time_steps`]
     /// * `freq_bins` - Number of frequency bins
     /// * `time_steps` - Number of time steps
     ///
     /// # Returns
     ///
     /// Augmented spectrogram.
+    #[must_use] 
     pub fn apply(&self, spec: &[f32], freq_bins: usize, time_steps: usize) -> Vec<f32> {
         let mut result = spec.to_vec();
         let mut rng = rand::thread_rng();
@@ -455,6 +483,7 @@ impl SpecAugment {
     }
 
     /// Apply only frequency masking.
+    #[must_use] 
     pub fn freq_mask(&self, spec: &[f32], freq_bins: usize, time_steps: usize) -> Vec<f32> {
         let mut result = spec.to_vec();
         let mut rng = rand::thread_rng();
@@ -479,6 +508,7 @@ impl SpecAugment {
     }
 
     /// Apply only time masking.
+    #[must_use] 
     pub fn time_mask(&self, spec: &[f32], freq_bins: usize, time_steps: usize) -> Vec<f32> {
         let mut result = spec.to_vec();
         let mut rng = rand::thread_rng();
@@ -502,19 +532,21 @@ impl SpecAugment {
         result
     }
 
+    #[must_use] 
     pub fn num_freq_masks(&self) -> usize {
         self.num_freq_masks
     }
 
+    #[must_use] 
     pub fn num_time_masks(&self) -> usize {
         self.num_time_masks
     }
 }
 
-/// RandAugment: Automated data augmentation policy (Cubuk et al., 2020).
+/// `RandAugment`: Automated data augmentation policy (Cubuk et al., 2020).
 ///
 /// Applies N random augmentations from a set, each with magnitude M.
-/// Simpler than AutoAugment with fewer hyperparameters.
+/// Simpler than `AutoAugment` with fewer hyperparameters.
 ///
 /// # Reference
 ///
@@ -554,12 +586,13 @@ impl Default for RandAugment {
 }
 
 impl RandAugment {
-    /// Create RandAugment with N operations and magnitude M.
+    /// Create `RandAugment` with N operations and magnitude M.
     ///
     /// # Arguments
     ///
     /// * `n` - Number of augmentations to apply
     /// * `m` - Magnitude (0-30)
+    #[must_use] 
     pub fn new(n: usize, m: usize) -> Self {
         Self {
             n,
@@ -577,12 +610,14 @@ impl RandAugment {
     }
 
     /// Set custom augmentation types.
+    #[must_use] 
     pub fn with_augmentations(mut self, augs: Vec<AugmentationType>) -> Self {
         self.augmentations = augs;
         self
     }
 
     /// Get N random augmentation types.
+    #[must_use] 
     pub fn sample_augmentations(&self) -> Vec<AugmentationType> {
         use rand::seq::SliceRandom;
         let mut rng = rand::thread_rng();
@@ -598,6 +633,7 @@ impl RandAugment {
     }
 
     /// Get magnitude as normalized value [0, 1].
+    #[must_use] 
     pub fn normalized_magnitude(&self) -> f32 {
         self.m as f32 / 30.0
     }
@@ -610,6 +646,7 @@ impl RandAugment {
     /// * `aug` - Augmentation type
     /// * `h` - Image height
     /// * `w` - Image width
+    #[must_use] 
     pub fn apply_single(
         &self,
         image: &[f32],
@@ -700,10 +737,12 @@ impl RandAugment {
         }
     }
 
+    #[must_use] 
     pub fn n(&self) -> usize {
         self.n
     }
 
+    #[must_use] 
     pub fn m(&self) -> usize {
         self.m
     }

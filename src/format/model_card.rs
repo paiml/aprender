@@ -80,7 +80,7 @@ pub struct ModelCard {
     pub metrics: HashMap<String, serde_json::Value>,
 
     // === Technical Details ===
-    /// Model architecture type (e.g., "MarkovModel", "LinearRegression")
+    /// Model architecture type (e.g., "`MarkovModel`", "`LinearRegression`")
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub architecture: Option<String>,
 

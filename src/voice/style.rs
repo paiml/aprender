@@ -26,7 +26,7 @@
 //!
 //! # References
 //!
-//! - Qian, K., et al. (2019). AutoVC: Zero-Shot Voice Style Transfer.
+//! - Qian, K., et al. (2019). `AutoVC`: Zero-Shot Voice Style Transfer.
 //! - Wang, Y., et al. (2018). Style Tokens for Expressive Speech Synthesis.
 //! - Chen, M., et al. (2021). Adaspeech: Adaptive Text to Speech for Custom Voice.
 //!
@@ -417,7 +417,7 @@ impl StyleEncoder for GstEncoder {
 
 /// AutoVC-based voice style transfer.
 ///
-/// Reference: Qian et al., 2019 - AutoVC: Zero-Shot Voice Style Transfer.
+/// Reference: Qian et al., 2019 - `AutoVC`: Zero-Shot Voice Style Transfer.
 ///
 /// # Note
 /// This is a stub - requires model weights.
@@ -427,7 +427,7 @@ pub struct AutoVcTransfer {
 }
 
 impl AutoVcTransfer {
-    /// Create new AutoVC transfer
+    /// Create new `AutoVC` transfer
     #[must_use]
     pub fn new(config: StyleConfig) -> Self {
         Self { config }

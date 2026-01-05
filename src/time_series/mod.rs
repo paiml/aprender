@@ -109,6 +109,7 @@ impl ARIMA {
     /// // ARIMA(0, 1, 1) - MA(1) with differencing (equivalent to exponential smoothing)
     /// let ma_model = ARIMA::new(0, 1, 1);
     /// ```
+    #[must_use] 
     pub fn new(p: usize, d: usize, q: usize) -> Self {
         Self {
             p,
@@ -372,6 +373,7 @@ impl ARIMA {
     /// let ar_coef = model.ar_coefficients().expect("should have AR coefficients");
     /// assert_eq!(ar_coef.len(), 2);
     /// ```
+    #[must_use] 
     pub fn ar_coefficients(&self) -> Option<&Vector<f64>> {
         self.ar_coef.as_ref()
     }
@@ -391,11 +393,13 @@ impl ARIMA {
     /// let ma_coef = model.ma_coefficients().expect("should have MA coefficients");
     /// assert_eq!(ma_coef.len(), 1);
     /// ```
+    #[must_use] 
     pub fn ma_coefficients(&self) -> Option<&Vector<f64>> {
         self.ma_coef.as_ref()
     }
 
     /// Get the model intercept (if fitted).
+    #[must_use] 
     pub fn intercept(&self) -> f64 {
         self.intercept
     }
@@ -410,6 +414,7 @@ impl ARIMA {
     /// let model = ARIMA::new(1, 1, 1);
     /// assert_eq!(model.order(), (1, 1, 1));
     /// ```
+    #[must_use] 
     pub fn order(&self) -> (usize, usize, usize) {
         (self.p, self.d, self.q)
     }

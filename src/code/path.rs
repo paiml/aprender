@@ -1,9 +1,9 @@
-//! Code2Vec path extraction from AST
+//! `Code2Vec` path extraction from AST
 //!
 //! Implements the path extraction algorithm from the code2vec paper:
 //! - Extract paths between terminal nodes (leaves) in the AST
 //! - Paths go up from one terminal, through the LCA, down to another terminal
-//! - Each path is represented as (source_token, path_nodes, target_token)
+//! - Each path is represented as (`source_token`, `path_nodes`, `target_token`)
 
 use super::ast::{AstNode, AstNodeType, Token, TokenType};
 

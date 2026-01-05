@@ -1,12 +1,12 @@
-//! DataFrame module for named column containers.
+//! `DataFrame` module for named column containers.
 //!
-//! Provides a minimal DataFrame implementation (~300 LOC) for ML workflows.
+//! Provides a minimal `DataFrame` implementation (~300 LOC) for ML workflows.
 //! Heavy data wrangling should be delegated to ruchy/polars.
 
 use crate::error::Result;
 use crate::primitives::{Matrix, Vector};
 
-/// A minimal DataFrame with named columns.
+/// A minimal `DataFrame` with named columns.
 ///
 /// This is a thin wrapper around `Vec<(String, Vector<f32>)>` with
 /// convenience methods for ML workflows.
@@ -31,7 +31,7 @@ pub struct DataFrame {
 }
 
 impl DataFrame {
-    /// Creates a new DataFrame from named columns.
+    /// Creates a new `DataFrame` from named columns.
     ///
     /// # Errors
     ///
@@ -65,7 +65,7 @@ impl DataFrame {
         Ok(Self { columns, n_rows })
     }
 
-    /// Returns the shape as (n_rows, n_cols).
+    /// Returns the shape as (`n_rows`, `n_cols`).
     #[must_use]
     pub fn shape(&self) -> (usize, usize) {
         (self.n_rows, self.columns.len())
@@ -102,7 +102,7 @@ impl DataFrame {
             .ok_or_else(|| "Column not found".into())
     }
 
-    /// Selects multiple columns by name, returning a new DataFrame.
+    /// Selects multiple columns by name, returning a new `DataFrame`.
     ///
     /// # Errors
     ///
@@ -136,9 +136,9 @@ impl DataFrame {
         Ok(Vector::from_vec(data))
     }
 
-    /// Converts the DataFrame to a Matrix (column-major stacking).
+    /// Converts the `DataFrame` to a Matrix (column-major stacking).
     ///
-    /// Returns a Matrix with shape (n_rows, n_cols).
+    /// Returns a Matrix with shape (`n_rows`, `n_cols`).
     #[must_use]
     pub fn to_matrix(&self) -> Matrix<f32> {
         let mut data = Vec::with_capacity(self.n_rows * self.columns.len());
@@ -158,7 +158,7 @@ impl DataFrame {
         self.columns.iter().map(|(n, v)| (n.as_str(), v))
     }
 
-    /// Adds a new column to the DataFrame.
+    /// Adds a new column to the `DataFrame`.
     ///
     /// # Errors
     ///

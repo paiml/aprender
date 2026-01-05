@@ -104,7 +104,7 @@ pub mod platforms {
         deserialize_throughput_bps: 1_000_000_000.0,
     };
 
-    /// Desktop/Server (x86-64, NVMe SSD)
+    /// Desktop/Server (x86-64, `NVMe` SSD)
     pub const DESKTOP_X86: PlatformSpecs = PlatformSpecs {
         min_read_speed_mbps: 500.0,   // NVMe worst-case
         min_decomp_speed_mbps: 800.0, // Zstd with AVX2

@@ -95,7 +95,7 @@ pub struct CodeGraph {
     nodes: Vec<CodeGraphNode>,
     /// Edges in the graph
     edges: Vec<CodeGraphEdge>,
-    /// Adjacency list (node -> [(neighbor, edge_idx)])
+    /// Adjacency list (node -> [(neighbor, `edge_idx`)])
     adj_list: Vec<Vec<(usize, usize)>>,
 }
 

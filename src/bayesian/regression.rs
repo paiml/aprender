@@ -49,10 +49,10 @@ pub struct BayesianLinearRegression {
     /// Prior covariance Σ₀ (default: large diagonal for weak prior)
     beta_prior_precision: f32, // Simplified: Σ₀ = (1/precision) * I
 
-    /// InverseGamma shape parameter for noise variance prior
+    /// `InverseGamma` shape parameter for noise variance prior
     noise_alpha: f32,
 
-    /// InverseGamma scale parameter for noise variance prior
+    /// `InverseGamma` scale parameter for noise variance prior
     noise_beta: f32,
 
     /// Posterior mean βₙ (after fitting)
@@ -83,6 +83,7 @@ impl BayesianLinearRegression {
     ///
     /// let model = BayesianLinearRegression::new(3); // 3 features
     /// ```
+    #[must_use] 
     pub fn new(n_features: usize) -> Self {
         Self {
             n_features,
@@ -103,8 +104,8 @@ impl BayesianLinearRegression {
     /// * `n_features` - Number of features
     /// * `beta_prior_mean` - Prior mean for coefficients
     /// * `beta_prior_precision` - Prior precision (inverse variance) for coefficients
-    /// * `noise_alpha` - InverseGamma shape for noise variance
-    /// * `noise_beta` - InverseGamma scale for noise variance
+    /// * `noise_alpha` - `InverseGamma` shape for noise variance
+    /// * `noise_beta` - `InverseGamma` scale for noise variance
     ///
     /// # Example
     ///
@@ -163,16 +164,19 @@ impl BayesianLinearRegression {
     }
 
     /// Number of features (excluding intercept).
+    #[must_use] 
     pub fn n_features(&self) -> usize {
         self.n_features
     }
 
     /// Posterior mean coefficients (available after fitting).
+    #[must_use] 
     pub fn posterior_mean(&self) -> Option<&[f32]> {
         self.posterior_mean.as_deref()
     }
 
     /// Estimated noise variance σ² (available after fitting).
+    #[must_use] 
     pub fn noise_variance(&self) -> Option<f32> {
         self.noise_variance
     }
@@ -297,11 +301,11 @@ impl BayesianLinearRegression {
     ///
     /// # Arguments
     ///
-    /// * `x_test` - Test feature matrix (n_test × p)
+    /// * `x_test` - Test feature matrix (`n_test` × p)
     ///
     /// # Returns
     ///
-    /// Predicted values (n_test × 1)
+    /// Predicted values (`n_test` × 1)
     ///
     /// # Errors
     ///

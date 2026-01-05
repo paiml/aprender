@@ -120,7 +120,7 @@ pub fn load_state_dict_into<M: Module + ?Sized>(
     Ok(())
 }
 
-/// Save a module's parameters to a SafeTensors file.
+/// Save a module's parameters to a `SafeTensors` file.
 ///
 /// # Arguments
 ///
@@ -138,7 +138,7 @@ pub fn save_model<M: Module + ?Sized, P: AsRef<Path>>(module: &M, path: P) -> Re
     save_safetensors(path, &state)
 }
 
-/// Load a state dictionary from a SafeTensors file.
+/// Load a state dictionary from a `SafeTensors` file.
 ///
 /// # Arguments
 ///
@@ -160,7 +160,7 @@ pub fn load_state_dict<P: AsRef<Path>>(path: P) -> Result<StateDict, String> {
     Ok(state)
 }
 
-/// Load parameters from a SafeTensors file into a module.
+/// Load parameters from a `SafeTensors` file into a module.
 ///
 /// Convenience function that combines `load_state_dict` and `load_state_dict_into`.
 ///

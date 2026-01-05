@@ -67,6 +67,7 @@ impl LogisticRegression {
     ///
     /// let model = LogisticRegression::new();
     /// ```
+    #[must_use] 
     pub fn new() -> Self {
         Self {
             coefficients: None,
@@ -78,18 +79,21 @@ impl LogisticRegression {
     }
 
     /// Sets the learning rate.
+    #[must_use] 
     pub fn with_learning_rate(mut self, lr: f32) -> Self {
         self.learning_rate = lr;
         self
     }
 
     /// Sets the maximum number of iterations.
+    #[must_use] 
     pub fn with_max_iter(mut self, max_iter: usize) -> Self {
         self.max_iter = max_iter;
         self
     }
 
     /// Sets the convergence tolerance.
+    #[must_use] 
     pub fn with_tolerance(mut self, tol: f32) -> Self {
         self.tol = tol;
         self
@@ -103,6 +107,7 @@ impl LogisticRegression {
     /// Predicts probabilities for samples.
     ///
     /// Returns probability of class 1 for each sample.
+    #[must_use] 
     pub fn predict_proba(&self, x: &Matrix<f32>) -> Vector<f32> {
         let coef = self.coefficients.as_ref().expect("Model not fitted yet");
         let (n_samples, _) = x.shape();
@@ -123,8 +128,8 @@ impl LogisticRegression {
     ///
     /// # Arguments
     ///
-    /// * `x` - Feature matrix (n_samples × n_features)
-    /// * `y` - Binary labels (n_samples), must be 0 or 1
+    /// * `x` - Feature matrix (`n_samples` × `n_features`)
+    /// * `y` - Binary labels (`n_samples`), must be 0 or 1
     ///
     /// # Returns
     ///
@@ -194,6 +199,7 @@ impl LogisticRegression {
     /// Predicts class labels for samples.
     ///
     /// Returns 0 or 1 for each sample based on probability threshold of 0.5.
+    #[must_use] 
     pub fn predict(&self, x: &Matrix<f32>) -> Vec<usize> {
         let probas = self.predict_proba(x);
         probas
@@ -206,6 +212,7 @@ impl LogisticRegression {
     /// Computes accuracy score on test data.
     ///
     /// Returns fraction of correctly classified samples.
+    #[must_use] 
     pub fn score(&self, x: &Matrix<f32>, y: &[usize]) -> f32 {
         let predictions = self.predict(x);
         let correct = predictions
@@ -221,19 +228,21 @@ impl LogisticRegression {
     /// # Panics
     ///
     /// Panics if the model is not fitted.
+    #[must_use] 
     pub fn coefficients(&self) -> &Vector<f32> {
         self.coefficients.as_ref().expect("Model not fitted")
     }
 
     /// Get intercept (bias) term.
+    #[must_use] 
     pub fn intercept(&self) -> f32 {
         self.intercept
     }
 
-    /// Saves the trained model to SafeTensors format.
+    /// Saves the trained model to `SafeTensors` format.
     ///
-    /// SafeTensors is an industry-standard model serialization format
-    /// compatible with HuggingFace, Ollama, PyTorch, TensorFlow, and realizar.
+    /// `SafeTensors` is an industry-standard model serialization format
+    /// compatible with `HuggingFace`, Ollama, `PyTorch`, TensorFlow, and realizar.
     ///
     /// # Arguments
     ///
@@ -287,7 +296,7 @@ impl LogisticRegression {
         Ok(())
     }
 
-    /// Loads a model from SafeTensors format.
+    /// Loads a model from `SafeTensors` format.
     ///
     /// # Arguments
     ///
@@ -297,7 +306,7 @@ impl LogisticRegression {
     ///
     /// Returns an error if:
     /// - File reading fails
-    /// - SafeTensors format is invalid
+    /// - `SafeTensors` format is invalid
     /// - Required tensors are missing
     ///
     /// # Example
@@ -361,9 +370,9 @@ impl Default for LogisticRegression {
 /// Distance metric for K-Nearest Neighbors.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum DistanceMetric {
-    /// Euclidean distance: sqrt(sum((x_i - y_i)^2))
+    /// Euclidean distance: `sqrt(sum((x_i` - `y_i)^2`))
     Euclidean,
-    /// Manhattan distance: sum(|x_i - y_i|)
+    /// Manhattan distance: `sum(|x_i` - `y_i`|)
     Manhattan,
     /// Minkowski distance with parameter p
     Minkowski(f32),
@@ -704,7 +713,7 @@ pub struct GaussianNB {
     variances: Option<Vec<Vec<f32>>>,
     /// Class labels
     classes: Option<Vec<usize>>,
-    /// Laplace smoothing parameter (var_smoothing)
+    /// Laplace smoothing parameter (`var_smoothing`)
     var_smoothing: f32,
 }
 
@@ -718,6 +727,7 @@ impl GaussianNB {
     ///
     /// let model = GaussianNB::new();
     /// ```
+    #[must_use] 
     pub fn new() -> Self {
         Self {
             class_priors: None,
@@ -739,6 +749,7 @@ impl GaussianNB {
     ///
     /// let model = GaussianNB::new().with_var_smoothing(1e-8);
     /// ```
+    #[must_use] 
     pub fn with_var_smoothing(mut self, var_smoothing: f32) -> Self {
         self.var_smoothing = var_smoothing;
         self
@@ -857,7 +868,7 @@ impl GaussianNB {
     /// Returns probability estimates for each class.
     ///
     /// Uses Bayes' theorem with Gaussian likelihood:
-    /// P(y=c|X) ∝ P(y=c) * ∏ P(x_i|y=c)
+    /// P(y=c|X) ∝ P(y=c) * ∏ `P(x_i|y=c)`
     ///
     /// # Errors
     ///
@@ -976,9 +987,10 @@ impl LinearSVM {
     /// # Default Parameters
     ///
     /// - C: 1.0 (moderate regularization)
-    /// - learning_rate: 0.01
-    /// - max_iter: 1000
+    /// - `learning_rate`: 0.01
+    /// - `max_iter`: 1000
     /// - tol: 1e-4
+    #[must_use] 
     pub fn new() -> Self {
         Self {
             weights: None,
@@ -994,24 +1006,28 @@ impl LinearSVM {
     ///
     /// Larger C means less regularization (fit data more closely).
     /// Smaller C means more regularization (simpler model).
+    #[must_use] 
     pub fn with_c(mut self, c: f32) -> Self {
         self.c = c;
         self
     }
 
     /// Sets the learning rate for subgradient descent.
+    #[must_use] 
     pub fn with_learning_rate(mut self, learning_rate: f32) -> Self {
         self.learning_rate = learning_rate;
         self
     }
 
     /// Sets the maximum number of iterations.
+    #[must_use] 
     pub fn with_max_iter(mut self, max_iter: usize) -> Self {
         self.max_iter = max_iter;
         self
     }
 
     /// Sets the convergence tolerance.
+    #[must_use] 
     pub fn with_tolerance(mut self, tol: f32) -> Self {
         self.tol = tol;
         self
@@ -1021,7 +1037,7 @@ impl LinearSVM {
     ///
     /// # Arguments
     ///
-    /// - `x`: Feature matrix (n_samples × n_features)
+    /// - `x`: Feature matrix (`n_samples` × `n_features`)
     /// - `y`: Binary labels (0 or 1)
     ///
     /// # Returns
@@ -1111,7 +1127,7 @@ impl LinearSVM {
     ///
     /// # Arguments
     ///
-    /// - `x`: Feature matrix (n_samples × n_features)
+    /// - `x`: Feature matrix (`n_samples` × `n_features`)
     ///
     /// # Returns
     ///
@@ -1140,7 +1156,7 @@ impl LinearSVM {
     ///
     /// # Arguments
     ///
-    /// - `x`: Feature matrix (n_samples × n_features)
+    /// - `x`: Feature matrix (`n_samples` × `n_features`)
     ///
     /// # Returns
     ///

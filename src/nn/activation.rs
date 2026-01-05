@@ -33,7 +33,8 @@ use crate::autograd::Tensor;
 pub struct ReLU;
 
 impl ReLU {
-    /// Create a new ReLU activation.
+    /// Create a new `ReLU` activation.
+    #[must_use] 
     pub fn new() -> Self {
         Self
     }
@@ -45,7 +46,7 @@ impl Module for ReLU {
     }
 }
 
-/// Leaky ReLU activation: LeakyReLU(x) = max(negative_slope * x, x)
+/// Leaky `ReLU` activation: LeakyReLU(x) = `max(negative_slope` * x, x)
 ///
 /// # Arguments
 ///
@@ -56,14 +57,16 @@ pub struct LeakyReLU {
 }
 
 impl LeakyReLU {
-    /// Create a new LeakyReLU with default negative slope (0.01).
+    /// Create a new `LeakyReLU` with default negative slope (0.01).
+    #[must_use] 
     pub fn new() -> Self {
         Self {
             negative_slope: 0.01,
         }
     }
 
-    /// Create a new LeakyReLU with specified negative slope.
+    /// Create a new `LeakyReLU` with specified negative slope.
+    #[must_use] 
     pub fn with_slope(negative_slope: f32) -> Self {
         Self { negative_slope }
     }
@@ -88,6 +91,7 @@ impl Module for LeakyReLU {
 pub struct Sigmoid;
 
 impl Sigmoid {
+    #[must_use] 
     pub fn new() -> Self {
         Self
     }
@@ -106,6 +110,7 @@ impl Module for Sigmoid {
 pub struct Tanh;
 
 impl Tanh {
+    #[must_use] 
     pub fn new() -> Self {
         Self
     }
@@ -129,6 +134,7 @@ impl Module for Tanh {
 pub struct GELU;
 
 impl GELU {
+    #[must_use] 
     pub fn new() -> Self {
         Self
     }
@@ -140,7 +146,7 @@ impl Module for GELU {
     }
 }
 
-/// Softmax activation: softmax(x)_i = exp(x_i) / Σ_j exp(x_j)
+/// Softmax activation: softmax(x)_i = `exp(x_i)` / `Σ_j` `exp(x_j)`
 ///
 /// Converts logits to probabilities that sum to 1.
 ///
@@ -155,6 +161,7 @@ pub struct Softmax {
 
 impl Softmax {
     /// Create a new Softmax along the specified dimension.
+    #[must_use] 
     pub fn new(dim: i32) -> Self {
         Self { dim }
     }

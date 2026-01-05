@@ -49,8 +49,8 @@
 //! # References
 //!
 //! - Yosinski, J., et al. (2014). How transferable are features in deep
-//!   neural networks? NeurIPS.
-//! - Hu, E. J., et al. (2021). LoRA: Low-Rank Adaptation of Large Language
+//!   neural networks? `NeurIPS`.
+//! - Hu, E. J., et al. (2021). `LoRA`: Low-Rank Adaptation of Large Language
 //!   Models. arXiv:2106.09685.
 
 use crate::autograd::Tensor;
@@ -451,14 +451,14 @@ impl<E: TransferEncoder> Module for DomainAdapter<E> {
     }
 }
 
-/// LoRA (Low-Rank Adaptation) configuration.
+/// `LoRA` (Low-Rank Adaptation) configuration.
 ///
-/// LoRA freezes pre-trained weights and adds small trainable matrices
+/// `LoRA` freezes pre-trained weights and adds small trainable matrices
 /// to specific layers, drastically reducing memory and compute for fine-tuning.
 ///
 /// # Reference
 ///
-/// Hu, E. J., et al. (2021). LoRA: Low-Rank Adaptation of Large Language Models.
+/// Hu, E. J., et al. (2021). `LoRA`: Low-Rank Adaptation of Large Language Models.
 #[derive(Debug, Clone)]
 pub struct LoRAConfig {
     /// Rank of the low-rank matrices (typically 4, 8, or 16)
@@ -467,17 +467,18 @@ pub struct LoRAConfig {
     pub alpha: f32,
     /// Target module names (e.g., `["q_proj", "v_proj"]`)
     pub target_modules: Vec<String>,
-    /// Dropout probability for LoRA layers
+    /// Dropout probability for `LoRA` layers
     pub dropout: f32,
 }
 
 impl LoRAConfig {
-    /// Create a new LoRA configuration.
+    /// Create a new `LoRA` configuration.
     ///
     /// # Arguments
     ///
     /// * `rank` - Rank of low-rank matrices (4-64 typical)
     /// * `alpha` - Scaling factor (often same as rank)
+    #[must_use] 
     pub fn new(rank: usize, alpha: f32) -> Self {
         Self {
             rank,
@@ -487,19 +488,22 @@ impl LoRAConfig {
         }
     }
 
-    /// Set target modules for LoRA adaptation.
+    /// Set target modules for `LoRA` adaptation.
+    #[must_use] 
     pub fn with_target_modules(mut self, modules: Vec<String>) -> Self {
         self.target_modules = modules;
         self
     }
 
     /// Set dropout probability.
+    #[must_use] 
     pub fn with_dropout(mut self, dropout: f32) -> Self {
         self.dropout = dropout;
         self
     }
 
     /// Compute the scaling factor.
+    #[must_use] 
     pub fn scaling(&self) -> f32 {
         self.alpha / self.rank as f32
     }
@@ -511,28 +515,29 @@ impl Default for LoRAConfig {
     }
 }
 
-/// LoRA adapter weights for a single layer.
+/// `LoRA` adapter weights for a single layer.
 ///
 /// Stores the A and B matrices for low-rank adaptation:
 /// W' = W + BA where B ∈ R^{d×r}, A ∈ R^{r×k}
 #[derive(Debug)]
 pub struct LoRAAdapter {
-    /// Down-projection matrix A (input_dim → rank)
+    /// Down-projection matrix A (`input_dim` → rank)
     pub lora_a: Tensor,
-    /// Up-projection matrix B (rank → output_dim)
+    /// Up-projection matrix B (rank → `output_dim`)
     pub lora_b: Tensor,
     /// Configuration
     pub config: LoRAConfig,
 }
 
 impl LoRAAdapter {
-    /// Create a new LoRA adapter for a layer.
+    /// Create a new `LoRA` adapter for a layer.
     ///
     /// # Arguments
     ///
     /// * `input_dim` - Input dimension of the layer
     /// * `output_dim` - Output dimension of the layer
-    /// * `config` - LoRA configuration
+    /// * `config` - `LoRA` configuration
+    #[must_use] 
     pub fn new(input_dim: usize, output_dim: usize, config: LoRAConfig) -> Self {
         // Initialize A with small values (simulating kaiming init), B with zeros
         // This ensures the adapter starts as identity (W' = W + 0)
@@ -554,9 +559,10 @@ impl LoRAAdapter {
         }
     }
 
-    /// Apply the LoRA adaptation to a weight matrix.
+    /// Apply the `LoRA` adaptation to a weight matrix.
     ///
     /// Returns W + scaling * (B @ A)
+    #[must_use] 
     pub fn apply(&self, base_weight: &Tensor) -> Tensor {
         let ba = self.lora_b.matmul(&self.lora_a);
         let scaled = ba.mul_scalar(self.config.scaling());
@@ -564,6 +570,7 @@ impl LoRAAdapter {
     }
 
     /// Get the delta weight (B @ A * scaling).
+    #[must_use] 
     pub fn delta_weight(&self) -> Tensor {
         self.lora_b
             .matmul(&self.lora_a)
@@ -599,6 +606,7 @@ impl KnowledgeDistillation {
     ///
     /// * `temperature` - Softmax temperature (higher = softer targets)
     /// * `alpha` - Weight of distillation loss vs task loss (0-1)
+    #[must_use] 
     pub fn new(temperature: f32, alpha: f32) -> Self {
         assert!(temperature > 0.0, "Temperature must be positive");
         assert!((0.0..=1.0).contains(&alpha), "Alpha must be in [0, 1]");
@@ -606,6 +614,7 @@ impl KnowledgeDistillation {
     }
 
     /// Compute soft cross-entropy loss between teacher and student logits.
+    #[must_use] 
     pub fn distillation_loss(&self, student_logits: &[f32], teacher_logits: &[f32]) -> f32 {
         let student_soft = softmax_with_temp(student_logits, self.temperature);
         let teacher_soft = softmax_with_temp(teacher_logits, self.temperature);
@@ -622,7 +631,8 @@ impl KnowledgeDistillation {
         kl * self.temperature * self.temperature
     }
 
-    /// Compute combined loss: alpha * distill_loss + (1-alpha) * task_loss.
+    /// Compute combined loss: alpha * `distill_loss` + (1-alpha) * `task_loss`.
+    #[must_use] 
     pub fn combined_loss(
         &self,
         student_logits: &[f32],
@@ -633,10 +643,12 @@ impl KnowledgeDistillation {
         self.alpha * distill + (1.0 - self.alpha) * task_loss
     }
 
+    #[must_use] 
     pub fn temperature(&self) -> f32 {
         self.temperature
     }
 
+    #[must_use] 
     pub fn alpha(&self) -> f32 {
         self.alpha
     }
@@ -660,11 +672,13 @@ pub enum FeatureLossType {
 }
 
 impl FeatureDistillation {
+    #[must_use] 
     pub fn new(loss_type: FeatureLossType) -> Self {
         Self { loss_type }
     }
 
     /// Compute feature matching loss between teacher and student features.
+    #[must_use] 
     pub fn compute_loss(&self, student: &[f32], teacher: &[f32]) -> f32 {
         assert_eq!(student.len(), teacher.len());
 
@@ -710,12 +724,14 @@ pub struct AttentionTransfer {
 }
 
 impl AttentionTransfer {
+    #[must_use] 
     pub fn new(p: usize) -> Self {
         Self { p }
     }
 
     /// Compute attention map: sum over channels of |activation|^p
     #[allow(clippy::needless_range_loop)]
+    #[must_use] 
     pub fn compute_attention_map(
         &self,
         activations: &[f32],
@@ -745,6 +761,7 @@ impl AttentionTransfer {
     }
 
     /// Compute attention transfer loss between teacher and student attention maps.
+    #[must_use] 
     pub fn compute_loss(
         &self,
         student_acts: &[f32],
@@ -776,6 +793,7 @@ pub struct SelfDistillation {
 }
 
 impl SelfDistillation {
+    #[must_use] 
     pub fn new(temperature: f32) -> Self {
         Self {
             temperature,
@@ -783,18 +801,21 @@ impl SelfDistillation {
         }
     }
 
-    /// Add a layer pair (teacher_layer_idx, student_layer_idx).
+    /// Add a layer pair (`teacher_layer_idx`, `student_layer_idx`).
     /// Teacher should be deeper (higher index) than student.
+    #[must_use] 
     pub fn add_layer_pair(mut self, teacher_idx: usize, student_idx: usize) -> Self {
         self.layer_pairs.push((teacher_idx, student_idx));
         self
     }
 
+    #[must_use] 
     pub fn layer_pairs(&self) -> &[(usize, usize)] {
         &self.layer_pairs
     }
 
     /// Compute self-distillation loss for a layer pair.
+    #[must_use] 
     pub fn layer_loss(&self, student_output: &[f32], teacher_output: &[f32]) -> f32 {
         let student_soft = softmax_with_temp(student_output, self.temperature);
         let teacher_soft = softmax_with_temp(teacher_output, self.temperature);
@@ -850,6 +871,7 @@ impl OnlineDistillation {
     /// * `num_networks` - Number of networks to co-train (typically 2-4)
     /// * `temperature` - Temperature for softening predictions
     /// * `mutual_weight` - Weight for mutual learning loss (vs task loss)
+    #[must_use] 
     pub fn new(num_networks: usize, temperature: f32, mutual_weight: f32) -> Self {
         assert!(
             num_networks >= 2,
@@ -866,6 +888,7 @@ impl OnlineDistillation {
     /// Compute mutual learning loss for one network given all peer outputs.
     ///
     /// Each network learns from the average of its peers' predictions.
+    #[must_use] 
     pub fn mutual_loss(&self, network_idx: usize, all_logits: &[Vec<f32>]) -> f32 {
         assert_eq!(all_logits.len(), self.num_networks);
 
@@ -897,7 +920,8 @@ impl OnlineDistillation {
         }
     }
 
-    /// Compute combined loss for one network: task_loss + mutual_weight * mutual_loss.
+    /// Compute combined loss for one network: `task_loss` + `mutual_weight` * `mutual_loss`.
+    #[must_use] 
     pub fn combined_loss(
         &self,
         network_idx: usize,
@@ -909,20 +933,24 @@ impl OnlineDistillation {
     }
 
     /// Compute losses for all networks.
+    #[must_use] 
     pub fn all_losses(&self, all_logits: &[Vec<f32>], task_losses: &[f32]) -> Vec<f32> {
         (0..self.num_networks)
             .map(|i| self.combined_loss(i, all_logits, task_losses[i]))
             .collect()
     }
 
+    #[must_use] 
     pub fn num_networks(&self) -> usize {
         self.num_networks
     }
 
+    #[must_use] 
     pub fn temperature(&self) -> f32 {
         self.temperature
     }
 
+    #[must_use] 
     pub fn mutual_weight(&self) -> f32 {
         self.mutual_weight
     }
@@ -944,6 +972,7 @@ pub struct ProgressiveDistillation {
 
 impl ProgressiveDistillation {
     /// Create progressive distillation from current to target steps.
+    #[must_use] 
     pub fn new(current_steps: usize, target_steps: usize, weight: f32) -> Self {
         assert!(
             current_steps > target_steps,
@@ -958,6 +987,7 @@ impl ProgressiveDistillation {
     }
 
     /// Check if we should halve steps (typically after convergence).
+    #[must_use] 
     pub fn should_halve(&self) -> bool {
         self.current_steps > self.target_steps * 2
     }
@@ -970,6 +1000,7 @@ impl ProgressiveDistillation {
     }
 
     /// Compute distillation loss between teacher (2N steps) and student (N steps).
+    #[must_use] 
     pub fn compute_loss(&self, teacher_output: &[f32], student_output: &[f32]) -> f32 {
         assert_eq!(teacher_output.len(), student_output.len());
         let mse: f32 = teacher_output
@@ -981,10 +1012,12 @@ impl ProgressiveDistillation {
         self.weight * mse
     }
 
+    #[must_use] 
     pub fn current_steps(&self) -> usize {
         self.current_steps
     }
 
+    #[must_use] 
     pub fn target_steps(&self) -> usize {
         self.target_steps
     }
@@ -1015,12 +1048,14 @@ pub enum DistanceMetric {
 }
 
 impl PrototypicalNetwork {
+    #[must_use] 
     pub fn new(distance: DistanceMetric) -> Self {
         Self { distance }
     }
 
     /// Compute class prototypes from support set embeddings.
-    /// support: Vec of (embedding, class_label)
+    /// support: Vec of (embedding, `class_label`)
+    #[must_use] 
     pub fn compute_prototypes(&self, support: &[(Vec<f32>, usize)]) -> Vec<(usize, Vec<f32>)> {
         use std::collections::HashMap;
         let mut class_sums: HashMap<usize, (Vec<f32>, usize)> = HashMap::new();
@@ -1045,6 +1080,7 @@ impl PrototypicalNetwork {
     }
 
     /// Classify query embedding against prototypes.
+    #[must_use] 
     pub fn classify(&self, query: &[f32], prototypes: &[(usize, Vec<f32>)]) -> usize {
         let mut best_class = 0;
         let mut best_dist = f32::INFINITY;
@@ -1113,11 +1149,13 @@ pub struct MatchingNetwork {
 }
 
 impl MatchingNetwork {
+    #[must_use] 
     pub fn new(temperature: f32) -> Self {
         Self { temperature }
     }
 
     /// Predict class by attention-weighted combination over support set.
+    #[must_use] 
     pub fn predict(&self, query: &[f32], support: &[(Vec<f32>, usize)]) -> usize {
         use std::collections::HashMap;
         let mut class_scores: HashMap<usize, f32> = HashMap::new();

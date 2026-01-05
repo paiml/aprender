@@ -997,7 +997,7 @@ impl GNNErrorEncoder {
         AdjacencyMatrix::from_edge_index(&all_edges, graph.num_nodes()).add_self_loops()
     }
 
-    /// Apply ReLU activation.
+    /// Apply `ReLU` activation.
     fn relu(tensor: &Tensor) -> Tensor {
         let data: Vec<f32> = tensor.data().iter().map(|&x| x.max(0.0)).collect();
         Tensor::new(&data, tensor.shape())

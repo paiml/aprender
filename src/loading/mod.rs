@@ -35,29 +35,29 @@ use std::time::Duration;
 /// # Toyota Way Alignment
 ///
 /// - **Eager**: Maximum quality, minimum latency (Jidoka)
-/// - **MappedDemand**: Just-in-time resource usage (JIT)
+/// - **`MappedDemand`**: Just-in-time resource usage (JIT)
 /// - **Streaming**: Level loading for constrained systems (Heijunka)
-/// - **LazySection**: Muda elimination for sparse access
+/// - **`LazySection`**: Muda elimination for sparse access
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum LoadingMode {
     /// Full load into contiguous memory (embedded systems with deterministic requirements)
-    /// Memory: O(uncompressed_size)
+    /// Memory: `O(uncompressed_size)`
     /// Latency: Highest initial, lowest inference
     #[default]
     Eager,
 
     /// Memory-mapped with demand paging (server/desktop with large models)
-    /// Memory: O(page_size * active_pages)
+    /// Memory: `O(page_size` * `active_pages`)
     /// Latency: Lowest initial, amortized inference
     MappedDemand,
 
     /// Streaming decompression with fixed-size ring buffer (ultra-constrained)
-    /// Memory: O(buffer_size) constant
+    /// Memory: `O(buffer_size)` constant
     /// Latency: Consistent per-chunk
     Streaming,
 
     /// JIT section loading for sparse access patterns (tree ensembles)
-    /// Memory: O(accessed_sections)
+    /// Memory: `O(accessed_sections)`
     /// Latency: Per-section on first access
     LazySection,
 }
@@ -106,8 +106,8 @@ impl LoadingMode {
 /// # Safety Levels
 ///
 /// Maps to ISO 26262 ASIL levels and DO-178C DALs:
-/// - **UnsafeSkip**: Testing only, NEVER in production
-/// - **ChecksumOnly**: ASIL-A / DAL-D (minimum Jidoka)
+/// - **`UnsafeSkip`**: Testing only, NEVER in production
+/// - **`ChecksumOnly`**: ASIL-A / DAL-D (minimum Jidoka)
 /// - **Standard**: ASIL-B / DAL-C (production default)
 /// - **Paranoid**: ASIL-D / DAL-A (safety-critical)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -231,7 +231,7 @@ pub enum Backend {
     Cuda,
     /// WebAssembly (browser deployment)
     Wasm,
-    /// Bare metal embedded (no_std)
+    /// Bare metal embedded (`no_std`)
     Embedded,
 }
 
@@ -359,7 +359,7 @@ impl LoadConfig {
     /// Create configuration for NVIDIA CUDA deployment
     ///
     /// Requires the `cuda` feature and NVIDIA driver.
-    /// Uses MappedDemand for efficient GPU memory transfers.
+    /// Uses `MappedDemand` for efficient GPU memory transfers.
     #[must_use]
     pub fn cuda() -> Self {
         Self {

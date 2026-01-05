@@ -79,41 +79,48 @@ impl Default for GenerationConfig {
 
 impl GenerationConfig {
     /// Create a new generation config with default values.
+    #[must_use] 
     pub fn new() -> Self {
         Self::default()
     }
 
     /// Set maximum generation length.
+    #[must_use] 
     pub fn with_max_length(mut self, max_length: usize) -> Self {
         self.max_length = max_length;
         self
     }
 
     /// Set temperature for sampling.
+    #[must_use] 
     pub fn with_temperature(mut self, temperature: f32) -> Self {
         self.temperature = temperature;
         self
     }
 
     /// Set top-k sampling.
+    #[must_use] 
     pub fn with_top_k(mut self, top_k: usize) -> Self {
         self.top_k = Some(top_k);
         self
     }
 
     /// Set nucleus (top-p) sampling.
+    #[must_use] 
     pub fn with_top_p(mut self, top_p: f32) -> Self {
         self.top_p = Some(top_p);
         self
     }
 
     /// Set beam search width.
+    #[must_use] 
     pub fn with_num_beams(mut self, num_beams: usize) -> Self {
         self.num_beams = num_beams;
         self
     }
 
     /// Set EOS token ID.
+    #[must_use] 
     pub fn with_eos_token_id(mut self, eos_token_id: usize) -> Self {
         self.eos_token_id = Some(eos_token_id);
         self
@@ -133,6 +140,7 @@ pub struct BeamHypothesis {
 
 impl BeamHypothesis {
     /// Create a new beam hypothesis.
+    #[must_use] 
     pub fn new(tokens: Vec<usize>, score: f32) -> Self {
         Self {
             tokens,
@@ -142,6 +150,7 @@ impl BeamHypothesis {
     }
 
     /// Get the length-normalized score.
+    #[must_use] 
     pub fn normalized_score(&self, length_penalty: f32) -> f32 {
         let len = self.tokens.len() as f32;
         self.score / len.powf(length_penalty)
@@ -150,7 +159,7 @@ impl BeamHypothesis {
 
 /// Beam search decoder for sequence generation.
 ///
-/// Maintains the top-k (beam_size) hypotheses at each decoding step.
+/// Maintains the top-k (`beam_size`) hypotheses at each decoding step.
 ///
 /// # Example
 ///
@@ -171,6 +180,7 @@ impl BeamSearch {
     /// # Arguments
     ///
     /// * `beam_size` - Number of beams to maintain
+    #[must_use] 
     pub fn new(beam_size: usize) -> Self {
         Self {
             beam_size,
@@ -181,18 +191,21 @@ impl BeamSearch {
     }
 
     /// Set length penalty (>1 favors longer sequences).
+    #[must_use] 
     pub fn with_length_penalty(mut self, penalty: f32) -> Self {
         self.length_penalty = penalty;
         self
     }
 
     /// Enable early stopping when all beams reach EOS.
+    #[must_use] 
     pub fn with_early_stopping(mut self) -> Self {
         self.early_stopping = true;
         self
     }
 
     /// Set EOS token ID.
+    #[must_use] 
     pub fn with_eos_token_id(mut self, eos_token_id: usize) -> Self {
         self.eos_token_id = Some(eos_token_id);
         self
@@ -208,6 +221,7 @@ impl BeamSearch {
     /// # Returns
     ///
     /// Updated beam hypotheses after one step.
+    #[must_use] 
     pub fn step(
         &self,
         log_probs: &Tensor,
@@ -253,16 +267,19 @@ impl BeamSearch {
     }
 
     /// Initialize beam search with a start token.
+    #[must_use] 
     pub fn init(&self, start_token: usize) -> Vec<BeamHypothesis> {
         vec![BeamHypothesis::new(vec![start_token], 0.0)]
     }
 
     /// Check if all beams are done.
+    #[must_use] 
     pub fn all_done(&self, beams: &[BeamHypothesis]) -> bool {
         beams.iter().all(|b| b.is_done)
     }
 
     /// Get the best hypothesis.
+    #[must_use] 
     pub fn best(&self, beams: &[BeamHypothesis]) -> Option<BeamHypothesis> {
         beams
             .iter()
@@ -274,12 +291,14 @@ impl BeamSearch {
             .cloned()
     }
 
-    /// Get beam_size.
+    /// Get `beam_size`.
+    #[must_use] 
     pub fn beam_size(&self) -> usize {
         self.beam_size
     }
 
-    /// Get length_penalty.
+    /// Get `length_penalty`.
+    #[must_use] 
     pub fn length_penalty(&self) -> f32 {
         self.length_penalty
     }
@@ -324,6 +343,7 @@ impl NucleusSampler {
     /// # Arguments
     ///
     /// * `top_p` - Cumulative probability threshold (0.0, 1.0]
+    #[must_use] 
     pub fn new(top_p: f32) -> Self {
         assert!(top_p > 0.0 && top_p <= 1.0, "top_p must be in (0.0, 1.0]");
         Self {
@@ -334,12 +354,14 @@ impl NucleusSampler {
     }
 
     /// Set temperature for sampling.
+    #[must_use] 
     pub fn with_temperature(mut self, temperature: f32) -> Self {
         self.temperature = temperature;
         self
     }
 
-    /// Set minimum tokens to keep (even if below top_p threshold).
+    /// Set minimum tokens to keep (even if below `top_p` threshold).
+    #[must_use] 
     pub fn with_min_tokens_to_keep(mut self, min_tokens: usize) -> Self {
         self.min_tokens_to_keep = min_tokens;
         self
@@ -356,6 +378,7 @@ impl NucleusSampler {
     /// # Returns
     ///
     /// Filtered logits tensor.
+    #[must_use] 
     pub fn filter(&self, logits: &Tensor) -> Tensor {
         let vocab_size = logits.data().len();
 
@@ -415,17 +438,20 @@ impl NucleusSampler {
     /// # Returns
     ///
     /// Sampled token ID.
+    #[must_use] 
     pub fn sample(&self, logits: &Tensor) -> usize {
         let filtered = self.filter(logits);
         sample_from_logits(&filtered)
     }
 
-    /// Get top_p value.
+    /// Get `top_p` value.
+    #[must_use] 
     pub fn top_p(&self) -> f32 {
         self.top_p
     }
 
     /// Get temperature value.
+    #[must_use] 
     pub fn temperature(&self) -> f32 {
         self.temperature
     }
@@ -462,6 +488,7 @@ impl TopKSampler {
     /// # Arguments
     ///
     /// * `top_k` - Number of top tokens to keep
+    #[must_use] 
     pub fn new(top_k: usize) -> Self {
         assert!(top_k > 0, "top_k must be > 0");
         Self {
@@ -471,12 +498,14 @@ impl TopKSampler {
     }
 
     /// Set temperature for sampling.
+    #[must_use] 
     pub fn with_temperature(mut self, temperature: f32) -> Self {
         self.temperature = temperature;
         self
     }
 
     /// Filter logits to keep only top-k tokens.
+    #[must_use] 
     pub fn filter(&self, logits: &Tensor) -> Tensor {
         let vocab_size = logits.data().len();
         let k = self.top_k.min(vocab_size);
@@ -506,12 +535,14 @@ impl TopKSampler {
     }
 
     /// Sample a token from the filtered distribution.
+    #[must_use] 
     pub fn sample(&self, logits: &Tensor) -> usize {
         let filtered = self.filter(logits);
         sample_from_logits(&filtered)
     }
 
-    /// Get top_k value.
+    /// Get `top_k` value.
+    #[must_use] 
     pub fn top_k(&self) -> usize {
         self.top_k
     }
@@ -532,11 +563,13 @@ pub struct GreedyDecoder;
 
 impl GreedyDecoder {
     /// Create a new greedy decoder.
+    #[must_use] 
     pub fn new() -> Self {
         Self
     }
 
     /// Decode the most likely token.
+    #[must_use] 
     pub fn decode(&self, logits: &Tensor) -> usize {
         argmax(logits.data())
     }
@@ -553,6 +586,7 @@ impl GreedyDecoder {
 /// # Returns
 ///
 /// Penalized logits tensor.
+#[must_use] 
 pub fn apply_repetition_penalty(
     logits: &Tensor,
     generated_tokens: &[usize],
@@ -575,6 +609,7 @@ pub fn apply_repetition_penalty(
 }
 
 /// Apply temperature scaling to logits.
+#[must_use] 
 pub fn apply_temperature(logits: &Tensor, temperature: f32) -> Tensor {
     assert!(temperature > 0.0, "Temperature must be positive");
     let data: Vec<f32> = logits.data().iter().map(|&x| x / temperature).collect();
@@ -637,7 +672,7 @@ fn argmax(data: &[f32]) -> usize {
 ///
 /// - **Linear**: Decreases teacher forcing ratio linearly
 /// - **Exponential**: Decreases exponentially
-/// - **InverseSquareRoot**: Slow initial decay, faster later
+/// - **`InverseSquareRoot`**: Slow initial decay, faster later
 ///
 /// # Example
 ///
@@ -680,6 +715,7 @@ pub enum TeacherForcingSchedule {
 
 impl TeacherForcing {
     /// Create constant teacher forcing (ratio doesn't change).
+    #[must_use] 
     pub fn constant(ratio: f32) -> Self {
         assert!((0.0..=1.0).contains(&ratio), "Ratio must be in [0, 1]");
         Self {
@@ -691,6 +727,7 @@ impl TeacherForcing {
     }
 
     /// Create linear decay schedule.
+    #[must_use] 
     pub fn linear(initial: f32, final_ratio: f32, num_steps: usize) -> Self {
         assert!(
             (0.0..=1.0).contains(&initial),
@@ -709,6 +746,7 @@ impl TeacherForcing {
     }
 
     /// Create exponential decay schedule.
+    #[must_use] 
     pub fn exponential(initial: f32, final_ratio: f32, num_steps: usize) -> Self {
         assert!(
             (0.0..=1.0).contains(&initial),
@@ -727,6 +765,7 @@ impl TeacherForcing {
     }
 
     /// Create inverse square root decay schedule.
+    #[must_use] 
     pub fn inverse_sqrt(initial: f32, num_steps: usize) -> Self {
         assert!(
             (0.0..=1.0).contains(&initial),
@@ -741,6 +780,7 @@ impl TeacherForcing {
     }
 
     /// Get teacher forcing ratio for given step.
+    #[must_use] 
     pub fn get_ratio(&self, step: usize) -> f32 {
         match self.schedule {
             TeacherForcingSchedule::Constant => self.initial_ratio,
@@ -773,19 +813,23 @@ impl TeacherForcing {
     /// Decide whether to use teacher forcing at this step.
     ///
     /// Returns true with probability equal to the current ratio.
+    #[must_use] 
     pub fn should_use_teacher(&self, step: usize) -> bool {
         let ratio = self.get_ratio(step);
         rand::random::<f32>() < ratio
     }
 
+    #[must_use] 
     pub fn schedule(&self) -> TeacherForcingSchedule {
         self.schedule
     }
 
+    #[must_use] 
     pub fn initial_ratio(&self) -> f32 {
         self.initial_ratio
     }
 
+    #[must_use] 
     pub fn final_ratio(&self) -> f32 {
         self.final_ratio
     }

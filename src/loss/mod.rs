@@ -51,6 +51,7 @@ use crate::primitives::Vector;
 /// let loss = mse_loss(&y_pred, &y_true);
 /// assert!((loss - 0.0).abs() < 1e-6);
 /// ```
+#[must_use] 
 pub fn mse_loss(y_pred: &Vector<f32>, y_true: &Vector<f32>) -> f32 {
     assert_eq!(
         y_pred.len(),
@@ -104,6 +105,7 @@ pub fn mse_loss(y_pred: &Vector<f32>, y_true: &Vector<f32>) -> f32 {
 /// let loss = mae_loss(&y_pred, &y_true);
 /// assert!((loss - 0.5).abs() < 1e-6);
 /// ```
+#[must_use] 
 pub fn mae_loss(y_pred: &Vector<f32>, y_true: &Vector<f32>) -> f32 {
     assert_eq!(
         y_pred.len(),
@@ -163,6 +165,7 @@ pub fn mae_loss(y_pred: &Vector<f32>, y_true: &Vector<f32>) -> f32 {
 /// let loss = huber_loss(&y_pred, &y_true, 1.0);
 /// assert!(loss > 0.0);
 /// ```
+#[must_use] 
 pub fn huber_loss(y_pred: &Vector<f32>, y_true: &Vector<f32>, delta: f32) -> f32 {
     assert_eq!(
         y_pred.len(),
@@ -321,6 +324,7 @@ impl Loss for HuberLoss {
 /// let loss = triplet_loss(&anchor, &positive, &negative, 0.2);
 /// assert!(loss >= 0.0);
 /// ```
+#[must_use] 
 pub fn triplet_loss(
     anchor: &Vector<f32>,
     positive: &Vector<f32>,
@@ -370,7 +374,7 @@ fn cosine_similarity(a: &Vector<f32>, b: &Vector<f32>) -> f32 {
     dot / denom
 }
 
-/// InfoNCE (Noise Contrastive Estimation) loss for contrastive learning.
+/// `InfoNCE` (Noise Contrastive Estimation) loss for contrastive learning.
 ///
 /// Also known as NT-Xent (Normalized Temperature-scaled Cross Entropy).
 ///
@@ -387,7 +391,7 @@ fn cosine_similarity(a: &Vector<f32>, b: &Vector<f32>) -> f32 {
 ///
 /// # Returns
 ///
-/// The InfoNCE loss value
+/// The `InfoNCE` loss value
 ///
 /// # Example
 ///
@@ -405,6 +409,7 @@ fn cosine_similarity(a: &Vector<f32>, b: &Vector<f32>) -> f32 {
 /// let loss = info_nce_loss(&anchor, &positive, &negatives, 0.1);
 /// assert!(loss >= 0.0);
 /// ```
+#[must_use] 
 pub fn info_nce_loss(
     anchor: &Vector<f32>,
     positive: &Vector<f32>,
@@ -477,6 +482,7 @@ pub fn info_nce_loss(
 /// let loss = focal_loss(&predictions, &targets, 0.25, 2.0);
 /// assert!(loss >= 0.0);
 /// ```
+#[must_use] 
 pub fn focal_loss(predictions: &Vector<f32>, targets: &Vector<f32>, alpha: f32, gamma: f32) -> f32 {
     assert_eq!(
         predictions.len(),
@@ -532,6 +538,7 @@ pub fn focal_loss(predictions: &Vector<f32>, targets: &Vector<f32>, alpha: f32, 
 /// let kl = kl_divergence(&p, &q);
 /// assert!(kl >= 0.0);
 /// ```
+#[must_use] 
 pub fn kl_divergence(p: &Vector<f32>, q: &Vector<f32>) -> f32 {
     assert_eq!(p.len(), q.len(), "Distributions must have same length");
 
@@ -566,6 +573,7 @@ impl TripletLoss {
     }
 
     /// Compute triplet loss for given embeddings.
+    #[must_use] 
     pub fn compute_triplet(
         &self,
         anchor: &Vector<f32>,
@@ -618,14 +626,14 @@ impl Loss for FocalLoss {
     }
 }
 
-/// InfoNCE / NT-Xent loss function (struct wrapper).
+/// `InfoNCE` / NT-Xent loss function (struct wrapper).
 #[derive(Debug, Clone, Copy)]
 pub struct InfoNCELoss {
     temperature: f32,
 }
 
 impl InfoNCELoss {
-    /// Creates a new InfoNCE loss with given temperature.
+    /// Creates a new `InfoNCE` loss with given temperature.
     ///
     /// # Arguments
     ///
@@ -641,7 +649,8 @@ impl InfoNCELoss {
         self.temperature
     }
 
-    /// Compute InfoNCE loss for contrastive learning.
+    /// Compute `InfoNCE` loss for contrastive learning.
+    #[must_use] 
     pub fn compute_contrastive(
         &self,
         anchor: &Vector<f32>,
@@ -664,6 +673,7 @@ impl InfoNCELoss {
 /// * `y_pred` - Predicted probabilities (0-1)
 /// * `y_true` - Ground truth binary mask (0 or 1)
 /// * `smooth` - Smoothing factor to avoid division by zero
+#[must_use] 
 pub fn dice_loss(y_pred: &Vector<f32>, y_true: &Vector<f32>, smooth: f32) -> f32 {
     assert_eq!(y_pred.len(), y_true.len());
 
@@ -691,6 +701,7 @@ pub fn dice_loss(y_pred: &Vector<f32>, y_true: &Vector<f32>, smooth: f32) -> f32
 /// * `y_pred` - Predicted scores (raw, not probabilities)
 /// * `y_true` - True labels (-1 or 1)
 /// * `margin` - Margin threshold (typically 1.0)
+#[must_use] 
 pub fn hinge_loss(y_pred: &Vector<f32>, y_true: &Vector<f32>, margin: f32) -> f32 {
     assert_eq!(y_pred.len(), y_true.len());
 
@@ -703,6 +714,7 @@ pub fn hinge_loss(y_pred: &Vector<f32>, y_true: &Vector<f32>, margin: f32) -> f3
 }
 
 /// Squared hinge loss (smoother gradient).
+#[must_use] 
 pub fn squared_hinge_loss(y_pred: &Vector<f32>, y_true: &Vector<f32>, margin: f32) -> f32 {
     assert_eq!(y_pred.len(), y_true.len());
 
@@ -721,10 +733,12 @@ pub struct DiceLoss {
 }
 
 impl DiceLoss {
+    #[must_use] 
     pub fn new(smooth: f32) -> Self {
         Self { smooth }
     }
 
+    #[must_use] 
     pub fn smooth(&self) -> f32 {
         self.smooth
     }
@@ -747,10 +761,12 @@ pub struct HingeLoss {
 }
 
 impl HingeLoss {
+    #[must_use] 
     pub fn new(margin: f32) -> Self {
         Self { margin }
     }
 
+    #[must_use] 
     pub fn margin(&self) -> f32 {
         self.margin
     }
@@ -779,10 +795,12 @@ pub struct CTCLoss {
 
 impl CTCLoss {
     /// Create CTC loss with specified blank token index.
+    #[must_use] 
     pub fn new(blank_idx: usize) -> Self {
         Self { blank_idx }
     }
 
+    #[must_use] 
     pub fn blank_idx(&self) -> usize {
         self.blank_idx
     }
@@ -794,6 +812,7 @@ impl CTCLoss {
     /// * `targets` - Target sequence (class indices, no blanks)
     /// * `input_length` - Length of input sequence
     /// * `target_length` - Length of target sequence
+    #[must_use] 
     pub fn forward(
         &self,
         log_probs: &[Vec<f32>],
@@ -875,6 +894,7 @@ fn log_sum_exp(a: f32, b: f32) -> f32 {
 /// For 1D sorted distributions: W1 = Σ|CDF1 - CDF2|
 ///
 /// Reference: Arjovsky et al., "Wasserstein GAN" (2017)
+#[must_use] 
 pub fn wasserstein_loss(real_scores: &Vector<f32>, fake_scores: &Vector<f32>) -> f32 {
     let real_mean: f32 = real_scores.as_slice().iter().sum::<f32>() / real_scores.len() as f32;
     let fake_mean: f32 = fake_scores.as_slice().iter().sum::<f32>() / fake_scores.len() as f32;
@@ -883,18 +903,21 @@ pub fn wasserstein_loss(real_scores: &Vector<f32>, fake_scores: &Vector<f32>) ->
 
 /// Wasserstein loss for discriminator (critic).
 /// Maximizes distance between real and fake.
+#[must_use] 
 pub fn wasserstein_discriminator_loss(real_scores: &Vector<f32>, fake_scores: &Vector<f32>) -> f32 {
     -wasserstein_loss(real_scores, fake_scores)
 }
 
 /// Wasserstein loss for generator.
 /// Minimizes negative fake score.
+#[must_use] 
 pub fn wasserstein_generator_loss(fake_scores: &Vector<f32>) -> f32 {
     -fake_scores.as_slice().iter().sum::<f32>() / fake_scores.len() as f32
 }
 
 /// Gradient penalty for WGAN-GP.
 /// Enforces Lipschitz constraint via gradient norm penalty.
+#[must_use] 
 pub fn gradient_penalty(gradients: &[f32], lambda: f32) -> f32 {
     let grad_norm: f32 = gradients.iter().map(|&g| g * g).sum::<f32>().sqrt();
     lambda * (grad_norm - 1.0).powi(2)
@@ -907,18 +930,22 @@ pub struct WassersteinLoss {
 }
 
 impl WassersteinLoss {
+    #[must_use] 
     pub fn new(lambda_gp: f32) -> Self {
         Self { lambda_gp }
     }
 
+    #[must_use] 
     pub fn lambda_gp(&self) -> f32 {
         self.lambda_gp
     }
 
+    #[must_use] 
     pub fn discriminator_loss(&self, real: &Vector<f32>, fake: &Vector<f32>) -> f32 {
         wasserstein_discriminator_loss(real, fake)
     }
 
+    #[must_use] 
     pub fn generator_loss(&self, fake: &Vector<f32>) -> f32 {
         wasserstein_generator_loss(fake)
     }

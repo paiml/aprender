@@ -69,6 +69,7 @@ impl Default for FakeQuantConfig {
 
 impl FakeQuantConfig {
     /// Create 8-bit symmetric quantization config.
+    #[must_use] 
     pub fn int8() -> Self {
         Self {
             bits: 8,
@@ -79,6 +80,7 @@ impl FakeQuantConfig {
     }
 
     /// Create 4-bit symmetric quantization config.
+    #[must_use] 
     pub fn int4() -> Self {
         Self {
             bits: 4,
@@ -89,18 +91,21 @@ impl FakeQuantConfig {
     }
 
     /// Enable learnable scale quantization (LSQ).
+    #[must_use] 
     pub fn with_learnable(mut self) -> Self {
         self.learnable = true;
         self
     }
 
     /// Set observation method.
+    #[must_use] 
     pub fn with_observer(mut self, observer: ObserverMethod) -> Self {
         self.observer = observer;
         self
     }
 
     /// Compute quantization range for given bits.
+    #[must_use] 
     pub fn quant_range(&self) -> (f32, f32) {
         if self.symmetric {
             let max = (1 << (self.bits - 1)) - 1;
@@ -133,6 +138,7 @@ pub struct QuantObserver {
 
 impl QuantObserver {
     /// Create a new observer.
+    #[must_use] 
     pub fn new(method: ObserverMethod) -> Self {
         Self {
             min_val: f32::INFINITY,
@@ -199,6 +205,7 @@ impl QuantObserver {
     }
 
     /// Get observed range.
+    #[must_use] 
     pub fn range(&self) -> (f32, f32) {
         (self.min_val, self.max_val)
     }
@@ -213,6 +220,7 @@ impl QuantObserver {
     }
 
     /// Compute scale and zero-point for asymmetric quantization.
+    #[must_use] 
     pub fn compute_qparams(&self, config: &FakeQuantConfig) -> (f32, f32) {
         let (qmin, qmax) = config.quant_range();
         let (min_val, max_val) = self.range();
@@ -253,6 +261,7 @@ pub struct FakeQuantize {
 
 impl FakeQuantize {
     /// Create fake quantizer with config.
+    #[must_use] 
     pub fn new(config: FakeQuantConfig) -> Self {
         let observer = QuantObserver::new(config.observer);
         Self {
@@ -299,16 +308,19 @@ impl FakeQuantize {
     }
 
     /// Get current scale.
+    #[must_use] 
     pub fn scale(&self) -> f32 {
         self.scale
     }
 
     /// Get current zero point.
+    #[must_use] 
     pub fn zero_point(&self) -> f32 {
         self.zero_point
     }
 
     /// Get config.
+    #[must_use] 
     pub fn config(&self) -> &FakeQuantConfig {
         &self.config
     }
@@ -408,6 +420,7 @@ impl QuantizedLinear {
 
     /// Perform quantized forward pass.
     #[allow(clippy::needless_range_loop)]
+    #[must_use] 
     pub fn forward_quantized(&self, input: &[i8]) -> Vec<i32> {
         let batch_size = input.len() / self.in_features;
         let mut output = vec![0i32; batch_size * self.out_features];
@@ -431,6 +444,7 @@ impl QuantizedLinear {
     }
 
     /// Get output scale for next layer.
+    #[must_use] 
     pub fn output_scale(&self) -> f32 {
         self.output_scale
     }
@@ -446,11 +460,13 @@ pub struct DynamicQuantizer {
 
 impl DynamicQuantizer {
     /// Create dynamic quantizer.
+    #[must_use] 
     pub fn new(config: FakeQuantConfig) -> Self {
         Self { config }
     }
 
     /// Quantize tensor dynamically.
+    #[must_use] 
     pub fn quantize(&self, data: &[f32]) -> (Vec<i8>, f32, f32) {
         let mut observer = QuantObserver::new(self.config.observer);
         observer.observe(data);
@@ -466,6 +482,7 @@ impl DynamicQuantizer {
     }
 
     /// Dequantize back to float.
+    #[must_use] 
     pub fn dequantize(&self, data: &[i8], scale: f32, zero_point: f32) -> Vec<f32> {
         data.iter()
             .map(|&q| (f32::from(q) - zero_point) * scale)
@@ -494,6 +511,7 @@ pub struct MixedPrecision {
 
 impl MixedPrecision {
     /// Create mixed precision manager.
+    #[must_use] 
     pub fn new() -> Self {
         Self {
             loss_scale: 65536.0,
@@ -506,6 +524,7 @@ impl MixedPrecision {
     }
 
     /// Scale loss for backward pass.
+    #[must_use] 
     pub fn scale_loss(&self, loss: f32) -> f32 {
         loss * self.loss_scale
     }
@@ -519,6 +538,7 @@ impl MixedPrecision {
     }
 
     /// Check for overflow in gradients.
+    #[must_use] 
     pub fn check_overflow(&self, grads: &[f32]) -> bool {
         grads.iter().any(|&g| !g.is_finite())
     }
@@ -538,6 +558,7 @@ impl MixedPrecision {
     }
 
     /// Get current loss scale.
+    #[must_use] 
     pub fn loss_scale(&self) -> f32 {
         self.loss_scale
     }

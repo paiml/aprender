@@ -219,7 +219,7 @@ pub fn tensor_hex_dump(tensor: &[f32], config: &HexDumpConfig) -> String {
 pub struct LayerInfo {
     /// Layer name
     pub name: String,
-    /// Layer type (e.g., "Conv2d", "Linear", "LayerNorm")
+    /// Layer type (e.g., "Conv2d", "Linear", "`LayerNorm`")
     pub layer_type: String,
     /// Input shape
     pub input_shape: Vec<usize>,

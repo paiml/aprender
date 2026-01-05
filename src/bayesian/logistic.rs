@@ -9,11 +9,11 @@
 //! Prior: β ~ N(0, λ^(-1)I), where λ is the precision (inverse variance)
 //!
 //! The posterior is approximated as:
-//! β|y,X ~ N(β_MAP, H^(-1))
+//! β|y,X ~ `N(β_MAP`, H^(-1))
 //!
 //! where:
-//! - β_MAP is the maximum a posteriori estimate
-//! - H is the Hessian of the negative log posterior at β_MAP
+//! - `β_MAP` is the maximum a posteriori estimate
+//! - H is the Hessian of the negative log posterior at `β_MAP`
 
 use crate::error::{AprenderError, Result};
 use crate::primitives::{Matrix, Vector};
@@ -49,7 +49,7 @@ pub struct BayesianLogisticRegression {
     /// Convergence tolerance
     tol: f32,
 
-    /// MAP estimate of coefficients (β_MAP)
+    /// MAP estimate of coefficients (`β_MAP`)
     coefficients_map: Option<Vec<f32>>,
 
     /// Posterior covariance H^(-1) (inverse Hessian at MAP)
@@ -72,6 +72,7 @@ impl BayesianLogisticRegression {
     ///
     /// let model = BayesianLogisticRegression::new(1.0);
     /// ```
+    #[must_use] 
     pub fn new(prior_precision: f32) -> Self {
         Self {
             prior_precision,
@@ -110,18 +111,20 @@ impl BayesianLogisticRegression {
     }
 
     /// Returns the MAP estimate of coefficients (available after fitting).
+    #[must_use] 
     pub fn coefficients_map(&self) -> Option<&[f32]> {
         self.coefficients_map.as_deref()
     }
 
     /// Returns the posterior covariance matrix (available after fitting).
+    #[must_use] 
     pub fn posterior_covariance(&self) -> Option<&[Vec<f32>]> {
         self.posterior_covariance.as_deref()
     }
 
     /// Fits the Bayesian Logistic Regression using Laplace approximation.
     ///
-    /// Finds the MAP estimate β_MAP and computes the Hessian for uncertainty.
+    /// Finds the MAP estimate `β_MAP` and computes the Hessian for uncertainty.
     ///
     /// # Arguments
     ///
@@ -250,7 +253,7 @@ impl BayesianLogisticRegression {
     ///
     /// # Arguments
     ///
-    /// * `x_test` - Test feature matrix (n_test × p)
+    /// * `x_test` - Test feature matrix (`n_test` × p)
     ///
     /// # Returns
     ///
@@ -303,12 +306,12 @@ impl BayesianLogisticRegression {
     ///
     /// # Arguments
     ///
-    /// * `x_test` - Test feature matrix (n_test × p)
+    /// * `x_test` - Test feature matrix (`n_test` × p)
     /// * `level` - Confidence level (e.g., 0.95 for 95% credible interval)
     ///
     /// # Returns
     ///
-    /// Tuple of (lower_bounds, upper_bounds) for P(y=1|x)
+    /// Tuple of (`lower_bounds`, `upper_bounds`) for P(y=1|x)
     ///
     /// # Example
     ///

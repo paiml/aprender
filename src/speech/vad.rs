@@ -159,7 +159,7 @@ impl Vad {
     /// - `sample_rate` is zero
     /// - `samples` is empty
     ///
-    /// Returns `SpeechError::InsufficientSamples` if samples are fewer than frame_size.
+    /// Returns `SpeechError::InsufficientSamples` if samples are fewer than `frame_size`.
     pub fn detect(&self, samples: &[f32], sample_rate: u32) -> SpeechResult<Vec<VoiceSegment>> {
         // Validate inputs
         if sample_rate == 0 {

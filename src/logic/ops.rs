@@ -33,9 +33,9 @@ pub enum Nonlinearity {
     Step,
     /// Sigmoid: 1 / (1 + exp(-x))
     Sigmoid,
-    /// ReLU: max(0, x)
+    /// `ReLU`: max(0, x)
     Relu,
-    /// Softmax: exp(x_i) / sum(exp(x_j))
+    /// Softmax: `exp(x_i)` / `sum(exp(x_j))`
     Softmax,
     /// Tanh: (exp(x) - exp(-x)) / (exp(x) + exp(-x))
     Tanh,
@@ -56,6 +56,7 @@ pub enum Nonlinearity {
 ///
 /// # Returns
 /// Result tensor where result[i][k] = ∃j: t1[i][j] ∧ t2[j][k]
+#[must_use] 
 pub fn logical_join(t1: &[Vec<f64>], t2: &[Vec<f64>], mode: LogicMode) -> Vec<Vec<f64>> {
     let rows = t1.len();
     let inner = if t1.is_empty() { 0 } else { t1[0].len() };
@@ -143,6 +144,7 @@ pub fn logical_project(tensor: &[Vec<f64>], dim: usize, mode: LogicMode) -> Vec<
 ///
 /// # Continuous mode (probabilistic OR)
 /// result[i][j] = P(A) + P(B) - P(A)*P(B)
+#[must_use] 
 pub fn logical_union(t1: &[Vec<f64>], t2: &[Vec<f64>], mode: LogicMode) -> Vec<Vec<f64>> {
     let rows = t1.len();
     let cols = if t1.is_empty() { 0 } else { t1[0].len() };
@@ -173,6 +175,7 @@ pub fn logical_union(t1: &[Vec<f64>], t2: &[Vec<f64>], mode: LogicMode) -> Vec<V
 /// Logical negation (NOT): Negates tensor values
 ///
 /// result[i][j] = 1 - tensor[i][j]
+#[must_use] 
 pub fn logical_negation(tensor: &[Vec<f64>], mode: LogicMode) -> Vec<Vec<f64>> {
     let rows = tensor.len();
     let cols = if tensor.is_empty() {
@@ -203,6 +206,7 @@ pub fn logical_negation(tensor: &[Vec<f64>], mode: LogicMode) -> Vec<Vec<f64>> {
 /// Logical selection (WHERE): Filters tensor by condition
 ///
 /// result[i][j] = tensor[i][j] if condition[i][j] else 0
+#[must_use] 
 pub fn logical_select(
     tensor: &[Vec<f64>],
     condition: &[Vec<f64>],
@@ -237,11 +241,13 @@ pub fn logical_select(
 }
 
 /// Apply nonlinearity function to tensor
+#[must_use] 
 pub fn apply_nonlinearity(tensor: &[Vec<f64>], func: Nonlinearity) -> Vec<Vec<f64>> {
     apply_nonlinearity_with_temperature(tensor, func, 1.0)
 }
 
 /// Apply nonlinearity with temperature parameter
+#[must_use] 
 pub fn apply_nonlinearity_with_temperature(
     tensor: &[Vec<f64>],
     func: Nonlinearity,
@@ -276,6 +282,7 @@ pub fn apply_nonlinearity_with_temperature(
 }
 
 /// Apply nonlinearity with optional mask
+#[must_use] 
 pub fn apply_nonlinearity_with_mask(
     tensor: &[Vec<f64>],
     func: Nonlinearity,

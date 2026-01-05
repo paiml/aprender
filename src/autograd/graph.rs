@@ -30,7 +30,7 @@ pub(crate) struct TapeEntry {
 ///
 /// # Thread Safety
 ///
-/// Each thread has its own computation graph (via thread_local storage
+/// Each thread has its own computation graph (via `thread_local` storage
 /// in the parent module). This avoids synchronization overhead during
 /// single-threaded training.
 #[allow(missing_debug_implementations)]
@@ -47,6 +47,7 @@ pub struct ComputationGraph {
 
 impl ComputationGraph {
     /// Create a new empty computation graph.
+    #[must_use] 
     pub fn new() -> Self {
         Self {
             tape: Vec::new(),
@@ -85,6 +86,7 @@ impl ComputationGraph {
     }
 
     /// Get a tensor by ID.
+    #[must_use] 
     pub fn get_tensor(&self, id: TensorId) -> Option<&Tensor> {
         self.tensors.get(&id)
     }
@@ -97,7 +99,7 @@ impl ComputationGraph {
     /// Compute gradients via backpropagation.
     ///
     /// This implements the reverse-mode automatic differentiation algorithm:
-    /// 1. Start with grad_output for the output tensor
+    /// 1. Start with `grad_output` for the output tensor
     /// 2. Iterate through operations in reverse order
     /// 3. For each operation, compute gradients w.r.t. inputs
     /// 4. Accumulate gradients for tensors used multiple times
@@ -151,16 +153,19 @@ impl ComputationGraph {
     }
 
     /// Get the number of recorded operations.
+    #[must_use] 
     pub fn len(&self) -> usize {
         self.tape.len()
     }
 
     /// Check if the tape is empty.
+    #[must_use] 
     pub fn is_empty(&self) -> bool {
         self.tape.is_empty()
     }
 
     /// Get gradient for a tensor by ID (after backward).
+    #[must_use] 
     pub fn get_grad(&self, id: TensorId) -> Option<Tensor> {
         self.tensors.get(&id).and_then(|t| t.grad().cloned())
     }

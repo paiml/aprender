@@ -31,6 +31,7 @@ pub trait QueryStrategy {
 pub struct UncertaintySampling;
 
 impl UncertaintySampling {
+    #[must_use] 
     pub fn new() -> Self {
         Self
     }
@@ -53,6 +54,7 @@ impl QueryStrategy for UncertaintySampling {
 pub struct MarginSampling;
 
 impl MarginSampling {
+    #[must_use] 
     pub fn new() -> Self {
         Self
     }
@@ -80,6 +82,7 @@ impl QueryStrategy for MarginSampling {
 pub struct EntropySampling;
 
 impl EntropySampling {
+    #[must_use] 
     pub fn new() -> Self {
         Self
     }
@@ -109,11 +112,13 @@ pub struct QueryByCommittee {
 }
 
 impl QueryByCommittee {
+    #[must_use] 
     pub fn new(n_members: usize) -> Self {
         Self { n_members }
     }
 
     /// Score based on vote entropy across committee members.
+    #[must_use] 
     pub fn score_committee(&self, committee_preds: &[Vec<Vector<f32>>]) -> Vec<f32> {
         if committee_preds.is_empty() || committee_preds[0].is_empty() {
             return vec![];
@@ -151,6 +156,7 @@ impl QueryByCommittee {
             .collect()
     }
 
+    #[must_use] 
     pub fn n_members(&self) -> usize {
         self.n_members
     }
@@ -161,10 +167,12 @@ impl QueryByCommittee {
 pub struct RandomSampling;
 
 impl RandomSampling {
+    #[must_use] 
     pub fn new() -> Self {
         Self
     }
 
+    #[must_use] 
     pub fn select(&self, n_samples: usize, k: usize) -> Vec<usize> {
         use rand::seq::SliceRandom;
         let mut rng = rand::thread_rng();
@@ -197,6 +205,7 @@ pub struct CoreSetSelection {
 
 impl CoreSetSelection {
     /// Create a new core-set selector.
+    #[must_use] 
     pub fn new() -> Self {
         Self {
             labeled_indices: Vec::new(),
@@ -204,6 +213,7 @@ impl CoreSetSelection {
     }
 
     /// Create with initial labeled indices.
+    #[must_use] 
     pub fn with_labeled(labeled_indices: Vec<usize>) -> Self {
         Self { labeled_indices }
     }
@@ -275,6 +285,7 @@ impl CoreSetSelection {
     /// Compute diversity score for a set of indices.
     ///
     /// Higher score indicates more diverse selection.
+    #[must_use] 
     pub fn diversity_score(&self, embeddings: &[Vec<f32>], indices: &[usize]) -> f32 {
         if indices.len() < 2 {
             return 0.0;
@@ -329,11 +340,13 @@ pub struct ExpectedModelChange {
 
 impl ExpectedModelChange {
     /// Create a new expected model change selector.
+    #[must_use] 
     pub fn new() -> Self {
         Self { min_grad_norm: 0.0 }
     }
 
     /// Create with minimum gradient norm threshold.
+    #[must_use] 
     pub fn with_min_grad(min_grad_norm: f32) -> Self {
         Self { min_grad_norm }
     }
@@ -341,6 +354,7 @@ impl ExpectedModelChange {
     /// Score samples by expected gradient magnitude.
     ///
     /// Uses prediction uncertainty as proxy for gradient magnitude.
+    #[must_use] 
     pub fn score(&self, predictions: &[Vector<f32>], gradient_norms: Option<&[f32]>) -> Vec<f32> {
         if let Some(norms) = gradient_norms {
             // Use actual gradient norms if provided
@@ -366,6 +380,7 @@ impl ExpectedModelChange {
     }
 
     /// Select top-k samples by expected model change.
+    #[must_use] 
     pub fn select(&self, predictions: &[Vector<f32>], k: usize) -> Vec<usize> {
         let scores = self.score(predictions, None);
         let mut indices: Vec<usize> = (0..scores.len()).collect();

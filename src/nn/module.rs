@@ -1,7 +1,7 @@
 //! Module trait for neural network layers.
 //!
 //! The Module trait defines the interface for all neural network components,
-//! following PyTorch's design (Paszke et al., 2019).
+//! following `PyTorch`'s design (Paszke et al., 2019).
 
 use crate::autograd::Tensor;
 
@@ -62,7 +62,7 @@ pub trait Module: Send + Sync {
     /// Set the module to training mode.
     ///
     /// This affects layers like Dropout (active during training)
-    /// and BatchNorm (uses batch statistics during training).
+    /// and `BatchNorm` (uses batch statistics during training).
     fn train(&mut self) {
         // Default: no-op for stateless modules
     }
@@ -70,7 +70,7 @@ pub trait Module: Send + Sync {
     /// Set the module to evaluation mode.
     ///
     /// This affects layers like Dropout (disabled during eval)
-    /// and BatchNorm (uses running statistics during eval).
+    /// and `BatchNorm` (uses running statistics during eval).
     fn eval(&mut self) {
         // Default: no-op for stateless modules
     }

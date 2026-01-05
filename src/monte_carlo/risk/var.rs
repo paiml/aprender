@@ -1,7 +1,7 @@
-//! Value at Risk (VaR) calculations
+//! Value at Risk (`VaR`) calculations
 //!
-//! VaR at confidence level α is the threshold value such that the probability
-//! of loss exceeding VaR is (1-α).
+//! `VaR` at confidence level α is the threshold value such that the probability
+//! of loss exceeding `VaR` is (1-α).
 //!
 //! Reference: Jorion (2006), "Value at Risk"
 
@@ -13,15 +13,15 @@ use crate::monte_carlo::error::{MonteCarloError, Result};
 pub struct VaR;
 
 impl VaR {
-    /// Calculate historical VaR from returns
+    /// Calculate historical `VaR` from returns
     ///
     /// VaR(α) = -Quantile(Returns, 1-α)
     ///
-    /// Returns VaR as a positive value (loss)
+    /// Returns `VaR` as a positive value (loss)
     ///
     /// # Arguments
     /// * `returns` - Vector of returns (can be positive or negative)
-    /// * `confidence` - Confidence level (e.g., 0.95 for 95% VaR)
+    /// * `confidence` - Confidence level (e.g., 0.95 for 95% `VaR`)
     ///
     /// # Example
     /// ```
@@ -45,9 +45,9 @@ impl VaR {
         -loss_quantile.min(0.0)
     }
 
-    /// Calculate parametric VaR assuming normal distribution
+    /// Calculate parametric `VaR` assuming normal distribution
     ///
-    /// VaR = -μ - σ × z_α where z_α = Φ⁻¹(1-α) < 0
+    /// `VaR` = -μ - σ × `z_α` where `z_α` = Φ⁻¹(1-α) < 0
     ///
     /// # Arguments
     /// * `mean` - Mean of returns
@@ -61,7 +61,7 @@ impl VaR {
         -(mean + std * z).min(0.0)
     }
 
-    /// Calculate Cornish-Fisher VaR (accounts for skewness and kurtosis)
+    /// Calculate Cornish-Fisher `VaR` (accounts for skewness and kurtosis)
     ///
     /// Adjusts the normal quantile for non-normality
     #[must_use]
@@ -83,7 +83,7 @@ impl VaR {
         -(mean + std * z_cf).min(0.0)
     }
 
-    /// Calculate VaR from simulation paths
+    /// Calculate `VaR` from simulation paths
     #[must_use]
     pub fn from_paths(paths: &[SimulationPath], confidence: f64) -> f64 {
         let returns: Vec<f64> = paths

@@ -20,6 +20,7 @@ pub struct MaskedPrediction {
 }
 
 impl MaskedPrediction {
+    #[must_use] 
     pub fn new(mask_prob: f32, mask_token_id: usize) -> Self {
         assert!((0.0..1.0).contains(&mask_prob));
         Self {
@@ -28,7 +29,8 @@ impl MaskedPrediction {
         }
     }
 
-    /// Apply masking to input sequence, returns (masked_input, mask_positions).
+    /// Apply masking to input sequence, returns (`masked_input`, `mask_positions`).
+    #[must_use] 
     pub fn apply(&self, input: &[usize], seed: u64) -> (Vec<usize>, Vec<usize>) {
         let mut rng = StdRng::seed_from_u64(seed);
         let mut masked = input.to_vec();
@@ -43,6 +45,7 @@ impl MaskedPrediction {
         (masked, positions)
     }
 
+    #[must_use] 
     pub fn mask_prob(&self) -> f32 {
         self.mask_prob
     }
@@ -53,11 +56,13 @@ impl MaskedPrediction {
 pub struct RotationPrediction;
 
 impl RotationPrediction {
+    #[must_use] 
     pub fn new() -> Self {
         Self
     }
 
     /// Rotate flat image `[C*H*W]` by rotation class (0-3).
+    #[must_use] 
     pub fn rotate(&self, image: &[f32], h: usize, w: usize, c: usize, rot: usize) -> Vec<f32> {
         let mut result = vec![0.0; image.len()];
         for ch in 0..c {
@@ -81,7 +86,8 @@ impl RotationPrediction {
         result
     }
 
-    /// Generate random rotation and return (rotated_image, label).
+    /// Generate random rotation and return (`rotated_image`, label).
+    #[must_use] 
     pub fn generate_task(
         &self,
         image: &[f32],
@@ -110,6 +116,7 @@ pub struct JigsawPuzzle {
 }
 
 impl JigsawPuzzle {
+    #[must_use] 
     pub fn new(grid_size: usize, num_permutations: usize) -> Self {
         Self {
             grid_size,
@@ -117,7 +124,8 @@ impl JigsawPuzzle {
         }
     }
 
-    /// Shuffle patches and return (shuffled_patches, permutation_idx).
+    /// Shuffle patches and return (`shuffled_patches`, `permutation_idx`).
+    #[must_use] 
     pub fn generate_task(
         &self,
         image: &[f32],
@@ -162,6 +170,7 @@ impl JigsawPuzzle {
         (patches, perm_idx)
     }
 
+    #[must_use] 
     pub fn grid_size(&self) -> usize {
         self.grid_size
     }
@@ -174,11 +183,13 @@ pub struct ContrastiveTask {
 }
 
 impl ContrastiveTask {
+    #[must_use] 
     pub fn new(temperature: f32) -> Self {
         Self { temperature }
     }
 
-    /// Compute InfoNCE loss for positive pair against negatives.
+    /// Compute `InfoNCE` loss for positive pair against negatives.
+    #[must_use] 
     pub fn info_nce_loss(&self, anchor: &[f32], positive: &[f32], negatives: &[Vec<f32>]) -> f32 {
         let pos_sim = cosine_sim(anchor, positive) / self.temperature;
 
@@ -199,6 +210,7 @@ impl ContrastiveTask {
         -pos_sim + log_sum_exp
     }
 
+    #[must_use] 
     pub fn temperature(&self) -> f32 {
         self.temperature
     }
@@ -211,7 +223,7 @@ fn cosine_sim(a: &[f32], b: &[f32]) -> f32 {
     dot / (na * nb + 1e-10)
 }
 
-/// SimCLR framework (Chen et al., 2020).
+/// `SimCLR` framework (Chen et al., 2020).
 ///
 /// Simple framework for contrastive learning of visual representations:
 /// 1. Apply two random augmentations to create positive pairs
@@ -230,7 +242,8 @@ pub struct SimCLR {
 }
 
 impl SimCLR {
-    /// Create SimCLR framework.
+    /// Create `SimCLR` framework.
+    #[must_use] 
     pub fn new(temperature: f32, projection_dim: usize) -> Self {
         Self {
             temperature,
@@ -247,6 +260,7 @@ impl SimCLR {
     ///
     /// For each sample i, its positive pair is `z_j[i]` and negatives are
     /// all other samples in the batch.
+    #[must_use] 
     pub fn nt_xent_loss(&self, z_i: &[Vec<f32>], z_j: &[Vec<f32>]) -> f32 {
         let batch_size = z_i.len();
         assert_eq!(batch_size, z_j.len());
@@ -300,16 +314,18 @@ impl SimCLR {
         total_loss / (2.0 * batch_size as f32)
     }
 
+    #[must_use] 
     pub fn temperature(&self) -> f32 {
         self.temperature
     }
 
+    #[must_use] 
     pub fn projection_dim(&self) -> usize {
         self.projection_dim
     }
 }
 
-/// MoCo (Momentum Contrast) framework (He et al., 2020).
+/// `MoCo` (Momentum Contrast) framework (He et al., 2020).
 ///
 /// Uses a momentum encoder and a queue of negative samples:
 /// - Slowly-evolving momentum encoder provides consistent targets
@@ -321,7 +337,7 @@ impl SimCLR {
 /// Representation Learning. CVPR.
 #[derive(Debug, Clone)]
 pub struct MoCo {
-    /// Temperature for InfoNCE
+    /// Temperature for `InfoNCE`
     temperature: f32,
     /// Momentum coefficient (0.999 typical)
     momentum: f32,
@@ -337,7 +353,8 @@ pub struct MoCo {
 }
 
 impl MoCo {
-    /// Create MoCo framework.
+    /// Create `MoCo` framework.
+    #[must_use] 
     pub fn new(temperature: f32, momentum: f32, queue_size: usize, dim: usize) -> Self {
         Self {
             temperature,
@@ -379,6 +396,7 @@ impl MoCo {
     ///
     /// * `queries` - Query embeddings from encoder
     /// * `keys` - Key embeddings from momentum encoder (positive)
+    #[must_use] 
     pub fn contrastive_loss(&self, queries: &[Vec<f32>], keys: &[Vec<f32>]) -> f32 {
         let batch_size = queries.len();
         if batch_size == 0 || self.queue.is_empty() {
@@ -406,10 +424,12 @@ impl MoCo {
         total_loss / batch_size as f32
     }
 
+    #[must_use] 
     pub fn queue_len(&self) -> usize {
         self.queue.len()
     }
 
+    #[must_use] 
     pub fn momentum(&self) -> f32 {
         self.momentum
     }
@@ -425,7 +445,7 @@ impl MoCo {
 /// # Reference
 ///
 /// Grill, J.B., et al. (2020). Bootstrap Your Own Latent: A New Approach
-/// to Self-Supervised Learning. NeurIPS.
+/// to Self-Supervised Learning. `NeurIPS`.
 #[derive(Debug, Clone)]
 pub struct BYOL {
     /// Momentum coefficient
@@ -434,6 +454,7 @@ pub struct BYOL {
 
 impl BYOL {
     /// Create BYOL framework.
+    #[must_use] 
     pub fn new(momentum: f32) -> Self {
         Self { momentum }
     }
@@ -444,6 +465,7 @@ impl BYOL {
     ///
     /// * `online_pred` - Predictions from online network
     /// * `target_proj` - Projections from target network (stop gradient)
+    #[must_use] 
     pub fn loss(&self, online_pred: &[Vec<f32>], target_proj: &[Vec<f32>]) -> f32 {
         assert_eq!(online_pred.len(), target_proj.len());
         let batch_size = online_pred.len();
@@ -472,6 +494,7 @@ impl BYOL {
     }
 
     /// Symmetric BYOL loss (both views predict each other).
+    #[must_use] 
     pub fn symmetric_loss(
         &self,
         pred_1: &[Vec<f32>],
@@ -489,12 +512,13 @@ impl BYOL {
         }
     }
 
+    #[must_use] 
     pub fn momentum(&self) -> f32 {
         self.momentum
     }
 }
 
-/// SimCSE for text embeddings (Gao et al., 2021).
+/// `SimCSE` for text embeddings (Gao et al., 2021).
 ///
 /// Simple Contrastive Learning of Sentence Embeddings:
 /// - Uses dropout as minimal augmentation
@@ -503,7 +527,7 @@ impl BYOL {
 ///
 /// # Reference
 ///
-/// Gao, T., et al. (2021). SimCSE: Simple Contrastive Learning of
+/// Gao, T., et al. (2021). `SimCSE`: Simple Contrastive Learning of
 /// Sentence Embeddings. EMNLP.
 #[derive(Debug, Clone)]
 pub struct SimCSE {
@@ -512,12 +536,13 @@ pub struct SimCSE {
 }
 
 impl SimCSE {
-    /// Create SimCSE.
+    /// Create `SimCSE`.
+    #[must_use] 
     pub fn new(temperature: f32) -> Self {
         Self { temperature }
     }
 
-    /// Compute unsupervised SimCSE loss.
+    /// Compute unsupervised `SimCSE` loss.
     ///
     /// # Arguments
     ///
@@ -526,6 +551,7 @@ impl SimCSE {
     ///
     /// Same index = positive pair, different indices = negatives.
     #[allow(clippy::needless_range_loop)]
+    #[must_use] 
     pub fn unsupervised_loss(&self, emb_1: &[Vec<f32>], emb_2: &[Vec<f32>]) -> f32 {
         assert_eq!(emb_1.len(), emb_2.len());
         let batch_size = emb_1.len();
@@ -555,7 +581,7 @@ impl SimCSE {
         total_loss / batch_size as f32
     }
 
-    /// Compute supervised SimCSE loss with hard negatives.
+    /// Compute supervised `SimCSE` loss with hard negatives.
     ///
     /// # Arguments
     ///
@@ -563,6 +589,7 @@ impl SimCSE {
     /// * `positives` - Positive (entailment) embeddings
     /// * `negatives` - Hard negative (contradiction) embeddings
     #[allow(clippy::needless_range_loop)]
+    #[must_use] 
     pub fn supervised_loss(
         &self,
         anchors: &[Vec<f32>],
@@ -603,6 +630,7 @@ impl SimCSE {
         total_loss / batch_size as f32
     }
 
+    #[must_use] 
     pub fn temperature(&self) -> f32 {
         self.temperature
     }

@@ -8,7 +8,7 @@ use std::fmt;
 
 /// Synthetic data generation hyperparameters.
 ///
-/// These parameters can be added to an AutoML search space to jointly
+/// These parameters can be added to an `AutoML` search space to jointly
 /// optimize data augmentation alongside model hyperparameters.
 ///
 /// # Example

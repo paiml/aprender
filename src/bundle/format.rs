@@ -43,7 +43,7 @@ fn format_error(msg: impl Into<String>) -> AprenderError {
 pub struct BundleFormat;
 
 impl BundleFormat {
-    /// Header size: magic (8) + version (4) + manifest_len (8) = 20 bytes.
+    /// Header size: magic (8) + version (4) + `manifest_len` (8) = 20 bytes.
     pub const HEADER_SIZE: usize = 20;
 
     /// Validate magic bytes.

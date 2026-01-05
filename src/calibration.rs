@@ -23,6 +23,7 @@ impl Default for TemperatureScaling {
 }
 
 impl TemperatureScaling {
+    #[must_use] 
     pub fn new() -> Self {
         Self { temperature: 1.0 }
     }
@@ -53,6 +54,7 @@ impl TemperatureScaling {
     }
 
     /// Calibrate logits by dividing by temperature.
+    #[must_use] 
     pub fn calibrate(&self, logits: &Vector<f32>) -> Vector<f32> {
         let scaled: Vec<f32> = logits
             .as_slice()
@@ -63,11 +65,13 @@ impl TemperatureScaling {
     }
 
     /// Get calibrated probabilities.
+    #[must_use] 
     pub fn predict_proba(&self, logits: &Vector<f32>) -> Vector<f32> {
         let calibrated = self.calibrate(logits);
         Vector::from_slice(&softmax(calibrated.as_slice()))
     }
 
+    #[must_use] 
     pub fn temperature(&self) -> f32 {
         self.temperature
     }
@@ -87,6 +91,7 @@ impl Default for PlattScaling {
 }
 
 impl PlattScaling {
+    #[must_use] 
     pub fn new() -> Self {
         Self { a: 1.0, b: 0.0 }
     }
@@ -118,16 +123,19 @@ impl PlattScaling {
     }
 
     /// Get calibrated probability.
+    #[must_use] 
     pub fn predict_proba(&self, logit: f32) -> f32 {
         sigmoid(self.a * logit + self.b)
     }
 
+    #[must_use] 
     pub fn params(&self) -> (f32, f32) {
         (self.a, self.b)
     }
 }
 
 /// Expected Calibration Error (ECE) - measures calibration quality.
+#[must_use] 
 pub fn expected_calibration_error(predictions: &[f32], labels: &[bool], n_bins: usize) -> f32 {
     let mut bin_sums = vec![0.0; n_bins];
     let mut bin_correct = vec![0.0; n_bins];
@@ -154,6 +162,7 @@ pub fn expected_calibration_error(predictions: &[f32], labels: &[bool], n_bins: 
 }
 
 /// Maximum Calibration Error (MCE).
+#[must_use] 
 pub fn maximum_calibration_error(predictions: &[f32], labels: &[bool], n_bins: usize) -> f32 {
     let mut bin_sums = vec![0.0; n_bins];
     let mut bin_correct = vec![0.0; n_bins];
@@ -213,6 +222,7 @@ impl Default for IsotonicRegression {
 
 impl IsotonicRegression {
     /// Create a new isotonic regression calibrator.
+    #[must_use] 
     pub fn new() -> Self {
         Self {
             thresholds: Vec::new(),
@@ -277,6 +287,7 @@ impl IsotonicRegression {
     }
 
     /// Get calibrated probability for a prediction.
+    #[must_use] 
     pub fn predict(&self, prediction: f32) -> f32 {
         if self.thresholds.is_empty() {
             return prediction;
@@ -306,6 +317,7 @@ impl IsotonicRegression {
     }
 
     /// Get calibrated probabilities for multiple predictions.
+    #[must_use] 
     pub fn predict_batch(&self, predictions: &[f32]) -> Vec<f32> {
         predictions.iter().map(|&p| self.predict(p)).collect()
     }
@@ -313,7 +325,8 @@ impl IsotonicRegression {
 
 /// Generate reliability diagram data.
 ///
-/// Returns (mean_predicted_prob, fraction_positive) for each bin.
+/// Returns (`mean_predicted_prob`, `fraction_positive`) for each bin.
+#[must_use] 
 pub fn reliability_diagram(predictions: &[f32], labels: &[bool], n_bins: usize) -> Vec<(f32, f32)> {
     let mut bins: Vec<(f32, f32, usize)> = vec![(0.0, 0.0, 0); n_bins]; // (sum_pred, sum_pos, count)
 
@@ -345,6 +358,7 @@ pub fn reliability_diagram(predictions: &[f32], labels: &[bool], n_bins: usize) 
 /// ```
 ///
 /// Lower is better. Perfect calibration = 0.
+#[must_use] 
 pub fn brier_score(predictions: &[f32], labels: &[bool]) -> f32 {
     let n = predictions.len() as f32;
     predictions

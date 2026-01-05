@@ -6,7 +6,7 @@
 //! # Available Algorithms
 //!
 //! - **ICA** (Independent Component Analysis): Separates multivariate signals into
-//!   independent, non-Gaussian components using the FastICA algorithm
+//!   independent, non-Gaussian components using the `FastICA` algorithm
 //! - **PCA** (Principal Component Analysis): Available in the main crate
 
 pub mod ica;

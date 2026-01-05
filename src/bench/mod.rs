@@ -315,7 +315,7 @@ impl ExampleResult {
 /// Status of an example evaluation
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ExampleStatus {
-    /// Solved within max_turns
+    /// Solved within `max_turns`
     Solved {
         /// Turn on which it was solved
         turn: u32,

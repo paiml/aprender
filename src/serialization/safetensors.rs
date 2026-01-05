@@ -1,6 +1,6 @@
-//! SafeTensors format implementation for model serialization.
+//! `SafeTensors` format implementation for model serialization.
 //!
-//! Implements the SafeTensors format:
+//! Implements the `SafeTensors` format:
 //! ```text
 //! [8-byte header: u64 metadata length (little-endian)]
 //! [JSON metadata: tensor names, dtypes, shapes, data_offsets]
@@ -8,9 +8,9 @@
 //! ```
 //!
 //! Compatible with:
-//! - HuggingFace ecosystem
+//! - `HuggingFace` ecosystem
 //! - Ollama (can convert to GGUF)
-//! - PyTorch, TensorFlow
+//! - `PyTorch`, TensorFlow
 //! - realizar inference engine
 
 use crate::bundle::MappedFile;
@@ -19,7 +19,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
-/// Metadata for a single tensor in SafeTensors format.
+/// Metadata for a single tensor in `SafeTensors` format.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TensorMetadata {
     /// Data type of the tensor (e.g., "F32").
@@ -30,11 +30,11 @@ pub struct TensorMetadata {
     pub data_offsets: [usize; 2],
 }
 
-/// Complete SafeTensors metadata structure.
-/// Uses BTreeMap for deterministic JSON serialization (sorted keys).
+/// Complete `SafeTensors` metadata structure.
+/// Uses `BTreeMap` for deterministic JSON serialization (sorted keys).
 pub type SafeTensorsMetadata = BTreeMap<String, TensorMetadata>;
 
-/// Saves tensors to SafeTensors format.
+/// Saves tensors to `SafeTensors` format.
 ///
 /// # Arguments
 ///
@@ -98,7 +98,7 @@ pub fn save_safetensors<P: AsRef<Path>>(
     Ok(())
 }
 
-/// Loads tensors from SafeTensors format.
+/// Loads tensors from `SafeTensors` format.
 ///
 /// # Arguments
 ///
@@ -125,7 +125,7 @@ pub fn load_safetensors<P: AsRef<Path>>(path: P) -> Result<(SafeTensorsMetadata,
     Ok((metadata, raw_data))
 }
 
-/// Memory-mapped SafeTensors file for zero-copy tensor access.
+/// Memory-mapped `SafeTensors` file for zero-copy tensor access.
 ///
 /// Uses `bundle::MappedFile` for efficient large model loading.
 /// Tensors are accessed directly from the mapped memory without copying.
@@ -149,7 +149,7 @@ pub struct MappedSafeTensors {
 }
 
 impl MappedSafeTensors {
-    /// Open a SafeTensors file with memory mapping.
+    /// Open a `SafeTensors` file with memory mapping.
     ///
     /// # Errors
     ///
@@ -288,11 +288,11 @@ fn parse_metadata(bytes: &[u8], metadata_len: usize) -> Result<SafeTensorsMetada
     Ok(metadata)
 }
 
-/// Extracts a tensor from raw SafeTensors data.
+/// Extracts a tensor from raw `SafeTensors` data.
 ///
 /// # Arguments
 ///
-/// * `raw_data` - Raw tensor bytes from SafeTensors file
+/// * `raw_data` - Raw tensor bytes from `SafeTensors` file
 /// * `tensor_meta` - Metadata for the tensor to extract
 ///
 /// # Returns

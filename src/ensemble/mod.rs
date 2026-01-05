@@ -1,4 +1,4 @@
-//! Mixture of Experts (MoE) ensemble learning (GH-101)
+//! Mixture of Experts (`MoE`) ensemble learning (GH-101)
 
 mod gating;
 mod moe;

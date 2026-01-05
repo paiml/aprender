@@ -33,6 +33,7 @@ pub enum LFOutput {
 
 impl LFOutput {
     /// Convert to i32 representation (-1 for abstain).
+    #[must_use] 
     pub fn to_i32(&self) -> i32 {
         match self {
             LFOutput::Abstain => ABSTAIN,
@@ -41,6 +42,7 @@ impl LFOutput {
     }
 
     /// Create from i32 (-1 means abstain).
+    #[must_use] 
     pub fn from_i32(v: i32) -> Self {
         if v < 0 {
             LFOutput::Abstain
@@ -78,9 +80,9 @@ pub struct LabelModel {
     n_classes: usize,
     /// Number of labeling functions
     n_lfs: usize,
-    /// Estimated accuracy per LF per class [n_lfs x n_classes]
+    /// Estimated accuracy per LF per class [`n_lfs` x `n_classes`]
     accuracies: Vec<Vec<f32>>,
-    /// Prior class probabilities [n_classes]
+    /// Prior class probabilities [`n_classes`]
     class_priors: Vec<f32>,
 }
 
@@ -91,6 +93,7 @@ impl LabelModel {
     ///
     /// * `n_classes` - Number of output classes
     /// * `n_lfs` - Number of labeling functions
+    #[must_use] 
     pub fn new(n_classes: usize, n_lfs: usize) -> Self {
         Self {
             n_classes,
@@ -104,7 +107,7 @@ impl LabelModel {
     ///
     /// # Arguments
     ///
-    /// * `lf_matrix` - Matrix of LF outputs [n_samples x n_lfs]
+    /// * `lf_matrix` - Matrix of LF outputs [`n_samples` x `n_lfs`]
     /// * `n_epochs` - Number of EM iterations
     /// * `lr` - Learning rate for parameter updates
     pub fn fit(&mut self, lf_matrix: &[Vec<LFOutput>], n_epochs: usize, lr: f32) {
@@ -196,6 +199,7 @@ impl LabelModel {
     }
 
     /// Get probabilistic labels for samples.
+    #[must_use] 
     pub fn predict_proba(&self, lf_matrix: &[Vec<LFOutput>]) -> Vec<Vector<f32>> {
         lf_matrix
             .iter()
@@ -230,6 +234,7 @@ impl LabelModel {
     }
 
     /// Get hard label predictions (argmax of probabilities).
+    #[must_use] 
     pub fn predict(&self, lf_matrix: &[Vec<LFOutput>]) -> Vec<usize> {
         self.predict_proba(lf_matrix)
             .into_iter()
@@ -245,16 +250,19 @@ impl LabelModel {
     }
 
     /// Get estimated LF accuracies.
+    #[must_use] 
     pub fn get_accuracies(&self) -> &[Vec<f32>] {
         &self.accuracies
     }
 
     /// Get estimated class priors.
+    #[must_use] 
     pub fn get_class_priors(&self) -> &[f32] {
         &self.class_priors
     }
 
     /// Get coverage of each LF (fraction of samples with non-abstain votes).
+    #[must_use] 
     pub fn get_lf_coverage(&self, lf_matrix: &[Vec<LFOutput>]) -> Vec<f32> {
         let n_samples = lf_matrix.len() as f32;
         if n_samples == 0.0 {
@@ -295,6 +303,7 @@ pub struct ConfidentLearning {
 
 impl ConfidentLearning {
     /// Create new confident learning instance.
+    #[must_use] 
     pub fn new(n_classes: usize) -> Self {
         Self {
             n_classes,
@@ -303,6 +312,7 @@ impl ConfidentLearning {
     }
 
     /// Create with custom threshold.
+    #[must_use] 
     pub fn with_threshold(n_classes: usize, threshold: f32) -> Self {
         Self {
             n_classes,
@@ -320,6 +330,7 @@ impl ConfidentLearning {
     /// # Returns
     ///
     /// Indices of samples likely to be mislabeled.
+    #[must_use] 
     pub fn find_label_issues(&self, labels: &[usize], pred_probs: &[Vector<f32>]) -> Vec<usize> {
         let mut issues = Vec::new();
 
@@ -346,6 +357,7 @@ impl ConfidentLearning {
     ///
     /// Element (i,j) represents count of samples with noisy label i
     /// and confident predicted label j.
+    #[must_use] 
     pub fn compute_confident_joint(
         &self,
         labels: &[usize],
@@ -406,6 +418,7 @@ impl ConfidentLearning {
     }
 
     /// Estimate noise transition matrix P(noisy=i | true=j).
+    #[must_use] 
     pub fn estimate_noise_matrix(
         &self,
         labels: &[usize],

@@ -3,8 +3,8 @@
 //! Implements Section 13 of APR-SPEC.md: Import/Convert Pipeline
 //!
 //! Supports:
-//! - HuggingFace Hub downloads (hf://org/repo)
-//! - SafeTensors conversion
+//! - `HuggingFace` Hub downloads (<hf://org/repo>)
+//! - `SafeTensors` conversion
 //! - Inline validation during conversion
 //! - Quantization and compression
 
@@ -28,7 +28,7 @@ use std::path::{Path, PathBuf};
 /// Parsed source location
 #[derive(Debug, Clone, PartialEq)]
 pub enum Source {
-    /// HuggingFace Hub: hf://org/repo or hf://org/repo/file.safetensors
+    /// `HuggingFace` Hub: <hf://org/repo> or <hf://org/repo/file.safetensors>
     HuggingFace {
         org: String,
         repo: String,
@@ -74,6 +74,7 @@ impl Source {
     }
 
     /// Get the default model file for this source
+    #[must_use] 
     pub fn default_file(&self) -> &str {
         match self {
             Self::HuggingFace { file: Some(f), .. } => f,
@@ -94,18 +95,19 @@ pub enum Architecture {
     /// Auto-detect from tensor names
     #[default]
     Auto,
-    /// OpenAI Whisper
+    /// `OpenAI` Whisper
     Whisper,
-    /// Meta LLaMA
+    /// Meta `LLaMA`
     Llama,
     /// Google BERT
     Bert,
-    /// Alibaba Qwen2 (includes Qwen2.5, QwenCoder)
+    /// Alibaba Qwen2 (includes Qwen2.5, `QwenCoder`)
     Qwen2,
 }
 
 impl Architecture {
     /// Map a source tensor name to APR canonical name
+    #[must_use] 
     pub fn map_name(&self, source_name: &str) -> String {
         match self {
             Self::Auto => Self::auto_map_name(source_name),
@@ -163,14 +165,14 @@ pub struct TensorExpectation {
 }
 
 impl TensorExpectation {
-    /// LayerNorm weight: gamma initialized to ~1.0
+    /// `LayerNorm` weight: gamma initialized to ~1.0
     pub const LAYER_NORM_WEIGHT: Self = Self {
         mean_range: (0.5, 3.0),
         std_range: Some((0.0, 2.0)),
         description: "LayerNorm weight (gamma)",
     };
 
-    /// LayerNorm bias: beta initialized to ~0.0
+    /// `LayerNorm` bias: beta initialized to ~0.0
     pub const LAYER_NORM_BIAS: Self = Self {
         mean_range: (-0.5, 0.5),
         std_range: Some((0.0, 1.0)),
@@ -191,8 +193,8 @@ impl TensorExpectation {
         description: "Embedding",
     };
 
-    /// RMSNorm weight: gamma initialized to ~1.0 but varies after training
-    /// Trained models show means from ~0.0 to ~2.0 (TinyLlama: 0.005-0.5)
+    /// `RMSNorm` weight: gamma initialized to ~1.0 but varies after training
+    /// Trained models show means from ~0.0 to ~2.0 (`TinyLlama`: 0.005-0.5)
     pub const RMSNORM_WEIGHT: Self = Self {
         mean_range: (-0.5, 3.0), // Wide range for trained models
         std_range: Some((0.0, 2.0)),
@@ -200,6 +202,7 @@ impl TensorExpectation {
     };
 
     /// Get expectation for a tensor name
+    #[must_use] 
     pub fn for_tensor(name: &str) -> Option<Self> {
         // RMSNorm patterns (LLaMA, Qwen2, TinyLlama) - check BEFORE generic LayerNorm
         // These use gamma initialized to 1.0, not the 0-centered LayerNorm
@@ -288,6 +291,7 @@ impl Default for ValidationConfig {
 
 impl ValidationConfig {
     /// Create strict validation config
+    #[must_use] 
     pub fn strict() -> Self {
         Self::Strict
     }
@@ -497,7 +501,7 @@ fn parse_import_error(error_msg: &str, resource: &str) -> ImportError {
 
 /// Parsed sharded model index (model.safetensors.index.json)
 ///
-/// HuggingFace uses this format for large models split across multiple shards.
+/// `HuggingFace` uses this format for large models split across multiple shards.
 /// Example: Llama-2-7b has 2 shards, Llama-2-70b has 15 shards.
 #[derive(Debug, Clone)]
 pub struct ShardedIndex {
@@ -680,6 +684,7 @@ pub struct AprConverter {
 
 impl AprConverter {
     /// Create a new converter
+    #[must_use] 
     pub fn new() -> Self {
         Self {
             source: None,
@@ -697,24 +702,28 @@ impl AprConverter {
     }
 
     /// Set the architecture
+    #[must_use] 
     pub fn architecture(mut self, arch: Architecture) -> Self {
         self.architecture = arch;
         self
     }
 
     /// Set validation config
+    #[must_use] 
     pub fn validate(mut self, config: ValidationConfig) -> Self {
         self.validation = config;
         self
     }
 
     /// Set quantization
+    #[must_use] 
     pub fn quantize(mut self, quant: QuantizationType) -> Self {
         self.quantize = Some(quant);
         self
     }
 
     /// Set compression
+    #[must_use] 
     pub fn compress(mut self, comp: Compression) -> Self {
         self.compress = Some(comp);
         self
@@ -750,7 +759,7 @@ impl Default for AprConverter {
 /// Import a model from source to APR format
 ///
 /// # Arguments
-/// * `source` - Source path: local file, hf://org/repo, or URL
+/// * `source` - Source path: local file, <hf://org/repo>, or URL
 /// * `output` - Output APR file path
 /// * `options` - Import configuration
 ///
@@ -857,7 +866,7 @@ fn get_xdg_cache_dir() -> PathBuf {
         })
 }
 
-/// Get HuggingFace cache directory.
+/// Get `HuggingFace` cache directory.
 fn get_hf_cache_dir() -> PathBuf {
     std::env::var("HF_HOME")
         .ok()
@@ -885,7 +894,7 @@ fn find_in_aprender_cache(
     apr_cache.exists().then_some(apr_cache)
 }
 
-/// Check HuggingFace hub cache for a file.
+/// Check `HuggingFace` hub cache for a file.
 fn find_in_hf_hub_cache(
     cache_base: &Path,
     org: &str,
@@ -959,7 +968,7 @@ fn download_from_hf(repo_id: &str, filename: &str) -> Result<PathBuf> {
     Ok(path)
 }
 
-/// Load tensors from source file (SafeTensors format)
+/// Load tensors from source file (`SafeTensors` format)
 fn load_source_tensors(
     path: &Path,
     _options: &ImportOptions,
@@ -986,7 +995,7 @@ fn load_source_tensors(
     }
 }
 
-/// Load tensors from SafeTensors file using memory-mapped I/O for efficiency
+/// Load tensors from `SafeTensors` file using memory-mapped I/O for efficiency
 fn load_safetensors_tensors(path: &Path) -> Result<BTreeMap<String, (Vec<f32>, Vec<usize>)>> {
     // Use MappedSafeTensors for zero-copy mmap access (much faster for large models)
     let mapped = MappedSafeTensors::open(path).map_err(|e| AprenderError::FormatError {
@@ -1408,6 +1417,7 @@ pub struct ConvertReport {
 
 impl ConvertReport {
     /// Format reduction as percentage string
+    #[must_use] 
     pub fn reduction_percent(&self) -> String {
         if self.original_size > 0 && self.converted_size > 0 {
             let reduction = 100.0 * (1.0 - self.converted_size as f64 / self.original_size as f64);
@@ -1542,13 +1552,13 @@ fn save_model_tensors(
 /// Export format options
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExportFormat {
-    /// SafeTensors format (.safetensors) - HuggingFace ecosystem
+    /// `SafeTensors` format (.safetensors) - `HuggingFace` ecosystem
     SafeTensors,
     /// GGUF format (.gguf) - llama.cpp / local inference
     Gguf,
     /// ONNX format (.onnx) - Cross-framework inference (not yet implemented)
     Onnx,
-    /// TorchScript format (.pt) - PyTorch deployment (not yet implemented)
+    /// `TorchScript` format (.pt) - `PyTorch` deployment (not yet implemented)
     TorchScript,
 }
 

@@ -5,9 +5,9 @@
 //! - Word tokenization (alphanumeric + punctuation handling)
 //! - Character tokenization (splits into individual characters)
 //! - Subword tokenization for LLMs:
-//!   - BPE (Byte Pair Encoding) - GPT, LLaMA, Mistral
-//!   - WordPiece - BERT, DistilBERT
-//!   - Unigram/SentencePiece - T5, ALBERT, XLNet
+//!   - BPE (Byte Pair Encoding) - GPT, `LLaMA`, Mistral
+//!   - `WordPiece` - BERT, `DistilBERT`
+//!   - Unigram/SentencePiece - T5, ALBERT, `XLNet`
 //!
 //! All tokenizers implement the `Tokenizer` trait and follow zero-unwrap safety.
 //!
@@ -35,7 +35,7 @@
 //!
 //! - Sennrich et al. (2016): Neural Machine Translation of Rare Words with Subword Units
 //! - Wu et al. (2016): Google's Neural Machine Translation System
-//! - Kudo & Richardson (2018): SentencePiece: A simple and language independent subword tokenizer
+//! - Kudo & Richardson (2018): `SentencePiece`: A simple and language independent subword tokenizer
 
 use crate::text::Tokenizer;
 use crate::AprenderError;
@@ -78,6 +78,7 @@ impl WhitespaceTokenizer {
     ///
     /// let tokenizer = WhitespaceTokenizer::new();
     /// ```
+    #[must_use] 
     pub fn new() -> Self {
         Self
     }
@@ -127,6 +128,7 @@ impl WordTokenizer {
     ///
     /// let tokenizer = WordTokenizer::new();
     /// ```
+    #[must_use] 
     pub fn new() -> Self {
         Self
     }
@@ -201,6 +203,7 @@ impl CharTokenizer {
     ///
     /// let tokenizer = CharTokenizer::new();
     /// ```
+    #[must_use] 
     pub fn new() -> Self {
         Self
     }
@@ -236,6 +239,7 @@ pub struct SentenceTokenizer {
 
 impl SentenceTokenizer {
     /// Create a new sentence tokenizer with default abbreviations.
+    #[must_use] 
     pub fn new() -> Self {
         Self {
             abbreviations: vec![
@@ -249,6 +253,7 @@ impl SentenceTokenizer {
     }
 
     /// Split text into sentences.
+    #[must_use] 
     pub fn split(&self, text: &str) -> Vec<String> {
         if text.is_empty() {
             return Vec::new();
@@ -353,7 +358,7 @@ impl Default for SpecialTokens {
 /// BPE iteratively merges the most frequent pair of adjacent tokens,
 /// building a subword vocabulary that handles rare words by decomposition.
 ///
-/// Used by GPT, GPT-2, RoBERTa, LLaMA, Mistral, and many other LLMs.
+/// Used by GPT, GPT-2, `RoBERTa`, `LLaMA`, Mistral, and many other LLMs.
 ///
 /// # Algorithm
 ///
@@ -409,7 +414,7 @@ impl BpeTokenizer {
     /// # Returns
     ///
     /// * `Ok(BpeTokenizer)` - Trained tokenizer
-    /// * `Err(AprenderError)` - If vocab_size is too small
+    /// * `Err(AprenderError)` - If `vocab_size` is too small
     ///
     /// # Examples
     ///
@@ -571,6 +576,7 @@ impl BpeTokenizer {
     ///
     /// * `vocab` - Token to ID mapping
     /// * `merges` - Ordered list of merge rules
+    #[must_use] 
     pub fn from_vocab(vocab: HashMap<String, u32>, merges: Vec<(String, String)>) -> Self {
         let inverse_vocab: HashMap<u32, String> =
             vocab.iter().map(|(k, v)| (*v, k.clone())).collect();
@@ -583,7 +589,7 @@ impl BpeTokenizer {
         }
     }
 
-    /// Load a BPE tokenizer from HuggingFace vocab.json and merges.txt files.
+    /// Load a BPE tokenizer from `HuggingFace` vocab.json and merges.txt files.
     ///
     /// This is the standard format used by GPT-2, Whisper, and many other models.
     ///
@@ -628,7 +634,7 @@ impl BpeTokenizer {
     /// # References
     ///
     /// - Sennrich et al. (2016): Neural Machine Translation of Rare Words with Subword Units
-    /// - HuggingFace Tokenizers: <https://huggingface.co/docs/tokenizers>
+    /// - `HuggingFace` Tokenizers: <https://huggingface.co/docs/tokenizers>
     pub fn from_huggingface(vocab_json: &str, merges_txt: &str) -> Result<Self, AprenderError> {
         // Parse vocab.json - simple JSON parsing without external dependency
         let vocab = Self::parse_vocab_json(vocab_json)?;
@@ -679,7 +685,7 @@ impl BpeTokenizer {
         })
     }
 
-    /// Parse vocab.json content into a HashMap.
+    /// Parse vocab.json content into a `HashMap`.
     ///
     /// Simple JSON parsing without external dependencies. Handles basic JSON format:
     /// `{"token1": 0, "token2": 1, ...}`
@@ -1083,9 +1089,9 @@ impl Tokenizer for BpeTokenizer {
     }
 }
 
-/// WordPiece tokenizer (used by BERT).
+/// `WordPiece` tokenizer (used by BERT).
 ///
-/// WordPiece is similar to BPE but uses a different scoring criterion:
+/// `WordPiece` is similar to BPE but uses a different scoring criterion:
 /// it maximizes the likelihood of the training data rather than frequency.
 /// Subwords (except the first) are prefixed with "##".
 ///
@@ -1127,7 +1133,7 @@ pub struct WordPieceTokenizer {
 }
 
 impl WordPieceTokenizer {
-    /// Train a WordPiece tokenizer on the given corpus.
+    /// Train a `WordPiece` tokenizer on the given corpus.
     ///
     /// # Arguments
     ///
@@ -1278,6 +1284,7 @@ impl WordPieceTokenizer {
     }
 
     /// Create from pre-built vocabulary.
+    #[must_use] 
     pub fn from_vocab(vocab: HashMap<String, u32>) -> Self {
         let inverse_vocab: HashMap<u32, String> =
             vocab.iter().map(|(k, v)| (*v, k.clone())).collect();
@@ -1438,7 +1445,7 @@ impl Tokenizer for WordPieceTokenizer {
     }
 }
 
-/// Unigram tokenizer (SentencePiece).
+/// Unigram tokenizer (`SentencePiece`).
 ///
 /// Unigram uses a probabilistic model where each token has a probability,
 /// and the tokenization is chosen to maximize the total probability.
@@ -1446,7 +1453,7 @@ impl Tokenizer for WordPieceTokenizer {
 ///
 /// # Algorithm
 ///
-/// 1. Initialize with a large vocabulary (all substrings up to max_len)
+/// 1. Initialize with a large vocabulary (all substrings up to `max_len`)
 /// 2. Compute loss = -sum(log P(token)) for each token
 /// 3. Remove tokens that increase loss the least
 /// 4. Repeat until target vocabulary size
@@ -1466,7 +1473,7 @@ impl Tokenizer for WordPieceTokenizer {
 /// # References
 ///
 /// - Kudo (2018): Subword Regularization: Improving Neural Network Translation Models
-/// - Kudo & Richardson (2018): SentencePiece
+/// - Kudo & Richardson (2018): `SentencePiece`
 #[derive(Debug, Clone)]
 pub struct UnigramTokenizer {
     /// Token to (ID, log probability) mapping
@@ -1569,6 +1576,7 @@ impl UnigramTokenizer {
     }
 
     /// Create from pre-built vocabulary with probabilities.
+    #[must_use] 
     pub fn from_vocab(vocab: HashMap<String, (u32, f64)>) -> Self {
         let inverse_vocab: HashMap<u32, String> =
             vocab.iter().map(|(k, (id, _))| (*id, k.clone())).collect();

@@ -270,7 +270,7 @@ impl DiagnosticLabel {
 /// Compiler suggestion for fixing the error.
 ///
 /// Rust's excellent diagnostics provide suggestions that can bootstrap
-/// the fix generator per DeepDelta (Mesbah et al., 2019).
+/// the fix generator per `DeepDelta` (Mesbah et al., 2019).
 #[derive(Debug, Clone)]
 pub struct CompilerSuggestion {
     /// Suggestion text

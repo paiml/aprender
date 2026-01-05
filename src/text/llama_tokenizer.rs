@@ -39,7 +39,7 @@ use crate::error::{AprenderError, Result};
 // Constants
 // ============================================================================
 
-/// LLaMA vocabulary size (standard)
+/// `LLaMA` vocabulary size (standard)
 pub const LLAMA_VOCAB_SIZE: usize = 32000;
 
 /// Special token: Beginning of sequence
@@ -49,7 +49,7 @@ pub const EOS_TOKEN: &str = "</s>";
 /// Special token: Unknown
 pub const UNK_TOKEN: &str = "<unk>";
 
-/// Byte fallback prefix (SentencePiece style)
+/// Byte fallback prefix (`SentencePiece` style)
 const BYTE_FALLBACK_PREFIX: &str = "<0x";
 
 // ============================================================================
@@ -82,7 +82,7 @@ pub struct LlamaTokenizer {
 }
 
 impl LlamaTokenizer {
-    /// Create a new LlamaTokenizer from vocabulary data.
+    /// Create a new `LlamaTokenizer` from vocabulary data.
     ///
     /// # Arguments
     /// * `tokens` - List of token strings

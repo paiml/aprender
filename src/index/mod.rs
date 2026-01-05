@@ -76,6 +76,7 @@ where
 }
 
 /// Default cross-encoder using cosine similarity.
+#[must_use] 
 pub fn default_cross_encoder() -> CrossEncoder<impl Fn(&[f32], &[f32]) -> f32> {
     CrossEncoder::new(|q, d| {
         let dot: f32 = q.iter().zip(d).map(|(&a, &b)| a * b).sum();
@@ -96,6 +97,7 @@ pub struct HybridSearch {
 
 impl HybridSearch {
     /// Create hybrid search with dense/sparse weights.
+    #[must_use] 
     pub fn new(dense_weight: f32, sparse_weight: f32) -> Self {
         Self {
             dense_weight,
@@ -149,6 +151,7 @@ impl HybridSearch {
     }
 
     /// Reciprocal Rank Fusion (RRF) for combining rankings.
+    #[must_use] 
     pub fn rrf_fuse(&self, rankings: &[Vec<String>], k: f32, top_n: usize) -> Vec<(String, f32)> {
         use std::collections::HashMap;
 
@@ -166,9 +169,11 @@ impl HybridSearch {
         results
     }
 
+    #[must_use] 
     pub fn dense_weight(&self) -> f32 {
         self.dense_weight
     }
+    #[must_use] 
     pub fn sparse_weight(&self) -> f32 {
         self.sparse_weight
     }
@@ -267,7 +272,7 @@ where
 /// ColBERT-style late interaction retrieval.
 ///
 /// Computes fine-grained token-level interactions between queries and documents,
-/// using MaxSim (maximum similarity per query token).
+/// using `MaxSim` (maximum similarity per query token).
 ///
 /// # Architecture
 ///
@@ -279,7 +284,7 @@ where
 ///
 /// # Reference
 ///
-/// Khattab, O., & Zaharia, M. (2020). ColBERT: Efficient and Effective Passage
+/// Khattab, O., & Zaharia, M. (2020). `ColBERT`: Efficient and Effective Passage
 /// Search via Contextualized Late Interaction over BERT. SIGIR.
 #[derive(Debug)]
 pub struct ColBERT {
@@ -287,12 +292,13 @@ pub struct ColBERT {
 }
 
 impl ColBERT {
-    /// Create ColBERT with specified embedding dimension.
+    /// Create `ColBERT` with specified embedding dimension.
+    #[must_use] 
     pub fn new(embedding_dim: usize) -> Self {
         Self { embedding_dim }
     }
 
-    /// Compute MaxSim score between query and document token embeddings.
+    /// Compute `MaxSim` score between query and document token embeddings.
     ///
     /// For each query token, finds maximum similarity with any doc token,
     /// then sums across query tokens.
@@ -315,6 +321,7 @@ impl ColBERT {
     }
 
     /// Score a batch of documents against a query.
+    #[must_use] 
     pub fn score_documents(
         &self,
         query_tokens: &[Vec<f32>],
@@ -326,7 +333,7 @@ impl ColBERT {
             .collect()
     }
 
-    /// Retrieve top-k documents using MaxSim.
+    /// Retrieve top-k documents using `MaxSim`.
     pub fn retrieve<T: Clone>(
         &self,
         query_tokens: &[Vec<f32>],
@@ -343,6 +350,7 @@ impl ColBERT {
         scores
     }
 
+    #[must_use] 
     pub fn embedding_dim(&self) -> usize {
         self.embedding_dim
     }

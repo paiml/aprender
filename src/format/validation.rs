@@ -279,13 +279,13 @@ impl TensorStats {
         self.zero_count < self.count
     }
 
-    /// Check if LayerNorm weight mean is in valid range [0.5, 3.0]
+    /// Check if `LayerNorm` weight mean is in valid range [0.5, 3.0]
     #[must_use]
     pub fn is_valid_layernorm_weight(&self) -> bool {
         self.mean >= 0.5 && self.mean <= 3.0
     }
 
-    /// Check if LayerNorm bias mean is in valid range [-0.5, 0.5]
+    /// Check if `LayerNorm` bias mean is in valid range [-0.5, 0.5]
     #[must_use]
     pub fn is_valid_layernorm_bias(&self) -> bool {
         self.mean >= -0.5 && self.mean <= 0.5
@@ -632,7 +632,7 @@ impl Default for AprValidator {
 /// Poka-yoke gate result
 #[derive(Debug, Clone)]
 pub struct Gate {
-    /// Gate name (e.g., "filterbank_present")
+    /// Gate name (e.g., "`filterbank_present`")
     pub name: &'static str,
     /// Whether gate passed
     pub passed: bool,
@@ -827,7 +827,7 @@ pub trait PokaYoke {
     }
 }
 
-/// Create a failing result for models without PokaYoke implementation.
+/// Create a failing result for models without `PokaYoke` implementation.
 ///
 /// Use this when saving models that don't implement the trait.
 /// Returns a result with score=0 and a single failing gate.
@@ -889,7 +889,7 @@ impl WhisperValidation {
     /// Validate Whisper filterbank (D11: present, D12: Slaney-normalized)
     ///
     /// # Arguments
-    /// * `filterbank` - Optional filterbank data (80 mel bins × n_fft bins)
+    /// * `filterbank` - Optional filterbank data (80 mel bins × `n_fft` bins)
     ///
     /// # Returns
     /// `PokaYokeResult` with gates:
@@ -938,7 +938,7 @@ impl WhisperValidation {
     /// Validate encoder/decoder tensor statistics
     ///
     /// Checks for common conversion bugs:
-    /// - LayerNorm weights should have mean ≈ 1.0
+    /// - `LayerNorm` weights should have mean ≈ 1.0
     /// - Linear weights should have mean ≈ 0.0
     /// - No NaN/Inf values
     #[must_use]

@@ -19,7 +19,7 @@ use super::tensor::Tensor;
 /// - ∂z/∂x = 1
 /// - ∂z/∂y = 1
 ///
-/// So backward(grad_output) returns [grad_output, grad_output].
+/// So `backward(grad_output)` returns [`grad_output`, `grad_output`].
 pub trait GradFn: Send + Sync {
     /// Compute gradients with respect to inputs.
     ///
@@ -313,7 +313,7 @@ impl GradFn for MeanBackward {
 // Activation Functions
 // ============================================================================
 
-/// Gradient function for ReLU: z = max(0, x)
+/// Gradient function for `ReLU`: z = max(0, x)
 pub(crate) struct ReluBackward {
     pub(crate) x: Tensor,
 }
@@ -335,7 +335,7 @@ impl GradFn for ReluBackward {
     }
 }
 
-/// Gradient function for LeakyReLU: z = max(negative_slope * x, x)
+/// Gradient function for `LeakyReLU`: z = `max(negative_slope` * x, x)
 pub(crate) struct LeakyReluBackward {
     pub(crate) x: Tensor,
     pub(crate) negative_slope: f32,
@@ -395,7 +395,7 @@ impl GradFn for GeluBackward {
 
 /// Gradient function for Softmax over last dimension of 2D tensor
 /// For y = softmax(x), the gradient is:
-/// ∂L/∂x_i = y_i * (g_i - Σ_j g_j * y_j)
+/// ∂`L/∂x_i` = `y_i` * (`g_i` - `Σ_j` `g_j` * `y_j`)
 pub(crate) struct SoftmaxBackward {
     pub(crate) output: Tensor, // softmax output (needed for gradient)
 }
@@ -436,8 +436,8 @@ impl GradFn for SoftmaxBackward {
 
 /// Gradient function for Cross-Entropy Loss (combined softmax + NLL)
 /// For L = -log(softmax(x)[target]), the gradient is:
-/// ∂L/∂x_i = softmax(x)_i - 1 if i == target else softmax(x)_i
-/// This is simply: grad = softmax(logits) - one_hot(targets)
+/// ∂`L/∂x_i` = softmax(x)_i - 1 if i == target else softmax(x)_i
+/// This is simply: grad = softmax(logits) - `one_hot(targets)`
 pub(crate) struct CrossEntropyBackward {
     pub(crate) softmax_output: Tensor, // softmax(logits)
     pub(crate) targets: Vec<usize>,    // target class indices
@@ -561,7 +561,7 @@ impl GradFn for BroadcastAddBackward {
     }
 }
 
-/// Gradient function for view/reshape: z = x.view(new_shape)
+/// Gradient function for view/reshape: z = `x.view(new_shape)`
 pub(crate) struct ViewBackward {
     pub(crate) input_shape: Vec<usize>,
 }

@@ -35,7 +35,7 @@
 //!
 //! - Bai et al. (2023). "Qwen Technical Report"
 //! - Ainslie et al. (2023). "GQA: Training Generalized Multi-Query Transformer Models"
-//! - Su et al. (2021). "RoFormer: Enhanced Transformer with Rotary Position Embedding"
+//! - Su et al. (2021). "`RoFormer`: Enhanced Transformer with Rotary Position Embedding"
 //! - Zhang & Sennrich (2019). "Root Mean Square Layer Normalization"
 
 use crate::autograd::Tensor;
@@ -51,7 +51,7 @@ use crate::nn::{GroupedQueryAttention, Linear, Module, RMSNorm, RotaryPositionEm
 /// Maps token IDs to dense vectors.
 #[derive(Debug)]
 pub struct Embedding {
-    /// Weight matrix [vocab_size, hidden_size]
+    /// Weight matrix [`vocab_size`, `hidden_size`]
     weight: Tensor,
     vocab_size: usize,
     hidden_size: usize,
@@ -59,6 +59,7 @@ pub struct Embedding {
 
 impl Embedding {
     /// Create a new embedding layer.
+    #[must_use] 
     pub fn new(vocab_size: usize, hidden_size: usize) -> Self {
         // Initialize with small random values
         let data: Vec<f32> = (0..vocab_size * hidden_size)
@@ -78,10 +79,11 @@ impl Embedding {
     /// Create a placeholder embedding with minimal memory allocation.
     ///
     /// Used for lazy initialization when loading pre-trained weights.
-    /// Uses 1-element tensor instead of vocab_size * hidden_size.
+    /// Uses 1-element tensor instead of `vocab_size` * `hidden_size`.
     ///
     /// **IMPORTANT**: This layer will NOT work for inference until
     /// `set_weight()` is called with real weights.
+    #[must_use] 
     pub fn placeholder(vocab_size: usize, hidden_size: usize) -> Self {
         Self {
             weight: Tensor::new(&[0.0], &[1]),
@@ -108,6 +110,7 @@ impl Embedding {
     }
 
     /// Look up embeddings for token IDs.
+    #[must_use] 
     pub fn forward(&self, input_ids: &[u32]) -> Tensor {
         let batch_size = 1;
         let mut output = vec![0.0f32; batch_size * input_ids.len() * self.hidden_size];
@@ -121,6 +124,7 @@ impl Embedding {
     }
 
     /// Get weight tensor reference.
+    #[must_use] 
     pub fn weight(&self) -> &Tensor {
         &self.weight
     }
@@ -130,7 +134,7 @@ impl Embedding {
 // Qwen2 MLP (SwiGLU)
 // ============================================================================
 
-/// Qwen2 MLP with SwiGLU activation.
+/// Qwen2 MLP with `SwiGLU` activation.
 ///
 /// ```text
 /// output = down_proj(SiLU(gate_proj(x)) * up_proj(x))
@@ -145,6 +149,7 @@ pub struct Qwen2MLP {
 
 impl Qwen2MLP {
     /// Create a new Qwen2 MLP layer.
+    #[must_use] 
     pub fn new(hidden_size: usize, intermediate_size: usize) -> Self {
         Self {
             gate_proj: Linear::new(hidden_size, intermediate_size),
@@ -156,6 +161,7 @@ impl Qwen2MLP {
     /// Create a placeholder MLP with minimal memory allocation.
     ///
     /// Used for lazy initialization when loading pre-trained weights.
+    #[must_use] 
     pub fn placeholder(hidden_size: usize, intermediate_size: usize) -> Self {
         Self {
             gate_proj: Linear::placeholder(hidden_size, intermediate_size),
@@ -164,7 +170,8 @@ impl Qwen2MLP {
         }
     }
 
-    /// Forward pass with SwiGLU activation.
+    /// Forward pass with `SwiGLU` activation.
+    #[must_use] 
     pub fn forward(&self, x: &Tensor) -> Tensor {
         let gate = self.gate_proj.forward(x);
         let gate_activated = silu(&gate);
@@ -214,6 +221,7 @@ pub struct Qwen2DecoderLayer {
 
 impl Qwen2DecoderLayer {
     /// Create a new decoder layer.
+    #[must_use] 
     pub fn new(config: &Qwen2Config) -> Self {
         Self {
             self_attn: GroupedQueryAttention::new(
@@ -230,6 +238,7 @@ impl Qwen2DecoderLayer {
     /// Create a placeholder decoder layer with minimal memory allocation.
     ///
     /// Used for lazy initialization when loading pre-trained weights.
+    #[must_use] 
     pub fn placeholder(config: &Qwen2Config) -> Self {
         Self {
             self_attn: GroupedQueryAttention::placeholder(
@@ -244,6 +253,7 @@ impl Qwen2DecoderLayer {
     }
 
     /// Forward pass through the decoder layer.
+    #[must_use] 
     pub fn forward(
         &self,
         hidden_states: &Tensor,
@@ -267,6 +277,7 @@ impl Qwen2DecoderLayer {
     }
 
     /// Forward pass with detailed profiling output.
+    #[must_use] 
     pub fn forward_profiled(
         &self,
         hidden_states: &Tensor,
@@ -325,7 +336,7 @@ impl Qwen2DecoderLayer {
 /// Key-Value cache for efficient autoregressive generation.
 #[derive(Debug)]
 pub struct KVCache {
-    /// Cached keys per layer: [batch, num_kv_heads, cached_len, head_dim]
+    /// Cached keys per layer: [batch, `num_kv_heads`, `cached_len`, `head_dim`]
     pub keys: Vec<Option<Tensor>>,
     /// Cached values per layer
     pub values: Vec<Option<Tensor>>,
@@ -335,6 +346,7 @@ pub struct KVCache {
 
 impl KVCache {
     /// Create a new empty KV cache.
+    #[must_use] 
     pub fn new(num_layers: usize) -> Self {
         Self {
             keys: vec![None; num_layers],
@@ -364,13 +376,13 @@ impl KVCache {
 /// Assembles embedding, decoder layers, and LM head into a complete model.
 #[derive(Debug)]
 pub struct Qwen2Model {
-    /// Token embeddings [vocab_size, hidden_size]
+    /// Token embeddings [`vocab_size`, `hidden_size`]
     embed_tokens: Embedding,
     /// Decoder layers
     layers: Vec<Qwen2DecoderLayer>,
-    /// Final RMSNorm
+    /// Final `RMSNorm`
     norm: RMSNorm,
-    /// Language model head [hidden_size, vocab_size]
+    /// Language model head [`hidden_size`, `vocab_size`]
     lm_head: Linear,
     /// Rotary position embeddings
     rope: RotaryPositionEmbedding,
@@ -392,6 +404,7 @@ impl Qwen2Model {
     /// Create a new Qwen2 model from configuration.
     ///
     /// Weights are initialized randomly. Use `load()` to load pre-trained weights.
+    #[must_use] 
     pub fn new(config: &Qwen2Config) -> Self {
         let head_dim = config.hidden_size / config.num_attention_heads;
 
@@ -419,6 +432,7 @@ impl Qwen2Model {
     /// Create an uninitialized Qwen2 model with minimal memory allocation.
     ///
     /// The model is not ready for inference until weights are loaded.
+    #[must_use] 
     pub fn new_uninitialized(config: &Qwen2Config) -> Self {
         let head_dim = config.hidden_size / config.num_attention_heads;
 
@@ -447,12 +461,12 @@ impl Qwen2Model {
     ///
     /// # Arguments
     ///
-    /// * `input_ids` - Token IDs [seq_len]
-    /// * `position_ids` - Position indices [seq_len]
+    /// * `input_ids` - Token IDs [`seq_len`]
+    /// * `position_ids` - Position indices [`seq_len`]
     ///
     /// # Returns
     ///
-    /// Logits tensor [1, seq_len, vocab_size]
+    /// Logits tensor [1, `seq_len`, `vocab_size`]
     pub fn forward(&mut self, input_ids: &[u32], position_ids: &[usize]) -> Tensor {
         // Embed tokens (re-use buffer)
         let seq_len = input_ids.len();
@@ -691,6 +705,7 @@ impl Qwen2Model {
     }
 
     /// Get model configuration.
+    #[must_use] 
     pub fn config(&self) -> &Qwen2Config {
         &self.config
     }
@@ -723,6 +738,7 @@ impl Qwen2Model {
     }
 
     /// Get number of layers.
+    #[must_use] 
     pub fn num_layers(&self) -> usize {
         self.layers.len()
     }
@@ -731,13 +747,14 @@ impl Qwen2Model {
     // Weight Introspection Methods (Section A: Model Loading)
     // ========================================================================
 
-    /// Get list of weight names following HuggingFace convention.
+    /// Get list of weight names following `HuggingFace` convention.
     ///
     /// Returns names like:
     /// - `model.embed_tokens.weight`
     /// - `model.layers.0.self_attn.q_proj.weight`
     /// - `model.norm.weight`
     /// - `lm_head.weight`
+    #[must_use] 
     pub fn weight_names(&self) -> Vec<String> {
         let mut names = Vec::new();
 
@@ -774,6 +791,7 @@ impl Qwen2Model {
     }
 
     /// Get weight shapes as a map from name to shape.
+    #[must_use] 
     pub fn weight_info(&self) -> std::collections::HashMap<String, Vec<usize>> {
         use std::collections::HashMap;
         let mut info = HashMap::new();
@@ -820,9 +838,10 @@ impl Qwen2Model {
 
     /// Extract accessible weights as a map from name to f32 data.
     ///
-    /// Returns a map suitable for serialization to SafeTensors format.
+    /// Returns a map suitable for serialization to `SafeTensors` format.
     /// Note: Currently returns weights from components with public accessors.
     /// Full weight export will be enabled when nn modules expose weight accessors.
+    #[must_use] 
     pub fn weights(&self) -> std::collections::HashMap<String, Vec<f32>> {
         use std::collections::HashMap;
         let mut weights = HashMap::new();
@@ -841,6 +860,7 @@ impl Qwen2Model {
     }
 
     /// Get total number of parameters in the model.
+    #[must_use] 
     pub fn num_parameters(&self) -> usize {
         let info = self.weight_info();
         info.values()
@@ -873,6 +893,7 @@ impl Qwen2Model {
     }
 
     /// Get reference to language model head (for testing/inspection).
+    #[must_use] 
     pub fn lm_head(&self) -> &Linear {
         &self.lm_head
     }
@@ -881,7 +902,7 @@ impl Qwen2Model {
     // SafeTensors Loading (Section A: Model Loading)
     // ========================================================================
 
-    /// Load weights from SafeTensors format.
+    /// Load weights from `SafeTensors` format.
     ///
     /// # Arguments
     ///
@@ -985,7 +1006,7 @@ impl Qwen2Model {
         Ok(loaded_count)
     }
 
-    /// Load model from SafeTensors file.
+    /// Load model from `SafeTensors` file.
     ///
     /// Creates a new model with the given config and loads weights from file.
     pub fn from_safetensors(config: &Qwen2Config, path: &std::path::Path) -> Result<Self, String> {
@@ -1124,7 +1145,7 @@ impl Qwen2Model {
 // Helper Functions
 // ============================================================================
 
-/// SiLU (Swish) activation: x * sigmoid(x)
+/// `SiLU` (Swish) activation: x * sigmoid(x)
 /// Uses SIMD-accelerated Tensor ops instead of naive iterators.
 fn silu(x: &Tensor) -> Tensor {
     // SiLU(x) = x * sigmoid(x)

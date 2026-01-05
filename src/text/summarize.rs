@@ -1,7 +1,7 @@
 //! Extractive text summarization.
 //!
 //! This module provides algorithms for extractive summarization:
-//! - TextRank: Graph-based sentence ranking (like PageRank)
+//! - `TextRank`: Graph-based sentence ranking (like `PageRank`)
 //! - TF-IDF: Sentence scoring based on term importance
 //! - Hybrid: Combination of multiple methods
 //!
@@ -23,11 +23,11 @@ use std::collections::{HashMap, HashSet};
 /// Summarization method.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SummarizationMethod {
-    /// TextRank algorithm (graph-based)
+    /// `TextRank` algorithm (graph-based)
     TextRank,
     /// TF-IDF sentence scoring
     TfIdf,
-    /// Hybrid approach (average of TextRank and TF-IDF)
+    /// Hybrid approach (average of `TextRank` and TF-IDF)
     Hybrid,
 }
 
@@ -55,11 +55,11 @@ pub struct TextSummarizer {
     method: SummarizationMethod,
     /// Maximum number of sentences in summary
     max_sentences: usize,
-    /// Damping factor for TextRank (default: 0.85)
+    /// Damping factor for `TextRank` (default: 0.85)
     damping_factor: f64,
-    /// Number of TextRank iterations (default: 100)
+    /// Number of `TextRank` iterations (default: 100)
     max_iterations: usize,
-    /// Convergence threshold for TextRank (default: 0.0001)
+    /// Convergence threshold for `TextRank` (default: 0.0001)
     convergence_threshold: f64,
 }
 
@@ -78,6 +78,7 @@ impl TextSummarizer {
     ///
     /// let summarizer = TextSummarizer::new(SummarizationMethod::TextRank, 3);
     /// ```
+    #[must_use] 
     pub fn new(method: SummarizationMethod, max_sentences: usize) -> Self {
         Self {
             method,
@@ -88,7 +89,7 @@ impl TextSummarizer {
         }
     }
 
-    /// Set damping factor for TextRank.
+    /// Set damping factor for `TextRank`.
     ///
     /// # Examples
     ///
@@ -98,12 +99,13 @@ impl TextSummarizer {
     /// let summarizer = TextSummarizer::new(SummarizationMethod::TextRank, 2)
     ///     .with_damping_factor(0.9);
     /// ```
+    #[must_use] 
     pub fn with_damping_factor(mut self, factor: f64) -> Self {
         self.damping_factor = factor;
         self
     }
 
-    /// Set maximum iterations for TextRank.
+    /// Set maximum iterations for `TextRank`.
     ///
     /// # Examples
     ///
@@ -113,6 +115,7 @@ impl TextSummarizer {
     /// let summarizer = TextSummarizer::new(SummarizationMethod::TextRank, 2)
     ///     .with_max_iterations(50);
     /// ```
+    #[must_use] 
     pub fn with_max_iterations(mut self, max_iter: usize) -> Self {
         self.max_iterations = max_iter;
         self
@@ -179,7 +182,7 @@ impl TextSummarizer {
             .collect()
     }
 
-    /// Compute TextRank scores for sentences.
+    /// Compute `TextRank` scores for sentences.
     fn textrank_scores(&self, sentences: &[String]) -> Vec<f64> {
         let n = sentences.len();
         if n == 0 {
@@ -277,7 +280,7 @@ impl TextSummarizer {
         scores
     }
 
-    /// Compute hybrid scores (average of TextRank and TF-IDF).
+    /// Compute hybrid scores (average of `TextRank` and TF-IDF).
     fn hybrid_scores(&self, sentences: &[String]) -> Vec<f64> {
         let textrank = self.textrank_scores(sentences);
         let tfidf = self.tfidf_scores(sentences);

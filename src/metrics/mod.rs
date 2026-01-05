@@ -15,9 +15,9 @@ use crate::primitives::{Matrix, Vector};
 
 /// Computes the coefficient of determination (R²).
 ///
-/// R² = 1 - (SS_res / SS_tot)
+/// R² = 1 - (`SS_res` / `SS_tot`)
 ///
-/// where SS_res is the residual sum of squares and SS_tot is the total
+/// where `SS_res` is the residual sum of squares and `SS_tot` is the total
 /// sum of squares.
 ///
 /// # Examples
@@ -59,7 +59,7 @@ pub fn r_squared(y_pred: &Vector<f32>, y_true: &Vector<f32>) -> f32 {
 
 /// Computes the Mean Squared Error (MSE).
 ///
-/// MSE = (1/n) * Σ(y_true - y_pred)²
+/// MSE = (1/n) * `Σ(y_true` - `y_pred)²`
 ///
 /// # Examples
 ///
@@ -95,7 +95,7 @@ pub fn mse(y_pred: &Vector<f32>, y_true: &Vector<f32>) -> f32 {
 
 /// Computes the Mean Absolute Error (MAE).
 ///
-/// MAE = (1/n) * Σ|y_true - y_pred|
+/// MAE = (1/n) * `Σ|y_true` - `y_pred`|
 ///
 /// # Examples
 ///

@@ -32,9 +32,9 @@ use serde::{Deserialize, Serialize};
 ///
 /// - **Standard2025**: Use for current deployments (fast, small keys)
 /// - **Hybrid2028**: Use for long-term sensitive data (transition period)
-/// - **PostQuantum2030**: Use when NIST PQC is fully standardized
-/// - **GovHighAssurance**: Use for government/defense applications
-/// - **LegacyRSA**: DEPRECATED - load-only for migration
+/// - **`PostQuantum2030`**: Use when NIST PQC is fully standardized
+/// - **`GovHighAssurance`**: Use for government/defense applications
+/// - **`LegacyRSA`**: DEPRECATED - load-only for migration
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum CipherSuite {

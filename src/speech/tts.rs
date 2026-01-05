@@ -3,7 +3,7 @@
 //! Provides TTS primitives for:
 //! - Neural TTS synthesis
 //! - Mel spectrogram generation from text
-//! - Vocoder integration (HiFi-GAN, WaveGlow, etc.)
+//! - Vocoder integration (HiFi-GAN, `WaveGlow`, etc.)
 //! - Multi-speaker synthesis
 //!
 //! # Architecture
@@ -34,7 +34,7 @@
 //! # References
 //!
 //! - Wang, Y., et al. (2017). Tacotron: End-to-End Speech Synthesis.
-//! - Ren, Y., et al. (2020). FastSpeech 2: Fast and High-Quality TTS.
+//! - Ren, Y., et al. (2020). `FastSpeech` 2: Fast and High-Quality TTS.
 //! - Kim, J., et al. (2021). Conditional Variational Autoencoder with Adversarial Learning.
 //!
 //! # PMAT Compliance
@@ -289,7 +289,7 @@ pub struct SynthesisResult {
     pub sample_rate: u32,
     /// Duration in seconds
     pub duration: f32,
-    /// Mel spectrogram (n_mels x frames)
+    /// Mel spectrogram (`n_mels` x frames)
     pub mel_spectrogram: Option<Vec<Vec<f32>>>,
     /// Alignment info (if available)
     pub alignment: Option<Vec<AlignmentInfo>>,
@@ -420,7 +420,7 @@ pub trait Vocoder {
     /// Convert mel spectrogram to audio.
     ///
     /// # Arguments
-    /// * `mel` - Mel spectrogram (n_mels x frames)
+    /// * `mel` - Mel spectrogram (`n_mels` x frames)
     ///
     /// # Returns
     /// Audio samples.
@@ -453,7 +453,7 @@ pub struct FastSpeech2Synthesizer {
 }
 
 impl FastSpeech2Synthesizer {
-    /// Create new FastSpeech2 synthesizer
+    /// Create new `FastSpeech2` synthesizer
     #[must_use]
     pub fn new(config: TtsConfig) -> Self {
         Self {

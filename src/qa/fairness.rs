@@ -121,7 +121,7 @@ impl GroupMetrics {
 
 /// Calculate Disparate Impact Ratio
 ///
-/// DIR = (positive_rate_unprivileged) / (positive_rate_privileged)
+/// DIR = (`positive_rate_unprivileged`) / (`positive_rate_privileged`)
 ///
 /// Should be >= 0.8 (Four-Fifths Rule) and <= 1.25
 #[must_use]
@@ -140,7 +140,7 @@ pub fn calculate_disparate_impact(
 
 /// Calculate Equal Opportunity Difference
 ///
-/// EOD = TPR_privileged - TPR_unprivileged
+/// EOD = `TPR_privileged` - `TPR_unprivileged`
 ///
 /// Should be close to 0 (absolute value <= 0.1)
 #[must_use]
@@ -166,6 +166,7 @@ pub fn satisfies_four_fifths_rule(dir: f32) -> bool {
 }
 
 /// Run fairness tests on model predictions
+#[must_use] 
 pub fn run_fairness_tests(config: &FairnessConfig) -> (CategoryScore, Vec<QaIssue>) {
     let start = Instant::now();
     let mut score = CategoryScore::new(15); // 15 points for fairness

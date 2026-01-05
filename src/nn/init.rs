@@ -4,14 +4,14 @@
 //! This module provides initialization schemes from the literature:
 //!
 //! - Xavier/Glorot (Glorot & Bengio, 2010) - for tanh/sigmoid activations
-//! - Kaiming/He (He et al., 2015) - for ReLU activations
+//! - Kaiming/He (He et al., 2015) - for `ReLU` activations
 //!
 //! # References
 //!
 //! - Glorot, X., & Bengio, Y. (2010). Understanding the difficulty of training
 //!   deep feedforward neural networks. AISTATS.
 //! - He, K., et al. (2015). Delving deep into rectifiers: Surpassing human-level
-//!   performance on ImageNet classification. ICCV.
+//!   performance on `ImageNet` classification. ICCV.
 
 use crate::autograd::Tensor;
 use rand::rngs::StdRng;
@@ -19,7 +19,7 @@ use rand::{Rng, SeedableRng};
 
 /// Xavier uniform initialization (Glorot & Bengio, 2010).
 ///
-/// Samples from U(-a, a) where a = sqrt(6 / (fan_in + fan_out)).
+/// Samples from U(-a, a) where a = sqrt(6 / (`fan_in` + `fan_out`)).
 /// Suitable for tanh and sigmoid activations.
 ///
 /// # Arguments
@@ -37,6 +37,7 @@ use rand::{Rng, SeedableRng};
 /// // Initialize weight for layer with 784 inputs and 256 outputs
 /// let weight = xavier_uniform(&[256, 784], 784, 256, None);
 /// ```
+#[must_use] 
 pub fn xavier_uniform(shape: &[usize], fan_in: usize, fan_out: usize, seed: Option<u64>) -> Tensor {
     let a = (6.0 / (fan_in + fan_out) as f32).sqrt();
     uniform(shape, -a, a, seed)
@@ -44,8 +45,9 @@ pub fn xavier_uniform(shape: &[usize], fan_in: usize, fan_out: usize, seed: Opti
 
 /// Xavier normal initialization (Glorot & Bengio, 2010).
 ///
-/// Samples from N(0, std) where std = sqrt(2 / (fan_in + fan_out)).
+/// Samples from N(0, std) where std = sqrt(2 / (`fan_in` + `fan_out`)).
 /// Suitable for tanh and sigmoid activations.
+#[must_use] 
 pub fn xavier_normal(shape: &[usize], fan_in: usize, fan_out: usize, seed: Option<u64>) -> Tensor {
     let std = (2.0 / (fan_in + fan_out) as f32).sqrt();
     normal(shape, 0.0, std, seed)
@@ -53,14 +55,15 @@ pub fn xavier_normal(shape: &[usize], fan_in: usize, fan_out: usize, seed: Optio
 
 /// Kaiming uniform initialization (He et al., 2015).
 ///
-/// Samples from U(-bound, bound) where bound = sqrt(6 / fan_in).
-/// Optimal for ReLU activations.
+/// Samples from U(-bound, bound) where bound = sqrt(6 / `fan_in`).
+/// Optimal for `ReLU` activations.
 ///
 /// # Arguments
 ///
 /// * `shape` - Shape of the tensor
 /// * `fan_in` - Number of input features
 /// * `seed` - Optional random seed
+#[must_use] 
 pub fn kaiming_uniform(shape: &[usize], fan_in: usize, seed: Option<u64>) -> Tensor {
     let bound = (6.0 / fan_in as f32).sqrt();
     uniform(shape, -bound, bound, seed)
@@ -68,8 +71,9 @@ pub fn kaiming_uniform(shape: &[usize], fan_in: usize, seed: Option<u64>) -> Ten
 
 /// Kaiming normal initialization (He et al., 2015).
 ///
-/// Samples from N(0, std) where std = sqrt(2 / fan_in).
-/// Optimal for ReLU activations.
+/// Samples from N(0, std) where std = sqrt(2 / `fan_in`).
+/// Optimal for `ReLU` activations.
+#[must_use] 
 pub fn kaiming_normal(shape: &[usize], fan_in: usize, seed: Option<u64>) -> Tensor {
     let std = (2.0 / fan_in as f32).sqrt();
     normal(shape, 0.0, std, seed)

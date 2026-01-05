@@ -63,6 +63,7 @@ pub struct ScoredSample {
 
 impl ScoredSample {
     /// Create a new scored sample
+    #[must_use] 
     pub fn new(features: Vec<f64>, target: f64, difficulty: f64) -> Self {
         Self {
             features,
@@ -94,6 +95,7 @@ impl LinearCurriculum {
     ///
     /// # Arguments
     /// * `n_stages` - Number of stages (higher = finer progression)
+    #[must_use] 
     pub fn new(n_stages: usize) -> Self {
         let step_size = if n_stages > 0 {
             1.0 / n_stages as f64
@@ -109,6 +111,7 @@ impl LinearCurriculum {
     }
 
     /// Set custom difficulty range
+    #[must_use] 
     pub fn with_difficulty_range(mut self, min: f64, max: f64) -> Self {
         self.difficulty_range = (min, max);
         self
@@ -160,6 +163,7 @@ impl ExponentialCurriculum {
     ///
     /// # Arguments
     /// * `growth_rate` - Growth rate (typical: 0.1-0.5)
+    #[must_use] 
     pub fn new(growth_rate: f64) -> Self {
         Self {
             stage: 0.0,
@@ -222,6 +226,7 @@ impl SelfPacedCurriculum {
     /// # Arguments
     /// * `initial_threshold` - Starting difficulty threshold (e.g., 0.1)
     /// * `growth_rate` - How much to increase threshold per advance (e.g., 1.5)
+    #[must_use] 
     pub fn new(initial_threshold: f64, growth_rate: f64) -> Self {
         Self {
             samples: Vec::new(),
@@ -234,6 +239,7 @@ impl SelfPacedCurriculum {
     }
 
     /// Set maximum threshold
+    #[must_use] 
     pub fn with_max_threshold(mut self, max: f64) -> Self {
         self.max_threshold = max;
         self
@@ -291,6 +297,7 @@ impl SelfPacedCurriculum {
     }
 
     /// Get all samples below current threshold
+    #[must_use] 
     pub fn eligible_samples(&self) -> Vec<&ScoredSample> {
         self.samples
             .iter()
@@ -299,6 +306,7 @@ impl SelfPacedCurriculum {
     }
 
     /// Get number of eligible samples
+    #[must_use] 
     pub fn n_eligible(&self) -> usize {
         self.samples
             .iter()
@@ -307,11 +315,13 @@ impl SelfPacedCurriculum {
     }
 
     /// Get total number of samples
+    #[must_use] 
     pub fn n_total(&self) -> usize {
         self.samples.len()
     }
 
     /// Get current threshold
+    #[must_use] 
     pub fn threshold(&self) -> f64 {
         self.threshold
     }
@@ -357,11 +367,13 @@ pub struct LossDifficultyScorer {
 
 impl LossDifficultyScorer {
     /// Create a new loss-based scorer
+    #[must_use] 
     pub fn new() -> Self {
         Self { target_mean: 0.0 }
     }
 
     /// Create with known target mean
+    #[must_use] 
     pub fn with_mean(target_mean: f64) -> Self {
         Self { target_mean }
     }
@@ -395,6 +407,7 @@ pub struct FeatureNormScorer;
 
 impl FeatureNormScorer {
     /// Create a new feature norm scorer
+    #[must_use] 
     pub fn new() -> Self {
         Self
     }

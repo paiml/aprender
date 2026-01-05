@@ -33,7 +33,7 @@
 //!
 //! # References
 //!
-//! - McKusick & Karels (1988): BSD memory allocator design
+//! - `McKusick` & Karels (1988): BSD memory allocator design
 //! - Chu, H. (2011): LMDB memory-mapped design
 //! - Didona et al. (2022): mmap vs explicit I/O performance analysis
 
@@ -268,6 +268,7 @@ pub struct MappedRegion {
 
 impl MappedRegion {
     /// Create a new mapped region.
+    #[must_use] 
     pub fn new(data: Vec<u8>, offset: u64) -> Self {
         let length = data.len();
         Self {

@@ -213,7 +213,7 @@ impl SyntheticValidator {
     ///
     /// # Returns
     ///
-    /// Tuple of (accepted_count, rejected_count, rejection_reasons).
+    /// Tuple of (`accepted_count`, `rejected_count`, `rejection_reasons`).
     #[must_use]
     pub fn validate_batch(
         &self,

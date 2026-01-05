@@ -394,7 +394,7 @@ impl CodeFeatureExtractor {
 
     /// Estimate complexity delta from diff statistics.
     ///
-    /// Uses a simple heuristic: net lines changed / complexity_factor.
+    /// Uses a simple heuristic: net lines changed / `complexity_factor`.
     /// Positive = complexity increased, negative = decreased.
     fn estimate_complexity_delta(&self, diff: &CommitDiff) -> f32 {
         let net = diff.lines_added as f32 - diff.lines_deleted as f32;
@@ -403,7 +403,7 @@ impl CodeFeatureExtractor {
 
     /// Extract time-based features from timestamp.
     ///
-    /// Returns (hour_of_day, day_of_week).
+    /// Returns (`hour_of_day`, `day_of_week`).
     #[allow(clippy::unused_self)]
     fn extract_time_features(&self, timestamp: u64) -> (u8, u8) {
         // Simple calculation assuming UTC

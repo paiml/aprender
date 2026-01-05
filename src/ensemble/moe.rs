@@ -1,6 +1,6 @@
 //! Mixture of Experts implementation
 //!
-//! MoE enables specialized expert models with a learnable gating network
+//! `MoE` enables specialized expert models with a learnable gating network
 //! that routes inputs to the most appropriate expert(s).
 //!
 //! # Architecture
@@ -23,7 +23,7 @@ use crate::traits::Estimator;
 use crate::{Matrix, Result, Vector};
 use serde::{Deserialize, Serialize};
 
-/// MoE routing configuration
+/// `MoE` routing configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MoeConfig {
     pub top_k: usize,
@@ -89,6 +89,7 @@ impl<E: Estimator + std::fmt::Debug, G: GatingNetwork + std::fmt::Debug> std::fm
 }
 
 impl<E: Estimator, G: GatingNetwork> MixtureOfExperts<E, G> {
+    #[must_use] 
     pub fn builder() -> MoeBuilder<E, G> {
         MoeBuilder::new()
     }
@@ -128,7 +129,7 @@ impl<E: Estimator, G: GatingNetwork> MixtureOfExperts<E, G> {
     ///
     /// # Arguments
     ///
-    /// * `inputs` - Matrix of shape [n_samples, n_features]
+    /// * `inputs` - Matrix of shape [`n_samples`, `n_features`]
     ///
     /// # Returns
     ///
@@ -150,13 +151,13 @@ impl<E: Estimator, G: GatingNetwork> MixtureOfExperts<E, G> {
     /// Encourages even distribution of inputs across experts to prevent
     /// expert collapse (all inputs routed to single expert).
     ///
-    /// Loss = sum_i(f_i * P_i) where:
-    /// - f_i = fraction of inputs routed to expert i
-    /// - P_i = average gate probability for expert i
+    /// Loss = `sum_i(f_i` * `P_i`) where:
+    /// - `f_i` = fraction of inputs routed to expert i
+    /// - `P_i` = average gate probability for expert i
     ///
     /// # Arguments
     ///
-    /// * `inputs` - Matrix of shape [n_samples, n_features]
+    /// * `inputs` - Matrix of shape [`n_samples`, `n_features`]
     ///
     /// # Returns
     ///
@@ -208,11 +209,11 @@ impl<E: Estimator, G: GatingNetwork> MixtureOfExperts<E, G> {
     ///
     /// # Arguments
     ///
-    /// * `inputs` - Matrix of shape [n_samples, n_features]
+    /// * `inputs` - Matrix of shape [`n_samples`, `n_features`]
     ///
     /// # Returns
     ///
-    /// Vector of usage fractions, one per expert (sums to top_k).
+    /// Vector of usage fractions, one per expert (sums to `top_k`).
     pub fn expert_usage(&self, inputs: &Matrix<f32>) -> Vec<f32> {
         let n_samples = inputs.n_rows();
         let n_experts = self.experts.len();
@@ -263,14 +264,14 @@ where
     E: Estimator + Clone,
     G: GatingNetwork,
 {
-    /// Fit MoE using pre-trained experts.
+    /// Fit `MoE` using pre-trained experts.
     ///
     /// This is a simple two-stage training approach:
     /// 1. Experts are assumed to be pre-trained (passed in via builder)
     /// 2. No gating training is performed (uses initial weights)
     ///
     /// For more sophisticated training, use separate expert training
-    /// followed by MoE construction.
+    /// followed by `MoE` construction.
     ///
     /// # Arguments
     ///
@@ -349,7 +350,7 @@ struct DeserializableMoe<E, G> {
     config: MoeConfig,
 }
 
-/// Builder for MixtureOfExperts
+/// Builder for `MixtureOfExperts`
 pub struct MoeBuilder<E: Estimator, G: GatingNetwork> {
     experts: Vec<E>,
     gating: Option<G>,

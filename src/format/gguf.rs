@@ -567,7 +567,7 @@ pub struct GgufReader {
     pub version: u32,
     /// Number of tensors
     pub tensor_count: u64,
-    /// Tensor infos (name, dims, dtype, data_offset)
+    /// Tensor infos (name, dims, dtype, `data_offset`)
     pub tensors: Vec<GgufTensorMeta>,
     /// Offset where tensor data section starts
     pub data_offset: usize,
@@ -580,7 +580,7 @@ pub struct GgufTensorMeta {
     pub name: String,
     /// Dimensions
     pub dims: Vec<u64>,
-    /// Data type (GgmlType as u32)
+    /// Data type (`GgmlType` as u32)
     pub dtype: u32,
     /// Offset within tensor data section
     pub offset: u64,
@@ -786,8 +786,8 @@ fn f16_to_f32(bits: u16) -> f32 {
     }
 }
 
-/// Dequantize Q4_0 format
-/// Q4_0: blocks of 32 elements, each block has 2-byte f16 scale + 16 bytes of 4-bit quants
+/// Dequantize `Q4_0` format
+/// `Q4_0`: blocks of 32 elements, each block has 2-byte f16 scale + 16 bytes of 4-bit quants
 fn dequantize_q4_0(data: &[u8], start: usize, num_elements: usize) -> Result<Vec<f32>> {
     const BLOCK_SIZE: usize = 32;
     const BLOCK_BYTES: usize = 2 + 16; // f16 scale + 16 bytes of 4-bit values
@@ -828,8 +828,8 @@ fn dequantize_q4_0(data: &[u8], start: usize, num_elements: usize) -> Result<Vec
     Ok(result)
 }
 
-/// Dequantize Q8_0 format
-/// Q8_0: blocks of 32 elements, each block has 2-byte f16 scale + 32 bytes of int8 quants
+/// Dequantize `Q8_0` format
+/// `Q8_0`: blocks of 32 elements, each block has 2-byte f16 scale + 32 bytes of int8 quants
 fn dequantize_q8_0(data: &[u8], start: usize, num_elements: usize) -> Result<Vec<f32>> {
     const BLOCK_SIZE: usize = 32;
     const BLOCK_BYTES: usize = 2 + 32; // f16 scale + 32 bytes of int8 values

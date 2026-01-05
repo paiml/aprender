@@ -11,7 +11,7 @@
 //!
 //! # References
 //!
-//! Bergstra et al. (2011). Algorithms for Hyper-Parameter Optimization. NeurIPS.
+//! Bergstra et al. (2011). Algorithms for Hyper-Parameter Optimization. `NeurIPS`.
 
 use crate::automl::params::ParamKey;
 use crate::automl::search::{ParamValue, Rng, SearchSpace, SearchStrategy, Trial, TrialResult};

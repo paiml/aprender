@@ -114,7 +114,7 @@ pub fn o2_whisper_transcribe_example() -> DocsResult {
 // O3: examples/logic_family_tree.rs runs
 // =============================================================================
 
-/// Verify TensorLogic example exists
+/// Verify `TensorLogic` example exists
 #[must_use]
 pub fn o3_logic_family_tree_example() -> DocsResult {
     let example_exists = example_file_exists("logic_family_tree.rs");
@@ -366,7 +366,7 @@ pub fn o18_wasm_documentation() -> DocsResult {
 // O19: Book covers TensorLogic theory
 // =============================================================================
 
-/// Verify TensorLogic documentation exists
+/// Verify `TensorLogic` documentation exists
 #[must_use]
 pub fn o19_tensorlogic_documentation() -> DocsResult {
     // TensorLogic chapter or module docs

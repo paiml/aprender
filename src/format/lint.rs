@@ -49,7 +49,7 @@ impl std::fmt::Display for LintLevel {
 /// Category of lint check
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum LintCategory {
-    /// Metadata checks (license, model_card, provenance)
+    /// Metadata checks (license, `model_card`, provenance)
     Metadata,
     /// Tensor naming convention checks
     Naming,

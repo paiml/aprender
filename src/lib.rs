@@ -30,7 +30,7 @@
 //! # Modules
 //!
 //! - [`primitives`]: Core Vector and Matrix types
-//! - [`data`]: DataFrame for named columns
+//! - [`data`]: `DataFrame` for named columns
 //! - [`linear_model`]: Linear regression algorithms
 //! - [`cluster`]: Clustering algorithms (K-Means)
 //! - [`code`]: Code analysis and code2vec embeddings
@@ -42,7 +42,7 @@
 //! - [`preprocessing`]: Data transformers (scalers, encoders)
 //! - [`optim`]: Optimization algorithms (SGD, Adam)
 //! - [`loss`]: Loss functions for training (MSE, MAE, Huber)
-//! - [`serialization`]: Model serialization (SafeTensors format)
+//! - [`serialization`]: Model serialization (`SafeTensors` format)
 //! - [`stats`]: Traditional descriptive statistics (quantiles, histograms)
 //! - [`graph`]: Graph construction and analysis (centrality, community detection)
 //! - [`bayesian`]: Bayesian inference (conjugate priors, MCMC, variational inference)
@@ -52,7 +52,7 @@
 //! - [`time_series`]: Time series analysis and forecasting (ARIMA)
 //! - [`index`]: Approximate nearest neighbor search (HNSW)
 //! - [`recommend`]: Recommendation systems (content-based, collaborative filtering)
-//! - [`synthetic`]: Synthetic data generation for AutoML (EDA, back-translation, MixUp)
+//! - [`synthetic`]: Synthetic data generation for `AutoML` (EDA, back-translation, `MixUp`)
 //! - [`bundle`]: Model bundling and memory paging for large models
 //! - [`cache`]: Cache hierarchy and model registry for large model management
 //! - [`chaos`]: Chaos engineering configuration (from renacer)
@@ -129,6 +129,8 @@ pub mod optim;
 pub mod prelude;
 pub mod preprocessing;
 pub mod primitives;
+/// Neural network pruning: importance scoring, sparsity masks, and compression.
+pub mod pruning;
 /// Model Quality Assurance module (spec §7.9)
 pub mod qa;
 pub mod recommend;

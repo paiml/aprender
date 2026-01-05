@@ -1106,7 +1106,7 @@ impl DirichletMultinomial {
     ///
     /// # Panics
     ///
-    /// Panics if counts.len() != num_categories().
+    /// Panics if `counts.len()` != `num_categories()`.
     ///
     /// # Example
     ///

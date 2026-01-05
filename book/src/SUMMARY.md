@@ -116,6 +116,10 @@
 - [Automatic Differentiation Theory](./ml-fundamentals/automatic-differentiation.md)
 - [Graph Neural Networks Theory](./ml-fundamentals/graph-neural-networks.md)
 
+## Model Compression
+
+- [Neural Network Pruning Theory](./ml-fundamentals/neural-network-pruning.md)
+
 ## Simulation and Risk
 
 - [Monte Carlo Simulation Theory](./ml-fundamentals/monte-carlo.md)
@@ -273,6 +277,7 @@
 - [Case Study: Monte Carlo Financial Simulation](./examples/monte-carlo-simulation.md)
 - [Case Study: Automatic Differentiation Training](./examples/autograd-training.md)
 - [Case Study: Graph Neural Networks](./examples/gnn-node-classification.md)
+- [Case Study: Magnitude Pruning](./examples/pruning-magnitude.md)
 
 # Sprint-Based Development
 

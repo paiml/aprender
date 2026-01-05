@@ -41,7 +41,7 @@ pub enum Budget {
     /// Maximum number of iterations/generations.
     ///
     /// For population-based methods, one iteration typically means
-    /// one generation (population_size evaluations).
+    /// one generation (`population_size` evaluations).
     Iterations(usize),
 
     /// Early stopping based on convergence detection.
@@ -75,7 +75,7 @@ impl Budget {
 
     /// Create a convergence-based budget with default patience.
     ///
-    /// Uses patience=50, min_delta=1e-8, max_evaluations=1_000_000.
+    /// Uses patience=50, min_delta=1e-8, `max_evaluations=1_000_000`.
     #[must_use]
     pub const fn convergence() -> Self {
         Self::Convergence {

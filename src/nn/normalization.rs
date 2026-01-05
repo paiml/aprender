@@ -49,11 +49,12 @@ pub struct LayerNorm {
 }
 
 impl LayerNorm {
-    /// Create a new LayerNorm layer.
+    /// Create a new `LayerNorm` layer.
     ///
     /// # Arguments
     ///
     /// * `normalized_shape` - Shape of the dimensions to normalize over
+    #[must_use] 
     pub fn new(normalized_shape: &[usize]) -> Self {
         let numel: usize = normalized_shape.iter().product();
         Self {
@@ -65,14 +66,16 @@ impl LayerNorm {
         }
     }
 
-    /// Create LayerNorm with custom epsilon.
+    /// Create `LayerNorm` with custom epsilon.
+    #[must_use] 
     pub fn with_eps(normalized_shape: &[usize], eps: f32) -> Self {
         let mut layer = Self::new(normalized_shape);
         layer.eps = eps;
         layer
     }
 
-    /// Create LayerNorm without learnable parameters.
+    /// Create `LayerNorm` without learnable parameters.
+    #[must_use] 
     pub fn without_affine(normalized_shape: &[usize]) -> Self {
         let numel: usize = normalized_shape.iter().product();
         Self {
@@ -85,6 +88,7 @@ impl LayerNorm {
     }
 
     /// Get the normalized shape.
+    #[must_use] 
     pub fn normalized_shape(&self) -> &[usize] {
         &self.normalized_shape
     }
@@ -185,11 +189,12 @@ pub struct BatchNorm1d {
 }
 
 impl BatchNorm1d {
-    /// Create a new BatchNorm1d layer.
+    /// Create a new `BatchNorm1d` layer.
     ///
     /// # Arguments
     ///
     /// * `num_features` - Number of features (channels)
+    #[must_use] 
     pub fn new(num_features: usize) -> Self {
         Self {
             num_features,
@@ -204,12 +209,14 @@ impl BatchNorm1d {
     }
 
     /// Set momentum for running statistics update.
+    #[must_use] 
     pub fn with_momentum(mut self, momentum: f32) -> Self {
         self.momentum = momentum;
         self
     }
 
     /// Set epsilon for numerical stability.
+    #[must_use] 
     pub fn with_eps(mut self, eps: f32) -> Self {
         self.eps = eps;
         self
@@ -355,12 +362,12 @@ impl Module for BatchNorm1d {
 /// Group Normalization (Wu & He, 2018).
 ///
 /// Divides channels into groups and normalizes within each group.
-/// Unlike BatchNorm, GroupNorm is independent of batch size, making it
+/// Unlike `BatchNorm`, `GroupNorm` is independent of batch size, making it
 /// suitable for small batch training (e.g., object detection, segmentation).
 ///
 /// # Shape
 ///
-/// - Input: `(N, C, *)` where C must be divisible by num_groups
+/// - Input: `(N, C, *)` where C must be divisible by `num_groups`
 /// - Output: Same as input
 ///
 /// # Example
@@ -377,7 +384,7 @@ impl Module for BatchNorm1d {
 pub struct GroupNorm {
     /// Number of groups to divide channels into
     num_groups: usize,
-    /// Number of channels (must be divisible by num_groups)
+    /// Number of channels (must be divisible by `num_groups`)
     num_channels: usize,
     /// Small constant for numerical stability
     eps: f32,
@@ -390,16 +397,17 @@ pub struct GroupNorm {
 }
 
 impl GroupNorm {
-    /// Create a new GroupNorm layer.
+    /// Create a new `GroupNorm` layer.
     ///
     /// # Arguments
     ///
     /// * `num_groups` - Number of groups to divide channels into
-    /// * `num_channels` - Number of channels (must be divisible by num_groups)
+    /// * `num_channels` - Number of channels (must be divisible by `num_groups`)
     ///
     /// # Panics
     ///
     /// Panics if `num_channels` is not divisible by `num_groups`.
+    #[must_use] 
     pub fn new(num_groups: usize, num_channels: usize) -> Self {
         assert!(
             num_channels % num_groups == 0,
@@ -416,14 +424,16 @@ impl GroupNorm {
         }
     }
 
-    /// Create GroupNorm with custom epsilon.
+    /// Create `GroupNorm` with custom epsilon.
+    #[must_use] 
     pub fn with_eps(num_groups: usize, num_channels: usize, eps: f32) -> Self {
         let mut layer = Self::new(num_groups, num_channels);
         layer.eps = eps;
         layer
     }
 
-    /// Create GroupNorm without learnable parameters.
+    /// Create `GroupNorm` without learnable parameters.
+    #[must_use] 
     pub fn without_affine(num_groups: usize, num_channels: usize) -> Self {
         assert!(
             num_channels % num_groups == 0,
@@ -441,11 +451,13 @@ impl GroupNorm {
     }
 
     /// Get number of groups.
+    #[must_use] 
     pub fn num_groups(&self) -> usize {
         self.num_groups
     }
 
     /// Get number of channels.
+    #[must_use] 
     pub fn num_channels(&self) -> usize {
         self.num_channels
     }
@@ -541,16 +553,16 @@ impl Module for GroupNorm {
 
 /// Root Mean Square Layer Normalization (Zhang & Sennrich, 2019).
 ///
-/// A simplified version of LayerNorm that only uses the root mean square
+/// A simplified version of `LayerNorm` that only uses the root mean square
 /// for normalization, without centering (no mean subtraction).
-/// This is faster than LayerNorm while achieving similar results.
+/// This is faster than `LayerNorm` while achieving similar results.
 ///
 /// ```text
 /// y = x / RMS(x) * gamma
 /// RMS(x) = sqrt(mean(x^2) + eps)
 /// ```
 ///
-/// Used in LLaMA, Gemma, and other modern transformers.
+/// Used in `LLaMA`, Gemma, and other modern transformers.
 ///
 /// # Example
 ///
@@ -566,7 +578,7 @@ impl Module for GroupNorm {
 /// # References
 ///
 /// - Zhang, B., & Sennrich, R. (2019). Root Mean Square Layer Normalization.
-///   NeurIPS.
+///   `NeurIPS`.
 #[derive(Debug)]
 pub struct RMSNorm {
     /// Shape of the normalized dimensions
@@ -580,11 +592,12 @@ pub struct RMSNorm {
 }
 
 impl RMSNorm {
-    /// Create a new RMSNorm layer.
+    /// Create a new `RMSNorm` layer.
     ///
     /// # Arguments
     ///
     /// * `normalized_shape` - Shape of the dimensions to normalize over
+    #[must_use] 
     pub fn new(normalized_shape: &[usize]) -> Self {
         let numel: usize = normalized_shape.iter().product();
         Self {
@@ -595,14 +608,16 @@ impl RMSNorm {
         }
     }
 
-    /// Create RMSNorm with custom epsilon.
+    /// Create `RMSNorm` with custom epsilon.
+    #[must_use] 
     pub fn with_eps(normalized_shape: &[usize], eps: f32) -> Self {
         let mut layer = Self::new(normalized_shape);
         layer.eps = eps;
         layer
     }
 
-    /// Create RMSNorm without learnable parameters.
+    /// Create `RMSNorm` without learnable parameters.
+    #[must_use] 
     pub fn without_affine(normalized_shape: &[usize]) -> Self {
         let numel: usize = normalized_shape.iter().product();
         Self {
@@ -614,11 +629,13 @@ impl RMSNorm {
     }
 
     /// Get the normalized shape.
+    #[must_use] 
     pub fn normalized_shape(&self) -> &[usize] {
         &self.normalized_shape
     }
 
     /// Get the epsilon value.
+    #[must_use] 
     pub fn eps(&self) -> f32 {
         self.eps
     }
@@ -631,11 +648,12 @@ impl RMSNorm {
     }
 
     /// Get reference to weight tensor.
+    #[must_use] 
     pub fn weight(&self) -> &Tensor {
         &self.weight
     }
 
-    /// Create a placeholder RMSNorm layer with minimal memory allocation.
+    /// Create a placeholder `RMSNorm` layer with minimal memory allocation.
     ///
     /// Used for lazy initialization when loading pre-trained weights.
     /// The placeholder uses 1-element tensors instead of full vectors,
@@ -643,6 +661,7 @@ impl RMSNorm {
     ///
     /// **IMPORTANT**: This layer will NOT work for inference until
     /// `set_weight()` is called with real weights.
+    #[must_use] 
     pub fn placeholder(normalized_shape: &[usize]) -> Self {
         Self {
             normalized_shape: normalized_shape.to_vec(),
@@ -724,21 +743,23 @@ impl Module for RMSNorm {
 /// Normalizes each channel independently for each sample.
 /// Commonly used in style transfer networks.
 ///
-/// This is equivalent to GroupNorm with num_groups = num_channels.
+/// This is equivalent to `GroupNorm` with `num_groups` = `num_channels`.
 #[derive(Debug)]
 pub struct InstanceNorm {
     inner: GroupNorm,
 }
 
 impl InstanceNorm {
-    /// Create a new InstanceNorm layer.
+    /// Create a new `InstanceNorm` layer.
+    #[must_use] 
     pub fn new(num_channels: usize) -> Self {
         Self {
             inner: GroupNorm::new(num_channels, num_channels),
         }
     }
 
-    /// Create InstanceNorm without learnable parameters.
+    /// Create `InstanceNorm` without learnable parameters.
+    #[must_use] 
     pub fn without_affine(num_channels: usize) -> Self {
         Self {
             inner: GroupNorm::without_affine(num_channels, num_channels),

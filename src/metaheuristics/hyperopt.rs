@@ -1,4 +1,4 @@
-//! HyperoptSearch: High-level Hyperparameter Optimization Wrapper
+//! `HyperoptSearch`: High-level Hyperparameter Optimization Wrapper
 //!
 //! Provides a scikit-learn style interface for hyperparameter tuning
 //! using metaheuristic algorithms as the search backend.
@@ -55,6 +55,7 @@ pub enum Hyperparameter {
 
 impl Hyperparameter {
     /// Get the parameter name.
+    #[must_use] 
     pub fn name(&self) -> &str {
         match self {
             Self::Real { name, .. } | Self::Int { name, .. } | Self::Categorical { name, .. } => {
@@ -64,6 +65,7 @@ impl Hyperparameter {
     }
 
     /// Get the dimensionality this parameter contributes.
+    #[must_use] 
     pub fn dim(&self) -> usize {
         match self {
             Self::Real { .. } | Self::Int { .. } => 1,
@@ -82,16 +84,19 @@ pub struct HyperparameterSet {
 
 impl HyperparameterSet {
     /// Create empty parameter set.
+    #[must_use] 
     pub fn new() -> Self {
         Self::default()
     }
 
     /// Get a real-valued parameter.
+    #[must_use] 
     pub fn get_real(&self, name: &str) -> Option<f64> {
         self.reals.get(name).copied()
     }
 
     /// Get an integer parameter.
+    #[must_use] 
     pub fn get_int(&self, name: &str) -> Option<i64> {
         self.ints.get(name).copied()
     }
@@ -162,6 +167,7 @@ impl Default for HyperoptSearch {
 
 impl HyperoptSearch {
     /// Create a new hyperparameter search.
+    #[must_use] 
     pub fn new() -> Self {
         Self {
             parameters: Vec::new(),
@@ -172,6 +178,7 @@ impl HyperoptSearch {
     }
 
     /// Add a real-valued hyperparameter.
+    #[must_use] 
     pub fn add_real(mut self, name: &str, lower: f64, upper: f64, log_scale: bool) -> Self {
         self.parameters.push(Hyperparameter::Real {
             name: name.to_string(),
@@ -183,6 +190,7 @@ impl HyperoptSearch {
     }
 
     /// Add an integer hyperparameter.
+    #[must_use] 
     pub fn add_int(mut self, name: &str, lower: i64, upper: i64) -> Self {
         self.parameters.push(Hyperparameter::Int {
             name: name.to_string(),
@@ -193,6 +201,7 @@ impl HyperoptSearch {
     }
 
     /// Add a categorical hyperparameter.
+    #[must_use] 
     pub fn add_categorical(mut self, name: &str, choices: &[&str]) -> Self {
         self.parameters.push(Hyperparameter::Categorical {
             name: name.to_string(),
@@ -202,18 +211,21 @@ impl HyperoptSearch {
     }
 
     /// Set the search algorithm backend.
+    #[must_use] 
     pub fn with_algorithm(mut self, algorithm: SearchAlgorithm) -> Self {
         self.algorithm = algorithm;
         self
     }
 
     /// Set random seed for reproducibility.
+    #[must_use] 
     pub fn with_seed(mut self, seed: u64) -> Self {
         self.seed = Some(seed);
         self
     }
 
     /// Set number of parallel jobs (reserved for future use).
+    #[must_use] 
     pub fn with_n_jobs(mut self, n_jobs: usize) -> Self {
         self.n_jobs = n_jobs.max(1);
         self

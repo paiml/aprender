@@ -180,7 +180,7 @@ pub struct Transcription {
     /// Processing duration in milliseconds
     pub processing_time_ms: u64,
     /// Cross-attention weights for alignment (G5)
-    /// Shape: [decoder_layers, decoder_tokens, encoder_frames]
+    /// Shape: [`decoder_layers`, `decoder_tokens`, `encoder_frames`]
     pub cross_attention_weights: Option<CrossAttentionWeights>,
 }
 
@@ -221,7 +221,7 @@ impl CrossAttentionWeights {
     /// Create cross-attention weights from flat data
     ///
     /// # Arguments
-    /// * `weights` - Flattened weights of shape [n_layers × n_tokens × n_frames]
+    /// * `weights` - Flattened weights of shape [`n_layers` × `n_tokens` × `n_frames`]
     /// * `n_layers` - Number of decoder layers
     /// * `n_tokens` - Number of decoder tokens
     /// * `n_frames` - Number of encoder frames
@@ -261,7 +261,7 @@ impl CrossAttentionWeights {
         }
     }
 
-    /// Get the shape as (n_layers, n_tokens, n_frames)
+    /// Get the shape as (`n_layers`, `n_tokens`, `n_frames`)
     #[must_use]
     pub fn shape(&self) -> (usize, usize, usize) {
         (self.n_layers, self.n_tokens, self.n_frames)
@@ -449,7 +449,7 @@ impl Default for LanguageDetection {
 ///
 /// # Arguments
 /// * `encoder_output` - Encoder hidden states
-/// * `encoder_shape` - Shape as [batch, frames, hidden_dim]
+/// * `encoder_shape` - Shape as [batch, frames, `hidden_dim`]
 ///
 /// # Returns
 /// Language detection result with confidence scores
@@ -622,7 +622,7 @@ impl<M: AsrModel> AsrSession<M> {
     ///
     /// # Arguments
     /// * `mel` - Mel spectrogram features (80 bins × time frames)
-    /// * `mel_shape` - Shape as [n_mels, n_frames]
+    /// * `mel_shape` - Shape as [`n_mels`, `n_frames`]
     ///
     /// # Returns
     /// Transcription with segments and timing

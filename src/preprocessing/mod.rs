@@ -183,11 +183,11 @@ impl StandardScaler {
         Matrix::from_vec(n_samples, n_features, result).map_err(Into::into)
     }
 
-    /// Saves the StandardScaler to a SafeTensors file.
+    /// Saves the `StandardScaler` to a `SafeTensors` file.
     ///
     /// # Arguments
     ///
-    /// * `path` - Path where the SafeTensors file will be saved
+    /// * `path` - Path where the `SafeTensors` file will be saved
     ///
     /// # Errors
     ///
@@ -223,11 +223,11 @@ impl StandardScaler {
         Ok(())
     }
 
-    /// Loads a StandardScaler from a SafeTensors file.
+    /// Loads a `StandardScaler` from a `SafeTensors` file.
     ///
     /// # Arguments
     ///
-    /// * `path` - Path to the SafeTensors file
+    /// * `path` - Path to the `SafeTensors` file
     ///
     /// # Errors
     ///
@@ -356,7 +356,7 @@ impl Transformer for StandardScaler {
 
 /// Scales features to a given range (default [0, 1]).
 ///
-/// The transformation is: X_scaled = (X - X_min) / (X_max - X_min)
+/// The transformation is: `X_scaled` = (X - `X_min`) / (`X_max` - `X_min`)
 ///
 /// This transformer is useful for algorithms sensitive to feature scales
 /// and when you want bounded outputs (e.g., for neural networks).
@@ -863,7 +863,7 @@ impl Default for TSNE {
 impl TSNE {
     /// Create a new t-SNE with default parameters.
     ///
-    /// Default: perplexity=30.0, learning_rate=200.0, n_iter=1000
+    /// Default: perplexity=30.0, `learning_rate=200.0`, `n_iter=1000`
     #[must_use]
     pub fn new(n_components: usize) -> Self {
         Self {
@@ -945,7 +945,7 @@ impl TSNE {
 
     /// Compute conditional probabilities P(j|i) with perplexity constraint.
     ///
-    /// Uses binary search to find sigma_i such that perplexity matches target.
+    /// Uses binary search to find `sigma_i` such that perplexity matches target.
     fn compute_p_conditional(&self, distances: &[f32], n_samples: usize) -> Vec<f32> {
         let mut p_conditional = vec![0.0; n_samples * n_samples];
         let target_entropy = self.perplexity.ln();

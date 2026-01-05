@@ -132,12 +132,12 @@ impl LinearRegression {
         Ok(model)
     }
 
-    /// Saves the model to SafeTensors format.
+    /// Saves the model to `SafeTensors` format.
     ///
-    /// SafeTensors format is compatible with:
-    /// - HuggingFace ecosystem
+    /// `SafeTensors` format is compatible with:
+    /// - `HuggingFace` ecosystem
     /// - Ollama (can convert to GGUF)
-    /// - PyTorch, TensorFlow
+    /// - `PyTorch`, TensorFlow
     /// - realizar inference engine
     ///
     /// # Errors
@@ -174,13 +174,13 @@ impl LinearRegression {
         Ok(())
     }
 
-    /// Loads a model from SafeTensors format.
+    /// Loads a model from `SafeTensors` format.
     ///
     /// # Errors
     ///
     /// Returns an error if:
     /// - File reading fails
-    /// - SafeTensors format is invalid
+    /// - `SafeTensors` format is invalid
     /// - Required tensors are missing
     pub fn load_safetensors<P: AsRef<Path>>(path: P) -> std::result::Result<Self, String> {
         use crate::serialization::safetensors;
@@ -460,12 +460,12 @@ impl Ridge {
         Ok(model)
     }
 
-    /// Saves the model to SafeTensors format.
+    /// Saves the model to `SafeTensors` format.
     ///
-    /// SafeTensors format is compatible with:
-    /// - HuggingFace ecosystem
+    /// `SafeTensors` format is compatible with:
+    /// - `HuggingFace` ecosystem
     /// - Ollama (can convert to GGUF)
-    /// - PyTorch, TensorFlow
+    /// - `PyTorch`, TensorFlow
     /// - realizar inference engine
     ///
     /// # Errors
@@ -507,13 +507,13 @@ impl Ridge {
         Ok(())
     }
 
-    /// Loads a model from SafeTensors format.
+    /// Loads a model from `SafeTensors` format.
     ///
     /// # Errors
     ///
     /// Returns an error if:
     /// - File reading fails
-    /// - SafeTensors format is invalid
+    /// - `SafeTensors` format is invalid
     /// - Required tensors are missing
     pub fn load_safetensors<P: AsRef<Path>>(path: P) -> std::result::Result<Self, String> {
         use crate::serialization::safetensors;
@@ -818,12 +818,12 @@ impl Lasso {
         Ok(model)
     }
 
-    /// Saves the model to SafeTensors format.
+    /// Saves the model to `SafeTensors` format.
     ///
-    /// SafeTensors format is compatible with:
-    /// - HuggingFace ecosystem
+    /// `SafeTensors` format is compatible with:
+    /// - `HuggingFace` ecosystem
     /// - Ollama (can convert to GGUF)
-    /// - PyTorch, TensorFlow
+    /// - `PyTorch`, TensorFlow
     /// - realizar inference engine
     ///
     /// # Errors
@@ -875,13 +875,13 @@ impl Lasso {
         Ok(())
     }
 
-    /// Loads a model from SafeTensors format.
+    /// Loads a model from `SafeTensors` format.
     ///
     /// # Errors
     ///
     /// Returns an error if:
     /// - File reading fails
-    /// - SafeTensors format is invalid
+    /// - `SafeTensors` format is invalid
     /// - Required tensors are missing
     pub fn load_safetensors<P: AsRef<Path>>(path: P) -> std::result::Result<Self, String> {
         use crate::serialization::safetensors;
@@ -1274,12 +1274,12 @@ impl ElasticNet {
         Ok(model)
     }
 
-    /// Saves the model to SafeTensors format.
+    /// Saves the model to `SafeTensors` format.
     ///
-    /// SafeTensors format is compatible with:
-    /// - HuggingFace ecosystem
+    /// `SafeTensors` format is compatible with:
+    /// - `HuggingFace` ecosystem
     /// - Ollama (can convert to GGUF)
-    /// - PyTorch, TensorFlow
+    /// - `PyTorch`, TensorFlow
     /// - realizar inference engine
     ///
     /// # Errors
@@ -1336,13 +1336,13 @@ impl ElasticNet {
         Ok(())
     }
 
-    /// Loads a model from SafeTensors format.
+    /// Loads a model from `SafeTensors` format.
     ///
     /// # Errors
     ///
     /// Returns an error if:
     /// - File reading fails
-    /// - SafeTensors format is invalid
+    /// - `SafeTensors` format is invalid
     /// - Required tensors are missing
     pub fn load_safetensors<P: AsRef<Path>>(path: P) -> std::result::Result<Self, String> {
         use crate::serialization::safetensors;

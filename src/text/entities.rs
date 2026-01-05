@@ -42,6 +42,7 @@ pub struct Entities {
 
 impl Entities {
     /// Create empty entities.
+    #[must_use] 
     pub fn new() -> Self {
         Self {
             emails: Vec::new(),
@@ -54,6 +55,7 @@ impl Entities {
     }
 
     /// Check if any entities were found.
+    #[must_use] 
     pub fn is_empty(&self) -> bool {
         self.emails.is_empty()
             && self.urls.is_empty()
@@ -64,6 +66,7 @@ impl Entities {
     }
 
     /// Count total entities found.
+    #[must_use] 
     pub fn total_count(&self) -> usize {
         self.emails.len()
             + self.urls.len()
@@ -112,6 +115,7 @@ impl EntityExtractor {
     ///
     /// let extractor = EntityExtractor::new();
     /// ```
+    #[must_use] 
     pub fn new() -> Self {
         Self {
             extract_named_entities: true,
@@ -127,6 +131,7 @@ impl EntityExtractor {
     ///
     /// let extractor = EntityExtractor::new().with_named_entities(false);
     /// ```
+    #[must_use] 
     pub fn with_named_entities(mut self, enable: bool) -> Self {
         self.extract_named_entities = enable;
         self

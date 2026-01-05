@@ -1,6 +1,6 @@
-//! MixUp Data Augmentation.
+//! `MixUp` Data Augmentation.
 //!
-//! Implements MixUp (Zhang et al., 2018) for creating synthetic samples
+//! Implements `MixUp` (Zhang et al., 2018) for creating synthetic samples
 //! via convex combinations in embedding space.
 //!
 //! # References
@@ -17,7 +17,7 @@ use crate::error::Result;
 
 /// Trait for types that can be embedded into a vector space.
 ///
-/// Implement this trait to enable MixUp interpolation for your data type.
+/// Implement this trait to enable `MixUp` interpolation for your data type.
 ///
 /// # Example
 ///
@@ -60,7 +60,7 @@ pub trait Embeddable: Clone {
 // MixUp Configuration
 // ============================================================================
 
-/// Configuration for MixUp augmentation.
+/// Configuration for `MixUp` augmentation.
 #[derive(Debug, Clone)]
 pub struct MixUpConfig {
     /// Alpha parameter for Beta distribution (higher = more uniform mixing).
@@ -85,7 +85,7 @@ impl Default for MixUpConfig {
 }
 
 impl MixUpConfig {
-    /// Create a new MixUp configuration.
+    /// Create a new `MixUp` configuration.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
@@ -172,7 +172,7 @@ impl SimpleRng {
 // MixUp Generator
 // ============================================================================
 
-/// MixUp synthetic data generator.
+/// `MixUp` synthetic data generator.
 ///
 /// Creates synthetic samples by interpolating between pairs of samples
 /// in embedding space: x' = λ*x1 + (1-λ)*x2
@@ -210,7 +210,7 @@ pub struct MixUpGenerator<T: Embeddable> {
 }
 
 impl<T: Embeddable> MixUpGenerator<T> {
-    /// Create a new MixUp generator with default configuration.
+    /// Create a new `MixUp` generator with default configuration.
     #[must_use]
     pub fn new() -> Self {
         Self {

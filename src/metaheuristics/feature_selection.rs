@@ -42,7 +42,7 @@ pub enum SelectionCriterion {
     /// Minimize features only (for compression/interpretability)
     MinFeatures,
 
-    /// Balance accuracy and feature count: score = accuracy - alpha * n_features
+    /// Balance accuracy and feature count: score = accuracy - alpha * `n_features`
     MaxAccuracyMinFeatures {
         /// Penalty per selected feature
         alpha: f64,
@@ -54,13 +54,13 @@ pub enum SelectionCriterion {
         max_features: usize,
     },
 
-    /// AIC-like criterion: score = accuracy - 2 * n_features / n_samples
+    /// AIC-like criterion: score = accuracy - 2 * `n_features` / `n_samples`
     AIC {
         /// Number of training samples
         n_samples: usize,
     },
 
-    /// BIC-like criterion: score = accuracy - log(n) * n_features / n_samples
+    /// BIC-like criterion: score = accuracy - log(n) * `n_features` / `n_samples`
     BIC {
         /// Number of training samples
         n_samples: usize,
@@ -101,6 +101,7 @@ pub struct FeatureSelector {
 
 impl FeatureSelector {
     /// Create new feature selector for given number of features.
+    #[must_use] 
     pub fn new(n_features: usize) -> Self {
         Self {
             n_features,
@@ -112,24 +113,28 @@ impl FeatureSelector {
     }
 
     /// Set selection criterion.
+    #[must_use] 
     pub fn with_criterion(mut self, criterion: SelectionCriterion) -> Self {
         self.criterion = criterion;
         self
     }
 
     /// Set population size for Binary GA.
+    #[must_use] 
     pub fn with_population_size(mut self, size: usize) -> Self {
         self.population_size = size.max(10);
         self
     }
 
     /// Set mutation probability.
+    #[must_use] 
     pub fn with_mutation_prob(mut self, prob: f64) -> Self {
         self.mutation_prob = prob.clamp(0.001, 0.5);
         self
     }
 
     /// Set random seed for reproducibility.
+    #[must_use] 
     pub fn with_seed(mut self, seed: u64) -> Self {
         self.seed = Some(seed);
         self
@@ -137,7 +142,7 @@ impl FeatureSelector {
 
     /// Run feature selection.
     ///
-    /// The evaluator function takes a boolean mask and returns (accuracy, n_selected).
+    /// The evaluator function takes a boolean mask and returns (accuracy, `n_selected`).
     pub fn select<F>(&mut self, evaluator: F, budget: Budget) -> FeatureSelectionResult
     where
         F: Fn(&[bool]) -> (f64, usize),

@@ -52,12 +52,14 @@ impl Default for DistillationConfig {
 
 impl DistillationConfig {
     /// Create with custom temperature
+    #[must_use] 
     pub fn with_temperature(mut self, temperature: f64) -> Self {
         self.temperature = temperature;
         self
     }
 
     /// Create with custom alpha
+    #[must_use] 
     pub fn with_alpha(mut self, alpha: f64) -> Self {
         self.alpha = alpha;
         self
@@ -66,7 +68,7 @@ impl DistillationConfig {
 
 /// Softmax with temperature scaling
 ///
-/// softmax_T(z_i) = exp(z_i/T) / sum(exp(z_j/T))
+/// `softmax_T(z_i)` = `exp(z_i/T)` / `sum(exp(z_j/T))`
 pub fn softmax_temperature(logits: &[f64], temperature: f64) -> Vec<f64> {
     if logits.is_empty() {
         return vec![];
@@ -86,13 +88,15 @@ pub fn softmax_temperature(logits: &[f64], temperature: f64) -> Vec<f64> {
 }
 
 /// Regular softmax (T=1)
+#[must_use] 
 pub fn softmax(logits: &[f64]) -> Vec<f64> {
     softmax_temperature(logits, 1.0)
 }
 
-/// KL divergence: D_KL(P || Q) = sum(P * log(P/Q))
+/// KL divergence: `D_KL(P` || Q) = sum(P * log(P/Q))
 ///
 /// Returns sum of KL divergence over all classes
+#[must_use] 
 pub fn kl_divergence(p: &[f64], q: &[f64]) -> f64 {
     if p.len() != q.len() {
         return f64::INFINITY;
@@ -110,6 +114,7 @@ pub fn kl_divergence(p: &[f64], q: &[f64]) -> f64 {
 }
 
 /// Cross-entropy loss: CE(p, y) = -sum(y * log(p))
+#[must_use] 
 pub fn cross_entropy(probs: &[f64], targets: &[f64]) -> f64 {
     if probs.len() != targets.len() {
         return f64::INFINITY;
@@ -124,6 +129,7 @@ pub fn cross_entropy(probs: &[f64], targets: &[f64]) -> f64 {
 }
 
 /// Binary cross-entropy for single-class prediction
+#[must_use] 
 pub fn binary_cross_entropy(prob: f64, target: f64) -> f64 {
     let eps = 1e-15;
     let p = prob.clamp(eps, 1.0 - eps);
@@ -145,6 +151,7 @@ impl Default for SoftTargetGenerator {
 
 impl SoftTargetGenerator {
     /// Create with default temperature
+    #[must_use] 
     pub fn new() -> Self {
         Self {
             temperature: DEFAULT_TEMPERATURE,
@@ -152,16 +159,19 @@ impl SoftTargetGenerator {
     }
 
     /// Create with custom temperature
+    #[must_use] 
     pub fn with_temperature(temperature: f64) -> Self {
         Self { temperature }
     }
 
     /// Generate soft targets from logits
+    #[must_use] 
     pub fn generate(&self, logits: &[f64]) -> Vec<f64> {
         softmax_temperature(logits, self.temperature)
     }
 
     /// Generate soft targets for batch
+    #[must_use] 
     pub fn generate_batch(&self, logits: &[f64], n_classes: usize) -> Vec<f64> {
         if logits.is_empty() || n_classes == 0 || logits.len() % n_classes != 0 {
             return vec![];
@@ -194,6 +204,7 @@ impl Default for DistillationLoss {
 
 impl DistillationLoss {
     /// Create with default config
+    #[must_use] 
     pub fn new() -> Self {
         Self {
             config: DistillationConfig::default(),
@@ -201,13 +212,14 @@ impl DistillationLoss {
     }
 
     /// Create with custom config
+    #[must_use] 
     pub fn with_config(config: DistillationConfig) -> Self {
         Self { config }
     }
 
     /// Compute distillation loss
     ///
-    /// Loss = α * T² * KL(student_soft || teacher_soft) + (1-α) * CE(student_hard, labels)
+    /// Loss = α * T² * `KL(student_soft` || `teacher_soft`) + (1-α) * `CE(student_hard`, labels)
     ///
     /// The T² factor compensates for the gradient magnitude change when using temperature.
     ///
@@ -258,7 +270,7 @@ impl DistillationLoss {
     /// Compute gradient of distillation loss w.r.t. student logits
     ///
     /// # Returns
-    /// Gradient vector same size as student_logits
+    /// Gradient vector same size as `student_logits`
     pub fn gradient(
         &self,
         student_logits: &[f64],
@@ -299,6 +311,7 @@ impl DistillationLoss {
     }
 
     /// Get configuration
+    #[must_use] 
     pub fn config(&self) -> &DistillationConfig {
         &self.config
     }
@@ -307,9 +320,9 @@ impl DistillationLoss {
 /// Simple linear distillation model (for testing/simple cases)
 #[derive(Debug, Clone)]
 pub struct LinearDistiller {
-    /// Student weights (n_classes × n_features)
+    /// Student weights (`n_classes` × `n_features`)
     weights: Vec<f64>,
-    /// Student biases (n_classes)
+    /// Student biases (`n_classes`)
     biases: Vec<f64>,
     /// Number of features
     n_features: usize,
@@ -326,6 +339,7 @@ impl LinearDistiller {
     /// # Arguments
     /// * `n_features` - Number of input features
     /// * `n_classes` - Number of output classes
+    #[must_use] 
     pub fn new(n_features: usize, n_classes: usize) -> Self {
         Self {
             weights: vec![0.0; n_classes * n_features],
@@ -337,6 +351,7 @@ impl LinearDistiller {
     }
 
     /// Create with custom config
+    #[must_use] 
     pub fn with_config(n_features: usize, n_classes: usize, config: DistillationConfig) -> Self {
         Self {
             weights: vec![0.0; n_classes * n_features],
@@ -412,11 +427,13 @@ impl LinearDistiller {
     }
 
     /// Get weights
+    #[must_use] 
     pub fn weights(&self) -> &[f64] {
         &self.weights
     }
 
     /// Get biases
+    #[must_use] 
     pub fn biases(&self) -> &[f64] {
         &self.biases
     }

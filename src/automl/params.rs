@@ -124,12 +124,12 @@ impl fmt::Display for KNNParam {
     }
 }
 
-/// Linear model hyperparameters (Ridge, Lasso, ElasticNet).
+/// Linear model hyperparameters (Ridge, Lasso, `ElasticNet`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum LinearParam {
     /// Regularization strength (alpha).
     Alpha,
-    /// L1/L2 mixing ratio for ElasticNet.
+    /// L1/L2 mixing ratio for `ElasticNet`.
     L1Ratio,
     /// Whether to fit intercept.
     FitIntercept,

@@ -612,7 +612,7 @@ impl LayerData {
 pub enum LayerType {
     /// Fully connected layer
     Dense,
-    /// ReLU activation
+    /// `ReLU` activation
     ReLU,
     /// Sigmoid activation
     Sigmoid,

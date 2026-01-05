@@ -328,7 +328,7 @@ impl LevelResult {
     }
 }
 
-/// Generate canonical Py2Rs examples
+/// Generate canonical `Py2Rs` examples
 #[must_use]
 pub fn generate_canonical_examples() -> Vec<Example> {
     Py2RsLevel::all()
@@ -349,7 +349,7 @@ pub fn generate_canonical_examples() -> Vec<Example> {
         .collect()
 }
 
-/// Run Py2Rs benchmark on a model (mock implementation)
+/// Run `Py2Rs` benchmark on a model (mock implementation)
 #[must_use]
 pub fn run_benchmark(model_id: &str, max_turns: u32) -> Py2RsScore {
     let mut score = Py2RsScore::new(model_id);
@@ -405,7 +405,7 @@ fn mock_model_result(level: Py2RsLevel, model_id: &str) -> (bool, u32) {
     }
 }
 
-/// Compare multiple models on Py2Rs benchmark
+/// Compare multiple models on `Py2Rs` benchmark
 #[must_use]
 pub fn compare_models(model_ids: &[(&str, u64)], max_turns: u32) -> ModelComparison {
     let mut comparison = ModelComparison::new("py2rs-canonical");

@@ -367,7 +367,7 @@ impl<P: ParamKey> SearchSpace<P> {
         self
     }
 
-    /// Add a raw HyperParam.
+    /// Add a raw `HyperParam`.
     #[must_use]
     pub fn add_param(mut self, key: P, param: HyperParam) -> Self {
         self.params.insert(key, param);
@@ -754,7 +754,7 @@ pub struct DESearch {
     best_idx: usize,
     /// Parameter keys in order (for conversion).
     param_order: Vec<String>,
-    /// Parameter bounds (lower, upper, is_integer, is_log).
+    /// Parameter bounds (lower, upper, `is_integer`, `is_log`).
     param_bounds: Vec<(f64, f64, bool, bool)>,
     /// Trials generated so far.
     trials_generated: usize,
@@ -1158,7 +1158,7 @@ impl<S> ActiveLearningSearch<S> {
 
     /// Get current uncertainty estimate.
     ///
-    /// Uses coefficient of variation (std_dev / mean) as uncertainty metric.
+    /// Uses coefficient of variation (`std_dev` / mean) as uncertainty metric.
     /// Returns infinity if not enough samples.
     #[must_use]
     pub fn uncertainty(&self) -> f64 {

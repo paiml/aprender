@@ -2,8 +2,8 @@
 //!
 //! Provides two serialization formats:
 //!
-//! ## SafeTensors Format
-//! Industry-standard format compatible with HuggingFace ecosystem.
+//! ## `SafeTensors` Format
+//! Industry-standard format compatible with `HuggingFace` ecosystem.
 //! ```text
 //! [8-byte header: u64 metadata length (little-endian)]
 //! [JSON metadata: tensor names, dtypes, shapes, data_offsets]

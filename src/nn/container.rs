@@ -32,6 +32,7 @@ pub struct Sequential {
 
 impl Sequential {
     /// Create an empty Sequential container.
+    #[must_use] 
     pub fn new() -> Self {
         Self {
             modules: Vec::new(),
@@ -49,17 +50,20 @@ impl Sequential {
     }
 
     /// Add a module by boxed trait object.
+    #[must_use] 
     pub fn add_boxed(mut self, module: Box<dyn Module>) -> Self {
         self.modules.push(module);
         self
     }
 
     /// Get the number of modules.
+    #[must_use] 
     pub fn len(&self) -> usize {
         self.modules.len()
     }
 
     /// Check if the container is empty.
+    #[must_use] 
     pub fn is_empty(&self) -> bool {
         self.modules.is_empty()
     }
@@ -119,7 +123,7 @@ impl std::fmt::Debug for Sequential {
 
 /// List of modules with index-based access.
 ///
-/// Unlike Sequential, ModuleList doesn't define a forward pass.
+/// Unlike Sequential, `ModuleList` doesn't define a forward pass.
 /// It's useful for holding submodules that need custom control flow.
 ///
 /// # Example
@@ -149,7 +153,8 @@ pub struct ModuleList {
 }
 
 impl ModuleList {
-    /// Create an empty ModuleList.
+    /// Create an empty `ModuleList`.
+    #[must_use] 
     pub fn new() -> Self {
         Self {
             modules: Vec::new(),
@@ -165,6 +170,7 @@ impl ModuleList {
     }
 
     /// Add a boxed module to the list.
+    #[must_use] 
     pub fn add_boxed(mut self, module: Box<dyn Module>) -> Self {
         self.modules.push(module);
         self
@@ -181,11 +187,13 @@ impl ModuleList {
     }
 
     /// Get the number of modules.
+    #[must_use] 
     pub fn len(&self) -> usize {
         self.modules.len()
     }
 
     /// Check if the list is empty.
+    #[must_use] 
     pub fn is_empty(&self) -> bool {
         self.modules.is_empty()
     }
@@ -205,6 +213,7 @@ impl Default for ModuleList {
 // ModuleList doesn't implement forward - use get() for custom control flow
 impl ModuleList {
     /// Get all parameters from all modules.
+    #[must_use] 
     pub fn parameters(&self) -> Vec<&Tensor> {
         self.modules.iter().flat_map(|m| m.parameters()).collect()
     }
@@ -272,7 +281,8 @@ pub struct ModuleDict {
 }
 
 impl ModuleDict {
-    /// Create an empty ModuleDict.
+    /// Create an empty `ModuleDict`.
+    #[must_use] 
     pub fn new() -> Self {
         Self {
             modules: HashMap::new(),
@@ -314,6 +324,7 @@ impl ModuleDict {
     }
 
     /// Check if a module with the given name exists.
+    #[must_use] 
     pub fn contains(&self, name: &str) -> bool {
         self.modules.contains_key(name)
     }
@@ -329,11 +340,13 @@ impl ModuleDict {
     }
 
     /// Get the number of modules.
+    #[must_use] 
     pub fn len(&self) -> usize {
         self.modules.len()
     }
 
     /// Check if the dictionary is empty.
+    #[must_use] 
     pub fn is_empty(&self) -> bool {
         self.modules.is_empty()
     }
@@ -356,6 +369,7 @@ impl ModuleDict {
     }
 
     /// Get all parameters from all modules.
+    #[must_use] 
     pub fn parameters(&self) -> Vec<&Tensor> {
         self.keys
             .iter()
@@ -389,6 +403,7 @@ impl ModuleDict {
     }
 
     /// Check if in training mode.
+    #[must_use] 
     pub fn training(&self) -> bool {
         self.training
     }

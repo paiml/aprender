@@ -1,7 +1,7 @@
 //! Caching for Synthetic Data Generation.
 //!
 //! Provides memoization of generated synthetic samples to avoid
-//! redundant computation during AutoML hyperparameter search.
+//! redundant computation during `AutoML` hyperparameter search.
 
 use std::collections::{HashMap, VecDeque};
 use std::hash::{Hash, Hasher};
@@ -294,7 +294,7 @@ impl<T: Clone> SyntheticCache<T> {
         self.lru_order.push_back(key.clone());
     }
 
-    /// Evict entries until we have room for new_size.
+    /// Evict entries until we have room for `new_size`.
     fn evict_until_fits(&mut self, new_size: usize) {
         while self.current_size + new_size > self.max_size && !self.lru_order.is_empty() {
             self.evict_lru();

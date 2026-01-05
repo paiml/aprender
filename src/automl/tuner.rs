@@ -1,4 +1,4 @@
-//! AutoTuner for automatic hyperparameter optimization.
+//! `AutoTuner` for automatic hyperparameter optimization.
 //!
 //! Provides high-level API for tuning any model that implements the Estimator trait.
 
@@ -165,7 +165,7 @@ pub struct TuneResult<P: ParamKey> {
     pub n_trials: usize,
 }
 
-/// AutoTuner for hyperparameter optimization.
+/// `AutoTuner` for hyperparameter optimization.
 ///
 /// # Example
 ///

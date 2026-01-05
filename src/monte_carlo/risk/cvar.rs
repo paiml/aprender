@@ -1,7 +1,7 @@
-//! Conditional Value at Risk (CVaR / Expected Shortfall)
+//! Conditional Value at Risk (`CVaR` / Expected Shortfall)
 //!
-//! CVaR is the expected loss given that loss exceeds VaR.
-//! It is a coherent risk measure (unlike VaR).
+//! `CVaR` is the expected loss given that loss exceeds `VaR`.
+//! It is a coherent risk measure (unlike `VaR`).
 //!
 //! Reference: Artzner et al. (1999), "Coherent Measures of Risk"
 
@@ -12,11 +12,11 @@ use crate::monte_carlo::engine::{percentile, SimulationPath};
 pub struct CVaR;
 
 impl CVaR {
-    /// Calculate CVaR from returns
+    /// Calculate `CVaR` from returns
     ///
     /// CVaR(α) = E[Loss | Loss > VaR(α)]
     ///
-    /// Returns CVaR as a positive value (expected loss in tail)
+    /// Returns `CVaR` as a positive value (expected loss in tail)
     ///
     /// # Arguments
     /// * `returns` - Vector of returns
@@ -59,7 +59,7 @@ impl CVaR {
         -avg_tail.min(0.0)
     }
 
-    /// Calculate CVaR from simulation paths
+    /// Calculate `CVaR` from simulation paths
     #[must_use]
     pub fn from_paths(paths: &[SimulationPath], confidence: f64) -> f64 {
         let returns: Vec<f64> = paths
@@ -69,7 +69,7 @@ impl CVaR {
         Self::from_returns(&returns, confidence)
     }
 
-    /// Calculate CVaR using continuous distribution approximation
+    /// Calculate `CVaR` using continuous distribution approximation
     ///
     /// For continuous distributions:
     /// CVaR(α) = (1/(1-α)) × ∫_{-∞}^{VaR(α)} x × f(x) dx

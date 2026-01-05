@@ -42,7 +42,7 @@ pub struct EmbeddedTestData {
     /// Feature matrix (flattened, row-major)
     pub x_data: Vec<f32>,
 
-    /// Feature matrix shape (n_samples, n_features)
+    /// Feature matrix shape (`n_samples`, `n_features`)
     pub x_shape: (usize, usize),
 
     /// Target vector (for supervised models)
@@ -66,7 +66,7 @@ impl EmbeddedTestData {
     ///
     /// # Arguments
     /// * `x_data` - Flattened feature matrix (row-major order)
-    /// * `x_shape` - Shape as (n_samples, n_features)
+    /// * `x_shape` - Shape as (`n_samples`, `n_features`)
     ///
     /// # Panics
     /// Panics if `x_data.len() != x_shape.0 * x_shape.1`
@@ -351,8 +351,8 @@ impl Default for DataProvenance {
 /// Selects optimal compression based on data characteristics:
 /// - **None**: Raw f32 values, zero latency
 /// - **Zstd**: General purpose, 2-10x ratio
-/// - **DeltaZstd**: Time series/sorted data, 5-20x ratio
-/// - **QuantizedEntropy**: ML-specific, 4-8x with minimal accuracy loss
+/// - **`DeltaZstd`**: Time series/sorted data, 5-20x ratio
+/// - **`QuantizedEntropy`**: ML-specific, 4-8x with minimal accuracy loss
 /// - **Sparse**: Sparse features, ratio proportional to sparsity
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum DataCompression {

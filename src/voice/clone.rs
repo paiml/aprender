@@ -26,7 +26,7 @@
 //! # References
 //!
 //! - Jia, Y., et al. (2018). Transfer Learning from Speaker Verification to TTS.
-//! - Casanova, E., et al. (2022). YourTTS: Zero-Shot TTS and Voice Conversion.
+//! - Casanova, E., et al. (2022). `YourTTS`: Zero-Shot TTS and Voice Conversion.
 //! - Arik, S., et al. (2018). Neural Voice Cloning with Few Samples.
 //!
 //! # PMAT Compliance
@@ -383,7 +383,7 @@ pub trait SpeakerEncoder {
 
 /// YourTTS-based voice cloning.
 ///
-/// Reference: Casanova et al., 2022 - YourTTS: Zero-Shot TTS and Voice Conversion.
+/// Reference: Casanova et al., 2022 - `YourTTS`: Zero-Shot TTS and Voice Conversion.
 ///
 /// # Note
 /// This is a stub - requires model weights.
@@ -393,7 +393,7 @@ pub struct YourTtsCloner {
 }
 
 impl YourTtsCloner {
-    /// Create new YourTTS cloner
+    /// Create new `YourTTS` cloner
     #[must_use]
     pub fn new(config: CloningConfig) -> Self {
         Self { config }

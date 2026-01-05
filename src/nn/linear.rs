@@ -34,14 +34,14 @@ use crate::autograd::Tensor;
 /// assert_eq!(output.shape(), &[128, 30]);
 /// ```
 pub struct Linear {
-    /// Weight matrix, shape: [out_features, in_features]
+    /// Weight matrix, shape: [`out_features`, `in_features`]
     weight: Tensor,
 
-    /// Cached transposed weight [in_features, out_features] for fast forward
+    /// Cached transposed weight [`in_features`, `out_features`] for fast forward
     /// Computed once when weight is set, avoids transpose overhead every forward.
     weight_t: Option<Tensor>,
 
-    /// Bias vector, shape: [out_features], or None if bias=false
+    /// Bias vector, shape: [`out_features`], or None if bias=false
     bias: Option<Tensor>,
 
     /// Number of input features
@@ -64,11 +64,13 @@ impl Linear {
     /// ```ignore
     /// let layer = Linear::new(784, 256);
     /// ```
+    #[must_use] 
     pub fn new(in_features: usize, out_features: usize) -> Self {
         Self::with_seed(in_features, out_features, None)
     }
 
     /// Create a Linear layer with a specific random seed.
+    #[must_use] 
     pub fn with_seed(in_features: usize, out_features: usize, seed: Option<u64>) -> Self {
         let weight = xavier_uniform(
             &[out_features, in_features],
@@ -91,12 +93,14 @@ impl Linear {
 
     /// Create a Linear layer without bias.
     ///
-    /// Useful when followed by BatchNorm which has its own bias.
+    /// Useful when followed by `BatchNorm` which has its own bias.
+    #[must_use] 
     pub fn without_bias(in_features: usize, out_features: usize) -> Self {
         Self::without_bias_with_seed(in_features, out_features, None)
     }
 
     /// Create a Linear layer without bias with a specific random seed.
+    #[must_use] 
     pub fn without_bias_with_seed(
         in_features: usize,
         out_features: usize,
@@ -121,23 +125,26 @@ impl Linear {
     }
 
     /// Get the input feature dimension.
+    #[must_use] 
     pub fn in_features(&self) -> usize {
         self.in_features
     }
 
     /// Get the output feature dimension.
+    #[must_use] 
     pub fn out_features(&self) -> usize {
         self.out_features
     }
 
     /// Check if this layer has a bias term.
+    #[must_use] 
     pub fn has_bias(&self) -> bool {
         self.bias.is_some()
     }
 
     /// Set weight tensor from external data.
     ///
-    /// Used for loading pre-trained weights from SafeTensors or other formats.
+    /// Used for loading pre-trained weights from `SafeTensors` or other formats.
     /// Automatically computes and caches the transposed weight for fast forward.
     pub fn set_weight(&mut self, weight: Tensor) {
         // Pre-compute transpose once during loading (not every forward pass)
@@ -160,6 +167,7 @@ impl Linear {
     ///
     /// **IMPORTANT**: This layer will NOT work for inference until
     /// `set_weight()` is called with real weights.
+    #[must_use] 
     pub fn placeholder(in_features: usize, out_features: usize) -> Self {
         // Use 1-element placeholder tensors to save memory
         Self {
@@ -172,18 +180,20 @@ impl Linear {
     }
 
     /// Get reference to weight tensor.
+    #[must_use] 
     pub fn weight(&self) -> &Tensor {
         &self.weight
     }
 
     /// Get reference to bias tensor if present.
+    #[must_use] 
     pub fn bias(&self) -> Option<&Tensor> {
         self.bias.as_ref()
     }
 
-    /// Check if this layer is ready for inference (weight_t is cached).
+    /// Check if this layer is ready for inference (`weight_t` is cached).
     ///
-    /// Returns false for placeholder layers that haven't had set_weight() called.
+    /// Returns false for placeholder layers that haven't had `set_weight()` called.
     /// This is useful for verifying all layers are properly initialized before forward.
     #[must_use]
     pub fn is_ready(&self) -> bool {

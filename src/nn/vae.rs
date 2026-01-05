@@ -99,6 +99,7 @@ impl VAE {
     /// ```ignore
     /// let vae = VAE::new(784, vec![512, 256], 32);
     /// ```
+    #[must_use] 
     pub fn new(input_dim: usize, hidden_dims: Vec<usize>, latent_dim: usize) -> Self {
         // Build encoder
         let mut encoder_layers = Vec::new();
@@ -145,6 +146,7 @@ impl VAE {
     /// Set β for β-VAE (controls KL weight).
     ///
     /// β > 1 encourages disentangled representations.
+    #[must_use] 
     pub fn with_beta(mut self, beta: f32) -> Self {
         self.beta = beta;
         self
@@ -154,7 +156,8 @@ impl VAE {
     ///
     /// # Returns
     ///
-    /// Tuple of (mean, log_variance)
+    /// Tuple of (mean, `log_variance`)
+    #[must_use] 
     pub fn encode(&self, x: &Tensor) -> (Tensor, Tensor) {
         let mut h = x.clone();
 
@@ -174,6 +177,7 @@ impl VAE {
     /// Reparameterization trick: z = μ + σ * ε, where ε ~ N(0, I).
     ///
     /// Enables backpropagation through sampling.
+    #[must_use] 
     pub fn reparameterize(&self, mu: &Tensor, log_var: &Tensor) -> Tensor {
         if !self.training {
             // At test time, just use the mean
@@ -191,6 +195,7 @@ impl VAE {
     }
 
     /// Decode latent vector to reconstruction.
+    #[must_use] 
     pub fn decode(&self, z: &Tensor) -> Tensor {
         let mut h = z.clone();
 
@@ -205,6 +210,7 @@ impl VAE {
     }
 
     /// Full forward pass through VAE.
+    #[must_use] 
     pub fn forward_vae(&self, x: &Tensor) -> VAEOutput {
         // Encode
         let (mu, log_var) = self.encode(x);
@@ -232,7 +238,8 @@ impl VAE {
     ///
     /// # Returns
     ///
-    /// Tuple of (total_loss, reconstruction_loss, kl_loss)
+    /// Tuple of (`total_loss`, `reconstruction_loss`, `kl_loss`)
+    #[must_use] 
     pub fn loss(&self, output: &VAEOutput, target: &Tensor) -> (f32, f32, f32) {
         // Reconstruction loss (MSE)
         let recon_loss = mse_loss(&output.reconstruction, target);
@@ -246,12 +253,14 @@ impl VAE {
     }
 
     /// Sample from the latent space.
+    #[must_use] 
     pub fn sample(&self, num_samples: usize) -> Tensor {
         let z = sample_standard_normal(&[num_samples, self.latent_dim]);
         self.decode(&z)
     }
 
     /// Interpolate between two points in latent space.
+    #[must_use] 
     pub fn interpolate(&self, x1: &Tensor, x2: &Tensor, steps: usize) -> Vec<Tensor> {
         let (mu1, _) = self.encode(x1);
         let (mu2, _) = self.encode(x2);
@@ -268,16 +277,19 @@ impl VAE {
     }
 
     /// Get latent dimension.
+    #[must_use] 
     pub fn latent_dim(&self) -> usize {
         self.latent_dim
     }
 
     /// Get input dimension.
+    #[must_use] 
     pub fn input_dim(&self) -> usize {
         self.input_dim
     }
 
     /// Get β value.
+    #[must_use] 
     pub fn beta(&self) -> f32 {
         self.beta
     }
@@ -379,6 +391,7 @@ impl ConditionalVAE {
     /// * `num_classes` - Number of classes for conditioning
     /// * `hidden_dims` - Dimensions of hidden layers
     /// * `latent_dim` - Dimension of latent space
+    #[must_use] 
     pub fn new(
         input_dim: usize,
         num_classes: usize,
@@ -426,6 +439,7 @@ impl ConditionalVAE {
     }
 
     /// Encode with class label.
+    #[must_use] 
     pub fn encode(&self, x: &Tensor, class_label: usize) -> (Tensor, Tensor) {
         let x_cond = concat_one_hot(x, class_label, self.num_classes);
 
@@ -442,6 +456,7 @@ impl ConditionalVAE {
     }
 
     /// Decode with class label.
+    #[must_use] 
     pub fn decode(&self, z: &Tensor, class_label: usize) -> Tensor {
         let z_cond = concat_one_hot(z, class_label, self.num_classes);
 
@@ -465,6 +480,7 @@ impl ConditionalVAE {
     }
 
     /// Full forward pass.
+    #[must_use] 
     pub fn forward_cvae(&self, x: &Tensor, class_label: usize) -> VAEOutput {
         let (mu, log_var) = self.encode(x, class_label);
         let z = self.reparameterize(&mu, &log_var);
@@ -479,22 +495,26 @@ impl ConditionalVAE {
     }
 
     /// Sample with class label.
+    #[must_use] 
     pub fn sample(&self, num_samples: usize, class_label: usize) -> Tensor {
         let z = sample_standard_normal(&[num_samples, self.latent_dim]);
         self.decode(&z, class_label)
     }
 
     /// Get number of classes.
+    #[must_use] 
     pub fn num_classes(&self) -> usize {
         self.num_classes
     }
 
     /// Get latent dimension.
+    #[must_use] 
     pub fn latent_dim(&self) -> usize {
         self.latent_dim
     }
 
     /// Get input dimension.
+    #[must_use] 
     pub fn input_dim(&self) -> usize {
         self.input_dim
     }
@@ -562,7 +582,7 @@ fn mse_loss(pred: &Tensor, target: &Tensor) -> f32 {
     sum_sq / pred.data().len() as f32
 }
 
-/// KL divergence loss for VAE: -0.5 * sum(1 + log_var - mu^2 - exp(log_var)).
+/// KL divergence loss for VAE: -0.5 * sum(1 + `log_var` - mu^2 - `exp(log_var)`).
 fn kl_divergence_loss(mu: &Tensor, log_var: &Tensor) -> f32 {
     let kl: f32 = mu
         .data()

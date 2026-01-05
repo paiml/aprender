@@ -85,7 +85,7 @@ impl HNSWIndex {
     ///
     /// * `m` - Maximum connections per node (12-48 recommended)
     /// * `ef_construction` - Construction parameter (100-200 recommended)
-    /// * `seed` - Random seed (0.0 for default ThreadRng)
+    /// * `seed` - Random seed (0.0 for default `ThreadRng`)
     ///
     /// # Examples
     ///
@@ -94,6 +94,7 @@ impl HNSWIndex {
     ///
     /// let index = HNSWIndex::new(16, 200, 0.0);
     /// ```
+    #[must_use] 
     pub fn new(m: usize, ef_construction: usize, _seed: f64) -> Self {
         Self {
             m,
@@ -160,7 +161,7 @@ impl HNSWIndex {
     ///
     /// # Returns
     ///
-    /// List of (item_id, distance) pairs, sorted by distance (closest first)
+    /// List of (`item_id`, distance) pairs, sorted by distance (closest first)
     ///
     /// # Examples
     ///
@@ -177,6 +178,7 @@ impl HNSWIndex {
     ///
     /// assert_eq!(results[0].0, "a");
     /// ```
+    #[must_use] 
     pub fn search(&self, query: &Vector<f64>, k: usize) -> Vec<(String, f64)> {
         if self.nodes.is_empty() || self.entry_point.is_none() {
             return Vec::new();
@@ -229,6 +231,7 @@ impl HNSWIndex {
     /// index.add("item1", Vector::from_slice(&[1.0]));
     /// assert_eq!(index.len(), 1);
     /// ```
+    #[must_use] 
     pub fn len(&self) -> usize {
         self.nodes.len()
     }
@@ -243,6 +246,7 @@ impl HNSWIndex {
     /// let index = HNSWIndex::new(16, 200, 0.0);
     /// assert!(index.is_empty());
     /// ```
+    #[must_use] 
     pub fn is_empty(&self) -> bool {
         self.nodes.is_empty()
     }
@@ -257,11 +261,12 @@ impl HNSWIndex {
     /// let index = HNSWIndex::new(16, 200, 0.0);
     /// assert_eq!(index.m(), 16);
     /// ```
+    #[must_use] 
     pub fn m(&self) -> usize {
         self.m
     }
 
-    /// Get the ef_construction parameter.
+    /// Get the `ef_construction` parameter.
     ///
     /// # Examples
     ///
@@ -271,6 +276,7 @@ impl HNSWIndex {
     /// let index = HNSWIndex::new(16, 200, 0.0);
     /// assert_eq!(index.ef_construction(), 200);
     /// ```
+    #[must_use] 
     pub fn ef_construction(&self) -> usize {
         self.ef_construction
     }

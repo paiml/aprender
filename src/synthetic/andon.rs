@@ -304,7 +304,7 @@ impl AndonHandler for TestAndon {
     }
 }
 
-/// Andon configuration for SyntheticConfig.
+/// Andon configuration for `SyntheticConfig`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AndonConfig {
     /// Whether Andon monitoring is enabled.

@@ -210,7 +210,7 @@ pub fn autocorrelation(values: &[f64], lag: usize) -> f64 {
 /// Calculate ESS using autocorrelation method
 ///
 /// Computes autocorrelations until they become negligible,
-/// then calculates ESS = n / (1 + 2 * sum(ρ_k))
+/// then calculates ESS = n / (1 + 2 * `sum(ρ_k)`)
 #[must_use]
 pub fn ess_autocorr(values: &[f64]) -> f64 {
     let n = values.len();

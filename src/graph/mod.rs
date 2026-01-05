@@ -3,10 +3,10 @@
 //! This module provides high-performance graph algorithms built on top of
 //! Compressed Sparse Row (CSR) format for maximum cache locality. Key features:
 //!
-//! - CSR representation (50-70% memory reduction vs HashMap)
-//! - Centrality measures (degree, betweenness, PageRank)
+//! - CSR representation (50-70% memory reduction vs `HashMap`)
+//! - Centrality measures (degree, betweenness, `PageRank`)
 //! - Parallel algorithms using Rayon
-//! - Numerical stability (Kahan summation in PageRank)
+//! - Numerical stability (Kahan summation in `PageRank`)
 //!
 //! # Examples
 //!
@@ -39,10 +39,10 @@ pub struct Edge {
 /// Memory layout inspired by Combinatorial BLAS (Buluc et al. 2009):
 /// - Adjacency stored as two flat vectors (CSR format)
 /// - Node labels stored separately (accessed rarely)
-/// - String→NodeId mapping via HashMap (build-time only)
+/// - String→NodeId mapping via `HashMap` (build-time only)
 ///
 /// # Performance
-/// - Memory: 50-70% reduction vs HashMap (no pointer overhead)
+/// - Memory: 50-70% reduction vs `HashMap` (no pointer overhead)
 /// - Cache misses: 3-5x fewer (sequential access pattern)
 /// - SIMD-friendly: Neighbor iteration can use vectorization
 #[derive(Debug)]
@@ -76,6 +76,7 @@ impl Graph {
     /// let g = Graph::new(false); // undirected
     /// assert_eq!(g.num_nodes(), 0);
     /// ```
+    #[must_use] 
     pub fn new(is_directed: bool) -> Self {
         Self {
             row_ptr: vec![0],
@@ -90,16 +91,19 @@ impl Graph {
     }
 
     /// Get number of nodes in graph.
+    #[must_use] 
     pub fn num_nodes(&self) -> usize {
         self.n_nodes
     }
 
     /// Get number of edges in graph.
+    #[must_use] 
     pub fn num_edges(&self) -> usize {
         self.n_edges
     }
 
     /// Check if graph is directed.
+    #[must_use] 
     pub fn is_directed(&self) -> bool {
         self.is_directed
     }
@@ -119,6 +123,7 @@ impl Graph {
     /// let g = Graph::from_edges(&[(0, 1), (1, 2)], false);
     /// assert_eq!(g.neighbors(1), &[0, 2]);
     /// ```
+    #[must_use] 
     pub fn neighbors(&self, v: NodeId) -> &[NodeId] {
         if v >= self.n_nodes {
             return &[];
@@ -145,6 +150,7 @@ impl Graph {
     /// assert_eq!(g.num_nodes(), 3);
     /// assert_eq!(g.num_edges(), 3);
     /// ```
+    #[must_use] 
     pub fn from_edges(edges: &[(NodeId, NodeId)], is_directed: bool) -> Self {
         if edges.is_empty() {
             return Self::new(is_directed);
@@ -213,6 +219,7 @@ impl Graph {
     /// assert_eq!(g.num_nodes(), 3);
     /// assert_eq!(g.num_edges(), 2);
     /// ```
+    #[must_use] 
     pub fn from_weighted_edges(edges: &[(NodeId, NodeId, f64)], is_directed: bool) -> Self {
         if edges.is_empty() {
             return Self::new(is_directed);
@@ -296,10 +303,10 @@ impl Graph {
 
     /// Compute degree centrality for all nodes.
     ///
-    /// Uses Freeman's normalization (1978): C_D(v) = deg(v) / (n - 1)
+    /// Uses Freeman's normalization (1978): `C_D(v)` = deg(v) / (n - 1)
     ///
     /// # Returns
-    /// HashMap mapping NodeId to centrality score in [0, 1]
+    /// `HashMap` mapping `NodeId` to centrality score in [0, 1]
     ///
     /// # Performance
     /// O(n + m) where n = nodes, m = edges
@@ -315,6 +322,7 @@ impl Graph {
     /// assert_eq!(dc[&0], 1.0); // center connected to all others
     /// assert!((dc[&1] - 0.333).abs() < 0.01); // leaves connected to 1 of 3
     /// ```
+    #[must_use] 
     pub fn degree_centrality(&self) -> HashMap<NodeId, f64> {
         let mut centrality = HashMap::with_capacity(self.n_nodes);
 
@@ -337,9 +345,9 @@ impl Graph {
         centrality
     }
 
-    /// Compute PageRank using power iteration with Kahan summation.
+    /// Compute `PageRank` using power iteration with Kahan summation.
     ///
-    /// Uses the PageRank algorithm (Page et al. 1999) with numerically
+    /// Uses the `PageRank` algorithm (Page et al. 1999) with numerically
     /// stable Kahan summation (Higham 1993) to prevent floating-point
     /// drift in large graphs (>10K nodes).
     ///
@@ -349,7 +357,7 @@ impl Graph {
     /// * `tol` - Convergence tolerance (default 1e-6)
     ///
     /// # Returns
-    /// Vector of PageRank scores (one per node)
+    /// Vector of `PageRank` scores (one per node)
     ///
     /// # Performance
     /// O(k * m) where k = iterations, m = edges
@@ -418,7 +426,7 @@ impl Graph {
 
     /// Get incoming neighbors for directed graphs (reverse edges).
     ///
-    /// For undirected graphs, this is the same as neighbors().
+    /// For undirected graphs, this is the same as `neighbors()`.
     /// For directed graphs, we need to scan all nodes to find incoming edges.
     fn incoming_neighbors(&self, v: NodeId) -> Vec<NodeId> {
         if !self.is_directed {
@@ -460,6 +468,7 @@ impl Graph {
     /// assert!(bc[1] > bc[0]); // middle node has highest betweenness
     /// assert!(bc[1] > bc[2]);
     /// ```
+    #[must_use] 
     pub fn betweenness_centrality(&self) -> Vec<f64> {
         if self.n_nodes == 0 {
             return Vec::new();
@@ -546,18 +555,19 @@ impl Graph {
     /// Modularity Q measures the density of edges within communities compared to
     /// a random graph. Ranges from -0.5 to 1.0 (higher is better).
     ///
-    /// Formula: Q = (1/2m) Σ[A_ij - k_i*k_j/2m] δ(c_i, c_j)
+    /// Formula: Q = (1/2m) Σ[`A_ij` - `k_i`*`k_j/2m`] `δ(c_i`, `c_j`)
     /// where:
     /// - m = total edges
-    /// - A_ij = adjacency matrix
-    /// - k_i = degree of node i
-    /// - δ(c_i, c_j) = 1 if nodes i,j in same community, 0 otherwise
+    /// - `A_ij` = adjacency matrix
+    /// - `k_i` = degree of node i
+    /// - `δ(c_i`, `c_j`) = 1 if nodes i,j in same community, 0 otherwise
     ///
     /// # Arguments
     /// * `communities` - Vector of communities, each community is a vector of node IDs
     ///
     /// # Returns
     /// Modularity score Q ∈ [-0.5, 1.0]
+    #[must_use] 
     pub fn modularity(&self, communities: &[Vec<NodeId>]) -> f64 {
         if self.n_nodes == 0 || communities.is_empty() {
             return 0.0;
@@ -642,6 +652,7 @@ impl Graph {
     /// let communities = g.louvain();
     /// assert_eq!(communities.len(), 2);  // Two communities detected
     /// ```
+    #[must_use] 
     pub fn louvain(&self) -> Vec<Vec<NodeId>> {
         if self.n_nodes == 0 {
             return Vec::new();
@@ -767,7 +778,7 @@ impl Graph {
     /// Compute closeness centrality for all nodes.
     ///
     /// Closeness measures how close a node is to all other nodes in the graph.
-    /// Uses Wasserman & Faust (1994) normalization: C_C(v) = (n-1) / Σd(v,u)
+    /// Uses Wasserman & Faust (1994) normalization: `C_C(v)` = (n-1) / Σd(v,u)
     ///
     /// # Returns
     /// Vector of closeness centrality scores (one per node)
@@ -785,6 +796,7 @@ impl Graph {
     /// let cc = g.closeness_centrality();
     /// assert!(cc[0] > cc[1]); // center has highest closeness
     /// ```
+    #[must_use] 
     pub fn closeness_centrality(&self) -> Vec<f64> {
         if self.n_nodes == 0 {
             return Vec::new();
@@ -900,10 +912,10 @@ impl Graph {
     /// Compute Katz centrality with attenuation factor.
     ///
     /// Katz centrality generalizes eigenvector centrality by adding an attenuation
-    /// factor for long-range connections: C_K = Σ(α^k · A^k · 1)
+    /// factor for long-range connections: `C_K` = Σ(α^k · A^k · 1)
     ///
     /// # Arguments
-    /// * `alpha` - Attenuation factor (typically 0.1-0.5, must be < 1/λ_max)
+    /// * `alpha` - Attenuation factor (typically 0.1-0.5, must be < `1/λ_max`)
     /// * `max_iter` - Maximum iterations (default 100)
     /// * `tol` - Convergence tolerance (default 1e-6)
     ///
@@ -967,7 +979,7 @@ impl Graph {
     /// Harmonic centrality is the sum of reciprocal distances to all other nodes.
     /// More robust than closeness for disconnected graphs (Boldi & Vigna 2014).
     ///
-    /// Formula: C_H(v) = Σ(1/d(v,u)) for all u ≠ v
+    /// Formula: `C_H(v)` = Σ(1/d(v,u)) for all u ≠ v
     ///
     /// # Returns
     /// Vector of harmonic centrality scores
@@ -984,6 +996,7 @@ impl Graph {
     /// let hc = g.harmonic_centrality();
     /// assert!(hc[0] > hc[1]); // center most central
     /// ```
+    #[must_use] 
     pub fn harmonic_centrality(&self) -> Vec<f64> {
         if self.n_nodes == 0 {
             return Vec::new();
@@ -1023,6 +1036,7 @@ impl Graph {
     /// let g = Graph::from_edges(&[(0,1), (0,2), (0,3), (1,2), (1,3), (2,3)], false);
     /// assert!((g.density() - 1.0).abs() < 1e-6);
     /// ```
+    #[must_use] 
     pub fn density(&self) -> f64 {
         if self.n_nodes <= 1 {
             return 0.0;
@@ -1057,6 +1071,7 @@ impl Graph {
     /// let g = Graph::from_edges(&[(0,1), (1,2), (2,3)], false);
     /// assert_eq!(g.diameter(), Some(3));
     /// ```
+    #[must_use] 
     pub fn diameter(&self) -> Option<usize> {
         if self.n_nodes == 0 {
             return None;
@@ -1101,6 +1116,7 @@ impl Graph {
     /// assert!((g.clustering_coefficient() - 1.0).abs() < 1e-6);
     /// ```
     #[allow(clippy::cast_lossless)]
+    #[must_use] 
     pub fn clustering_coefficient(&self) -> f64 {
         if self.n_nodes == 0 {
             return 0.0;
@@ -1163,6 +1179,7 @@ impl Graph {
     /// let g = Graph::from_edges(&[(0,1), (0,2), (0,3)], false);
     /// assert!(g.assortativity() < 0.0);
     /// ```
+    #[must_use] 
     pub fn assortativity(&self) -> f64 {
         if self.n_edges == 0 {
             return 0.0;
@@ -1249,6 +1266,7 @@ impl Graph {
     /// let path = g.shortest_path(0, 2).unwrap();
     /// assert!(path.len() <= 3); // Either 0->1->2 or 0->3->2
     /// ```
+    #[must_use] 
     pub fn shortest_path(&self, source: NodeId, target: NodeId) -> Option<Vec<NodeId>> {
         // Bounds checking
         if source >= self.n_nodes || target >= self.n_nodes {
@@ -1331,6 +1349,7 @@ impl Graph {
     /// let (path, dist) = g.dijkstra(0, 2).unwrap();
     /// assert_eq!(dist, 3.0); // 0->1->2 is shorter than 0->2
     /// ```
+    #[must_use] 
     pub fn dijkstra(&self, source: NodeId, target: NodeId) -> Option<(Vec<NodeId>, f64)> {
         use std::cmp::Ordering;
         use std::collections::BinaryHeap;
@@ -1471,6 +1490,7 @@ impl Graph {
     /// assert_eq!(dist[0][1], Some(1));
     /// assert_eq!(dist[0][2], Some(2));
     /// ```
+    #[must_use] 
     pub fn all_pairs_shortest_paths(&self) -> Vec<Vec<Option<usize>>> {
         let n = self.n_nodes;
         let mut distances = vec![vec![None; n]; n];
@@ -1503,7 +1523,7 @@ impl Graph {
     /// # Arguments
     /// * `source` - Starting node ID
     /// * `target` - Destination node ID
-    /// * `heuristic` - Function mapping NodeId to estimated distance to target
+    /// * `heuristic` - Function mapping `NodeId` to estimated distance to target
     ///
     /// # Returns
     /// * `Some(path)` - Shortest path as vector of node IDs
@@ -1665,6 +1685,7 @@ impl Graph {
     /// assert_eq!(visited.len(), 4); // All nodes reachable
     /// assert_eq!(visited[0], 0); // Starts at source
     /// ```
+    #[must_use] 
     pub fn dfs(&self, source: NodeId) -> Option<Vec<NodeId>> {
         // Validate source node
         if source >= self.n_nodes {
@@ -1722,6 +1743,7 @@ impl Graph {
     /// assert_eq!(components[0], components[1]); // Same component
     /// assert_ne!(components[0], components[2]); // Different components
     /// ```
+    #[must_use] 
     pub fn connected_components(&self) -> Vec<usize> {
         let n = self.n_nodes;
         if n == 0 {
@@ -1813,6 +1835,7 @@ impl Graph {
     /// assert_eq!(sccs[0], sccs[1]);
     /// assert_eq!(sccs[1], sccs[2]);
     /// ```
+    #[must_use] 
     pub fn strongly_connected_components(&self) -> Vec<usize> {
         let n = self.n_nodes;
         if n == 0 {
@@ -1919,6 +1942,7 @@ impl Graph {
     /// assert!(order.iter().position(|&x| x == 0) < order.iter().position(|&x| x == 1));
     /// assert!(order.iter().position(|&x| x == 1) < order.iter().position(|&x| x == 2));
     /// ```
+    #[must_use] 
     pub fn topological_sort(&self) -> Option<Vec<NodeId>> {
         let n = self.n_nodes;
         if n == 0 {
@@ -2000,6 +2024,7 @@ impl Graph {
     /// // Nodes 1 and 2 share neighbor 0
     /// assert_eq!(g.common_neighbors(1, 2), Some(1));
     /// ```
+    #[must_use] 
     pub fn common_neighbors(&self, u: NodeId, v: NodeId) -> Option<usize> {
         // Validate nodes
         if u >= self.n_nodes || v >= self.n_nodes {
@@ -2059,6 +2084,7 @@ impl Graph {
     /// let aa = g.adamic_adar_index(1, 2).expect("valid nodes");
     /// assert!(aa > 0.0);
     /// ```
+    #[must_use] 
     pub fn adamic_adar_index(&self, u: NodeId, v: NodeId) -> Option<f64> {
         // Validate nodes
         if u >= self.n_nodes || v >= self.n_nodes {
@@ -2109,7 +2135,7 @@ impl Graph {
     /// Vector mapping each node to its community label (0-indexed)
     ///
     /// # Time Complexity
-    /// O(max_iter · m) where m = number of edges
+    /// `O(max_iter` · m) where m = number of edges
     ///
     /// # Examples
     /// ```
@@ -2125,6 +2151,7 @@ impl Graph {
     /// // Nodes in same community have same label
     /// assert_eq!(communities[0], communities[1]);
     /// ```
+    #[must_use] 
     pub fn label_propagation(&self, max_iter: usize, seed: Option<u64>) -> Vec<usize> {
         let n = self.n_nodes;
         if n == 0 {

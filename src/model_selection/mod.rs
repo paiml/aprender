@@ -17,6 +17,7 @@ pub struct CrossValidationResult {
 
 impl CrossValidationResult {
     /// Calculate mean score across folds
+    #[must_use] 
     pub fn mean(&self) -> f32 {
         if self.scores.is_empty() {
             return 0.0;
@@ -25,6 +26,7 @@ impl CrossValidationResult {
     }
 
     /// Calculate standard deviation of scores
+    #[must_use] 
     pub fn std(&self) -> f32 {
         if self.scores.is_empty() {
             return 0.0;
@@ -62,7 +64,7 @@ impl CrossValidationResult {
 /// * `estimator` - The model to cross-validate (must be cloneable)
 /// * `x` - Feature matrix
 /// * `y` - Target vector
-/// * `cv` - Cross-validation splitter (e.g., KFold)
+/// * `cv` - Cross-validation splitter (e.g., `KFold`)
 ///
 /// # Example
 ///
@@ -167,6 +169,7 @@ impl KFold {
     /// # Arguments
     ///
     /// * `n_splits` - Number of folds. Must be at least 2.
+    #[must_use] 
     pub fn new(n_splits: usize) -> Self {
         Self {
             n_splits,
@@ -176,12 +179,14 @@ impl KFold {
     }
 
     /// Enable shuffling before splitting into batches.
+    #[must_use] 
     pub fn with_shuffle(mut self, shuffle: bool) -> Self {
         self.shuffle = shuffle;
         self
     }
 
     /// Set random state for reproducible shuffling.
+    #[must_use] 
     pub fn with_random_state(mut self, random_state: u64) -> Self {
         self.random_state = Some(random_state);
         self.shuffle = true; // Shuffle is implied when random_state is set
@@ -190,7 +195,8 @@ impl KFold {
 
     /// Generate train/test indices for each fold.
     ///
-    /// Returns a vector of (train_indices, test_indices) tuples.
+    /// Returns a vector of (`train_indices`, `test_indices`) tuples.
+    #[must_use] 
     pub fn split(&self, n_samples: usize) -> Vec<(Vec<usize>, Vec<usize>)> {
         use rand::seq::SliceRandom;
         use rand::SeedableRng;
@@ -286,6 +292,7 @@ impl StratifiedKFold {
     ///
     /// let skfold = StratifiedKFold::new(5);
     /// ```
+    #[must_use] 
     pub fn new(n_splits: usize) -> Self {
         Self {
             n_splits,
@@ -303,6 +310,7 @@ impl StratifiedKFold {
     ///
     /// let skfold = StratifiedKFold::new(5).with_shuffle(true);
     /// ```
+    #[must_use] 
     pub fn with_shuffle(mut self, shuffle: bool) -> Self {
         self.shuffle = shuffle;
         self
@@ -317,6 +325,7 @@ impl StratifiedKFold {
     ///
     /// let skfold = StratifiedKFold::new(5).with_random_state(42);
     /// ```
+    #[must_use] 
     pub fn with_random_state(mut self, random_state: u64) -> Self {
         self.random_state = Some(random_state);
         self.shuffle = true;
@@ -334,7 +343,7 @@ impl StratifiedKFold {
     ///
     /// # Returns
     ///
-    /// Vector of (train_indices, test_indices) tuples
+    /// Vector of (`train_indices`, `test_indices`) tuples
     ///
     /// # Example
     ///
@@ -348,6 +357,7 @@ impl StratifiedKFold {
     /// let splits = skfold.split(&y);
     /// assert_eq!(splits.len(), 2);
     /// ```
+    #[must_use] 
     pub fn split(&self, y: &Vector<f32>) -> Vec<(Vec<usize>, Vec<usize>)> {
         use rand::seq::SliceRandom;
         use rand::SeedableRng;
@@ -432,6 +442,7 @@ pub struct GridSearchResult {
 
 impl GridSearchResult {
     /// Returns the index of the best alpha value.
+    #[must_use] 
     pub fn best_index(&self) -> usize {
         self.scores
             .iter()
@@ -446,17 +457,17 @@ impl GridSearchResult {
 
 /// Evaluate a single alpha value with cross-validation for a specific model type.
 ///
-/// Creates the appropriate model based on model_type and evaluates it using
+/// Creates the appropriate model based on `model_type` and evaluates it using
 /// cross-validation.
 ///
 /// # Arguments
 ///
-/// * `model_type` - Type of model: "ridge", "lasso", or "elastic_net"
+/// * `model_type` - Type of model: "ridge", "lasso", or "`elastic_net`"
 /// * `alpha` - Alpha value to evaluate
 /// * `x` - Training data
 /// * `y` - Target values
 /// * `cv` - Cross-validation splitter
-/// * `l1_ratio` - L1 ratio for ElasticNet
+/// * `l1_ratio` - L1 ratio for `ElasticNet`
 ///
 /// # Returns
 ///
@@ -513,12 +524,12 @@ fn update_best_if_improved(score: f32, alpha: f32, best_score: &mut f32, best_al
 ///
 /// # Arguments
 ///
-/// * `model_type` - Type of model: "ridge", "lasso", or "elastic_net"
+/// * `model_type` - Type of model: "ridge", "lasso", or "`elastic_net`"
 /// * `alphas` - Vector of alpha values to try
 /// * `x` - Feature matrix
 /// * `y` - Target vector
 /// * `cv` - Cross-validation splitter
-/// * `l1_ratio` - Optional l1_ratio for ElasticNet (ignored for Ridge/Lasso)
+/// * `l1_ratio` - Optional `l1_ratio` for `ElasticNet` (ignored for Ridge/Lasso)
 ///
 /// # Returns
 ///
@@ -583,7 +594,7 @@ pub fn grid_search_alpha(
 ///
 /// # Returns
 ///
-/// Tuple of (x_train, x_test, y_train, y_test)
+/// Tuple of (`x_train`, `x_test`, `y_train`, `y_test`)
 ///
 /// # Example
 ///
@@ -598,7 +609,7 @@ pub fn grid_search_alpha(
 /// assert_eq!(x_train.shape().0, 8);  // 80% training
 /// assert_eq!(x_test.shape().0, 2);   // 20% test
 /// ```
-/// Validates inputs for train_test_split.
+/// Validates inputs for `train_test_split`.
 fn validate_split_inputs(
     x: &Matrix<f32>,
     y: &Vector<f32>,

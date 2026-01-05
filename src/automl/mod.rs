@@ -1,4 +1,4 @@
-//! Automated Machine Learning (AutoML) module.
+//! Automated Machine Learning (`AutoML`) module.
 //!
 //! Provides hyperparameter optimization with type-safe parameter definitions,
 //! multiple search strategies, and integration with aprender's Estimator trait.
@@ -27,7 +27,7 @@
 //! # References
 //!
 //! - Bergstra & Bengio (2012). Random Search for Hyper-Parameter Optimization. JMLR.
-//! - Snoek et al. (2012). Practical Bayesian Optimization. NeurIPS.
+//! - Snoek et al. (2012). Practical Bayesian Optimization. `NeurIPS`.
 
 pub mod params;
 mod search;

@@ -50,9 +50,9 @@ use crate::AprenderError;
 pub struct LatentDirichletAllocation {
     /// Number of topics
     n_topics: usize,
-    /// Document-topic distribution (n_docs × n_topics)
+    /// Document-topic distribution (`n_docs` × `n_topics`)
     doc_topic: Option<Matrix<f64>>,
-    /// Topic-word distribution (n_topics × n_terms)
+    /// Topic-word distribution (`n_topics` × `n_terms`)
     topic_word: Option<Matrix<f64>>,
     /// Random seed
     random_seed: u64,
@@ -72,6 +72,7 @@ impl LatentDirichletAllocation {
     ///
     /// let lda = LatentDirichletAllocation::new(5);  // 5 topics
     /// ```
+    #[must_use] 
     pub fn new(n_topics: usize) -> Self {
         Self {
             n_topics,
@@ -90,6 +91,7 @@ impl LatentDirichletAllocation {
     ///
     /// let lda = LatentDirichletAllocation::new(3).with_random_seed(123);
     /// ```
+    #[must_use] 
     pub fn with_random_seed(mut self, seed: u64) -> Self {
         self.random_seed = seed;
         self
@@ -101,7 +103,7 @@ impl LatentDirichletAllocation {
     ///
     /// # Arguments
     ///
-    /// * `dtm` - Document-term matrix (n_docs × n_terms)
+    /// * `dtm` - Document-term matrix (`n_docs` × `n_terms`)
     /// * `max_iter` - Maximum iterations
     ///
     /// # Examples

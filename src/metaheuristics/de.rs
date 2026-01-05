@@ -89,7 +89,7 @@ pub enum DEStrategy {
     #[default]
     Rand1Bin,
 
-    /// DE/best/1/bin: v = x_best + F·(xₐ - xᵦ)
+    /// DE/best/1/bin: v = `x_best` + F·(xₐ - xᵦ)
     ///
     /// Fast convergence, may premature converge.
     Best1Bin,
@@ -99,7 +99,7 @@ pub enum DEStrategy {
     /// More exploration, uses 5 random vectors.
     Rand2Bin,
 
-    /// DE/current-to-best/1/bin: v = xᵢ + F·(x_best - xᵢ) + F·(xₐ - xᵦ)
+    /// DE/current-to-best/1/bin: v = xᵢ + `F·(x_best` - xᵢ) + F·(xₐ - xᵦ)
     ///
     /// Balance between rand and best.
     CurrentToBest1Bin,
@@ -118,7 +118,7 @@ pub enum AdaptationStrategy {
     JADE {
         /// External archive of inferior solutions
         archive: Vec<Vec<f64>>,
-        /// Maximum archive size (typically = population_size)
+        /// Maximum archive size (typically = `population_size`)
         archive_size: usize,
         /// Location parameter for F (Cauchy distribution)
         mu_f: f64,
@@ -373,7 +373,7 @@ impl DifferentialEvolution {
     /// Get adaptive F and CR values (for JADE/SHADE).
     ///
     /// Uses simplified normal perturbation instead of Cauchy for F
-    /// (avoids rand_distr dependency).
+    /// (avoids `rand_distr` dependency).
     fn get_adaptive_params(&self, rng: &mut StdRng) -> (f64, f64) {
         match &self.adaptation {
             AdaptationStrategy::None => (self.mutation_factor, self.crossover_rate),

@@ -7,7 +7,7 @@
 //!
 //! This module provides:
 //! - **Simulation Engine**: Reproducible RNG, variance reduction, convergence diagnostics
-//! - **Risk Metrics**: VaR, CVaR, Maximum Drawdown, risk-adjusted ratios
+//! - **Risk Metrics**: `VaR`, `CVaR`, Maximum Drawdown, risk-adjusted ratios
 //! - **Financial Models**: GBM, GARCH, jump-diffusion for stock prices
 //! - **Business Models**: Revenue projection with Bayesian priors
 //!

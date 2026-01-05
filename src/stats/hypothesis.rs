@@ -67,8 +67,8 @@ pub struct AnovaResult {
 
 /// One-sample t-test: Tests if sample mean differs from population mean.
 ///
-/// H₀: μ = population_mean
-/// H₁: μ ≠ population_mean
+/// H₀: μ = `population_mean`
+/// H₁: μ ≠ `population_mean`
 ///
 /// # Arguments
 ///
@@ -177,8 +177,8 @@ pub fn ttest_ind(sample1: &[f32], sample2: &[f32], equal_var: bool) -> Result<TT
 
 /// Paired t-test: Tests if paired samples have different means.
 ///
-/// H₀: μ_diff = 0
-/// H₁: μ_diff ≠ 0
+/// H₀: `μ_diff` = 0
+/// H₁: `μ_diff` ≠ 0
 ///
 /// # Arguments
 ///

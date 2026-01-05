@@ -1,4 +1,4 @@
-//! Code Analysis and Code2Vec Embeddings
+//! Code Analysis and `Code2Vec` Embeddings
 //!
 //! This module provides statistical approximation techniques for code analysis
 //! without state explosion, following the code2vec approach.

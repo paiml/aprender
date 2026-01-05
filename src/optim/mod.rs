@@ -243,7 +243,7 @@ fn solve_with_regularization(
     Err("Cholesky solve failed after maximum regularization attempts")
 }
 
-/// Create regularized matrix A_reg = A + λI.
+/// Create regularized matrix `A_reg` = A + λI.
 fn create_regularized_matrix(a: &Matrix<f32>, n: usize, lambda: f32) -> Matrix<f32> {
     let mut a_reg_data = vec![0.0; n * n];
     for i in 0..n {
@@ -299,7 +299,7 @@ pub trait LineSearch {
 ///
 /// - **c1**: Armijo constant (typical: 1e-4), controls acceptable decrease
 /// - **rho**: Backtracking factor (typical: 0.5), shrinkage rate for α
-/// - **max_iter**: Maximum backtracking iterations (safety limit)
+/// - **`max_iter`**: Maximum backtracking iterations (safety limit)
 ///
 /// # Example
 ///
@@ -354,7 +354,7 @@ impl BacktrackingLineSearch {
 impl Default for BacktrackingLineSearch {
     /// Creates a backtracking line search with default parameters.
     ///
-    /// Defaults: c1=1e-4, rho=0.5, max_iter=50
+    /// Defaults: c1=1e-4, rho=0.5, `max_iter=50`
     fn default() -> Self {
         Self::new(1e-4, 0.5, 50)
     }
@@ -417,7 +417,7 @@ impl LineSearch for BacktrackingLineSearch {
 ///
 /// - **c1**: Armijo constant (typical: 1e-4), c₁ ∈ (0, c₂)
 /// - **c2**: Curvature constant (typical: 0.9), c₂ ∈ (c₁, 1)
-/// - **max_iter**: Maximum line search iterations
+/// - **`max_iter`**: Maximum line search iterations
 ///
 /// # Example
 ///
@@ -479,7 +479,7 @@ impl WolfeLineSearch {
 impl Default for WolfeLineSearch {
     /// Creates a Wolfe line search with default parameters.
     ///
-    /// Defaults: c1=1e-4, c2=0.9, max_iter=50
+    /// Defaults: c1=1e-4, c2=0.9, `max_iter=50`
     fn default() -> Self {
         Self::new(1e-4, 0.9, 50)
     }
@@ -565,15 +565,15 @@ impl LineSearch for WolfeLineSearch {
 ///
 /// # Algorithm
 ///
-/// 1. Compute gradient g_k = ∇f(x_k)
-/// 2. Compute search direction d_k using two-loop recursion (approximates H^(-1) * g_k)
-/// 3. Find step size α_k via line search (Wolfe conditions)
-/// 4. Update: x_{k+1} = x_k - α_k * d_k
+/// 1. Compute gradient `g_k` = ∇`f(x_k)`
+/// 2. Compute search direction `d_k` using two-loop recursion (approximates H^(-1) * `g_k`)
+/// 3. Find step size `α_k` via line search (Wolfe conditions)
+/// 4. Update: x_{k+1} = `x_k` - `α_k` * `d_k`
 /// 5. Store gradient and position differences for next iteration
 ///
 /// # Parameters
 ///
-/// - **max_iter**: Maximum number of iterations
+/// - **`max_iter`**: Maximum number of iterations
 /// - **tol**: Convergence tolerance (gradient norm)
 /// - **m**: History size (typically 5-20, tradeoff between memory and convergence)
 ///
@@ -617,9 +617,9 @@ pub struct LBFGS {
     m: usize,
     /// Line search strategy
     line_search: WolfeLineSearch,
-    /// Position differences: s_k = x_{k+1} - x_k
+    /// Position differences: `s_k` = x_{k+1} - `x_k`
     s_history: Vec<Vector<f32>>,
-    /// Gradient differences: y_k = g_{k+1} - g_k
+    /// Gradient differences: `y_k` = g_{k+1} - `g_k`
     y_history: Vec<Vector<f32>>,
 }
 
@@ -886,15 +886,15 @@ impl Optimizer for LBFGS {
 /// numerical stability characteristics.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CGBetaFormula {
-    /// Fletcher-Reeves: β = (g_{k+1}^T g_{k+1}) / (g_k^T g_k)
+    /// Fletcher-Reeves: β = (g_{k+1}^T g_{k+1}) / (`g_k^T` `g_k`)
     ///
     /// Most stable but can be slow on non-quadratic problems.
     FletcherReeves,
-    /// Polak-Ribière: β = g_{k+1}^T (g_{k+1} - g_k) / (g_k^T g_k)
+    /// Polak-Ribière: β = g_{k+1}^T (g_{k+1} - `g_k`) / (`g_k^T` `g_k`)
     ///
     /// Better performance than FR, includes automatic restart (β < 0).
     PolakRibiere,
-    /// Hestenes-Stiefel: β = g_{k+1}^T (g_{k+1} - g_k) / (d_k^T (g_{k+1} - g_k))
+    /// Hestenes-Stiefel: β = g_{k+1}^T (g_{k+1} - `g_k`) / (`d_k^T` (g_{k+1} - `g_k`))
     ///
     /// Similar to PR but with different denominator, can be more robust.
     HestenesStiefel,
@@ -908,19 +908,19 @@ pub enum CGBetaFormula {
 ///
 /// # Algorithm
 ///
-/// 1. Initialize with steepest descent: d_0 = -∇f(x_0)
-/// 2. Line search: find α_k minimizing f(x_k + α_k d_k)
-/// 3. Update: x_{k+1} = x_k + α_k d_k
+/// 1. Initialize with steepest descent: `d_0` = -∇`f(x_0)`
+/// 2. Line search: find `α_k` minimizing `f(x_k` + `α_k` `d_k`)
+/// 3. Update: x_{k+1} = `x_k` + `α_k` `d_k`
 /// 4. Compute β_{k+1} using chosen formula (FR, PR, or HS)
-/// 5. Update direction: d_{k+1} = -∇f(x_{k+1}) + β_{k+1} d_k
+/// 5. Update direction: d_{k+1} = -∇f(x_{k+1}) + β_{k+1} `d_k`
 /// 6. Restart if β < 0 or every n iterations
 ///
 /// # Parameters
 ///
-/// - **max_iter**: Maximum number of iterations
+/// - **`max_iter`**: Maximum number of iterations
 /// - **tol**: Convergence tolerance (gradient norm)
-/// - **beta_formula**: Method for computing β (FR, PR, or HS)
-/// - **restart_interval**: Restart with steepest descent every n iterations (0 = no periodic restart)
+/// - **`beta_formula`**: Method for computing β (FR, PR, or HS)
+/// - **`restart_interval`**: Restart with steepest descent every n iterations (0 = no periodic restart)
 ///
 /// # Example
 ///
@@ -976,7 +976,7 @@ impl ConjugateGradient {
     ///
     /// * `max_iter` - Maximum number of iterations (typical: 100-1000)
     /// * `tol` - Convergence tolerance for gradient norm (typical: 1e-5)
-    /// * `beta_formula` - Method for computing β (FletcherReeves, PolakRibiere, or HestenesStiefel)
+    /// * `beta_formula` - Method for computing β (`FletcherReeves`, `PolakRibiere`, or `HestenesStiefel`)
     ///
     /// # Example
     ///
@@ -1253,11 +1253,11 @@ impl Optimizer for ConjugateGradient {
 /// 3. Solve H * d = -g using Cholesky decomposition
 /// 4. If Hessian not positive definite, fall back to steepest descent
 /// 5. Line search along d to find step size α
-/// 6. Update: x_{k+1} = x_k + α * d_k
+/// 6. Update: x_{k+1} = `x_k` + α * `d_k`
 ///
 /// # Parameters
 ///
-/// - **max_iter**: Maximum number of iterations
+/// - **`max_iter`**: Maximum number of iterations
 /// - **tol**: Convergence tolerance (gradient norm)
 /// - **epsilon**: Finite difference step size for Hessian approximation (default: 1e-5)
 ///
@@ -1334,7 +1334,7 @@ impl DampedNewton {
 
     /// Approximates the Hessian matrix using finite differences.
     ///
-    /// Uses central differences: H[i,j] ≈ (∂²f/∂x_i∂x_j)
+    /// Uses central differences: H[i,j] ≈ (∂`²f/∂x_i∂x_j`)
     fn approximate_hessian<G>(&self, grad: &G, x: &Vector<f32>) -> Matrix<f32>
     where
         G: Fn(&Vector<f32>) -> Vector<f32>,
@@ -1792,7 +1792,7 @@ impl FISTA {
     ///
     /// * `smooth` - Smooth part f(x)
     /// * `grad_smooth` - Gradient ∇f(x)
-    /// * `prox` - Proximal operator prox_g(v, α)
+    /// * `prox` - Proximal operator `prox_g(v`, α)
     /// * `x0` - Initial point
     ///
     /// # Returns
@@ -2271,6 +2271,7 @@ impl ADMM {
     ///
     /// let admm = ADMM::new(100, 1.0, 1e-4);
     /// ```
+    #[must_use] 
     pub fn new(max_iter: usize, rho: f32, tol: f32) -> Self {
         Self {
             max_iter,
@@ -2295,6 +2296,7 @@ impl ADMM {
     ///
     /// let admm = ADMM::new(100, 1.0, 1e-4).with_adaptive_rho(true);
     /// ```
+    #[must_use] 
     pub fn with_adaptive_rho(mut self, adaptive: bool) -> Self {
         self.adaptive_rho = adaptive;
         self
@@ -2306,6 +2308,7 @@ impl ADMM {
     ///
     /// - `increase`: Factor to multiply rho when primal residual is large (default: 2.0)
     /// - `decrease`: Factor to divide rho when dual residual is large (default: 2.0)
+    #[must_use] 
     pub fn with_rho_factors(mut self, increase: f32, decrease: f32) -> Self {
         self.rho_increase = increase;
         self.rho_decrease = decrease;
@@ -2325,16 +2328,16 @@ impl ADMM {
     ///
     /// # Returns
     ///
-    /// OptimizationResult containing the optimal x value and convergence information.
+    /// `OptimizationResult` containing the optimal x value and convergence information.
     ///
     /// # Minimizer Functions
     ///
-    /// The x_minimizer should solve:
+    /// The `x_minimizer` should solve:
     /// ```text
     /// argmin_x { f(x) + (ρ/2)‖Ax + Bz - c + u‖² }
     /// ```
     ///
-    /// The z_minimizer should solve:
+    /// The `z_minimizer` should solve:
     /// ```text
     /// argmin_z { g(z) + (ρ/2)‖Ax + Bz - c + u‖² }
     /// ```
@@ -2466,7 +2469,7 @@ impl Optimizer for ADMM {
 ///     x_k+1 = P_C(x_k - α∇f(x_k))
 /// ```
 ///
-/// where P_C is the projection onto constraint set C.
+/// where `P_C` is the projection onto constraint set C.
 ///
 /// # Key Applications
 ///
@@ -2592,7 +2595,7 @@ impl ProjectedGradientDescent {
     ///
     /// * `objective` - Objective function f(x)
     /// * `gradient` - Gradient function ∇f(x)
-    /// * `project` - Projection operator P_C(x)
+    /// * `project` - Projection operator `P_C(x)`
     /// * `x0` - Initial point
     ///
     /// # Returns
@@ -3551,7 +3554,7 @@ impl SGD {
 
 /// Adam (Adaptive Moment Estimation) optimizer.
 ///
-/// Adam combines the benefits of AdaGrad and RMSprop by computing adaptive learning
+/// Adam combines the benefits of `AdaGrad` and `RMSprop` by computing adaptive learning
 /// rates for each parameter using estimates of first and second moments of gradients.
 ///
 /// Update rules:
@@ -3565,8 +3568,8 @@ impl SGD {
 /// ```
 ///
 /// where:
-/// - m_t is the first moment (mean) estimate
-/// - v_t is the second moment (variance) estimate
+/// - `m_t` is the first moment (mean) estimate
+/// - `v_t` is the second moment (variance) estimate
 /// - β₁, β₂ are exponential decay rates (typically 0.9, 0.999)
 /// - α is the learning rate (step size)
 /// - ε is a small constant for numerical stability (typically 1e-8)
@@ -3861,7 +3864,7 @@ impl Optimizer for Adam {
 /// adam.step(&mut params, &grad);
 /// ```
 pub trait Optimizer {
-    /// Stochastic update (mini-batch mode) - for SGD, Adam, RMSprop.
+    /// Stochastic update (mini-batch mode) - for SGD, Adam, `RMSprop`.
     ///
     /// Updates parameters in-place given gradient from current mini-batch.
     /// Used in ML training loops where gradients come from different data batches.

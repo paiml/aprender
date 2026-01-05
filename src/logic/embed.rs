@@ -3,13 +3,13 @@
 //! Implements embedding-based relational learning:
 //! - **Entity embeddings**: Each entity is a learned vector
 //! - **Relation matrices**: Each relation is a learned matrix transformation
-//! - **Bilinear scoring**: score(s, r, o) = s^T × W_r × o
-//! - **RESCAL factorization**: X_k ≈ A × R_k × A^T
+//! - **Bilinear scoring**: score(s, r, o) = s^T × `W_r` × o
+//! - **RESCAL factorization**: `X_k` ≈ A × `R_k` × A^T
 //!
 //! # References
 //!
 //! - Nickel et al. (2011): "RESCAL: A Three-Way Model for Collective Learning"
-//! - Bordes et al. (2013): "TransE: Translating Embeddings for Multi-relational Data"
+//! - Bordes et al. (2013): "`TransE`: Translating Embeddings for Multi-relational Data"
 
 use rand::Rng;
 use std::collections::HashMap;
@@ -21,7 +21,7 @@ pub struct EmbeddingSpace {
     num_entities: usize,
     /// Embedding dimension
     dim: usize,
-    /// Entity embeddings [num_entities, dim]
+    /// Entity embeddings [`num_entities`, dim]
     entity_embeddings: Vec<Vec<f64>>,
     /// Relation matrices [dim, dim] per relation
     relation_matrices: HashMap<String, Vec<Vec<f64>>>,
@@ -29,6 +29,7 @@ pub struct EmbeddingSpace {
 
 impl EmbeddingSpace {
     /// Create a new embedding space with random initialization
+    #[must_use] 
     pub fn new(num_entities: usize, dim: usize) -> Self {
         let mut rng = rand::thread_rng();
 
@@ -58,13 +59,15 @@ impl EmbeddingSpace {
     }
 
     /// Get a relation matrix by name
+    #[must_use] 
     pub fn get_relation_matrix(&self, name: &str) -> Option<&Vec<Vec<f64>>> {
         self.relation_matrices.get(name)
     }
 
     /// Score a triple (subject, relation, object) using bilinear scoring
     ///
-    /// score = subject^T × W_relation × object
+    /// score = subject^T × `W_relation` × object
+    #[must_use] 
     pub fn score(&self, subject: usize, relation: &str, object: usize) -> f64 {
         let s = &self.entity_embeddings[subject];
         let o = &self.entity_embeddings[object];
@@ -86,6 +89,7 @@ impl EmbeddingSpace {
     /// Compose multiple relations by matrix multiplication
     ///
     /// Example: `grandparent = compose(&[parent, parent])`
+    #[must_use] 
     pub fn compose_relations(&self, relations: &[&str]) -> Vec<Vec<f64>> {
         if relations.is_empty() {
             return vec![vec![0.0; self.dim]; self.dim];
@@ -107,6 +111,7 @@ impl EmbeddingSpace {
     }
 
     /// Get entity embedding
+    #[must_use] 
     pub fn get_entity(&self, idx: usize) -> Option<&Vec<f64>> {
         self.entity_embeddings.get(idx)
     }
@@ -119,11 +124,13 @@ impl EmbeddingSpace {
     }
 
     /// Number of entities
+    #[must_use] 
     pub fn num_entities(&self) -> usize {
         self.num_entities
     }
 
     /// Embedding dimension
+    #[must_use] 
     pub fn dim(&self) -> usize {
         self.dim
     }
@@ -138,16 +145,19 @@ pub struct RelationMatrix {
 
 impl RelationMatrix {
     /// Create from data
+    #[must_use] 
     pub fn new(data: Vec<Vec<f64>>) -> Self {
         Self { data }
     }
 
     /// Get dimension
+    #[must_use] 
     pub fn len(&self) -> usize {
         self.data.len()
     }
 
     /// Check if empty
+    #[must_use] 
     pub fn is_empty(&self) -> bool {
         self.data.is_empty()
     }
@@ -161,11 +171,13 @@ pub struct BilinearScorer {
 
 impl BilinearScorer {
     /// Create a new scorer
+    #[must_use] 
     pub fn new(space: EmbeddingSpace) -> Self {
         Self { space }
     }
 
     /// Score all entities as objects for (subject, relation, ?)
+    #[must_use] 
     pub fn score_tails(&self, subject: usize, relation: &str) -> Vec<f64> {
         (0..self.space.num_entities)
             .map(|o| self.space.score(subject, relation, o))
@@ -173,6 +185,7 @@ impl BilinearScorer {
     }
 
     /// Score all entities as subjects for (?, relation, object)
+    #[must_use] 
     pub fn score_heads(&self, relation: &str, object: usize) -> Vec<f64> {
         (0..self.space.num_entities)
             .map(|s| self.space.score(s, relation, object))
@@ -180,6 +193,7 @@ impl BilinearScorer {
     }
 
     /// Get top-K predictions for (subject, relation, ?)
+    #[must_use] 
     pub fn predict_tails(&self, subject: usize, relation: &str, k: usize) -> Vec<(usize, f64)> {
         let scores = self.score_tails(subject, relation);
         let mut indexed: Vec<(usize, f64)> = scores.into_iter().enumerate().collect();
@@ -192,12 +206,12 @@ impl BilinearScorer {
 /// RESCAL Tensor Factorization for predicate invention
 ///
 /// Decomposes a 3-way tensor X into:
-/// X_k ≈ A × R_k × A^T
+/// `X_k` ≈ A × `R_k` × A^T
 ///
 /// Where:
-/// - X_k is the adjacency matrix for relation k
+/// - `X_k` is the adjacency matrix for relation k
 /// - A contains entity embeddings
-/// - R_k is the core tensor for relation k
+/// - `R_k` is the core tensor for relation k
 #[derive(Debug)]
 pub struct RescalFactorizer {
     /// Number of entities
@@ -211,14 +225,15 @@ pub struct RescalFactorizer {
 /// Result of RESCAL factorization
 #[derive(Debug)]
 pub struct RescalResult {
-    /// Entity embeddings [num_entities, dim]
+    /// Entity embeddings [`num_entities`, dim]
     pub entity_embeddings: Vec<Vec<f64>>,
-    /// Relation core tensors [num_relations, dim, dim]
+    /// Relation core tensors [`num_relations`, dim, dim]
     pub relation_cores: Vec<Vec<Vec<f64>>>,
 }
 
 impl RescalFactorizer {
     /// Create a new factorizer
+    #[must_use] 
     pub fn new(num_entities: usize, dim: usize, num_relations: usize) -> Self {
         Self {
             num_entities,
@@ -232,6 +247,7 @@ impl RescalFactorizer {
     /// # Arguments
     /// * `triples` - List of (head, relation, tail) indices
     /// * `iterations` - Number of ALS iterations
+    #[must_use] 
     pub fn factorize(&self, triples: &[(usize, usize, usize)], iterations: usize) -> RescalResult {
         let mut rng = rand::thread_rng();
 

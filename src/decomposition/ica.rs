@@ -3,9 +3,9 @@
 //! ICA is a computational technique for separating a multivariate signal into
 //! additive, independent components. It's a form of blind source separation.
 //!
-//! # Algorithm: FastICA
+//! # Algorithm: `FastICA`
 //!
-//! The FastICA algorithm (Hyvärinen & Oja, 2000) consists of:
+//! The `FastICA` algorithm (Hyvärinen & Oja, 2000) consists of:
 //!
 //! 1. **Centering**: Subtract mean from each feature
 //! 2. **Whitening**: Decorrelate and normalize variance via eigendecomposition
@@ -42,7 +42,7 @@
 use crate::error::{AprenderError, Result};
 use crate::primitives::{Matrix, Vector};
 
-/// Independent Component Analysis using FastICA algorithm.
+/// Independent Component Analysis using `FastICA` algorithm.
 ///
 /// ICA separates multivariate signals into independent, non-Gaussian components.
 #[derive(Debug, Clone)]
@@ -50,7 +50,7 @@ pub struct ICA {
     /// Number of components to extract
     n_components: usize,
 
-    /// Maximum iterations for FastICA
+    /// Maximum iterations for `FastICA`
     max_iter: usize,
 
     /// Convergence tolerance
@@ -60,10 +60,10 @@ pub struct ICA {
     random_state: Option<u64>,
 
     // Fitted parameters
-    /// Whitening matrix (p × n_components)
+    /// Whitening matrix (p × `n_components`)
     whitening_matrix: Option<Matrix<f32>>,
 
-    /// Unmixing matrix (n_components × p)
+    /// Unmixing matrix (`n_components` × p)
     unmixing_matrix: Option<Matrix<f32>>,
 
     /// Mean of each feature
@@ -84,6 +84,7 @@ impl ICA {
     ///
     /// let ica = ICA::new(3); // Extract 3 components
     /// ```
+    #[must_use] 
     pub fn new(n_components: usize) -> Self {
         Self {
             n_components,
@@ -165,7 +166,7 @@ impl ICA {
     ///
     /// # Returns
     ///
-    /// Independent components (n × n_components)
+    /// Independent components (n × `n_components`)
     pub fn transform(&self, x: &Matrix<f32>) -> Result<Matrix<f32>> {
         let mean = self
             .mean
@@ -381,7 +382,7 @@ impl ICA {
         Ok((eigenvalue, Vector::from_vec(v)))
     }
 
-    /// FastICA algorithm to find unmixing matrix.
+    /// `FastICA` algorithm to find unmixing matrix.
     ///
     /// Uses deflation approach with tanh nonlinearity.
     #[allow(clippy::similar_names)]

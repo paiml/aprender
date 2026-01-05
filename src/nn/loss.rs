@@ -64,17 +64,20 @@ pub struct MSELoss {
 }
 
 impl MSELoss {
-    /// Create a new MSELoss with default reduction (mean).
+    /// Create a new `MSELoss` with default reduction (mean).
+    #[must_use] 
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Create MSELoss with specified reduction.
+    /// Create `MSELoss` with specified reduction.
+    #[must_use] 
     pub fn with_reduction(reduction: Reduction) -> Self {
         Self { reduction }
     }
 
     /// Compute MSE loss between predictions and targets.
+    #[must_use] 
     pub fn forward(&self, pred: &Tensor, target: &Tensor) -> Tensor {
         assert_eq!(
             pred.shape(),
@@ -105,15 +108,18 @@ pub struct L1Loss {
 }
 
 impl L1Loss {
+    #[must_use] 
     pub fn new() -> Self {
         Self::default()
     }
 
+    #[must_use] 
     pub fn with_reduction(reduction: Reduction) -> Self {
         Self { reduction }
     }
 
     /// Compute L1 loss between predictions and targets.
+    #[must_use] 
     pub fn forward(&self, pred: &Tensor, target: &Tensor) -> Tensor {
         assert_eq!(pred.shape(), target.shape());
 
@@ -145,6 +151,7 @@ pub struct SmoothL1Loss {
 }
 
 impl SmoothL1Loss {
+    #[must_use] 
     pub fn new() -> Self {
         Self {
             beta: 1.0,
@@ -152,6 +159,7 @@ impl SmoothL1Loss {
         }
     }
 
+    #[must_use] 
     pub fn with_beta(beta: f32) -> Self {
         Self {
             beta,
@@ -159,6 +167,7 @@ impl SmoothL1Loss {
         }
     }
 
+    #[must_use] 
     pub fn forward(&self, pred: &Tensor, target: &Tensor) -> Tensor {
         assert_eq!(pred.shape(), target.shape());
 
@@ -194,7 +203,7 @@ impl Default for SmoothL1Loss {
 
 /// Cross-Entropy Loss for classification.
 ///
-/// Combines log_softmax and negative log likelihood for numerical stability.
+/// Combines `log_softmax` and negative log likelihood for numerical stability.
 ///
 /// For multi-class classification:
 /// ```text
@@ -212,10 +221,12 @@ pub struct CrossEntropyLoss {
 }
 
 impl CrossEntropyLoss {
+    #[must_use] 
     pub fn new() -> Self {
         Self::default()
     }
 
+    #[must_use] 
     pub fn with_reduction(reduction: Reduction) -> Self {
         Self {
             reduction,
@@ -223,6 +234,7 @@ impl CrossEntropyLoss {
         }
     }
 
+    #[must_use] 
     pub fn with_label_smoothing(label_smoothing: f32) -> Self {
         assert!(
             (0.0..1.0).contains(&label_smoothing),
@@ -240,6 +252,7 @@ impl CrossEntropyLoss {
     ///
     /// * `logits` - Shape `[batch, num_classes]`
     /// * `targets` - Shape `[batch]`, integer class indices (as f32)
+    #[must_use] 
     pub fn forward(&self, logits: &Tensor, targets: &Tensor) -> Tensor {
         assert_eq!(logits.ndim(), 2, "Logits must be 2D [batch, classes]");
         assert_eq!(targets.ndim(), 1, "Targets must be 1D [batch]");
@@ -344,10 +357,12 @@ pub struct BCEWithLogitsLoss {
 }
 
 impl BCEWithLogitsLoss {
+    #[must_use] 
     pub fn new() -> Self {
         Self::default()
     }
 
+    #[must_use] 
     pub fn with_reduction(reduction: Reduction) -> Self {
         Self {
             reduction,
@@ -356,6 +371,7 @@ impl BCEWithLogitsLoss {
     }
 
     /// Set positive class weight for imbalanced datasets.
+    #[must_use] 
     pub fn with_pos_weight(pos_weight: f32) -> Self {
         Self {
             reduction: Reduction::Mean,
@@ -369,6 +385,7 @@ impl BCEWithLogitsLoss {
     ///
     /// * `logits` - Raw model outputs (before sigmoid)
     /// * `targets` - Binary targets (0 or 1)
+    #[must_use] 
     pub fn forward(&self, logits: &Tensor, targets: &Tensor) -> Tensor {
         assert_eq!(logits.shape(), targets.shape());
 
@@ -406,17 +423,19 @@ impl BCEWithLogitsLoss {
 
 /// Negative Log Likelihood loss.
 ///
-/// Expects log-probabilities as input (use after log_softmax).
+/// Expects log-probabilities as input (use after `log_softmax`).
 #[derive(Debug, Clone, Copy, Default)]
 pub struct NLLLoss {
     reduction: Reduction,
 }
 
 impl NLLLoss {
+    #[must_use] 
     pub fn new() -> Self {
         Self::default()
     }
 
+    #[must_use] 
     pub fn forward(&self, log_probs: &Tensor, targets: &Tensor) -> Tensor {
         assert_eq!(log_probs.ndim(), 2);
         assert_eq!(targets.ndim(), 1);

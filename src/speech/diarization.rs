@@ -108,7 +108,7 @@ impl DiarizationConfig {
 pub struct Speaker {
     /// Speaker ID (0-indexed)
     pub id: usize,
-    /// Speaker label (e.g., "SPEAKER_00")
+    /// Speaker label (e.g., "`SPEAKER_00`")
     pub label: String,
     /// Speaker embedding vector (for similarity comparison)
     pub embedding: Vec<f32>,
@@ -233,8 +233,8 @@ impl DiarizationResult {
 /// Perform speaker diarization on audio segments
 ///
 /// # Arguments
-/// * `embeddings` - Speaker embeddings for each segment (shape: n_segments × embedding_dim)
-/// * `segment_times` - Start/end times for each segment [(start_ms, end_ms), ...]
+/// * `embeddings` - Speaker embeddings for each segment (shape: `n_segments` × `embedding_dim`)
+/// * `segment_times` - Start/end times for each segment [(`start_ms`, `end_ms`), ...]
 /// * `config` - Diarization configuration
 ///
 /// # Returns

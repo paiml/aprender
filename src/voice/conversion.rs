@@ -15,7 +15,7 @@
 //!
 //! # Voice Conversion Methods
 //!
-//! - **AutoVC**: Autoencoder-based, disentangled content and speaker
+//! - **`AutoVC`**: Autoencoder-based, disentangled content and speaker
 //! - **StarGAN-VC**: GAN-based, non-parallel training
 //! - **PPG-based**: Phonetic Posteriorgram bottleneck
 //! - **VQVC+**: Vector-quantized with self-supervision
@@ -31,7 +31,7 @@
 //!
 //! # References
 //!
-//! - Qian, K., et al. (2019). AutoVC: Zero-Shot Voice Style Transfer.
+//! - Qian, K., et al. (2019). `AutoVC`: Zero-Shot Voice Style Transfer.
 //! - Kameoka, H., et al. (2018). StarGAN-VC: Non-parallel VC with Star GAN.
 //! - Sun, L., et al. (2016). Phonetic Posteriorgrams for VC.
 //!
@@ -65,7 +65,7 @@ pub enum ConversionMode {
 pub enum BottleneckType {
     /// Phonetic Posteriorgram (PPG) from ASR
     Ppg,
-    /// AutoEncoder bottleneck
+    /// `AutoEncoder` bottleneck
     #[default]
     AutoEncoder,
     /// Vector Quantized (VQ) codebook
@@ -305,12 +305,12 @@ pub trait VoiceConverter: Send + Sync {
 
 /// AutoVC-based voice converter.
 ///
-/// Implements the AutoVC architecture for zero-shot voice conversion:
+/// Implements the `AutoVC` architecture for zero-shot voice conversion:
 /// - Content encoder: Extracts speaker-independent features
 /// - Speaker encoder: Extracts speaker embedding
 /// - Decoder: Reconstructs mel spectrogram from content + speaker
 ///
-/// Reference: Qian et al. (2019) "AutoVC: Zero-Shot Voice Style Transfer"
+/// Reference: Qian et al. (2019) "`AutoVC`: Zero-Shot Voice Style Transfer"
 #[derive(Debug, Clone)]
 pub struct AutoVcConverter {
     /// Configuration
@@ -320,7 +320,7 @@ pub struct AutoVcConverter {
 }
 
 impl AutoVcConverter {
-    /// Create a new AutoVC converter
+    /// Create a new `AutoVC` converter
     #[must_use]
     pub fn new(config: VoiceConversionConfig) -> Self {
         Self {
@@ -329,7 +329,7 @@ impl AutoVcConverter {
         }
     }
 
-    /// Create with default AutoVC config
+    /// Create with default `AutoVC` config
     #[must_use]
     pub fn default_autovc() -> Self {
         Self::new(VoiceConversionConfig::autovc())
@@ -708,7 +708,7 @@ pub fn semitones_to_ratio(semitones: f32) -> f32 {
 /// * `converted_embedding` - Embedding of converted audio
 ///
 /// # Returns
-/// (source_similarity, target_similarity, conversion_score)
+/// (`source_similarity`, `target_similarity`, `conversion_score`)
 #[must_use]
 pub fn conversion_quality(
     source_embedding: &SpeakerEmbedding,

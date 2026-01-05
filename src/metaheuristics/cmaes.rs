@@ -97,12 +97,14 @@ pub struct CmaEs {
 
 impl CmaEs {
     /// Create new CMA-ES for given dimension
+    #[must_use] 
     pub fn new(dim: usize) -> Self {
         let lambda = 4 + (3.0 * (dim as f64).ln()).floor() as usize;
         Self::with_lambda(dim, lambda)
     }
 
     /// Create CMA-ES with specific population size
+    #[must_use] 
     pub fn with_lambda(dim: usize, lambda: usize) -> Self {
         let lambda = lambda.max(4);
         let mu = lambda / 2;
@@ -152,12 +154,14 @@ impl CmaEs {
     }
 
     /// Set random seed
+    #[must_use] 
     pub fn with_seed(mut self, seed: u64) -> Self {
         self.seed = Some(seed);
         self
     }
 
     /// Set initial sigma (step-size)
+    #[must_use] 
     pub fn with_sigma(mut self, sigma: f64) -> Self {
         self.sigma = sigma.max(1e-10);
         self
@@ -168,12 +172,14 @@ impl CmaEs {
     /// When the algorithm stagnates (sigma too small or no improvement),
     /// it restarts with a doubled population size. This helps escape
     /// local optima on multimodal functions.
+    #[must_use] 
     pub fn with_ipop(mut self) -> Self {
         self.ipop.enabled = true;
         self
     }
 
     /// Configure IPOP settings.
+    #[must_use] 
     pub fn with_ipop_config(mut self, config: IpopConfig) -> Self {
         self.ipop = config;
         self.ipop.enabled = true;
@@ -181,6 +187,7 @@ impl CmaEs {
     }
 
     /// Get the number of restarts performed.
+    #[must_use] 
     pub fn restart_count(&self) -> usize {
         self.restart_count
     }

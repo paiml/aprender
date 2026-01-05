@@ -41,7 +41,7 @@ pub struct Qwen2Config {
     pub max_seq_len: usize,
     /// Intermediate size (FFN)
     pub intermediate_size: usize,
-    /// RoPE theta
+    /// `RoPE` theta
     pub rope_theta: f64,
 }
 

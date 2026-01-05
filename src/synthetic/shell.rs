@@ -7,7 +7,7 @@
 //! # References
 //!
 //! - Jia & Liang (2016). Data Recombination for Neural Semantic Parsing. ACL.
-//! - Section 4 of AutoML with Synthetic Data Specification.
+//! - Section 4 of `AutoML` with Synthetic Data Specification.
 
 use std::collections::{HashMap, HashSet};
 

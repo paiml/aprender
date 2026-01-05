@@ -216,7 +216,7 @@ pub fn n5_memory_sanitizer_clean() -> SecurityResult {
 // N6: Panic Safety (FFI)
 // =============================================================================
 
-/// Verify catch_unwind at all WASM boundaries
+/// Verify `catch_unwind` at all WASM boundaries
 #[must_use]
 pub fn n6_panic_safety_ffi() -> SecurityResult {
     // All WASM exports should use catch_unwind
@@ -244,7 +244,7 @@ pub fn n6_panic_safety_ffi() -> SecurityResult {
 // N7: Error Propagation
 // =============================================================================
 
-/// Verify Result used everywhere, no unwrap() in lib
+/// Verify Result used everywhere, no `unwrap()` in lib
 #[must_use]
 pub fn n7_error_propagation() -> SecurityResult {
     // Check for unwrap() usage in library code
@@ -542,7 +542,7 @@ pub fn n15_wasm_sandboxing() -> SecurityResult {
 // N16: Disk Full Simulation
 // =============================================================================
 
-/// Verify write_file handles ENOSPC
+/// Verify `write_file` handles ENOSPC
 #[must_use]
 pub fn n16_disk_full_handling() -> SecurityResult {
     // IO errors should be properly propagated

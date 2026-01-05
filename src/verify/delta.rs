@@ -40,6 +40,7 @@ pub struct Delta {
 
 impl Delta {
     /// Compute delta between two ground truth statistics.
+    #[must_use] 
     pub fn compute(our: &GroundTruth, gt: &GroundTruth) -> Self {
         let mean_delta = (our.mean() - gt.mean()).abs();
         let std_delta = (our.std() - gt.std()).abs();
@@ -72,6 +73,7 @@ impl Delta {
     }
 
     /// Create a delta from a simple percent value (for testing).
+    #[must_use] 
     pub fn from_percent(percent: f32) -> Self {
         Self {
             mean_delta: 0.0,
@@ -84,6 +86,7 @@ impl Delta {
     }
 
     /// Create a delta from mean and std differences (for testing).
+    #[must_use] 
     pub fn from_stats(mean_delta: f32, std_delta: f32) -> Self {
         let percent = (mean_delta + std_delta) * 100.0;
         Self {
@@ -97,31 +100,37 @@ impl Delta {
     }
 
     /// Get the absolute difference in mean.
+    #[must_use] 
     pub fn mean_delta(&self) -> f32 {
         self.mean_delta
     }
 
     /// Get the absolute difference in standard deviation.
+    #[must_use] 
     pub fn std_delta(&self) -> f32 {
         self.std_delta
     }
 
     /// Get the percent divergence.
+    #[must_use] 
     pub fn percent(&self) -> f32 {
         self.percent
     }
 
     /// Check if there's a sign flip between our value and ground truth.
+    #[must_use] 
     pub fn is_sign_flipped(&self) -> bool {
         self.sign_flipped
     }
 
     /// Get cosine similarity if computed.
+    #[must_use] 
     pub fn cosine(&self) -> Option<f32> {
         self.cosine
     }
 
     /// Get KL divergence if computed.
+    #[must_use] 
     pub fn kl_divergence_value(&self) -> Option<f32> {
         self.kl_div
     }
@@ -132,6 +141,7 @@ impl Delta {
     /// - 1.0: identical direction
     /// - 0.0: orthogonal
     /// - -1.0: opposite direction
+    #[must_use] 
     pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
         if a.len() != b.len() || a.is_empty() {
             return 0.0;
@@ -152,6 +162,7 @@ impl Delta {
     ///
     /// P and Q must be probability distributions (sum to 1, non-negative).
     /// Returns bits of information lost when using Q to approximate P.
+    #[must_use] 
     pub fn kl_divergence(p: &[f32], q: &[f32]) -> f32 {
         if p.len() != q.len() || p.is_empty() {
             return f32::INFINITY;
@@ -174,6 +185,7 @@ impl Delta {
     ///
     /// For sorted 1-D distributions, this is the sum of absolute differences
     /// of the cumulative distribution functions.
+    #[must_use] 
     pub fn wasserstein_1d(a: &[f32], b: &[f32]) -> f32 {
         if a.is_empty() || b.is_empty() {
             return 0.0;
@@ -218,6 +230,7 @@ impl Delta {
     }
 
     /// Compute all metrics and return the delta with full information.
+    #[must_use] 
     pub fn compute_all(our: &GroundTruth, gt: &GroundTruth) -> Self {
         let mut delta = Self::compute(our, gt);
 

@@ -9,7 +9,7 @@
 //!
 //! - [`GCNConv`] - Graph Convolutional Network (Kipf & Welling, 2017)
 //! - [`GATConv`] - Graph Attention Network (Veličković et al., 2018)
-//! - [`SAGEConv`] - GraphSAGE (Hamilton et al., 2017)
+//! - [`SAGEConv`] - `GraphSAGE` (Hamilton et al., 2017)
 //!
 //! # Example
 //!
@@ -31,7 +31,7 @@
 //!   Graph Convolutional Networks. ICLR.
 //! - Veličković, P., et al. (2018). Graph Attention Networks. ICLR.
 //! - Hamilton, W. L., et al. (2017). Inductive Representation Learning on
-//!   Large Graphs. NeurIPS.
+//!   Large Graphs. `NeurIPS`.
 
 use crate::autograd::Tensor;
 use crate::primitives::Matrix;
@@ -96,7 +96,7 @@ impl AdjacencyMatrix {
 
     /// Add self-loops (edges from each node to itself).
     ///
-    /// Required for GCN normalization: A_hat = A + I
+    /// Required for GCN normalization: `A_hat` = A + I
     #[must_use]
     pub fn add_self_loops(mut self) -> Self {
         if self.has_self_loops {
@@ -217,7 +217,7 @@ impl AdjacencyMatrix {
 /// - Ã = A + I (adjacency with self-loops)
 /// - D̃ = degree matrix of Ã
 /// - W = learnable weight matrix
-/// - σ = activation function (ReLU by default)
+/// - σ = activation function (`ReLU` by default)
 ///
 /// # Example
 /// ```
@@ -236,9 +236,9 @@ pub struct GCNConv {
     in_features: usize,
     /// Output feature dimension
     out_features: usize,
-    /// Weight matrix [in_features, out_features]
+    /// Weight matrix [`in_features`, `out_features`]
     weight: Tensor,
-    /// Bias vector [out_features]
+    /// Bias vector [`out_features`]
     bias: Option<Tensor>,
     /// Whether to use bias
     use_bias: bool,
@@ -312,11 +312,12 @@ impl GCNConv {
     /// Forward pass: X' = D^(-1/2) A D^(-1/2) X W + b
     ///
     /// # Arguments
-    /// * `x` - Node features [num_nodes, in_features]
+    /// * `x` - Node features [`num_nodes`, `in_features`]
     /// * `adj` - Adjacency matrix
     ///
     /// # Returns
-    /// Output features [num_nodes, out_features]
+    /// Output features [`num_nodes`, `out_features`]
+    #[must_use] 
     pub fn forward(&self, x: &Tensor, adj: &AdjacencyMatrix) -> Tensor {
         let num_nodes = x.shape()[0];
         let in_feat = x.shape()[1];
@@ -424,7 +425,7 @@ impl GCNConv {
     }
 }
 
-/// Aggregation method for GraphSAGE.
+/// Aggregation method for `GraphSAGE`.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum SAGEAggregation {
     /// Mean aggregation (default)
@@ -438,10 +439,10 @@ pub enum SAGEAggregation {
     Lstm,
 }
 
-/// GraphSAGE convolutional layer (Hamilton et al., 2017).
+/// `GraphSAGE` convolutional layer (Hamilton et al., 2017).
 ///
 /// Implements the aggregation rule:
-/// h_v^(l+1) = σ(W · CONCAT(h_v^(l), AGG({h_u^(l) : u ∈ N(v)})))
+/// `h_v^(l+1)` = σ(W · `CONCAT(h_v^(l)`, `AGG({h_u^(l)` : u ∈ N(v)})))
 ///
 /// Where AGG can be mean, max, sum, or LSTM aggregation.
 ///
@@ -462,11 +463,11 @@ pub struct SAGEConv {
     in_features: usize,
     /// Output feature dimension
     out_features: usize,
-    /// Weight for self features [in_features, out_features]
+    /// Weight for self features [`in_features`, `out_features`]
     weight_self: Tensor,
-    /// Weight for neighbor aggregation [in_features, out_features]
+    /// Weight for neighbor aggregation [`in_features`, `out_features`]
     weight_neigh: Tensor,
-    /// Bias vector [out_features]
+    /// Bias vector [`out_features`]
     bias: Option<Tensor>,
     /// Aggregation method
     aggregation: SAGEAggregation,
@@ -477,7 +478,7 @@ pub struct SAGEConv {
 }
 
 impl SAGEConv {
-    /// Create a new GraphSAGE layer.
+    /// Create a new `GraphSAGE` layer.
     ///
     /// # Arguments
     /// * `in_features` - Input feature dimension per node
@@ -557,11 +558,12 @@ impl SAGEConv {
     /// Forward pass with neighbor aggregation.
     ///
     /// # Arguments
-    /// * `x` - Node features [num_nodes, in_features]
+    /// * `x` - Node features [`num_nodes`, `in_features`]
     /// * `adj` - Adjacency matrix
     ///
     /// # Returns
-    /// Output features [num_nodes, out_features]
+    /// Output features [`num_nodes`, `out_features`]
+    #[must_use] 
     pub fn forward(&self, x: &Tensor, adj: &AdjacencyMatrix) -> Tensor {
         let num_nodes = x.shape()[0];
         let in_feat = x.shape()[1];
@@ -689,8 +691,8 @@ impl SAGEConv {
 /// Graph Attention Network layer (Veličković et al., 2018).
 ///
 /// Implements multi-head attention over graph neighbors:
-/// α_ij = softmax_j(LeakyReLU(a^T [Wh_i || Wh_j]))
-/// h'_i = σ(Σ_j α_ij W h_j)
+/// `α_ij` = `softmax_j(LeakyReLU(a^T` [`Wh_i` || `Wh_j`]))
+/// h'_i = `σ(Σ_j` `α_ij` W `h_j`)
 ///
 /// # Example
 /// ```
@@ -711,15 +713,15 @@ pub struct GATConv {
     out_features: usize,
     /// Number of attention heads
     num_heads: usize,
-    /// Linear transformation weight [in_features, out_features * num_heads]
+    /// Linear transformation weight [`in_features`, `out_features` * `num_heads`]
     weight: Tensor,
-    /// Attention weight for source nodes [num_heads, out_features]
+    /// Attention weight for source nodes [`num_heads`, `out_features`]
     att_src: Tensor,
-    /// Attention weight for target nodes [num_heads, out_features]
+    /// Attention weight for target nodes [`num_heads`, `out_features`]
     att_tgt: Tensor,
-    /// Bias [out_features * num_heads]
+    /// Bias [`out_features` * `num_heads`]
     bias: Option<Tensor>,
-    /// Negative slope for LeakyReLU
+    /// Negative slope for `LeakyReLU`
     negative_slope: f32,
     /// Dropout probability
     dropout: f32,
@@ -771,7 +773,7 @@ impl GATConv {
         }
     }
 
-    /// Set negative slope for LeakyReLU.
+    /// Set negative slope for `LeakyReLU`.
     #[must_use]
     pub fn with_negative_slope(mut self, slope: f32) -> Self {
         self.negative_slope = slope;
@@ -824,7 +826,7 @@ impl GATConv {
         self.num_heads
     }
 
-    /// Get total output dimension (out_features * num_heads if concat, else out_features).
+    /// Get total output dimension (`out_features` * `num_heads` if concat, else `out_features`).
     #[must_use]
     pub fn total_out_features(&self) -> usize {
         if self.concat {
@@ -834,7 +836,7 @@ impl GATConv {
         }
     }
 
-    /// LeakyReLU activation.
+    /// `LeakyReLU` activation.
     fn leaky_relu(&self, x: f32) -> f32 {
         if x > 0.0 {
             x
@@ -846,12 +848,12 @@ impl GATConv {
     /// Forward pass with multi-head attention.
     ///
     /// # Arguments
-    /// * `x` - Node features [num_nodes, in_features]
+    /// * `x` - Node features [`num_nodes`, `in_features`]
     /// * `adj` - Adjacency matrix
     ///
     /// # Returns
-    /// Output features [num_nodes, out_features * num_heads] if concat
-    /// or [num_nodes, out_features] if averaging heads
+    /// Output features [`num_nodes`, `out_features` * `num_heads`] if concat
+    /// or [`num_nodes`, `out_features`] if averaging heads
     #[allow(clippy::too_many_lines)]
     pub fn forward(&self, x: &Tensor, adj: &AdjacencyMatrix) -> Tensor {
         let num_nodes = x.shape()[0];

@@ -1,8 +1,8 @@
-//! Synthetic Data Generation for AutoML.
+//! Synthetic Data Generation for `AutoML`.
 //!
 //! This module provides automatic synthetic data generation capabilities
 //! to improve model performance in low-resource domains. Generated data
-//! is validated, quality-scored, and integrated into the AutoML optimization loop.
+//! is validated, quality-scored, and integrated into the `AutoML` optimization loop.
 //!
 //! # Quick Start
 //!
@@ -22,11 +22,11 @@
 //!
 //! - **Quality-First**: All generated samples validated before inclusion
 //! - **Diversity-Aware**: Monitors for mode collapse and distribution shift
-//! - **AutoML Integration**: Augmentation parameters jointly optimized with model hyperparameters
+//! - **`AutoML` Integration**: Augmentation parameters jointly optimized with model hyperparameters
 //!
 //! # References
 //!
-//! - Cubuk et al. (2019). AutoAugment: Learning Augmentation Strategies. CVPR.
+//! - Cubuk et al. (2019). `AutoAugment`: Learning Augmentation Strategies. CVPR.
 //! - Wei & Zou (2019). EDA: Easy Data Augmentation. EMNLP.
 //! - Ratner et al. (2017). Snorkel: Weak Supervision. VLDB.
 

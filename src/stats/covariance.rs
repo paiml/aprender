@@ -22,7 +22,7 @@
 //! ρ(X, Y) = Cov(X, Y) / (σ_X σ_Y)
 //! ```
 //!
-//! Where σ_X and σ_Y are standard deviations.
+//! Where `σ_X` and `σ_Y` are standard deviations.
 //!
 //! # Examples
 //!

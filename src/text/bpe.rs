@@ -1,7 +1,7 @@
 //! Byte Pair Encoding (BPE) tokenizer (GH-128).
 //!
 //! Provides BPE tokenization for LLMs and speech models:
-//! - HuggingFace tokenizer loading (tokenizer.json)
+//! - `HuggingFace` tokenizer loading (tokenizer.json)
 //! - Encode text to token IDs
 //! - Decode token IDs to text
 //! - Special token handling
@@ -483,9 +483,9 @@ pub struct Qwen2BpeTokenizer {
 }
 
 impl Qwen2BpeTokenizer {
-    /// Special token: <|im_start|>
+    /// Special token: <|`im_start`|>
     pub const IM_START_ID: u32 = 151644;
-    /// Special token: <|im_end|>
+    /// Special token: <|`im_end`|>
     pub const IM_END_ID: u32 = 151645;
     /// Special token: <|endoftext|>
     pub const ENDOFTEXT_ID: u32 = 151643;
@@ -575,13 +575,13 @@ impl Qwen2BpeTokenizer {
         result
     }
 
-    /// Get the im_start token ID.
+    /// Get the `im_start` token ID.
     #[must_use]
     pub fn im_start_id(&self) -> u32 {
         self.im_start_id
     }
 
-    /// Get the im_end token ID.
+    /// Get the `im_end` token ID.
     #[must_use]
     pub fn im_end_id(&self) -> u32 {
         self.im_end_id
@@ -608,7 +608,7 @@ impl Qwen2BpeTokenizer {
     /// Load tokenizer from JSON string.
     ///
     /// # Arguments
-    /// * `json` - JSON string containing HuggingFace tokenizer format
+    /// * `json` - JSON string containing `HuggingFace` tokenizer format
     ///
     /// # Returns
     /// Loaded Qwen2 tokenizer with full vocabulary
@@ -689,7 +689,7 @@ pub fn bytes_to_unicode() -> (HashMap<u8, char>, HashMap<char, u8>) {
 // HuggingFace tokenizer.json Parsing Structures
 // ============================================================================
 
-/// HuggingFace tokenizer.json root structure.
+/// `HuggingFace` tokenizer.json root structure.
 #[derive(Debug, Deserialize)]
 struct HfTokenizerJson {
     model: HfModel,
@@ -713,7 +713,7 @@ struct HfAddedToken {
     special: bool,
 }
 
-/// Load tokenizer from HuggingFace tokenizer.json format.
+/// Load tokenizer from `HuggingFace` tokenizer.json format.
 ///
 /// # Arguments
 /// * `json` - JSON string of tokenizer configuration

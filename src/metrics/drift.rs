@@ -113,7 +113,7 @@ impl DriftDetector {
 
     /// Detect drift in univariate data using normalized mean difference.
     ///
-    /// Uses (|mean_ref - mean_cur| / std_ref) as drift measure.
+    /// Uses (|`mean_ref` - `mean_cur`| / `std_ref`) as drift measure.
     #[must_use]
     pub fn detect_univariate(&self, reference: &Vector<f32>, current: &Vector<f32>) -> DriftStatus {
         if reference.len() < self.config.min_samples || current.len() < self.config.min_samples {

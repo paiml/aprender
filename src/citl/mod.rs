@@ -77,7 +77,7 @@ use std::sync::Arc;
 
 /// Error code with metadata for categorization and curriculum learning.
 ///
-/// Per StepCoder (Dou et al., 2024), categorizing errors by difficulty
+/// Per `StepCoder` (Dou et al., 2024), categorizing errors by difficulty
 /// enables curriculum learning that accelerates convergence by 2.3x.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ErrorCode {
@@ -148,7 +148,7 @@ pub enum ErrorCategory {
 
 /// Difficulty level for curriculum learning.
 ///
-/// Per StepCoder, starting with easy errors and progressing to hard
+/// Per `StepCoder`, starting with easy errors and progressing to hard
 /// improves learning efficiency.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Difficulty {

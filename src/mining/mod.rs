@@ -59,7 +59,7 @@ pub struct AssociationRule {
 ///
 /// # Algorithm
 ///
-/// 1. Find frequent 1-itemsets (support >= min_support)
+/// 1. Find frequent 1-itemsets (support >= `min_support`)
 /// 2. Generate candidate k-itemsets from frequent (k-1)-itemsets
 /// 3. Prune candidates that don't meet minimum support
 /// 4. Repeat until no more frequent itemsets can be generated
@@ -105,6 +105,7 @@ impl Apriori {
     ///
     /// - `min_support`: 0.1 (10%)
     /// - `min_confidence`: 0.5 (50%)
+    #[must_use] 
     pub fn new() -> Self {
         Self {
             min_support: 0.1,
@@ -119,6 +120,7 @@ impl Apriori {
     /// # Arguments
     ///
     /// * `min_support` - Minimum support (0.0 to 1.0)
+    #[must_use] 
     pub fn with_min_support(mut self, min_support: f64) -> Self {
         self.min_support = min_support;
         self
@@ -129,6 +131,7 @@ impl Apriori {
     /// # Arguments
     ///
     /// * `min_confidence` - Minimum confidence (0.0 to 1.0)
+    #[must_use] 
     pub fn with_min_confidence(mut self, min_confidence: f64) -> Self {
         self.min_confidence = min_confidence;
         self
@@ -361,6 +364,7 @@ impl Apriori {
     /// Get the discovered frequent itemsets.
     ///
     /// Returns a vector of (itemset, support) tuples sorted by support descending.
+    #[must_use] 
     pub fn get_frequent_itemsets(&self) -> Vec<(Vec<usize>, f64)> {
         self.frequent_itemsets
             .iter()
@@ -371,6 +375,7 @@ impl Apriori {
     /// Get the generated association rules.
     ///
     /// Returns rules sorted by confidence descending.
+    #[must_use] 
     pub fn get_rules(&self) -> Vec<AssociationRule> {
         self.rules.clone()
     }
@@ -385,6 +390,7 @@ impl Apriori {
     /// # Returns
     ///
     /// Support value (0.0 to 1.0)
+    #[must_use] 
     pub fn calculate_support(itemset: &HashSet<usize>, transactions: &[Vec<usize>]) -> f64 {
         if transactions.is_empty() {
             return 0.0;

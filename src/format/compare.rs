@@ -1,4 +1,4 @@
-//! HuggingFace weight comparison module (GH-121).
+//! `HuggingFace` weight comparison module (GH-121).
 //!
 // Allow format_push_string: cleaner code for string building without I/O concerns
 #![allow(clippy::format_push_string, clippy::uninlined_format_args)]
@@ -114,6 +114,7 @@ pub struct TensorComparison {
 
 impl TensorComparison {
     /// Check if tensors match within tolerance
+    #[must_use] 
     pub fn is_match_with_tolerance(&self, l2_tol: f64, max_tol: f64) -> bool {
         self.shape_match
             && self.l2_diff.is_some_and(|d| d <= l2_tol)

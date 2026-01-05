@@ -92,6 +92,7 @@ impl SGD {
     /// * `params` - Mutable references to parameter tensors
     /// * `lr` - Learning rate
     #[allow(clippy::needless_pass_by_value)]
+    #[must_use] 
     pub fn new(params: Vec<&mut Tensor>, lr: f32) -> Self {
         let param_ids: Vec<TensorId> = params.iter().map(|p| p.id()).collect();
         Self {
@@ -107,6 +108,7 @@ impl SGD {
 
     /// Create SGD with momentum.
     #[allow(clippy::needless_pass_by_value)]
+    #[must_use] 
     pub fn with_momentum(params: Vec<&mut Tensor>, lr: f32, momentum: f32) -> Self {
         let param_ids: Vec<TensorId> = params.iter().map(|p| p.id()).collect();
         Self {
@@ -121,12 +123,14 @@ impl SGD {
     }
 
     /// Enable Nesterov momentum.
+    #[must_use] 
     pub fn nesterov(mut self) -> Self {
         self.nesterov = true;
         self
     }
 
     /// Set weight decay (L2 regularization).
+    #[must_use] 
     pub fn weight_decay(mut self, wd: f32) -> Self {
         self.weight_decay = wd;
         self
@@ -249,6 +253,7 @@ impl Adam {
     ///
     /// Default: β₁=0.9, β₂=0.999, ε=1e-8
     #[allow(clippy::needless_pass_by_value)]
+    #[must_use] 
     pub fn new(params: Vec<&mut Tensor>, lr: f32) -> Self {
         let param_ids: Vec<TensorId> = params.iter().map(|p| p.id()).collect();
         Self {
@@ -266,6 +271,7 @@ impl Adam {
     }
 
     /// Set beta parameters.
+    #[must_use] 
     pub fn betas(mut self, beta1: f32, beta2: f32) -> Self {
         self.beta1 = beta1;
         self.beta2 = beta2;
@@ -273,12 +279,14 @@ impl Adam {
     }
 
     /// Set epsilon for numerical stability.
+    #[must_use] 
     pub fn eps(mut self, eps: f32) -> Self {
         self.eps = eps;
         self
     }
 
     /// Set weight decay (L2 regularization, applied to gradient).
+    #[must_use] 
     pub fn weight_decay(mut self, wd: f32) -> Self {
         self.weight_decay = wd;
         self
@@ -363,7 +371,7 @@ impl Optimizer for Adam {
     }
 }
 
-/// AdamW optimizer (Loshchilov & Hutter, 2019).
+/// `AdamW` optimizer (Loshchilov & Hutter, 2019).
 ///
 /// Like Adam but with decoupled weight decay, which is more effective
 /// for regularization.
@@ -388,10 +396,11 @@ pub struct AdamW {
 }
 
 impl AdamW {
-    /// Create a new AdamW optimizer.
+    /// Create a new `AdamW` optimizer.
     ///
-    /// Default: β₁=0.9, β₂=0.999, ε=1e-8, weight_decay=0.01
+    /// Default: β₁=0.9, β₂=0.999, ε=1e-8, `weight_decay=0.01`
     #[allow(clippy::needless_pass_by_value)]
+    #[must_use] 
     pub fn new(params: Vec<&mut Tensor>, lr: f32) -> Self {
         let param_ids: Vec<TensorId> = params.iter().map(|p| p.id()).collect();
         Self {
@@ -408,17 +417,20 @@ impl AdamW {
         }
     }
 
+    #[must_use] 
     pub fn betas(mut self, beta1: f32, beta2: f32) -> Self {
         self.beta1 = beta1;
         self.beta2 = beta2;
         self
     }
 
+    #[must_use] 
     pub fn eps(mut self, eps: f32) -> Self {
         self.eps = eps;
         self
     }
 
+    #[must_use] 
     pub fn weight_decay(mut self, wd: f32) -> Self {
         self.weight_decay = wd;
         self
@@ -496,7 +508,7 @@ impl Optimizer for AdamW {
     }
 }
 
-/// RMSprop optimizer.
+/// `RMSprop` optimizer.
 ///
 /// Maintains a moving average of squared gradients for adaptive learning rates.
 ///
@@ -521,10 +533,11 @@ pub struct RMSprop {
 }
 
 impl RMSprop {
-    /// Create a new RMSprop optimizer.
+    /// Create a new `RMSprop` optimizer.
     ///
     /// Default: α=0.99, ε=1e-8
     #[allow(clippy::needless_pass_by_value)]
+    #[must_use] 
     pub fn new(params: Vec<&mut Tensor>, lr: f32) -> Self {
         let param_ids: Vec<TensorId> = params.iter().map(|p| p.id()).collect();
         Self {
@@ -540,21 +553,25 @@ impl RMSprop {
         }
     }
 
+    #[must_use] 
     pub fn alpha(mut self, alpha: f32) -> Self {
         self.alpha = alpha;
         self
     }
 
+    #[must_use] 
     pub fn eps(mut self, eps: f32) -> Self {
         self.eps = eps;
         self
     }
 
+    #[must_use] 
     pub fn momentum(mut self, momentum: f32) -> Self {
         self.momentum = momentum;
         self
     }
 
+    #[must_use] 
     pub fn weight_decay(mut self, wd: f32) -> Self {
         self.weight_decay = wd;
         self
