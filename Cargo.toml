@@ -149,7 +149,7 @@ minijinja = { version = "2.14.0", features = ["loader", "serde"] }
 
 [dev-dependencies]
 proptest = "1.6"
-criterion = "0.5"
+criterion = "0.8"
 renacer = "0.9.1"
 tempfile = "3.14"  # For format module tests
 jugar-probar = "0.5"  # TUI/GUI testing framework with coverage tracking (spec §8)
