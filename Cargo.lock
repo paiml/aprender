@@ -243,7 +243,7 @@ checksum = "a23eb6b1614318a8071c9b2521f36b424b2c83db5eb3a0fead4a6c0809af6e61"
 name = "apr-cli"
 version = "0.2.2"
 dependencies = [
- "aprender 0.22.0",
+ "aprender 0.23.0",
  "assert_cmd",
  "axum",
  "axum-test",
@@ -334,7 +334,7 @@ dependencies = [
 
 [[package]]
 name = "aprender"
-version = "0.22.0"
+version = "0.23.0"
 dependencies = [
  "aes-gcm",
  "alimentar",
@@ -5138,9 +5138,9 @@ dependencies = [
 
 [[package]]
 name = "serde_json"
-version = "1.0.148"
+version = "1.0.149"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3084b546a1dd6289475996f182a22aba973866ea8e8b02c51d9f46b1336a22da"
+checksum = "83fc039473c5595ace860d8c4fafa220ff474b3fc6bfdb4293327f1a37e94d86"
 dependencies = [
  "itoa",
  "memchr",
