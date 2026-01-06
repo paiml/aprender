@@ -506,7 +506,13 @@ Automated releases on version tags.
 - **Stemming**: `PorterStemmer` (simplified Porter algorithm)
   - Steps 1-5 suffix removal
   - Handles plurals, -ed/-ing, common endings
-- 62 unit tests + 25 doctests (87 tests total)
+- **Chat Templates** (`chat_template` module):
+  - Generic chat template engine supporting 6+ formats
+  - Auto-detection from model name or tokens
+  - Formats: ChatML (Qwen2, Yi), LLaMA2 (TinyLlama, Vicuna), Mistral, Phi, Alpaca, Raw
+  - Security: Sandboxed Jinja2 via `minijinja` (no filesystem/network access)
+  - See `docs/specifications/chat-template-improvement-spec.md` for full spec
+- 70 chat template tests + 62 unit tests + 25 doctests (157 tests total)
 
 **Bayesian Inference (`bayesian` module):**
 - Conjugate Priors: Gamma-Poisson, Normal-InverseGamma, Dirichlet-Multinomial
@@ -540,6 +546,7 @@ Automated releases on version tags.
 - `src/metrics/mod.rs` - R², MSE, MAE, inertia, silhouette
 - `src/time_series/mod.rs` - ARIMA time series forecasting (524 LOC)
 - `src/text/` - Text preprocessing (tokenization, stop words, stemming)
+- `src/text/chat_template.rs` - Chat template engine (1818 LOC, 70 tests)
 - `src/bayesian/` - Bayesian inference and model selection
 - `src/glm/` - Generalized Linear Models
 - `src/graph/` - Graph algorithms and analysis

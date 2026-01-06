@@ -145,12 +145,14 @@ safetensors = { version = "0.4", optional = true }
 # WASM bindings for noise generator (optional, spec: noise-generator-apr-wasm-spec.md)
 wasm-bindgen = { version = "0.2", optional = true }
 js-sys = { version = "0.3", optional = true }
+minijinja = { version = "2.14.0", features = ["loader", "serde"] }
 
 [dev-dependencies]
 proptest = "1.6"
 criterion = "0.5"
 renacer = "0.9.1"
 tempfile = "3.14"  # For format module tests
+jugar-probar = "0.5"  # TUI/GUI testing framework with coverage tracking (spec §8)
 
 [features]
 default = ["parallel"]
@@ -228,6 +230,15 @@ required-features = ["format-quantize"]
 [[example]]
 name = "shell_encryption_demo"
 required-features = ["format-encryption"]
+
+[[example]]
+name = "chat_template"
+
+[[example]]
+name = "text_preprocessing"
+
+[[example]]
+name = "time_series_forecasting"
 
 [profile.release]
 lto = true

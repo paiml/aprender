@@ -1,0 +1,349 @@
+# Chat Template State Machine Playbook
+# Verified with: bashrs lint && bashrs purify
+#
+# This playbook defines the state machine for chat template processing
+# following Toyota Way principles (Jidoka, Poka-Yoke, Standardized Work)
+#
+# Reference: docs/specifications/chat-template-improvement-spec.md v1.3.0
+
+version: "1.0"
+name: "Chat Template State Machine"
+description: "Verify correct chat template processing through state transitions"
+
+machine:
+  id: "chat_template_engine"
+  initial: "idle"
+
+  states:
+    idle:
+      id: "idle"
+      description: "Template engine ready to accept input"
+      invariants:
+        - description: "No active template"
+          condition: "engine.template.is_none()"
+
+    detecting:
+      id: "detecting"
+      description: "Auto-detecting template format from model name or tokens"
+      on_entry:
+        - type: log
+          message: "Starting format detection"
+      invariants:
+        - description: "Model name or config provided"
+          condition: "engine.input.is_some()"
+
+    loading:
+      id: "loading"
+      description: "Loading and compiling template"
+      invariants:
+        - description: "Format has been detected"
+          condition: "engine.format.is_some()"
+
+    formatting:
+      id: "formatting"
+      description: "Formatting conversation with template"
+      invariants:
+        - description: "Template is compiled"
+          condition: "engine.template.is_some()"
+        - description: "Messages provided"
+          condition: "engine.messages.len() > 0"
+
+    complete:
+      id: "complete"
+      description: "Conversation formatted successfully"
+      final_state: true
+      invariants:
+        - description: "Output is non-empty"
+          condition: "engine.output.len() > 0"
+
+    error:
+      id: "error"
+      description: "Error encountered during processing"
+      final_state: true
+      invariants:
+        - description: "Error is recorded"
+          condition: "engine.error.is_some()"
+
+  transitions:
+    - id: "start_detection"
+      from: "idle"
+      to: "detecting"
+      event: "model_loaded"
+      description: "Begin format detection"
+      actions:
+        - type: call
+          method: "engine.set_model_name(name)"
+
+    - id: "format_detected"
+      from: "detecting"
+      to: "loading"
+      event: "format_detected"
+      description: "Format identified, load template"
+      guard: "format != TemplateFormat::Unknown"
+
+    - id: "template_ready"
+      from: "loading"
+      to: "formatting"
+      event: "template_compiled"
+      description: "Template compiled, ready to format"
+      guard: "template.is_valid()"
+
+    - id: "format_complete"
+      from: "formatting"
+      to: "complete"
+      event: "conversation_formatted"
+      description: "Conversation formatted successfully"
+      guard: "output.len() > 0"
+
+    - id: "detection_error"
+      from: "detecting"
+      to: "error"
+      event: "detection_failed"
+      description: "Could not detect format"
+
+    - id: "loading_error"
+      from: "loading"
+      to: "error"
+      event: "template_invalid"
+      description: "Template compilation failed"
+
+    - id: "format_error"
+      from: "formatting"
+      to: "error"
+      event: "format_failed"
+      description: "Conversation formatting failed"
+
+  forbidden:
+    - from: "idle"
+      to: "complete"
+      reason: "Cannot complete without processing"
+
+    - from: "idle"
+      to: "formatting"
+      reason: "Cannot format without loading template"
+
+    - from: "detecting"
+      to: "complete"
+      reason: "Cannot complete without formatting"
+
+    - from: "loading"
+      to: "complete"
+      reason: "Cannot complete without formatting"
+
+# Feature Coverage Requirements
+coverage:
+  features:
+    templates:
+      - chatml_basic           # ChatML single message
+      - chatml_multiturn       # ChatML multi-turn conversation
+      - chatml_system          # ChatML with system prompt
+      - llama2_basic           # LLaMA2 single message
+      - llama2_system          # LLaMA2 with <<SYS>> system prompt
+      - llama2_multiturn       # LLaMA2 multi-turn
+      - mistral_basic          # Mistral single message (no system)
+      - mistral_multiturn      # Mistral multi-turn
+      - phi_basic              # Phi Instruct/Output format
+      - phi_system             # Phi with system prompt
+      - alpaca_basic           # Alpaca ### format
+      - alpaca_system          # Alpaca with instruction
+      - raw_passthrough        # Raw fallback
+      - custom_jinja2          # Custom HuggingFace template
+
+    auto_detection:
+      - detect_chatml_tokens   # <|im_start|> in vocab
+      - detect_llama2_tokens   # [INST] in vocab
+      - detect_mistral_name    # "mistral" in model name
+      - detect_phi_name        # "phi" in model name
+      - detect_alpaca_name     # "alpaca" in model name
+      - detect_qwen_name       # "qwen" in model name
+      - detect_yi_name         # "yi" in model name
+      - detect_fallback_raw    # Unknown model -> Raw
+
+    edge_cases:
+      - empty_conversation     # [] input
+      - single_message         # One user message
+      - unicode_content        # CJK, emoji, RTL
+      - special_token_escape   # Content with <|im_end|>
+      - long_conversation      # 100+ turns
+      - binary_content         # Null bytes in content
+      - whitespace_content     # Only whitespace
+      - newline_content        # Multiple newlines
+      - nested_quotes          # Quotes in content
+
+    security:
+      - template_size_limit    # Reject > 100KB
+      - recursion_limit        # Max 100 depth
+      - loop_limit             # Max 10K iterations
+      - no_filesystem          # No file access
+      - no_code_exec           # No arbitrary code
+      - content_escaping       # Escape special tokens
+
+  thresholds:
+    minimum_coverage: 95
+    target_coverage: 100
+
+# Performance Requirements
+performance:
+  format_single_message:
+    max_duration_us: 100      # < 100 microseconds
+    max_memory_kb: 10
+  format_conversation:
+    max_duration_ms: 1        # < 1 millisecond for 10 turns
+    max_memory_kb: 100
+  auto_detection:
+    max_duration_us: 500      # < 500 microseconds
+    max_memory_kb: 1
+  template_compile:
+    max_duration_ms: 10       # < 10 milliseconds
+    max_memory_kb: 500
+
+# Determinism Requirements
+determinism:
+  enabled: true
+  iterations: 3
+  description: "Same input must produce identical output"
+
+# Path Assertions
+assertions:
+  path:
+    must_visit:
+      - "idle"
+      - "detecting"
+      - "loading"
+      - "formatting"
+      - "complete"
+    must_not_visit:
+      - "error"  # For valid inputs
+
+  output:
+    - var: "formatted_output"
+      not_empty: true
+    - var: "errors"
+      empty: true  # For valid inputs
+
+# Test Scenarios
+scenarios:
+  - name: "ChatML Basic Flow"
+    input:
+      model_name: "Qwen2-0.5B-Instruct"
+      messages:
+        - role: "user"
+          content: "Hello"
+    expected:
+      format: "ChatML"
+      output_contains:
+        - "<|im_start|>user"
+        - "Hello"
+        - "<|im_end|>"
+        - "<|im_start|>assistant"
+
+  - name: "LLaMA2 with System"
+    input:
+      model_name: "TinyLlama-1.1B-Chat"
+      messages:
+        - role: "system"
+          content: "You are helpful."
+        - role: "user"
+          content: "Hi"
+    expected:
+      format: "Llama2"
+      output_contains:
+        - "<s>"
+        - "[INST]"
+        - "<<SYS>>"
+        - "You are helpful."
+        - "<</SYS>>"
+        - "Hi"
+        - "[/INST]"
+
+  - name: "Mistral No System"
+    input:
+      model_name: "Mistral-7B-Instruct"
+      messages:
+        - role: "system"
+          content: "Ignored"
+        - role: "user"
+          content: "Hello"
+    expected:
+      format: "Mistral"
+      output_not_contains:
+        - "Ignored"
+        - "<<SYS>>"
+      output_contains:
+        - "[INST]"
+        - "Hello"
+
+  - name: "Edge Case - Empty Conversation"
+    input:
+      model_name: "Qwen2-0.5B-Instruct"
+      messages: []
+    expected:
+      format: "ChatML"
+      output_contains:
+        - "<|im_start|>assistant"
+
+  - name: "Edge Case - Unicode Content"
+    input:
+      model_name: "Qwen2-0.5B-Instruct"
+      messages:
+        - role: "user"
+          content: "Hello world!"
+    expected:
+      format: "ChatML"
+      output_contains:
+        - "Hello world!"
+
+  - name: "Multi-turn Conversation"
+    input:
+      model_name: "Qwen2-0.5B-Instruct"
+      messages:
+        - role: "system"
+          content: "You are helpful."
+        - role: "user"
+          content: "What is 2+2?"
+        - role: "assistant"
+          content: "4"
+        - role: "user"
+          content: "And 3+3?"
+    expected:
+      format: "ChatML"
+      output_contains:
+        - "You are helpful."
+        - "What is 2+2?"
+        - "4"
+        - "And 3+3?"
+
+  - name: "Custom Jinja2 Template"
+    input:
+      model_name: "custom"
+      template: "{% for message in messages %}{{ message.role }}: {{ message.content }}\n{% endfor %}"
+      messages:
+        - role: "user"
+          content: "Hello"
+        - role: "assistant"
+          content: "Hi there"
+    expected:
+      format: "Custom"
+      output_contains:
+        - "user: Hello"
+        - "assistant: Hi there"
+
+# Probador Integration
+probador:
+  enabled: true
+  test_file: "tests/book/case_studies/chat_template_usage.rs"
+  coverage_report: "target/coverage/chat_template.json"
+  visual_snapshots:
+    - name: "chatml_output"
+      scenario: "ChatML Basic Flow"
+    - name: "llama2_output"
+      scenario: "LLaMA2 with System"
+    - name: "mistral_output"
+      scenario: "Mistral No System"
+
+# bashrs Verification Commands
+verification:
+  lint: "bashrs lint playbooks/chat_template.yaml"
+  test: "cargo test --test book chat_template"
+  example: "cargo run --example chat_template"
+  coverage: "cargo llvm-cov --test book -- chat_template"

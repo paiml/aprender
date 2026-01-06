@@ -13,4 +13,5 @@
 //! The book build will FAIL if any test in this module fails.
 //! This is **Poka-Yoke** (error-proofing) - we cannot publish broken examples.
 
+mod case_studies;
 mod ml_fundamentals;

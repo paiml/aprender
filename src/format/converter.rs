@@ -9,7 +9,7 @@
 //! - Quantization and compression
 
 use crate::error::{AprenderError, Result};
-use crate::format::gguf::load_gguf_tensors;
+use crate::format::gguf::{load_gguf_with_tokenizer, GgufTokenizer};
 use crate::format::v2::{AprV2Metadata, AprV2Writer};
 use crate::format::validation::{AprValidator, TensorStats, ValidationReport};
 use crate::format::Compression;
@@ -788,17 +788,22 @@ pub fn apr_import<P: AsRef<Path>>(
     // Step 1: Resolve source to local path
     let local_path = resolve_source(&parsed_source, options.cache)?;
 
-    // Step 2: Detect format and load tensors
-    let tensors = load_source_tensors(&local_path, &options)?;
+    // Step 2: Detect format and load tensors (with tokenizer for GGUF)
+    let load_result = load_source_tensors(&local_path, &options)?;
 
     // Step 3: Map tensor names to canonical APR names
-    let mapped_tensors = map_tensor_names(&tensors, options.architecture);
+    let mapped_tensors = map_tensor_names(&load_result.tensors, options.architecture);
 
     // Step 4: Validate tensors (inline validation)
     let validation_result = validate_tensors(&mapped_tensors, &options)?;
 
-    // Step 5: Write APR format
-    write_apr_file(&mapped_tensors, output_path, &options)?;
+    // Step 5: Write APR format (with tokenizer data if available)
+    write_apr_file(
+        &mapped_tensors,
+        output_path,
+        &options,
+        load_result.tokenizer.as_ref(),
+    )?;
 
     Ok(validation_result)
 }
@@ -968,22 +973,40 @@ fn download_from_hf(repo_id: &str, filename: &str) -> Result<PathBuf> {
     Ok(path)
 }
 
+/// Result of loading source tensors (may include tokenizer data)
+struct SourceLoadResult {
+    /// Tensor data (name -> (data, shape))
+    tensors: BTreeMap<String, (Vec<f32>, Vec<usize>)>,
+    /// Tokenizer data (only present for GGUF files)
+    tokenizer: Option<GgufTokenizer>,
+}
+
 /// Load tensors from source file (`SafeTensors` format)
-fn load_source_tensors(
-    path: &Path,
-    _options: &ImportOptions,
-) -> Result<BTreeMap<String, (Vec<f32>, Vec<usize>)>> {
+fn load_source_tensors(path: &Path, _options: &ImportOptions) -> Result<SourceLoadResult> {
     let extension = path.extension().and_then(|e| e.to_str()).unwrap_or("");
 
     match extension {
-        "safetensors" => load_safetensors_tensors(path),
+        "safetensors" => {
+            let tensors = load_safetensors_tensors(path)?;
+            Ok(SourceLoadResult {
+                tensors,
+                tokenizer: None,
+            })
+        }
         "apr" => {
             // Already APR format - extract tensors
             Err(AprenderError::FormatError {
                 message: "Cannot import from APR format - use direct loading instead".to_string(),
             })
         }
-        "gguf" => load_gguf_tensors(path),
+        "gguf" => {
+            // Load GGUF with tokenizer data preserved
+            let result = load_gguf_with_tokenizer(path)?;
+            Ok(SourceLoadResult {
+                tensors: result.tensors,
+                tokenizer: Some(result.tokenizer),
+            })
+        }
         "bin" | "pt" | "pth" => Err(AprenderError::FormatError {
             message: format!(
                 "PyTorch format ({extension}) not supported. Convert to SafeTensors first."
@@ -1248,6 +1271,7 @@ fn write_apr_file(
     tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
     output: &Path,
     options: &ImportOptions,
+    tokenizer: Option<&GgufTokenizer>,
 ) -> Result<()> {
     // Calculate total parameter count
     let param_count: u64 = tensors.values().map(|(data, _)| data.len() as u64).sum();
@@ -1270,6 +1294,56 @@ fn write_apr_file(
         "tensor_shapes".to_string(),
         serde_json::Value::Object(tensor_shapes),
     );
+
+    // Add tokenizer data if available (CRITICAL for GGUF import)
+    if let Some(tok) = tokenizer {
+        if !tok.vocabulary.is_empty() {
+            // Store vocabulary as JSON array
+            let vocab_array: Vec<serde_json::Value> = tok
+                .vocabulary
+                .iter()
+                .map(|s| serde_json::Value::String(s.clone()))
+                .collect();
+            custom.insert(
+                "tokenizer.vocabulary".to_string(),
+                serde_json::Value::Array(vocab_array),
+            );
+            custom.insert(
+                "tokenizer.vocab_size".to_string(),
+                serde_json::Value::Number(serde_json::Number::from(tok.vocabulary.len())),
+            );
+        }
+        if let Some(ref model_type) = tok.model_type {
+            custom.insert(
+                "tokenizer.model_type".to_string(),
+                serde_json::Value::String(model_type.clone()),
+            );
+        }
+        if let Some(bos) = tok.bos_token_id {
+            custom.insert(
+                "tokenizer.bos_token_id".to_string(),
+                serde_json::Value::Number(serde_json::Number::from(bos)),
+            );
+        }
+        if let Some(eos) = tok.eos_token_id {
+            custom.insert(
+                "tokenizer.eos_token_id".to_string(),
+                serde_json::Value::Number(serde_json::Number::from(eos)),
+            );
+        }
+        if let Some(ref arch) = tok.architecture {
+            custom.insert(
+                "tokenizer.architecture".to_string(),
+                serde_json::Value::String(arch.clone()),
+            );
+        }
+        if let Some(ref name) = tok.model_name {
+            custom.insert(
+                "tokenizer.model_name".to_string(),
+                serde_json::Value::String(name.clone()),
+            );
+        }
+    }
 
     let metadata = AprV2Metadata {
         model_type: format!("{:?}", options.architecture),

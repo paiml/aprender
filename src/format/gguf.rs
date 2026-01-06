@@ -522,6 +522,211 @@ fn read_string(data: &[u8], offset: usize) -> Result<(String, usize)> {
     Ok((s, 8 + len))
 }
 
+/// Read a metadata value and return (value, bytes_consumed)
+fn read_metadata_value(data: &[u8], offset: usize, value_type: u32) -> Result<(GgufValue, usize)> {
+    match value_type {
+        0 => {
+            // Uint8
+            if offset >= data.len() {
+                return Err(AprenderError::FormatError {
+                    message: "Unexpected EOF reading Uint8".to_string(),
+                });
+            }
+            Ok((GgufValue::Uint8(data[offset]), 1))
+        }
+        1 => {
+            // Int8
+            if offset >= data.len() {
+                return Err(AprenderError::FormatError {
+                    message: "Unexpected EOF reading Int8".to_string(),
+                });
+            }
+            Ok((GgufValue::Int8(data[offset] as i8), 1))
+        }
+        2 => {
+            // Uint16
+            if offset + 2 > data.len() {
+                return Err(AprenderError::FormatError {
+                    message: "Unexpected EOF reading Uint16".to_string(),
+                });
+            }
+            let v = u16::from_le_bytes([data[offset], data[offset + 1]]);
+            Ok((GgufValue::Uint16(v), 2))
+        }
+        3 => {
+            // Int16
+            if offset + 2 > data.len() {
+                return Err(AprenderError::FormatError {
+                    message: "Unexpected EOF reading Int16".to_string(),
+                });
+            }
+            let v = i16::from_le_bytes([data[offset], data[offset + 1]]);
+            Ok((GgufValue::Int16(v), 2))
+        }
+        4 => {
+            // Uint32
+            let v = read_u32(data, offset)?;
+            Ok((GgufValue::Uint32(v), 4))
+        }
+        5 => {
+            // Int32
+            if offset + 4 > data.len() {
+                return Err(AprenderError::FormatError {
+                    message: "Unexpected EOF reading Int32".to_string(),
+                });
+            }
+            let v = i32::from_le_bytes([
+                data[offset],
+                data[offset + 1],
+                data[offset + 2],
+                data[offset + 3],
+            ]);
+            Ok((GgufValue::Int32(v), 4))
+        }
+        6 => {
+            // Float32
+            if offset + 4 > data.len() {
+                return Err(AprenderError::FormatError {
+                    message: "Unexpected EOF reading Float32".to_string(),
+                });
+            }
+            let v = f32::from_le_bytes([
+                data[offset],
+                data[offset + 1],
+                data[offset + 2],
+                data[offset + 3],
+            ]);
+            Ok((GgufValue::Float32(v), 4))
+        }
+        7 => {
+            // Bool
+            if offset >= data.len() {
+                return Err(AprenderError::FormatError {
+                    message: "Unexpected EOF reading Bool".to_string(),
+                });
+            }
+            Ok((GgufValue::Bool(data[offset] != 0), 1))
+        }
+        8 => {
+            // String
+            let (s, len) = read_string(data, offset)?;
+            Ok((GgufValue::String(s), len))
+        }
+        9 => {
+            // Array - read element type and count, then elements
+            let elem_type = read_u32(data, offset)?;
+            let count = read_u64(data, offset + 4)? as usize;
+            let mut consumed = 12; // type (4) + count (8)
+
+            // For tokenizer vocabulary, we need string arrays
+            if elem_type == 8 {
+                // Array of strings
+                let mut strings = Vec::with_capacity(count);
+                for _ in 0..count {
+                    let (s, len) = read_string(data, offset + consumed)?;
+                    strings.push(s);
+                    consumed += len;
+                }
+                Ok((GgufValue::ArrayString(strings), consumed))
+            } else if elem_type == 4 {
+                // Array of Uint32
+                let mut values = Vec::with_capacity(count);
+                for _ in 0..count {
+                    values.push(read_u32(data, offset + consumed)?);
+                    consumed += 4;
+                }
+                Ok((GgufValue::ArrayUint32(values), consumed))
+            } else if elem_type == 5 {
+                // Array of Int32
+                let mut values = Vec::with_capacity(count);
+                for _ in 0..count {
+                    let v = i32::from_le_bytes([
+                        data[offset + consumed],
+                        data[offset + consumed + 1],
+                        data[offset + consumed + 2],
+                        data[offset + consumed + 3],
+                    ]);
+                    values.push(v);
+                    consumed += 4;
+                }
+                Ok((GgufValue::ArrayInt32(values), consumed))
+            } else if elem_type == 6 {
+                // Array of Float32
+                let mut values = Vec::with_capacity(count);
+                for _ in 0..count {
+                    let v = f32::from_le_bytes([
+                        data[offset + consumed],
+                        data[offset + consumed + 1],
+                        data[offset + consumed + 2],
+                        data[offset + consumed + 3],
+                    ]);
+                    values.push(v);
+                    consumed += 4;
+                }
+                Ok((GgufValue::ArrayFloat32(values), consumed))
+            } else {
+                // For other array types, compute size and skip
+                let elem_size = match elem_type {
+                    0..=1 | 7 => 1, // Uint8, Int8, Bool
+                    2..=3 => 2,     // Uint16, Int16
+                    10..=12 => 8,   // Uint64, Int64, Float64
+                    _ => 4,         // Default
+                };
+                consumed += count * elem_size;
+                // Return empty array (we don't need these types for tokenizer)
+                Ok((GgufValue::ArrayUint32(vec![]), consumed))
+            }
+        }
+        10 => {
+            // Uint64
+            let v = read_u64(data, offset)?;
+            Ok((GgufValue::Uint64(v), 8))
+        }
+        11 => {
+            // Int64
+            if offset + 8 > data.len() {
+                return Err(AprenderError::FormatError {
+                    message: "Unexpected EOF reading Int64".to_string(),
+                });
+            }
+            let v = i64::from_le_bytes([
+                data[offset],
+                data[offset + 1],
+                data[offset + 2],
+                data[offset + 3],
+                data[offset + 4],
+                data[offset + 5],
+                data[offset + 6],
+                data[offset + 7],
+            ]);
+            Ok((GgufValue::Int64(v), 8))
+        }
+        12 => {
+            // Float64
+            if offset + 8 > data.len() {
+                return Err(AprenderError::FormatError {
+                    message: "Unexpected EOF reading Float64".to_string(),
+                });
+            }
+            let v = f64::from_le_bytes([
+                data[offset],
+                data[offset + 1],
+                data[offset + 2],
+                data[offset + 3],
+                data[offset + 4],
+                data[offset + 5],
+                data[offset + 6],
+                data[offset + 7],
+            ]);
+            Ok((GgufValue::Float64(v), 8))
+        }
+        _ => {
+            // Unknown type - skip 4 bytes
+            Ok((GgufValue::Uint32(0), 4))
+        }
+    }
+}
+
 /// Skip a metadata value (we don't need to parse all metadata types)
 fn skip_metadata_value(data: &[u8], offset: usize, value_type: u32) -> Result<usize> {
     match value_type {
@@ -571,6 +776,8 @@ pub struct GgufReader {
     pub tensors: Vec<GgufTensorMeta>,
     /// Offset where tensor data section starts
     pub data_offset: usize,
+    /// Metadata key-value pairs (extracted from GGUF)
+    pub metadata: BTreeMap<String, GgufValue>,
 }
 
 /// Tensor metadata from GGUF file
@@ -615,20 +822,29 @@ impl GgufReader {
         let tensor_count = read_u64(&data, 8)?;
         let metadata_kv_count = read_u64(&data, 16)?;
 
-        // Skip metadata section
+        // Parse metadata section (extract vocabulary and other tokenizer data)
         let mut offset = 24;
+        let mut metadata = BTreeMap::new();
         for _ in 0..metadata_kv_count {
             // Read key
-            let (_, key_len) = read_string(&data, offset)?;
+            let (key, key_len) = read_string(&data, offset)?;
             offset += key_len;
 
             // Read value type
             let value_type = read_u32(&data, offset)?;
             offset += 4;
 
-            // Skip value
-            let value_len = skip_metadata_value(&data, offset, value_type)?;
-            offset += value_len;
+            // Parse value (for tokenizer-related keys) or skip (for others)
+            // We parse: tokenizer.ggml.* keys for vocabulary support
+            if key.starts_with("tokenizer.") || key.starts_with("general.") {
+                let (value, value_len) = read_metadata_value(&data, offset, value_type)?;
+                metadata.insert(key, value);
+                offset += value_len;
+            } else {
+                // Skip non-tokenizer metadata for efficiency
+                let value_len = skip_metadata_value(&data, offset, value_type)?;
+                offset += value_len;
+            }
         }
 
         // Parse tensor infos
@@ -675,7 +891,75 @@ impl GgufReader {
             tensor_count,
             tensors,
             data_offset,
+            metadata,
         })
+    }
+
+    /// Get vocabulary tokens from metadata
+    ///
+    /// Returns the token strings indexed by token ID.
+    /// Uses "tokenizer.ggml.tokens" key from GGUF metadata.
+    #[must_use]
+    pub fn vocabulary(&self) -> Option<Vec<String>> {
+        if let Some(GgufValue::ArrayString(tokens)) = self.metadata.get("tokenizer.ggml.tokens") {
+            if tokens.is_empty() {
+                None
+            } else {
+                Some(tokens.clone())
+            }
+        } else {
+            None
+        }
+    }
+
+    /// Get tokenizer model type (e.g., "llama", "gpt2")
+    #[must_use]
+    pub fn tokenizer_model(&self) -> Option<String> {
+        if let Some(GgufValue::String(model)) = self.metadata.get("tokenizer.ggml.model") {
+            Some(model.clone())
+        } else {
+            None
+        }
+    }
+
+    /// Get BOS (beginning of sequence) token ID
+    #[must_use]
+    pub fn bos_token_id(&self) -> Option<u32> {
+        if let Some(GgufValue::Uint32(id)) = self.metadata.get("tokenizer.ggml.bos_token_id") {
+            Some(*id)
+        } else {
+            None
+        }
+    }
+
+    /// Get EOS (end of sequence) token ID
+    #[must_use]
+    pub fn eos_token_id(&self) -> Option<u32> {
+        if let Some(GgufValue::Uint32(id)) = self.metadata.get("tokenizer.ggml.eos_token_id") {
+            Some(*id)
+        } else {
+            None
+        }
+    }
+
+    /// Get general architecture name (e.g., "llama", "qwen2")
+    #[must_use]
+    pub fn architecture(&self) -> Option<String> {
+        if let Some(GgufValue::String(arch)) = self.metadata.get("general.architecture") {
+            Some(arch.clone())
+        } else {
+            None
+        }
+    }
+
+    /// Get model name from metadata
+    #[must_use]
+    pub fn model_name(&self) -> Option<String> {
+        if let Some(GgufValue::String(name)) = self.metadata.get("general.name") {
+            Some(name.clone())
+        } else {
+            None
+        }
     }
 
     /// Extract a tensor as F32 data (dequantizing if needed)
@@ -869,6 +1153,67 @@ fn dequantize_q8_0(data: &[u8], start: usize, num_elements: usize) -> Result<Vec
 pub fn load_gguf_tensors<P: AsRef<Path>>(path: P) -> Result<TensorDataMap> {
     let reader = GgufReader::from_file(path)?;
     reader.get_all_tensors_f32()
+}
+
+/// Tokenizer data extracted from GGUF file
+#[derive(Debug, Clone, Default)]
+pub struct GgufTokenizer {
+    /// Vocabulary tokens (indexed by token ID)
+    pub vocabulary: Vec<String>,
+    /// Tokenizer model type (e.g., "llama", "gpt2")
+    pub model_type: Option<String>,
+    /// BOS (beginning of sequence) token ID
+    pub bos_token_id: Option<u32>,
+    /// EOS (end of sequence) token ID
+    pub eos_token_id: Option<u32>,
+    /// Model architecture (e.g., "llama", "qwen2")
+    pub architecture: Option<String>,
+    /// Model name from metadata
+    pub model_name: Option<String>,
+}
+
+impl GgufTokenizer {
+    /// Check if tokenizer has a valid vocabulary
+    #[must_use]
+    pub fn has_vocabulary(&self) -> bool {
+        !self.vocabulary.is_empty()
+    }
+
+    /// Get vocabulary size
+    #[must_use]
+    pub fn vocab_size(&self) -> usize {
+        self.vocabulary.len()
+    }
+}
+
+/// Result of loading a GGUF file with full tokenizer data
+#[derive(Debug)]
+pub struct GgufLoadResult {
+    /// Tensor data (name -> (data, shape))
+    pub tensors: TensorDataMap,
+    /// Tokenizer data extracted from GGUF metadata
+    pub tokenizer: GgufTokenizer,
+}
+
+/// Load GGUF file and extract tensors AND tokenizer data
+///
+/// This is the preferred method for GGUF import as it preserves
+/// the vocabulary needed for text generation.
+pub fn load_gguf_with_tokenizer<P: AsRef<Path>>(path: P) -> Result<GgufLoadResult> {
+    let reader = GgufReader::from_file(path)?;
+
+    let tensors = reader.get_all_tensors_f32()?;
+
+    let tokenizer = GgufTokenizer {
+        vocabulary: reader.vocabulary().unwrap_or_else(Vec::new),
+        model_type: reader.tokenizer_model(),
+        bos_token_id: reader.bos_token_id(),
+        eos_token_id: reader.eos_token_id(),
+        architecture: reader.architecture(),
+        model_name: reader.model_name(),
+    };
+
+    Ok(GgufLoadResult { tensors, tokenizer })
 }
 
 #[cfg(test)]

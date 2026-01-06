@@ -228,6 +228,7 @@
 - [Case Study: ARIMA Time Series Forecasting](./examples/time-series-forecasting.md)
 - [Case Study: Text Preprocessing for NLP](./examples/text-preprocessing.md)
 - [Case Study: Text Classification with TF-IDF](./examples/text-classification.md)
+- [Case Study: Chat Templates for LLM Inference](./examples/chat-template.md)
 - [Case Study: Advanced NLP (Similarity, Entities, Summarization)](./examples/advanced-nlp.md)
 - [Case Study: XOR Neural Network (Deep Learning)](./examples/xor-neural-network.md)
 - [Case Study: XOR Training](./examples/xor-training.md)

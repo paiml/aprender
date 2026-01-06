@@ -24,6 +24,8 @@
 //! - Bai et al. (2023). "Qwen Technical Report"
 //! - HuggingFace Transformers Documentation
 
+pub mod reliable;
+
 /// Model configuration for Qwen2-0.5B-Instruct
 #[derive(Debug, Clone)]
 pub struct Qwen2Config {

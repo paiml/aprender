@@ -120,9 +120,45 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 - **Graph Analysis** — PageRank, betweenness centrality, community detection
 - **Time Series** — ARIMA forecasting
-- **Text Processing** — Tokenization, TF-IDF, stemming
+- **Text Processing** — Tokenization, TF-IDF, stemming, chat templates
 - **Neural Networks** — Sequential models, transformers, mixture of experts
 - **Metaheuristics** — ACO, Tabu Search, DE, PSO, GA, CMA-ES
+
+### Chat Templates
+
+Format LLM conversations for different model families with automatic template detection:
+
+```rust
+use aprender::text::chat_template::{
+    auto_detect_template, ChatMessage, ChatTemplateEngine
+};
+
+// Auto-detect template from model name
+let template = auto_detect_template("Qwen2-0.5B-Instruct");
+
+let messages = vec![
+    ChatMessage::system("You are a helpful assistant."),
+    ChatMessage::user("Hello!"),
+];
+
+let formatted = template.format_conversation(&messages)?;
+```
+
+**Supported Formats:**
+
+| Format | Models | System Prompt |
+|--------|--------|---------------|
+| ChatML | Qwen2, Yi, OpenHermes | Yes |
+| Llama2 | TinyLlama, Vicuna, LLaMA 2 | Yes |
+| Mistral | Mistral-7B, Mixtral | No |
+| Phi | Phi-2, Phi-3 | Yes |
+| Alpaca | Alpaca, Guanaco | Yes |
+| Raw | Fallback | Passthrough |
+| Custom | Any (Jinja2) | Configurable |
+
+See [`examples/chat_template.rs`](examples/chat_template.rs) for complete usage.
+
+**Verification:** All templates are 100% tested via bashrs probar playbooks. See [`docs/model-verification-checklist.md`](docs/model-verification-checklist.md) for coverage status.
 
 ### Related Crates
 

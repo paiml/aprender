@@ -418,9 +418,53 @@ pub struct AprV2Metadata {
     #[serde(default)]
     pub sharding: Option<ShardingMetadata>,
 
+    /// Chat template (Jinja2 format, from tokenizer_config.json)
+    /// Per spec: chat-template-improvement-spec.md CTA-01
+    #[serde(default)]
+    pub chat_template: Option<String>,
+
+    /// Detected chat template format
+    /// Per spec: chat-template-improvement-spec.md CTA-03
+    /// Values: "chatml", "llama2", "mistral", "phi", "alpaca", "custom", "raw"
+    #[serde(default)]
+    pub chat_format: Option<String>,
+
+    /// Special tokens for chat templates
+    /// Per spec: chat-template-improvement-spec.md CTA-04
+    #[serde(default)]
+    pub special_tokens: Option<ChatSpecialTokens>,
+
     /// Custom key-value pairs
     #[serde(default, flatten)]
     pub custom: HashMap<String, serde_json::Value>,
+}
+
+/// Special tokens for chat templates (CTA-04)
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ChatSpecialTokens {
+    /// Beginning of sequence token
+    #[serde(default)]
+    pub bos_token: Option<String>,
+
+    /// End of sequence token
+    #[serde(default)]
+    pub eos_token: Option<String>,
+
+    /// Unknown token
+    #[serde(default)]
+    pub unk_token: Option<String>,
+
+    /// Padding token
+    #[serde(default)]
+    pub pad_token: Option<String>,
+
+    /// ChatML start token (<|im_start|>)
+    #[serde(default)]
+    pub im_start_token: Option<String>,
+
+    /// ChatML end token (<|im_end|>)
+    #[serde(default)]
+    pub im_end_token: Option<String>,
 }
 
 impl AprV2Metadata {
@@ -1820,5 +1864,130 @@ mod tests {
             Some("safetensors"),
             "DD6 FALSIFIED: Original format corrupted"
         );
+    }
+
+    // ========================================================================
+    // Chat Template Metadata Tests (CTA-01 to CTA-04)
+    // Per spec: chat-template-improvement-spec.md Part VIII
+    // ========================================================================
+
+    /// CTA-01: chat_template stored in APR v2 metadata section
+    #[test]
+    fn test_cta_01_chat_template_in_metadata() {
+        let mut metadata = AprV2Metadata::new("qwen2");
+        metadata.chat_template =
+            Some("{% for message in messages %}<|im_start|>{{ message.role }}".to_string());
+
+        let json = metadata.to_json().expect("serialize");
+        let parsed = AprV2Metadata::from_json(&json).expect("deserialize");
+
+        assert!(
+            parsed.chat_template.is_some(),
+            "CTA-01 FALSIFIED: chat_template not stored in metadata"
+        );
+        assert!(parsed
+            .chat_template
+            .as_ref()
+            .expect("chat_template")
+            .contains("<|im_start|>"));
+    }
+
+    /// CTA-02: Backward compatibility - APR files without chat_template still load
+    #[test]
+    fn test_cta_02_backward_compatibility() {
+        // JSON without chat_template field (old format)
+        let json = r#"{"model_type":"qwen2","name":"test","param_count":500000000}"#;
+
+        let parsed = AprV2Metadata::from_json(json.as_bytes()).expect("deserialize");
+        assert_eq!(parsed.model_type, "qwen2");
+        assert!(
+            parsed.chat_template.is_none(),
+            "CTA-02: Missing chat_template should be None, not error"
+        );
+    }
+
+    /// CTA-03: chat_format field indicates detected format
+    #[test]
+    fn test_cta_03_chat_format_field() {
+        let mut metadata = AprV2Metadata::new("qwen2");
+        metadata.chat_format = Some("chatml".to_string());
+
+        let json = metadata.to_json().expect("serialize");
+        let parsed = AprV2Metadata::from_json(&json).expect("deserialize");
+
+        assert_eq!(
+            parsed.chat_format.as_deref(),
+            Some("chatml"),
+            "CTA-03 FALSIFIED: chat_format not preserved"
+        );
+    }
+
+    /// CTA-04: Special tokens stored in special_tokens object
+    #[test]
+    fn test_cta_04_special_tokens_in_metadata() {
+        let mut metadata = AprV2Metadata::new("qwen2");
+        metadata.special_tokens = Some(ChatSpecialTokens {
+            bos_token: Some("<|endoftext|>".to_string()),
+            eos_token: Some("<|im_end|>".to_string()),
+            im_start_token: Some("<|im_start|>".to_string()),
+            im_end_token: Some("<|im_end|>".to_string()),
+            ..Default::default()
+        });
+
+        let json = metadata.to_json().expect("serialize");
+        let parsed = AprV2Metadata::from_json(&json).expect("deserialize");
+
+        let tokens = parsed
+            .special_tokens
+            .expect("CTA-04 FALSIFIED: special_tokens not stored");
+        assert_eq!(tokens.im_start_token.as_deref(), Some("<|im_start|>"));
+        assert_eq!(tokens.im_end_token.as_deref(), Some("<|im_end|>"));
+    }
+
+    /// CTA-05: Chat template survives full APR write/read cycle
+    #[test]
+    fn test_cta_05_chat_template_roundtrip() {
+        let template = "{% for m in messages %}{{ m.content }}{% endfor %}";
+
+        let mut metadata = AprV2Metadata::new("tinyllama");
+        metadata.chat_template = Some(template.to_string());
+        metadata.chat_format = Some("llama2".to_string());
+        metadata.special_tokens = Some(ChatSpecialTokens {
+            bos_token: Some("<s>".to_string()),
+            eos_token: Some("</s>".to_string()),
+            ..Default::default()
+        });
+
+        let mut writer = AprV2Writer::new(metadata);
+        writer.add_f32_tensor("test", vec![4], &[1.0, 2.0, 3.0, 4.0]);
+
+        let bytes = writer.write().expect("write");
+        let reader = AprV2Reader::from_bytes(&bytes).expect("read");
+
+        let read_meta = reader.metadata();
+        assert_eq!(
+            read_meta.chat_template.as_deref(),
+            Some(template),
+            "CTA-05 FALSIFIED: chat_template not preserved in APR file"
+        );
+        assert_eq!(
+            read_meta.chat_format.as_deref(),
+            Some("llama2"),
+            "CTA-05 FALSIFIED: chat_format not preserved"
+        );
+        assert!(
+            read_meta.special_tokens.is_some(),
+            "CTA-05 FALSIFIED: special_tokens not preserved"
+        );
+    }
+
+    /// ChatSpecialTokens default is empty
+    #[test]
+    fn test_chat_special_tokens_default() {
+        let tokens = ChatSpecialTokens::default();
+        assert!(tokens.bos_token.is_none());
+        assert!(tokens.eos_token.is_none());
+        assert!(tokens.im_start_token.is_none());
+        assert!(tokens.im_end_token.is_none());
     }
 }

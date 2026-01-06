@@ -26,6 +26,10 @@ use crate::error::CliError;
 use crate::output;
 #[cfg(feature = "inference")]
 use aprender::text::llama_tokenizer::LlamaTokenizer;
+// Chat template support (Toyota Way: Standardized Work)
+use aprender::text::chat_template::{
+    auto_detect_template, detect_format_from_name, ChatMessage, ChatTemplateEngine, TemplateFormat,
+};
 use colored::Colorize;
 use std::io::{self, Write};
 use std::path::Path;
@@ -140,6 +144,23 @@ fn detect_format_from_bytes(data: &[u8]) -> ModelFormat {
 
 fn print_welcome_banner(path: &Path, config: &ChatConfig) {
     let format = detect_format(path);
+
+    // Detect chat template format from model name (Toyota Way: Visual Control)
+    let model_name = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("unknown");
+    let template_format = detect_format_from_name(model_name);
+    let template_name = match template_format {
+        TemplateFormat::ChatML => "ChatML",
+        TemplateFormat::Llama2 => "LLaMA2",
+        TemplateFormat::Mistral => "Mistral",
+        TemplateFormat::Phi => "Phi",
+        TemplateFormat::Alpaca => "Alpaca",
+        TemplateFormat::Custom => "Custom",
+        TemplateFormat::Raw => "Raw",
+    };
+
     match format {
         ModelFormat::Apr => {
             // Y13: Architecture detected from metadata, not hardcoded
@@ -179,6 +200,7 @@ fn print_welcome_banner(path: &Path, config: &ChatConfig) {
     }
     println!();
     output::kv("Model", path.display());
+    output::kv("Chat Template", template_name);
     output::kv("Temperature", config.temperature);
     output::kv("Top-P", config.top_p);
     output::kv("Max Tokens", config.max_tokens);
@@ -229,8 +251,12 @@ mod realizar_chat {
         model_path: std::path::PathBuf,
         /// Detected format
         format: ModelFormat,
-        /// Conversation history
-        history: Vec<String>,
+        /// Conversation history as ChatMessage objects
+        history: Vec<ChatMessage>,
+        /// Chat template engine (Toyota Way: Standardized Work)
+        chat_template: Box<dyn ChatTemplateEngine + Send + Sync>,
+        /// Detected template format name (for display)
+        template_format: TemplateFormat,
         /// LLaMA tokenizer (for GGUF format)
         llama_tokenizer: Option<LlamaTokenizer>,
         /// Qwen2 BPE tokenizer (for SafeTensors/APR format)
@@ -408,11 +434,36 @@ mod realizar_chat {
                 None
             };
 
+            // Detect chat template from model name (Toyota Way: Jidoka - auto-detect)
+            let model_name = path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("unknown");
+            let template_format = detect_format_from_name(model_name);
+            let chat_template = auto_detect_template(model_name);
+
+            let template_name = match template_format {
+                TemplateFormat::ChatML => "ChatML",
+                TemplateFormat::Llama2 => "LLaMA2",
+                TemplateFormat::Mistral => "Mistral",
+                TemplateFormat::Phi => "Phi",
+                TemplateFormat::Alpaca => "Alpaca",
+                TemplateFormat::Custom => "Custom",
+                TemplateFormat::Raw => "Raw",
+            };
+            println!(
+                "{} {} chat template",
+                "Detected".green(),
+                template_name.cyan()
+            );
+
             Ok(Self {
                 model_bytes,
                 model_path: path.to_path_buf(),
                 format,
                 history: Vec::new(),
+                chat_template,
+                template_format,
                 llama_tokenizer,
                 qwen_tokenizer,
                 qwen_model,
@@ -422,13 +473,35 @@ mod realizar_chat {
         pub(super) fn generate(&mut self, user_input: &str, config: &ChatConfig) -> String {
             let start = Instant::now();
 
-            // Tokenize input using appropriate tokenizer
+            // Build conversation with chat template (Toyota Way: Standardized Work)
+            let mut messages: Vec<ChatMessage> = Vec::new();
+
+            // Add system prompt if configured
+            if let Some(ref system) = config.system {
+                messages.push(ChatMessage::system(system));
+            }
+
+            // Add conversation history
+            messages.extend(self.history.iter().cloned());
+
+            // Add current user message
+            messages.push(ChatMessage::user(user_input));
+
+            // Format conversation using detected template
+            let formatted_prompt = match self.chat_template.format_conversation(&messages) {
+                Ok(prompt) => prompt,
+                Err(e) => {
+                    return format!("[Template error: {}]", e);
+                }
+            };
+
+            // Tokenize the formatted prompt
             let prompt_tokens: Vec<u32> = if let Some(ref tokenizer) = self.llama_tokenizer {
-                tokenizer.encode_with_bos(user_input)
+                tokenizer.encode_with_bos(&formatted_prompt)
             } else if let Some(ref tokenizer) = self.qwen_tokenizer {
-                tokenizer.encode(user_input)
+                tokenizer.encode(&formatted_prompt)
             } else {
-                user_input.chars().map(|c| c as u32).collect()
+                formatted_prompt.chars().map(|c| c as u32).collect()
             };
 
             let result = match self.format {
@@ -615,12 +688,17 @@ mod realizar_chat {
             Ok(output[prompt.len()..].to_vec())
         }
 
-        pub(super) fn history(&self) -> &[String] {
+        #[allow(dead_code)]
+        pub(super) fn history(&self) -> &[ChatMessage] {
             &self.history
         }
 
+        pub(super) fn history_len(&self) -> usize {
+            self.history.len()
+        }
+
         pub(super) fn add_to_history(&mut self, role: &str, content: &str) {
-            self.history.push(format!("{role}: {content}"));
+            self.history.push(ChatMessage::new(role, content));
         }
 
         pub(super) fn clear_history(&mut self) {
@@ -630,6 +708,11 @@ mod realizar_chat {
         #[allow(dead_code)]
         pub(super) fn format(&self) -> ModelFormat {
             self.format
+        }
+
+        #[allow(dead_code)]
+        pub(super) fn template_format(&self) -> TemplateFormat {
+            self.template_format
         }
     }
 }
@@ -969,7 +1052,11 @@ fn print_inspection_info_inference(session: &ChatSession) {
     println!("{}", format!("  Format: {:?}", session.format()).dimmed());
     println!(
         "{}",
-        format!("  History: {} messages", session.history().len()).dimmed()
+        format!("  Template: {:?}", session.template_format()).dimmed()
+    );
+    println!(
+        "{}",
+        format!("  History: {} messages", session.history_len()).dimmed()
     );
 }
 

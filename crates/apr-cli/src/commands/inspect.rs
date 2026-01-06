@@ -46,6 +46,13 @@ struct MetadataInfo {
     hyperparameters: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     metrics: Option<serde_json::Value>,
+    // Chat template info (CTA-07: apr inspect Shows Template)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    chat_template: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    chat_format: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    special_tokens: Option<serde_json::Value>,
 }
 
 /// Parsed header data
@@ -194,6 +201,10 @@ fn read_metadata(reader: &mut BufReader<File>, metadata_size: u32) -> MetadataIn
             } else {
                 serde_json::to_value(&meta.metrics).ok()
             },
+            // Chat template info (from v1 metadata, may be empty)
+            chat_template: None,
+            chat_format: None,
+            special_tokens: None,
         },
         Err(_) => MetadataInfo::default(),
     }
@@ -323,6 +334,33 @@ fn output_metadata_text(metadata: &MetadataInfo) {
         if let Some(obj) = m.as_object() {
             for (k, v) in obj {
                 println!("    {k}: {v}");
+            }
+        }
+    }
+
+    // Chat template info (CTA-07: apr inspect Shows Template)
+    if metadata.chat_template.is_some() || metadata.chat_format.is_some() {
+        println!("\n  Chat Template:");
+        if let Some(format) = &metadata.chat_format {
+            println!("    Format: {format}");
+        }
+        if let Some(template) = &metadata.chat_template {
+            // Truncate long templates for display
+            let display_template = if template.len() > 100 {
+                format!("{}... ({} chars)", &template[..100], template.len())
+            } else {
+                template.clone()
+            };
+            println!("    Template: {display_template}");
+        }
+        if let Some(tokens) = &metadata.special_tokens {
+            println!("    Special Tokens:");
+            if let Some(obj) = tokens.as_object() {
+                for (k, v) in obj {
+                    if !v.is_null() {
+                        println!("      {k}: {v}");
+                    }
+                }
             }
         }
     }
