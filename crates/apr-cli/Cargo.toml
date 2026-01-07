@@ -76,7 +76,7 @@ realizar = { version = "0.5", optional = true, default-features = false, feature
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal"], optional = true }
 
 # HTTP server (for serve command with inference feature)
-axum = { version = "0.7", optional = true }
+axum = { version = "0.8", optional = true }
 
 # Async streams for SSE
 futures-util = { version = "0.3", optional = true }
