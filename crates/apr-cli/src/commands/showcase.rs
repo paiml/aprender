@@ -294,7 +294,22 @@ fn run_gguf_inference(config: &ShowcaseConfig) -> Result<bool> {
     println!();
     println!("Running inference test...");
 
-    let prompt_tokens: Vec<u32> = vec![1, 2, 3, 4, 5]; // Simple test tokens
+    // Use real tokenization from the GGUF model's vocabulary
+    let test_prompt = "Hello, I am a coding assistant. Write a function";
+    let prompt_tokens: Vec<u32> = mapped.model.encode(test_prompt).unwrap_or_else(|| {
+        // Fallback to simple tokens if vocab not available
+        println!(
+            "  {} No vocabulary found, using fallback tokens",
+            "⚠".yellow()
+        );
+        vec![1, 2, 3, 4, 5]
+    });
+    println!(
+        "  Prompt: \"{}\" ({} tokens)",
+        test_prompt,
+        prompt_tokens.len()
+    );
+
     let gen_config = QuantizedGenerateConfig {
         max_tokens: 16,
         temperature: 0.7,
@@ -377,11 +392,13 @@ fn run_convert(config: &ShowcaseConfig) -> Result<bool> {
 
     println!("Input: {}", gguf_path.display());
     println!("Output: {}", apr_path.display());
-    println!("Compression: LZ4");
+    // NOTE: APR currently uses JSON serialization (no compression)
+    // APR file will be LARGER because GGUF is quantized, APR dequantizes to F32
+    println!("Format: {} (dequantized F32 weights)", "JSON".yellow());
     println!();
 
     let start = Instant::now();
-    println!("Converting GGUF to APR format...");
+    println!("Converting GGUF to APR format (dequantizing to F32)...");
 
     // Read GGUF bytes
     let gguf_bytes = std::fs::read(&gguf_path)
@@ -402,23 +419,33 @@ fn run_convert(config: &ShowcaseConfig) -> Result<bool> {
     let elapsed = start.elapsed();
     let apr_size = apr_bytes.len();
     let gguf_size = gguf_bytes.len();
-    let compression_ratio = if apr_size > 0 {
-        gguf_size as f64 / apr_size as f64
-    } else {
-        1.0
-    };
+    let size_ratio = apr_size as f64 / gguf_size as f64;
 
     println!(
         "{} Conversion complete in {:.2}s",
         "✓".green(),
         elapsed.as_secs_f32()
     );
-    println!(
-        "  GGUF: {:.2} GB → APR: {:.2} GB ({:.2}x compression)",
-        gguf_size as f64 / 1e9,
-        apr_size as f64 / 1e9,
-        compression_ratio
-    );
+    // Be honest: APR is larger because it's dequantized F32 (no quantization, no compression)
+    if apr_size > gguf_size {
+        println!(
+            "  GGUF: {:.2} GB → APR: {:.2} GB ({:.1}x expansion due to F32 dequantization)",
+            gguf_size as f64 / 1e9,
+            apr_size as f64 / 1e9,
+            size_ratio
+        );
+        println!(
+            "  {} APR is larger because GGUF uses Q4_K_M quantization (~4 bits/weight)",
+            "ℹ".cyan()
+        );
+    } else {
+        println!(
+            "  GGUF: {:.2} GB → APR: {:.2} GB ({:.2}x)",
+            gguf_size as f64 / 1e9,
+            apr_size as f64 / 1e9,
+            gguf_size as f64 / apr_size as f64
+        );
+    }
 
     Ok(true)
 }
@@ -472,7 +499,11 @@ fn run_apr_inference(config: &ShowcaseConfig) -> Result<bool> {
 
     println!("Model: {}", apr_path.display());
     if config.zram {
-        println!("ZRAM: {} (Zero-Page + LZ4)", "enabled".green());
+        // NOTE: ZRAM is not yet implemented in realizar - flag is captured but not active
+        println!(
+            "ZRAM: {} (not yet implemented in realizar)",
+            "disabled".yellow()
+        );
     }
 
     let start = Instant::now();
@@ -493,7 +524,15 @@ fn run_apr_inference(config: &ShowcaseConfig) -> Result<bool> {
 
     // Run inference
     println!("Running inference test...");
-    let prompt_tokens: Vec<u32> = vec![1, 2, 3, 4, 5];
+
+    // NOTE: APR format doesn't include tokenizer vocabulary
+    // For proper tokenization, we'd need to load the source GGUF or store vocab in APR
+    // Using Qwen2 BOS token (151643) + common word tokens for reasonable test
+    let prompt_tokens: Vec<u32> = vec![151643, 9707, 11, 358, 1079, 264, 11761, 18328];
+    println!(
+        "  {} APR doesn't include vocabulary - using pre-tokenized Qwen2 tokens",
+        "ℹ".cyan()
+    );
 
     let infer_start = Instant::now();
     let output = transformer
@@ -533,7 +572,11 @@ fn run_apr_inference(config: &ShowcaseConfig) -> Result<bool> {
     );
     println!("Model: {}", apr_path.display());
     if config.zram {
-        println!("ZRAM: {} (Zero-Page + LZ4)", "enabled".green());
+        // NOTE: ZRAM is not yet implemented in realizar - flag is captured but not active
+        println!(
+            "ZRAM: {} (not yet implemented in realizar)",
+            "disabled".yellow()
+        );
     }
 
     Ok(true)
@@ -572,7 +615,7 @@ fn run_benchmark(config: &ShowcaseConfig) -> Result<BenchmarkComparison> {
     // APR/GGUF benchmark
     println!();
     println!("{}", "Running APR benchmark...".yellow());
-    let apr_results = run_real_benchmark(&model, config)?;
+    let apr_results = run_real_benchmark(&model, &mapped, config)?;
 
     let apr_tps = apr_results
         .iter()
@@ -641,11 +684,23 @@ fn run_benchmark(config: &ShowcaseConfig) -> Result<BenchmarkComparison> {
 #[cfg(feature = "inference")]
 fn run_real_benchmark(
     model: &realizar::gguf::OwnedQuantizedModel,
+    mapped: &realizar::gguf::MappedGGUFModel,
     config: &ShowcaseConfig,
 ) -> Result<Vec<BenchMeasurement>> {
     use realizar::gguf::QuantizedGenerateConfig;
 
-    let prompt_tokens: Vec<u32> = vec![1, 2, 3, 4, 5, 6, 7, 8];
+    // Use real tokenization from the GGUF model's vocabulary
+    let test_prompt = "Hello, I am a coding assistant. Write a function that calculates";
+    let prompt_tokens: Vec<u32> = mapped.model.encode(test_prompt).unwrap_or_else(|| {
+        // Fallback to Qwen2 pre-tokenized tokens if vocab not available
+        vec![151643, 9707, 11, 358, 1079, 264, 11761, 18328, 13, 9842]
+    });
+    println!(
+        "  Prompt: {} tokens (\"{}...\")",
+        prompt_tokens.len(),
+        &test_prompt[..test_prompt.len().min(30)]
+    );
+
     let gen_config = QuantizedGenerateConfig {
         max_tokens: 32,
         temperature: 0.7,
