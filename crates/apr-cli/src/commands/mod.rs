@@ -25,6 +25,7 @@ pub(crate) mod probar;
 pub(crate) mod profile;
 pub(crate) mod run;
 pub(crate) mod serve;
+pub(crate) mod showcase;
 pub(crate) mod tensors;
 pub(crate) mod trace;
 pub(crate) mod tree;

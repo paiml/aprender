@@ -26,8 +26,8 @@ mod output;
 
 use commands::{
     bench, canary, canary::CanaryCommands, chat, compare_hf, convert, debug, diff, eval, explain,
-    export, flow, hex, import, inspect, lint, merge, probar, profile, run, serve, tensors, trace,
-    tree, tui, validate,
+    export, flow, hex, import, inspect, lint, merge, probar, profile, run, serve, showcase,
+    tensors, trace, tree, tui, validate,
 };
 
 /// apr - APR Model Operations Tool
@@ -612,6 +612,33 @@ enum Commands {
         #[arg(long)]
         fail_on_naive: bool,
     },
+
+    /// Qwen2.5-Coder showcase demo (spec: qwen2.5-coder-showcase-demo.md)
+    Showcase {
+        /// Run all steps with auto-verification
+        #[arg(long)]
+        auto_verify: bool,
+
+        /// Run specific step: import, gguf, convert, apr, bench, visualize, all
+        #[arg(long)]
+        step: Option<String>,
+
+        /// Model directory
+        #[arg(long, default_value = "./models")]
+        model_dir: PathBuf,
+
+        /// Baselines to compare: llama-cpp,ollama
+        #[arg(long, default_value = "llama-cpp,ollama")]
+        baseline: String,
+
+        /// Enable ZRAM compression
+        #[arg(long)]
+        zram: bool,
+
+        /// Number of benchmark runs (spec: minimum 30)
+        #[arg(long, default_value = "30")]
+        runs: usize,
+    },
 }
 
 /// Execute the CLI command and return the result.
@@ -896,6 +923,48 @@ fn execute_command(cli: &Cli) -> Result<(), error::CliError> {
                 *callgraph,
                 *fail_on_naive,
             )
+        }
+
+        Commands::Showcase {
+            auto_verify,
+            step,
+            model_dir,
+            baseline,
+            zram,
+            runs,
+        } => {
+            let step = step.as_ref().and_then(|s| match s.as_str() {
+                "import" => Some(showcase::ShowcaseStep::Import),
+                "gguf" => Some(showcase::ShowcaseStep::GgufInference),
+                "convert" => Some(showcase::ShowcaseStep::Convert),
+                "apr" => Some(showcase::ShowcaseStep::AprInference),
+                "bench" => Some(showcase::ShowcaseStep::Benchmark),
+                "chat" => Some(showcase::ShowcaseStep::Chat),
+                "visualize" => Some(showcase::ShowcaseStep::Visualize),
+                "all" => Some(showcase::ShowcaseStep::All),
+                _ => None,
+            });
+
+            let baselines: Vec<showcase::Baseline> = baseline
+                .split(',')
+                .filter_map(|b| match b.trim() {
+                    "llama-cpp" => Some(showcase::Baseline::LlamaCpp),
+                    "ollama" => Some(showcase::Baseline::Ollama),
+                    _ => None,
+                })
+                .collect();
+
+            let config = showcase::ShowcaseConfig {
+                model_dir: model_dir.clone(),
+                auto_verify: *auto_verify,
+                step,
+                baselines,
+                zram: *zram,
+                bench_runs: *runs,
+                ..Default::default()
+            };
+
+            showcase::run(&config)
         }
     }
 }
