@@ -243,7 +243,7 @@ checksum = "a23eb6b1614318a8071c9b2521f36b424b2c83db5eb3a0fead4a6c0809af6e61"
 name = "apr-cli"
 version = "0.2.2"
 dependencies = [
- "aprender 0.23.0",
+ "aprender 0.24.0",
  "assert_cmd",
  "axum",
  "axum-test",
@@ -316,25 +316,26 @@ dependencies = [
 
 [[package]]
 name = "aprender"
-version = "0.20.2"
+version = "0.23.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f846cd5143d27f1b31b0068fb0124b026a236a30894b171f7a82f64641b69b9f"
+checksum = "9f0da5259c3f5e51f9eb70168d53d344f100bcd7f8632ce47409870bb693bb0d"
 dependencies = [
  "bincode",
  "getrandom 0.2.16",
  "memmap2",
+ "minijinja",
  "rand 0.8.5",
  "rand_chacha 0.3.1",
  "rayon",
  "rmp-serde",
  "serde",
  "serde_json",
- "trueno 0.10.1",
+ "trueno 0.11.0",
 ]
 
 [[package]]
 name = "aprender"
-version = "0.23.0"
+version = "0.24.0"
 dependencies = [
  "aes-gcm",
  "alimentar",
@@ -374,29 +375,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "aprender"
-version = "0.23.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9f0da5259c3f5e51f9eb70168d53d344f100bcd7f8632ce47409870bb693bb0d"
-dependencies = [
- "bincode",
- "getrandom 0.2.16",
- "memmap2",
- "minijinja",
- "rand 0.8.5",
- "rand_chacha 0.3.1",
- "rayon",
- "rmp-serde",
- "serde",
- "serde_json",
- "trueno 0.11.0",
-]
-
-[[package]]
 name = "aprender-monte-carlo"
 version = "0.1.1"
 dependencies = [
- "aprender 0.15.0",
+ "aprender 0.24.0",
  "assert_cmd",
  "chrono",
  "clap",
@@ -432,7 +414,7 @@ dependencies = [
 name = "aprender-tsp"
 version = "0.1.2"
 dependencies = [
- "aprender 0.15.0",
+ "aprender 0.24.0",
  "assert_cmd",
  "clap",
  "crc32fast",
@@ -1914,7 +1896,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "aafda076ddc9789b5d2372c45d6b3021836a54083d72d75055187510ffdd6c27"
 dependencies = [
  "alimentar",
- "aprender 0.23.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "aprender 0.23.0",
  "bytemuck",
  "chrono",
  "clap",
@@ -4620,12 +4602,12 @@ dependencies = [
 
 [[package]]
 name = "realizar"
-version = "0.3.3"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "abf1f176633d8795c1033c3fb161c62350966c30937efab896f7a321d956e7d4"
+checksum = "8ae343c719053d2e3a8f111a0eea28a024a669e776702ea109696863b707a32e"
 dependencies = [
  "anyhow",
- "aprender 0.20.2",
+ "aprender 0.23.0",
  "arc-swap",
  "async-stream",
  "axum",
@@ -4634,6 +4616,7 @@ dependencies = [
  "half",
  "libc",
  "memmap2",
+ "minijinja",
  "num-traits",
  "once_cell",
  "rand 0.8.5",
@@ -4646,7 +4629,7 @@ dependencies = [
  "tokio-stream",
  "tower 0.4.13",
  "tracing",
- "trueno 0.10.1",
+ "trueno 0.11.0",
  "trueno-gpu",
  "uuid",
 ]
@@ -6011,11 +5994,7 @@ version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "27f3dcb4168729183188125bd1c4591b7e435b68a9527c6b6258e42d955b2cad"
 dependencies = [
- "bytemuck",
- "futures-intrusive",
- "pollster",
  "thiserror 2.0.17",
- "wgpu",
 ]
 
 [[package]]

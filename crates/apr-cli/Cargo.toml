@@ -67,10 +67,10 @@ cuda = ["inference", "realizar/cuda"]
 
 [dependencies]
 # Core aprender library
-aprender = { path = "../..", version = "0.23.0", default-features = true, features = ["format-compression"] }
+aprender = {  path = "../..", version = "0.24.0", default-features = true, features = ["format-compression"] }
 
 # Inference engine (crates.io) - Ollama-parity performance
-realizar = { version = "0.3.3", optional = true, default-features = false, features = ["server", "aprender-serve", "gpu"] }
+realizar = { version = "0.5", optional = true, default-features = false, features = ["server", "aprender-serve", "gpu"] }
 
 # Async runtime for server
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal"], optional = true }
