@@ -374,6 +374,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "aprender"
+version = "0.23.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9f0da5259c3f5e51f9eb70168d53d344f100bcd7f8632ce47409870bb693bb0d"
+dependencies = [
+ "bincode",
+ "getrandom 0.2.16",
+ "memmap2",
+ "minijinja",
+ "rand 0.8.5",
+ "rand_chacha 0.3.1",
+ "rayon",
+ "rmp-serde",
+ "serde",
+ "serde_json",
+ "trueno 0.11.0",
+]
+
+[[package]]
 name = "aprender-monte-carlo"
 version = "0.1.1"
 dependencies = [
@@ -1890,12 +1909,12 @@ dependencies = [
 
 [[package]]
 name = "entrenar"
-version = "0.3.0"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7f1ba2495ace8daa4bc0dc148b73384416920f8cb0cfae31c3b34aaf65f92911"
+checksum = "aafda076ddc9789b5d2372c45d6b3021836a54083d72d75055187510ffdd6c27"
 dependencies = [
  "alimentar",
- "aprender 0.19.0",
+ "aprender 0.23.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "bytemuck",
  "chrono",
  "clap",
@@ -1915,7 +1934,7 @@ dependencies = [
  "sha2",
  "thiserror 2.0.17",
  "toml",
- "trueno 0.8.9",
+ "trueno 0.11.0",
  "trueno-viz",
  "zip",
 ]
