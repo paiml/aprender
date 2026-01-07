@@ -280,7 +280,7 @@ checksum = "918c5660d9274eafc97ebd08befa3506964e8641985a90fe4c217a692bca27d4"
 dependencies = [
  "aes-gcm",
  "argon2",
- "bincode",
+ "bincode 1.3.3",
  "getrandom 0.2.16",
  "hkdf",
  "memmap2",
@@ -302,7 +302,7 @@ version = "0.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c996d5e1fba70e6cfe1909831e3ffb10e24434c647a86b1b085a784db3302c1c"
 dependencies = [
- "bincode",
+ "bincode 1.3.3",
  "getrandom 0.2.16",
  "memmap2",
  "rand 0.8.5",
@@ -320,7 +320,7 @@ version = "0.23.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f0da5259c3f5e51f9eb70168d53d344f100bcd7f8632ce47409870bb693bb0d"
 dependencies = [
- "bincode",
+ "bincode 1.3.3",
  "getrandom 0.2.16",
  "memmap2",
  "minijinja",
@@ -341,7 +341,7 @@ dependencies = [
  "alimentar",
  "alsa",
  "argon2",
- "bincode",
+ "bincode 3.0.0",
  "criterion",
  "dirs 6.0.0",
  "ed25519-dalek",
@@ -947,6 +947,12 @@ checksum = "b1f45e9417d87227c7a56d22e471c6206462cba514c7590c09aff4cf6d1ddcad"
 dependencies = [
  "serde",
 ]
+
+[[package]]
+name = "bincode"
+version = "3.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fd6a120d2e16b3e1b4a24bd70f23b12d3e16b81f113364a26935f8db7245452d"
 
 [[package]]
 name = "bit-set"
