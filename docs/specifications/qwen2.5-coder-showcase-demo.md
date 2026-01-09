@@ -535,9 +535,10 @@ Each claim is **falsifiable** — a single test failure disproves the claim.
 | ~~P0~~ | ~~Pre-allocated workspace~~ | ~~+3-4x~~ | ✅ Done (1.01x actual) |
 | ~~P0-NEW~~ | ~~Fused AVX2/AVX-512 kernels~~ | **10.13x micro** | ✅ Done (1.0x end-to-end) |
 | ~~P1-NEW~~ | ~~Memory bandwidth optimization~~ | ~~+3-5x~~ | ❌ Disproven (not memory-bound) |
-| P1-REV | **Zero-alloc forward pass** | +2-3x | Need `fused_matmul_into` for all ops |
-| P2-REV | **Q8_0 quantized activations** | +1.5x | Match llama.cpp activation format |
-| P3 | Optimize rayon chunk sizes | +1.2x | Pending |
+| ~~P1-REV~~ | ~~Zero-alloc forward pass (qkv_matmul_into)~~ | ~~+2-3x~~ | ✅ Done (1.02x actual) |
+| P2-REV | **Rayon parallelization overhead** | +2-3x | 155 rayon invocations/token |
+| P3-REV | Q8_0 quantized activations | +1.5x | Match llama.cpp activation format |
+| P4-REV | Tiled cache-blocked matmul | +1.5x | Better L2 cache utilization |
 
 **P0-NEW Experiment Results (2026-01-09):**
 - Implemented llama.cpp-style SIMD in `fused_q4k_dot_avx2`:
@@ -563,13 +564,34 @@ Initial hypothesis (memory-bound) was WRONG. Detailed profiling revealed:
 4. Secondary: Attention scores allocations (fixed with `attention_with_cache_gqa_into`)
 5. No true zero-allocation forward path exists - even "scratch" variants allocate for QKV
 
+**P1-REV Zero-Allocation Experiment Results (2026-01-09):**
+- Implemented `qkv_matmul_into()` for zero-allocation QKV projection
+- Updated `forward_single_with_scratch` to use `qkv_matmul_into`
+- All matmul operations in scratch path now use `_into` variants
+- **Result: 12.2 → 12.4 tok/s (1.02x improvement)**
+- **Conclusion: Allocation overhead was NOT the bottleneck**
+
+**New Root Cause Analysis (P2-REV):**
+With zero-allocation proving ineffective, the bottleneck is elsewhere:
+1. Matmul-only benchmark: **34ms/token** = 29.4 tok/s theoretical
+2. Full forward pass: **80ms/token** = 12.4 tok/s actual
+3. Gap: **46ms non-matmul overhead** per token
+4. Memory bandwidth: Only 33% DDR4 utilized (8.3 GB/s of 25 GB/s)
+
+**Suspected Bottleneck: Rayon Parallelization Overhead**
+- 155 matmuls per token × ~100µs rayon overhead = 15.5ms
+- Thread pool synchronization on each `into_par_iter()`
+- Context switching between parallel invocations
+- Poor cache locality across thread boundaries
+
 **llama.cpp Differentiators:**
 - Fully zero-allocation forward pass with pre-allocated buffers
 - Q8_0 quantized activations (3.5x less activation bandwidth than f32)
 - Tiled matmul with L2 cache optimization
-- Multi-threaded with thread-local scratch buffers
+- Single thread pool dispatch per layer (not per matmul)
+- Cache-blocked operations maintain L2 locality
 
-**Projected After Fixes:** Need fully zero-allocation `fused_matmul_into` + Q8 activations
+**Next Investigation:** Profile rayon overhead, consider batch-fused layer operations
 
 ### Realistic Achievable Targets
 
