@@ -119,6 +119,7 @@
 ## Model Compression
 
 - [Neural Network Pruning Theory](./ml-fundamentals/neural-network-pruning.md)
+- [Lottery Ticket Hypothesis Theory](./ml-fundamentals/lottery-ticket-hypothesis.md)
 
 ## Simulation and Risk
 
@@ -279,6 +280,9 @@
 - [Case Study: Automatic Differentiation Training](./examples/autograd-training.md)
 - [Case Study: Graph Neural Networks](./examples/gnn-node-classification.md)
 - [Case Study: Magnitude Pruning](./examples/pruning-magnitude.md)
+- [Case Study: Lottery Ticket Pruning](./examples/lottery-ticket-pruning.md)
+- [Case Study: Benchmark Comparison](./examples/bench-comparison.md)
+- [Case Study: Showcase Benchmark](./examples/showcase-benchmark.md)
 
 # Sprint-Based Development
 

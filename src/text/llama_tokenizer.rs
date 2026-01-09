@@ -95,12 +95,12 @@ fn build_gpt2_byte_decoder() -> HashMap<char, u8> {
 /// GPT-2 BPE uses unicode characters to represent bytes. This function
 /// converts the unicode representation back to the original bytes.
 fn decode_gpt2_token(token: &str) -> Vec<u8> {
-    static GPT2_DECODER: std::sync::LazyLock<HashMap<char, u8>> =
-        std::sync::LazyLock::new(build_gpt2_byte_decoder);
+    static GPT2_DECODER: std::sync::OnceLock<HashMap<char, u8>> = std::sync::OnceLock::new();
 
+    let decoder = GPT2_DECODER.get_or_init(build_gpt2_byte_decoder);
     let mut bytes = Vec::with_capacity(token.len());
     for c in token.chars() {
-        if let Some(&b) = GPT2_DECODER.get(&c) {
+        if let Some(&b) = decoder.get(&c) {
             bytes.push(b);
         } else {
             // Character not in GPT-2 mapping, encode as UTF-8

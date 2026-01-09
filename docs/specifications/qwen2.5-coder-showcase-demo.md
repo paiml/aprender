@@ -534,8 +534,10 @@ Each claim is **falsifiable** — a single test failure disproves the claim.
 |----------|-----|---------------|--------|
 | ~~P0~~ | ~~Pre-allocated workspace~~ | ~~+3-4x~~ | ✅ Done (1.01x actual) |
 | ~~P0-NEW~~ | ~~Fused AVX2/AVX-512 kernels~~ | **10.13x micro** | ✅ Done (1.0x end-to-end) |
-| P1-NEW | **Memory bandwidth optimization** | +3-5x | Cache-blocked matmul |
-| P2 | Optimize rayon chunk sizes | +1.2x | Pending |
+| ~~P1-NEW~~ | ~~Memory bandwidth optimization~~ | ~~+3-5x~~ | ❌ Disproven (not memory-bound) |
+| P1-REV | **Zero-alloc forward pass** | +2-3x | Need `fused_matmul_into` for all ops |
+| P2-REV | **Q8_0 quantized activations** | +1.5x | Match llama.cpp activation format |
+| P3 | Optimize rayon chunk sizes | +1.2x | Pending |
 
 **P0-NEW Experiment Results (2026-01-09):**
 - Implemented llama.cpp-style SIMD in `fused_q4k_dot_avx2`:
@@ -547,12 +549,27 @@ Each claim is **falsifiable** — a single test failure disproves the claim.
 - **End-to-end: 9.8 tok/s** (same as before!)
 - **Conclusion: Kernel is fast but memory bandwidth limited**
 
-**Root Cause Analysis Update:**
-The micro-benchmark achieves 65+ GB/s bandwidth (cache-resident), but full model inference
-is memory-bound. TinyLlama has 2.2B weight bytes, exceeding L3 cache (36MB typical).
-Each token requires reading weights from DRAM at ~25 GB/s (DDR4-3200), not cache.
+**P1-NEW Forward Pass Profiling (2026-01-09):**
+- Isolated matmul-only benchmark: **29.5 GB/s**, **25ms/token** = 29.3 tok/s theoretical
+- Full forward pass: **59ms/token** = 17 tok/s actual
+- **Only 42% of time is in matmul** - 58% is non-matmul overhead!
+- System memory bandwidth utilization: **only 5%** (7.9 GB/s of 150+ GB/s available)
 
-**Projected After Fixes:** Need memory-optimized inference (tiled/blocked matmul with cache reuse)
+**Root Cause Analysis Update (P1-NEW):**
+Initial hypothesis (memory-bound) was WRONG. Detailed profiling revealed:
+1. Matmul bandwidth (29.5 GB/s) is good - already near DDR4 theoretical max
+2. But total effective bandwidth is only 5% - CPU stalls dominate
+3. Key bottleneck: **154+ Vec allocations per token** from matmul return values
+4. Secondary: Attention scores allocations (fixed with `attention_with_cache_gqa_into`)
+5. No true zero-allocation forward path exists - even "scratch" variants allocate for QKV
+
+**llama.cpp Differentiators:**
+- Fully zero-allocation forward pass with pre-allocated buffers
+- Q8_0 quantized activations (3.5x less activation bandwidth than f32)
+- Tiled matmul with L2 cache optimization
+- Multi-threaded with thread-local scratch buffers
+
+**Projected After Fixes:** Need fully zero-allocation `fused_matmul_into` + Q8 activations
 
 ### Realistic Achievable Targets
 
