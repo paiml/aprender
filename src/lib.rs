@@ -74,6 +74,14 @@ pub mod automl;
 pub mod bayesian;
 /// Model evaluation and benchmarking framework (spec §7.10)
 pub mod bench;
+/// Benchmark visualization with rich colors and scientific statistics (PAR-040)
+///
+/// Creates 2×3 grid visualizations for inference comparisons with:
+/// - ANSI terminal colors for clear pass/fail/warn status
+/// - Multi-iteration statistics (mean, std dev, 95% CI)
+/// - Criterion-style scientific benchmarking output
+/// - Chat-pasteable profiling logs for debugging
+pub mod bench_viz;
 pub mod bundle;
 pub mod cache;
 pub mod calibration;
@@ -138,6 +146,14 @@ pub mod regularization;
 /// 100-point model quality scoring system (spec §7)
 pub mod scoring;
 pub mod serialization;
+/// GPU Inference Showcase with PMAT verification (PAR-040)
+///
+/// Benchmark harness for Qwen2.5-Coder showcase demonstrating >2x performance:
+/// - trueno GPU PTX generation (persistent kernels, megakernels)
+/// - trueno SIMD (AVX2/AVX-512/NEON)
+/// - trueno-zram KV cache compression
+/// - renacer GPU kernel profiling
+pub mod showcase;
 /// Speech processing: VAD, ASR, TTS, diarization (spec §5, GH-133)
 pub mod speech;
 /// Sovereign AI Stack integration types (spec §9)

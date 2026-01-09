@@ -53,10 +53,82 @@ pub const UNK_TOKEN: &str = "<unk>";
 const BYTE_FALLBACK_PREFIX: &str = "<0x";
 
 // ============================================================================
+// GPT-2 BPE Byte Decoding
+// ============================================================================
+
+/// Build the GPT-2 byte-to-unicode mapping.
+///
+/// GPT-2 BPE encodes bytes as unicode characters to ensure all byte sequences
+/// are valid unicode. This maps the special unicode chars back to bytes.
+///
+/// The mapping is:
+/// - Printable ASCII without space (33-126): Maps to same codepoint
+/// - All other bytes (0-32, 127-255): Maps to U+0100..U+01FF range
+fn build_gpt2_byte_decoder() -> HashMap<char, u8> {
+    let mut decoder = HashMap::with_capacity(256);
+
+    // Printable ASCII (33-126) and some extras (161-172, 174-255) map directly
+    // Per GPT-2 encoder.py bytes_to_unicode()
+    let direct_bytes: Vec<u8> = (b'!'..=b'~')
+        .chain(0xA1u8..=0xACu8)
+        .chain(0xAEu8..=0xFFu8)
+        .collect();
+
+    let mut n = 0u32;
+    for b in 0u8..=255u8 {
+        if direct_bytes.contains(&b) {
+            decoder.insert(char::from(b), b);
+        } else {
+            // Non-printable bytes map to 256 + n
+            if let Some(c) = char::from_u32(256 + n) {
+                decoder.insert(c, b);
+            }
+            n += 1;
+        }
+    }
+
+    decoder
+}
+
+/// Decode a GPT-2 BPE token string to actual bytes.
+///
+/// GPT-2 BPE uses unicode characters to represent bytes. This function
+/// converts the unicode representation back to the original bytes.
+fn decode_gpt2_token(token: &str) -> Vec<u8> {
+    static GPT2_DECODER: std::sync::LazyLock<HashMap<char, u8>> =
+        std::sync::LazyLock::new(build_gpt2_byte_decoder);
+
+    let mut bytes = Vec::with_capacity(token.len());
+    for c in token.chars() {
+        if let Some(&b) = GPT2_DECODER.get(&c) {
+            bytes.push(b);
+        } else {
+            // Character not in GPT-2 mapping, encode as UTF-8
+            let mut buf = [0u8; 4];
+            let s = c.encode_utf8(&mut buf);
+            bytes.extend_from_slice(s.as_bytes());
+        }
+    }
+    bytes
+}
+
+// ============================================================================
 // LlamaTokenizer
 // ============================================================================
 
+/// Tokenizer model type (from GGUF metadata)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TokenizerModel {
+    /// SentencePiece-style BPE (LLaMA, Mistral)
+    #[default]
+    SentencePiece,
+    /// GPT-2 BPE (Qwen, GPT-2, etc.)
+    Gpt2,
+}
+
 /// LLaMA/TinyLlama tokenizer using SentencePiece-style BPE.
+///
+/// Also supports GPT-2 BPE for models like Qwen2.5.
 ///
 /// Loads vocabulary and merges from GGUF metadata.
 #[derive(Debug, Clone)]
@@ -79,6 +151,8 @@ pub struct LlamaTokenizer {
     pad_token_id: Option<u32>,
     /// Vocabulary size
     vocab_size: usize,
+    /// Tokenizer model type (SentencePiece or GPT-2)
+    model: TokenizerModel,
 }
 
 impl LlamaTokenizer {
@@ -141,7 +215,19 @@ impl LlamaTokenizer {
             unk_token_id,
             pad_token_id: None,
             vocab_size,
+            model: TokenizerModel::SentencePiece, // Default, updated by GGUF loader
         })
+    }
+
+    /// Set the tokenizer model type.
+    pub fn set_model(&mut self, model: TokenizerModel) {
+        self.model = model;
+    }
+
+    /// Get the tokenizer model type.
+    #[must_use]
+    pub fn model(&self) -> TokenizerModel {
+        self.model
     }
 
     /// Get vocabulary size.
@@ -246,6 +332,8 @@ impl LlamaTokenizer {
 
     /// Decode token IDs to text.
     ///
+    /// Handles both SentencePiece-style (LLaMA) and GPT-2 BPE (Qwen) tokenizers.
+    ///
     /// # Arguments
     /// * `token_ids` - Token IDs to decode
     ///
@@ -253,6 +341,34 @@ impl LlamaTokenizer {
     /// Decoded text string
     #[must_use]
     pub fn decode(&self, token_ids: &[u32]) -> String {
+        match self.model {
+            TokenizerModel::Gpt2 => self.decode_gpt2(token_ids),
+            TokenizerModel::SentencePiece => self.decode_sentencepiece(token_ids),
+        }
+    }
+
+    /// Decode using GPT-2 byte-level BPE (Qwen, GPT-2, etc.)
+    fn decode_gpt2(&self, token_ids: &[u32]) -> String {
+        let mut bytes = Vec::with_capacity(token_ids.len() * 4);
+
+        for &token_id in token_ids {
+            // Skip special tokens in output
+            if token_id == self.bos_token_id || token_id == self.eos_token_id {
+                continue;
+            }
+
+            if let Some(token) = self.id_to_token.get(&token_id) {
+                // GPT-2 BPE: decode unicode chars to original bytes
+                bytes.extend(decode_gpt2_token(token));
+            }
+        }
+
+        // Convert bytes to UTF-8 string, replacing invalid sequences
+        String::from_utf8_lossy(&bytes).into_owned()
+    }
+
+    /// Decode using SentencePiece-style BPE (LLaMA, Mistral, etc.)
+    fn decode_sentencepiece(&self, token_ids: &[u32]) -> String {
         let mut result = String::with_capacity(token_ids.len() * 4);
 
         for &token_id in token_ids {
@@ -262,10 +378,12 @@ impl LlamaTokenizer {
             }
 
             if let Some(token) = self.id_to_token.get(&token_id) {
-                // Handle SentencePiece space prefix
+                // Handle SentencePiece space prefix (U+2581)
                 let text = token.replace('▁', " ");
+                // Handle GPT-2 BPE space prefix (U+0120 'Ġ') for hybrid tokenizers
+                let text = text.replace('Ġ', " ");
 
-                // Handle byte tokens
+                // Handle byte tokens like <0x0A> for newlines
                 if text.starts_with(BYTE_FALLBACK_PREFIX) && text.ends_with('>') {
                     if let Some(hex) = text.strip_prefix(BYTE_FALLBACK_PREFIX) {
                         if let Some(hex) = hex.strip_suffix('>') {
@@ -281,7 +399,7 @@ impl LlamaTokenizer {
             }
         }
 
-        // Clean up leading space if present
+        // Clean up leading space if present (SentencePiece adds leading space)
         if result.starts_with(' ') {
             result.remove(0);
         }
@@ -367,6 +485,7 @@ impl LlamaTokenizer {
         let mut bos_token_id: u32 = 1;
         let mut eos_token_id: u32 = 2;
         let mut unk_token_id: u32 = 0;
+        let mut tokenizer_model = TokenizerModel::SentencePiece; // Default
 
         for _ in 0..metadata_count {
             if offset + 8 > data.len() {
@@ -442,6 +561,23 @@ impl LlamaTokenizer {
                         offset += 4;
                     }
                 }
+                "tokenizer.ggml.model" => {
+                    // Detect tokenizer type: "gpt2" for GPT-2 BPE, "llama" for SentencePiece
+                    if val_type == 8 && offset + 8 <= data.len() {
+                        let str_len = u64::from_le_bytes(
+                            data[offset..offset + 8].try_into().unwrap_or([0; 8]),
+                        ) as usize;
+                        offset += 8;
+                        if offset + str_len <= data.len() {
+                            let model_str =
+                                String::from_utf8_lossy(&data[offset..offset + str_len]);
+                            if model_str == "gpt2" {
+                                tokenizer_model = TokenizerModel::Gpt2;
+                            }
+                            offset += str_len;
+                        }
+                    }
+                }
                 _ => {
                     // Skip other values
                     offset = Self::skip_value(data, offset, val_type);
@@ -455,7 +591,9 @@ impl LlamaTokenizer {
 
         let scores = scores.unwrap_or_else(|| vec![0.0; tokens.len()]);
 
-        Self::new(tokens, scores, bos_token_id, eos_token_id, unk_token_id)
+        let mut tokenizer = Self::new(tokens, scores, bos_token_id, eos_token_id, unk_token_id)?;
+        tokenizer.set_model(tokenizer_model);
+        Ok(tokenizer)
     }
 
     fn parse_string_array(data: &[u8], mut offset: usize) -> Result<(Vec<String>, usize)> {
@@ -791,6 +929,155 @@ mod tests {
         data.extend_from_slice(key5);
         data.extend_from_slice(&4u32.to_le_bytes()); // u32 type
         data.extend_from_slice(&0u32.to_le_bytes()); // value
+
+        data
+    }
+
+    // ========================================================================
+    // GPT-2 BPE Decoding Tests
+    // ========================================================================
+
+    /// GPT-01: GPT-2 byte decoder MUST correctly map unicode to bytes
+    /// Falsification: If mapping is wrong, decoded text will be garbage
+    #[test]
+    fn gpt01_byte_decoder_maps_correctly() {
+        let decoder = build_gpt2_byte_decoder();
+
+        // Printable ASCII should map to itself
+        assert_eq!(decoder.get(&'A'), Some(&b'A'));
+        assert_eq!(decoder.get(&'z'), Some(&b'z'));
+        assert_eq!(decoder.get(&'0'), Some(&b'0'));
+
+        // GPT-2 space marker (Ġ = U+0120) should map to space (0x20)
+        assert_eq!(decoder.get(&'Ġ'), Some(&b' '));
+
+        // Newline marker (Ċ = U+010A) should map to newline (0x0A)
+        assert_eq!(decoder.get(&'Ċ'), Some(&b'\n'));
+
+        // Tab marker (ĉ = U+0109) should map to tab (0x09)
+        assert_eq!(decoder.get(&'ĉ'), Some(&b'\t'));
+    }
+
+    /// GPT-02: GPT-2 token decoding MUST produce valid UTF-8
+    /// Falsification: If decoding fails, String::from_utf8_lossy will show replacement chars
+    #[test]
+    fn gpt02_token_decoding_produces_utf8() {
+        // "Hello" in GPT-2 BPE
+        let token = "Hello";
+        let bytes = decode_gpt2_token(token);
+        assert_eq!(bytes, b"Hello");
+
+        // " world" in GPT-2 BPE (Ġ prefix for space)
+        let token_with_space = "Ġworld";
+        let bytes = decode_gpt2_token(token_with_space);
+        assert_eq!(bytes, b" world");
+    }
+
+    /// GPT-03: GPT-2 tokenizer MUST decode complete sentences correctly
+    /// Falsification: Sentence will be garbled
+    #[test]
+    fn gpt03_gpt2_tokenizer_decodes_sentences() {
+        // Create a GPT-2 tokenizer with some tokens
+        let tokens = vec![
+            "<unk>".to_string(),
+            "<|endoftext|>".to_string(), // BOS/EOS for GPT-2
+            "</s>".to_string(),
+            "Hello".to_string(),
+            "Ġworld".to_string(), // " world" in GPT-2
+            "!".to_string(),
+        ];
+        let scores = vec![0.0; tokens.len()];
+
+        let mut tokenizer =
+            LlamaTokenizer::new(tokens, scores, 1, 2, 0).expect("Failed to create tokenizer");
+        tokenizer.set_model(TokenizerModel::Gpt2);
+
+        // Decode token IDs
+        let token_ids = vec![3, 4, 5]; // "Hello", " world", "!"
+        let decoded = tokenizer.decode(&token_ids);
+
+        assert_eq!(decoded, "Hello world!");
+    }
+
+    /// GPT-04: Model type detection from GGUF MUST work
+    /// Falsification: Would default to SentencePiece even for GPT-2 models
+    #[test]
+    fn gpt04_model_type_detection() {
+        let gguf_data = create_gpt2_test_gguf();
+        let tokenizer = LlamaTokenizer::from_gguf_bytes(&gguf_data);
+
+        assert!(tokenizer.is_ok());
+        let tokenizer = tokenizer.expect("already checked");
+        assert_eq!(
+            tokenizer.model(),
+            TokenizerModel::Gpt2,
+            "FALSIFIED: GPT-2 model type not detected"
+        );
+    }
+
+    fn create_gpt2_test_gguf() -> Vec<u8> {
+        let mut data = Vec::new();
+
+        // GGUF header
+        data.extend_from_slice(b"GGUF");
+        data.extend_from_slice(&3u32.to_le_bytes()); // version
+        data.extend_from_slice(&0u64.to_le_bytes()); // tensor_count
+        data.extend_from_slice(&6u64.to_le_bytes()); // metadata_count (added one more)
+
+        // Metadata 1: tokenizer.ggml.tokens
+        let key1 = b"tokenizer.ggml.tokens";
+        data.extend_from_slice(&(key1.len() as u64).to_le_bytes());
+        data.extend_from_slice(key1);
+        data.extend_from_slice(&9u32.to_le_bytes()); // array type
+        data.extend_from_slice(&8u32.to_le_bytes()); // string element type
+        let tokens = ["<unk>", "<|endoftext|>", "</s>", "Hello", "Ġworld"];
+        data.extend_from_slice(&(tokens.len() as u64).to_le_bytes());
+        for token in &tokens {
+            let bytes = token.as_bytes();
+            data.extend_from_slice(&(bytes.len() as u64).to_le_bytes());
+            data.extend_from_slice(bytes);
+        }
+
+        // Metadata 2: tokenizer.ggml.scores
+        let key2 = b"tokenizer.ggml.scores";
+        data.extend_from_slice(&(key2.len() as u64).to_le_bytes());
+        data.extend_from_slice(key2);
+        data.extend_from_slice(&9u32.to_le_bytes());
+        data.extend_from_slice(&6u32.to_le_bytes());
+        data.extend_from_slice(&(tokens.len() as u64).to_le_bytes());
+        for _ in &tokens {
+            data.extend_from_slice(&0.0f32.to_le_bytes());
+        }
+
+        // Metadata 3: bos_token_id
+        let key3 = b"tokenizer.ggml.bos_token_id";
+        data.extend_from_slice(&(key3.len() as u64).to_le_bytes());
+        data.extend_from_slice(key3);
+        data.extend_from_slice(&4u32.to_le_bytes());
+        data.extend_from_slice(&1u32.to_le_bytes());
+
+        // Metadata 4: eos_token_id
+        let key4 = b"tokenizer.ggml.eos_token_id";
+        data.extend_from_slice(&(key4.len() as u64).to_le_bytes());
+        data.extend_from_slice(key4);
+        data.extend_from_slice(&4u32.to_le_bytes());
+        data.extend_from_slice(&2u32.to_le_bytes());
+
+        // Metadata 5: unknown_token_id
+        let key5 = b"tokenizer.ggml.unknown_token_id";
+        data.extend_from_slice(&(key5.len() as u64).to_le_bytes());
+        data.extend_from_slice(key5);
+        data.extend_from_slice(&4u32.to_le_bytes());
+        data.extend_from_slice(&0u32.to_le_bytes());
+
+        // Metadata 6: tokenizer.ggml.model = "gpt2"
+        let key6 = b"tokenizer.ggml.model";
+        data.extend_from_slice(&(key6.len() as u64).to_le_bytes());
+        data.extend_from_slice(key6);
+        data.extend_from_slice(&8u32.to_le_bytes()); // string type
+        let model_str = b"gpt2";
+        data.extend_from_slice(&(model_str.len() as u64).to_le_bytes());
+        data.extend_from_slice(model_str);
 
         data
     }

@@ -26,12 +26,14 @@
 //! - Han, S., et al. (2015). Learning both weights and connections. NeurIPS.
 //! - Sun, M., et al. (2023). A simple and effective pruning approach. arXiv:2306.11695.
 //! - Frantar, E., & Alistarh, D. (2023). SparseGPT. ICML.
+//! - Frankle, J., & Carbin, M. (2018). The Lottery Ticket Hypothesis. arXiv:1803.03635.
 
 mod calibration;
 mod depth;
 mod error;
 mod graph;
 mod importance;
+mod lottery;
 mod magnitude;
 mod mask;
 mod pruner;
@@ -58,3 +60,9 @@ pub use sparse::{sparsify, BlockSparseTensor, COOTensor, CSRTensor, SparseFormat
 pub use sparsegpt::SparseGPTImportance;
 pub use wanda::WandaImportance;
 pub use width::{ChannelImportance, WidthPruner, WidthPruningResult};
+
+// Lottery Ticket Hypothesis (Frankle & Carbin, 2018)
+pub use lottery::{
+    LotteryTicketConfig, LotteryTicketPruner, LotteryTicketPrunerBuilder, RewindStrategy,
+    WinningTicket,
+};
