@@ -21,13 +21,11 @@ use ratatui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
-    symbols,
     text::{Line, Span},
-    widgets::{Block, Borders, Gauge, List, ListItem, Paragraph, Sparkline, Tabs},
+    widgets::{Block, Borders, List, ListItem, Paragraph, Sparkline, Tabs},
     Frame, Terminal,
 };
 use std::io;
-use std::path::PathBuf;
 
 /// Brick timing data
 #[derive(Debug, Clone)]
@@ -561,7 +559,7 @@ fn render_histogram(f: &mut Frame<'_>, area: Rect, app: &App) {
     }
 }
 
-fn render_gpu(f: &mut Frame<'_>, area: Rect, app: &App) {
+fn render_gpu(f: &mut Frame<'_>, area: Rect, _app: &App) {
     let block = Block::default()
         .borders(Borders::ALL)
         .title(" GPU Metrics (Genchi Genbutsu: Real Data) ");
@@ -605,7 +603,7 @@ fn render_gpu(f: &mut Frame<'_>, area: Rect, app: &App) {
     f.render_widget(paragraph, inner);
 }
 
-fn render_memory(f: &mut Frame<'_>, area: Rect, app: &App) {
+fn render_memory(f: &mut Frame<'_>, area: Rect, _app: &App) {
     let block = Block::default()
         .borders(Borders::ALL)
         .title(" Memory Bandwidth ");
@@ -651,8 +649,9 @@ fn render_summary(f: &mut Frame<'_>, area: Rect, app: &App) {
 
     let total_budget = app.pipeline.total_budget();
     let total_actual = app.pipeline.total_actual();
-    let model_budget = total_budget * app.pipeline.total_layers as f64;
-    let model_actual = total_actual * app.pipeline.total_layers as f64;
+    // Model-level budgets for future use (full model = layer × layers)
+    let _model_budget = total_budget * app.pipeline.total_layers as f64;
+    let _model_actual = total_actual * app.pipeline.total_layers as f64;
 
     let status_color = if total_actual <= total_budget {
         Color::Green

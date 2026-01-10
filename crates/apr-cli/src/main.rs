@@ -1015,6 +1015,7 @@ fn execute_command(cli: &Cli) -> Result<(), error::CliError> {
                 "visualize" => Some(showcase::ShowcaseStep::Visualize),
                 "zram" => Some(showcase::ShowcaseStep::ZramDemo),
                 "cuda" => Some(showcase::ShowcaseStep::CudaDemo),
+                "brick" => Some(showcase::ShowcaseStep::BrickDemo),
                 "all" => Some(showcase::ShowcaseStep::All),
                 _ => None,
             });

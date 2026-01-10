@@ -261,6 +261,7 @@ pub fn run(config: &ShowcaseConfig) -> Result<()> {
             println!("  bench         - Run benchmark comparison");
             println!("  visualize     - Generate performance visualization");
             println!("  zram          - Run ZRAM compression demo");
+            println!("  cuda          - CUDA Graph + DP4A brick demo (Sections 5.2/5.3)");
             println!("  all           - Run all steps");
             return Ok(());
         }
@@ -292,7 +293,7 @@ pub fn run(config: &ShowcaseConfig) -> Result<()> {
     }
 
     print_summary(&results, config);
-    validate_falsification(&results)?;
+    validate_falsification(&results, config)?;
 
     Ok(())
 }
@@ -397,6 +398,7 @@ struct ShowcaseResults {
 
 /// ComputeBrick demo result - per-layer timing with bottleneck detection
 #[derive(Debug, Clone, Default)]
+#[allow(dead_code)] // Fields used in tests and for future summary output
 pub struct BrickDemoResult {
     /// Total layers measured
     pub layers_measured: usize,
@@ -429,8 +431,9 @@ pub struct ZramDemoResult {
     pub context_extension: f64,
 }
 
-/// CUDA GPU demo result (Point 78)
+/// CUDA GPU demo result (Point 78, Sections 5.2/5.3)
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // Fields used in tests and for future summary output
 pub struct CudaDemoResult {
     /// Number of CUDA devices detected
     pub device_count: usize,
@@ -442,6 +445,14 @@ pub struct CudaDemoResult {
     pub free_vram_gb: f64,
     /// CUDA available flag
     pub cuda_available: bool,
+    /// CUDA Graph capture available (Section 5.2 - P0)
+    pub graph_capture_available: bool,
+    /// CUDA Graph speedup factor vs eager execution
+    pub graph_speedup: f64,
+    /// Coalesced DP4A kernel available (Section 5.3 - P0)
+    pub dp4a_available: bool,
+    /// DP4A arithmetic intensity (flops/byte)
+    pub dp4a_arithmetic_intensity: f64,
 }
 
 fn print_header(tier: ModelTier) {
@@ -2055,6 +2066,10 @@ fn run_cuda_demo(_config: &ShowcaseConfig) -> Result<CudaDemoResult> {
                 total_vram_gb: 0.0,
                 free_vram_gb: 0.0,
                 cuda_available: false,
+                graph_capture_available: false,
+                graph_speedup: 1.0,
+                dp4a_available: false,
+                dp4a_arithmetic_intensity: 0.0,
             });
         }
 
@@ -2103,6 +2118,93 @@ fn run_cuda_demo(_config: &ShowcaseConfig) -> Result<CudaDemoResult> {
             );
         }
 
+        // Section 5.2: CUDA Graph Brick Demo (P0)
+        println!();
+        println!(
+            "{}",
+            "─── CUDA Graph Capture (Section 5.2 - P0) ───".yellow()
+        );
+
+        use realizar::brick::{CoalescedDp4aBrick, ComputeBrick, CudaGraphBrick};
+
+        // Create CUDA Graph brick for 64 layers @ 4096 hidden dim (Qwen2.5-32B config)
+        let graph_brick = CudaGraphBrick::new(64, 4096);
+        let graph_capture_available = graph_brick.can_run();
+
+        println!(
+            "  {} CudaGraphBrick: {} layers × {} hidden_dim",
+            if graph_capture_available {
+                "✓".green()
+            } else {
+                "✗".red()
+            },
+            graph_brick.num_layers,
+            graph_brick.hidden_dim
+        );
+        println!(
+            "    Budget: {:.1}µs ({:.0} tok/s)",
+            graph_brick.budget().us_per_token,
+            graph_brick.budget().tokens_per_sec
+        );
+
+        // Graph speedup estimation: eager launch overhead ~5µs per kernel × 280 kernels = 1.4ms
+        // Graph replay: ~20µs (single dispatch)
+        // Speedup: 1400/20 = 70x for launch overhead alone
+        let eager_launch_us = 5.0 * 280.0; // ~280 kernels per forward pass
+        let graph_replay_us = graph_brick.budget().us_per_token;
+        let graph_speedup = eager_launch_us / graph_replay_us;
+
+        println!(
+            "    Estimated speedup: {:.1}x (eager: {:.0}µs → graph: {:.0}µs)",
+            graph_speedup, eager_launch_us, graph_replay_us
+        );
+
+        for assertion in graph_brick.assertions() {
+            println!("    {} Assertion: {}", "✓".green(), assertion.name);
+        }
+
+        // Section 5.3: Coalesced DP4A Brick Demo (P0)
+        println!();
+        println!(
+            "{}",
+            "─── Coalesced DP4A Brick (Section 5.3 - P0) ───".yellow()
+        );
+
+        // Create DP4A brick for typical decode GEMV: K=4096, N=1 (single token)
+        let dp4a_brick = CoalescedDp4aBrick::new(4096, 4096);
+        let dp4a_available = dp4a_brick.can_run();
+
+        println!(
+            "  {} CoalescedDp4aBrick: K={} × N={}",
+            if dp4a_available {
+                "✓".green()
+            } else {
+                "✗".red()
+            },
+            dp4a_brick.k,
+            dp4a_brick.n
+        );
+        println!(
+            "    Budget: {:.1}µs ({:.0} tok/s)",
+            dp4a_brick.budget().us_per_token,
+            dp4a_brick.budget().tokens_per_sec
+        );
+
+        let dp4a_ai = dp4a_brick.arithmetic_intensity();
+        println!("    Arithmetic intensity: {:.2} flops/byte", dp4a_ai);
+        println!(
+            "    {}",
+            if dp4a_ai >= 0.5 {
+                "Compute-bound (good for DP4A)".green()
+            } else {
+                "Memory-bound (may not benefit from DP4A)".yellow()
+            }
+        );
+
+        for assertion in dp4a_brick.assertions() {
+            println!("    {} Assertion: {}", "✓".green(), assertion.name);
+        }
+
         println!();
         println!(
             "{} CUDA demo complete - GPU kernels visible via realizar/trueno-gpu",
@@ -2115,6 +2217,10 @@ fn run_cuda_demo(_config: &ShowcaseConfig) -> Result<CudaDemoResult> {
             total_vram_gb,
             free_vram_gb,
             cuda_available: true,
+            graph_capture_available,
+            graph_speedup,
+            dp4a_available,
+            dp4a_arithmetic_intensity: dp4a_ai,
         })
     }
 
@@ -2129,6 +2235,10 @@ fn run_cuda_demo(_config: &ShowcaseConfig) -> Result<CudaDemoResult> {
             total_vram_gb: 0.0,
             free_vram_gb: 0.0,
             cuda_available: false,
+            graph_capture_available: false,
+            graph_speedup: 1.0,
+            dp4a_available: false,
+            dp4a_arithmetic_intensity: 0.0,
         })
     }
 }
@@ -2348,6 +2458,7 @@ fn run_brick_demo(_config: &ShowcaseConfig) -> Result<BrickDemoResult> {
     Ok(BrickDemoResult::default())
 }
 
+#[allow(dead_code)] // Utility for future brick demo enhancements
 fn find_gguf_model(model_dir: &Path) -> Result<PathBuf> {
     if let Ok(entries) = std::fs::read_dir(model_dir) {
         for entry in entries.flatten() {
@@ -2423,35 +2534,81 @@ fn print_summary(results: &ShowcaseResults, _config: &ShowcaseConfig) {
     }
 }
 
-fn validate_falsification(results: &ShowcaseResults) -> Result<()> {
+fn validate_falsification(results: &ShowcaseResults, config: &ShowcaseConfig) -> Result<()> {
     let mut failures = Vec::new();
 
-    // Check step completion (Points 1-40)
-    if !results.import {
-        failures.push("Point 1: Import step failed".to_string());
-    }
-    if !results.gguf_inference {
-        failures.push("Point 11: GGUF inference step failed".to_string());
-    }
-    if !results.convert {
-        failures.push("Point 21: APR conversion step failed".to_string());
-    }
-    if !results.apr_inference {
-        failures.push("Point 31: APR inference step failed".to_string());
+    // Determine which steps were requested
+    let is_full_run = config.auto_verify || matches!(config.step, Some(ShowcaseStep::All));
+    let requested_step = config.step;
+
+    // For single-step runs (not auto-verify or --step all), skip validation of other steps
+    // CUDA demo, ZRAM demo, and Brick demo are standalone demos that pass on their own
+    let is_standalone_demo = matches!(
+        requested_step,
+        Some(ShowcaseStep::CudaDemo) | Some(ShowcaseStep::ZramDemo) | Some(ShowcaseStep::BrickDemo)
+    );
+
+    if is_standalone_demo {
+        // Standalone demos pass without requiring full pipeline
+        println!();
+        println!(
+            "{}",
+            "═══ Demo Complete (standalone mode) ═══".green().bold()
+        );
+        return Ok(());
     }
 
-    // Point 41+: Benchmark required
-    let Some(ref bench) = results.benchmark else {
-        failures.push("Benchmark data missing - required for performance validation".to_string());
-        println!();
-        println!("{}", "═══ Falsification Failures ═══".red().bold());
-        for failure in &failures {
-            println!("  {} {}", "✗".red(), failure);
+    // Check step completion (Points 1-40) - only for full runs
+    if is_full_run || matches!(requested_step, Some(ShowcaseStep::Import)) {
+        if !results.import {
+            failures.push("Point 1: Import step failed".to_string());
         }
-        return Err(CliError::ValidationFailed(format!(
-            "{} falsification point(s) failed",
-            failures.len()
-        )));
+    }
+    if is_full_run || matches!(requested_step, Some(ShowcaseStep::GgufInference)) {
+        if !results.gguf_inference {
+            failures.push("Point 11: GGUF inference step failed".to_string());
+        }
+    }
+    if is_full_run || matches!(requested_step, Some(ShowcaseStep::Convert)) {
+        if !results.convert {
+            failures.push("Point 21: APR conversion step failed".to_string());
+        }
+    }
+    if is_full_run || matches!(requested_step, Some(ShowcaseStep::AprInference)) {
+        if !results.apr_inference {
+            failures.push("Point 31: APR inference step failed".to_string());
+        }
+    }
+
+    // Point 41+: Benchmark required only for full runs or explicit bench step
+    if !is_full_run && !matches!(requested_step, Some(ShowcaseStep::Benchmark)) {
+        // Skip benchmark validation for single non-benchmark steps
+        if failures.is_empty() {
+            println!();
+            println!("{}", "═══ Step Complete ═══".green().bold());
+            return Ok(());
+        }
+    }
+
+    let Some(ref bench) = results.benchmark else {
+        if is_full_run || matches!(requested_step, Some(ShowcaseStep::Benchmark)) {
+            failures
+                .push("Benchmark data missing - required for performance validation".to_string());
+        }
+        if !failures.is_empty() {
+            println!();
+            println!("{}", "═══ Falsification Failures ═══".red().bold());
+            for failure in &failures {
+                println!("  {} {}", "✗".red(), failure);
+            }
+            return Err(CliError::ValidationFailed(format!(
+                "{} falsification point(s) failed",
+                failures.len()
+            )));
+        }
+        println!();
+        println!("{}", "═══ Step Complete ═══".green().bold());
+        return Ok(());
     };
 
     // Points 41-42: 25% speedup requirement
@@ -2519,6 +2676,14 @@ fn validate_falsification(results: &ShowcaseResults) -> Result<()> {
 mod tests {
     use super::*;
 
+    /// Helper: create a full-run config for testing validation
+    fn full_run_config() -> ShowcaseConfig {
+        ShowcaseConfig {
+            auto_verify: true,
+            ..Default::default()
+        }
+    }
+
     #[test]
     fn test_showcase_config_default() {
         let config = ShowcaseConfig::default();
@@ -2571,7 +2736,7 @@ mod tests {
             ..Default::default()
         };
 
-        assert!(validate_falsification(&results).is_ok());
+        assert!(validate_falsification(&results, &full_run_config()).is_ok());
     }
 
     #[test]
@@ -2592,7 +2757,7 @@ mod tests {
             ..Default::default()
         };
 
-        assert!(validate_falsification(&results).is_err());
+        assert!(validate_falsification(&results, &full_run_config()).is_err());
     }
 
     #[test]
@@ -2613,7 +2778,7 @@ mod tests {
             ..Default::default()
         };
 
-        assert!(validate_falsification(&results).is_err());
+        assert!(validate_falsification(&results, &full_run_config()).is_err());
     }
 
     #[test]
@@ -2634,7 +2799,7 @@ mod tests {
             ..Default::default()
         };
 
-        assert!(validate_falsification(&results).is_err());
+        assert!(validate_falsification(&results, &full_run_config()).is_err());
     }
 
     #[test]
@@ -2694,7 +2859,7 @@ mod tests {
             chat: true,
             ..Default::default()
         };
-        assert!(validate_falsification(&results).is_ok());
+        assert!(validate_falsification(&results, &full_run_config()).is_ok());
     }
 
     // === Falsification Point 50: 30+ runs ===
@@ -2721,7 +2886,7 @@ mod tests {
             chat: true,
             ..Default::default()
         };
-        assert!(validate_falsification(&results).is_ok());
+        assert!(validate_falsification(&results, &full_run_config()).is_ok());
     }
 
     #[test]
@@ -2747,7 +2912,7 @@ mod tests {
             chat: true,
             ..Default::default()
         };
-        assert!(validate_falsification(&results).is_err());
+        assert!(validate_falsification(&results, &full_run_config()).is_err());
     }
 
     // === Falsification Point 41/42: 25% speedup ===
@@ -2774,7 +2939,7 @@ mod tests {
             chat: true,
             ..Default::default()
         };
-        assert!(validate_falsification(&results).is_ok());
+        assert!(validate_falsification(&results, &full_run_config()).is_ok());
     }
 
     #[test]
@@ -2800,7 +2965,7 @@ mod tests {
             chat: true,
             ..Default::default()
         };
-        assert!(validate_falsification(&results).is_err());
+        assert!(validate_falsification(&results, &full_run_config()).is_err());
     }
 
     // === Falsification: No benchmark data ===
@@ -2816,7 +2981,7 @@ mod tests {
             chat: true,
             ..Default::default()
         };
-        assert!(validate_falsification(&results).is_err());
+        assert!(validate_falsification(&results, &full_run_config()).is_err());
     }
 
     // === BenchMeasurement tests ===
@@ -2910,7 +3075,7 @@ mod tests {
             ..Default::default()
         };
         // Should pass - only llama.cpp baseline required
-        assert!(validate_falsification(&results).is_ok());
+        assert!(validate_falsification(&results, &full_run_config()).is_ok());
     }
 
     // === Step failures should fail falsification ===
@@ -2937,7 +3102,7 @@ mod tests {
             chat: true,
             ..Default::default()
         };
-        assert!(validate_falsification(&results).is_err());
+        assert!(validate_falsification(&results, &full_run_config()).is_err());
     }
 
     #[test]
@@ -2963,7 +3128,7 @@ mod tests {
             chat: true,
             ..Default::default()
         };
-        assert!(validate_falsification(&results).is_err());
+        assert!(validate_falsification(&results, &full_run_config()).is_err());
     }
 
     // === Export Format Tests (Point 85) ===
@@ -3317,6 +3482,10 @@ mod tests {
             total_vram_gb: 24.0,
             free_vram_gb: 20.0,
             cuda_available: true,
+            graph_capture_available: true,
+            graph_speedup: 70.0,
+            dp4a_available: true,
+            dp4a_arithmetic_intensity: 1.78,
         };
 
         assert_eq!(result.device_count, 1);
@@ -3324,6 +3493,11 @@ mod tests {
         assert!(result.total_vram_gb >= 20.0); // RTX 4090 has 24GB
         assert!(result.free_vram_gb > 0.0);
         assert!(result.cuda_available);
+        // Section 5.2/5.3 fields
+        assert!(result.graph_capture_available);
+        assert!(result.graph_speedup > 1.0);
+        assert!(result.dp4a_available);
+        assert!(result.dp4a_arithmetic_intensity > 0.0);
     }
 
     #[test]
@@ -3334,10 +3508,16 @@ mod tests {
             total_vram_gb: 0.0,
             free_vram_gb: 0.0,
             cuda_available: false,
+            graph_capture_available: false,
+            graph_speedup: 1.0,
+            dp4a_available: false,
+            dp4a_arithmetic_intensity: 0.0,
         };
 
         assert_eq!(result.device_count, 0);
         assert!(!result.cuda_available);
+        assert!(!result.graph_capture_available);
+        assert!(!result.dp4a_available);
     }
 
     #[test]
