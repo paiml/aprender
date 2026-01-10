@@ -2147,16 +2147,22 @@ fn run_cuda_demo(_config: &ShowcaseConfig) -> Result<CudaDemoResult> {
             graph_brick.budget().tokens_per_sec
         );
 
-        // Graph speedup estimation: eager launch overhead ~5µs per kernel × 280 kernels = 1.4ms
-        // Graph replay: ~20µs (single dispatch)
-        // Speedup: 1400/20 = 70x for launch overhead alone
-        let eager_launch_us = 5.0 * 280.0; // ~280 kernels per forward pass
-        let graph_replay_us = graph_brick.budget().us_per_token;
+        // Graph speedup is THEORETICAL based on:
+        // - Industry benchmark: ~5µs kernel launch overhead (NVIDIA Nsight)
+        // - Qwen2.5-32B decode: ~280 kernels per forward pass
+        // - Graph replay: single dispatch (~20µs target)
+        // TODO(PAR-090): Measure actual speedup via CudaEvent timing
+        let eager_launch_us = 5.0 * 280.0; // THEORETICAL: 280 kernels × 5µs launch overhead
+        let graph_replay_us = graph_brick.budget().us_per_token; // TARGET budget, not measured
         let graph_speedup = eager_launch_us / graph_replay_us;
 
         println!(
-            "    Estimated speedup: {:.1}x (eager: {:.0}µs → graph: {:.0}µs)",
+            "    Theoretical speedup: {:.1}x (eager: {:.0}µs → graph: {:.0}µs)",
             graph_speedup, eager_launch_us, graph_replay_us
+        );
+        println!(
+            "    {}",
+            "⚠ Values are theoretical estimates, not measured (see PAR-090)".yellow()
         );
 
         for assertion in graph_brick.assertions() {
