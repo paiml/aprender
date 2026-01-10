@@ -1,6 +1,6 @@
 # Qwen2.5-Coder Showcase: ComputeBrick Architecture
 
-**Version:** 3.0.0
+**Version:** 3.1.0
 **Status:** Approved
 **Author:** PAIML Engineering
 **Date:** 2026-01-10
@@ -20,10 +20,10 @@
 |---|---------|--------|
 | [0](#executive-summary) | Executive Summary | - |
 | [1](#1-canonical-design-authority) | Canonical Design Authority | - |
-| 2 | ComputeBrick Transformer Pipeline | - |
-| 2.4 | SimdLoadBrick Optimization | - |
-| 2.5 | ComputeBrick Scoring Framework | - |
-| 3 | Brick Budget Matrix | - |
+| [2](#2-computebrick-transformer-pipeline) | ComputeBrick Transformer Pipeline | - |
+| [2.4](#24-simdloadbrick-optimization) | SimdLoadBrick Optimization | - |
+| [2.5](#25-computebrick-scoring-framework) | ComputeBrick Scoring Framework | - |
+| [3](#3-brick-budget-matrix) | Brick Budget Matrix | - |
 | [4](#4-five-whys-root-cause-analysis) | Five-Whys Root Cause Analysis | - |
 | [5](#5-remediation-bricks) | Remediation Bricks | - |
 | [6](#6-tui-visualization-cbtop) | TUI Visualization (cbtop) | - |
@@ -41,7 +41,9 @@
 |---------|------|--------|----------|--------|-------|
 | 1.0.0 | 2025-12-15 | PAIML Engineering | Initial Draft | Draft | Original PAR-xxx approach |
 | 2.0.0 | 2026-01-08 | PAIML Engineering | Architecture Lead | Approved | Added five-whys analysis |
-| 3.0.0 | 2026-01-10 | PAIML Engineering | Architecture Lead | Approved | **ComputeBrick refactor**: Token-centric budgets, 5-layer architecture, 100-point falsification |
+| 3.0.0 | 2026-01-10 | PAIML Engineering | Architecture Lead | Approved | ComputeBrick refactor |
+| 3.1.0 | 2026-01-10 | PAIML Engineering | Architecture Lead | Approved | **SIMD & Scoring**: Added SimdLoadBrick and PMAT scoring framework |
+
 
 ---
 
@@ -524,7 +526,12 @@ Effective bandwidth ratio: 128 / 1024 = 12.5% of peak
 | `FusedFfnBrick` | `forward(input, gate, up, down)` | ✅ REAL | R006, R007, R010 |
 | `CudaGraphBrick` | `capture()`, `replay()` | ⏳ CUDA-only | F063, F064 |
 
-**Test Count:** 59 brick tests (49 falsification + 10 real implementation)
+**Test Count:** 91 brick tests (81 falsification F001-F100 + 10 real implementation R001-R010)
+
+**PMAT Scores:**
+- Rust Project Score: A+ (152.9/134)
+- TDG Score: A+ (98.1/100)
+- Perfection Score: 177.1/200 (B+)
 
 ### 5.2 CUDA Graph Brick (P0)
 
@@ -806,12 +813,13 @@ impl Brick for CorrectnessTestBrick {
 
 | Category | Points | Status |
 |----------|--------|--------|
-| F001-F020: Brick Core Invariants | 20 | ✅ 34/34 tests pass |
-| F021-F040: Token Budget Compliance | 20 | ✅ Implemented |
-| F041-F060: Backend Correctness | 20 | ✅ F050-F062 pass |
-| F061-F080: CUDA Kernel Validation | 20 | ✅ F063-F073 infrastructure ready |
-| F081-F100: Performance Regression | 20 | ✅ F081-F094 infrastructure ready |
-| **TOTAL** | **100** | **100/100 ✅** |
+| F001-F020: Brick Core Invariants | 20 | ✅ F001-F022 (22 tests) |
+| F021-F040: Token Budget Compliance | 20 | ✅ F023-F030 (8 tests) |
+| F041-F060: Backend Correctness | 20 | ✅ F041-F062 (15 tests) |
+| F061-F080: CUDA Kernel Validation | 20 | ✅ F063-F080 (14 tests) |
+| F081-F100: Performance Regression | 20 | ✅ F081-F100 (22 tests) |
+| R001-R010: Real Implementation | +10 | ✅ Bonus (10 tests) |
+| **TOTAL** | **100+10** | **91 tests pass ✅** |
 
 **Passing Threshold**: 100/100 points required for release (Zero Defects).
 
@@ -915,6 +923,10 @@ impl Brick for CorrectnessTestBrick {
 | F092 | Memory usage within 1.1x of model size | `apr bench --mem` | 1 |
 | F093 | No memory leaks over 1000 iterations | `valgrind / asan` | 1 |
 | F094 | Graceful degradation under memory pressure | `stress --vm` | 1 |
+| F095 | `SimdLoadBrick` Dot Product ≥ 25 GFLOP/s | `cargo bench --bench simd` | 1 |
+| F096 | `PMAT Score` ≥ 90 for release candidates | `apr score --check` | 1 |
+| F095 | `SimdLoadBrick` Dot Product ≥ 25 GFLOP/s | `cargo bench --bench simd` | 1 |
+| F096 | `PMAT Score` ≥ 90 for release candidates | `apr score --check` | 1 |
 
 ---
 
