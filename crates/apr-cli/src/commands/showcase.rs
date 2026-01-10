@@ -2451,6 +2451,41 @@ fn run_brick_demo(config: &ShowcaseConfig) -> Result<BrickDemoResult> {
         );
     }
 
+    // P2 Optimization: ActivationQuantBrick
+    println!();
+    println!(
+        "{}",
+        "─── P2 Optimization: ActivationQuantBrick (Q8) ───".yellow()
+    );
+
+    let act_quant = realizar::brick::ActivationQuantBrick::new(hidden_dim);
+    let bw_reduction = act_quant.bandwidth_reduction();
+    let bytes_saved = act_quant.bytes_saved();
+    let quant_error = act_quant.estimated_error();
+    let quant_budget = act_quant.budget().us_per_token;
+
+    println!("  Activation Quantization (Jacob et al. 2018):");
+    println!("    f32 activation → Q8 (scale, zero_point) → int8");
+    println!("    int8 → dequant → f32 (next layer input)");
+    println!();
+    println!("  Hidden dim: {} elements", hidden_dim);
+    println!("  Bandwidth reduction: {:.1}x (f32 → int8)", bw_reduction);
+    println!(
+        "  Bytes saved/token: {} ({:.1}KB)",
+        bytes_saved,
+        bytes_saved as f64 / 1024.0
+    );
+    println!(
+        "  Quantization error: {:.2}% (per-tensor)",
+        quant_error * 100.0
+    );
+    println!(
+        "  Overhead budget: {:.1}µs/tok (quant + dequant)",
+        quant_budget
+    );
+    println!();
+    println!("  {} ~2x memory bandwidth improvement", "→".green());
+
     // Run single token inference and measure
     println!();
     println!("{}", "─── Per-Layer Timing (N=100 samples) ───".yellow());
