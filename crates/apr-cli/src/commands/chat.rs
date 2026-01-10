@@ -515,6 +515,7 @@ mod realizar_chat {
 
             match result {
                 Ok(output_tokens) => {
+                    // Debug: show first few tokens and their decoded values
                     if config.inspect {
                         println!(
                             "{}",
@@ -526,6 +527,16 @@ mod realizar_chat {
                             )
                             .dimmed()
                         );
+                        // Debug: show first 10 tokens
+                        if let Some(ref tok) = self.llama_tokenizer {
+                            println!(
+                                "[DEBUG: first 10 tokens: {:?}]",
+                                &output_tokens[..output_tokens.len().min(10)]
+                            );
+                            for &id in output_tokens.iter().take(10) {
+                                println!("[DEBUG: {} -> {:?}]", id, tok.id_to_token(id));
+                            }
+                        }
                     }
                     // Decode output tokens using appropriate tokenizer
                     if let Some(ref tokenizer) = self.llama_tokenizer {

@@ -493,13 +493,22 @@ pub fn health_check(state: &ServerState) -> HealthResponse {
         }
     };
 
+    // Detect GPU availability
+    #[cfg(feature = "inference")]
+    let gpu_available = {
+        use realizar::cuda::CudaExecutor;
+        CudaExecutor::is_available() && CudaExecutor::num_devices() > 0
+    };
+    #[cfg(not(feature = "inference"))]
+    let gpu_available = false;
+
     HealthResponse {
         status,
         model_id: state.model_id.clone(),
         version: env!("CARGO_PKG_VERSION").to_string(),
         uptime_seconds: metrics.uptime_seconds(),
         requests_total: metrics.requests_total.load(Ordering::Relaxed),
-        gpu_available: false, // TODO: Detect GPU via realizar
+        gpu_available,
     }
 }
 
@@ -1013,7 +1022,7 @@ fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
         println!("  GET  /health         - Health check");
         println!("  GET  /model          - Model info (tensors, metadata)");
         if enable_metrics {
-            println!("  GET  /metrics        - Prometheus metrics (TODO)");
+            println!("  GET  /metrics        - Prometheus metrics");
         }
         println!();
         println!(

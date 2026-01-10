@@ -26,7 +26,7 @@ mod output;
 
 use commands::{
     bench, canary, canary::CanaryCommands, chat, compare_hf, convert, debug, diff, eval, explain,
-    export, flow, hex, import, inspect, lint, merge, probar, profile, run, serve, showcase,
+    export, flow, hex, import, inspect, lint, merge, probar, profile, pull, run, serve, showcase,
     tensors, trace, tree, tui, validate,
 };
 
@@ -332,6 +332,25 @@ enum Commands {
         force: bool,
     },
 
+    /// Download GGUF model from HuggingFace (for LLM inference via realizar)
+    Pull {
+        /// Repository: org/repo (e.g., bartowski/Qwen2.5-Coder-32B-Instruct-GGUF)
+        #[arg(value_name = "REPO")]
+        repo: String,
+
+        /// Quantization variant (Q4_K_M, Q4_K_S, Q5_K_M, Q6_K, Q8_0, F16)
+        #[arg(long, default_value = "Q4_K_M")]
+        quant: String,
+
+        /// Output directory
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+
+        /// Force download even if file exists
+        #[arg(long)]
+        force: bool,
+    },
+
     /// Convert/optimize model
     Convert {
         /// Path to .apr model file
@@ -541,6 +560,10 @@ enum Commands {
         /// Use realizar for fast inference (vs aprender baseline)
         #[arg(long)]
         fast: bool,
+
+        /// Benchmark specific brick (rms_norm, qkv, rope, attn, o_proj, ffn, layer)
+        #[arg(long)]
+        brick: Option<String>,
     },
 
     /// Evaluate model perplexity (spec H13: PPL <= 20)
@@ -623,6 +646,10 @@ enum Commands {
         #[arg(long)]
         step: Option<String>,
 
+        /// Model tier: tiny (0.5B), small (1.5B), medium (7B), large (32B)
+        #[arg(long, default_value = "small")]
+        tier: String,
+
         /// Model directory
         #[arg(long, default_value = "./models")]
         model_dir: PathBuf,
@@ -638,6 +665,22 @@ enum Commands {
         /// Number of benchmark runs (spec: minimum 30)
         #[arg(long, default_value = "30")]
         runs: usize,
+
+        /// Force GPU acceleration
+        #[arg(long)]
+        gpu: bool,
+
+        /// Output results as JSON
+        #[arg(long)]
+        json: bool,
+
+        /// Verbose output
+        #[arg(short, long)]
+        verbose: bool,
+
+        /// Quiet mode (errors only)
+        #[arg(short, long)]
+        quiet: bool,
     },
 }
 
@@ -766,6 +809,12 @@ fn execute_command(cli: &Cli) -> Result<(), error::CliError> {
             quantize.as_deref(),
             *force,
         ),
+        Commands::Pull {
+            repo,
+            quant,
+            output,
+            force,
+        } => pull::run(repo, Some(quant.as_str()), output.as_deref(), *force),
         Commands::Convert {
             file,
             quantize,
@@ -869,6 +918,7 @@ fn execute_command(cli: &Cli) -> Result<(), error::CliError> {
             max_tokens,
             prompt,
             fast,
+            brick,
         } => bench::run(
             file,
             *warmup,
@@ -876,6 +926,7 @@ fn execute_command(cli: &Cli) -> Result<(), error::CliError> {
             *max_tokens,
             prompt.as_deref(),
             *fast,
+            brick.as_deref(),
         ),
 
         Commands::Eval {
@@ -928,10 +979,15 @@ fn execute_command(cli: &Cli) -> Result<(), error::CliError> {
         Commands::Showcase {
             auto_verify,
             step,
+            tier,
             model_dir,
             baseline,
             zram,
             runs,
+            gpu,
+            json,
+            verbose,
+            quiet,
         } => {
             let step = step.as_ref().and_then(|s| match s.as_str() {
                 "import" => Some(showcase::ShowcaseStep::Import),
@@ -941,9 +997,19 @@ fn execute_command(cli: &Cli) -> Result<(), error::CliError> {
                 "bench" => Some(showcase::ShowcaseStep::Benchmark),
                 "chat" => Some(showcase::ShowcaseStep::Chat),
                 "visualize" => Some(showcase::ShowcaseStep::Visualize),
+                "zram" => Some(showcase::ShowcaseStep::ZramDemo),
+                "cuda" => Some(showcase::ShowcaseStep::CudaDemo),
                 "all" => Some(showcase::ShowcaseStep::All),
                 _ => None,
             });
+
+            let tier = match tier.as_str() {
+                "tiny" => showcase::ModelTier::Tiny,
+                "small" => showcase::ModelTier::Small,
+                "medium" => showcase::ModelTier::Medium,
+                "large" => showcase::ModelTier::Large,
+                _ => showcase::ModelTier::Small,
+            };
 
             let baselines: Vec<showcase::Baseline> = baseline
                 .split(',')
@@ -954,14 +1020,27 @@ fn execute_command(cli: &Cli) -> Result<(), error::CliError> {
                 })
                 .collect();
 
+            let export_format = if *json {
+                showcase::ExportFormat::Json
+            } else {
+                showcase::ExportFormat::None
+            };
+
             let config = showcase::ShowcaseConfig {
+                tier,
+                model: tier.model_path().to_string(),
+                quant: "Q4_K_M".to_string(),
                 model_dir: model_dir.clone(),
                 auto_verify: *auto_verify,
                 step,
                 baselines,
                 zram: *zram,
                 bench_runs: *runs,
-                ..Default::default()
+                export_format,
+                export_path: None,
+                gpu: *gpu,
+                verbose: *verbose,
+                quiet: *quiet,
             };
 
             showcase::run(&config)

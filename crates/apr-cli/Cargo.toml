@@ -59,18 +59,22 @@ name = "apr"
 path = "src/main.rs"
 
 [features]
-default = ["hf-hub", "safetensors-compare", "inference"]
+default = ["hf-hub", "safetensors-compare", "inference", "cuda", "visualization", "zram"]
 hf-hub = ["aprender/hf-hub-integration"]
 safetensors-compare = ["aprender/safetensors-compare"]
 inference = ["realizar", "tokio", "axum", "futures-util"]
 cuda = ["inference", "realizar/cuda"]
+visualization = ["renacer", "trueno-viz"]
+zram = ["trueno-zram-core"]
 
 [dependencies]
 # Core aprender library
 aprender = { path = "../..", version = "0.24", default-features = true, features = ["format-compression"] }
 
-# Inference engine (crates.io) - Ollama-parity performance
-realizar = { version = "0.5", optional = true, default-features = false, features = ["server", "aprender-serve", "gpu"] }
+# Inference engine (local path for PAR-041 testing)
+# Note: cuda feature enables GPU-accelerated inference via trueno-gpu
+# PAR-041: Using local realizar with tiled GEMV kernel (256 threads vs 32)
+realizar = { path = "/home/noah/src/realizar", optional = true, default-features = false, features = ["server", "aprender-serve", "gpu", "cuda"] }
 
 # Async runtime for server
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal"], optional = true }
@@ -110,6 +114,13 @@ ureq = "2.10"
 # TUI
 ratatui = { version = "0.29", default-features = true }
 crossterm = "0.28"
+
+# Visualization (syscall tracing and charts)
+renacer = { version = "0.9.4", optional = true, default-features = false }
+trueno-viz = { version = "0.1.16", optional = true, default-features = false, features = ["svg"] }
+
+# ZRAM compression (SIMD-accelerated LZ4/ZSTD)
+trueno-zram-core = { version = "0.2", optional = true }
 
 [[example]]
 name = "probar_tui_testing"

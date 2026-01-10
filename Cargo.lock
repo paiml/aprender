@@ -261,6 +261,7 @@ dependencies = [
  "ratatui",
  "realizar",
  "regex",
+ "renacer",
  "rmp-serde",
  "serde",
  "serde_json",
@@ -269,6 +270,8 @@ dependencies = [
  "thiserror 2.0.17",
  "tokio",
  "tower 0.5.2",
+ "trueno-viz",
+ "trueno-zram-core 0.2.0",
  "ureq",
 ]
 
@@ -294,24 +297,6 @@ dependencies = [
  "trueno 0.8.9",
  "x25519-dalek",
  "zstd",
-]
-
-[[package]]
-name = "aprender"
-version = "0.19.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c996d5e1fba70e6cfe1909831e3ffb10e24434c647a86b1b085a784db3302c1c"
-dependencies = [
- "bincode",
- "getrandom 0.2.16",
- "memmap2",
- "rand 0.8.5",
- "rand_chacha 0.3.1",
- "rayon",
- "rmp-serde",
- "serde",
- "serde_json",
- "trueno 0.8.9",
 ]
 
 [[package]]
@@ -369,9 +354,29 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.17",
  "trueno 0.11.0",
+ "trueno-zram-core 0.3.0",
  "wasm-bindgen",
  "x25519-dalek",
  "zstd",
+]
+
+[[package]]
+name = "aprender"
+version = "0.24.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d1140494fee114ac8ae686c8d4e0d859b421c8e082e7a8c4a3f67d0e3f9e2754"
+dependencies = [
+ "bincode",
+ "getrandom 0.2.16",
+ "memmap2",
+ "minijinja",
+ "rand 0.8.5",
+ "rand_chacha 0.3.1",
+ "rayon",
+ "rmp-serde",
+ "serde",
+ "serde_json",
+ "trueno 0.11.0",
 ]
 
 [[package]]
@@ -4602,9 +4607,7 @@ dependencies = [
 
 [[package]]
 name = "realizar"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8ae343c719053d2e3a8f111a0eea28a024a669e776702ea109696863b707a32e"
+version = "0.5.1"
 dependencies = [
  "anyhow",
  "aprender 0.23.0",
@@ -4630,7 +4633,7 @@ dependencies = [
  "tower 0.4.13",
  "tracing",
  "trueno 0.11.0",
- "trueno-gpu",
+ "trueno-gpu 0.4.5",
  "uuid",
 ]
 
@@ -4705,16 +4708,17 @@ checksum = "7a2d987857b319362043e95f5353c0535c1f58eec5336fdfcf626430af7def58"
 
 [[package]]
 name = "renacer"
-version = "0.9.2"
+version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9612bd4101de39ae6c06dc66729e523cb411f307130c4204ffde30029852c957"
+checksum = "0cd1f68012c469cc8f371651caaf63e96ac672829ef6354c116e8cd050ad757f"
 dependencies = [
  "addr2line",
  "anyhow",
- "aprender 0.19.0",
+ "aprender 0.24.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "backtrace",
  "clap",
  "crossbeam",
+ "crossterm",
  "fnv",
  "gimli",
  "hex",
@@ -4726,6 +4730,7 @@ dependencies = [
  "opentelemetry-otlp",
  "opentelemetry_sdk",
  "rand 0.8.5",
+ "ratatui",
  "regex",
  "rmp-serde",
  "serde",
@@ -4736,9 +4741,10 @@ dependencies = [
  "toml",
  "tracing",
  "tracing-subscriber",
- "trueno 0.8.9",
+ "trueno 0.11.0",
  "trueno-db",
  "trueno-graph",
+ "trueno-viz",
 ]
 
 [[package]]
@@ -6009,7 +6015,7 @@ dependencies = [
  "num_cpus",
  "pollster",
  "thiserror 2.0.17",
- "trueno-gpu",
+ "trueno-gpu 0.4.5 (registry+https://github.com/rust-lang/crates.io-index)",
  "wgpu",
 ]
 
@@ -6045,6 +6051,14 @@ dependencies = [
 [[package]]
 name = "trueno-gpu"
 version = "0.4.5"
+dependencies = [
+ "libloading",
+ "thiserror 2.0.17",
+]
+
+[[package]]
+name = "trueno-gpu"
+version = "0.4.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "11adf9d98b8ebe9349d729c79bc755d6ec209a25d0fe03d7e2917db4811e4c93"
 dependencies = [
@@ -6070,15 +6084,38 @@ dependencies = [
 
 [[package]]
 name = "trueno-viz"
-version = "0.1.9"
+version = "0.1.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c7e46e0d7027e514a7253d981461e313c70599c3e76cb53375a22ff61395e8b8"
+checksum = "8e8745e9140e70b9f449808a39720de6c77c9604ef16e33315e54f0554feacc5"
 dependencies = [
  "base64",
+ "crossterm",
+ "dirs 5.0.1",
  "libc",
  "png 0.17.16",
+ "ratatui",
+ "serde",
+ "serde_yaml",
  "thiserror 2.0.17",
- "trueno 0.10.1",
+ "trueno 0.11.0",
+]
+
+[[package]]
+name = "trueno-zram-core"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a910ae76a7f13dd9243657311bafac99164c0fa839840034e0955b7058699e13"
+dependencies = [
+ "thiserror 2.0.17",
+]
+
+[[package]]
+name = "trueno-zram-core"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dca7191b8dba48c103538578e8dc9f204be1de557ad226052c87e96a5c7d62d9"
+dependencies = [
+ "thiserror 2.0.17",
 ]
 
 [[package]]
