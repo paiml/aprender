@@ -2257,7 +2257,7 @@ fn run_cuda_demo(_config: &ShowcaseConfig) -> Result<CudaDemoResult> {
 /// Toyota Way: Mieruka (visual control) - shows where time is spent.
 #[cfg(feature = "inference")]
 fn run_brick_demo(config: &ShowcaseConfig) -> Result<BrickDemoResult> {
-    use realizar::brick::{ComputeBrick, TransformerLayerBrick};
+    use realizar::brick::{ComputeBrick, FusedFfnBrick, TransformerLayerBrick};
     use realizar::gguf::{MappedGGUFModel, OwnedQuantizedModel};
 
     println!();
@@ -2339,6 +2339,117 @@ fn run_brick_demo(config: &ShowcaseConfig) -> Result<BrickDemoResult> {
         "    └── FfnBrick: {:.1}µs budget",
         layer_brick.ffn.budget().us_per_token
     );
+
+    // P1 Optimization: FusedFfnBrick with DP4A
+    println!();
+    println!(
+        "{}",
+        "─── P1 Optimization: FusedFfnBrick (DP4A) ───".yellow()
+    );
+
+    let fused_ffn = FusedFfnBrick::with_packed_dp4a(hidden_dim, intermediate_dim);
+    let fused_flops = fused_ffn.flops();
+    let fused_ai = fused_ffn.arithmetic_intensity();
+    let naive_budget = layer_brick.ffn.budget().us_per_token;
+    let fused_budget = fused_ffn.budget().us_per_token;
+    let ffn_speedup = naive_budget / fused_budget;
+
+    println!("  DP4A Pipeline:");
+    println!("    input → Q8 quant (shared) → gate_proj ─┐");
+    println!("                              → up_proj   ─┼→ SwiGLU → down_proj → output");
+    println!();
+    println!(
+        "  FLOPs: {:.2}G (6 × hidden × intermediate)",
+        fused_flops as f64 / 1e9
+    );
+    println!(
+        "  Arithmetic Intensity: {:.1} FLOPs/byte (compute-bound if >10)",
+        fused_ai
+    );
+    println!();
+    println!(
+        "  Naive FfnBrick:  {:.1}µs/tok (separate gate, up, down)",
+        naive_budget
+    );
+    println!(
+        "  FusedFfnBrick:   {:.1}µs/tok (shared Q8 + fused SwiGLU)",
+        fused_budget
+    );
+    println!("  {} Theoretical speedup: {:.1}x", "→".green(), ffn_speedup);
+
+    if fused_ffn.use_packed_dp4a {
+        println!(
+            "  {} PACKED_DP4A=1 enabled (4-byte coalesced loads)",
+            "✓".green()
+        );
+    } else {
+        println!("  {} PACKED_DP4A not set (using scalar DP4A)", "○".yellow());
+    }
+
+    // P1 Optimization: FlashAttentionBrick
+    println!();
+    println!(
+        "{}",
+        "─── P1 Optimization: FlashAttentionBrick (Online Softmax) ───".yellow()
+    );
+
+    let head_dim = hidden_dim / num_heads;
+    let flash_attn = realizar::brick::FlashAttentionBrick::new(num_heads, num_kv_heads, head_dim);
+    let test_seq_len = 512; // Typical decode context length
+    let flash_flops = flash_attn.flops(test_seq_len);
+    let flash_ai = flash_attn.arithmetic_intensity(test_seq_len);
+    let (naive_bytes, flash_bytes) = flash_attn.memory_bytes(test_seq_len);
+    let naive_budget = layer_brick.attention.budget().us_per_token;
+    let flash_budget = flash_attn.budget().us_per_token;
+    let attn_speedup = naive_budget / flash_budget;
+
+    println!("  FlashAttention-2 Algorithm (Dao et al. 2023):");
+    println!(
+        "    for tile in KV_tiles(TILE_SIZE={}):",
+        flash_attn.tile_size
+    );
+    println!("        S_tile = Q @ K_tile^T / sqrt(D)  # Online softmax");
+    println!("        O += softmax(S_tile) @ V_tile    # Accumulate");
+    println!();
+    println!(
+        "  Test config: seq_len={}, heads={}, kv_heads={}, head_dim={}",
+        test_seq_len, num_heads, num_kv_heads, head_dim
+    );
+    println!("  FLOPs: {:.2}M (4 × H × D × S)", flash_flops as f64 / 1e6);
+    println!("  Arithmetic Intensity: {:.1} FLOPs/byte", flash_ai);
+    println!();
+    println!(
+        "  Memory: naive={:.1}KB, flash={:.1}KB ({:.1}x reduction)",
+        naive_bytes as f64 / 1024.0,
+        flash_bytes as f64 / 1024.0,
+        naive_bytes as f64 / flash_bytes as f64
+    );
+    println!(
+        "  Tiles: {} (tile_size={})",
+        flash_attn.num_tiles(test_seq_len),
+        flash_attn.tile_size
+    );
+    println!();
+    println!(
+        "  Naive AttentionBrick:   {:.1}µs/tok (full attention matrix)",
+        naive_budget
+    );
+    println!(
+        "  FlashAttentionBrick:    {:.1}µs/tok (online softmax, tiled KV)",
+        flash_budget
+    );
+    println!(
+        "  {} Theoretical speedup: {:.1}x",
+        "→".green(),
+        attn_speedup
+    );
+
+    if flash_attn.use_online_softmax {
+        println!(
+            "  {} Online softmax enabled (no attention matrix materialization)",
+            "✓".green()
+        );
+    }
 
     // Run single token inference and measure
     println!();

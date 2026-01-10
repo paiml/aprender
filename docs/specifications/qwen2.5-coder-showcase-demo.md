@@ -454,13 +454,22 @@ Effective bandwidth ratio: 128 / 1024 = 12.5% of peak
 
 ### 5.1 Brick-Level Fixes
 
-| Brick | Fix | Expected Gain | Complexity | Priority |
-|-------|-----|---------------|------------|----------|
-| **All** | CUDA Graph capture (1 launch/tok) | 10x small models | Medium | P0 |
-| **QkvBrick** | Coalesced 4-byte loads + DP4A | 4x bandwidth | Medium | P0 |
-| **FfnBrick** | Fused gate-up-down megakernel | 3x (1 launch vs 3) | Medium | P1 |
-| **AttentionBrick** | Incremental flash attention | 2x | High | P1 |
-| **All** | Activation Q8 quantization | 2x memory BW | Medium | P2 |
+**Goal**: 2x Ollama throughput on ALL Qwen2.5-Coder models (CPU & GPU)
+
+| Brick | Fix | Expected Gain | Complexity | Priority | Status |
+|-------|-----|---------------|------------|----------|--------|
+| **All** | CUDA Graph capture (1 launch/tok) | 10x small models | Medium | P0 | ✅ Done |
+| **QkvBrick** | Coalesced 4-byte loads + DP4A | 4x bandwidth | Medium | P0 | ✅ Done |
+| **FfnBrick** | Fused gate-up-down megakernel | 3x (1 launch vs 3) | Medium | P1 | ✅ Done |
+| **AttentionBrick** | Incremental flash attention | 2x | High | P1 | ✅ Done |
+| **All** | Activation Q8 quantization | 2x memory BW | Medium | P2 | ⏳ Pending |
+
+**Progress Log:**
+- 2026-01-10: P0 complete - CudaGraphBrick, CoalescedDp4aBrick implemented (realizar v0.5.1)
+- 2026-01-10: FusedFfnBrick complete - DP4A pipeline, flops(), arithmetic_intensity() in realizar
+- 2026-01-10: Brick demo enhanced - shows FusedFfnBrick vs naive speedup comparison
+- 2026-01-10: FlashAttentionBrick complete - online softmax, tiled KV access, 2x speedup target
+- 2026-01-10: All P0+P1 items complete - ready for 2x Ollama performance verification
 
 ### 5.2 CUDA Graph Brick (P0)
 
@@ -515,7 +524,8 @@ impl CudaGraphBrick {
 }
 ```
 
-**Expected Impact**: Reduce 5.6ms overhead → 0.02ms = **280x overhead reduction**
+**Theoretical Impact** (Pending PAR-090): Reduce 5.6ms overhead → 0.02ms = **280x overhead reduction**
+*Note: Speedup values are theoretical estimates until full graph capture is verified (see PAR-090).*
 
 ### 5.3 Coalesced DP4A Brick (P0)
 
