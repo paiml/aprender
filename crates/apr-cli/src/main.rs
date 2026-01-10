@@ -25,9 +25,9 @@ pub mod federation;
 mod output;
 
 use commands::{
-    bench, canary, canary::CanaryCommands, chat, compare_hf, convert, debug, diff, eval, explain,
-    export, flow, hex, import, inspect, lint, merge, probar, profile, pull, run, serve, showcase,
-    tensors, trace, tree, tui, validate,
+    bench, canary, canary::CanaryCommands, cbtop, chat, compare_hf, convert, debug, diff, eval,
+    explain, export, flow, hex, import, inspect, lint, merge, probar, profile, pull, run, serve,
+    showcase, tensors, trace, tree, tui, validate,
 };
 
 /// apr - APR Model Operations Tool
@@ -390,6 +390,20 @@ enum Commands {
         /// Path to .apr model file
         #[arg(value_name = "FILE")]
         file: Option<PathBuf>,
+    },
+
+    /// ComputeBrick pipeline monitor (cbtop)
+    ///
+    /// Real-time visualization of brick-level timing during inference.
+    /// Per spec: docs/specifications/qwen2.5-coder-showcase-demo.md §6
+    Cbtop {
+        /// Model name (e.g., qwen2.5-coder-1.5b)
+        #[arg(long)]
+        model: Option<String>,
+
+        /// Attach to running realizar process
+        #[arg(long)]
+        attach: Option<String>,
     },
 
     /// Export for probar visual testing
@@ -827,6 +841,8 @@ fn execute_command(cli: &Cli) -> Result<(), error::CliError> {
             weights,
         } => merge::run(files, strategy, output, weights.clone()),
         Commands::Tui { file } => tui::run(file.clone()),
+
+        Commands::Cbtop { model, attach } => cbtop::run(model.as_deref(), attach.as_deref()),
 
         Commands::Probar {
             file,

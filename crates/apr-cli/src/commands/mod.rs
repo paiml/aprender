@@ -7,6 +7,7 @@
 
 pub(crate) mod bench;
 pub(crate) mod canary;
+pub(crate) mod cbtop;
 pub(crate) mod chat;
 pub(crate) mod compare_hf;
 pub(crate) mod convert;
