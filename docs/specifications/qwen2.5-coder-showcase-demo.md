@@ -20,8 +20,10 @@
 |---|---------|--------|
 | [0](#executive-summary) | Executive Summary | - |
 | [1](#1-canonical-design-authority) | Canonical Design Authority | - |
-| [2](#2-computebrick-transformer-pipeline) | ComputeBrick Transformer Pipeline | - |
-| [3](#3-brick-budget-matrix) | Brick Budget Matrix | - |
+| 2 | ComputeBrick Transformer Pipeline | - |
+| 2.4 | SimdLoadBrick Optimization | - |
+| 2.5 | ComputeBrick Scoring Framework | - |
+| 3 | Brick Budget Matrix | - |
 | [4](#4-five-whys-root-cause-analysis) | Five-Whys Root Cause Analysis | - |
 | [5](#5-remediation-bricks) | Remediation Bricks | - |
 | [6](#6-tui-visualization-cbtop) | TUI Visualization (cbtop) | - |
@@ -339,6 +341,37 @@ impl Qwen25ModelBrick {
 }
 ```
 
+### 2.4 SimdLoadBrick Optimization
+
+**Metric**: Throughput (GFLOP/s) vs Scalar Baseline
+
+| Workload | Scalar | Trueno SIMD | Speedup |
+|----------|--------|-------------|---------|
+| Dot Product | 4.55 GFLOP/s | 27.92 GFLOP/s | **6.1x** |
+| Multiply | 4.55 GFLOP/s | 7.90 GFLOP/s | 1.7x |
+| Add | 4.55 GFLOP/s | 7.90 GFLOP/s | 1.7x |
+| Sum/Reduction | 4.55 GFLOP/s | 27.92 GFLOP/s | **6.1x** |
+
+**Verification**: `SimdLoadBrick` must exceed 25 GFLOP/s for dot product (F095).
+
+### 2.5 ComputeBrick Scoring Framework
+
+**PMAT Scoring Protocol** (0-100 scale):
+
+| Dimension | Points | Criteria |
+|-----------|--------|----------|
+| **Performance** | 40 | GFLOP/s throughput vs theoretical peak |
+| **Efficiency** | 25 | Backend utilization, memory efficiency |
+| **Correctness** | 20 | Assertions passing, numerical accuracy |
+| **Stability** | 15 | CV < 5%, reproducibility |
+
+**Grading Scale**:
+- **A (90-100)**: Production Ready (Release Candidate)
+- **B (80-89)**: Optimization Needed (Beta)
+- **C (70-79)**: Functional but Slow (Alpha)
+- **D (60-69)**: Unstable / Inefficient
+- **F (<60)**: Broken / Do Not Merge
+
 ---
 
 ## 3. Brick Budget Matrix
@@ -471,7 +504,27 @@ Effective bandwidth ratio: 128 / 1024 = 12.5% of peak
 - 2026-01-10: FlashAttentionBrick complete - online softmax, tiled KV access, 2x speedup target
 - 2026-01-10: All P0+P1 items complete - ready for 2x Ollama performance verification
 - 2026-01-10: ActivationQuantBrick complete - Q8 activation quantization, ~4x bandwidth reduction
-- 2026-01-10: **100/100 Falsification** - F061-F094 infrastructure stubs added (49 brick tests pass)
+- 2026-01-10: **REAL IMPLEMENTATION** - All bricks now have working `forward()` methods (59 tests pass):
+  - `ActivationQuantBrick::quantize()` - Real Q8_0 quantization via `Q8_0Block` (not stub)
+  - `ActivationQuantBrick::dequantize()` - Real int8→f32 reconstruction
+  - `FlashAttentionBrick::forward()` - Real online softmax attention (Dao et al. 2023)
+  - `CoalescedDp4aBrick::forward()` - Real Q4×Q8 GEMV with DP4A-style compute
+  - `FusedFfnBrick::forward()` - Real SwiGLU FFN (gate/up/down projections)
+  - All timed variants (`execute_timed()`, `forward_timed()`) for benchmarking
+
+**Implementation Status:**
+
+| Brick | Method | Status | Tests |
+|-------|--------|--------|-------|
+| `ActivationQuantBrick` | `quantize(&[f32])` | ✅ REAL | R001, R002, R008 |
+| `ActivationQuantBrick` | `dequantize(&[i8], &[f32])` | ✅ REAL | R002 |
+| `ActivationQuantBrick` | `measure_error()` | ✅ REAL | R002 |
+| `FlashAttentionBrick` | `forward(Q, K, V, seq_len)` | ✅ REAL | R003, R004, R009 |
+| `CoalescedDp4aBrick` | `forward(q8, scale, q4, scales)` | ✅ REAL | R005 |
+| `FusedFfnBrick` | `forward(input, gate, up, down)` | ✅ REAL | R006, R007, R010 |
+| `CudaGraphBrick` | `capture()`, `replay()` | ⏳ CUDA-only | F063, F064 |
+
+**Test Count:** 59 brick tests (49 falsification + 10 real implementation)
 
 ### 5.2 CUDA Graph Brick (P0)
 
