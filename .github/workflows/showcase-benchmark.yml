@@ -1,0 +1,183 @@
+# Showcase Benchmark Workflow
+#
+# Per spec: docs/specifications/qwen2.5-coder-showcase-demo.md Section 6
+#
+# Runs the ComputeBrick showcase benchmarks and falsification tests.
+# This workflow validates the brick-level performance claims.
+
+name: Showcase Benchmark
+
+on:
+  # Manual trigger for on-demand benchmarking
+  workflow_dispatch:
+    inputs:
+      throughput_threshold:
+        description: 'Minimum throughput (tok/s)'
+        required: false
+        default: '100'
+      brick_score_threshold:
+        description: 'Minimum brick score (0-100)'
+        required: false
+        default: '80'
+
+  # Run on PR for showcase-related changes
+  pull_request:
+    paths:
+      - 'crates/apr-cli/src/commands/cbtop.rs'
+      - 'tests/falsification_*.rs'
+      - 'docs/specifications/qwen2.5-coder-showcase-demo.md'
+      - '.github/workflows/showcase-benchmark.yml'
+
+  # Weekly scheduled run for trend tracking
+  schedule:
+    - cron: '0 3 * * 1'  # Every Monday at 3 AM UTC
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  falsification-tests:
+    name: Run Falsification Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run Falsification Tests (F001-F040, M001-M020)
+        run: |
+          echo "Running Popperian falsification test suite..."
+          cargo test --release \
+            --test falsification_brick_tests \
+            --test falsification_budget_tests \
+            --test falsification_measurement_tests \
+            -- --test-threads=2 2>&1 | tee falsification-results.txt
+
+      - name: Generate test summary
+        if: always()
+        run: |
+          echo "# Falsification Test Results" > falsification-summary.md
+          echo "" >> falsification-summary.md
+          echo "**Date:** $(date -u)" >> falsification-summary.md
+          echo "**Branch:** ${{ github.ref_name }}" >> falsification-summary.md
+          echo "**Commit:** ${{ github.sha }}" >> falsification-summary.md
+          echo "" >> falsification-summary.md
+          echo "## Test Categories" >> falsification-summary.md
+          echo "" >> falsification-summary.md
+          echo "| Category | Tests | Description |" >> falsification-summary.md
+          echo "|----------|-------|-------------|" >> falsification-summary.md
+          echo "| F001-F020 | Brick Core | ComputeBrick trait invariants |" >> falsification-summary.md
+          echo "| F021-F040 | Token Budget | Timing budget compliance |" >> falsification-summary.md
+          echo "| M001-M020 | Measurement | cbtop and scoring infrastructure |" >> falsification-summary.md
+          echo "" >> falsification-summary.md
+
+          # Count passed/failed
+          passed=$(grep -c "ok$" falsification-results.txt || echo "0")
+          failed=$(grep -c "FAILED$" falsification-results.txt || echo "0")
+          echo "## Results" >> falsification-summary.md
+          echo "" >> falsification-summary.md
+          echo "- **Passed:** $passed" >> falsification-summary.md
+          echo "- **Failed:** $failed" >> falsification-summary.md
+          echo "" >> falsification-summary.md
+
+          cat falsification-summary.md
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: falsification-results-${{ github.sha }}
+          path: |
+            falsification-results.txt
+            falsification-summary.md
+          retention-days: 30
+
+  headless-benchmark:
+    name: Run Headless Benchmark
+    runs-on: ubuntu-latest
+    needs: falsification-tests
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build in release mode
+        run: cargo build --release -p apr-cli
+
+      - name: Run headless benchmark
+        run: |
+          echo "Running cbtop headless benchmark..."
+          cargo run --release -p apr-cli -- cbtop \
+            --headless \
+            --json \
+            --output showcase-results.json \
+            --iterations 100
+
+          echo "Benchmark results:"
+          cat showcase-results.json
+
+      - name: Validate CI thresholds
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          echo "Validating CI thresholds..."
+          cargo run --release -p apr-cli -- cbtop \
+            --headless \
+            --ci \
+            --throughput ${{ github.event.inputs.throughput_threshold || '100' }} \
+            --iterations 100
+
+      - name: Upload benchmark results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: showcase-results-${{ github.sha }}
+          path: showcase-results.json
+          retention-days: 90
+
+      - name: Comment on PR (if applicable)
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let results = {};
+            try {
+              results = JSON.parse(fs.readFileSync('showcase-results.json', 'utf8'));
+            } catch (e) {
+              results = { error: 'Failed to parse results' };
+            }
+
+            const throughput = results.throughput?.tokens_per_sec?.toFixed(1) || 'N/A';
+            const status = results.status || 'UNKNOWN';
+            const passed = results.falsification?.passed || 0;
+            const total = results.falsification?.total_points || 120;
+
+            const body = `## ComputeBrick Showcase Results
+
+            | Metric | Value |
+            |--------|-------|
+            | Throughput | ${throughput} tok/s |
+            | Status | ${status} |
+            | Falsification | ${passed}/${total} points |
+
+            **Model:** ${results.model || 'N/A'}
+
+            ---
+            *Benchmark completed on commit ${context.sha.substring(0, 7)}*`;
+
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.name,
+              body: body
+            });

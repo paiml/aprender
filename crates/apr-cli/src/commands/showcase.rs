@@ -234,7 +234,18 @@ pub fn run(config: &ShowcaseConfig) -> Result<()> {
     print_header(config.tier);
 
     let steps = match config.step {
-        Some(ShowcaseStep::All) | None if config.auto_verify => vec![
+        Some(ShowcaseStep::All) => vec![
+            ShowcaseStep::Import,
+            ShowcaseStep::GgufInference,
+            ShowcaseStep::Convert,
+            ShowcaseStep::AprInference,
+            ShowcaseStep::BrickDemo,
+            ShowcaseStep::Benchmark,
+            ShowcaseStep::Visualize,
+            ShowcaseStep::ZramDemo,
+            ShowcaseStep::CudaDemo,
+        ],
+        None if config.auto_verify => vec![
             ShowcaseStep::Import,
             ShowcaseStep::GgufInference,
             ShowcaseStep::Convert,
@@ -600,13 +611,37 @@ fn run_gguf_inference(config: &ShowcaseConfig) -> Result<bool> {
     println!("  Heads: {}", model.config.num_heads);
     println!("  KV heads: {}", model.config.num_kv_heads);
 
+    // DEBUG: Print actual embedding values from model BEFORE potential move to GPU
+    let emb_token_0 = model.embed(&[0]);
+    println!(
+        "  Embed(token 0) first 8: {:?}",
+        &emb_token_0[..8.min(emb_token_0.len())]
+    );
+    println!(
+        "  Embed(token 0) sum: {:.6}",
+        emb_token_0.iter().sum::<f32>()
+    );
+    let emb_token_9707 = model.embed(&[9707]);
+    println!(
+        "  Embed(token 9707 = 'Hello') first 8: {:?}",
+        &emb_token_9707[..8.min(emb_token_9707.len())]
+    );
+    println!(
+        "  Embed(token 9707) sum: {:.6}",
+        emb_token_9707.iter().sum::<f32>()
+    );
+
     // Run inference test
     println!();
     println!("Running inference test...");
 
-    // Use real tokenization from the GGUF model's vocabulary
-    let test_prompt = "Hello, I am a coding assistant. Write a function";
-    let prompt_tokens: Vec<u32> = mapped.model.encode(test_prompt).unwrap_or_else(|| {
+    // Use ChatML format for Qwen2.5-Coder (required for proper generation)
+    let user_message = "Hello, I am a coding assistant. Write a function";
+    let test_prompt = format!(
+        "<|im_start|>user\n{}<|im_end|>\n<|im_start|>assistant\n",
+        user_message
+    );
+    let prompt_tokens: Vec<u32> = mapped.model.encode(&test_prompt).unwrap_or_else(|| {
         // Fallback to simple tokens if vocab not available
         println!(
             "  {} No vocabulary found, using fallback tokens",
@@ -614,9 +649,13 @@ fn run_gguf_inference(config: &ShowcaseConfig) -> Result<bool> {
         );
         vec![1, 2, 3, 4, 5]
     });
+    // DEBUG: Show what tokens the prompt was encoded to
+    let prompt_decoded = mapped.model.decode(&prompt_tokens);
+    println!("  Prompt token IDs: {:?}", prompt_tokens);
+    println!("  Prompt decoded: \"{}\"", prompt_decoded);
     println!(
-        "  Prompt: \"{}\" ({} tokens)",
-        test_prompt,
+        "  User message: \"{}\" ({} tokens total with ChatML)",
+        user_message,
         prompt_tokens.len()
     );
 
@@ -668,6 +707,39 @@ fn run_gguf_inference(config: &ShowcaseConfig) -> Result<bool> {
         infer_time.as_secs_f32(),
         tps
     );
+
+    // DEBUG: Decode and print generated output to verify correctness
+    let generated_tokens = &output[prompt_tokens.len()..];
+    let generated_text = mapped.model.decode(generated_tokens);
+    println!("  Output tokens: {:?}", generated_tokens);
+    println!("  Generated text: \"{}\"", generated_text);
+
+    // Check rope config from metadata
+    println!(
+        "  rope_theta from metadata: {:?}",
+        mapped.model.rope_freq_base()
+    );
+    println!("  rope_type from metadata: {:?}", mapped.model.rope_type());
+
+    // DEBUG: Verify tensor_data_start
+    println!("  tensor_data_start: {}", mapped.model.tensor_data_start);
+    println!("  Expected: 5948576");
+
+    // DEBUG: Print first embedding values
+    if let Some(tensor) = mapped
+        .model
+        .tensors
+        .iter()
+        .find(|t| t.name == "token_embd.weight")
+    {
+        let data = mapped.data();
+        let offset = mapped.model.tensor_data_start + tensor.offset as usize;
+        println!("  token_embd offset in file: {}", offset);
+        println!(
+            "  First 10 bytes at offset: {:02x?}",
+            &data[offset..offset + 10]
+        );
+    }
 
     Ok(true)
 }

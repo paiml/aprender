@@ -396,6 +396,10 @@ enum Commands {
     ///
     /// Real-time visualization of brick-level timing during inference.
     /// Per spec: docs/specifications/qwen2.5-coder-showcase-demo.md §6
+    ///
+    /// Headless mode for CI:
+    ///   apr cbtop --headless --json --output results.json
+    ///   apr cbtop --headless --ci --throughput 400 --brick-score 90
     Cbtop {
         /// Model name (e.g., qwen2.5-coder-1.5b)
         #[arg(long)]
@@ -404,6 +408,38 @@ enum Commands {
         /// Attach to running realizar process
         #[arg(long)]
         attach: Option<String>,
+
+        /// Run in headless mode (no TUI, for CI/automation)
+        #[arg(long)]
+        headless: bool,
+
+        /// Output JSON format (requires --headless)
+        #[arg(long)]
+        json: bool,
+
+        /// Output file path (requires --headless)
+        #[arg(long, value_name = "FILE")]
+        output: Option<PathBuf>,
+
+        /// CI mode: exit with code 1 if thresholds not met
+        #[arg(long)]
+        ci: bool,
+
+        /// Minimum throughput threshold in tok/s (for --ci)
+        #[arg(long, value_name = "TOK_S")]
+        throughput: Option<f64>,
+
+        /// Minimum brick score threshold 0-100 (for --ci)
+        #[arg(long, value_name = "SCORE")]
+        brick_score: Option<u32>,
+
+        /// Number of warmup iterations before measurement
+        #[arg(long, default_value = "10")]
+        warmup: usize,
+
+        /// Number of measurement iterations
+        #[arg(long, default_value = "100")]
+        iterations: usize,
     },
 
     /// Export for probar visual testing
@@ -842,7 +878,29 @@ fn execute_command(cli: &Cli) -> Result<(), error::CliError> {
         } => merge::run(files, strategy, output, weights.clone()),
         Commands::Tui { file } => tui::run(file.clone()),
 
-        Commands::Cbtop { model, attach } => cbtop::run(model.as_deref(), attach.as_deref()),
+        Commands::Cbtop {
+            model,
+            attach,
+            headless,
+            json,
+            output,
+            ci,
+            throughput,
+            brick_score,
+            warmup,
+            iterations,
+        } => cbtop::run(cbtop::CbtopConfig {
+            model: model.as_deref().map(String::from),
+            attach: attach.as_deref().map(String::from),
+            headless: *headless,
+            json: *json,
+            output: output.clone(),
+            ci: *ci,
+            throughput_threshold: *throughput,
+            brick_score_threshold: *brick_score,
+            warmup: *warmup,
+            iterations: *iterations,
+        }),
 
         Commands::Probar {
             file,
