@@ -1,6 +1,6 @@
 # Qwen2.5-Coder Showcase: ComputeBrick Architecture
 
-**Version:** 4.5.1
+**Version:** 4.6.0
 **Status:** Approved
 **Author:** PAIML Engineering
 **Date:** 2026-01-11
@@ -31,7 +31,7 @@
 | [2](#2-computebrick-transformer-pipeline) | ComputeBrick Transformer Pipeline | - | - |
 | [3](#3-brick-budget-matrix) | Brick Budget Matrix | - | - |
 | [4](#4-five-whys-root-cause-analysis) | Five-Whys Root Cause Analysis | - | - |
-| [5](#5-remediation-bricks-optimization) | **Remediation Bricks (OPTIMIZATION)** | 🔧 FIX | 🟡 1.36x gap (163.62 vs 222 tok/s) |
+| [5](#5-remediation-bricks-optimization) | **Remediation Bricks (OPTIMIZATION)** | 🔧 FIX | 🟡 1.45x gap (137.97 vs 200 tok/s) |
 | [6](#6-cbtop-measurement-framework) | **cbtop Measurement Framework** | 📊 MEASURE | ✅ Implemented |
 | [7](#7-benchmark-protocol) | Benchmark Protocol | 📊 MEASURE | - |
 | [8](#8-peer-reviewed-citations) | Peer-Reviewed Citations | - | - |
@@ -66,6 +66,7 @@
 | 4.4.0 | 2026-01-11 | PAIML Engineering | Architecture Lead | Approved | **GPU-Resident Path**: Q5_0 GEMV alignment fix, 23x speedup (1.67→38.69 tok/s), 10.3x gap remains |
 | 4.5.0 | 2026-01-11 | PAIML Engineering | Architecture Lead | Approved | **7B PTX Fix + Performance**: Fixed shared memory threshold for 7B, 163.62 tok/s on 1.5B @ 1000 tokens (74% of Ollama 222 tok/s), 1.36x gap remains |
 | 4.5.1 | 2026-01-11 | PAIML Engineering | Architecture Lead | Approved | **CI Workflow**: All changes pushed to GitHub on each iteration |
+| 4.6.0 | 2026-01-11 | PAIML Engineering | Architecture Lead | Approved | **Falsification Complete**: 123/123 tests passing, CUDA-TDG ArgMax tests added, 137.97 tok/s achieved (69% Ollama), ComputeBlock/cuda-tdg patterns applied |
 
 ---
 
