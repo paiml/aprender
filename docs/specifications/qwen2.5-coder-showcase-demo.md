@@ -1,6 +1,6 @@
 # Qwen2.5-Coder Showcase: ComputeBrick Architecture
 
-**Version:** 4.7.0
+**Version:** 4.9.0
 **Status:** Approved
 **Author:** PAIML Engineering
 **Date:** 2026-01-11
@@ -69,6 +69,7 @@
 | 4.6.0 | 2026-01-11 | PAIML Engineering | Architecture Lead | Approved | **Falsification Complete**: 123/123 tests passing, CUDA-TDG ArgMax tests added, 137.97 tok/s achieved (69% Ollama), ComputeBlock/cuda-tdg patterns applied |
 | 4.7.0 | 2026-01-11 | PAIML Engineering | Architecture Lead | Approved | **PMAT-PERF-002**: InterleavedQ4K struct implemented in realizar, F102-F105 falsification tests added (25/25 passing), weight pre-interleaving infrastructure complete |
 | 4.8.0 | 2026-01-11 | PAIML Engineering | Architecture Lead | Approved | **PMAT-PERF-009 Investigation**: Documented megakernel skeleton status, 131.37 tok/s vs 400 tok/s (3x gap), recommended fused QKV + FFN kernels path |
+| 4.9.0 | 2026-01-11 | PAIML Engineering | Architecture Lead | Approved | **MANDATORY Five-Whys + ComputeBrick**: All blockers require Five-Whys analysis; all fused ops MUST use ComputeOp trait with assertions and budgets |
 
 ---
 
@@ -90,6 +91,80 @@ This ensures:
 2. CI/CD pipelines validate changes
 3. Collaboration is enabled
 4. Falsification tests run on GitHub Actions
+
+---
+
+## MANDATORY: Five-Whys and ComputeBrick Requirements
+
+**ALL blockers MUST use Five-Whys analysis before implementation.**
+
+### Five-Whys Protocol (MANDATORY)
+
+Every blocker fix MUST include:
+
+```
+Why 1: [Surface symptom]
+→ [First-level cause]
+
+Why 2: Why [first-level cause]?
+→ [Second-level cause]
+
+Why 3: Why [second-level cause]?
+→ [Third-level cause]
+
+Why 4: Why [third-level cause]?
+→ [Fourth-level cause]
+
+Why 5: ROOT CAUSE
+→ [Actionable root cause that can be fixed]
+```
+
+**Enforcement:**
+- PRs without Five-Whys for blockers will be REJECTED
+- The root cause MUST be actionable (not "it's slow" but "kernel launch overhead is 50µs × 280 launches = 14ms/token")
+
+### ComputeBrick Design (MANDATORY for trueno/batuta ecosystem)
+
+**ALL fused operations MUST use `ComputeOp` trait:**
+
+```rust
+// ✅ CORRECT: Use ComputeOp trait
+pub struct FusedQKVOp {
+    pub hidden_size: usize,
+    pub num_heads: usize,
+    pub head_dim: usize,
+}
+
+impl ComputeOp for FusedQKVOp {
+    type Input = (Vec<f32>, FusedQKVWeights);  // (x, weights)
+    type Output = (Vec<f32>, Vec<f32>, Vec<f32>);  // (Q, K, V)
+
+    fn name(&self) -> &'static str { "fused_qkv" }
+    fn execute(&self, input: Self::Input, backend: Backend) -> Result<Self::Output, TruenoError>;
+    fn tokens(&self, input: &Self::Input) -> usize { self.hidden_size }
+}
+
+// Wrap in ComputeBrick with assertions and budget
+let fused_qkv = ComputeBrick::new(FusedQKVOp::new(3584, 28, 128))
+    .assert_equiv(Backend::Scalar)  // Popperian falsifiability
+    .assert_finite()                 // No NaN/Inf
+    .budget_tok_per_sec(400_000.0)  // 400k tok/s target
+    .backend(Backend::Cuda);
+```
+
+**❌ FORBIDDEN: Raw PTX without ComputeBrick wrapper**
+
+```rust
+// ❌ WRONG: Raw PTX kernel without ComputeBrick
+pub struct FusedQKVKernel { ... }
+impl Kernel for FusedQKVKernel { ... }  // No assertions, no budget!
+```
+
+**Rationale:**
+1. ComputeBrick enforces Popperian falsifiability (assertions)
+2. Token budgets align with LLM inference metrics
+3. Backend abstraction enables CPU/GPU testing parity
+4. BrickLayer composition identifies bottlenecks
 
 ---
 
