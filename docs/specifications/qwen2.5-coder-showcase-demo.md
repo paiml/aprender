@@ -68,6 +68,7 @@
 | 4.5.1 | 2026-01-11 | PAIML Engineering | Architecture Lead | Approved | **CI Workflow**: All changes pushed to GitHub on each iteration |
 | 4.6.0 | 2026-01-11 | PAIML Engineering | Architecture Lead | Approved | **Falsification Complete**: 123/123 tests passing, CUDA-TDG ArgMax tests added, 137.97 tok/s achieved (69% Ollama), ComputeBlock/cuda-tdg patterns applied |
 | 4.7.0 | 2026-01-11 | PAIML Engineering | Architecture Lead | Approved | **PMAT-PERF-002**: InterleavedQ4K struct implemented in realizar, F102-F105 falsification tests added (25/25 passing), weight pre-interleaving infrastructure complete |
+| 4.8.0 | 2026-01-11 | PAIML Engineering | Architecture Lead | Approved | **PMAT-PERF-009 Investigation**: Documented megakernel skeleton status, 131.37 tok/s vs 400 tok/s (3x gap), recommended fused QKV + FFN kernels path |
 
 ---
 
@@ -1223,10 +1224,10 @@ impl TruenoGpuBackend {
 | PMAT-PERF-007 | FFN Normalization Fix | ✅ RESOLVED | Parallel residual path fixed |
 | **PMAT-PERF-008** | **Keep Tensors on GPU** | ✅ COMPLETE | **23x gain achieved (1.67→38.69 tok/s)** |
 | PMAT-PERF-010 | Q5_0 GEMV Alignment Fix | ✅ COMPLETE | Byte-wise qh load for unaligned access |
-| **PMAT-PERF-009** | **Batch Matmuls** | 🔴 NOT STARTED | **5-10x gain expected** |
-| PMAT-PERF-005 | 2x Ollama Verification | 🟡 IN PROGRESS | 38.69 tok/s vs 400 tok/s (10.3x gap) |
+| **PMAT-PERF-009** | **Batch Matmuls** | 🟡 INVESTIGATED | **Megakernel skeleton exists; needs completion for 5-10x gain** |
+| PMAT-PERF-005 | 2x Ollama Verification | 🟡 IN PROGRESS | 131.37 tok/s vs 400 tok/s (3x gap) |
 
-**SPEC STATUS: 🟡 GPU-RESIDENT WORKING (38.69 tok/s vs 400 tok/s target, 10.3x gap)**
+**SPEC STATUS: 🟡 GPU-RESIDENT WORKING (131.37 tok/s vs 400 tok/s target, 3x gap)**
 
 ---
 
@@ -1310,6 +1311,50 @@ let qh = ctx.or_u32(qh_012, qh_b3_shifted);
 - [trueno-gpu](https://github.com/paiml/trueno/tree/main/trueno-gpu) - Pure Rust PTX generation
 - [trueno-gpu/kernels](https://github.com/paiml/trueno/tree/main/trueno-gpu/src/kernels) - Q4K, Flash Attention
 - [realizar](https://github.com/paiml/aprender/tree/main/crates/realizar) - LLM inference engine
+
+#### 🟡 PMAT-PERF-009: Batch Matmuls Investigation (2026-01-11)
+
+**Status:** INVESTIGATED - Megakernel skeleton exists but incomplete
+
+**Current Throughput:** 131.37 tok/s (GPU-resident path)
+**Target:** 400 tok/s (2x Ollama baseline)
+**Gap:** 3x
+
+**Investigation Findings:**
+
+1. **Kernel Launch Structure:**
+   - ~71 kernel launch call sites in trueno-gpu
+   - ~10+ kernels launched per transformer layer (RMSNorm, Q/K/V GEMV, attention, O proj, FFN gate/up/down)
+   - CUDA graphs reduce launch overhead but don't reduce kernel count
+
+2. **TransformerBlockMegakernel Status:**
+   - Location: `trueno-gpu/src/kernels/megakernel.rs`
+   - Phase 1 (RMSNorm) implemented
+   - Phase 2 (Q/K/V projection), Phase 3 (Attention), Phase 4 (FFN) marked as TODOs
+   - Comment indicates: "PHASE 3: Simplified output (full implementation would include Q/K/V projection, attention, FFN, etc.)"
+
+3. **Performance Impact Analysis:**
+   - Current: 10+ kernels/layer × 28 layers = 280+ kernel launches per token
+   - Target: 1 megakernel launch per token (or 1 per layer)
+   - Expected gain: 5-10x from reduced launch overhead + register reuse
+
+**Optimization Paths (Ranked by ROI):**
+
+| Option | Effort | Expected Gain | Status |
+|--------|--------|---------------|--------|
+| A. Complete megakernel | High (3-4 weeks) | 5-10x | Skeleton exists |
+| B. Fused QKV kernel | Medium (1 week) | 2-3x | New kernel needed |
+| C. Fused gate+up FFN | Medium (1 week) | 1.5-2x | New kernel needed |
+| D. Persistent kernels | Medium (1 week) | 1.5-2x | New pattern needed |
+
+**Recommended Path:**
+Option B + C first (fused QKV + fused FFN) for 3-6x total gain, then Option A (megakernel) for remaining gap.
+
+**Next Steps:**
+1. Implement fused QKV projection kernel (Q, K, V in single GEMV)
+2. Implement fused gate+up FFN kernel
+3. Measure gains and update spec
+4. If still below target, complete megakernel
 
 ---
 
