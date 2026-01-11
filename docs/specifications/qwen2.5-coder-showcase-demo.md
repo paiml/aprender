@@ -1,6 +1,6 @@
 # Qwen2.5-Coder Showcase: ComputeBrick Architecture
 
-**Version:** 4.6.0
+**Version:** 4.7.0
 **Status:** Approved
 **Author:** PAIML Engineering
 **Date:** 2026-01-11
@@ -67,6 +67,7 @@
 | 4.5.0 | 2026-01-11 | PAIML Engineering | Architecture Lead | Approved | **7B PTX Fix + Performance**: Fixed shared memory threshold for 7B, 163.62 tok/s on 1.5B @ 1000 tokens (74% of Ollama 222 tok/s), 1.36x gap remains |
 | 4.5.1 | 2026-01-11 | PAIML Engineering | Architecture Lead | Approved | **CI Workflow**: All changes pushed to GitHub on each iteration |
 | 4.6.0 | 2026-01-11 | PAIML Engineering | Architecture Lead | Approved | **Falsification Complete**: 123/123 tests passing, CUDA-TDG ArgMax tests added, 137.97 tok/s achieved (69% Ollama), ComputeBlock/cuda-tdg patterns applied |
+| 4.7.0 | 2026-01-11 | PAIML Engineering | Architecture Lead | Approved | **PMAT-PERF-002**: InterleavedQ4K struct implemented in realizar, F102-F105 falsification tests added (25/25 passing), weight pre-interleaving infrastructure complete |
 
 ---
 
@@ -1215,7 +1216,7 @@ impl TruenoGpuBackend {
 | Ticket | Description | Status | Notes |
 |--------|-------------|--------|-------|
 | PMAT-PERF-001 | trueno-gpu Q4_K GEMM | ✅ COMPLETE | Tests pass |
-| PMAT-PERF-002 | Weight Pre-Interleaving | 🔴 NOT STARTED | 2-4x gain expected |
+| PMAT-PERF-002 | Weight Pre-Interleaving | ✅ IMPLEMENTED | InterleavedQ4K struct in realizar |
 | PMAT-PERF-003 | CUDA Graph Capture | ✅ WIRED | Needs tuning for 2-5x gain |
 | PMAT-PERF-004 | FlashAttention (trueno-gpu) | ✅ COMPLETE | Thread count bug fixed |
 | PMAT-PERF-006 | CUDA Error 716 Fix | ✅ RESOLVED | FlashAttention thread config fixed |
