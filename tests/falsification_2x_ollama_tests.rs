@@ -231,9 +231,9 @@ fn f103_cuda_graph_speedup() {
 /// Citation: Dao et al. (2023), Rabe & Staats (2022)
 #[test]
 fn f104_flash_attention_memory() {
-    let seq_len = 4096;
-    let heads = 32;
-    let head_dim = 128;
+    let seq_len: u64 = 4096;
+    let heads: u64 = 32;
+    let head_dim: u64 = 128;
 
     // Naive attention would allocate O(seq_len²) for attention matrix
     let naive_memory_bytes = seq_len * seq_len * heads * 4; // ~2GB for 4k context
