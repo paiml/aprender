@@ -1,6 +1,6 @@
 # Qwen2.5-Coder Showcase: ComputeBrick Architecture
 
-**Version:** 4.5.0
+**Version:** 4.5.1
 **Status:** Approved
 **Author:** PAIML Engineering
 **Date:** 2026-01-11
@@ -65,7 +65,28 @@
 | 4.3.0 | 2026-01-11 | PAIML Engineering | Architecture Lead | Approved | **Correctness Fixed**: PMAT-PERF-006/007, CORRECTNESS-001 resolved; 2x target NOT MET (1.67 vs 400 tok/s) |
 | 4.4.0 | 2026-01-11 | PAIML Engineering | Architecture Lead | Approved | **GPU-Resident Path**: Q5_0 GEMV alignment fix, 23x speedup (1.67→38.69 tok/s), 10.3x gap remains |
 | 4.5.0 | 2026-01-11 | PAIML Engineering | Architecture Lead | Approved | **7B PTX Fix + Performance**: Fixed shared memory threshold for 7B, 163.62 tok/s on 1.5B @ 1000 tokens (74% of Ollama 222 tok/s), 1.36x gap remains |
+| 4.5.1 | 2026-01-11 | PAIML Engineering | Architecture Lead | Approved | **CI Workflow**: All changes pushed to GitHub on each iteration |
 
+---
+
+## Development Workflow
+
+**CRITICAL: Push on Each Iteration**
+
+All changes MUST be pushed to GitHub after each development iteration:
+
+```bash
+# After each iteration, push all three repositories:
+cd /home/noah/src/aprender && git add -A && git commit -m "..." && git push origin main
+cd /home/noah/src/realizar && git add -A && git commit -m "..." && git push origin main
+cd /home/noah/src/trueno && git add -A && git commit -m "..." && git push origin main
+```
+
+This ensures:
+1. Progress is preserved and recoverable
+2. CI/CD pipelines validate changes
+3. Collaboration is enabled
+4. Falsification tests run on GitHub Actions
 
 ---
 
