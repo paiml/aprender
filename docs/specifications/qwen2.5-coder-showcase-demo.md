@@ -1,7 +1,7 @@
 # Qwen2.5-Coder Showcase: ComputeBrick Architecture
 
-**Version:** 4.28.0
-**Status:** IN PROGRESS (GPU 110 tok/s vs Ollama 257 tok/s = 2.3x gap; target 513 tok/s = 4.7x improvement needed)
+**Version:** 4.29.0
+**Status:** IN PROGRESS (GPU 102 tok/s vs Ollama 163 tok/s = 1.6x gap; target 326 tok/s = 3.2x improvement needed)
 **Author:** PAIML Engineering
 **Date:** 2026-01-12
 **PMAT Roadmap ID:** `SHOWCASE-BRICK-001`
@@ -89,6 +89,7 @@
 | 4.26.0 | 2026-01-12 | PAIML Engineering | Architecture Lead | **IN PROGRESS** | **PAR-064/067 GEMV OPTIMIZATION**: (1) PAR-064: Switched Q4K GEMV to CoalescedQ4KGemv kernel (99→126 tok/s, +27%). (2) PAR-065: Tried DP4A kernel - no improvement (compute not bottleneck). (3) PAR-066: GPU argmax failed with CUDA_ERROR_UNKNOWN - reverted to CPU argmax. (4) PAR-067: Fixed redundant index/workspace rebuild per generate() call (120→125 tok/s, +4%). **Current: 125 tok/s vs Ollama 303 tok/s (41% of Ollama, 2.4x gap)**. Target: 556 tok/s (2x Ollama) requires 4.4x improvement. Root cause: Memory-bound - need Flash Decoding + better vectorized GEMV. |
 | 4.27.0 | 2026-01-12 | PAIML Engineering | Architecture Lead | **IN PROGRESS** | **PAR-068 GPU ARGMAX FIX**: Five-Whys root cause: PTX argmax kernel used `ld.shared`/`st.shared` with GENERIC addresses from `cvta.to.shared`. Fix: Changed all shared memory ops to `ld_generic`/`st_generic`. Also optimized argmax: pre-allocated buffers (eliminates 3 allocs/token), removed intermediate sync. **Current: 127 tok/s vs Ollama 257 tok/s (49% of Ollama, 2.0x gap)**. Target: 513 tok/s (2x Ollama). Root cause remaining: kernel efficiency. |
 | 4.28.0 | 2026-01-12 | PAIML Engineering | Architecture Lead | **IN PROGRESS** | **CORRECTNESS-001 RESOLVED (Five-Whys)**: Investigated GPU vs CPU Q divergence. Five-Whys root cause: FALSE POSITIVE - GPU kernels (TiledQ4KGemv, Dp4aQ4KGemv) produce **identical** output to CPU SIMD (fused_q4k_parallel_matvec). The apparent mismatch was comparing raw kernel output (no bias) with forward() output (with QKV bias added). Qwen2.5 adds QKV bias: BEFORE=[-0.436, -0.604, -0.443] + BIAS=[0.287, -0.232, -0.204] = AFTER=[-0.149, -0.836, -0.648]. Also cleaned up debug eprintln!() calls causing 19% slowdown. **Current: 110 tok/s vs Ollama 257 tok/s (43% of Ollama, 2.3x gap)**. Target: 513 tok/s (2x Ollama). |
+| 4.29.0 | 2026-01-12 | PAIML Engineering | Architecture Lead | **IN PROGRESS** | **PAR-065 COALESCED Q4K**: Five-Whys identified TiledQ4KGemv uses single-byte loads (ld_global_u8) causing 6% memory bandwidth. Switched q4k_gemv_into to CoalescedQ4KGemv kernel (vectorized u32 loads + warp shuffles). Updated preload_modules_for_capture to use CoalescedQ4KGemv for all Q4K operations. **NEW FINDING**: Q6K kernel (used for FFN down and LM head) also uses single-byte loads - this is the remaining bottleneck for Qwen 1.5B which uses Q6K heavily. **Current: 102 tok/s vs Ollama 163 tok/s (62.5% of Ollama, 1.6x gap)**. |
 
 ---
 
