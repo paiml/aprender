@@ -898,19 +898,42 @@ fn execute_command(cli: &Cli) -> Result<(), error::CliError> {
             brick_score,
             warmup,
             iterations,
-        } => cbtop::run(cbtop::CbtopConfig {
-            model: model.as_deref().map(String::from),
-            attach: attach.as_deref().map(String::from),
-            model_path: model_path.clone(),
-            headless: *headless,
-            json: *json,
-            output: output.clone(),
-            ci: *ci,
-            throughput_threshold: *throughput,
-            brick_score_threshold: *brick_score,
-            warmup: *warmup,
-            iterations: *iterations,
-        }),
+        } => {
+            // P0: Auto-detect if --model is a file path for real profiling
+            // If model looks like a path (ends with .gguf or exists as file), use it as model_path
+            let (resolved_model, resolved_model_path) = if let Some(ref m) = model {
+                let path = std::path::Path::new(m);
+                if m.ends_with(".gguf") || path.exists() {
+                    (
+                        Some(
+                            path.file_stem()
+                                .and_then(|s| s.to_str())
+                                .unwrap_or(m)
+                                .to_string(),
+                        ),
+                        Some(PathBuf::from(m)),
+                    )
+                } else {
+                    (Some(m.clone()), model_path.clone())
+                }
+            } else {
+                (None, model_path.clone())
+            };
+
+            cbtop::run(cbtop::CbtopConfig {
+                model: resolved_model,
+                attach: attach.as_deref().map(String::from),
+                model_path: resolved_model_path,
+                headless: *headless,
+                json: *json,
+                output: output.clone(),
+                ci: *ci,
+                throughput_threshold: *throughput,
+                brick_score_threshold: *brick_score,
+                warmup: *warmup,
+                iterations: *iterations,
+            })
+        }
 
         Commands::Probar {
             file,

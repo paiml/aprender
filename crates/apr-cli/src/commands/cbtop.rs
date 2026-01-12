@@ -443,10 +443,7 @@ fn run_headless_simulated(config: CbtopConfig) -> Result<()> {
 /// - Reports real hardware info from CUDA context
 #[cfg(feature = "inference")]
 fn run_headless_real(config: CbtopConfig) -> Result<()> {
-    use realizar::brick::{
-        benchmark_brick, BenchmarkConfig, ComputeBrick, FfnBrick, OProjBrick, QkvBrick,
-        RmsNormBrick, RopeBrick,
-    };
+    use realizar::brick::{benchmark_brick, BenchmarkConfig, QkvBrick, RmsNormBrick};
     use realizar::cuda::CudaExecutor;
     use realizar::gguf::{
         MappedGGUFModel, OwnedQuantizedModel, OwnedQuantizedModelCuda, QuantizedGenerateConfig,
@@ -577,11 +574,24 @@ fn run_headless_real(config: CbtopConfig) -> Result<()> {
     let tokens_per_sec = (total_tokens as f64) / (total_time_us / 1_000_000.0);
 
     eprintln!();
-    eprintln!("cbtop: Throughput: {:.1} tok/s", tokens_per_sec);
+    eprintln!("cbtop: Throughput: {:.1} tok/s (MEASURED)", tokens_per_sec);
+
+    // Calculate actual per-layer time from measured throughput
+    let measured_per_token_us = 1_000_000.0 / tokens_per_sec;
+    let measured_per_layer_us = measured_per_token_us / num_layers as f64;
+    let target_per_layer_us = 35.7; // Budget from spec
+    eprintln!(
+        "cbtop: Per-layer time: {:.1}µs (MEASURED), budget: {:.1}µs ({:.1}x)",
+        measured_per_layer_us,
+        target_per_layer_us,
+        measured_per_layer_us / target_per_layer_us
+    );
     eprintln!();
 
     // Phase 3: Benchmark individual bricks
-    eprintln!("cbtop: Benchmarking individual bricks...");
+    // NOTE: These are DERIVED from total throughput, not directly measured per-kernel
+    // True per-kernel profiling requires CUDA events (future enhancement)
+    eprintln!("cbtop: Brick timing estimates (* = derived from throughput)...");
 
     let bench_config = BenchmarkConfig {
         warmup: config.warmup.min(10),
@@ -589,7 +599,8 @@ fn run_headless_real(config: CbtopConfig) -> Result<()> {
         max_cv: 0.05,
     };
 
-    // Measure each brick type
+    // Brick reports - mix of CPU-measured and derived from throughput
+    // * suffix indicates derived values
     let mut brick_reports: Vec<BrickScore> = Vec::new();
 
     // RmsNorm brick
@@ -617,103 +628,84 @@ fn run_headless_real(config: CbtopConfig) -> Result<()> {
         eprintln!("  RmsNorm: {:.2}µs (budget: 1.5µs)", report.mean_us);
     }
 
-    // QkvBrick
+    // QkvBrick - derived from measured layer time
     {
-        let brick = QkvBrick::new(
+        let _brick = QkvBrick::new(
             hidden_dim,
             hidden_dim,
             num_heads * head_dim,
             num_kv_heads * head_dim,
         );
-        let report = benchmark_brick(
-            &brick,
-            || {
-                let start = Instant::now();
-                let _ = brick.budget();
-                start.elapsed().as_nanos() as f64 / 1000.0
-            },
-            &bench_config,
-        );
-        // Use theoretical timing since QkvBrick doesn't have a run method
-        let theoretical_us = 6.0 * (hidden_dim as f64 / 896.0);
-        let score = compute_brick_score(theoretical_us, 6.0);
+        // Use proportional timing based on measured layer time
+        let qkv_budget_fraction = 6.0 / 35.7;
+        let derived_us = measured_per_layer_us * qkv_budget_fraction;
+        let score = compute_brick_score(derived_us, 6.0);
         brick_reports.push(BrickScore {
-            name: "QkvBrick".to_string(),
+            name: "QkvBrick*".to_string(),
             score,
             grade: score_to_grade(score),
             budget_us: 6.0,
-            actual_us: theoretical_us,
-            gap_factor: theoretical_us / 6.0,
+            actual_us: derived_us,
+            gap_factor: derived_us / 6.0,
         });
-        eprintln!("  QkvBrick: {:.2}µs (budget: 6.0µs)", theoretical_us);
+        eprintln!("  QkvBrick*: {:.2}µs (budget: 6.0µs)", derived_us);
     }
 
-    // RoPE brick
+    // RoPE brick - derived from measured layer time
     {
-        // rope_type: 2 = NEOX (Qwen), 0 = NORM (LLaMA)
-        let brick = RopeBrick::new(head_dim, num_heads, 1_000_000.0, 2);
-        let report = benchmark_brick(
-            &brick,
-            || {
-                let start = Instant::now();
-                let _ = brick.budget();
-                start.elapsed().as_nanos() as f64 / 1000.0
-            },
-            &bench_config,
-        );
-        let theoretical_us = 1.0 * (hidden_dim as f64 / 896.0);
-        let score = compute_brick_score(theoretical_us, 1.0);
+        let rope_budget_fraction = 1.0 / 35.7;
+        let derived_us = measured_per_layer_us * rope_budget_fraction;
+        let score = compute_brick_score(derived_us, 1.0);
         brick_reports.push(BrickScore {
-            name: "RoPE".to_string(),
+            name: "RoPE*".to_string(),
             score,
             grade: score_to_grade(score),
             budget_us: 1.0,
-            actual_us: theoretical_us,
-            gap_factor: theoretical_us / 1.0,
+            actual_us: derived_us,
+            gap_factor: derived_us / 1.0,
         });
-        eprintln!("  RoPE: {:.2}µs (budget: 1.0µs)", theoretical_us);
+        eprintln!("  RoPE*: {:.2}µs (budget: 1.0µs)", derived_us);
     }
 
-    // Attention - estimate from throughput
+    // Attention - calculate from measured throughput and layer budget proportion
+    // P0: This is DERIVED from total throughput, not directly measured per-kernel
+    // For true per-kernel profiling, use CUDA events (requires trueno-gpu enhancement)
     {
-        let tokens_per_layer_us = 1_000_000.0 / tokens_per_sec / num_layers as f64;
-        let attn_fraction = 10.0 / 35.7; // Attention budget / total layer budget
-        let attn_us = tokens_per_layer_us * attn_fraction;
+        // Total layer budget = 35.7µs (sum of all brick budgets)
+        // Measured layer time = 1_000_000 / tokens_per_sec / num_layers
+        let measured_layer_us = 1_000_000.0 / tokens_per_sec / num_layers as f64;
+        // Proportionally attribute time to attention based on budget fraction
+        let attn_budget_fraction = 10.0 / 35.7;
+        let attn_us = measured_layer_us * attn_budget_fraction;
         let score = compute_brick_score(attn_us, 10.0);
         brick_reports.push(BrickScore {
-            name: "Attention".to_string(),
+            name: "Attention*".to_string(), // * = derived from throughput
             score,
             grade: score_to_grade(score),
             budget_us: 10.0,
             actual_us: attn_us,
             gap_factor: attn_us / 10.0,
         });
-        eprintln!("  Attention: {:.2}µs (budget: 10.0µs)", attn_us);
+        eprintln!(
+            "  Attention*: {:.2}µs (budget: 10.0µs) [* = derived from total throughput]",
+            attn_us
+        );
     }
 
-    // OProj brick
+    // OProj brick - derived from measured layer time
     {
-        let brick = OProjBrick::new(hidden_dim, hidden_dim);
-        let report = benchmark_brick(
-            &brick,
-            || {
-                let start = Instant::now();
-                let _ = brick.budget();
-                start.elapsed().as_nanos() as f64 / 1000.0
-            },
-            &bench_config,
-        );
-        let theoretical_us = 3.5 * (hidden_dim as f64 / 896.0);
-        let score = compute_brick_score(theoretical_us, 3.5);
+        let oproj_budget_fraction = 3.5 / 35.7;
+        let derived_us = measured_per_layer_us * oproj_budget_fraction;
+        let score = compute_brick_score(derived_us, 3.5);
         brick_reports.push(BrickScore {
-            name: "OProj".to_string(),
+            name: "OProj*".to_string(),
             score,
             grade: score_to_grade(score),
             budget_us: 3.5,
-            actual_us: theoretical_us,
-            gap_factor: theoretical_us / 3.5,
+            actual_us: derived_us,
+            gap_factor: derived_us / 3.5,
         });
-        eprintln!("  OProj: {:.2}µs (budget: 3.5µs)", theoretical_us);
+        eprintln!("  OProj*: {:.2}µs (budget: 3.5µs)", derived_us);
     }
 
     // Second RmsNorm (post-attention)
@@ -741,29 +733,20 @@ fn run_headless_real(config: CbtopConfig) -> Result<()> {
         eprintln!("  RmsNorm (2): {:.2}µs (budget: 1.5µs)", report.mean_us);
     }
 
-    // FfnBrick
+    // FfnBrick - derived from measured layer time
     {
-        let brick = FfnBrick::new(hidden_dim, intermediate_dim);
-        let report = benchmark_brick(
-            &brick,
-            || {
-                let start = Instant::now();
-                let _ = brick.budget();
-                start.elapsed().as_nanos() as f64 / 1000.0
-            },
-            &bench_config,
-        );
-        let theoretical_us = 12.2 * (intermediate_dim as f64 / 4864.0);
-        let score = compute_brick_score(theoretical_us, 12.2);
+        let ffn_budget_fraction = 12.2 / 35.7;
+        let derived_us = measured_per_layer_us * ffn_budget_fraction;
+        let score = compute_brick_score(derived_us, 12.2);
         brick_reports.push(BrickScore {
-            name: "FfnBrick".to_string(),
+            name: "FfnBrick*".to_string(),
             score,
             grade: score_to_grade(score),
             budget_us: 12.2,
-            actual_us: theoretical_us,
-            gap_factor: theoretical_us / 12.2,
+            actual_us: derived_us,
+            gap_factor: derived_us / 12.2,
         });
-        eprintln!("  FfnBrick: {:.2}µs (budget: 12.2µs)", theoretical_us);
+        eprintln!("  FfnBrick*: {:.2}µs (budget: 12.2µs)", derived_us);
     }
 
     eprintln!();
