@@ -225,23 +225,38 @@ jq -s '.[0].throughput.tokens_per_sec, .[1].throughput.tokens_per_sec' \
 
 **Current cbtop Output (2026-01-12):**
 
+> **⚠️ BLOCKER**: cbtop currently uses SIMULATED data (hardware shows "(simulated)").
+> Real profiling requires wiring cbtop to realizar inference loop.
+> Use `gpu_showcase_benchmark` for real throughput measurements until fixed.
+
 ```json
 {
-  "throughput": { "tokens_per_sec": 948.07, "cv_percent": 87.44 },
+  "hardware": {"gpu": "NVIDIA RTX 4090 (simulated)"},
+  "throughput": { "tokens_per_sec": 974.03, "cv_percent": 81.06 },
   "brick_scores": [
-    {"name": "RmsNorm", "actual_us": 1.27, "budget_us": 1.50, "score": 100},
-    {"name": "QkvBrick", "actual_us": 5.91, "budget_us": 6.00, "score": 100},
-    {"name": "Attention", "actual_us": 8.22, "budget_us": 10.00, "score": 100},
-    {"name": "OProj", "actual_us": 3.94, "budget_us": 3.50, "score": 93},
-    {"name": "FfnBrick", "actual_us": 13.15, "budget_us": 12.20, "score": 96}
+    {"name": "QkvBrick", "actual_us": 7.19, "budget_us": 6.00, "score": 90, "gap_factor": 1.198},
+    {"name": "RmsNorm", "actual_us": 1.74, "budget_us": 1.50, "score": 91, "gap_factor": 1.161},
+    {"name": "OProj", "actual_us": 3.95, "budget_us": 3.50, "score": 93, "gap_factor": 1.129},
+    {"name": "FfnBrick", "actual_us": 13.15, "budget_us": 12.20, "score": 96, "gap_factor": 1.078},
+    {"name": "Attention", "actual_us": 8.52, "budget_us": 10.00, "score": 100, "gap_factor": 0.852}
   ],
-  "brick_score": 97, "grade": "A"
+  "brick_score": 95, "grade": "A", "status": "FAIL"
 }
 ```
 
-**Identified Bottlenecks (gap_factor > 1.0):**
-1. **OProj**: 3.94µs vs 3.50µs budget (1.126x over) - requires kernel optimization
-2. **FfnBrick**: 13.15µs vs 12.20µs budget (1.078x over) - requires fused Q4K kernels
+**Real Throughput (gpu_showcase_benchmark):** 190-198 tok/s (60% of Ollama 318 tok/s)
+
+**Identified Bottlenecks (gap_factor > 1.0, sorted by severity):**
+1. **QkvBrick**: 7.19µs vs 6.00µs budget (1.198x over) - **MAIN BOTTLENECK** - requires fused Q4K QKV kernel
+2. **RmsNorm**: 1.74µs vs 1.50µs budget (1.161x over) - investigate kernel efficiency
+3. **OProj**: 3.95µs vs 3.50µs budget (1.129x over) - output projection optimization
+4. **FfnBrick**: 13.15µs vs 12.20µs budget (1.078x over) - requires fused Q4K FFN kernels
+
+**Action Items:**
+- [ ] Wire cbtop to realizar for real profiling (remove simulated data)
+- [ ] Implement fused Q4K QKV kernel (blocked on PTX builder)
+- [ ] Investigate RmsNorm efficiency
+- [ ] Implement fused Q4K FFN kernel (blocked on PTX builder)
 
 ---
 
