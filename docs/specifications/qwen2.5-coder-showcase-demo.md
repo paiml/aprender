@@ -1,7 +1,7 @@
 # Qwen2.5-Coder Showcase: ComputeBrick Architecture
 
-**Version:** 4.34.0
-**Status:** IN PROGRESS (1.5B: **201.1 tok/s vs Ollama 295 tok/s = 68%**, PAR-070 multi-warp attention +2%)
+**Version:** 4.35.0
+**Status:** IN PROGRESS (1.5B: **122.7 tok/s vs Ollama 175 tok/s = 70%**, P0 cbtop real measurements)
 **Author:** PAIML Engineering
 **Date:** 2026-01-13
 **PMAT Roadmap ID:** `SHOWCASE-BRICK-001`
@@ -32,7 +32,8 @@
 | [3](#3-brick-budget-matrix) | Brick Budget Matrix | - | - |
 | [4](#4-five-whys-root-cause-analysis) | Five-Whys Root Cause Analysis | - | - |
 | [5](#5-remediation-bricks-optimization) | **Remediation Bricks (OPTIMIZATION)** | 🔧 FIX | 🟡 2.1x gap (190 vs 400 tok/s target) |
-| [6](#6-cbtop-measurement-framework) | **cbtop Measurement Framework** | 📊 MEASURE | ✅ Implemented |
+| [6](#6-cbtop-measurement-framework) | **cbtop Measurement Framework** | 📊 MEASURE | ✅ Real measurements |
+| [6.7](#67-mandatory-pure-rust-real-timing-infrastructure) | **MANDATORY Pure Rust Timing** | 📊 MEASURE | ✅ Spec added |
 | [7](#7-benchmark-protocol) | Benchmark Protocol | 📊 MEASURE | - |
 | [8](#8-peer-reviewed-citations) | Peer-Reviewed Citations | - | - |
 | [9](#9-120-point-popperian-falsification) | **120-Point Popperian Falsification** | 🔬 TEST | ⚠️ Tests pass, 2x goal NOT MET |
@@ -95,6 +96,7 @@
 | 4.32.0 | 2026-01-12 | PAIML Engineering | Architecture Lead | **IN PROGRESS** | **PERFORMANCE SUMMARY**: Re-measured with latest optimizations. **0.5B model: 379.8 tok/s** vs Ollama 333 tok/s = **1.14x FASTER than Ollama**! **1.5B model: 196.9 tok/s** vs Ollama 232 tok/s = **0.85x Ollama**. The 0.5B model now exceeds Ollama by 14%. The 1.5B model uses Q6K for FFN down_proj (28 layers) and LM head, limiting speedup. Remaining gap for 2x target on 1.5B: 2.36x improvement needed. Potential paths: speculative decoding, FP16 activations, tensor cores for attention. |
 | 4.33.0 | 2026-01-12 | PAIML Engineering | Architecture Lead | **IN PROGRESS** | **PAR-069 VECTORIZED Q4K KERNEL COMPARISON**: Five-Whys comparison of Q4K kernels: (1) TiledQ4KGemv: 141.7 tok/s (byte loads, baseline), (2) CoalescedQ4KGemv: 136 tok/s (warp shuffle scales, slower than tiled), (3) VectorizedQ4KGemv: **197.6 tok/s** (coalesced u32 loads + selp_f32, BEST). VectorizedQ4K uses ld_global_u32 for 128-byte coalesced transactions (32 threads × 4 bytes). The selp_f32 overhead for per-block scale selection is smaller than memory bandwidth improvement. **Current: 1.5B 197.6 tok/s vs Ollama 248 tok/s (79.6%)**. **0.5B: 297.9 tok/s vs Ollama 384 tok/s (77.6%)**. Target: 25% faster than Ollama = 310 tok/s (1.5B), 480 tok/s (0.5B). Gap: 57% improvement needed. |
 | 4.34.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **IN PROGRESS** | **PAR-070 MULTI-WARP ATTENTION**: Five-Whys root cause: Attention was 8.17x over budget (81.69 µs vs 10 µs target). Single-warp per head with serial seq_loop O(seq_len). Implemented MultiWarpIncrementalAttentionKernel in trueno-gpu: Grid (num_heads, 1), Block (32 × num_warps, 1), cross-warp reduction via shared memory. **Result: 197.6 → 201.1 tok/s (+2%)**. Limited by reduction overhead; the three bar_sync barriers and loop-based final summation eat the parallelism gains. Alternative paths: TensorCore attention for decode, paged KV cache, or speculative decoding. **Current: 1.5B 201 tok/s vs Ollama 295 tok/s (68%)**. |
+| 4.35.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **IN PROGRESS** | **P0 PURE RUST TIMING**: (1) Fixed cbtop to auto-detect `--model` as file path for real profiling. (2) Added MEASURED vs DERIVED labels to distinguish real measurements from proportional estimates. (3) Added §6.7 "MANDATORY: Pure Rust Real Timing Infrastructure" - NO CUDA event FFI, NO simulated data, use `std::time::Instant` + CUDA sync only. (4) Defined timing requirements for all repos: trueno, trueno-gpu, trueno-zram, aprender, realizar, presentar. **Real measured: 122.7 tok/s, 291µs/layer (8.2x over budget)**. |
 
 ---
 
@@ -2121,6 +2123,106 @@ pmat tdg . --cuda --include-components
 # ├── Resource Usage: 19/20
 # ├── Error Handling: 15/15
 # └── Portability: 9.2/10
+```
+
+### 6.7 MANDATORY: Pure Rust Real Timing Infrastructure
+
+> **CRITICAL REQUIREMENT**: All timing MUST be REAL measurements using pure Rust.
+> NO simulated data. NO FFI-based profiling. NO CUDA events via C bindings.
+
+#### 6.7.1 Sovereign Stack Timing Architecture
+
+All repos in the Sovereign Stack MUST use **renacer** + **cbtop** for real timing:
+
+| Repository | Timing Method | Tool | Status |
+|------------|---------------|------|--------|
+| **trueno** | `std::time::Instant` | renacer | REQUIRED |
+| **trueno-gpu** | `std::time::Instant` + CUDA sync | cbtop | REQUIRED |
+| **trueno-zram** | `std::time::Instant` | renacer | REQUIRED |
+| **aprender** | `std::time::Instant` | renacer | REQUIRED |
+| **realizar** | `std::time::Instant` + CUDA sync | cbtop | REQUIRED |
+| **presentar** | `std::time::Instant` | renacer | REQUIRED |
+
+#### 6.7.2 Pure Rust Timing Pattern
+
+```rust
+// CORRECT: Pure Rust timing with CUDA synchronization
+use std::time::Instant;
+
+pub fn measure_kernel_time<F: FnOnce()>(
+    cuda_stream: &CudaStream,
+    kernel_fn: F,
+) -> std::time::Duration {
+    // Ensure GPU is idle before measurement
+    cuda_stream.synchronize().unwrap();
+
+    let start = Instant::now();
+    kernel_fn();
+
+    // Wait for kernel completion
+    cuda_stream.synchronize().unwrap();
+
+    start.elapsed()
+}
+
+// WRONG: Do NOT add CUDA event FFI
+// pub type CUevent = *mut c_void;  // NO! Keep stack pure Rust
+```
+
+#### 6.7.3 cbtop Real Measurement Requirements
+
+cbtop MUST show MEASURED vs DERIVED values clearly:
+
+```
+cbtop: Throughput: 122.7 tok/s (MEASURED)
+cbtop: Per-layer time: 291.2µs (MEASURED), budget: 35.7µs (8.2x)
+
+cbtop: Brick timing estimates (* = derived from throughput)...
+  RmsNorm: 2.20µs (budget: 1.5µs)           ← CPU measured
+  QkvBrick*: 48.94µs (budget: 6.0µs)        ← derived from layer time
+  Attention*: 81.56µs (budget: 10.0µs)      ← derived from layer time
+  FfnBrick*: 99.50µs (budget: 12.2µs)       ← derived from layer time
+```
+
+**Key Principle**: Only total throughput and per-layer time are MEASURED.
+Brick-level breakdown is DERIVED proportionally until per-kernel CUDA sync is added.
+
+#### 6.7.4 renacer Integration
+
+renacer provides tracing spans with duration for all operations:
+
+```rust
+use renacer::trace;
+
+#[trace(name = "q4k_gemv", duration_us)]
+pub fn q4k_gemv_kernel(input: &[f32], weights: &[u8], output: &mut [f32]) {
+    // Kernel implementation
+    // Duration automatically recorded via std::time::Instant
+}
+```
+
+#### 6.7.5 Forbidden Patterns
+
+| Pattern | Why Forbidden | Alternative |
+|---------|---------------|-------------|
+| `CUevent` FFI bindings | Violates pure Rust stack | `std::time::Instant` + sync |
+| Simulated benchmark data | Misleading metrics | Real model inference |
+| Estimated brick times | Masks bottlenecks | Per-kernel sync timing |
+| External profilers (nsight) | Non-reproducible | renacer spans |
+
+#### 6.7.6 CI Enforcement
+
+```yaml
+# .github/workflows/timing-validation.yml
+- name: Verify real timing
+  run: |
+    # cbtop must NOT show "(simulated)" in output
+    cargo run -p apr-cli -- cbtop --model-path model.gguf --headless 2>&1 | \
+      grep -v "(simulated)" || exit 1
+
+    # All timing must show "MEASURED" label
+    cargo run -p apr-cli -- cbtop --model-path model.gguf --headless 2>&1 | \
+      grep "MEASURED" || exit 1
 ```
 
 ---
