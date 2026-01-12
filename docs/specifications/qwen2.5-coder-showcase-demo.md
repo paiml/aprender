@@ -172,6 +172,77 @@ impl Kernel for FusedQKVKernel { ... }  // No assertions, no budget!
 3. Backend abstraction enables CPU/GPU testing parity
 4. BrickLayer composition identifies bottlenecks
 
+### MANDATORY: cbtop + renacer Profiling Protocol
+
+**ALL optimization iterations MUST use cbtop and renacer for measurement.**
+
+This requirement is grounded in peer-reviewed research on performance engineering:
+
+| Citation | Finding | Application |
+|----------|---------|-------------|
+| Williams et al. (2009) [Roofline Model] | Performance is bounded by compute OR memory bandwidth | cbtop identifies which bound applies per brick |
+| Curtsinger & Berger (2013) [STABILIZER] | Measurement noise invalidates naive profiling | cbtop uses statistical rigor (CV < 5%) |
+| Mytkowicz et al. (2009) [Producing Wrong Data] | Environmental factors cause 30%+ variance | cbtop controls for warmup, iterations |
+| Popper (1959) [Logic of Scientific Discovery] | Claims must be falsifiable | Each brick has budget assertion |
+
+**Iteration Protocol (MANDATORY):**
+
+```bash
+# Step 1: Baseline measurement with cbtop
+apr cbtop --model MODEL.gguf --headless --json --output baseline.json
+
+# Step 2: Identify bottleneck brick (highest gap_factor > 1.0)
+jq '.brick_scores | sort_by(-.gap_factor) | .[0]' baseline.json
+
+# Step 3: Deep trace with renacer (if CV > 5% or anomaly detected)
+renacer trace --brick BOTTLENECK_BRICK --output trace.json
+renacer analyze trace.json
+
+# Step 4: Implement optimization
+
+# Step 5: Verify improvement with cbtop
+apr cbtop --model MODEL.gguf --headless --json --output after.json
+
+# Step 6: Compare (FAIL if regression)
+jq -s '.[0].throughput.tokens_per_sec, .[1].throughput.tokens_per_sec' \
+  baseline.json after.json
+```
+
+**Falsification Tests (F-CBTOP-001 to F-CBTOP-010):**
+
+| Test ID | Assertion | Failure Condition |
+|---------|-----------|-------------------|
+| F-CBTOP-001 | cbtop --headless exits cleanly | Non-zero exit code |
+| F-CBTOP-002 | JSON output is valid | Parse error |
+| F-CBTOP-003 | All bricks have scores | Missing brick_scores |
+| F-CBTOP-004 | Throughput > 0 | tokens_per_sec <= 0 |
+| F-CBTOP-005 | CV < 5% for stable systems | cv_percent >= 5.0 |
+| F-CBTOP-006 | No brick score < 50 | Any score < 50 |
+| F-CBTOP-007 | Total brick time < 1/throughput | Sum(actual_us) > 1e6/tok_s |
+| F-CBTOP-008 | renacer trace generates output | Empty trace file |
+| F-CBTOP-009 | renacer analyze identifies hotspots | No hotspots found |
+| F-CBTOP-010 | Baseline exists before optimization | Missing baseline.json |
+
+**Current cbtop Output (2026-01-12):**
+
+```json
+{
+  "throughput": { "tokens_per_sec": 948.07, "cv_percent": 87.44 },
+  "brick_scores": [
+    {"name": "RmsNorm", "actual_us": 1.27, "budget_us": 1.50, "score": 100},
+    {"name": "QkvBrick", "actual_us": 5.91, "budget_us": 6.00, "score": 100},
+    {"name": "Attention", "actual_us": 8.22, "budget_us": 10.00, "score": 100},
+    {"name": "OProj", "actual_us": 3.94, "budget_us": 3.50, "score": 93},
+    {"name": "FfnBrick", "actual_us": 13.15, "budget_us": 12.20, "score": 96}
+  ],
+  "brick_score": 97, "grade": "A"
+}
+```
+
+**Identified Bottlenecks (gap_factor > 1.0):**
+1. **OProj**: 3.94µs vs 3.50µs budget (1.126x over) - requires kernel optimization
+2. **FfnBrick**: 13.15µs vs 12.20µs budget (1.078x over) - requires fused Q4K kernels
+
 ---
 
 ## Executive Summary
