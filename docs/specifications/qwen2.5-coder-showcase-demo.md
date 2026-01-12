@@ -1,6 +1,6 @@
 # Qwen2.5-Coder Showcase: ComputeBrick Architecture
 
-**Version:** 4.19.0
+**Version:** 4.20.0
 **Status:** Approved
 **Author:** PAIML Engineering
 **Date:** 2026-01-12
@@ -80,6 +80,7 @@
 | 4.17.0 | 2026-01-12 | PAIML Engineering | Architecture Lead | Approved | **CBTOP SIMULATED BLOCKER**: Documented cbtop uses simulated data (CV: 81.06%, hardware: "(simulated)"). Identified as blocker for accurate profiling. |
 | 4.18.0 | 2026-01-12 | PAIML Engineering | Architecture Lead | Approved | **CBTOP REAL PROFILING**: Wired cbtop to realizar via `--model-path` flag. Real CUDA inference, real hardware detection (RTX 4090), CV 1.25% (excellent). 131 tok/s on 1.5B model. |
 | 4.19.0 | 2026-01-12 | PAIML Engineering | Architecture Lead | Approved | **COMPUTEBRICK INTEGRATION COMPLETE**: Audited all repos - trueno (core), trueno-gpu (documented), aprender (via trueno), realizar (brick.rs). Wired renacer BrickTracer to apr-cli cbtop for anomaly escalation (CV>15% or efficiency<25% triggers deep tracing). |
+| 4.20.0 | 2026-01-12 | PAIML Engineering | Architecture Lead | **FALSIFIED** | **POPPERIAN FALSIFICATION**: F002 FAILED - crates.io trueno@0.11.0 does NOT have brick.rs! Aprender cannot use trueno::brick until trueno@0.12.0 is published. Updated spec matrix with accurate status (5/7 pass, 1 falsified). |
 
 ---
 
@@ -91,10 +92,16 @@
 |------------|-------------|--------|----------|-------|
 | **trueno** | ✅ Native | `src/brick.rs` | TokenBudget, BrickLayer, FusedQKV, FusedGateUp | Core brick architecture (SIMD/CPU) |
 | **trueno-gpu** | 📝 Documented | N/A (no cycle) | Uses trueno ComputeBrick | `trueno-gpu` cannot depend on `trueno` (cycle); users import from `trueno::brick` |
-| **aprender** | ✅ Via trueno | `trueno = "0.11.0"` | Re-export available | Uses `trueno::brick::*` |
+| **aprender** | ⚠️ **BLOCKED** | `trueno = "0.11.0"` | **NOT YET PUBLISHED** | crates.io trueno@0.11.0 LACKS brick module! Needs trueno publish |
 | **realizar** | ✅ Native | `src/brick.rs` | RmsNormBrick, QkvBrick, FfnBrick, etc. | LLM-specific bricks with CUDA backends |
 | **apr-cli** | ✅ Integrated | `realizar::brick` + renacer | cbtop TUI, headless, BrickTracer | Anomaly escalation to renacer when CV>15% |
 | **renacer** | ✅ Native | `src/brick_tracer.rs` | BrickTracer, SyscallBreakdown, OTLP export | Deep tracing on anomaly detection |
+
+**⚠️ FALSIFICATION FINDING (F002):**
+The spec previously claimed aprender could use `trueno::brick` via its dependency. This was **FALSIFIED** on 2026-01-12:
+- Local trueno repo has `src/brick.rs` ✅
+- Published crates.io `trueno@0.11.0` does NOT have `brick.rs` ❌
+- **ACTION REQUIRED:** Publish trueno@0.12.0 with brick module to unblock aprender integration
 
 **Integration Flow:**
 
