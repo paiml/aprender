@@ -1,6 +1,6 @@
 # Qwen2.5-Coder Showcase: ComputeBrick Architecture
 
-**Version:** 4.10.0
+**Version:** 4.18.0
 **Status:** Approved
 **Author:** PAIML Engineering
 **Date:** 2026-01-12
@@ -76,6 +76,9 @@
 | 4.13.0 | 2026-01-12 | PAIML Engineering | Architecture Lead | Approved | **CUDA GRAPH VERIFIED**: PMAT-PERF-003 measured 1.22x speedup (120→145 tok/s). Graph capture and replay working. Current: 145 tok/s, target: 400 tok/s (2.75x gap remaining). |
 | 4.14.0 | 2026-01-12 | PAIML Engineering | Architecture Lead | Approved | **OLLAMA COMPARISON**: Measured Ollama qwen2.5-coder:1.5b at ~300 tok/s decode. realizar at 145 tok/s = 48% of Ollama, 2.07x gap to parity. |
 | 4.15.0 | 2026-01-12 | PAIML Engineering | Architecture Lead | Approved | **KERNEL TUNING**: TiledQ4KGemv optimal at 4 outputs/block. DP4A (-5%) and 8 outputs/block (-7%) slower than baseline. Current: 190-198 tok/s (60% Ollama), 1.67x gap to parity. |
+| 4.16.0 | 2026-01-12 | PAIML Engineering | Architecture Lead | Approved | **MANDATORY PROFILING PROTOCOL**: Added cbtop + renacer profiling requirement with peer-reviewed citations (Williams Roofline, Curtsinger STABILIZER, Mytkowicz Benchmarking). |
+| 4.17.0 | 2026-01-12 | PAIML Engineering | Architecture Lead | Approved | **CBTOP SIMULATED BLOCKER**: Documented cbtop uses simulated data (CV: 81.06%, hardware: "(simulated)"). Identified as blocker for accurate profiling. |
+| 4.18.0 | 2026-01-12 | PAIML Engineering | Architecture Lead | Approved | **CBTOP REAL PROFILING**: Wired cbtop to realizar via `--model-path` flag. Real CUDA inference, real hardware detection (RTX 4090), CV 1.25% (excellent). 131 tok/s on 1.5B model. |
 
 ---
 
@@ -225,35 +228,43 @@ jq -s '.[0].throughput.tokens_per_sec, .[1].throughput.tokens_per_sec' \
 
 **Current cbtop Output (2026-01-12):**
 
-> **⚠️ BLOCKER**: cbtop currently uses SIMULATED data (hardware shows "(simulated)").
-> Real profiling requires wiring cbtop to realizar inference loop.
-> Use `gpu_showcase_benchmark` for real throughput measurements until fixed.
+> **✅ RESOLVED (v4.18.0)**: cbtop now supports REAL profiling via `--model-path` flag.
+> Uses realizar CUDA inference loop. Reports real hardware (RTX 4090), real throughput, CV 1.25%.
+>
+> **Usage:**
+> ```bash
+> apr cbtop --model-path /path/to/model.gguf --headless --json
+> ```
+
+**Real Profiling Example (v4.18.0):**
 
 ```json
 {
-  "hardware": {"gpu": "NVIDIA RTX 4090 (simulated)"},
-  "throughput": { "tokens_per_sec": 974.03, "cv_percent": 81.06 },
+  "hardware": {"gpu": "NVIDIA GeForce RTX 4090", "cpu": "AMD Ryzen Threadripper 7960X 24-Cores"},
+  "throughput": { "tokens_per_sec": 131.15, "cv_percent": 1.25 },
   "brick_scores": [
-    {"name": "QkvBrick", "actual_us": 7.19, "budget_us": 6.00, "score": 90, "gap_factor": 1.198},
-    {"name": "RmsNorm", "actual_us": 1.74, "budget_us": 1.50, "score": 91, "gap_factor": 1.161},
-    {"name": "OProj", "actual_us": 3.95, "budget_us": 3.50, "score": 93, "gap_factor": 1.129},
-    {"name": "FfnBrick", "actual_us": 13.15, "budget_us": 12.20, "score": 96, "gap_factor": 1.078},
-    {"name": "Attention", "actual_us": 8.52, "budget_us": 10.00, "score": 100, "gap_factor": 0.852}
+    {"name": "RmsNorm", "actual_us": 2.15, "budget_us": 1.50, "score": 56, "gap_factor": 1.433},
+    {"name": "QkvBrick", "actual_us": 10.29, "budget_us": 6.00, "score": 28, "gap_factor": 1.714},
+    {"name": "Attention", "actual_us": 76.28, "budget_us": 10.00, "score": 0, "gap_factor": 7.628},
+    {"name": "FfnBrick", "actual_us": 22.47, "budget_us": 12.20, "score": 15, "gap_factor": 1.842}
   ],
-  "brick_score": 95, "grade": "A", "status": "FAIL"
+  "brick_score": 18, "grade": "F", "status": "FAIL"
 }
 ```
 
-**Real Throughput (gpu_showcase_benchmark):** 190-198 tok/s (60% of Ollama 318 tok/s)
+> **Note:** Above measurements from 1.5B model. Budgets calibrated for 0.5B (hidden=896).
+> 0.5B model not available locally. Download with: `ollama pull qwen2.5-coder:0.5b-instruct-q4_K_M`
+
+**Real Throughput (cbtop --model-path):** 131 tok/s on 1.5B, 190-198 tok/s estimated for 0.5B
 
 **Identified Bottlenecks (gap_factor > 1.0, sorted by severity):**
-1. **QkvBrick**: 7.19µs vs 6.00µs budget (1.198x over) - **MAIN BOTTLENECK** - requires fused Q4K QKV kernel
-2. **RmsNorm**: 1.74µs vs 1.50µs budget (1.161x over) - investigate kernel efficiency
-3. **OProj**: 3.95µs vs 3.50µs budget (1.129x over) - output projection optimization
-4. **FfnBrick**: 13.15µs vs 12.20µs budget (1.078x over) - requires fused Q4K FFN kernels
+1. **Attention**: Estimated 7.6x over budget (scaling issues with larger model)
+2. **FfnBrick**: 1.84x over budget - requires fused Q4K FFN kernels
+3. **QkvBrick**: 1.71x over budget - requires fused Q4K QKV kernel
+4. **RmsNorm**: 1.43x over budget - investigate kernel efficiency
 
 **Action Items:**
-- [ ] Wire cbtop to realizar for real profiling (remove simulated data)
+- [x] Wire cbtop to realizar for real profiling (v4.18.0 COMPLETE)
 - [ ] Implement fused Q4K QKV kernel (blocked on PTX builder)
 - [ ] Investigate RmsNorm efficiency
 - [ ] Implement fused Q4K FFN kernel (blocked on PTX builder)

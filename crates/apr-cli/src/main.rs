@@ -400,6 +400,9 @@ enum Commands {
     /// Headless mode for CI:
     ///   apr cbtop --headless --json --output results.json
     ///   apr cbtop --headless --ci --throughput 400 --brick-score 90
+    ///
+    /// Real profiling mode (PMAT-PERF-009):
+    ///   apr cbtop --model-path model.gguf --headless --json
     Cbtop {
         /// Model name (e.g., qwen2.5-coder-1.5b)
         #[arg(long)]
@@ -408,6 +411,11 @@ enum Commands {
         /// Attach to running realizar process
         #[arg(long)]
         attach: Option<String>,
+
+        /// Path to GGUF model file for real profiling (PMAT-PERF-009)
+        /// Enables real CUDA inference instead of simulated data
+        #[arg(long, value_name = "MODEL")]
+        model_path: Option<PathBuf>,
 
         /// Run in headless mode (no TUI, for CI/automation)
         #[arg(long)]
@@ -881,6 +889,7 @@ fn execute_command(cli: &Cli) -> Result<(), error::CliError> {
         Commands::Cbtop {
             model,
             attach,
+            model_path,
             headless,
             json,
             output,
@@ -892,6 +901,7 @@ fn execute_command(cli: &Cli) -> Result<(), error::CliError> {
         } => cbtop::run(cbtop::CbtopConfig {
             model: model.as_deref().map(String::from),
             attach: attach.as_deref().map(String::from),
+            model_path: model_path.clone(),
             headless: *headless,
             json: *json,
             output: output.clone(),
