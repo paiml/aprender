@@ -1146,10 +1146,11 @@ fn run_real_benchmark(
         &test_prompt[..test_prompt.len().min(30)]
     );
 
+    // PERF-003: Use greedy sampling for fair benchmark (eliminates CPU top-k sort overhead)
     let gen_config = QuantizedGenerateConfig {
         max_tokens: 32,
-        temperature: 0.7,
-        top_k: 40,
+        temperature: 0.0, // Greedy
+        top_k: 1,         // Greedy
         ..Default::default()
     };
 
@@ -1218,10 +1219,11 @@ fn run_real_benchmark_cuda(
         &test_prompt[..test_prompt.len().min(30)]
     );
 
+    // PERF-003: Use greedy sampling for fair benchmark (eliminates CPU top-k sort overhead)
     let gen_config = QuantizedGenerateConfig {
         max_tokens: 32,
-        temperature: 0.7,
-        top_k: 40,
+        temperature: 0.0, // Greedy
+        top_k: 1,         // Greedy
         ..Default::default()
     };
 
