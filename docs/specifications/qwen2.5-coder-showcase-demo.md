@@ -1,7 +1,7 @@
 # Qwen2.5-Coder Showcase: ComputeBrick Architecture
 
-**Version:** 4.31.0
-**Status:** IN PROGRESS (0.5B: **338 tok/s > Ollama 230 tok/s = 1.47x FASTER!**; 1.5B: **196.9 tok/s vs Ollama 232 tok/s = 0.85x**)
+**Version:** 4.32.0
+**Status:** IN PROGRESS (0.5B: **379.8 tok/s vs Ollama 333 tok/s = 1.14x FASTER**; 1.5B: **196.9 tok/s vs Ollama 232 tok/s = 0.85x**)
 **Author:** PAIML Engineering
 **Date:** 2026-01-12
 **PMAT Roadmap ID:** `SHOWCASE-BRICK-001`
@@ -92,6 +92,7 @@
 | 4.29.0 | 2026-01-12 | PAIML Engineering | Architecture Lead | **IN PROGRESS** | **PAR-065 COALESCED Q4K**: Five-Whys identified TiledQ4KGemv uses single-byte loads (ld_global_u8) causing 6% memory bandwidth. Switched q4k_gemv_into to CoalescedQ4KGemv kernel (vectorized u32 loads + warp shuffles). Updated preload_modules_for_capture to use CoalescedQ4KGemv for all Q4K operations. **NEW FINDING**: Q6K kernel (used for FFN down and LM head) also uses single-byte loads - this is the remaining bottleneck for Qwen 1.5B which uses Q6K heavily. **Current: 102 tok/s vs Ollama 163 tok/s (62.5% of Ollama, 1.6x gap)**. |
 | 4.30.0 | 2026-01-12 | PAIML Engineering | Architecture Lead | **IN PROGRESS** | **PAR-065 GREEDY SAMPLING**: Enabled greedy sampling (temp=0, top_k=1) in benchmark to use GPU argmax path, eliminating 600KB logits transfer per token. **MAJOR WIN: 0.5B model achieves 338 tok/s vs Ollama 230 tok/s (1.47x FASTER!)**. 1.5B model: 163 tok/s vs Ollama 216 tok/s (75% of Ollama). Q6K kernel (FFN down, LM head) remains bottleneck for Q6K-heavy models. **Target: 432 tok/s (2x Ollama 216) requires 2.65x improvement**. Next: Optimize Q6K kernel with coalesced loads. |
 | 4.31.0 | 2026-01-12 | PAIML Engineering | Architecture Lead | **IN PROGRESS** | **PAR-066 COALESCED Q6K**: Five-Whys root cause analysis identified Q6K super-blocks are 210 bytes (NOT 4-byte aligned), causing misaligned memory access (CUDA_ERROR_UNKNOWN 716). Fix: Changed from 4×ld_global_u32 to 16×ld_global_u8 byte loads + warp shuffle broadcast. Correctness verified: max diff 0.00001, correlation 1.0. **Performance with CoalescedQ4K + CoalescedQ6K: 196.9 tok/s** vs Ollama 232 tok/s = **0.85x Ollama**. 11% improvement from Q6K optimization. Target: 465 tok/s (2x Ollama). Next: Profile remaining bottlenecks (attention, memory bandwidth). |
+| 4.32.0 | 2026-01-12 | PAIML Engineering | Architecture Lead | **IN PROGRESS** | **PERFORMANCE SUMMARY**: Re-measured with latest optimizations. **0.5B model: 379.8 tok/s** vs Ollama 333 tok/s = **1.14x FASTER than Ollama**! **1.5B model: 196.9 tok/s** vs Ollama 232 tok/s = **0.85x Ollama**. The 0.5B model now exceeds Ollama by 14%. The 1.5B model uses Q6K for FFN down_proj (28 layers) and LM head, limiting speedup. Remaining gap for 2x target on 1.5B: 2.36x improvement needed. Potential paths: speculative decoding, FP16 activations, tensor cores for attention. |
 
 ---
 
