@@ -31,7 +31,7 @@
 | [2](#2-computebrick-transformer-pipeline) | ComputeBrick Transformer Pipeline | - | - |
 | [3](#3-brick-budget-matrix) | Brick Budget Matrix | - | - |
 | [4](#4-five-whys-root-cause-analysis) | Five-Whys Root Cause Analysis | - | - |
-| [5](#5-remediation-bricks-optimization) | **Remediation Bricks (OPTIMIZATION)** | 🔧 FIX | 🟡 2.07x gap (145 vs 300 tok/s Ollama) |
+| [5](#5-remediation-bricks-optimization) | **Remediation Bricks (OPTIMIZATION)** | 🔧 FIX | 🟡 1.67x gap (190 vs 318 tok/s Ollama) |
 | [6](#6-cbtop-measurement-framework) | **cbtop Measurement Framework** | 📊 MEASURE | ✅ Implemented |
 | [7](#7-benchmark-protocol) | Benchmark Protocol | 📊 MEASURE | - |
 | [8](#8-peer-reviewed-citations) | Peer-Reviewed Citations | - | - |
@@ -75,6 +75,7 @@
 | 4.12.0 | 2026-01-12 | PAIML Engineering | Architecture Lead | Approved | **SHOWCASE VERIFICATION**: All infrastructure complete - 136/136 falsification tests pass, cbtop headless/JSON/CI modes work, Makefile targets verified, GitHub Actions workflow ready. Actual throughput: 135.8 tok/s (target: 400 tok/s). |
 | 4.13.0 | 2026-01-12 | PAIML Engineering | Architecture Lead | Approved | **CUDA GRAPH VERIFIED**: PMAT-PERF-003 measured 1.22x speedup (120→145 tok/s). Graph capture and replay working. Current: 145 tok/s, target: 400 tok/s (2.75x gap remaining). |
 | 4.14.0 | 2026-01-12 | PAIML Engineering | Architecture Lead | Approved | **OLLAMA COMPARISON**: Measured Ollama qwen2.5-coder:1.5b at ~300 tok/s decode. realizar at 145 tok/s = 48% of Ollama, 2.07x gap to parity. |
+| 4.15.0 | 2026-01-12 | PAIML Engineering | Architecture Lead | Approved | **KERNEL TUNING**: TiledQ4KGemv optimal at 4 outputs/block. DP4A (-5%) and 8 outputs/block (-7%) slower than baseline. Current: 190-198 tok/s (60% Ollama), 1.67x gap to parity. |
 
 ---
 
@@ -1305,9 +1306,9 @@ impl TruenoGpuBackend {
 | **PMAT-PERF-008** | **Keep Tensors on GPU** | ✅ COMPLETE | **23x gain achieved (1.67→38.69 tok/s)** |
 | PMAT-PERF-010 | Q5_0 GEMV Alignment Fix | ✅ COMPLETE | Byte-wise qh load for unaligned access |
 | **PMAT-PERF-009** | **Batch Matmuls** | ✅ IMPLEMENTED | **FusedQKVKernel + FusedGateUpKernel complete; ready for benchmark** |
-| PMAT-PERF-005 | 2x Ollama Verification | 🟡 IN PROGRESS | 145 tok/s vs 400 tok/s (2.75x gap) |
+| PMAT-PERF-005 | 2x Ollama Verification | 🟡 IN PROGRESS | 190 tok/s vs 318 tok/s Ollama (1.67x gap), vs 400 tok/s (2.1x gap) |
 
-**SPEC STATUS: 🟡 GPU-RESIDENT + CUDA GRAPH (145 tok/s vs 400 tok/s target, 2.75x gap)**
+**SPEC STATUS: 🟡 GPU-RESIDENT + CUDA GRAPH + KERNEL TUNING (190 tok/s vs 318 tok/s Ollama, 1.67x gap)**
 
 ---
 
@@ -1400,10 +1401,10 @@ let qh = ctx.or_u32(qh_012, qh_b3_shifted);
 **Target:** 400 tok/s (2x Ollama baseline)
 
 **Ollama Comparison (Measured 2026-01-12):**
-- Ollama qwen2.5-coder:1.5b: ~300 tok/s (decode)
-- realizar (CUDA Graph): 145 tok/s
-- Gap to Ollama parity: 2.07x
-- Gap to 2x target (400 tok/s): 2.75x
+- Ollama qwen2.5-coder:1.5b: ~318 tok/s (decode)
+- realizar (CUDA Graph + TiledQ4K): 190-198 tok/s
+- Gap to Ollama parity: 1.67x
+- Gap to 2x target (636 tok/s): 3.3x
 **Expected:** 3x improvement from fused kernels (once quantized versions complete)
 
 **Critical Finding (2026-01-12):**
