@@ -1,6 +1,6 @@
 [package]
 name = "aprender-shell"
-version = "0.2.2"
+version = "0.3.0"
 edition = "2021"
 authors = ["paiml"]
 description = "AI-powered shell completion trained on your history"
@@ -28,7 +28,7 @@ harness = false
 
 [dependencies]
 # Use crates.io version for release
-aprender = { version = "0.15", features = ["format-encryption", "format-compression", "format-homomorphic"] }
+aprender = { version = "0.24", features = ["format-encryption", "format-compression", "format-homomorphic"] }
 clap = { version = "4", features = ["derive"] }
 dirs = "5"
 serde = { version = "1", features = ["derive"] }
