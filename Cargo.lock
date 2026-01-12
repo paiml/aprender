@@ -281,11 +281,8 @@ version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "918c5660d9274eafc97ebd08befa3506964e8641985a90fe4c217a692bca27d4"
 dependencies = [
- "aes-gcm",
- "argon2",
  "bincode",
  "getrandom 0.2.16",
- "hkdf",
  "memmap2",
  "rand 0.8.5",
  "rand_chacha 0.3.1",
@@ -293,10 +290,7 @@ dependencies = [
  "rmp-serde",
  "serde",
  "serde_json",
- "sha2",
  "trueno 0.8.9",
- "x25519-dalek",
- "zstd",
 ]
 
 [[package]]
@@ -366,8 +360,12 @@ version = "0.24.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d1140494fee114ac8ae686c8d4e0d859b421c8e082e7a8c4a3f67d0e3f9e2754"
 dependencies = [
+ "aes-gcm",
+ "argon2",
  "bincode",
  "getrandom 0.2.16",
+ "hkdf",
+ "lz4_flex",
  "memmap2",
  "minijinja",
  "rand 0.8.5",
@@ -376,7 +374,10 @@ dependencies = [
  "rmp-serde",
  "serde",
  "serde_json",
+ "sha2",
  "trueno 0.11.0",
+ "x25519-dalek",
+ "zstd",
 ]
 
 [[package]]
@@ -400,9 +401,9 @@ dependencies = [
 
 [[package]]
 name = "aprender-shell"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
- "aprender 0.15.0",
+ "aprender 0.24.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "assert_cmd",
  "clap",
  "criterion",
@@ -417,9 +418,9 @@ dependencies = [
 
 [[package]]
 name = "aprender-tsp"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
- "aprender 0.24.0",
+ "aprender 0.24.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "assert_cmd",
  "clap",
  "crc32fast",
@@ -4607,10 +4608,10 @@ dependencies = [
 
 [[package]]
 name = "realizar"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "anyhow",
- "aprender 0.23.0",
+ "aprender 0.24.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "arc-swap",
  "async-stream",
  "axum",
