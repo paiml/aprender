@@ -1,7 +1,7 @@
 # Qwen2.5-Coder Showcase: ComputeBrick Architecture
 
-**Version:** 4.20.0
-**Status:** Approved
+**Version:** 4.28.0
+**Status:** IN PROGRESS (GPU 110 tok/s vs Ollama 257 tok/s = 2.3x gap; target 513 tok/s = 4.7x improvement needed)
 **Author:** PAIML Engineering
 **Date:** 2026-01-12
 **PMAT Roadmap ID:** `SHOWCASE-BRICK-001`
@@ -31,11 +31,11 @@
 | [2](#2-computebrick-transformer-pipeline) | ComputeBrick Transformer Pipeline | - | - |
 | [3](#3-brick-budget-matrix) | Brick Budget Matrix | - | - |
 | [4](#4-five-whys-root-cause-analysis) | Five-Whys Root Cause Analysis | - | - |
-| [5](#5-remediation-bricks-optimization) | **Remediation Bricks (OPTIMIZATION)** | 🔧 FIX | 🟡 1.67x gap (190 vs 318 tok/s Ollama) |
+| [5](#5-remediation-bricks-optimization) | **Remediation Bricks (OPTIMIZATION)** | 🔧 FIX | 🟡 2.1x gap (190 vs 400 tok/s target) |
 | [6](#6-cbtop-measurement-framework) | **cbtop Measurement Framework** | 📊 MEASURE | ✅ Implemented |
 | [7](#7-benchmark-protocol) | Benchmark Protocol | 📊 MEASURE | - |
 | [8](#8-peer-reviewed-citations) | Peer-Reviewed Citations | - | - |
-| [9](#9-120-point-popperian-falsification) | **120-Point Popperian Falsification** | - | - |
+| [9](#9-120-point-popperian-falsification) | **120-Point Popperian Falsification** | 🔬 TEST | ⚠️ Tests pass, 2x goal NOT MET |
 | [A](#appendix-a-hardware-requirements) | Hardware Requirements | - | - |
 | [B](#appendix-b-model-matrix) | Model Matrix | - | - |
 | [C](#appendix-c-measurement-vs-optimization) | **Measurement vs Optimization** | - | - |
@@ -81,12 +81,22 @@
 | 4.18.0 | 2026-01-12 | PAIML Engineering | Architecture Lead | Approved | **CBTOP REAL PROFILING**: Wired cbtop to realizar via `--model-path` flag. Real CUDA inference, real hardware detection (RTX 4090), CV 1.25% (excellent). 131 tok/s on 1.5B model. |
 | 4.19.0 | 2026-01-12 | PAIML Engineering | Architecture Lead | Approved | **COMPUTEBRICK INTEGRATION COMPLETE**: Audited all repos - trueno (core), trueno-gpu (documented), aprender (via trueno), realizar (brick.rs). Wired renacer BrickTracer to apr-cli cbtop for anomaly escalation (CV>15% or efficiency<25% triggers deep tracing). |
 | 4.20.0 | 2026-01-12 | PAIML Engineering | Architecture Lead | **FALSIFIED** | **POPPERIAN FALSIFICATION**: F002 FAILED - crates.io trueno@0.11.0 does NOT have brick.rs! Aprender cannot use trueno::brick until trueno@0.12.0 is published. Updated spec matrix with accurate status (5/7 pass, 1 falsified). |
+| 4.21.0 | 2026-01-12 | PAIML Engineering | Architecture Lead | **IN PROGRESS** | **NO PUBLISH UNTIL 2x**: Falsification tests pass (136/136) but 2x Ollama goal NOT MET (190 tok/s vs 400 tok/s target). NO packages will be published until 2x performance achieved. Work item INCOMPLETE. |
+| 4.22.0 | 2026-01-12 | PAIML Engineering | Architecture Lead | **IN PROGRESS** | **Q4K FUSED KERNELS IMPLEMENTED**: Five-Whys disproved "PTX API gap" claim. FusedQ4KQKVKernel and FusedQ4KGateUpKernel implemented using existing TiledQ4KGemv patterns. Fixed rcp.f32→rcp.approx.f32 PTX bug. Result: ~100 tok/s (equal to baseline, no gain). Bottleneck is NOT kernel launch overhead. |
+| 4.23.0 | 2026-01-12 | PAIML Engineering | Architecture Lead | **IN PROGRESS** | **PARALLEL ATTENTION + CPU VS GPU**: Implemented ParallelIncrementalAttentionKernel (8 warps/head). Result: no improvement (169 tok/s both). **KEY FINDING**: CPU baseline (trueno SIMD) achieves **465 tok/s** vs GPU **169 tok/s** vs Ollama **365 tok/s** on 0.5B model. CPU is 1.27x FASTER than Ollama! GPU bottleneck needs investigation. |
+| 4.24.0 | 2026-01-12 | PAIML Engineering | Architecture Lead | **IN PROGRESS** | **PAR-058-DEBUG SYNCS REMOVED**: Five-Whys found debug synchronize() calls in hot path (forward_all_layers_gpu_to_logits, transformer_layer_workspace, incremental_attention). Removed/gated with skip_debug=true. GPU improved DeepSeek 1.3B: 156→206 tok/s (+32%). Qwen 1.5B: 173 tok/s vs Ollama 278 tok/s (62%). **ROOT CAUSE CONFIRMED**: Memory bandwidth at 6% (6-12 GB/s vs 1000 GB/s peak) due to non-coalesced byte loads in TiledQ4KGemv kernel. |
+| 4.25.0 | 2026-01-12 | PAIML Engineering | Architecture Lead | **IN PROGRESS** | **CORRECTNESS-002 + PERF-002/003 FIXED**: (1) Fixed Q4K/Q4_0 size-based detection order - dimensions 1536×8960 had same byte count, wrong kernel selected causing NaN. (2) PERF-002: Removed debug D2H transfers in forward_gpu_workspace_internal (70→73 tok/s). (3) PERF-003: Changed benchmark to greedy sampling (73→99 tok/s, +35%). (4) GPU argmax kernel fails with CUDA_ERROR_UNKNOWN - CPU argmax used. **Current: 99 tok/s vs Ollama 259 tok/s (38% of Ollama, 2.6x gap)**. Bottleneck: PTX kernels slower than Ollama's cuBLAS. |
+| 4.26.0 | 2026-01-12 | PAIML Engineering | Architecture Lead | **IN PROGRESS** | **PAR-064/067 GEMV OPTIMIZATION**: (1) PAR-064: Switched Q4K GEMV to CoalescedQ4KGemv kernel (99→126 tok/s, +27%). (2) PAR-065: Tried DP4A kernel - no improvement (compute not bottleneck). (3) PAR-066: GPU argmax failed with CUDA_ERROR_UNKNOWN - reverted to CPU argmax. (4) PAR-067: Fixed redundant index/workspace rebuild per generate() call (120→125 tok/s, +4%). **Current: 125 tok/s vs Ollama 303 tok/s (41% of Ollama, 2.4x gap)**. Target: 556 tok/s (2x Ollama) requires 4.4x improvement. Root cause: Memory-bound - need Flash Decoding + better vectorized GEMV. |
+| 4.27.0 | 2026-01-12 | PAIML Engineering | Architecture Lead | **IN PROGRESS** | **PAR-068 GPU ARGMAX FIX**: Five-Whys root cause: PTX argmax kernel used `ld.shared`/`st.shared` with GENERIC addresses from `cvta.to.shared`. Fix: Changed all shared memory ops to `ld_generic`/`st_generic`. Also optimized argmax: pre-allocated buffers (eliminates 3 allocs/token), removed intermediate sync. **Current: 127 tok/s vs Ollama 257 tok/s (49% of Ollama, 2.0x gap)**. Target: 513 tok/s (2x Ollama). Root cause remaining: kernel efficiency. |
+| 4.28.0 | 2026-01-12 | PAIML Engineering | Architecture Lead | **IN PROGRESS** | **CORRECTNESS-001 RESOLVED (Five-Whys)**: Investigated GPU vs CPU Q divergence. Five-Whys root cause: FALSE POSITIVE - GPU kernels (TiledQ4KGemv, Dp4aQ4KGemv) produce **identical** output to CPU SIMD (fused_q4k_parallel_matvec). The apparent mismatch was comparing raw kernel output (no bias) with forward() output (with QKV bias added). Qwen2.5 adds QKV bias: BEFORE=[-0.436, -0.604, -0.443] + BIAS=[0.287, -0.232, -0.204] = AFTER=[-0.149, -0.836, -0.648]. Also cleaned up debug eprintln!() calls causing 19% slowdown. **Current: 110 tok/s vs Ollama 257 tok/s (43% of Ollama, 2.3x gap)**. Target: 513 tok/s (2x Ollama). |
 
 ---
 
 ## ComputeBrick Integration Matrix
 
-**Status:** All repositories integrated with ComputeBrick architecture.
+**Status:** IN PROGRESS - Infrastructure complete, performance goal not met.
+
+**PUBLISHING POLICY:** NO packages (trueno, realizar, aprender) will be published until 2x Ollama performance target (400 tok/s) is achieved. Current: 190 tok/s (47.5%).
 
 | Repository | ComputeBrick | Source | Features | Notes |
 |------------|-------------|--------|----------|-------|
@@ -1534,19 +1544,19 @@ let qh = ctx.or_u32(qh_012, qh_b3_shifted);
 - [trueno-gpu/kernels](https://github.com/paiml/trueno/tree/main/trueno-gpu/src/kernels) - Q4K, Flash Attention
 - [realizar](https://github.com/paiml/aprender/tree/main/crates/realizar) - LLM inference engine
 
-#### 🟡 PMAT-PERF-009: Fused Kernels PARTIAL (2026-01-12)
+#### 🟡 PMAT-PERF-009: Fused Kernels COMPLETE (2026-01-12)
 
-**Status:** PARTIAL - f32 fused kernels complete, quantized (Q4K) fused kernels DEFERRED
+**Status:** COMPLETE - Q4K fused kernels implemented, wired, and tested
 
-**Current Throughput:** 131.37 tok/s → TBD (pending benchmark)
+**Current Throughput:** ~100 tok/s (realized equal to TiledQ4KGemv baseline)
 **Target:** 400 tok/s (2x Ollama baseline)
 
 **Ollama Comparison (Measured 2026-01-12):**
-- Ollama qwen2.5-coder:1.5b: ~318 tok/s (decode)
-- realizar (CUDA Graph + TiledQ4K): 190-198 tok/s
-- Gap to Ollama parity: 1.67x
-- Gap to 2x target (636 tok/s): 3.3x
-**Expected:** 3x improvement from fused kernels (once quantized versions complete)
+- Ollama qwen2.5-coder:1.5b: ~275 tok/s (decode)
+- realizar (CUDA Graph + Q4K fused): ~100 tok/s
+- Gap to Ollama parity: 2.75x
+- Gap to 2x target (400 tok/s): 4x
+**Finding:** Fused kernels provide ~equal performance to TiledQ4KGemv (not improvement)
 
 **Critical Finding (2026-01-12):**
 
@@ -1579,12 +1589,12 @@ match quant_type {
    - GQA support (kv_dim may differ from hidden_size)
    - 8 kernel tests passing
 
-3. **🔴 DEFERRED: Quantized Fused Kernels:**
-   - `FusedQ4KQKVKernel`: Requires Q4K dequantization in PTX - DEFERRED
-   - `FusedQ4KGateUpKernel`: Requires Q4K dequantization in PTX - DEFERRED
-   - **Reason:** PTX builder API lacks primitives for Q4K super-block format
-   - Q4K format: 144-byte super-blocks with (d, dmin, scales[12], qs[128]) for 256 values
-   - Complex bit manipulation needed for 4-bit extraction + scale lookup
+3. **✅ IMPLEMENTED: Quantized Fused Kernels (2026-01-12):**
+   - `FusedQ4KQKVKernel`: Q4K dequant + QKV fused GEMV - IMPLEMENTED
+   - `FusedQ4KGateUpKernel`: Q4K dequant + Gate+Up+SiLU fused - IMPLEMENTED & WIRED
+   - **Five-Whys Finding:** PTX builder DOES have all primitives (TiledQ4KGemvKernel proves this)
+   - **Result:** ~100 tok/s (equal to TiledQ4KGemv baseline - not an improvement)
+   - **Root Cause:** TiledQ4KGemv already optimized; fused kernels can't beat it
 
 4. **realizar/src/cuda.rs - Executor Integration:**
    - Imported FusedQKVKernel, FusedGateUpKernel from trueno_gpu
@@ -1619,8 +1629,8 @@ Why 5: ROOT CAUSE
 |--------|--------|---------------|--------|
 | B. Fused QKV kernel (f32) | Medium | 2-3x | ✅ COMPLETE |
 | C. Fused gate+up FFN (f32) | Medium | 1.5-2x | ✅ COMPLETE |
-| B'. Fused QKV kernel (Q4K) | High | 2-3x | 🔴 DEFERRED |
-| C'. Fused gate+up FFN (Q4K) | High | 1.5-2x | 🔴 DEFERRED |
+| B'. Fused QKV kernel (Q4K) | High | 2-3x | ✅ IMPLEMENTED (no gain over TiledQ4K) |
+| C'. Fused gate+up FFN (Q4K) | High | 1.5-2x | ✅ IMPLEMENTED & WIRED (no gain) |
 | A. Complete megakernel | High | 5-10x | 🟡 Skeleton exists |
 | D. Persistent kernels | Medium | 1.5-2x | 🟡 New pattern needed |
 
@@ -1633,10 +1643,14 @@ Why 5: ROOT CAUSE
 **Next Steps:**
 1. ~~Implement fused QKV projection kernel (f32)~~ ✅ DONE
 2. ~~Implement fused gate+up FFN kernel (f32)~~ ✅ DONE
-3. 🔴 Implement quantized fused kernels (Q4K) - BLOCKED on PTX builder
-4. 🟡 Consider CUDA Graph capture as alternative optimization
-5. Benchmark current throughput to identify actual bottlenecks
-6. If launch overhead is confirmed, prioritize alternative approaches
+3. ~~Implement quantized fused kernels (Q4K)~~ ✅ DONE (no perf gain found)
+4. ✅ CUDA Graph capture - working, minor improvement
+5. 🔴 **NEW BLOCKER:** TiledQ4KGemv already optimal; fused kernels provide ~equal perf
+6. 🔴 **INVESTIGATION NEEDED:** Why 100 tok/s vs Ollama 275 tok/s (2.75x gap)?
+   - Possible: Different quantization (Ollama may use different format)
+   - Possible: Attention bottleneck (81µs measured vs 10µs budget)
+   - Possible: Memory bandwidth saturation
+7. 🟡 Consider megakernel approach for 5-10x potential gain
 
 ---
 
