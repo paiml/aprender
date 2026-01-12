@@ -116,7 +116,8 @@ ratatui = { version = "0.29", default-features = true }
 crossterm = "0.28"
 
 # Visualization (syscall tracing and charts)
-renacer = { version = "0.9.4", optional = true, default-features = false }
+# Using local path for Sprint 58 BrickTracer integration (PMAT-PERF-009)
+renacer = { path = "/home/noah/src/renacer", optional = true, default-features = false }
 trueno-viz = { version = "0.1.16", optional = true, default-features = false, features = ["svg"] }
 
 # ZRAM compression (SIMD-accelerated LZ4/ZSTD)

@@ -778,6 +778,47 @@ fn run_headless_real(config: CbtopConfig) -> Result<()> {
     let std_dev = variance.sqrt();
     let cv_percent = (std_dev / mean_latency) * 100.0;
 
+    // PMAT-PERF-009: Renacer BrickTracer escalation for anomaly detection
+    // Per Mace et al. (2015): Only trace when anomalies detected to avoid overhead
+    #[cfg(feature = "visualization")]
+    {
+        use renacer::brick_tracer::{BrickEscalationThresholds, BrickTracer};
+
+        let thresholds = BrickEscalationThresholds::default();
+        let efficiency = tokens_per_sec / 976.0 * 100.0; // 976 tok/s = 100% target
+
+        if cv_percent > thresholds.cv_percent || efficiency < thresholds.efficiency_percent {
+            eprintln!();
+            eprintln!(
+                "cbtop: Anomaly detected (CV: {:.1}%, efficiency: {:.1}%) - escalating to renacer",
+                cv_percent, efficiency
+            );
+            eprintln!(
+                "  Threshold: CV > {:.1}% or efficiency < {:.1}%",
+                thresholds.cv_percent, thresholds.efficiency_percent
+            );
+
+            // Create BrickTracer for deep syscall analysis (no OTLP needed for local)
+            let _tracer = BrickTracer::new_local();
+            {
+                eprintln!("  BrickTracer: Enabled for syscall breakdown");
+                eprintln!(
+                    "  Escalation reason: {}",
+                    if cv_percent > thresholds.cv_percent
+                        && efficiency < thresholds.efficiency_percent
+                    {
+                        "cv_and_efficiency"
+                    } else if cv_percent > thresholds.cv_percent {
+                        "cv_exceeded"
+                    } else {
+                        "efficiency_low"
+                    }
+                );
+            }
+            eprintln!();
+        }
+    }
+
     // Calculate percentiles
     let mut sorted_latencies = latencies_us.clone();
     sorted_latencies.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
