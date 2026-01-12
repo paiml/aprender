@@ -1,7 +1,7 @@
 # Qwen2.5-Coder Showcase: ComputeBrick Architecture
 
-**Version:** 4.30.0
-**Status:** IN PROGRESS (0.5B: **338 tok/s > Ollama 230 tok/s = 1.47x FASTER!**; 1.5B: 163 tok/s vs Ollama 216 tok/s = 0.75x)
+**Version:** 4.31.0
+**Status:** IN PROGRESS (0.5B: **338 tok/s > Ollama 230 tok/s = 1.47x FASTER!**; 1.5B: **196.9 tok/s vs Ollama 232 tok/s = 0.85x**)
 **Author:** PAIML Engineering
 **Date:** 2026-01-12
 **PMAT Roadmap ID:** `SHOWCASE-BRICK-001`
@@ -91,6 +91,7 @@
 | 4.28.0 | 2026-01-12 | PAIML Engineering | Architecture Lead | **IN PROGRESS** | **CORRECTNESS-001 RESOLVED (Five-Whys)**: Investigated GPU vs CPU Q divergence. Five-Whys root cause: FALSE POSITIVE - GPU kernels (TiledQ4KGemv, Dp4aQ4KGemv) produce **identical** output to CPU SIMD (fused_q4k_parallel_matvec). The apparent mismatch was comparing raw kernel output (no bias) with forward() output (with QKV bias added). Qwen2.5 adds QKV bias: BEFORE=[-0.436, -0.604, -0.443] + BIAS=[0.287, -0.232, -0.204] = AFTER=[-0.149, -0.836, -0.648]. Also cleaned up debug eprintln!() calls causing 19% slowdown. **Current: 110 tok/s vs Ollama 257 tok/s (43% of Ollama, 2.3x gap)**. Target: 513 tok/s (2x Ollama). |
 | 4.29.0 | 2026-01-12 | PAIML Engineering | Architecture Lead | **IN PROGRESS** | **PAR-065 COALESCED Q4K**: Five-Whys identified TiledQ4KGemv uses single-byte loads (ld_global_u8) causing 6% memory bandwidth. Switched q4k_gemv_into to CoalescedQ4KGemv kernel (vectorized u32 loads + warp shuffles). Updated preload_modules_for_capture to use CoalescedQ4KGemv for all Q4K operations. **NEW FINDING**: Q6K kernel (used for FFN down and LM head) also uses single-byte loads - this is the remaining bottleneck for Qwen 1.5B which uses Q6K heavily. **Current: 102 tok/s vs Ollama 163 tok/s (62.5% of Ollama, 1.6x gap)**. |
 | 4.30.0 | 2026-01-12 | PAIML Engineering | Architecture Lead | **IN PROGRESS** | **PAR-065 GREEDY SAMPLING**: Enabled greedy sampling (temp=0, top_k=1) in benchmark to use GPU argmax path, eliminating 600KB logits transfer per token. **MAJOR WIN: 0.5B model achieves 338 tok/s vs Ollama 230 tok/s (1.47x FASTER!)**. 1.5B model: 163 tok/s vs Ollama 216 tok/s (75% of Ollama). Q6K kernel (FFN down, LM head) remains bottleneck for Q6K-heavy models. **Target: 432 tok/s (2x Ollama 216) requires 2.65x improvement**. Next: Optimize Q6K kernel with coalesced loads. |
+| 4.31.0 | 2026-01-12 | PAIML Engineering | Architecture Lead | **IN PROGRESS** | **PAR-066 COALESCED Q6K**: Five-Whys root cause analysis identified Q6K super-blocks are 210 bytes (NOT 4-byte aligned), causing misaligned memory access (CUDA_ERROR_UNKNOWN 716). Fix: Changed from 4×ld_global_u32 to 16×ld_global_u8 byte loads + warp shuffle broadcast. Correctness verified: max diff 0.00001, correlation 1.0. **Performance with CoalescedQ4K + CoalescedQ6K: 196.9 tok/s** vs Ollama 232 tok/s = **0.85x Ollama**. 11% improvement from Q6K optimization. Target: 465 tok/s (2x Ollama). Next: Profile remaining bottlenecks (attention, memory bandwidth). |
 
 ---
 
