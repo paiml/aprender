@@ -1,7 +1,7 @@
 # Qwen2.5-Coder Showcase: ComputeBrick Architecture
 
-**Version:** 4.35.0
-**Status:** IN PROGRESS (1.5B: **122.7 tok/s vs Ollama 175 tok/s = 70%**, P0 cbtop real measurements)
+**Version:** 4.36.0
+**Status:** IN PROGRESS (1.5B: **232.9 tok/s vs Ollama 243.9 tok/s = 95.5%**, PAR-071 GPU argmax)
 **Author:** PAIML Engineering
 **Date:** 2026-01-13
 **PMAT Roadmap ID:** `SHOWCASE-BRICK-001`
@@ -97,6 +97,7 @@
 | 4.33.0 | 2026-01-12 | PAIML Engineering | Architecture Lead | **IN PROGRESS** | **PAR-069 VECTORIZED Q4K KERNEL COMPARISON**: Five-Whys comparison of Q4K kernels: (1) TiledQ4KGemv: 141.7 tok/s (byte loads, baseline), (2) CoalescedQ4KGemv: 136 tok/s (warp shuffle scales, slower than tiled), (3) VectorizedQ4KGemv: **197.6 tok/s** (coalesced u32 loads + selp_f32, BEST). VectorizedQ4K uses ld_global_u32 for 128-byte coalesced transactions (32 threads × 4 bytes). The selp_f32 overhead for per-block scale selection is smaller than memory bandwidth improvement. **Current: 1.5B 197.6 tok/s vs Ollama 248 tok/s (79.6%)**. **0.5B: 297.9 tok/s vs Ollama 384 tok/s (77.6%)**. Target: 25% faster than Ollama = 310 tok/s (1.5B), 480 tok/s (0.5B). Gap: 57% improvement needed. |
 | 4.34.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **IN PROGRESS** | **PAR-070 MULTI-WARP ATTENTION**: Five-Whys root cause: Attention was 8.17x over budget (81.69 µs vs 10 µs target). Single-warp per head with serial seq_loop O(seq_len). Implemented MultiWarpIncrementalAttentionKernel in trueno-gpu: Grid (num_heads, 1), Block (32 × num_warps, 1), cross-warp reduction via shared memory. **Result: 197.6 → 201.1 tok/s (+2%)**. Limited by reduction overhead; the three bar_sync barriers and loop-based final summation eat the parallelism gains. Alternative paths: TensorCore attention for decode, paged KV cache, or speculative decoding. **Current: 1.5B 201 tok/s vs Ollama 295 tok/s (68%)**. |
 | 4.35.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **IN PROGRESS** | **P0 PURE RUST TIMING**: (1) Fixed cbtop to auto-detect `--model` as file path for real profiling. (2) Added MEASURED vs DERIVED labels to distinguish real measurements from proportional estimates. (3) Added §6.7 "MANDATORY: Pure Rust Real Timing Infrastructure" - NO CUDA event FFI, NO simulated data, use `std::time::Instant` + CUDA sync only. (4) Defined timing requirements for all repos: trueno, trueno-gpu, trueno-zram, aprender, realizar, presentar. **Real measured: 122.7 tok/s, 291µs/layer (8.2x over budget)**. |
+| 4.36.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **IN PROGRESS** | **PAR-071 GPU ARGMAX FOR CBTOP**: Five-Whys root cause: cbtop used temp=0.7 which downloads ALL 600KB logits per token. GPU argmax only transfers 4 bytes (150,000x reduction). **RESULT: 122.7 → 232.9 tok/s (+87%)**. Now at **95.5% of Ollama 243.9 tok/s**. Remaining 4.3x layer budget gap (153µs vs 35.7µs) from: graph launch overhead, KV cache updates, kernel efficiency. Target: 487.8 tok/s (2x Ollama) requires 2.1x improvement. |
 
 ---
 
