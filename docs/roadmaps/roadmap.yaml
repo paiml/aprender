@@ -1395,3 +1395,83 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-PERF-009-CUDA
+  github_issue: null
+  item_type: task
+  title: 'New task: PMAT-PERF-009-CUDA'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-01-11T23:07:13.191160326+00:00
+  updated: 2026-01-11T23:07:13.191160326+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-PERF-009-WIRE
+  github_issue: null
+  item_type: task
+  title: 'New task: PMAT-PERF-009-WIRE'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-01-12T09:15:48.332874564+00:00
+  updated: 2026-01-12T09:15:48.332874564+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-SHOWCASE-NEXT
+  github_issue: null
+  item_type: task
+  title: 'New task: PMAT-SHOWCASE-NEXT'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-01-12T09:30:13.183954948+00:00
+  updated: 2026-01-12T09:30:13.183954948+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-PERF-OPTIMIZE
+  github_issue: null
+  item_type: task
+  title: 'New task: PMAT-PERF-OPTIMIZE'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-01-12T09:38:13.765147245+00:00
+  updated: 2026-01-12T09:38:13.765147245+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-PERF-2X-TARGET
+  github_issue: null
+  item_type: task
+  title: 'New task: PMAT-PERF-2X-TARGET'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-01-12T09:46:30.149149972+00:00
+  updated: 2026-01-12T09:46:30.149149972+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

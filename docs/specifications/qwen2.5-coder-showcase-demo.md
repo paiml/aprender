@@ -31,7 +31,7 @@
 | [2](#2-computebrick-transformer-pipeline) | ComputeBrick Transformer Pipeline | - | - |
 | [3](#3-brick-budget-matrix) | Brick Budget Matrix | - | - |
 | [4](#4-five-whys-root-cause-analysis) | Five-Whys Root Cause Analysis | - | - |
-| [5](#5-remediation-bricks-optimization) | **Remediation Bricks (OPTIMIZATION)** | 🔧 FIX | 🟡 1.45x gap (137.97 vs 200 tok/s) |
+| [5](#5-remediation-bricks-optimization) | **Remediation Bricks (OPTIMIZATION)** | 🔧 FIX | 🟡 2.07x gap (145 vs 300 tok/s Ollama) |
 | [6](#6-cbtop-measurement-framework) | **cbtop Measurement Framework** | 📊 MEASURE | ✅ Implemented |
 | [7](#7-benchmark-protocol) | Benchmark Protocol | 📊 MEASURE | - |
 | [8](#8-peer-reviewed-citations) | Peer-Reviewed Citations | - | - |
@@ -71,6 +71,10 @@
 | 4.8.0 | 2026-01-11 | PAIML Engineering | Architecture Lead | Approved | **PMAT-PERF-009 Investigation**: Documented megakernel skeleton status, 131.37 tok/s vs 400 tok/s (3x gap), recommended fused QKV + FFN kernels path |
 | 4.9.0 | 2026-01-11 | PAIML Engineering | Architecture Lead | Approved | **MANDATORY Five-Whys + ComputeBrick**: All blockers require Five-Whys analysis; all fused ops MUST use ComputeOp trait with assertions and budgets |
 | 4.10.0 | 2026-01-12 | PAIML Engineering | Architecture Lead | Approved | **PMAT-PERF-009 IMPLEMENTED**: FusedQKVKernel and FusedGateUpKernel added to trueno-gpu, integrated into realizar cuda.rs |
+| 4.11.0 | 2026-01-12 | PAIML Engineering | Architecture Lead | Approved | **PMAT-PERF-009 PARTIAL**: f32 fused kernels complete; quantized (Q4K) fused kernels DEFERRED due to PTX builder API gaps. Inference uses Q4K weights, not f32. Alternative: CUDA Graph capture. |
+| 4.12.0 | 2026-01-12 | PAIML Engineering | Architecture Lead | Approved | **SHOWCASE VERIFICATION**: All infrastructure complete - 136/136 falsification tests pass, cbtop headless/JSON/CI modes work, Makefile targets verified, GitHub Actions workflow ready. Actual throughput: 135.8 tok/s (target: 400 tok/s). |
+| 4.13.0 | 2026-01-12 | PAIML Engineering | Architecture Lead | Approved | **CUDA GRAPH VERIFIED**: PMAT-PERF-003 measured 1.22x speedup (120→145 tok/s). Graph capture and replay working. Current: 145 tok/s, target: 400 tok/s (2.75x gap remaining). |
+| 4.14.0 | 2026-01-12 | PAIML Engineering | Architecture Lead | Approved | **OLLAMA COMPARISON**: Measured Ollama qwen2.5-coder:1.5b at ~300 tok/s decode. realizar at 145 tok/s = 48% of Ollama, 2.07x gap to parity. |
 
 ---
 
@@ -1294,16 +1298,16 @@ impl TruenoGpuBackend {
 |--------|-------------|--------|-------|
 | PMAT-PERF-001 | trueno-gpu Q4_K GEMM | ✅ COMPLETE | Tests pass |
 | PMAT-PERF-002 | Weight Pre-Interleaving | ✅ IMPLEMENTED | InterleavedQ4K struct in realizar |
-| PMAT-PERF-003 | CUDA Graph Capture | ✅ WIRED | Needs tuning for 2-5x gain |
+| **PMAT-PERF-003** | **CUDA Graph Capture** | ✅ VERIFIED | **1.22x gain measured (120→145 tok/s)** |
 | PMAT-PERF-004 | FlashAttention (trueno-gpu) | ✅ COMPLETE | Thread count bug fixed |
 | PMAT-PERF-006 | CUDA Error 716 Fix | ✅ RESOLVED | FlashAttention thread config fixed |
 | PMAT-PERF-007 | FFN Normalization Fix | ✅ RESOLVED | Parallel residual path fixed |
 | **PMAT-PERF-008** | **Keep Tensors on GPU** | ✅ COMPLETE | **23x gain achieved (1.67→38.69 tok/s)** |
 | PMAT-PERF-010 | Q5_0 GEMV Alignment Fix | ✅ COMPLETE | Byte-wise qh load for unaligned access |
 | **PMAT-PERF-009** | **Batch Matmuls** | ✅ IMPLEMENTED | **FusedQKVKernel + FusedGateUpKernel complete; ready for benchmark** |
-| PMAT-PERF-005 | 2x Ollama Verification | 🟡 IN PROGRESS | 131.37 tok/s vs 400 tok/s (3x gap) |
+| PMAT-PERF-005 | 2x Ollama Verification | 🟡 IN PROGRESS | 145 tok/s vs 400 tok/s (2.75x gap) |
 
-**SPEC STATUS: 🟡 GPU-RESIDENT WORKING (131.37 tok/s vs 400 tok/s target, 3x gap)**
+**SPEC STATUS: 🟡 GPU-RESIDENT + CUDA GRAPH (145 tok/s vs 400 tok/s target, 2.75x gap)**
 
 ---
 
@@ -1388,34 +1392,62 @@ let qh = ctx.or_u32(qh_012, qh_b3_shifted);
 - [trueno-gpu/kernels](https://github.com/paiml/trueno/tree/main/trueno-gpu/src/kernels) - Q4K, Flash Attention
 - [realizar](https://github.com/paiml/aprender/tree/main/crates/realizar) - LLM inference engine
 
-#### ✅ PMAT-PERF-009: Fused Kernels IMPLEMENTED (2026-01-12)
+#### 🟡 PMAT-PERF-009: Fused Kernels PARTIAL (2026-01-12)
 
-**Status:** IMPLEMENTED - FusedQKVKernel and FusedGateUpKernel complete
+**Status:** PARTIAL - f32 fused kernels complete, quantized (Q4K) fused kernels DEFERRED
 
 **Current Throughput:** 131.37 tok/s → TBD (pending benchmark)
 **Target:** 400 tok/s (2x Ollama baseline)
-**Expected:** 3x improvement from fused kernels
 
-**Implementation Complete (2026-01-12):**
+**Ollama Comparison (Measured 2026-01-12):**
+- Ollama qwen2.5-coder:1.5b: ~300 tok/s (decode)
+- realizar (CUDA Graph): 145 tok/s
+- Gap to Ollama parity: 2.07x
+- Gap to 2x target (400 tok/s): 2.75x
+**Expected:** 3x improvement from fused kernels (once quantized versions complete)
 
-1. **trueno/src/brick.rs - ComputeOp Infrastructure:**
+**Critical Finding (2026-01-12):**
+
+The inference path uses **quantized weights** (Q4K, Q5_0, Q6K, Q8_0, Q5K), NOT f32.
+The f32 fused kernels cannot directly help the quantized inference path.
+
+```
+// Inference path in realizar/src/cuda.rs uses quantized GEMV:
+match quant_type {
+    GgufQuantType::Q4K => q4k_gemv_into(executor, ...),   // Q4K format
+    GgufQuantType::Q5_0 => q5_0_gemv_into(executor, ...), // Q5_0 format
+    GgufQuantType::Q6K => q6k_gemv_into(executor, ...),   // Q6K format
+    GgufQuantType::Q8_0 => q8_0_gemv_into(executor, ...), // Q8_0 format
+    ...
+}
+```
+
+**Implementation Status:**
+
+1. **✅ trueno/src/brick.rs - ComputeOp Infrastructure:**
    - `FusedQKVOp`: Q/K/V projection as single ComputeOp (3 GEMV → 1)
    - `FusedGateUpOp`: Gate+Up FFN with SiLU as single ComputeOp (2 GEMV → 1)
    - Both implement ComputeOp trait with assertions and budgets
    - 22 unit tests passing
 
-2. **trueno-gpu/src/kernels/fused.rs - PTX Kernels:**
-   - `FusedQKVKernel`: Warp-based GEMV computing Q, K, V in single kernel
-   - `FusedGateUpKernel`: Warp-based GEMV with in-kernel SiLU activation
+2. **✅ trueno-gpu/src/kernels/fused.rs - f32 PTX Kernels:**
+   - `FusedQKVKernel`: Warp-based GEMV computing Q, K, V in single kernel (f32)
+   - `FusedGateUpKernel`: Warp-based GEMV with in-kernel SiLU activation (f32)
    - Both use shuffle reduction for warp-level parallel reduction
    - GQA support (kv_dim may differ from hidden_size)
    - 8 kernel tests passing
 
-3. **realizar/src/cuda.rs - Executor Integration:**
+3. **🔴 DEFERRED: Quantized Fused Kernels:**
+   - `FusedQ4KQKVKernel`: Requires Q4K dequantization in PTX - DEFERRED
+   - `FusedQ4KGateUpKernel`: Requires Q4K dequantization in PTX - DEFERRED
+   - **Reason:** PTX builder API lacks primitives for Q4K super-block format
+   - Q4K format: 144-byte super-blocks with (d, dmin, scales[12], qs[128]) for 256 values
+   - Complex bit manipulation needed for 4-bit extraction + scale lookup
+
+4. **realizar/src/cuda.rs - Executor Integration:**
    - Imported FusedQKVKernel, FusedGateUpKernel from trueno_gpu
    - Added KernelType::FusedQKV and KernelType::FusedGateUp
-   - Added `fused_qkv_into()` and `fused_gate_up_into()` executor methods
-   - Ready for inference path integration
+   - NOT yet wired into inference path (requires quantized versions)
 
 **Five-Whys Root Cause:**
 ```
@@ -1443,17 +1475,26 @@ Why 5: ROOT CAUSE
 
 | Option | Effort | Expected Gain | Status |
 |--------|--------|---------------|--------|
-| B. Fused QKV kernel | Medium | 2-3x | ✅ COMPLETE |
-| C. Fused gate+up FFN | Medium | 1.5-2x | ✅ COMPLETE |
+| B. Fused QKV kernel (f32) | Medium | 2-3x | ✅ COMPLETE |
+| C. Fused gate+up FFN (f32) | Medium | 1.5-2x | ✅ COMPLETE |
+| B'. Fused QKV kernel (Q4K) | High | 2-3x | 🔴 DEFERRED |
+| C'. Fused gate+up FFN (Q4K) | High | 1.5-2x | 🔴 DEFERRED |
 | A. Complete megakernel | High | 5-10x | 🟡 Skeleton exists |
 | D. Persistent kernels | Medium | 1.5-2x | 🟡 New pattern needed |
 
+**Alternative Approaches (if Q4K fused kernels remain blocked):**
+1. **CUDA Graph Capture:** Reduce launch overhead without fusing kernels
+2. **Hand-written PTX:** Bypass PTX builder for complex Q4K logic
+3. **cuBLAS INT8:** Use vendor library for quantized GEMM where available
+4. **Profile-guided:** Measure actual bottlenecks before optimizing
+
 **Next Steps:**
-1. ~~Implement fused QKV projection kernel~~ ✅ DONE
-2. ~~Implement fused gate+up FFN kernel~~ ✅ DONE
-3. Wire fused kernels into inference hot path
-4. Benchmark and verify speedup
-5. If still below target, complete megakernel
+1. ~~Implement fused QKV projection kernel (f32)~~ ✅ DONE
+2. ~~Implement fused gate+up FFN kernel (f32)~~ ✅ DONE
+3. 🔴 Implement quantized fused kernels (Q4K) - BLOCKED on PTX builder
+4. 🟡 Consider CUDA Graph capture as alternative optimization
+5. Benchmark current throughput to identify actual bottlenecks
+6. If launch overhead is confirmed, prioritize alternative approaches
 
 ---
 
@@ -2384,7 +2425,7 @@ Triton: c=4: 89%  c=8: 86%  c=16: 81%  ← Lower at high concurrency
 
 **Current Score**: 120/120 = **100%** (Grade: A+)
 
-**Test Summary (123 Total Tests)**:
+**Test Summary (136 Total Tests)**:
 | File | Tests | Passing | Ignored | Status |
 |------|-------|---------|---------|--------|
 | `falsification_brick_tests.rs` | F001-F020 | 20 | 0 | ✅ Complete |
@@ -2392,8 +2433,9 @@ Triton: c=4: 89%  c=8: 86%  c=16: 81%  ← Lower at high concurrency
 | `falsification_correctness_tests.rs` | F041-F060 | 21 | 0 | ✅ Complete |
 | `falsification_cuda_tests.rs` | F061-F080 | 21 | 0 | ✅ Complete |
 | `falsification_measurement_tests.rs` | M001-M020 | 20 | 0 | ✅ Complete |
-| `falsification_performance_tests.rs` | F081-F100 | 21 | 0 | ✅ Complete |
-| **Total** | **123 tests** | **123** | **0** | **100%** |
+| `falsification_performance_tests.rs` | F081-F105 | 25 | 0 | ✅ Complete |
+| `falsification_2x_ollama_tests.rs` | O001-O009 | 9 | 0 | ✅ Complete |
+| **Total** | **136 tests** | **136** | **0** | **100%** |
 
 **PMAT Scores (via cbtop --headless --json)**:
 - `rust_project_score`: 152.9/134 (A+)
