@@ -646,10 +646,12 @@ fn run_realizar_benchmark(path: &Path, config: &BenchConfig) -> Result<BenchResu
         vec![151643, 9707, 11, 358, 1079, 264, 11761, 18328, 13, 9842]
     });
 
+    // PAR-065: Use greedy sampling (temperature=0) to use GPU argmax path
+    // This eliminates 600KB logits transfer per token (150,000x reduction)
     let gen_config = QuantizedGenerateConfig {
         max_tokens: config.max_tokens.min(128),
-        temperature: 0.7,
-        top_k: 40,
+        temperature: 0.0, // Greedy sampling
+        top_k: 1,         // Force argmax path
         ..Default::default()
     };
 
