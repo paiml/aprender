@@ -1,7 +1,7 @@
 # Qwen2.5-Coder Showcase: ComputeBrick Architecture
 
-**Version:** 4.56.0
-**Status:** ✅ MILESTONE (PAR-104: GPU attention NOT beneficial for decode batch - CPU optimal; peak 201 tok/s @ batch=4 is near limit)
+**Version:** 4.57.0
+**Status:** ✅ COMPLETE (Five-Whys: GPU attention 300x overhead for decode, CPU optimal, 2x REQUIRES speculative decoding with draft model)
 **Author:** PAIML Engineering
 **Date:** 2026-01-13
 **PMAT Roadmap ID:** `SHOWCASE-BRICK-001`
@@ -163,6 +163,17 @@ Q4K GEMV kernel is already well-optimized:
 - Current: 359 tok/s = **84% of realistic max, 59% of theoretical**
 
 **Key Insight:** Single-token autoregressive decode is fundamentally limited by memory bandwidth. At 58% efficiency (close to Q4K format limits), reaching 2x Ollama (577 tok/s) is **IMPOSSIBLE without speculative decoding** to amortize weight reads over multiple tokens per forward pass.
+
+**PAR-103/104 Batch Decode Findings:**
+| Approach | Throughput | Finding |
+|----------|------------|---------|
+| Single-token decode | 356 tok/s | Baseline (1.19x Ollama) |
+| Batch decode (CPU attn) | 201 tok/s @ batch=4 | +27% speedup, peaks at batch=4 |
+| Batch decode (GPU attn) | 1.2 tok/s @ batch=2 | **300x overhead** - NOT beneficial |
+| Speculative (self) | No improvement | 25% acceptance = no benefit |
+| Speculative (draft) | **REQUIRED FOR 2x** | 70%+ acceptance needed |
+
+**ROOT CAUSE (Five-Whys):** GPU attention has ~30ms kernel launch overhead. For decode batch where attention is [batch, head_dim] @ [head_dim, batch] = [batch, batch], the matmul is too small (e.g., [2,128]@[128,2]=[2,2]) for GPU to be beneficial. CPU attention is optimal for decode; GPU only wins for prefill (large seq_len).
 
 **⚠️ CRITICAL: Ollama Comparison is FAIR (Apples-to-Apples)**
 
