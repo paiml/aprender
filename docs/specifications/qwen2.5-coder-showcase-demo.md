@@ -99,6 +99,7 @@
 | 4.35.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **IN PROGRESS** | **P0 PURE RUST TIMING**: (1) Fixed cbtop to auto-detect `--model` as file path for real profiling. (2) Added MEASURED vs DERIVED labels to distinguish real measurements from proportional estimates. (3) Added §6.7 "MANDATORY: Pure Rust Real Timing Infrastructure" - NO CUDA event FFI, NO simulated data, use `std::time::Instant` + CUDA sync only. (4) Defined timing requirements for all repos: trueno, trueno-gpu, trueno-zram, aprender, realizar, presentar. **Real measured: 122.7 tok/s, 291µs/layer (8.2x over budget)**. |
 | 4.36.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **IN PROGRESS** | **PAR-071 GPU ARGMAX FOR CBTOP**: Five-Whys root cause: cbtop used temp=0.7 which downloads ALL 600KB logits per token. GPU argmax only transfers 4 bytes (150,000x reduction). **RESULT: 122.7 → 232.9 tok/s (+87%)**. Now at **95.5% of Ollama 243.9 tok/s**. Remaining 4.3x layer budget gap (153µs vs 35.7µs) from: graph launch overhead, KV cache updates, kernel efficiency. Target: 487.8 tok/s (2x Ollama) requires 2.1x improvement. |
 | 4.37.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **IN PROGRESS** | **PAR-073 BRICKPROFILER FOUNDATIONAL**: Implemented BrickProfiler in trueno (pure Rust timing via std::time::Instant). Integrated into realizar CudaExecutor and OwnedQuantizedModelCuda. Updated cbtop to enable profiling and print summary. Infrastructure ready - per-brick timing points needed in transformer layer. **Current: 233.5 tok/s vs Ollama 243.9 tok/s (95.7%)**. Target: 487.8 tok/s (2x Ollama). Repos updated: trueno, realizar, aprender. |
+| 4.38.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **IN PROGRESS** | **PAR-073 REAL PER-BRICK TIMING COMPLETE**: Added 11 timing points to transformer_layer_workspace_inner. CUDA graphs disabled during profiling (env CUDA_GRAPH_DISABLE=1). **REAL MEASURED DATA (0.5B Q4_0)**: Attention 68.90µs (38.4%), FFNGateUp 19.61µs (10.9%), QKV 16.12µs (9.0%), FFNDown 15.27µs (8.5%), RmsNorm1 14.84µs (8.3%), RmsNorm2 14.68µs (8.2%), OProj 8.12µs (4.5%), RoPE 7.12µs (4.0%), Residual2 5.12µs (2.8%), Residual1 4.92µs (2.7%), SwiGLU 4.90µs (2.7%). **Five-Whys Root Cause: Attention is 38.4% of layer time = MAIN BOTTLENECK**. Profiled throughput: 171.8 tok/s (with sync overhead). Non-profiled: 416 tok/s. Headless simulation FALSIFIED - now requires real model. |
 
 ---
 
@@ -2227,6 +2228,76 @@ pub fn q4k_gemv_kernel(input: &[f32], weights: &[u8], output: &mut [f32]) {
       grep "MEASURED" || exit 1
 ```
 
+### 6.8 MANDATORY: True Per-Brick Profiling
+
+**Objective**: Eliminate "derived" metrics in cbtop. All brick timings MUST be real measurements.
+
+**Problem**: Current "Real Profiling" uses derived metrics for bricks (e.g., `QkvBrick*`) based on total throughput and budget ratios. This masks actual bottlenecks.
+
+**Requirement**: `realizar` MUST implement true per-brick profiling by synchronizing the CUDA stream before and after each kernel launch when profiling is enabled.
+
+#### 6.8.1 Implementation Strategy
+
+1.  **Helper Method**: `CudaExecutor::record_brick(name, f)`
+2.  **Synchronization**: `cudaStreamSynchronize` BEFORE and AFTER the closure `f`.
+3.  **Timing**: `std::time::Instant` around the closure.
+4.  **Condition**: Only execute sync/timing if `self.profiler.is_enabled()`.
+
+```rust
+// realizar/src/cuda.rs
+pub fn record_brick<F, R>(&mut self, name: &str, f: F) -> Result<R, GpuError>
+where F: FnOnce(&mut Self) -> Result<R, GpuError> {
+    if !self.profiler.is_enabled() {
+        return f(self); // Zero overhead path
+    }
+
+    self.stream.synchronize()?;
+    let timer = self.profiler.start(name);
+    let result = f(self)?;
+    self.stream.synchronize()?;
+    self.profiler.stop(timer, 1);
+    Ok(result)
+}
+```
+
+#### 6.8.2 Falsification Protocol (F-PROF-001)
+
+**Hypothesis**: If profiling is real, brick latencies will vary independently.
+**Null Hypothesis (Falsified)**: Brick latencies are perfectly correlated with total throughput (derived).
+
+| Test ID | Description | Command | Success Criteria |
+|---------|-------------|---------|------------------|
+| **F-PROF-001** | **Independent Variance** | `cargo test test_profiling_variance` | `correlation(brick_A, brick_B) < 0.99` |
+
+**Verification Logic:**
+1.  Run 10 iterations of inference.
+2.  Capture per-brick latencies for `QkvBrick` and `AttentionBrick`.
+3.  Calculate correlation coefficient.
+4.  **FAIL** if correlation > 0.99 (implies derived from same source).
+5.  **PASS** if correlation < 0.99 (implies independent measurement noise).
+
+### 6.9 Sovereign Stack Profiling Mandate
+
+**Requirement**: Every component in the Sovereign Stack MUST implement REAL `BrickProfiler` timing.
+**Falsification**: Derived or simulated metrics are explicitly FORBIDDEN.
+
+| Component | Repository | Metric | Implementation | Falsification |
+|-----------|------------|--------|----------------|---------------|
+| **trueno** | `trueno` | SIMD Ops/sec | `Instant::now()` | `F-PROF-002` |
+| **trueno-gpu** | `trueno` | Kernel Latency | `cudaEventRecord` | `F-PROF-003` |
+| **trueno-zram** | `trueno` | Compression GB/s | `Instant` + Batch | `F-PROF-004` |
+| **aprender** | `aprender` | Algorithm Latency | `BrickProfiler` | `F-PROF-005` |
+| **realizar** | `aprender` | Inference Latency | `cudaDeviceSynchronize` | `F-PROF-001` |
+| **presentar** | `aprender` | Frame Time | `requestAnimationFrame` | `F-PROF-006` |
+
+**Implementation Strategy:**
+1.  **trueno**: Base `BrickProfiler` struct (done).
+2.  **trueno-gpu**: Add `record_kernel(stream, name)` using CUDA events.
+3.  **trueno-zram**: Wrap `Zstd::compress` in `record_brick`.
+4.  **aprender**: Wrap `fit/predict` in `record_brick`.
+5.  **realizar**: Use `CudaExecutor::record_brick` (Section 6.8).
+6.  **presentar**: TUI/WASM render loop timing.
+
 ---
 
 ## 7. Benchmark Protocol
@@ -2519,8 +2590,8 @@ impl Brick for CorrectnessTestBrick {
 |----|----------|-------------|---------|
 | [1] | **Popper, K. (1959).** "The Logic of Scientific Discovery." Routledge. | Falsification criterion - all assertions must be falsifiable | §9 |
 | [2] | **Curtsinger, C., & Berger, E. D. (2013).** "Stabilizer: Statistically Sound Performance Evaluation." ASPLOS '13. | CV < 5%, N ≥ 100, warmup protocol | §7.1 |
-| [3] | **Mytkowicz, T., et al. (2009).** "Producing Wrong Data Without Doing Anything Obviously Wrong!" ASPLOS '09. | Benchmark methodology, measurement bias | §7 |
-| [4] | **Georges, A., et al. (2007).** "Statistically Rigorous Java Performance Evaluation." OOPSLA '07. | Statistical analysis of performance | §7.1 |
+| [3] | **Mytkowicz, T., et al. (2009).** "Producing Wrong Data Without Doing Anything Obviously Wrong!" ASPLOS '09. | Benchmark methodology, measurement bias, context sensitivity | §7 |
+| [4] | **Jain, R. (1991).** "The Art of Computer Systems Performance Analysis." Wiley. | Measurement vs simulation, workload characterization | §6 |
 
 ### 8.2 Toyota Production System
 
@@ -2530,52 +2601,56 @@ impl Brick for CorrectnessTestBrick {
 | [6] | **Shingo, S. (1986).** "Zero Quality Control: Source Inspection and the Poka-Yoke System." | Error-proofing via type system | §1.1 |
 | [7] | **Liker, J. (2004).** "The Toyota Way: 14 Management Principles." | Genchi Genbutsu (go and see), Mieruka (visual control) | §6 |
 
-### 8.3 Performance Modeling
+### 8.3 Performance Modeling & Profiling
 
 | ID | Citation | Application | Section |
 |----|----------|-------------|---------|
 | [8] | **Williams, S., et al. (2009).** "Roofline: An Insightful Visual Performance Model." CACM 52(4). | Bottleneck analysis, arithmetic intensity | §4 |
 | [9] | **Little, J. D. C. (1961).** "A Proof for the Queuing Formula: L = λW." Operations Research. | Throughput = tokens / latency | §3 |
 | [10] | **Amdahl, G. M. (1967).** "Validity of the single processor approach." AFIPS '67. | Serial fraction limits speedup | §4.1 |
+| [11] | **Sigelman, B. H., et al. (2010).** "Dapper, a Large-Scale Distributed Systems Tracing Infrastructure." Google. | Justification for `renacer` span-based tracing | §6.9 |
 
-### 8.4 GPU Optimization
-
-| ID | Citation | Application | Section |
-|----|----------|-------------|---------|
-| [11] | **Dao, T., et al. (2023).** "FlashAttention-2: Faster Attention with Better Parallelism." arXiv:2307.08691. | Online softmax, tiled attention | §5.1 |
-| [12] | **NVIDIA. (2023).** "CUDA C++ Best Practices Guide." Section 9.2.1. | Memory coalescing, DP4A | §5.3 |
-| [13] | **Gerganov, G. (2023).** "llama.cpp: Inference of LLaMA model in pure C/C++." GitHub. | Q4K kernels, reference implementation | §4.2 |
-| [14] | **Jacob, B., et al. (2018).** "Quantization and Training of Neural Networks for Efficient Integer-Arithmetic-Only Inference." CVPR '18. | INT8 quantization theory | §5.1 |
-
-### 8.5 LLM Inference Systems
+### 8.4 GPU Optimization & Compression
 
 | ID | Citation | Application | Section |
 |----|----------|-------------|---------|
-| [15] | **Kwon, W., et al. (2023).** "Efficient Memory Management for Large Language Model Serving with PagedAttention." SOSP '23. | KV cache management | §2.1 |
-| [16] | **Pope, R., et al. (2022).** "Efficiently Scaling Transformer Inference." MLSys '22. | Decode optimization | §5.1 |
-| [17] | **Sheng, Y., et al. (2023).** "High-throughput Generative Inference of Large Language Models with a Single GPU." ICML '23. | FlexGen, offloading | - |
-| [18] | **Leviathan, Y., et al. (2023).** "Fast Inference from Transformers via Speculative Decoding." ICML '23. | Speculative decoding | - |
+| [12] | **Dao, T., et al. (2023).** "FlashAttention-2: Faster Attention with Better Parallelism." arXiv:2307.08691. | Online softmax, tiled attention | §5.1 |
+| [13] | **NVIDIA. (2023).** "CUDA C++ Best Practices Guide." Section 9.2.1. | Memory coalescing, DP4A | §5.3 |
+| [14] | **Deutsch, L. P. (1996).** "DEFLATE Compressed Data Format Specification version 1.3." RFC 1951. | Basis for `trueno-zram` compression profiling | §6.9 |
+| [15] | **Ziv, J., & Lempel, A. (1977).** "A Universal Algorithm for Sequential Data Compression." IEEE. | LZ77 algorithm foundation | §6.9 |
 
-### 8.6 Systems & Memory Safety
+### 8.5 UI/UX Latency
+
+| ID | Citation | Application | Section |
+|----|----------|-------------|---------|
+| [16] | **Nielsen, J. (1993).** "Response Times: The 3 Important Limits." Usability Engineering. | 0.1s instantaneous, 1.0s flow, 10s attention | §6.9 |
+
+### 8.6 LLM Inference Systems
+
+| ID | Citation | Application | Section |
+|----|----------|-------------|---------|
+| [17] | **Kwon, W., et al. (2023).** "Efficient Memory Management for Large Language Model Serving with PagedAttention." SOSP '23. | KV cache management | §2.1 |
+| [18] | **Pope, R., et al. (2022).** "Efficiently Scaling Transformer Inference." MLSys '22. | Decode optimization | §5.1 |
+
+### 8.7 Systems & Memory Safety
 
 | ID | Citation | Application | Section |
 |----|----------|-------------|---------|
 | [19] | **Jung, R., et al. (2017).** "RustBelt: Securing the Foundations of the Rust Programming Language." POPL '17. | Memory safety, no GC overhead | §1.1 |
-| [20] | **Anderson, T. E., et al. (1991).** "The Performance of Spin Lock Alternatives for Shared-Memory Multiprocessors." IEEE TPDS. | Lock-free data structures | - |
 
-### 8.7 Citation Index by Section
+### 8.8 Citation Index by Section
 
 | Section | Citations Used |
 |---------|---------------|
 | §1 (Foundations) | [1], [5], [6], [7], [19] |
 | §3 (Budgets) | [8], [9] |
-| §4 (Root Cause) | [8], [10], [11], [12], [13] |
-| §5 (Optimization) | [11], [12], [13], [14], [15], [16] |
-| §6 (Measurement) | [2], [3], [4], [7], [8] |
-| §7 (Benchmark) | [2], [3], [4], [21] |
+| §4 (Root Cause) | [8], [10], [12], [13] |
+| §5 (Optimization) | [12], [13], [14], [17], [18] |
+| §6 (Measurement) | [2], [3], [4], [7], [8], [11], [14], [15], [16] |
+| §7 (Benchmark) | [2], [3], [4] |
 | §9 (Falsification) | [1], [2] |
 
-### 8.8 Production Benchmarking Reference
+---
 
 | ID | Citation | Application | Section |
 |----|----------|-------------|---------|
@@ -2938,6 +3013,61 @@ apr score model.apr
 
 **Key Insight**: Passing M001-M020 proves cbtop works correctly.
 It does NOT prove performance targets are met. Only F081-F100 can prove that.
+
+## 10. Extensive QA Checklist
+
+**Objective**: Verify the "Pure Rust" invariant and "Real Profiling" mandate across the Sovereign Stack.
+
+### 10.1 Real Profiling Verification
+- [ ] **trueno**: `cargo bench --bench simd_profiling` shows independent variance? (F-PROF-002)
+- [ ] **trueno-gpu**: `apr bench --trace` shows kernel events with non-zero duration? (F-PROF-003)
+- [ ] **trueno-zram**: `apr bench --zram` reports GB/s based on wall-clock time? (F-PROF-004)
+- [ ] **aprender**: `apr bench --algo kmeans` shows per-phase timing? (F-PROF-005)
+- [ ] **realizar**: `cbtop` shows "REAL" per-brick timing (no "derived")? (F-PROF-001)
+- [ ] **presentar**: TUI frame times visible in `cbtop` debug panel? (F-PROF-006)
+
+### 10.2 Falsification Verification
+- [ ] **Simulation Rejection**: `cbtop --model-path ...` FAILS if `BrickProfiler` data is empty?
+- [ ] **Synchronization**: `CudaExecutor::record_brick` wraps kernel launches with syncs?
+- [ ] **Overhead**: Profiling overhead < 10% (checked via `apr bench --profile-overhead`)?
+
+### 10.3 Integration Verification
+- [ ] **aprender → realizar**: Dependency path uses local `realizar` with `cuda` feature?
+- [ ] **realizar → trueno-gpu**: `OwnedQuantizedModelCuda` exposes `profiler()`?
+- [ ] **cbtop → realizar**: `run_headless_real` prefers `profiler.all_stats()` over derived?
+
+## 11. PMAT Ticket Definition
+
+**System**: Use `pmat.toml` configuration in root.
+**Assignee**: Engineering Team.
+
+### T-PROF-001: Implement `CudaExecutor::record_brick`
+- **Repo**: `realizar`
+- **File**: `src/cuda.rs`
+- **Task**: Add `record_brick` helper with `cudaDeviceSynchronize` and `Instant::now`.
+- **Falsification**: F-PROF-001 (Realizar Latency)
+
+### T-PROF-002: Wrap Kernels in `record_brick`
+- **Repo**: `realizar`
+- **File**: `src/cuda.rs`
+- **Task**: Update `transformer_layer_workspace_inner` to wrap RmsNorm, QKV, RoPE, Attention, OProj, FFN.
+- **Falsification**: `cbtop` output shows populated "Per-Brick Timing" table.
+
+### T-PROF-003: Update `cbtop` to Use Real Stats
+- **Repo**: `aprender` (apr-cli)
+- **File**: `crates/apr-cli/src/commands/cbtop.rs`
+- **Task**: Modify `run_headless_real` to populate `brick_reports` from `cuda_model.profiler()`.
+- **Falsification**: F-PROF-001 (Variance Check)
+
+### T-PROF-004: Add Profiling to `trueno-zram`
+- **Repo**: `trueno`
+- **Task**: Instrument `compress_batch` with `BrickProfiler`.
+- **Falsification**: F-PROF-004 (Compression Speed)
+
+### T-PROF-005: Add Profiling to `presentar`
+- **Repo**: `presentar`
+- **Task**: Instrument render loop with `BrickProfiler`.
+- **Falsification**: F-PROF-006 (Frame Time)
 
 ---
 

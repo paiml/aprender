@@ -354,21 +354,31 @@ pub fn run(config: CbtopConfig) -> Result<()> {
 
 /// Run headless mode for CI/automation
 fn run_headless(config: CbtopConfig) -> Result<()> {
-    // PMAT-PERF-009: Route to real profiling if model_path is provided
+    // Falsification: Headless mode MUST NOT use simulation by default.
+    // Users must provide a model path and have the inference feature enabled.
+
     #[cfg(feature = "inference")]
-    if config.model_path.is_some() {
-        return run_headless_real(config);
+    {
+        if let Some(_) = config.model_path {
+            return run_headless_real(config);
+        } else {
+            return Err(CliError::ValidationFailed(
+                "Headless mode requires --model-path for real profiling.\n\
+                 Simulation is disabled in headless mode to ensure data validity.\n\
+                 Usage: apr cbtop --model-path <FILE> --headless"
+                    .to_string(),
+            ));
+        }
     }
 
     #[cfg(not(feature = "inference"))]
-    if config.model_path.is_some() {
-        eprintln!(
-            "cbtop: WARNING - --model-path requires 'inference' feature. Using simulated data."
-        );
-        eprintln!("       Build with: cargo build -p apr-cli --features inference");
+    {
+        return Err(CliError::ValidationFailed(
+            "Headless mode requires the 'inference' feature to be enabled.\n\
+             Rebuild with: cargo build -p apr-cli --features inference"
+                .to_string(),
+        ));
     }
-
-    run_headless_simulated(config)
 }
 
 /// Run headless mode with simulated data (demo mode)
@@ -449,6 +459,11 @@ fn run_headless_real(config: CbtopConfig) -> Result<()> {
         MappedGGUFModel, OwnedQuantizedModel, OwnedQuantizedModelCuda, QuantizedGenerateConfig,
     };
 
+    // PAR-073: Disable CUDA graphs BEFORE model load for per-brick profiling
+    // CUDA graph replay bypasses timing code, so we must use the non-graphed path
+    // The OnceLock in cuda.rs checks this env var on first forward pass
+    std::env::set_var("CUDA_GRAPH_DISABLE", "1");
+
     let model_path = config.model_path.as_ref().ok_or_else(|| {
         CliError::ValidationFailed("model_path is required for real profiling".to_string())
     })?;
@@ -496,6 +511,7 @@ fn run_headless_real(config: CbtopConfig) -> Result<()> {
 
     let load_time = load_start.elapsed();
     eprintln!("cbtop: Model loaded in {:.2}s", load_time.as_secs_f32());
+    eprintln!("cbtop: CUDA graphs DISABLED for per-brick profiling (PAR-073)");
     eprintln!();
 
     // Get model dimensions for brick benchmarks (via GGUFModel)
