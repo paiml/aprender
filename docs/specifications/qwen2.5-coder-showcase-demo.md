@@ -1,9 +1,9 @@
 # Qwen2.5-Coder Showcase: ComputeBrick Architecture
 
-**Version:** 4.88.0
-**Status:** ✅ **GPU 2x OLLAMA ACHIEVED** | 🟡 **CPU 3.8x GAP** (PAR-126: Fixed scratch path correctness bugs - GQA dimension calc and loop structure. CPU: 18.7 tok/s vs Ollama 71 tok/s. Rayon overhead is only 5.3ms/token. Real bottleneck: ~40ms unexplained gap in forward pass, possibly memory bandwidth or code path differences between fused vs non-fused ops.)
+**Version:** 4.90.0
+**Status:** ✅ **GPU 2x OLLAMA ACHIEVED** | 🟡 **CPU 5x GAP** (PAR-126: Fixed PARALLEL_THRESHOLD mismatch, added rayon::join for FFN. CPU: 14.2 tok/s vs Ollama 71 tok/s. Identified: Rayon dispatch overhead 50-90 us/call × 112 calls = 7ms/token. Q8K path could save 7ms more. Total gap: 23ms overhead on 46ms estimated forward time.)
 **Author:** PAIML Engineering
-**Date:** 2026-01-13
+**Date:** 2026-01-14
 **PMAT Roadmap ID:** `SHOWCASE-BRICK-001`
 
 **Canonical References:**
@@ -55,6 +55,9 @@
 | [7](#7-benchmark-protocol) | Benchmark Protocol | 📊 MEASURE | - |
 | [8](#8-peer-reviewed-citations) | Peer-Reviewed Citations | - | - |
 | [9](#9-120-point-popperian-falsification) | **120-Point Popperian Falsification** | 🔬 TEST | ✅ **136/136 tests, 2x ACHIEVED** |
+| [10](#10-extensive-qa-checklist) | Extensive QA Checklist | 🔬 TEST | - |
+| [11](#11-pmat-ticket-definition) | PMAT Ticket Definition | - | - |
+| [12](#12-ml-tuner-integration-trueno--aprender) | **ML Tuner Integration** | 🤖 ML | 🟡 trueno v0.12.0 required |
 | [A](#appendix-a-hardware-requirements) | Hardware Requirements | - | - |
 | [B](#appendix-b-model-matrix) | Model Matrix | - | - |
 | [C](#appendix-c-measurement-vs-optimization) | **Measurement vs Optimization** | - | - |
@@ -162,6 +165,7 @@
 | 4.83.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **FIX** | **PAR-125 VECTORIZED SCALE LOADING FIX**: Implemented in trueno-gpu commit `705392b`. Load 12 scale bytes as 3 × u32 instead of 12 × u8 (4x fewer transactions). **Results**: 7B M=8: 228→265 tok/s (+16%, **1.98x Ollama**). 7B M=4: 163→243 tok/s (+49%). 1.5B M=8: 798→943 tok/s (+18%, **3.24x Ollama**). 1.5B M=4: 632→815 tok/s (+29%). 7B now at 98.9% of 2x target (265 vs 268 tok/s). |
 | 4.84.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **ANALYSIS** | **PAR-126 CPU PERFORMANCE ANALYSIS**: CPU path (trueno SIMD) measured at 16 tok/s vs Ollama 290 tok/s (18x gap). Five-Whys analysis: (1) MADV_WILLNEED missing - added, improved 1.1→5.6 tok/s. (2) PARALLEL_THRESHOLD=4096 too high - lowered to 256, improved to 16 tok/s. (3) Remaining gap: fused_q4k_dot_simd kernel 18x slower than llama.cpp - requires SIMD optimization (future work). GPU 2x target achieved; CPU optimization deferred. |
 | 4.85.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **OPTIMIZED** | **PAR-126 CPU SIMD OPTIMIZATION**: Five-Whys analysis and optimization. (1) Optimized AVX-512 VNNI kernel: 16→63.7 tok/s (4x improvement). (2) **NUMA discovery**: 48 threads = 10% efficiency, 16 threads = 74% efficiency (peak at 16-24 threads). (3) Per-layer breakdown: QKV 95µs, Attn O 35µs, FFN up 114µs, FFN down 157µs = 514µs/layer. (4) LM head 1.3ms dominates (vocab=152K). **Current: 63.7 tok/s vs Ollama 265 tok/s CPU = 24% (4.2x gap)**. Remaining bottleneck: horizontal sums (24 per super-block). |
+| 4.89.0 | 2026-01-14 | PAIML Engineering | Architecture Lead | **SPEC** | **Section 12 ML TUNER INTEGRATION**: Added trueno+aprender ML tuner integration spec. TunerFeatures DIM=42 (v1.1.0) with roofline clamping. aprender RandomForest{Regressor,Classifier} for throughput prediction and kernel selection. Blocked on trueno v0.12.0 publish. Falsification tests F-TUNER-001 through F-TUNER-005 defined. PMAT tickets T-TUNER-001, T-TUNER-002 created. |
 
 ---
 
@@ -3580,6 +3584,197 @@ It does NOT prove performance targets are met. Only F081-F100 can prove that.
 
 ---
 
+## 12. ML Tuner Integration (trueno + aprender)
+
+**Version:** v1.1.0 (TunerFeatures DIM=42)
+**Status:** 🟡 IN PROGRESS - trueno v0.12.0 required
+**Canonical Reference:** trueno `src/tuner.rs`, `docs/specifications/ml-tuner-bricks.md`
+
+### 12.1 Architecture Overview
+
+The ML Tuner enables **learned kernel selection and throughput prediction** for ComputeBricks using aprender's ML models:
+
+```text
+┌─────────────────────────────────────────────────────────────────────┐
+│                        ML Tuner Architecture                        │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  ┌─────────────┐    ┌──────────────────┐    ┌──────────────────┐   │
+│  │ HardwareInfo│    │  TunerFeatures   │    │  aprender::tree  │   │
+│  │             │───▶│    (DIM=42)      │───▶│                  │   │
+│  │ - GPU mem   │    │                  │    │ RandomForest     │   │
+│  │ - CPU SIMD  │    │ 11 HW features   │    │ Regressor        │   │
+│  │ - PCIe BW   │    │  8 quant onehot  │    │ (throughput)     │   │
+│  └─────────────┘    │ 16 op onehot     │    │                  │   │
+│                     │  5 config feats  │    │ RandomForest     │   │
+│  ┌─────────────┐    │  2 v1.1.0 feats  │    │ Classifier       │   │
+│  │ ModelConfig │───▶│                  │    │ (kernel select)  │   │
+│  │             │    └──────────────────┘    └──────────────────┘   │
+│  │ - params    │              │                      │             │
+│  │ - layers    │              │                      ▼             │
+│  │ - hidden    │              │           ┌──────────────────┐     │
+│  └─────────────┘              │           │   Predictions    │     │
+│                               │           │                  │     │
+│  ┌─────────────┐              │           │ - tok/s estimate │     │
+│  │ BrickConfig │──────────────┘           │ - kernel choice  │     │
+│  │             │                          │ - roofline bound │     │
+│  │ - op type   │                          └──────────────────┘     │
+│  │ - batch sz  │                                                   │
+│  └─────────────┘                                                   │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### 12.2 TunerFeatures Vector (DIM=42)
+
+The 42-dimension feature vector enables ML models to predict optimal kernel configurations:
+
+| Range | Count | Feature Group | Examples |
+|-------|-------|---------------|----------|
+| 0-10 | 11 | Hardware | `cpu_simd_width`, `gpu_mem_bw_norm`, `gpu_l2_cache_norm` |
+| 11-18 | 8 | Quantization (one-hot) | Q4_0, Q4_K, Q5_K, Q6_K, Q8_0, F16, F32, BF16 |
+| 19-34 | 16 | Operation (one-hot) | MatMul, Attention, RMSNorm, RoPE, SwiGLU, ... |
+| 35-39 | 5 | Configuration | `batch_size_norm`, `seq_len_norm`, `model_params_b` |
+| 40-41 | 2 | v1.1.0 additions | `gpu_l2_cache_norm`, `is_zero_copy` |
+
+**v1.1.0 Critical Fields:**
+```rust
+pub struct TunerFeatures {
+    // ... 40 existing fields ...
+
+    /// L2 cache size / 128 MB (v1.1.0: critical for occupancy)
+    pub gpu_l2_cache_norm: f32,
+
+    /// Zero-copy memory path enabled (0 or 1) (v1.1.0: pinned memory)
+    pub is_zero_copy: f32,
+}
+```
+
+### 12.3 aprender Integration API
+
+**Dependency:** `aprender = "0.3.0"` (feature `tree`)
+
+```rust
+use aprender::tree::{RandomForestRegressor, RandomForestClassifier};
+use trueno::tuner::{TunerFeatures, KernelSelector, ThroughputRegressor};
+
+// 1. Throughput Prediction (tok/s)
+let mut regressor = RandomForestRegressor::new(100); // 100 trees
+let features: Matrix = training_features.into();    // [N, 42]
+let labels: Vector = throughput_labels.into();      // [N]
+regressor.fit(&features, &labels);
+
+let prediction = regressor.predict(&new_features);  // tok/s estimate
+
+// 2. Kernel Selection (classification)
+let mut classifier = RandomForestClassifier::new(50);
+let kernel_labels: Vector = kernel_ids.into();  // 0=TiledGemv, 1=Coalesced, ...
+classifier.fit(&features, &kernel_labels);
+
+let kernel_id = classifier.predict(&new_features).argmax();
+```
+
+### 12.4 Roofline Clamping (v1.1.0)
+
+Predictions are clamped to physical limits using the Williams et al. (2009) roofline model:
+
+```rust
+/// Theoretical maximum throughput based on memory bandwidth
+fn compute_roofline_bound(features: &TunerFeatures) -> f32 {
+    let model_params_b = 10.0_f32.powf(features.model_params_b * 3.0 - 1.0);
+    let bytes_per_param = bytes_from_quant_onehot(&features.quant_type_onehot);
+    let gpu_mem_bw_gbs = features.gpu_mem_bw_norm * 3000.0;  // denormalize
+    let batch_size = (features.batch_size_norm * 64.0).max(1.0);
+
+    // roofline: throughput <= memory_bw / bytes_per_token
+    let theoretical_max = (gpu_mem_bw_gbs * batch_size)
+                        / (model_params_b * bytes_per_param);
+    theoretical_max.clamp(1.0, 10000.0)
+}
+
+// Predictions cannot exceed physical limits
+let raw_prediction = regressor.predict(&features);
+let roofline = compute_roofline_bound(&features);
+let final_prediction = raw_prediction.min(roofline);  // CLAMPED
+```
+
+### 12.5 Integration Status Matrix
+
+| Component | Status | Blocked By | Notes |
+|-----------|--------|------------|-------|
+| **trueno::tuner** | ✅ v1.1.0 | - | 42-dim features, roofline clamping |
+| **aprender::tree** | ✅ 0.3.0 | - | RandomForest{Regressor,Classifier} |
+| **trueno publish** | ⚠️ BLOCKED | CI pipeline | v0.12.0 needed for brick+tuner |
+| **Integration wire** | 📋 TODO | trueno publish | Replace heuristic models |
+
+### 12.6 Training Data Collection
+
+BrickProfiler provides training data via CUDA-synchronized timing:
+
+```rust
+// Collect training samples during inference
+let profiler = BrickProfiler::new();
+for layer in 0..num_layers {
+    profiler.start_brick(BrickType::Attention);
+    attention_kernel(&q, &k, &v, &mut out);
+    cuda_device_synchronize();
+    profiler.end_brick();
+}
+
+// Export for ML training
+let samples: Vec<TrainingSample> = profiler.to_training_data(
+    &hardware_info,
+    &model_config,
+);
+serde_json::to_writer(file, &samples)?;
+```
+
+### 12.7 Falsification Tests (Popperian Protocol)
+
+| Test ID | Hypothesis | Falsification Criterion |
+|---------|------------|------------------------|
+| F-TUNER-001 | TunerFeatures DIM=42 | `features.to_vec().len() == 42` |
+| F-TUNER-002 | Roofline bound respected | `prediction <= roofline_bound` |
+| F-TUNER-003 | aprender fit converges | `regressor.fit()` returns Ok |
+| F-TUNER-004 | Kernel selection accurate | `accuracy > 0.8` on test set |
+| F-TUNER-005 | Throughput prediction | `MAE < 50 tok/s` |
+
+```rust
+#[test]
+fn f026_roofline_bound() {
+    // Setup: 7B model, Q4_K, RTX 4090 (1000 GB/s)
+    let features = TunerFeatures::builder()
+        .model_params_b(log10(7e9) / 3.0 + 1.0/3.0)
+        .gpu_mem_bw_norm(1000.0 / 3000.0)
+        .quant_type(QuantType::Q4_K)
+        .build();
+
+    // Roofline: 1000 GB/s / (7B * 0.5 bytes) = 285 tok/s theoretical max
+    let regressor = ThroughputRegressor::default();
+    let prediction = regressor.predict(&features);
+
+    // FALSIFICATION: prediction MUST NOT exceed roofline
+    assert!(prediction <= 285.0,
+        "Roofline violated: {} > 285 tok/s", prediction);
+}
+```
+
+### 12.8 PMAT Ticket Definition
+
+**T-TUNER-001: Wire aprender RandomForest to trueno tuner**
+- **Repo**: `trueno`
+- **File**: `src/tuner.rs`
+- **Task**: Replace placeholder heuristic models with aprender RandomForest
+- **Dependency**: trueno v0.12.0 publish, aprender v0.3.0
+- **Falsification**: F-TUNER-003, F-TUNER-004, F-TUNER-005
+
+**T-TUNER-002: Collect training data from cbtop**
+- **Repo**: `aprender` (apr-cli)
+- **File**: `crates/apr-cli/src/commands/cbtop.rs`
+- **Task**: Export BrickProfiler data as TunerFeatures + throughput pairs
+- **Falsification**: JSON output matches schema
+
+---
+
 ## Appendix A: Hardware Requirements
 
 | Component | Minimum | Recommended | Validated |
@@ -3634,20 +3829,38 @@ It does NOT prove performance targets are met. Only F081-F100 can prove that.
 
 | Why | Finding | Fix Applied |
 |-----|---------|-------------|
-| Why 1.1 tok/s initially? | MADV_WILLNEED not called | Added prefetch → 5.6 tok/s |
-| Why 11 tok/s still slow? | PARALLEL_THRESHOLD=4096 too high | Lowered to 256 → 16 tok/s |
-| Why 16 tok/s not 290? | fused_q4k_dot_simd slow | Optimized VNNI kernel → 63.7 tok/s |
-| Why only 63.7 tok/s? | NUMA scaling kills >16 threads | Identified 16-24 threads optimal |
-| Why 4.2x gap remains? | 24 horizontal sums/super-block | Kernel efficiency ~25 GFLOPS/thread |
+| Why scratch path 25% slower? | PARALLEL_THRESHOLD=4096 in _into variant vs 256 in allocating | Fixed to 256 → paths equal |
+| Why 71ms vs 46ms estimated? | Rayon dispatch overhead ~70 us × 140 matmuls = 10 ms | rayon::join for FFN → 70ms |
+| Why only 14.2 tok/s? | Sequential FFN up/gate → 2 extra Rayon dispatches/layer | Used rayon::join → 14.2 tok/s |
+| Why 23ms unexplained gap? | Cache effects + remaining Rayon overhead | Q8K path could save 7ms |
+| Why 5x gap to Ollama? | Ollama uses different parallelization (no Rayon) | Investigate llama.cpp approach |
 
-**v4.84.0 CPU Progress (PAR-126)**:
-- **Before**: 16 tok/s (18x slower than Ollama 290 tok/s)
-- **After**: 63.7 tok/s (4.2x slower than Ollama 265 tok/s CPU)
-- **NUMA Finding**: 48 threads = 10% efficiency, 16 threads = 74% efficiency
-- **Per-layer breakdown**: QKV 95µs, Attn O 35µs, FFN up 114µs, FFN down 157µs = 514µs/layer
-- **LM head**: 1.3 ms (vocab=152K)
+**v4.90.0 CPU Progress (PAR-126)**:
+- **Model**: Qwen2.5-Coder-1.5B Q4_K_M
+- **Current**: 14.2 tok/s (scratch path, up from 12.8)
+- **Ollama**: 70.59 tok/s
+- **Gap**: 5x slower
 
-**Remaining Gap**: 4.2x slower than Ollama CPU - FFN matmuls (57% of layer time) need further optimization
+**Commits**:
+- `d630426`: Fixed PARALLEL_THRESHOLD mismatch (scratch path was 25% slower)
+- `3cc79e0`: Parallel FFN up/gate with rayon::join (1.6 ms savings)
+
+**Timing Breakdown** (per token):
+- Estimated matmul time: 40 ms (140 matmuls × 280 us)
+- Estimated non-matmul: 7 ms (RMSNorm, RoPE, attention, SiLU)
+- Total estimated: 47 ms
+- Actual measured: 70 ms
+- **Unexplained gap: 23 ms (50% overhead)**
+
+**Rayon Overhead Analysis**:
+- Par dispatch per call: 50-90 us
+- Calls per token: 112 (4 per layer × 28 layers after join optimization)
+- Total Rayon overhead: ~8 ms
+
+**Remaining Optimizations**:
+- Q8K path: 1.2x kernel speedup, ~7 ms savings potential
+- Further Rayon batching: unclear benefit
+- Algorithm changes: need to study llama.cpp approach
 
 **Legend:**
 - ✅ = 2x Ollama achieved (with tok/s measurement)
