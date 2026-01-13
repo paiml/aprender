@@ -1,7 +1,7 @@
 # Qwen2.5-Coder Showcase: ComputeBrick Architecture
 
-**Version:** 4.55.0
-**Status:** ✅ MILESTONE (PAR-103: GQA attention NOT GPU-accelerated, peak 201 tok/s @ batch=4, PAR-104 BLOCKS 2x)
+**Version:** 4.56.0
+**Status:** ✅ MILESTONE (PAR-104: GPU attention NOT beneficial for decode batch - CPU optimal; peak 201 tok/s @ batch=4 is near limit)
 **Author:** PAIML Engineering
 **Date:** 2026-01-13
 **PMAT Roadmap ID:** `SHOWCASE-BRICK-001`
@@ -234,10 +234,14 @@ The 2x Ollama target requires speculative decoding infrastructure that neither s
     - With GQA: Q has hidden_dim (1536), K/V have hidden_dim * num_kv_heads / num_heads (256)
     - Attempt to use GPU attention failed with "range start index 1536 out of range for slice of length 512"
   - **PATH TO 2x:** Need GQA-aware batched GPU attention (PAR-104) OR better draft model
-- [ ] **PAR-104** GQA-aware batched GPU attention — **TODO (required for batch_size>4 scaling)**
-  - Modify `batched_causal_attention_gpu` to handle different Q vs K/V dimensions
-  - Handle head expansion (each KV head serves multiple Q heads)
-  - Would unlock linear scaling to batch_size=16+
+- [x] **PAR-104** GQA-aware batched GPU attention — **IMPLEMENTED BUT NOT BENEFICIAL**
+  - Implemented `batched_causal_attention_gpu_gqa()` with proper Q/K/V dimension handling
+  - **Five-Whys Finding:** GPU attention has 300x overhead for small seq_len (batch decode)
+    - At batch_size=2: Q@K^T is [2, 128] @ [128, 2] = [2, 2] matmul
+    - GPU kernel launch overhead (~30ms) dominates tiny computation
+    - Measured: 1.2 tok/s (GPU) vs 197 tok/s (CPU) at batch_size=2
+  - **ROOT CAUSE:** GPU wins only for large seq_len (prefill), not decode batch
+  - **CONCLUSION:** CPU attention is optimal for batch decode; 2x requires different approach
 
 | Repository | ComputeBrick | Source | Features | Notes |
 |------------|-------------|--------|----------|-------|
