@@ -59,6 +59,8 @@ pub struct CbtopConfig {
     pub speculative: bool,
     /// PAR-100: Number of tokens to draft speculatively (default: 4)
     pub speculation_k: usize,
+    /// PAR-099: Path to draft model for speculative decoding
+    pub draft_model_path: Option<PathBuf>,
 }
 
 impl Default for CbtopConfig {
@@ -77,6 +79,7 @@ impl Default for CbtopConfig {
             iterations: 100,
             speculative: false,
             speculation_k: 4,
+            draft_model_path: None,
         }
     }
 }
@@ -520,6 +523,31 @@ fn run_headless_real(config: CbtopConfig) -> Result<()> {
     eprintln!("cbtop: CUDA graphs DISABLED for per-brick profiling (PAR-073)");
     eprintln!();
 
+    // PAR-099: Load draft model if provided
+    let mut draft_cuda_model = if let Some(ref draft_path) = config.draft_model_path {
+        eprintln!("cbtop: Loading draft model (PAR-099)...");
+        let draft_load_start = Instant::now();
+
+        let draft_mapped = MappedGGUFModel::from_path(draft_path)
+            .map_err(|e| CliError::ValidationFailed(format!("Failed to map draft model: {e}")))?;
+
+        let draft_model = OwnedQuantizedModel::from_mapped(&draft_mapped).map_err(|e| {
+            CliError::ValidationFailed(format!("Failed to create draft model: {e}"))
+        })?;
+
+        let draft_cuda = OwnedQuantizedModelCuda::new(draft_model, 0)
+            .map_err(|e| CliError::ValidationFailed(format!("Failed to init draft CUDA: {e}")))?;
+
+        let draft_load_time = draft_load_start.elapsed();
+        eprintln!(
+            "cbtop: Draft model loaded in {:.2}s",
+            draft_load_time.as_secs_f32()
+        );
+        Some(draft_cuda)
+    } else {
+        None
+    };
+
     // Get model dimensions for brick benchmarks (via GGUFModel)
     let hidden_dim = mapped.model.embedding_dim().unwrap_or(896);
     let num_heads = mapped.model.num_heads().unwrap_or(14);
@@ -576,8 +604,10 @@ fn run_headless_real(config: CbtopConfig) -> Result<()> {
     eprintln!();
 
     // Phase 2: Measure throughput
-    let mode_str = if config.speculative {
-        format!("speculative (k={})", config.speculation_k)
+    let mode_str = if config.speculative && draft_cuda_model.is_some() {
+        format!("speculative with draft (k={})", config.speculation_k)
+    } else if config.speculative {
+        format!("speculative self (k={})", config.speculation_k)
     } else {
         "standard".to_string()
     };
@@ -591,9 +621,24 @@ fn run_headless_real(config: CbtopConfig) -> Result<()> {
     for i in 0..config.iterations {
         let iter_start = Instant::now();
 
-        // PAR-100: Use speculative decoding if flag is set
+        // PAR-099/100: Use speculative decoding if flag is set
         let result = if config.speculative {
-            cuda_model.generate_speculative_cuda(&prompt_tokens, &gen_config, config.speculation_k)
+            if let Some(ref mut draft) = draft_cuda_model {
+                // PAR-099: Use draft model for fast token generation
+                cuda_model.generate_speculative_with_draft(
+                    draft,
+                    &prompt_tokens,
+                    &gen_config,
+                    config.speculation_k,
+                )
+            } else {
+                // PAR-100: Self-speculative (same model, baseline)
+                cuda_model.generate_speculative_cuda(
+                    &prompt_tokens,
+                    &gen_config,
+                    config.speculation_k,
+                )
+            }
         } else {
             cuda_model.generate_gpu_resident(&prompt_tokens, &gen_config)
         };

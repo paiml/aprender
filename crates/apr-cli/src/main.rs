@@ -456,6 +456,10 @@ enum Commands {
         /// PAR-100: Number of tokens to draft speculatively (default: 4)
         #[arg(long, default_value = "4")]
         speculation_k: usize,
+
+        /// PAR-099: Path to draft model for speculative decoding
+        #[arg(long, value_name = "DRAFT_MODEL")]
+        draft_model: Option<PathBuf>,
     },
 
     /// Export for probar visual testing
@@ -908,6 +912,7 @@ fn execute_command(cli: &Cli) -> Result<(), error::CliError> {
             iterations,
             speculative,
             speculation_k,
+            draft_model,
         } => {
             // P0: Auto-detect if --model is a file path for real profiling
             // If model looks like a path (ends with .gguf or exists as file), use it as model_path
@@ -944,6 +949,7 @@ fn execute_command(cli: &Cli) -> Result<(), error::CliError> {
                 iterations: *iterations,
                 speculative: *speculative,
                 speculation_k: *speculation_k,
+                draft_model_path: draft_model.clone(),
             })
         }
 
