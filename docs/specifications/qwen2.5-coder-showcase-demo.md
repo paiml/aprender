@@ -147,22 +147,25 @@
 | 4.69.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **COMPLETE** | **PAR-110 FIVE-WHYS ROOT CAUSE**: Gap between current 360 tok/s and target 400 tok/s analyzed. Found DP4A kernels disabled (CORRECTNESS-001 scale extraction bug). VectorizedQ4KGemvKernel is already optimized (coalesced loads, warp shuffle). Kernel is memory-bound, not compute-bound. DP4A fix would not significantly help. Multi-sequence batching is the path to 400 tok/s. |
 | 4.70.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **IN PROGRESS** | **PAR-111 BATCHED GEMV BENCHMARK**: Ran `bench_batched_gemv.rs` showing **16x speedup for M=4** batched vs sequential GEMV (501µs→31µs for FFN up projection). Key insight: Batched kernel reads/dequantizes weights ONCE for all M inputs. Current sequential: 360 tok/s. With batched GEMV in forward path: Theoretical 875+ tok/s (well above 400 tok/s target). Implementation: M-wide workspace buffers + batched GEMV for all projections + attention M times (can't batch different KV caches) + batched argmax. |
 | 4.71.1 | 2026-01-13 | PAIML Engineering | Architecture Lead | **REAL DATA** | **PAR-111 REAL MEASUREMENTS**: Updated spec with REAL profiling data from cbtop and bench_batched_forward: M=1: 231.3 tok/s, M=4: 398.7 tok/s (1.23x Ollama 323.9 tok/s). ComputeBlocks/sec: 122,795 CB/s. Per-brick timing from BrickProfiler with 109,200 samples each. Attention (42.47µs, 23.8%) is main bottleneck. Gap to 2x Ollama: 38% (648 tok/s target). |
+| 4.72.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **IMPLEMENTED** | **PAR-112 BATCHED RMSNORM**: Five-Whys identified sequential RMSNorm launches (M×2 per layer) as overhead. Implemented BatchedVectorizedRmsNormKernel in trueno-gpu using Grid.y=M for parallel sequence processing. Integrated into realizar transformer_layer_batched. **Result: 407 tok/s (1.26x Ollama 323 tok/s)**. **Five-Whys Analysis**: At 407 tok/s, we're at 96% of theoretical max (423 tok/s) for single-request at 55% memory bandwidth efficiency. **2x TARGET REQUIRES**: (1) Multi-request continuous batching (PAR-106), (2) TensorCore GEMM for batch>1, or (3) Better-matched speculative decoding. Gap to 2x: 37% (648 tok/s target). |
 
 ---
 
 ## ComputeBrick Integration Matrix
 
-**Status:** PAR-111 COMPLETE - **1.23x OLLAMA** (398.7 tok/s with M=4 batching vs 323.9 tok/s Ollama baseline)
+**Status:** PAR-112 COMPLETE - **1.26x OLLAMA** (407 tok/s with M=4 batching + batched RMSNorm vs 323 tok/s Ollama baseline)
 
-**Dual Metrics (per user request) - REAL MEASUREMENTS:**
+**Dual Metrics (per user request) - REAL MEASUREMENTS (PAR-112):**
 | Metric | Value | Formula | Source |
 |--------|-------|---------|--------|
-| **Tokens/sec (M=1)** | 231.3 tok/s | Single-sequence decode | `bench_batched_forward.rs` REAL |
-| **Tokens/sec (M=4)** | 398.7 tok/s | Batched decode (4 sequences) | `bench_batched_forward.rs` REAL |
-| **ComputeBlocks/sec** | 122,795 CB/s | 398.7 tok/s × 28 layers × 11 bricks | Calculated from REAL throughput |
-| **Per-layer time** | 89.5µs | 17.5 MB @ 55% of 355 GB/s | Derived from 398.7/(28×1e6) |
-| **Ollama baseline** | 323.9 tok/s | `ollama run qwen2.5-coder:1.5b` | REAL measurement |
-| **Speedup vs Ollama** | 1.23x | 398.7 / 323.9 | **ACHIEVED** |
+| **Tokens/sec (M=1)** | 216 tok/s | Single-sequence decode | `bench_batched_forward.rs` REAL |
+| **Tokens/sec (M=4)** | 407 tok/s | Batched decode (4 sequences) | `bench_batched_forward.rs` REAL |
+| **ComputeBlocks/sec** | 125,356 CB/s | 407 tok/s × 28 layers × 11 bricks | Calculated from REAL throughput |
+| **Per-layer time** | 87.8µs | 17.5 MB @ 56% of 355 GB/s | Derived from 407/(28×1e6) |
+| **Ollama baseline** | 323 tok/s | `ollama run qwen2.5-coder:1.5b` | REAL measurement |
+| **Speedup vs Ollama** | 1.26x | 407 / 323 | **ACHIEVED** |
+| **Theoretical max** | 423 tok/s | At 55% bandwidth efficiency | Analysis |
+| **Efficiency** | 96% | 407 / 423 | Near theoretical limit |
 
 **Per-Brick Profiling (REAL via cbtop --headless --model-path):**
 | Brick | Mean µs | % of Layer | Samples | Budget µs | Status |
