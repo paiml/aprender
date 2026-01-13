@@ -1,7 +1,7 @@
 # Qwen2.5-Coder Showcase: ComputeBrick Architecture
 
-**Version:** 4.49.0
-**Status:** ✅ MILESTONE (1.3B: **409.3 tok/s** = 129% Ollama, Fair Comparison - Neither Uses Speculative)
+**Version:** 4.50.0
+**Status:** ✅ MILESTONE (1.3B: **400 tok/s** = 126% Ollama, Fair Comparison - Neither Uses Speculative)
 **Author:** PAIML Engineering
 **Date:** 2026-01-13
 **PMAT Roadmap ID:** `SHOWCASE-BRICK-001`
@@ -111,6 +111,7 @@
 | 4.47.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **IN PROGRESS** | **PAR-094 TENSOR CORE Q4K GEMM KERNEL**: Five-Whys root cause: `batch_matmul_gpu` dequantizes Q4K→FP32 first (line 15349), then does FP32 GEMM. This is 2x memory bandwidth (read quantized, write dequantized). **FIX**: Added `TensorCoreQ4KGemmKernel` import to realizar from trueno-gpu (line 61), added `KernelType::TensorCoreQ4KGemm` (line 353), implemented `tensor_core_q4k_gemm` function (line 7252). Kernel uses WMMA 16×16×16 tiles with fused dequant+GEMM. **NEXT**: Integrate with speculative decoder for M>1 batch verification. Path to 2x: Single-token max is ~430 tok/s; batch decode (k=4-8 speculative) amortizes weight reads for theoretical 2-4x speedup. |
 | 4.48.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **IN PROGRESS** | **PAR-095 TENSOR CORE GEMM WRAPPER**: Added `tensor_core_q4k_gemm_cached()` function (line 7329) that provides CPU input/output interface for speculative decode. Takes CPU slices [M,K]→[M,N], uses GPU-resident Q4K weights, handles upload/download. Infrastructure complete for batched verification. **NEXT**: Wire into `OwnedQuantizedModelCuda.forward_batch_native` to replace dequant+FP32 path. |
 | 4.49.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **IN PROGRESS** | **PAR-096 FORWARD_BATCH_CUDA_NATIVE**: Five-Whys discovered TensorCoreQ4KGemmKernel is skeleton only (lines 7947-7968). Alternative: Implemented `batched_q4k_gemv_cached()` that calls GEMV M times with L2 cache reuse. Added `forward_batch_cuda_native()` to `OwnedQuantizedModelCuda` (270 LOC). Uses batched GEMV for all projections (QKV, O, FFN up/down, LM head). **RESULT: 409.3 tok/s = 1.29x Ollama 318** (up from 359.9). Gap to 2x: 1.55x. **NEXT**: PAR-097 batched attention kernel for speculative verification. |
+| 4.50.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **IN PROGRESS** | **PAR-097 BATCHED ATTENTION WITH CACHE**: Added `batched_attention_with_cache_gqa()` to `OwnedQuantizedModel` (100 LOC) for k queries against cache+k new K/V. Added `append_kv()`, `advance_by()` to KV cache. Added `forward_batch_with_cache_cuda_native()` (300 LOC) with proper RoPE positions. **Infrastructure for speculative decode COMPLETE**. Current: 400 tok/s = 1.26x Ollama. **NEXT**: PAR-098 Wire speculative decoder to batched forward. |
 
 ---
 
@@ -136,7 +137,7 @@
 | PAR-094 TensorCoreQ4KGemm | +0% (infra) | Medium | ✅ DONE (kernel added) |
 | PAR-095 BatchedGEMV Wrapper | +0% (infra) | Medium | ✅ DONE (L2 cache reuse) |
 | PAR-096 forward_batch_cuda_native | +14% | Medium | ✅ DONE (359→409 tok/s) |
-| PAR-097 Batched Attention | +20-30% | Medium | 🔧 IN PROGRESS (k queries × N keys) |
+| PAR-097 Batched Attention | +0% (infra) | Medium | ✅ DONE (batched_attention_with_cache_gqa) |
 | PAR-091 Speculative Decoding (k=4) | +100-200% | High | 📋 NEXT (draft model needed) |
 | Tensor Core Attention (FP16 WMMA) | +10-15% | High | 📋 TODO (diminishing returns) |
 | ~~PAR-085 Multi-token Decode~~ | ~~+50-100%~~ | ~~High~~ | ❌ BLOCKED (requires speculative) |
@@ -191,7 +192,10 @@ The 2x Ollama target requires speculative decoding infrastructure that neither s
   - Uses `batched_q4k_gemv_cached()` for all projections (QKV, O, FFN, LM head)
   - Five-Whys: TensorCoreQ4KGemmKernel is skeleton only, GEMV M times is alternative
   - **RESULT: 359→409.3 tok/s (+14%)**
-- [ ] **PAR-097** Batched attention kernel (k queries vs N keys)
+- [x] **PAR-097** Batched attention kernel (k queries vs N keys) — **DONE**
+  - `batched_attention_with_cache_gqa()` added to `OwnedQuantizedModel` (100 LOC)
+  - `append_kv()`, `advance_by()` added to `OwnedQuantizedKVCache`
+  - `forward_batch_with_cache_cuda_native()` added to `OwnedQuantizedModelCuda` (300 LOC)
 - [ ] Speculative KV cache management
 - [ ] Draft model loading (0.5B Qwen)
 - [ ] Verification and rejection sampling logic
