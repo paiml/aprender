@@ -196,9 +196,16 @@ The 2x Ollama target requires speculative decoding infrastructure that neither s
   - `batched_attention_with_cache_gqa()` added to `OwnedQuantizedModel` (100 LOC)
   - `append_kv()`, `advance_by()` added to `OwnedQuantizedKVCache`
   - `forward_batch_with_cache_cuda_native()` added to `OwnedQuantizedModelCuda` (300 LOC)
-- [ ] Speculative KV cache management
-- [ ] Draft model loading (0.5B Qwen)
-- [ ] Verification and rejection sampling logic
+- [ ] **PAR-098** Speculative KV cache management
+  - Cache rollback on token rejection
+  - Separate cache state tracking for draft/target
+- [ ] **PAR-099** Draft model loading (0.5B Qwen)
+  - Load smaller Q4K model for drafting (~600MB)
+  - Share GPU context with target model
+- [ ] **PAR-100** `generate_speculative_cuda()` implementation
+  - Draft k tokens using draft model
+  - Verify batch using `forward_batch_with_cache_cuda_native`
+  - Acceptance sampling with proper cache management
 
 | Repository | ComputeBrick | Source | Features | Notes |
 |------------|-------------|--------|----------|-------|
