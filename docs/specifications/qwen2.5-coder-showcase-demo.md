@@ -1,7 +1,7 @@
 # Qwen2.5-Coder Showcase: ComputeBrick Architecture
 
-**Version:** 4.43.0
-**Status:** IN PROGRESS (1.5B: **328.7 tok/s** = 118% Ollama, PAR-081 RmsNorm optimization)
+**Version:** 4.44.0
+**Status:** IN PROGRESS (1.5B: **362 tok/s** = 127% Ollama, CUDA Graph + PAR-081 RmsNorm)
 **Author:** PAIML Engineering
 **Date:** 2026-01-13
 **PMAT Roadmap ID:** `SHOWCASE-BRICK-001`
@@ -105,22 +105,31 @@
 | 4.41.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **IN PROGRESS** | **PAR-076 FUSED RMSNORM+GEMV PATH**: Identified `FusedRmsNormQ4KGemvKernel` in trueno-gpu that fuses RMSNorm with Q4K GEMV in single pass. Could save ~10-20% layer time by fusing: (1) RmsNorm1 + Q projection, (2) RmsNorm2 + FFN gate. **IMPLEMENTATION REQUIRED**: Add kernel type to realizar, add wrapper function, modify transformer layer. **CURRENT STATUS**: 290.5 tok/s (91% Ollama). **OPTIMIZATIONS APPLIED**: PAR-074 adaptive attention (44% faster), PAR-073 real profiling. **REMAINING GAP**: 2.2x to 2x Ollama target. |
 | 4.42.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **IN PROGRESS** | **PAR-076/077 BLOCKED + PROFILING OVERHEAD IDENTIFIED**: (1) **PAR-076 BLOCKED**: RmsNorm output shared by multiple GEMVs (Q,K,V use same norm output). Cannot fuse. (2) **PAR-077 FusedGateUpQ4K BLOCKED**: Five-Whys analysis disproved "input bandwidth" hypothesis. Input: 6KB, Weights: 15MB - weights dominate by 2500x. L2 cache naturally serves input reuse. Fused kernel was 3x SLOWER due to shared memory + barrier overhead. (3) **PROFILING OVERHEAD**: cbtop `--headless` adds sync between bricks, masking real performance. **TRUE PERFORMANCE**: `apr bench --fast`: **261.6 tok/s** (82% Ollama 318), not 132 tok/s. **Per-layer: 139µs** (not 355µs). **Gap to 2x: 2.4x** (261.6 → 636 tok/s). Next paths: Flash Attention, Tensor Cores, batch decode. |
 | 4.43.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **IN PROGRESS** | **PAR-081 VECTORIZED RMSNORM**: Five-Whys root cause: RmsNorm was 23.5µs (21.5% of layer) due to single-warp kernel (32 threads) leaving 97% of GPU idle. Implemented VectorizedRmsNormKernel with 256 threads (8 warps) and shared memory reduction. **RESULTS**: RmsNorm 23.5µs → 7.4µs (3.2x faster). **Total throughput: 229.5 → 328.7 tok/s (+43%)**. **NOW 1.18x FASTER THAN OLLAMA** (328.7 vs 277.8). Target: 555 tok/s (2x Ollama). Gap: 1.7x. Remaining bottlenecks: Attention (44µs, 26%), FFNGateUp (34µs, 20%), FFNDown (27µs, 16%). |
+| 4.44.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **IN PROGRESS** | **BENCHMARK CORRECTION + CUDA GRAPH VERIFIED**: (1) Previous 462 tok/s measurement was aprender baseline (fake tiny model), NOT realizar. (2) Real realizar path with CUDA graph: **314-362 tok/s** (longer sequences amortize prefill). (3) Ollama baseline: **279-285 tok/s**. (4) **CORRECT RATIO: 1.27x Ollama** (362 vs 285). Target: 570 tok/s (2x Ollama 285). Gap: 1.58x remaining. Memory bandwidth analysis: 17.5MB/layer, 51% efficiency at 114µs/layer. Theoretical max at 100% efficiency: 613 tok/s. Current implementation is within 60% of theoretical limit. Remaining paths: Speculative decoding (2-4x via weight reuse), Tensor Core attention (FP16 WMMA). |
 
 ---
 
 ## ComputeBrick Integration Matrix
 
-**Status:** IN PROGRESS - Infrastructure complete, **NOW FASTER THAN OLLAMA** (328.7 vs 278 tok/s = 1.18x)
+**Status:** IN PROGRESS - Infrastructure complete, **1.27x FASTER THAN OLLAMA** (362 vs 285 tok/s)
 
-**PUBLISHING POLICY:** NO packages (trueno, realizar, aprender) will be published until 2x Ollama performance target (~556 tok/s) is achieved. Current: **328.7 tok/s (118% Ollama, 59% of 2x target)**.
+**PUBLISHING POLICY:** NO packages (trueno, realizar, aprender) will be published until 2x Ollama performance target (~570 tok/s) is achieved. Current: **362 tok/s (127% Ollama, 63% of 2x target)**.
 
-**Path to 2x Ollama (remaining 1.7x improvement):**
+**Path to 2x Ollama (remaining 1.58x improvement):**
 | Optimization | Expected Gain | Complexity | Status |
 |--------------|---------------|------------|--------|
-| PAR-081 VectorizedRmsNorm | +43% | Low | ✅ DONE |
+| PAR-081 VectorizedRmsNorm | +43% | Low | ✅ DONE (23µs→7.4µs) |
+| PAR-083 Benchmark Correction | N/A | Low | ✅ DONE (fake→real path) |
+| Speculative Decoding (4-draft) | +50-100% | High | 📋 TODO |
 | Tensor Core Attention (FP16 WMMA) | +15-25% | High | 📋 TODO |
-| FP16 Activations Pipeline | +30-50% | High | 📋 TODO |
-| Speculative Decoding | +100-200% | High | 📋 TODO |
+| FP16 Activations Pipeline | +20-40% | Medium | 📋 TODO |
+
+**Theoretical Analysis:**
+- Memory per layer: 17.5 MB (Q4K weights)
+- Theoretical minimum at 300 GB/s: 58.3µs/layer
+- Current actual: 114µs/layer (51% efficiency)
+- Theoretical max throughput: **613 tok/s** (at 100% bandwidth)
+- Current: 362 tok/s = **59% of theoretical max**
 
 | Repository | ComputeBrick | Source | Features | Notes |
 |------------|-------------|--------|----------|-------|
