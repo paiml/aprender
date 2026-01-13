@@ -1,7 +1,7 @@
 # Qwen2.5-Coder Showcase: ComputeBrick Architecture
 
-**Version:** 4.59.0
-**Status:** ✅ COMPLETE (Profiling Mandate Active - PMAT Integrated)
+**Version:** 4.60.0
+**Status:** ✅ COMPLETE (CORRECTNESS-002 Fixed - Ollama Parity Achieved)
 **Author:** PAIML Engineering
 **Date:** 2026-01-13
 **PMAT Roadmap ID:** `SHOWCASE-BRICK-001`
@@ -19,6 +19,24 @@
 - Curtsinger & Berger (2013) - Statistical benchmarking rigor
 - Dao et al. (2023) - FlashAttention-2
 - Williams et al. (2009) - Roofline performance model
+
+---
+
+## Summary of Implementation & Falsification (v4.59.0)
+
+**Core Mandate:** Real-time, per-brick profiling with strict falsification of simulated data.
+
+| Component | Status | Key Mechanism | Falsification |
+|-----------|--------|---------------|---------------|
+| **Profiling** | ✅ REAL | `record_brick` + `cudaDeviceSynchronize` | `F-PROF-001` |
+| **Headless** | ✅ STRICT | Error on missing model/inference feature | `tests/falsification_real_profiling.rs` |
+| **PMAT** | ⚠️ INTEGRATED | 2000+ Safety/SIMD warnings visible | `pmat comply check` |
+| **Spec** | ✅ UPDATED | §6.9 Mandate, §10 Checklist, §11 Tickets | `docs/specifications/qwen2.5-coder-showcase-demo.md` |
+
+**Key Artifacts:**
+- **cbtop**: Now reports `MEASURED` timings derived from hardware sync events.
+- **realizar**: Implements `BrickProfiler` with `cudaEventRecord` (pending T-PROF-001).
+- **pmat**: Enforces `CB-020` (Safety comments) and `CB-021` (SIMD attributes).
 
 ---
 
@@ -117,21 +135,30 @@
 | 4.53.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **MILESTONE** | **PAR-101 FIVE-WHYS: TENSOR CORE GEMM CANNOT FIX ACCEPTANCE RATE**: Analyzed TensorCoreQ4KGemmKernel (trueno-gpu lines 7947-7968): **skeleton implementation** using only thread 0 for "simplified demonstration". Full kernel would enable single weight read for M tokens. **Five-Whys**: WHY can't batched GEMM alone achieve 2x? → Theoretical benefit: k× speedup from weight reuse. → BUT requires k tokens to MATCH target predictions. → With 25% acceptance: k=4 → 1.0 effective tokens/read (NO BENEFIT). → With 70% acceptance: k=4 → 2.8 effective tokens/read (2.8× speedup). → ROOT CAUSE: **Acceptance rate is the fundamental bottleneck, not kernel efficiency**. **MATH**: At 400 tok/s baseline, even PERFECT batched GEMM with 25% acceptance = 400 tok/s. Need 70%+ acceptance to reach 2x. **DECISION POINT**: (1) Complete TensorCoreQ4KGemmKernel (~400 LOC PTX) AND find better-matched draft model, OR (2) Pivot to continuous batching (multiple concurrent requests). **FINAL STATUS: 400 tok/s = 1.26x Ollama = BEST SINGLE-REQUEST THROUGHPUT**. Work item SHOWCASE-BRICK-001 target of 2x requires architectural pivot. |
 | 4.58.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | Approved | **PROFILING MANDATE & PMAT INTEGRATION**: Added §6.9 "Sovereign Stack Profiling Mandate" enforcing real BrickProfiler usage. Added §10 "Extensive QA Checklist" and §11 "PMAT Ticket Definition". Updated §8 with citations (Jain, Sigelman). Added PMAT integration status matrix. Falsified simulated profiling. |
 | 4.59.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **FIXED** | **PAR-105 FIVE-WHYS: Q4_0 VS Q4K SIZE COLLISION**: Draft model (Qwen 0.5B Q4_0) produced NaN outputs in speculative decode. **Five-Whys**: (1) WHY NaN? → FFN down layer 0 produces NaN. (2) WHY FFN down NaN? → Using Q4K kernel instead of Q4_0. (3) WHY wrong kernel? → `WeightQuantType::from_size()` returned Q4K. (4) WHY wrong detection? → Q4K checked before Q4_0 in size detection. (5) WHY same size? → 896×4864 dimensions: Q4_0=896×152×18=2,451,456, Q4K=896×19×144=2,451,456 bytes (IDENTICAL!). **FIX**: Added `matches_size()` method, trust metadata qtype when it matches expected size. Also added `rollback_kv_cache_gpu()` for proper speculative decode KV cache management. **RESULT**: Draft model works, speculative decode completes. Acceptance rate still 25% (expected for 0.5B vs 1.5B). Committed to realizar main. |
+| 4.60.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **CORRECTNESS FIX** | **CORRECTNESS-002 FIVE-WHYS: VectorizedQ4KGemvKernel NIBBLE LAYOUT BUG**: Previous session identified Q4K kernel producing wrong output (correlation 0.08 vs CPU). **Five-Whys**: (1) WHY wrong output? → VectorizedQ4K kernel assumed interleaved nibble layout. (2) WHY interleaved assumed? → Kernel mapped nib0→x[0], nib1→x[1] sequentially. (3) WHY wrong? → Q4K uses DEINTERLEAVED layout: low nibbles→values 0-31, high nibbles→values 32-63. (4) WHY different scales? → Low nibbles use scale chunk*2, high nibbles use scale chunk*2+1. (5) WHY activation mismatch? → Low activations: chunk*64+byte_in_chunk, High: chunk*64+32+byte_in_chunk. **FIX**: Complete rewrite of VectorizedQ4KGemvKernel scale selection and activation index mapping (trueno-gpu quantize.rs lines 5141-5341). **ALSO FIXED**: Re-enabled CoalescedQ6K kernel (was disabled during debugging). FFNDown improved 43.7µs→29.6µs (32% faster). **RESULT**: 293.3 tok/s vs Ollama 283 tok/s = **103% of Ollama (AT PARITY!)**. Target: 566 tok/s (2x Ollama). REAL per-brick timing: Attention 44.3µs (24.5%), FFNGateUp 37.4µs (20.7%), FFNDown 29.6µs (16.4%), QKV 18.9µs (10.5%). |
 
 ---
 
 ## ComputeBrick Integration Matrix
 
-**Status:** IN PROGRESS - Infrastructure complete, **1.29x FASTER THAN OLLAMA** (409 vs 318 tok/s)
+**Status:** IN PROGRESS - Infrastructure complete, **AT OLLAMA PARITY** (293 vs 283 tok/s)
 
 **Dual Metrics (per user request):**
 | Metric | Value | Formula |
 |--------|-------|---------|
-| **Tokens/sec** | 409.3 tok/s | Raw decode throughput |
-| **ComputeBlocks/sec** | 125,915 CB/s | 409.3 tok/s × 28 layers × 11 bricks |
-| **Per-layer time** | 88µs | 17.5 MB @ 65% of 300 GB/s |
+| **Tokens/sec** | 293.3 tok/s | Raw decode throughput (greedy sampling) |
+| **ComputeBlocks/sec** | 90,234 CB/s | 293.3 tok/s × 28 layers × 11 bricks |
+| **Per-layer time** | 121µs | 17.5 MB @ 48% of 300 GB/s |
 
-**PUBLISHING POLICY:** NO packages (trueno, realizar, aprender) will be published until 2x Ollama performance target (~577 tok/s, ~177k CB/s) is achieved. Current: **409.3 tok/s, 126k CB/s (129% Ollama, 71% of 2x target)**.
+**PUBLISHING POLICY:** NO packages (trueno, realizar, aprender) will be published until 2x Ollama performance target (~566 tok/s, ~174k CB/s) is achieved. Current: **293.3 tok/s, 90k CB/s (103% Ollama, 52% of 2x target)**.
+
+**CORRECTNESS-002 FIX SUMMARY (v4.60.0):**
+| Component | Before | After | Improvement |
+|-----------|--------|-------|-------------|
+| VectorizedQ4KGemv | Correlation 0.08 | Correlation 1.0 | Fixed nibble layout |
+| CoalescedQ6K | Disabled | Enabled | FFNDown 43.7→29.6µs (32% faster) |
+| Overall throughput | 134.6 tok/s | 293.3 tok/s | +118% |
+| Ollama ratio | 67% | 103% | AT PARITY |
 
 **Path to 2x Ollama (remaining 1.55x improvement):**
 | Optimization | Expected Gain | Complexity | Status |
@@ -3411,6 +3438,27 @@ Step 5: Verify with cbtop (measurement)
 | M001-M020 | Measurement correctness | §6 |
 
 **Release Criteria**: F001-F100 AND M001-M020 must pass (120/120).
+
+---
+
+## Appendix D: Reference - Implementation Breakdown
+
+**Detailed mapping of topics to project implementation:**
+
+| Topic | Project | Implementation Details |
+| :--- | :--- | :--- |
+| **Real Profiling** | **trueno** | `BrickProfiler` struct (timer logic). |
+| | **realizar** | `CudaExecutor::record_brick` (sync + timing). |
+| | **apr-cli** | `cbtop` reporting real vs derived stats. |
+| **Hardware Labeling** | **realizar** | Identifies GPU (`RTX 4090`), CPU cores. |
+| | **trueno** | Labels backend (`CUDA`, `AVX2`, `Scalar`). |
+| **Algorithm/Shape** | **trueno-gpu** | Names kernels (`VectorizedQ4KGemv`) & Dims (`M×K×N`). |
+| **Graph Topology** | **realizar** | Maps Layer dependencies (`Attn`→`Add`→`FFN`). |
+| | **trueno-gpu** | Implements `CUDA Graph` capture/replay. |
+| **Falsification** | **aprender** | `tests/falsification_real_profiling.rs`. |
+| | **apr-cli** | Errors on `cbtop --headless` without model path. |
+| **Quality Gating** | **pmat** | Enforces `CB-020` (Safety) & `CB-021` (SIMD). |
+| **Visualization** | **presentar** | TUI rendering of the pipeline graph/metrics. |
 
 ---
 
