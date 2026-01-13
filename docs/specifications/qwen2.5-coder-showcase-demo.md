@@ -1,7 +1,7 @@
 # Qwen2.5-Coder Showcase: ComputeBrick Architecture
 
-**Version:** 4.40.0
-**Status:** IN PROGRESS (1.5B: **290.5 tok/s** = 91% Ollama 318, 2.2x gap to 2x target)
+**Version:** 4.41.0
+**Status:** IN PROGRESS (1.5B: **290.5 tok/s** = 91% Ollama, PAR-076 FusedRmsNorm+GEMV path identified)
 **Author:** PAIML Engineering
 **Date:** 2026-01-13
 **PMAT Roadmap ID:** `SHOWCASE-BRICK-001`
@@ -102,6 +102,7 @@
 | 4.38.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **IN PROGRESS** | **PAR-073 REAL PER-BRICK TIMING COMPLETE**: Added 11 timing points to transformer_layer_workspace_inner. CUDA graphs disabled during profiling (env CUDA_GRAPH_DISABLE=1). **REAL MEASURED DATA (0.5B Q4_0)**: Attention 68.90µs (38.4%), FFNGateUp 19.61µs (10.9%), QKV 16.12µs (9.0%), FFNDown 15.27µs (8.5%), RmsNorm1 14.84µs (8.3%), RmsNorm2 14.68µs (8.2%), OProj 8.12µs (4.5%), RoPE 7.12µs (4.0%), Residual2 5.12µs (2.8%), Residual1 4.92µs (2.7%), SwiGLU 4.90µs (2.7%). **Five-Whys Root Cause: Attention is 38.4% of layer time = MAIN BOTTLENECK**. Profiled throughput: 171.8 tok/s (with sync overhead). Non-profiled: 416 tok/s. Headless simulation FALSIFIED - now requires real model. |
 | 4.39.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **IN PROGRESS** | **PAR-074 ADAPTIVE ATTENTION KERNEL**: Five-Whys root cause: MultiWarp kernel (4 warps) has warp synchronization overhead that dominates for short sequences (decode). **Solution:** Adaptive kernel selection: seq_len < 128 uses single-warp IncrementalAttention (32 threads), seq_len >= 128 uses multi-warp MultiWarpAttention (128 threads). **RESULT (1.5B Q4_K_M)**: Attention 76.52µs → 42.88µs (**44% faster**), share 38.2% → 21.1% of layer time. Profiled throughput: 132.3 tok/s. Remaining bottlenecks: FFNGateUp (17.2%), FFNDown (13.7%), RmsNorm (22.2% combined). |
 | 4.40.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **IN PROGRESS** | **PAR-075 FUSION ANALYSIS**: Analyzed Residual+RmsNorm fusion opportunity. Added `fused_residual_rmsnorm_into` helper. **BLOCKER**: Cannot fuse Residual1+RmsNorm2 in current architecture because residual1 value is needed for second residual add. Would need buffer restructure. **Non-profiled benchmark: 290.5 tok/s (91% of Ollama 318 tok/s)**. Target: 636 tok/s (2x Ollama). Gap: 2.2x. Main bottleneck: Q4K GEMV at ~50% (memory-bound). Next paths: FP16 activations, tensor cores, speculative decoding. |
+| 4.41.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **IN PROGRESS** | **PAR-076 FUSED RMSNORM+GEMV PATH**: Identified `FusedRmsNormQ4KGemvKernel` in trueno-gpu that fuses RMSNorm with Q4K GEMV in single pass. Could save ~10-20% layer time by fusing: (1) RmsNorm1 + Q projection, (2) RmsNorm2 + FFN gate. **IMPLEMENTATION REQUIRED**: Add kernel type to realizar, add wrapper function, modify transformer layer. **CURRENT STATUS**: 290.5 tok/s (91% Ollama). **OPTIMIZATIONS APPLIED**: PAR-074 adaptive attention (44% faster), PAR-073 real profiling. **REMAINING GAP**: 2.2x to 2x Ollama target. |
 
 ---
 
