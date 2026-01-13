@@ -146,21 +146,43 @@
 | 4.68.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **COMPLETE** | **PAR-109 MULTI-SEQUENCE GRAPH ANALYSIS**: Created `bench_multisequence_graph.rs` benchmark to measure per-token overhead breakdown. **KEY FINDING**: Multi-sequence CUDA graph can achieve **974-1502 tok/s (2.7-4.5x current)** - well above 2x Ollama target. Analysis: GEMV is 68% of per-token time (2040us) and batches perfectly with M=4 (510us). Attention is only 28% (840us) and runs M times but doesn't dominate. Per-token breakdown: Embedding 0.6us, GPU 3014us. M=4 batched theoretical: 1027us/tok = **974 tok/s (4.87x Ollama)**. Implementation: M-wide buffers + batched GEMV (PAR-108) + M attention kernels + M-way argmax. |
 | 4.69.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **COMPLETE** | **PAR-110 FIVE-WHYS ROOT CAUSE**: Gap between current 360 tok/s and target 400 tok/s analyzed. Found DP4A kernels disabled (CORRECTNESS-001 scale extraction bug). VectorizedQ4KGemvKernel is already optimized (coalesced loads, warp shuffle). Kernel is memory-bound, not compute-bound. DP4A fix would not significantly help. Multi-sequence batching is the path to 400 tok/s. |
 | 4.70.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **IN PROGRESS** | **PAR-111 BATCHED GEMV BENCHMARK**: Ran `bench_batched_gemv.rs` showing **16x speedup for M=4** batched vs sequential GEMV (501µs→31µs for FFN up projection). Key insight: Batched kernel reads/dequantizes weights ONCE for all M inputs. Current sequential: 360 tok/s. With batched GEMV in forward path: Theoretical 875+ tok/s (well above 400 tok/s target). Implementation: M-wide workspace buffers + batched GEMV for all projections + attention M times (can't batch different KV caches) + batched argmax. |
+| 4.71.1 | 2026-01-13 | PAIML Engineering | Architecture Lead | **REAL DATA** | **PAR-111 REAL MEASUREMENTS**: Updated spec with REAL profiling data from cbtop and bench_batched_forward: M=1: 231.3 tok/s, M=4: 398.7 tok/s (1.23x Ollama 323.9 tok/s). ComputeBlocks/sec: 122,795 CB/s. Per-brick timing from BrickProfiler with 109,200 samples each. Attention (42.47µs, 23.8%) is main bottleneck. Gap to 2x Ollama: 38% (648 tok/s target). |
 
 ---
 
 ## ComputeBrick Integration Matrix
 
-**Status:** PAR-106 COMPLETE - **1.80x OLLAMA** (360 tok/s with batching vs 200 tok/s Ollama baseline)
+**Status:** PAR-111 COMPLETE - **1.23x OLLAMA** (398.7 tok/s with M=4 batching vs 323.9 tok/s Ollama baseline)
 
-**Dual Metrics (per user request):**
-| Metric | Value | Formula |
-|--------|-------|---------|
-| **Tokens/sec** | 293.3 tok/s | Raw decode throughput (greedy sampling) |
-| **ComputeBlocks/sec** | 90,234 CB/s | 293.3 tok/s × 28 layers × 11 bricks |
-| **Per-layer time** | 121µs | 17.5 MB @ 48% of 300 GB/s |
+**Dual Metrics (per user request) - REAL MEASUREMENTS:**
+| Metric | Value | Formula | Source |
+|--------|-------|---------|--------|
+| **Tokens/sec (M=1)** | 231.3 tok/s | Single-sequence decode | `bench_batched_forward.rs` REAL |
+| **Tokens/sec (M=4)** | 398.7 tok/s | Batched decode (4 sequences) | `bench_batched_forward.rs` REAL |
+| **ComputeBlocks/sec** | 122,795 CB/s | 398.7 tok/s × 28 layers × 11 bricks | Calculated from REAL throughput |
+| **Per-layer time** | 89.5µs | 17.5 MB @ 55% of 355 GB/s | Derived from 398.7/(28×1e6) |
+| **Ollama baseline** | 323.9 tok/s | `ollama run qwen2.5-coder:1.5b` | REAL measurement |
+| **Speedup vs Ollama** | 1.23x | 398.7 / 323.9 | **ACHIEVED** |
 
-**PUBLISHING POLICY:** NO packages (trueno, realizar, aprender) will be published until 2x Ollama performance target (~566 tok/s, ~174k CB/s) is achieved. Current: **293.3 tok/s, 90k CB/s (103% Ollama, 52% of 2x target)**.
+**Per-Brick Profiling (REAL via cbtop --headless --model-path):**
+| Brick | Mean µs | % of Layer | Samples | Budget µs | Status |
+|-------|---------|------------|---------|-----------|--------|
+| Attention | 42.47 | 23.8% | 109,200 | 10.0 | ❌ 4.2x |
+| FFNGateUp | 37.37 | 21.0% | 109,200 | 12.2 | ❌ 3.1x |
+| FFNDown | 29.64 | 16.6% | 109,200 | 12.2 | ❌ 2.4x |
+| QKV | 18.89 | 10.6% | 109,200 | 6.0 | ❌ 3.1x |
+| OProj | 9.97 | 5.6% | 109,200 | 3.5 | ❌ 2.8x |
+| RmsNorm1 | 7.79 | 4.4% | 109,200 | 1.5 | ❌ 5.2x |
+| RmsNorm2 | 7.49 | 4.2% | 109,200 | 1.5 | ❌ 5.0x |
+| RoPE | 7.21 | 4.0% | 109,200 | 1.0 | ❌ 7.2x |
+| SwiGLU | 6.06 | 3.4% | 109,200 | - | - |
+| Residual2 | 5.84 | 3.3% | 109,200 | - | - |
+| Residual1 | 5.49 | 3.1% | 109,200 | - | - |
+| **TOTAL** | ~178µs | 100% | - | 35.7µs | ❌ 5.0x |
+
+**Note:** Per-brick profiling adds CUDA sync overhead (~30% slowdown). Non-profiled throughput is 398.7 tok/s.
+
+**PUBLISHING POLICY:** NO packages (trueno, realizar, aprender) will be published until 2x Ollama performance target (~648 tok/s, ~200k CB/s) is achieved. Current: **398.7 tok/s, 123k CB/s (123% Ollama, 62% of 2x target)**.
 
 **CORRECTNESS-002 FIX SUMMARY (v4.60.0):**
 | Component | Before | After | Improvement |
@@ -170,7 +192,7 @@
 | Overall throughput | 134.6 tok/s | 293.3 tok/s | +118% |
 | Ollama ratio | 67% | 103% | AT PARITY |
 
-**Path to 2x Ollama (remaining 1.61x improvement from 248 tok/s):**
+**Path to 2x Ollama (remaining 1.63x improvement from 398.7 tok/s):**
 | Optimization | Expected Gain | Complexity | Status |
 |--------------|---------------|------------|--------|
 | PAR-081 VectorizedRmsNorm | +43% | Low | ✅ DONE (23µs→7.4µs) |
@@ -180,6 +202,7 @@
 | PAR-095 BatchedGEMV Wrapper | +0% (infra) | Medium | ✅ DONE (L2 cache reuse) |
 | PAR-096 forward_batch_cuda_native | +14% | Medium | ✅ DONE (359→409 tok/s) |
 | PAR-097 Batched Attention | +0% (infra) | Medium | ✅ DONE (batched_attention_with_cache_gqa) |
+| **PAR-111 Batched Forward Path** | **+72%** | Medium | ✅ **DONE (231→399 tok/s, 1.23x Ollama)** |
 | PAR-091 Speculative Decoding (k=4) | ~~+100-200%~~ | High | ❌ **BLOCKED** - 0.5B/1.5B incompatible (9.5% match rate) |
 | PAR-106 Continuous Batching | +50-200% | High | 📋 **RECOMMENDED** for 2x (vLLM-style) |
 | Tensor Core Attention (FP16 WMMA) | +10-15% | High | 📋 TODO (diminishing returns) |
