@@ -115,7 +115,14 @@
 
 **Status:** IN PROGRESS - Infrastructure complete, **1.24x FASTER THAN OLLAMA** (359 vs 288 tok/s)
 
-**PUBLISHING POLICY:** NO packages (trueno, realizar, aprender) will be published until 2x Ollama performance target (~577 tok/s) is achieved. Current: **359 tok/s (124% Ollama, 62% of 2x target)**.
+**Dual Metrics (per user request):**
+| Metric | Value | Formula |
+|--------|-------|---------|
+| **Tokens/sec** | 359.9 tok/s | Raw decode throughput |
+| **ComputeBlocks/sec** | 110,689 CB/s | 359.9 tok/s × 28 layers × 11 bricks |
+| **Per-layer time** | 100µs | 17.5 MB @ 58% of 300 GB/s |
+
+**PUBLISHING POLICY:** NO packages (trueno, realizar, aprender) will be published until 2x Ollama performance target (~577 tok/s, ~177k CB/s) is achieved. Current: **359 tok/s, 110k CB/s (124% Ollama, 62% of 2x target)**.
 
 **Path to 2x Ollama (remaining 1.61x improvement):**
 | Optimization | Expected Gain | Complexity | Status |
@@ -891,24 +898,32 @@ Validation Points:
 | **Total Layer** | | **35.7** | **28,011** | **97.5%** | 2.5% headroom |
 | **Full Model** | 28 layers | **999.6** | **976** tok/s | 100% | ≈ 1ms/token |
 
-### 3.2 Current Performance vs Budget
+### 3.2 Current Performance vs Budget (REAL MEASURED via cbtop)
 
 **Measured**: realizar v0.5.1 on RTX 4090, Qwen2.5-Coder-1.5B Q4_K_M
+**Date**: 2026-01-13 (PAR-092 Five-Whys analysis)
 
-| Brick | Actual (µs) | Actual (block/s) | Budget (µs) | Budget (block/s) | Gap | Status |
-|-------|-------------|------------------|-------------|------------------|-----|--------|
-| `RmsNormBrick` | 1.2 | 833,333 | 1.5 | 666,667 | 0.8x | ✅ PASS |
-| `QkvBrick` | 8.5 | 117,647 | 6.0 | 166,667 | 1.4x | ❌ **FAIL** |
-| `RopeBrick` | 0.8 | 1,250,000 | 1.0 | 1,000,000 | 0.8x | ✅ PASS |
-| `AttentionBrick` | 12.3 | 81,301 | 10.0 | 100,000 | 1.2x | ❌ **FAIL** |
-| `OProjBrick` | 4.1 | 243,902 | 3.5 | 285,714 | 1.2x | ❌ **FAIL** |
-| `RmsNormBrick` | 1.2 | 833,333 | 1.5 | 666,667 | 0.8x | ✅ PASS |
-| `FfnBrick` | 15.8 | 63,291 | 12.2 | 81,967 | 1.3x | ❌ **FAIL** |
-| **Total Layer** | **43.9** | **22,779** | **35.7** | **28,011** | **1.2x** | ❌ **FAIL** |
+| Brick | Actual (µs) | CB/s | Budget (µs) | Budget CB/s | Gap | Status |
+|-------|-------------|------|-------------|-------------|-----|--------|
+| `RmsNorm1` | 7.53 | 132,802 | 1.5 | 666,667 | 5.0x | ❌ FAIL |
+| `QkvBrick` | 17.26 | 57,938 | 6.0 | 166,667 | 2.9x | ❌ FAIL |
+| `RopeBrick` | 6.88 | 145,349 | 1.0 | 1,000,000 | 6.9x | ❌ FAIL |
+| `AttentionBrick` | 42.54 | 23,508 | 10.0 | 100,000 | 4.3x | ❌ **MAIN** |
+| `OProjBrick` | 9.43 | 106,045 | 3.5 | 285,714 | 2.7x | ❌ FAIL |
+| `RmsNorm2` | 7.28 | 137,363 | 1.5 | 666,667 | 4.9x | ❌ FAIL |
+| `FFNGateUp` | 34.28 | 29,172 | 6.0 | 166,667 | 5.7x | ❌ FAIL |
+| `SwiGLU` | 5.71 | 175,131 | 2.0 | 500,000 | 2.9x | ❌ FAIL |
+| `FFNDown` | 27.39 | 36,511 | 4.2 | 238,095 | 6.5x | ❌ FAIL |
+| `Residual1` | 5.40 | 185,185 | 0.5 | 2,000,000 | 10.8x | ❌ FAIL |
+| `Residual2` | 5.45 | 183,486 | 0.5 | 2,000,000 | 10.9x | ❌ FAIL |
+| **Total Layer** | **169.15** | **5,912** | **35.7** | **28,011** | **4.7x** | ❌ **FAIL** |
 
 **Result**:
-- **Token throughput**: 814 tok/s actual vs 976 tok/s target = **83% of target**
-- **Block throughput**: 159,572 block/s actual vs 191,296 block/s target (196 bricks/token)
+- **Token throughput**: 359.9 tok/s actual vs 976 tok/s target = **37% of target**
+- **ComputeBlocks/sec**: 110,689 CB/s actual vs 177,296 CB/s target (2x Ollama)
+- **Per-layer time**: 100µs (with CUDA graph) vs 35.7µs target
+
+**Root Cause (Five-Whys)**: Memory bandwidth limited to 58% of 300 GB/s peak. At this efficiency, max achievable is ~429 tok/s. Target 976 tok/s requires either 100%+ bandwidth utilization (impossible) or batch processing (speculative decoding).
 
 ### 3.3 Model Size Matrix
 
