@@ -110,9 +110,17 @@
 
 ## ComputeBrick Integration Matrix
 
-**Status:** IN PROGRESS - Infrastructure complete, performance goal not met.
+**Status:** IN PROGRESS - Infrastructure complete, **NOW FASTER THAN OLLAMA** (328.7 vs 278 tok/s = 1.18x)
 
-**PUBLISHING POLICY:** NO packages (trueno, realizar, aprender) will be published until 2x Ollama performance target (400 tok/s) is achieved. Current: 190 tok/s (47.5%).
+**PUBLISHING POLICY:** NO packages (trueno, realizar, aprender) will be published until 2x Ollama performance target (~556 tok/s) is achieved. Current: **328.7 tok/s (118% Ollama, 59% of 2x target)**.
+
+**Path to 2x Ollama (remaining 1.7x improvement):**
+| Optimization | Expected Gain | Complexity | Status |
+|--------------|---------------|------------|--------|
+| PAR-081 VectorizedRmsNorm | +43% | Low | ✅ DONE |
+| Tensor Core Attention (FP16 WMMA) | +15-25% | High | 📋 TODO |
+| FP16 Activations Pipeline | +30-50% | High | 📋 TODO |
+| Speculative Decoding | +100-200% | High | 📋 TODO |
 
 | Repository | ComputeBrick | Source | Features | Notes |
 |------------|-------------|--------|----------|-------|
