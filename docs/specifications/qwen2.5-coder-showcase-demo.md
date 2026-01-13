@@ -1,7 +1,7 @@
 # Qwen2.5-Coder Showcase: ComputeBrick Architecture
 
-**Version:** 4.41.0
-**Status:** IN PROGRESS (1.5B: **290.5 tok/s** = 91% Ollama, PAR-076 FusedRmsNorm+GEMV path identified)
+**Version:** 4.42.0
+**Status:** IN PROGRESS (1.5B: **261.6 tok/s** = 82% Ollama, profiling overhead identified)
 **Author:** PAIML Engineering
 **Date:** 2026-01-13
 **PMAT Roadmap ID:** `SHOWCASE-BRICK-001`
@@ -103,6 +103,7 @@
 | 4.39.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **IN PROGRESS** | **PAR-074 ADAPTIVE ATTENTION KERNEL**: Five-Whys root cause: MultiWarp kernel (4 warps) has warp synchronization overhead that dominates for short sequences (decode). **Solution:** Adaptive kernel selection: seq_len < 128 uses single-warp IncrementalAttention (32 threads), seq_len >= 128 uses multi-warp MultiWarpAttention (128 threads). **RESULT (1.5B Q4_K_M)**: Attention 76.52µs → 42.88µs (**44% faster**), share 38.2% → 21.1% of layer time. Profiled throughput: 132.3 tok/s. Remaining bottlenecks: FFNGateUp (17.2%), FFNDown (13.7%), RmsNorm (22.2% combined). |
 | 4.40.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **IN PROGRESS** | **PAR-075 FUSION ANALYSIS**: Analyzed Residual+RmsNorm fusion opportunity. Added `fused_residual_rmsnorm_into` helper. **BLOCKER**: Cannot fuse Residual1+RmsNorm2 in current architecture because residual1 value is needed for second residual add. Would need buffer restructure. **Non-profiled benchmark: 290.5 tok/s (91% of Ollama 318 tok/s)**. Target: 636 tok/s (2x Ollama). Gap: 2.2x. Main bottleneck: Q4K GEMV at ~50% (memory-bound). Next paths: FP16 activations, tensor cores, speculative decoding. |
 | 4.41.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **IN PROGRESS** | **PAR-076 FUSED RMSNORM+GEMV PATH**: Identified `FusedRmsNormQ4KGemvKernel` in trueno-gpu that fuses RMSNorm with Q4K GEMV in single pass. Could save ~10-20% layer time by fusing: (1) RmsNorm1 + Q projection, (2) RmsNorm2 + FFN gate. **IMPLEMENTATION REQUIRED**: Add kernel type to realizar, add wrapper function, modify transformer layer. **CURRENT STATUS**: 290.5 tok/s (91% Ollama). **OPTIMIZATIONS APPLIED**: PAR-074 adaptive attention (44% faster), PAR-073 real profiling. **REMAINING GAP**: 2.2x to 2x Ollama target. |
+| 4.42.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **IN PROGRESS** | **PAR-076/077 BLOCKED + PROFILING OVERHEAD IDENTIFIED**: (1) **PAR-076 BLOCKED**: RmsNorm output shared by multiple GEMVs (Q,K,V use same norm output). Cannot fuse. (2) **PAR-077 FusedGateUpQ4K BLOCKED**: Five-Whys analysis disproved "input bandwidth" hypothesis. Input: 6KB, Weights: 15MB - weights dominate by 2500x. L2 cache naturally serves input reuse. Fused kernel was 3x SLOWER due to shared memory + barrier overhead. (3) **PROFILING OVERHEAD**: cbtop `--headless` adds sync between bricks, masking real performance. **TRUE PERFORMANCE**: `apr bench --fast`: **261.6 tok/s** (82% Ollama 318), not 132 tok/s. **Per-layer: 139µs** (not 355µs). **Gap to 2x: 2.4x** (261.6 → 636 tok/s). Next paths: Flash Attention, Tensor Cores, batch decode. |
 
 ---
 
