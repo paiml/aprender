@@ -55,6 +55,10 @@ pub struct CbtopConfig {
     pub brick_score_threshold: Option<u32>,
     pub warmup: usize,
     pub iterations: usize,
+    /// PAR-100: Enable speculative decoding benchmark
+    pub speculative: bool,
+    /// PAR-100: Number of tokens to draft speculatively (default: 4)
+    pub speculation_k: usize,
 }
 
 impl Default for CbtopConfig {
@@ -71,6 +75,8 @@ impl Default for CbtopConfig {
             brick_score_threshold: None,
             warmup: 10,
             iterations: 100,
+            speculative: false,
+            speculation_k: 4,
         }
     }
 }
@@ -570,16 +576,29 @@ fn run_headless_real(config: CbtopConfig) -> Result<()> {
     eprintln!();
 
     // Phase 2: Measure throughput
+    let mode_str = if config.speculative {
+        format!("speculative (k={})", config.speculation_k)
+    } else {
+        "standard".to_string()
+    };
     eprintln!(
-        "cbtop: Measuring throughput ({} iterations)...",
-        config.iterations
+        "cbtop: Measuring throughput ({} iterations, {} mode)...",
+        config.iterations, mode_str
     );
     let mut total_tokens = 0usize;
     let mut latencies_us: Vec<f64> = Vec::with_capacity(config.iterations);
 
     for i in 0..config.iterations {
         let iter_start = Instant::now();
-        match cuda_model.generate_gpu_resident(&prompt_tokens, &gen_config) {
+
+        // PAR-100: Use speculative decoding if flag is set
+        let result = if config.speculative {
+            cuda_model.generate_speculative_cuda(&prompt_tokens, &gen_config, config.speculation_k)
+        } else {
+            cuda_model.generate_gpu_resident(&prompt_tokens, &gen_config)
+        };
+
+        match result {
             Ok(output) => {
                 let tokens_generated = output.len().saturating_sub(prompt_tokens.len());
                 total_tokens += tokens_generated;

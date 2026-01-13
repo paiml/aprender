@@ -448,6 +448,14 @@ enum Commands {
         /// Number of measurement iterations
         #[arg(long, default_value = "100")]
         iterations: usize,
+
+        /// PAR-100: Enable speculative decoding benchmark
+        #[arg(long)]
+        speculative: bool,
+
+        /// PAR-100: Number of tokens to draft speculatively (default: 4)
+        #[arg(long, default_value = "4")]
+        speculation_k: usize,
     },
 
     /// Export for probar visual testing
@@ -898,6 +906,8 @@ fn execute_command(cli: &Cli) -> Result<(), error::CliError> {
             brick_score,
             warmup,
             iterations,
+            speculative,
+            speculation_k,
         } => {
             // P0: Auto-detect if --model is a file path for real profiling
             // If model looks like a path (ends with .gguf or exists as file), use it as model_path
@@ -932,6 +942,8 @@ fn execute_command(cli: &Cli) -> Result<(), error::CliError> {
                 brick_score_threshold: *brick_score,
                 warmup: *warmup,
                 iterations: *iterations,
+                speculative: *speculative,
+                speculation_k: *speculation_k,
             })
         }
 
