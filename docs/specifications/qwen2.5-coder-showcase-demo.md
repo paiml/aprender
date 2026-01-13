@@ -120,9 +120,17 @@
 |--------------|---------------|------------|--------|
 | PAR-081 VectorizedRmsNorm | +43% | Low | ✅ DONE (23µs→7.4µs) |
 | PAR-083 Benchmark Correction | N/A | Low | ✅ DONE (fake→real path) |
-| Speculative Decoding (4-draft) | +50-100% | High | 📋 TODO |
+| PAR-085 Multi-token Decode (k=2-4) | +50-100% | High | 📋 TODO (weight reuse) |
+| Speculative Decoding (4-draft) | +50-100% | High | 📋 TODO (draft model needed) |
 | Tensor Core Attention (FP16 WMMA) | +15-25% | High | 📋 TODO |
-| FP16 Activations Pipeline | +20-40% | Medium | 📋 TODO |
+| ~~FP16 Activations Pipeline~~ | ~~+20-40%~~ | ~~Medium~~ | ❌ DEPRIORITIZED |
+
+**PAR-085 FP16 Activations Analysis:**
+FP16 activations would NOT significantly help:
+- Weights: 17.5 MB/layer (99.96% of memory traffic)
+- Activations: 6 KB/layer (0.04% of memory traffic)
+- Ratio: 2500:1 - FFN is weight-bound, not activation-bound
+- FP16 would add complexity with minimal gain
 
 **Theoretical Analysis:**
 - Memory per layer: 17.5 MB (Q4K weights)
@@ -130,6 +138,8 @@
 - Current actual: 114µs/layer (51% efficiency)
 - Theoretical max throughput: **613 tok/s** (at 100% bandwidth)
 - Current: 362 tok/s = **59% of theoretical max**
+
+**Key Insight:** To exceed 613 tok/s (theoretical max at 100% bandwidth), multi-token batching is required to amortize weight reads over multiple tokens per layer pass.
 
 | Repository | ComputeBrick | Source | Features | Notes |
 |------------|-------------|--------|----------|-------|
