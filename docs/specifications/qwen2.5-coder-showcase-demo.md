@@ -1,7 +1,7 @@
 # Qwen2.5-Coder Showcase: ComputeBrick Architecture
 
-**Version:** 4.74.0
-**Status:** 🟠 ARCHITECTURAL LIMIT (PAR-117: Five-Whys shows **asymptotic max 521 tok/s** (165% Ollama). Current M=8: **448 tok/s = 1.42x Ollama**. 2x requires Flash Decoding or Tensor Core attention.)
+**Version:** 4.75.0
+**Status:** 🟠 ARCHITECTURAL LIMIT (PAR-118: Root cause = **SINGLE SHARED KV CACHE**. M=8 plateaus at **431 tok/s = 1.37x Ollama**. 2x (630 tok/s) requires multi-KV-cache architecture (PAR-119) or Flash Decoding.)
 **Author:** PAIML Engineering
 **Date:** 2026-01-13
 **PMAT Roadmap ID:** `SHOWCASE-BRICK-001`
@@ -150,26 +150,33 @@
 | 4.72.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **IMPLEMENTED** | **PAR-112 BATCHED RMSNORM**: Five-Whys identified sequential RMSNorm launches (M×2 per layer) as overhead. Implemented BatchedVectorizedRmsNormKernel in trueno-gpu using Grid.y=M for parallel sequence processing. Integrated into realizar transformer_layer_batched. **Result: 407 tok/s (1.26x Ollama 323 tok/s)**. **Five-Whys Analysis**: At 407 tok/s, we're at 96% of theoretical max (423 tok/s) for single-request at 55% memory bandwidth efficiency. **2x TARGET REQUIRES**: (1) Multi-request continuous batching (PAR-106), (2) TensorCore GEMM for batch>1, or (3) Better-matched speculative decoding. Gap to 2x: 37% (648 tok/s target). |
 | 4.73.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **IMPLEMENTED** | **PAR-114 BATCHED ROPE/RESIDUAL/SWIGLU**: Five-Whys identified sequential kernel launches (6M per layer) as overhead. Implemented BatchedRopeKernel, BatchedResidualAddKernel, BatchedSwigluKernel in trueno-gpu using Grid.y=M. Integrated into realizar transformer_layer_batched. Per-layer kernel launches reduced from ~6M+9 to ~16 fixed. **Result: M=8: 444.2 tok/s (1.41x Ollama 315 tok/s)**, up from 415 tok/s (+7%). Gap to 2x: 41% (630 tok/s target). |
 | 4.74.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **ARCHITECTURAL LIMIT** | **PAR-115/117 FIVE-WHYS ASYMPTOTIC ANALYSIS**: (1) PAR-115: Batched output RMSNorm implemented (+1% = 449 tok/s). (2) Five-Whys root cause analysis of M-sequence scaling model: `batch_time = GEMV_base + M × K` where K=1.92ms per-sequence overhead. **K breakdown**: Attention 1.5ms, Argmax 0.2ms, other 0.2ms. **Asymptotic limit at M→∞: 521 tok/s (165% Ollama)**. BATCHED GEMV kernel limited to M=8 by register pressure. **2x OLLAMA (630 tok/s) REQUIRES**: Flash Decoding (amortize KV reads across queries), Tensor Core attention, or fundamentally different architecture. Current: **M=8: 448 tok/s = 1.42x Ollama**. |
+| 4.75.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **ROOT CAUSE FOUND** | **PAR-118 FIVE-WHYS DEEP DIVE**: Root cause of M-scaling plateau identified: **SINGLE SHARED KV CACHE PER LAYER**. Current architecture has 1 KV cache per layer (28 total), NOT M separate caches. This FORCES sequential attention (M calls per layer). **PTX API gap fixed**: Added `ld_global_u64` to trueno-gpu PTX builder. **BatchedIncrementalAttentionKernel** implemented in trueno-gpu (Grid: (num_heads, batch_size, 1)), but CANNOT be used without M separate KV caches. **REAL NUMBERS**: M=1: 229.8 tok/s, M=4: 435.0 tok/s, M=8: 431.2 tok/s (PLATEAU). **TO REACH 2x OLLAMA**: Requires multi-KV-cache architecture (PAR-119) or Flash Decoding. |
 
 ---
 
 ## ComputeBrick Integration Matrix
 
-**Status:** PAR-117 **ARCHITECTURAL LIMIT FOUND** - **1.42x OLLAMA** (448 tok/s @ M=8). Asymptotic max: **521 tok/s (165% Ollama)**. 2x (630 tok/s) NOT achievable with current M-sequence batching.
+**Status:** PAR-118 **ROOT CAUSE FOUND** - **Single Shared KV Cache** architecture limits M-scaling. M=8 plateaus at **431 tok/s = 1.37x Ollama**. 2x (630 tok/s) NOT achievable without multi-KV-cache architecture.
 
-**Dual Metrics (per user request) - REAL MEASUREMENTS (PAR-117):**
+**Dual Metrics (per user request) - REAL MEASUREMENTS (PAR-118):**
 | Metric | Value | Formula | Source |
 |--------|-------|---------|--------|
-| **Tokens/sec (M=1)** | 227.3 tok/s | Single-sequence decode | `bench_batched_forward.rs` REAL |
-| **Tokens/sec (M=4)** | 424.2 tok/s | Batched decode (4 sequences) | `bench_batched_forward.rs` REAL |
-| **Tokens/sec (M=8)** | 448.1 tok/s | Batched decode (8 sequences) | `bench_batched_forward.rs` REAL |
-| **Asymptotic max (M→∞)** | 521 tok/s | 1/K where K=1.92ms per-seq | Five-Whys model |
-| **ComputeBlocks/sec** | 137,944 CB/s | 448 tok/s × 28 layers × 11 bricks | Calculated from REAL throughput |
-| **Per-layer time** | 79.7µs | 17.5 MB @ 62% of 355 GB/s | Derived from 448/(28×1e6) |
-| **Ollama baseline** | 315 tok/s | `ollama run qwen2.5-coder:1.5b` | REAL measurement |
-| **Speedup vs Ollama** | 1.42x | 448 / 315 | **ACHIEVED** |
-| **Per-sequence overhead K** | 1.92ms | Attention 1.5ms + Argmax 0.2ms + other 0.2ms | Five-Whys model |
-| **Batched GEMV base** | 2.48ms | Constant regardless of M | Five-Whys model |
+| **Tokens/sec (M=1)** | 229.8 tok/s | Single-sequence decode | `bench_batched_forward.rs` REAL |
+| **Tokens/sec (M=2)** | 374.8 tok/s | Batched decode (2 sequences) | `bench_batched_forward.rs` REAL |
+| **Tokens/sec (M=4)** | 435.0 tok/s | Batched decode (4 sequences) | `bench_batched_forward.rs` REAL |
+| **Tokens/sec (M=8)** | 431.2 tok/s | Batched decode (8 sequences) **PLATEAU** | `bench_batched_forward.rs` REAL |
+| **Ollama baseline** | 315 tok/s | qwen2.5-coder:1.5b | Measured |
+| **Current vs Ollama** | 1.37x | 431.2 / 315 | Calculated |
+| **ComputeBlocks/sec** | 132,748 CB/s | 431 tok/s × 28 layers × 11 bricks | Calculated from REAL throughput |
+
+**PAR-118 Five-Whys Root Cause:**
+| Why? | Answer |
+|------|--------|
+| Why plateau at ~430 tok/s? | Sequential attention: 28 layers × M kernel calls |
+| Why can't batch attention? | Single shared KV cache per layer (1, not M) |
+| Why single KV cache? | Original design for single-sequence inference |
+| Why not add M caches? | Major architectural change (PAR-119) |
+| Path to 2x Ollama? | Multi-KV-cache (PAR-119) OR Flash Decoding |
 
 **Per-Brick Profiling (REAL via cbtop --headless --model-path):**
 | Brick | Mean µs | % of Layer | Samples | Budget µs | Status |
