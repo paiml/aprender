@@ -1,7 +1,7 @@
 # Qwen2.5-Coder Showcase: ComputeBrick Architecture
 
-**Version:** 4.63.0
-**Status:** ✅ PAR-106 COMPLETE (360 tok/s = 180% Ollama with batching, 2x requires CUDA graph batched decode)
+**Version:** 4.65.0
+**Status:** 🟡 IN PROGRESS (PAR-107 Graph Preservation, 1.80x Ollama achieved)
 **Author:** PAIML Engineering
 **Date:** 2026-01-13
 **PMAT Roadmap ID:** `SHOWCASE-BRICK-001`
@@ -22,21 +22,21 @@
 
 ---
 
-## Summary of Implementation & Falsification (v4.59.0)
+## Summary - Ecosystem Compliance & Book Updates (v4.64.0)
 
-**Core Mandate:** Real-time, per-brick profiling with strict falsification of simulated data.
+**Status**: ✅ COMPLETE - All cargo examples verified, book chapters pushed, and enforcement hooks installed.
 
-| Component | Status | Key Mechanism | Falsification |
-|-----------|--------|---------------|---------------|
-| **Profiling** | ✅ REAL | `record_brick` + `cudaDeviceSynchronize` | `F-PROF-001` |
-| **Headless** | ✅ STRICT | Error on missing model/inference feature | `tests/falsification_real_profiling.rs` |
-| **PMAT** | ⚠️ INTEGRATED | 2000+ Safety/SIMD warnings visible | `pmat comply check` |
-| **Spec** | ✅ UPDATED | §6.9 Mandate, §10 Checklist, §11 Tickets | `docs/specifications/qwen2.5-coder-showcase-demo.md` |
+| Component | Status | Verified | Details |
+|-----------|--------|----------|---------|
+| **Examples** | ✅ | `work_commands`, `comply`, `five_whys`, `cuda_tdg` | All demo binaries functional |
+| **Books** | ✅ | `pmat-book` Chapter 42 | ComputeBrick defect patterns & compliance |
+| **Hooks** | ✅ | 16 Projects | Pre-push enforcement enabled globally |
+| **Profiling** | ✅ | `cbtop` | Real-time hardware event tracking |
 
 **Key Artifacts:**
-- **cbtop**: Now reports `MEASURED` timings derived from hardware sync events.
-- **realizar**: Implements `BrickProfiler` with `cudaEventRecord` (pending T-PROF-001).
-- **pmat**: Enforces `CB-020` (Safety comments) and `CB-021` (SIMD attributes).
+- **Book**: `pmat-book` commit `bf8b7f9` (Chapter 42 added)
+- **Hooks**: Installed in `trueno`, `aprender`, `realizar`, `batuta`, etc.
+- **Config**: `.pmat-gates.toml` reference configuration published.
 
 ---
 
@@ -139,6 +139,8 @@
 | 4.61.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **FIVE-WHYS ANALYSIS** | **PAR-099 FIVE-WHYS: MODEL COMPATIBILITY FAILURE**: Created `debug_speculative.rs` diagnostic to analyze 0.5B vs 1.5B token predictions. **FINDING: Only 9.5% match rate** between independent generation of Qwen 0.5B (Q4_0) and 1.5B (Q4K_M). This explains the 25% speculative acceptance: target corrections, not draft matches. **Five-Whys**: (1) WHY 25% acceptance? → Models predict different tokens. (2) WHY different predictions? → 9.5% independent match rate. (3) WHY 9.5%? → Different architectures (896 vs 1536 hidden dim), different training. (4) WHY can't speculative work? → Need 70%+ match for speedup. (5) WHY isn't there a better draft? → **NEED same model with different quantization** (Q8 draft → Q4K target). **CONCLUSION**: Speculative decode with 0.5B/1.5B pair is fundamentally incompatible. Alternative approaches: (1) Same-model self-speculation with layer skipping, (2) Medusa multi-head speculation, (3) Same model Q8_0 → Q4K_M speculation. **Current: 244-268 tok/s = 122-134% Ollama (ABOVE PARITY)**. |
 | 4.62.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **FINAL ANALYSIS** | **2x TARGET REQUIRES CONTINUOUS BATCHING**: Verified single-request throughput at **248 tok/s = 124% Ollama** (confirmed via imp_1010 benchmark). Five-Whys analysis shows: (1) 77% memory bandwidth efficiency achieved (232 GB/s of 1000 GB/s RTX 4090). (2) Speculative decode BLOCKED: 0.5B/1.5B have 9.5% match rate. (3) Self-speculative does 2x work. (4) No Q8 model available. (5) **CONCLUSION: 2x requires PAR-106 Continuous Batching** (vLLM-style multiple concurrent requests to amortize weight reads). Updated path-to-2x table with PAR-091 BLOCKED status and PAR-106 recommendation. Current state represents **optimal single-request throughput**. |
 | 4.63.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **PAR-106 IMPLEMENTED** | **CONTINUOUS BATCHING ACHIEVES 180% OLLAMA**: Implemented `generate_batch_gpu_resident()` for concurrent request processing. **Five-Whys Analysis**: (1) Initial TRUE batched path (forward_batch_with_cache_cuda_native) was SLOWER (149 tok/s vs 360 tok/s) due to hybrid CPU/GPU without CUDA graphs. (2) Changed to sequential GPU-resident forward with CUDA graphs for ALL cases. **RESULTS**: Single-request baseline: 154 tok/s. Sequential 4 requests: 354 tok/s. **TRUE batched: 340 tok/s (2.53x vs single, 170% Ollama)**. Batch=8 sweep: 360 tok/s (1.80x Ollama). **Gap to 2x: 10%** (360→400 requires multi-token CUDA graph capture). Created `bench_continuous_batching.rs` example. Current state: **1.80x Ollama with 4-8 concurrent requests**. |
+| 4.64.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **COMPLETE** | **ECOSYSTEM COMPLIANCE**: Verified 4 cargo examples, pushed pmat-book Chapter 42 (Compliance), and installed enforcement hooks in 16 projects. |
+| 4.65.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **IN PROGRESS** | **PAR-107 CUDA GRAPH PRESERVATION FIX**: Five-Whys root cause: Graph re-captured each request because `init_workspace()` reallocated buffers (invalidating captured addresses). **Fix**: Added `has_workspace()`/`has_indexed_weights()` checks to skip re-init. Graph now persists across requests. Added Test 5 (warm graph persistence) to benchmark. **Current: 350-360 tok/s (1.75-1.80x Ollama)**. Gap to 2x: 11-14% (40-50 tok/s). Memory bandwidth at 32% suggests kernel-bound, not memory-bound. Next path: Explore batched GEMM for multi-sequence weight sharing. |
 
 ---
 
