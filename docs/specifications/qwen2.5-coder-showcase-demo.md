@@ -1,7 +1,7 @@
 # Qwen2.5-Coder Showcase: ComputeBrick Architecture
 
-**Version:** 4.86.0
-**Status:** ✅ **GPU 2x OLLAMA ACHIEVED** | ✅ **CPU 1.19x OLLAMA ACHIEVED** (PAR-125: GPU vectorized scale loading. **GPU 1.5B M=8: 943 tok/s = 3.24x Ollama**, **GPU 7B M=8: 265 tok/s = 1.98x Ollama**. PAR-126: **CPU 78 tok/s vs Ollama 67 tok/s = 1.16-1.19x FASTER**. CRITICAL FIX: Previous "265 tok/s Ollama" was GPU, not CPU!)
+**Version:** 4.88.0
+**Status:** ✅ **GPU 2x OLLAMA ACHIEVED** | 🟡 **CPU 3.8x GAP** (PAR-126: Fixed scratch path correctness bugs - GQA dimension calc and loop structure. CPU: 18.7 tok/s vs Ollama 71 tok/s. Rayon overhead is only 5.3ms/token. Real bottleneck: ~40ms unexplained gap in forward pass, possibly memory bandwidth or code path differences between fused vs non-fused ops.)
 **Author:** PAIML Engineering
 **Date:** 2026-01-13
 **PMAT Roadmap ID:** `SHOWCASE-BRICK-001`
