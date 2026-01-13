@@ -1,6 +1,6 @@
 # Qwen2.5-Coder Showcase: ComputeBrick Architecture
 
-**Version:** 4.50.0
+**Version:** 4.51.0
 **Status:** ✅ MILESTONE (1.3B: **400 tok/s** = 126% Ollama, Fair Comparison - Neither Uses Speculative)
 **Author:** PAIML Engineering
 **Date:** 2026-01-13
@@ -112,6 +112,7 @@
 | 4.48.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **IN PROGRESS** | **PAR-095 TENSOR CORE GEMM WRAPPER**: Added `tensor_core_q4k_gemm_cached()` function (line 7329) that provides CPU input/output interface for speculative decode. Takes CPU slices [M,K]→[M,N], uses GPU-resident Q4K weights, handles upload/download. Infrastructure complete for batched verification. **NEXT**: Wire into `OwnedQuantizedModelCuda.forward_batch_native` to replace dequant+FP32 path. |
 | 4.49.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **IN PROGRESS** | **PAR-096 FORWARD_BATCH_CUDA_NATIVE**: Five-Whys discovered TensorCoreQ4KGemmKernel is skeleton only (lines 7947-7968). Alternative: Implemented `batched_q4k_gemv_cached()` that calls GEMV M times with L2 cache reuse. Added `forward_batch_cuda_native()` to `OwnedQuantizedModelCuda` (270 LOC). Uses batched GEMV for all projections (QKV, O, FFN up/down, LM head). **RESULT: 409.3 tok/s = 1.29x Ollama 318** (up from 359.9). Gap to 2x: 1.55x. **NEXT**: PAR-097 batched attention kernel for speculative verification. |
 | 4.50.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **IN PROGRESS** | **PAR-097 BATCHED ATTENTION WITH CACHE**: Added `batched_attention_with_cache_gqa()` to `OwnedQuantizedModel` (100 LOC) for k queries against cache+k new K/V. Added `append_kv()`, `advance_by()` to KV cache. Added `forward_batch_with_cache_cuda_native()` (300 LOC) with proper RoPE positions. **Infrastructure for speculative decode COMPLETE**. Current: 400 tok/s = 1.26x Ollama. **NEXT**: PAR-098 Wire speculative decoder to batched forward. |
+| 4.51.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **IN PROGRESS** | **PAR-100 FIVE-WHYS: SELF-SPECULATIVE DOES NOT IMPROVE THROUGHPUT**: Implemented `generate_speculative_cuda()` with GPU-resident forward path, KV cache rollback (`rollback_to()`, `snapshot_len()`). **Five-Whys Analysis**: WHY is self-speculative (same model for draft+verify) not faster? → Draft phase: k forwards = k weight reads. → Verify phase: k forwards = k weight reads (sequential verification). → Total: 2k weight reads vs k for standard generation. → ROOT CAUSE: Self-spec with sequential verify does 2x the work. **FIX REQUIRED**: Either (1) Smaller draft model (0.5B for 1.5B target) = PAR-099, or (2) Batched GPU verification with TRUE weight sharing (single read for k tokens) = PAR-101. Fixed GQA QKV bias dimension bug. Current: 400 tok/s = 1.26x Ollama (unchanged by self-spec). |
 
 ---
 
@@ -196,16 +197,22 @@ The 2x Ollama target requires speculative decoding infrastructure that neither s
   - `batched_attention_with_cache_gqa()` added to `OwnedQuantizedModel` (100 LOC)
   - `append_kv()`, `advance_by()` added to `OwnedQuantizedKVCache`
   - `forward_batch_with_cache_cuda_native()` added to `OwnedQuantizedModelCuda` (300 LOC)
-- [ ] **PAR-098** Speculative KV cache management
-  - Cache rollback on token rejection
-  - Separate cache state tracking for draft/target
+- [x] **PAR-098** Speculative KV cache management — **DONE**
+  - Cache rollback via `rollback_to(new_len, kv_dim)` on token rejection
+  - Snapshot state via `snapshot_len()` for draft/target tracking
 - [ ] **PAR-099** Draft model loading (0.5B Qwen)
   - Load smaller Q4K model for drafting (~600MB)
   - Share GPU context with target model
-- [ ] **PAR-100** `generate_speculative_cuda()` implementation
-  - Draft k tokens using draft model
-  - Verify batch using `forward_batch_with_cache_cuda_native`
-  - Acceptance sampling with proper cache management
+  - **REQUIRED FOR 2x**: Self-spec doesn't improve throughput (see PAR-100)
+- [x] **PAR-100** `generate_speculative_cuda()` implementation — **DONE (baseline only)**
+  - Implemented with GPU-resident forward path
+  - **Five-Whys Finding**: Self-speculative (same model for draft+verify) does NOT improve throughput
+  - ROOT CAUSE: Draft phase does k weight reads, sequential verify does k more = 2k total vs k for standard
+  - Fixed GQA QKV bias dimension bug (hidden_dim + 2*kv_dim, not 3*hidden_dim)
+- [ ] **PAR-101** Batched GPU verification with TRUE weight sharing
+  - Single weight read for k tokens (vs k reads in sequential)
+  - Requires TensorCoreQ4KGemm kernel completion
+  - Alternative path to 2x without draft model
 
 | Repository | ComputeBrick | Source | Features | Notes |
 |------------|-------------|--------|----------|-------|
