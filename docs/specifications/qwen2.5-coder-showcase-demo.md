@@ -184,6 +184,11 @@ The 2x Ollama target requires speculative decoding infrastructure that neither s
   - `tensor_core_q4k_gemm_cached()` added (line 7329) for CPU I/O
   - Current: `forward_batch_gpu` still uses `HybridScheduler` (dequant → FP32)
   - **NEXT**: Wire `forward_batch_native()` to use `tensor_core_q4k_gemm_cached()`
+- [ ] **PAR-096** Add `forward_batch_cuda_native()` to `OwnedQuantizedModelCuda`
+  - Requires: Pre-cache Q4K weights by layer name
+  - Use `tensor_core_q4k_gemm_cached()` for QKV, O_proj, FFN up/down
+  - Challenge: Single-token path uses different weight caching scheme
+  - Estimated: 200-300 LOC, medium complexity
 - [ ] Batched attention kernel (k queries vs N keys)
 - [ ] Speculative KV cache management
 - [ ] Draft model loading (0.5B Qwen)
