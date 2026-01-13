@@ -1,7 +1,7 @@
 # Qwen2.5-Coder Showcase: ComputeBrick Architecture
 
-**Version:** 4.73.0
-**Status:** 🟡 IN PROGRESS (PAR-114: Batched RoPE/Residual/SwiGLU achieves **444.2 tok/s** with M=8 sequences, **1.41x Ollama**. Gap to 2x: 41%)
+**Version:** 4.74.0
+**Status:** 🟠 ARCHITECTURAL LIMIT (PAR-117: Five-Whys shows **asymptotic max 521 tok/s** (165% Ollama). Current M=8: **448 tok/s = 1.42x Ollama**. 2x requires Flash Decoding or Tensor Core attention.)
 **Author:** PAIML Engineering
 **Date:** 2026-01-13
 **PMAT Roadmap ID:** `SHOWCASE-BRICK-001`
@@ -149,25 +149,27 @@
 | 4.71.1 | 2026-01-13 | PAIML Engineering | Architecture Lead | **REAL DATA** | **PAR-111 REAL MEASUREMENTS**: Updated spec with REAL profiling data from cbtop and bench_batched_forward: M=1: 231.3 tok/s, M=4: 398.7 tok/s (1.23x Ollama 323.9 tok/s). ComputeBlocks/sec: 122,795 CB/s. Per-brick timing from BrickProfiler with 109,200 samples each. Attention (42.47µs, 23.8%) is main bottleneck. Gap to 2x Ollama: 38% (648 tok/s target). |
 | 4.72.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **IMPLEMENTED** | **PAR-112 BATCHED RMSNORM**: Five-Whys identified sequential RMSNorm launches (M×2 per layer) as overhead. Implemented BatchedVectorizedRmsNormKernel in trueno-gpu using Grid.y=M for parallel sequence processing. Integrated into realizar transformer_layer_batched. **Result: 407 tok/s (1.26x Ollama 323 tok/s)**. **Five-Whys Analysis**: At 407 tok/s, we're at 96% of theoretical max (423 tok/s) for single-request at 55% memory bandwidth efficiency. **2x TARGET REQUIRES**: (1) Multi-request continuous batching (PAR-106), (2) TensorCore GEMM for batch>1, or (3) Better-matched speculative decoding. Gap to 2x: 37% (648 tok/s target). |
 | 4.73.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **IMPLEMENTED** | **PAR-114 BATCHED ROPE/RESIDUAL/SWIGLU**: Five-Whys identified sequential kernel launches (6M per layer) as overhead. Implemented BatchedRopeKernel, BatchedResidualAddKernel, BatchedSwigluKernel in trueno-gpu using Grid.y=M. Integrated into realizar transformer_layer_batched. Per-layer kernel launches reduced from ~6M+9 to ~16 fixed. **Result: M=8: 444.2 tok/s (1.41x Ollama 315 tok/s)**, up from 415 tok/s (+7%). Gap to 2x: 41% (630 tok/s target). |
+| 4.74.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **ARCHITECTURAL LIMIT** | **PAR-115/117 FIVE-WHYS ASYMPTOTIC ANALYSIS**: (1) PAR-115: Batched output RMSNorm implemented (+1% = 449 tok/s). (2) Five-Whys root cause analysis of M-sequence scaling model: `batch_time = GEMV_base + M × K` where K=1.92ms per-sequence overhead. **K breakdown**: Attention 1.5ms, Argmax 0.2ms, other 0.2ms. **Asymptotic limit at M→∞: 521 tok/s (165% Ollama)**. BATCHED GEMV kernel limited to M=8 by register pressure. **2x OLLAMA (630 tok/s) REQUIRES**: Flash Decoding (amortize KV reads across queries), Tensor Core attention, or fundamentally different architecture. Current: **M=8: 448 tok/s = 1.42x Ollama**. |
 
 ---
 
 ## ComputeBrick Integration Matrix
 
-**Status:** PAR-114 COMPLETE - **1.41x OLLAMA** (444 tok/s with M=8 batching + batched RoPE/Residual/SwiGLU vs 315 tok/s Ollama baseline)
+**Status:** PAR-117 **ARCHITECTURAL LIMIT FOUND** - **1.42x OLLAMA** (448 tok/s @ M=8). Asymptotic max: **521 tok/s (165% Ollama)**. 2x (630 tok/s) NOT achievable with current M-sequence batching.
 
-**Dual Metrics (per user request) - REAL MEASUREMENTS (PAR-114):**
+**Dual Metrics (per user request) - REAL MEASUREMENTS (PAR-117):**
 | Metric | Value | Formula | Source |
 |--------|-------|---------|--------|
-| **Tokens/sec (M=1)** | 230.3 tok/s | Single-sequence decode | `bench_batched_forward.rs` REAL |
-| **Tokens/sec (M=4)** | 418.4 tok/s | Batched decode (4 sequences) | `bench_batched_forward.rs` REAL |
-| **Tokens/sec (M=8)** | 444.2 tok/s | Batched decode (8 sequences) | `bench_batched_forward.rs` REAL |
-| **ComputeBlocks/sec** | 136,814 CB/s | 444 tok/s × 28 layers × 11 bricks | Calculated from REAL throughput |
-| **Per-layer time** | 80.5µs | 17.5 MB @ 61% of 355 GB/s | Derived from 444/(28×1e6) |
+| **Tokens/sec (M=1)** | 227.3 tok/s | Single-sequence decode | `bench_batched_forward.rs` REAL |
+| **Tokens/sec (M=4)** | 424.2 tok/s | Batched decode (4 sequences) | `bench_batched_forward.rs` REAL |
+| **Tokens/sec (M=8)** | 448.1 tok/s | Batched decode (8 sequences) | `bench_batched_forward.rs` REAL |
+| **Asymptotic max (M→∞)** | 521 tok/s | 1/K where K=1.92ms per-seq | Five-Whys model |
+| **ComputeBlocks/sec** | 137,944 CB/s | 448 tok/s × 28 layers × 11 bricks | Calculated from REAL throughput |
+| **Per-layer time** | 79.7µs | 17.5 MB @ 62% of 355 GB/s | Derived from 448/(28×1e6) |
 | **Ollama baseline** | 315 tok/s | `ollama run qwen2.5-coder:1.5b` | REAL measurement |
-| **Speedup vs Ollama** | 1.41x | 444 / 315 | **ACHIEVED** |
-| **Theoretical max** | 480 tok/s | At 61% bandwidth efficiency | Analysis |
-| **Efficiency** | 93% | 444 / 480 | Near theoretical limit |
+| **Speedup vs Ollama** | 1.42x | 448 / 315 | **ACHIEVED** |
+| **Per-sequence overhead K** | 1.92ms | Attention 1.5ms + Argmax 0.2ms + other 0.2ms | Five-Whys model |
+| **Batched GEMV base** | 2.48ms | Constant regardless of M | Five-Whys model |
 
 **Per-Brick Profiling (REAL via cbtop --headless --model-path):**
 | Brick | Mean µs | % of Layer | Samples | Budget µs | Status |
@@ -187,7 +189,7 @@
 
 **Note:** Per-brick profiling adds CUDA sync overhead (~30% slowdown). Non-profiled throughput is 444.2 tok/s.
 
-**PUBLISHING POLICY:** NO packages (trueno, realizar, aprender) will be published until 2x Ollama performance target (~630 tok/s, ~194k CB/s) is achieved. Current: **444.2 tok/s, 137k CB/s (141% Ollama, 70% of 2x target)**.
+**PUBLISHING POLICY:** NO packages (trueno, realizar, aprender) will be published until 2x Ollama performance target (~630 tok/s, ~194k CB/s) is achieved. Current: **448 tok/s, 138k CB/s (142% Ollama)**. **ARCHITECTURAL LIMIT IDENTIFIED**: Asymptotic max with M-sequence batching is **521 tok/s (165% Ollama)**. 2x requires Flash Decoding or fundamentally different architecture.
 
 **CORRECTNESS-002 FIX SUMMARY (v4.60.0):**
 | Component | Before | After | Improvement |
@@ -197,7 +199,7 @@
 | Overall throughput | 134.6 tok/s | 293.3 tok/s | +118% |
 | Ollama ratio | 67% | 103% | AT PARITY |
 
-**Path to 2x Ollama (remaining 1.42x improvement from 444.2 tok/s):**
+**Path to 2x Ollama (BLOCKED by architectural limit - asymptotic max 521 tok/s):**
 | Optimization | Expected Gain | Complexity | Status |
 |--------------|---------------|------------|--------|
 | PAR-081 VectorizedRmsNorm | +43% | Low | ✅ DONE (23µs→7.4µs) |
@@ -209,7 +211,10 @@
 | PAR-097 Batched Attention | +0% (infra) | Medium | ✅ DONE (batched_attention_with_cache_gqa) |
 | **PAR-111 Batched Forward Path** | **+72%** | Medium | ✅ **DONE (231→399 tok/s, 1.23x Ollama)** |
 | **PAR-114 Batched RoPE/Residual/SwiGLU** | **+7%** | Medium | ✅ **DONE (415→444 tok/s, 1.41x Ollama)** |
+| **PAR-115 Batched Output RMSNorm** | **+1%** | Low | ✅ **DONE (444→448 tok/s)** |
+| **PAR-117 Five-Whys Asymptotic Analysis** | N/A | Analysis | 🟠 **LIMIT FOUND: 521 tok/s max (165% Ollama)** |
 | PAR-091 Speculative Decoding (k=4) | ~~+100-200%~~ | High | ❌ **BLOCKED** - 0.5B/1.5B incompatible (9.5% match rate) |
+| Flash Decoding (PAR-118) | **REQUIRED for 2x** | Very High | 📋 Amortize KV reads across multiple queries |
 | PAR-106 Continuous Batching | +50-200% | High | 📋 **RECOMMENDED** for 2x (vLLM-style) |
 | Tensor Core Attention (FP16 WMMA) | +10-15% | High | 📋 TODO (diminishing returns) |
 | ~~PAR-085 Multi-token Decode~~ | ~~+50-100%~~ | ~~High~~ | ❌ BLOCKED (requires speculative) |
