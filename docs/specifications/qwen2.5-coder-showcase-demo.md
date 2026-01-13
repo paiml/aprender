@@ -1,6 +1,6 @@
 # Qwen2.5-Coder Showcase: ComputeBrick Architecture
 
-**Version:** 4.47.0
+**Version:** 4.48.0
 **Status:** ✅ MILESTONE (1.5B: **359 tok/s** = 124% Ollama, Fair Comparison - Neither Uses Speculative)
 **Author:** PAIML Engineering
 **Date:** 2026-01-13
@@ -109,6 +109,7 @@
 | 4.45.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **IN PROGRESS** | **PAR-089 FIVE-WHYS KERNEL EFFICIENCY ANALYSIS**: (1) Verified VectorizedQ4KGemv kernel uses coalesced 128-byte weight loads per warp - OPTIMAL. (2) Scale selection via 7 selp_f32 - minor overhead (~5%). (3) Warp shuffle reduction - 5 ops - OPTIMAL. (4) **Five-Whys Root Cause**: At 51% bandwidth efficiency, we're close to practical limit for Q4K format. Q4K has 0.5625 bytes/value vs 4 bytes for f32 = 7.1x compression but irregular layout causes ~20-30% coalescing loss. (5) **THEORETICAL CEILING**: Even at 70% efficiency (best realistic), max is 426 tok/s. **To reach 617 tok/s (2x Ollama), MUST use speculative decoding** to amortize weight reads. **Current: 359 tok/s = 1.24x Ollama 288 tok/s**. Gap: 1.61x to 2x target. |
 | 4.46.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **IN PROGRESS** | **PAR-091 OLLAMA SPECULATIVE STATUS**: Confirmed via GitHub Issues [#5800](https://github.com/ollama/ollama/issues/5800), [#9216](https://github.com/ollama/ollama/issues/9216) that **Ollama does NOT support speculative decoding** as of Jan 2025. This validates our comparison: (1) Both systems use single-token autoregressive decode. (2) **1.24x speedup is FAIR apples-to-apples**. (3) 2x goal requires speculative infrastructure NEITHER system has. (4) Current 359 tok/s = **84% of realistic bandwidth limit** (429 tok/s at 70% efficiency). **MILESTONE ACHIEVED**: realizar beats Ollama by 24% on level playing field. Future 2x requires Q4K GEMM batch kernels + draft model infrastructure. |
 | 4.47.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **IN PROGRESS** | **PAR-094 TENSOR CORE Q4K GEMM KERNEL**: Five-Whys root cause: `batch_matmul_gpu` dequantizes Q4K→FP32 first (line 15349), then does FP32 GEMM. This is 2x memory bandwidth (read quantized, write dequantized). **FIX**: Added `TensorCoreQ4KGemmKernel` import to realizar from trueno-gpu (line 61), added `KernelType::TensorCoreQ4KGemm` (line 353), implemented `tensor_core_q4k_gemm` function (line 7252). Kernel uses WMMA 16×16×16 tiles with fused dequant+GEMM. **NEXT**: Integrate with speculative decoder for M>1 batch verification. Path to 2x: Single-token max is ~430 tok/s; batch decode (k=4-8 speculative) amortizes weight reads for theoretical 2-4x speedup. |
+| 4.48.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **IN PROGRESS** | **PAR-095 TENSOR CORE GEMM WRAPPER**: Added `tensor_core_q4k_gemm_cached()` function (line 7329) that provides CPU input/output interface for speculative decode. Takes CPU slices [M,K]→[M,N], uses GPU-resident Q4K weights, handles upload/download. Infrastructure complete for batched verification. **NEXT**: Wire into `OwnedQuantizedModelCuda.forward_batch_native` to replace dequant+FP32 path. |
 
 ---
 
@@ -175,7 +176,14 @@ The 2x Ollama target requires speculative decoding infrastructure that neither s
 5. Expected: **2-3x throughput improvement** → 718-1077 tok/s (EXCEEDS 2x target)
 
 **Implementation Requirements for PAR-091:**
-- [ ] Q4K GEMM kernel (batched matrix-matrix, not just GEMV)
+- [x] Q4K GEMM kernel (batched matrix-matrix, not just GEMV) — **PAR-094 DONE**
+  - `TensorCoreQ4KGemmKernel` added to trueno-gpu (line 7823)
+  - `KernelType::TensorCoreQ4KGemm` added to realizar (line 353)
+  - `tensor_core_q4k_gemm()` function implemented (line 7252)
+- [x] **PAR-095** Integrate batched GEMM into forward path — **WRAPPER DONE**
+  - `tensor_core_q4k_gemm_cached()` added (line 7329) for CPU I/O
+  - Current: `forward_batch_gpu` still uses `HybridScheduler` (dequant → FP32)
+  - **NEXT**: Wire `forward_batch_native()` to use `tensor_core_q4k_gemm_cached()`
 - [ ] Batched attention kernel (k queries vs N keys)
 - [ ] Speculative KV cache management
 - [ ] Draft model loading (0.5B Qwen)
