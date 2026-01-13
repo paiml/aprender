@@ -1,6 +1,6 @@
 # Qwen2.5-Coder Showcase: ComputeBrick Architecture
 
-**Version:** 4.46.0
+**Version:** 4.47.0
 **Status:** ✅ MILESTONE (1.5B: **359 tok/s** = 124% Ollama, Fair Comparison - Neither Uses Speculative)
 **Author:** PAIML Engineering
 **Date:** 2026-01-13
@@ -108,6 +108,7 @@
 | 4.44.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **IN PROGRESS** | **BENCHMARK CORRECTION + CUDA GRAPH VERIFIED**: (1) Previous 462 tok/s measurement was aprender baseline (fake tiny model), NOT realizar. (2) Real realizar path with CUDA graph: **314-362 tok/s** (longer sequences amortize prefill). (3) Ollama baseline: **279-285 tok/s**. (4) **CORRECT RATIO: 1.27x Ollama** (362 vs 285). Target: 570 tok/s (2x Ollama 285). Gap: 1.58x remaining. Memory bandwidth analysis: 17.5MB/layer, 51% efficiency at 114µs/layer. Theoretical max at 100% efficiency: 613 tok/s. Current implementation is within 60% of theoretical limit. Remaining paths: Speculative decoding (2-4x via weight reuse), Tensor Core attention (FP16 WMMA). |
 | 4.45.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **IN PROGRESS** | **PAR-089 FIVE-WHYS KERNEL EFFICIENCY ANALYSIS**: (1) Verified VectorizedQ4KGemv kernel uses coalesced 128-byte weight loads per warp - OPTIMAL. (2) Scale selection via 7 selp_f32 - minor overhead (~5%). (3) Warp shuffle reduction - 5 ops - OPTIMAL. (4) **Five-Whys Root Cause**: At 51% bandwidth efficiency, we're close to practical limit for Q4K format. Q4K has 0.5625 bytes/value vs 4 bytes for f32 = 7.1x compression but irregular layout causes ~20-30% coalescing loss. (5) **THEORETICAL CEILING**: Even at 70% efficiency (best realistic), max is 426 tok/s. **To reach 617 tok/s (2x Ollama), MUST use speculative decoding** to amortize weight reads. **Current: 359 tok/s = 1.24x Ollama 288 tok/s**. Gap: 1.61x to 2x target. |
 | 4.46.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **IN PROGRESS** | **PAR-091 OLLAMA SPECULATIVE STATUS**: Confirmed via GitHub Issues [#5800](https://github.com/ollama/ollama/issues/5800), [#9216](https://github.com/ollama/ollama/issues/9216) that **Ollama does NOT support speculative decoding** as of Jan 2025. This validates our comparison: (1) Both systems use single-token autoregressive decode. (2) **1.24x speedup is FAIR apples-to-apples**. (3) 2x goal requires speculative infrastructure NEITHER system has. (4) Current 359 tok/s = **84% of realistic bandwidth limit** (429 tok/s at 70% efficiency). **MILESTONE ACHIEVED**: realizar beats Ollama by 24% on level playing field. Future 2x requires Q4K GEMM batch kernels + draft model infrastructure. |
+| 4.47.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **IN PROGRESS** | **PAR-094 TENSOR CORE Q4K GEMM KERNEL**: Five-Whys root cause: `batch_matmul_gpu` dequantizes Q4K→FP32 first (line 15349), then does FP32 GEMM. This is 2x memory bandwidth (read quantized, write dequantized). **FIX**: Added `TensorCoreQ4KGemmKernel` import to realizar from trueno-gpu (line 61), added `KernelType::TensorCoreQ4KGemm` (line 353), implemented `tensor_core_q4k_gemm` function (line 7252). Kernel uses WMMA 16×16×16 tiles with fused dequant+GEMM. **NEXT**: Integrate with speculative decoder for M>1 batch verification. Path to 2x: Single-token max is ~430 tok/s; batch decode (k=4-8 speculative) amortizes weight reads for theoretical 2-4x speedup. |
 
 ---
 
@@ -130,6 +131,8 @@
 | PAR-081 VectorizedRmsNorm | +43% | Low | ✅ DONE (23µs→7.4µs) |
 | PAR-083 Benchmark Correction | N/A | Low | ✅ DONE (fake→real path) |
 | PAR-089 Five-Whys Kernel Analysis | N/A | Low | ✅ DONE (51% efficiency confirmed) |
+| PAR-094 TensorCoreQ4KGemm | +0% (infra) | Medium | ✅ DONE (kernel added) |
+| PAR-095 Speculative Integration | +100-200% | High | 📋 NEXT (connect kernel to decoder) |
 | PAR-091 Speculative Decoding (k=4) | +100-200% | High | 📋 NEXT (draft model needed) |
 | Tensor Core Attention (FP16 WMMA) | +10-15% | High | 📋 TODO (diminishing returns) |
 | ~~PAR-085 Multi-token Decode~~ | ~~+50-100%~~ | ~~High~~ | ❌ BLOCKED (requires speculative) |
