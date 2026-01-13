@@ -9,9 +9,10 @@
 
 use std::process::Command;
 
-/// M001: cbtop --headless exits cleanly with code 0
+/// M001: cbtop --headless --simulated exits cleanly with code 0
 ///
 /// FALSIFICATION: Headless mode crashes or hangs
+/// NOTE: Uses --simulated for CI testing (Toyota Way: explicit simulation opt-in)
 #[test]
 fn m001_headless_exits_cleanly() {
     let output = Command::new("cargo")
@@ -22,6 +23,7 @@ fn m001_headless_exits_cleanly() {
             "--",
             "cbtop",
             "--headless",
+            "--simulated", // Explicit simulation for CI
             "--iterations",
             "10",
         ])
@@ -59,6 +61,7 @@ fn m002_json_output_valid() {
             "--",
             "cbtop",
             "--headless",
+            "--simulated",
             "--json",
             "--iterations",
             "10",
@@ -109,6 +112,7 @@ fn m003_brick_scores_present() {
             "--",
             "cbtop",
             "--headless",
+            "--simulated",
             "--json",
             "--iterations",
             "10",
@@ -209,6 +213,7 @@ fn m007_ci_exit_code_on_failure() {
             "--",
             "cbtop",
             "--headless",
+            "--simulated",
             "--ci",
             "--throughput",
             "999999", // Impossible threshold
@@ -245,6 +250,7 @@ fn m008_ci_exit_code_on_pass() {
             "--",
             "cbtop",
             "--headless",
+            "--simulated",
             "--ci",
             "--throughput",
             "100", // Low threshold
@@ -308,6 +314,7 @@ fn m010_output_file_created() {
             "--",
             "cbtop",
             "--headless",
+            "--simulated",
             "--json",
             "--output",
             output_path,

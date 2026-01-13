@@ -63,6 +63,8 @@ pub struct CbtopConfig {
     pub draft_model_path: Option<PathBuf>,
     /// PAR-102: Number of concurrent requests for aggregate throughput measurement
     pub concurrent: usize,
+    /// Use simulated data (for CI testing only - explicitly opts out of real profiling)
+    pub simulated: bool,
 }
 
 impl Default for CbtopConfig {
@@ -83,6 +85,7 @@ impl Default for CbtopConfig {
             speculation_k: 4,
             draft_model_path: None,
             concurrent: 1, // PAR-102: Default to single request
+            simulated: false,
         }
     }
 }
@@ -366,18 +369,25 @@ pub fn run(config: CbtopConfig) -> Result<()> {
 
 /// Run headless mode for CI/automation
 fn run_headless(config: CbtopConfig) -> Result<()> {
-    // Falsification: Headless mode MUST NOT use simulation by default.
-    // Users must provide a model path and have the inference feature enabled.
+    // Toyota Way: Genchi Genbutsu - Use real data by default.
+    // Simulation is only allowed when explicitly requested with --simulated.
+
+    // If --simulated is set, use simulated data (for CI testing)
+    if config.simulated {
+        eprintln!("cbtop: WARNING - Using simulated data (--simulated flag set)");
+        eprintln!("       For real profiling: apr cbtop --model-path <FILE> --headless");
+        return run_headless_simulated(config);
+    }
 
     #[cfg(feature = "inference")]
     {
-        if let Some(_) = config.model_path {
+        if config.model_path.is_some() {
             return run_headless_real(config);
         } else {
             return Err(CliError::ValidationFailed(
                 "Headless mode requires --model-path for real profiling.\n\
-                 Simulation is disabled in headless mode to ensure data validity.\n\
-                 Usage: apr cbtop --model-path <FILE> --headless"
+                 For CI testing with simulated data, use: apr cbtop --headless --simulated\n\
+                 For real profiling, use: apr cbtop --model-path <FILE> --headless"
                     .to_string(),
             ));
         }
@@ -386,7 +396,8 @@ fn run_headless(config: CbtopConfig) -> Result<()> {
     #[cfg(not(feature = "inference"))]
     {
         return Err(CliError::ValidationFailed(
-            "Headless mode requires the 'inference' feature to be enabled.\n\
+            "Headless mode requires --model-path and the 'inference' feature.\n\
+             For CI testing with simulated data, use: apr cbtop --headless --simulated\n\
              Rebuild with: cargo build -p apr-cli --features inference"
                 .to_string(),
         ));

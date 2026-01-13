@@ -464,6 +464,11 @@ enum Commands {
         /// PAR-102: Number of concurrent requests for aggregate throughput measurement
         #[arg(long, default_value = "1")]
         concurrent: usize,
+
+        /// Use simulated data (for CI testing only - explicitly opts out of real profiling)
+        /// WARNING: Simulated data is NOT accurate for optimization decisions!
+        #[arg(long)]
+        simulated: bool,
     },
 
     /// Export for probar visual testing
@@ -918,6 +923,7 @@ fn execute_command(cli: &Cli) -> Result<(), error::CliError> {
             speculation_k,
             draft_model,
             concurrent,
+            simulated,
         } => {
             // P0: Auto-detect if --model is a file path for real profiling
             // If model looks like a path (ends with .gguf or exists as file), use it as model_path
@@ -956,6 +962,7 @@ fn execute_command(cli: &Cli) -> Result<(), error::CliError> {
                 speculation_k: *speculation_k,
                 draft_model_path: draft_model.clone(),
                 concurrent: *concurrent,
+                simulated: *simulated,
             })
         }
 
