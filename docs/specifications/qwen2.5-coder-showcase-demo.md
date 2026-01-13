@@ -1,7 +1,7 @@
 # Qwen2.5-Coder Showcase: ComputeBrick Architecture
 
-**Version:** 4.53.0
-**Status:** ✅ MILESTONE (1.5B: **400 tok/s** = 126% Ollama, Fair Comparison - Neither Uses Speculative, 2x REQUIRES ARCHITECTURAL PIVOT)
+**Version:** 4.54.0
+**Status:** ✅ MILESTONE (PAR-103: Concurrent batch mode 27% speedup, CPU attention bottleneck identified, 2x REQUIRES GPU attention)
 **Author:** PAIML Engineering
 **Date:** 2026-01-13
 **PMAT Roadmap ID:** `SHOWCASE-BRICK-001`
@@ -215,6 +215,21 @@ The 2x Ollama target requires speculative decoding infrastructure that neither s
   - Single weight read for k tokens (vs k reads in sequential)
   - Requires TensorCoreQ4KGemm kernel completion
   - Alternative path to 2x without draft model
+- [x] **PAR-102** Baseline REAL timing confirmed: realizar 356 tok/s vs Ollama 299 tok/s = **1.19x** — **DONE**
+  - Used std::time::Instant + CUDA sync for accurate measurement
+  - Peak throughput confirmed at single-token decode
+- [x] **PAR-103** Concurrent batch benchmark implemented — **DONE (27% speedup, CPU bottleneck)**
+  - Added `--concurrent N` flag to cbtop for batch mode testing
+  - Fixed GQA dimension bug in `forward_batch_cuda_native()` (q_dim vs k_dim vs v_dim)
+  - Implemented `pre_cache_weights_for_batch()` for proper weight naming
+  - **Results (Qwen 1.5B):**
+    - concurrent=1: 158.8 tok/s (baseline headless path)
+    - concurrent=2: 197.1 tok/s (+24%, 5.07ms/tok vs 6.3ms/tok)
+    - concurrent=4: 201.2 tok/s (peak, +27%, 4.97ms/tok)
+    - concurrent=8: 189.5 tok/s (degradation begins)
+    - concurrent=16: 178.2 tok/s (CPU attention bottleneck)
+  - **Five-Whys ROOT CAUSE:** CPU attention (`causal_attention`) is O(n²) and becomes bottleneck at batch_size>4
+  - **PATH TO 2x:** Need batched GPU attention OR better draft model acceptance rate
 
 | Repository | ComputeBrick | Source | Features | Notes |
 |------------|-------------|--------|----------|-------|

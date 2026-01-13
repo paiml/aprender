@@ -460,6 +460,10 @@ enum Commands {
         /// PAR-099: Path to draft model for speculative decoding
         #[arg(long, value_name = "DRAFT_MODEL")]
         draft_model: Option<PathBuf>,
+
+        /// PAR-102: Number of concurrent requests for aggregate throughput measurement
+        #[arg(long, default_value = "1")]
+        concurrent: usize,
     },
 
     /// Export for probar visual testing
@@ -913,6 +917,7 @@ fn execute_command(cli: &Cli) -> Result<(), error::CliError> {
             speculative,
             speculation_k,
             draft_model,
+            concurrent,
         } => {
             // P0: Auto-detect if --model is a file path for real profiling
             // If model looks like a path (ends with .gguf or exists as file), use it as model_path
@@ -950,6 +955,7 @@ fn execute_command(cli: &Cli) -> Result<(), error::CliError> {
                 speculative: *speculative,
                 speculation_k: *speculation_k,
                 draft_model_path: draft_model.clone(),
+                concurrent: *concurrent,
             })
         }
 

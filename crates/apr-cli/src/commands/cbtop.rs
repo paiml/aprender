@@ -61,6 +61,8 @@ pub struct CbtopConfig {
     pub speculation_k: usize,
     /// PAR-099: Path to draft model for speculative decoding
     pub draft_model_path: Option<PathBuf>,
+    /// PAR-102: Number of concurrent requests for aggregate throughput measurement
+    pub concurrent: usize,
 }
 
 impl Default for CbtopConfig {
@@ -80,6 +82,7 @@ impl Default for CbtopConfig {
             speculative: false,
             speculation_k: 4,
             draft_model_path: None,
+            concurrent: 1, // PAR-102: Default to single request
         }
     }
 }
@@ -604,7 +607,9 @@ fn run_headless_real(config: CbtopConfig) -> Result<()> {
     eprintln!();
 
     // Phase 2: Measure throughput
-    let mode_str = if config.speculative && draft_cuda_model.is_some() {
+    let mode_str = if config.concurrent > 1 {
+        format!("batch (concurrent={})", config.concurrent)
+    } else if config.speculative && draft_cuda_model.is_some() {
         format!("speculative with draft (k={})", config.speculation_k)
     } else if config.speculative {
         format!("speculative self (k={})", config.speculation_k)
@@ -618,46 +623,92 @@ fn run_headless_real(config: CbtopConfig) -> Result<()> {
     let mut total_tokens = 0usize;
     let mut latencies_us: Vec<f64> = Vec::with_capacity(config.iterations);
 
-    for i in 0..config.iterations {
-        let iter_start = Instant::now();
+    // PAR-103: Concurrent batch mode for aggregate throughput measurement
+    if config.concurrent > 1 {
+        // Pre-cache weights with proper naming for batched GEMV
+        eprintln!("cbtop: PAR-103 Pre-caching weights for batch mode...");
+        let cache_bytes = cuda_model
+            .pre_cache_weights_for_batch()
+            .map_err(|e| CliError::ValidationFailed(format!("Failed to pre-cache weights: {e}")))?;
+        eprintln!(
+            "cbtop: PAR-103 Cached {:.1} MB of weights",
+            cache_bytes as f64 / 1024.0 / 1024.0
+        );
 
-        // PAR-099/100: Use speculative decoding if flag is set
-        let result = if config.speculative {
-            if let Some(ref mut draft) = draft_cuda_model {
-                // PAR-099: Use draft model for fast token generation
-                cuda_model.generate_speculative_with_draft(
-                    draft,
-                    &prompt_tokens,
-                    &gen_config,
-                    config.speculation_k,
-                )
-            } else {
-                // PAR-100: Self-speculative (same model, baseline)
-                cuda_model.generate_speculative_cuda(
-                    &prompt_tokens,
-                    &gen_config,
-                    config.speculation_k,
-                )
-            }
-        } else {
-            cuda_model.generate_gpu_resident(&prompt_tokens, &gen_config)
-        };
+        eprintln!(
+            "cbtop: PAR-103 Batch mode - {} concurrent tokens per forward",
+            config.concurrent
+        );
+        // Create batch of token IDs (simulating concurrent requests at same position)
+        let batch_tokens: Vec<u32> = (0..config.concurrent)
+            .map(|_| prompt_tokens.last().copied().unwrap_or(0))
+            .collect();
 
-        match result {
-            Ok(output) => {
-                let tokens_generated = output.len().saturating_sub(prompt_tokens.len());
-                total_tokens += tokens_generated;
-                let iter_us = iter_start.elapsed().as_micros() as f64;
-                latencies_us.push(iter_us);
+        for i in 0..config.iterations {
+            let iter_start = Instant::now();
+
+            // Use batched forward pass - processes concurrent tokens sharing weights
+            let result = cuda_model.forward_batch_cuda_native(&batch_tokens);
+
+            match result {
+                Ok(_logits) => {
+                    // Each forward processes config.concurrent tokens
+                    total_tokens += config.concurrent;
+                    let iter_us = iter_start.elapsed().as_micros() as f64;
+                    latencies_us.push(iter_us);
+                }
+                Err(e) => {
+                    eprintln!("\ncbtop: Batch forward error: {e}");
+                    return Err(CliError::ValidationFailed(format!(
+                        "Batch forward failed: {e}"
+                    )));
+                }
             }
-            Err(e) => {
-                eprintln!("\ncbtop: Generation error: {e}");
-                return Err(CliError::ValidationFailed(format!(
-                    "Generation failed: {e}"
-                )));
-            }
+            eprint!("\r  Iteration {}/{}", i + 1, config.iterations);
         }
-        eprint!("\r  Iteration {}/{}", i + 1, config.iterations);
+    } else {
+        // Standard single-token mode
+        for i in 0..config.iterations {
+            let iter_start = Instant::now();
+
+            // PAR-099/100: Use speculative decoding if flag is set
+            let result = if config.speculative {
+                if let Some(ref mut draft) = draft_cuda_model {
+                    // PAR-099: Use draft model for fast token generation
+                    cuda_model.generate_speculative_with_draft(
+                        draft,
+                        &prompt_tokens,
+                        &gen_config,
+                        config.speculation_k,
+                    )
+                } else {
+                    // PAR-100: Self-speculative (same model, baseline)
+                    cuda_model.generate_speculative_cuda(
+                        &prompt_tokens,
+                        &gen_config,
+                        config.speculation_k,
+                    )
+                }
+            } else {
+                cuda_model.generate_gpu_resident(&prompt_tokens, &gen_config)
+            };
+
+            match result {
+                Ok(output) => {
+                    let tokens_generated = output.len().saturating_sub(prompt_tokens.len());
+                    total_tokens += tokens_generated;
+                    let iter_us = iter_start.elapsed().as_micros() as f64;
+                    latencies_us.push(iter_us);
+                }
+                Err(e) => {
+                    eprintln!("\ncbtop: Generation error: {e}");
+                    return Err(CliError::ValidationFailed(format!(
+                        "Generation failed: {e}"
+                    )));
+                }
+            }
+            eprint!("\r  Iteration {}/{}", i + 1, config.iterations);
+        }
     }
     eprintln!();
 
