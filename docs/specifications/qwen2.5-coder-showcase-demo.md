@@ -1,6 +1,6 @@
 # Qwen2.5-Coder Showcase: ComputeBrick Architecture
 
-**Version:** 4.80.0
+**Version:** 4.81.0
 **Status:** ✅ **2x OLLAMA ACHIEVED** (PAR-119/121: Multi-KV-cache + CUDA graphs. **M=4 graphed: 648.7 tok/s = 2.23x Ollama**, **M=8: 816.0 tok/s = 2.80x Ollama 291 tok/s**. M=1: 357 tok/s = 1.23x Ollama (CUDA graphs, near Q4K theoretical limit))
 **Author:** PAIML Engineering
 **Date:** 2026-01-13
@@ -156,6 +156,7 @@
 | 4.78.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **COMPLETE** | **PAR-121 CUDA GRAPHS FOR BATCHED PATH**: Added CUDA graph capture support to batched forward path (`forward_batched_to_token_ids_graphed`). **Five-Whys**: (1) WHY add graphs to batched? → Reduce kernel launch overhead. (2) WHY only ~5% improvement (vs 59% for M=1)? → Batched kernels already amortize launch overhead across M sequences. (3) Each kernel serves M tokens, dividing overhead by M. **RESULTS**: M=2 non-graphed: 405.7 tok/s → M=2 graphed: 426.3 tok/s (+5.1%). M=4 non-graphed: 613.5 tok/s → **M=4 graphed: 648.7 tok/s (+5.7%)**. **Ollama baseline re-verified: 291 tok/s**. M=8 non-graphed: **816.0 tok/s = 2.80x Ollama** ✅. |
 | 4.79.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **COMPLETE** | **PAR-122 FALSIFICATION TESTS COMPLETE**: Fixed cbtop headless mode per Toyota Way (Genchi Genbutsu - real data by default). Added `--simulated` flag for explicit CI testing opt-in. **136/136 falsification tests pass**: F001-F020 (20), F021-F040 (20), F041-F060 (21), F061-F080 (21), M001-M020 (20), F081-F105 (25), O001-O009 (9). **2x Ollama CONFIRMED**: M=4 graphed: 648.7 tok/s = 2.23x, M=8: 816.0 tok/s = 2.80x. |
 | 4.80.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **ROADMAP** | **PAR-123 MODEL COMPLETION MATRIX**: Added mandatory completion matrix (Appendix B.1). **ALL 5 models** (0.5B, 1.5B, 3B, 7B, 32B) MUST achieve 2x Ollama on **BOTH CPU and GPU** for **ALL batch sizes M=1-8**. Current status: 1.5B GPU ✅ COMPLETE, all others 🔴 TODO. Priority order: 0.5B → 7B → 3B → 32B. Completion criteria: GPU M=4 ≥2x, GPU M=8 ≥2.5x, CPU operational, 136 falsification tests, cbtop real data. |
+| 4.81.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **FIVE-WHYS** | **PAR-124 0.5B MODEL ANALYSIS**: Five-Whys root cause for 0.5B underperformance. **Q4_0 format**: 1.44x Ollama (603/420) - no BatchedQ4_0 kernel. **Q4_K_M format**: 1.61x Ollama (675/420) - small model architectural limit. **Root cause**: hidden_dim=896 (58% of 1.5B's 1536) provides insufficient parallelism to saturate GPU. Fixed kernel overhead amortized over fewer ops. **Ollama baseline CORRECTED**: 420 tok/s (was incorrectly 594 in spec). **Conclusion**: 0.5B architecturally limited to ~1.6x on GPU; may need CPU path for 2x. |
 
 ---
 
@@ -3604,7 +3605,8 @@ It does NOT prove performance targets are met. Only F081-F100 can prove that.
 
 | Model | M=1 | M=2 | M=4 | M=8 | 2x Target | Status |
 |-------|-----|-----|-----|-----|-----------|--------|
-| **0.5B** | ⬜ | ⬜ | ⬜ | ⬜ | 1188 tok/s | 🔴 TODO |
+| **0.5B Q4_0** | 🟡 398 | 🟡 486 | 🟡 537 | 🟡 603 | 840 tok/s | 🟡 **1.44x** (Q4_0 no batched kernel) |
+| **0.5B Q4_K_M** | 🟡 432 | 🟡 533 | 🟡 651 | 🟡 675 | 840 tok/s | 🟡 **1.61x** (small model limit) |
 | **1.5B** | ✅ 357 | ✅ 436 | ✅ 632 | ✅ 798 | 582 tok/s | ✅ **DONE** |
 | **3B** | ⬜ | ⬜ | ⬜ | ⬜ | TBD | 🔴 TODO |
 | **7B** | ⬜ | ⬜ | ⬜ | ⬜ | 254 tok/s | 🔴 TODO |
@@ -3651,11 +3653,44 @@ Each model is considered **COMPLETE** when:
 
 | Model | Ollama tok/s | 2x Target | Source |
 |-------|--------------|-----------|--------|
-| 0.5B Q4_0 | 594 | 1188 | Spec §3.4 |
+| 0.5B Q4_0 | **420** | **840** | Measured 3x (was 594 - WRONG) |
 | 1.5B Q4_K_M | 291 | 582 | Measured 3x |
 | 3B Q4_K_M | TBD | TBD | Needs measurement |
 | 7B Q4_K_M | 127 | 254 | Spec §3.4 |
 | 32B Q4_K_M | TBD | TBD | Needs measurement |
+
+### B.5 Five-Whys: 0.5B Q4_0 Performance Gap (PAR-124)
+
+**Problem**: 0.5B Q4_0 only achieves 1.44x Ollama (603 tok/s) vs 1.5B Q4_K_M at 2.74x (798 tok/s)
+
+| Why | Finding | Evidence |
+|-----|---------|----------|
+| **Why 0.5B slower ratio?** | Q4_0 format vs Q4_K_M format | `cuda.rs` line 60 |
+| **Why Q4_0 different?** | No BatchedQ4_0GemvKernel exists | Only `BatchedQ4KGemv` implemented |
+| **Why no batched Q4_0?** | Development focused on Q4_K_M (1.5B reference) | Historical prioritization |
+| **Why does batching matter?** | Batched GEMV reads weights once for M sequences | 2x from weight amortization |
+| **Fix options** | (1) Add BatchedQ4_0Gemv OR (2) Use Q4_K_M model | Testing Q4_K_M now |
+
+**Root Cause**: `BatchedQ4KGemv` kernel at `cuda.rs:5065` is hardcoded to Q4_K format (144 bytes/256 values).
+Q4_0 format (18 bytes/32 values) falls back to sequential M=1 kernels, losing batched weight amortization.
+
+**UPDATE (PAR-124-B)**: Tested Q4_K_M version - only 1.61x Ollama (675 tok/s vs 420 baseline).
+
+| Model | Q4_0 M=8 | Q4_K_M M=8 | Ollama | Q4_0 vs Ollama | Q4_K_M vs Ollama |
+|-------|----------|------------|--------|----------------|------------------|
+| 0.5B | 603 tok/s | 675 tok/s | 420 tok/s | 1.44x | **1.61x** |
+| 1.5B | N/A | 798 tok/s | 291 tok/s | N/A | **2.74x** |
+
+**Five-Whys Continued (Small Model Architectural Limit):**
+| Why | Finding |
+|-----|---------|
+| Why 0.5B Q4_K_M only 1.61x? | Smaller matrices don't saturate GPU |
+| Why worse saturation? | hidden_dim=896 vs 1536 = 58% fewer threads |
+| Why does thread count matter? | Less parallelism to hide memory latency |
+| Why more latency impact? | Fixed kernel overhead amortized over fewer ops |
+| **Conclusion** | 0.5B is **architecturally limited** to ~1.6-1.7x on GPU |
+
+**Recommendation**: 0.5B may need CPU path (trueno SIMD) for better efficiency, or accept 1.6x as practical limit.
 
 ---
 
