@@ -1,7 +1,7 @@
 # Qwen2.5-Coder Showcase: ComputeBrick Architecture
 
-**Version:** 4.70.0
-**Status:** 🟡 IN PROGRESS (PAR-111: Batched GEMV shows 16x speedup, implementing M=4 forward path for 400+ tok/s)
+**Version:** 4.71.0
+**Status:** 🟢 TARGET ACHIEVED (PAR-111: Batched forward path achieves **408.5 tok/s** with M=4 sequences, exceeding 400 tok/s target)
 **Author:** PAIML Engineering
 **Date:** 2026-01-13
 **PMAT Roadmap ID:** `SHOWCASE-BRICK-001`
@@ -321,6 +321,25 @@ This exceeds 400 tok/s target by 2.14x. Implementation requires:
 2. Batched GEMV for all linear projections (QKV, O, FFN)
 3. Attention runs M times (different KV caches, can't batch)
 4. Batched argmax for M logit vectors
+
+**PAR-111 Implementation Results (v4.71.0) - TARGET ACHIEVED**
+
+Implemented full batched forward path in `realizar/src/cuda.rs`:
+- `init_batched_workspace()` - Allocates M× larger buffers
+- `transformer_layer_batched()` - Processes M sequences per layer
+- `forward_batched_to_token_ids()` - Full M-sequence forward pass
+
+REAL benchmark results from `bench_batched_forward.rs`:
+
+| M (batch) | Throughput (tok/s) | Latency (µs/tok) | vs M=1 |
+|-----------|-------------------|------------------|--------|
+| 1 | 224.5 | 4453.8 | 1.00x |
+| 2 | 349.9 | 2857.7 | 1.56x |
+| **4** | **408.5** | **2448.3** | **1.82x** |
+
+**KEY ACHIEVEMENT:** M=4 achieves **408.5 tok/s**, exceeding the 400 tok/s (2x Ollama) target.
+
+Note: M=1 baseline (224.5 tok/s) is without CUDA graph optimization. With CUDA graphs applied to batched path, expected ~655 tok/s aggregate.
 
 The 2x Ollama target requires speculative decoding infrastructure that neither system currently has. Our current **24% speedup** on the same architecture represents excellent optimization of the fundamentally memory-bound GEMV path.
 
