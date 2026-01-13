@@ -199,10 +199,9 @@ fn resolve_model(source: &ModelSource, _force: bool, offline: bool) -> Result<Pa
                      Network access is disabled. Download and cache the model first."
                 )))
             } else {
-                // NOTE: URL download deferred to GH-80 milestone
-                Err(CliError::ValidationFailed(format!(
-                    "Model not cached. URL download not yet implemented: {url}"
-                )))
+                // Auto-download from URL
+                eprintln!("{}", format!("Downloading {url}...").yellow());
+                download_url_model(url)
             }
         }
     }
@@ -275,6 +274,45 @@ fn download_hf_model(org: &str, repo: &str) -> Result<PathBuf> {
     if let Err(e) = download_file(&tokenizer_url, &tokenizer_path) {
         eprintln!("  Warning: tokenizer.json not available: {e}");
     }
+
+    eprintln!("{}", "  Download complete!".green());
+
+    Ok(model_path)
+}
+
+/// Download model from arbitrary URL
+///
+/// Caches to ~/.apr/cache/url/<hash>/<filename>
+fn download_url_model(url: &str) -> Result<PathBuf> {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+
+    // Hash URL for cache directory
+    let mut hasher = DefaultHasher::new();
+    url.hash(&mut hasher);
+    let url_hash = format!("{:016x}", hasher.finish());
+
+    // Extract filename from URL or use default
+    let filename = url
+        .rsplit('/')
+        .next()
+        .filter(|s| !s.is_empty() && s.contains('.'))
+        .unwrap_or("model.safetensors");
+
+    let cache_dir = dirs::home_dir()
+        .ok_or_else(|| CliError::ValidationFailed("Cannot find home directory".to_string()))?
+        .join(".apr")
+        .join("cache")
+        .join("url")
+        .join(&url_hash);
+
+    std::fs::create_dir_all(&cache_dir)?;
+
+    let model_path = cache_dir.join(filename);
+
+    // Download model
+    eprintln!("  Downloading {}...", filename);
+    download_file(url, &model_path)?;
 
     eprintln!("{}", "  Download complete!".green());
 
