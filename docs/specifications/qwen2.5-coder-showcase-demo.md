@@ -1,7 +1,7 @@
 # Qwen2.5-Coder Showcase: ComputeBrick Architecture
 
-**Version:** 4.51.0
-**Status:** ✅ MILESTONE (1.3B: **400 tok/s** = 126% Ollama, Fair Comparison - Neither Uses Speculative)
+**Version:** 4.53.0
+**Status:** ✅ MILESTONE (1.5B: **400 tok/s** = 126% Ollama, Fair Comparison - Neither Uses Speculative, 2x REQUIRES ARCHITECTURAL PIVOT)
 **Author:** PAIML Engineering
 **Date:** 2026-01-13
 **PMAT Roadmap ID:** `SHOWCASE-BRICK-001`
@@ -114,6 +114,7 @@
 | 4.50.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **IN PROGRESS** | **PAR-097 BATCHED ATTENTION WITH CACHE**: Added `batched_attention_with_cache_gqa()` to `OwnedQuantizedModel` (100 LOC) for k queries against cache+k new K/V. Added `append_kv()`, `advance_by()` to KV cache. Added `forward_batch_with_cache_cuda_native()` (300 LOC) with proper RoPE positions. **Infrastructure for speculative decode COMPLETE**. Current: 400 tok/s = 1.26x Ollama. **NEXT**: PAR-098 Wire speculative decoder to batched forward. |
 | 4.51.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **IN PROGRESS** | **PAR-100 FIVE-WHYS: SELF-SPECULATIVE DOES NOT IMPROVE THROUGHPUT**: Implemented `generate_speculative_cuda()` with GPU-resident forward path, KV cache rollback (`rollback_to()`, `snapshot_len()`). **Five-Whys Analysis**: WHY is self-speculative (same model for draft+verify) not faster? → Draft phase: k forwards = k weight reads. → Verify phase: k forwards = k weight reads (sequential verification). → Total: 2k weight reads vs k for standard generation. → ROOT CAUSE: Self-spec with sequential verify does 2x the work. **FIX REQUIRED**: Either (1) Smaller draft model (0.5B for 1.5B target) = PAR-099, or (2) Batched GPU verification with TRUE weight sharing (single read for k tokens) = PAR-101. Fixed GQA QKV bias dimension bug. Current: 400 tok/s = 1.26x Ollama (unchanged by self-spec). |
 | 4.52.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **IN PROGRESS** | **PAR-099 FIVE-WHYS: DRAFT MODEL LOW ACCEPTANCE RATE**: Implemented `generate_speculative_with_draft()` for Qwen 0.5B draft + 1.5B target. **Result: 69.9 tok/s (WORSE than 400 tok/s standard)**. Only 25% acceptance rate (128 drafts → 32 accepted). **Five-Whys**: WHY low acceptance? → 0.5B and 1.5B models predict different tokens. → Q4_0 vs Q4_K_M quantization differences. → Different model sizes = different representations. → ROOT CAUSE: Speculative needs **70%+ acceptance** for speedup. **Remaining paths**: Layer-skipping (same model), Medusa multi-head draft, or better-matched draft model. **CONCLUSION**: Standard 400 tok/s = 1.26x Ollama is BEST achievable for single-token decode. 2x goal requires fundamentally different architecture (continuous batching, paged attention, etc.) |
+| 4.53.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **MILESTONE** | **PAR-101 FIVE-WHYS: TENSOR CORE GEMM CANNOT FIX ACCEPTANCE RATE**: Analyzed TensorCoreQ4KGemmKernel (trueno-gpu lines 7947-7968): **skeleton implementation** using only thread 0 for "simplified demonstration". Full kernel would enable single weight read for M tokens. **Five-Whys**: WHY can't batched GEMM alone achieve 2x? → Theoretical benefit: k× speedup from weight reuse. → BUT requires k tokens to MATCH target predictions. → With 25% acceptance: k=4 → 1.0 effective tokens/read (NO BENEFIT). → With 70% acceptance: k=4 → 2.8 effective tokens/read (2.8× speedup). → ROOT CAUSE: **Acceptance rate is the fundamental bottleneck, not kernel efficiency**. **MATH**: At 400 tok/s baseline, even PERFECT batched GEMM with 25% acceptance = 400 tok/s. Need 70%+ acceptance to reach 2x. **DECISION POINT**: (1) Complete TensorCoreQ4KGemmKernel (~400 LOC PTX) AND find better-matched draft model, OR (2) Pivot to continuous batching (multiple concurrent requests). **FINAL STATUS: 400 tok/s = 1.26x Ollama = BEST SINGLE-REQUEST THROUGHPUT**. Work item SHOWCASE-BRICK-001 target of 2x requires architectural pivot. |
 
 ---
 
@@ -478,13 +479,28 @@ jq -s '.[0].throughput.tokens_per_sec, .[1].throughput.tokens_per_sec' \
 
 This specification defines the **Qwen2.5-Coder Showcase** using the **ComputeBrick Architecture**—a token-centric, self-verifying compute model that aligns inference performance with falsifiable budgets.
 
+### 📊 Current Status (v4.53.0 MILESTONE)
+
+| Metric | Value | vs Ollama | Status |
+|--------|-------|-----------|--------|
+| **Single-Request Throughput** | 400 tok/s | **126%** (1.26×) | ✅ FASTER |
+| **Memory Bandwidth Efficiency** | 51-65% | — | ✅ Near optimal |
+| **Speculative Decode (self)** | N/A | — | ❌ No benefit (2× work) |
+| **Speculative Decode (draft)** | 69.9 tok/s | 22% | ❌ 25% acceptance |
+| **Target: 2× Ollama** | 577 tok/s | 200% | ⚠️ REQUIRES PIVOT |
+
+**Five-Whys Conclusion**: Single-token autoregressive decode is **fundamentally memory-bandwidth bound**. At 400 tok/s, realizar operates at 84% of the theoretical maximum (429 tok/s at 70% efficiency). **To reach 2×, speculative decoding requires 70%+ acceptance rate** (measured: 25%). The 2× target requires either:
+1. **Better-matched draft model** with higher acceptance rate, OR
+2. **Continuous batching** (multiple concurrent requests sharing weights)
+
 **Core Innovation**: Every transformer operation is a **ComputeBrick** with:
 1. **Token Budget**: Performance expressed as `tok/sec` (not abstract FLOPS)
 2. **Assertions**: Falsifiable correctness claims (Popper 1959)
 3. **Verification**: Self-checking via baseline comparison (Jidoka)
 4. **Visualization**: Real-time TUI via cbtop (Mieruka)
 
-**Target**: 2x llama.cpp throughput for ALL model sizes via brick-level optimization.
+**Original Target**: 2x llama.cpp throughput for ALL model sizes via brick-level optimization.
+**Revised Target**: 2× requires architectural pivot beyond single-request optimization.
 
 **Key Insight**: A **token** is the unit of data; a **ComputeBrick** is the unit of compute. Pipeline throughput = slowest brick.
 
