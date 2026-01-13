@@ -1,7 +1,7 @@
 # Qwen2.5-Coder Showcase: ComputeBrick Architecture
 
-**Version:** 4.54.0
-**Status:** ✅ MILESTONE (PAR-103: Concurrent batch mode 27% speedup, CPU attention bottleneck identified, 2x REQUIRES GPU attention)
+**Version:** 4.55.0
+**Status:** ✅ MILESTONE (PAR-103: GQA attention NOT GPU-accelerated, peak 201 tok/s @ batch=4, PAR-104 BLOCKS 2x)
 **Author:** PAIML Engineering
 **Date:** 2026-01-13
 **PMAT Roadmap ID:** `SHOWCASE-BRICK-001`
@@ -229,7 +229,15 @@ The 2x Ollama target requires speculative decoding infrastructure that neither s
     - concurrent=8: 189.5 tok/s (degradation begins)
     - concurrent=16: 178.2 tok/s (CPU attention bottleneck)
   - **Five-Whys ROOT CAUSE:** CPU attention (`causal_attention`) is O(n²) and becomes bottleneck at batch_size>4
-  - **PATH TO 2x:** Need batched GPU attention OR better draft model acceptance rate
+  - **DEEPER ROOT CAUSE (GQA):** `batched_causal_attention_gpu` is NOT GQA-aware
+    - Assumes Q, K, V all have same hidden_dim
+    - With GQA: Q has hidden_dim (1536), K/V have hidden_dim * num_kv_heads / num_heads (256)
+    - Attempt to use GPU attention failed with "range start index 1536 out of range for slice of length 512"
+  - **PATH TO 2x:** Need GQA-aware batched GPU attention (PAR-104) OR better draft model
+- [ ] **PAR-104** GQA-aware batched GPU attention — **TODO (required for batch_size>4 scaling)**
+  - Modify `batched_causal_attention_gpu` to handle different Q vs K/V dimensions
+  - Handle head expansion (each KV head serves multiple Q heads)
+  - Would unlock linear scaling to batch_size=16+
 
 | Repository | ComputeBrick | Source | Features | Notes |
 |------------|-------------|--------|----------|-------|
