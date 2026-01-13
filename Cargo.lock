@@ -2551,6 +2551,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "hostname"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "617aaa3557aef3810a6369d0a99fac8a080891b68bd9f9812a1eeda0c0730cbd"
+dependencies = [
+ "cfg-if",
+ "libc",
+ "windows-link",
+]
+
+[[package]]
 name = "http"
 version = "0.2.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6047,10 +6058,14 @@ version = "0.11.0"
 dependencies = [
  "anyhow",
  "bytemuck",
+ "chrono",
  "futures-intrusive",
+ "hostname",
  "num_cpus",
  "pollster",
+ "serde",
  "thiserror 2.0.17",
+ "toml",
  "wgpu",
 ]
 

@@ -1,7 +1,7 @@
 # Qwen2.5-Coder Showcase: ComputeBrick Architecture
 
-**Version:** 4.84.0
-**Status:** ✅ **GPU 2x OLLAMA ACHIEVED** | 🔴 **CPU 18x GAP** (PAR-125: GPU vectorized scale loading. **GPU 1.5B M=8: 943 tok/s = 3.24x Ollama**, **GPU 7B M=8: 265 tok/s = 1.98x Ollama**. PAR-126: CPU 16 tok/s vs Ollama 290 tok/s - SIMD kernel optimization needed.)
+**Version:** 4.85.0
+**Status:** ✅ **GPU 2x OLLAMA ACHIEVED** | 🟡 **CPU 4.2x GAP** (PAR-125: GPU vectorized scale loading. **GPU 1.5B M=8: 943 tok/s = 3.24x Ollama**, **GPU 7B M=8: 265 tok/s = 1.98x Ollama**. PAR-126: CPU 63.7 tok/s vs Ollama 265 tok/s (4.2x gap, improved from 18x). NUMA bottleneck identified: 16-thread optimal.)
 **Author:** PAIML Engineering
 **Date:** 2026-01-13
 **PMAT Roadmap ID:** `SHOWCASE-BRICK-001`
@@ -160,6 +160,7 @@
 | 4.82.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **FIVE-WHYS** | **PAR-125 7B MODEL ANALYSIS**: Downloaded and tested 7B Q4_K_M model. **Results**: M=1: 55 tok/s, M=2: 114, M=4: 163, M=8: 228 tok/s = **1.70x Ollama** (134 tok/s baseline). **Five-Whys root cause**: Memory bandwidth utilization only 65% (657 GB/s vs 1008 GB/s RTX 4090). Scale bytes in BatchedQ4KGemv loaded individually (12 transactions). CUDA graphs provide NO benefit for 7B (larger model, graph overhead > savings). **Gap**: Need 17.6% improvement (40 tok/s) to reach 2x. **Fix path**: Coalesce scale loads in BatchedQ4KGemvKernel. |
 | 4.83.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **FIX** | **PAR-125 VECTORIZED SCALE LOADING FIX**: Implemented in trueno-gpu commit `705392b`. Load 12 scale bytes as 3 × u32 instead of 12 × u8 (4x fewer transactions). **Results**: 7B M=8: 228→265 tok/s (+16%, **1.98x Ollama**). 7B M=4: 163→243 tok/s (+49%). 1.5B M=8: 798→943 tok/s (+18%, **3.24x Ollama**). 1.5B M=4: 632→815 tok/s (+29%). 7B now at 98.9% of 2x target (265 vs 268 tok/s). |
 | 4.84.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **ANALYSIS** | **PAR-126 CPU PERFORMANCE ANALYSIS**: CPU path (trueno SIMD) measured at 16 tok/s vs Ollama 290 tok/s (18x gap). Five-Whys analysis: (1) MADV_WILLNEED missing - added, improved 1.1→5.6 tok/s. (2) PARALLEL_THRESHOLD=4096 too high - lowered to 256, improved to 16 tok/s. (3) Remaining gap: fused_q4k_dot_simd kernel 18x slower than llama.cpp - requires SIMD optimization (future work). GPU 2x target achieved; CPU optimization deferred. |
+| 4.85.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **OPTIMIZED** | **PAR-126 CPU SIMD OPTIMIZATION**: Five-Whys analysis and optimization. (1) Optimized AVX-512 VNNI kernel: 16→63.7 tok/s (4x improvement). (2) **NUMA discovery**: 48 threads = 10% efficiency, 16 threads = 74% efficiency (peak at 16-24 threads). (3) Per-layer breakdown: QKV 95µs, Attn O 35µs, FFN up 114µs, FFN down 157µs = 514µs/layer. (4) LM head 1.3ms dominates (vocab=152K). **Current: 63.7 tok/s vs Ollama 265 tok/s CPU = 24% (4.2x gap)**. Remaining bottleneck: horizontal sums (24 per super-block). |
 
 ---
 
@@ -3624,26 +3625,28 @@ It does NOT prove performance targets are met. Only F081-F100 can prove that.
 | Model | M=1 (tok/s) | M=2 | M=4 | M=8 | M=8 (kCB/s) | 2x Target | Status |
 |-------|-------------|-----|-----|-----|-------------|-----------|--------|
 | **0.5B** | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | 1188 tok/s | 🔴 TODO |
-| **1.5B** | 🟡 16 | ⬜ | ⬜ | ⬜ | ⬜ | 582 tok/s | 🔴 **5.5% Ollama** |
+| **1.5B** | 🟡 63.7 | ⬜ | ⬜ | ⬜ | ⬜ | 582 tok/s | 🟡 **24% Ollama (4.2x gap)** |
 | **7B** | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | 254 tok/s | 🔴 TODO |
 | **32B** | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | TBD | 🔴 TODO |
 
-**PAR-126 Five-Whys: CPU Performance Gap**
+**PAR-126 Five-Whys Root Cause Analysis (CPU Gap)**
 
-| Why | Finding | Evidence |
-|-----|---------|----------|
-| **Why 16 tok/s vs Ollama 290?** | fused_q4k_dot_simd 18x slower than llama.cpp | Measured 2026-01-13 |
-| **Why SIMD kernel slower?** | AVX2 only, no AVX-512 (CPU supports it) | `is_x86_feature_detected!("avx2")` |
-| **Why no vectorized scale loads?** | GPU kernel optimized (PAR-125), CPU not | `quantize.rs:1800-1810` |
-| **Why per-token allocations?** | forward_cached allocates 280 Vecs/token | `gguf.rs:11461-11482` |
-| **Why cache pollution?** | Frequent malloc/free evicts weight data from L3 | Theoretical analysis |
+| Why | Finding | Fix Applied |
+|-----|---------|-------------|
+| Why 1.1 tok/s initially? | MADV_WILLNEED not called | Added prefetch → 5.6 tok/s |
+| Why 11 tok/s still slow? | PARALLEL_THRESHOLD=4096 too high | Lowered to 256 → 16 tok/s |
+| Why 16 tok/s not 290? | fused_q4k_dot_simd slow | Optimized VNNI kernel → 63.7 tok/s |
+| Why only 63.7 tok/s? | NUMA scaling kills >16 threads | Identified 16-24 threads optimal |
+| Why 4.2x gap remains? | 24 horizontal sums/super-block | Kernel efficiency ~25 GFLOPS/thread |
 
-**Improvements Applied (PAR-126):**
-1. MADV_WILLNEED prefetch: 1.1 → 5.6 tok/s (+5x)
-2. PARALLEL_THRESHOLD 4096→256: 11 → 16 tok/s (+45%)
-3. OwnedQuantizedModel: Eliminates mmap page faults
+**v4.84.0 CPU Progress (PAR-126)**:
+- **Before**: 16 tok/s (18x slower than Ollama 290 tok/s)
+- **After**: 63.7 tok/s (4.2x slower than Ollama 265 tok/s CPU)
+- **NUMA Finding**: 48 threads = 10% efficiency, 16 threads = 74% efficiency
+- **Per-layer breakdown**: QKV 95µs, Attn O 35µs, FFN up 114µs, FFN down 157µs = 514µs/layer
+- **LM head**: 1.3 ms (vocab=152K)
 
-**Remaining Gap**: 18x slower than Ollama - requires SIMD kernel optimization (future work)
+**Remaining Gap**: 4.2x slower than Ollama CPU - FFN matmuls (57% of layer time) need further optimization
 
 **Legend:**
 - ✅ = 2x Ollama achieved (with tok/s measurement)
