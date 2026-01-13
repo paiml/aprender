@@ -309,7 +309,7 @@ dependencies = [
  "rmp-serde",
  "serde",
  "serde_json",
- "trueno 0.11.0",
+ "trueno 0.11.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -347,7 +347,7 @@ dependencies = [
  "sha2",
  "tempfile",
  "thiserror 2.0.17",
- "trueno 0.11.0",
+ "trueno 0.11.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "trueno-zram-core 0.3.0",
  "wasm-bindgen",
  "x25519-dalek",
@@ -375,7 +375,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
- "trueno 0.11.0",
+ "trueno 0.11.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "x25519-dalek",
  "zstd",
 ]
@@ -1922,7 +1922,7 @@ dependencies = [
  "sha2",
  "thiserror 2.0.17",
  "toml",
- "trueno 0.11.0",
+ "trueno 0.11.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "trueno-viz",
  "zip",
 ]
@@ -4742,7 +4742,7 @@ dependencies = [
  "toml",
  "tracing",
  "tracing-subscriber",
- "trueno 0.11.0",
+ "trueno 0.11.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "trueno-db",
  "trueno-graph",
  "trueno-viz",
@@ -4779,7 +4779,7 @@ dependencies = [
  "toml",
  "tracing",
  "tracing-subscriber",
- "trueno 0.11.0",
+ "trueno 0.11.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "trueno-db",
  "trueno-graph",
  "trueno-viz",
@@ -6044,6 +6044,19 @@ dependencies = [
 [[package]]
 name = "trueno"
 version = "0.11.0"
+dependencies = [
+ "anyhow",
+ "bytemuck",
+ "futures-intrusive",
+ "num_cpus",
+ "pollster",
+ "thiserror 2.0.17",
+ "wgpu",
+]
+
+[[package]]
+name = "trueno"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4a0756605a19a0b79f5dca9b61fba7e428c497abe9ebeac2ef91b39d90b6da91"
 dependencies = [
@@ -6135,7 +6148,7 @@ dependencies = [
  "serde",
  "serde_yaml",
  "thiserror 2.0.17",
- "trueno 0.11.0",
+ "trueno 0.11.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]

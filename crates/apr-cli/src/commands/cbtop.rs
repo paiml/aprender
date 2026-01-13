@@ -545,6 +545,14 @@ fn run_headless_real(config: CbtopConfig) -> Result<()> {
     }
     eprintln!();
 
+    // PAR-073: Enable BrickProfiler for per-brick timing
+    // NOTE: Per-brick timing requires CUDA sync after each brick, which adds overhead
+    // We enable it for detailed profiling but acknowledge throughput may be lower
+    cuda_model.enable_profiling();
+    cuda_model.reset_profiler();
+    eprintln!("cbtop: BrickProfiler enabled (PAR-073)");
+    eprintln!();
+
     // Phase 2: Measure throughput
     eprintln!(
         "cbtop: Measuring throughput ({} iterations)...",
@@ -589,6 +597,32 @@ fn run_headless_real(config: CbtopConfig) -> Result<()> {
         target_per_layer_us,
         measured_per_layer_us / target_per_layer_us
     );
+    eprintln!();
+
+    // PAR-073: Print BrickProfiler summary
+    eprintln!("=== PAR-073 BrickProfiler Results ===");
+    let profiler_summary = cuda_model.profiler_summary();
+    eprintln!("{}", profiler_summary);
+
+    // Print individual brick stats if available
+    let profiler = cuda_model.profiler();
+    let all_stats = profiler.all_stats();
+    if !all_stats.is_empty() {
+        eprintln!("Per-Brick Timing (REAL via std::time::Instant + CUDA sync):");
+        let mut sorted_stats: Vec<_> = all_stats.iter().collect();
+        sorted_stats.sort_by(|a, b| b.1.total_ns.cmp(&a.1.total_ns));
+        for (name, stats) in sorted_stats {
+            eprintln!(
+                "  {:20} {:8.2}µs avg, {:8} samples, {:.1} tok/s",
+                name,
+                stats.avg_us(),
+                stats.count,
+                stats.tokens_per_sec()
+            );
+        }
+    } else {
+        eprintln!("  No per-brick data collected (profiling may need per-brick sync points)");
+    }
     eprintln!();
 
     // Phase 3: Benchmark individual bricks
