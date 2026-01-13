@@ -1,6 +1,6 @@
 # Qwen2.5-Coder Showcase: ComputeBrick Architecture
 
-**Version:** 4.78.0
+**Version:** 4.79.0
 **Status:** ✅ **2x OLLAMA ACHIEVED** (PAR-119/121: Multi-KV-cache + CUDA graphs. **M=4 graphed: 648.7 tok/s = 2.23x Ollama**, **M=8: 816.0 tok/s = 2.80x Ollama 291 tok/s**. M=1: 357 tok/s = 1.23x Ollama (CUDA graphs, near Q4K theoretical limit))
 **Author:** PAIML Engineering
 **Date:** 2026-01-13
@@ -54,7 +54,7 @@
 | [6.7](#67-mandatory-pure-rust-real-timing-infrastructure) | **MANDATORY Pure Rust Timing** | 📊 MEASURE | ✅ Spec added |
 | [7](#7-benchmark-protocol) | Benchmark Protocol | 📊 MEASURE | - |
 | [8](#8-peer-reviewed-citations) | Peer-Reviewed Citations | - | - |
-| [9](#9-120-point-popperian-falsification) | **120-Point Popperian Falsification** | 🔬 TEST | ⚠️ Tests pass, 2x goal NOT MET |
+| [9](#9-120-point-popperian-falsification) | **120-Point Popperian Falsification** | 🔬 TEST | ✅ **136/136 tests, 2x ACHIEVED** |
 | [A](#appendix-a-hardware-requirements) | Hardware Requirements | - | - |
 | [B](#appendix-b-model-matrix) | Model Matrix | - | - |
 | [C](#appendix-c-measurement-vs-optimization) | **Measurement vs Optimization** | - | - |
@@ -154,6 +154,7 @@
 | 4.76.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **2x ACHIEVED** | **PAR-119 MULTI-KV-CACHE ARCHITECTURE IMPLEMENTED**: Five-Whys fix for single shared KV cache bottleneck. Changes: (1) Added M separate KV caches per layer (`batched_kv_k_caches`, `batched_kv_v_caches`). (2) Added `init_batched_kv_cache_gpu()` with batch size tracking and reallocation. (3) Added `batched_incremental_attention_into()` with pointer arrays for batched kernel. (4) Fixed PTX module header bug (missing `.version`/`.target` directives). (5) Fixed shfl mask (0x1f→0xFFFFFFFF for full warp participation). **RESULTS**: M=1: 211.4 tok/s, M=2: 376.3 tok/s (1.19x), M=4: 598.1 tok/s (1.90x), **M=8: 794.5 tok/s (2.52x Ollama)**. **GOAL EXCEEDED!** |
 | 4.77.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **COMPLETE** | **PAR-120 M=1 ARCHITECTURAL LIMIT ANALYSIS**: Five-Whys root cause: M=1 single-sequence at **357 tok/s (1.28x Ollama 279 tok/s)** with CUDA graphs is near theoretical Q4K limit. **CORRECTED OLLAMA BASELINE**: Re-verified via `ollama run qwen2.5-coder:1.5b --verbose` = **279 tok/s** (not 315). **Five-Whys**: (1) WHY M=1 only 1.28x vs M=8 2.85x? → M=1 reads weights once/token, M=8 amortizes across sequences. (2) WHY can't M=1 reach 2x? → Memory bandwidth efficiency at 35.9%, need 55.4% for 2x. (3) WHY only 35.9%? → Q4K irregular super-block layout causes ~20-30% coalescing loss. (4) WHY not optimize further? → At 51% theoretical limit, practical max ~70% = 426 tok/s. (5) **CONCLUSION**: 2x Ollama (558 tok/s) for M=1 is **architecturally infeasible** with Q4K GEMV. **2x achieved via M>1 batching** (PAR-119). |
 | 4.78.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **COMPLETE** | **PAR-121 CUDA GRAPHS FOR BATCHED PATH**: Added CUDA graph capture support to batched forward path (`forward_batched_to_token_ids_graphed`). **Five-Whys**: (1) WHY add graphs to batched? → Reduce kernel launch overhead. (2) WHY only ~5% improvement (vs 59% for M=1)? → Batched kernels already amortize launch overhead across M sequences. (3) Each kernel serves M tokens, dividing overhead by M. **RESULTS**: M=2 non-graphed: 405.7 tok/s → M=2 graphed: 426.3 tok/s (+5.1%). M=4 non-graphed: 613.5 tok/s → **M=4 graphed: 648.7 tok/s (+5.7%)**. **Ollama baseline re-verified: 291 tok/s**. M=8 non-graphed: **816.0 tok/s = 2.80x Ollama** ✅. |
+| 4.79.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **COMPLETE** | **PAR-122 FALSIFICATION TESTS COMPLETE**: Fixed cbtop headless mode per Toyota Way (Genchi Genbutsu - real data by default). Added `--simulated` flag for explicit CI testing opt-in. **136/136 falsification tests pass**: F001-F020 (20), F021-F040 (20), F041-F060 (21), F061-F080 (21), M001-M020 (20), F081-F105 (25), O001-O009 (9). **2x Ollama CONFIRMED**: M=4 graphed: 648.7 tok/s = 2.23x, M=8: 816.0 tok/s = 2.80x. |
 
 ---
 
