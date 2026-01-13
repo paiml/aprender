@@ -1,7 +1,7 @@
 # Qwen2.5-Coder Showcase: ComputeBrick Architecture
 
-**Version:** 4.68.0
-**Status:** 🟡 IN PROGRESS (PAR-109 Multi-Sequence Graph Analysis, 974-1502 tok/s theoretical)
+**Version:** 4.69.0
+**Status:** 🟡 IN PROGRESS (PAR-110 Five-Whys: DP4A disabled due to scale extraction bug, path to 400 tok/s identified)
 **Author:** PAIML Engineering
 **Date:** 2026-01-13
 **PMAT Roadmap ID:** `SHOWCASE-BRICK-001`
@@ -250,6 +250,49 @@ Per GitHub Issue [ollama/ollama#5800](https://github.com/ollama/ollama/issues/58
 2. Our **1.24x speedup** (359 vs 288 tok/s) is a **fair comparison**
 3. Both systems are equally limited by memory bandwidth
 4. To reach 2x, **BOTH** systems would need speculative decoding
+
+**PAR-110 Five-Whys: 9.6% Gap to 400 tok/s (v4.69.0)**
+
+Root cause analysis for the gap between current 365 tok/s and target 400 tok/s:
+
+| Why | Finding | Evidence | Location |
+|-----|---------|----------|----------|
+| **Why 365 tok/s instead of 400?** | GPU compute takes 2740µs instead of 2500µs | REAL cbtop profiling | `cbtop --model-path` |
+| **Why GPU compute slow?** | Q4K GEMV dominates (~68% of compute time) | Brick timings show QKV+FFN = 85µs/layer | `BrickProfiler` |
+| **Why Q4K GEMV not faster?** | Using `VectorizedQ4KGemv` instead of `Dp4aQ4KGemv` | Code inspection | `cuda.rs:4329` |
+| **Why not using DP4A?** | CORRECTNESS-001: "dp4a_q4k has scale extraction bug" | Explicit code comment | `cuda.rs:8126` |
+| **ROOT CAUSE** | **DP4A kernels disabled due to Q4K scale extraction bug** | `transformer_layer_gpu` forces TiledQ4K | `cuda.rs:8122-8128` |
+
+**Code Evidence (cuda.rs:8122-8128):**
+```rust
+// Q/K/V projections: K = hidden_dim
+// CORRECTNESS-001: Temporarily disable DP4A to test fixed TiledQ4K kernel
+// PAR-063: Use DP4A kernel for aligned dimensions (fastest)
+let _use_dp4a = hidden_aligned && q_aligned && hidden_dim <= CHUNK_THRESHOLD;
+let q = {
+    // Force TiledQ4K for now - dp4a_q4k has scale extraction bug
+    self.q4k_gemv_cached_async(&q_name, &normed, q_dim, hidden_dim)?
+};
+```
+
+**Kernel Analysis (trueno-gpu VectorizedQ4KGemvKernel):**
+- ✅ Coalesced 128-byte warp loads (32 threads × 4 bytes)
+- ✅ Scale broadcast via warp shuffle
+- ✅ Proper Q4K deinterleaved nibble layout (CORRECTNESS-002 FIX)
+- ⚠️ Memory-bound, not compute-bound (correct approach)
+- ⚠️ Theoretical bandwidth ~22% of peak (4.5x gap)
+
+**Path to 400 tok/s (Two Options):**
+
+| Option | Expected Gain | Effort | Status |
+|--------|---------------|--------|--------|
+| **Fix DP4A scale extraction** | 4x instruction throughput | Medium | Blocked by CORRECTNESS-001 |
+| **Multi-sequence graph (M=4)** | 2.9x aggregate throughput | Medium | PAR-109 theoretical validated |
+
+**Recommendation:** Multi-sequence CUDA graph (PAR-109) is the cleaner path since:
+1. VectorizedQ4KGemv is already well-optimized for single-sequence
+2. DP4A would help compute but we're memory-bound
+3. Multi-sequence amortizes weight reads across M tokens
 
 The 2x Ollama target requires speculative decoding infrastructure that neither system currently has. Our current **24% speedup** on the same architecture represents excellent optimization of the fundamentally memory-bound GEMV path.
 
