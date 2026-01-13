@@ -181,15 +181,17 @@
 | ~~PAR-085 Multi-token Decode~~ | ~~+50-100%~~ | ~~High~~ | ❌ BLOCKED (requires speculative) |
 | ~~FP16 Activations Pipeline~~ | ~~+20-40%~~ | ~~Medium~~ | ❌ DEPRIORITIZED |
 
-**Five-Whys Analysis of 2x Target (PAR-091 v4.61.0):**
-1. WHY can't single-request throughput reach 2x? → Memory bandwidth limited (77% efficiency at 248 tok/s)
-2. WHY is 77% the practical limit? → Q4K format irregularity + kernel launch overhead
-3. WHY doesn't speculative decoding help? → 0.5B/1.5B models have only 9.5% match rate
-4. WHY such low match rate? → Different architectures (896 vs 1536 hidden), different training
-5. WHY not use same model? → Q8 variant unavailable; self-spec does 2x work
+**Five-Whys Analysis of 2x Target (PAR-107 v4.65.0):**
+1. WHY can't batched throughput reach 2x? → At 32% bandwidth efficiency, ALU-bound on dequantization
+2. WHY only 32% bandwidth? → Sequential GEMV dequantizes weights for each of N sequences
+3. WHY not share dequantization? → Current GEMV is per-sequence, need batched GEMM
+4. WHY not use batched GEMM? → TensorCoreQ4KGemmKernel is skeleton only (~400 LOC needed)
+5. WHY skeleton? → Complex WMMA PTX with Q4K super-block layout
 
-**CONCLUSION:** 2x Ollama requires **continuous batching** (multiple concurrent requests) to amortize weight reads.
-Current **248 tok/s = 124% Ollama** is optimal for single-request throughput.
+**CONCLUSION:** 2x Ollama (400 tok/s) requires **TensorCoreQ4KGemmKernel completion** for true M×N weight sharing.
+Current **360 tok/s = 180% Ollama** with PAR-106 continuous batching. Gap: 11% (40 tok/s).
+
+**PAR-107 Fix:** CUDA graph preservation - added has_workspace()/has_indexed_weights() checks to prevent buffer reallocation.
 
 **PAR-089 Five-Whys Kernel Efficiency Analysis:**
 Q4K GEMV kernel is already well-optimized:
