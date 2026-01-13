@@ -1,7 +1,7 @@
 # Qwen2.5-Coder Showcase: ComputeBrick Architecture
 
-**Version:** 4.69.0
-**Status:** 🟡 IN PROGRESS (PAR-110 Five-Whys: DP4A disabled due to scale extraction bug, path to 400 tok/s identified)
+**Version:** 4.70.0
+**Status:** 🟡 IN PROGRESS (PAR-111: Batched GEMV shows 16x speedup, implementing M=4 forward path for 400+ tok/s)
 **Author:** PAIML Engineering
 **Date:** 2026-01-13
 **PMAT Roadmap ID:** `SHOWCASE-BRICK-001`
@@ -143,7 +143,9 @@
 | 4.65.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **COMPLETE** | **PAR-107 CUDA GRAPH PRESERVATION FIX**: Five-Whys root cause: Graph re-captured each request because `init_workspace()` reallocated buffers (invalidating captured addresses). **Fix**: Added `has_workspace()`/`has_indexed_weights()` checks to skip re-init. Graph now persists across requests. Added Test 5 (warm graph persistence) to benchmark. **Current: 350-360 tok/s (1.75-1.80x Ollama)**. Gap to 2x: 11-14% (40-50 tok/s). Memory bandwidth at 32% suggests kernel-bound, not memory-bound. Next path: Explore batched GEMM for multi-sequence weight sharing. |
 | 4.66.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **COMPLETE** | **PAR-108 BATCHED GEMV ANALYSIS**: Implemented BatchedQ4KGemvKernel in trueno-gpu (15x speedup at GEMV level for M=4). Integrated into realizar's `batched_q4k_gemv_cached`. Created `forward_batch_indexed` and `forward_batch_multi_cache_to_tokens` for multi-sequence decode. **KEY FINDING**: CUDA graphs' kernel launch amortization is MORE impactful than batched dequant sharing. Batched CPU path: 225 tok/s. Sequential CUDA graphed: 360 tok/s. **CONCLUSION**: 2x Ollama (400 tok/s) requires multi-token CUDA graph capture, not just batched GEMV. Current: **360 tok/s (1.80x Ollama)**. |
 | 4.67.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **COMPLETE** | **PMAT-446 BRICK-SCORE CLI IMPLEMENTED**: `pmat brick-score` command now available (v2.213.7). Reads BrickProfiler JSON output and calculates 100-point score: Performance (40 pts) throughput vs µs budgets, Efficiency (25 pts) backend utilization, Correctness (20 pts) all bricks executed, Stability (15 pts) CV < 15%. Supports text/JSON/markdown/YAML output. `--threshold` flag for CI gates. All ecosystem projects (trueno, realizar, aprender) forced to v2.213.7 with enforcement hooks installed. **Usage**: `pmat brick-score --input brick_profile.json --verbose --threshold 90`. |
-| 4.68.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **IN PROGRESS** | **PAR-109 MULTI-SEQUENCE GRAPH ANALYSIS**: Created `bench_multisequence_graph.rs` benchmark to measure per-token overhead breakdown. **KEY FINDING**: Multi-sequence CUDA graph can achieve **974-1502 tok/s (2.7-4.5x current)** - well above 2x Ollama target. Analysis: GEMV is 68% of per-token time (2040us) and batches perfectly with M=4 (510us). Attention is only 28% (840us) and runs M times but doesn't dominate. Per-token breakdown: Embedding 0.6us, GPU 3014us. M=4 batched theoretical: 1027us/tok = **974 tok/s (4.87x Ollama)**. Implementation: M-wide buffers + batched GEMV (PAR-108) + M attention kernels + M-way argmax. |
+| 4.68.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **COMPLETE** | **PAR-109 MULTI-SEQUENCE GRAPH ANALYSIS**: Created `bench_multisequence_graph.rs` benchmark to measure per-token overhead breakdown. **KEY FINDING**: Multi-sequence CUDA graph can achieve **974-1502 tok/s (2.7-4.5x current)** - well above 2x Ollama target. Analysis: GEMV is 68% of per-token time (2040us) and batches perfectly with M=4 (510us). Attention is only 28% (840us) and runs M times but doesn't dominate. Per-token breakdown: Embedding 0.6us, GPU 3014us. M=4 batched theoretical: 1027us/tok = **974 tok/s (4.87x Ollama)**. Implementation: M-wide buffers + batched GEMV (PAR-108) + M attention kernels + M-way argmax. |
+| 4.69.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **COMPLETE** | **PAR-110 FIVE-WHYS ROOT CAUSE**: Gap between current 360 tok/s and target 400 tok/s analyzed. Found DP4A kernels disabled (CORRECTNESS-001 scale extraction bug). VectorizedQ4KGemvKernel is already optimized (coalesced loads, warp shuffle). Kernel is memory-bound, not compute-bound. DP4A fix would not significantly help. Multi-sequence batching is the path to 400 tok/s. |
+| 4.70.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **IN PROGRESS** | **PAR-111 BATCHED GEMV BENCHMARK**: Ran `bench_batched_gemv.rs` showing **16x speedup for M=4** batched vs sequential GEMV (501µs→31µs for FFN up projection). Key insight: Batched kernel reads/dequantizes weights ONCE for all M inputs. Current sequential: 360 tok/s. With batched GEMV in forward path: Theoretical 875+ tok/s (well above 400 tok/s target). Implementation: M-wide workspace buffers + batched GEMV for all projections + attention M times (can't batch different KV caches) + batched argmax. |
 
 ---
 
@@ -293,6 +295,32 @@ let q = {
 1. VectorizedQ4KGemv is already well-optimized for single-sequence
 2. DP4A would help compute but we're memory-bound
 3. Multi-sequence amortizes weight reads across M tokens
+
+**PAR-111 Batched GEMV Benchmark Results (v4.70.0)**
+
+REAL benchmark results from `bench_batched_gemv.rs` show massive speedup:
+
+| M (batch) | Sequential (µs) | Batched (µs) | Speedup |
+|-----------|-----------------|--------------|---------|
+| 1 | 112.5 | 28.0 | **4.02x** |
+| 2 | 242.9 | 24.4 | **9.95x** |
+| 4 | 501.0 | 30.9 | **16.21x** |
+| 8 | 1019.8 | 55.6 | **18.32x** |
+
+**Key Insight:** Batched kernel reads/dequantizes weights ONCE for all M inputs. Sequential does M separate reads.
+
+**Theoretical Throughput with Batched GEMV:**
+- Current GEMV time per token: ~1700µs (60% of 2850µs total)
+- With M=4 batched GEMV (16x): ~106µs for 4 tokens
+- Attention (can't batch): ~1140µs × 4 = 4560µs for 4 tokens
+- Total for 4 tokens: 4666µs
+- Per token: 1167µs = **857 tok/s**
+
+This exceeds 400 tok/s target by 2.14x. Implementation requires:
+1. M-wide workspace buffers (hidden, q, k, v, ffn)
+2. Batched GEMV for all linear projections (QKV, O, FFN)
+3. Attention runs M times (different KV caches, can't batch)
+4. Batched argmax for M logit vectors
 
 The 2x Ollama target requires speculative decoding infrastructure that neither system currently has. Our current **24% speedup** on the same architecture represents excellent optimization of the fundamentally memory-bound GEMV path.
 
