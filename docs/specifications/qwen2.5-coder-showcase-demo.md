@@ -1,10 +1,45 @@
 # Qwen2.5-Coder Showcase: ComputeBrick Architecture
 
-**Version:** 5.0.6
-**Status:** 🎯 **GPU FIRST** | ✅ 0.5B 3.01x | ✅ 1.5B 2.52x | ✅ 7B 2.55x | 🔴 32B 0.66x | 🔴 APR FORMAT TODO
+**Version:** 5.1.0
+**Status:** 🔴 **APR FORMAT BROKEN** — inference only works via GGUF interop, not native .apr
 **Author:** PAIML Engineering
 **Date:** 2026-01-14
 **PMAT Roadmap ID:** `SHOWCASE-BRICK-001`
+
+---
+
+## 🚨 CRITICAL: APR Format Gap
+
+**Goal:** `apr run model.apr` just works, 2x Ollama performance.
+
+**Reality:**
+| Path | Status | Performance |
+|------|--------|-------------|
+| `apr run model.gguf` | ✅ Works | 2x+ Ollama (0.5B/1.5B/7B) |
+| `apr run model.apr` | 🔴 **BROKEN** | Loads metadata only, no inference |
+
+**Root Cause:**
+- APR2 format = generic tensor storage (works)
+- APR2 inference = **NOT IMPLEMENTED** in realizar
+- realizar has separate "APRT" format for transformers (wrong approach)
+
+**Fix Required:**
+1. **ONE format**: APR2 (magic `APR2`) — no APRT, no confusion
+2. **realizar**: Load APR2 → detect architecture → run inference
+3. **apr-cli**: Wire `run` command to realizar APR2 inference
+
+**Benchmark Matrix (Current State):**
+| Backend | Format | 0.5B | 1.5B | 7B | 32B |
+|---------|--------|------|------|-----|-----|
+| Ollama | GGUF | 112 | 315 | 134 | 36.4 |
+| realizar | GGUF | ✅ 337 | ✅ 794 | ✅ 342 | 🔴 24 |
+| realizar | APR | 🔴 BROKEN | 🔴 BROKEN | 🔴 BROKEN | 🔴 BROKEN |
+| apr-cli | GGUF | 🔴 TODO | 🔴 TODO | 🔴 TODO | 🔴 TODO |
+| apr-cli | APR | 🔴 BROKEN | 🔴 BROKEN | 🔴 BROKEN | 🔴 BROKEN |
+
+**Priority:** Fix APR format BEFORE optimizing GGUF further.
+
+---
 
 **Canonical References:**
 - PROBAR-SPEC-009 (Brick Testing Protocol)
@@ -180,6 +215,7 @@
 | 5.0.4 | 2026-01-14 | PAIML Engineering | Architecture Lead | **32B GPU-READY** | **FIVE-WHYS CORRECTION: SERVICE STATE, NOT VRAM**: Re-tested Ollama 32B after service restart. **Ollama 32B GPU: 36.35 tok/s** (760 tokens in 20.9s). **GPU Memory: 22.15 GB / 24 GB (92% VRAM)**. **CORRECTED Five-Whys**: (1) WHY was 32B showing CPU-only? → `ollama ps` showed 100% CPU. (2) WHY 100% CPU? → Model not loaded to GPU despite VRAM available. (3) WHY not loaded? → Stale Ollama service state. (4) WHY stale state? → Service caching issue, not physical constraint. (5) **ROOT CAUSE (CORRECTED)**: Ollama service state bug caused GPU bypass, NOT VRAM constraint. 32B FITS in 24GB RTX 4090 (22.15GB used). **2x Target: 72.7 tok/s**. realizar 32B GPU TODO. |
 | 5.0.5 | 2026-01-14 | PAIML Engineering | Architecture Lead | **32B BENCHMARKED** | **realizar 32B GPU MEASURED**: Ran `gpu_showcase_benchmark` with 32B model. **realizar 32B GPU: 24.0 tok/s** (CV=0.4%, 5 iterations). **VRAM: 24045 MB** (fully GPU-resident). **Ratio: 24.0/36.35 = 0.66x Ollama**. **Five-Whys (32B Gap)**: (1) WHY only 0.66x? → 24 tok/s vs 36 tok/s Ollama. (2) WHY slower than Ollama? → 64 layers vs Ollama's optimized kernels. (3) WHY 64-layer overhead? → Graph captures only 28 layers, iterating rest. (4) WHY partial graph? → CUDA graph memory limits for 32B. (5) **ROOT CAUSE**: 32B model saturates both VRAM (24GB/24GB) and graph capture limits. **Need 3x improvement (72.7 tok/s) for 2x target**. |
 | 5.0.6 | 2026-01-14 | PAIML Engineering | Architecture Lead | **BENCHMARK MATRIX** | **4-row benchmark matrix added**: realizar GGUF, realizar APR, apr-cli GGUF, apr-cli APR. **.apr is primary format** - we control it, we optimize for it. GGUF/SafeTensors = interop. Updated `scripts/gpu_2x_benchmark.sh` to test all 4 combinations. **APR format benchmarks: TODO** - need .apr model files and apr-cli `--benchmark` flag. |
+| 5.1.0 | 2026-01-14 | PAIML Engineering | Architecture Lead | **🚨 APR BROKEN** | **CLARITY: APR format inference is BROKEN**. Tested `apr run model.apr` - loads metadata only, no inference. Root cause: realizar has separate APRT format for transformers, APR2 is generic tensor storage only. **WRONG APPROACH**: Should be ONE format (APR2) that does everything. Fix: (1) Merge APRT into APR2, (2) realizar loads APR2 → infers architecture → runs inference, (3) apr-cli wires to it. **GGUF works but APR is our format - must be primary**. |
 
 ---
 
