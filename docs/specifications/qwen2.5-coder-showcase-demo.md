@@ -349,17 +349,109 @@ Quantization: Q4_K_M
 - [ ] README examples work
 - [ ] API docs complete for new public methods
 
-### Scoring
+### Scoring Integration
 
-| Category | Points | Passing |
+**Three scores MUST align:**
+
+#### 1. APR Falsification Score (F-APR, 80 points)
+
+| Category | Points | Maps To |
 |----------|--------|---------|
-| Format Integrity (F-APR-001-020) | 20 | ≥18 |
-| Inference Correctness (F-APR-021-040) | 20 | ≥18 |
-| Performance (F-APR-041-060) | 20 | ≥16 |
-| CLI Integration (F-APR-061-080) | 20 | ≥18 |
-| **TOTAL** | **80** | **≥70** |
+| Format Integrity (F-APR-001-020) | 20 | → APR Format Score |
+| Inference Correctness (F-APR-021-040) | 20 | → APR Parity Score |
+| Performance (F-APR-041-060) | 20 | → ComputeBrick Score |
+| CLI Integration (F-APR-061-080) | 20 | → APR Load Score |
 
-**APR format is NOT COMPLETE until score ≥ 70/80.**
+#### 2. APR Model Score (§2.6, 100 points)
+
+```rust
+pub struct AprScore {
+    format_score: u32,   // 25 pts ← F-APR-001-020 (scaled)
+    parity_score: u32,   // 35 pts ← F-APR-021-040 (scaled)
+    memory_score: u32,   // 20 pts ← F-APR-041-060 (memory subset)
+    load_score: u32,     // 20 pts ← F-APR-061-080 (scaled)
+}
+```
+
+**Mapping: F-APR → AprScore**
+```
+apr_score.format_score = (f_apr_001_020_passed / 20) * 25
+apr_score.parity_score = (f_apr_021_040_passed / 20) * 35
+apr_score.memory_score = (f_apr_048_052_passed / 5) * 20
+apr_score.load_score   = (f_apr_061_080_passed / 20) * 20
+```
+
+#### 3. ComputeBrick Score (§2.5, 100 points)
+
+| Dimension | Points | Source |
+|-----------|--------|--------|
+| Performance | 40 | F-APR-043 to F-APR-050 (2x targets) |
+| Efficiency | 25 | F-APR-049, F-APR-051, F-APR-058 |
+| Correctness | 20 | F-APR-034 to F-APR-040 (GGUF parity) |
+| Stability | 15 | F-APR-047 (CV < 5%) |
+
+**Combined Score Formula:**
+
+```rust
+/// Overall APR Implementation Score
+pub fn apr_implementation_score(
+    f_apr_score: u32,      // 0-80 from falsification tests
+    apr_model_score: u32,  // 0-100 from AprScore
+    brick_score: u32,      // 0-100 from ComputeBrick
+) -> (u32, char) {
+    // Normalize F-APR to 100 scale
+    let f_apr_normalized = (f_apr_score * 100) / 80;
+
+    // Weighted average (falsification most important)
+    let combined = (f_apr_normalized * 50 + apr_model_score * 25 + brick_score * 25) / 100;
+
+    let grade = match combined {
+        90..=100 => 'A',
+        80..=89 => 'B',
+        70..=79 => 'C',
+        60..=69 => 'D',
+        _ => 'F',
+    };
+
+    (combined, grade)
+}
+```
+
+#### Passing Criteria
+
+| Score Type | Minimum | Current | Status |
+|------------|---------|---------|--------|
+| F-APR Falsification | ≥70/80 | 0/80 | 🔴 BROKEN |
+| APR Model Score | ≥80/100 | 0/100 | 🔴 BROKEN |
+| ComputeBrick Score | ≥80/100 | N/A | 🔴 BROKEN |
+| **Combined** | **≥80** | **0** | 🔴 **BLOCKED** |
+
+**APR format is NOT COMPLETE until Combined Score ≥ 80.**
+
+#### CI Gate
+
+```yaml
+# .github/workflows/apr-quality.yml
+apr-quality-gate:
+  runs-on: ubuntu-latest
+  steps:
+    - name: Run APR Falsification Tests
+      run: cargo test f_apr_ --release
+
+    - name: Calculate Scores
+      run: |
+        F_APR=$(cargo test f_apr_ --release 2>&1 | grep -c "ok")
+        APR_SCORE=$(apr score model.apr --json | jq .total)
+        BRICK_SCORE=$(apr cbtop --headless --json | jq .brick_score)
+
+        COMBINED=$(( (F_APR * 100 / 80 * 50 + APR_SCORE * 25 + BRICK_SCORE * 25) / 100 ))
+
+        if [ "$COMBINED" -lt 80 ]; then
+          echo "❌ Combined score $COMBINED < 80"
+          exit 1
+        fi
+        echo "✅ Combined score: $COMBINED"
+```
 
 ---
 
