@@ -8,36 +8,205 @@
 
 ---
 
-## 🚨 CRITICAL: APR Format Gap
+## 🚨 CRITICAL: APR Format — THE ONLY FORMAT THAT MATTERS
 
-**Goal:** `apr run model.apr` just works, 2x Ollama performance.
+### The Goal (Non-Negotiable)
 
-**Reality:**
-| Path | Status | Performance |
-|------|--------|-------------|
-| `apr run model.gguf` | ✅ Works | 2x+ Ollama (0.5B/1.5B/7B) |
-| `apr run model.apr` | 🔴 **BROKEN** | Loads metadata only, no inference |
+```bash
+# This MUST work. Period.
+apr run model.apr --prompt "Hello"
+# Output: Hello! I'm an AI assistant... (at 2x Ollama speed)
+```
 
-**Root Cause:**
-- APR2 format = generic tensor storage (works)
-- APR2 inference = **NOT IMPLEMENTED** in realizar
-- realizar has separate "APRT" format for transformers (wrong approach)
+**Performance Target:**
+| Model | Ollama Baseline | APR Target (2x) | Status |
+|-------|-----------------|-----------------|--------|
+| 0.5B | 112 tok/s | **224 tok/s** | 🔴 BROKEN |
+| 1.5B | 315 tok/s | **630 tok/s** | 🔴 BROKEN |
+| 7B | 134 tok/s | **268 tok/s** | 🔴 BROKEN |
+| 32B | 36.4 tok/s | **72.8 tok/s** | 🔴 BROKEN |
 
-**Fix Required:**
-1. **ONE format**: APR2 (magic `APR2`) — no APRT, no confusion
-2. **realizar**: Load APR2 → detect architecture → run inference
-3. **apr-cli**: Wire `run` command to realizar APR2 inference
+### Current State: BROKEN
 
-**Benchmark Matrix (Current State):**
+```
+$ apr run model.apr --prompt "Hello"
+Loaded transformer_lm model (arch: qwen2, 1 tensors, ~0 parameters)
+Note: APR v2 is tensor-based. For LLM inference, use SafeTensors or GGUF format.
+```
+
+**This is UNACCEPTABLE.** APR is OUR format. We control it. It MUST be the best.
+
+### Root Cause Analysis (Five Whys)
+
+| Why | Finding |
+|-----|---------|
+| **Why doesn't `apr run model.apr` work?** | apr-cli calls `execute_apr_inference()` which only loads metadata |
+| **Why only metadata?** | realizar's `AprV2Model` is generic tensor storage, no forward pass |
+| **Why no forward pass?** | realizar has SEPARATE `MmapAprTransformer` (APRT format, magic `APRT`) |
+| **Why separate formats?** | Historical accident — APRT was added for "transformer-specific" inference |
+| **ROOT CAUSE** | **TWO FORMATS when there should be ONE** |
+
+### The Fix: ONE Format (APR2)
+
+**Delete APRT. Merge into APR2. Period.**
+
+#### 1. APR2 Format Structure (Already Defined in APR-SPEC.md)
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ Header (32 bytes): magic=APR2, version, flags, offsets      │
+├─────────────────────────────────────────────────────────────┤
+│ Metadata (JSON): architecture, vocab_size, hidden_dim, etc  │
+├─────────────────────────────────────────────────────────────┤
+│ Tensor Index: name → offset mapping                         │
+├─────────────────────────────────────────────────────────────┤
+│ Tensor Data: 64-byte aligned, quantized weights             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+#### 2. Required Metadata for Inference
+
+```json
+{
+  "architecture": "qwen2",
+  "model_type": "transformer_lm",
+  "vocab_size": 152064,
+  "hidden_size": 1536,
+  "num_hidden_layers": 28,
+  "num_attention_heads": 12,
+  "num_key_value_heads": 2,
+  "intermediate_size": 8960,
+  "rope_theta": 1000000.0,
+  "rms_norm_eps": 1e-6,
+  "quantization": "Q4_K_M"
+}
+```
+
+#### 3. Required Tensors (Standard Naming)
+
+```
+model.embed_tokens.weight          # [vocab_size, hidden_size]
+model.layers.{i}.input_layernorm.weight
+model.layers.{i}.self_attn.q_proj.weight
+model.layers.{i}.self_attn.k_proj.weight
+model.layers.{i}.self_attn.v_proj.weight
+model.layers.{i}.self_attn.o_proj.weight
+model.layers.{i}.post_attention_layernorm.weight
+model.layers.{i}.mlp.gate_proj.weight
+model.layers.{i}.mlp.up_proj.weight
+model.layers.{i}.mlp.down_proj.weight
+model.norm.weight                  # Final RMSNorm
+lm_head.weight                     # [vocab_size, hidden_size]
+```
+
+### Implementation Checklist
+
+#### Phase 1: realizar APR2 Inference (../realizar)
+
+- [ ] **Delete** `src/apr_transformer.rs` (APRT format — GONE)
+- [ ] **Extend** `src/apr.rs` `AprV2Model`:
+  ```rust
+  impl AprV2Model {
+      /// Detect if this APR2 file is a transformer
+      pub fn is_transformer(&self) -> bool {
+          self.metadata.architecture.as_ref()
+              .map(|a| ["qwen2", "llama", "mistral", "phi"].contains(&a.as_str()))
+              .unwrap_or(false)
+      }
+
+      /// Run transformer forward pass
+      pub fn forward(&self, tokens: &[u32]) -> Result<Vec<f32>> {
+          // Load tensors, run attention + FFN layers
+      }
+
+      /// Generate tokens
+      pub fn generate(&self, prompt: &[u32], max_tokens: usize) -> Result<Vec<u32>> {
+          // Autoregressive decoding with KV cache
+      }
+  }
+  ```
+- [ ] **Add** GPU path: `AprV2ModelCuda` mirroring `OwnedQuantizedModelCuda`
+- [ ] **Add** quantization support: Q4_K, Q8_0, F16, F32
+
+#### Phase 2: apr-cli Integration (./crates/apr-cli)
+
+- [ ] **Update** `src/commands/run.rs`:
+  ```rust
+  fn execute_apr_inference(path: &Path, options: &RunOptions) -> Result<String> {
+      let model = realizar::apr::AprV2Model::load(path)?;
+
+      if !model.is_transformer() {
+          return Err("Not a transformer model");
+      }
+
+      let tokens = tokenize(&options.prompt)?;
+      let output = model.generate(&tokens, options.max_tokens)?;
+      Ok(detokenize(&output))
+  }
+  ```
+- [ ] **Add** `--benchmark` flag for performance measurement
+- [ ] **Add** `--gpu` / `--no-gpu` flags
+
+#### Phase 3: Conversion Tools
+
+- [ ] **Update** `apr import model.gguf -o model.apr`:
+  - Reads GGUF tensors
+  - Writes APR2 with proper metadata
+  - Preserves quantization (Q4_K_M → Q4_K_M)
+- [ ] **Add** `apr convert model.apr --quantize Q4_K_M`
+
+### Acceptance Criteria (MANDATORY)
+
+```bash
+# 1. Basic inference works
+$ apr run qwen-1.5b.apr --prompt "What is 2+2?"
+2+2 equals 4.
+
+# 2. Performance meets 2x target
+$ apr run qwen-1.5b.apr --benchmark
+Throughput: 650 tok/s (2.06x Ollama 315 tok/s) ✅
+
+# 3. GPU acceleration works
+$ apr run qwen-1.5b.apr --gpu --benchmark
+Throughput: 800 tok/s (2.54x Ollama) ✅
+
+# 4. Import from GGUF works
+$ apr import qwen-1.5b.gguf -o qwen-1.5b.apr
+Imported: 197 tensors, 1.5B parameters, Q4_K_M quantization
+
+# 5. Inspect shows correct metadata
+$ apr inspect qwen-1.5b.apr
+Architecture: qwen2
+Layers: 28
+Hidden: 1536
+Vocab: 152064
+Quantization: Q4_K_M
+```
+
+### Benchmark Matrix (Target State)
+
 | Backend | Format | 0.5B | 1.5B | 7B | 32B |
 |---------|--------|------|------|-----|-----|
 | Ollama | GGUF | 112 | 315 | 134 | 36.4 |
-| realizar | GGUF | ✅ 337 | ✅ 794 | ✅ 342 | 🔴 24 |
-| realizar | APR | 🔴 BROKEN | 🔴 BROKEN | 🔴 BROKEN | 🔴 BROKEN |
-| apr-cli | GGUF | 🔴 TODO | 🔴 TODO | 🔴 TODO | 🔴 TODO |
-| apr-cli | APR | 🔴 BROKEN | 🔴 BROKEN | 🔴 BROKEN | 🔴 BROKEN |
+| realizar | GGUF | ✅ 337 | ✅ 794 | ✅ 342 | 🟡 24 |
+| **realizar** | **APR** | **🎯 337** | **🎯 794** | **🎯 342** | **🎯 73** |
+| **apr-cli** | **APR** | **🎯 337** | **🎯 794** | **🎯 342** | **🎯 73** |
 
-**Priority:** Fix APR format BEFORE optimizing GGUF further.
+**APR MUST match or exceed GGUF performance. No exceptions.**
+
+### Why APR > GGUF
+
+| Feature | GGUF | APR |
+|---------|------|-----|
+| Control | ❌ llama.cpp owns it | ✅ We own it |
+| WASM | ❌ Requires Emscripten | ✅ Native wasm32 |
+| Alignment | ❌ Varies | ✅ 64-byte guaranteed |
+| Metadata | ❌ Key-value blobs | ✅ Typed JSON schema |
+| Streaming | ❌ Must load full file | ✅ Chunked loading |
+| Sharding | ❌ Single file | ✅ Multi-file native |
+| Compression | ❌ None | ✅ LZ4 optional |
+
+**APR is the best model format. We just need to finish implementing it.**
 
 ---
 
