@@ -1,7 +1,7 @@
 # Qwen2.5-Coder Showcase: ComputeBrick Architecture
 
-**Version:** 4.97.0
-**Status:** ✅ **GPU 2x OLLAMA ACHIEVED** | 🟡 **CPU Matrix Testing** (PAR-126: 1.5B=32.2 tok/s (2.2x gap), 7B=13.2 tok/s (1.86x gap), 0.5B=Q8K BUG)
+**Version:** 4.98.0
+**Status:** ✅ **GPU 2x OLLAMA ACHIEVED** | 🟡 **CPU 3.26x Gap** (PAR-126: 1.5B=21.8 tok/s vs 71 tok/s target, Root Cause: AVX-512 kernel horizontal sums)
 **Author:** PAIML Engineering
 **Date:** 2026-01-14
 **PMAT Roadmap ID:** `SHOWCASE-BRICK-001`
@@ -1361,6 +1361,44 @@ Effective bandwidth ratio: 128 / 1024 = 12.5% of peak
 | **Why no flash attention?** | Incremental decode uses simple loop | `cuda.rs:attention_kernel` | Source |
 | **Why simple loop?** | Flash attention designed for prefill | Not adapted for decode | Design |
 | **ROOT CAUSE** | **Need incremental flash attention for decode** | [Dao et al. 2023] | FlashAttention-2 |
+
+### 4.4 Why: CPU 3.26x Slower Than Ollama (PAR-126)
+
+> **Five-Whys for CPU 1.5B Performance Gap**
+
+| Why | Finding | Evidence | Citation |
+|-----|---------|----------|----------|
+| **Why 1.5B CPU at 21.8 tok/s vs 71 tok/s (Ollama)?** | Forward pass takes 45ms instead of 14ms | `profile_full_forward.rs` | REAL Profiling |
+| **Why does forward pass take 45ms?** | Q4K×Q8K matmul kernels take 31.7ms total | `bench_q8k_speedup.rs` | REAL Profiling |
+| **Why do matmuls take 31.7ms instead of ~14ms?** | Q4K×Q8K kernel is 2.25x slower than llama.cpp | 225µs vs ~100µs per matmul | Benchmark |
+| **Why is Q4K×Q8K kernel 2.25x slower?** | Horizontal sums in inner loop (24 per row) | `quantize.rs:2823-2834` | Source Analysis |
+| **ROOT CAUSE** | **AVX-512 kernel does horizontal sums inside loop instead of at end** | llama.cpp defers reduction | GGML comparison |
+
+**CPU Performance Matrix (REAL MEASUREMENTS):**
+
+| Model | realizar | Ollama | Gap | Root Cause | Status |
+|-------|----------|--------|-----|------------|--------|
+| 0.5B | 3.4 tok/s | 134 tok/s | 39x | Q5_0 format (no SIMD kernel) | 🔴 No kernel |
+| 1.5B | 21.8 tok/s | 71 tok/s | 3.26x | AVX-512 horizontal sums | 🟡 Fixable |
+| 7B | 13.2 tok/s | 24.5 tok/s | 1.86x | AVX-512 horizontal sums | 🟡 Fixable |
+
+**Kernel Optimization Path:**
+```
+Current:  Per-chunk horizontal sum → scalar accumulate → next chunk
+Optimal:  Vector accumulate across chunks → single final reduction
+
+Example inner loop:
+  Current (24 horizontal sums):
+    for chunk in 0..4:
+      dot = horizontal_sum(vnni_result)  // EXPENSIVE
+      total += dot * scale
+
+  Optimal (1 horizontal sum):
+    acc = _mm512_setzero()
+    for chunk in 0..4:
+      acc = _mm512_add(acc, vnni_result)  // CHEAP
+    total = horizontal_sum(acc) * scale   // ONE sum at end
+```
 
 ---
 
