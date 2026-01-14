@@ -1,7 +1,7 @@
 # Qwen2.5-Coder Showcase: ComputeBrick Architecture
 
-**Version:** 4.99.0
-**Status:** ✅ **GPU 2x OLLAMA ACHIEVED** | 🟡 **CPU 3.54x Gap** (PAR-126: 1.5B=20.1 tok/s vs 71.2 tok/s target, Root Cause: Cache contention at 11% parallel efficiency)
+**Version:** 5.0.0
+**Status:** 🎯 **GPU FIRST** | ✅ 1.5B GPU 2.52x | 🟡 0.5B/7B/32B GPU pending | 🔴 CPU DEFERRED
 **Author:** PAIML Engineering
 **Date:** 2026-01-14
 **PMAT Roadmap ID:** `SHOWCASE-BRICK-001`
@@ -173,6 +173,7 @@
 | 4.96.0 | 2026-01-14 | PAIML Engineering | Architecture Lead | ✅ **COMPLETE** | **OPTIMIZATION FLYWHEEL DOCUMENTED (§12.10)**: Added OBSERVE→LEARN→PREDICT→ACT closed-loop optimization cycle documentation. Explains how BrickProfiler (OBSERVE) feeds TunerDataCollector (LEARN) which trains BrickTuner (PREDICT) to configure ComputeBrick (ACT). Includes flywheel velocity metrics, concept drift detection, and integration code examples. |
 | 4.97.0 | 2026-01-14 | PAIML Engineering | Architecture Lead | **FIXED** | **PAR-126 CPU MODEL MATRIX + Q8K BUG FIX**: (1) Tested all CPU models: 0.5B=3.4 tok/s (2.5% Ollama), 1.5B=32.2 tok/s (45%), 7B=13.2 tok/s (54%). (2) **Q8K BUG FIXED**: Added `use_q8k_path = hidden_dim.is_multiple_of(256)` check in forward_single_with_scratch - falls back to f32 path for 0.5B (hidden=896). (3) Root cause: 0.5B f32 fallback is 40x slower than Q8K VNNI. |
 | 4.99.0 | 2026-01-14 | PAIML Engineering | Architecture Lead | **ANALYSIS** | **PAR-126 CPU FIVE-WHYS DEEP DIVE**: Implemented V2 AVX-512 kernel with deferred horizontal sums: kernel 225µs→122µs (1.84x faster). Full matmul 35.7ms→30.1ms (1.19x). **NEW ROOT CAUSE**: Cache contention limits parallelization to 3x (11% efficiency). More threads = SLOWER (24 threads: 1.3x, 6 threads: 2.9x). Per-row work (82ns) too fine-grained. **Current: 20.1 tok/s vs Ollama 71.2 tok/s (3.54x gap)**. Path to 2x requires tiled matmul for cache efficiency. |
+| 5.0.0 | 2026-01-14 | PAIML Engineering | Architecture Lead | **PRIORITY** | **GPU FIRST, CPU DEFERRED**: Added §5.0 priority section mandating GPU 2x for ALL models before ANY CPU optimization. Updated header status. Added realizar GPU performance matrix with tok/s AND CB/s metrics. Current: 1.5B ✅ 2.52x, 0.5B 🟡 1.42x (need +40%), 7B/32B 🔴 TODO. CPU optimization BLOCKED until GPU complete. |
 
 ---
 
@@ -1436,7 +1437,44 @@ Result: 225µs → 122µs per matmul (1.84x kernel speedup)
 > **⚠️ HARD REQUIREMENT: This spec FAILS without verified 2x Ollama performance.**
 > Infrastructure tests are NOT sufficient. Real benchmarks against real models required.
 
-### 5.0 Performance Requirements (MANDATORY)
+### 5.0 Priority: GPU FIRST, Then CPU (MANDATORY)
+
+> **🎯 EXECUTION ORDER: Complete GPU 2x for ALL models before ANY CPU optimization.**
+
+| Priority | Backend | Reason |
+|----------|---------|--------|
+| **P0** | GPU | Higher throughput ceiling, production path, better parallelism |
+| **P1** | CPU | Fallback for systems without GPU, edge deployment |
+
+**GPU Completion Criteria (ALL REQUIRED before CPU work):**
+- [ ] 0.5B GPU ≥2x Ollama (batched)
+- [ ] 1.5B GPU ≥2x Ollama (batched) ✅ ACHIEVED (2.52x at M=8)
+- [ ] 7B GPU ≥2x Ollama (batched)
+- [ ] 32B GPU ≥2x Ollama (batched)
+
+**CPU Status: 🔴 DEFERRED** - No CPU optimization until ALL GPU targets met.
+
+**realizar GPU Performance Matrix (REAL MEASUREMENTS):**
+
+| Model | Ollama | realizar M=1 | realizar M=4 | realizar M=8 | 2x Target | Status |
+|-------|--------|--------------|--------------|--------------|-----------|--------|
+| **0.5B** | 420 tok/s | 211 tok/s | 598 tok/s | — | 840 tok/s | 🟡 1.42x (need +40%) |
+| **1.5B** | 315 tok/s | 211 tok/s | 598 tok/s | 794 tok/s | 630 tok/s | ✅ **2.52x ACHIEVED** |
+| **7B** | 134 tok/s | — | — | — | 268 tok/s | 🔴 TODO |
+| **32B** | 39 tok/s | — | — | — | 78 tok/s | 🔴 TODO |
+
+**ComputeBlocks/sec (CB/s) Matrix:**
+
+| Model | Bricks/tok | Ollama CB/s | realizar M=8 CB/s | 2x Target CB/s |
+|-------|------------|-------------|-------------------|----------------|
+| **0.5B** | 24 | 10,080 | — | 20,160 |
+| **1.5B** | 28 | 8,820 | 22,232 | 17,640 |
+| **7B** | 28 | 3,752 | — | 7,504 |
+| **32B** | 64 | 2,496 | — | 4,992 |
+
+---
+
+### 5.0.1 Performance Requirements (MANDATORY)
 
 **SPEC FAILS WITHOUT:**
 
