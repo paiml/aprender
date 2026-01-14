@@ -340,23 +340,31 @@ enum Commands {
         force: bool,
     },
 
-    /// Download GGUF model from HuggingFace (for LLM inference via realizar)
+    /// Download and cache model from HuggingFace (Ollama-like UX)
+    ///
+    /// Examples:
+    ///   apr pull qwen2.5-coder:7b
+    ///   apr pull hf://bartowski/Qwen2.5-Coder-7B-Instruct-GGUF/model.gguf
     Pull {
-        /// Repository: org/repo (e.g., bartowski/Qwen2.5-Coder-32B-Instruct-GGUF)
-        #[arg(value_name = "REPO")]
-        repo: String,
+        /// Model reference (alias, hf:// URI, or org/repo)
+        #[arg(value_name = "MODEL")]
+        model_ref: String,
 
-        /// Quantization variant (Q4_K_M, Q4_K_S, Q5_K_M, Q6_K, Q8_0, F16)
-        #[arg(long, default_value = "Q4_K_M")]
-        quant: String,
-
-        /// Output directory
-        #[arg(short, long)]
-        output: Option<PathBuf>,
-
-        /// Force download even if file exists
+        /// Force re-download even if cached
         #[arg(long)]
         force: bool,
+    },
+
+    /// List cached models
+    #[command(name = "list", alias = "ls")]
+    List,
+
+    /// Remove model from cache
+    #[command(name = "rm", alias = "remove")]
+    Rm {
+        /// Model reference to remove
+        #[arg(value_name = "MODEL")]
+        model_ref: String,
     },
 
     /// Convert/optimize model
@@ -900,12 +908,9 @@ fn execute_command(cli: &Cli) -> Result<(), error::CliError> {
             quantize.as_deref(),
             *force,
         ),
-        Commands::Pull {
-            repo,
-            quant,
-            output,
-            force,
-        } => pull::run(repo, Some(quant.as_str()), output.as_deref(), *force),
+        Commands::Pull { model_ref, force } => pull::run(model_ref, *force),
+        Commands::List => pull::list(),
+        Commands::Rm { model_ref } => pull::remove(model_ref),
         Commands::Convert {
             file,
             quantize,

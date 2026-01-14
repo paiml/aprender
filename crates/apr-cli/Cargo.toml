@@ -126,6 +126,9 @@ trueno-viz = { version = "0.1.16", optional = true, default-features = false, fe
 # ZRAM compression (SIMD-accelerated LZ4/ZSTD)
 trueno-zram-core = { version = "0.2", optional = true }
 
+# Model registry and caching (Ollama-like model management)
+pacha = { path = "/home/noah/src/pacha", default-features = false, features = ["remote"] }
+
 [[example]]
 name = "probar_tui_testing"
 required-features = ["inference"]

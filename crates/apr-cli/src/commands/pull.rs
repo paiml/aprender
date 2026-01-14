@@ -1,202 +1,228 @@
-//! Pull command implementation
+//! Pull command implementation using pacha ModelFetcher
 //!
-//! Downloads GGUF models directly from HuggingFace without conversion.
-//! For LLM inference via realizar, models must remain in GGUF format.
+//! Downloads and caches models from HuggingFace with Ollama-like UX.
+//! Models are cached at `~/.cache/pacha/models/` for reuse.
 //!
 //! Usage:
-//!   apr pull bartowski/Qwen2.5-Coder-32B-Instruct-GGUF --quant Q4_K_M
-//!   apr pull TheBloke/Llama-2-7B-GGUF --quant Q4_K_M -o ./models/
+//!   apr pull qwen2.5-coder:7b           # Short alias
+//!   apr pull hf://bartowski/Qwen2.5-Coder-7B-Instruct-GGUF/qwen2.5-coder-7b-instruct-q4_k_m.gguf
+//!   apr pull TheBloke/Llama-2-7B-GGUF   # Will auto-detect quant
 
 use crate::error::{CliError, Result};
 use colored::Colorize;
-use std::fs;
-use std::io::Read;
-use std::path::{Path, PathBuf};
-
-/// Quantization variants for GGUF files
-#[derive(Debug, Clone, Copy)]
-pub enum GgufQuant {
-    Q4K,
-    Q4KM,
-    Q4KS,
-    Q5K,
-    Q5KM,
-    Q5KS,
-    Q6K,
-    Q8_0,
-    F16,
-    F32,
-}
-
-impl GgufQuant {
-    /// Parse quantization string (case-insensitive, with/without underscore)
-    pub fn parse(s: &str) -> Option<Self> {
-        match s.to_uppercase().replace('-', "_").as_str() {
-            "Q4_K" | "Q4K" => Some(Self::Q4K),
-            "Q4_K_M" | "Q4KM" => Some(Self::Q4KM),
-            "Q4_K_S" | "Q4KS" => Some(Self::Q4KS),
-            "Q5_K" | "Q5K" => Some(Self::Q5K),
-            "Q5_K_M" | "Q5KM" => Some(Self::Q5KM),
-            "Q5_K_S" | "Q5KS" => Some(Self::Q5KS),
-            "Q6_K" | "Q6K" => Some(Self::Q6K),
-            "Q8_0" | "Q80" => Some(Self::Q8_0),
-            "F16" | "FP16" => Some(Self::F16),
-            "F32" | "FP32" => Some(Self::F32),
-            _ => None,
-        }
-    }
-
-    /// Get the filename suffix pattern for this quantization
-    pub fn filename_pattern(self) -> &'static str {
-        match self {
-            Self::Q4K => "Q4_K",
-            Self::Q4KM => "Q4_K_M",
-            Self::Q4KS => "Q4_K_S",
-            Self::Q5K => "Q5_K",
-            Self::Q5KM => "Q5_K_M",
-            Self::Q5KS => "Q5_K_S",
-            Self::Q6K => "Q6_K",
-            Self::Q8_0 => "Q8_0",
-            Self::F16 => "F16",
-            Self::F32 => "F32",
-        }
-    }
-}
+use pacha::fetcher::{FetchConfig, ModelFetcher};
+use std::io::{self, Write};
 
 /// Run the pull command
-pub fn run(repo: &str, quant: Option<&str>, output: Option<&Path>, force: bool) -> Result<()> {
-    println!("{}", "=== APR Pull (GGUF Download) ===".cyan().bold());
+pub fn run(model_ref: &str, force: bool) -> Result<()> {
+    println!("{}", "=== APR Pull ===".cyan().bold());
     println!();
+    println!("Model: {}", model_ref.cyan());
 
-    // Parse repository (org/repo format)
-    let (org, repo_name) = parse_repo(repo)?;
-    println!("Repository: {}/{}", org.cyan(), repo_name.cyan());
+    // Initialize pacha ModelFetcher
+    let mut fetcher = ModelFetcher::with_config(FetchConfig::default()).map_err(|e| {
+        CliError::ValidationFailed(format!("Failed to initialize model fetcher: {e}"))
+    })?;
 
-    // Parse quantization
-    let quant_type = match quant {
-        Some(q) => GgufQuant::parse(q).ok_or_else(|| {
-            CliError::ValidationFailed(format!(
-                "Unknown quantization: {q}. Supported: Q4_K_M, Q4_K_S, Q5_K_M, Q6_K, Q8_0, F16"
-            ))
-        })?,
-        None => GgufQuant::Q4KM, // Default to Q4_K_M
-    };
-    println!("Quantization: {}", quant_type.filename_pattern().yellow());
+    // Check if already cached
+    if !force && fetcher.is_cached(model_ref) {
+        println!("{} Model already cached", "✓".green());
 
-    // Determine output path
-    let output_dir = output.map_or_else(|| PathBuf::from("./models"), Path::to_path_buf);
-
-    // Create output directory
-    if !output_dir.exists() {
-        fs::create_dir_all(&output_dir).map_err(|e| {
-            CliError::ValidationFailed(format!("Failed to create output directory: {e}"))
+        // Get the cached path
+        let result = fetcher.pull_quiet(model_ref).map_err(|e| {
+            CliError::ValidationFailed(format!("Failed to get cached model: {e}"))
         })?;
-    }
 
-    // Construct HuggingFace URL
-    let filename = format!(
-        "{}-{}.gguf",
-        repo_name.to_lowercase().replace(' ', "-"),
-        quant_type.filename_pattern()
-    );
-    let output_path = output_dir.join(&filename);
-
-    if output_path.exists() && !force {
+        println!("  Path: {}", result.path.display());
+        println!("  Size: {}", result.size_human());
+        println!("  Format: {:?}", result.format);
         println!();
-        println!(
-            "{} {} already exists. Use --force to overwrite.",
-            "⚠".yellow(),
-            output_path.display()
-        );
+        println!("{}", "Usage:".cyan().bold());
+        println!("  apr run {}", result.path.display());
         return Ok(());
     }
 
-    // HuggingFace download URL pattern
-    let hf_url = format!("https://huggingface.co/{org}/{repo_name}/resolve/main/{filename}");
-
-    println!("URL: {}", hf_url.dimmed());
-    println!("Output: {}", output_path.display());
     println!();
-
-    // Download with progress
     println!("{}", "Downloading...".yellow());
-    download_file(&hf_url, &output_path)?;
+
+    // Pull with progress callback
+    let result = fetcher
+        .pull(model_ref, |progress| {
+            // Simple progress bar
+            let pct = progress.percent();
+            print!(
+                "\r  [{:50}] {:5.1}% ({}/{})",
+                "=".repeat((pct / 2.0) as usize),
+                pct,
+                format_bytes(progress.downloaded_bytes),
+                format_bytes(progress.total_bytes)
+            );
+            io::stdout().flush().ok();
+        })
+        .map_err(|e| CliError::NetworkError(format!("Download failed: {e}")))?;
 
     println!();
-    println!(
-        "{} Downloaded to {}",
-        "✓".green().bold(),
-        output_path.display()
-    );
+    println!();
 
-    // Verify GGUF magic
-    verify_gguf(&output_path)?;
-    println!("{} GGUF format verified", "✓".green());
+    if result.cache_hit {
+        println!("{} Model retrieved from cache", "✓".green());
+    } else {
+        println!("{} Downloaded successfully", "✓".green());
+    }
+
+    println!("  Path: {}", result.path.display().to_string().green());
+    println!("  Size: {}", result.size_human().yellow());
+    println!("  Format: {:?}", result.format);
+    println!("  Hash: {}", &result.hash[..16]);
 
     println!();
     println!("{}", "Usage:".cyan().bold());
-    println!("  apr serve {} --port 8080", output_path.display());
-    println!("  apr chat {}", output_path.display());
+    println!("  apr run {}", result.path.display());
+    println!("  apr serve {}", result.path.display());
 
     Ok(())
 }
 
-/// Parse "org/repo" format
-fn parse_repo(repo: &str) -> Result<(String, String)> {
-    // Handle hf:// prefix
-    let repo = repo.strip_prefix("hf://").unwrap_or(repo);
+/// List cached models
+pub fn list() -> Result<()> {
+    println!("{}", "=== Cached Models ===".cyan().bold());
+    println!();
 
-    let parts: Vec<&str> = repo.split('/').collect();
-    if parts.len() != 2 {
-        return Err(CliError::ValidationFailed(format!(
-            "Invalid repository format: {repo}. Expected: org/repo (e.g., bartowski/Qwen2.5-Coder-32B-Instruct-GGUF)"
-        )));
+    let fetcher = ModelFetcher::new().map_err(|e| {
+        CliError::ValidationFailed(format!("Failed to initialize model fetcher: {e}"))
+    })?;
+
+    let models = fetcher.list();
+
+    if models.is_empty() {
+        println!("{}", "No cached models found.".dimmed());
+        println!();
+        println!("Pull a model with:");
+        println!("  apr pull qwen2.5-coder:7b");
+        return Ok(());
     }
-    Ok((parts[0].to_string(), parts[1].to_string()))
+
+    // Print header
+    println!(
+        "{:<40} {:<12} {:<10} {}",
+        "NAME".dimmed(),
+        "SIZE".dimmed(),
+        "FORMAT".dimmed(),
+        "PATH".dimmed()
+    );
+    println!("{}", "-".repeat(100).dimmed());
+
+    for model in &models {
+        let size = format_bytes(model.size_bytes);
+        let format = format!("{:?}", model.format);
+        let name = if model.name.len() > 38 {
+            format!("{}...", &model.name[..35])
+        } else {
+            model.name.clone()
+        };
+
+        println!(
+            "{:<40} {:<12} {:<10} {}",
+            name.cyan(),
+            size.yellow(),
+            format,
+            model.path.display().to_string().dimmed()
+        );
+    }
+
+    println!();
+
+    // Print stats
+    let stats = fetcher.stats();
+    println!(
+        "Total: {} models, {} used",
+        models.len(),
+        format_bytes(stats.total_size_bytes)
+    );
+
+    Ok(())
 }
 
-/// Download file with progress (uses ureq for simplicity)
-fn download_file(url: &str, output: &Path) -> Result<()> {
-    // Use curl for now (available on most systems)
-    // TODO: Use hf-hub crate when available
-    let status = std::process::Command::new("curl")
-        .args([
-            "-L", // Follow redirects
-            "-#", // Progress bar
-            "-o",
-            output.to_str().unwrap_or("model.gguf"),
-            url,
-        ])
-        .status()
-        .map_err(|e| CliError::NetworkError(format!("Failed to run curl: {e}")))?;
+/// Remove a model from cache
+pub fn remove(model_ref: &str) -> Result<()> {
+    println!("{}", "=== APR Remove ===".cyan().bold());
+    println!();
+    println!("Model: {}", model_ref.cyan());
 
-    if !status.success() {
-        return Err(CliError::NetworkError(format!(
-            "Download failed. Check if the model exists at: {url}"
-        )));
+    let mut fetcher = ModelFetcher::new().map_err(|e| {
+        CliError::ValidationFailed(format!("Failed to initialize model fetcher: {e}"))
+    })?;
+
+    let removed = fetcher.remove(model_ref).map_err(|e| {
+        CliError::ValidationFailed(format!("Failed to remove model: {e}"))
+    })?;
+
+    if removed {
+        println!("{} Model removed from cache", "✓".green());
+    } else {
+        println!("{} Model not found in cache", "⚠".yellow());
     }
 
     Ok(())
 }
 
-/// Verify file is valid GGUF format
-fn verify_gguf(path: &Path) -> Result<()> {
-    let mut file = fs::File::open(path)
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to open file: {e}")))?;
-
-    let mut magic = [0u8; 4];
-    file.read_exact(&mut magic)
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to read magic: {e}")))?;
-
-    // GGUF magic: "GGUF" (0x46554747)
-    if &magic != b"GGUF" {
-        return Err(CliError::ValidationFailed(format!(
-            "Invalid GGUF file: magic bytes {:?} != GGUF",
-            magic
-        )));
+/// Resolve a model reference to a local path (for run/serve commands)
+/// Downloads if not cached and auto_pull is enabled
+pub fn resolve_model_path(model_ref: &str) -> Result<std::path::PathBuf> {
+    // If it's already a local file path, use it directly
+    let path = std::path::Path::new(model_ref);
+    if path.exists() && path.is_file() {
+        return Ok(path.to_path_buf());
     }
 
-    Ok(())
+    // Try to resolve via pacha
+    let mut fetcher = ModelFetcher::with_config(FetchConfig::default()).map_err(|e| {
+        CliError::ValidationFailed(format!("Failed to initialize model fetcher: {e}"))
+    })?;
+
+    // Pull (uses cache if available)
+    let result = fetcher
+        .pull(model_ref, |progress| {
+            if progress.total_bytes > 0 {
+                let pct = progress.percent();
+                eprint!(
+                    "\rPulling model... [{:30}] {:5.1}%",
+                    "=".repeat((pct / 3.33) as usize),
+                    pct
+                );
+                io::stderr().flush().ok();
+            }
+        })
+        .map_err(|e| {
+            // Not a pacha model ref, check if file exists
+            CliError::ValidationFailed(format!(
+                "Model '{}' not found. Not a local file and could not resolve via registry: {}",
+                model_ref, e
+            ))
+        })?;
+
+    if !result.cache_hit {
+        eprintln!(); // Newline after progress
+    }
+
+    Ok(result.path)
+}
+
+/// Format bytes to human-readable string
+fn format_bytes(bytes: u64) -> String {
+    const KB: u64 = 1024;
+    const MB: u64 = KB * 1024;
+    const GB: u64 = MB * 1024;
+
+    if bytes >= GB {
+        format!("{:.2} GB", bytes as f64 / GB as f64)
+    } else if bytes >= MB {
+        format!("{:.2} MB", bytes as f64 / MB as f64)
+    } else if bytes >= KB {
+        format!("{:.2} KB", bytes as f64 / KB as f64)
+    } else {
+        format!("{} B", bytes)
+    }
 }
 
 #[cfg(test)]
@@ -204,38 +230,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_parse_repo_valid() {
-        let (org, repo) = parse_repo("bartowski/Qwen2.5-Coder-32B-Instruct-GGUF").unwrap();
-        assert_eq!(org, "bartowski");
-        assert_eq!(repo, "Qwen2.5-Coder-32B-Instruct-GGUF");
-    }
-
-    #[test]
-    fn test_parse_repo_with_hf_prefix() {
-        let (org, repo) = parse_repo("hf://TheBloke/Llama-2-7B-GGUF").unwrap();
-        assert_eq!(org, "TheBloke");
-        assert_eq!(repo, "Llama-2-7B-GGUF");
-    }
-
-    #[test]
-    fn test_parse_repo_invalid() {
-        assert!(parse_repo("invalid").is_err());
-        assert!(parse_repo("too/many/parts").is_err());
-    }
-
-    #[test]
-    fn test_quant_parse() {
-        assert!(matches!(GgufQuant::parse("Q4_K_M"), Some(GgufQuant::Q4KM)));
-        assert!(matches!(GgufQuant::parse("q4_k_m"), Some(GgufQuant::Q4KM)));
-        assert!(matches!(GgufQuant::parse("Q4KM"), Some(GgufQuant::Q4KM)));
-        assert!(matches!(GgufQuant::parse("Q6_K"), Some(GgufQuant::Q6K)));
-        assert!(matches!(GgufQuant::parse("F16"), Some(GgufQuant::F16)));
-        assert!(GgufQuant::parse("invalid").is_none());
-    }
-
-    #[test]
-    fn test_quant_filename_pattern() {
-        assert_eq!(GgufQuant::Q4KM.filename_pattern(), "Q4_K_M");
-        assert_eq!(GgufQuant::Q6K.filename_pattern(), "Q6_K");
+    fn test_format_bytes() {
+        assert_eq!(format_bytes(512), "512 B");
+        assert_eq!(format_bytes(1024), "1.00 KB");
+        assert_eq!(format_bytes(1024 * 1024), "1.00 MB");
+        assert_eq!(format_bytes(1024 * 1024 * 1024), "1.00 GB");
+        assert_eq!(format_bytes(5 * 1024 * 1024 * 1024), "5.00 GB");
     }
 }
