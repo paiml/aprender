@@ -208,6 +208,159 @@ Quantization: Q4_K_M
 
 **APR is the best model format. We just need to finish implementing it.**
 
+### Falsification Tests (Popperian Criteria)
+
+**Each test MUST be able to FAIL. If it can't fail, it's not a test.**
+
+#### F-APR-001 to F-APR-020: Format Integrity (20 points)
+
+| ID | Test | Pass Criteria | Falsifiable? |
+|----|------|---------------|--------------|
+| F-APR-001 | Magic bytes | `head -c4 model.apr` = `APR2` | ✅ Wrong magic = FAIL |
+| F-APR-002 | Header size | Exactly 32 bytes | ✅ Wrong size = FAIL |
+| F-APR-003 | Version field | Major=2, Minor≥0 | ✅ Wrong version = FAIL |
+| F-APR-004 | Metadata valid JSON | `jq . metadata` succeeds | ✅ Invalid JSON = FAIL |
+| F-APR-005 | Architecture present | `metadata.architecture` exists | ✅ Missing = FAIL |
+| F-APR-006 | Vocab size present | `metadata.vocab_size` > 0 | ✅ Missing/zero = FAIL |
+| F-APR-007 | Hidden size present | `metadata.hidden_size` > 0 | ✅ Missing/zero = FAIL |
+| F-APR-008 | Num layers present | `metadata.num_hidden_layers` > 0 | ✅ Missing/zero = FAIL |
+| F-APR-009 | Tensor count > 0 | At least 1 tensor | ✅ Zero tensors = FAIL |
+| F-APR-010 | Tensor alignment | All tensors 64-byte aligned | ✅ Misaligned = FAIL |
+| F-APR-011 | Embed tensor exists | `model.embed_tokens.weight` present | ✅ Missing = FAIL |
+| F-APR-012 | LM head exists | `lm_head.weight` present | ✅ Missing = FAIL |
+| F-APR-013 | Layer 0 exists | `model.layers.0.*` tensors present | ✅ Missing = FAIL |
+| F-APR-014 | Tensor shapes valid | All dims > 0 | ✅ Zero dim = FAIL |
+| F-APR-015 | No NaN weights | `!any(isnan(tensor))` | ✅ NaN found = FAIL |
+| F-APR-016 | No Inf weights | `!any(isinf(tensor))` | ✅ Inf found = FAIL |
+| F-APR-017 | Footer checksum | CRC32 matches | ✅ Mismatch = FAIL |
+| F-APR-018 | File not truncated | All offsets within file | ✅ OOB offset = FAIL |
+| F-APR-019 | Quantization valid | Q4_K/Q8_0/F16/F32 only | ✅ Unknown qtype = FAIL |
+| F-APR-020 | Metadata matches tensors | Layer count = actual layers | ✅ Mismatch = FAIL |
+
+#### F-APR-021 to F-APR-040: Inference Correctness (20 points)
+
+| ID | Test | Pass Criteria | Falsifiable? |
+|----|------|---------------|--------------|
+| F-APR-021 | Load succeeds | `AprV2Model::load()` returns Ok | ✅ Error = FAIL |
+| F-APR-022 | Forward succeeds | `model.forward(&[1])` returns logits | ✅ Error = FAIL |
+| F-APR-023 | Logits shape | Output len = vocab_size | ✅ Wrong shape = FAIL |
+| F-APR-024 | Logits finite | All logits finite | ✅ NaN/Inf = FAIL |
+| F-APR-025 | Argmax deterministic | Same input → same argmax | ✅ Non-deterministic = FAIL |
+| F-APR-026 | Generate succeeds | `model.generate()` returns tokens | ✅ Error = FAIL |
+| F-APR-027 | EOS stops generation | Generation stops at EOS | ✅ Infinite loop = FAIL |
+| F-APR-028 | Max tokens respected | Output ≤ max_tokens | ✅ Overflow = FAIL |
+| F-APR-029 | KV cache works | Cached forward = uncached | ✅ Mismatch = FAIL |
+| F-APR-030 | Batch size 1 works | Single sequence inference | ✅ Error = FAIL |
+| F-APR-031 | Empty prompt handled | `forward(&[])` doesn't crash | ✅ Crash = FAIL |
+| F-APR-032 | OOV token handled | Token > vocab_size handled | ✅ Crash = FAIL |
+| F-APR-033 | Long sequence works | 2048 tokens forward | ✅ OOM/crash = FAIL |
+| F-APR-034 | RoPE positions correct | Position encoding matches GGUF | ✅ Mismatch = FAIL |
+| F-APR-035 | RMSNorm correct | Norm output matches GGUF | ✅ Mismatch = FAIL |
+| F-APR-036 | Attention correct | Attention output matches GGUF | ✅ Mismatch = FAIL |
+| F-APR-037 | FFN correct | FFN output matches GGUF | ✅ Mismatch = FAIL |
+| F-APR-038 | Logits match GGUF | Same input → same logits (ε<1e-3) | ✅ Divergence = FAIL |
+| F-APR-039 | Greedy matches GGUF | Same prompt → same output | ✅ Different output = FAIL |
+| F-APR-040 | Perplexity matches | PPL within 1% of GGUF | ✅ >1% diff = FAIL |
+
+#### F-APR-041 to F-APR-060: Performance (20 points)
+
+| ID | Test | Pass Criteria | Falsifiable? |
+|----|------|---------------|--------------|
+| F-APR-041 | Load time < 5s | 1.5B model loads in <5s | ✅ Timeout = FAIL |
+| F-APR-042 | First token < 100ms | TTFT < 100ms | ✅ Slow = FAIL |
+| F-APR-043 | 0.5B ≥ 224 tok/s | 2x Ollama 112 | ✅ Below target = FAIL |
+| F-APR-044 | 1.5B ≥ 630 tok/s | 2x Ollama 315 | ✅ Below target = FAIL |
+| F-APR-045 | 7B ≥ 268 tok/s | 2x Ollama 134 | ✅ Below target = FAIL |
+| F-APR-046 | 32B ≥ 72.8 tok/s | 2x Ollama 36.4 | ✅ Below target = FAIL |
+| F-APR-047 | CV < 5% | Coefficient of variation | ✅ High variance = FAIL |
+| F-APR-048 | No memory leak | RSS stable over 1000 inferences | ✅ Growing RSS = FAIL |
+| F-APR-049 | GPU utilization > 80% | nvidia-smi shows high util | ✅ Low util = FAIL |
+| F-APR-050 | APR ≥ GGUF perf | APR tok/s ≥ GGUF tok/s | ✅ Slower = FAIL |
+| F-APR-051 | Mmap works | Zero-copy tensor access | ✅ Memcpy in hot path = FAIL |
+| F-APR-052 | Streaming load | Can start inference before EOF | ✅ Must load all = FAIL |
+| F-APR-053 | WASM works | Runs in wasm32-unknown-unknown | ✅ Compile error = FAIL |
+| F-APR-054 | WASM perf > 10 tok/s | Usable in browser | ✅ Too slow = FAIL |
+| F-APR-055 | Quantized matches F32 | Q4_K output ≈ F32 output | ✅ >5% divergence = FAIL |
+| F-APR-056 | GPU path exists | CUDA acceleration available | ✅ CPU only = FAIL |
+| F-APR-057 | GPU 2x CPU | GPU tok/s > 2x CPU tok/s | ✅ No speedup = FAIL |
+| F-APR-058 | Batch scaling | M=8 > 2x M=1 throughput | ✅ No scaling = FAIL |
+| F-APR-059 | CUDA graphs work | Graph capture reduces overhead | ✅ No improvement = FAIL |
+| F-APR-060 | Multi-GPU works | Tensor parallelism for 32B+ | ✅ Single GPU only = FAIL |
+
+#### F-APR-061 to F-APR-080: CLI Integration (20 points)
+
+| ID | Test | Pass Criteria | Falsifiable? |
+|----|------|---------------|--------------|
+| F-APR-061 | `apr run` works | Basic inference succeeds | ✅ Error = FAIL |
+| F-APR-062 | `--prompt` works | Custom prompt accepted | ✅ Ignored = FAIL |
+| F-APR-063 | `--benchmark` works | Shows tok/s output | ✅ No metrics = FAIL |
+| F-APR-064 | `--gpu` works | Uses GPU when available | ✅ Ignored = FAIL |
+| F-APR-065 | `--no-gpu` works | Forces CPU path | ✅ Uses GPU anyway = FAIL |
+| F-APR-066 | `--max-tokens` works | Limits output length | ✅ Ignored = FAIL |
+| F-APR-067 | `--stream` works | Token-by-token output | ✅ Batch output = FAIL |
+| F-APR-068 | `--json` works | JSON formatted output | ✅ Plain text = FAIL |
+| F-APR-069 | Exit code 0 on success | Successful run = 0 | ✅ Non-zero = FAIL |
+| F-APR-070 | Exit code 1 on error | Failed run = 1 | ✅ Zero on error = FAIL |
+| F-APR-071 | `apr import` works | GGUF → APR conversion | ✅ Error = FAIL |
+| F-APR-072 | `apr inspect` works | Shows APR metadata | ✅ Error = FAIL |
+| F-APR-073 | `apr validate` works | Validates APR integrity | ✅ Error = FAIL |
+| F-APR-074 | Pipe input works | `echo "hi" \| apr run` | ✅ Error = FAIL |
+| F-APR-075 | Pipe output works | `apr run \| head` | ✅ Broken pipe = FAIL |
+| F-APR-076 | File not found error | Missing file → clear error | ✅ Crash = FAIL |
+| F-APR-077 | Invalid file error | Bad APR → clear error | ✅ Crash = FAIL |
+| F-APR-078 | Help text exists | `apr run --help` works | ✅ No help = FAIL |
+| F-APR-079 | Version shows | `apr --version` works | ✅ No version = FAIL |
+| F-APR-080 | Quiet mode works | `--quiet` suppresses output | ✅ Still verbose = FAIL |
+
+### Peer Review Checklist
+
+**Before merging APR inference implementation, ALL must be checked:**
+
+#### Code Review (Reviewer 1: Architecture)
+
+- [ ] No APRT references remain in codebase
+- [ ] `AprV2Model` has `forward()` and `generate()` methods
+- [ ] GPU path mirrors CPU path structure
+- [ ] Quantization handling matches GGUF implementation
+- [ ] Memory safety: no unsafe blocks without justification
+- [ ] Error handling: all Results propagated, no unwrap()
+
+#### Code Review (Reviewer 2: Performance)
+
+- [ ] Zero-copy mmap for tensor access
+- [ ] 64-byte alignment for SIMD
+- [ ] KV cache implemented correctly
+- [ ] CUDA graphs captured for decode loop
+- [ ] No unnecessary allocations in hot path
+- [ ] Batch processing scales linearly
+
+#### Test Review (Reviewer 3: QA)
+
+- [ ] All 80 falsification tests implemented
+- [ ] All tests actually run in CI
+- [ ] Tests use real models, not mocks
+- [ ] Performance tests have statistical rigor (10+ samples)
+- [ ] Edge cases covered (empty input, OOV tokens, long sequences)
+
+#### Documentation Review (Reviewer 4: Docs)
+
+- [ ] APR-SPEC.md updated with inference section
+- [ ] CHANGELOG.md updated
+- [ ] README examples work
+- [ ] API docs complete for new public methods
+
+### Scoring
+
+| Category | Points | Passing |
+|----------|--------|---------|
+| Format Integrity (F-APR-001-020) | 20 | ≥18 |
+| Inference Correctness (F-APR-021-040) | 20 | ≥18 |
+| Performance (F-APR-041-060) | 20 | ≥16 |
+| CLI Integration (F-APR-061-080) | 20 | ≥18 |
+| **TOTAL** | **80** | **≥70** |
+
+**APR format is NOT COMPLETE until score ≥ 70/80.**
+
 ---
 
 **Canonical References:**
