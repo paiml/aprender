@@ -1,7 +1,7 @@
 # Qwen2.5-Coder Showcase: ComputeBrick Architecture
 
-**Version:** 5.12.0
-**Status:** 🚨 **GPU REGRESSION** — Single-seq GPU path produces garbage. CPU works (17.2 tok/s). Bisect needed.
+**Version:** 5.13.0
+**Status:** 🚨 **P(-1) MODEL CACHE MISSING** + **GPU REGRESSION** — No model cache management like Ollama's `~/.ollama/models`. GPU produces garbage (CPU works 17.2 tok/s).
 **Author:** PAIML Engineering
 **Date:** 2026-01-14
 **PMAT Roadmap ID:** `SHOWCASE-BRICK-001`
@@ -57,6 +57,112 @@
 | .gguf | ✅ 2.5x Ollama | ✅ | ⚠️ Needs IQ2_XS | Production |
 | .safetensors | ✅ | ✅ | ✅ | Production |
 | .apr | ✅ Infrastructure | N/A | N/A | 🟡 Testing |
+
+---
+
+## 🚨 P(-1) URGENT: MODEL CACHE MANAGEMENT
+
+### Current State: BROKEN
+
+```bash
+# Ollama UX (what users expect)
+ollama run qwen2.5-coder:7b
+# Auto-downloads, caches at ~/.ollama/models, runs
+
+# Our UX (BROKEN)
+apr run qwen2.5-coder:7b
+# ERROR: Model file 'qwen2.5-coder:7b' not found
+# Must manually: apr run /home/user/downloads/qwen2.5-coder-7b-instruct-q4_k_m.gguf
+```
+
+### Five-Whys Root Cause
+
+| Why | Finding |
+|-----|---------|
+| **Why no model cache?** | realizar/apr-cli only handle direct file paths |
+| **Why direct paths only?** | Historical: built for benchmarking, not UX |
+| **Why is this P(-1)?** | Sovereign AI stack MUST be self-contained |
+| **Why self-contained?** | Can't compete with Ollama without UX parity |
+| **ROOT CAUSE** | Missing `pacha` (Model Registry) integration |
+
+### Architecture Recommendation (from batuta Oracle)
+
+Per batuta stack architecture:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    batuta v0.4.8                            │
+│                 (Orchestration Layer)                       │
+├─────────────────────────────────────────────────────────────┤
+│     realizar v0.5        │         pacha v0.2               │
+│   (Inference Engine)     │      (Model Registry)            │  ← MODEL CACHE GOES HERE
+├──────────────────────────┴──────────────────────────────────┤
+│   aprender v0.24   │  entrenar v0.5  │  alimentar v0.2      │
+│    (ML Algorithms) │    (Training)   │   (Data Loading)     │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Model cache belongs in `pacha`**, NOT apr-cli or realizar:
+
+| Component | Responsibility |
+|-----------|---------------|
+| **pacha** (Model Registry) | `~/.cache/aprender/models/`, HuggingFace API, model manifests, versioning |
+| **apr-cli** | Thin CLI, calls `pacha pull model:tag` → gets path → feeds to realizar |
+| **realizar** | Inference engine only, takes file path, runs model |
+
+### Required API
+
+```rust
+// pacha crate
+pub struct ModelRegistry {
+    cache_dir: PathBuf,  // ~/.cache/aprender/models/
+}
+
+impl ModelRegistry {
+    /// Pull model from HuggingFace or local cache
+    pub fn pull(&self, model_spec: &str) -> Result<PathBuf>;
+
+    /// List cached models
+    pub fn list(&self) -> Vec<CachedModel>;
+
+    /// Remove model from cache
+    pub fn rm(&self, model_spec: &str) -> Result<()>;
+}
+
+// Usage in apr-cli
+let registry = ModelRegistry::default();
+let model_path = registry.pull("qwen2.5-coder:7b")?;  // Downloads if needed
+realizar::Model::load(&model_path)?.generate(&prompt)?;
+```
+
+### Target UX (Ollama Parity)
+
+```bash
+# Pull model (downloads and caches)
+apr pull qwen2.5-coder:7b
+
+# Run model (auto-pulls if not cached)
+apr run qwen2.5-coder:7b --prompt "Hello"
+
+# List cached models
+apr list
+# REPOSITORY                    TAG       SIZE      MODIFIED
+# qwen2.5-coder                 7b        4.7 GB    2 days ago
+# qwen2.5-coder                 1.5b      1.1 GB    5 minutes ago
+
+# Remove model
+apr rm qwen2.5-coder:7b
+```
+
+### Implementation Priority
+
+| Task | Priority | Component | Status |
+|------|----------|-----------|--------|
+| Create pacha crate scaffold | P(-1) | pacha | 🔴 TODO |
+| Implement ModelRegistry::pull | P(-1) | pacha | 🔴 TODO |
+| HuggingFace API integration | P(-1) | pacha | 🔴 TODO |
+| apr-cli pacha integration | P(-1) | apr-cli | 🔴 TODO |
+| apr pull/list/rm commands | P(-1) | apr-cli | 🔴 TODO |
 
 ---
 
@@ -682,6 +788,7 @@ apr-quality-gate:
 | 5.10.0 | 2026-01-14 | PAIML Engineering | Architecture Lead | ✅ **APR GPU WEIGHT CACHING** | **PAR-127 GPU WEIGHT CACHING FOR APR**: Implemented `gemm_b_cached()` in CudaExecutor (cuda.rs:3177) for caching weight matrix B instead of input A. Added `pre_cache_weights()` in AprV2ModelCuda to pre-transpose and cache all QKV/FFN/LM-head weights at init. Updated `forward_cuda()` to use `gemm_cached_gpu()` with cached weights - avoids per-forward transpose+upload. 8 GEMM ops/layer now use GPU-resident weights. Target: 2x performance for APR GPU path. |
 | 5.11.0 | 2026-01-14 | PAIML Engineering | Architecture Lead | ✅ **FIVE-WHYS: PROFILING FIX** | **PAR-128 BRICKPROFILER INSTRUMENTATION (§6.9 Mandate)**: Five-Whys revealed `forward_cuda()` was missing BrickProfiler instrumentation - violated §6.9 Sovereign Stack Profiling Mandate. Added all 11 timing points per §12.11: apr.Embed, apr.RmsNorm (2x), apr.QKV, apr.Attention, apr.OProj, apr.Residual (2x), apr.FFN, apr.FinalNorm, apr.LmHead. GPU sync before/after GPU ops for accurate timing. ROOT CAUSE: Incremental changes without spec verification. |
 | 5.12.0 | 2026-01-14 | PAIML Engineering | Architecture Lead | 🚨 **GPU REGRESSION** | **FIVE-WHYS: SINGLE-SEQ GPU PATH BROKEN**: `realizar run --gpu` produces GARBAGE output while CPU (17.2 tok/s) works correctly. **Five-Whys**: (1) WHY garbage? → GPU forward pass returns wrong logits. (2) WHY GPU differs from CPU? → Different code paths (generate_gpu_resident vs CPU generate). (3) WHY only GPU broken? → Likely regression from PAR-108→PAR-121 batching changes (Jan 13). (4) WHY did batching changes break single-seq? → Shared code paths in KV cache or attention kernels. (5) **ROOT CAUSE**: Need bisect between commit 85d6002 (working CORRECTNESS-002 fix at 293 tok/s) and HEAD. **Batched benchmarks may work (isolated test code) but production `run` command broken.** Fixed hardcoded "28 layers" message in cuda.rs:10774. |
+| 5.13.0 | 2026-01-14 | PAIML Engineering | Architecture Lead | 🚨 **P(-1) MODEL CACHE** | **FIVE-WHYS: SOVEREIGN STACK REQUIRES MODEL CACHE**: Ollama has `~/.ollama/models`, we have NOTHING. **Five-Whys**: (1) WHY no model cache? → Realized only handles direct file paths. (2) WHY direct paths only? → Historical: built for benchmarking, not user experience. (3) WHY is this P(-1)? → Sovereign AI stack must be SELF-CONTAINED. (4) WHY self-contained matters? → Ollama users run `ollama run model:tag`, not `ollama run /path/to/model.gguf`. (5) **ROOT CAUSE**: Missing `pacha` (Model Registry) integration. **RECOMMENDATION**: Model cache belongs in `pacha` (from batuta stack architecture), NOT apr-cli or realizar. apr-cli should call `pacha pull model_name` → cache at `~/.cache/aprender/models/` → return path → feed to realizar. |
 
 ---
 
