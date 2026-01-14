@@ -1,7 +1,7 @@
 # Qwen2.5-Coder Showcase: ComputeBrick Architecture
 
-**Version:** 5.0.5
-**Status:** 🎯 **GPU FIRST** | ✅ 0.5B 3.01x | ✅ 1.5B 2.52x | ✅ 7B 2.55x | 🔴 32B 0.66x (24/36.4 tok/s, need 3x) | 🔴 CPU DEFERRED
+**Version:** 5.0.6
+**Status:** 🎯 **GPU FIRST** | ✅ 0.5B 3.01x | ✅ 1.5B 2.52x | ✅ 7B 2.55x | 🔴 32B 0.66x | 🔴 APR FORMAT TODO
 **Author:** PAIML Engineering
 **Date:** 2026-01-14
 **PMAT Roadmap ID:** `SHOWCASE-BRICK-001`
@@ -179,6 +179,7 @@
 | 5.0.3 | 2026-01-14 | PAIML Engineering | Architecture Lead | **32B VRAM-BLOCKED** | **FIVE-WHYS: 32B VRAM CONSTRAINT**: Tested 32B (19GB download, 22GB runtime). **Ollama 32B: 5.67 tok/s (CPU-only, 100% CPU)**. **realizar 32B: 1.4 tok/s (CPU-bound, 42s load)**. **Five-Whys**: (1) WHY is 32B slow? → CPU offloading. (2) WHY CPU offload? → 22GB model > practical VRAM (24GB - headroom). (3) WHY can't fit? → RTX 4090 = 24GB, 32B = 22GB, headroom ~2GB needed for KV cache. (4) WHY not layer-by-layer? → Ollama and realizar both use full-model-in-VRAM approach. (5) **ROOT CAUSE**: 32B requires >24GB VRAM or tensor parallelism (multi-GPU). **3/4 models at 2x+ GPU (0.5B/1.5B/7B ✅), 32B BLOCKED on hardware**. |
 | 5.0.4 | 2026-01-14 | PAIML Engineering | Architecture Lead | **32B GPU-READY** | **FIVE-WHYS CORRECTION: SERVICE STATE, NOT VRAM**: Re-tested Ollama 32B after service restart. **Ollama 32B GPU: 36.35 tok/s** (760 tokens in 20.9s). **GPU Memory: 22.15 GB / 24 GB (92% VRAM)**. **CORRECTED Five-Whys**: (1) WHY was 32B showing CPU-only? → `ollama ps` showed 100% CPU. (2) WHY 100% CPU? → Model not loaded to GPU despite VRAM available. (3) WHY not loaded? → Stale Ollama service state. (4) WHY stale state? → Service caching issue, not physical constraint. (5) **ROOT CAUSE (CORRECTED)**: Ollama service state bug caused GPU bypass, NOT VRAM constraint. 32B FITS in 24GB RTX 4090 (22.15GB used). **2x Target: 72.7 tok/s**. realizar 32B GPU TODO. |
 | 5.0.5 | 2026-01-14 | PAIML Engineering | Architecture Lead | **32B BENCHMARKED** | **realizar 32B GPU MEASURED**: Ran `gpu_showcase_benchmark` with 32B model. **realizar 32B GPU: 24.0 tok/s** (CV=0.4%, 5 iterations). **VRAM: 24045 MB** (fully GPU-resident). **Ratio: 24.0/36.35 = 0.66x Ollama**. **Five-Whys (32B Gap)**: (1) WHY only 0.66x? → 24 tok/s vs 36 tok/s Ollama. (2) WHY slower than Ollama? → 64 layers vs Ollama's optimized kernels. (3) WHY 64-layer overhead? → Graph captures only 28 layers, iterating rest. (4) WHY partial graph? → CUDA graph memory limits for 32B. (5) **ROOT CAUSE**: 32B model saturates both VRAM (24GB/24GB) and graph capture limits. **Need 3x improvement (72.7 tok/s) for 2x target**. |
+| 5.0.6 | 2026-01-14 | PAIML Engineering | Architecture Lead | **BENCHMARK MATRIX** | **4-row benchmark matrix added**: realizar GGUF, realizar APR, apr-cli GGUF, apr-cli APR. **.apr is primary format** - we control it, we optimize for it. GGUF/SafeTensors = interop. Updated `scripts/gpu_2x_benchmark.sh` to test all 4 combinations. **APR format benchmarks: TODO** - need .apr model files and apr-cli `--benchmark` flag. |
 
 ---
 
@@ -1459,14 +1460,24 @@ Result: 225µs → 122µs per matmul (1.84x kernel speedup)
 
 **CPU Status: 🔴 DEFERRED** - No CPU optimization until ALL GPU targets met.
 
-**realizar GPU Performance Matrix (REAL MEASUREMENTS v5.0.1):**
+**GPU Performance Matrix (REAL MEASUREMENTS v5.0.5):**
 
-| Model | Ollama | realizar M=1 | realizar M=4 | realizar M=8 | 2x Target | Status |
-|-------|--------|--------------|--------------|--------------|-----------|--------|
-| **0.5B** | 112 tok/s | 99.9 tok/s | 332.6 tok/s | 337 tok/s | 224 tok/s | ✅ **3.01x ACHIEVED** |
-| **1.5B** | 315 tok/s | 211 tok/s | 598 tok/s | 794 tok/s | 630 tok/s | ✅ **2.52x ACHIEVED** |
-| **7B** | 134 tok/s | 107 tok/s | — | 342 tok/s | 268 tok/s | ✅ **2.55x ACHIEVED** |
-| **32B** | **36.4 tok/s (GPU)** | **24.0 tok/s** | — | — | 72.7 tok/s | 🔴 **0.66x** (need 3x improvement) |
+| Backend | Format | 0.5B | 1.5B | 7B | 32B |
+|---------|--------|------|------|-----|-----|
+| **Ollama** | GGUF | 112 tok/s | 315 tok/s | 134 tok/s | 36.4 tok/s |
+| **realizar** | GGUF | 337 tok/s | 794 tok/s | 342 tok/s | 24.0 tok/s |
+| **realizar** | APR | — | — | — | — |
+| **apr-cli** | GGUF | — | — | — | — |
+| **apr-cli** | APR | — | — | — | — |
+| **2x Target** | — | 224 tok/s | 630 tok/s | 268 tok/s | 72.7 tok/s |
+
+**Status:**
+| Backend/Format | 0.5B | 1.5B | 7B | 32B |
+|----------------|------|------|-----|-----|
+| realizar GGUF | ✅ 3.01x | ✅ 2.52x | ✅ 2.55x | 🔴 0.66x |
+| realizar APR | 🔴 TODO | 🔴 TODO | 🔴 TODO | 🔴 TODO |
+| apr-cli GGUF | 🔴 TODO | 🔴 TODO | 🔴 TODO | 🔴 TODO |
+| apr-cli APR | 🔴 TODO | 🔴 TODO | 🔴 TODO | 🔴 TODO |
 
 **ComputeBlocks/sec (CB/s) Matrix:**
 

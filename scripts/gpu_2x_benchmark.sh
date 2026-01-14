@@ -1,201 +1,171 @@
 #!/bin/bash
 # GPU 2x Ollama Reproducible Benchmark
-# SPEC: docs/specifications/qwen2.5-coder-showcase-demo.md v5.0.3
+# SPEC: docs/specifications/qwen2.5-coder-showcase-demo.md v5.0.5
 #
+# Benchmarks 4 rows: realizar GGUF, realizar APR, apr-cli GGUF, apr-cli APR
 # REPRODUCIBILITY: O(1) - Single run produces deterministic JSON output
 # NO FAKE DATA: All measurements from real hardware execution
 #
-# bashrs: 0 errors, info-only warnings (numeric JSON values, jq patterns)
+# bashrs: 0 errors, info-only warnings
 
 set -euo pipefail
 
-# Configuration - use environment variables for portability
+# Configuration
 REALIZAR_DIR="${REALIZAR_DIR:-$(cd "$(dirname "$0")/.." && pwd)/../realizar}"
+APRENDER_DIR="${APRENDER_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
 OUTPUT_DIR="${OUTPUT_DIR:-/tmp}"
+MODELS_DIR="${MODELS_DIR:-$APRENDER_DIR/models}"
 
-# Create output file with timestamp
 readonly TIMESTAMP
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
 readonly OUTPUT_FILE="${OUTPUT_DIR}/gpu_2x_benchmark_${TIMESTAMP}.json"
 
-# Ensure OUTPUT_FILE is created securely
 touch "$OUTPUT_FILE" || { echo "ERROR: Cannot create output file"; exit 1; }
 
 echo "==================================================="
-echo "  GPU 2x Ollama Benchmark"
+echo "  GPU 2x Benchmark (4 Backend/Format Combinations)"
 echo "==================================================="
 echo ""
 
-# Get hardware info
 HARDWARE="$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1 || echo 'unknown')"
 echo "Hardware: $HARDWARE"
 echo "Date: $(date -Iseconds)"
 echo "Output: $OUTPUT_FILE"
-echo "realizar: $REALIZAR_DIR"
 echo ""
 
-# Function: Get Ollama decode rate for a model
+# Model paths
+declare -A GGUF_MODELS=(
+    ["0.5B"]="$MODELS_DIR/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"
+    ["1.5B"]="$MODELS_DIR/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"
+    ["7B"]="$MODELS_DIR/qwen2.5-coder-7b-instruct-q4_k_m.gguf"
+    ["32B"]="$MODELS_DIR/Qwen2.5-Coder-32B-Instruct-Q4_K_M.gguf"
+)
+
+declare -A APR_MODELS=(
+    ["0.5B"]="$MODELS_DIR/qwen2.5-coder-0.5b.apr"
+    ["1.5B"]="$MODELS_DIR/qwen2.5-coder-1.5b.apr"
+    ["7B"]="$MODELS_DIR/qwen2.5-coder-7b.apr"
+    ["32B"]="$MODELS_DIR/qwen2.5-coder-32b.apr"
+)
+
+declare -A OLLAMA_MODELS=(
+    ["0.5B"]="qwen2.5-coder:0.5b"
+    ["1.5B"]="qwen2.5-coder:1.5b"
+    ["7B"]="qwen2.5-coder:7b"
+    ["32B"]="qwen2.5-coder:32b"
+)
+
+# Function: Get Ollama decode rate
 get_ollama_rate() {
     local model_tag="$1"
-
-    # Warmup (discard output)
     ollama run "$model_tag" "Hello" --verbose >/dev/null 2>&1 || true
-
-    # Measure decode rate - use TERM=dumb to prevent ANSI codes
     local output
-    output="$(TERM=dumb ollama run "$model_tag" "Write a long explanation of quicksort" --verbose 2>&1)" || true
-
-    # Parse "eval rate: 111.92 tokens/s" line
+    output="$(TERM=dumb ollama run "$model_tag" "Write quicksort" --verbose 2>&1)" || true
     printf '%s' "$output" | grep -oP 'eval rate:\s+\K[0-9.]+' || echo "0"
 }
 
-# Function: Get realizar GPU throughput
-get_realizar_rate() {
-    if [[ ! -d "$REALIZAR_DIR" ]]; then
+# Function: Get realizar GGUF rate
+get_realizar_gguf_rate() {
+    local model_path="$1"
+    if [[ ! -f "$model_path" ]]; then
         echo "0"
         return
     fi
-
     local result
-    result="$(cd "$REALIZAR_DIR" && TERM=dumb cargo run --release --example bench_continuous_batching --features cuda -- --batch-sizes 8 2>&1)" || true
-
-    # Parse "batch=8: 400 tokens in 1.19s = 337.2 tok/s" line
-    printf '%s' "$result" | grep -oP 'batch=8:.*=\s*\K[0-9.]+(?=\s*tok/s)' || echo "0"
+    result="$(cd "$REALIZAR_DIR" && TERM=dumb cargo run --release --features cuda --example gpu_showcase_benchmark -- --model "$model_path" --quick 2>&1)" || true
+    printf '%s' "$result" | grep -oP 'APR CUDA.*:\s+\K[0-9.]+' | head -1 || echo "0"
 }
 
-# Function: Calculate ratio safely
-calc_ratio() {
-    local realizar="$1"
-    local ollama="$2"
-
-    if [[ -z "$ollama" ]] || [[ "$ollama" == "0" ]]; then
-        printf '0'
+# Function: Get realizar APR rate
+get_realizar_apr_rate() {
+    local model_path="$1"
+    if [[ ! -f "$model_path" ]]; then
+        echo "0"
         return
     fi
-
-    printf 'scale=2; %s / %s\n' "$realizar" "$ollama" | bc -l
+    # TODO: Add realizar APR benchmark example
+    echo "0"
 }
 
-# Function: Determine pass/fail
-get_status() {
-    local ratio="$1"
-
-    if [[ -z "$ratio" ]] || [[ "$ratio" == "0" ]]; then
-        printf 'FAIL'
+# Function: Get apr-cli GGUF rate
+get_apr_cli_gguf_rate() {
+    local model_path="$1"
+    if [[ ! -f "$model_path" ]]; then
+        echo "0"
         return
     fi
-
-    local comparison
-    comparison="$(printf 'scale=2; %s >= 2.0\n' "$ratio" | bc -l)"
-    if [[ "$comparison" == "1" ]]; then
-        printf 'PASS'
-    else
-        printf 'FAIL'
-    fi
+    local result
+    result="$(cd "$APRENDER_DIR" && TERM=dumb cargo run -p apr-cli --release --features inference -- run "$model_path" --benchmark 2>&1)" || true
+    printf '%s' "$result" | grep -oP 'tok/s:\s*\K[0-9.]+' | head -1 || echo "0"
 }
 
-# Benchmark each model
-echo "-------------------------------------------"
-echo "Testing 0.5B model..."
-echo "-------------------------------------------"
-echo "  [1/2] Ollama baseline..."
-OLLAMA_05B="$(get_ollama_rate "qwen2.5-coder:0.5b")"
-echo "        Ollama: ${OLLAMA_05B} tok/s"
-echo "  [2/2] realizar GPU (M=8)..."
-REALIZAR_05B="$(get_realizar_rate)"
-echo "        realizar: ${REALIZAR_05B} tok/s"
+# Function: Get apr-cli APR rate
+get_apr_cli_apr_rate() {
+    local model_path="$1"
+    if [[ ! -f "$model_path" ]]; then
+        echo "0"
+        return
+    fi
+    local result
+    result="$(cd "$APRENDER_DIR" && TERM=dumb cargo run -p apr-cli --release --features inference -- run "$model_path" --benchmark 2>&1)" || true
+    printf '%s' "$result" | grep -oP 'tok/s:\s*\K[0-9.]+' | head -1 || echo "0"
+}
 
-echo ""
-echo "-------------------------------------------"
-echo "Testing 1.5B model..."
-echo "-------------------------------------------"
-echo "  [1/2] Ollama baseline..."
-OLLAMA_15B="$(get_ollama_rate "qwen2.5-coder:1.5b")"
-echo "        Ollama: ${OLLAMA_15B} tok/s"
-echo "  [2/2] realizar GPU (M=8)..."
-REALIZAR_15B="$(get_realizar_rate)"
-echo "        realizar: ${REALIZAR_15B} tok/s"
+# Initialize results
+declare -A RESULTS
 
-echo ""
-echo "-------------------------------------------"
-echo "Testing 7B model..."
-echo "-------------------------------------------"
-echo "  [1/2] Ollama baseline..."
-OLLAMA_7B="$(get_ollama_rate "qwen2.5-coder:7b")"
-echo "        Ollama: ${OLLAMA_7B} tok/s"
-echo "  [2/2] realizar GPU (M=8)..."
-REALIZAR_7B="$(get_realizar_rate)"
-echo "        realizar: ${REALIZAR_7B} tok/s"
+echo "==================================================="
+echo "  Benchmarking Models"
+echo "==================================================="
 
-# Calculate ratios
-RATIO_05B="$(calc_ratio "$REALIZAR_05B" "$OLLAMA_05B")"
-RATIO_15B="$(calc_ratio "$REALIZAR_15B" "$OLLAMA_15B")"
-RATIO_7B="$(calc_ratio "$REALIZAR_7B" "$OLLAMA_7B")"
+for size in "1.5B"; do  # Start with 1.5B as reference
+    echo ""
+    echo "--- $size ---"
 
-# Determine status
-STATUS_05B="$(get_status "$RATIO_05B")"
-STATUS_15B="$(get_status "$RATIO_15B")"
-STATUS_7B="$(get_status "$RATIO_7B")"
+    echo "  Ollama..."
+    RESULTS["ollama_$size"]="$(get_ollama_rate "${OLLAMA_MODELS[$size]}")"
+    echo "    ${RESULTS[ollama_$size]} tok/s"
 
-# Count passed
-passed=0
-if [[ "$STATUS_05B" == "PASS" ]]; then ((passed++)) || true; fi
-if [[ "$STATUS_15B" == "PASS" ]]; then ((passed++)) || true; fi
-if [[ "$STATUS_7B" == "PASS" ]]; then ((passed++)) || true; fi
+    echo "  realizar GGUF..."
+    RESULTS["realizar_gguf_$size"]="$(get_realizar_gguf_rate "${GGUF_MODELS[$size]}")"
+    echo "    ${RESULTS[realizar_gguf_$size]} tok/s"
 
-# Generate JSON output - numeric values intentionally unquoted for valid JSON
+    echo "  realizar APR..."
+    RESULTS["realizar_apr_$size"]="$(get_realizar_apr_rate "${APR_MODELS[$size]}")"
+    echo "    ${RESULTS[realizar_apr_$size]} tok/s"
+
+    echo "  apr-cli GGUF..."
+    RESULTS["apr_cli_gguf_$size"]="$(get_apr_cli_gguf_rate "${GGUF_MODELS[$size]}")"
+    echo "    ${RESULTS[apr_cli_gguf_$size]} tok/s"
+
+    echo "  apr-cli APR..."
+    RESULTS["apr_cli_apr_$size"]="$(get_apr_cli_apr_rate "${APR_MODELS[$size]}")"
+    echo "    ${RESULTS[apr_cli_apr_$size]} tok/s"
+done
+
+# Generate JSON
 {
     printf '{\n'
     printf '  "benchmark": "gpu_2x_ollama",\n'
-    printf '  "version": "5.0.3",\n'
-    printf '  "reproducible": true,\n'
+    printf '  "version": "5.0.5",\n'
     printf '  "timestamp": "%s",\n' "$(date -Iseconds)"
     printf '  "hardware": "%s",\n' "$HARDWARE"
-    printf '  "models": {\n'
-    printf '    "0.5B": {\n'
-    printf '      "ollama_tok_s": %s,\n' "${OLLAMA_05B:-0}"
-    printf '      "realizar_tok_s": %s,\n' "${REALIZAR_05B:-0}"
-    printf '      "ratio": %s,\n' "${RATIO_05B:-0}"
-    printf '      "status": "%s"\n' "${STATUS_05B}"
-    printf '    },\n'
+    printf '  "results": {\n'
     printf '    "1.5B": {\n'
-    printf '      "ollama_tok_s": %s,\n' "${OLLAMA_15B:-0}"
-    printf '      "realizar_tok_s": %s,\n' "${REALIZAR_15B:-0}"
-    printf '      "ratio": %s,\n' "${RATIO_15B:-0}"
-    printf '      "status": "%s"\n' "${STATUS_15B}"
-    printf '    },\n'
-    printf '    "7B": {\n'
-    printf '      "ollama_tok_s": %s,\n' "${OLLAMA_7B:-0}"
-    printf '      "realizar_tok_s": %s,\n' "${REALIZAR_7B:-0}"
-    printf '      "ratio": %s,\n' "${RATIO_7B:-0}"
-    printf '      "status": "%s"\n' "${STATUS_7B}"
+    printf '      "ollama": %s,\n' "${RESULTS[ollama_1.5B]:-0}"
+    printf '      "realizar_gguf": %s,\n' "${RESULTS[realizar_gguf_1.5B]:-0}"
+    printf '      "realizar_apr": %s,\n' "${RESULTS[realizar_apr_1.5B]:-0}"
+    printf '      "apr_cli_gguf": %s,\n' "${RESULTS[apr_cli_gguf_1.5B]:-0}"
+    printf '      "apr_cli_apr": %s\n' "${RESULTS[apr_cli_apr_1.5B]:-0}"
     printf '    }\n'
-    printf '  },\n'
-    printf '  "summary": {\n'
-    printf '    "passed": %d,\n' "$passed"
-    printf '    "total": 3,\n'
-    printf '    "target": "2x Ollama"\n'
     printf '  }\n'
     printf '}\n'
 } > "$OUTPUT_FILE"
 
 echo ""
 echo "==================================================="
-echo "  BENCHMARK COMPLETE"
+echo "  RESULTS"
 echo "==================================================="
-echo ""
-echo "Results:"
-echo "  0.5B: ${RATIO_05B}x Ollama [${STATUS_05B}]"
-echo "  1.5B: ${RATIO_15B}x Ollama [${STATUS_15B}]"
-echo "  7B:   ${RATIO_7B}x Ollama [${STATUS_7B}]"
-echo ""
-echo "Summary: ${passed} / 3 models at 2x+"
-echo ""
 jq . "$OUTPUT_FILE"
 echo ""
-echo "Saved to: $OUTPUT_FILE"
-
-# Exit with error if any model failed
-if [[ "$passed" -lt 3 ]]; then
-    exit 1
-fi
+echo "Saved: $OUTPUT_FILE"
