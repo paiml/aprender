@@ -410,15 +410,15 @@ showcase-ci: ## Run showcase benchmark in CI mode with threshold check
 	@cargo run --release -p apr-cli -- cbtop --headless --ci --throughput 100 --iterations 100
 	@echo "✅ CI validation passed"
 
-falsification-tests: ## Run all 123 falsification tests (F001-F100, M001-M020)
-	@echo "🧪 Running Popperian falsification test suite (123 tests)..."
-	@cargo test --release --test falsification_brick_tests --test falsification_budget_tests --test falsification_correctness_tests --test falsification_cuda_tests --test falsification_measurement_tests --test falsification_performance_tests -- --test-threads=2
-	@echo "✅ All falsification tests passed (123 tests)"
+falsification-tests: ## Run all 137 falsification tests (F001-F105, M001-M020, O001-O009, R001)
+	@echo "🧪 Running Popperian falsification test suite (137 tests)..."
+	@cargo test --release --test falsification_brick_tests --test falsification_budget_tests --test falsification_correctness_tests --test falsification_cuda_tests --test falsification_measurement_tests --test falsification_performance_tests --test falsification_2x_ollama_tests --test falsification_real_profiling -- --test-threads=2
+	@echo "✅ All falsification tests passed (137 tests)"
 
 falsification-quick: ## Run falsification tests in debug mode (faster compile)
 	@echo "⚡ Running falsification tests (debug mode)..."
-	@cargo test --test falsification_brick_tests --test falsification_budget_tests --test falsification_correctness_tests --test falsification_cuda_tests --test falsification_measurement_tests --test falsification_performance_tests -- --test-threads=2
-	@echo "✅ Falsification tests passed (123 tests)"
+	@cargo test --test falsification_brick_tests --test falsification_budget_tests --test falsification_correctness_tests --test falsification_cuda_tests --test falsification_measurement_tests --test falsification_performance_tests --test falsification_2x_ollama_tests --test falsification_real_profiling -- --test-threads=2
+	@echo "✅ Falsification tests passed (137 tests)"
 
 showcase-pmat: ## Run PMAT quality gates for showcase (spec section 7.0.2)
 	@echo "📊 Running PMAT quality gates..."

@@ -67,6 +67,14 @@ enum Commands {
         #[arg(short, long)]
         input: Option<PathBuf>,
 
+        /// Text prompt for generation (for LLM models)
+        #[arg(short, long)]
+        prompt: Option<String>,
+
+        /// Maximum tokens to generate (default: 32)
+        #[arg(long, default_value = "32")]
+        max_tokens: usize,
+
         /// Enable streaming output
         #[arg(long)]
         stream: bool,
@@ -770,6 +778,8 @@ fn execute_command(cli: &Cli) -> Result<(), error::CliError> {
         Commands::Run {
             source,
             input,
+            prompt,
+            max_tokens,
             stream,
             language,
             task,
@@ -779,6 +789,8 @@ fn execute_command(cli: &Cli) -> Result<(), error::CliError> {
         } => run::run(
             source,
             input.as_deref(),
+            prompt.as_deref(),
+            *max_tokens,
             *stream,
             language.as_deref(),
             task.as_deref(),

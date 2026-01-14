@@ -9,7 +9,7 @@
 //! - Quantization and compression
 
 use crate::error::{AprenderError, Result};
-use crate::format::gguf::{load_gguf_with_tokenizer, GgufTokenizer};
+use crate::format::gguf::{load_gguf_with_tokenizer, GgufModelConfig, GgufTokenizer};
 use crate::format::v2::{AprV2Metadata, AprV2Writer};
 use crate::format::validation::{AprValidator, TensorStats, ValidationReport};
 use crate::format::Compression;
@@ -797,12 +797,13 @@ pub fn apr_import<P: AsRef<Path>>(
     // Step 4: Validate tensors (inline validation)
     let validation_result = validate_tensors(&mapped_tensors, &options)?;
 
-    // Step 5: Write APR format (with tokenizer data if available)
+    // Step 5: Write APR format (with tokenizer AND model config - CRITICAL for inference)
     write_apr_file(
         &mapped_tensors,
         output_path,
         &options,
         load_result.tokenizer.as_ref(),
+        load_result.model_config.as_ref(),
     )?;
 
     Ok(validation_result)
@@ -979,6 +980,113 @@ struct SourceLoadResult {
     tensors: BTreeMap<String, (Vec<f32>, Vec<usize>)>,
     /// Tokenizer data (only present for GGUF files)
     tokenizer: Option<GgufTokenizer>,
+    /// Model config (CRITICAL for inference - from GGUF)
+    model_config: Option<GgufModelConfig>,
+}
+
+/// Infer model config from tensor shapes (for SafeTensors which has no metadata)
+fn infer_model_config_from_tensors(
+    tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
+) -> Option<GgufModelConfig> {
+    // Try to find embedding tensor to get vocab_size and hidden_size
+    let (vocab_size, hidden_size) = tensors
+        .iter()
+        .find(|(name, _)| {
+            name.contains("embed_tokens") || name.contains("wte") || name.contains("word_embeddings")
+        })
+        .and_then(|(_, (_, shape))| {
+            if shape.len() == 2 {
+                Some((shape[0], shape[1]))
+            } else {
+                None
+            }
+        })?;
+
+    // Count transformer layers
+    let num_layers = tensors
+        .keys()
+        .filter_map(|name| {
+            // Match patterns like "layers.N." or "h.N." or "blocks.N."
+            let patterns = [
+                (name.find("layers."), "."),
+                (name.find("h."), "."),
+                (name.find("blocks."), "."),
+            ];
+            for (pos, delim) in patterns {
+                if let Some(start) = pos {
+                    let rest = &name[start + 7..]; // Skip "layers." or similar
+                    if let Some(end) = rest.find(delim) {
+                        if let Ok(n) = rest[..end].parse::<usize>() {
+                            return Some(n);
+                        }
+                    }
+                }
+            }
+            None
+        })
+        .max()
+        .map(|n| n + 1)
+        .unwrap_or(0);
+
+    // Try to infer num_heads from Q projection shape
+    let num_heads = tensors
+        .iter()
+        .find(|(name, _)| name.contains("q_proj.weight") || name.contains("query.weight"))
+        .and_then(|(_, (_, shape))| {
+            if shape.len() == 2 {
+                // q_proj is typically [num_heads * head_dim, hidden_size]
+                // hidden_size / head_dim = num_heads, and output_dim = num_heads * head_dim
+                // For many models: output_dim == hidden_size, so num_heads = hidden_size / head_dim
+                // Common head_dims: 64, 128. Try to find a reasonable factor.
+                let q_dim = shape[0];
+                if q_dim == hidden_size {
+                    // Likely num_heads = hidden_size / head_dim
+                    // Try common head_dims
+                    for head_dim in [64, 128, 96, 80] {
+                        if hidden_size % head_dim == 0 {
+                            return Some(hidden_size / head_dim);
+                        }
+                    }
+                }
+                None
+            } else {
+                None
+            }
+        });
+
+    // Try to get intermediate_size from gate/up projection
+    let intermediate_size = tensors
+        .iter()
+        .find(|(name, _)| name.contains("gate_proj") || name.contains("up_proj") || name.contains("fc1"))
+        .and_then(|(_, (_, shape))| {
+            if shape.len() == 2 {
+                Some(shape[0]) // Output dimension of gate/up projection
+            } else {
+                None
+            }
+        });
+
+    // Infer architecture from tensor naming patterns
+    let architecture = if tensors.keys().any(|k| k.contains("model.layers")) {
+        Some("qwen2".to_string()) // or llama
+    } else if tensors.keys().any(|k| k.contains("transformer.h")) {
+        Some("gpt2".to_string())
+    } else {
+        Some("unknown".to_string())
+    };
+
+    Some(GgufModelConfig {
+        architecture,
+        hidden_size: Some(hidden_size),
+        num_layers: Some(num_layers),
+        num_heads,
+        num_kv_heads: num_heads, // Assume MHA, not GQA
+        vocab_size: Some(vocab_size),
+        intermediate_size,
+        max_position_embeddings: Some(4096), // Default
+        rope_theta: Some(10000.0),            // Default
+        rms_norm_eps: Some(1e-6),             // Default
+    })
 }
 
 /// Load tensors from source file (`SafeTensors` format)
@@ -988,9 +1096,12 @@ fn load_source_tensors(path: &Path, _options: &ImportOptions) -> Result<SourceLo
     match extension {
         "safetensors" => {
             let tensors = load_safetensors_tensors(path)?;
+            // Infer model config from tensor shapes
+            let model_config = infer_model_config_from_tensors(&tensors);
             Ok(SourceLoadResult {
                 tensors,
                 tokenizer: None,
+                model_config,
             })
         }
         "apr" => {
@@ -1000,11 +1111,12 @@ fn load_source_tensors(path: &Path, _options: &ImportOptions) -> Result<SourceLo
             })
         }
         "gguf" => {
-            // Load GGUF with tokenizer data preserved
+            // Load GGUF with tokenizer AND model config (CRITICAL for inference)
             let result = load_gguf_with_tokenizer(path)?;
             Ok(SourceLoadResult {
                 tensors: result.tensors,
                 tokenizer: Some(result.tokenizer),
+                model_config: Some(result.model_config),
             })
         }
         "bin" | "pt" | "pth" => Err(AprenderError::FormatError {
@@ -1272,6 +1384,7 @@ fn write_apr_file(
     output: &Path,
     options: &ImportOptions,
     tokenizer: Option<&GgufTokenizer>,
+    model_config: Option<&GgufModelConfig>,
 ) -> Result<()> {
     // Calculate total parameter count
     let param_count: u64 = tensors.values().map(|(data, _)| data.len() as u64).sum();
@@ -1345,6 +1458,25 @@ fn write_apr_file(
         }
     }
 
+    // Extract transformer config from model_config (CRITICAL for inference)
+    let (architecture, hidden_size, num_layers, num_heads, num_kv_heads, vocab_size, intermediate_size, max_position_embeddings, rope_theta, rms_norm_eps) =
+        if let Some(cfg) = model_config {
+            (
+                cfg.architecture.clone(),
+                cfg.hidden_size,
+                cfg.num_layers,
+                cfg.num_heads,
+                cfg.num_kv_heads,
+                cfg.vocab_size,
+                cfg.intermediate_size,
+                cfg.max_position_embeddings,
+                cfg.rope_theta,
+                cfg.rms_norm_eps,
+            )
+        } else {
+            (None, None, None, None, None, None, None, None, None, None)
+        };
+
     let metadata = AprV2Metadata {
         model_type: format!("{:?}", options.architecture),
         name: Some(
@@ -1356,6 +1488,17 @@ fn write_apr_file(
         ),
         param_count,
         custom,
+        // Transformer config (CRITICAL for realizar inference)
+        architecture,
+        hidden_size,
+        num_layers,
+        num_heads,
+        num_kv_heads,
+        vocab_size,
+        intermediate_size,
+        max_position_embeddings,
+        rope_theta,
+        rms_norm_eps,
         ..Default::default()
     };
 

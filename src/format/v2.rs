@@ -434,6 +434,50 @@ pub struct AprV2Metadata {
     #[serde(default)]
     pub special_tokens: Option<ChatSpecialTokens>,
 
+    // ========================================================================
+    // Transformer Config (CRITICAL for inference - realizar::apr::AprMetadata)
+    // ========================================================================
+
+    /// Model architecture family (e.g., "llama", "qwen2", "phi")
+    #[serde(default)]
+    pub architecture: Option<String>,
+
+    /// Hidden dimension size
+    #[serde(default)]
+    pub hidden_size: Option<usize>,
+
+    /// Number of transformer layers
+    #[serde(default)]
+    pub num_layers: Option<usize>,
+
+    /// Number of attention heads
+    #[serde(default)]
+    pub num_heads: Option<usize>,
+
+    /// Number of key-value heads (for GQA, defaults to num_heads)
+    #[serde(default)]
+    pub num_kv_heads: Option<usize>,
+
+    /// Vocabulary size
+    #[serde(default)]
+    pub vocab_size: Option<usize>,
+
+    /// FFN intermediate dimension
+    #[serde(default)]
+    pub intermediate_size: Option<usize>,
+
+    /// Maximum context/sequence length
+    #[serde(default)]
+    pub max_position_embeddings: Option<usize>,
+
+    /// RoPE theta for position encoding
+    #[serde(default)]
+    pub rope_theta: Option<f32>,
+
+    /// Layer norm epsilon
+    #[serde(default)]
+    pub rms_norm_eps: Option<f32>,
+
     /// Custom key-value pairs
     #[serde(default, flatten)]
     pub custom: HashMap<String, serde_json::Value>,

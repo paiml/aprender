@@ -94,6 +94,10 @@ fn md5_hash(data: &[u8]) -> u64 {
 pub(crate) struct RunOptions {
     /// Input file (audio, text, etc.)
     pub input: Option<PathBuf>,
+    /// Text prompt for LLM generation
+    pub prompt: Option<String>,
+    /// Maximum tokens to generate
+    pub max_tokens: usize,
     /// Output format (text, json, srt, vtt)
     pub output_format: String,
     /// Force re-download (bypass cache)
@@ -108,6 +112,8 @@ impl Default for RunOptions {
     fn default() -> Self {
         Self {
             input: None,
+            prompt: None,
+            max_tokens: 32,
             output_format: "text".to_string(),
             force: false,
             no_gpu: false,
@@ -431,16 +437,23 @@ fn execute_with_realizar(
 
 /// Execute APR model inference (APR v2 format)
 ///
-/// APR v2 is tensor-based - for LLM inference, use SafeTensors or GGUF formats.
-/// This function loads the model and displays metadata.
+/// APR v2 now supports transformer inference with forward() and generate() methods.
+/// For transformer models with proper metadata, runs autoregressive generation.
+/// Supports GPU acceleration via `AprV2ModelCuda` when `--gpu` is specified.
 #[cfg(feature = "inference")]
 fn execute_apr_inference(
     model_path: &Path,
-    _input_path: Option<&PathBuf>,
-    _options: &RunOptions,
+    input_path: Option<&PathBuf>,
+    options: &RunOptions,
 ) -> Result<String> {
     use realizar::apr::AprModel;
     use std::time::Instant;
+
+    // Check if GPU should be used
+    #[cfg(feature = "cuda")]
+    let use_gpu = !options.no_gpu && realizar::apr::AprV2ModelCuda::is_available();
+    #[cfg(not(feature = "cuda"))]
+    let use_gpu = false;
 
     // Load the APR v2 model
     let start = Instant::now();
@@ -463,16 +476,167 @@ fn execute_apr_inference(
     eprintln!(
         "{}",
         format!(
-            "Loaded {} model (arch: {}, {} tensors, ~{} parameters)",
+            "Loaded {} model (arch: {}, {} tensors, ~{} parameters) in {:.2}ms",
             model_type,
             architecture,
             model.tensor_count(),
-            model.estimated_parameters()
+            model.estimated_parameters(),
+            load_time.as_secs_f64() * 1000.0
         )
         .dimmed()
     );
 
-    // List available tensors
+    // Check if this is a transformer model
+    if model.metadata().is_transformer() {
+        eprintln!("{}", "Running transformer generation...".cyan());
+
+        // Try to load tokenizer from sibling file
+        let tokenizer_info = AprModel::load_tokenizer_from_sibling(model_path);
+        let (vocab, _bos_id, eos_id) = match &tokenizer_info {
+            Some((v, b, e)) => {
+                eprintln!(
+                    "{}",
+                    format!("Loaded tokenizer ({} tokens)", v.len()).dimmed()
+                );
+                (Some(v.as_slice()), *b, *e)
+            }
+            None => {
+                eprintln!(
+                    "{}",
+                    "No tokenizer.json found. Using token IDs only.".yellow()
+                );
+                (None, None, Some(2u32)) // Default EOS
+            }
+        };
+
+        // Get input tokens
+        let input_tokens = if let Some(ref prompt) = options.prompt {
+            // Parse comma-separated token IDs or encode text
+            if prompt.contains(',') || prompt.chars().all(|c| c.is_ascii_digit() || c == ',') {
+                parse_token_ids(prompt)?
+            } else {
+                // Text prompt - encode using tokenizer
+                if let Some(tokens) = AprModel::encode_text(model_path, prompt) {
+                    eprintln!(
+                        "{}",
+                        format!("Encoded {} chars to {} tokens", prompt.len(), tokens.len()).dimmed()
+                    );
+                    tokens
+                } else {
+                    eprintln!(
+                        "{}",
+                        "Warning: No tokenizer found. Using BOS token.".yellow()
+                    );
+                    vec![1u32] // BOS token fallback
+                }
+            }
+        } else if let Some(path) = input_path {
+            let content = std::fs::read_to_string(path)?;
+            parse_token_ids(&content)?
+        } else {
+            // Default: just use token ID 1 (BOS)
+            vec![1u32]
+        };
+
+        let max_new_tokens = options.max_tokens;
+
+        // Capture vocab_size before potential model move
+        let vocab_size = model.metadata().vocab_size.unwrap_or(0);
+
+        // Report backend selection
+        let backend_label = if use_gpu { "GPU" } else { "CPU" };
+        eprintln!(
+            "{}",
+            format!(
+                "Generating {} tokens from {} input tokens ({} backend)...",
+                max_new_tokens,
+                input_tokens.len(),
+                backend_label
+            )
+            .dimmed()
+        );
+
+        // Run generation (GPU or CPU path)
+        let infer_start = Instant::now();
+        let output_tokens = if use_gpu {
+            // GPU path via AprV2ModelCuda
+            #[cfg(feature = "cuda")]
+            {
+                let mut cuda_model = realizar::apr::AprV2ModelCuda::new(model, 0)
+                    .map_err(|e| CliError::ModelLoadFailed(format!("CUDA init failed: {e}")))?;
+                eprintln!(
+                    "{}",
+                    format!("Using GPU: {} ({} MB VRAM)", cuda_model.device_name(), cuda_model.vram_mb()).green()
+                );
+                cuda_model
+                    .generate_cuda(&input_tokens, max_new_tokens, eos_id.unwrap_or(2))
+                    .map_err(|e| CliError::InferenceFailed(format!("GPU generation failed: {e}")))?
+            }
+            #[cfg(not(feature = "cuda"))]
+            {
+                // Fallback to CPU (should not reach here due to use_gpu check)
+                model
+                    .generate(&input_tokens, max_new_tokens, eos_id)
+                    .map_err(|e| CliError::InferenceFailed(format!("Generation failed: {e}")))?
+            }
+        } else {
+            // CPU path
+            model
+                .generate(&input_tokens, max_new_tokens, eos_id)
+                .map_err(|e| CliError::InferenceFailed(format!("Generation failed: {e}")))?
+        };
+        let infer_time = infer_start.elapsed();
+
+        let new_tokens = output_tokens.len() - input_tokens.len();
+        let tokens_per_sec = if infer_time.as_secs_f64() > 0.0 {
+            new_tokens as f64 / infer_time.as_secs_f64()
+        } else {
+            0.0
+        };
+
+        let mut output = format!(
+            "APR v2 Transformer Generation\n\
+             Architecture: {}\n\
+             Vocab size: {}\n\
+             Input tokens: {:?}\n\
+             Generated tokens: {} new ({} total)\n\
+             Generation time: {:.2}ms ({:.1} tok/s)\n\n",
+            architecture,
+            vocab_size,
+            input_tokens,
+            new_tokens,
+            output_tokens.len(),
+            infer_time.as_secs_f64() * 1000.0,
+            tokens_per_sec
+        );
+
+        // Decode and show output text if tokenizer available
+        if let Some(v) = vocab {
+            let generated_tokens = &output_tokens[input_tokens.len()..];
+            let decoded_text = AprModel::decode_tokens(v, generated_tokens);
+            output.push_str("Generated text:\n");
+            output.push_str(&format!("  {}\n\n", decoded_text));
+        }
+
+        output.push_str("Output tokens:\n");
+        output.push_str(&format!("  {:?}\n", output_tokens));
+
+        // Show which tokens were generated (new ones)
+        if new_tokens > 0 {
+            output.push_str("\nGenerated token IDs:\n  ");
+            for (i, &tok) in output_tokens.iter().skip(input_tokens.len()).enumerate() {
+                if i > 0 {
+                    output.push_str(", ");
+                }
+                output.push_str(&format!("{}", tok));
+            }
+            output.push('\n');
+        }
+
+        return Ok(output);
+    }
+
+    // Fallback: display metadata for non-transformer models
     let tensor_names = model.tensor_names();
     let mut output = format!(
         "APR v2 Model: {}\n\
@@ -494,10 +658,32 @@ fn execute_apr_inference(
     }
 
     output.push_str(
-        "\nNote: APR v2 is tensor-based. For LLM inference, use SafeTensors or GGUF format.",
+        "\nNote: Model missing transformer config. Add hidden_size, num_layers, num_heads, vocab_size to metadata.",
     );
 
     Ok(output)
+}
+
+/// Parse token IDs from input string (JSON array or comma-separated)
+#[cfg(feature = "inference")]
+fn parse_token_ids(input: &str) -> Result<Vec<u32>> {
+    let trimmed = input.trim();
+    if trimmed.starts_with('[') {
+        // JSON array
+        serde_json::from_str(trimmed)
+            .map_err(|e| CliError::InvalidFormat(format!("Failed to parse token IDs: {e}")))
+    } else {
+        // Comma or space separated
+        trimmed
+            .split([',', ' ', '\n', '\t'])
+            .filter(|s| !s.is_empty())
+            .map(|s| {
+                s.trim()
+                    .parse::<u32>()
+                    .map_err(|e| CliError::InvalidFormat(format!("Invalid token ID: {s} - {e}")))
+            })
+            .collect()
+    }
 }
 
 /// Execute SafeTensors model inference
@@ -561,80 +747,175 @@ fn execute_safetensors_inference(
 
 /// Execute GGUF model inspection
 ///
-/// Uses realizar's GGUF loader to inspect model metadata.
-/// Full text generation requires additional setup (tokenizer, config).
+/// Execute GGUF model inference using realizar's optimized OwnedQuantizedModel.
+///
+/// Uses quantized compute for better performance than naive dequantize-then-compute.
 #[cfg(feature = "inference")]
 fn execute_gguf_inference(
     model_path: &Path,
     input_path: Option<&PathBuf>,
-    _options: &RunOptions,
+    options: &RunOptions,
 ) -> Result<String> {
-    use realizar::gguf::MappedGGUFModel;
+    use realizar::apr::AprV2Model as AprModel;
+    use realizar::gguf::{MappedGGUFModel, OwnedQuantizedModel};
     use std::time::Instant;
 
     // Load GGUF model via memory mapping
     let start = Instant::now();
     let mapped_model = MappedGGUFModel::from_path(model_path)
         .map_err(|e| CliError::ModelLoadFailed(format!("Failed to load GGUF model: {e}")))?;
-    let load_time = start.elapsed();
-
-    let model = &mapped_model.model;
+    let mmap_time = start.elapsed();
 
     eprintln!(
         "{}",
         format!(
             "Loaded GGUF model (mmap) in {:.2}ms",
-            load_time.as_secs_f64() * 1000.0
+            mmap_time.as_secs_f64() * 1000.0
         )
         .dimmed()
     );
 
-    let input_desc = input_path
-        .map(|p| p.display().to_string())
-        .unwrap_or_else(|| "none".to_string());
+    // Try to create optimized quantized model
+    eprintln!("{}", "Loading quantized model...".cyan());
+    let load_start = Instant::now();
+    let model_result = OwnedQuantizedModel::from_mapped(&mapped_model);
+    let load_time = load_start.elapsed();
 
-    // Build output with model information
-    let mut output = String::new();
-    output.push_str(&format!("Model: {}\n", model_path.display()));
-    output.push_str(&format!("Input: {}\n", input_desc));
-    output.push_str(&format!("GGUF Version: {}\n", model.header.version));
-    output.push_str(&format!("Tensors: {}\n", model.tensors.len()));
-    output.push_str(&format!("Metadata entries: {}\n", model.metadata.len()));
-    output.push_str(&format!(
-        "Load time: {:.2}ms\n",
-        load_time.as_secs_f64() * 1000.0
-    ));
+    match model_result {
+        Ok(model) => {
+            eprintln!(
+                "{}",
+                format!(
+                    "Model loaded in {:.2}s",
+                    load_time.as_secs_f64()
+                )
+                .dimmed()
+            );
 
-    // Show some metadata
-    output.push_str("\nMetadata (first 10):\n");
-    for (i, (key, _)) in model.metadata.iter().take(10).enumerate() {
-        output.push_str(&format!("  {}. {}\n", i + 1, key));
+            // Get input tokens
+            let input_tokens = if let Some(ref prompt) = options.prompt {
+                // Parse comma-separated token IDs or encode text
+                if prompt.contains(',') || prompt.chars().all(|c| c.is_ascii_digit() || c == ',') {
+                    parse_token_ids(prompt)?
+                } else {
+                    // Text prompt - encode using tokenizer
+                    if let Some(tokens) = AprModel::encode_text(model_path, prompt) {
+                        eprintln!(
+                            "{}",
+                            format!("Encoded {} chars to {} tokens", prompt.len(), tokens.len()).dimmed()
+                        );
+                        tokens
+                    } else {
+                        eprintln!(
+                            "{}",
+                            "Warning: No tokenizer found. Using BOS token.".yellow()
+                        );
+                        vec![1u32] // BOS token fallback
+                    }
+                }
+            } else if let Some(path) = input_path {
+                let content = std::fs::read_to_string(path)?;
+                parse_token_ids(&content)?
+            } else {
+                vec![1u32] // BOS token
+            };
+
+            // Run forward pass using optimized quantized compute
+            eprintln!("{}", "Running quantized inference...".cyan());
+            let infer_start = Instant::now();
+            let logits = model.forward(&input_tokens).map_err(|e| {
+                CliError::InferenceFailed(format!("Forward pass failed: {e}"))
+            })?;
+            let infer_time = infer_start.elapsed();
+
+            // Find top-k tokens
+            let mut indexed_logits: Vec<(usize, f32)> =
+                logits.iter().copied().enumerate().collect();
+            indexed_logits
+                .sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+            let vocab_size = model.config.vocab_size;
+            let tokens_per_sec = if infer_time.as_secs_f64() > 0.0 {
+                (input_tokens.len() as f64) / infer_time.as_secs_f64()
+            } else {
+                0.0
+            };
+
+            let mut output = format!(
+                "GGUF Quantized Inference (OwnedQuantizedModel)\n\
+                 Model: {}\n\
+                 Hidden dim: {}\n\
+                 Num layers: {}\n\
+                 Num heads: {}\n\
+                 Vocab size: {}\n\
+                 Input tokens: {:?}\n\
+                 Load time: {:.2}s\n\
+                 Inference time: {:.2}ms ({:.1} tok/s)\n\n",
+                model_path.display(),
+                model.config.hidden_dim,
+                model.config.num_layers,
+                model.config.num_heads,
+                vocab_size,
+                input_tokens,
+                load_time.as_secs_f64(),
+                infer_time.as_secs_f64() * 1000.0,
+                tokens_per_sec
+            );
+
+            output.push_str("Top 10 next token predictions:\n");
+            for (rank, (token_id, logit)) in indexed_logits.iter().take(10).enumerate() {
+                output.push_str(&format!(
+                    "  {}. token {} (logit: {:.4})\n",
+                    rank + 1,
+                    token_id,
+                    logit
+                ));
+            }
+
+            Ok(output)
+        }
+        Err(e) => {
+            // Fallback to metadata display
+            let model = &mapped_model.model;
+            let mut output = format!(
+                "GGUF Model (quantized inference unavailable)\n\
+                 Model: {}\n\
+                 Load error: {}\n\
+                 GGUF Version: {}\n\
+                 Tensors: {}\n\
+                 Metadata entries: {}\n\n",
+                model_path.display(),
+                e,
+                model.header.version,
+                model.tensors.len(),
+                model.metadata.len()
+            );
+
+            output.push_str("Metadata (first 10):\n");
+            for (i, (key, _)) in model.metadata.iter().take(10).enumerate() {
+                output.push_str(&format!("  {}. {}\n", i + 1, key));
+            }
+            if model.metadata.len() > 10 {
+                output.push_str(&format!("  ... and {} more\n", model.metadata.len() - 10));
+            }
+
+            output.push_str("\nTensors (first 10):\n");
+            for (i, tensor) in model.tensors.iter().take(10).enumerate() {
+                output.push_str(&format!(
+                    "  {}. {} (type: {}, dims: {:?})\n",
+                    i + 1,
+                    tensor.name,
+                    tensor.qtype,
+                    tensor.dims
+                ));
+            }
+            if model.tensors.len() > 10 {
+                output.push_str(&format!("  ... and {} more\n", model.tensors.len() - 10));
+            }
+
+            Ok(output)
+        }
     }
-
-    if model.metadata.len() > 10 {
-        output.push_str(&format!("  ... and {} more\n", model.metadata.len() - 10));
-    }
-
-    // Show tensor info
-    output.push_str("\nTensors (first 10):\n");
-    for (i, tensor) in model.tensors.iter().take(10).enumerate() {
-        output.push_str(&format!(
-            "  {}. {} ({:?})\n",
-            i + 1,
-            tensor.name,
-            tensor.dims
-        ));
-    }
-
-    if model.tensors.len() > 10 {
-        output.push_str(&format!("  ... and {} more\n", model.tensors.len() - 10));
-    }
-
-    output.push_str(
-        "\nNote: Full text generation requires `apr serve` with proper tokenizer setup.\n",
-    );
-
-    Ok(output)
 }
 
 /// Parse input features from file or stdin
@@ -709,6 +990,8 @@ fn format_prediction_output(
 pub(crate) fn run(
     source: &str,
     input: Option<&Path>,
+    prompt: Option<&str>,
+    max_tokens: usize,
     stream: bool,
     _language: Option<&str>,
     _task: Option<&str>,
@@ -730,6 +1013,8 @@ pub(crate) fn run(
 
     let options = RunOptions {
         input: input.map(Path::to_path_buf),
+        prompt: prompt.map(String::from),
+        max_tokens,
         output_format: output_format.to_string(),
         force: false,
         no_gpu,
@@ -897,6 +1182,8 @@ mod tests {
     fn test_run_model_with_options() {
         let options = RunOptions {
             input: Some(PathBuf::from("/tmp/test.wav")),
+            prompt: None,
+            max_tokens: 32,
             output_format: "json".to_string(),
             force: false,
             no_gpu: true,

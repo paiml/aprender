@@ -62,7 +62,7 @@ path = "src/main.rs"
 default = ["hf-hub", "safetensors-compare", "inference", "cuda", "visualization", "zram"]
 hf-hub = ["aprender/hf-hub-integration"]
 safetensors-compare = ["aprender/safetensors-compare"]
-inference = ["realizar", "tokio", "axum", "futures-util"]
+inference = ["realizar", "trueno", "tokio", "axum", "futures-util"]
 cuda = ["inference", "realizar/cuda"]
 visualization = ["renacer", "trueno-viz"]
 zram = ["trueno-zram-core"]
@@ -75,6 +75,9 @@ aprender = { path = "../..", version = "0.24", default-features = true, features
 # Note: cuda feature enables GPU-accelerated inference via trueno-gpu
 # PAR-041: Using local realizar with tiled GEMV kernel (256 threads vs 32)
 realizar = { path = "/home/noah/src/realizar", optional = true, default-features = false, features = ["server", "aprender-serve", "gpu", "cuda"] }
+
+# SIMD compute library (for BrickProfiler in §12.11 unified profiling)
+trueno = { path = "/home/noah/src/trueno", optional = true }
 
 # Async runtime for server
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal"], optional = true }

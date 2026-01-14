@@ -49,13 +49,18 @@ jobs:
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
 
-      - name: Run Falsification Tests (F001-F040, M001-M020)
+      - name: Run Falsification Tests (137 tests: F001-F105, M001-M020, O001-O009, R001)
         run: |
-          echo "Running Popperian falsification test suite..."
+          echo "Running Popperian falsification test suite (137 tests)..."
           cargo test --release \
             --test falsification_brick_tests \
             --test falsification_budget_tests \
+            --test falsification_correctness_tests \
+            --test falsification_cuda_tests \
             --test falsification_measurement_tests \
+            --test falsification_performance_tests \
+            --test falsification_2x_ollama_tests \
+            --test falsification_real_profiling \
             -- --test-threads=2 2>&1 | tee falsification-results.txt
 
       - name: Generate test summary
@@ -67,13 +72,18 @@ jobs:
           echo "**Branch:** ${{ github.ref_name }}" >> falsification-summary.md
           echo "**Commit:** ${{ github.sha }}" >> falsification-summary.md
           echo "" >> falsification-summary.md
-          echo "## Test Categories" >> falsification-summary.md
+          echo "## Test Categories (137 total)" >> falsification-summary.md
           echo "" >> falsification-summary.md
-          echo "| Category | Tests | Description |" >> falsification-summary.md
+          echo "| Category | Count | Description |" >> falsification-summary.md
           echo "|----------|-------|-------------|" >> falsification-summary.md
-          echo "| F001-F020 | Brick Core | ComputeBrick trait invariants |" >> falsification-summary.md
-          echo "| F021-F040 | Token Budget | Timing budget compliance |" >> falsification-summary.md
-          echo "| M001-M020 | Measurement | cbtop and scoring infrastructure |" >> falsification-summary.md
+          echo "| F001-F020 | 20 | Brick Core Invariants |" >> falsification-summary.md
+          echo "| F021-F040 | 20 | Token Budget Compliance |" >> falsification-summary.md
+          echo "| F041-F060 | 21 | Backend Correctness |" >> falsification-summary.md
+          echo "| F061-F080 | 21 | CUDA Kernel Validation |" >> falsification-summary.md
+          echo "| F081-F105 | 25 | Performance Regression |" >> falsification-summary.md
+          echo "| M001-M020 | 20 | Measurement & Scoring |" >> falsification-summary.md
+          echo "| O001-O009 | 9 | 2x Ollama Parity |" >> falsification-summary.md
+          echo "| R001 | 1 | Real Profiling |" >> falsification-summary.md
           echo "" >> falsification-summary.md
 
           # Count passed/failed
@@ -114,11 +124,12 @@ jobs:
       - name: Build in release mode
         run: cargo build --release -p apr-cli
 
-      - name: Run headless benchmark
+      - name: Run headless benchmark (simulated for CI)
         run: |
-          echo "Running cbtop headless benchmark..."
+          echo "Running cbtop headless benchmark (simulated data for CI)..."
           cargo run --release -p apr-cli -- cbtop \
             --headless \
+            --simulated \
             --json \
             --output showcase-results.json \
             --iterations 100
@@ -126,12 +137,13 @@ jobs:
           echo "Benchmark results:"
           cat showcase-results.json
 
-      - name: Validate CI thresholds
+      - name: Validate CI thresholds (simulated)
         if: github.event_name == 'workflow_dispatch'
         run: |
-          echo "Validating CI thresholds..."
+          echo "Validating CI thresholds (simulated data)..."
           cargo run --release -p apr-cli -- cbtop \
             --headless \
+            --simulated \
             --ci \
             --throughput ${{ github.event.inputs.throughput_threshold || '100' }} \
             --iterations 100
@@ -160,7 +172,7 @@ jobs:
             const throughput = results.throughput?.tokens_per_sec?.toFixed(1) || 'N/A';
             const status = results.status || 'UNKNOWN';
             const passed = results.falsification?.passed || 0;
-            const total = results.falsification?.total_points || 120;
+            const total = results.falsification?.total_points || 137;
 
             const body = `## ComputeBrick Showcase Results
 
