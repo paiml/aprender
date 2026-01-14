@@ -1,7 +1,7 @@
 # Qwen2.5-Coder Showcase: ComputeBrick Architecture
 
-**Version:** 4.90.0
-**Status:** ✅ **GPU 2x OLLAMA ACHIEVED** | 🟡 **CPU 5x GAP** (PAR-126: Fixed PARALLEL_THRESHOLD mismatch, added rayon::join for FFN. CPU: 14.2 tok/s vs Ollama 71 tok/s. Identified: Rayon dispatch overhead 50-90 us/call × 112 calls = 7ms/token. Q8K path could save 7ms more. Total gap: 23ms overhead on 46ms estimated forward time.)
+**Version:** 4.94.0
+**Status:** ✅ **GPU 2x OLLAMA ACHIEVED** | 🟡 **CPU 2.3x GAP** (PAR-126: Q6_K AVX2 SIMD - 31.4 tok/s vs Ollama 71 tok/s. Q6_K FFN down 897µs→181µs (5x). Total matmul 37ms→16ms (2.3x). 67% improvement from v4.93.)
 **Author:** PAIML Engineering
 **Date:** 2026-01-14
 **PMAT Roadmap ID:** `SHOWCASE-BRICK-001`
@@ -9,6 +9,7 @@
 **Canonical References:**
 - PROBAR-SPEC-009 (Brick Testing Protocol)
 - SPEC-024 (Popperian Falsification)
+- TUNER-SPEC-001 (ML-Tuner for ComputeBricks)
 - trueno v0.11.0 (SIMD/GPU Compute, Brick Scoring)
 - realizar v0.5.1 (LLM Inference)
 - presentar v0.2.0 (WASM-first TUI Framework)
@@ -166,6 +167,7 @@
 | 4.84.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **ANALYSIS** | **PAR-126 CPU PERFORMANCE ANALYSIS**: CPU path (trueno SIMD) measured at 16 tok/s vs Ollama 290 tok/s (18x gap). Five-Whys analysis: (1) MADV_WILLNEED missing - added, improved 1.1→5.6 tok/s. (2) PARALLEL_THRESHOLD=4096 too high - lowered to 256, improved to 16 tok/s. (3) Remaining gap: fused_q4k_dot_simd kernel 18x slower than llama.cpp - requires SIMD optimization (future work). GPU 2x target achieved; CPU optimization deferred. |
 | 4.85.0 | 2026-01-13 | PAIML Engineering | Architecture Lead | **OPTIMIZED** | **PAR-126 CPU SIMD OPTIMIZATION**: Five-Whys analysis and optimization. (1) Optimized AVX-512 VNNI kernel: 16→63.7 tok/s (4x improvement). (2) **NUMA discovery**: 48 threads = 10% efficiency, 16 threads = 74% efficiency (peak at 16-24 threads). (3) Per-layer breakdown: QKV 95µs, Attn O 35µs, FFN up 114µs, FFN down 157µs = 514µs/layer. (4) LM head 1.3ms dominates (vocab=152K). **Current: 63.7 tok/s vs Ollama 265 tok/s CPU = 24% (4.2x gap)**. Remaining bottleneck: horizontal sums (24 per super-block). |
 | 4.89.0 | 2026-01-14 | PAIML Engineering | Architecture Lead | **SPEC** | **Section 12 ML TUNER INTEGRATION**: Added trueno+aprender ML tuner integration spec. TunerFeatures DIM=42 (v1.1.0) with roofline clamping. aprender RandomForest{Regressor,Classifier} for throughput prediction and kernel selection. Blocked on trueno v0.12.0 publish. Falsification tests F-TUNER-001 through F-TUNER-005 defined. PMAT tickets T-TUNER-001, T-TUNER-002 created. |
+| 4.93.0 | 2026-01-14 | PAIML Engineering | Architecture Lead | **IN PROGRESS** | **ML TUNER GITHUB ISSUES**: Added T-TUNER-003 through T-TUNER-007 from GitHub issues #80-84. T-TUNER-003: Train on real profiling data (GH#80). T-TUNER-004: Persistent model storage with versioning (GH#81). T-TUNER-005: Online learning from user sessions (GH#82). T-TUNER-006: cbtop TUI integration (GH#83). T-TUNER-007: 100-point Popperian falsification suite (GH#84). Added §12.9 GitHub Issue Tracking table. |
 
 ---
 
@@ -3702,9 +3704,16 @@ let final_prediction = raw_prediction.min(roofline);  // CLAMPED
 | Component | Status | Blocked By | Notes |
 |-----------|--------|------------|-------|
 | **trueno::tuner** | ✅ v1.1.0 | - | 42-dim features, roofline clamping |
-| **aprender::tree** | ✅ 0.3.0 | - | RandomForest{Regressor,Classifier} |
-| **trueno publish** | ⚠️ BLOCKED | CI pipeline | v0.12.0 needed for brick+tuner |
-| **Integration wire** | 📋 TODO | trueno publish | Replace heuristic models |
+| **aprender::tree** | ✅ 0.24.0 | - | RandomForest{Regressor,Classifier} |
+| **trueno ml-tuner** | ✅ Implemented | aprender path dep | `--features ml-tuner` enables RF models |
+| **trueno publish** | ⚠️ BLOCKED | CI pipeline | v0.12.0 needed for brick+tuner+ml-tuner |
+| **crates.io aprender** | ⚠️ BLOCKED | aprender publish | 0.3.x lacks RandomForestRegressor export |
+
+**Note:** Until aprender v0.4.0 publishes `RandomForestRegressor`, trueno uses a path dependency:
+```toml
+# Cargo.toml
+aprender = { path = "../aprender", optional = true, default-features = false }
+```
 
 ### 12.6 Training Data Collection
 
@@ -3773,6 +3782,82 @@ fn f026_roofline_bound() {
 - **Task**: Export BrickProfiler data as TunerFeatures + throughput pairs
 - **Falsification**: JSON output matches schema
 
+**T-TUNER-003: Train on real profiling data** ([GH#80](https://github.com/paiml/trueno/issues/80))
+- **Repo**: `trueno`
+- **File**: `src/tuner.rs`, `src/tuner/data_collector.rs`
+- **Task**: Replace hardcoded heuristic weights with training from actual profiling runs
+- **Acceptance Criteria**:
+  - [ ] `TunerDataCollector` records BrickProfiler runs automatically
+  - [ ] Minimum 1000 samples before model training triggers
+  - [ ] MAPE < 10% on holdout test set (F001 falsification)
+  - [ ] R² > 0.85 on throughput prediction (F002 falsification)
+- **Falsification**: F-TUNER-006, F-TUNER-007
+
+**T-TUNER-004: Persistent model storage with versioning** ([GH#81](https://github.com/paiml/trueno/issues/81))
+- **Repo**: `trueno`
+- **File**: `src/tuner.rs`
+- **Task**: Implement `BrickTuner::load_or_default()` with disk persistence
+- **Storage**: `~/.cache/trueno/tuner_model_v{VERSION}.safetensors`
+- **Acceptance Criteria**:
+  - [ ] Model persists across sessions
+  - [ ] Loads in < 100ms (F065 falsification)
+  - [ ] SafeTensors round-trip works (F070 falsification)
+  - [ ] Backward compatible model loading (F080 falsification)
+  - [ ] Version mismatch triggers retraining
+- **Falsification**: F-TUNER-008, F-TUNER-009, F-TUNER-010
+
+**T-TUNER-005: Online learning from user sessions** ([GH#82](https://github.com/paiml/trueno/issues/82))
+- **Repo**: `trueno`
+- **File**: `src/tuner/data_collector.rs`
+- **Task**: Passive recording of profiling runs with incremental updates
+- **Acceptance Criteria**:
+  - [ ] Profiling runs automatically recorded (opt-in)
+  - [ ] Retraining improves model (F088 falsification)
+  - [ ] Concept drift detection alerts user (F087 falsification)
+  - [ ] User feedback integrated into training signal
+  - [ ] Privacy: local-only storage, no telemetry
+- **Falsification**: F-TUNER-011, F-TUNER-012
+
+**T-TUNER-006: cbtop TUI integration** ([GH#83](https://github.com/paiml/trueno/issues/83))
+- **Repo**: `trueno`
+- **File**: `src/bin/trueno-monitor.rs`, `src/tui/tuner_panel.rs`
+- **Task**: Add TunerPanel widget to cbtop with interactive recommendations
+- **Acceptance Criteria**:
+  - [ ] TunerPanel renders in cbtop
+  - [ ] Recommendations update in real-time
+  - [ ] 'a' key applies recommendations
+  - [ ] Prediction accuracy displayed after run
+  - [ ] Toggle panel with 't' key
+- **CLI**: `cbtop --model model.gguf --recommend`, `--auto-tune`
+- **Falsification**: F-TUNER-013, F-TUNER-014
+
+**T-TUNER-007: 100-point Popperian falsification suite** ([GH#84](https://github.com/paiml/trueno/issues/84))
+- **Repo**: `trueno`
+- **File**: `tests/tuner_falsification.rs`
+- **Task**: Implement 100 falsification tests across 5 categories
+- **Categories**:
+  - F001-F020: Model Accuracy (MAPE < 10%, R² > 0.85, kernel accuracy > 80%)
+  - F021-F040: Feature Engineering (TunerFeatures validation)
+  - F041-F060: Training Data Quality
+  - F061-F080: Integration Correctness (load < 100ms, deterministic)
+  - F081-F100: Generalization & Robustness
+- **Acceptance Criteria**:
+  - [ ] All 100 falsification tests implemented
+  - [ ] Tests run in CI (< 5 min total)
+  - [ ] Score reported: X/100 points
+  - [ ] Blocking release if score < 90
+- **Falsification**: F-TUNER-015 through F-TUNER-020
+
+### 12.9 GitHub Issue Tracking
+
+| Ticket | GitHub | Status | Priority |
+|--------|--------|--------|----------|
+| T-TUNER-003 | [#80](https://github.com/paiml/trueno/issues/80) | 🟡 IN PROGRESS | P0 |
+| T-TUNER-004 | [#81](https://github.com/paiml/trueno/issues/81) | 🟡 IN PROGRESS | P0 |
+| T-TUNER-005 | [#82](https://github.com/paiml/trueno/issues/82) | ⬜ TODO | P1 |
+| T-TUNER-006 | [#83](https://github.com/paiml/trueno/issues/83) | ⬜ TODO | P1 |
+| T-TUNER-007 | [#84](https://github.com/paiml/trueno/issues/84) | 🟡 IN PROGRESS | P0 |
+
 ---
 
 ## Appendix A: Hardware Requirements
@@ -3835,32 +3920,41 @@ fn f026_roofline_bound() {
 | Why 23ms unexplained gap? | Cache effects + remaining Rayon overhead | Q8K path could save 7ms |
 | Why 5x gap to Ollama? | Ollama uses different parallelization (no Rayon) | Investigate llama.cpp approach |
 
-**v4.90.0 CPU Progress (PAR-126)**:
+**v4.94.0 CPU Progress (PAR-126)**:
 - **Model**: Qwen2.5-Coder-1.5B Q4_K_M
-- **Current**: 14.2 tok/s (scratch path, up from 12.8)
-- **Ollama**: 70.59 tok/s
-- **Gap**: 5x slower
+- **Current**: 31.4 tok/s (scratch path, 24 threads)
+- **Ollama**: 71.17 tok/s
+- **Gap**: 2.27x slower (was 4.6x)
 
 **Commits**:
 - `d630426`: Fixed PARALLEL_THRESHOLD mismatch (scratch path was 25% slower)
 - `3cc79e0`: Parallel FFN up/gate with rayon::join (1.6 ms savings)
+- `e0b717e`: Q8K VNNI acceleration for QKV and FFN (5.4 ms savings)
+- `30dc14f`: **Q6_K AVX2 SIMD** - FFN down 897µs→181µs (5x speedup)
 
-**Timing Breakdown** (per token):
-- Estimated matmul time: 40 ms (140 matmuls × 280 us)
-- Estimated non-matmul: 7 ms (RMSNorm, RoPE, attention, SiLU)
-- Total estimated: 47 ms
-- Actual measured: 70 ms
-- **Unexplained gap: 23 ms (50% overhead)**
+**Timing Breakdown** (per token, v4.94.0):
+- Matmul time: 16.6 ms (was 37.1 ms before Q6_K SIMD)
+- Actual measured: 31.87 ms (scratch path, 24 threads)
+- Ollama: 14.05 ms
+- **Gap to Ollama: 2.3x**
+- **Gap to 2x Ollama target: 4.5x speedup needed**
 
-**Rayon Overhead Analysis**:
-- Par dispatch per call: 50-90 us
-- Calls per token: 112 (4 per layer × 28 layers after join optimization)
-- Total Rayon overhead: ~8 ms
+**Key Optimization: Q6_K AVX2 SIMD**:
+- Root cause: Q6_K (FFN down) was using SCALAR code while Q4_K had AVX2
+- FFN down (Q6_K): 897 µs → 181 µs (5x speedup)
+- Per-layer matmul: 1324 µs → 577 µs (2.3x speedup)
+- Full forward: 18.2 tok/s → 31.4 tok/s (67% improvement)
+
+**Thread Count Analysis**:
+- 48 threads: 15.4 tok/s (too much Rayon overhead)
+- 24 threads: 31.4 tok/s (optimal)
+- 16 threads: 17.9 tok/s
+- 8 threads: 12.3 tok/s
 
 **Remaining Optimizations**:
-- Q8K path: 1.2x kernel speedup, ~7 ms savings potential
-- Further Rayon batching: unclear benefit
-- Algorithm changes: need to study llama.cpp approach
+- Parallelize attention over heads (currently sequential)
+- Reduce remaining Rayon dispatch overhead (~15 ms non-matmul time)
+- Study llama.cpp threading model (OpenMP vs Rayon)
 
 **Legend:**
 - ✅ = 2x Ollama achieved (with tok/s measurement)
@@ -4106,6 +4200,22 @@ Step 5: Verify with cbtop (measurement)
 | | **apr-cli** | Errors on `cbtop --headless` without model path. |
 | **Quality Gating** | **pmat** | Enforces `CB-020` (Safety) & `CB-021` (SIMD). |
 | **Visualization** | **presentar** | TUI rendering of the pipeline graph/metrics. |
+
+---
+
+## Appendix E: ML Tuning Taxonomy
+
+**Clarification of "Tuning" scope in this showcase:**
+
+| Level | Type | Scope | Showcase Examples |
+|-------|------|-------|-------------------|
+| **L1** | **Kernel Tuning** | Optimizing CUDA/PTX code for specific GPU constraints (registers, shared mem). | **PAR-081** (Vectorized RmsNorm), **PAR-015** (Workgroup Size), **PAR-125** (Scale Loading). |
+| **L2** | **System Tuning** | Optimizing data flow, batching strategies, and memory management. | **PAR-106** (Continuous Batching), **PAR-119** (Multi-KV Cache), **PAR-121** (Graph Capture). |
+| **L3** | **Model Tuning** | Selecting model architectures and quantization formats for hardware fit. | **PAR-124** (0.5B Q4_0 Analysis), **PAR-120** (Q4K Bandwidth Limit). |
+| **L4** | **Hyperparameter Tuning** | Optimization of learning rates, etc. (Training focus). | *Out of Scope* (See `metaheuristics-spec.md`). |
+| **L5** | **Learned Auto-Tuning** | ML-based prediction of optimal kernels and throughput. | *Future Work* (See `ml-tuner-bricks.md` / `TUNER-SPEC-001`). |
+
+**Key Insight**: This showcase focused heavily on **L1 (Kernel)** and **L2 (System)** tuning to achieve the 2x throughput goal. **L5** represents the institutionalization of this knowledge.
 
 ---
 
