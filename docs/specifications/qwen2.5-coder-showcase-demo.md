@@ -1,7 +1,7 @@
 # Qwen2.5-Coder Showcase: ComputeBrick Architecture
 
-**Version:** 4.98.0
-**Status:** ✅ **GPU 2x OLLAMA ACHIEVED** | 🟡 **CPU 3.26x Gap** (PAR-126: 1.5B=21.8 tok/s vs 71 tok/s target, Root Cause: AVX-512 kernel horizontal sums)
+**Version:** 4.99.0
+**Status:** ✅ **GPU 2x OLLAMA ACHIEVED** | 🟡 **CPU 3.54x Gap** (PAR-126: 1.5B=20.1 tok/s vs 71.2 tok/s target, Root Cause: Cache contention at 11% parallel efficiency)
 **Author:** PAIML Engineering
 **Date:** 2026-01-14
 **PMAT Roadmap ID:** `SHOWCASE-BRICK-001`
@@ -172,6 +172,7 @@
 | 4.95.0 | 2026-01-14 | PAIML Engineering | Architecture Lead | ✅ **COMPLETE** | **ML TUNER IMPLEMENTED (GH#80-84)**: All 5 GitHub issues complete. **T-TUNER-003** (GH#80): TunerDataCollector with APR2 persistence, hardware fingerprinting, auto-train at 1000+ samples. **T-TUNER-004** (GH#81): BrickTuner APR1 format with CRC32 validation, `~/.cache/trueno/tuner_model_v{VERSION}.apr`. **T-TUNER-005** (GH#82): Online learning with UserFeedback enum, ConceptDriftStatus, auto-retrain with feedback weighting. **T-TUNER-006** (GH#83): presentar TUI integration via render_panel/render_compact/render_comparison returning Vec<String>. **T-TUNER-007** (GH#84): 85 falsification tests in tests/tuner_falsification.rs (F001-F100 across 5 categories). All 85 tests pass. |
 | 4.96.0 | 2026-01-14 | PAIML Engineering | Architecture Lead | ✅ **COMPLETE** | **OPTIMIZATION FLYWHEEL DOCUMENTED (§12.10)**: Added OBSERVE→LEARN→PREDICT→ACT closed-loop optimization cycle documentation. Explains how BrickProfiler (OBSERVE) feeds TunerDataCollector (LEARN) which trains BrickTuner (PREDICT) to configure ComputeBrick (ACT). Includes flywheel velocity metrics, concept drift detection, and integration code examples. |
 | 4.97.0 | 2026-01-14 | PAIML Engineering | Architecture Lead | **FIXED** | **PAR-126 CPU MODEL MATRIX + Q8K BUG FIX**: (1) Tested all CPU models: 0.5B=3.4 tok/s (2.5% Ollama), 1.5B=32.2 tok/s (45%), 7B=13.2 tok/s (54%). (2) **Q8K BUG FIXED**: Added `use_q8k_path = hidden_dim.is_multiple_of(256)` check in forward_single_with_scratch - falls back to f32 path for 0.5B (hidden=896). (3) Root cause: 0.5B f32 fallback is 40x slower than Q8K VNNI. |
+| 4.99.0 | 2026-01-14 | PAIML Engineering | Architecture Lead | **ANALYSIS** | **PAR-126 CPU FIVE-WHYS DEEP DIVE**: Implemented V2 AVX-512 kernel with deferred horizontal sums: kernel 225µs→122µs (1.84x faster). Full matmul 35.7ms→30.1ms (1.19x). **NEW ROOT CAUSE**: Cache contention limits parallelization to 3x (11% efficiency). More threads = SLOWER (24 threads: 1.3x, 6 threads: 2.9x). Per-row work (82ns) too fine-grained. **Current: 20.1 tok/s vs Ollama 71.2 tok/s (3.54x gap)**. Path to 2x requires tiled matmul for cache efficiency. |
 
 ---
 
@@ -1362,43 +1363,71 @@ Effective bandwidth ratio: 128 / 1024 = 12.5% of peak
 | **Why simple loop?** | Flash attention designed for prefill | Not adapted for decode | Design |
 | **ROOT CAUSE** | **Need incremental flash attention for decode** | [Dao et al. 2023] | FlashAttention-2 |
 
-### 4.4 Why: CPU 3.26x Slower Than Ollama (PAR-126)
+### 4.4 Why: CPU 3.54x Slower Than Ollama (PAR-126)
 
-> **Five-Whys for CPU 1.5B Performance Gap**
+> **Five-Whys for CPU 1.5B Performance Gap (v4.99.0 Update)**
 
 | Why | Finding | Evidence | Citation |
 |-----|---------|----------|----------|
-| **Why 1.5B CPU at 21.8 tok/s vs 71 tok/s (Ollama)?** | Forward pass takes 45ms instead of 14ms | `profile_full_forward.rs` | REAL Profiling |
-| **Why does forward pass take 45ms?** | Q4K×Q8K matmul kernels take 31.7ms total | `bench_q8k_speedup.rs` | REAL Profiling |
-| **Why do matmuls take 31.7ms instead of ~14ms?** | Q4K×Q8K kernel is 2.25x slower than llama.cpp | 225µs vs ~100µs per matmul | Benchmark |
-| **Why is Q4K×Q8K kernel 2.25x slower?** | Horizontal sums in inner loop (24 per row) | `quantize.rs:2823-2834` | Source Analysis |
-| **ROOT CAUSE** | **AVX-512 kernel does horizontal sums inside loop instead of at end** | llama.cpp defers reduction | GGML comparison |
+| **Why 1.5B CPU at 20.1 tok/s vs 71.2 tok/s (Ollama)?** | Forward pass takes 49.8ms instead of 14ms | `bench_toks.rs` | REAL Profiling |
+| **Why does forward pass take 49.8ms?** | Q4K×Q8K matmuls take 30.1ms, attention+other 19.7ms | `profile_q8k_forward.rs` | REAL Profiling |
+| **Why do matmuls take 30.1ms instead of ~14ms?** | Parallelization limited to 3x speedup | Sequential: 752µs, Parallel: 250µs | REAL Profiling |
+| **Why only 3x parallel speedup with 24 cores?** | Cache contention (11% parallel efficiency) | Theoretical 31µs, Actual 250µs | Benchmark |
+| **ROOT CAUSE** | **Cache contention** - All threads accessing different weight rows causes L3 thrashing | Per-row work (82ns) too fine-grained for parallel dispatch | Architecture Analysis |
 
-**CPU Performance Matrix (REAL MEASUREMENTS):**
+**Five-Whys Iterations (Complete Analysis):**
+
+| Iteration | Hypothesis | Fix Applied | Result | Status |
+|-----------|------------|-------------|--------|--------|
+| **1** | Horizontal sums in inner loop | V2 kernel defers sums | Kernel: 225µs→122µs (1.84x) | ✅ Fixed |
+| **2** | Rayon overhead | Tested chunk sizes 32-512 | No improvement (256 best) | ❌ Not root cause |
+| **3** | Thread count | Manual 6/12/24 threads | 6 best (2.9x), 24 worst (1.3x) | 🔴 More threads = slower |
+| **4** | Memory bandwidth | Measured 66 MB/s vs 9 GB/s | Not memory bound | ❌ Not root cause |
+| **5** | **Cache contention** | — | 11% efficiency = L3 thrashing | ✅ **TRUE ROOT CAUSE** |
+
+**CPU Performance Matrix (REAL MEASUREMENTS v4.99.0):**
 
 | Model | realizar | Ollama | Gap | Root Cause | Status |
 |-------|----------|--------|-----|------------|--------|
 | 0.5B | 3.4 tok/s | 134 tok/s | 39x | Q5_0 format (no SIMD kernel) | 🔴 No kernel |
-| 1.5B | 21.8 tok/s | 71 tok/s | 3.26x | AVX-512 horizontal sums | 🟡 Fixable |
-| 7B | 13.2 tok/s | 24.5 tok/s | 1.86x | AVX-512 horizontal sums | 🟡 Fixable |
+| 1.5B | 20.1 tok/s | 71.2 tok/s | 3.54x | Cache contention (11% efficiency) | 🟡 Need tiled matmul |
+| 7B | 13.2 tok/s | 24.5 tok/s | 1.86x | Cache contention | 🟡 Need tiled matmul |
 
-**Kernel Optimization Path:**
+**Per-Matmul Breakdown (REAL MEASUREMENTS):**
+
+| Operation | Size | Time | % of Layer |
+|-----------|------|------|------------|
+| FFN Up | 8960×1536 | 224 µs | 23% |
+| FFN Gate | 8960×1536 | 223 µs | 23% |
+| FFN Down | 1536×8960 | 230 µs | 24% |
+| Q Proj | 1536×1536 | 114 µs | 12% |
+| Attn Out | 1536×1536 | 109 µs | 11% |
+| K Proj | 256×1536 | 33 µs | 3% |
+| V Proj | 256×1536 | 33 µs | 3% |
+| **Total** | — | **966 µs** | 100% |
+
+**Kernel Optimization Path (COMPLETED):**
 ```
-Current:  Per-chunk horizontal sum → scalar accumulate → next chunk
-Optimal:  Vector accumulate across chunks → single final reduction
+V1 (old):  Per-chunk horizontal sum → scalar accumulate → next chunk
+V2 (new):  Vector accumulate across chunks → single final reduction
 
-Example inner loop:
-  Current (24 horizontal sums):
-    for chunk in 0..4:
-      dot = horizontal_sum(vnni_result)  // EXPENSIVE
-      total += dot * scale
+V2 AVX-512 VNNI Kernel (fused_q4k_q8k_dot_avx512vnni_v2):
+  // Global float accumulator - defer horizontal sum
+  total_acc = _mm256_setzero_ps()
+  for sb in super_blocks:
+    // Process chunks with hadd into lane, NOT to scalar
+    total_acc = _mm256_add_ps(total_acc, result)
+  // ONE horizontal sum at very end
+  return horizontal_sum(total_acc)
 
-  Optimal (1 horizontal sum):
-    acc = _mm512_setzero()
-    for chunk in 0..4:
-      acc = _mm512_add(acc, vnni_result)  // CHEAP
-    total = horizontal_sum(acc) * scale   // ONE sum at end
+Result: 225µs → 122µs per matmul (1.84x kernel speedup)
 ```
+
+**Path to 2x Ollama (142 tok/s):**
+1. ✅ **V2 Kernel**: 1.84x kernel speedup (DONE)
+2. 🔴 **Tiled Matmul**: Cache-blocked 2D tiling like llama.cpp's `ggml_vec_dot_q4_K_q8_K`
+3. 🔴 **Work Stealing**: Process multiple rows per cache line before moving to next
+4. 🔴 **Q5_0 Kernel**: Implement SIMD kernel for 0.5B model
 
 ---
 
