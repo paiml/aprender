@@ -1,7 +1,7 @@
 # Qwen2.5-Coder Showcase: ComputeBrick Architecture
 
-**Version:** 5.13.0
-**Status:** 🚨 **P(-1) MODEL CACHE MISSING** + **GPU REGRESSION** — No model cache management like Ollama's `~/.ollama/models`. GPU produces garbage (CPU works 17.2 tok/s).
+**Version:** 5.14.0
+**Status:** ✅ **P(-1) MODEL CACHE DONE** + 🚨 **GPU REGRESSION** — Model cache via pacha (`apr pull/list/rm`). GPU produces garbage (CPU works 17.2 tok/s).
 **Author:** PAIML Engineering
 **Date:** 2026-01-14
 **PMAT Roadmap ID:** `SHOWCASE-BRICK-001`
@@ -158,11 +158,11 @@ apr rm qwen2.5-coder:7b
 
 | Task | Priority | Component | Status |
 |------|----------|-----------|--------|
-| Create pacha crate scaffold | P(-1) | pacha | 🔴 TODO |
-| Implement ModelRegistry::pull | P(-1) | pacha | 🔴 TODO |
-| HuggingFace API integration | P(-1) | pacha | 🔴 TODO |
-| apr-cli pacha integration | P(-1) | apr-cli | 🔴 TODO |
-| apr pull/list/rm commands | P(-1) | apr-cli | 🔴 TODO |
+| Create pacha crate scaffold | P(-1) | pacha | ✅ EXISTS (v0.2.3) |
+| Implement ModelRegistry::pull | P(-1) | pacha | ✅ ModelFetcher::pull() |
+| HuggingFace API integration | P(-1) | pacha | ✅ ModelResolver via hf:// |
+| apr-cli pacha integration | P(-1) | apr-cli | ✅ DONE |
+| apr pull/list/rm commands | P(-1) | apr-cli | ✅ DONE |
 
 ---
 
@@ -789,6 +789,7 @@ apr-quality-gate:
 | 5.11.0 | 2026-01-14 | PAIML Engineering | Architecture Lead | ✅ **FIVE-WHYS: PROFILING FIX** | **PAR-128 BRICKPROFILER INSTRUMENTATION (§6.9 Mandate)**: Five-Whys revealed `forward_cuda()` was missing BrickProfiler instrumentation - violated §6.9 Sovereign Stack Profiling Mandate. Added all 11 timing points per §12.11: apr.Embed, apr.RmsNorm (2x), apr.QKV, apr.Attention, apr.OProj, apr.Residual (2x), apr.FFN, apr.FinalNorm, apr.LmHead. GPU sync before/after GPU ops for accurate timing. ROOT CAUSE: Incremental changes without spec verification. |
 | 5.12.0 | 2026-01-14 | PAIML Engineering | Architecture Lead | 🚨 **GPU REGRESSION** | **FIVE-WHYS: SINGLE-SEQ GPU PATH BROKEN**: `realizar run --gpu` produces GARBAGE output while CPU (17.2 tok/s) works correctly. **Five-Whys**: (1) WHY garbage? → GPU forward pass returns wrong logits. (2) WHY GPU differs from CPU? → Different code paths (generate_gpu_resident vs CPU generate). (3) WHY only GPU broken? → Likely regression from PAR-108→PAR-121 batching changes (Jan 13). (4) WHY did batching changes break single-seq? → Shared code paths in KV cache or attention kernels. (5) **ROOT CAUSE**: Need bisect between commit 85d6002 (working CORRECTNESS-002 fix at 293 tok/s) and HEAD. **Batched benchmarks may work (isolated test code) but production `run` command broken.** Fixed hardcoded "28 layers" message in cuda.rs:10774. |
 | 5.13.0 | 2026-01-14 | PAIML Engineering | Architecture Lead | 🚨 **P(-1) MODEL CACHE** | **FIVE-WHYS: SOVEREIGN STACK REQUIRES MODEL CACHE**: Ollama has `~/.ollama/models`, we have NOTHING. **Five-Whys**: (1) WHY no model cache? → Realized only handles direct file paths. (2) WHY direct paths only? → Historical: built for benchmarking, not user experience. (3) WHY is this P(-1)? → Sovereign AI stack must be SELF-CONTAINED. (4) WHY self-contained matters? → Ollama users run `ollama run model:tag`, not `ollama run /path/to/model.gguf`. (5) **ROOT CAUSE**: Missing `pacha` (Model Registry) integration. **RECOMMENDATION**: Model cache belongs in `pacha` (from batuta stack architecture), NOT apr-cli or realizar. apr-cli should call `pacha pull model_name` → cache at `~/.cache/aprender/models/` → return path → feed to realizar. |
+| 5.14.0 | 2026-01-14 | PAIML Engineering | Architecture Lead | ✅ **P(-1) DONE** | **MODEL CACHE IMPLEMENTED**: Added pacha dependency to apr-cli. Rewrote `pull.rs` to use `pacha::fetcher::ModelFetcher`. Added `apr list` (alias `apr ls`) and `apr rm` commands. Cache at `~/.cache/pacha/models/`. Commands: `apr pull qwen2:7b`, `apr list`, `apr rm qwen2:7b`. Architecture: pacha=registry, apr-cli=thin wrapper, realizar=inference engine. |
 
 ---
 
