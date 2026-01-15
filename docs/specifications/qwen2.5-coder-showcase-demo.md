@@ -256,9 +256,9 @@ ALL of the following MUST be true:
 | ID | Task | Status | Blocks |
 |----|------|--------|--------|
 | B1 | Fix GPU GGUF kernel (QKV bias) | ✅ DONE | ~~chat, generate, serve GPU~~ |
-| B2 | Implement APR→realizar inference path | ❌ TODO | all .apr modalities |
-| B3 | Implement apr serve (full HTTP) | ❌ TODO | serve benchmarks |
-| B4 | Achieve 2X CPU performance | ❌ TODO | all CPU benchmarks |
+| B2 | Implement APR→realizar inference path | ✅ DONE (817.2 tok/s GPU) | ~~all .apr modalities~~ |
+| B3 | Implement apr serve (full HTTP) | ✅ DONE (--gpu --batch) | ~~serve benchmarks~~ |
+| B4 | Achieve 2X CPU performance | 🔄 IN PROGRESS | all CPU benchmarks |
 | B5 | Add --benchmark flag to chat/run | ✅ DONE | ~~benchmark script~~ |
 | B6 | Add --force-cpu flag consistency | ❌ TODO | CPU benchmarks |
 | B7 | Implement apr pull | ❌ TODO | pull benchmarks |
@@ -304,8 +304,8 @@ P5: Secondary matrix           → SafeTensors optimization
 
 | Format | GPU | CPU | Target | Status |
 |--------|-----|-----|--------|--------|
-| GGUF | **824.7 tok/s (2.83x)** | ? | 582 tok/s (2X) | ✅ EXCEEDED |
-| APR | **788.6 tok/s (2.71x)** | ❌ 0 tok/s | 582 tok/s (2X) | ✅ GPU EXCEEDED |
+| GGUF | **824.7 tok/s (2.83x)** | 1.8 tok/s (1.5B) | 582 tok/s (2X) | ✅ EXCEEDED |
+| APR | **817.2 tok/s (2.81x)** | 25.3 tok/s (0.5B) | 582 tok/s (2X) | ✅ GPU EXCEEDED |
 
 ### APR GPU Benchmark Results (2026-01-15)
 ```
@@ -322,7 +322,16 @@ P5: Secondary matrix           → SafeTensors optimization
 ```
 
 ### Next Action
-**P4: APR CPU inference** — Implement trueno SIMD path for APR format
+**P4: APR CPU inference** — APR uses trueno SIMD (25.3 tok/s on 0.5B), need 1.5B benchmark
+
+### B3 Completion (2026-01-15)
+```
+apr serve --gpu --batch now working:
+  - CUDA enabled on GPU 0
+  - GPU cache warmup: 3.08 GB (28 layers)
+  - Batch processor: 50ms window, 32 optimal batch
+  - Endpoints: /health, /v1/gpu/status, /v1/completions, /v1/batch/completions
+```
 
 ---
 
