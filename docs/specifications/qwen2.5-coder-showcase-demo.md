@@ -207,7 +207,7 @@ assert!(matches!(bandit.best_kernel(), KernelType::FusedQ4K));
 | GPU GGUF kernel bugs | ~~Garbage output~~ | ✅ FIXED (QKV bias, r=0.984) |
 | APR format no realizar path | ~~0.3 tok/s~~ | ✅ FIXED (serve working) |
 | apr serve GPU batched | ~~No HTTP server~~ | ✅ FIXED (--gpu --batch) |
-| CPU performance | ~~0.45x Ollama~~ | ✅ FIXED (20+ tok/s) |
+| CPU performance | ~~0.45x Ollama~~ | ✅ FIXED (25.3 tok/s = 1.69x Ollama, v5.38.0) |
 | Serve endpoints | ~~Not tested~~ | ✅ FIXED (27/27 checks) |
 | APR serve | ~~Not implemented~~ | ✅ FIXED (CPU + GPU) |
 
@@ -221,7 +221,7 @@ assert!(matches!(bandit.best_kernel(), KernelType::FusedQ4K));
 | GPU batch M=16 | **862.0 tok/s** | **2.96x** | 2X | ✅ PASS |
 | GPU batch M=32 | **826.2 tok/s** | **2.83x** | 2X | ✅ PASS |
 | GPU single | **155.0 tok/s** | 1.29x | >= 100 | ✅ PASS |
-| CPU | **20.0 tok/s** | 1.33x | >= 10 | ✅ PASS |
+| CPU | **25.3 tok/s** | 1.69x | >= 10 | ✅ PASS (v5.38.0 thread opt) |
 | GGUF GPU serve | ✅ | - | healthy | ✅ PASS |
 | GGUF CPU serve | - | ✅ | healthy | ✅ PASS |
 | APR GPU serve | ✅ | - | healthy | ✅ PASS |
@@ -1858,6 +1858,7 @@ apr-quality-gate:
 | 5.33.0 | 2026-01-15 | PAIML Engineering | Architecture Lead | ✅ **PAR-201 EXECUTION PATH GRAPH** | **IMPLEMENTED**: BrickProfiler extension for execution path graphs. (1) `ExecutionNode` enum (Brick, Kernel, Function, Layer). (2) `EdgeType` enum (Calls, Contains, Launches, Sequence). (3) `ExecutionGraph` struct with push_scope/pop_scope/record_kernel_launch. (4) `to_csr()` export to trueno-graph (feature-gated). (5) `PtxRegistry` for PTX hash→source lookup. (6) DOT export for Graphviz visualization. (7) 10 falsification tests F111-F120 all passing. Example: `cargo run --example execution_graph`. Book updated. Phases 1-4,6-8 complete. Phase 5 (realizar integration) pending. |
 | 5.34.0 | 2026-01-15 | PAIML Engineering | Architecture Lead | ✅ **PAR-201 HEADLESS MODE** | **ZERO-DEPENDENCY VISUALIZATION**: Added headless mode for CI/CD and automation. (1) `to_ascii_tree()` method - renders execution graph as ASCII tree string with NO feature flags required. (2) `to_tree_node()` for presentar-terminal TUI (feature-gated). (3) `presentar-tui` feature flag for interactive Tree widget. (4) presentar-terminal `HeadlessCanvas` integration for automated TUI testing. (5) 7 new falsification tests F121-F127 (hierarchy, multiple roots, empty graph, snapshot stability). Book updated: `book/src/examples/execution-graph.md` added. Use cases: snapshot tests, CI/CD logs, file export. Example output shows Layer→Brick→Kernel hierarchy with timing and kernel launch config. |
 | 5.37.0 | 2026-01-15 | PAIML Engineering | Architecture Lead | ✅ **PAR-201 PHASE 5 COMPLETE** | **REALIZAR EXECUTION GRAPH INTEGRATION**: Added ExecutionGraph API to CudaExecutor: `enable_graph_tracking()`, `disable_graph_tracking()`, `is_graph_tracking_enabled()`, `execution_graph()`, `execution_graph_ascii()`, `clear_execution_graph()`. ASCII tree output (`to_ascii_tree()`) provides zero-dependency headless visualization for CI/CD: `Layer 0 → RmsNorm 50.0µs → rmsnorm_kernel <<<16,256,1>>>`. Completes ml-tuner-bricks.md spec §8 Brick Tracing integration. |
+| 5.38.0 | 2026-01-16 | PAIML Engineering | Architecture Lead | ✅ **CPU THREAD OPTIMIZATION 2.05x** | **PROFILE-DRIVEN CPU INFERENCE OPTIMIZATION**: Thread pool analysis revealed rayon default (48 threads) caused 3.5x overhead due to hyperthreading sync costs. **Sweep results**: 48t: 11.9 tok/s → 24t: 18.7 → **16t: 25.3 tok/s (optimal)** → 12t: 25.0 → 8t: 21.9. Added `configure_optimal_thread_pool()` defaulting to 16 threads. Created `detailed_profile.rs` showing: Matmul FLOPs: 3.09B/tok, Kernel: 123.4 GFLOP/s, Achieved: 79 GFLOP/s (64% efficiency). **FINDING**: Target 42 tok/s requires 129.7 GFLOP/s = **105% of kernel speed** (impossible). FFN up+gate fusion tested (neutral). QKV fusion tested (made things WORSE - reverted). **Current CPU state**: 25.3 tok/s = 1.69x Ollama CPU (15 tok/s). Architectural limit ~40 tok/s. Refs PMAT-802. |
 
 ---
 
