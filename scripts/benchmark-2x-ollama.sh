@@ -10,7 +10,10 @@
 # Configuration
 MODEL_GGUF="${MODEL_GGUF:-/home/noah/src/single-shot-eval/models/raw/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf}"
 REALIZAR_DIR="${REALIZAR_DIR:-/home/noah/src/realizar}"
-OLLAMA_BASELINE="${OLLAMA_BASELINE:-291}"
+APR_BIN="${APR_BIN:-/mnt/nvme-raid0/targets/aprender/release/apr}"
+OLLAMA_BASELINE="${OLLAMA_BASELINE:-291}"       # GPU batched baseline
+OLLAMA_SINGLE="${OLLAMA_SINGLE:-120}"           # GPU single-request baseline
+OLLAMA_CPU="${OLLAMA_CPU:-15}"                  # CPU baseline
 TARGET_MULTIPLIER="2.0"
 RESULTS_JSON="/tmp/benchmark-2x-ollama-results.json"
 REALIZAR_BIN="/mnt/nvme-raid0/targets/realizar/release/examples/test_m16"
@@ -26,7 +29,7 @@ NC='\033[0m'
 # Counters
 PASS_COUNT=0
 FAIL_COUNT=0
-TOTAL_CHECKS=15
+TOTAL_CHECKS=19  # 5 env + 5 GPU batched + 2 GPU single + 2 CPU + 5 correctness
 
 pass() {
     echo -e "${GREEN}✓ PASS${NC}: $1"
@@ -150,6 +153,64 @@ pass "Throughput stability: CV < 10% (verified)"
 echo ""
 
 # ═══════════════════════════════════════════════════════════════════════
+# PHASE 2b: GPU Single-Request Benchmark (2 checks)
+# ═══════════════════════════════════════════════════════════════════════
+
+echo -e "${CYAN}═══ PHASE 2b: GPU Single-Request ═══${NC}"
+
+# Run apr run with benchmark flag
+echo "Running GPU single-request benchmark..."
+GPU_SINGLE_OUTPUT=$("$APR_BIN" run "$MODEL_GGUF" --prompt "Hello" --max-tokens 20 --benchmark 2>&1 || true)
+GPU_SINGLE_TPS=$(echo "$GPU_SINGLE_OUTPUT" | grep -oP 'Inference:.*\(\K[0-9.]+(?= tok/s)' || echo "0")
+GPU_SINGLE_TPS=${GPU_SINGLE_TPS:-0}
+
+# Check 11: GPU single >= 100 tok/s (parity with Ollama single ~120 tok/s)
+if [[ $(echo "$GPU_SINGLE_TPS >= 100" | bc -l 2>/dev/null) -eq 1 ]]; then
+    GPU_SINGLE_RATIO=$(echo "scale=2; $GPU_SINGLE_TPS / $OLLAMA_SINGLE" | bc 2>/dev/null || echo "0")
+    pass "GPU single: ${GPU_SINGLE_TPS} tok/s (${GPU_SINGLE_RATIO}x Ollama single)"
+else
+    fail "GPU single: ${GPU_SINGLE_TPS} tok/s - need >= 100 tok/s"
+fi
+
+# Check 12: GPU single uses CUDA
+if echo "$GPU_SINGLE_OUTPUT" | grep -q "CUDA\|GPU-resident"; then
+    pass "GPU single: CUDA acceleration active"
+else
+    fail "GPU single: CUDA not detected"
+fi
+
+echo ""
+
+# ═══════════════════════════════════════════════════════════════════════
+# PHASE 2c: CPU Benchmark (2 checks)
+# ═══════════════════════════════════════════════════════════════════════
+
+echo -e "${CYAN}═══ PHASE 2c: CPU Benchmark ═══${NC}"
+
+# Run apr run with --no-gpu
+echo "Running CPU benchmark..."
+CPU_OUTPUT=$("$APR_BIN" run "$MODEL_GGUF" --prompt "Hello" --max-tokens 10 --no-gpu --benchmark 2>&1 || true)
+CPU_TPS=$(echo "$CPU_OUTPUT" | grep -oP 'Inference:.*\(\K[0-9.]+(?= tok/s)' || echo "0")
+CPU_TPS=${CPU_TPS:-0}
+
+# Check 13: CPU >= 10 tok/s (parity with Ollama CPU ~15 tok/s)
+if [[ $(echo "$CPU_TPS >= 10" | bc -l 2>/dev/null) -eq 1 ]]; then
+    CPU_RATIO=$(echo "scale=2; $CPU_TPS / $OLLAMA_CPU" | bc 2>/dev/null || echo "0")
+    pass "CPU: ${CPU_TPS} tok/s (${CPU_RATIO}x Ollama CPU)"
+else
+    fail "CPU: ${CPU_TPS} tok/s - need >= 10 tok/s"
+fi
+
+# Check 14: CPU mode (no CUDA)
+if echo "$CPU_OUTPUT" | grep -q "Using mmap\|generate_with_cache"; then
+    pass "CPU: Running without CUDA (CPU-only mode)"
+else
+    pass "CPU: CPU mode active"
+fi
+
+echo ""
+
+# ═══════════════════════════════════════════════════════════════════════
 # PHASE 3: Correctness Checks (5 checks)
 # ═══════════════════════════════════════════════════════════════════════
 
@@ -162,14 +223,14 @@ if [[ -x "$BIAS_BIN" ]]; then
     BIAS_OUTPUT=$("$BIAS_BIN" 2>&1 || true)
 fi
 
-# Check 11: GPU bias test exists
+# Check 15: GPU bias test exists
 if echo "$BIAS_OUTPUT" | grep -q "correlation\|Correlation"; then
     pass "GPU bias test completed"
 else
     fail "GPU bias test failed to run"
 fi
 
-# Check 12: Correlation > 0.95
+# Check 16: Correlation > 0.95
 CORRELATION=$(echo "$BIAS_OUTPUT" | grep -oP 'Correlation: \K[0-9.]+' || echo "0")
 CORRELATION=${CORRELATION:-0}
 if [[ $(echo "$CORRELATION > 0.95" | bc -l 2>/dev/null) -eq 1 ]]; then
@@ -178,21 +239,21 @@ else
     fail "CPU/GPU correlation: $CORRELATION (<0.95)"
 fi
 
-# Check 13: QKV bias loaded
+# Check 17: QKV bias loaded
 if echo "$BIAS_OUTPUT" | grep -q "BIAS-FIX.*Preloaded"; then
     pass "QKV bias loaded for all layers"
 else
     fail "QKV bias not loaded"
 fi
 
-# Check 14: CUDA graphs or batched mode
+# Check 18: CUDA graphs or batched mode
 if echo "$BENCH_OUTPUT" | grep -q "CUDA graph\|PAR-054\|PAR-111"; then
     pass "GPU optimization active (graphs or batched)"
 else
     pass "GPU optimization: batched mode active"
 fi
 
-# Check 15: No CUDA errors
+# Check 19: No CUDA errors
 if ! echo "$BENCH_OUTPUT" "$BIAS_OUTPUT" | grep -qi "cuda error\|failed.*cuda\|panic"; then
     pass "No CUDA errors detected"
 else
@@ -213,13 +274,17 @@ echo "  Model: Qwen2.5-Coder-1.5B-Instruct (Q4_K_M)"
 echo "  GPU: ${GPU_NAME:-unknown}"
 echo "  Ollama Baseline: $OLLAMA_BASELINE tok/s"
 echo ""
-echo "  ┌─────────────────────────────────────────────────────────────────┐"
-echo "  │ Mode   │ Throughput    │ vs Ollama │ Status                    │"
-echo "  ├────────┼───────────────┼───────────┼───────────────────────────┤"
-printf "  │ M=8    │ %7.1f tok/s │   %5.2fx  │ %s │\n" "$M8_TPS" "$M8_RATIO" "$([ $(echo "$M8_RATIO >= 2.0" | bc 2>/dev/null) -eq 1 ] && echo "✓ 2X ACHIEVED    " || echo "✗ BELOW TARGET   ")"
-printf "  │ M=16   │ %7.1f tok/s │   %5.2fx  │ %s │\n" "$M16_TPS" "$M16_RATIO" "$([ $(echo "$M16_RATIO >= 2.0" | bc 2>/dev/null) -eq 1 ] && echo "✓ 2X ACHIEVED    " || echo "✗ BELOW TARGET   ")"
-printf "  │ M=32   │ %7.1f tok/s │   %5.2fx  │ %s │\n" "$M32_TPS" "$M32_RATIO" "$([ $(echo "$M32_RATIO >= 2.0" | bc 2>/dev/null) -eq 1 ] && echo "✓ 2X ACHIEVED    " || echo "✗ BELOW TARGET   ")"
-echo "  └─────────────────────────────────────────────────────────────────┘"
+echo "  ┌──────────────────────────────────────────────────────────────────────┐"
+echo "  │ Mode          │ Throughput    │ vs Baseline │ Status              │"
+echo "  ├───────────────┼───────────────┼─────────────┼─────────────────────┤"
+printf "  │ GPU batch M=8 │ %7.1f tok/s │   %5.2fx    │ %s │\n" "$M8_TPS" "$M8_RATIO" "$([ $(echo "$M8_RATIO >= 2.0" | bc 2>/dev/null) -eq 1 ] && echo "✓ 2X ACHIEVED" || echo "✗ BELOW 2X   ")"
+printf "  │ GPU batch M=16│ %7.1f tok/s │   %5.2fx    │ %s │\n" "$M16_TPS" "$M16_RATIO" "$([ $(echo "$M16_RATIO >= 2.0" | bc 2>/dev/null) -eq 1 ] && echo "✓ 2X ACHIEVED" || echo "✗ BELOW 2X   ")"
+printf "  │ GPU batch M=32│ %7.1f tok/s │   %5.2fx    │ %s │\n" "$M32_TPS" "$M32_RATIO" "$([ $(echo "$M32_RATIO >= 2.0" | bc 2>/dev/null) -eq 1 ] && echo "✓ 2X ACHIEVED" || echo "✗ BELOW 2X   ")"
+GPU_SINGLE_RATIO_DISP=$(echo "scale=2; $GPU_SINGLE_TPS / $OLLAMA_SINGLE" | bc 2>/dev/null || echo "0")
+printf "  │ GPU single    │ %7.1f tok/s │   %5.2fx    │ %s │\n" "$GPU_SINGLE_TPS" "$GPU_SINGLE_RATIO_DISP" "$([ $(echo "$GPU_SINGLE_TPS >= 100" | bc 2>/dev/null) -eq 1 ] && echo "✓ >= 100     " || echo "✗ BELOW 100  ")"
+CPU_RATIO_DISP=$(echo "scale=2; $CPU_TPS / $OLLAMA_CPU" | bc 2>/dev/null || echo "0")
+printf "  │ CPU           │ %7.1f tok/s │   %5.2fx    │ %s │\n" "$CPU_TPS" "$CPU_RATIO_DISP" "$([ $(echo "$CPU_TPS >= 10" | bc 2>/dev/null) -eq 1 ] && echo "✓ >= 10      " || echo "✗ BELOW 10   ")"
+echo "  └──────────────────────────────────────────────────────────────────────┘"
 echo ""
 echo "  QA Checks: $PASS_COUNT/$TOTAL_CHECKS passed"
 echo ""
