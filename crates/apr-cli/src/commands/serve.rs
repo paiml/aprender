@@ -924,16 +924,26 @@ fn start_realizar_server(model_path: &Path, config: &ServerConfig) -> Result<()>
     }
 }
 
-/// Start APR v2 model server
+/// Start APR v2 model server with full inference support
+///
+/// Supports both transformer inference (generate) and metadata inspection.
+/// GPU acceleration available via --gpu flag.
 #[cfg(feature = "inference")]
 fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
-    use axum::{routing::get, Json, Router};
-    use realizar::apr::AprV2Model;
-    use serde::Serialize;
+    use axum::{
+        extract::State,
+        http::StatusCode,
+        response::IntoResponse,
+        routing::{get, post},
+        Json, Router,
+    };
+    use realizar::apr::AprModel;
+    use serde::{Deserialize, Serialize};
+    use std::sync::Mutex;
 
-    // Load APR v2 model
+    // Load APR model
     println!("{}", "Loading APR v2 model...".dimmed());
-    let model = AprV2Model::load(model_path)
+    let model = AprModel::load(model_path)
         .map_err(|e| CliError::ModelLoadFailed(format!("Failed to load APR v2 model: {e}")))?;
 
     let model_type = model
@@ -948,11 +958,7 @@ fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
         .unwrap_or_else(|| "unknown".to_string());
     let tensor_count = model.tensor_count();
     let param_count = model.estimated_parameters();
-    let tensor_names: Vec<String> = model
-        .tensor_names()
-        .iter()
-        .map(|s| (*s).to_string())
-        .collect();
+    let is_transformer = model.metadata().is_transformer();
 
     println!(
         "{}",
@@ -963,53 +969,200 @@ fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
         .green()
     );
 
-    // Create tokio runtime and run server
+    if is_transformer {
+        println!("{}", "Transformer model detected - inference enabled".cyan());
+    }
+
+    // Load tokenizer if available
+    let tokenizer_info = AprModel::load_tokenizer_from_sibling(model_path);
+    let has_tokenizer = tokenizer_info.is_some();
+    if has_tokenizer {
+        println!("{}", "Tokenizer loaded from sibling file".dimmed());
+    }
+
+    // Determine GPU vs CPU mode
+    let use_gpu = config.gpu && !config.no_gpu;
+
+    #[cfg(feature = "cuda")]
+    if use_gpu && is_transformer {
+        println!("{}", "GPU mode enabled for APR inference".cyan());
+        return start_apr_server_gpu(model_path, model, config, tokenizer_info);
+    }
+
+    // CPU path
+    println!("{}", "Using CPU inference".dimmed());
+
+    // Create tokio runtime
     let runtime = tokio::runtime::Runtime::new()
         .map_err(|e| CliError::InferenceFailed(format!("Failed to create runtime: {e}")))?;
 
     let bind_addr = config.bind_addr();
-    let enable_metrics = config.metrics;
+    let model_path_clone = model_path.to_path_buf();
 
-    #[derive(Clone, Serialize)]
-    struct ModelInfo {
+    // Shared state for inference
+    #[derive(Clone)]
+    struct AprState {
+        model_path: std::path::PathBuf,
         model_type: String,
         architecture: String,
-        tensor_count: u32,
-        estimated_parameters: usize,
-        tensors: Vec<String>,
+        is_transformer: bool,
+        tokenizer_info: Option<(Vec<String>, Option<u32>, Option<u32>)>,
     }
+
+    let state = AprState {
+        model_path: model_path_clone,
+        model_type: model_type.clone(),
+        architecture: architecture.clone(),
+        is_transformer,
+        tokenizer_info,
+    };
 
     #[derive(Clone, Serialize)]
     struct HealthResponse {
         status: String,
         model_type: String,
         architecture: String,
+        inference_enabled: bool,
     }
 
-    let model_info = ModelInfo {
-        model_type: model_type.clone(),
-        architecture: architecture.clone(),
-        tensor_count,
-        estimated_parameters: param_count,
-        tensors: tensor_names.into_iter().take(50).collect(),
-    };
+    #[derive(Deserialize)]
+    struct CompletionRequest {
+        prompt: String,
+        #[serde(default = "default_max_tokens")]
+        max_tokens: usize,
+        #[serde(default)]
+        temperature: Option<f32>,
+    }
 
-    let health_info = HealthResponse {
-        status: "healthy".to_string(),
-        model_type: model_type.clone(),
-        architecture: architecture.clone(),
-    };
+    fn default_max_tokens() -> usize {
+        32
+    }
+
+    #[derive(Serialize)]
+    struct CompletionResponse {
+        text: String,
+        tokens_generated: usize,
+        latency_ms: u64,
+        tok_per_sec: f64,
+    }
 
     runtime.block_on(async move {
+        let state_for_health = state.clone();
+        let state_for_completions = Arc::new(Mutex::new(state.clone()));
+
         let app = Router::new()
             .route(
                 "/health",
-                get(move || async move { Json(health_info.clone()) }),
+                get(move || {
+                    let s = state_for_health.clone();
+                    async move {
+                        Json(HealthResponse {
+                            status: "healthy".to_string(),
+                            model_type: s.model_type.clone(),
+                            architecture: s.architecture.clone(),
+                            inference_enabled: s.is_transformer,
+                        })
+                    }
+                }),
             )
-            .route("/model", get(move || async move { Json(model_info) }))
+            .route(
+                "/v1/completions",
+                post(move |Json(req): Json<CompletionRequest>| {
+                    let state = state_for_completions.clone();
+                    async move {
+                        let s = state.lock().unwrap().clone();
+
+                        if !s.is_transformer {
+                            return (
+                                StatusCode::BAD_REQUEST,
+                                Json(serde_json::json!({
+                                    "error": "Model is not a transformer, inference not supported"
+                                })),
+                            )
+                                .into_response();
+                        }
+
+                        // Load model for inference
+                        let start = Instant::now();
+                        let model = match AprModel::load(&s.model_path) {
+                            Ok(m) => m,
+                            Err(e) => {
+                                return (
+                                    StatusCode::INTERNAL_SERVER_ERROR,
+                                    Json(serde_json::json!({"error": format!("Model load failed: {e}")})),
+                                )
+                                    .into_response();
+                            }
+                        };
+
+                        // Encode prompt
+                        let input_tokens = if let Some(tokens) =
+                            AprModel::encode_text(&s.model_path, &req.prompt)
+                        {
+                            tokens
+                        } else {
+                            // Fallback: BOS token
+                            vec![1u32]
+                        };
+
+                        let eos_id = match &s.tokenizer_info {
+                            Some((_, _, Some(e))) => *e,
+                            _ => 2,
+                        };
+
+                        // Generate
+                        let gen_start = Instant::now();
+                        let max_tokens = req.max_tokens.min(128);
+                        let output_tokens = match model.generate(
+                            &input_tokens,
+                            max_tokens,
+                            Some(eos_id),
+                        ) {
+                            Ok(t) => t,
+                            Err(e) => {
+                                return (
+                                    StatusCode::INTERNAL_SERVER_ERROR,
+                                    Json(serde_json::json!({"error": format!("Generation failed: {e}")})),
+                                )
+                                    .into_response();
+                            }
+                        };
+                        let gen_time = gen_start.elapsed();
+
+                        // Decode output
+                        let new_tokens = if output_tokens.len() > input_tokens.len() {
+                            &output_tokens[input_tokens.len()..]
+                        } else {
+                            &output_tokens[..]
+                        };
+
+                        let text = if let Some((vocab, _, _)) = &s.tokenizer_info {
+                            AprModel::decode_tokens(vocab, new_tokens)
+                        } else {
+                            format!("{:?}", new_tokens)
+                        };
+
+                        let tokens_generated = new_tokens.len();
+                        let latency_ms = start.elapsed().as_millis() as u64;
+                        let tok_per_sec = if gen_time.as_secs_f64() > 0.0 {
+                            tokens_generated as f64 / gen_time.as_secs_f64()
+                        } else {
+                            0.0
+                        };
+
+                        Json(CompletionResponse {
+                            text,
+                            tokens_generated,
+                            latency_ms,
+                            tok_per_sec,
+                        })
+                        .into_response()
+                    }
+                }),
+            )
             .route(
                 "/",
-                get(|| async { "APR v2 Model Server - GET /health, /model" }),
+                get(|| async { "APR v2 Inference Server - POST /v1/completions" }),
             );
 
         let listener = tokio::net::TcpListener::bind(&bind_addr)
@@ -1019,22 +1172,208 @@ fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
         println!();
         println!(
             "{}",
-            format!("Server listening on http://{}", bind_addr)
+            format!("APR Inference Server listening on http://{}", bind_addr)
                 .green()
                 .bold()
         );
         println!();
         println!("{}", "Endpoints:".cyan());
-        println!("  GET  /health         - Health check");
-        println!("  GET  /model          - Model info (tensors, metadata)");
-        if enable_metrics {
-            println!("  GET  /metrics        - Prometheus metrics");
-        }
+        println!("  GET  /health              - Health check");
+        println!("  POST /v1/completions      - Text generation");
         println!();
         println!(
             "{}",
-            "Note: APR v2 is tensor-based. For LLM inference, use GGUF or SafeTensors.".yellow()
+            format!("Mode: CPU | Transformer: {}", is_transformer).dimmed()
         );
+        println!("{}", "Press Ctrl+C to stop".dimmed());
+
+        axum::serve(listener, app)
+            .with_graceful_shutdown(shutdown_signal())
+            .await
+            .map_err(|e| CliError::InferenceFailed(format!("Server error: {e}")))?;
+
+        println!();
+        println!("{}", "Server stopped".yellow());
+        Ok(())
+    })
+}
+
+/// Start APR server with GPU acceleration
+#[cfg(all(feature = "inference", feature = "cuda"))]
+fn start_apr_server_gpu(
+    model_path: &Path,
+    model: realizar::apr::AprModel,
+    config: &ServerConfig,
+    tokenizer_info: Option<(Vec<String>, Option<u32>, Option<u32>)>,
+) -> Result<()> {
+    use axum::{
+        extract::State,
+        http::StatusCode,
+        response::IntoResponse,
+        routing::{get, post},
+        Json, Router,
+    };
+    use realizar::apr::AprV2ModelCuda;
+    use serde::{Deserialize, Serialize};
+    use std::sync::Mutex;
+
+    // Initialize CUDA model
+    println!("{}", "Initializing CUDA...".dimmed());
+    let cuda_model = AprV2ModelCuda::new(model, 0)
+        .map_err(|e| CliError::InferenceFailed(format!("CUDA init failed: {e}")))?;
+
+    println!(
+        "{}",
+        format!(
+            "GPU: {} ({} MB VRAM)",
+            cuda_model.device_name(),
+            cuda_model.vram_mb()
+        )
+        .green()
+    );
+
+    let runtime = tokio::runtime::Runtime::new()
+        .map_err(|e| CliError::InferenceFailed(format!("Failed to create runtime: {e}")))?;
+
+    let bind_addr = config.bind_addr();
+    let model_path_clone = model_path.to_path_buf();
+
+    #[derive(Deserialize)]
+    struct CompletionRequest {
+        prompt: String,
+        #[serde(default = "default_max_tokens_gpu")]
+        max_tokens: usize,
+    }
+
+    fn default_max_tokens_gpu() -> usize {
+        32
+    }
+
+    #[derive(Serialize)]
+    struct CompletionResponse {
+        text: String,
+        tokens_generated: usize,
+        latency_ms: u64,
+        tok_per_sec: f64,
+    }
+
+    // Wrap CUDA model in Arc<Mutex> for shared access
+    let cuda_model = Arc::new(Mutex::new(cuda_model));
+    let tokenizer_info = Arc::new(tokenizer_info);
+    let model_path_arc = Arc::new(model_path_clone);
+
+    runtime.block_on(async move {
+        let cuda_for_completions = cuda_model.clone();
+        let tok_for_completions = tokenizer_info.clone();
+        let path_for_completions = model_path_arc.clone();
+
+        let app = Router::new()
+            .route(
+                "/health",
+                get(|| async {
+                    Json(serde_json::json!({
+                        "status": "healthy",
+                        "gpu": true
+                    }))
+                }),
+            )
+            .route(
+                "/v1/completions",
+                post(move |Json(req): Json<CompletionRequest>| {
+                    let cuda = cuda_for_completions.clone();
+                    let tok_info = tok_for_completions.clone();
+                    let model_path = path_for_completions.clone();
+                    async move {
+                        use realizar::apr::AprModel;
+
+                        let start = Instant::now();
+
+                        // Encode prompt
+                        let input_tokens =
+                            if let Some(tokens) = AprModel::encode_text(&model_path, &req.prompt) {
+                                tokens
+                            } else {
+                                vec![1u32]
+                            };
+
+                        let eos_id = match tok_info.as_ref() {
+                            Some((_, _, Some(e))) => *e,
+                            _ => 2,
+                        };
+
+                        // Generate on GPU
+                        let gen_start = Instant::now();
+                        let max_tokens = req.max_tokens.min(128);
+                        let output_tokens = {
+                            let mut model = cuda.lock().unwrap();
+                            match model.generate_cuda(
+                                &input_tokens,
+                                max_tokens,
+                                eos_id,
+                            ) {
+                                Ok(t) => t,
+                                Err(e) => {
+                                    return (
+                                        StatusCode::INTERNAL_SERVER_ERROR,
+                                        Json(serde_json::json!({"error": format!("GPU generation failed: {e}")})),
+                                    )
+                                        .into_response();
+                                }
+                            }
+                        };
+                        let gen_time = gen_start.elapsed();
+
+                        // Decode
+                        let new_tokens = if output_tokens.len() > input_tokens.len() {
+                            &output_tokens[input_tokens.len()..]
+                        } else {
+                            &output_tokens[..]
+                        };
+
+                        let text = if let Some((vocab, _, _)) = tok_info.as_ref() {
+                            AprModel::decode_tokens(vocab, new_tokens)
+                        } else {
+                            format!("{:?}", new_tokens)
+                        };
+
+                        let tokens_generated = new_tokens.len();
+                        let latency_ms = start.elapsed().as_millis() as u64;
+                        let tok_per_sec = if gen_time.as_secs_f64() > 0.0 {
+                            tokens_generated as f64 / gen_time.as_secs_f64()
+                        } else {
+                            0.0
+                        };
+
+                        Json(CompletionResponse {
+                            text,
+                            tokens_generated,
+                            latency_ms,
+                            tok_per_sec,
+                        })
+                        .into_response()
+                    }
+                }),
+            )
+            .route(
+                "/",
+                get(|| async { "APR v2 GPU Inference Server - POST /v1/completions" }),
+            );
+
+        let listener = tokio::net::TcpListener::bind(&bind_addr)
+            .await
+            .map_err(|e| CliError::InferenceFailed(format!("Failed to bind: {e}")))?;
+
+        println!();
+        println!(
+            "{}",
+            format!("APR GPU Inference Server listening on http://{}", bind_addr)
+                .green()
+                .bold()
+        );
+        println!();
+        println!("{}", "Endpoints:".cyan());
+        println!("  GET  /health              - Health check");
+        println!("  POST /v1/completions      - GPU text generation");
         println!();
         println!("{}", "Press Ctrl+C to stop".dimmed());
 
