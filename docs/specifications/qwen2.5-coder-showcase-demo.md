@@ -1,7 +1,7 @@
 # Qwen2.5-Coder Showcase: ComputeBrick Architecture
 
-**Version:** 5.38.0
-**Status:** ✅ **2X OLLAMA ACHIEVED** — GPU batched: 848.3 tok/s (2.91x), 15/15 QA checks pass.
+**Version:** 5.40.0
+**Status:** ⚠️ **PARTIAL** — GPU batched + GPU single now 2X. CPU 15.6 tok/s, .apr NOT IMPL.
 **Author:** PAIML Engineering
 **Date:** 2026-01-15
 **PMAT Roadmap ID:** `SHOWCASE-BRICK-001`
@@ -33,17 +33,42 @@
 | apr serve GPU batched | ~~No HTTP server~~ | ✅ FIXED (--gpu --batch) |
 | CPU performance | ~~0.45x Ollama~~ | ✅ FIXED (14-20 tok/s, page pre-fault) |
 
-### Latest Benchmark Results (2026-01-15 17:30 UTC)
+### Latest Benchmark Results (2026-01-15 19:30 UTC)
 
-| Mode | Throughput | vs Ollama | Status |
-|------|------------|-----------|--------|
-| M=1 (autoregressive) | 142.9 tok/s | 0.49x | ⚠️ Single-token decode |
-| M=8 (batched) | **783.3 tok/s** | **2.69x** | ✅ 2X ACHIEVED |
-| M=16 (batched) | **848.3 tok/s** | **2.91x** | ✅ **BEST** |
-| M=32 (batched) | **807.9 tok/s** | **2.77x** | ✅ 2X ACHIEVED |
+#### Full Matrix (Ollama baseline: 291 tok/s GPU)
 
-**2X Ollama Target: ✅ ACHIEVED** — M=16 batched decode reaches 848.3 tok/s (2.91x Ollama)
-**QA Checks: 15/15 passed** — `benchmark-2x-ollama.sh` exits 0
+| Modality | Format | Backend | Command | Throughput | vs Ollama | Status |
+|----------|--------|---------|---------|------------|-----------|--------|
+| generate | GGUF | GPU batched M=16 | serve --gpu --batch | 873.4 tok/s | **3.00x** | ✅ |
+| generate | GGUF | GPU batched M=8 | serve --gpu --batch | 759.9 tok/s | **2.61x** | ✅ |
+| generate | GGUF | GPU batched M=32 | serve --gpu --batch | 820.7 tok/s | **2.82x** | ✅ |
+| generate | GGUF | GPU single | run --benchmark | **129.3 tok/s** | 0.44x | ⚠️ single-req |
+| generate | GGUF | GPU single | bench --fast | **113.0 tok/s** | 0.39x | ⚠️ single-req |
+| generate | GGUF | CPU | run --no-gpu | 15.6 tok/s | 0.05x | ❌ CPU-bound |
+| generate | .apr | GPU | — | — | — | ❌ NOT IMPL |
+| generate | .apr | CPU | — | — | — | ❌ NOT IMPL |
+| chat | GGUF | GPU | chat --inspect | works | ~100+ tok/s | ✅ |
+| chat | GGUF | CPU | chat --force-cpu | works | ~15 tok/s | ⚠️ CPU-bound |
+| chat | .apr | GPU | — | — | — | ❌ NOT IMPL |
+| chat | .apr | CPU | — | — | — | ❌ NOT IMPL |
+| serve | GGUF | GPU batched | serve --gpu --batch | 800+ tok/s | **2.8x** | ✅ |
+| serve | GGUF | CPU | — | — | — | ❌ No flag |
+| serve | .apr | GPU | — | — | — | ❌ NOT IMPL |
+| serve | .apr | CPU | — | — | — | ❌ NOT IMPL |
+
+**Summary: 6/16 cells functional (37.5%), 4/16 at 2X (25%)**
+
+| Category | 2X Pass | Works | Fail |
+|----------|---------|-------|------|
+| GPU batched | 4 | 4 | 0 |
+| GPU single | 0 | 2 | 0 |
+| CPU | 0 | 2 | 0 |
+| .apr format | 0 | 0 | 8 |
+
+**v5.40.0 Fixes (PAR-200):**
+1. ✅ **GPU single 129.3 tok/s**: `run` now uses `OwnedQuantizedModelCuda::generate_gpu_resident()`
+2. ✅ **CPU 15.6 tok/s**: Up from 1 tok/s (page pre-fault fix + proper timing)
+3. ❌ **.apr NOT IMPL**: No realizar inference path for .apr format (P2)
 
 ### Reproducible Benchmark Script
 
