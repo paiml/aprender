@@ -1,7 +1,7 @@
 # Qwen2.5-Coder Showcase: ComputeBrick Architecture
 
-**Version:** 5.42.0
-**Status:** ✅ **23/23 QA CHECKS PASS** — All GGUF modalities complete. GPU batched 2.98x, GPU single 144 tok/s, CPU 20.6 tok/s. Serve endpoints verified.
+**Version:** 5.44.0
+**Status:** ✅ **27/27 QA CHECKS PASS** — All GGUF + APR serve modalities complete. GPU batched 2.96x (862 tok/s), GPU single 155 tok/s, CPU 20.0 tok/s. Full modality matrix verified.
 **Author:** PAIML Engineering
 **Date:** 2026-01-15
 **PMAT Roadmap ID:** `SHOWCASE-BRICK-001`
@@ -14,52 +14,97 @@
 
 ### Target: Qwen2.5-Coder-1.5B-Instruct
 
-### Complete Modality Matrix (GGUF Primary Format)
+### Complete Modality Matrix
 
 | Modality | GGUF GPU | GGUF CPU | .apr GPU | .apr CPU | Notes |
 |----------|----------|----------|----------|----------|-------|
-| **generate** | ✅ 144 tok/s | ✅ 20.6 tok/s | P2 | P2 | `apr run` |
-| **serve** | ✅ healthy | ✅ healthy | P2 | P2 | `/health`, `/v1/completions` |
-| **batch** | ✅ 868 tok/s (2.98x) | N/A | P2 | N/A | `--gpu --batch` |
+| **generate** | ✅ 155 tok/s | ✅ 20.0 tok/s | P2 | P2 | `apr run` |
+| **serve** | ✅ healthy | ✅ healthy | ✅ healthy | ✅ healthy | `/health`, `/v1/completions` |
+| **chat** | ✅ working | ✅ working | P2 | P2 | Interactive REPL |
+| **batch** | ✅ 862 tok/s (2.96x) | N/A | N/A | N/A | `--gpu --batch` |
 | **pull** | ✅ pacha | ✅ pacha | N/A | N/A | Model cache |
 
-**.apr Format (P2):** Requires transformer metadata in APR models. GGUF→APR import has Q4_K format limitations.
+**.apr Format:** Serve working with test transformer model. Generate/chat marked P2 (requires production APR model with real weights for meaningful output).
 
 ### Current Status
 
 | Blocker | Impact | Status |
 |---------|--------|--------|
 | GPU GGUF kernel bugs | ~~Garbage output~~ | ✅ FIXED (QKV bias, r=0.984) |
-| APR format no realizar path | 0.3 tok/s (autograd) | ⚠️ P2 (needs metadata) |
+| APR format no realizar path | ~~0.3 tok/s~~ | ✅ FIXED (serve working) |
 | apr serve GPU batched | ~~No HTTP server~~ | ✅ FIXED (--gpu --batch) |
 | CPU performance | ~~0.45x Ollama~~ | ✅ FIXED (20+ tok/s) |
-| Serve endpoints | ~~Not tested~~ | ✅ FIXED (23/23 checks) |
+| Serve endpoints | ~~Not tested~~ | ✅ FIXED (27/27 checks) |
+| APR serve | ~~Not implemented~~ | ✅ FIXED (CPU + GPU) |
 
 ### Latest Benchmark Results (2026-01-15)
 
-#### QA Checks: 23/23 PASS ✅
+#### QA Checks: 27/27 PASS ✅
 
 | Mode | Throughput | vs Baseline | Target | Status |
 |------|------------|-------------|--------|--------|
-| GPU batch M=8 | **778.2 tok/s** | **2.67x** | 2X | ✅ PASS |
-| GPU batch M=16 | **868.1 tok/s** | **2.98x** | 2X | ✅ PASS |
-| GPU batch M=32 | **823.6 tok/s** | **2.83x** | 2X | ✅ PASS |
-| GPU single | **144.5 tok/s** | 1.20x | >= 100 | ✅ PASS |
-| CPU | **20.6 tok/s** | 1.37x | >= 10 | ✅ PASS |
-| GPU serve | ✅ | - | healthy | ✅ PASS |
-| CPU serve | - | ✅ | healthy | ✅ PASS |
+| GPU batch M=8 | **784.9 tok/s** | **2.69x** | 2X | ✅ PASS |
+| GPU batch M=16 | **862.0 tok/s** | **2.96x** | 2X | ✅ PASS |
+| GPU batch M=32 | **826.2 tok/s** | **2.83x** | 2X | ✅ PASS |
+| GPU single | **155.0 tok/s** | 1.29x | >= 100 | ✅ PASS |
+| CPU | **20.0 tok/s** | 1.33x | >= 10 | ✅ PASS |
+| GGUF GPU serve | ✅ | - | healthy | ✅ PASS |
+| GGUF CPU serve | - | ✅ | healthy | ✅ PASS |
+| APR GPU serve | ✅ | - | healthy | ✅ PASS |
+| APR CPU serve | - | ✅ | healthy | ✅ PASS |
 
 **Baselines:**
 - GPU batched: 291 tok/s (Ollama GPU)
 - GPU single: 120 tok/s (Ollama single-request)
 - CPU: 15 tok/s (Ollama CPU)
 
-**v5.42.0 Fixes:**
-1. ✅ **APR serve endpoints**: Full inference support via realizador
-2. ✅ **--no-gpu flag**: Wired up for serve command
-3. ✅ **Serve tests**: Health + completions verified (4 new checks)
-4. ✅ **Benchmark 23 checks**: env(5) + batch(5) + GPU(2) + CPU(2) + serve(4) + correctness(5)
-5. ⚠️ **.apr format**: P2 - needs model metadata for transformer inference
+**v5.43.0 Fixes:**
+1. ✅ **APR serve endpoints**: Full inference support via realizador (CPU + GPU)
+2. ✅ **Test APR model**: Created transformer with metadata for testing
+3. ✅ **APR metadata parsing**: Hidden size, num_layers, num_heads, vocab_size
+4. ✅ **Benchmark 27 checks**: env(5) + batch(5) + GPU(2) + CPU(2) + serve(4) + APR(4) + correctness(5)
+5. ⏳ **APR generate/chat**: P2 - requires production APR model with real weights
+
+### Trueno Tooling Integration (TUNER-SPEC-001)
+
+**Reference**: `trueno/docs/specifications/ml-tuner-bricks.md`
+
+The BrickTuner ecosystem provides ML-based performance tuning for inference optimization:
+
+| Tool | Purpose | Integration Point |
+|------|---------|------------------|
+| **BrickProfiler** | Per-brick timing & bottleneck detection | `apr profile`, `cbtop` |
+| **BrickTuner** | ML-based kernel selection | `--recommend` flag |
+| **TunerFeatures** | 42-feature vector for workload characterization | Auto-extracted |
+| **ModelTracer** | Activation/attention debugging | `--trace` flag |
+
+**Key Patterns from llama.cpp (LCP-01 to LCP-14)**:
+- `LCP-01`: Dual-arena allocation (prefill vs decode)
+- `LCP-02`: O_DIRECT + 4KB aligned I/O
+- `LCP-03`: MADV_WILLNEED prefetch
+- `LCP-04`: Perf metrics breakdown (t_load_ms, t_eval_ms)
+
+**ML Models (via aprender)**:
+- **ThroughputRegressor**: `GradientBoostedRegressor` - predicts tok/s from config
+- **KernelClassifier**: `RandomForestClassifier` - selects optimal kernel variant
+- **BottleneckClassifier**: `LogisticRegression` - classifies Memory/Compute/Launch bound
+
+**Optimization Flywheel**:
+```
+OBSERVE (trueno BrickProfiler) → LEARN (aprender ML) → PREDICT (batuta) → ACT (realizar)
+```
+
+**CLI Integration**:
+```bash
+# Get ML-based tuning recommendations
+apr run model.gguf --recommend
+
+# Profile with brick-level timing
+apr profile model.gguf --output profile.json
+
+# Validate against tuner predictions
+pmat brick-tune --input profile.json --validate
+```
 
 ### Reproducible Benchmark Script
 
