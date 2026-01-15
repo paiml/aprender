@@ -4756,7 +4756,7 @@ dependencies = [
 
 [[package]]
 name = "realizar"
-version = "0.5.2"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "aprender 0.24.0 (registry+https://github.com/rust-lang/crates.io-index)",

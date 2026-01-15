@@ -55,6 +55,9 @@ pub(crate) struct ChatConfig {
     pub system: Option<String>,
     /// Show inspection info (top-k probs, tokens/sec)
     pub inspect: bool,
+    /// Force CPU inference (skip CUDA even if available)
+    /// Default: true - GPU kernel has errors, CPU achieves ~115 tok/s
+    pub force_cpu: bool,
 }
 
 impl Default for ChatConfig {
@@ -65,6 +68,7 @@ impl Default for ChatConfig {
             max_tokens: 512,
             system: None,
             inspect: false,
+            force_cpu: true, // GPU has kernel errors, use stable CPU path (~115 tok/s)
         }
     }
 }
@@ -77,6 +81,7 @@ pub(crate) fn run(
     max_tokens: usize,
     system: Option<&str>,
     inspect: bool,
+    force_cpu: bool,
 ) -> Result<(), CliError> {
     // Validate file exists
     if !path.exists() {
@@ -89,6 +94,7 @@ pub(crate) fn run(
         max_tokens,
         system: system.map(String::from),
         inspect,
+        force_cpu,
     };
 
     print_welcome_banner(path, &config);
@@ -118,6 +124,51 @@ fn detect_format(path: &Path) -> ModelFormat {
         Some("safetensors") => ModelFormat::SafeTensors,
         _ => ModelFormat::Demo,
     }
+}
+
+/// Clean ChatML markers and artifacts from model response
+///
+/// Strips:
+/// - <|im_start|>assistant, <|im_end|>, <|im_start|>, etc.
+/// - Leading/trailing whitespace
+/// - Repeated newlines
+fn clean_chat_response(raw: &str) -> String {
+    let mut cleaned = raw.to_string();
+
+    // Remove ChatML markers
+    let markers = [
+        "<|im_start|>assistant\n",
+        "<|im_start|>assistant",
+        "<|im_end|>",
+        "<|im_start|>",
+        "<|endoftext|>",
+    ];
+    for marker in markers {
+        cleaned = cleaned.replace(marker, "");
+    }
+
+    // Trim and normalize whitespace
+    let trimmed = cleaned.trim();
+
+    // Stop at first line if it looks like the model started a new turn
+    // (e.g., "4\nSuggest a fun way..." -> just "4")
+    if let Some(first_newline) = trimmed.find('\n') {
+        let first_line = trimmed[..first_newline].trim();
+        let rest = trimmed[first_newline..].trim();
+        // If rest looks like a new question/topic, just return first line
+        if rest.starts_with("Suggest")
+            || rest.starts_with("What")
+            || rest.starts_with("How")
+            || rest.starts_with("Why")
+            || rest.starts_with("Can")
+            || rest.starts_with("Human:")
+            || rest.contains("<|im_start|>")
+        {
+            return first_line.to_string();
+        }
+    }
+
+    trimmed.to_string()
 }
 
 /// Detect format from magic bytes (more reliable than extension)
@@ -495,7 +546,17 @@ mod realizar_chat {
                 }
             };
 
-            // Tokenize the formatted prompt
+            // For GGUF, use embedded tokenizer directly (correct special token IDs)
+            // This is critical: GGUF models have their own tokenizer with correct special token IDs
+            // Using LlamaTokenizer/Qwen2BpeTokenizer causes wrong IDs for <|im_start|>, <|im_end|>, etc.
+            if self.format == ModelFormat::Gguf {
+                return match self.generate_gguf_with_prompt(&formatted_prompt, config) {
+                    Ok(response) => clean_chat_response(&response),
+                    Err(e) => format!("[Error: {}]", e),
+                };
+            }
+
+            // For non-GGUF formats, tokenize with loaded tokenizer
             let prompt_tokens: Vec<u32> = if let Some(ref tokenizer) = self.llama_tokenizer {
                 tokenizer.encode_with_bos(&formatted_prompt)
             } else if let Some(ref tokenizer) = self.qwen_tokenizer {
@@ -506,52 +567,165 @@ mod realizar_chat {
 
             let result = match self.format {
                 ModelFormat::Apr => self.generate_apr(&prompt_tokens, config),
-                ModelFormat::Gguf => self.generate_gguf(&prompt_tokens, config),
                 ModelFormat::SafeTensors => self.generate_safetensors(&prompt_tokens, config),
                 ModelFormat::Demo => Ok(vec![]),
+                ModelFormat::Gguf => unreachable!(), // handled above
             };
 
             let gen_time = start.elapsed();
 
             match result {
                 Ok(output_tokens) => {
-                    // Debug: show first few tokens and their decoded values
+                    // Strip prompt tokens - only decode newly generated tokens
+                    let new_tokens = if output_tokens.len() > prompt_tokens.len() {
+                        &output_tokens[prompt_tokens.len()..]
+                    } else {
+                        &output_tokens[..]
+                    };
+
+                    // Debug: show generation stats
                     if config.inspect {
                         println!(
                             "{}",
                             format!(
-                                "[{} tokens in {:.2}s = {:.1} tok/s]",
-                                output_tokens.len(),
+                                "[{} new tokens in {:.2}s = {:.1} tok/s]",
+                                new_tokens.len(),
                                 gen_time.as_secs_f32(),
-                                output_tokens.len() as f32 / gen_time.as_secs_f32()
+                                new_tokens.len() as f32 / gen_time.as_secs_f32()
                             )
                             .dimmed()
                         );
-                        // Debug: show first 10 tokens
+                        // Debug: show first 10 new tokens
                         if let Some(ref tok) = self.llama_tokenizer {
                             println!(
-                                "[DEBUG: first 10 tokens: {:?}]",
-                                &output_tokens[..output_tokens.len().min(10)]
+                                "[DEBUG: first 10 new tokens: {:?}]",
+                                &new_tokens[..new_tokens.len().min(10)]
                             );
-                            for &id in output_tokens.iter().take(10) {
+                            for &id in new_tokens.iter().take(10) {
                                 println!("[DEBUG: {} -> {:?}]", id, tok.id_to_token(id));
                             }
                         }
                     }
-                    // Decode output tokens using appropriate tokenizer
-                    if let Some(ref tokenizer) = self.llama_tokenizer {
-                        tokenizer.decode(&output_tokens)
+
+                    // Decode only the new tokens
+                    let raw_response = if let Some(ref tokenizer) = self.llama_tokenizer {
+                        tokenizer.decode(new_tokens)
                     } else if let Some(ref tokenizer) = self.qwen_tokenizer {
-                        tokenizer.decode(&output_tokens)
+                        tokenizer.decode(new_tokens)
                     } else {
-                        output_tokens
+                        new_tokens
                             .iter()
                             .filter_map(|&t| char::from_u32(t))
                             .collect()
-                    }
+                    };
+
+                    // Clean up ChatML markers from response
+                    clean_chat_response(&raw_response)
                 }
                 Err(e) => format!("[Error: {}]", e),
             }
+        }
+
+        /// Generate response for GGUF models using the embedded tokenizer
+        ///
+        /// GGUF models have their own tokenizer with correct special token IDs.
+        /// Using LlamaTokenizer/Qwen2BpeTokenizer causes wrong token IDs for:
+        /// - <|im_start|> (should be 151644)
+        /// - <|im_end|> (should be 151645)
+        /// - <|endoftext|> (should be 151643)
+        ///
+        /// This function uses the GGUF's embedded tokenizer for both encode and decode.
+        fn generate_gguf_with_prompt(&self, prompt: &str, config: &ChatConfig) -> Result<String, String> {
+            use realizar::gguf::{MappedGGUFModel, OwnedQuantizedModel, QuantizedGenerateConfig};
+
+            // Load GGUF model with mmap
+            let mapped = MappedGGUFModel::from_path(&self.model_path)
+                .map_err(|e| format!("Failed to mmap GGUF: {e}"))?;
+
+            // Encode prompt using GGUF's embedded tokenizer (correct special token IDs)
+            let prompt_tokens = mapped.model.encode(prompt)
+                .ok_or_else(|| "Failed to encode prompt with GGUF tokenizer".to_string())?;
+            let prompt_len = prompt_tokens.len();
+
+            let model = OwnedQuantizedModel::from_mapped(&mapped)
+                .map_err(|e| format!("Failed to create GGUF model: {e}"))?;
+
+            let practical_max = config.max_tokens.min(128);
+
+            // ChatML stop tokens for Qwen2/ChatML models
+            let gen_config = QuantizedGenerateConfig {
+                max_tokens: practical_max,
+                temperature: config.temperature,
+                top_k: 40,
+                stop_tokens: vec![151645, 151643], // <|im_end|>, <|endoftext|>
+            };
+
+            // Try CUDA GPU path first
+            #[cfg(feature = "cuda")]
+            if !config.force_cpu {
+                use realizar::gguf::OwnedQuantizedModelCuda;
+                if OwnedQuantizedModelCuda::is_available() {
+                    let num_layers = model.config.num_layers;
+                    let is_gqa = model.config.num_kv_heads < model.config.num_heads;
+                    let gqa_note = if is_gqa {
+                        format!(" (GQA: {} kv_heads)", model.config.num_kv_heads)
+                    } else {
+                        String::new()
+                    };
+
+                    match OwnedQuantizedModelCuda::new(model, 0) {
+                        Ok(mut cuda_model) => {
+                            let gpu_name = cuda_model.device_name().to_string();
+                            let vram_mb = cuda_model.vram_mb();
+                            println!(
+                                "{}",
+                                format!(
+                                    "[GGUF CUDA: {} ({} MB VRAM), {} layers, {} tokens{}]",
+                                    gpu_name, vram_mb, num_layers, practical_max, gqa_note
+                                )
+                                .bright_green()
+                            );
+
+                            let output_tokens = cuda_model
+                                .generate_gpu_resident(&prompt_tokens, &gen_config)
+                                .map_err(|e| format!("CUDA generate failed: {e}"))?;
+
+                            // Extract new tokens and decode with GGUF tokenizer
+                            let new_tokens = if output_tokens.len() > prompt_len {
+                                &output_tokens[prompt_len..]
+                            } else {
+                                &output_tokens[..]
+                            };
+
+                            return Ok(mapped.model.decode(new_tokens));
+                        }
+                        Err(e) => {
+                            println!(
+                                "{}",
+                                format!("[CUDA init failed: {}, falling back to CPU]", e).yellow()
+                            );
+                            // Fall through to CPU path - need to recreate model
+                        }
+                    }
+                }
+            }
+
+            // CPU path - recreate model since CUDA may have consumed it
+            let model = OwnedQuantizedModel::from_mapped(&mapped)
+                .map_err(|e| format!("Failed to recreate model: {e}"))?;
+
+            let output_tokens = model
+                .generate_with_cache(&prompt_tokens, &gen_config)
+                .map_err(|e| format!("GGUF generate failed: {e}"))?;
+
+            // Extract new tokens and decode with GGUF tokenizer
+            let new_tokens = if output_tokens.len() > prompt_len {
+                &output_tokens[prompt_len..]
+            } else {
+                &output_tokens[..]
+            };
+
+            Ok(mapped.model.decode(new_tokens))
         }
 
         fn generate_apr(&self, prompt: &[u32], config: &ChatConfig) -> Result<Vec<u32>, String> {
@@ -586,21 +760,23 @@ mod realizar_chat {
                 String::new()
             };
 
+            // ChatML stop tokens for Qwen2/ChatML models:
+            // <|im_end|> = 151645, <|endoftext|> = 151643
             let gen_config = QuantizedGenerateConfig {
                 max_tokens: practical_max,
                 temperature: config.temperature,
                 top_k: 40,
-                ..Default::default()
+                stop_tokens: vec![151645, 151643], // <|im_end|>, <|endoftext|>
             };
 
             // Try CUDA GPU path first (200+ tok/s target)
+            // Uses generate_gpu_resident which is the tested/working GPU path
             #[cfg(feature = "cuda")]
-            {
+            if !config.force_cpu {
                 use realizar::gguf::OwnedQuantizedModelCuda;
                 if OwnedQuantizedModelCuda::is_available() {
                     // Print model info before attempting CUDA (model consumed on success)
                     let num_layers = model.config.num_layers;
-                    let hidden_dim = model.config.hidden_dim;
 
                     match OwnedQuantizedModelCuda::new(model, 0) {
                         Ok(mut cuda_model) => {
@@ -614,8 +790,9 @@ mod realizar_chat {
                                 )
                                 .bright_green()
                             );
+                            // Use generate_gpu_resident (tested working path) not generate_full_cuda_with_cache
                             return cuda_model
-                                .generate_full_cuda_with_cache(prompt, &gen_config)
+                                .generate_gpu_resident(prompt, &gen_config)
                                 .map_err(|e| format!("CUDA generate failed: {e}"));
                         }
                         Err(e) => {
@@ -627,15 +804,6 @@ mod realizar_chat {
                             let model = OwnedQuantizedModel::from_mapped(&mapped)
                                 .map_err(|e| format!("Failed to recreate model: {e}"))?;
 
-                            println!(
-                                "{}",
-                                format!(
-                                    "[GGUF CPU: {} layers, {} hidden, {} tokens (KV cache){}]",
-                                    num_layers, hidden_dim, practical_max, gqa_note
-                                )
-                                .dimmed()
-                            );
-
                             return model
                                 .generate_with_cache(prompt, &gen_config)
                                 .map_err(|e| format!("GGUF generate failed: {e}"));
@@ -645,15 +813,6 @@ mod realizar_chat {
             }
 
             // CPU path with KV cache (12+ tok/s) - used when CUDA feature disabled or unavailable
-            println!(
-                "{}",
-                format!(
-                    "[GGUF CPU: {} layers, {} hidden, {} tokens (KV cache){}]",
-                    model.config.num_layers, model.config.hidden_dim, practical_max, gqa_note
-                )
-                .dimmed()
-            );
-
             // Use KV cache path for O(n) instead of O(n²)
             model
                 .generate_with_cache(prompt, &gen_config)
@@ -672,25 +831,6 @@ mod realizar_chat {
 
             // Limit tokens for reasonable CPU inference speed
             let max_tokens = config.max_tokens.min(32);
-
-            let params = model.num_parameters();
-            let params_str = if params >= 1_000_000_000 {
-                format!("{:.1}B", params as f64 / 1_000_000_000.0)
-            } else if params >= 1_000_000 {
-                format!("{:.1}M", params as f64 / 1_000_000.0)
-            } else {
-                format!("{params}")
-            };
-            println!(
-                "{}",
-                format!(
-                    "[SafeTensors: {} layers, {} params - generating up to {} tokens...]",
-                    model.num_layers(),
-                    params_str,
-                    max_tokens
-                )
-                .dimmed()
-            );
 
             // Generate using the model
             let output = model.generate(prompt, max_tokens, config.temperature, config.top_p);

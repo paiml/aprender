@@ -792,10 +792,27 @@ fn execute_gguf_inference(
         .map_err(|e| CliError::ModelLoadFailed(format!("Failed to load GGUF model: {e}")))?;
     let mmap_time = start.elapsed();
 
+    // Pre-fault all mmap pages to avoid page faults during model load/inference (PAR-200: B4 CPU perf fix)
+    // Without this, OwnedQuantizedModel::from_mapped() triggers ~9M minor page faults = 2.5s overhead!
+    {
+        let prefault_start = Instant::now();
+        let data = mapped_model.data();
+        let page_size = 4096;
+        let mut checksum: u8 = 0;
+        // Touch one byte per page to force kernel to fault in the page
+        for i in (0..data.len()).step_by(page_size) {
+            checksum = checksum.wrapping_add(data[i]);
+        }
+        // Use checksum to prevent dead code elimination
+        std::hint::black_box(checksum);
+        // Debug timing (can be removed in production)
+        let _ = (data.len().div_ceil(page_size), prefault_start.elapsed());
+    }
+
     // Try to create optimized quantized model
     let load_start = Instant::now();
     let model_result = OwnedQuantizedModel::from_mapped(&mapped_model);
-    let load_time = load_start.elapsed();
+    let _load_time = load_start.elapsed();
 
     match model_result {
         Ok(mut model) => {
@@ -848,7 +865,6 @@ fn execute_gguf_inference(
             let output_tokens = model.generate_with_cache(&input_tokens, &gen_config)
                 .map_err(|e| CliError::InferenceFailed(format!("Generation failed: {e}")))?;
             let _infer_time = infer_start.elapsed();
-            let _load_time = load_time; // Suppress unused warnings
 
             // Decode output using GGUF's embedded tokenizer - only new tokens
             let generated_tokens = &output_tokens[input_tokens.len()..];

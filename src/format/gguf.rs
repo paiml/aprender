@@ -1188,6 +1188,60 @@ impl GgufReader {
         }
         Ok(result)
     }
+
+    /// Get raw tensor bytes without dequantization (preserves Q4K/Q6K)
+    ///
+    /// Returns (raw_bytes, shape, ggml_dtype) where dtype is:
+    /// - 0 = F32, 1 = F16, 6 = Q4_K, 7 = Q5_K, 8 = Q8_0, 12 = Q6_K
+    pub fn get_tensor_raw(&self, name: &str) -> Result<(Vec<u8>, Vec<usize>, u32)> {
+        let meta = self
+            .tensors
+            .iter()
+            .find(|t| t.name == name)
+            .ok_or_else(|| AprenderError::FormatError {
+                message: format!("Tensor '{name}' not found in GGUF"),
+            })?;
+
+        let shape: Vec<usize> = meta.dims.iter().map(|&d| d as usize).collect();
+        let num_elements: usize = shape.iter().product();
+        let tensor_start = self.data_offset + meta.offset as usize;
+
+        // Calculate byte size based on dtype
+        let byte_size = match meta.dtype {
+            0 => num_elements * 4,      // F32
+            1 => num_elements * 2,      // F16
+            8 => (num_elements / 32) * 34, // Q8_0: 32 elements = 2 (scale) + 32 (quants)
+            6 => (num_elements / 256) * 144, // Q4_K: 256 elements = 144 bytes
+            7 => (num_elements / 256) * 176, // Q5_K: 256 elements = 176 bytes
+            12 => (num_elements / 256) * 210, // Q6_K: 256 elements = 210 bytes
+            _ => {
+                return Err(AprenderError::FormatError {
+                    message: format!("Unsupported dtype {} for raw extraction", meta.dtype),
+                });
+            }
+        };
+
+        if tensor_start + byte_size > self.data.len() {
+            return Err(AprenderError::FormatError {
+                message: format!("Tensor '{name}' data exceeds file size"),
+            });
+        }
+
+        let bytes = self.data[tensor_start..tensor_start + byte_size].to_vec();
+        Ok((bytes, shape, meta.dtype))
+    }
+
+    /// Get all tensors as raw bytes (preserves quantization)
+    ///
+    /// Returns BTreeMap of name -> (raw_bytes, shape, ggml_dtype)
+    pub fn get_all_tensors_raw(&self) -> Result<BTreeMap<String, (Vec<u8>, Vec<usize>, u32)>> {
+        let mut result = BTreeMap::new();
+        for meta in &self.tensors {
+            let (data, shape, dtype) = self.get_tensor_raw(&meta.name)?;
+            result.insert(meta.name.clone(), (data, shape, dtype));
+        }
+        Ok(result)
+    }
 }
 
 /// Convert F16 (IEEE 754 half-precision) to F32
@@ -1814,6 +1868,70 @@ pub fn load_gguf_with_tokenizer<P: AsRef<Path>>(path: P) -> Result<GgufLoadResul
     };
 
     Ok(GgufLoadResult {
+        tensors,
+        tokenizer,
+        model_config,
+    })
+}
+
+/// Raw tensor data with quantization preserved
+#[derive(Debug, Clone)]
+pub struct GgufRawTensor {
+    /// Raw bytes (Q4K/Q6K super-blocks, or F32/F16 data)
+    pub data: Vec<u8>,
+    /// Tensor shape
+    pub shape: Vec<usize>,
+    /// GGML dtype: 0=F32, 1=F16, 6=Q4_K, 7=Q5_K, 8=Q8_0, 12=Q6_K
+    pub dtype: u32,
+}
+
+/// Result of loading GGUF with raw quantized tensors
+#[derive(Debug)]
+pub struct GgufRawLoadResult {
+    /// Tensors with raw bytes (preserving Q4K/Q6K quantization)
+    pub tensors: BTreeMap<String, GgufRawTensor>,
+    /// Extracted tokenizer
+    pub tokenizer: GgufTokenizer,
+    /// Model configuration
+    pub model_config: GgufModelConfig,
+}
+
+/// Load GGUF with raw quantized tensors (preserves Q4K for GPU inference)
+///
+/// This is essential for APR format to achieve 2x Ollama performance.
+/// The Q4K bytes are stored directly in APR and used by GPU kernels.
+pub fn load_gguf_raw<P: AsRef<Path>>(path: P) -> Result<GgufRawLoadResult> {
+    let reader = GgufReader::from_file(path)?;
+
+    let raw_tensors = reader.get_all_tensors_raw()?;
+    let mut tensors = BTreeMap::new();
+    for (name, (data, shape, dtype)) in raw_tensors {
+        tensors.insert(name, GgufRawTensor { data, shape, dtype });
+    }
+
+    let tokenizer = GgufTokenizer {
+        vocabulary: reader.vocabulary().unwrap_or_else(Vec::new),
+        model_type: reader.tokenizer_model(),
+        bos_token_id: reader.bos_token_id(),
+        eos_token_id: reader.eos_token_id(),
+        architecture: reader.architecture(),
+        model_name: reader.model_name(),
+    };
+
+    let model_config = GgufModelConfig {
+        architecture: reader.architecture(),
+        hidden_size: reader.hidden_size(),
+        num_layers: reader.num_layers(),
+        num_heads: reader.num_heads(),
+        num_kv_heads: reader.num_kv_heads(),
+        vocab_size: reader.vocab_size(),
+        intermediate_size: reader.intermediate_size(),
+        max_position_embeddings: reader.context_length(),
+        rope_theta: reader.rope_theta(),
+        rms_norm_eps: reader.rms_norm_eps(),
+    };
+
+    Ok(GgufRawLoadResult {
         tensors,
         tokenizer,
         model_config,

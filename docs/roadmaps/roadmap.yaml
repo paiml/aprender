@@ -1491,3 +1491,19 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: 'APR-TOK-001: Fix tokenizer decoding for coherent text output'
+  github_issue: null
+  item_type: task
+  title: 'New task: APR-TOK-001: Fix tokenizer decoding for coherent text output'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-01-15T14:15:28.015657827+00:00
+  updated: 2026-01-15T14:15:28.015657827+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

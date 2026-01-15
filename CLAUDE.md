@@ -582,6 +582,7 @@ The `apr` CLI provides comprehensive model operations. Located in `crates/apr-cl
 | `tui` | Interactive terminal UI | `commands/tui.rs` (stub) |
 | `probar` | Export for visual testing | `commands/probar.rs` (445 lines) |
 | `profile` | Deep profiling with Roofline analysis | `commands/profile.rs` (planned) |
+| `qa` | Falsifiable QA checklist (golden output, throughput, Ollama parity) | `commands/qa.rs` |
 
 ### Key Library Functions (src/format/)
 
@@ -650,6 +651,12 @@ apr canary check optimized.apr --canary canary.json
 
 # Import from HuggingFace
 apr import hf://openai/whisper-tiny -o whisper.apr --arch whisper
+
+# Falsifiable QA checklist (blocks release if gates fail)
+apr qa model.gguf                              # Run all gates (golden, throughput, Ollama parity)
+apr qa model.gguf --assert-tps 100             # Custom throughput threshold
+apr qa model.gguf --assert-speedup 2.0         # Require 2x Ollama speedup
+apr qa model.gguf --skip-ollama --json         # JSON output for CI
 ```
 
 ## Integration

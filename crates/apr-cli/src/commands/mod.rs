@@ -25,6 +25,7 @@ pub(crate) mod merge;
 pub(crate) mod probar;
 pub(crate) mod profile;
 pub(crate) mod pull;
+pub(crate) mod qa;
 pub(crate) mod run;
 pub(crate) mod serve;
 pub(crate) mod showcase;

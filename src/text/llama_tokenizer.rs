@@ -272,9 +272,15 @@ impl LlamaTokenizer {
             return Vec::new();
         }
 
-        // SentencePiece prepends space to input and uses ▁ as word boundary marker
-        // "Hello, world!" becomes "▁Hello▁,▁world▁!"
-        let normalized = format!("▁{}", text.replace(' ', "▁"));
+        // Normalize based on tokenizer model type:
+        // - SentencePiece: Uses ▁ (U+2581) as word boundary marker
+        //   "Hello, world!" becomes "▁Hello▁,▁world▁!"
+        // - GPT-2: Uses Ġ (U+0120) as space prefix
+        //   "Hello, world!" becomes "Hello,Ġworld!"
+        let normalized = match self.model {
+            TokenizerModel::SentencePiece => format!("▁{}", text.replace(' ', "▁")),
+            TokenizerModel::Gpt2 => text.replace(' ', "\u{0120}").replace('\n', "\u{010A}"),
+        };
         let chars: Vec<char> = normalized.chars().collect();
 
         let mut tokens: Vec<u32> = Vec::with_capacity(text.len());
