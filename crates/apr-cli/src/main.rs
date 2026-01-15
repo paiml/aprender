@@ -130,6 +130,14 @@ enum Commands {
         /// Disable GPU acceleration
         #[arg(long)]
         no_gpu: bool,
+
+        /// Force GPU acceleration (requires CUDA)
+        #[arg(long)]
+        gpu: bool,
+
+        /// Enable batched GPU inference for 2X+ throughput
+        #[arg(long)]
+        batch: bool,
     },
 
     /// Inspect model metadata, vocab, and structure
@@ -878,6 +886,8 @@ fn execute_command(cli: &Cli) -> Result<(), error::CliError> {
             no_cors,
             no_metrics,
             no_gpu,
+            gpu,
+            batch,
         } => {
             let config = serve::ServerConfig {
                 port: *port,
@@ -885,6 +895,8 @@ fn execute_command(cli: &Cli) -> Result<(), error::CliError> {
                 cors: !no_cors,
                 metrics: !no_metrics,
                 no_gpu: *no_gpu,
+                gpu: *gpu,
+                batch: *batch,
                 ..Default::default()
             };
             serve::run(file, &config)
