@@ -44145,6 +44145,30 @@ Memory savings:
 </ul>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="showcase-benchmark"><a class="header" href="#showcase-benchmark">Showcase Benchmark</a></h1>
 <p>This example demonstrates the Qwen2.5-Coder showcase benchmark harness for measuring inference performance against baselines like Ollama and llama.cpp.</p>
+<h2 id="-milestone-achieved-2026-01-15"><a class="header" href="#-milestone-achieved-2026-01-15">🏆 MILESTONE ACHIEVED (2026-01-15)</a></h2>
+<p><strong>Both GGUF and APR formats now exceed 2X Ollama on GPU!</strong></p>
+<h3 id="qwen25-coder-15b-results"><a class="header" href="#qwen25-coder-15b-results">Qwen2.5-Coder-1.5B Results</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Format</th><th>M=8</th><th>M=16</th><th>M=32</th><th>Status</th></tr></thead><tbody>
+<tr><td><strong>GGUF</strong></td><td>-</td><td>824.7 tok/s (2.83x)</td><td>-</td><td>✅ EXCEEDED</td></tr>
+<tr><td><strong>APR</strong></td><td>723.8 tok/s (2.49x)</td><td>799.9 tok/s (2.75x)</td><td>763.9 tok/s (2.63x)</td><td>✅ EXCEEDED</td></tr>
+<tr><td><strong>Target</strong></td><td>582 tok/s (2X)</td><td>582 tok/s (2X)</td><td>582 tok/s (2X)</td><td>-</td></tr>
+</tbody></table>
+</div>
+<h3 id="key-achievements"><a class="header" href="#key-achievements">Key Achievements</a></h3>
+<ul>
+<li><strong>GGUF GPU</strong>: 824.7 tok/s = <strong>2.83x Ollama</strong> (291 tok/s baseline)</li>
+<li><strong>APR GPU</strong>: 799.9 tok/s = <strong>2.75x Ollama</strong> at M=16</li>
+<li><strong>APR Format</strong>: Quantization preserved (Q4_K, Q6_K) through GGUF → APR conversion</li>
+<li><strong>File Size</strong>: 1.9GB APR file with full model fidelity</li>
+</ul>
+<h3 id="run-the-showcase"><a class="header" href="#run-the-showcase">Run the Showcase</a></h3>
+<pre><code class="language-bash"># APR GPU Benchmark (FEATURED)
+MODEL_PATH=/path/to/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf \
+  cargo run --example apr_gpu_benchmark --release --features cuda
+
+# Full showcase benchmark suite
+cargo run --release --example showcase_benchmark
+</code></pre>
 <h2 id="overview-73"><a class="header" href="#overview-73">Overview</a></h2>
 <p>The <code>showcase_benchmark</code> example implements:</p>
 <ul>
@@ -44152,20 +44176,14 @@ Memory savings:
 <li>Side-by-side benchmarking against Ollama</li>
 <li>Performance visualization</li>
 <li>Regression detection</li>
+<li>GGUF → APR conversion with quantization preservation</li>
 </ul>
-<h2 id="running-the-showcase"><a class="header" href="#running-the-showcase">Running the Showcase</a></h2>
-<pre><code class="language-bash"># Run full showcase benchmark suite
-cargo run --release --example showcase_benchmark
-
-# Or via the CLI
-apr showcase --model qwen2.5-coder-0.5b --format gguf
-</code></pre>
 <h2 id="test-matrix"><a class="header" href="#test-matrix">Test Matrix</a></h2>
-<div class="table-wrapper"><table><thead><tr><th>Model</th><th>Size</th><th>GPU Target</th><th>CPU Target</th></tr></thead><tbody>
-<tr><td>Qwen2.5-Coder-0.5B</td><td>490MB</td><td>500+ tok/s</td><td>150+ tok/s</td></tr>
-<tr><td>Qwen2.5-Coder-1.5B</td><td>1.1GB</td><td>350+ tok/s</td><td>75+ tok/s</td></tr>
-<tr><td>Qwen2.5-Coder-7B</td><td>4.4GB</td><td>150+ tok/s</td><td>25+ tok/s</td></tr>
-<tr><td>Qwen2.5-Coder-32B</td><td>19GB</td><td>40+ tok/s</td><td>6+ tok/s</td></tr>
+<div class="table-wrapper"><table><thead><tr><th>Model</th><th>Size</th><th>GPU Target</th><th>GPU Achieved</th><th>CPU Target</th></tr></thead><tbody>
+<tr><td>Qwen2.5-Coder-0.5B</td><td>490MB</td><td>500+ tok/s</td><td>TBD</td><td>150+ tok/s</td></tr>
+<tr><td>Qwen2.5-Coder-1.5B</td><td>1.1GB</td><td>350+ tok/s</td><td><strong>824.7 tok/s</strong> ✅</td><td>75+ tok/s</td></tr>
+<tr><td>Qwen2.5-Coder-7B</td><td>4.4GB</td><td>150+ tok/s</td><td>TBD</td><td>25+ tok/s</td></tr>
+<tr><td>Qwen2.5-Coder-32B</td><td>19GB</td><td>40+ tok/s</td><td>TBD</td><td>6+ tok/s</td></tr>
 </tbody></table>
 </div>
 <h2 id="metrics-3"><a class="header" href="#metrics-3">Metrics</a></h2>
