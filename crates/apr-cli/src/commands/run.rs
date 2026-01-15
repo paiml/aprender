@@ -106,6 +106,8 @@ pub(crate) struct RunOptions {
     pub no_gpu: bool,
     /// Offline mode: refuse any network access
     pub offline: bool,
+    /// Benchmark mode: output performance metrics
+    pub benchmark: bool,
 }
 
 impl Default for RunOptions {
@@ -118,6 +120,7 @@ impl Default for RunOptions {
             force: false,
             no_gpu: false,
             offline: false,
+            benchmark: false,
         }
     }
 }
@@ -131,6 +134,8 @@ pub(crate) struct RunResult {
     pub duration_secs: f64,
     /// Whether model was cached
     pub cached: bool,
+    /// Number of tokens generated (for benchmark mode)
+    pub tokens_generated: Option<usize>,
 }
 
 /// Run the model on input
@@ -156,10 +161,14 @@ pub(crate) fn run_model(source: &str, options: &RunOptions) -> Result<RunResult>
 
     let duration = start.elapsed();
 
+    // Estimate tokens generated from output text (word count approximation)
+    let tokens_generated = Some(text.split_whitespace().count());
+
     Ok(RunResult {
         text,
         duration_secs: duration.as_secs_f64(),
         cached: matches!(model_source, ModelSource::Local(_)) || model_source.cache_path().exists(),
+        tokens_generated,
     })
 }
 
@@ -686,6 +695,24 @@ fn parse_token_ids(input: &str) -> Result<Vec<u32>> {
     }
 }
 
+/// Clean model output by stripping ChatML markers and extra tokens
+#[cfg(feature = "inference")]
+fn clean_model_output(raw: &str) -> String {
+    let mut cleaned = raw.to_string();
+    // Strip ChatML markers commonly present in instruct model output
+    let markers = [
+        "<|im_start|>assistant\n",
+        "<|im_start|>assistant",
+        "<|im_end|>",
+        "<|im_start|>",
+        "<|endoftext|>",
+    ];
+    for marker in markers {
+        cleaned = cleaned.replace(marker, "");
+    }
+    cleaned.trim().to_string()
+}
+
 /// Execute SafeTensors model inference
 ///
 /// Uses realizar's safetensors support for transformer model inspection.
@@ -756,8 +783,7 @@ fn execute_gguf_inference(
     input_path: Option<&PathBuf>,
     options: &RunOptions,
 ) -> Result<String> {
-    use realizar::apr::AprV2Model as AprModel;
-    use realizar::gguf::{MappedGGUFModel, OwnedQuantizedModel};
+    use realizar::gguf::{MappedGGUFModel, OwnedQuantizedModel, QuantizedGenerateConfig};
     use std::time::Instant;
 
     // Load GGUF model via memory mapping
@@ -766,52 +792,40 @@ fn execute_gguf_inference(
         .map_err(|e| CliError::ModelLoadFailed(format!("Failed to load GGUF model: {e}")))?;
     let mmap_time = start.elapsed();
 
-    eprintln!(
-        "{}",
-        format!(
-            "Loaded GGUF model (mmap) in {:.2}ms",
-            mmap_time.as_secs_f64() * 1000.0
-        )
-        .dimmed()
-    );
-
     // Try to create optimized quantized model
-    eprintln!("{}", "Loading quantized model...".cyan());
     let load_start = Instant::now();
     let model_result = OwnedQuantizedModel::from_mapped(&mapped_model);
     let load_time = load_start.elapsed();
 
     match model_result {
-        Ok(model) => {
-            eprintln!(
-                "{}",
-                format!(
-                    "Model loaded in {:.2}s",
-                    load_time.as_secs_f64()
-                )
-                .dimmed()
-            );
-
-            // Get input tokens
+        Ok(mut model) => {
+            // Enable CUDA acceleration for GGUF inference if available
+            #[cfg(feature = "cuda")]
+            let cuda_enabled = if !options.no_gpu {
+                match model.enable_cuda(0) {
+                    Ok(()) => {
+                        eprintln!("Using CUDA GPU 0 for GGUF inference");
+                        true
+                    }
+                    Err(e) => {
+                        eprintln!("CUDA unavailable, using CPU: {e}");
+                        false
+                    }
+                }
+            } else {
+                false
+            };
+            #[cfg(not(feature = "cuda"))]
+            let cuda_enabled = false;
+            let _ = cuda_enabled; // suppress unused warning when not verbose
+            // Get input tokens - use GGUF's embedded tokenizer
             let input_tokens = if let Some(ref prompt) = options.prompt {
                 // Parse comma-separated token IDs or encode text
                 if prompt.contains(',') || prompt.chars().all(|c| c.is_ascii_digit() || c == ',') {
                     parse_token_ids(prompt)?
                 } else {
-                    // Text prompt - encode using tokenizer
-                    if let Some(tokens) = AprModel::encode_text(model_path, prompt) {
-                        eprintln!(
-                            "{}",
-                            format!("Encoded {} chars to {} tokens", prompt.len(), tokens.len()).dimmed()
-                        );
-                        tokens
-                    } else {
-                        eprintln!(
-                            "{}",
-                            "Warning: No tokenizer found. Using BOS token.".yellow()
-                        );
-                        vec![1u32] // BOS token fallback
-                    }
+                    // Text prompt - encode using GGUF's embedded tokenizer
+                    mapped_model.model.encode(prompt).unwrap_or_else(|| vec![1u32])
                 }
             } else if let Some(path) = input_path {
                 let content = std::fs::read_to_string(path)?;
@@ -820,59 +834,29 @@ fn execute_gguf_inference(
                 vec![1u32] // BOS token
             };
 
-            // Run forward pass using optimized quantized compute
-            eprintln!("{}", "Running quantized inference...".cyan());
+            // Run generation with KV cache for proper autoregressive decoding
             let infer_start = Instant::now();
-            let logits = model.forward(&input_tokens).map_err(|e| {
-                CliError::InferenceFailed(format!("Forward pass failed: {e}"))
-            })?;
-            let infer_time = infer_start.elapsed();
 
-            // Find top-k tokens
-            let mut indexed_logits: Vec<(usize, f32)> =
-                logits.iter().copied().enumerate().collect();
-            indexed_logits
-                .sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-
-            let vocab_size = model.config.vocab_size;
-            let tokens_per_sec = if infer_time.as_secs_f64() > 0.0 {
-                (input_tokens.len() as f64) / infer_time.as_secs_f64()
-            } else {
-                0.0
+            let max_new_tokens = options.max_tokens;
+            let gen_config = QuantizedGenerateConfig {
+                max_tokens: max_new_tokens,
+                temperature: 0.7, // Use reasonable default
+                top_k: 40,
+                ..Default::default()
             };
 
-            let mut output = format!(
-                "GGUF Quantized Inference (OwnedQuantizedModel)\n\
-                 Model: {}\n\
-                 Hidden dim: {}\n\
-                 Num layers: {}\n\
-                 Num heads: {}\n\
-                 Vocab size: {}\n\
-                 Input tokens: {:?}\n\
-                 Load time: {:.2}s\n\
-                 Inference time: {:.2}ms ({:.1} tok/s)\n\n",
-                model_path.display(),
-                model.config.hidden_dim,
-                model.config.num_layers,
-                model.config.num_heads,
-                vocab_size,
-                input_tokens,
-                load_time.as_secs_f64(),
-                infer_time.as_secs_f64() * 1000.0,
-                tokens_per_sec
-            );
+            let output_tokens = model.generate_with_cache(&input_tokens, &gen_config)
+                .map_err(|e| CliError::InferenceFailed(format!("Generation failed: {e}")))?;
+            let _infer_time = infer_start.elapsed();
+            let _load_time = load_time; // Suppress unused warnings
 
-            output.push_str("Top 10 next token predictions:\n");
-            for (rank, (token_id, logit)) in indexed_logits.iter().take(10).enumerate() {
-                output.push_str(&format!(
-                    "  {}. token {} (logit: {:.4})\n",
-                    rank + 1,
-                    token_id,
-                    logit
-                ));
-            }
+            // Decode output using GGUF's embedded tokenizer - only new tokens
+            let generated_tokens = &output_tokens[input_tokens.len()..];
+            let decoded_text = mapped_model.model.decode(generated_tokens);
 
-            Ok(output)
+            // Clean output: strip ChatML markers for instruct models
+            let cleaned = clean_model_output(&decoded_text);
+            Ok(cleaned)
         }
         Err(e) => {
             // Fallback to metadata display
@@ -998,6 +982,7 @@ pub(crate) fn run(
     output_format: &str,
     no_gpu: bool,
     offline: bool,
+    benchmark: bool,
 ) -> Result<()> {
     if offline {
         println!("{}", "=== APR Run (OFFLINE MODE) ===".cyan().bold());
@@ -1019,11 +1004,38 @@ pub(crate) fn run(
         force: false,
         no_gpu,
         offline,
+        benchmark,
     };
 
     let result = run_model(source, &options)?;
 
-    if stream {
+    if benchmark {
+        // Benchmark mode - output performance metrics
+        let tokens_generated = result.tokens_generated.unwrap_or(max_tokens);
+        let tok_per_sec = if result.duration_secs > 0.0 {
+            tokens_generated as f64 / result.duration_secs
+        } else {
+            0.0
+        };
+
+        println!();
+        println!("{}", "=== Benchmark Results ===".cyan().bold());
+        println!("tok/s: {:.1}", tok_per_sec);
+        println!("tokens: {}", tokens_generated);
+        println!("latency: {:.2}ms", result.duration_secs * 1000.0);
+        println!("model: {}", source);
+        println!();
+
+        // Clean output for parsing
+        if output_format == "json" {
+            println!(
+                r#"{{"tok_s": {:.1}, "tokens": {}, "latency_ms": {:.2}}}"#,
+                tok_per_sec,
+                tokens_generated,
+                result.duration_secs * 1000.0
+            );
+        }
+    } else if stream {
         // Streaming mode - output token by token
         for word in result.text.split_whitespace() {
             print!("{word} ");
@@ -1037,16 +1049,18 @@ pub(crate) fn run(
         println!("{}", result.text);
     }
 
-    println!();
-    println!(
-        "Completed in {:.2}s {}",
-        result.duration_secs,
-        if result.cached {
-            "(cached)".dimmed()
-        } else {
-            "(downloaded)".dimmed()
-        }
-    );
+    if !benchmark {
+        println!();
+        println!(
+            "Completed in {:.2}s {}",
+            result.duration_secs,
+            if result.cached {
+                "(cached)".dimmed()
+            } else {
+                "(downloaded)".dimmed()
+            }
+        );
+    }
 
     Ok(())
 }
@@ -1188,6 +1202,7 @@ mod tests {
             force: false,
             no_gpu: true,
             offline: false,
+            benchmark: false,
         };
         assert!(options.no_gpu);
         assert_eq!(options.output_format, "json");

@@ -26,7 +26,7 @@ mod output;
 
 use commands::{
     bench, canary, canary::CanaryCommands, cbtop, chat, compare_hf, convert, debug, diff, eval,
-    explain, export, flow, hex, import, inspect, lint, merge, probar, profile, pull, run, serve,
+    explain, export, flow, hex, import, inspect, lint, merge, probar, profile, pull, qa, run, serve,
     showcase, tensors, trace, tree, tui, validate,
 };
 
@@ -99,6 +99,10 @@ enum Commands {
         /// Per Section 9.2: "apr run --offline is mandatory for production"
         #[arg(long)]
         offline: bool,
+
+        /// Benchmark mode: output performance metrics (tok/s, latency)
+        #[arg(long)]
+        benchmark: bool,
     },
 
     /// Start inference server (REST API, streaming, metrics)
@@ -628,6 +632,10 @@ enum Commands {
         /// Show inspection info (top-k probs, tokens/sec)
         #[arg(long)]
         inspect: bool,
+
+        /// Force CPU inference (skip CUDA even if available)
+        #[arg(long)]
+        force_cpu: bool,
     },
 
     /// Benchmark throughput (spec H12: >= 10 tok/s)
@@ -731,6 +739,60 @@ enum Commands {
         fail_on_naive: bool,
     },
 
+    /// Falsifiable QA checklist for model releases
+    ///
+    /// Runs three gates:
+    /// 1. Golden Output Test (correctness)
+    /// 2. Throughput Falsification (performance)
+    /// 3. Ollama Parity Test (parity)
+    ///
+    /// All claims are falsifiable - if a test can't fail, it provides no information.
+    Qa {
+        /// Path to model file
+        #[arg(value_name = "FILE")]
+        file: std::path::PathBuf,
+
+        /// Minimum throughput threshold in tok/s (default: 100 for GPU)
+        #[arg(long, value_name = "TPS")]
+        assert_tps: Option<f64>,
+
+        /// Minimum speedup vs Ollama (default: 2.0x)
+        #[arg(long, value_name = "SPEEDUP")]
+        assert_speedup: Option<f64>,
+
+        /// Skip golden output test
+        #[arg(long)]
+        skip_golden: bool,
+
+        /// Skip throughput benchmark
+        #[arg(long)]
+        skip_throughput: bool,
+
+        /// Skip Ollama parity comparison
+        #[arg(long)]
+        skip_ollama: bool,
+
+        /// Number of benchmark iterations
+        #[arg(long, default_value = "10")]
+        iterations: usize,
+
+        /// Number of warmup iterations
+        #[arg(long, default_value = "3")]
+        warmup: usize,
+
+        /// Maximum tokens to generate
+        #[arg(long, default_value = "32")]
+        max_tokens: usize,
+
+        /// Output as JSON (for CI integration)
+        #[arg(long)]
+        json: bool,
+
+        /// Verbose output
+        #[arg(short, long)]
+        verbose: bool,
+    },
+
     /// Qwen2.5-Coder showcase demo (spec: qwen2.5-coder-showcase-demo.md)
     Showcase {
         /// Run all steps with auto-verification
@@ -794,6 +856,7 @@ fn execute_command(cli: &Cli) -> Result<(), error::CliError> {
             format,
             no_gpu,
             offline,
+            benchmark,
         } => run::run(
             source,
             input.as_deref(),
@@ -805,6 +868,7 @@ fn execute_command(cli: &Cli) -> Result<(), error::CliError> {
             format,
             *no_gpu,
             *offline,
+            *benchmark,
         ),
 
         Commands::Serve {
@@ -1057,6 +1121,7 @@ fn execute_command(cli: &Cli) -> Result<(), error::CliError> {
             max_tokens,
             system,
             inspect,
+            force_cpu,
         } => chat::run(
             file,
             *temperature,
@@ -1064,6 +1129,7 @@ fn execute_command(cli: &Cli) -> Result<(), error::CliError> {
             *max_tokens,
             system.as_deref(),
             *inspect,
+            *force_cpu,
         ),
 
         Commands::Bench {
@@ -1130,6 +1196,32 @@ fn execute_command(cli: &Cli) -> Result<(), error::CliError> {
                 *fail_on_naive,
             )
         }
+
+        Commands::Qa {
+            file,
+            assert_tps,
+            assert_speedup,
+            skip_golden,
+            skip_throughput,
+            skip_ollama,
+            iterations,
+            warmup,
+            max_tokens,
+            json,
+            verbose,
+        } => qa::run(
+            file,
+            *assert_tps,
+            *assert_speedup,
+            *skip_golden,
+            *skip_throughput,
+            *skip_ollama,
+            *iterations,
+            *warmup,
+            *max_tokens,
+            *json || cli.json,
+            *verbose || cli.verbose,
+        ),
 
         Commands::Showcase {
             auto_verify,
