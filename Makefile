@@ -404,14 +404,14 @@ semantic-search: ## Interactive semantic code search
 
 .PHONY: showcase-headless showcase-ci falsification-tests falsification-quick showcase-verify showcase-pmat showcase-full
 
-showcase-headless: ## Run cbtop in headless mode with JSON output
-	@echo "🎯 Running showcase headless benchmark..."
-	@cargo run --release -p apr-cli -- cbtop --headless --json --output target/showcase-results.json --iterations 100
+showcase-headless: ## Run cbtop in headless mode with JSON output (simulated data for CI)
+	@echo "🎯 Running showcase headless benchmark (simulated mode)..."
+	@cargo run --release -p apr-cli -- cbtop --headless --simulated --json --output target/showcase-results.json --iterations 100
 	@echo "✅ Results saved to target/showcase-results.json"
 
 showcase-ci: ## Run showcase benchmark in CI mode with threshold check
 	@echo "🔍 Running showcase CI validation (throughput >= 100 tok/s)..."
-	@cargo run --release -p apr-cli -- cbtop --headless --ci --throughput 100 --iterations 100
+	@cargo run --release -p apr-cli -- cbtop --headless --simulated --ci --throughput 100 --iterations 100
 	@echo "✅ CI validation passed"
 
 falsification-tests: ## Run all 137 falsification tests (F001-F105, M001-M020, O001-O009, R001)

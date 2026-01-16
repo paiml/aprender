@@ -77,7 +77,8 @@ aprender = { path = "../..", version = "0.24", default-features = true, features
 realizar = { path = "/home/noah/src/realizar", optional = true, default-features = false, features = ["server", "aprender-serve", "gpu", "cuda"] }
 
 # SIMD compute library (for BrickProfiler in §12.11 unified profiling)
-trueno = { path = "/home/noah/src/trueno", optional = true }
+# MUST use crates.io version to match aprender's trueno dependency
+trueno = { version = "0.13.0", optional = true }
 
 # Async runtime for server
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal"], optional = true }

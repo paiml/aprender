@@ -349,7 +349,7 @@ dependencies = [
  "sha2",
  "tempfile",
  "thiserror 2.0.17",
- "trueno 0.13.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "trueno 0.13.0",
  "trueno-zram-core 0.3.0",
  "wasm-bindgen",
  "x25519-dalek",
@@ -4781,7 +4781,7 @@ dependencies = [
  "tokio-stream",
  "tower 0.4.13",
  "tracing",
- "trueno 0.13.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "trueno 0.13.0",
  "trueno-gpu 0.4.6",
  "uuid",
 ]
@@ -6232,20 +6232,6 @@ dependencies = [
  "anyhow",
  "num_cpus",
  "thiserror 2.0.17",
-]
-
-[[package]]
-name = "trueno"
-version = "0.13.0"
-dependencies = [
- "anyhow",
- "chrono",
- "hostname",
- "num_cpus",
- "serde",
- "serde_json",
- "thiserror 2.0.17",
- "toml",
 ]
 
 [[package]]
