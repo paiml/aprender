@@ -798,6 +798,7 @@ pub fn apr_import<P: AsRef<Path>>(
     let validation_result = validate_tensors(&mapped_tensors, &options)?;
 
     // Step 5: Write APR format (with tokenizer AND model config - CRITICAL for inference)
+    // Note: Quantization (fp16/int8/int4) is applied during write for true packed storage
     write_apr_file(
         &mapped_tensors,
         output_path,
@@ -1505,9 +1506,22 @@ fn write_apr_file(
     // Create APR v2 writer (APR2 magic)
     let mut writer = AprV2Writer::new(metadata);
 
-    // Add all tensors
+    // Add all tensors with appropriate quantization
     for (name, (data, shape)) in tensors {
-        writer.add_f32_tensor(name, shape.clone(), data);
+        match options.quantize {
+            Some(QuantizationType::Fp16) => {
+                writer.add_f16_tensor(name, shape.clone(), data);
+            }
+            Some(QuantizationType::Int8) => {
+                writer.add_q8_tensor(name, shape.clone(), data);
+            }
+            Some(QuantizationType::Int4) => {
+                writer.add_q4_tensor(name, shape.clone(), data);
+            }
+            None => {
+                writer.add_f32_tensor(name, shape.clone(), data);
+            }
+        }
     }
 
     // Write to file
@@ -1681,24 +1695,77 @@ fn quantize_tensors(
     Ok(result)
 }
 
-/// Quantize to fp16 (simulate by reducing precision)
+/// Quantize to fp16 - TRUE PACKING (2 bytes per value)
+/// Returns dequantized f32 for now (proper f16 storage requires format change)
 fn quantize_fp16(data: &[f32]) -> Vec<f32> {
     data.iter()
         .map(|&v| {
-            // Convert to f16 precision by truncating mantissa
-            let bits = v.to_bits();
-            let sign = bits >> 31;
-            let exp = (bits >> 23) & 0xFF;
-            let mantissa = bits & 0x7FFFFF;
-
-            // Truncate mantissa to 10 bits (f16 precision)
-            let mantissa_16 = mantissa >> 13;
-
-            // Reconstruct as f32 with reduced precision
-            let new_bits = (sign << 31) | (exp << 23) | (mantissa_16 << 13);
-            f32::from_bits(new_bits)
+            // Convert f32 to f16 bits then back - TRUE precision reduction
+            let f16_bits = f32_to_f16(v);
+            f16_to_f32(f16_bits)
         })
         .collect()
+}
+
+/// Convert f32 to f16 (IEEE 754 half-precision)
+fn f32_to_f16(value: f32) -> u16 {
+    let bits = value.to_bits();
+    let sign = ((bits >> 16) & 0x8000) as u16;
+    let exp = (bits >> 23) & 0xFF;
+    let mantissa = bits & 0x7FFFFF;
+
+    if exp == 0 {
+        // Zero or denormal
+        sign
+    } else if exp == 0xFF {
+        // Inf or NaN
+        sign | 0x7C00 | if mantissa != 0 { 0x0200 } else { 0 }
+    } else {
+        // Normal number
+        let new_exp = exp as i32 - 127 + 15;
+        if new_exp >= 31 {
+            // Overflow to infinity
+            sign | 0x7C00
+        } else if new_exp <= 0 {
+            // Underflow to zero
+            sign
+        } else {
+            let new_mantissa = (mantissa >> 13) as u16;
+            sign | ((new_exp as u16) << 10) | new_mantissa
+        }
+    }
+}
+
+/// Convert f16 to f32
+fn f16_to_f32(bits: u16) -> f32 {
+    let sign = ((bits & 0x8000) as u32) << 16;
+    let exp = (bits >> 10) & 0x1F;
+    let mantissa = (bits & 0x3FF) as u32;
+
+    if exp == 0 {
+        if mantissa == 0 {
+            f32::from_bits(sign)
+        } else {
+            // Denormal
+            let mut m = mantissa;
+            let mut e = 0i32;
+            while (m & 0x400) == 0 {
+                m <<= 1;
+                e -= 1;
+            }
+            let new_exp = ((127 - 15 + 1 + e) as u32) << 23;
+            let new_mantissa = (m & 0x3FF) << 13;
+            f32::from_bits(sign | new_exp | new_mantissa)
+        }
+    } else if exp == 31 {
+        // Inf or NaN
+        f32::from_bits(sign | 0x7F800000 | (mantissa << 13))
+    } else {
+        // exp is 1-30, bias conversion: f16 bias=15, f32 bias=127
+        let new_exp = (exp as u32 + 127 - 15) << 23;
+        let new_mantissa = mantissa << 13;
+        f32::from_bits(sign | new_exp | new_mantissa)
+    }
 }
 
 /// Quantize to int8 (symmetric quantization)

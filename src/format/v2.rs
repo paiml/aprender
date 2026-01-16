@@ -88,6 +88,134 @@ fn crc32(data: &[u8]) -> u32 {
 }
 
 // ============================================================================
+// IEEE 754 Half-Precision (f16) Conversion
+// ============================================================================
+
+/// Convert f32 to f16 (IEEE 754 half-precision)
+///
+/// Half-precision format:
+/// - Sign: 1 bit
+/// - Exponent: 5 bits (bias 15)
+/// - Mantissa: 10 bits
+fn f32_to_f16(value: f32) -> u16 {
+    let bits = value.to_bits();
+    let sign = ((bits >> 16) & 0x8000) as u16;
+    let exp = (bits >> 23) & 0xFF;
+    let mantissa = bits & 0x7F_FFFF;
+
+    if exp == 0 {
+        // Zero or denormal f32 → zero f16
+        sign
+    } else if exp == 255 {
+        // Inf or NaN
+        if mantissa == 0 {
+            sign | 0x7C00 // Inf
+        } else {
+            sign | 0x7E00 // NaN (quiet)
+        }
+    } else {
+        // Normalized number
+        let new_exp = (exp as i32) - 127 + 15;
+
+        if new_exp >= 31 {
+            // Overflow to infinity
+            sign | 0x7C00
+        } else if new_exp <= 0 {
+            // Underflow to zero (could do denormals but not worth it)
+            sign
+        } else {
+            let new_mantissa = (mantissa >> 13) as u16;
+            sign | ((new_exp as u16) << 10) | new_mantissa
+        }
+    }
+}
+
+/// Convert f16 to f32
+fn f16_to_f32(bits: u16) -> f32 {
+    let sign = ((bits & 0x8000) as u32) << 16;
+    let exp = (bits >> 10) & 0x1F;
+    let mantissa = (bits & 0x3FF) as u32;
+
+    if exp == 0 {
+        if mantissa == 0 {
+            f32::from_bits(sign)
+        } else {
+            // Denormal f16 → normalized f32
+            let mut m = mantissa;
+            let mut e = 0i32;
+            while (m & 0x400) == 0 {
+                m <<= 1;
+                e -= 1;
+            }
+            let new_exp = (127 - 15 + 1 + e) as u32;
+            let new_mantissa = (m & 0x3FF) << 13;
+            f32::from_bits(sign | (new_exp << 23) | new_mantissa)
+        }
+    } else if exp == 31 {
+        // Inf or NaN
+        f32::from_bits(sign | 0x7F80_0000 | (mantissa << 13))
+    } else {
+        // Normalized
+        let new_exp = (exp as u32 - 15 + 127) << 23;
+        let new_mantissa = mantissa << 13;
+        f32::from_bits(sign | new_exp | new_mantissa)
+    }
+}
+
+/// Dequantize Q4 block-quantized data to f32
+///
+/// Format: blocks of [scale: f16 (2 bytes)] + [packed nibbles: 16 bytes]
+/// Each block contains 32 values.
+fn dequantize_q4(data: &[u8], element_count: usize) -> Option<Vec<f32>> {
+    const BLOCK_SIZE: usize = 32;
+
+    let mut result = Vec::with_capacity(element_count);
+    let mut pos = 0;
+    let mut remaining = element_count;
+
+    while remaining > 0 && pos + 2 <= data.len() {
+        // Read scale (f16)
+        let scale_bits = u16::from_le_bytes([data[pos], data[pos + 1]]);
+        let scale = f16_to_f32(scale_bits);
+        pos += 2;
+
+        // Read packed nibbles (16 bytes max)
+        let values_in_block = remaining.min(BLOCK_SIZE);
+
+        for i in 0..values_in_block {
+            let byte_idx = pos + i / 2;
+            if byte_idx >= data.len() {
+                break;
+            }
+
+            let byte = data[byte_idx];
+            let nibble = if i % 2 == 0 {
+                byte & 0x0F
+            } else {
+                byte >> 4
+            };
+
+            // Convert back from unsigned nibble (0-15) to signed (-8 to 7)
+            let q = (nibble as i8) - 8;
+            result.push(f32::from(q) * scale);
+        }
+
+        // Move to next block (always 18 bytes per block in storage)
+        pos += 16;
+        remaining = remaining.saturating_sub(BLOCK_SIZE);
+    }
+
+    // Ensure we have the expected number of elements
+    if result.len() == element_count {
+        Some(result)
+    } else {
+        // Pad with zeros if needed (partial last block)
+        result.resize(element_count, 0.0);
+        Some(result)
+    }
+}
+
+// ============================================================================
 // Constants
 // ============================================================================
 
@@ -864,6 +992,101 @@ impl AprV2Writer {
         self.add_tensor(name, TensorDType::F32, shape, bytes);
     }
 
+    /// Add f16 tensor (converts f32 → f16, 2 bytes per value)
+    ///
+    /// This provides true 2x compression over f32 storage with minimal precision loss
+    /// for inference workloads. Uses IEEE 754 half-precision format.
+    pub fn add_f16_tensor(&mut self, name: impl Into<String>, shape: Vec<usize>, data: &[f32]) {
+        let bytes: Vec<u8> = data
+            .iter()
+            .flat_map(|&f| f32_to_f16(f).to_le_bytes())
+            .collect();
+        self.add_tensor(name, TensorDType::F16, shape, bytes);
+    }
+
+    /// Add Q8 tensor (8-bit symmetric quantization)
+    ///
+    /// Format: [scale: f32 (4 bytes)] + [quantized: i8 × n]
+    /// Total size: 4 + n bytes (vs 4n for f32)
+    /// Compression ratio: ~4x
+    pub fn add_q8_tensor(&mut self, name: impl Into<String>, shape: Vec<usize>, data: &[f32]) {
+        if data.is_empty() {
+            self.add_tensor(name, TensorDType::Q8, shape, Vec::new());
+            return;
+        }
+
+        // Find scale (max absolute value)
+        let max_abs = data.iter().map(|v| v.abs()).fold(0.0f32, f32::max);
+        let scale = if max_abs == 0.0 { 1.0 } else { max_abs / 127.0 };
+
+        // Pack: scale (4 bytes) + quantized values (1 byte each)
+        let mut bytes = Vec::with_capacity(4 + data.len());
+        bytes.extend_from_slice(&scale.to_le_bytes());
+
+        for &v in data {
+            let q = (v / scale).round().clamp(-127.0, 127.0) as i8;
+            bytes.push(q as u8);
+        }
+
+        self.add_tensor(name, TensorDType::Q8, shape, bytes);
+    }
+
+    /// Add Q4 tensor (4-bit symmetric quantization, block-wise)
+    ///
+    /// Format: For each block of 32 values:
+    ///   [block_scale: f16 (2 bytes)] + [packed nibbles: 16 bytes]
+    ///
+    /// Total size per block: 18 bytes (vs 128 bytes for f32)
+    /// Compression ratio: ~7x
+    pub fn add_q4_tensor(&mut self, name: impl Into<String>, shape: Vec<usize>, data: &[f32]) {
+        const BLOCK_SIZE: usize = 32;
+
+        if data.is_empty() {
+            self.add_tensor(name, TensorDType::Q4, shape, Vec::new());
+            return;
+        }
+
+        // Blocks: each block has 2-byte scale + 16 bytes of packed nibbles
+        let num_blocks = (data.len() + BLOCK_SIZE - 1) / BLOCK_SIZE;
+        let mut bytes = Vec::with_capacity(num_blocks * 18);
+
+        for block_start in (0..data.len()).step_by(BLOCK_SIZE) {
+            let block_end = (block_start + BLOCK_SIZE).min(data.len());
+            let block = &data[block_start..block_end];
+
+            // Find block scale
+            let max_abs = block.iter().map(|v| v.abs()).fold(0.0f32, f32::max);
+            let scale = if max_abs == 0.0 { 1.0 } else { max_abs / 7.0 };
+
+            // Store scale as f16
+            bytes.extend_from_slice(&f32_to_f16(scale).to_le_bytes());
+
+            // Quantize and pack (2 values per byte)
+            let mut packed_idx = 0;
+            let mut packed_buf = [0u8; 16];
+
+            for (i, &v) in block.iter().enumerate() {
+                // Quantize to 4-bit signed (-8 to 7)
+                let q = (v / scale).round().clamp(-8.0, 7.0) as i8;
+                // Store as unsigned nibble (0-15)
+                let nibble = ((q + 8) as u8) & 0x0F;
+
+                if i % 2 == 0 {
+                    packed_buf[packed_idx] = nibble;
+                } else {
+                    packed_buf[packed_idx] |= nibble << 4;
+                    packed_idx += 1;
+                }
+            }
+            // Note: No need to track packed_idx for odd elements since we write all 16 bytes anyway
+
+            // Write all 16 bytes (zero-padded for partial blocks)
+            bytes.extend_from_slice(&packed_buf);
+        }
+
+        self.add_tensor(name, TensorDType::Q4, shape, bytes);
+    }
+
     /// Set LZ4 compression flag
     pub fn with_lz4_compression(&mut self) -> &mut Self {
         self.header.flags = self.header.flags.with(AprV2Flags::LZ4_COMPRESSED);
@@ -1104,7 +1327,7 @@ impl AprV2Reader {
         }
     }
 
-    /// Get tensor as f32 slice
+    /// Get tensor as f32 slice (F32 dtype only)
     #[must_use]
     pub fn get_f32_tensor(&self, name: &str) -> Option<Vec<f32>> {
         let entry = self.get_tensor(name)?;
@@ -1119,6 +1342,52 @@ impl AprV2Reader {
             .collect();
 
         Some(floats)
+    }
+
+    /// Get tensor as f32 Vec, dequantizing if necessary
+    ///
+    /// Supports all tensor types:
+    /// - F32: direct copy
+    /// - F16: IEEE 754 half-precision → f32
+    /// - Q8: 8-bit symmetric dequantization
+    /// - Q4: 4-bit block dequantization
+    #[must_use]
+    pub fn get_tensor_as_f32(&self, name: &str) -> Option<Vec<f32>> {
+        let entry = self.get_tensor(name)?;
+        let data = self.get_tensor_data(name)?;
+        let element_count = entry.element_count();
+
+        match entry.dtype {
+            TensorDType::F32 => {
+                let floats: Vec<f32> = data
+                    .chunks_exact(4)
+                    .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+                    .collect();
+                Some(floats)
+            }
+            TensorDType::F16 => {
+                let floats: Vec<f32> = data
+                    .chunks_exact(2)
+                    .map(|chunk| f16_to_f32(u16::from_le_bytes([chunk[0], chunk[1]])))
+                    .collect();
+                Some(floats)
+            }
+            TensorDType::Q8 => {
+                if data.len() < 4 {
+                    return None;
+                }
+                let scale = f32::from_le_bytes([data[0], data[1], data[2], data[3]]);
+                let floats: Vec<f32> = data[4..]
+                    .iter()
+                    .map(|&b| f32::from(b as i8) * scale)
+                    .collect();
+                Some(floats)
+            }
+            TensorDType::Q4 => {
+                dequantize_q4(data, element_count)
+            }
+            _ => None, // Other types not yet supported
+        }
     }
 
     /// Check if all tensors are 64-byte aligned
@@ -1248,6 +1517,52 @@ impl<'a> AprV2ReaderRef<'a> {
             .collect();
 
         Some(floats)
+    }
+
+    /// Get tensor as f32 Vec, dequantizing if necessary
+    ///
+    /// Supports all tensor types:
+    /// - F32: direct copy
+    /// - F16: IEEE 754 half-precision → f32
+    /// - Q8: 8-bit symmetric dequantization
+    /// - Q4: 4-bit block dequantization
+    #[must_use]
+    pub fn get_tensor_as_f32(&self, name: &str) -> Option<Vec<f32>> {
+        let entry = self.get_tensor(name)?;
+        let data = self.get_tensor_data(name)?;
+        let element_count = entry.element_count();
+
+        match entry.dtype {
+            TensorDType::F32 => {
+                let floats: Vec<f32> = data
+                    .chunks_exact(4)
+                    .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+                    .collect();
+                Some(floats)
+            }
+            TensorDType::F16 => {
+                let floats: Vec<f32> = data
+                    .chunks_exact(2)
+                    .map(|chunk| f16_to_f32(u16::from_le_bytes([chunk[0], chunk[1]])))
+                    .collect();
+                Some(floats)
+            }
+            TensorDType::Q8 => {
+                if data.len() < 4 {
+                    return None;
+                }
+                let scale = f32::from_le_bytes([data[0], data[1], data[2], data[3]]);
+                let floats: Vec<f32> = data[4..]
+                    .iter()
+                    .map(|&b| f32::from(b as i8) * scale)
+                    .collect();
+                Some(floats)
+            }
+            TensorDType::Q4 => {
+                dequantize_q4(data, element_count)
+            }
+            _ => None, // Other types not yet supported
+        }
     }
 
     /// Check if all tensors are 64-byte aligned
@@ -2033,5 +2348,184 @@ mod tests {
         assert!(tokens.eos_token.is_none());
         assert!(tokens.im_start_token.is_none());
         assert!(tokens.im_end_token.is_none());
+    }
+
+    // ========================================================================
+    // Quantization Tests - True Packed Storage (APR-QUANT-001)
+    // ========================================================================
+
+    /// F16 tensor roundtrip - 2x compression
+    #[test]
+    fn test_f16_tensor_roundtrip() {
+        let metadata = AprV2Metadata::new("test");
+        let mut writer = AprV2Writer::new(metadata);
+
+        let original = vec![1.0f32, -2.5, 3.14159, 0.0, 65504.0, -65504.0];
+        writer.add_f16_tensor("weights", vec![6], &original);
+
+        let bytes = writer.write().expect("write");
+        let reader = AprV2Reader::from_bytes(&bytes).expect("read");
+
+        let entry = reader.get_tensor("weights").expect("tensor exists");
+        assert_eq!(entry.dtype, TensorDType::F16);
+        // F16 = 2 bytes per element
+        assert_eq!(entry.size, 12);
+
+        let recovered = reader.get_tensor_as_f32("weights").expect("dequantize");
+        assert_eq!(recovered.len(), 6);
+
+        // F16 has ~3 decimal digits precision
+        for (orig, rec) in original.iter().zip(recovered.iter()) {
+            let diff = (orig - rec).abs();
+            let rel_err = if *orig != 0.0 { diff / orig.abs() } else { diff };
+            assert!(rel_err < 0.01, "F16 precision loss too high: {orig} -> {rec}");
+        }
+    }
+
+    /// Q8 tensor roundtrip - 4x compression
+    #[test]
+    fn test_q8_tensor_roundtrip() {
+        let metadata = AprV2Metadata::new("test");
+        let mut writer = AprV2Writer::new(metadata);
+
+        let original: Vec<f32> = (-64..64).map(|i| i as f32 * 0.1).collect();
+        writer.add_q8_tensor("weights", vec![128], &original);
+
+        let bytes = writer.write().expect("write");
+        let reader = AprV2Reader::from_bytes(&bytes).expect("read");
+
+        let entry = reader.get_tensor("weights").expect("tensor exists");
+        assert_eq!(entry.dtype, TensorDType::Q8);
+        // Q8 = 4 bytes scale + 1 byte per element = 132 bytes
+        assert_eq!(entry.size, 132);
+
+        let recovered = reader.get_tensor_as_f32("weights").expect("dequantize");
+        assert_eq!(recovered.len(), 128);
+
+        // Q8 has ~7 bit precision
+        for (orig, rec) in original.iter().zip(recovered.iter()) {
+            let diff = (orig - rec).abs();
+            let max_val = original.iter().map(|v| v.abs()).fold(0.0f32, f32::max);
+            let rel_err = diff / max_val;
+            assert!(rel_err < 0.02, "Q8 precision loss too high: {orig} -> {rec}");
+        }
+    }
+
+    /// Q4 tensor roundtrip - 7x compression
+    #[test]
+    fn test_q4_tensor_roundtrip() {
+        let metadata = AprV2Metadata::new("test");
+        let mut writer = AprV2Writer::new(metadata);
+
+        // 64 values = 2 blocks of 32
+        let original: Vec<f32> = (-32..32).map(|i| i as f32 * 0.25).collect();
+        writer.add_q4_tensor("weights", vec![64], &original);
+
+        let bytes = writer.write().expect("write");
+        let reader = AprV2Reader::from_bytes(&bytes).expect("read");
+
+        let entry = reader.get_tensor("weights").expect("tensor exists");
+        assert_eq!(entry.dtype, TensorDType::Q4);
+        // Q4 = 2 blocks × 18 bytes/block = 36 bytes
+        assert_eq!(entry.size, 36);
+
+        let recovered = reader.get_tensor_as_f32("weights").expect("dequantize");
+        assert_eq!(recovered.len(), 64);
+
+        // Q4 has ~4 bit precision (16 levels)
+        for (orig, rec) in original.iter().zip(recovered.iter()) {
+            let diff = (orig - rec).abs();
+            // Q4 can have up to ~15% error per value due to only 16 quantization levels
+            assert!(diff < 1.5, "Q4 error too high: {orig} -> {rec} (diff={diff})");
+        }
+    }
+
+    /// Verify F16 produces smaller files than F32
+    #[test]
+    fn test_f16_compression_ratio() {
+        let data: Vec<f32> = (0..1000).map(|i| i as f32 * 0.001).collect();
+
+        // F32 version
+        let mut writer_f32 = AprV2Writer::new(AprV2Metadata::new("f32"));
+        writer_f32.add_f32_tensor("w", vec![1000], &data);
+        let bytes_f32 = writer_f32.write().expect("write f32");
+
+        // F16 version
+        let mut writer_f16 = AprV2Writer::new(AprV2Metadata::new("f16"));
+        writer_f16.add_f16_tensor("w", vec![1000], &data);
+        let bytes_f16 = writer_f16.write().expect("write f16");
+
+        // F16 should be ~50% the size of F32 for tensor data
+        let ratio = bytes_f16.len() as f32 / bytes_f32.len() as f32;
+        assert!(ratio < 0.6, "F16 should be <60% of F32 size, got {ratio:.2}");
+    }
+
+    /// Verify Q4 produces much smaller files than F32
+    #[test]
+    fn test_q4_compression_ratio() {
+        let data: Vec<f32> = (0..1024).map(|i| (i % 16) as f32 - 8.0).collect();
+
+        // F32 version
+        let mut writer_f32 = AprV2Writer::new(AprV2Metadata::new("f32"));
+        writer_f32.add_f32_tensor("w", vec![1024], &data);
+        let bytes_f32 = writer_f32.write().expect("write f32");
+
+        // Q4 version
+        let mut writer_q4 = AprV2Writer::new(AprV2Metadata::new("q4"));
+        writer_q4.add_q4_tensor("w", vec![1024], &data);
+        let bytes_q4 = writer_q4.write().expect("write q4");
+
+        // Q4 should be ~15-20% the size of F32 (32 blocks × 18 bytes = 576 vs 4096)
+        // Actual ratio depends on metadata overhead for small tensors
+        let ratio = bytes_q4.len() as f32 / bytes_f32.len() as f32;
+        assert!(ratio < 0.30, "Q4 should be <30% of F32 size, got {ratio:.2}");
+    }
+
+    /// Test f16 conversion edge cases
+    #[test]
+    fn test_f16_edge_cases() {
+        // Zero
+        assert_eq!(f32_to_f16(0.0), 0);
+        assert_eq!(f16_to_f32(0), 0.0);
+
+        // Negative zero
+        assert_eq!(f32_to_f16(-0.0) & 0x7FFF, 0);
+
+        // One
+        let one_f16 = f32_to_f16(1.0);
+        assert!((f16_to_f32(one_f16) - 1.0).abs() < 0.001);
+
+        // Max f16 value (~65504)
+        let max_f16 = f32_to_f16(65504.0);
+        assert!((f16_to_f32(max_f16) - 65504.0).abs() < 100.0);
+
+        // Infinity
+        let inf_f16 = f32_to_f16(f32::INFINITY);
+        assert_eq!(inf_f16 & 0x7FFF, 0x7C00);
+
+        // NaN
+        let nan_f16 = f32_to_f16(f32::NAN);
+        assert!(nan_f16 & 0x7FFF > 0x7C00); // NaN has exponent all 1s and non-zero mantissa
+    }
+
+    /// ReaderRef also supports quantized tensors
+    #[test]
+    fn test_reader_ref_quantized() {
+        let metadata = AprV2Metadata::new("test");
+        let mut writer = AprV2Writer::new(metadata);
+
+        writer.add_f16_tensor("f16", vec![4], &[1.0, 2.0, 3.0, 4.0]);
+        writer.add_q8_tensor("q8", vec![4], &[1.0, 2.0, 3.0, 4.0]);
+
+        let bytes = writer.write().expect("write");
+        let reader = AprV2ReaderRef::from_bytes(&bytes).expect("read");
+
+        let f16_data = reader.get_tensor_as_f32("f16").expect("f16");
+        assert_eq!(f16_data.len(), 4);
+        assert!((f16_data[0] - 1.0).abs() < 0.01);
+
+        let q8_data = reader.get_tensor_as_f32("q8").expect("q8");
+        assert_eq!(q8_data.len(), 4);
+        assert!((q8_data[0] - 1.0).abs() < 0.1);
     }
 }

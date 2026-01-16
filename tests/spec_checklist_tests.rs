@@ -4392,7 +4392,8 @@ fn x3_trueno_dependency_documented() {
             in_dependencies = false;
         }
 
-        if in_dependencies && line.contains("trueno") && line.contains("optional = true") {
+        // Check for trueno (not trueno-zram-core or other trueno-* crates)
+        if in_dependencies && line.starts_with("trueno ") && line.contains("optional = true") {
             trueno_optional = true;
         }
     }
