@@ -110,7 +110,7 @@ alsa = { version = "0.9", optional = true }  # ALSA bindings for Linux audio cap
 rayon = { version = "1.10", optional = true }
 
 # Core compute primitives - SIMD-accelerated tensor operations
-trueno = "0.11.0"
+trueno = "0.13.0"
 
 # Compression for .apr format (optional, spec §3.3)
 lz4_flex = { version = "0.11", optional = true }

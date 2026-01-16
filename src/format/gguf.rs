@@ -1394,8 +1394,8 @@ fn dequantize_q4_k(data: &[u8], start: usize, num_elements: usize) -> Result<Vec
         // First 8 bytes: lower 4 bits of scales, lower 4 bits of mins
         // Last 4 bytes: upper 2 bits of scales and mins
         for i in 0..4 {
-            scales[i] = (scales_bytes[i] & 0x3F);
-            scales[i + 4] = (scales_bytes[i + 4] & 0x3F);
+            scales[i] = scales_bytes[i] & 0x3F;
+            scales[i + 4] = scales_bytes[i + 4] & 0x3F;
             mins[i] = (scales_bytes[i] >> 6) | ((scales_bytes[i + 8] & 0x0F) << 2);
             mins[i + 4] = (scales_bytes[i + 4] >> 6) | ((scales_bytes[i + 8] >> 4) << 2);
         }
