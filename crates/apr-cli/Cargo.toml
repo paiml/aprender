@@ -1,6 +1,6 @@
 [package]
 name = "apr-cli"
-version = "0.2.2"
+version = "0.2.3"
 edition = "2021"
 rust-version = "1.70"
 authors = ["Noah Gift <noah@paiml.com>"]
@@ -71,10 +71,9 @@ zram = ["trueno-zram-core"]
 # Core aprender library
 aprender = { path = "../..", version = "0.24", default-features = true, features = ["format-compression"] }
 
-# Inference engine (local path for PAR-041 testing)
+# Inference engine (crates.io version, with local path for dev)
 # Note: cuda feature enables GPU-accelerated inference via trueno-gpu
-# PAR-041: Using local realizar with tiled GEMV kernel (256 threads vs 32)
-realizar = { path = "/home/noah/src/realizar", optional = true, default-features = false, features = ["server", "aprender-serve", "gpu", "cuda"] }
+realizar = { version = ">=0.5.2", path = "/home/noah/src/realizar", optional = true, default-features = false, features = ["server", "aprender-serve", "gpu", "cuda"] }
 
 # SIMD compute library (for BrickProfiler in §12.11 unified profiling)
 # MUST use crates.io version to match aprender's trueno dependency
@@ -120,15 +119,14 @@ ratatui = { version = "0.29", default-features = true }
 crossterm = "0.28"
 
 # Visualization (syscall tracing and charts)
-# Using local path for Sprint 58 BrickTracer integration (PMAT-PERF-009)
-renacer = { path = "/home/noah/src/renacer", optional = true, default-features = false }
+renacer = { version = "0.9.5", path = "/home/noah/src/renacer", optional = true, default-features = false }
 trueno-viz = { version = "0.1.16", optional = true, default-features = false, features = ["svg"] }
 
 # ZRAM compression (SIMD-accelerated LZ4/ZSTD)
 trueno-zram-core = { version = "0.2", optional = true }
 
 # Model registry and caching (Ollama-like model management)
-pacha = { path = "/home/noah/src/pacha", default-features = false, features = ["remote"] }
+pacha = { version = "0.2.3", path = "/home/noah/src/pacha", default-features = false, features = ["remote"] }
 
 [[example]]
 name = "probar_tui_testing"

@@ -108,6 +108,8 @@ pub(crate) struct RunOptions {
     pub offline: bool,
     /// Benchmark mode: output performance metrics
     pub benchmark: bool,
+    /// Verbose mode: show loading/backend metadata (NOISY-GUARD F-UX-27)
+    pub verbose: bool,
     /// Enable inference tracing (APR-TRACE-001)
     pub trace: bool,
     /// Trace specific steps only
@@ -129,6 +131,7 @@ impl Default for RunOptions {
             no_gpu: false,
             offline: false,
             benchmark: false,
+            verbose: false,
             trace: false,
             trace_steps: None,
             trace_verbose: false,
@@ -428,6 +431,9 @@ fn execute_inference(
 }
 
 /// Execute inference using realizar engine
+///
+/// Per spec APR-CLI-DELEGATE-001: All inference delegates to realizar's
+/// high-level API. This eliminates ~1500 lines of duplicated code.
 #[cfg(feature = "inference")]
 fn execute_with_realizar(
     model_path: &Path,
@@ -435,25 +441,52 @@ fn execute_with_realizar(
     options: &RunOptions,
     _use_mmap: bool,
 ) -> Result<String> {
-    use realizar::format::{detect_format, ModelFormat};
+    use realizar::{run_inference, InferenceConfig};
 
-    // Read file for format detection
-    let data = std::fs::read(model_path)?;
-    if data.len() < 8 {
-        return Err(CliError::InvalidFormat(
-            "File too small for format detection".to_string(),
-        ));
+    // Get prompt from options or input file
+    let prompt = if let Some(ref p) = options.prompt {
+        Some(p.clone())
+    } else if let Some(path) = input_path {
+        Some(std::fs::read_to_string(path)?)
+    } else {
+        None
+    };
+
+    // Build inference config
+    let mut config = InferenceConfig::new(model_path);
+    if let Some(ref p) = prompt {
+        config = config.with_prompt(p);
+    }
+    config = config
+        .with_max_tokens(options.max_tokens)
+        .with_verbose(options.verbose); // NOISY-GUARD F-UX-27: explicit --verbose flag
+
+    if options.no_gpu {
+        config = config.without_gpu();
     }
 
-    // Detect model format from magic bytes
-    let format = detect_format(&data[..8])
-        .map_err(|e| CliError::InvalidFormat(format!("Format detection failed: {e}")))?;
-
-    match format {
-        ModelFormat::Apr => execute_apr_inference(model_path, input_path, options),
-        ModelFormat::SafeTensors => execute_safetensors_inference(model_path, input_path, options),
-        ModelFormat::Gguf => execute_gguf_inference(model_path, input_path, options),
+    if options.trace {
+        config = config.with_trace(true);
     }
+
+    // Run inference via realizar
+    let result = run_inference(&config).map_err(|e| {
+        CliError::InferenceFailed(format!("Inference failed: {e}"))
+    })?;
+
+    // Report performance if benchmarking
+    if options.benchmark {
+        eprintln!(
+            "{}",
+            format!(
+                "Generated {} tokens in {:.1}ms ({:.1} tok/s)",
+                result.generated_token_count, result.inference_ms, result.tok_per_sec
+            )
+            .green()
+        );
+    }
+
+    Ok(result.text)
 }
 
 /// Execute APR model inference (APR v2 format)
@@ -1565,6 +1598,7 @@ pub(crate) fn run(
     no_gpu: bool,
     offline: bool,
     benchmark: bool,
+    verbose: bool,
     trace: bool,
     trace_steps: Option<&[String]>,
     trace_verbose: bool,
@@ -1605,6 +1639,7 @@ pub(crate) fn run(
         no_gpu,
         offline,
         benchmark,
+        verbose,
         trace,
         trace_steps: trace_steps.map(|s| s.to_vec()),
         trace_verbose,
@@ -1807,6 +1842,7 @@ mod tests {
             no_gpu: true,
             offline: false,
             benchmark: false,
+            verbose: false,
             trace: false,
             trace_steps: None,
             trace_verbose: false,

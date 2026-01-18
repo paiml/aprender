@@ -658,9 +658,13 @@ enum Commands {
         #[arg(long)]
         inspect: bool,
 
-        /// Force CPU inference (skip CUDA even if available)
+        /// Disable GPU acceleration (use CPU)
         #[arg(long)]
-        force_cpu: bool,
+        no_gpu: bool,
+
+        /// Force GPU acceleration (requires CUDA)
+        #[arg(long)]
+        gpu: bool,
 
         /// Enable inference tracing (APR-TRACE-001)
         #[arg(long)]
@@ -880,12 +884,26 @@ enum Commands {
         #[arg(short, long)]
         quiet: bool,
     },
+
+    /// Model self-test: 10-stage pipeline integrity check (APR-TRACE-001)
+    Check {
+        /// Path to model file
+        #[arg(value_name = "FILE")]
+        file: PathBuf,
+
+        /// Disable GPU acceleration
+        #[arg(long)]
+        no_gpu: bool,
+    },
 }
 
 /// Execute the CLI command and return the result.
 #[allow(clippy::too_many_lines)] // CLI dispatch naturally has many command branches
 fn execute_command(cli: &Cli) -> Result<(), error::CliError> {
     match &cli.command {
+        Commands::Check { file, no_gpu } => {
+            commands::check::run(file, *no_gpu)
+        }
         Commands::Run {
             source,
             input,
@@ -914,6 +932,7 @@ fn execute_command(cli: &Cli) -> Result<(), error::CliError> {
             *no_gpu,
             *offline,
             *benchmark,
+            cli.verbose,
             *trace,
             trace_steps.as_deref(),
             *trace_verbose,
@@ -1174,7 +1193,8 @@ fn execute_command(cli: &Cli) -> Result<(), error::CliError> {
             max_tokens,
             system,
             inspect,
-            force_cpu,
+            no_gpu,
+            gpu: _, // GPU is default, --gpu is for explicitness
             trace,
             trace_steps,
             trace_verbose,
@@ -1186,7 +1206,7 @@ fn execute_command(cli: &Cli) -> Result<(), error::CliError> {
             *max_tokens,
             system.as_deref(),
             *inspect,
-            *force_cpu,
+            *no_gpu, // force_cpu = no_gpu
             *trace,
             trace_steps.as_deref(),
             *trace_verbose,
