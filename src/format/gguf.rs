@@ -1176,14 +1176,14 @@ impl GgufReader {
             }
             // I-quants (importance matrix quantization) - complex formats
             // For now, approximate with simpler dequantization
-            16 | 17 | 18 | 19 | 20 | 21 | 22 | 23 => {
+            16..=23 => {
                 // IQ2_XXS=16, IQ2_XS=17, IQ2_S=18, IQ3_XXS=19, IQ3_S=20, IQ1_S=21, IQ4_NL=22, IQ4_XS=23
                 // Fall back to zero-filled tensor with warning
                 eprintln!(
                     "Warning: I-quant dtype {} for tensor '{}' not fully supported, using approximation",
                     meta.dtype, name
                 );
-                dequantize_iq_approximate(&self.data, tensor_start, num_elements, meta.dtype)?
+                dequantize_iq_approximate(&self.data, tensor_start, num_elements, meta.dtype)
             }
             _ => {
                 return Err(AprenderError::FormatError {
@@ -1433,8 +1433,8 @@ fn dequantize_q4_k(data: &[u8], start: usize, num_elements: usize) -> Result<Vec
 
             for l in 0..16 {
                 let q_byte = qs[j * 16 + l];
-                let q0 = (q_byte & 0x0F) as f32;
-                let q1 = (q_byte >> 4) as f32;
+                let q0 = f32::from(q_byte & 0x0F);
+                let q1 = f32::from(q_byte >> 4);
                 result.push(q0 * scale - min_val);
                 result.push(q1 * scale - min_val);
             }
@@ -1502,8 +1502,8 @@ fn dequantize_q5_k(data: &[u8], start: usize, num_elements: usize) -> Result<Vec
                 let qh_byte = qh[idx / 8];
                 let bit_pos = (idx % 8) as u8;
 
-                let q0 = ((q_byte & 0x0F) | (((qh_byte >> bit_pos) & 1) << 4)) as f32;
-                let q1 = ((q_byte >> 4) | ((((qh_byte >> bit_pos) >> 1) & 1) << 4)) as f32;
+                let q0 = f32::from((q_byte & 0x0F) | (((qh_byte >> bit_pos) & 1) << 4));
+                let q1 = f32::from((q_byte >> 4) | ((((qh_byte >> bit_pos) >> 1) & 1) << 4));
 
                 result.push(q0 * scale - min_val);
                 result.push(q1 * scale - min_val);
@@ -1734,20 +1734,15 @@ fn dequantize_iq_approximate(
     start: usize,
     num_elements: usize,
     dtype: u32,
-) -> Result<Vec<f32>> {
+) -> Vec<f32> {
     // I-quants have variable block sizes and complex lookup tables
     // Approximate by treating as low-bit quantization with estimated scale
 
     let (bits_per_element, block_size) = match dtype {
-        13 => (2, 256), // IQ2_XXS
-        14 => (2, 256), // IQ2_XS
-        15 => (2, 256), // IQ2_S
-        16 => (3, 256), // IQ3_XXS
-        17 => (3, 256), // IQ3_S
-        18 => (1, 256), // IQ1_S
-        19 => (4, 256), // IQ4_NL
-        20 => (4, 256), // IQ4_XS
-        _ => (4, 256),  // Default
+        13..=15 => (2, 256), // IQ2_XXS, IQ2_XS, IQ2_S
+        16 | 17 => (3, 256), // IQ3_XXS, IQ3_S
+        18 => (1, 256),      // IQ1_S
+        _ => (4, 256),       // IQ4_NL, IQ4_XS, and default
     };
 
     let bytes_per_block = (block_size * bits_per_element + 7) / 8 + 4; // data + scale overhead
@@ -1780,7 +1775,7 @@ fn dequantize_iq_approximate(
     }
 
     result.truncate(num_elements);
-    Ok(result)
+    result
 }
 
 /// Load GGUF file and extract all tensors as F32

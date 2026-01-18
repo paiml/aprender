@@ -5,9 +5,9 @@
 //! - JSON metadata section (vocab, config, tokenizer, etc.)
 //! - Streaming decompression capability
 //!
-//! Format (uncompressed - APR1):
+//! Format (APR\0 - ONE format, no versioning):
 //! ```text
-//! [4-byte magic: "APR1"]
+//! [4-byte magic: "APR\0"]
 //! [4-byte metadata_len: u32 little-endian]
 //! [JSON metadata: arbitrary key-value pairs]
 //! [4-byte n_tensors: u32 little-endian]
@@ -16,12 +16,12 @@
 //! [4-byte CRC32: checksum of all preceding bytes]
 //! ```
 //!
-//! Format (compressed - APR2):
+//! Format (compressed):
 //! ```text
-//! [4-byte magic: "APR2"]
+//! [4-byte magic: "APR\0"]
 //! [1-byte compression: 0=None, 1=LZ4, 2=ZSTD]
 //! [4-byte uncompressed_len: u32 little-endian]
-//! [compressed payload: LZ4/ZSTD compressed APR1 data]
+//! [compressed payload: compressed APR data]
 //! ```
 
 use serde::{Deserialize, Serialize};
@@ -30,11 +30,11 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
-/// Magic bytes for APR format (uncompressed)
+/// Magic bytes for APR format (uncompressed) - "APR1"
 pub const APR_MAGIC: [u8; 4] = [b'A', b'P', b'R', b'1'];
 
-/// Magic bytes for APR format (compressed)
-pub const APR_MAGIC_COMPRESSED: [u8; 4] = [b'A', b'P', b'R', b'2'];
+/// Magic bytes for APR format (compressed) - "APR\0" (APR + null byte)
+pub const APR_MAGIC_COMPRESSED: [u8; 4] = [b'A', b'P', b'R', 0];
 
 /// Compression algorithm for .apr files
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -960,8 +960,11 @@ mod tests {
     // =========================================================================
 
     #[test]
-    fn test_apr2_magic() {
-        assert_eq!(APR_MAGIC_COMPRESSED, [b'A', b'P', b'R', b'2']);
+    fn test_apr_magic_distinct() {
+        // APR1 (uncompressed) vs APR\0 (compressed) - distinct formats
+        assert_eq!(APR_MAGIC, [b'A', b'P', b'R', b'1']);
+        assert_eq!(APR_MAGIC_COMPRESSED, [b'A', b'P', b'R', 0]);
+        assert_ne!(APR_MAGIC, APR_MAGIC_COMPRESSED);
     }
 
     #[test]

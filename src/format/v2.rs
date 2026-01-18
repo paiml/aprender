@@ -12,7 +12,7 @@
 //! ```text
 //! ┌─────────────────────────────────────────────────────────────┐
 //! │ Header (64 bytes, 64-byte aligned)                          │
-//! │   - Magic: "APR2" (4 bytes)                                 │
+//! │   - Magic: "APR\0" (4 bytes) - ONE format, no versioning    │
 //! │   - Version: major.minor (2 bytes)                          │
 //! │   - Flags (2 bytes)                                         │
 //! │   - Tensor count (4 bytes)                                  │
@@ -132,9 +132,9 @@ fn f32_to_f16(value: f32) -> u16 {
 
 /// Convert f16 to f32
 fn f16_to_f32(bits: u16) -> f32 {
-    let sign = ((bits & 0x8000) as u32) << 16;
+    let sign = u32::from(bits & 0x8000) << 16;
     let exp = (bits >> 10) & 0x1F;
-    let mantissa = (bits & 0x3FF) as u32;
+    let mantissa = u32::from(bits & 0x3FF);
 
     if exp == 0 {
         if mantissa == 0 {
@@ -156,7 +156,7 @@ fn f16_to_f32(bits: u16) -> f32 {
         f32::from_bits(sign | 0x7F80_0000 | (mantissa << 13))
     } else {
         // Normalized
-        let new_exp = (exp as u32 - 15 + 127) << 23;
+        let new_exp = (u32::from(exp) - 15 + 127) << 23;
         let new_mantissa = mantissa << 13;
         f32::from_bits(sign | new_exp | new_mantissa)
     }
@@ -166,7 +166,7 @@ fn f16_to_f32(bits: u16) -> f32 {
 ///
 /// Format: blocks of [scale: f16 (2 bytes)] + [packed nibbles: 16 bytes]
 /// Each block contains 32 values.
-fn dequantize_q4(data: &[u8], element_count: usize) -> Option<Vec<f32>> {
+fn dequantize_q4(data: &[u8], element_count: usize) -> Vec<f32> {
     const BLOCK_SIZE: usize = 32;
 
     let mut result = Vec::with_capacity(element_count);
@@ -205,22 +205,18 @@ fn dequantize_q4(data: &[u8], element_count: usize) -> Option<Vec<f32>> {
         remaining = remaining.saturating_sub(BLOCK_SIZE);
     }
 
-    // Ensure we have the expected number of elements
-    if result.len() == element_count {
-        Some(result)
-    } else {
-        // Pad with zeros if needed (partial last block)
-        result.resize(element_count, 0.0);
-        Some(result)
-    }
+    // Pad with zeros if needed (partial last block)
+    result.resize(element_count, 0.0);
+    result
 }
 
 // ============================================================================
 // Constants
 // ============================================================================
 
-/// APR v2 magic number: "APR2" in ASCII (0x41505232)
-pub const MAGIC_V2: [u8; 4] = [0x41, 0x50, 0x52, 0x32];
+/// APR magic number: "APR\0" in ASCII (0x41505200)
+/// ONE format. No versioning. Period.
+pub const MAGIC_V2: [u8; 4] = [0x41, 0x50, 0x52, 0x00];
 
 /// Format version 2.0
 pub const VERSION_V2: (u8, u8) = (2, 0);
@@ -341,11 +337,11 @@ impl AprV2Flags {
 // Header
 // ============================================================================
 
-/// APR v2 file header (64 bytes)
+/// APR file header (64 bytes)
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
 pub struct AprV2Header {
-    /// Magic number ("APR2")
+    /// Magic number ("APR\0") - ONE format, no versioning
     pub magic: [u8; 4],
     /// Format version (major, minor)
     pub version: (u8, u8),
@@ -1384,7 +1380,7 @@ impl AprV2Reader {
                 Some(floats)
             }
             TensorDType::Q4 => {
-                dequantize_q4(data, element_count)
+                Some(dequantize_q4(data, element_count))
             }
             _ => None, // Other types not yet supported
         }
@@ -1559,7 +1555,7 @@ impl<'a> AprV2ReaderRef<'a> {
                 Some(floats)
             }
             TensorDType::Q4 => {
-                dequantize_q4(data, element_count)
+                Some(dequantize_q4(data, element_count))
             }
             _ => None, // Other types not yet supported
         }
@@ -1714,8 +1710,8 @@ mod tests {
 
     #[test]
     fn test_magic_v2() {
-        assert_eq!(MAGIC_V2, [0x41, 0x50, 0x52, 0x32]); // "APR2"
-        assert_eq!(&MAGIC_V2, b"APR2");
+        assert_eq!(MAGIC_V2, [0x41, 0x50, 0x52, 0x00]); // "APR\0"
+        assert_eq!(&MAGIC_V2, b"APR\0");
     }
 
     #[test]

@@ -301,7 +301,7 @@ impl TensorStats {
 /// APR file header for validation
 #[derive(Debug, Clone)]
 pub struct AprHeader {
-    /// Magic bytes (should be "APRN" or "APR2")
+    /// Magic bytes (should be "APR\0" - ONE format)
     pub magic: [u8; 4],
     /// Version major
     pub version_major: u8,
@@ -346,10 +346,10 @@ impl AprHeader {
         })
     }
 
-    /// Check if magic is valid (APRN or APR2)
+    /// Check if magic is valid (APR\0 - ONE format)
     #[must_use]
     pub fn is_valid_magic(&self) -> bool {
-        self.magic == *b"APRN" || self.magic == *b"APR2"
+        self.magic == *b"APR\0"
     }
 
     /// Check if version is supported
@@ -547,7 +547,7 @@ impl AprValidator {
     fn check_magic(&mut self, data: &[u8]) {
         let status = if data.len() >= 4 {
             let magic = &data[0..4];
-            if magic == b"APRN" || magic == b"APR2" {
+            if magic == b"APR\0" {
                 CheckStatus::Pass
             } else {
                 CheckStatus::Fail(format!("Invalid magic: {magic:?}"))
@@ -1373,7 +1373,7 @@ mod tests_section_a {
     #[test]
     fn test_check_1_magic_valid_aprn() {
         let mut data = vec![0u8; 32];
-        data[0..4].copy_from_slice(b"APRN");
+        data[0..4].copy_from_slice(b"APR\0");
         let mut validator = AprValidator::new();
         validator.validate_bytes(&data);
         let check = validator
@@ -1382,13 +1382,13 @@ mod tests_section_a {
             .iter()
             .find(|c| c.id == 1)
             .unwrap();
-        assert!(check.status.is_pass(), "APRN magic should pass");
+        assert!(check.status.is_pass(), "APR\\0 magic should pass");
     }
 
     #[test]
-    fn test_check_1_magic_valid_apr2() {
+    fn test_check_1_magic_valid_apr_unified() {
         let mut data = vec![0u8; 32];
-        data[0..4].copy_from_slice(b"APR2");
+        data[0..4].copy_from_slice(b"APR\0");
         let mut validator = AprValidator::new();
         validator.validate_bytes(&data);
         let check = validator
@@ -1397,7 +1397,7 @@ mod tests_section_a {
             .iter()
             .find(|c| c.id == 1)
             .unwrap();
-        assert!(check.status.is_pass(), "APR2 magic should pass");
+        assert!(check.status.is_pass(), "APR\\0 magic should pass (unified format)");
     }
 
     #[test]
@@ -1448,7 +1448,7 @@ mod tests_section_a {
     #[test]
     fn test_check_3_version_1_0_supported() {
         let mut data = vec![0u8; 32];
-        data[0..4].copy_from_slice(b"APRN");
+        data[0..4].copy_from_slice(b"APR\0");
         data[4] = 1; // major
         data[5] = 0; // minor
         let mut validator = AprValidator::new();
@@ -1465,7 +1465,7 @@ mod tests_section_a {
     #[test]
     fn test_check_3_version_2_0_supported() {
         let mut data = vec![0u8; 32];
-        data[0..4].copy_from_slice(b"APR2");
+        data[0..4].copy_from_slice(b"APR\0");
         data[4] = 2; // major
         data[5] = 0; // minor
         let mut validator = AprValidator::new();
@@ -1482,7 +1482,7 @@ mod tests_section_a {
     #[test]
     fn test_check_3_version_unsupported() {
         let mut data = vec![0u8; 32];
-        data[0..4].copy_from_slice(b"APRN");
+        data[0..4].copy_from_slice(b"APR\0");
         data[4] = 3; // major (unsupported)
         data[5] = 0;
         let mut validator = AprValidator::new();
@@ -1500,7 +1500,7 @@ mod tests_section_a {
     #[test]
     fn test_check_11_known_flags_pass() {
         let mut data = vec![0u8; 32];
-        data[0..4].copy_from_slice(b"APRN");
+        data[0..4].copy_from_slice(b"APR\0");
         data[4] = 1;
         data[8] = 0x01; // COMPRESSED flag
         let mut validator = AprValidator::new();
