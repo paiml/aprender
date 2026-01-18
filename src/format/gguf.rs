@@ -1126,29 +1126,33 @@ impl GgufReader {
                     .map(|c| f16_to_f32(u16::from_le_bytes([c[0], c[1]])))
                     .collect()
             }
+            // GGML dtype values (from ggml.h):
+            // 0=F32, 1=F16, 2=Q4_0, 3=Q4_1, 6=Q5_0, 7=Q5_1, 8=Q8_0, 9=Q8_1
+            // 10=Q2_K, 11=Q3_K, 12=Q4_K, 13=Q5_K, 14=Q6_K
+            // 16+=IQ variants
             2 => {
                 // Q4_0 - dequantize
                 dequantize_q4_0(&self.data, tensor_start, num_elements)?
             }
-            8 => {
-                // Q8_0 - dequantize
-                dequantize_q8_0(&self.data, tensor_start, num_elements)?
-            }
-            6 => {
-                // Q4_K - dequantize (super blocks of 256 elements)
-                dequantize_q4_k(&self.data, tensor_start, num_elements)?
-            }
-            7 => {
-                // Q5_K - dequantize (super blocks of 256 elements)
-                dequantize_q5_k(&self.data, tensor_start, num_elements)?
-            }
-            12 => {
-                // Q6_K - dequantize (super blocks of 256 elements)
-                dequantize_q6_k(&self.data, tensor_start, num_elements)?
-            }
             3 => {
                 // Q4_1 - dequantize (blocks of 32 with scale and min)
                 dequantize_q4_1(&self.data, tensor_start, num_elements)?
+            }
+            6 => {
+                // Q5_0 - dequantize (blocks of 32 with 5-bit quants)
+                // TODO: implement Q5_0 dequantization
+                eprintln!("Warning: Q5_0 dtype 6 not fully implemented for tensor '{}'", name);
+                vec![0.0; num_elements]
+            }
+            7 => {
+                // Q5_1 - dequantize (blocks of 32 with 5-bit quants + min)
+                // TODO: implement Q5_1 dequantization
+                eprintln!("Warning: Q5_1 dtype 7 not fully implemented for tensor '{}'", name);
+                vec![0.0; num_elements]
+            }
+            8 => {
+                // Q8_0 - dequantize
+                dequantize_q8_0(&self.data, tensor_start, num_elements)?
             }
             10 => {
                 // Q2_K - dequantize (super blocks of 256)
@@ -1158,10 +1162,22 @@ impl GgufReader {
                 // Q3_K - dequantize (super blocks of 256)
                 dequantize_q3_k(&self.data, tensor_start, num_elements)?
             }
+            12 => {
+                // Q4_K - dequantize (super blocks of 256 elements, 144 bytes/block)
+                dequantize_q4_k(&self.data, tensor_start, num_elements)?
+            }
+            13 => {
+                // Q5_K - dequantize (super blocks of 256 elements, 176 bytes/block)
+                dequantize_q5_k(&self.data, tensor_start, num_elements)?
+            }
+            14 => {
+                // Q6_K - dequantize (super blocks of 256 elements, 210 bytes/block)
+                dequantize_q6_k(&self.data, tensor_start, num_elements)?
+            }
             // I-quants (importance matrix quantization) - complex formats
             // For now, approximate with simpler dequantization
-            13 | 14 | 15 | 16 | 17 | 18 | 19 | 20 => {
-                // IQ2_XXS, IQ2_XS, IQ2_S, IQ3_XXS, IQ3_S, IQ1_S, IQ4_NL, IQ4_XS
+            16 | 17 | 18 | 19 | 20 | 21 | 22 | 23 => {
+                // IQ2_XXS=16, IQ2_XS=17, IQ2_S=18, IQ3_XXS=19, IQ3_S=20, IQ1_S=21, IQ4_NL=22, IQ4_XS=23
                 // Fall back to zero-filled tensor with warning
                 eprintln!(
                     "Warning: I-quant dtype {} for tensor '{}' not fully supported, using approximation",
@@ -1191,8 +1207,9 @@ impl GgufReader {
 
     /// Get raw tensor bytes without dequantization (preserves Q4K/Q6K)
     ///
-    /// Returns (raw_bytes, shape, ggml_dtype) where dtype is:
-    /// - 0 = F32, 1 = F16, 6 = Q4_K, 7 = Q5_K, 8 = Q8_0, 12 = Q6_K
+    /// Returns (raw_bytes, shape, ggml_dtype) where dtype is per GGML spec:
+    /// - 0=F32, 1=F16, 2=Q4_0, 3=Q4_1, 8=Q8_0
+    /// - 10=Q2_K, 11=Q3_K, 12=Q4_K, 13=Q5_K, 14=Q6_K
     pub fn get_tensor_raw(&self, name: &str) -> Result<(Vec<u8>, Vec<usize>, u32)> {
         let meta = self
             .tensors
@@ -1206,14 +1223,18 @@ impl GgufReader {
         let num_elements: usize = shape.iter().product();
         let tensor_start = self.data_offset + meta.offset as usize;
 
-        // Calculate byte size based on dtype
+        // Calculate byte size based on dtype (GGML dtype values)
         let byte_size = match meta.dtype {
             0 => num_elements * 4,      // F32
             1 => num_elements * 2,      // F16
-            8 => (num_elements / 32) * 34, // Q8_0: 32 elements = 2 (scale) + 32 (quants)
-            6 => (num_elements / 256) * 144, // Q4_K: 256 elements = 144 bytes
-            7 => (num_elements / 256) * 176, // Q5_K: 256 elements = 176 bytes
-            12 => (num_elements / 256) * 210, // Q6_K: 256 elements = 210 bytes
+            2 => (num_elements / 32) * 18,  // Q4_0: 32 elements = 2 (scale) + 16 (quants)
+            3 => (num_elements / 32) * 20,  // Q4_1: 32 elements = 2 (scale) + 2 (min) + 16 (quants)
+            8 => (num_elements / 32) * 34,  // Q8_0: 32 elements = 2 (scale) + 32 (quants)
+            10 => (num_elements / 256) * 84,  // Q2_K: 256 elements = 84 bytes
+            11 => (num_elements / 256) * 110, // Q3_K: 256 elements = 110 bytes
+            12 => (num_elements / 256) * 144, // Q4_K: 256 elements = 144 bytes
+            13 => (num_elements / 256) * 176, // Q5_K: 256 elements = 176 bytes
+            14 => (num_elements / 256) * 210, // Q6_K: 256 elements = 210 bytes
             _ => {
                 return Err(AprenderError::FormatError {
                     message: format!("Unsupported dtype {} for raw extraction", meta.dtype),
@@ -1881,7 +1902,7 @@ pub struct GgufRawTensor {
     pub data: Vec<u8>,
     /// Tensor shape
     pub shape: Vec<usize>,
-    /// GGML dtype: 0=F32, 1=F16, 6=Q4_K, 7=Q5_K, 8=Q8_0, 12=Q6_K
+    /// GGML dtype: 0=F32, 1=F16, 2=Q4_0, 3=Q4_1, 8=Q8_0, 10=Q2_K, 11=Q3_K, 12=Q4_K, 13=Q5_K, 14=Q6_K
     pub dtype: u32,
 }
 
