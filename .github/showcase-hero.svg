@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 400">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0d1117"/>
+      <stop offset="100%" style="stop-color:#161b22"/>
+    </linearGradient>
+    <linearGradient id="greenGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#238636"/>
+      <stop offset="100%" style="stop-color:#2ea043"/>
+    </linearGradient>
+    <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#d29922"/>
+      <stop offset="100%" style="stop-color:#e3b341"/>
+    </linearGradient>
+    <linearGradient id="blueGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#1f6feb"/>
+      <stop offset="100%" style="stop-color:#388bfd"/>
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="400" fill="url(#bgGrad)"/>
+
+  <!-- Grid pattern -->
+  <g opacity="0.1">
+    <line x1="0" y1="100" x2="1200" y2="100" stroke="#30363d" stroke-width="1"/>
+    <line x1="0" y1="200" x2="1200" y2="200" stroke="#30363d" stroke-width="1"/>
+    <line x1="0" y1="300" x2="1200" y2="300" stroke="#30363d" stroke-width="1"/>
+    <line x1="300" y1="0" x2="300" y2="400" stroke="#30363d" stroke-width="1"/>
+    <line x1="600" y1="0" x2="600" y2="400" stroke="#30363d" stroke-width="1"/>
+    <line x1="900" y1="0" x2="900" y2="400" stroke="#30363d" stroke-width="1"/>
+  </g>
+
+  <!-- Title -->
+  <text x="600" y="55" text-anchor="middle" fill="#ffffff" font-family="system-ui, -apple-system, sans-serif" font-size="32" font-weight="bold">Qwen2.5-Coder Showcase</text>
+  <text x="600" y="85" text-anchor="middle" fill="#8b949e" font-family="system-ui, -apple-system, sans-serif" font-size="16">Pure Rust LLM Inference • 2.93x Ollama Performance • GPU Accelerated</text>
+
+  <!-- Main metric -->
+  <g transform="translate(600, 180)">
+    <text x="0" y="0" text-anchor="middle" fill="url(#greenGrad)" font-family="system-ui, -apple-system, sans-serif" font-size="72" font-weight="bold" filter="url(#glow)">851.8</text>
+    <text x="0" y="35" text-anchor="middle" fill="#58a6ff" font-family="system-ui, -apple-system, sans-serif" font-size="24">tok/s</text>
+    <text x="0" y="65" text-anchor="middle" fill="#8b949e" font-family="system-ui, -apple-system, sans-serif" font-size="14">GPU Batched (M=16)</text>
+  </g>
+
+  <!-- Stats boxes -->
+  <g transform="translate(100, 280)">
+    <!-- Box 1: Speedup -->
+    <rect x="0" y="0" width="180" height="80" rx="8" fill="#21262d" stroke="#30363d" stroke-width="1"/>
+    <text x="90" y="35" text-anchor="middle" fill="url(#goldGrad)" font-family="system-ui, -apple-system, sans-serif" font-size="28" font-weight="bold">2.93x</text>
+    <text x="90" y="60" text-anchor="middle" fill="#8b949e" font-family="system-ui, -apple-system, sans-serif" font-size="12">vs Ollama</text>
+  </g>
+
+  <g transform="translate(320, 280)">
+    <!-- Box 2: Model -->
+    <rect x="0" y="0" width="180" height="80" rx="8" fill="#21262d" stroke="#30363d" stroke-width="1"/>
+    <text x="90" y="35" text-anchor="middle" fill="url(#blueGrad)" font-family="system-ui, -apple-system, sans-serif" font-size="28" font-weight="bold">1.5B</text>
+    <text x="90" y="60" text-anchor="middle" fill="#8b949e" font-family="system-ui, -apple-system, sans-serif" font-size="12">Parameters</text>
+  </g>
+
+  <g transform="translate(540, 280)">
+    <!-- Box 3: Quantization -->
+    <rect x="0" y="0" width="180" height="80" rx="8" fill="#21262d" stroke="#30363d" stroke-width="1"/>
+    <text x="90" y="35" text-anchor="middle" fill="#a371f7" font-family="system-ui, -apple-system, sans-serif" font-size="28" font-weight="bold">Q4_K</text>
+    <text x="90" y="60" text-anchor="middle" fill="#8b949e" font-family="system-ui, -apple-system, sans-serif" font-size="12">Quantization</text>
+  </g>
+
+  <g transform="translate(760, 280)">
+    <!-- Box 4: Memory -->
+    <rect x="0" y="0" width="180" height="80" rx="8" fill="#21262d" stroke="#30363d" stroke-width="1"/>
+    <text x="90" y="35" text-anchor="middle" fill="#7ee787" font-family="system-ui, -apple-system, sans-serif" font-size="28" font-weight="bold">1.1GB</text>
+    <text x="90" y="60" text-anchor="middle" fill="#8b949e" font-family="system-ui, -apple-system, sans-serif" font-size="12">VRAM</text>
+  </g>
+
+  <g transform="translate(980, 280)">
+    <!-- Box 5: Status -->
+    <rect x="0" y="0" width="120" height="80" rx="8" fill="#238636" stroke="#2ea043" stroke-width="1"/>
+    <text x="60" y="45" text-anchor="middle" fill="#ffffff" font-family="system-ui, -apple-system, sans-serif" font-size="18" font-weight="bold">PASS</text>
+    <text x="60" y="65" text-anchor="middle" fill="#ffffff" font-family="system-ui, -apple-system, sans-serif" font-size="10">QA Verified</text>
+  </g>
+
+  <!-- Footer -->
+  <text x="600" y="385" text-anchor="middle" fill="#484f58" font-family="system-ui, -apple-system, sans-serif" font-size="11">aprender v0.13 • realizar inference engine • trueno SIMD backend • 2026-01-18</text>
+</svg>

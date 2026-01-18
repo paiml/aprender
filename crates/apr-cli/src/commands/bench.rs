@@ -668,12 +668,11 @@ fn run_realizar_benchmark(path: &Path, config: &BenchConfig) -> Result<BenchResu
         )
     } else {
         run_cpu_benchmark(
-            &gguf,
-            &model_bytes,
             &prompt_tokens,
             &gen_config,
             config,
             start,
+            path,
         )
     }
 }
@@ -780,17 +779,19 @@ fn run_cuda_benchmark(
 /// CPU-based benchmark fallback path
 #[cfg(feature = "inference")]
 fn run_cpu_benchmark(
-    gguf: &realizar::gguf::GGUFModel,
-    model_bytes: &[u8],
     prompt_tokens: &[u32],
     gen_config: &realizar::gguf::QuantizedGenerateConfig,
     config: &BenchConfig,
     start: Instant,
+    path: &Path,
 ) -> Result<BenchResult> {
-    use realizar::gguf::QuantizedGGUFTransformer;
+    use realizar::gguf::{MappedGGUFModel, OwnedQuantizedModel};
 
-    let transformer = QuantizedGGUFTransformer::from_gguf(gguf, model_bytes)
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to create transformer: {e}")))?;
+    // Use memory-mapped loading for CPU path
+    let mapped = MappedGGUFModel::from_path(path)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to mmap model: {e}")))?;
+    let model = OwnedQuantizedModel::from_mapped(&mapped)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to create model: {e}")))?;
 
     let load_time = start.elapsed();
     println!(
@@ -803,7 +804,7 @@ fn run_cpu_benchmark(
     // Warmup
     println!("{}", "Running warmup (CPU)...".yellow());
     for i in 0..config.warmup {
-        let _ = transformer.generate(prompt_tokens, gen_config);
+        let _ = model.generate_with_cache(prompt_tokens, gen_config);
         print!("  Warmup {}/{}\r", i + 1, config.warmup);
         std::io::Write::flush(&mut std::io::stdout()).ok();
     }
@@ -819,8 +820,8 @@ fn run_cpu_benchmark(
     for i in 0..config.iterations {
         let iter_start = Instant::now();
 
-        let output = transformer
-            .generate(prompt_tokens, gen_config)
+        let output = model
+            .generate_with_cache(prompt_tokens, gen_config)
             .unwrap_or_default();
         let tokens_generated = output.len().saturating_sub(prompt_tokens.len());
 

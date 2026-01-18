@@ -261,6 +261,32 @@ apr canary create model.apr --input ref.wav --output canary.json
 apr canary check optimized.apr --canary canary.json
 ```
 
+## Showcase: Qwen2.5-Coder Inference
+
+The `apr` CLI achieves **2.93x Ollama** performance on Qwen2.5-Coder-1.5B with GPU acceleration:
+
+```bash
+# Interactive chat
+apr chat qwen2.5-coder-1.5b-q4_k_m.gguf
+
+# Single-shot generation
+apr run qwen2.5-coder-1.5b-q4_k_m.gguf --prompt "Write hello world in Rust"
+
+# Production server (OpenAI-compatible API)
+apr serve qwen2.5-coder-1.5b-q4_k_m.gguf --port 8080
+```
+
+### Benchmark Results (2026-01-18)
+
+| Mode | Throughput | vs Ollama | Status |
+|------|------------|-----------|--------|
+| GPU Batched (M=16) | **851.8 tok/s** | **2.93x** | Pass |
+| GPU Batched (M=8) | 770.0 tok/s | 2.65x | Pass |
+| GPU Single | 120.1 tok/s | 1.0x | Pass |
+| CPU | 25.3 tok/s | 1.69x | Pass |
+
+See [`docs/specifications/qwen2.5-coder-showcase-demo.md`](docs/specifications/qwen2.5-coder-showcase-demo.md) for full benchmark methodology.
+
 ## Documentation
 
 | Resource | Link |

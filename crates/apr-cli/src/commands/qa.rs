@@ -478,20 +478,20 @@ fn run_throughput_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
             }
         } else {
             // CPU fallback - use lower threshold
-            use realizar::gguf::QuantizedGGUFTransformer;
-
-            let transformer = QuantizedGGUFTransformer::from_gguf(&gguf, &model_bytes)
-                .map_err(|e| CliError::ValidationFailed(format!("Transform failed: {e}")))?;
+            let mapped = MappedGGUFModel::from_path(path)
+                .map_err(|e| CliError::ValidationFailed(format!("Map failed: {e}")))?;
+            let model = OwnedQuantizedModel::from_mapped(&mapped)
+                .map_err(|e| CliError::ValidationFailed(format!("Model failed: {e}")))?;
 
             for _ in 0..config.warmup {
-                let _ = transformer.generate(&prompt_tokens, &gen_config);
+                let _ = model.generate_with_cache(&prompt_tokens, &gen_config);
             }
 
             let mut total_tokens = 0usize;
             let measure_start = Instant::now();
 
             for _ in 0..config.iterations {
-                let output = transformer.generate(&prompt_tokens, &gen_config).unwrap_or_default();
+                let output = model.generate_with_cache(&prompt_tokens, &gen_config).unwrap_or_default();
                 total_tokens += output.len().saturating_sub(prompt_tokens.len());
             }
 
@@ -616,20 +616,21 @@ fn run_ollama_parity_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
 
             total_tokens as f64 / measure_start.elapsed().as_secs_f64()
         } else {
-            use realizar::gguf::QuantizedGGUFTransformer;
-
-            let transformer = QuantizedGGUFTransformer::from_gguf(&gguf, &model_bytes)
-                .map_err(|e| CliError::ValidationFailed(format!("Transform failed: {e}")))?;
+            // CPU fallback path
+            let mapped = MappedGGUFModel::from_path(path)
+                .map_err(|e| CliError::ValidationFailed(format!("Map failed: {e}")))?;
+            let model = OwnedQuantizedModel::from_mapped(&mapped)
+                .map_err(|e| CliError::ValidationFailed(format!("Model failed: {e}")))?;
 
             for _ in 0..config.warmup {
-                let _ = transformer.generate(&prompt_tokens, &gen_config);
+                let _ = model.generate_with_cache(&prompt_tokens, &gen_config);
             }
 
             let mut total_tokens = 0usize;
             let measure_start = Instant::now();
 
             for _ in 0..config.iterations {
-                let output = transformer.generate(&prompt_tokens, &gen_config).unwrap_or_default();
+                let output = model.generate_with_cache(&prompt_tokens, &gen_config).unwrap_or_default();
                 total_tokens += output.len().saturating_sub(prompt_tokens.len());
             }
 
