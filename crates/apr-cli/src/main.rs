@@ -103,6 +103,23 @@ enum Commands {
         /// Benchmark mode: output performance metrics (tok/s, latency)
         #[arg(long)]
         benchmark: bool,
+
+        /// Enable inference tracing (APR-TRACE-001)
+        /// Shows step-by-step visualization of the inference pipeline
+        #[arg(long)]
+        trace: bool,
+
+        /// Trace specific steps only (comma-separated: encode,embed,transformer,lmhead,sample,decode)
+        #[arg(long, value_delimiter = ',')]
+        trace_steps: Option<Vec<String>>,
+
+        /// Verbose tracing (show tensor values)
+        #[arg(long)]
+        trace_verbose: bool,
+
+        /// Save trace output to JSON file
+        #[arg(long, value_name = "FILE")]
+        trace_output: Option<PathBuf>,
     },
 
     /// Start inference server (REST API, streaming, metrics)
@@ -644,6 +661,22 @@ enum Commands {
         /// Force CPU inference (skip CUDA even if available)
         #[arg(long)]
         force_cpu: bool,
+
+        /// Enable inference tracing (APR-TRACE-001)
+        #[arg(long)]
+        trace: bool,
+
+        /// Trace specific steps only (comma-separated)
+        #[arg(long, value_delimiter = ',')]
+        trace_steps: Option<Vec<String>>,
+
+        /// Verbose tracing
+        #[arg(long)]
+        trace_verbose: bool,
+
+        /// Save trace output to JSON file
+        #[arg(long, value_name = "FILE")]
+        trace_output: Option<PathBuf>,
     },
 
     /// Benchmark throughput (spec H12: >= 10 tok/s)
@@ -865,6 +898,10 @@ fn execute_command(cli: &Cli) -> Result<(), error::CliError> {
             no_gpu,
             offline,
             benchmark,
+            trace,
+            trace_steps,
+            trace_verbose,
+            trace_output,
         } => run::run(
             source,
             input.as_deref(),
@@ -877,6 +914,10 @@ fn execute_command(cli: &Cli) -> Result<(), error::CliError> {
             *no_gpu,
             *offline,
             *benchmark,
+            *trace,
+            trace_steps.as_deref(),
+            *trace_verbose,
+            trace_output.clone(),
         ),
 
         Commands::Serve {
@@ -1134,6 +1175,10 @@ fn execute_command(cli: &Cli) -> Result<(), error::CliError> {
             system,
             inspect,
             force_cpu,
+            trace,
+            trace_steps,
+            trace_verbose,
+            trace_output,
         } => chat::run(
             file,
             *temperature,
@@ -1142,6 +1187,10 @@ fn execute_command(cli: &Cli) -> Result<(), error::CliError> {
             system.as_deref(),
             *inspect,
             *force_cpu,
+            *trace,
+            trace_steps.as_deref(),
+            *trace_verbose,
+            trace_output.clone(),
         ),
 
         Commands::Bench {

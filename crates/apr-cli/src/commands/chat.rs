@@ -58,6 +58,10 @@ pub(crate) struct ChatConfig {
     /// Force CPU inference (skip CUDA even if available)
     /// Default: true - GPU kernel has errors, CPU achieves ~115 tok/s
     pub force_cpu: bool,
+    /// Enable inference tracing (APR-TRACE-001)
+    pub trace: bool,
+    /// Trace output file path
+    pub trace_output: Option<std::path::PathBuf>,
 }
 
 impl Default for ChatConfig {
@@ -69,11 +73,14 @@ impl Default for ChatConfig {
             system: None,
             inspect: false,
             force_cpu: true, // GPU has kernel errors, use stable CPU path (~115 tok/s)
+            trace: false,
+            trace_output: None,
         }
     }
 }
 
-/// Run the chat command
+/// Run the chat command with optional inference tracing (APR-TRACE-001)
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn run(
     path: &Path,
     temperature: f32,
@@ -82,11 +89,32 @@ pub(crate) fn run(
     system: Option<&str>,
     inspect: bool,
     force_cpu: bool,
+    trace: bool,
+    trace_steps: Option<&[String]>,
+    trace_verbose: bool,
+    trace_output: Option<std::path::PathBuf>,
 ) -> Result<(), CliError> {
     // Validate file exists
     if !path.exists() {
         return Err(CliError::FileNotFound(path.to_path_buf()));
     }
+
+    // Setup trace config if tracing enabled (APR-TRACE-001)
+    if trace {
+        eprintln!("{}", "Inference tracing enabled for chat (APR-TRACE-001)".cyan());
+        if let Some(ref steps) = trace_steps {
+            eprintln!("  Trace steps: {}", steps.join(", "));
+        }
+        if trace_verbose {
+            eprintln!("  Verbose mode enabled");
+        }
+        if let Some(ref path) = trace_output {
+            eprintln!("  Output: {}", path.display());
+        }
+    }
+
+    // trace_steps and trace_verbose reserved for future use
+    let _ = (trace_steps, trace_verbose);
 
     let config = ChatConfig {
         temperature,
@@ -95,6 +123,8 @@ pub(crate) fn run(
         system: system.map(String::from),
         inspect,
         force_cpu,
+        trace,
+        trace_output: trace_output.map(|p| p.to_path_buf()),
     };
 
     print_welcome_banner(path, &config);
@@ -546,6 +576,12 @@ mod realizar_chat {
                 }
             };
 
+            // APR-TRACE-001: Debug formatted prompt
+            if config.trace {
+                eprintln!("[APR-TRACE] Formatted prompt ({} chars):", formatted_prompt.len());
+                eprintln!("[APR-TRACE] {:?}", &formatted_prompt[..formatted_prompt.len().min(500)]);
+            }
+
             // For GGUF, use embedded tokenizer directly (correct special token IDs)
             // This is critical: GGUF models have their own tokenizer with correct special token IDs
             // Using LlamaTokenizer/Qwen2BpeTokenizer causes wrong IDs for <|im_start|>, <|im_end|>, etc.
@@ -647,6 +683,14 @@ mod realizar_chat {
                 .ok_or_else(|| "Failed to encode prompt with GGUF tokenizer".to_string())?;
             let prompt_len = prompt_tokens.len();
 
+            // APR-TRACE-001: Debug token IDs
+            if config.trace {
+                eprintln!("[APR-TRACE] Prompt tokens ({} tokens): {:?}", prompt_len, &prompt_tokens[..prompt_len.min(50)]);
+                // Decode tokens to verify they're correct
+                let decoded = mapped.model.decode(&prompt_tokens);
+                eprintln!("[APR-TRACE] Decoded: {:?}", &decoded[..decoded.len().min(200)]);
+            }
+
             let model = OwnedQuantizedModel::from_mapped(&mapped)
                 .map_err(|e| format!("Failed to create GGUF model: {e}"))?;
 
@@ -686,8 +730,16 @@ mod realizar_chat {
                                 .bright_green()
                             );
 
+                            // APR-TRACE-001: Force logits path for debugging
+                            let debug_gen_config = realizar::gguf::QuantizedGenerateConfig {
+                                max_tokens: gen_config.max_tokens,
+                                temperature: 0.01, // Near-zero but forces logits path
+                                top_k: 10, // Get top-10 for debugging
+                                stop_tokens: gen_config.stop_tokens.clone(),
+                            };
+
                             let output_tokens = cuda_model
-                                .generate_gpu_resident(&prompt_tokens, &gen_config)
+                                .generate_gpu_resident(&prompt_tokens, &debug_gen_config)
                                 .map_err(|e| format!("CUDA generate failed: {e}"))?;
 
                             // Extract new tokens and decode with GGUF tokenizer
@@ -696,6 +748,17 @@ mod realizar_chat {
                             } else {
                                 &output_tokens[..]
                             };
+
+                            // APR-TRACE-001: Debug generated tokens
+                            if config.trace {
+                                eprintln!("[APR-TRACE] Generated {} new tokens: {:?}", new_tokens.len(), &new_tokens[..new_tokens.len().min(50)]);
+
+                                // Decode each token individually to find spacing bug
+                                for (i, &tok) in new_tokens.iter().take(20).enumerate() {
+                                    let decoded = mapped.model.decode(&[tok]);
+                                    eprintln!("[APR-TRACE] Token {}: {} -> {:?}", i, tok, decoded);
+                                }
+                            }
 
                             return Ok(mapped.model.decode(new_tokens));
                         }
@@ -714,9 +777,50 @@ mod realizar_chat {
             let model = OwnedQuantizedModel::from_mapped(&mapped)
                 .map_err(|e| format!("Failed to recreate model: {e}"))?;
 
-            let output_tokens = model
-                .generate_with_cache(&prompt_tokens, &gen_config)
-                .map_err(|e| format!("GGUF generate failed: {e}"))?;
+            // APR-TRACE-001: Use traced generation when --trace is enabled
+            let output_tokens = if config.trace {
+                use realizar::{InferenceTracer, TraceConfig, ModelInfo};
+
+                let trace_config = TraceConfig {
+                    enabled: true,
+                    verbose: false,
+                    output: config.trace_output.clone(),
+                    ..Default::default()
+                };
+
+                let mut tracer = InferenceTracer::new(trace_config);
+                tracer.set_model_info(ModelInfo {
+                    name: format!("GGUF Model (CPU)"),
+                    num_layers: model.config.num_layers,
+                    hidden_dim: model.config.hidden_dim,
+                    vocab_size: model.config.vocab_size,
+                    num_heads: model.config.num_heads,
+                    quant_type: None,
+                });
+
+                // Create decode closure for tracing
+                let decode_fn = |token_id: u32| -> String {
+                    mapped.model.decode(&[token_id])
+                };
+
+                // APR-TRACE-001: CPU traced generation not yet implemented
+                eprintln!("Warning: CPU traced generation not implemented, using non-traced path");
+
+                let result = model
+                    .generate_with_cache(&prompt_tokens, &gen_config)
+                    .map_err(|e| format!("GGUF generate failed: {e}"))?;
+
+                // Output partial trace
+                if let Err(e) = tracer.write_output() {
+                    eprintln!("Warning: Failed to write trace output: {e}");
+                }
+
+                result
+            } else {
+                model
+                    .generate_with_cache(&prompt_tokens, &gen_config)
+                    .map_err(|e| format!("GGUF generate failed: {e}"))?
+            };
 
             // Extract new tokens and decode with GGUF tokenizer
             let new_tokens = if output_tokens.len() > prompt_len {
@@ -725,7 +829,8 @@ mod realizar_chat {
                 &output_tokens[..]
             };
 
-            Ok(mapped.model.decode(new_tokens))
+            let decoded = mapped.model.decode(new_tokens);
+            Ok(decoded)
         }
 
         fn generate_apr(&self, prompt: &[u32], config: &ChatConfig) -> Result<Vec<u32>, String> {

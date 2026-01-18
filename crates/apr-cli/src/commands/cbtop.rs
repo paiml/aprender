@@ -563,7 +563,8 @@ fn run_headless_apr(
 
     for i in 0..config.iterations {
         profiler.reset();
-        let _ = model.forward_profiled(&prompt_tokens, &mut profiler);
+        // Note: forward_profiled not yet implemented in realizar, using forward
+        let _ = model.forward(&prompt_tokens);
         eprint!("\r  Iteration {}/{}", i + 1, config.iterations);
     }
     eprintln!();
@@ -831,8 +832,8 @@ fn run_headless_real(config: CbtopConfig) -> Result<()> {
         for i in 0..config.iterations {
             let iter_start = Instant::now();
 
-            // Use batched forward pass - processes concurrent tokens sharing weights
-            let result = cuda_model.forward_batch_cuda_native(&batch_tokens);
+            // Use CUDA forward pass - processes sequence of tokens
+            let result = cuda_model.forward_cuda(&batch_tokens);
 
             match result {
                 Ok(_logits) => {

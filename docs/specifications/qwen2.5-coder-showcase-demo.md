@@ -847,14 +847,22 @@ apr serve --gpu --batch now working:
 This script executes the "Matrix Gauntlet", verifying UX, Correctness, and Performance across all formats.
 
 ```bash
-# Run the full suite
+# Run the full suite with fail-fast
 chmod +x scripts/showcase-qa.sh
-./scripts/showcase-qa.sh
+./scripts/showcase-qa.sh --fail-fast
 ```
+
+**Artifacts**:
+- Failures are logged to `qa_artifacts/fail_<testname>.log`.
+- Throughput is parsed stripping ANSI codes.
 
 **Exit Criteria**:
 - **Exit 0**: 🟢 APPROVED (All Math/Code/UTF-8/Perf tests passed).
 - **Exit 1**: 🔴 REJECTED (Fix failures before release).
+
+### UX Cleanup Status
+- `apr-cli` tracing logs (`[APR-TRACE]`) are now gated behind `--trace`.
+- **Known Issue**: `realizar` library logs (`[PAR-058]`) are currently hardcoded and require an update to the external `realizar` repository to silence.
 
 ### QA Gates (All Must Pass)
 
@@ -7695,6 +7703,29 @@ The remaining bug is NOT bias-related. Possible causes:
 *   **Symptom**: "Dream-like" output (coherent grammar, wrong topic/tokens).
 *   **Cause**: `x @ W` vs `x @ W.T`. Magnitudes preserved, direction scrambled.
 *   **Falsification**: Explicitly check stride/layout against GGUF spec during loading.
+
+---
+
+## D. Implementation Breakdown
+
+---
+
+### C.6 Peer-Reviewed Quality Metrics (Diamond-Hard Standards)
+
+**Mandate**: All releases must pass these scientifically grounded quality gates.
+
+| Metric | Citation | Definition | Threshold |
+| :--- | :--- | :--- | :--- |
+| **1. TTFT Stability** | Dean & Barroso (2013) "The Tail at Scale" | P99 latency vs Mean latency | P99 < 2 × Mean |
+| **2. Attn Sink Entropy** | Xiao et al. (2023) "Streaming LLMs" | Stability of BOS token attention | $\Delta H < 0.1$ |
+| **3. Degeneracy Check** | Holtzman et al. (2019) "Text Degeneration" | Repeated 4-grams in short window | 0 repetitions |
+| **4. Integer Numeracy** | Lewkowycz et al. (2022) "Minerva" | Arithmetic accuracy (< 100) | 100% Correct |
+| **5. KV Cache Reuse** | Pope et al. (2023) "Scaling Inference" | Prompt tokens served from cache | 100% (Chat) |
+| **6. Instruction Adherence**| Ouyang et al. (2022) "InstructGPT" | Output format matches prompt constraint | 100% |
+| **7. Memory Efficiency** | Kwon et al. (2023) "PagedAttention" | VRAM Utilization (Allocated/Reserved) | > 85% |
+| **8. Stationarity** | Agarwal et al. (2021) | Bit-exact output reproducibility (Fixed Seed) | 0 diffs |
+| **9. Token Velocity** | Aminabadi et al. (2022) "DeepSpeed" | Inter-token latency standard deviation | $\sigma < 5ms$ |
+| **10. Layer Norm Drift** | Ba et al. (2016) "LayerNorm" | Hidden state mean/var shift per layer | < 1.0 |
 
 ---
 
