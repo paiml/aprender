@@ -316,32 +316,6 @@ dependencies = [
 
 [[package]]
 name = "aprender"
-version = "0.24.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d1140494fee114ac8ae686c8d4e0d859b421c8e082e7a8c4a3f67d0e3f9e2754"
-dependencies = [
- "aes-gcm",
- "argon2",
- "bincode",
- "getrandom 0.2.16",
- "hkdf",
- "lz4_flex",
- "memmap2",
- "minijinja",
- "rand 0.8.5",
- "rand_chacha 0.3.1",
- "rayon",
- "rmp-serde",
- "serde",
- "serde_json",
- "sha2",
- "trueno 0.11.0",
- "x25519-dalek",
- "zstd",
-]
-
-[[package]]
-name = "aprender"
 version = "0.24.1"
 dependencies = [
  "aes-gcm",
@@ -384,6 +358,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "aprender"
+version = "0.24.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cbdcccadf867c37e6538dd179da518f4a9e55eb9efabcaec01323c3a12239e34"
+dependencies = [
+ "aes-gcm",
+ "argon2",
+ "bincode",
+ "getrandom 0.2.16",
+ "hkdf",
+ "lz4_flex",
+ "memmap2",
+ "minijinja",
+ "rand 0.8.5",
+ "rand_chacha 0.3.1",
+ "rayon",
+ "rmp-serde",
+ "serde",
+ "serde_json",
+ "sha2",
+ "trueno 0.13.0",
+ "x25519-dalek",
+ "zstd",
+]
+
+[[package]]
 name = "aprender-monte-carlo"
 version = "0.1.1"
 dependencies = [
@@ -406,7 +406,7 @@ dependencies = [
 name = "aprender-shell"
 version = "0.3.0"
 dependencies = [
- "aprender 0.24.0",
+ "aprender 0.24.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "assert_cmd",
  "clap",
  "criterion",
@@ -423,7 +423,7 @@ dependencies = [
 name = "aprender-tsp"
 version = "0.2.0"
 dependencies = [
- "aprender 0.24.0",
+ "aprender 0.24.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "assert_cmd",
  "clap",
  "crc32fast",
@@ -1332,7 +1332,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "117725a109d387c937a1533ce01b450cbde6b88abceea8473c4d7a85853cda3c"
 dependencies = [
  "lazy_static",
- "windows-sys 0.59.0",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
@@ -1855,7 +1855,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users 0.5.2",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3736,7 +3736,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4757,10 +4757,10 @@ dependencies = [
 
 [[package]]
 name = "realizar"
-version = "0.6.2"
+version = "0.6.3"
 dependencies = [
  "anyhow",
- "aprender 0.24.0",
+ "aprender 0.24.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "arc-swap",
  "async-stream",
  "axum",
@@ -4864,7 +4864,7 @@ checksum = "0cd1f68012c469cc8f371651caaf63e96ac672829ef6354c116e8cd050ad757f"
 dependencies = [
  "addr2line",
  "anyhow",
- "aprender 0.24.0",
+ "aprender 0.24.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "backtrace",
  "clap",
  "crossbeam",
@@ -4903,7 +4903,7 @@ version = "0.9.6"
 dependencies = [
  "addr2line",
  "anyhow",
- "aprender 0.24.0",
+ "aprender 0.24.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "backtrace",
  "clap",
  "crossbeam",
@@ -5138,7 +5138,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.4.15",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
