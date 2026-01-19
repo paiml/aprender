@@ -73,7 +73,7 @@ unused_self = "allow"  # Method stubs common during development
 
 [package]
 name = "aprender"
-version = "0.24.0"
+version = "0.24.1"
 edition = "2021"
 rust-version = "1.70"
 authors = ["Noah Gift <noah@paiml.com>"]
