@@ -112,6 +112,9 @@ rayon = { version = "1.10", optional = true }
 # Core compute primitives - SIMD-accelerated tensor operations
 trueno = "0.13.0"
 
+# RAG pipeline for document-based ML (optional, GH-125)
+trueno-rag = { version = "0.1.9", optional = true }
+
 # Compression for .apr format (optional, spec §3.3)
 lz4_flex = { version = "0.11", optional = true }
 zstd = { version = "0.13", optional = true }
@@ -182,6 +185,7 @@ audio-codec = ["audio"]  # Enable audio codec decoding (WAV, MP3, AAC, FLAC, Opu
 audio-noise = ["audio"]  # Enable ML-based noise generation (GH-144)
 audio-noise-wasm = ["audio-noise", "wasm-bindgen", "js-sys"]  # Enable WASM bindings for noise generator
 safetensors-compare = ["safetensors", "hf-hub-integration", "half"]  # Enable SafeTensors comparison (GH-121)
+rag = ["trueno-rag"]  # Enable RAG pipeline for document-based ML (GH-125)
 inference-monitoring = ["entrenar"]  # Enable inference monitoring and explainability
 gpu = ["trueno/gpu"]  # Enable GPU acceleration via trueno wgpu backend
 cuda = ["trueno/cuda-monitor"]  # Enable CUDA monitoring via trueno-gpu (NVIDIA GPUs)
@@ -252,3 +256,7 @@ name = "time_series_forecasting"
 lto = true
 codegen-units = 1
 debug = true  # Enable debug info for flamegraph/profiling
+
+# CORRECTNESS-013: Override trueno-gpu with local version for PreciseRmsNormKernel
+[patch.crates-io]
+trueno-gpu = { path = "../trueno/trueno-gpu" }

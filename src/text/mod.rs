@@ -99,3 +99,32 @@ pub trait Tokenizer {
     /// ```
     fn tokenize(&self, text: &str) -> Result<Vec<String>, AprenderError>;
 }
+
+// ============================================================================
+// trueno-rag integration (GH-125)
+// ============================================================================
+
+/// Re-export trueno-rag types when the `rag` feature is enabled.
+///
+/// Provides document chunking, retrieval, and RAG pipeline capabilities
+/// for document-based ML workflows.
+///
+/// # Example
+///
+/// ```ignore
+/// use aprender::text::rag::{Chunker, ChunkingStrategy};
+///
+/// let chunker = Chunker::new(ChunkingStrategy::Recursive {
+///     chunk_size: 512,
+///     overlap: 64,
+/// });
+/// let chunks = chunker.chunk(&document)?;
+/// ```
+#[cfg(feature = "rag")]
+pub mod rag {
+    //! RAG (Retrieval-Augmented Generation) pipeline integration.
+    //!
+    //! Re-exports from `trueno-rag` for document chunking, retrieval, and metrics.
+
+    pub use trueno_rag::*;
+}
