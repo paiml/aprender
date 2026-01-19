@@ -834,19 +834,21 @@ fn resolve_source(source: &Source, cache: bool) -> Result<PathBuf> {
                 }
             }
 
-            // Try to download using hf-hub if feature is enabled
+            // Try to download using hf-hub if feature is enabled (GH-129: proper error handling)
             #[cfg(feature = "hf-hub-integration")]
             {
                 let repo_id = format!("{org}/{repo}");
                 match download_from_hf(&repo_id, filename) {
                     Ok(path) => return Ok(path),
                     Err(e) => {
-                        // Fall through to manual download instructions
-                        eprintln!("HF download failed: {e}");
+                        // Return the actual error instead of generic message
+                        return Err(e);
                     }
                 }
             }
 
+            // Only reach here if hf-hub-integration feature is disabled
+            #[cfg(not(feature = "hf-hub-integration"))]
             Err(AprenderError::FormatError {
                 message: format!(
                     "HuggingFace model not found in cache. Download manually:\n\

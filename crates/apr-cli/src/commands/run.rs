@@ -23,6 +23,7 @@
 
 use crate::error::{CliError, Result};
 use colored::Colorize;
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
@@ -289,15 +290,30 @@ fn download_hf_model(org: &str, repo: &str) -> Result<PathBuf> {
 
     std::fs::create_dir_all(&cache_dir)?;
 
-    let model_url = format!("https://huggingface.co/{org}/{repo}/resolve/main/model.safetensors");
-    let tokenizer_url = format!("https://huggingface.co/{org}/{repo}/resolve/main/tokenizer.json");
+    let base_url = format!("https://huggingface.co/{org}/{repo}/resolve/main");
+    let tokenizer_url = format!("{base_url}/tokenizer.json");
+    let config_url = format!("{base_url}/config.json");
 
-    let model_path = cache_dir.join("model.safetensors");
     let tokenizer_path = cache_dir.join("tokenizer.json");
+    let config_path = cache_dir.join("config.json");
 
-    // Download model
-    eprintln!("  Downloading model.safetensors...");
-    download_file(&model_url, &model_path)?;
+    // GH-127: Check for sharded model first (index.json indicates multi-tensor model)
+    let index_url = format!("{base_url}/model.safetensors.index.json");
+    let index_path = cache_dir.join("model.safetensors.index.json");
+
+    let model_path = if download_file(&index_url, &index_path).is_ok() {
+        // Sharded model - download all shards listed in index
+        eprintln!("  Detected sharded model (multi-tensor)");
+        download_sharded_model(&cache_dir, &index_path, &base_url)?
+    } else {
+        // Single model.safetensors file
+        let model_url = format!("{base_url}/model.safetensors");
+        let model_path = cache_dir.join("model.safetensors");
+
+        eprintln!("  Downloading model.safetensors...");
+        download_file(&model_url, &model_path)?;
+        model_path
+    };
 
     // Download tokenizer (optional, don't fail if missing)
     eprintln!("  Downloading tokenizer.json...");
@@ -305,9 +321,103 @@ fn download_hf_model(org: &str, repo: &str) -> Result<PathBuf> {
         eprintln!("  Warning: tokenizer.json not available: {e}");
     }
 
+    // Download config.json (required for SafeTensors inference) - GH-150
+    eprintln!("  Downloading config.json...");
+    if let Err(e) = download_file(&config_url, &config_path) {
+        eprintln!("  Warning: config.json not available: {e}");
+    }
+
     eprintln!("{}", "  Download complete!".green());
 
     Ok(model_path)
+}
+
+/// Download sharded model files from HuggingFace (GH-127)
+///
+/// Parses the index.json to get list of shard files and downloads each one.
+/// Returns path to the index file which can be used to locate all shards.
+fn download_sharded_model(cache_dir: &Path, index_path: &Path, base_url: &str) -> Result<PathBuf> {
+    // Read and parse index file
+    let index_content = std::fs::read_to_string(index_path)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to read index file: {e}")))?;
+
+    // Parse weight_map to get unique shard filenames
+    // Format: {"metadata": {...}, "weight_map": {"tensor.name": "model-00001-of-00006.safetensors", ...}}
+    let shard_files: HashSet<String> = extract_shard_files(&index_content);
+
+    if shard_files.is_empty() {
+        return Err(CliError::ValidationFailed(
+            "Sharded model index contains no shard files".to_string(),
+        ));
+    }
+
+    let total_shards = shard_files.len();
+    eprintln!("  Found {} shard files to download", total_shards);
+
+    // Download each shard
+    for (i, shard_file) in shard_files.iter().enumerate() {
+        let shard_url = format!("{base_url}/{shard_file}");
+        let shard_path = cache_dir.join(shard_file);
+
+        // Skip if already cached
+        if shard_path.exists() {
+            eprintln!("  [{}/{}] {} (cached)", i + 1, total_shards, shard_file);
+            continue;
+        }
+
+        eprintln!("  [{}/{}] Downloading {}...", i + 1, total_shards, shard_file);
+        download_file(&shard_url, &shard_path)?;
+    }
+
+    // Return path to index file (caller uses this to locate shards)
+    Ok(index_path.to_path_buf())
+}
+
+/// Extract unique shard filenames from index.json weight_map
+fn extract_shard_files(json: &str) -> HashSet<String> {
+    let mut files = HashSet::new();
+
+    // Simple parsing - find "weight_map" section and extract shard filenames
+    // Shard files look like: "model-00001-of-00006.safetensors"
+    if let Some(weight_map_start) = json.find("\"weight_map\"") {
+        let after_key = &json[weight_map_start..];
+        if let Some(brace_start) = after_key.find('{') {
+            let content = &after_key[brace_start + 1..];
+            // Find matching closing brace (handle nested braces)
+            let mut depth = 1;
+            let mut end_pos = 0;
+            for (i, c) in content.char_indices() {
+                match c {
+                    '{' => depth += 1,
+                    '}' => {
+                        depth -= 1;
+                        if depth == 0 {
+                            end_pos = i;
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+
+            let entries = &content[..end_pos];
+
+            // Extract shard filenames (values in key:value pairs)
+            for part in entries.split(',') {
+                // Format: "tensor.name": "shard-file.safetensors"
+                if let Some(colon_pos) = part.rfind(':') {
+                    let value = part[colon_pos + 1..].trim();
+                    // Remove quotes and extract filename
+                    let filename = value.trim_matches(|c| c == '"' || c == ' ' || c == '\n' || c == '\r');
+                    if filename.ends_with(".safetensors") && !filename.is_empty() {
+                        files.insert(filename.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    files
 }
 
 /// Download model from arbitrary URL
@@ -1940,5 +2050,113 @@ mod tests {
             options.offline,
             "FALSIFIED: Offline flag did not propagate to options"
         );
+    }
+
+    // ==================== Sharded Model Tests (GH-127) ====================
+
+    /// Test extract_shard_files with typical HuggingFace index.json format
+    #[test]
+    fn test_extract_shard_files_basic() {
+        let json = r#"{
+            "metadata": {"total_size": 1000000},
+            "weight_map": {
+                "model.embed_tokens.weight": "model-00001-of-00003.safetensors",
+                "model.layers.0.weight": "model-00001-of-00003.safetensors",
+                "model.layers.1.weight": "model-00002-of-00003.safetensors",
+                "model.layers.2.weight": "model-00003-of-00003.safetensors",
+                "lm_head.weight": "model-00003-of-00003.safetensors"
+            }
+        }"#;
+
+        let files = extract_shard_files(json);
+
+        assert_eq!(files.len(), 3, "Should extract 3 unique shard files");
+        assert!(files.contains("model-00001-of-00003.safetensors"));
+        assert!(files.contains("model-00002-of-00003.safetensors"));
+        assert!(files.contains("model-00003-of-00003.safetensors"));
+    }
+
+    /// Test extract_shard_files with empty weight_map
+    #[test]
+    fn test_extract_shard_files_empty() {
+        let json = r#"{"weight_map": {}}"#;
+        let files = extract_shard_files(json);
+        assert!(files.is_empty(), "Empty weight_map should yield no files");
+    }
+
+    /// Test extract_shard_files with no weight_map key
+    #[test]
+    fn test_extract_shard_files_no_weight_map() {
+        let json = r#"{"metadata": {}}"#;
+        let files = extract_shard_files(json);
+        assert!(files.is_empty(), "Missing weight_map should yield no files");
+    }
+
+    /// Test extract_shard_files with single shard (all tensors in one file)
+    #[test]
+    fn test_extract_shard_files_single_shard() {
+        let json = r#"{
+            "weight_map": {
+                "a": "model.safetensors",
+                "b": "model.safetensors",
+                "c": "model.safetensors"
+            }
+        }"#;
+
+        let files = extract_shard_files(json);
+
+        assert_eq!(files.len(), 1, "All tensors in same file should yield 1 shard");
+        assert!(files.contains("model.safetensors"));
+    }
+
+    /// Test extract_shard_files handles real-world Phi-4 style index
+    #[test]
+    fn test_extract_shard_files_phi4_style() {
+        // Simplified version of microsoft/phi-4 index structure
+        let json = r#"{
+            "metadata": {
+                "total_size": 56000000000
+            },
+            "weight_map": {
+                "model.embed_tokens.weight": "model-00001-of-00006.safetensors",
+                "model.layers.0.input_layernorm.weight": "model-00001-of-00006.safetensors",
+                "model.layers.10.mlp.up_proj.weight": "model-00002-of-00006.safetensors",
+                "model.layers.20.self_attn.v_proj.weight": "model-00003-of-00006.safetensors",
+                "model.layers.30.post_attention_layernorm.weight": "model-00004-of-00006.safetensors",
+                "model.layers.40.mlp.gate_proj.weight": "model-00005-of-00006.safetensors",
+                "model.norm.weight": "model-00006-of-00006.safetensors",
+                "lm_head.weight": "model-00006-of-00006.safetensors"
+            }
+        }"#;
+
+        let files = extract_shard_files(json);
+
+        assert_eq!(files.len(), 6, "Phi-4 style model has 6 shards");
+        for i in 1..=6 {
+            let expected = format!("model-{i:05}-of-00006.safetensors");
+            assert!(
+                files.contains(&expected),
+                "Should contain shard file: {expected}"
+            );
+        }
+    }
+
+    /// Test that non-safetensors files are filtered out
+    #[test]
+    fn test_extract_shard_files_filters_non_safetensors() {
+        let json = r#"{
+            "weight_map": {
+                "a": "model.safetensors",
+                "b": "config.json",
+                "c": "tokenizer.model"
+            }
+        }"#;
+
+        let files = extract_shard_files(json);
+
+        assert_eq!(files.len(), 1, "Should only include .safetensors files");
+        assert!(files.contains("model.safetensors"));
+        assert!(!files.contains("config.json"));
+        assert!(!files.contains("tokenizer.model"));
     }
 }

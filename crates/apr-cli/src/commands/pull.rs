@@ -98,7 +98,10 @@ pub fn list() -> Result<()> {
         println!("{}", "No cached models found.".dimmed());
         println!();
         println!("Pull a model with:");
-        println!("  apr pull qwen2.5-coder:7b");
+        println!("  apr pull hf://Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf");
+        println!();
+        println!("Or run directly (auto-downloads):");
+        println!("  apr run hf://Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf");
         return Ok(());
     }
 

@@ -501,11 +501,26 @@ mod realizar_chat {
                 // Create model and load weights
                 let mut model = Qwen2Model::new_uninitialized(&qwen_config);
                 match model.load_from_safetensors(path) {
-                    Ok(count) => {
+                    Ok(count) if count > 0 => {
                         println!("{} {} tensors from SafeTensors", "Loaded".green(), count);
                         model.eval();
                         Some(model)
                     }
+                    Ok(0) => {
+                        // GH-140: No tensors loaded - model has different naming convention
+                        println!(
+                            "{} No matching tensors found in SafeTensors file. \
+                             Model may use different weight naming convention.",
+                            "Error:".red()
+                        );
+                        println!(
+                            "{}",
+                            "Tip: Use GGUF format for better compatibility: apr run model.gguf"
+                                .yellow()
+                        );
+                        None
+                    }
+                    Ok(_) => unreachable!(), // count is always >= 0
                     Err(e) => {
                         println!("{} Failed to load weights: {}", "Warning:".yellow(), e);
                         None
