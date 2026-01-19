@@ -934,8 +934,15 @@ fn compress_payload(data: &[u8], compression: Compression) -> Result<(Vec<u8>, C
             // Feature not enabled, fall back to no compression
             Ok((data.to_vec(), Compression::None))
         }
+        #[cfg(feature = "format-compression")]
         Compression::Lz4 => {
-            // LZ4 not yet implemented, fall back to no compression
+            // LZ4 compression using lz4_flex with prepended size (GH-146)
+            let compressed = lz4_flex::compress_prepend_size(data);
+            Ok((compressed, Compression::Lz4))
+        }
+        #[cfg(not(feature = "format-compression"))]
+        Compression::Lz4 => {
+            // Feature not enabled, fall back to no compression
             Ok((data.to_vec(), Compression::None))
         }
     }
@@ -953,8 +960,14 @@ fn decompress_payload(data: &[u8], compression: Compression) -> Result<Vec<u8>> 
             message: "Zstd compression not supported (enable format-compression feature)"
                 .to_string(),
         }),
+        #[cfg(feature = "format-compression")]
+        Compression::Lz4 => lz4_flex::decompress_size_prepended(data).map_err(|e| {
+            AprenderError::Serialization(format!("LZ4 decompression failed: {e}"))
+        }),
+        #[cfg(not(feature = "format-compression"))]
         Compression::Lz4 => Err(AprenderError::FormatError {
-            message: "LZ4 compression not yet implemented".to_string(),
+            message: "LZ4 compression not supported (enable format-compression feature)"
+                .to_string(),
         }),
     }
 }
@@ -2792,6 +2805,93 @@ mod tests {
         {
             assert_eq!(actual_compression, Compression::ZstdDefault);
             // Compressed data will be different (has zstd header)
+            assert_ne!(compressed, data);
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "format-compression")]
+    fn test_lz4_compression_roundtrip() {
+        // Test LZ4 compression/decompression roundtrip (GH-146)
+        let data = vec![0u8; 1000]; // Highly compressible data
+
+        let (compressed, actual_compression) =
+            compress_payload(&data, Compression::Lz4).expect("lz4 compress should succeed");
+
+        assert_eq!(actual_compression, Compression::Lz4);
+        assert!(
+            compressed.len() < data.len(),
+            "LZ4 should compress zeros: {} < {}",
+            compressed.len(),
+            data.len()
+        );
+
+        // Decompress and verify
+        let decompressed =
+            decompress_payload(&compressed, Compression::Lz4).expect("lz4 decompress should succeed");
+
+        assert_eq!(decompressed, data);
+    }
+
+    #[test]
+    #[cfg(feature = "format-compression")]
+    fn test_lz4_compression_model_roundtrip() {
+        // Test LZ4 with actual model save/load (GH-146)
+        use tempfile::tempdir;
+
+        #[derive(Debug, Serialize, Deserialize, PartialEq)]
+        struct LargeModel {
+            weights: Vec<f32>,
+        }
+
+        // Repetitive data compresses well
+        let model = LargeModel {
+            weights: (0..10_000).map(|i| (i % 100) as f32).collect(),
+        };
+
+        let dir = tempdir().expect("create temp dir");
+        let path = dir.path().join("lz4_compressed.apr");
+
+        // Save with LZ4 compression
+        save(
+            &model,
+            ModelType::Custom,
+            &path,
+            SaveOptions::default().with_compression(Compression::Lz4),
+        )
+        .expect("save should succeed");
+
+        // Load and verify
+        let loaded: LargeModel = load(&path, ModelType::Custom).expect("load should succeed");
+        assert_eq!(loaded, model);
+
+        // Verify compression reduced size
+        let info = inspect(&path).expect("inspect should succeed");
+        assert!(
+            info.payload_size < info.uncompressed_size,
+            "LZ4 compressed size {} should be less than uncompressed {}",
+            info.payload_size,
+            info.uncompressed_size
+        );
+    }
+
+    #[test]
+    fn test_lz4_fallback_without_feature() {
+        // When format-compression is disabled, LZ4 should fall back to None
+        let data = vec![1u8, 2, 3, 4, 5];
+        let (compressed, actual_compression) =
+            compress_payload(&data, Compression::Lz4).expect("should fallback");
+
+        #[cfg(not(feature = "format-compression"))]
+        {
+            assert_eq!(actual_compression, Compression::None);
+            assert_eq!(compressed, data);
+        }
+
+        #[cfg(feature = "format-compression")]
+        {
+            assert_eq!(actual_compression, Compression::Lz4);
+            // LZ4 adds size prefix, so will be different
             assert_ne!(compressed, data);
         }
     }
