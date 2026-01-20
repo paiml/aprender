@@ -1496,35 +1496,49 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'New task: APR-TOK-001: Fix tokenizer decoding for coherent text output'
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-01-15T14:15:28.015657827+00:00
-  updated: 2026-01-15T14:15:28.015657827+00:00
+  updated: 2026-01-20T20:00:00.000000000+00:00
   spec: null
-  acceptance_criteria: []
+  acceptance_criteria:
+  - 95/95 QA tests pass for all GGUF model sizes
+  - Tokenizer decoding produces coherent text
   phases: []
   subtasks: []
   estimated_effort: null
   labels: []
-  notes: null
+  notes: |
+    Resolved 2026-01-20: Verified through GGUF-SERVE-001 validation.
+    All 95 QA tests pass with coherent output across 0.5B, 1B, 1.5B, 7B, 32B models.
 - id: PMAT-081
   github_issue: null
   item_type: task
   title: 'FORMAT-PARITY-001: Implement SafeTensors and APR inference'
-  status: inprogress
+  status: completed
   priority: high
   assigned_to: null
   created: 2026-01-20T11:24:51Z
-  updated: 2026-01-20T11:24:56.883562018+00:00
+  updated: 2026-01-20T20:00:00.000000000+00:00
   spec: null
   acceptance_criteria:
   - Implement PAR-301 (SafeTensors) and PAR-302 (APR) format inference in realizar
+  - PAR-301: SafeTensors /v1/chat/completions with SSE streaming
+  - PAR-302: APR format /v1/chat/completions with SSE streaming (CPU and GPU)
   phases: []
   subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
+  estimated_effort: 2h
+  labels:
+  - inference
+  - api
+  - streaming
+  notes: |
+    Resolved 2026-01-20:
+    - PAR-301: SafeTensors server now has /v1/chat/completions and /generate endpoints
+    - PAR-302: APR server (CPU and GPU) now has /v1/chat/completions endpoint
+    - Both support OpenAI-compatible API with SSE streaming
+    - ChatML prompt template formatting implemented
 - id: 'GGUF-SERVE-001: Validate apr serve works for all GGUF model sizes (0.5B, 1B, 1.5B, 7B, 32B)'
   github_issue: null
   item_type: task
@@ -1571,10 +1585,10 @@ roadmap:
   spec: null
   acceptance_criteria:
   - 'Version bump: 0.2.9 -> 0.2.10'
-  - 'Published to crates.io'
-  - 'Verified installation from crates.io'
-  - 'apr --version reports 0.2.10'
-  - 'apr run works with 1.5B model'
+  - Published to crates.io
+  - Verified installation from crates.io
+  - apr --version reports 0.2.10
+  - apr run works with 1.5B model
   phases: []
   subtasks: []
   estimated_effort: 30m

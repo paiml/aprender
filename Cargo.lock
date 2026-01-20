@@ -4722,7 +4722,9 @@ dependencies = [
 
 [[package]]
 name = "realizar"
-version = "0.6.6"
+version = "0.6.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "89e6d6866d26aa376b0019e7a73138834109557bfde0fac8e43bc562445cc7f2"
 dependencies = [
  "anyhow",
  "aprender 0.24.1 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -6236,7 +6238,7 @@ dependencies = [
 
 [[package]]
 name = "trueno-gpu"
-version = "0.4.8"
+version = "0.4.9"
 dependencies = [
  "libloading",
  "thiserror 2.0.18",

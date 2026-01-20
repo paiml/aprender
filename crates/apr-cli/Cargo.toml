@@ -140,6 +140,10 @@ required-features = ["inference"]
 name = "serve_with_tracing"
 required-features = ["inference"]
 
+[[example]]
+name = "gpu_chat_inference"
+required-features = ["inference", "cuda"]
+
 [dev-dependencies]
 assert_cmd = "2.0"
 predicates = "3.1"

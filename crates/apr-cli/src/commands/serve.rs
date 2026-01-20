@@ -1161,8 +1161,161 @@ fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
                 }),
             )
             .route(
+                "/v1/chat/completions",
+                {
+                    let state_for_chat = Arc::new(Mutex::new(state.clone()));
+                    post(move |Json(req): Json<serde_json::Value>| {
+                        let state = state_for_chat.clone();
+                        async move {
+                            use axum::response::sse::{Event, Sse};
+                            use futures_util::stream;
+
+                            let s = state.lock().unwrap().clone();
+
+                            if !s.is_transformer {
+                                return axum::Json(serde_json::json!({
+                                    "error": "Model is not a transformer, inference not supported"
+                                }))
+                                .into_response();
+                            }
+
+                            // Extract messages from request
+                            let messages = req.get("messages").and_then(|m| m.as_array());
+                            let stream_mode = req.get("stream").and_then(|s| s.as_bool()).unwrap_or(false);
+                            let max_tokens = req.get("max_tokens").and_then(|m| m.as_u64()).unwrap_or(32) as usize;
+
+                            let prompt = if let Some(msgs) = messages {
+                                // Format as ChatML
+                                let mut prompt = String::new();
+                                for msg in msgs {
+                                    let role = msg.get("role").and_then(|r| r.as_str()).unwrap_or("user");
+                                    let content = msg.get("content").and_then(|c| c.as_str()).unwrap_or("");
+                                    prompt.push_str(&format!("<|im_start|>{}\n{}<|im_end|>\n", role, content));
+                                }
+                                prompt.push_str("<|im_start|>assistant\n");
+                                prompt
+                            } else {
+                                return axum::Json(serde_json::json!({"error": "Missing messages"})).into_response();
+                            };
+
+                            // Load model for inference
+                            let start = Instant::now();
+                            let model = match AprModel::load(&s.model_path) {
+                                Ok(m) => m,
+                                Err(e) => {
+                                    return axum::Json(serde_json::json!({"error": format!("Model load failed: {e}")}))
+                                        .into_response();
+                                }
+                            };
+
+                            // Encode prompt
+                            let input_tokens = if let Some(tokens) = AprModel::encode_text(&s.model_path, &prompt) {
+                                tokens
+                            } else {
+                                vec![1u32]
+                            };
+
+                            let eos_id = match &s.tokenizer_info {
+                                Some((_, _, Some(e))) => *e,
+                                _ => 151645, // ChatML end token
+                            };
+
+                            // Generate
+                            let gen_start = Instant::now();
+                            let max_tokens = max_tokens.min(256);
+                            let output_tokens = match model.generate(&input_tokens, max_tokens, Some(eos_id)) {
+                                Ok(t) => t,
+                                Err(e) => {
+                                    return axum::Json(serde_json::json!({"error": format!("Generation failed: {e}")}))
+                                        .into_response();
+                                }
+                            };
+                            let elapsed = gen_start.elapsed();
+
+                            // Decode output
+                            let new_tokens = if output_tokens.len() > input_tokens.len() {
+                                &output_tokens[input_tokens.len()..]
+                            } else {
+                                &output_tokens[..]
+                            };
+
+                            let output_text = if let Some((vocab, _, _)) = &s.tokenizer_info {
+                                AprModel::decode_tokens(vocab, new_tokens)
+                            } else {
+                                format!("{:?}", new_tokens)
+                            };
+
+                            let tokens_generated = new_tokens.len();
+                            let tok_per_sec = if elapsed.as_secs_f64() > 0.0 {
+                                tokens_generated as f64 / elapsed.as_secs_f64()
+                            } else {
+                                0.0
+                            };
+
+                            // Generate unique ID
+                            let request_id = format!(
+                                "chatcmpl-{}-{}",
+                                std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .unwrap_or_default()
+                                    .as_nanos(),
+                                std::process::id()
+                            );
+
+                            let created = std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_secs();
+
+                            if stream_mode {
+                                // SSE streaming response (PAR-302)
+                                let response = serde_json::json!({
+                                    "id": request_id,
+                                    "object": "chat.completion.chunk",
+                                    "created": created,
+                                    "model": "apr",
+                                    "choices": [{
+                                        "index": 0,
+                                        "delta": {"role": "assistant", "content": output_text},
+                                        "finish_reason": "stop"
+                                    }]
+                                });
+
+                                let stream = stream::once(async move {
+                                    Ok::<_, std::convert::Infallible>(Event::default().data(response.to_string()))
+                                });
+                                Sse::new(stream).into_response()
+                            } else {
+                                // Non-streaming response
+                                axum::Json(serde_json::json!({
+                                    "id": request_id,
+                                    "object": "chat.completion",
+                                    "created": created,
+                                    "model": "apr",
+                                    "choices": [{
+                                        "index": 0,
+                                        "message": {"role": "assistant", "content": output_text},
+                                        "finish_reason": "stop"
+                                    }],
+                                    "usage": {
+                                        "prompt_tokens": input_tokens.len(),
+                                        "completion_tokens": tokens_generated,
+                                        "total_tokens": input_tokens.len() + tokens_generated
+                                    },
+                                    "_apr_metrics": {
+                                        "latency_ms": start.elapsed().as_millis(),
+                                        "tok_per_sec": tok_per_sec
+                                    }
+                                }))
+                                .into_response()
+                            }
+                        }
+                    })
+                },
+            )
+            .route(
                 "/",
-                get(|| async { "APR v2 Inference Server - POST /v1/completions" }),
+                get(|| async { "APR v2 Inference Server - POST /v1/completions, /v1/chat/completions" }),
             );
 
         let listener = tokio::net::TcpListener::bind(&bind_addr)
@@ -1180,6 +1333,7 @@ fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
         println!("{}", "Endpoints:".cyan());
         println!("  GET  /health              - Health check");
         println!("  POST /v1/completions      - Text generation");
+        println!("  POST /v1/chat/completions - Chat completions (PAR-302)");
         println!();
         println!(
             "{}",
@@ -1355,8 +1509,152 @@ fn start_apr_server_gpu(
                 }),
             )
             .route(
+                "/v1/chat/completions",
+                {
+                    let cuda_for_chat = cuda_model.clone();
+                    let tok_for_chat = tokenizer_info.clone();
+                    let path_for_chat = model_path_arc.clone();
+                    post(move |Json(req): Json<serde_json::Value>| {
+                        let cuda = cuda_for_chat.clone();
+                        let tok_info = tok_for_chat.clone();
+                        let model_path = path_for_chat.clone();
+                        async move {
+                            use axum::response::sse::{Event, Sse};
+                            use futures_util::stream;
+                            use realizar::apr::AprModel;
+
+                            // Extract messages from request
+                            let messages = req.get("messages").and_then(|m| m.as_array());
+                            let stream_mode = req.get("stream").and_then(|s| s.as_bool()).unwrap_or(false);
+                            let max_tokens = req.get("max_tokens").and_then(|m| m.as_u64()).unwrap_or(32) as usize;
+
+                            let prompt = if let Some(msgs) = messages {
+                                // Format as ChatML
+                                let mut prompt = String::new();
+                                for msg in msgs {
+                                    let role = msg.get("role").and_then(|r| r.as_str()).unwrap_or("user");
+                                    let content = msg.get("content").and_then(|c| c.as_str()).unwrap_or("");
+                                    prompt.push_str(&format!("<|im_start|>{}\n{}<|im_end|>\n", role, content));
+                                }
+                                prompt.push_str("<|im_start|>assistant\n");
+                                prompt
+                            } else {
+                                return axum::Json(serde_json::json!({"error": "Missing messages"})).into_response();
+                            };
+
+                            let start = Instant::now();
+
+                            // Encode prompt
+                            let input_tokens = if let Some(tokens) = AprModel::encode_text(&model_path, &prompt) {
+                                tokens
+                            } else {
+                                vec![1u32]
+                            };
+
+                            let eos_id = match tok_info.as_ref() {
+                                Some((_, _, Some(e))) => *e,
+                                _ => 151645, // ChatML end token
+                            };
+
+                            // Generate on GPU
+                            let gen_start = Instant::now();
+                            let max_tokens = max_tokens.min(256);
+                            let output_tokens = {
+                                let mut model = cuda.lock().unwrap();
+                                match model.generate_cuda(&input_tokens, max_tokens, eos_id) {
+                                    Ok(t) => t,
+                                    Err(e) => {
+                                        return axum::Json(serde_json::json!({"error": format!("GPU generation failed: {e}")}))
+                                            .into_response();
+                                    }
+                                }
+                            };
+                            let elapsed = gen_start.elapsed();
+
+                            // Decode
+                            let new_tokens = if output_tokens.len() > input_tokens.len() {
+                                &output_tokens[input_tokens.len()..]
+                            } else {
+                                &output_tokens[..]
+                            };
+
+                            let output_text = if let Some((vocab, _, _)) = tok_info.as_ref() {
+                                AprModel::decode_tokens(vocab, new_tokens)
+                            } else {
+                                format!("{:?}", new_tokens)
+                            };
+
+                            let tokens_generated = new_tokens.len();
+                            let tok_per_sec = if elapsed.as_secs_f64() > 0.0 {
+                                tokens_generated as f64 / elapsed.as_secs_f64()
+                            } else {
+                                0.0
+                            };
+
+                            // Generate unique ID
+                            let request_id = format!(
+                                "chatcmpl-{}-{}",
+                                std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .unwrap_or_default()
+                                    .as_nanos(),
+                                std::process::id()
+                            );
+
+                            let created = std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_secs();
+
+                            if stream_mode {
+                                // SSE streaming response (PAR-302)
+                                let response = serde_json::json!({
+                                    "id": request_id,
+                                    "object": "chat.completion.chunk",
+                                    "created": created,
+                                    "model": "apr-gpu",
+                                    "choices": [{
+                                        "index": 0,
+                                        "delta": {"role": "assistant", "content": output_text},
+                                        "finish_reason": "stop"
+                                    }]
+                                });
+
+                                let stream = stream::once(async move {
+                                    Ok::<_, std::convert::Infallible>(Event::default().data(response.to_string()))
+                                });
+                                Sse::new(stream).into_response()
+                            } else {
+                                // Non-streaming response
+                                axum::Json(serde_json::json!({
+                                    "id": request_id,
+                                    "object": "chat.completion",
+                                    "created": created,
+                                    "model": "apr-gpu",
+                                    "choices": [{
+                                        "index": 0,
+                                        "message": {"role": "assistant", "content": output_text},
+                                        "finish_reason": "stop"
+                                    }],
+                                    "usage": {
+                                        "prompt_tokens": input_tokens.len(),
+                                        "completion_tokens": tokens_generated,
+                                        "total_tokens": input_tokens.len() + tokens_generated
+                                    },
+                                    "_apr_metrics": {
+                                        "latency_ms": start.elapsed().as_millis(),
+                                        "tok_per_sec": tok_per_sec
+                                    }
+                                }))
+                                .into_response()
+                            }
+                        }
+                    })
+                },
+            )
+            .route(
                 "/",
-                get(|| async { "APR v2 GPU Inference Server - POST /v1/completions" }),
+                get(|| async { "APR v2 GPU Inference Server - POST /v1/completions, /v1/chat/completions" }),
             );
 
         let listener = tokio::net::TcpListener::bind(&bind_addr)
@@ -1374,6 +1672,7 @@ fn start_apr_server_gpu(
         println!("{}", "Endpoints:".cyan());
         println!("  GET  /health              - Health check");
         println!("  POST /v1/completions      - GPU text generation");
+        println!("  POST /v1/chat/completions - GPU chat completions (PAR-302)");
         println!();
         println!("{}", "Press Ctrl+C to stop".dimmed());
 
@@ -1714,9 +2013,15 @@ fn start_gguf_server_gpu_batched(
 /// Start SafeTensors inspection server
 #[cfg(feature = "inference")]
 fn start_safetensors_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
-    use axum::{routing::get, Json, Router};
+    use axum::{
+        routing::{get, post},
+        Json, Router,
+    };
+    use realizar::apr_transformer::AprTransformer;
     use realizar::safetensors::SafetensorsModel;
+    use realizar::safetensors_infer::SafetensorsToAprConverter;
     use serde::Serialize;
+    use std::sync::{Arc, Mutex};
 
     // Load SafeTensors for inspection
     let data = std::fs::read(model_path)?;
@@ -1731,12 +2036,51 @@ fn start_safetensors_server(model_path: &Path, config: &ServerConfig) -> Result<
         format!("SafeTensors loaded: {} tensors", tensor_count).green()
     );
 
+    // Try to convert to AprTransformer for inference (PAR-301)
+    let transformer = match SafetensorsToAprConverter::convert(model_path) {
+        Ok(t) => {
+            println!(
+                "{}",
+                format!(
+                    "Inference enabled: {} layers, hidden_dim={}",
+                    t.config.num_layers, t.config.hidden_dim
+                )
+                .cyan()
+            );
+            Some(Arc::new(Mutex::new(t)))
+        }
+        Err(e) => {
+            println!(
+                "{}",
+                format!("Inference disabled: {e} (inspection-only mode)").yellow()
+            );
+            None
+        }
+    };
+
+    // Try to load tokenizer from sibling tokenizer.json
+    let tokenizer_path = model_path.with_file_name("tokenizer.json");
+    let tokenizer_info = if tokenizer_path.exists() {
+        load_safetensors_tokenizer(&tokenizer_path)
+    } else {
+        println!(
+            "{}",
+            "No tokenizer.json found - using fallback tokenization".yellow()
+        );
+        None
+    };
+
+    if tokenizer_info.is_some() {
+        println!("{}", "Tokenizer loaded from sibling file".dimmed());
+    }
+
     // Create tokio runtime
     let runtime = tokio::runtime::Runtime::new()
         .map_err(|e| CliError::InferenceFailed(format!("Failed to create runtime: {e}")))?;
 
     let bind_addr = config.bind_addr();
     let model_path_str = model_path.display().to_string();
+    let inference_enabled = transformer.is_some();
 
     runtime.block_on(async move {
         #[derive(Clone, Serialize)]
@@ -1744,21 +2088,54 @@ fn start_safetensors_server(model_path: &Path, config: &ServerConfig) -> Result<
             count: usize,
             model: String,
             names: Vec<String>,
+            inference_enabled: bool,
         }
 
         let info = TensorInfo {
             count: tensor_count,
             model: model_path_str.clone(),
             names: tensor_names.clone(),
+            inference_enabled,
         };
 
-        // Simple inspection endpoints
-        let app = Router::new()
+        // Use module-level SafeTensorsState for inference
+        let state = SafeTensorsState {
+            transformer: transformer.clone(),
+            tokenizer_info: tokenizer_info.clone(),
+            model_path: model_path_str.clone(),
+        };
+
+        // Build base routes (no state required)
+        let base_routes = Router::new()
             .route(
                 "/health",
-                get(|| async { Json(serde_json::json!({"status": "healthy"})) }),
+                get({
+                    let inference = inference_enabled;
+                    move || async move {
+                        Json(serde_json::json!({
+                            "status": "healthy",
+                            "inference_enabled": inference
+                        }))
+                    }
+                }),
             )
             .route("/tensors", get(move || async move { Json(info.clone()) }));
+
+        // Build inference routes with state (PAR-301)
+        let inference_routes: Router = if inference_enabled {
+            Router::new()
+                .route(
+                    "/v1/chat/completions",
+                    post(safetensors_chat_completions_handler),
+                )
+                .route("/generate", post(safetensors_generate_handler))
+                .with_state(state)
+        } else {
+            Router::new()
+        };
+
+        // Merge all routes into final app
+        let app = base_routes.merge(inference_routes);
 
         let listener = tokio::net::TcpListener::bind(&bind_addr)
             .await
@@ -1773,13 +2150,19 @@ fn start_safetensors_server(model_path: &Path, config: &ServerConfig) -> Result<
         );
         println!();
         println!("{}", "Endpoints:".cyan());
-        println!("  GET /health   - Health check");
-        println!("  GET /tensors  - List tensor names");
+        println!("  GET  /health              - Health check");
+        println!("  GET  /tensors             - List tensor names");
+        if inference_enabled {
+            println!("  POST /generate            - Text generation");
+            println!("  POST /v1/chat/completions - Chat completions (PAR-301)");
+        }
         println!();
-        println!(
-            "{}",
-            "Note: SafeTensors serving requires additional tokenizer/config".yellow()
-        );
+        if !inference_enabled {
+            println!(
+                "{}",
+                "Note: Inference disabled - ensure config.json exists alongside model".yellow()
+            );
+        }
         println!("{}", "Press Ctrl+C to stop".dimmed());
 
         axum::serve(listener, app)
@@ -1791,6 +2174,354 @@ fn start_safetensors_server(model_path: &Path, config: &ServerConfig) -> Result<
         println!("{}", "Server stopped".yellow());
         Ok(())
     })
+}
+
+/// Tokenizer info for SafeTensors models
+#[derive(Clone)]
+struct SafeTensorsTokenizerInfo {
+    vocab: Vec<String>,
+    bos_token_id: Option<u32>,
+    eos_token_id: Option<u32>,
+}
+
+/// Load tokenizer from HuggingFace tokenizer.json format
+fn load_safetensors_tokenizer(path: &Path) -> Option<SafeTensorsTokenizerInfo> {
+    let content = std::fs::read_to_string(path).ok()?;
+    let json: serde_json::Value = serde_json::from_str(&content).ok()?;
+
+    // Extract vocabulary from model.vocab
+    let vocab_obj = json.get("model")?.get("vocab")?;
+    let vocab_map = vocab_obj.as_object()?;
+
+    // Build vocab vector (sorted by ID)
+    let mut vocab_vec: Vec<(String, u32)> = vocab_map
+        .iter()
+        .filter_map(|(token, id)| Some((token.clone(), id.as_u64()? as u32)))
+        .collect();
+    vocab_vec.sort_by_key(|(_, id)| *id);
+
+    let vocab: Vec<String> = vocab_vec.into_iter().map(|(token, _)| token).collect();
+
+    // Extract special tokens
+    let added_tokens = json.get("added_tokens").and_then(|v| v.as_array());
+    let mut bos_token_id = None;
+    let mut eos_token_id = None;
+
+    if let Some(tokens) = added_tokens {
+        for token in tokens {
+            let content = token.get("content").and_then(|v| v.as_str());
+            let id = token.get("id").and_then(|v| v.as_u64()).map(|v| v as u32);
+
+            if let (Some(content), Some(id)) = (content, id) {
+                if content.contains("bos") || content == "<s>" {
+                    bos_token_id = Some(id);
+                }
+                if content.contains("eos") || content == "</s>" || content.contains("im_end") {
+                    eos_token_id = Some(id);
+                }
+            }
+        }
+    }
+
+    Some(SafeTensorsTokenizerInfo {
+        vocab,
+        bos_token_id,
+        eos_token_id,
+    })
+}
+
+/// SafeTensors chat completions handler (PAR-301)
+#[cfg(feature = "inference")]
+async fn safetensors_chat_completions_handler(
+    axum::extract::State(state): axum::extract::State<SafeTensorsState>,
+    axum::Json(request): axum::Json<serde_json::Value>,
+) -> axum::response::Response {
+    use axum::http::StatusCode;
+    use axum::response::{sse::Event, IntoResponse, Sse};
+    use futures_util::stream;
+
+    // Parse request
+    let messages = request.get("messages").and_then(|m| m.as_array());
+    let max_tokens = request
+        .get("max_tokens")
+        .and_then(|m| m.as_u64())
+        .unwrap_or(50) as usize;
+    let stream_mode = request
+        .get("stream")
+        .and_then(|s| s.as_bool())
+        .unwrap_or(false);
+
+    // Build prompt from messages
+    let prompt = if let Some(msgs) = messages {
+        let mut prompt = String::new();
+        for msg in msgs {
+            let role = msg.get("role").and_then(|r| r.as_str()).unwrap_or("user");
+            let content = msg.get("content").and_then(|c| c.as_str()).unwrap_or("");
+            prompt.push_str(&format!("<|im_start|>{role}\n{content}<|im_end|>\n"));
+        }
+        prompt.push_str("<|im_start|>assistant\n");
+        prompt
+    } else {
+        return (
+            StatusCode::BAD_REQUEST,
+            axum::Json(serde_json::json!({"error": "Missing messages field"})),
+        )
+            .into_response();
+    };
+
+    // Get transformer
+    let transformer = match &state.transformer {
+        Some(t) => t.clone(),
+        None => {
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                axum::Json(serde_json::json!({"error": "Inference not available - missing config.json"})),
+            )
+                .into_response();
+        }
+    };
+
+    // Encode prompt (simple tokenization if no tokenizer)
+    let input_ids = if let Some(ref tok_info) = state.tokenizer_info {
+        simple_encode(&prompt, &tok_info.vocab)
+    } else {
+        // Fallback: character-level tokenization
+        prompt.chars().map(|c| c as u32).collect()
+    };
+
+    // Generate
+    let start = Instant::now();
+    let output_ids = {
+        let t = transformer.lock().unwrap();
+        match t.generate(&input_ids, max_tokens) {
+            Ok(ids) => ids,
+            Err(e) => {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    axum::Json(serde_json::json!({"error": format!("Generation failed: {e}")})),
+                )
+                    .into_response();
+            }
+        }
+    };
+    let elapsed = start.elapsed();
+
+    // Decode output
+    let new_tokens = &output_ids[input_ids.len()..];
+    let output_text = if let Some(ref tok_info) = state.tokenizer_info {
+        simple_decode(new_tokens, &tok_info.vocab)
+    } else {
+        new_tokens
+            .iter()
+            .map(|&id| char::from_u32(id.min(127)).unwrap_or('?'))
+            .collect()
+    };
+
+    // Clean output (remove any trailing special tokens)
+    let output_text = output_text
+        .split("<|im_end|>")
+        .next()
+        .unwrap_or(&output_text)
+        .to_string();
+
+    let tokens_generated = new_tokens.len();
+    let tok_per_sec = if elapsed.as_secs_f64() > 0.0 {
+        tokens_generated as f64 / elapsed.as_secs_f64()
+    } else {
+        0.0
+    };
+
+    // Generate unique ID using timestamp and process ID
+    let request_id = format!(
+        "chatcmpl-{}-{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos(),
+        std::process::id()
+    );
+
+    // Return OpenAI-compatible response
+    if stream_mode {
+        // SSE streaming response
+        let response = serde_json::json!({
+            "id": request_id,
+            "object": "chat.completion.chunk",
+            "created": std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs(),
+            "model": "safetensors",
+            "choices": [{
+                "index": 0,
+                "delta": {"role": "assistant", "content": output_text},
+                "finish_reason": "stop"
+            }]
+        });
+
+        let stream = stream::once(async move {
+            Ok::<_, std::convert::Infallible>(Event::default().data(response.to_string()))
+        });
+        Sse::new(stream).into_response()
+    } else {
+        // Non-streaming response
+        axum::Json(serde_json::json!({
+            "id": request_id,
+            "object": "chat.completion",
+            "created": std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs(),
+            "model": "safetensors",
+            "choices": [{
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": output_text
+                },
+                "finish_reason": "stop"
+            }],
+            "usage": {
+                "prompt_tokens": input_ids.len(),
+                "completion_tokens": tokens_generated,
+                "total_tokens": input_ids.len() + tokens_generated
+            },
+            "latency_ms": elapsed.as_millis(),
+            "tok_per_sec": tok_per_sec
+        }))
+        .into_response()
+    }
+}
+
+/// SafeTensors generate handler
+#[cfg(feature = "inference")]
+async fn safetensors_generate_handler(
+    axum::extract::State(state): axum::extract::State<SafeTensorsState>,
+    axum::Json(request): axum::Json<serde_json::Value>,
+) -> axum::response::Response {
+    use axum::http::StatusCode;
+    use axum::response::IntoResponse;
+
+    let prompt = request
+        .get("prompt")
+        .and_then(|p| p.as_str())
+        .unwrap_or("");
+    let max_tokens = request
+        .get("max_tokens")
+        .and_then(|m| m.as_u64())
+        .unwrap_or(32) as usize;
+
+    let transformer = match &state.transformer {
+        Some(t) => t.clone(),
+        None => {
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                axum::Json(serde_json::json!({"error": "Inference not available"})),
+            )
+                .into_response();
+        }
+    };
+
+    // Encode prompt
+    let input_ids = if let Some(ref tok_info) = state.tokenizer_info {
+        simple_encode(prompt, &tok_info.vocab)
+    } else {
+        prompt.chars().map(|c| c as u32).collect()
+    };
+
+    // Generate
+    let start = Instant::now();
+    let output_ids = {
+        let t = transformer.lock().unwrap();
+        match t.generate(&input_ids, max_tokens) {
+            Ok(ids) => ids,
+            Err(e) => {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    axum::Json(serde_json::json!({"error": format!("Generation failed: {e}")})),
+                )
+                    .into_response();
+            }
+        }
+    };
+    let elapsed = start.elapsed();
+
+    // Decode
+    let new_tokens = &output_ids[input_ids.len()..];
+    let output_text = if let Some(ref tok_info) = state.tokenizer_info {
+        simple_decode(new_tokens, &tok_info.vocab)
+    } else {
+        new_tokens
+            .iter()
+            .map(|&id| char::from_u32(id.min(127)).unwrap_or('?'))
+            .collect()
+    };
+
+    let tokens_generated = new_tokens.len();
+    let tok_per_sec = if elapsed.as_secs_f64() > 0.0 {
+        tokens_generated as f64 / elapsed.as_secs_f64()
+    } else {
+        0.0
+    };
+
+    axum::Json(serde_json::json!({
+        "text": output_text,
+        "tokens_generated": tokens_generated,
+        "latency_ms": elapsed.as_millis(),
+        "tok_per_sec": tok_per_sec
+    }))
+    .into_response()
+}
+
+/// Simple tokenization using greedy longest match
+fn simple_encode(text: &str, vocab: &[String]) -> Vec<u32> {
+    let mut tokens = Vec::new();
+    let mut remaining = text;
+
+    while !remaining.is_empty() {
+        // Find longest matching token
+        let mut best_match = None;
+        let mut best_len = 0;
+
+        for (id, token) in vocab.iter().enumerate() {
+            if remaining.starts_with(token) && token.len() > best_len {
+                best_match = Some(id as u32);
+                best_len = token.len();
+            }
+        }
+
+        if let Some(id) = best_match {
+            tokens.push(id);
+            remaining = &remaining[best_len..];
+        } else {
+            // Skip unknown character
+            let char_len = remaining.chars().next().map_or(1, char::len_utf8);
+            remaining = &remaining[char_len..];
+        }
+    }
+
+    tokens
+}
+
+/// Simple decode using vocab lookup
+fn simple_decode(token_ids: &[u32], vocab: &[String]) -> String {
+    token_ids
+        .iter()
+        .map(|&id| {
+            vocab
+                .get(id as usize)
+                .map_or("?".to_string(), |s| s.clone())
+        })
+        .collect::<Vec<_>>()
+        .join("")
+}
+
+/// Shared state for SafeTensors server
+#[derive(Clone)]
+struct SafeTensorsState {
+    transformer: Option<Arc<std::sync::Mutex<realizar::apr_transformer::AprTransformer>>>,
+    tokenizer_info: Option<SafeTensorsTokenizerInfo>,
+    model_path: String,
 }
 
 /// Shutdown signal handler

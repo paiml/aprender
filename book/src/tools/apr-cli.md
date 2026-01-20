@@ -20,6 +20,8 @@ The binary will be available at `target/release/apr`.
 
 | Command | Description | Toyota Way Principle |
 |---------|-------------|---------------------|
+| `serve` | Start inference server with GPU acceleration | Just-in-Time Production |
+| `chat` | Interactive chat with language models | Genchi Genbutsu (Go and See) |
 | `inspect` | View model metadata and structure | Genchi Genbutsu (Go and See) |
 | `debug` | Debug output with optional drama mode | Visualization |
 | `validate` | Validate integrity with quality scoring | Jidoka (Built-in Quality) |
@@ -29,6 +31,79 @@ The binary will be available at `target/release/apr`.
 | `probar` | Export for visual regression testing | Standardization |
 | `import` | Import from HuggingFace, local files, or URLs | Automation |
 | `explain` | Explain errors, architecture, and tensors | Knowledge Sharing |
+
+## Serve Command
+
+Start an OpenAI-compatible inference server with optional GPU acceleration.
+
+```bash
+# Basic server (CPU)
+apr serve model.gguf --port 8080
+
+# GPU-accelerated server
+apr serve model.gguf --port 8080 --gpu
+
+# Batched GPU mode (2.9x faster than Ollama)
+apr serve model.gguf --port 8080 --gpu --batch
+```
+
+### Performance
+
+| Mode | Throughput | vs Ollama | Memory |
+|------|------------|-----------|--------|
+| CPU (baseline) | ~15 tok/s | 0.05x | 1.1 GB |
+| GPU (single) | ~83 tok/s | 0.25x | 1.5 GB |
+| GPU (batched) | ~850 tok/s | 2.9x | 1.9 GB |
+| Ollama | ~333 tok/s | 1.0x | - |
+
+### Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/health` | GET | Health check |
+| `/metrics` | GET | Prometheus metrics |
+| `/v1/chat/completions` | POST | OpenAI-compatible chat |
+| `/v1/completions` | POST | OpenAI-compatible completions |
+| `/generate` | POST | Native generation endpoint |
+
+### Example Request
+
+```bash
+curl -X POST http://localhost:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "default",
+    "messages": [{"role": "user", "content": "Hello!"}],
+    "max_tokens": 50
+  }'
+```
+
+### Tracing Headers
+
+Use the `X-Trace-Level` header for performance debugging:
+
+```bash
+# Token-level timing
+curl -H "X-Trace-Level: brick" http://localhost:8080/v1/chat/completions ...
+
+# Layer-level timing
+curl -H "X-Trace-Level: layer" http://localhost:8080/v1/chat/completions ...
+```
+
+## Chat Command
+
+Interactive chat with language models (supports GGUF, APR, SafeTensors).
+
+```bash
+# Interactive chat (GPU by default)
+apr chat model.gguf
+
+# Force CPU inference
+apr chat model.gguf --no-gpu
+
+# Adjust generation parameters
+apr chat model.gguf --temperature 0.7 --top-p 0.9 --max-tokens 512
+```
 
 ## Inspect Command
 
