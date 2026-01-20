@@ -1562,16 +1562,25 @@ roadmap:
 - id: PMAT-082
   github_issue: null
   item_type: task
-  title: 'APR-CLI-RELEASE-029: Release apr-cli v0.2.9 to crates.io'
-  status: inprogress
+  title: 'APR-CLI-RELEASE-029: Release apr-cli v0.2.10 to crates.io'
+  status: completed
   priority: high
   assigned_to: null
   created: 2026-01-20T16:57:43Z
-  updated: 2026-01-20T16:57:48.678558093+00:00
+  updated: 2026-01-20T17:01:00.000000000+00:00
   spec: null
-  acceptance_criteria: []
+  acceptance_criteria:
+  - 'Version bump: 0.2.9 -> 0.2.10'
+  - 'Published to crates.io'
+  - 'Verified installation from crates.io'
+  - 'apr --version reports 0.2.10'
+  - 'apr run works with 1.5B model'
   phases: []
   subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
+  estimated_effort: 30m
+  labels:
+  - release
+  - crates-io
+  notes: |
+    Released 2026-01-20: apr-cli v0.2.10 published to crates.io
+    Verified: cargo install apr-cli installs and runs correctly
