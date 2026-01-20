@@ -1,7 +1,7 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
 **Version:** 7.5.0
-**Status:** ⚠️ FORMAT PARITY INCOMPLETE — GGUF works, APR/SafeTensors blocked
+**Status:** NOT READY TO SHIP — CRITICAL GAPS (33% PASS)
 **Author:** PAIML Engineering
 **Date:** 2026-01-20
 **PMAT Roadmap ID:** `SHOWCASE-BRICK-001`
@@ -9,58 +9,35 @@
 
 ---
 
-## Executive Summary
+## Executive Summary: The Unified Inference Hypothesis
 
-This specification defines the **Unified Inference Architecture** for the aprender ecosystem. The core principle is **separation of concerns**:
+This specification defines the **Unified Inference Architecture** for the aprender ecosystem. In accordance with **Popperian epistemology**, we frame this architecture not as a verified truth, but as a **falsifiable hypothesis**:
 
-- **aprender**: ML algorithms, training, .apr format (LIBRARY)
-- **realizar**: Inference engine, model serving, GPU/CPU dispatch (RUNTIME)
-- **apr-cli**: User interface, model management, delegates to realizar (CLI)
+> **Hypothesis ($H_1$):** A strict separation of concerns between `aprender` (library), `realizar` (runtime), and `apr-cli` (interface) yields a system that is performant (≥2x Ollama), consistent (Ollama parity), and scientifically verifiable (10-stage pipeline), without introducing significant overhead.
 
-All inference operations (`apr run`, `apr chat`, `apr serve`) delegate to `realizar`, ensuring:
-1. Single codebase for inference optimizations
-2. Consistent UX (Ollama-style spinner, clean output)
-3. Unified tracing and profiling
-4. 10-stage pipeline verification
+**Null Hypothesis ($H_0$):** The abstraction overhead of the unified architecture degrades performance below targets or introduces integration bugs that prevent parity, necessitating a return to monolithic design.
 
-## Known Regressions (PAR-201) — ✅ CHAT/RUN FIXED, ❌ FORMAT PARITY BLOCKED
+We accept $H_1$ strictly provisionally, only as long as it survives the **300-point Falsification Checklist** defined herein.
 
-### PAR-201 Regressions (FIXED)
+## Blocking Issues (P0) — 🛑 IMMEDIATE ACTION REQUIRED
 
-QA identified critical regressions in the `apr chat` command (v0.2.2). **All fixed in v0.2.6:**
+The following issues currently **falsify** the readiness of the system (Current Score: 7/21):
 
-1.  ✅ **F-GPU-134b FIXED**: `force_cpu` now defaults to `false` — GPU is used when available.
-2.  ✅ **F-CLI-013b/014b VERIFIED**: `apr chat --gpu` and `--no-gpu` flags exist and work correctly.
-3.  ✅ **F-PIPE-166b FIXED**: `clean_chat_response()` now removes BPE artifacts (`Ġ`, `Ċ`) and normalizes punctuation.
-4.  ✅ **F-UX-40 FIXED**: Debug output is now guarded by `--verbose` or `--trace` flags (NOISY-GUARD).
-5.  ✅ **realizar#39 FIXED**: Architecture detection now reads from GGUF metadata (`general.architecture`) instead of filename parsing. 0.5B model correctly detected as "Qwen2".
+1.  🛑 **PAR-301 (SafeTensors Gap):** `realizar` lacks inference support for SafeTensors format.
+    *   *Impact:* Falsifies "Unified Architecture" claim; currently GGUF-only.
+2.  🛑 **PAR-302 (APR Format Gap):** APR format loading fails due to missing `config.json` support.
+    *   *Impact:* Falsifies "Native Format" support ($H_1$ requires `aprender` integration).
+3.  🛑 **PAR-303 (0.5B Coherency):** 0.5B models produce garbled output.
+    *   *Impact:* Critical failure in `realizar`/`tokenizer` logic for smaller vocab/dim models.
 
-**Tests Added:** 6 new unit tests for `clean_chat_response()` validating artifact removal.
+## Known Regressions (PAR-201) — ✅ REFUTED
 
-### FORMAT PARITY Blockers (CRITICAL — MUST FIX)
+Previous falsification attempts (QA) successfully refuted the release candidate v0.2.2. The following regressions have since been addressed and the fixes verified:
 
-| Issue ID | Format | Error | Component | Priority |
-|----------|--------|-------|-----------|----------|
-| **PAR-301** | SafeTensors | "Operation 'safetensors_inference' not supported" | realizar | P0 |
-| **PAR-302** | APR | "SafeTensors model requires config.json" | realizar | P0 |
-| **PAR-303** | 0.5B | Garbled output from all 0.5B models | realizar/tokenizer | P1 |
-
-**PAR-301: SafeTensors Inference**
-- **Symptom**: `apr run model.safetensors` fails with "not supported"
-- **Root Cause**: `realizar::infer.rs` has stub for SafeTensors, not implemented
-- **Fix Required**: Implement `execute_safetensors()` in realizar matching GGUF path
-
-**PAR-302: APR Format Inference**
-- **Symptom**: `apr run model.apr` fails with "requires config.json"
-- **Root Cause**: APR format inference tries to use SafeTensors path
-- **Fix Required**: Implement native APR inference path in realizar
-
-**PAR-303: 0.5B Output Quality**
-- **Symptom**: All 0.5B models (Qwen2, Qwen2.5) produce gibberish
-- **Root Cause**: Unknown — tokenizer mismatch? Embedding issue?
-- **Fix Required**: Debug 0.5B inference path, compare with llama.cpp
-
-**Showcase QA Result:** `scripts/showcase-qa.sh --size=1.5b` → **DIAMOND-HARD QA PASSED** (GGUF only)
+1.  ✅ **F-GPU-134b FIXED**: `force_cpu` logic corrected. Refutation: `apr chat` now correctly utilizes GPU by default.
+2.  ✅ **F-CLI-013b/014b VERIFIED**: Feature flags `--gpu`/`--no-gpu` empirically verified.
+3.  ✅ **F-PIPE-166b FIXED**: BPE artifacts (`Ġ`, `Ċ`) eliminated from output stream.
+4.  ✅ **F-UX-40 FIXED**: "Noisy" debug output successfully confined to `--verbose`.
 
 ---
 
@@ -109,40 +86,27 @@ User Request
 └─────────────┘
 ```
 
-### 1.3 Peer-Reviewed Citations
+### 1.3 Peer-Reviewed Citations & Theoretical Basis
 
-1. **Vaswani, A., et al. (2017).** "Attention Is All You Need." *NeurIPS*. [arXiv:1706.03762](https://arxiv.org/abs/1706.03762)
-   - Transformer architecture we implement and trace
+1.  **Popper, K. (1959).** *The Logic of Scientific Discovery*. Hutchinson.
+    -   Foundation of our "Falsification Protocol": We do not prove software works; we fail to prove it breaks.
+2.  **Vaswani, A., et al. (2017).** "Attention Is All You Need." *NeurIPS*.
+3.  **Liker, J. K. (2004).** *The Toyota Way*. McGraw-Hill.
+    -   *Jidoka*: Automated stopping on abnormality (see Section VII).
+4.  **Gregg, B. (2020).** *Systems Performance*. Addison-Wesley.
+    -   Observability vs. Monitoring (see Section V).
+5.  **Dao, T., et al. (2022).** "FlashAttention." *NeurIPS*.
+6.  **Little, J. D. C. (1961).** "A Proof for the Queuing Formula: L = λW". *Operations Research*.
+    -   Theoretical basis for batching throughput calculations.
 
-2. **Liker, J. K. (2004).** *The Toyota Way: 14 Management Principles*. McGraw-Hill. ISBN 0071392319
-   - Jidoka (built-in quality), Genchi Genbutsu (go and see)
+### 1.4 Falsification Methodology
 
-3. **Popper, K. (1959).** *The Logic of Scientific Discovery*. Hutchinson.
-   - Falsification methodology for our 300-point QA checklist
+To ensure scientific rigor, we classify falsification events (bugs/failures) by severity:
 
-4. **Dao, T., et al. (2022).** "FlashAttention: Fast and Memory-Efficient Exact Attention." *NeurIPS*. [arXiv:2205.14135](https://arxiv.org/abs/2205.14135)
-   - Attention optimization techniques
-
-5. **Frantar, E., et al. (2023).** "GPTQ: Accurate Post-Training Quantization." *ICLR*. [arXiv:2210.17323](https://arxiv.org/abs/2210.17323)
-   - Quantization methods (Q4_K, Q8_0)
-
-6. **Dettmers, T., et al. (2022).** "LLM.int8(): 8-bit Matrix Multiplication for Transformers at Scale." *NeurIPS*. [arXiv:2208.07339](https://arxiv.org/abs/2208.07339)
-   - INT8 quantization theory
-
-7. **Wolf, T., et al. (2020).** "Transformers: State-of-the-Art NLP." *EMNLP*. [arXiv:1910.03771](https://arxiv.org/abs/1910.03771)
-   - Tokenizer and pipeline abstractions
-
-8. **Gregg, B. (2020).** *Systems Performance*, 2nd Ed. Addison-Wesley. ISBN 0136820158
-   - Observability vs monitoring principles
-
-9. **Kwon, W., et al. (2023).** "Efficient Memory Management for LLM Serving with PagedAttention." *SOSP*. [arXiv:2309.06180](https://arxiv.org/abs/2309.06180)
-   - vLLM KV cache management
-
-10. **NVIDIA (2024).** "CUDA C++ Programming Guide." [docs.nvidia.com](https://docs.nvidia.com/cuda/)
-    - GPU kernel optimization
-
-11. **Ansel, J., et al. (2014).** "OpenTuner: An Extensible Framework for Program Autotuning." *PACT*.
-    - Inspiration for Level 5 Auto-Tuning (Compiler-in-the-loop)
+*   **Level 1 (Cosmetic):** Output formatting, help text, typos. Does not refute $H_1$, but requires correction.
+*   **Level 2 (Functional):** Feature fails to execute as described (e.g., flag ignored). Requires code fix.
+*   **Level 3 (Structural):** Feature works but implementation violates architecture (e.g., CLI doing inference). **Refutes the Design ($H_1$).** Requires refactor.
+*   **Level 4 (Existential):** Performance targets physically impossible or core premise invalid. **Refutes the Project Goals.** Requires strategic pivot.
 
 ---
 
@@ -240,18 +204,20 @@ Performance: 25.3 tok/s
 
 ### 3.2 Verification Logic (apr check)
 
-| Stage | Invariant | Falsification Test |
+The `apr check` command performs **automated falsification** of the following invariants:
+
+| Stage | Invariant ($H$) | Falsification Test (Rejection Criteria) |
 |-------|-----------|-------------------|
-| 1. Tokenizer | encode(decode(x)) = x | Round-trip "test" |
-| 2. Embedding | ‖v‖ > 0, no NaN | Magnitude check |
-| 3. RoPE | θ = 10000, rotation applied | cos/sin present |
-| 4. QKV | Output variance > 0 | Non-collapsed |
-| 5. Attention | Entropy > 0.1 | Not degenerate |
-| 6. FFN | SwiGLU non-linear | Activation check |
-| 7. LayerNorm | std(output) ≈ 1.0 | Normalization |
-| 8. LM Head | shape = [vocab_size] | Dimension check |
-| 9. Softmax | Σprobs = 1.0 ± 1e-5 | Probability sum |
-| 10. Sampler | Deterministic at temp=0 | Reproducibility |
+| 1. Tokenizer | encode(decode(x)) = x | `encode(decode(x)) != x` |
+| 2. Embedding | ‖v‖ > 0, no NaN | `Any(isnan(v)) OR norm(v) == 0` |
+| 3. RoPE | θ = 10000, rotation applied | `cos/sin tables all zero` |
+| 4. QKV | Output variance > 0 | `std(output) < epsilon` (Collapsed) |
+| 5. Attention | Entropy > 0.1 | `entropy(attn) < 0.1` (Degenerate) |
+| 6. FFN | SwiGLU non-linear | `output == input` (Identity/Bypass) |
+| 7. LayerNorm | std(output) ≈ 1.0 | `abs(std(out) - 1.0) > 0.1` |
+| 8. LM Head | shape = [vocab_size] | `dim(out) != vocab_size` |
+| 9. Softmax | Σprobs = 1.0 ± 1e-5 | `abs(sum(p) - 1.0) > 1e-5` |
+| 10. Sampler | Deterministic at temp=0 | `run(s, t=0) != run(s, t=0)` |
 
 ---
 
@@ -272,62 +238,24 @@ The showcase validates across **four model sizes** to ensure architecture detect
 All model sizes MUST be detected as `Qwen2` architecture (not generic `Transformer`).
 See: realizar#39 for 0.5B detection bug.
 
-### 4.2 Modality Matrix — REQUIREMENTS
+### 4.2 Modality Matrix (Per Model Size)
 
-**ALL combinations below MUST work for showcase to ship.**
+**Status Legend:** ✅ Verified | ❌ Broken/Missing | 🚧 Work in Progress
 
-#### 4.2.1 Format × Command Matrix (REQUIRED)
+| Modality | 0.5B GGUF | 1.5B GGUF | 7B GGUF | 32B GGUF | APR | SafeTensors |
+|----------|-----------|-----------|---------|----------|-----|-------------|
+| **apr run** | ❌ (PAR-303) | ✅ | ✅ | ✅ | ❌ (PAR-302) | ❌ (PAR-301) |
+| **apr chat** | ❌ (PAR-303) | ✅ | ✅ | ✅ | ❌ | ❌ |
+| **apr serve** | ❌ (PAR-303) | ✅ | ✅ | ✅ | ❌ | ❌ |
+| **apr check** | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ |
+| **--trace** | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ |
+| **Architecture** | Qwen2 | Qwen2 | Qwen2 | Qwen2 | N/A | N/A |
 
-| Command | GGUF | APR | SafeTensors | Status |
-|---------|------|-----|-------------|--------|
-| **apr run** | ✅ Required | ✅ Required | ✅ Required | GGUF only |
-| **apr chat** | ✅ Required | ✅ Required | ✅ Required | GGUF only |
-| **apr serve** | ✅ Required | ✅ Required | ✅ Required | GGUF only |
-| **apr check** | ✅ Required | ✅ Required | ✅ Required | GGUF only |
-
-#### 4.2.2 Model Size × Format Matrix (REQUIRED)
-
-| Size | GGUF | APR | SafeTensors | Current Status |
-|------|------|-----|-------------|----------------|
-| **0.5B** | ✅ Req | ✅ Req | ✅ Req | ⚠️ GGUF loads, output garbled |
-| **1.5B** | ✅ Req | ✅ Req | ✅ Req | ✅ GGUF works, APR/ST blocked |
-| **7B** | ✅ Req | ✅ Req | ✅ Req | ✅ GGUF works, APR/ST blocked |
-| **32B** | ✅ Req | ✅ Req | ✅ Req | ✅ GGUF works, APR/ST blocked |
-
-#### 4.2.3 Backend × Format Matrix (REQUIRED)
-
-| Backend | GGUF | APR | SafeTensors | Status |
-|---------|------|-----|-------------|--------|
-| **CPU** | ✅ Req | ✅ Req | ✅ Req | GGUF only |
-| **GPU/CUDA** | ✅ Req | ✅ Req | ✅ Req | GGUF only |
-
-#### 4.2.4 Current State Summary
-
-```
-╔═══════════════════════════════════════════════════════════════════════════════╗
-║                         CURRENT FORMAT SUPPORT                                 ║
-╠═══════════════════════════════════════════════════════════════════════════════╣
-║  Format       │ run    │ chat   │ serve  │ Blocker                            ║
-╠═══════════════════════════════════════════════════════════════════════════════╣
-║  GGUF         │ ✅     │ ✅     │ ✅     │ None (works via realizar)          ║
-║  SafeTensors  │ ❌     │ ❌     │ ❌     │ "Not yet implemented" in realizar  ║
-║  APR          │ ❌     │ ❌     │ ❌     │ Needs config.json support          ║
-╚═══════════════════════════════════════════════════════════════════════════════╝
-```
-
-**Blocking Issues:**
-1. **realizar**: SafeTensors inference returns "Operation 'safetensors_inference' not supported"
-2. **realizar**: APR format returns "SafeTensors model requires config.json for inference"
-3. **0.5B output quality**: All 0.5B models produce garbled output (tokenizer issue?)
-
-**Definition of Done (FORMAT PARITY):**
-- `apr run model.gguf` ✅ works
-- `apr run model.safetensors` ❌ MUST work
-- `apr run model.apr` ❌ MUST work
-- All three formats produce identical output for same prompt
-- All model sizes (0.5B, 1.5B, 7B, 32B) produce coherent output
+**Current Score:** 7/21 (33%) — **FAILED**
 
 ### 4.3 Performance Targets (Per Model Size)
+
+These targets act as **falsifiable predictions**. If the system consistently fails to meet them on reference hardware (RTX 3090/4090, Modern AVX2 CPU), the optimization hypothesis is falsified.
 
 **0.5B Model (Edge/Mobile):**
 | Backend | Minimum | Target | Notes |
@@ -451,6 +379,8 @@ pub struct InferenceResult {
 ---
 
 ## 6. 300-Point Popperian Falsification Checklist
+
+**Protocol:** A single check failure constitutes a successful falsification of the release candidate. All boxes must be checked to accept the hypothesis $H_1$.
 
 ### Section I: CLI & UX (40 Points)
 
@@ -839,48 +769,37 @@ This section enforces the strict separation between **Runtime Observation** (see
 
 ## 8. Definition of Done
 
-### 8.1 FORMAT PARITY (MANDATORY)
-
-| Requirement | GGUF | APR | SafeTensors |
-|-------------|------|-----|-------------|
-| `apr run` works | ✅ | ❌ BLOCKED | ❌ BLOCKED |
-| `apr chat` works | ✅ | ❌ BLOCKED | ❌ BLOCKED |
-| `apr serve` works | ✅ | ❌ BLOCKED | ❌ BLOCKED |
-| 0.5B coherent output | ❌ BROKEN | ❌ | ❌ |
-| 1.5B coherent output | ✅ | ❌ | ❌ |
-| 7B coherent output | ✅ | ❌ | ❌ |
-| 32B coherent output | ✅ | ❌ | ❌ |
-
-**Current Score: 7/21 (33%)** — NOT READY TO SHIP
-
-### 8.2 Full Definition of Done
-
-1. ✅ `scripts/showcase-qa.sh` exits 0 (GGUF only)
-2. ⬜ 300-point falsification: ≥ 290 pass
-3. ❌ **All modalities (run/chat/serve × formats × backends) work** — BLOCKED
-4. ⬜ GPU ≥ 2x Ollama throughput
-5. ⬜ apr-cli has no duplicated inference code
-6. ✅ Ollama-style UX (spinner, clean output)
-7. ⬜ Tracing works across all paths
-8. ❌ **All formats (GGUF, APR, SafeTensors) produce identical output** — BLOCKED
-9. ❌ **All model sizes (0.5B, 1.5B, 7B, 32B) produce coherent output** — 0.5B BROKEN
+1. `scripts/showcase-qa.sh` exits 0
+2. 300-point falsification: ≥ 290 pass
+3. All modalities (run/chat/serve × formats × backends) work
+4. GPU ≥ 2x Ollama throughput
+5. apr-cli has no duplicated inference code
+6. Ollama-style UX (spinner, clean output)
+7. Tracing works across all paths
 
 ---
 
-## 9. Failure Conditions
+## 9. Falsification Criteria & Pivot Strategy
 
-**BLOCKING (Cannot Ship):**
-- ❌ SafeTensors format not working = **FAIL** (PAR-301)
-- ❌ APR format not working = **FAIL** (PAR-302)
-- ❌ 0.5B model produces garbage = **FAIL** (PAR-303)
-- Any model size not working for any format = **FAIL**
-- Duplicated inference code = **FAIL**
+We define "Success" not as a working feature, but as the **failure to falsify the hypothesis**.
 
-**QUALITY (Degrades Experience):**
-- No spinner/clean output = **FAIL**
-- < 290/300 falsification points = **FAIL**
-- GPU < 2x Ollama = **FAIL**
-- CPU < 10 tok/s = **FAIL**
+### Falsification Triggers (Refutation of Release)
+If ANY of the following occur, the Release Candidate is **REJECTED**:
+*   **F-CRIT-001**: Any modality (run/chat/serve) fails to execute on reference hardware (Level 2).
+*   **F-CRIT-002**: `apr-cli` is found to contain independent inference logic (Level 3).
+*   **F-CRIT-003**: GPU throughput is consistently < 1.0x Ollama (Level 4).
+*   **F-CRIT-004**: Falsification Score < 290/300.
+*   **F-CRIT-005**: `apr check` passes but model generates garbage (Invalid Falsification Test).
+*   **F-CRIT-301**: SafeTensors support missing (PAR-301).
+*   **F-CRIT-302**: APR format support missing (PAR-302).
+*   **F-CRIT-303**: 0.5B model coherency failure (PAR-303).
+
+### Pivot Strategy (In case of Level 4 Failure)
+If the Unified Architecture is falsified at Level 4 (Structural/Performance limits):
+1.  **Stop** all feature work.
+2.  **Revert** to `trueno` direct binding (bypass `realizar` middleware) for critical paths.
+3.  **Document** the overhead cost of the abstraction layer.
+4.  **Issue** Post-Mortem: "Why Rust Abstractions Failed to Scale".
 
 ---
 
