@@ -1541,11 +1541,11 @@ roadmap:
   - '1.5B GGUF: 19/19 tests pass'
   - '7B GGUF: 19/19 tests pass'
   - '32B GGUF: 19/19 tests pass'
-  - 'PAR-303 (0.5B coherency) resolved'
-  - 'qa-serve.sh bashrs lint compliant'
-  - 'OpenAI-compatible API /v1/chat/completions verified'
-  - 'SSE streaming with [DONE] termination verified'
-  - 'X-Trace-Level header (brick/step/layer) verified'
+  - PAR-303 (0.5B coherency) resolved
+  - qa-serve.sh bashrs lint compliant
+  - OpenAI-compatible API /v1/chat/completions verified
+  - SSE streaming with [DONE] termination verified
+  - X-Trace-Level header (brick/step/layer) verified
   phases: []
   subtasks: []
   estimated_effort: 4h
@@ -1559,3 +1559,19 @@ roadmap:
     PAR-303 (0.5B coherency) resolved - all model sizes now produce coherent output.
     Showcase spec updated to v7.6.0 (100% GGUF, 71% Overall).
     Remaining gaps: PAR-301 (SafeTensors), PAR-302 (APR format).
+- id: PMAT-082
+  github_issue: null
+  item_type: task
+  title: 'APR-CLI-RELEASE-029: Release apr-cli v0.2.9 to crates.io'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-01-20T16:57:43Z
+  updated: 2026-01-20T16:57:48.678558093+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
