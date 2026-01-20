@@ -7,8 +7,12 @@
 #
 # Usage: ./qa-serve.sh [port] [model_path] [expected_mode]
 #   port: Server port (default: 8080)
-#   model_path: Path to model (optional, will start server if provided)
+#   model_path: Path to model, or "--all-models" to test all sizes
 #   expected_mode: "cpu" or "gpu" (optional, enforces F-HTTP-003)
+#
+# Multi-Model Testing:
+#   ./qa-serve.sh 8080 --all-models
+#   Tests 0.5B, 1B, 1.5B, and 7B models automatically
 
 set -euo pipefail
 
@@ -19,6 +23,22 @@ EXPECTED_MODE="${3:-}"
 VERBOSE="${VERBOSE:-1}"
 BASE_URL="http://127.0.0.1:${PORT}"
 SERVER_PID=""
+ALL_MODELS_MODE=0
+
+# Multi-model test configuration
+declare -A MODEL_SIZES
+MODEL_SIZES=(
+    ["0.5B"]="${HOME}/.cache/pacha/models/d4c4d9763127153c.gguf"
+    ["1B"]="${HOME}/.cache/pacha/models/117fd82563e7bb5d.gguf"
+    ["1.5B"]="${HOME}/.cache/huggingface/models/qwen2.5-coder-1.5b-gguf/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"
+    ["7B"]="${HOME}/.cache/huggingface/models/qwen2.5-coder-7b-gguf/qwen2.5-coder-7b-instruct-q4_k_m.gguf"
+)
+
+# Check for --all-models flag
+if [[ "${MODEL_PATH}" == "--all-models" ]]; then
+    ALL_MODELS_MODE=1
+    MODEL_PATH=""
+fi
 
 # Colors for output
 RED='\033[0;31m'
@@ -394,8 +414,107 @@ test_default_mode_suppression() {
 }
 
 #######################################
+# Run All Tests for Current Server
+#######################################
+run_test_suite() {
+    test_health
+    test_basic_inference
+    test_streaming
+    test_determinism
+    test_malformed_json
+    test_coherency
+    test_tracing
+    test_default_mode_suppression
+}
+
+#######################################
+# Multi-Model Test Runner
+#######################################
+run_all_models() {
+    local total_models=0
+    local passed_models=0
+    local failed_models=0
+
+    print_color "${BLUE}" "\n╔══════════════════════════════════════════════════════════════╗"
+    print_color "${BLUE}" "║         MULTI-MODEL QA TEST SUITE (4 Model Sizes)            ║"
+    print_color "${BLUE}" "╚══════════════════════════════════════════════════════════════╝"
+
+    # Test each model size
+    for size in "0.5B" "1B" "1.5B" "7B"; do
+        local model_path="${MODEL_SIZES[$size]}"
+
+        print_color "${YELLOW}" "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        print_color "${YELLOW}" "Testing ${size} Model: $(basename "${model_path}")"
+        print_color "${YELLOW}" "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+        # Check if model exists
+        if [[ ! -f "${model_path}" ]]; then
+            print_color "${RED}" "[SKIP] ${size}: Model file not found: ${model_path}"
+            continue
+        fi
+
+        total_models=$((total_models + 1))
+
+        # Reset counters for this model
+        TESTS_PASSED=0
+        TESTS_FAILED=0
+        TOTAL_TESTS=0
+
+        # Start server for this model
+        MODEL_PATH="${model_path}"
+        start_server
+
+        if ! check_server; then
+            print_color "${RED}" "[FAIL] ${size}: Server failed to start"
+            failed_models=$((failed_models + 1))
+            continue
+        fi
+
+        # Run test suite
+        run_test_suite
+
+        # Stop server
+        stop_server
+        sleep 2
+
+        # Report results for this model
+        if [[ "${TESTS_FAILED}" -eq 0 ]]; then
+            print_color "${GREEN}" "[PASS] ${size}: ${TESTS_PASSED}/${TOTAL_TESTS} tests passed"
+            passed_models=$((passed_models + 1))
+        else
+            print_color "${RED}" "[FAIL] ${size}: ${TESTS_PASSED}/${TOTAL_TESTS} tests passed, ${TESTS_FAILED} failed"
+            failed_models=$((failed_models + 1))
+        fi
+    done
+
+    # Final summary
+    print_color "${BLUE}" "\n╔══════════════════════════════════════════════════════════════╗"
+    print_color "${BLUE}" "║                    MULTI-MODEL SUMMARY                        ║"
+    print_color "${BLUE}" "╚══════════════════════════════════════════════════════════════╝"
+    echo ""
+    echo "Models Tested: ${total_models}"
+    echo "Models Passed: ${passed_models}"
+    echo "Models Failed: ${failed_models}"
+    echo ""
+
+    if [[ "${failed_models}" -eq 0 ]] && [[ "${total_models}" -gt 0 ]]; then
+        print_color "${GREEN}" "✓ ALL ${total_models} MODEL SIZES PASSED QA"
+        return 0
+    else
+        print_color "${RED}" "✗ ${failed_models}/${total_models} MODEL SIZES FAILED QA"
+        return 1
+    fi
+}
+
+#######################################
 # Main Execution
 #######################################
+
+# Handle --all-models mode
+if [[ "${ALL_MODELS_MODE}" -eq 1 ]]; then
+    run_all_models
+    exit $?
+fi
 
 if [[ -n "${MODEL_PATH}" ]]; then
     start_server
@@ -404,19 +523,13 @@ else
     if ! check_server; then
         print_color "${RED}" "ERROR: No model path provided and server not running."
         echo "Usage: $0 [port] [model_path]"
+        echo "       $0 [port] --all-models   # Test all 4 model sizes"
         exit 2
     fi
 fi
 
 # Execute Falsification Suite
-test_health
-test_basic_inference
-test_streaming
-test_determinism
-test_malformed_json
-test_coherency
-test_tracing
-test_default_mode_suppression
+run_test_suite
 
 # Summary
 print_header "Falsification Summary"
