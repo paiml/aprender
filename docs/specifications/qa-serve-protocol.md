@@ -49,6 +49,15 @@ The QA script MUST implement the following 20-point checklist.
 *   [ ] **F-HTTP-019**: Concurrent requests do not cause deadlock.
 *   [ ] **F-HTTP-020**: **Coherency Check**: Output entropy > threshold (detects "garbled" 0.5B output).
 
+### Section V: Tracing Parity (Observability)
+*   [ ] **F-TRACE-001**: Brick tracing works with `X-Trace-Level: brick`.
+*   [ ] **F-TRACE-002**: Step tracing works with `X-Trace-Level: step`.
+*   [ ] **F-TRACE-003**: Layer tracing works with `X-Trace-Level: layer`.
+*   [ ] **F-TRACE-004**: Default mode (no header) suppresses all traces.
+*   [ ] **F-TRACE-004a**: Response remains valid JSON in default mode.
+*   [ ] **F-TRACE-004b**: Response does NOT contain "trace", "brick_trace", "layer_trace", or "step_trace".
+*   [ ] **F-TRACE-004c**: Normal inference text is returned correctly.
+
 ---
 
 ## 3. Protocol for `qa-serve.sh`
