@@ -68,6 +68,18 @@ pub(crate) fn info(msg: &str) {
     println!("{} {}", "[INFO]".blue(), msg);
 }
 
+/// Print an error message
+#[allow(dead_code)]
+pub(crate) fn error(msg: &str) {
+    eprintln!("{} {}", "[ERROR]".red().bold(), msg);
+}
+
+/// Print a warning message (alias for backward compatibility)
+#[allow(dead_code)]
+pub(crate) fn warn(msg: &str) {
+    warning(msg);
+}
+
 /// Format bytes as human-readable size
 pub(crate) fn format_size(bytes: u64) -> String {
     humansize::format_size(bytes, humansize::BINARY)
