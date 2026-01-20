@@ -1454,7 +1454,7 @@ fn start_gguf_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
             Ok(gpu_model) => {
                 println!("{}", "GPU model loaded from GGUF weights".green());
 
-                let state = AppState::with_gpu_model(gpu_model)
+                let state = AppState::with_gpu_model_and_vocab(gpu_model, vocab.clone())
                     .map_err(|e| CliError::InferenceFailed(format!("Failed to create GPU state: {e}")))?;
 
                 let app = create_router(state);
