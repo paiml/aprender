@@ -12,6 +12,7 @@
   - "469M model (0.5B class) passes 19/19 QA tests"
   - "941M model (1B class) passes 19/19 QA tests"
   - "1.1G model (1.5B class) passes 19/19 QA tests"
+  - "4.4G model (7B class) passes 19/19 QA tests"
   - "OpenAI-compatible /v1/chat/completions works"
   - "SSE streaming works with [DONE] termination"
   - "X-Trace-Level header works for brick/step/layer"
@@ -22,4 +23,4 @@
   - qa
   - serve
   - gguf
-  notes: "2.7G model file was corrupted (tensor data exceeds file size)"
+  notes: "All 4 model sizes validated: 0.5B, 1B, 1.5B, 7B"
