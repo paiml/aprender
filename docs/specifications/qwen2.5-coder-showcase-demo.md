@@ -23,10 +23,17 @@ We accept $H_1$ strictly provisionally, only as long as it survives the **300-po
 
 The following issues currently **falsify** full readiness (Current GGUF Score: 25/25, Overall: 25/35):
 
-1.  🛑 **PAR-301 (SafeTensors Gap):** `realizar` lacks inference support for SafeTensors format.
-    *   *Impact:* Falsifies "Unified Architecture" claim; currently GGUF-only.
-2.  🛑 **PAR-302 (APR Format Gap):** APR format loading fails due to missing `config.json` support.
-    *   *Impact:* Falsifies "Native Format" support ($H_1$ requires `aprender` integration).
+1.  🛑 **PAR-301 (SafeTensors Gap):** `apr serve` lacks OpenAI-compatible endpoints for SafeTensors.
+    *   *Current State:* `start_safetensors_server()` only has `/health` and `/tensors` endpoints
+    *   *Required:* Add `/v1/chat/completions`, `/generate`, SSE streaming
+    *   *Note:* `realizar::safetensors_infer` exists with `SafetensorsToAprConverter`
+    *   *Path:* `crates/apr-cli/src/commands/serve.rs:1611`
+
+2.  🛑 **PAR-302 (APR Format Gap):** `apr serve` APR path lacks chat completions endpoint.
+    *   *Current State:* Has `/v1/completions` but no `/v1/chat/completions`
+    *   *Required:* Add chat completions, SSE streaming, trace headers
+    *   *Note:* CPU inference works, GPU path exists
+    *   *Path:* `crates/apr-cli/src/commands/serve.rs:932`
 
 ## Resolved Issues — ✅ VERIFIED
 
