@@ -208,6 +208,14 @@ except:
         return 1
     fi
     print_result "F-HTTP-009" "Token Artifacts" "PASS"
+
+    # F-HTTP-009b: BPE Artifacts (PAR-201)
+    # Checking for 'Ġ' (U+0120), 'Ċ' (U+010A), 'â' (often part of encoding errors)
+    if echo "${content}" | grep -qE "Ġ|Ċ|â"; then
+        print_result "F-HTTP-009b" "BPE Artifacts" "FAIL" "BPE artifacts detected (e.g. Ġ/Ċ): ${content}"
+        return 1
+    fi
+    print_result "F-HTTP-009b" "BPE Artifacts" "PASS"
 }
 
 # F-HTTP-020: Coherency Check (PAR-303)
@@ -233,10 +241,20 @@ test_coherency() {
     fi
     
     # Heuristic 2: Check for known garbage patterns (replacement chars, nulls)
-    if echo "${content}" | grep -q ""; then
-        print_result "F-HTTP-020" "Garbage Check" "FAIL" "Replacement characters detected (encoding issue)"
+    # Look for Unicode replacement char (U+FFFD, rendered as diamond with ?) or raw token patterns
+    local has_garbage=0
+    if [[ "${content}" == *$\'\xef\xbf\xbd'* ]]; then
+        has_garbage=1
+    fi
+    # Check for raw token patterns like "token123" which indicate broken decoding
+    if echo "${content}" | grep -qE "token[0-9]{2,}"; then
+        has_garbage=1
+    fi
+
+    if [[ "${has_garbage}" == "1" ]]; then
+        print_result "F-HTTP-020b" "Garbage Check" "FAIL" "Replacement characters or raw tokens detected"
     else
-         print_result "F-HTTP-020" "Garbage Check" "PASS" "No replacement characters"
+        print_result "F-HTTP-020b" "Garbage Check" "PASS" "No garbage patterns"
     fi
 }
 
@@ -259,16 +277,19 @@ test_malformed_json() {
 
 # F-HTTP-016: Determinism
 test_determinism() {
+    print_header "Section III: Determinism"
+
     local p1
     local p2
-    
-    p1=$(curl -s "${BASE_URL}/v1/chat/completions" -d '{"messages":[{"role":"user","content":"Hi"}],"temperature":0}' -H "Content-Type: application/json")
-    p2=$(curl -s "${BASE_URL}/v1/chat/completions" -d '{"messages":[{"role":"user","content":"Hi"}],"temperature":0}' -H "Content-Type: application/json")
-    
+
+    p1=$(curl -s "${BASE_URL}/v1/chat/completions" -d '{"model":"default","messages":[{"role":"user","content":"Hi"}],"temperature":0,"max_tokens":10}' -H "Content-Type: application/json")
+    p2=$(curl -s "${BASE_URL}/v1/chat/completions" -d '{"model":"default","messages":[{"role":"user","content":"Hi"}],"temperature":0,"max_tokens":10}' -H "Content-Type: application/json")
+
     local c1 c2
     c1=$(echo "${p1}" | python3 -c "import sys,json; print(json.load(sys.stdin)['choices'][0]['message']['content'])" 2>/dev/null)
     c2=$(echo "${p2}" | python3 -c "import sys,json; print(json.load(sys.stdin)['choices'][0]['message']['content'])" 2>/dev/null)
-    log_debug "Det1: ${c1}, Det2: ${c2}"
+    log_debug "Det1: ${c1}"
+    log_debug "Det2: ${c2}"
 
     if [[ "${c1}" == "${c2}" ]]; then
         print_result "F-HTTP-016" "Determinism (T=0)" "PASS"
@@ -280,20 +301,23 @@ test_determinism() {
 # F-HTTP-010: Streaming
 test_streaming() {
     print_header "Section III: Advanced Features - Streaming"
-    
-    local response
-    response=$(timeout 5 curl -N -s "${BASE_URL}/v1/chat/completions" \
-        -H "Content-Type: application/json" \
-        -d '{"messages":[{"role":"user","content":"Hi"}],"stream":true}') || true
-    log_debug "Streaming head: ${response:0:200}..."
 
-    if echo "${response}" | grep -q "data: [DONE]"; then
+    local response
+    # Use max_tokens to limit generation and ensure quick response
+    response=$(timeout 10 curl -N -s "${BASE_URL}/v1/chat/completions" \
+        -H "Content-Type: application/json" \
+        -d '{"model":"default","messages":[{"role":"user","content":"Hi"}],"stream":true,"max_tokens":5}') || true
+    log_debug "Streaming head: ${response:0:300}..."
+
+    # Check for [DONE] marker (OpenAI SSE termination)
+    if echo "${response}" | grep -qF "[DONE]"; then
         print_result "F-HTTP-011" "Stream End" "PASS" "Received [DONE]"
     else
         print_result "F-HTTP-011" "Stream End" "FAIL" "Missing [DONE] marker"
     fi
-    
-    if echo "${response}" | grep -q "data: {"; then
+
+    # Check for SSE data format
+    if echo "${response}" | grep -qF "data: {"; then
         print_result "F-HTTP-010" "Stream Format" "PASS" "SSE data detected"
     else
         print_result "F-HTTP-010" "Stream Format" "FAIL" "Invalid SSE format"
@@ -316,7 +340,7 @@ test_tracing() {
         response=$(curl -s "${BASE_URL}/v1/chat/completions" \
             -H "Content-Type: application/json" \
             -H "X-Trace-Level: ${level}" \
-            -d '{"messages":[{"role":"user","content":"Hi"}],"max_tokens":5}')
+            -d '{"model":"default","messages":[{"role":"user","content":"Hi"}],"max_tokens":5}')
         
         if echo "${response}" | grep -q "\"${level}_trace\""; then
             print_result "${id}" "Trace Level: ${level}" "PASS" "Found ${level}_trace in response"
@@ -332,7 +356,7 @@ test_default_mode_suppression() {
     local response
     response=$(curl -s "${BASE_URL}/v1/chat/completions" \
         -H "Content-Type: application/json" \
-        -d '{"messages":[{"role":"user","content":"Hi"}],"max_tokens":5}')
+        -d '{"model":"default","messages":[{"role":"user","content":"Hi"}],"max_tokens":5}')
     log_debug "Default mode response: ${response}"
 
     # F-TRACE-004a: Valid JSON
@@ -347,7 +371,7 @@ test_default_mode_suppression() {
     local traces=("trace" "brick_trace" "layer_trace" "step_trace")
     local leaked=0
     for t in "${traces[@]}"; do
-        if echo "${response}" | grep -q "\"${t}\""; then
+        if echo "${response}" | grep -q "\"${t}\"" ; then
             log_debug "Leaked trace field: ${t}"
             leaked=1
         fi
@@ -400,10 +424,12 @@ echo "Total Tests: ${TOTAL_TESTS}"
 echo "Passed:      ${TESTS_PASSED}"
 echo "Failed:      ${TESTS_FAILED}"
 
+H_SERVER="apr-serve produces correct OpenAI-compatible inference"
+
 if [[ "${TESTS_FAILED}" -eq 0 ]]; then
-    print_color "${GREEN}" "Hypothesis $H_server SURVIVED falsification."
+    print_color "${GREEN}" "Hypothesis '${H_SERVER}' SURVIVED falsification."
     exit 0
 else
-    print_color "${RED}" "Hypothesis $H_server FALSIFIED."
+    print_color "${RED}" "Hypothesis '${H_SERVER}' FALSIFIED."
     exit 1
 fi

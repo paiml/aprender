@@ -33,6 +33,7 @@ The QA script MUST implement the following 20-point checklist.
 *   [ ] **F-HTTP-007**: Response is valid JSON (rfc8259).
 *   [ ] **F-HTTP-008**: Content is not empty string.
 *   [ ] **F-HTTP-009**: Content does not contain raw token IDs (e.g., "token123").
+*   [ ] **F-HTTP-009b**: Content does not contain BPE artifacts (`Ġ`, `Ċ`, `â`).
 
 ### Section III: Advanced Features (Parity)
 *   [ ] **F-HTTP-010**: Streaming (`stream=true`) returns valid SSE (`data: {...}`).
@@ -47,7 +48,7 @@ The QA script MUST implement the following 20-point checklist.
 *   [ ] **F-HTTP-017**: Malformed JSON returns 400 Bad Request.
 *   [ ] **F-HTTP-018**: OOM protection (Large max_tokens doesn't crash server).
 *   [ ] **F-HTTP-019**: Concurrent requests do not cause deadlock.
-*   [ ] **F-HTTP-020**: **Coherency Check**: Output entropy > threshold (detects "garbled" 0.5B output).
+*   [ ] **F-HTTP-020**: **Coherency Check**: Output entropy > threshold, NO replacement chars (``).
 
 ### Section V: Tracing Parity (Observability)
 *   [ ] **F-TRACE-001**: Brick tracing works with `X-Trace-Level: brick`.
