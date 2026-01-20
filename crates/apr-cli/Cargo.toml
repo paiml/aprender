@@ -73,7 +73,7 @@ aprender = { path = "../..", version = "0.24.1", default-features = true, featur
 
 # Inference engine (crates.io version, with local path for dev)
 # Note: cuda feature enables GPU-accelerated inference via trueno-gpu
-realizar = { version = "0.6.7", optional = true, default-features = false, features = ["server", "aprender-serve", "gpu", "cuda"] }
+realizar = { version = "0.6.8", optional = true, default-features = false, features = ["server", "aprender-serve", "gpu", "cuda"] }
 
 # SIMD compute library (for BrickProfiler in §12.11 unified profiling)
 # MUST use crates.io version to match aprender's trueno dependency
