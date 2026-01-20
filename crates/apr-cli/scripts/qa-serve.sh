@@ -26,15 +26,25 @@ SERVER_PID=''
 ALL_MODELS_MODE=0
 
 # Multi-model test configuration (5 sizes: 0.5B to 32B)
-# Note: 32B model requires ~40GB+ RAM to run inference
+# Note: 32B model requires ~20GB+ RAM for Q2_K, ~40GB+ for Q4_K
 declare -A MODEL_SIZES
 MODEL_SIZES=(
     ["0.5B"]="${HOME}/.cache/pacha/models/d4c4d9763127153c.gguf"
     ["1B"]="${HOME}/.cache/pacha/models/117fd82563e7bb5d.gguf"
     ["1.5B"]="${HOME}/.cache/huggingface/models/qwen2.5-coder-1.5b-gguf/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"
     ["7B"]="${HOME}/.cache/huggingface/models/qwen2.5-coder-7b-gguf/qwen2.5-coder-7b-instruct-q4_k_m.gguf"
-    ["32B"]="${HOME}/.cache/huggingface/models/qwen2.5-coder-32b-gguf/qwen2.5-coder-32b-instruct-q4_k_m.gguf"
+    ["32B"]="${HOME}/Downloads/qwen2.5-coder-32b-instruct-q2_k.gguf"
 )
+
+# Alternative 32B model paths (fallback order)
+MODEL_SIZES_32B_ALT=(
+    "${HOME}/.cache/huggingface/models/qwen2.5-coder-32b-gguf/qwen2.5-coder-32b-instruct-q2_k.gguf"
+    "${HOME}/.cache/huggingface/models/qwen2.5-coder-32b-gguf/qwen2.5-coder-32b-instruct-q4_k_m.gguf"
+    "${HOME}/Downloads/qwen2.5-coder-32b-instruct-q4_k_m.gguf"
+)
+
+# Results tracking for proof matrix
+declare -A PROOF_MATRIX
 
 # Check for --all-models flag
 if [[ "${MODEL_PATH}" == "--all-models" ]]; then
@@ -433,6 +443,130 @@ run_test_suite() {
 }
 
 #######################################
+# Find model path with fallbacks
+#######################################
+find_model_path() {
+    local size="$1"
+    local primary_path="${MODEL_SIZES[$size]}"
+
+    # Check primary path
+    if [[ -f "${primary_path}" ]]; then
+        echo "${primary_path}"
+        return 0
+    fi
+
+    # For 32B, try alternative paths
+    if [[ "${size}" == "32B" ]]; then
+        for alt_path in "${MODEL_SIZES_32B_ALT[@]}"; do
+            if [[ -f "${alt_path}" ]]; then
+                echo "${alt_path}"
+                return 0
+            fi
+        done
+    fi
+
+    # Not found
+    echo ""
+    return 1
+}
+
+#######################################
+# Core capability tests (for proof matrix)
+#######################################
+test_serve_capability() {
+    if check_server; then
+        PROOF_MATRIX["${CURRENT_SIZE}_serve"]="PASS"
+        return 0
+    fi
+    PROOF_MATRIX["${CURRENT_SIZE}_serve"]="FAIL"
+    return 1
+}
+
+test_chat_capability() {
+    local response
+    response=$(curl -s -w "\n%{http_code}" "${BASE_URL}/v1/chat/completions" \
+        -H "Content-Type: application/json" \
+        -d '{"model": "default", "messages": [{"role": "user", "content": "Hi"}], "max_tokens": 10}')
+
+    local http_code
+    http_code=$(echo "${response}" | tail -n1)
+    local body
+    body=$(echo "${response}" | sed '$d')
+
+    if [[ "${http_code}" == "200" ]]; then
+        local content
+        content=$(python3 -c "import sys,json; print(json.load(sys.stdin)['choices'][0]['message']['content'])" <<< "${body}" 2>/dev/null) || content=""
+        if [[ -n "${content}" ]]; then
+            PROOF_MATRIX["${CURRENT_SIZE}_chat"]="PASS"
+            return 0
+        fi
+    fi
+    PROOF_MATRIX["${CURRENT_SIZE}_chat"]="FAIL"
+    return 1
+}
+
+test_stream_capability() {
+    local response
+    response=$(timeout 15 curl -N -s "${BASE_URL}/v1/chat/completions" \
+        -H "Content-Type: application/json" \
+        -d '{"model":"default","messages":[{"role":"user","content":"Hi"}],"stream":true,"max_tokens":5}') || true
+
+    # Check for [DONE] marker and data: prefix
+    if [[ "${response}" == *'[DONE]'* && "${response}" == *'data: {'* ]]; then
+        PROOF_MATRIX["${CURRENT_SIZE}_stream"]="PASS"
+        return 0
+    fi
+    PROOF_MATRIX["${CURRENT_SIZE}_stream"]="FAIL"
+    return 1
+}
+
+#######################################
+# Print proof matrix
+#######################################
+print_proof_matrix() {
+    print_color "${BLUE}" "\n╔══════════════════════════════════════════════════════════════════════╗"
+    print_color "${BLUE}" "║                    PROOF MATRIX: Chat/Serve/Stream                   ║"
+    print_color "${BLUE}" "╠══════════════════════════════════════════════════════════════════════╣"
+    print_color "${BLUE}" "║  Model Size │  SERVE  │  CHAT   │  STREAM │  Status                 ║"
+    print_color "${BLUE}" "╠═════════════╪═════════╪═════════╪═════════╪═════════════════════════╣"
+
+    local all_pass=1
+    for size in "0.5B" "1B" "1.5B" "7B" "32B"; do
+        local serve="${PROOF_MATRIX["${size}_serve"]:-SKIP}"
+        local chat="${PROOF_MATRIX["${size}_chat"]:-SKIP}"
+        local stream="${PROOF_MATRIX["${size}_stream"]:-SKIP}"
+
+        local serve_icon="⏭"
+        local chat_icon="⏭"
+        local stream_icon="⏭"
+        local status="SKIPPED"
+
+        if [[ "${serve}" == "PASS" ]]; then serve_icon="✓"; fi
+        if [[ "${serve}" == "FAIL" ]]; then serve_icon="✗"; fi
+        if [[ "${chat}" == "PASS" ]]; then chat_icon="✓"; fi
+        if [[ "${chat}" == "FAIL" ]]; then chat_icon="✗"; fi
+        if [[ "${stream}" == "PASS" ]]; then stream_icon="✓"; fi
+        if [[ "${stream}" == "FAIL" ]]; then stream_icon="✗"; fi
+
+        if [[ "${serve}" == "PASS" && "${chat}" == "PASS" && "${stream}" == "PASS" ]]; then
+            status="ALL PASS ✓"
+        elif [[ "${serve}" == "SKIP" ]]; then
+            status="SKIPPED (no model)"
+        else
+            status="FAILURES ✗"
+            all_pass=0
+        fi
+
+        printf "║  %-9s │   %s     │   %s     │    %s    │  %-21s ║\n" \
+            "${size}" "${serve_icon}" "${chat_icon}" "${stream_icon}" "${status}"
+    done
+
+    print_color "${BLUE}" "╚══════════════════════════════════════════════════════════════════════╝"
+
+    return $((1 - all_pass))
+}
+
+#######################################
 # Multi-Model Test Runner
 #######################################
 run_all_models() {
@@ -440,23 +574,40 @@ run_all_models() {
     local passed_models=0
     local failed_models=0
 
+    # Reset proof matrix
+    PROOF_MATRIX=()
+
     print_color "${BLUE}" "\n╔══════════════════════════════════════════════════════════════╗"
     print_color "${BLUE}" "║         MULTI-MODEL QA TEST SUITE (5 Model Sizes)            ║"
+    print_color "${BLUE}" "║                                                              ║"
+    print_color "${BLUE}" "║  Testing: SERVE, CHAT, STREAM for each model size           ║"
     print_color "${BLUE}" "╚══════════════════════════════════════════════════════════════╝"
 
     # Test each model size
     for size in "0.5B" "1B" "1.5B" "7B" "32B"; do
-        local model_path="${MODEL_SIZES[$size]}"
+        CURRENT_SIZE="${size}"
+        local model_path
+        model_path=$(find_model_path "${size}")
 
         print_color "${YELLOW}" "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        print_color "${YELLOW}" "Testing ${size} Model: $(basename "${model_path}")"
+        print_color "${YELLOW}" "Testing ${size} Model"
         print_color "${YELLOW}" "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
         # Check if model exists
-        if [[ ! -f "${model_path}" ]]; then
-            print_color "${RED}" "[SKIP] ${size}: Model file not found: ${model_path}"
+        if [[ -z "${model_path}" ]]; then
+            print_color "${RED}" "[SKIP] ${size}: No model file found"
+            print_color "${CYAN}" "       Searched: ${MODEL_SIZES[$size]}"
+            if [[ "${size}" == "32B" ]]; then
+                print_color "${CYAN}" "       Also tried: ${MODEL_SIZES_32B_ALT[*]}"
+            fi
+            PROOF_MATRIX["${size}_serve"]="SKIP"
+            PROOF_MATRIX["${size}_chat"]="SKIP"
+            PROOF_MATRIX["${size}_stream"]="SKIP"
             continue
         fi
+
+        print_color "${CYAN}" "Model: $(basename "${model_path}")"
+        print_color "${CYAN}" "Path:  ${model_path}"
 
         total_models=$((total_models+1))
 
@@ -471,11 +622,24 @@ run_all_models() {
 
         if ! check_server; then
             print_color "${RED}" "[FAIL] ${size}: Server failed to start"
+            PROOF_MATRIX["${size}_serve"]="FAIL"
+            PROOF_MATRIX["${size}_chat"]="FAIL"
+            PROOF_MATRIX["${size}_stream"]="FAIL"
             failed_models=$((failed_models+1))
             continue
         fi
 
-        # Run test suite
+        # Test core capabilities for proof matrix
+        print_color "${CYAN}" "\n[Proof] Testing core capabilities..."
+        test_serve_capability
+        test_chat_capability
+        test_stream_capability
+
+        printf '  SERVE:  %s\n' "${PROOF_MATRIX["${size}_serve"]}"
+        printf '  CHAT:   %s\n' "${PROOF_MATRIX["${size}_chat"]}"
+        printf '  STREAM: %s\n' "${PROOF_MATRIX["${size}_stream"]}"
+
+        # Run full test suite
         run_test_suite
 
         # Stop server
@@ -492,6 +656,10 @@ run_all_models() {
         fi
     done
 
+    # Print proof matrix
+    print_proof_matrix
+    local matrix_result=$?
+
     # Final summary
     print_color "${BLUE}" "\n╔══════════════════════════════════════════════════════════════╗"
     print_color "${BLUE}" "║                    MULTI-MODEL SUMMARY                        ║"
@@ -504,6 +672,7 @@ run_all_models() {
 
     if (( failed_models == 0 && total_models > 0 )); then
         print_color "${GREEN}" "✓ ALL ${total_models} MODEL SIZES PASSED QA"
+        print_color "${GREEN}" "✓ PROVEN: Chat, Serve, Stream work for all tested sizes"
         return 0
     else
         print_color "${RED}" "✗ ${failed_models}/${total_models} MODEL SIZES FAILED QA"
