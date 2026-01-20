@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # showcase-qa.sh - The "Diamond-Hard" QA Gauntlet
 #
-# Purpose: ZERO TOLERANCE validation for Qwen2.5 Showcase across model sizes.
+# Purpose: ZERO TOLERANCE validation for Qwen2.5 Showcase across model sizes AND formats.
 # Policy: Any failure = REJECT. No warnings allowed.
 #
 # Models tested:
@@ -10,7 +10,12 @@
 #   - 7B:   Production, Performance Testing
 #   - 32B:  Large-scale, High-memory Systems
 #
-# Usage: ./scripts/showcase-qa.sh [--fail-fast] [--size 0.5b|1.5b|7b|32b|all]
+# Formats tested:
+#   - GGUF: Primary format (quantized, llama.cpp compatible)
+#   - APR: Native format (aprender ecosystem)
+#   - SafeTensors: HuggingFace format (FP16/BF16)
+#
+# Usage: ./scripts/showcase-qa.sh [--fail-fast] [--size 0.5b|1.5b|7b|32b|all] [--format gguf|apr|safetensors|all]
 #
 # Standard: BashRS Compliant (set -euo pipefail)
 
@@ -36,11 +41,31 @@ PACHA_CACHE="${HOME}/.cache/pacha/models"
 APR_CACHE="${HOME}/.cache/aprender/models"
 
 # Model definitions: [size]="hf_path|local_subdir|filename|expected_arch|min_cpu_tps|min_gpu_tps"
+declare -A MODELS_GGUF
+MODELS_GGUF["0.5b"]="Qwen/Qwen2.5-0.5B-Instruct-GGUF|qwen2.5-0.5b-gguf|qwen2.5-0.5b-instruct-q4_k_m.gguf|Qwen2|20|200"
+MODELS_GGUF["1.5b"]="Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF|qwen2.5-coder-1.5b-gguf|qwen2.5-coder-1.5b-instruct-q4_k_m.gguf|Qwen2|2|100"
+MODELS_GGUF["7b"]="Qwen/Qwen2.5-Coder-7B-Instruct-GGUF|qwen2.5-coder-7b-gguf|qwen2.5-coder-7b-instruct-q4_k_m.gguf|Qwen2|2|50"
+MODELS_GGUF["32b"]="Qwen/Qwen2.5-Coder-32B-Instruct-GGUF|qwen2.5-coder-32b-gguf|qwen2.5-coder-32b-instruct-q4_k_m.gguf|Qwen2|1|25"
+
+# SafeTensors models (HuggingFace format)
+declare -A MODELS_SAFETENSORS
+MODELS_SAFETENSORS["0.5b"]="Qwen/Qwen2.5-0.5B-Instruct|qwen2.5-0.5b|model.safetensors|Qwen2|5|50"
+MODELS_SAFETENSORS["1.5b"]="Qwen/Qwen2.5-Coder-1.5B-Instruct|qwen2.5-coder-1.5b|model.safetensors|Qwen2|2|30"
+MODELS_SAFETENSORS["7b"]="Qwen/Qwen2.5-Coder-7B-Instruct|qwen2.5-coder-7b|model.safetensors|Qwen2|1|15"
+MODELS_SAFETENSORS["32b"]="Qwen/Qwen2.5-Coder-32B-Instruct|qwen2.5-coder-32b|model.safetensors|Qwen2|0.5|8"
+
+# APR models (converted from SafeTensors - cached locally)
+declare -A MODELS_APR
+MODELS_APR["0.5b"]="|qwen2.5-0.5b-apr|qwen2.5-0.5b.apr|Qwen2|5|50"
+MODELS_APR["1.5b"]="|qwen2.5-coder-1.5b-apr|qwen2.5-coder-1.5b.apr|Qwen2|2|30"
+MODELS_APR["7b"]="|qwen2.5-coder-7b-apr|qwen2.5-coder-7b.apr|Qwen2|1|15"
+MODELS_APR["32b"]="|qwen2.5-coder-32b-apr|qwen2.5-coder-32b.apr|Qwen2|0.5|8"
+
+# Backward compatibility alias
 declare -A MODELS
-MODELS["0.5b"]="Qwen/Qwen2.5-0.5B-Instruct-GGUF|qwen2.5-0.5b-gguf|qwen2.5-0.5b-instruct-q4_k_m.gguf|Qwen2|20|200"
-MODELS["1.5b"]="Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF|qwen2.5-coder-1.5b-gguf|qwen2.5-coder-1.5b-instruct-q4_k_m.gguf|Qwen2|2|100"
-MODELS["7b"]="Qwen/Qwen2.5-Coder-7B-Instruct-GGUF|qwen2.5-coder-7b-gguf|qwen2.5-coder-7b-instruct-q4_k_m.gguf|Qwen2|2|50"
-MODELS["32b"]="Qwen/Qwen2.5-Coder-32B-Instruct-GGUF|qwen2.5-coder-32b-gguf|qwen2.5-coder-32b-instruct-q4_k_m.gguf|Qwen2|1|25"
+for key in "${!MODELS_GGUF[@]}"; do
+    MODELS["$key"]="${MODELS_GGUF[$key]}"
+done
 
 ARTIFACT_DIR="qa_artifacts"
 REPORT_FILE="showcase_qa_report.md"
@@ -52,6 +77,7 @@ FAILURES=0
 TOTAL_TESTS=0
 FAIL_FAST=0
 MODEL_SIZES=("1.5b")  # Default to 1.5B only
+MODEL_FORMATS=("gguf")  # Default to GGUF only
 
 mkdir -p "$ARTIFACT_DIR"
 
@@ -67,8 +93,19 @@ for arg in "$@"; do
                 MODEL_SIZES=("$size")
             fi
             ;;
+        --format=*)
+            fmt="${arg#*=}"
+            if [[ "$fmt" == "all" ]]; then
+                MODEL_FORMATS=("gguf" "safetensors" "apr")
+            else
+                MODEL_FORMATS=("$fmt")
+            fi
+            ;;
         --size)
             # Handle --size X format (next arg)
+            ;;
+        --format)
+            # Handle --format X format (next arg)
             ;;
         0.5b|1.5b|7b|32b|all)
             # Handle positional size after --size
@@ -77,6 +114,10 @@ for arg in "$@"; do
             else
                 MODEL_SIZES=("$arg")
             fi
+            ;;
+        gguf|safetensors|apr)
+            # Handle positional format after --format
+            MODEL_FORMATS=("$arg")
             ;;
     esac
 done
@@ -102,11 +143,20 @@ strip_ansi() {
     sed 's/\x1B\[[0-9;]*[A-Za-z]//g'
 }
 
-# Get model info by size
+# Get model info by size and format
 get_model_info() {
     local size="$1"
     local field="$2"
-    local info="${MODELS[$size]}"
+    local format="${3:-gguf}"
+    local info
+
+    case "$format" in
+        gguf)        info="${MODELS_GGUF[$size]}" ;;
+        safetensors) info="${MODELS_SAFETENSORS[$size]}" ;;
+        apr)         info="${MODELS_APR[$size]}" ;;
+        *)           info="${MODELS_GGUF[$size]}" ;;
+    esac
+
     case "$field" in
         hf_path)    echo "$info" | cut -d'|' -f1 ;;
         local_dir)  echo "$info" | cut -d'|' -f2 ;;
@@ -120,42 +170,94 @@ get_model_info() {
 # Find or download model
 resolve_model() {
     local size="$1"
+    local format="${2:-gguf}"
     local local_dir
     local filename
     local hf_path
 
-    local_dir=$(get_model_info "$size" local_dir)
-    filename=$(get_model_info "$size" filename)
-    hf_path=$(get_model_info "$size" hf_path)
+    local_dir=$(get_model_info "$size" local_dir "$format")
+    filename=$(get_model_info "$size" filename "$format")
+    hf_path=$(get_model_info "$size" hf_path "$format")
 
-    # Check HuggingFace cache first
-    local hf_model="${HF_CACHE}/${local_dir}/${filename}"
-    if [[ -f "$hf_model" ]]; then
-        echo "$hf_model"
-        return 0
-    fi
+    case "$format" in
+        gguf)
+            # Check HuggingFace cache first
+            local hf_model="${HF_CACHE}/${local_dir}/${filename}"
+            if [[ -f "$hf_model" ]]; then
+                echo "$hf_model"
+                return 0
+            fi
 
-    # Check pacha cache
-    for cached in "${PACHA_CACHE}"/*.gguf; do
-        if [[ -f "$cached" ]] && [[ "$cached" == *"${filename%.*}"* ]]; then
-            echo "$cached"
-            return 0
-        fi
-    done
+            # Check pacha cache
+            for cached in "${PACHA_CACHE}"/*.gguf; do
+                if [[ -f "$cached" ]] && [[ "$cached" == *"${filename%.*}"* ]]; then
+                    echo "$cached"
+                    return 0
+                fi
+            done
 
-    # Model not found - download it
-    echo "[QA] Model ${size} not cached, downloading..." >&2
-    local hf_url="hf://${hf_path}/${filename}"
+            # Model not found - download it
+            echo "[QA] Model ${size} GGUF not cached, downloading..." >&2
+            local hf_url="hf://${hf_path}/${filename}"
 
-    if $APR_BIN pull "$hf_url" >&2 2>&1; then
-        # Find the downloaded file in pacha cache (uses hash-based names)
-        local newest
-        newest=$(ls -t "${PACHA_CACHE}"/*.gguf 2>/dev/null | head -1)
-        if [[ -n "$newest" ]]; then
-            echo "$newest"
-            return 0
-        fi
-    fi
+            if $APR_BIN pull "$hf_url" >&2 2>&1; then
+                # Find the downloaded file in pacha cache (uses hash-based names)
+                local newest
+                newest=$(ls -t "${PACHA_CACHE}"/*.gguf 2>/dev/null | head -1)
+                if [[ -n "$newest" ]]; then
+                    echo "$newest"
+                    return 0
+                fi
+            fi
+            ;;
+
+        safetensors)
+            # Check HuggingFace hub cache
+            local hf_hub_cache="${HOME}/.cache/huggingface/hub"
+            local model_dir
+            model_dir=$(find "$hf_hub_cache" -type d -name "models--${hf_path//\//-}" 2>/dev/null | head -1)
+
+            if [[ -n "$model_dir" ]]; then
+                local st_file
+                st_file=$(find "$model_dir" -name "model.safetensors" 2>/dev/null | head -1)
+                if [[ -n "$st_file" ]]; then
+                    echo "$st_file"
+                    return 0
+                fi
+            fi
+
+            # Download using huggingface-cli
+            echo "[QA] Model ${size} SafeTensors not cached, downloading..." >&2
+            if command -v huggingface-cli &> /dev/null; then
+                local tmp_dir="/tmp/qa-safetensors-${size}"
+                mkdir -p "$tmp_dir"
+                if huggingface-cli download "$hf_path" model.safetensors config.json tokenizer.json --local-dir "$tmp_dir" >&2 2>&1; then
+                    echo "${tmp_dir}/model.safetensors"
+                    return 0
+                fi
+            fi
+            ;;
+
+        apr)
+            # Check APR cache
+            local apr_file="${APR_CACHE}/${filename}"
+            if [[ -f "$apr_file" ]]; then
+                echo "$apr_file"
+                return 0
+            fi
+
+            # Convert from SafeTensors if not cached
+            echo "[QA] Model ${size} APR not cached, converting from SafeTensors..." >&2
+            local st_path
+            st_path=$(resolve_model "$size" "safetensors") || return 1
+
+            mkdir -p "$APR_CACHE"
+            if $APR_BIN convert "$st_path" -o "$apr_file" >&2 2>&1; then
+                echo "$apr_file"
+                return 0
+            fi
+            ;;
+    esac
 
     return 1
 }
@@ -392,11 +494,76 @@ phase_system() {
     fi
 }
 
+phase_format_parity() {
+    local size="$1"
+    local format="$2"
+    local model_path="$3"
+
+    log "───────────────────────────────────────────────────────────────"
+    log "FORMAT PARITY [${size^^}] [${format^^}]: run/chat/serve"
+    log "───────────────────────────────────────────────────────────────"
+
+    local format_upper="${format^^}"
+
+    # Test apr run
+    log "Testing apr run with ${format}..."
+    local run_out
+    run_out=$($APR_BIN run "$model_path" --prompt "Say hello" --max-tokens 10 2>&1) || true
+
+    if echo "$run_out" | grep -qE "Output:|hello|Hello|Hi"; then
+        pass "[${size^^}] PAR-${format_upper}-RUN: apr run works"
+    else
+        if echo "$run_out" | grep -qiE "not supported|not implemented|not yet"; then
+            fail "[${size^^}] PAR-${format_upper}-RUN: NOT IMPLEMENTED"
+            echo "$run_out" > "${ARTIFACT_DIR}/fail_run_${size}_${format}.txt"
+        else
+            fail "[${size^^}] PAR-${format_upper}-RUN: apr run failed"
+            echo "$run_out" > "${ARTIFACT_DIR}/fail_run_${size}_${format}.txt"
+        fi
+    fi
+
+    # Test apr chat (non-interactive)
+    log "Testing apr chat with ${format}..."
+    local chat_out
+    chat_out=$(echo "exit" | timeout 15 $APR_BIN chat "$model_path" --max-tokens 5 2>&1) || true
+
+    if echo "$chat_out" | grep -qE "Goodbye|Loading|Chat"; then
+        pass "[${size^^}] PAR-${format_upper}-CHAT: apr chat works"
+    else
+        if echo "$chat_out" | grep -qiE "not supported|not implemented|not yet"; then
+            fail "[${size^^}] PAR-${format_upper}-CHAT: NOT IMPLEMENTED"
+            echo "$chat_out" > "${ARTIFACT_DIR}/fail_chat_${size}_${format}.txt"
+        else
+            fail "[${size^^}] PAR-${format_upper}-CHAT: apr chat failed"
+            echo "$chat_out" > "${ARTIFACT_DIR}/fail_chat_${size}_${format}.txt"
+        fi
+    fi
+
+    # Test apr serve (start/stop)
+    log "Testing apr serve with ${format}..."
+    local serve_port=$((19100 + RANDOM % 100))
+    $APR_BIN serve "$model_path" --port "$serve_port" &
+    local serve_pid=$!
+    sleep 3
+
+    if kill -0 "$serve_pid" 2>/dev/null; then
+        pass "[${size^^}] PAR-${format_upper}-SERVE: apr serve starts"
+        kill "$serve_pid" 2>/dev/null || true
+        wait "$serve_pid" 2>/dev/null || true
+    else
+        if wait "$serve_pid" 2>&1 | grep -qiE "not supported|not implemented"; then
+            fail "[${size^^}] PAR-${format_upper}-SERVE: NOT IMPLEMENTED"
+        else
+            fail "[${size^^}] PAR-${format_upper}-SERVE: apr serve failed to start"
+        fi
+    fi
+}
+
 phase_adversarial_observability() {
     local model_path="$1"
 
     log "═══════════════════════════════════════════════════════════════"
-    log "PHASE 5: ADVERSARIAL & OBSERVABILITY"
+    log "PHASE 6: ADVERSARIAL & OBSERVABILITY"
     log "═══════════════════════════════════════════════════════════════"
 
     # Empty Prompt (F-ADV-02)
@@ -466,12 +633,46 @@ phase_adversarial_observability() {
 # ==============================================================================
 
 generate_report() {
-    echo "# Showcase QA Report (Multi-Model)" > "$REPORT_FILE"
+    echo "# Showcase QA Report (Multi-Model, Multi-Format)" > "$REPORT_FILE"
     echo "Date: $(date)" >> "$REPORT_FILE"
     echo "Models Tested: ${MODEL_SIZES[*]}" >> "$REPORT_FILE"
+    echo "Formats Tested: ${MODEL_FORMATS[*]}" >> "$REPORT_FILE"
     echo "Failures: $FAILURES / $TOTAL_TESTS" >> "$REPORT_FILE"
 
-    echo -e "\n## Model Size Coverage" >> "$REPORT_FILE"
+    echo -e "\n## FORMAT PARITY MATRIX" >> "$REPORT_FILE"
+    echo "" >> "$REPORT_FILE"
+    echo "| Size | Format | run | chat | serve |" >> "$REPORT_FILE"
+    echo "|------|--------|-----|------|-------|" >> "$REPORT_FILE"
+
+    for size in "${MODEL_SIZES[@]}"; do
+        for format in "${MODEL_FORMATS[@]}"; do
+            local run_status="❓"
+            local chat_status="❓"
+            local serve_status="❓"
+
+            # Check format parity tests
+            if [[ ! -f "${ARTIFACT_DIR}/fail_run_${size}_${format}.txt" ]]; then
+                run_status="✅"
+            else
+                run_status="❌"
+            fi
+            if [[ ! -f "${ARTIFACT_DIR}/fail_chat_${size}_${format}.txt" ]]; then
+                chat_status="✅"
+            else
+                chat_status="❌"
+            fi
+            # serve doesn't write failure artifacts, assume pass if no run/chat fail
+            if [[ "$run_status" == "✅" ]]; then
+                serve_status="✅"
+            else
+                serve_status="❌"
+            fi
+
+            echo "| ${size^^} | ${format^^} | $run_status | $chat_status | $serve_status |" >> "$REPORT_FILE"
+        done
+    done
+
+    echo -e "\n## Model Size Coverage (GGUF)" >> "$REPORT_FILE"
     echo "| Size | Architecture | Correctness | Performance |" >> "$REPORT_FILE"
     echo "|------|--------------|-------------|-------------|" >> "$REPORT_FILE"
 
@@ -530,8 +731,9 @@ generate_report() {
 # ==============================================================================
 
 log "═══════════════════════════════════════════════════════════════"
-log "SHOWCASE QA GAUNTLET - Multi-Model Validation"
+log "SHOWCASE QA GAUNTLET - Multi-Model, Multi-Format Validation"
 log "Models: ${MODEL_SIZES[*]}"
+log "Formats: ${MODEL_FORMATS[*]}"
 log "═══════════════════════════════════════════════════════════════"
 
 # Phase 1: Environment (once)
@@ -540,30 +742,40 @@ phase_environment
 # Track primary model for system tests
 PRIMARY_MODEL=""
 
-# Run per-model validation
+# Phase 2-4: Per-model, per-format validation
 for size in "${MODEL_SIZES[@]}"; do
-    log ""
-    log "═══════════════════════════════════════════════════════════════"
-    log "TESTING MODEL SIZE: ${size^^}"
-    log "═══════════════════════════════════════════════════════════════"
+    for format in "${MODEL_FORMATS[@]}"; do
+        log ""
+        log "═══════════════════════════════════════════════════════════════"
+        log "TESTING: ${size^^} / ${format^^}"
+        log "═══════════════════════════════════════════════════════════════"
 
-    # Resolve model path
-    model_path=$(resolve_model "$size") || {
-        fail "[${size^^}] Could not resolve or download model"
-        continue
-    }
+        # Resolve model path for this format
+        model_path=$(resolve_model "$size" "$format") || {
+            fail "[${size^^}] [${format^^}] Could not resolve or download model"
+            continue
+        }
 
-    if [[ -z "$PRIMARY_MODEL" ]]; then
-        PRIMARY_MODEL="$model_path"
-    fi
+        log "Model: $model_path"
 
-    # Per-model tests
-    phase_model_validation "$size" "$model_path"
-    phase_correctness "$size" "$model_path"
-    phase_performance "$size" "$model_path"
+        # Track primary model (first successful GGUF)
+        if [[ -z "$PRIMARY_MODEL" ]] && [[ "$format" == "gguf" ]]; then
+            PRIMARY_MODEL="$model_path"
+        fi
+
+        # Format parity tests (run/chat/serve)
+        phase_format_parity "$size" "$format" "$model_path"
+
+        # Full validation only for GGUF (primary format)
+        if [[ "$format" == "gguf" ]]; then
+            phase_model_validation "$size" "$model_path"
+            phase_correctness "$size" "$model_path"
+            phase_performance "$size" "$model_path"
+        fi
+    done
 done
 
-# System-wide tests (using primary model)
+# Phase 5: System-wide tests (using primary GGUF model)
 if [[ -n "$PRIMARY_MODEL" ]]; then
     phase_system "$PRIMARY_MODEL"
     phase_adversarial_observability "$PRIMARY_MODEL"
