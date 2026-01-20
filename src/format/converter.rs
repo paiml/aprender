@@ -838,13 +838,8 @@ fn resolve_source(source: &Source, cache: bool) -> Result<PathBuf> {
             #[cfg(feature = "hf-hub-integration")]
             {
                 let repo_id = format!("{org}/{repo}");
-                match download_from_hf(&repo_id, filename) {
-                    Ok(path) => return Ok(path),
-                    Err(e) => {
-                        // Return the actual error instead of generic message
-                        return Err(e);
-                    }
-                }
+                // Return the result directly without explicit return statements
+                download_from_hf(&repo_id, filename)
             }
 
             // Only reach here if hf-hub-integration feature is disabled

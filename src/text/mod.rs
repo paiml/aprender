@@ -122,9 +122,8 @@ pub trait Tokenizer {
 /// ```
 #[cfg(feature = "rag")]
 pub mod rag {
-    //! RAG (Retrieval-Augmented Generation) pipeline integration.
-    //!
-    //! Re-exports from `trueno-rag` for document chunking, retrieval, and metrics.
+    // RAG (Retrieval-Augmented Generation) pipeline integration.
+    // Re-exports from `trueno-rag` for document chunking, retrieval, and metrics.
 
     pub use trueno_rag::*;
 }

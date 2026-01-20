@@ -520,25 +520,53 @@ test_stream_capability() {
     return 1
 }
 
+test_trace_capability() {
+    local all_traces_pass=1
+
+    # Test all three trace levels
+    for level in "brick" "step" "layer"; do
+        local response
+        response=$(curl -s "${BASE_URL}/v1/chat/completions" \
+            -H "Content-Type: application/json" \
+            -H "X-Trace-Level: ${level}" \
+            -d '{"model":"default","messages":[{"role":"user","content":"Hi"}],"max_tokens":3}') || true
+
+        # Check if trace data is present in response
+        if [[ "${response}" != *"\"${level}_trace\""* ]]; then
+            all_traces_pass=0
+            log_debug "Trace level ${level} missing in response"
+        fi
+    done
+
+    if [[ "${all_traces_pass}" -eq 1 ]]; then
+        PROOF_MATRIX["${CURRENT_SIZE}_trace"]="PASS"
+        return 0
+    fi
+    PROOF_MATRIX["${CURRENT_SIZE}_trace"]="FAIL"
+    return 1
+}
+
 #######################################
 # Print proof matrix
 #######################################
 print_proof_matrix() {
-    print_color "${BLUE}" "\n╔══════════════════════════════════════════════════════════════════════╗"
-    print_color "${BLUE}" "║                    PROOF MATRIX: Chat/Serve/Stream                   ║"
-    print_color "${BLUE}" "╠══════════════════════════════════════════════════════════════════════╣"
-    print_color "${BLUE}" "║  Model Size │  SERVE  │  CHAT   │  STREAM │  Status                 ║"
-    print_color "${BLUE}" "╠═════════════╪═════════╪═════════╪═════════╪═════════════════════════╣"
+    print_color "${BLUE}" "\n╔════════════════════════════════════════════════════════════════════════════════╗"
+    print_color "${BLUE}" "║                    PROOF MATRIX: Serve/Chat/Stream/Trace                       ║"
+    print_color "${BLUE}" "╠════════════════════════════════════════════════════════════════════════════════╣"
+    print_color "${BLUE}" "║  Model Size │  SERVE  │  CHAT   │  STREAM │  TRACE  │  Status                 ║"
+    print_color "${BLUE}" "╠═════════════╪═════════╪═════════╪═════════╪═════════╪═════════════════════════╣"
 
     local all_pass=1
     for size in "0.5B" "1B" "1.5B" "7B" "32B"; do
         local serve="${PROOF_MATRIX["${size}_serve"]:-SKIP}"
         local chat="${PROOF_MATRIX["${size}_chat"]:-SKIP}"
         local stream="${PROOF_MATRIX["${size}_stream"]:-SKIP}"
+        local trace="${PROOF_MATRIX["${size}_trace"]:-SKIP}"
 
         local serve_icon="⏭"
         local chat_icon="⏭"
         local stream_icon="⏭"
+        local trace_icon="⏭"
         local status="SKIPPED"
 
         if [[ "${serve}" == "PASS" ]]; then serve_icon="✓"; fi
@@ -547,8 +575,10 @@ print_proof_matrix() {
         if [[ "${chat}" == "FAIL" ]]; then chat_icon="✗"; fi
         if [[ "${stream}" == "PASS" ]]; then stream_icon="✓"; fi
         if [[ "${stream}" == "FAIL" ]]; then stream_icon="✗"; fi
+        if [[ "${trace}" == "PASS" ]]; then trace_icon="✓"; fi
+        if [[ "${trace}" == "FAIL" ]]; then trace_icon="✗"; fi
 
-        if [[ "${serve}" == "PASS" && "${chat}" == "PASS" && "${stream}" == "PASS" ]]; then
+        if [[ "${serve}" == "PASS" && "${chat}" == "PASS" && "${stream}" == "PASS" && "${trace}" == "PASS" ]]; then
             status="ALL PASS ✓"
         elif [[ "${serve}" == "SKIP" ]]; then
             status="SKIPPED (no model)"
@@ -557,11 +587,11 @@ print_proof_matrix() {
             all_pass=0
         fi
 
-        printf "║  %-9s │   %s     │   %s     │    %s    │  %-21s ║\n" \
-            "${size}" "${serve_icon}" "${chat_icon}" "${stream_icon}" "${status}"
+        printf "║  %-9s │   %s     │   %s     │    %s    │   %s     │  %-21s ║\n" \
+            "${size}" "${serve_icon}" "${chat_icon}" "${stream_icon}" "${trace_icon}" "${status}"
     done
 
-    print_color "${BLUE}" "╚══════════════════════════════════════════════════════════════════════╝"
+    print_color "${BLUE}" "╚════════════════════════════════════════════════════════════════════════════════╝"
 
     return $((1 - all_pass))
 }
@@ -634,10 +664,12 @@ run_all_models() {
         test_serve_capability
         test_chat_capability
         test_stream_capability
+        test_trace_capability
 
         printf '  SERVE:  %s\n' "${PROOF_MATRIX["${size}_serve"]}"
         printf '  CHAT:   %s\n' "${PROOF_MATRIX["${size}_chat"]}"
         printf '  STREAM: %s\n' "${PROOF_MATRIX["${size}_stream"]}"
+        printf '  TRACE:  %s\n' "${PROOF_MATRIX["${size}_trace"]}"
 
         # Run full test suite
         run_test_suite
