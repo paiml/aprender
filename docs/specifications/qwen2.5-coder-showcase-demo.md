@@ -1,7 +1,7 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 7.4.0
-**Status:** ✅ SHOWCASE QA PASSED — Ready to Ship
+**Version:** 7.5.0
+**Status:** ⚠️ FORMAT PARITY INCOMPLETE — GGUF works, APR/SafeTensors blocked
 **Author:** PAIML Engineering
 **Date:** 2026-01-20
 **PMAT Roadmap ID:** `SHOWCASE-BRICK-001`
@@ -23,7 +23,9 @@ All inference operations (`apr run`, `apr chat`, `apr serve`) delegate to `reali
 3. Unified tracing and profiling
 4. 10-stage pipeline verification
 
-## Known Regressions (PAR-201) — ✅ ALL FIXED
+## Known Regressions (PAR-201) — ✅ CHAT/RUN FIXED, ❌ FORMAT PARITY BLOCKED
+
+### PAR-201 Regressions (FIXED)
 
 QA identified critical regressions in the `apr chat` command (v0.2.2). **All fixed in v0.2.6:**
 
@@ -35,7 +37,30 @@ QA identified critical regressions in the `apr chat` command (v0.2.2). **All fix
 
 **Tests Added:** 6 new unit tests for `clean_chat_response()` validating artifact removal.
 
-**Showcase QA Result:** `scripts/showcase-qa.sh --size=1.5b` → **DIAMOND-HARD QA PASSED**
+### FORMAT PARITY Blockers (CRITICAL — MUST FIX)
+
+| Issue ID | Format | Error | Component | Priority |
+|----------|--------|-------|-----------|----------|
+| **PAR-301** | SafeTensors | "Operation 'safetensors_inference' not supported" | realizar | P0 |
+| **PAR-302** | APR | "SafeTensors model requires config.json" | realizar | P0 |
+| **PAR-303** | 0.5B | Garbled output from all 0.5B models | realizar/tokenizer | P1 |
+
+**PAR-301: SafeTensors Inference**
+- **Symptom**: `apr run model.safetensors` fails with "not supported"
+- **Root Cause**: `realizar::infer.rs` has stub for SafeTensors, not implemented
+- **Fix Required**: Implement `execute_safetensors()` in realizar matching GGUF path
+
+**PAR-302: APR Format Inference**
+- **Symptom**: `apr run model.apr` fails with "requires config.json"
+- **Root Cause**: APR format inference tries to use SafeTensors path
+- **Fix Required**: Implement native APR inference path in realizar
+
+**PAR-303: 0.5B Output Quality**
+- **Symptom**: All 0.5B models (Qwen2, Qwen2.5) produce gibberish
+- **Root Cause**: Unknown — tokenizer mismatch? Embedding issue?
+- **Fix Required**: Debug 0.5B inference path, compare with llama.cpp
+
+**Showcase QA Result:** `scripts/showcase-qa.sh --size=1.5b` → **DIAMOND-HARD QA PASSED** (GGUF only)
 
 ---
 
@@ -247,16 +272,60 @@ The showcase validates across **four model sizes** to ensure architecture detect
 All model sizes MUST be detected as `Qwen2` architecture (not generic `Transformer`).
 See: realizar#39 for 0.5B detection bug.
 
-### 4.2 Modality Matrix (Per Model Size)
+### 4.2 Modality Matrix — REQUIREMENTS
 
-| Modality | 0.5B GGUF | 1.5B GGUF | 7B GGUF | 32B GGUF | APR | SafeTensors |
-|----------|-----------|-----------|---------|----------|-----|-------------|
-| **apr run** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **apr chat** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **apr serve** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **apr check** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **--trace** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **Architecture** | Qwen2 | Qwen2 | Qwen2 | Qwen2 | Qwen2 | Qwen2 |
+**ALL combinations below MUST work for showcase to ship.**
+
+#### 4.2.1 Format × Command Matrix (REQUIRED)
+
+| Command | GGUF | APR | SafeTensors | Status |
+|---------|------|-----|-------------|--------|
+| **apr run** | ✅ Required | ✅ Required | ✅ Required | GGUF only |
+| **apr chat** | ✅ Required | ✅ Required | ✅ Required | GGUF only |
+| **apr serve** | ✅ Required | ✅ Required | ✅ Required | GGUF only |
+| **apr check** | ✅ Required | ✅ Required | ✅ Required | GGUF only |
+
+#### 4.2.2 Model Size × Format Matrix (REQUIRED)
+
+| Size | GGUF | APR | SafeTensors | Current Status |
+|------|------|-----|-------------|----------------|
+| **0.5B** | ✅ Req | ✅ Req | ✅ Req | ⚠️ GGUF loads, output garbled |
+| **1.5B** | ✅ Req | ✅ Req | ✅ Req | ✅ GGUF works, APR/ST blocked |
+| **7B** | ✅ Req | ✅ Req | ✅ Req | ✅ GGUF works, APR/ST blocked |
+| **32B** | ✅ Req | ✅ Req | ✅ Req | ✅ GGUF works, APR/ST blocked |
+
+#### 4.2.3 Backend × Format Matrix (REQUIRED)
+
+| Backend | GGUF | APR | SafeTensors | Status |
+|---------|------|-----|-------------|--------|
+| **CPU** | ✅ Req | ✅ Req | ✅ Req | GGUF only |
+| **GPU/CUDA** | ✅ Req | ✅ Req | ✅ Req | GGUF only |
+
+#### 4.2.4 Current State Summary
+
+```
+╔═══════════════════════════════════════════════════════════════════════════════╗
+║                         CURRENT FORMAT SUPPORT                                 ║
+╠═══════════════════════════════════════════════════════════════════════════════╣
+║  Format       │ run    │ chat   │ serve  │ Blocker                            ║
+╠═══════════════════════════════════════════════════════════════════════════════╣
+║  GGUF         │ ✅     │ ✅     │ ✅     │ None (works via realizar)          ║
+║  SafeTensors  │ ❌     │ ❌     │ ❌     │ "Not yet implemented" in realizar  ║
+║  APR          │ ❌     │ ❌     │ ❌     │ Needs config.json support          ║
+╚═══════════════════════════════════════════════════════════════════════════════╝
+```
+
+**Blocking Issues:**
+1. **realizar**: SafeTensors inference returns "Operation 'safetensors_inference' not supported"
+2. **realizar**: APR format returns "SafeTensors model requires config.json for inference"
+3. **0.5B output quality**: All 0.5B models produce garbled output (tokenizer issue?)
+
+**Definition of Done (FORMAT PARITY):**
+- `apr run model.gguf` ✅ works
+- `apr run model.safetensors` ❌ MUST work
+- `apr run model.apr` ❌ MUST work
+- All three formats produce identical output for same prompt
+- All model sizes (0.5B, 1.5B, 7B, 32B) produce coherent output
 
 ### 4.3 Performance Targets (Per Model Size)
 
@@ -770,20 +839,44 @@ This section enforces the strict separation between **Runtime Observation** (see
 
 ## 8. Definition of Done
 
-1. `scripts/showcase-qa.sh` exits 0
-2. 300-point falsification: ≥ 290 pass
-3. All modalities (run/chat/serve × formats × backends) work
-4. GPU ≥ 2x Ollama throughput
-5. apr-cli has no duplicated inference code
-6. Ollama-style UX (spinner, clean output)
-7. Tracing works across all paths
+### 8.1 FORMAT PARITY (MANDATORY)
+
+| Requirement | GGUF | APR | SafeTensors |
+|-------------|------|-----|-------------|
+| `apr run` works | ✅ | ❌ BLOCKED | ❌ BLOCKED |
+| `apr chat` works | ✅ | ❌ BLOCKED | ❌ BLOCKED |
+| `apr serve` works | ✅ | ❌ BLOCKED | ❌ BLOCKED |
+| 0.5B coherent output | ❌ BROKEN | ❌ | ❌ |
+| 1.5B coherent output | ✅ | ❌ | ❌ |
+| 7B coherent output | ✅ | ❌ | ❌ |
+| 32B coherent output | ✅ | ❌ | ❌ |
+
+**Current Score: 7/21 (33%)** — NOT READY TO SHIP
+
+### 8.2 Full Definition of Done
+
+1. ✅ `scripts/showcase-qa.sh` exits 0 (GGUF only)
+2. ⬜ 300-point falsification: ≥ 290 pass
+3. ❌ **All modalities (run/chat/serve × formats × backends) work** — BLOCKED
+4. ⬜ GPU ≥ 2x Ollama throughput
+5. ⬜ apr-cli has no duplicated inference code
+6. ✅ Ollama-style UX (spinner, clean output)
+7. ⬜ Tracing works across all paths
+8. ❌ **All formats (GGUF, APR, SafeTensors) produce identical output** — BLOCKED
+9. ❌ **All model sizes (0.5B, 1.5B, 7B, 32B) produce coherent output** — 0.5B BROKEN
 
 ---
 
 ## 9. Failure Conditions
 
-- Any modality not working = **FAIL**
+**BLOCKING (Cannot Ship):**
+- ❌ SafeTensors format not working = **FAIL** (PAR-301)
+- ❌ APR format not working = **FAIL** (PAR-302)
+- ❌ 0.5B model produces garbage = **FAIL** (PAR-303)
+- Any model size not working for any format = **FAIL**
 - Duplicated inference code = **FAIL**
+
+**QUALITY (Degrades Experience):**
 - No spinner/clean output = **FAIL**
 - < 290/300 falsification points = **FAIL**
 - GPU < 2x Ollama = **FAIL**
