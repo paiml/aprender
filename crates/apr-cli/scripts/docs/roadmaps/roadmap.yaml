@@ -1,0 +1,25 @@
+- id: GGUF-SERVE-001
+  github_issue: null
+  item_type: task
+  title: "Validate apr serve works for all GGUF model sizes"
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-01-20T14:45:00.000000000+00:00
+  updated: 2026-01-20T15:00:00.000000000+00:00
+  spec: null
+  acceptance_criteria:
+  - "469M model (0.5B class) passes 19/19 QA tests"
+  - "941M model (1B class) passes 19/19 QA tests"
+  - "1.1G model (1.5B class) passes 19/19 QA tests"
+  - "OpenAI-compatible /v1/chat/completions works"
+  - "SSE streaming works with [DONE] termination"
+  - "X-Trace-Level header works for brick/step/layer"
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - qa
+  - serve
+  - gguf
+  notes: "2.7G model file was corrupted (tensor data exceeds file size)"
