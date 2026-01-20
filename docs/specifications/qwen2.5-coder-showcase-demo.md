@@ -754,11 +754,11 @@ This section enforces the strict separation between **Runtime Observation** (see
 - [ ] **F-INT-284**: pacha model registry works
 - [ ] **F-INT-285**: hf:// URLs resolve
 - [ ] **F-INT-286**: pacha:// URLs resolve
-- [ ] **F-INT-287**: Local paths work
+- [x] **F-INT-287**: Local paths work ✅ (verified with all 5 GGUF models)
 - [ ] **F-INT-288**: HTTP URLs work
 - [ ] **F-INT-289**: Model caching works (~/.apr/cache)
 - [ ] **F-INT-290**: --offline mode works
-- [ ] **F-INT-291**: cargo install apr-cli works
+- [x] **F-INT-291**: cargo install apr-cli works ✅ (v0.2.10 published 2026-01-20)
 - [ ] **F-INT-292**: No duplicate code between apr-cli and realizar
 - [ ] **F-INT-293**: Shared chat template logic
 - [ ] **F-INT-294**: Shared tokenizer logic
@@ -793,9 +793,9 @@ This section enforces the strict separation between **Runtime Observation** (see
 
 ### Phase 4: Release (Week 4)
 1. Publish realizar 0.7.0
-2. Publish apr-cli 0.3.0
-3. Update showcase demo
-4. Final QA sign-off
+2. ✅ Publish apr-cli v0.2.10 (2026-01-20)
+3. ✅ Update showcase demo (v7.6.0)
+4. Final QA sign-off (GGUF: 100%, Overall: 71%)
 
 ---
 
