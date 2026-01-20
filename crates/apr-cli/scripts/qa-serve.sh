@@ -243,7 +243,7 @@ test_coherency() {
     # Heuristic 2: Check for known garbage patterns (replacement chars, nulls)
     # Look for Unicode replacement char (U+FFFD, rendered as diamond with ?) or raw token patterns
     local has_garbage=0
-    if [[ "${content}" == *$\'\xef\xbf\xbd'* ]]; then
+    if [[ "${content}" == *$'\xef\xbf\xbd'* ]]; then
         has_garbage=1
     fi
     # Check for raw token patterns like "token123" which indicate broken decoding
