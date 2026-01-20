@@ -241,7 +241,7 @@ checksum = "a23eb6b1614318a8071c9b2521f36b424b2c83db5eb3a0fead4a6c0809af6e61"
 
 [[package]]
 name = "apr-cli"
-version = "0.2.7"
+version = "0.2.9"
 dependencies = [
  "aprender 0.24.1",
  "assert_cmd",
@@ -4722,9 +4722,7 @@ dependencies = [
 
 [[package]]
 name = "realizar"
-version = "0.6.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3533e926ff7c56b1b8a9346b56eaad325083178869a3df21a51aa04832c98a73"
+version = "0.6.6"
 dependencies = [
  "anyhow",
  "aprender 0.24.1 (registry+https://github.com/rust-lang/crates.io-index)",

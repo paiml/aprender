@@ -136,6 +136,10 @@ required-features = ["inference"]
 name = "federation_tui_demo"
 required-features = ["inference"]
 
+[[example]]
+name = "serve_with_tracing"
+required-features = ["inference"]
+
 [dev-dependencies]
 assert_cmd = "2.0"
 predicates = "3.1"
