@@ -25,13 +25,15 @@ BASE_URL="http://127.0.0.1:${PORT}"
 SERVER_PID=""
 ALL_MODELS_MODE=0
 
-# Multi-model test configuration
+# Multi-model test configuration (5 sizes: 0.5B to 32B)
+# Note: 32B model requires ~40GB+ RAM to run inference
 declare -A MODEL_SIZES
 MODEL_SIZES=(
     ["0.5B"]="${HOME}/.cache/pacha/models/d4c4d9763127153c.gguf"
     ["1B"]="${HOME}/.cache/pacha/models/117fd82563e7bb5d.gguf"
     ["1.5B"]="${HOME}/.cache/huggingface/models/qwen2.5-coder-1.5b-gguf/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"
     ["7B"]="${HOME}/.cache/huggingface/models/qwen2.5-coder-7b-gguf/qwen2.5-coder-7b-instruct-q4_k_m.gguf"
+    ["32B"]="${HOME}/.cache/huggingface/models/qwen2.5-coder-32b-gguf/qwen2.5-coder-32b-instruct-q4_k_m.gguf"
 )
 
 # Check for --all-models flag
@@ -436,11 +438,11 @@ run_all_models() {
     local failed_models=0
 
     print_color "${BLUE}" "\n╔══════════════════════════════════════════════════════════════╗"
-    print_color "${BLUE}" "║         MULTI-MODEL QA TEST SUITE (4 Model Sizes)            ║"
+    print_color "${BLUE}" "║         MULTI-MODEL QA TEST SUITE (5 Model Sizes)            ║"
     print_color "${BLUE}" "╚══════════════════════════════════════════════════════════════╝"
 
     # Test each model size
-    for size in "0.5B" "1B" "1.5B" "7B"; do
+    for size in "0.5B" "1B" "1.5B" "7B" "32B"; do
         local model_path="${MODEL_SIZES[$size]}"
 
         print_color "${YELLOW}" "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
