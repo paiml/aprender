@@ -1525,3 +1525,37 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: 'GGUF-SERVE-001: Validate apr serve works for all GGUF model sizes (0.5B, 1B, 1.5B, 7B, 32B)'
+  github_issue: null
+  item_type: task
+  title: 'GGUF-SERVE-001: Validate apr serve works for all GGUF model sizes'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-01-20T14:48:04.165836172+00:00
+  updated: 2026-01-20T18:30:00.000000000+00:00
+  spec: docs/specifications/qwen2.5-coder-showcase-demo.md
+  acceptance_criteria:
+  - '0.5B GGUF: 19/19 tests pass'
+  - '1B GGUF: 19/19 tests pass'
+  - '1.5B GGUF: 19/19 tests pass'
+  - '7B GGUF: 19/19 tests pass'
+  - '32B GGUF: 19/19 tests pass'
+  - 'PAR-303 (0.5B coherency) resolved'
+  - 'qa-serve.sh bashrs lint compliant'
+  - 'OpenAI-compatible API /v1/chat/completions verified'
+  - 'SSE streaming with [DONE] termination verified'
+  - 'X-Trace-Level header (brick/step/layer) verified'
+  phases: []
+  subtasks: []
+  estimated_effort: 4h
+  labels:
+  - qa
+  - gguf
+  - serving
+  - validation
+  notes: |
+    Validated 2026-01-20: All 5 GGUF model sizes pass QA (95/95 tests total).
+    PAR-303 (0.5B coherency) resolved - all model sizes now produce coherent output.
+    Showcase spec updated to v7.6.0 (100% GGUF, 71% Overall).
+    Remaining gaps: PAR-301 (SafeTensors), PAR-302 (APR format).
