@@ -1,6 +1,6 @@
 [package]
 name = "apr-cli"
-version = "0.2.4"
+version = "0.2.5"
 edition = "2021"
 rust-version = "1.70"
 authors = ["Noah Gift <noah@paiml.com>"]
@@ -119,8 +119,8 @@ ratatui = { version = "0.29", default-features = true }
 crossterm = "0.28"
 
 # Visualization (syscall tracing and charts)
-renacer = { version = "0.9.6", path = "/home/noah/src/renacer", optional = true, default-features = false }
-trueno-viz = { version = "0.1.16", optional = true, default-features = false, features = ["svg"] }
+renacer = { version = "0.9.7", path = "/home/noah/src/renacer", optional = true, default-features = false }
+trueno-viz = { version = "0.1.19", optional = true, default-features = false, features = ["svg"] }
 
 # ZRAM compression (SIMD-accelerated LZ4/ZSTD)
 trueno-zram-core = { version = "0.2", optional = true }
