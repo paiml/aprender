@@ -8,8 +8,9 @@
 #   - 0.5B: Edge/Mobile, Fast CI
 #   - 1.5B: Development, Primary QA (default)
 #   - 7B:   Production, Performance Testing
+#   - 32B:  Large-scale, High-memory Systems
 #
-# Usage: ./scripts/showcase-qa.sh [--fail-fast] [--size 0.5b|1.5b|7b|all]
+# Usage: ./scripts/showcase-qa.sh [--fail-fast] [--size 0.5b|1.5b|7b|32b|all]
 #
 # Standard: BashRS Compliant (set -euo pipefail)
 
@@ -39,6 +40,7 @@ declare -A MODELS
 MODELS["0.5b"]="Qwen/Qwen2.5-0.5B-Instruct-GGUF|qwen2.5-0.5b-gguf|qwen2.5-0.5b-instruct-q4_k_m.gguf|Qwen2|20|200"
 MODELS["1.5b"]="Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF|qwen2.5-coder-1.5b-gguf|qwen2.5-coder-1.5b-instruct-q4_k_m.gguf|Qwen2|2|100"
 MODELS["7b"]="Qwen/Qwen2.5-Coder-7B-Instruct-GGUF|qwen2.5-coder-7b-gguf|qwen2.5-coder-7b-instruct-q4_k_m.gguf|Qwen2|2|50"
+MODELS["32b"]="Qwen/Qwen2.5-Coder-32B-Instruct-GGUF|qwen2.5-coder-32b-gguf|qwen2.5-coder-32b-instruct-q4_k_m.gguf|Qwen2|1|25"
 
 ARTIFACT_DIR="qa_artifacts"
 REPORT_FILE="showcase_qa_report.md"
@@ -60,7 +62,7 @@ for arg in "$@"; do
         --size=*)
             size="${arg#*=}"
             if [[ "$size" == "all" ]]; then
-                MODEL_SIZES=("0.5b" "1.5b" "7b")
+                MODEL_SIZES=("0.5b" "1.5b" "7b" "32b")
             else
                 MODEL_SIZES=("$size")
             fi
@@ -68,10 +70,10 @@ for arg in "$@"; do
         --size)
             # Handle --size X format (next arg)
             ;;
-        0.5b|1.5b|7b|all)
+        0.5b|1.5b|7b|32b|all)
             # Handle positional size after --size
             if [[ "$size" == "all" ]]; then
-                MODEL_SIZES=("0.5b" "1.5b" "7b")
+                MODEL_SIZES=("0.5b" "1.5b" "7b" "32b")
             else
                 MODEL_SIZES=("$arg")
             fi

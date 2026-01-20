@@ -11,8 +11,20 @@
 //! - Model caching (~/.apr/cache/)
 //! - mmap loading for models >50MB
 //! - Backend selection (AVX2/GPU/WASM via trueno)
+//!
+//! # Architecture (APR-CLI-DELEGATE-001)
+//!
+//! All inference now delegates to `realizar::run_inference()` via `execute_with_realizar()`.
+//! The following legacy functions are DEAD CODE scheduled for removal:
+//! - `execute_apr_inference()` (lines 603-881)
+//! - `execute_safetensors_inference()` (lines 927-1208)
+//! - `execute_gguf_inference()` (lines 1317-1488)
+//! - `run_safetensors_generation()` (lines 1235-1309)
+//! - `run_gguf_generate()` (lines 1500-1633)
+//!
+//! TODO(SHOWCASE-BRICK-001): Remove dead code after realizar refactor is stable.
 
-// Allow dead code during development - these are planned features
+// Allow dead code during development - legacy functions pending removal
 #![allow(dead_code)]
 #![allow(unused_imports)]
 #![allow(unused_variables)]
@@ -511,7 +523,8 @@ fn execute_inference(
     let metadata = std::fs::metadata(model_path)?;
     let use_mmap = metadata.len() > 50 * 1024 * 1024; // 50MB threshold
 
-    if use_mmap {
+    // F-UX-26: Only show mmap info in verbose mode (NOISY-GUARD)
+    if use_mmap && options.verbose {
         eprintln!(
             "{}",
             format!("Using mmap for {}MB model", metadata.len() / 1024 / 1024).dimmed()
@@ -1375,17 +1388,17 @@ fn execute_gguf_inference(
                         prompt.to_string()
                     };
 
-                    // PMAT-COR-002: DEBUG - always show
-                    eprintln!("[TOKEN-DEBUG] Model: {} (instruct={})", model_name, is_instruct);
-                    eprintln!("[TOKEN-DEBUG] Formatted prompt: {:?}", formatted_prompt);
-
-                    if options.trace {
+                    // F-UX-40: Debug output only in trace/verbose mode (NOISY-GUARD)
+                    if options.trace || options.verbose {
                         eprintln!("[APR-TRACE] Model: {} (instruct={})", model_name, is_instruct);
                         eprintln!("[APR-TRACE] Formatted prompt: {:?}", formatted_prompt);
                     }
 
                     let tokens = mapped_model.model.encode(&formatted_prompt);
-                    eprintln!("[TOKEN-DEBUG] encode returned: {:?}", tokens.as_ref().map(|t| t.len()));
+                    // F-UX-40: Debug output only in trace/verbose mode
+                    if options.trace || options.verbose {
+                        eprintln!("[APR-TRACE] encode returned: {:?}", tokens.as_ref().map(|t| t.len()));
+                    }
                     tokens.unwrap_or_else(|| vec![1u32])
                 }
             } else if let Some(path) = input_path {
@@ -1508,7 +1521,11 @@ fn run_gguf_generate(
     #[cfg(feature = "cuda")]
     if !no_gpu {
         use realizar::gguf::OwnedQuantizedModelCuda;
-        eprintln!("Initializing CUDA GPU 0 (GPU-resident mode)...");
+        // F-UX-40/F-UX-26: Only show CUDA init in verbose/benchmark mode (NOISY-GUARD)
+        let verbose = trace_options.map_or(false, |o| o.verbose);
+        if verbose || benchmark {
+            eprintln!("Initializing CUDA GPU 0 (GPU-resident mode)...");
+        }
         let mut cuda_model = OwnedQuantizedModelCuda::new(model, 0)
             .map_err(|e| CliError::InferenceFailed(format!("CUDA init failed: {e}")))?;
 

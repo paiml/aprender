@@ -56,7 +56,7 @@ pub(crate) struct ChatConfig {
     /// Show inspection info (top-k probs, tokens/sec)
     pub inspect: bool,
     /// Force CPU inference (skip CUDA even if available)
-    /// Default: true - GPU kernel has errors, CPU achieves ~115 tok/s
+    /// Default: false - GPU is preferred when available (F-GPU-134b)
     pub force_cpu: bool,
     /// Enable inference tracing (APR-TRACE-001)
     pub trace: bool,
@@ -72,7 +72,7 @@ impl Default for ChatConfig {
             max_tokens: 512,
             system: None,
             inspect: false,
-            force_cpu: true, // GPU has kernel errors, use stable CPU path (~115 tok/s)
+            force_cpu: false, // F-GPU-134b: Default to GPU when available
             trace: false,
             trace_output: None,
         }
@@ -158,8 +158,10 @@ fn detect_format(path: &Path) -> ModelFormat {
 
 /// Clean ChatML markers and artifacts from model response
 ///
-/// Strips:
+/// Strips (F-PIPE-166b compliance):
 /// - <|im_start|>assistant, <|im_end|>, <|im_start|>, etc.
+/// - GPT-2/BPE tokenizer artifacts (Ġ = U+0120 = space prefix)
+/// - Repeated punctuation (!!!, ???, etc.)
 /// - Leading/trailing whitespace
 /// - Repeated newlines
 fn clean_chat_response(raw: &str) -> String {
@@ -175,6 +177,41 @@ fn clean_chat_response(raw: &str) -> String {
     ];
     for marker in markers {
         cleaned = cleaned.replace(marker, "");
+    }
+
+    // F-PIPE-166b: Clean GPT-2/BPE tokenizer artifacts
+    // Ġ (U+0120) represents a space before a token in GPT-2 BPE encoding
+    cleaned = cleaned.replace('\u{0120}', " ");
+    // Ċ (U+010A) represents newline in some BPE tokenizers
+    cleaned = cleaned.replace('\u{010A}', "\n");
+    // Other common BPE artifacts
+    cleaned = cleaned.replace("Ġ", " ");  // In case it's literal "Ġ" string
+    cleaned = cleaned.replace("Ċ", "\n"); // In case it's literal "Ċ" string
+
+    // F-PIPE-166b: Normalize repeated punctuation (e.g., "!!!" -> "!")
+    // Use a simple loop to avoid regex dependency
+    let mut prev_char = '\0';
+    let mut repeat_count = 0;
+    let mut result = String::with_capacity(cleaned.len());
+
+    for c in cleaned.chars() {
+        if c == prev_char && (c == '!' || c == '?' || c == '.') {
+            repeat_count += 1;
+            // Allow at most 3 repeated punctuation marks
+            if repeat_count < 3 {
+                result.push(c);
+            }
+        } else {
+            repeat_count = 0;
+            result.push(c);
+        }
+        prev_char = c;
+    }
+    cleaned = result;
+
+    // Normalize multiple spaces to single space
+    while cleaned.contains("  ") {
+        cleaned = cleaned.replace("  ", " ");
     }
 
     // Trim and normalize whitespace
@@ -1516,5 +1553,48 @@ mod tests {
         assert_eq!(config.max_tokens, 512);
         assert!(config.system.is_none());
         assert!(!config.inspect);
+        // F-GPU-134b: Default to GPU (force_cpu = false)
+        assert!(!config.force_cpu, "F-GPU-134b: force_cpu should default to false");
+    }
+
+    // F-PIPE-166b: Test tokenizer artifact cleaning
+    #[test]
+    fn test_clean_chat_response_removes_chatml_markers() {
+        let raw = "<|im_start|>assistant\nHello world<|im_end|>";
+        let cleaned = clean_chat_response(raw);
+        assert_eq!(cleaned, "Hello world");
+    }
+
+    #[test]
+    fn test_clean_chat_response_removes_bpe_artifacts() {
+        // Ġ (U+0120) is used in GPT-2/BPE tokenizers for space prefix
+        let raw = "HelloĠworld";
+        let cleaned = clean_chat_response(raw);
+        assert_eq!(cleaned, "Hello world");
+    }
+
+    #[test]
+    fn test_clean_chat_response_normalizes_repeated_punctuation() {
+        let raw = "Wow!!!!!";
+        let cleaned = clean_chat_response(raw);
+        assert_eq!(cleaned, "Wow!!!");
+
+        let raw2 = "Really??????";
+        let cleaned2 = clean_chat_response(raw2);
+        assert_eq!(cleaned2, "Really???");
+    }
+
+    #[test]
+    fn test_clean_chat_response_normalizes_spaces() {
+        let raw = "Hello   world";
+        let cleaned = clean_chat_response(raw);
+        assert_eq!(cleaned, "Hello world");
+    }
+
+    #[test]
+    fn test_clean_chat_response_trims_whitespace() {
+        let raw = "  Hello world  ";
+        let cleaned = clean_chat_response(raw);
+        assert_eq!(cleaned, "Hello world");
     }
 }

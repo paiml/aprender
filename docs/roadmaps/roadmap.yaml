@@ -1479,13 +1479,14 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'New task: SHOWCASE-BRICK-001'
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-01-12T23:02:11.425753080+00:00
-  updated: 2026-01-14T01:00:51.397398936+00:00
+  updated: 2026-01-20T10:39:55.357397569+00:00
   spec: null
-  acceptance_criteria: []
+  acceptance_criteria:
+  - PAR-201 regressions fixed (F-GPU-134b, F-PIPE-166b, F-UX-40). Dead code documented. 32B model added.
   phases: []
   subtasks: []
   estimated_effort: null
