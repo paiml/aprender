@@ -1430,15 +1430,23 @@ fn start_gguf_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
         .green()
     );
 
+    // Extract vocabulary from GGUF for proper token encoding/decoding
+    let vocab = mapped_model.model.vocabulary().unwrap_or_else(|| {
+        eprintln!("Warning: No vocabulary in GGUF, using placeholder tokens");
+        (0..quantized_model.config.vocab_size)
+            .map(|i| format!("token{i}"))
+            .collect()
+    });
+
     // GPU batched inference path (2X+ Ollama performance)
     #[cfg(feature = "cuda")]
     if config.gpu && config.batch {
-        return start_gguf_server_gpu_batched(quantized_model, config);
+        return start_gguf_server_gpu_batched(quantized_model, vocab, config);
     }
 
     // CPU path (default)
-    // Create realizar AppState with full inference capabilities
-    let state = AppState::with_quantized_model(quantized_model)
+    // Create realizar AppState with full inference capabilities and real vocab
+    let state = AppState::with_quantized_model_and_vocab(quantized_model, vocab)
         .map_err(|e| CliError::InferenceFailed(format!("Failed to create app state: {e}")))?;
 
     // Create realizar's full inference router (Ollama-parity endpoints)
@@ -1496,6 +1504,7 @@ fn start_gguf_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
 #[cfg(all(feature = "inference", feature = "cuda"))]
 fn start_gguf_server_gpu_batched(
     quantized_model: realizar::gguf::OwnedQuantizedModel,
+    vocab: Vec<String>,
     config: &ServerConfig,
 ) -> Result<()> {
     use realizar::api::{create_router, spawn_batch_processor, AppState, BatchConfig};
@@ -1532,8 +1541,8 @@ fn start_gguf_server_gpu_batched(
         }
     }
 
-    // Create state with cached model
-    let state = AppState::with_cached_model(cached_model)
+    // Create state with cached model and real vocab
+    let state = AppState::with_cached_model_and_vocab(cached_model, vocab)
         .map_err(|e| CliError::InferenceFailed(format!("Failed to create app state: {e}")))?;
 
     // Get Arc'd model for batch processor

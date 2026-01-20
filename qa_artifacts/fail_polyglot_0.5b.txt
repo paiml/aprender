@@ -1,0 +1,11 @@
+=== APR Run ===
+
+Source: /home/noah/.cache/pacha/models/d4c4d9763127153c.gguf
+[CORRECTNESS-013] RMSNorm using PreciseRmsNormKernel (Kahan+Newton-Raphson)
+[CORRECTNESS-013] RoPE NEOX using PreciseRopeIndirectKernel (polynomial trig)
+
+Output:
+有_physicaloire鸪葭疏昆ients;');
+عا
+
+Completed in 1.66s (cached)
