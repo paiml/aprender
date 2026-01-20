@@ -1444,6 +1444,62 @@ fn start_gguf_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
         return start_gguf_server_gpu_batched(quantized_model, vocab, config);
     }
 
+    // GPU non-batched path (--gpu without --batch)
+    #[cfg(feature = "cuda")]
+    if config.gpu && !config.no_gpu {
+        println!("{}", "Enabling GPU inference...".cyan());
+        use realizar::gpu::GpuModel;
+
+        match GpuModel::from_mapped_gguf(&mapped_model) {
+            Ok(gpu_model) => {
+                println!("{}", "GPU model loaded from GGUF weights".green());
+
+                let state = AppState::with_gpu_model(gpu_model)
+                    .map_err(|e| CliError::InferenceFailed(format!("Failed to create GPU state: {e}")))?;
+
+                let app = create_router(state);
+
+                let runtime = tokio::runtime::Runtime::new()
+                    .map_err(|e| CliError::InferenceFailed(format!("Failed to create runtime: {e}")))?;
+
+                let bind_addr = config.bind_addr();
+
+                return runtime.block_on(async move {
+                    let listener = tokio::net::TcpListener::bind(&bind_addr)
+                        .await
+                        .map_err(|e| CliError::InferenceFailed(format!("Failed to bind: {e}")))?;
+
+                    println!();
+                    println!(
+                        "{}",
+                        format!("GPU inference server listening on http://{}", bind_addr)
+                            .green()
+                            .bold()
+                    );
+                    println!();
+                    println!("{}", "GPU Endpoints:".cyan());
+                    println!("  GET  /health              - Health check");
+                    println!("  GET  /metrics             - Prometheus metrics");
+                    println!("  POST /generate            - Text generation");
+                    println!("  POST /v1/completions      - OpenAI-compatible");
+                    println!("  POST /v1/chat/completions - Chat completions");
+                    println!();
+                    println!("{}", "Press Ctrl+C to stop".dimmed());
+
+                    axum::serve(listener, app)
+                        .with_graceful_shutdown(shutdown_signal())
+                        .await
+                        .map_err(|e| CliError::InferenceFailed(format!("Server error: {e}")))?;
+
+                    Ok(())
+                });
+            }
+            Err(e) => {
+                eprintln!("{}", format!("GPU init failed, falling back to CPU: {e}").yellow());
+            }
+        }
+    }
+
     // CPU path (default)
     // Create realizar AppState with full inference capabilities and real vocab
     let state = AppState::with_quantized_model_and_vocab(quantized_model, vocab)
