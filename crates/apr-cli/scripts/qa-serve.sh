@@ -295,6 +295,62 @@ test_coherency() {
     else
         print_result "F-HTTP-020b" "Garbage Check" "PASS" "No garbage patterns"
     fi
+
+    # F-HTTP-020c: Multi-turn loop check (PMAT-092)
+    # Model should NOT generate fake Human:/Assistant:/User: turns
+    test_no_multi_turn_loop
+}
+
+# F-HTTP-020c: Multi-turn Loop Prevention (PMAT-092)
+# Verifies model stops at EOS and doesn't generate fake conversation turns
+test_no_multi_turn_loop() {
+    print_header "Section IV: Robustness - Multi-Turn Loop Prevention (PMAT-092)"
+
+    local response
+    response=$(curl -s "${BASE_URL}/v1/chat/completions" \
+        -H "Content-Type: application/json" \
+        -d '{"model": "default", "messages": [{"role": "user", "content": "Say hello in one sentence."}], "max_tokens": 100}')
+    log_debug "Multi-turn check response: ${response}"
+
+    local content
+    content=$(python3 -c "import sys, json; print(json.load(sys.stdin)['choices'][0]['message']['content'])" <<< "${response}" 2>/dev/null) || content=""
+
+    # Check for fake conversation turn markers that indicate the model didn't stop at EOS
+    local has_fake_turns=0
+    local detected_patterns=""
+
+    # Check for Human/Assistant style (Anthropic/Claude format)
+    if [[ "${content}" == *$'\nHuman:'* || "${content}" == *$'\n\nHuman:'* ]]; then
+        has_fake_turns=1
+        detected_patterns="Human:"
+    fi
+    if [[ "${content}" == *$'\nAssistant:'* || "${content}" == *$'\n\nAssistant:'* ]]; then
+        has_fake_turns=1
+        detected_patterns="${detected_patterns} Assistant:"
+    fi
+
+    # Check for User/Assistant style (common in chat models)
+    if [[ "${content}" == *$'\nUser:'* || "${content}" == *$'\n\nUser:'* ]]; then
+        has_fake_turns=1
+        detected_patterns="${detected_patterns} User:"
+    fi
+
+    # Check for ChatML markers that shouldn't appear in content
+    if [[ "${content}" == *'<|im_start|>'* ]]; then
+        has_fake_turns=1
+        detected_patterns="${detected_patterns} <|im_start|>"
+    fi
+
+    # Check for multiple "sentences" that look like a conversation
+    local newline_count
+    newline_count=$(echo "${content}" | grep -c '^' || echo "0")
+
+    if [[ "${has_fake_turns}" == "1" ]]; then
+        print_result "F-HTTP-020c" "Multi-Turn Loop" "FAIL" "Detected fake turns: ${detected_patterns}"
+        log_debug "Full content: ${content}"
+    else
+        print_result "F-HTTP-020c" "Multi-Turn Loop" "PASS" "No fake conversation turns detected"
+    fi
 }
 
 # F-HTTP-017: Malformed JSON
