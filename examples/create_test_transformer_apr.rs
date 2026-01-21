@@ -46,7 +46,10 @@ fn main() {
     }
     // Pad to vocab_size
     while vocab.len() < vocab_size {
-        vocab.push(serde_json::Value::String(format!("<unused{}>", vocab.len())));
+        vocab.push(serde_json::Value::String(format!(
+            "<unused{}>",
+            vocab.len()
+        )));
     }
 
     custom.insert(
@@ -209,5 +212,7 @@ fn main() {
     println!();
     println!("Test with:");
     println!("  cargo run --bin apr -- inspect /tmp/test-transformer.apr");
-    println!("  cargo run --bin apr --features inference -- serve /tmp/test-transformer.apr --port 8093");
+    println!(
+        "  cargo run --bin apr --features inference -- serve /tmp/test-transformer.apr --port 8093"
+    );
 }

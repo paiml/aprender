@@ -1747,14 +1747,8 @@ fn f2_wasmtime_compatible_code() {
     };
 
     // All data types used must be WASM32-safe
-    assert!(
-        size_of::<f32>() == 4,
-        "F2: f32 must be 4 bytes for WASM"
-    );
-    assert!(
-        size_of::<usize>() <= 8,
-        "F2: usize must fit in 64 bits"
-    );
+    assert!(size_of::<f32>() == 4, "F2: f32 must be 4 bytes for WASM");
+    assert!(size_of::<usize>() <= 8, "F2: usize must fit in 64 bits");
 
     // Model can be created with stack-safe config
     let model = Qwen2Model::new(&config);

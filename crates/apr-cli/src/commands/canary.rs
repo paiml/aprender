@@ -24,7 +24,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 /// Canary subcommands
-#[derive(Subcommand, Clone)]
+#[derive(Subcommand, Clone, Debug)]
 pub(crate) enum CanaryCommands {
     /// Create a canary test
     Create {

@@ -133,6 +133,7 @@ To ensure long-term maintainability and prevent regression, we enforce a **stric
     *   **Priority:** Test the extracted logic **FIRST**.
 5.  **CUDA Verification:**
     *   **Policy:** "Just Test It". With RTX 4090 hardware available, actual GPU execution paths must be covered, not mocked.
+    *   **Enforcement:** QA fails if CUDA coverage < 90% (Technical Debt Prevention). Ignoring CUDA paths (`#[cfg(not(feature = "cuda"))]`) on capable hardware is **forbidden**.
 6.  **Model Serving Tests:**
     *   **Strategy:** Use ephemeral `setup/teardown` of in-memory APR models for server verification. Do not rely on external artifacts or file I/O for these tests.
 7.  **Full PMAT Compliance:**
@@ -142,16 +143,23 @@ To ensure long-term maintainability and prevent regression, we enforce a **stric
 
 ### 1.5.1 Critical Coverage Gaps (Prioritized)
 
-The following modules are identified as high-risk due to low coverage (<95%) and high complexity. They require **Systematic Edge Case Testing**:
+The following modules remain high-priority for coverage expansion:
 
-1.  **`gguf.rs` (83.83%)**: 4,500 missed lines. Priority: **Critical**.
-    *   *Risk:* Model loading failures, parsing exploits, invalid tensor mapping.
+1.  **`cuda.rs` (39.62%)**: 13,240 missed regions. Priority: **BLOCKER**.
+    *   *Analysis:* Primary blocker (32% of all missed regions).
+    *   *Gap:* Batched inference, graph capture, specialized kernel variants.
 2.  **`quantize.rs` (83.19%)**: 1,790 missed lines. Priority: **High**.
-    *   *Risk:* Numerical instability, performance regressions, scalar fallback bugs.
-3.  **`api.rs` (82.66%)**: 1,667 missed lines. Priority: **High**.
-    *   *Risk:* Public API contracts broken, error handling missing.
-4.  **`layers.rs` (86.63%)**: 1,105 missed lines. Priority: **Medium**.
-    *   *Risk:* Inference correctness, attention mask bugs.
+    *   *Gap:* Numerical instability, performance regressions, scalar fallback bugs.
+3.  **`apr_transformer.rs` (82.56%)**: 1,819 missed regions. Priority: **Medium**.
+    *   *Gap:* Native transformer architecture implementation.
+
+#### Logic Modules: Verified via Fuzzing/Fault Injection
+
+The following modules have achieved target coverage/robustness via **Extreme TDD Logic Hardening**:
+
+*   ✅ **`gguf.rs`**: Hardened via `tests/gguf_error_fuzzing.rs` (36 malicious byte-level tests).
+*   ✅ **`api.rs`**: Hardened via `tests/api_fault_injection.rs` (32 I/O fault tests).
+*   ✅ **`apr.rs`**: Hardened via `tests/apr_format_boundaries.rs` (33 dimension-boundary tests).
 
 ### 1.5.2 Handling Slow Tests (The "Heavy" Tier)
 
@@ -192,6 +200,25 @@ To ensure production readiness, we require **Live Verification** of the serving 
         *   Measure **Total-Generation-Time (TGT)**.
         *   **FAIL IF:** `TTFT > 0.8 * TGT` (Implies buffering).
         *   **FAIL IF:** Tokens arrive in a single burst (inter-token arrival time variance is 0).
+
+### 1.5.4 CUDA Testing Strategy (The "Live Layer" Protocol)
+
+To close the `cuda.rs` coverage gap (20% -> 95%) without incurring the cost of full model loading, we mandate the **Live Layer Protocol**:
+
+1.  **Single Layer Harness (Target: `transformer_layer_*`):**
+    *   **Concept:** Do *not* load GGUF files. Instantiate a **single** `TransformerLayer` struct with random weights directly on the GPU.
+    *   **Action:** Execute `forward` pass with random inputs.
+    *   **Coverage:** Hits the core inference kernels immediately.
+    *   **Speed:** < 50ms setup time.
+
+2.  **Synthetic Graph Verification (Target: `capture/replay`):**
+    *   **Concept:** Do not graph a full model. Record a CUDA graph of a simple dummy operation (e.g., `vec_add`).
+    *   **Action:** Capture, Replay, Verify output.
+    *   **Coverage:** Validates the *lifecycle management* code (Graph instantiation, execution, destruction) in `cuda.rs`.
+
+3.  **Buffer Fuzzing (Target: `GpuBuffer` wrappers):**
+    *   **Concept:** Use `proptest` to generate random buffer sizes and batch counts.
+    *   **Action:** Allocate `GpuBuffer`, perform move-in/move-out, verify data integrity.
 
 ---
 
@@ -447,47 +474,35 @@ pub async fn execute(args: RunArgs) -> Result<()> {
 
 ```rust
 // realizar/src/lib.rs - Public inference API
-
-/// Run model inference with Ollama-style UX
-pub async fn run_inference(config: InferenceConfig) -> Result<InferenceResult>;
-
-/// Start interactive chat session
-pub async fn run_chat(config: ChatConfig) -> Result<()>;
-
-/// Start HTTP inference server
-pub async fn run_serve(config: ServeConfig) -> Result<()>;
-
-/// Run 10-stage pipeline verification
-pub fn check_model(path: &Path) -> Result<CheckResult>;
-
-/// Configuration for inference
-pub struct InferenceConfig {
-    pub model_path: PathBuf,
-    pub prompt: Option<String>,
-    pub max_tokens: usize,
-    pub temperature: f32,
-    pub verbose: bool,
-    pub trace: Option<TraceConfig>,
-    pub gpu: bool,
-}
-
-/// Trace configuration (AWS Step Functions parity)
-pub struct TraceConfig {
-    pub enabled: bool,
-    pub steps: Option<Vec<TraceStep>>,
-    pub output: Option<PathBuf>,
-    pub verbose: bool,
-}
-
-/// Inference result
-pub struct InferenceResult {
-    pub text: String,
-    pub tokens_generated: usize,
-    pub duration_ms: f64,
-    pub tokens_per_second: f64,
-    pub trace: Option<TraceOutput>,
-}
+...
 ```
+
+### 5.4 CLI Architecture Standard (Shim Pattern)
+
+**Policy:** All binaries must adhere to the "Shim Pattern" to ensure testability.
+
+1.  **Entry Point (`main.rs`):
+    *   Maximum 20 lines.
+    *   Sole responsibility: Parse args, call library entry, handle exit code.
+    *   No business logic.
+
+    ```rust
+    fn main() -> ExitCode {
+        let cli = Cli::parse();
+        match execute_command(&cli) {
+            Ok(_) => ExitCode::SUCCESS,
+            Err(e) => { eprintln!("{}", e); ExitCode::FAILURE }
+        }
+    }
+    ```
+
+2.  **Library Entry (`lib.rs`):
+    *   `execute_command(cli: &Cli) -> Result<()>`: Dispatch logic.
+    *   `Cli::try_parse_from()`: Used in unit tests to verify flag parsing logic.
+
+3.  **Mocking Strategy:**
+    *   `create_router()`: Separate HTTP route construction from server binding.
+    *   `ServerState`: Injectable state for testing handlers without heavy backends.
 
 ---
 
@@ -852,7 +867,25 @@ This section enforces the strict separation between **Runtime Observation** (see
 
 ---
 
-## 7. Implementation Roadmap
+## 7. Verification Status (2026-01-20)
+
+### 7.1 OpenAI Parity (`/v1/chat/completions`)
+*   ✅ **SSE Streaming:** Robust `[DONE]` termination implemented (verified in `api.rs`).
+*   ✅ **Tracing:** `X-Trace-Level` header support verified.
+*   ✅ **Templates:** ChatML support verified for Qwen2, LLaMA2, Mistral, Phi.
+
+### 7.2 `apr check` (10-Stage Pipeline)
+The verification pipeline has been hardened with "Poison Detection":
+*   ✅ **Softmax Overflow:** Detects `hidden_dim >= 2^20`.
+*   ✅ **Variance Collapse:** Detects zero/invalid dimensions (`hidden_dim`, `num_layers`, `vocab_size`).
+*   ✅ **Tensor Existence:** Verifies Q/K/V, FFN gates, and LayerNorm tensors specifically.
+
+### 7.3 Observability (`cbtop`)
+*   ✅ **Headless Mode:** `cbtop --headless` confirmed to output valid JSON for CI tracking.
+
+---
+
+## 8. Implementation Roadmap
 
 ### Phase 1: Architecture Refactor (Week 1)
 1. Add public inference API to realizar
@@ -905,6 +938,7 @@ If ANY of the following occur, the Release Candidate is **REJECTED**:
 *   **F-CRIT-003**: GPU throughput is consistently < 1.0x Ollama (Level 4).
 *   **F-CRIT-004**: Falsification Score < 290/300.
 *   **F-CRIT-005**: `apr check` passes but model generates garbage (Invalid Falsification Test).
+*   **F-CRIT-006**: CUDA paths detected as "Ignored/Skipped" in coverage report on RTX 4090 host.
 *   **F-CRIT-301**: SafeTensors support missing (PAR-301). 🛑 BLOCKING
 *   **F-CRIT-302**: APR format support missing (PAR-302). 🛑 BLOCKING
 *   ~~**F-CRIT-303**: 0.5B model coherency failure (PAR-303).~~ ✅ RESOLVED (2026-01-20)
@@ -980,14 +1014,23 @@ Optimization in the aprender ecosystem follows a strict 5-level hierarchy.
 | Ticket ID | Title | Description | Status |
 |-----------|-------|-------------|--------|
 | **T-QA-001** | **Coverage Infrastructure** | Setup `make coverage` and `make lint` commands to enforce zero warnings and <5min execution time. | TODO |
-| **T-QA-002** | **CLI Refactor (Extreme TDD)** | Extract logic from `apr-cli` into testable library modules. Leave minimal shims. | TODO |
+| **T-QA-002** | **CLI Refactor (Extreme TDD)** | Extract logic from `apr-cli` into testable library modules. Leave minimal shims. | **DONE** |
 | **T-QA-003** | **CUDA Live Testing** | Enable and verify real GPU execution paths in tests on RTX 4090. | TODO |
 | **T-QA-004** | **In-Memory Server Tests** | Implement setup/teardown for in-memory APR model serving tests. | TODO |
 | **T-QA-005** | **Coverage Enforcement** | Falsify build if coverage < 95% or time > 5min. | TODO |
 | **T-QA-006** | **PMAT Compliance Enforcement** | Verify `pmat comply` passes for `aprender` and `realizar` (Complexity & SATD gates). | TODO |
-| **T-QA-007** | **Coverage Gap: gguf.rs** | Close 4,500 line gap (83% -> 95%) in GGUF loading/parsing logic. | TODO |
+| **T-QA-007** | **Coverage Gap: gguf.rs** | Close 4,500 line gap (83% -> 95%) in GGUF loading/parsing logic. | **DONE** |
 | **T-QA-008** | **Coverage Gap: quantize.rs** | Close 1,790 line gap (83% -> 95%) in quantization kernels/logic. | TODO |
-| **T-QA-009** | **Coverage Gap: api.rs** | Close 1,667 line gap (82% -> 95%) in high-level inference API. | TODO |
+| **T-QA-009** | **Coverage Gap: api.rs** | Close 1,667 line gap (82% -> 95%) in high-level inference API. | **DONE** |
 | **T-QA-010** | **Coverage Gap: layers.rs** | Close 1,105 line gap (86% -> 95%) in transformer layer implementations. | TODO |
+| **T-QA-011** | **Active CUDA Coverage** | Eliminate "Ignored" CUDA paths. Increase `cuda.rs` coverage 20% -> 90% by running actual kernels on RTX 4090. | TODO |
+| **T-QA-012** | **CUDA Single Layer Harness** | Implement `test_cuda_layer_fwd` using random weights to cover `transformer_layer_*` functions. | TODO |
+| **T-QA-013** | **CUDA Synthetic Graph Test** | Implement `test_cuda_graph_lifecycle` using dummy kernels to cover capture/replay logic. | TODO |
+| **T-QA-014** | **CUDA Buffer Fuzzing** | Implement `proptest` for `GpuBuffer` allocation/movement. | TODO |
+| **T-QA-015** | **Coverage Gap: apr.rs** | Close 1,962 region gap (79% -> 95%) in .apr format handling. | **DONE** |
+| **T-QA-016** | **Coverage Gap: apr_transformer.rs** | Close 1,819 region gap (82% -> 95%) in native transformer impl. | TODO |
+
+
+
 
 

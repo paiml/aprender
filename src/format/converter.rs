@@ -990,7 +990,9 @@ fn infer_model_config_from_tensors(
     let (vocab_size, hidden_size) = tensors
         .iter()
         .find(|(name, _)| {
-            name.contains("embed_tokens") || name.contains("wte") || name.contains("word_embeddings")
+            name.contains("embed_tokens")
+                || name.contains("wte")
+                || name.contains("word_embeddings")
         })
         .and_then(|(_, (_, shape))| {
             if shape.len() == 2 {
@@ -1055,7 +1057,9 @@ fn infer_model_config_from_tensors(
     // Try to get intermediate_size from gate/up projection
     let intermediate_size = tensors
         .iter()
-        .find(|(name, _)| name.contains("gate_proj") || name.contains("up_proj") || name.contains("fc1"))
+        .find(|(name, _)| {
+            name.contains("gate_proj") || name.contains("up_proj") || name.contains("fc1")
+        })
         .and_then(|(_, (_, shape))| {
             if shape.len() == 2 {
                 Some(shape[0]) // Output dimension of gate/up projection
@@ -1082,8 +1086,8 @@ fn infer_model_config_from_tensors(
         vocab_size: Some(vocab_size),
         intermediate_size,
         max_position_embeddings: Some(4096), // Default
-        rope_theta: Some(10000.0),            // Default
-        rms_norm_eps: Some(1e-6),             // Default
+        rope_theta: Some(10000.0),           // Default
+        rms_norm_eps: Some(1e-6),            // Default
     })
 }
 
@@ -1457,23 +1461,33 @@ fn write_apr_file(
     }
 
     // Extract transformer config from model_config (CRITICAL for inference)
-    let (architecture, hidden_size, num_layers, num_heads, num_kv_heads, vocab_size, intermediate_size, max_position_embeddings, rope_theta, rms_norm_eps) =
-        if let Some(cfg) = model_config {
-            (
-                cfg.architecture.clone(),
-                cfg.hidden_size,
-                cfg.num_layers,
-                cfg.num_heads,
-                cfg.num_kv_heads,
-                cfg.vocab_size,
-                cfg.intermediate_size,
-                cfg.max_position_embeddings,
-                cfg.rope_theta,
-                cfg.rms_norm_eps,
-            )
-        } else {
-            (None, None, None, None, None, None, None, None, None, None)
-        };
+    let (
+        architecture,
+        hidden_size,
+        num_layers,
+        num_heads,
+        num_kv_heads,
+        vocab_size,
+        intermediate_size,
+        max_position_embeddings,
+        rope_theta,
+        rms_norm_eps,
+    ) = if let Some(cfg) = model_config {
+        (
+            cfg.architecture.clone(),
+            cfg.hidden_size,
+            cfg.num_layers,
+            cfg.num_heads,
+            cfg.num_kv_heads,
+            cfg.vocab_size,
+            cfg.intermediate_size,
+            cfg.max_position_embeddings,
+            cfg.rope_theta,
+            cfg.rms_norm_eps,
+        )
+    } else {
+        (None, None, None, None, None, None, None, None, None, None)
+    };
 
     let metadata = AprV2Metadata {
         model_type: format!("{:?}", options.architecture),

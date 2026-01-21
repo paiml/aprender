@@ -895,7 +895,6 @@ mod tests {
 
     #[test]
     fn test_from_apr_with_valid_model() {
-        
         use tempfile::NamedTempFile;
 
         // Create a valid model with correct n_freqs for buffer_size 1024

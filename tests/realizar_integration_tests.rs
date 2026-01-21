@@ -173,8 +173,6 @@ fn s7_rmsnorm_simd_compatible() {
 /// Falsification: RoPE computation produces incorrect rotations
 #[test]
 fn s8_rope_rotary_embedding() {
-    
-
     // RoPE applies rotation to query/key vectors
     // For position p and dimension d:
     // theta = base^(-2d/dim)

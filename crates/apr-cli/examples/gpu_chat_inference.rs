@@ -70,9 +70,7 @@ fn main() {
 
     // Check if server is running
     let health_url = format!("http://localhost:{}/health", DEFAULT_PORT);
-    let health = Command::new("curl")
-        .args(["-s", &health_url])
-        .output();
+    let health = Command::new("curl").args(["-s", &health_url]).output();
 
     match health {
         Ok(output) if output.status.success() => {
@@ -110,10 +108,13 @@ fn run_chat_completion() {
     let output = Command::new("curl")
         .args([
             "-s",
-            "-X", "POST",
+            "-X",
+            "POST",
             &url,
-            "-H", "Content-Type: application/json",
-            "-d", request,
+            "-H",
+            "Content-Type: application/json",
+            "-d",
+            request,
         ])
         .output();
 
@@ -139,9 +140,18 @@ fn run_chat_completion() {
 
                 // Show usage stats
                 if let Some(usage) = json.get("usage") {
-                    let prompt_tokens = usage.get("prompt_tokens").and_then(|t| t.as_i64()).unwrap_or(0);
-                    let completion_tokens = usage.get("completion_tokens").and_then(|t| t.as_i64()).unwrap_or(0);
-                    let total_tokens = usage.get("total_tokens").and_then(|t| t.as_i64()).unwrap_or(0);
+                    let prompt_tokens = usage
+                        .get("prompt_tokens")
+                        .and_then(|t| t.as_i64())
+                        .unwrap_or(0);
+                    let completion_tokens = usage
+                        .get("completion_tokens")
+                        .and_then(|t| t.as_i64())
+                        .unwrap_or(0);
+                    let total_tokens = usage
+                        .get("total_tokens")
+                        .and_then(|t| t.as_i64())
+                        .unwrap_or(0);
 
                     println!("Usage:");
                     println!("  Prompt tokens: {}", prompt_tokens);
@@ -177,10 +187,16 @@ fn print_instructions() {
     println!("To start the GPU-accelerated server:");
     println!();
     println!("  # Single-request mode (~83 tok/s)");
-    println!("  apr serve /path/to/model.gguf --port {} --gpu", DEFAULT_PORT);
+    println!(
+        "  apr serve /path/to/model.gguf --port {} --gpu",
+        DEFAULT_PORT
+    );
     println!();
     println!("  # Batched mode (~850 tok/s, 2.9x Ollama)");
-    println!("  apr serve /path/to/model.gguf --port {} --gpu --batch", DEFAULT_PORT);
+    println!(
+        "  apr serve /path/to/model.gguf --port {} --gpu --batch",
+        DEFAULT_PORT
+    );
     println!();
     println!("Example models:");
     println!("  - qwen2.5-coder-1.5b-instruct-q4_k_m.gguf (recommended)");

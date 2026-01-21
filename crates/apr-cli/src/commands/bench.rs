@@ -667,13 +667,7 @@ fn run_realizar_benchmark(path: &Path, config: &BenchConfig) -> Result<BenchResu
             path,
         )
     } else {
-        run_cpu_benchmark(
-            &prompt_tokens,
-            &gen_config,
-            config,
-            start,
-            path,
-        )
+        run_cpu_benchmark(&prompt_tokens, &gen_config, config, start, path)
     }
 }
 

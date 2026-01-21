@@ -72,7 +72,7 @@ pub struct QaConfig {
 impl Default for QaConfig {
     fn default() -> Self {
         Self {
-            min_tps: 100.0, // GPU target
+            min_tps: 100.0,   // GPU target
             min_speedup: 0.4, // CPU mode; GPU mode (when fixed) can achieve 2.0x+
             skip_golden: false,
             skip_throughput: false,
@@ -108,7 +108,13 @@ pub struct GateResult {
 }
 
 impl GateResult {
-    fn passed(name: &str, message: &str, value: Option<f64>, threshold: Option<f64>, duration: Duration) -> Self {
+    fn passed(
+        name: &str,
+        message: &str,
+        value: Option<f64>,
+        threshold: Option<f64>,
+        duration: Duration,
+    ) -> Self {
         Self {
             name: name.to_string(),
             passed: true,
@@ -120,7 +126,13 @@ impl GateResult {
         }
     }
 
-    fn failed(name: &str, message: &str, value: Option<f64>, threshold: Option<f64>, duration: Duration) -> Self {
+    fn failed(
+        name: &str,
+        message: &str,
+        value: Option<f64>,
+        threshold: Option<f64>,
+        duration: Duration,
+    ) -> Self {
         Self {
             name: name.to_string(),
             passed: false,
@@ -193,7 +205,10 @@ pub fn run(
     let report = run_qa(path, &config)?;
 
     if json {
-        println!("{}", serde_json::to_string_pretty(&report).unwrap_or_default());
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&report).unwrap_or_default()
+        );
     }
 
     if !report.passed {
@@ -274,7 +289,10 @@ fn run_qa(path: &Path, config: &QaConfig) -> Result<QaReport> {
             }
         }
         println!();
-        output::kv("Total Duration", format!("{:.2}s", total_duration.as_secs_f32()));
+        output::kv(
+            "Total Duration",
+            format!("{:.2}s", total_duration.as_secs_f32()),
+        );
     }
 
     Ok(QaReport {
@@ -301,15 +319,23 @@ fn run_golden_output_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
     // Golden test: Use ChatML format for instruct models
     // Raw prompt would make model explain, ChatML makes it respond directly
     let test_cases = vec![
-        ("<|im_start|>user\nWhat is 2+2?<|im_end|>\n<|im_start|>assistant\n", vec!["4"]),
-        ("<|im_start|>user\nHello<|im_end|>\n<|im_start|>assistant\n", vec!["Hello", "Hi", "hey", "hello", "!"]),
+        (
+            "<|im_start|>user\nWhat is 2+2?<|im_end|>\n<|im_start|>assistant\n",
+            vec!["4"],
+        ),
+        (
+            "<|im_start|>user\nHello<|im_end|>\n<|im_start|>assistant\n",
+            vec!["Hello", "Hi", "hey", "hello", "!"],
+        ),
     ];
 
     #[cfg(feature = "inference")]
     {
         use realizar::cuda::CudaExecutor;
         use realizar::format::{detect_format, ModelFormat};
-        use realizar::gguf::{GGUFModel, MappedGGUFModel, OwnedQuantizedModel, QuantizedGenerateConfig};
+        use realizar::gguf::{
+            GGUFModel, MappedGGUFModel, OwnedQuantizedModel, QuantizedGenerateConfig,
+        };
 
         // Check if CUDA available
         let cuda_available = CudaExecutor::is_available() && CudaExecutor::num_devices() > 0;
@@ -322,7 +348,10 @@ fn run_golden_output_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
             .map_err(|e| CliError::ValidationFailed(format!("Failed to detect format: {e}")))?;
 
         if format != ModelFormat::Gguf {
-            return Ok(GateResult::skipped("golden_output", "Only GGUF format supported currently"));
+            return Ok(GateResult::skipped(
+                "golden_output",
+                "Only GGUF format supported currently",
+            ));
         }
 
         let gguf = GGUFModel::from_bytes(&model_bytes)
@@ -345,7 +374,8 @@ fn run_golden_output_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
                     .map_err(|e| CliError::ValidationFailed(format!("Map failed: {e}")))?;
                 let model = OwnedQuantizedModel::from_mapped(&mapped)
                     .map_err(|e| CliError::ValidationFailed(format!("Model failed: {e}")))?;
-                model.generate_with_cache(&prompt_tokens, &gen_config)
+                model
+                    .generate_with_cache(&prompt_tokens, &gen_config)
                     .map_err(|e| CliError::ValidationFailed(format!("Generation failed: {e}")))?
             };
             let _ = cuda_available; // suppress warning
@@ -354,9 +384,9 @@ fn run_golden_output_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
             let output_text = gguf.decode(&output_tokens);
 
             // Check if any expected pattern is present
-            let pattern_found = expected_patterns.iter().any(|p|
-                output_text.to_lowercase().contains(&p.to_lowercase())
-            );
+            let pattern_found = expected_patterns
+                .iter()
+                .any(|p| output_text.to_lowercase().contains(&p.to_lowercase()));
 
             if !pattern_found {
                 let duration = start.elapsed();
@@ -364,7 +394,9 @@ fn run_golden_output_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
                     "golden_output",
                     &format!(
                         "Prompt '{}' output '{}' did not contain any of: {:?}",
-                        prompt, output_text.chars().take(100).collect::<String>(), expected_patterns
+                        prompt,
+                        output_text.chars().take(100).collect::<String>(),
+                        expected_patterns
                     ),
                     None,
                     None,
@@ -386,7 +418,10 @@ fn run_golden_output_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
     #[cfg(not(feature = "inference"))]
     {
         let _ = (path, config, test_cases);
-        Ok(GateResult::skipped("golden_output", "Requires 'inference' feature"))
+        Ok(GateResult::skipped(
+            "golden_output",
+            "Requires 'inference' feature",
+        ))
     }
 }
 
@@ -405,7 +440,10 @@ fn run_throughput_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
     {
         use realizar::cuda::CudaExecutor;
         use realizar::format::{detect_format, ModelFormat};
-        use realizar::gguf::{GGUFModel, MappedGGUFModel, OwnedQuantizedModel, OwnedQuantizedModelCuda, QuantizedGenerateConfig};
+        use realizar::gguf::{
+            GGUFModel, MappedGGUFModel, OwnedQuantizedModel, OwnedQuantizedModelCuda,
+            QuantizedGenerateConfig,
+        };
 
         let cuda_available = CudaExecutor::is_available() && CudaExecutor::num_devices() > 0;
 
@@ -416,7 +454,10 @@ fn run_throughput_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
             .map_err(|e| CliError::ValidationFailed(format!("Failed to detect format: {e}")))?;
 
         if format != ModelFormat::Gguf {
-            return Ok(GateResult::skipped("throughput", "Only GGUF format supported currently"));
+            return Ok(GateResult::skipped(
+                "throughput",
+                "Only GGUF format supported currently",
+            ));
         }
 
         let gguf = GGUFModel::from_bytes(&model_bytes)
@@ -450,7 +491,8 @@ fn run_throughput_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
             let measure_start = Instant::now();
 
             for _ in 0..config.iterations {
-                let output = cuda_model.generate_gpu_resident(&prompt_tokens, &gen_config)
+                let output = cuda_model
+                    .generate_gpu_resident(&prompt_tokens, &gen_config)
                     .unwrap_or_default();
                 total_tokens += output.len().saturating_sub(prompt_tokens.len());
             }
@@ -491,7 +533,9 @@ fn run_throughput_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
             let measure_start = Instant::now();
 
             for _ in 0..config.iterations {
-                let output = model.generate_with_cache(&prompt_tokens, &gen_config).unwrap_or_default();
+                let output = model
+                    .generate_with_cache(&prompt_tokens, &gen_config)
+                    .unwrap_or_default();
                 total_tokens += output.len().saturating_sub(prompt_tokens.len());
             }
 
@@ -505,7 +549,10 @@ fn run_throughput_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
             if tps >= cpu_threshold {
                 Ok(GateResult::passed(
                     "throughput",
-                    &format!("{:.1} tok/s >= {:.0} tok/s threshold (CPU)", tps, cpu_threshold),
+                    &format!(
+                        "{:.1} tok/s >= {:.0} tok/s threshold (CPU)",
+                        tps, cpu_threshold
+                    ),
                     Some(tps),
                     Some(cpu_threshold),
                     duration,
@@ -513,7 +560,10 @@ fn run_throughput_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
             } else {
                 Ok(GateResult::failed(
                     "throughput",
-                    &format!("{:.1} tok/s < {:.0} tok/s threshold (CPU)", tps, cpu_threshold),
+                    &format!(
+                        "{:.1} tok/s < {:.0} tok/s threshold (CPU)",
+                        tps, cpu_threshold
+                    ),
                     Some(tps),
                     Some(cpu_threshold),
                     duration,
@@ -525,7 +575,10 @@ fn run_throughput_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
     #[cfg(not(feature = "inference"))]
     {
         let _ = (path, config);
-        Ok(GateResult::skipped("throughput", "Requires 'inference' feature"))
+        Ok(GateResult::skipped(
+            "throughput",
+            "Requires 'inference' feature",
+        ))
     }
 }
 
@@ -546,7 +599,7 @@ fn run_ollama_parity_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
     if !ollama_available {
         return Ok(GateResult::skipped(
             "ollama_parity",
-            "Ollama not available (start with: ollama serve)"
+            "Ollama not available (start with: ollama serve)",
         ));
     }
 
@@ -554,7 +607,10 @@ fn run_ollama_parity_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
     {
         use realizar::cuda::CudaExecutor;
         use realizar::format::{detect_format, ModelFormat};
-        use realizar::gguf::{GGUFModel, MappedGGUFModel, OwnedQuantizedModel, OwnedQuantizedModelCuda, QuantizedGenerateConfig};
+        use realizar::gguf::{
+            GGUFModel, MappedGGUFModel, OwnedQuantizedModel, OwnedQuantizedModelCuda,
+            QuantizedGenerateConfig,
+        };
 
         // First, measure Ollama baseline
         let ollama_tps = measure_ollama_throughput(config)?;
@@ -562,7 +618,7 @@ fn run_ollama_parity_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
         if ollama_tps <= 0.0 {
             return Ok(GateResult::skipped(
                 "ollama_parity",
-                "Could not measure Ollama throughput"
+                "Could not measure Ollama throughput",
             ));
         }
 
@@ -576,7 +632,10 @@ fn run_ollama_parity_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
             .map_err(|e| CliError::ValidationFailed(format!("Failed to detect format: {e}")))?;
 
         if format != ModelFormat::Gguf {
-            return Ok(GateResult::skipped("ollama_parity", "Only GGUF format supported"));
+            return Ok(GateResult::skipped(
+                "ollama_parity",
+                "Only GGUF format supported",
+            ));
         }
 
         let gguf = GGUFModel::from_bytes(&model_bytes)
@@ -609,7 +668,8 @@ fn run_ollama_parity_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
             let measure_start = Instant::now();
 
             for _ in 0..config.iterations {
-                let output = cuda_model.generate_gpu_resident(&prompt_tokens, &gen_config)
+                let output = cuda_model
+                    .generate_gpu_resident(&prompt_tokens, &gen_config)
                     .unwrap_or_default();
                 total_tokens += output.len().saturating_sub(prompt_tokens.len());
             }
@@ -630,7 +690,9 @@ fn run_ollama_parity_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
             let measure_start = Instant::now();
 
             for _ in 0..config.iterations {
-                let output = model.generate_with_cache(&prompt_tokens, &gen_config).unwrap_or_default();
+                let output = model
+                    .generate_with_cache(&prompt_tokens, &gen_config)
+                    .unwrap_or_default();
                 total_tokens += output.len().saturating_sub(prompt_tokens.len());
             }
 
@@ -668,7 +730,10 @@ fn run_ollama_parity_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
     #[cfg(not(feature = "inference"))]
     {
         let _ = (path, config);
-        Ok(GateResult::skipped("ollama_parity", "Requires 'inference' feature"))
+        Ok(GateResult::skipped(
+            "ollama_parity",
+            "Requires 'inference' feature",
+        ))
     }
 }
 
@@ -676,7 +741,14 @@ fn run_ollama_parity_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
 fn check_ollama_available() -> bool {
     // Try to connect to Ollama API
     std::process::Command::new("curl")
-        .args(["-s", "-o", "/dev/null", "-w", "%{http_code}", "http://localhost:11434/api/tags"])
+        .args([
+            "-s",
+            "-o",
+            "/dev/null",
+            "-w",
+            "%{http_code}",
+            "http://localhost:11434/api/tags",
+        ])
         .output()
         .map(|o| String::from_utf8_lossy(&o.stdout).trim() == "200")
         .unwrap_or(false)
@@ -706,10 +778,13 @@ fn measure_ollama_throughput(config: &QaConfig) -> Result<f64> {
         let output = std::process::Command::new("curl")
             .args([
                 "-s",
-                "-X", "POST",
+                "-X",
+                "POST",
                 "http://localhost:11434/api/generate",
-                "-H", "Content-Type: application/json",
-                "-d", &request_body.to_string(),
+                "-H",
+                "Content-Type: application/json",
+                "-d",
+                &request_body.to_string(),
             ])
             .output();
 
@@ -747,12 +822,7 @@ fn print_gate_result(result: &GateResult) {
         _ => &result.name,
     };
 
-    println!(
-        "{} {} - {}",
-        status,
-        name.white().bold(),
-        result.message
-    );
+    println!("{} {} - {}", status, name.white().bold(), result.message);
 
     if !result.skipped {
         println!(
@@ -816,9 +886,13 @@ mod tests {
         let report = QaReport {
             model: "test.gguf".to_string(),
             passed: true,
-            gates: vec![
-                GateResult::passed("throughput", "100 tok/s", Some(100.0), Some(60.0), Duration::from_secs(5)),
-            ],
+            gates: vec![GateResult::passed(
+                "throughput",
+                "100 tok/s",
+                Some(100.0),
+                Some(60.0),
+                Duration::from_secs(5),
+            )],
             total_duration_ms: 5000,
             timestamp: "2026-01-15T00:00:00Z".to_string(),
             summary: "All gates passed".to_string(),

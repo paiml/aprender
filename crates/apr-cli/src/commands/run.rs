@@ -377,7 +377,12 @@ fn download_sharded_model(cache_dir: &Path, index_path: &Path, base_url: &str) -
             continue;
         }
 
-        eprintln!("  [{}/{}] Downloading {}...", i + 1, total_shards, shard_file);
+        eprintln!(
+            "  [{}/{}] Downloading {}...",
+            i + 1,
+            total_shards,
+            shard_file
+        );
         download_file(&shard_url, &shard_path)?;
     }
 
@@ -420,7 +425,8 @@ fn extract_shard_files(json: &str) -> HashSet<String> {
                 if let Some(colon_pos) = part.rfind(':') {
                     let value = part[colon_pos + 1..].trim();
                     // Remove quotes and extract filename
-                    let filename = value.trim_matches(|c| c == '"' || c == ' ' || c == '\n' || c == '\r');
+                    let filename =
+                        value.trim_matches(|c| c == '"' || c == ' ' || c == '\n' || c == '\r');
                     if filename.ends_with(".safetensors") && !filename.is_empty() {
                         files.insert(filename.to_string());
                     }
@@ -593,9 +599,8 @@ fn execute_with_realizar(
     }
 
     // Run inference via realizar
-    let result = run_inference(&config).map_err(|e| {
-        CliError::InferenceFailed(format!("Inference failed: {e}"))
-    })?;
+    let result = run_inference(&config)
+        .map_err(|e| CliError::InferenceFailed(format!("Inference failed: {e}")))?;
 
     // Report performance if benchmarking
     if options.benchmark {
@@ -696,7 +701,8 @@ fn execute_apr_inference(
                 if let Some(tokens) = AprModel::encode_text(model_path, prompt) {
                     eprintln!(
                         "{}",
-                        format!("Encoded {} chars to {} tokens", prompt.len(), tokens.len()).dimmed()
+                        format!("Encoded {} chars to {} tokens", prompt.len(), tokens.len())
+                            .dimmed()
                     );
                     tokens
                 } else {
@@ -735,7 +741,7 @@ fn execute_apr_inference(
 
         // Setup tracing if enabled (APR-TRACE-001)
         let mut tracer = if options.trace {
-            use realizar::{InferenceTracer, TraceConfig, ModelInfo};
+            use realizar::{InferenceTracer, ModelInfo, TraceConfig};
 
             let mut trace_config = TraceConfig::enabled();
             trace_config.verbose = options.trace_verbose;
@@ -749,7 +755,7 @@ fn execute_apr_inference(
                 name: format!("APR Model ({})", architecture),
                 num_layers: model.metadata().num_layers.unwrap_or(0),
                 hidden_dim: model.metadata().hidden_size.unwrap_or(0),
-                vocab_size: vocab_size,
+                vocab_size,
                 num_heads: model.metadata().num_heads.unwrap_or(0),
                 quant_type: None,
             });
@@ -777,7 +783,12 @@ fn execute_apr_inference(
                     .map_err(|e| CliError::ModelLoadFailed(format!("CUDA init failed: {e}")))?;
                 eprintln!(
                     "{}",
-                    format!("Using GPU: {} ({} MB VRAM)", cuda_model.device_name(), cuda_model.vram_mb()).green()
+                    format!(
+                        "Using GPU: {} ({} MB VRAM)",
+                        cuda_model.device_name(),
+                        cuda_model.vram_mb()
+                    )
+                    .green()
                 );
                 cuda_model
                     .generate_cuda(&input_tokens, max_new_tokens, eos_id.unwrap_or(2))
@@ -987,10 +998,7 @@ fn execute_safetensors_inference(
             cfg.num_attention_heads.unwrap_or(0),
         )
     } else {
-        eprintln!(
-            "{}",
-            "No config.json found. Metadata-only mode.".yellow()
-        );
+        eprintln!("{}", "No config.json found. Metadata-only mode.".yellow());
         (0, 0, 0, 0)
     };
 
@@ -1028,7 +1036,10 @@ fn execute_safetensors_inference(
         t.set_model_info(ModelInfo {
             name: format!(
                 "SafeTensors Model ({})",
-                config.as_ref().map(|c| c.architecture()).unwrap_or_else(|| "unknown".to_string())
+                config
+                    .as_ref()
+                    .map(|c| c.architecture())
+                    .unwrap_or_else(|| "unknown".to_string())
             ),
             num_layers,
             hidden_dim: hidden_size,
@@ -1331,8 +1342,8 @@ fn execute_gguf_inference(
     input_path: Option<&PathBuf>,
     options: &RunOptions,
 ) -> Result<String> {
+    use realizar::chat_template::{format_messages, ChatMessage};
     use realizar::gguf::{MappedGGUFModel, OwnedQuantizedModel, QuantizedGenerateConfig};
-    use realizar::chat_template::{ChatMessage, format_messages};
     use std::time::Instant;
 
     // Load GGUF model via memory mapping
@@ -1390,14 +1401,20 @@ fn execute_gguf_inference(
 
                     // F-UX-40: Debug output only in trace/verbose mode (NOISY-GUARD)
                     if options.trace || options.verbose {
-                        eprintln!("[APR-TRACE] Model: {} (instruct={})", model_name, is_instruct);
+                        eprintln!(
+                            "[APR-TRACE] Model: {} (instruct={})",
+                            model_name, is_instruct
+                        );
                         eprintln!("[APR-TRACE] Formatted prompt: {:?}", formatted_prompt);
                     }
 
                     let tokens = mapped_model.model.encode(&formatted_prompt);
                     // F-UX-40: Debug output only in trace/verbose mode
                     if options.trace || options.verbose {
-                        eprintln!("[APR-TRACE] encode returned: {:?}", tokens.as_ref().map(|t| t.len()));
+                        eprintln!(
+                            "[APR-TRACE] encode returned: {:?}",
+                            tokens.as_ref().map(|t| t.len())
+                        );
                     }
                     tokens.unwrap_or_else(|| vec![1u32])
                 }
@@ -1418,9 +1435,7 @@ fn execute_gguf_inference(
             };
 
             // Create decode function for tracing (APR-TRACE-001)
-            let decode_fn = |token_id: u32| -> String {
-                mapped_model.model.decode(&[token_id])
-            };
+            let decode_fn = |token_id: u32| -> String { mapped_model.model.decode(&[token_id]) };
 
             // PAR-200: Use GPU-resident path for 20x faster inference (116 tok/s vs 5.7 tok/s)
             // APR-TRACE-001: Pass trace options for traced generation when --trace is enabled
@@ -1443,7 +1458,10 @@ fn execute_gguf_inference(
                 } else {
                     0.0
                 };
-                eprintln!("Inference: {} tokens in {:.1}ms ({:.1} tok/s)", new_tokens, gen_result.inference_ms, tok_per_sec);
+                eprintln!(
+                    "Inference: {} tokens in {:.1}ms ({:.1} tok/s)",
+                    new_tokens, gen_result.inference_ms, tok_per_sec
+                );
             }
 
             // Decode output using GGUF's embedded tokenizer - only new tokens
@@ -1545,7 +1563,7 @@ fn run_gguf_generate(
 
         let tokens = if trace_enabled {
             // GPU path with tracing (APR-TRACE-001: F-HW-04-B CUDA Graph parity)
-            use realizar::{InferenceTracer, TraceConfig, ModelInfo};
+            use realizar::{InferenceTracer, ModelInfo, TraceConfig};
 
             let opts = trace_options.expect("trace_options must be Some when trace_enabled");
             let mut trace_config = TraceConfig::enabled();
@@ -1569,7 +1587,8 @@ fn run_gguf_generate(
             eprintln!("Warning: GPU tracing not yet implemented, using non-traced path");
 
             // Run generation without tracing
-            let result = cuda_model.generate_gpu_resident(input_tokens, gen_config)
+            let result = cuda_model
+                .generate_gpu_resident(input_tokens, gen_config)
                 .map_err(|e| CliError::InferenceFailed(format!("GPU generation failed: {e}")))?;
 
             // Still write trace output (will be minimal without actual trace data)
@@ -1580,13 +1599,17 @@ fn run_gguf_generate(
             result
         } else {
             // GPU path without tracing (fast path)
-            cuda_model.generate_gpu_resident(input_tokens, gen_config)
+            cuda_model
+                .generate_gpu_resident(input_tokens, gen_config)
                 .map_err(|e| CliError::InferenceFailed(format!("GPU generation failed: {e}")))?
         };
 
         let inference_ms = infer_start.elapsed().as_secs_f64() * 1000.0;
 
-        return Ok(GgufGenerateResult { tokens, inference_ms });
+        return Ok(GgufGenerateResult {
+            tokens,
+            inference_ms,
+        });
     }
 
     // CPU fallback - with optional tracing (APR-TRACE-001)
@@ -1600,7 +1623,7 @@ fn run_gguf_generate(
 
     let tokens = if trace_enabled {
         // Use traced generation path (APR-TRACE-001)
-        use realizar::{InferenceTracer, TraceConfig, ModelInfo};
+        use realizar::{InferenceTracer, ModelInfo, TraceConfig};
 
         let opts = trace_options.expect("trace_options must be Some when trace_enabled");
         let mut trace_config = TraceConfig::enabled();
@@ -1625,7 +1648,8 @@ fn run_gguf_generate(
         eprintln!("Hint: Use GPU for full tracing support (remove CUDA_VISIBLE_DEVICES=\"\")");
 
         // Fall back to non-traced generation
-        let result = cpu_model.generate_with_cache(input_tokens, gen_config)
+        let result = cpu_model
+            .generate_with_cache(input_tokens, gen_config)
             .map_err(|e| CliError::InferenceFailed(format!("CPU generation failed: {e}")))?;
 
         // Still output partial trace (model info only)
@@ -1635,13 +1659,17 @@ fn run_gguf_generate(
 
         result
     } else {
-        cpu_model.generate_with_cache(input_tokens, gen_config)
+        cpu_model
+            .generate_with_cache(input_tokens, gen_config)
             .map_err(|e| CliError::InferenceFailed(format!("Generation failed: {e}")))?
     };
 
     let inference_ms = infer_start.elapsed().as_secs_f64() * 1000.0;
 
-    Ok(GgufGenerateResult { tokens, inference_ms })
+    Ok(GgufGenerateResult {
+        tokens,
+        inference_ms,
+    })
 }
 
 /// Parse input features from file or stdin
@@ -2122,7 +2150,11 @@ mod tests {
 
         let files = extract_shard_files(json);
 
-        assert_eq!(files.len(), 1, "All tensors in same file should yield 1 shard");
+        assert_eq!(
+            files.len(),
+            1,
+            "All tensors in same file should yield 1 shard"
+        );
         assert!(files.contains("model.safetensors"));
     }
 

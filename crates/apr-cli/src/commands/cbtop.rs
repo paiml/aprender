@@ -580,12 +580,18 @@ fn run_headless_apr(
     eprintln!("╠═══════════════════════════════════════════════════════════╣");
     eprintln!("║ Model: {:50} ║", model_name);
     eprintln!("║ Format: APR (brick prefix: apr.*)                        ║");
-    eprintln!("║ Throughput: {:8.1} tok/s                                ║", throughput);
+    eprintln!(
+        "║ Throughput: {:8.1} tok/s                                ║",
+        throughput
+    );
     eprintln!("╠═══════════════════════════════════════════════════════════╣");
 
     // Display per-brick stats from profiler using all_stats()
     eprintln!("║ Brick Timing Summary:                                     ║");
-    eprintln!("║ {:20} │ {:10} │ {:6} │ {:8} ║", "Brick", "Mean µs", "% Tot", "Samples");
+    eprintln!(
+        "║ {:20} │ {:10} │ {:6} │ {:8} ║",
+        "Brick", "Mean µs", "% Tot", "Samples"
+    );
     eprintln!("╠═══════════════════════════════════════════════════════════╣");
 
     // Get stats sorted by total time (using public fields)
@@ -600,7 +606,10 @@ fn run_headless_apr(
         let total_ns = stat.total_ns;
         let pct = (total_ns as f64 / summary_total as f64) * 100.0;
         let samples = stat.count;
-        eprintln!("║ {:20} │ {:10.2} │ {:5.1}% │ {:8} ║", name, mean_us, pct, samples);
+        eprintln!(
+            "║ {:20} │ {:10.2} │ {:5.1}% │ {:8} ║",
+            name, mean_us, pct, samples
+        );
     }
 
     eprintln!("╚═══════════════════════════════════════════════════════════╝");
@@ -669,7 +678,11 @@ fn run_headless_real(config: CbtopConfig) -> Result<()> {
     eprintln!("cbtop: Running headless benchmark (REAL PROFILING)...");
     eprintln!("  Model: {model_name}");
     eprintln!("  Path: {}", model_path.display());
-    eprintln!("  Format: {:?} (brick prefix: {}.*)", format, format.brick_prefix());
+    eprintln!(
+        "  Format: {:?} (brick prefix: {}.*)",
+        format,
+        format.brick_prefix()
+    );
     eprintln!("  Warmup: {} iterations", config.warmup);
     eprintln!("  Measurement: {} iterations", config.iterations);
     eprintln!();

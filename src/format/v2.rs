@@ -189,11 +189,7 @@ fn dequantize_q4(data: &[u8], element_count: usize) -> Vec<f32> {
             }
 
             let byte = data[byte_idx];
-            let nibble = if i % 2 == 0 {
-                byte & 0x0F
-            } else {
-                byte >> 4
-            };
+            let nibble = if i % 2 == 0 { byte & 0x0F } else { byte >> 4 };
 
             // Convert back from unsigned nibble (0-15) to signed (-8 to 7)
             let q = (nibble as i8) - 8;
@@ -561,7 +557,6 @@ pub struct AprV2Metadata {
     // ========================================================================
     // Transformer Config (CRITICAL for inference - realizar::apr::AprMetadata)
     // ========================================================================
-
     /// Model architecture family (e.g., "llama", "qwen2", "phi")
     #[serde(default)]
     pub architecture: Option<String>,
@@ -1379,9 +1374,7 @@ impl AprV2Reader {
                     .collect();
                 Some(floats)
             }
-            TensorDType::Q4 => {
-                Some(dequantize_q4(data, element_count))
-            }
+            TensorDType::Q4 => Some(dequantize_q4(data, element_count)),
             _ => None, // Other types not yet supported
         }
     }
@@ -1554,9 +1547,7 @@ impl<'a> AprV2ReaderRef<'a> {
                     .collect();
                 Some(floats)
             }
-            TensorDType::Q4 => {
-                Some(dequantize_q4(data, element_count))
-            }
+            TensorDType::Q4 => Some(dequantize_q4(data, element_count)),
             _ => None, // Other types not yet supported
         }
     }
@@ -2373,8 +2364,15 @@ mod tests {
         // F16 has ~3 decimal digits precision
         for (orig, rec) in original.iter().zip(recovered.iter()) {
             let diff = (orig - rec).abs();
-            let rel_err = if *orig != 0.0 { diff / orig.abs() } else { diff };
-            assert!(rel_err < 0.01, "F16 precision loss too high: {orig} -> {rec}");
+            let rel_err = if *orig != 0.0 {
+                diff / orig.abs()
+            } else {
+                diff
+            };
+            assert!(
+                rel_err < 0.01,
+                "F16 precision loss too high: {orig} -> {rec}"
+            );
         }
     }
 
@@ -2403,7 +2401,10 @@ mod tests {
             let diff = (orig - rec).abs();
             let max_val = original.iter().map(|v| v.abs()).fold(0.0f32, f32::max);
             let rel_err = diff / max_val;
-            assert!(rel_err < 0.02, "Q8 precision loss too high: {orig} -> {rec}");
+            assert!(
+                rel_err < 0.02,
+                "Q8 precision loss too high: {orig} -> {rec}"
+            );
         }
     }
 
@@ -2432,7 +2433,10 @@ mod tests {
         for (orig, rec) in original.iter().zip(recovered.iter()) {
             let diff = (orig - rec).abs();
             // Q4 can have up to ~15% error per value due to only 16 quantization levels
-            assert!(diff < 1.5, "Q4 error too high: {orig} -> {rec} (diff={diff})");
+            assert!(
+                diff < 1.5,
+                "Q4 error too high: {orig} -> {rec} (diff={diff})"
+            );
         }
     }
 
@@ -2453,7 +2457,10 @@ mod tests {
 
         // F16 should be ~50% the size of F32 for tensor data
         let ratio = bytes_f16.len() as f32 / bytes_f32.len() as f32;
-        assert!(ratio < 0.6, "F16 should be <60% of F32 size, got {ratio:.2}");
+        assert!(
+            ratio < 0.6,
+            "F16 should be <60% of F32 size, got {ratio:.2}"
+        );
     }
 
     /// Verify Q4 produces much smaller files than F32
@@ -2474,7 +2481,10 @@ mod tests {
         // Q4 should be ~15-20% the size of F32 (32 blocks × 18 bytes = 576 vs 4096)
         // Actual ratio depends on metadata overhead for small tensors
         let ratio = bytes_q4.len() as f32 / bytes_f32.len() as f32;
-        assert!(ratio < 0.30, "Q4 should be <30% of F32 size, got {ratio:.2}");
+        assert!(
+            ratio < 0.30,
+            "Q4 should be <30% of F32 size, got {ratio:.2}"
+        );
     }
 
     /// Test f16 conversion edge cases

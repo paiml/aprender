@@ -262,7 +262,7 @@ dependencies = [
  "ratatui",
  "realizar",
  "regex",
- "renacer 0.9.7",
+ "renacer 0.9.8",
  "rmp-serde",
  "serde",
  "serde_json",
@@ -303,7 +303,7 @@ dependencies = [
  "rand 0.8.5",
  "rand_chacha 0.3.1",
  "rayon",
- "renacer 0.9.7 (registry+https://github.com/rust-lang/crates.io-index)",
+ "renacer 0.9.7",
  "rmp-serde",
  "rustfft",
  "safetensors 0.4.5",
@@ -4826,43 +4826,6 @@ checksum = "7a2d987857b319362043e95f5353c0535c1f58eec5336fdfcf626430af7def58"
 [[package]]
 name = "renacer"
 version = "0.9.7"
-dependencies = [
- "addr2line",
- "anyhow",
- "aprender 0.24.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "backtrace",
- "clap",
- "crossbeam",
- "crossterm",
- "dashmap",
- "fnv",
- "gimli",
- "hex",
- "libc",
- "memmap2",
- "nix",
- "object 0.38.1",
- "rand 0.8.5",
- "ratatui",
- "regex",
- "rmp-serde",
- "serde",
- "serde_json",
- "sha2",
- "static_assertions",
- "thiserror 2.0.18",
- "toml",
- "tracing",
- "tracing-subscriber",
- "trueno 0.13.0",
- "trueno-db",
- "trueno-graph",
- "trueno-viz",
-]
-
-[[package]]
-name = "renacer"
-version = "0.9.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "468b7d12aacb741808f94d47af264349c045c0644a93369f54156e3ad934194b"
 dependencies = [
@@ -4894,6 +4857,43 @@ dependencies = [
  "static_assertions",
  "thiserror 2.0.18",
  "tokio",
+ "toml",
+ "tracing",
+ "tracing-subscriber",
+ "trueno 0.13.0",
+ "trueno-db",
+ "trueno-graph",
+ "trueno-viz",
+]
+
+[[package]]
+name = "renacer"
+version = "0.9.8"
+dependencies = [
+ "addr2line",
+ "anyhow",
+ "aprender 0.24.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "backtrace",
+ "clap",
+ "crossbeam",
+ "crossterm",
+ "dashmap",
+ "fnv",
+ "gimli",
+ "hex",
+ "libc",
+ "memmap2",
+ "nix",
+ "object 0.38.1",
+ "rand 0.8.5",
+ "ratatui",
+ "regex",
+ "rmp-serde",
+ "serde",
+ "serde_json",
+ "sha2",
+ "static_assertions",
+ "thiserror 2.0.18",
  "toml",
  "tracing",
  "tracing-subscriber",

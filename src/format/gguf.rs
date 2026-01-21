@@ -1141,13 +1141,19 @@ impl GgufReader {
             6 => {
                 // Q5_0 - dequantize (blocks of 32 with 5-bit quants)
                 // TODO: implement Q5_0 dequantization
-                eprintln!("Warning: Q5_0 dtype 6 not fully implemented for tensor '{}'", name);
+                eprintln!(
+                    "Warning: Q5_0 dtype 6 not fully implemented for tensor '{}'",
+                    name
+                );
                 vec![0.0; num_elements]
             }
             7 => {
                 // Q5_1 - dequantize (blocks of 32 with 5-bit quants + min)
                 // TODO: implement Q5_1 dequantization
-                eprintln!("Warning: Q5_1 dtype 7 not fully implemented for tensor '{}'", name);
+                eprintln!(
+                    "Warning: Q5_1 dtype 7 not fully implemented for tensor '{}'",
+                    name
+                );
                 vec![0.0; num_elements]
             }
             8 => {
@@ -1225,12 +1231,12 @@ impl GgufReader {
 
         // Calculate byte size based on dtype (GGML dtype values)
         let byte_size = match meta.dtype {
-            0 => num_elements * 4,      // F32
-            1 => num_elements * 2,      // F16
-            2 => (num_elements / 32) * 18,  // Q4_0: 32 elements = 2 (scale) + 16 (quants)
-            3 => (num_elements / 32) * 20,  // Q4_1: 32 elements = 2 (scale) + 2 (min) + 16 (quants)
-            8 => (num_elements / 32) * 34,  // Q8_0: 32 elements = 2 (scale) + 32 (quants)
-            10 => (num_elements / 256) * 84,  // Q2_K: 256 elements = 84 bytes
+            0 => num_elements * 4,            // F32
+            1 => num_elements * 2,            // F16
+            2 => (num_elements / 32) * 18,    // Q4_0: 32 elements = 2 (scale) + 16 (quants)
+            3 => (num_elements / 32) * 20, // Q4_1: 32 elements = 2 (scale) + 2 (min) + 16 (quants)
+            8 => (num_elements / 32) * 34, // Q8_0: 32 elements = 2 (scale) + 32 (quants)
+            10 => (num_elements / 256) * 84, // Q2_K: 256 elements = 84 bytes
             11 => (num_elements / 256) * 110, // Q3_K: 256 elements = 110 bytes
             12 => (num_elements / 256) * 144, // Q4_K: 256 elements = 144 bytes
             13 => (num_elements / 256) * 176, // Q5_K: 256 elements = 176 bytes

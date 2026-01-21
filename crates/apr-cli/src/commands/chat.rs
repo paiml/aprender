@@ -101,7 +101,10 @@ pub(crate) fn run(
 
     // Setup trace config if tracing enabled (APR-TRACE-001)
     if trace {
-        eprintln!("{}", "Inference tracing enabled for chat (APR-TRACE-001)".cyan());
+        eprintln!(
+            "{}",
+            "Inference tracing enabled for chat (APR-TRACE-001)".cyan()
+        );
         if let Some(ref steps) = trace_steps {
             eprintln!("  Trace steps: {}", steps.join(", "));
         }
@@ -185,7 +188,7 @@ fn clean_chat_response(raw: &str) -> String {
     // Ċ (U+010A) represents newline in some BPE tokenizers
     cleaned = cleaned.replace('\u{010A}', "\n");
     // Other common BPE artifacts
-    cleaned = cleaned.replace("Ġ", " ");  // In case it's literal "Ġ" string
+    cleaned = cleaned.replace("Ġ", " "); // In case it's literal "Ġ" string
     cleaned = cleaned.replace("Ċ", "\n"); // In case it's literal "Ċ" string
 
     // F-PIPE-166b: Normalize repeated punctuation (e.g., "!!!" -> "!")
@@ -630,8 +633,14 @@ mod realizar_chat {
 
             // APR-TRACE-001: Debug formatted prompt
             if config.trace {
-                eprintln!("[APR-TRACE] Formatted prompt ({} chars):", formatted_prompt.len());
-                eprintln!("[APR-TRACE] {:?}", &formatted_prompt[..formatted_prompt.len().min(500)]);
+                eprintln!(
+                    "[APR-TRACE] Formatted prompt ({} chars):",
+                    formatted_prompt.len()
+                );
+                eprintln!(
+                    "[APR-TRACE] {:?}",
+                    &formatted_prompt[..formatted_prompt.len().min(500)]
+                );
             }
 
             // For GGUF, use embedded tokenizer directly (correct special token IDs)
@@ -723,7 +732,11 @@ mod realizar_chat {
         /// - <|endoftext|> (should be 151643)
         ///
         /// This function uses the GGUF's embedded tokenizer for both encode and decode.
-        fn generate_gguf_with_prompt(&self, prompt: &str, config: &ChatConfig) -> Result<String, String> {
+        fn generate_gguf_with_prompt(
+            &self,
+            prompt: &str,
+            config: &ChatConfig,
+        ) -> Result<String, String> {
             use realizar::gguf::{MappedGGUFModel, OwnedQuantizedModel, QuantizedGenerateConfig};
 
             // Load GGUF model with mmap
@@ -731,16 +744,25 @@ mod realizar_chat {
                 .map_err(|e| format!("Failed to mmap GGUF: {e}"))?;
 
             // Encode prompt using GGUF's embedded tokenizer (correct special token IDs)
-            let prompt_tokens = mapped.model.encode(prompt)
+            let prompt_tokens = mapped
+                .model
+                .encode(prompt)
                 .ok_or_else(|| "Failed to encode prompt with GGUF tokenizer".to_string())?;
             let prompt_len = prompt_tokens.len();
 
             // APR-TRACE-001: Debug token IDs
             if config.trace {
-                eprintln!("[APR-TRACE] Prompt tokens ({} tokens): {:?}", prompt_len, &prompt_tokens[..prompt_len.min(50)]);
+                eprintln!(
+                    "[APR-TRACE] Prompt tokens ({} tokens): {:?}",
+                    prompt_len,
+                    &prompt_tokens[..prompt_len.min(50)]
+                );
                 // Decode tokens to verify they're correct
                 let decoded = mapped.model.decode(&prompt_tokens);
-                eprintln!("[APR-TRACE] Decoded: {:?}", &decoded[..decoded.len().min(200)]);
+                eprintln!(
+                    "[APR-TRACE] Decoded: {:?}",
+                    &decoded[..decoded.len().min(200)]
+                );
             }
 
             let model = OwnedQuantizedModel::from_mapped(&mapped)
@@ -786,7 +808,7 @@ mod realizar_chat {
                             let debug_gen_config = realizar::gguf::QuantizedGenerateConfig {
                                 max_tokens: gen_config.max_tokens,
                                 temperature: 0.01, // Near-zero but forces logits path
-                                top_k: 10, // Get top-10 for debugging
+                                top_k: 10,         // Get top-10 for debugging
                                 stop_tokens: gen_config.stop_tokens.clone(),
                             };
 
@@ -803,7 +825,11 @@ mod realizar_chat {
 
                             // APR-TRACE-001: Debug generated tokens
                             if config.trace {
-                                eprintln!("[APR-TRACE] Generated {} new tokens: {:?}", new_tokens.len(), &new_tokens[..new_tokens.len().min(50)]);
+                                eprintln!(
+                                    "[APR-TRACE] Generated {} new tokens: {:?}",
+                                    new_tokens.len(),
+                                    &new_tokens[..new_tokens.len().min(50)]
+                                );
 
                                 // Decode each token individually to find spacing bug
                                 for (i, &tok) in new_tokens.iter().take(20).enumerate() {
@@ -831,7 +857,7 @@ mod realizar_chat {
 
             // APR-TRACE-001: Use traced generation when --trace is enabled
             let output_tokens = if config.trace {
-                use realizar::{InferenceTracer, TraceConfig, ModelInfo};
+                use realizar::{InferenceTracer, ModelInfo, TraceConfig};
 
                 let trace_config = TraceConfig {
                     enabled: true,
@@ -851,9 +877,7 @@ mod realizar_chat {
                 });
 
                 // Create decode closure for tracing
-                let _decode_fn = |token_id: u32| -> String {
-                    mapped.model.decode(&[token_id])
-                };
+                let _decode_fn = |token_id: u32| -> String { mapped.model.decode(&[token_id]) };
 
                 // APR-TRACE-001: CPU traced generation not yet implemented
                 eprintln!("Warning: CPU traced generation not implemented, using non-traced path");
@@ -1555,7 +1579,10 @@ mod tests {
         assert!(config.system.is_none());
         assert!(!config.inspect);
         // F-GPU-134b: Default to GPU (force_cpu = false)
-        assert!(!config.force_cpu, "F-GPU-134b: force_cpu should default to false");
+        assert!(
+            !config.force_cpu,
+            "F-GPU-134b: force_cpu should default to false"
+        );
     }
 
     // F-PIPE-166b: Test tokenizer artifact cleaning

@@ -961,9 +961,8 @@ fn decompress_payload(data: &[u8], compression: Compression) -> Result<Vec<u8>> 
                 .to_string(),
         }),
         #[cfg(feature = "format-compression")]
-        Compression::Lz4 => lz4_flex::decompress_size_prepended(data).map_err(|e| {
-            AprenderError::Serialization(format!("LZ4 decompression failed: {e}"))
-        }),
+        Compression::Lz4 => lz4_flex::decompress_size_prepended(data)
+            .map_err(|e| AprenderError::Serialization(format!("LZ4 decompression failed: {e}"))),
         #[cfg(not(feature = "format-compression"))]
         Compression::Lz4 => Err(AprenderError::FormatError {
             message: "LZ4 compression not supported (enable format-compression feature)"
@@ -2827,8 +2826,8 @@ mod tests {
         );
 
         // Decompress and verify
-        let decompressed =
-            decompress_payload(&compressed, Compression::Lz4).expect("lz4 decompress should succeed");
+        let decompressed = decompress_payload(&compressed, Compression::Lz4)
+            .expect("lz4 decompress should succeed");
 
         assert_eq!(decompressed, data);
     }

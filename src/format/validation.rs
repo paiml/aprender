@@ -1397,7 +1397,10 @@ mod tests_section_a {
             .iter()
             .find(|c| c.id == 1)
             .unwrap();
-        assert!(check.status.is_pass(), "APR\\0 magic should pass (unified format)");
+        assert!(
+            check.status.is_pass(),
+            "APR\\0 magic should pass (unified format)"
+        );
     }
 
     #[test]

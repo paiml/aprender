@@ -29,9 +29,9 @@ pub fn run(model_ref: &str, force: bool) -> Result<()> {
         println!("{} Model already cached", "✓".green());
 
         // Get the cached path
-        let result = fetcher.pull_quiet(model_ref).map_err(|e| {
-            CliError::ValidationFailed(format!("Failed to get cached model: {e}"))
-        })?;
+        let result = fetcher
+            .pull_quiet(model_ref)
+            .map_err(|e| CliError::ValidationFailed(format!("Failed to get cached model: {e}")))?;
 
         println!("  Path: {}", result.path.display());
         println!("  Size: {}", result.size_human());
@@ -156,9 +156,9 @@ pub fn remove(model_ref: &str) -> Result<()> {
         CliError::ValidationFailed(format!("Failed to initialize model fetcher: {e}"))
     })?;
 
-    let removed = fetcher.remove(model_ref).map_err(|e| {
-        CliError::ValidationFailed(format!("Failed to remove model: {e}"))
-    })?;
+    let removed = fetcher
+        .remove(model_ref)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to remove model: {e}")))?;
 
     if removed {
         println!("{} Model removed from cache", "✓".green());

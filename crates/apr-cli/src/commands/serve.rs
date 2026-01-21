@@ -970,7 +970,10 @@ fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
     );
 
     if is_transformer {
-        println!("{}", "Transformer model detected - inference enabled".cyan());
+        println!(
+            "{}",
+            "Transformer model detected - inference enabled".cyan()
+        );
     }
 
     // Load tokenizer if available
@@ -1749,7 +1752,10 @@ fn start_gguf_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
     if config.gpu && !config.no_gpu {
         use realizar::gguf::OwnedQuantizedModelCuda;
 
-        println!("{}", "Enabling optimized CUDA acceleration (PAR-111)...".cyan());
+        println!(
+            "{}",
+            "Enabling optimized CUDA acceleration (PAR-111)...".cyan()
+        );
 
         // Create CUDA-optimized model wrapper (this initializes GPU KV cache)
         match OwnedQuantizedModelCuda::new(quantized_model, 0) {
@@ -1760,30 +1766,31 @@ fn start_gguf_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
                     Ok(bytes) => {
                         println!(
                             "{}",
-                            format!(
-                                "  Pre-uploaded {} MB weights to GPU",
-                                bytes / (1024 * 1024)
-                            )
-                            .green()
+                            format!("  Pre-uploaded {} MB weights to GPU", bytes / (1024 * 1024))
+                                .green()
                         );
                     }
                     Err(e) => {
                         eprintln!(
                             "{}",
-                            format!("  Warning: Weight preload failed, using on-demand: {e}").yellow()
+                            format!("  Warning: Weight preload failed, using on-demand: {e}")
+                                .yellow()
                         );
                     }
                 }
 
                 println!("{}", "CUDA optimized model ready".green());
 
-                let state = AppState::with_cuda_model_and_vocab(cuda_model, vocab)
-                    .map_err(|e| CliError::InferenceFailed(format!("Failed to create state: {e}")))?;
+                let state =
+                    AppState::with_cuda_model_and_vocab(cuda_model, vocab).map_err(|e| {
+                        CliError::InferenceFailed(format!("Failed to create state: {e}"))
+                    })?;
 
                 let app = create_router(state);
 
-                let runtime = tokio::runtime::Runtime::new()
-                    .map_err(|e| CliError::InferenceFailed(format!("Failed to create runtime: {e}")))?;
+                let runtime = tokio::runtime::Runtime::new().map_err(|e| {
+                    CliError::InferenceFailed(format!("Failed to create runtime: {e}"))
+                })?;
 
                 let bind_addr = config.bind_addr();
 
@@ -1820,13 +1827,17 @@ fn start_gguf_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
                 });
             }
             Err(e) => {
-                eprintln!("{}", format!("CUDA init failed, falling back to CPU: {e}").yellow());
+                eprintln!(
+                    "{}",
+                    format!("CUDA init failed, falling back to CPU: {e}").yellow()
+                );
                 // Fall through to CPU path - rebuild the model since we consumed it
             }
         }
         // Rebuild quantized model for CPU fallback if CUDA failed
-        let quantized_model = OwnedQuantizedModel::from_mapped(&mapped_model)
-            .map_err(|e| CliError::ModelLoadFailed(format!("Failed to rebuild quantized model: {e}")))?;
+        let quantized_model = OwnedQuantizedModel::from_mapped(&mapped_model).map_err(|e| {
+            CliError::ModelLoadFailed(format!("Failed to rebuild quantized model: {e}"))
+        })?;
         let vocab = mapped_model.model.vocabulary().unwrap_or_else(|| {
             (0..quantized_model.config.vocab_size)
                 .map(|i| format!("token{i}"))
@@ -1914,7 +1925,10 @@ fn start_gguf_server_gpu_batched(
     use realizar::api::{create_router, spawn_batch_processor, AppState, BatchConfig};
     use realizar::gguf::OwnedQuantizedModelCachedSync;
 
-    println!("{}", "Enabling GPU batched inference (2X+ Ollama)...".cyan());
+    println!(
+        "{}",
+        "Enabling GPU batched inference (2X+ Ollama)...".cyan()
+    );
 
     // Create tokio runtime FIRST (needed for batch processor spawn)
     let runtime = tokio::runtime::Runtime::new()
@@ -2275,7 +2289,9 @@ async fn safetensors_chat_completions_handler(
         None => {
             return (
                 StatusCode::SERVICE_UNAVAILABLE,
-                axum::Json(serde_json::json!({"error": "Inference not available - missing config.json"})),
+                axum::Json(
+                    serde_json::json!({"error": "Inference not available - missing config.json"}),
+                ),
             )
                 .into_response();
         }
@@ -2402,10 +2418,7 @@ async fn safetensors_generate_handler(
     use axum::http::StatusCode;
     use axum::response::IntoResponse;
 
-    let prompt = request
-        .get("prompt")
-        .and_then(|p| p.as_str())
-        .unwrap_or("");
+    let prompt = request.get("prompt").and_then(|p| p.as_str()).unwrap_or("");
     let max_tokens = request
         .get("max_tokens")
         .and_then(|m| m.as_u64())

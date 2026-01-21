@@ -386,7 +386,7 @@ fn extract_json_string(json: &str, key: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     use tempfile::NamedTempFile;
 
     #[test]
