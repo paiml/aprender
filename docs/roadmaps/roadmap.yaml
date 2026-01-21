@@ -1685,11 +1685,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'SERVE-STREAM-001: Fix SSE streaming not visible to OpenAI SDK clients'
-  status: planned
+  status: completed
   priority: high
   assigned_to: null
   created: 2026-01-21T18:31:33Z
-  updated: 2026-01-21T18:34:12Z
+  updated: 2026-01-21T20:00:00Z
   spec: null
   acceptance_criteria:
   - |-
@@ -1709,11 +1709,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'SERVE-CHAT-001: Fix prompt injection in chat completions (extra Human/Assistant turns)'
-  status: planned
+  status: completed
   priority: high
   assigned_to: null
   created: 2026-01-21T18:31:34Z
-  updated: 2026-01-21T18:34:13Z
+  updated: 2026-01-21T20:00:00Z
   spec: null
   acceptance_criteria:
   - |-
