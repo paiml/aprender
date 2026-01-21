@@ -913,7 +913,7 @@ The verification pipeline has been hardened with "Poison Detection":
 
 ---
 
-## 8. Definition of Done
+## 9. Definition of Done
 
 1. `scripts/showcase-qa.sh` exits 0
 2. 300-point falsification: ≥ 290 pass
@@ -927,7 +927,7 @@ The verification pipeline has been hardened with "Poison Detection":
 
 ---
 
-## 9. Falsification Criteria & Pivot Strategy
+## 10. Falsification Criteria & Pivot Strategy
 
 We define "Success" not as a working feature, but as the **failure to falsify the hypothesis**.
 
