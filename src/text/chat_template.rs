@@ -2010,7 +2010,10 @@ mod tests {
         };
         let template = ChatMLTemplate::with_tokens(tokens);
         // Check tokens are stored correctly
-        assert_eq!(template.special_tokens().bos_token, Some("<bos>".to_string()));
+        assert_eq!(
+            template.special_tokens().bos_token,
+            Some("<bos>".to_string())
+        );
     }
 
     /// Test TemplateFormat Debug

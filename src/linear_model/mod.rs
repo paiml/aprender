@@ -1588,6 +1588,5 @@ impl Estimator for ElasticNet {
     }
 }
 
-
 #[cfg(test)]
 mod tests;

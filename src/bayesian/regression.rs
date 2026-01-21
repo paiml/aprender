@@ -818,7 +818,8 @@ mod tests {
         model.fit(&x_train, &y_train).expect("Fit should succeed");
 
         // Predict with wrong number of features
-        let x_test = Matrix::from_vec(2, 3, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]).expect("Valid matrix");
+        let x_test =
+            Matrix::from_vec(2, 3, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]).expect("Valid matrix");
         let result = model.predict(&x_test);
 
         assert!(result.is_err());

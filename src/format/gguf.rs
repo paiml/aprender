@@ -2657,7 +2657,10 @@ mod tests {
     #[test]
     fn test_reader_hidden_size_uint32() {
         let mut metadata = BTreeMap::new();
-        metadata.insert("llama.embedding_length".to_string(), GgufValue::Uint32(4096));
+        metadata.insert(
+            "llama.embedding_length".to_string(),
+            GgufValue::Uint32(4096),
+        );
         let reader = make_test_reader(metadata);
         assert_eq!(reader.hidden_size(), Some(4096));
     }
@@ -2827,10 +2830,7 @@ mod tests {
     #[test]
     fn test_reader_context_length_uint32() {
         let mut metadata = BTreeMap::new();
-        metadata.insert(
-            "llama.context_length".to_string(),
-            GgufValue::Uint32(4096),
-        );
+        metadata.insert("llama.context_length".to_string(), GgufValue::Uint32(4096));
         let reader = make_test_reader(metadata);
         assert_eq!(reader.context_length(), Some(4096));
     }
@@ -2838,10 +2838,7 @@ mod tests {
     #[test]
     fn test_reader_context_length_uint64() {
         let mut metadata = BTreeMap::new();
-        metadata.insert(
-            "llama.context_length".to_string(),
-            GgufValue::Uint64(4096),
-        );
+        metadata.insert("llama.context_length".to_string(), GgufValue::Uint64(4096));
         let reader = make_test_reader(metadata);
         assert_eq!(reader.context_length(), Some(4096));
     }
@@ -2866,10 +2863,7 @@ mod tests {
     #[test]
     fn test_reader_rope_theta_uint32() {
         let mut metadata = BTreeMap::new();
-        metadata.insert(
-            "llama.rope.freq_base".to_string(),
-            GgufValue::Uint32(10000),
-        );
+        metadata.insert("llama.rope.freq_base".to_string(), GgufValue::Uint32(10000));
         let reader = make_test_reader(metadata);
         assert_eq!(reader.rope_theta(), Some(10000.0));
     }

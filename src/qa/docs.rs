@@ -711,7 +711,11 @@ mod tests {
         let results = run_all_docs_tests(&config);
 
         for result in &results {
-            assert!(!result.name.is_empty(), "Result {} has empty name", result.id);
+            assert!(
+                !result.name.is_empty(),
+                "Result {} has empty name",
+                result.id
+            );
             assert!(
                 !result.details.is_empty(),
                 "Result {} has empty details",

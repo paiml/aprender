@@ -1466,8 +1466,8 @@ pub fn is_positive(n: i32) -> bool {
             .expect("Should build");
 
         let source = "let x = 42;";
-        let fix =
-            SuggestedFix::new("replacement".to_string(), 0.9, "Test".to_string()).with_span(100, 105); // start >= source.len()
+        let fix = SuggestedFix::new("replacement".to_string(), 0.9, "Test".to_string())
+            .with_span(100, 105); // start >= source.len()
 
         let result = citl.apply_fix(source, &fix);
         assert_eq!(result, source); // Should return original source unchanged
@@ -1726,7 +1726,9 @@ pub fn is_positive(n: i32) -> bool {
         }
 
         // Tier 2: Medium
-        let medium_codes = ["E0382", "E0502", "E0499", "E0596", "E0507", "E0282", "E0106"];
+        let medium_codes = [
+            "E0382", "E0502", "E0499", "E0596", "E0507", "E0282", "E0106",
+        ];
         for code in &medium_codes {
             let ec = codes.get(*code).expect("Code should exist");
             assert!(
@@ -1739,7 +1741,10 @@ pub fn is_positive(n: i32) -> bool {
         let hard_codes = ["E0597", "E0621", "E0495", "E0623", "E0277"];
         for code in &hard_codes {
             let ec = codes.get(*code).expect("Code should exist");
-            assert!(ec.difficulty == Difficulty::Hard, "Expected Hard for {code}");
+            assert!(
+                ec.difficulty == Difficulty::Hard,
+                "Expected Hard for {code}"
+            );
         }
 
         // Tier 4: Expert

@@ -2226,6 +2226,5 @@ fn kahan_diff(a: &[f64], b: &[f64]) -> f64 {
     sum
 }
 
-
 #[cfg(test)]
 mod tests;

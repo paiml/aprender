@@ -2799,6 +2799,5 @@ impl Default for GradientBoostingClassifier {
     }
 }
 
-
 #[cfg(test)]
 mod tests;

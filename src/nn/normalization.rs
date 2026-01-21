@@ -1722,7 +1722,9 @@ mod tests {
     fn test_batch_norm_large_values() {
         let norm = BatchNorm1d::new(4);
         let x = Tensor::new(
-            &[1000.0, 2000.0, 3000.0, 4000.0, 1001.0, 2001.0, 3001.0, 4001.0],
+            &[
+                1000.0, 2000.0, 3000.0, 4000.0, 1001.0, 2001.0, 3001.0, 4001.0,
+            ],
             &[2, 4],
         );
         let y = norm.forward(&x);

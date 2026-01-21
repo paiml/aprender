@@ -1030,7 +1030,9 @@ mod tests {
 
     #[test]
     fn test_corpus_source_clone() {
-        let original = CorpusSource::new("test", vec![]).with_weight(2.0).with_priority(3);
+        let original = CorpusSource::new("test", vec![])
+            .with_weight(2.0)
+            .with_priority(3);
         let cloned = original.clone();
         assert_eq!(original.name, cloned.name);
         assert_eq!(original.weight, cloned.weight);

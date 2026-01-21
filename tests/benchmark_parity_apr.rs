@@ -56,9 +56,15 @@ struct FormatBenchmark {
 impl FormatBenchmark {
     fn print(&self) {
         println!("\n=== {} ===", self.format_name);
-        println!("  File size:   {:.2} MB", self.file_size_bytes as f64 / 1_048_576.0);
+        println!(
+            "  File size:   {:.2} MB",
+            self.file_size_bytes as f64 / 1_048_576.0
+        );
         println!("  Load time:   {:.2} ms", self.load_time_ms);
-        println!("  Uses mmap:   {}", if self.uses_mmap { "YES" } else { "NO" });
+        println!(
+            "  Uses mmap:   {}",
+            if self.uses_mmap { "YES" } else { "NO" }
+        );
         println!("  Notes:       {}", self.notes);
     }
 }
@@ -75,7 +81,10 @@ fn test_apr_uses_mmap() {
 
     if !path.exists() {
         println!("[SKIP] APR model not found at: {}", apr_path);
-        println!("Set {} environment variable to specify a different path", APR_MODEL_ENV);
+        println!(
+            "Set {} environment variable to specify a different path",
+            APR_MODEL_ENV
+        );
         return;
     }
 
@@ -102,7 +111,10 @@ fn test_apr_uses_mmap() {
             println!("[PASS] APR file is uncompressed - will use mmap");
         }
 
-        assert!(!is_compressed, "For mmap benchmark, APR should be uncompressed");
+        assert!(
+            !is_compressed,
+            "For mmap benchmark, APR should be uncompressed"
+        );
     }
 }
 
@@ -154,7 +166,8 @@ fn test_apr_load_time() {
 /// Benchmark GGUF load time for comparison
 #[test]
 fn test_gguf_load_time() {
-    let gguf_path = std::env::var(GGUF_MODEL_ENV).unwrap_or_else(|_| GGUF_MODEL_DEFAULT.to_string());
+    let gguf_path =
+        std::env::var(GGUF_MODEL_ENV).unwrap_or_else(|_| GGUF_MODEL_DEFAULT.to_string());
     let path = Path::new(&gguf_path);
 
     if !path.exists() {
@@ -204,15 +217,24 @@ fn test_gguf_load_time() {
 #[test]
 fn test_format_parity_mmap() {
     let apr_path = std::env::var(APR_MODEL_ENV).unwrap_or_else(|_| APR_MODEL_DEFAULT.to_string());
-    let gguf_path = std::env::var(GGUF_MODEL_ENV).unwrap_or_else(|_| GGUF_MODEL_DEFAULT.to_string());
+    let gguf_path =
+        std::env::var(GGUF_MODEL_ENV).unwrap_or_else(|_| GGUF_MODEL_DEFAULT.to_string());
 
     let apr_exists = Path::new(&apr_path).exists();
     let gguf_exists = Path::new(&gguf_path).exists();
 
     if !apr_exists || !gguf_exists {
         println!("[SKIP] Both models required for parity test");
-        println!("  APR:  {} ({})", apr_path, if apr_exists { "found" } else { "missing" });
-        println!("  GGUF: {} ({})", gguf_path, if gguf_exists { "found" } else { "missing" });
+        println!(
+            "  APR:  {} ({})",
+            apr_path,
+            if apr_exists { "found" } else { "missing" }
+        );
+        println!(
+            "  GGUF: {} ({})",
+            gguf_path,
+            if gguf_exists { "found" } else { "missing" }
+        );
         return;
     }
 
@@ -311,7 +333,11 @@ fn test_apr_zero_copy_access() {
         let sample: Vec<u8> = tensor_data[..16.min(tensor_data.len())].to_vec();
         let elapsed = start.elapsed();
 
-        println!("Sample read: {:?} in {:?}", &sample[..4.min(sample.len())], elapsed);
+        println!(
+            "Sample read: {:?} in {:?}",
+            &sample[..4.min(sample.len())],
+            elapsed
+        );
         println!("\n[PASS] Zero-copy tensor access verified");
     }
 }

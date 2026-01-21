@@ -1139,6 +1139,5 @@ fn score_security_safety(
     dim
 }
 
-
 #[cfg(test)]
 mod tests;

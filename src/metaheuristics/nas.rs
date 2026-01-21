@@ -925,8 +925,11 @@ mod tests {
 
     #[test]
     fn test_mutation_change_type() {
-        let space = NasSearchSpace::new()
-            .with_layer_types(vec![LayerType::Dense, LayerType::Conv2d, LayerType::Dropout]);
+        let space = NasSearchSpace::new().with_layer_types(vec![
+            LayerType::Dense,
+            LayerType::Conv2d,
+            LayerType::Dropout,
+        ]);
         let mut genome = NasGenome::from_layers(vec![LayerConfig::new(LayerType::Dense)]);
 
         let mut rng = StdRng::seed_from_u64(42);
@@ -939,9 +942,8 @@ mod tests {
     #[test]
     fn test_mutation_modify_params() {
         let space = NasSearchSpace::new().with_units_range(32, 256);
-        let mut genome = NasGenome::from_layers(vec![
-            LayerConfig::new(LayerType::Dense).with_units(128),
-        ]);
+        let mut genome =
+            NasGenome::from_layers(vec![LayerConfig::new(LayerType::Dense).with_units(128)]);
 
         let mut rng = StdRng::seed_from_u64(42);
         mutate_genome(&mut genome, NasMutation::ModifyParams, &space, &mut rng);
@@ -997,9 +999,8 @@ mod tests {
     #[test]
     fn test_crossover_with_empty_parent1() {
         let parent1 = NasGenome::new();
-        let parent2 = NasGenome::from_layers(vec![
-            LayerConfig::new(LayerType::Dense).with_units(64),
-        ]);
+        let parent2 =
+            NasGenome::from_layers(vec![LayerConfig::new(LayerType::Dense).with_units(64)]);
 
         let mut rng = StdRng::seed_from_u64(42);
         let child = crossover_genomes(&parent1, &parent2, &mut rng);
@@ -1009,9 +1010,8 @@ mod tests {
 
     #[test]
     fn test_crossover_with_empty_parent2() {
-        let parent1 = NasGenome::from_layers(vec![
-            LayerConfig::new(LayerType::Dense).with_units(64),
-        ]);
+        let parent1 =
+            NasGenome::from_layers(vec![LayerConfig::new(LayerType::Dense).with_units(64)]);
         let parent2 = NasGenome::new();
 
         let mut rng = StdRng::seed_from_u64(42);
@@ -1130,7 +1130,7 @@ mod tests {
         let space = NasSearchSpace::new().with_activation_choices(&["relu", "tanh"]);
 
         let genome = NasGenome::from_layers(vec![
-            LayerConfig::new(LayerType::Dense).with_activation("unknown_activation"),
+            LayerConfig::new(LayerType::Dense).with_activation("unknown_activation")
         ]);
 
         // Should not panic, returns 0 for unknown activation

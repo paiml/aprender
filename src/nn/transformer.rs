@@ -2655,7 +2655,6 @@ mod tests {
         assert!((sum - 1.0).abs() < 1e-5);
     }
 
-
     #[test]
     fn test_generate_causal_mask_small() {
         let mask = generate_causal_mask(2);
@@ -2664,7 +2663,7 @@ mod tests {
         assert_eq!(mask.data()[0], 0.0); // [0,0]
         assert_eq!(mask.data()[2], 0.0); // [1,0]
         assert_eq!(mask.data()[3], 0.0); // [1,1]
-        // Upper triangle should be -inf
+                                         // Upper triangle should be -inf
         assert!(mask.data()[1].is_infinite()); // [0,1]
     }
 

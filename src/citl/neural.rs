@@ -2054,8 +2054,7 @@ mod tests {
 
         // Get embedding in eval mode
         encoder.eval();
-        let emb_eval =
-            encoder.encode("E0308: mismatched types", "let x: i32 = \"hello\";", "rust");
+        let emb_eval = encoder.encode("E0308: mismatched types", "let x: i32 = \"hello\";", "rust");
 
         // Get embedding in train mode (dropout active)
         encoder.train();

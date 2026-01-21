@@ -3955,6 +3955,5 @@ impl Optimizer for SGD {
     }
 }
 
-
 #[cfg(test)]
 mod tests;

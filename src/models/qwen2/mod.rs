@@ -2081,7 +2081,10 @@ mod tests {
     fn test_from_safetensors_error_path() {
         let config = create_tiny_config();
         // Try loading from non-existent path
-        let result = Qwen2Model::from_safetensors(&config, std::path::Path::new("/nonexistent/path.safetensors"));
+        let result = Qwen2Model::from_safetensors(
+            &config,
+            std::path::Path::new("/nonexistent/path.safetensors"),
+        );
         assert!(result.is_err());
     }
 
@@ -2107,7 +2110,8 @@ mod tests {
         let config = create_tiny_config();
         let mut model = Qwen2Model::new(&config);
         // Try loading from non-existent path
-        let result = model.load_from_safetensors(std::path::Path::new("/nonexistent/path.safetensors"));
+        let result =
+            model.load_from_safetensors(std::path::Path::new("/nonexistent/path.safetensors"));
         assert!(result.is_err());
     }
 
@@ -2632,9 +2636,9 @@ mod tests {
 
     #[test]
     fn test_load_from_apr_with_file() {
+        use crate::format::v2::{AprV2Metadata, AprV2Writer};
         use std::io::Write;
         use tempfile::NamedTempFile;
-        use crate::format::v2::{AprV2Writer, AprV2Metadata};
 
         let config = create_tiny_config();
 
@@ -2744,9 +2748,9 @@ mod tests {
 
     #[test]
     fn test_load_from_apr_weight_tying() {
+        use crate::format::v2::{AprV2Metadata, AprV2Writer};
         use std::io::Write;
         use tempfile::NamedTempFile;
-        use crate::format::v2::{AprV2Writer, AprV2Metadata};
 
         let config = create_tiny_config();
 
@@ -2764,7 +2768,11 @@ mod tests {
         );
 
         // Add norm weight
-        writer.add_f32_tensor("norm.weight", vec![config.hidden_size], &vec![1.0; config.hidden_size]);
+        writer.add_f32_tensor(
+            "norm.weight",
+            vec![config.hidden_size],
+            &vec![1.0; config.hidden_size],
+        );
 
         // NO lm_head.weight - should fall back to embed_tokens.weight
 
@@ -2776,15 +2784,51 @@ mod tests {
             let head_dim = h / config.num_attention_heads;
             let kv_dim = config.num_kv_heads * head_dim;
 
-            writer.add_f32_tensor(&format!("{prefix}.self_attn.q_proj.weight"), vec![h, h], &vec![0.01; h * h]);
-            writer.add_f32_tensor(&format!("{prefix}.self_attn.k_proj.weight"), vec![kv_dim, h], &vec![0.01; kv_dim * h]);
-            writer.add_f32_tensor(&format!("{prefix}.self_attn.v_proj.weight"), vec![kv_dim, h], &vec![0.01; kv_dim * h]);
-            writer.add_f32_tensor(&format!("{prefix}.self_attn.o_proj.weight"), vec![h, h], &vec![0.01; h * h]);
-            writer.add_f32_tensor(&format!("{prefix}.mlp.gate_proj.weight"), vec![i, h], &vec![0.01; i * h]);
-            writer.add_f32_tensor(&format!("{prefix}.mlp.up_proj.weight"), vec![i, h], &vec![0.01; i * h]);
-            writer.add_f32_tensor(&format!("{prefix}.mlp.down_proj.weight"), vec![h, i], &vec![0.01; h * i]);
-            writer.add_f32_tensor(&format!("{prefix}.input_layernorm.weight"), vec![h], &vec![1.0; h]);
-            writer.add_f32_tensor(&format!("{prefix}.post_attention_layernorm.weight"), vec![h], &vec![1.0; h]);
+            writer.add_f32_tensor(
+                &format!("{prefix}.self_attn.q_proj.weight"),
+                vec![h, h],
+                &vec![0.01; h * h],
+            );
+            writer.add_f32_tensor(
+                &format!("{prefix}.self_attn.k_proj.weight"),
+                vec![kv_dim, h],
+                &vec![0.01; kv_dim * h],
+            );
+            writer.add_f32_tensor(
+                &format!("{prefix}.self_attn.v_proj.weight"),
+                vec![kv_dim, h],
+                &vec![0.01; kv_dim * h],
+            );
+            writer.add_f32_tensor(
+                &format!("{prefix}.self_attn.o_proj.weight"),
+                vec![h, h],
+                &vec![0.01; h * h],
+            );
+            writer.add_f32_tensor(
+                &format!("{prefix}.mlp.gate_proj.weight"),
+                vec![i, h],
+                &vec![0.01; i * h],
+            );
+            writer.add_f32_tensor(
+                &format!("{prefix}.mlp.up_proj.weight"),
+                vec![i, h],
+                &vec![0.01; i * h],
+            );
+            writer.add_f32_tensor(
+                &format!("{prefix}.mlp.down_proj.weight"),
+                vec![h, i],
+                &vec![0.01; h * i],
+            );
+            writer.add_f32_tensor(
+                &format!("{prefix}.input_layernorm.weight"),
+                vec![h],
+                &vec![1.0; h],
+            );
+            writer.add_f32_tensor(
+                &format!("{prefix}.post_attention_layernorm.weight"),
+                vec![h],
+                &vec![1.0; h],
+            );
         }
 
         // Write to temp file
@@ -2797,17 +2841,24 @@ mod tests {
         let mut model = Qwen2Model::new_uninitialized(&config);
         let result = model.load_from_apr(temp_file.path());
 
-        assert!(result.is_ok(), "Should load APR file with weight tying: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Should load APR file with weight tying: {:?}",
+            result.err()
+        );
         // Should load embed + norm + lm_head(from embed) + layers*(9 weights)
         let loaded = result.unwrap();
-        assert!(loaded >= 2 + config.num_layers * 9, "Should load tensors with weight tying");
+        assert!(
+            loaded >= 2 + config.num_layers * 9,
+            "Should load tensors with weight tying"
+        );
     }
 
     #[test]
     fn test_from_apr_static_method() {
+        use crate::format::v2::{AprV2Metadata, AprV2Writer};
         use std::io::Write;
         use tempfile::NamedTempFile;
-        use crate::format::v2::{AprV2Writer, AprV2Metadata};
 
         let config = create_tiny_config();
 
@@ -2818,7 +2869,11 @@ mod tests {
             vec![config.vocab_size, config.hidden_size],
             &vec![0.01; config.vocab_size * config.hidden_size],
         );
-        writer.add_f32_tensor("norm.weight", vec![config.hidden_size], &vec![1.0; config.hidden_size]);
+        writer.add_f32_tensor(
+            "norm.weight",
+            vec![config.hidden_size],
+            &vec![1.0; config.hidden_size],
+        );
 
         // Add minimal layer weights
         for layer_idx in 0..config.num_layers {
@@ -2828,15 +2883,51 @@ mod tests {
             let head_dim = h / config.num_attention_heads;
             let kv_dim = config.num_kv_heads * head_dim;
 
-            writer.add_f32_tensor(&format!("{prefix}.self_attn.q_proj.weight"), vec![h, h], &vec![0.01; h * h]);
-            writer.add_f32_tensor(&format!("{prefix}.self_attn.k_proj.weight"), vec![kv_dim, h], &vec![0.01; kv_dim * h]);
-            writer.add_f32_tensor(&format!("{prefix}.self_attn.v_proj.weight"), vec![kv_dim, h], &vec![0.01; kv_dim * h]);
-            writer.add_f32_tensor(&format!("{prefix}.self_attn.o_proj.weight"), vec![h, h], &vec![0.01; h * h]);
-            writer.add_f32_tensor(&format!("{prefix}.mlp.gate_proj.weight"), vec![i, h], &vec![0.01; i * h]);
-            writer.add_f32_tensor(&format!("{prefix}.mlp.up_proj.weight"), vec![i, h], &vec![0.01; i * h]);
-            writer.add_f32_tensor(&format!("{prefix}.mlp.down_proj.weight"), vec![h, i], &vec![0.01; h * i]);
-            writer.add_f32_tensor(&format!("{prefix}.input_layernorm.weight"), vec![h], &vec![1.0; h]);
-            writer.add_f32_tensor(&format!("{prefix}.post_attention_layernorm.weight"), vec![h], &vec![1.0; h]);
+            writer.add_f32_tensor(
+                &format!("{prefix}.self_attn.q_proj.weight"),
+                vec![h, h],
+                &vec![0.01; h * h],
+            );
+            writer.add_f32_tensor(
+                &format!("{prefix}.self_attn.k_proj.weight"),
+                vec![kv_dim, h],
+                &vec![0.01; kv_dim * h],
+            );
+            writer.add_f32_tensor(
+                &format!("{prefix}.self_attn.v_proj.weight"),
+                vec![kv_dim, h],
+                &vec![0.01; kv_dim * h],
+            );
+            writer.add_f32_tensor(
+                &format!("{prefix}.self_attn.o_proj.weight"),
+                vec![h, h],
+                &vec![0.01; h * h],
+            );
+            writer.add_f32_tensor(
+                &format!("{prefix}.mlp.gate_proj.weight"),
+                vec![i, h],
+                &vec![0.01; i * h],
+            );
+            writer.add_f32_tensor(
+                &format!("{prefix}.mlp.up_proj.weight"),
+                vec![i, h],
+                &vec![0.01; i * h],
+            );
+            writer.add_f32_tensor(
+                &format!("{prefix}.mlp.down_proj.weight"),
+                vec![h, i],
+                &vec![0.01; h * i],
+            );
+            writer.add_f32_tensor(
+                &format!("{prefix}.input_layernorm.weight"),
+                vec![h],
+                &vec![1.0; h],
+            );
+            writer.add_f32_tensor(
+                &format!("{prefix}.post_attention_layernorm.weight"),
+                vec![h],
+                &vec![1.0; h],
+            );
         }
 
         // Write to temp file

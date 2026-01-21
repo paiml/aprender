@@ -170,8 +170,11 @@ mod tests {
                     data.push(x.get(row, col) / self.scale);
                 }
             }
-            Matrix::from_vec(x.n_rows(), x.n_cols(), data)
-                .map_err(|e| AprenderError::ValidationError { message: e.to_string() })
+            Matrix::from_vec(x.n_rows(), x.n_cols(), data).map_err(|e| {
+                AprenderError::ValidationError {
+                    message: e.to_string(),
+                }
+            })
         }
     }
 

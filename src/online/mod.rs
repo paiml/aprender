@@ -741,7 +741,11 @@ mod tests {
 
         // lr = 1.0 / t, at t=10, lr = 0.1
         let lr = model.current_learning_rate();
-        assert!(lr < 0.2, "Inverse decay should reduce lr to ~0.1, got {}", lr);
+        assert!(
+            lr < 0.2,
+            "Inverse decay should reduce lr to ~0.1, got {}",
+            lr
+        );
     }
 
     #[test]
@@ -760,7 +764,11 @@ mod tests {
 
         // lr = 1.0 / (1 + 0.1 * 10) = 1.0 / 2 = 0.5
         let lr = model.current_learning_rate();
-        assert!(lr < 0.6 && lr > 0.4, "Step decay should reduce lr to ~0.5, got {}", lr);
+        assert!(
+            lr < 0.6 && lr > 0.4,
+            "Step decay should reduce lr to ~0.5, got {}",
+            lr
+        );
     }
 
     #[test]
@@ -1252,7 +1260,9 @@ mod tests {
         let mut model = OnlineLinearRegression::new(1);
 
         // Large input * large error = large gradient
-        let loss = model.partial_fit(&[1000.0], &[1000000.0], Some(0.001)).unwrap();
+        let loss = model
+            .partial_fit(&[1000.0], &[1000000.0], Some(0.001))
+            .unwrap();
         assert!(loss.is_finite());
         assert!(model.weights()[0].is_finite());
     }

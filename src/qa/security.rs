@@ -1002,8 +1002,10 @@ mod tests {
     #[test]
     fn test_escape_html_combined() {
         // Test a string with multiple special characters
-        assert_eq!(escape_html("<a href=\"test\">it's & fun</a>"),
-                   "&lt;a href=&quot;test&quot;&gt;it&#x27;s &amp; fun&lt;/a&gt;");
+        assert_eq!(
+            escape_html("<a href=\"test\">it's & fun</a>"),
+            "&lt;a href=&quot;test&quot;&gt;it&#x27;s &amp; fun&lt;/a&gt;"
+        );
     }
 
     #[test]
@@ -1176,7 +1178,11 @@ mod tests {
         let results = run_all_security_tests(&config);
 
         for result in &results {
-            assert!(!result.name.is_empty(), "Result {} has empty name", result.id);
+            assert!(
+                !result.name.is_empty(),
+                "Result {} has empty name",
+                result.id
+            );
         }
     }
 
@@ -1186,7 +1192,11 @@ mod tests {
         let results = run_all_security_tests(&config);
 
         for result in &results {
-            assert!(!result.details.is_empty(), "Result {} has empty details", result.id);
+            assert!(
+                !result.details.is_empty(),
+                "Result {} has empty details",
+                result.id
+            );
         }
     }
 
@@ -1205,7 +1215,11 @@ mod tests {
         // Verify IDs are N1 through N20
         for (i, result) in results.iter().enumerate() {
             let expected_id = format!("N{}", i + 1);
-            assert_eq!(result.id, expected_id, "Expected {} but got {}", expected_id, result.id);
+            assert_eq!(
+                result.id, expected_id,
+                "Expected {} but got {}",
+                expected_id, result.id
+            );
         }
     }
 

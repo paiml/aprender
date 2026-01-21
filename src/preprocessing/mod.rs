@@ -1190,6 +1190,5 @@ impl Transformer for TSNE {
     }
 }
 
-
 #[cfg(test)]
 mod tests;

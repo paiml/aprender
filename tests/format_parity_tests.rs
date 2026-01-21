@@ -446,11 +446,7 @@ fn cc1_apr_format_constants_match() {
     );
 
     // Verify magic is APR with null terminator
-    assert_eq!(
-        &magic_v2,
-        b"APR\0",
-        "CC1 FALSIFIED: Magic should be APR\\0"
-    );
+    assert_eq!(&magic_v2, b"APR\0", "CC1 FALSIFIED: Magic should be APR\\0");
 
     // Header size v2 should be 64 bytes
     let header_size_v2 = aprender::format::v2::HEADER_SIZE_V2;

@@ -614,8 +614,8 @@ mod tests {
 
     #[test]
     fn test_velocity_result_with_duration_chains() {
-        let result = VelocityResult::fail("id", "name", "details")
-            .with_duration(Duration::from_millis(100));
+        let result =
+            VelocityResult::fail("id", "name", "details").with_duration(Duration::from_millis(100));
         assert!(!result.passed);
         assert!(result.duration.is_some());
     }
@@ -685,8 +685,8 @@ mod tests {
     #[test]
     fn test_velocity_result_multiple_durations() {
         // Test that with_duration overwrites properly
-        let result = VelocityResult::pass("id", "name", "details")
-            .with_duration(Duration::from_secs(1));
+        let result =
+            VelocityResult::pass("id", "name", "details").with_duration(Duration::from_secs(1));
         assert_eq!(result.duration, Some(Duration::from_secs(1)));
 
         // Calling with_duration again creates new instance with new duration
@@ -779,15 +779,15 @@ mod tests {
 
     #[test]
     fn test_duration_nanoseconds() {
-        let result = VelocityResult::pass("id", "name", "details")
-            .with_duration(Duration::from_nanos(1));
+        let result =
+            VelocityResult::pass("id", "name", "details").with_duration(Duration::from_nanos(1));
         assert_eq!(result.duration, Some(Duration::from_nanos(1)));
     }
 
     #[test]
     fn test_duration_microseconds() {
-        let result = VelocityResult::pass("id", "name", "details")
-            .with_duration(Duration::from_micros(500));
+        let result =
+            VelocityResult::pass("id", "name", "details").with_duration(Duration::from_micros(500));
         assert_eq!(result.duration, Some(Duration::from_micros(500)));
     }
 }

@@ -719,9 +719,7 @@ mod tests {
 
     #[test]
     fn test_sequential_debug() {
-        let model = Sequential::new()
-            .add(Linear::new(10, 5))
-            .add(ReLU::new());
+        let model = Sequential::new().add(Linear::new(10, 5)).add(ReLU::new());
         let debug_str = format!("{:?}", model);
         assert!(debug_str.contains("Sequential"));
         assert!(debug_str.contains("num_modules"));
@@ -739,9 +737,7 @@ mod tests {
 
     #[test]
     fn test_module_list_debug() {
-        let list = ModuleList::new()
-            .add(Linear::new(10, 5))
-            .add(ReLU::new());
+        let list = ModuleList::new().add(Linear::new(10, 5)).add(ReLU::new());
         let debug_str = format!("{:?}", list);
         assert!(debug_str.contains("ModuleList"));
         assert!(debug_str.contains("num_modules"));
@@ -808,8 +804,7 @@ mod tests {
 
     #[test]
     fn test_module_dict_get_mut() {
-        let mut dict = ModuleDict::new()
-            .insert("layer", Linear::new(10, 5));
+        let mut dict = ModuleDict::new().insert("layer", Linear::new(10, 5));
 
         // Get mutable reference
         let layer = dict.get_mut("layer");
@@ -840,8 +835,7 @@ mod tests {
 
     #[test]
     fn test_module_dict_remove_nonexistent() {
-        let mut dict = ModuleDict::new()
-            .insert("keep", Linear::new(10, 5));
+        let mut dict = ModuleDict::new().insert("keep", Linear::new(10, 5));
 
         let removed = dict.remove("nonexistent");
         assert!(removed.is_none());

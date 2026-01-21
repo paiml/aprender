@@ -2588,6 +2588,5 @@ impl Default for SpectralClustering {
     }
 }
 
-
 #[cfg(test)]
 mod tests;

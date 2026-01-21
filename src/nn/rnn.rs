@@ -851,7 +851,12 @@ mod tests {
     #[test]
     fn test_slice_timestep() {
         // [batch=2, seq=3, input=2]
-        let x = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0], &[2, 3, 2]);
+        let x = Tensor::new(
+            &[
+                1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0,
+            ],
+            &[2, 3, 2],
+        );
 
         // Get timestep 0 (should be [1,2] and [7,8])
         let t0 = slice_timestep(&x, 0);

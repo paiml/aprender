@@ -499,11 +499,11 @@ mod tests {
 
     #[test]
     fn test_lda_many_topics() {
-        let dtm = Matrix::from_vec(3, 4, vec![
-            2.0, 1.0, 0.0, 1.0,
-            0.0, 1.0, 2.0, 0.0,
-            1.0, 0.0, 1.0, 2.0,
-        ])
+        let dtm = Matrix::from_vec(
+            3,
+            4,
+            vec![2.0, 1.0, 0.0, 1.0, 0.0, 1.0, 2.0, 0.0, 1.0, 0.0, 1.0, 2.0],
+        )
         .expect("matrix should succeed");
 
         let mut lda = LatentDirichletAllocation::new(3);
@@ -517,11 +517,13 @@ mod tests {
     #[test]
     fn test_lda_sparse_matrix() {
         // Matrix with many zeros
-        let dtm = Matrix::from_vec(3, 5, vec![
-            1.0, 0.0, 0.0, 0.0, 0.0,
-            0.0, 0.0, 1.0, 0.0, 0.0,
-            0.0, 0.0, 0.0, 0.0, 1.0,
-        ])
+        let dtm = Matrix::from_vec(
+            3,
+            5,
+            vec![
+                1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+            ],
+        )
         .expect("matrix should succeed");
 
         let mut lda = LatentDirichletAllocation::new(2);
@@ -534,11 +536,8 @@ mod tests {
 
     #[test]
     fn test_lda_top_words_all() {
-        let dtm = Matrix::from_vec(2, 4, vec![
-            2.0, 1.0, 0.0, 0.5,
-            0.0, 1.0, 2.0, 0.5,
-        ])
-        .expect("matrix should succeed");
+        let dtm = Matrix::from_vec(2, 4, vec![2.0, 1.0, 0.0, 0.5, 0.0, 1.0, 2.0, 0.5])
+            .expect("matrix should succeed");
 
         let mut lda = LatentDirichletAllocation::new(2);
         lda.fit(&dtm, 10).expect("fit should succeed");
@@ -594,7 +593,12 @@ mod tests {
         let lda = LatentDirichletAllocation::new(2).with_random_seed(123);
         for idx in 0..100 {
             let val = lda.pseudo_random(idx);
-            assert!(val >= 0.0 && val < 1.0, "Value {} out of range: {}", idx, val);
+            assert!(
+                val >= 0.0 && val < 1.0,
+                "Value {} out of range: {}",
+                idx,
+                val
+            );
         }
     }
 
@@ -607,11 +611,15 @@ mod tests {
     #[test]
     fn test_lda_fit_with_zero_counts() {
         // Matrix where some documents have zero counts in certain terms
-        let dtm = Matrix::from_vec(3, 4, vec![
-            0.0, 0.0, 1.0, 2.0,  // Doc 0: no words in first two terms
-            1.0, 2.0, 0.0, 0.0,  // Doc 1: no words in last two terms
-            0.0, 1.0, 1.0, 0.0,  // Doc 2: sparse
-        ])
+        let dtm = Matrix::from_vec(
+            3,
+            4,
+            vec![
+                0.0, 0.0, 1.0, 2.0, // Doc 0: no words in first two terms
+                1.0, 2.0, 0.0, 0.0, // Doc 1: no words in last two terms
+                0.0, 1.0, 1.0, 0.0, // Doc 2: sparse
+            ],
+        )
         .expect("matrix");
 
         let mut lda = LatentDirichletAllocation::new(2);
@@ -630,8 +638,7 @@ mod tests {
 
     #[test]
     fn test_lda_fit_single_iteration() {
-        let dtm = Matrix::from_vec(2, 3, vec![1.0, 1.0, 1.0, 1.0, 1.0, 1.0])
-            .expect("matrix");
+        let dtm = Matrix::from_vec(2, 3, vec![1.0, 1.0, 1.0, 1.0, 1.0, 1.0]).expect("matrix");
 
         let mut lda = LatentDirichletAllocation::new(2);
         lda.fit(&dtm, 1).expect("fit should succeed");
@@ -643,8 +650,7 @@ mod tests {
 
     #[test]
     fn test_lda_fit_zero_iterations() {
-        let dtm = Matrix::from_vec(2, 3, vec![1.0, 1.0, 1.0, 1.0, 1.0, 1.0])
-            .expect("matrix");
+        let dtm = Matrix::from_vec(2, 3, vec![1.0, 1.0, 1.0, 1.0, 1.0, 1.0]).expect("matrix");
 
         let mut lda = LatentDirichletAllocation::new(2);
         // With zero iterations, only initialization happens
@@ -656,11 +662,11 @@ mod tests {
 
     #[test]
     fn test_lda_fit_many_iterations() {
-        let dtm = Matrix::from_vec(3, 4, vec![
-            3.0, 0.0, 0.0, 0.0,
-            0.0, 3.0, 0.0, 0.0,
-            0.0, 0.0, 3.0, 0.0,
-        ])
+        let dtm = Matrix::from_vec(
+            3,
+            4,
+            vec![3.0, 0.0, 0.0, 0.0, 0.0, 3.0, 0.0, 0.0, 0.0, 0.0, 3.0, 0.0],
+        )
         .expect("matrix");
 
         let mut lda = LatentDirichletAllocation::new(3);
@@ -697,8 +703,7 @@ mod tests {
 
     #[test]
     fn test_top_words_more_than_available() {
-        let dtm = Matrix::from_vec(2, 3, vec![1.0, 2.0, 0.0, 0.0, 1.0, 2.0])
-            .expect("matrix");
+        let dtm = Matrix::from_vec(2, 3, vec![1.0, 2.0, 0.0, 0.0, 1.0, 2.0]).expect("matrix");
 
         let mut lda = LatentDirichletAllocation::new(2);
         lda.fit(&dtm, 5).expect("fit should succeed");
@@ -715,13 +720,16 @@ mod tests {
 
     #[test]
     fn test_top_words_request_one() {
-        let dtm = Matrix::from_vec(2, 3, vec![2.0, 1.0, 0.0, 0.0, 1.0, 2.0])
-            .expect("matrix");
+        let dtm = Matrix::from_vec(2, 3, vec![2.0, 1.0, 0.0, 0.0, 1.0, 2.0]).expect("matrix");
 
         let mut lda = LatentDirichletAllocation::new(2);
         lda.fit(&dtm, 5).expect("fit should succeed");
 
-        let vocab = vec!["first".to_string(), "second".to_string(), "third".to_string()];
+        let vocab = vec![
+            "first".to_string(),
+            "second".to_string(),
+            "third".to_string(),
+        ];
 
         let top_words = lda.top_words(&vocab, 1).expect("top words");
         assert_eq!(top_words.len(), 2);
@@ -731,8 +739,7 @@ mod tests {
 
     #[test]
     fn test_top_words_request_zero() {
-        let dtm = Matrix::from_vec(2, 3, vec![1.0, 1.0, 1.0, 1.0, 1.0, 1.0])
-            .expect("matrix");
+        let dtm = Matrix::from_vec(2, 3, vec![1.0, 1.0, 1.0, 1.0, 1.0, 1.0]).expect("matrix");
 
         let mut lda = LatentDirichletAllocation::new(2);
         lda.fit(&dtm, 5).expect("fit should succeed");
@@ -759,7 +766,10 @@ mod tests {
                 break;
             }
         }
-        assert!(any_different, "Different seeds should produce different initializations");
+        assert!(
+            any_different,
+            "Different seeds should produce different initializations"
+        );
     }
 
     #[test]
@@ -823,11 +833,14 @@ mod tests {
     #[test]
     fn test_lda_fit_all_zero_document() {
         // One document has all zeros
-        let dtm = Matrix::from_vec(3, 3, vec![
-            1.0, 2.0, 0.0,
-            0.0, 0.0, 0.0,  // All zeros
-            0.0, 1.0, 2.0,
-        ])
+        let dtm = Matrix::from_vec(
+            3,
+            3,
+            vec![
+                1.0, 2.0, 0.0, 0.0, 0.0, 0.0, // All zeros
+                0.0, 1.0, 2.0,
+            ],
+        )
         .expect("matrix");
 
         let mut lda = LatentDirichletAllocation::new(2);
@@ -840,11 +853,11 @@ mod tests {
     #[test]
     fn test_lda_fit_uniform_distribution() {
         // All documents have same word distribution
-        let dtm = Matrix::from_vec(3, 4, vec![
-            1.0, 1.0, 1.0, 1.0,
-            1.0, 1.0, 1.0, 1.0,
-            1.0, 1.0, 1.0, 1.0,
-        ])
+        let dtm = Matrix::from_vec(
+            3,
+            4,
+            vec![1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+        )
         .expect("matrix");
 
         let mut lda = LatentDirichletAllocation::new(2);
@@ -864,16 +877,18 @@ mod tests {
     #[test]
     fn test_lda_top_words_with_ties() {
         // Create a situation where multiple words have same probability
-        let dtm = Matrix::from_vec(2, 4, vec![
-            1.0, 1.0, 1.0, 1.0,
-            1.0, 1.0, 1.0, 1.0,
-        ])
-        .expect("matrix");
+        let dtm =
+            Matrix::from_vec(2, 4, vec![1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]).expect("matrix");
 
         let mut lda = LatentDirichletAllocation::new(1);
         lda.fit(&dtm, 10).expect("fit");
 
-        let vocab = vec!["a".to_string(), "b".to_string(), "c".to_string(), "d".to_string()];
+        let vocab = vec![
+            "a".to_string(),
+            "b".to_string(),
+            "c".to_string(),
+            "d".to_string(),
+        ];
         let top_words = lda.top_words(&vocab, 2).expect("top words");
 
         assert_eq!(top_words.len(), 1);
@@ -882,8 +897,7 @@ mod tests {
 
     #[test]
     fn test_lda_single_document() {
-        let dtm = Matrix::from_vec(1, 3, vec![1.0, 2.0, 3.0])
-            .expect("matrix");
+        let dtm = Matrix::from_vec(1, 3, vec![1.0, 2.0, 3.0]).expect("matrix");
 
         let mut lda = LatentDirichletAllocation::new(2);
         lda.fit(&dtm, 5).expect("fit");
@@ -895,8 +909,7 @@ mod tests {
 
     #[test]
     fn test_lda_single_term() {
-        let dtm = Matrix::from_vec(3, 1, vec![1.0, 2.0, 3.0])
-            .expect("matrix");
+        let dtm = Matrix::from_vec(3, 1, vec![1.0, 2.0, 3.0]).expect("matrix");
 
         let mut lda = LatentDirichletAllocation::new(2);
         lda.fit(&dtm, 5).expect("fit");
@@ -912,12 +925,8 @@ mod tests {
     #[test]
     fn test_lda_topics_equals_terms() {
         // Edge case: number of topics equals number of terms
-        let dtm = Matrix::from_vec(3, 3, vec![
-            2.0, 0.0, 0.0,
-            0.0, 2.0, 0.0,
-            0.0, 0.0, 2.0,
-        ])
-        .expect("matrix");
+        let dtm = Matrix::from_vec(3, 3, vec![2.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 2.0])
+            .expect("matrix");
 
         let mut lda = LatentDirichletAllocation::new(3);
         lda.fit(&dtm, 20).expect("fit");
@@ -929,8 +938,7 @@ mod tests {
     #[test]
     fn test_lda_topics_exceeds_terms() {
         // More topics than terms
-        let dtm = Matrix::from_vec(2, 2, vec![1.0, 2.0, 2.0, 1.0])
-            .expect("matrix");
+        let dtm = Matrix::from_vec(2, 2, vec![1.0, 2.0, 2.0, 1.0]).expect("matrix");
 
         let mut lda = LatentDirichletAllocation::new(5);
         lda.fit(&dtm, 5).expect("fit");
@@ -942,11 +950,8 @@ mod tests {
     #[test]
     fn test_lda_high_count_values() {
         // Test with larger count values
-        let dtm = Matrix::from_vec(2, 3, vec![
-            100.0, 50.0, 10.0,
-            10.0, 50.0, 100.0,
-        ])
-        .expect("matrix");
+        let dtm =
+            Matrix::from_vec(2, 3, vec![100.0, 50.0, 10.0, 10.0, 50.0, 100.0]).expect("matrix");
 
         let mut lda = LatentDirichletAllocation::new(2);
         lda.fit(&dtm, 10).expect("fit");
@@ -966,11 +971,8 @@ mod tests {
     #[test]
     fn test_lda_small_count_values() {
         // Test with very small count values
-        let dtm = Matrix::from_vec(2, 3, vec![
-            0.001, 0.002, 0.001,
-            0.002, 0.001, 0.002,
-        ])
-        .expect("matrix");
+        let dtm =
+            Matrix::from_vec(2, 3, vec![0.001, 0.002, 0.001, 0.002, 0.001, 0.002]).expect("matrix");
 
         let mut lda = LatentDirichletAllocation::new(2);
         lda.fit(&dtm, 10).expect("fit");

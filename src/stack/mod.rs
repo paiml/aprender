@@ -969,12 +969,20 @@ mod tests {
 
     #[test]
     fn test_stack_component_descriptions() {
-        assert!(StackComponent::Alimentar.description().contains("Data loading"));
-        assert!(StackComponent::Aprender.description().contains("Machine learning"));
+        assert!(StackComponent::Alimentar
+            .description()
+            .contains("Data loading"));
+        assert!(StackComponent::Aprender
+            .description()
+            .contains("Machine learning"));
         assert!(StackComponent::Pacha.description().contains("registry"));
         assert!(StackComponent::Realizar.description().contains("inference"));
-        assert!(StackComponent::Presentar.description().contains("visualization"));
-        assert!(StackComponent::Batuta.description().contains("Orchestration"));
+        assert!(StackComponent::Presentar
+            .description()
+            .contains("visualization"));
+        assert!(StackComponent::Batuta
+            .description()
+            .contains("Orchestration"));
     }
 
     #[test]
@@ -999,8 +1007,14 @@ mod tests {
 
     #[test]
     fn test_stack_component_magic_some() {
-        assert_eq!(StackComponent::Alimentar.magic(), Some([0x41, 0x4C, 0x44, 0x46])); // "ALDF"
-        assert_eq!(StackComponent::Batuta.magic(), Some([0x42, 0x41, 0x54, 0x41]));    // "BATA"
+        assert_eq!(
+            StackComponent::Alimentar.magic(),
+            Some([0x41, 0x4C, 0x44, 0x46])
+        ); // "ALDF"
+        assert_eq!(
+            StackComponent::Batuta.magic(),
+            Some([0x42, 0x41, 0x54, 0x41])
+        ); // "BATA"
     }
 
     #[test]
@@ -1065,8 +1079,7 @@ mod tests {
 
     #[test]
     fn test_model_version_no_quality_score_not_production_ready() {
-        let version = ModelVersion::new("1.0.0", [0u8; 32])
-            .with_stage(ModelStage::Production);
+        let version = ModelVersion::new("1.0.0", [0u8; 32]).with_stage(ModelStage::Production);
         // No quality score set
         assert!(!version.is_production_ready());
     }
@@ -1074,7 +1087,10 @@ mod tests {
     #[test]
     fn test_inference_config_batch_predict_url() {
         let config = InferenceConfig::new("model.apr").with_port(3000);
-        assert_eq!(config.batch_predict_url(), "http://localhost:3000/batch_predict");
+        assert_eq!(
+            config.batch_predict_url(),
+            "http://localhost:3000/batch_predict"
+        );
     }
 
     #[test]
@@ -1470,9 +1486,18 @@ mod tests {
     #[test]
     fn test_derivation_type_eq() {
         assert_eq!(DerivationType::Original, DerivationType::Original);
-        let d1 = DerivationType::FineTune { parent_hash: [0; 32], epochs: 10 };
-        let d2 = DerivationType::FineTune { parent_hash: [0; 32], epochs: 10 };
-        let d3 = DerivationType::FineTune { parent_hash: [1; 32], epochs: 10 };
+        let d1 = DerivationType::FineTune {
+            parent_hash: [0; 32],
+            epochs: 10,
+        };
+        let d2 = DerivationType::FineTune {
+            parent_hash: [0; 32],
+            epochs: 10,
+        };
+        let d3 = DerivationType::FineTune {
+            parent_hash: [1; 32],
+            epochs: 10,
+        };
         assert_eq!(d1, d2);
         assert_ne!(d1, d3);
     }
@@ -1508,7 +1533,11 @@ mod tests {
             parent_hash: parent,
             epochs: 100,
         };
-        if let DerivationType::FineTune { epochs, parent_hash } = deriv {
+        if let DerivationType::FineTune {
+            epochs,
+            parent_hash,
+        } = deriv
+        {
             assert_eq!(epochs, 100);
             assert_eq!(parent_hash, parent);
         } else {
@@ -1523,7 +1552,11 @@ mod tests {
             teacher_hash: teacher,
             temperature: 1.5,
         };
-        if let DerivationType::Distillation { temperature, teacher_hash } = deriv {
+        if let DerivationType::Distillation {
+            temperature,
+            teacher_hash,
+        } = deriv
+        {
             assert!((temperature - 1.5).abs() < 1e-6);
             assert_eq!(teacher_hash, teacher);
         } else {
@@ -1538,7 +1571,11 @@ mod tests {
             parent_hash: parent,
             quant_type: QuantizationType::Int4,
         };
-        if let DerivationType::Quantize { quant_type, parent_hash } = deriv {
+        if let DerivationType::Quantize {
+            quant_type,
+            parent_hash,
+        } = deriv
+        {
             assert_eq!(quant_type, QuantizationType::Int4);
             assert_eq!(parent_hash, parent);
         } else {
@@ -1553,7 +1590,11 @@ mod tests {
             parent_hash: parent,
             sparsity: 0.9,
         };
-        if let DerivationType::Prune { sparsity, parent_hash } = deriv {
+        if let DerivationType::Prune {
+            sparsity,
+            parent_hash,
+        } = deriv
+        {
             assert!((sparsity - 0.9).abs() < 1e-6);
             assert_eq!(parent_hash, parent);
         } else {
@@ -1616,7 +1657,10 @@ mod tests {
         assert_eq!(health.overall, HealthStatus::Unhealthy);
 
         // Third: fix it, now degraded
-        health.set_component(StackComponent::Aprender, ComponentHealth::degraded("1.0", "slow"));
+        health.set_component(
+            StackComponent::Aprender,
+            ComponentHealth::degraded("1.0", "slow"),
+        );
         assert_eq!(health.overall, HealthStatus::Degraded);
 
         // Fourth: all healthy again
@@ -1654,8 +1698,7 @@ mod tests {
 
     #[test]
     fn test_model_version_large_size() {
-        let version = ModelVersion::new("1.0.0", [0u8; 32])
-            .with_size(100_000_000_000); // 100GB
+        let version = ModelVersion::new("1.0.0", [0u8; 32]).with_size(100_000_000_000); // 100GB
         assert_eq!(version.size_bytes, 100_000_000_000);
     }
 

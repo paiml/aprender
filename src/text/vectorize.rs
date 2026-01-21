@@ -1744,14 +1744,14 @@ mod tests {
     fn test_count_vectorizer_fit_transform_consistency() {
         let docs = vec!["a b c", "b c d", "c d e"];
 
-        let mut v1 =
-            CountVectorizer::new().with_tokenizer(Box::new(WhitespaceTokenizer::new()));
+        let mut v1 = CountVectorizer::new().with_tokenizer(Box::new(WhitespaceTokenizer::new()));
 
         // fit_transform should give same result as fit then transform
-        let matrix1 = v1.fit_transform(&docs).expect("fit_transform should succeed");
+        let matrix1 = v1
+            .fit_transform(&docs)
+            .expect("fit_transform should succeed");
 
-        let mut v2 =
-            CountVectorizer::new().with_tokenizer(Box::new(WhitespaceTokenizer::new()));
+        let mut v2 = CountVectorizer::new().with_tokenizer(Box::new(WhitespaceTokenizer::new()));
         v2.fit(&docs).expect("fit should succeed");
         let matrix2 = v2.transform(&docs).expect("transform should succeed");
 
@@ -1769,13 +1769,13 @@ mod tests {
     fn test_tfidf_vectorizer_fit_transform_consistency() {
         let docs = vec!["a b", "b c", "c a"];
 
-        let mut v1 =
-            TfidfVectorizer::new().with_tokenizer(Box::new(WhitespaceTokenizer::new()));
+        let mut v1 = TfidfVectorizer::new().with_tokenizer(Box::new(WhitespaceTokenizer::new()));
 
-        let matrix1 = v1.fit_transform(&docs).expect("fit_transform should succeed");
+        let matrix1 = v1
+            .fit_transform(&docs)
+            .expect("fit_transform should succeed");
 
-        let mut v2 =
-            TfidfVectorizer::new().with_tokenizer(Box::new(WhitespaceTokenizer::new()));
+        let mut v2 = TfidfVectorizer::new().with_tokenizer(Box::new(WhitespaceTokenizer::new()));
         v2.fit(&docs).expect("fit should succeed");
         let matrix2 = v2.transform(&docs).expect("transform should succeed");
 

@@ -2,1788 +2,1775 @@
 
 use super::*;
 
+#[test]
+fn test_new() {
+    let model = LinearRegression::new();
+    assert!(!model.is_fitted());
+    assert!(model.fit_intercept);
+}
 
-    #[test]
-    fn test_new() {
-        let model = LinearRegression::new();
-        assert!(!model.is_fitted());
-        assert!(model.fit_intercept);
+#[test]
+fn test_simple_regression() {
+    // y = 2x + 1
+    let x =
+        Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0]).expect("Valid matrix dimensions for test");
+    let y = Vector::from_slice(&[3.0, 5.0, 7.0, 9.0]);
+
+    let mut model = LinearRegression::new();
+    model
+        .fit(&x, &y)
+        .expect("Fit should succeed with valid test data");
+
+    assert!(model.is_fitted());
+
+    // Check coefficients
+    let coef = model.coefficients();
+    assert!((coef[0] - 2.0).abs() < 1e-4);
+    assert!((model.intercept() - 1.0).abs() < 1e-4);
+
+    // Check predictions
+    let predictions = model.predict(&x);
+    for i in 0..4 {
+        assert!((predictions[i] - y[i]).abs() < 1e-4);
     }
 
-    #[test]
-    fn test_simple_regression() {
-        // y = 2x + 1
-        let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0])
-            .expect("Valid matrix dimensions for test");
-        let y = Vector::from_slice(&[3.0, 5.0, 7.0, 9.0]);
+    // Check R²
+    let r2 = model.score(&x, &y);
+    assert!((r2 - 1.0).abs() < 1e-4);
+}
 
-        let mut model = LinearRegression::new();
-        model
-            .fit(&x, &y)
-            .expect("Fit should succeed with valid test data");
-
-        assert!(model.is_fitted());
-
-        // Check coefficients
-        let coef = model.coefficients();
-        assert!((coef[0] - 2.0).abs() < 1e-4);
-        assert!((model.intercept() - 1.0).abs() < 1e-4);
-
-        // Check predictions
-        let predictions = model.predict(&x);
-        for i in 0..4 {
-            assert!((predictions[i] - y[i]).abs() < 1e-4);
-        }
-
-        // Check R²
-        let r2 = model.score(&x, &y);
-        assert!((r2 - 1.0).abs() < 1e-4);
-    }
-
-    #[test]
-    fn test_multivariate_regression() {
-        // y = 1 + 2*x1 + 3*x2
-        let x = Matrix::from_vec(4, 2, vec![1.0, 1.0, 2.0, 1.0, 1.0, 2.0, 2.0, 2.0])
-            .expect("Valid matrix dimensions for test");
-        let y = Vector::from_slice(&[6.0, 8.0, 9.0, 11.0]);
-
-        let mut model = LinearRegression::new();
-        model
-            .fit(&x, &y)
-            .expect("Fit should succeed with valid test data");
-
-        let coef = model.coefficients();
-        assert!((coef[0] - 2.0).abs() < 1e-4);
-        assert!((coef[1] - 3.0).abs() < 1e-4);
-        assert!((model.intercept() - 1.0).abs() < 1e-4);
-
-        let r2 = model.score(&x, &y);
-        assert!((r2 - 1.0).abs() < 1e-4);
-    }
-
-    #[test]
-    fn test_no_intercept() {
-        // y = 2x (no intercept)
-        let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0])
-            .expect("Valid matrix dimensions for test");
-        let y = Vector::from_slice(&[2.0, 4.0, 6.0, 8.0]);
-
-        let mut model = LinearRegression::new().with_intercept(false);
-        model
-            .fit(&x, &y)
-            .expect("Fit should succeed with valid test data");
-
-        let coef = model.coefficients();
-        assert!((coef[0] - 2.0).abs() < 1e-4);
-        assert!((model.intercept() - 0.0).abs() < 1e-4);
-    }
-
-    #[test]
-    fn test_predict_new_data() {
-        // y = x + 1
-        let x_train =
-            Matrix::from_vec(3, 1, vec![1.0, 2.0, 3.0]).expect("Valid matrix dimensions for test");
-        let y_train = Vector::from_slice(&[2.0, 3.0, 4.0]);
-
-        let mut model = LinearRegression::new();
-        model
-            .fit(&x_train, &y_train)
-            .expect("Fit should succeed with valid test data");
-
-        let x_test =
-            Matrix::from_vec(2, 1, vec![4.0, 5.0]).expect("Valid matrix dimensions for test");
-        let predictions = model.predict(&x_test);
-
-        assert!((predictions[0] - 5.0).abs() < 1e-4);
-        assert!((predictions[1] - 6.0).abs() < 1e-4);
-    }
-
-    #[test]
-    fn test_dimension_mismatch_error() {
-        let x = Matrix::from_vec(3, 2, vec![1.0; 6]).expect("Valid matrix dimensions for test");
-        let y = Vector::from_slice(&[1.0, 2.0]); // Wrong length
-
-        let mut model = LinearRegression::new();
-        let result = model.fit(&x, &y);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_empty_data_error() {
-        let x = Matrix::from_vec(0, 2, vec![]).expect("Valid matrix dimensions for test");
-        let y = Vector::from_vec(vec![]);
-
-        let mut model = LinearRegression::new();
-        let result = model.fit(&x, &y);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_with_noise() {
-        // y ≈ 2x + 1 with some noise
-        let x = Matrix::from_vec(5, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0])
-            .expect("Valid matrix dimensions for test");
-        let y = Vector::from_slice(&[3.1, 4.9, 7.2, 8.8, 11.1]);
-
-        let mut model = LinearRegression::new();
-        model
-            .fit(&x, &y)
-            .expect("Fit should succeed with valid test data");
-
-        // Should still get approximately correct coefficients
-        let coef = model.coefficients();
-        assert!((coef[0] - 2.0).abs() < 0.2);
-        assert!((model.intercept() - 1.0).abs() < 0.5);
-
-        // R² should be high but not perfect
-        let r2 = model.score(&x, &y);
-        assert!(r2 > 0.95);
-        assert!(r2 < 1.0);
-    }
-
-    #[test]
-    fn test_default() {
-        let model = LinearRegression::default();
-        assert!(!model.is_fitted());
-    }
-
-    #[test]
-    fn test_clone() {
-        let x =
-            Matrix::from_vec(3, 1, vec![1.0, 2.0, 3.0]).expect("Valid matrix dimensions for test");
-        let y = Vector::from_slice(&[2.0, 4.0, 6.0]);
-
-        let mut model = LinearRegression::new();
-        model
-            .fit(&x, &y)
-            .expect("Fit should succeed with valid test data");
-
-        let cloned = model.clone();
-        assert!(cloned.is_fitted());
-        assert!((cloned.intercept() - model.intercept()).abs() < 1e-6);
-    }
-
-    #[test]
-    fn test_score_range() {
-        // R² should be between negative infinity and 1
-        let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0])
-            .expect("Valid matrix dimensions for test");
-        let y = Vector::from_slice(&[3.0, 5.0, 7.0, 9.0]);
-
-        let mut model = LinearRegression::new();
-        model
-            .fit(&x, &y)
-            .expect("Fit should succeed with valid test data");
-
-        let r2 = model.score(&x, &y);
-        assert!(r2 <= 1.0);
-    }
-
-    #[test]
-    fn test_prediction_invariant() {
-        // Property: predict(fit(X, y), X) should approximate y
-        // Use non-collinear data
-        let x = Matrix::from_vec(5, 2, vec![1.0, 1.0, 2.0, 3.0, 3.0, 2.0, 4.0, 5.0, 5.0, 4.0])
-            .expect("Valid matrix dimensions for test");
-        // y = 2*x1 + 3*x2 + 1
-        let y = Vector::from_slice(&[6.0, 14.0, 13.0, 24.0, 23.0]);
-
-        let mut model = LinearRegression::new();
-        model
-            .fit(&x, &y)
-            .expect("Fit should succeed with valid test data");
-
-        let predictions = model.predict(&x);
-
-        for i in 0..y.len() {
-            assert!((predictions[i] - y[i]).abs() < 1e-3);
-        }
-    }
-
-    #[test]
-    fn test_coefficients_length_invariant() {
-        // Property: coefficients.len() == n_features
-        // Use well-conditioned data with independent columns
-        let x = Matrix::from_vec(
-            6,
-            3,
-            vec![
-                1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0,
-                0.0, 1.0,
-            ],
-        )
+#[test]
+fn test_multivariate_regression() {
+    // y = 1 + 2*x1 + 3*x2
+    let x = Matrix::from_vec(4, 2, vec![1.0, 1.0, 2.0, 1.0, 1.0, 2.0, 2.0, 2.0])
         .expect("Valid matrix dimensions for test");
-        let y = Vector::from_slice(&[1.0, 2.0, 3.0, 3.0, 5.0, 4.0]);
+    let y = Vector::from_slice(&[6.0, 8.0, 9.0, 11.0]);
 
-        let mut model = LinearRegression::new();
-        model
-            .fit(&x, &y)
-            .expect("Fit should succeed with valid test data");
+    let mut model = LinearRegression::new();
+    model
+        .fit(&x, &y)
+        .expect("Fit should succeed with valid test data");
 
-        assert_eq!(model.coefficients().len(), 3);
-    }
+    let coef = model.coefficients();
+    assert!((coef[0] - 2.0).abs() < 1e-4);
+    assert!((coef[1] - 3.0).abs() < 1e-4);
+    assert!((model.intercept() - 1.0).abs() < 1e-4);
 
-    #[test]
-    fn test_larger_dataset() {
-        // Test with more samples
-        let n = 100;
-        let mut x_data = Vec::with_capacity(n);
-        let mut y_data = Vec::with_capacity(n);
+    let r2 = model.score(&x, &y);
+    assert!((r2 - 1.0).abs() < 1e-4);
+}
 
-        for i in 0..n {
-            let x_val = i as f32;
-            x_data.push(x_val);
-            y_data.push(2.0 * x_val + 3.0); // y = 2x + 3
-        }
+#[test]
+fn test_no_intercept() {
+    // y = 2x (no intercept)
+    let x =
+        Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0]).expect("Valid matrix dimensions for test");
+    let y = Vector::from_slice(&[2.0, 4.0, 6.0, 8.0]);
 
-        let x = Matrix::from_vec(n, 1, x_data).expect("Valid matrix dimensions for test");
-        let y = Vector::from_vec(y_data);
+    let mut model = LinearRegression::new().with_intercept(false);
+    model
+        .fit(&x, &y)
+        .expect("Fit should succeed with valid test data");
 
-        let mut model = LinearRegression::new();
-        model
-            .fit(&x, &y)
-            .expect("Fit should succeed with valid test data");
+    let coef = model.coefficients();
+    assert!((coef[0] - 2.0).abs() < 1e-4);
+    assert!((model.intercept() - 0.0).abs() < 1e-4);
+}
 
-        let coef = model.coefficients();
-        assert!((coef[0] - 2.0).abs() < 1e-3);
-        assert!((model.intercept() - 3.0).abs() < 1e-3);
-    }
+#[test]
+fn test_predict_new_data() {
+    // y = x + 1
+    let x_train =
+        Matrix::from_vec(3, 1, vec![1.0, 2.0, 3.0]).expect("Valid matrix dimensions for test");
+    let y_train = Vector::from_slice(&[2.0, 3.0, 4.0]);
 
-    #[test]
-    fn test_single_sample_single_feature() {
-        // Edge case: minimum viable data
-        let x = Matrix::from_vec(2, 1, vec![1.0, 2.0]).expect("Valid matrix dimensions for test");
-        let y = Vector::from_slice(&[3.0, 5.0]);
+    let mut model = LinearRegression::new();
+    model
+        .fit(&x_train, &y_train)
+        .expect("Fit should succeed with valid test data");
 
-        let mut model = LinearRegression::new();
-        model
-            .fit(&x, &y)
-            .expect("Fit should succeed with valid test data");
+    let x_test = Matrix::from_vec(2, 1, vec![4.0, 5.0]).expect("Valid matrix dimensions for test");
+    let predictions = model.predict(&x_test);
 
-        // y = 2x + 1
-        let coef = model.coefficients();
-        assert!((coef[0] - 2.0).abs() < 1e-4);
-        assert!((model.intercept() - 1.0).abs() < 1e-4);
-    }
+    assert!((predictions[0] - 5.0).abs() < 1e-4);
+    assert!((predictions[1] - 6.0).abs() < 1e-4);
+}
 
-    #[test]
-    fn test_negative_values() {
-        // Test with negative coefficients and values
-        let x = Matrix::from_vec(4, 1, vec![-2.0, -1.0, 0.0, 1.0])
-            .expect("Valid matrix dimensions for test");
-        let y = Vector::from_slice(&[5.0, 3.0, 1.0, -1.0]); // y = -2x + 1
+#[test]
+fn test_dimension_mismatch_error() {
+    let x = Matrix::from_vec(3, 2, vec![1.0; 6]).expect("Valid matrix dimensions for test");
+    let y = Vector::from_slice(&[1.0, 2.0]); // Wrong length
 
-        let mut model = LinearRegression::new();
-        model
-            .fit(&x, &y)
-            .expect("Fit should succeed with valid test data");
+    let mut model = LinearRegression::new();
+    let result = model.fit(&x, &y);
+    assert!(result.is_err());
+}
 
-        let coef = model.coefficients();
-        assert!((coef[0] - (-2.0)).abs() < 1e-4);
-        assert!((model.intercept() - 1.0).abs() < 1e-4);
-    }
+#[test]
+fn test_empty_data_error() {
+    let x = Matrix::from_vec(0, 2, vec![]).expect("Valid matrix dimensions for test");
+    let y = Vector::from_vec(vec![]);
 
-    #[test]
-    fn test_large_values() {
-        // Test numerical stability with large values
-        let x = Matrix::from_vec(3, 1, vec![1000.0, 2000.0, 3000.0])
-            .expect("Valid matrix dimensions for test");
-        let y = Vector::from_slice(&[2001.0, 4001.0, 6001.0]); // y = 2x + 1
+    let mut model = LinearRegression::new();
+    let result = model.fit(&x, &y);
+    assert!(result.is_err());
+}
 
-        let mut model = LinearRegression::new();
-        model
-            .fit(&x, &y)
-            .expect("Fit should succeed with valid test data");
-
-        let coef = model.coefficients();
-        assert!((coef[0] - 2.0).abs() < 1e-2);
-        assert!((model.intercept() - 1.0).abs() < 10.0); // Larger tolerance for large values
-    }
-
-    #[test]
-    fn test_small_values() {
-        // Test with small values
-        let x = Matrix::from_vec(3, 1, vec![0.001, 0.002, 0.003])
-            .expect("Valid matrix dimensions for test");
-        let y = Vector::from_slice(&[0.003, 0.005, 0.007]); // y = 2x + 0.001
-
-        let mut model = LinearRegression::new();
-        model
-            .fit(&x, &y)
-            .expect("Fit should succeed with valid test data");
-
-        let coef = model.coefficients();
-        assert!((coef[0] - 2.0).abs() < 1e-2);
-    }
-
-    #[test]
-    fn test_zero_intercept_data() {
-        // Data that should produce zero intercept
-        let x =
-            Matrix::from_vec(3, 1, vec![1.0, 2.0, 3.0]).expect("Valid matrix dimensions for test");
-        let y = Vector::from_slice(&[2.0, 4.0, 6.0]); // y = 2x
-
-        let mut model = LinearRegression::new();
-        model
-            .fit(&x, &y)
-            .expect("Fit should succeed with valid test data");
-
-        let coef = model.coefficients();
-        assert!((coef[0] - 2.0).abs() < 1e-4);
-        assert!(model.intercept().abs() < 1e-4);
-    }
-
-    #[test]
-    fn test_constant_target() {
-        // All y values are the same
-        let x =
-            Matrix::from_vec(3, 1, vec![1.0, 2.0, 3.0]).expect("Valid matrix dimensions for test");
-        let y = Vector::from_slice(&[5.0, 5.0, 5.0]);
-
-        let mut model = LinearRegression::new();
-        model
-            .fit(&x, &y)
-            .expect("Fit should succeed with valid test data");
-
-        // Coefficient should be ~0, intercept should be ~5
-        let coef = model.coefficients();
-        assert!(coef[0].abs() < 1e-4);
-        assert!((model.intercept() - 5.0).abs() < 1e-4);
-    }
-
-    #[test]
-    fn test_r2_score_bounds() {
-        // R² should be in reasonable range for good fit
-        let x = Matrix::from_vec(5, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0])
-            .expect("Valid matrix dimensions for test");
-        let y = Vector::from_slice(&[2.1, 3.9, 6.1, 7.9, 10.1]);
-
-        let mut model = LinearRegression::new();
-        model
-            .fit(&x, &y)
-            .expect("Fit should succeed with valid test data");
-
-        let r2 = model.score(&x, &y);
-        assert!(r2 > 0.0);
-        assert!(r2 <= 1.0);
-    }
-
-    #[test]
-    fn test_extrapolation() {
-        // Test prediction outside training range
-        let x_train =
-            Matrix::from_vec(3, 1, vec![1.0, 2.0, 3.0]).expect("Valid matrix dimensions for test");
-        let y_train = Vector::from_slice(&[2.0, 4.0, 6.0]); // y = 2x
-
-        let mut model = LinearRegression::new();
-        model
-            .fit(&x_train, &y_train)
-            .expect("Fit should succeed with valid test data");
-
-        // Predict at x = 10 (extrapolation)
-        let x_test = Matrix::from_vec(1, 1, vec![10.0]).expect("Valid matrix dimensions for test");
-        let predictions = model.predict(&x_test);
-
-        assert!((predictions[0] - 20.0).abs() < 1e-4);
-    }
-
-    #[test]
-    fn test_underdetermined_system_with_intercept() {
-        // n_samples < n_features + 1 (underdetermined with intercept)
-        // 3 samples, 5 features, fit_intercept=true means we need 6 parameters
-        let x = Matrix::from_vec(
-            3,
-            5,
-            vec![
-                1.0, 2.0, 3.0, 4.0, 5.0, 2.0, 3.0, 4.0, 5.0, 6.0, 3.0, 4.0, 5.0, 6.0, 7.0,
-            ],
-        )
+#[test]
+fn test_with_noise() {
+    // y ≈ 2x + 1 with some noise
+    let x = Matrix::from_vec(5, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0])
         .expect("Valid matrix dimensions for test");
-        let y = Vector::from_vec(vec![10.0, 20.0, 30.0]);
+    let y = Vector::from_slice(&[3.1, 4.9, 7.2, 8.8, 11.1]);
 
-        let mut model = LinearRegression::new();
-        let result = model.fit(&x, &y);
+    let mut model = LinearRegression::new();
+    model
+        .fit(&x, &y)
+        .expect("Fit should succeed with valid test data");
 
-        assert!(result.is_err());
-        let error_msg = result.expect_err("Should fail when underdetermined system with intercept");
-        let error_str = error_msg.to_string();
-        // Should mention samples, features, and suggest solutions
-        assert!(
-            error_str.contains("samples") || error_str.contains("features"),
-            "Error message should mention samples or features: {error_str}"
-        );
-    }
+    // Should still get approximately correct coefficients
+    let coef = model.coefficients();
+    assert!((coef[0] - 2.0).abs() < 0.2);
+    assert!((model.intercept() - 1.0).abs() < 0.5);
 
-    #[test]
-    fn test_underdetermined_system_without_intercept() {
-        // n_samples < n_features (underdetermined without intercept)
-        // 3 samples, 5 features, fit_intercept=false
-        let x = Matrix::from_vec(
-            3,
-            5,
-            vec![
-                1.0, 2.0, 3.0, 4.0, 5.0, 2.0, 3.0, 4.0, 5.0, 6.0, 3.0, 4.0, 5.0, 6.0, 7.0,
-            ],
-        )
+    // R² should be high but not perfect
+    let r2 = model.score(&x, &y);
+    assert!(r2 > 0.95);
+    assert!(r2 < 1.0);
+}
+
+#[test]
+fn test_default() {
+    let model = LinearRegression::default();
+    assert!(!model.is_fitted());
+}
+
+#[test]
+fn test_clone() {
+    let x = Matrix::from_vec(3, 1, vec![1.0, 2.0, 3.0]).expect("Valid matrix dimensions for test");
+    let y = Vector::from_slice(&[2.0, 4.0, 6.0]);
+
+    let mut model = LinearRegression::new();
+    model
+        .fit(&x, &y)
+        .expect("Fit should succeed with valid test data");
+
+    let cloned = model.clone();
+    assert!(cloned.is_fitted());
+    assert!((cloned.intercept() - model.intercept()).abs() < 1e-6);
+}
+
+#[test]
+fn test_score_range() {
+    // R² should be between negative infinity and 1
+    let x =
+        Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0]).expect("Valid matrix dimensions for test");
+    let y = Vector::from_slice(&[3.0, 5.0, 7.0, 9.0]);
+
+    let mut model = LinearRegression::new();
+    model
+        .fit(&x, &y)
+        .expect("Fit should succeed with valid test data");
+
+    let r2 = model.score(&x, &y);
+    assert!(r2 <= 1.0);
+}
+
+#[test]
+fn test_prediction_invariant() {
+    // Property: predict(fit(X, y), X) should approximate y
+    // Use non-collinear data
+    let x = Matrix::from_vec(5, 2, vec![1.0, 1.0, 2.0, 3.0, 3.0, 2.0, 4.0, 5.0, 5.0, 4.0])
         .expect("Valid matrix dimensions for test");
-        let y = Vector::from_vec(vec![10.0, 20.0, 30.0]);
+    // y = 2*x1 + 3*x2 + 1
+    let y = Vector::from_slice(&[6.0, 14.0, 13.0, 24.0, 23.0]);
 
-        let mut model = LinearRegression::new().with_intercept(false);
-        let result = model.fit(&x, &y);
+    let mut model = LinearRegression::new();
+    model
+        .fit(&x, &y)
+        .expect("Fit should succeed with valid test data");
 
-        assert!(result.is_err());
-        let error_msg =
-            result.expect_err("Should fail when underdetermined system without intercept");
-        let error_str = error_msg.to_string();
-        assert!(
-            error_str.contains("samples") || error_str.contains("features"),
-            "Error message should be helpful: {error_str}"
-        );
+    let predictions = model.predict(&x);
+
+    for i in 0..y.len() {
+        assert!((predictions[i] - y[i]).abs() < 1e-3);
+    }
+}
+
+#[test]
+fn test_coefficients_length_invariant() {
+    // Property: coefficients.len() == n_features
+    // Use well-conditioned data with independent columns
+    let x = Matrix::from_vec(
+        6,
+        3,
+        vec![
+            1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0,
+            1.0,
+        ],
+    )
+    .expect("Valid matrix dimensions for test");
+    let y = Vector::from_slice(&[1.0, 2.0, 3.0, 3.0, 5.0, 4.0]);
+
+    let mut model = LinearRegression::new();
+    model
+        .fit(&x, &y)
+        .expect("Fit should succeed with valid test data");
+
+    assert_eq!(model.coefficients().len(), 3);
+}
+
+#[test]
+fn test_larger_dataset() {
+    // Test with more samples
+    let n = 100;
+    let mut x_data = Vec::with_capacity(n);
+    let mut y_data = Vec::with_capacity(n);
+
+    for i in 0..n {
+        let x_val = i as f32;
+        x_data.push(x_val);
+        y_data.push(2.0 * x_val + 3.0); // y = 2x + 3
     }
 
-    #[test]
-    fn test_exactly_determined_system() {
-        // n_samples == n_features + 1 (exactly determined with intercept)
-        // 4 samples, 3 features, fit_intercept=true means 4 parameters
-        let x = Matrix::from_vec(
-            4,
-            3,
-            vec![1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
-        )
+    let x = Matrix::from_vec(n, 1, x_data).expect("Valid matrix dimensions for test");
+    let y = Vector::from_vec(y_data);
+
+    let mut model = LinearRegression::new();
+    model
+        .fit(&x, &y)
+        .expect("Fit should succeed with valid test data");
+
+    let coef = model.coefficients();
+    assert!((coef[0] - 2.0).abs() < 1e-3);
+    assert!((model.intercept() - 3.0).abs() < 1e-3);
+}
+
+#[test]
+fn test_single_sample_single_feature() {
+    // Edge case: minimum viable data
+    let x = Matrix::from_vec(2, 1, vec![1.0, 2.0]).expect("Valid matrix dimensions for test");
+    let y = Vector::from_slice(&[3.0, 5.0]);
+
+    let mut model = LinearRegression::new();
+    model
+        .fit(&x, &y)
+        .expect("Fit should succeed with valid test data");
+
+    // y = 2x + 1
+    let coef = model.coefficients();
+    assert!((coef[0] - 2.0).abs() < 1e-4);
+    assert!((model.intercept() - 1.0).abs() < 1e-4);
+}
+
+#[test]
+fn test_negative_values() {
+    // Test with negative coefficients and values
+    let x = Matrix::from_vec(4, 1, vec![-2.0, -1.0, 0.0, 1.0])
         .expect("Valid matrix dimensions for test");
-        let y = Vector::from_vec(vec![1.0, 2.0, 3.0, 6.0]);
+    let y = Vector::from_slice(&[5.0, 3.0, 1.0, -1.0]); // y = -2x + 1
 
-        let mut model = LinearRegression::new();
-        let result = model.fit(&x, &y);
+    let mut model = LinearRegression::new();
+    model
+        .fit(&x, &y)
+        .expect("Fit should succeed with valid test data");
 
-        // This should succeed (exactly determined)
-        assert!(result.is_ok(), "Exactly determined system should work");
-    }
+    let coef = model.coefficients();
+    assert!((coef[0] - (-2.0)).abs() < 1e-4);
+    assert!((model.intercept() - 1.0).abs() < 1e-4);
+}
 
-    #[test]
-    fn test_save_load_binary() {
-        use std::fs;
-        use std::path::Path;
-
-        // Train a model
-        let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0])
-            .expect("Valid matrix dimensions for test");
-        let y = Vector::from_slice(&[3.0, 5.0, 7.0, 9.0]); // y = 2x + 1
-
-        let mut model = LinearRegression::new();
-        model
-            .fit(&x, &y)
-            .expect("Fit should succeed with valid test data");
-
-        // Save to file
-        let path = Path::new("/tmp/test_linear_regression.bin");
-        model.save(path).expect("Failed to save model");
-
-        // Load from file
-        let loaded_model = LinearRegression::load(path).expect("Failed to load model");
-
-        // Verify loaded model matches original
-        let original_pred = model.predict(&x);
-        let loaded_pred = loaded_model.predict(&x);
-
-        for i in 0..original_pred.len() {
-            assert!(
-                (original_pred[i] - loaded_pred[i]).abs() < 1e-6,
-                "Loaded model predictions don't match original"
-            );
-        }
-
-        // Verify coefficients and intercept match
-        assert_eq!(
-            model.coefficients().len(),
-            loaded_model.coefficients().len()
-        );
-        for i in 0..model.coefficients().len() {
-            assert!((model.coefficients()[i] - loaded_model.coefficients()[i]).abs() < 1e-6);
-        }
-        assert!((model.intercept() - loaded_model.intercept()).abs() < 1e-6);
-
-        // Cleanup
-        fs::remove_file(path).ok();
-    }
-
-    #[test]
-    fn test_with_intercept_returns_self() {
-        // Test that with_intercept returns the modified self, not a default
-        // This catches the mutation: with_intercept -> Default::default()
-        let model = LinearRegression::new().with_intercept(false);
-
-        // If mutation returns Default::default(), fit_intercept would be true
-        // Since new() sets fit_intercept = true by default
-
-        // We need to verify the model actually has fit_intercept = false
-        // by checking the fitted behavior
-        let x =
-            Matrix::from_vec(3, 1, vec![1.0, 2.0, 3.0]).expect("Valid matrix dimensions for test");
-        let y = Vector::from_slice(&[2.0, 4.0, 6.0]); // y = 2x
-
-        let mut model = model;
-        model
-            .fit(&x, &y)
-            .expect("Fit should succeed with valid test data");
-
-        // Without intercept, the model should pass through origin
-        // Predicting x=0 should give y=0 (no intercept term)
-        let x_zero = Matrix::from_vec(1, 1, vec![0.0]).expect("Valid matrix dimensions for test");
-        let pred = model.predict(&x_zero);
-
-        assert!(
-            pred[0].abs() < 1e-6,
-            "Model without intercept should predict 0 at x=0, got {}",
-            pred[0]
-        );
-    }
-
-    #[test]
-    fn test_with_intercept_builder_chain() {
-        // Test that builder pattern works correctly
-        // with_intercept(false) followed by fitting should not have intercept
-        let x = Matrix::from_vec(2, 1, vec![1.0, 2.0]).expect("Valid matrix dimensions for test");
-        let y = Vector::from_slice(&[3.0, 5.0]); // y = 2x + 1
-
-        // Model with intercept
-        let mut with_int = LinearRegression::new().with_intercept(true);
-        with_int
-            .fit(&x, &y)
-            .expect("Fit should succeed with valid test data");
-
-        // Model without intercept
-        let mut without_int = LinearRegression::new().with_intercept(false);
-        without_int
-            .fit(&x, &y)
-            .expect("Fit should succeed with valid test data");
-
-        // The intercept should be different
-        // With intercept: should have non-zero intercept for this data
-        // Without intercept: intercept is always 0
-        assert!(
-            with_int.intercept().abs() > 0.1,
-            "Model with intercept should have non-zero intercept"
-        );
-        assert!(
-            without_int.intercept().abs() < 1e-6,
-            "Model without intercept should have zero intercept, got {}",
-            without_int.intercept()
-        );
-    }
-
-    // Ridge regression tests
-    #[test]
-    fn test_ridge_new() {
-        let model = Ridge::new(1.0);
-        assert!(!model.is_fitted());
-        assert!((model.alpha() - 1.0).abs() < 1e-6);
-    }
-
-    #[test]
-    fn test_ridge_simple_regression() {
-        // y = 2x + 1
-        let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0])
-            .expect("Valid matrix dimensions for test");
-        let y = Vector::from_slice(&[3.0, 5.0, 7.0, 9.0]);
-
-        let mut model = Ridge::new(0.0); // No regularization = OLS
-        model
-            .fit(&x, &y)
-            .expect("Fit should succeed with valid test data");
-
-        assert!(model.is_fitted());
-
-        // Check predictions are close (might not be perfect due to regularization)
-        let r2 = model.score(&x, &y);
-        assert!(r2 > 0.99);
-    }
-
-    #[test]
-    fn test_ridge_regularization_shrinks_coefficients() {
-        // Test that higher alpha shrinks coefficients
-        let x = Matrix::from_vec(5, 2, vec![1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0, 5.0, 5.0])
-            .expect("Valid matrix dimensions for test");
-        let y = Vector::from_slice(&[4.0, 8.0, 12.0, 16.0, 20.0]);
-
-        // Low regularization
-        let mut low_reg = Ridge::new(0.01);
-        low_reg
-            .fit(&x, &y)
-            .expect("Fit should succeed with valid test data");
-
-        // High regularization
-        let mut high_reg = Ridge::new(100.0);
-        high_reg
-            .fit(&x, &y)
-            .expect("Fit should succeed with valid test data");
-
-        // Higher regularization should produce smaller coefficient magnitudes
-        let low_coef = low_reg.coefficients();
-        let high_coef = high_reg.coefficients();
-        let low_norm: f32 = (0..low_coef.len()).map(|i| low_coef[i] * low_coef[i]).sum();
-        let high_norm: f32 = (0..high_coef.len())
-            .map(|i| high_coef[i] * high_coef[i])
-            .sum();
-
-        assert!(
-            high_norm < low_norm,
-            "High regularization should shrink coefficients: {high_norm} < {low_norm}"
-        );
-    }
-
-    #[test]
-    fn test_ridge_multivariate() {
-        // y = 1 + 2*x1 + 3*x2
-        let x = Matrix::from_vec(5, 2, vec![1.0, 1.0, 2.0, 1.0, 1.0, 2.0, 2.0, 2.0, 3.0, 3.0])
-            .expect("Valid matrix dimensions for test");
-        let y = Vector::from_slice(&[6.0, 8.0, 9.0, 11.0, 16.0]);
-
-        let mut model = Ridge::new(0.1);
-        model
-            .fit(&x, &y)
-            .expect("Fit should succeed with valid test data");
-
-        let r2 = model.score(&x, &y);
-        assert!(r2 > 0.95);
-    }
-
-    #[test]
-    fn test_ridge_no_intercept() {
-        // y = 2x
-        let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0])
-            .expect("Valid matrix dimensions for test");
-        let y = Vector::from_slice(&[2.0, 4.0, 6.0, 8.0]);
-
-        let mut model = Ridge::new(0.1).with_intercept(false);
-        model
-            .fit(&x, &y)
-            .expect("Fit should succeed with valid test data");
-
-        assert!((model.intercept() - 0.0).abs() < 1e-6);
-    }
-
-    #[test]
-    fn test_ridge_dimension_mismatch_error() {
-        let x = Matrix::from_vec(3, 2, vec![1.0; 6]).expect("Valid matrix dimensions for test");
-        let y = Vector::from_slice(&[1.0, 2.0]); // Wrong length
-
-        let mut model = Ridge::new(1.0);
-        let result = model.fit(&x, &y);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_ridge_empty_data_error() {
-        let x = Matrix::from_vec(0, 2, vec![]).expect("Valid matrix dimensions for test");
-        let y = Vector::from_vec(vec![]);
-
-        let mut model = Ridge::new(1.0);
-        let result = model.fit(&x, &y);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_ridge_underdetermined_system() {
-        // Ridge can handle underdetermined systems due to regularization
-        // 3 samples, 5 features
-        let x = Matrix::from_vec(
-            3,
-            5,
-            vec![
-                1.0, 2.0, 3.0, 4.0, 5.0, 2.0, 3.0, 4.0, 5.0, 6.0, 3.0, 4.0, 5.0, 6.0, 7.0,
-            ],
-        )
+#[test]
+fn test_large_values() {
+    // Test numerical stability with large values
+    let x = Matrix::from_vec(3, 1, vec![1000.0, 2000.0, 3000.0])
         .expect("Valid matrix dimensions for test");
-        let y = Vector::from_vec(vec![10.0, 20.0, 30.0]);
+    let y = Vector::from_slice(&[2001.0, 4001.0, 6001.0]); // y = 2x + 1
 
-        // With sufficient regularization, this should work
-        let mut model = Ridge::new(10.0);
-        let result = model.fit(&x, &y);
-        assert!(
-            result.is_ok(),
-            "Ridge should handle underdetermined systems"
-        );
-    }
+    let mut model = LinearRegression::new();
+    model
+        .fit(&x, &y)
+        .expect("Fit should succeed with valid test data");
 
-    #[test]
-    fn test_ridge_clone() {
-        let x =
-            Matrix::from_vec(3, 1, vec![1.0, 2.0, 3.0]).expect("Valid matrix dimensions for test");
-        let y = Vector::from_slice(&[2.0, 4.0, 6.0]);
+    let coef = model.coefficients();
+    assert!((coef[0] - 2.0).abs() < 1e-2);
+    assert!((model.intercept() - 1.0).abs() < 10.0); // Larger tolerance for large values
+}
 
-        let mut model = Ridge::new(0.5);
-        model
-            .fit(&x, &y)
-            .expect("Fit should succeed with valid test data");
-
-        let cloned = model.clone();
-        assert!(cloned.is_fitted());
-        assert!((cloned.alpha() - model.alpha()).abs() < 1e-6);
-        assert!((cloned.intercept() - model.intercept()).abs() < 1e-6);
-    }
-
-    #[test]
-    fn test_ridge_alpha_zero_equals_ols() {
-        // Ridge with alpha=0 should give same results as OLS
-        let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0])
-            .expect("Valid matrix dimensions for test");
-        let y = Vector::from_slice(&[3.0, 5.0, 7.0, 9.0]);
-
-        let mut ridge = Ridge::new(0.0);
-        ridge
-            .fit(&x, &y)
-            .expect("Fit should succeed with valid test data");
-
-        let mut ols = LinearRegression::new();
-        ols.fit(&x, &y)
-            .expect("Fit should succeed with valid test data");
-
-        // Coefficients should be nearly identical
-        assert!(
-            (ridge.coefficients()[0] - ols.coefficients()[0]).abs() < 1e-4,
-            "Ridge with alpha=0 should equal OLS"
-        );
-        assert!((ridge.intercept() - ols.intercept()).abs() < 1e-4);
-    }
-
-    #[test]
-    fn test_ridge_save_load() {
-        use std::fs;
-        use std::path::Path;
-
-        let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0])
-            .expect("Valid matrix dimensions for test");
-        let y = Vector::from_slice(&[3.0, 5.0, 7.0, 9.0]);
-
-        let mut model = Ridge::new(0.5);
-        model
-            .fit(&x, &y)
-            .expect("Fit should succeed with valid test data");
-
-        let path = Path::new("/tmp/test_ridge.bin");
-        model.save(path).expect("Failed to save model");
-
-        let loaded = Ridge::load(path).expect("Failed to load model");
-
-        // Verify loaded model matches original
-        assert!((loaded.alpha() - model.alpha()).abs() < 1e-6);
-        let original_pred = model.predict(&x);
-        let loaded_pred = loaded.predict(&x);
-
-        for i in 0..original_pred.len() {
-            assert!((original_pred[i] - loaded_pred[i]).abs() < 1e-6);
-        }
-
-        fs::remove_file(path).ok();
-    }
-
-    #[test]
-    fn test_ridge_with_intercept_builder() {
-        let model = Ridge::new(1.0).with_intercept(false);
-
-        let x =
-            Matrix::from_vec(3, 1, vec![1.0, 2.0, 3.0]).expect("Valid matrix dimensions for test");
-        let y = Vector::from_slice(&[2.0, 4.0, 6.0]);
-
-        let mut model = model;
-        model
-            .fit(&x, &y)
-            .expect("Fit should succeed with valid test data");
-
-        // Without intercept, predicting at x=0 should give 0
-        let x_zero = Matrix::from_vec(1, 1, vec![0.0]).expect("Valid matrix dimensions for test");
-        let pred = model.predict(&x_zero);
-
-        assert!(
-            pred[0].abs() < 1e-6,
-            "Ridge without intercept should predict 0 at x=0"
-        );
-    }
-
-    #[test]
-    fn test_ridge_coefficients_length() {
-        let x = Matrix::from_vec(5, 3, vec![1.0; 15]).expect("Valid matrix dimensions for test");
-        let y = Vector::from_slice(&[1.0, 2.0, 3.0, 4.0, 5.0]);
-
-        let mut model = Ridge::new(1.0);
-        model
-            .fit(&x, &y)
-            .expect("Fit should succeed with valid test data");
-
-        assert_eq!(model.coefficients().len(), 3);
-    }
-
-    // Lasso regression tests
-    #[test]
-    fn test_lasso_new() {
-        let model = Lasso::new(1.0);
-        assert!(!model.is_fitted());
-        assert!((model.alpha() - 1.0).abs() < 1e-6);
-    }
-
-    #[test]
-    fn test_lasso_simple_regression() {
-        // y = 2x + 1
-        let x = Matrix::from_vec(5, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0])
-            .expect("Valid matrix dimensions for test");
-        let y = Vector::from_slice(&[3.0, 5.0, 7.0, 9.0, 11.0]);
-
-        let mut model = Lasso::new(0.01); // Small regularization
-        model
-            .fit(&x, &y)
-            .expect("Fit should succeed with valid test data");
-
-        assert!(model.is_fitted());
-
-        let r2 = model.score(&x, &y);
-        assert!(r2 > 0.98, "R² should be > 0.98, got {r2}");
-    }
-
-    #[test]
-    fn test_lasso_produces_sparsity() {
-        // Test that Lasso with high alpha produces sparse coefficients
-        // Create data where only first feature matters: y = x1
-        let x = Matrix::from_vec(
-            6,
-            3,
-            vec![
-                1.0, 0.1, 0.2, 2.0, 0.2, 0.1, 3.0, 0.1, 0.3, 4.0, 0.3, 0.1, 5.0, 0.2, 0.2, 6.0,
-                0.1, 0.1,
-            ],
-        )
+#[test]
+fn test_small_values() {
+    // Test with small values
+    let x = Matrix::from_vec(3, 1, vec![0.001, 0.002, 0.003])
         .expect("Valid matrix dimensions for test");
-        let y = Vector::from_slice(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+    let y = Vector::from_slice(&[0.003, 0.005, 0.007]); // y = 2x + 0.001
 
-        let mut model = Lasso::new(1.0); // High regularization
-        model
-            .fit(&x, &y)
-            .expect("Fit should succeed with valid test data");
+    let mut model = LinearRegression::new();
+    model
+        .fit(&x, &y)
+        .expect("Fit should succeed with valid test data");
 
-        // Count non-zero coefficients
-        let coef = model.coefficients();
-        let mut non_zero = 0;
-        for i in 0..coef.len() {
-            if coef[i].abs() > 1e-4 {
-                non_zero += 1;
-            }
-        }
+    let coef = model.coefficients();
+    assert!((coef[0] - 2.0).abs() < 1e-2);
+}
 
-        // With high alpha, some coefficients should be zeroed out
-        assert!(
-            non_zero < coef.len(),
-            "Lasso should produce sparse solution, got {} non-zero out of {}",
-            non_zero,
-            coef.len()
-        );
-    }
+#[test]
+fn test_zero_intercept_data() {
+    // Data that should produce zero intercept
+    let x = Matrix::from_vec(3, 1, vec![1.0, 2.0, 3.0]).expect("Valid matrix dimensions for test");
+    let y = Vector::from_slice(&[2.0, 4.0, 6.0]); // y = 2x
 
-    #[test]
-    fn test_lasso_multivariate() {
-        // y = 1 + 2*x1 + 3*x2
-        let x = Matrix::from_vec(
-            6,
-            2,
-            vec![1.0, 1.0, 2.0, 1.0, 1.0, 2.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0],
-        )
+    let mut model = LinearRegression::new();
+    model
+        .fit(&x, &y)
+        .expect("Fit should succeed with valid test data");
+
+    let coef = model.coefficients();
+    assert!((coef[0] - 2.0).abs() < 1e-4);
+    assert!(model.intercept().abs() < 1e-4);
+}
+
+#[test]
+fn test_constant_target() {
+    // All y values are the same
+    let x = Matrix::from_vec(3, 1, vec![1.0, 2.0, 3.0]).expect("Valid matrix dimensions for test");
+    let y = Vector::from_slice(&[5.0, 5.0, 5.0]);
+
+    let mut model = LinearRegression::new();
+    model
+        .fit(&x, &y)
+        .expect("Fit should succeed with valid test data");
+
+    // Coefficient should be ~0, intercept should be ~5
+    let coef = model.coefficients();
+    assert!(coef[0].abs() < 1e-4);
+    assert!((model.intercept() - 5.0).abs() < 1e-4);
+}
+
+#[test]
+fn test_r2_score_bounds() {
+    // R² should be in reasonable range for good fit
+    let x = Matrix::from_vec(5, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0])
         .expect("Valid matrix dimensions for test");
-        let y = Vector::from_slice(&[6.0, 8.0, 9.0, 11.0, 16.0, 21.0]);
+    let y = Vector::from_slice(&[2.1, 3.9, 6.1, 7.9, 10.1]);
 
-        let mut model = Lasso::new(0.01);
-        model
-            .fit(&x, &y)
-            .expect("Fit should succeed with valid test data");
+    let mut model = LinearRegression::new();
+    model
+        .fit(&x, &y)
+        .expect("Fit should succeed with valid test data");
 
-        let r2 = model.score(&x, &y);
-        assert!(r2 > 0.95, "R² should be > 0.95, got {r2}");
-    }
+    let r2 = model.score(&x, &y);
+    assert!(r2 > 0.0);
+    assert!(r2 <= 1.0);
+}
 
-    #[test]
-    fn test_lasso_no_intercept() {
-        // y = 2x
-        let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0])
-            .expect("Valid matrix dimensions for test");
-        let y = Vector::from_slice(&[2.0, 4.0, 6.0, 8.0]);
+#[test]
+fn test_extrapolation() {
+    // Test prediction outside training range
+    let x_train =
+        Matrix::from_vec(3, 1, vec![1.0, 2.0, 3.0]).expect("Valid matrix dimensions for test");
+    let y_train = Vector::from_slice(&[2.0, 4.0, 6.0]); // y = 2x
 
-        let mut model = Lasso::new(0.01).with_intercept(false);
-        model
-            .fit(&x, &y)
-            .expect("Fit should succeed with valid test data");
+    let mut model = LinearRegression::new();
+    model
+        .fit(&x_train, &y_train)
+        .expect("Fit should succeed with valid test data");
 
-        assert!((model.intercept() - 0.0).abs() < 1e-6);
-    }
+    // Predict at x = 10 (extrapolation)
+    let x_test = Matrix::from_vec(1, 1, vec![10.0]).expect("Valid matrix dimensions for test");
+    let predictions = model.predict(&x_test);
 
-    #[test]
-    fn test_lasso_dimension_mismatch_error() {
-        let x = Matrix::from_vec(3, 2, vec![1.0; 6]).expect("Valid matrix dimensions for test");
-        let y = Vector::from_slice(&[1.0, 2.0]); // Wrong length
+    assert!((predictions[0] - 20.0).abs() < 1e-4);
+}
 
-        let mut model = Lasso::new(1.0);
-        let result = model.fit(&x, &y);
-        assert!(result.is_err());
-    }
+#[test]
+fn test_underdetermined_system_with_intercept() {
+    // n_samples < n_features + 1 (underdetermined with intercept)
+    // 3 samples, 5 features, fit_intercept=true means we need 6 parameters
+    let x = Matrix::from_vec(
+        3,
+        5,
+        vec![
+            1.0, 2.0, 3.0, 4.0, 5.0, 2.0, 3.0, 4.0, 5.0, 6.0, 3.0, 4.0, 5.0, 6.0, 7.0,
+        ],
+    )
+    .expect("Valid matrix dimensions for test");
+    let y = Vector::from_vec(vec![10.0, 20.0, 30.0]);
 
-    #[test]
-    fn test_lasso_empty_data_error() {
-        let x = Matrix::from_vec(0, 2, vec![]).expect("Valid matrix dimensions for test");
-        let y = Vector::from_vec(vec![]);
+    let mut model = LinearRegression::new();
+    let result = model.fit(&x, &y);
 
-        let mut model = Lasso::new(1.0);
-        let result = model.fit(&x, &y);
-        assert!(result.is_err());
-    }
+    assert!(result.is_err());
+    let error_msg = result.expect_err("Should fail when underdetermined system with intercept");
+    let error_str = error_msg.to_string();
+    // Should mention samples, features, and suggest solutions
+    assert!(
+        error_str.contains("samples") || error_str.contains("features"),
+        "Error message should mention samples or features: {error_str}"
+    );
+}
 
-    #[test]
-    fn test_lasso_clone() {
-        let x =
-            Matrix::from_vec(3, 1, vec![1.0, 2.0, 3.0]).expect("Valid matrix dimensions for test");
-        let y = Vector::from_slice(&[2.0, 4.0, 6.0]);
+#[test]
+fn test_underdetermined_system_without_intercept() {
+    // n_samples < n_features (underdetermined without intercept)
+    // 3 samples, 5 features, fit_intercept=false
+    let x = Matrix::from_vec(
+        3,
+        5,
+        vec![
+            1.0, 2.0, 3.0, 4.0, 5.0, 2.0, 3.0, 4.0, 5.0, 6.0, 3.0, 4.0, 5.0, 6.0, 7.0,
+        ],
+    )
+    .expect("Valid matrix dimensions for test");
+    let y = Vector::from_vec(vec![10.0, 20.0, 30.0]);
 
-        let mut model = Lasso::new(0.5);
-        model
-            .fit(&x, &y)
-            .expect("Fit should succeed with valid test data");
+    let mut model = LinearRegression::new().with_intercept(false);
+    let result = model.fit(&x, &y);
 
-        let cloned = model.clone();
-        assert!(cloned.is_fitted());
-        assert!((cloned.alpha() - model.alpha()).abs() < 1e-6);
-        assert!((cloned.intercept() - model.intercept()).abs() < 1e-6);
-    }
+    assert!(result.is_err());
+    let error_msg = result.expect_err("Should fail when underdetermined system without intercept");
+    let error_str = error_msg.to_string();
+    assert!(
+        error_str.contains("samples") || error_str.contains("features"),
+        "Error message should be helpful: {error_str}"
+    );
+}
 
-    #[test]
-    fn test_lasso_save_load() {
-        use std::fs;
-        use std::path::Path;
+#[test]
+fn test_exactly_determined_system() {
+    // n_samples == n_features + 1 (exactly determined with intercept)
+    // 4 samples, 3 features, fit_intercept=true means 4 parameters
+    let x = Matrix::from_vec(
+        4,
+        3,
+        vec![1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
+    )
+    .expect("Valid matrix dimensions for test");
+    let y = Vector::from_vec(vec![1.0, 2.0, 3.0, 6.0]);
 
-        let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0])
-            .expect("Valid matrix dimensions for test");
-        let y = Vector::from_slice(&[3.0, 5.0, 7.0, 9.0]);
+    let mut model = LinearRegression::new();
+    let result = model.fit(&x, &y);
 
-        let mut model = Lasso::new(0.1);
-        model
-            .fit(&x, &y)
-            .expect("Fit should succeed with valid test data");
+    // This should succeed (exactly determined)
+    assert!(result.is_ok(), "Exactly determined system should work");
+}
 
-        let path = Path::new("/tmp/test_lasso.bin");
-        model.save(path).expect("Failed to save model");
+#[test]
+fn test_save_load_binary() {
+    use std::fs;
+    use std::path::Path;
 
-        let loaded = Lasso::load(path).expect("Failed to load model");
+    // Train a model
+    let x =
+        Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0]).expect("Valid matrix dimensions for test");
+    let y = Vector::from_slice(&[3.0, 5.0, 7.0, 9.0]); // y = 2x + 1
 
-        assert!((loaded.alpha() - model.alpha()).abs() < 1e-6);
-        let original_pred = model.predict(&x);
-        let loaded_pred = loaded.predict(&x);
+    let mut model = LinearRegression::new();
+    model
+        .fit(&x, &y)
+        .expect("Fit should succeed with valid test data");
 
-        for i in 0..original_pred.len() {
-            assert!((original_pred[i] - loaded_pred[i]).abs() < 1e-6);
-        }
+    // Save to file
+    let path = Path::new("/tmp/test_linear_regression.bin");
+    model.save(path).expect("Failed to save model");
 
-        fs::remove_file(path).ok();
-    }
+    // Load from file
+    let loaded_model = LinearRegression::load(path).expect("Failed to load model");
 
-    #[test]
-    fn test_lasso_with_intercept_builder() {
-        let model = Lasso::new(1.0).with_intercept(false);
+    // Verify loaded model matches original
+    let original_pred = model.predict(&x);
+    let loaded_pred = loaded_model.predict(&x);
 
-        let x =
-            Matrix::from_vec(3, 1, vec![1.0, 2.0, 3.0]).expect("Valid matrix dimensions for test");
-        let y = Vector::from_slice(&[2.0, 4.0, 6.0]);
-
-        let mut model = model;
-        model
-            .fit(&x, &y)
-            .expect("Fit should succeed with valid test data");
-
-        let x_zero = Matrix::from_vec(1, 1, vec![0.0]).expect("Valid matrix dimensions for test");
-        let pred = model.predict(&x_zero);
-
+    for i in 0..original_pred.len() {
         assert!(
-            pred[0].abs() < 1e-6,
-            "Lasso without intercept should predict 0 at x=0"
+            (original_pred[i] - loaded_pred[i]).abs() < 1e-6,
+            "Loaded model predictions don't match original"
         );
     }
 
-    #[test]
-    fn test_lasso_coefficients_length() {
-        let x = Matrix::from_vec(5, 3, vec![1.0; 15]).expect("Valid matrix dimensions for test");
-        let y = Vector::from_slice(&[1.0, 2.0, 3.0, 4.0, 5.0]);
+    // Verify coefficients and intercept match
+    assert_eq!(
+        model.coefficients().len(),
+        loaded_model.coefficients().len()
+    );
+    for i in 0..model.coefficients().len() {
+        assert!((model.coefficients()[i] - loaded_model.coefficients()[i]).abs() < 1e-6);
+    }
+    assert!((model.intercept() - loaded_model.intercept()).abs() < 1e-6);
 
-        let mut model = Lasso::new(0.1);
-        model
-            .fit(&x, &y)
-            .expect("Fit should succeed with valid test data");
+    // Cleanup
+    fs::remove_file(path).ok();
+}
 
-        assert_eq!(model.coefficients().len(), 3);
+#[test]
+fn test_with_intercept_returns_self() {
+    // Test that with_intercept returns the modified self, not a default
+    // This catches the mutation: with_intercept -> Default::default()
+    let model = LinearRegression::new().with_intercept(false);
+
+    // If mutation returns Default::default(), fit_intercept would be true
+    // Since new() sets fit_intercept = true by default
+
+    // We need to verify the model actually has fit_intercept = false
+    // by checking the fitted behavior
+    let x = Matrix::from_vec(3, 1, vec![1.0, 2.0, 3.0]).expect("Valid matrix dimensions for test");
+    let y = Vector::from_slice(&[2.0, 4.0, 6.0]); // y = 2x
+
+    let mut model = model;
+    model
+        .fit(&x, &y)
+        .expect("Fit should succeed with valid test data");
+
+    // Without intercept, the model should pass through origin
+    // Predicting x=0 should give y=0 (no intercept term)
+    let x_zero = Matrix::from_vec(1, 1, vec![0.0]).expect("Valid matrix dimensions for test");
+    let pred = model.predict(&x_zero);
+
+    assert!(
+        pred[0].abs() < 1e-6,
+        "Model without intercept should predict 0 at x=0, got {}",
+        pred[0]
+    );
+}
+
+#[test]
+fn test_with_intercept_builder_chain() {
+    // Test that builder pattern works correctly
+    // with_intercept(false) followed by fitting should not have intercept
+    let x = Matrix::from_vec(2, 1, vec![1.0, 2.0]).expect("Valid matrix dimensions for test");
+    let y = Vector::from_slice(&[3.0, 5.0]); // y = 2x + 1
+
+    // Model with intercept
+    let mut with_int = LinearRegression::new().with_intercept(true);
+    with_int
+        .fit(&x, &y)
+        .expect("Fit should succeed with valid test data");
+
+    // Model without intercept
+    let mut without_int = LinearRegression::new().with_intercept(false);
+    without_int
+        .fit(&x, &y)
+        .expect("Fit should succeed with valid test data");
+
+    // The intercept should be different
+    // With intercept: should have non-zero intercept for this data
+    // Without intercept: intercept is always 0
+    assert!(
+        with_int.intercept().abs() > 0.1,
+        "Model with intercept should have non-zero intercept"
+    );
+    assert!(
+        without_int.intercept().abs() < 1e-6,
+        "Model without intercept should have zero intercept, got {}",
+        without_int.intercept()
+    );
+}
+
+// Ridge regression tests
+#[test]
+fn test_ridge_new() {
+    let model = Ridge::new(1.0);
+    assert!(!model.is_fitted());
+    assert!((model.alpha() - 1.0).abs() < 1e-6);
+}
+
+#[test]
+fn test_ridge_simple_regression() {
+    // y = 2x + 1
+    let x =
+        Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0]).expect("Valid matrix dimensions for test");
+    let y = Vector::from_slice(&[3.0, 5.0, 7.0, 9.0]);
+
+    let mut model = Ridge::new(0.0); // No regularization = OLS
+    model
+        .fit(&x, &y)
+        .expect("Fit should succeed with valid test data");
+
+    assert!(model.is_fitted());
+
+    // Check predictions are close (might not be perfect due to regularization)
+    let r2 = model.score(&x, &y);
+    assert!(r2 > 0.99);
+}
+
+#[test]
+fn test_ridge_regularization_shrinks_coefficients() {
+    // Test that higher alpha shrinks coefficients
+    let x = Matrix::from_vec(5, 2, vec![1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0, 5.0, 5.0])
+        .expect("Valid matrix dimensions for test");
+    let y = Vector::from_slice(&[4.0, 8.0, 12.0, 16.0, 20.0]);
+
+    // Low regularization
+    let mut low_reg = Ridge::new(0.01);
+    low_reg
+        .fit(&x, &y)
+        .expect("Fit should succeed with valid test data");
+
+    // High regularization
+    let mut high_reg = Ridge::new(100.0);
+    high_reg
+        .fit(&x, &y)
+        .expect("Fit should succeed with valid test data");
+
+    // Higher regularization should produce smaller coefficient magnitudes
+    let low_coef = low_reg.coefficients();
+    let high_coef = high_reg.coefficients();
+    let low_norm: f32 = (0..low_coef.len()).map(|i| low_coef[i] * low_coef[i]).sum();
+    let high_norm: f32 = (0..high_coef.len())
+        .map(|i| high_coef[i] * high_coef[i])
+        .sum();
+
+    assert!(
+        high_norm < low_norm,
+        "High regularization should shrink coefficients: {high_norm} < {low_norm}"
+    );
+}
+
+#[test]
+fn test_ridge_multivariate() {
+    // y = 1 + 2*x1 + 3*x2
+    let x = Matrix::from_vec(5, 2, vec![1.0, 1.0, 2.0, 1.0, 1.0, 2.0, 2.0, 2.0, 3.0, 3.0])
+        .expect("Valid matrix dimensions for test");
+    let y = Vector::from_slice(&[6.0, 8.0, 9.0, 11.0, 16.0]);
+
+    let mut model = Ridge::new(0.1);
+    model
+        .fit(&x, &y)
+        .expect("Fit should succeed with valid test data");
+
+    let r2 = model.score(&x, &y);
+    assert!(r2 > 0.95);
+}
+
+#[test]
+fn test_ridge_no_intercept() {
+    // y = 2x
+    let x =
+        Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0]).expect("Valid matrix dimensions for test");
+    let y = Vector::from_slice(&[2.0, 4.0, 6.0, 8.0]);
+
+    let mut model = Ridge::new(0.1).with_intercept(false);
+    model
+        .fit(&x, &y)
+        .expect("Fit should succeed with valid test data");
+
+    assert!((model.intercept() - 0.0).abs() < 1e-6);
+}
+
+#[test]
+fn test_ridge_dimension_mismatch_error() {
+    let x = Matrix::from_vec(3, 2, vec![1.0; 6]).expect("Valid matrix dimensions for test");
+    let y = Vector::from_slice(&[1.0, 2.0]); // Wrong length
+
+    let mut model = Ridge::new(1.0);
+    let result = model.fit(&x, &y);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_ridge_empty_data_error() {
+    let x = Matrix::from_vec(0, 2, vec![]).expect("Valid matrix dimensions for test");
+    let y = Vector::from_vec(vec![]);
+
+    let mut model = Ridge::new(1.0);
+    let result = model.fit(&x, &y);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_ridge_underdetermined_system() {
+    // Ridge can handle underdetermined systems due to regularization
+    // 3 samples, 5 features
+    let x = Matrix::from_vec(
+        3,
+        5,
+        vec![
+            1.0, 2.0, 3.0, 4.0, 5.0, 2.0, 3.0, 4.0, 5.0, 6.0, 3.0, 4.0, 5.0, 6.0, 7.0,
+        ],
+    )
+    .expect("Valid matrix dimensions for test");
+    let y = Vector::from_vec(vec![10.0, 20.0, 30.0]);
+
+    // With sufficient regularization, this should work
+    let mut model = Ridge::new(10.0);
+    let result = model.fit(&x, &y);
+    assert!(
+        result.is_ok(),
+        "Ridge should handle underdetermined systems"
+    );
+}
+
+#[test]
+fn test_ridge_clone() {
+    let x = Matrix::from_vec(3, 1, vec![1.0, 2.0, 3.0]).expect("Valid matrix dimensions for test");
+    let y = Vector::from_slice(&[2.0, 4.0, 6.0]);
+
+    let mut model = Ridge::new(0.5);
+    model
+        .fit(&x, &y)
+        .expect("Fit should succeed with valid test data");
+
+    let cloned = model.clone();
+    assert!(cloned.is_fitted());
+    assert!((cloned.alpha() - model.alpha()).abs() < 1e-6);
+    assert!((cloned.intercept() - model.intercept()).abs() < 1e-6);
+}
+
+#[test]
+fn test_ridge_alpha_zero_equals_ols() {
+    // Ridge with alpha=0 should give same results as OLS
+    let x =
+        Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0]).expect("Valid matrix dimensions for test");
+    let y = Vector::from_slice(&[3.0, 5.0, 7.0, 9.0]);
+
+    let mut ridge = Ridge::new(0.0);
+    ridge
+        .fit(&x, &y)
+        .expect("Fit should succeed with valid test data");
+
+    let mut ols = LinearRegression::new();
+    ols.fit(&x, &y)
+        .expect("Fit should succeed with valid test data");
+
+    // Coefficients should be nearly identical
+    assert!(
+        (ridge.coefficients()[0] - ols.coefficients()[0]).abs() < 1e-4,
+        "Ridge with alpha=0 should equal OLS"
+    );
+    assert!((ridge.intercept() - ols.intercept()).abs() < 1e-4);
+}
+
+#[test]
+fn test_ridge_save_load() {
+    use std::fs;
+    use std::path::Path;
+
+    let x =
+        Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0]).expect("Valid matrix dimensions for test");
+    let y = Vector::from_slice(&[3.0, 5.0, 7.0, 9.0]);
+
+    let mut model = Ridge::new(0.5);
+    model
+        .fit(&x, &y)
+        .expect("Fit should succeed with valid test data");
+
+    let path = Path::new("/tmp/test_ridge.bin");
+    model.save(path).expect("Failed to save model");
+
+    let loaded = Ridge::load(path).expect("Failed to load model");
+
+    // Verify loaded model matches original
+    assert!((loaded.alpha() - model.alpha()).abs() < 1e-6);
+    let original_pred = model.predict(&x);
+    let loaded_pred = loaded.predict(&x);
+
+    for i in 0..original_pred.len() {
+        assert!((original_pred[i] - loaded_pred[i]).abs() < 1e-6);
     }
 
-    #[test]
-    fn test_lasso_with_max_iter() {
-        let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0])
-            .expect("Valid matrix dimensions for test");
-        let y = Vector::from_slice(&[3.0, 5.0, 7.0, 9.0]);
+    fs::remove_file(path).ok();
+}
 
-        let mut model = Lasso::new(0.1).with_max_iter(100);
-        model
-            .fit(&x, &y)
-            .expect("Fit should succeed with valid test data");
+#[test]
+fn test_ridge_with_intercept_builder() {
+    let model = Ridge::new(1.0).with_intercept(false);
 
-        assert!(model.is_fitted());
-    }
+    let x = Matrix::from_vec(3, 1, vec![1.0, 2.0, 3.0]).expect("Valid matrix dimensions for test");
+    let y = Vector::from_slice(&[2.0, 4.0, 6.0]);
 
-    #[test]
-    fn test_lasso_with_tol() {
-        let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0])
-            .expect("Valid matrix dimensions for test");
-        let y = Vector::from_slice(&[3.0, 5.0, 7.0, 9.0]);
+    let mut model = model;
+    model
+        .fit(&x, &y)
+        .expect("Fit should succeed with valid test data");
 
-        let mut model = Lasso::new(0.1).with_tol(1e-6);
-        model
-            .fit(&x, &y)
-            .expect("Fit should succeed with valid test data");
+    // Without intercept, predicting at x=0 should give 0
+    let x_zero = Matrix::from_vec(1, 1, vec![0.0]).expect("Valid matrix dimensions for test");
+    let pred = model.predict(&x_zero);
 
-        assert!(model.is_fitted());
-    }
+    assert!(
+        pred[0].abs() < 1e-6,
+        "Ridge without intercept should predict 0 at x=0"
+    );
+}
 
-    #[test]
-    fn test_lasso_soft_threshold() {
-        // Test the soft-thresholding function
-        assert!((Lasso::soft_threshold(5.0, 2.0) - 3.0).abs() < 1e-6);
-        assert!((Lasso::soft_threshold(-5.0, 2.0) - (-3.0)).abs() < 1e-6);
-        assert!((Lasso::soft_threshold(1.0, 2.0) - 0.0).abs() < 1e-6);
-        assert!((Lasso::soft_threshold(-1.0, 2.0) - 0.0).abs() < 1e-6);
-    }
+#[test]
+fn test_ridge_coefficients_length() {
+    let x = Matrix::from_vec(5, 3, vec![1.0; 15]).expect("Valid matrix dimensions for test");
+    let y = Vector::from_slice(&[1.0, 2.0, 3.0, 4.0, 5.0]);
 
-    // ==================== ElasticNet Tests ====================
+    let mut model = Ridge::new(1.0);
+    model
+        .fit(&x, &y)
+        .expect("Fit should succeed with valid test data");
 
-    #[test]
-    fn test_elastic_net_new() {
-        let model = ElasticNet::new(1.0, 0.5);
-        assert!(!model.is_fitted());
-        assert!((model.alpha() - 1.0).abs() < 1e-6);
-        assert!((model.l1_ratio() - 0.5).abs() < 1e-6);
-    }
+    assert_eq!(model.coefficients().len(), 3);
+}
 
-    #[test]
-    fn test_elastic_net_simple() {
-        // y = 2x + 1
-        let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0])
-            .expect("Valid matrix dimensions for test");
-        let y = Vector::from_slice(&[3.0, 5.0, 7.0, 9.0]);
+// Lasso regression tests
+#[test]
+fn test_lasso_new() {
+    let model = Lasso::new(1.0);
+    assert!(!model.is_fitted());
+    assert!((model.alpha() - 1.0).abs() < 1e-6);
+}
 
-        let mut model = ElasticNet::new(0.01, 0.5);
-        model
-            .fit(&x, &y)
-            .expect("Fit should succeed with valid test data");
+#[test]
+fn test_lasso_simple_regression() {
+    // y = 2x + 1
+    let x = Matrix::from_vec(5, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0])
+        .expect("Valid matrix dimensions for test");
+    let y = Vector::from_slice(&[3.0, 5.0, 7.0, 9.0, 11.0]);
 
-        assert!(model.is_fitted());
+    let mut model = Lasso::new(0.01); // Small regularization
+    model
+        .fit(&x, &y)
+        .expect("Fit should succeed with valid test data");
 
-        // Should recover approximately y = 2x + 1
-        let coef = model.coefficients();
-        assert!((coef[0] - 2.0).abs() < 0.5); // Some regularization effect
-        assert!((model.intercept() - 1.0).abs() < 1.0);
-    }
+    assert!(model.is_fitted());
 
-    #[test]
-    fn test_elastic_net_multivariate() {
-        // y = 2*x1 + 3*x2
-        let x = Matrix::from_vec(4, 2, vec![1.0, 1.0, 2.0, 1.0, 1.0, 2.0, 2.0, 2.0])
-            .expect("Valid matrix dimensions for test");
-        let y = Vector::from_slice(&[5.0, 7.0, 8.0, 10.0]);
+    let r2 = model.score(&x, &y);
+    assert!(r2 > 0.98, "R² should be > 0.98, got {r2}");
+}
 
-        let mut model = ElasticNet::new(0.01, 0.5);
-        model
-            .fit(&x, &y)
-            .expect("Fit should succeed with valid test data");
+#[test]
+fn test_lasso_produces_sparsity() {
+    // Test that Lasso with high alpha produces sparse coefficients
+    // Create data where only first feature matters: y = x1
+    let x = Matrix::from_vec(
+        6,
+        3,
+        vec![
+            1.0, 0.1, 0.2, 2.0, 0.2, 0.1, 3.0, 0.1, 0.3, 4.0, 0.3, 0.1, 5.0, 0.2, 0.2, 6.0, 0.1,
+            0.1,
+        ],
+    )
+    .expect("Valid matrix dimensions for test");
+    let y = Vector::from_slice(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
 
-        let predictions = model.predict(&x);
-        for i in 0..4 {
-            assert!((predictions[i] - y[i]).abs() < 1.0);
+    let mut model = Lasso::new(1.0); // High regularization
+    model
+        .fit(&x, &y)
+        .expect("Fit should succeed with valid test data");
+
+    // Count non-zero coefficients
+    let coef = model.coefficients();
+    let mut non_zero = 0;
+    for i in 0..coef.len() {
+        if coef[i].abs() > 1e-4 {
+            non_zero += 1;
         }
     }
 
-    #[test]
-    fn test_elastic_net_l1_ratio_pure_l1() {
-        // l1_ratio=1.0 should behave like Lasso
-        let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0])
-            .expect("Valid matrix dimensions for test");
-        let y = Vector::from_slice(&[3.0, 5.0, 7.0, 9.0]);
+    // With high alpha, some coefficients should be zeroed out
+    assert!(
+        non_zero < coef.len(),
+        "Lasso should produce sparse solution, got {} non-zero out of {}",
+        non_zero,
+        coef.len()
+    );
+}
 
-        let mut elastic = ElasticNet::new(0.1, 1.0);
-        elastic
-            .fit(&x, &y)
-            .expect("Fit should succeed with valid test data");
+#[test]
+fn test_lasso_multivariate() {
+    // y = 1 + 2*x1 + 3*x2
+    let x = Matrix::from_vec(
+        6,
+        2,
+        vec![1.0, 1.0, 2.0, 1.0, 1.0, 2.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0],
+    )
+    .expect("Valid matrix dimensions for test");
+    let y = Vector::from_slice(&[6.0, 8.0, 9.0, 11.0, 16.0, 21.0]);
 
-        let mut lasso = Lasso::new(0.1);
-        lasso
-            .fit(&x, &y)
-            .expect("Fit should succeed with valid test data");
+    let mut model = Lasso::new(0.01);
+    model
+        .fit(&x, &y)
+        .expect("Fit should succeed with valid test data");
 
-        // Should have similar coefficients
-        let elastic_coef = elastic.coefficients();
-        let lasso_coef = lasso.coefficients();
-        assert!((elastic_coef[0] - lasso_coef[0]).abs() < 0.1);
+    let r2 = model.score(&x, &y);
+    assert!(r2 > 0.95, "R² should be > 0.95, got {r2}");
+}
+
+#[test]
+fn test_lasso_no_intercept() {
+    // y = 2x
+    let x =
+        Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0]).expect("Valid matrix dimensions for test");
+    let y = Vector::from_slice(&[2.0, 4.0, 6.0, 8.0]);
+
+    let mut model = Lasso::new(0.01).with_intercept(false);
+    model
+        .fit(&x, &y)
+        .expect("Fit should succeed with valid test data");
+
+    assert!((model.intercept() - 0.0).abs() < 1e-6);
+}
+
+#[test]
+fn test_lasso_dimension_mismatch_error() {
+    let x = Matrix::from_vec(3, 2, vec![1.0; 6]).expect("Valid matrix dimensions for test");
+    let y = Vector::from_slice(&[1.0, 2.0]); // Wrong length
+
+    let mut model = Lasso::new(1.0);
+    let result = model.fit(&x, &y);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_lasso_empty_data_error() {
+    let x = Matrix::from_vec(0, 2, vec![]).expect("Valid matrix dimensions for test");
+    let y = Vector::from_vec(vec![]);
+
+    let mut model = Lasso::new(1.0);
+    let result = model.fit(&x, &y);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_lasso_clone() {
+    let x = Matrix::from_vec(3, 1, vec![1.0, 2.0, 3.0]).expect("Valid matrix dimensions for test");
+    let y = Vector::from_slice(&[2.0, 4.0, 6.0]);
+
+    let mut model = Lasso::new(0.5);
+    model
+        .fit(&x, &y)
+        .expect("Fit should succeed with valid test data");
+
+    let cloned = model.clone();
+    assert!(cloned.is_fitted());
+    assert!((cloned.alpha() - model.alpha()).abs() < 1e-6);
+    assert!((cloned.intercept() - model.intercept()).abs() < 1e-6);
+}
+
+#[test]
+fn test_lasso_save_load() {
+    use std::fs;
+    use std::path::Path;
+
+    let x =
+        Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0]).expect("Valid matrix dimensions for test");
+    let y = Vector::from_slice(&[3.0, 5.0, 7.0, 9.0]);
+
+    let mut model = Lasso::new(0.1);
+    model
+        .fit(&x, &y)
+        .expect("Fit should succeed with valid test data");
+
+    let path = Path::new("/tmp/test_lasso.bin");
+    model.save(path).expect("Failed to save model");
+
+    let loaded = Lasso::load(path).expect("Failed to load model");
+
+    assert!((loaded.alpha() - model.alpha()).abs() < 1e-6);
+    let original_pred = model.predict(&x);
+    let loaded_pred = loaded.predict(&x);
+
+    for i in 0..original_pred.len() {
+        assert!((original_pred[i] - loaded_pred[i]).abs() < 1e-6);
     }
 
-    #[test]
-    fn test_elastic_net_l1_ratio_pure_l2() {
-        // l1_ratio=0.0 should behave like Ridge
-        let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0])
-            .expect("Valid matrix dimensions for test");
-        let y = Vector::from_slice(&[3.0, 5.0, 7.0, 9.0]);
+    fs::remove_file(path).ok();
+}
 
-        let mut elastic = ElasticNet::new(0.1, 0.0);
-        elastic
-            .fit(&x, &y)
-            .expect("Fit should succeed with valid test data");
+#[test]
+fn test_lasso_with_intercept_builder() {
+    let model = Lasso::new(1.0).with_intercept(false);
 
-        let mut ridge = Ridge::new(0.1);
-        ridge
-            .fit(&x, &y)
-            .expect("Fit should succeed with valid test data");
+    let x = Matrix::from_vec(3, 1, vec![1.0, 2.0, 3.0]).expect("Valid matrix dimensions for test");
+    let y = Vector::from_slice(&[2.0, 4.0, 6.0]);
 
-        // Should have similar coefficients
-        let elastic_coef = elastic.coefficients();
-        let ridge_coef = ridge.coefficients();
-        assert!((elastic_coef[0] - ridge_coef[0]).abs() < 0.5);
+    let mut model = model;
+    model
+        .fit(&x, &y)
+        .expect("Fit should succeed with valid test data");
+
+    let x_zero = Matrix::from_vec(1, 1, vec![0.0]).expect("Valid matrix dimensions for test");
+    let pred = model.predict(&x_zero);
+
+    assert!(
+        pred[0].abs() < 1e-6,
+        "Lasso without intercept should predict 0 at x=0"
+    );
+}
+
+#[test]
+fn test_lasso_coefficients_length() {
+    let x = Matrix::from_vec(5, 3, vec![1.0; 15]).expect("Valid matrix dimensions for test");
+    let y = Vector::from_slice(&[1.0, 2.0, 3.0, 4.0, 5.0]);
+
+    let mut model = Lasso::new(0.1);
+    model
+        .fit(&x, &y)
+        .expect("Fit should succeed with valid test data");
+
+    assert_eq!(model.coefficients().len(), 3);
+}
+
+#[test]
+fn test_lasso_with_max_iter() {
+    let x =
+        Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0]).expect("Valid matrix dimensions for test");
+    let y = Vector::from_slice(&[3.0, 5.0, 7.0, 9.0]);
+
+    let mut model = Lasso::new(0.1).with_max_iter(100);
+    model
+        .fit(&x, &y)
+        .expect("Fit should succeed with valid test data");
+
+    assert!(model.is_fitted());
+}
+
+#[test]
+fn test_lasso_with_tol() {
+    let x =
+        Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0]).expect("Valid matrix dimensions for test");
+    let y = Vector::from_slice(&[3.0, 5.0, 7.0, 9.0]);
+
+    let mut model = Lasso::new(0.1).with_tol(1e-6);
+    model
+        .fit(&x, &y)
+        .expect("Fit should succeed with valid test data");
+
+    assert!(model.is_fitted());
+}
+
+#[test]
+fn test_lasso_soft_threshold() {
+    // Test the soft-thresholding function
+    assert!((Lasso::soft_threshold(5.0, 2.0) - 3.0).abs() < 1e-6);
+    assert!((Lasso::soft_threshold(-5.0, 2.0) - (-3.0)).abs() < 1e-6);
+    assert!((Lasso::soft_threshold(1.0, 2.0) - 0.0).abs() < 1e-6);
+    assert!((Lasso::soft_threshold(-1.0, 2.0) - 0.0).abs() < 1e-6);
+}
+
+// ==================== ElasticNet Tests ====================
+
+#[test]
+fn test_elastic_net_new() {
+    let model = ElasticNet::new(1.0, 0.5);
+    assert!(!model.is_fitted());
+    assert!((model.alpha() - 1.0).abs() < 1e-6);
+    assert!((model.l1_ratio() - 0.5).abs() < 1e-6);
+}
+
+#[test]
+fn test_elastic_net_simple() {
+    // y = 2x + 1
+    let x =
+        Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0]).expect("Valid matrix dimensions for test");
+    let y = Vector::from_slice(&[3.0, 5.0, 7.0, 9.0]);
+
+    let mut model = ElasticNet::new(0.01, 0.5);
+    model
+        .fit(&x, &y)
+        .expect("Fit should succeed with valid test data");
+
+    assert!(model.is_fitted());
+
+    // Should recover approximately y = 2x + 1
+    let coef = model.coefficients();
+    assert!((coef[0] - 2.0).abs() < 0.5); // Some regularization effect
+    assert!((model.intercept() - 1.0).abs() < 1.0);
+}
+
+#[test]
+fn test_elastic_net_multivariate() {
+    // y = 2*x1 + 3*x2
+    let x = Matrix::from_vec(4, 2, vec![1.0, 1.0, 2.0, 1.0, 1.0, 2.0, 2.0, 2.0])
+        .expect("Valid matrix dimensions for test");
+    let y = Vector::from_slice(&[5.0, 7.0, 8.0, 10.0]);
+
+    let mut model = ElasticNet::new(0.01, 0.5);
+    model
+        .fit(&x, &y)
+        .expect("Fit should succeed with valid test data");
+
+    let predictions = model.predict(&x);
+    for i in 0..4 {
+        assert!((predictions[i] - y[i]).abs() < 1.0);
+    }
+}
+
+#[test]
+fn test_elastic_net_l1_ratio_pure_l1() {
+    // l1_ratio=1.0 should behave like Lasso
+    let x =
+        Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0]).expect("Valid matrix dimensions for test");
+    let y = Vector::from_slice(&[3.0, 5.0, 7.0, 9.0]);
+
+    let mut elastic = ElasticNet::new(0.1, 1.0);
+    elastic
+        .fit(&x, &y)
+        .expect("Fit should succeed with valid test data");
+
+    let mut lasso = Lasso::new(0.1);
+    lasso
+        .fit(&x, &y)
+        .expect("Fit should succeed with valid test data");
+
+    // Should have similar coefficients
+    let elastic_coef = elastic.coefficients();
+    let lasso_coef = lasso.coefficients();
+    assert!((elastic_coef[0] - lasso_coef[0]).abs() < 0.1);
+}
+
+#[test]
+fn test_elastic_net_l1_ratio_pure_l2() {
+    // l1_ratio=0.0 should behave like Ridge
+    let x =
+        Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0]).expect("Valid matrix dimensions for test");
+    let y = Vector::from_slice(&[3.0, 5.0, 7.0, 9.0]);
+
+    let mut elastic = ElasticNet::new(0.1, 0.0);
+    elastic
+        .fit(&x, &y)
+        .expect("Fit should succeed with valid test data");
+
+    let mut ridge = Ridge::new(0.1);
+    ridge
+        .fit(&x, &y)
+        .expect("Fit should succeed with valid test data");
+
+    // Should have similar coefficients
+    let elastic_coef = elastic.coefficients();
+    let ridge_coef = ridge.coefficients();
+    assert!((elastic_coef[0] - ridge_coef[0]).abs() < 0.5);
+}
+
+#[test]
+fn test_elastic_net_dimension_mismatch() {
+    let x = Matrix::from_vec(3, 2, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+        .expect("Valid matrix dimensions for test");
+    let y = Vector::from_slice(&[1.0, 2.0]); // Wrong length
+
+    let mut model = ElasticNet::new(0.1, 0.5);
+    let result = model.fit(&x, &y);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_elastic_net_empty_data() {
+    let x = Matrix::from_vec(0, 2, vec![]).expect("Valid matrix dimensions for test");
+    let y = Vector::from_vec(vec![]);
+
+    let mut model = ElasticNet::new(0.1, 0.5);
+    let result = model.fit(&x, &y);
+    assert!(result.is_err());
+}
+
+#[test]
+#[should_panic(expected = "Model not fitted")]
+fn test_elastic_net_predict_not_fitted() {
+    let model = ElasticNet::new(0.1, 0.5);
+    let x = Matrix::from_vec(1, 1, vec![1.0]).expect("Valid matrix dimensions for test");
+    let _ = model.predict(&x);
+}
+
+#[test]
+fn test_elastic_net_score() {
+    let x =
+        Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0]).expect("Valid matrix dimensions for test");
+    let y = Vector::from_slice(&[3.0, 5.0, 7.0, 9.0]);
+
+    let mut model = ElasticNet::new(0.01, 0.5);
+    model
+        .fit(&x, &y)
+        .expect("Fit should succeed with valid test data");
+
+    let r2 = model.score(&x, &y);
+    assert!(r2 > 0.9); // Should fit well with small alpha
+}
+
+#[test]
+fn test_elastic_net_clone() {
+    let x = Matrix::from_vec(3, 1, vec![1.0, 2.0, 3.0]).expect("Valid matrix dimensions for test");
+    let y = Vector::from_slice(&[2.0, 4.0, 6.0]);
+
+    let mut model = ElasticNet::new(0.5, 0.5);
+    model
+        .fit(&x, &y)
+        .expect("Fit should succeed with valid test data");
+
+    let cloned = model.clone();
+    assert!(cloned.is_fitted());
+    assert!((cloned.alpha() - model.alpha()).abs() < 1e-6);
+    assert!((cloned.l1_ratio() - model.l1_ratio()).abs() < 1e-6);
+    assert!((cloned.intercept() - model.intercept()).abs() < 1e-6);
+}
+
+#[test]
+fn test_elastic_net_save_load() {
+    use std::fs;
+    use std::path::Path;
+
+    let x =
+        Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0]).expect("Valid matrix dimensions for test");
+    let y = Vector::from_slice(&[3.0, 5.0, 7.0, 9.0]);
+
+    let mut model = ElasticNet::new(0.1, 0.5);
+    model
+        .fit(&x, &y)
+        .expect("Fit should succeed with valid test data");
+
+    let path = Path::new("/tmp/test_elastic_net.bin");
+    model.save(path).expect("Failed to save model");
+
+    let loaded = ElasticNet::load(path).expect("Failed to load model");
+
+    assert!((loaded.alpha() - model.alpha()).abs() < 1e-6);
+    assert!((loaded.l1_ratio() - model.l1_ratio()).abs() < 1e-6);
+    let original_pred = model.predict(&x);
+    let loaded_pred = loaded.predict(&x);
+
+    for i in 0..original_pred.len() {
+        assert!((original_pred[i] - loaded_pred[i]).abs() < 1e-6);
     }
 
-    #[test]
-    fn test_elastic_net_dimension_mismatch() {
-        let x = Matrix::from_vec(3, 2, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
-            .expect("Valid matrix dimensions for test");
-        let y = Vector::from_slice(&[1.0, 2.0]); // Wrong length
-
-        let mut model = ElasticNet::new(0.1, 0.5);
-        let result = model.fit(&x, &y);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_elastic_net_empty_data() {
-        let x = Matrix::from_vec(0, 2, vec![]).expect("Valid matrix dimensions for test");
-        let y = Vector::from_vec(vec![]);
-
-        let mut model = ElasticNet::new(0.1, 0.5);
-        let result = model.fit(&x, &y);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    #[should_panic(expected = "Model not fitted")]
-    fn test_elastic_net_predict_not_fitted() {
-        let model = ElasticNet::new(0.1, 0.5);
-        let x = Matrix::from_vec(1, 1, vec![1.0]).expect("Valid matrix dimensions for test");
-        let _ = model.predict(&x);
-    }
-
-    #[test]
-    fn test_elastic_net_score() {
-        let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0])
-            .expect("Valid matrix dimensions for test");
-        let y = Vector::from_slice(&[3.0, 5.0, 7.0, 9.0]);
-
-        let mut model = ElasticNet::new(0.01, 0.5);
-        model
-            .fit(&x, &y)
-            .expect("Fit should succeed with valid test data");
-
-        let r2 = model.score(&x, &y);
-        assert!(r2 > 0.9); // Should fit well with small alpha
-    }
-
-    #[test]
-    fn test_elastic_net_clone() {
-        let x =
-            Matrix::from_vec(3, 1, vec![1.0, 2.0, 3.0]).expect("Valid matrix dimensions for test");
-        let y = Vector::from_slice(&[2.0, 4.0, 6.0]);
-
-        let mut model = ElasticNet::new(0.5, 0.5);
-        model
-            .fit(&x, &y)
-            .expect("Fit should succeed with valid test data");
-
-        let cloned = model.clone();
-        assert!(cloned.is_fitted());
-        assert!((cloned.alpha() - model.alpha()).abs() < 1e-6);
-        assert!((cloned.l1_ratio() - model.l1_ratio()).abs() < 1e-6);
-        assert!((cloned.intercept() - model.intercept()).abs() < 1e-6);
-    }
-
-    #[test]
-    fn test_elastic_net_save_load() {
-        use std::fs;
-        use std::path::Path;
-
-        let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0])
-            .expect("Valid matrix dimensions for test");
-        let y = Vector::from_slice(&[3.0, 5.0, 7.0, 9.0]);
-
-        let mut model = ElasticNet::new(0.1, 0.5);
-        model
-            .fit(&x, &y)
-            .expect("Fit should succeed with valid test data");
-
-        let path = Path::new("/tmp/test_elastic_net.bin");
-        model.save(path).expect("Failed to save model");
-
-        let loaded = ElasticNet::load(path).expect("Failed to load model");
-
-        assert!((loaded.alpha() - model.alpha()).abs() < 1e-6);
-        assert!((loaded.l1_ratio() - model.l1_ratio()).abs() < 1e-6);
-        let original_pred = model.predict(&x);
-        let loaded_pred = loaded.predict(&x);
-
-        for i in 0..original_pred.len() {
-            assert!((original_pred[i] - loaded_pred[i]).abs() < 1e-6);
-        }
-
-        fs::remove_file(path).ok();
-    }
-
-    #[test]
-    fn test_elastic_net_with_intercept_builder() {
-        let model = ElasticNet::new(1.0, 0.5).with_intercept(false);
-
-        let x =
-            Matrix::from_vec(3, 1, vec![1.0, 2.0, 3.0]).expect("Valid matrix dimensions for test");
-        let y = Vector::from_slice(&[2.0, 4.0, 6.0]);
-
-        let mut model = model;
-        model
-            .fit(&x, &y)
-            .expect("Fit should succeed with valid test data");
-
-        let x_zero = Matrix::from_vec(1, 1, vec![0.0]).expect("Valid matrix dimensions for test");
-        let pred = model.predict(&x_zero);
-        assert!((pred[0] - 0.0).abs() < 1e-6); // No intercept
-    }
-
-    #[test]
-    fn test_elastic_net_multivariate_coefficients() {
-        let x = Matrix::from_vec(3, 3, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0])
-            .expect("Valid matrix dimensions for test");
-        let y = Vector::from_slice(&[6.0, 15.0, 24.0]);
-
-        let mut model = ElasticNet::new(0.1, 0.5);
-        model
-            .fit(&x, &y)
-            .expect("Fit should succeed with valid test data");
-
-        assert_eq!(model.coefficients().len(), 3);
-    }
-
-    #[test]
-    fn test_elastic_net_with_max_iter() {
-        let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0])
-            .expect("Valid matrix dimensions for test");
-        let y = Vector::from_slice(&[3.0, 5.0, 7.0, 9.0]);
-
-        let mut model = ElasticNet::new(0.1, 0.5).with_max_iter(100);
-        model
-            .fit(&x, &y)
-            .expect("Fit should succeed with valid test data");
-
-        assert!(model.is_fitted());
-    }
-
-    #[test]
-    fn test_elastic_net_with_tol() {
-        let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0])
-            .expect("Valid matrix dimensions for test");
-        let y = Vector::from_slice(&[3.0, 5.0, 7.0, 9.0]);
-
-        let mut model = ElasticNet::new(0.1, 0.5).with_tol(1e-6);
-        model
-            .fit(&x, &y)
-            .expect("Fit should succeed with valid test data");
-
-        assert!(model.is_fitted());
-    }
-
-    // =========================================================================
-    // Coverage boost tests: SafeTensors and binary serialization
-    // =========================================================================
-
-    #[test]
-    fn test_linear_regression_save_load_binary() {
-        let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0])
-            .expect("Valid matrix dimensions for test");
-        let y = Vector::from_slice(&[3.0, 5.0, 7.0, 9.0]);
-
-        let mut model = LinearRegression::new();
-        model.fit(&x, &y).expect("Fit should succeed");
-
-        let path = "/tmp/test_lr_binary.bin";
-        model.save(path).expect("Save should succeed");
-
-        let loaded = LinearRegression::load(path).expect("Load should succeed");
-        assert!(loaded.is_fitted());
-        assert!((loaded.intercept() - model.intercept()).abs() < 1e-6);
-
-        fs::remove_file(path).ok();
-    }
-
-    #[test]
-    fn test_linear_regression_save_load_safetensors() {
-        let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0])
-            .expect("Valid matrix dimensions for test");
-        let y = Vector::from_slice(&[3.0, 5.0, 7.0, 9.0]);
-
-        let mut model = LinearRegression::new();
-        model.fit(&x, &y).expect("Fit should succeed");
-
-        let path = "/tmp/test_lr_safetensors.safetensors";
-        model.save_safetensors(path).expect("Save should succeed");
-
-        let loaded = LinearRegression::load_safetensors(path).expect("Load should succeed");
-        assert!(loaded.is_fitted());
-        assert!((loaded.intercept() - model.intercept()).abs() < 1e-6);
-
-        fs::remove_file(path).ok();
-    }
-
-    #[test]
-    fn test_linear_regression_save_unfitted_error() {
-        let model = LinearRegression::new();
-        let result = model.save_safetensors("/tmp/unfitted.safetensors");
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_ridge_save_load_binary() {
-        let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0])
-            .expect("Valid matrix dimensions for test");
-        let y = Vector::from_slice(&[3.0, 5.0, 7.0, 9.0]);
-
-        let mut model = Ridge::new(0.1);
-        model.fit(&x, &y).expect("Fit should succeed");
-
-        let path = "/tmp/test_ridge_binary.bin";
-        model.save(path).expect("Save should succeed");
-
-        let loaded = Ridge::load(path).expect("Load should succeed");
-        assert!(loaded.is_fitted());
-        assert!((loaded.alpha() - model.alpha()).abs() < 1e-6);
-
-        fs::remove_file(path).ok();
-    }
-
-    #[test]
-    fn test_ridge_save_load_safetensors() {
-        let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0])
-            .expect("Valid matrix dimensions for test");
-        let y = Vector::from_slice(&[3.0, 5.0, 7.0, 9.0]);
-
-        let mut model = Ridge::new(0.1);
-        model.fit(&x, &y).expect("Fit should succeed");
-
-        let path = "/tmp/test_ridge_safetensors.safetensors";
-        model.save_safetensors(path).expect("Save should succeed");
-
-        let loaded = Ridge::load_safetensors(path).expect("Load should succeed");
-        assert!(loaded.is_fitted());
-        assert!((loaded.alpha() - model.alpha()).abs() < 1e-6);
-
-        fs::remove_file(path).ok();
-    }
-
-    #[test]
-    fn test_ridge_save_unfitted_error() {
-        let model = Ridge::new(0.1);
-        let result = model.save_safetensors("/tmp/unfitted_ridge.safetensors");
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_lasso_save_load_binary() {
-        let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0])
-            .expect("Valid matrix dimensions for test");
-        let y = Vector::from_slice(&[3.0, 5.0, 7.0, 9.0]);
-
-        let mut model = Lasso::new(0.01);
-        model.fit(&x, &y).expect("Fit should succeed");
-
-        let path = "/tmp/test_lasso_binary.bin";
-        model.save(path).expect("Save should succeed");
-
-        let loaded = Lasso::load(path).expect("Load should succeed");
-        assert!(loaded.is_fitted());
-
-        fs::remove_file(path).ok();
-    }
-
-    #[test]
-    fn test_lasso_save_load_safetensors() {
-        let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0])
-            .expect("Valid matrix dimensions for test");
-        let y = Vector::from_slice(&[3.0, 5.0, 7.0, 9.0]);
-
-        let mut model = Lasso::new(0.01);
-        model.fit(&x, &y).expect("Fit should succeed");
-
-        let path = "/tmp/test_lasso_safetensors.safetensors";
-        model.save_safetensors(path).expect("Save should succeed");
-
-        let loaded = Lasso::load_safetensors(path).expect("Load should succeed");
-        assert!(loaded.is_fitted());
-
-        fs::remove_file(path).ok();
-    }
-
-    #[test]
-    fn test_lasso_save_unfitted_error() {
-        let model = Lasso::new(0.1);
-        let result = model.save_safetensors("/tmp/unfitted_lasso.safetensors");
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_elastic_net_save_load_binary() {
-        let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0])
-            .expect("Valid matrix dimensions for test");
-        let y = Vector::from_slice(&[3.0, 5.0, 7.0, 9.0]);
-
-        let mut model = ElasticNet::new(0.1, 0.5);
-        model.fit(&x, &y).expect("Fit should succeed");
-
-        let path = "/tmp/test_elastic_binary.bin";
-        model.save(path).expect("Save should succeed");
-
-        let loaded = ElasticNet::load(path).expect("Load should succeed");
-        assert!(loaded.is_fitted());
-
-        fs::remove_file(path).ok();
-    }
-
-    #[test]
-    fn test_elastic_net_save_load_safetensors() {
-        let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0])
-            .expect("Valid matrix dimensions for test");
-        let y = Vector::from_slice(&[3.0, 5.0, 7.0, 9.0]);
-
-        let mut model = ElasticNet::new(0.1, 0.5);
-        model.fit(&x, &y).expect("Fit should succeed");
-
-        let path = "/tmp/test_elastic_safetensors.safetensors";
-        model.save_safetensors(path).expect("Save should succeed");
-
-        let loaded = ElasticNet::load_safetensors(path).expect("Load should succeed");
-        assert!(loaded.is_fitted());
-
-        fs::remove_file(path).ok();
-    }
-
-    #[test]
-    fn test_elastic_net_save_unfitted_error() {
-        let model = ElasticNet::new(0.1, 0.5);
-        let result = model.save_safetensors("/tmp/unfitted_elastic.safetensors");
-        assert!(result.is_err());
-    }
-
-    // =========================================================================
-    // Coverage boost: Getters and builder methods
-    // =========================================================================
-
-    #[test]
-    fn test_ridge_alpha_getter() {
-        let model = Ridge::new(0.5);
-        assert!((model.alpha() - 0.5).abs() < 1e-6);
-    }
-
-    #[test]
-    fn test_ridge_with_intercept() {
-        let model = Ridge::new(0.1).with_intercept(false);
-        assert!(!model.fit_intercept);
-    }
-
-    #[test]
-    fn test_lasso_alpha_getter() {
-        let model = Lasso::new(0.25);
-        assert!((model.alpha() - 0.25).abs() < 1e-6);
-    }
-
-    #[test]
-    fn test_lasso_with_intercept() {
-        let model = Lasso::new(0.1).with_intercept(false);
-        assert!(!model.fit_intercept);
-    }
-
-    #[test]
-    fn test_elastic_net_alpha_getter() {
-        let model = ElasticNet::new(0.3, 0.7);
-        assert!((model.alpha() - 0.3).abs() < 1e-6);
-    }
-
-    #[test]
-    fn test_elastic_net_l1_ratio_getter() {
-        let model = ElasticNet::new(0.3, 0.7);
-        assert!((model.l1_ratio() - 0.7).abs() < 1e-6);
-    }
-
-    #[test]
-    fn test_elastic_net_with_intercept() {
-        let model = ElasticNet::new(0.1, 0.5).with_intercept(false);
-        assert!(!model.fit_intercept);
-    }
-
-    // =========================================================================
-    // Coverage boost: Error handling
-    // =========================================================================
-
-    #[test]
-    fn test_ridge_fit_empty_error() {
-        let x = Matrix::from_vec(0, 2, vec![]).expect("Valid matrix dimensions for test");
-        let y = Vector::from_vec(vec![]);
-
-        let mut model = Ridge::new(0.1);
-        let result = model.fit(&x, &y);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_ridge_fit_dimension_mismatch() {
-        let x = Matrix::from_vec(3, 2, vec![1.0; 6]).expect("Valid matrix dimensions for test");
-        let y = Vector::from_slice(&[1.0, 2.0]); // Wrong length
-
-        let mut model = Ridge::new(0.1);
-        let result = model.fit(&x, &y);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_lasso_fit_empty_error() {
-        let x = Matrix::from_vec(0, 2, vec![]).expect("Valid matrix dimensions for test");
-        let y = Vector::from_vec(vec![]);
-
-        let mut model = Lasso::new(0.1);
-        let result = model.fit(&x, &y);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_lasso_fit_dimension_mismatch() {
-        let x = Matrix::from_vec(3, 2, vec![1.0; 6]).expect("Valid matrix dimensions for test");
-        let y = Vector::from_slice(&[1.0, 2.0]); // Wrong length
-
-        let mut model = Lasso::new(0.1);
-        let result = model.fit(&x, &y);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_elastic_net_fit_empty_error() {
-        let x = Matrix::from_vec(0, 2, vec![]).expect("Valid matrix dimensions for test");
-        let y = Vector::from_vec(vec![]);
-
-        let mut model = ElasticNet::new(0.1, 0.5);
-        let result = model.fit(&x, &y);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_elastic_net_fit_dimension_mismatch() {
-        let x = Matrix::from_vec(3, 2, vec![1.0; 6]).expect("Valid matrix dimensions for test");
-        let y = Vector::from_slice(&[1.0, 2.0]); // Wrong length
-
-        let mut model = ElasticNet::new(0.1, 0.5);
-        let result = model.fit(&x, &y);
-        assert!(result.is_err());
-    }
-
-    // =========================================================================
-    // Coverage boost: Score and prediction edge cases
-    // =========================================================================
-
-    #[test]
-    fn test_ridge_score_perfect() {
-        let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0])
-            .expect("Valid matrix dimensions for test");
-        let y = Vector::from_slice(&[2.0, 4.0, 6.0, 8.0]);
-
-        let mut model = Ridge::new(0.0001); // Very small regularization
-        model.fit(&x, &y).expect("Fit should succeed");
-
-        let score = model.score(&x, &y);
-        assert!(score > 0.99);
-    }
-
-    #[test]
-    fn test_lasso_score_perfect() {
-        let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0])
-            .expect("Valid matrix dimensions for test");
-        let y = Vector::from_slice(&[2.0, 4.0, 6.0, 8.0]);
-
-        let mut model = Lasso::new(0.0001); // Very small regularization
-        model.fit(&x, &y).expect("Fit should succeed");
-
-        let score = model.score(&x, &y);
-        assert!(score > 0.9);
-    }
-
-    #[test]
-    fn test_elastic_net_score_perfect() {
-        let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0])
-            .expect("Valid matrix dimensions for test");
-        let y = Vector::from_slice(&[2.0, 4.0, 6.0, 8.0]);
-
-        let mut model = ElasticNet::new(0.0001, 0.5);
-        model.fit(&x, &y).expect("Fit should succeed");
-
-        let score = model.score(&x, &y);
-        assert!(score > 0.9);
-    }
-
-    // =========================================================================
-    // Coverage boost: Debug and Clone implementations
-    // =========================================================================
-
-    #[test]
-    fn test_ridge_debug_trait() {
-        let model = Ridge::new(0.1);
-        let debug_str = format!("{:?}", model);
-        assert!(debug_str.contains("Ridge"));
-    }
-
-    #[test]
-    fn test_ridge_clone_trait() {
-        let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0])
-            .expect("Valid matrix dimensions for test");
-        let y = Vector::from_slice(&[3.0, 5.0, 7.0, 9.0]);
-
-        let mut model = Ridge::new(0.1);
-        model.fit(&x, &y).expect("Fit should succeed");
-
-        let cloned = model.clone();
-        assert!(cloned.is_fitted());
-        assert!((cloned.alpha() - model.alpha()).abs() < 1e-6);
-    }
-
-    #[test]
-    fn test_lasso_debug_trait() {
-        let model = Lasso::new(0.1);
-        let debug_str = format!("{:?}", model);
-        assert!(debug_str.contains("Lasso"));
-    }
-
-    #[test]
-    fn test_lasso_clone_trait() {
-        let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0])
-            .expect("Valid matrix dimensions for test");
-        let y = Vector::from_slice(&[3.0, 5.0, 7.0, 9.0]);
-
-        let mut model = Lasso::new(0.01);
-        model.fit(&x, &y).expect("Fit should succeed");
-
-        let cloned = model.clone();
-        assert!(cloned.is_fitted());
-    }
-
-    #[test]
-    fn test_elastic_net_debug_trait() {
-        let model = ElasticNet::new(0.1, 0.5);
-        let debug_str = format!("{:?}", model);
-        assert!(debug_str.contains("ElasticNet"));
-    }
-
-    #[test]
-    fn test_elastic_net_clone_trait() {
-        let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0])
-            .expect("Valid matrix dimensions for test");
-        let y = Vector::from_slice(&[3.0, 5.0, 7.0, 9.0]);
-
-        let mut model = ElasticNet::new(0.1, 0.5);
-        model.fit(&x, &y).expect("Fit should succeed");
-
-        let cloned = model.clone();
-        assert!(cloned.is_fitted());
-    }
-
-    // =========================================================================
-    // Coverage boost: Soft threshold function (Lasso internal)
-    // =========================================================================
-
-    #[test]
-    fn test_soft_threshold_positive() {
-        // x > lambda: should return x - lambda
-        let result = Lasso::soft_threshold(5.0, 2.0);
-        assert!((result - 3.0).abs() < 1e-6);
-    }
-
-    #[test]
-    fn test_soft_threshold_negative() {
-        // x < -lambda: should return x + lambda
-        let result = Lasso::soft_threshold(-5.0, 2.0);
-        assert!((result - (-3.0)).abs() < 1e-6);
-    }
-
-    #[test]
-    fn test_soft_threshold_zero_region() {
-        // |x| <= lambda: should return 0
-        let result = Lasso::soft_threshold(1.0, 2.0);
-        assert!(result.abs() < 1e-6);
-
-        let result = Lasso::soft_threshold(-1.0, 2.0);
-        assert!(result.abs() < 1e-6);
-
-        let result = Lasso::soft_threshold(0.0, 2.0);
-        assert!(result.abs() < 1e-6);
-    }
-
-    // =========================================================================
-    // Coverage boost: Add intercept column helper
-    // =========================================================================
-
-    #[test]
-    fn test_add_intercept_column_coverage() {
-        let x = Matrix::from_vec(3, 2, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
-            .expect("Valid matrix dimensions for test");
-
-        let x_with_intercept = LinearRegression::add_intercept_column(&x);
-        assert_eq!(x_with_intercept.shape(), (3, 3));
-
-        // First column should be all 1s
-        assert!((x_with_intercept.get(0, 0) - 1.0).abs() < 1e-6);
-        assert!((x_with_intercept.get(1, 0) - 1.0).abs() < 1e-6);
-        assert!((x_with_intercept.get(2, 0) - 1.0).abs() < 1e-6);
-    }
-
-    // =========================================================================
-    // Coverage boost: Multivariate regression
-    // =========================================================================
-
-    #[test]
-    fn test_ridge_multivariate_coverage() {
-        let x = Matrix::from_vec(4, 2, vec![1.0, 1.0, 2.0, 1.0, 1.0, 2.0, 2.0, 2.0])
-            .expect("Valid matrix dimensions for test");
-        let y = Vector::from_slice(&[6.0, 8.0, 9.0, 11.0]);
-
-        let mut model = Ridge::new(0.01);
-        model.fit(&x, &y).expect("Fit should succeed");
-
-        assert_eq!(model.coefficients().len(), 2);
-        let score = model.score(&x, &y);
-        assert!(score > 0.9);
-    }
-
-    #[test]
-    fn test_lasso_multivariate_coverage() {
-        let x = Matrix::from_vec(4, 2, vec![1.0, 1.0, 2.0, 1.0, 1.0, 2.0, 2.0, 2.0])
-            .expect("Valid matrix dimensions for test");
-        let y = Vector::from_slice(&[6.0, 8.0, 9.0, 11.0]);
-
-        let mut model = Lasso::new(0.001);
-        model.fit(&x, &y).expect("Fit should succeed");
-
-        assert_eq!(model.coefficients().len(), 2);
-    }
-
-    #[test]
-    fn test_elastic_net_multivariate_coverage() {
-        let x = Matrix::from_vec(4, 2, vec![1.0, 1.0, 2.0, 1.0, 1.0, 2.0, 2.0, 2.0])
-            .expect("Valid matrix dimensions for test");
-        let y = Vector::from_slice(&[6.0, 8.0, 9.0, 11.0]);
-
-        let mut model = ElasticNet::new(0.001, 0.5);
-        model.fit(&x, &y).expect("Fit should succeed");
-
-        assert_eq!(model.coefficients().len(), 2);
-    }
+    fs::remove_file(path).ok();
+}
+
+#[test]
+fn test_elastic_net_with_intercept_builder() {
+    let model = ElasticNet::new(1.0, 0.5).with_intercept(false);
+
+    let x = Matrix::from_vec(3, 1, vec![1.0, 2.0, 3.0]).expect("Valid matrix dimensions for test");
+    let y = Vector::from_slice(&[2.0, 4.0, 6.0]);
+
+    let mut model = model;
+    model
+        .fit(&x, &y)
+        .expect("Fit should succeed with valid test data");
+
+    let x_zero = Matrix::from_vec(1, 1, vec![0.0]).expect("Valid matrix dimensions for test");
+    let pred = model.predict(&x_zero);
+    assert!((pred[0] - 0.0).abs() < 1e-6); // No intercept
+}
+
+#[test]
+fn test_elastic_net_multivariate_coefficients() {
+    let x = Matrix::from_vec(3, 3, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0])
+        .expect("Valid matrix dimensions for test");
+    let y = Vector::from_slice(&[6.0, 15.0, 24.0]);
+
+    let mut model = ElasticNet::new(0.1, 0.5);
+    model
+        .fit(&x, &y)
+        .expect("Fit should succeed with valid test data");
+
+    assert_eq!(model.coefficients().len(), 3);
+}
+
+#[test]
+fn test_elastic_net_with_max_iter() {
+    let x =
+        Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0]).expect("Valid matrix dimensions for test");
+    let y = Vector::from_slice(&[3.0, 5.0, 7.0, 9.0]);
+
+    let mut model = ElasticNet::new(0.1, 0.5).with_max_iter(100);
+    model
+        .fit(&x, &y)
+        .expect("Fit should succeed with valid test data");
+
+    assert!(model.is_fitted());
+}
+
+#[test]
+fn test_elastic_net_with_tol() {
+    let x =
+        Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0]).expect("Valid matrix dimensions for test");
+    let y = Vector::from_slice(&[3.0, 5.0, 7.0, 9.0]);
+
+    let mut model = ElasticNet::new(0.1, 0.5).with_tol(1e-6);
+    model
+        .fit(&x, &y)
+        .expect("Fit should succeed with valid test data");
+
+    assert!(model.is_fitted());
+}
+
+// =========================================================================
+// Coverage boost tests: SafeTensors and binary serialization
+// =========================================================================
+
+#[test]
+fn test_linear_regression_save_load_binary() {
+    let x =
+        Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0]).expect("Valid matrix dimensions for test");
+    let y = Vector::from_slice(&[3.0, 5.0, 7.0, 9.0]);
+
+    let mut model = LinearRegression::new();
+    model.fit(&x, &y).expect("Fit should succeed");
+
+    let path = "/tmp/test_lr_binary.bin";
+    model.save(path).expect("Save should succeed");
+
+    let loaded = LinearRegression::load(path).expect("Load should succeed");
+    assert!(loaded.is_fitted());
+    assert!((loaded.intercept() - model.intercept()).abs() < 1e-6);
+
+    fs::remove_file(path).ok();
+}
+
+#[test]
+fn test_linear_regression_save_load_safetensors() {
+    let x =
+        Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0]).expect("Valid matrix dimensions for test");
+    let y = Vector::from_slice(&[3.0, 5.0, 7.0, 9.0]);
+
+    let mut model = LinearRegression::new();
+    model.fit(&x, &y).expect("Fit should succeed");
+
+    let path = "/tmp/test_lr_safetensors.safetensors";
+    model.save_safetensors(path).expect("Save should succeed");
+
+    let loaded = LinearRegression::load_safetensors(path).expect("Load should succeed");
+    assert!(loaded.is_fitted());
+    assert!((loaded.intercept() - model.intercept()).abs() < 1e-6);
+
+    fs::remove_file(path).ok();
+}
+
+#[test]
+fn test_linear_regression_save_unfitted_error() {
+    let model = LinearRegression::new();
+    let result = model.save_safetensors("/tmp/unfitted.safetensors");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_ridge_save_load_binary() {
+    let x =
+        Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0]).expect("Valid matrix dimensions for test");
+    let y = Vector::from_slice(&[3.0, 5.0, 7.0, 9.0]);
+
+    let mut model = Ridge::new(0.1);
+    model.fit(&x, &y).expect("Fit should succeed");
+
+    let path = "/tmp/test_ridge_binary.bin";
+    model.save(path).expect("Save should succeed");
+
+    let loaded = Ridge::load(path).expect("Load should succeed");
+    assert!(loaded.is_fitted());
+    assert!((loaded.alpha() - model.alpha()).abs() < 1e-6);
+
+    fs::remove_file(path).ok();
+}
+
+#[test]
+fn test_ridge_save_load_safetensors() {
+    let x =
+        Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0]).expect("Valid matrix dimensions for test");
+    let y = Vector::from_slice(&[3.0, 5.0, 7.0, 9.0]);
+
+    let mut model = Ridge::new(0.1);
+    model.fit(&x, &y).expect("Fit should succeed");
+
+    let path = "/tmp/test_ridge_safetensors.safetensors";
+    model.save_safetensors(path).expect("Save should succeed");
+
+    let loaded = Ridge::load_safetensors(path).expect("Load should succeed");
+    assert!(loaded.is_fitted());
+    assert!((loaded.alpha() - model.alpha()).abs() < 1e-6);
+
+    fs::remove_file(path).ok();
+}
+
+#[test]
+fn test_ridge_save_unfitted_error() {
+    let model = Ridge::new(0.1);
+    let result = model.save_safetensors("/tmp/unfitted_ridge.safetensors");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_lasso_save_load_binary() {
+    let x =
+        Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0]).expect("Valid matrix dimensions for test");
+    let y = Vector::from_slice(&[3.0, 5.0, 7.0, 9.0]);
+
+    let mut model = Lasso::new(0.01);
+    model.fit(&x, &y).expect("Fit should succeed");
+
+    let path = "/tmp/test_lasso_binary.bin";
+    model.save(path).expect("Save should succeed");
+
+    let loaded = Lasso::load(path).expect("Load should succeed");
+    assert!(loaded.is_fitted());
+
+    fs::remove_file(path).ok();
+}
+
+#[test]
+fn test_lasso_save_load_safetensors() {
+    let x =
+        Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0]).expect("Valid matrix dimensions for test");
+    let y = Vector::from_slice(&[3.0, 5.0, 7.0, 9.0]);
+
+    let mut model = Lasso::new(0.01);
+    model.fit(&x, &y).expect("Fit should succeed");
+
+    let path = "/tmp/test_lasso_safetensors.safetensors";
+    model.save_safetensors(path).expect("Save should succeed");
+
+    let loaded = Lasso::load_safetensors(path).expect("Load should succeed");
+    assert!(loaded.is_fitted());
+
+    fs::remove_file(path).ok();
+}
+
+#[test]
+fn test_lasso_save_unfitted_error() {
+    let model = Lasso::new(0.1);
+    let result = model.save_safetensors("/tmp/unfitted_lasso.safetensors");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_elastic_net_save_load_binary() {
+    let x =
+        Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0]).expect("Valid matrix dimensions for test");
+    let y = Vector::from_slice(&[3.0, 5.0, 7.0, 9.0]);
+
+    let mut model = ElasticNet::new(0.1, 0.5);
+    model.fit(&x, &y).expect("Fit should succeed");
+
+    let path = "/tmp/test_elastic_binary.bin";
+    model.save(path).expect("Save should succeed");
+
+    let loaded = ElasticNet::load(path).expect("Load should succeed");
+    assert!(loaded.is_fitted());
+
+    fs::remove_file(path).ok();
+}
+
+#[test]
+fn test_elastic_net_save_load_safetensors() {
+    let x =
+        Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0]).expect("Valid matrix dimensions for test");
+    let y = Vector::from_slice(&[3.0, 5.0, 7.0, 9.0]);
+
+    let mut model = ElasticNet::new(0.1, 0.5);
+    model.fit(&x, &y).expect("Fit should succeed");
+
+    let path = "/tmp/test_elastic_safetensors.safetensors";
+    model.save_safetensors(path).expect("Save should succeed");
+
+    let loaded = ElasticNet::load_safetensors(path).expect("Load should succeed");
+    assert!(loaded.is_fitted());
+
+    fs::remove_file(path).ok();
+}
+
+#[test]
+fn test_elastic_net_save_unfitted_error() {
+    let model = ElasticNet::new(0.1, 0.5);
+    let result = model.save_safetensors("/tmp/unfitted_elastic.safetensors");
+    assert!(result.is_err());
+}
+
+// =========================================================================
+// Coverage boost: Getters and builder methods
+// =========================================================================
+
+#[test]
+fn test_ridge_alpha_getter() {
+    let model = Ridge::new(0.5);
+    assert!((model.alpha() - 0.5).abs() < 1e-6);
+}
+
+#[test]
+fn test_ridge_with_intercept() {
+    let model = Ridge::new(0.1).with_intercept(false);
+    assert!(!model.fit_intercept);
+}
+
+#[test]
+fn test_lasso_alpha_getter() {
+    let model = Lasso::new(0.25);
+    assert!((model.alpha() - 0.25).abs() < 1e-6);
+}
+
+#[test]
+fn test_lasso_with_intercept() {
+    let model = Lasso::new(0.1).with_intercept(false);
+    assert!(!model.fit_intercept);
+}
+
+#[test]
+fn test_elastic_net_alpha_getter() {
+    let model = ElasticNet::new(0.3, 0.7);
+    assert!((model.alpha() - 0.3).abs() < 1e-6);
+}
+
+#[test]
+fn test_elastic_net_l1_ratio_getter() {
+    let model = ElasticNet::new(0.3, 0.7);
+    assert!((model.l1_ratio() - 0.7).abs() < 1e-6);
+}
+
+#[test]
+fn test_elastic_net_with_intercept() {
+    let model = ElasticNet::new(0.1, 0.5).with_intercept(false);
+    assert!(!model.fit_intercept);
+}
+
+// =========================================================================
+// Coverage boost: Error handling
+// =========================================================================
+
+#[test]
+fn test_ridge_fit_empty_error() {
+    let x = Matrix::from_vec(0, 2, vec![]).expect("Valid matrix dimensions for test");
+    let y = Vector::from_vec(vec![]);
+
+    let mut model = Ridge::new(0.1);
+    let result = model.fit(&x, &y);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_ridge_fit_dimension_mismatch() {
+    let x = Matrix::from_vec(3, 2, vec![1.0; 6]).expect("Valid matrix dimensions for test");
+    let y = Vector::from_slice(&[1.0, 2.0]); // Wrong length
+
+    let mut model = Ridge::new(0.1);
+    let result = model.fit(&x, &y);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_lasso_fit_empty_error() {
+    let x = Matrix::from_vec(0, 2, vec![]).expect("Valid matrix dimensions for test");
+    let y = Vector::from_vec(vec![]);
+
+    let mut model = Lasso::new(0.1);
+    let result = model.fit(&x, &y);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_lasso_fit_dimension_mismatch() {
+    let x = Matrix::from_vec(3, 2, vec![1.0; 6]).expect("Valid matrix dimensions for test");
+    let y = Vector::from_slice(&[1.0, 2.0]); // Wrong length
+
+    let mut model = Lasso::new(0.1);
+    let result = model.fit(&x, &y);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_elastic_net_fit_empty_error() {
+    let x = Matrix::from_vec(0, 2, vec![]).expect("Valid matrix dimensions for test");
+    let y = Vector::from_vec(vec![]);
+
+    let mut model = ElasticNet::new(0.1, 0.5);
+    let result = model.fit(&x, &y);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_elastic_net_fit_dimension_mismatch() {
+    let x = Matrix::from_vec(3, 2, vec![1.0; 6]).expect("Valid matrix dimensions for test");
+    let y = Vector::from_slice(&[1.0, 2.0]); // Wrong length
+
+    let mut model = ElasticNet::new(0.1, 0.5);
+    let result = model.fit(&x, &y);
+    assert!(result.is_err());
+}
+
+// =========================================================================
+// Coverage boost: Score and prediction edge cases
+// =========================================================================
+
+#[test]
+fn test_ridge_score_perfect() {
+    let x =
+        Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0]).expect("Valid matrix dimensions for test");
+    let y = Vector::from_slice(&[2.0, 4.0, 6.0, 8.0]);
+
+    let mut model = Ridge::new(0.0001); // Very small regularization
+    model.fit(&x, &y).expect("Fit should succeed");
+
+    let score = model.score(&x, &y);
+    assert!(score > 0.99);
+}
+
+#[test]
+fn test_lasso_score_perfect() {
+    let x =
+        Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0]).expect("Valid matrix dimensions for test");
+    let y = Vector::from_slice(&[2.0, 4.0, 6.0, 8.0]);
+
+    let mut model = Lasso::new(0.0001); // Very small regularization
+    model.fit(&x, &y).expect("Fit should succeed");
+
+    let score = model.score(&x, &y);
+    assert!(score > 0.9);
+}
+
+#[test]
+fn test_elastic_net_score_perfect() {
+    let x =
+        Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0]).expect("Valid matrix dimensions for test");
+    let y = Vector::from_slice(&[2.0, 4.0, 6.0, 8.0]);
+
+    let mut model = ElasticNet::new(0.0001, 0.5);
+    model.fit(&x, &y).expect("Fit should succeed");
+
+    let score = model.score(&x, &y);
+    assert!(score > 0.9);
+}
+
+// =========================================================================
+// Coverage boost: Debug and Clone implementations
+// =========================================================================
+
+#[test]
+fn test_ridge_debug_trait() {
+    let model = Ridge::new(0.1);
+    let debug_str = format!("{:?}", model);
+    assert!(debug_str.contains("Ridge"));
+}
+
+#[test]
+fn test_ridge_clone_trait() {
+    let x =
+        Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0]).expect("Valid matrix dimensions for test");
+    let y = Vector::from_slice(&[3.0, 5.0, 7.0, 9.0]);
+
+    let mut model = Ridge::new(0.1);
+    model.fit(&x, &y).expect("Fit should succeed");
+
+    let cloned = model.clone();
+    assert!(cloned.is_fitted());
+    assert!((cloned.alpha() - model.alpha()).abs() < 1e-6);
+}
+
+#[test]
+fn test_lasso_debug_trait() {
+    let model = Lasso::new(0.1);
+    let debug_str = format!("{:?}", model);
+    assert!(debug_str.contains("Lasso"));
+}
+
+#[test]
+fn test_lasso_clone_trait() {
+    let x =
+        Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0]).expect("Valid matrix dimensions for test");
+    let y = Vector::from_slice(&[3.0, 5.0, 7.0, 9.0]);
+
+    let mut model = Lasso::new(0.01);
+    model.fit(&x, &y).expect("Fit should succeed");
+
+    let cloned = model.clone();
+    assert!(cloned.is_fitted());
+}
+
+#[test]
+fn test_elastic_net_debug_trait() {
+    let model = ElasticNet::new(0.1, 0.5);
+    let debug_str = format!("{:?}", model);
+    assert!(debug_str.contains("ElasticNet"));
+}
+
+#[test]
+fn test_elastic_net_clone_trait() {
+    let x =
+        Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0]).expect("Valid matrix dimensions for test");
+    let y = Vector::from_slice(&[3.0, 5.0, 7.0, 9.0]);
+
+    let mut model = ElasticNet::new(0.1, 0.5);
+    model.fit(&x, &y).expect("Fit should succeed");
+
+    let cloned = model.clone();
+    assert!(cloned.is_fitted());
+}
+
+// =========================================================================
+// Coverage boost: Soft threshold function (Lasso internal)
+// =========================================================================
+
+#[test]
+fn test_soft_threshold_positive() {
+    // x > lambda: should return x - lambda
+    let result = Lasso::soft_threshold(5.0, 2.0);
+    assert!((result - 3.0).abs() < 1e-6);
+}
+
+#[test]
+fn test_soft_threshold_negative() {
+    // x < -lambda: should return x + lambda
+    let result = Lasso::soft_threshold(-5.0, 2.0);
+    assert!((result - (-3.0)).abs() < 1e-6);
+}
+
+#[test]
+fn test_soft_threshold_zero_region() {
+    // |x| <= lambda: should return 0
+    let result = Lasso::soft_threshold(1.0, 2.0);
+    assert!(result.abs() < 1e-6);
+
+    let result = Lasso::soft_threshold(-1.0, 2.0);
+    assert!(result.abs() < 1e-6);
+
+    let result = Lasso::soft_threshold(0.0, 2.0);
+    assert!(result.abs() < 1e-6);
+}
+
+// =========================================================================
+// Coverage boost: Add intercept column helper
+// =========================================================================
+
+#[test]
+fn test_add_intercept_column_coverage() {
+    let x = Matrix::from_vec(3, 2, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+        .expect("Valid matrix dimensions for test");
+
+    let x_with_intercept = LinearRegression::add_intercept_column(&x);
+    assert_eq!(x_with_intercept.shape(), (3, 3));
+
+    // First column should be all 1s
+    assert!((x_with_intercept.get(0, 0) - 1.0).abs() < 1e-6);
+    assert!((x_with_intercept.get(1, 0) - 1.0).abs() < 1e-6);
+    assert!((x_with_intercept.get(2, 0) - 1.0).abs() < 1e-6);
+}
+
+// =========================================================================
+// Coverage boost: Multivariate regression
+// =========================================================================
+
+#[test]
+fn test_ridge_multivariate_coverage() {
+    let x = Matrix::from_vec(4, 2, vec![1.0, 1.0, 2.0, 1.0, 1.0, 2.0, 2.0, 2.0])
+        .expect("Valid matrix dimensions for test");
+    let y = Vector::from_slice(&[6.0, 8.0, 9.0, 11.0]);
+
+    let mut model = Ridge::new(0.01);
+    model.fit(&x, &y).expect("Fit should succeed");
+
+    assert_eq!(model.coefficients().len(), 2);
+    let score = model.score(&x, &y);
+    assert!(score > 0.9);
+}
+
+#[test]
+fn test_lasso_multivariate_coverage() {
+    let x = Matrix::from_vec(4, 2, vec![1.0, 1.0, 2.0, 1.0, 1.0, 2.0, 2.0, 2.0])
+        .expect("Valid matrix dimensions for test");
+    let y = Vector::from_slice(&[6.0, 8.0, 9.0, 11.0]);
+
+    let mut model = Lasso::new(0.001);
+    model.fit(&x, &y).expect("Fit should succeed");
+
+    assert_eq!(model.coefficients().len(), 2);
+}
+
+#[test]
+fn test_elastic_net_multivariate_coverage() {
+    let x = Matrix::from_vec(4, 2, vec![1.0, 1.0, 2.0, 1.0, 1.0, 2.0, 2.0, 2.0])
+        .expect("Valid matrix dimensions for test");
+    let y = Vector::from_slice(&[6.0, 8.0, 9.0, 11.0]);
+
+    let mut model = ElasticNet::new(0.001, 0.5);
+    model.fit(&x, &y).expect("Fit should succeed");
+
+    assert_eq!(model.coefficients().len(), 2);
+}

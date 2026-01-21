@@ -1174,6 +1174,5 @@ impl Default for LinearSVM {
     }
 }
 
-
 #[cfg(test)]
 mod tests;

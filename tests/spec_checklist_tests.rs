@@ -1996,7 +1996,10 @@ fn g5_native_format_structures() {
 
     // Header structure exists and has required fields
     let header = AprV2Header::new();
-    assert_eq!(&header.magic, b"APR\0", "G5: APR magic bytes correct (APR\\0)");
+    assert_eq!(
+        &header.magic, b"APR\0",
+        "G5: APR magic bytes correct (APR\\0)"
+    );
     assert_eq!(header.version, (2, 0), "G5: APR version is 2.0");
 }
 
