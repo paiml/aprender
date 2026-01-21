@@ -1524,8 +1524,8 @@ roadmap:
   spec: null
   acceptance_criteria:
   - Implement PAR-301 (SafeTensors) and PAR-302 (APR) format inference in realizar
-  - PAR-301: SafeTensors /v1/chat/completions with SSE streaming
-  - PAR-302: APR format /v1/chat/completions with SSE streaming (CPU and GPU)
+  - 'PAR-301: SafeTensors /v1/chat/completions with SSE streaming'
+  - 'PAR-302: APR format /v1/chat/completions with SSE streaming (CPU and GPU)'
   phases: []
   subtasks: []
   estimated_effort: 2h
@@ -1598,3 +1598,22 @@ roadmap:
   notes: |
     Released 2026-01-20: apr-cli v0.2.10 published to crates.io
     Verified: cargo install apr-cli installs and runs correctly
+- id: PMAT-083
+  github_issue: null
+  item_type: task
+  title: PMAT-COMPLY-001
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-01-21T16:38:40Z
+  updated: 2026-01-21T16:38:44.707813472+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Fix all PMAT compliance warnings: missing .pmat-metrics.toml, O(1) hooks cache, file health analysis'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - compliance
+  - pmat
+  notes: null
