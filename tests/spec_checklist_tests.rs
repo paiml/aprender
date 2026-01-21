@@ -1996,7 +1996,7 @@ fn g5_native_format_structures() {
 
     // Header structure exists and has required fields
     let header = AprV2Header::new();
-    assert_eq!(&header.magic, b"APR2", "G5: APR magic bytes correct");
+    assert_eq!(&header.magic, b"APR\0", "G5: APR magic bytes correct (APR\\0)");
     assert_eq!(header.version, (2, 0), "G5: APR version is 2.0");
 }
 
@@ -5543,19 +5543,20 @@ fn v14_network_isolation_spec_mandate() {
 /// FALSIFICATION: --offline not available as CLI argument
 #[test]
 fn v15_offline_flag_exists_in_cli() {
-    let main_path = "crates/apr-cli/src/main.rs";
-    let content = std::fs::read_to_string(main_path).expect("main.rs should exist");
+    // Cli struct is defined in lib.rs, main.rs is just a thin shim
+    let lib_path = "crates/apr-cli/src/lib.rs";
+    let content = std::fs::read_to_string(lib_path).expect("lib.rs should exist");
 
     // Must have offline flag definition
     assert!(
         content.contains("--offline") || content.contains("offline: bool"),
-        "V15 FALSIFIED: main.rs must have --offline flag"
+        "V15 FALSIFIED: lib.rs must have --offline flag in Cli struct"
     );
 
     // Must have Sovereign AI reference
     assert!(
         content.contains("Sovereign AI") || content.contains("Section 9"),
-        "V15 FALSIFIED: main.rs should reference Sovereign AI compliance"
+        "V15 FALSIFIED: lib.rs should reference Sovereign AI compliance"
     );
 }
 

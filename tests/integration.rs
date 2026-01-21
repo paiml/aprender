@@ -291,11 +291,11 @@ fn int01_apr_roundtrip_integrity() {
     // Write to bytes
     let apr_bytes = writer.write().expect("Failed to write APR");
 
-    // Verify magic bytes
+    // Verify magic bytes (APR\0 per v2 spec)
     assert_eq!(
         &apr_bytes[0..4],
-        b"APR2",
-        "INT-01 FALSIFIED: Wrong magic bytes"
+        b"APR\0",
+        "INT-01 FALSIFIED: Wrong magic bytes (expected APR\\0)"
     );
 
     // Verify we can read back the metadata
@@ -340,11 +340,11 @@ fn int01b_apr_v2_roundtrip() {
 
     let apr_bytes = writer.write().expect("write");
 
-    // v2 uses APR2 magic
+    // v2 uses APR\0 magic (null-terminated)
     assert_eq!(
         &apr_bytes[0..4],
-        b"APR2",
-        "INT-01b FALSIFIED: v2 should use APR2 magic"
+        b"APR\0",
+        "INT-01b FALSIFIED: v2 should use APR\\0 magic"
     );
 }
 

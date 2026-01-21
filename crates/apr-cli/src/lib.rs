@@ -45,6 +45,10 @@ pub struct Cli {
     /// Quiet mode (errors only)
     #[arg(short, long, global = true)]
     pub quiet: bool,
+
+    /// Disable network access (Sovereign AI compliance, Section 9)
+    #[arg(long, global = true)]
+    pub offline: bool,
 }
 
 #[derive(Subcommand, Debug)]
