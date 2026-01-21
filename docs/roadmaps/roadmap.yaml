@@ -1656,3 +1656,28 @@ roadmap:
   - refactoring
   - file-health
   notes: null
+- id: PMAT-086
+  github_issue: null
+  item_type: task
+  title: 'SERVE-TRACE-001: Implement X-Trace-Level header in apr serve'
+  status: todo
+  priority: medium
+  assigned_to: null
+  created: 2026-01-21T18:30:00Z
+  updated: 2026-01-21T18:30:00Z
+  spec: null
+  acceptance_criteria:
+  - Parse X-Trace-Level header (brick/step/layer)
+  - Include brick_trace, step_trace, or layer_trace in response when header present
+  - No trace fields in response when header absent (F-TRACE-004b)
+  - QA serve script passes F-TRACE-001, F-TRACE-002, F-TRACE-003
+  phases: []
+  subtasks: []
+  estimated_effort: 4h
+  labels:
+  - serving
+  - tracing
+  - feature
+  notes: |
+    Discovered 2026-01-21: X-Trace-Level header documented in examples/serve_with_tracing.rs
+    but not implemented in commands/serve.rs. QA script fails F-TRACE-001/002/003.
