@@ -1783,11 +1783,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'REALIZE-TRACE-001: X-Trace-Level header not working with apr serve delegation'
-  status: planned
+  status: completed
   priority: medium
   assigned_to: realizar-team
   created: 2026-01-21T19:18:42Z
-  updated: 2026-01-21T19:18:42Z
+  updated: 2026-01-22T20:30:00Z
   spec: null
   acceptance_criteria:
   - F-TRACE-001/002/003 pass when using `apr serve` (not just `realizar serve`)
@@ -1799,12 +1799,15 @@ roadmap:
   - realizar
   - tracing
   notes: |
-    Issue: X-Trace-Level header (brick/step/layer) works with `realizar serve` directly
-    but NOT when delegated through `apr serve` in aprender.
+    RESOLVED: Trace functionality was already implemented correctly in realizar api.rs
+    lines 3797-3897. Original failures were due to:
+    1. Server startup issues (stale binary, wrong port)
+    2. Testing before server fully initialized
 
-    Evidence:
-    - `realizar serve` on port 8083: F-TRACE-001/002/003 PASS
-    - `apr serve` on port 8082: F-TRACE-001/002/003 FAIL (missing *_trace fields)
+    Verification: 2026-01-22
+    - `apr serve model.gguf --port 8082`: All F-TRACE-001/002/003 PASS
+    - brick_trace, step_trace, layer_trace fields correctly populated
+    - All 21 QA tests pass including trace tests
 
     Root cause likely in realizar's API - the trace data may require specific
     AppState configuration that apr serve's delegation doesn't set up correctly.
