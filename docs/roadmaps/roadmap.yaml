@@ -1660,7 +1660,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'SERVE-TRACE-001: Implement X-Trace-Level header in apr serve'
-  status: todo
+  status: planned
   priority: medium
   assigned_to: null
   created: 2026-01-21T18:30:00Z
@@ -1681,3 +1681,61 @@ roadmap:
   notes: |
     Discovered 2026-01-21: X-Trace-Level header documented in examples/serve_with_tracing.rs
     but not implemented in commands/serve.rs. QA script fails F-TRACE-001/002/003.
+- id: PMAT-087
+  github_issue: null
+  item_type: task
+  title: 'SERVE-STREAM-001: Fix SSE streaming not visible to OpenAI SDK clients'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-01-21T18:31:33Z
+  updated: 2026-01-21T18:34:12Z
+  spec: null
+  acceptance_criteria:
+  - |-
+    **Root Cause**: CPU streaming in realizar's api.rs is 'fake streaming' - it generates ALL tokens first via generate_with_cache (blocking), THEN streams them one-by-one. True streaming only exists in CUDA path (generate_gpu_resident_streaming).
+
+    **Fix Required**: Add streaming callback support to CPU OwnedQuantizedModel.generate_with_cache() similar to the CUDA path, or implement generate_streaming() method that yields tokens as they're generated.
+
+    **Files**:
+    - /home/noah/src/realizar/src/api.rs:3622-3679 (CPU quantized streaming)
+    - /home/noah/src/realizar/src/gguf/mod.rs (add generate_streaming)
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-088
+  github_issue: null
+  item_type: task
+  title: 'SERVE-CHAT-001: Fix prompt injection in chat completions (extra Human/Assistant turns)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-01-21T18:31:34Z
+  updated: 2026-01-21T18:34:13Z
+  spec: null
+  acceptance_criteria:
+  - |-
+    **Root Cause**: Model generates 'Human:'/'Assistant:' turns because:
+    1. Empty stop_tokens (Vec::new()) passed to QuantizedGenerateConfig - should include EOS token
+    2. Model may not match ChatML template - some models use 'Human:'/'Assistant:' format
+    3. Output not cleaned of extra turns after generation
+
+    **Evidence**:
+    - api.rs:3619 has stop_tokens: Vec::new()
+    - User typed 'hey', got 'Human: Hi there...' in response
+
+    **Fix Required**:
+    1. Pass proper stop tokens (EOS token ID 151645 for ChatML)
+    2. Clean output text after <|im_end|> or stop sequence
+    3. Consider auto-detecting model format from GGUF metadata
+
+    **Files**:
+    - /home/noah/src/realizar/src/api.rs:3615-3620 (QuantizedGenerateConfig)
+    - /home/noah/src/realizar/src/chat_template.rs (template detection)
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
