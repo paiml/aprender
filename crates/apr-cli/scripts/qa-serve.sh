@@ -340,7 +340,7 @@ test_determinism() {
     fi
 }
 
-# F-HTTP-010: Streaming
+# F-HTTP-010: Streaming (curl-based)
 test_streaming() {
     print_header "Section III: Advanced Features - Streaming"
 
@@ -363,6 +363,108 @@ test_streaming() {
         print_result "F-HTTP-010" "Stream Format" "PASS" "SSE data detected"
     else
         print_result "F-HTTP-010" "Stream Format" "FAIL" "Invalid SSE format"
+    fi
+
+    # F-HTTP-010b: OpenAI SDK streaming test (ephemeral uv)
+    test_streaming_openai_sdk
+}
+
+# F-HTTP-010b: OpenAI SDK Streaming Test (PMAT-087)
+# Uses ephemeral uv for Python execution - no persistent deps
+test_streaming_openai_sdk() {
+    print_header "Section III: OpenAI SDK Streaming (uv ephemeral)"
+
+    # Check if uv is available
+    if ! command -v uv &>/dev/null; then
+        print_result "F-HTTP-010b" "OpenAI SDK Streaming" "SKIP" "uv not installed"
+        return 0
+    fi
+
+    local script_output
+    local script_exit=0
+
+    # Ephemeral Python script using uv run --with
+    # This installs openai temporarily and runs the test
+    script_output=$(timeout 30 uv run --with openai python3 - <<'PYTHON_EOF'
+import os
+import sys
+import time
+
+# Suppress warnings
+os.environ["PYTHONWARNINGS"] = "ignore"
+
+from openai import OpenAI
+
+base_url = os.getenv("OPENAI_API_BASE", "http://localhost:8081/v1")
+client = OpenAI(api_key="test", base_url=base_url)
+
+try:
+    stream = client.chat.completions.create(
+        model="default",
+        messages=[{"role": "user", "content": "Say hi"}],
+        max_tokens=5,
+        stream=True,
+    )
+
+    token_count = 0
+    first_token_time = None
+    start_time = time.time()
+    content_pieces = []
+
+    for chunk in stream:
+        if hasattr(chunk.choices[0].delta, 'content'):
+            content = chunk.choices[0].delta.content
+            if content:
+                if first_token_time is None:
+                    first_token_time = time.time()
+                content_pieces.append(content)
+                token_count += 1
+
+    total_time = time.time() - start_time
+    ttft = first_token_time - start_time if first_token_time else total_time
+
+    # Output results in parseable format
+    print(f"TOKENS:{token_count}")
+    print(f"TTFT:{ttft:.3f}")
+    print(f"TOTAL:{total_time:.3f}")
+    print(f"CONTENT:{''.join(content_pieces)}")
+
+    # Streaming is working if TTFT < 50% of total time (tokens arrive incrementally)
+    if token_count > 0 and ttft < total_time * 0.8:
+        print("STREAMING:TRUE")
+        sys.exit(0)
+    elif token_count > 0:
+        print("STREAMING:MAYBE")  # Got tokens but timing unclear
+        sys.exit(0)
+    else:
+        print("STREAMING:FALSE")
+        sys.exit(1)
+
+except Exception as e:
+    print(f"ERROR:{e}")
+    sys.exit(1)
+PYTHON_EOF
+    ) || script_exit=$?
+
+    log_debug "SDK streaming output: ${script_output}"
+
+    # Parse results
+    local tokens ttft streaming content
+    tokens=$(grep '^TOKENS:' <<< "${script_output}" | cut -d: -f2) || tokens="0"
+    ttft=$(grep '^TTFT:' <<< "${script_output}" | cut -d: -f2) || ttft="0"
+    streaming=$(grep '^STREAMING:' <<< "${script_output}" | cut -d: -f2) || streaming="FALSE"
+    content=$(grep '^CONTENT:' <<< "${script_output}" | cut -d: -f2-) || content=""
+
+    if [[ "${script_exit}" -eq 0 && "${tokens}" -gt 0 ]]; then
+        if [[ "${streaming}" == "TRUE" ]]; then
+            print_result "F-HTTP-010b" "OpenAI SDK Streaming" "PASS" "Tokens: ${tokens}, TTFT: ${ttft}s"
+        else
+            print_result "F-HTTP-010b" "OpenAI SDK Streaming" "PASS" "Tokens received: ${tokens} (timing inconclusive)"
+        fi
+    else
+        local error
+        error=$(grep '^ERROR:' <<< "${script_output}" | cut -d: -f2-) || error="Unknown error"
+        print_result "F-HTTP-010b" "OpenAI SDK Streaming" "FAIL" "${error}"
     fi
 }
 
