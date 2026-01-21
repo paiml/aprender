@@ -385,6 +385,8 @@ test_streaming_openai_sdk() {
 
     # Ephemeral Python script using uv run --with
     # This installs openai temporarily and runs the test
+    # Export BASE_URL for the Python script to use
+    export OPENAI_API_BASE="${BASE_URL}/v1"
     script_output=$(timeout 30 uv run --with openai python3 - <<'PYTHON_EOF'
 import os
 import sys
@@ -395,7 +397,7 @@ os.environ["PYTHONWARNINGS"] = "ignore"
 
 from openai import OpenAI
 
-base_url = os.getenv("OPENAI_API_BASE", "http://localhost:8081/v1")
+base_url = os.getenv("OPENAI_API_BASE", "http://localhost:8080/v1")
 client = OpenAI(api_key="test", base_url=base_url)
 
 try:
