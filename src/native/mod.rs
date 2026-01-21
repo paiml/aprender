@@ -929,4 +929,279 @@ mod tests {
         let vec = AlignedVec::<f32>::default();
         assert!(vec.is_empty());
     }
+
+    // ========================================================================
+    // Additional Coverage Tests
+    // ========================================================================
+
+    #[test]
+    fn test_aligned_vec_as_mut_ptr() {
+        let mut vec = AlignedVec::from_slice(&[1.0_f32, 2.0, 3.0]);
+        let ptr = vec.as_mut_ptr();
+        assert!(!ptr.is_null());
+    }
+
+    #[test]
+    fn test_aligned_vec_as_mut_slice() {
+        let mut vec = AlignedVec::from_slice(&[1.0_f32, 2.0, 3.0]);
+        let slice = vec.as_mut_slice();
+        slice[0] = 10.0;
+        assert_eq!(vec[0], 10.0);
+    }
+
+    #[test]
+    fn test_aligned_vec_get_mut() {
+        let mut vec = AlignedVec::from_slice(&[1.0_f32, 2.0, 3.0]);
+        if let Some(val) = vec.get_mut(1) {
+            *val = 20.0;
+        }
+        assert_eq!(vec[1], 20.0);
+        assert!(vec.get_mut(10).is_none());
+    }
+
+    #[test]
+    fn test_aligned_vec_index_mut() {
+        let mut vec = AlignedVec::from_slice(&[1.0_f32, 2.0, 3.0]);
+        vec[0] = 100.0;
+        assert_eq!(vec[0], 100.0);
+    }
+
+    #[test]
+    fn test_aligned_vec_is_aligned_empty() {
+        let vec = AlignedVec::<f32>::with_capacity(0);
+        assert!(vec.is_aligned());
+    }
+
+    #[test]
+    fn test_trueno_native_model_with_extra() {
+        let extra = ModelExtra::new();
+        let model = TruenoNativeModel::new(ModelType::LinearRegression, 0, 0, 1).with_extra(extra);
+        assert!(model.extra.is_some());
+    }
+
+    #[test]
+    fn test_trueno_native_model_params_ptr() {
+        let params = AlignedVec::from_slice(&[1.0_f32, 2.0, 3.0]);
+        let model =
+            TruenoNativeModel::new(ModelType::LinearRegression, 3, 3, 1).with_params(params);
+
+        let ptr = model.params_ptr();
+        assert!(ptr.is_some());
+        assert!(!ptr.unwrap().is_null());
+    }
+
+    #[test]
+    fn test_trueno_native_model_params_ptr_none() {
+        let model = TruenoNativeModel::new(ModelType::LinearRegression, 0, 0, 1);
+        assert!(model.params_ptr().is_none());
+    }
+
+    #[test]
+    fn test_trueno_native_model_bias_ptr() {
+        let bias = AlignedVec::from_slice(&[1.0_f32]);
+        let model = TruenoNativeModel::new(ModelType::LinearRegression, 0, 0, 1).with_bias(bias);
+
+        let ptr = model.bias_ptr();
+        assert!(ptr.is_some());
+    }
+
+    #[test]
+    fn test_trueno_native_model_bias_ptr_none() {
+        let model = TruenoNativeModel::new(ModelType::LinearRegression, 0, 0, 1);
+        assert!(model.bias_ptr().is_none());
+    }
+
+    #[test]
+    fn test_trueno_native_model_validate_invalid_bias() {
+        let params = AlignedVec::from_slice(&[1.0_f32, 2.0, 3.0]);
+        let bias = AlignedVec::from_slice(&[f32::INFINITY]);
+        let model = TruenoNativeModel::new(ModelType::LinearRegression, 3, 3, 1)
+            .with_params(params)
+            .with_bias(bias);
+
+        let result = model.validate();
+        assert!(matches!(
+            result,
+            Err(NativeModelError::InvalidBias { index: 0, .. })
+        ));
+    }
+
+    #[test]
+    fn test_model_extra_with_tree() {
+        let tree = TreeData::new();
+        let extra = ModelExtra::new().with_tree(tree);
+        assert!(extra.tree_data.is_some());
+    }
+
+    #[test]
+    fn test_model_extra_with_layers() {
+        let layers = vec![LayerData::dense(10, 5)];
+        let extra = ModelExtra::new().with_layers(layers);
+        assert!(extra.layer_data.is_some());
+    }
+
+    #[test]
+    fn test_tree_data_new_and_default() {
+        let tree1 = TreeData::new();
+        let tree2 = TreeData::default();
+        assert_eq!(tree1.n_nodes(), 0);
+        assert_eq!(tree2.n_nodes(), 0);
+    }
+
+    #[test]
+    fn test_layer_type_all_variants() {
+        let types = [
+            LayerType::Dense,
+            LayerType::ReLU,
+            LayerType::Sigmoid,
+            LayerType::Tanh,
+            LayerType::Softmax,
+            LayerType::Dropout,
+            LayerType::BatchNorm,
+        ];
+        for lt in &types {
+            let debug = format!("{:?}", lt);
+            assert!(!debug.is_empty());
+        }
+    }
+
+    #[test]
+    fn test_layer_type_eq() {
+        assert_eq!(LayerType::Dense, LayerType::Dense);
+        assert_ne!(LayerType::Dense, LayerType::ReLU);
+    }
+
+    #[test]
+    fn test_native_model_error_display_all_variants() {
+        let errors = [
+            NativeModelError::ParamCountMismatch {
+                declared: 10,
+                actual: 5,
+            },
+            NativeModelError::InvalidParameter {
+                index: 0,
+                value: f32::NAN,
+            },
+            NativeModelError::InvalidBias {
+                index: 0,
+                value: f32::INFINITY,
+            },
+            NativeModelError::FeatureMismatch {
+                expected: 3,
+                got: 2,
+            },
+            NativeModelError::MissingParams,
+            NativeModelError::AlignmentError {
+                ptr: 12345,
+                required: 64,
+            },
+        ];
+
+        for err in &errors {
+            let msg = format!("{err}");
+            assert!(!msg.is_empty());
+        }
+    }
+
+    #[test]
+    fn test_native_model_error_debug_clone() {
+        let err = NativeModelError::MissingParams;
+        let cloned = err.clone();
+        let debug = format!("{:?}", cloned);
+        assert!(debug.contains("MissingParams"));
+    }
+
+    #[test]
+    fn test_native_model_error_is_error() {
+        let err = NativeModelError::MissingParams;
+        let _: &dyn std::error::Error = &err;
+    }
+
+    #[test]
+    fn test_trueno_native_model_debug_clone() {
+        let model = TruenoNativeModel::default();
+        let cloned = model.clone();
+        assert_eq!(model.n_params, cloned.n_params);
+
+        let debug = format!("{:?}", model);
+        assert!(debug.contains("TruenoNativeModel"));
+    }
+
+    #[test]
+    fn test_aligned_vec_debug_clone() {
+        let vec = AlignedVec::from_slice(&[1.0_f32, 2.0, 3.0]);
+        let cloned = vec.clone();
+        assert_eq!(vec, cloned);
+
+        let debug = format!("{:?}", vec);
+        assert!(debug.contains("AlignedVec"));
+    }
+
+    #[test]
+    fn test_model_extra_debug_clone_default() {
+        let extra = ModelExtra::default();
+        let cloned = extra.clone();
+        let debug = format!("{:?}", cloned);
+        assert!(debug.contains("ModelExtra"));
+    }
+
+    #[test]
+    fn test_tree_data_debug_clone() {
+        let tree = TreeData::default();
+        let cloned = tree.clone();
+        let debug = format!("{:?}", cloned);
+        assert!(debug.contains("TreeData"));
+    }
+
+    #[test]
+    fn test_layer_data_debug_clone() {
+        let layer = LayerData::dense(10, 5);
+        let cloned = layer.clone();
+        assert_eq!(layer.input_dim, cloned.input_dim);
+
+        let debug = format!("{:?}", layer);
+        assert!(debug.contains("LayerData"));
+    }
+
+    #[test]
+    fn test_aligned_vec_push_triggers_realloc() {
+        let mut vec = AlignedVec::<f32>::with_capacity(1);
+        vec.push(1.0);
+        vec.push(2.0);
+        vec.push(3.0);
+        vec.push(4.0);
+        assert_eq!(vec.len(), 4);
+    }
+
+    #[test]
+    fn test_model_extra_size_bytes_all_components() {
+        let tree = TreeData {
+            feature_indices: vec![0, 1],
+            thresholds: vec![0.5, 0.3],
+            left_children: vec![1, -1],
+            right_children: vec![2, -1],
+            leaf_values: vec![0.0, 1.0, 0.5],
+        };
+        let layer = LayerData::dense(10, 5)
+            .with_weights(AlignedVec::zeros(50))
+            .with_biases(AlignedVec::zeros(5));
+        let extra = ModelExtra::new()
+            .with_tree(tree)
+            .with_layers(vec![layer])
+            .with_centroids(AlignedVec::from_slice(&[1.0_f32, 2.0, 3.0]))
+            .with_metadata("key", vec![1, 2, 3, 4, 5]);
+
+        assert!(extra.size_bytes() > 0);
+    }
+
+    #[test]
+    fn test_trueno_native_model_predict_linear_no_bias() {
+        let params = AlignedVec::from_slice(&[1.0_f32, 2.0, 3.0]);
+        let model =
+            TruenoNativeModel::new(ModelType::LinearRegression, 3, 3, 1).with_params(params);
+
+        // 1*1 + 2*2 + 3*3 + 0 = 14
+        let pred = model.predict_linear(&[1.0, 2.0, 3.0]).unwrap();
+        assert!((pred - 14.0).abs() < f32::EPSILON);
+    }
 }

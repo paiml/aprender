@@ -1479,4 +1479,352 @@ mod tests {
         // Feature 0: [1, 5] -> mean=3, std=2 -> [-1, 1]
         assert!((y_data[0] - y_data[4]).abs() > 0.5, "Should be different");
     }
+
+    // ==========================================================================
+    // Additional Coverage Tests
+    // ==========================================================================
+
+    #[test]
+    fn test_layer_norm_debug() {
+        let norm = LayerNorm::new(&[64]);
+        let debug_str = format!("{:?}", norm);
+        assert!(debug_str.contains("LayerNorm"));
+    }
+
+    #[test]
+    fn test_layer_norm_batch_independence() {
+        // Each sample in batch is normalized independently
+        let norm = LayerNorm::without_affine(&[4]);
+
+        let x = Tensor::new(&[1.0, 1.0, 1.0, 1.0, 10.0, 10.0, 10.0, 10.0], &[2, 4]);
+        let y = norm.forward(&x);
+        let y_data = y.data();
+
+        // Batch 0: all 1s -> variance = 0 -> all zeros after normalization (div by eps)
+        // Batch 1: all 10s -> same behavior
+
+        // For uniform values, normalized output should be 0 (mean subtraction)
+        // when variance is nearly 0
+        for &v in &y_data[0..4] {
+            assert!(v.abs() < 1e-3, "Uniform input should normalize to ~0");
+        }
+    }
+
+    #[test]
+    fn test_layer_norm_affine_transform() {
+        // Test that affine parameters (weight, bias) are applied
+        let norm = LayerNorm::new(&[4]);
+
+        // With default weight=1 and bias=0, output should be same as without_affine
+        let x = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[1, 4]);
+        let y = norm.forward(&x);
+
+        let norm_no_affine = LayerNorm::without_affine(&[4]);
+        let y_no_affine = norm_no_affine.forward(&x);
+
+        for (a, b) in y.data().iter().zip(y_no_affine.data().iter()) {
+            assert!((a - b).abs() < 1e-5);
+        }
+    }
+
+    #[test]
+    fn test_batch_norm_1d_chained_builders() {
+        let norm = BatchNorm1d::new(32).with_momentum(0.2).with_eps(1e-4);
+        let x = Tensor::ones(&[8, 32]);
+        let y = norm.forward(&x);
+        assert_eq!(y.shape(), &[8, 32]);
+    }
+
+    #[test]
+    fn test_batch_norm_1d_3d_varied_input_training() {
+        // Test 3D input with varied values in training mode
+        let norm = BatchNorm1d::new(2);
+        let x = Tensor::new(
+            &[
+                // batch 0, feature 0, length=2
+                1.0, 2.0, // batch 0, feature 1, length=2
+                3.0, 4.0, // batch 1, feature 0, length=2
+                5.0, 6.0, // batch 1, feature 1, length=2
+                7.0, 8.0,
+            ],
+            &[2, 2, 2],
+        );
+        let y = norm.forward(&x);
+        assert_eq!(y.shape(), &[2, 2, 2]);
+    }
+
+    #[test]
+    fn test_batch_norm_1d_3d_varied_input_eval() {
+        // Test 3D input with varied values in eval mode
+        let mut norm = BatchNorm1d::new(2);
+        norm.eval();
+        let x = Tensor::new(
+            &[
+                1.0, 2.0, 3.0, 4.0, // batch 0
+                5.0, 6.0, 7.0, 8.0, // batch 1
+            ],
+            &[2, 2, 2],
+        );
+        let y = norm.forward(&x);
+        assert_eq!(y.shape(), &[2, 2, 2]);
+    }
+
+    #[test]
+    fn test_group_norm_larger_spatial() {
+        // Test with larger spatial dimensions
+        let norm = GroupNorm::new(4, 8);
+        let x = Tensor::ones(&[2, 8, 4, 4]);
+        let y = norm.forward(&x);
+        assert_eq!(y.shape(), &[2, 8, 4, 4]);
+    }
+
+    #[test]
+    fn test_group_norm_varying_values() {
+        // Test with varying values to ensure proper group normalization
+        let norm = GroupNorm::new(2, 4);
+        let x = Tensor::new(
+            &[
+                1.0, 2.0, 3.0, 4.0, // sample 0
+                5.0, 6.0, 7.0, 8.0, // sample 1
+            ],
+            &[2, 4],
+        );
+        let y = norm.forward(&x);
+
+        // Check output is valid
+        assert!(y.data().iter().all(|&v| v.is_finite()));
+    }
+
+    #[test]
+    fn test_group_norm_with_affine_output() {
+        // Test that affine parameters affect output
+        let norm_with_affine = GroupNorm::new(2, 4);
+        let norm_without_affine = GroupNorm::without_affine(2, 4);
+
+        let x = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[1, 4]);
+
+        let y1 = norm_with_affine.forward(&x);
+        let y2 = norm_without_affine.forward(&x);
+
+        // With default weight=1, bias=0, outputs should be same
+        for (a, b) in y1.data().iter().zip(y2.data().iter()) {
+            assert!((a - b).abs() < 1e-5);
+        }
+    }
+
+    #[test]
+    fn test_rms_norm_4d_input() {
+        // Test with 4D input
+        let norm = RMSNorm::new(&[8]);
+        let x = Tensor::ones(&[2, 4, 4, 8]);
+        let y = norm.forward(&x);
+        assert_eq!(y.shape(), &[2, 4, 4, 8]);
+    }
+
+    #[test]
+    fn test_rms_norm_multi_dim_normalized_shape() {
+        // Test with multi-dimensional normalized shape
+        let norm = RMSNorm::new(&[4, 8]);
+        let x = Tensor::ones(&[2, 4, 8]);
+        let y = norm.forward(&x);
+        assert_eq!(y.shape(), &[2, 4, 8]);
+    }
+
+    #[test]
+    fn test_rms_norm_eps_effect() {
+        // Test that eps prevents division by zero
+        let norm_small_eps = RMSNorm::with_eps(&[4], 1e-10);
+        let norm_large_eps = RMSNorm::with_eps(&[4], 1.0);
+
+        let x = Tensor::new(&[1e-8, 1e-8, 1e-8, 1e-8], &[1, 4]);
+
+        let y_small = norm_small_eps.forward(&x);
+        let y_large = norm_large_eps.forward(&x);
+
+        // Both should be finite
+        assert!(y_small.data().iter().all(|&v| v.is_finite()));
+        assert!(y_large.data().iter().all(|&v| v.is_finite()));
+    }
+
+    #[test]
+    fn test_instance_norm_3d_varied_values() {
+        let norm = InstanceNorm::new(4);
+        let x = Tensor::new(
+            &[
+                1.0, 2.0, 3.0, 4.0, // batch 0, channels 0-3
+                5.0, 6.0, 7.0, 8.0, // batch 1, channels 0-3
+            ],
+            &[2, 4],
+        );
+        let y = norm.forward(&x);
+        assert_eq!(y.shape(), &[2, 4]);
+    }
+
+    #[test]
+    fn test_instance_norm_without_affine_forward() {
+        let norm = InstanceNorm::without_affine(4);
+        let x = Tensor::ones(&[2, 4, 8, 8]);
+        let y = norm.forward(&x);
+        assert_eq!(y.shape(), &[2, 4, 8, 8]);
+    }
+
+    #[test]
+    fn test_layer_norm_large_batch() {
+        let norm = LayerNorm::new(&[64]);
+        let x = Tensor::ones(&[128, 64]);
+        let y = norm.forward(&x);
+        assert_eq!(y.shape(), &[128, 64]);
+    }
+
+    #[test]
+    fn test_batch_norm_single_sample_training() {
+        // Single sample batch in training mode
+        let norm = BatchNorm1d::new(4);
+        let x = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[1, 4]);
+        let y = norm.forward(&x);
+        assert_eq!(y.shape(), &[1, 4]);
+    }
+
+    #[test]
+    fn test_group_norm_all_zeros() {
+        // Test with all zeros input
+        let norm = GroupNorm::new(2, 4);
+        let x = Tensor::zeros(&[1, 4]);
+        let y = norm.forward(&x);
+
+        // Normalized zeros should still be zeros (0 - 0) / eps
+        assert!(y.data().iter().all(|&v| v.abs() < 1e-3));
+    }
+
+    #[test]
+    fn test_rms_norm_all_zeros() {
+        // Test with all zeros input - should be handled by eps
+        let norm = RMSNorm::without_affine(&[4]);
+        let x = Tensor::zeros(&[1, 4]);
+        let y = norm.forward(&x);
+
+        // 0 / sqrt(eps) should be finite
+        assert!(y.data().iter().all(|&v| v.is_finite()));
+    }
+
+    #[test]
+    fn test_layer_norm_negative_values() {
+        let norm = LayerNorm::without_affine(&[4]);
+        let x = Tensor::new(&[-1.0, -2.0, -3.0, -4.0], &[1, 4]);
+        let y = norm.forward(&x);
+
+        // Mean should be centered
+        let mean: f32 = y.data().iter().sum::<f32>() / 4.0;
+        assert!(mean.abs() < 1e-5);
+    }
+
+    #[test]
+    fn test_batch_norm_large_values() {
+        let norm = BatchNorm1d::new(4);
+        let x = Tensor::new(
+            &[1000.0, 2000.0, 3000.0, 4000.0, 1001.0, 2001.0, 3001.0, 4001.0],
+            &[2, 4],
+        );
+        let y = norm.forward(&x);
+
+        // Should normalize large values
+        assert!(y.data().iter().all(|&v| v.is_finite()));
+    }
+
+    #[test]
+    fn test_group_norm_batch_size_one() {
+        let norm = GroupNorm::new(4, 8);
+        let x = Tensor::ones(&[1, 8]);
+        let y = norm.forward(&x);
+        assert_eq!(y.shape(), &[1, 8]);
+    }
+
+    #[test]
+    fn test_rms_norm_large_values() {
+        let norm = RMSNorm::without_affine(&[4]);
+        let x = Tensor::new(&[1000.0, 2000.0, 3000.0, 4000.0], &[1, 4]);
+        let y = norm.forward(&x);
+
+        // Should normalize large values without overflow
+        assert!(y.data().iter().all(|&v| v.is_finite()));
+    }
+
+    #[test]
+    fn test_layer_norm_mixed_signs() {
+        let norm = LayerNorm::without_affine(&[4]);
+        let x = Tensor::new(&[-2.0, -1.0, 1.0, 2.0], &[1, 4]);
+        let y = norm.forward(&x);
+
+        // Mean should be 0 (input mean is 0)
+        let mean: f32 = y.data().iter().sum::<f32>() / 4.0;
+        assert!(mean.abs() < 1e-5);
+    }
+
+    #[test]
+    fn test_instance_norm_parameters_mut_without_affine() {
+        let mut norm = InstanceNorm::without_affine(32);
+        let params = norm.parameters_mut();
+        assert!(params.is_empty());
+    }
+
+    #[test]
+    fn test_batch_norm_training_flag_persistence() {
+        let mut norm = BatchNorm1d::new(64);
+
+        // Start in training mode
+        assert!(norm.training());
+
+        // Switch to eval
+        norm.eval();
+        assert!(!norm.training());
+
+        // Process some data
+        let x = Tensor::ones(&[4, 64]);
+        let _ = norm.forward(&x);
+
+        // Should stay in eval mode
+        assert!(!norm.training());
+
+        // Switch back to train
+        norm.train();
+        assert!(norm.training());
+    }
+
+    #[test]
+    fn test_group_norm_3d_batch_processing() {
+        // Test 3D input (no spatial dims) with multiple batches
+        let norm = GroupNorm::new(2, 8);
+
+        let data: Vec<f32> = (0..32).map(|x| x as f32).collect();
+        let x = Tensor::new(&data, &[4, 8]);
+        let y = norm.forward(&x);
+
+        assert_eq!(y.shape(), &[4, 8]);
+        assert!(y.data().iter().all(|&v| v.is_finite()));
+    }
+
+    #[test]
+    fn test_rms_norm_with_affine_vs_without() {
+        let norm_affine = RMSNorm::new(&[4]);
+        let norm_no_affine = RMSNorm::without_affine(&[4]);
+
+        let x = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[1, 4]);
+
+        // Default weights are 1.0, so should produce same results
+        let y1 = norm_affine.forward(&x);
+        let y2 = norm_no_affine.forward(&x);
+
+        for (a, b) in y1.data().iter().zip(y2.data().iter()) {
+            assert!((a - b).abs() < 1e-5);
+        }
+    }
+
+    #[test]
+    fn test_layer_norm_4d_batch() {
+        // Test 4D input
+        let norm = LayerNorm::new(&[8]);
+        let x = Tensor::ones(&[2, 4, 4, 8]);
+        let y = norm.forward(&x);
+        assert_eq!(y.shape(), &[2, 4, 4, 8]);
+    }
 }

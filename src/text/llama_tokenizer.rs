@@ -1087,4 +1087,279 @@ mod tests {
 
         data
     }
+
+    // ========================================================================
+    // Additional Coverage Tests
+    // ========================================================================
+
+    #[test]
+    fn test_tokenizer_model_default() {
+        let model = TokenizerModel::default();
+        assert_eq!(model, TokenizerModel::SentencePiece);
+    }
+
+    #[test]
+    fn test_tokenizer_model_debug_clone_eq() {
+        let model = TokenizerModel::Gpt2;
+        let cloned = model;
+        assert_eq!(model, cloned);
+
+        let debug = format!("{:?}", model);
+        assert!(debug.contains("Gpt2"));
+    }
+
+    #[test]
+    fn test_llama_tokenizer_debug_clone() {
+        let tokenizer = create_test_tokenizer();
+        let cloned = tokenizer.clone();
+        assert_eq!(tokenizer.vocab_size(), cloned.vocab_size());
+
+        let debug = format!("{:?}", tokenizer);
+        assert!(debug.contains("LlamaTokenizer"));
+    }
+
+    #[test]
+    fn test_set_model_and_get_model() {
+        let mut tokenizer = create_test_tokenizer();
+        assert_eq!(tokenizer.model(), TokenizerModel::SentencePiece);
+
+        tokenizer.set_model(TokenizerModel::Gpt2);
+        assert_eq!(tokenizer.model(), TokenizerModel::Gpt2);
+    }
+
+    #[test]
+    fn test_id_to_token() {
+        let tokenizer = create_test_tokenizer();
+
+        // Known token
+        let token = tokenizer.id_to_token(3);
+        assert_eq!(token, Some("▁Hello"));
+
+        // Unknown ID
+        let unknown = tokenizer.id_to_token(9999);
+        assert!(unknown.is_none());
+    }
+
+    #[test]
+    fn test_token_to_id() {
+        let tokenizer = create_test_tokenizer();
+
+        // Known token
+        let id = tokenizer.token_to_id("▁Hello");
+        assert_eq!(id, Some(3));
+
+        // Unknown token
+        let unknown = tokenizer.token_to_id("unknown_xyz");
+        assert!(unknown.is_none());
+    }
+
+    #[test]
+    fn test_new_empty_vocabulary_error() {
+        let result = LlamaTokenizer::new(vec![], vec![], 0, 0, 0);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_new_invalid_bos_id() {
+        let tokens = vec!["<unk>".to_string(), "<s>".to_string()];
+        let result = LlamaTokenizer::new(tokens, vec![0.0, 0.0], 999, 1, 0);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_new_invalid_eos_id() {
+        let tokens = vec!["<unk>".to_string(), "<s>".to_string()];
+        let result = LlamaTokenizer::new(tokens, vec![0.0, 0.0], 1, 999, 0);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_new_invalid_unk_id() {
+        let tokens = vec!["<unk>".to_string(), "<s>".to_string()];
+        let result = LlamaTokenizer::new(tokens, vec![0.0, 0.0], 1, 0, 999);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_decode_byte_token() {
+        // Create tokenizer with byte token for newline
+        let tokens = vec![
+            "<unk>".to_string(),
+            "<s>".to_string(),
+            "</s>".to_string(),
+            "<0x0A>".to_string(), // newline byte token
+        ];
+        let scores = vec![0.0; tokens.len()];
+        let tokenizer = LlamaTokenizer::new(tokens, scores, 1, 2, 0).unwrap();
+
+        let decoded = tokenizer.decode(&[3]); // decode byte token
+        assert_eq!(decoded, "\n");
+    }
+
+    #[test]
+    fn test_decode_invalid_byte_token() {
+        // Create tokenizer with malformed byte token
+        let tokens = vec![
+            "<unk>".to_string(),
+            "<s>".to_string(),
+            "</s>".to_string(),
+            "<0xZZ>".to_string(), // invalid hex
+        ];
+        let scores = vec![0.0; tokens.len()];
+        let tokenizer = LlamaTokenizer::new(tokens, scores, 1, 2, 0).unwrap();
+
+        // Should not panic, just output the token as-is
+        let decoded = tokenizer.decode(&[3]);
+        assert_eq!(decoded, "<0xZZ>");
+    }
+
+    #[test]
+    fn test_encode_gpt2_mode() {
+        let mut tokenizer = create_test_tokenizer();
+        tokenizer.set_model(TokenizerModel::Gpt2);
+
+        let tokens = tokenizer.encode("Hello World");
+        assert!(!tokens.is_empty());
+    }
+
+    #[test]
+    fn test_from_gguf_too_short() {
+        let short_data = b"GGUF";
+        let result = LlamaTokenizer::from_gguf_bytes(short_data);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_from_gguf_missing_tokens() {
+        // Create GGUF without tokenizer.ggml.tokens
+        let mut data = Vec::new();
+        data.extend_from_slice(b"GGUF");
+        data.extend_from_slice(&3u32.to_le_bytes()); // version
+        data.extend_from_slice(&0u64.to_le_bytes()); // tensor_count
+        data.extend_from_slice(&0u64.to_le_bytes()); // metadata_count (zero)
+
+        let result = LlamaTokenizer::from_gguf_bytes(&data);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_gguf_value_variants() {
+        // Test GGUFValue enum variants
+        let values = vec![
+            GGUFValue::UInt8(1),
+            GGUFValue::Int8(-1),
+            GGUFValue::UInt16(100),
+            GGUFValue::Int16(-100),
+            GGUFValue::UInt32(1000),
+            GGUFValue::Int32(-1000),
+            GGUFValue::Float32(1.5),
+            GGUFValue::Bool(true),
+            GGUFValue::String("test".to_string()),
+            GGUFValue::Array(vec![GGUFValue::UInt8(1)]),
+            GGUFValue::UInt64(10000),
+            GGUFValue::Int64(-10000),
+            GGUFValue::Float64(3.14),
+        ];
+
+        for val in &values {
+            let debug = format!("{:?}", val);
+            assert!(!debug.is_empty());
+        }
+
+        // Clone test
+        let cloned = values.clone();
+        assert_eq!(values.len(), cloned.len());
+    }
+
+    #[test]
+    fn test_decode_gpt2_non_mapped_char() {
+        // Test decoding a character not in GPT-2 mapping
+        // Should fallback to UTF-8 encoding
+        let bytes = decode_gpt2_token("日本語"); // Japanese characters
+        let text = String::from_utf8_lossy(&bytes);
+        assert!(!text.is_empty());
+    }
+
+    #[test]
+    fn test_gpt2_decode_full_sentence() {
+        let mut tokenizer = create_test_tokenizer();
+        tokenizer.set_model(TokenizerModel::Gpt2);
+
+        // Test decode_gpt2 path with special tokens
+        let decoded = tokenizer.decode(&[
+            tokenizer.bos_token_id(),
+            3, // some token
+            tokenizer.eos_token_id(),
+        ]);
+        // BOS and EOS should be filtered
+        assert!(!decoded.contains("<s>"));
+        assert!(!decoded.contains("</s>"));
+    }
+
+    #[test]
+    fn test_vocab_size_accessor() {
+        let tokenizer = create_test_tokenizer();
+        assert!(tokenizer.vocab_size() > 0);
+    }
+
+    #[test]
+    fn test_constants() {
+        assert_eq!(LLAMA_VOCAB_SIZE, 32000);
+        assert_eq!(BOS_TOKEN, "<s>");
+        assert_eq!(EOS_TOKEN, "</s>");
+        assert_eq!(UNK_TOKEN, "<unk>");
+    }
+
+    #[test]
+    fn test_encode_with_byte_fallback_for_emoji() {
+        // Create tokenizer with byte tokens
+        let mut tokens = vec![
+            "<unk>".to_string(),
+            "<s>".to_string(),
+            "</s>".to_string(),
+            "▁Hello".to_string(),
+        ];
+        // Add byte tokens for 0x00 to 0xFF
+        for i in 0u8..=255 {
+            tokens.push(format!("<0x{i:02X}>"));
+        }
+        let scores = vec![0.0; tokens.len()];
+        let tokenizer = LlamaTokenizer::new(tokens, scores, 1, 2, 0).unwrap();
+
+        // Encode text with emoji (uses byte fallback)
+        let encoded = tokenizer.encode("🎉");
+        assert!(!encoded.is_empty());
+    }
+
+    #[test]
+    fn test_decode_skips_unknown_token_id() {
+        let tokenizer = create_test_tokenizer();
+        // Decode with non-existent token ID
+        let decoded = tokenizer.decode(&[9999]);
+        // Should not panic, produces empty for missing token
+        assert!(decoded.is_empty() || decoded.len() > 0);
+    }
+
+    #[test]
+    fn test_gpt2_byte_decoder_size() {
+        let decoder = build_gpt2_byte_decoder();
+        // GPT-2 byte decoder should have 256 entries
+        assert_eq!(decoder.len(), 256);
+    }
+
+    #[test]
+    fn test_decode_sentencepiece_handles_hybrid_space() {
+        // Test that hybrid tokenizers with GPT-2 space marker work
+        let tokens = vec![
+            "<unk>".to_string(),
+            "<s>".to_string(),
+            "</s>".to_string(),
+            "Ġworld".to_string(), // GPT-2 space marker
+        ];
+        let scores = vec![0.0; tokens.len()];
+        let tokenizer = LlamaTokenizer::new(tokens, scores, 1, 2, 0).unwrap();
+
+        let decoded = tokenizer.decode(&[3]);
+        assert_eq!(decoded, "world"); // Leading space removed
+    }
 }

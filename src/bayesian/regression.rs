@@ -769,4 +769,206 @@ mod tests {
         // Note: This may not always hold due to numerical precision
         // so we just verify both are finite
     }
+
+    // =========================================================================
+    // Extended coverage tests
+    // =========================================================================
+
+    #[test]
+    fn test_fit_feature_count_mismatch() {
+        use crate::primitives::{Matrix, Vector};
+
+        let x = Matrix::from_vec(3, 2, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]).expect("Valid matrix");
+        let y = Vector::from_vec(vec![1.0, 2.0, 3.0]);
+
+        let mut model = BayesianLinearRegression::new(3); // Expects 3 features, matrix has 2
+        let result = model.fit(&x, &y);
+
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("features") || err.contains("columns"));
+    }
+
+    #[test]
+    fn test_fit_underdetermined() {
+        use crate::primitives::{Matrix, Vector};
+
+        // More features than samples (n < p)
+        let x = Matrix::from_vec(2, 3, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]).expect("Valid matrix");
+        let y = Vector::from_vec(vec![1.0, 2.0]);
+
+        let mut model = BayesianLinearRegression::new(3);
+        let result = model.fit(&x, &y);
+
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("sample") || err.contains("Need at least"));
+    }
+
+    #[test]
+    fn test_predict_feature_count_mismatch() {
+        use crate::primitives::{Matrix, Vector};
+
+        // Train the model
+        let x_train = Matrix::from_vec(4, 2, vec![1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0])
+            .expect("Valid matrix");
+        let y_train = Vector::from_vec(vec![2.0, 4.0, 6.0, 8.0]);
+
+        let mut model = BayesianLinearRegression::new(2);
+        model.fit(&x_train, &y_train).expect("Fit should succeed");
+
+        // Predict with wrong number of features
+        let x_test = Matrix::from_vec(2, 3, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]).expect("Valid matrix");
+        let result = model.predict(&x_test);
+
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("feature") || err.contains("columns"));
+    }
+
+    #[test]
+    fn test_log_likelihood_feature_mismatch() {
+        use crate::primitives::{Matrix, Vector};
+
+        // Train
+        let x_train = Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0]).expect("Valid matrix");
+        let y_train = Vector::from_vec(vec![2.0, 4.0, 6.0, 8.0]);
+
+        let mut model = BayesianLinearRegression::new(1);
+        model.fit(&x_train, &y_train).expect("Fit should succeed");
+
+        // Compute log-likelihood with wrong feature count
+        let x_wrong = Matrix::from_vec(4, 2, vec![1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0])
+            .expect("Valid matrix");
+        let y_wrong = Vector::from_vec(vec![2.0, 4.0, 6.0, 8.0]);
+
+        let result = model.log_likelihood(&x_wrong, &y_wrong);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_log_likelihood_y_length_mismatch() {
+        use crate::primitives::{Matrix, Vector};
+
+        // Train
+        let x_train = Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0]).expect("Valid matrix");
+        let y_train = Vector::from_vec(vec![2.0, 4.0, 6.0, 8.0]);
+
+        let mut model = BayesianLinearRegression::new(1);
+        model.fit(&x_train, &y_train).expect("Fit should succeed");
+
+        // Compute log-likelihood with y length mismatch
+        let x_test = Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0]).expect("Valid matrix");
+        let y_wrong = Vector::from_vec(vec![2.0, 4.0]); // Only 2 elements
+
+        let result = model.log_likelihood(&x_test, &y_wrong);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("sample"));
+    }
+
+    #[test]
+    fn test_with_prior_invalid_noise_beta() {
+        let result = BayesianLinearRegression::with_prior(
+            2,
+            vec![1.0, 2.0],
+            1.0,
+            1.0,
+            -1.0, // Invalid beta
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_debug_implementation() {
+        let model = BayesianLinearRegression::new(3);
+        let debug_str = format!("{:?}", model);
+        assert!(debug_str.contains("BayesianLinearRegression"));
+        assert!(debug_str.contains("n_features"));
+    }
+
+    #[test]
+    fn test_clone_implementation() {
+        let original = BayesianLinearRegression::new(2);
+        let cloned = original.clone();
+        assert_eq!(cloned.n_features(), 2);
+        assert!(cloned.posterior_mean().is_none());
+    }
+
+    #[test]
+    fn test_clone_after_fit() {
+        use crate::primitives::{Matrix, Vector};
+
+        let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0]).expect("Valid matrix");
+        let y = Vector::from_vec(vec![2.0, 4.0, 6.0, 8.0]);
+
+        let mut model = BayesianLinearRegression::new(1);
+        model.fit(&x, &y).expect("Fit should succeed");
+
+        let cloned = model.clone();
+        assert!(cloned.posterior_mean().is_some());
+        assert!(cloned.noise_variance().is_some());
+    }
+
+    #[test]
+    fn test_with_prior_zero_precision() {
+        let result = BayesianLinearRegression::with_prior(
+            2,
+            vec![1.0, 2.0],
+            0.0, // Invalid: must be > 0
+            1.0,
+            1.0,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_with_prior_zero_alpha() {
+        let result = BayesianLinearRegression::with_prior(
+            2,
+            vec![1.0, 2.0],
+            1.0,
+            0.0, // Invalid alpha
+            1.0,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_with_prior_zero_beta() {
+        let result = BayesianLinearRegression::with_prior(
+            2,
+            vec![1.0, 2.0],
+            1.0,
+            1.0,
+            0.0, // Invalid beta
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_bic_not_fitted() {
+        use crate::primitives::{Matrix, Vector};
+
+        let x = Matrix::from_vec(3, 1, vec![1.0, 2.0, 3.0]).expect("Valid matrix");
+        let y = Vector::from_vec(vec![2.0, 4.0, 6.0]);
+
+        let model = BayesianLinearRegression::new(1);
+        let result = model.bic(&x, &y);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_aic_not_fitted() {
+        use crate::primitives::{Matrix, Vector};
+
+        let x = Matrix::from_vec(3, 1, vec![1.0, 2.0, 3.0]).expect("Valid matrix");
+        let y = Vector::from_vec(vec![2.0, 4.0, 6.0]);
+
+        let model = BayesianLinearRegression::new(1);
+        let result = model.aic(&x, &y);
+
+        assert!(result.is_err());
+    }
 }

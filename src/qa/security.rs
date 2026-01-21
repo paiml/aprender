@@ -904,4 +904,177 @@ mod tests {
         assert_eq!(escape_html("\"quoted\""), "&quot;quoted&quot;");
         assert_eq!(escape_html("it's"), "it&#x27;s");
     }
+
+    // ========================================================================
+    // Additional Coverage Tests
+    // ========================================================================
+
+    #[test]
+    fn test_security_config_debug_clone() {
+        let config = SecurityConfig::default();
+        let cloned = config.clone();
+        assert_eq!(config.enable_fuzzing, cloned.enable_fuzzing);
+        assert_eq!(config.fuzz_duration_secs, cloned.fuzz_duration_secs);
+
+        let debug_str = format!("{:?}", config);
+        assert!(debug_str.contains("enable_fuzzing"));
+    }
+
+    #[test]
+    fn test_security_result_debug_clone() {
+        let result = SecurityResult::pass("N1", "Test", "Details");
+        let cloned = result.clone();
+        assert_eq!(result.id, cloned.id);
+        assert_eq!(result.passed, cloned.passed);
+
+        let debug_str = format!("{:?}", result);
+        assert!(debug_str.contains("N1"));
+    }
+
+    #[test]
+    fn test_is_path_safe_safe_paths() {
+        assert!(is_path_safe("model.apr"));
+        assert!(is_path_safe("models/whisper.apr"));
+        assert!(is_path_safe("path/to/file.txt"));
+        assert!(is_path_safe("relative/path"));
+    }
+
+    #[test]
+    fn test_is_path_safe_dot_dot() {
+        assert!(!is_path_safe("../something"));
+        assert!(!is_path_safe("a/../../b"));
+        assert!(!is_path_safe(".."));
+    }
+
+    #[test]
+    fn test_is_path_safe_windows_paths() {
+        assert!(!is_path_safe("C:\\Windows"));
+        assert!(!is_path_safe("c:\\Users"));
+        assert!(!is_path_safe("C:file.txt"));
+    }
+
+    #[test]
+    fn test_is_path_safe_absolute_paths() {
+        assert!(!is_path_safe("/etc/passwd"));
+        assert!(!is_path_safe("/home/user/file"));
+    }
+
+    #[test]
+    fn test_oom_handling_function() {
+        // test_oom_handling allocates 1MB and should succeed
+        assert!(test_oom_handling());
+    }
+
+    #[test]
+    fn test_wasm32_limit_function() {
+        // test_wasm32_limit checks if 5GB > 4GB limit
+        assert!(test_wasm32_limit());
+    }
+
+    #[test]
+    fn test_path_traversal_blocked_function() {
+        assert!(test_path_traversal_blocked());
+    }
+
+    #[test]
+    fn test_security_config_custom() {
+        let config = SecurityConfig {
+            enable_fuzzing: true,
+            fuzz_duration_secs: 120,
+            enable_sanitizers: true,
+            max_file_size: 50 * 1024 * 1024,
+            wasm_memory_limit: 1024 * 1024 * 1024,
+        };
+        assert!(config.enable_fuzzing);
+        assert_eq!(config.fuzz_duration_secs, 120);
+        assert!(config.enable_sanitizers);
+    }
+
+    #[test]
+    fn test_security_result_fail_details() {
+        let fail = SecurityResult::fail("N99", "Failed Test", "Something went wrong");
+        assert!(!fail.passed);
+        assert_eq!(fail.id, "N99");
+        assert_eq!(fail.name, "Failed Test");
+        assert_eq!(fail.details, "Something went wrong");
+    }
+
+    #[test]
+    fn test_escape_html_combined() {
+        // Test a string with multiple special characters
+        assert_eq!(escape_html("<a href=\"test\">it's & fun</a>"),
+                   "&lt;a href=&quot;test&quot;&gt;it&#x27;s &amp; fun&lt;/a&gt;");
+    }
+
+    #[test]
+    fn test_escape_html_empty() {
+        assert_eq!(escape_html(""), "");
+    }
+
+    #[test]
+    fn test_weight_validation_with_only_valid() {
+        let weights = [1.0_f32, 2.0, 3.0, 4.0];
+        let has_invalid = weights.iter().any(|w| w.is_nan() || w.is_infinite());
+        assert!(!has_invalid);
+    }
+
+    #[test]
+    fn test_weight_validation_with_nan() {
+        let weights = [1.0_f32, f32::NAN, 3.0];
+        let has_invalid = weights.iter().any(|w| w.is_nan() || w.is_infinite());
+        assert!(has_invalid);
+    }
+
+    #[test]
+    fn test_weight_validation_with_inf() {
+        let weights = [1.0_f32, f32::INFINITY, 3.0];
+        let has_invalid = weights.iter().any(|w| w.is_nan() || w.is_infinite());
+        assert!(has_invalid);
+    }
+
+    #[test]
+    fn test_weight_validation_with_neg_inf() {
+        let weights = [1.0_f32, f32::NEG_INFINITY, 3.0];
+        let has_invalid = weights.iter().any(|w| w.is_nan() || w.is_infinite());
+        assert!(has_invalid);
+    }
+
+    #[test]
+    fn test_exponential_backoff_values() {
+        let base_delay_ms = 100;
+        let max_retries = 5;
+
+        let delays: Vec<u64> = (0..max_retries)
+            .map(|attempt| base_delay_ms * 2_u64.pow(attempt))
+            .collect();
+
+        assert_eq!(delays, vec![100, 200, 400, 800, 1600]);
+    }
+
+    #[test]
+    fn test_all_security_results_have_unique_ids() {
+        let config = SecurityConfig::default();
+        let results = run_all_security_tests(&config);
+
+        let ids: Vec<&str> = results.iter().map(|r| r.id.as_str()).collect();
+        for i in 0..ids.len() {
+            for j in (i + 1)..ids.len() {
+                assert_ne!(ids[i], ids[j], "Duplicate ID found");
+            }
+        }
+    }
+
+    #[test]
+    fn test_security_result_pass_has_true() {
+        let result = SecurityResult::pass("T1", "Name", "Details");
+        assert!(result.passed);
+    }
+
+    #[test]
+    fn test_wasm_memory_limit_in_default_config() {
+        let config = SecurityConfig::default();
+        // On non-wasm32 targets, should be 4GB
+        #[cfg(not(target_arch = "wasm32"))]
+        assert_eq!(config.wasm_memory_limit, 4 * 1024 * 1024 * 1024);
+    }
 }

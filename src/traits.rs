@@ -116,5 +116,119 @@ pub trait Transformer {
 
 #[cfg(test)]
 mod tests {
-    // Traits are tested via their implementations
+    use super::*;
+    use crate::error::AprenderError;
+
+    // Mock transformer to test trait default methods
+    struct MockTransformer {
+        fitted: bool,
+        scale: f32,
+    }
+
+    impl MockTransformer {
+        fn new() -> Self {
+            Self {
+                fitted: false,
+                scale: 1.0,
+            }
+        }
+    }
+
+    impl Transformer for MockTransformer {
+        fn fit(&mut self, x: &Matrix<f32>) -> Result<()> {
+            if x.n_rows() == 0 {
+                return Err(AprenderError::DimensionMismatch {
+                    expected: "non-empty matrix".to_string(),
+                    actual: "empty matrix (0 rows)".to_string(),
+                });
+            }
+            // Compute mean for scaling
+            let mut sum = 0.0;
+            for row in 0..x.n_rows() {
+                for col in 0..x.n_cols() {
+                    sum += x.get(row, col);
+                }
+            }
+            let total = x.n_rows() * x.n_cols();
+            self.scale = if total > 0 { sum / total as f32 } else { 1.0 };
+            if self.scale == 0.0 {
+                self.scale = 1.0;
+            }
+            self.fitted = true;
+            Ok(())
+        }
+
+        fn transform(&self, x: &Matrix<f32>) -> Result<Matrix<f32>> {
+            if !self.fitted {
+                return Err(AprenderError::ValidationError {
+                    message: "MockTransformer not fitted".to_string(),
+                });
+            }
+            let mut data = Vec::with_capacity(x.n_rows() * x.n_cols());
+            for row in 0..x.n_rows() {
+                for col in 0..x.n_cols() {
+                    data.push(x.get(row, col) / self.scale);
+                }
+            }
+            Matrix::from_vec(x.n_rows(), x.n_cols(), data)
+                .map_err(|e| AprenderError::ValidationError { message: e.to_string() })
+        }
+    }
+
+    #[test]
+    fn test_transformer_fit_transform_default() {
+        let mut transformer = MockTransformer::new();
+        let x = Matrix::from_vec(2, 2, vec![2.0, 4.0, 6.0, 8.0]).expect("matrix");
+
+        // fit_transform uses default implementation
+        let result = transformer.fit_transform(&x);
+        assert!(result.is_ok());
+
+        let transformed = result.expect("should succeed");
+        assert_eq!(transformed.n_rows(), 2);
+        assert_eq!(transformed.n_cols(), 2);
+
+        // Verify transformer was fitted
+        assert!(transformer.fitted);
+    }
+
+    #[test]
+    fn test_transformer_fit_then_transform() {
+        let mut transformer = MockTransformer::new();
+        let x = Matrix::from_vec(2, 2, vec![2.0, 4.0, 6.0, 8.0]).expect("matrix");
+
+        // Separate fit and transform
+        transformer.fit(&x).expect("fit should succeed");
+        assert!(transformer.fitted);
+
+        let transformed = transformer.transform(&x).expect("transform should succeed");
+        assert_eq!(transformed.n_rows(), 2);
+    }
+
+    #[test]
+    fn test_transformer_transform_without_fit() {
+        let transformer = MockTransformer::new();
+        let x = Matrix::from_vec(2, 2, vec![1.0, 2.0, 3.0, 4.0]).expect("matrix");
+
+        let result = transformer.transform(&x);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_transformer_fit_empty_matrix() {
+        let mut transformer = MockTransformer::new();
+        let x = Matrix::from_vec(0, 2, vec![]).expect("matrix");
+
+        let result = transformer.fit(&x);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_transformer_fit_transform_empty_fails() {
+        let mut transformer = MockTransformer::new();
+        let x = Matrix::from_vec(0, 0, vec![]).expect("matrix");
+
+        let result = transformer.fit_transform(&x);
+        assert!(result.is_err());
+    }
 }

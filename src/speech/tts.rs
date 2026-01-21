@@ -983,4 +983,257 @@ mod tests {
         let sentences = split_sentences("   ");
         assert!(sentences.is_empty());
     }
+
+    // =========================================================================
+    // Extended coverage tests
+    // =========================================================================
+
+    #[test]
+    fn test_tts_config_validate_n_mels() {
+        let mut config = TtsConfig::default();
+        config.n_mels = 0;
+        assert!(config.validate().is_err());
+        let err = config.validate().unwrap_err().to_string();
+        assert!(err.contains("n_mels"));
+    }
+
+    #[test]
+    fn test_tts_config_validate_hop_size() {
+        let mut config = TtsConfig::default();
+        config.hop_size = 0;
+        assert!(config.validate().is_err());
+        let err = config.validate().unwrap_err().to_string();
+        assert!(err.contains("hop_size"));
+    }
+
+    #[test]
+    fn test_tts_config_validate_win_size_less_than_hop() {
+        let mut config = TtsConfig::default();
+        config.win_size = 100;
+        config.hop_size = 200;
+        assert!(config.validate().is_err());
+        let err = config.validate().unwrap_err().to_string();
+        assert!(err.contains("win_size"));
+    }
+
+    #[test]
+    fn test_tts_config_validate_win_size_zero() {
+        let mut config = TtsConfig::default();
+        config.win_size = 0;
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn test_tts_config_validate_energy_scale_zero() {
+        let mut config = TtsConfig::default();
+        config.energy_scale = 0.0;
+        assert!(config.validate().is_err());
+        let err = config.validate().unwrap_err().to_string();
+        assert!(err.contains("energy_scale"));
+    }
+
+    #[test]
+    fn test_tts_config_validate_energy_scale_too_high() {
+        let mut config = TtsConfig::default();
+        config.energy_scale = 5.0;
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn test_tts_config_validate_max_text_length() {
+        let mut config = TtsConfig::default();
+        config.max_text_length = 0;
+        assert!(config.validate().is_err());
+        let err = config.validate().unwrap_err().to_string();
+        assert!(err.contains("max_text_length"));
+    }
+
+    #[test]
+    fn test_tts_config_validate_max_output_duration() {
+        let mut config = TtsConfig::default();
+        config.max_output_duration = 0.0;
+        assert!(config.validate().is_err());
+        let err = config.validate().unwrap_err().to_string();
+        assert!(err.contains("max_output_duration"));
+    }
+
+    #[test]
+    fn test_tts_config_max_output_samples() {
+        let config = TtsConfig::default();
+        let max_samples = config.max_output_samples();
+        // 30 seconds * 22050 Hz = 661500 samples
+        assert_eq!(max_samples, 661500);
+    }
+
+    #[test]
+    fn test_synthesis_request_validate_pitch_shift_out_of_range() {
+        let config = TtsConfig::default();
+        let request = SynthesisRequest::new("Hello".to_string()).with_pitch_shift(30.0);
+        assert!(request.validate(&config).is_err());
+        let err = request.validate(&config).unwrap_err().to_string();
+        assert!(err.contains("pitch_shift"));
+    }
+
+    #[test]
+    fn test_synthesis_request_validate_energy_scale_out_of_range() {
+        let config = TtsConfig::default();
+        let request = SynthesisRequest::new("Hello".to_string()).with_energy_scale(5.0);
+        assert!(request.validate(&config).is_err());
+        let err = request.validate(&config).unwrap_err().to_string();
+        assert!(err.contains("energy_scale"));
+    }
+
+    #[test]
+    fn test_synthesis_request_validate_energy_scale_zero() {
+        let config = TtsConfig::default();
+        let request = SynthesisRequest::new("Hello".to_string()).with_energy_scale(0.0);
+        assert!(request.validate(&config).is_err());
+    }
+
+    #[test]
+    fn test_synthesis_result_zero_sample_rate() {
+        let audio = vec![0.0_f32; 100];
+        let result = SynthesisResult::new(audio, 0);
+        assert_eq!(result.duration, 0.0);
+    }
+
+    #[test]
+    fn test_fastspeech2_add_speaker() {
+        let mut synth = FastSpeech2Synthesizer::default_config();
+        synth.add_speaker("alice".to_string());
+        synth.add_speaker("bob".to_string());
+
+        // Adding duplicate should not create duplicate
+        synth.add_speaker("alice".to_string());
+
+        let speakers = synth.available_speakers();
+        assert!(speakers.contains(&"alice".to_string()));
+        assert!(speakers.contains(&"bob".to_string()));
+        assert_eq!(speakers.iter().filter(|&s| s == "alice").count(), 1);
+    }
+
+    #[test]
+    fn test_fastspeech2_new_custom_config() {
+        let config = TtsConfig::high_quality();
+        let synth = FastSpeech2Synthesizer::new(config);
+        assert_eq!(synth.config().sample_rate, 48000);
+    }
+
+    #[test]
+    fn test_vits_unknown_speaker() {
+        let synth = VitsSynthesizer::default_config();
+        let request =
+            SynthesisRequest::new("Hello".to_string()).with_speaker("unknown".to_string());
+        let result = synth.synthesize(&request);
+        assert!(matches!(result, Err(SpeechError::InvalidConfig(_))));
+    }
+
+    #[test]
+    fn test_vits_new_custom_config() {
+        let config = TtsConfig::fast();
+        let synth = VitsSynthesizer::new(config);
+        assert_eq!(synth.config().sample_rate, 16000);
+    }
+
+    #[test]
+    fn test_hifigan_new() {
+        let vocoder = HifiGanVocoder::new(44100, 128);
+        assert_eq!(vocoder.sample_rate(), 44100);
+        assert_eq!(vocoder.n_mels(), 128);
+    }
+
+    #[test]
+    fn test_tts_config_validate_speaking_rate_too_high() {
+        let mut config = TtsConfig::default();
+        config.speaking_rate = 6.0;
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn test_tts_config_validate_pitch_shift_too_low() {
+        let mut config = TtsConfig::default();
+        config.pitch_shift = -30.0;
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn test_synthesis_request_debug() {
+        let request = SynthesisRequest::new("Hello".to_string());
+        let debug_str = format!("{:?}", request);
+        assert!(debug_str.contains("SynthesisRequest"));
+    }
+
+    #[test]
+    fn test_synthesis_result_debug() {
+        let result = SynthesisResult::new(vec![0.0], 22050);
+        let debug_str = format!("{:?}", result);
+        assert!(debug_str.contains("SynthesisResult"));
+    }
+
+    #[test]
+    fn test_tts_config_debug() {
+        let config = TtsConfig::default();
+        let debug_str = format!("{:?}", config);
+        assert!(debug_str.contains("TtsConfig"));
+    }
+
+    #[test]
+    fn test_alignment_info_debug() {
+        let align = AlignmentInfo::new("a".to_string(), 0.0, 0.1);
+        let debug_str = format!("{:?}", align);
+        assert!(debug_str.contains("AlignmentInfo"));
+    }
+
+    #[test]
+    fn test_fastspeech2_debug() {
+        let synth = FastSpeech2Synthesizer::default_config();
+        let debug_str = format!("{:?}", synth);
+        assert!(debug_str.contains("FastSpeech2"));
+    }
+
+    #[test]
+    fn test_vits_debug() {
+        let synth = VitsSynthesizer::default_config();
+        let debug_str = format!("{:?}", synth);
+        assert!(debug_str.contains("VitsSynthesizer"));
+    }
+
+    #[test]
+    fn test_hifigan_debug() {
+        let vocoder = HifiGanVocoder::default_config();
+        let debug_str = format!("{:?}", vocoder);
+        assert!(debug_str.contains("HifiGanVocoder"));
+    }
+
+    #[test]
+    fn test_tts_config_clone() {
+        let config = TtsConfig::default();
+        let cloned = config.clone();
+        assert_eq!(cloned.sample_rate, config.sample_rate);
+        assert_eq!(cloned.n_mels, config.n_mels);
+    }
+
+    #[test]
+    fn test_synthesis_request_clone() {
+        let request = SynthesisRequest::new("Hello".to_string()).with_speaker("alice".to_string());
+        let cloned = request.clone();
+        assert_eq!(cloned.text, request.text);
+        assert_eq!(cloned.speaker_id, request.speaker_id);
+    }
+
+    #[test]
+    fn test_synthesis_result_clone() {
+        let result = SynthesisResult::new(vec![1.0, 2.0, 3.0], 22050);
+        let cloned = result.clone();
+        assert_eq!(cloned.audio, result.audio);
+        assert_eq!(cloned.sample_rate, result.sample_rate);
+    }
+
+    #[test]
+    fn test_alignment_info_clone() {
+        let align = AlignmentInfo::new("hello".to_string(), 0.0, 0.5);
+        let cloned = align.clone();
+        assert_eq!(cloned.token, align.token);
+        assert!((cloned.start - align.start).abs() < f32::EPSILON);
+    }
 }

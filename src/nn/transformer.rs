@@ -2526,4 +2526,160 @@ mod tests {
         let params = attn.parameters_mut();
         assert_eq!(params.len(), 8);
     }
+
+    // ========================================================================
+    // Additional coverage tests
+    // ========================================================================
+
+    #[test]
+    fn test_multi_head_attention_with_dropout() {
+        let mha = MultiHeadAttention::new(64, 8).with_dropout(0.1);
+        let x = Tensor::ones(&[2, 10, 64]);
+        let output = mha.forward(&x);
+        assert_eq!(output.shape(), &[2, 10, 64]);
+    }
+
+    #[test]
+    fn test_multi_head_attention_train_eval() {
+        let mut mha = MultiHeadAttention::new(64, 8);
+        assert!(mha.training());
+        mha.eval();
+        assert!(!mha.training());
+        mha.train();
+        assert!(mha.training());
+    }
+
+    #[test]
+    fn test_multi_head_attention_debug() {
+        let mha = MultiHeadAttention::new(128, 8);
+        let debug_str = format!("{:?}", mha);
+        assert!(debug_str.contains("MultiHeadAttention"));
+        assert!(debug_str.contains("embed_dim"));
+        assert!(debug_str.contains("num_heads"));
+    }
+
+    #[test]
+    fn test_multi_head_attention_getters() {
+        let mha = MultiHeadAttention::new(128, 4);
+        assert_eq!(mha.embed_dim(), 128);
+        assert_eq!(mha.num_heads(), 4);
+    }
+
+    #[test]
+    fn test_multi_head_attention_parameters_mut() {
+        let mut mha = MultiHeadAttention::new(64, 8);
+        let params = mha.parameters_mut();
+        assert_eq!(params.len(), 8);
+    }
+
+    #[test]
+    fn test_transformer_encoder_layer_with_dropout() {
+        let layer = TransformerEncoderLayer::new(64, 8, 256).with_dropout(0.2);
+        let x = Tensor::ones(&[2, 10, 64]);
+        let y = layer.forward(&x);
+        assert_eq!(y.shape(), &[2, 10, 64]);
+    }
+
+    #[test]
+    fn test_transformer_encoder_layer_forward_with_none_mask() {
+        let layer = TransformerEncoderLayer::new(64, 8, 256);
+        let x = Tensor::ones(&[2, 10, 64]);
+        let y = layer.forward_with_mask(&x, None);
+        assert_eq!(y.shape(), &[2, 10, 64]);
+    }
+
+    #[test]
+    fn test_transformer_encoder_layer_train_eval() {
+        let mut layer = TransformerEncoderLayer::new(64, 8, 256);
+        assert!(layer.training());
+        layer.eval();
+        assert!(!layer.training());
+        layer.train();
+        assert!(layer.training());
+    }
+
+    #[test]
+    fn test_transformer_encoder_layer_parameters_mut() {
+        let mut layer = TransformerEncoderLayer::new(64, 8, 256);
+        let params = layer.parameters_mut();
+        assert_eq!(params.len(), 16);
+    }
+
+    #[test]
+    fn test_transformer_decoder_layer_forward_with_none_masks() {
+        let layer = TransformerDecoderLayer::new(64, 8, 256);
+        let tgt = Tensor::ones(&[2, 10, 64]);
+        let memory = Tensor::ones(&[2, 20, 64]);
+        let output = layer.forward_with_memory(&tgt, &memory, None, None);
+        assert_eq!(output.shape(), &[2, 10, 64]);
+    }
+
+    #[test]
+    fn test_transformer_decoder_layer_train_eval() {
+        let mut layer = TransformerDecoderLayer::new(64, 8, 256);
+        assert!(layer.training());
+        layer.eval();
+        assert!(!layer.training());
+        layer.train();
+        assert!(layer.training());
+    }
+
+    #[test]
+    fn test_transformer_decoder_layer_parameters() {
+        let layer = TransformerDecoderLayer::new(64, 8, 256);
+        let params = layer.parameters();
+        // Self-attn: 8, Cross-attn: 8, Linear1: 2, Linear2: 2, Norms: 6
+        assert!(params.len() > 0);
+    }
+
+    #[test]
+    fn test_transformer_decoder_layer_parameters_mut() {
+        let mut layer = TransformerDecoderLayer::new(64, 8, 256);
+        let params = layer.parameters_mut();
+        assert!(params.len() > 0);
+    }
+
+    #[test]
+    fn test_add_tensors_shape_3d() {
+        let a = Tensor::ones(&[2, 3, 4]);
+        let b = Tensor::ones(&[2, 3, 4]);
+        let c = add_tensors(&a, &b);
+        assert_eq!(c.shape(), &[2, 3, 4]);
+    }
+
+    #[test]
+    fn test_softmax_last_dim_single_row() {
+        let x = Tensor::new(&[1.0, 2.0, 3.0], &[1, 3]);
+        let y = softmax_last_dim(&x);
+        let sum: f32 = y.data().iter().sum();
+        assert!((sum - 1.0).abs() < 1e-5);
+    }
+
+
+    #[test]
+    fn test_generate_causal_mask_small() {
+        let mask = generate_causal_mask(2);
+        assert_eq!(mask.shape(), &[2, 2]);
+        // Lower triangle and diagonal should be 0
+        assert_eq!(mask.data()[0], 0.0); // [0,0]
+        assert_eq!(mask.data()[2], 0.0); // [1,0]
+        assert_eq!(mask.data()[3], 0.0); // [1,1]
+        // Upper triangle should be -inf
+        assert!(mask.data()[1].is_infinite()); // [0,1]
+    }
+
+    #[test]
+    fn test_rope_head_dim() {
+        let rope = RotaryPositionEmbedding::new(16, 100);
+        assert_eq!(rope.head_dim(), 16);
+    }
+
+    #[test]
+    fn test_rope_single_position() {
+        let rope = RotaryPositionEmbedding::new(8, 128);
+        let x = Tensor::ones(&[1, 1, 2, 8]);
+        let positions = vec![42_usize];
+        let y = rope.apply(&x, &positions);
+        assert_eq!(y.shape(), &[1, 1, 2, 8]);
+    }
 }

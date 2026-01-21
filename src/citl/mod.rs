@@ -1396,4 +1396,401 @@ pub fn is_positive(n: i32) -> bool {
             "Different errors should have lower similarity, got {similarity}"
         );
     }
+
+    // ==================== Additional Coverage Tests ====================
+
+    #[test]
+    fn test_citl_builder_default() {
+        let builder = CITLBuilder::default();
+        // Default builder has no compiler set
+        let result = builder.build();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_citl_builder_pattern_library_path() {
+        let compiler = RustCompiler::new();
+        let citl = CITL::builder()
+            .compiler(compiler)
+            .pattern_library("/nonexistent/path/patterns.db")
+            .build()
+            .expect("Should build with nonexistent path (creates new library)");
+        // Pattern library should be empty (new) since path doesn't exist
+        assert!(citl.pattern_library.is_empty());
+    }
+
+    #[test]
+    fn test_citl_add_pattern_self_training_disabled() {
+        let mut citl = CITL::builder()
+            .compiler(RustCompiler::new())
+            .build()
+            .expect("Should build");
+
+        // Disable self-training
+        citl.config.enable_self_training = false;
+
+        // Try to add a pattern
+        let error_code = ErrorCode::new("E0308", ErrorCategory::TypeMismatch, Difficulty::Easy);
+        let embedding = ErrorEmbedding::new(vec![0.0; 256], error_code, 12345);
+        let fix = FixTemplate::new("$expr.to_string()", "Convert to String");
+
+        citl.add_pattern(embedding, fix, true);
+
+        // Pattern should NOT be added when self-training is disabled
+        assert!(citl.pattern_library.is_empty());
+    }
+
+    #[test]
+    fn test_citl_add_pattern_unsuccessful_fix() {
+        let mut citl = CITL::builder()
+            .compiler(RustCompiler::new())
+            .build()
+            .expect("Should build");
+
+        // Self-training enabled but fix was unsuccessful
+        let error_code = ErrorCode::new("E0308", ErrorCategory::TypeMismatch, Difficulty::Easy);
+        let embedding = ErrorEmbedding::new(vec![0.0; 256], error_code, 12345);
+        let fix = FixTemplate::new("$expr.to_string()", "Convert to String");
+
+        citl.add_pattern(embedding, fix, false); // success = false
+
+        // Pattern should NOT be added for unsuccessful fix
+        assert!(citl.pattern_library.is_empty());
+    }
+
+    #[test]
+    fn test_apply_fix_start_offset_out_of_bounds() {
+        let citl = CITL::builder()
+            .compiler(RustCompiler::new())
+            .build()
+            .expect("Should build");
+
+        let source = "let x = 42;";
+        let fix =
+            SuggestedFix::new("replacement".to_string(), 0.9, "Test".to_string()).with_span(100, 105); // start >= source.len()
+
+        let result = citl.apply_fix(source, &fix);
+        assert_eq!(result, source); // Should return original source unchanged
+    }
+
+    #[test]
+    fn test_apply_fix_end_offset_out_of_bounds() {
+        let citl = CITL::builder()
+            .compiler(RustCompiler::new())
+            .build()
+            .expect("Should build");
+
+        let source = "let x = 42;";
+        let fix =
+            SuggestedFix::new("replacement".to_string(), 0.9, "Test".to_string()).with_span(0, 100); // end > source.len()
+
+        let result = citl.apply_fix(source, &fix);
+        assert_eq!(result, source); // Should return original source unchanged
+    }
+
+    #[test]
+    fn test_suggested_fix_with_error_code() {
+        let fix = SuggestedFix::new("fixed".to_string(), 0.8, "Description".to_string())
+            .with_error_code("E0308");
+        assert_eq!(fix.error_code, "E0308");
+    }
+
+    #[test]
+    fn test_suggested_fix_with_span_and_error_code() {
+        let fix = SuggestedFix::new("fixed".to_string(), 0.8, "Description".to_string())
+            .with_span(10, 20)
+            .with_error_code("E0382");
+        assert_eq!(fix.start_offset, 10);
+        assert_eq!(fix.end_offset, 20);
+        assert_eq!(fix.error_code, "E0382");
+    }
+
+    #[test]
+    fn test_error_code_hash() {
+        use std::collections::HashSet;
+        let mut set = HashSet::new();
+        let code1 = ErrorCode::new("E0308", ErrorCategory::TypeMismatch, Difficulty::Easy);
+        let code2 = ErrorCode::new("E0308", ErrorCategory::TypeMismatch, Difficulty::Easy);
+        let code3 = ErrorCode::new("E0382", ErrorCategory::Ownership, Difficulty::Medium);
+
+        set.insert(code1.clone());
+        set.insert(code2.clone());
+        set.insert(code3.clone());
+
+        // code1 and code2 are equal, so only 2 entries
+        assert_eq!(set.len(), 2);
+    }
+
+    #[test]
+    fn test_error_category_clone_and_debug() {
+        let cat = ErrorCategory::TypeMismatch;
+        let cloned = cat.clone();
+        assert_eq!(cat, cloned);
+        let debug_str = format!("{:?}", cat);
+        assert!(debug_str.contains("TypeMismatch"));
+    }
+
+    #[test]
+    fn test_difficulty_clone_and_debug() {
+        let diff = Difficulty::Hard;
+        let cloned = diff.clone();
+        assert_eq!(diff, cloned);
+        let debug_str = format!("{:?}", diff);
+        assert!(debug_str.contains("Hard"));
+    }
+
+    #[test]
+    fn test_language_clone_debug_hash() {
+        use std::collections::HashSet;
+
+        let lang = Language::Python;
+        let cloned = lang.clone();
+        assert_eq!(lang, cloned);
+
+        let debug_str = format!("{:?}", lang);
+        assert!(debug_str.contains("Python"));
+
+        let mut set = HashSet::new();
+        set.insert(Language::Python);
+        set.insert(Language::C);
+        set.insert(Language::Rust);
+        assert_eq!(set.len(), 3);
+    }
+
+    #[test]
+    fn test_citl_config_clone_and_debug() {
+        let config = CITLConfig::default();
+        let cloned = config.clone();
+        assert_eq!(config.max_iterations, cloned.max_iterations);
+        assert!((config.confidence_threshold - cloned.confidence_threshold).abs() < f32::EPSILON);
+        assert_eq!(config.enable_self_training, cloned.enable_self_training);
+
+        let debug_str = format!("{:?}", config);
+        assert!(debug_str.contains("max_iterations"));
+    }
+
+    #[test]
+    fn test_suggested_fix_debug_clone() {
+        let fix = SuggestedFix::new("code".to_string(), 0.9, "desc".to_string());
+        let cloned = fix.clone();
+        assert_eq!(fix.replacement, cloned.replacement);
+        assert!((fix.confidence - cloned.confidence).abs() < f32::EPSILON);
+
+        let debug_str = format!("{:?}", fix);
+        assert!(debug_str.contains("replacement"));
+    }
+
+    #[test]
+    fn test_fix_result_debug_clone() {
+        let result = FixResult::success("code".to_string(), 1);
+        let cloned = result.clone();
+        assert_eq!(result.success, cloned.success);
+        assert_eq!(result.iterations, cloned.iterations);
+
+        let debug_str = format!("{:?}", result);
+        assert!(debug_str.contains("success"));
+    }
+
+    #[test]
+    fn test_instantiate_template_with_expected_type() {
+        let citl = CITL::builder()
+            .compiler(RustCompiler::new())
+            .build()
+            .expect("Should build");
+
+        let template = FixTemplate::new("$expr as $type", "Type cast");
+        let error_code = ErrorCode::new("E0308", ErrorCategory::TypeMismatch, Difficulty::Easy);
+        let span = SourceSpan::default();
+        let mut diag = CompilerDiagnostic::new(
+            error_code,
+            DiagnosticSeverity::Error,
+            "mismatched types",
+            span,
+        );
+        diag.expected = Some(TypeInfo::new("String"));
+
+        let result = citl.instantiate_template(&template, &diag, "let x = 42;");
+        assert!(result.contains("String"));
+    }
+
+    #[test]
+    fn test_instantiate_template_with_found_type() {
+        let citl = CITL::builder()
+            .compiler(RustCompiler::new())
+            .build()
+            .expect("Should build");
+
+        let template = FixTemplate::new("convert $found to target", "Type conversion");
+        let error_code = ErrorCode::new("E0308", ErrorCategory::TypeMismatch, Difficulty::Easy);
+        let span = SourceSpan::default();
+        let mut diag = CompilerDiagnostic::new(
+            error_code,
+            DiagnosticSeverity::Error,
+            "mismatched types",
+            span,
+        );
+        diag.found = Some(TypeInfo::new("i32"));
+
+        let result = citl.instantiate_template(&template, &diag, "let x = 42;");
+        assert!(result.contains("i32"));
+    }
+
+    #[test]
+    fn test_instantiate_template_with_both_types() {
+        let citl = CITL::builder()
+            .compiler(RustCompiler::new())
+            .build()
+            .expect("Should build");
+
+        let template = FixTemplate::new("($expr as $type) // was $found", "Full cast");
+        let error_code = ErrorCode::new("E0308", ErrorCategory::TypeMismatch, Difficulty::Easy);
+        let span = SourceSpan::default();
+        let mut diag = CompilerDiagnostic::new(
+            error_code,
+            DiagnosticSeverity::Error,
+            "mismatched types",
+            span,
+        );
+        diag.expected = Some(TypeInfo::new("u64"));
+        diag.found = Some(TypeInfo::new("i32"));
+
+        let result = citl.instantiate_template(&template, &diag, "let x = 42;");
+        assert!(result.contains("u64"));
+        assert!(result.contains("i32"));
+        assert!(result.contains("expr")); // $expr replaced with placeholder
+    }
+
+    #[test]
+    fn test_error_category_all_variants_debug() {
+        let categories = [
+            ErrorCategory::TypeMismatch,
+            ErrorCategory::TraitBound,
+            ErrorCategory::Unresolved,
+            ErrorCategory::Ownership,
+            ErrorCategory::Borrowing,
+            ErrorCategory::Lifetime,
+            ErrorCategory::Async,
+            ErrorCategory::TypeInference,
+            ErrorCategory::MethodNotFound,
+            ErrorCategory::Import,
+            ErrorCategory::Unknown,
+        ];
+        for cat in &categories {
+            let debug_str = format!("{:?}", cat);
+            assert!(!debug_str.is_empty());
+        }
+    }
+
+    #[test]
+    fn test_difficulty_all_variants_debug() {
+        let difficulties = [
+            Difficulty::Easy,
+            Difficulty::Medium,
+            Difficulty::Hard,
+            Difficulty::Expert,
+        ];
+        for diff in &difficulties {
+            let debug_str = format!("{:?}", diff);
+            assert!(!debug_str.is_empty());
+        }
+    }
+
+    #[test]
+    fn test_language_all_variants() {
+        let languages = [
+            Language::Python,
+            Language::C,
+            Language::Ruchy,
+            Language::Bash,
+            Language::Rust,
+        ];
+        for lang in &languages {
+            // Test Display
+            let display = format!("{}", lang);
+            assert!(!display.is_empty());
+            // Test Debug
+            let debug = format!("{:?}", lang);
+            assert!(!debug.is_empty());
+        }
+    }
+
+    #[test]
+    fn test_rust_error_codes_all_tiers() {
+        let codes = rust_error_codes();
+
+        // Tier 1: Easy
+        let easy_codes = ["E0308", "E0425", "E0433", "E0432", "E0412", "E0599"];
+        for code in &easy_codes {
+            let ec = codes.get(*code).expect("Code should exist");
+            assert_eq!(ec.difficulty, Difficulty::Easy);
+        }
+
+        // Tier 2: Medium
+        let medium_codes = ["E0382", "E0502", "E0499", "E0596", "E0507", "E0282", "E0106"];
+        for code in &medium_codes {
+            let ec = codes.get(*code).expect("Code should exist");
+            assert!(
+                ec.difficulty == Difficulty::Medium,
+                "Expected Medium for {code}"
+            );
+        }
+
+        // Tier 3: Hard
+        let hard_codes = ["E0597", "E0621", "E0495", "E0623", "E0277"];
+        for code in &hard_codes {
+            let ec = codes.get(*code).expect("Code should exist");
+            assert!(ec.difficulty == Difficulty::Hard, "Expected Hard for {code}");
+        }
+
+        // Tier 4: Expert
+        let expert_codes = ["E0373"];
+        for code in &expert_codes {
+            let ec = codes.get(*code).expect("Code should exist");
+            assert_eq!(ec.difficulty, Difficulty::Expert);
+        }
+    }
+
+    #[test]
+    fn test_fix_result_failure_with_applied_fixes() {
+        let result = FixResult::failure(3, vec!["E0308".to_string()])
+            .with_applied_fix("Attempted fix 1".to_string())
+            .with_applied_fix("Attempted fix 2".to_string());
+
+        assert!(!result.is_success());
+        assert_eq!(result.iterations, 3);
+        assert_eq!(result.applied_fixes.len(), 2);
+    }
+
+    #[test]
+    fn test_citl_search_patterns_empty_library() {
+        let citl = CITL::builder()
+            .compiler(RustCompiler::new())
+            .build()
+            .expect("Should build");
+
+        let error_code = ErrorCode::new("E0308", ErrorCategory::TypeMismatch, Difficulty::Easy);
+        let embedding = ErrorEmbedding::new(vec![0.1; 256], error_code, 12345);
+
+        let results = citl.search_patterns(&embedding, 10);
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_citl_encode_error() {
+        let citl = CITL::builder()
+            .compiler(RustCompiler::new())
+            .build()
+            .expect("Should build");
+
+        let error_code = ErrorCode::new("E0308", ErrorCategory::TypeMismatch, Difficulty::Easy);
+        let diag = CompilerDiagnostic::new(
+            error_code,
+            DiagnosticSeverity::Error,
+            "test error message",
+            SourceSpan::default(),
+        );
+
+        let embedding = citl.encode_error(&diag, "let x = 42;");
+        assert!(!embedding.vector.is_empty());
+    }
 }

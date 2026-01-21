@@ -166,4 +166,63 @@ mod tests {
         let params = module.parameters_mut();
         assert_eq!(params.len(), 1);
     }
+
+    // Test module that uses all default trait implementations
+    struct MinimalModule;
+
+    impl Module for MinimalModule {
+        fn forward(&self, input: &Tensor) -> Tensor {
+            input.clone()
+        }
+    }
+
+    #[test]
+    fn test_module_default_parameters() {
+        let module = MinimalModule;
+        let params = module.parameters();
+        assert!(params.is_empty());
+    }
+
+    #[test]
+    fn test_module_default_parameters_mut() {
+        let mut module = MinimalModule;
+        let params = module.parameters_mut();
+        assert!(params.is_empty());
+    }
+
+    #[test]
+    fn test_module_default_refresh_caches() {
+        let mut module = MinimalModule;
+        module.refresh_caches(); // Should not panic
+    }
+
+    #[test]
+    fn test_module_default_train() {
+        let mut module = MinimalModule;
+        module.train(); // Should not panic
+    }
+
+    #[test]
+    fn test_module_default_eval() {
+        let mut module = MinimalModule;
+        module.eval(); // Should not panic
+    }
+
+    #[test]
+    fn test_module_default_training() {
+        let module = MinimalModule;
+        assert!(module.training()); // Default is true
+    }
+
+    #[test]
+    fn test_module_default_zero_grad() {
+        let mut module = MinimalModule;
+        module.zero_grad(); // Should not panic with empty params
+    }
+
+    #[test]
+    fn test_module_default_num_parameters() {
+        let module = MinimalModule;
+        assert_eq!(module.num_parameters(), 0); // No parameters
+    }
 }
