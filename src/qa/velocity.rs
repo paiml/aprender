@@ -589,4 +589,205 @@ mod tests {
             Duration::from_secs(3600)
         );
     }
+
+    // =========================================================================
+    // Additional coverage tests for all branches
+    // =========================================================================
+
+    #[test]
+    fn test_velocity_result_pass_creates_passing() {
+        let result = VelocityResult::pass("test-id", "test name", "test details");
+        assert!(result.passed);
+        assert_eq!(result.id, "test-id");
+        assert_eq!(result.name, "test name");
+        assert_eq!(result.details, "test details");
+    }
+
+    #[test]
+    fn test_velocity_result_fail_creates_failing() {
+        let result = VelocityResult::fail("fail-id", "fail name", "fail details");
+        assert!(!result.passed);
+        assert_eq!(result.id, "fail-id");
+        assert_eq!(result.name, "fail name");
+        assert_eq!(result.details, "fail details");
+    }
+
+    #[test]
+    fn test_velocity_result_with_duration_chains() {
+        let result = VelocityResult::fail("id", "name", "details")
+            .with_duration(Duration::from_millis(100));
+        assert!(!result.passed);
+        assert!(result.duration.is_some());
+    }
+
+    #[test]
+    fn test_p1_returns_correct_id() {
+        let result = p1_test_fast_exists();
+        assert_eq!(result.id, "P1");
+        assert_eq!(result.name, "test-fast exists");
+    }
+
+    #[test]
+    fn test_p2_returns_correct_id() {
+        let result = p2_test_fast_under_2s();
+        assert_eq!(result.id, "P2");
+        assert_eq!(result.name, "test-fast < 2s");
+    }
+
+    #[test]
+    fn test_p7_returns_correct_id() {
+        let result = p7_test_heavy_exists();
+        assert_eq!(result.id, "P7");
+        assert_eq!(result.name, "test-heavy exists");
+    }
+
+    #[test]
+    fn test_p8_returns_correct_id() {
+        let result = p8_nextest_supported();
+        assert_eq!(result.id, "P8");
+        assert_eq!(result.name, "nextest supported");
+    }
+
+    #[test]
+    fn test_p9_returns_correct_id() {
+        let result = p9_ci_fast_first();
+        assert_eq!(result.id, "P9");
+        assert_eq!(result.name, "CI fast first");
+    }
+
+    #[test]
+    fn test_all_results_have_consistent_structure() {
+        let results = run_all_velocity_tests();
+        for (i, result) in results.iter().enumerate() {
+            let expected_id = format!("P{}", i + 1);
+            assert_eq!(result.id, expected_id, "Result {} has wrong ID", i);
+            assert!(!result.name.is_empty());
+            assert!(!result.details.is_empty());
+        }
+    }
+
+    #[test]
+    fn test_velocity_score_returns_tuple() {
+        let (passed, total) = velocity_score();
+        assert_eq!(total, 10);
+        assert!(passed <= total);
+    }
+
+    #[test]
+    fn test_velocity_result_duration_none_by_default() {
+        let pass_result = VelocityResult::pass("id", "name", "details");
+        assert!(pass_result.duration.is_none());
+
+        let fail_result = VelocityResult::fail("id", "name", "details");
+        assert!(fail_result.duration.is_none());
+    }
+
+    #[test]
+    fn test_velocity_result_multiple_durations() {
+        // Test that with_duration overwrites properly
+        let result = VelocityResult::pass("id", "name", "details")
+            .with_duration(Duration::from_secs(1));
+        assert_eq!(result.duration, Some(Duration::from_secs(1)));
+
+        // Calling with_duration again creates new instance with new duration
+        let result2 = result.with_duration(Duration::from_secs(2));
+        assert_eq!(result2.duration, Some(Duration::from_secs(2)));
+    }
+
+    #[test]
+    fn test_p3_details_contain_percentage() {
+        let result = p3_test_fast_coverage();
+        assert!(result.details.contains('%'));
+    }
+
+    #[test]
+    fn test_p4_details_describe_policy() {
+        let result = p4_no_network_calls();
+        assert!(
+            result.details.contains("network") || result.details.contains("HF"),
+            "Details should describe network policy"
+        );
+    }
+
+    #[test]
+    fn test_p5_details_describe_policy() {
+        let result = p5_no_disk_writes();
+        assert!(
+            result.details.contains("tmp") || result.details.contains("tempfile"),
+            "Details should mention temp directory policy"
+        );
+    }
+
+    #[test]
+    fn test_p6_details_describe_compilation() {
+        let result = p6_compile_under_5s();
+        assert!(
+            result.details.contains("ncremental") || result.details.contains("compile"),
+            "Details should describe compilation strategy"
+        );
+    }
+
+    #[test]
+    fn test_p10_details_describe_ignore() {
+        let result = p10_no_sleep_in_fast();
+        assert!(
+            result.details.contains("ignore") || result.details.contains("#[ignore]"),
+            "Details should mention ignore attribute"
+        );
+    }
+
+    #[test]
+    fn test_velocity_result_clone_independence() {
+        let original = VelocityResult::pass("id", "name", "details");
+        let cloned = original.clone();
+
+        // Cloned should be equal
+        assert_eq!(original.id, cloned.id);
+        assert_eq!(original.name, cloned.name);
+        assert_eq!(original.passed, cloned.passed);
+        assert_eq!(original.details, cloned.details);
+    }
+
+    #[test]
+    fn test_velocity_result_debug_output() {
+        let result = VelocityResult::fail("P99", "test", "details");
+        let debug = format!("{:?}", result);
+        assert!(debug.contains("P99"));
+        assert!(debug.contains("passed: false") || debug.contains("passed:false"));
+    }
+
+    #[test]
+    fn test_run_all_returns_10_results() {
+        let results = run_all_velocity_tests();
+        assert_eq!(results.len(), 10);
+    }
+
+    #[test]
+    fn test_all_p_tests_return_results() {
+        // Exercise all individual test functions
+        let _ = p1_test_fast_exists();
+        let _ = p2_test_fast_under_2s();
+        let _ = p3_test_fast_coverage();
+        let _ = p4_no_network_calls();
+        let _ = p5_no_disk_writes();
+        let _ = p6_compile_under_5s();
+        let _ = p7_test_heavy_exists();
+        let _ = p8_nextest_supported();
+        let _ = p9_ci_fast_first();
+        let _ = p10_no_sleep_in_fast();
+    }
+
+    #[test]
+    fn test_duration_nanoseconds() {
+        let result = VelocityResult::pass("id", "name", "details")
+            .with_duration(Duration::from_nanos(1));
+        assert_eq!(result.duration, Some(Duration::from_nanos(1)));
+    }
+
+    #[test]
+    fn test_duration_microseconds() {
+        let result = VelocityResult::pass("id", "name", "details")
+            .with_duration(Duration::from_micros(500));
+        assert_eq!(result.duration, Some(Duration::from_micros(500)));
+    }
 }

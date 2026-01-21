@@ -928,4 +928,234 @@ mod tests {
         assert!(config.deduplicate);
         assert_eq!(config.policy, EvictionPolicy::Reservoir);
     }
+
+    // =========================================================================
+    // Additional coverage tests
+    // =========================================================================
+
+    #[test]
+    fn test_eviction_policy_eq() {
+        assert_eq!(EvictionPolicy::FIFO, EvictionPolicy::FIFO);
+        assert_ne!(EvictionPolicy::FIFO, EvictionPolicy::Reservoir);
+    }
+
+    #[test]
+    fn test_eviction_policy_debug() {
+        let policy = EvictionPolicy::DiversitySampling;
+        let debug = format!("{:?}", policy);
+        assert!(debug.contains("DiversitySampling"));
+    }
+
+    #[test]
+    fn test_eviction_policy_clone() {
+        let policy = EvictionPolicy::ImportanceWeighted;
+        let cloned = policy;
+        assert_eq!(policy, cloned);
+    }
+
+    #[test]
+    fn test_sample_source_external() {
+        let source = SampleSource::External("dataset.csv".to_string());
+        let debug = format!("{:?}", source);
+        assert!(debug.contains("External"));
+        assert!(debug.contains("dataset.csv"));
+    }
+
+    #[test]
+    fn test_sample_source_eq() {
+        assert_eq!(SampleSource::Synthetic, SampleSource::Synthetic);
+        assert_ne!(SampleSource::Synthetic, SampleSource::HandCrafted);
+        assert_eq!(
+            SampleSource::External("a".to_string()),
+            SampleSource::External("a".to_string())
+        );
+        assert_ne!(
+            SampleSource::External("a".to_string()),
+            SampleSource::External("b".to_string())
+        );
+    }
+
+    #[test]
+    fn test_sample_source_hash() {
+        use std::collections::HashSet;
+        let mut set = HashSet::new();
+        set.insert(SampleSource::Synthetic);
+        set.insert(SampleSource::Production);
+        assert_eq!(set.len(), 2);
+    }
+
+    #[test]
+    fn test_sample_debug() {
+        let sample = Sample::new(vec![1.0], vec![2.0]);
+        let debug = format!("{:?}", sample);
+        assert!(debug.contains("Sample"));
+    }
+
+    #[test]
+    fn test_sample_clone() {
+        let original = Sample::with_weight(vec![1.0, 2.0], vec![3.0], 0.5);
+        let cloned = original.clone();
+        assert_eq!(original.features, cloned.features);
+        assert_eq!(original.target, cloned.target);
+        assert_eq!(original.weight, cloned.weight);
+    }
+
+    #[test]
+    fn test_corpus_buffer_config_debug() {
+        let config = CorpusBufferConfig::default();
+        let debug = format!("{:?}", config);
+        assert!(debug.contains("CorpusBufferConfig"));
+    }
+
+    #[test]
+    fn test_corpus_buffer_config_clone() {
+        let original = CorpusBufferConfig::default();
+        let cloned = original.clone();
+        assert_eq!(original.max_size, cloned.max_size);
+    }
+
+    #[test]
+    fn test_corpus_buffer_debug() {
+        let buffer = CorpusBuffer::new(10);
+        let debug = format!("{:?}", buffer);
+        assert!(debug.contains("CorpusBuffer"));
+    }
+
+    #[test]
+    fn test_corpus_source_debug() {
+        let source = CorpusSource::new("test", vec![]);
+        let debug = format!("{:?}", source);
+        assert!(debug.contains("CorpusSource"));
+    }
+
+    #[test]
+    fn test_corpus_source_clone() {
+        let original = CorpusSource::new("test", vec![]).with_weight(2.0).with_priority(3);
+        let cloned = original.clone();
+        assert_eq!(original.name, cloned.name);
+        assert_eq!(original.weight, cloned.weight);
+        assert_eq!(original.priority, cloned.priority);
+    }
+
+    #[test]
+    fn test_corpus_provenance_debug() {
+        let prov = CorpusProvenance::new();
+        let debug = format!("{:?}", prov);
+        assert!(debug.contains("CorpusProvenance"));
+    }
+
+    #[test]
+    fn test_corpus_provenance_clone() {
+        let mut original = CorpusProvenance::new();
+        original.add_source("test", 10, 20);
+        original.set_final_size(20);
+        let cloned = original.clone();
+        assert_eq!(original.final_size, cloned.final_size);
+    }
+
+    #[test]
+    fn test_corpus_merger_debug() {
+        let merger = CorpusMerger::new();
+        let debug = format!("{:?}", merger);
+        assert!(debug.contains("CorpusMerger"));
+    }
+
+    #[test]
+    fn test_corpus_merger_default() {
+        let merger = CorpusMerger::default();
+        assert!(merger.deduplicate);
+    }
+
+    #[test]
+    fn test_corpus_provenance_default() {
+        let prov = CorpusProvenance::default();
+        assert_eq!(prov.final_size, 0);
+        assert!(prov.sources.is_empty());
+    }
+
+    #[test]
+    fn test_corpus_buffer_diversity_sampling() {
+        let config = CorpusBufferConfig {
+            max_size: 3,
+            policy: EvictionPolicy::DiversitySampling,
+            deduplicate: false,
+            seed: Some(42),
+        };
+        let mut buffer = CorpusBuffer::with_config(config);
+
+        buffer.add_raw(vec![0.0], vec![0.0]);
+        buffer.add_raw(vec![1.0], vec![1.0]);
+        buffer.add_raw(vec![2.0], vec![2.0]);
+        // Add a sample that's diverse from existing
+        buffer.add_raw(vec![100.0], vec![100.0]);
+
+        assert_eq!(buffer.len(), 3);
+    }
+
+    #[test]
+    fn test_corpus_buffer_is_full() {
+        let mut buffer = CorpusBuffer::new(2);
+        assert!(!buffer.is_full());
+
+        buffer.add_raw(vec![1.0], vec![1.0]);
+        assert!(!buffer.is_full());
+
+        buffer.add_raw(vec![2.0], vec![2.0]);
+        assert!(buffer.is_full());
+    }
+
+    #[test]
+    fn test_sample_with_timestamp() {
+        let mut sample = Sample::new(vec![1.0], vec![2.0]);
+        sample.timestamp = Some(12345);
+        assert_eq!(sample.timestamp, Some(12345));
+    }
+
+    #[test]
+    fn test_corpus_buffer_fifo_with_dedup() {
+        let config = CorpusBufferConfig {
+            max_size: 2,
+            policy: EvictionPolicy::FIFO,
+            deduplicate: true,
+            seed: None,
+        };
+        let mut buffer = CorpusBuffer::with_config(config);
+
+        buffer.add_raw(vec![1.0], vec![1.0]);
+        buffer.add_raw(vec![2.0], vec![2.0]);
+        buffer.add_raw(vec![3.0], vec![3.0]); // Should evict first
+
+        assert_eq!(buffer.len(), 2);
+    }
+
+    #[test]
+    fn test_corpus_merger_subsample() {
+        let samples: Vec<Sample> = (0..10)
+            .map(|i| Sample::new(vec![i as f64], vec![i as f64]))
+            .collect();
+
+        let mut merger = CorpusMerger::new().deduplicate(false);
+        merger.add_source(CorpusSource::new("subsampled", samples).with_weight(0.5));
+
+        let (buffer, _) = merger.merge().unwrap();
+
+        // Weight 0.5 should halve the samples
+        assert!(buffer.len() <= 5);
+    }
+
+    #[test]
+    fn test_sample_sources_all_variants() {
+        let sources = vec![
+            SampleSource::Synthetic,
+            SampleSource::HandCrafted,
+            SampleSource::Examples,
+            SampleSource::Production,
+            SampleSource::External("test".to_string()),
+        ];
+
+        for source in sources {
+            let debug = format!("{:?}", source);
+            assert!(!debug.is_empty());
+        }
+    }
 }

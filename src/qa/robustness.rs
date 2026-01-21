@@ -769,4 +769,264 @@ mod tests {
         let debug = format!("{result:?}");
         assert!(debug.contains("EdgeCaseResult"));
     }
+
+    #[test]
+    fn test_process_edge_case_result_failed_no_error() {
+        // Test process_edge_case_result with failed test and no error message
+        use super::{process_edge_case_result, CategoryScore};
+
+        let result = EdgeCaseResult {
+            name: "Failing test".to_string(),
+            passed: false,
+            expected: EdgeCaseBehavior::Normal,
+            actual: EdgeCaseBehavior::Panics, // Unacceptable behavior
+            error: None,                      // No error message - will use description
+            duration: Duration::from_millis(5),
+        };
+
+        let mut score = CategoryScore::new(10);
+        process_edge_case_result(&result, &mut score);
+
+        assert_eq!(score.tests_failed, 1);
+        assert_eq!(score.tests_passed, 0);
+    }
+
+    #[test]
+    fn test_process_edge_case_result_passed_but_unacceptable() {
+        // Test when passed=true but actual behavior is unacceptable
+        use super::{process_edge_case_result, CategoryScore};
+
+        let result = EdgeCaseResult {
+            name: "Passed but hangs".to_string(),
+            passed: true,
+            expected: EdgeCaseBehavior::Normal,
+            actual: EdgeCaseBehavior::Hangs, // Unacceptable
+            error: Some("Timeout detected".to_string()),
+            duration: Duration::from_millis(5000),
+        };
+
+        let mut score = CategoryScore::new(10);
+        process_edge_case_result(&result, &mut score);
+
+        // Should fail because actual behavior is unacceptable
+        assert_eq!(score.tests_failed, 1);
+    }
+
+    #[test]
+    fn test_process_edge_case_result_passed_acceptable() {
+        use super::{process_edge_case_result, CategoryScore};
+
+        let result = EdgeCaseResult {
+            name: "Good test".to_string(),
+            passed: true,
+            expected: EdgeCaseBehavior::Normal,
+            actual: EdgeCaseBehavior::Normal,
+            error: None,
+            duration: Duration::from_millis(1),
+        };
+
+        let mut score = CategoryScore::new(10);
+        process_edge_case_result(&result, &mut score);
+
+        assert_eq!(score.tests_passed, 1);
+        assert_eq!(score.tests_failed, 0);
+    }
+
+    #[test]
+    fn test_max_size_handling_exceeds_limit() {
+        // Test max_size_handling when size exceeds the cap (handled internally)
+        use super::test_max_size_handling;
+
+        // When max_size is smaller than actual allocation cap
+        let result = test_max_size_handling(100);
+        assert!(result.passed); // Always passes because min(100, 10_000) = 100
+
+        // Test with very small max_size
+        let result_small = test_max_size_handling(1);
+        assert!(result_small.passed);
+        assert_eq!(result_small.actual, EdgeCaseBehavior::Normal);
+    }
+
+    #[test]
+    fn test_run_edge_case_tests_only_nan() {
+        let config = EdgeCaseConfig {
+            test_nan: true,
+            test_inf: false,
+            test_empty: false,
+            test_zero: false,
+            test_max_size: false,
+            max_input_size: 1000,
+            allow_panic: false,
+        };
+
+        let (score, _issues) = run_edge_case_tests(&config);
+        assert_eq!(score.tests_passed + score.tests_failed, 1);
+    }
+
+    #[test]
+    fn test_run_edge_case_tests_only_inf() {
+        let config = EdgeCaseConfig {
+            test_nan: false,
+            test_inf: true,
+            test_empty: false,
+            test_zero: false,
+            test_max_size: false,
+            max_input_size: 1000,
+            allow_panic: false,
+        };
+
+        let (score, _issues) = run_edge_case_tests(&config);
+        assert_eq!(score.tests_passed + score.tests_failed, 1);
+    }
+
+    #[test]
+    fn test_run_edge_case_tests_only_empty() {
+        let config = EdgeCaseConfig {
+            test_nan: false,
+            test_inf: false,
+            test_empty: true,
+            test_zero: false,
+            test_max_size: false,
+            max_input_size: 1000,
+            allow_panic: false,
+        };
+
+        let (score, _issues) = run_edge_case_tests(&config);
+        assert_eq!(score.tests_passed + score.tests_failed, 1);
+    }
+
+    #[test]
+    fn test_run_edge_case_tests_only_zero() {
+        let config = EdgeCaseConfig {
+            test_nan: false,
+            test_inf: false,
+            test_empty: false,
+            test_zero: true,
+            test_max_size: false,
+            max_input_size: 1000,
+            allow_panic: false,
+        };
+
+        let (score, _issues) = run_edge_case_tests(&config);
+        assert_eq!(score.tests_passed + score.tests_failed, 1);
+    }
+
+    #[test]
+    fn test_run_edge_case_tests_only_max_size() {
+        let config = EdgeCaseConfig {
+            test_nan: false,
+            test_inf: false,
+            test_empty: false,
+            test_zero: false,
+            test_max_size: true,
+            max_input_size: 1000,
+            allow_panic: false,
+        };
+
+        let (score, _issues) = run_edge_case_tests(&config);
+        assert_eq!(score.tests_passed + score.tests_failed, 1);
+    }
+
+    #[test]
+    fn test_edge_case_behavior_copy() {
+        let behavior = EdgeCaseBehavior::Normal;
+        let copied = behavior;
+        assert_eq!(behavior, copied);
+
+        let behavior2 = EdgeCaseBehavior::GracefulError;
+        let copied2 = behavior2;
+        assert_eq!(behavior2, copied2);
+    }
+
+    #[test]
+    fn test_edge_case_behavior_eq() {
+        assert_eq!(EdgeCaseBehavior::Normal, EdgeCaseBehavior::Normal);
+        assert_ne!(EdgeCaseBehavior::Normal, EdgeCaseBehavior::Panics);
+        assert_ne!(EdgeCaseBehavior::GracefulError, EdgeCaseBehavior::Hangs);
+    }
+
+    #[test]
+    fn test_edge_case_config_all_fields() {
+        let config = EdgeCaseConfig {
+            test_nan: true,
+            test_inf: true,
+            test_empty: true,
+            test_zero: true,
+            test_max_size: true,
+            max_input_size: 999_999,
+            allow_panic: false,
+        };
+
+        assert!(config.test_nan);
+        assert!(config.test_inf);
+        assert!(config.test_empty);
+        assert!(config.test_zero);
+        assert!(config.test_max_size);
+        assert_eq!(config.max_input_size, 999_999);
+        assert!(!config.allow_panic);
+    }
+
+    #[test]
+    fn test_numerical_underflow_result_fields() {
+        let result = numerical::test_underflow();
+        assert_eq!(result.name, "Underflow handling");
+        assert_eq!(result.expected, EdgeCaseBehavior::Normal);
+        assert!(result.error.is_none());
+    }
+
+    #[test]
+    fn test_numerical_overflow_result_fields() {
+        let result = numerical::test_overflow();
+        assert_eq!(result.name, "Overflow handling");
+        assert_eq!(result.expected, EdgeCaseBehavior::ReturnsDefault);
+        // actual can be ReturnsDefault (Inf) or Normal (finite)
+        assert!(result.actual.is_acceptable());
+    }
+
+    #[test]
+    fn test_numerical_precision_result_fields() {
+        let result = numerical::test_precision_loss();
+        assert_eq!(result.name, "Precision loss handling");
+        assert_eq!(result.expected, EdgeCaseBehavior::Normal);
+        assert_eq!(result.actual, EdgeCaseBehavior::Normal);
+    }
+
+    #[test]
+    fn test_edge_case_result_with_long_duration() {
+        let result = EdgeCaseResult {
+            name: "Slow test".to_string(),
+            passed: true,
+            expected: EdgeCaseBehavior::Normal,
+            actual: EdgeCaseBehavior::Normal,
+            error: None,
+            duration: Duration::from_secs(60),
+        };
+
+        assert_eq!(result.duration.as_secs(), 60);
+    }
+
+    #[test]
+    fn test_edge_case_result_all_behavior_types() {
+        // Test EdgeCaseResult with each behavior type
+        let behaviors = [
+            EdgeCaseBehavior::GracefulError,
+            EdgeCaseBehavior::ReturnsDefault,
+            EdgeCaseBehavior::Panics,
+            EdgeCaseBehavior::Hangs,
+            EdgeCaseBehavior::Normal,
+        ];
+
+        for behavior in behaviors {
+            let result = EdgeCaseResult {
+                name: format!("Test with {:?}", behavior),
+                passed: true,
+                expected: behavior,
+                actual: behavior,
+                error: None,
+                duration: Duration::from_millis(1),
+            };
+
+            assert_eq!(result.expected, result.actual);
+        }
+    }
 }

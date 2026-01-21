@@ -1077,4 +1077,165 @@ mod tests {
         #[cfg(not(target_arch = "wasm32"))]
         assert_eq!(config.wasm_memory_limit, 4 * 1024 * 1024 * 1024);
     }
+
+    #[test]
+    fn test_is_path_safe_empty_path() {
+        // Empty path is considered safe (relative)
+        assert!(is_path_safe(""));
+    }
+
+    #[test]
+    fn test_is_path_safe_single_file() {
+        assert!(is_path_safe("file.txt"));
+        assert!(is_path_safe("a"));
+    }
+
+    #[test]
+    fn test_is_path_safe_nested_relative() {
+        assert!(is_path_safe("a/b/c/d/e/file.txt"));
+        assert!(is_path_safe("deeply/nested/path/to/model.apr"));
+    }
+
+    #[test]
+    fn test_is_path_safe_with_dots_in_name() {
+        // Dots that aren't ".." should be allowed
+        assert!(is_path_safe("file.name.with.dots.txt"));
+        assert!(is_path_safe("version.1.0.apr"));
+    }
+
+    #[test]
+    fn test_is_path_safe_hidden_files() {
+        // Unix hidden files (starting with .)
+        assert!(is_path_safe(".hidden"));
+        assert!(is_path_safe(".config/settings"));
+    }
+
+    #[test]
+    fn test_is_path_safe_trailing_dot_dot() {
+        assert!(!is_path_safe("path/to/.."));
+        assert!(!is_path_safe("folder/.."));
+    }
+
+    #[test]
+    fn test_security_result_name_field() {
+        let pass = SecurityResult::pass("X1", "Test Name Here", "Some details");
+        assert_eq!(pass.name, "Test Name Here");
+
+        let fail = SecurityResult::fail("X2", "Another Name", "Error details");
+        assert_eq!(fail.name, "Another Name");
+    }
+
+    #[test]
+    fn test_security_result_details_field() {
+        let result = SecurityResult::pass("X1", "Name", "These are the details");
+        assert_eq!(result.details, "These are the details");
+    }
+
+    #[test]
+    fn test_security_config_all_fields_accessible() {
+        let config = SecurityConfig {
+            enable_fuzzing: true,
+            fuzz_duration_secs: 300,
+            enable_sanitizers: true,
+            max_file_size: 1024,
+            wasm_memory_limit: 2048,
+        };
+
+        assert!(config.enable_fuzzing);
+        assert_eq!(config.fuzz_duration_secs, 300);
+        assert!(config.enable_sanitizers);
+        assert_eq!(config.max_file_size, 1024);
+        assert_eq!(config.wasm_memory_limit, 2048);
+    }
+
+    #[test]
+    fn test_exponential_backoff_single_retry() {
+        let base_delay_ms = 100;
+        let delays: Vec<u64> = (0..1)
+            .map(|attempt| base_delay_ms * 2_u64.pow(attempt))
+            .collect();
+        assert_eq!(delays, vec![100]);
+    }
+
+    #[test]
+    fn test_exponential_backoff_large_retries() {
+        let base_delay_ms = 100;
+        let max_retries = 10;
+
+        let delays: Vec<u64> = (0..max_retries)
+            .map(|attempt| base_delay_ms * 2_u64.pow(attempt))
+            .collect();
+
+        // Last delay should be 100 * 2^9 = 51200
+        assert_eq!(delays[9], 51200);
+    }
+
+    #[test]
+    fn test_security_results_all_have_names() {
+        let config = SecurityConfig::default();
+        let results = run_all_security_tests(&config);
+
+        for result in &results {
+            assert!(!result.name.is_empty(), "Result {} has empty name", result.id);
+        }
+    }
+
+    #[test]
+    fn test_security_results_all_have_details() {
+        let config = SecurityConfig::default();
+        let results = run_all_security_tests(&config);
+
+        for result in &results {
+            assert!(!result.details.is_empty(), "Result {} has empty details", result.id);
+        }
+    }
+
+    #[test]
+    fn test_is_path_safe_backslash_traversal() {
+        // Windows-style path traversal
+        assert!(!is_path_safe("..\\etc\\passwd"));
+        assert!(!is_path_safe("folder\\..\\..\\secret"));
+    }
+
+    #[test]
+    fn test_n_tests_sequential_ids() {
+        let config = SecurityConfig::default();
+        let results = run_all_security_tests(&config);
+
+        // Verify IDs are N1 through N20
+        for (i, result) in results.iter().enumerate() {
+            let expected_id = format!("N{}", i + 1);
+            assert_eq!(result.id, expected_id, "Expected {} but got {}", expected_id, result.id);
+        }
+    }
+
+    #[test]
+    fn test_escape_html_no_special_chars() {
+        let input = "Hello World 123";
+        assert_eq!(escape_html(input), input);
+    }
+
+    #[test]
+    fn test_escape_html_unicode() {
+        // Unicode characters should pass through unchanged
+        assert_eq!(escape_html("héllo wörld"), "héllo wörld");
+        assert_eq!(escape_html("日本語"), "日本語");
+    }
+
+    #[test]
+    fn test_security_config_debug_format() {
+        let config = SecurityConfig::default();
+        let debug = format!("{:?}", config);
+        assert!(debug.contains("SecurityConfig"));
+        assert!(debug.contains("fuzz_duration_secs"));
+        assert!(debug.contains("max_file_size"));
+    }
+
+    #[test]
+    fn test_security_result_debug_format() {
+        let result = SecurityResult::pass("N1", "Test", "Details");
+        let debug = format!("{:?}", result);
+        assert!(debug.contains("SecurityResult"));
+        assert!(debug.contains("passed"));
+    }
 }

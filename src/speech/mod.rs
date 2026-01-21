@@ -117,4 +117,173 @@ mod tests {
         let err2 = SpeechError::InvalidAudio("test".to_string());
         assert_eq!(err1, err2);
     }
+
+    #[test]
+    fn test_speech_error_invalid_audio_display() {
+        let err = SpeechError::InvalidAudio("corrupted data".to_string());
+        assert_eq!(err.to_string(), "Invalid audio: corrupted data");
+    }
+
+    #[test]
+    fn test_speech_error_processing_error_display() {
+        let err = SpeechError::ProcessingError("failed to decode".to_string());
+        assert_eq!(err.to_string(), "Processing error: failed to decode");
+    }
+
+    #[test]
+    fn test_speech_error_debug() {
+        let err = SpeechError::InvalidConfig("test".to_string());
+        let debug = format!("{:?}", err);
+        assert!(debug.contains("InvalidConfig"));
+        assert!(debug.contains("test"));
+    }
+
+    #[test]
+    fn test_speech_error_clone() {
+        let err = SpeechError::ProcessingError("error".to_string());
+        let cloned = err.clone();
+        assert_eq!(err, cloned);
+    }
+
+    #[test]
+    fn test_speech_error_is_error() {
+        // Test that SpeechError implements std::error::Error
+        let err: &dyn std::error::Error = &SpeechError::InvalidConfig("test".to_string());
+        assert!(err.to_string().contains("Invalid configuration"));
+    }
+
+    #[test]
+    fn test_speech_error_inequality() {
+        let err1 = SpeechError::InvalidAudio("test1".to_string());
+        let err2 = SpeechError::InvalidAudio("test2".to_string());
+        assert_ne!(err1, err2);
+    }
+
+    #[test]
+    fn test_speech_error_different_variants() {
+        let err1 = SpeechError::InvalidConfig("msg".to_string());
+        let err2 = SpeechError::InvalidAudio("msg".to_string());
+        assert_ne!(err1, err2);
+    }
+
+    #[test]
+    fn test_speech_error_insufficient_samples_fields() {
+        let err = SpeechError::InsufficientSamples {
+            required: 1000,
+            provided: 500,
+        };
+        if let SpeechError::InsufficientSamples { required, provided } = err {
+            assert_eq!(required, 1000);
+            assert_eq!(provided, 500);
+        } else {
+            panic!("Expected InsufficientSamples variant");
+        }
+    }
+
+    #[test]
+    fn test_speech_error_debug_all_variants() {
+        let errors = [
+            SpeechError::InvalidConfig("config".to_string()),
+            SpeechError::InvalidAudio("audio".to_string()),
+            SpeechError::ProcessingError("proc".to_string()),
+            SpeechError::InsufficientSamples {
+                required: 10,
+                provided: 5,
+            },
+        ];
+
+        for err in &errors {
+            let debug = format!("{:?}", err);
+            assert!(!debug.is_empty());
+        }
+    }
+
+    #[test]
+    fn test_speech_error_clone_all_variants() {
+        let errors = [
+            SpeechError::InvalidConfig("config".to_string()),
+            SpeechError::InvalidAudio("audio".to_string()),
+            SpeechError::ProcessingError("proc".to_string()),
+            SpeechError::InsufficientSamples {
+                required: 10,
+                provided: 5,
+            },
+        ];
+
+        for err in &errors {
+            let cloned = err.clone();
+            assert_eq!(*err, cloned);
+        }
+    }
+
+    #[test]
+    fn test_speech_result_ok() {
+        let result: SpeechResult<i32> = Ok(42);
+        assert!(result.is_ok());
+        assert_eq!(result.expect("should be ok"), 42);
+    }
+
+    #[test]
+    fn test_speech_result_err() {
+        let result: SpeechResult<i32> = Err(SpeechError::InvalidConfig("bad".to_string()));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_speech_error_source() {
+        // std::error::Error requires source() method
+        let err = SpeechError::InvalidConfig("test".to_string());
+        let source = std::error::Error::source(&err);
+        assert!(source.is_none()); // Default implementation returns None
+    }
+
+    #[test]
+    fn test_speech_error_display_empty_message() {
+        let err = SpeechError::InvalidConfig(String::new());
+        assert_eq!(err.to_string(), "Invalid configuration: ");
+
+        let err = SpeechError::InvalidAudio(String::new());
+        assert_eq!(err.to_string(), "Invalid audio: ");
+
+        let err = SpeechError::ProcessingError(String::new());
+        assert_eq!(err.to_string(), "Processing error: ");
+    }
+
+    #[test]
+    fn test_speech_error_insufficient_samples_zero() {
+        let err = SpeechError::InsufficientSamples {
+            required: 0,
+            provided: 0,
+        };
+        assert_eq!(
+            err.to_string(),
+            "Insufficient samples: required 0, provided 0"
+        );
+    }
+
+    #[test]
+    fn test_speech_error_partial_eq_same_variant_different_content() {
+        let err1 = SpeechError::InvalidConfig("foo".to_string());
+        let err2 = SpeechError::InvalidConfig("bar".to_string());
+        assert_ne!(err1, err2);
+    }
+
+    #[test]
+    fn test_speech_error_partial_eq_struct_variant() {
+        let err1 = SpeechError::InsufficientSamples {
+            required: 100,
+            provided: 50,
+        };
+        let err2 = SpeechError::InsufficientSamples {
+            required: 100,
+            provided: 50,
+        };
+        assert_eq!(err1, err2);
+
+        let err3 = SpeechError::InsufficientSamples {
+            required: 100,
+            provided: 60,
+        };
+        assert_ne!(err1, err3);
+    }
 }
