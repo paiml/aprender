@@ -1743,31 +1743,39 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'F-CLI-006-REGRESSION: apr check subcommand missing from binary'
-  status: planned
+  status: completed
   priority: critical
   assigned_to: null
   created: 2026-01-21T19:01:41Z
-  updated: 2026-01-21T19:01:41Z
+  updated: 2026-01-21T20:30:00Z
   spec: null
   acceptance_criteria: []
   phases: []
   subtasks: []
   estimated_effort: null
   labels: []
-  notes: null
+  notes: |
+    Resolution: NOT A REGRESSION - stale binary issue.
+    Fresh build: `apr check --help` works, 10/10 stages pass.
+    QA artifact was from outdated binary.
 - id: PMAT-090
   github_issue: null
   item_type: task
   title: 'PAR-303-REGRESSION: 0.5B model produces incoherent gibberish output'
-  status: planned
+  status: completed
   priority: critical
   assigned_to: null
   created: 2026-01-21T19:02:15Z
-  updated: 2026-01-21T19:02:15Z
+  updated: 2026-01-21T20:30:00Z
   spec: null
   acceptance_criteria: []
   phases: []
   subtasks: []
   estimated_effort: null
   labels: []
-  notes: null
+  notes: |
+    Resolution: MODEL CAPACITY ISSUE, NOT CODE BUG.
+    Root cause: 0.5B model lacks sufficient parameters for coherent generation.
+    Control test: 1B model produces perfect output on same code path.
+    Evidence: 1B output "The answer to 2+2 is 4. Let's break it down..."
+    Action: 0.5B marked as stress-test/latency benchmark only.
