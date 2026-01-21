@@ -1617,3 +1617,23 @@ roadmap:
   - compliance
   - pmat
   notes: null
+- id: PMAT-084
+  github_issue: null
+  item_type: task
+  title: 'FILE-HEALTH-001: Refactor large files to improve code health'
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-01-21T16:42:33Z
+  updated: 2026-01-21T16:47:22.466235283+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Split 20 files >2000 lines into smaller modules. Target: all files <2000 lines, avg health >85%'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - refactoring
+  - file-health
+  - pmat
+  notes: null

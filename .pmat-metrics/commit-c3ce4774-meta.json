@@ -1,0 +1,9 @@
+{
+  "commit_sha": null,
+  "work_item_id": "PMAT-084",
+  "prompt": "FILE-HEALTH-001: Refactor large files to improve code health",
+  "tdg_score": 0.0,
+  "repo_score": 0.0,
+  "rust_project_score": 0.0,
+  "timestamp": "2026-01-21T16:47:22.470051832Z"
+}
