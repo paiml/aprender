@@ -408,11 +408,11 @@ mod tests {
 
     #[test]
     fn test_error_send_sync() {
-        fn assert_send<T: Send>() {}
-        fn assert_sync<T: Sync>() {}
+        fn _assert_send<T: Send>() {}
+        fn _assert_sync<T: Sync>() {}
         // These would fail to compile if AprenderError wasn't Send + Sync
         // (commented out as std::io::Error is not Sync)
-        // assert_send::<AprenderError>();
+        // _assert_send::<AprenderError>();
     }
 
     // =========================================================================

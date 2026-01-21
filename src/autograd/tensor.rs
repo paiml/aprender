@@ -382,7 +382,7 @@ mod tests {
     #[should_panic(expected = "item() only works on tensors with exactly 1 element")]
     fn test_item_panics_multi_element() {
         let t = Tensor::from_slice(&[1.0, 2.0]);
-        t.item();
+        let _ = t.item();
     }
 
     #[test]

@@ -305,7 +305,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "Decay factor must be in (0, 1)")]
     fn test_invalid_decay_factor() {
-        IncrementalIDF::new(1.5);
+        let _ = IncrementalIDF::new(1.5);
     }
 
     #[test]

@@ -589,6 +589,7 @@ fn run_headless_apr(
     eprintln!("╠═══════════════════════════════════════════════════════════╣");
 
     // Get stats sorted by total time (using public fields)
+    #[allow(deprecated)]
     let all_stats = profiler.all_stats();
     let mut sorted_stats: Vec<_> = all_stats.iter().collect();
     sorted_stats.sort_by(|a, b| b.1.total_ns.cmp(&a.1.total_ns));
@@ -922,6 +923,7 @@ fn run_headless_real(config: CbtopConfig) -> Result<()> {
 
     // Print individual brick stats if available
     let profiler = cuda_model.profiler();
+    #[allow(deprecated)]
     let all_stats = profiler.all_stats();
     if !all_stats.is_empty() {
         eprintln!("Per-Brick Timing (REAL via std::time::Instant + CUDA sync):");

@@ -976,14 +976,15 @@ fn numerical_stability_edge_cases() {
 fn f1_wasm_compatible_codebase() {
     // Verify no_std compatibility markers exist
     // The wasm module should exist and be feature-gated
-    #[cfg(feature = "wasm")]
+    #[cfg(feature = "wasm-bindgen")]
     {
+        #[allow(unused_imports)]
         use aprender::wasm;
         // If feature enabled, basic module exists
         assert!(true, "F1: WASM feature flag exists");
     }
 
-    #[cfg(not(feature = "wasm"))]
+    #[cfg(not(feature = "wasm-bindgen"))]
     {
         // Even without feature, verify the module structure exists
         assert!(
@@ -1330,7 +1331,7 @@ fn e4_memory_estimation() {
 
     // Total
     let total_params = embed_params + config.num_layers * layer_params;
-    let estimated_bytes = total_params * std::mem::size_of::<f32>();
+    let estimated_bytes = total_params * size_of::<f32>();
 
     // Verify estimate is reasonable
     assert!(
@@ -1747,11 +1748,11 @@ fn f2_wasmtime_compatible_code() {
 
     // All data types used must be WASM32-safe
     assert!(
-        std::mem::size_of::<f32>() == 4,
+        size_of::<f32>() == 4,
         "F2: f32 must be 4 bytes for WASM"
     );
     assert!(
-        std::mem::size_of::<usize>() <= 8,
+        size_of::<usize>() <= 8,
         "F2: usize must fit in 64 bits"
     );
 
@@ -1797,10 +1798,10 @@ fn f5_component_model_types() {
     assert!(test_str.is_ascii() || test_str.chars().all(|c| c.len_utf8() <= 4));
 
     // Numeric types must have defined sizes
-    assert_eq!(std::mem::size_of::<i32>(), 4, "F5: i32 is 4 bytes");
-    assert_eq!(std::mem::size_of::<i64>(), 8, "F5: i64 is 8 bytes");
-    assert_eq!(std::mem::size_of::<f32>(), 4, "F5: f32 is 4 bytes");
-    assert_eq!(std::mem::size_of::<f64>(), 8, "F5: f64 is 8 bytes");
+    assert_eq!(size_of::<i32>(), 4, "F5: i32 is 4 bytes");
+    assert_eq!(size_of::<i64>(), 8, "F5: i64 is 8 bytes");
+    assert_eq!(size_of::<f32>(), 4, "F5: f32 is 4 bytes");
+    assert_eq!(size_of::<f64>(), 8, "F5: f64 is 8 bytes");
 }
 
 /// F6: WIT interface type validation
@@ -3588,6 +3589,7 @@ fn j18_energy_graceful_degradation() {
     // Verify energy profiling gracefully handles unsupported platforms
 
     #[derive(Debug)]
+    #[allow(dead_code)]
     enum EnergyResult {
         Available(f64),
         Unavailable(String),
@@ -3823,6 +3825,7 @@ fn i19_probador_report_generation() {
     // Verify apr probador report infrastructure exists
 
     #[derive(Debug)]
+    #[allow(dead_code)]
     struct ProbadorReport {
         total_tests: usize,
         passed: usize,

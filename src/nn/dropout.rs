@@ -751,13 +751,13 @@ mod tests {
     #[test]
     #[should_panic(expected = "Dropout probability must be in [0, 1)")]
     fn test_dropout_invalid_probability_high() {
-        Dropout::new(1.0);
+        let _ = Dropout::new(1.0);
     }
 
     #[test]
     #[should_panic(expected = "Dropout probability must be in [0, 1)")]
     fn test_dropout_invalid_probability_negative() {
-        Dropout::new(-0.1);
+        let _ = Dropout::new(-0.1);
     }
 
     // Dropout2d tests

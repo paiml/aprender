@@ -457,10 +457,10 @@ mod tests {
         let input = config.encode(0.0);
         let output = model.forward(&input);
 
-        let target = NoiseTrainer::generate_target_spectrum(NoiseType::White, 64);
+        let _target = NoiseTrainer::generate_target_spectrum(NoiseType::White, 64);
 
         // Check that output matches target pattern (flat)
-        let variance: f32 = output
+        let _variance: f32 = output
             .iter()
             .map(|x| (x - output.iter().sum::<f32>() / output.len() as f32).powi(2))
             .sum::<f32>()
@@ -585,10 +585,10 @@ mod tests {
         let result2 = trainer2.train(20);
 
         // Some losses should differ due to different random custom slopes
-        let mut any_different = false;
+        let mut _any_different = false;
         for (l1, l2) in result1.loss_history.iter().zip(result2.loss_history.iter()) {
             if (l1 - l2).abs() > 0.001 {
-                any_different = true;
+                _any_different = true;
                 break;
             }
         }

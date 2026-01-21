@@ -1452,19 +1452,19 @@ mod tests {
     /// CTC-03: Template size limit constant defined
     #[test]
     fn ctc_03_template_size_limit() {
-        assert_eq!(super::MAX_TEMPLATE_SIZE, 100 * 1024);
+        assert_eq!(MAX_TEMPLATE_SIZE, 100 * 1024);
     }
 
     /// CTC-04: Recursion limit constant defined
     #[test]
     fn ctc_04_recursion_limit() {
-        assert_eq!(super::MAX_RECURSION_DEPTH, 100);
+        assert_eq!(MAX_RECURSION_DEPTH, 100);
     }
 
     /// CTC-05: Loop iteration limit constant defined
     #[test]
     fn ctc_05_loop_iteration_limit() {
-        assert_eq!(super::MAX_LOOP_ITERATIONS, 10_000);
+        assert_eq!(MAX_LOOP_ITERATIONS, 10_000);
     }
 
     /// CTC-08: Template injection - Jinja syntax in content not executed

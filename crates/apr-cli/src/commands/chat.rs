@@ -851,7 +851,7 @@ mod realizar_chat {
                 });
 
                 // Create decode closure for tracing
-                let decode_fn = |token_id: u32| -> String {
+                let _decode_fn = |token_id: u32| -> String {
                     mapped.model.decode(&[token_id])
                 };
 
@@ -896,6 +896,7 @@ mod realizar_chat {
                 .map_err(|e| format!("APR generate failed: {e}"))
         }
 
+        #[allow(dead_code)]
         fn generate_gguf(&self, prompt: &[u32], config: &ChatConfig) -> Result<Vec<u32>, String> {
             use realizar::gguf::{MappedGGUFModel, OwnedQuantizedModel, QuantizedGenerateConfig};
 

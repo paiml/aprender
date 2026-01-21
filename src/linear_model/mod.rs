@@ -2908,7 +2908,7 @@ mod tests {
         assert!(loaded.is_fitted());
         assert!((loaded.intercept() - model.intercept()).abs() < 1e-6);
 
-        std::fs::remove_file(path).ok();
+        fs::remove_file(path).ok();
     }
 
     #[test]
@@ -2927,7 +2927,7 @@ mod tests {
         assert!(loaded.is_fitted());
         assert!((loaded.intercept() - model.intercept()).abs() < 1e-6);
 
-        std::fs::remove_file(path).ok();
+        fs::remove_file(path).ok();
     }
 
     #[test]
@@ -2953,7 +2953,7 @@ mod tests {
         assert!(loaded.is_fitted());
         assert!((loaded.alpha() - model.alpha()).abs() < 1e-6);
 
-        std::fs::remove_file(path).ok();
+        fs::remove_file(path).ok();
     }
 
     #[test]
@@ -2972,7 +2972,7 @@ mod tests {
         assert!(loaded.is_fitted());
         assert!((loaded.alpha() - model.alpha()).abs() < 1e-6);
 
-        std::fs::remove_file(path).ok();
+        fs::remove_file(path).ok();
     }
 
     #[test]
@@ -2997,7 +2997,7 @@ mod tests {
         let loaded = Lasso::load(path).expect("Load should succeed");
         assert!(loaded.is_fitted());
 
-        std::fs::remove_file(path).ok();
+        fs::remove_file(path).ok();
     }
 
     #[test]
@@ -3015,7 +3015,7 @@ mod tests {
         let loaded = Lasso::load_safetensors(path).expect("Load should succeed");
         assert!(loaded.is_fitted());
 
-        std::fs::remove_file(path).ok();
+        fs::remove_file(path).ok();
     }
 
     #[test]
@@ -3040,7 +3040,7 @@ mod tests {
         let loaded = ElasticNet::load(path).expect("Load should succeed");
         assert!(loaded.is_fitted());
 
-        std::fs::remove_file(path).ok();
+        fs::remove_file(path).ok();
     }
 
     #[test]
@@ -3058,7 +3058,7 @@ mod tests {
         let loaded = ElasticNet::load_safetensors(path).expect("Load should succeed");
         assert!(loaded.is_fitted());
 
-        std::fs::remove_file(path).ok();
+        fs::remove_file(path).ok();
     }
 
     #[test]

@@ -895,7 +895,7 @@ mod tests {
 
     #[test]
     fn test_from_apr_with_valid_model() {
-        use std::io::Write;
+        
         use tempfile::NamedTempFile;
 
         // Create a valid model with correct n_freqs for buffer_size 1024
@@ -903,7 +903,7 @@ mod tests {
         let mlp = SpectralMLP::random_init(8, 64, n_freqs, 42);
 
         // Save to temp file
-        let mut temp = NamedTempFile::new().unwrap();
+        let temp = NamedTempFile::new().unwrap();
         mlp.save_apr(temp.path()).unwrap();
 
         // Load from file
@@ -911,7 +911,7 @@ mod tests {
         let gen = NoiseGenerator::from_apr(temp.path(), config).unwrap();
 
         // Verify it works
-        let mut buffer = vec![0.0; 1024];
+        let _buffer = vec![0.0; 1024];
         gen.clone_config();
         assert_eq!(gen.config().buffer_size, 1024);
     }

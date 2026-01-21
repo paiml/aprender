@@ -1434,7 +1434,8 @@ mod tests {
 
         // With empty metadata, should have warnings
         let warning_count = score.warning_count();
-        assert!(warning_count >= 0);
+        // warning_count is usize, always >= 0, just verify it's callable
+        assert!(warning_count < usize::MAX);
     }
 
     #[test]
@@ -1445,7 +1446,8 @@ mod tests {
         let score = compute_quality_score(&metadata, &config);
 
         let info_count = score.info_count();
-        assert!(info_count >= 0);
+        // info_count is usize, always >= 0, just verify it's callable
+        assert!(info_count < usize::MAX);
     }
 
     #[test]

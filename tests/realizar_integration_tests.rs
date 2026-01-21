@@ -110,7 +110,7 @@ fn s4_model_loading_strategy() {
 fn s5_qwen2_tensor_count() {
     // Qwen2-0.5B-Instruct has 219 tensors per HuggingFace
     // This is verified by loading model.safetensors
-    const EXPECTED_TENSOR_COUNT: usize = 219;
+    const _EXPECTED_TENSOR_COUNT: usize = 219;
 
     // Verify the config matches
     use aprender::demo::Qwen2Config;
@@ -173,7 +173,7 @@ fn s7_rmsnorm_simd_compatible() {
 /// Falsification: RoPE computation produces incorrect rotations
 #[test]
 fn s8_rope_rotary_embedding() {
-    use std::f32::consts::PI;
+    
 
     // RoPE applies rotation to query/key vectors
     // For position p and dimension d:

@@ -119,6 +119,80 @@ To ensure scientific rigor, we classify falsification events (bugs/failures) by 
 *   **Level 3 (Structural):** Feature works but implementation violates architecture (e.g., CLI doing inference). **Refutes the Design ($H_1$).** Requires refactor.
 *   **Level 4 (Existential):** Performance targets physically impossible or core premise invalid. **Refutes the Project Goals.** Requires strategic pivot.
 
+### 1.5 Quality Standards & Coverage Mandate
+
+To ensure long-term maintainability and prevent regression, we enforce a **strict** quality gate:
+
+1.  **95% Code Coverage:** All crates must achieve ≥95% test coverage.
+2.  **Zero Warnings:** `make lint` and `make coverage` must complete with **0 warnings**.
+3.  **Fast Feedback Loop:** The entire coverage suite (`make coverage`) must run in **< 5 minutes**.
+    *   **Constraint:** No slow tests allowed in the main coverage suite. Slow tests must be separated into a distinct profile or integration suite.
+4.  **Extreme TDD for CLI/Binary/IO:**
+    *   **Strategy:** Logic must be extracted from binaries/CLIs into testable library functions.
+    *   **Shim:** The binary entry point (`main.rs`) should be a minimal "shim" that calls the library.
+    *   **Priority:** Test the extracted logic **FIRST**.
+5.  **CUDA Verification:**
+    *   **Policy:** "Just Test It". With RTX 4090 hardware available, actual GPU execution paths must be covered, not mocked.
+6.  **Model Serving Tests:**
+    *   **Strategy:** Use ephemeral `setup/teardown` of in-memory APR models for server verification. Do not rely on external artifacts or file I/O for these tests.
+7.  **Full PMAT Compliance:**
+    *   **Scope:** `aprender` and `realizar`.
+    *   **Requirement:** Must pass `pmat comply` with zero violations.
+    *   **Metrics:** Cyclomatic Complexity ≤ 10, Cognitive Complexity ≤ 15, SATD = 0.
+
+### 1.5.1 Critical Coverage Gaps (Prioritized)
+
+The following modules are identified as high-risk due to low coverage (<95%) and high complexity. They require **Systematic Edge Case Testing**:
+
+1.  **`gguf.rs` (83.83%)**: 4,500 missed lines. Priority: **Critical**.
+    *   *Risk:* Model loading failures, parsing exploits, invalid tensor mapping.
+2.  **`quantize.rs` (83.19%)**: 1,790 missed lines. Priority: **High**.
+    *   *Risk:* Numerical instability, performance regressions, scalar fallback bugs.
+3.  **`api.rs` (82.66%)**: 1,667 missed lines. Priority: **High**.
+    *   *Risk:* Public API contracts broken, error handling missing.
+4.  **`layers.rs` (86.63%)**: 1,105 missed lines. Priority: **Medium**.
+    *   *Risk:* Inference correctness, attention mask bugs.
+
+### 1.5.2 Handling Slow Tests (The "Heavy" Tier)
+
+To maintain the <5 minute coverage mandate while ensuring thorough validation, we employ a strict **Tiered Testing Strategy**:
+
+1.  **The `#[ignore]` Standard:**
+    *   **Rule:** Any test taking >1 second must be marked `#[ignore]`.
+    *   **Execution:** These tests run ONLY in `make test-heavy` (Tier 4 CI), never in `make test-fast` (Tier 1/2 Local).
+    *   **Naming:** Suffix slow tests with `_slow` or `_heavy` (e.g., `test_large_context_slow`).
+
+2.  **Coverage Exclusion:**
+    *   **Configuration:** The coverage harness is configured to explicitly skip `heavy`, `slow`, and `benchmark` tags.
+    *   **Goal:** Coverage report reflects the *logic* (unit/fast integration), not the *performance* or *I/O wait time*.
+
+3.  **Architecture Separation:**
+    *   **Strategy:** Move monolithic integration suites to `tests/*.rs` separate binaries.
+    *   **Benefit:** Parallel compilation and granular execution (e.g., `cargo test --test falsification_cuda_tests`).
+
+### 1.5.3 Serving & Streaming Verification
+
+To ensure production readiness, we require **Live Verification** of the serving stack using dedicated examples:
+
+1.  **Mandatory Examples:**
+    *   `cargo run --example serve --release` (Standard HTTP)
+    *   `cargo run --example serve_streaming --release` (SSE Token Streaming)
+
+2.  **Model Matrix (All Supported Sizes):**
+    Serving must be verified against **ALL** supported Qwen GGUF models to ensure memory mapping and architecture detection works at scale:
+    *   `Qwen2.5-0.5B-Instruct` (Edge)
+    *   `Qwen2.5-Coder-1.5B-Instruct` (Dev)
+    *   `Qwen2.5-Coder-7B-Instruct` (Prod)
+    *   `Qwen2.5-Coder-32B-Instruct` (HPC)
+
+3.  **Falsifying "Fake Streaming":**
+    *   **Hypothesis:** The server is truly streaming tokens as they are generated, not buffering the full response.
+    *   **Falsification Test:**
+        *   Measure **Time-to-First-Token (TTFT)**.
+        *   Measure **Total-Generation-Time (TGT)**.
+        *   **FAIL IF:** `TTFT > 0.8 * TGT` (Implies buffering).
+        *   **FAIL IF:** Tokens arrive in a single burst (inter-token arrival time variance is 0).
+
 ---
 
 ## 2. CLI Interface
@@ -815,6 +889,8 @@ This section enforces the strict separation between **Runtime Observation** (see
 5. apr-cli has no duplicated inference code
 6. Ollama-style UX (spinner, clean output)
 7. Tracing works across all paths
+8. Coverage: `make lint && make coverage` passes with 0 warnings and >95% coverage in < 5m.
+9. PMAT: `aprender` and `realizar` pass `pmat comply` (Full Compliance).
 
 ---
 
@@ -896,3 +972,22 @@ Optimization in the aprender ecosystem follows a strict 5-level hierarchy.
 - JIT compilation of fused kernels.
 - Automated exploration of tuning parameters (tile sizes, unroll factors).
 - **Goal:** Self-optimizing runtime that adapts to workload.
+
+---
+
+## Appendix F: PMAT Work Tickets
+
+| Ticket ID | Title | Description | Status |
+|-----------|-------|-------------|--------|
+| **T-QA-001** | **Coverage Infrastructure** | Setup `make coverage` and `make lint` commands to enforce zero warnings and <5min execution time. | TODO |
+| **T-QA-002** | **CLI Refactor (Extreme TDD)** | Extract logic from `apr-cli` into testable library modules. Leave minimal shims. | TODO |
+| **T-QA-003** | **CUDA Live Testing** | Enable and verify real GPU execution paths in tests on RTX 4090. | TODO |
+| **T-QA-004** | **In-Memory Server Tests** | Implement setup/teardown for in-memory APR model serving tests. | TODO |
+| **T-QA-005** | **Coverage Enforcement** | Falsify build if coverage < 95% or time > 5min. | TODO |
+| **T-QA-006** | **PMAT Compliance Enforcement** | Verify `pmat comply` passes for `aprender` and `realizar` (Complexity & SATD gates). | TODO |
+| **T-QA-007** | **Coverage Gap: gguf.rs** | Close 4,500 line gap (83% -> 95%) in GGUF loading/parsing logic. | TODO |
+| **T-QA-008** | **Coverage Gap: quantize.rs** | Close 1,790 line gap (83% -> 95%) in quantization kernels/logic. | TODO |
+| **T-QA-009** | **Coverage Gap: api.rs** | Close 1,667 line gap (82% -> 95%) in high-level inference API. | TODO |
+| **T-QA-010** | **Coverage Gap: layers.rs** | Close 1,105 line gap (86% -> 95%) in transformer layer implementations. | TODO |
+
+

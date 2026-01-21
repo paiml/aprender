@@ -1274,7 +1274,7 @@ mod tests_falsification_aa {
         // Generate test signal: 1 second of 440Hz sine wave
         let sample_rate = 16000;
         let samples: Vec<f32> = (0..sample_rate)
-            .map(|i| (2.0 * std::f32::consts::PI * 440.0 * i as f32 / sample_rate as f32).sin())
+            .map(|i| (2.0 * PI * 440.0 * i as f32 / sample_rate as f32).sin())
             .collect();
 
         let mel = filterbank

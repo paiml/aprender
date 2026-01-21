@@ -7,10 +7,9 @@ use crate::error::CliError;
 use crate::output;
 use colored::Colorize;
 use std::path::Path;
-use std::time::Instant;
 
 #[cfg(feature = "inference")]
-use realizar::gguf::{MappedGGUFModel, OwnedQuantizedModel, QuantizedGenerateConfig};
+use realizar::gguf::{MappedGGUFModel, OwnedQuantizedModel};
 
 /// Run the 10-stage pipeline self-test
 pub(crate) fn run(path: &Path, no_gpu: bool) -> Result<(), CliError> {

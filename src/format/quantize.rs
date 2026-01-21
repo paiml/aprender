@@ -1145,7 +1145,7 @@ mod tests_falsification_bb {
 
         // Extract scale from block (first 2 bytes as f16)
         let scale_bytes = [quantized.blocks[0], quantized.blocks[1]];
-        let scale = half::f16::from_le_bytes(scale_bytes).to_f32();
+        let scale = f16::from_le_bytes(scale_bytes).to_f32();
 
         // Scale should be max_abs / 127 = 127 / 127 = 1.0
         assert!(
@@ -1260,7 +1260,7 @@ mod tests_proptest_bb {
             // Extract scale from first block
             if quantized.blocks.len() >= 2 {
                 let scale_bytes = [quantized.blocks[0], quantized.blocks[1]];
-                let scale = half::f16::from_le_bytes(scale_bytes).to_f32();
+                let scale = f16::from_le_bytes(scale_bytes).to_f32();
 
                 prop_assert!(
                     scale > 0.0,

@@ -1593,7 +1593,7 @@ fn run_gguf_generate(
     #[allow(unused_variables)]
     let _ = benchmark; // Used only in CUDA path for warmup
     let infer_start = Instant::now();
-    let mut cpu_model = model;
+    let cpu_model = model;
 
     // Check if tracing is enabled
     let trace_enabled = trace_options.map_or(false, |o| o.trace);

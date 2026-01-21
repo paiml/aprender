@@ -1177,10 +1177,10 @@ fn generate_causal_mask_into(size: usize, data: &mut [f32]) {
 
 /// Generate causal attention mask as a Tensor (for tests).
 #[cfg(test)]
-fn generate_causal_mask(size: usize) -> crate::autograd::Tensor {
+fn generate_causal_mask(size: usize) -> Tensor {
     let mut data = vec![0.0f32; size * size];
     generate_causal_mask_into(size, &mut data);
-    crate::autograd::Tensor::new(&data, &[size, size])
+    Tensor::new(&data, &[size, size])
 }
 
 /// Find index of maximum value.

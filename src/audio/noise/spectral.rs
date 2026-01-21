@@ -641,6 +641,6 @@ mod tests {
     fn test_forward_wrong_config_dim() {
         let model = SpectralMLP::random_init(8, 64, 513, 42);
         let wrong_config = vec![0.5; 4]; // Wrong dimension
-        model.forward(&wrong_config);
+        let _ = model.forward(&wrong_config);
     }
 }

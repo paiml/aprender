@@ -386,7 +386,7 @@ fn extract_json_string(json: &str, key: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
+    
     use tempfile::NamedTempFile;
 
     #[test]
@@ -590,7 +590,7 @@ mod tests {
         let mut set = GoldenTraceSet::new("qwen2", "TestModel");
         set.add_trace(GoldenTrace::new("t1", vec![1, 2], vec![0.1]));
 
-        let mut temp = NamedTempFile::new().expect("create temp");
+        let temp = NamedTempFile::new().expect("create temp");
         let path = temp.path().to_path_buf();
 
         // Save
