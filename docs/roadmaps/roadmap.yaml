@@ -1739,3 +1739,35 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-089
+  github_issue: null
+  item_type: task
+  title: 'F-CLI-006-REGRESSION: apr check subcommand missing from binary'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-01-21T19:01:41Z
+  updated: 2026-01-21T19:01:41Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-090
+  github_issue: null
+  item_type: task
+  title: 'PAR-303-REGRESSION: 0.5B model produces incoherent gibberish output'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-01-21T19:02:15Z
+  updated: 2026-01-21T19:02:15Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
