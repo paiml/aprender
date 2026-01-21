@@ -1524,8 +1524,8 @@ roadmap:
   spec: null
   acceptance_criteria:
   - Implement PAR-301 (SafeTensors) and PAR-302 (APR) format inference in realizar
-  - 'PAR-301: SafeTensors /v1/chat/completions with SSE streaming'
-  - 'PAR-302: APR format /v1/chat/completions with SSE streaming (CPU and GPU)'
+  - PAR-301: SafeTensors /v1/chat/completions with SSE streaming
+  - PAR-302: APR format /v1/chat/completions with SSE streaming (CPU and GPU)
   phases: []
   subtasks: []
   estimated_effort: 2h
@@ -1598,61 +1598,3 @@ roadmap:
   notes: |
     Released 2026-01-20: apr-cli v0.2.10 published to crates.io
     Verified: cargo install apr-cli installs and runs correctly
-- id: PMAT-083
-  github_issue: null
-  item_type: task
-  title: PMAT-COMPLY-001
-  status: completed
-  priority: high
-  assigned_to: null
-  created: 2026-01-21T16:38:40Z
-  updated: 2026-01-21T16:41:40.297300390+00:00
-  spec: null
-  acceptance_criteria:
-  - 'Fix all PMAT compliance warnings: missing .pmat-metrics.toml, O(1) hooks cache, file health analysis'
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels:
-  - compliance
-  - pmat
-  notes: null
-- id: PMAT-084
-  github_issue: null
-  item_type: task
-  title: 'FILE-HEALTH-001: Refactor large files to improve code health'
-  status: completed
-  priority: critical
-  assigned_to: null
-  created: 2026-01-21T16:42:33Z
-  updated: 2026-01-21T16:47:22.466235283+00:00
-  spec: null
-  acceptance_criteria:
-  - 'Split 20 files >2000 lines into smaller modules. Target: all files <2000 lines, avg health >85%'
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels:
-  - refactoring
-  - file-health
-  - pmat
-  notes: null
-- id: PMAT-085
-  github_issue: null
-  item_type: task
-  title: 'FILE-HEALTH-002: Split optim/mod.rs into submodules'
-  status: inprogress
-  priority: critical
-  assigned_to: null
-  created: 2026-01-21T16:49:43Z
-  updated: 2026-01-21T16:49:49.584195704+00:00
-  spec: null
-  acceptance_criteria:
-  - Extract optimizers into separate files to reduce optim/mod.rs from 7090 to <2000 lines
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels:
-  - refactoring
-  - file-health
-  notes: null

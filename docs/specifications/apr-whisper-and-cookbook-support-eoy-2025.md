@@ -2347,6 +2347,29 @@ fn y1_apr_loads_via_realizar_mmap() {
 
 ### 16. Verification Findings
 *(This section is updated by the CI/CD pipeline)*
+- **2026-01-21**: ❌ **SafeTensors Inference FALSIFIED (T-QA-019b)**
+  - **Status**: **NOT PRODUCTION GRADE** - Scientific falsification complete
+  - **Model**: Qwen2.5-Coder-1.5B-Instruct (2.9GB BF16)
+  - **Critical Failure**: First token latency >10 seconds (requirement: <2s)
+  - **Root Cause**: `safetensors_infer.rs:40` uses `std::fs::read()` instead of mmap
+  - **Comparison**: GGUF achieves 1.16s first token via `memmap2::Mmap`
+  - **Five Whys**:
+    1. Timeout → First token >10s
+    2. Slow → Full 2.9GB file read blocks startup
+    3. Full read → `std::fs::read(model_path)` in `SafetensorsToAprConverter::convert()`
+    4. No mmap → `SafetensorsModel::from_bytes()` requires `&[u8]`
+    5. Implementation gap → No `MappedSafetensorsModel` equivalent to `MappedGGUFModel`
+  - **Memory**: 15.3GB RSS for 2.9GB model (5x spike during BF16→F32 conversion)
+  - **Remediation Required**: Implement `MappedSafetensorsModel` with `memmap2::Mmap`
+  - **Report**: `docs/benchmarks/SAFETENSORS_FALSIFICATION_REPORT.md`
+- **2026-01-21**: ⚠️ **Live SafeTensors Server Startup: PASSED (T-QA-019)**
+  - **Model**: Qwen2.5-Coder-1.5B-Instruct (2.9GB BF16)
+  - **Tokenizer**: Loaded from sibling `tokenizer.json` ✅
+  - **Tensors**: 338 tensors loaded ✅
+  - **Inference**: 28 layers, hidden_dim=1536 ✅
+  - **Endpoint**: `/v1/chat/completions` available (PAR-301) ✅
+  - **Health**: `{"inference_enabled":true,"status":"healthy"}`
+  - **Note**: Server starts but inference performance is NOT production-ready
 - **2025-12-30**: ✅ **SPEC 100% COMPLETE: 410/410 verification points**
   - Section 19 (Z1-Z10): High-Performance APR Inference verified
   - Qwen2-0.5B-Instruct: Import infrastructure complete (232 spec tests pass)
