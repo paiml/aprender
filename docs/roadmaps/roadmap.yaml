@@ -1811,3 +1811,27 @@ roadmap:
 
     Note: This is a REALIZAR issue, not APRENDER. apr serve correctly delegates
     to realizar::api::create_router() but traces don't appear in responses.
+- id: PMAT-092
+  github_issue: null
+  item_type: task
+  title: 'PMAT-092: Fix empty stop_tokens in GPU chat completions path causing multi-turn loop'
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-01-21T22:44:48Z
+  updated: 2026-01-21T22:50:00Z
+  spec: null
+  acceptance_criteria:
+  - Model stops at EOS token instead of generating fake Human/Assistant turns
+  - No multi-turn conversation loops in chat completions
+  phases: []
+  subtasks: []
+  estimated_effort: 30m
+  labels:
+  - realizar
+  - bug
+  notes: |
+    Fixed in realizar commit 95bff6d.
+    Root cause: GPU path had `stop_tokens: Vec::new()` causing model to generate
+    beyond EOS, creating fake "Human:" and "Assistant:" turns.
+    Fix: Added EOS token lookup (<|im_end|> or <|endoftext|>, fallback 151645).
