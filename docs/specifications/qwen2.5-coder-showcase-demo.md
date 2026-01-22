@@ -1,10 +1,10 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 7.15.0
+**Version:** 7.16.0
 **Status:** FORMAT PARITY VERIFIED — GGUF, SafeTensors, and APR v2 all produce correct output
 **Author:** PAIML Engineering
 **Date:** 2026-01-22
-**Latest Update:** PMAT-099 APR token decode fix — special tokens now included in vocabulary
+**Latest Update:** PMAT-100 GPU trace paths fix — all 21/21 QA tests pass
 **PMAT Roadmap ID:** `SHOWCASE-BRICK-001`
 **Issue:** `APR-REALIZE-001`
 
@@ -46,6 +46,9 @@ We accept $H_1$ strictly provisionally. As of **2026-01-20**, the previous falsi
     *   *Implementation:* Added trace support to all code paths (GPU, CUDA, cached, quantized, registry).
     *   *Trace Levels:* brick (token ops), step (forward pass), layer (per-layer timing).
     *   *Verification:* X-Trace-Level header now populates `brick_trace`/`step_trace`/`layer_trace` fields.
+    *   *Update (2026-01-22):* Fixed GPU paths that were returning `None` for trace fields. All 4 GPU
+        code paths (non-batched, cached, CUDA optimized, quantized) now use `build_trace_data()` helper.
+    *   *QA Result:* F-TRACE-001/002/003 tests now pass (21/21 total).
 
 4.  ✅ **PAR-502 (CUDA PTX Shared Memory Overflow) FIXED:** 7B/32B models now use chunked kernel.
     *   *Root Cause:* `tiled_q4k_gemv` kernel uses K×4 bytes shared memory, overflow for K>25600.
@@ -118,7 +121,7 @@ We accept $H_1$ strictly provisionally. As of **2026-01-20**, the previous falsi
         - **1.5B GGUF**: ✅ "Hello! How can I help you today?" — coherent output
         - **1.5B SafeTensors**: ✅ "4" — correct math answer
         - **Format Parity Test**: Both formats produce identical correct output for "What is 2+2?"
-        - **QA Falsification**: 18/21 tests pass (3 trace tests pending implementation)
+        - **QA Falsification**: 21/21 tests pass (trace tests fixed in PMAT-100)
 
 9.  ⚠️ **PMAT-097 (0.5B Model Garbage) UNDER INVESTIGATION:** Small model produces incoherent output.
     *   *Symptom:* 0.5B GGUF model produces garbage like "åĨħ3lesc çèį£" for simple prompts.
