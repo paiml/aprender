@@ -52,6 +52,35 @@ We accept $H_1$ strictly provisionally. As of **2026-01-20**, the previous falsi
     *   *Fix:* Modified realizar/src/cuda.rs to dispatch to `ChunkedTiledQ4KGemvKernel` when K>25600.
     *   *Threshold:* `const MAX_TILED_K: u32 = 25_600` (100KB / 4 bytes = 25,600 floats).
 
+### ✅ FIXED BLOCKING ISSUES (2026-01-22) — Five-Whys Analysis
+
+5.  ✅ **PMAT-094 (SafeTensors Inference Garbage Output) FIXED:** RMSNorm vs LayerNorm mismatch.
+    *   *Symptom:* SafeTensors inference produced garbage like "WhatĠisĠ2+2??" (echoing input with BPE artifacts).
+    *   *Five-Whys Analysis:*
+        1.  **Why garbage output?** → Logits not meaningful for new tokens
+        2.  **Why not meaningful?** → Hidden states corrupted after layer normalization
+        3.  **Why corrupted?** → Using LayerNorm instead of RMSNorm
+        4.  **Why LayerNorm?** → `layer_norm` function subtracts mean (LayerNorm), but Qwen2 requires RMSNorm
+        5.  **Why no RMSNorm?** → Original implementation used generic LayerNorm formula
+    *   *Root Cause:* `AprTransformer::layer_norm()` in `realizar/src/apr_transformer.rs` computed:
+        ```
+        LayerNorm: (x - mean) / sqrt(var + eps) * weight  ← WRONG for Qwen2
+        ```
+        But Qwen2, LLaMA, Mistral use RMSNorm:
+        ```
+        RMSNorm: x / sqrt(mean(x^2) + eps) * weight  ← CORRECT
+        ```
+    *   *Fix:* Changed `layer_norm` to compute RMS without mean subtraction.
+    *   *Verification:* 392 tests pass in `apr_transformer` module.
+    *   *File:* `realizar/src/apr_transformer.rs:1632-1672`
+
+6.  ✅ **PMAT-804 (APR v1 Format Detection) FIXED:** Clear error for APR v1 files.
+    *   *Symptom:* APR v1 files (Whisper models) produced confusing errors like "metadata extends to 6442450996249".
+    *   *Root Cause:* APR v1 (magic "APR1") has different header layout than APR v2 (magic "APR2" or "APR\0").
+    *   *Fix:* Added explicit check for APR v1 version byte and return helpful error message.
+    *   *Error Message:* "APR v1 format not supported for inference. Use 'apr convert' or GGUF."
+    *   *File:* `realizar/src/apr.rs:594-603`
+
 ## Resolved Issues — ✅ VERIFIED
 
 3.  ⚠️ **PAR-303 (0.5B Coherency) RECLASSIFIED (2026-01-21):** Model capacity limitation, not code bug.

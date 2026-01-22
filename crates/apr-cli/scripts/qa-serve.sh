@@ -129,10 +129,10 @@ start_server() {
         return 0
     fi
 
-    # PAR-301 Check
+    # PMAT-094 Check: SafeTensors now working (RMSNorm fix applied 2026-01-22)
     if [[ "${MODEL_PATH}" == *.safetensors ]]; then
-        print_color "${YELLOW}" "WARNING: PAR-301 SafeTensors support is currently BROKEN."
-        print_color "${YELLOW}" "Expect immediate failure."
+        print_color "${GREEN}" "INFO: SafeTensors inference enabled (PMAT-094 RMSNorm fix applied)."
+        print_color "${YELLOW}" "Note: SafeTensors CPU inference is slower than GGUF (~0.4 tok/s vs 30+ tok/s)."
     fi
 
     print_color "${BLUE}" "Starting apr serve with model: ${MODEL_PATH} (GPU enabled)"
