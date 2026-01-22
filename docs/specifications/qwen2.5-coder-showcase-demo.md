@@ -1,9 +1,9 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 7.10.0
+**Version:** 7.11.0
 **Status:** PARTIAL — 0.5B Model Capacity Issue (Not Code Bug), CLI Verified Working
 **Author:** PAIML Engineering
-**Date:** 2026-01-21
+**Date:** 2026-01-22
 **PMAT Roadmap ID:** `SHOWCASE-BRICK-001`
 **Issue:** `APR-REALIZE-001`
 
@@ -80,6 +80,25 @@ We accept $H_1$ strictly provisionally. As of **2026-01-20**, the previous falsi
     *   *Fix:* Added explicit check for APR v1 version byte and return helpful error message.
     *   *Error Message:* "APR v1 format not supported for inference. Use 'apr convert' or GGUF."
     *   *File:* `realizar/src/apr.rs:594-603`
+
+7.  ✅ **PMAT-095 (SafeTensors 75x Performance Gap) FIXED:** Eliminated O(n²) weight transposition.
+    *   *Symptom:* SafeTensors inference at ~0.4 tok/s while GGUF achieved 30+ tok/s (75x slower).
+    *   *Five-Whys Analysis:*
+        1.  **Why 75x slower?** → F32 matmul dominated by O(n²) weight transposition
+        2.  **Why transposition?** → `matmul()` transposes weights before SIMD matvec
+        3.  **Why transpose every call?** → Logic bug: "fast path" condition unreachable
+        4.  **Why unreachable?** → `weight.len() == in_dim * out_dim` same as `out_dim * in_dim` (commutative!)
+        5.  **Why same condition?** → Original implementation error - both branches check identical condition
+    *   *Root Cause:* Double transposition bug:
+        - `SafetensorsToAprConverter`: Transposed HuggingFace [out, in] → APR [in, out]
+        - `matmul()`: Transposed APR [in, out] → trueno [out, in] **on every forward pass**
+        - Net effect: O(n²) transposition executed for every matmul, every layer, every token
+    *   *Fix:* Kept HuggingFace [out_dim, in_dim] layout directly, matmul uses it without transposition.
+    *   *Result:* SafeTensors now ~1.1 tok/s (0.5B model), still slower than GGUF Q4_K ~1.7 tok/s due to F32 vs quantized.
+    *   *Files:*
+        - `realizar/src/safetensors_infer.rs:206-241` (removed transpose)
+        - `realizar/src/apr_transformer.rs:1674-1726` (fixed matmul layout)
+    *   *Verification:* 392 tests pass in `apr_transformer`, SafeTensors produces correct output.
 
 ## Resolved Issues — ✅ VERIFIED
 

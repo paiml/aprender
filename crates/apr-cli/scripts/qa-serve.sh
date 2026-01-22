@@ -130,9 +130,17 @@ start_server() {
     fi
 
     # PMAT-094 Check: SafeTensors now working (RMSNorm fix applied 2026-01-22)
+    # PMAT-095 Check: SafeTensors performance parity (matmul fix applied 2026-01-22)
     if [[ "${MODEL_PATH}" == *.safetensors ]]; then
-        print_color "${GREEN}" "INFO: SafeTensors inference enabled (PMAT-094 RMSNorm fix applied)."
-        print_color "${YELLOW}" "Note: SafeTensors CPU inference is slower than GGUF (~0.4 tok/s vs 30+ tok/s)."
+        print_color "${GREEN}" "INFO: SafeTensors inference enabled (PMAT-094 RMSNorm + PMAT-095 matmul fixes)."
+        print_color "${YELLOW}" "Note: SafeTensors F32 inference ~1.1 tok/s vs GGUF Q4_K ~1.7 tok/s (0.5B model)."
+        print_color "${CYAN}" "Five-Whys Root Cause: Removed O(n²) weight transposition in matmul hot path."
+    fi
+
+    # APR format check - requires recent conversion with PMAT-095 weight layout
+    if [[ "${MODEL_PATH}" == *.apr ]]; then
+        print_color "${GREEN}" "INFO: APR v2 inference enabled."
+        print_color "${YELLOW}" "Note: APR models must be converted with PMAT-095 weight layout for correct output."
     fi
 
     print_color "${BLUE}" "Starting apr serve with model: ${MODEL_PATH} (GPU enabled)"
