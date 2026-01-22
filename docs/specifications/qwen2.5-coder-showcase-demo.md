@@ -1,10 +1,10 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 7.25.0
-**Status:** NATIVE Q4_K FUNCTIONAL — Storage parity achieved, Fused Kernel Protocol specified.
+**Version:** 7.26.0
+**Status:** ARCHITECTURE LOCKED — Verification Roadmap Complete.
 **Author:** PAIML Engineering
 **Date:** 2026-01-22
-**Latest Update:** Added Section 12 "Fused Kernel Protocol (F-GPU-130)" specifying `matmul_q4k_f32` interface, Golden Test invariant, and performance falsification criteria. Links to PMAT-103 milestones.
+**Latest Update:** F-GPU-130a/b COMPLETE. Fused Q4K kernel implemented in `trueno/src/backends/q4k.rs` with passing golden parity test. Pending: trueno 0.14.0 release and realizar integration for >5 tok/s target.
 **QA Scripts:** `qa-serve.sh` (21/21), `qa-chat.sh` (5/5), `qa-run.sh` (19/21 - 2 perf failures)
 **PMAT Roadmap ID:** `SHOWCASE-BRICK-001`
 **Issue:** `APR-REALIZE-001`
@@ -930,20 +930,20 @@ pub async fn execute(args: RunArgs) -> Result<()> {
 - [ ] **F-GGUF-060**: Same output as llama.cpp (deterministic)
 
 #### II-B: APR Support (15 pts)
-- [ ] **F-APR-061**: Load APR format
-- [ ] **F-APR-062**: Load INT4 quantized tensors
-- [ ] **F-APR-063**: Load INT8 quantized tensors
+- [x] **F-APR-061**: Load APR format ✅
+- [x] **F-APR-062**: Load INT4 quantized tensors (Q4_K) ✅
+- [ ] **F-APR-063**: Load INT8 quantized tensors (Q8_0)
 - [ ] **F-APR-064**: Load F16 tensors
-- [ ] **F-APR-065**: Load F32 tensors
-- [ ] **F-APR-066**: Read APR metadata
+- [x] **F-APR-065**: Load F32 tensors ✅
+- [x] **F-APR-066**: Read APR metadata ✅
 - [ ] **F-APR-067**: Handle compression (LZ4, ZSTD)
-- [ ] **F-APR-068**: Auto-dequantize to F32
-- [ ] **F-APR-069**: Tensor name mapping works
-- [ ] **F-APR-070**: Error on corrupted bundle
-- [ ] **F-APR-071**: Error on invalid magic bytes
+- [x] **F-APR-068**: Auto-dequantize to F32 (Load-time) ✅
+- [x] **F-APR-069**: Tensor name mapping works ✅
+- [x] **F-APR-070**: Error on corrupted bundle ✅
+- [x] **F-APR-071**: Error on invalid magic bytes ✅
 - [ ] **F-APR-072**: Support streaming read
-- [ ] **F-APR-073**: Validate checksums
-- [ ] **F-APR-074**: Same output as GGUF (same model)
+- [x] **F-APR-073**: Validate checksums ✅
+- [x] **F-APR-074**: Same output as GGUF (Golden Parity) ✅ **VERIFIED CORRECT**
 - [ ] **F-APR-075**: APR → GGUF round-trip preserves accuracy
 
 #### II-C: SafeTensors Support (15 pts)
@@ -986,7 +986,8 @@ pub async fn execute(args: RunArgs) -> Result<()> {
 - [ ] **F-CPU-108**: Works on Linux x86_64
 - [ ] **F-CPU-109**: Works on macOS ARM64
 - [ ] **F-CPU-110**: Works on Windows x86_64
-- [ ] **F-CPU-111**: Q4_K dequantization correct
+- [x] **F-CPU-111**: Q4_K dequantization correct ✅ **VERIFIED (Load-path)**
+- [ ] **F-CPU-111b**: Q4_K dequantization correct (Fused-path) ⏳ **PENDING F-GPU-130**
 - [ ] **F-CPU-112**: Q6_K dequantization correct
 - [ ] **F-CPU-113**: F16→F32 conversion correct
 - [ ] **F-CPU-114**: RMSNorm numerically stable
@@ -1510,13 +1511,34 @@ This protocol directly addresses the performance gap identified in PMAT-103:
 
 ### 12.8 Acceptance Criteria (Definition of Done)
 
-- [ ] **F-GPU-130a:** `matmul_q4k_f32` implemented in `trueno/src/simd/q4k.rs`
-- [ ] **F-GPU-130b:** Golden parity test passes (±1e-3 tolerance)
+- [x] **F-GPU-130a:** `matmul_q4k_f32` implemented in `trueno/src/backends/q4k.rs`
+- [x] **F-GPU-130b:** Golden parity test passes (±1e-3 tolerance)
 - [ ] **F-GPU-130c:** Throughput >5 tok/s on Qwen2-0.5B (CPU)
 - [ ] **F-GPU-130d:** Memory usage <800 MB during inference
 - [ ] **F-GPU-130e:** No regression in model output quality
 - [ ] **F-GPU-130f:** CUDA PTX variant achieves >100 tok/s
 - [ ] **F-GPU-130g:** Integration with `realizar` inference path
+
+### 12.9 Implementation Status (2026-01-23)
+
+**Completed:**
+- Scalar reference: `trueno/src/backends/q4k.rs::matmul_q4k_f32_scalar`
+- 4-way unrolled: `trueno/src/backends/q4k.rs::matmul_q4k_f32`
+- Golden parity test: `test_fused_q4k_golden_parity` passes
+- Commit: `b906642` (trueno main)
+
+**Pending Integration (requires trueno 0.14.0 release):**
+1. Publish trueno with `backends::q4k` module
+2. Modify realizar to store Q4K raw bytes instead of dequantizing
+3. Dispatch fused kernel during matmul operations
+
+### 12.10 Performance Falsification Matrix
+
+| Metric | Baseline (Deq+F32) | Target (Fused) | Falsification Criteria |
+|--------|-------------------|----------------|------------------------|
+| **Throughput** | 0.27 tok/s | **> 5.0 tok/s** | $< 5.0$ tok/s |
+| **Memory** | ~1.8 GB (peak) | **< 800 MB** | $> 800$ MB |
+| **TTFT** | ~4.0 s | **< 1.0 s** | $> 1.0$ s |
 
 ---
 
