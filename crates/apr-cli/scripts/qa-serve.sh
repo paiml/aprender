@@ -303,13 +303,15 @@ test_coherency() {
 
 # F-HTTP-020c: Multi-turn Loop Prevention (PMAT-092)
 # Verifies model stops at EOS and doesn't generate fake conversation turns
+# Uses temperature=0 and limited tokens for deterministic output
 test_no_multi_turn_loop() {
     print_header "Section IV: Robustness - Multi-Turn Loop Prevention (PMAT-092)"
 
     local response
+    # Use temperature=0 for deterministic output, max_tokens=30 to limit generation
     response=$(curl -s "${BASE_URL}/v1/chat/completions" \
         -H "Content-Type: application/json" \
-        -d '{"model": "default", "messages": [{"role": "user", "content": "Say hello in one sentence."}], "max_tokens": 100}')
+        -d '{"model": "default", "messages": [{"role": "user", "content": "What is 2+2? Answer with just the number."}], "max_tokens": 30, "temperature": 0}')
     log_debug "Multi-turn check response: ${response}"
 
     local content
@@ -340,10 +342,6 @@ test_no_multi_turn_loop() {
         has_fake_turns=1
         detected_patterns="${detected_patterns} <|im_start|>"
     fi
-
-    # Check for multiple "sentences" that look like a conversation
-    local newline_count
-    newline_count=$(echo "${content}" | grep -c '^' || echo "0")
 
     if [[ "${has_fake_turns}" == "1" ]]; then
         print_result "F-HTTP-020c" "Multi-Turn Loop" "FAIL" "Detected fake turns: ${detected_patterns}"

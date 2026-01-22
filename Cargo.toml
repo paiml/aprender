@@ -258,5 +258,7 @@ codegen-units = 1
 debug = true  # Enable debug info for flamegraph/profiling
 
 # CORRECTNESS-013: Override trueno-gpu with local version for PreciseRmsNormKernel
+# PMAT-088: Override realizar with local version for clean_chat_output fix
 [patch.crates-io]
 trueno-gpu = { path = "../trueno/trueno-gpu" }
+realizar = { path = "../realizar" }
