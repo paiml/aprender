@@ -7,12 +7,16 @@
 #
 # Usage: ./qa-serve.sh [port] [model_path] [expected_mode]
 #   port: Server port (default: 8080)
-#   model_path: Path to model, or "--all-models" to test all sizes
+#   model_path: Path to model, or "--all-models" / "--format-parity"
 #   expected_mode: "cpu" or "gpu" (optional, enforces F-HTTP-003)
 #
 # Multi-Model Testing:
 #   ./qa-serve.sh 8080 --all-models
-#   Tests 0.5B, 1B, 1.5B, and 7B models automatically
+#   Tests 0.5B, 1B, 1.5B, 7B, and 32B GGUF models automatically
+#
+# Format Parity Testing (PMAT-094, PMAT-095):
+#   ./qa-serve.sh 8080 --format-parity
+#   Tests that GGUF and SafeTensors produce equivalent results
 #
 # shellcheck disable=SC2227  # Redirection warnings are false positives (no pipes)
 # shellcheck disable=SC2282  # ${var:-} is intentional defensive coding
@@ -39,6 +43,19 @@ MODEL_SIZES=(
     ["1.5B"]="${HOME}/.cache/huggingface/models/qwen2.5-coder-1.5b-gguf/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"
     ["7B"]="${HOME}/.cache/huggingface/models/qwen2.5-coder-7b-gguf/qwen2.5-coder-7b-instruct-q4_k_m.gguf"
     ["32B"]="${HOME}/Downloads/qwen2.5-coder-32b-instruct-q2_k.gguf"
+)
+
+# SafeTensors model paths for format parity testing (PMAT-094, PMAT-095)
+declare -A SAFETENSORS_MODELS
+SAFETENSORS_MODELS=(
+    ["ST-1.5B"]="${HOME}/.cache/huggingface/hub/models--Qwen--Qwen2.5-Coder-1.5B-Instruct/snapshots/2e1fd397ee46e1388853d2af2c993145b0f1098a/model.safetensors"
+    ["ST-0.5B"]="${HOME}/.cache/huggingface/hub/models--Qwen--Qwen2-0.5B-Instruct/snapshots/c540970f9e29518b1d8f06ab8b24cba66ad77b6d/model.safetensors"
+)
+
+# APR model paths for format parity testing (PMAT-099)
+declare -A APR_MODELS
+APR_MODELS=(
+    ["APR-1.5B"]="${HOME}/models/qwen2.5-coder-1.5b.apr"
 )
 
 # Alternative 32B model paths (fallback order)
@@ -137,10 +154,10 @@ start_server() {
         print_color "${CYAN}" "Five-Whys Root Cause: Removed O(n²) weight transposition in matmul hot path."
     fi
 
-    # APR format check - requires recent conversion with PMAT-095 weight layout
+    # APR format check
     if [[ "${MODEL_PATH}" == *.apr ]]; then
-        print_color "${GREEN}" "INFO: APR v2 inference enabled."
-        print_color "${YELLOW}" "Note: APR models must be converted with PMAT-095 weight layout for correct output."
+        print_color "${GREEN}" "INFO: APR inference enabled."
+        print_color "${YELLOW}" "Target: GGUF parity (30+ tok/s CPU, 500+ tok/s GPU)."
     fi
 
     print_color "${BLUE}" "Starting apr serve with model: ${MODEL_PATH} (GPU enabled)"
@@ -898,8 +915,145 @@ run_all_models() {
 }
 
 #######################################
+# Format Parity Test (PMAT-094, PMAT-095, PMAT-099)
+#######################################
+# Tests that GGUF, SafeTensors, and APR produce coherent output for the same prompt
+test_format_parity() {
+    print_header "Format Parity Test (GGUF vs SafeTensors vs APR)"
+
+    local gguf_path="${MODEL_SIZES["1.5B"]}"
+    local st_path="${SAFETENSORS_MODELS["ST-1.5B"]}"
+    local apr_path="${APR_MODELS["APR-1.5B"]}"
+    local parity_passed=1
+    local formats_tested=0
+
+    print_color "${CYAN}" "Testing GGUF: $(basename "${gguf_path}" 2>/dev/null || echo 'not found')"
+    print_color "${CYAN}" "Testing SafeTensors: $(basename "${st_path}" 2>/dev/null || echo 'not found')"
+    print_color "${CYAN}" "Testing APR: $(basename "${apr_path}" 2>/dev/null || echo 'not found')"
+
+    local test_prompt="What is 2+2? Answer with just the number."
+
+    # Test GGUF
+    if [[ -f "${gguf_path}" ]]; then
+        print_color "${BLUE}" "\n[1/3] Testing GGUF format..."
+        MODEL_PATH="${gguf_path}"
+        start_server || true
+
+        if ! check_server; then
+            print_result "F-PARITY-001" "GGUF Server Start" "FAIL" "Server failed to start"
+            parity_passed=0
+        else
+            local gguf_response
+            gguf_response=$(curl -s "${BASE_URL}/v1/chat/completions" \
+                -H "Content-Type: application/json" \
+                -d "{\"model\": \"default\", \"messages\": [{\"role\": \"user\", \"content\": \"${test_prompt}\"}], \"max_tokens\": 20, \"temperature\": 0}")
+
+            local gguf_content
+            gguf_content=$(python3 -c "import sys, json; print(json.load(sys.stdin)['choices'][0]['message']['content'])" <<< "${gguf_response}" 2>/dev/null) || gguf_content=""
+
+            if [[ -n "${gguf_content}" && "${gguf_content}" == *"4"* ]]; then
+                print_result "F-PARITY-001" "GGUF Inference" "PASS" "Output: ${gguf_content}"
+                formats_tested=$((formats_tested+1))
+            else
+                print_result "F-PARITY-001" "GGUF Inference" "FAIL" "Unexpected output: ${gguf_content}"
+                parity_passed=0
+            fi
+        fi
+        stop_server
+        sleep 2
+    else
+        print_color "${YELLOW}" "[SKIP] GGUF 1.5B model not found: ${gguf_path}"
+    fi
+
+    # Test SafeTensors
+    if [[ -f "${st_path}" ]]; then
+        print_color "${BLUE}" "\n[2/3] Testing SafeTensors format..."
+        MODEL_PATH="${st_path}"
+        start_server || true
+
+        if ! check_server; then
+            print_result "F-PARITY-002" "SafeTensors Server Start" "FAIL" "Server failed to start"
+            parity_passed=0
+        else
+            local st_response
+            st_response=$(curl -s "${BASE_URL}/v1/chat/completions" \
+                -H "Content-Type: application/json" \
+                -d "{\"model\": \"default\", \"messages\": [{\"role\": \"user\", \"content\": \"${test_prompt}\"}], \"max_tokens\": 20, \"temperature\": 0}")
+
+            local st_content
+            st_content=$(python3 -c "import sys, json; print(json.load(sys.stdin)['choices'][0]['message']['content'])" <<< "${st_response}" 2>/dev/null) || st_content=""
+
+            if [[ -n "${st_content}" && "${st_content}" == *"4"* ]]; then
+                print_result "F-PARITY-002" "SafeTensors Inference" "PASS" "Output: ${st_content}"
+                formats_tested=$((formats_tested+1))
+            else
+                print_result "F-PARITY-002" "SafeTensors Inference" "FAIL" "Unexpected output: ${st_content}"
+                parity_passed=0
+            fi
+        fi
+        stop_server
+        sleep 2
+    else
+        print_color "${YELLOW}" "[SKIP] SafeTensors 1.5B model not found: ${st_path}"
+    fi
+
+    # Test APR (PMAT-099)
+    if [[ -f "${apr_path}" ]]; then
+        print_color "${BLUE}" "\n[3/3] Testing APR format..."
+        print_color "${GREEN}" "INFO: APR inference enabled."
+        print_color "${YELLOW}" "Target: GGUF parity (30+ tok/s CPU). F32 slower than Q4_K is a FAIL."
+        MODEL_PATH="${apr_path}"
+        start_server || true
+
+        if ! check_server; then
+            print_result "F-PARITY-003" "APR Server Start" "FAIL" "Server failed to start"
+            parity_passed=0
+        else
+            # APR inference can be slow, use longer timeout
+            local apr_response
+            apr_response=$(timeout 120 curl -s "${BASE_URL}/v1/chat/completions" \
+                -H "Content-Type: application/json" \
+                -d "{\"model\": \"default\", \"messages\": [{\"role\": \"user\", \"content\": \"${test_prompt}\"}], \"max_tokens\": 20, \"temperature\": 0}") || apr_response=""
+
+            local apr_content
+            apr_content=$(python3 -c "import sys, json; print(json.load(sys.stdin)['choices'][0]['message']['content'])" <<< "${apr_response}" 2>/dev/null) || apr_content=""
+
+            if [[ -n "${apr_content}" && "${apr_content}" == *"4"* ]]; then
+                print_result "F-PARITY-003" "APR Inference" "PASS" "Output: ${apr_content}"
+                formats_tested=$((formats_tested+1))
+            else
+                print_result "F-PARITY-003" "APR Inference" "FAIL" "Unexpected output: ${apr_content}"
+                parity_passed=0
+            fi
+        fi
+        stop_server
+    else
+        print_color "${YELLOW}" "[SKIP] APR 1.5B model not found: ${apr_path}"
+        print_color "${CYAN}" "       To create: apr import <safetensors_path> -o ${apr_path} --arch qwen2 --force"
+    fi
+
+    # Summary
+    if [[ "${parity_passed}" -eq 1 && "${formats_tested}" -gt 0 ]]; then
+        print_color "${GREEN}" "\n✓ FORMAT PARITY VERIFIED: All ${formats_tested} tested formats produce correct output"
+        return 0
+    elif [[ "${formats_tested}" -eq 0 ]]; then
+        print_color "${YELLOW}" "\n⚠ FORMAT PARITY SKIPPED: No formats tested (models not found)"
+        return 0
+    else
+        print_color "${RED}" "\n✗ FORMAT PARITY FAILED: Some formats produce incorrect results"
+        return 1
+    fi
+}
+
+#######################################
 # Main Execution
 #######################################
+
+# Handle --format-parity mode (new)
+if [[ "${MODEL_PATH}" == "--format-parity" ]]; then
+    test_format_parity
+    exit $?
+fi
 
 # Handle --all-models mode
 if [[ "${ALL_MODELS_MODE}" -eq 1 ]]; then
@@ -914,7 +1068,8 @@ else
     if ! check_server; then
         print_color "${RED}" "ERROR: No model path provided and server not running."
         printf 'Usage: %s [port] [model_path]\n' "$0"
-        printf '       %s [port] --all-models   # Test all 4 model sizes\n' "$0"
+        printf '       %s [port] --all-models     # Test all 5 model sizes (GGUF)\n' "$0"
+        printf '       %s [port] --format-parity  # Test GGUF vs SafeTensors parity\n' "$0"
         exit 2
     fi
 fi

@@ -1,10 +1,11 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 7.16.0
-**Status:** FORMAT PARITY VERIFIED — GGUF, SafeTensors, and APR v2 all produce correct output
+**Version:** 7.17.0
+**Status:** FORMAT PARITY VERIFIED — GGUF, SafeTensors, and APR all produce correct output
 **Author:** PAIML Engineering
 **Date:** 2026-01-22
-**Latest Update:** PMAT-100 GPU trace paths fix — all 21/21 QA tests pass
+**Latest Update:** Remove APR versioning (single format), require GGUF parity (30+ tok/s)
+**QA Scripts:** `qa-serve.sh`, `verify-chat-models.sh`
 **PMAT Roadmap ID:** `SHOWCASE-BRICK-001`
 **Issue:** `APR-REALIZE-001`
 
@@ -78,14 +79,7 @@ We accept $H_1$ strictly provisionally. As of **2026-01-20**, the previous falsi
     *   *Verification:* 392 tests pass in `apr_transformer` module.
     *   *File:* `realizar/src/apr_transformer.rs:1632-1672`
 
-6.  ✅ **PMAT-804 (APR v1 Format Detection) FIXED:** Clear error for APR v1 files.
-    *   *Symptom:* APR v1 files (Whisper models) produced confusing errors like "metadata extends to 6442450996249".
-    *   *Root Cause:* APR v1 (magic "APR1") has different header layout than APR v2 (magic "APR2" or "APR\0").
-    *   *Fix:* Added explicit check for APR v1 version byte and return helpful error message.
-    *   *Error Message:* "APR v1 format not supported for inference. Use 'apr convert' or GGUF."
-    *   *File:* `realizar/src/apr.rs:594-603`
-
-7.  ✅ **PMAT-095 (SafeTensors 75x Performance Gap) FIXED:** Eliminated O(n²) weight transposition.
+6.  ✅ **PMAT-095 (SafeTensors 75x Performance Gap) FIXED:** Eliminated O(n²) weight transposition.
     *   *Symptom:* SafeTensors inference at ~0.4 tok/s while GGUF achieved 30+ tok/s (75x slower).
     *   *Five-Whys Analysis:*
         1.  **Why 75x slower?** → F32 matmul dominated by O(n²) weight transposition
@@ -217,34 +211,38 @@ We accept $H_1$ strictly provisionally. As of **2026-01-20**, the previous falsi
 | Format | Model | Correctness | Performance | Status |
 |--------|-------|-------------|-------------|--------|
 | **GGUF Q4_K** | 1.5B | ✅ "4" | ~755 tok/s (GPU) | PRODUCTION |
-| **SafeTensors F32** | 1.5B | ✅ "4" | ~1 tok/s (CPU) | PRODUCTION |
-| **APR v2** | 1.5B | ✅ "4" | ~0.18 tok/s (CPU) | **PRODUCTION** |
+| **SafeTensors F32** | 1.5B | ✅ "4" | ~1 tok/s (CPU) | ⚠️ SLOW (F32) |
+| **APR** | 1.5B | ✅ "4" | ~0.18 tok/s (CPU) | ❌ **FAIL** (needs 30+ tok/s) |
+
+**Performance Targets (GGUF Parity Required):**
+- CPU: 30+ tok/s (1.5B Q4_K baseline)
+- GPU: 500+ tok/s (1.5B Q4_K baseline)
+- APR at 0.18 tok/s is **167x slower** than target — requires optimization
 
 **Test Command:**
 ```bash
 ./qa-serve.sh 8199 --format-parity  # Tests all 3 formats: GGUF vs SafeTensors vs APR
 ```
 
-**Key Findings (2026-01-22 — PMAT-099):**
-- **GGUF 1.5B**: ✅ Correct output "4", ~755 tok/s GPU
-- **SafeTensors 1.5B**: ✅ Correct output "4", ~1 tok/s CPU
-- **APR v2 1.5B**: ✅ Correct output "4", ~0.18 tok/s CPU
-- Format parity test: **ALL 3 FORMATS PASS**
-- Full QA suite (1.5B GGUF): 18/21 tests pass (3 trace tests pending)
+**Key Findings (2026-01-22):**
+- **GGUF 1.5B**: ✅ Correct output "4", ~755 tok/s GPU — **BASELINE**
+- **SafeTensors 1.5B**: ✅ Correct output "4", ~1 tok/s CPU — ⚠️ F32 overhead
+- **APR 1.5B**: ✅ Correct output "4", ~0.18 tok/s CPU — ❌ **FAIL** (167x below target)
+- Full QA suite: 21/21 tests pass
 
-**APR GPU Status:**
-- APR GPU path (`AprV2ModelCuda`) disabled due to tensor name mismatches
-- CPU path uses `AprTransformer` which correctly reads tensor names from APR metadata
-- GPU support tracked for future fix (tensor name mapping between APR and CUDA kernels)
+**APR Performance Gap (BLOCKING):**
+- Target: 30+ tok/s CPU (GGUF parity)
+- Actual: 0.18 tok/s CPU
+- Gap: **167x slower** — requires quantization or kernel optimization
 
-### APR v2 Format Summary
+### APR Format Summary
 
-The APR v2 format from SafeTensors now works correctly with these key fixes:
+The APR format works correctly with these key fixes:
 1. **PMAT-100**: Add `lm_head.weight` by copying `embed_tokens.weight` for tied embeddings
 2. **PMAT-101**: Pre-fuse QKV as `qkv_proj.weight` in `[qkv_dim, hidden_dim]` layout
-3. **PMAT-099**: Include `added_tokens` in vocabulary for proper decode of special tokens (151643+)
+3. **PMAT-099**: Include `added_tokens` in vocabulary for proper decode of special tokens
 
-**Tensor Structure (APR v2 from SafeTensors):**
+**Tensor Structure (APR from SafeTensors):**
 - 283 tensors total (28 layers × QKV fused + other weights + lm_head)
 - `model.embed_tokens.weight`: [151936, 1536]
 - `lm_head.weight`: [151936, 1536] (copied from embed_tokens for tied embeddings)
@@ -813,7 +811,7 @@ pub async fn execute(args: RunArgs) -> Result<()> {
 - [ ] **F-GGUF-060**: Same output as llama.cpp (deterministic)
 
 #### II-B: APR Support (15 pts)
-- [ ] **F-APR-061**: Load APR v2 format
+- [ ] **F-APR-061**: Load APR format
 - [ ] **F-APR-062**: Load INT4 quantized tensors
 - [ ] **F-APR-063**: Load INT8 quantized tensors
 - [ ] **F-APR-064**: Load F16 tensors
@@ -823,7 +821,7 @@ pub async fn execute(args: RunArgs) -> Result<()> {
 - [ ] **F-APR-068**: Auto-dequantize to F32
 - [ ] **F-APR-069**: Tensor name mapping works
 - [ ] **F-APR-070**: Error on corrupted bundle
-- [ ] **F-APR-071**: Error on version mismatch
+- [ ] **F-APR-071**: Error on invalid magic bytes
 - [ ] **F-APR-072**: Support streaming read
 - [ ] **F-APR-073**: Validate checksums
 - [ ] **F-APR-074**: Same output as GGUF (same model)
