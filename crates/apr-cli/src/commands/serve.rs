@@ -979,20 +979,42 @@ fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
         );
     }
 
-    // Load tokenizer if available
-    let tokenizer_info = AprModel::load_tokenizer_from_sibling(model_path);
-    let has_tokenizer = tokenizer_info.is_some();
+    // Load tokenizer if available - prefer BPE tokenizer from tokenizer.json
+    // PMAT-098: Use proper BPE tokenizer (same as SafeTensors path)
+    let tokenizer_json_path = model_path.with_file_name("tokenizer.json");
+    let bpe_tokenizer = if tokenizer_json_path.exists() {
+        load_safetensors_tokenizer(&tokenizer_json_path)
+    } else {
+        None
+    };
+
+    let has_tokenizer = bpe_tokenizer.is_some();
     if has_tokenizer {
-        println!("{}", "Tokenizer loaded from sibling file".dimmed());
+        println!("{}", "BPE tokenizer loaded from tokenizer.json".green());
+    } else {
+        println!(
+            "{}",
+            "No tokenizer.json found - using fallback tokenization".yellow()
+        );
     }
 
     // Determine GPU vs CPU mode
+    // PMAT-099: APR GPU path currently has tensor name mismatches with AprV2ModelCuda
+    // For now, force CPU for APR until GPU path is fixed
     let use_gpu = config.gpu && !config.no_gpu;
 
     #[cfg(feature = "cuda")]
     if use_gpu && is_transformer {
-        println!("{}", "GPU mode enabled for APR inference".cyan());
-        return start_apr_server_gpu(model_path, model, config, tokenizer_info);
+        // PMAT-099: Disable GPU for APR until AprV2ModelCuda tensor name mapping is fixed
+        // The AprTransformer CPU path uses correct tensor names from APR metadata
+        // but AprV2ModelCuda expects different names (model.layers vs blk)
+        println!(
+            "{}",
+            "Note: APR GPU path disabled (PMAT-099 - tensor name mapping WIP)".yellow()
+        );
+        println!("{}", "Using CPU path for APR inference".dimmed());
+        // Fall through to CPU path instead of:
+        // return start_apr_server_gpu(model_path, model, config, bpe_tokenizer);
     }
 
     // CPU path
@@ -1005,22 +1027,51 @@ fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
     let bind_addr = config.bind_addr();
     let model_path_clone = model_path.to_path_buf();
 
-    // Shared state for inference
+    // PMAT-098: Load transformer once and share across requests
+    // Previous code reloaded model on every request causing ~0.01 tok/s
+    // Now we load once using AprTransformer for efficient inference
+    let transformer = if is_transformer {
+        match realizar::apr_transformer::AprTransformer::from_apr_file(model_path) {
+            Ok(t) => {
+                println!(
+                    "{}",
+                    format!(
+                        "Transformer ready: {} layers, hidden_dim={}",
+                        t.config.num_layers, t.config.hidden_dim
+                    )
+                    .cyan()
+                );
+                Some(Arc::new(Mutex::new(t)))
+            }
+            Err(e) => {
+                println!(
+                    "{}",
+                    format!("Transformer load failed: {e} - inference disabled").yellow()
+                );
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    // Shared state for inference (model loaded once, not per-request)
+    // PMAT-098: Use BPE tokenizer for proper encoding
     #[derive(Clone)]
     struct AprState {
-        model_path: std::path::PathBuf,
+        transformer: Option<Arc<Mutex<realizar::apr_transformer::AprTransformer>>>,
         model_type: String,
         architecture: String,
         is_transformer: bool,
-        tokenizer_info: Option<(Vec<String>, Option<u32>, Option<u32>)>,
+        tokenizer: Option<SafeTensorsTokenizerInfo>,
     }
 
     let state = AprState {
-        model_path: model_path_clone,
+        transformer,
         model_type: model_type.clone(),
         architecture: architecture.clone(),
         is_transformer,
-        tokenizer_info,
+        tokenizer: bpe_tokenizer,
     };
 
     #[derive(Clone, Serialize)]
@@ -1078,59 +1129,51 @@ fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
                     async move {
                         let s = state.lock().unwrap().clone();
 
-                        if !s.is_transformer {
-                            return (
-                                StatusCode::BAD_REQUEST,
-                                Json(serde_json::json!({
-                                    "error": "Model is not a transformer, inference not supported"
-                                })),
-                            )
-                                .into_response();
-                        }
-
-                        // Load model for inference
-                        let start = Instant::now();
-                        let model = match AprModel::load(&s.model_path) {
-                            Ok(m) => m,
-                            Err(e) => {
+                        // PMAT-098: Use shared transformer (no reload per request)
+                        let transformer = match &s.transformer {
+                            Some(t) => t.clone(),
+                            None => {
                                 return (
-                                    StatusCode::INTERNAL_SERVER_ERROR,
-                                    Json(serde_json::json!({"error": format!("Model load failed: {e}")})),
+                                    StatusCode::BAD_REQUEST,
+                                    Json(serde_json::json!({
+                                        "error": "Transformer not loaded, inference not supported"
+                                    })),
                                 )
                                     .into_response();
                             }
                         };
 
-                        // Encode prompt
-                        let input_tokens = if let Some(tokens) =
-                            AprModel::encode_text(&s.model_path, &req.prompt)
-                        {
-                            tokens
+                        let start = Instant::now();
+
+                        // PMAT-098: Use BPE tokenizer for proper encoding
+                        let input_tokens: Vec<u32> = if let Some(ref tok) = s.tokenizer {
+                            tok.tokenizer.encode(&req.prompt)
                         } else {
-                            // Fallback: BOS token
-                            vec![1u32]
+                            // Fallback: character-level
+                            req.prompt.chars().map(|c| c as u32).collect()
                         };
 
-                        let eos_id = match &s.tokenizer_info {
-                            Some((_, _, Some(e))) => *e,
+                        let eos_id = match &s.tokenizer {
+                            Some(tok) => tok.eos_token_id.unwrap_or(2),
                             _ => 2,
                         };
 
-                        // Generate
+                        // PMAT-099: Generate using shared transformer with generate() method
+                        // Changed from manual forward loop to t.generate() for consistency with SafeTensors handler
                         let gen_start = Instant::now();
-                        let max_tokens = req.max_tokens.min(128);
-                        let output_tokens = match model.generate(
-                            &input_tokens,
-                            max_tokens,
-                            Some(eos_id),
-                        ) {
-                            Ok(t) => t,
-                            Err(e) => {
-                                return (
-                                    StatusCode::INTERNAL_SERVER_ERROR,
-                                    Json(serde_json::json!({"error": format!("Generation failed: {e}")})),
-                                )
-                                    .into_response();
+                        let max_tokens = req.max_tokens.min(128) as usize;
+
+                        let output_tokens = {
+                            let t = transformer.lock().unwrap();
+                            match t.generate(&input_tokens, max_tokens) {
+                                Ok(tokens) => tokens,
+                                Err(e) => {
+                                    return (
+                                        StatusCode::INTERNAL_SERVER_ERROR,
+                                        Json(serde_json::json!({"error": format!("Generate failed: {e}")})),
+                                    )
+                                        .into_response();
+                                }
                             }
                         };
                         let gen_time = gen_start.elapsed();
@@ -1142,10 +1185,27 @@ fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
                             &output_tokens[..]
                         };
 
-                        let text = if let Some((vocab, _, _)) = &s.tokenizer_info {
-                            AprModel::decode_tokens(vocab, new_tokens)
+                        // PMAT-099: Debug logging for token decoding
+                        eprintln!("[APR DEBUG] Generated {} total tokens, {} new tokens", output_tokens.len(), new_tokens.len());
+                        eprintln!("[APR DEBUG] New token IDs: {:?}", &new_tokens[..new_tokens.len().min(20)]);
+
+                        // PMAT-098: Use BPE tokenizer for proper decoding
+                        let text = if let Some(ref tok) = s.tokenizer {
+                            match tok.tokenizer.decode(new_tokens) {
+                                Ok(decoded) => {
+                                    eprintln!("[APR DEBUG] Decoded text: {:?}", decoded);
+                                    decoded
+                                }
+                                Err(e) => {
+                                    eprintln!("[APR DEBUG] Decode error: {e}");
+                                    String::new()
+                                }
+                            }
                         } else {
-                            format!("{:?}", new_tokens)
+                            // Fallback: interpret as char codes
+                            let fallback: String = new_tokens.iter().filter_map(|&t| char::from_u32(t)).collect();
+                            eprintln!("[APR DEBUG] Fallback decode: {:?}", fallback);
+                            fallback
                         };
 
                         let tokens_generated = new_tokens.len();
@@ -1178,12 +1238,16 @@ fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
 
                             let s = state.lock().unwrap().clone();
 
-                            if !s.is_transformer {
-                                return axum::Json(serde_json::json!({
-                                    "error": "Model is not a transformer, inference not supported"
-                                }))
-                                .into_response();
-                            }
+                            // PMAT-098: Use shared transformer (no reload per request)
+                            let transformer = match &s.transformer {
+                                Some(t) => t.clone(),
+                                None => {
+                                    return axum::Json(serde_json::json!({
+                                        "error": "Transformer not loaded, inference not supported"
+                                    }))
+                                    .into_response();
+                                }
+                            };
 
                             // Extract messages from request
                             let messages = req.get("messages").and_then(|m| m.as_array());
@@ -1204,36 +1268,34 @@ fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
                                 return axum::Json(serde_json::json!({"error": "Missing messages"})).into_response();
                             };
 
-                            // Load model for inference
                             let start = Instant::now();
-                            let model = match AprModel::load(&s.model_path) {
-                                Ok(m) => m,
-                                Err(e) => {
-                                    return axum::Json(serde_json::json!({"error": format!("Model load failed: {e}")}))
-                                        .into_response();
-                                }
-                            };
 
-                            // Encode prompt
-                            let input_tokens = if let Some(tokens) = AprModel::encode_text(&s.model_path, &prompt) {
-                                tokens
+                            // PMAT-098: Use BPE tokenizer for proper encoding
+                            let input_tokens: Vec<u32> = if let Some(ref tok) = s.tokenizer {
+                                tok.tokenizer.encode(&prompt)
                             } else {
-                                vec![1u32]
+                                // Fallback: character-level
+                                prompt.chars().map(|c| c as u32).collect()
                             };
 
-                            let eos_id = match &s.tokenizer_info {
-                                Some((_, _, Some(e))) => *e,
+                            let eos_id = match &s.tokenizer {
+                                Some(tok) => tok.eos_token_id.unwrap_or(151645),
                                 _ => 151645, // ChatML end token
                             };
 
-                            // Generate
+                            // PMAT-099: Generate using shared transformer with generate() method
+                            // Changed from manual forward loop to t.generate() for consistency with SafeTensors handler
                             let gen_start = Instant::now();
-                            let max_tokens = max_tokens.min(256);
-                            let output_tokens = match model.generate(&input_tokens, max_tokens, Some(eos_id)) {
-                                Ok(t) => t,
-                                Err(e) => {
-                                    return axum::Json(serde_json::json!({"error": format!("Generation failed: {e}")}))
-                                        .into_response();
+                            let max_tokens = max_tokens.min(256) as usize;
+
+                            let output_tokens = {
+                                let t = transformer.lock().unwrap();
+                                match t.generate(&input_tokens, max_tokens) {
+                                    Ok(tokens) => tokens,
+                                    Err(e) => {
+                                        return axum::Json(serde_json::json!({"error": format!("Generate failed: {e}")}))
+                                            .into_response();
+                                    }
                                 }
                             };
                             let elapsed = gen_start.elapsed();
@@ -1245,10 +1307,28 @@ fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
                                 &output_tokens[..]
                             };
 
-                            let output_text = if let Some((vocab, _, _)) = &s.tokenizer_info {
-                                AprModel::decode_tokens(vocab, new_tokens)
+                            // PMAT-099: Debug logging for token decoding
+                            eprintln!("[APR CHAT DEBUG] Input tokens: {}, Output tokens: {}, New tokens: {}",
+                                input_tokens.len(), output_tokens.len(), new_tokens.len());
+                            eprintln!("[APR CHAT DEBUG] New token IDs: {:?}", &new_tokens[..new_tokens.len().min(20)]);
+
+                            // PMAT-098: Use BPE tokenizer for proper decoding
+                            let output_text = if let Some(ref tok) = s.tokenizer {
+                                match tok.tokenizer.decode(new_tokens) {
+                                    Ok(decoded) => {
+                                        eprintln!("[APR CHAT DEBUG] Decoded text: {:?}", decoded);
+                                        decoded
+                                    }
+                                    Err(e) => {
+                                        eprintln!("[APR CHAT DEBUG] Decode error: {e}");
+                                        String::new()
+                                    }
+                                }
                             } else {
-                                format!("{:?}", new_tokens)
+                                // Fallback: interpret as char codes
+                                let fallback: String = new_tokens.iter().filter_map(|&t| char::from_u32(t)).collect();
+                                eprintln!("[APR CHAT DEBUG] Fallback decode: {:?}", fallback);
+                                fallback
                             };
 
                             let tokens_generated = new_tokens.len();
@@ -1359,12 +1439,13 @@ fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
 }
 
 /// Start APR server with GPU acceleration
+/// PMAT-098: Updated to use BPE tokenizer for proper encoding
 #[cfg(all(feature = "inference", feature = "cuda"))]
 fn start_apr_server_gpu(
     model_path: &Path,
     model: realizar::apr::AprModel,
     config: &ServerConfig,
-    tokenizer_info: Option<(Vec<String>, Option<u32>, Option<u32>)>,
+    tokenizer: Option<SafeTensorsTokenizerInfo>,
 ) -> Result<()> {
     use axum::{
         extract::State,
@@ -1418,13 +1499,14 @@ fn start_apr_server_gpu(
     }
 
     // Wrap CUDA model in Arc<Mutex> for shared access
+    // PMAT-098: Use BPE tokenizer for proper encoding
     let cuda_model = Arc::new(Mutex::new(cuda_model));
-    let tokenizer_info = Arc::new(tokenizer_info);
+    let tokenizer = Arc::new(tokenizer);
     let model_path_arc = Arc::new(model_path_clone);
 
     runtime.block_on(async move {
         let cuda_for_completions = cuda_model.clone();
-        let tok_for_completions = tokenizer_info.clone();
+        let tok_for_completions = tokenizer.clone();
         let path_for_completions = model_path_arc.clone();
 
         let app = Router::new()
@@ -1448,16 +1530,14 @@ fn start_apr_server_gpu(
 
                         let start = Instant::now();
 
-                        // Encode prompt
-                        let input_tokens =
-                            if let Some(tokens) = AprModel::encode_text(&model_path, &req.prompt) {
-                                tokens
-                            } else {
-                                vec![1u32]
-                            };
+                        // PMAT-098: Use BPE tokenizer for proper encoding
+                        let input_tokens: Vec<u32> = match tok_info.as_ref() {
+                            Some(tok) => tok.tokenizer.encode(&req.prompt),
+                            None => req.prompt.chars().map(|c| c as u32).collect(),
+                        };
 
                         let eos_id = match tok_info.as_ref() {
-                            Some((_, _, Some(e))) => *e,
+                            Some(tok) => tok.eos_token_id.unwrap_or(2),
                             _ => 2,
                         };
 
@@ -1490,10 +1570,10 @@ fn start_apr_server_gpu(
                             &output_tokens[..]
                         };
 
-                        let text = if let Some((vocab, _, _)) = tok_info.as_ref() {
-                            AprModel::decode_tokens(vocab, new_tokens)
-                        } else {
-                            format!("{:?}", new_tokens)
+                        // PMAT-098: Use BPE tokenizer for proper decoding
+                        let text = match tok_info.as_ref() {
+                            Some(tok) => tok.tokenizer.decode(new_tokens).unwrap_or_else(|_| String::new()),
+                            None => new_tokens.iter().filter_map(|&t| char::from_u32(t)).collect::<String>(),
                         };
 
                         let tokens_generated = new_tokens.len();
@@ -1518,7 +1598,7 @@ fn start_apr_server_gpu(
                 "/v1/chat/completions",
                 {
                     let cuda_for_chat = cuda_model.clone();
-                    let tok_for_chat = tokenizer_info.clone();
+                    let tok_for_chat = tokenizer.clone();
                     let path_for_chat = model_path_arc.clone();
                     post(move |Json(req): Json<serde_json::Value>| {
                         let cuda = cuda_for_chat.clone();
@@ -1551,14 +1631,14 @@ fn start_apr_server_gpu(
                             let start = Instant::now();
 
                             // Encode prompt
-                            let input_tokens = if let Some(tokens) = AprModel::encode_text(&model_path, &prompt) {
-                                tokens
-                            } else {
-                                vec![1u32]
+                            // PMAT-098: Use BPE tokenizer for proper encoding
+                            let input_tokens: Vec<u32> = match tok_info.as_ref() {
+                                Some(tok) => tok.tokenizer.encode(&prompt),
+                                None => prompt.chars().map(|c| c as u32).collect(),
                             };
 
                             let eos_id = match tok_info.as_ref() {
-                                Some((_, _, Some(e))) => *e,
+                                Some(tok) => tok.eos_token_id.unwrap_or(151645),
                                 _ => 151645, // ChatML end token
                             };
 
@@ -1584,10 +1664,28 @@ fn start_apr_server_gpu(
                                 &output_tokens[..]
                             };
 
-                            let output_text = if let Some((vocab, _, _)) = tok_info.as_ref() {
-                                AprModel::decode_tokens(vocab, new_tokens)
-                            } else {
-                                format!("{:?}", new_tokens)
+                            // PMAT-099: Debug logging for GPU token decoding
+                            eprintln!("[APR GPU CHAT DEBUG] Input tokens: {}, Output tokens: {}, New tokens: {}",
+                                input_tokens.len(), output_tokens.len(), new_tokens.len());
+                            eprintln!("[APR GPU CHAT DEBUG] New token IDs: {:?}", &new_tokens[..new_tokens.len().min(20)]);
+
+                            // PMAT-098: Use BPE tokenizer for proper decoding
+                            let output_text = match tok_info.as_ref() {
+                                Some(tok) => match tok.tokenizer.decode(new_tokens) {
+                                    Ok(decoded) => {
+                                        eprintln!("[APR GPU CHAT DEBUG] Decoded text: {:?}", decoded);
+                                        decoded
+                                    }
+                                    Err(e) => {
+                                        eprintln!("[APR GPU CHAT DEBUG] Decode error: {e}");
+                                        String::new()
+                                    }
+                                },
+                                None => {
+                                    let fallback: String = new_tokens.iter().filter_map(|&t| char::from_u32(t)).collect();
+                                    eprintln!("[APR GPU CHAT DEBUG] Fallback decode (no tokenizer): {:?}", fallback);
+                                    fallback
+                                }
                             };
 
                             let tokens_generated = new_tokens.len();
@@ -2242,10 +2340,12 @@ fn load_safetensors_tokenizer(path: &Path) -> Option<SafeTensorsTokenizerInfo> {
         })
         .collect();
 
-    // Extract special tokens
+    // Extract special tokens and add them to vocabulary
+    // PMAT-099: added_tokens must be included in vocab for decode to work
     let added_tokens = json.get("added_tokens").and_then(|v| v.as_array());
     let mut bos_token_id = None;
     let mut eos_token_id = None;
+    let mut special_tokens: Vec<(u32, String)> = Vec::new();
 
     if let Some(tokens) = added_tokens {
         for token in tokens {
@@ -2253,12 +2353,31 @@ fn load_safetensors_tokenizer(path: &Path) -> Option<SafeTensorsTokenizerInfo> {
             let id = token.get("id").and_then(|v| v.as_u64()).map(|v| v as u32);
 
             if let (Some(content), Some(id)) = (content, id) {
+                special_tokens.push((id, content.to_string()));
+
                 if content.contains("bos") || content == "<s>" {
                     bos_token_id = Some(id);
                 }
                 if content.contains("eos") || content == "</s>" || content.contains("im_end") {
                     eos_token_id = Some(id);
                 }
+            }
+        }
+    }
+
+    // Extend vocab to include special tokens at their proper IDs
+    // PMAT-099: Special tokens often have IDs beyond base vocab (e.g., 151643+)
+    let mut vocab = vocab;
+    if !special_tokens.is_empty() {
+        let max_special_id = special_tokens.iter().map(|(id, _)| *id).max().unwrap_or(0);
+        if max_special_id as usize >= vocab.len() {
+            // Resize vocab to fit all special tokens
+            vocab.resize(max_special_id as usize + 1, "<unused>".to_string());
+        }
+        // Insert special tokens at their IDs
+        for (id, content) in special_tokens {
+            if (id as usize) < vocab.len() {
+                vocab[id as usize] = content;
             }
         }
     }
