@@ -892,17 +892,20 @@ pub(crate) fn run(model_path: &Path, config: &ServerConfig) -> Result<()> {
 #[cfg(feature = "inference")]
 fn start_realizar_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
     use realizar::format::{detect_format, ModelFormat};
+    use std::io::Read;
 
-    // Read file for format detection
-    let data = std::fs::read(model_path)?;
-    if data.len() < 8 {
+    // Read only 8 bytes for format detection (avoid loading entire file)
+    let mut file = std::fs::File::open(model_path)?;
+    let mut magic = [0u8; 8];
+    let bytes_read = file.read(&mut magic)?;
+    if bytes_read < 8 {
         return Err(CliError::InvalidFormat(
             "File too small for format detection".to_string(),
         ));
     }
 
     // Detect model format from magic bytes
-    let format = detect_format(&data[..8])
+    let format = detect_format(&magic)
         .map_err(|e| CliError::InvalidFormat(format!("Format detection failed: {e}")))?;
 
     println!();
@@ -2032,17 +2035,17 @@ fn start_safetensors_server(model_path: &Path, config: &ServerConfig) -> Result<
         Json, Router,
     };
     use realizar::apr_transformer::AprTransformer;
-    use realizar::safetensors::SafetensorsModel;
+    use realizar::safetensors::MappedSafeTensorsModel;
     use realizar::safetensors_infer::SafetensorsToAprConverter;
     use serde::Serialize;
     use std::sync::{Arc, Mutex};
 
-    // Load SafeTensors for inspection
-    let data = std::fs::read(model_path)?;
-    let st_model = SafetensorsModel::from_bytes(&data)
+    // Load SafeTensors using mmap for zero-copy access (T-QA-020)
+    // Avoids redundant std::fs::read that caused >10s latency on large files
+    let st_model = MappedSafeTensorsModel::load(model_path)
         .map_err(|e| CliError::ModelLoadFailed(format!("Failed to load SafeTensors: {e}")))?;
 
-    let tensor_names: Vec<String> = st_model.tensors.keys().cloned().collect();
+    let tensor_names: Vec<String> = st_model.tensor_names().into_iter().map(String::from).collect();
     let tensor_count = tensor_names.len();
 
     println!(
@@ -2190,31 +2193,54 @@ fn start_safetensors_server(model_path: &Path, config: &ServerConfig) -> Result<
     })
 }
 
-/// Tokenizer info for SafeTensors models
+/// Tokenizer info for SafeTensors models with proper BPE support
 #[derive(Clone)]
 struct SafeTensorsTokenizerInfo {
+    /// BPE tokenizer with vocab and merge rules
+    tokenizer: std::sync::Arc<realizar::tokenizer::BPETokenizer>,
+    /// Vocab for decode fallback
     vocab: Vec<String>,
     bos_token_id: Option<u32>,
     eos_token_id: Option<u32>,
 }
 
-/// Load tokenizer from HuggingFace tokenizer.json format
+/// Load tokenizer from HuggingFace tokenizer.json format with BPE merge rules
+///
+/// PMAT-093: Proper BPE tokenization is critical for SafeTensors inference.
+/// Without merge rules, tokenization produces wrong tokens causing garbage output.
 fn load_safetensors_tokenizer(path: &Path) -> Option<SafeTensorsTokenizerInfo> {
     let content = std::fs::read_to_string(path).ok()?;
     let json: serde_json::Value = serde_json::from_str(&content).ok()?;
 
-    // Extract vocabulary from model.vocab
+    // Extract vocabulary from model.vocab (token -> id mapping)
     let vocab_obj = json.get("model")?.get("vocab")?;
     let vocab_map = vocab_obj.as_object()?;
 
-    // Build vocab vector (sorted by ID)
+    // Build vocab vector sorted by ID (for index-based lookup)
     let mut vocab_vec: Vec<(String, u32)> = vocab_map
         .iter()
         .filter_map(|(token, id)| Some((token.clone(), id.as_u64()? as u32)))
         .collect();
     vocab_vec.sort_by_key(|(_, id)| *id);
-
     let vocab: Vec<String> = vocab_vec.into_iter().map(|(token, _)| token).collect();
+
+    // Extract BPE merge rules from model.merges
+    // Merges are stored as ["ab cd", "ef gh", ...] meaning "merge 'ab' + 'cd'"
+    let merges: Vec<(String, String)> = json
+        .get("model")?
+        .get("merges")?
+        .as_array()?
+        .iter()
+        .filter_map(|m| {
+            let s = m.as_str()?;
+            let parts: Vec<&str> = s.split(' ').collect();
+            if parts.len() == 2 {
+                Some((parts[0].to_string(), parts[1].to_string()))
+            } else {
+                None
+            }
+        })
+        .collect();
 
     // Extract special tokens
     let added_tokens = json.get("added_tokens").and_then(|v| v.as_array());
@@ -2237,7 +2263,12 @@ fn load_safetensors_tokenizer(path: &Path) -> Option<SafeTensorsTokenizerInfo> {
         }
     }
 
+    // Create BPE tokenizer with vocab and merge rules
+    let tokenizer =
+        realizar::tokenizer::BPETokenizer::new(vocab.clone(), merges, "<unk>").ok()?;
+
     Some(SafeTensorsTokenizerInfo {
+        tokenizer: std::sync::Arc::new(tokenizer),
         vocab,
         bos_token_id,
         eos_token_id,
@@ -2297,11 +2328,11 @@ async fn safetensors_chat_completions_handler(
         }
     };
 
-    // Encode prompt (simple tokenization if no tokenizer)
+    // Encode prompt using BPE tokenizer (PMAT-093)
     let input_ids = if let Some(ref tok_info) = state.tokenizer_info {
-        simple_encode(&prompt, &tok_info.vocab)
+        tok_info.tokenizer.encode(&prompt)
     } else {
-        // Fallback: character-level tokenization
+        // Fallback: character-level tokenization (no tokenizer.json)
         prompt.chars().map(|c| c as u32).collect()
     };
 
@@ -2322,10 +2353,13 @@ async fn safetensors_chat_completions_handler(
     };
     let elapsed = start.elapsed();
 
-    // Decode output
+    // Decode output using BPE tokenizer (PMAT-093)
     let new_tokens = &output_ids[input_ids.len()..];
     let output_text = if let Some(ref tok_info) = state.tokenizer_info {
-        simple_decode(new_tokens, &tok_info.vocab)
+        tok_info
+            .tokenizer
+            .decode(new_tokens)
+            .unwrap_or_else(|_| simple_decode(new_tokens, &tok_info.vocab))
     } else {
         new_tokens
             .iter()
@@ -2435,9 +2469,9 @@ async fn safetensors_generate_handler(
         }
     };
 
-    // Encode prompt
+    // Encode prompt using BPE tokenizer (PMAT-093)
     let input_ids = if let Some(ref tok_info) = state.tokenizer_info {
-        simple_encode(prompt, &tok_info.vocab)
+        tok_info.tokenizer.encode(prompt)
     } else {
         prompt.chars().map(|c| c as u32).collect()
     };
@@ -2459,10 +2493,13 @@ async fn safetensors_generate_handler(
     };
     let elapsed = start.elapsed();
 
-    // Decode
+    // Decode using BPE tokenizer (PMAT-093)
     let new_tokens = &output_ids[input_ids.len()..];
     let output_text = if let Some(ref tok_info) = state.tokenizer_info {
-        simple_decode(new_tokens, &tok_info.vocab)
+        tok_info
+            .tokenizer
+            .decode(new_tokens)
+            .unwrap_or_else(|_| simple_decode(new_tokens, &tok_info.vocab))
     } else {
         new_tokens
             .iter()
