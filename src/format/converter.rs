@@ -12,7 +12,7 @@ use crate::error::{AprenderError, Result};
 use crate::format::gguf::{
     load_gguf_raw, load_gguf_with_tokenizer, GgufModelConfig, GgufRawTensor, GgufTokenizer,
 };
-use crate::format::v2::{AprV2Metadata, AprV2Writer, TensorDType};
+use crate::format::v2::{AprV2Metadata, AprV2Writer, QuantizationMetadata, TensorDType};
 use crate::format::validation::{AprValidator, TensorStats, ValidationReport};
 use crate::format::Compression;
 use crate::serialization::safetensors::{save_safetensors, MappedSafeTensors};
@@ -1773,29 +1773,40 @@ fn write_apr_file(
             }
         }
 
+        // Determine if tensor should skip quantization
+        // - Biases are too small and precision-sensitive
+        // - LayerNorm/RMSNorm weights are critical for numerical stability
+        // - Small tensors (<1024 elements) don't benefit from quantization
+        let should_skip_quant = name.contains("bias")
+            || name.contains("layernorm")
+            || name.contains("layer_norm")
+            || name.contains("norm.weight")
+            || data.len() < 1024;
+
         // Write tensor (no transposition needed - QKV fusion handles it)
         match options.quantize {
             Some(QuantizationType::Fp16) => {
                 writer.add_f16_tensor(name, shape.clone(), data);
             }
-            Some(QuantizationType::Int8) => {
+            Some(QuantizationType::Int8) if !should_skip_quant => {
                 writer.add_q8_tensor(name, shape.clone(), data);
             }
-            Some(QuantizationType::Int4) => {
+            Some(QuantizationType::Int4) if !should_skip_quant => {
                 writer.add_q4_tensor(name, shape.clone(), data);
             }
-            Some(QuantizationType::Q4K) => {
+            Some(QuantizationType::Q4K) if !should_skip_quant => {
                 // Native Q4_K quantization: F32 -> packed Q4_K bytes
                 let q4k_bytes = quantize_q4_k(data);
                 writer.add_q4k_raw_tensor(name, shape.clone(), q4k_bytes);
             }
-            None => {
+            _ => {
+                // Keep as F32 for small/critical tensors or when no quantization
                 writer.add_f32_tensor(name, shape.clone(), data);
             }
         }
     }
 
-    // Write fused QKV tensors
+    // Write fused QKV tensors (always large enough to quantize)
     for (name, (data, shape)) in &qkv_fused {
         match options.quantize {
             Some(QuantizationType::Fp16) => {
@@ -1808,7 +1819,6 @@ fn write_apr_file(
                 writer.add_q4_tensor(name, shape.clone(), data);
             }
             Some(QuantizationType::Q4K) => {
-                // Native Q4_K quantization: F32 -> packed Q4_K bytes
                 let q4k_bytes = quantize_q4_k(data);
                 writer.add_q4k_raw_tensor(name, shape.clone(), q4k_bytes);
             }
@@ -2109,7 +2119,29 @@ pub fn apr_convert<P: AsRef<Path>>(
     let original_size = calculate_tensor_size(&tensors);
     let original_count = tensors.len();
 
-    // Step 2: Apply quantization if requested
+    // Step 2: Handle Q4K specially - store raw Q4K bytes in APR v2 format
+    if options.quantize == Some(QuantizationType::Q4K) {
+        save_model_tensors_q4k(&tensors, output_path)?;
+
+        let converted_size = fs::metadata(output_path)
+            .map(|m| m.len() as usize)
+            .unwrap_or(0);
+
+        return Ok(ConvertReport {
+            original_size,
+            converted_size,
+            tensor_count: original_count,
+            quantization: options.quantize,
+            compression: options.compress,
+            reduction_ratio: if converted_size > 0 {
+                original_size as f64 / converted_size as f64
+            } else {
+                0.0
+            },
+        });
+    }
+
+    // Step 2b: Apply other quantization types (Fp16, Int8, Int4)
     let tensors = if let Some(quant_type) = &options.quantize {
         quantize_tensors(&tensors, quant_type)?
     } else {
@@ -2211,52 +2243,73 @@ fn quantize_tensors(
 }
 
 /// Dequantize Q4_K bytes back to F32 (for verification/testing)
+/// Dequantize Q4_K data to f32 (llama.cpp compatible)
+///
+/// Matches the encoder format and realizar's `dequantize_q4_k_apr`:
+/// - Scale packing: blocks 0-3 in lower 6 bits, blocks 4-7 use upper bits
+/// - Value packing: 64-value chunks with low/high nibble interleaving
 fn dequantize_q4_k_to_f32(data: &[u8], num_elements: usize) -> Vec<f32> {
     const SUPER_BLOCK_SIZE: usize = 256;
     const SUPER_BLOCK_BYTES: usize = 144;
 
     let num_blocks = (num_elements + SUPER_BLOCK_SIZE - 1) / SUPER_BLOCK_SIZE;
-    let mut result = Vec::with_capacity(num_blocks * SUPER_BLOCK_SIZE);
-    let mut offset = 0;
+    let mut result = vec![0.0f32; num_blocks * SUPER_BLOCK_SIZE];
 
-    for _ in 0..num_blocks {
-        if offset + SUPER_BLOCK_BYTES > data.len() {
+    for sb_idx in 0..num_blocks {
+        let sb_start = sb_idx * SUPER_BLOCK_BYTES;
+        let out_start = sb_idx * SUPER_BLOCK_SIZE;
+
+        if sb_start + SUPER_BLOCK_BYTES > data.len() {
             break;
         }
 
         // Read d and dmin (f16)
-        let d = f16_to_f32(u16::from_le_bytes([data[offset], data[offset + 1]]));
-        let dmin = f16_to_f32(u16::from_le_bytes([data[offset + 2], data[offset + 3]]));
-        offset += 4;
+        let d = f16_to_f32(u16::from_le_bytes([data[sb_start], data[sb_start + 1]]));
+        let dmin = f16_to_f32(u16::from_le_bytes([data[sb_start + 2], data[sb_start + 3]]));
 
-        // Unpack scales and mins
-        let scales_bytes = &data[offset..offset + 12];
+        // Unpack scales and mins (llama.cpp format)
+        let scales_bytes = &data[sb_start + 4..sb_start + 16];
         let mut scales = [0u8; 8];
         let mut mins = [0u8; 8];
 
         for i in 0..4 {
+            // Blocks 0-3: lower 6 bits of bytes 0-3 and 4-7
             scales[i] = scales_bytes[i] & 0x3F;
-            scales[i + 4] = scales_bytes[i + 4] & 0x3F;
-            mins[i] = (scales_bytes[i] >> 6) | ((scales_bytes[i + 8] & 0x0F) << 2);
-            mins[i + 4] = (scales_bytes[i + 4] >> 6) | ((scales_bytes[i + 8] >> 4) << 2);
+            mins[i] = scales_bytes[i + 4] & 0x3F;
+            // Blocks 4-7: lower 4 bits from bytes 8-11, upper 2 bits from bytes 0-3/4-7
+            scales[i + 4] = (scales_bytes[i + 8] & 0x0F) | ((scales_bytes[i] >> 6) << 4);
+            mins[i + 4] = (scales_bytes[i + 8] >> 4) | ((scales_bytes[i + 4] >> 6) << 4);
         }
-        offset += 12;
 
         // Read quantized values
-        let qs = &data[offset..offset + 128];
-        offset += 128;
+        let qs = &data[sb_start + 16..sb_start + 144];
 
-        // Dequantize
-        for j in 0..8 {
-            let scale = d * f32::from(scales[j]);
-            let min_val = dmin * f32::from(mins[j]);
+        // Dequantize following candle/llama.cpp layout:
+        // For each 64-value chunk: output 32 low nibbles then 32 high nibbles
+        let mut ys_index = out_start;
 
-            for l in 0..16 {
-                let q_byte = qs[j * 16 + l];
-                let q0 = f32::from(q_byte & 0x0F);
-                let q1 = f32::from(q_byte >> 4);
-                result.push(q0 * scale - min_val);
-                result.push(q1 * scale - min_val);
+        for chunk in 0..4 {
+            let q = &qs[chunk * 32..(chunk + 1) * 32];
+
+            // Scale indices for this chunk
+            let scale_idx_low = chunk * 2;
+            let scale_idx_high = chunk * 2 + 1;
+
+            let d1 = d * f32::from(scales[scale_idx_low]);
+            let dm1 = dmin * f32::from(mins[scale_idx_low]);
+            let d2 = d * f32::from(scales[scale_idx_high]);
+            let dm2 = dmin * f32::from(mins[scale_idx_high]);
+
+            // First pass: 32 low nibbles
+            for &byte in q {
+                result[ys_index] = d1 * (byte & 0xF) as f32 - dm1;
+                ys_index += 1;
+            }
+
+            // Second pass: 32 high nibbles
+            for &byte in q {
+                result[ys_index] = d2 * (byte >> 4) as f32 - dm2;
+                ys_index += 1;
             }
         }
     }
@@ -2297,8 +2350,21 @@ fn f32_to_f16(value: f32) -> u16 {
             // Overflow to infinity
             sign | 0x7C00
         } else if new_exp <= 0 {
-            // Underflow to zero
-            sign
+            // Subnormal: f16 can represent down to 2^(-24) ≈ 5.96e-8
+            // Add implicit 1 bit to mantissa (bit 23)
+            let full_mantissa = mantissa | 0x800000;
+            // Calculate shift: 14 bits base when new_exp=0, more for negative
+            let shift = 14 - new_exp;
+            if shift <= 24 {
+                // Round to nearest: add 0.5 at the bit position being truncated
+                let round_bit = 1u32 << (shift - 1);
+                let rounded = full_mantissa.saturating_add(round_bit);
+                let subnormal = (rounded >> shift) as u16;
+                sign | (subnormal & 0x3FF)
+            } else {
+                // Too small for f16 subnormals, underflow to zero
+                sign
+            }
         } else {
             let new_mantissa = (mantissa >> 13) as u16;
             sign | ((new_exp as u16) << 10) | new_mantissa
@@ -2398,6 +2464,21 @@ fn quantize_int4(data: &[f32]) -> Vec<f32> {
 /// Total: 144 bytes per 256 elements = 4.5 bits/weight
 ///
 /// Returns packed Q4_K bytes ready for APR storage.
+/// Quantize f32 data to Q4_K format (llama.cpp compatible)
+///
+/// Q4_K super-block layout (144 bytes per 256 elements):
+/// - d: 2 bytes (f16 global scale)
+/// - dmin: 2 bytes (f16 global min scale)
+/// - scales: 12 bytes (packed 6-bit scales and mins for 8 sub-blocks)
+/// - qs: 128 bytes (4-bit quantized values, interleaved low/high nibbles)
+///
+/// Scale packing (llama.cpp get_scale_min_k4):
+/// - Blocks 0-3: scales[j] = scale_6bit, scales[j+4] = min_6bit
+/// - Blocks 4-7: packed in bytes 8-11 using high bits of bytes 0-7
+///
+/// Value packing (candle/llama.cpp layout):
+/// - For each 64-value chunk: 32 bytes store low nibbles first, then high nibbles
+/// - Low nibbles use scale[is], high nibbles use scale[is+1]
 fn quantize_q4_k(data: &[f32]) -> Vec<u8> {
     const SUPER_BLOCK_SIZE: usize = 256;
     const SUB_BLOCK_SIZE: usize = 32;
@@ -2419,13 +2500,10 @@ fn quantize_q4_k(data: &[f32]) -> Vec<u8> {
         let mut padded = [0.0f32; SUPER_BLOCK_SIZE];
         padded[..block_data.len()].copy_from_slice(block_data);
 
-        // Compute per-sub-block statistics
-        // Q4_K decoding: value = q * scale - min_val
-        // So: q = (value + min_val) / scale
-        // min_val = -min_input (the negation of the minimum value)
-        // scale = (max_input - min_input) / 15
-        let mut sub_scales = [0.0f32; 8]; // (max - min) / 15
-        let mut sub_offsets = [0.0f32; 8]; // -min (offset to add before quantizing)
+        // Compute per-sub-block statistics (8 sub-blocks of 32 elements each)
+        // Q4_K decoding: value = q * d * scale - dmin * min
+        let mut sub_scales = [0.0f32; 8];
+        let mut sub_mins = [0.0f32; 8];
 
         for (j, sub_block) in padded.chunks(SUB_BLOCK_SIZE).enumerate().take(8) {
             let min = sub_block.iter().fold(f32::INFINITY, |a, &b| a.min(b));
@@ -2433,24 +2511,20 @@ fn quantize_q4_k(data: &[f32]) -> Vec<u8> {
             let range = max - min;
 
             sub_scales[j] = if range > 1e-10 { range / 15.0 } else { 1e-10 };
-            // min_val in decode = -min_input, stored as positive offset
-            // For negative min (e.g., -0.5), offset = 0.5 (positive)
-            // For positive min (e.g., 0.1), offset = -0.1 (negative, clamped to 0)
-            sub_offsets[j] = (-min).max(0.0);
+            sub_mins[j] = (-min).max(0.0); // Store as positive offset
         }
 
         // Find global scale factors d and dmin
-        // d scales per-block scales (0-63), dmin scales per-block offsets (0-63)
         let max_scale = sub_scales.iter().fold(0.0f32, |a, &b| a.max(b));
-        let max_offset = sub_offsets.iter().fold(0.0f32, |a, &b| a.max(b));
+        let max_min = sub_mins.iter().fold(0.0f32, |a, &b| a.max(b));
 
         let d = if max_scale > 1e-10 {
             max_scale / 63.0
         } else {
             1e-10
         };
-        let dmin = if max_offset > 1e-10 {
-            max_offset / 63.0
+        let dmin = if max_min > 1e-10 {
+            max_min / 63.0
         } else {
             1e-10
         };
@@ -2461,7 +2535,7 @@ fn quantize_q4_k(data: &[f32]) -> Vec<u8> {
 
         for j in 0..8 {
             scales_6bit[j] = ((sub_scales[j] / d).round() as u8).min(63);
-            mins_6bit[j] = ((sub_offsets[j] / dmin).round() as u8).min(63);
+            mins_6bit[j] = ((sub_mins[j] / dmin).round() as u8).min(63);
         }
 
         // Write d (f16) - 2 bytes
@@ -2472,43 +2546,66 @@ fn quantize_q4_k(data: &[f32]) -> Vec<u8> {
         let dmin_f16 = f32_to_f16(dmin);
         result.extend_from_slice(&dmin_f16.to_le_bytes());
 
-        // Pack scales and mins into 12 bytes
-        // Format: First 8 bytes have lower 6 bits, last 4 bytes have upper 2 bits
+        // Pack scales and mins into 12 bytes (llama.cpp format)
+        // Decoder expects:
+        // - Blocks 0-3: scale = scales[j] & 63, min = scales[j+4] & 63
+        // - Blocks 4-7: scale = (scales[j+4] & 0xF) | ((scales[j-4] >> 6) << 4)
+        //               min = (scales[j+4] >> 4) | ((scales[j] >> 6) << 4)
         let mut scales_packed = [0u8; 12];
+
+        // Blocks 0-3: store lower 6 bits directly, use upper 2 bits for blocks 4-7
         for i in 0..4 {
-            // Lower 6 bits of scales[i] and scales[i+4]
-            scales_packed[i] = (scales_6bit[i] & 0x3F) | ((mins_6bit[i] & 0x03) << 6);
-            scales_packed[i + 4] = (scales_6bit[i + 4] & 0x3F) | ((mins_6bit[i + 4] & 0x03) << 6);
-            // Upper 4 bits of mins[i] and mins[i+4]
-            scales_packed[i + 8] = ((mins_6bit[i] >> 2) & 0x0F) | ((mins_6bit[i + 4] >> 2) << 4);
+            // Lower 6 bits of scale[i], upper 2 bits store part of scale[i+4]
+            scales_packed[i] = (scales_6bit[i] & 0x3F) | ((scales_6bit[i + 4] & 0x30) << 2);
+            // Lower 6 bits of min[i], upper 2 bits store part of min[i+4]
+            scales_packed[i + 4] = (mins_6bit[i] & 0x3F) | ((mins_6bit[i + 4] & 0x30) << 2);
+        }
+
+        // Blocks 4-7: store lower 4 bits of scale and min in bytes 8-11
+        for i in 0..4 {
+            scales_packed[i + 8] = (scales_6bit[i + 4] & 0x0F) | ((mins_6bit[i + 4] & 0x0F) << 4);
         }
         result.extend_from_slice(&scales_packed);
 
-        // Quantize values to 4-bit and pack into 128 bytes
+        // Quantize values to 4-bit and pack into 128 bytes (candle/llama.cpp layout)
+        // For each 64-value chunk: first 32 values as low nibbles, next 32 as high nibbles
+        // Output order: [low0, low1, ..., low31, high0, high1, ..., high31] repeated 4 times
         let mut qs = [0u8; 128];
-        for j in 0..8 {
-            let scale = d * f32::from(scales_6bit[j]);
-            let min_val = dmin * f32::from(mins_6bit[j]);
 
-            for l in 0..16 {
-                let idx0 = j * SUB_BLOCK_SIZE + l * 2;
-                let idx1 = idx0 + 1;
+        for chunk in 0..4 {
+            // Each chunk processes 64 values using 32 bytes
+            let chunk_start = chunk * 64;
+            let qs_start = chunk * 32;
 
-                // Quantize: q = (value + min_val) / scale
-                // Decode:   value = q * scale - min_val
-                let q0 = if scale > 1e-10 {
-                    ((padded[idx0] + min_val) / scale).round().clamp(0.0, 15.0) as u8
+            // Scale indices: chunk 0 uses scales 0,1; chunk 1 uses 2,3; etc.
+            let scale_idx_low = chunk * 2;
+            let scale_idx_high = chunk * 2 + 1;
+
+            let d1 = d * f32::from(scales_6bit[scale_idx_low]);
+            let dm1 = dmin * f32::from(mins_6bit[scale_idx_low]);
+            let d2 = d * f32::from(scales_6bit[scale_idx_high]);
+            let dm2 = dmin * f32::from(mins_6bit[scale_idx_high]);
+
+            // Quantize 64 values: first 32 go to low nibbles, next 32 to high nibbles
+            for i in 0..32 {
+                let idx_low = chunk_start + i;
+                let idx_high = chunk_start + 32 + i;
+
+                // Low nibble value (first 32 of chunk)
+                let q_low = if d1 > 1e-10 {
+                    ((padded[idx_low] + dm1) / d1).round().clamp(0.0, 15.0) as u8
                 } else {
                     0
                 };
-                let q1 = if scale > 1e-10 {
-                    ((padded[idx1] + min_val) / scale).round().clamp(0.0, 15.0) as u8
+
+                // High nibble value (next 32 of chunk)
+                let q_high = if d2 > 1e-10 {
+                    ((padded[idx_high] + dm2) / d2).round().clamp(0.0, 15.0) as u8
                 } else {
                     0
                 };
 
-                // Pack two 4-bit values into one byte
-                qs[j * 16 + l] = (q0 & 0x0F) | ((q1 & 0x0F) << 4);
+                qs[qs_start + i] = (q_low & 0x0F) | ((q_high & 0x0F) << 4);
             }
         }
         result.extend_from_slice(&qs);
@@ -2528,6 +2625,142 @@ fn save_model_tensors(
     save_safetensors(output, tensors).map_err(|e| AprenderError::FormatError {
         message: format!("Failed to save converted model: {e}"),
     })
+}
+
+/// Save model tensors with Q4K quantization in APR v2 format
+///
+/// Selectively quantizes large weight tensors while keeping biases and norms as F32.
+/// Uses APR v2 format with proper Q4K dtype for GPU-accelerated inference.
+fn save_model_tensors_q4k(
+    tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
+    output: &Path,
+) -> Result<()> {
+    use std::io::Write as IoWrite;
+
+    // Infer model configuration from tensor shapes
+    let mut hidden_size: Option<usize> = None;
+    let mut num_layers: Option<usize> = None;
+    let mut num_kv_heads: Option<usize> = None;
+    let mut vocab_size: Option<usize> = None;
+    let mut intermediate_size: Option<usize> = None;
+    let mut num_heads: Option<usize> = None;
+
+    for (name, (_, shape)) in tensors {
+        // Infer hidden_size from norm weights (1D tensor of hidden_dim)
+        if name.contains("input_layernorm.weight") && shape.len() == 1 {
+            hidden_size = Some(shape[0]);
+        }
+        // Infer vocab_size from embedding [vocab_size, hidden_dim]
+        if name.contains("embed_tokens.weight") && shape.len() == 2 {
+            vocab_size = Some(shape[0]);
+            if hidden_size.is_none() {
+                hidden_size = Some(shape[1]);
+            }
+        }
+        // Count layers
+        if let Some(idx) = name.strip_prefix("model.layers.") {
+            if let Some(layer_num) = idx.split('.').next().and_then(|s| s.parse::<usize>().ok()) {
+                num_layers = Some(num_layers.map_or(layer_num + 1, |n| n.max(layer_num + 1)));
+            }
+        }
+        // Infer kv_heads from k_proj shape [kv_dim, hidden_dim]
+        if name.contains("k_proj.weight") && shape.len() == 2 && hidden_size.is_some() {
+            // kv_dim = shape[0], hidden_dim = shape[1]
+            // num_kv_heads = kv_dim / head_dim where head_dim = hidden_dim / num_heads
+            // For Qwen2-0.5B: kv_dim=128, hidden_dim=896, head_dim=64, num_kv_heads=2
+            num_kv_heads = Some(shape[0] / 64); // Assume head_dim=64 for now
+        }
+        // Infer num_heads from q_proj shape [q_dim, hidden_dim]
+        if name.contains("q_proj.weight") && shape.len() == 2 {
+            // q_dim = hidden_dim for standard attention
+            // num_heads = hidden_dim / head_dim = hidden_dim / 64
+            num_heads = Some(shape[0] / 64);
+        }
+        // Infer intermediate_size from gate_proj [intermediate, hidden]
+        if name.contains("gate_proj.weight") && shape.len() == 2 {
+            intermediate_size = Some(shape[0]);
+        }
+    }
+
+    // Create APR v2 metadata
+    let param_count: u64 = tensors
+        .values()
+        .map(|(data, _)| data.len() as u64)
+        .sum();
+
+    let metadata = AprV2Metadata {
+        model_type: "qwen2".to_string(),
+        name: Some("Quantized Model".to_string()),
+        description: Some("Q4K quantized from SafeTensors".to_string()),
+        author: None,
+        license: None,
+        version: Some("1.0.0".to_string()),
+        source: None,
+        original_format: Some("safetensors".to_string()),
+        created_at: None,
+        total_size: 0,
+        param_count,
+        quantization: Some(QuantizationMetadata {
+            quant_type: "q4_k".to_string(),
+            bits: 4,
+            block_size: Some(256),
+            symmetric: false,
+        }),
+        sharding: None,
+        chat_template: None,
+        chat_format: None,
+        special_tokens: None,
+        architecture: Some("qwen2".to_string()),
+        hidden_size,
+        num_layers,
+        num_heads,
+        num_kv_heads,
+        vocab_size,
+        intermediate_size,
+        max_position_embeddings: Some(32768), // Default for Qwen2
+        rope_theta: Some(1000000.0),           // Default for Qwen2
+        rms_norm_eps: Some(1e-6),              // Default for Qwen2
+        custom: std::collections::HashMap::new(),
+    };
+
+    let mut writer = AprV2Writer::new(metadata);
+
+    // Add tensors, selectively quantizing to Q4K
+    for (name, (data, shape)) in tensors {
+        // Skip quantization for small tensors (biases, norms, scales)
+        // and for 1D tensors which are typically biases/norms
+        let should_quantize = shape.len() >= 2
+            && data.len() >= 256  // Minimum size for Q4K (one super-block)
+            && !name.contains("bias")
+            && !name.contains("norm")
+            && !name.contains("scale")
+            && !name.contains("embed");  // Keep embeddings as F32 for now
+
+        if should_quantize {
+            // Quantize to Q4K bytes
+            let q4k_bytes = quantize_q4_k(data);
+            writer.add_q4k_raw_tensor(name, shape.clone(), q4k_bytes);
+        } else {
+            // Keep as F32
+            writer.add_f32_tensor(name, shape.clone(), data);
+        }
+    }
+
+    // Write to file
+    let bytes = writer.write().map_err(|e| AprenderError::FormatError {
+        message: format!("Failed to serialize APR v2 format: {e}"),
+    })?;
+
+    let mut file = fs::File::create(output).map_err(|e| AprenderError::FormatError {
+        message: format!("Failed to create output file: {e}"),
+    })?;
+
+    file.write_all(&bytes)
+        .map_err(|e| AprenderError::FormatError {
+            message: format!("Failed to write APR file: {e}"),
+        })?;
+
+    Ok(())
 }
 
 // ============================================================================

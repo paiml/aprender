@@ -1838,3 +1838,100 @@ roadmap:
     Root cause: GPU path had `stop_tokens: Vec::new()` causing model to generate
     beyond EOS, creating fake "Human:" and "Assistant:" turns.
     Fix: Added EOS token lookup (<|im_end|> or <|endoftext|>, fallback 151645).
+- id: PMAT-093
+  github_issue: null
+  item_type: task
+  title: 'PAR-301: Expand apr serve to support APR and SafeTensors formats'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-01-22T09:45:17Z
+  updated: 2026-01-22T09:45:17Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-094
+  github_issue: null
+  item_type: task
+  title: 'FIVE-WHYS-ST-001: SafeTensors inference produces garbage output'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-01-22T10:09:34Z
+  updated: 2026-01-22T10:09:34Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-095
+  github_issue: null
+  item_type: task
+  title: 'PERF-ST-001: SafeTensors performance parity with GGUF'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-01-22T10:29:50Z
+  updated: 2026-01-22T10:29:50Z
+  spec: null
+  acceptance_criteria:
+  - SafeTensors inference is 0.4 tok/s vs GGUF 30+ tok/s - need five-whys analysis
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-096
+  github_issue: null
+  item_type: task
+  title: 'PMAT-098: APR format performance parity with GGUF and SafeTensors'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-01-22T12:49:19Z
+  updated: 2026-01-22T12:49:19Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: 'PMAT-099: APR format parity - fix AprTransformer config reading'
+  github_issue: null
+  item_type: task
+  title: 'New task: PMAT-099: APR format parity - fix AprTransformer config reading'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-01-22T14:11:54.074583783+00:00
+  updated: 2026-01-22T14:11:54.074583783+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: 'APR-PARITY-001: APR/SafeTensors GGUF parity - all QA scripts pass'
+  github_issue: null
+  item_type: task
+  title: 'New task: APR-PARITY-001: APR/SafeTensors GGUF parity - all QA scripts pass'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-01-22T15:35:30.231896505+00:00
+  updated: 2026-01-22T15:35:30.231896505+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

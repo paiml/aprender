@@ -862,6 +862,11 @@ pub enum TensorDType {
     Q4 = 8,
     /// 8-bit quantized with scale
     Q8 = 9,
+    /// GGUF Q4_K format (raw super-blocks, ~4.5 bits/weight)
+    /// Format: 256-element blocks with super-block scales
+    Q4K = 12,
+    /// GGUF Q6_K format (raw super-blocks, ~6.5 bits/weight)
+    Q6K = 14,
 }
 
 impl TensorDType {
@@ -879,6 +884,8 @@ impl TensorDType {
             7 => Some(Self::U8),
             8 => Some(Self::Q4),
             9 => Some(Self::Q8),
+            12 => Some(Self::Q4K),
+            14 => Some(Self::Q6K),
             _ => None,
         }
     }
@@ -891,7 +898,7 @@ impl TensorDType {
             Self::F16 | Self::BF16 => 2,
             Self::F64 | Self::I64 => 8,
             Self::I8 | Self::U8 | Self::Q8 => 1,
-            Self::Q4 => 0, // Packed, need special handling
+            Self::Q4 | Self::Q4K | Self::Q6K => 0, // Packed/block formats, need special handling
         }
     }
 
@@ -909,6 +916,8 @@ impl TensorDType {
             Self::U8 => "u8",
             Self::Q4 => "q4",
             Self::Q8 => "q8",
+            Self::Q4K => "q4_k",
+            Self::Q6K => "q6_k",
         }
     }
 }
@@ -1076,6 +1085,38 @@ impl AprV2Writer {
         }
 
         self.add_tensor(name, TensorDType::Q4, shape, bytes);
+    }
+
+    /// Add raw Q4_K tensor (GGUF-compatible super-block format)
+    ///
+    /// This stores GGUF Q4_K data directly without re-quantization.
+    /// Q4_K format: 256-element super-blocks with nested 32-element sub-blocks
+    /// Each super-block: d (f16, 2B) + dmin (f16, 2B) + scales (12B) + qs (128B) = 144 bytes
+    /// Effective bits per weight: ~4.5
+    ///
+    /// Use this when importing from GGUF to preserve exact quantization.
+    pub fn add_q4k_raw_tensor(
+        &mut self,
+        name: impl Into<String>,
+        shape: Vec<usize>,
+        raw_data: Vec<u8>,
+    ) {
+        self.add_tensor(name, TensorDType::Q4K, shape, raw_data);
+    }
+
+    /// Add raw Q6_K tensor (GGUF-compatible super-block format)
+    ///
+    /// This stores GGUF Q6_K data directly without re-quantization.
+    /// Q6_K format: 256-element super-blocks
+    /// Each super-block: ql (128B) + qh (64B) + scales (16B) + d (f16, 2B) = 210 bytes
+    /// Effective bits per weight: ~6.5
+    pub fn add_q6k_raw_tensor(
+        &mut self,
+        name: impl Into<String>,
+        shape: Vec<usize>,
+        raw_data: Vec<u8>,
+    ) {
+        self.add_tensor(name, TensorDType::Q6K, shape, raw_data);
     }
 
     /// Set LZ4 compression flag

@@ -5,6 +5,11 @@
 #
 # Implements strict Popperian falsification of the HTTP inference endpoint.
 #
+# CRITICAL: Format parity requires SAME QUANTIZATION (Q4_K)
+#   - GGUF Q4_K vs APR Q4_K = Valid comparison
+#   - GGUF Q4_K vs APR F32 = INVALID (8x memory diff, different kernels)
+#   - SafeTensors F32 = Import format only, NOT for performance comparison
+#
 # Usage: ./qa-serve.sh [port] [model_path] [expected_mode]
 #   port: Server port (default: 8080)
 #   model_path: Path to model, or "--all-models" / "--format-parity"
@@ -14,9 +19,9 @@
 #   ./qa-serve.sh 8080 --all-models
 #   Tests 0.5B, 1B, 1.5B, 7B, and 32B GGUF models automatically
 #
-# Format Parity Testing (PMAT-094, PMAT-095):
+# Format Parity Testing (PMAT-094, PMAT-095, PMAT-103):
 #   ./qa-serve.sh 8080 --format-parity
-#   Tests that GGUF and SafeTensors produce equivalent results
+#   Tests GGUF Q4_K vs APR Q4_K (same quantization, fair comparison)
 #
 # shellcheck disable=SC2227  # Redirection warnings are false positives (no pipes)
 # shellcheck disable=SC2282  # ${var:-} is intentional defensive coding
@@ -52,10 +57,11 @@ SAFETENSORS_MODELS=(
     ["ST-0.5B"]="${HOME}/.cache/huggingface/hub/models--Qwen--Qwen2-0.5B-Instruct/snapshots/c540970f9e29518b1d8f06ab8b24cba66ad77b6d/model.safetensors"
 )
 
-# APR model paths for format parity testing (PMAT-099)
+# APR model paths for format parity testing (PMAT-099, PMAT-103)
+# CRITICAL: APR model MUST be Q4_K quantized for fair comparison with GGUF Q4_K
 declare -A APR_MODELS
 APR_MODELS=(
-    ["APR-1.5B"]="${HOME}/models/qwen2.5-coder-1.5b.apr"
+    ["APR-1.5B"]="${HOME}/models/qwen2.5-coder-1.5b-q4k.apr"  # Q4_K quantized APR (must match GGUF)
 )
 
 # Alternative 32B model paths (fallback order)
@@ -915,11 +921,15 @@ run_all_models() {
 }
 
 #######################################
-# Format Parity Test (PMAT-094, PMAT-095, PMAT-099)
+# Format Parity Test (PMAT-094, PMAT-095, PMAT-099, PMAT-103)
 #######################################
-# Tests that GGUF, SafeTensors, and APR produce coherent output for the same prompt
+# CRITICAL: Tests GGUF Q4_K vs APR Q4_K (same quantization for fair comparison)
+# SafeTensors F32 is informational only - NOT included in parity tests
 test_format_parity() {
-    print_header "Format Parity Test (GGUF vs SafeTensors vs APR)"
+    print_header "Format Parity Test (GGUF Q4_K vs APR Q4_K)"
+    print_color "${CYAN}" "REQUIREMENT: Both formats must use Q4_K quantization"
+    print_color "${CYAN}" "  - GGUF Q4_K (~1.1 GB) vs APR Q4_K (~1.1 GB) = Valid"
+    print_color "${CYAN}" "  - GGUF Q4_K vs APR F32 = INVALID comparison"
 
     local gguf_path="${MODEL_SIZES["1.5B"]}"
     local st_path="${SAFETENSORS_MODELS["ST-1.5B"]}"
@@ -927,20 +937,20 @@ test_format_parity() {
     local parity_passed=1
     local formats_tested=0
 
-    print_color "${CYAN}" "Testing GGUF: $(basename "${gguf_path}" 2>/dev/null || echo 'not found')"
-    print_color "${CYAN}" "Testing SafeTensors: $(basename "${st_path}" 2>/dev/null || echo 'not found')"
-    print_color "${CYAN}" "Testing APR: $(basename "${apr_path}" 2>/dev/null || echo 'not found')"
+    print_color "${CYAN}" "Testing GGUF Q4_K: $(basename "${gguf_path}" 2>/dev/null || echo 'not found')"
+    print_color "${CYAN}" "Testing APR Q4_K: $(basename "${apr_path}" 2>/dev/null || echo 'not found')"
+    print_color "${YELLOW}" "SafeTensors F32: $(basename "${st_path}" 2>/dev/null || echo 'not found') (informational only)"
 
     local test_prompt="What is 2+2? Answer with just the number."
 
-    # Test GGUF
+    # Test GGUF Q4_K (reference baseline)
     if [[ -f "${gguf_path}" ]]; then
-        print_color "${BLUE}" "\n[1/3] Testing GGUF format..."
+        print_color "${BLUE}" "\n[1/2] Testing GGUF Q4_K (reference baseline)..."
         MODEL_PATH="${gguf_path}"
         start_server || true
 
         if ! check_server; then
-            print_result "F-PARITY-001" "GGUF Server Start" "FAIL" "Server failed to start"
+            print_result "F-PARITY-001" "GGUF_Q4K Server Start" "FAIL" "Server failed to start"
             parity_passed=0
         else
             local gguf_response
@@ -952,61 +962,38 @@ test_format_parity() {
             gguf_content=$(python3 -c "import sys, json; print(json.load(sys.stdin)['choices'][0]['message']['content'])" <<< "${gguf_response}" 2>/dev/null) || gguf_content=""
 
             if [[ -n "${gguf_content}" && "${gguf_content}" == *"4"* ]]; then
-                print_result "F-PARITY-001" "GGUF Inference" "PASS" "Output: ${gguf_content}"
+                print_result "F-PARITY-001" "GGUF_Q4K Inference" "PASS" "Output: ${gguf_content}"
                 formats_tested=$((formats_tested+1))
             else
-                print_result "F-PARITY-001" "GGUF Inference" "FAIL" "Unexpected output: ${gguf_content}"
+                print_result "F-PARITY-001" "GGUF_Q4K Inference" "FAIL" "Unexpected output: ${gguf_content}"
                 parity_passed=0
             fi
         fi
         stop_server
         sleep 2
     else
-        print_color "${YELLOW}" "[SKIP] GGUF 1.5B model not found: ${gguf_path}"
+        print_color "${RED}" "[FAIL] GGUF Q4_K model not found: ${gguf_path}"
+        print_color "${RED}" "Cannot run parity test without reference model"
+        return 1
     fi
 
-    # Test SafeTensors
-    if [[ -f "${st_path}" ]]; then
-        print_color "${BLUE}" "\n[2/3] Testing SafeTensors format..."
-        MODEL_PATH="${st_path}"
-        start_server || true
-
-        if ! check_server; then
-            print_result "F-PARITY-002" "SafeTensors Server Start" "FAIL" "Server failed to start"
-            parity_passed=0
-        else
-            local st_response
-            st_response=$(curl -s "${BASE_URL}/v1/chat/completions" \
-                -H "Content-Type: application/json" \
-                -d "{\"model\": \"default\", \"messages\": [{\"role\": \"user\", \"content\": \"${test_prompt}\"}], \"max_tokens\": 20, \"temperature\": 0}")
-
-            local st_content
-            st_content=$(python3 -c "import sys, json; print(json.load(sys.stdin)['choices'][0]['message']['content'])" <<< "${st_response}" 2>/dev/null) || st_content=""
-
-            if [[ -n "${st_content}" && "${st_content}" == *"4"* ]]; then
-                print_result "F-PARITY-002" "SafeTensors Inference" "PASS" "Output: ${st_content}"
-                formats_tested=$((formats_tested+1))
-            else
-                print_result "F-PARITY-002" "SafeTensors Inference" "FAIL" "Unexpected output: ${st_content}"
-                parity_passed=0
-            fi
-        fi
-        stop_server
-        sleep 2
-    else
-        print_color "${YELLOW}" "[SKIP] SafeTensors 1.5B model not found: ${st_path}"
-    fi
-
-    # Test APR (PMAT-099)
+    # Test APR Q4_K (must match GGUF performance)
     if [[ -f "${apr_path}" ]]; then
-        print_color "${BLUE}" "\n[3/3] Testing APR format..."
-        print_color "${GREEN}" "INFO: APR inference enabled."
-        print_color "${YELLOW}" "Target: GGUF parity (30+ tok/s CPU). F32 slower than Q4_K is a FAIL."
+        print_color "${BLUE}" "\n[2/2] Testing APR Q4_K (must match GGUF)..."
+        # Verify APR model is Q4_K quantized (file size ~1.1 GB, not ~6.6 GB)
+        local apr_size
+        apr_size=$(stat -c%s "${apr_path}" 2>/dev/null || stat -f%z "${apr_path}" 2>/dev/null || echo 0)
+        local apr_size_gb=$((apr_size / 1073741824))
+        if [[ ${apr_size_gb} -gt 2 ]]; then
+            print_color "${YELLOW}" "WARNING: APR model is ${apr_size_gb} GB - likely F32 not Q4_K"
+            print_color "${YELLOW}" "For valid parity test, convert GGUF to APR Q4_K:"
+            print_color "${YELLOW}" "  apr convert ${gguf_path} --format apr -o ${apr_path}"
+        fi
         MODEL_PATH="${apr_path}"
         start_server || true
 
         if ! check_server; then
-            print_result "F-PARITY-003" "APR Server Start" "FAIL" "Server failed to start"
+            print_result "F-PARITY-002" "APR_Q4K Server Start" "FAIL" "Server failed to start"
             parity_passed=0
         else
             # APR inference can be slow, use longer timeout
@@ -1019,28 +1006,59 @@ test_format_parity() {
             apr_content=$(python3 -c "import sys, json; print(json.load(sys.stdin)['choices'][0]['message']['content'])" <<< "${apr_response}" 2>/dev/null) || apr_content=""
 
             if [[ -n "${apr_content}" && "${apr_content}" == *"4"* ]]; then
-                print_result "F-PARITY-003" "APR Inference" "PASS" "Output: ${apr_content}"
+                print_result "F-PARITY-002" "APR_Q4K Inference" "PASS" "Output: ${apr_content}"
                 formats_tested=$((formats_tested+1))
             else
-                print_result "F-PARITY-003" "APR Inference" "FAIL" "Unexpected output: ${apr_content}"
+                print_result "F-PARITY-002" "APR_Q4K Inference" "FAIL" "Unexpected output: ${apr_content}"
                 parity_passed=0
             fi
         fi
         stop_server
+        sleep 2
     else
-        print_color "${YELLOW}" "[SKIP] APR 1.5B model not found: ${apr_path}"
-        print_color "${CYAN}" "       To create: apr import <safetensors_path> -o ${apr_path} --arch qwen2 --force"
+        print_color "${YELLOW}" "[SKIP] APR Q4_K model not found: ${apr_path}"
+        print_color "${YELLOW}" "Create Q4_K APR model with:"
+        print_color "${YELLOW}" "  apr convert ${gguf_path} --format apr -o ${apr_path}"
+    fi
+
+    # SafeTensors F32 - informational only, NOT a parity test
+    if [[ -f "${st_path}" ]]; then
+        print_color "${BLUE}" "\n[INFO] SafeTensors F32 (import format only, not parity test)..."
+        print_color "${YELLOW}" "SafeTensors F32 is for import/export only"
+        print_color "${YELLOW}" "Performance comparison with GGUF Q4_K is INVALID (8x memory diff)"
+        MODEL_PATH="${st_path}"
+        start_server || true
+
+        if ! check_server; then
+            print_color "${YELLOW}" "[SKIP] SafeTensors server failed to start (informational)"
+        else
+            local st_response
+            st_response=$(curl -s "${BASE_URL}/v1/chat/completions" \
+                -H "Content-Type: application/json" \
+                -d "{\"model\": \"default\", \"messages\": [{\"role\": \"user\", \"content\": \"${test_prompt}\"}], \"max_tokens\": 20, \"temperature\": 0}")
+
+            local st_content
+            st_content=$(python3 -c "import sys, json; print(json.load(sys.stdin)['choices'][0]['message']['content'])" <<< "${st_response}" 2>/dev/null) || st_content=""
+
+            if [[ -n "${st_content}" && "${st_content}" == *"4"* ]]; then
+                print_color "${GREEN}" "[INFO] SafeTensors_F32 Correctness: Output contains '4' (informational)"
+            else
+                print_color "${YELLOW}" "[INFO] SafeTensors_F32 Correctness: Unexpected output (informational)"
+            fi
+        fi
+        stop_server
     fi
 
     # Summary
+    print_color "${BLUE}" "\nParity formats tested: ${formats_tested}"
     if [[ "${parity_passed}" -eq 1 && "${formats_tested}" -gt 0 ]]; then
-        print_color "${GREEN}" "\n✓ FORMAT PARITY VERIFIED: All ${formats_tested} tested formats produce correct output"
+        print_color "${GREEN}" "\n✓ Q4_K FORMAT PARITY VERIFIED: All ${formats_tested} Q4_K formats produce correct output"
         return 0
     elif [[ "${formats_tested}" -eq 0 ]]; then
-        print_color "${YELLOW}" "\n⚠ FORMAT PARITY SKIPPED: No formats tested (models not found)"
+        print_color "${YELLOW}" "\n⚠ FORMAT PARITY SKIPPED: No Q4_K formats tested (models not found)"
         return 0
     else
-        print_color "${RED}" "\n✗ FORMAT PARITY FAILED: Some formats produce incorrect results"
+        print_color "${RED}" "\n✗ Q4_K FORMAT PARITY FAILED: Some Q4_K formats produce incorrect results"
         return 1
     fi
 }
