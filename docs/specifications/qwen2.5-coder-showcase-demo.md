@@ -1,10 +1,10 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 7.24.0
-**Status:** NATIVE Q4_K FUNCTIONAL — Storage parity achieved, Inference correctness verified.
+**Version:** 7.25.0
+**Status:** NATIVE Q4_K FUNCTIONAL — Storage parity achieved, Fused Kernel Protocol specified.
 **Author:** PAIML Engineering
 **Date:** 2026-01-22
-**Latest Update:** Native Q4_K pipeline fixed (f16 subnormals, tied weights). Model produces correct output at 2.5x compression. Performance (0.27 tok/s) pending fused kernels.
+**Latest Update:** Added Section 12 "Fused Kernel Protocol (F-GPU-130)" specifying `matmul_q4k_f32` interface, Golden Test invariant, and performance falsification criteria. Links to PMAT-103 milestones.
 **QA Scripts:** `qa-serve.sh` (21/21), `qa-chat.sh` (5/5), `qa-run.sh` (19/21 - 2 perf failures)
 **PMAT Roadmap ID:** `SHOWCASE-BRICK-001`
 **Issue:** `APR-REALIZE-001`
@@ -1374,6 +1374,149 @@ A KV cache implementation is only valid if it satisfies the following invariant:
 | Native Q4_K Quant | ~0.7 tok/s (CPU) | ✅ IMPLEMENTED (0.27 tok/s) |
 | Target Throughput | >5.0 tok/s (CPU) | ⏳ Pending (Verification) |
 | SIMD/Quantized Parity | >25.0 tok/s | ⏳ Pending |
+
+---
+
+## 12. Fused Kernel Protocol (F-GPU-130)
+
+**Hypothesis ($H_{fused}$):** Computing matrix-vector products directly on Q4_K super-blocks yields >5 tok/s CPU throughput without accuracy loss, compared to the current "dequantize-then-multiply" approach (0.27 tok/s).
+
+### 12.1 Problem Statement
+
+Current Q4_K inference path:
+```
+Q4K weights (712 MB) → dequant_q4k_to_f32() → F32 weights (1.8 GB) → matmul()
+```
+
+This achieves **storage parity** (2.5x compression) but not **compute parity** because:
+1. Full dequantization allocates 1.8 GB at load time
+2. F32 matmul operates on the expanded representation
+3. Memory bandwidth dominates (F32 is 4.5x larger than Q4K)
+
+### 12.2 Target Architecture
+
+Fused kernel path:
+```
+Q4K weights (712 MB, in-place) → matmul_q4k_f32(weight, input) → output
+```
+
+**Key Invariant:** Weights remain in Q4K format. Dequantization happens per-block during the dot product computation, streaming through cache.
+
+### 12.3 Interface Specification
+
+```rust
+/// Fused Q4K matrix-vector multiply
+///
+/// Computes: output = Q4K_weight @ input
+/// where weight is stored in Q4K format (144 bytes per 256 elements)
+///
+/// # Arguments
+/// * `q4k_data` - Raw Q4K bytes (d, dmin, scales, qs packed)
+/// * `input` - F32 input vector [in_dim]
+/// * `out_dim` - Number of output elements
+/// * `in_dim` - Number of input elements (must be multiple of 256)
+///
+/// # Returns
+/// F32 output vector [out_dim]
+///
+/// # Performance Target
+/// >5 tok/s CPU (AVX2), >100 tok/s GPU (CUDA PTX)
+fn matmul_q4k_f32(
+    q4k_data: &[u8],
+    input: &[f32],
+    out_dim: usize,
+    in_dim: usize,
+) -> Vec<f32>;
+```
+
+### 12.4 Golden Test (Correctness Invariant)
+
+The fused kernel is only valid if it satisfies the following invariant:
+
+> **∀ Q4K weight $W$, ∀ input $x$:**
+> `matmul_q4k_f32(W, x)` **MUST** equal `matmul(dequant_q4k_to_f32(W), x)` within $ε = 10^{-3}$ tolerance.
+
+**Falsification Criteria:**
+```rust
+#[test]
+fn test_fused_q4k_golden_parity() {
+    let q4k_weight = load_q4k_weight("model.layers.0.mlp.gate_proj.weight");
+    let f32_weight = dequant_q4k_to_f32(&q4k_weight, num_elements);
+    let input = random_f32_vector(in_dim);
+
+    let fused_output = matmul_q4k_f32(&q4k_weight, &input, out_dim, in_dim);
+    let reference_output = matmul(&f32_weight, &input, in_dim, out_dim);
+
+    // Golden parity: fused ≈ reference within 1e-3
+    for (fused, reference) in fused_output.iter().zip(reference_output.iter()) {
+        assert!((fused - reference).abs() < 1e-3,
+            "Fused kernel divergence: {} vs {} (Δ={})",
+            fused, reference, (fused - reference).abs());
+    }
+}
+```
+
+**Additional Invariants:**
+1. **No NaN/Inf:** Output must be finite for all finite inputs
+2. **Determinism:** Same input → same output (no uninitialized memory)
+3. **Boundary:** Works for in_dim not multiple of 256 (padding)
+
+### 12.5 Performance Falsification
+
+| Metric | Baseline (dequant+matmul) | Target (fused) | Falsification |
+|--------|---------------------------|----------------|---------------|
+| **Throughput** | 0.27 tok/s | >5 tok/s (CPU) | Fail if <5 tok/s |
+| **Memory** | 1.8 GB (F32) | 712 MB (Q4K) | Fail if >800 MB RSS |
+| **TTFT** | ~4s | <1s | Fail if >1s first token |
+| **Accuracy** | Reference | ±1e-3 | Fail if divergence >1e-3 |
+
+### 12.6 Implementation Strategy
+
+**Phase 1: Scalar Reference (Correctness)**
+```rust
+// Naive implementation for golden parity verification
+for out_idx in 0..out_dim {
+    let mut sum = 0.0f32;
+    for super_block in 0..(in_dim / 256) {
+        let (d, dmin, scales, qs) = parse_q4k_block(&q4k_data[super_block * 144..]);
+        for i in 0..256 {
+            let q_val = dequant_single_q4k(d, dmin, scales, qs, i);
+            sum += q_val * input[super_block * 256 + i];
+        }
+    }
+    output[out_idx] = sum;
+}
+```
+
+**Phase 2: SIMD Optimization (AVX2/AVX-512)**
+- Process 8/16 Q4K values per iteration
+- Use `_mm256_fmadd_ps` for fused multiply-add
+- Prefetch next super-block while processing current
+
+**Phase 3: CUDA PTX Kernel**
+- One thread block per output row
+- Shared memory for Q4K super-block (144 bytes)
+- Warp-level reduction for dot product
+
+### 12.7 Integration with PMAT-103
+
+This protocol directly addresses the performance gap identified in PMAT-103:
+
+| PMAT-103 Milestone | F-GPU-130 Contribution |
+|--------------------|------------------------|
+| Native Q4_K Quant (0.27 tok/s) | ✅ Achieved via `save_model_tensors_q4k` |
+| Target >5.0 tok/s (CPU) | ⏳ Requires `matmul_q4k_f32` fused kernel |
+| SIMD/Quantized Parity >25 tok/s | ⏳ Requires AVX2 vectorization |
+
+### 12.8 Acceptance Criteria (Definition of Done)
+
+- [ ] **F-GPU-130a:** `matmul_q4k_f32` implemented in `trueno/src/simd/q4k.rs`
+- [ ] **F-GPU-130b:** Golden parity test passes (±1e-3 tolerance)
+- [ ] **F-GPU-130c:** Throughput >5 tok/s on Qwen2-0.5B (CPU)
+- [ ] **F-GPU-130d:** Memory usage <800 MB during inference
+- [ ] **F-GPU-130e:** No regression in model output quality
+- [ ] **F-GPU-130f:** CUDA PTX variant achieves >100 tok/s
+- [ ] **F-GPU-130g:** Integration with `realizar` inference path
 
 ---
 
