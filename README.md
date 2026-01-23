@@ -48,7 +48,7 @@ Add aprender to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-aprender = "0.13"
+aprender = "0.24"
 ```
 
 ### Optional Features
