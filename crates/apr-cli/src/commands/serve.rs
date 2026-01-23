@@ -2345,6 +2345,7 @@ fn start_safetensors_server(model_path: &Path, config: &ServerConfig) -> Result<
 }
 
 /// Tokenizer info for SafeTensors models with proper BPE support
+#[cfg(feature = "inference")]
 #[derive(Clone)]
 struct SafeTensorsTokenizerInfo {
     /// BPE tokenizer with vocab and merge rules
@@ -2359,6 +2360,7 @@ struct SafeTensorsTokenizerInfo {
 ///
 /// PMAT-093: Proper BPE tokenization is critical for SafeTensors inference.
 /// Without merge rules, tokenization produces wrong tokens causing garbage output.
+#[cfg(feature = "inference")]
 fn load_safetensors_tokenizer(path: &Path) -> Option<SafeTensorsTokenizerInfo> {
     let content = std::fs::read_to_string(path).ok()?;
     let json: serde_json::Value = serde_json::from_str(&content).ok()?;
@@ -2759,6 +2761,7 @@ fn simple_decode(token_ids: &[u32], vocab: &[String]) -> String {
 }
 
 /// Shared state for SafeTensors server
+#[cfg(feature = "inference")]
 #[derive(Clone)]
 struct SafeTensorsState {
     transformer: Option<Arc<std::sync::Mutex<realizar::apr_transformer::AprTransformer>>>,

@@ -81,7 +81,17 @@ pub(crate) fn run(
 ) -> Result<()> {
     // If --brick is specified, run brick-specific benchmark
     if let Some(brick_name) = brick {
-        return run_brick_benchmark(brick_name, warmup, iterations);
+        #[cfg(feature = "inference")]
+        {
+            return run_brick_benchmark(brick_name, warmup, iterations);
+        }
+        #[cfg(not(feature = "inference"))]
+        {
+            let _ = brick_name;
+            return Err(CliError::ValidationFailed(
+                "--brick requires the 'inference' feature. Build with: cargo build --features inference".to_string()
+            ));
+        }
     }
 
     let config = BenchConfig {
@@ -136,6 +146,7 @@ pub(crate) fn run(
 ///
 /// Tests individual ComputeBrick types for their token budget compliance.
 /// Implements falsification tests F023-F029 for per-brick performance.
+#[cfg(feature = "inference")]
 fn run_brick_benchmark(brick_name: &str, warmup: usize, iterations: usize) -> Result<()> {
     use realizar::brick::{
         benchmark_brick, AttentionBrick, BenchmarkConfig, ComputeBrick, FfnBrick, OProjBrick,
