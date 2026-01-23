@@ -1,7 +1,7 @@
 //! APR CLI Commands Demo
 //!
 //! Demonstrates creating test models and using the apr-cli commands.
-//! This example creates model files that work with all 17 apr-cli commands.
+//! This example creates model files that work with all 24 apr-cli commands.
 //!
 //! Toyota Way Alignment:
 //! - **Genchi Genbutsu**: Go and see - inspect actual model data
@@ -193,7 +193,7 @@ fn print_cli_commands(model_path: &Path, model_v2_path: &Path) {
     println!("For inference commands (run, serve):");
     println!("  cargo build -p apr-cli --features inference\n");
 
-    println!("=== 17 APR CLI Commands ===\n");
+    println!("=== 24 APR CLI Commands ===\n");
 
     println!("--- Model Inspection ---\n");
 
@@ -293,4 +293,38 @@ fn print_cli_commands(model_path: &Path, model_v2_path: &Path) {
     println!(
         "    # Then: curl -X POST http://localhost:8080/predict -d '{{\"input\": [1.0, 2.0]}}'\n"
     );
+
+    println!("18. CHAT - Interactive chat (LLM models):");
+    println!("    ./target/debug/apr chat model.gguf");
+    println!("    ./target/debug/apr chat model.gguf --system \"You are a helpful assistant\"\n");
+
+    println!("--- HuggingFace Hub ---\n");
+
+    println!("19. PUBLISH - Push model to HuggingFace Hub:");
+    println!("    ./target/debug/apr publish {demo_dir}/ --repo org/model-name");
+    println!("    ./target/debug/apr publish {demo_dir}/ --repo org/model-name --dry-run");
+    println!("    ./target/debug/apr publish {demo_dir}/ --repo org/model-name --license mit --tags rust,ml\n");
+
+    println!("20. PULL - Download model from HuggingFace Hub:");
+    println!("    ./target/debug/apr pull hf://org/repo-name -o ./models/");
+    println!("    ./target/debug/apr pull hf://Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF -o ./models/\n");
+
+    println!("--- Benchmarking & QA ---\n");
+
+    println!("21. QA - Run falsifiable QA checklist:");
+    println!("    ./target/debug/apr qa model.gguf");
+    println!("    ./target/debug/apr qa model.gguf --assert-tps 100");
+    println!("    ./target/debug/apr qa model.gguf --json\n");
+
+    println!("22. SHOWCASE - Performance benchmark demo:");
+    println!("    ./target/debug/apr showcase model.gguf");
+    println!("    ./target/debug/apr showcase model.gguf --warmup 3 --iterations 10\n");
+
+    println!("23. PROFILE - Deep performance profiling:");
+    println!("    ./target/debug/apr profile model.gguf");
+    println!("    ./target/debug/apr profile model.gguf --roofline\n");
+
+    println!("24. BENCH - Run benchmarks:");
+    println!("    ./target/debug/apr bench model.gguf");
+    println!("    ./target/debug/apr bench model.gguf --iterations 100\n");
 }
