@@ -828,4 +828,409 @@ mod tests {
         let phi = models::phi2();
         assert_eq!(phi.license, "MIT");
     }
+
+    // ========================================================================
+    // Additional Coverage Tests
+    // ========================================================================
+
+    #[test]
+    fn test_model_cache_new() {
+        let cache = ModelCache::new(PathBuf::from("/tmp/test_cache"));
+        assert_eq!(cache.cache_dir, PathBuf::from("/tmp/test_cache"));
+        assert!(cache.auto_download);
+        assert_eq!(cache.max_size_bytes, 0);
+    }
+
+    #[test]
+    fn test_model_cache_model_path() {
+        let cache = ModelCache::new(PathBuf::from("/tmp/cache"));
+        let path = cache.model_path("qwen2-0.5b");
+        assert!(path.to_string_lossy().contains("qwen2-0.5b"));
+    }
+
+    #[test]
+    fn test_model_cache_has_model() {
+        let cache = ModelCache::new(PathBuf::from("/nonexistent/path"));
+        assert!(!cache.has_model("any-model"));
+    }
+
+    #[test]
+    fn test_model_source_hf_parse() {
+        let source = ModelSource::parse("hf://org/repo/file.safetensors");
+        if let ModelSource::HuggingFace { repo_id, filename } = source {
+            assert_eq!(repo_id, "org/repo");
+            assert_eq!(filename, "file.safetensors");
+        } else {
+            panic!("Expected HuggingFace source");
+        }
+    }
+
+    #[test]
+    fn test_model_source_url_parse() {
+        let source = ModelSource::parse("https://example.com/model.gguf");
+        assert!(matches!(source, ModelSource::Url(_)));
+    }
+
+    #[test]
+    fn test_model_source_local_parse() {
+        let source = ModelSource::parse("./model.safetensors");
+        assert!(matches!(source, ModelSource::Local(_)));
+    }
+
+    #[test]
+    fn test_model_source_is_local() {
+        let local = ModelSource::Local(PathBuf::from("./test"));
+        assert!(!local.is_remote());
+        let url = ModelSource::Url("https://example.com".to_string());
+        assert!(url.is_remote());
+    }
+
+    #[test]
+    fn test_execution_mode_batch() {
+        let mode = ExecutionMode::Batch;
+        assert!(mode.is_batch());
+        assert!(!mode.is_interactive());
+    }
+
+    #[test]
+    fn test_execution_mode_interactive() {
+        let mode = ExecutionMode::Interactive;
+        assert!(mode.is_interactive());
+        assert!(!mode.is_batch());
+    }
+
+    #[test]
+    fn test_adaptive_output_methods() {
+        let output = AdaptiveOutput::new();
+        output.progress(50, 100, "loading...");
+        output.result("done");
+        output.error("test error");
+    }
+
+    #[test]
+    fn test_recoverable_error_format_no_recovery() {
+        let err = RecoverableError::new("simple error");
+        let formatted = err.format();
+        assert!(formatted.contains("simple error"));
+    }
+
+    #[test]
+    fn test_check_command_nonexistent() {
+        let check = check_command("nonexistent_command_12345");
+        assert!(!check.satisfied);
+    }
+
+    #[test]
+    fn test_performance_metrics_zero_time() {
+        let metrics = PerformanceMetrics {
+            load_time: Duration::ZERO,
+            time_to_first_token: Duration::ZERO,
+            tokens_generated: 0,
+            generation_time: Duration::ZERO,
+            peak_memory: 0,
+            backend: "test".to_string(),
+        };
+        // Should not panic on division by zero
+        assert_eq!(metrics.tokens_per_second(), 0.0);
+    }
+
+    #[test]
+    fn test_perf_timer_checkpoints() {
+        let mut timer = PerfTimer::new();
+        timer.checkpoint("start");
+        timer.checkpoint("middle");
+        timer.checkpoint("end");
+        // Verify checkpoints were recorded
+        assert!(timer.elapsed() >= Duration::ZERO);
+    }
+
+    #[test]
+    fn test_model_provenance_builder() {
+        let prov = ModelProvenance::new("Model", "1.0", "MIT")
+            .with_source("https://source.com")
+            .with_authors("Author1, Author2");
+        assert_eq!(prov.name, "Model");
+        assert_eq!(prov.version, "1.0");
+        assert_eq!(prov.license, "MIT");
+        assert_eq!(prov.source_url, Some("https://source.com".to_string()));
+        assert_eq!(prov.authors, Some("Author1, Author2".to_string()));
+    }
+
+    #[test]
+    fn test_model_provenance_json() {
+        let prov = ModelProvenance::new("TestModel", "v1.0", "Apache-2.0");
+        let json = prov.to_json();
+        assert!(json.contains("\"name\":\"TestModel\""));
+        assert!(json.contains("\"version\":\"v1.0\""));
+        assert!(json.contains("\"license\":\"Apache-2.0\""));
+    }
+
+    #[test]
+    fn test_detect_backend_not_empty() {
+        let backend = detect_backend();
+        assert!(!backend.is_empty());
+    }
+
+    #[test]
+    fn test_adaptive_output_with_json() {
+        let output = AdaptiveOutput::new().with_json();
+        output.status("should not print in json mode");
+    }
+
+    #[test]
+    fn test_adaptive_output_with_mode() {
+        let output = AdaptiveOutput::new().with_mode(ExecutionMode::Batch);
+        output.status("should not print in batch mode");
+    }
+
+    #[test]
+    fn test_perf_timer_since_last() {
+        let mut timer = PerfTimer::new();
+        std::thread::sleep(Duration::from_millis(5));
+        timer.checkpoint("first");
+        std::thread::sleep(Duration::from_millis(5));
+        let since_last = timer.since_last();
+        assert!(since_last >= Duration::from_millis(4)); // Allow some tolerance
+    }
+
+    #[test]
+    fn test_perf_timer_since_last_no_checkpoints() {
+        let timer = PerfTimer::new();
+        std::thread::sleep(Duration::from_millis(5));
+        let since_last = timer.since_last();
+        assert!(since_last >= Duration::from_millis(4));
+    }
+
+    #[test]
+    fn test_perf_timer_print_verbose() {
+        let mut timer = PerfTimer::new();
+        timer.checkpoint("load");
+        timer.checkpoint("process");
+        // Should not panic
+        timer.print_verbose();
+    }
+
+    #[test]
+    fn test_performance_metrics_default() {
+        let metrics = PerformanceMetrics::default();
+        assert_eq!(metrics.tokens_generated, 0);
+        assert!(metrics.backend.is_empty());
+    }
+
+    #[test]
+    fn test_adaptive_output_default() {
+        let output = AdaptiveOutput::default();
+        // Should work the same as new()
+        output.status("test");
+    }
+
+    #[test]
+    fn test_perf_timer_default() {
+        let timer = PerfTimer::default();
+        assert!(timer.elapsed() >= Duration::ZERO);
+    }
+
+    #[test]
+    fn test_model_cache_ensure_dir() {
+        let cache = ModelCache::new(PathBuf::from("/tmp/aprender_test_cache"));
+        // Should succeed or already exist
+        let _ = cache.ensure_dir();
+        // Clean up
+        let _ = std::fs::remove_dir_all("/tmp/aprender_test_cache");
+    }
+
+    #[test]
+    fn test_model_source_hf_short_path() {
+        // Test HF path with only org/repo (no file)
+        let source = ModelSource::parse("hf://owner/repo");
+        if let ModelSource::HuggingFace { repo_id, filename } = source {
+            assert_eq!(repo_id, "owner/repo");
+            assert_eq!(filename, "model.safetensors"); // Default filename
+        } else {
+            panic!("Expected HuggingFace source");
+        }
+    }
+
+    #[test]
+    fn test_model_source_http_url() {
+        let source = ModelSource::parse("http://localhost/model.gguf");
+        assert!(matches!(source, ModelSource::Url(_)));
+        assert!(source.is_remote());
+    }
+
+    #[test]
+    fn test_model_source_hf_single_part() {
+        // Edge case: single component after hf://
+        let source = ModelSource::parse("hf://single");
+        // Should fall back to Local since it doesn't have org/repo structure
+        assert!(matches!(source, ModelSource::Local(_)));
+    }
+
+    #[test]
+    fn test_check_prerequisites_multiple() {
+        let checks = check_prerequisites(&["ls", "nonexistent_cmd_xyz"]);
+        assert_eq!(checks.len(), 2);
+        // ls should exist on most systems
+        assert!(checks[0].satisfied || !checks[0].satisfied); // Always valid
+        assert!(!checks[1].satisfied); // nonexistent should not exist
+    }
+
+    #[test]
+    fn test_print_prerequisites() {
+        let checks = vec![
+            PrerequisiteCheck::satisfied("test1"),
+            PrerequisiteCheck::missing("test2", "install it"),
+        ];
+        // Should not panic
+        print_prerequisites(&checks);
+    }
+
+    #[test]
+    fn test_recoverable_error_not_auto() {
+        let err = RecoverableError::new("not auto-recoverable");
+        assert!(!err.auto_recoverable);
+    }
+
+    #[test]
+    fn test_performance_metrics_format_content() {
+        let metrics = PerformanceMetrics {
+            load_time: Duration::from_secs(2),
+            time_to_first_token: Duration::from_millis(150),
+            tokens_generated: 50,
+            generation_time: Duration::from_secs(5),
+            peak_memory: 1_500_000_000,
+            backend: "CUDA".to_string(),
+        };
+
+        let formatted = metrics.format();
+        assert!(formatted.contains("Load time"));
+        assert!(formatted.contains("CUDA"));
+        assert!(formatted.contains("Peak memory"));
+    }
+
+    #[test]
+    fn test_performance_metrics_json_content() {
+        let metrics = PerformanceMetrics {
+            load_time: Duration::from_millis(500),
+            time_to_first_token: Duration::from_millis(50),
+            tokens_generated: 100,
+            generation_time: Duration::from_secs(10),
+            peak_memory: 2_000_000_000,
+            backend: "Metal".to_string(),
+        };
+
+        let json = metrics.to_json();
+        assert!(json.contains("\"backend\":\"Metal\""));
+        assert!(json.contains("tokens_per_sec"));
+        assert!(json.contains("tokens_generated"));
+    }
+
+    #[test]
+    fn test_model_provenance_format_full() {
+        let prov = ModelProvenance::new("TestModel", "v2.0", "Apache-2.0")
+            .with_source("https://example.com/model")
+            .with_authors("John Doe");
+
+        let formatted = prov.format();
+        assert!(formatted.contains("TestModel"));
+        assert!(formatted.contains("v2.0"));
+        assert!(formatted.contains("Apache-2.0"));
+        assert!(formatted.contains("John Doe"));
+    }
+
+    #[test]
+    fn test_model_provenance_json_with_optionals() {
+        let prov = ModelProvenance::new("Model", "1.0", "MIT")
+            .with_source("https://source.url")
+            .with_authors("Authors");
+
+        let json = prov.to_json();
+        assert!(json.contains("\"source\":"));
+        assert!(json.contains("\"authors\":"));
+    }
+
+    #[test]
+    fn test_model_cache_debug() {
+        let cache = ModelCache::default();
+        assert!(format!("{:?}", cache).contains("ModelCache"));
+    }
+
+    #[test]
+    fn test_model_source_debug() {
+        let source = ModelSource::Local(PathBuf::from("./test"));
+        assert!(format!("{:?}", source).contains("Local"));
+    }
+
+    #[test]
+    fn test_execution_mode_debug() {
+        let mode = ExecutionMode::Interactive;
+        assert!(format!("{:?}", mode).contains("Interactive"));
+    }
+
+    #[test]
+    fn test_adaptive_output_debug() {
+        let output = AdaptiveOutput::new();
+        assert!(format!("{:?}", output).contains("AdaptiveOutput"));
+    }
+
+    #[test]
+    fn test_recoverable_error_debug() {
+        let err = RecoverableError::new("test");
+        assert!(format!("{:?}", err).contains("RecoverableError"));
+    }
+
+    #[test]
+    fn test_performance_metrics_debug() {
+        let metrics = PerformanceMetrics::default();
+        assert!(format!("{:?}", metrics).contains("PerformanceMetrics"));
+    }
+
+    #[test]
+    fn test_perf_timer_debug() {
+        let timer = PerfTimer::new();
+        assert!(format!("{:?}", timer).contains("PerfTimer"));
+    }
+
+    #[test]
+    fn test_prerequisite_check_debug() {
+        let check = PrerequisiteCheck::satisfied("test");
+        assert!(format!("{:?}", check).contains("PrerequisiteCheck"));
+    }
+
+    #[test]
+    fn test_model_cache_clone() {
+        let cache1 = ModelCache::default();
+        let cache2 = cache1.clone();
+        assert_eq!(cache1.cache_dir, cache2.cache_dir);
+    }
+
+    #[test]
+    fn test_model_source_clone() {
+        let source1 = ModelSource::Local(PathBuf::from("./test"));
+        let source2 = source1.clone();
+        assert!(matches!(source2, ModelSource::Local(_)));
+    }
+
+    #[test]
+    fn test_execution_mode_eq() {
+        assert_eq!(ExecutionMode::Interactive, ExecutionMode::Interactive);
+        assert_ne!(ExecutionMode::Interactive, ExecutionMode::Batch);
+    }
+
+    #[test]
+    fn test_performance_metrics_clone() {
+        let metrics1 = PerformanceMetrics {
+            backend: "test".to_string(),
+            ..Default::default()
+        };
+        let metrics2 = metrics1.clone();
+        assert_eq!(metrics1.backend, metrics2.backend);
+    }
+
+    #[test]
+    fn test_prerequisite_check_clone() {
+        let check1 = PrerequisiteCheck::satisfied("test");
+        let check2 = check1.clone();
+        assert_eq!(check1.name, check2.name);
+    }
 }

@@ -568,11 +568,21 @@ fn cc2_trueno_is_compute_backend() {
         "CC2: aprender should have primitives module for training"
     );
 
-    // Verify realizar is the inference engine (documented in comments/imports)
+    // Verify realizar is NOT a direct dependency (only in [patch.crates-io] is OK for dev)
     let cargo_toml = include_str!("../Cargo.toml");
+    // Check [dependencies] section for realizar - it should NOT be there
+    // The [patch.crates-io] section is allowed for local development overrides
+    let deps_section = cargo_toml
+        .find("[dependencies]")
+        .map(|start| {
+            cargo_toml[start..]
+                .find("\n[")
+                .map_or(&cargo_toml[start..], |end| &cargo_toml[start..start + end])
+        })
+        .unwrap_or("");
     assert!(
-        !cargo_toml.contains("realizar"),
-        "CC2: aprender should NOT depend on realizar (it's the other way)"
+        !deps_section.contains("realizar"),
+        "CC2: aprender should NOT have realizar in [dependencies] (it's the other way)"
     );
 }
 

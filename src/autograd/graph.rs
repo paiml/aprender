@@ -283,4 +283,204 @@ mod tests {
         // Clear grad on non-existent tensor (should not panic)
         graph.clear_grad(other.id());
     }
+
+    // ========================================================================
+    // Additional Coverage Tests for graph.rs
+    // ========================================================================
+
+    #[test]
+    fn test_graph_len_empty() {
+        let graph = ComputationGraph::new();
+        assert_eq!(graph.len(), 0);
+    }
+
+    #[test]
+    fn test_graph_multiple_register() {
+        let mut graph = ComputationGraph::new();
+        let t1 = Tensor::from_slice(&[1.0]).requires_grad();
+        let t2 = Tensor::from_slice(&[2.0]).requires_grad();
+        let t3 = Tensor::from_slice(&[3.0]).requires_grad();
+
+        graph.register_tensor(t1);
+        graph.register_tensor(t2);
+        graph.register_tensor(t3);
+
+        assert_eq!(graph.tensors.len(), 3);
+    }
+
+    #[test]
+    fn test_graph_register_same_tensor_twice() {
+        let mut graph = ComputationGraph::new();
+        let t = Tensor::from_slice(&[1.0]).requires_grad();
+        let id = t.id();
+
+        // Clone to register same ID twice
+        graph.register_tensor(t.clone());
+        graph.register_tensor(t);
+
+        // Should still have only one entry for that ID
+        assert!(graph.get_tensor(id).is_some());
+    }
+
+    #[test]
+    fn test_backward_simple() {
+        use crate::autograd::grad_fn::NegBackward;
+
+        let mut graph = ComputationGraph::new();
+
+        // Create input tensor that requires gradients
+        let input = Tensor::from_slice(&[1.0, 2.0]).requires_grad();
+        let input_id = input.id();
+        graph.register_tensor(input);
+
+        // Create output tensor
+        let output = Tensor::from_slice(&[-1.0, -2.0]);
+        let output_id = output.id();
+        graph.register_tensor(output);
+
+        // Record the negation operation
+        graph.record(output_id, Arc::new(NegBackward), vec![input_id]);
+
+        // Backward pass with ones gradient
+        let grad_output = Tensor::from_slice(&[1.0, 1.0]);
+        graph.backward(output_id, grad_output);
+
+        // Check that gradient was computed (negation backward passes gradient as-is negated)
+        let grad = graph.get_grad(input_id);
+        assert!(grad.is_some());
+    }
+
+    #[test]
+    fn test_backward_no_matching_output() {
+        let mut graph = ComputationGraph::new();
+
+        // Backward with non-existent output_id - should not panic
+        let output_id = Tensor::from_slice(&[1.0]).id();
+        let grad_output = Tensor::from_slice(&[1.0]);
+        graph.backward(output_id, grad_output);
+
+        // Should complete without error
+        assert!(graph.is_empty());
+    }
+
+    #[test]
+    fn test_backward_empty_tape() {
+        let mut graph = ComputationGraph::new();
+
+        let t = Tensor::from_slice(&[1.0]).requires_grad();
+        let id = t.id();
+        graph.register_tensor(t);
+
+        // Backward with empty tape
+        let grad_output = Tensor::from_slice(&[1.0]);
+        graph.backward(id, grad_output);
+
+        // Should complete without error
+        assert!(graph.is_empty());
+    }
+
+    #[test]
+    fn test_clear_grad_existing_tensor() {
+        let mut graph = ComputationGraph::new();
+        let t = Tensor::from_slice(&[1.0, 2.0]).requires_grad();
+        let id = t.id();
+        graph.register_tensor(t);
+
+        // Clear grad on existing tensor
+        graph.clear_grad(id);
+
+        // Should complete without error
+        assert!(graph.get_grad(id).is_none());
+    }
+
+    #[test]
+    fn test_tape_entry_clone() {
+        use crate::autograd::grad_fn::NegBackward;
+
+        let entry = TapeEntry {
+            output_id: TensorId::new(),
+            grad_fn: Arc::new(NegBackward),
+            input_ids: vec![TensorId::new(), TensorId::new()],
+        };
+
+        let cloned = entry.clone();
+        assert_eq!(cloned.input_ids.len(), 2);
+    }
+
+    #[test]
+    fn test_graph_record_multiple_operations() {
+        use crate::autograd::grad_fn::NegBackward;
+
+        let mut graph = ComputationGraph::new();
+
+        let t1 = Tensor::from_slice(&[1.0]);
+        let t2 = Tensor::from_slice(&[-1.0]);
+        let t3 = Tensor::from_slice(&[1.0]);
+
+        // Record two operations
+        graph.record(t2.id(), Arc::new(NegBackward), vec![t1.id()]);
+        graph.record(t3.id(), Arc::new(NegBackward), vec![t2.id()]);
+
+        assert_eq!(graph.len(), 2);
+    }
+
+    #[test]
+    fn test_backward_skips_unrelated_operations() {
+        use crate::autograd::grad_fn::NegBackward;
+
+        let mut graph = ComputationGraph::new();
+
+        // Create tensors
+        let t1 = Tensor::from_slice(&[1.0]).requires_grad();
+        let t1_id = t1.id();
+        let t2 = Tensor::from_slice(&[-1.0]);
+        let t2_id = t2.id();
+        let t3 = Tensor::from_slice(&[5.0]); // unrelated
+        let t3_id = t3.id();
+
+        graph.register_tensor(t1);
+        graph.register_tensor(t2);
+
+        // Record operation for t1 -> t2
+        graph.record(t2_id, Arc::new(NegBackward), vec![t1_id]);
+
+        // Record unrelated operation (t3 not connected to backward path)
+        graph.record(TensorId::new(), Arc::new(NegBackward), vec![t3_id]);
+
+        // Backward from t2
+        let grad_output = Tensor::from_slice(&[1.0]);
+        graph.backward(t2_id, grad_output);
+
+        // Should still work
+        assert!(graph.get_grad(t1_id).is_some());
+    }
+
+    #[test]
+    fn test_graph_get_tensor_nonexistent() {
+        let graph = ComputationGraph::new();
+        let fake_id = TensorId::new();
+        assert!(graph.get_tensor(fake_id).is_none());
+    }
+
+    #[test]
+    fn test_requires_grad_set_tracking() {
+        let mut graph = ComputationGraph::new();
+
+        let t1 = Tensor::from_slice(&[1.0]).requires_grad();
+        let t2 = Tensor::from_slice(&[2.0]); // no requires_grad
+        let t3 = Tensor::from_slice(&[3.0]).requires_grad();
+
+        let id1 = t1.id();
+        let id2 = t2.id();
+        let id3 = t3.id();
+
+        graph.register_tensor(t1);
+        graph.register_tensor(t2);
+        graph.register_tensor(t3);
+
+        // Only t1 and t3 should be in requires_grad set
+        assert!(graph.requires_grad.contains(&id1));
+        assert!(!graph.requires_grad.contains(&id2));
+        assert!(graph.requires_grad.contains(&id3));
+    }
 }

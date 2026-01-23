@@ -685,4 +685,134 @@ mod tests {
         let err = result.expect_err("Should be an error");
         assert!(matches!(err, AprenderError::Other(_)));
     }
+
+    // ========================================================================
+    // Additional Coverage Tests for bayesian/logistic.rs
+    // ========================================================================
+
+    #[test]
+    fn test_sigmoid_extreme_values() {
+        // Extreme negative value
+        let sig_neg = BayesianLogisticRegression::sigmoid(-100.0);
+        assert!(sig_neg < 1e-10);
+
+        // Extreme positive value
+        let sig_pos = BayesianLogisticRegression::sigmoid(100.0);
+        assert!(sig_pos > 0.9999999);
+
+        // Zero
+        let sig_zero = BayesianLogisticRegression::sigmoid(0.0);
+        assert!((sig_zero - 0.5).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_prior_precision_effects() {
+        let x =
+            Matrix::from_vec(6, 1, vec![-2.0, -1.0, -0.5, 0.5, 1.0, 2.0]).expect("Valid matrix");
+        let y = Vector::from_vec(vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
+
+        // Medium prior precision = moderate regularization
+        let mut model_low = BayesianLogisticRegression::new(0.1);
+        model_low.fit(&x, &y).expect("Fit succeeds");
+
+        // High prior precision = strong regularization
+        let mut model_high = BayesianLogisticRegression::new(10.0);
+        model_high.fit(&x, &y).expect("Fit succeeds");
+
+        // Higher regularization should shrink coefficients toward zero
+        let beta_low = model_low.coefficients_map.as_ref().expect("has coefficients");
+        let beta_high = model_high.coefficients_map.as_ref().expect("has coefficients");
+
+        assert!(
+            beta_low[0].abs() >= beta_high[0].abs(),
+            "Higher prior precision should shrink coefficients"
+        );
+    }
+
+    #[test]
+    fn test_multiple_features() {
+        // Create data with 2 features
+        let x = Matrix::from_vec(
+            4,
+            2,
+            vec![1.0, 0.0, 0.0, 1.0, -1.0, 0.0, 0.0, -1.0],
+        )
+        .expect("Valid matrix");
+        let y = Vector::from_vec(vec![1.0, 1.0, 0.0, 0.0]);
+
+        let mut model = BayesianLogisticRegression::new(0.1);
+        model.fit(&x, &y).expect("Fit succeeds");
+
+        // Should have 2 coefficients (plus intercept if applicable)
+        let beta = model.coefficients_map.as_ref().unwrap();
+        assert!(beta.len() >= 2);
+    }
+
+    #[test]
+    fn test_predict_interval_dimension_mismatch() {
+        let x = Matrix::from_vec(4, 2, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0])
+            .expect("Valid matrix");
+        let y = Vector::from_vec(vec![0.0, 0.0, 1.0, 1.0]);
+
+        let mut model = BayesianLogisticRegression::new(1.0);
+        model.fit(&x, &y).expect("Fit succeeds");
+
+        // Wrong number of features
+        let x_test = Matrix::from_vec(2, 1, vec![1.0, 2.0]).expect("Valid test matrix");
+        let result = model.predict_proba_interval(&x_test, 0.95);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_predict_returns_labels() {
+        let x =
+            Matrix::from_vec(6, 1, vec![-2.0, -1.0, -0.5, 0.5, 1.0, 2.0]).expect("Valid matrix");
+        let y = Vector::from_vec(vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
+
+        let mut model = BayesianLogisticRegression::new(0.1);
+        model.fit(&x, &y).expect("Fit succeeds");
+
+        let x_test = Matrix::from_vec(4, 1, vec![-3.0, -0.1, 0.1, 3.0]).expect("Valid test matrix");
+        let labels = model.predict(&x_test).expect("Prediction succeeds");
+
+        // All labels should be 0.0 or 1.0
+        for &label in labels.as_slice() {
+            assert!(label == 0.0 || label == 1.0);
+        }
+
+        // Very negative x should predict 0, very positive should predict 1
+        assert_eq!(labels[0], 0.0);
+        assert_eq!(labels[3], 1.0);
+    }
+
+    #[test]
+    fn test_wide_credible_interval() {
+        let x =
+            Matrix::from_vec(6, 1, vec![-2.0, -1.0, -0.5, 0.5, 1.0, 2.0]).expect("Valid matrix");
+        let y = Vector::from_vec(vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
+
+        let mut model = BayesianLogisticRegression::new(0.1);
+        model.fit(&x, &y).expect("Fit succeeds");
+
+        // 99% credible interval should be wider than 90%
+        let x_test = Matrix::from_vec(1, 1, vec![0.0]).expect("Valid test matrix");
+
+        let (lower_90, upper_90) = model
+            .predict_proba_interval(&x_test, 0.90)
+            .expect("Interval succeeds");
+        let (lower_99, upper_99) = model
+            .predict_proba_interval(&x_test, 0.99)
+            .expect("Interval succeeds");
+
+        let width_90 = upper_90[0] - lower_90[0];
+        let width_99 = upper_99[0] - lower_99[0];
+
+        assert!(
+            width_99 >= width_90,
+            "99% CI should be wider than 90% CI: {} >= {}",
+            width_99,
+            width_90
+        );
+    }
 }

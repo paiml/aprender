@@ -297,6 +297,7 @@ impl BundleWriter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bundle::manifest::ModelMetadata;
     use tempfile::NamedTempFile;
 
     #[test]
@@ -548,5 +549,169 @@ mod tests {
         assert_eq!(all.get("first"), Some(&vec![1, 2, 3]));
         assert_eq!(all.get("second"), Some(&vec![4, 5, 6, 7]));
         assert_eq!(all.get("third"), Some(&vec![8, 9, 10, 11, 12]));
+    }
+
+    // ========================================================================
+    // Additional Coverage Tests for bundle/format.rs (v2)
+    // ========================================================================
+
+    #[test]
+    fn test_model_entry_field_access() {
+        let entry = ModelEntry::new("test_model", 1024);
+        assert_eq!(entry.name, "test_model");
+        assert_eq!(entry.size, 1024);
+        assert_eq!(entry.offset, 0);
+    }
+
+    #[test]
+    fn test_model_entry_with_metadata_builder() {
+        let meta = ModelMetadata::new(2048)
+            .with_version("1.0")
+            .with_architecture("transformer");
+        let entry = ModelEntry::new("model", 2048).with_metadata(meta);
+
+        assert_eq!(entry.metadata.version, "1.0");
+        assert_eq!(entry.metadata.architecture, "transformer");
+    }
+
+    #[test]
+    fn test_model_entry_clone_v2() {
+        let entry = ModelEntry::new("model", 512)
+            .with_offset(100)
+            .with_component("layer1");
+
+        let cloned = entry.clone();
+        assert_eq!(cloned.name, "model");
+        assert_eq!(cloned.size, 512);
+        assert_eq!(cloned.offset, 100);
+        assert_eq!(cloned.components.len(), 1);
+    }
+
+    #[test]
+    fn test_model_entry_debug_v2() {
+        let entry = ModelEntry::new("debug_model", 100);
+        let debug_str = format!("{:?}", entry);
+        assert!(debug_str.contains("debug_model"));
+        assert!(debug_str.contains("100"));
+    }
+
+    #[test]
+    fn test_bundle_manifest_total_size() {
+        let mut manifest = BundleManifest::new();
+        manifest.add_model(ModelEntry::new("m1", 100));
+        manifest.add_model(ModelEntry::new("m2", 200));
+        manifest.add_model(ModelEntry::new("m3", 300));
+
+        assert_eq!(manifest.total_size(), 600);
+    }
+
+    #[test]
+    fn test_bundle_manifest_get_model_v2() {
+        let mut manifest = BundleManifest::new();
+        manifest.add_model(ModelEntry::new("target", 1024));
+        manifest.add_model(ModelEntry::new("other", 512));
+
+        let model = manifest.get_model("target");
+        assert!(model.is_some());
+        assert_eq!(model.expect("model exists").size, 1024);
+
+        assert!(manifest.get_model("nonexistent").is_none());
+    }
+
+    #[test]
+    fn test_bundle_manifest_model_names_order() {
+        let mut manifest = BundleManifest::new();
+        manifest.add_model(ModelEntry::new("z_last", 100));
+        manifest.add_model(ModelEntry::new("a_first", 200));
+        manifest.add_model(ModelEntry::new("m_middle", 300));
+
+        // Order should be insertion order, not alphabetical
+        let names = manifest.model_names();
+        assert_eq!(names[0], "z_last");
+        assert_eq!(names[1], "a_first");
+        assert_eq!(names[2], "m_middle");
+    }
+
+    #[test]
+    fn test_bundle_manifest_clone_v2() {
+        let mut manifest = BundleManifest::new().with_description("Test");
+        manifest.add_model(ModelEntry::new("model", 256));
+
+        let cloned = manifest.clone();
+        assert_eq!(cloned.len(), 1);
+        assert_eq!(cloned.description, "Test");
+        assert!(cloned.get_model("model").is_some());
+    }
+
+    #[test]
+    fn test_bundle_manifest_debug_v2() {
+        let manifest = BundleManifest::new();
+        let debug_str = format!("{:?}", manifest);
+        assert!(debug_str.contains("BundleManifest"));
+    }
+
+    #[test]
+    fn test_bundle_large_model_v2() {
+        let temp = NamedTempFile::new().expect("Failed to create temp file");
+        let path = temp.path();
+
+        // Create a larger model (1KB)
+        let large_data: Vec<u8> = (0..1024).map(|i| (i % 256) as u8).collect();
+
+        let mut manifest = BundleManifest::new();
+        manifest.add_model(ModelEntry::new("large", large_data.len()));
+
+        let mut models = HashMap::new();
+        models.insert("large".to_string(), large_data.clone());
+
+        let writer = BundleWriter::create(path).expect("Failed to create writer");
+        writer
+            .write_bundle(&manifest, &models)
+            .expect("Failed to write");
+
+        let mut reader = BundleReader::open(path).expect("Failed to open");
+        let manifest = reader.read_manifest().expect("Failed to read manifest");
+        let entry = manifest.get_model("large").expect("Model should exist");
+        let read_data = reader.read_model(entry).expect("Failed to read");
+
+        assert_eq!(read_data.len(), 1024);
+        assert_eq!(read_data, large_data);
+    }
+
+    #[test]
+    fn test_bundle_format_constants() {
+        assert_eq!(BundleFormat::HEADER_SIZE, 20);
+    }
+
+    #[test]
+    fn test_bundle_format_validate_magic_short() {
+        // Too short
+        let short = vec![0u8; 4];
+        assert!(!BundleFormat::validate_magic(&short));
+    }
+
+    #[test]
+    fn test_bundle_manifest_get_model_mut() {
+        let mut manifest = BundleManifest::new();
+        manifest.add_model(ModelEntry::new("mutable", 100));
+
+        let model = manifest.get_model_mut("mutable");
+        assert!(model.is_some());
+        let m = model.expect("model exists");
+        m.size = 200;
+
+        // Verify mutation
+        let model2 = manifest.get_model("mutable");
+        assert_eq!(model2.expect("model exists").size, 200);
+    }
+
+    #[test]
+    fn test_bundle_manifest_add_same_model_twice() {
+        let mut manifest = BundleManifest::new();
+        manifest.add_model(ModelEntry::new("dup", 100));
+        manifest.add_model(ModelEntry::new("dup", 200)); // Should replace
+
+        assert_eq!(manifest.len(), 1);
+        assert_eq!(manifest.get_model("dup").expect("exists").size, 200);
     }
 }

@@ -1294,4 +1294,280 @@ pub fn add(a: i32, b: i32) -> i32 {
             "Expected errors but got none"
         );
     }
+
+    // ========================================================================
+    // Additional Coverage Tests for citl/compiler.rs
+    // ========================================================================
+
+    #[test]
+    fn test_compiler_version_parse_short() {
+        // Too short to parse
+        assert!(CompilerVersion::parse("1.75").is_none());
+        assert!(CompilerVersion::parse("1").is_none());
+        assert!(CompilerVersion::parse("").is_none());
+    }
+
+    #[test]
+    fn test_compiler_version_parse_invalid() {
+        assert!(CompilerVersion::parse("a.b.c").is_none());
+        assert!(CompilerVersion::parse("1.x.0").is_none());
+    }
+
+    #[test]
+    fn test_compiled_artifact_fields() {
+        let artifact = CompiledArtifact {
+            artifact_type: ArtifactType::Binary,
+            path: Some(PathBuf::from("/tmp/test")),
+            size: 1024,
+        };
+        assert_eq!(artifact.artifact_type, ArtifactType::Binary);
+        assert_eq!(artifact.size, 1024);
+        assert!(artifact.path.is_some());
+    }
+
+    #[test]
+    fn test_artifact_type_variants() {
+        assert_eq!(ArtifactType::StaticLib, ArtifactType::StaticLib);
+        assert_eq!(ArtifactType::DynamicLib, ArtifactType::DynamicLib);
+        assert_eq!(ArtifactType::Object, ArtifactType::Object);
+        assert_eq!(ArtifactType::Wasm, ArtifactType::Wasm);
+        assert_ne!(ArtifactType::Binary, ArtifactType::Wasm);
+    }
+
+    #[test]
+    fn test_compilation_result_warnings_success() {
+        let code = ErrorCode::new("W0001", ErrorCategory::TypeMismatch, Difficulty::Easy);
+        let span = SourceSpan::default();
+        let warning =
+            CompilerDiagnostic::new(code, DiagnosticSeverity::Warning, "test warning", span);
+
+        let result = CompilationResult::Success {
+            artifact: None,
+            warnings: vec![warning],
+            metrics: CompilationMetrics::default(),
+        };
+
+        assert!(result.is_success());
+        assert_eq!(result.warning_count(), 1);
+        assert_eq!(result.warnings().len(), 1);
+        assert!(result.errors().is_empty());
+    }
+
+    #[test]
+    fn test_compilation_result_warnings_failure() {
+        let err_code = ErrorCode::new("E0308", ErrorCategory::TypeMismatch, Difficulty::Easy);
+        let warn_code = ErrorCode::new("W0001", ErrorCategory::TypeMismatch, Difficulty::Easy);
+        let span = SourceSpan::default();
+        let error =
+            CompilerDiagnostic::new(err_code, DiagnosticSeverity::Error, "test error", span.clone());
+        let warning =
+            CompilerDiagnostic::new(warn_code, DiagnosticSeverity::Warning, "test warning", span);
+
+        let result = CompilationResult::Failure {
+            errors: vec![error],
+            warnings: vec![warning],
+            raw_output: "raw".to_string(),
+        };
+
+        assert!(!result.is_success());
+        assert_eq!(result.warning_count(), 1);
+        assert_eq!(result.error_count(), 1);
+    }
+
+    #[test]
+    fn test_compilation_mode_cargo() {
+        let mode = CompilationMode::Cargo {
+            manifest_path: PathBuf::from("/tmp/Cargo.toml"),
+        };
+        match mode {
+            CompilationMode::Cargo { manifest_path } => {
+                assert_eq!(manifest_path, PathBuf::from("/tmp/Cargo.toml"));
+            }
+            _ => panic!("Expected Cargo mode"),
+        }
+    }
+
+    #[test]
+    fn test_opt_level_equality() {
+        assert_eq!(OptLevel::Debug, OptLevel::Debug);
+        assert_eq!(OptLevel::Release, OptLevel::Release);
+        assert_ne!(OptLevel::Debug, OptLevel::Release);
+    }
+
+    #[test]
+    fn test_extract_span_from_json() {
+        let json = r#"{"file_name":"test.rs","line_start":"5","line_end":"10","column_start":"1","column_end":"20"}"#;
+        let span = extract_span_from_json(json);
+        assert_eq!(span.file, "test.rs");
+        assert_eq!(span.line_start, 5);
+        assert_eq!(span.line_end, 10);
+    }
+
+    #[test]
+    fn test_extract_span_from_json_missing_fields() {
+        let json = r#"{"file_name":"test.rs"}"#;
+        let span = extract_span_from_json(json);
+        assert_eq!(span.file, "test.rs");
+        assert_eq!(span.line_start, 1);
+        assert_eq!(span.line_end, 1);
+    }
+
+    #[test]
+    fn test_extract_suggestions_from_json() {
+        let json = r#"{"suggestions":[]}"#;
+        assert!(extract_suggestions_from_json(json).is_none());
+    }
+
+    #[test]
+    fn test_find_children_array_end() {
+        let json = r#"{"children":[{"a":1},{"b":2}],"other":"data"}"#;
+        let start = json.find("\"children\":").expect("Should find");
+        let end = find_children_array_end(json, start);
+        assert!(end > start);
+    }
+
+    #[test]
+    fn test_find_children_array_end_nested() {
+        let json = r#"{"children":[[1,2],[3,4]]}"#;
+        let start = json.find("\"children\":").expect("Should find");
+        let end = find_children_array_end(json, start);
+        assert_eq!(end, json.len() - 1);
+    }
+
+    #[test]
+    fn test_extract_top_level_json_value_before_children() {
+        let json = r#"{"level":"error","children":[{"level":"note"}]}"#;
+        let children_start = json.find("\"children\":").expect("Should find");
+        let result = extract_top_level_json_value(json, "\"level\":\"", children_start);
+        assert_eq!(result, Some("error".to_string()));
+    }
+
+    #[test]
+    fn test_extract_value_from_segment() {
+        let segment = r#""key":"value", other"#;
+        assert_eq!(
+            extract_value_from_segment(segment, "\"key\":\""),
+            Some("value".to_string())
+        );
+        assert!(extract_value_from_segment(segment, "\"nonexistent\":\"").is_none());
+    }
+
+    #[test]
+    fn test_extract_json_string_with_children() {
+        // Test that we get top-level level/message, not from children
+        let json = r#"{"level":"error","children":[{"level":"note","message":"inner"}],"message":"outer"}"#;
+        assert_eq!(
+            extract_json_string(json, "level"),
+            Some("error".to_string())
+        );
+    }
+
+    #[test]
+    fn test_rust_compiler_default() {
+        let compiler = RustCompiler::default();
+        assert_eq!(compiler.name(), "rustc");
+    }
+
+    #[test]
+    fn test_rust_compiler_parse_diagnostic() {
+        let compiler = RustCompiler::new();
+        let json = r#"{"level":"error","message":"test message","code":{"code":"E0308"}}"#;
+        let diag = compiler.parse_diagnostic(json);
+        assert!(diag.is_some());
+        let d = diag.expect("Should parse");
+        assert_eq!(d.severity, DiagnosticSeverity::Error);
+        assert_eq!(d.message, "test message");
+    }
+
+    #[test]
+    fn test_rust_compiler_parse_diagnostic_invalid() {
+        let compiler = RustCompiler::new();
+        let diag = compiler.parse_diagnostic("not json");
+        assert!(diag.is_none());
+    }
+
+    #[test]
+    fn test_rust_compiler_parse_json_diagnostics() {
+        let compiler = RustCompiler::new();
+        let output = r#"{"level":"error","message":"type mismatch","code":{"code":"E0308"}}
+{"level":"warning","message":"unused variable","code":{"code":"unused"}}"#;
+
+        let (errors, warnings) = compiler.parse_json_diagnostics(output);
+        assert_eq!(errors.len(), 1);
+        assert_eq!(warnings.len(), 1);
+    }
+
+    #[test]
+    fn test_rust_compiler_parse_json_diagnostics_skip_aborting() {
+        let compiler = RustCompiler::new();
+        let output = r#"{"level":"error","message":"aborting due to 1 previous error","code":{"code":"E0000"}}"#;
+
+        let (errors, warnings) = compiler.parse_json_diagnostics(output);
+        assert!(errors.is_empty());
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn test_compile_options_with_values() {
+        let mut options = CompileOptions::default();
+        options.opt_level = OptLevel::Release;
+        options.extra_flags.push("-v".to_string());
+        options.env.insert("RUST_LOG".to_string(), "debug".to_string());
+        options.working_dir = Some(PathBuf::from("/tmp"));
+
+        assert_eq!(options.opt_level, OptLevel::Release);
+        assert_eq!(options.extra_flags.len(), 1);
+        assert!(options.working_dir.is_some());
+    }
+
+    #[test]
+    fn test_compilation_metrics_with_values() {
+        let metrics = CompilationMetrics {
+            duration: Duration::from_secs(5),
+            memory_bytes: Some(1024 * 1024),
+            units: 3,
+        };
+
+        assert_eq!(metrics.duration, Duration::from_secs(5));
+        assert_eq!(metrics.memory_bytes, Some(1024 * 1024));
+        assert_eq!(metrics.units, 3);
+    }
+
+    #[test]
+    fn test_lookup_error_code_known() {
+        let code = lookup_error_code("E0308");
+        assert_eq!(code.code, "E0308");
+    }
+
+    #[test]
+    fn test_lookup_error_code_unknown() {
+        let code = lookup_error_code("E9999");
+        assert_eq!(code.code, "E9999");
+    }
+
+    #[test]
+    fn test_cargo_project_generate_cargo_toml() {
+        let project = CargoProject::new("test_proj")
+            .edition(RustEdition::E2021)
+            .dependency("serde", "1.0");
+
+        let toml = project.generate_cargo_toml();
+        assert!(toml.contains("name = \"test_proj\""));
+        assert!(toml.contains("edition = \"2021\""));
+        assert!(toml.contains("serde = \"1.0\""));
+    }
+
+    #[test]
+    fn test_compiler_version_with_commit() {
+        let version = CompilerVersion {
+            major: 1,
+            minor: 80,
+            patch: 0,
+            full: "rustc 1.80.0 (abc123)".to_string(),
+            commit: Some("abc123".to_string()),
+        };
+
+        assert_eq!(version.commit, Some("abc123".to_string()));
+        assert_eq!(format!("{version}"), "1.80.0");
+    }
 }
