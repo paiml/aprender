@@ -144,9 +144,10 @@ renacer = { version = "0.9.1", optional = true }
 # SIMD-accelerated compression for KV cache (optional)
 trueno-zram-core = { version = "0.3.0", optional = true }
 
-# Hugging Face Hub integration (optional, spec §11.8)
+# Hugging Face Hub integration (optional, spec §11.8, hf-hub-upload-spec.md)
 hf-hub = { version = "0.4", optional = true, default-features = false, features = ["ureq"] }
 dirs = { version = "6.0", optional = true }
+ureq = { version = "2.12", optional = true, features = ["json"] }  # Direct HTTP for HF Hub upload (APR-PUB-001)
 
 # SafeTensors format parsing (optional, for HF model comparison)
 safetensors = { version = "0.4", optional = true }
@@ -173,7 +174,7 @@ format-encryption = ["aes-gcm", "argon2", "x25519-dalek", "hkdf", "sha2"]  # Ena
 format-quantize = ["half"]  # Enable quantization for .apr format (spec §6.2)
 format-homomorphic = []  # Enable homomorphic encryption for .apr format (spec: homomorphic-encryption-spec.md)
 # Note: mmap is automatic on native platforms, no feature needed (spec: bundle-mmap-spec.md)
-hf-hub-integration = ["hf-hub", "dirs"]  # Enable Hugging Face Hub integration (GH-100)
+hf-hub-integration = ["hf-hub", "dirs", "ureq", "sha2"]  # Enable Hugging Face Hub integration (GH-100, APR-PUB-001)
 audio = ["rustfft", "thiserror"]  # Enable audio processing (mel spectrogram, resampling)
 audio-capture = ["audio"]  # Enable audio capture base functionality
 audio-alsa = ["audio-capture", "alsa"]  # Enable ALSA audio capture (Linux only)
@@ -260,5 +261,6 @@ debug = true  # Enable debug info for flamegraph/profiling
 # CORRECTNESS-013: Override trueno-gpu with local version for PreciseRmsNormKernel
 # PMAT-088: Override realizar with local version for clean_chat_output fix
 [patch.crates-io]
+trueno = { path = "../trueno" }
 trueno-gpu = { path = "../trueno/trueno-gpu" }
 realizar = { path = "../realizar" }

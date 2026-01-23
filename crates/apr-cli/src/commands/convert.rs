@@ -27,9 +27,10 @@ pub(crate) fn run(file: &Path, quantize: Option<&str>, output: &Path) -> Result<
         Some("int8") => Some(QuantizationType::Int8),
         Some("int4") => Some(QuantizationType::Int4),
         Some("fp16") => Some(QuantizationType::Fp16),
+        Some("q4k") | Some("q4_k") => Some(QuantizationType::Q4K),
         Some(other) => {
             return Err(CliError::ValidationFailed(format!(
-                "Unknown quantization: {other}. Supported: int8, int4, fp16"
+                "Unknown quantization: {other}. Supported: int8, int4, fp16, q4k"
             )));
         }
         None => None,

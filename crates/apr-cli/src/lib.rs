@@ -18,8 +18,8 @@ pub mod federation;
 // Commands are crate-private, used internally by execute_command
 use commands::{
     bench, canary, canary::CanaryCommands, cbtop, chat, compare_hf, convert, debug, diff, eval,
-    explain, export, flow, hex, import, inspect, lint, merge, probar, profile, pull, qa, run,
-    serve, showcase, tensors, trace, tree, tui, validate,
+    explain, export, flow, hex, import, inspect, lint, merge, probar, profile, publish, pull, qa,
+    run, serve, showcase, tensors, trace, tree, tui, validate,
 };
 
 /// apr - APR Model Operations Tool
@@ -361,6 +361,11 @@ pub enum Commands {
         /// Force import even if validation fails
         #[arg(long)]
         force: bool,
+
+        /// Preserve Q4K quantization for fused kernel inference (GGUF only)
+        /// Uses realizar's Q4K converter instead of dequantizing to F32
+        #[arg(long)]
+        preserve_q4k: bool,
     },
 
     /// Download and cache model from HuggingFace (Ollama-like UX)
@@ -866,6 +871,45 @@ pub enum Commands {
         #[arg(long)]
         no_gpu: bool,
     },
+
+    /// Publish model to HuggingFace Hub (APR-PUB-001)
+    Publish {
+        /// Directory containing model files to publish
+        #[arg(value_name = "DIRECTORY")]
+        directory: PathBuf,
+
+        /// HuggingFace repository ID (e.g., paiml/whisper-apr-tiny)
+        #[arg(value_name = "REPO_ID")]
+        repo_id: String,
+
+        /// Model display name
+        #[arg(long)]
+        model_name: Option<String>,
+
+        /// License (SPDX identifier, default: mit)
+        #[arg(long, default_value = "mit")]
+        license: String,
+
+        /// Pipeline tag (e.g., automatic-speech-recognition, text-generation)
+        #[arg(long, default_value = "text-generation")]
+        pipeline_tag: String,
+
+        /// Library name (e.g., whisper-apr, aprender)
+        #[arg(long)]
+        library_name: Option<String>,
+
+        /// Additional tags (comma-separated)
+        #[arg(long, value_delimiter = ',')]
+        tags: Option<Vec<String>>,
+
+        /// Commit message
+        #[arg(long)]
+        message: Option<String>,
+
+        /// Dry run (preview without uploading)
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 /// Execute the CLI command and return the result.
@@ -1006,12 +1050,14 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
             arch,
             quantize,
             force,
+            preserve_q4k,
         } => import::run(
             source,
             output,
             Some(arch.as_str()),
             quantize.as_deref(),
             *force,
+            *preserve_q4k,
         ),
         Commands::Pull { model_ref, force } => pull::run(model_ref, *force),
         Commands::List => pull::list(),
@@ -1341,6 +1387,29 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
 
             showcase::run(&config)
         }
+
+        Commands::Publish {
+            directory,
+            repo_id,
+            model_name,
+            license,
+            pipeline_tag,
+            library_name,
+            tags,
+            message,
+            dry_run,
+        } => publish::execute(
+            directory,
+            repo_id,
+            model_name.as_deref(),
+            license,
+            pipeline_tag,
+            library_name.as_deref(),
+            tags.as_ref().map(|v| v.as_slice()).unwrap_or(&[]),
+            message.as_deref(),
+            *dry_run,
+            cli.verbose,
+        ),
     }
 }
 

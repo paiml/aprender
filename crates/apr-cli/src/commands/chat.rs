@@ -247,8 +247,8 @@ fn detect_format_from_bytes(data: &[u8]) -> ModelFormat {
     if data.len() < 8 {
         return ModelFormat::Demo;
     }
-    // APR v1: "APRN", APR v2: "APR2"
-    if &data[0..4] == b"APRN" || &data[0..4] == b"APR2" {
+    // APR v1: "APRN", APR v2: "APR2" or "APR\0"
+    if &data[0..4] == b"APRN" || &data[0..4] == b"APR2" || &data[0..4] == b"APR\0" {
         return ModelFormat::Apr;
     }
     // GGUF: "GGUF"
@@ -910,13 +910,22 @@ mod realizar_chat {
         }
 
         fn generate_apr(&self, prompt: &[u32], config: &ChatConfig) -> Result<Vec<u32>, String> {
-            use realizar::apr_transformer::AprTransformer;
+            use realizar::apr_transformer::{AprTransformer, GenerateConfig};
 
             let transformer = AprTransformer::from_apr_bytes(&self.model_bytes)
                 .map_err(|e| format!("Failed to load APR transformer: {e}"))?;
 
+            // Use generate_with_cache for O(n) KV-cached generation (not O(n²) forward)
+            let gen_config = GenerateConfig {
+                max_tokens: config.max_tokens.min(128),
+                temperature: config.temperature,
+                top_p: config.top_p,
+                top_k: 0,
+                repetition_penalty: 1.0,
+            };
+
             transformer
-                .generate(prompt, config.max_tokens.min(128))
+                .generate_with_cache(prompt, &gen_config)
                 .map_err(|e| format!("APR generate failed: {e}"))
         }
 

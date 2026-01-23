@@ -3426,11 +3426,16 @@ fn test_whisper_tiny_import() {
 4. Baylor, D., et al. (2017). "TFX: A TensorFlow-Based Production-Scale ML Platform." *KDD 2017*
 5. Zaharia, M., et al. (2018). "Accelerating the ML Lifecycle with MLflow." *IEEE Data Eng. Bull.*
 
+**Specification Documents:**
+- [Unified Tensor Format Specification](./unified-tensor-formats.md) - Cross-format support for SafeTensors, GGUF, and APR
+
 **Code References:**
 - APR v1: `src/serialization/apr.rs`
-- GGUF: `src/format/gguf.rs`
+- GGUF: `realizar/src/gguf/mod.rs`
 - Bundle system: `src/bundle/`
-- SafeTensors: `src/serialization/safetensors.rs`
+- SafeTensors (write): `src/serialization/safetensors.rs`
+- SafeTensors (read): `realizar/src/safetensors.rs`
+- SafeTensors (infer): `realizar/src/safetensors_infer.rs`
 
 ---
 

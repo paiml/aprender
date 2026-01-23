@@ -46,6 +46,60 @@ cargo mutants --no-times                     # Mutation testing (target: 85%)
 pmat tdg . --include-components              # TDG score (target: A+ = 95.0+)
 ```
 
+## ⚠️ MANDATORY: Debugging with Tracing (Don't Just Read Code)
+
+**STOP. Before debugging performance or correctness issues by reading code, USE THE TRACING TOOLS.**
+
+### Realizar Inference Tracing (APR-TRACE-001)
+
+Located in `realizar/src/inference_trace.rs`. Models inference as AWS Step Functions state machine:
+
+```bash
+# Enable full tracing
+realizar run model.safetensors --prompt "2+2?" --trace
+
+# Trace specific steps only
+realizar run model.gguf --prompt "Hi" --trace=tokenize,sample,decode
+
+# Output to JSON for analysis
+realizar run model.safetensors --prompt "test" --trace --trace-output trace.json
+
+# Analyze trace
+cat trace.json | jq '.[] | {step: .step, duration_ms: .duration_ms}'
+```
+
+**TraceStep enum** (what you can trace):
+- `Tokenize` - Text → Token IDs
+- `Embed` - Token IDs → Vectors
+- `LayerNorm`, `Attention`, `FFN` - Individual layer ops
+- `TransformerBlock` - Full layer (attention + FFN)
+- `LmHead` - Hidden → Logits
+- `Sample` - Logits → Token ID
+- `Decode` - Token ID → Text
+
+### Profiling Tools
+
+```bash
+# Trueno BrickProfiler (per-layer timing)
+# Access via: transformer.profiler() / transformer.profiler_summary()
+
+# apr CLI profiling
+apr trace model.gguf        # Layer-by-layer analysis
+apr profile model.gguf      # Roofline analysis (memory vs compute bound)
+
+# Per-token timing (to verify O(n) vs O(n²))
+# If each token takes CONSTANT time → KV cache working (O(n))
+# If token N takes N× longer → KV cache broken (O(n²))
+```
+
+### When Debugging Performance Issues
+
+1. **FIRST**: Run with `--trace` to get actual timing data
+2. **THEN**: Check per-token timing to identify O(n) vs O(n²)
+3. **ONLY THEN**: Read code to understand WHY
+
+**Dr. Popper says**: "Reading code is theorizing. Running traces is experimenting. Do experiments first."
+
 ## Architecture
 
 ### Core Design Patterns
@@ -186,6 +240,41 @@ cargo bench --bench ollama_parity --features format-quantize
 # - attention: scaled dot-product attention
 # - mlp_forward: end-to-end MLP layer
 ```
+
+### LAYOUT-001: Quantized Kernel Layout Safety
+
+**CRITICAL: GGUF/APR use ROW-MAJOR layout. Use the CORRECT kernels!**
+
+This bug has occurred 100+ times. The root cause is using column-major kernels for row-major data.
+
+**Layout Definitions:**
+- **ROW-MAJOR (GGUF/APR):** Super-blocks organized per OUTPUT row
+- **COLUMN-MAJOR (trueno):** Super-blocks organized per INPUT column
+
+**FORBIDDEN IMPORTS (will produce garbage output):**
+```rust
+// ❌ NEVER USE THESE FOR GGUF/APR DATA:
+use trueno::backends::q4k::matmul_q4k_f32_colmajor;
+use trueno::backends::q4k::matmul_q4k_f32_colmajor_dispatch;
+use trueno::backends::q6k::matmul_q6k_f32_colmajor;
+use trueno::backends::q6k::matmul_q6k_f32_colmajor_dispatch;
+```
+
+**REQUIRED IMPORTS (row-major, correct for GGUF/APR):**
+```rust
+// ✅ ALWAYS USE THESE FOR GGUF/APR DATA:
+use crate::quantize::fused_q4k_parallel_matvec;
+use crate::quantize::fused_q6k_parallel_matvec;
+```
+
+**Evidence of Bug (garbage output example):**
+```
+Input: "Hello, how are you?"
+WRONG kernel: "olumbia+lsi nunca/localENTS" (garbage)
+RIGHT kernel: "Hello!" (correct)
+```
+
+**CI Enforcement:** See `docs/specifications/qwen2.5-coder-showcase-demo.md` Section 13.
 
 ### Code Scheduled for Deletion
 

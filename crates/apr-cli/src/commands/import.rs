@@ -16,7 +16,24 @@ pub(crate) fn run(
     arch: Option<&str>,
     quantize: Option<&str>,
     force: bool,
+    preserve_q4k: bool,
 ) -> Result<()> {
+    // PMAT-103: If preserve_q4k is set and source is a local GGUF file,
+    // use realizar's Q4K converter to preserve quantization
+    #[cfg(feature = "inference")]
+    if preserve_q4k {
+        let source_path = std::path::Path::new(source);
+        if source_path.exists()
+            && source_path
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("gguf"))
+        {
+            return run_q4k_import(source_path, output);
+        }
+    }
+
+    #[allow(unused_variables)]
+    let _ = preserve_q4k; // Suppress unused warning when inference feature not enabled
     // Parse and display source info
     let parsed_source = Source::parse(source)
         .map_err(|e| CliError::ValidationFailed(format!("Invalid source: {e}")))?;
@@ -120,8 +137,58 @@ fn parse_quantize(
         Some("int8") => Ok(Some(QuantizationType::Int8)),
         Some("int4") => Ok(Some(QuantizationType::Int4)),
         Some("fp16") => Ok(Some(QuantizationType::Fp16)),
+        Some("q4k") | Some("q4_k") => Ok(Some(QuantizationType::Q4K)),
         Some(other) => Err(CliError::ValidationFailed(format!(
-            "Unknown quantization: {other}. Supported: int8, int4, fp16"
+            "Unknown quantization: {other}. Supported: int8, int4, fp16, q4k"
         ))),
+    }
+}
+
+/// PMAT-103: Import GGUF file to APR with Q4K quantization preserved
+///
+/// This uses realizar's `GgufToAprQ4KConverter` to create an APR file
+/// that preserves raw Q4K bytes for fused kernel inference.
+#[cfg(feature = "inference")]
+fn run_q4k_import(source: &Path, output: &Path) -> Result<()> {
+    use humansize::{format_size, BINARY};
+    use realizar::convert::GgufToAprQ4KConverter;
+
+    println!("{}", "=== APR Q4K Import (Fused Kernel) ===".cyan().bold());
+    println!();
+    println!("Source: {} (GGUF)", source.display());
+    println!("Output: {} (APR with Q4K)", output.display());
+    println!();
+    println!(
+        "{}",
+        "Preserving Q4K quantization for fused kernel inference...".yellow()
+    );
+
+    // Use realizar's Q4K converter
+    match GgufToAprQ4KConverter::convert(source, output) {
+        Ok(stats) => {
+            println!();
+            println!("{}", "=== Q4K Import Report ===".cyan().bold());
+            println!("Total tensors:    {}", stats.tensor_count);
+            println!("Q4K tensors:      {}", stats.q4k_tensor_count);
+            println!(
+                "Total bytes:      {}",
+                format_size(stats.total_bytes as u64, BINARY)
+            );
+            println!("Architecture:     {}", stats.architecture);
+            println!("Layers:           {}", stats.num_layers);
+            println!("Hidden size:      {}", stats.hidden_size);
+            println!();
+            println!("{}", "✓ Q4K import successful".green().bold());
+            println!(
+                "{}",
+                "  Model ready for fused kernel inference (30+ tok/s CPU target)".dimmed()
+            );
+            Ok(())
+        }
+        Err(e) => {
+            println!();
+            println!("{}", "✗ Q4K import failed".red().bold());
+            Err(CliError::ValidationFailed(e.to_string()))
+        }
     }
 }

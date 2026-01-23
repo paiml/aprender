@@ -1935,3 +1935,67 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: APR-PUB-001
+  github_issue: null
+  item_type: task
+  title: 'New task: APR-PUB-001'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-01-23T10:19:57.986146153+00:00
+  updated: 2026-01-23T10:19:57.986146153+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: 'PMAT-103-SIMD: AVX2 SIMD optimization for Q4K matmul to achieve 5+ tok/s'
+  github_issue: null
+  item_type: task
+  title: 'New task: PMAT-103-SIMD: AVX2 SIMD optimization for Q4K matmul to achieve 5+ tok/s'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-01-23T12:13:30.786974749+00:00
+  updated: 2026-01-23T12:13:30.786974749+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: 'APR-TRACE-001: Implement tracing features for APR serve path (5 failing tests)'
+  github_issue: null
+  item_type: task
+  title: 'New task: APR-TRACE-001: Implement tracing features for APR serve path (5 failing tests)'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-01-23T12:44:42.307541008+00:00
+  updated: 2026-01-23T12:56:13.838059990+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: 'LAYOUT-001: Fix Q4K kernel layout mismatch - use row-major kernel for APR/GGUF'
+  github_issue: null
+  item_type: task
+  title: 'New task: LAYOUT-001: Fix Q4K kernel layout mismatch - use row-major kernel for APR/GGUF'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-01-23T14:32:25.102949371+00:00
+  updated: 2026-01-23T14:39:07.951711729+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

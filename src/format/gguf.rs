@@ -1230,17 +1230,26 @@ impl GgufReader {
         let tensor_start = self.data_offset + meta.offset as usize;
 
         // Calculate byte size based on dtype (GGML dtype values)
+        // See llama.cpp ggml.h for type definitions
+        // GGML enum: 0=F32, 1=F16, 2=Q4_0, 3=Q4_1, 6=Q5_0, 7=Q5_1, 8=Q8_0, 9=Q8_1
+        //           10=Q2_K, 11=Q3_K, 12=Q4_K, 13=Q5_K, 14=Q6_K, 15=Q8_K
         let byte_size = match meta.dtype {
             0 => num_elements * 4,            // F32
             1 => num_elements * 2,            // F16
-            2 => (num_elements / 32) * 18,    // Q4_0: 32 elements = 2 (scale) + 16 (quants)
-            3 => (num_elements / 32) * 20, // Q4_1: 32 elements = 2 (scale) + 2 (min) + 16 (quants)
-            8 => (num_elements / 32) * 34, // Q8_0: 32 elements = 2 (scale) + 32 (quants)
-            10 => (num_elements / 256) * 84, // Q2_K: 256 elements = 84 bytes
+            2 => (num_elements / 32) * 18,    // Q4_0: 32 elements = 2 (d) + 16 (qs)
+            3 => (num_elements / 32) * 20,    // Q4_1: 32 elements = 2 (d) + 2 (m) + 16 (qs)
+            // dtype 4,5 = removed (Q4_2, Q4_3)
+            6 => (num_elements / 32) * 22,    // Q5_0: 32 elements = 2 (d) + 4 (qh) + 16 (ql)
+            7 => (num_elements / 32) * 24,    // Q5_1: 32 elements = 2 (d) + 2 (m) + 4 (qh) + 16 (ql)
+            8 => (num_elements / 32) * 34,    // Q8_0: 32 elements = 2 (d) + 32 (qs)
+            9 => (num_elements / 32) * 36,    // Q8_1: 32 elements = 2 (d) + 2 (s) + 32 (qs)
+            10 => (num_elements / 256) * 84,  // Q2_K: 256 elements = 84 bytes
             11 => (num_elements / 256) * 110, // Q3_K: 256 elements = 110 bytes
             12 => (num_elements / 256) * 144, // Q4_K: 256 elements = 144 bytes
             13 => (num_elements / 256) * 176, // Q5_K: 256 elements = 176 bytes
             14 => (num_elements / 256) * 210, // Q6_K: 256 elements = 210 bytes
+            15 => (num_elements / 256) * 292, // Q8_K: 256 elements = 292 bytes
+            30 => num_elements * 2,           // BF16: 2 bytes per element
             _ => {
                 return Err(AprenderError::FormatError {
                     message: format!("Unsupported dtype {} for raw extraction", meta.dtype),

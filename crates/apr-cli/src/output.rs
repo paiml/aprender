@@ -8,11 +8,15 @@ use colored::Colorize;
 pub(crate) const MAGIC_APRN: [u8; 4] = [0x41, 0x50, 0x52, 0x4E]; // "APRN" - aprender v1
 pub(crate) const MAGIC_APR1: [u8; 4] = [0x41, 0x50, 0x52, 0x31]; // "APR1" - whisper.apr
 pub(crate) const MAGIC_APR2: [u8; 4] = [0x41, 0x50, 0x52, 0x32]; // "APR2" - aprender v2
+pub(crate) const MAGIC_APR0: [u8; 4] = [0x41, 0x50, 0x52, 0x00]; // "APR\0" - ONE TRUE APR format (v2)
 
-/// Check if magic bytes are valid (supports APRN, APR1, APR2)
+/// Check if magic bytes are valid (supports APRN, APR1, APR2, APR\0)
 pub(crate) fn is_valid_magic(magic: &[u8]) -> bool {
     magic.len() >= 4
-        && (magic[..4] == MAGIC_APRN || magic[..4] == MAGIC_APR1 || magic[..4] == MAGIC_APR2)
+        && (magic[..4] == MAGIC_APRN
+            || magic[..4] == MAGIC_APR1
+            || magic[..4] == MAGIC_APR2
+            || magic[..4] == MAGIC_APR0)
 }
 
 /// Get format name from magic bytes
@@ -26,6 +30,9 @@ pub(crate) fn format_name(magic: &[u8]) -> &'static str {
         }
         if magic[..4] == MAGIC_APR2 {
             return "APR2 (aprender v2)";
+        }
+        if magic[..4] == MAGIC_APR0 {
+            return "APR v2 (ONE TRUE format)";
         }
     }
     "Unknown"

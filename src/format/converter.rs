@@ -1047,54 +1047,54 @@ fn load_model_config_from_json(model_path: &Path) -> Option<GgufModelConfig> {
     // Parse HuggingFace config.json format
     let hidden_size = json
         .get("hidden_size")
-        .and_then(|v| v.as_u64())
+        .and_then(serde_json::Value::as_u64)
         .map(|v| v as usize);
 
     let num_layers = json
         .get("num_hidden_layers")
-        .and_then(|v| v.as_u64())
+        .and_then(serde_json::Value::as_u64)
         .map(|v| v as usize);
 
     let num_heads = json
         .get("num_attention_heads")
-        .and_then(|v| v.as_u64())
+        .and_then(serde_json::Value::as_u64)
         .map(|v| v as usize);
 
     let num_kv_heads = json
         .get("num_key_value_heads")
-        .and_then(|v| v.as_u64())
+        .and_then(serde_json::Value::as_u64)
         .map(|v| v as usize)
         .or(num_heads); // Default to num_heads if not specified (no GQA)
 
     let vocab_size = json
         .get("vocab_size")
-        .and_then(|v| v.as_u64())
+        .and_then(serde_json::Value::as_u64)
         .map(|v| v as usize);
 
     let intermediate_size = json
         .get("intermediate_size")
-        .and_then(|v| v.as_u64())
+        .and_then(serde_json::Value::as_u64)
         .map(|v| v as usize);
 
     let max_position_embeddings = json
         .get("max_position_embeddings")
-        .and_then(|v| v.as_u64())
+        .and_then(serde_json::Value::as_u64)
         .map(|v| v as usize);
 
     let rope_theta = json
         .get("rope_theta")
-        .and_then(|v| v.as_f64())
+        .and_then(serde_json::Value::as_f64)
         .unwrap_or(10000.0);
 
     let rms_norm_eps = json
         .get("rms_norm_eps")
-        .and_then(|v| v.as_f64())
+        .and_then(serde_json::Value::as_f64)
         .unwrap_or(1e-6);
 
     let architecture = json
         .get("model_type")
         .and_then(|v| v.as_str())
-        .map(|s| s.to_string());
+        .map(std::string::ToString::to_string);
 
     Some(GgufModelConfig {
         architecture,
@@ -2028,6 +2028,7 @@ fn write_apr_file_raw(
     let mut writer = AprV2Writer::new(metadata);
 
     // Add all tensors with their native quantization format
+    // PMAT-103: Store tensors as-is from GGUF (dimension handling in realizar)
     for (name, tensor) in tensors {
         // Map GGUF dtype to APR dtype
         let apr_dtype = match tensor.dtype {
@@ -2035,11 +2036,17 @@ fn write_apr_file_raw(
             1 => TensorDType::F16,
             12 => TensorDType::Q4K,  // Q4_K
             14 => TensorDType::Q6K,  // Q6_K
-            // For other types, store as raw bytes with Q4K marker (will need dequant at runtime)
-            _ => TensorDType::Q4K,
+            // Q5_0 (dtype 6), Q5_1 (dtype 7), Q8_0 (dtype 8), Q8_1 (dtype 9)
+            // Store with F32 marker - will dequant at runtime
+            6..=9 => TensorDType::F32,
+            // Other types
+            _ => {
+                eprintln!("[WARN] Unsupported GGUF dtype {} for tensor {}, storing as-is", tensor.dtype, name);
+                TensorDType::F32
+            }
         };
 
-        // Add tensor with raw bytes (no conversion)
+        // Store tensor with GGUF shape (no transpose - handled in realizar)
         writer.add_tensor(name, apr_dtype, tensor.shape.clone(), tensor.data.clone());
     }
 
@@ -2612,6 +2619,166 @@ fn quantize_q4_k(data: &[f32]) -> Vec<u8> {
     }
 
     result
+}
+
+/// Transpose Q4K data for matmul kernel compatibility (PMAT-103)
+///
+/// GGUF stores weight matrices in column-major order (GGML convention) for `x @ W`.
+/// The trueno Q4K kernel expects row-major order for `W @ x`.
+/// These are transposes of each other.
+///
+/// This function:
+/// 1. Dequantizes Q4K to F32
+/// 2. Transposes from [rows, cols] to [cols, rows]
+/// 3. Re-quantizes to Q4K
+///
+/// Returns: (transposed_q4k_bytes, transposed_shape)
+fn transpose_q4k_for_matmul(data: &[u8], shape: &[usize]) -> (Vec<u8>, Vec<usize>) {
+    // Only transpose 2D tensors
+    if shape.len() != 2 {
+        return (data.to_vec(), shape.to_vec());
+    }
+
+    let rows = shape[0];
+    let cols = shape[1];
+    let num_elements = rows * cols;
+
+    // Step 1: Dequantize Q4K to F32
+    let f32_data = dequantize_q4_k_to_f32(data, num_elements);
+
+    // Step 2: Transpose the F32 matrix from [rows, cols] to [cols, rows]
+    // Original: data[i * cols + j] = element at row i, column j
+    // Transposed: data[j * rows + i] = element at row j, column i
+    let mut transposed_f32 = vec![0.0f32; num_elements];
+    for i in 0..rows {
+        for j in 0..cols {
+            transposed_f32[j * rows + i] = f32_data[i * cols + j];
+        }
+    }
+
+    // Step 3: Re-quantize to Q4K
+    let transposed_q4k = quantize_q4_k(&transposed_f32);
+
+    // Return with swapped dimensions
+    (transposed_q4k, vec![cols, rows])
+}
+
+/// Transpose Q6K data for matmul kernel compatibility (PMAT-103)
+///
+/// Same as transpose_q4k_for_matmul but for Q6K format.
+fn transpose_q6k_for_matmul(data: &[u8], shape: &[usize]) -> (Vec<u8>, Vec<usize>) {
+    // Only transpose 2D tensors
+    if shape.len() != 2 {
+        return (data.to_vec(), shape.to_vec());
+    }
+
+    let rows = shape[0];
+    let cols = shape[1];
+    let num_elements = rows * cols;
+
+    // Step 1: Dequantize Q6K to F32
+    let f32_data = dequantize_q6_k_to_f32(data, num_elements);
+
+    // Step 2: Transpose the F32 matrix
+    let mut transposed_f32 = vec![0.0f32; num_elements];
+    for i in 0..rows {
+        for j in 0..cols {
+            transposed_f32[j * rows + i] = f32_data[i * cols + j];
+        }
+    }
+
+    // Step 3: Re-quantize to Q6K (for now, convert to Q4K since we don't have Q6K encoder)
+    // TODO: Implement proper Q6K quantization if needed
+    let transposed_q4k = quantize_q4_k(&transposed_f32);
+
+    // Return with swapped dimensions
+    (transposed_q4k, vec![cols, rows])
+}
+
+/// Dequantize Q6_K data to f32 (for transpose)
+fn dequantize_q6_k_to_f32(data: &[u8], num_elements: usize) -> Vec<f32> {
+    const SUPER_BLOCK_SIZE: usize = 256;
+    const SUPER_BLOCK_BYTES: usize = 210;
+
+    let num_blocks = (num_elements + SUPER_BLOCK_SIZE - 1) / SUPER_BLOCK_SIZE;
+    let mut result = vec![0.0f32; num_blocks * SUPER_BLOCK_SIZE];
+
+    for sb_idx in 0..num_blocks {
+        let sb_start = sb_idx * SUPER_BLOCK_BYTES;
+        let out_start = sb_idx * SUPER_BLOCK_SIZE;
+
+        if sb_start + SUPER_BLOCK_BYTES > data.len() {
+            break;
+        }
+
+        // Q6_K layout: ql (128B) + qh (64B) + scales (16B) + d (2B)
+        let ql = &data[sb_start..sb_start + 128];
+        let qh = &data[sb_start + 128..sb_start + 192];
+        let scales_raw = &data[sb_start + 192..sb_start + 208];
+        let d = f16_to_f32(u16::from_le_bytes([data[sb_start + 208], data[sb_start + 209]]));
+
+        // Decode scales as signed i8
+        let mut scales = [0i8; 16];
+        for i in 0..16 {
+            scales[i] = scales_raw[i] as i8;
+        }
+
+        // Dequantize 256 values
+        for j in 0..256 {
+            // Get 6-bit quantized value
+            let ql_byte = ql[j / 2];
+            let ql_val = if j % 2 == 0 {
+                ql_byte & 0x0F
+            } else {
+                ql_byte >> 4
+            };
+
+            let qh_byte = qh[j / 4];
+            let qh_val = (qh_byte >> ((j % 4) * 2)) & 0x03;
+
+            let q6 = (ql_val as i32) | ((qh_val as i32) << 4);
+            let q6_signed = q6 - 32; // Q6K uses offset encoding
+
+            // Get scale for this 16-element block
+            let scale_idx = j / 16;
+            let scale = scales[scale_idx] as f32;
+
+            result[out_start + j] = d * scale * q6_signed as f32;
+        }
+    }
+
+    result.truncate(num_elements);
+    result
+}
+
+/// Check if a tensor name represents a 2D weight that needs transposition
+fn needs_transpose(name: &str, shape: &[usize]) -> bool {
+    // Only transpose 2D weight tensors
+    if shape.len() != 2 {
+        return false;
+    }
+
+    // Transpose these weight tensors for matmul compatibility
+    let weight_patterns = [
+        "attn_output.weight",
+        "attn_k.weight",
+        "attn_q.weight",
+        "attn_v.weight",
+        "ffn_gate.weight",
+        "ffn_up.weight",
+        "ffn_down.weight",
+        "output.weight",
+        "lm_head.weight",
+        "q_proj.weight",
+        "k_proj.weight",
+        "v_proj.weight",
+        "o_proj.weight",
+        "gate_proj.weight",
+        "up_proj.weight",
+        "down_proj.weight",
+    ];
+
+    weight_patterns.iter().any(|pattern| name.contains(pattern))
 }
 
 /// Save model tensors with optional compression
