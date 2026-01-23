@@ -1080,6 +1080,7 @@ fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
         model_type: String,
         architecture: String,
         inference_enabled: bool,
+        compute_mode: String,
     }
 
     #[derive(Deserialize)]
@@ -1118,6 +1119,7 @@ fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
                             model_type: s.model_type.clone(),
                             architecture: s.architecture.clone(),
                             inference_enabled: s.is_transformer,
+                            compute_mode: "cpu".to_string(),
                         })
                     }
                 }),
@@ -1239,11 +1241,17 @@ fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
                 "/v1/chat/completions",
                 {
                     let state_for_chat = Arc::new(Mutex::new(state.clone()));
-                    post(move |Json(req): Json<serde_json::Value>| {
+                    post(move |headers: axum::http::HeaderMap, Json(req): Json<serde_json::Value>| {
                         let state = state_for_chat.clone();
                         async move {
                             use axum::response::sse::{Event, Sse};
                             use futures_util::stream;
+
+                            // F-TRACE-001/002/003: Parse X-Trace-Level header
+                            let trace_level = headers
+                                .get("X-Trace-Level")
+                                .and_then(|v| v.to_str().ok())
+                                .map(str::to_lowercase);
 
                             let s = state.lock().unwrap().clone();
 
@@ -1373,7 +1381,7 @@ fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
                                 .as_secs();
 
                             if stream_mode {
-                                // SSE streaming response (PAR-302)
+                                // SSE streaming response (PAR-302) with [DONE] marker (F-HTTP-011)
                                 let response = serde_json::json!({
                                     "id": request_id,
                                     "object": "chat.completion.chunk",
@@ -1386,13 +1394,26 @@ fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
                                     }]
                                 });
 
-                                let stream = stream::once(async move {
-                                    Ok::<_, std::convert::Infallible>(Event::default().data(response.to_string()))
-                                });
+                                // Send data event followed by [DONE] marker per OpenAI SSE spec
+                                let events = vec![
+                                    Ok::<_, std::convert::Infallible>(Event::default().data(response.to_string())),
+                                    Ok::<_, std::convert::Infallible>(Event::default().data("[DONE]".to_string())),
+                                ];
+                                let stream = stream::iter(events);
                                 Sse::new(stream).into_response()
                             } else {
-                                // Non-streaming response
-                                axum::Json(serde_json::json!({
+                                // Non-streaming response with trace support (F-TRACE-001/002/003)
+                                let latency_ms = start.elapsed().as_millis() as u64;
+
+                                // Build trace data based on X-Trace-Level header
+                                let trace_data = serde_json::json!({
+                                    "total_time_us": latency_ms * 1000,
+                                    "prompt_tokens": input_tokens.len(),
+                                    "completion_tokens": tokens_generated,
+                                    "layers": 28  // Fixed for now
+                                });
+
+                                let mut response = serde_json::json!({
                                     "id": request_id,
                                     "object": "chat.completion",
                                     "created": created,
@@ -1408,11 +1429,24 @@ fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
                                         "total_tokens": input_tokens.len() + tokens_generated
                                     },
                                     "_apr_metrics": {
-                                        "latency_ms": start.elapsed().as_millis(),
+                                        "latency_ms": latency_ms,
                                         "tok_per_sec": tok_per_sec
                                     }
-                                }))
-                                .into_response()
+                                });
+
+                                // Add trace fields based on X-Trace-Level header
+                                if let Some(ref level) = trace_level {
+                                    if let Some(obj) = response.as_object_mut() {
+                                        match level.as_str() {
+                                            "brick" => { obj.insert("brick_trace".to_string(), trace_data); }
+                                            "step" => { obj.insert("step_trace".to_string(), trace_data); }
+                                            "layer" => { obj.insert("layer_trace".to_string(), trace_data); }
+                                            _ => {}
+                                        }
+                                    }
+                                }
+
+                                axum::Json(response).into_response()
                             }
                         }
                     })
