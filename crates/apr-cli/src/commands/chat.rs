@@ -105,7 +105,7 @@ pub(crate) fn run(
             "{}",
             "Inference tracing enabled for chat (APR-TRACE-001)".cyan()
         );
-        if let Some(ref steps) = trace_steps {
+        if let Some(steps) = trace_steps {
             eprintln!("  Trace steps: {}", steps.join(", "));
         }
         if trace_verbose {
@@ -127,7 +127,7 @@ pub(crate) fn run(
         inspect,
         force_cpu,
         trace,
-        trace_output: trace_output.map(|p| p.to_path_buf()),
+        trace_output,
     };
 
     print_welcome_banner(path, &config);
@@ -831,7 +831,7 @@ mod realizar_chat {
                                     &new_tokens[..new_tokens.len().min(50)]
                                 );
 
-                                // Decode each token individually to find spacing bug
+                                // Decode each token individually for trace diagnostics
                                 for (i, &tok) in new_tokens.iter().take(20).enumerate() {
                                     let decoded = mapped.model.decode(&[tok]);
                                     eprintln!("[APR-TRACE] Token {}: {} -> {:?}", i, tok, decoded);
@@ -868,7 +868,7 @@ mod realizar_chat {
 
                 let mut tracer = InferenceTracer::new(trace_config);
                 tracer.set_model_info(ModelInfo {
-                    name: format!("GGUF Model (CPU)"),
+                    name: "GGUF Model (CPU)".to_string(),
                     num_layers: model.config.num_layers,
                     hidden_dim: model.config.hidden_dim,
                     vocab_size: model.config.vocab_size,

@@ -1164,7 +1164,7 @@ fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
                         // Previous code used generate() which calls forward() on ALL tokens each step = O(n²)
                         // generate_with_cache() uses KV cache for incremental generation = O(n)
                         let gen_start = Instant::now();
-                        let max_tokens = req.max_tokens.min(128) as usize;
+                        let max_tokens = req.max_tokens.min(128);
 
                         let gen_config = realizar::apr_transformer::GenerateConfig {
                             max_tokens,
@@ -1304,7 +1304,7 @@ fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
                             // Previous code used generate() which calls forward() on ALL tokens each step = O(n²)
                             // generate_with_cache() uses KV cache for incremental generation = O(n)
                             let gen_start = Instant::now();
-                            let max_tokens = max_tokens.min(256) as usize;
+                            let max_tokens = max_tokens.min(256);
                             let temperature = req.get("temperature").and_then(|t| t.as_f64()).unwrap_or(0.0) as f32;
 
                             let gen_config = realizar::apr_transformer::GenerateConfig {
@@ -1397,7 +1397,7 @@ fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
                                 // Send data event followed by [DONE] marker per OpenAI SSE spec
                                 let events = vec![
                                     Ok::<_, std::convert::Infallible>(Event::default().data(response.to_string())),
-                                    Ok::<_, std::convert::Infallible>(Event::default().data("[DONE]".to_string())),
+                                    Ok::<_, std::convert::Infallible>(Event::default().data("[DONE]")),
                                 ];
                                 let stream = stream::iter(events);
                                 Sse::new(stream).into_response()
@@ -1998,12 +1998,12 @@ fn start_gguf_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
                 .collect()
         });
         // Run CPU server with rebuilt model
-        return run_cpu_server(quantized_model, vocab, &config);
+        return run_cpu_server(quantized_model, vocab, config);
     }
 
     // CPU path (default - when not using GPU or cuda feature disabled)
     // Create realizar AppState with full inference capabilities and real vocab
-    run_cpu_server(quantized_model, vocab, &config)
+    run_cpu_server(quantized_model, vocab, config)
 }
 
 /// Run the CPU inference server
@@ -2756,8 +2756,7 @@ fn simple_decode(token_ids: &[u32], vocab: &[String]) -> String {
                 .get(id as usize)
                 .map_or("?".to_string(), |s| s.clone())
         })
-        .collect::<Vec<_>>()
-        .join("")
+        .collect::<String>()
 }
 
 /// Shared state for SafeTensors server

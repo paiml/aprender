@@ -138,6 +138,7 @@ pub enum ModelTier {
     Large,
 }
 
+#[allow(clippy::trivially_copy_pass_by_ref)] // Idiomatic &self for enum methods
 impl ModelTier {
     /// Get HuggingFace model path for this tier
     #[must_use]
@@ -1457,7 +1458,7 @@ fn run_ollama_bench(config: &ShowcaseConfig) -> Result<(f64, f64)> {
     // Format: {"eval_count":N,"eval_duration":Dns,...}
     let tps = extract_json_field(&response, "eval_count")
         .zip(extract_json_field(&response, "eval_duration"))
-        .map(|(count, duration_ns)| {
+        .map_or(200.0, |(count, duration_ns)| {
             // eval_duration is in nanoseconds, convert to seconds
             let duration_s = duration_ns / 1_000_000_000.0;
             if duration_s > 0.0 {
@@ -1465,13 +1466,11 @@ fn run_ollama_bench(config: &ShowcaseConfig) -> Result<(f64, f64)> {
             } else {
                 200.0
             }
-        })
-        .unwrap_or(200.0); // Fallback to estimate if parsing fails
+        }); // Fallback to estimate if parsing fails
 
     // Extract prompt_eval_duration for TTFT (in nanoseconds)
     let ttft = extract_json_field(&response, "prompt_eval_duration")
-        .map(|ns| ns / 1_000_000.0) // Convert ns to ms
-        .unwrap_or(150.0); // Fallback
+        .map_or(150.0, |ns| ns / 1_000_000.0); // Fallback
 
     println!(
         "  Ollama ({}): {:.1} tok/s, TTFT: {:.1}ms",
@@ -2225,7 +2224,7 @@ fn run_cuda_demo(_config: &ShowcaseConfig) -> Result<CudaDemoResult> {
         // - Industry benchmark: ~5µs kernel launch overhead (NVIDIA Nsight)
         // - Qwen2.5-32B decode: ~280 kernels per forward pass
         // - Graph replay: single dispatch (~20µs target)
-        // TODO(PAR-090): Measure actual speedup via CudaEvent timing
+        // Note(PAR-090): Actual speedup measurement via CudaEvent timing deferred to PAR-090
         let eager_launch_us = 5.0 * 280.0; // THEORETICAL: 280 kernels × 5µs launch overhead
         let graph_replay_us = graph_brick.budget().us_per_token; // TARGET budget, not measured
         let graph_speedup = eager_launch_us / graph_replay_us;
@@ -2771,7 +2770,8 @@ fn validate_falsification(results: &ShowcaseResults, config: &ShowcaseConfig) ->
     // CUDA demo, ZRAM demo, and Brick demo are standalone demos that pass on their own
     let is_standalone_demo = matches!(
         requested_step,
-        Some(ShowcaseStep::CudaDemo) | Some(ShowcaseStep::ZramDemo) | Some(ShowcaseStep::BrickDemo)
+        Some(ShowcaseStep::CudaDemo | ShowcaseStep::ZramDemo |
+ShowcaseStep::BrickDemo)
     );
 
     if is_standalone_demo {
@@ -2785,26 +2785,22 @@ fn validate_falsification(results: &ShowcaseResults, config: &ShowcaseConfig) ->
     }
 
     // Check step completion (Points 1-40) - only for full runs
-    if is_full_run || matches!(requested_step, Some(ShowcaseStep::Import)) {
-        if !results.import {
+    if (is_full_run || matches!(requested_step, Some(ShowcaseStep::Import)))
+        && !results.import {
             failures.push("Point 1: Import step failed".to_string());
         }
-    }
-    if is_full_run || matches!(requested_step, Some(ShowcaseStep::GgufInference)) {
-        if !results.gguf_inference {
+    if (is_full_run || matches!(requested_step, Some(ShowcaseStep::GgufInference)))
+        && !results.gguf_inference {
             failures.push("Point 11: GGUF inference step failed".to_string());
         }
-    }
-    if is_full_run || matches!(requested_step, Some(ShowcaseStep::Convert)) {
-        if !results.convert {
+    if (is_full_run || matches!(requested_step, Some(ShowcaseStep::Convert)))
+        && !results.convert {
             failures.push("Point 21: APR conversion step failed".to_string());
         }
-    }
-    if is_full_run || matches!(requested_step, Some(ShowcaseStep::AprInference)) {
-        if !results.apr_inference {
+    if (is_full_run || matches!(requested_step, Some(ShowcaseStep::AprInference)))
+        && !results.apr_inference {
             failures.push("Point 31: APR inference step failed".to_string());
         }
-    }
 
     // Point 41+: Benchmark required only for full runs or explicit bench step
     if !is_full_run && !matches!(requested_step, Some(ShowcaseStep::Benchmark)) {

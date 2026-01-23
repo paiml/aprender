@@ -58,7 +58,7 @@ fn base64_encode(data: &[u8]) -> String {
         let mut buf = [0u8; 3];
         buf[..chunk.len()].copy_from_slice(chunk);
 
-        let n = ((buf[0] as u32) << 16) | ((buf[1] as u32) << 8) | (buf[2] as u32);
+        let n = (u32::from(buf[0]) << 16) | (u32::from(buf[1]) << 8) | u32::from(buf[2]);
 
         result.push(ALPHABET[(n >> 18) as usize & 0x3F] as char);
         result.push(ALPHABET[(n >> 12) as usize & 0x3F] as char);
@@ -414,6 +414,7 @@ impl HfHubClient {
     /// **Andon Cord**: This function will NEVER silently succeed - it either
     /// uploads successfully or returns an error.
     #[cfg(feature = "hf-hub-integration")]
+    #[allow(clippy::needless_pass_by_value)] // PushOptions is consumed/cloned for API simplicity
     pub fn push_to_hub(
         &self,
         repo_id: &str,
@@ -519,6 +520,7 @@ impl HfHubClient {
 
     /// Create repository if it doesn't exist
     #[cfg(feature = "hf-hub-integration")]
+    #[allow(clippy::disallowed_methods)] // serde_json::json! macro internally uses unwrap()
     fn create_repo_if_not_exists(&self, repo_id: &str, token: &str, private: bool) -> Result<()> {
         let (org, name) = Self::parse_repo_id(repo_id)?;
         let url = format!("{}/api/repos/create", self.api_base);
@@ -639,6 +641,7 @@ impl HfHubClient {
 
     /// Upload small file directly via commit API
     #[cfg(feature = "hf-hub-integration")]
+    #[allow(clippy::disallowed_methods)] // serde_json::json! macro internally uses unwrap()
     fn upload_direct(
         &self,
         repo_id: &str,
@@ -692,6 +695,7 @@ impl HfHubClient {
     ///
     /// **OBS-003/OBS-004**: Full verbose logging for diagnostics
     #[cfg(feature = "hf-hub-integration")]
+    #[allow(clippy::disallowed_methods)] // serde_json::json! macro internally uses unwrap()
     fn upload_via_lfs(
         &self,
         repo_id: &str,
@@ -850,7 +854,7 @@ impl HfHubClient {
                 eprintln!("[LFS] Chunk {}/{} uploaded: status={}, elapsed={:.1}s",
                     i + 1, urls.len(), status, chunk_start_time.elapsed().as_secs_f64());
 
-                if status < 200 || status >= 300 {
+                if !(200..300).contains(&status) {
                     return Err(HfHubError::NetworkError(format!("Chunk upload failed with status {}", status)));
                 }
             }
@@ -861,7 +865,7 @@ impl HfHubClient {
                 let _ = ureq::post(completion_url)
                     .set("Authorization", &format!("Bearer {token}"))
                     .set("Content-Type", "application/json")
-                    .send_json(&serde_json::json!({}));
+                    .send_json(serde_json::json!({}));
             }
         } else if let Some(url) = upload_url {
             // Single URL upload (for smaller LFS files)
@@ -896,7 +900,7 @@ impl HfHubClient {
                 (file_size as f64 / 1_000_000.0) / upload_start.elapsed().as_secs_f64()
             );
 
-            if status < 200 || status >= 300 {
+            if !(200..300).contains(&status) {
                 let body = resp.into_string().unwrap_or_default();
                 return Err(HfHubError::NetworkError(format!("Upload failed (HTTP {}): {}", status, body)));
             }

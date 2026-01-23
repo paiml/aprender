@@ -1405,7 +1405,7 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
             license,
             pipeline_tag,
             library_name.as_deref(),
-            tags.as_ref().map(|v| v.as_slice()).unwrap_or(&[]),
+            tags.as_ref().map_or(&[], std::vec::Vec::as_slice),
             message.as_deref(),
             *dry_run,
             cli.verbose,

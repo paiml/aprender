@@ -137,7 +137,7 @@ fn parse_quantize(
         Some("int8") => Ok(Some(QuantizationType::Int8)),
         Some("int4") => Ok(Some(QuantizationType::Int4)),
         Some("fp16") => Ok(Some(QuantizationType::Fp16)),
-        Some("q4k") | Some("q4_k") => Ok(Some(QuantizationType::Q4K)),
+        Some("q4k" | "q4_k") => Ok(Some(QuantizationType::Q4K)),
         Some(other) => Err(CliError::ValidationFailed(format!(
             "Unknown quantization: {other}. Supported: int8, int4, fp16, q4k"
         ))),

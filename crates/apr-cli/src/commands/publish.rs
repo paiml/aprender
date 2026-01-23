@@ -299,17 +299,17 @@ impl ModelCardExt for ModelCard {
         output.push_str("          name: custom\n");
         output.push_str("          type: custom\n");
         output.push_str("        metrics:\n");
-        if !self.metrics.is_empty() {
+        if self.metrics.is_empty() {
+            // Add placeholder metric when none provided (required by HuggingFace)
+            output.push_str("          - name: accuracy\n");
+            output.push_str("            type: custom\n");
+            output.push_str("            value: N/A\n");
+        } else {
             for (key, value) in &self.metrics {
                 let _ = writeln!(output, "          - name: {}", key);
                 output.push_str("            type: custom\n");
                 let _ = writeln!(output, "            value: {}", value);
             }
-        } else {
-            // Add placeholder metric when none provided (required by HuggingFace)
-            output.push_str("          - name: accuracy\n");
-            output.push_str("            type: custom\n");
-            output.push_str("            value: N/A\n");
         }
 
         output.push_str("---\n\n");
@@ -334,7 +334,7 @@ impl ModelCardExt for ModelCard {
         output.push_str("## Usage\n\n");
         output.push_str("```rust\n");
         output.push_str("use aprender::Model;\n");
-        output.push_str("\n");
+        output.push('\n');
         output.push_str("let model = Model::load(\"model.apr\")?;\n");
         output.push_str("let result = model.run(&input)?;\n");
         output.push_str("```\n\n");

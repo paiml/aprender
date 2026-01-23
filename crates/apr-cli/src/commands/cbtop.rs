@@ -53,6 +53,7 @@ pub enum ModelFormat {
     Apr,
 }
 
+#[allow(clippy::trivially_copy_pass_by_ref)] // Idiomatic &self for enum methods
 impl ModelFormat {
     /// Detect format from file extension
     pub fn from_path(path: &std::path::Path) -> Option<Self> {
@@ -291,7 +292,7 @@ impl PipelineState {
     fn bottleneck(&self) -> Option<&BrickTiming> {
         self.bricks
             .iter()
-            .max_by(|a, b| a.gap_factor().partial_cmp(&b.gap_factor()).unwrap())
+            .max_by(|a, b| a.gap_factor().partial_cmp(&b.gap_factor()).unwrap_or(std::cmp::Ordering::Equal))
     }
 
     fn update_demo(&mut self) {
@@ -299,7 +300,7 @@ impl PipelineState {
         use std::time::{SystemTime, UNIX_EPOCH};
         let seed = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .expect("System time before Unix epoch")
             .as_millis() as u64;
 
         for (i, brick) in self.bricks.iter_mut().enumerate() {
@@ -418,14 +419,14 @@ fn run_headless(config: CbtopConfig) -> Result<()> {
     #[cfg(feature = "inference")]
     {
         if config.model_path.is_some() {
-            return run_headless_real(config);
+            run_headless_real(config)
         } else {
-            return Err(CliError::ValidationFailed(
+            Err(CliError::ValidationFailed(
                 "Headless mode requires --model-path for real profiling.\n\
                  For CI testing with simulated data, use: apr cbtop --headless --simulated\n\
                  For real profiling, use: apr cbtop --model-path <FILE> --headless"
                     .to_string(),
-            ));
+            ))
         }
     }
 
@@ -441,6 +442,7 @@ fn run_headless(config: CbtopConfig) -> Result<()> {
 }
 
 /// Run headless mode with simulated data (demo mode)
+#[allow(clippy::needless_pass_by_value)] // Config is consumed for API simplicity
 fn run_headless_simulated(config: CbtopConfig) -> Result<()> {
     let model_name = config.model.as_deref().unwrap_or("qwen2.5-coder-1.5b");
 
@@ -511,6 +513,7 @@ fn run_headless_simulated(config: CbtopConfig) -> Result<()> {
 /// Uses CPU inference with unified BrickProfiler instrumentation.
 /// Brick names: apr.Embed, apr.RmsNorm, apr.QKV, apr.Attention, apr.OProj, apr.FFN, etc.
 #[cfg(feature = "inference")]
+#[allow(clippy::needless_pass_by_value)] // Config is consumed for API simplicity
 fn run_headless_apr(
     config: CbtopConfig,
     model_path: &std::path::Path,
@@ -670,9 +673,7 @@ fn run_headless_real(config: CbtopConfig) -> Result<()> {
     let model_name: String = config.model.clone().unwrap_or_else(|| {
         model_path
             .file_stem()
-            .and_then(|s| s.to_str())
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| "unknown".to_string())
+            .and_then(|s| s.to_str()).map_or_else(|| "unknown".to_string(), std::string::ToString::to_string)
     });
 
     eprintln!("cbtop: Running headless benchmark (REAL PROFILING)...");
@@ -762,8 +763,7 @@ fn run_headless_real(config: CbtopConfig) -> Result<()> {
         .tensors
         .iter()
         .find(|t| t.name == "blk.0.ffn_up.weight")
-        .map(|t| t.dims.first().copied().unwrap_or(4864) as usize)
-        .unwrap_or(hidden_dim * 54 / 10);
+        .map_or(hidden_dim * 54 / 10, |t| t.dims.first().copied().unwrap_or(4864) as usize);
 
     eprintln!("cbtop: Model config:");
     eprintln!("  Hidden: {}", hidden_dim);
@@ -779,9 +779,8 @@ fn run_headless_real(config: CbtopConfig) -> Result<()> {
         .encode(prompt)
         .unwrap_or_else(|| vec![151643, 9707, 11, 358, 1079, 264, 11761, 18328, 13]);
 
-    // PAR-071: Use greedy sampling (temp=0) to use GPU argmax path
-    // This reduces data transfer from 600KB to 4 bytes per token (150,000x reduction)
-    // Temperature sampling requires downloading all logits to CPU for top-k
+    // Rationale: Greedy sampling (temp=0) leverages GPU argmax path for 150,000x reduced
+    // data transfer (4 bytes vs 600KB per token). Temperature sampling requires CPU top-k.
     let gen_config = QuantizedGenerateConfig {
         max_tokens: 32,
         temperature: 0.0, // Greedy sampling - uses GPU argmax (4 bytes vs 600KB)
@@ -938,7 +937,9 @@ fn run_headless_real(config: CbtopConfig) -> Result<()> {
     let profiler = cuda_model.profiler();
     #[allow(deprecated)]
     let all_stats = profiler.all_stats();
-    if !all_stats.is_empty() {
+    if all_stats.is_empty() {
+        eprintln!("  No per-brick data collected (profiling may need per-brick sync points)");
+    } else {
         eprintln!("Per-Brick Timing (REAL via std::time::Instant + CUDA sync):");
         let mut sorted_stats: Vec<_> = all_stats.iter().collect();
         sorted_stats.sort_by(|a, b| b.1.total_ns.cmp(&a.1.total_ns));
@@ -951,8 +952,6 @@ fn run_headless_real(config: CbtopConfig) -> Result<()> {
                 stats.tokens_per_sec()
             );
         }
-    } else {
-        eprintln!("  No per-brick data collected (profiling may need per-brick sync points)");
     }
     eprintln!();
 
@@ -1202,7 +1201,7 @@ fn run_headless_real(config: CbtopConfig) -> Result<()> {
     let gpu_name = cuda_model.device_name().to_string();
 
     let report = HeadlessReport {
-        model: model_name.to_string(),
+        model: model_name.clone(),
         timestamp: chrono_timestamp(),
         hardware: HardwareInfo {
             gpu: gpu_name,
@@ -1292,16 +1291,18 @@ fn chrono_timestamp() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|d| {
-            let secs = d.as_secs();
-            format!(
-                "2026-01-12T{:02}:{:02}:{:02}Z",
-                (secs / 3600) % 24,
-                (secs / 60) % 60,
-                secs % 60
-            )
-        })
-        .unwrap_or_else(|_| "unknown".to_string())
+        .map_or_else(
+            |_| "unknown".to_string(),
+            |d| {
+                let secs = d.as_secs();
+                format!(
+                    "2026-01-12T{:02}:{:02}:{:02}Z",
+                    (secs / 3600) % 24,
+                    (secs / 60) % 60,
+                    secs % 60
+                )
+            },
+        )
 }
 
 /// Get CPU info (best effort)
@@ -1331,17 +1332,19 @@ fn generate_headless_report_simulated(
 
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|d| {
-            // ISO 8601 format approximation
-            let secs = d.as_secs();
-            format!(
-                "2026-01-11T{:02}:{:02}:{:02}Z",
-                (secs / 3600) % 24,
-                (secs / 60) % 60,
-                secs % 60
-            )
-        })
-        .unwrap_or_else(|_| "unknown".to_string());
+        .map_or_else(
+            |_| "unknown".to_string(),
+            |d| {
+                // ISO 8601 format approximation
+                let secs = d.as_secs();
+                format!(
+                    "2026-01-11T{:02}:{:02}:{:02}Z",
+                    (secs / 3600) % 24,
+                    (secs / 60) % 60,
+                    secs % 60
+                )
+            },
+        );
 
     // Calculate brick scores
     let brick_scores: Vec<BrickScore> = pipeline
@@ -1926,7 +1929,7 @@ fn render_histogram(f: &mut Frame<'_>, area: Rect, app: &App) {
 
     if let Some(brick) = app.pipeline.bricks.get(app.selected_brick) {
         let mut sorted = brick.samples.clone();
-        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
 
         let p50 = sorted.get(sorted.len() / 2).copied().unwrap_or(0.0);
         let p99 = sorted

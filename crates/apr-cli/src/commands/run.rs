@@ -764,7 +764,7 @@ fn execute_apr_inference(
 
             let mut trace_config = TraceConfig::enabled();
             trace_config.verbose = options.trace_verbose;
-            trace_config.output = options.trace_output.clone();
+            options.trace_output.clone_into(&mut trace_config.output);
             if let Some(ref steps) = options.trace_steps {
                 trace_config.steps = TraceConfig::parse_steps(&steps.join(","));
             }
@@ -1046,7 +1046,7 @@ fn execute_safetensors_inference(
 
         let mut trace_config = TraceConfig::enabled();
         trace_config.verbose = options.trace_verbose;
-        trace_config.output = options.trace_output.clone();
+        options.trace_output.clone_into(&mut trace_config.output);
         if let Some(ref steps) = options.trace_steps {
             trace_config.steps = TraceConfig::parse_steps(&steps.join(","));
         }
@@ -1057,7 +1057,7 @@ fn execute_safetensors_inference(
                 "SafeTensors Model ({})",
                 config
                     .as_ref()
-                    .map(|c| c.architecture())
+                    .map(realizar::SafetensorsConfig::architecture)
                     .unwrap_or_else(|| "unknown".to_string())
             ),
             num_layers,
@@ -1261,12 +1261,7 @@ fn find_embedding_tensor(model: &realizar::safetensors::SafetensorsModel) -> Opt
         "token_embedding.weight",
     ];
 
-    for name in candidates {
-        if model.has_tensor(name) {
-            return Some(name);
-        }
-    }
-    None
+    candidates.into_iter().find(|&name| model.has_tensor(name)).map(|v| v as _)
 }
 
 /// Run simplified SafeTensors generation
@@ -1413,9 +1408,9 @@ fn execute_gguf_inference(
                         // Apply ChatML template for instruct models
                         let messages = vec![ChatMessage::user(prompt)];
                         format_messages(&messages, Some(model_name))
-                            .unwrap_or_else(|_| prompt.to_string())
+                            .unwrap_or_else(|_| prompt.clone())
                     } else {
-                        prompt.to_string()
+                        prompt.clone()
                     };
 
                     // F-UX-40: Debug output only in trace/verbose mode (NOISY-GUARD)
@@ -1432,7 +1427,7 @@ fn execute_gguf_inference(
                     if options.trace || options.verbose {
                         eprintln!(
                             "[APR-TRACE] encode returned: {:?}",
-                            tokens.as_ref().map(|t| t.len())
+                            tokens.as_ref().map(std::vec::Vec::len)
                         );
                     }
                     tokens.unwrap_or_else(|| vec![1u32])
@@ -1559,7 +1554,7 @@ fn run_gguf_generate(
     if !no_gpu {
         use realizar::gguf::OwnedQuantizedModelCuda;
         // F-UX-40/F-UX-26: Only show CUDA init in verbose/benchmark mode (NOISY-GUARD)
-        let verbose = trace_options.map_or(false, |o| o.verbose);
+        let verbose = trace_options.is_some_and(|o| o.verbose);
         if verbose || benchmark {
             eprintln!("Initializing CUDA GPU 0 (GPU-resident mode)...");
         }
@@ -1575,7 +1570,7 @@ fn run_gguf_generate(
         }
 
         // Check if tracing is enabled (APR-TRACE-001)
-        let trace_enabled = trace_options.map_or(false, |o| o.trace);
+        let trace_enabled = trace_options.is_some_and(|o| o.trace);
 
         // Measure inference time separately from loading
         let infer_start = Instant::now();
@@ -1638,7 +1633,7 @@ fn run_gguf_generate(
     let cpu_model = model;
 
     // Check if tracing is enabled
-    let trace_enabled = trace_options.map_or(false, |o| o.trace);
+    let trace_enabled = trace_options.is_some_and(|o| o.trace);
 
     let tokens = if trace_enabled {
         // Use traced generation path (APR-TRACE-001)
@@ -1793,7 +1788,7 @@ pub(crate) fn run(
     // Setup trace config if tracing enabled (APR-TRACE-001)
     if trace {
         eprintln!("{}", "Inference tracing enabled (APR-TRACE-001)".cyan());
-        if let Some(ref steps) = trace_steps {
+        if let Some(steps) = trace_steps {
             eprintln!("  Trace steps: {}", steps.join(", "));
         }
         if trace_verbose {
@@ -1815,7 +1810,7 @@ pub(crate) fn run(
         benchmark,
         verbose,
         trace,
-        trace_steps: trace_steps.map(|s| s.to_vec()),
+        trace_steps: trace_steps.map(<[std::string::String]>::to_vec),
         trace_verbose,
         trace_output,
     };

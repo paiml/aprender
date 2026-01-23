@@ -756,6 +756,7 @@ fn check_ollama_available() -> bool {
 
 /// Measure Ollama throughput for comparison
 #[cfg(feature = "inference")]
+#[allow(clippy::disallowed_methods)] // serde_json::json! macro internally uses unwrap()
 fn measure_ollama_throughput(config: &QaConfig) -> Result<f64> {
     // Use curl to send a request to Ollama
     let prompt = "Write a hello world program in Python:";
@@ -790,7 +791,7 @@ fn measure_ollama_throughput(config: &QaConfig) -> Result<f64> {
 
         if let Ok(output) = output {
             if let Ok(response) = serde_json::from_slice::<serde_json::Value>(&output.stdout) {
-                if let Some(eval_count) = response.get("eval_count").and_then(|v| v.as_u64()) {
+                if let Some(eval_count) = response.get("eval_count").and_then(serde_json::Value::as_u64) {
                     total_tokens += eval_count as usize;
                 }
             }
