@@ -1158,14 +1158,23 @@ fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
                             _ => 2,
                         };
 
-                        // PMAT-099: Generate using shared transformer with generate() method
-                        // Changed from manual forward loop to t.generate() for consistency with SafeTensors handler
+                        // PMAT-103 FIX: Use generate_with_cache for O(n) generation
+                        // Previous code used generate() which calls forward() on ALL tokens each step = O(n²)
+                        // generate_with_cache() uses KV cache for incremental generation = O(n)
                         let gen_start = Instant::now();
                         let max_tokens = req.max_tokens.min(128) as usize;
 
+                        let gen_config = realizar::apr_transformer::GenerateConfig {
+                            max_tokens,
+                            temperature: req.temperature.unwrap_or(0.0),
+                            top_p: 0.9,
+                            top_k: 0,
+                            repetition_penalty: 1.0,
+                        };
+
                         let output_tokens = {
                             let t = transformer.lock().unwrap();
-                            match t.generate(&input_tokens, max_tokens) {
+                            match t.generate_with_cache(&input_tokens, &gen_config) {
                                 Ok(tokens) => tokens,
                                 Err(e) => {
                                     return (
@@ -1283,14 +1292,24 @@ fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
                                 _ => 151645, // ChatML end token
                             };
 
-                            // PMAT-099: Generate using shared transformer with generate() method
-                            // Changed from manual forward loop to t.generate() for consistency with SafeTensors handler
+                            // PMAT-103 FIX: Use generate_with_cache for O(n) generation
+                            // Previous code used generate() which calls forward() on ALL tokens each step = O(n²)
+                            // generate_with_cache() uses KV cache for incremental generation = O(n)
                             let gen_start = Instant::now();
                             let max_tokens = max_tokens.min(256) as usize;
+                            let temperature = req.get("temperature").and_then(|t| t.as_f64()).unwrap_or(0.0) as f32;
+
+                            let gen_config = realizar::apr_transformer::GenerateConfig {
+                                max_tokens,
+                                temperature,
+                                top_p: 0.9,
+                                top_k: 0,
+                                repetition_penalty: 1.0,
+                            };
 
                             let output_tokens = {
                                 let t = transformer.lock().unwrap();
-                                match t.generate(&input_tokens, max_tokens) {
+                                match t.generate_with_cache(&input_tokens, &gen_config) {
                                     Ok(tokens) => tokens,
                                     Err(e) => {
                                         return axum::Json(serde_json::json!({"error": format!("Generate failed: {e}")}))
@@ -2455,11 +2474,21 @@ async fn safetensors_chat_completions_handler(
         prompt.chars().map(|c| c as u32).collect()
     };
 
-    // Generate
+    // PMAT-103 FIX: Use generate_with_cache for O(n) generation
+    // Previous code used generate() which calls forward() on ALL tokens each step = O(n²)
+    // generate_with_cache() uses KV cache for incremental generation = O(n)
     let start = Instant::now();
+    let temperature = request.get("temperature").and_then(|t| t.as_f64()).unwrap_or(0.0) as f32;
+    let gen_config = realizar::apr_transformer::GenerateConfig {
+        max_tokens,
+        temperature,
+        top_p: 0.9,
+        top_k: 0,
+        repetition_penalty: 1.0,
+    };
     let output_ids = {
         let t = transformer.lock().unwrap();
-        match t.generate(&input_ids, max_tokens) {
+        match t.generate_with_cache(&input_ids, &gen_config) {
             Ok(ids) => ids,
             Err(e) => {
                 return (
@@ -2595,11 +2624,21 @@ async fn safetensors_generate_handler(
         prompt.chars().map(|c| c as u32).collect()
     };
 
-    // Generate
+    // PMAT-103 FIX: Use generate_with_cache for O(n) generation
+    // Previous code used generate() which calls forward() on ALL tokens each step = O(n²)
+    // generate_with_cache() uses KV cache for incremental generation = O(n)
     let start = Instant::now();
+    let temperature = request.get("temperature").and_then(|t| t.as_f64()).unwrap_or(0.0) as f32;
+    let gen_config = realizar::apr_transformer::GenerateConfig {
+        max_tokens,
+        temperature,
+        top_p: 0.9,
+        top_k: 0,
+        repetition_penalty: 1.0,
+    };
     let output_ids = {
         let t = transformer.lock().unwrap();
-        match t.generate(&input_ids, max_tokens) {
+        match t.generate_with_cache(&input_ids, &gen_config) {
             Ok(ids) => ids,
             Err(e) => {
                 return (
