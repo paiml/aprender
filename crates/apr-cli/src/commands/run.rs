@@ -327,16 +327,35 @@ fn download_hf_model(org: &str, repo: &str) -> Result<PathBuf> {
         model_path
     };
 
-    // Download tokenizer (optional, don't fail if missing)
-    eprintln!("  Downloading tokenizer.json...");
-    if let Err(e) = download_file(&tokenizer_url, &tokenizer_path) {
-        eprintln!("  Warning: tokenizer.json not available: {e}");
-    }
-
-    // Download config.json (required for SafeTensors inference) - GH-150
+    // Download config.json (REQUIRED for SafeTensors inference) - GH-150
     eprintln!("  Downloading config.json...");
-    if let Err(e) = download_file(&config_url, &config_path) {
-        eprintln!("  Warning: config.json not available: {e}");
+    download_file(&config_url, &config_path).map_err(|e| {
+        // Clean up partial download on failure
+        let _ = std::fs::remove_file(&model_path);
+        CliError::ValidationFailed(format!(
+            "config.json is required for inference but download failed: {e}\n\
+             Ensure the HuggingFace repo contains config.json"
+        ))
+    })?;
+
+    // Download tokenizer.json (REQUIRED for text encoding/decoding)
+    eprintln!("  Downloading tokenizer.json...");
+    download_file(&tokenizer_url, &tokenizer_path).map_err(|e| {
+        // Clean up partial download on failure
+        let _ = std::fs::remove_file(&model_path);
+        let _ = std::fs::remove_file(&config_path);
+        CliError::ValidationFailed(format!(
+            "tokenizer.json is required for inference but download failed: {e}\n\
+             Ensure the HuggingFace repo contains tokenizer.json"
+        ))
+    })?;
+
+    // Download tokenizer_config.json (optional but recommended)
+    let tokenizer_config_url = format!("{base_url}/tokenizer_config.json");
+    let tokenizer_config_path = cache_dir.join("tokenizer_config.json");
+    eprintln!("  Downloading tokenizer_config.json...");
+    if let Err(e) = download_file(&tokenizer_config_url, &tokenizer_config_path) {
+        eprintln!("  Note: tokenizer_config.json not available (optional): {e}");
     }
 
     eprintln!("{}", "  Download complete!".green());
