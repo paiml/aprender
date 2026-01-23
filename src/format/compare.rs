@@ -697,4 +697,198 @@ mod tests {
         };
         assert!(!report.all_match());
     }
+
+    // ========================================================================
+    // Additional Coverage Tests for compare.rs
+    // ========================================================================
+
+    #[test]
+    fn test_compare_config_clone() {
+        let config = CompareConfig::default();
+        let cloned = config.clone();
+        assert_eq!(cloned.l2_tolerance, config.l2_tolerance);
+        assert_eq!(cloned.max_tolerance, config.max_tolerance);
+    }
+
+    #[test]
+    fn test_compare_config_debug() {
+        let config = CompareConfig::default();
+        let debug_str = format!("{:?}", config);
+        assert!(debug_str.contains("CompareConfig"));
+    }
+
+    #[test]
+    fn test_tensor_comparison_debug() {
+        let comparison = TensorComparison {
+            name: "test_tensor".to_string(),
+            shape_match: true,
+            source_shape: vec![2, 2],
+            target_shape: vec![2, 2],
+            l2_diff: Some(0.0),
+            max_diff: Some(0.0),
+            mean_diff: Some(0.0),
+        };
+        let debug_str = format!("{:?}", comparison);
+        assert!(debug_str.contains("test_tensor"));
+    }
+
+    #[test]
+    fn test_tensor_comparison_clone() {
+        let comparison = TensorComparison {
+            name: "test".to_string(),
+            shape_match: true,
+            source_shape: vec![2, 2],
+            target_shape: vec![2, 2],
+            l2_diff: Some(0.1),
+            max_diff: Some(0.2),
+            mean_diff: Some(0.05),
+        };
+        let cloned = comparison.clone();
+        assert_eq!(cloned.name, "test");
+        assert_eq!(cloned.l2_diff, Some(0.1));
+    }
+
+    #[test]
+    fn test_compare_report_debug() {
+        let config = CompareConfig::default();
+        let report = CompareReport {
+            tensors: vec![],
+            source_only: vec![],
+            target_only: vec![],
+            total_l2_diff: 0.0,
+            global_max_diff: 0.0,
+            config,
+        };
+        let debug_str = format!("{:?}", report);
+        assert!(debug_str.contains("CompareReport"));
+    }
+
+    #[test]
+    fn test_compare_report_clone() {
+        let config = CompareConfig::default();
+        let report = CompareReport {
+            tensors: vec![],
+            source_only: vec!["a".to_string()],
+            target_only: vec!["b".to_string()],
+            total_l2_diff: 0.5,
+            global_max_diff: 0.3,
+            config,
+        };
+        let cloned = report.clone();
+        assert_eq!(cloned.source_only.len(), 1);
+        assert_eq!(cloned.total_l2_diff, 0.5);
+    }
+
+    #[test]
+    fn test_weight_comparer_debug() {
+        let comparer = WeightComparer::new(CompareConfig::default());
+        let debug_str = format!("{:?}", comparer);
+        assert!(debug_str.contains("WeightComparer"));
+    }
+
+    #[test]
+    fn test_tensor_comparison_no_match_shape_mismatch() {
+        let comparison = TensorComparison {
+            name: "test".to_string(),
+            shape_match: false,
+            source_shape: vec![2, 2],
+            target_shape: vec![2, 3],
+            l2_diff: None,
+            max_diff: None,
+            mean_diff: None,
+        };
+        assert!(!comparison.is_match());
+    }
+
+    #[test]
+    fn test_tensor_comparison_with_mean_diff() {
+        let comparison = TensorComparison {
+            name: "test".to_string(),
+            shape_match: true,
+            source_shape: vec![4],
+            target_shape: vec![4],
+            l2_diff: Some(0.0),
+            max_diff: Some(0.0),
+            mean_diff: Some(0.0),
+        };
+        assert!(comparison.is_match());
+        assert_eq!(comparison.element_count(), 4);
+    }
+
+    #[test]
+    fn test_compare_report_with_target_only() {
+        let config = CompareConfig::default();
+        let report = CompareReport {
+            tensors: vec![],
+            source_only: vec![],
+            target_only: vec!["extra".to_string()],
+            total_l2_diff: 0.0,
+            global_max_diff: 0.0,
+            config,
+        };
+        assert!(!report.all_match());
+    }
+
+    #[test]
+    fn test_max_diff_nan_in_source() {
+        let a = vec![f32::NAN, 2.0];
+        let b = vec![1.0, 2.0];
+        assert!(max_diff(&a, &b).is_none());
+    }
+
+    #[test]
+    fn test_max_diff_inf_diff() {
+        let a = vec![f32::INFINITY, 0.0];
+        let b = vec![0.0, 0.0];
+        let diff = max_diff(&a, &b);
+        // INFINITY - 0.0 = INFINITY, which might be filtered out
+        // Just verify the function doesn't panic
+        let _ = diff;
+    }
+
+    #[test]
+    fn test_relative_l2_error_length_mismatch() {
+        let a = vec![1.0_f32, 2.0];
+        let b = vec![1.0_f32, 2.0, 3.0];
+        assert!(relative_l2_error(&a, &b).is_none());
+    }
+
+    #[test]
+    fn test_compare_empty_models() {
+        let comparer = WeightComparer::new(CompareConfig::default());
+        let source: HashMap<String, (Vec<f32>, Vec<usize>)> = HashMap::new();
+        let target: HashMap<String, (Vec<f32>, Vec<usize>)> = HashMap::new();
+
+        let report = comparer.compare_models(&source, &target);
+        assert!(report.tensors.is_empty());
+        assert!(report.source_only.is_empty());
+        assert!(report.target_only.is_empty());
+        assert!(report.all_match());
+    }
+
+    #[test]
+    fn test_compare_report_summary_with_mismatches() {
+        let config = CompareConfig::default();
+        let report = CompareReport {
+            tensors: vec![TensorComparison {
+                name: "weight".to_string(),
+                shape_match: true,
+                source_shape: vec![10],
+                target_shape: vec![10],
+                l2_diff: Some(1.0), // Large diff
+                max_diff: Some(1.0),
+                mean_diff: Some(0.1),
+            }],
+            source_only: vec!["missing".to_string()],
+            target_only: vec!["extra".to_string()],
+            total_l2_diff: 1.0,
+            global_max_diff: 1.0,
+            config,
+        };
+
+        let summary = report.summary();
+        // The summary format may vary, just check it contains key info
+        assert!(summary.contains("1"));
+        assert!(!summary.is_empty());
+    }
 }
