@@ -119,14 +119,14 @@ ratatui = { version = "0.29", default-features = true }
 crossterm = "0.28"
 
 # Visualization (syscall tracing and charts)
-renacer = { version = "0.9.7", path = "/home/noah/src/renacer", optional = true, default-features = false }
+renacer = { version = "0.9.7", optional = true, default-features = false }
 trueno-viz = { version = "0.1.19", optional = true, default-features = false, features = ["svg"] }
 
 # ZRAM compression (SIMD-accelerated LZ4/ZSTD)
 trueno-zram-core = { version = "0.2", optional = true }
 
 # Model registry and caching (Ollama-like model management)
-pacha = { version = "0.2.3", path = "/home/noah/src/pacha", default-features = false, features = ["remote"] }
+pacha = { version = "0.2.3", default-features = false, features = ["remote"] }
 
 [[example]]
 name = "probar_tui_testing"
