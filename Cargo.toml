@@ -70,6 +70,7 @@ uninlined_format_args = "allow"  # Format string style preference
 type_complexity = "allow"  # Complex types common in ML
 cloned_instead_of_copied = "allow"  # Style preference
 unused_self = "allow"  # Method stubs common during development
+useless_vec = "allow"  # Test data often uses vec![] for clarity
 
 [package]
 name = "aprender"
