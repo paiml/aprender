@@ -841,7 +841,7 @@ impl BpeTokenizer {
 
     /// Get the end-of-word marker used by this tokenizer.
     ///
-    /// Returns "</w>" for standard BPE or "Ġ" for GPT-2 style tokenizers.
+    /// Returns `</w>` for standard BPE or "Ġ" for GPT-2 style tokenizers.
     #[must_use]
     pub fn end_of_word_marker(&self) -> &str {
         &self.end_of_word

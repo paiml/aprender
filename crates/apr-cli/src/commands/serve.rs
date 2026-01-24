@@ -2186,15 +2186,16 @@ fn start_safetensors_server(model_path: &Path, config: &ServerConfig) -> Result<
         Json, Router,
     };
     use realizar::apr_transformer::AprTransformer;
-    use realizar::safetensors::MappedSafeTensorsModel;
+    use realizar::safetensors::SafetensorsModel;
     use realizar::safetensors_infer::SafetensorsToAprConverter;
     use serde::Serialize;
     use std::sync::{Arc, Mutex};
 
-    // Load SafeTensors using mmap for zero-copy access (T-QA-020)
-    // Avoids redundant std::fs::read that caused >10s latency on large files
-    let st_model = MappedSafeTensorsModel::load(model_path)
-        .map_err(|e| CliError::ModelLoadFailed(format!("Failed to load SafeTensors: {e}")))?;
+    // Load SafeTensors from file (T-QA-020)
+    let bytes = std::fs::read(model_path)
+        .map_err(|e| CliError::ModelLoadFailed(format!("Failed to read SafeTensors file: {e}")))?;
+    let st_model = SafetensorsModel::from_bytes(&bytes)
+        .map_err(|e| CliError::ModelLoadFailed(format!("Failed to parse SafeTensors: {e}")))?;
 
     let tensor_names: Vec<String> = st_model
         .tensor_names()

@@ -456,8 +456,8 @@ pub fn average_embeddings(embeddings: &[SpeakerEmbedding]) -> VoiceResult<Speake
 
 /// Compute pairwise similarity matrix for embeddings.
 ///
-/// Returns `NxN` matrix where entry [i][j] is cosine similarity
-/// between embedding i and embedding j.
+/// Returns `NxN` matrix where entry `[i][j]` is cosine similarity
+/// between embedding `i` and embedding `j`.
 #[must_use]
 pub fn similarity_matrix(embeddings: &[SpeakerEmbedding]) -> Vec<Vec<f32>> {
     let n = embeddings.len();

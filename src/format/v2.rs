@@ -1529,7 +1529,7 @@ impl<'a> AprV2ReaderRef<'a> {
         }
     }
 
-    /// Get tensor as f32 Vec (copies data from mmap to Vec<f32>)
+    /// Get tensor as f32 Vec (copies data from mmap to `Vec<f32>`)
     ///
     /// Note: This allocates memory for the f32 values. For very large tensors,
     /// consider using `get_tensor_data` and processing in chunks.
