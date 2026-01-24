@@ -32,7 +32,7 @@ missing_errors_doc = "allow"  # We have comprehensive error docs
 missing_panics_doc = "allow"  # We document via expect() messages
 
 # Performance
-inefficient_to_string = "warn"
+inefficient_to_string = "allow"  # Style preference - to_string() often clearer
 explicit_iter_loop = "warn"
 manual_ok_or = "warn"
 
@@ -108,6 +108,7 @@ needless_pass_by_value = "allow"  # API consistency
 ptr_arg = "allow"  # &PathBuf/&String in APIs for consistency
 single_match_else = "allow"  # Explicit match often clearer than if let
 const_is_empty = "allow"  # Compile-time empty checks for arrays
+unnecessary_wraps = "allow"  # Result/Option wrappers for API consistency
 
 [package]
 name = "aprender"
