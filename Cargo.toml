@@ -101,6 +101,7 @@ unnecessary_literal_bound = "allow"  # Style preference
 unnecessary_map_or = "allow"  # Style preference
 vec_init_then_push = "allow"  # Explicit initialization for clarity
 nonminimal_bool = "allow"  # Complex booleans in mutation testing tests
+trivially_copy_pass_by_ref = "allow"  # API consistency with &T for traits
 
 [package]
 name = "aprender"
