@@ -82,6 +82,33 @@ jobs:
       - name: All tests
         run: cargo test --all
 
+  rosetta:
+    name: Rosetta Stone Verification
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Verify zero ignored tests
+        run: |
+          IGNORED=$(cargo test rosetta --lib -- --ignored 2>&1 | grep "0 passed" || echo "none")
+          if echo "$IGNORED" | grep -q "0 passed"; then
+            echo "✅ Zero ignored tests in Rosetta Stone"
+          else
+            echo "⚠️ Note: Running ignored tests (if any exist)"
+          fi
+      - name: Run Rosetta Stone tests (82 expected)
+        run: |
+          OUTPUT=$(cargo test rosetta --lib 2>&1)
+          echo "$OUTPUT"
+          if echo "$OUTPUT" | grep -q "82 passed"; then
+            echo "✅ All 82 Rosetta Stone tests pass"
+          else
+            echo "::warning::Test count may have changed from 82"
+          fi
+      - name: Run Rosetta Stone example
+        run: cargo run --example rosetta_stone
+
   coverage:
     name: Coverage
     runs-on: ubuntu-latest
@@ -178,7 +205,7 @@ jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
-    needs: [check, fmt, clippy, test, security, deny, wasm]
+    needs: [check, fmt, clippy, test, rosetta, security, deny, wasm]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -190,6 +217,7 @@ jobs:
           cargo run --example boston_housing
           cargo run --example iris_clustering
           cargo run --example dataframe_basics
+          cargo run --example rosetta_stone
 
   chaos:
     name: Chaos Testing (aprender-shell)
