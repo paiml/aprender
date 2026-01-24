@@ -616,6 +616,540 @@ This is a **Whisper (Tiny)** model.
 - **Output**: Text tokens (multilingual)
 ```
 
+## Pull Command
+
+Download and cache models from HuggingFace with Ollama-style UX.
+
+```bash
+# Download model to local cache
+apr pull hf://Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF
+
+# Download to specific directory
+apr pull hf://openai/whisper-tiny -o ./models/
+
+# Download specific file from repo
+apr pull hf://TheBloke/Llama-2-7B-GGUF --file llama-2-7b.Q4_K_M.gguf
+```
+
+### Example Output
+
+```
+Downloading: Qwen2.5-Coder-1.5B-Instruct-Q4_K_M.gguf
+Progress: [████████████████████] 100% (1.2 GB)
+Cached to: ~/.cache/apr/models/qwen2.5-coder-1.5b-q4_k_m.gguf
+```
+
+## List Command
+
+List all cached models.
+
+```bash
+# List cached models
+apr list
+
+# List with sizes
+apr list --size
+
+# JSON output
+apr list --json
+```
+
+### Example Output
+
+```
+Cached Models:
+  qwen2.5-coder-1.5b-q4_k_m.gguf  1.2 GB  2025-01-20
+  whisper-tiny.apr                39 MB   2025-01-18
+  llama-2-7b.Q4_K_M.gguf         3.8 GB  2025-01-15
+
+Total: 3 models, 5.04 GB
+```
+
+## Rm Command
+
+Remove models from cache.
+
+```bash
+# Remove specific model
+apr rm qwen2.5-coder-1.5b-q4_k_m.gguf
+
+# Remove all cached models
+apr rm --all
+
+# Dry run (show what would be deleted)
+apr rm --all --dry-run
+```
+
+## Cbtop Command
+
+Interactive ComputeBrick pipeline monitor (similar to htop for GPU/CPU inference).
+
+```bash
+# Start monitor
+apr cbtop
+
+# Monitor specific model
+apr cbtop --model model.gguf
+
+# Set refresh rate
+apr cbtop --refresh 500  # 500ms
+```
+
+### Example Output
+
+```
+┌─ ComputeBrick Pipeline Monitor ─────────────────────────┐
+│ Model: qwen2.5-coder-1.5b-q4_k_m.gguf                   │
+│ Backend: GPU (CUDA)                                      │
+├──────────────────────────────────────────────────────────┤
+│ Throughput: 125.3 tok/s                                  │
+│ Latency:    8.0 ms/tok                                   │
+│ Memory:     1.2 GB / 8.0 GB                              │
+│ Utilization: ████████████░░░░░░░░ 60%                    │
+├──────────────────────────────────────────────────────────┤
+│ Layer Timing:                                            │
+│   attention:  4.2 ms (52%)                               │
+│   ffn:        2.8 ms (35%)                               │
+│   other:      1.0 ms (13%)                               │
+└──────────────────────────────────────────────────────────┘
+```
+
+## Compare-hf Command
+
+Compare APR model against HuggingFace source for validation.
+
+```bash
+# Compare converted model against HF source
+apr compare-hf model.apr --hf-repo openai/whisper-tiny
+
+# Show tensor-level differences
+apr compare-hf model.apr --hf-repo org/repo --tensors
+
+# Tolerance for floating point comparison
+apr compare-hf model.apr --hf-repo org/repo --tolerance 1e-5
+```
+
+### Example Output
+
+```
+Comparing model.apr against hf://openai/whisper-tiny
+
+Tensor Comparison:
+  ✓ encoder.conv1.weight: max_diff=1.2e-7 (within tolerance)
+  ✓ encoder.conv1.bias: max_diff=0.0 (exact match)
+  ✓ decoder.embed_tokens.weight: max_diff=2.3e-8 (within tolerance)
+
+Result: MATCH (all tensors within tolerance 1e-5)
+```
+
+## Hex Command
+
+Hex dump tensor data for low-level debugging.
+
+```bash
+# Hex dump first 256 bytes
+apr hex model.apr --limit 256
+
+# Hex dump specific tensor
+apr hex model.apr --tensor encoder.conv1.weight --limit 128
+
+# Show ASCII alongside hex
+apr hex model.apr --ascii
+```
+
+### Example Output
+
+```
+=== Hex Dump: model.apr ===
+
+00000000: 4150 524e 0100 0000 0200 0000 4c69 6e65  APRN........Line
+00000010: 6172 5265 6772 6573 7369 6f6e 0000 0000  arRegression....
+00000020: 0000 0000 0000 0000 0000 0000 0000 0000  ................
+00000030: 0a00 0000 0000 0000 0000 0000 0000 0000  ................
+```
+
+## Tree Command
+
+Display model architecture as a tree view.
+
+```bash
+# Show architecture tree
+apr tree model.gguf
+
+# Show with tensor shapes
+apr tree model.gguf --shapes
+
+# Show with parameter counts
+apr tree model.gguf --params
+```
+
+### Example Output
+
+```
+model.gguf (1.5B parameters)
+├── token_embd [51865, 384]
+├── encoder
+│   ├── conv1 [384, 80, 3]
+│   ├── conv2 [384, 384, 3]
+│   └── blocks (4 layers)
+│       ├── block.0
+│       │   ├── attn [384, 384] × 4
+│       │   └── mlp [384, 1536, 384]
+│       └── ...
+├── decoder
+│   ├── embed_tokens [51865, 384]
+│   └── blocks (4 layers)
+└── lm_head [51865, 384]
+```
+
+## Flow Command
+
+Visualize data flow through the model.
+
+```bash
+# Show data flow diagram
+apr flow model.apr
+
+# Export as DOT format
+apr flow model.apr --format dot -o model.dot
+
+# Show with tensor shapes
+apr flow model.apr --shapes
+```
+
+### Example Output
+
+```
+=== Data Flow: model.apr ===
+
+input [batch, seq_len]
+    │
+    ▼
+token_embd [batch, seq_len, 384]
+    │
+    ▼
+encoder.blocks.0 ─┬─ attn ─┬─ Q ──┐
+                  │        ├─ K ──┼─► attention
+                  │        └─ V ──┘
+                  └─ mlp ─────────►
+    │
+    ▼
+...
+    │
+    ▼
+lm_head [batch, seq_len, vocab]
+    │
+    ▼
+output logits
+```
+
+## Bench Command
+
+Benchmark model throughput (spec H12: >= 10 tok/s).
+
+```bash
+# Run benchmark
+apr bench model.gguf
+
+# Specify iterations
+apr bench model.gguf --iterations 100
+
+# Benchmark with specific prompt
+apr bench model.gguf --prompt "Hello, world!"
+
+# JSON output for CI
+apr bench model.gguf --json
+```
+
+### Example Output
+
+```
+=== Benchmark: model.gguf ===
+
+Configuration:
+  Iterations: 50
+  Warmup: 5
+  Prompt: "Hello, how are you?"
+
+Results:
+  Throughput: 125.3 tok/s
+  Latency (p50): 8.0 ms
+  Latency (p99): 12.3 ms
+  Memory Peak: 1.2 GB
+
+Spec H12 (>= 10 tok/s): ✓ PASS
+```
+
+## Eval Command
+
+Evaluate model perplexity (spec H13: PPL <= 20).
+
+```bash
+# Evaluate perplexity
+apr eval model.gguf
+
+# Evaluate on specific dataset
+apr eval model.gguf --dataset wikitext-2
+
+# Limit context length
+apr eval model.gguf --context 512
+
+# JSON output
+apr eval model.gguf --json
+```
+
+### Example Output
+
+```
+=== Evaluation: model.gguf ===
+
+Dataset: wikitext-2
+Tokens: 10000
+Context: 2048
+
+Results:
+  Perplexity: 8.45
+  Bits per byte: 2.31
+  Cross-entropy: 2.13
+
+Spec H13 (PPL <= 20): ✓ PASS
+```
+
+## Profile Command
+
+Deep profiling with Roofline analysis.
+
+```bash
+# Run profiler
+apr profile model.gguf
+
+# Profile specific layers
+apr profile model.gguf --layer attention
+
+# Generate roofline plot data
+apr profile model.gguf --roofline
+
+# Output as JSON
+apr profile model.gguf --json
+```
+
+### Example Output
+
+```
+=== Profile: model.gguf ===
+
+Roofline Analysis:
+  Peak Compute: 2.5 TFLOPS
+  Peak Memory BW: 200 GB/s
+  Arithmetic Intensity: 12.5 FLOPS/byte
+
+Layer Breakdown:
+  Layer              Time (ms)   Memory   Compute   Bound
+  ─────────────────────────────────────────────────────────
+  token_embd         0.5         128 MB   0.1 TF    Memory
+  attention          4.2         256 MB   0.8 TF    Compute
+  ffn                2.8         512 MB   1.2 TF    Compute
+  lm_head            0.8         384 MB   0.4 TF    Memory
+
+Bottleneck: Attention layer (compute-bound)
+Recommendation: Increase batch size for better GPU utilization
+```
+
+## QA Command
+
+Falsifiable QA checklist for model releases.
+
+```bash
+# Run full QA checklist
+apr qa model.gguf
+
+# Specify throughput threshold
+apr qa model.gguf --assert-tps 100
+
+# Require Ollama speedup
+apr qa model.gguf --assert-speedup 2.0
+
+# Skip Ollama comparison
+apr qa model.gguf --skip-ollama
+
+# JSON output for CI
+apr qa model.gguf --json
+```
+
+### Example Output
+
+```
+=== QA Checklist: model.gguf ===
+
+[1/10] Format Validation
+  ✓ Valid GGUF header
+  ✓ All tensors readable
+  ✓ No NaN/Inf values
+
+[2/10] Golden Output Test
+  ✓ Prompt: "Hello" → "Hello! How can I help you today?"
+  ✓ Output matches expected (cosine sim: 0.98)
+
+[3/10] Throughput Test
+  ✓ 125.3 tok/s (threshold: 10 tok/s)
+
+[4/10] Perplexity Test
+  ✓ PPL: 8.45 (threshold: 20.0)
+
+[5/10] Ollama Parity
+  ✓ 2.93x Ollama throughput
+
+...
+
+Result: 10/10 PASS
+```
+
+## Showcase Command
+
+Qwen2.5-Coder showcase demo for performance demonstration.
+
+```bash
+# Run showcase demo
+apr showcase model.gguf
+
+# Specify warmup and iterations
+apr showcase model.gguf --warmup 3 --iterations 10
+
+# GPU mode
+apr showcase model.gguf --gpu
+
+# Batched GPU mode
+apr showcase model.gguf --gpu --batch
+```
+
+### Example Output
+
+```
+╔════════════════════════════════════════════════════════════╗
+║           APR Showcase: Qwen2.5-Coder Performance          ║
+╚════════════════════════════════════════════════════════════╝
+
+Model: qwen2.5-coder-1.5b-q4_k_m.gguf
+Backend: GPU (CUDA)
+Mode: Batched (M=16)
+
+Benchmark Results:
+  ┌────────────────┬────────────┬───────────┐
+  │ Metric         │ Value      │ vs Ollama │
+  ├────────────────┼────────────┼───────────┤
+  │ Throughput     │ 851.8 t/s  │ 2.93x     │
+  │ Time to First  │ 45 ms      │ 0.8x      │
+  │ Memory         │ 1.9 GB     │ 1.2x      │
+  └────────────────┴────────────┴───────────┘
+
+✓ Showcase PASSED: 2.93x Ollama performance achieved
+```
+
+## Check Command
+
+Model self-test: 10-stage pipeline integrity check (APR-TRACE-001).
+
+```bash
+# Run full check
+apr check model.gguf
+
+# Verbose output
+apr check model.gguf --verbose
+
+# JSON output
+apr check model.gguf --json
+```
+
+### Example Output
+
+```
+=== Model Self-Test: model.gguf ===
+
+Stage 1: Format Validation
+  ✓ GGUF magic bytes valid
+  ✓ Version: 3
+  ✓ Tensor count: 145
+
+Stage 2: Tensor Integrity
+  ✓ All tensors readable
+  ✓ Shapes consistent
+  ✓ No NaN/Inf values
+
+Stage 3: Tokenizer Check
+  ✓ Vocabulary size: 151936
+  ✓ Special tokens present
+  ✓ BPE merges valid
+
+Stage 4: Embedding Test
+  ✓ Token embedding produces valid vectors
+  ✓ L2 norm in expected range
+
+Stage 5: Attention Test
+  ✓ Self-attention computes correctly
+  ✓ KV cache initialized
+
+Stage 6: FFN Test
+  ✓ Feed-forward produces valid output
+  ✓ Activation function working
+
+Stage 7: Layer Norm Test
+  ✓ RMSNorm produces normalized output
+  ✓ Epsilon handling correct
+
+Stage 8: LM Head Test
+  ✓ Logits in valid range
+  ✓ Vocabulary mapping correct
+
+Stage 9: Generation Test
+  ✓ Can generate 10 tokens
+  ✓ Output is coherent text
+
+Stage 10: Performance Test
+  ✓ Throughput: 125 tok/s (> 10 tok/s)
+
+Result: 10/10 PASS
+```
+
+## Publish Command
+
+Publish model to HuggingFace Hub (APR-PUB-001).
+
+```bash
+# Publish model directory
+apr publish ./model-dir/ org/model-name
+
+# Dry run (show what would be uploaded)
+apr publish ./model-dir/ org/model-name --dry-run
+
+# Specify license and tags
+apr publish ./model-dir/ org/model-name --license mit --tags rust,ml
+
+# Custom commit message
+apr publish ./model-dir/ org/model-name --message "v1.0.0 release"
+```
+
+### Example Output
+
+```
+=== Publishing to HuggingFace Hub ===
+
+Repository: org/model-name
+Files to upload:
+  - model.gguf (1.2 GB)
+  - config.json (2 KB)
+  - tokenizer.json (500 KB)
+
+Generating README.md with model card...
+
+Uploading...
+  [████████████████████] 100% model.gguf
+  [████████████████████] 100% config.json
+  [████████████████████] 100% tokenizer.json
+  [████████████████████] 100% README.md
+
+✓ Published to https://huggingface.co/org/model-name
+```
+
 ## Exit Codes
 
 | Code | Meaning |
