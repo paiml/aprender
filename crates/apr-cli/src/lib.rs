@@ -19,7 +19,7 @@ pub mod federation;
 use commands::{
     bench, canary, canary::CanaryCommands, cbtop, chat, compare_hf, convert, debug, diff, eval,
     explain, export, flow, hex, import, inspect, lint, merge, probar, profile, publish, pull, qa,
-    run, serve, showcase, tensors, trace, tree, tui, validate,
+    rosetta, rosetta::RosettaCommands, run, serve, showcase, tensors, trace, tree, tui, validate,
 };
 
 /// apr - APR Model Operations Tool
@@ -872,6 +872,12 @@ pub enum Commands {
         no_gpu: bool,
     },
 
+    /// Rosetta Stone - Universal model format converter (PMAT-ROSETTA-001)
+    Rosetta {
+        #[command(subcommand)]
+        action: RosettaCommands,
+    },
+
     /// Publish model to HuggingFace Hub (APR-PUB-001)
     Publish {
         /// Directory containing model files to publish
@@ -1388,6 +1394,31 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
             showcase::run(&config)
         }
 
+        Commands::Rosetta { action } => match action {
+            RosettaCommands::Inspect { file, hexdump, json } => {
+                rosetta::run_inspect(file, *hexdump, *json || cli.json)
+            }
+            RosettaCommands::Convert {
+                source,
+                target,
+                quantize,
+                verify,
+                json,
+            } => rosetta::run_convert(source, target, quantize.as_deref(), *verify, *json || cli.json),
+            RosettaCommands::Chain {
+                source,
+                formats,
+                work_dir,
+                json,
+            } => rosetta::run_chain(source, formats, work_dir, *json || cli.json),
+            RosettaCommands::Verify {
+                source,
+                intermediate,
+                tolerance,
+                json,
+            } => rosetta::run_verify(source, intermediate, *tolerance, *json || cli.json),
+        },
+
         Commands::Publish {
             directory,
             repo_id,
@@ -1801,6 +1832,117 @@ mod tests {
                 assert!(fail_on_naive);
             }
             _ => panic!("Expected Profile command"),
+        }
+    }
+
+    /// Test parsing 'apr rosetta inspect' command
+    #[test]
+    fn test_parse_rosetta_inspect() {
+        let args = vec!["apr", "rosetta", "inspect", "model.gguf", "--json"];
+        let cli = Cli::try_parse_from(args).expect("Failed to parse");
+        match cli.command {
+            Commands::Rosetta { action } => match action {
+                RosettaCommands::Inspect { file, json, .. } => {
+                    assert_eq!(file, PathBuf::from("model.gguf"));
+                    assert!(json);
+                }
+                _ => panic!("Expected Inspect subcommand"),
+            },
+            _ => panic!("Expected Rosetta command"),
+        }
+    }
+
+    /// Test parsing 'apr rosetta convert' command
+    #[test]
+    fn test_parse_rosetta_convert() {
+        let args = vec![
+            "apr",
+            "rosetta",
+            "convert",
+            "model.gguf",
+            "model.safetensors",
+            "--verify",
+        ];
+        let cli = Cli::try_parse_from(args).expect("Failed to parse");
+        match cli.command {
+            Commands::Rosetta { action } => match action {
+                RosettaCommands::Convert {
+                    source,
+                    target,
+                    verify,
+                    ..
+                } => {
+                    assert_eq!(source, PathBuf::from("model.gguf"));
+                    assert_eq!(target, PathBuf::from("model.safetensors"));
+                    assert!(verify);
+                }
+                _ => panic!("Expected Convert subcommand"),
+            },
+            _ => panic!("Expected Rosetta command"),
+        }
+    }
+
+    /// Test parsing 'apr rosetta chain' command
+    #[test]
+    fn test_parse_rosetta_chain() {
+        let args = vec![
+            "apr",
+            "rosetta",
+            "chain",
+            "model.gguf",
+            "safetensors",
+            "apr",
+            "--work-dir",
+            "/tmp/rosetta",
+        ];
+        let cli = Cli::try_parse_from(args).expect("Failed to parse");
+        match cli.command {
+            Commands::Rosetta { action } => match action {
+                RosettaCommands::Chain {
+                    source,
+                    formats,
+                    work_dir,
+                    ..
+                } => {
+                    assert_eq!(source, PathBuf::from("model.gguf"));
+                    assert_eq!(formats, vec!["safetensors", "apr"]);
+                    assert_eq!(work_dir, PathBuf::from("/tmp/rosetta"));
+                }
+                _ => panic!("Expected Chain subcommand"),
+            },
+            _ => panic!("Expected Rosetta command"),
+        }
+    }
+
+    /// Test parsing 'apr rosetta verify' command
+    #[test]
+    fn test_parse_rosetta_verify() {
+        let args = vec![
+            "apr",
+            "rosetta",
+            "verify",
+            "model.apr",
+            "--intermediate",
+            "gguf",
+            "--tolerance",
+            "1e-4",
+        ];
+        let cli = Cli::try_parse_from(args).expect("Failed to parse");
+        match cli.command {
+            Commands::Rosetta { action } => match action {
+                RosettaCommands::Verify {
+                    source,
+                    intermediate,
+                    tolerance,
+                    ..
+                } => {
+                    assert_eq!(source, PathBuf::from("model.apr"));
+                    assert_eq!(intermediate, "gguf");
+                    assert!((tolerance - 1e-4).abs() < f32::EPSILON);
+                }
+                _ => panic!("Expected Verify subcommand"),
+            },
+            _ => panic!("Expected Rosetta command"),
         }
     }
 }

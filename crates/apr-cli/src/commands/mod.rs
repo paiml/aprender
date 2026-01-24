@@ -27,6 +27,7 @@ pub(crate) mod probar;
 pub(crate) mod profile;
 pub(crate) mod publish;
 pub(crate) mod pull;
+pub(crate) mod rosetta;
 pub(crate) mod qa;
 pub(crate) mod run;
 pub(crate) mod serve;
