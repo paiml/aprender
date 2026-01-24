@@ -213,7 +213,7 @@ cargo install apr-cli
 |---------|-------------|
 | `apr run` | Run model directly (auto-download, cache, execute) |
 | `apr serve` | Start inference server (REST API, streaming, metrics) |
-| `apr compile` | Build standalone executable with embedded model |
+| `apr chat` | Interactive chat with language models |
 | `apr inspect` | Inspect model metadata, vocab, and structure |
 | `apr debug` | Simple debugging output ("drama" mode available) |
 | `apr validate` | Validate model integrity and quality |
@@ -225,10 +225,25 @@ cargo install apr-cli
 | `apr canary` | Regression testing via tensor statistics |
 | `apr export` | Export to SafeTensors, GGUF formats |
 | `apr import` | Import from HuggingFace, SafeTensors |
+| `apr pull` | Download and cache model from HuggingFace (Ollama-style UX) |
+| `apr list` | List cached models |
+| `apr rm` | Remove model from cache |
 | `apr convert` | Quantization (int8, int4, fp16) and optimization |
 | `apr merge` | Merge models (average, weighted strategies) |
 | `apr tui` | Interactive terminal UI |
 | `apr probar` | Export for visual testing |
+| `apr tree` | Model architecture tree view |
+| `apr hex` | Hex dump tensor data |
+| `apr flow` | Data flow visualization |
+| `apr bench` | Benchmark throughput (spec H12: >= 10 tok/s) |
+| `apr eval` | Evaluate model perplexity (spec H13: PPL <= 20) |
+| `apr profile` | Deep profiling with Roofline analysis |
+| `apr qa` | Falsifiable QA checklist for model releases |
+| `apr showcase` | Qwen2.5-Coder showcase demo |
+| `apr check` | Model self-test: 10-stage pipeline integrity check |
+| `apr publish` | Publish model to HuggingFace Hub |
+| `apr cbtop` | ComputeBrick pipeline monitor |
+| `apr compare-hf` | Compare APR model against HuggingFace source |
 
 ### Quick Examples
 
@@ -236,8 +251,9 @@ cargo install apr-cli
 # Run model directly (auto-downloads if needed)
 apr run hf://openai/whisper-tiny --input audio.wav
 
-# Build standalone executable with embedded model
-apr compile whisper.apr --quantize int8 -o whisper-cli
+# Download and cache models (Ollama-style UX)
+apr pull hf://Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF -o ./models/
+apr list  # List cached models
 
 # Validate model integrity
 apr validate model.apr --quality
@@ -259,6 +275,9 @@ apr canary create model.apr --input ref.wav --output canary.json
 
 # Check model against canary
 apr canary check optimized.apr --canary canary.json
+
+# Publish to HuggingFace Hub
+apr publish ./model-dir/ org/model-name --license mit
 ```
 
 ## Showcase: Qwen2.5-Coder Inference

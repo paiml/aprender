@@ -20,6 +20,7 @@ The binary will be available at `target/release/apr`.
 
 | Command | Description | Toyota Way Principle |
 |---------|-------------|---------------------|
+| `run` | Run model directly (auto-download, cache, execute) | Just-in-Time Production |
 | `serve` | Start inference server with GPU acceleration | Just-in-Time Production |
 | `chat` | Interactive chat with language models | Genchi Genbutsu (Go and See) |
 | `inspect` | View model metadata and structure | Genchi Genbutsu (Go and See) |
@@ -28,9 +29,30 @@ The binary will be available at `target/release/apr`.
 | `diff` | Compare two models | Kaizen (Continuous Improvement) |
 | `tensors` | List tensor names, shapes, and statistics | Genchi Genbutsu (Go to the Source) |
 | `trace` | Layer-by-layer analysis with anomaly detection | Visualization |
+| `lint` | Check for best practices and conventions | Jidoka (Built-in Quality) |
 | `probar` | Export for visual regression testing | Standardization |
 | `import` | Import from HuggingFace, local files, or URLs | Automation |
+| `export` | Export to SafeTensors, GGUF formats | Automation |
+| `pull` | Download and cache model (Ollama-style UX) | Automation |
+| `list` | List cached models | Visibility |
+| `rm` | Remove model from cache | Standardization |
+| `convert` | Quantization (int8, int4, fp16) and optimization | Kaizen |
+| `merge` | Merge models (average, weighted strategies) | Kaizen |
+| `tree` | Model architecture tree view | Visualization |
+| `hex` | Hex dump tensor data | Genchi Genbutsu |
+| `flow` | Data flow visualization | Visualization |
+| `bench` | Benchmark throughput (spec H12: >= 10 tok/s) | Measurement |
+| `eval` | Evaluate model perplexity (spec H13: PPL <= 20) | Measurement |
+| `profile` | Deep profiling with Roofline analysis | Genchi Genbutsu |
+| `qa` | Falsifiable QA checklist for model releases | Jidoka |
+| `showcase` | Qwen2.5-Coder showcase demo | Standardization |
+| `check` | Model self-test: 10-stage pipeline integrity | Jidoka |
+| `publish` | Publish model to HuggingFace Hub | Automation |
+| `cbtop` | ComputeBrick pipeline monitor | Visualization |
+| `compare-hf` | Compare APR model against HuggingFace source | Jidoka |
 | `explain` | Explain errors, architecture, and tensors | Knowledge Sharing |
+| `tui` | Interactive terminal UI | Visualization |
+| `canary` | Regression testing via tensor statistics | Jidoka |
 
 ## Serve Command
 
