@@ -110,6 +110,10 @@ pub mod sharded;
 // Golden trace verification (spec §7.6.3 - prove model authenticity)
 pub mod golden;
 
+// Rosetta Stone - Universal Model Format Converter (PMAT-ROSETTA-001)
+// Bidirectional conversion: GGUF ↔ APR ↔ SafeTensors
+pub mod rosetta;
+
 // Re-export golden trace types
 pub use golden::{
     verify_logits, GoldenTrace, GoldenTraceSet, GoldenVerifyReport, LogitStats, TraceVerifyResult,
@@ -147,6 +151,14 @@ pub use sharded::{
     estimate_shard_memory, get_shard_files, is_sharded_model, CacheStats, CachedShard, ImportPhase,
     ImportProgress, ImportReport, ShardCache, ShardIndex, ShardedImportConfig, ShardedImporter,
 };
+
+// Re-export Rosetta Stone types (PMAT-ROSETTA-001 - Universal Model Format Converter)
+pub use rosetta::{
+    ConversionOptions, ConversionPath, ConversionReport, FormatType, InspectionReport,
+    RosettaStone, TensorInfo, VerificationReport,
+};
+// Note: rosetta::TensorStats intentionally not re-exported to avoid conflict with validation::TensorStats
+// Use aprender::format::rosetta::TensorStats directly if needed
 
 // Re-export quantization types when feature is enabled
 #[cfg(feature = "format-quantize")]
