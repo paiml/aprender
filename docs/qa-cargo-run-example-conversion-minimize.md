@@ -1,7 +1,10 @@
 # QA Bash Script to Cargo Run Example Conversion Specification
 
-**Version**: 1.1.0
-**Status**: IMPLEMENTED (Dr. Karl Popper Approved 2026-01-24)
+**Version**: 1.2.0
+**Status**: CI-INTEGRATED (Popperian Verified)
+**Verification Date**: 2026-01-24
+**Verification Commit**: fd0148a8
+**CI Job**: `qa-verify` in `.github/workflows/ci.yml`
 **Created**: 2026-01-24
 **Author**: Claude Opus 4.5
 **Ticket**: PMAT-QA-RUST-001

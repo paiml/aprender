@@ -109,6 +109,33 @@ jobs:
       - name: Run Rosetta Stone example
         run: cargo run --example rosetta_stone
 
+  qa-verify:
+    name: QA Verify (PMAT-QA-RUST-001)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - name: Run qa_verify example (20 point checklist)
+        run: |
+          echo "╔══════════════════════════════════════════════════════════════╗"
+          echo "║  PMAT-QA-RUST-001: Popperian Falsification Suite             ║"
+          echo "║  Replaces: qa-verify.sh, all-modules-qa-verify.sh,           ║"
+          echo "║            math-qa-verify.sh (3,929 LOC → 343 LOC)           ║"
+          echo "╚══════════════════════════════════════════════════════════════╝"
+          cargo run --example qa_verify
+      - name: Verify all gates passed
+        run: |
+          # Run again and capture exit code
+          if cargo run --example qa_verify; then
+            echo "✅ All quality gates PASSED (Grade A+)"
+          else
+            echo "::error::Quality gates FAILED - see qa_verify output above"
+            exit 1
+          fi
+
   coverage:
     name: Coverage
     runs-on: ubuntu-latest
@@ -205,7 +232,7 @@ jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
-    needs: [check, fmt, clippy, test, rosetta, security, deny, wasm]
+    needs: [check, fmt, clippy, test, rosetta, qa-verify, security, deny, wasm]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
