@@ -107,6 +107,7 @@ manual_let_else = "allow"  # Early returns common pattern
 needless_pass_by_value = "allow"  # API consistency
 ptr_arg = "allow"  # &PathBuf/&String in APIs for consistency
 single_match_else = "allow"  # Explicit match often clearer than if let
+const_is_empty = "allow"  # Compile-time empty checks for arrays
 
 [package]
 name = "aprender"
