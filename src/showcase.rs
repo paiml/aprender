@@ -1678,7 +1678,8 @@ mod tests {
     }
 
     #[test]
-    fn test_zram_config_custom() {
+    #[cfg(not(feature = "showcase-zram"))]
+    fn test_zram_config_custom_stub() {
         let config = zram::ZramConfig {
             algorithm: "zstd".to_string(),
             adaptive: false,
@@ -1689,7 +1690,21 @@ mod tests {
     }
 
     #[test]
-    fn test_zram_result_fields() {
+    #[cfg(feature = "showcase-zram")]
+    fn test_zram_config_custom_real() {
+        use zram::ZramAlgorithm;
+        let config = zram::ZramConfig {
+            algorithm: ZramAlgorithm::Zstd { level: 3 },
+            adaptive: false,
+            min_savings: 0.2,
+        };
+        assert!(!config.adaptive);
+        assert!((config.min_savings - 0.2).abs() < 0.01);
+    }
+
+    #[test]
+    #[cfg(not(feature = "showcase-zram"))]
+    fn test_zram_result_fields_stub() {
         let result = zram::ZramResult {
             original_size: 4096,
             compressed_size: 2048,
@@ -1699,6 +1714,23 @@ mod tests {
         assert_eq!(result.original_size, 4096);
         assert_eq!(result.compressed_size, 2048);
         assert_eq!(result.ratio, 2.0);
+        assert!(!result.zero_page);
+    }
+
+    #[test]
+    #[cfg(feature = "showcase-zram")]
+    fn test_zram_result_fields_real() {
+        let result = zram::ZramResult {
+            original_size: 4096,
+            compressed_size: 2048,
+            ratio: 2.0,
+            algorithm: "zstd".to_string(),
+            zero_page: false,
+        };
+        assert_eq!(result.original_size, 4096);
+        assert_eq!(result.compressed_size, 2048);
+        assert_eq!(result.ratio, 2.0);
+        assert_eq!(result.algorithm, "zstd");
         assert!(!result.zero_page);
     }
 
