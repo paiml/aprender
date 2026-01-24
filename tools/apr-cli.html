@@ -190,6 +190,7 @@
 <p>The binary will be available at <code>target/release/apr</code>.</p>
 <h2 id="commands-overview"><a class="header" href="#commands-overview">Commands Overview</a></h2>
 <div class="table-wrapper"><table><thead><tr><th>Command</th><th>Description</th><th>Toyota Way Principle</th></tr></thead><tbody>
+<tr><td><code>run</code></td><td>Run model directly (auto-download, cache, execute)</td><td>Just-in-Time Production</td></tr>
 <tr><td><code>serve</code></td><td>Start inference server with GPU acceleration</td><td>Just-in-Time Production</td></tr>
 <tr><td><code>chat</code></td><td>Interactive chat with language models</td><td>Genchi Genbutsu (Go and See)</td></tr>
 <tr><td><code>inspect</code></td><td>View model metadata and structure</td><td>Genchi Genbutsu (Go and See)</td></tr>
@@ -198,9 +199,30 @@
 <tr><td><code>diff</code></td><td>Compare two models</td><td>Kaizen (Continuous Improvement)</td></tr>
 <tr><td><code>tensors</code></td><td>List tensor names, shapes, and statistics</td><td>Genchi Genbutsu (Go to the Source)</td></tr>
 <tr><td><code>trace</code></td><td>Layer-by-layer analysis with anomaly detection</td><td>Visualization</td></tr>
+<tr><td><code>lint</code></td><td>Check for best practices and conventions</td><td>Jidoka (Built-in Quality)</td></tr>
 <tr><td><code>probar</code></td><td>Export for visual regression testing</td><td>Standardization</td></tr>
 <tr><td><code>import</code></td><td>Import from HuggingFace, local files, or URLs</td><td>Automation</td></tr>
+<tr><td><code>export</code></td><td>Export to SafeTensors, GGUF formats</td><td>Automation</td></tr>
+<tr><td><code>pull</code></td><td>Download and cache model (Ollama-style UX)</td><td>Automation</td></tr>
+<tr><td><code>list</code></td><td>List cached models</td><td>Visibility</td></tr>
+<tr><td><code>rm</code></td><td>Remove model from cache</td><td>Standardization</td></tr>
+<tr><td><code>convert</code></td><td>Quantization (int8, int4, fp16) and optimization</td><td>Kaizen</td></tr>
+<tr><td><code>merge</code></td><td>Merge models (average, weighted strategies)</td><td>Kaizen</td></tr>
+<tr><td><code>tree</code></td><td>Model architecture tree view</td><td>Visualization</td></tr>
+<tr><td><code>hex</code></td><td>Hex dump tensor data</td><td>Genchi Genbutsu</td></tr>
+<tr><td><code>flow</code></td><td>Data flow visualization</td><td>Visualization</td></tr>
+<tr><td><code>bench</code></td><td>Benchmark throughput (spec H12: &gt;= 10 tok/s)</td><td>Measurement</td></tr>
+<tr><td><code>eval</code></td><td>Evaluate model perplexity (spec H13: PPL &lt;= 20)</td><td>Measurement</td></tr>
+<tr><td><code>profile</code></td><td>Deep profiling with Roofline analysis</td><td>Genchi Genbutsu</td></tr>
+<tr><td><code>qa</code></td><td>Falsifiable QA checklist for model releases</td><td>Jidoka</td></tr>
+<tr><td><code>showcase</code></td><td>Qwen2.5-Coder showcase demo</td><td>Standardization</td></tr>
+<tr><td><code>check</code></td><td>Model self-test: 10-stage pipeline integrity</td><td>Jidoka</td></tr>
+<tr><td><code>publish</code></td><td>Publish model to HuggingFace Hub</td><td>Automation</td></tr>
+<tr><td><code>cbtop</code></td><td>ComputeBrick pipeline monitor</td><td>Visualization</td></tr>
+<tr><td><code>compare-hf</code></td><td>Compare APR model against HuggingFace source</td><td>Jidoka</td></tr>
 <tr><td><code>explain</code></td><td>Explain errors, architecture, and tensors</td><td>Knowledge Sharing</td></tr>
+<tr><td><code>tui</code></td><td>Interactive terminal UI</td><td>Visualization</td></tr>
+<tr><td><code>canary</code></td><td>Regression testing via tensor statistics</td><td>Jidoka</td></tr>
 </tbody></table>
 </div>
 <h2 id="serve-command"><a class="header" href="#serve-command">Serve Command</a></h2>

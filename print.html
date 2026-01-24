@@ -38925,7 +38925,7 @@ cargo build -p apr-cli
 <pre><code class="language-rust ignore">//! APR CLI Commands Demo
 //!
 //! Demonstrates creating test models and using the apr-cli commands.
-//! This example creates model files that work with all 17 apr-cli commands.
+//! This example creates model files that work with all 24 apr-cli commands.
 //!
 //! Toyota Way Alignment:
 //! - **Genchi Genbutsu**: Go and see - inspect actual model data
@@ -39117,7 +39117,7 @@ fn print_cli_commands(model_path: &amp;Path, model_v2_path: &amp;Path) {
     println!(&quot;For inference commands (run, serve):&quot;);
     println!(&quot;  cargo build -p apr-cli --features inference\n&quot;);
 
-    println!(&quot;=== 17 APR CLI Commands ===\n&quot;);
+    println!(&quot;=== 24 APR CLI Commands ===\n&quot;);
 
     println!(&quot;--- Model Inspection ---\n&quot;);
 
@@ -39217,6 +39217,40 @@ fn print_cli_commands(model_path: &amp;Path, model_v2_path: &amp;Path) {
     println!(
         &quot;    # Then: curl -X POST http://localhost:8080/predict -d '{{\&quot;input\&quot;: [1.0, 2.0]}}'\n&quot;
     );
+
+    println!(&quot;18. CHAT - Interactive chat (LLM models):&quot;);
+    println!(&quot;    ./target/debug/apr chat model.gguf&quot;);
+    println!(&quot;    ./target/debug/apr chat model.gguf --system \&quot;You are a helpful assistant\&quot;\n&quot;);
+
+    println!(&quot;--- HuggingFace Hub ---\n&quot;);
+
+    println!(&quot;19. PUBLISH - Push model to HuggingFace Hub:&quot;);
+    println!(&quot;    ./target/debug/apr publish {demo_dir}/ org/model-name&quot;);
+    println!(&quot;    ./target/debug/apr publish {demo_dir}/ org/model-name --dry-run&quot;);
+    println!(&quot;    ./target/debug/apr publish {demo_dir}/ org/model-name --license mit --tags rust,ml\n&quot;);
+
+    println!(&quot;20. PULL - Download model from HuggingFace Hub:&quot;);
+    println!(&quot;    ./target/debug/apr pull hf://org/repo-name -o ./models/&quot;);
+    println!(&quot;    ./target/debug/apr pull hf://Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF -o ./models/\n&quot;);
+
+    println!(&quot;--- Benchmarking &amp; QA ---\n&quot;);
+
+    println!(&quot;21. QA - Run falsifiable QA checklist:&quot;);
+    println!(&quot;    ./target/debug/apr qa model.gguf&quot;);
+    println!(&quot;    ./target/debug/apr qa model.gguf --assert-tps 100&quot;);
+    println!(&quot;    ./target/debug/apr qa model.gguf --json\n&quot;);
+
+    println!(&quot;22. SHOWCASE - Performance benchmark demo:&quot;);
+    println!(&quot;    ./target/debug/apr showcase model.gguf&quot;);
+    println!(&quot;    ./target/debug/apr showcase model.gguf --warmup 3 --iterations 10\n&quot;);
+
+    println!(&quot;23. PROFILE - Deep performance profiling:&quot;);
+    println!(&quot;    ./target/debug/apr profile model.gguf&quot;);
+    println!(&quot;    ./target/debug/apr profile model.gguf --roofline\n&quot;);
+
+    println!(&quot;24. BENCH - Run benchmarks:&quot;);
+    println!(&quot;    ./target/debug/apr bench model.gguf&quot;);
+    println!(&quot;    ./target/debug/apr bench model.gguf --iterations 100\n&quot;);
 }</code></pre>
 <h2 id="all-17-commands"><a class="header" href="#all-17-commands">All 17 Commands</a></h2>
 <h3 id="model-inspection-1"><a class="header" href="#model-inspection-1">Model Inspection</a></h3>
@@ -44344,6 +44378,7 @@ cargo run --release --example showcase_benchmark
 <p>The binary will be available at <code>target/release/apr</code>.</p>
 <h2 id="commands-overview"><a class="header" href="#commands-overview">Commands Overview</a></h2>
 <div class="table-wrapper"><table><thead><tr><th>Command</th><th>Description</th><th>Toyota Way Principle</th></tr></thead><tbody>
+<tr><td><code>run</code></td><td>Run model directly (auto-download, cache, execute)</td><td>Just-in-Time Production</td></tr>
 <tr><td><code>serve</code></td><td>Start inference server with GPU acceleration</td><td>Just-in-Time Production</td></tr>
 <tr><td><code>chat</code></td><td>Interactive chat with language models</td><td>Genchi Genbutsu (Go and See)</td></tr>
 <tr><td><code>inspect</code></td><td>View model metadata and structure</td><td>Genchi Genbutsu (Go and See)</td></tr>
@@ -44352,9 +44387,30 @@ cargo run --release --example showcase_benchmark
 <tr><td><code>diff</code></td><td>Compare two models</td><td>Kaizen (Continuous Improvement)</td></tr>
 <tr><td><code>tensors</code></td><td>List tensor names, shapes, and statistics</td><td>Genchi Genbutsu (Go to the Source)</td></tr>
 <tr><td><code>trace</code></td><td>Layer-by-layer analysis with anomaly detection</td><td>Visualization</td></tr>
+<tr><td><code>lint</code></td><td>Check for best practices and conventions</td><td>Jidoka (Built-in Quality)</td></tr>
 <tr><td><code>probar</code></td><td>Export for visual regression testing</td><td>Standardization</td></tr>
 <tr><td><code>import</code></td><td>Import from HuggingFace, local files, or URLs</td><td>Automation</td></tr>
+<tr><td><code>export</code></td><td>Export to SafeTensors, GGUF formats</td><td>Automation</td></tr>
+<tr><td><code>pull</code></td><td>Download and cache model (Ollama-style UX)</td><td>Automation</td></tr>
+<tr><td><code>list</code></td><td>List cached models</td><td>Visibility</td></tr>
+<tr><td><code>rm</code></td><td>Remove model from cache</td><td>Standardization</td></tr>
+<tr><td><code>convert</code></td><td>Quantization (int8, int4, fp16) and optimization</td><td>Kaizen</td></tr>
+<tr><td><code>merge</code></td><td>Merge models (average, weighted strategies)</td><td>Kaizen</td></tr>
+<tr><td><code>tree</code></td><td>Model architecture tree view</td><td>Visualization</td></tr>
+<tr><td><code>hex</code></td><td>Hex dump tensor data</td><td>Genchi Genbutsu</td></tr>
+<tr><td><code>flow</code></td><td>Data flow visualization</td><td>Visualization</td></tr>
+<tr><td><code>bench</code></td><td>Benchmark throughput (spec H12: &gt;= 10 tok/s)</td><td>Measurement</td></tr>
+<tr><td><code>eval</code></td><td>Evaluate model perplexity (spec H13: PPL &lt;= 20)</td><td>Measurement</td></tr>
+<tr><td><code>profile</code></td><td>Deep profiling with Roofline analysis</td><td>Genchi Genbutsu</td></tr>
+<tr><td><code>qa</code></td><td>Falsifiable QA checklist for model releases</td><td>Jidoka</td></tr>
+<tr><td><code>showcase</code></td><td>Qwen2.5-Coder showcase demo</td><td>Standardization</td></tr>
+<tr><td><code>check</code></td><td>Model self-test: 10-stage pipeline integrity</td><td>Jidoka</td></tr>
+<tr><td><code>publish</code></td><td>Publish model to HuggingFace Hub</td><td>Automation</td></tr>
+<tr><td><code>cbtop</code></td><td>ComputeBrick pipeline monitor</td><td>Visualization</td></tr>
+<tr><td><code>compare-hf</code></td><td>Compare APR model against HuggingFace source</td><td>Jidoka</td></tr>
 <tr><td><code>explain</code></td><td>Explain errors, architecture, and tensors</td><td>Knowledge Sharing</td></tr>
+<tr><td><code>tui</code></td><td>Interactive terminal UI</td><td>Visualization</td></tr>
+<tr><td><code>canary</code></td><td>Regression testing via tensor statistics</td><td>Jidoka</td></tr>
 </tbody></table>
 </div>
 <h2 id="serve-command"><a class="header" href="#serve-command">Serve Command</a></h2>
