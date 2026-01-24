@@ -111,6 +111,7 @@ const_is_empty = "allow"  # Compile-time empty checks for arrays
 unnecessary_wraps = "allow"  # Result/Option wrappers for API consistency
 ignore_without_reason = "allow"  # #[ignore] tests don't always need reasons
 index_refutable_slice = "allow"  # Explicit indexing preferred in ML code
+redundant_guards = "allow"  # Explicit guards for clarity in pattern matching
 
 [package]
 name = "aprender"
