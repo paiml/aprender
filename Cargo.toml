@@ -19,7 +19,7 @@ trivial_casts = "warn"
 trivial_numeric_casts = "warn"
 unused_import_braces = "warn"
 unused_lifetimes = "warn"
-unused_qualifications = "warn"
+unused_qualifications = "allow"  # Explicit paths sometimes preferred for clarity
 
 [workspace.lints.clippy]
 # Base level
@@ -100,6 +100,7 @@ stable_sort_primitive = "allow"  # Explicit sort stability
 unnecessary_literal_bound = "allow"  # Style preference
 unnecessary_map_or = "allow"  # Style preference
 vec_init_then_push = "allow"  # Explicit initialization for clarity
+nonminimal_bool = "allow"  # Complex booleans in mutation testing tests
 
 [package]
 name = "aprender"
