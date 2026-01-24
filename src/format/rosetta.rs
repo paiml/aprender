@@ -782,7 +782,7 @@ impl RosettaStone {
         })
     }
 
-    #[allow(clippy::only_used_in_recursion)] // Self is needed for recursive convert calls
+    #[allow(clippy::self_only_used_in_recursion)] // Self is needed for recursive convert calls
     fn convert_internal(
         &self,
         source: &Path,
@@ -791,7 +791,9 @@ impl RosettaStone {
         target_format: FormatType,
         opts: &ConversionOptions,
     ) -> Result<()> {
-        use crate::format::converter::{apr_export, apr_import, ExportFormat, ExportOptions, ImportOptions};
+        use crate::format::converter::{
+            apr_export, apr_import, ExportFormat, ExportOptions, ImportOptions,
+        };
 
         // Allow opts for future use and recursive calls
         let _ = &opts;
@@ -1923,7 +1925,10 @@ mod tests {
         let rosetta = RosettaStone::new();
         let report = rosetta.inspect(&path).expect("Inspect SafeTensors");
         assert_eq!(report.format, FormatType::SafeTensors);
-        assert!(!report.tensors.is_empty(), "Should have at least one tensor");
+        assert!(
+            !report.tensors.is_empty(),
+            "Should have at least one tensor"
+        );
         let _ = std::fs::remove_file(path);
     }
 
@@ -1936,7 +1941,10 @@ mod tests {
         let rosetta = RosettaStone::new();
         let report = rosetta.inspect(&path).expect("Inspect APR");
         assert_eq!(report.format, FormatType::Apr);
-        assert!(!report.tensors.is_empty(), "Should have at least one tensor");
+        assert!(
+            !report.tensors.is_empty(),
+            "Should have at least one tensor"
+        );
         let _ = std::fs::remove_file(path);
     }
 
