@@ -114,6 +114,8 @@ index_refutable_slice = "allow"  # Explicit indexing preferred in ML code
 redundant_guards = "allow"  # Explicit guards for clarity in pattern matching
 print_literal = "allow"  # Explicit format strings for documentation
 unnecessary_debug_formatting = "allow"  # Debug formatting in tests
+iter_cloned_collect = "allow"  # .iter().cloned().collect() pattern
+semicolon_if_nothing_returned = "allow"  # Style preference
 
 [package]
 name = "aprender"
