@@ -1051,6 +1051,44 @@ mod tests {
         );
     }
 
+    #[test]
+    fn p017_empty_intermediates() {
+        let path = ConversionPath::direct(FormatType::Gguf, FormatType::Apr);
+        assert!(path.intermediates.is_empty());
+        assert_eq!(path.steps().len(), 2);
+    }
+
+    #[test]
+    fn p018_single_intermediate() {
+        let path = ConversionPath::chain(
+            FormatType::Gguf,
+            vec![FormatType::Apr],
+            FormatType::SafeTensors,
+        );
+        assert_eq!(path.intermediates.len(), 1);
+        assert_eq!(path.steps().len(), 3);
+    }
+
+    #[test]
+    fn p019_multiple_intermediates() {
+        let path = ConversionPath {
+            source: FormatType::Gguf,
+            target: FormatType::Gguf,
+            intermediates: vec![FormatType::Apr, FormatType::SafeTensors, FormatType::Apr],
+        };
+        assert_eq!(path.steps().len(), 5);
+        assert!(path.is_roundtrip());
+    }
+
+    #[test]
+    fn p020_path_equality() {
+        let path1 = ConversionPath::direct(FormatType::Gguf, FormatType::Apr);
+        let path2 = ConversionPath::direct(FormatType::Gguf, FormatType::Apr);
+        let path3 = ConversionPath::direct(FormatType::Apr, FormatType::Gguf);
+        assert_eq!(path1, path2);
+        assert_ne!(path1, path3);
+    }
+
     // ========================================================================
     // Section 3: Options Tests (P021-P030)
     // ========================================================================
@@ -1074,6 +1112,89 @@ mod tests {
         assert!((opts.tolerance - 1e-3).abs() < 1e-9);
     }
 
+    #[test]
+    fn p023_quantization_option() {
+        let opts = ConversionOptions {
+            quantization: Some("Q4_K_M".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(opts.quantization, Some("Q4_K_M".to_string()));
+    }
+
+    #[test]
+    fn p024_verify_disabled() {
+        let opts = ConversionOptions {
+            verify: false,
+            ..Default::default()
+        };
+        assert!(!opts.verify);
+    }
+
+    #[test]
+    fn p025_compute_stats_enabled() {
+        let opts = ConversionOptions {
+            compute_stats: true,
+            ..Default::default()
+        };
+        assert!(opts.compute_stats);
+    }
+
+    #[test]
+    fn p026_no_provenance() {
+        let opts = ConversionOptions {
+            add_provenance: false,
+            ..Default::default()
+        };
+        assert!(!opts.add_provenance);
+    }
+
+    #[test]
+    fn p027_no_preserve_metadata() {
+        let opts = ConversionOptions {
+            preserve_metadata: false,
+            ..Default::default()
+        };
+        assert!(!opts.preserve_metadata);
+    }
+
+    #[test]
+    fn p028_strict_tolerance() {
+        let opts = ConversionOptions {
+            tolerance: 1e-9,
+            ..Default::default()
+        };
+        assert!(opts.tolerance < 1e-8);
+    }
+
+    #[test]
+    fn p029_all_options_custom() {
+        let opts = ConversionOptions {
+            quantization: Some("Q8_0".to_string()),
+            verify: false,
+            compute_stats: true,
+            tolerance: 1e-4,
+            preserve_metadata: false,
+            add_provenance: false,
+        };
+        assert_eq!(opts.quantization, Some("Q8_0".to_string()));
+        assert!(!opts.verify);
+        assert!(opts.compute_stats);
+        assert!((opts.tolerance - 1e-4).abs() < 1e-10);
+        assert!(!opts.preserve_metadata);
+        assert!(!opts.add_provenance);
+    }
+
+    #[test]
+    fn p030_options_clone() {
+        let opts = ConversionOptions {
+            quantization: Some("Q4_0".to_string()),
+            ..Default::default()
+        };
+        let opts2 = opts.clone();
+        assert_eq!(opts.quantization, opts2.quantization);
+        assert_eq!(opts.tolerance, opts2.tolerance);
+    }
+
     // ========================================================================
     // Section 4: Rosetta Stone Core Tests (P031-P050)
     // ========================================================================
@@ -1094,6 +1215,33 @@ mod tests {
         assert!(!rosetta.options.verify);
     }
 
+    #[test]
+    fn p033_rosetta_default_impl() {
+        let rosetta = RosettaStone::default();
+        assert!(rosetta.options.verify);
+    }
+
+    #[test]
+    fn p034_rosetta_debug_trait() {
+        let rosetta = RosettaStone::new();
+        let debug_str = format!("{:?}", rosetta);
+        assert!(debug_str.contains("RosettaStone"));
+    }
+
+    #[test]
+    fn p035_rosetta_inspect_nonexistent() {
+        let rosetta = RosettaStone::new();
+        let result = rosetta.inspect("/nonexistent/file.gguf");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn p036_rosetta_inspect_no_extension() {
+        let rosetta = RosettaStone::new();
+        let result = rosetta.inspect("/tmp/noextension");
+        assert!(result.is_err());
+    }
+
     // ========================================================================
     // Section 5: Verification Report Tests (P051-P060)
     // ========================================================================
@@ -1111,6 +1259,70 @@ mod tests {
         report.max_diff = 1e-7;
         assert!(report.passes_with_tolerance(1e-6));
         assert!(!report.passes_with_tolerance(1e-8));
+    }
+
+    #[test]
+    fn p053_verification_failed_tensors() {
+        let mut report = VerificationReport::passing();
+        report.failed_tensors.push("layer.0.weight".to_string());
+        assert!(!report.passes_with_tolerance(1e-3));
+    }
+
+    #[test]
+    fn p054_verification_mean_diff() {
+        let report = VerificationReport {
+            is_equivalent: true,
+            max_diff: 1e-5,
+            mean_diff: 1e-7,
+            tensor_diffs: BTreeMap::new(),
+            changed_metadata: Vec::new(),
+            failed_tensors: Vec::new(),
+        };
+        assert!(report.mean_diff < report.max_diff);
+    }
+
+    #[test]
+    fn p055_verification_tensor_diffs() {
+        let mut diffs = BTreeMap::new();
+        diffs.insert("embed.weight".to_string(), 1e-8_f32);
+        diffs.insert("lm_head.weight".to_string(), 1e-7_f32);
+
+        let report = VerificationReport {
+            is_equivalent: true,
+            max_diff: 1e-7,
+            mean_diff: 5e-8,
+            tensor_diffs: diffs.clone(),
+            changed_metadata: Vec::new(),
+            failed_tensors: Vec::new(),
+        };
+        assert_eq!(report.tensor_diffs.len(), 2);
+    }
+
+    #[test]
+    fn p056_verification_metadata_changes() {
+        let report = VerificationReport {
+            is_equivalent: true,
+            max_diff: 0.0,
+            mean_diff: 0.0,
+            tensor_diffs: BTreeMap::new(),
+            changed_metadata: vec!["model_name".to_string(), "version".to_string()],
+            failed_tensors: Vec::new(),
+        };
+        assert_eq!(report.changed_metadata.len(), 2);
+    }
+
+    #[test]
+    fn p057_verification_not_equivalent() {
+        let report = VerificationReport {
+            is_equivalent: false,
+            max_diff: 1.0,
+            mean_diff: 0.5,
+            tensor_diffs: BTreeMap::new(),
+            changed_metadata: Vec::new(),
+            failed_tensors: vec!["all_layers".to_string()],
+        };
+        assert!(!report.is_equivalent);
+        assert!(!report.passes_with_tolerance(1e-3));
     }
 
     // ========================================================================
@@ -1146,6 +1358,221 @@ mod tests {
         };
         assert!(report.is_lossless());
         assert!(report.tensor_counts_match());
+    }
+
+    #[test]
+    fn p062_conversion_with_dropped_tensors() {
+        let report = ConversionReport {
+            path: ConversionPath::direct(FormatType::Gguf, FormatType::Apr),
+            source_inspection: InspectionReport {
+                format: FormatType::Gguf,
+                file_size: 1000,
+                metadata: BTreeMap::new(),
+                tensors: vec![
+                    TensorInfo {
+                        name: "layer.0".to_string(),
+                        dtype: "F32".to_string(),
+                        shape: vec![100, 100],
+                        size_bytes: 40000,
+                        stats: None,
+                    },
+                    TensorInfo {
+                        name: "layer.1".to_string(),
+                        dtype: "F32".to_string(),
+                        shape: vec![100, 100],
+                        size_bytes: 40000,
+                        stats: None,
+                    },
+                ],
+                total_params: 20000,
+                quantization: None,
+                architecture: None,
+            },
+            target_inspection: InspectionReport {
+                format: FormatType::Apr,
+                file_size: 800,
+                metadata: BTreeMap::new(),
+                tensors: vec![TensorInfo {
+                    name: "layer.0".to_string(),
+                    dtype: "F32".to_string(),
+                    shape: vec![100, 100],
+                    size_bytes: 40000,
+                    stats: None,
+                }],
+                total_params: 10000,
+                quantization: None,
+                architecture: None,
+            },
+            warnings: vec!["Tensor dropped".to_string()],
+            duration_ms: 100,
+            modified_tensors: vec![],
+            dropped_tensors: vec!["layer.1".to_string()],
+        };
+        assert!(!report.is_lossless());
+        assert!(!report.tensor_counts_match());
+    }
+
+    #[test]
+    fn p063_conversion_warnings() {
+        let report = ConversionReport {
+            path: ConversionPath::direct(FormatType::Gguf, FormatType::Apr),
+            source_inspection: InspectionReport {
+                format: FormatType::Gguf,
+                file_size: 1000,
+                metadata: BTreeMap::new(),
+                tensors: vec![],
+                total_params: 0,
+                quantization: None,
+                architecture: None,
+            },
+            target_inspection: InspectionReport {
+                format: FormatType::Apr,
+                file_size: 1000,
+                metadata: BTreeMap::new(),
+                tensors: vec![],
+                total_params: 0,
+                quantization: None,
+                architecture: None,
+            },
+            warnings: vec!["Warning 1".to_string(), "Warning 2".to_string()],
+            duration_ms: 50,
+            modified_tensors: vec![],
+            dropped_tensors: vec![],
+        };
+        assert_eq!(report.warnings.len(), 2);
+        assert!(report.is_lossless());
+    }
+
+    // ========================================================================
+    // Section 7: TensorInfo Tests (P071-P080)
+    // ========================================================================
+
+    #[test]
+    fn p071_tensor_info_creation() {
+        let info = TensorInfo {
+            name: "model.embed".to_string(),
+            dtype: "F32".to_string(),
+            shape: vec![32000, 4096],
+            size_bytes: 32000 * 4096 * 4,
+            stats: None,
+        };
+        assert_eq!(info.name, "model.embed");
+        assert_eq!(info.dtype, "F32");
+    }
+
+    #[test]
+    fn p072_tensor_info_with_stats() {
+        let stats = TensorStats {
+            min: -1.0,
+            max: 1.0,
+            mean: 0.0,
+            std: 0.5,
+        };
+        let info = TensorInfo {
+            name: "layer.weight".to_string(),
+            dtype: "F16".to_string(),
+            shape: vec![1024, 1024],
+            size_bytes: 1024 * 1024 * 2,
+            stats: Some(stats),
+        };
+        assert!(info.stats.is_some());
+        let s = info.stats.unwrap();
+        assert_eq!(s.min, -1.0);
+        assert_eq!(s.max, 1.0);
+    }
+
+    #[test]
+    fn p073_tensor_info_multidim_shape() {
+        let info = TensorInfo {
+            name: "conv.weight".to_string(),
+            dtype: "F32".to_string(),
+            shape: vec![64, 32, 3, 3],
+            size_bytes: 64 * 32 * 3 * 3 * 4,
+            stats: None,
+        };
+        assert_eq!(info.shape.len(), 4);
+        let total: usize = info.shape.iter().product();
+        assert_eq!(total, 64 * 32 * 3 * 3);
+    }
+
+    #[test]
+    fn p074_tensor_stats_range() {
+        let stats = TensorStats {
+            min: -2.5,
+            max: 2.5,
+            mean: 0.01,
+            std: 1.0,
+        };
+        assert!(stats.min < stats.max);
+        assert!(stats.mean >= stats.min && stats.mean <= stats.max);
+    }
+
+    // ========================================================================
+    // Section 8: InspectionReport Tests (P081-P090)
+    // ========================================================================
+
+    #[test]
+    fn p081_inspection_report_format() {
+        let report = InspectionReport {
+            format: FormatType::Gguf,
+            file_size: 1_000_000,
+            metadata: BTreeMap::new(),
+            tensors: vec![],
+            total_params: 100_000,
+            quantization: None,
+            architecture: None,
+        };
+        assert_eq!(report.format, FormatType::Gguf);
+        assert_eq!(report.file_size, 1_000_000);
+    }
+
+    #[test]
+    fn p082_inspection_report_with_metadata() {
+        let mut metadata = BTreeMap::new();
+        metadata.insert("model_name".to_string(), "test-model".to_string());
+        metadata.insert("version".to_string(), "1.0".to_string());
+
+        let report = InspectionReport {
+            format: FormatType::Apr,
+            file_size: 500_000,
+            metadata,
+            tensors: vec![],
+            total_params: 50_000,
+            quantization: None,
+            architecture: Some("transformer".to_string()),
+        };
+        assert_eq!(report.metadata.len(), 2);
+        assert!(report.architecture.is_some());
+    }
+
+    #[test]
+    fn p083_inspection_report_with_quantization() {
+        let report = InspectionReport {
+            format: FormatType::Gguf,
+            file_size: 2_000_000,
+            metadata: BTreeMap::new(),
+            tensors: vec![],
+            total_params: 1_000_000,
+            quantization: Some("Q4_K_M".to_string()),
+            architecture: Some("llama".to_string()),
+        };
+        assert_eq!(report.quantization, Some("Q4_K_M".to_string()));
+    }
+
+    #[test]
+    fn p084_inspection_report_display() {
+        let report = InspectionReport {
+            format: FormatType::SafeTensors,
+            file_size: 100,
+            metadata: BTreeMap::new(),
+            tensors: vec![],
+            total_params: 10,
+            quantization: None,
+            architecture: None,
+        };
+        let display = format!("{}", report);
+        assert!(display.contains("Rosetta Stone Inspection"));
+        assert!(display.contains("SafeTensors"));
     }
 
     // ========================================================================
@@ -1215,6 +1642,227 @@ mod tests {
             path.has_cycle(),
             "Chain with repeated formats should have cycle"
         );
+    }
+
+    #[test]
+    fn p094_zero_size_file_test() {
+        // Zero-size file should fail inspection
+        let temp_dir = std::env::temp_dir();
+        let empty_file = temp_dir.join("empty.gguf");
+        std::fs::write(&empty_file, b"").expect("Write empty file");
+
+        let result = FormatType::from_magic(&empty_file);
+        let _ = std::fs::remove_file(&empty_file);
+
+        assert!(result.is_err(), "Empty file should fail magic detection");
+    }
+
+    #[test]
+    fn p095_truncated_magic_test() {
+        // File with only 3 bytes (truncated magic)
+        let temp_dir = std::env::temp_dir();
+        let short_file = temp_dir.join("short.gguf");
+        std::fs::write(&short_file, b"GGU").expect("Write short file");
+
+        let result = FormatType::from_magic(&short_file);
+        let _ = std::fs::remove_file(&short_file);
+
+        assert!(result.is_err(), "Truncated magic should fail");
+    }
+
+    #[test]
+    fn p096_symlink_path_extension() {
+        // Paths with multiple dots
+        let path = Path::new("model.v1.backup.gguf");
+        let format = FormatType::from_extension(path);
+        assert!(format.is_ok());
+        assert_eq!(format.unwrap(), FormatType::Gguf);
+    }
+
+    #[test]
+    fn p097_hidden_file_extension() {
+        // Hidden file with extension
+        let path = Path::new(".hidden_model.safetensors");
+        let format = FormatType::from_extension(path);
+        assert!(format.is_ok());
+        assert_eq!(format.unwrap(), FormatType::SafeTensors);
+    }
+
+    #[test]
+    fn p098_mixed_case_extension() {
+        // Mixed case extension
+        let path = Path::new("model.GgUf");
+        let format = FormatType::from_extension(path);
+        assert!(format.is_ok());
+        assert_eq!(format.unwrap(), FormatType::Gguf);
+    }
+
+    #[test]
+    fn p099_format_hash_trait() {
+        // Verify FormatType implements Hash correctly
+        use std::collections::HashSet;
+        let mut set = HashSet::new();
+        set.insert(FormatType::Gguf);
+        set.insert(FormatType::Apr);
+        set.insert(FormatType::Gguf); // Duplicate
+        assert_eq!(set.len(), 2);
+    }
+
+    #[test]
+    fn p100_format_eq_trait() {
+        // Verify FormatType equality
+        assert_eq!(FormatType::Gguf, FormatType::Gguf);
+        assert_ne!(FormatType::Gguf, FormatType::Apr);
+        assert_ne!(FormatType::Apr, FormatType::SafeTensors);
+    }
+
+    // ========================================================================
+    // Section 14: Additional Edge Cases (P101-P110)
+    // ========================================================================
+
+    #[test]
+    fn p101_conversion_path_clone() {
+        let path = ConversionPath::direct(FormatType::Gguf, FormatType::Apr);
+        let path2 = path.clone();
+        assert_eq!(path, path2);
+    }
+
+    #[test]
+    fn p102_conversion_path_debug() {
+        let path = ConversionPath::direct(FormatType::Gguf, FormatType::Apr);
+        let debug = format!("{:?}", path);
+        assert!(debug.contains("ConversionPath"));
+        assert!(debug.contains("Gguf"));
+    }
+
+    #[test]
+    fn p103_tensor_info_clone() {
+        let info = TensorInfo {
+            name: "test".to_string(),
+            dtype: "F32".to_string(),
+            shape: vec![10, 20],
+            size_bytes: 800,
+            stats: None,
+        };
+        let info2 = info.clone();
+        assert_eq!(info.name, info2.name);
+        assert_eq!(info.shape, info2.shape);
+    }
+
+    #[test]
+    fn p104_tensor_stats_copy() {
+        let stats = TensorStats {
+            min: 0.0,
+            max: 1.0,
+            mean: 0.5,
+            std: 0.25,
+        };
+        let stats2 = stats; // Copy
+        assert_eq!(stats.mean, stats2.mean);
+    }
+
+    #[test]
+    fn p105_verification_report_clone() {
+        let report = VerificationReport::passing();
+        let report2 = report.clone();
+        assert_eq!(report.is_equivalent, report2.is_equivalent);
+    }
+
+    #[test]
+    fn p106_options_debug() {
+        let opts = ConversionOptions::default();
+        let debug = format!("{:?}", opts);
+        assert!(debug.contains("ConversionOptions"));
+    }
+
+    #[test]
+    fn p107_empty_tensor_list() {
+        let report = InspectionReport {
+            format: FormatType::Apr,
+            file_size: 0,
+            metadata: BTreeMap::new(),
+            tensors: vec![],
+            total_params: 0,
+            quantization: None,
+            architecture: None,
+        };
+        assert!(report.tensors.is_empty());
+        assert_eq!(report.total_params, 0);
+    }
+
+    #[test]
+    fn p108_large_tensor_count() {
+        let tensors: Vec<TensorInfo> = (0..100)
+            .map(|i| TensorInfo {
+                name: format!("layer.{}", i),
+                dtype: "F16".to_string(),
+                shape: vec![256, 256],
+                size_bytes: 256 * 256 * 2,
+                stats: None,
+            })
+            .collect();
+
+        let report = InspectionReport {
+            format: FormatType::Gguf,
+            file_size: tensors.len() * 256 * 256 * 2,
+            metadata: BTreeMap::new(),
+            tensors,
+            total_params: 100 * 256 * 256,
+            quantization: None,
+            architecture: None,
+        };
+        assert_eq!(report.tensors.len(), 100);
+    }
+
+    #[test]
+    fn p109_metadata_long_value() {
+        let mut metadata = BTreeMap::new();
+        let long_value = "x".repeat(1000);
+        metadata.insert("long_key".to_string(), long_value.clone());
+
+        let report = InspectionReport {
+            format: FormatType::SafeTensors,
+            file_size: 1000,
+            metadata,
+            tensors: vec![],
+            total_params: 0,
+            quantization: None,
+            architecture: None,
+        };
+
+        let display = format!("{}", report);
+        // Long values should be truncated in display
+        assert!(display.len() < long_value.len() * 2);
+    }
+
+    #[test]
+    fn p110_conversion_duration() {
+        let report = ConversionReport {
+            path: ConversionPath::direct(FormatType::Gguf, FormatType::Apr),
+            source_inspection: InspectionReport {
+                format: FormatType::Gguf,
+                file_size: 1000,
+                metadata: BTreeMap::new(),
+                tensors: vec![],
+                total_params: 100,
+                quantization: None,
+                architecture: None,
+            },
+            target_inspection: InspectionReport {
+                format: FormatType::Apr,
+                file_size: 1000,
+                metadata: BTreeMap::new(),
+                tensors: vec![],
+                total_params: 100,
+                quantization: None,
+                architecture: None,
+            },
+            warnings: vec![],
+            duration_ms: 1500,
+            modified_tensors: vec![],
+            dropped_tensors: vec![],
+        };
+        assert_eq!(report.duration_ms, 1500);
     }
 
     // ========================================================================
