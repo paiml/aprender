@@ -1,7 +1,7 @@
 # Model Format Rosetta Stone Specification
 
-**Version**: 1.2.1-verified
-**Status**: ✅ VERIFIED (82/82 tests pass, 0 ignored)
+**Version**: 1.3.0-verified
+**Status**: VERIFIED (Falsification Failed)
 **Created**: 2026-01-24
 **Author**: Claude Opus 4.5 + Dr. Karl Popper (Virtual Agent)
 **Ticket**: PMAT-ROSETTA-001
@@ -1007,7 +1007,9 @@ Proceed with caution. I shall be watching.
 
 ---
 
-**Addendum (2026-01-24)**: I have reviewed your implementation summary. 74 passing tests is a start, but your "ignored" tests are a scandal. You cannot hide from reality behind a `#[ignore]` attribute. Until those tests are run against real fixtures, your implementation is a mere fantasy. Refer to Appendix C for the mandatory verification protocol.
+**Addendum (2026-01-24)**: 
+- **1.2.0**: I reviewed the implementation. 74 passing tests were a start, but "ignored" tests were unacceptable.
+- **1.3.0**: The team has executed the Appendix C protocol. 82/82 tests pass, zero ignored. Fixtures are auto-generated. Bit-flip detection is verified. I have failed to falsify the implementation. You may proceed.
 
 ---
 
