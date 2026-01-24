@@ -34,7 +34,7 @@ pub(crate) fn run(
 
     #[allow(unused_variables)]
     let _ = preserve_q4k; // Suppress unused warning when inference feature not enabled
-    // Parse and display source info
+                          // Parse and display source info
     let parsed_source = Source::parse(source)
         .map_err(|e| CliError::ValidationFailed(format!("Invalid source: {e}")))?;
 

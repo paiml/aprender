@@ -1070,8 +1070,8 @@ mod tests {
 
     #[test]
     fn test_lint_issue_display_with_suggestion() {
-        let issue = LintIssue::naming_info("Use full name")
-            .with_suggestion("Rename to 'encoder.weight'");
+        let issue =
+            LintIssue::naming_info("Use full name").with_suggestion("Rename to 'encoder.weight'");
         let display = format!("{}", issue);
         assert!(display.contains("[INFO]"));
         assert!(display.contains("Tensor Naming"));

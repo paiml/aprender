@@ -1358,8 +1358,12 @@ pub fn add(a: i32, b: i32) -> i32 {
         let err_code = ErrorCode::new("E0308", ErrorCategory::TypeMismatch, Difficulty::Easy);
         let warn_code = ErrorCode::new("W0001", ErrorCategory::TypeMismatch, Difficulty::Easy);
         let span = SourceSpan::default();
-        let error =
-            CompilerDiagnostic::new(err_code, DiagnosticSeverity::Error, "test error", span.clone());
+        let error = CompilerDiagnostic::new(
+            err_code,
+            DiagnosticSeverity::Error,
+            "test error",
+            span.clone(),
+        );
         let warning =
             CompilerDiagnostic::new(warn_code, DiagnosticSeverity::Warning, "test warning", span);
 
@@ -1512,7 +1516,9 @@ pub fn add(a: i32, b: i32) -> i32 {
         let mut options = CompileOptions::default();
         options.opt_level = OptLevel::Release;
         options.extra_flags.push("-v".to_string());
-        options.env.insert("RUST_LOG".to_string(), "debug".to_string());
+        options
+            .env
+            .insert("RUST_LOG".to_string(), "debug".to_string());
         options.working_dir = Some(PathBuf::from("/tmp"));
 
         assert_eq!(options.opt_level, OptLevel::Release);

@@ -2196,7 +2196,11 @@ fn start_safetensors_server(model_path: &Path, config: &ServerConfig) -> Result<
     let st_model = MappedSafeTensorsModel::load(model_path)
         .map_err(|e| CliError::ModelLoadFailed(format!("Failed to load SafeTensors: {e}")))?;
 
-    let tensor_names: Vec<String> = st_model.tensor_names().into_iter().map(String::from).collect();
+    let tensor_names: Vec<String> = st_model
+        .tensor_names()
+        .into_iter()
+        .map(String::from)
+        .collect();
     let tensor_count = tensor_names.len();
 
     println!(
@@ -2438,8 +2442,7 @@ fn load_safetensors_tokenizer(path: &Path) -> Option<SafeTensorsTokenizerInfo> {
     }
 
     // Create BPE tokenizer with vocab and merge rules
-    let tokenizer =
-        realizar::tokenizer::BPETokenizer::new(vocab.clone(), merges, "<unk>").ok()?;
+    let tokenizer = realizar::tokenizer::BPETokenizer::new(vocab.clone(), merges, "<unk>").ok()?;
 
     Some(SafeTensorsTokenizerInfo {
         tokenizer: std::sync::Arc::new(tokenizer),
@@ -2514,7 +2517,10 @@ async fn safetensors_chat_completions_handler(
     // Previous code used generate() which calls forward() on ALL tokens each step = O(n²)
     // generate_with_cache() uses KV cache for incremental generation = O(n)
     let start = Instant::now();
-    let temperature = request.get("temperature").and_then(|t| t.as_f64()).unwrap_or(0.0) as f32;
+    let temperature = request
+        .get("temperature")
+        .and_then(|t| t.as_f64())
+        .unwrap_or(0.0) as f32;
     let gen_config = realizar::apr_transformer::GenerateConfig {
         max_tokens,
         temperature,
@@ -2664,7 +2670,10 @@ async fn safetensors_generate_handler(
     // Previous code used generate() which calls forward() on ALL tokens each step = O(n²)
     // generate_with_cache() uses KV cache for incremental generation = O(n)
     let start = Instant::now();
-    let temperature = request.get("temperature").and_then(|t| t.as_f64()).unwrap_or(0.0) as f32;
+    let temperature = request
+        .get("temperature")
+        .and_then(|t| t.as_f64())
+        .unwrap_or(0.0) as f32;
     let gen_config = realizar::apr_transformer::GenerateConfig {
         max_tokens,
         temperature,

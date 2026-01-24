@@ -59,22 +59,56 @@ struct TestResult {
 
 impl TestResult {
     fn pass(id: &'static str, name: &'static str, points: u32) -> Self {
-        Self { id, name, passed: true, details: None, points }
+        Self {
+            id,
+            name,
+            passed: true,
+            details: None,
+            points,
+        }
     }
-    fn pass_with_details(id: &'static str, name: &'static str, points: u32, details: String) -> Self {
-        Self { id, name, passed: true, details: Some(details), points }
+    fn pass_with_details(
+        id: &'static str,
+        name: &'static str,
+        points: u32,
+        details: String,
+    ) -> Self {
+        Self {
+            id,
+            name,
+            passed: true,
+            details: Some(details),
+            points,
+        }
     }
     fn fail(id: &'static str, name: &'static str, points: u32, details: String) -> Self {
-        Self { id, name, passed: false, details: Some(details), points }
+        Self {
+            id,
+            name,
+            passed: false,
+            details: Some(details),
+            points,
+        }
     }
     fn skip(id: &'static str, name: &'static str, _points: u32, reason: String) -> Self {
-        Self { id, name, passed: true, details: Some(format!("SKIP: {}", reason)), points: 0 }
+        Self {
+            id,
+            name,
+            passed: true,
+            details: Some(format!("SKIP: {}", reason)),
+            points: 0,
+        }
     }
     fn print(&self) {
-        let status = if self.passed { format!("{}[PASS]{}", GREEN, NC) }
-                     else { format!("{}[FAIL]{}", RED, NC) };
+        let status = if self.passed {
+            format!("{}[PASS]{}", GREEN, NC)
+        } else {
+            format!("{}[FAIL]{}", RED, NC)
+        };
         println!("{} {}: {}", status, self.id, self.name);
-        if let Some(ref d) = self.details { println!("       {}", d); }
+        if let Some(ref d) = self.details {
+            println!("       {}", d);
+        }
     }
 }
 
@@ -100,9 +134,15 @@ impl Default for QaConfig {
 }
 
 fn find_apr_binary() -> PathBuf {
-    for p in ["target/release/apr", "target/debug/apr", "/mnt/nvme-raid0/targets/aprender/release/apr"] {
+    for p in [
+        "target/release/apr",
+        "target/debug/apr",
+        "/mnt/nvme-raid0/targets/aprender/release/apr",
+    ] {
         let path = PathBuf::from(p);
-        if path.exists() { return path; }
+        if path.exists() {
+            return path;
+        }
     }
     PathBuf::from("cargo")
 }
@@ -122,11 +162,25 @@ fn find_default_model() -> Option<PathBuf> {
 /// Start the apr serve process
 fn start_server(config: &QaConfig, model: &PathBuf) -> Option<Child> {
     let port_str = config.port.to_string();
-    let args = vec!["serve", model.to_str().unwrap_or(""), "--port", &port_str, "--gpu"];
+    let args = vec![
+        "serve",
+        model.to_str().unwrap_or(""),
+        "--port",
+        &port_str,
+        "--gpu",
+    ];
 
     let mut cmd = if config.apr_binary.to_string_lossy() == "cargo" {
         let mut c = Command::new("cargo");
-        c.args(["run", "-p", "apr-cli", "--release", "--features", "inference", "--"]);
+        c.args([
+            "run",
+            "-p",
+            "apr-cli",
+            "--release",
+            "--features",
+            "inference",
+            "--",
+        ]);
         c.args(&args);
         c
     } else {
@@ -168,21 +222,33 @@ fn http_get(host: &str, port: u16, path: &str) -> Result<(u16, String), String> 
     stream.set_read_timeout(Some(Duration::from_secs(30))).ok();
 
     use std::io::Write;
-    let request = format!("GET {} HTTP/1.1\r\nHost: {}:{}\r\nConnection: close\r\n\r\n", path, host, port);
-    stream.write_all(request.as_bytes()).map_err(|e| e.to_string())?;
+    let request = format!(
+        "GET {} HTTP/1.1\r\nHost: {}:{}\r\nConnection: close\r\n\r\n",
+        path, host, port
+    );
+    stream
+        .write_all(request.as_bytes())
+        .map_err(|e| e.to_string())?;
 
     let mut reader = BufReader::new(stream);
     let mut status_line = String::new();
-    reader.read_line(&mut status_line).map_err(|e| e.to_string())?;
+    reader
+        .read_line(&mut status_line)
+        .map_err(|e| e.to_string())?;
 
-    let status: u16 = status_line.split_whitespace().nth(1)
-        .and_then(|s| s.parse().ok()).unwrap_or(0);
+    let status: u16 = status_line
+        .split_whitespace()
+        .nth(1)
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
 
     // Skip headers
     loop {
         let mut line = String::new();
         reader.read_line(&mut line).ok();
-        if line.trim().is_empty() { break; }
+        if line.trim().is_empty() {
+            break;
+        }
     }
 
     let mut body = String::new();
@@ -195,7 +261,13 @@ fn http_get(host: &str, port: u16, path: &str) -> Result<(u16, String), String> 
 }
 
 /// HTTP POST request with JSON body
-fn http_post(host: &str, port: u16, path: &str, body: &str, headers: &[(&str, &str)]) -> Result<(u16, String), String> {
+fn http_post(
+    host: &str,
+    port: u16,
+    path: &str,
+    body: &str,
+    headers: &[(&str, &str)],
+) -> Result<(u16, String), String> {
     let addr = format!("{}:{}", host, port);
     let mut stream = TcpStream::connect(&addr).map_err(|e| e.to_string())?;
     stream.set_read_timeout(Some(Duration::from_secs(60))).ok();
@@ -210,20 +282,29 @@ fn http_post(host: &str, port: u16, path: &str, body: &str, headers: &[(&str, &s
         "POST {} HTTP/1.1\r\nHost: {}:{}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n{}Connection: close\r\n\r\n{}",
         path, host, port, body.len(), header_str, body
     );
-    stream.write_all(request.as_bytes()).map_err(|e| e.to_string())?;
+    stream
+        .write_all(request.as_bytes())
+        .map_err(|e| e.to_string())?;
 
     let mut reader = BufReader::new(stream);
     let mut status_line = String::new();
-    reader.read_line(&mut status_line).map_err(|e| e.to_string())?;
+    reader
+        .read_line(&mut status_line)
+        .map_err(|e| e.to_string())?;
 
-    let status: u16 = status_line.split_whitespace().nth(1)
-        .and_then(|s| s.parse().ok()).unwrap_or(0);
+    let status: u16 = status_line
+        .split_whitespace()
+        .nth(1)
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
 
     // Skip headers
     loop {
         let mut line = String::new();
         reader.read_line(&mut line).ok();
-        if line.trim().is_empty() { break; }
+        if line.trim().is_empty() {
+            break;
+        }
     }
 
     let mut resp_body = String::new();
@@ -261,7 +342,9 @@ fn extract_json_content(json: &str) -> Option<String> {
 fn test_health(config: &QaConfig) -> TestResult {
     match http_get("127.0.0.1", config.port, "/health") {
         Ok((status, _)) if status == 200 => TestResult::pass("P017", "Health Endpoint", 2),
-        Ok((status, _)) => TestResult::fail("P017", "Health Endpoint", 2, format!("Status {}", status)),
+        Ok((status, _)) => {
+            TestResult::fail("P017", "Health Endpoint", 2, format!("Status {}", status))
+        }
         Err(e) => TestResult::fail("P017", "Health Endpoint", 2, e),
     }
 }
@@ -289,13 +372,19 @@ fn test_valid_json(config: &QaConfig) -> TestResult {
                 TestResult::fail("P019", "Valid JSON Response", 2, "Invalid JSON".to_string())
             }
         }
-        Ok((status, _)) => TestResult::fail("P019", "Valid JSON Response", 2, format!("Status {}", status)),
+        Ok((status, _)) => TestResult::fail(
+            "P019",
+            "Valid JSON Response",
+            2,
+            format!("Status {}", status),
+        ),
         Err(e) => TestResult::fail("P019", "Valid JSON Response", 2, e),
     }
 }
 
 fn test_openai_structure(config: &QaConfig) -> TestResult {
-    let body = r#"{"model":"default","messages":[{"role":"user","content":"Say hi"}],"max_tokens":10}"#;
+    let body =
+        r#"{"model":"default","messages":[{"role":"user","content":"Say hi"}],"max_tokens":10}"#;
     match http_post("127.0.0.1", config.port, "/v1/chat/completions", body, &[]) {
         Ok((200, resp)) => {
             if resp.contains("choices") && resp.contains("message") && resp.contains("content") {
@@ -310,17 +399,28 @@ fn test_openai_structure(config: &QaConfig) -> TestResult {
 }
 
 fn test_non_empty_content(config: &QaConfig) -> TestResult {
-    let body = r#"{"model":"default","messages":[{"role":"user","content":"Say hello"}],"max_tokens":10}"#;
+    let body =
+        r#"{"model":"default","messages":[{"role":"user","content":"Say hello"}],"max_tokens":10}"#;
     match http_post("127.0.0.1", config.port, "/v1/chat/completions", body, &[]) {
         Ok((200, resp)) => {
             if let Some(content) = extract_json_content(&resp) {
                 if !content.is_empty() {
-                    TestResult::pass_with_details("P021", "Non-Empty Content", 2, format!("Len: {}", content.len()))
+                    TestResult::pass_with_details(
+                        "P021",
+                        "Non-Empty Content",
+                        2,
+                        format!("Len: {}", content.len()),
+                    )
                 } else {
                     TestResult::fail("P021", "Non-Empty Content", 2, "Empty content".to_string())
                 }
             } else {
-                TestResult::fail("P021", "Non-Empty Content", 2, "No content field".to_string())
+                TestResult::fail(
+                    "P021",
+                    "Non-Empty Content",
+                    2,
+                    "No content field".to_string(),
+                )
             }
         }
         Ok((s, _)) => TestResult::fail("P021", "Non-Empty Content", 2, format!("Status {}", s)),
@@ -333,7 +433,12 @@ fn test_no_token_artifacts(config: &QaConfig) -> TestResult {
     match http_post("127.0.0.1", config.port, "/v1/chat/completions", body, &[]) {
         Ok((200, resp)) => {
             if resp.contains("token0") || resp.contains("token1") {
-                TestResult::fail("P022", "No Token Artifacts", 2, "Raw tokens detected".to_string())
+                TestResult::fail(
+                    "P022",
+                    "No Token Artifacts",
+                    2,
+                    "Raw tokens detected".to_string(),
+                )
             } else {
                 TestResult::pass("P022", "No Token Artifacts", 2)
             }
@@ -348,7 +453,12 @@ fn test_no_bpe_artifacts(config: &QaConfig) -> TestResult {
     match http_post("127.0.0.1", config.port, "/v1/chat/completions", body, &[]) {
         Ok((200, resp)) => {
             if resp.contains('Ġ') || resp.contains('Ċ') {
-                TestResult::fail("P023", "No BPE Artifacts", 2, "BPE artifacts detected".to_string())
+                TestResult::fail(
+                    "P023",
+                    "No BPE Artifacts",
+                    2,
+                    "BPE artifacts detected".to_string(),
+                )
             } else {
                 TestResult::pass("P023", "No BPE Artifacts", 2)
             }
@@ -365,7 +475,12 @@ fn test_streaming_format(config: &QaConfig) -> TestResult {
             if resp.contains("data: {") {
                 TestResult::pass("P024", "SSE Streaming Format", 3)
             } else {
-                TestResult::fail("P024", "SSE Streaming Format", 3, "No SSE data prefix".to_string())
+                TestResult::fail(
+                    "P024",
+                    "SSE Streaming Format",
+                    3,
+                    "No SSE data prefix".to_string(),
+                )
             }
         }
         Err(e) => TestResult::fail("P024", "SSE Streaming Format", 3, e),
@@ -379,7 +494,12 @@ fn test_stream_termination(config: &QaConfig) -> TestResult {
             if resp.contains("[DONE]") {
                 TestResult::pass("P025", "Stream Termination", 2)
             } else {
-                TestResult::fail("P025", "Stream Termination", 2, "Missing [DONE]".to_string())
+                TestResult::fail(
+                    "P025",
+                    "Stream Termination",
+                    2,
+                    "Missing [DONE]".to_string(),
+                )
             }
         }
         Err(e) => TestResult::fail("P025", "Stream Termination", 2, e),
@@ -409,10 +529,18 @@ fn test_determinism(config: &QaConfig) -> TestResult {
 fn test_malformed_json(config: &QaConfig) -> TestResult {
     let body = r#"{ "broken_json": [ }"#; // Invalid JSON
     match http_post("127.0.0.1", config.port, "/v1/chat/completions", body, &[]) {
-        Ok((status, _)) if status == 400 || status == 500 => {
-            TestResult::pass_with_details("P027", "Malformed JSON Rejection", 2, format!("Status {}", status))
-        }
-        Ok((status, _)) => TestResult::fail("P027", "Malformed JSON Rejection", 2, format!("Expected 400, got {}", status)),
+        Ok((status, _)) if status == 400 || status == 500 => TestResult::pass_with_details(
+            "P027",
+            "Malformed JSON Rejection",
+            2,
+            format!("Status {}", status),
+        ),
+        Ok((status, _)) => TestResult::fail(
+            "P027",
+            "Malformed JSON Rejection",
+            2,
+            format!("Expected 400, got {}", status),
+        ),
         Err(e) => TestResult::fail("P027", "Malformed JSON Rejection", 2, e),
     }
 }
@@ -425,7 +553,12 @@ fn test_coherency(config: &QaConfig) -> TestResult {
             if resp.contains('1') && resp.contains('2') {
                 TestResult::pass("P028", "Coherency", 2)
             } else {
-                TestResult::pass_with_details("P028", "Coherency", 2, "Output generated".to_string())
+                TestResult::pass_with_details(
+                    "P028",
+                    "Coherency",
+                    2,
+                    "Output generated".to_string(),
+                )
             }
         }
         Ok((s, _)) => TestResult::fail("P028", "Coherency", 2, format!("Status {}", s)),
@@ -437,10 +570,17 @@ fn test_no_multi_turn_loop(config: &QaConfig) -> TestResult {
     let body = r#"{"model":"default","messages":[{"role":"user","content":"What is 2+2?"}],"max_tokens":30,"temperature":0}"#;
     match http_post("127.0.0.1", config.port, "/v1/chat/completions", body, &[]) {
         Ok((200, resp)) => {
-            let has_fake = resp.contains("\nHuman:") || resp.contains("\nAssistant:")
-                        || resp.contains("\nUser:") || resp.contains("<|im_start|>");
+            let has_fake = resp.contains("\nHuman:")
+                || resp.contains("\nAssistant:")
+                || resp.contains("\nUser:")
+                || resp.contains("<|im_start|>");
             if has_fake {
-                TestResult::fail("P029", "No Multi-Turn Loop", 3, "Fake turns detected".to_string())
+                TestResult::fail(
+                    "P029",
+                    "No Multi-Turn Loop",
+                    3,
+                    "Fake turns detected".to_string(),
+                )
             } else {
                 TestResult::pass("P029", "No Multi-Turn Loop", 3)
             }
@@ -450,10 +590,21 @@ fn test_no_multi_turn_loop(config: &QaConfig) -> TestResult {
     }
 }
 
-fn test_trace_level(config: &QaConfig, level: &str, id: &'static str, name: &'static str) -> TestResult {
+fn test_trace_level(
+    config: &QaConfig,
+    level: &str,
+    id: &'static str,
+    name: &'static str,
+) -> TestResult {
     let body = r#"{"model":"default","messages":[{"role":"user","content":"Hi"}],"max_tokens":3}"#;
     let headers = [("X-Trace-Level", level)];
-    match http_post("127.0.0.1", config.port, "/v1/chat/completions", body, &headers) {
+    match http_post(
+        "127.0.0.1",
+        config.port,
+        "/v1/chat/completions",
+        body,
+        &headers,
+    ) {
         Ok((200, resp)) => {
             let trace_key = format!("{}_trace", level);
             if resp.contains(&trace_key) {
@@ -471,23 +622,47 @@ fn test_default_suppression(config: &QaConfig) -> TestResult {
     let body = r#"{"model":"default","messages":[{"role":"user","content":"Hi"}],"max_tokens":5}"#;
     match http_post("127.0.0.1", config.port, "/v1/chat/completions", body, &[]) {
         Ok((200, resp)) => {
-            let has_trace = resp.contains("brick_trace") || resp.contains("step_trace") || resp.contains("layer_trace");
+            let has_trace = resp.contains("brick_trace")
+                || resp.contains("step_trace")
+                || resp.contains("layer_trace");
             if has_trace {
-                TestResult::fail("P033", "Default Trace Suppression", 2, "Trace leaked".to_string())
+                TestResult::fail(
+                    "P033",
+                    "Default Trace Suppression",
+                    2,
+                    "Trace leaked".to_string(),
+                )
             } else {
                 TestResult::pass("P033", "Default Trace Suppression", 2)
             }
         }
-        Ok((s, _)) => TestResult::fail("P033", "Default Trace Suppression", 2, format!("Status {}", s)),
+        Ok((s, _)) => TestResult::fail(
+            "P033",
+            "Default Trace Suppression",
+            2,
+            format!("Status {}", s),
+        ),
         Err(e) => TestResult::fail("P033", "Default Trace Suppression", 2, e),
     }
 }
 
 fn print_header() {
-    println!("{}╔══════════════════════════════════════════════════════════════╗{}", BLUE, NC);
-    println!("{}║        APR SERVE QA - Popperian Falsification Suite          ║{}", BLUE, NC);
-    println!("{}║        PMAT-QA-RUST-001 Section C (35 Points)                 ║{}", BLUE, NC);
-    println!("{}╚══════════════════════════════════════════════════════════════╝{}", BLUE, NC);
+    println!(
+        "{}╔══════════════════════════════════════════════════════════════╗{}",
+        BLUE, NC
+    );
+    println!(
+        "{}║        APR SERVE QA - Popperian Falsification Suite          ║{}",
+        BLUE, NC
+    );
+    println!(
+        "{}║        PMAT-QA-RUST-001 Section C (35 Points)                 ║{}",
+        BLUE, NC
+    );
+    println!(
+        "{}╚══════════════════════════════════════════════════════════════╝{}",
+        BLUE, NC
+    );
     println!();
 }
 
@@ -498,15 +673,32 @@ fn print_summary(results: &[TestResult]) {
     let failed = results.iter().filter(|r| !r.passed).count();
 
     println!();
-    println!("{}═══════════════════════════════════════════════════════════════{}", BLUE, NC);
-    println!("Total: {}, Passed: {}{}{}, Failed: {}{}{}",
-        results.len(), GREEN, passed, NC, if failed > 0 { RED } else { GREEN }, failed, NC);
+    println!(
+        "{}═══════════════════════════════════════════════════════════════{}",
+        BLUE, NC
+    );
+    println!(
+        "Total: {}, Passed: {}{}{}, Failed: {}{}{}",
+        results.len(),
+        GREEN,
+        passed,
+        NC,
+        if failed > 0 { RED } else { GREEN },
+        failed,
+        NC
+    );
     println!("Points: {}/{}", earned, total);
 
     if failed == 0 {
-        println!("{}Hypothesis \"apr serve produces OpenAI-compatible output\" SURVIVED.{}", GREEN, NC);
+        println!(
+            "{}Hypothesis \"apr serve produces OpenAI-compatible output\" SURVIVED.{}",
+            GREEN, NC
+        );
     } else {
-        println!("{}Hypothesis \"apr serve produces OpenAI-compatible output\" FALSIFIED.{}", RED, NC);
+        println!(
+            "{}Hypothesis \"apr serve produces OpenAI-compatible output\" FALSIFIED.{}",
+            RED, NC
+        );
     }
 }
 
@@ -517,10 +709,22 @@ fn main() {
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
-            "--model" if i + 1 < args.len() => { config.model_path = Some(PathBuf::from(&args[i + 1])); i += 2; }
-            "--port" if i + 1 < args.len() => { config.port = args[i + 1].parse().unwrap_or(8080); i += 2; }
-            "--all-models" => { config.all_models = true; i += 1; }
-            "--verbose" | "-v" => { config.verbose = true; i += 1; }
+            "--model" if i + 1 < args.len() => {
+                config.model_path = Some(PathBuf::from(&args[i + 1]));
+                i += 2;
+            }
+            "--port" if i + 1 < args.len() => {
+                config.port = args[i + 1].parse().unwrap_or(8080);
+                i += 2;
+            }
+            "--all-models" => {
+                config.all_models = true;
+                i += 1;
+            }
+            "--verbose" | "-v" => {
+                config.verbose = true;
+                i += 1;
+            }
             "--help" | "-h" => {
                 println!("Usage: cargo run --example qa_serve [OPTIONS]");
                 println!("  --model PATH   Model file");
@@ -529,7 +733,9 @@ fn main() {
                 println!("  --verbose      Verbose output");
                 return;
             }
-            _ => { i += 1; }
+            _ => {
+                i += 1;
+            }
         }
     }
 
@@ -565,31 +771,71 @@ fn main() {
     let start = Instant::now();
     let mut results = Vec::new();
 
-    println!("{}=== Section C: qa_serve.rs Tests (35 Points) ==={}", YELLOW, NC);
+    println!(
+        "{}=== Section C: qa_serve.rs Tests (35 Points) ==={}",
+        YELLOW, NC
+    );
     println!();
 
     // Run all tests
-    results.push(test_health(&config)); results.last().unwrap().print();
-    results.push(test_compute_mode(&config)); results.last().unwrap().print();
-    results.push(test_valid_json(&config)); results.last().unwrap().print();
-    results.push(test_openai_structure(&config)); results.last().unwrap().print();
-    results.push(test_non_empty_content(&config)); results.last().unwrap().print();
-    results.push(test_no_token_artifacts(&config)); results.last().unwrap().print();
-    results.push(test_no_bpe_artifacts(&config)); results.last().unwrap().print();
-    results.push(test_streaming_format(&config)); results.last().unwrap().print();
-    results.push(test_stream_termination(&config)); results.last().unwrap().print();
-    results.push(test_determinism(&config)); results.last().unwrap().print();
-    results.push(test_malformed_json(&config)); results.last().unwrap().print();
-    results.push(test_coherency(&config)); results.last().unwrap().print();
-    results.push(test_no_multi_turn_loop(&config)); results.last().unwrap().print();
-    results.push(test_trace_level(&config, "brick", "P030", "Trace Brick Level")); results.last().unwrap().print();
-    results.push(test_trace_level(&config, "step", "P031", "Trace Step Level")); results.last().unwrap().print();
-    results.push(test_trace_level(&config, "layer", "P032", "Trace Layer Level")); results.last().unwrap().print();
-    results.push(test_default_suppression(&config)); results.last().unwrap().print();
+    results.push(test_health(&config));
+    results.last().unwrap().print();
+    results.push(test_compute_mode(&config));
+    results.last().unwrap().print();
+    results.push(test_valid_json(&config));
+    results.last().unwrap().print();
+    results.push(test_openai_structure(&config));
+    results.last().unwrap().print();
+    results.push(test_non_empty_content(&config));
+    results.last().unwrap().print();
+    results.push(test_no_token_artifacts(&config));
+    results.last().unwrap().print();
+    results.push(test_no_bpe_artifacts(&config));
+    results.last().unwrap().print();
+    results.push(test_streaming_format(&config));
+    results.last().unwrap().print();
+    results.push(test_stream_termination(&config));
+    results.last().unwrap().print();
+    results.push(test_determinism(&config));
+    results.last().unwrap().print();
+    results.push(test_malformed_json(&config));
+    results.last().unwrap().print();
+    results.push(test_coherency(&config));
+    results.last().unwrap().print();
+    results.push(test_no_multi_turn_loop(&config));
+    results.last().unwrap().print();
+    results.push(test_trace_level(
+        &config,
+        "brick",
+        "P030",
+        "Trace Brick Level",
+    ));
+    results.last().unwrap().print();
+    results.push(test_trace_level(
+        &config,
+        "step",
+        "P031",
+        "Trace Step Level",
+    ));
+    results.last().unwrap().print();
+    results.push(test_trace_level(
+        &config,
+        "layer",
+        "P032",
+        "Trace Layer Level",
+    ));
+    results.last().unwrap().print();
+    results.push(test_default_suppression(&config));
+    results.last().unwrap().print();
 
     let elapsed = start.elapsed();
     println!();
-    println!("{}Tests completed in {:.1}s{}", CYAN, elapsed.as_secs_f64(), NC);
+    println!(
+        "{}Tests completed in {:.1}s{}",
+        CYAN,
+        elapsed.as_secs_f64(),
+        NC
+    );
 
     print_summary(&results);
 

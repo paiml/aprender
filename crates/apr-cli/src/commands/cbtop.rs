@@ -290,9 +290,11 @@ impl PipelineState {
     }
 
     fn bottleneck(&self) -> Option<&BrickTiming> {
-        self.bricks
-            .iter()
-            .max_by(|a, b| a.gap_factor().partial_cmp(&b.gap_factor()).unwrap_or(std::cmp::Ordering::Equal))
+        self.bricks.iter().max_by(|a, b| {
+            a.gap_factor()
+                .partial_cmp(&b.gap_factor())
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
     }
 
     fn update_demo(&mut self) {
@@ -673,7 +675,8 @@ fn run_headless_real(config: CbtopConfig) -> Result<()> {
     let model_name: String = config.model.clone().unwrap_or_else(|| {
         model_path
             .file_stem()
-            .and_then(|s| s.to_str()).map_or_else(|| "unknown".to_string(), std::string::ToString::to_string)
+            .and_then(|s| s.to_str())
+            .map_or_else(|| "unknown".to_string(), std::string::ToString::to_string)
     });
 
     eprintln!("cbtop: Running headless benchmark (REAL PROFILING)...");
@@ -763,7 +766,9 @@ fn run_headless_real(config: CbtopConfig) -> Result<()> {
         .tensors
         .iter()
         .find(|t| t.name == "blk.0.ffn_up.weight")
-        .map_or(hidden_dim * 54 / 10, |t| t.dims.first().copied().unwrap_or(4864) as usize);
+        .map_or(hidden_dim * 54 / 10, |t| {
+            t.dims.first().copied().unwrap_or(4864) as usize
+        });
 
     eprintln!("cbtop: Model config:");
     eprintln!("  Hidden: {}", hidden_dim);
@@ -1289,20 +1294,18 @@ fn score_to_grade(score: u32) -> String {
 /// Get ISO 8601 timestamp
 fn chrono_timestamp() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or_else(
-            |_| "unknown".to_string(),
-            |d| {
-                let secs = d.as_secs();
-                format!(
-                    "2026-01-12T{:02}:{:02}:{:02}Z",
-                    (secs / 3600) % 24,
-                    (secs / 60) % 60,
-                    secs % 60
-                )
-            },
-        )
+    SystemTime::now().duration_since(UNIX_EPOCH).map_or_else(
+        |_| "unknown".to_string(),
+        |d| {
+            let secs = d.as_secs();
+            format!(
+                "2026-01-12T{:02}:{:02}:{:02}Z",
+                (secs / 3600) % 24,
+                (secs / 60) % 60,
+                secs % 60
+            )
+        },
+    )
 }
 
 /// Get CPU info (best effort)
@@ -1330,21 +1333,19 @@ fn generate_headless_report_simulated(
 ) -> HeadlessReport {
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    let timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or_else(
-            |_| "unknown".to_string(),
-            |d| {
-                // ISO 8601 format approximation
-                let secs = d.as_secs();
-                format!(
-                    "2026-01-11T{:02}:{:02}:{:02}Z",
-                    (secs / 3600) % 24,
-                    (secs / 60) % 60,
-                    secs % 60
-                )
-            },
-        );
+    let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).map_or_else(
+        |_| "unknown".to_string(),
+        |d| {
+            // ISO 8601 format approximation
+            let secs = d.as_secs();
+            format!(
+                "2026-01-11T{:02}:{:02}:{:02}Z",
+                (secs / 3600) % 24,
+                (secs / 60) % 60,
+                secs % 60
+            )
+        },
+    );
 
     // Calculate brick scores
     let brick_scores: Vec<BrickScore> = pipeline

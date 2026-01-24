@@ -791,7 +791,10 @@ pub fn apr_import<P: AsRef<Path>>(
     let local_path = resolve_source(&parsed_source, options.cache)?;
 
     // Step 2: Check if GGUF - use raw import path to preserve quantization
-    let extension = local_path.extension().and_then(|e| e.to_str()).unwrap_or("");
+    let extension = local_path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("");
     if extension == "gguf" {
         // PMAT-103: Use raw GGUF loading to preserve Q4_K/Q6_K quantization
         // This is critical for format parity - we don't want to dequantize and re-quantize
@@ -1973,9 +1976,8 @@ fn write_apr_file_raw(
             custom.insert(
                 "model.rope_theta".to_string(),
                 serde_json::Value::Number(
-                    serde_json::Number::from_f64(f64::from(rope_theta)).unwrap_or_else(|| {
-                        serde_json::Number::from(10000u64)
-                    }),
+                    serde_json::Number::from_f64(f64::from(rope_theta))
+                        .unwrap_or_else(|| serde_json::Number::from(10000u64)),
                 ),
             );
         }
@@ -1983,9 +1985,8 @@ fn write_apr_file_raw(
             custom.insert(
                 "model.rms_norm_eps".to_string(),
                 serde_json::Value::Number(
-                    serde_json::Number::from_f64(f64::from(rms_eps)).unwrap_or_else(|| {
-                        serde_json::Number::from(0u64)
-                    }),
+                    serde_json::Number::from_f64(f64::from(rms_eps))
+                        .unwrap_or_else(|| serde_json::Number::from(0u64)),
                 ),
             );
         }
@@ -2036,14 +2037,17 @@ fn write_apr_file_raw(
         let apr_dtype = match tensor.dtype {
             0 => TensorDType::F32,
             1 => TensorDType::F16,
-            12 => TensorDType::Q4K,  // Q4_K
-            14 => TensorDType::Q6K,  // Q6_K
+            12 => TensorDType::Q4K, // Q4_K
+            14 => TensorDType::Q6K, // Q6_K
             // Q5_0 (dtype 6), Q5_1 (dtype 7), Q8_0 (dtype 8), Q8_1 (dtype 9)
             // Store with F32 marker - will dequant at runtime
             6..=9 => TensorDType::F32,
             // Other types
             _ => {
-                eprintln!("[WARN] Unsupported GGUF dtype {} for tensor {}, storing as-is", tensor.dtype, name);
+                eprintln!(
+                    "[WARN] Unsupported GGUF dtype {} for tensor {}, storing as-is",
+                    tensor.dtype, name
+                );
                 TensorDType::F32
             }
         };
@@ -2728,7 +2732,10 @@ fn dequantize_q6_k_to_f32(data: &[u8], num_elements: usize) -> Vec<f32> {
         let ql = &data[sb_start..sb_start + 128];
         let qh = &data[sb_start + 128..sb_start + 192];
         let scales_raw = &data[sb_start + 192..sb_start + 208];
-        let d = f16_to_f32(u16::from_le_bytes([data[sb_start + 208], data[sb_start + 209]]));
+        let d = f16_to_f32(u16::from_le_bytes([
+            data[sb_start + 208],
+            data[sb_start + 209],
+        ]));
 
         // Decode scales as signed i8
         let mut scales = [0i8; 16];
@@ -2866,10 +2873,7 @@ fn save_model_tensors_q4k(
     }
 
     // Create APR v2 metadata
-    let param_count: u64 = tensors
-        .values()
-        .map(|(data, _)| data.len() as u64)
-        .sum();
+    let param_count: u64 = tensors.values().map(|(data, _)| data.len() as u64).sum();
 
     let metadata = AprV2Metadata {
         model_type: "qwen2".to_string(),
@@ -2901,8 +2905,8 @@ fn save_model_tensors_q4k(
         vocab_size,
         intermediate_size,
         max_position_embeddings: Some(32768), // Default for Qwen2
-        rope_theta: Some(1000000.0),           // Default for Qwen2
-        rms_norm_eps: Some(1e-6),              // Default for Qwen2
+        rope_theta: Some(1000000.0),          // Default for Qwen2
+        rms_norm_eps: Some(1e-6),             // Default for Qwen2
         custom: std::collections::HashMap::new(),
     };
 
@@ -2917,7 +2921,7 @@ fn save_model_tensors_q4k(
             && !name.contains("bias")
             && !name.contains("norm")
             && !name.contains("scale")
-            && !name.contains("embed");  // Keep embeddings as F32 for now
+            && !name.contains("embed"); // Keep embeddings as F32 for now
 
         if should_quantize {
             // Quantize to Q4K bytes
@@ -5173,7 +5177,10 @@ mod tests_import_errors {
         let mut tensors = BTreeMap::new();
         tensors.insert(
             "test".to_string(),
-            ((0..512).map(|i| i as f32 * 0.001 - 0.256).collect(), vec![512]),
+            (
+                (0..512).map(|i| i as f32 * 0.001 - 0.256).collect(),
+                vec![512],
+            ),
         );
 
         let result = quantize_tensors(&tensors, &QuantizationType::Q4K).unwrap();
@@ -5273,14 +5280,8 @@ mod tests_import_errors {
     #[test]
     fn test_calculate_tensor_size() {
         let mut tensors = BTreeMap::new();
-        tensors.insert(
-            "a".to_string(),
-            (vec![1.0f32; 100], vec![10, 10]),
-        );
-        tensors.insert(
-            "b".to_string(),
-            (vec![2.0f32; 50], vec![50]),
-        );
+        tensors.insert("a".to_string(), (vec![1.0f32; 100], vec![10, 10]));
+        tensors.insert("b".to_string(), (vec![2.0f32; 50], vec![50]));
         let size = calculate_tensor_size(&tensors);
         // 100 * 4 + 50 * 4 = 600
         assert_eq!(size, 600);
@@ -5318,7 +5319,10 @@ mod tests_import_errors {
         assert_eq!(quantized.len(), data.len());
         // int8 quantization scales to -127..127
         for (orig, quant) in data.iter().zip(quantized.iter()) {
-            assert!((orig - quant).abs() < 0.05, "int8 should preserve value within tolerance");
+            assert!(
+                (orig - quant).abs() < 0.05,
+                "int8 should preserve value within tolerance"
+            );
         }
     }
 
@@ -5338,7 +5342,10 @@ mod tests_import_errors {
         assert_eq!(quantized.len(), data.len());
         // int4 has only 16 levels so lower precision
         for (orig, quant) in data.iter().zip(quantized.iter()) {
-            assert!((orig - quant).abs() < 0.15, "int4 should preserve value within tolerance");
+            assert!(
+                (orig - quant).abs() < 0.15,
+                "int4 should preserve value within tolerance"
+            );
         }
     }
 
@@ -5655,13 +5662,19 @@ mod tests_import_errors {
     #[test]
     fn test_architecture_whisper_preserves_prefix() {
         let arch = Architecture::Whisper;
-        assert_eq!(arch.map_name("model.encoder.weight"), "model.encoder.weight");
+        assert_eq!(
+            arch.map_name("model.encoder.weight"),
+            "model.encoder.weight"
+        );
     }
 
     #[test]
     fn test_architecture_llama_preserves_prefix() {
         let arch = Architecture::Llama;
-        assert_eq!(arch.map_name("model.layers.0.weight"), "model.layers.0.weight");
+        assert_eq!(
+            arch.map_name("model.layers.0.weight"),
+            "model.layers.0.weight"
+        );
     }
 
     #[test]
@@ -5673,7 +5686,10 @@ mod tests_import_errors {
     #[test]
     fn test_architecture_qwen2_preserves_prefix() {
         let arch = Architecture::Qwen2;
-        assert_eq!(arch.map_name("model.embed_tokens.weight"), "model.embed_tokens.weight");
+        assert_eq!(
+            arch.map_name("model.embed_tokens.weight"),
+            "model.embed_tokens.weight"
+        );
     }
 
     #[test]

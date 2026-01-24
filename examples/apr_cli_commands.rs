@@ -303,11 +303,15 @@ fn print_cli_commands(model_path: &Path, model_v2_path: &Path) {
     println!("19. PUBLISH - Push model to HuggingFace Hub:");
     println!("    ./target/debug/apr publish {demo_dir}/ org/model-name");
     println!("    ./target/debug/apr publish {demo_dir}/ org/model-name --dry-run");
-    println!("    ./target/debug/apr publish {demo_dir}/ org/model-name --license mit --tags rust,ml\n");
+    println!(
+        "    ./target/debug/apr publish {demo_dir}/ org/model-name --license mit --tags rust,ml\n"
+    );
 
     println!("20. PULL - Download model from HuggingFace Hub:");
     println!("    ./target/debug/apr pull hf://org/repo-name -o ./models/");
-    println!("    ./target/debug/apr pull hf://Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF -o ./models/\n");
+    println!(
+        "    ./target/debug/apr pull hf://Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF -o ./models/\n"
+    );
 
     println!("--- Benchmarking & QA ---\n");
 

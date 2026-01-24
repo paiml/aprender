@@ -108,7 +108,10 @@ pub fn execute(
     }
     total_size += readme_content.len() as u64;
 
-    println!("Total upload size: {:.1} MB", total_size as f64 / 1_000_000.0);
+    println!(
+        "Total upload size: {:.1} MB",
+        total_size as f64 / 1_000_000.0
+    );
 
     // Progress callback
     let verbose_flag = verbose;
@@ -126,14 +129,19 @@ pub fn execute(
 
     // Upload all files using native Rust implementation (APR-PUB-001 fix)
     for file in &files {
-        let filename = file.file_name()
+        let filename = file
+            .file_name()
             .ok_or_else(|| CliError::ValidationFailed("Invalid file path".into()))?
             .to_string_lossy()
             .to_string();
 
         if verbose {
             let size = fs::metadata(file).map(|m| m.len()).unwrap_or(0);
-            println!("Uploading {} ({:.1} MB)...", filename, size as f64 / 1_000_000.0);
+            println!(
+                "Uploading {} ({:.1} MB)...",
+                filename,
+                size as f64 / 1_000_000.0
+            );
         }
 
         let file_data = fs::read(file)?;
@@ -144,9 +152,9 @@ pub fn execute(
             .with_progress_callback(progress_callback.clone())
             .with_create_repo(true);
 
-        client.push_to_hub(repo_id, &file_data, options).map_err(|e| {
-            CliError::NetworkError(format!("Upload failed: {}", e))
-        })?;
+        client
+            .push_to_hub(repo_id, &file_data, options)
+            .map_err(|e| CliError::NetworkError(format!("Upload failed: {}", e)))?;
     }
 
     // Upload README.md
@@ -159,14 +167,11 @@ pub fn execute(
         .with_commit_message(commit_msg)
         .with_create_repo(false); // Repo already created
 
-    client.push_to_hub(repo_id, readme_content.as_bytes(), readme_options).map_err(|e| {
-        CliError::NetworkError(format!("README upload failed: {}", e))
-    })?;
+    client
+        .push_to_hub(repo_id, readme_content.as_bytes(), readme_options)
+        .map_err(|e| CliError::NetworkError(format!("README upload failed: {}", e)))?;
 
-    println!(
-        "\n✓ Published to https://huggingface.co/{}",
-        repo_id
-    );
+    println!("\n✓ Published to https://huggingface.co/{}", repo_id);
 
     Ok(())
 }
@@ -205,9 +210,7 @@ fn generate_model_card(
     _tags: &[String],
     _files: &[std::path::PathBuf],
 ) -> ModelCard {
-    let name = model_name.unwrap_or_else(|| {
-        repo_id.split('/').next_back().unwrap_or(repo_id)
-    });
+    let name = model_name.unwrap_or_else(|| repo_id.split('/').next_back().unwrap_or(repo_id));
 
     ModelCard::new(repo_id, "1.0.0")
         .with_name(name)

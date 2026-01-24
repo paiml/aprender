@@ -5955,7 +5955,10 @@ fn z_import_qwen2_0_5b_instruct_infra() {
     // PMAT-099: Preserve model. prefix for AprTransformer compatibility
     let arch = Architecture::Qwen2;
     let mapped = arch.map_name("model.embed_tokens.weight");
-    assert_eq!(mapped, "model.embed_tokens.weight", "Qwen2 preserves model. prefix");
+    assert_eq!(
+        mapped, "model.embed_tokens.weight",
+        "Qwen2 preserves model. prefix"
+    );
 
     // 3. Import options
     let options = ImportOptions {
@@ -6025,10 +6028,7 @@ fn z_import_qwen2_tensor_mappings() {
     // PMAT-099: Preserve model. prefix for AprTransformer compatibility
     // The model. prefix is now preserved during import for architecture compatibility
     let patterns = [
-        (
-            "model.embed_tokens.weight",
-            "model.embed_tokens.weight",
-        ),
+        ("model.embed_tokens.weight", "model.embed_tokens.weight"),
         (
             "model.layers.0.self_attn.q_proj.weight",
             "model.layers.0.self_attn.q_proj.weight",

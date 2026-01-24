@@ -65,7 +65,12 @@ impl TestResult {
         }
     }
 
-    fn pass_with_details(id: &'static str, name: &'static str, points: u32, details: String) -> Self {
+    fn pass_with_details(
+        id: &'static str,
+        name: &'static str,
+        points: u32,
+        details: String,
+    ) -> Self {
         Self {
             id,
             name,
@@ -209,9 +214,7 @@ fn run_apr_command(config: &QaConfig, args: &[&str]) -> Result<String, String> {
 #[allow(clippy::ptr_arg)]
 fn test_model_exists(_config: &QaConfig, model: &PathBuf) -> TestResult {
     if model.exists() {
-        let size = std::fs::metadata(model)
-            .map(|m| m.len())
-            .unwrap_or(0);
+        let size = std::fs::metadata(model).map(|m| m.len()).unwrap_or(0);
         let size_mb = size / (1024 * 1024);
         TestResult::pass_with_details("P001", "Model Exists", 2, format!("{} MB", size_mb))
     } else {
@@ -238,13 +241,21 @@ fn test_correct_answer(config: &QaConfig, model: &PathBuf) -> TestResult {
     match run_apr_command(config, &args) {
         Ok(output) => {
             if output.contains('4') {
-                TestResult::pass_with_details("P002", "Correct Answer (2+2=4)", 3, "Contains '4'".to_string())
+                TestResult::pass_with_details(
+                    "P002",
+                    "Correct Answer (2+2=4)",
+                    3,
+                    "Contains '4'".to_string(),
+                )
             } else {
                 TestResult::fail(
                     "P002",
                     "Correct Answer (2+2=4)",
                     3,
-                    format!("Missing '4' in output: {}", output.chars().take(100).collect::<String>()),
+                    format!(
+                        "Missing '4' in output: {}",
+                        output.chars().take(100).collect::<String>()
+                    ),
                 )
             }
         }
@@ -266,10 +277,7 @@ fn test_no_garbage(config: &QaConfig, model: &PathBuf) -> TestResult {
     match run_apr_command(config, &args) {
         Ok(output) => {
             // Check for token\d+ pattern (raw tokens)
-            let has_token_pattern = output
-                .chars()
-                .collect::<String>()
-                .contains("token");
+            let has_token_pattern = output.chars().collect::<String>().contains("token");
 
             // Check for Unicode replacement character (U+FFFD)
             let has_replacement_char = output.contains('\u{FFFD}');
@@ -324,7 +332,10 @@ fn test_no_bpe_artifacts(config: &QaConfig, model: &PathBuf) -> TestResult {
                     "P004",
                     "No BPE Artifacts",
                     2,
-                    format!("BPE artifacts detected: Ġ={} Ċ={}", has_g_artifact, has_c_artifact),
+                    format!(
+                        "BPE artifacts detected: Ġ={} Ċ={}",
+                        has_g_artifact, has_c_artifact
+                    ),
                 )
             } else {
                 TestResult::pass("P004", "No BPE Artifacts", 2)
@@ -351,7 +362,12 @@ fn test_trace_flag(config: &QaConfig, model: &PathBuf) -> TestResult {
         Err(e) => {
             // Some models may not support trace but shouldn't crash
             if e.contains("not supported") || e.contains("unknown") {
-                TestResult::skip("P005", "Trace Flag Accepted", 2, "Trace not supported".to_string())
+                TestResult::skip(
+                    "P005",
+                    "Trace Flag Accepted",
+                    2,
+                    "Trace not supported".to_string(),
+                )
             } else {
                 TestResult::fail("P005", "Trace Flag Accepted", 2, e)
             }
@@ -476,15 +492,22 @@ fn test_determinism(config: &QaConfig, model: &PathBuf) -> TestResult {
             let content2 = out2.trim();
 
             if content1 == content2 {
-                TestResult::pass_with_details("P008", "Determinism (T=0)", 3, "Outputs match".to_string())
+                TestResult::pass_with_details(
+                    "P008",
+                    "Determinism (T=0)",
+                    3,
+                    "Outputs match".to_string(),
+                )
             } else {
                 TestResult::fail(
                     "P008",
                     "Determinism (T=0)",
                     3,
-                    format!("Outputs differ:\n  1: {}\n  2: {}",
-                            content1.chars().take(50).collect::<String>(),
-                            content2.chars().take(50).collect::<String>()),
+                    format!(
+                        "Outputs differ:\n  1: {}\n  2: {}",
+                        content1.chars().take(50).collect::<String>(),
+                        content2.chars().take(50).collect::<String>()
+                    ),
                 )
             }
         }
@@ -496,7 +519,12 @@ fn test_determinism(config: &QaConfig, model: &PathBuf) -> TestResult {
 fn test_format_parity_gguf(config: &QaConfig, model: &PathBuf) -> TestResult {
     // Only run in format-parity mode or if model is GGUF
     if !config.format_parity && !model.to_string_lossy().ends_with(".gguf") {
-        return TestResult::skip("P009", "Format Parity GGUF", 2, "Not in format-parity mode".to_string());
+        return TestResult::skip(
+            "P009",
+            "Format Parity GGUF",
+            2,
+            "Not in format-parity mode".to_string(),
+        );
     }
 
     let args = vec![
@@ -511,9 +539,19 @@ fn test_format_parity_gguf(config: &QaConfig, model: &PathBuf) -> TestResult {
     match run_apr_command(config, &args) {
         Ok(output) => {
             if output.contains('4') {
-                TestResult::pass_with_details("P009", "Format Parity GGUF", 2, "Correct output".to_string())
+                TestResult::pass_with_details(
+                    "P009",
+                    "Format Parity GGUF",
+                    2,
+                    "Correct output".to_string(),
+                )
             } else {
-                TestResult::fail("P009", "Format Parity GGUF", 2, "Incorrect output".to_string())
+                TestResult::fail(
+                    "P009",
+                    "Format Parity GGUF",
+                    2,
+                    "Incorrect output".to_string(),
+                )
             }
         }
         Err(e) => TestResult::fail("P009", "Format Parity GGUF", 2, e),
@@ -545,23 +583,50 @@ fn test_format_parity_apr(config: &QaConfig) -> TestResult {
             match run_apr_command(config, &args) {
                 Ok(output) => {
                     if output.contains('4') {
-                        TestResult::pass_with_details("P010", "Format Parity APR", 2, "Correct output".to_string())
+                        TestResult::pass_with_details(
+                            "P010",
+                            "Format Parity APR",
+                            2,
+                            "Correct output".to_string(),
+                        )
                     } else {
-                        TestResult::fail("P010", "Format Parity APR", 2, "Incorrect output".to_string())
+                        TestResult::fail(
+                            "P010",
+                            "Format Parity APR",
+                            2,
+                            "Incorrect output".to_string(),
+                        )
                     }
                 }
                 Err(e) => TestResult::fail("P010", "Format Parity APR", 2, e),
             }
         }
-        None => TestResult::skip("P010", "Format Parity APR", 2, "No APR model found".to_string()),
+        None => TestResult::skip(
+            "P010",
+            "Format Parity APR",
+            2,
+            "No APR model found".to_string(),
+        ),
     }
 }
 
 fn print_header() {
-    println!("{}╔══════════════════════════════════════════════════════════════╗{}", BLUE, NC);
-    println!("{}║         APR RUN QA - Popperian Falsification Suite           ║{}", BLUE, NC);
-    println!("{}║         PMAT-QA-RUST-001 Section A (25 Points)                ║{}", BLUE, NC);
-    println!("{}╚══════════════════════════════════════════════════════════════╝{}", BLUE, NC);
+    println!(
+        "{}╔══════════════════════════════════════════════════════════════╗{}",
+        BLUE, NC
+    );
+    println!(
+        "{}║         APR RUN QA - Popperian Falsification Suite           ║{}",
+        BLUE, NC
+    );
+    println!(
+        "{}║         PMAT-QA-RUST-001 Section A (25 Points)                ║{}",
+        BLUE, NC
+    );
+    println!(
+        "{}╚══════════════════════════════════════════════════════════════╝{}",
+        BLUE, NC
+    );
     println!();
 }
 
@@ -572,20 +637,40 @@ fn print_summary(results: &[TestResult]) {
     let failed = results.iter().filter(|r| !r.passed).count();
 
     println!();
-    println!("{}═══════════════════════════════════════════════════════════════{}", BLUE, NC);
-    println!("{}                    FALSIFICATION SUMMARY                       {}", BLUE, NC);
-    println!("{}═══════════════════════════════════════════════════════════════{}", BLUE, NC);
+    println!(
+        "{}═══════════════════════════════════════════════════════════════{}",
+        BLUE, NC
+    );
+    println!(
+        "{}                    FALSIFICATION SUMMARY                       {}",
+        BLUE, NC
+    );
+    println!(
+        "{}═══════════════════════════════════════════════════════════════{}",
+        BLUE, NC
+    );
     println!();
     println!("Total Tests: {}", results.len());
     println!("Passed:      {}{}{}", GREEN, passed, NC);
-    println!("Failed:      {}{}{}", if failed > 0 { RED } else { GREEN }, failed, NC);
+    println!(
+        "Failed:      {}{}{}",
+        if failed > 0 { RED } else { GREEN },
+        failed,
+        NC
+    );
     println!("Points:      {}/{}", earned_points, total_points);
     println!();
 
     if failed == 0 {
-        println!("{}Hypothesis \"apr run produces correct output\" SURVIVED falsification.{}", GREEN, NC);
+        println!(
+            "{}Hypothesis \"apr run produces correct output\" SURVIVED falsification.{}",
+            GREEN, NC
+        );
     } else {
-        println!("{}Hypothesis \"apr run produces correct output\" FALSIFIED.{}", RED, NC);
+        println!(
+            "{}Hypothesis \"apr run produces correct output\" FALSIFIED.{}",
+            RED, NC
+        );
     }
 }
 
@@ -650,28 +735,34 @@ fn main() {
     print_header();
 
     // Find model
-    let model = config
-        .model_path
-        .clone()
-        .or_else(find_default_model);
+    let model = config.model_path.clone().or_else(find_default_model);
 
     let model = match model {
         Some(m) => m,
         None => {
-            println!("{}ERROR: No model specified and no default found.{}", RED, NC);
+            println!(
+                "{}ERROR: No model specified and no default found.{}",
+                RED, NC
+            );
             println!("Usage: cargo run --example qa_run -- --model path/to/model.gguf");
             std::process::exit(2);
         }
     };
 
     println!("{}Model:{} {}", CYAN, NC, model.display());
-    println!("{}Config:{} CPU >= {:.1} tok/s, GPU >= {:.1} tok/s", CYAN, NC, config.min_cpu_tps, config.min_gpu_tps);
+    println!(
+        "{}Config:{} CPU >= {:.1} tok/s, GPU >= {:.1} tok/s",
+        CYAN, NC, config.min_cpu_tps, config.min_gpu_tps
+    );
     println!();
 
     // Run all tests
     let mut results = Vec::new();
 
-    println!("{}=== Section A: qa_run.rs Tests (25 Points) ==={}", YELLOW, NC);
+    println!(
+        "{}=== Section A: qa_run.rs Tests (25 Points) ==={}",
+        YELLOW, NC
+    );
     println!();
 
     results.push(test_model_exists(&config, &model));

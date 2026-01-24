@@ -1226,22 +1226,22 @@ impl GgufReader {
         // Note: Some dtypes share byte sizes but are documented separately for clarity
         #[allow(clippy::match_same_arms)]
         let byte_size = match meta.dtype {
-            0 => num_elements * 4,            // F32
-            1 => num_elements * 2,            // F16
-            2 => (num_elements / 32) * 18,    // Q4_0: 32 elements = 2 (d) + 16 (qs)
-            3 => (num_elements / 32) * 20,    // Q4_1: 32 elements = 2 (d) + 2 (m) + 16 (qs)
+            0 => num_elements * 4,         // F32
+            1 => num_elements * 2,         // F16
+            2 => (num_elements / 32) * 18, // Q4_0: 32 elements = 2 (d) + 16 (qs)
+            3 => (num_elements / 32) * 20, // Q4_1: 32 elements = 2 (d) + 2 (m) + 16 (qs)
             // dtype 4,5 = removed (Q4_2, Q4_3)
-            6 => (num_elements / 32) * 22,    // Q5_0: 32 elements = 2 (d) + 4 (qh) + 16 (ql)
-            7 => (num_elements / 32) * 24,    // Q5_1: 32 elements = 2 (d) + 2 (m) + 4 (qh) + 16 (ql)
-            8 => (num_elements / 32) * 34,    // Q8_0: 32 elements = 2 (d) + 32 (qs)
-            9 => (num_elements / 32) * 36,    // Q8_1: 32 elements = 2 (d) + 2 (s) + 32 (qs)
-            10 => (num_elements / 256) * 84,  // Q2_K: 256 elements = 84 bytes
+            6 => (num_elements / 32) * 22, // Q5_0: 32 elements = 2 (d) + 4 (qh) + 16 (ql)
+            7 => (num_elements / 32) * 24, // Q5_1: 32 elements = 2 (d) + 2 (m) + 4 (qh) + 16 (ql)
+            8 => (num_elements / 32) * 34, // Q8_0: 32 elements = 2 (d) + 32 (qs)
+            9 => (num_elements / 32) * 36, // Q8_1: 32 elements = 2 (d) + 2 (s) + 32 (qs)
+            10 => (num_elements / 256) * 84, // Q2_K: 256 elements = 84 bytes
             11 => (num_elements / 256) * 110, // Q3_K: 256 elements = 110 bytes
             12 => (num_elements / 256) * 144, // Q4_K: 256 elements = 144 bytes
             13 => (num_elements / 256) * 176, // Q5_K: 256 elements = 176 bytes
             14 => (num_elements / 256) * 210, // Q6_K: 256 elements = 210 bytes
             15 => (num_elements / 256) * 292, // Q8_K: 256 elements = 292 bytes
-            30 => num_elements * 2,           // BF16: 2 bytes per element
+            30 => num_elements * 2,        // BF16: 2 bytes per element
             _ => {
                 return Err(AprenderError::FormatError {
                     message: format!("Unsupported dtype {} for raw extraction", meta.dtype),
@@ -3386,7 +3386,7 @@ mod tests {
         let mut data = Vec::new();
         data.extend_from_slice(&8u32.to_le_bytes()); // element type 8 = string
         data.extend_from_slice(&2u64.to_le_bytes()); // 2 elements
-        // First string "ab"
+                                                     // First string "ab"
         data.extend_from_slice(&2u64.to_le_bytes());
         data.extend_from_slice(b"ab");
         // Second string "cd"
@@ -3702,7 +3702,10 @@ mod tests {
     fn test_export_with_metadata() {
         let mut buffer = Vec::new();
         let metadata = vec![
-            ("general.name".to_string(), GgufValue::String("test".to_string())),
+            (
+                "general.name".to_string(),
+                GgufValue::String("test".to_string()),
+            ),
             ("general.version".to_string(), GgufValue::Uint32(1)),
         ];
         export_tensors_to_gguf(&mut buffer, &[], &metadata).expect("export");

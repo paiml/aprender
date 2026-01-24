@@ -1261,7 +1261,10 @@ fn find_embedding_tensor(model: &realizar::safetensors::SafetensorsModel) -> Opt
         "token_embedding.weight",
     ];
 
-    candidates.into_iter().find(|&name| model.has_tensor(name)).map(|v| v as _)
+    candidates
+        .into_iter()
+        .find(|&name| model.has_tensor(name))
+        .map(|v| v as _)
 }
 
 /// Run simplified SafeTensors generation

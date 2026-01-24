@@ -1469,8 +1469,8 @@ fn run_ollama_bench(config: &ShowcaseConfig) -> Result<(f64, f64)> {
         }); // Fallback to estimate if parsing fails
 
     // Extract prompt_eval_duration for TTFT (in nanoseconds)
-    let ttft = extract_json_field(&response, "prompt_eval_duration")
-        .map_or(150.0, |ns| ns / 1_000_000.0); // Fallback
+    let ttft =
+        extract_json_field(&response, "prompt_eval_duration").map_or(150.0, |ns| ns / 1_000_000.0); // Fallback
 
     println!(
         "  Ollama ({}): {:.1} tok/s, TTFT: {:.1}ms",
@@ -2770,8 +2770,7 @@ fn validate_falsification(results: &ShowcaseResults, config: &ShowcaseConfig) ->
     // CUDA demo, ZRAM demo, and Brick demo are standalone demos that pass on their own
     let is_standalone_demo = matches!(
         requested_step,
-        Some(ShowcaseStep::CudaDemo | ShowcaseStep::ZramDemo |
-ShowcaseStep::BrickDemo)
+        Some(ShowcaseStep::CudaDemo | ShowcaseStep::ZramDemo | ShowcaseStep::BrickDemo)
     );
 
     if is_standalone_demo {
@@ -2785,22 +2784,22 @@ ShowcaseStep::BrickDemo)
     }
 
     // Check step completion (Points 1-40) - only for full runs
-    if (is_full_run || matches!(requested_step, Some(ShowcaseStep::Import)))
-        && !results.import {
-            failures.push("Point 1: Import step failed".to_string());
-        }
+    if (is_full_run || matches!(requested_step, Some(ShowcaseStep::Import))) && !results.import {
+        failures.push("Point 1: Import step failed".to_string());
+    }
     if (is_full_run || matches!(requested_step, Some(ShowcaseStep::GgufInference)))
-        && !results.gguf_inference {
-            failures.push("Point 11: GGUF inference step failed".to_string());
-        }
-    if (is_full_run || matches!(requested_step, Some(ShowcaseStep::Convert)))
-        && !results.convert {
-            failures.push("Point 21: APR conversion step failed".to_string());
-        }
+        && !results.gguf_inference
+    {
+        failures.push("Point 11: GGUF inference step failed".to_string());
+    }
+    if (is_full_run || matches!(requested_step, Some(ShowcaseStep::Convert))) && !results.convert {
+        failures.push("Point 21: APR conversion step failed".to_string());
+    }
     if (is_full_run || matches!(requested_step, Some(ShowcaseStep::AprInference)))
-        && !results.apr_inference {
-            failures.push("Point 31: APR inference step failed".to_string());
-        }
+        && !results.apr_inference
+    {
+        failures.push("Point 31: APR inference step failed".to_string());
+    }
 
     // Point 41+: Benchmark required only for full runs or explicit bench step
     if !is_full_run && !matches!(requested_step, Some(ShowcaseStep::Benchmark)) {

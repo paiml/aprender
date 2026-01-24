@@ -720,8 +720,14 @@ mod tests {
         model_high.fit(&x, &y).expect("Fit succeeds");
 
         // Higher regularization should shrink coefficients toward zero
-        let beta_low = model_low.coefficients_map.as_ref().expect("has coefficients");
-        let beta_high = model_high.coefficients_map.as_ref().expect("has coefficients");
+        let beta_low = model_low
+            .coefficients_map
+            .as_ref()
+            .expect("has coefficients");
+        let beta_high = model_high
+            .coefficients_map
+            .as_ref()
+            .expect("has coefficients");
 
         assert!(
             beta_low[0].abs() >= beta_high[0].abs(),
@@ -732,12 +738,8 @@ mod tests {
     #[test]
     fn test_multiple_features() {
         // Create data with 2 features
-        let x = Matrix::from_vec(
-            4,
-            2,
-            vec![1.0, 0.0, 0.0, 1.0, -1.0, 0.0, 0.0, -1.0],
-        )
-        .expect("Valid matrix");
+        let x = Matrix::from_vec(4, 2, vec![1.0, 0.0, 0.0, 1.0, -1.0, 0.0, 0.0, -1.0])
+            .expect("Valid matrix");
         let y = Vector::from_vec(vec![1.0, 1.0, 0.0, 0.0]);
 
         let mut model = BayesianLogisticRegression::new(0.1);

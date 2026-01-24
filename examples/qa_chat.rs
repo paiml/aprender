@@ -50,19 +50,48 @@ struct TestResult {
 
 impl TestResult {
     fn pass(id: &'static str, name: &'static str, points: u32) -> Self {
-        Self { id, name, passed: true, details: None, points }
+        Self {
+            id,
+            name,
+            passed: true,
+            details: None,
+            points,
+        }
     }
 
-    fn pass_with_details(id: &'static str, name: &'static str, points: u32, details: String) -> Self {
-        Self { id, name, passed: true, details: Some(details), points }
+    fn pass_with_details(
+        id: &'static str,
+        name: &'static str,
+        points: u32,
+        details: String,
+    ) -> Self {
+        Self {
+            id,
+            name,
+            passed: true,
+            details: Some(details),
+            points,
+        }
     }
 
     fn fail(id: &'static str, name: &'static str, points: u32, details: String) -> Self {
-        Self { id, name, passed: false, details: Some(details), points }
+        Self {
+            id,
+            name,
+            passed: false,
+            details: Some(details),
+            points,
+        }
     }
 
     fn skip(id: &'static str, name: &'static str, _points: u32, reason: String) -> Self {
-        Self { id, name, passed: true, details: Some(format!("SKIP: {}", reason)), points: 0 }
+        Self {
+            id,
+            name,
+            passed: true,
+            details: Some(format!("SKIP: {}", reason)),
+            points: 0,
+        }
     }
 
     fn print(&self) {
@@ -136,7 +165,12 @@ fn find_default_model() -> Option<PathBuf> {
 }
 
 /// Run apr chat with piped input
-fn run_chat_command(config: &QaConfig, model: &PathBuf, input: &str, extra_args: &[&str]) -> Result<(String, f64), String> {
+fn run_chat_command(
+    config: &QaConfig,
+    model: &PathBuf,
+    input: &str,
+    extra_args: &[&str],
+) -> Result<(String, f64), String> {
     let mut args = vec!["chat", model.to_str().unwrap_or("")];
     args.extend(extra_args);
 
@@ -156,7 +190,10 @@ fn run_chat_command(config: &QaConfig, model: &PathBuf, input: &str, extra_args:
         .stderr(Stdio::piped());
 
     if config.verbose {
-        eprintln!("{}DEBUG: Running {:?} with input '{}'{}", CYAN, cmd, input, NC);
+        eprintln!(
+            "{}DEBUG: Running {:?} with input '{}'{}",
+            CYAN, cmd, input, NC
+        );
     }
 
     let start = Instant::now();
@@ -169,7 +206,9 @@ fn run_chat_command(config: &QaConfig, model: &PathBuf, input: &str, extra_args:
         let _ = stdin.write_all(b"\n");
     }
 
-    let output = child.wait_with_output().map_err(|e| format!("Failed to wait: {}", e))?;
+    let output = child
+        .wait_with_output()
+        .map_err(|e| format!("Failed to wait: {}", e))?;
     let elapsed = start.elapsed().as_secs_f64();
 
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
@@ -185,7 +224,12 @@ fn test_model_exists(model: &PathBuf) -> TestResult {
         let size_mb = size / (1024 * 1024);
         TestResult::pass_with_details("P011", "Model Exists", 2, format!("{} MB", size_mb))
     } else {
-        TestResult::fail("P011", "Model Exists", 2, format!("Not found: {}", model.display()))
+        TestResult::fail(
+            "P011",
+            "Model Exists",
+            2,
+            format!("Not found: {}", model.display()),
+        )
     }
 }
 
@@ -197,10 +241,22 @@ fn test_correct_answer(config: &QaConfig, model: &PathBuf) -> TestResult {
     match run_chat_command(config, model, input, &extra_args) {
         Ok((output, _)) => {
             if output.contains('4') {
-                TestResult::pass_with_details("P012", "Correct Answer", 3, "Contains '4'".to_string())
+                TestResult::pass_with_details(
+                    "P012",
+                    "Correct Answer",
+                    3,
+                    "Contains '4'".to_string(),
+                )
             } else {
-                TestResult::fail("P012", "Correct Answer", 3,
-                    format!("Missing '4': {}", output.chars().take(100).collect::<String>()))
+                TestResult::fail(
+                    "P012",
+                    "Correct Answer",
+                    3,
+                    format!(
+                        "Missing '4': {}",
+                        output.chars().take(100).collect::<String>()
+                    ),
+                )
             }
         }
         Err(e) => TestResult::fail("P012", "Correct Answer", 3, e),
@@ -218,7 +274,12 @@ fn test_no_garbage(config: &QaConfig, model: &PathBuf) -> TestResult {
             let has_raw_tokens = output.contains("token0") || output.contains("token1");
 
             if has_replacement || has_raw_tokens {
-                TestResult::fail("P013", "No Garbage Patterns", 3, "Garbage detected".to_string())
+                TestResult::fail(
+                    "P013",
+                    "No Garbage Patterns",
+                    3,
+                    "Garbage detected".to_string(),
+                )
             } else {
                 TestResult::pass("P013", "No Garbage Patterns", 3)
             }
@@ -235,7 +296,12 @@ fn test_no_bpe_artifacts(config: &QaConfig, model: &PathBuf) -> TestResult {
     match run_chat_command(config, model, input, &extra_args) {
         Ok((output, _)) => {
             if output.contains('Ġ') || output.contains('Ċ') {
-                TestResult::fail("P014", "No BPE Artifacts", 2, "BPE artifacts detected".to_string())
+                TestResult::fail(
+                    "P014",
+                    "No BPE Artifacts",
+                    2,
+                    "BPE artifacts detected".to_string(),
+                )
             } else {
                 TestResult::pass("P014", "No BPE Artifacts", 2)
             }
@@ -256,11 +322,19 @@ fn test_performance_cpu(config: &QaConfig, model: &PathBuf) -> TestResult {
             let tps = tokens_est / elapsed;
 
             if tps >= config.min_cpu_tps {
-                TestResult::pass_with_details("P015", "Performance CPU", 5,
-                    format!("{:.1} tok/s >= {:.1}", tps, config.min_cpu_tps))
+                TestResult::pass_with_details(
+                    "P015",
+                    "Performance CPU",
+                    5,
+                    format!("{:.1} tok/s >= {:.1}", tps, config.min_cpu_tps),
+                )
             } else {
-                TestResult::fail("P015", "Performance CPU", 5,
-                    format!("{:.1} tok/s < {:.1}", tps, config.min_cpu_tps))
+                TestResult::fail(
+                    "P015",
+                    "Performance CPU",
+                    5,
+                    format!("{:.1} tok/s < {:.1}", tps, config.min_cpu_tps),
+                )
             }
         }
         Err(e) => TestResult::fail("P015", "Performance CPU", 5, e),
@@ -290,11 +364,19 @@ fn test_performance_gpu(config: &QaConfig, model: &PathBuf) -> TestResult {
             let tps = tokens_est / elapsed;
 
             if tps >= config.min_gpu_tps {
-                TestResult::pass_with_details("P016", "Performance GPU", 5,
-                    format!("{:.1} tok/s >= {:.1}", tps, config.min_gpu_tps))
+                TestResult::pass_with_details(
+                    "P016",
+                    "Performance GPU",
+                    5,
+                    format!("{:.1} tok/s >= {:.1}", tps, config.min_gpu_tps),
+                )
             } else {
-                TestResult::fail("P016", "Performance GPU", 5,
-                    format!("{:.1} tok/s < {:.1}", tps, config.min_gpu_tps))
+                TestResult::fail(
+                    "P016",
+                    "Performance GPU",
+                    5,
+                    format!("{:.1} tok/s < {:.1}", tps, config.min_gpu_tps),
+                )
             }
         }
         Err(e) => TestResult::fail("P016", "Performance GPU", 5, e),
@@ -302,10 +384,22 @@ fn test_performance_gpu(config: &QaConfig, model: &PathBuf) -> TestResult {
 }
 
 fn print_header() {
-    println!("{}╔══════════════════════════════════════════════════════════════╗{}", BLUE, NC);
-    println!("{}║         APR CHAT QA - Popperian Falsification Suite          ║{}", BLUE, NC);
-    println!("{}║         PMAT-QA-RUST-001 Section B (20 Points)                ║{}", BLUE, NC);
-    println!("{}╚══════════════════════════════════════════════════════════════╝{}", BLUE, NC);
+    println!(
+        "{}╔══════════════════════════════════════════════════════════════╗{}",
+        BLUE, NC
+    );
+    println!(
+        "{}║         APR CHAT QA - Popperian Falsification Suite          ║{}",
+        BLUE, NC
+    );
+    println!(
+        "{}║         PMAT-QA-RUST-001 Section B (20 Points)                ║{}",
+        BLUE, NC
+    );
+    println!(
+        "{}╚══════════════════════════════════════════════════════════════╝{}",
+        BLUE, NC
+    );
     println!();
 }
 
@@ -316,15 +410,32 @@ fn print_summary(results: &[TestResult]) {
     let failed = results.iter().filter(|r| !r.passed).count();
 
     println!();
-    println!("{}═══════════════════════════════════════════════════════════════{}", BLUE, NC);
-    println!("Total: {}, Passed: {}{}{}, Failed: {}{}{}",
-        results.len(), GREEN, passed, NC, if failed > 0 { RED } else { GREEN }, failed, NC);
+    println!(
+        "{}═══════════════════════════════════════════════════════════════{}",
+        BLUE, NC
+    );
+    println!(
+        "Total: {}, Passed: {}{}{}, Failed: {}{}{}",
+        results.len(),
+        GREEN,
+        passed,
+        NC,
+        if failed > 0 { RED } else { GREEN },
+        failed,
+        NC
+    );
     println!("Points: {}/{}", earned, total);
 
     if failed == 0 {
-        println!("{}Hypothesis \"apr chat produces correct output\" SURVIVED.{}", GREEN, NC);
+        println!(
+            "{}Hypothesis \"apr chat produces correct output\" SURVIVED.{}",
+            GREEN, NC
+        );
     } else {
-        println!("{}Hypothesis \"apr chat produces correct output\" FALSIFIED.{}", RED, NC);
+        println!(
+            "{}Hypothesis \"apr chat produces correct output\" FALSIFIED.{}",
+            RED, NC
+        );
     }
 }
 
@@ -339,12 +450,18 @@ fn main() {
                 config.model_path = Some(PathBuf::from(&args[i + 1]));
                 i += 2;
             }
-            "--format-parity" => { config.format_parity = true; i += 1; }
+            "--format-parity" => {
+                config.format_parity = true;
+                i += 1;
+            }
             "--min-cpu-tps" if i + 1 < args.len() => {
                 config.min_cpu_tps = args[i + 1].parse().unwrap_or(30.0);
                 i += 2;
             }
-            "--verbose" | "-v" => { config.verbose = true; i += 1; }
+            "--verbose" | "-v" => {
+                config.verbose = true;
+                i += 1;
+            }
             "--help" | "-h" => {
                 println!("Usage: cargo run --example qa_chat [OPTIONS]");
                 println!("  --model PATH       Path to model file");
@@ -352,7 +469,9 @@ fn main() {
                 println!("  --verbose          Verbose output");
                 return;
             }
-            _ => { i += 1; }
+            _ => {
+                i += 1;
+            }
         }
     }
 
@@ -371,7 +490,10 @@ fn main() {
     println!();
 
     let mut results = Vec::new();
-    println!("{}=== Section B: qa_chat.rs Tests (20 Points) ==={}", YELLOW, NC);
+    println!(
+        "{}=== Section B: qa_chat.rs Tests (20 Points) ==={}",
+        YELLOW, NC
+    );
     println!();
 
     results.push(test_model_exists(&model));

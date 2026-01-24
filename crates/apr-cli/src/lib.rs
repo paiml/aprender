@@ -1395,16 +1395,24 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
         }
 
         Commands::Rosetta { action } => match action {
-            RosettaCommands::Inspect { file, hexdump, json } => {
-                rosetta::run_inspect(file, *hexdump, *json || cli.json)
-            }
+            RosettaCommands::Inspect {
+                file,
+                hexdump,
+                json,
+            } => rosetta::run_inspect(file, *hexdump, *json || cli.json),
             RosettaCommands::Convert {
                 source,
                 target,
                 quantize,
                 verify,
                 json,
-            } => rosetta::run_convert(source, target, quantize.as_deref(), *verify, *json || cli.json),
+            } => rosetta::run_convert(
+                source,
+                target,
+                quantize.as_deref(),
+                *verify,
+                *json || cli.json,
+            ),
             RosettaCommands::Chain {
                 source,
                 formats,

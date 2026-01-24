@@ -108,11 +108,7 @@ fn conversion_paths_demo() {
     println!("  Has Cycle: {}", chain.has_cycle());
 
     // Roundtrip path: A -> B -> A
-    let roundtrip = ConversionPath::chain(
-        FormatType::Apr,
-        vec![FormatType::Gguf],
-        FormatType::Apr,
-    );
+    let roundtrip = ConversionPath::chain(FormatType::Apr, vec![FormatType::Gguf], FormatType::Apr);
     println!("\nRoundtrip Path:");
     println!("  Path: {}", roundtrip);
     println!("  Steps: {}", roundtrip.steps().len());
@@ -181,11 +177,7 @@ fn cycle_detection_demo() {
     println!("  Has Cycle: {} (should be true)", cycle_chain.has_cycle());
 
     // Roundtrip is NOT a cycle (it's intentional)
-    let roundtrip = ConversionPath::chain(
-        FormatType::Apr,
-        vec![FormatType::Gguf],
-        FormatType::Apr,
-    );
+    let roundtrip = ConversionPath::chain(FormatType::Apr, vec![FormatType::Gguf], FormatType::Apr);
     println!("\nRoundtrip (intentional): {}", roundtrip);
     println!(
         "  Has Cycle: {} (roundtrip start/end same is allowed)",

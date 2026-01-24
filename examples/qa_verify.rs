@@ -48,23 +48,53 @@ struct TestResult {
 
 impl TestResult {
     fn pass(id: &'static str, name: &'static str, points: u32) -> Self {
-        Self { id, name, passed: true, details: None, points }
+        Self {
+            id,
+            name,
+            passed: true,
+            details: None,
+            points,
+        }
     }
-    fn pass_with_details(id: &'static str, name: &'static str, points: u32, details: String) -> Self {
-        Self { id, name, passed: true, details: Some(details), points }
+    fn pass_with_details(
+        id: &'static str,
+        name: &'static str,
+        points: u32,
+        details: String,
+    ) -> Self {
+        Self {
+            id,
+            name,
+            passed: true,
+            details: Some(details),
+            points,
+        }
     }
     fn fail(id: &'static str, name: &'static str, points: u32, details: String) -> Self {
-        Self { id, name, passed: false, details: Some(details), points }
+        Self {
+            id,
+            name,
+            passed: false,
+            details: Some(details),
+            points,
+        }
     }
     fn print(&self, json: bool) {
         if json {
-            println!(r#"{{"id":"{}","name":"{}","passed":{},"points":{}}}"#,
-                self.id, self.name, self.passed, self.points);
+            println!(
+                r#"{{"id":"{}","name":"{}","passed":{},"points":{}}}"#,
+                self.id, self.name, self.passed, self.points
+            );
         } else {
-            let status = if self.passed { format!("{}[PASS]{}", GREEN, NC) }
-                         else { format!("{}[FAIL]{}", RED, NC) };
+            let status = if self.passed {
+                format!("{}[PASS]{}", GREEN, NC)
+            } else {
+                format!("{}[FAIL]{}", RED, NC)
+            };
             println!("{} {}: {}", status, self.id, self.name);
-            if let Some(ref d) = self.details { println!("       {}", d); }
+            if let Some(ref d) = self.details {
+                println!("       {}", d);
+            }
         }
     }
 }
@@ -77,16 +107,18 @@ struct QaConfig {
 
 impl Default for QaConfig {
     fn default() -> Self {
-        Self { json: false, section: None, verbose: false }
+        Self {
+            json: false,
+            section: None,
+            verbose: false,
+        }
     }
 }
 
 /// Run a cargo command and return success/failure with output
 fn run_cargo(args: &[&str], _timeout_secs: u64) -> (bool, String) {
     let mut cmd = Command::new("cargo");
-    cmd.args(args)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+    cmd.args(args).stdout(Stdio::piped()).stderr(Stdio::piped());
 
     match cmd.output() {
         Ok(output) => {
@@ -131,7 +163,12 @@ fn test_count() -> TestResult {
     if count > 700 {
         TestResult::pass_with_details("P035", "Test Count > 700", 2, format!("{} tests", count))
     } else {
-        TestResult::fail("P035", "Test Count > 700", 2, format!("Only {} tests", count))
+        TestResult::fail(
+            "P035",
+            "Test Count > 700",
+            2,
+            format!("Only {} tests", count),
+        )
     }
 }
 
@@ -151,7 +188,12 @@ fn test_clippy() -> TestResult {
     } else {
         // Count warnings
         let warn_count = output.matches("warning:").count();
-        TestResult::fail("P037", "Clippy Clean", 3, format!("{} warnings", warn_count))
+        TestResult::fail(
+            "P037",
+            "Clippy Clean",
+            3,
+            format!("{} warnings", warn_count),
+        )
     }
 }
 
@@ -211,10 +253,22 @@ fn test_math_optimization() -> TestResult {
 
 fn print_header(json: bool) {
     if !json {
-        println!("{}╔══════════════════════════════════════════════════════════════╗{}", BLUE, NC);
-        println!("{}║       APRENDER QA VERIFY - Quality Gates Verification        ║{}", BLUE, NC);
-        println!("{}║       PMAT-QA-RUST-001 Section D (20 Points)                  ║{}", BLUE, NC);
-        println!("{}╚══════════════════════════════════════════════════════════════╝{}", BLUE, NC);
+        println!(
+            "{}╔══════════════════════════════════════════════════════════════╗{}",
+            BLUE, NC
+        );
+        println!(
+            "{}║       APRENDER QA VERIFY - Quality Gates Verification        ║{}",
+            BLUE, NC
+        );
+        println!(
+            "{}║       PMAT-QA-RUST-001 Section D (20 Points)                  ║{}",
+            BLUE, NC
+        );
+        println!(
+            "{}╚══════════════════════════════════════════════════════════════╝{}",
+            BLUE, NC
+        );
         println!();
     }
 }
@@ -226,31 +280,65 @@ fn print_summary(results: &[TestResult], json: bool, elapsed_secs: f64) {
     let failed = results.iter().filter(|r| !r.passed).count();
 
     if json {
-        println!(r#"{{"passed":{},"failed":{},"earned":{},"total":{},"elapsed":{:.1}}}"#,
-            passed, failed, earned, total, elapsed_secs);
+        println!(
+            r#"{{"passed":{},"failed":{},"earned":{},"total":{},"elapsed":{:.1}}}"#,
+            passed, failed, earned, total, elapsed_secs
+        );
     } else {
         println!();
-        println!("{}═══════════════════════════════════════════════════════════════{}", BLUE, NC);
-        println!("Total: {}, Passed: {}{}{}, Failed: {}{}{}",
-            results.len(), GREEN, passed, NC, if failed > 0 { RED } else { GREEN }, failed, NC);
-        println!("Points: {}/{} ({:.0}%)", earned, total, (earned as f64 / total as f64) * 100.0);
+        println!(
+            "{}═══════════════════════════════════════════════════════════════{}",
+            BLUE, NC
+        );
+        println!(
+            "Total: {}, Passed: {}{}{}, Failed: {}{}{}",
+            results.len(),
+            GREEN,
+            passed,
+            NC,
+            if failed > 0 { RED } else { GREEN },
+            failed,
+            NC
+        );
+        println!(
+            "Points: {}/{} ({:.0}%)",
+            earned,
+            total,
+            (earned as f64 / total as f64) * 100.0
+        );
         println!("Elapsed: {:.1}s", elapsed_secs);
         println!();
 
         // Grade
         let pct = (earned as f64 / total as f64) * 100.0;
-        let grade = if pct >= 93.0 { "A+" }
-            else if pct >= 90.0 { "A" }
-            else if pct >= 87.0 { "A-" }
-            else if pct >= 83.0 { "B+" }
-            else if pct >= 80.0 { "B" }
-            else if pct >= 70.0 { "C" }
-            else { "F" };
+        let grade = if pct >= 93.0 {
+            "A+"
+        } else if pct >= 90.0 {
+            "A"
+        } else if pct >= 87.0 {
+            "A-"
+        } else if pct >= 83.0 {
+            "B+"
+        } else if pct >= 80.0 {
+            "B"
+        } else if pct >= 70.0 {
+            "C"
+        } else {
+            "F"
+        };
 
-        println!("Grade: {}{}{}", if pct >= 80.0 { GREEN } else { RED }, grade, NC);
+        println!(
+            "Grade: {}{}{}",
+            if pct >= 80.0 { GREEN } else { RED },
+            grade,
+            NC
+        );
 
         if failed == 0 {
-            println!("{}All quality gates PASSED. Ready for production.{}", GREEN, NC);
+            println!(
+                "{}All quality gates PASSED. Ready for production.{}",
+                GREEN, NC
+            );
         } else {
             println!("{}Quality gates FAILED. Remediation required.{}", RED, NC);
         }
@@ -264,12 +352,18 @@ fn main() {
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
-            "--json" => { config.json = true; i += 1; }
+            "--json" => {
+                config.json = true;
+                i += 1;
+            }
             "--section" if i + 1 < args.len() => {
                 config.section = args[i + 1].parse().ok();
                 i += 2;
             }
-            "--verbose" | "-v" => { config.verbose = true; i += 1; }
+            "--verbose" | "-v" => {
+                config.verbose = true;
+                i += 1;
+            }
             "--help" | "-h" => {
                 println!("Usage: cargo run --example qa_verify [OPTIONS]");
                 println!("  --json         JSON output");
@@ -277,7 +371,9 @@ fn main() {
                 println!("  --verbose      Verbose output");
                 return;
             }
-            _ => { i += 1; }
+            _ => {
+                i += 1;
+            }
         }
     }
 
@@ -287,7 +383,10 @@ fn main() {
     let mut results = Vec::new();
 
     if !config.json {
-        println!("{}=== Section D: qa_verify.rs Tests (20 Points) ==={}", YELLOW, NC);
+        println!(
+            "{}=== Section D: qa_verify.rs Tests (20 Points) ==={}",
+            YELLOW, NC
+        );
         println!();
     }
 
@@ -296,12 +395,18 @@ fn main() {
         if !config.json {
             println!("{}--- Mandatory Gates ---{}", CYAN, NC);
         }
-        results.push(test_unit_tests()); results.last().unwrap().print(config.json);
-        results.push(test_count()); results.last().unwrap().print(config.json);
-        results.push(test_examples_build()); results.last().unwrap().print(config.json);
-        results.push(test_clippy()); results.last().unwrap().print(config.json);
-        results.push(test_format()); results.last().unwrap().print(config.json);
-        results.push(test_docs()); results.last().unwrap().print(config.json);
+        results.push(test_unit_tests());
+        results.last().unwrap().print(config.json);
+        results.push(test_count());
+        results.last().unwrap().print(config.json);
+        results.push(test_examples_build());
+        results.last().unwrap().print(config.json);
+        results.push(test_clippy());
+        results.last().unwrap().print(config.json);
+        results.push(test_format());
+        results.last().unwrap().print(config.json);
+        results.push(test_docs());
+        results.last().unwrap().print(config.json);
     }
 
     // Section 2: Mathematical Correctness (4 points)
@@ -310,10 +415,14 @@ fn main() {
             println!();
             println!("{}--- Mathematical Correctness ---{}", CYAN, NC);
         }
-        results.push(test_math_monte_carlo()); results.last().unwrap().print(config.json);
-        results.push(test_math_statistics()); results.last().unwrap().print(config.json);
-        results.push(test_math_ml()); results.last().unwrap().print(config.json);
-        results.push(test_math_optimization()); results.last().unwrap().print(config.json);
+        results.push(test_math_monte_carlo());
+        results.last().unwrap().print(config.json);
+        results.push(test_math_statistics());
+        results.last().unwrap().print(config.json);
+        results.push(test_math_ml());
+        results.last().unwrap().print(config.json);
+        results.push(test_math_optimization());
+        results.last().unwrap().print(config.json);
     }
 
     let elapsed = start.elapsed().as_secs_f64();

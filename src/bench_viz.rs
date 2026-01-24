@@ -1746,9 +1746,8 @@ mod tests {
         };
         let runner = BenchmarkRunner::with_config(config);
 
-        let measurement = runner.measure_iterations("test", || {
-            (100, Duration::from_millis(100), 5.0)
-        });
+        let measurement =
+            runner.measure_iterations("test", || (100, Duration::from_millis(100), 5.0));
 
         assert_eq!(measurement.engine, "test");
         assert_eq!(measurement.throughput_samples.len(), 3);
@@ -2145,11 +2144,10 @@ mod tests {
 
     #[test]
     fn test_benchmark_grid_speedup_zero_baseline() {
-        let mut grid = BenchmarkGrid::new()
-            .with_config(BenchConfig {
-                colors: false,
-                ..Default::default()
-            });
+        let mut grid = BenchmarkGrid::new().with_config(BenchConfig {
+            colors: false,
+            ..Default::default()
+        });
 
         grid.set_apr_row(
             BenchMeasurement::new("APR", ".apr").with_throughput(600.0),

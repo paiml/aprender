@@ -104,9 +104,9 @@ pub fn run_inspect(file: &Path, hexdump: bool, json: bool) -> Result<()> {
 
     let rosetta = RosettaStone::new();
 
-    let report = rosetta.inspect(file).map_err(|e| {
-        CliError::ValidationFailed(format!("Inspection failed: {e}"))
-    })?;
+    let report = rosetta
+        .inspect(file)
+        .map_err(|e| CliError::ValidationFailed(format!("Inspection failed: {e}")))?;
 
     if json {
         print_inspection_json(&report);
@@ -152,9 +152,9 @@ pub fn run_convert(
     if !json {
         println!("{}", "--- Source Inspection ---".yellow());
     }
-    let source_report = rosetta.inspect(source).map_err(|e| {
-        CliError::ValidationFailed(format!("Source inspection failed: {e}"))
-    })?;
+    let source_report = rosetta
+        .inspect(source)
+        .map_err(|e| CliError::ValidationFailed(format!("Source inspection failed: {e}")))?;
 
     if !json {
         print_inspection_summary(&source_report);
@@ -163,9 +163,9 @@ pub fn run_convert(
     }
 
     // Perform conversion
-    let report = rosetta.convert(source, target, Some(options)).map_err(|e| {
-        CliError::ValidationFailed(format!("Conversion failed: {e}"))
-    })?;
+    let report = rosetta
+        .convert(source, target, Some(options))
+        .map_err(|e| CliError::ValidationFailed(format!("Conversion failed: {e}")))?;
 
     if json {
         print_conversion_json(&report.path, &source_report, &report.target_inspection);
@@ -209,12 +209,7 @@ pub fn run_convert(
 }
 
 /// Run the rosetta chain subcommand
-pub fn run_chain(
-    source: &Path,
-    formats: &[String],
-    work_dir: &Path,
-    json: bool,
-) -> Result<()> {
+pub fn run_chain(source: &Path, formats: &[String], work_dir: &Path, json: bool) -> Result<()> {
     if !source.exists() {
         return Err(CliError::FileNotFound(source.to_path_buf()));
     }
@@ -239,7 +234,11 @@ pub fn run_chain(
     }
 
     // Check for cycles
-    let path = ConversionPath::chain(chain[0], chain[1..chain.len() - 1].to_vec(), chain[chain.len() - 1]);
+    let path = ConversionPath::chain(
+        chain[0],
+        chain[1..chain.len() - 1].to_vec(),
+        chain[chain.len() - 1],
+    );
     if path.has_cycle() {
         return Err(CliError::ValidationFailed(
             "Conversion chain contains a cycle (repeated format in middle)".to_string(),
@@ -247,9 +246,8 @@ pub fn run_chain(
     }
 
     // Create work directory
-    std::fs::create_dir_all(work_dir).map_err(|e| {
-        CliError::ValidationFailed(format!("Cannot create work directory: {e}"))
-    })?;
+    std::fs::create_dir_all(work_dir)
+        .map_err(|e| CliError::ValidationFailed(format!("Cannot create work directory: {e}")))?;
 
     let rosetta = RosettaStone::new();
 
@@ -262,9 +260,9 @@ pub fn run_chain(
         println!();
     }
 
-    let reports = rosetta.chain(source, &chain, work_dir).map_err(|e| {
-        CliError::ValidationFailed(format!("Chain conversion failed: {e}"))
-    })?;
+    let reports = rosetta
+        .chain(source, &chain, work_dir)
+        .map_err(|e| CliError::ValidationFailed(format!("Chain conversion failed: {e}")))?;
 
     if json {
         // TODO: Print JSON output for chain
@@ -289,12 +287,7 @@ pub fn run_chain(
 }
 
 /// Run the rosetta verify subcommand
-pub fn run_verify(
-    source: &Path,
-    intermediate: &str,
-    tolerance: f32,
-    json: bool,
-) -> Result<()> {
+pub fn run_verify(source: &Path, intermediate: &str, tolerance: f32, json: bool) -> Result<()> {
     if !source.exists() {
         return Err(CliError::FileNotFound(source.to_path_buf()));
     }
@@ -313,7 +306,12 @@ pub fn run_verify(
     let rosetta = RosettaStone::new();
 
     if !json {
-        println!("{}", "=== Rosetta Stone Round-Trip Verification ===".cyan().bold());
+        println!(
+            "{}",
+            "=== Rosetta Stone Round-Trip Verification ==="
+                .cyan()
+                .bold()
+        );
         println!();
         println!("Source: {}", source.display());
         println!("Intermediate: {intermediate_format}");
@@ -322,9 +320,9 @@ pub fn run_verify(
         println!("{}", "Verifying round-trip...".yellow());
     }
 
-    let report = rosetta.verify_roundtrip(source, intermediate_format).map_err(|e| {
-        CliError::ValidationFailed(format!("Verification failed: {e}"))
-    })?;
+    let report = rosetta
+        .verify_roundtrip(source, intermediate_format)
+        .map_err(|e| CliError::ValidationFailed(format!("Verification failed: {e}")))?;
 
     if json {
         print_verification_json(&report);

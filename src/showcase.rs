@@ -1131,8 +1131,9 @@ mod tests {
 
     #[test]
     fn test_benchmark_result_with_gpu_metrics() {
-        let result = BenchmarkResult::new(128, Duration::from_millis(250), Duration::from_millis(7))
-            .with_gpu_metrics(85.5, 4096.0);
+        let result =
+            BenchmarkResult::new(128, Duration::from_millis(250), Duration::from_millis(7))
+                .with_gpu_metrics(85.5, 4096.0);
 
         assert_eq!(result.gpu_util, Some(85.5));
         assert_eq!(result.gpu_mem_mb, Some(4096.0));
@@ -1205,8 +1206,7 @@ mod tests {
     #[test]
     fn test_showcase_runner_with_model_info() {
         let config = ShowcaseConfig::default();
-        let runner = ShowcaseRunner::new(config)
-            .with_model_info("TestModel", "7B", "Q4_K_M");
+        let runner = ShowcaseRunner::new(config).with_model_info("TestModel", "7B", "Q4_K_M");
 
         assert_eq!(runner.model_name, "TestModel");
         assert_eq!(runner.model_params, "7B");
@@ -1405,12 +1405,11 @@ mod tests {
             .with_gpu_info("Test GPU", 8.0);
 
         // Add APR GGUF
-        let gguf_results = vec![BenchmarkResult::new(
-            128,
-            Duration::from_millis(256),
-            Duration::from_millis(7),
-        )
-        .with_gpu_metrics(80.0, 2048.0)];
+        let gguf_results =
+            vec![
+                BenchmarkResult::new(128, Duration::from_millis(256), Duration::from_millis(7))
+                    .with_gpu_metrics(80.0, 2048.0),
+            ];
         runner.record_apr_gguf(BenchmarkStats::from_results(gguf_results));
 
         // Add APR native
@@ -1441,8 +1440,7 @@ mod tests {
     #[test]
     fn test_showcase_runner_to_grid_no_gguf_stats() {
         let config = ShowcaseConfig::default();
-        let runner = ShowcaseRunner::new(config)
-            .with_model_info("TestModel", "0.5B", "Q4_K_M");
+        let runner = ShowcaseRunner::new(config).with_model_info("TestModel", "0.5B", "Q4_K_M");
 
         let grid = runner.to_grid();
         let output = grid.render();
@@ -1660,7 +1658,9 @@ mod tests {
 
         // Very high throughput with low variance
         let apr_results: Vec<BenchmarkResult> = (0..10)
-            .map(|_| BenchmarkResult::new(128, Duration::from_millis(100), Duration::from_millis(5)))
+            .map(|_| {
+                BenchmarkResult::new(128, Duration::from_millis(100), Duration::from_millis(5))
+            })
             .collect();
         runner.record_apr_gguf(BenchmarkStats::from_results(apr_results));
 
@@ -1723,7 +1723,8 @@ mod tests {
 
     #[test]
     fn test_benchmark_result_debug() {
-        let result = BenchmarkResult::new(128, Duration::from_millis(250), Duration::from_millis(7));
+        let result =
+            BenchmarkResult::new(128, Duration::from_millis(250), Duration::from_millis(7));
         let debug_str = format!("{:?}", result);
         assert!(debug_str.contains("128"));
     }
@@ -1784,8 +1785,9 @@ mod tests {
 
     #[test]
     fn test_benchmark_result_clone() {
-        let result = BenchmarkResult::new(128, Duration::from_millis(250), Duration::from_millis(7))
-            .with_gpu_metrics(80.0, 2048.0);
+        let result =
+            BenchmarkResult::new(128, Duration::from_millis(250), Duration::from_millis(7))
+                .with_gpu_metrics(80.0, 2048.0);
         let cloned = result.clone();
         assert_eq!(cloned.tokens, 128);
         assert_eq!(cloned.gpu_util, Some(80.0));
