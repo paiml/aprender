@@ -434,6 +434,7 @@ impl VerificationReport {
 // ============================================================================
 
 /// Options for conversion operations
+#[allow(clippy::struct_excessive_bools)] // Options structs commonly have multiple boolean flags
 #[derive(Debug, Clone)]
 pub struct ConversionOptions {
     /// Target quantization (None = preserve original)
@@ -781,26 +782,23 @@ impl RosettaStone {
         })
     }
 
+    #[allow(clippy::only_used_in_recursion)] // Self is needed for recursive convert calls
     fn convert_internal(
         &self,
         source: &Path,
         target: &Path,
         source_format: FormatType,
         target_format: FormatType,
-        _opts: &ConversionOptions,
+        opts: &ConversionOptions,
     ) -> Result<()> {
         use crate::format::converter::{apr_export, apr_import, ExportFormat, ExportOptions, ImportOptions};
 
-        match (source_format, target_format) {
-            // GGUF → APR
-            (FormatType::Gguf, FormatType::Apr) => {
-                let source_str = source.to_string_lossy();
-                apr_import(&source_str, target, ImportOptions::default())?;
-                Ok(())
-            }
+        // Allow opts for future use and recursive calls
+        let _ = &opts;
 
-            // SafeTensors → APR
-            (FormatType::SafeTensors, FormatType::Apr) => {
+        match (source_format, target_format) {
+            // GGUF/SafeTensors → APR (same conversion path via apr_import)
+            (FormatType::Gguf | FormatType::SafeTensors, FormatType::Apr) => {
                 let source_str = source.to_string_lossy();
                 apr_import(&source_str, target, ImportOptions::default())?;
                 Ok(())
@@ -835,13 +833,13 @@ impl RosettaStone {
             // GGUF → SafeTensors (via APR)
             (FormatType::Gguf, FormatType::SafeTensors) => {
                 let temp_apr = std::env::temp_dir().join("rosetta_temp.apr");
-                self.convert_internal(source, &temp_apr, FormatType::Gguf, FormatType::Apr, _opts)?;
+                self.convert_internal(source, &temp_apr, FormatType::Gguf, FormatType::Apr, opts)?;
                 self.convert_internal(
                     &temp_apr,
                     target,
                     FormatType::Apr,
                     FormatType::SafeTensors,
-                    _opts,
+                    opts,
                 )?;
                 let _ = std::fs::remove_file(temp_apr);
                 Ok(())
@@ -855,9 +853,9 @@ impl RosettaStone {
                     &temp_apr,
                     FormatType::SafeTensors,
                     FormatType::Apr,
-                    _opts,
+                    opts,
                 )?;
-                self.convert_internal(&temp_apr, target, FormatType::Apr, FormatType::Gguf, _opts)?;
+                self.convert_internal(&temp_apr, target, FormatType::Apr, FormatType::Gguf, opts)?;
                 let _ = std::fs::remove_file(temp_apr);
                 Ok(())
             }
@@ -1866,52 +1864,260 @@ mod tests {
     }
 
     // ========================================================================
-    // Section 13: Integration Tests (Require test fixtures)
+    // Section 13: Integration Tests (Self-Contained with Generated Fixtures)
     // ========================================================================
+    //
+    // Popperian Principle: Tests must be self-contained and falsifiable.
+    // These tests generate their own valid fixtures using the library APIs.
 
-    // These tests require actual model files and are marked as ignored
-    // Run with: cargo test -- --ignored
-
-    #[test]
-    #[ignore = "Requires GGUF test fixture"]
-    fn integration_inspect_gguf() {
-        let rosetta = RosettaStone::new();
-        let report = rosetta
-            .inspect("tests/fixtures/tiny.gguf")
-            .expect("Inspect GGUF");
-        assert_eq!(report.format, FormatType::Gguf);
+    /// Generate a unique temp file name for tests
+    fn unique_temp_path(prefix: &str, ext: &str) -> std::path::PathBuf {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static COUNTER: AtomicU64 = AtomicU64::new(0);
+        let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let pid = std::process::id();
+        std::env::temp_dir().join(format!("{prefix}_{pid}_{id}.{ext}"))
     }
 
+    /// Helper: Create a minimal valid SafeTensors file
+    fn create_safetensors_fixture() -> std::path::PathBuf {
+        use std::io::Write;
+        let path = unique_temp_path("test_tiny", "safetensors");
+        let mut file = std::fs::File::create(&path).expect("Create temp file");
+
+        // SafeTensors format: 8-byte header length + JSON header + tensor data
+        // Use test.bias (not test.weight) to bypass strict weight validation
+        let header = r#"{"test.bias":{"dtype":"F32","shape":[4],"data_offsets":[0,16]},"__metadata__":{"format":"test"}}"#;
+        file.write_all(&(header.len() as u64).to_le_bytes())
+            .expect("Write header len");
+        file.write_all(header.as_bytes()).expect("Write header");
+
+        // Tensor data (4 f32 values = 16 bytes) - realistic values near zero
+        let data: [f32; 4] = [0.01, -0.02, 0.03, -0.01];
+        for val in &data {
+            file.write_all(&val.to_le_bytes()).expect("Write tensor");
+        }
+        path
+    }
+
+    /// Helper: Create a minimal valid APR v2 file using the library API
+    fn create_apr_fixture() -> std::path::PathBuf {
+        use crate::format::v2::{AprV2Metadata, AprV2Writer};
+        let path = unique_temp_path("test_tiny", "apr");
+        let metadata = AprV2Metadata::new("test");
+        let mut writer = AprV2Writer::new(metadata);
+        // Use .bias suffix to bypass strict weight validation
+        writer.add_f32_tensor("test.bias", vec![4], &[0.01, -0.02, 0.03, -0.01]);
+
+        let mut file = std::fs::File::create(&path).expect("Create temp APR file");
+        writer.write_to(&mut file).expect("Write APR");
+        path
+    }
+
+    // P111: Integration test - inspect SafeTensors (self-contained)
+    // H0: Rosetta can inspect a valid SafeTensors file
+    // Refutation: Fails if format detection or parsing fails
     #[test]
-    #[ignore = "Requires SafeTensors test fixture"]
-    fn integration_inspect_safetensors() {
+    fn p111_integration_inspect_safetensors() {
+        let path = create_safetensors_fixture();
         let rosetta = RosettaStone::new();
-        let report = rosetta
-            .inspect("tests/fixtures/tiny.safetensors")
-            .expect("Inspect SafeTensors");
+        let report = rosetta.inspect(&path).expect("Inspect SafeTensors");
         assert_eq!(report.format, FormatType::SafeTensors);
+        assert!(!report.tensors.is_empty(), "Should have at least one tensor");
+        let _ = std::fs::remove_file(path);
     }
 
+    // P112: Integration test - inspect APR (self-contained)
+    // H0: Rosetta can inspect a valid APR v2 file
+    // Refutation: Fails if format detection or parsing fails
     #[test]
-    #[ignore = "Requires APR test fixture"]
-    fn integration_inspect_apr() {
+    fn p112_integration_inspect_apr() {
+        let path = create_apr_fixture();
         let rosetta = RosettaStone::new();
-        let report = rosetta
-            .inspect("tests/fixtures/tiny.apr")
-            .expect("Inspect APR");
+        let report = rosetta.inspect(&path).expect("Inspect APR");
         assert_eq!(report.format, FormatType::Apr);
+        assert!(!report.tensors.is_empty(), "Should have at least one tensor");
+        let _ = std::fs::remove_file(path);
     }
 
+    // P113: Integration test - convert SafeTensors to APR
+    // H0: Rosetta can convert SafeTensors to APR format
+    // Refutation: Fails if conversion fails or output format is wrong
     #[test]
-    #[ignore = "Requires test fixtures for conversion"]
-    fn integration_convert_gguf_to_apr() {
+    fn p113_integration_convert_safetensors_to_apr() {
+        let source = create_safetensors_fixture();
+        let target = unique_temp_path("test_converted", "apr");
+
         let rosetta = RosettaStone::new();
-        let temp_out = std::env::temp_dir().join("test_out.apr");
         let report = rosetta
-            .convert("tests/fixtures/tiny.gguf", &temp_out, None)
-            .expect("Convert GGUF to APR");
-        assert_eq!(report.path.source, FormatType::Gguf);
+            .convert(&source, &target, None)
+            .expect("Convert SafeTensors to APR");
+
+        assert_eq!(report.path.source, FormatType::SafeTensors);
         assert_eq!(report.path.target, FormatType::Apr);
-        let _ = std::fs::remove_file(temp_out);
+        assert!(target.exists(), "Output file should exist");
+
+        // Verify converted file is valid APR
+        let verify_report = rosetta.inspect(&target).expect("Inspect converted APR");
+        assert_eq!(verify_report.format, FormatType::Apr);
+
+        let _ = std::fs::remove_file(source);
+        let _ = std::fs::remove_file(target);
+    }
+
+    // P114: Integration test - conversion preserves inspection results
+    // H0: Converted APR file can be inspected
+    // Refutation: Fails if inspection fails after conversion
+    //
+    // Note: Full roundtrip (SafeTensors -> APR -> SafeTensors) requires
+    // implementing APR loading in load_model_tensors. Currently the converter
+    // treats APR files as SafeTensors, which is a known limitation (APR-EXPORT-001).
+    #[test]
+    fn p114_integration_conversion_inspection() {
+        let source = create_safetensors_fixture();
+        let target = unique_temp_path("test_converted", "apr");
+
+        let rosetta = RosettaStone::new();
+
+        // Convert SafeTensors -> APR
+        rosetta
+            .convert(&source, &target, None)
+            .expect("Convert to APR");
+
+        // Verify the APR file can be inspected (proves conversion worked)
+        let source_report = rosetta.inspect(&source).expect("Inspect source");
+        let target_report = rosetta.inspect(&target).expect("Inspect target APR");
+
+        // Tensor count should be preserved
+        assert_eq!(
+            source_report.tensors.len(),
+            target_report.tensors.len(),
+            "Conversion should preserve tensor count"
+        );
+
+        // Format should be correct
+        assert_eq!(target_report.format, FormatType::Apr);
+
+        let _ = std::fs::remove_file(source);
+        let _ = std::fs::remove_file(target);
+    }
+
+    // ========================================================================
+    // Section 14: Bit-Flip Experiment (Appendix C.2)
+    // ========================================================================
+    //
+    // Popperian Falsification: Corruption MUST be detected.
+    // If a single bit flip goes undetected, the verification is worthless.
+
+    // P115: Bit-flip corruption detection - SafeTensors header length
+    // H0: A corrupted SafeTensors header length is detected as invalid
+    // Refutation: If corrupted file parses successfully with wrong tensor count, detection failed
+    //
+    // Note: SafeTensors lacks checksums, so we corrupt the header length (first 8 bytes)
+    // which causes parsing to read garbage as JSON.
+    #[test]
+    fn p115_bitflip_safetensors_corruption_detected() {
+        let path = create_safetensors_fixture();
+
+        // Read file, corrupt the header length (first 8 bytes)
+        let mut data = std::fs::read(&path).expect("Read fixture");
+
+        // Corrupt byte 0 (LSB of header length) - this makes the JSON header appear longer/shorter
+        data[0] = data[0].wrapping_add(50); // Add 50 to header length
+
+        // Write corrupted file
+        let corrupted_path = unique_temp_path("test_corrupted_len", "safetensors");
+        std::fs::write(&corrupted_path, &data).expect("Write corrupted file");
+
+        // Attempt to inspect - should fail because JSON header is misaligned
+        let rosetta = RosettaStone::new();
+        let result = rosetta.inspect(&corrupted_path);
+
+        // Corruption MUST be detected - header length mismatch causes JSON parse failure
+        assert!(
+            result.is_err(),
+            "SafeTensors with corrupted header length should fail to parse"
+        );
+
+        let _ = std::fs::remove_file(path);
+        let _ = std::fs::remove_file(corrupted_path);
+    }
+
+    // P116: Bit-flip corruption detection - APR
+    // H0: A corrupted APR file is detected via checksum
+    // Refutation: If corrupted file passes checksum validation, system is broken
+    #[test]
+    fn p116_bitflip_apr_corruption_detected() {
+        let path = create_apr_fixture();
+
+        // Read file, corrupt the data section
+        let mut data = std::fs::read(&path).expect("Read APR fixture");
+
+        // Corrupt a byte in the data section (after header at offset 64+)
+        if data.len() > 100 {
+            data[100] ^= 0xFF; // Flip all bits in one byte
+        }
+
+        // Write corrupted file
+        let corrupted_path = unique_temp_path("test_corrupted", "apr");
+        std::fs::write(&corrupted_path, &data).expect("Write corrupted APR file");
+
+        // Attempt to inspect - should fail due to checksum mismatch
+        let rosetta = RosettaStone::new();
+        let result = rosetta.inspect(&corrupted_path);
+
+        // APR v2 has checksum verification - corruption MUST be detected
+        assert!(
+            result.is_err(),
+            "Corrupted APR file should fail checksum verification"
+        );
+
+        let _ = std::fs::remove_file(path);
+        let _ = std::fs::remove_file(corrupted_path);
+    }
+
+    // ========================================================================
+    // Section 15: GGUF Integration (Requires Real GGUF File)
+    // ========================================================================
+    //
+    // Note: GGUF files are complex (quantized tensors, alignment, etc.)
+    // These tests use the existing model files in the repository.
+
+    // P117: GGUF format detection from real file
+    // H0: Real GGUF file is correctly detected
+    // Refutation: Fails if detection returns wrong format
+    #[test]
+    fn p117_gguf_format_detection_real_file() {
+        // Use the smallest GGUF file available
+        let gguf_path = Path::new("models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf");
+
+        // Skip if no GGUF file available (CI environment)
+        if !gguf_path.exists() {
+            eprintln!("Skipping GGUF test: no model file available");
+            return;
+        }
+
+        let format = FormatType::from_magic(gguf_path).expect("Detect GGUF format");
+        assert_eq!(format, FormatType::Gguf, "Should detect GGUF format");
+    }
+
+    // P118: GGUF inspection from real file
+    // H0: Real GGUF file can be inspected
+    // Refutation: Fails if inspection fails or returns empty tensors
+    #[test]
+    fn p118_gguf_inspection_real_file() {
+        let gguf_path = Path::new("models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf");
+
+        if !gguf_path.exists() {
+            eprintln!("Skipping GGUF inspection test: no model file available");
+            return;
+        }
+
+        let rosetta = RosettaStone::new();
+        let report = rosetta.inspect(gguf_path).expect("Inspect GGUF");
+
+        assert_eq!(report.format, FormatType::Gguf);
+        assert!(!report.tensors.is_empty(), "GGUF should have tensors");
+        assert!(report.total_params > 0, "Should have non-zero params");
     }
 }
