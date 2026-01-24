@@ -57,7 +57,7 @@ impl NoiseTrainer {
     }
 
     /// Generate target spectrum using analytical DSP formula
-    /// For colored noise: magnitude[f] ∝ f^(slope/6)
+    /// For colored noise: `magnitude[f] ∝ f^(slope/6)`
     /// - Brown noise (slope=-6): magnitude ∝ 1/f (low frequencies emphasized)
     /// - Blue noise (slope=+3): magnitude ∝ sqrt(f) (high frequencies emphasized)
     #[must_use]

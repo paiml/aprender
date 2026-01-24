@@ -5,7 +5,7 @@
 //!
 //! # Security Level
 //!
-//! 128-bit post-quantum security per Homomorphic Encryption Standard [9].
+//! 128-bit post-quantum security per Homomorphic Encryption Standard \[9\].
 //!
 //! # Example
 //!
@@ -23,7 +23,7 @@
 use crate::error::{AprenderError, Result};
 use serde::{Deserialize, Serialize};
 
-/// Security level per Homomorphic Encryption Standard [9]
+/// Security level per Homomorphic Encryption Standard \[9\]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum SecurityLevel {

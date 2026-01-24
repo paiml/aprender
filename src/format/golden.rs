@@ -33,7 +33,7 @@ pub struct GoldenTrace {
     pub name: String,
     /// Input token IDs
     pub input_ids: Vec<u32>,
-    /// Expected logits for the last position [`vocab_size`]
+    /// Expected logits for the last position \[`vocab_size`\]
     pub expected_logits: Vec<f32>,
     /// Maximum allowed deviation (default: 1e-4 per spec C1)
     pub tolerance: f32,

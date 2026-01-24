@@ -1538,7 +1538,7 @@ impl RotaryPositionEmbedding {
     /// # Arguments
     ///
     /// * `x` - Input tensor `[batch, seq_len, num_heads, head_dim]`
-    /// * `position_ids` - Position indices for each token `[seq_len]`
+    /// * `position_ids` - Position indices for each token \[`seq_len`\]
     ///
     /// # Returns
     ///

@@ -55,7 +55,7 @@ pub enum Nonlinearity {
 /// * `mode` - Boolean or Continuous
 ///
 /// # Returns
-/// Result tensor where result[i][k] = ∃j: t1[i][j] ∧ t2[j][k]
+/// Result tensor where `result[i][k] = ∃j: t1[i][j] ∧ t2[j][k]`
 #[must_use]
 pub fn logical_join(t1: &[Vec<f64>], t2: &[Vec<f64>], mode: LogicMode) -> Vec<Vec<f64>> {
     let rows = t1.len();
@@ -140,10 +140,10 @@ pub fn logical_project(tensor: &[Vec<f64>], dim: usize, mode: LogicMode) -> Vec<
 /// Logical union (OR): Combines two tensors via logical OR
 ///
 /// # Boolean mode
-/// result[i][j] = max(t1[i][j], t2[i][j])
+/// `result[i][j] = max(t1[i][j], t2[i][j])`
 ///
 /// # Continuous mode (probabilistic OR)
-/// result[i][j] = P(A) + P(B) - P(A)*P(B)
+/// `result[i][j] = P(A) + P(B) - P(A)*P(B)`
 #[must_use]
 pub fn logical_union(t1: &[Vec<f64>], t2: &[Vec<f64>], mode: LogicMode) -> Vec<Vec<f64>> {
     let rows = t1.len();
@@ -174,7 +174,7 @@ pub fn logical_union(t1: &[Vec<f64>], t2: &[Vec<f64>], mode: LogicMode) -> Vec<V
 
 /// Logical negation (NOT): Negates tensor values
 ///
-/// result[i][j] = 1 - tensor[i][j]
+/// `result[i][j] = 1 - tensor[i][j]`
 #[must_use]
 pub fn logical_negation(tensor: &[Vec<f64>], mode: LogicMode) -> Vec<Vec<f64>> {
     let rows = tensor.len();
@@ -205,7 +205,7 @@ pub fn logical_negation(tensor: &[Vec<f64>], mode: LogicMode) -> Vec<Vec<f64>> {
 
 /// Logical selection (WHERE): Filters tensor by condition
 ///
-/// result[i][j] = tensor[i][j] if condition[i][j] else 0
+/// `result[i][j] = tensor[i][j] if condition[i][j] else 0`
 #[must_use]
 pub fn logical_select(
     tensor: &[Vec<f64>],

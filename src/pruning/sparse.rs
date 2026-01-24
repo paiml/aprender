@@ -38,9 +38,9 @@ pub enum SparseFormat {
 ///
 /// # Memory Layout
 /// For a matrix with `nnz` non-zeros and `nrows` rows:
-/// - `values`: [nnz] - Non-zero values in row-major order
-/// - `col_indices`: [nnz] - Column index for each value
-/// - `row_ptrs`: [nrows + 1] - Start index in `values/col_indices` for each row
+/// - `values`: \[nnz\] - Non-zero values in row-major order
+/// - `col_indices`: \[nnz\] - Column index for each value
+/// - `row_ptrs`: \[nrows + 1\] - Start index in `values/col_indices` for each row
 ///
 /// # Example
 /// ```text
@@ -292,9 +292,9 @@ impl CSRTensor {
 /// Coordinate (COO) sparse tensor representation.
 ///
 /// # Memory Layout
-/// - `values`: [nnz] - Non-zero values
-/// - `row_indices`: [nnz] - Row index for each value
-/// - `col_indices`: [nnz] - Column index for each value
+/// - `values`: \[nnz\] - Non-zero values
+/// - `row_indices`: \[nnz\] - Row index for each value
+/// - `col_indices`: \[nnz\] - Column index for each value
 ///
 /// Simple format, good for construction and conversion.
 #[derive(Debug, Clone)]

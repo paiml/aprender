@@ -93,8 +93,8 @@ impl WandaImportance {
     /// Compute Wanda importance scores.
     ///
     /// # Arguments
-    /// * `weights` - Weight tensor of shape [`out_features`, `in_features`]
-    /// * `activation_norms` - L2 norms of input activations [`in_features`]
+    /// * `weights` - Weight tensor of shape \[`out_features`, `in_features`\]
+    /// * `activation_norms` - L2 norms of input activations \[`in_features`\]
     ///
     /// # Returns
     /// Importance scores with same shape as weights.

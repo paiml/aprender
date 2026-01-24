@@ -5,7 +5,7 @@
 //!
 //! # Available Models
 //!
-//! - [`qwen2::Qwen2Model`] - Qwen2-0.5B-Instruct decoder-only transformer
+//! - `Qwen2Model` - Qwen2-0.5B-Instruct decoder-only transformer
 //!
 //! # Design Philosophy
 //!

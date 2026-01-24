@@ -13,8 +13,8 @@
 //!
 //! # References
 //!
-//! - WebAssembly SIMD Spec: https://github.com/WebAssembly/simd
-//! - wasm-bindgen: https://rustwasm.github.io/wasm-bindgen/
+//! - WebAssembly SIMD Spec: <https://github.com/WebAssembly/simd>
+//! - wasm-bindgen: <https://rustwasm.github.io/wasm-bindgen/>
 
 use crate::primitives::{Matrix, Vector};
 

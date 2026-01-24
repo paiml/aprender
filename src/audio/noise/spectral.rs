@@ -8,7 +8,7 @@ use std::path::Path;
 use super::{NoiseError, NoiseResult};
 
 /// Small MLP for predicting noise magnitude spectra
-/// Architecture: [config_dim] -> [hidden_dim] -> [hidden_dim] -> [n_freqs]
+/// Architecture: \[config_dim\] -> \[hidden_dim\] -> \[hidden_dim\] -> \[n_freqs\]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SpectralMLP {
     /// Layer 1 weights: [config_dim × hidden_dim]

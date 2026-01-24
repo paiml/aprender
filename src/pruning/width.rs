@@ -373,7 +373,7 @@ impl WidthPruner {
     /// * `channels_to_keep` - Indices of channels to keep
     ///
     /// # Returns
-    /// Binary mask tensor [`original_dim`]
+    /// Binary mask tensor \[`original_dim`\]
     #[must_use]
     pub fn generate_hidden_mask(&self, original_dim: usize, channels_to_keep: &[usize]) -> Tensor {
         let mut mask = vec![0.0f32; original_dim];

@@ -461,8 +461,8 @@ impl Qwen2Model {
     ///
     /// # Arguments
     ///
-    /// * `input_ids` - Token IDs [`seq_len`]
-    /// * `position_ids` - Position indices [`seq_len`]
+    /// * `input_ids` - Token IDs \[`seq_len`\]
+    /// * `position_ids` - Position indices \[`seq_len`\]
     ///
     /// # Returns
     ///

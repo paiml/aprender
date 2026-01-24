@@ -5,10 +5,10 @@
 //!
 //! # Modules
 //!
-//! - [`vad`]: Voice Activity Detection (Silero-style or energy-based)
-//! - [`asr`]: Automatic Speech Recognition primitives
-//! - [`diarization`]: Speaker diarization
-//! - [`tts`]: Text-to-Speech primitives
+//! - `vad`: Voice Activity Detection (Silero-style or energy-based)
+//! - `asr`: Automatic Speech Recognition primitives
+//! - `diarization`: Speaker diarization
+//! - `tts`: Text-to-Speech primitives
 //!
 //! # Example
 //!

@@ -17,10 +17,10 @@ use std::collections::HashMap;
 #[derive(Debug, Clone)]
 pub struct ActivationStats {
     /// L2 norm of input activations per channel.
-    /// Shape: [`input_features`]
+    /// Shape: \[`input_features`\]
     pub input_norms: Tensor,
     /// Running mean of squared activations per channel.
-    /// Shape: [`input_features`]
+    /// Shape: \[`input_features`\]
     pub squared_mean: Tensor,
     /// Number of samples processed.
     pub count: usize,
@@ -43,7 +43,7 @@ impl ActivationStats {
     /// Update statistics with a new batch using Welford's algorithm.
     ///
     /// # Arguments
-    /// * `activations` - Tensor of shape [`batch_size`, `input_features`]
+    /// * `activations` - Tensor of shape \[`batch_size`, `input_features`\]
     ///
     /// # Algorithm
     /// Uses Welford's online algorithm for numerical stability when
