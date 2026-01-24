@@ -38,3 +38,4 @@ crates/aprender-shell/qa_test_artifacts/
 models/
 .pmat-metrics/
 *.cov-backup
+.cargo/config.toml
