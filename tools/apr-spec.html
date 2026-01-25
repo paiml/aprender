@@ -1133,6 +1133,22 @@ tui = [&quot;ratatui&quot;, &quot;crossterm&quot;]
 <h4 id="tokenizer-config"><a class="header" href="#tokenizer-config">Tokenizer Config</a></h4>
 <pre><code class="language-json">{&quot;tokenizer_config&quot;: {&quot;type&quot;: &quot;bpe&quot;, &quot;unk_token&quot;: &quot;&lt;|unk|&gt;&quot;, &quot;eos_token&quot;: &quot;&lt;|endoftext|&gt;&quot;}}
 </code></pre>
+<h4 id="embedded-tokenizer-pmat-apr-tok-001---v120"><a class="header" href="#embedded-tokenizer-pmat-apr-tok-001---v120">Embedded Tokenizer (PMAT-APR-TOK-001 - v1.2.0)</a></h4>
+<p>APR files now automatically embed tokenizers during conversion, making them truly portable single-file models:</p>
+<pre><code class="language-json">{
+  &quot;tokenizer.vocabulary&quot;: [&quot;&lt;|endoftext|&gt;&quot;, &quot;&lt;|startoftranscript|&gt;&quot;, &quot;the&quot;, &quot;...&quot;],
+  &quot;tokenizer.vocab_size&quot;: 151643,
+  &quot;tokenizer.bos_token_id&quot;: 151643,
+  &quot;tokenizer.eos_token_id&quot;: 151645,
+  &quot;tokenizer.model_type&quot;: &quot;BPE&quot;
+}
+</code></pre>
+<p><strong>Conversion Support:</strong></p>
+<ul>
+<li>SafeTensors → APR: Reads sibling <code>tokenizer.json</code> and embeds vocabulary</li>
+<li>GGUF → APR: Extracts vocabulary from GGUF metadata tensors</li>
+<li>Inference: Decodes tokens using embedded vocabulary (no external files needed)</li>
+</ul>
 <h4 id="image-preprocessing-vision"><a class="header" href="#image-preprocessing-vision">Image Preprocessing (Vision)</a></h4>
 <pre><code class="language-json">{&quot;image_config&quot;: {&quot;image_size&quot;: 224, &quot;mean&quot;: [0.485, 0.456, 0.406]}}
 </code></pre>

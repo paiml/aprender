@@ -19209,6 +19209,29 @@ let model: MyModel = load_as_recipient(&quot;partner.apr&quot;, ModelType::Custo
 <tr><td>Custom</td><td>Application-specific files</td><td>Single <code>.apr</code> file</td></tr>
 </tbody></table>
 </div>
+<h3 id="tokenizer-preservation-pmat-apr-tok-001"><a class="header" href="#tokenizer-preservation-pmat-apr-tok-001">Tokenizer Preservation (PMAT-APR-TOK-001)</a></h3>
+<p><strong>Critical Feature (v1.2.0):</strong> APR files now automatically embed tokenizers during conversion, making them truly self-contained portable files.</p>
+<div class="table-wrapper"><table><thead><tr><th>Conversion Path</th><th>Tokenizer Source</th><th>Preservation</th></tr></thead><tbody>
+<tr><td>SafeTensors → APR</td><td>Sibling <code>tokenizer.json</code></td><td>✅ Embedded in APR metadata</td></tr>
+<tr><td>GGUF → APR</td><td>GGUF vocabulary tensors</td><td>✅ Embedded in APR metadata</td></tr>
+<tr><td>APR Inference</td><td>APR metadata</td><td>✅ Automatic token decoding</td></tr>
+</tbody></table>
+</div>
+<p><strong>Tokenizer Metadata Keys:</strong></p>
+<ul>
+<li><code>tokenizer.vocabulary</code> - Full vocabulary list (e.g., 151,643 tokens for Qwen2.5)</li>
+<li><code>tokenizer.vocab_size</code> - Vocabulary size</li>
+<li><code>tokenizer.bos_token_id</code> - Beginning-of-sequence token ID</li>
+<li><code>tokenizer.eos_token_id</code> - End-of-sequence token ID</li>
+<li><code>tokenizer.model_type</code> - Tokenizer type (BPE, etc.)</li>
+</ul>
+<p><strong>Verification:</strong></p>
+<pre><code class="language-bash"># Check if tokenizer is embedded
+strings model.apr | grep &quot;tokenizer.vocabulary&quot;
+
+# Verify vocabulary size
+apr inspect model.apr --json | jq '.metadata.tokenizer.vocab_size'
+</code></pre>
 <h3 id="using-json-metadata"><a class="header" href="#using-json-metadata">Using JSON Metadata</a></h3>
 <pre><code class="language-rust ignore">use aprender::serialization::apr::{AprWriter, AprReader};
 use serde_json::json;
@@ -39227,11 +39250,15 @@ fn print_cli_commands(model_path: &amp;Path, model_v2_path: &amp;Path) {
     println!(&quot;19. PUBLISH - Push model to HuggingFace Hub:&quot;);
     println!(&quot;    ./target/debug/apr publish {demo_dir}/ org/model-name&quot;);
     println!(&quot;    ./target/debug/apr publish {demo_dir}/ org/model-name --dry-run&quot;);
-    println!(&quot;    ./target/debug/apr publish {demo_dir}/ org/model-name --license mit --tags rust,ml\n&quot;);
+    println!(
+        &quot;    ./target/debug/apr publish {demo_dir}/ org/model-name --license mit --tags rust,ml\n&quot;
+    );
 
     println!(&quot;20. PULL - Download model from HuggingFace Hub:&quot;);
     println!(&quot;    ./target/debug/apr pull hf://org/repo-name -o ./models/&quot;);
-    println!(&quot;    ./target/debug/apr pull hf://Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF -o ./models/\n&quot;);
+    println!(
+        &quot;    ./target/debug/apr pull hf://Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF -o ./models/\n&quot;
+    );
 
     println!(&quot;--- Benchmarking &amp; QA ---\n&quot;);
 
@@ -46282,6 +46309,22 @@ tui = [&quot;ratatui&quot;, &quot;crossterm&quot;]
 <h4 id="tokenizer-config"><a class="header" href="#tokenizer-config">Tokenizer Config</a></h4>
 <pre><code class="language-json">{&quot;tokenizer_config&quot;: {&quot;type&quot;: &quot;bpe&quot;, &quot;unk_token&quot;: &quot;&lt;|unk|&gt;&quot;, &quot;eos_token&quot;: &quot;&lt;|endoftext|&gt;&quot;}}
 </code></pre>
+<h4 id="embedded-tokenizer-pmat-apr-tok-001---v120"><a class="header" href="#embedded-tokenizer-pmat-apr-tok-001---v120">Embedded Tokenizer (PMAT-APR-TOK-001 - v1.2.0)</a></h4>
+<p>APR files now automatically embed tokenizers during conversion, making them truly portable single-file models:</p>
+<pre><code class="language-json">{
+  &quot;tokenizer.vocabulary&quot;: [&quot;&lt;|endoftext|&gt;&quot;, &quot;&lt;|startoftranscript|&gt;&quot;, &quot;the&quot;, &quot;...&quot;],
+  &quot;tokenizer.vocab_size&quot;: 151643,
+  &quot;tokenizer.bos_token_id&quot;: 151643,
+  &quot;tokenizer.eos_token_id&quot;: 151645,
+  &quot;tokenizer.model_type&quot;: &quot;BPE&quot;
+}
+</code></pre>
+<p><strong>Conversion Support:</strong></p>
+<ul>
+<li>SafeTensors → APR: Reads sibling <code>tokenizer.json</code> and embeds vocabulary</li>
+<li>GGUF → APR: Extracts vocabulary from GGUF metadata tensors</li>
+<li>Inference: Decodes tokens using embedded vocabulary (no external files needed)</li>
+</ul>
 <h4 id="image-preprocessing-vision"><a class="header" href="#image-preprocessing-vision">Image Preprocessing (Vision)</a></h4>
 <pre><code class="language-json">{&quot;image_config&quot;: {&quot;image_size&quot;: 224, &quot;mean&quot;: [0.485, 0.456, 0.406]}}
 </code></pre>

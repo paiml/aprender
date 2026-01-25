@@ -511,11 +511,15 @@ fn print_cli_commands(model_path: &amp;Path, model_v2_path: &amp;Path) {
     println!(&quot;19. PUBLISH - Push model to HuggingFace Hub:&quot;);
     println!(&quot;    ./target/debug/apr publish {demo_dir}/ org/model-name&quot;);
     println!(&quot;    ./target/debug/apr publish {demo_dir}/ org/model-name --dry-run&quot;);
-    println!(&quot;    ./target/debug/apr publish {demo_dir}/ org/model-name --license mit --tags rust,ml\n&quot;);
+    println!(
+        &quot;    ./target/debug/apr publish {demo_dir}/ org/model-name --license mit --tags rust,ml\n&quot;
+    );
 
     println!(&quot;20. PULL - Download model from HuggingFace Hub:&quot;);
     println!(&quot;    ./target/debug/apr pull hf://org/repo-name -o ./models/&quot;);
-    println!(&quot;    ./target/debug/apr pull hf://Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF -o ./models/\n&quot;);
+    println!(
+        &quot;    ./target/debug/apr pull hf://Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF -o ./models/\n&quot;
+    );
 
     println!(&quot;--- Benchmarking &amp; QA ---\n&quot;);
 
