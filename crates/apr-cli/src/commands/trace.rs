@@ -227,8 +227,12 @@ fn run_traced_inference(path: &Path) -> Result<(), CliError> {
         let source = ModelSource::parse(&path_str)?;
         match source {
             ModelSource::HuggingFace { org, repo, file } => {
-                println!("Model: hf://{}/{}{}", org, repo,
-                    file.as_ref().map(|f| format!("/{}", f)).unwrap_or_default());
+                println!(
+                    "Model: hf://{}/{}{}",
+                    org,
+                    repo,
+                    file.as_ref().map(|f| format!("/{}", f)).unwrap_or_default()
+                );
                 println!();
                 eprintln!("{}", format!("Downloading from HuggingFace...").yellow());
                 download_hf_model(&org, &repo, file.as_deref())?
@@ -242,7 +246,10 @@ fn run_traced_inference(path: &Path) -> Result<(), CliError> {
     };
 
     // Detect format from extension
-    let ext = local_path.extension().and_then(|e| e.to_str()).unwrap_or("");
+    let ext = local_path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("");
 
     match ext.to_lowercase().as_str() {
         "gguf" => run_traced_inference_gguf(&local_path),
@@ -277,12 +284,18 @@ fn run_traced_inference_gguf(path: &Path) -> Result<(), CliError> {
     println!("  Layers: {}", config.num_layers);
     println!("  Hidden dim: {}", config.hidden_dim);
     println!("  Vocab size: {}", config.vocab_size);
-    println!("  Heads: {} (KV: {})", config.num_heads, config.num_kv_heads);
+    println!(
+        "  Heads: {} (KV: {})",
+        config.num_heads, config.num_kv_heads
+    );
     println!();
 
     // Encode test prompt using GGUF's embedded tokenizer
     let test_prompt = "What is 2+2?";
-    let test_tokens = mapped.model.encode(test_prompt).unwrap_or_else(|| vec![1u32]);
+    let test_tokens = mapped
+        .model
+        .encode(test_prompt)
+        .unwrap_or_else(|| vec![1u32]);
 
     println!("{}", format!("Test prompt: {:?}", test_prompt).cyan());
     println!("{}", format!("Encoded tokens: {:?}", test_tokens).cyan());
@@ -297,7 +310,8 @@ fn run_traced_inference_gguf(path: &Path) -> Result<(), CliError> {
         ..Default::default()
     };
 
-    let output_tokens = model.generate_with_cache(&test_tokens, &gen_config)
+    let output_tokens = model
+        .generate_with_cache(&test_tokens, &gen_config)
         .map_err(|e| CliError::InferenceFailed(format!("Generation failed: {e}")))?;
 
     let generated = &output_tokens[test_tokens.len()..];
@@ -310,7 +324,13 @@ fn run_traced_inference_gguf(path: &Path) -> Result<(), CliError> {
         let decoded = mapped.model.decode(&[token_id]);
         let is_garbage = is_likely_garbage(&decoded);
         if is_garbage {
-            println!("  {}. token_id={} → {:?} {}", i + 1, token_id, decoded, "⚠ GARBAGE".red().bold());
+            println!(
+                "  {}. token_id={} → {:?} {}",
+                i + 1,
+                token_id,
+                decoded,
+                "⚠ GARBAGE".red().bold()
+            );
         } else {
             println!("  {}. token_id={} → {:?}", i + 1, token_id, decoded);
         }
@@ -386,7 +406,8 @@ fn run_traced_inference_apr(path: &Path) -> Result<(), CliError> {
 
     // Run forward pass
     println!("{}", "FORWARD PASS:".green().bold());
-    let logits = model.forward(&test_tokens)
+    let logits = model
+        .forward(&test_tokens)
         .map_err(|e| CliError::InferenceFailed(format!("Forward pass failed: {e}")))?;
 
     // Compute statistics on output logits
@@ -508,7 +529,10 @@ fn print_stats(prefix: &str, stats: &VectorStats) {
     println!("{}Range: [{:.6}, {:.6}]", prefix, stats.min, stats.max);
     println!("{}Mean: {:.6}", prefix, stats.mean);
     if stats.nan_count > 0 || stats.inf_count > 0 {
-        println!("{}NaN: {}, Inf: {}", prefix, stats.nan_count, stats.inf_count);
+        println!(
+            "{}NaN: {}, Inf: {}",
+            prefix, stats.nan_count, stats.inf_count
+        );
     }
 }
 
@@ -571,9 +595,11 @@ fn is_likely_garbage(text: &str) -> bool {
 
     // Check for nonsensical word combinations (no real sentence structure)
     // If output doesn't contain common words and has weird fragments, it's garbage
-    let has_normal_words = ["the", "is", "are", "and", "to", "of", "in", "that", "it", "for"]
-        .iter()
-        .any(|w| text_lower.contains(w));
+    let has_normal_words = [
+        "the", "is", "are", "and", "to", "of", "in", "that", "it", "for",
+    ]
+    .iter()
+    .any(|w| text_lower.contains(w));
 
     let has_numbers = text.chars().any(|c| c.is_ascii_digit());
 

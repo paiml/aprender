@@ -2280,9 +2280,7 @@ mod tests {
         assert_eq!(eos_id, 2, "EOS token ID should be 2");
 
         // Verify vocabulary content (spot check)
-        let first_token = vocab_array[3]
-            .as_str()
-            .expect("Token should be string");
+        let first_token = vocab_array[3].as_str().expect("Token should be string");
         assert_eq!(first_token, "Ġhello", "Token at index 3 should be 'Ġhello'");
 
         let _ = std::fs::remove_file(path);
@@ -2298,8 +2296,7 @@ mod tests {
 
         // Read APR and verify no tokenizer metadata
         let data = std::fs::read(&path).expect("Read APR");
-        let reader =
-            crate::format::v2::AprV2Reader::from_bytes(&data).expect("Parse APR");
+        let reader = crate::format::v2::AprV2Reader::from_bytes(&data).expect("Parse APR");
         let meta = reader.metadata();
 
         // Should NOT have tokenizer.vocabulary

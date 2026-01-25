@@ -168,6 +168,32 @@ Models often need more than just weights. Tokenizers, vocabulary, config, and cu
 | Tokenizer | Separate `tokenizer.json` | Embedded in model |
 | Custom | Application-specific files | Single `.apr` file |
 
+### Tokenizer Preservation (PMAT-APR-TOK-001)
+
+**Critical Feature (v1.2.0):** APR files now automatically embed tokenizers during conversion, making them truly self-contained portable files.
+
+| Conversion Path | Tokenizer Source | Preservation |
+|-----------------|------------------|--------------|
+| SafeTensors → APR | Sibling `tokenizer.json` | ✅ Embedded in APR metadata |
+| GGUF → APR | GGUF vocabulary tensors | ✅ Embedded in APR metadata |
+| APR Inference | APR metadata | ✅ Automatic token decoding |
+
+**Tokenizer Metadata Keys:**
+- `tokenizer.vocabulary` - Full vocabulary list (e.g., 151,643 tokens for Qwen2.5)
+- `tokenizer.vocab_size` - Vocabulary size
+- `tokenizer.bos_token_id` - Beginning-of-sequence token ID
+- `tokenizer.eos_token_id` - End-of-sequence token ID
+- `tokenizer.model_type` - Tokenizer type (BPE, etc.)
+
+**Verification:**
+```bash
+# Check if tokenizer is embedded
+strings model.apr | grep "tokenizer.vocabulary"
+
+# Verify vocabulary size
+apr inspect model.apr --json | jq '.metadata.tokenizer.vocab_size'
+```
+
 ### Using JSON Metadata
 
 ```rust,ignore

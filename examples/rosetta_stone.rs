@@ -5,6 +5,16 @@
 //! - Direct conversion paths (A -> B)
 //! - Multi-step conversion chains (A -> B -> C)
 //! - Round-trip verification for lossless conversion
+//! - **Tokenizer Preservation (PMAT-APR-TOK-001)**: Embedded tokenizers travel with the model
+//!
+//! ## Tokenizer Preservation
+//!
+//! APR format embeds tokenizers during conversion, making models truly portable:
+//! - SafeTensors → APR: Reads sibling `tokenizer.json` (vocab, BOS/EOS tokens)
+//! - GGUF → APR: Extracts vocabulary from GGUF metadata
+//! - APR inference: Uses embedded tokenizer for automatic token decoding
+//!
+//! Verification: `strings model.apr | grep tokenizer.vocabulary`
 //!
 //! Toyota Way Alignment:
 //! - **Genchi Genbutsu**: Inspect actual tensor data before/after conversion

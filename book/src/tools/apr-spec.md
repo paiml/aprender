@@ -1130,6 +1130,25 @@ tui = ["ratatui", "crossterm"]
 {"tokenizer_config": {"type": "bpe", "unk_token": "<|unk|>", "eos_token": "<|endoftext|>"}}
 ```
 
+#### Embedded Tokenizer (PMAT-APR-TOK-001 - v1.2.0)
+
+APR files now automatically embed tokenizers during conversion, making them truly portable single-file models:
+
+```json
+{
+  "tokenizer.vocabulary": ["<|endoftext|>", "<|startoftranscript|>", "the", "..."],
+  "tokenizer.vocab_size": 151643,
+  "tokenizer.bos_token_id": 151643,
+  "tokenizer.eos_token_id": 151645,
+  "tokenizer.model_type": "BPE"
+}
+```
+
+**Conversion Support:**
+- SafeTensors → APR: Reads sibling `tokenizer.json` and embeds vocabulary
+- GGUF → APR: Extracts vocabulary from GGUF metadata tensors
+- Inference: Decodes tokens using embedded vocabulary (no external files needed)
+
 #### Image Preprocessing (Vision)
 ```json
 {"image_config": {"image_size": 224, "mean": [0.485, 0.456, 0.406]}}

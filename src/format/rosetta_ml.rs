@@ -184,10 +184,10 @@ impl TarantulaTracker {
             return 0.0;
         }
 
-        let stats = self.stats.get(&decision).map_or(
-            DecisionStats::default(),
-            std::clone::Clone::clone,
-        );
+        let stats = self
+            .stats
+            .get(&decision)
+            .map_or(DecisionStats::default(), std::clone::Clone::clone);
 
         let failed_ratio = stats.failed as f32 / self.total_failed as f32;
         let passed_ratio = stats.passed as f32 / self.total_passed as f32;
@@ -454,7 +454,10 @@ pub enum JidokaViolation {
     /// Zero variance with non-zero mean (degenerate tensor)
     ZeroVariance { mean: f32 },
     /// Shape mismatch between source and target
-    ShapeMismatch { expected: Vec<usize>, actual: Vec<usize> },
+    ShapeMismatch {
+        expected: Vec<usize>,
+        actual: Vec<usize>,
+    },
     /// Checksum verification failed
     ChecksumFailed { expected: u32, actual: u32 },
 }
@@ -469,7 +472,10 @@ impl fmt::Display for JidokaViolation {
                 write!(f, "Shape mismatch: expected {expected:?}, got {actual:?}")
             }
             Self::ChecksumFailed { expected, actual } => {
-                write!(f, "Checksum failed: expected {expected:#x}, got {actual:#x}")
+                write!(
+                    f,
+                    "Checksum failed: expected {expected:#x}, got {actual:#x}"
+                )
             }
         }
     }
@@ -900,7 +906,9 @@ impl ErrorPattern {
     #[must_use]
     pub fn matches(&self, error_message: &str) -> bool {
         let lower = error_message.to_lowercase();
-        self.keywords.iter().any(|k| lower.contains(&k.to_lowercase()))
+        self.keywords
+            .iter()
+            .any(|k| lower.contains(&k.to_lowercase()))
     }
 
     /// Calculate match confidence (0.0 - 1.0)
@@ -1020,7 +1028,9 @@ impl ErrorPatternLibrary {
             .max_by(|a, b| {
                 let conf_a = a.match_confidence(error_message) * a.success_rate();
                 let conf_b = b.match_confidence(error_message) * b.success_rate();
-                conf_a.partial_cmp(&conf_b).unwrap_or(std::cmp::Ordering::Equal)
+                conf_a
+                    .partial_cmp(&conf_b)
+                    .unwrap_or(std::cmp::Ordering::Equal)
             });
 
         if best.is_some() {
@@ -1209,7 +1219,7 @@ impl HanseiReport {
                     attempts: *attempts,
                     successes: *cat_successes,
                     success_rate: *cat_successes as f32 / *attempts as f32,
-                    suspiciousness: 0.0, // Computed separately with Tarantula
+                    suspiciousness: 0.0,  // Computed separately with Tarantula
                     trend: Trend::Stable, // Would need historical data
                     failure_share,
                 },
@@ -1321,9 +1331,17 @@ pub enum Regression {
         actual: Vec<usize>,
     },
     /// Mean drifted beyond tolerance
-    MeanDrift { expected: f32, actual: f32, error: f32 },
+    MeanDrift {
+        expected: f32,
+        actual: f32,
+        error: f32,
+    },
     /// Standard deviation drifted
-    StdDrift { expected: f32, actual: f32, error: f32 },
+    StdDrift {
+        expected: f32,
+        actual: f32,
+        error: f32,
+    },
     /// Range (min/max) drifted
     RangeDrift {
         expected_min: f32,
@@ -1338,7 +1356,12 @@ pub enum Regression {
 impl TensorCanary {
     /// Create canary from tensor data
     #[must_use]
-    pub fn from_data(name: impl Into<String>, shape: Vec<usize>, dtype: impl Into<String>, data: &[f32]) -> Self {
+    pub fn from_data(
+        name: impl Into<String>,
+        shape: Vec<usize>,
+        dtype: impl Into<String>,
+        data: &[f32],
+    ) -> Self {
         let features = TensorFeatures::from_data(data);
 
         // CRC32 of first 1024 bytes
@@ -1593,11 +1616,8 @@ mod tests {
 
     #[test]
     fn test_pattern_retirement() {
-        let mut pattern = ErrorPattern::new(
-            "TEST_PATTERN",
-            vec!["test".into()],
-            FixAction::SkipTensor,
-        );
+        let mut pattern =
+            ErrorPattern::new("TEST_PATTERN", vec!["test".into()], FixAction::SkipTensor);
 
         // 5 applications, only 1 success = 20% success rate
         for i in 0..5 {
@@ -1622,7 +1642,9 @@ mod tests {
         let report = HanseiReport::from_results(&results);
 
         // GgufToApr has 4 failures out of 5 total failures (80%)
-        assert!(report.pareto_categories.contains(&ConversionCategory::GgufToApr));
+        assert!(report
+            .pareto_categories
+            .contains(&ConversionCategory::GgufToApr));
     }
 
     #[test]
@@ -1657,10 +1679,7 @@ mod tests {
     #[test]
     fn test_matrix_inversion() {
         // Simple 2x2 matrix
-        let matrix = vec![
-            vec![4.0, 7.0],
-            vec![2.0, 6.0],
-        ];
+        let matrix = vec![vec![4.0, 7.0], vec![2.0, 6.0]];
 
         let inv = invert_matrix(&matrix).expect("invertible");
 
@@ -1672,7 +1691,10 @@ mod tests {
                     sum += matrix[i][k] * inv[k][j];
                 }
                 let expected = if i == j { 1.0 } else { 0.0 };
-                assert!((sum - expected).abs() < 0.01, "({i},{j}): {sum} != {expected}");
+                assert!(
+                    (sum - expected).abs() < 0.01,
+                    "({i},{j}): {sum} != {expected}"
+                );
             }
         }
     }
@@ -1708,7 +1730,10 @@ mod tests {
         assert_eq!(features.mean, 5.0);
         // Zero variance with non-zero mean triggers Jidoka
         let violation = features.has_jidoka_violation();
-        assert!(matches!(violation, Some(JidokaViolation::ZeroVariance { .. })));
+        assert!(matches!(
+            violation,
+            Some(JidokaViolation::ZeroVariance { .. })
+        ));
     }
 
     #[test]
@@ -1758,7 +1783,10 @@ mod tests {
         for _ in 0..25 {
             tracker.record_fail(&[ConversionDecision::QuantQ4_K_Block256]);
         }
-        assert_eq!(tracker.priority(ConversionDecision::QuantQ4_K_Block256), Priority::Critical);
+        assert_eq!(
+            tracker.priority(ConversionDecision::QuantQ4_K_Block256),
+            Priority::Critical
+        );
 
         // 3% failure rate = Low
         for _ in 0..97 {
@@ -1767,10 +1795,16 @@ mod tests {
         for _ in 0..3 {
             tracker.record_fail(&[ConversionDecision::DtypeF16]);
         }
-        assert_eq!(tracker.priority(ConversionDecision::DtypeF16), Priority::Low);
+        assert_eq!(
+            tracker.priority(ConversionDecision::DtypeF16),
+            Priority::Low
+        );
 
         // Unknown decision = Low
-        assert_eq!(tracker.priority(ConversionDecision::VocabMerge), Priority::Low);
+        assert_eq!(
+            tracker.priority(ConversionDecision::VocabMerge),
+            Priority::Low
+        );
     }
 
     #[test]
@@ -1815,11 +1849,8 @@ mod tests {
     fn test_error_pattern_library_retire() {
         let mut lib = ErrorPatternLibrary::new();
 
-        let mut bad_pattern = ErrorPattern::new(
-            "BAD_PATTERN",
-            vec!["bad".into()],
-            FixAction::SkipTensor,
-        );
+        let mut bad_pattern =
+            ErrorPattern::new("BAD_PATTERN", vec!["bad".into()], FixAction::SkipTensor);
         // 5 applications, 0 successes = should retire
         for _ in 0..5 {
             bad_pattern.record_application(false);
@@ -1898,20 +1929,10 @@ mod tests {
 
     #[test]
     fn test_canary_mean_drift() {
-        let original = TensorCanary::from_data(
-            "test",
-            vec![100],
-            "f32",
-            &vec![1.0; 100],
-        );
+        let original = TensorCanary::from_data("test", vec![100], "f32", &vec![1.0; 100]);
 
         // Mean drifted by > 1%
-        let drifted = TensorCanary::from_data(
-            "test",
-            vec![100],
-            "f32",
-            &vec![1.1; 100],
-        );
+        let drifted = TensorCanary::from_data("test", vec![100], "f32", &vec![1.1; 100]);
 
         let regression = original.detect_regression(&drifted);
         assert!(matches!(regression, Some(Regression::MeanDrift { .. })));
@@ -1941,19 +1962,17 @@ mod tests {
 
     #[test]
     fn test_canary_checksum_mismatch() {
-        let original = TensorCanary::from_data(
-            "test",
-            vec![100],
-            "f32",
-            &vec![1.0; 100],
-        );
+        let original = TensorCanary::from_data("test", vec![100], "f32", &vec![1.0; 100]);
 
         // Same stats but different actual data
         let mut different = original.clone();
         different.checksum = 0xDEADBEEF;
 
         let regression = original.detect_regression(&different);
-        assert!(matches!(regression, Some(Regression::ChecksumMismatch { .. })));
+        assert!(matches!(
+            regression,
+            Some(Regression::ChecksumMismatch { .. })
+        ));
     }
 
     #[test]

@@ -168,8 +168,8 @@ pub use rosetta::{
 pub use rosetta_ml::{
     AndonLevel, AnomalyDetector, CanaryFile, CategorySummary, ConversionCategory,
     ConversionDecision, ConversionIssue, ErrorPattern, ErrorPatternLibrary, FixAction,
-    HanseiReport, JidokaViolation, PatternSource, Priority, Regression, Severity,
-    TarantulaTracker, TensorCanary, TensorFeatures, Trend, WilsonScore,
+    HanseiReport, JidokaViolation, PatternSource, Priority, Regression, Severity, TarantulaTracker,
+    TensorCanary, TensorFeatures, Trend, WilsonScore,
 };
 
 // Re-export quantization types when feature is enabled
