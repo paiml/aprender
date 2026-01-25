@@ -279,13 +279,9 @@ fn default_model_for_format(format: Format) -> String {
         }
         // SafeTensors: 1.5B full precision from HuggingFace
         Format::SafeTensors => "hf://Qwen/Qwen2.5-Coder-1.5B-Instruct".to_string(),
-        // APR: Use GGUF for now - local APR files have tokenizer issues (PMAT-APR-TOK-001)
-        Format::Apr => {
-            // TODO: Fix APR tokenizer embedding, then use local APR files
-            // For now, fall back to GGUF which has embedded tokenizer
-            "hf://Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"
-                .to_string()
-        }
+        // APR: Use HF SafeTensors, which gets converted to APR with embedded tokenizer
+        // (PMAT-APR-TOK-001 FIXED: SafeTensors→APR now embeds tokenizer.json vocabulary)
+        Format::Apr => "hf://Qwen/Qwen2.5-Coder-1.5B-Instruct".to_string()
     }
 }
 

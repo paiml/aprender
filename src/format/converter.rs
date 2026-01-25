@@ -1113,6 +1113,83 @@ fn load_model_config_from_json(model_path: &Path) -> Option<GgufModelConfig> {
     })
 }
 
+/// Load tokenizer from sibling tokenizer.json file (PMAT-APR-TOK-001)
+///
+/// For SafeTensors models, the tokenizer is stored in a separate tokenizer.json file.
+/// This function reads it and converts to GgufTokenizer format for APR embedding.
+fn load_tokenizer_from_json(model_path: &Path) -> Option<GgufTokenizer> {
+    let tokenizer_path = model_path.with_file_name("tokenizer.json");
+    if !tokenizer_path.exists() {
+        return None;
+    }
+
+    let content = fs::read_to_string(&tokenizer_path).ok()?;
+    let json: serde_json::Value = serde_json::from_str(&content).ok()?;
+
+    // Extract vocabulary from model.vocab (HuggingFace tokenizer.json format)
+    let vocab_obj = json.get("model")?.get("vocab")?;
+    let vocab_map = vocab_obj.as_object()?;
+
+    // Build vocab vector sorted by ID
+    let mut vocab_vec: Vec<(String, u32)> = vocab_map
+        .iter()
+        .filter_map(|(token, id)| Some((token.clone(), id.as_u64()? as u32)))
+        .collect();
+    vocab_vec.sort_by_key(|(_, id)| *id);
+
+    let vocabulary: Vec<String> = vocab_vec.into_iter().map(|(token, _)| token).collect();
+
+    if vocabulary.is_empty() {
+        return None;
+    }
+
+    // Extract special tokens (BOS/EOS)
+    let mut bos_token_id = None;
+    let mut eos_token_id = None;
+
+    if let Some(added_tokens) = json.get("added_tokens").and_then(|v| v.as_array()) {
+        for token in added_tokens {
+            let content = token.get("content").and_then(|v| v.as_str());
+            let id = token.get("id").and_then(|v| v.as_u64()).map(|v| v as u32);
+
+            if let (Some(content), Some(id)) = (content, id) {
+                // Common BOS/EOS token patterns
+                if content.contains("bos")
+                    || content == "<s>"
+                    || content == "<|startoftext|>"
+                    || content == "<|im_start|>"
+                {
+                    bos_token_id = Some(id);
+                }
+                if content.contains("eos")
+                    || content == "</s>"
+                    || content == "<|endoftext|>"
+                    || content == "<|im_end|>"
+                    || content == "<|eot_id|>"
+                {
+                    eos_token_id = Some(id);
+                }
+            }
+        }
+    }
+
+    // Try to get model type from tokenizer.json
+    let model_type = json
+        .get("model")
+        .and_then(|m| m.get("type"))
+        .and_then(|t| t.as_str())
+        .map(String::from);
+
+    Some(GgufTokenizer {
+        vocabulary,
+        model_type,
+        bos_token_id,
+        eos_token_id,
+        architecture: None,
+        model_name: None,
+    })
+}
+
 /// Infer model config from tensor shapes (for SafeTensors which has no metadata)
 fn infer_model_config_from_tensors(
     tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
@@ -1233,9 +1310,11 @@ fn load_source_tensors(path: &Path, _options: &ImportOptions) -> Result<SourceLo
             // Fall back to shape inference only if config.json is missing
             let model_config = load_model_config_from_json(path)
                 .or_else(|| infer_model_config_from_tensors(&tensors));
+            // PMAT-APR-TOK-001: Load tokenizer from sibling tokenizer.json for APR embedding
+            let tokenizer = load_tokenizer_from_json(path);
             Ok(SourceLoadResult {
                 tensors,
-                tokenizer: None,
+                tokenizer,
                 model_config,
             })
         }
@@ -6008,7 +6087,10 @@ mod tests_import_errors {
     #[test]
     fn test_needs_transpose_2d_weight() {
         assert!(needs_transpose("layer.0.attn_q.weight", &[512, 512]));
-        assert!(needs_transpose("model.layers.0.self_attn.q_proj.weight", &[512, 512]));
+        assert!(needs_transpose(
+            "model.layers.0.self_attn.q_proj.weight",
+            &[512, 512]
+        ));
         assert!(needs_transpose("model.lm_head.weight", &[50257, 768]));
     }
 
@@ -6016,7 +6098,10 @@ mod tests_import_errors {
     fn test_needs_transpose_1d() {
         // 1D tensors should NOT be transposed
         assert!(!needs_transpose("layer.0.attn_q.bias", &[512]));
-        assert!(!needs_transpose("model.layers.0.self_attn.q_proj.weight", &[512]));
+        assert!(!needs_transpose(
+            "model.layers.0.self_attn.q_proj.weight",
+            &[512]
+        ));
     }
 
     #[test]
@@ -6036,10 +6121,22 @@ mod tests_import_errors {
     fn test_needs_transpose_all_patterns() {
         // Test all weight patterns from the function
         let patterns = [
-            "attn_output.weight", "attn_k.weight", "attn_q.weight", "attn_v.weight",
-            "ffn_gate.weight", "ffn_up.weight", "ffn_down.weight", "output.weight",
-            "lm_head.weight", "q_proj.weight", "k_proj.weight", "v_proj.weight",
-            "o_proj.weight", "gate_proj.weight", "up_proj.weight", "down_proj.weight",
+            "attn_output.weight",
+            "attn_k.weight",
+            "attn_q.weight",
+            "attn_v.weight",
+            "ffn_gate.weight",
+            "ffn_up.weight",
+            "ffn_down.weight",
+            "output.weight",
+            "lm_head.weight",
+            "q_proj.weight",
+            "k_proj.weight",
+            "v_proj.weight",
+            "o_proj.weight",
+            "gate_proj.weight",
+            "up_proj.weight",
+            "down_proj.weight",
         ];
         for pattern in patterns {
             let name = format!("model.layers.0.{pattern}");
@@ -6311,7 +6408,7 @@ mod tests_import_errors {
         let stats = TensorStats {
             name: "layer_norm.weight".to_string(),
             count: 1000,
-            mean: 1.0, // Within mean range for LayerNorm
+            mean: 1.0,  // Within mean range for LayerNorm
             std: 100.0, // Way outside expected std range (0.0, 2.0)
             min: -0.1,
             max: 0.1,

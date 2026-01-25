@@ -273,13 +273,15 @@
     *   *Final Performance:* 28 layers @ ~68-74ms, lm_head @ ~2-3ms → ~72ms/token → ~14 tok/s.
     *   *Status:* TARGET EXCEEDED (5 tok/s target, achieved 14 tok/s = 2.8x target).
 
-18. ⚠️ **PMAT-APR-TOK-001 (APR Tokenizer Missing) WORKAROUND:**
+18. ✅ **PMAT-APR-TOK-001 (APR Tokenizer Missing) FIXED:**
     *   *Symptom:* APR format produces "[N tokens generated, tokenizer not found]" instead of text.
-    *   *Root Cause:* Local APR files don't embed tokenizer; `apr run` can't decode token IDs.
-    *   *Workaround (2026-01-25):* QA tests fall back to GGUF for APR format testing.
-    *   *File Changed:* `examples/qa_run.rs:default_model_for_format(Format::Apr)` returns GGUF URI.
-    *   *Long-term Fix:* Embed tokenizer in APR files or load from companion JSON.
-    *   *Status:* WORKAROUND APPLIED — APR tests pass via GGUF fallback.
+    *   *Root Cause:* SafeTensors→APR conversion didn't read/embed sibling tokenizer.json.
+    *   *Fix (2026-01-25):* Added `load_tokenizer_from_json()` to `src/format/converter.rs`.
+    *   *Files Changed:*
+        - `src/format/converter.rs`: New function loads tokenizer.json and embeds vocab in APR metadata
+        - `examples/qa_run.rs`: APR format now uses HF SafeTensors (converted with tokenizer)
+    *   *Verification:* APR files now contain `tokenizer.vocabulary` with 151,643 tokens (Qwen2.5).
+    *   *Status:* FIXED — APR format works natively with embedded tokenizer.
 
 ### ✅ FORMAT PARITY REQUIREMENTS (PMAT-103) & CANONICAL PIVOT
 
@@ -1414,10 +1416,10 @@ The `cargo run --example qa_run` command MUST support the following flags:
 
 **Overall: 69/90 points (77%), Grade C, 1/6 cells passed**
 
-### Known Bugs (2026-01-24)
+### Known Bugs (2026-01-25)
 
 1. **BUG-GGUF-001**: GGUF outputs garbage "random random random" (LAYOUT-001 regression)
-2. **BUG-APR-002**: APR format shows "[N tokens generated, tokenizer not found]" - tokenizer not bundled
+2. **BUG-APR-002**: ~~APR format shows "[N tokens generated, tokenizer not found]"~~ **FIXED** (PMAT-APR-TOK-001)
 3. **BUG-THRESH-001**: GPU threshold (100 tok/s) may be too aggressive for 0.5B model on SafeTensors
 4. **BUG-QA-001**: FIXED - QA test was checking full stdout+stderr for '4' (false positives from paths/line numbers)
 5. **BLOCKED**: Local trueno/realizar API mismatch - see https://github.com/paiml/trueno/issues/90
