@@ -3775,6 +3775,254 @@ mod tests {
         let t = GgmlType::F64;
         assert_eq!(t as u32, 28);
     }
+
+    // ========================================================================
+    // Dequantize Function Tests (ROSETTA-ML-001)
+    // ========================================================================
+
+    #[test]
+    fn test_dequantize_q4_0_basic() {
+        // Q4_0 block: 2 bytes d (f16) + 16 bytes qs = 18 bytes for 32 elements
+        // Create a minimal valid block
+        let mut data = Vec::new();
+        // d = 1.0 in f16 (0x3C00)
+        data.extend_from_slice(&0x3C00u16.to_le_bytes());
+        // 16 quantized bytes (4-bit pairs) = 32 values
+        data.extend_from_slice(&[0x00u8; 16]); // All zeros -> output should be around -8*d
+
+        let result = dequantize_q4_0(&data, 0, 32).unwrap();
+        assert_eq!(result.len(), 32);
+        // Q4_0 subtracts 8 from each 4-bit value, so 0 becomes -8
+        // All values should be -8 * d = -8.0
+        for &v in &result {
+            assert!((v + 8.0).abs() < 0.1);
+        }
+    }
+
+    #[test]
+    fn test_dequantize_q4_0_out_of_bounds() {
+        let data = vec![0u8; 10]; // Too small for one block
+        let result = dequantize_q4_0(&data, 0, 32);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_dequantize_q8_0_basic() {
+        // Q8_0 block: 2 bytes d (f16) + 32 bytes qs = 34 bytes for 32 elements
+        let mut data = Vec::new();
+        // d = 1.0 in f16 (0x3C00)
+        data.extend_from_slice(&0x3C00u16.to_le_bytes());
+        // 32 quantized bytes (signed i8) - all zeros
+        data.extend_from_slice(&[0i8 as u8; 32]);
+
+        let result = dequantize_q8_0(&data, 0, 32).unwrap();
+        assert_eq!(result.len(), 32);
+        // All values should be 0 * d = 0.0
+        for &v in &result {
+            assert!((v - 0.0).abs() < 0.001);
+        }
+    }
+
+    #[test]
+    fn test_dequantize_q8_0_with_values() {
+        // Q8_0 block: 2 bytes d (f16) + 32 bytes qs = 34 bytes for 32 elements
+        let mut data = Vec::new();
+        // d = 0.5 in f16 (0x3800)
+        data.extend_from_slice(&0x3800u16.to_le_bytes());
+        // First value = 10, rest = 0
+        let mut qs = [0u8; 32];
+        qs[0] = 10;
+        data.extend_from_slice(&qs);
+
+        let result = dequantize_q8_0(&data, 0, 32).unwrap();
+        assert_eq!(result.len(), 32);
+        // First value should be 10 * 0.5 = 5.0
+        assert!((result[0] - 5.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_dequantize_q8_0_out_of_bounds() {
+        let data = vec![0u8; 20]; // Too small for one block (needs 34)
+        let result = dequantize_q8_0(&data, 0, 32);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_dequantize_q5_0_basic() {
+        // Q5_0 block size: 2 (d) + 4 (qh) + 16 (ql) = 22 bytes for 32 elements
+        let mut data = Vec::new();
+        // d = 1.0 in f16 (0x3C00)
+        data.extend_from_slice(&0x3C00u16.to_le_bytes());
+        // qh (high bits): 4 bytes
+        data.extend_from_slice(&[0u8; 4]);
+        // ql (low 4 bits): 16 bytes
+        data.extend_from_slice(&[0u8; 16]);
+
+        let result = dequantize_q5_0(&data, 0, 32).unwrap();
+        assert_eq!(result.len(), 32);
+        // Values are finite
+        for &v in &result {
+            assert!(v.is_finite());
+        }
+    }
+
+    #[test]
+    fn test_dequantize_q5_0_out_of_bounds() {
+        let data = vec![0u8; 10]; // Too small (needs 22)
+        let result = dequantize_q5_0(&data, 0, 32);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_dequantize_q5_1_basic() {
+        // Q5_1 block size: 2 (d) + 2 (m) + 4 (qh) + 16 (ql) = 24 bytes for 32 elements
+        let mut data = Vec::new();
+        // d = 1.0 in f16 (0x3C00)
+        data.extend_from_slice(&0x3C00u16.to_le_bytes());
+        // m = 0.0 in f16 (0x0000)
+        data.extend_from_slice(&0x0000u16.to_le_bytes());
+        // qh (high bits): 4 bytes
+        data.extend_from_slice(&[0u8; 4]);
+        // ql (low 4 bits): 16 bytes
+        data.extend_from_slice(&[0u8; 16]);
+
+        let result = dequantize_q5_1(&data, 0, 32).unwrap();
+        assert_eq!(result.len(), 32);
+        // Values are finite
+        for &v in &result {
+            assert!(v.is_finite());
+        }
+    }
+
+    #[test]
+    fn test_dequantize_q5_1_out_of_bounds() {
+        let data = vec![0u8; 10]; // Too small (needs 24)
+        let result = dequantize_q5_1(&data, 0, 32);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_dequantize_q4_1_basic() {
+        // Q4_1 block: 2 (d) + 2 (m) + 16 (qs) = 20 bytes for 32 elements
+        let mut data = Vec::new();
+        // d = 1.0 in f16 (0x3C00)
+        data.extend_from_slice(&0x3C00u16.to_le_bytes());
+        // m = 0.0 in f16 (0x0000)
+        data.extend_from_slice(&0x0000u16.to_le_bytes());
+        // 16 quantized bytes
+        data.extend_from_slice(&[0u8; 16]);
+
+        let result = dequantize_q4_1(&data, 0, 32).unwrap();
+        assert_eq!(result.len(), 32);
+        // Values are finite
+        for &v in &result {
+            assert!(v.is_finite());
+        }
+    }
+
+    #[test]
+    fn test_dequantize_q4_1_out_of_bounds() {
+        let data = vec![0u8; 10]; // Too small (needs 20)
+        let result = dequantize_q4_1(&data, 0, 32);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_dequantize_q4_k_basic() {
+        // Q4_K super-block: 144 bytes for 256 elements
+        // Structure: 2 (d) + 2 (dmin) + 12 (scales) + 128 (qs) = 144
+        let data = vec![0u8; 144];
+
+        let result = dequantize_q4_k(&data, 0, 256).unwrap();
+        assert_eq!(result.len(), 256);
+        // All zeros in data -> all zeros in output
+        for &v in &result {
+            assert!(v.is_finite());
+        }
+    }
+
+    #[test]
+    fn test_dequantize_q4_k_out_of_bounds() {
+        let data = vec![0u8; 100]; // Too small (needs 144)
+        let result = dequantize_q4_k(&data, 0, 256);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_dequantize_q5_k_basic() {
+        // Q5_K super-block: 176 bytes for 256 elements
+        let data = vec![0u8; 176];
+
+        let result = dequantize_q5_k(&data, 0, 256).unwrap();
+        assert_eq!(result.len(), 256);
+        for &v in &result {
+            assert!(v.is_finite());
+        }
+    }
+
+    #[test]
+    fn test_dequantize_q5_k_out_of_bounds() {
+        let data = vec![0u8; 100]; // Too small (needs 176)
+        let result = dequantize_q5_k(&data, 0, 256);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_dequantize_q6_k_basic() {
+        // Q6_K super-block: 210 bytes for 256 elements
+        let data = vec![0u8; 210];
+
+        let result = dequantize_q6_k(&data, 0, 256).unwrap();
+        assert_eq!(result.len(), 256);
+        for &v in &result {
+            assert!(v.is_finite());
+        }
+    }
+
+    #[test]
+    fn test_dequantize_q6_k_out_of_bounds() {
+        let data = vec![0u8; 100]; // Too small (needs 210)
+        let result = dequantize_q6_k(&data, 0, 256);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_dequantize_q2_k_basic() {
+        // Q2_K super-block: 84 bytes for 256 elements
+        let data = vec![0u8; 84];
+
+        let result = dequantize_q2_k(&data, 0, 256).unwrap();
+        assert_eq!(result.len(), 256);
+        for &v in &result {
+            assert!(v.is_finite());
+        }
+    }
+
+    #[test]
+    fn test_dequantize_q2_k_out_of_bounds() {
+        let data = vec![0u8; 50]; // Too small (needs 84)
+        let result = dequantize_q2_k(&data, 0, 256);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_dequantize_q3_k_basic() {
+        // Q3_K super-block: 110 bytes for 256 elements
+        let data = vec![0u8; 110];
+
+        let result = dequantize_q3_k(&data, 0, 256).unwrap();
+        assert_eq!(result.len(), 256);
+        for &v in &result {
+            assert!(v.is_finite());
+        }
+    }
+
+    #[test]
+    fn test_dequantize_q3_k_out_of_bounds() {
+        let data = vec![0u8; 50]; // Too small (needs 110)
+        let result = dequantize_q3_k(&data, 0, 256);
+        assert!(result.is_err());
+    }
 }
 
 // ============================================================================
