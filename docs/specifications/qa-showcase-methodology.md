@@ -116,6 +116,35 @@ SafeTensors is F32/F16, cannot be directly compared to quantized formats:
 
 **CRITICAL:** Tracing MUST work for ALL three inference modalities: `run`, `chat`, `serve`.
 
+### 4.0 BLOCKING BUG: GGUF Tracing Not Implemented (PMAT-TRACE-GGUF-001)
+
+**Status:** 🔴 BLOCKER
+
+| Path | `[TRACE-CACHE]` Output | Status |
+|------|------------------------|--------|
+| SafeTensors/APR | ✅ Has tracing in `realizar/src/apr_transformer/mod.rs` | Works |
+| GGUF | ❌ No tracing in `realizar/src/gguf/inference/*.rs` | **NOT IMPLEMENTED** |
+
+**Evidence:**
+```bash
+# GGUF with --trace: NO [TRACE-CACHE] output
+apr run $MODEL --prompt "Hi" --trace
+# Output: "Inference tracing enabled (APR-TRACE-001)" but NO timing messages
+
+# SafeTensors with --trace: HAS [TRACE-CACHE] output
+apr run "hf://Qwen/Qwen2.5-Coder-1.5B-Instruct" --prompt "Hi" --trace
+# Output: [TRACE-CACHE] Layer 0: QKV projection using F32 (not fused)
+# Output: [TRACE-CACHE] pos=0: 28 layers took 347.8ms
+```
+
+**Root Cause:** `apr-cli/src/commands/run.rs` lines 1707-1708:
+```rust
+// APR-TRACE-001: CPU traced generation not implemented - use non-traced with warning
+eprintln!("Warning: CPU traced generation not implemented, using non-traced path");
+```
+
+**Fix Required:** Add `[TRACE-CACHE]` style output to `realizar/src/gguf/inference/generation.rs`
+
 ### 4.1 Canonical Model for All Tests
 
 ```bash
