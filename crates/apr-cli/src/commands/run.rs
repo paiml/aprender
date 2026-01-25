@@ -1492,6 +1492,7 @@ fn execute_gguf_inference(
                 max_tokens: max_new_tokens.min(128),
                 temperature: 0.0, // Greedy sampling for GPU argmax
                 top_k: 1,         // Force argmax path
+                trace: options.trace, // PMAT-TRACE-GGUF-001: Pass trace flag
                 ..Default::default()
             };
 

@@ -776,6 +776,7 @@ mod realizar_chat {
                 temperature: config.temperature,
                 top_k: 40,
                 stop_tokens: vec![151645, 151643], // <|im_end|>, <|endoftext|>
+                trace: config.trace, // PMAT-TRACE-GGUF-001: Pass trace flag
             };
 
             // Try CUDA GPU path first
@@ -810,6 +811,7 @@ mod realizar_chat {
                                 temperature: 0.01, // Near-zero but forces logits path
                                 top_k: 10,         // Get top-10 for debugging
                                 stop_tokens: gen_config.stop_tokens.clone(),
+                                trace: config.trace, // PMAT-TRACE-GGUF-001: Pass trace flag
                             };
 
                             let output_tokens = cuda_model
@@ -958,6 +960,7 @@ mod realizar_chat {
                 temperature: config.temperature,
                 top_k: 40,
                 stop_tokens: vec![151645, 151643], // <|im_end|>, <|endoftext|>
+                trace: config.trace, // PMAT-TRACE-GGUF-001: Pass trace flag
             };
 
             // Try CUDA GPU path first (200+ tok/s target)
