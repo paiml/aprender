@@ -1999,3 +1999,23 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-097
+  github_issue: null
+  item_type: task
+  title: 'REALIZAR-SEND-001: GpuModel Send/Sync bounds fix for apr-cli cuda feature'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-01-25T15:05:27Z
+  updated: 2026-01-25T15:12:19Z
+  spec: null
+  acceptance_criteria:
+  - 'Fix Send/Sync bounds on GpuModel.test_executor trait object. See GitHub #158.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - realizar
+  - cuda
+  - bug
+  notes: null
