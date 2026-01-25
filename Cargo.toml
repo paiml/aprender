@@ -306,8 +306,9 @@ debug = true  # Enable debug info for flamegraph/profiling
 
 # CORRECTNESS-013: Override trueno-gpu with local version for PreciseRmsNormKernel
 # PMAT-088: Override realizar with local version for clean_chat_output fix
-# NOTE: Uncomment these for local development with sibling repos
-# [patch.crates-io]
-# trueno = { path = "../trueno" }
-# trueno-gpu = { path = "../trueno/trueno-gpu" }
-# realizar = { path = "../realizar" }
+# PMAT-QA-MATRIX-001: Use local versions for latest tracing and GGUF fixes
+# TRACKING: https://github.com/paiml/trueno/issues/90
+[patch.crates-io]
+trueno = { path = "../trueno" }
+trueno-gpu = { path = "../trueno/trueno-gpu" }
+realizar = { path = "../realizar" }

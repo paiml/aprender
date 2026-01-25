@@ -1858,11 +1858,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'FIVE-WHYS-ST-001: SafeTensors inference produces garbage output'
-  status: planned
+  status: inprogress
   priority: medium
   assigned_to: null
   created: 2026-01-22T10:09:34Z
-  updated: 2026-01-22T10:09:34Z
+  updated: 2026-01-25T10:17:35.951330631+00:00
   spec: null
   acceptance_criteria: []
   phases: []

@@ -44,8 +44,13 @@ use std::time::Instant;
 pub(crate) enum ModelSource {
     /// Local file path
     Local(PathBuf),
-    /// HuggingFace Hub (hf://org/repo)
-    HuggingFace { org: String, repo: String },
+    /// HuggingFace Hub (hf://org/repo or hf://org/repo/filename.gguf)
+    HuggingFace {
+        org: String,
+        repo: String,
+        /// Optional specific file within the repo (e.g., "model-q4_k_m.gguf")
+        file: Option<String>,
+    },
     /// Direct URL
     Url(String),
 }
@@ -57,9 +62,16 @@ impl ModelSource {
             let path = source.strip_prefix("hf://").unwrap_or(source);
             let parts: Vec<&str> = path.split('/').collect();
             if parts.len() >= 2 {
+                // Check if there's a filename (3rd part with extension)
+                let file = if parts.len() >= 3 && parts[2].contains('.') {
+                    Some(parts[2..].join("/"))
+                } else {
+                    None
+                };
                 Ok(Self::HuggingFace {
                     org: parts[0].to_string(),
                     repo: parts[1].to_string(),
+                    file,
                 })
             } else {
                 Err(CliError::InvalidFormat(format!(
@@ -82,7 +94,7 @@ impl ModelSource {
 
         match self {
             Self::Local(path) => path.clone(),
-            Self::HuggingFace { org, repo } => cache_dir.join("hf").join(org).join(repo),
+            Self::HuggingFace { org, repo, .. } => cache_dir.join("hf").join(org).join(repo),
             Self::Url(url) => {
                 // Hash URL for cache key
                 let hash = format!("{:x}", md5_hash(url.as_bytes()));
@@ -211,9 +223,9 @@ pub(crate) fn run_model(source: &str, options: &RunOptions) -> Result<RunResult>
 fn resolve_model(source: &ModelSource, _force: bool, offline: bool) -> Result<PathBuf> {
     match source {
         ModelSource::Local(path) => Ok(path.clone()),
-        ModelSource::HuggingFace { org, repo } => {
+        ModelSource::HuggingFace { org, repo, file } => {
             // Check multiple cache locations for the model
-            if let Some(path) = find_cached_model(org, repo) {
+            if let Some(path) = find_cached_model(org, repo, file.as_deref()) {
                 return Ok(path);
             }
 
@@ -228,7 +240,7 @@ fn resolve_model(source: &ModelSource, _force: bool, offline: bool) -> Result<Pa
 
             // Auto-download like ollama
             eprintln!("{}", format!("Downloading hf://{org}/{repo}...").yellow());
-            download_hf_model(org, repo)
+            download_hf_model(org, repo, file.as_deref())
         }
         ModelSource::Url(url) => {
             let cache_path = source.cache_path();
@@ -251,7 +263,9 @@ fn resolve_model(source: &ModelSource, _force: bool, offline: bool) -> Result<Pa
 }
 
 /// Find model in various cache locations (HF cache, apr cache)
-fn find_cached_model(org: &str, repo: &str) -> Option<PathBuf> {
+///
+/// If `file` is specified, look for that exact file. Otherwise, search for common model files.
+fn find_cached_model(org: &str, repo: &str, file: Option<&str>) -> Option<PathBuf> {
     // Check HuggingFace hub cache first (standard location)
     let hf_cache = dirs::home_dir().map(|h| h.join(".cache").join("huggingface").join("hub"))?;
 
@@ -262,11 +276,19 @@ fn find_cached_model(org: &str, repo: &str) -> Option<PathBuf> {
         if let Ok(entries) = std::fs::read_dir(&snapshots_dir) {
             for entry in entries.flatten() {
                 let snapshot_dir = entry.path();
-                // Look for model.safetensors or model files
-                for filename in &["model.safetensors", "pytorch_model.bin", "model.apr"] {
+                // If specific file requested, look for it
+                if let Some(filename) = file {
                     let model_path = snapshot_dir.join(filename);
                     if model_path.exists() {
                         return Some(model_path);
+                    }
+                } else {
+                    // Look for model.safetensors or model files
+                    for filename in &["model.safetensors", "pytorch_model.bin", "model.apr"] {
+                        let model_path = snapshot_dir.join(filename);
+                        if model_path.exists() {
+                            return Some(model_path);
+                        }
                     }
                 }
             }
@@ -277,10 +299,18 @@ fn find_cached_model(org: &str, repo: &str) -> Option<PathBuf> {
     let apr_cache =
         dirs::home_dir().map(|h| h.join(".apr").join("cache").join("hf").join(org).join(repo))?;
     if apr_cache.exists() {
-        for ext in &["apr", "safetensors", "gguf"] {
-            let pattern = apr_cache.join(format!("model.{ext}"));
-            if pattern.exists() {
-                return Some(pattern);
+        // If specific file requested, look for it
+        if let Some(filename) = file {
+            let model_path = apr_cache.join(filename);
+            if model_path.exists() {
+                return Some(model_path);
+            }
+        } else {
+            for ext in &["apr", "safetensors", "gguf"] {
+                let pattern = apr_cache.join(format!("model.{ext}"));
+                if pattern.exists() {
+                    return Some(pattern);
+                }
             }
         }
     }
@@ -289,9 +319,10 @@ fn find_cached_model(org: &str, repo: &str) -> Option<PathBuf> {
 }
 
 /// Download model from HuggingFace and cache it
-fn download_hf_model(org: &str, repo: &str) -> Result<PathBuf> {
-    use std::io::Write;
-
+///
+/// If `file` is specified (e.g., "model-q4_k_m.gguf"), download that specific file.
+/// Otherwise, download model.safetensors (or sharded version).
+pub(crate) fn download_hf_model(org: &str, repo: &str, file: Option<&str>) -> Result<PathBuf> {
     let cache_dir = dirs::home_dir()
         .ok_or_else(|| CliError::ValidationFailed("Cannot find home directory".to_string()))?
         .join(".apr")
@@ -303,6 +334,19 @@ fn download_hf_model(org: &str, repo: &str) -> Result<PathBuf> {
     std::fs::create_dir_all(&cache_dir)?;
 
     let base_url = format!("https://huggingface.co/{org}/{repo}/resolve/main");
+
+    // If specific file requested (e.g., GGUF), download just that file
+    if let Some(filename) = file {
+        let model_url = format!("{base_url}/{filename}");
+        let model_path = cache_dir.join(filename);
+
+        eprintln!("  Downloading {}...", filename);
+        download_file(&model_url, &model_path)?;
+        eprintln!("{}", "  Download complete!".green());
+        return Ok(model_path);
+    }
+
+    // Default path: download SafeTensors model with config/tokenizer
     let tokenizer_url = format!("{base_url}/tokenizer.json");
     let config_url = format!("{base_url}/config.json");
 
@@ -1904,7 +1948,23 @@ mod tests {
             source,
             ModelSource::HuggingFace {
                 org: "openai".to_string(),
-                repo: "whisper-tiny".to_string()
+                repo: "whisper-tiny".to_string(),
+                file: None,
+            }
+        );
+    }
+
+    #[test]
+    fn test_parse_huggingface_with_file() {
+        let source =
+            ModelSource::parse("hf://Qwen/Qwen2.5-Coder-0.5B-Instruct-GGUF/model-q4_k_m.gguf")
+                .unwrap();
+        assert_eq!(
+            source,
+            ModelSource::HuggingFace {
+                org: "Qwen".to_string(),
+                repo: "Qwen2.5-Coder-0.5B-Instruct-GGUF".to_string(),
+                file: Some("model-q4_k_m.gguf".to_string()),
             }
         );
     }
@@ -1946,6 +2006,7 @@ mod tests {
         let source = ModelSource::HuggingFace {
             org: "openai".to_string(),
             repo: "whisper-tiny".to_string(),
+            file: None,
         };
         let cache = source.cache_path();
         assert!(cache.to_string_lossy().contains("hf"));
@@ -2038,6 +2099,7 @@ mod tests {
         let source = ModelSource::HuggingFace {
             org: "uncached-org".to_string(),
             repo: "nonexistent-repo".to_string(),
+            file: None,
         };
 
         // Offline mode MUST reject non-cached HF sources

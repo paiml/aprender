@@ -268,7 +268,7 @@ dependencies = [
  "ratatui",
  "realizar",
  "regex",
- "renacer 0.9.8",
+ "renacer",
  "rmp-serde",
  "serde",
  "serde_json",
@@ -309,7 +309,7 @@ dependencies = [
  "rand 0.8.5",
  "rand_chacha 0.3.1",
  "rayon",
- "renacer 0.9.8 (registry+https://github.com/rust-lang/crates.io-index)",
+ "renacer",
  "rmp-serde",
  "rustfft",
  "safetensors 0.4.5",
@@ -4020,6 +4020,8 @@ dependencies = [
 [[package]]
 name = "pacha"
 version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3359534cab92c0c1083002aef2ff66ab39d5c3afe54a8e9598c731ba35a80827"
 dependencies = [
  "anyhow",
  "blake3",
@@ -4827,43 +4829,6 @@ name = "regex-syntax"
 version = "0.8.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7a2d987857b319362043e95f5353c0535c1f58eec5336fdfcf626430af7def58"
-
-[[package]]
-name = "renacer"
-version = "0.9.8"
-dependencies = [
- "addr2line",
- "anyhow",
- "aprender 0.24.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "backtrace",
- "clap",
- "crossbeam",
- "crossterm",
- "dashmap",
- "fnv",
- "gimli",
- "hex",
- "libc",
- "memmap2",
- "nix",
- "object 0.38.1",
- "rand 0.8.5",
- "ratatui",
- "regex",
- "rmp-serde",
- "serde",
- "serde_json",
- "sha2",
- "static_assertions",
- "thiserror 2.0.18",
- "toml",
- "tracing",
- "tracing-subscriber",
- "trueno 0.13.0",
- "trueno-db",
- "trueno-graph",
- "trueno-viz",
-]
 
 [[package]]
 name = "renacer"

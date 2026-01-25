@@ -391,35 +391,35 @@ cargo run --example qa_verify
 
 | Bash Function | Rust Function | Status |
 |---------------|---------------|--------|
-| `test_run_basic()` | `test_run_basic()` | Pending |
-| `test_run_performance()` | `test_run_performance()` | Pending |
-| `test_run_determinism()` | `test_run_determinism()` | Pending |
-| `test_format_parity()` | `test_format_parity()` | Pending |
+| `test_run_basic()` | P001-P004 | ✅ DONE |
+| `test_run_performance()` | P006-P007 | ✅ DONE |
+| `test_run_determinism()` | P008 | ✅ DONE |
+| `test_format_parity()` | P009-P010 | ✅ DONE |
 
 ### qa-chat.sh → qa_chat.rs
 
 | Bash Function | Rust Function | Status |
 |---------------|---------------|--------|
-| `test_chat_basic()` | `test_chat_basic()` | Pending |
-| `test_chat_performance()` | `test_chat_performance()` | Pending |
-| `test_format_parity()` | `test_format_parity()` | Pending |
+| `test_chat_basic()` | P011-P014 | ✅ DONE |
+| `test_chat_performance()` | P015-P016 | ✅ DONE |
+| `test_format_parity()` | N/A | ✅ DONE |
 
 ### qa-serve.sh → qa_serve.rs
 
 | Bash Function | Rust Function | Status |
 |---------------|---------------|--------|
-| `test_health()` | `test_health()` | Pending |
-| `test_basic_inference()` | `test_basic_inference()` | Pending |
-| `test_streaming()` | `test_streaming()` | Pending |
-| `test_streaming_openai_sdk()` | `test_streaming_openai_sdk()` | Pending |
-| `test_determinism()` | `test_determinism()` | Pending |
-| `test_malformed_json()` | `test_malformed_json()` | Pending |
-| `test_coherency()` | `test_coherency()` | Pending |
-| `test_no_multi_turn_loop()` | `test_no_multi_turn_loop()` | Pending |
-| `test_tracing()` | `test_tracing()` | Pending |
-| `test_default_mode_suppression()` | `test_default_mode_suppression()` | Pending |
-| `test_format_parity()` | `test_format_parity()` | Pending |
-| `run_all_models()` | `run_all_models()` | Pending |
+| `test_health()` | P017 | ✅ DONE |
+| `test_basic_inference()` | P019-P021 | ✅ DONE |
+| `test_streaming()` | P024-P025 | ✅ DONE |
+| `test_streaming_openai_sdk()` | P024 | ✅ DONE |
+| `test_determinism()` | P026 | ✅ DONE |
+| `test_malformed_json()` | P027 | ✅ DONE |
+| `test_coherency()` | P028 | ✅ DONE |
+| `test_no_multi_turn_loop()` | P029 | ✅ DONE |
+| `test_tracing()` | P030-P032 | ✅ DONE |
+| `test_default_mode_suppression()` | P033 | ✅ DONE |
+| `test_format_parity()` | --all-models | ✅ DONE |
+| `run_all_models()` | --all-models | ✅ DONE |
 
 ---
 

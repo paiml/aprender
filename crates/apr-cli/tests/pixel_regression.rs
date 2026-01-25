@@ -6,6 +6,7 @@
 //! Toyota Way: Jidoka - Build quality in, stop on defects.
 
 #![allow(clippy::unwrap_used)]
+#![allow(deprecated)] // cargo_bin still works, just deprecated for custom build-dir
 
 use assert_cmd::Command;
 use std::fs;
