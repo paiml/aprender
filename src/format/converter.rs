@@ -6202,4 +6202,140 @@ mod tests_import_errors {
         let _lz4 = Compression::Lz4;
         let _none = Compression::None;
     }
+
+    // ========================================================================
+    // TensorExpectation Tests (ROSETTA-ML-001)
+    // ========================================================================
+
+    #[test]
+    fn test_tensor_expectation_for_tensor_rmsnorm() {
+        // Test RMSNorm weight pattern detection
+        let exp = TensorExpectation::for_tensor("model.layers.0.input_layernorm.weight");
+        assert!(exp.is_some());
+        let exp = exp.unwrap();
+        assert!(exp.mean_range.0 < 1.0 && exp.mean_range.1 > 1.0);
+    }
+
+    #[test]
+    fn test_tensor_expectation_for_tensor_rmsnorm_post_attn() {
+        let exp = TensorExpectation::for_tensor("model.layers.0.post_attention_layernorm.weight");
+        assert!(exp.is_some());
+    }
+
+    #[test]
+    fn test_tensor_expectation_for_tensor_rms_norm() {
+        let exp = TensorExpectation::for_tensor("model.layers.0.rms_norm.weight");
+        assert!(exp.is_some());
+    }
+
+    #[test]
+    fn test_tensor_expectation_for_tensor_layer_norm_gamma() {
+        let exp = TensorExpectation::for_tensor("bert.encoder.layer_norm.gamma");
+        assert!(exp.is_some());
+    }
+
+    #[test]
+    fn test_tensor_expectation_for_tensor_layer_norm_beta() {
+        let exp = TensorExpectation::for_tensor("bert.encoder.layer_norm.beta");
+        assert!(exp.is_some());
+    }
+
+    #[test]
+    fn test_tensor_expectation_for_tensor_ln_weight() {
+        let exp = TensorExpectation::for_tensor("transformer.ln_1.weight");
+        assert!(exp.is_some());
+    }
+
+    #[test]
+    fn test_tensor_expectation_for_tensor_ln_bias() {
+        let exp = TensorExpectation::for_tensor("transformer.ln_1.bias");
+        assert!(exp.is_some());
+    }
+
+    #[test]
+    fn test_tensor_expectation_for_tensor_final_norm() {
+        let exp = TensorExpectation::for_tensor("norm.weight");
+        assert!(exp.is_some());
+    }
+
+    #[test]
+    fn test_tensor_expectation_for_tensor_embedding() {
+        let exp = TensorExpectation::for_tensor("model.embed_tokens.weight");
+        assert!(exp.is_some());
+    }
+
+    #[test]
+    fn test_tensor_expectation_for_tensor_linear_weight() {
+        let exp = TensorExpectation::for_tensor("model.layers.0.fc1.weight");
+        assert!(exp.is_some());
+    }
+
+    #[test]
+    fn test_tensor_expectation_check_passing() {
+        let exp = TensorExpectation::EMBEDDING;
+        let stats = TensorStats {
+            name: "embed.weight".to_string(),
+            count: 1000,
+            mean: 0.001, // Near 0, within range
+            std: 0.02,
+            min: -0.1,
+            max: 0.1,
+            nan_count: 0,
+            inf_count: 0,
+            zero_count: 10,
+        };
+        assert!(exp.check(&stats).is_ok());
+    }
+
+    #[test]
+    fn test_tensor_expectation_check_mean_out_of_range() {
+        let exp = TensorExpectation::EMBEDDING;
+        let stats = TensorStats {
+            name: "embed.weight".to_string(),
+            count: 1000,
+            mean: 5.0, // Way outside expected range
+            std: 0.02,
+            min: -0.1,
+            max: 0.1,
+            nan_count: 0,
+            inf_count: 0,
+            zero_count: 10,
+        };
+        assert!(exp.check(&stats).is_err());
+    }
+
+    #[test]
+    fn test_tensor_expectation_check_std_out_of_range() {
+        // Use LAYER_NORM_WEIGHT which has std_range check
+        let exp = TensorExpectation::LAYER_NORM_WEIGHT;
+        let stats = TensorStats {
+            name: "layer_norm.weight".to_string(),
+            count: 1000,
+            mean: 1.0, // Within mean range for LayerNorm
+            std: 100.0, // Way outside expected std range (0.0, 2.0)
+            min: -0.1,
+            max: 0.1,
+            nan_count: 0,
+            inf_count: 0,
+            zero_count: 10,
+        };
+        assert!(exp.check(&stats).is_err());
+    }
+
+    #[test]
+    fn test_tensor_expectation_check_rmsnorm_passing() {
+        let exp = TensorExpectation::RMSNORM_WEIGHT;
+        let stats = TensorStats {
+            name: "norm.weight".to_string(),
+            count: 100,
+            mean: 1.0, // Near 1.0 for RMSNorm
+            std: 0.01,
+            min: 0.99,
+            max: 1.01,
+            nan_count: 0,
+            inf_count: 0,
+            zero_count: 0,
+        };
+        assert!(exp.check(&stats).is_ok());
+    }
 }
