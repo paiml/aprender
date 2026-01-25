@@ -114,6 +114,10 @@ pub mod golden;
 // Bidirectional conversion: GGUF ↔ APR ↔ SafeTensors
 pub mod rosetta;
 
+// Rosetta ML Diagnostics (ROSETTA-ML-001)
+// ML-powered format conversion diagnostics using aprender's own algorithms
+pub mod rosetta_ml;
+
 // Re-export golden trace types
 pub use golden::{
     verify_logits, GoldenTrace, GoldenTraceSet, GoldenVerifyReport, LogitStats, TraceVerifyResult,
@@ -159,6 +163,14 @@ pub use rosetta::{
 };
 // Note: rosetta::TensorStats intentionally not re-exported to avoid conflict with validation::TensorStats
 // Use aprender::format::rosetta::TensorStats directly if needed
+
+// Re-export Rosetta ML Diagnostics types (ROSETTA-ML-001)
+pub use rosetta_ml::{
+    AndonLevel, AnomalyDetector, CanaryFile, CategorySummary, ConversionCategory,
+    ConversionDecision, ConversionIssue, ErrorPattern, ErrorPatternLibrary, FixAction,
+    HanseiReport, JidokaViolation, PatternSource, Priority, Regression, Severity,
+    TarantulaTracker, TensorCanary, TensorFeatures, Trend, WilsonScore,
+};
 
 // Re-export quantization types when feature is enabled
 #[cfg(feature = "format-quantize")]
