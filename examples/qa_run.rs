@@ -2,44 +2,66 @@
 //!
 //! Popperian falsification tests for `apr run` command with full matrix support.
 //!
-//! # Matrix Mode (6 cells: 2 backends × 3 formats)
+//! # CRITICAL: Same-Model Comparison Protocol (PMAT-SHOWCASE-METHODOLOGY-001)
 //!
-//! | Cell | Backend | Format | Points |
-//! |------|---------|--------|--------|
-//! | M1 | CPU | GGUF | 15 |
-//! | M2 | CPU | SafeTensors | 15 |
-//! | M3 | CPU | APR | 15 |
-//! | M4 | GPU | GGUF | 15 |
-//! | M5 | GPU | SafeTensors | 15 |
-//! | M6 | GPU | APR | 15 |
+//! **Class A (Quantized):** GGUF Q4_K_M vs APR Q4_K (converted from same GGUF)
+//! **Class B (Full Precision):** SafeTensors F32 vs APR F32 (converted from same SafeTensors)
+//!
+//! NEVER compare different quantizations (e.g., Q4_K vs F32) - this is a FATAL DEFECT.
+//!
+//! # Canonical Model
+//!
+//! ```text
+//! GGUF: hf://Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+//! ```
+//!
+//! # Test Classes
+//!
+//! ## Class A: Quantized (60 points)
+//! | Cell | Backend | Format | Model Source |
+//! |------|---------|--------|--------------|
+//! | A1 | CPU | GGUF Q4_K | HF GGUF |
+//! | A2 | CPU | APR Q4_K | Converted from GGUF |
+//! | A3 | GPU | GGUF Q4_K | HF GGUF |
+//! | A4 | GPU | APR Q4_K | Converted from GGUF |
+//!
+//! ## Class B: Full Precision (40 points) - SLOWER, memory-bound
+//! | Cell | Backend | Format | Model Source |
+//! |------|---------|--------|--------------|
+//! | B1 | CPU | SafeTensors F32 | HF SafeTensors |
+//! | B2 | CPU | APR F32 | Converted from SafeTensors |
+//! | B3 | GPU | SafeTensors F32 | HF SafeTensors |
+//! | B4 | GPU | APR F32 | Converted from SafeTensors |
 //!
 //! # Usage
 //!
 //! ```bash
-//! # Full matrix (all 6 cells)
-//! cargo run --example qa_run -- --matrix
+//! # Class A only (quantized - recommended)
+//! cargo run --example qa_run -- --class quantized --matrix
+//!
+//! # Class B only (full precision - slow)
+//! cargo run --example qa_run -- --class full-precision --matrix
+//!
+//! # Both classes
+//! cargo run --example qa_run -- --class all --matrix
 //!
 //! # Single cell
-//! cargo run --example qa_run -- --backend cpu --format gguf
-//! cargo run --example qa_run -- --backend gpu --format apr
+//! cargo run --example qa_run -- --backend gpu --format gguf
 //!
 //! # With tracing
-//! cargo run --example qa_run -- --backend gpu --format gguf --trace-level layer
-//!
-//! # Legacy mode (single model)
-//! cargo run --example qa_run -- --model path/to/model.gguf
+//! cargo run --example qa_run -- --backend gpu --format gguf --trace
 //! ```
 //!
-//! # Tracing Levels
+//! # Tracing (ALL must work for run/chat/serve)
 //!
-//! - `brick`: Token-level ops (tokenize, sample, decode)
-//! - `step`: Forward pass steps
-//! - `layer`: Per-layer timing (attention, ffn, norm)
-//! - `profile`: Full roofline analysis
+//! - `--trace`: Step-by-step timing with [TRACE-CACHE] messages
+//! - `--trace-level layer`: Per-layer breakdown (Attention, FFN, Norm)
+//! - `--profile`: Roofline analysis (memory vs compute bound)
 //!
 //! # Citations
 //!
 //! - Popper, K. R. (1959). The Logic of Scientific Discovery. Routledge.
+//! - PMAT-SHOWCASE-METHODOLOGY-001: Same-Model Comparison Protocol
 
 use std::env;
 use std::path::PathBuf;
@@ -267,21 +289,29 @@ fn find_apr_binary() -> PathBuf {
     PathBuf::from("cargo")
 }
 
+/// Canonical GGUF model - the SINGLE SOURCE OF TRUTH for quantized comparisons
+/// All APR Q4_K tests MUST use this exact model converted to APR format.
+const CANONICAL_GGUF: &str = "hf://Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf";
+
+/// Canonical SafeTensors model - for full precision (Class B) comparisons
+const CANONICAL_SAFETENSORS: &str = "hf://Qwen/Qwen2.5-Coder-1.5B-Instruct";
+
 /// Returns HuggingFace URI or local path for model format.
-/// apr auto-downloads from HuggingFace - that's the whole point.
-/// NOTE: Using 1.5B models - 0.5B has known coherency issues (PMAT-097)
+///
+/// CRITICAL (PMAT-SHOWCASE-METHODOLOGY-001):
+/// - Class A (Quantized): GGUF and APR use the SAME Q4_K_M weights
+/// - Class B (Full Precision): SafeTensors and APR use the SAME F32 weights
+/// - NEVER compare different quantizations!
 fn default_model_for_format(format: Format) -> String {
     match format {
-        // GGUF: 1.5B quantized model from HuggingFace
-        Format::Gguf => {
-            "hf://Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"
-                .to_string()
-        }
-        // SafeTensors: 1.5B full precision from HuggingFace
-        Format::SafeTensors => "hf://Qwen/Qwen2.5-Coder-1.5B-Instruct".to_string(),
-        // APR: Use HF SafeTensors, which gets converted to APR with embedded tokenizer
-        // (PMAT-APR-TOK-001 FIXED: SafeTensors→APR now embeds tokenizer.json vocabulary)
-        Format::Apr => "hf://Qwen/Qwen2.5-Coder-1.5B-Instruct".to_string()
+        // GGUF Q4_K_M: Canonical quantized model from HuggingFace
+        Format::Gguf => CANONICAL_GGUF.to_string(),
+        // SafeTensors F32: Full precision for Class B comparisons
+        Format::SafeTensors => CANONICAL_SAFETENSORS.to_string(),
+        // APR: Use GGUF source for Class A (quantized) - same weights!
+        // For Class B (full precision), user must specify --apr with SafeTensors source
+        // Default to GGUF source since Class A is the primary focus
+        Format::Apr => CANONICAL_GGUF.to_string(),
     }
 }
 
@@ -756,33 +786,40 @@ fn print_matrix_summary(results: &[CellResult]) {
 fn print_help() {
     println!("{}QA Matrix Runner (PMAT-QA-MATRIX-001){}", BOLD, NC);
     println!();
+    println!("{}CRITICAL: Same-Model Comparison Protocol{}", YELLOW, NC);
+    println!("  Class A (Quantized): GGUF Q4_K vs APR Q4_K (SAME weights)");
+    println!("  Class B (Full Prec): SafeTensors F32 vs APR F32 (SAME weights)");
+    println!();
     println!("USAGE:");
     println!("    cargo run --example qa_run -- [OPTIONS]");
     println!();
     println!("OPTIONS:");
-    println!("    --matrix              Run full 6-cell matrix (2 backends × 3 formats)");
+    println!("    --matrix              Run full matrix (Class A: 4 cells quantized)");
     println!("    --backend <cpu|gpu>   Force specific backend");
     println!("    --format <gguf|safetensors|apr>  Force specific format");
-    println!("    --trace-level <brick|step|layer|profile>  Set trace level");
+    println!("    --trace               Enable tracing (shows [TRACE-CACHE] messages)");
+    println!("    --trace-level <layer|profile>  Detailed trace level");
     println!("    --gguf <PATH>         Path to GGUF model");
     println!("    --safetensors <PATH>  Path to SafeTensors model");
     println!("    --apr <PATH>          Path to APR model");
     println!("    --model <PATH>        Legacy: single model path");
-    println!("    --min-cpu-tps <N>     Minimum CPU tok/s (default: 8.0)");
-    println!("    --min-gpu-tps <N>     Minimum GPU tok/s for quantized (default: 100.0)");
-    println!("    --min-gpu-tps-f32 <N> Minimum GPU tok/s for float32 (default: 40.0)");
+    println!("    --min-cpu-tps <N>     Minimum CPU tok/s (default: 5.0)");
+    println!("    --min-gpu-tps <N>     Minimum GPU tok/s for quantized (default: 7.0)");
     println!("    --verbose, -v         Verbose output");
     println!("    --help, -h            Show this help");
     println!();
+    println!("CANONICAL MODEL:");
+    println!("    {}", CANONICAL_GGUF);
+    println!();
     println!("EXAMPLES:");
-    println!("    # Full matrix");
+    println!("    # Class A quantized matrix (recommended)");
     println!("    cargo run --example qa_run -- --matrix");
     println!();
-    println!("    # Single cell: GPU + GGUF");
-    println!("    cargo run --example qa_run -- --backend gpu --format gguf");
+    println!("    # Single cell: GPU + GGUF with tracing");
+    println!("    cargo run --example qa_run -- --backend gpu --format gguf --trace");
     println!();
-    println!("    # With custom model paths");
-    println!("    cargo run --example qa_run -- --matrix --gguf ~/models/qwen.gguf");
+    println!("    # Verify tracing works");
+    println!("    cargo run --example qa_run -- --backend cpu --format gguf --trace");
 }
 
 fn main() {
