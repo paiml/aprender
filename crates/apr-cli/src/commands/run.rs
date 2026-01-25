@@ -1490,8 +1490,8 @@ fn execute_gguf_inference(
             // PAR-200: Use greedy sampling for GPU argmax path (faster + deterministic)
             let gen_config = QuantizedGenerateConfig {
                 max_tokens: max_new_tokens.min(128),
-                temperature: 0.0, // Greedy sampling for GPU argmax
-                top_k: 1,         // Force argmax path
+                temperature: 0.0,     // Greedy sampling for GPU argmax
+                top_k: 1,             // Force argmax path
                 trace: options.trace, // PMAT-TRACE-GGUF-001: Pass trace flag
                 ..Default::default()
             };

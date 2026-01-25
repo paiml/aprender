@@ -291,7 +291,8 @@ fn find_apr_binary() -> PathBuf {
 
 /// Canonical GGUF model - the SINGLE SOURCE OF TRUTH for quantized comparisons
 /// All APR Q4_K tests MUST use this exact model converted to APR format.
-const CANONICAL_GGUF: &str = "hf://Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf";
+const CANONICAL_GGUF: &str =
+    "hf://Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf";
 
 /// Canonical SafeTensors model - for full precision (Class B) comparisons
 const CANONICAL_SAFETENSORS: &str = "hf://Qwen/Qwen2.5-Coder-1.5B-Instruct";

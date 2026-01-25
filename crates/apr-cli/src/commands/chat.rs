@@ -776,7 +776,7 @@ mod realizar_chat {
                 temperature: config.temperature,
                 top_k: 40,
                 stop_tokens: vec![151645, 151643], // <|im_end|>, <|endoftext|>
-                trace: config.trace, // PMAT-TRACE-GGUF-001: Pass trace flag
+                trace: config.trace,               // PMAT-TRACE-GGUF-001: Pass trace flag
             };
 
             // Try CUDA GPU path first
@@ -960,7 +960,7 @@ mod realizar_chat {
                 temperature: config.temperature,
                 top_k: 40,
                 stop_tokens: vec![151645, 151643], // <|im_end|>, <|endoftext|>
-                trace: config.trace, // PMAT-TRACE-GGUF-001: Pass trace flag
+                trace: config.trace,               // PMAT-TRACE-GGUF-001: Pass trace flag
             };
 
             // Try CUDA GPU path first (200+ tok/s target)
