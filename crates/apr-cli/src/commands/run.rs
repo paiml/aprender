@@ -1645,15 +1645,13 @@ fn run_gguf_generate(
                 quant_type: None,
             });
 
-            // GPU tracing not yet implemented in realizar - use non-traced path with warning
-            eprintln!("Warning: GPU tracing not yet implemented, using non-traced path");
-
-            // Run generation without tracing
+            // PMAT-TRACE-GGUF-001: GPU tracing via gen_config.trace flag
+            // The gen_config.trace flag is already set for [TRACE-CACHE] output
             let result = cuda_model
                 .generate_gpu_resident(input_tokens, gen_config)
                 .map_err(|e| CliError::InferenceFailed(format!("GPU generation failed: {e}")))?;
 
-            // Still write trace output (will be minimal without actual trace data)
+            // Write InferenceTracer output (model info summary)
             if let Err(e) = tracer.write_output() {
                 eprintln!("Warning: Failed to write trace output: {e}");
             }
@@ -1705,16 +1703,13 @@ fn run_gguf_generate(
             quant_type: None,
         });
 
-        // APR-TRACE-001: CPU traced generation not yet implemented - use non-traced with warning
-        eprintln!("Warning: CPU traced generation not implemented, using non-traced path");
-        eprintln!("Hint: Use GPU for full tracing support (remove CUDA_VISIBLE_DEVICES=\"\")");
-
-        // Fall back to non-traced generation
+        // PMAT-TRACE-GGUF-001: CPU traced generation now implemented in realizar
+        // The gen_config.trace flag is already set, so generate_with_cache outputs [TRACE-CACHE] messages
         let result = cpu_model
             .generate_with_cache(input_tokens, gen_config)
             .map_err(|e| CliError::InferenceFailed(format!("CPU generation failed: {e}")))?;
 
-        // Still output partial trace (model info only)
+        // Write InferenceTracer output (model info summary)
         if let Err(e) = tracer.write_output() {
             eprintln!("Warning: Failed to write trace output: {e}");
         }
