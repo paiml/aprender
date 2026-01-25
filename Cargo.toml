@@ -156,10 +156,10 @@ alsa = { version = "0.9", optional = true }  # ALSA bindings for Linux audio cap
 rayon = { version = "1.10", optional = true }
 
 # Core compute primitives - SIMD-accelerated tensor operations
-trueno = "0.13.0"
+trueno = "0.14.1"
 
 # RAG pipeline for document-based ML (optional, GH-125)
-trueno-rag = { version = "0.1.9", optional = true }
+trueno-rag = { version = "0.1.10", optional = true }
 
 # Compression for .apr format (optional, spec §3.3)
 lz4_flex = { version = "0.11", optional = true }
@@ -304,11 +304,6 @@ lto = true
 codegen-units = 1
 debug = true  # Enable debug info for flamegraph/profiling
 
-# CORRECTNESS-013: Override trueno-gpu with local version for PreciseRmsNormKernel
 # PMAT-088: Override realizar with local version for clean_chat_output fix
-# PMAT-QA-MATRIX-001: Use local versions for latest tracing and GGUF fixes
-# TRACKING: https://github.com/paiml/trueno/issues/90
 [patch.crates-io]
-trueno = { path = "../trueno" }
-trueno-gpu = { path = "../trueno/trueno-gpu" }
 realizar = { path = "../realizar" }
