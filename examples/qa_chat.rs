@@ -124,8 +124,10 @@ impl Default for QaConfig {
         Self {
             model_path: None,
             apr_binary: find_apr_binary(),
-            min_cpu_tps: 30.0,
-            min_gpu_tps: 500.0,
+            // Realistic defaults for 1.5B model (default test model)
+            // Scale: 0.5B=~755 GPU tok/s, 1.5B=~40-50 GPU tok/s
+            min_cpu_tps: 10.0,
+            min_gpu_tps: 40.0,
             format_parity: false,
             verbose: false,
             timeout_secs: 60,
@@ -134,10 +136,12 @@ impl Default for QaConfig {
 }
 
 fn find_apr_binary() -> PathBuf {
+    // Check custom target directory FIRST (common dev setup)
     let candidates = [
+        "/mnt/nvme-raid0/targets/aprender/release/apr",
+        "/mnt/nvme-raid0/targets/aprender/debug/apr",
         "target/release/apr",
         "target/debug/apr",
-        "/mnt/nvme-raid0/targets/aprender/release/apr",
     ];
     for candidate in candidates {
         let path = PathBuf::from(candidate);
@@ -527,8 +531,9 @@ mod tests {
     #[test]
     fn test_config_default() {
         let config = QaConfig::default();
-        assert_eq!(config.min_cpu_tps, 30.0);
-        assert_eq!(config.min_gpu_tps, 500.0);
+        // Realistic defaults for 1.5B model
+        assert_eq!(config.min_cpu_tps, 10.0);
+        assert_eq!(config.min_gpu_tps, 40.0);
     }
 
     #[test]

@@ -126,7 +126,7 @@ impl Default for QaConfig {
         Self {
             model_path: None,
             apr_binary: find_apr_binary(),
-            port: 8080,
+            port: 18080, // Use high port to avoid conflicts with common services
             all_models: false,
             verbose: false,
         }
@@ -134,10 +134,12 @@ impl Default for QaConfig {
 }
 
 fn find_apr_binary() -> PathBuf {
+    // Check custom target directory FIRST (common dev setup)
     for p in [
+        "/mnt/nvme-raid0/targets/aprender/release/apr",
+        "/mnt/nvme-raid0/targets/aprender/debug/apr",
         "target/release/apr",
         "target/debug/apr",
-        "/mnt/nvme-raid0/targets/aprender/release/apr",
     ] {
         let path = PathBuf::from(p);
         if path.exists() {
@@ -159,8 +161,37 @@ fn find_default_model() -> Option<PathBuf> {
     None
 }
 
+/// Check if something is already listening on the port
+fn check_port_in_use(port: u16) -> bool {
+    TcpStream::connect(format!("127.0.0.1:{}", port)).is_ok()
+}
+
+/// Verify server is OUR server (responds with valid APR health check)
+fn verify_server_health(port: u16) -> bool {
+    match http_get("127.0.0.1", port, "/health") {
+        Ok((status, body)) => {
+            // Must be 200 AND contain expected fields
+            status == 200 && body.contains("status") && body.contains("healthy")
+        }
+        Err(_) => false,
+    }
+}
+
 /// Start the apr serve process
 fn start_server(config: &QaConfig, model: &PathBuf) -> Option<Child> {
+    // Check if port is already in use BEFORE starting
+    if check_port_in_use(config.port) {
+        eprintln!(
+            "{}ERROR: Port {} already in use. Cannot start server.{}",
+            RED, config.port, NC
+        );
+        eprintln!(
+            "{}Try: lsof -i :{} to find what's using it{}",
+            YELLOW, config.port, NC
+        );
+        return None;
+    }
+
     let port_str = config.port.to_string();
     let args = vec![
         "serve",
@@ -197,15 +228,23 @@ fn start_server(config: &QaConfig, model: &PathBuf) -> Option<Child> {
 
     match cmd.spawn() {
         Ok(child) => {
-            // Wait for server to be ready
-            let base_url = format!("127.0.0.1:{}", config.port);
-            for _ in 0..30 {
+            // Wait for server to be ready - verify with health check, not just TCP
+            for i in 0..60 {
                 thread::sleep(Duration::from_secs(1));
-                if TcpStream::connect(&base_url).is_ok() {
+                if verify_server_health(config.port) {
+                    if config.verbose {
+                        eprintln!("{}Server health check passed after {}s{}", GREEN, i + 1, NC);
+                    }
                     return Some(child);
                 }
+                if config.verbose && i % 10 == 9 {
+                    eprintln!("{}Waiting for server... {}s{}", YELLOW, i + 1, NC);
+                }
             }
-            eprintln!("{}Server failed to start within 30s{}", RED, NC);
+            eprintln!(
+                "{}Server failed to respond to health check within 60s{}",
+                RED, NC
+            );
             None
         }
         Err(e) => {
