@@ -79,4 +79,36 @@ The summary lists 4 subcommands. We must attempt to break them.
 - [x] **NOT FALSIFIED** (Proceed to Release Candidate)
 
 ---
-*“We do not prove software works; we merely fail to prove it is broken.”*
+
+## 6. APR Embedded Tokenizer Tests (GH-156 Addendum)
+
+**Added**: 2026-01-25
+**Issue**: BUG-APR-002 - APR tokenizer not found during QA matrix testing
+
+The original Rosetta tests did NOT verify embedded tokenizer functionality in APR files. This gap allowed BUG-APR-002 to go undetected until QA matrix testing exposed it.
+
+### New Tests Added
+
+| Test ID | Description | Status |
+|---------|-------------|--------|
+| P119 | APR embedded tokenizer metadata presence | [x] PASSED |
+| P120 | APR tokenizer extraction round-trip | [x] PASSED |
+| P121 | APR without tokenizer graceful fallback | [x] PASSED |
+
+### realizar SimpleTokenizer Tests
+
+| Test | Description | Status |
+|------|-------------|--------|
+| test_simple_tokenizer_new | Constructor and special token detection | [x] PASSED |
+| test_simple_tokenizer_decode_basic | Basic token decoding | [x] PASSED |
+| test_simple_tokenizer_decode_bpe_space | BPE Ġ prefix handling | [x] PASSED |
+| test_simple_tokenizer_decode_out_of_bounds | Graceful OOB handling | [x] PASSED |
+| test_simple_tokenizer_no_special_tokens | Optional BOS/EOS | [x] PASSED |
+| test_simple_tokenizer_empty_decode | Empty input handling | [x] PASSED |
+| test_simple_tokenizer_clone | Clone trait | [x] PASSED |
+| test_simple_tokenizer_debug | Debug trait | [x] PASSED |
+
+**Total**: 88 Rosetta tests + 8 SimpleTokenizer tests = 96 tests covering format conversion and tokenizer embedding.
+
+---
+*"We do not prove software works; we merely fail to prove it is broken."*

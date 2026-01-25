@@ -2088,14 +2088,8 @@ fn start_gguf_server_gpu_batched(
     let runtime = tokio::runtime::Runtime::new()
         .map_err(|e| CliError::InferenceFailed(format!("Failed to create runtime: {e}")))?;
 
-    // Enable CUDA backend
-    let mut quantized_model = quantized_model;
-    quantized_model
-        .enable_cuda(0)
-        .map_err(|e| CliError::InferenceFailed(format!("CUDA init failed: {e}")))?;
-    println!("  CUDA enabled on GPU 0");
-
     // Create cached model for scheduler reuse
+    // OwnedQuantizedModelCachedSync handles GPU caching internally via warmup_gpu_cache()
     let cached_model = OwnedQuantizedModelCachedSync::new(quantized_model);
 
     // Warmup GPU cache
@@ -3571,8 +3565,8 @@ mod http_tests {
             .await
             .unwrap();
         let resp: GenerateResponse = serde_json::from_slice(&body).unwrap();
-        // Latency should be >= 0
-        assert!(resp.latency_ms >= 0);
+        // Verify latency field exists (u64 is always >= 0)
+        let _ = resp.latency_ms;
     }
 
     // ========================================================================
@@ -3617,7 +3611,8 @@ mod http_tests {
             .await
             .unwrap();
         let resp: TranscribeResponse = serde_json::from_slice(&body).unwrap();
-        assert!(resp.latency_ms >= 0);
+        // Verify latency field exists (u64 is always >= 0)
+        let _ = resp.latency_ms;
         assert_eq!(resp.language, "en");
     }
 
