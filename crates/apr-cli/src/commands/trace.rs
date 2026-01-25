@@ -256,6 +256,7 @@ fn run_traced_inference(path: &Path) -> Result<(), CliError> {
 }
 
 /// Traced inference for GGUF models (primary path for BUG-GGUF-001 debugging)
+#[cfg(feature = "inference")]
 fn run_traced_inference_gguf(path: &Path) -> Result<(), CliError> {
     use colored::Colorize;
     use realizar::gguf::{MappedGGUFModel, OwnedQuantizedModel, QuantizedGenerateConfig};
@@ -342,7 +343,16 @@ fn run_traced_inference_gguf(path: &Path) -> Result<(), CliError> {
     Ok(())
 }
 
+/// Stub for GGUF inference when inference feature is disabled
+#[cfg(not(feature = "inference"))]
+fn run_traced_inference_gguf(_path: &Path) -> Result<(), CliError> {
+    Err(CliError::FeatureDisabled(
+        "Traced inference for GGUF models requires the 'inference' feature. Build with --features inference".to_string(),
+    ))
+}
+
 /// Traced inference for APR models
+#[cfg(feature = "inference")]
 fn run_traced_inference_apr(path: &Path) -> Result<(), CliError> {
     use colored::Colorize;
     use realizar::apr::AprV2Model;
@@ -438,6 +448,14 @@ fn run_traced_inference_apr(path: &Path) -> Result<(), CliError> {
     println!("  See: https://github.com/paiml/aprender/issues/154");
 
     Ok(())
+}
+
+/// Stub for APR inference when inference feature is disabled
+#[cfg(not(feature = "inference"))]
+fn run_traced_inference_apr(_path: &Path) -> Result<(), CliError> {
+    Err(CliError::FeatureDisabled(
+        "Traced inference for APR models requires the 'inference' feature. Build with --features inference".to_string(),
+    ))
 }
 
 /// Simple vector statistics for tracing
@@ -568,6 +586,7 @@ fn is_likely_garbage(text: &str) -> bool {
 }
 
 /// Traced inference for SafeTensors models
+#[cfg(feature = "inference")]
 fn run_traced_inference_safetensors(path: &Path) -> Result<(), CliError> {
     use colored::Colorize;
     use realizar::safetensors::{SafetensorsConfig, SafetensorsModel};
@@ -598,6 +617,14 @@ fn run_traced_inference_safetensors(path: &Path) -> Result<(), CliError> {
     println!("  SafeTensors path uses realizar's optimized inference.");
 
     Ok(())
+}
+
+/// Stub for SafeTensors inference when inference feature is disabled
+#[cfg(not(feature = "inference"))]
+fn run_traced_inference_safetensors(_path: &Path) -> Result<(), CliError> {
+    Err(CliError::FeatureDisabled(
+        "Traced inference for SafeTensors models requires the 'inference' feature. Build with --features inference".to_string(),
+    ))
 }
 
 /// Read and parse model metadata from an APR file.
