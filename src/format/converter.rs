@@ -1291,9 +1291,8 @@ fn infer_model_config_from_tensors(
         .iter()
         .find(|(name, _)| name.contains("k_proj.weight") || name.contains("key.weight"))
         .and_then(|(_, (_, shape))| {
-            if shape.len() == 2 && num_heads.is_some() {
+            if let (2, Some(num_h)) = (shape.len(), num_heads) {
                 let kv_dim = shape[0];
-                let num_h = num_heads.unwrap();
                 // head_dim = hidden_size / num_heads
                 if hidden_size % num_h == 0 {
                     let head_dim = hidden_size / num_h;
@@ -1302,10 +1301,8 @@ fn infer_model_config_from_tensors(
                         return Some(kv_dim / head_dim);
                     }
                 }
-                None
-            } else {
-                None
             }
+            None
         })
         .or(num_heads); // Fall back to MHA if inference fails
 
