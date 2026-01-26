@@ -362,8 +362,6 @@ fn print_welcome_banner(path: &Path, config: &ChatConfig) {
 #[cfg(feature = "inference")]
 mod realizar_chat {
     use super::*;
-    use aprender::demo::Qwen2Config;
-    use aprender::models::Qwen2Model;
     use aprender::text::bpe::Qwen2BpeTokenizer;
     use std::fs::File;
     use std::io::Read;
@@ -371,6 +369,9 @@ mod realizar_chat {
     /// Chat session using realizar for high-performance inference
     /// Y13: Architecture-agnostic (detected from model metadata)
     /// Y14: Format-agnostic (APR, GGUF, SafeTensors)
+    ///
+    /// PMAT-108: ALL inference delegated to realizar engine.
+    /// aprender::models is NOT used for inference (only training).
     pub struct ChatSession {
         /// Model bytes (kept for regeneration if needed)
         model_bytes: Vec<u8>,
@@ -388,8 +389,6 @@ mod realizar_chat {
         llama_tokenizer: Option<LlamaTokenizer>,
         /// Qwen2 BPE tokenizer (for SafeTensors/APR format)
         qwen_tokenizer: Option<Qwen2BpeTokenizer>,
-        /// Qwen2 model (for SafeTensors inference)
-        qwen_model: Option<Qwen2Model>,
     }
 
     impl ChatSession {
@@ -490,94 +489,31 @@ mod realizar_chat {
                 ModelFormat::Demo => (None, None),
             };
 
-            // Load Qwen2Model for SafeTensors format
-            let qwen_model = if format == ModelFormat::SafeTensors {
-                // Try to load config.json for model architecture
-                let config_path = path.parent().map(|p| p.join("config.json"));
-                let qwen_config = if let Some(ref cp) = config_path {
-                    if cp.exists() {
-                        // Parse config.json to get model parameters
-                        match std::fs::read_to_string(cp) {
-                            Ok(json) => {
-                                // Parse the config - extract key fields
-                                if let Ok(v) = serde_json::from_str::<serde_json::Value>(&json) {
-                                    let hidden_size =
-                                        v["hidden_size"].as_u64().unwrap_or(896) as usize;
-                                    let num_heads =
-                                        v["num_attention_heads"].as_u64().unwrap_or(14) as usize;
-                                    let num_kv_heads =
-                                        v["num_key_value_heads"].as_u64().unwrap_or(2) as usize;
-                                    let num_layers =
-                                        v["num_hidden_layers"].as_u64().unwrap_or(24) as usize;
-                                    let vocab_size =
-                                        v["vocab_size"].as_u64().unwrap_or(151936) as usize;
-                                    let intermediate_size =
-                                        v["intermediate_size"].as_u64().unwrap_or(4864) as usize;
-                                    let rope_theta =
-                                        v["rope_theta"].as_f64().unwrap_or(1_000_000.0);
-
-                                    println!(
-                                        "{} config: {} layers, {} hidden, {} heads",
-                                        "Loaded".green(),
-                                        num_layers,
-                                        hidden_size,
-                                        num_heads
-                                    );
-
-                                    Qwen2Config {
-                                        hidden_size,
-                                        num_attention_heads: num_heads,
-                                        num_kv_heads,
-                                        num_layers,
-                                        vocab_size,
-                                        max_seq_len: 32768,
-                                        intermediate_size,
-                                        rope_theta,
-                                    }
-                                } else {
-                                    Qwen2Config::qwen2_0_5b_instruct()
-                                }
+            // PMAT-108: SafeTensors inference uses realizar's SafetensorsToAprConverter
+            // No need to pre-load weights here - done lazily in generate_safetensors()
+            // This avoids loading the model twice and removes aprender::models dependency
+            if format == ModelFormat::SafeTensors {
+                // Just print config info for user feedback (via realizar's SafetensorsConfig)
+                if let Some(parent) = path.parent() {
+                    let config_path = parent.join("config.json");
+                    if config_path.exists() {
+                        if let Ok(json) = std::fs::read_to_string(&config_path) {
+                            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&json) {
+                                let num_layers = v["num_hidden_layers"].as_u64().unwrap_or(0);
+                                let hidden_size = v["hidden_size"].as_u64().unwrap_or(0);
+                                let num_heads = v["num_attention_heads"].as_u64().unwrap_or(0);
+                                println!(
+                                    "{} config: {} layers, {} hidden, {} heads",
+                                    "Loaded".green(),
+                                    num_layers,
+                                    hidden_size,
+                                    num_heads
+                                );
                             }
-                            Err(_) => Qwen2Config::qwen2_0_5b_instruct(),
                         }
-                    } else {
-                        Qwen2Config::qwen2_0_5b_instruct()
-                    }
-                } else {
-                    Qwen2Config::qwen2_0_5b_instruct()
-                };
-
-                // Create model and load weights
-                let mut model = Qwen2Model::new_uninitialized(&qwen_config);
-                match model.load_from_safetensors(path) {
-                    Ok(count) if count > 0 => {
-                        println!("{} {} tensors from SafeTensors", "Loaded".green(), count);
-                        model.eval();
-                        Some(model)
-                    }
-                    Ok(0) => {
-                        // GH-140: No tensors loaded - model has different naming convention
-                        println!(
-                            "{} No matching tensors found in SafeTensors file. \
-                             Model may use different weight naming convention.",
-                            "Error:".red()
-                        );
-                        println!(
-                            "{}",
-                            "Tip: Use GGUF format for better compatibility: apr run model.gguf"
-                                .yellow()
-                        );
-                        None
-                    }
-                    Ok(_) => unreachable!(), // count is always >= 0
-                    Err(e) => {
-                        println!("{} Failed to load weights: {}", "Warning:".yellow(), e);
-                        None
                     }
                 }
-            } else {
-                None
-            };
+            }
 
             // Detect chat template from model architecture (Toyota Way: Jidoka - auto-detect)
             // F-TEMPLATE-001: Use GGUF metadata for architecture detection, not filename
@@ -631,7 +567,6 @@ mod realizar_chat {
                 template_format,
                 llama_tokenizer,
                 qwen_tokenizer,
-                qwen_model,
             })
         }
 
