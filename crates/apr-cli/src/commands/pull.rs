@@ -17,6 +17,11 @@ use std::io::{self, Write};
 pub fn run(model_ref: &str, force: bool) -> Result<()> {
     println!("{}", "=== APR Pull ===".cyan().bold());
     println!();
+
+    // PMAT-108: Resolve HuggingFace URI to include filename if missing
+    let resolved_ref = resolve_hf_uri(model_ref)?;
+    let model_ref = resolved_ref.as_str();
+
     println!("Model: {}", model_ref.cyan());
 
     // Initialize pacha ModelFetcher
@@ -229,6 +234,85 @@ fn format_bytes(bytes: u64) -> String {
     }
 }
 
+/// PMAT-108: Resolve HuggingFace URI to include filename if missing
+///
+/// Accepts both formats:
+/// - `hf://Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF` (auto-detects Q4_K_M .gguf)
+/// - `hf://Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/model.gguf` (unchanged)
+///
+/// Priority for auto-detection:
+/// 1. Q4_K_M (best quality/size ratio)
+/// 2. Q4_K_S
+/// 3. Q4_0
+/// 4. Any .gguf file
+pub fn resolve_hf_uri(uri: &str) -> Result<String> {
+    // If not a HuggingFace URI, return unchanged
+    if !uri.starts_with("hf://") {
+        return Ok(uri.to_string());
+    }
+
+    // If already has .gguf extension, return unchanged
+    if uri.to_lowercase().ends_with(".gguf") {
+        return Ok(uri.to_string());
+    }
+
+    // Parse org/repo from URI
+    let path = uri.strip_prefix("hf://").unwrap_or(uri);
+    let parts: Vec<&str> = path.split('/').collect();
+
+    if parts.len() < 2 {
+        return Err(CliError::ValidationFailed(format!(
+            "Invalid HuggingFace URI: {}. Expected hf://org/repo or hf://org/repo/file.gguf",
+            uri
+        )));
+    }
+
+    let org = parts[0];
+    let repo = parts[1];
+
+    // Query HuggingFace API for repo files
+    let api_url = format!("https://huggingface.co/api/models/{}/{}", org, repo);
+
+    let response = ureq::get(&api_url)
+        .call()
+        .map_err(|e| CliError::NetworkError(format!("Failed to query HuggingFace API: {}", e)))?;
+
+    let body: serde_json::Value = response
+        .into_json()
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to parse HuggingFace response: {}", e)))?;
+
+    // Extract siblings (files) from response
+    let siblings = body["siblings"]
+        .as_array()
+        .ok_or_else(|| CliError::ValidationFailed("No files found in repository".to_string()))?;
+
+    // Find GGUF files
+    let gguf_files: Vec<&str> = siblings
+        .iter()
+        .filter_map(|s| s["rfilename"].as_str())
+        .filter(|f| f.to_lowercase().ends_with(".gguf"))
+        .collect();
+
+    if gguf_files.is_empty() {
+        return Err(CliError::ValidationFailed(format!(
+            "No .gguf files found in {}/{}",
+            org, repo
+        )));
+    }
+
+    // Priority: Q4_K_M > Q4_K_S > Q4_0 > Q8_0 > any
+    let quantization_priority = ["q4_k_m", "q4_k_s", "q4_0", "q8_0"];
+
+    for quant in quantization_priority {
+        if let Some(file) = gguf_files.iter().find(|f| f.to_lowercase().contains(quant)) {
+            return Ok(format!("hf://{}/{}/{}", org, repo, file));
+        }
+    }
+
+    // Fallback to first GGUF file
+    Ok(format!("hf://{}/{}/{}", org, repo, gguf_files[0]))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -240,5 +324,51 @@ mod tests {
         assert_eq!(format_bytes(1024 * 1024), "1.00 MB");
         assert_eq!(format_bytes(1024 * 1024 * 1024), "1.00 GB");
         assert_eq!(format_bytes(5 * 1024 * 1024 * 1024), "5.00 GB");
+    }
+
+    // =========================================================================
+    // PMAT-108: resolve_hf_uri Tests (Extreme TDD)
+    // =========================================================================
+
+    #[test]
+    fn test_pmat_108_resolve_uri_with_gguf_extension_unchanged() {
+        let uri = "hf://Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/model.gguf";
+        let resolved = resolve_hf_uri(uri).unwrap();
+        assert_eq!(resolved, uri, "URI with .gguf should be unchanged");
+    }
+
+    #[test]
+    fn test_pmat_108_resolve_uri_case_insensitive_gguf() {
+        let uri = "hf://Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/model.GGUF";
+        let resolved = resolve_hf_uri(uri).unwrap();
+        assert_eq!(resolved, uri, "URI with .GGUF should be unchanged");
+    }
+
+    #[test]
+    fn test_pmat_108_resolve_non_hf_uri_unchanged() {
+        let uri = "/path/to/local/model.gguf";
+        let resolved = resolve_hf_uri(uri).unwrap();
+        assert_eq!(resolved, uri, "Non-hf:// URI should be unchanged");
+    }
+
+    #[test]
+    fn test_pmat_108_resolve_invalid_uri_fails() {
+        let uri = "hf://invalid";
+        let result = resolve_hf_uri(uri);
+        assert!(result.is_err(), "Invalid URI should fail");
+    }
+
+    // Integration test (requires network, marked ignore for CI)
+    #[test]
+    #[ignore]
+    fn test_pmat_108_resolve_qwen_repo_finds_q4_k_m() {
+        let uri = "hf://Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF";
+        let resolved = resolve_hf_uri(uri).unwrap();
+        assert!(resolved.ends_with(".gguf"), "Should end with .gguf");
+        assert!(
+            resolved.to_lowercase().contains("q4_k_m"),
+            "Should prefer Q4_K_M quantization: {}",
+            resolved
+        );
     }
 }
