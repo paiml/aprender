@@ -119,6 +119,10 @@ pub enum Commands {
         #[arg(long, value_name = "LEVEL", default_value = "basic")]
         trace_level: String,
 
+        /// Shorthand for --trace --trace-level payload (tensor value inspection)
+        #[arg(long)]
+        trace_payload: bool,
+
         /// Enable inline Roofline profiling (PMAT-SHOWCASE-METHODOLOGY-001)
         #[arg(long)]
         profile: bool,
@@ -968,27 +972,33 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
             trace_verbose,
             trace_output,
             trace_level,
+            trace_payload,
             profile,
-        } => run::run(
-            source,
-            input.as_deref(),
-            prompt.as_deref(),
-            *max_tokens,
-            *stream,
-            language.as_deref(),
-            task.as_deref(),
-            format,
-            *no_gpu,
-            *offline,
-            *benchmark,
-            cli.verbose,
-            *trace,
-            trace_steps.as_deref(),
-            *trace_verbose,
-            trace_output.clone(),
-            trace_level.as_str(),
-            *profile,
-        ),
+        } => {
+            // Handle --trace-payload shorthand (enables trace + sets level to payload)
+            let effective_trace = *trace || *trace_payload;
+            let effective_trace_level = if *trace_payload { "payload" } else { trace_level.as_str() };
+            run::run(
+                source,
+                input.as_deref(),
+                prompt.as_deref(),
+                *max_tokens,
+                *stream,
+                language.as_deref(),
+                task.as_deref(),
+                format,
+                *no_gpu,
+                *offline,
+                *benchmark,
+                cli.verbose,
+                effective_trace,
+                trace_steps.as_deref(),
+                *trace_verbose,
+                trace_output.clone(),
+                effective_trace_level,
+                *profile,
+            )
+        }
 
         Commands::Serve {
             file,

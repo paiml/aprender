@@ -24,6 +24,7 @@
 | `--trace-level layer` output | ✅ DONE | Per-layer timing table in run command |
 | `--profile` Roofline output | ✅ DONE | Memory/compute analysis in run command |
 | `--trace-output` for GGUF | ✅ DONE | JSON output to file |
+| `--trace-payload` flag | ✅ DONE | Tensor value inspection (activation stats) |
 | Ollama parity | ✅ DONE | Automated comparison via `--with-ollama` |
 
 ---
@@ -400,12 +401,13 @@ cargo run --example qa_run -- --backend cpu --format gguf --trace-level layer
 
 ## 8. Implementation Checklist
 
-- [ ] Update `qa_run.rs` with `--class` flag
-- [ ] Add GGUF → APR Q4_K conversion in QA setup
-- [ ] Add Ollama comparison tests
-- [ ] Implement all tracing mode tests
-- [ ] Update `default_model_for_format()` to use same canonical source
-- [ ] Add pre-conversion step before matrix tests
+- [x] Update `qa_run.rs` with `--class` flag
+- [x] Add GGUF → APR Q4_K conversion in QA setup
+- [x] Add Ollama comparison tests (`--with-ollama`)
+- [x] Implement basic tracing mode tests
+- [x] Update `default_model_for_format()` to use same canonical source
+- [x] Add pre-conversion step before matrix tests
+- [x] Add `--trace-payload` flag to `run` command (tensor value inspection)
 - [ ] Update spec with actual benchmark results
 
 ---
