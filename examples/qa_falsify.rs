@@ -373,27 +373,35 @@ fn test_hang_detection_simulation() {
 
 fn test_zombie_server_info() {
     println!("\n{}═══════════════════════════════════════════════════════════════{}", "\x1b[1;34m", "\x1b[0m");
-    println!("{}TEST 3: ZOMBIE SERVER (Manual Testing Required){}", "\x1b[1;33m", "\x1b[0m");
+    println!("{}TEST 3: ZOMBIE SERVER (PMAT-098-PF SIGINT Resiliency){}", "\x1b[1;33m", "\x1b[0m");
     println!("{}═══════════════════════════════════════════════════════════════{}\n", "\x1b[1;34m", "\x1b[0m");
 
-    println!("  This test requires manual execution:");
+    println!("  {}SIGINT Handler Implementation (PMAT-098-PF):{}", "\x1b[1m", "\x1b[0m");
+    println!("     - Global process registry: Arc<Mutex<Vec<u32>>>");
+    println!("     - ctrlc handler kills all registered processes");
+    println!("     - ProcessGuard RAII for panic safety");
+    println!("     - Jidoka message: '[JIDOKA] SIGINT received. Reaping N child processes...'");
+    println!();
+    println!("  {}Manual Verification:{}", "\x1b[1m", "\x1b[0m");
     println!();
     println!("  {}A. Interruption Test:{}", "\x1b[1m", "\x1b[0m");
     println!("     1. Run: cargo run --example qa_run -- --modality serve");
-    println!("     2. Press Ctrl+C immediately after 'Starting server...'");
-    println!("     3. Check: ps aux | grep 'apr.*serve'");
-    println!("     4. FAIL if apr serve process is still running");
+    println!("     2. Press Ctrl+C immediately after 'Waiting for Health Check'");
+    println!("     3. Verify: '[JIDOKA] SIGINT received...' message appears");
+    println!("     4. Check: lsof -i :PORT returns empty (server port released)");
+    println!("     5. Check: ps aux | grep 'apr.*serve' returns empty");
+    println!("     6. {}PASS if all checks pass{}", "\x1b[32m", "\x1b[0m");
     println!();
-    println!("  {}B. Port Conflict Test:{}", "\x1b[1m", "\x1b[0m");
-    println!("     1. Terminal 1: cargo run -p apr-cli -- serve model.gguf --port 8080");
-    println!("     2. Terminal 2: cargo run --example qa_run -- --modality serve");
-    println!("     3. FAIL if QA suite panics instead of clean 'Port Busy' error");
+    println!("  {}B. Port Recovery Test:{}", "\x1b[1m", "\x1b[0m");
+    println!("     1. Interrupt a test run with Ctrl+C");
+    println!("     2. Immediately start a new test run");
+    println!("     3. {}PASS if no 'Address already in use' error{}", "\x1b[32m", "\x1b[0m");
     println!();
-    println!("  {}Current Implementation Analysis:{}", "\x1b[1m", "\x1b[0m");
-    println!("     - Server cleanup: child.kill() + child.wait() in run_serve_test()");
-    println!("     - No SIGINT handler for graceful parent shutdown");
-    println!("     - Port selection: Uses random port (should avoid conflicts)");
-    println!("     - {}Risk:{} If parent crashes, child server may become orphan", "\x1b[33m", "\x1b[0m");
+    println!("  {}Implementation Details:{}", "\x1b[1m", "\x1b[0m");
+    println!("     - setup_signal_handler() called at main() start");
+    println!("     - run_serve_test() uses ProcessGuard for server");
+    println!("     - run_chat_test() uses register_process/unregister_process");
+    println!("     - Exit code 130 on SIGINT (standard convention)");
 }
 
 // ============================================================================
@@ -416,13 +424,16 @@ fn main() {
     println!("{}FALSIFICATION SUMMARY{}", "\x1b[1;33m", "\x1b[0m");
     println!("{}═══════════════════════════════════════════════════════════════{}\n", "\x1b[1;34m", "\x1b[0m");
 
-    println!("  {}FINDINGS (Post-Fix):{}", "\x1b[1m", "\x1b[0m");
+    println!("  {}FINDINGS (All Fixed):{}", "\x1b[1m", "\x1b[0m");
     println!("  1. Hang Detection: {}✓{} Works as designed (polling + kill)", "\x1b[32m", "\x1b[0m");
     println!("  2. Garbage Detection: {}✓{} All edge cases handled correctly", "\x1b[32m", "\x1b[0m");
-    println!("  3. Zombie Server: {}⚠{} Requires manual testing (SIGINT handling risk)", "\x1b[33m", "\x1b[0m");
+    println!("  3. Zombie Server: {}✓ FIXED{} - SIGINT handler + ProcessGuard (PMAT-098-PF)", "\x1b[32m", "\x1b[0m");
     println!("  4. Matrix Integrity: {}✓ FIXED{} - Documentation updated to 21 cells", "\x1b[32m", "\x1b[0m");
     println!("  5. Answer Verification: {}✓ FIXED{} - Word boundary check added", "\x1b[32m", "\x1b[0m");
     println!();
-    println!("  {}REMAINING WORK:{}", "\x1b[1m", "\x1b[0m");
-    println!("  - Add SIGINT handler for graceful server cleanup on parent interrupt");
+    println!("  {}IMPLEMENTATION:{}", "\x1b[1m", "\x1b[0m");
+    println!("  - ctrlc crate added to dev-dependencies");
+    println!("  - Global process registry: PROCESS_REGISTRY (OnceLock<Arc<Mutex<Vec<u32>>>>)");
+    println!("  - ProcessGuard RAII struct for automatic cleanup on Drop");
+    println!("  - Jidoka-style shutdown message on SIGINT");
 }

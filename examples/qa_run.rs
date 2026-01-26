@@ -67,7 +67,135 @@ use std::env;
 use std::io::Read;
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
+
+// ============================================================================
+// SIGINT RESILIENCY: Global Process Registry (PMAT-098-PF)
+// ============================================================================
+
+/// Global registry of active child processes for SIGINT cleanup.
+/// All spawned child processes (especially `apr serve`) must be registered here
+/// so they can be killed on Ctrl+C to prevent zombie processes.
+static PROCESS_REGISTRY: OnceLock<Arc<Mutex<Vec<u32>>>> = OnceLock::new();
+
+/// Get the global process registry, initializing if needed
+fn get_registry() -> Arc<Mutex<Vec<u32>>> {
+    PROCESS_REGISTRY
+        .get_or_init(|| Arc::new(Mutex::new(Vec::new())))
+        .clone()
+}
+
+/// Register a child process ID for SIGINT cleanup
+fn register_process(pid: u32) {
+    if let Ok(mut registry) = get_registry().lock() {
+        registry.push(pid);
+    }
+}
+
+/// Unregister a child process ID (after successful reap)
+fn unregister_process(pid: u32) {
+    if let Ok(mut registry) = get_registry().lock() {
+        registry.retain(|&p| p != pid);
+    }
+}
+
+/// Kill all registered child processes (called by SIGINT handler)
+fn kill_all_registered() -> usize {
+    let registry = get_registry();
+    let pids = match registry.lock() {
+        Ok(guard) => guard.clone(),
+        Err(_) => return 0,
+    };
+
+    let count = pids.len();
+    for pid in pids {
+        // Use kill(2) syscall via std::process::Command
+        // This is portable and doesn't require libc
+        #[cfg(unix)]
+        {
+            let _ = Command::new("kill")
+                .args(["-9", &pid.to_string()])
+                .output();
+        }
+        #[cfg(windows)]
+        {
+            let _ = Command::new("taskkill")
+                .args(["/F", "/PID", &pid.to_string()])
+                .output();
+        }
+    }
+    count
+}
+
+/// RAII guard that auto-kills a child process on drop (panic safety)
+/// This provides a secondary layer of safety for panics.
+struct ProcessGuard {
+    child: Option<Child>,
+    pid: u32,
+}
+
+impl ProcessGuard {
+    fn new(child: Child) -> Self {
+        let pid = child.id();
+        register_process(pid);
+        Self {
+            child: Some(child),
+            pid,
+        }
+    }
+
+    /// Get mutable reference to the child process
+    fn child_mut(&mut self) -> Option<&mut Child> {
+        self.child.as_mut()
+    }
+
+    /// Take ownership of the child, preventing auto-kill on drop
+    #[allow(dead_code)]
+    fn take(&mut self) -> Option<Child> {
+        unregister_process(self.pid);
+        self.child.take()
+    }
+
+    /// Manually kill and wait for the child
+    fn kill_and_wait(&mut self) {
+        if let Some(ref mut child) = self.child {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+        unregister_process(self.pid);
+        self.child = None;
+    }
+}
+
+impl Drop for ProcessGuard {
+    fn drop(&mut self) {
+        // Kill the process if it's still running
+        if let Some(ref mut child) = self.child {
+            let _ = child.kill();
+            let _ = child.wait();
+            unregister_process(self.pid);
+        }
+    }
+}
+
+/// Set up SIGINT/SIGTERM handler for graceful shutdown
+/// Must be called once at program start
+fn setup_signal_handler() {
+    if let Err(e) = ctrlc::set_handler(move || {
+        let count = kill_all_registered();
+        eprintln!(
+            "\n{}[JIDOKA] SIGINT received. Reaping {} active child process(es)...{}",
+            "\x1b[1;33m", count, "\x1b[0m"
+        );
+        std::process::exit(130); // Standard exit code for SIGINT
+    }) {
+        eprintln!(
+            "{}Warning: Could not set SIGINT handler: {}{}",
+            "\x1b[33m", e, "\x1b[0m"
+        );
+    }
+}
 
 // ANSI colors
 const RED: &str = "\x1b[0;31m";
@@ -666,14 +794,23 @@ fn run_chat_test(
         Err(e) => return Err(format!("Failed to spawn chat: {}", e)),
     };
 
+    // Register process for SIGINT cleanup (PMAT-098-PF)
+    let pid = child.id();
+    register_process(pid);
+
     // Write prompt to stdin, then close it to signal EOF
     if let Some(mut stdin) = child.stdin.take() {
         let _ = writeln!(stdin, "{}", prompt);
         // stdin is dropped here, closing the pipe
     }
 
-    // Wait with timeout
-    let status = wait_with_timeout(&mut child, timeout)?;
+    // Wait with timeout (this handles kill on timeout)
+    let status = wait_with_timeout(&mut child, timeout);
+
+    // Unregister after process is reaped (success or timeout)
+    unregister_process(pid);
+
+    let status = status?;
 
     // Read output
     let mut stdout_str = String::new();
@@ -738,8 +875,13 @@ fn run_serve_test(
         eprintln!("{}DEBUG (serve): {:?} on port {}{}", CYAN, cmd, port, NC);
     }
 
-    let mut server = match cmd.spawn() {
-        Ok(child) => child,
+    // Wrap server in ProcessGuard for SIGINT safety (PMAT-098-PF)
+    // This ensures the server is killed even if:
+    // 1. The user presses Ctrl+C
+    // 2. The test panics
+    // 3. An early return occurs
+    let mut server_guard = match cmd.spawn() {
+        Ok(child) => ProcessGuard::new(child),
         Err(e) => return Err(format!("Failed to spawn serve: {}", e)),
     };
 
@@ -750,13 +892,15 @@ fn run_serve_test(
 
     loop {
         if start.elapsed() >= server_timeout {
-            let _ = server.kill();
+            // ProcessGuard::drop will kill the server
             return Err("Server startup timeout (30s)".to_string());
         }
 
         // Check if server crashed
-        if let Ok(Some(status)) = server.try_wait() {
-            return Err(format!("Server exited early: {}", status));
+        if let Some(child) = server_guard.child_mut() {
+            if let Ok(Some(status)) = child.try_wait() {
+                return Err(format!("Server exited early: {}", status));
+            }
         }
 
         // Try health check
@@ -805,13 +949,12 @@ fn run_serve_test(
 
     // Check timeout
     if request_start.elapsed() >= timeout {
-        let _ = server.kill();
+        // ProcessGuard::drop will kill the server
         return Err(format!("Request timeout ({}s)", timeout.as_secs()));
     }
 
-    // Kill server
-    let _ = server.kill();
-    let _ = server.wait();
+    // Explicitly kill server before returning (ProcessGuard::drop would do this too)
+    server_guard.kill_and_wait();
 
     if response.status.success() {
         Ok(String::from_utf8_lossy(&response.stdout).to_string())
@@ -1478,6 +1621,9 @@ fn print_help() {
 }
 
 fn main() {
+    // Set up SIGINT handler for graceful shutdown (PMAT-098-PF: zombie mitigation)
+    setup_signal_handler();
+
     let args: Vec<String> = env::args().collect();
     let mut config = Config::default();
 
