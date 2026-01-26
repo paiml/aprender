@@ -283,6 +283,7 @@
 - [Case Study: Lottery Ticket Pruning](./examples/lottery-ticket-pruning.md)
 - [Case Study: Benchmark Comparison](./examples/bench-comparison.md)
 - [Case Study: Showcase Benchmark](./examples/showcase-benchmark.md)
+- [Case Study: QA Falsification Protocol](./examples/qa-falsification.md)
 
 # Sprint-Based Development
 

@@ -27,8 +27,8 @@ name = "recommendation_latency"
 harness = false
 
 [dependencies]
-# Use crates.io version for release
-aprender = { version = "0.24", features = ["format-encryption", "format-compression", "format-homomorphic"] }
+# Use path for local dev, crates.io for release
+aprender = { path = "../..", version = "0.25.0", features = ["format-encryption", "format-compression", "format-homomorphic"] }
 clap = { version = "4", features = ["derive"] }
 dirs = "5"
 serde = { version = "1", features = ["derive"] }

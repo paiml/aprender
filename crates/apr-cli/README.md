@@ -198,6 +198,34 @@ for i in {1..10}; do
 done
 ```
 
+## QA and Testing
+
+The apr CLI includes comprehensive QA commands for model validation:
+
+```bash
+# Run falsifiable QA checklist
+apr qa model.gguf
+
+# With custom throughput threshold
+apr qa model.gguf --assert-tps 100
+
+# Compare against Ollama
+apr qa model.gguf --assert-speedup 2.0
+
+# JSON output for CI integration
+apr qa model.gguf --skip-ollama --json
+```
+
+For automated QA testing, use the example runners:
+
+```bash
+# Full 21-cell QA matrix
+cargo run --example qa_run -- --full-matrix
+
+# Popperian falsification tests
+cargo run --example qa_falsify
+```
+
 ## License
 
 MIT

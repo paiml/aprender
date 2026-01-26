@@ -1074,19 +1074,29 @@ mod realizar_chat {
             prompt: &[u32],
             config: &ChatConfig,
         ) -> Result<Vec<u32>, String> {
-            // Use loaded Qwen2Model for SafeTensors inference
-            let model = self.qwen_model.as_mut().ok_or_else(|| {
-                "SafeTensors model not loaded. Check config.json and model weights.".to_string()
-            })?;
+            // PMAT-108 FIX: Use realizar's SafeTensors inference, not aprender's training model
+            // The old path used Qwen2Model.generate() which is 0.3 tok/s (training code)
+            // The new path uses AprTransformer via SafetensorsToAprConverter for 25+ tok/s
+            use realizar::apr_transformer::GenerateConfig;
+            use realizar::safetensors_infer::SafetensorsToAprConverter;
 
-            // Limit tokens for reasonable CPU inference speed
-            let max_tokens = config.max_tokens.min(32);
+            // Convert SafeTensors to AprTransformer (optimized inference engine)
+            let transformer = SafetensorsToAprConverter::convert(&self.model_path)
+                .map_err(|e| format!("SafeTensors conversion failed: {e}"))?;
 
-            // Generate using the model
-            let output = model.generate(prompt, max_tokens, config.temperature, config.top_p);
+            // Use KV-cached generation for O(n) instead of O(n²)
+            let gen_config = GenerateConfig {
+                max_tokens: config.max_tokens.min(128),
+                temperature: config.temperature,
+                top_p: config.top_p,
+                top_k: 0,
+                repetition_penalty: 1.0,
+                trace: config.trace,
+            };
 
-            // Return only the newly generated tokens (after prompt)
-            Ok(output[prompt.len()..].to_vec())
+            transformer
+                .generate_with_cache(prompt, &gen_config)
+                .map_err(|e| format!("SafeTensors generate failed: {e}"))
         }
 
         #[allow(dead_code)]

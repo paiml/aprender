@@ -7,6 +7,71 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.0] - 2026-01-26
+
+### Added
+
+#### QA Protocol Implementation (PMAT-098)
+
+- **QA Matrix Runner** (`examples/qa_run.rs`) - Comprehensive falsification suite
+  - 21-cell test matrix: Modality (3) × Format (3) × Backend (2) + trace variants
+  - Modalities: `run`, `chat`, `serve`
+  - Formats: GGUF, SafeTensors, APR
+  - Backends: CPU, GPU
+  - Hang detection with 60s timeout (§7.6)
+  - Garbage output detection (non-ASCII, repetition, mojibake patterns)
+  - Word boundary validation for answer verification
+  - Ollama parity comparison mode
+
+- **QA Falsification Suite** (`examples/qa_falsify.rs`) - Popperian falsification tests
+  - Automated tests for hang detection, garbage detection, answer verification
+  - Matrix integrity validation
+  - SIGINT handler verification
+  - Documents all falsification hypotheses and results
+
+- **SIGINT Resiliency** (PMAT-098-PF) - Zombie process mitigation
+  - Global process registry with `OnceLock<Arc<Mutex<Vec<u32>>>>`
+  - `ProcessGuard` RAII struct for automatic cleanup on Drop
+  - Signal handler with Jidoka-style messaging
+  - Prevents orphaned `apr serve` processes on Ctrl+C
+  - Exit code 130 for proper SIGINT handling
+
+#### CLI Flags for QA Matrix
+
+```bash
+# Run full 21-cell matrix
+cargo run --example qa_run -- --full-matrix
+
+# Single modality test
+cargo run --example qa_run -- --modality serve --backend cpu --format gguf
+
+# Compare against Ollama
+cargo run --example qa_run -- --with-ollama
+```
+
+### Changed
+
+- **ctrlc** crate added to dev-dependencies for signal handling
+- Documentation updated with QA protocol methodology
+
+### Fixed
+
+- **Answer verification brittleness** - Added `contains_as_word()` for word boundary checking
+  - "four" no longer matches "fourteen"
+- **Matrix documentation** - Corrected from "27-test" to "21-cell"
+
+### Quality
+
+- All QA falsification tests passing
+- SIGINT handler verified with apr serve
+- Zero zombie processes after Ctrl+C
+
+## [0.24.1] - 2026-01-25
+
+### Changed
+
+- Updated HuggingFace URI resolution for auto-pull
+
 ## [0.20.0] - 2025-12-22
 
 ### Added

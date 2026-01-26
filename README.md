@@ -48,7 +48,7 @@ Add aprender to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-aprender = "0.24"
+aprender = "0.25"
 ```
 
 ### Optional Features
@@ -306,6 +306,29 @@ apr serve qwen2.5-coder-1.5b-q4_k_m.gguf --port 8080
 
 See [`docs/specifications/qwen2.5-coder-showcase-demo.md`](docs/specifications/qwen2.5-coder-showcase-demo.md) for full benchmark methodology.
 
+## QA & Testing
+
+The project includes comprehensive QA infrastructure for model validation:
+
+```bash
+# Run full 21-cell QA matrix (modality × format × backend)
+cargo run --example qa_run -- --full-matrix
+
+# Run QA falsification suite (Popperian methodology)
+cargo run --example qa_falsify
+
+# Single modality test with Ollama comparison
+cargo run --example qa_run -- --modality serve --backend cpu --format gguf --with-ollama
+```
+
+**QA Matrix Coverage:**
+- **Modalities**: `run`, `chat`, `serve`
+- **Formats**: GGUF, SafeTensors, APR
+- **Backends**: CPU, GPU
+- **Features**: Hang detection (60s), garbage output detection, answer verification
+
+See [`examples/qa_run.rs`](examples/qa_run.rs) and [`examples/qa_falsify.rs`](examples/qa_falsify.rs) for implementation.
+
 ## Documentation
 
 | Resource | Link |
@@ -314,6 +337,7 @@ See [`docs/specifications/qwen2.5-coder-showcase-demo.md`](docs/specifications/q
 | User Guide | [paiml.github.io/aprender](https://paiml.github.io/aprender/) |
 | Examples | [`examples/`](examples/) |
 | APR Format Spec | [`docs/specifications/APR-SPEC.md`](docs/specifications/APR-SPEC.md) |
+| QA Protocol | [`docs/specifications/qa-showcase-methodology.md`](docs/specifications/qa-showcase-methodology.md) |
 
 ## Contributing
 
