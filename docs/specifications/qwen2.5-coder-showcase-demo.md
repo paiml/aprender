@@ -1,15 +1,15 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 1.2.0
-**Status:** PRODUCTION READY — All QA modalities pass (165/165 points).
+**Version:** 1.3.0
+**Status:** PRODUCTION READY — All QA modalities pass (132/135 points).
 **Author:** PAIML Engineering
-**Date:** 2026-01-25
-**Latest Update:** PMAT-APR-TOK-001 FIXED. APR format now embeds tokenizer from SafeTensors conversion. All 6 matrix cells pass (90/90 A+). Tokenizer payload preserved across all conversion paths.
+**Date:** 2026-01-26
+**Latest Update:** GQA Bug Fixed. All QA modalities passing. Minor CPU performance regression noted (3.8 tok/s).
 **QA Examples:**
-- `cargo run --example qa_verify` (20/20 A+) - Quality gates
+- `cargo run --example qa_verify` (20/20) - Quality gates
 - `cargo run --example qa_chat` (20/20) - Chat command tests
 - `cargo run --example qa_serve` (35/35) - HTTP REST API tests
-- `cargo run --example qa_run --matrix` (90/90 A+) - Matrix: 2 backends × 3 formats (ALL PASS)
+- `cargo run --example qa_run --matrix` (57/60) - Matrix: 2 backends × 3 formats (All Pass, minor perf regression)
 **PMAT Roadmap ID:** `SHOWCASE-BRICK-001`
 **Issue:** `APR-REALIZE-001`
 

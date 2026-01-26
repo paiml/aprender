@@ -247,7 +247,7 @@ checksum = "a23eb6b1614318a8071c9b2521f36b424b2c83db5eb3a0fead4a6c0809af6e61"
 
 [[package]]
 name = "apr-cli"
-version = "0.2.11"
+version = "0.2.12"
 dependencies = [
  "aprender 0.24.1",
  "assert_cmd",
@@ -318,7 +318,7 @@ dependencies = [
  "sha2",
  "tempfile",
  "thiserror 2.0.18",
- "trueno 0.14.1",
+ "trueno 0.14.2",
  "trueno-rag",
  "trueno-zram-core 0.3.0",
  "ureq",
@@ -4734,7 +4734,7 @@ name = "realizar"
 version = "0.6.8"
 dependencies = [
  "anyhow",
- "aprender 0.24.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "aprender 0.24.1",
  "arc-swap",
  "async-stream",
  "axum",
@@ -4756,7 +4756,7 @@ dependencies = [
  "tokio-stream",
  "tower 0.4.13",
  "tracing",
- "trueno 0.14.1",
+ "trueno 0.14.2",
  "trueno-gpu",
  "uuid",
 ]
@@ -6163,9 +6163,7 @@ dependencies = [
 
 [[package]]
 name = "trueno"
-version = "0.14.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "af04023ed05b97ab754e8b8ad1f8a74a5d75f82c4bb7dffef6d24f2f58b346d6"
+version = "0.14.2"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -6214,8 +6212,6 @@ dependencies = [
 [[package]]
 name = "trueno-gpu"
 version = "0.4.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "63c8725e80811eca69f26f296616fa1a16afd5e3a5702bbe223e65732dc9a414"
 dependencies = [
  "libloading",
  "thiserror 2.0.18",

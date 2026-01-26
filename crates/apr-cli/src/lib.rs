@@ -977,7 +977,11 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
         } => {
             // Handle --trace-payload shorthand (enables trace + sets level to payload)
             let effective_trace = *trace || *trace_payload;
-            let effective_trace_level = if *trace_payload { "payload" } else { trace_level.as_str() };
+            let effective_trace_level = if *trace_payload {
+                "payload"
+            } else {
+                trace_level.as_str()
+            };
             run::run(
                 source,
                 input.as_deref(),

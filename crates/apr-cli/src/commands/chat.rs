@@ -956,11 +956,7 @@ mod realizar_chat {
                     let vram_mb = cuda_model.vram_mb();
                     println!(
                         "{}",
-                        format!(
-                            "[APR CUDA: {} ({} MB VRAM)]",
-                            gpu_name, vram_mb
-                        )
-                        .bright_green()
+                        format!("[APR CUDA: {} ({} MB VRAM)]", gpu_name, vram_mb).bright_green()
                     );
 
                     // EOS tokens: <|im_end|> = 151645, <|endoftext|> = 151643

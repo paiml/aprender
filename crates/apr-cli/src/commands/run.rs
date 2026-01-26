@@ -1917,7 +1917,10 @@ pub(crate) fn run(
         let tokens_generated = result.tokens_generated.unwrap_or(max_tokens);
 
         eprintln!();
-        eprintln!("{}", "Activation Statistics (--trace-level payload):".cyan());
+        eprintln!(
+            "{}",
+            "Activation Statistics (--trace-level payload):".cyan()
+        );
         eprintln!();
         eprintln!(
             "{}",
@@ -1927,7 +1930,10 @@ pub(crate) fn run(
         eprintln!();
 
         // Show sample activation stats (would need actual tensor data for real values)
-        eprintln!("  {:>10} | {:>12} | {:>12} | {:>12} | {:>12}", "Layer", "Min", "Max", "Mean", "Std");
+        eprintln!(
+            "  {:>10} | {:>12} | {:>12} | {:>12} | {:>12}",
+            "Layer", "Min", "Max", "Mean", "Std"
+        );
         eprintln!("  -----------|--------------|--------------|--------------|-------------");
         for i in 0..num_layers.min(5) {
             // Placeholder stats - in real implementation would capture actual tensor values
