@@ -26,6 +26,8 @@ use crate::error::CliError;
 use crate::output;
 #[cfg(feature = "inference")]
 use aprender::text::llama_tokenizer::LlamaTokenizer;
+// PMAT-109: Qwen tokenizer needed for APR/SafeTensors format
+use aprender::text::bpe::Qwen2BpeTokenizer;
 // Chat template support (Toyota Way: Standardized Work)
 use aprender::text::chat_template::{
     auto_detect_template, detect_format_from_name, ChatMessage, ChatTemplateEngine, TemplateFormat,
@@ -40,8 +42,6 @@ use std::time::Instant;
 use aprender::demo::Qwen2Config;
 #[cfg(not(feature = "inference"))]
 use aprender::models::Qwen2Model;
-#[cfg(not(feature = "inference"))]
-use aprender::text::bpe::Qwen2BpeTokenizer;
 
 /// Chat configuration options
 pub(crate) struct ChatConfig {
@@ -163,6 +163,112 @@ fn detect_format(path: &Path) -> ModelFormat {
         Some("safetensors") => ModelFormat::SafeTensors,
         _ => ModelFormat::Demo,
     }
+}
+
+/// PMAT-109: Find Qwen tokenizer from multiple standard locations
+///
+/// Search order:
+/// 1. Model's parent directory (tokenizer.json)
+/// 2. HuggingFace cache (~/.cache/huggingface/hub/models--Qwen--*/snapshots/*/tokenizer.json)
+/// 3. APR tokenizer cache (~/.apr/tokenizers/qwen2/tokenizer.json)
+fn find_qwen_tokenizer(model_path: &Path) -> Result<Option<Qwen2BpeTokenizer>, CliError> {
+    // 1. Check model's parent directory first
+    if let Some(parent) = model_path.parent() {
+        let tokenizer_path = parent.join("tokenizer.json");
+        if tokenizer_path.exists() {
+            match Qwen2BpeTokenizer::from_file(&tokenizer_path) {
+                Ok(tok) => {
+                    println!(
+                        "{} {} ({})",
+                        "Loaded tokenizer:".green(),
+                        tokenizer_path.display(),
+                        format!("{} tokens", tok.vocab_size()).dimmed()
+                    );
+                    return Ok(Some(tok));
+                }
+                Err(e) => {
+                    println!(
+                        "{} {}",
+                        "Warning: Failed to load tokenizer from model dir:".yellow(),
+                        e
+                    );
+                }
+            }
+        }
+    }
+
+    // 2. Search HuggingFace cache for Qwen tokenizers
+    if let Some(home) = dirs::home_dir() {
+        let hf_cache = home.join(".cache/huggingface/hub");
+        if hf_cache.exists() {
+            // Look for Qwen model directories
+            if let Ok(entries) = std::fs::read_dir(&hf_cache) {
+                for entry in entries.flatten() {
+                    let name = entry.file_name();
+                    let name_str = name.to_string_lossy();
+                    // Match Qwen model directories (Qwen, Qwen2, Qwen2.5, etc.)
+                    if name_str.starts_with("models--Qwen") {
+                        let snapshots_dir = entry.path().join("snapshots");
+                        if snapshots_dir.exists() {
+                            if let Ok(snapshots) = std::fs::read_dir(&snapshots_dir) {
+                                for snapshot in snapshots.flatten() {
+                                    let tokenizer_path = snapshot.path().join("tokenizer.json");
+                                    if tokenizer_path.exists() {
+                                        match Qwen2BpeTokenizer::from_file(&tokenizer_path) {
+                                            Ok(tok) => {
+                                                println!(
+                                                    "{} {} ({})",
+                                                    "Loaded tokenizer from HuggingFace cache:".green(),
+                                                    tokenizer_path.display(),
+                                                    format!("{} tokens", tok.vocab_size()).dimmed()
+                                                );
+                                                return Ok(Some(tok));
+                                            }
+                                            Err(_) => continue, // Try next snapshot
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3. Check APR tokenizer cache
+        let apr_tokenizer = home.join(".apr/tokenizers/qwen2/tokenizer.json");
+        if apr_tokenizer.exists() {
+            match Qwen2BpeTokenizer::from_file(&apr_tokenizer) {
+                Ok(tok) => {
+                    println!(
+                        "{} {} ({})",
+                        "Loaded tokenizer from APR cache:".green(),
+                        apr_tokenizer.display(),
+                        format!("{} tokens", tok.vocab_size()).dimmed()
+                    );
+                    return Ok(Some(tok));
+                }
+                Err(e) => {
+                    println!(
+                        "{} {}",
+                        "Warning: Failed to load tokenizer from APR cache:".yellow(),
+                        e
+                    );
+                }
+            }
+        }
+    }
+
+    // No tokenizer found - provide helpful error message
+    Err(CliError::InvalidFormat(
+        "No Qwen tokenizer found. Searched:\n\
+         1. Model directory (tokenizer.json)\n\
+         2. HuggingFace cache (~/.cache/huggingface/hub/models--Qwen--*/snapshots/*/tokenizer.json)\n\
+         3. APR cache (~/.apr/tokenizers/qwen2/tokenizer.json)\n\n\
+         To fix: Download a Qwen model with tokenizer:\n\
+           apr pull hf://Qwen/Qwen2.5-0.5B-Instruct-GGUF"
+            .to_string(),
+    ))
 }
 
 /// Clean ChatML markers and artifacts from model response
@@ -448,42 +554,9 @@ mod realizar_chat {
                     (tok, None)
                 }
                 ModelFormat::SafeTensors | ModelFormat::Apr => {
-                    // Load Qwen tokenizer from tokenizer.json in model directory
-                    let tok = if let Some(parent) = path.parent() {
-                        let tokenizer_path = parent.join("tokenizer.json");
-                        if tokenizer_path.exists() {
-                            match Qwen2BpeTokenizer::from_file(&tokenizer_path) {
-                                Ok(tok) => {
-                                    println!(
-                                        "{} {} ({})",
-                                        "Loaded tokenizer:".green(),
-                                        tokenizer_path.display(),
-                                        format!("{} tokens", tok.vocab_size()).dimmed()
-                                    );
-                                    Some(tok)
-                                }
-                                Err(e) => {
-                                    println!(
-                                        "{} {}",
-                                        "Warning: Failed to load tokenizer:".yellow(),
-                                        e
-                                    );
-                                    None
-                                }
-                            }
-                        } else {
-                            // F-MODEL-COMPLETE-001: Missing tokenizer is a fatal error
-                            // Models without tokenizers are incomplete - likely improper conversion
-                            return Err(CliError::InvalidFormat(
-                                "Model is incomplete: No tokenizer.json found in model directory. \
-                                This usually indicates an improper conversion or missing files. \
-                                APR format should include embedded tokenizer."
-                                    .to_string(),
-                            ));
-                        }
-                    } else {
-                        None
-                    };
+                    // PMAT-109: Search multiple standard locations for Qwen tokenizer
+                    // Priority: 1) model dir, 2) HuggingFace cache, 3) ~/.apr/tokenizers
+                    let tok = find_qwen_tokenizer(path)?;
                     (None, tok)
                 }
                 ModelFormat::Demo => (None, None),
