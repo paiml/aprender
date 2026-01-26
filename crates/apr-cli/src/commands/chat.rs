@@ -438,12 +438,12 @@ mod realizar_chat {
                             Some(tok)
                         }
                         Err(e) => {
-                            println!(
-                                "{} Failed to load GGUF tokenizer: {} (using byte fallback)",
-                                "Warning:".yellow(),
+                            // F-MODEL-COMPLETE-001: Failed tokenizer is a fatal error
+                            return Err(CliError::InvalidFormat(format!(
+                                "Model is incomplete: Failed to load GGUF tokenizer: {}. \
+                                This usually indicates a corrupted or improperly converted model.",
                                 e
-                            );
-                            None
+                            )));
                         }
                     };
                     (tok, None)
@@ -473,11 +473,14 @@ mod realizar_chat {
                                 }
                             }
                         } else {
-                            println!(
-                                "{}",
-                                "Warning: No tokenizer.json found, using byte fallback".yellow()
-                            );
-                            None
+                            // F-MODEL-COMPLETE-001: Missing tokenizer is a fatal error
+                            // Models without tokenizers are incomplete - likely improper conversion
+                            return Err(CliError::InvalidFormat(
+                                "Model is incomplete: No tokenizer.json found in model directory. \
+                                This usually indicates an improper conversion or missing files. \
+                                APR format should include embedded tokenizer."
+                                    .to_string(),
+                            ));
                         }
                     } else {
                         None
@@ -918,6 +921,36 @@ mod realizar_chat {
         }
 
         fn generate_apr(&self, prompt: &[u32], config: &ChatConfig) -> Result<Vec<u32>, String> {
+            // F-GPU-134b: Try CUDA GPU path first (200+ tok/s target)
+            #[cfg(feature = "cuda")]
+            if !config.force_cpu {
+                use realizar::apr::{AprV2Model, AprV2ModelCuda};
+                if AprV2ModelCuda::is_available() {
+                    let model = AprV2Model::from_bytes(self.model_bytes.clone())
+                        .map_err(|e| format!("Failed to load APR model: {e}"))?;
+
+                    let mut cuda_model = AprV2ModelCuda::new(model, 0)
+                        .map_err(|e| format!("Failed to create CUDA model: {e}"))?;
+
+                    let gpu_name = cuda_model.device_name().to_string();
+                    let vram_mb = cuda_model.vram_mb();
+                    println!(
+                        "{}",
+                        format!(
+                            "[APR CUDA: {} ({} MB VRAM)]",
+                            gpu_name, vram_mb
+                        )
+                        .bright_green()
+                    );
+
+                    // EOS tokens: <|im_end|> = 151645, <|endoftext|> = 151643
+                    return cuda_model
+                        .generate_cuda_with_cache(prompt, config.max_tokens.min(128), 151645)
+                        .map_err(|e| format!("APR CUDA generate failed: {e}"));
+                }
+            }
+
+            // CPU fallback using AprTransformer
             use realizar::apr_transformer::{AprTransformer, GenerateConfig};
 
             let transformer = AprTransformer::from_apr_bytes(&self.model_bytes)
@@ -930,7 +963,7 @@ mod realizar_chat {
                 top_p: config.top_p,
                 top_k: 0,
                 repetition_penalty: 1.0,
-                trace: false,
+                trace: config.trace,
             };
 
             transformer
