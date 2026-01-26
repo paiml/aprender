@@ -949,9 +949,12 @@ mod realizar_chat {
         }
 
         fn generate_apr(&self, prompt: &[u32], config: &ChatConfig) -> Result<Vec<u32>, String> {
-            // F-GPU-134b: Try CUDA GPU path first (200+ tok/s target)
+            // PMAT-109: APR CUDA disabled - greedy-only sampling produces empty output
+            // TODO: Add temperature/top_p sampling to AprV2ModelCuda::generate_cuda_with_cache
+            // For now, use CPU path which has proper sampling support
             #[cfg(feature = "cuda")]
-            if !config.force_cpu {
+            if !config.force_cpu && false {
+                // DISABLED: AprV2ModelCuda only supports greedy sampling
                 use realizar::apr::{AprV2Model, AprV2ModelCuda};
                 if AprV2ModelCuda::is_available() {
                     let model = AprV2Model::from_bytes(self.model_bytes.clone())
@@ -974,7 +977,7 @@ mod realizar_chat {
                 }
             }
 
-            // CPU fallback using AprTransformer
+            // CPU path using AprTransformer (has temperature/top_p sampling)
             use realizar::apr_transformer::{AprTransformer, GenerateConfig};
 
             let transformer = AprTransformer::from_apr_bytes(&self.model_bytes)
