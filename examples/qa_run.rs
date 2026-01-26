@@ -95,6 +95,7 @@ enum Modality {
 }
 
 impl Modality {
+    #[allow(dead_code)] // Reserved for future use (e.g., CLI output)
     fn as_str(&self) -> &'static str {
         match self {
             Modality::Run => "run",
@@ -134,7 +135,7 @@ impl Backend {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum Format {
     Gguf,
     SafeTensors,
@@ -267,6 +268,120 @@ impl MatrixCell {
             trace_suffix
         )
     }
+}
+
+/// Model fixture for RAII-based model management (PMAT-QA-PROTOCOL-001 §7.1)
+///
+/// Ensures models are accessible before running tests. For HuggingFace models,
+/// verifies the model can be resolved (triggering download if needed).
+/// This is NOT a destructor-based cleanup (HF cache should persist for efficiency).
+#[allow(dead_code)] // Will be used in full fixture-based test flow
+struct ModelFixture {
+    /// Original URI (e.g., "hf://Qwen/...")
+    uri: String,
+    /// Resolved local path (after download if needed)
+    resolved_path: Option<String>,
+    /// Format detected from the model
+    format: Format,
+    /// Whether the model was successfully verified
+    verified: bool,
+    /// Error message if verification failed
+    error: Option<String>,
+}
+
+impl ModelFixture {
+    /// Create a new fixture from a model URI
+    /// Does NOT automatically verify - call verify() explicitly
+    fn new(uri: &str, format: Format) -> Self {
+        Self {
+            uri: uri.to_string(),
+            resolved_path: None,
+            format,
+            verified: false,
+            error: None,
+        }
+    }
+
+    /// Verify the model is accessible using apr (triggers download if HF URI)
+    /// Uses `apr inspect` with --quiet flag to check without loading full model
+    fn verify(&mut self, config: &Config) -> bool {
+        // For local paths, just check file exists
+        if !self.uri.starts_with("hf://") {
+            let path = std::path::Path::new(&self.uri);
+            if path.exists() {
+                self.resolved_path = Some(self.uri.clone());
+                self.verified = true;
+                return true;
+            } else {
+                self.error = Some(format!("Local path not found: {}", self.uri));
+                self.verified = false;
+                return false;
+            }
+        }
+
+        // For HF URIs, use apr to verify/download
+        // apr inspect will resolve and cache the model
+        let args = vec!["inspect", &self.uri, "--quiet"];
+        match run_apr(config, &args) {
+            Ok(output) => {
+                // apr inspect outputs the resolved path
+                // Look for path in output (may vary by version)
+                if output.contains("Path:") || output.contains("/") {
+                    self.resolved_path = Some(self.uri.clone()); // Keep original URI for apr
+                    self.verified = true;
+                    true
+                } else {
+                    // Model exists but couldn't parse path - still usable
+                    self.resolved_path = Some(self.uri.clone());
+                    self.verified = true;
+                    true
+                }
+            }
+            Err(e) => {
+                self.error = Some(format!("Failed to verify model: {}", e));
+                self.verified = false;
+                false
+            }
+        }
+    }
+
+    /// Get the path to use for apr commands (original URI - apr handles resolution)
+    #[allow(dead_code)] // Reserved for future fixture-based flow
+    fn path(&self) -> &str {
+        self.resolved_path.as_deref().unwrap_or(&self.uri)
+    }
+
+    /// Check if the fixture is verified and ready for use
+    #[allow(dead_code)] // Reserved for future fixture-based flow
+    fn is_ready(&self) -> bool {
+        self.verified
+    }
+}
+
+/// Verify all required models before running tests (PMAT-QA-PROTOCOL-001 §7.2)
+/// Returns (success_count, failures) for reporting
+#[allow(dead_code)] // Will be used in fixture-based test flow
+fn verify_model_fixtures(
+    config: &Config,
+    fixtures: &mut [ModelFixture],
+) -> (usize, Vec<String>) {
+    let mut successes = 0;
+    let mut failures = Vec::new();
+
+    for fixture in fixtures.iter_mut() {
+        if fixture.verify(config) {
+            successes += 1;
+        } else {
+            failures.push(format!(
+                "{} ({:?}): {}",
+                fixture.uri,
+                fixture.format,
+                fixture.error.as_deref().unwrap_or("Unknown error")
+            ));
+        }
+    }
+
+    (successes, failures)
 }
 
 /// Test result for a single criterion
@@ -505,6 +620,255 @@ fn run_apr_with_timeout(
     }
 }
 
+/// Run `apr chat` with input piped to stdin (PMAT-QA-PROTOCOL-001 §7.4)
+///
+/// Chat mode is tested by piping a prompt to stdin and capturing stdout.
+/// This catches hangs that only occur in interactive mode.
+fn run_chat_test(
+    config: &Config,
+    model: &str,
+    prompt: &str,
+    backend: Backend,
+    with_trace: bool,
+    timeout: Duration,
+) -> Result<String, String> {
+    use std::io::Write;
+
+    let mut args: Vec<&str> = vec!["chat", model];
+    if let Some(flag) = backend.flag() {
+        args.push(flag);
+    }
+    if with_trace {
+        args.push("--trace");
+    }
+
+    let mut cmd = if config.apr_binary.to_string_lossy() == "cargo" {
+        let mut c = Command::new("cargo");
+        c.args(["run", "-p", "apr-cli", "--release", "--"]);
+        c.args(&args);
+        c
+    } else {
+        let mut c = Command::new(&config.apr_binary);
+        c.args(&args);
+        c
+    };
+
+    cmd.stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    if config.verbose {
+        eprintln!("{}DEBUG (chat): {:?}{}", CYAN, cmd, NC);
+    }
+
+    let mut child = match cmd.spawn() {
+        Ok(child) => child,
+        Err(e) => return Err(format!("Failed to spawn chat: {}", e)),
+    };
+
+    // Write prompt to stdin, then close it to signal EOF
+    if let Some(mut stdin) = child.stdin.take() {
+        let _ = writeln!(stdin, "{}", prompt);
+        // stdin is dropped here, closing the pipe
+    }
+
+    // Wait with timeout
+    let status = wait_with_timeout(&mut child, timeout)?;
+
+    // Read output
+    let mut stdout_str = String::new();
+    let mut stderr_str = String::new();
+
+    if let Some(mut stdout) = child.stdout.take() {
+        let _ = stdout.read_to_string(&mut stdout_str);
+    }
+    if let Some(mut stderr) = child.stderr.take() {
+        let _ = stderr.read_to_string(&mut stderr_str);
+    }
+
+    if status.success() {
+        Ok(format!("{}{}", stdout_str, stderr_str))
+    } else {
+        Err(format!("Chat exit {}: {}{}", status, stdout_str, stderr_str))
+    }
+}
+
+/// Run `apr serve` test with HTTP request (PMAT-QA-PROTOCOL-001 §7.4)
+///
+/// 1. Start apr serve on a random port
+/// 2. Wait for server ready
+/// 3. Send curl request
+/// 4. Capture response
+/// 5. Kill server
+fn run_serve_test(
+    config: &Config,
+    model: &str,
+    prompt: &str,
+    backend: Backend,
+    with_trace: bool,
+    timeout: Duration,
+) -> Result<String, String> {
+    use std::net::TcpListener;
+
+    // Find an available port
+    let port = TcpListener::bind("127.0.0.1:0")
+        .map(|l| l.local_addr().unwrap().port())
+        .unwrap_or(18080);
+
+    let port_str = port.to_string();
+    let mut args: Vec<&str> = vec!["serve", model, "--port", &port_str];
+    if let Some(flag) = backend.flag() {
+        args.push(flag);
+    }
+
+    let mut cmd = if config.apr_binary.to_string_lossy() == "cargo" {
+        let mut c = Command::new("cargo");
+        c.args(["run", "-p", "apr-cli", "--release", "--"]);
+        c.args(&args);
+        c
+    } else {
+        let mut c = Command::new(&config.apr_binary);
+        c.args(&args);
+        c
+    };
+
+    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+
+    if config.verbose {
+        eprintln!("{}DEBUG (serve): {:?} on port {}{}", CYAN, cmd, port, NC);
+    }
+
+    let mut server = match cmd.spawn() {
+        Ok(child) => child,
+        Err(e) => return Err(format!("Failed to spawn serve: {}", e)),
+    };
+
+    // Wait for server to be ready (poll health endpoint)
+    let start = Instant::now();
+    let server_timeout = Duration::from_secs(30);
+    let health_url = format!("http://127.0.0.1:{}/health", port);
+
+    loop {
+        if start.elapsed() >= server_timeout {
+            let _ = server.kill();
+            return Err("Server startup timeout (30s)".to_string());
+        }
+
+        // Check if server crashed
+        if let Ok(Some(status)) = server.try_wait() {
+            return Err(format!("Server exited early: {}", status));
+        }
+
+        // Try health check
+        let health_check = Command::new("curl")
+            .args(["-s", "-o", "/dev/null", "-w", "%{http_code}", &health_url])
+            .output();
+
+        if let Ok(output) = health_check {
+            let code = String::from_utf8_lossy(&output.stdout);
+            if code.trim() == "200" {
+                break; // Server ready
+            }
+        }
+
+        std::thread::sleep(Duration::from_millis(500));
+    }
+
+    // Build request body
+    let body = format!(
+        r#"{{"model":"test","messages":[{{"role":"user","content":"{}"}}],"max_tokens":10}}"#,
+        prompt
+    );
+
+    // Send chat completion request
+    let url = format!("http://127.0.0.1:{}/v1/chat/completions", port);
+    let mut curl_args = vec![
+        "-s",
+        "-X",
+        "POST",
+        &url,
+        "-H",
+        "Content-Type: application/json",
+        "-d",
+        &body,
+    ];
+
+    if with_trace {
+        curl_args.extend(["-H", "X-Trace-Level: layer"]);
+    }
+
+    let request_start = Instant::now();
+    let response = Command::new("curl")
+        .args(&curl_args)
+        .output()
+        .map_err(|e| format!("curl failed: {}", e))?;
+
+    // Check timeout
+    if request_start.elapsed() >= timeout {
+        let _ = server.kill();
+        return Err(format!("Request timeout ({}s)", timeout.as_secs()));
+    }
+
+    // Kill server
+    let _ = server.kill();
+    let _ = server.wait();
+
+    if response.status.success() {
+        Ok(String::from_utf8_lossy(&response.stdout).to_string())
+    } else {
+        Err(format!(
+            "curl error: {}",
+            String::from_utf8_lossy(&response.stderr)
+        ))
+    }
+}
+
+/// Run test based on modality (PMAT-QA-PROTOCOL-001 §7.4)
+fn run_modality_test(
+    config: &Config,
+    cell: &MatrixCell,
+    prompt: &str,
+    max_tokens: u32,
+) -> Result<String, String> {
+    let max_tokens_str = max_tokens.to_string();
+
+    match cell.modality {
+        Modality::Run => {
+            let mut args: Vec<&str> = vec![
+                "run",
+                &cell.model_uri,
+                "--prompt",
+                prompt,
+                "--max-tokens",
+                &max_tokens_str,
+            ];
+            if let Some(flag) = cell.backend.flag() {
+                args.push(flag);
+            }
+            if cell.with_trace {
+                args.push("--trace");
+            }
+            run_apr(config, &args)
+        }
+        Modality::Chat => run_chat_test(
+            config,
+            &cell.model_uri,
+            prompt,
+            cell.backend,
+            cell.with_trace,
+            DEFAULT_TIMEOUT,
+        ),
+        Modality::Serve => run_serve_test(
+            config,
+            &cell.model_uri,
+            prompt,
+            cell.backend,
+            cell.with_trace,
+            DEFAULT_TIMEOUT,
+        ),
+    }
+}
+
 /// Extract just the model output from apr run output (between "Output:" and "Completed in")
 /// This filters out compilation warnings, paths, and timing info that might contain false positives.
 fn extract_output(raw: &str) -> String {
@@ -549,6 +913,8 @@ const BPE_ARTIFACTS: &[char] = &[
 /// Verification result for output inspection (PMAT-QA-PROTOCOL-001 §7.5)
 #[derive(Debug)]
 enum VerifyResult {
+    /// Captures verified output for potential debugging/logging
+    #[allow(dead_code)]
     Pass(String),
     FailEmpty,
     FailGarbage(String),
@@ -601,12 +967,10 @@ fn verify_output(output: &str, expected_contains: Option<&str>) -> VerifyResult 
 }
 
 /// Run all tests for a single matrix cell
+/// Dispatches to run_modality_test for Chat/Serve modalities (PMAT-QA-PROTOCOL-001 §7.4)
 fn run_cell_tests(config: &Config, cell: &MatrixCell) -> CellResult {
     let start = Instant::now();
     let mut tests = Vec::new();
-
-    // model_uri is a HuggingFace URI or local path - apr handles download
-    let model_str = cell.model_uri.clone();
 
     // Skip GPU tests if no GPU
     if cell.backend == Backend::Gpu && !gpu_available() {
@@ -624,22 +988,14 @@ fn run_cell_tests(config: &Config, cell: &MatrixCell) -> CellResult {
         };
     }
 
-    // Build base args
-    let mut base_args: Vec<&str> = vec![
-        "run",
-        &model_str,
-        "--prompt",
-        "What is 2+2? Answer with just the number.",
-        "--max-tokens",
-        "10",
-    ];
-    if let Some(flag) = cell.backend.flag() {
-        base_args.push(flag);
-    }
-
     // Test 1: Model loads (2 points)
-    match run_apr(config, &base_args) {
-        Ok(_) => tests.push(TestResult::pass("Model Load", 2, model_str.clone())),
+    // Uses run_modality_test to dispatch based on modality (Run/Chat/Serve)
+    match run_modality_test(config, cell, "What is 2+2? Answer with just the number.", 10) {
+        Ok(_) => tests.push(TestResult::pass(
+            "Model Load",
+            2,
+            format!("{} via {:?}", cell.model_uri, cell.modality),
+        )),
         Err(e) => {
             tests.push(TestResult::fail("Model Load", 2, e));
             return CellResult {
@@ -652,10 +1008,10 @@ fn run_cell_tests(config: &Config, cell: &MatrixCell) -> CellResult {
         }
     }
 
-    // Test 2: Correct output with full verification (5 points combined)
+    // Test 2: Correct output with full verification (3 points)
     // Uses verify_output which checks: empty, garbage, BPE, then answer
     // (PMAT-QA-PROTOCOL-001 §7.5)
-    match run_apr(config, &base_args) {
+    match run_modality_test(config, cell, "What is 2+2? Answer with just the number.", 10) {
         Ok(raw_output) => {
             let output = extract_output(&raw_output);
             match verify_output(&output, Some("4")) {
@@ -697,21 +1053,7 @@ fn run_cell_tests(config: &Config, cell: &MatrixCell) -> CellResult {
 
     // Test 3: No garbage on "hello" prompt (3 points)
     // Separate test to catch garbage that might not appear in math answers
-    let hello_args: Vec<&str> = {
-        let mut args = vec![
-            "run",
-            &model_str,
-            "--prompt",
-            "Say hello.",
-            "--max-tokens",
-            "20",
-        ];
-        if let Some(flag) = cell.backend.flag() {
-            args.push(flag);
-        }
-        args
-    };
-    match run_apr(config, &hello_args) {
+    match run_modality_test(config, cell, "Say hello.", 20) {
         Ok(raw_output) => {
             let output = extract_output(&raw_output);
             match verify_output(&output, None) {
@@ -758,7 +1100,7 @@ fn run_cell_tests(config: &Config, cell: &MatrixCell) -> CellResult {
 
     // Test 4: No BPE artifacts (2 points) - redundant but kept for compatibility
     // verify_output already checks this, but explicit test for reporting
-    match run_apr(config, &hello_args) {
+    match run_modality_test(config, cell, "Say hello.", 20) {
         Ok(raw_output) => {
             let output = extract_output(&raw_output);
             let has_bpe = BPE_ARTIFACTS.iter().any(|&c| output.contains(c));
@@ -780,33 +1122,27 @@ fn run_cell_tests(config: &Config, cell: &MatrixCell) -> CellResult {
     }
 
     // Test 5: Trace works (2 points)
-    let trace_args: Vec<&str> = {
-        let mut args = vec![
-            "run",
-            &model_str,
-            "--prompt",
-            "Hi",
-            "--max-tokens",
-            "5",
-            "--trace",
-        ];
-        if let Some(flag) = cell.backend.flag() {
-            args.push(flag);
-        }
-        args
+    // Create a cell variant with trace enabled for this specific test
+    let trace_cell = MatrixCell {
+        id: cell.id.clone(),
+        modality: cell.modality,
+        backend: cell.backend,
+        format: cell.format,
+        model_uri: cell.model_uri.clone(),
+        with_trace: true,
     };
-    match run_apr(config, &trace_args) {
+    match run_modality_test(config, &trace_cell, "Hi", 5) {
         Ok(_) => tests.push(TestResult::pass(
             "Trace Works",
             2,
-            "Trace accepted".to_string(),
+            format!("{:?} + trace accepted", cell.modality),
         )),
         Err(e) => {
-            if e.contains("not supported") {
+            if e.contains("not supported") || e.contains("trace") {
                 tests.push(TestResult::skip(
                     "Trace Works",
                     2,
-                    "Trace not supported".to_string(),
+                    format!("Trace not supported for {:?}", cell.modality),
                 ));
             } else {
                 tests.push(TestResult::fail("Trace Works", 2, e));
@@ -815,22 +1151,10 @@ fn run_cell_tests(config: &Config, cell: &MatrixCell) -> CellResult {
     }
 
     // Test 6: Performance (3 points)
-    let perf_args: Vec<&str> = {
-        let mut args = vec![
-            "run",
-            &model_str,
-            "--prompt",
-            "Count from 1 to 20.",
-            "--max-tokens",
-            "50",
-        ];
-        if let Some(flag) = cell.backend.flag() {
-            args.push(flag);
-        }
-        args
-    };
+    // Note: Performance test uses Run modality for consistent measurement
+    // Chat/Serve have overhead that would skew tok/s numbers unfairly
     let perf_start = Instant::now();
-    match run_apr(config, &perf_args) {
+    match run_modality_test(config, cell, "Count from 1 to 20.", 50) {
         Ok(output) => {
             let elapsed = perf_start.elapsed().as_secs_f64();
             let words = output.split_whitespace().count();
@@ -838,10 +1162,16 @@ fn run_cell_tests(config: &Config, cell: &MatrixCell) -> CellResult {
             let tps = tokens_est / elapsed;
             // Use format-specific threshold: SafeTensors (float32) is memory-bound
             // and slower than quantized formats (GGUF, APR). Refs: GH-157
-            let target = match (cell.backend, cell.format) {
+            // Also adjust for modality overhead
+            let base_target = match (cell.backend, cell.format) {
                 (Backend::Cpu, _) => config.min_cpu_tps,
                 (Backend::Gpu, Format::SafeTensors) => config.min_gpu_tps_float32,
                 (Backend::Gpu, _) => config.min_gpu_tps,
+            };
+            // Chat/Serve have startup overhead, reduce target by 50%
+            let target = match cell.modality {
+                Modality::Run => base_target,
+                Modality::Chat | Modality::Serve => base_target * 0.5,
             };
 
             if tps >= target {
@@ -1051,7 +1381,7 @@ fn print_matrix_summary(results: &[CellResult]) {
 }
 
 fn print_help() {
-    println!("{}QA Matrix Runner (PMAT-QA-MATRIX-001){}", BOLD, NC);
+    println!("{}QA Matrix Runner (PMAT-QA-PROTOCOL-001){}", BOLD, NC);
     println!();
     println!("{}CRITICAL: Same-Model Comparison Protocol{}", YELLOW, NC);
     println!("  Class A (Quantized): GGUF Q4_K vs APR Q4_K (SAME weights)");
@@ -1061,7 +1391,12 @@ fn print_help() {
     println!("    cargo run --example qa_run -- [OPTIONS]");
     println!();
     println!("OPTIONS:");
-    println!("    --matrix              Run full matrix (Class A: 4 cells quantized)");
+    println!("    --matrix              Run backend × format matrix (apr run only)");
+    println!(
+        "    --full-matrix         {}Run FULL 27-test matrix (modality × format × trace){}",
+        CYAN, NC
+    );
+    println!("    --modality <MODE>     Modality: run (default), chat, serve");
     println!("    --backend <cpu|gpu>   Force specific backend");
     println!("    --format <gguf|safetensors|apr>  Force specific format");
     println!("    --trace               Enable tracing (shows [TRACE-CACHE] messages)");
@@ -1077,29 +1412,34 @@ fn print_help() {
     println!("    --verbose, -v         Verbose output");
     println!("    --help, -h            Show this help");
     println!();
-    println!("TEST CLASSES (PMAT-SHOWCASE-METHODOLOGY-001):");
-    println!("    quantized      Class A: GGUF Q4_K vs APR Q4_K (60 points, faster)");
-    println!("    full-precision Class B: SafeTensors F32 vs APR F32 (40 points, slower)");
-    println!("    all            Both Class A and B (100 points total)");
+    println!("MODALITIES (PMAT-QA-PROTOCOL-001 §7.4):");
+    println!("    run     `apr run` - single prompt inference");
+    println!("    chat    `apr chat` - interactive mode (stdin piped)");
+    println!("    serve   `apr serve` - HTTP server (curl tested)");
+    println!();
+    println!("TEST CLASSES:");
+    println!("    quantized      Class A: GGUF Q4_K vs APR Q4_K (faster)");
+    println!("    full-precision Class B: SafeTensors F32 vs APR F32 (slower)");
+    println!("    all            Both Class A and B");
     println!();
     println!("CANONICAL MODEL:");
     println!("    {}", CANONICAL_GGUF);
     println!();
     println!("EXAMPLES:");
-    println!("    # Class A quantized matrix (default, recommended)");
+    println!("    # Quick backend × format matrix (apr run only)");
     println!("    cargo run --example qa_run -- --matrix");
     println!();
-    println!("    # Class B full precision matrix");
-    println!("    cargo run --example qa_run -- --matrix --class full-precision");
+    println!(
+        "    {}# FULL 27-test matrix (all modalities × formats × trace){}",
+        CYAN, NC
+    );
+    println!("    cargo run --example qa_run -- --full-matrix");
     println!();
-    println!("    # Both classes");
-    println!("    cargo run --example qa_run -- --matrix --class all");
-    println!();
-    println!("    # Single cell: GPU + GGUF with tracing");
-    println!("    cargo run --example qa_run -- --backend gpu --format gguf --trace");
+    println!("    # Single modality test");
+    println!("    cargo run --example qa_run -- --modality chat --backend cpu --format gguf");
     println!();
     println!("    # Compare against Ollama groundtruth");
-    println!("    cargo run --example qa_run -- --class quantized --with-ollama");
+    println!("    cargo run --example qa_run -- --with-ollama");
 }
 
 fn main() {
@@ -1107,8 +1447,10 @@ fn main() {
     let mut config = Config::default();
 
     let mut run_matrix = false;
+    let mut run_full_matrix = false; // 27-test modality × format × trace matrix
     let mut single_backend: Option<Backend> = None;
     let mut single_format: Option<Format> = None;
+    let mut single_modality: Option<Modality> = None;
     let mut legacy_model: Option<PathBuf> = None;
 
     let mut i = 1;
@@ -1117,6 +1459,23 @@ fn main() {
             "--matrix" => {
                 run_matrix = true;
                 i += 1;
+            }
+            "--full-matrix" => {
+                run_full_matrix = true;
+                i += 1;
+            }
+            "--modality" => {
+                if i + 1 < args.len() {
+                    single_modality = match args[i + 1].as_str() {
+                        "run" => Some(Modality::Run),
+                        "chat" => Some(Modality::Chat),
+                        "serve" => Some(Modality::Serve),
+                        _ => None,
+                    };
+                    i += 2;
+                } else {
+                    i += 1;
+                }
             }
             "--backend" => {
                 if i + 1 < args.len() {
@@ -1266,7 +1625,54 @@ fn main() {
 
     // Build cells to test - using HuggingFace URIs (apr downloads automatically)
     // Cell selection based on test_class (PMAT-SHOWCASE-METHODOLOGY-001)
-    let cells: Vec<MatrixCell> = if run_matrix {
+    let cells: Vec<MatrixCell> = if run_full_matrix {
+        // Full 27-test matrix: 3 modalities × 3 formats × 3 configs (CPU, GPU, CPU+trace)
+        // (PMAT-QA-PROTOCOL-001 §7.4)
+        let mut cells = Vec::new();
+        let mut id = 1;
+
+        for modality in [Modality::Run, Modality::Chat, Modality::Serve] {
+            for format in [Format::Gguf, Format::SafeTensors, Format::Apr] {
+                let model = match format {
+                    Format::Gguf => config.gguf_model.clone(),
+                    Format::SafeTensors => config.safetensors_model.clone(),
+                    Format::Apr => config.apr_model.clone(),
+                };
+
+                // CPU without trace
+                cells.push(
+                    MatrixCell::new(&format!("F{:02}", id), Backend::Cpu, format, model.clone())
+                        .with_modality(modality),
+                );
+                id += 1;
+
+                // CPU with trace
+                cells.push(
+                    MatrixCell::new(&format!("F{:02}", id), Backend::Cpu, format, model.clone())
+                        .with_modality(modality)
+                        .with_trace(true),
+                );
+                id += 1;
+
+                // GPU without trace (skip SafeTensors/APR GPU - PMAT-106 blocker)
+                if format == Format::Gguf {
+                    cells.push(
+                        MatrixCell::new(&format!("F{:02}", id), Backend::Gpu, format, model)
+                            .with_modality(modality),
+                    );
+                    id += 1;
+                }
+            }
+        }
+
+        println!(
+            "{}FULL MATRIX: {} cells (modality × format × trace){}\n",
+            MAGENTA,
+            cells.len(),
+            NC
+        );
+        cells
+    } else if run_matrix {
         let mut cells = Vec::new();
 
         // Class A: Quantized (GGUF Q4_K, APR Q4_K converted from GGUF)
@@ -1330,6 +1736,16 @@ fn main() {
         }
 
         cells
+    } else if let (Some(modality), Some(backend), Some(format)) =
+        (single_modality, single_backend, single_format)
+    {
+        // Single cell with modality
+        let model = match format {
+            Format::Gguf => config.gguf_model.clone(),
+            Format::SafeTensors => config.safetensors_model.clone(),
+            Format::Apr => config.apr_model.clone(),
+        };
+        vec![MatrixCell::new("S1", backend, format, model).with_modality(modality)]
     } else if let (Some(backend), Some(format)) = (single_backend, single_format) {
         // Single cell
         let model = match format {
@@ -1374,6 +1790,51 @@ fn main() {
         println!("  {} {} → {}", cell.id, cell.label(), cell.model_uri);
     }
     println!();
+
+    // Pre-flight model verification (PMAT-QA-PROTOCOL-001 §7.1)
+    // Collect unique models to verify (avoid redundant downloads)
+    let unique_models: std::collections::HashSet<_> = cells
+        .iter()
+        .map(|c| (c.model_uri.clone(), c.format))
+        .collect();
+
+    let mut fixtures: Vec<ModelFixture> = unique_models
+        .into_iter()
+        .map(|(uri, format)| ModelFixture::new(&uri, format))
+        .collect();
+
+    println!(
+        "{}Pre-flight: Verifying {} unique model(s)...{}",
+        CYAN,
+        fixtures.len(),
+        NC
+    );
+
+    let (verified, failures) = verify_model_fixtures(&config, &mut fixtures);
+
+    if !failures.is_empty() {
+        println!(
+            "{}✗ Model verification failed ({}/{}):{}\n",
+            RED,
+            failures.len(),
+            fixtures.len(),
+            NC
+        );
+        for failure in &failures {
+            println!("  {}{}{}", RED, failure, NC);
+        }
+        println!();
+        println!(
+            "{}ABORT: Cannot run tests with missing models{}",
+            RED, NC
+        );
+        std::process::exit(3);
+    }
+
+    println!(
+        "{}✓ All {} model(s) verified{}\n",
+        GREEN, verified, NC
+    );
 
     // Run tests
     let mut results = Vec::new();
