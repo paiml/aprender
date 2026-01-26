@@ -1181,6 +1181,7 @@ fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
                             top_p: 0.9,
                             top_k: 0,
                             repetition_penalty: 1.0,
+                            trace: false,
                         };
 
                         let output_tokens = {
@@ -1322,6 +1323,7 @@ fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
                                 top_p: 0.9,
                                 top_k: 0,
                                 repetition_penalty: 1.0,
+                                trace: false,
                             };
 
                             let output_tokens = {
@@ -2531,6 +2533,7 @@ async fn safetensors_chat_completions_handler(
         top_p: 0.9,
         top_k: 0,
         repetition_penalty: 1.0,
+        trace: false,
     };
     let output_ids = {
         let t = transformer.lock().unwrap();
@@ -2684,6 +2687,7 @@ async fn safetensors_generate_handler(
         top_p: 0.9,
         top_k: 0,
         repetition_penalty: 1.0,
+        trace: false,
     };
     let output_ids = {
         let t = transformer.lock().unwrap();

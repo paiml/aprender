@@ -930,6 +930,7 @@ mod realizar_chat {
                 top_p: config.top_p,
                 top_k: 0,
                 repetition_penalty: 1.0,
+                trace: false,
             };
 
             transformer
