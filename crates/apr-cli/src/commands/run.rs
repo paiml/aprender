@@ -661,6 +661,11 @@ fn execute_with_realizar(
         config = config.with_trace(true);
     }
 
+    // Pass trace output path if specified (PMAT-SHOWCASE-METHODOLOGY-001)
+    if let Some(ref trace_path) = options.trace_output {
+        config = config.with_trace_output(trace_path);
+    }
+
     // Run inference via realizar
     let result = run_inference(&config)
         .map_err(|e| CliError::InferenceFailed(format!("Inference failed: {e}")))?;
@@ -1878,7 +1883,11 @@ pub(crate) fn run(
         eprintln!();
         eprintln!(
             "{}",
-            format!("Layer Timing ({} layers × {} tokens):", num_layers, tokens_generated).cyan()
+            format!(
+                "Layer Timing ({} layers × {} tokens):",
+                num_layers, tokens_generated
+            )
+            .cyan()
         );
         eprintln!(
             "  {:>6} | {:>9} | {:>8} | {:>9} | {:>10}",
@@ -1911,11 +1920,26 @@ pub(crate) fn run(
         // Estimate memory vs compute bound based on tok/s
         // >50 tok/s typically indicates compute bound (GPU), <20 indicates memory bound (CPU)
         let (compute_pct, memory_pct, bottleneck, recommendation) = if tok_per_sec > 50.0 {
-            (65, 35, "Compute (GPU)", "Model is GPU-accelerated, running efficiently")
+            (
+                65,
+                35,
+                "Compute (GPU)",
+                "Model is GPU-accelerated, running efficiently",
+            )
         } else if tok_per_sec > 20.0 {
-            (45, 55, "Mixed", "Consider GPU acceleration for better throughput")
+            (
+                45,
+                55,
+                "Mixed",
+                "Consider GPU acceleration for better throughput",
+            )
         } else {
-            (25, 75, "Memory bandwidth (DRAM)", "Use quantized model for better cache utilization")
+            (
+                25,
+                75,
+                "Memory bandwidth (DRAM)",
+                "Use quantized model for better cache utilization",
+            )
         };
 
         eprintln!();
