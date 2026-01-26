@@ -23,7 +23,7 @@
 | `--profile` CLI flag | ✅ DONE | Added to run, chat, serve |
 | `--trace-level layer` output | ✅ DONE | Per-layer timing table in run command |
 | `--profile` Roofline output | ✅ DONE | Memory/compute analysis in run command |
-| `--trace-output` for GGUF | ⏳ FUTURE | JSON output |
+| `--trace-output` for GGUF | ✅ DONE | JSON output to file |
 | Ollama parity | ⏳ FUTURE | Automated comparison |
 
 ---
