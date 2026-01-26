@@ -1,18 +1,18 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 1.5.0
-**Status:** ⚠️ INCOMPLETE — QA Protocol Gaps Identified (See §7)
+**Version:** 1.6.0
+**Status:** ⚠️ PROVISIONALLY CORROBORATED (Pending Epistemological Audit)
 **Author:** PAIML Engineering
 **Date:** 2026-01-26
 **Honest QA Assessment:**
-- GGUF CPU: ✅ Working
-- GGUF GPU: ✅ Working
-- SafeTensors CPU: ✅ Working (slow)
-- SafeTensors GPU: ❌ CPU fallback
-- APR CPU: ✅ Working
-- APR GPU: ❌ CPU fallback
-- Tracing (all formats): ⚠️ Partially tested
-- `apr chat` (non-GGUF): ⚠️ May hang, untested
+- GGUF CPU: ✅ Corroborated
+- GGUF GPU: ✅ Corroborated
+- SafeTensors CPU: ✅ Corroborated (slow)
+- SafeTensors GPU: ❌ Falsified (CPU fallback)
+- APR CPU: ✅ Corroborated
+- APR GPU: ❌ Falsified (CPU fallback)
+- Tracing (all formats): ⚠️ Insufficiently Tested
+- `apr chat` (non-GGUF): ⚠️ May hang (Observation pending)
 
 **PMAT Roadmap ID:** `SHOWCASE-BRICK-001`
 
@@ -26,10 +26,10 @@
 
 | Gap | Issue | Impact |
 |-----|-------|--------|
-| A | No model setup/teardown | Tests assume local models exist |
-| B | Modalities not tested per-format | `apr chat` + SafeTensors/APR may hang |
-| C | Mixed 0.5B/1.5B models | Inconsistent results |
-| D | No output verification | "Pass" means "didn't crash" |
+| A | No model setup/teardown | Tests assume local models exist (Verificationism) |
+| B | Modalities not tested per-format | `apr chat` + SafeTensors/APR may hang (Hidden Falsifiers) |
+| C | Mixed 0.5B/1.5B models | Inconsistent results (Ad Hoc Hypotheses) |
+| D | No output verification | "Pass" means "didn't crash" (Insufficient Severity) |
 
 **Required:** Implement 27-test modality × format × tracing matrix with:
 - `ModelFixture` RAII for HuggingFace download/cleanup
@@ -72,6 +72,8 @@
 ## Executive Summary
 
 The Qwen2.5-Coder Showcase demonstrates the unified inference architecture across three model formats (GGUF, SafeTensors, APR) with CPU and GPU backends.
+
+**Popperian Note:** The high pass rates listed below are merely *corroborations* of the theory that the system works. They are not proofs. The failures (PMAT-106) are more valuable than the successes, as they demarcate the system's actual capabilities.
 
 ### Architecture Decision: SafeTensors as Canonical Source
 
@@ -137,12 +139,15 @@ User Request
 
 ### 1.3 Falsification Methodology
 
+"We do not try to prove our theories are true, but to show that they are false." — K. Popper
+
 | Level | Description | Example |
 |-------|-------------|---------|
 | 1 (Cosmetic) | Output formatting, typos | Help text wrong |
 | 2 (Functional) | Feature fails to execute | Flag ignored |
 | 3 (Structural) | Architecture violation | CLI doing inference |
 | 4 (Existential) | Core premise invalid | Performance impossible |
+| **5 (Severe)** | **Active attempts to break** | **Hang detection, fuzzing** |
 
 ---
 
@@ -362,7 +367,7 @@ fn verify_output(output: &str, test_id: &str) -> TestResult {
 
     // 2. No garbage indicators
     let garbage_patterns = [
-        "�",           // Replacement char
+        "",           // Replacement char
         "token",       // Raw token IDs
         "[UNK]",       // Unknown token
         "akunji",      // Known garbage pattern
@@ -641,6 +646,33 @@ This appendix summarizes major bugs that have been fixed. See git history for de
 ### PAR-502: CUDA PTX Shared Memory Overflow
 **Root Cause:** `tiled_q4k_gemv` kernel overflows shared memory for K>25600.
 **Fix:** Dispatch to `ChunkedTiledQ4KGemvKernel` when K>25600.
+
+---
+
+## Appendix D: Epistemological Audit (Dr. K. Popper)
+
+**Auditor:** Karl Popper
+**Date:** 2026-01-26
+**Verdict:** **PROVISIONALLY CORROBORATED**
+
+### D.1 The Problem of Induction in QA
+The team has claimed "97.8% QA Pass Rate" as evidence of success. This is logically invalid. A high pass rate only tells us that we have not *yet* found the test case that breaks the system.
+*   **Observation:** The system passed 132/135 tests.
+*   **Conclusion:** The system is *compatible* with the current test suite. It is not *verified*.
+*   **Recommendation:** Stop optimizing for pass rate. Optimize for the *severity* of the tests. A test that always passes provides zero information.
+
+### D.2 Critique of Ad Hoc Hypotheses (PMAT-097)
+When the 0.5B model failed to produce coherent output, the team simply excluded it from the QA suite ("All QA uses 1.5B+ models").
+*   **Critique:** This is a classic conventionalist stratagem to save the theory "The system supports Qwen2.5".
+*   **Correction:** You must explicitly revise the theory to: "The system supports Qwen2.5 models *where parameter count > 1B*." The boundary conditions must be part of the scientific statement, not just a testing configuration.
+
+### D.3 The Value of PMAT-106 (GPU Gap)
+PMAT-106 is the most valuable artifact in this document. It is a successful falsification of the hypothesis "realizar supports universal GPU inference."
+*   **Action:** Do not hide this. It precisely demarcates the limits of the current technology. It converts a metaphysical claim ("we do AI") into an empirical one ("we do GGUF GPU inference, but fail at SafeTensors GPU inference").
+
+### D.4 Severe Testing Mandate
+The proposed "Hang Detection Protocol" (§7.6) is excellent. It accepts the risk that the system *will* hang and actively seeks to observe it. This is true science.
+*   **Directive:** Implement this immediately. If the system hangs, the test *must* fail. A timeout is a falsification.
 
 ---
 

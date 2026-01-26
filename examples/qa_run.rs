@@ -64,9 +64,10 @@
 //! - PMAT-SHOWCASE-METHODOLOGY-001: Same-Model Comparison Protocol
 
 use std::env;
+use std::io::Read;
 use std::path::PathBuf;
-use std::process::{Command, Stdio};
-use std::time::Instant;
+use std::process::{Child, Command, Stdio};
+use std::time::{Duration, Instant};
 
 // ANSI colors
 const RED: &str = "\x1b[0;31m";
@@ -77,6 +78,39 @@ const CYAN: &str = "\x1b[0;36m";
 const MAGENTA: &str = "\x1b[0;35m";
 const NC: &str = "\x1b[0m";
 const BOLD: &str = "\x1b[1m";
+
+/// Default timeout for all apr commands (PMAT-QA-PROTOCOL-001 §7.6)
+/// A command that hangs is a test failure, not a process state.
+const DEFAULT_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// Modality: which apr command to test (PMAT-QA-PROTOCOL-001 §7.4)
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Modality {
+    /// `apr run` - single prompt inference
+    Run,
+    /// `apr chat` - interactive chat mode (stdin/stdout)
+    Chat,
+    /// `apr serve` - HTTP server mode
+    Serve,
+}
+
+impl Modality {
+    fn as_str(&self) -> &'static str {
+        match self {
+            Modality::Run => "run",
+            Modality::Chat => "chat",
+            Modality::Serve => "serve",
+        }
+    }
+
+    fn display_name(&self) -> &'static str {
+        match self {
+            Modality::Run => "apr run",
+            Modality::Chat => "apr chat",
+            Modality::Serve => "apr serve",
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Backend {
@@ -189,27 +223,49 @@ impl TestClass {
     }
 }
 
-/// A single matrix cell (backend × format combination)
+/// A single matrix cell (modality × backend × format combination)
+/// (PMAT-QA-PROTOCOL-001 §7.4)
 #[derive(Debug, Clone)]
 struct MatrixCell {
     id: String,
+    modality: Modality,
     backend: Backend,
     format: Format,
-    model_uri: String, // HuggingFace URI or local path
+    model_uri: String,   // HuggingFace URI or local path
+    with_trace: bool,    // Test with --trace flag
 }
 
 impl MatrixCell {
     fn new(id: &str, backend: Backend, format: Format, model_uri: String) -> Self {
         Self {
             id: id.to_string(),
+            modality: Modality::Run, // Default to apr run
             backend,
             format,
             model_uri,
+            with_trace: false,
         }
     }
 
+    fn with_modality(mut self, modality: Modality) -> Self {
+        self.modality = modality;
+        self
+    }
+
+    fn with_trace(mut self, trace: bool) -> Self {
+        self.with_trace = trace;
+        self
+    }
+
     fn label(&self) -> String {
-        format!("{} × {}", self.backend.as_str(), self.format.as_str())
+        let trace_suffix = if self.with_trace { " +trace" } else { "" };
+        format!(
+            "{} × {} × {}{}",
+            self.modality.display_name(),
+            self.backend.as_str(),
+            self.format.as_str(),
+            trace_suffix
+        )
     }
 }
 
@@ -362,7 +418,49 @@ fn gpu_available() -> bool {
         .unwrap_or(false)
 }
 
+/// Wait for child process with timeout using polling (PMAT-QA-PROTOCOL-001 §7.6)
+///
+/// A hung process is a test FAILURE, not a process state. This function:
+/// 1. Polls child.try_wait() in a loop
+/// 2. Kills the process if timeout exceeded
+/// 3. Returns explicit error on timeout
+fn wait_with_timeout(
+    child: &mut Child,
+    timeout: Duration,
+) -> Result<std::process::ExitStatus, String> {
+    let start = Instant::now();
+    let poll_interval = Duration::from_millis(100);
+
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return Ok(status),
+            Ok(None) => {
+                // Still running - check timeout
+                if start.elapsed() >= timeout {
+                    // Kill the hung process
+                    let _ = child.kill();
+                    let _ = child.wait(); // Reap zombie
+                    return Err(format!(
+                        "HANG: Process killed after {}s timeout (PMAT-QA-PROTOCOL-001 violation)",
+                        timeout.as_secs()
+                    ));
+                }
+                std::thread::sleep(poll_interval);
+            }
+            Err(e) => return Err(format!("Process error: {}", e)),
+        }
+    }
+}
+
 fn run_apr(config: &Config, args: &[&str]) -> Result<String, String> {
+    run_apr_with_timeout(config, args, DEFAULT_TIMEOUT)
+}
+
+fn run_apr_with_timeout(
+    config: &Config,
+    args: &[&str],
+    timeout: Duration,
+) -> Result<String, String> {
     let mut cmd = if config.apr_binary.to_string_lossy() == "cargo" {
         let mut c = Command::new("cargo");
         c.args(["run", "-p", "apr-cli", "--release", "--"]);
@@ -380,17 +478,30 @@ fn run_apr(config: &Config, args: &[&str]) -> Result<String, String> {
         eprintln!("{}DEBUG: {:?}{}", CYAN, cmd, NC);
     }
 
-    match cmd.output() {
-        Ok(output) => {
-            let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-            if output.status.success() {
-                Ok(format!("{}{}", stdout, stderr))
-            } else {
-                Err(format!("Exit {}: {}{}", output.status, stdout, stderr))
-            }
-        }
-        Err(e) => Err(format!("Failed: {}", e)),
+    // Spawn instead of output() to enable timeout handling
+    let mut child = match cmd.spawn() {
+        Ok(child) => child,
+        Err(e) => return Err(format!("Failed to spawn: {}", e)),
+    };
+
+    // Wait with timeout - hung processes are test failures
+    let status = wait_with_timeout(&mut child, timeout)?;
+
+    // Read output after process completes
+    let mut stdout_str = String::new();
+    let mut stderr_str = String::new();
+
+    if let Some(mut stdout) = child.stdout.take() {
+        let _ = stdout.read_to_string(&mut stdout_str);
+    }
+    if let Some(mut stderr) = child.stderr.take() {
+        let _ = stderr.read_to_string(&mut stderr_str);
+    }
+
+    if status.success() {
+        Ok(format!("{}{}", stdout_str, stderr_str))
+    } else {
+        Err(format!("Exit {}: {}{}", status, stdout_str, stderr_str))
     }
 }
 
@@ -413,6 +524,80 @@ fn extract_output(raw: &str) -> String {
         }
     }
     content.join("\n").trim().to_string()
+}
+
+/// Garbage patterns that indicate model collapse or tokenization failure
+/// (PMAT-QA-PROTOCOL-001 §7.5)
+const GARBAGE_PATTERNS: &[&str] = &[
+    "\u{FFFD}",    // Replacement character (encoding error)
+    "[UNK]",       // Unknown token marker
+    "akunji",      // Known GQA bug garbage
+    "olumbia",     // Known layout bug garbage
+    "专门窗",      // Known GQA bug CJK garbage
+    "token0",      // Raw token ID leak
+    "token1",      // Raw token ID leak
+    "<0x",         // Byte token leak (e.g., <0x0A>)
+];
+
+/// BPE artifacts that indicate incomplete detokenization
+const BPE_ARTIFACTS: &[char] = &[
+    'Ġ', // GPT-2 style space prefix
+    'Ċ', // GPT-2 style newline
+    'ĉ', // GPT-2 style tab
+];
+
+/// Verification result for output inspection (PMAT-QA-PROTOCOL-001 §7.5)
+#[derive(Debug)]
+enum VerifyResult {
+    Pass(String),
+    FailEmpty,
+    FailGarbage(String),
+    FailBpeArtifact(char),
+    FailMissingAnswer(String),
+}
+
+/// Verify output is correct: not empty, no garbage, contains expected answer
+/// (PMAT-QA-PROTOCOL-001 §7.5)
+///
+/// Order of checks is CRITICAL (fail fast on garbage):
+/// 1. Not empty
+/// 2. No garbage patterns (BEFORE checking answer)
+/// 3. No BPE artifacts
+/// 4. Contains expected answer
+fn verify_output(output: &str, expected_contains: Option<&str>) -> VerifyResult {
+    let trimmed = output.trim();
+
+    // 1. Empty check
+    if trimmed.is_empty() {
+        return VerifyResult::FailEmpty;
+    }
+
+    // 2. Garbage detection (FAIL FAST - before answer check)
+    for pattern in GARBAGE_PATTERNS {
+        if trimmed.contains(pattern) {
+            return VerifyResult::FailGarbage((*pattern).to_string());
+        }
+    }
+
+    // 3. BPE artifact check
+    for &artifact in BPE_ARTIFACTS {
+        if trimmed.contains(artifact) {
+            return VerifyResult::FailBpeArtifact(artifact);
+        }
+    }
+
+    // 4. Expected answer check (only if specified)
+    if let Some(expected) = expected_contains {
+        if !trimmed.contains(expected) {
+            return VerifyResult::FailMissingAnswer(format!(
+                "Expected '{}', got: {}",
+                expected,
+                trimmed.chars().take(50).collect::<String>()
+            ));
+        }
+    }
+
+    VerifyResult::Pass(trimmed.to_string())
 }
 
 /// Run all tests for a single matrix cell
@@ -467,32 +652,51 @@ fn run_cell_tests(config: &Config, cell: &MatrixCell) -> CellResult {
         }
     }
 
-    // Test 2: Correct output (3 points)
-    // Use extract_output to avoid false positives from line numbers/paths containing '4'
+    // Test 2: Correct output with full verification (5 points combined)
+    // Uses verify_output which checks: empty, garbage, BPE, then answer
+    // (PMAT-QA-PROTOCOL-001 §7.5)
     match run_apr(config, &base_args) {
         Ok(raw_output) => {
             let output = extract_output(&raw_output);
-            if output.contains('4') {
-                tests.push(TestResult::pass(
-                    "Correct Output",
-                    3,
-                    "Contains '4'".to_string(),
-                ));
-            } else {
-                tests.push(TestResult::fail(
-                    "Correct Output",
-                    3,
-                    format!(
-                        "Missing '4': {}",
-                        output.chars().take(50).collect::<String>()
-                    ),
-                ));
+            match verify_output(&output, Some("4")) {
+                VerifyResult::Pass(_) => {
+                    tests.push(TestResult::pass(
+                        "Correct Output",
+                        3,
+                        "Contains '4', no garbage".to_string(),
+                    ));
+                }
+                VerifyResult::FailEmpty => {
+                    tests.push(TestResult::fail(
+                        "Correct Output",
+                        3,
+                        "Empty output".to_string(),
+                    ));
+                }
+                VerifyResult::FailGarbage(pattern) => {
+                    tests.push(TestResult::fail(
+                        "Correct Output",
+                        3,
+                        format!("GARBAGE: '{}'", pattern),
+                    ));
+                }
+                VerifyResult::FailBpeArtifact(c) => {
+                    tests.push(TestResult::fail(
+                        "Correct Output",
+                        3,
+                        format!("BPE artifact: '{}'", c),
+                    ));
+                }
+                VerifyResult::FailMissingAnswer(msg) => {
+                    tests.push(TestResult::fail("Correct Output", 3, msg));
+                }
             }
         }
         Err(e) => tests.push(TestResult::fail("Correct Output", 3, e)),
     }
 
-    // Test 3: No garbage (3 points)
+    // Test 3: No garbage on "hello" prompt (3 points)
+    // Separate test to catch garbage that might not appear in math answers
     let hello_args: Vec<&str> = {
         let mut args = vec![
             "run",
@@ -510,34 +714,59 @@ fn run_cell_tests(config: &Config, cell: &MatrixCell) -> CellResult {
     match run_apr(config, &hello_args) {
         Ok(raw_output) => {
             let output = extract_output(&raw_output);
-            let has_garbage = output.contains('\u{FFFD}')
-                || (output.contains("token0") || output.contains("token1"));
-            if has_garbage {
-                tests.push(TestResult::fail(
-                    "No Garbage",
-                    3,
-                    "Garbage patterns detected".to_string(),
-                ));
-            } else {
-                tests.push(TestResult::pass(
-                    "No Garbage",
-                    3,
-                    "Clean output".to_string(),
-                ));
+            match verify_output(&output, None) {
+                VerifyResult::Pass(_) => {
+                    tests.push(TestResult::pass(
+                        "No Garbage",
+                        3,
+                        "Clean output".to_string(),
+                    ));
+                }
+                VerifyResult::FailEmpty => {
+                    tests.push(TestResult::fail(
+                        "No Garbage",
+                        3,
+                        "Empty output".to_string(),
+                    ));
+                }
+                VerifyResult::FailGarbage(pattern) => {
+                    tests.push(TestResult::fail(
+                        "No Garbage",
+                        3,
+                        format!("GARBAGE: '{}'", pattern),
+                    ));
+                }
+                VerifyResult::FailBpeArtifact(c) => {
+                    tests.push(TestResult::fail(
+                        "No Garbage",
+                        3,
+                        format!("BPE artifact: '{}'", c),
+                    ));
+                }
+                VerifyResult::FailMissingAnswer(_) => {
+                    // No expected answer for this test
+                    tests.push(TestResult::pass(
+                        "No Garbage",
+                        3,
+                        "Clean output".to_string(),
+                    ));
+                }
             }
         }
         Err(e) => tests.push(TestResult::fail("No Garbage", 3, e)),
     }
 
-    // Test 4: No BPE artifacts (2 points)
+    // Test 4: No BPE artifacts (2 points) - redundant but kept for compatibility
+    // verify_output already checks this, but explicit test for reporting
     match run_apr(config, &hello_args) {
         Ok(raw_output) => {
             let output = extract_output(&raw_output);
-            if output.contains('Ġ') || output.contains('Ċ') {
+            let has_bpe = BPE_ARTIFACTS.iter().any(|&c| output.contains(c));
+            if has_bpe {
                 tests.push(TestResult::fail(
                     "No BPE Artifacts",
                     2,
-                    "Ġ/Ċ detected".to_string(),
+                    "Ġ/Ċ/ĉ detected".to_string(),
                 ));
             } else {
                 tests.push(TestResult::pass(
