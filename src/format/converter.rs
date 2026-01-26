@@ -1285,12 +1285,36 @@ fn infer_model_config_from_tensors(
         Some("unknown".to_string())
     };
 
+    // PMAT-107: Infer num_kv_heads from K projection tensor shape for GQA support
+    // K tensor shape: [kv_dim, hidden_dim] where kv_dim = num_kv_heads * head_dim
+    let num_kv_heads = tensors
+        .iter()
+        .find(|(name, _)| name.contains("k_proj.weight") || name.contains("key.weight"))
+        .and_then(|(_, (_, shape))| {
+            if shape.len() == 2 && num_heads.is_some() {
+                let kv_dim = shape[0];
+                let num_h = num_heads.unwrap();
+                // head_dim = hidden_size / num_heads
+                if hidden_size % num_h == 0 {
+                    let head_dim = hidden_size / num_h;
+                    // num_kv_heads = kv_dim / head_dim
+                    if kv_dim % head_dim == 0 {
+                        return Some(kv_dim / head_dim);
+                    }
+                }
+                None
+            } else {
+                None
+            }
+        })
+        .or(num_heads); // Fall back to MHA if inference fails
+
     Some(GgufModelConfig {
         architecture,
         hidden_size: Some(hidden_size),
         num_layers: Some(num_layers),
         num_heads,
-        num_kv_heads: num_heads, // Assume MHA, not GQA
+        num_kv_heads, // PMAT-107: Now correctly inferred for GQA models
         vocab_size: Some(vocab_size),
         intermediate_size,
         max_position_embeddings: Some(4096), // Default
@@ -6434,5 +6458,164 @@ mod tests_import_errors {
             zero_count: 0,
         };
         assert!(exp.check(&stats).is_ok());
+    }
+}
+
+// =============================================================================
+// PMAT-107: GQA Metadata Preservation Tests (Falsification Protocol)
+// =============================================================================
+#[cfg(test)]
+mod tests_pmat_107_gqa_metadata {
+    use super::*;
+    use std::collections::BTreeMap;
+
+    /// PMAT-107 Falsification Test: num_kv_heads MUST be inferred from K projection tensor
+    ///
+    /// This test verifies that `infer_model_config_from_tensors()` correctly identifies
+    /// GQA models (where num_kv_heads < num_heads) from tensor shapes.
+    ///
+    /// Failure Mode (Pre-Fix):
+    ///   num_kv_heads defaulted to num_heads, causing MHA dimensions on GPU
+    ///   GPU kernels launched with wrong grid size -> CUDA hang
+    #[test]
+    fn test_pmat_107_gqa_num_kv_heads_inferred_from_k_proj() {
+        // Simulate a GQA model:
+        // - hidden_size: 768 (must be divisible by head_dim=64, which the code tries first)
+        // - num_heads: 12 (768 / 64 = 12)
+        // - num_kv_heads: 2 (GQA ratio 6:1)
+        // - head_dim: 64
+        // - q_dim: 12 * 64 = 768
+        // - kv_dim: 2 * 64 = 128
+        let mut tensors: BTreeMap<String, (Vec<f32>, Vec<usize>)> = BTreeMap::new();
+
+        // Embedding layer: [vocab_size, hidden_size]
+        tensors.insert(
+            "model.embed_tokens.weight".to_string(),
+            (vec![0.0; 32000 * 768], vec![32000, 768]),
+        );
+
+        // Q projection: [q_dim, hidden_size] = [768, 768]
+        tensors.insert(
+            "model.layers.0.self_attn.q_proj.weight".to_string(),
+            (vec![0.0; 768 * 768], vec![768, 768]),
+        );
+
+        // K projection: [kv_dim, hidden_size] = [128, 768] (GQA: 2 heads, not 12)
+        tensors.insert(
+            "model.layers.0.self_attn.k_proj.weight".to_string(),
+            (vec![0.0; 128 * 768], vec![128, 768]),
+        );
+
+        // V projection: [kv_dim, hidden_size] = [128, 768]
+        tensors.insert(
+            "model.layers.0.self_attn.v_proj.weight".to_string(),
+            (vec![0.0; 128 * 768], vec![128, 768]),
+        );
+
+        // Layer 1 (to detect num_layers = 2)
+        tensors.insert(
+            "model.layers.1.self_attn.q_proj.weight".to_string(),
+            (vec![0.0; 768 * 768], vec![768, 768]),
+        );
+
+        let config = infer_model_config_from_tensors(&tensors);
+        assert!(config.is_some(), "PMAT-107: Config inference should succeed");
+
+        let config = config.unwrap();
+
+        // FALSIFICATION: This MUST be 2, not 12
+        assert_eq!(
+            config.num_kv_heads,
+            Some(2),
+            "PMAT-107: num_kv_heads MUST be 2 for GQA model, not {:?}. \
+             If this fails, the GPU path will hang.",
+            config.num_kv_heads
+        );
+
+        assert_eq!(
+            config.num_heads,
+            Some(12),
+            "num_heads should be 12 (768/64)"
+        );
+        assert_eq!(config.hidden_size, Some(768), "hidden_size should be 768");
+    }
+
+    /// PMAT-107: MHA models should have num_kv_heads == num_heads
+    #[test]
+    fn test_pmat_107_mha_num_kv_heads_equals_num_heads() {
+        // Simulate an MHA model:
+        // - hidden_size: 2048 (divisible by head_dim=64)
+        // - num_heads: 32 (2048 / 64 = 32)
+        // - num_kv_heads: 32 (MHA)
+        // - head_dim: 64
+        let mut tensors: BTreeMap<String, (Vec<f32>, Vec<usize>)> = BTreeMap::new();
+
+        tensors.insert(
+            "model.embed_tokens.weight".to_string(),
+            (vec![0.0; 32000 * 2048], vec![32000, 2048]),
+        );
+
+        // Q and K have same first dimension (MHA)
+        tensors.insert(
+            "model.layers.0.self_attn.q_proj.weight".to_string(),
+            (vec![0.0; 2048 * 2048], vec![2048, 2048]),
+        );
+        tensors.insert(
+            "model.layers.0.self_attn.k_proj.weight".to_string(),
+            (vec![0.0; 2048 * 2048], vec![2048, 2048]),
+        );
+        tensors.insert(
+            "model.layers.1.self_attn.q_proj.weight".to_string(),
+            (vec![0.0; 2048 * 2048], vec![2048, 2048]),
+        );
+
+        let config = infer_model_config_from_tensors(&tensors).unwrap();
+
+        // MHA: num_kv_heads == num_heads
+        assert_eq!(config.num_kv_heads, config.num_heads);
+        assert_eq!(
+            config.num_heads,
+            Some(32),
+            "num_heads should be 32 (2048/64)"
+        );
+    }
+
+    /// PMAT-107: Extreme GQA ratio (8:1 like TinyLlama)
+    #[test]
+    fn test_pmat_107_extreme_gqa_ratio() {
+        // TinyLlama-style: 32 heads, 4 KV heads
+        let mut tensors: BTreeMap<String, (Vec<f32>, Vec<usize>)> = BTreeMap::new();
+
+        // hidden_size: 2048, num_heads: 32, head_dim: 64
+        tensors.insert(
+            "model.embed_tokens.weight".to_string(),
+            (vec![0.0; 32000 * 2048], vec![32000, 2048]),
+        );
+
+        // Q: 32 heads * 64 = 2048
+        tensors.insert(
+            "model.layers.0.self_attn.q_proj.weight".to_string(),
+            (vec![0.0; 2048 * 2048], vec![2048, 2048]),
+        );
+
+        // K: 4 heads * 64 = 256 (GQA 8:1)
+        tensors.insert(
+            "model.layers.0.self_attn.k_proj.weight".to_string(),
+            (vec![0.0; 256 * 2048], vec![256, 2048]),
+        );
+
+        tensors.insert(
+            "model.layers.1.self_attn.q_proj.weight".to_string(),
+            (vec![0.0; 2048 * 2048], vec![2048, 2048]),
+        );
+
+        let config = infer_model_config_from_tensors(&tensors).unwrap();
+
+        assert_eq!(
+            config.num_kv_heads,
+            Some(4),
+            "PMAT-107: TinyLlama-style 8:1 GQA must have num_kv_heads=4"
+        );
+        assert_eq!(config.num_heads, Some(32));
     }
 }
