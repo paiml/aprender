@@ -159,6 +159,36 @@ impl TraceLevel {
     }
 }
 
+/// Test class for same-model comparison (PMAT-SHOWCASE-METHODOLOGY-001)
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum TestClass {
+    /// Class A: Quantized (GGUF Q4_K, APR Q4_K) - 60 points
+    Quantized,
+    /// Class B: Full Precision (SafeTensors F32, APR F32) - 40 points
+    FullPrecision,
+    /// Run both classes
+    All,
+}
+
+impl TestClass {
+    #[allow(dead_code)]
+    fn as_str(&self) -> &'static str {
+        match self {
+            TestClass::Quantized => "quantized",
+            TestClass::FullPrecision => "full-precision",
+            TestClass::All => "all",
+        }
+    }
+
+    fn includes_quantized(&self) -> bool {
+        matches!(self, TestClass::Quantized | TestClass::All)
+    }
+
+    fn includes_full_precision(&self) -> bool {
+        matches!(self, TestClass::FullPrecision | TestClass::All)
+    }
+}
+
 /// A single matrix cell (backend × format combination)
 #[derive(Debug, Clone)]
 struct MatrixCell {
@@ -243,6 +273,8 @@ impl CellResult {
 struct Config {
     apr_binary: PathBuf,
     trace_level: TraceLevel,
+    /// Test class for same-model comparison (PMAT-SHOWCASE-METHODOLOGY-001)
+    test_class: TestClass,
     min_cpu_tps: f64,
     min_gpu_tps: f64,
     /// Lower threshold for float32 models (SafeTensors) which are slower than quantized
@@ -259,6 +291,7 @@ impl Default for Config {
         Self {
             apr_binary: find_apr_binary(),
             trace_level: TraceLevel::None,
+            test_class: TestClass::Quantized, // Default to Class A (faster, recommended)
             // 1.5B model thresholds (PMAT-SHOWCASE-METHODOLOGY-001)
             // Word-based tok/s estimation has ~20% variance, so use conservative thresholds
             // Actual performance: CPU ~5-10 tok/s, GPU ~7-15 tok/s (quantized)
@@ -806,22 +839,31 @@ fn print_help() {
     println!("    --apr <PATH>          Path to APR model");
     println!("    --model <PATH>        Legacy: single model path");
     println!("    --min-cpu-tps <N>     Minimum CPU tok/s (default: 5.0)");
-    println!("    --min-gpu-tps <N>     Minimum GPU tok/s for quantized (default: 7.0)");
+    println!("    --min-gpu-tps <N>     Minimum GPU tok/s for quantized (default: 5.0)");
+    println!("    --class <CLASS>       Test class: quantized (default), full-precision, all");
     println!("    --verbose, -v         Verbose output");
     println!("    --help, -h            Show this help");
+    println!();
+    println!("TEST CLASSES (PMAT-SHOWCASE-METHODOLOGY-001):");
+    println!("    quantized      Class A: GGUF Q4_K vs APR Q4_K (60 points, faster)");
+    println!("    full-precision Class B: SafeTensors F32 vs APR F32 (40 points, slower)");
+    println!("    all            Both Class A and B (100 points total)");
     println!();
     println!("CANONICAL MODEL:");
     println!("    {}", CANONICAL_GGUF);
     println!();
     println!("EXAMPLES:");
-    println!("    # Class A quantized matrix (recommended)");
+    println!("    # Class A quantized matrix (default, recommended)");
     println!("    cargo run --example qa_run -- --matrix");
+    println!();
+    println!("    # Class B full precision matrix");
+    println!("    cargo run --example qa_run -- --matrix --class full-precision");
+    println!();
+    println!("    # Both classes");
+    println!("    cargo run --example qa_run -- --matrix --class all");
     println!();
     println!("    # Single cell: GPU + GGUF with tracing");
     println!("    cargo run --example qa_run -- --backend gpu --format gguf --trace");
-    println!();
-    println!("    # Verify tracing works");
-    println!("    cargo run --example qa_run -- --backend cpu --format gguf --trace");
 }
 
 fn main() {
@@ -935,6 +977,19 @@ fn main() {
                     i += 1;
                 }
             }
+            "--class" => {
+                if i + 1 < args.len() {
+                    config.test_class = match args[i + 1].as_str() {
+                        "quantized" | "a" | "A" => TestClass::Quantized,
+                        "full-precision" | "fp" | "b" | "B" => TestClass::FullPrecision,
+                        "all" | "both" => TestClass::All,
+                        _ => TestClass::Quantized,
+                    };
+                    i += 2;
+                } else {
+                    i += 1;
+                }
+            }
             "--verbose" | "-v" => {
                 config.verbose = true;
                 i += 1;
@@ -970,26 +1025,71 @@ fn main() {
     println!();
 
     // Build cells to test - using HuggingFace URIs (apr downloads automatically)
+    // Cell selection based on test_class (PMAT-SHOWCASE-METHODOLOGY-001)
     let cells: Vec<MatrixCell> = if run_matrix {
-        // Full matrix: 6 cells (2 backends × 3 formats)
-        vec![
-            MatrixCell::new("M1", Backend::Cpu, Format::Gguf, config.gguf_model.clone()),
-            MatrixCell::new(
-                "M2",
+        let mut cells = Vec::new();
+
+        // Class A: Quantized (GGUF Q4_K, APR Q4_K converted from GGUF)
+        if config.test_class.includes_quantized() {
+            // A1, A2: CPU × GGUF, CPU × APR (from GGUF)
+            cells.push(MatrixCell::new(
+                "A1",
+                Backend::Cpu,
+                Format::Gguf,
+                config.gguf_model.clone(),
+            ));
+            cells.push(MatrixCell::new(
+                "A2",
+                Backend::Cpu,
+                Format::Apr,
+                config.apr_model.clone(),
+            ));
+            // A3, A4: GPU × GGUF, GPU × APR (from GGUF)
+            cells.push(MatrixCell::new(
+                "A3",
+                Backend::Gpu,
+                Format::Gguf,
+                config.gguf_model.clone(),
+            ));
+            cells.push(MatrixCell::new(
+                "A4",
+                Backend::Gpu,
+                Format::Apr,
+                config.apr_model.clone(),
+            ));
+        }
+
+        // Class B: Full Precision (SafeTensors F32, APR F32 converted from SafeTensors)
+        if config.test_class.includes_full_precision() {
+            // B1, B2: CPU × SafeTensors, CPU × APR (from SafeTensors)
+            cells.push(MatrixCell::new(
+                "B1",
                 Backend::Cpu,
                 Format::SafeTensors,
                 config.safetensors_model.clone(),
-            ),
-            MatrixCell::new("M3", Backend::Cpu, Format::Apr, config.apr_model.clone()),
-            MatrixCell::new("M4", Backend::Gpu, Format::Gguf, config.gguf_model.clone()),
-            MatrixCell::new(
-                "M5",
+            ));
+            cells.push(MatrixCell::new(
+                "B2",
+                Backend::Cpu,
+                Format::Apr,
+                config.apr_model.clone(),
+            ));
+            // B3, B4: GPU × SafeTensors, GPU × APR (from SafeTensors)
+            cells.push(MatrixCell::new(
+                "B3",
                 Backend::Gpu,
                 Format::SafeTensors,
                 config.safetensors_model.clone(),
-            ),
-            MatrixCell::new("M6", Backend::Gpu, Format::Apr, config.apr_model.clone()),
-        ]
+            ));
+            cells.push(MatrixCell::new(
+                "B4",
+                Backend::Gpu,
+                Format::Apr,
+                config.apr_model.clone(),
+            ));
+        }
+
+        cells
     } else if let (Some(backend), Some(format)) = (single_backend, single_format) {
         // Single cell
         let model = match format {
@@ -1001,9 +1101,15 @@ fn main() {
     } else if let Some(model_path) = legacy_model {
         // Legacy single model mode
         let model = model_path.to_string_lossy().to_string();
-        let format = if model.ends_with(".gguf") {
+        let format = if model_path
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("gguf"))
+        {
             Format::Gguf
-        } else if model.ends_with(".safetensors") {
+        } else if model_path
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("safetensors"))
+        {
             Format::SafeTensors
         } else {
             Format::Apr
