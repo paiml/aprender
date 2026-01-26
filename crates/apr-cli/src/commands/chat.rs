@@ -579,13 +579,33 @@ mod realizar_chat {
                 None
             };
 
-            // Detect chat template from model name (Toyota Way: Jidoka - auto-detect)
-            let model_name = path
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("unknown");
-            let template_format = detect_format_from_name(model_name);
-            let chat_template = auto_detect_template(model_name);
+            // Detect chat template from model architecture (Toyota Way: Jidoka - auto-detect)
+            // F-TEMPLATE-001: Use GGUF metadata for architecture detection, not filename
+            // Hash-based filenames (e.g., d4c4d9763127153c.gguf) don't contain model name
+            let model_name = if format == ModelFormat::Gguf {
+                // Parse GGUF metadata to get architecture (e.g., "qwen2", "llama")
+                use realizar::gguf::GGUFModel;
+                match GGUFModel::from_bytes(&model_bytes) {
+                    Ok(gguf) => {
+                        let arch = gguf.architecture().unwrap_or("unknown").to_string();
+                        // Map GGUF architecture to template-detectable name
+                        // Architecture names: qwen2, llama, phi3, mistral, etc.
+                        arch
+                    }
+                    Err(_) => path
+                        .file_stem()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("unknown")
+                        .to_string(),
+                }
+            } else {
+                path.file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("unknown")
+                    .to_string()
+            };
+            let template_format = detect_format_from_name(&model_name);
+            let chat_template = auto_detect_template(&model_name);
 
             let template_name = match template_format {
                 TemplateFormat::ChatML => "ChatML",

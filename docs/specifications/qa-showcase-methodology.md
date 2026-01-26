@@ -483,7 +483,33 @@ apr chat incomplete_model.apr 2>&1 | grep -q 'incomplete' || echo "FAIL: No inco
 apr chat incomplete_model.apr 2>&1 | grep -q 'tokenizer' || echo "FAIL: Doesn't mention tokenizer"
 ```
 
-### 10.4 Falsification Test Matrix (15 points)
+### 10.4 F-TEMPLATE-001: Architecture-Based Template Detection
+
+| Requirement | Test | Violation |
+|-------------|------|-----------|
+| **F-TEMPLATE-001** | GGUF uses metadata architecture for template detection | Fail if "Raw" detected for qwen2/llama models |
+| **F-TEMPLATE-002** | Hash-based filenames (e.g., `d4c4d9763127153c.gguf`) detect correctly | Fail if template detection uses filename |
+| **F-TEMPLATE-003** | ChatML template for qwen2 architecture | Fail if "Detected Raw" for qwen2 model |
+| **F-TEMPLATE-004** | LLaMA2 template for llama architecture | Fail if wrong template for llama model |
+
+**Root Cause:** Hash-based filenames from model caches (e.g., `~/.cache/pacha/models/d4c4d9763127153c.gguf`)
+don't contain model names like "qwen" or "llama", causing fallback to "Raw" template.
+
+**Fix:** Parse GGUF `general.architecture` metadata (e.g., "qwen2", "llama") instead of filename.
+
+**Test Command:**
+```bash
+# For a Qwen model with hash filename
+apr chat ~/.cache/pacha/models/d4c4d9763127153c.gguf --max-tokens 5 2>&1 | grep -q 'ChatML' || echo "FAIL: Not detecting ChatML for qwen2"
+
+# Verify template detection shows architecture-based detection
+apr chat $MODEL --max-tokens 5 2>&1 | grep 'Detected' | grep -v 'Raw' || echo "FAIL: Raw template should not appear for known models"
+```
+
+**Symptom When Broken:** Garbage output like `渚化员uria �')}}"></ �绪NullOrictionaries特有的` because
+model expects ChatML format (`<|im_start|>user\n...<|im_end|>`) but receives raw text.
+
+### 10.5 Falsification Test Matrix (21 points)
 
 | Test | Requirement | Points |
 |------|-------------|--------|
@@ -492,8 +518,10 @@ apr chat incomplete_model.apr 2>&1 | grep -q 'tokenizer' || echo "FAIL: Doesn't 
 | GPU by default | F-GPU-001 | 3 |
 | `--no-gpu` works | F-GPU-003 | 3 |
 | Missing tokenizer = error | F-COMPLETE-001 | 3 |
+| Architecture-based template detection | F-TEMPLATE-001 | 3 |
+| Hash filename detects correctly | F-TEMPLATE-002 | 3 |
 
-**Total Falsification Points: 15**
+**Total Falsification Points: 21**
 
 ---
 
