@@ -952,11 +952,12 @@ fn verify_output(output: &str, expected_contains: Option<&str>) -> VerifyResult 
         }
     }
 
-    // 4. Expected answer check (only if specified)
+    // 4. Expected answer check with word boundary validation
+    // (Fixed: PMAT-098 Red Team falsification found naive substring matching is brittle)
     if let Some(expected) = expected_contains {
-        if !trimmed.contains(expected) {
+        if !contains_as_word(trimmed, expected) {
             return VerifyResult::FailMissingAnswer(format!(
-                "Expected '{}', got: {}",
+                "Expected '{}' as standalone word, got: {}",
                 expected,
                 trimmed.chars().take(50).collect::<String>()
             ));
@@ -964,6 +965,40 @@ fn verify_output(output: &str, expected_contains: Option<&str>) -> VerifyResult 
     }
 
     VerifyResult::Pass(trimmed.to_string())
+}
+
+/// Check if `needle` appears in `haystack` as a standalone word (not embedded in another word/number)
+/// This prevents false positives like "14" matching expected "4"
+fn contains_as_word(haystack: &str, needle: &str) -> bool {
+    // Find all occurrences and check word boundaries
+    let mut search_start = 0;
+    while let Some(pos) = haystack[search_start..].find(needle) {
+        let abs_pos = search_start + pos;
+        let end_pos = abs_pos + needle.len();
+
+        // Check left boundary: start of string OR non-alphanumeric
+        let left_ok = abs_pos == 0 || {
+            let prev_char = haystack[..abs_pos].chars().last().unwrap();
+            !prev_char.is_alphanumeric()
+        };
+
+        // Check right boundary: end of string OR non-alphanumeric
+        let right_ok = end_pos >= haystack.len() || {
+            let next_char = haystack[end_pos..].chars().next().unwrap();
+            !next_char.is_alphanumeric()
+        };
+
+        if left_ok && right_ok {
+            return true;
+        }
+
+        // Continue searching after this occurrence
+        search_start = abs_pos + 1;
+        if search_start >= haystack.len() {
+            break;
+        }
+    }
+    false
 }
 
 /// Run all tests for a single matrix cell
@@ -1393,7 +1428,7 @@ fn print_help() {
     println!("OPTIONS:");
     println!("    --matrix              Run backend × format matrix (apr run only)");
     println!(
-        "    --full-matrix         {}Run FULL 27-test matrix (modality × format × trace){}",
+        "    --full-matrix         {}Run FULL 21-cell matrix (modality × format × trace){}",
         CYAN, NC
     );
     println!("    --modality <MODE>     Modality: run (default), chat, serve");
@@ -1430,7 +1465,7 @@ fn print_help() {
     println!("    cargo run --example qa_run -- --matrix");
     println!();
     println!(
-        "    {}# FULL 27-test matrix (all modalities × formats × trace){}",
+        "    {}# FULL 21-cell matrix (all modalities × formats × trace){}",
         CYAN, NC
     );
     println!("    cargo run --example qa_run -- --full-matrix");
@@ -1447,7 +1482,7 @@ fn main() {
     let mut config = Config::default();
 
     let mut run_matrix = false;
-    let mut run_full_matrix = false; // 27-test modality × format × trace matrix
+    let mut run_full_matrix = false; // 21-cell modality × format × trace matrix
     let mut single_backend: Option<Backend> = None;
     let mut single_format: Option<Format> = None;
     let mut single_modality: Option<Modality> = None;
@@ -1626,8 +1661,9 @@ fn main() {
     // Build cells to test - using HuggingFace URIs (apr downloads automatically)
     // Cell selection based on test_class (PMAT-SHOWCASE-METHODOLOGY-001)
     let cells: Vec<MatrixCell> = if run_full_matrix {
-        // Full 27-test matrix: 3 modalities × 3 formats × 3 configs (CPU, GPU, CPU+trace)
-        // (PMAT-QA-PROTOCOL-001 §7.4)
+        // Full 21-cell matrix: 3 modalities × 3 formats × (2 CPU configs + 1 GPU for GGUF only)
+        // Per modality: GGUF(3) + SafeTensors(2) + APR(2) = 7 cells
+        // Total: 3 modalities × 7 = 21 cells (PMAT-QA-PROTOCOL-001 §7.4)
         let mut cells = Vec::new();
         let mut id = 1;
 
