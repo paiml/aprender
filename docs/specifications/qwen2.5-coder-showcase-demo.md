@@ -1,15 +1,18 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 1.4.0
-**Status:** ✅ OPERATIONAL (97.8% QA Pass Rate) — 2 Blockers Remaining
+**Version:** 1.5.0
+**Status:** ⚠️ INCOMPLETE — QA Protocol Gaps Identified (See §7)
 **Author:** PAIML Engineering
 **Date:** 2026-01-26
-**QA Results:**
-- `cargo run --example qa_verify` (20/20) ✅
-- `cargo run --example qa_chat` (20/20) ✅
-- `cargo run --example qa_serve` (35/35) ✅
-- `cargo run --example qa_run --matrix` (57/60) ✅
-- **Total: 132/135 (97.8%)**
+**Honest QA Assessment:**
+- GGUF CPU: ✅ Working
+- GGUF GPU: ✅ Working
+- SafeTensors CPU: ✅ Working (slow)
+- SafeTensors GPU: ❌ CPU fallback
+- APR CPU: ✅ Working
+- APR GPU: ❌ CPU fallback
+- Tracing (all formats): ⚠️ Partially tested
+- `apr chat` (non-GGUF): ⚠️ May hang, untested
 
 **PMAT Roadmap ID:** `SHOWCASE-BRICK-001`
 
@@ -17,28 +20,37 @@
 
 ## Remaining Work (P0 Blockers)
 
+### 🔴 PMAT-QA-PROTOCOL-001: QA Testing Gaps
+
+**Critical gaps in current QA (See §7):**
+
+| Gap | Issue | Impact |
+|-----|-------|--------|
+| A | No model setup/teardown | Tests assume local models exist |
+| B | Modalities not tested per-format | `apr chat` + SafeTensors/APR may hang |
+| C | Mixed 0.5B/1.5B models | Inconsistent results |
+| D | No output verification | "Pass" means "didn't crash" |
+
+**Required:** Implement 27-test modality × format × tracing matrix with:
+- `ModelFixture` RAII for HuggingFace download/cleanup
+- 60-second timeout per test (hang detection)
+- Output verification (garbage detection, expected answer)
+
 ### 🔴 PMAT-106: GPU Support Gap for SafeTensors/APR
 
-**Problem:** `realizar` only implements GPU inference for GGUF quantized models. SafeTensors (F32) and APR (Native) fall back to CPU.
+**Problem:** `realizar` only implements GPU inference for GGUF. SafeTensors/APR fall back to CPU.
 
 | Format | GPU | CPU | Gap |
 |--------|-----|-----|-----|
 | GGUF Q4_K | 755 tok/s | 14 tok/s | — |
-| SafeTensors F32 | ❌ CPU fallback | 14 tok/s | 54x |
+| SafeTensors F32 | ❌ CPU fallback | 2.2 tok/s | 343x |
 | APR Q4_K | ❌ CPU fallback | 8 tok/s | 94x |
-
-**Required:** Implement `CudaGraph` and `CudaEngine` support for `AprTransformer` and `SafeTensorsModel`.
 
 ### 🔴 PMAT-107: APR GPU GQA Metadata
 
-**Problem:** APR converter may strip `num_kv_heads` and `rope_type`, causing GPU hangs on GQA models.
+**Problem:** APR converter may strip `num_kv_heads` and `rope_type`, causing GPU hangs.
 
-**Fix Plan:**
-1. Update `src/format/converter.rs:1293` to call `infer_num_kv_heads_from_tensors()`
-2. Update `realizar/src/convert/mod.rs` to infer `rope_type` from architecture
-3. Add CI gate: `apr inspect model.apr --json | jq -e '.metadata.num_kv_heads'`
-
-**Verification:** `timeout 60 apr run model.apr --prompt "Hi" --max-tokens 5` must complete on GPU.
+**Fix:** Update `src/format/converter.rs` to infer GQA metadata from tensor shapes.
 
 ---
 
@@ -46,10 +58,14 @@
 
 | Item | Status | Section |
 |------|--------|---------|
-| `apr check` command (10-stage verification) | F-CHECK-211 to F-CHECK-230 unchecked | §3 |
+| QA-FIXTURE-001: Model setup/teardown | Not implemented | §7.3 |
+| QA-MATRIX-001: 27-test modality matrix | Not implemented | §7.4 |
+| QA-VERIFY-001: Output verification | Not implemented | §7.5 |
+| QA-HANG-001: Timeout wrapper | Not implemented | §7.6 |
+| `apr check` command | F-CHECK-211 to F-CHECK-230 unchecked | §3 |
 | Verbose mode UX | F-UX-027 to F-UX-040 unchecked | §6 |
-| CI parity gates | LAYOUT-001c/d not in CI | §13 |
-| GGUF Q4_0/Q4_1 support | BUG-GGUF-001 | §14 |
+| CI parity gates | LAYOUT-001c/d not in CI | §9 |
+| GGUF Q4_0/Q4_1 support | BUG-GGUF-001 | §10 |
 
 ---
 
@@ -236,28 +252,202 @@ apr check model.gguf
 
 ---
 
-## 7. QA Matrix Results (2026-01-26)
+## 7. QA Testing Protocol (PMAT-QA-PROTOCOL-001)
 
-### Matrix Cells (6 total)
+### 7.1 Critical Testing Gaps Identified
 
-| Cell | Backend | Format | Points | Status |
-|------|---------|--------|--------|--------|
-| M1 | CPU | GGUF | 12/15 | ✅ (3.8 tok/s < 5.0 threshold) |
-| M2 | CPU | SafeTensors | 15/15 | ✅ |
-| M3 | CPU | APR | 15/15 | ✅ |
-| M4 | GPU | GGUF | 15/15 | ✅ |
-| M5 | GPU | SafeTensors | — | ❌ PMAT-106 |
-| M6 | GPU | APR | — | ❌ PMAT-106 |
+| Gap | Problem | Impact |
+|-----|---------|--------|
+| **A. No Setup/Teardown** | Tests assume models exist locally | Tests skip or use wrong models |
+| **B. No Modality Coverage** | `apr chat`, `apr run`, `apr serve` not tested per-format | Hangs go undetected |
+| **C. Mixed Model Configs** | 0.5B vs 1.5B, Q4_K vs F32 used inconsistently | False passes/fails |
+| **D. No Output Inspection** | "Pass" means "didn't crash", not "correct output" | Garbage output undetected |
 
-### QA Suite Results
+### 7.2 Canonical Test Configuration
 
-| Suite | Points | Status |
-|-------|--------|--------|
-| qa_run | 57/60 | ✅ |
-| qa_chat | 20/20 | ✅ |
-| qa_serve | 35/35 | ✅ |
-| qa_verify | 20/20 | ✅ |
-| **Total** | **132/135** | **97.8%** |
+**Model Selection (MANDATORY):**
+- **Primary:** `Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF` (Q4_K_M quantization)
+- **SafeTensors:** `Qwen/Qwen2.5-Coder-1.5B-Instruct` (F32)
+- **FORBIDDEN:** 0.5B models (insufficient capacity), mixing quantizations
+
+**Test Prompt (Deterministic):**
+```
+"What is 2+2? Answer with just the number."
+```
+
+**Expected Output:** Contains "4" (not "four", not garbage, not empty)
+
+**Timeout:** 60 seconds per test (hang detection)
+
+### 7.3 Model Fixture Protocol (Setup/Teardown)
+
+```rust
+/// RAII model fixture for QA tests
+struct ModelFixture {
+    format: Format,           // GGUF, SafeTensors, APR
+    path: PathBuf,            // Local cache path
+    hf_uri: String,           // HuggingFace source
+    cleanup_on_drop: bool,    // Delete after test
+}
+
+impl ModelFixture {
+    /// Download model from HuggingFace if not cached
+    fn setup(&self) -> Result<PathBuf> {
+        if !self.path.exists() {
+            hf_hub::download(&self.hf_uri, &self.path)?;
+        }
+        Ok(self.path.clone())
+    }
+
+    /// Optional cleanup (default: keep cached)
+    fn teardown(&self) {
+        if self.cleanup_on_drop {
+            std::fs::remove_file(&self.path).ok();
+        }
+    }
+}
+
+impl Drop for ModelFixture {
+    fn drop(&mut self) {
+        self.teardown();
+    }
+}
+```
+
+**Fixture Registry:**
+
+| Fixture ID | Format | HuggingFace URI | Local Path |
+|------------|--------|-----------------|------------|
+| `gguf_1.5b_q4k` | GGUF | `hf://Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf` | `~/.cache/apr/models/qwen2.5-1.5b-q4k.gguf` |
+| `safetensors_1.5b` | SafeTensors | `hf://Qwen/Qwen2.5-Coder-1.5B-Instruct` | `~/.cache/apr/models/qwen2.5-1.5b-st/` |
+| `apr_1.5b_q4k` | APR | Converted from GGUF | `~/.cache/apr/models/qwen2.5-1.5b.apr` |
+
+### 7.4 Modality × Format × Tracing Matrix (27 Tests)
+
+Every combination MUST be tested explicitly:
+
+| # | Modality | Format | Tracing | Command | Timeout |
+|---|----------|--------|---------|---------|---------|
+| 1 | `apr run` | GGUF | OFF | `apr run $GGUF "2+2?" -n 8` | 60s |
+| 2 | `apr run` | GGUF | ON | `apr run $GGUF "2+2?" -n 8 --trace` | 60s |
+| 3 | `apr run` | SafeTensors | OFF | `apr run $ST "2+2?" -n 8` | 60s |
+| 4 | `apr run` | SafeTensors | ON | `apr run $ST "2+2?" -n 8 --trace` | 60s |
+| 5 | `apr run` | APR | OFF | `apr run $APR "2+2?" -n 8` | 60s |
+| 6 | `apr run` | APR | ON | `apr run $APR "2+2?" -n 8 --trace` | 60s |
+| 7 | `apr chat` | GGUF | OFF | `echo "2+2?" \| apr chat $GGUF` | 60s |
+| 8 | `apr chat` | GGUF | ON | `echo "2+2?" \| apr chat $GGUF --trace` | 60s |
+| 9 | `apr chat` | SafeTensors | OFF | `echo "2+2?" \| apr chat $ST` | 60s |
+| 10 | `apr chat` | SafeTensors | ON | `echo "2+2?" \| apr chat $ST --trace` | 60s |
+| 11 | `apr chat` | APR | OFF | `echo "2+2?" \| apr chat $APR` | 60s |
+| 12 | `apr chat` | APR | ON | `echo "2+2?" \| apr chat $APR --trace` | 60s |
+| 13 | `apr serve` | GGUF | OFF | `curl localhost:8080/v1/chat/completions` | 60s |
+| 14 | `apr serve` | GGUF | ON | `curl -H "X-Trace-Level: layer"` | 60s |
+| 15 | `apr serve` | SafeTensors | OFF | `curl localhost:8081/v1/chat/completions` | 60s |
+| 16 | `apr serve` | SafeTensors | ON | `curl -H "X-Trace-Level: layer"` | 60s |
+| 17 | `apr serve` | APR | OFF | `curl localhost:8082/v1/chat/completions` | 60s |
+| 18 | `apr serve` | APR | ON | `curl -H "X-Trace-Level: layer"` | 60s |
+
+**GPU variants (9 additional tests):** Repeat tests 1, 3, 5, 7, 9, 11, 13, 15, 17 with `--gpu` flag.
+
+### 7.5 Output Verification Protocol
+
+**CRITICAL: A test only passes if output is VERIFIED correct.**
+
+```rust
+fn verify_output(output: &str, test_id: &str) -> TestResult {
+    // 1. Not empty
+    if output.trim().is_empty() {
+        return TestResult::Fail(format!("{}: Empty output", test_id));
+    }
+
+    // 2. No garbage indicators
+    let garbage_patterns = [
+        "�",           // Replacement char
+        "token",       // Raw token IDs
+        "[UNK]",       // Unknown token
+        "akunji",      // Known garbage pattern
+        "olumbia",     // Known garbage pattern
+        "专门窗",       // GQA bug garbage
+    ];
+    for pattern in garbage_patterns {
+        if output.contains(pattern) {
+            return TestResult::Fail(format!("{}: Garbage detected: {}", test_id, pattern));
+        }
+    }
+
+    // 3. Contains expected answer
+    if !output.contains("4") {
+        return TestResult::Fail(format!("{}: Expected '4', got: {}", test_id, output));
+    }
+
+    // 4. Tracing verification (if trace enabled)
+    if test_id.contains("trace") {
+        if !output.contains("brick_trace") && !output.contains("step_trace") {
+            return TestResult::Fail(format!("{}: Trace data missing", test_id));
+        }
+    }
+
+    TestResult::Pass
+}
+```
+
+### 7.6 Hang Detection Protocol
+
+**Problem:** Many modality × format combinations silently hang.
+
+```bash
+#!/bin/bash
+# hang_detector.sh - Run command with timeout and report
+
+run_with_timeout() {
+    local cmd="$1"
+    local timeout_sec="${2:-60}"
+    local test_id="$3"
+
+    # Run with timeout
+    output=$(timeout "$timeout_sec" bash -c "$cmd" 2>&1)
+    exit_code=$?
+
+    if [ $exit_code -eq 124 ]; then
+        echo "HANG: $test_id (killed after ${timeout_sec}s)"
+        return 1
+    elif [ $exit_code -ne 0 ]; then
+        echo "FAIL: $test_id (exit code $exit_code)"
+        echo "Output: $output"
+        return 1
+    else
+        echo "PASS: $test_id"
+        echo "Output: $output"
+        return 0
+    fi
+}
+```
+
+### 7.7 Current Test Results (Honest Assessment)
+
+| Modality | GGUF | SafeTensors | APR | Notes |
+|----------|------|-------------|-----|-------|
+| `apr run` | ✅ | ✅ | ✅ | CPU works |
+| `apr run --trace` | ✅ | ⚠️ | ⚠️ | Trace may be empty |
+| `apr run --gpu` | ✅ | ❌ CPU fallback | ❌ CPU fallback | PMAT-106 |
+| `apr chat` | ✅ | ⚠️ Slow | ⚠️ Slow | May timeout |
+| `apr chat --trace` | ⚠️ | ❌ UNTESTED | ❌ UNTESTED | **Gap B** |
+| `apr serve` | ✅ | ✅ | ✅ | HTTP works |
+| `apr serve + trace` | ✅ | ⚠️ | ⚠️ | X-Trace-Level may be empty |
+
+**Legend:** ✅ Verified working | ⚠️ Partial/Untested | ❌ Known broken
+
+### 7.8 QA Implementation Checklist
+
+- [ ] **QA-FIXTURE-001:** Implement `ModelFixture` with HF download
+- [ ] **QA-FIXTURE-002:** Add teardown/cleanup option
+- [ ] **QA-MATRIX-001:** Implement 27-test modality matrix
+- [ ] **QA-MATRIX-002:** Add GPU variants (9 tests)
+- [ ] **QA-VERIFY-001:** Implement `verify_output()` with garbage detection
+- [ ] **QA-HANG-001:** Add timeout wrapper to all tests
+- [ ] **QA-TRACE-001:** Verify trace output contains actual data
+- [ ] **QA-TRACE-002:** Test `--trace` flag on all modalities
+- [ ] **QA-CI-001:** Add matrix to CI with 60s timeout per test
 
 ---
 
