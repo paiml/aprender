@@ -19,8 +19,10 @@
 | qa_run GPU GGUF | ✅ PASS | 15/15 points |
 | qa_serve tests | ✅ PASS | 35/35 points |
 | qa_verify tests | ✅ PASS | 20/20 points |
-| `--trace-level layer` | ⏳ FUTURE | Per-layer breakdown |
-| `--profile` Roofline | ⏳ FUTURE | Memory/compute analysis |
+| `--trace-level` CLI flag | ✅ DONE | Added to run, chat, serve |
+| `--profile` CLI flag | ✅ DONE | Added to run, chat, serve |
+| `--trace-level layer` output | ⏳ FUTURE | Per-layer breakdown logic |
+| `--profile` Roofline output | ⏳ FUTURE | Memory/compute analysis |
 | `--trace-output` for GGUF | ⏳ FUTURE | JSON output |
 | Ollama parity | ⏳ FUTURE | Automated comparison |
 

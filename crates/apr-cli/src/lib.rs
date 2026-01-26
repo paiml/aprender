@@ -114,6 +114,14 @@ pub enum Commands {
         /// Save trace output to JSON file
         #[arg(long, value_name = "FILE")]
         trace_output: Option<PathBuf>,
+
+        /// Trace detail level (none, basic, layer, payload)
+        #[arg(long, value_name = "LEVEL", default_value = "basic")]
+        trace_level: String,
+
+        /// Enable inline Roofline profiling (PMAT-SHOWCASE-METHODOLOGY-001)
+        #[arg(long)]
+        profile: bool,
     },
 
     /// Start inference server (REST API, streaming, metrics)
@@ -149,6 +157,18 @@ pub enum Commands {
         /// Enable batched GPU inference for 2X+ throughput
         #[arg(long)]
         batch: bool,
+
+        /// Enable inference tracing (PMAT-SHOWCASE-METHODOLOGY-001)
+        #[arg(long)]
+        trace: bool,
+
+        /// Trace detail level (none, basic, layer)
+        #[arg(long, value_name = "LEVEL", default_value = "basic")]
+        trace_level: String,
+
+        /// Enable inline Roofline profiling (adds X-Profile headers)
+        #[arg(long)]
+        profile: bool,
     },
 
     /// Inspect model metadata, vocab, and structure
@@ -664,6 +684,14 @@ pub enum Commands {
         /// Save trace output to JSON file
         #[arg(long, value_name = "FILE")]
         trace_output: Option<PathBuf>,
+
+        /// Trace detail level (none, basic, layer, payload)
+        #[arg(long, value_name = "LEVEL", default_value = "basic")]
+        trace_level: String,
+
+        /// Enable inline Roofline profiling (PMAT-SHOWCASE-METHODOLOGY-001)
+        #[arg(long)]
+        profile: bool,
     },
 
     /// Benchmark throughput (spec H12: >= 10 tok/s)
@@ -939,6 +967,8 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
             trace_steps,
             trace_verbose,
             trace_output,
+            trace_level,
+            profile,
         } => run::run(
             source,
             input.as_deref(),
@@ -956,6 +986,8 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
             trace_steps.as_deref(),
             *trace_verbose,
             trace_output.clone(),
+            trace_level.as_str(),
+            *profile,
         ),
 
         Commands::Serve {
@@ -967,6 +999,9 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
             no_gpu,
             gpu,
             batch,
+            trace,
+            trace_level,
+            profile,
         } => {
             let config = serve::ServerConfig {
                 port: *port,
@@ -976,6 +1011,9 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
                 no_gpu: *no_gpu,
                 gpu: *gpu,
                 batch: *batch,
+                trace: *trace,
+                trace_level: trace_level.clone(),
+                profile: *profile,
                 ..Default::default()
             };
             serve::run(file, &config)
@@ -1101,7 +1139,10 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
         } => {
             let (resolved_model, resolved_model_path) = if let Some(ref m) = model {
                 let path = std::path::Path::new(m);
-                if m.ends_with(".gguf") || path.exists() {
+                let is_gguf = path
+                    .extension()
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case("gguf"));
+                if is_gguf || path.exists() {
                     (
                         Some(
                             path.file_stem()
@@ -1218,6 +1259,8 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
             trace_steps,
             trace_verbose,
             trace_output,
+            trace_level,
+            profile,
         } => chat::run(
             file,
             *temperature,
@@ -1230,6 +1273,8 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
             trace_steps.as_deref(),
             *trace_verbose,
             trace_output.clone(),
+            trace_level.as_str(),
+            *profile,
         ),
 
         Commands::Bench {

@@ -1427,7 +1427,9 @@ fn execute_gguf_inference(
         // Use checksum to prevent dead code elimination
         std::hint::black_box(checksum);
         // Debug timing (can be removed in production)
-        let _ = (data.len().div_ceil(page_size), prefault_start.elapsed());
+        // Use manual div_ceil to avoid MSRV incompatibility (clippy::incompatible_msrv)
+        let pages_touched = (data.len() + page_size - 1) / page_size;
+        let _ = (pages_touched, prefault_start.elapsed());
     }
 
     // Try to create optimized quantized model
@@ -1630,7 +1632,7 @@ fn run_gguf_generate(
             let opts = trace_options.expect("trace_options must be Some when trace_enabled");
             let mut trace_config = TraceConfig::enabled();
             trace_config.verbose = opts.trace_verbose;
-            trace_config.output = opts.trace_output.clone();
+            trace_config.output.clone_from(&opts.trace_output);
             if let Some(ref steps) = opts.trace_steps {
                 trace_config.steps = TraceConfig::parse_steps(&steps.join(","));
             }
@@ -1688,7 +1690,7 @@ fn run_gguf_generate(
         let opts = trace_options.expect("trace_options must be Some when trace_enabled");
         let mut trace_config = TraceConfig::enabled();
         trace_config.verbose = opts.trace_verbose;
-        trace_config.output = opts.trace_output.clone();
+        trace_config.output.clone_from(&opts.trace_output);
         if let Some(ref steps) = opts.trace_steps {
             trace_config.steps = TraceConfig::parse_steps(&steps.join(","));
         }
@@ -1815,6 +1817,8 @@ pub(crate) fn run(
     trace_steps: Option<&[String]>,
     trace_verbose: bool,
     trace_output: Option<PathBuf>,
+    trace_level: &str,
+    profile: bool,
 ) -> Result<()> {
     if offline {
         println!("{}", "=== APR Run (OFFLINE MODE) ===".cyan().bold());
@@ -1831,6 +1835,7 @@ pub(crate) fn run(
     // Setup trace config if tracing enabled (APR-TRACE-001)
     if trace {
         eprintln!("{}", "Inference tracing enabled (APR-TRACE-001)".cyan());
+        eprintln!("  Trace level: {}", trace_level);
         if let Some(steps) = trace_steps {
             eprintln!("  Trace steps: {}", steps.join(", "));
         }
@@ -1840,7 +1845,13 @@ pub(crate) fn run(
         if let Some(ref path) = trace_output {
             eprintln!("  Output: {}", path.display());
         }
+        if profile {
+            eprintln!("  Roofline profiling enabled");
+        }
     }
+
+    // trace_level and profile reserved for layer-level tracing implementation
+    let _ = (trace_level, profile);
 
     let options = RunOptions {
         input: input.map(Path::to_path_buf),

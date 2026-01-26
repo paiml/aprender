@@ -234,7 +234,7 @@ fn run_traced_inference(path: &Path) -> Result<(), CliError> {
                     file.as_ref().map(|f| format!("/{}", f)).unwrap_or_default()
                 );
                 println!();
-                eprintln!("{}", format!("Downloading from HuggingFace...").yellow());
+                eprintln!("{}", "Downloading from HuggingFace...".yellow());
                 download_hf_model(&org, &repo, file.as_deref())?
             }
             _ => path.to_path_buf(),
@@ -514,10 +514,13 @@ fn compute_vector_stats(data: &[f32]) -> VectorStats {
     let mean = if n > 0.0 { (sum / n) as f32 } else { 0.0 };
     let l2_norm = (sum_sq as f32).sqrt();
 
+    // Use n to check if any valid elements were found, rather than comparing
+    // sentinel float values (clippy::float_cmp)
+    let valid_elements = n > 0.0;
     VectorStats {
         l2_norm,
-        min: if min == f32::MAX { 0.0 } else { min },
-        max: if max == f32::MIN { 0.0 } else { max },
+        min: if valid_elements { min } else { 0.0 },
+        max: if valid_elements { max } else { 0.0 },
         mean,
         nan_count,
         inf_count,

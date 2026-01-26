@@ -61,6 +61,12 @@ pub(crate) struct ServerConfig {
     pub gpu: bool,
     /// Enable batched GPU inference for 2X+ throughput
     pub batch: bool,
+    /// Enable inference tracing (PMAT-SHOWCASE-METHODOLOGY-001)
+    pub trace: bool,
+    /// Trace detail level (none, basic, layer)
+    pub trace_level: String,
+    /// Enable inline Roofline profiling (adds X-Profile headers)
+    pub profile: bool,
 }
 
 impl Default for ServerConfig {
@@ -75,6 +81,9 @@ impl Default for ServerConfig {
             no_gpu: false,
             gpu: false,
             batch: false,
+            trace: false,
+            trace_level: "basic".to_string(),
+            profile: false,
         }
     }
 }

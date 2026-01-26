@@ -93,6 +93,8 @@ pub(crate) fn run(
     trace_steps: Option<&[String]>,
     trace_verbose: bool,
     trace_output: Option<std::path::PathBuf>,
+    trace_level: &str,
+    profile: bool,
 ) -> Result<(), CliError> {
     // Validate file exists
     if !path.exists() {
@@ -105,6 +107,7 @@ pub(crate) fn run(
             "{}",
             "Inference tracing enabled for chat (APR-TRACE-001)".cyan()
         );
+        eprintln!("  Trace level: {}", trace_level);
         if let Some(steps) = trace_steps {
             eprintln!("  Trace steps: {}", steps.join(", "));
         }
@@ -114,10 +117,13 @@ pub(crate) fn run(
         if let Some(ref path) = trace_output {
             eprintln!("  Output: {}", path.display());
         }
+        if profile {
+            eprintln!("  Roofline profiling enabled");
+        }
     }
 
-    // trace_steps and trace_verbose reserved for future use
-    let _ = (trace_steps, trace_verbose);
+    // trace_steps, trace_verbose, trace_level, profile reserved for future use
+    let _ = (trace_steps, trace_verbose, trace_level, profile);
 
     let config = ChatConfig {
         temperature,
