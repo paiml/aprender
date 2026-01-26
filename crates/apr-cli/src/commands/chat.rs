@@ -271,6 +271,50 @@ fn find_qwen_tokenizer(model_path: &Path) -> Result<Option<Qwen2BpeTokenizer>, C
     ))
 }
 
+/// Sample next token from logits with temperature
+///
+/// Temperature = 0: greedy (argmax)
+/// Temperature > 0: softmax with temperature scaling
+fn sample_with_temperature(logits: &[f32], temperature: f32) -> u32 {
+    if temperature <= 0.0 || temperature < 0.01 {
+        // Greedy sampling
+        logits
+            .iter()
+            .enumerate()
+            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+            .map_or(0, |(idx, _)| idx as u32)
+    } else {
+        // Temperature-scaled softmax sampling
+        let max_logit = logits.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+        let scaled: Vec<f32> = logits
+            .iter()
+            .map(|&x| ((x - max_logit) / temperature).exp())
+            .collect();
+        let sum: f32 = scaled.iter().sum();
+        let probs: Vec<f32> = scaled.iter().map(|&x| x / sum).collect();
+
+        // Random sampling from distribution
+        let mut rng_val: f32 = rand_simple();
+        for (idx, &p) in probs.iter().enumerate() {
+            rng_val -= p;
+            if rng_val <= 0.0 {
+                return idx as u32;
+            }
+        }
+        (probs.len() - 1) as u32
+    }
+}
+
+/// Simple random float [0, 1) using system time
+fn rand_simple() -> f32 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .subsec_nanos();
+    (nanos as f32 / 1_000_000_000.0).fract()
+}
+
 /// Clean ChatML markers and artifacts from model response
 ///
 /// Strips (F-PIPE-166b compliance):
@@ -949,35 +993,12 @@ mod realizar_chat {
         }
 
         fn generate_apr(&self, prompt: &[u32], config: &ChatConfig) -> Result<Vec<u32>, String> {
-            // PMAT-109: APR CUDA disabled - greedy-only sampling produces empty output
-            // TODO: Add temperature/top_p sampling to AprV2ModelCuda::generate_cuda_with_cache
-            // For now, use CPU path which has proper sampling support
-            #[cfg(feature = "cuda")]
-            if !config.force_cpu && false {
-                // DISABLED: AprV2ModelCuda only supports greedy sampling
-                use realizar::apr::{AprV2Model, AprV2ModelCuda};
-                if AprV2ModelCuda::is_available() {
-                    let model = AprV2Model::from_bytes(self.model_bytes.clone())
-                        .map_err(|e| format!("Failed to load APR model: {e}"))?;
+            // PMAT-109: APR CUDA disabled - forward_single_cuda has NO KV cache
+            // The realizar AprV2ModelCuda::forward_single_cuda just calls forward_cuda(&[token])
+            // with no context, making generation impossible. Use CPU path which has proper KV cache.
+            // TODO: Fix realizar APR CUDA to implement proper KV cache like GGUF CUDA path
 
-                    let mut cuda_model = AprV2ModelCuda::new(model, 0)
-                        .map_err(|e| format!("Failed to create CUDA model: {e}"))?;
-
-                    let gpu_name = cuda_model.device_name().to_string();
-                    let vram_mb = cuda_model.vram_mb();
-                    println!(
-                        "{}",
-                        format!("[APR CUDA: {} ({} MB VRAM)]", gpu_name, vram_mb).bright_green()
-                    );
-
-                    // EOS tokens: <|im_end|> = 151645, <|endoftext|> = 151643
-                    return cuda_model
-                        .generate_cuda_with_cache(prompt, config.max_tokens.min(128), 151645)
-                        .map_err(|e| format!("APR CUDA generate failed: {e}"));
-                }
-            }
-
-            // CPU path using AprTransformer (has temperature/top_p sampling)
+            // CPU path using AprTransformer (has temperature/top_p sampling + KV cache)
             use realizar::apr_transformer::{AprTransformer, GenerateConfig};
 
             let transformer = AprTransformer::from_apr_bytes(&self.model_bytes)
