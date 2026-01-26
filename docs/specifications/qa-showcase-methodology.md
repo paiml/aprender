@@ -1,9 +1,28 @@
 # QA Showcase Methodology: Same-Model Comparison Protocol
 
-**Version:** 1.0.0
-**Status:** MANDATORY
-**Date:** 2026-01-25
+**Version:** 1.1.0
+**Status:** IMPLEMENTED
+**Date:** 2026-01-26
 **Refs:** PMAT-SHOWCASE-METHODOLOGY-001
+
+---
+
+## Implementation Status
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| CPU/GPU Performance Thresholds | ✅ DONE | qa_chat (3.0/5.0), qa_run (5.0/5.0) |
+| GGUF [TRACE-CACHE] Tracing | ✅ DONE | CPU and GPU paths |
+| `--class` flag for qa_run | ✅ DONE | quantized, full-precision, all |
+| qa_chat tests | ✅ PASS | 20/20 points |
+| qa_run CPU GGUF | ✅ PASS | 15/15 points |
+| qa_run GPU GGUF | ✅ PASS | 15/15 points |
+| qa_serve tests | ✅ PASS | 35/35 points |
+| qa_verify tests | ✅ PASS | 20/20 points |
+| `--trace-level layer` | ⏳ FUTURE | Per-layer breakdown |
+| `--profile` Roofline | ⏳ FUTURE | Memory/compute analysis |
+| `--trace-output` for GGUF | ⏳ FUTURE | JSON output |
+| Ollama parity | ⏳ FUTURE | Automated comparison |
 
 ---
 
@@ -116,34 +135,31 @@ SafeTensors is F32/F16, cannot be directly compared to quantized formats:
 
 **CRITICAL:** Tracing MUST work for ALL three inference modalities: `run`, `chat`, `serve`.
 
-### 4.0 BLOCKING BUG: GGUF Tracing Not Implemented (PMAT-TRACE-GGUF-001)
+### 4.0 GGUF Tracing (PMAT-TRACE-GGUF-001)
 
-**Status:** 🔴 BLOCKER
+**Status:** ✅ IMPLEMENTED (2026-01-26)
 
 | Path | `[TRACE-CACHE]` Output | Status |
 |------|------------------------|--------|
 | SafeTensors/APR | ✅ Has tracing in `realizar/src/apr_transformer/mod.rs` | Works |
-| GGUF | ❌ No tracing in `realizar/src/gguf/inference/*.rs` | **NOT IMPLEMENTED** |
+| GGUF CPU | ✅ Tracing in `realizar/src/gguf/inference/generation.rs` | **IMPLEMENTED** |
+| GGUF GPU | ✅ Tracing in `realizar/src/gguf/cuda/generation.rs` | **IMPLEMENTED** |
 
-**Evidence:**
+**Example Output:**
 ```bash
-# GGUF with --trace: NO [TRACE-CACHE] output
-apr run $MODEL --prompt "Hi" --trace
-# Output: "Inference tracing enabled (APR-TRACE-001)" but NO timing messages
-
-# SafeTensors with --trace: HAS [TRACE-CACHE] output
-apr run "hf://Qwen/Qwen2.5-Coder-1.5B-Instruct" --prompt "Hi" --trace
-# Output: [TRACE-CACHE] Layer 0: QKV projection using F32 (not fused)
-# Output: [TRACE-CACHE] pos=0: 28 layers took 347.8ms
+apr run $MODEL --prompt "2+2=" --max-tokens 5 --trace
+# Output:
+# [TRACE-CACHE] GGUF model (GPU): 28 layers, hidden_dim=1536, vocab=151936
+# [TRACE-CACHE] Prefill: 12 tokens, max_gen=5
+# [TRACE-CACHE] Prefill complete: 12 tokens in 112.08ms
+# [TRACE-CACHE] pos=11: 28 layers took 6.95ms
+# [TRACE-CACHE] pos=12: 28 layers took 6.83ms
 ```
 
-**Root Cause:** `apr-cli/src/commands/run.rs` lines 1707-1708:
-```rust
-// APR-TRACE-001: CPU traced generation not implemented - use non-traced with warning
-eprintln!("Warning: CPU traced generation not implemented, using non-traced path");
-```
-
-**Fix Required:** Add `[TRACE-CACHE]` style output to `realizar/src/gguf/inference/generation.rs`
+**Changes Made:**
+- `realizar/src/gguf/inference/generation.rs`: Added trace output to `generate_with_cache()`
+- `realizar/src/gguf/cuda/generation.rs`: Added trace output to `generate_gpu_resident()`
+- `apr-cli/src/commands/run.rs`: Removed outdated "not implemented" warnings
 
 ### 4.1 Canonical Model for All Tests
 
