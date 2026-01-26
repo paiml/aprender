@@ -424,7 +424,80 @@ cargo run --example qa_run -- --backend cpu --format gguf --trace-level layer
 
 ---
 
-## 10. Quick Verification Commands
+## 10. Falsification Requirements (NOISY-GUARD + F-MODEL-COMPLETE)
+
+These are hard requirements that MUST be satisfied. Violating them is a test failure.
+
+### 10.1 NOISY-GUARD: Silent by Default
+
+| Requirement | Test | Violation |
+|-------------|------|-----------|
+| **F-NOISY-001** | `apr chat model.gguf` produces ZERO `[DEBUG]` or `[TRACE]` lines | Fail if any debug output without `--trace` |
+| **F-NOISY-002** | `apr run model.gguf --prompt "Hi"` has clean output | Fail if trace messages appear |
+| **F-NOISY-003** | `apr serve model.gguf` logs only startup and requests | Fail if debug spam in logs |
+| **F-NOISY-004** | `--trace` flag MUST enable trace output | Fail if `--trace` produces no trace |
+| **F-NOISY-005** | `REALIZE_TRACE=1` env var enables traces | Fail if env var ignored |
+
+**Test Command:**
+```bash
+# MUST produce clean output (no [DEBUG], [TRACE], [TRACE-CACHE])
+apr run $MODEL --prompt "Hi" --max-tokens 5 2>&1 | grep -E '^\[' && echo "FAIL: Debug output detected"
+
+# MUST produce trace output
+apr run $MODEL --prompt "Hi" --max-tokens 5 --trace 2>&1 | grep -q '\[TRACE' || echo "FAIL: No trace with --trace"
+```
+
+### 10.2 F-GPU-134: GPU by Default
+
+| Requirement | Test | Violation |
+|-------------|------|-----------|
+| **F-GPU-001** | GGUF chat uses GPU when CUDA available | Fail if CPU used without `--no-gpu` |
+| **F-GPU-002** | APR chat uses GPU when CUDA available | Fail if CPU used without `--no-gpu` |
+| **F-GPU-003** | `--no-gpu` forces CPU path | Fail if GPU used with `--no-gpu` |
+| **F-GPU-004** | `--gpu` forces GPU (error if unavailable) | Fail if silently falls back to CPU |
+| **F-GPU-005** | GPU info message printed on GPU use | `[GGUF CUDA: ...]` or `[APR CUDA: ...]` |
+
+**Test Command:**
+```bash
+# MUST show GPU info (if CUDA available)
+apr chat $MODEL --max-tokens 5 2>&1 | grep -q 'CUDA' || echo "FAIL: Not using GPU"
+
+# MUST NOT show GPU info with --no-gpu
+apr chat $MODEL --max-tokens 5 --no-gpu 2>&1 | grep -q 'CUDA' && echo "FAIL: GPU used with --no-gpu"
+```
+
+### 10.3 F-MODEL-COMPLETE: No Silent Fallbacks
+
+| Requirement | Test | Violation |
+|-------------|------|-----------|
+| **F-COMPLETE-001** | Missing tokenizer is FATAL error | Fail if "using byte fallback" appears |
+| **F-COMPLETE-002** | Failed tokenizer load is FATAL error | Fail if warning and continues |
+| **F-COMPLETE-003** | Missing config.json is FATAL for SafeTensors | Fail if defaults used silently |
+| **F-COMPLETE-004** | Error message explains WHY model broken | Fail if generic "load failed" |
+| **F-COMPLETE-005** | Error suggests FIX (improper conversion) | Fail if no remediation guidance |
+
+**Test Command:**
+```bash
+# MUST fail with clear error for incomplete model
+apr chat incomplete_model.apr 2>&1 | grep -q 'incomplete' || echo "FAIL: No incomplete error"
+apr chat incomplete_model.apr 2>&1 | grep -q 'tokenizer' || echo "FAIL: Doesn't mention tokenizer"
+```
+
+### 10.4 Falsification Test Matrix (15 points)
+
+| Test | Requirement | Points |
+|------|-------------|--------|
+| Clean output (no debug) | F-NOISY-001 | 3 |
+| Trace with `--trace` | F-NOISY-004 | 3 |
+| GPU by default | F-GPU-001 | 3 |
+| `--no-gpu` works | F-GPU-003 | 3 |
+| Missing tokenizer = error | F-COMPLETE-001 | 3 |
+
+**Total Falsification Points: 15**
+
+---
+
+## 11. Quick Verification Commands
 
 Run these commands to verify the showcase works:
 
@@ -462,7 +535,7 @@ ollama run qwen2.5-coder:1.5b-instruct-q4_K_M "What is 2+2? Answer with just the
 
 ---
 
-## 10. References
+## 12. References
 
 - PMAT-SHOWCASE-NEXT
 - PMAT-APR-TOK-001
