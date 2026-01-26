@@ -284,6 +284,8 @@ struct Config {
     gguf_model: String,
     safetensors_model: String,
     apr_model: String,
+    /// Compare against Ollama as groundtruth (PMAT-SHOWCASE-METHODOLOGY-001 Section 5)
+    with_ollama: bool,
 }
 
 impl Default for Config {
@@ -302,6 +304,7 @@ impl Default for Config {
             gguf_model: default_model_for_format(Format::Gguf),
             safetensors_model: default_model_for_format(Format::SafeTensors),
             apr_model: default_model_for_format(Format::Apr),
+            with_ollama: false,
         }
     }
 }
@@ -841,6 +844,7 @@ fn print_help() {
     println!("    --min-cpu-tps <N>     Minimum CPU tok/s (default: 5.0)");
     println!("    --min-gpu-tps <N>     Minimum GPU tok/s for quantized (default: 5.0)");
     println!("    --class <CLASS>       Test class: quantized (default), full-precision, all");
+    println!("    --with-ollama         Compare against Ollama as groundtruth");
     println!("    --verbose, -v         Verbose output");
     println!("    --help, -h            Show this help");
     println!();
@@ -864,6 +868,9 @@ fn print_help() {
     println!();
     println!("    # Single cell: GPU + GGUF with tracing");
     println!("    cargo run --example qa_run -- --backend gpu --format gguf --trace");
+    println!();
+    println!("    # Compare against Ollama groundtruth");
+    println!("    cargo run --example qa_run -- --class quantized --with-ollama");
 }
 
 fn main() {
@@ -989,6 +996,10 @@ fn main() {
                 } else {
                     i += 1;
                 }
+            }
+            "--with-ollama" => {
+                config.with_ollama = true;
+                i += 1;
             }
             "--verbose" | "-v" => {
                 config.verbose = true;
@@ -1146,9 +1157,203 @@ fn main() {
     // Summary
     print_matrix_summary(&results);
 
+    // Ollama parity test (PMAT-SHOWCASE-METHODOLOGY-001 Section 5)
+    let ollama_passed = if config.with_ollama {
+        run_ollama_comparison(&config)
+    } else {
+        true
+    };
+
     // Exit code
-    let all_passed = results.iter().all(|r| r.passed());
+    let all_passed = results.iter().all(|r| r.passed()) && ollama_passed;
     std::process::exit(if all_passed { 0 } else { 1 });
+}
+
+/// Ollama model name for Q4_K_M quantization (same as CANONICAL_GGUF)
+const OLLAMA_MODEL: &str = "qwen2.5-coder:1.5b-instruct-q4_K_M";
+
+/// Run Ollama parity comparison (PMAT-SHOWCASE-METHODOLOGY-001 Section 5)
+///
+/// Compares apr's output against Ollama as groundtruth for:
+/// 1. Correctness - Output matches semantically
+/// 2. Performance - Within 2x of Ollama tok/s
+fn run_ollama_comparison(config: &Config) -> bool {
+    println!();
+    println!(
+        "{}═══════════════════════════════════════════════════════════════{}",
+        CYAN, NC
+    );
+    println!(
+        "{}         OLLAMA PARITY TEST (PMAT-SHOWCASE-METHODOLOGY-001)      {}",
+        CYAN, NC
+    );
+    println!(
+        "{}═══════════════════════════════════════════════════════════════{}",
+        CYAN, NC
+    );
+    println!();
+
+    // Check if ollama is available
+    let ollama_check = Command::new("which").arg("ollama").output();
+
+    if ollama_check.is_err() || !ollama_check.unwrap().status.success() {
+        println!(
+            "{}[SKIP]{} Ollama not installed - skipping parity test",
+            YELLOW, NC
+        );
+        return true;
+    }
+
+    // Check if model is available
+    let model_check = Command::new("ollama")
+        .args(["show", OLLAMA_MODEL])
+        .stderr(Stdio::null())
+        .output();
+
+    if model_check.is_err() || !model_check.unwrap().status.success() {
+        println!(
+            "{}[SKIP]{} Ollama model {} not available",
+            YELLOW, NC, OLLAMA_MODEL
+        );
+        println!("       Install with: ollama pull {}", OLLAMA_MODEL);
+        return true;
+    }
+
+    let prompt = "What is 2+2? Answer with just the number.";
+    let mut all_passed = true;
+
+    // Test 1: Correctness - Ollama output
+    println!("{}Test 1: Ollama Groundtruth{}", BOLD, NC);
+    let ollama_start = Instant::now();
+    let ollama_output = Command::new("ollama")
+        .args(["run", OLLAMA_MODEL, prompt])
+        .output();
+
+    let (ollama_answer, ollama_time) = match ollama_output {
+        Ok(output) => {
+            let answer = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            let time = ollama_start.elapsed().as_secs_f64();
+            (answer, time)
+        }
+        Err(e) => {
+            println!("{}[FAIL]{} Ollama execution failed: {}", RED, NC, e);
+            return false;
+        }
+    };
+
+    println!("  Ollama output: {:?}", ollama_answer);
+    println!("  Ollama time: {:.2}s", ollama_time);
+
+    // Check if Ollama answer contains "4"
+    let ollama_correct = ollama_answer.contains('4');
+    if ollama_correct {
+        println!("{}[PASS]{} Ollama groundtruth is correct", GREEN, NC);
+    } else {
+        println!(
+            "{}[WARN]{} Ollama groundtruth doesn't contain '4': {}",
+            YELLOW, NC, ollama_answer
+        );
+    }
+
+    // Test 2: APR output
+    println!();
+    println!("{}Test 2: APR Output{}", BOLD, NC);
+    let apr_start = Instant::now();
+    let apr_output = Command::new(&config.apr_binary)
+        .args([
+            "run",
+            &config.gguf_model,
+            "--prompt",
+            prompt,
+            "--max-tokens",
+            "10",
+        ])
+        .output();
+
+    let (apr_answer, apr_time) = match apr_output {
+        Ok(output) => {
+            let answer = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            let time = apr_start.elapsed().as_secs_f64();
+            (answer, time)
+        }
+        Err(e) => {
+            println!("{}[FAIL]{} APR execution failed: {}", RED, NC, e);
+            return false;
+        }
+    };
+
+    println!("  APR output: {:?}", apr_answer);
+    println!("  APR time: {:.2}s", apr_time);
+
+    // Test 3: Correctness comparison
+    println!();
+    println!("{}Test 3: Correctness Parity{}", BOLD, NC);
+    let apr_correct = apr_answer.contains('4');
+    if apr_correct && ollama_correct {
+        println!(
+            "{}[PASS]{} P050: Both produce correct answer (contains '4')",
+            GREEN, NC
+        );
+    } else if apr_correct {
+        println!(
+            "{}[PASS]{} P050: APR correct (Ollama groundtruth was incorrect)",
+            GREEN, NC
+        );
+    } else {
+        println!("{}[FAIL]{} P050: APR output doesn't contain '4'", RED, NC);
+        all_passed = false;
+    }
+
+    // Test 4: Performance comparison (within 2x)
+    println!();
+    println!("{}Test 4: Performance Parity{}", BOLD, NC);
+    let speedup = ollama_time / apr_time;
+    let within_2x = apr_time <= ollama_time * 2.0;
+
+    if within_2x {
+        println!(
+            "{}[PASS]{} P051: APR within 2x of Ollama ({:.2}x speedup)",
+            GREEN, NC, speedup
+        );
+    } else {
+        println!(
+            "{}[FAIL]{} P051: APR too slow (need 2x, got {:.2}x)",
+            RED, NC, speedup
+        );
+        all_passed = false;
+    }
+
+    // Summary
+    println!();
+    println!(
+        "{}═══════════════════════════════════════════════════════════════{}",
+        CYAN, NC
+    );
+    println!(
+        "{}Ollama Parity: {} | Speedup: {:.2}x | APR: {:.2}s | Ollama: {:.2}s{}",
+        if all_passed { GREEN } else { RED },
+        if all_passed { "PASS" } else { "FAIL" },
+        speedup,
+        apr_time,
+        ollama_time,
+        NC
+    );
+    println!(
+        "{}═══════════════════════════════════════════════════════════════{}",
+        CYAN, NC
+    );
+
+    if config.verbose {
+        println!();
+        println!("{}Detailed Comparison:{}", MAGENTA, NC);
+        println!("  Prompt:        {:?}", prompt);
+        println!("  Ollama Model:  {}", OLLAMA_MODEL);
+        println!("  APR Model:     {}", config.gguf_model);
+        println!("  Ollama Answer: {:?}", ollama_answer);
+        println!("  APR Answer:    {:?}", apr_answer);
+    }
+
+    all_passed
 }
 
 #[cfg(test)]

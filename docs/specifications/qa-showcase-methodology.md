@@ -24,7 +24,7 @@
 | `--trace-level layer` output | ✅ DONE | Per-layer timing table in run command |
 | `--profile` Roofline output | ✅ DONE | Memory/compute analysis in run command |
 | `--trace-output` for GGUF | ✅ DONE | JSON output to file |
-| Ollama parity | ⏳ FUTURE | Automated comparison |
+| Ollama parity | ✅ DONE | Automated comparison via `--with-ollama` |
 
 ---
 
