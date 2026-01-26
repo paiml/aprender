@@ -271,50 +271,6 @@ fn find_qwen_tokenizer(model_path: &Path) -> Result<Option<Qwen2BpeTokenizer>, C
     ))
 }
 
-/// Sample next token from logits with temperature
-///
-/// Temperature = 0: greedy (argmax)
-/// Temperature > 0: softmax with temperature scaling
-fn sample_with_temperature(logits: &[f32], temperature: f32) -> u32 {
-    if temperature <= 0.0 || temperature < 0.01 {
-        // Greedy sampling
-        logits
-            .iter()
-            .enumerate()
-            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
-            .map_or(0, |(idx, _)| idx as u32)
-    } else {
-        // Temperature-scaled softmax sampling
-        let max_logit = logits.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
-        let scaled: Vec<f32> = logits
-            .iter()
-            .map(|&x| ((x - max_logit) / temperature).exp())
-            .collect();
-        let sum: f32 = scaled.iter().sum();
-        let probs: Vec<f32> = scaled.iter().map(|&x| x / sum).collect();
-
-        // Random sampling from distribution
-        let mut rng_val: f32 = rand_simple();
-        for (idx, &p) in probs.iter().enumerate() {
-            rng_val -= p;
-            if rng_val <= 0.0 {
-                return idx as u32;
-            }
-        }
-        (probs.len() - 1) as u32
-    }
-}
-
-/// Simple random float [0, 1) using system time
-fn rand_simple() -> f32 {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .subsec_nanos();
-    (nanos as f32 / 1_000_000_000.0).fract()
-}
-
 /// Clean ChatML markers and artifacts from model response
 ///
 /// Strips (F-PIPE-166b compliance):
