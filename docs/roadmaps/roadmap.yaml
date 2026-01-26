@@ -1660,11 +1660,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'SERVE-TRACE-001: Implement X-Trace-Level header in apr serve'
-  status: planned
+  status: inprogress
   priority: medium
   assigned_to: null
   created: 2026-01-21T18:30:00Z
-  updated: 2026-01-21T18:30:00Z
+  updated: 2026-01-26T09:15:00.067752987+00:00
   spec: null
   acceptance_criteria:
   - Parse X-Trace-Level header (brick/step/layer)
