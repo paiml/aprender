@@ -1,6 +1,6 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 4.4.0
+**Version:** 4.5.0
 **Status:** ✅ OPERATIONAL (Real Observability Active)
 **Author:** PAIML Engineering
 **Date:** 2026-01-27
@@ -21,6 +21,23 @@
 **PMAT-114 Fix (2026-01-27):** ✅ COMPLETE. Root cause: APR converter fuses QKV biases into `qkv_proj.bias` but loader only looked for separate biases. Fixed in `realizar/src/apr_transformer/mod.rs:600`.
 
 **PMAT Roadmap ID:** `SHOWCASE-BRICK-001`
+
+### 100-Point Falsification Results (PMAT-112, 2026-01-27)
+
+**Showcase-Specific Score: 12/55** (See `docs/qa/popperian_falsification_checklist.md`)
+
+| Section | Score | Key Results |
+|---------|-------|-------------|
+| II. Loader | 5/15 | F-LOAD-011 ✅ GGUF Q4_K (0.76s), F-LOAD-013 ✅ SafeTensors (0.38s), F-LOAD-015 ✅ APR |
+| III. Quality | 2/15 | F-QUAL-026 ✅ 2+2=4 CPU, F-QUAL-027 ✅ 2+2=4 GPU |
+| IV. Performance | 2/15 | F-PERF-049 ✅ Load <2s, F-PERF-052 ✅ 10.6 tok/s CPU |
+| V. Rosetta | 1/10 | F-CONV-056 ✅ SafeTensors→APR |
+| VII. Observability | 2/10 | F-OBS-081 ✅ --trace JSON, F-OBS-089 ✅ apr check |
+
+**Remaining Showcase Gaps:**
+- F-QUAL-032: Argmax parity GGUF vs SafeTensors (needs same model)
+- F-PERF-042: GPU > 2x CPU throughput verification
+- F-CONV-059: `apr rosetta compare-inference` parity tool
 
 ---
 
