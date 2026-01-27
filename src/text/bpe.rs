@@ -285,32 +285,94 @@ impl BpeTokenizer {
 
         let mut ids = Vec::new();
 
-        // Pre-tokenize into words (simple whitespace split)
-        let text = if self.config.add_prefix_space && !text.starts_with(' ') {
-            format!(" {text}")
-        } else {
-            text.to_string()
-        };
+        // PMAT-114: Handle special tokens FIRST before BPE tokenization
+        // This ensures tokens like <|im_start|> are encoded as single tokens (151644)
+        // rather than being split into characters (27, 91, 318, 4906, 91, 29)
+        let segments = self.split_on_special_tokens(text);
 
-        // Process each word
-        for word in self.pre_tokenize(&text) {
-            // Convert to byte-encoded representation
-            let byte_word = self.bytes_to_bpe_tokens(&word);
+        for segment in segments {
+            if let Some(&special_id) = self.special_tokens.get(&segment) {
+                // Special token - output its ID directly
+                ids.push(special_id);
+            } else {
+                // Regular text - apply BPE tokenization
+                let segment_text = if self.config.add_prefix_space
+                    && !segment.starts_with(' ')
+                    && ids.is_empty()
+                {
+                    format!(" {segment}")
+                } else {
+                    segment
+                };
 
-            // Apply BPE merges
-            let tokens = self.bpe(&byte_word);
+                for word in self.pre_tokenize(&segment_text) {
+                    let byte_word = self.bytes_to_bpe_tokens(&word);
+                    let tokens = self.bpe(&byte_word);
 
-            // Convert tokens to IDs
-            for token in tokens {
-                if let Some(&id) = self.vocab.get(&token) {
-                    ids.push(id);
-                } else if let Some(&id) = self.vocab.get(&self.config.unk_token) {
-                    ids.push(id);
+                    for token in tokens {
+                        if let Some(&id) = self.vocab.get(&token) {
+                            ids.push(id);
+                        } else if let Some(&id) = self.vocab.get(&self.config.unk_token) {
+                            ids.push(id);
+                        }
+                    }
                 }
             }
         }
 
         ids
+    }
+
+    /// Split text on special tokens while preserving them as separate segments.
+    /// Returns vec of segments where special tokens are their own elements.
+    fn split_on_special_tokens(&self, text: &str) -> Vec<String> {
+        if self.special_tokens.is_empty() {
+            return vec![text.to_string()];
+        }
+
+        // Sort special tokens by length (longest first) to avoid partial matches
+        let mut sorted_tokens: Vec<_> = self.special_tokens.keys().collect();
+        sorted_tokens.sort_by_key(|t| std::cmp::Reverse(t.len()));
+
+        let mut result = Vec::new();
+        let mut remaining = text;
+
+        while !remaining.is_empty() {
+            // Find the earliest special token occurrence
+            let mut earliest_match: Option<(usize, &str)> = None;
+
+            for token in &sorted_tokens {
+                if let Some(pos) = remaining.find(token.as_str()) {
+                    match earliest_match {
+                        None => earliest_match = Some((pos, token)),
+                        Some((prev_pos, _)) if pos < prev_pos => {
+                            earliest_match = Some((pos, token));
+                        }
+                        _ => {}
+                    }
+                }
+            }
+
+            match earliest_match {
+                Some((pos, token)) => {
+                    // Add text before the special token (if any)
+                    if pos > 0 {
+                        result.push(remaining[..pos].to_string());
+                    }
+                    // Add the special token itself
+                    result.push(token.to_string());
+                    // Continue with remaining text
+                    remaining = &remaining[pos + token.len()..];
+                }
+                None => {
+                    // No more special tokens - add remaining text
+                    result.push(remaining.to_string());
+                    break;
+                }
+            }
+        }
+
+        result
     }
 
     /// Decode token IDs to text.

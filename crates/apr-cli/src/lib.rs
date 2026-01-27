@@ -1484,6 +1484,23 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
                 tolerance,
                 json,
             } => rosetta::run_verify(source, intermediate, *tolerance, *json || cli.json),
+            RosettaCommands::CompareInference {
+                model_a,
+                model_b,
+                prompt,
+                max_tokens,
+                temperature,
+                tolerance,
+                json,
+            } => rosetta::run_compare_inference(
+                model_a,
+                model_b,
+                prompt,
+                *max_tokens,
+                *temperature,
+                *tolerance,
+                *json || cli.json,
+            ),
         },
 
         Commands::Publish {

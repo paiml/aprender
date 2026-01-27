@@ -424,6 +424,89 @@ Output:
 ╚══════════════════════════════════════════════════════════════════════════════╝
 ```
 
+### 6.4 Inference Comparison Mode (PMAT-114)
+
+**Purpose**: Compare inference outputs between two model formats to debug parity issues.
+
+Unlike tensor comparison (6.3) which compares static weights, inference comparison runs
+the same prompt through both models and compares logits/outputs at each token position.
+
+```bash
+apr rosetta compare-inference model1.gguf model2.apr --prompt "2+2="
+```
+
+**Synopsis**:
+```
+apr rosetta compare-inference <MODEL_A> <MODEL_B> [OPTIONS]
+
+Compare inference outputs between two models.
+
+ARGUMENTS:
+    <MODEL_A>    First model (reference, typically GGUF)
+    <MODEL_B>    Second model (test, typically APR)
+
+OPTIONS:
+    --prompt <PROMPT>       Test prompt [default: "Hello"]
+    --max-tokens <N>        Maximum tokens to generate [default: 5]
+    --temperature <T>       Sampling temperature (0=greedy) [default: 0]
+    --compare-logits        Compare full logit distributions (not just top-k)
+    --tolerance <TOL>       Logit difference tolerance [default: 0.1]
+    --trace-layer <N>       Trace specific layer activations
+    --json                  Output as JSON for CI integration
+```
+
+**Output**:
+```
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                     INFERENCE COMPARISON REPORT                               ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║ Model A: model1.gguf (GGUF Q4_K)                                             ║
+║ Model B: model2.apr (APR F32)                                                ║
+║ Prompt: "2+2="                                                               ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║                           TOKEN-BY-TOKEN COMPARISON                           ║
+╠───────┬────────────────────────────────┬────────────────────────────────┬────╣
+║ Pos   │ Model A                        │ Model B                        │ Δ  ║
+╠───────┼────────────────────────────────┼────────────────────────────────┼────╣
+║ 0     │ "4" (19) logit=18.52           │ "5" (20) logit=18.14           │ ✗  ║
+║       │ Top-5: [4,5,3,2,1]             │ Top-5: [5,4,3,2,1]             │    ║
+║       │ Logit delta for "4": 0.00      │ Logit delta for "4": -0.52     │    ║
+╠───────┼────────────────────────────────┼────────────────────────────────┼────╣
+║ 1     │ <EOS> (151645)                 │ <EOS> (151645)                 │ ✓  ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║                           LOGIT STATISTICS                                    ║
+╠──────────────────────────┬───────────────────┬───────────────────────────────╣
+║ Metric                   │ Model A           │ Model B           │ Status   ║
+╠──────────────────────────┼───────────────────┼───────────────────┼──────────╣
+║ Token 0 Top-1 Match      │ "4"               │ "5"               │ ✗ DIFFER ║
+║ Token 0 Logit[19] (="4") │ 18.52             │ 17.62             │ Δ=-0.90  ║
+║ Token 0 Logit[20] (="5") │ 17.80             │ 18.14             │ Δ=+0.34  ║
+║ KL Divergence (softmax)  │ -                 │ 0.023             │ ⚠ HIGH   ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║                           DIAGNOSIS                                           ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║ Token 0 mismatch: Model B ranks "5" higher than "4" by 0.52 logits           ║
+║ Possible causes:                                                              ║
+║   1. Precision difference (F32 vs Q4K): logit variance ~0.5                  ║
+║   2. RoPE implementation difference: check rope_type, rope_theta             ║
+║   3. Attention mask difference: check causal mask application                ║
+║   4. LayerNorm epsilon: check rms_norm_eps matches                           ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║ RESULT: INFERENCE MISMATCH (1/2 tokens differ)                               ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+```
+
+**Falsification Criteria** (PMAT-114):
+1. If top-1 token matches for all positions → PASS
+2. If top-1 differs but correct token is in top-5 → WARN (calibration issue)
+3. If correct token not in top-5 → FAIL (fundamental issue)
+
+**Implementation Notes**:
+- Uses realizar for inference (both GGUF and APR paths)
+- Caches KV state to compare intermediate activations
+- Reports KL divergence for softmax distributions
+- Suggests root causes based on error patterns
+
 ---
 
 ## 7. Multi-Step Conversion Chains

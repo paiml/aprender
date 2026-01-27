@@ -699,6 +699,15 @@ mod realizar_chat {
                 formatted_prompt.chars().map(|c| c as u32).collect()
             };
 
+            // PMAT-114: Debug APR tokenization to compare with GGUF
+            if config.trace {
+                eprintln!(
+                    "[APR-TRACE] Prompt tokens ({} tokens): {:?}",
+                    prompt_tokens.len(),
+                    &prompt_tokens[..prompt_tokens.len().min(50)]
+                );
+            }
+
             let result = match self.format {
                 ModelFormat::Apr => self.generate_apr(&prompt_tokens, config),
                 ModelFormat::SafeTensors => self.generate_safetensors(&prompt_tokens, config),
@@ -949,10 +958,44 @@ mod realizar_chat {
         }
 
         fn generate_apr(&self, prompt: &[u32], config: &ChatConfig) -> Result<Vec<u32>, String> {
-            // PMAT-109: APR CUDA disabled - forward_single_cuda has NO KV cache
-            // The realizar AprV2ModelCuda::forward_single_cuda just calls forward_cuda(&[token])
-            // with no context, making generation impossible. Use CPU path which has proper KV cache.
-            // TODO: Fix realizar APR CUDA to implement proper KV cache like GGUF CUDA path
+            // PMAT-110: APR CUDA now works with KV cache (fixed in realizar)
+            // Try GPU path first if not force_cpu
+
+            #[cfg(feature = "cuda")]
+            if !config.force_cpu {
+                use realizar::apr::{AprV2Model, AprV2ModelCuda};
+
+                if AprV2ModelCuda::is_available() {
+                    // First create AprV2Model from bytes, then wrap with CUDA
+                    match AprV2Model::from_bytes(self.model_bytes.clone()) {
+                        Ok(apr_model) => {
+                            match AprV2ModelCuda::new(apr_model, 0) {
+                                Ok(mut cuda_model) => {
+                                    let gpu_name = cuda_model.device_name().to_string();
+                                    let vram_mb = cuda_model.vram_mb();
+                                    eprintln!(
+                                        "[APR CUDA: {} ({} MB VRAM)]",
+                                        gpu_name, vram_mb
+                                    );
+
+                                    // Generate using CUDA path with KV cache (greedy sampling)
+                                    // EOS tokens: <|im_end|> = 151645
+                                    let max_tokens = config.max_tokens.min(128);
+                                    return cuda_model
+                                        .generate_cuda_with_cache(prompt, max_tokens, 151645)
+                                        .map_err(|e| format!("APR CUDA generate failed: {e}"));
+                                }
+                                Err(e) => {
+                                    eprintln!("[APR CUDA init failed: {}, using CPU]", e);
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("[APR model load failed: {}, using CPU]", e);
+                        }
+                    }
+                }
+            }
 
             // CPU path using AprTransformer (has temperature/top_p sampling + KV cache)
             use realizar::apr_transformer::{AprTransformer, GenerateConfig};
@@ -1062,6 +1105,18 @@ mod realizar_chat {
             prompt: &[u32],
             config: &ChatConfig,
         ) -> Result<Vec<u32>, String> {
+            // JIDOKA (F-SAFE-GPU-ST): Fail explicitly if GPU requested but not supported
+            // Silent CPU fallback when user requests --gpu is a 0/100 FAIL per Popperian QA
+            #[cfg(feature = "cuda")]
+            if !config.force_cpu {
+                return Err(
+                    "SafeTensors GPU inference not yet supported. \
+                    Use --force-cpu flag, or convert to APR format first: \
+                    apr import model.safetensors -o model.apr && apr chat model.apr --gpu"
+                        .to_string(),
+                );
+            }
+
             // PMAT-108 FIX: Use realizar's SafeTensors inference, not aprender's training model
             // The old path used Qwen2Model.generate() which is 0.3 tok/s (training code)
             // The new path uses AprTransformer via SafetensorsToAprConverter for 25+ tok/s

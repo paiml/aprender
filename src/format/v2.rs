@@ -593,6 +593,11 @@ pub struct AprV2Metadata {
     #[serde(default)]
     pub rope_theta: Option<f32>,
 
+    /// RoPE type: 0=NORM (adjacent pairs), 2=NEOX (split halves)
+    /// CORRECTNESS-011: Qwen2.5 models require rope_type=2 (NEOX style)
+    #[serde(default)]
+    pub rope_type: Option<u32>,
+
     /// Layer norm epsilon
     #[serde(default)]
     pub rms_norm_eps: Option<f32>,

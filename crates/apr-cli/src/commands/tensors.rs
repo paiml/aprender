@@ -56,7 +56,8 @@ pub(crate) fn run(
 
     // Validate header and detect format version
     let magic = validate_header(&mut reader)?;
-    let is_v2 = &magic == b"APR2";
+    // APR v2 uses "APR\0" (null byte) or "APR2" magic
+    let is_v2 = &magic == b"APR2" || &magic == b"APR\0";
 
     // Read metadata size and offset based on format version
     // APR v1 layout: offset 8 = metadata_size, header = 32 bytes

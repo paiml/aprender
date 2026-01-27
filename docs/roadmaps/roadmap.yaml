@@ -2112,3 +2112,42 @@ roadmap:
   - inference
   - fix
   notes: null
+- id: PMAT-112
+  github_issue: null
+  item_type: task
+  title: 'FALSIFY-100: Run 100-point Popperian falsification checklist'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-01-27T20:10:46Z
+  updated: 2026-01-27T20:24:47Z
+  spec: null
+  acceptance_criteria:
+  - Execute docs/qa/popperian_falsification_checklist.md against Qwen2.5 showcase. Track pass/fail for all 100 tests.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - qa
+  - falsification
+  - showcase
+  notes: null
+- id: PMAT-113
+  github_issue: null
+  item_type: task
+  title: 'PMAT-115: Fix SafeTensors GPU silent fallback (Jidoka violation)'
+  status: inprogress
+  priority: critical
+  assigned_to: null
+  created: 2026-01-27T21:09:47Z
+  updated: 2026-01-27T21:09:51.113454281+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - jidoka
+  - safetensors
+  - gpu
+  notes: null

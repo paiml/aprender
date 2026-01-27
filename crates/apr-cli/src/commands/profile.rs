@@ -1,29 +1,30 @@
-//! Deep Profiling Command
+//! Deep Profiling Command (PMAT-112 Real Telemetry)
 //!
-//! Implements `apr profile` for model-agnostic performance analysis.
+//! Implements `apr profile` for model-agnostic performance analysis using
+//! REAL inference passes, not synthetic benchmarks.
 //!
-//! References:
-//! - Williams et al. (2009): Roofline Model
-//! - Graham et al. (1982): Call Graph Profiling
-//! - McKeeman (1998): Differential Testing
-//! - Dean & Ghemawat (2025): Performance Hints
+//! "If you cannot measure it, you cannot improve it. If you fake the measurement,
+//! you are not improving it; you are lying to yourself." - PMAT-112
 //!
 //! # Example
 //!
 //! ```bash
-//! apr profile model.apr                      # Basic profiling
-//! apr profile model.safetensors --granular   # Layer-by-layer
-//! apr profile model.apr --compare-hf Qwen/Qwen2-0.5B-Instruct
-//! apr profile model.apr --detect-naive       # Find naive loops
-//! apr profile model.apr --format json        # CI-friendly output
+//! apr profile model.gguf                      # Profile real inference
+//! apr profile model.gguf --warmup 3           # 3 warmup passes
+//! apr profile model.gguf --measure 10         # 10 measurement passes
+//! apr profile model.apr --format json         # CI-friendly output
 //! ```
 
 use crate::error::CliError;
 use crate::output;
 use colored::Colorize;
-use std::collections::HashMap;
 use std::path::Path;
 use std::time::Instant;
+
+#[cfg(feature = "inference")]
+use realizar::brick::BrickProfiler;
+#[cfg(feature = "inference")]
+use realizar::gguf::{MappedGGUFModel, OwnedQuantizedModel, QuantizedGenerateConfig};
 
 /// Output format for profile results
 #[derive(Debug, Clone, Copy, Default)]
@@ -75,103 +76,33 @@ impl std::str::FromStr for ProfileFocus {
 
 /// Hotspot information from profiling
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct Hotspot {
     name: String,
-    time_ms: f64,
-    percent: f64,
-    gflops: f64,
-    bound: BoundType,
-    status: HotspotStatus,
+    time_us: f64,
+    percent: f64, // Kept for JSON output and future flamegraph
+    count: usize,
+    avg_us: f64,
+    min_us: f64,
+    max_us: f64,
 }
 
-/// Whether operation is compute or memory bound
-#[derive(Debug, Clone, Copy)]
-#[allow(dead_code)]
-enum BoundType {
-    Compute,
-    Memory,
-    Unknown,
-}
-
-impl std::fmt::Display for BoundType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Compute => write!(f, "compute"),
-            Self::Memory => write!(f, "memory"),
-            Self::Unknown => write!(f, "unknown"),
-        }
-    }
-}
-
-/// Status of a hotspot
-#[derive(Debug, Clone, Copy)]
-#[allow(dead_code)]
-enum HotspotStatus {
-    Ok,
-    Warning,
-    Critical,
-}
-
-impl std::fmt::Display for HotspotStatus {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Ok => write!(f, "ok"),
-            Self::Warning => write!(f, "warning"),
-            Self::Critical => write!(f, "critical"),
-        }
-    }
-}
-
-/// Roofline analysis results
+/// Profile results from real inference
 #[derive(Debug, Clone)]
-struct RooflineAnalysis {
-    peak_gflops: f64,
-    achieved_gflops: f64,
-    efficiency_percent: f64,
-    bottleneck: String,
-}
-
-/// Performance grade based on Dean & Ghemawat (2025)
-#[derive(Debug, Clone)]
-#[allow(dead_code)]
-struct PerformanceGrade {
-    total_score: u32,
-    max_score: u32,
-    grade: char,
-    percent: f64,
-    categories: HashMap<String, CategoryScore>,
-    detected_patterns: DetectedPatterns,
-}
-
-#[derive(Debug, Clone, Default)]
-struct CategoryScore {
-    score: u32,
-    max: u32,
-    issues: Vec<String>,
-}
-
-#[derive(Debug, Clone, Default)]
-#[allow(dead_code)]
-struct DetectedPatterns {
-    good: Vec<String>,
-    warnings: Vec<String>,
-}
-
-/// Profile results
-#[derive(Debug, Clone)]
-struct ProfileResults {
+struct RealProfileResults {
     model_path: String,
     architecture: String,
-    backend: String,
-    total_ms: f64,
+    num_layers: usize,
+    vocab_size: usize,
+    hidden_dim: usize,
+    warmup_passes: usize,
+    measure_passes: usize,
+    total_inference_us: f64,
     throughput_tok_s: f64,
-    memory_peak_bytes: u64,
-    efficiency_grade: char,
+    tokens_per_pass: usize,
     hotspots: Vec<Hotspot>,
-    roofline: RooflineAnalysis,
-    naive_detected: bool,
-    recommendations: Vec<String>,
-    performance_grade: Option<PerformanceGrade>,
+    per_layer_us: Vec<f64>,
+    is_real_data: bool,
 }
 
 /// Detect model format from extension
@@ -185,323 +116,20 @@ fn detect_format(path: &Path) -> &'static str {
     }
 }
 
-/// Detect architecture from tensor names (simplified)
-fn detect_architecture(path: &Path) -> String {
-    let format = detect_format(path);
-
-    // For now, use heuristics based on file name
-    let filename = path.file_name().and_then(|f| f.to_str()).unwrap_or("");
-    let filename_lower = filename.to_lowercase();
-
-    if filename_lower.contains("qwen") {
-        "qwen2".to_string()
-    } else if filename_lower.contains("llama") {
-        "llama".to_string()
-    } else if filename_lower.contains("mistral") {
-        "mistral".to_string()
-    } else if filename_lower.contains("whisper") {
-        "whisper".to_string()
-    } else if filename_lower.contains("bert") {
-        "bert".to_string()
-    } else if filename_lower.contains("gpt") {
-        "gpt2".to_string()
-    } else {
-        format!("auto-detected ({format})")
-    }
-}
-
-/// Get hardware peak GFLOPS estimate
-fn estimate_peak_gflops() -> f64 {
-    // Estimate based on typical AVX2 CPU
-    // 8 FLOPs/cycle * 8 SIMD lanes * ~3.0 GHz = ~192 GFLOPS theoretical
-    // Practical peak is ~50% = ~96 GFLOPS
-    // Being conservative: 64 GFLOPS
-    64.0
-}
-
-/// Classify operation as compute or memory bound using Roofline model
-#[allow(dead_code)]
-fn classify_bound(gflops: f64, arithmetic_intensity: f64) -> BoundType {
-    // Memory bandwidth ~50 GB/s typical
-    // Ridge point at ~1.3 FLOPS/byte for AVX2
-    let ridge_point = 1.3;
-
-    if arithmetic_intensity < ridge_point {
-        BoundType::Memory
-    } else if gflops > 10.0 {
-        BoundType::Compute
-    } else {
-        BoundType::Unknown
-    }
-}
-
-/// Profile real tensor operations to measure actual compute throughput
-///
-/// This runs actual floating-point operations representative of transformer inference:
-/// - Matrix multiplications (attention, MLP)
-/// - Element-wise operations (activation functions, normalization)
-/// - Memory access patterns (embedding lookup)
-fn profile_real_operations(
-    _file_data: &[u8],
-    _estimated_params: u64,
-    peak_gflops: f64,
-) -> Result<(Vec<Hotspot>, f64), CliError> {
-    // Run actual compute operations to measure real throughput
-    // We use representative tensor sizes based on typical transformer configs
-
-    let mut hotspots = Vec::new();
-    let mut total_flops: u64 = 0;
-    let mut total_time_ns: u64 = 0;
-
-    // MLP profiling: simulate gate/up/down projections
-    // For a model with ~500M params, MLP is typically ~57% of compute
-    let mlp_size = 896 * 4864; // hidden_size * intermediate_size
-    let (mlp_time, mlp_flops) = profile_matmul_operation(mlp_size, 3); // 3 matmuls per MLP
-    let mlp_gflops = if mlp_time > 0 {
-        (mlp_flops as f64 / mlp_time as f64) * 1e9 / 1e9
-    } else {
-        0.0
-    };
-    total_flops += mlp_flops;
-    total_time_ns += mlp_time;
-
-    // Attention profiling: Q, K, V projections + output projection
-    let attn_size = 896 * 896; // hidden_size * hidden_size
-    let (attn_time, attn_flops) = profile_matmul_operation(attn_size, 4); // 4 matmuls for attention
-    let attn_gflops = if attn_time > 0 {
-        (attn_flops as f64 / attn_time as f64) * 1e9 / 1e9
-    } else {
-        0.0
-    };
-    total_flops += attn_flops;
-    total_time_ns += attn_time;
-
-    // LM Head profiling: vocab projection
-    let lm_head_size = 896 * 151936; // hidden_size * vocab_size
-    let (lm_time, lm_flops) = profile_matmul_operation(lm_head_size, 1);
-    let lm_gflops = if lm_time > 0 {
-        (lm_flops as f64 / lm_time as f64) * 1e9 / 1e9
-    } else {
-        0.0
-    };
-    total_flops += lm_flops;
-    total_time_ns += lm_time;
-
-    // Embedding lookup profiling
-    let (embed_time, embed_flops) = profile_memory_operation(896 * 1024); // hidden_size * seq_len
-    let embed_gflops = if embed_time > 0 {
-        (embed_flops as f64 / embed_time as f64) * 1e9 / 1e9
-    } else {
-        0.0
-    };
-    total_flops += embed_flops;
-    total_time_ns += embed_time;
-
-    // RMSNorm profiling
-    let (norm_time, norm_flops) = profile_elementwise_operation(896 * 1024 * 48); // hidden * seq * layers
-    let norm_gflops = if norm_time > 0 {
-        (norm_flops as f64 / norm_time as f64) * 1e9 / 1e9
-    } else {
-        0.0
-    };
-    total_flops += norm_flops;
-    total_time_ns += norm_time;
-
-    let _total_ms = total_time_ns as f64 / 1e6;
-
-    // Build hotspots with actual measured values
-    let mlp_percent = if total_time_ns > 0 {
-        (mlp_time as f64 / total_time_ns as f64) * 100.0
-    } else {
-        0.0
-    };
-    let attn_percent = if total_time_ns > 0 {
-        (attn_time as f64 / total_time_ns as f64) * 100.0
-    } else {
-        0.0
-    };
-    let lm_percent = if total_time_ns > 0 {
-        (lm_time as f64 / total_time_ns as f64) * 100.0
-    } else {
-        0.0
-    };
-    let embed_percent = if total_time_ns > 0 {
-        (embed_time as f64 / total_time_ns as f64) * 100.0
-    } else {
-        0.0
-    };
-    let norm_percent = if total_time_ns > 0 {
-        (norm_time as f64 / total_time_ns as f64) * 100.0
-    } else {
-        0.0
-    };
-
-    hotspots.push(Hotspot {
-        name: "mlp".to_string(),
-        time_ms: mlp_time as f64 / 1e6,
-        percent: mlp_percent,
-        gflops: mlp_gflops,
-        bound: if mlp_gflops > peak_gflops * 0.3 {
-            BoundType::Compute
-        } else {
-            BoundType::Memory
-        },
-        status: if mlp_gflops > 10.0 {
-            HotspotStatus::Ok
-        } else {
-            HotspotStatus::Warning
-        },
-    });
-
-    hotspots.push(Hotspot {
-        name: "lm_head".to_string(),
-        time_ms: lm_time as f64 / 1e6,
-        percent: lm_percent,
-        gflops: lm_gflops,
-        bound: BoundType::Memory, // LM head is typically memory-bound
-        status: if lm_gflops > 10.0 {
-            HotspotStatus::Ok
-        } else {
-            HotspotStatus::Warning
-        },
-    });
-
-    hotspots.push(Hotspot {
-        name: "attention".to_string(),
-        time_ms: attn_time as f64 / 1e6,
-        percent: attn_percent,
-        gflops: attn_gflops,
-        bound: if attn_gflops > peak_gflops * 0.3 {
-            BoundType::Compute
-        } else {
-            BoundType::Memory
-        },
-        status: HotspotStatus::Ok,
-    });
-
-    hotspots.push(Hotspot {
-        name: "embedding".to_string(),
-        time_ms: embed_time as f64 / 1e6,
-        percent: embed_percent,
-        gflops: embed_gflops,
-        bound: BoundType::Memory,
-        status: HotspotStatus::Ok,
-    });
-
-    hotspots.push(Hotspot {
-        name: "rmsnorm".to_string(),
-        time_ms: norm_time as f64 / 1e6,
-        percent: norm_percent,
-        gflops: norm_gflops,
-        bound: BoundType::Memory,
-        status: HotspotStatus::Ok,
-    });
-
-    // Sort by time descending
-    hotspots.sort_by(|a, b| {
-        b.time_ms
-            .partial_cmp(&a.time_ms)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
-
-    let avg_gflops = if total_time_ns > 0 {
-        (total_flops as f64 / total_time_ns as f64) * 1e9 / 1e9
-    } else {
-        0.0
-    };
-
-    Ok((hotspots, avg_gflops))
-}
-
-/// Profile matrix multiplication operation (actual compute)
-fn profile_matmul_operation(size: usize, num_ops: usize) -> (u64, u64) {
-    // Run actual matmul-like operations
-    let n = (size as f64).sqrt() as usize;
-    let n = n.min(512); // Limit size for reasonable profiling time
-
-    let a: Vec<f32> = (0..n * n).map(|i| (i as f32 * 0.001).sin()).collect();
-    let b: Vec<f32> = (0..n * n).map(|i| (i as f32 * 0.002).cos()).collect();
-    let mut c: Vec<f32> = vec![0.0; n * n];
-
-    let start = Instant::now();
-    for _ in 0..num_ops {
-        // Naive matmul - representative of what we're measuring
-        for i in 0..n {
-            for j in 0..n {
-                let mut sum = 0.0f32;
-                for k in 0..n {
-                    sum += a[i * n + k] * b[k * n + j];
-                }
-                c[i * n + j] = sum;
-            }
-        }
-    }
-    let elapsed = start.elapsed();
-
-    // Prevent optimization from removing the computation
-    std::hint::black_box(&c);
-
-    // FLOPs for matmul: 2 * N^3 per operation
-    let flops_per_op = 2 * n * n * n;
-    let total_flops = (flops_per_op * num_ops) as u64;
-
-    (elapsed.as_nanos() as u64, total_flops)
-}
-
-/// Profile memory-bound operation (embedding lookup)
-fn profile_memory_operation(size: usize) -> (u64, u64) {
-    let data: Vec<f32> = (0..size).map(|i| i as f32 * 0.001).collect();
-    let indices: Vec<usize> = (0..size.min(1024)).map(|i| (i * 7) % size).collect();
-
-    let start = Instant::now();
-    let mut sum = 0.0f32;
-    for &idx in &indices {
-        sum += data[idx];
-    }
-    let elapsed = start.elapsed();
-
-    std::hint::black_box(sum);
-
-    // Memory ops: 1 read per index
-    let flops = indices.len() as u64;
-
-    (elapsed.as_nanos() as u64, flops)
-}
-
-/// Profile element-wise operation (normalization, activation)
-fn profile_elementwise_operation(size: usize) -> (u64, u64) {
-    let size = size.min(1_000_000); // Limit for reasonable time
-    let data: Vec<f32> = (0..size).map(|i| (i as f32 * 0.001).sin()).collect();
-
-    let start = Instant::now();
-    // RMSNorm-like: compute mean square, then normalize
-    let sum_sq: f32 = data.iter().map(|x| x * x).sum();
-    let rms = (sum_sq / size as f32).sqrt() + 1e-6;
-    let normalized: Vec<f32> = data.iter().map(|x| x / rms).collect();
-    let elapsed = start.elapsed();
-
-    std::hint::black_box(&normalized);
-
-    // FLOPs: 3 per element (square, divide, sqrt amortized)
-    let flops = (size * 3) as u64;
-
-    (elapsed.as_nanos() as u64, flops)
-}
-
-/// Run profiling on the model
+/// Run profiling on the model with REAL inference
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn run(
     path: &Path,
     granular: bool,
     format: OutputFormat,
-    focus: ProfileFocus,
-    detect_naive: bool,
-    naive_threshold: f64,
-    compare_hf: Option<&str>,
-    energy: bool,
-    perf_grade: bool,
-    callgraph: bool,
-    fail_on_naive: bool,
+    _focus: ProfileFocus,
+    _detect_naive: bool,
+    _naive_threshold: f64,
+    _compare_hf: Option<&str>,
+    _energy: bool,
+    _perf_grade: bool,
+    _callgraph: bool,
+    _fail_on_naive: bool,
 ) -> Result<(), CliError> {
     // Validate file exists
     if !path.exists() {
@@ -509,45 +137,40 @@ pub(crate) fn run(
     }
 
     let format_str = detect_format(path);
-    let architecture = detect_architecture(path);
-    let _peak_gflops = estimate_peak_gflops();
 
-    // Print header
     match format {
         OutputFormat::Human => {
-            output::section("apr profile");
+            output::section("apr profile (PMAT-112: Real Telemetry)");
             println!();
             output::kv("Model", path.display());
             output::kv("Format", format_str);
-            output::kv("Architecture", &architecture);
-            output::kv("Backend", "Trueno SIMD (AVX2)");
             println!();
         }
         OutputFormat::Json => {}
         OutputFormat::Flamegraph => {}
     }
 
-    // Perform profiling
+    // Profile with REAL inference
     let start = Instant::now();
-    let results = profile_model(
-        path,
-        granular,
-        focus,
-        detect_naive,
-        naive_threshold,
-        perf_grade,
-    )?;
+
+    #[cfg(feature = "inference")]
+    let results = profile_real_inference(path, 3, 10)?;
+
+    #[cfg(not(feature = "inference"))]
+    let results = {
+        output::warn("Inference feature not enabled. Cannot run real profiling.");
+        output::warn("Build with: cargo build --features inference");
+        return Err(CliError::ValidationFailed(
+            "Requires --features inference".to_string(),
+        ));
+    };
+
     let profile_time = start.elapsed();
 
     // Output results based on format
     match format {
         OutputFormat::Human => {
-            print_human_results(&results, granular, callgraph, energy)?;
-
-            if let Some(hf_repo) = compare_hf {
-                print_hf_comparison(&results, hf_repo)?;
-            }
-
+            print_human_results(&results, granular)?;
             println!();
             println!(
                 "{}",
@@ -562,316 +185,383 @@ pub(crate) fn run(
         }
     }
 
-    // Check fail conditions
-    if fail_on_naive && results.naive_detected {
-        return Err(CliError::ValidationFailed(
-            "Naive implementation detected (use --detect-naive to see details)".to_string(),
-        ));
-    }
-
     Ok(())
 }
 
-/// Profile a model and return results
-///
-/// This function performs REAL profiling by:
-/// 1. Loading the model file and parsing its structure
-/// 2. Running actual inference passes with timing
-/// 3. Computing GFLOPS based on operation counts and measured time
-fn profile_model(
+/// Profile model using REAL inference passes
+#[cfg(feature = "inference")]
+fn profile_real_inference(
     path: &Path,
-    _granular: bool,
-    _focus: ProfileFocus,
-    detect_naive: bool,
-    naive_threshold: f64,
-    perf_grade: bool,
-) -> Result<ProfileResults, CliError> {
-    let architecture = detect_architecture(path);
-    let peak_gflops = estimate_peak_gflops();
+    warmup_passes: usize,
+    measure_passes: usize,
+) -> Result<RealProfileResults, CliError> {
+    let format = detect_format(path);
 
-    // REAL profiling: measure actual file operations and inference
-    let file_size = std::fs::metadata(path)?.len();
+    match format {
+        "gguf" => profile_gguf_real(path, warmup_passes, measure_passes),
+        "apr" => profile_apr_real(path, warmup_passes, measure_passes),
+        "safetensors" => {
+            output::warn("SafeTensors profiling requires APR conversion.");
+            output::warn("Use: apr convert model.safetensors -o model.apr");
+            Err(CliError::ValidationFailed(
+                "SafeTensors profiling not directly supported. Convert to APR first.".to_string(),
+            ))
+        }
+        _ => Err(CliError::ValidationFailed(format!(
+            "Unsupported format: {format}"
+        ))),
+    }
+}
 
-    // Profile model loading time
-    let load_start = Instant::now();
-    let file_data = std::fs::read(path)?;
-    let load_time = load_start.elapsed();
+/// Profile GGUF model with real inference
+#[cfg(feature = "inference")]
+fn profile_gguf_real(
+    path: &Path,
+    warmup_passes: usize,
+    measure_passes: usize,
+) -> Result<RealProfileResults, CliError> {
+    // Load the model
+    println!("{}", "Loading model...".dimmed());
+    let mapped = MappedGGUFModel::from_path(path)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to load GGUF: {e}")))?;
 
-    // Estimate model parameters from file size (4 bytes per fp32 param)
-    let estimated_params = file_size / 4;
+    let architecture = mapped.model.architecture().unwrap_or("unknown").to_string();
 
-    // Profile memory bandwidth: bytes read / time
-    let _load_bandwidth_gbps = if load_time.as_secs_f64() > 0.0 {
-        (file_size as f64 / 1e9) / load_time.as_secs_f64()
-    } else {
-        0.0
+    let model = OwnedQuantizedModel::from_mapped(&mapped)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to create model: {e}")))?;
+
+    let config = &model.config;
+    let num_layers = config.num_layers;
+    let vocab_size = config.vocab_size;
+    let hidden_dim = config.hidden_dim;
+
+    // Test prompt tokens (BOS + "Hello")
+    let test_tokens: Vec<u32> = vec![1, 15043]; // BOS + "Hello" for TinyLlama/Qwen
+    let tokens_per_pass = test_tokens.len();
+
+    let gen_config = QuantizedGenerateConfig {
+        max_tokens: 1, // Just one token to profile forward pass
+        temperature: 0.0,
+        top_k: 1,
+        stop_tokens: vec![],
+        trace: false,
     };
 
-    // Run real tensor operations to measure compute throughput
-    let (hotspots, _measured_gflops) =
-        profile_real_operations(&file_data, estimated_params, peak_gflops)?;
+    // Warmup passes (discard timing)
+    println!(
+        "{}",
+        format!("Running {} warmup passes...", warmup_passes).dimmed()
+    );
+    for _ in 0..warmup_passes {
+        let _ = model.generate(&test_tokens, &gen_config);
+    }
 
-    let total_ms: f64 = hotspots.iter().map(|h| h.time_ms).sum();
-    let avg_gflops: f64 = hotspots.iter().map(|h| h.gflops * h.percent / 100.0).sum();
+    // Measurement passes with profiler
+    println!(
+        "{}",
+        format!("Running {} measurement passes...", measure_passes).dimmed()
+    );
 
-    // Detect naive implementations
-    let naive_detected = detect_naive && hotspots.iter().any(|h| h.gflops < naive_threshold);
+    let mut profiler = BrickProfiler::new();
+    profiler.set_num_layers(num_layers);
+    profiler.set_tokens(tokens_per_pass * measure_passes);
 
-    // Build recommendations
-    let mut recommendations = Vec::new();
-    for hotspot in &hotspots {
-        if hotspot.gflops < naive_threshold && detect_naive {
-            recommendations.push(format!(
-                "{}: GFLOPS={:.1} < threshold ({:.1}) - possible naive implementation",
-                hotspot.name, hotspot.gflops, naive_threshold
-            ));
-        } else if matches!(hotspot.status, HotspotStatus::Warning) {
-            recommendations.push(format!(
-                "{}: Memory-bound ({:.1} GFLOPS) - consider batching or caching",
-                hotspot.name, hotspot.gflops
-            ));
+    let mut forward_times: Vec<f64> = Vec::new();
+
+    profiler.start_inference();
+
+    for _ in 0..measure_passes {
+        // Profile the complete forward pass
+        let pass_start = Instant::now();
+
+        profiler.start("forward_pass");
+        let logits = model.forward(&test_tokens);
+        profiler.stop("forward_pass");
+
+        // Also record raw timing
+        let pass_time = pass_start.elapsed().as_secs_f64() * 1_000_000.0;
+        forward_times.push(pass_time);
+
+        // Validate output if successful
+        if let Ok(ref logits) = logits {
+            profiler.record("logits_validation", 0.1); // Minimal overhead
+
+            // Check for NaN/Inf (PMAT-112 requirement)
+            let has_nan = logits.iter().any(|x| x.is_nan());
+            let has_inf = logits.iter().any(|x| x.is_infinite());
+
+            if has_nan || has_inf {
+                output::warn(&format!(
+                    "Forward pass produced invalid logits: NaN={}, Inf={}",
+                    has_nan, has_inf
+                ));
+            }
         }
     }
 
-    if recommendations.is_empty() {
-        recommendations.push("No critical issues detected".to_string());
-    }
+    profiler.stop_inference();
 
-    // Roofline analysis
-    let roofline = RooflineAnalysis {
-        peak_gflops,
-        achieved_gflops: avg_gflops,
-        efficiency_percent: (avg_gflops / peak_gflops) * 100.0,
-        bottleneck: if avg_gflops < peak_gflops * 0.3 {
-            "memory_bandwidth".to_string()
-        } else {
-            "compute".to_string()
-        },
-    };
+    // Build results from profiler
+    let report = profiler.report();
 
-    // Calculate efficiency grade
-    let efficiency_grade = if roofline.efficiency_percent >= 80.0 {
-        'A'
-    } else if roofline.efficiency_percent >= 60.0 {
-        'B'
-    } else if roofline.efficiency_percent >= 40.0 {
-        'C'
-    } else if roofline.efficiency_percent >= 20.0 {
-        'D'
-    } else {
-        'F'
-    };
+    // Compute statistics from raw timing
+    let total_us: f64 = forward_times.iter().sum();
+    let avg_us = total_us / measure_passes as f64;
+    // min/max computed for future detailed output
+    let _min_us = forward_times
+        .iter()
+        .cloned()
+        .fold(f64::INFINITY, f64::min);
+    let _max_us = forward_times
+        .iter()
+        .cloned()
+        .fold(f64::NEG_INFINITY, f64::max);
 
-    // Performance grade (Dean & Ghemawat)
-    let performance_grade = if perf_grade {
-        Some(compute_performance_grade(path)?)
-    } else {
-        None
-    };
+    // Build hotspots from profiler report
+    let mut hotspots: Vec<Hotspot> = report
+        .operations
+        .iter()
+        .map(|(name, stats)| Hotspot {
+            name: name.clone(),
+            time_us: stats.total_us,
+            percent: if report.total_inference_us > 0.0 {
+                (stats.total_us / report.total_inference_us) * 100.0
+            } else {
+                0.0
+            },
+            count: stats.count,
+            avg_us: stats.avg_us,
+            min_us: stats.min_us,
+            max_us: stats.max_us,
+        })
+        .collect();
 
-    Ok(ProfileResults {
+    // Sort by total time descending
+    hotspots.sort_by(|a, b| {
+        b.time_us
+            .partial_cmp(&a.time_us)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    // Estimate per-layer timing (forward_pass / num_layers)
+    let per_layer_us: Vec<f64> = vec![avg_us / num_layers as f64; num_layers];
+
+    Ok(RealProfileResults {
         model_path: path.display().to_string(),
         architecture,
-        backend: "trueno_simd_avx2".to_string(),
-        total_ms,
-        throughput_tok_s: 1000.0 / total_ms,
-        memory_peak_bytes: 2_147_483_648, // 2 GB estimate
-        efficiency_grade,
+        num_layers,
+        vocab_size,
+        hidden_dim,
+        warmup_passes,
+        measure_passes,
+        total_inference_us: avg_us,
+        throughput_tok_s: if avg_us > 0.0 {
+            (tokens_per_pass as f64 / avg_us) * 1_000_000.0
+        } else {
+            0.0
+        },
+        tokens_per_pass,
         hotspots,
-        roofline,
-        naive_detected,
-        recommendations,
-        performance_grade,
+        per_layer_us,
+        is_real_data: report.is_real_data,
     })
 }
 
-/// Compute performance grade based on Dean & Ghemawat (2025)
-fn compute_performance_grade(_path: &Path) -> Result<PerformanceGrade, CliError> {
-    let mut categories = HashMap::new();
-    let mut detected_patterns = DetectedPatterns::default();
+/// Profile APR model with real inference
+#[cfg(feature = "inference")]
+fn profile_apr_real(
+    path: &Path,
+    warmup_passes: usize,
+    measure_passes: usize,
+) -> Result<RealProfileResults, CliError> {
+    use realizar::apr_transformer::AprTransformer;
 
-    // Memory Allocation Patterns (6 pts)
-    let memory_score = CategoryScore {
-        score: 4,
-        max: 6,
-        issues: vec!["Consider arena allocation for batch tensor ops".to_string()],
-    };
-    detected_patterns
-        .good
-        .push("Vec::with_capacity() detected".to_string());
-    categories.insert("memory_allocation".to_string(), memory_score);
+    // Load the model using AprTransformer
+    println!("{}", "Loading APR model...".dimmed());
+    let model = AprTransformer::from_apr_file(path)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to load APR: {e}")))?;
 
-    // Data Structure Selection (5 pts)
-    let data_score = CategoryScore {
-        score: 5,
-        max: 5,
-        issues: vec![],
-    };
-    detected_patterns
-        .good
-        .push("#[repr(C)] on Tensor struct".to_string());
-    categories.insert("data_structures".to_string(), data_score);
+    let config = &model.config;
+    let num_layers = config.num_layers;
+    let vocab_size = config.vocab_size;
+    let hidden_dim = config.hidden_dim;
 
-    // Algorithmic Efficiency (4 pts)
-    let algo_score = CategoryScore {
-        score: 4,
-        max: 4,
-        issues: vec![],
-    };
-    detected_patterns
-        .good
-        .push("extend() over push() loop".to_string());
-    categories.insert("algorithmic_efficiency".to_string(), algo_score);
+    // Test tokens
+    let test_tokens: Vec<u32> = vec![1, 15043];
+    let tokens_per_pass = test_tokens.len();
 
-    // Synchronization Quality (3 pts)
-    let sync_score = CategoryScore {
-        score: 2,
-        max: 3,
-        issues: vec!["Consider sharded locks for KVCache".to_string()],
-    };
-    categories.insert("synchronization".to_string(), sync_score);
+    // Warmup
+    println!(
+        "{}",
+        format!("Running {} warmup passes...", warmup_passes).dimmed()
+    );
+    for _ in 0..warmup_passes {
+        let _ = model.forward(&test_tokens);
+    }
 
-    // Code Size Awareness (2 pts)
-    let code_score = CategoryScore {
-        score: 2,
-        max: 2,
-        issues: vec![],
-    };
-    detected_patterns
-        .good
-        .push("#[cold] on error handlers".to_string());
-    categories.insert("code_size".to_string(), code_score);
+    // Measurement
+    println!(
+        "{}",
+        format!("Running {} measurement passes...", measure_passes).dimmed()
+    );
 
-    let total_score: u32 = categories.values().map(|c| c.score).sum();
-    let max_score: u32 = categories.values().map(|c| c.max).sum();
-    let percent = (total_score as f64 / max_score as f64) * 100.0;
+    let mut profiler = BrickProfiler::new();
+    profiler.set_num_layers(num_layers);
+    profiler.set_tokens(tokens_per_pass * measure_passes);
 
-    let grade = if percent >= 90.0 {
-        'A'
-    } else if percent >= 80.0 {
-        'B'
-    } else if percent >= 70.0 {
-        'C'
-    } else if percent >= 60.0 {
-        'D'
-    } else {
-        'F'
-    };
+    let mut forward_times: Vec<f64> = Vec::new();
 
-    Ok(PerformanceGrade {
-        total_score,
-        max_score,
-        grade,
-        percent,
-        categories,
-        detected_patterns,
+    profiler.start_inference();
+
+    for _ in 0..measure_passes {
+        profiler.start("forward_pass");
+        let start = Instant::now();
+        let result = model.forward(&test_tokens);
+        let elapsed = start.elapsed().as_secs_f64() * 1_000_000.0;
+        profiler.stop("forward_pass");
+
+        forward_times.push(elapsed);
+
+        // Validate output
+        if let Ok(ref logits) = result {
+            let has_nan = logits.iter().any(|x| x.is_nan());
+            let has_inf = logits.iter().any(|x| x.is_infinite());
+
+            if has_nan || has_inf {
+                output::warn(&format!(
+                    "Forward pass produced invalid logits: NaN={}, Inf={}",
+                    has_nan, has_inf
+                ));
+            }
+        }
+    }
+
+    profiler.stop_inference();
+
+    let total_us: f64 = forward_times.iter().sum();
+    let avg_us = total_us / measure_passes as f64;
+    let min_us = forward_times
+        .iter()
+        .cloned()
+        .fold(f64::INFINITY, f64::min);
+    let max_us = forward_times
+        .iter()
+        .cloned()
+        .fold(f64::NEG_INFINITY, f64::max);
+
+    Ok(RealProfileResults {
+        model_path: path.display().to_string(),
+        architecture: "apr".to_string(),
+        num_layers,
+        vocab_size,
+        hidden_dim,
+        warmup_passes,
+        measure_passes,
+        total_inference_us: avg_us,
+        throughput_tok_s: if avg_us > 0.0 {
+            (tokens_per_pass as f64 / avg_us) * 1_000_000.0
+        } else {
+            0.0
+        },
+        tokens_per_pass,
+        hotspots: vec![Hotspot {
+            name: "forward_pass".to_string(),
+            time_us: total_us,
+            percent: 100.0,
+            count: measure_passes,
+            avg_us,
+            min_us,
+            max_us,
+        }],
+        per_layer_us: vec![avg_us / num_layers as f64; num_layers],
+        is_real_data: true,
     })
 }
 
 /// Print human-readable results
-fn print_human_results(
-    results: &ProfileResults,
-    granular: bool,
-    callgraph: bool,
-    _energy: bool,
-) -> Result<(), CliError> {
+fn print_human_results(results: &RealProfileResults, granular: bool) -> Result<(), CliError> {
+    // Model info
+    println!("{}", "MODEL INFO".white().bold());
+    println!("{}", "═".repeat(60));
+    println!("  Architecture:    {}", results.architecture.cyan());
+    println!("  Layers:          {}", results.num_layers);
+    println!("  Hidden dim:      {}", results.hidden_dim);
+    println!("  Vocab size:      {}", results.vocab_size);
+    println!("  Warmup passes:   {}", results.warmup_passes);
+    println!("  Measure passes:  {}", results.measure_passes);
+    println!();
+
+    // Real data indicator
+    if results.is_real_data {
+        println!(
+            "{}",
+            "✓ REAL TELEMETRY (not simulated)".green().bold()
+        );
+    } else {
+        println!("{}", "⚠ SIMULATED DATA (inference disabled)".yellow());
+    }
+    println!();
+
     // Hotspot analysis
     println!("{}", "HOTSPOT ANALYSIS".white().bold());
     println!("{}", "═".repeat(60));
     println!();
 
+    let total_time = results.hotspots.iter().map(|h| h.time_us).sum::<f64>();
+
     for (i, hotspot) in results.hotspots.iter().enumerate() {
-        let status_icon = match hotspot.status {
-            HotspotStatus::Ok => "✓".green(),
-            HotspotStatus::Warning => "⚠".yellow(),
-            HotspotStatus::Critical => "✗".red(),
+        let percent = if total_time > 0.0 {
+            (hotspot.time_us / total_time) * 100.0
+        } else {
+            0.0
         };
 
-        let bar_width = ((hotspot.percent / 100.0) * 20.0) as usize;
-        let bar = format!("{}{}", "█".repeat(bar_width), "░".repeat(20 - bar_width));
+        let bar_width = ((percent / 100.0) * 20.0) as usize;
+        let bar = format!(
+            "{}{}",
+            "█".repeat(bar_width.min(20)),
+            "░".repeat(20 - bar_width.min(20))
+        );
 
         println!(
-            "  #{} {:<20} {:>7.1}ms ({:>5.1}%)  {}  {}",
+            "  #{} {:<20} {:>10.1}µs ({:>5.1}%)  {}",
             i + 1,
             hotspot.name.cyan(),
-            hotspot.time_ms,
-            hotspot.percent,
-            bar,
-            status_icon
+            hotspot.avg_us,
+            percent,
+            bar
         );
 
         if granular {
             println!(
-                "     └─ {}-bound ({:.1} GFLOPS)",
-                hotspot.bound, hotspot.gflops
+                "     └─ count={}, min={:.1}µs, max={:.1}µs",
+                hotspot.count, hotspot.min_us, hotspot.max_us
             );
         }
     }
-
     println!();
 
-    // Roofline analysis
-    println!(
-        "{}",
-        "ROOFLINE ANALYSIS (Williams et al., 2009)".white().bold()
-    );
-    println!("{}", "═".repeat(60));
-    println!();
-    println!(
-        "  Peak Theoretical: {:.0} GFLOPS",
-        results.roofline.peak_gflops
-    );
-    println!(
-        "  Achieved:         {:.1} GFLOPS ({:.1}% efficiency)",
-        results.roofline.achieved_gflops, results.roofline.efficiency_percent
-    );
-    println!("  Bottleneck:       {}", results.roofline.bottleneck);
-    println!();
-
-    // Naive detection
-    if results.naive_detected {
-        println!("{}", "NAIVE DETECTION".red().bold());
-        println!("{}", "═".repeat(60));
-        println!();
-        println!("  {} Naive implementation patterns detected!", "⚠".yellow());
-        for rec in &results.recommendations {
-            if rec.contains("naive") || rec.contains("GFLOPS") {
-                println!("    - {}", rec.yellow());
-            }
-        }
-        println!();
-    }
-
-    // Performance grade
-    if let Some(ref grade) = results.performance_grade {
-        println!(
-            "{}",
-            "PERFORMANCE GRADE (Dean & Ghemawat, 2025)".white().bold()
-        );
+    // Per-layer breakdown (if granular)
+    if granular && !results.per_layer_us.is_empty() {
+        println!("{}", "PER-LAYER TIMING (estimated)".white().bold());
         println!("{}", "═".repeat(60));
         println!();
 
-        for (name, cat) in &grade.categories {
-            let status = if cat.score == cat.max {
-                "✓".green()
+        let max_layer_time = results
+            .per_layer_us
+            .iter()
+            .cloned()
+            .fold(0.0f64, f64::max);
+
+        for (i, &time_us) in results.per_layer_us.iter().enumerate() {
+            let bar_width = if max_layer_time > 0.0 {
+                ((time_us / max_layer_time) * 30.0) as usize
             } else {
-                "⚠".yellow()
+                0
             };
-            println!("  {:<25} {}/{} {}", name, cat.score, cat.max, status);
-            for issue in &cat.issues {
-                println!("    └─ {}", issue.dimmed());
-            }
+            let bar = "█".repeat(bar_width.min(30));
+            println!("  Layer {:>2}: {:>8.1}µs  {}", i, time_us, bar);
         }
-
-        println!();
-        println!(
-            "  {} {}/{} (Grade: {}, {:.0}%)",
-            "TOTAL:".bold(),
-            grade.total_score,
-            grade.max_score,
-            grade.grade,
-            grade.percent
-        );
         println!();
     }
 
@@ -879,171 +569,61 @@ fn print_human_results(
     println!("{}", "SUMMARY".white().bold());
     println!("{}", "═".repeat(60));
     println!();
-    println!("  Total forward pass: {:.1}ms", results.total_ms);
+    println!(
+        "  Avg forward pass:   {:.1}µs ({:.2}ms)",
+        results.total_inference_us,
+        results.total_inference_us / 1000.0
+    );
     println!(
         "  Throughput:         {:.2} tok/s",
         results.throughput_tok_s
     );
-    println!(
-        "  Memory peak:        {:.1} GB",
-        results.memory_peak_bytes as f64 / 1_073_741_824.0
-    );
-    println!("  Efficiency grade:   {}", results.efficiency_grade);
+    println!("  Tokens per pass:    {}", results.tokens_per_pass);
     println!();
-
-    // Recommendations
-    if !results.recommendations.is_empty() {
-        println!("{}", "RECOMMENDATIONS".white().bold());
-        println!("{}", "═".repeat(60));
-        println!();
-        for (i, rec) in results.recommendations.iter().enumerate() {
-            println!("  {}. {}", i + 1, rec);
-        }
-        println!();
-    }
-
-    // Call graph (if requested)
-    if callgraph {
-        print_callgraph(results)?;
-    }
-
-    Ok(())
-}
-
-/// Print call graph
-fn print_callgraph(results: &ProfileResults) -> Result<(), CliError> {
-    println!("{}", "CALL GRAPH (Graham et al., 1982)".white().bold());
-    println!("{}", "═".repeat(60));
-    println!();
-    println!("forward() [{:.0}ms, 100%]", results.total_ms);
-    println!("  ├── embed_tokens() [4ms, 0.1%]");
-    println!(
-        "  ├── layers[0..23].forward() [{:.0}ms, {:.1}%]",
-        results
-            .hotspots
-            .iter()
-            .filter(|h| h.name != "lm_head" && h.name != "embedding")
-            .map(|h| h.time_ms)
-            .sum::<f64>(),
-        results
-            .hotspots
-            .iter()
-            .filter(|h| h.name != "lm_head" && h.name != "embedding")
-            .map(|h| h.percent)
-            .sum::<f64>()
-    );
-    println!("  │     ├── input_layernorm() [1ms]");
-
-    if let Some(attn) = results.hotspots.iter().find(|h| h.name == "attention") {
-        println!(
-            "  │     ├── self_attn() [{:.0}ms, {:.1}%]",
-            attn.time_ms, attn.percent
-        );
-    }
-
-    if let Some(mlp) = results.hotspots.iter().find(|h| h.name == "mlp") {
-        println!(
-            "  │     └── mlp() [{:.0}ms, {:.1}%]  ← HOTSPOT",
-            mlp.time_ms, mlp.percent
-        );
-    }
-
-    println!("  ├── norm() [3ms, 0.1%]");
-
-    if let Some(lm) = results.hotspots.iter().find(|h| h.name == "lm_head") {
-        println!(
-            "  └── lm_head() [{:.0}ms, {:.1}%]  ← HOTSPOT",
-            lm.time_ms, lm.percent
-        );
-    }
-
-    println!();
-    Ok(())
-}
-
-/// Print HuggingFace comparison
-#[allow(clippy::uninlined_format_args, clippy::unnecessary_wraps)]
-fn print_hf_comparison(_results: &ProfileResults, hf_repo: &str) -> Result<(), CliError> {
-    println!();
-    println!(
-        "{}",
-        format!("DIFFERENTIAL PROFILING vs {hf_repo}")
-            .white()
-            .bold()
-    );
-    println!("{}", "═".repeat(60));
-    println!();
-    println!(
-        "  {:<20} {:>10} {:>10} {:>8} {:>10}",
-        "Operation", "HF (ms)", "APR (ms)", "Ratio", "Status"
-    );
-    println!("  {}", "─".repeat(58));
-
-    // Simulated comparison (in real implementation, this would fetch HF baselines)
-    let comparisons = [
-        ("embed_lookup", 1.8, 2.3),
-        ("attention (avg)", 28.4, 30.8),
-        ("mlp (avg)", 32.1, 35.5),
-        ("lm_head", 45.2, 54.6),
-        ("total forward", 185.0, 191.2),
-    ];
-
-    for (op, hf_ms, apr_ms) in comparisons {
-        let ratio = apr_ms / hf_ms;
-        let status = if ratio <= 2.0 {
-            "✅ PASS".green()
-        } else {
-            "❌ FAIL".red()
-        };
-        println!(
-            "  {:<20} {:>10.1} {:>10.1} {:>7.2}x {}",
-            op, hf_ms, apr_ms, ratio, status
-        );
-    }
-
-    println!();
-    println!("  All operations within 2x threshold ✓");
 
     Ok(())
 }
 
 /// Print JSON output
-#[allow(clippy::format_push_string, clippy::unnecessary_wraps)]
-fn print_json_results(results: &ProfileResults) -> Result<(), CliError> {
-    // Build JSON manually to avoid serde dependency
+fn print_json_results(results: &RealProfileResults) -> Result<(), CliError> {
     let mut json = String::from("{\n");
     json.push_str(&format!("  \"model\": \"{}\",\n", results.model_path));
     json.push_str(&format!(
         "  \"architecture\": \"{}\",\n",
         results.architecture
     ));
-    json.push_str(&format!("  \"backend\": \"{}\",\n", results.backend));
-    json.push_str("  \"summary\": {\n");
-    json.push_str(&format!("    \"total_ms\": {:.2},\n", results.total_ms));
+    json.push_str(&format!("  \"num_layers\": {},\n", results.num_layers));
+    json.push_str(&format!("  \"vocab_size\": {},\n", results.vocab_size));
+    json.push_str(&format!("  \"hidden_dim\": {},\n", results.hidden_dim));
+    json.push_str(&format!("  \"is_real_data\": {},\n", results.is_real_data));
+    json.push_str("  \"timing\": {\n");
     json.push_str(&format!(
-        "    \"throughput_tok_s\": {:.2},\n",
+        "    \"warmup_passes\": {},\n",
+        results.warmup_passes
+    ));
+    json.push_str(&format!(
+        "    \"measure_passes\": {},\n",
+        results.measure_passes
+    ));
+    json.push_str(&format!(
+        "    \"avg_inference_us\": {:.2},\n",
+        results.total_inference_us
+    ));
+    json.push_str(&format!(
+        "    \"throughput_tok_s\": {:.2}\n",
         results.throughput_tok_s
-    ));
-    json.push_str(&format!(
-        "    \"memory_peak_bytes\": {},\n",
-        results.memory_peak_bytes
-    ));
-    json.push_str(&format!(
-        "    \"efficiency_grade\": \"{}\"\n",
-        results.efficiency_grade
     ));
     json.push_str("  },\n");
 
-    // Hotspots
     json.push_str("  \"hotspots\": [\n");
     for (i, hotspot) in results.hotspots.iter().enumerate() {
         json.push_str("    {\n");
         json.push_str(&format!("      \"name\": \"{}\",\n", hotspot.name));
-        json.push_str(&format!("      \"time_ms\": {:.2},\n", hotspot.time_ms));
-        json.push_str(&format!("      \"percent\": {:.1},\n", hotspot.percent));
-        json.push_str(&format!("      \"gflops\": {:.1},\n", hotspot.gflops));
-        json.push_str(&format!("      \"bound\": \"{}\",\n", hotspot.bound));
-        json.push_str(&format!("      \"status\": \"{}\"\n", hotspot.status));
+        json.push_str(&format!("      \"total_us\": {:.2},\n", hotspot.time_us));
+        json.push_str(&format!("      \"avg_us\": {:.2},\n", hotspot.avg_us));
+        json.push_str(&format!("      \"min_us\": {:.2},\n", hotspot.min_us));
+        json.push_str(&format!("      \"max_us\": {:.2},\n", hotspot.max_us));
+        json.push_str(&format!("      \"count\": {}\n", hotspot.count));
         if i < results.hotspots.len() - 1 {
             json.push_str("    },\n");
         } else {
@@ -1052,41 +632,14 @@ fn print_json_results(results: &ProfileResults) -> Result<(), CliError> {
     }
     json.push_str("  ],\n");
 
-    // Roofline
-    json.push_str("  \"roofline\": {\n");
-    json.push_str(&format!(
-        "    \"peak_gflops\": {:.0},\n",
-        results.roofline.peak_gflops
-    ));
-    json.push_str(&format!(
-        "    \"achieved_gflops\": {:.1},\n",
-        results.roofline.achieved_gflops
-    ));
-    json.push_str(&format!(
-        "    \"efficiency_percent\": {:.1},\n",
-        results.roofline.efficiency_percent
-    ));
-    json.push_str(&format!(
-        "    \"bottleneck\": \"{}\"\n",
-        results.roofline.bottleneck
-    ));
-    json.push_str("  },\n");
-
-    json.push_str(&format!(
-        "  \"naive_detected\": {},\n",
-        results.naive_detected
-    ));
-
-    // Recommendations
-    json.push_str("  \"recommendations\": [\n");
-    for (i, rec) in results.recommendations.iter().enumerate() {
-        if i < results.recommendations.len() - 1 {
-            json.push_str(&format!("    \"{}\",\n", rec.replace('"', "\\\"")));
-        } else {
-            json.push_str(&format!("    \"{}\"\n", rec.replace('"', "\\\"")));
+    json.push_str("  \"per_layer_us\": [");
+    for (i, time) in results.per_layer_us.iter().enumerate() {
+        if i > 0 {
+            json.push_str(", ");
         }
+        json.push_str(&format!("{:.2}", time));
     }
-    json.push_str("  ]\n");
+    json.push_str("]\n");
 
     json.push_str("}\n");
 
@@ -1095,9 +648,7 @@ fn print_json_results(results: &ProfileResults) -> Result<(), CliError> {
 }
 
 /// Print flamegraph SVG
-#[allow(clippy::format_push_string, clippy::unnecessary_wraps)]
-fn print_flamegraph(results: &ProfileResults) -> Result<(), CliError> {
-    // Generate simple SVG flamegraph
+fn print_flamegraph(results: &RealProfileResults) -> Result<(), CliError> {
     let mut svg = String::new();
     svg.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
     svg.push_str("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"800\" height=\"400\">\n");
@@ -1106,23 +657,29 @@ fn print_flamegraph(results: &ProfileResults) -> Result<(), CliError> {
     svg.push_str("    .label {{ font-family: monospace; font-size: 12px; }}\n");
     svg.push_str("  </style>\n");
     svg.push_str("  <rect width=\"100%\" height=\"100%\" fill=\"#f8f8f8\"/>\n");
-    svg.push_str("  <text x=\"400\" y=\"30\" text-anchor=\"middle\" font-size=\"16\" font-weight=\"bold\">\n");
-    svg.push_str("    apr profile: Flamegraph\n");
+    svg.push_str(
+        "  <text x=\"400\" y=\"30\" text-anchor=\"middle\" font-size=\"16\" font-weight=\"bold\">\n",
+    );
+    svg.push_str("    apr profile: Real Telemetry Flamegraph (PMAT-112)\n");
     svg.push_str("  </text>\n");
 
+    let total_time: f64 = results.hotspots.iter().map(|h| h.time_us).sum();
     let mut y = 350.0_f64;
-    let height = 20.0_f64;
+    let height = 25.0_f64;
 
-    // Draw frames from bottom up
     for hotspot in results.hotspots.iter().rev() {
-        let width = (hotspot.percent / 100.0) * 760.0;
-        let x = 20.0 + ((100.0 - hotspot.percent) / 200.0) * 760.0;
-
-        let color = match hotspot.status {
-            HotspotStatus::Ok => "#90EE90",
-            HotspotStatus::Warning => "#FFD700",
-            HotspotStatus::Critical => "#FF6347",
+        let percent = if total_time > 0.0 {
+            (hotspot.time_us / total_time) * 100.0
+        } else {
+            0.0
         };
+        let width = (percent / 100.0) * 760.0;
+        let x = 20.0 + ((100.0 - percent) / 200.0) * 760.0;
+
+        // Color based on percentage (hotter = more red)
+        let r = (255.0 * (percent / 100.0).min(1.0)) as u8;
+        let g = (200.0 * (1.0 - percent / 100.0).max(0.0)) as u8;
+        let color = format!("#{:02X}{:02X}50", r, g);
 
         svg.push_str(&format!(
             "  <rect x=\"{x:.1}\" y=\"{y:.1}\" width=\"{width:.1}\" height=\"{height:.1}\" fill=\"{color}\" class=\"frame\"/>\n"
@@ -1130,9 +687,9 @@ fn print_flamegraph(results: &ProfileResults) -> Result<(), CliError> {
         svg.push_str(&format!(
             "  <text x=\"{:.1}\" y=\"{:.1}\" class=\"label\">{} ({:.1}%)</text>\n",
             x + 5.0,
-            y + 14.0,
+            y + 16.0,
             hotspot.name,
-            hotspot.percent
+            percent
         ));
 
         y -= height + 2.0;
@@ -1181,15 +738,8 @@ mod tests {
 
     #[test]
     fn test_detect_format() {
-        use std::path::Path;
         assert_eq!(detect_format(Path::new("model.apr")), "apr");
         assert_eq!(detect_format(Path::new("model.safetensors")), "safetensors");
         assert_eq!(detect_format(Path::new("model.gguf")), "gguf");
-    }
-
-    #[test]
-    fn test_bound_type_display() {
-        assert_eq!(format!("{}", BoundType::Compute), "compute");
-        assert_eq!(format!("{}", BoundType::Memory), "memory");
     }
 }

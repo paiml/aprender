@@ -94,6 +94,37 @@ pub enum RosettaCommands {
         #[arg(long)]
         json: bool,
     },
+
+    /// Compare inference outputs between two models (PMAT-114)
+    CompareInference {
+        /// Reference model (typically GGUF)
+        #[arg(value_name = "MODEL_A")]
+        model_a: PathBuf,
+
+        /// Test model (typically APR)
+        #[arg(value_name = "MODEL_B")]
+        model_b: PathBuf,
+
+        /// Test prompt
+        #[arg(long, default_value = "2+2=")]
+        prompt: String,
+
+        /// Maximum tokens to generate
+        #[arg(long, default_value = "5")]
+        max_tokens: usize,
+
+        /// Sampling temperature (0 = greedy)
+        #[arg(long, default_value = "0")]
+        temperature: f32,
+
+        /// Logit difference tolerance
+        #[arg(long, default_value = "0.1")]
+        tolerance: f32,
+
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 /// Run the rosetta inspect subcommand
@@ -350,6 +381,436 @@ pub fn run_verify(source: &Path, intermediate: &str, tolerance: f32, json: bool)
     }
 
     Ok(())
+}
+
+/// Run the rosetta compare-inference subcommand (PMAT-114)
+///
+/// Compare inference outputs between two models to debug parity issues.
+/// Runs the same prompt through both models and compares logits/outputs.
+pub fn run_compare_inference(
+    model_a: &Path,
+    model_b: &Path,
+    prompt: &str,
+    max_tokens: usize,
+    temperature: f32,
+    tolerance: f32,
+    json: bool,
+) -> Result<()> {
+    if !model_a.exists() {
+        return Err(CliError::FileNotFound(model_a.to_path_buf()));
+    }
+    if !model_b.exists() {
+        return Err(CliError::FileNotFound(model_b.to_path_buf()));
+    }
+
+    if !json {
+        println!(
+            "{}",
+            "╔══════════════════════════════════════════════════════════════════════════════╗"
+                .cyan()
+        );
+        println!(
+            "{}",
+            "║                     INFERENCE COMPARISON REPORT (PMAT-114)                   ║"
+                .cyan()
+        );
+        println!(
+            "{}",
+            "╠══════════════════════════════════════════════════════════════════════════════╣"
+                .cyan()
+        );
+        println!(
+            "║ Model A: {:<66} ║",
+            truncate_path(model_a.display().to_string(), 66)
+        );
+        println!(
+            "║ Model B: {:<66} ║",
+            truncate_path(model_b.display().to_string(), 66)
+        );
+        println!("║ Prompt: {:?}{} ║", prompt, " ".repeat(59_usize.saturating_sub(prompt.len())));
+        println!(
+            "{}",
+            "╠══════════════════════════════════════════════════════════════════════════════╣"
+                .cyan()
+        );
+    }
+
+    // Run Model A with APR_TRACE_LOGITS to capture logit data
+    if !json {
+        println!("{}", "Running Model A...".yellow());
+    }
+
+    let result_a = run_model_with_logits(model_a, prompt, max_tokens, temperature)?;
+
+    if !json {
+        println!("{}", "Running Model B...".yellow());
+    }
+
+    let result_b = run_model_with_logits(model_b, prompt, max_tokens, temperature)?;
+
+    // Compare results
+    let total_tokens = result_a.tokens.len().min(result_b.tokens.len());
+    let mut mismatches = 0;
+
+    if !json {
+        println!(
+            "{}",
+            "╠══════════════════════════════════════════════════════════════════════════════╣"
+                .cyan()
+        );
+        println!(
+            "{}",
+            "║                           TOKEN-BY-TOKEN COMPARISON                           ║"
+                .cyan()
+        );
+        println!(
+            "{}",
+            "╠───────┬─────────────────────────────────┬────────────────────────────────┬───╣"
+                .cyan()
+        );
+        println!(
+            "{}",
+            "║ Pos   │ Model A (top-1)                 │ Model B (top-1)                │ Δ ║"
+                .cyan()
+        );
+        println!(
+            "{}",
+            "╠───────┼─────────────────────────────────┼────────────────────────────────┼───╣"
+                .cyan()
+        );
+    }
+
+    for i in 0..total_tokens {
+        let token_a = result_a.tokens.get(i).copied().unwrap_or(0);
+        let token_b = result_b.tokens.get(i).copied().unwrap_or(0);
+
+        let logit_a = result_a.logits.get(i).copied().unwrap_or(0.0);
+        let logit_b = result_b.logits.get(i).copied().unwrap_or(0.0);
+
+        let matches = token_a == token_b;
+        if !matches {
+            mismatches += 1;
+        }
+
+        let status = if matches { "✓" } else { "✗" };
+        let status_colored = if matches {
+            status.green()
+        } else {
+            status.red()
+        };
+
+        if !json {
+            println!(
+                "║ {:<5} │ token={:<5} logit={:<12.2} │ token={:<5} logit={:<11.2} │ {} ║",
+                i, token_a, logit_a, token_b, logit_b, status_colored
+            );
+
+            // Show top-5 if mismatch
+            if !matches {
+                if let Some(top5_a) = result_a.top5.get(i) {
+                    println!(
+                        "║       │ Top-5: {:<24} │{:<32} │   ║",
+                        format!("{:?}", top5_a),
+                        ""
+                    );
+                }
+                if let Some(top5_b) = result_b.top5.get(i) {
+                    println!(
+                        "║       │{:<33} │ Top-5: {:<23} │   ║",
+                        "",
+                        format!("{:?}", top5_b)
+                    );
+                }
+            }
+        }
+    }
+
+    if !json {
+        println!(
+            "{}",
+            "╠══════════════════════════════════════════════════════════════════════════════╣"
+                .cyan()
+        );
+
+        // Diagnosis
+        println!(
+            "{}",
+            "║                           DIAGNOSIS                                           ║"
+                .cyan()
+        );
+        println!(
+            "{}",
+            "╠══════════════════════════════════════════════════════════════════════════════╣"
+                .cyan()
+        );
+
+        if mismatches == 0 {
+            println!(
+                "║ {:<76} ║",
+                "All tokens match - models produce identical output"
+                    .green()
+                    .bold()
+            );
+        } else {
+            println!(
+                "║ {:<76} ║",
+                format!(
+                    "{}/{} tokens differ - see possible causes below",
+                    mismatches, total_tokens
+                )
+                .yellow()
+            );
+            println!("║ Possible causes:                                                              ║");
+            println!(
+                "║   1. Precision difference (F32 vs Q4K): logit variance ~0.5                  ║"
+            );
+            println!(
+                "║   2. RoPE type mismatch: Qwen2 needs rope_type=2 (NEOX style)                ║"
+            );
+            println!(
+                "║   3. Missing QKV bias: check APR has qkv_proj.bias tensors                   ║"
+            );
+            println!(
+                "║   4. LayerNorm epsilon: check rms_norm_eps matches (1e-6 for Qwen2)          ║"
+            );
+        }
+
+        println!(
+            "{}",
+            "╠══════════════════════════════════════════════════════════════════════════════╣"
+                .cyan()
+        );
+
+        // Result
+        let match_rate = if total_tokens > 0 {
+            1.0 - (mismatches as f32 / total_tokens as f32)
+        } else {
+            0.0
+        };
+
+        let result_text = if mismatches == 0 {
+            "RESULT: INFERENCE MATCH (100%)".green().bold().to_string()
+        } else if match_rate >= (1.0 - tolerance) {
+            format!(
+                "RESULT: PARTIAL MATCH ({:.0}% within tolerance {:.0}%)",
+                match_rate * 100.0,
+                tolerance * 100.0
+            )
+            .yellow()
+            .bold()
+            .to_string()
+        } else {
+            format!(
+                "RESULT: INFERENCE MISMATCH ({}/{} tokens = {:.0}%)",
+                mismatches,
+                total_tokens,
+                match_rate * 100.0
+            )
+            .red()
+            .bold()
+            .to_string()
+        };
+        println!("║ {:<76} ║", result_text);
+        println!(
+            "{}",
+            "╚══════════════════════════════════════════════════════════════════════════════╝"
+                .cyan()
+        );
+
+        // Show actual outputs
+        println!();
+        println!("{}", "=== Generated Text ===".cyan().bold());
+        println!("Model A: {:?}", result_a.output_text);
+        println!("Model B: {:?}", result_b.output_text);
+    } else {
+        // JSON output
+        let match_rate = if total_tokens > 0 {
+            1.0 - (mismatches as f64 / total_tokens as f64)
+        } else {
+            0.0
+        };
+
+        println!("{{");
+        println!("  \"model_a\": \"{}\",", model_a.display());
+        println!("  \"model_b\": \"{}\",", model_b.display());
+        println!("  \"prompt\": {:?},", prompt);
+        println!("  \"total_tokens\": {},", total_tokens);
+        println!("  \"mismatches\": {},", mismatches);
+        println!("  \"match_rate\": {:.4},", match_rate);
+        println!("  \"text_a\": {:?},", result_a.output_text);
+        println!("  \"text_b\": {:?},", result_b.output_text);
+        println!("  \"passed\": {}", mismatches == 0 || (1.0 - match_rate as f32) <= tolerance);
+        println!("}}");
+    }
+
+    if mismatches > 0 {
+        let match_rate = 1.0 - (mismatches as f32 / total_tokens.max(1) as f32);
+        if match_rate < (1.0 - tolerance) {
+            return Err(CliError::ValidationFailed(format!(
+                "Inference mismatch: {}/{} tokens differ ({:.0}% match rate, need {:.0}%)",
+                mismatches,
+                total_tokens,
+                match_rate * 100.0,
+                (1.0 - tolerance) * 100.0
+            )));
+        }
+    }
+
+    Ok(())
+}
+
+/// Inference result with logit data
+struct InferenceResult {
+    tokens: Vec<u32>,
+    logits: Vec<f32>,
+    top5: Vec<Vec<u32>>,
+    output_text: String,
+}
+
+/// Run a model and capture output
+fn run_model_with_logits(
+    model_path: &Path,
+    prompt: &str,
+    max_tokens: usize,
+    temperature: f32,
+) -> Result<InferenceResult> {
+    use std::process::{Command, Stdio};
+
+    // Determine which command to use based on file extension
+    let ext = model_path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("");
+
+    // Use realizar for both GGUF and APR files for consistent comparison
+    // Use the full path to avoid picking up old versions from PATH
+    let realizar_path = std::env::var("REALIZAR_PATH")
+        .unwrap_or_else(|_| "realizar".to_string());
+    let output = Command::new(&realizar_path)
+        .arg("run")
+        .arg(model_path)
+        .arg(prompt)
+        .arg("--max-tokens")
+        .arg(max_tokens.to_string())
+        .arg("--temperature")
+        .arg(temperature.to_string())
+        .arg("--format")
+        .arg("text")
+        .env("APR_TRACE_LOGITS", "1")
+        .env("NO_COLOR", "1")
+        .env("TERM", "dumb")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to run realizar: {e}")))?;
+
+    let (stdout_text, stderr_text) = (
+        String::from_utf8_lossy(&output.stdout).to_string(),
+        String::from_utf8_lossy(&output.stderr).to_string(),
+    );
+
+    // Combine stdout and stderr for parsing (trace goes to both)
+    let combined = format!("{}\n{}", stdout_text, stderr_text);
+
+    let mut tokens = Vec::new();
+    let mut logits = Vec::new();
+    let mut top5 = Vec::new();
+
+    // Parse PMAT-113-F trace lines
+    for line in combined.lines() {
+        // Handle "Selected token: X (logit: Y)" lines
+        if line.contains("Selected token:") {
+            if let Some(token_part) = line.split("Selected token:").nth(1) {
+                let trimmed = token_part.trim();
+                if let Some(paren_pos) = trimmed.find(" (") {
+                    if let Ok(token_id) = trimmed[..paren_pos].parse::<u32>() {
+                        tokens.push(token_id);
+                    }
+                    if let Some(logit_start) = trimmed.find("logit:") {
+                        let logit_str = &trimmed[logit_start + 6..];
+                        if let Some(end) = logit_str.find(')') {
+                            if let Ok(logit) = logit_str[..end].trim().parse::<f32>() {
+                                logits.push(logit);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // Handle "Top 5 tokens:" lines
+        if line.contains("Top 5 tokens:") {
+            if let Some(top5_part) = line.split("Top 5 tokens:").nth(1) {
+                let mut current_top5 = Vec::new();
+                for pair in top5_part.split("),") {
+                    if let Some(open_paren) = pair.find('(') {
+                        let inner = &pair[open_paren + 1..];
+                        if let Some(comma) = inner.find(',') {
+                            if let Ok(token_id) = inner[..comma].trim().parse::<u32>() {
+                                current_top5.push(token_id);
+                            }
+                        }
+                    }
+                }
+                if !current_top5.is_empty() {
+                    top5.push(current_top5);
+                }
+            }
+        }
+    }
+
+    // Extract output text - both GGUF and APR use realizar, so same parsing
+    // Strip ANSI codes and spinner characters, get last non-empty line
+    let clean = strip_ansi(&stdout_text);
+    let output_text = clean
+        .lines()
+        .filter(|l| !l.is_empty() && !l.contains('⠋') && !l.contains('⠙') && !l.contains('⠹') && !l.contains('⠸'))
+        .last()
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    let _ = ext; // Suppress unused warning
+
+    Ok(InferenceResult {
+        tokens,
+        logits,
+        top5,
+        output_text,
+    })
+}
+
+/// Strip ANSI escape codes from text
+fn strip_ansi(text: &str) -> String {
+    let mut result = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+
+    while let Some(c) = chars.next() {
+        if c == '\x1b' {
+            // Skip escape sequence
+            if chars.peek() == Some(&'[') {
+                chars.next(); // consume '['
+                // Skip until we hit a letter
+                while let Some(&next) = chars.peek() {
+                    chars.next();
+                    if next.is_ascii_alphabetic() {
+                        break;
+                    }
+                }
+            }
+        } else {
+            result.push(c);
+        }
+    }
+
+    result
+}
+
+/// Truncate path for display
+fn truncate_path(path: String, max_len: usize) -> String {
+    if path.len() <= max_len {
+        path
+    } else {
+        format!("...{}", &path[path.len() - max_len + 3..])
+    }
 }
 
 // ============================================================================

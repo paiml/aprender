@@ -80,6 +80,7 @@ pub(crate) fn run(
 
     // Run import pipeline
     println!("{}", "Importing...".yellow());
+    println!("[DEBUG-CLI] About to call apr_import with source={}", source);
 
     match apr_import(source, output, options) {
         Ok(report) => {

@@ -156,7 +156,8 @@ alsa = { version = "0.9", optional = true }  # ALSA bindings for Linux audio cap
 rayon = { version = "1.10", optional = true }
 
 # Core compute primitives - SIMD-accelerated tensor operations
-trueno = { path = "../trueno" }
+# v0.14.3 fixes WASM compilation (hostname crate gated for native-only)
+trueno = "0.14.3"
 
 # RAG pipeline for document-based ML (optional, GH-125)
 trueno-rag = { version = "0.1.10", optional = true }
