@@ -10,7 +10,8 @@
 
 use crate::error::{AprenderError, Result};
 use crate::format::gguf::{
-    load_gguf_raw, load_gguf_with_tokenizer, GgufModelConfig, GgufRawTensor, GgufTokenizer,
+    dequantize_q5_0, dequantize_q8_0, load_gguf_raw, load_gguf_with_tokenizer, GgufModelConfig,
+    GgufRawTensor, GgufTokenizer,
 };
 use crate::format::v2::{AprV2Metadata, AprV2Writer, QuantizationMetadata, TensorDType};
 use crate::format::validation::{AprValidator, TensorStats, ValidationReport};
@@ -784,17 +785,20 @@ pub fn apr_import<P: AsRef<Path>>(
     output: P,
     options: ImportOptions,
 ) -> Result<ValidationReport> {
+    println!("[DEBUG] apr_import called: source={}", source);
     let parsed_source = Source::parse(source)?;
     let output_path = output.as_ref();
 
     // Step 1: Resolve source to local path
     let local_path = resolve_source(&parsed_source, options.cache)?;
+    println!("[DEBUG] local_path={}", local_path.display());
 
     // Step 2: Check if GGUF - use raw import path to preserve quantization
     let extension = local_path
         .extension()
         .and_then(|e| e.to_str())
         .unwrap_or("");
+    println!("[DEBUG] extension={}", extension);
     if extension == "gguf" {
         // PMAT-103: Use raw GGUF loading to preserve Q4_K/Q6_K quantization
         // This is critical for format parity - we don't want to dequantize and re-quantize
@@ -832,6 +836,7 @@ fn apr_import_gguf_raw(
     output_path: &Path,
     options: &ImportOptions,
 ) -> Result<ValidationReport> {
+    println!("[PMAT-114 DEBUG] apr_import_gguf_raw called - gguf_path={}", gguf_path.display());
     // Load GGUF with raw quantized tensors (preserves Q4_K bytes)
     let raw_result = load_gguf_raw(gguf_path)?;
 
@@ -1099,6 +1104,13 @@ fn load_model_config_from_json(model_path: &Path) -> Option<GgufModelConfig> {
         .and_then(|v| v.as_str())
         .map(ToString::to_string);
 
+    // PMAT-114: Infer rope_type from architecture
+    // Qwen2/Qwen2.5 models use NEOX-style RoPE (type 2)
+    let rope_type = match architecture.as_deref() {
+        Some("qwen2" | "qwen2.5" | "qwen") => Some(2), // NEOX style
+        _ => Some(0), // Default to NORM style
+    };
+
     Some(GgufModelConfig {
         architecture,
         hidden_size,
@@ -1110,6 +1122,7 @@ fn load_model_config_from_json(model_path: &Path) -> Option<GgufModelConfig> {
         max_position_embeddings,
         rope_theta: Some(rope_theta as f32),
         rms_norm_eps: Some(rms_norm_eps as f32),
+        rope_type,
     })
 }
 
@@ -1306,6 +1319,12 @@ fn infer_model_config_from_tensors(
         })
         .or(num_heads); // Fall back to MHA if inference fails
 
+    // PMAT-114: Infer rope_type from architecture
+    let rope_type = match architecture.as_deref() {
+        Some("qwen2" | "qwen2.5" | "qwen") => Some(2), // NEOX style
+        _ => Some(0), // Default to NORM style
+    };
+
     Some(GgufModelConfig {
         architecture,
         hidden_size: Some(hidden_size),
@@ -1317,6 +1336,7 @@ fn infer_model_config_from_tensors(
         max_position_embeddings: Some(4096), // Default
         rope_theta: Some(10000.0),           // Default
         rms_norm_eps: Some(1e-6),            // Default
+        rope_type,
     })
 }
 
@@ -1659,8 +1679,12 @@ fn write_apr_file(
 
     // PMAT-101: Pre-fuse Q, K, V into qkv_proj.weight for realizar compatibility
     // Compute this FIRST so we can include fused tensors in tensor_shapes metadata
-    let qkv_fused: BTreeMap<String, (Vec<f32>, Vec<usize>)> = {
+    let (qkv_fused, qkv_bias_fused): (
+        BTreeMap<String, (Vec<f32>, Vec<usize>)>,
+        BTreeMap<String, (Vec<f32>, Vec<usize>)>,
+    ) = {
         let mut fused = BTreeMap::new();
+        let mut bias_fused = BTreeMap::new();
         if let Some(cfg) = model_config {
             if let (Some(hidden_dim), Some(num_heads), Some(num_kv_heads)) =
                 (cfg.hidden_size, cfg.num_heads, cfg.num_kv_heads)
@@ -1691,20 +1715,43 @@ fn write_apr_file(
                             format!("model.layers.{layer_idx}.self_attn.qkv_proj.weight");
                         fused.insert(qkv_name, (qkv_data, vec![qkv_dim, hidden_dim]));
                     }
+
+                    // PMAT-114: Also fuse Q, K, V biases if present (Qwen2 has attention bias)
+                    let q_bias_name = format!("model.layers.{layer_idx}.self_attn.q_proj.bias");
+                    let k_bias_name = format!("model.layers.{layer_idx}.self_attn.k_proj.bias");
+                    let v_bias_name = format!("model.layers.{layer_idx}.self_attn.v_proj.bias");
+
+                    if let (Some((q_bias, _)), Some((k_bias, _)), Some((v_bias, _))) = (
+                        tensors_with_lm_head.get(&q_bias_name),
+                        tensors_with_lm_head.get(&k_bias_name),
+                        tensors_with_lm_head.get(&v_bias_name),
+                    ) {
+                        // Fuse biases as [Q_bias; K_bias; V_bias]
+                        let mut qkv_bias_data =
+                            Vec::with_capacity(q_bias.len() + k_bias.len() + v_bias.len());
+                        qkv_bias_data.extend_from_slice(q_bias);
+                        qkv_bias_data.extend_from_slice(k_bias);
+                        qkv_bias_data.extend_from_slice(v_bias);
+
+                        let qkv_bias_name =
+                            format!("model.layers.{layer_idx}.self_attn.qkv_proj.bias");
+                        bias_fused.insert(qkv_bias_name, (qkv_bias_data, vec![qkv_dim]));
+                    }
                 }
             }
         }
-        fused
+        (fused, bias_fused)
     };
 
     // Build tensor_shapes map for metadata (used by `apr tensors` command)
     // PMAT-101: Skip individual Q/K/V, include fused qkv_proj instead
+    // PMAT-114: Also skip individual Q/K/V biases if fused
     let tensor_shapes: serde_json::Map<String, serde_json::Value> = {
         let mut shapes = serde_json::Map::new();
 
         // Add non-QKV tensors
         for (name, (_, shape)) in &tensors_with_lm_head {
-            // Skip individual Q, K, V if we have fused versions
+            // Skip individual Q, K, V weights if we have fused versions
             if name.contains("q_proj.weight")
                 || name.contains("k_proj.weight")
                 || name.contains("v_proj.weight")
@@ -1722,6 +1769,25 @@ fn write_apr_file(
                 }
             }
 
+            // PMAT-114: Skip individual Q, K, V biases if we have fused versions
+            if name.contains("q_proj.bias")
+                || name.contains("k_proj.bias")
+                || name.contains("v_proj.bias")
+            {
+                let layer_idx_opt = name
+                    .split("layers.")
+                    .nth(1)
+                    .and_then(|s| s.split('.').next())
+                    .and_then(|s| s.parse::<usize>().ok());
+                if let Some(layer_idx) = layer_idx_opt {
+                    let qkv_bias_name =
+                        format!("model.layers.{layer_idx}.self_attn.qkv_proj.bias");
+                    if qkv_bias_fused.contains_key(&qkv_bias_name) {
+                        continue;
+                    }
+                }
+            }
+
             let shape_array: Vec<serde_json::Value> = shape
                 .iter()
                 .map(|&dim| serde_json::Value::Number(serde_json::Number::from(dim as u64)))
@@ -1729,8 +1795,17 @@ fn write_apr_file(
             shapes.insert(name.clone(), serde_json::Value::Array(shape_array));
         }
 
-        // Add fused QKV tensors
+        // Add fused QKV weight tensors
         for (name, (_, shape)) in &qkv_fused {
+            let shape_array: Vec<serde_json::Value> = shape
+                .iter()
+                .map(|&dim| serde_json::Value::Number(serde_json::Number::from(dim as u64)))
+                .collect();
+            shapes.insert(name.clone(), serde_json::Value::Array(shape_array));
+        }
+
+        // PMAT-114: Add fused QKV bias tensors
+        for (name, (_, shape)) in &qkv_bias_fused {
             let shape_array: Vec<serde_json::Value> = shape
                 .iter()
                 .map(|&dim| serde_json::Value::Number(serde_json::Number::from(dim as u64)))
@@ -1809,6 +1884,7 @@ fn write_apr_file(
         intermediate_size,
         max_position_embeddings,
         rope_theta,
+        rope_type,
         rms_norm_eps,
     ) = if let Some(cfg) = model_config {
         (
@@ -1821,10 +1897,11 @@ fn write_apr_file(
             cfg.intermediate_size,
             cfg.max_position_embeddings,
             cfg.rope_theta,
+            cfg.rope_type,
             cfg.rms_norm_eps,
         )
     } else {
-        (None, None, None, None, None, None, None, None, None, None)
+        (None, None, None, None, None, None, None, None, None, None, None)
     };
 
     let metadata = AprV2Metadata {
@@ -1848,6 +1925,7 @@ fn write_apr_file(
         intermediate_size,
         max_position_embeddings,
         rope_theta,
+        rope_type,
         rms_norm_eps,
         ..Default::default()
     };
@@ -1872,6 +1950,25 @@ fn write_apr_file(
                 let qkv_name = format!("model.layers.{layer_idx}.self_attn.qkv_proj.weight");
                 if qkv_fused.contains_key(&qkv_name) {
                     continue; // Skip individual tensor, we'll write fused version
+                }
+            }
+        }
+
+        // PMAT-114: Skip individual Q, K, V biases if we fused them
+        if name.contains("q_proj.bias")
+            || name.contains("k_proj.bias")
+            || name.contains("v_proj.bias")
+        {
+            let layer_idx_opt = name
+                .split("layers.")
+                .nth(1)
+                .and_then(|s| s.split('.').next())
+                .and_then(|s| s.parse::<usize>().ok());
+            if let Some(layer_idx) = layer_idx_opt {
+                let qkv_bias_name =
+                    format!("model.layers.{layer_idx}.self_attn.qkv_proj.bias");
+                if qkv_bias_fused.contains_key(&qkv_bias_name) {
+                    continue; // Skip individual bias, we'll write fused version
                 }
             }
         }
@@ -1931,6 +2028,11 @@ fn write_apr_file(
         }
     }
 
+    // PMAT-114: Write fused QKV bias tensors (always F32 - biases are small and precision-sensitive)
+    for (name, (data, shape)) in &qkv_bias_fused {
+        writer.add_f32_tensor(name, shape.clone(), data);
+    }
+
     // Write to file
     let bytes = writer.write().map_err(|e| AprenderError::FormatError {
         message: format!("Failed to serialize APR format: {e}"),
@@ -1966,11 +2068,15 @@ fn write_apr_file_raw(
         .sum();
 
     // Build tensor_shapes map for metadata
+    // PMAT-114 FIX: Per apr_transformer/mod.rs comments, APR should store
+    // GGML-convention dims (NOT reversed) with row-major data.
+    // "APR stores GGUF data in row-major layout even though dims metadata
+    //  says GGML column-major convention. The data is already correct - DO NOT transpose!"
     let tensor_shapes: serde_json::Map<String, serde_json::Value> = tensors
         .iter()
         .map(|(name, tensor)| {
-            let shape_array: Vec<serde_json::Value> = tensor
-                .shape
+            // Keep GGML-order dims - don't reverse
+            let shape_array: Vec<serde_json::Value> = tensor.shape
                 .iter()
                 .map(|&dim| serde_json::Value::Number(serde_json::Number::from(dim as u64)))
                 .collect();
@@ -2090,6 +2196,13 @@ fn write_apr_file_raw(
                 ),
             );
         }
+        // PMAT-114: Write rope_type for correct RoPE style
+        if let Some(rope_type) = cfg.rope_type {
+            custom.insert(
+                "model.rope_type".to_string(),
+                serde_json::Value::Number(serde_json::Number::from(rope_type)),
+            );
+        }
     }
 
     // Build metadata using correct AprV2Metadata structure
@@ -2121,6 +2234,7 @@ fn write_apr_file_raw(
         intermediate_size: model_config.and_then(|c| c.intermediate_size),
         max_position_embeddings: model_config.and_then(|c| c.max_position_embeddings),
         rope_theta: model_config.and_then(|c| c.rope_theta),
+        rope_type: model_config.and_then(|c| c.rope_type),
         rms_norm_eps: model_config.and_then(|c| c.rms_norm_eps),
         custom,
     };
@@ -2129,31 +2243,87 @@ fn write_apr_file_raw(
     let mut writer = AprV2Writer::new(metadata);
 
     // Add all tensors with their native quantization format
-    // PMAT-103: Store tensors as-is from GGUF (dimension handling in realizar)
+    // PMAT-103: Store tensors as-is from GGUF for supported formats, dequantize others
+    // PMAT-114 FIX: Per apr_transformer/mod.rs, APR should store GGML-convention dims
+    // (NOT reversed) with raw GGUF data. The APR loader handles the interpretation.
+    let mut dtype_counts: std::collections::HashMap<u32, usize> = std::collections::HashMap::new();
     for (name, tensor) in tensors {
-        // Map GGUF dtype to APR dtype
-        // Note: Multiple dtypes map to F32 (native + fallback for unsupported)
-        #[allow(clippy::match_same_arms)]
-        let apr_dtype = match tensor.dtype {
-            0 => TensorDType::F32,
-            1 => TensorDType::F16,
-            12 => TensorDType::Q4K, // Q4_K
-            14 => TensorDType::Q6K, // Q6_K
-            // Q5_0 (dtype 6), Q5_1 (dtype 7), Q8_0 (dtype 8), Q8_1 (dtype 9)
-            // Store with F32 marker - will dequant at runtime
-            6..=9 => TensorDType::F32,
-            // Other types
+        *dtype_counts.entry(tensor.dtype).or_insert(0) += 1;
+
+        // Calculate element count for dequantization
+        let num_elements: usize = tensor.shape.iter().product();
+
+        // Process tensor based on dtype
+        // Q5_0/Q8_0 need dequantization since realizar doesn't support them natively
+        // All formats: store raw data bytes as-is, keep GGML-order dims
+        match tensor.dtype {
+            0 => {
+                // F32 - store data as-is with GGML-order dims
+                writer.add_tensor(name, TensorDType::F32, tensor.shape.clone(), tensor.data.clone());
+            }
+            1 => {
+                // F16 - store data as-is with GGML-order dims
+                writer.add_tensor(name, TensorDType::F16, tensor.shape.clone(), tensor.data.clone());
+            }
+            12 => {
+                // Q4_K - store raw for fused kernels with GGML-order dims
+                writer.add_tensor(name, TensorDType::Q4K, tensor.shape.clone(), tensor.data.clone());
+            }
+            14 => {
+                // Q6_K - store raw for fused kernels with GGML-order dims
+                writer.add_tensor(name, TensorDType::Q6K, tensor.shape.clone(), tensor.data.clone());
+            }
+            6 => {
+                // Q5_0 - dequantize to F32 and reverse dims (like GGUF loader)
+                // PMAT-114 FIX: GGUF loader at line 371 does dims.reverse() to convert
+                // GGML column-major convention to row-major interpretation.
+                // The DATA layout is already correct - we just need to reverse dims.
+                match dequantize_q5_0(&tensor.data, 0, num_elements) {
+                    Ok(f32_data) => {
+                        // Reverse dims like GGUF loader does - data layout is already correct
+                        let reversed_shape: Vec<usize> = tensor.shape.iter().rev().copied().collect();
+                        eprintln!("[PMAT-114 DEBUG] Q5_0 {name}: GGML dims {:?} -> reversed dims {:?}", tensor.shape, reversed_shape);
+                        let bytes: Vec<u8> = f32_data.iter().flat_map(|f| f.to_le_bytes()).collect();
+                        writer.add_tensor(name, TensorDType::F32, reversed_shape, bytes);
+                    }
+                    Err(e) => {
+                        eprintln!("[WARN] Failed to dequantize Q5_0 tensor {name}: {e}");
+                        writer.add_tensor(name, TensorDType::F32, tensor.shape.clone(), tensor.data.clone());
+                    }
+                }
+            }
+            8 => {
+                // Q8_0 - dequantize to F32 and reverse dims (like GGUF loader)
+                // PMAT-114 FIX: Same as Q5_0 - reverse dims, don't transpose data
+                match dequantize_q8_0(&tensor.data, 0, num_elements) {
+                    Ok(f32_data) => {
+                        // Reverse dims like GGUF loader does - data layout is already correct
+                        let reversed_shape: Vec<usize> = tensor.shape.iter().rev().copied().collect();
+                        let bytes: Vec<u8> = f32_data.iter().flat_map(|f| f.to_le_bytes()).collect();
+                        writer.add_tensor(name, TensorDType::F32, reversed_shape, bytes);
+                    }
+                    Err(e) => {
+                        eprintln!("[WARN] Failed to dequantize Q8_0 tensor {name}: {e}");
+                        writer.add_tensor(name, TensorDType::F32, tensor.shape.clone(), tensor.data.clone());
+                    }
+                }
+            }
+            7 | 9 => {
+                // Q5_1/Q8_1 - not yet supported, store raw with warning
+                eprintln!(
+                    "[WARN] GGUF dtype {} for tensor {} not yet supported, storing raw bytes",
+                    tensor.dtype, name
+                );
+                writer.add_tensor(name, TensorDType::F32, tensor.shape.clone(), tensor.data.clone());
+            }
             _ => {
                 eprintln!(
                     "[WARN] Unsupported GGUF dtype {} for tensor {}, storing as-is",
                     tensor.dtype, name
                 );
-                TensorDType::F32
+                writer.add_tensor(name, TensorDType::F32, tensor.shape.clone(), tensor.data.clone());
             }
-        };
-
-        // Store tensor with GGUF shape (no transpose - handled in realizar)
-        writer.add_tensor(name, apr_dtype, tensor.shape.clone(), tensor.data.clone());
+        }
     }
 
     // Write to file
@@ -3006,6 +3176,7 @@ fn save_model_tensors_q4k(
         intermediate_size,
         max_position_embeddings: Some(32768), // Default for Qwen2
         rope_theta: Some(1000000.0),          // Default for Qwen2
+        rope_type: Some(2),                   // NEOX style for Qwen2 (PMAT-114)
         rms_norm_eps: Some(1e-6),             // Default for Qwen2
         custom: std::collections::HashMap::new(),
     };

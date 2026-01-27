@@ -1352,7 +1352,11 @@ fn dequantize_q4_0(data: &[u8], start: usize, num_elements: usize) -> Result<Vec
 
 /// Dequantize `Q8_0` format
 /// `Q8_0`: blocks of 32 elements, each block has 2-byte f16 scale + 32 bytes of int8 quants
-fn dequantize_q8_0(data: &[u8], start: usize, num_elements: usize) -> Result<Vec<f32>> {
+/// Dequantize Q8_0 data to f32
+///
+/// Q8_0: blocks of 32 elements, each block has 2-byte f16 scale + 32 int8 values
+/// Total: 34 bytes per block
+pub fn dequantize_q8_0(data: &[u8], start: usize, num_elements: usize) -> Result<Vec<f32>> {
     const BLOCK_SIZE: usize = 32;
     const BLOCK_BYTES: usize = 2 + 32; // f16 scale + 32 bytes of int8 values
 
@@ -1387,14 +1391,15 @@ fn dequantize_q8_0(data: &[u8], start: usize, num_elements: usize) -> Result<Vec
     Ok(result)
 }
 
-/// Dequantize `Q5_0` format
-/// `Q5_0`: blocks of 32 elements, each block has:
+/// Dequantize `Q5_0` format to f32
+///
+/// Q5_0: blocks of 32 elements, each block has:
 /// - 2-byte f16 scale
 /// - 4 bytes of high bits (32 bits = 1 per element)
 /// - 16 bytes of low 4-bit values (32 values packed 2 per byte)
 ///
 /// Total: 22 bytes per block
-fn dequantize_q5_0(data: &[u8], start: usize, num_elements: usize) -> Result<Vec<f32>> {
+pub fn dequantize_q5_0(data: &[u8], start: usize, num_elements: usize) -> Result<Vec<f32>> {
     const BLOCK_SIZE: usize = 32;
     const BLOCK_BYTES: usize = 2 + 4 + 16; // f16 scale + 4 high bits + 16 low nibbles = 22
 
@@ -1976,6 +1981,9 @@ pub struct GgufModelConfig {
     pub rope_theta: Option<f32>,
     /// RMS norm epsilon
     pub rms_norm_eps: Option<f32>,
+    /// RoPE type: 0=NORM (adjacent pairs), 2=NEOX (split halves)
+    /// CORRECTNESS-011: Qwen2.5 models require rope_type=2 (NEOX style)
+    pub rope_type: Option<u32>,
 }
 
 /// Result of loading a GGUF file with full tokenizer data and model config
@@ -2007,8 +2015,16 @@ pub fn load_gguf_with_tokenizer<P: AsRef<Path>>(path: P) -> Result<GgufLoadResul
         model_name: reader.model_name(),
     };
 
+    // PMAT-114: Infer rope_type from architecture
+    // Qwen2/Qwen2.5 models use NEOX-style RoPE (type 2)
+    let arch = reader.architecture();
+    let rope_type = match arch.as_deref() {
+        Some("qwen2" | "qwen2.5" | "qwen") => Some(2), // NEOX style
+        _ => Some(0), // Default to NORM style
+    };
+
     let model_config = GgufModelConfig {
-        architecture: reader.architecture(),
+        architecture: arch,
         hidden_size: reader.hidden_size(),
         num_layers: reader.num_layers(),
         num_heads: reader.num_heads(),
@@ -2018,6 +2034,7 @@ pub fn load_gguf_with_tokenizer<P: AsRef<Path>>(path: P) -> Result<GgufLoadResul
         max_position_embeddings: reader.context_length(),
         rope_theta: reader.rope_theta(),
         rms_norm_eps: reader.rms_norm_eps(),
+        rope_type,
     };
 
     Ok(GgufLoadResult {
@@ -2071,8 +2088,15 @@ pub fn load_gguf_raw<P: AsRef<Path>>(path: P) -> Result<GgufRawLoadResult> {
         model_name: reader.model_name(),
     };
 
+    // PMAT-114: Infer rope_type from architecture
+    let arch = reader.architecture();
+    let rope_type = match arch.as_deref() {
+        Some("qwen2" | "qwen2.5" | "qwen") => Some(2), // NEOX style
+        _ => Some(0), // Default to NORM style
+    };
+
     let model_config = GgufModelConfig {
-        architecture: reader.architecture(),
+        architecture: arch,
         hidden_size: reader.hidden_size(),
         num_layers: reader.num_layers(),
         num_heads: reader.num_heads(),
@@ -2082,6 +2106,7 @@ pub fn load_gguf_raw<P: AsRef<Path>>(path: P) -> Result<GgufRawLoadResult> {
         max_position_embeddings: reader.context_length(),
         rope_theta: reader.rope_theta(),
         rms_norm_eps: reader.rms_norm_eps(),
+        rope_type,
     };
 
     Ok(GgufRawLoadResult {
@@ -3100,6 +3125,7 @@ mod tests {
             max_position_embeddings: Some(4096),
             rope_theta: Some(10000.0),
             rms_norm_eps: Some(1e-6),
+            rope_type: Some(0), // NORM style for LLaMA
         };
         assert!(format!("{config:?}").contains("GgufModelConfig"));
     }
@@ -3127,6 +3153,7 @@ mod tests {
                 max_position_embeddings: None,
                 rope_theta: None,
                 rms_norm_eps: None,
+                rope_type: None,
             },
         };
         assert!(format!("{result:?}").contains("GgufLoadResult"));
@@ -3165,6 +3192,7 @@ mod tests {
                 max_position_embeddings: None,
                 rope_theta: None,
                 rms_norm_eps: None,
+                rope_type: None,
             },
         };
         assert!(format!("{result:?}").contains("GgufRawLoadResult"));
