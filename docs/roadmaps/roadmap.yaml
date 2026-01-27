@@ -1431,11 +1431,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'New task: PMAT-SHOWCASE-NEXT'
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-01-12T09:30:13.183954948+00:00
-  updated: 2026-01-12T09:30:13.183954948+00:00
+  updated: 2026-01-27T18:42:19.759905183+00:00
   spec: null
   acceptance_criteria: []
   phases: []
@@ -2024,4 +2024,91 @@ roadmap:
   - realizar
   - cuda
   - bug
+  notes: null
+- id: PMAT-098
+  github_issue: null
+  item_type: task
+  title: 'PMAT-QA-PROTOCOL-001: Implement comprehensive QA testing protocol'
+  status: inprogress
+  priority: critical
+  assigned_to: null
+  created: 2026-01-26T15:03:49Z
+  updated: 2026-01-26T15:54:50.326576146+00:00
+  spec: null
+  acceptance_criteria:
+  - Implement 27-test modality × format × tracing matrix with ModelFixture, timeouts, and output verification. See spec §7.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - qa
+  - testing
+  - showcase
+  notes: null
+- id: PMAT-099
+  github_issue: null
+  item_type: task
+  title: 'PMAT-110: APR CUDA KV Cache - Implement proper KV cache for AprV2ModelCuda generation'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-01-26T19:17:34Z
+  updated: 2026-01-26T19:17:34Z
+  spec: null
+  acceptance_criteria:
+  - |-
+    Root cause: realizar's AprV2ModelCuda::forward_single_cuda has NO KV cache - it just calls forward_cuda(&[token]) with no context. This makes generation impossible (logits all -inf).
+
+    Fix: Implement proper KV cache in realizar similar to GGUF CUDA path (OwnedQuantizedKVCache).
+
+    Acceptance criteria:
+    - [ ] APR CUDA generates correct output (not empty/garbage)
+    - [ ] Temperature sampling works
+    - [ ] Performance: >50 tok/s on RTX 4090
+    - [ ] Test: apr chat with APR model uses GPU
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - cuda
+  - apr
+  - kv-cache
+  - realizar
+  notes: null
+- id: PMAT-110
+  github_issue: null
+  item_type: task
+  title: 'New task: PMAT-110'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-01-26T19:17:40.490094202+00:00
+  updated: 2026-01-26T19:19:52Z
+  spec: null
+  acceptance_criteria:
+  - "Root cause: realizar's AprV2ModelCuda::forward_single_cuda has NO KV cache - it just calls forward_cuda(&[token]) with no context. This makes generation impossible (logits all -inf).\n\nFix: Implement proper KV cache in realizar similar to GGUF CUDA path (OwnedQuantizedKVCache).\n\nSCOPE: Both APR AND SafeTensors formats must work with GPU for:\n- apr chat (interactive)\n- apr serve (REST API)\n- apr run (single prompt)\n\nAcceptance criteria:\n- [ ] APR CUDA generates correct output (not empty/garbage)\n- [ ] SafeTensors CUDA generates correct output\n- [ ] Temperature sampling works for both formats\n- [ ] Performance: >50 tok/s on RTX 4090 for both\n- [ ] Test: apr chat with APR model uses GPU\n- [ ] Test: apr chat with SafeTensors model uses GPU\n- [ ] Test: apr serve works with APR format\n- [ ] Test: apr serve works with SafeTensors format\n- [ ] Test: apr run works with APR format  \n- [ ] Test: apr run works with SafeTensors format"
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-111
+  github_issue: null
+  item_type: task
+  title: 'PMAT-114: SafeTensors→APR inference fix'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-01-27T17:43:06Z
+  updated: 2026-01-27T18:33:52.975501569+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Fix fused QKV bias loading in APR transformer. Root cause: APR converter fuses Q/K/V biases into qkv_proj.bias but loader only looked for separate biases.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - apr
+  - inference
+  - fix
   notes: null

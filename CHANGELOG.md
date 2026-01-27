@@ -1274,3 +1274,5 @@ Major feature release adding tree-based models, ensemble methods, cross-validati
 [0.2.0]: https://github.com/paiml/aprender/releases/tag/v0.2.0
 [0.1.0]: https://github.com/paiml/aprender/releases/tag/v0.1.0
 - Implement Content-Based Recommender with HNSW (Phase 1) (#71)
+- PMAT-114: SafeTensors→APR inference fix
+- PMAT-114: SafeTensors→APR inference fix
