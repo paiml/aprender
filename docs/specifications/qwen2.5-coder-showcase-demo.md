@@ -1,7 +1,7 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 4.2.0
-**Status:** ✅ OPERATIONAL (All GGUF Modalities Verified)
+**Version:** 4.4.0
+**Status:** ✅ OPERATIONAL (Real Observability Active)
 **Author:** PAIML Engineering
 **Date:** 2026-01-27
 **Honest QA Assessment (Popperian Falsification):**
@@ -9,19 +9,66 @@
 - GGUF GPU: ✅ **CORROBORATED** (CUDA path verified, 21.4 tok/s)
 - SafeTensors CPU: ✅ **CORROBORATED** (T200: Real Qwen2-0.5B, argmax=262)
 - SafeTensors GPU: ⚠️ P1 (CPU fallback)
-- APR CPU: ✅ **EMPIRICAL** (T201: Synthetic fixture, 10.4 tok/s measured)
-- APR GPU: ⚠️ P1 (PMAT-113 fixed hang, but pre-existing quality bug: corrupt tensor layouts)
+- APR CPU (SafeTensors): ✅ **CORROBORATED** (PMAT-114 Fix: fused QKV bias loading)
+- APR CPU (GGUF): ❌ **FALSIFIED** (Q5_0/Q4_0 dequantization issues)
+- APR GPU (SafeTensors): ✅ **CORROBORATED** (2+2 equals 4, RTX 4090)
 - Cross-format parity: ✅ **VERIFIED** (GGUF vs SafeTensors Invariant)
 - `apr check` (10-stage): ✅ **VERIFIED** (Real forward pass telemetry)
 - `apr profile`: ✅ **VERIFIED** (Real BrickProfiler telemetry)
 - `apr chat` (non-GGUF): ✅ Verified (Modality Matrix)
-- `apr serve` GGUF: ✅ **VERIFIED** (All endpoints working - PMAT-SERVE-FIX-001)
+
+**PMAT-114 Strategic Pivot (2026-01-27):** SafeTensors-first import debugging.
+**PMAT-114 Fix (2026-01-27):** ✅ COMPLETE. Root cause: APR converter fuses QKV biases into `qkv_proj.bias` but loader only looked for separate biases. Fixed in `realizar/src/apr_transformer/mod.rs:600`.
 
 **PMAT Roadmap ID:** `SHOWCASE-BRICK-001`
 
 ---
 
+## Critical Failures (Falsifications)
+
+### ✅ PMAT-114: SafeTensors→APR Inference Fixed
+
+**Status:** CORROBORATED (2026-01-27)
+
+**Problem (was):** APR files converted from SafeTensors produced garbage output.
+- **Root Cause:** APR converter fused Q/K/V biases into `qkv_proj.bias` but loader only looked for separate `q_proj.bias`, `k_proj.bias`, `v_proj.bias`.
+- **Fix:** Modified `realizar/src/apr_transformer/mod.rs:600` to check for fused QKV bias first.
+- **Result:** SafeTensors→APR now produces correct output ("2+2 equals 4.") on both CPU and GPU.
+
+### ⚠️ PMAT-113: APR GGUF Import Still Broken
+
+**Status:** FALSIFIED (2026-01-27), Lower Priority (SafeTensors-First Pivot)
+
+**Problem:** APR files converted from GGUF still produce garbage output.
+- **Observation:** Q5_0/Q4_0 dequantization produces incorrect values.
+- **Root Cause:** Likely dimension reversal and/or Q5_0 block dequantization bugs in converter.
+- **Corrective Action:** Lower priority per SafeTensors-first pivot. Use SafeTensors→APR for production.
+
+---
+
 ## Completed P0 Blockers (All Done)
+
+### ✅ PMAT-114: SafeTensors→APR Inference
+
+**Status:** COMPLETE (2026-01-27)
+
+**Problem:** APR files converted from SafeTensors produced garbage output.
+- Converter fuses Q/K/V weights and biases into single `qkv_proj.weight`/`qkv_proj.bias` tensors
+- Loader only looked for separate `q_proj.bias`, `k_proj.bias`, `v_proj.bias`
+- Qwen2 models require attention bias, so inference produced garbage without it
+
+**Fix:** Modified `realizar/src/apr_transformer/mod.rs:600`:
+```rust
+let qkv_bias = if let Some(fused_bias) = get_f32_tensor(&format!("{hf_prefix}.self_attn.qkv_proj.bias")) {
+    // Fused QKV bias from APR converter - use directly
+    Some(fused_bias)
+} else {
+    // Try separate Q/K/V biases (fallback for GGUF)
+    // ...
+};
+```
+
+**Result:** SafeTensors→APR produces correct output on CPU and GPU ("2+2 equals 4.").
 
 ### ✅ PMAT-QA-PROTOCOL-001: QA Testing Gaps
 
@@ -180,29 +227,69 @@ Added `AprV2Model::load_tokenizer_from_path()` to support loading from explicit 
 
 **Result:** APR models with F32 weights now generate tokens on GPU (P0 hang resolved). All 24 APR CUDA tests pass.
 
-### ⚠️ P1 REMAINING: APR CUDA Output Quality (Pre-existing Bug)
+### ⚠️ P1 REMAINING: APR Output Quality (PMAT-114)
 
-**Status:** KNOWN ISSUE (documented in code as SATD-WARNING)
+**Status:** IN PROGRESS - SAFETENSORS-FIRST PIVOT (2026-01-27)
 
-**Problem:** APR CUDA forward path produces garbage output ("helf helf helfakak" instead of coherent text).
+**Problem:** APR forward path produces garbage output regardless of source format:
+- APR from GGUF → Garbage
+- APR from SafeTensors → Garbage
 
-**Evidence from Code (realizar/src/apr/cuda.rs:1459-1461):**
+**Strategic Pivot (2026-01-27):**
+
+The original debugging approach was GGUF-first because Ollama uses GGUF. However, this is strategically wrong:
+
+| Factor | GGUF | SafeTensors |
+|--------|------|-------------|
+| Data complexity | 20+ quantization formats (Q4_K, Q5_0, Q6_K, Q8_0...) | Simple (F32, F16, BF16) |
+| Shape convention | GGML column-major (dims reversed) | Standard row-major |
+| Ecosystem | llama.cpp/Ollama | HuggingFace (millions of models) |
+| Debug difficulty | Hard (block dequantization) | Easy (just floats) |
+
+**New Approach: SafeTensors First**
+
 ```
-SATD-WARNING: APR CUDA forward path currently produces NaN logits
-The APR import creates corrupt tensor layouts (qkv_weight dimension mismatch)
-Use GGUF format for working inference until APR format is fixed
+Phase 1: SafeTensors → APR (F32 only)
+  ├── Simple data types, no quantization complexity
+  ├── Standard row-major layout
+  └── Use rosetta compare-inference to verify parity
+
+Phase 2: Once F32 works, add quantization
+  ├── APR native Q4/Q8 quantization
+  └── Preserve Q4_K/Q6_K from GGUF
+
+Phase 3: GGUF → APR (with proven F32 baseline)
+  └── Now we know the F32 path works, debug quantization issues
 ```
 
-**Symptoms:**
-- Both F32 APR (from SafeTensors import) and Q4K APR (from GGUF import) produce garbage
-- GGUF format on same GPU produces correct output
-- Issue is in `AprV2ModelCuda::forward_cuda()`, not in weight caching
+**Debugging Tool: `apr rosetta compare-inference`**
 
-**Root Cause:** APR import creates corrupt tensor layouts - qkv_weight dimension mismatch.
+```bash
+# Compare SafeTensors direct inference vs APR converted from SafeTensors
+apr rosetta compare-inference \
+    model.safetensors \
+    model.apr \
+    --prompt "2+2=" \
+    --verbose
 
-**Workaround:** Use GGUF format for GPU inference (`apr chat model.gguf --gpu` works correctly).
+# Output shows:
+# - Tokenization: [tokens match? ✓/✗]
+# - Embedding: [first 5 values, diff]
+# - Per-layer activations: [max diff per layer]
+# - Final logits: [argmax match? ✓/✗]
+```
 
-**Next Steps:** Investigate tensor layout corruption in APR import (PMAT-114).
+**Root Cause Analysis (Previous GGUF Attempts):**
+- GGML stores dims in reverse order (column-major convention)
+- GGUF loader does `dims.reverse()` at line 371 to convert to row-major
+- APR converter was storing GGML dims without reversal for Q5_0/Q8_0
+- Multiple transpose/reverse attempts failed due to complexity
+
+**Why SafeTensors First Will Work:**
+1. No dimension reversal needed - already row-major
+2. No dequantization - F32 data is what it is
+3. Smaller surface area for bugs
+4. Once working, provides golden baseline for GGUF debugging
 
 ### GGUF Modality Verification Matrix (2026-01-27)
 
@@ -262,6 +349,7 @@ SafeTensors (F32) ──┬──> realizar inference (direct)
 |--------|---------|------------|---------------|
 | GGUF Q4_K | GPU (RTX 4090) | 21.4 tok/s | ✅ Real (BrickProfiler) |
 | APR Q4_K | CPU (AVX2) | 10.4 tok/s | ✅ Real (BrickProfiler) |
+| APR Q4_K | GPU | ❌ FALSIFIED | ⚠️ NaN Logits |
 | SafeTensors | CPU | 2.2 tok/s | ✅ Real (BrickProfiler) |
 
 ---
@@ -651,12 +739,55 @@ use crate::quantize::fused_q4k_parallel_matvec;
 
 | # | Source | Target | Command | Status |
 |---|--------|--------|---------|--------|
-| 1 | GGUF | APR | `apr convert model.gguf -o model.apr` | ✅ |
+| 1 | GGUF | APR | `apr convert model.gguf -o model.apr` | ⚠️ Garbage output |
 | 2 | APR | GGUF | `apr export model.apr --format gguf` | ✅ |
-| 3 | SafeTensors | APR | `apr import model.safetensors -o model.apr` | ✅ |
+| 3 | SafeTensors | APR | `apr import model.safetensors -o model.apr` | 🔄 PMAT-114 |
 | 4 | APR | SafeTensors | `apr export model.apr --format safetensors` | ✅ |
 | 5 | GGUF | SafeTensors | `apr convert model.gguf --format safetensors` | ⚠️ |
 | 6 | SafeTensors | GGUF | `apr convert model.safetensors --format gguf` | ⚠️ |
+
+### Inference Comparison (PMAT-114 Debug Tool)
+
+```bash
+# Compare inference between two formats to find divergence
+apr rosetta compare-inference SOURCE TARGET --prompt "2+2="
+
+# Examples:
+apr rosetta compare-inference model.safetensors model.apr --prompt "2+2=" --verbose
+apr rosetta compare-inference model.gguf model.apr --prompt "Hi" --diff-threshold 0.001
+```
+
+**Output:**
+```
+=== Rosetta Inference Comparison ===
+Source: model.safetensors (SafeTensors)
+Target: model.apr (APR)
+Prompt: "2+2="
+
+[1] Tokenization
+    Source tokens: [151643, 17, 10, 17, 28]
+    Target tokens: [151643, 17, 10, 17, 28]
+    Status: ✓ MATCH
+
+[2] Embedding Lookup (token 0)
+    Source: [0.0234, -0.0156, 0.0078, ...]
+    Target: [0.0234, -0.0156, 0.0078, ...]
+    Max diff: 0.0000
+    Status: ✓ MATCH
+
+[3] Layer 0 Output
+    Max diff: 0.0023
+    Status: ✓ WITHIN THRESHOLD
+
+...
+
+[N] Final Logits
+    Source argmax: 19 ("4")
+    Target argmax: 8234 ("随")
+    Status: ✗ MISMATCH - DIVERGENCE DETECTED
+
+First divergence at: Layer 0, FFN gate projection
+```
 
 ### Jidoka Stop Conditions
 
