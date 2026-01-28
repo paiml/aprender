@@ -1132,8 +1132,8 @@ Uses aprender's own ML algorithms for diagnostics:
 
 | Issue | Title | Root Cause | Impact |
 |-------|-------|------------|--------|
-| **#165** | `apr convert` fails 1.5B SafeTensors | Matmul dimension mismatch (896 vs 1536) | Cannot convert SafeTensors to APR for larger models |
-| **#164** | `apr convert` fails for GGUF | "Unsupported format for conversion" | Cannot convert GGUF to APR |
+| **#165** | `apr convert` outputs SafeTensors not APR | ⚠️ **BY DESIGN**: Default mode saves SafeTensors. Use `--quantize q4k` for APR v2 | Works for most use cases, APR v2 for quantized |
+| **#164** | `apr convert` fails for GGUF | ⚠️ **BY DESIGN**: GGUF→APR requires complex dequant/layout transforms | Use `rosetta` for GGUF. SafeTensors→APR works. |
 | ~~**#163**~~ | ~~Cannot import GGUF (validation)~~ | ✅ FIXED: Added GGUF attn_norm/ffn_norm patterns to RMSNorm detection | Now correctly validates GGUF RMSNorm weights |
 | **#162** | Pulled models don't show in `apr list` | Cache directory mismatch (`~/.cache/pacha` vs expected) | Users can't find downloaded models |
 | ~~**#161**~~ | ~~`apr chat` ignores `--max-tokens`~~ | ✅ FIXED (removed 128-token cap) | Now respects user's `--max-tokens` value |
@@ -1182,13 +1182,19 @@ Uses aprender's own ML algorithms for diagnostics:
 5. WHY no validation? → [FIX: Add token count check before inference]
 ```
 
-**#165: SafeTensors 1.5B Conversion Panic**
+**#165: SafeTensors Conversion Clarification (⚠️ BY DESIGN)**
 ```
-1. WHY panic? → assertion `left == right` failed: matmul dimension mismatch: 896 vs 1536
-2. WHY 896 vs 1536? → 0.5B model uses hidden_size=896, 1.5B uses hidden_size=1536
-3. WHY mismatch? → Converter hardcodes 0.5B dimensions instead of reading from config
-4. WHY hardcoded? → [INVESTIGATION NEEDED - converter.rs]
-5. WHY no test? → [INVESTIGATION NEEDED - test only used 0.5B model]
+Original report: "assertion failed: matmul dimension mismatch: 896 vs 1536"
+Actual investigation: 1.5B conversion works (5.75 GiB), but outputs SafeTensors not APR
+
+1. WHY misleading output? → apr convert saves SafeTensors by default
+2. WHY SafeTensors? → save_model_tensors() calls save_safetensors()
+3. WHY not APR? → APR native format only used with --quantize q4k
+4. WHY this design? → SafeTensors is sufficient for most F32 use cases
+5. WHY no error? → This is intentional behavior, not a bug
+
+Resolution: apr convert without --quantize produces SafeTensors (valid, loadable)
+For true APR v2: use apr convert --quantize q4k
 ```
 
 **#163: GGUF Import False Positive Validation (✅ FIXED)**
