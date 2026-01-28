@@ -296,8 +296,31 @@ pub fn run_chain(source: &Path, formats: &[String], work_dir: &Path, json: bool)
         .map_err(|e| CliError::ValidationFailed(format!("Chain conversion failed: {e}")))?;
 
     if json {
-        // TODO: Print JSON output for chain
-        println!("{{\"steps\": {}}}", reports.len());
+        // Print JSON output for chain conversion
+        let steps: Vec<serde_json::Value> = reports
+            .iter()
+            .enumerate()
+            .map(|(i, r)| {
+                serde_json::json!({
+                    "step": i + 1,
+                    "path": r.path.to_string(),
+                    "duration_ms": r.duration_ms,
+                    "source_tensors": r.source_inspection.tensors.len(),
+                    "target_tensors": r.target_inspection.tensors.len(),
+                    "warnings": r.warnings,
+                    "lossless": r.is_lossless()
+                })
+            })
+            .collect();
+        println!(
+            "{}",
+            serde_json::json!({
+                "chain": chain.iter().map(|f| format!("{f:?}")).collect::<Vec<_>>(),
+                "steps": steps,
+                "total_steps": reports.len(),
+                "success": true
+            })
+        );
     } else {
         for (i, report) in reports.iter().enumerate() {
             println!("{}", format!("--- Step {} ---", i + 1).yellow());

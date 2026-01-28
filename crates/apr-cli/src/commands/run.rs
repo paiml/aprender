@@ -15,14 +15,21 @@
 //! # Architecture (APR-CLI-DELEGATE-001)
 //!
 //! All inference now delegates to `realizar::run_inference()` via `execute_with_realizar()`.
-//! The following legacy functions are DEAD CODE scheduled for removal:
-//! - `execute_apr_inference()` (lines 603-881)
-//! - `execute_safetensors_inference()` (lines 927-1208)
-//! - `execute_gguf_inference()` (lines 1317-1488)
-//! - `run_safetensors_generation()` (lines 1235-1309)
-//! - `run_gguf_generate()` (lines 1500-1633)
 //!
-//! TODO(SHOWCASE-BRICK-001): Remove dead code after realizar refactor is stable.
+//! ## Deprecated Legacy Code (kept for reference)
+//!
+//! The following functions are deprecated and no longer called in the main path:
+//! - `execute_apr_inference()` - Superseded by realizar
+//! - `execute_safetensors_inference()` - Superseded by realizar
+//! - `execute_gguf_inference()` - Superseded by realizar
+//! - `run_safetensors_generation()` - Superseded by realizar
+//! - `run_gguf_generate()` - Superseded by realizar
+//!
+//! These remain in the codebase for:
+//! 1. Historical reference (how inference was done pre-realizar)
+//! 2. Potential fallback if realizar has regressions (compile with different features)
+//!
+//! See PMAT-SHOWCASE-BRICK-001 for cleanup tracking.
 
 // Allow dead code during development - legacy functions pending removal
 #![allow(dead_code)]

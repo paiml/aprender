@@ -1211,7 +1211,7 @@ fn run_headless_real(config: CbtopConfig) -> Result<()> {
         hardware: HardwareInfo {
             gpu: gpu_name,
             cpu: get_cpu_info(),
-            memory_gb: 64, // TODO: Get from system
+            memory_gb: get_memory_gb(),
         },
         throughput: ThroughputMetrics {
             tokens_per_sec,
@@ -1323,6 +1323,28 @@ fn get_cpu_info() -> String {
         }
     }
     "Unknown CPU".to_string()
+}
+
+/// Get system memory in GB (best effort)
+fn get_memory_gb() -> u32 {
+    #[cfg(target_os = "linux")]
+    {
+        if let Ok(content) = std::fs::read_to_string("/proc/meminfo") {
+            for line in content.lines() {
+                if line.starts_with("MemTotal:") {
+                    // MemTotal is in kB, convert to GB
+                    if let Some(kb_str) = line.split_whitespace().nth(1) {
+                        if let Ok(kb) = kb_str.parse::<u64>() {
+                            #[allow(clippy::cast_possible_truncation)]
+                            return (kb / 1_048_576) as u32; // kB to GB
+                        }
+                    }
+                }
+            }
+        }
+    }
+    // Fallback for non-Linux systems
+    64
 }
 
 /// Generate headless report from pipeline state (simulated data)

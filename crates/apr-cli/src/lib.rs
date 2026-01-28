@@ -421,9 +421,13 @@ pub enum Commands {
         #[arg(value_name = "FILE")]
         file: PathBuf,
 
-        /// Quantize to format (int8, int4, fp16)
+        /// Quantize to format (int8, int4, fp16, q4k)
         #[arg(long)]
         quantize: Option<String>,
+
+        /// Compress output (none, zstd, zstd-max, lz4)
+        #[arg(long)]
+        compress: Option<String>,
 
         /// Output file path
         #[arg(short, long)]
@@ -1123,8 +1127,9 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
         Commands::Convert {
             file,
             quantize,
+            compress,
             output,
-        } => convert::run(file, quantize.as_deref(), output),
+        } => convert::run(file, quantize.as_deref(), compress.as_deref(), output),
         Commands::Merge {
             files,
             strategy,
