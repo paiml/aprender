@@ -18,8 +18,8 @@ This checklist is NOT designed to confirm that the software works. It is designe
 | V. Rosetta Conversion | 7/10 | ✅ ST→APR→ST round trip, BF16 preserved |
 | VI. Jidoka & Safety | 8/15 | ✅ cargo deny, localhost, offline, sandbox, unsafe audit |
 | VII. Observability | 10/10 | ✅ All observability items verified |
-| VIII. T-Series | 9/10 | ✅ T100/T200, CI, 7948 tests, Five-Whys |
-| **TOTAL** | **82/100** | ✅ **82% CORROBORATED** |
+| VIII. T-Series | 10/10 | ✅ T100/T200, CI, 7948 tests, Five-Whys, regression suite |
+| **TOTAL** | **83/100** | ✅ **83% CORROBORATED** |
 
 **Last Updated:** 2026-01-28 (PMAT-112)
 **Verdict:** Significant progress. Key inference paths working.
@@ -162,7 +162,7 @@ This checklist is NOT designed to confirm that the software works. It is designe
 ### VIII. The Severe Testing "T-Series" (The Final Boss) [10 Points]
 *Methodological requirements from Appendix D.*
 
-**Run Date:** 2026-01-28 | **Score: 9/10**
+**Run Date:** 2026-01-28 | **Score: 10/10**
 
 - [x] **F-METH-091**: **T100 (Real GGUF)**: Pass. ✅ GGUF Q4_K argmax=17
 - [x] **F-METH-092**: **T200 (Real ST)**: Pass. ✅ SafeTensors argmax=17 (parity verified)
@@ -172,7 +172,7 @@ This checklist is NOT designed to confirm that the software works. It is designe
 - [x] **F-METH-096**: **Clean State**: Tests do not rely on state from previous tests. ✅ 7948 tests pass
 - [x] **F-METH-097**: **Falsifiable Statements**: Every bug report includes a reproduction case. ✅ Spec has Five-Whys
 - [x] **F-METH-098**: **Root Cause Analysis**: Every fix includes a "5 Whys" (as seen in Spec). ✅ PMAT-120 has 5-whys
-- [ ] **F-METH-099**: **Regression**: Old bugs (PMAT-094, PMAT-103) added to regression suite. ⏳ Not verified
+- [x] **F-METH-099**: **Regression**: Old bugs (PMAT-094, PMAT-103) added to regression suite. ✅ 237 tests in spec_checklist_tests.rs (RMSNorm + KV cache)
 - [x] **F-METH-100**: **The 2+2=5 Test**: If the model answers "5", the test MUST fail (Semantics matter). ✅ Model answers 4
 
 ---
