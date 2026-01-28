@@ -1984,7 +1984,8 @@ fn start_gguf_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
                 let state =
                     AppState::with_cuda_model_and_vocab(cuda_model, vocab).map_err(|e| {
                         CliError::InferenceFailed(format!("Failed to create state: {e}"))
-                    })?;
+                    })?
+                    .with_verbose(config.verbose);  // GH-152: Pass verbose flag
 
                 let app = create_router(state);
 
@@ -2062,7 +2063,8 @@ fn run_cpu_server(
     use realizar::api::{create_router, AppState};
 
     let state = AppState::with_quantized_model_and_vocab(quantized_model, vocab)
-        .map_err(|e| CliError::InferenceFailed(format!("Failed to create app state: {e}")))?;
+        .map_err(|e| CliError::InferenceFailed(format!("Failed to create app state: {e}")))?
+        .with_verbose(config.verbose);  // GH-152: Pass verbose flag to handlers
 
     // Create realizar's full inference router (Ollama-parity endpoints)
     let app = create_router(state);
@@ -2155,7 +2157,8 @@ fn start_gguf_server_gpu_batched(
 
     // Create state with cached model and real vocab
     let state = AppState::with_cached_model_and_vocab(cached_model, vocab)
-        .map_err(|e| CliError::InferenceFailed(format!("Failed to create app state: {e}")))?;
+        .map_err(|e| CliError::InferenceFailed(format!("Failed to create app state: {e}")))?
+        .with_verbose(config.verbose);  // GH-152: Pass verbose flag
 
     // Get Arc'd model for batch processor
     let cached_model_arc = state

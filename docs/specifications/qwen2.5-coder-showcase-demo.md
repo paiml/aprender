@@ -702,7 +702,7 @@ Completed in 1.83s (cached)
 └─────┴─────────────────────┴──────────────────────────┴──────┘
 ```
 
-**`apr check` Implementation Status:** NOT IMPLEMENTED (F-CHECK-211 to F-CHECK-230 pending)
+**`apr check` Implementation Status:** ✅ IMPLEMENTED (F-CHECK-211 to F-CHECK-230 - 10/10 stages pass)
 
 ---
 
@@ -1149,7 +1149,7 @@ Uses aprender's own ML algorithms for diagnostics:
 | Issue | Title | Summary | Status |
 |-------|-------|---------|--------|
 | **#160** | Enable Tool Calling support | `tools` field in `/v1/chat/completions` ignored; grammar-constrained sampling not wired | Blocks LangChain/Agents integration |
-| **#152** | `--verbose` for serve payloads | No request/response logging middleware | Debugging production issues difficult |
+| **#152** | ~~`--verbose` for serve payloads~~ | ~~No request/response logging middleware~~ | ✅ FIXED: verbose passed to realizar AppState |
 
 ### C.4 P2 Performance/UX (Optimization)
 
@@ -1163,6 +1163,17 @@ Uses aprender's own ML algorithms for diagnostics:
 | **#141** | Y7: GPU Performance Benchmarks | APR decode ≥200 tok/s on GPU (RTX 4090) | Blocks APR GPU parity with GGUF |
 
 ### C.5 Five-Whys Analysis Required
+
+**#152: Verbose Flag Not Working for GGUF (FIXED)**
+```
+1. WHY no [VERBOSE] output? → Handler logging not called
+2. WHY not called? → apr-cli's verbose handlers not used for GGUF
+3. WHY not used? → GGUF models use realizar's handlers via create_router()
+4. WHY no verbose in realizar? → AppState had no verbose field
+5. ROOT CAUSE: verbose flag parsed but never passed to realizar
+FIX: Added verbose field to realizar's AppState with with_verbose() builder
+     Updated apr-cli to call .with_verbose(config.verbose) on AppState
+```
 
 **#166: apr convert Silently Overwrites (NEW)**
 ```
@@ -1378,7 +1389,7 @@ Following Popper's critical rationalism, we do not seek to *confirm* that infere
 
 **Key Principle:** Use REAL models, not synthetic fixtures. Testing fixtures tests the fixture generator, not the inference engine (circular reasoning fallacy).
 
-### 13.2 T-Series Test Results (2026-01-26)
+### 13.2 T-Series Test Results (2026-01-28)
 
 | Test ID | Format | Device | Model | Status | Evidence |
 |---------|--------|--------|-------|--------|----------|
@@ -1387,6 +1398,25 @@ Following Popper's critical rationalism, we do not seek to *confirm* that infere
 | **T201** | APR | CPU | Synthetic fixture | ✅ **EMPIRICAL** | PMAT-111 FIXED: loader+forward runs |
 | T101 | GGUF | CUDA | Qwen2-0.5B | ⚠️ **PENDING** | Requires CUDA hardware |
 | T104 | APR | CUDA | Real model | ❌ **FALSIFIED** | CPU fallback (PMAT-106) |
+
+### 13.3 CLI Falsification Tests (2026-01-28, PMAT-121)
+
+| Test ID | Command | Expected | Actual | Status |
+|---------|---------|----------|--------|--------|
+| F-RUN-001 | `apr run model.gguf --prompt "2+2="` | "4" | "4" | ✅ **CORROBORATED** |
+| F-SERVE-001 | `curl /health` | JSON status | `{"status":"healthy"...}` | ✅ **CORROBORATED** |
+| F-SERVE-002 | `curl /metrics` | Prometheus | Valid metrics | ✅ **CORROBORATED** |
+| F-SERVE-003 | `curl /v1/chat/completions` | Correct answer | "2 + 2 is 4." | ✅ **CORROBORATED** |
+| F-CHECK-001 | `apr check model.gguf` | 10/10 stages | 10/10 PASS | ✅ **CORROBORATED** |
+| F-QA-001 | `apr qa model.gguf` | >100 tok/s | 264.6 tok/s | ✅ **CORROBORATED** |
+| F-CONV-001 | `apr convert .gguf -o .safetensors` | Valid file | 2.35 GiB | ✅ **CORROBORATED** |
+| F-IMPORT-001 | `apr import .gguf -o .apr` | APR file | 85/100 score | ✅ **CORROBORATED** |
+| F-APR-GGUF | `apr run converted.apr` | Correct | Garbage | ❌ **FALSIFIED** |
+| F-LIST-001 | `apr list` | Model list | 1 model shown | ✅ **CORROBORATED** |
+| F-BENCH-001 | `apr bench model.gguf` | >10 tok/s | 489.5 tok/s | ✅ **CORROBORATED** |
+| F-ROSETTA-001 | `apr rosetta inspect` | Format info | GGUF metadata | ✅ **CORROBORATED** |
+
+**Summary:** 11/12 tests CORROBORATED, 1 FALSIFIED (APR from GGUF produces garbage - known issue)
 
 ### 13.7 Cross-Format Parity (The argmax Invariant)
 
