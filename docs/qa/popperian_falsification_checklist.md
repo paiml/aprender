@@ -13,13 +13,13 @@ This checklist is NOT designed to confirm that the software works. It is designe
 |---------|-------|--------|
 | I. Metaphysical Baseline | 8/10 | ⚠️ Binary size exceeds limit |
 | II. Loader Gauntlet | 7/15 | ⚠️ Partial testing |
-| III. Output Quality | 10/15 | ✅ Core tests pass |
+| III. Output Quality | 12/15 | ✅ Core tests pass, system prompt, stop tokens |
 | IV. Performance | 10/15 | ✅ GPU 88.9x faster, 274 tok/s |
 | V. Rosetta Conversion | 2/10 | ⚠️ Partial testing |
 | VI. Jidoka & Safety | 5/15 | ✅ cargo deny passes, localhost binding verified |
 | VII. Observability | 9/10 | ✅ Trace, layer, JSON, apr check working |
 | VIII. T-Series | 5/10 | ✅ T100/T200 pass |
-| **TOTAL** | **56/100** | ⚠️ **56% CORROBORATED** |
+| **TOTAL** | **58/100** | ⚠️ **58% CORROBORATED** |
 
 **Last Updated:** 2026-01-28 (PMAT-112)
 **Verdict:** Significant progress. Key inference paths working.
@@ -66,18 +66,18 @@ This checklist is NOT designed to confirm that the software works. It is designe
 ### III. The Output Quality Invariants (Strict Verification) [15 Points]
 *Tests if the output is semantically valid. "2+2=4".*
 
-**Run Date:** 2026-01-28 | **Score: 10/15**
+**Run Date:** 2026-01-28 | **Score: 12/15**
 
 - [x] **F-QUAL-026**: **Deterministic Arithmetic**: `apr run ... "2+2="` -> Output contains "4". ✅ GGUF CPU: "4"
 - [x] **F-QUAL-027**: **Deterministic Arithmetic (GPU)**: GPU run "2+2=" -> Output contains "4". ✅ GGUF GPU: "4"
 - [x] **F-QUAL-028**: **No Garbage (Start)**: Output does not start with `` or random unicode. ✅ Clean "Hello!" output
 - [x] **F-QUAL-029**: **No Garbage (Loop)**: Output does not enter infinite repetition loop ("and and and and"). ✅ Verified
 - [x] **F-QUAL-030**: **No Garbage (Tokens)**: Output does not contain raw token IDs (e.g., "token151643"). ✅ No garbage patterns
-- [ ] **F-QUAL-031**: **Stop Tokens**: Generation stops at `<|im_end|>` or equivalent (doesn't spew user prompt). ⏳ Not tested
+- [x] **F-QUAL-031**: **Stop Tokens**: Generation stops at `<|im_end|>` or equivalent (doesn't spew user prompt). ✅ Chat mode stops correctly
 - [x] **F-QUAL-032**: **Argmax Parity (CPU)**: GGUF vs SafeTensors for same prompt -> Same Argmax token at pos 0. ✅ argmax=17 both
 - [x] **F-QUAL-033**: **Argmax Parity (GPU)**: GGUF CPU vs GGUF GPU -> Same Argmax token at pos 0. ✅ Verified
 - [x] **F-QUAL-034**: **Chat Template**: `apr chat` correctly formats `<|im_start|>user...` ✅ ChatML auto-detected
-- [ ] **F-QUAL-035**: **System Prompt**: `--system "You are a pirate"` -> Model replies in pirate voice. ⏳ Not tested
+- [x] **F-QUAL-035**: **System Prompt**: `--system "You are a pirate"` -> Model replies in pirate voice. ✅ "Arr matey! I'm Captain Blackbeard"
 - [ ] **F-QUAL-036**: **Temperature 0**: Two consecutive runs with `-t 0` produce bit-identical text output.
 - [ ] **F-QUAL-037**: **Context Window**: Input > 4096 tokens -> Error "Context limit exceeded" or proper truncation (no silent failure).
 - [ ] **F-QUAL-038**: **Empty Prompt**: `apr run ... ""` -> Handles gracefully (generates or exits, no panic).
