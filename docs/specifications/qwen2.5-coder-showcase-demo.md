@@ -110,7 +110,10 @@ Compare:
 **Remaining Showcase Gaps:**
 - F-QUAL-032: Argmax parity GGUF vs SafeTensors (needs same model)
 - F-PERF-042: GPU > 2x CPU throughput verification
-- F-CONV-059: `apr rosetta compare-inference` parity tool
+
+**Completed (PMAT-117):**
+- ✅ F-CONV-059: `apr rosetta compare-inference` parity tool (implemented)
+- ✅ Zero SATD in apr-cli (4 violations fixed)
 
 ---
 
