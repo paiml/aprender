@@ -79,7 +79,7 @@ Compare:
 
 **Honest QA Assessment (Popperian Falsification):**
 - GGUF CPU: ✅ **CORROBORATED** (T100: Real Qwen2-0.5B, argmax=262)
-- GGUF GPU: ✅ **CORROBORATED** (CUDA path verified, 21.4 tok/s)
+- GGUF GPU: ✅ **CORROBORATED** (CUDA path verified, 276.9 tok/s, 6.8x Ollama)
 - SafeTensors CPU: ✅ **CORROBORATED** (T200: Real Qwen2-0.5B, argmax=262)
 - SafeTensors GPU: ✅ **CORROBORATED** (PMAT-120 Fix: QKV bias loading + weight transpose)
 - APR CPU (SafeTensors): ✅ **CORROBORATED** (PMAT-114 Fix: fused QKV bias loading)
@@ -136,6 +136,15 @@ apr chat model.gguf         # "2 + 2 equals 4."
 
 **Remaining Showcase Gaps:**
 - None! All showcase requirements implemented.
+
+**Latest QA Verification (2026-01-28):**
+```
+✅ Golden Output - 2 golden test cases passed
+✅ Throughput - 276.9 tok/s >= 100 tok/s threshold
+✅ Ollama Parity - 6.8x Ollama (258 vs 38 tok/s) >= 0.4x threshold
+✅ GPU Speedup - GPU 92.7x faster than CPU (280 vs 3 tok/s) >= 2.0x threshold
+✅ Format Parity - GGUF argmax=17 == SafeTensors argmax=17
+```
 
 **Completed (PMAT-119):**
 - ✅ F-QUAL-032: Cross-format parity GGUF vs SafeTensors (`apr qa --safetensors-path`)
@@ -540,7 +549,7 @@ SafeTensors (F32) ──┬──> realizar inference (direct)
 
 | Format | Source | Backend | Throughput | Status |
 |--------|--------|---------|------------|--------|
-| GGUF Q4_K | Direct | GPU (RTX 4090) | 21.4 tok/s | ✅ CORROBORATED |
+| GGUF Q4_K | Direct | GPU (RTX 4090) | 276.9 tok/s | ✅ CORROBORATED |
 | GGUF Q4_K | Direct | CPU (AVX2) | 14 tok/s | ✅ CORROBORATED |
 | APR F32 | SafeTensors | GPU (RTX 4090) | ~20 tok/s | ✅ CORROBORATED |
 | APR F32 | SafeTensors | CPU | 2.2 tok/s | ✅ CORROBORATED |
