@@ -517,7 +517,7 @@ All GGUF modalities verified working with and without tracing:
 | QA-VERIFY-001: Output verification | ✅ DONE | §7.5 |
 | QA-HANG-001: Timeout wrapper | ✅ DONE | §7.6 |
 | `apr check` command | ✅ DONE (PMAT-112) | §3 |
-| Verbose mode UX | F-UX-027 to F-UX-040 unchecked | §6 |
+| Verbose mode UX | ⚠️ 10/14 (4 missing items) | §2.3 |
 | CI parity gates | LAYOUT-001c/d not in CI | §9 |
 | ~~GGUF Q4_0/Q4_1 support~~ | ✅ FIXED (2026-01-27) | §10 |
 
@@ -639,6 +639,47 @@ apr check model.gguf
 
 **Trace (`--trace`):** JSON output with AWS Step Functions schema parity.
 
+### 2.3 Verbose Mode UX Falsification (F-UX-027 to F-UX-040)
+
+**Test Date:** 2026-01-28 | **Score: 10/14** | **Status: ⚠️ PARTIAL**
+
+| ID | Requirement | GGUF GPU | SafeTensors CPU | Status |
+|----|-------------|----------|-----------------|--------|
+| F-UX-027 | Source path displayed | ✅ | ✅ | **PASS** |
+| F-UX-028 | File size displayed | ✅ "468MB" | ✅ "942MB" | **PASS** |
+| F-UX-029 | Architecture name displayed | ✅ "Qwen2" | ✅ "Qwen2ForCausalLM" | **PASS** |
+| F-UX-030 | Number of layers displayed | ✅ "24 layers" | ✅ "24 layers" | **PASS** |
+| F-UX-031 | Vocabulary size displayed | ✅ "vocab_size=151936" | ✅ "vocab_size=151936" | **PASS** |
+| F-UX-032 | Model load time displayed | ✅ "525.0ms" | ✅ "1439.7ms" | **PASS** |
+| F-UX-033 | Backend type (CPU/GPU) displayed | ✅ "GPU" | ❌ Not shown | **PARTIAL** |
+| F-UX-034 | GPU device name (when GPU) | ✅ "NVIDIA GeForce RTX 4090" | N/A | **PASS** |
+| F-UX-035 | VRAM amount (when GPU) | ✅ "24045 MB VRAM" | N/A | **PASS** |
+| F-UX-036 | Hidden dimensions displayed | ❌ Not shown | ❌ Not shown | **FAIL** |
+| F-UX-037 | Thread count displayed | ❌ Not shown | ❌ Not shown | **FAIL** |
+| F-UX-038 | Quantization type (GGUF) | ❌ Not shown | N/A | **FAIL** |
+| F-UX-039 | Context length displayed | ❌ Not shown | ❌ Not shown | **FAIL** |
+| F-UX-040 | Total generation time displayed | ✅ "Completed in 1.83s" | ✅ "Completed in 4.35s" | **PASS** |
+
+**Example Output (GGUF GPU, verbose):**
+```
+=== APR Run ===
+Source: /home/noah/.apr/cache/hf/.../qwen2.5-coder-0.5b-instruct-q4_k_m.gguf
+Using mmap for 468MB model
+Loading model: ...
+Architecture: Qwen2 [GGUF: qwen2] (24 layers, vocab_size=151936)
+Model loaded in 525.0ms
+Backend: GPU (NVIDIA GeForce RTX 4090, 24045 MB VRAM)
+Output:
+2 + 2 equals 4.
+Completed in 1.83s (cached)
+```
+
+**Missing Items (PMAT-121: Future Enhancement):**
+- F-UX-036: Hidden dimensions (hidden_size, num_attention_heads)
+- F-UX-037: Thread count (CPU inference thread pool)
+- F-UX-038: Quantization type (Q4_K_M, F32, etc.)
+- F-UX-039: Context length (max_position_embeddings)
+
 ---
 
 ## 3. 10-Stage Pipeline Verification
@@ -705,7 +746,7 @@ apr check model.gguf
 
 | Section | Points | Status |
 |---------|--------|--------|
-| I-B: Verbose Mode UX | 0/14 | ❌ F-UX-027 to F-UX-040 |
+| I-B: Verbose Mode UX | 10/14 | ⚠️ F-UX-027 to F-UX-040 (4 missing: hidden_dim, threads, quant, ctx) |
 | II-A: GGUF Support | 20/20 | ✅ Q4_0/Q4_1 FIXED |
 | II-B: APR Support | 10/15 | ⚠️ Compression, streaming |
 | II-C: SafeTensors | 7/15 | ⚠️ F16, BF16, sharded |
@@ -715,7 +756,7 @@ apr check model.gguf
 | VI: Server | ~20/30 | ⚠️ Partial |
 | VIII: Integration | ~10/20 | ⚠️ Partial |
 
-**Total Estimated: ~150-180/300 (50-60%)**
+**Total Estimated: ~160-190/300 (53-63%)**
 
 ---
 
