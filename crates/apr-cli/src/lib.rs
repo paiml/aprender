@@ -817,6 +817,10 @@ pub enum Commands {
         #[arg(long, value_name = "SPEEDUP")]
         assert_speedup: Option<f64>,
 
+        /// Minimum GPU vs CPU speedup (F-PERF-042)
+        #[arg(long, value_name = "SPEEDUP")]
+        assert_gpu_speedup: Option<f64>,
+
         /// Skip golden output test
         #[arg(long)]
         skip_golden: bool,
@@ -828,6 +832,10 @@ pub enum Commands {
         /// Skip Ollama parity comparison
         #[arg(long)]
         skip_ollama: bool,
+
+        /// Skip GPU vs CPU speedup test (F-PERF-042)
+        #[arg(long)]
+        skip_gpu_speedup: bool,
 
         /// Number of benchmark iterations
         #[arg(long, default_value = "10")]
@@ -1365,9 +1373,11 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
             file,
             assert_tps,
             assert_speedup,
+            assert_gpu_speedup,
             skip_golden,
             skip_throughput,
             skip_ollama,
+            skip_gpu_speedup,
             iterations,
             warmup,
             max_tokens,
@@ -1377,9 +1387,11 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
             file,
             *assert_tps,
             *assert_speedup,
+            *assert_gpu_speedup,
             *skip_golden,
             *skip_throughput,
             *skip_ollama,
+            *skip_gpu_speedup,
             *iterations,
             *warmup,
             *max_tokens,

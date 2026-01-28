@@ -1,6 +1,6 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 4.7.0
+**Version:** 4.8.0
 **Status:** ✅ OPERATIONAL (Real Observability Active)
 **Author:** PAIML Engineering
 **Date:** 2026-01-28
@@ -109,7 +109,9 @@ Compare:
 
 **Remaining Showcase Gaps:**
 - F-QUAL-032: Argmax parity GGUF vs SafeTensors (needs same model)
-- F-PERF-042: GPU > 2x CPU throughput verification
+
+**Completed (PMAT-118):**
+- ✅ F-PERF-042: GPU > 2x CPU throughput verification (`apr qa --assert-gpu-speedup`)
 
 **Completed (PMAT-117):**
 - ✅ F-CONV-059: `apr rosetta compare-inference` parity tool (implemented)

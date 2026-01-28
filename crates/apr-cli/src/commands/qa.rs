@@ -19,13 +19,21 @@
 //!    - Assert speedup factor >= target
 //!    - Falsifiable: If speedup < target, test fails
 //!
+//! 4. **GPU vs CPU Speedup Test** (F-PERF-042)
+//!    - Measure throughput on both GPU and CPU
+//!    - Assert GPU >= 2x CPU (default threshold)
+//!    - Falsifiable: If GPU speedup < threshold, test fails
+//!    - Toyota Way: Genchi Genbutsu - measure real performance
+//!
 //! # Usage
 //!
 //! ```bash
 //! apr qa model.gguf                           # Run all gates
 //! apr qa model.gguf --assert-tps 100          # Custom throughput threshold
 //! apr qa model.gguf --assert-speedup 2.0      # Custom Ollama speedup
+//! apr qa model.gguf --assert-gpu-speedup 3.0  # Custom GPU vs CPU speedup
 //! apr qa model.gguf --skip-ollama             # Skip Ollama comparison
+//! apr qa model.gguf --skip-gpu-speedup        # Skip GPU vs CPU test
 //! apr qa model.gguf --json                    # JSON output for CI
 //! ```
 //!
@@ -51,12 +59,16 @@ pub struct QaConfig {
     pub min_tps: f64,
     /// Minimum speedup vs Ollama (default: 2.0x)
     pub min_speedup: f64,
+    /// Minimum GPU vs CPU speedup (default: 2.0x) - F-PERF-042
+    pub min_gpu_speedup: f64,
     /// Skip golden output test
     pub skip_golden: bool,
     /// Skip throughput test
     pub skip_throughput: bool,
     /// Skip Ollama parity test
     pub skip_ollama: bool,
+    /// Skip GPU vs CPU speedup test (F-PERF-042)
+    pub skip_gpu_speedup: bool,
     /// Number of benchmark iterations
     pub iterations: usize,
     /// Number of warmup iterations
@@ -72,11 +84,13 @@ pub struct QaConfig {
 impl Default for QaConfig {
     fn default() -> Self {
         Self {
-            min_tps: 100.0,   // GPU target
-            min_speedup: 0.4, // CPU mode; GPU mode (when fixed) can achieve 2.0x+
+            min_tps: 100.0,       // GPU target
+            min_speedup: 0.4,     // CPU mode; GPU mode (when fixed) can achieve 2.0x+
+            min_gpu_speedup: 2.0, // GPU must be 2x faster than CPU (F-PERF-042)
             skip_golden: false,
             skip_throughput: false,
             skip_ollama: false,
+            skip_gpu_speedup: false,
             iterations: 10,
             warmup: 3,
             max_tokens: 32,
@@ -180,9 +194,11 @@ pub fn run(
     path: &Path,
     min_tps: Option<f64>,
     min_speedup: Option<f64>,
+    min_gpu_speedup: Option<f64>,
     skip_golden: bool,
     skip_throughput: bool,
     skip_ollama: bool,
+    skip_gpu_speedup: bool,
     iterations: usize,
     warmup: usize,
     max_tokens: usize,
@@ -192,9 +208,11 @@ pub fn run(
     let config = QaConfig {
         min_tps: min_tps.unwrap_or(100.0),
         min_speedup: min_speedup.unwrap_or(0.4), // CPU mode; GPU mode can achieve 2.0x+
+        min_gpu_speedup: min_gpu_speedup.unwrap_or(2.0), // GPU must be 2x faster (F-PERF-042)
         skip_golden,
         skip_throughput,
         skip_ollama,
+        skip_gpu_speedup,
         iterations,
         warmup,
         max_tokens,
@@ -264,6 +282,17 @@ fn run_qa(path: &Path, config: &QaConfig) -> Result<QaReport> {
         print_gate_result(&ollama_result);
     }
     gates.push(ollama_result);
+
+    // Gate 4: GPU vs CPU Speedup (F-PERF-042)
+    let gpu_speedup_result = if config.skip_gpu_speedup {
+        GateResult::skipped("gpu_speedup", "Skipped by --skip-gpu-speedup")
+    } else {
+        run_gpu_speedup_gate(path, config)?
+    };
+    if !config.json {
+        print_gate_result(&gpu_speedup_result);
+    }
+    gates.push(gpu_speedup_result);
 
     let total_duration = start.elapsed();
     let passed = gates.iter().all(|g| g.passed);
@@ -737,6 +766,166 @@ fn run_ollama_parity_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
     }
 }
 
+/// Gate 4: GPU vs CPU Speedup Test (F-PERF-042)
+///
+/// Measures throughput on both GPU and CPU, verifies GPU >= 2x CPU.
+/// This is falsifiable - if GPU speedup < threshold, test fails.
+///
+/// Toyota Way: Genchi Genbutsu - Go and see for yourself. Measure real performance.
+fn run_gpu_speedup_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
+    let start = Instant::now();
+
+    if !config.json && config.verbose {
+        println!("{}", "Running GPU vs CPU speedup test...".yellow());
+    }
+
+    #[cfg(feature = "inference")]
+    {
+        use realizar::cuda::CudaExecutor;
+        use realizar::format::{detect_format, ModelFormat};
+        use realizar::gguf::{
+            GGUFModel, MappedGGUFModel, OwnedQuantizedModel, OwnedQuantizedModelCuda,
+            QuantizedGenerateConfig,
+        };
+
+        // Check if CUDA available
+        let cuda_available = CudaExecutor::is_available() && CudaExecutor::num_devices() > 0;
+
+        if !cuda_available {
+            return Ok(GateResult::skipped(
+                "gpu_speedup",
+                "CUDA not available - cannot compare GPU vs CPU",
+            ));
+        }
+
+        let model_bytes = std::fs::read(path)
+            .map_err(|e| CliError::ValidationFailed(format!("Failed to read model: {e}")))?;
+
+        let format = detect_format(&model_bytes[..8.min(model_bytes.len())])
+            .map_err(|e| CliError::ValidationFailed(format!("Failed to detect format: {e}")))?;
+
+        if format != ModelFormat::Gguf {
+            return Ok(GateResult::skipped(
+                "gpu_speedup",
+                "Only GGUF format supported",
+            ));
+        }
+
+        let gguf = GGUFModel::from_bytes(&model_bytes)
+            .map_err(|e| CliError::ValidationFailed(format!("Failed to parse GGUF: {e}")))?;
+
+        let prompt = "Write a function to calculate factorial:";
+        let prompt_tokens = gguf.encode(prompt).unwrap_or_else(|| vec![151643]);
+
+        let gen_config = QuantizedGenerateConfig {
+            max_tokens: config.max_tokens,
+            temperature: 0.0,
+            top_k: 1,
+            ..Default::default()
+        };
+
+        // Measure CPU throughput
+        let cpu_tps = {
+            let mapped = MappedGGUFModel::from_path(path)
+                .map_err(|e| CliError::ValidationFailed(format!("Map failed: {e}")))?;
+            let model = OwnedQuantizedModel::from_mapped(&mapped)
+                .map_err(|e| CliError::ValidationFailed(format!("Model failed: {e}")))?;
+
+            // Warmup
+            for _ in 0..config.warmup {
+                let _ = model.generate_with_cache(&prompt_tokens, &gen_config);
+            }
+
+            let mut total_tokens = 0usize;
+            let measure_start = Instant::now();
+
+            for _ in 0..config.iterations {
+                let output = model
+                    .generate_with_cache(&prompt_tokens, &gen_config)
+                    .unwrap_or_default();
+                total_tokens += output.len().saturating_sub(prompt_tokens.len());
+            }
+
+            total_tokens as f64 / measure_start.elapsed().as_secs_f64()
+        };
+
+        // Measure GPU throughput
+        let gpu_tps = {
+            let mapped = MappedGGUFModel::from_path(path)
+                .map_err(|e| CliError::ValidationFailed(format!("Map failed: {e}")))?;
+            let model = OwnedQuantizedModel::from_mapped(&mapped)
+                .map_err(|e| CliError::ValidationFailed(format!("Model failed: {e}")))?;
+            let mut cuda_model = OwnedQuantizedModelCuda::new(model, 0)
+                .map_err(|e| CliError::ValidationFailed(format!("CUDA init failed: {e}")))?;
+
+            // Warmup
+            for _ in 0..config.warmup {
+                let _ = cuda_model.generate_gpu_resident(&prompt_tokens, &gen_config);
+            }
+
+            let mut total_tokens = 0usize;
+            let measure_start = Instant::now();
+
+            for _ in 0..config.iterations {
+                let output = cuda_model
+                    .generate_gpu_resident(&prompt_tokens, &gen_config)
+                    .unwrap_or_default();
+                total_tokens += output.len().saturating_sub(prompt_tokens.len());
+            }
+
+            total_tokens as f64 / measure_start.elapsed().as_secs_f64()
+        };
+
+        let duration = start.elapsed();
+
+        // Calculate speedup
+        if cpu_tps <= 0.0 {
+            return Ok(GateResult::failed(
+                "gpu_speedup",
+                "CPU throughput was zero - cannot calculate speedup",
+                None,
+                None,
+                duration,
+            ));
+        }
+
+        let speedup = gpu_tps / cpu_tps;
+
+        if speedup >= config.min_gpu_speedup {
+            Ok(GateResult::passed(
+                "gpu_speedup",
+                &format!(
+                    "GPU {:.1}x faster than CPU ({:.0} vs {:.0} tok/s) >= {:.1}x threshold",
+                    speedup, gpu_tps, cpu_tps, config.min_gpu_speedup
+                ),
+                Some(speedup),
+                Some(config.min_gpu_speedup),
+                duration,
+            ))
+        } else {
+            Ok(GateResult::failed(
+                "gpu_speedup",
+                &format!(
+                    "GPU {:.2}x faster than CPU ({:.0} vs {:.0} tok/s) < {:.1}x threshold",
+                    speedup, gpu_tps, cpu_tps, config.min_gpu_speedup
+                ),
+                Some(speedup),
+                Some(config.min_gpu_speedup),
+                duration,
+            ))
+        }
+    }
+
+    #[cfg(not(feature = "inference"))]
+    {
+        let _ = (path, config);
+        Ok(GateResult::skipped(
+            "gpu_speedup",
+            "Requires 'inference' feature",
+        ))
+    }
+}
+
 /// Check if Ollama is available by pinging the API
 fn check_ollama_available() -> bool {
     // Try to connect to Ollama API
@@ -823,6 +1012,7 @@ fn print_gate_result(result: &GateResult) {
         "golden_output" => "Golden Output",
         "throughput" => "Throughput",
         "ollama_parity" => "Ollama Parity",
+        "gpu_speedup" => "GPU Speedup",
         _ => &result.name,
     };
 
@@ -846,9 +1036,11 @@ mod tests {
         let config = QaConfig::default();
         assert!((config.min_tps - 100.0).abs() < f64::EPSILON);
         assert!((config.min_speedup - 0.4).abs() < f64::EPSILON);
+        assert!((config.min_gpu_speedup - 2.0).abs() < f64::EPSILON);
         assert!(!config.skip_golden);
         assert!(!config.skip_throughput);
         assert!(!config.skip_ollama);
+        assert!(!config.skip_gpu_speedup);
     }
 
     #[test]
