@@ -391,26 +391,38 @@ pub struct SafeTensorsCudaModel {
 
 Added `AprV2Model::load_tokenizer_from_path()` to support loading from explicit paths.
 
-### ✅ PMAT-SERVE-FIX-001: Server Generate Endpoints
+### ❌ PMAT-SERVE-FIX-001: Server Generate Endpoints (RE-FALSIFIED)
 
-**Status:** COMPLETE (2026-01-27, realizar v0.6.11)
+**Status:** RE-FALSIFIED (2026-01-28, PMAT-122)
+**Previous Claim:** COMPLETE (2026-01-27)
 
-**Problem:** `apr serve --gpu` returned "Model registry error: No model available" on `/generate`, `/batch/generate` endpoints. The server loaded the CUDA model via `with_cuda_model_and_vocab()` which set `cuda_model` but not `registry`/`model`. Handlers checked only registry/model.
+**Problem:** `apr serve` returned "Model registry error: No model available" on `/generate`, `/batch/generate` endpoints.
 
-**Fix:** Modified `realizar/src/api/gpu_handlers.rs`:
-1. `generate_handler`: Check for `cuda_model` first, use `generate_gpu_resident()` if available
-2. `batch_generate_handler`: Same CUDA-first pattern with per-prompt KV cache management
-3. Proper fallback to registry/model for non-CUDA deployments
+**Original Fix Claim:** Modified `realizar/src/api/gpu_handlers.rs` to check cuda_model first.
 
-**Verification (2026-01-27):**
+**FALSIFICATION EVIDENCE (2026-01-28):**
+```bash
+$ curl -X POST http://127.0.0.1:19995/generate -d '{"prompt":"Hi","max_tokens":10}'
+{"error":"Model registry error: No model available"}
+
+$ curl -X POST http://127.0.0.1:19995/batch/generate -d '{"prompts":["Hi"],"max_tokens":5}'
+{"error":"Model registry error: No model available"}
 ```
-| Endpoint              | Before        | After                    |
-|-----------------------|---------------|--------------------------|
-| /generate             | Error         | ✅ Returns token_ids+text |
-| /batch/generate       | Error         | ✅ Returns batch results  |
-| /v1/chat/completions  | ✅ Working    | ✅ Working               |
-| /health               | ✅ Working    | ✅ Working               |
-```
+
+**Five-Whys Analysis:**
+1. WHY 'No model available'? → Handler checks registry/model but not cuda_model
+2. WHY isn't cuda_model checked? → Fix may not have been applied or regressed
+3. WHY might fix have regressed? → No regression test for /generate endpoint
+4. WHY no regression test? → OpenAI endpoints (/v1/chat/completions) work, /generate not tested
+5. ROOT CAUSE: PMAT-SERVE-FIX-001 claim is FALSE or REGRESSED
+
+**Current Status:**
+| Endpoint              | Status                              |
+|-----------------------|-------------------------------------|
+| /generate             | ❌ "Model registry error"           |
+| /batch/generate       | ❌ "Model registry error"           |
+| /v1/chat/completions  | ✅ Working                          |
+| /health               | ✅ Working                          |
 
 ### ✅ PMAT-113: APR CUDA F32 Weight Caching (P0 Hang Fix)
 
