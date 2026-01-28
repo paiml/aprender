@@ -1134,7 +1134,7 @@ Uses aprender's own ML algorithms for diagnostics:
 |-------|-------|------------|--------|
 | **#165** | `apr convert` fails 1.5B SafeTensors | Matmul dimension mismatch (896 vs 1536) | Cannot convert SafeTensors to APR for larger models |
 | **#164** | `apr convert` fails for GGUF | "Unsupported format for conversion" | Cannot convert GGUF to APR |
-| **#163** | Cannot import GGUF (validation) | RMSNorm weights flagged as invalid (mean outside [-0.1, 0.1]) | False positive validation blocks valid GGUF imports |
+| ~~**#163**~~ | ~~Cannot import GGUF (validation)~~ | ✅ FIXED: Added GGUF attn_norm/ffn_norm patterns to RMSNorm detection | Now correctly validates GGUF RMSNorm weights |
 | **#162** | Pulled models don't show in `apr list` | Cache directory mismatch (`~/.cache/pacha` vs expected) | Users can't find downloaded models |
 | ~~**#161**~~ | ~~`apr chat` ignores `--max-tokens`~~ | ✅ FIXED (removed 128-token cap) | Now respects user's `--max-tokens` value |
 
@@ -1191,20 +1191,23 @@ Uses aprender's own ML algorithms for diagnostics:
 5. WHY no test? → [INVESTIGATION NEEDED - test only used 0.5B model]
 ```
 
-**#163: GGUF Import False Positive Validation**
+**#163: GGUF Import False Positive Validation (✅ FIXED)**
 ```
 1. WHY validation fails? → "mean=0.6402 outside expected range [-0.1, 0.1]"
-2. WHY checking mean? → Linear weight validation assumes mean≈0
-3. WHY RMSNorm fails? → RMSNorm gamma weights are NOT mean≈0 (they're centered around 1.0)
-4. WHY not distinguished? → Validator treats all weights the same
-5. WHY no RMSNorm exception? → [FIX: Add weight type classification, skip mean check for norm weights]
+2. WHY checking mean? → LINEAR_WEIGHT expectation matched instead of RMSNORM_WEIGHT
+3. WHY wrong match? → GGUF uses attn_norm/ffn_norm patterns not in detection list
+4. WHY not detected? → for_tensor() only checked input_layernorm/post_attention_layernorm/rms_norm
+5. WHY now fixed? → Added attn_norm/ffn_norm to RMSNORM_WEIGHT pattern matching
+
+FIX: converter.rs:208-212 now includes GGUF norm patterns
+Tests: test_tensor_expectation_gguf_attn_norm, test_tensor_expectation_gguf_ffn_norm
 ```
 
 ### C.6 Triage Priority Matrix
 
 | Priority | Criteria | Issues |
 |----------|----------|--------|
-| **P0** | Blocks core `apr chat`/`apr convert` workflow | ~~#161~~, #162, #163, #164, #165 |
+| **P0** | Blocks core `apr chat`/`apr convert` workflow | ~~#161~~, #162, ~~#163~~, #164, #165 |
 | **P1** | Data loss / safety risk | #166 |
 | **P1** | Missing expected feature | #160, #152 |
 | **P2** | Performance/UX optimization | #141, #153, #159, #167 |

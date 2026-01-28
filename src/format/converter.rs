@@ -203,11 +203,14 @@ impl TensorExpectation {
     /// Get expectation for a tensor name
     #[must_use]
     pub fn for_tensor(name: &str) -> Option<Self> {
-        // RMSNorm patterns (LLaMA, Qwen2, TinyLlama) - check BEFORE generic LayerNorm
+        // RMSNorm patterns (LLaMA, Qwen2, TinyLlama, GGUF) - check BEFORE generic LayerNorm
         // These use gamma initialized to 1.0, not the 0-centered LayerNorm
+        // Fix #163: Also match GGUF attn_norm/ffn_norm patterns
         if (name.contains("input_layernorm")
             || name.contains("post_attention_layernorm")
-            || name.contains("rms_norm"))
+            || name.contains("rms_norm")
+            || name.contains("attn_norm")  // GGUF pattern (blk.N.attn_norm.weight)
+            || name.contains("ffn_norm"))  // GGUF pattern (blk.N.ffn_norm.weight)
             && name.ends_with(".weight")
         {
             return Some(Self::RMSNORM_WEIGHT);
@@ -5806,6 +5809,26 @@ mod tests_import_errors {
     fn test_tensor_expectation_rms_norm() {
         let exp = TensorExpectation::for_tensor("rms_norm.weight");
         assert!(exp.is_some());
+    }
+
+    /// Fix #163: GGUF attn_norm pattern should be recognized as RMSNorm
+    #[test]
+    fn test_tensor_expectation_gguf_attn_norm() {
+        let exp = TensorExpectation::for_tensor("blk.0.attn_norm.weight");
+        assert!(exp.is_some());
+        let exp = exp.unwrap();
+        assert_eq!(exp.description, "RMSNorm weight (gamma)");
+        // Mean range should be wide enough for trained weights
+        assert!(exp.mean_range.0 <= 0.0 && exp.mean_range.1 >= 2.0);
+    }
+
+    /// Fix #163: GGUF ffn_norm pattern should be recognized as RMSNorm
+    #[test]
+    fn test_tensor_expectation_gguf_ffn_norm() {
+        let exp = TensorExpectation::for_tensor("blk.5.ffn_norm.weight");
+        assert!(exp.is_some());
+        let exp = exp.unwrap();
+        assert_eq!(exp.description, "RMSNorm weight (gamma)");
     }
 
     #[test]
