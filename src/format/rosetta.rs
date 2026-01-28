@@ -892,9 +892,72 @@ impl RosettaStone {
             });
         }
 
-        // TODO: Implement actual tensor data comparison
-        // For now, return passing if structure matches
-        Ok(VerificationReport::passing())
+        // Compare tensor statistics (Toyota Way: no SATD, implement now)
+        // Uses statistical comparison: if stats match closely, tensors are equivalent
+        let mut tensor_diffs = BTreeMap::new();
+        let mut max_diff: f32 = 0.0;
+        let mut total_diff: f32 = 0.0;
+        let mut diff_count: usize = 0;
+        let mut failed_tensors = Vec::new();
+
+        for (tensor_a, tensor_b) in inspection_a.tensors.iter().zip(inspection_b.tensors.iter()) {
+            // Check tensor names match
+            if tensor_a.name != tensor_b.name {
+                failed_tensors.push(format!(
+                    "Tensor name mismatch: {} vs {}",
+                    tensor_a.name, tensor_b.name
+                ));
+                continue;
+            }
+
+            // Check shapes match
+            if tensor_a.shape != tensor_b.shape {
+                failed_tensors.push(format!(
+                    "{}: shape mismatch {:?} vs {:?}",
+                    tensor_a.name, tensor_a.shape, tensor_b.shape
+                ));
+                continue;
+            }
+
+            // Compare statistics if available
+            match (&tensor_a.stats, &tensor_b.stats) {
+                (Some(stats_a), Some(stats_b)) => {
+                    let mean_diff = (stats_a.mean - stats_b.mean).abs();
+                    let std_diff = (stats_a.std - stats_b.std).abs();
+                    let min_diff = (stats_a.min - stats_b.min).abs();
+                    let max_val_diff = (stats_a.max - stats_b.max).abs();
+
+                    let tensor_max_diff = mean_diff.max(std_diff).max(min_diff).max(max_val_diff);
+                    tensor_diffs.insert(tensor_a.name.clone(), tensor_max_diff);
+
+                    max_diff = max_diff.max(tensor_max_diff);
+                    total_diff += tensor_max_diff;
+                    diff_count += 1;
+                }
+                _ => {
+                    // No stats available, assume matching if shapes match
+                    tensor_diffs.insert(tensor_a.name.clone(), 0.0);
+                }
+            }
+        }
+
+        let mean_diff = if diff_count > 0 {
+            total_diff / diff_count as f32
+        } else {
+            0.0
+        };
+
+        // Threshold: max_diff < 1e-4 is considered equivalent (float precision)
+        let is_equivalent = failed_tensors.is_empty() && max_diff < 1e-4;
+
+        Ok(VerificationReport {
+            is_equivalent,
+            max_diff,
+            mean_diff,
+            tensor_diffs,
+            changed_metadata: Vec::new(),
+            failed_tensors,
+        })
     }
 }
 
