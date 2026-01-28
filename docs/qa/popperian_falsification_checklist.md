@@ -17,9 +17,9 @@ This checklist is NOT designed to confirm that the software works. It is designe
 | IV. Performance | 10/15 | ✅ GPU 88.9x faster, 274 tok/s |
 | V. Rosetta Conversion | 2/10 | ⚠️ Partial testing |
 | VI. Jidoka & Safety | 5/15 | ✅ cargo deny passes, localhost binding verified |
-| VII. Observability | 8/10 | ✅ Trace, layer, JSON working |
+| VII. Observability | 9/10 | ✅ Trace, layer, JSON, apr check working |
 | VIII. T-Series | 5/10 | ✅ T100/T200 pass |
-| **TOTAL** | **55/100** | ⚠️ **55% CORROBORATED** |
+| **TOTAL** | **56/100** | ⚠️ **56% CORROBORATED** |
 
 **Last Updated:** 2026-01-28 (PMAT-112)
 **Verdict:** Significant progress. Key inference paths working.
@@ -146,7 +146,7 @@ This checklist is NOT designed to confirm that the software works. It is designe
 ### VII. Observability & Tracing (The Microscope) [10 Points]
 *Tests the "No Black Box" hypothesis.*
 
-**Run Date:** 2026-01-28 | **Score: 8/10**
+**Run Date:** 2026-01-28 | **Score: 9/10**
 
 - [x] **F-OBS-081**: **Trace Flag**: `--trace` generates JSON output. ✅ `--trace-output trace.json` works
 - [x] **F-OBS-082**: **Trace Schema**: JSON output matches defined schema (Layers, Timings, Tokens). ✅ version, model, inference
@@ -156,7 +156,7 @@ This checklist is NOT designed to confirm that the software works. It is designe
 - [x] **F-OBS-086**: **Verbose Mode**: `--verbose` logs model config, backend used (CPU/GPU), and thread count. ✅ 10/14 items
 - [x] **F-OBS-087**: **Server Logs**: Requests logged with Method, Path, Status, Latency. ✅ Prometheus metrics
 - [x] **F-OBS-088**: **Error Logs**: Stack traces hidden from API responses, logged to stderr. ✅ JSON errors only
-- [ ] **F-OBS-089**: **Check Command**: `apr check` runs Stages 1-10 successfully on valid model. ⏳ Not tested
+- [x] **F-OBS-089**: **Check Command**: `apr check` runs Stages 1-10 successfully on valid model. ✅ 10/10 STAGES PASSED
 - [x] **F-OBS-090**: **Check Failure**: `apr check` on broken model fails at specific stage (e.g., Tokenizer). ✅ Error handling works
 
 ### VIII. The Severe Testing "T-Series" (The Final Boss) [10 Points]
