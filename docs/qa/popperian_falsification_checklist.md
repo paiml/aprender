@@ -16,10 +16,10 @@ This checklist is NOT designed to confirm that the software works. It is designe
 | III. Output Quality | 14/15 | ✅ Core tests, system prompt, determinism, whitespace, special tokens |
 | IV. Performance | 10/15 | ✅ GPU 88.9x faster, 274 tok/s |
 | V. Rosetta Conversion | 5/10 | ⚠️ ST→APR works, parity verified |
-| VI. Jidoka & Safety | 7/15 | ✅ cargo deny, localhost, offline, sandbox |
+| VI. Jidoka & Safety | 8/15 | ✅ cargo deny, localhost, offline, sandbox, unsafe audit |
 | VII. Observability | 10/10 | ✅ All observability items verified |
 | VIII. T-Series | 8/10 | ✅ T100/T200 pass, CI gate, 7948 tests, 2+2=4 |
-| **TOTAL** | **72/100** | ⚠️ **72% CORROBORATED** |
+| **TOTAL** | **73/100** | ⚠️ **73% CORROBORATED** |
 
 **Last Updated:** 2026-01-28 (PMAT-112)
 **Verdict:** Significant progress. Key inference paths working.
@@ -118,13 +118,13 @@ This checklist is NOT designed to confirm that the software works. It is designe
 - [ ] **F-CONV-061**: **Metadata Preservation**: Converted model retains architecture/tokenizer info. ⏳ Not tested
 - [ ] **F-CONV-062**: **Quantization Preservation**: F32 in -> F32 out (unless quant flag used). ⏳ Not tested
 - [x] **F-CONV-063**: **File Size**: APR file size roughly equivalent to source tensor data size. ✅ 988MB ST → 2.5GB APR (F32)
-- [ ] **F-CONV-064**: **Overwrite Protection**: Converter refuses to overwrite existing file without `--force`. ⏳ Needs verification
+- [ ] **F-CONV-064**: **Overwrite Protection**: Converter refuses to overwrite existing file without `--force`. ❌ No check implemented
 - [ ] **F-CONV-065**: **Partial Convert**: Interrupting conversion deletes partial file. ⏳ Not tested
 
 ### VI. Jidoka & Safety (The Andon Cord) [15 Points]
 *Tests the "Stop on Defect" hypothesis.*
 
-**Run Date:** 2026-01-28 | **Score: 7/15**
+**Run Date:** 2026-01-28 | **Score: 8/15**
 
 - [ ] **F-SAFE-066**: **NaN Detection**: Injecting NaN into weights -> Inference Halts (Panic/Error), does not output garbage. ⏳ Not tested
 - [ ] **F-SAFE-067**: **Inf Detection**: Intermediate activation overflow -> Inference Halts. ⏳ Not tested
@@ -132,7 +132,7 @@ This checklist is NOT designed to confirm that the software works. It is designe
 - [ ] **F-SAFE-069**: **Vocab Bounds**: Token ID >= vocab_size -> Error (no out-of-bounds read). ⏳ Not tested
 - [ ] **F-SAFE-070**: **Embedding Bounds**: Embedding lookup with invalid index -> Error. ⏳ Not tested
 - [ ] **F-SAFE-071**: **Dimension Mismatch**: Matrix mult with wrong shapes -> Explicit panic "Shape mismatch", not segfault. ⏳ Not tested
-- [ ] **F-SAFE-072**: **Unsafe Code**: Minimal `unsafe` blocks audit (grep `unsafe`). ⏳ Not tested
+- [x] **F-SAFE-072**: **Unsafe Code**: Minimal `unsafe` blocks audit (grep `unsafe`). ✅ 1 block in mmap.rs, well-documented SAFETY comment
 - [x] **F-SAFE-073**: **Sandboxing**: `apr run` does not write outside CWD or `/tmp`. ✅ No files created in home
 - [x] **F-SAFE-074**: **Network**: `apr run` (offline mode) makes NO network requests. ✅ --offline flag available
 - [x] **F-SAFE-075**: **API Security**: `apr serve` binds to localhost by default (not 0.0.0.0). ✅ --host default: 127.0.0.1
