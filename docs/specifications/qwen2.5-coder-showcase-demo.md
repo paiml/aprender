@@ -1,11 +1,11 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 5.20.0
+**Version:** 5.21.0
 **Status:** ⚠️ PARTIALLY VERIFIED (GGUF works, 5 paths FALSIFIED)
-**Popperian Score:** 84/100 (32/38 Corroborated, 5 FALSIFIED, 1 PARTIAL)
+**Popperian Score:** 87/100 (39/45 Corroborated, 5 FALSIFIED, 1 PARTIAL)
 **Author:** PAIML Engineering
 **Date:** 2026-01-28
-**Last Falsification Run:** 2026-01-28 (PMAT-122: 38 tests, 5 falsified including PMAT-114 and PMAT-SERVE-FIX-001)
+**Last Falsification Run:** 2026-01-28 (PMAT-122: 45 tests, GGUF Modality Matrix 6/6 verified)
 **Quality Philosophy:** Toyota Way + Popperian Falsification (Zero SATD, Stop-the-Line)
 
 ---
@@ -1455,7 +1455,15 @@ Following Popper's critical rationalism, we do not seek to *confirm* that infere
 | F-VERBOSE-001 | `apr run --verbose` | Shows arch/layers/backend | Shows all | ✅ **CORROBORATED** |
 | F-CHATTEMPLATE | `apr chat model.gguf` | Auto-detect | "Detected ChatML" | ✅ **CORROBORATED** |
 
-**Summary:** 32/38 tests CORROBORATED, 5 FALSIFIED, 1 PARTIAL
+**Summary:** 39/45 tests CORROBORATED, 5 FALSIFIED, 1 PARTIAL
+
+**GGUF Modality Matrix (Lines 514-526) - ALL VERIFIED:**
+- F-MODALITY-001: `apr run` (no trace) → "4" ✅ **CORROBORATED**
+- F-MODALITY-002: `apr run --trace` → Per-layer timing + output ✅ **CORROBORATED**
+- F-MODALITY-003: `apr chat` (no trace) → "3+3 is 6" ✅ **CORROBORATED**
+- F-MODALITY-004: `apr chat --inspect` → Token trace ✅ **CORROBORATED**
+- F-MODALITY-005: `apr serve` → /health + /v1/chat/completions ✅ **CORROBORATED**
+- F-PERF-TABLE-001: GPU 266 tok/s, CPU 3 tok/s ✅ **CORROBORATED**
 
 **Additional Tests (PMAT-122 - Extended):**
 - F-OLLAMA-PARITY: 5.3x Ollama (264 vs 50 tok/s) ✅ **CORROBORATED**
