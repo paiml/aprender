@@ -126,7 +126,8 @@ trueno-viz = { version = "0.1.19", optional = true, default-features = false, fe
 trueno-zram-core = { version = "0.2", optional = true }
 
 # Model registry and caching (Ollama-like model management)
-pacha = { version = "0.2.3", default-features = false, features = ["remote"] }
+# GH-162 FIX: Use local path until fix is published to crates.io
+pacha = { path = "../../../pacha", default-features = false, features = ["remote"] }
 
 [[example]]
 name = "probar_tui_testing"
