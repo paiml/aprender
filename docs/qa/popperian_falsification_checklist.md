@@ -11,15 +11,15 @@ This checklist is NOT designed to confirm that the software works. It is designe
 
 | Section | Score | Status |
 |---------|-------|--------|
-| I. Metaphysical Baseline | 8/10 | ⚠️ Binary size exceeds limit |
+| I. Metaphysical Baseline | 9/10 | ✅ Binary 21MB (stripped), SIGINT not tested |
 | II. Loader Gauntlet | 9/15 | ⚠️ Unknown arch, tokenizer verified |
-| III. Output Quality | 12/15 | ✅ Core tests, system prompt, determinism, empty prompt |
+| III. Output Quality | 14/15 | ✅ Core tests, system prompt, determinism, whitespace, special tokens |
 | IV. Performance | 10/15 | ✅ GPU 88.9x faster, 274 tok/s |
 | V. Rosetta Conversion | 5/10 | ⚠️ ST→APR works, parity verified |
 | VI. Jidoka & Safety | 7/15 | ✅ cargo deny, localhost, offline, sandbox |
 | VII. Observability | 10/10 | ✅ All observability items verified |
 | VIII. T-Series | 8/10 | ✅ T100/T200 pass, CI gate, 7948 tests, 2+2=4 |
-| **TOTAL** | **69/100** | ⚠️ **69% CORROBORATED** |
+| **TOTAL** | **72/100** | ⚠️ **72% CORROBORATED** |
 
 **Last Updated:** 2026-01-28 (PMAT-112)
 **Verdict:** Significant progress. Key inference paths working.
@@ -29,12 +29,12 @@ This checklist is NOT designed to confirm that the software works. It is designe
 ### I. The Metaphysical Baseline (Existence & Hygiene) [10 Points]
 *Tests if the artifacts exist and are observable.*
 
-**Run Date:** 2026-01-27 | **Score: 8/10**
+**Run Date:** 2026-01-28 | **Score: 9/10**
 
 - [x] **F-META-001**: `apr --version` returns a valid semantic version string (not empty, not error). ✅ `apr 0.2.12`
 - [x] **F-META-002**: `apr --help` returns valid help text with all subcommands (`run`, `chat`, `serve`, `check`, `convert`). ✅
 - [x] **F-META-003**: `apr run --help` shows model path argument and generation flags. ✅
-- [ ] **F-META-004**: Binary size is within expected bounds (< 50MB release, < 200MB debug). ❌ **290MB** (debug symbols)
+- [x] **F-META-004**: Binary size is within expected bounds (< 50MB release, < 200MB debug). ✅ **21MB** stripped release
 - [x] **F-META-005**: Execution on a clean environment (no `.env`, no cache) fails gracefully with clear instructions, not a panic. ✅
 - [x] **F-META-006**: `apr run` with a non-existent file path returns "File not found" error code (not panic). ✅ Exit 3
 - [x] **F-META-007**: `apr run` with a directory path instead of file returns appropriate error. ✅ "Is a directory"
@@ -66,7 +66,7 @@ This checklist is NOT designed to confirm that the software works. It is designe
 ### III. The Output Quality Invariants (Strict Verification) [15 Points]
 *Tests if the output is semantically valid. "2+2=4".*
 
-**Run Date:** 2026-01-28 | **Score: 12/15**
+**Run Date:** 2026-01-28 | **Score: 14/15**
 
 - [x] **F-QUAL-026**: **Deterministic Arithmetic**: `apr run ... "2+2="` -> Output contains "4". ✅ GGUF CPU: "4"
 - [x] **F-QUAL-027**: **Deterministic Arithmetic (GPU)**: GPU run "2+2=" -> Output contains "4". ✅ GGUF GPU: "4"
@@ -81,8 +81,8 @@ This checklist is NOT designed to confirm that the software works. It is designe
 - [x] **F-QUAL-036**: **Temperature 0**: Two consecutive runs with `-t 0` produce bit-identical text output. ✅ Verified
 - [ ] **F-QUAL-037**: **Context Window**: Input > 4096 tokens -> Error "Context limit exceeded" or proper truncation (no silent failure).
 - [x] **F-QUAL-038**: **Empty Prompt**: `apr run ... ""` -> Handles gracefully (generates or exits, no panic). ✅ Generates code
-- [ ] **F-QUAL-039**: **Whitespace Prompt**: `apr run ... "   "` -> Handles gracefully.
-- [ ] **F-QUAL-040**: **Special Tokens**: Input containing `<|im_end|>` is sanitized or handled per policy.
+- [x] **F-QUAL-039**: **Whitespace Prompt**: `apr run ... "   "` -> Handles gracefully. ✅ Generates code
+- [x] **F-QUAL-040**: **Special Tokens**: Input containing `<|im_end|>` is sanitized or handled per policy. ✅ Handled gracefully
 
 ### IV. Performance & Resource Falsification [15 Points]
 *Tests the "Efficient Inference" hypothesis.*
