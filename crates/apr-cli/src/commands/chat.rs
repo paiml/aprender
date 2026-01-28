@@ -853,7 +853,7 @@ mod realizar_chat {
             let model = OwnedQuantizedModel::from_mapped(&mapped)
                 .map_err(|e| format!("Failed to create GGUF model: {e}"))?;
 
-            let practical_max = config.max_tokens.min(128);
+            let practical_max = config.max_tokens;
 
             // ChatML stop tokens for Qwen2/ChatML models
             let gen_config = QuantizedGenerateConfig {
@@ -1019,7 +1019,7 @@ mod realizar_chat {
 
                                     // Generate using CUDA path with KV cache (greedy sampling)
                                     // EOS tokens: <|im_end|> = 151645
-                                    let max_tokens = config.max_tokens.min(128);
+                                    let max_tokens = config.max_tokens;
                                     return cuda_model
                                         .generate_cuda_with_cache(prompt, max_tokens, 151645)
                                         .map_err(|e| format!("APR CUDA generate failed: {e}"));
@@ -1044,7 +1044,7 @@ mod realizar_chat {
 
             // Use generate_with_cache for O(n) KV-cached generation (not O(n²) forward)
             let gen_config = GenerateConfig {
-                max_tokens: config.max_tokens.min(128),
+                max_tokens: config.max_tokens,
                 temperature: config.temperature,
                 top_p: config.top_p,
                 top_k: 0,
@@ -1070,7 +1070,7 @@ mod realizar_chat {
                 .map_err(|e| format!("Failed to create GGUF model: {e}"))?;
 
             // With KV cache, we can generate more tokens efficiently
-            let practical_max = config.max_tokens.min(128);
+            let practical_max = config.max_tokens;
 
             let is_gqa = model.config.num_kv_heads < model.config.num_heads;
             let gqa_note = if is_gqa {
@@ -1166,7 +1166,7 @@ mod realizar_chat {
 
                 // Generate with GPU acceleration
                 let tokens = cuda_model
-                    .generate(prompt, config.max_tokens.min(128), eos_id)
+                    .generate(prompt, config.max_tokens, eos_id)
                     .map_err(|e| format!("SafeTensors CUDA generate failed: {e}"))?;
 
                 // PMAT-120 DEBUG: Log generated token IDs
@@ -1196,7 +1196,7 @@ mod realizar_chat {
 
             // Use KV-cached generation for O(n) instead of O(n²)
             let gen_config = GenerateConfig {
-                max_tokens: config.max_tokens.min(128),
+                max_tokens: config.max_tokens,
                 temperature: config.temperature,
                 top_p: config.top_p,
                 top_k: 0,
@@ -1422,13 +1422,13 @@ impl ChatSession {
         let output_ids = if config.inspect {
             self.model.generate_profiled(
                 &input_ids,
-                config.max_tokens.min(128), // Limit for speed
+                config.max_tokens, // Limit for speed
                 config.temperature,
             )
         } else {
             self.model.generate(
                 &input_ids,
-                config.max_tokens.min(128), // Limit for speed
+                config.max_tokens, // Limit for speed
                 config.temperature,
                 config.top_p,
             )

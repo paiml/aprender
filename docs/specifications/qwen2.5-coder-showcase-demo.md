@@ -1,6 +1,6 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 5.14.0
+**Version:** 5.15.0
 **Status:** ⭐ VERIFIED (All inference paths working)
 **Popperian Score:** 100/100 ⭐ (100% Corroborated, ALL 8 sections PERFECT)
 **Author:** PAIML Engineering
@@ -1136,7 +1136,7 @@ Uses aprender's own ML algorithms for diagnostics:
 | **#164** | `apr convert` fails for GGUF | "Unsupported format for conversion" | Cannot convert GGUF to APR |
 | **#163** | Cannot import GGUF (validation) | RMSNorm weights flagged as invalid (mean outside [-0.1, 0.1]) | False positive validation blocks valid GGUF imports |
 | **#162** | Pulled models don't show in `apr list` | Cache directory mismatch (`~/.cache/pacha` vs expected) | Users can't find downloaded models |
-| **#161** | `apr chat` ignores `--max-tokens` | Flag parsed but not propagated to inference config | Stuck at 128 tokens regardless of flag |
+| ~~**#161**~~ | ~~`apr chat` ignores `--max-tokens`~~ | ✅ FIXED (removed 128-token cap) | Now respects user's `--max-tokens` value |
 
 ### C.2 P1 Bugs (Data Loss / Safety Risk)
 
@@ -1204,7 +1204,7 @@ Uses aprender's own ML algorithms for diagnostics:
 
 | Priority | Criteria | Issues |
 |----------|----------|--------|
-| **P0** | Blocks core `apr chat`/`apr convert` workflow | #161, #162, #163, #164, #165 |
+| **P0** | Blocks core `apr chat`/`apr convert` workflow | ~~#161~~, #162, #163, #164, #165 |
 | **P1** | Data loss / safety risk | #166 |
 | **P1** | Missing expected feature | #160, #152 |
 | **P2** | Performance/UX optimization | #141, #153, #159, #167 |
