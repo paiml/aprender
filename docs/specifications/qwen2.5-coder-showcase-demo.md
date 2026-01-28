@@ -1443,10 +1443,20 @@ Following Popper's critical rationalism, we do not seek to *confirm* that infere
 | F-VERBOSE-001 | `apr run --verbose` | Shows arch/layers/backend | Shows all | ✅ **CORROBORATED** |
 | F-CHATTEMPLATE | `apr chat model.gguf` | Auto-detect | "Detected ChatML" | ✅ **CORROBORATED** |
 
-**Summary:** 25/28 tests CORROBORATED, 2 FALSIFIED, 1 PARTIAL
-- ❌ F-APR-GGUF: APR from GGUF produces garbage (Q5_0/Q4_0 dequantization)
-- ❌ F-APR-ST: APR from SafeTensors produces wrong output
+**Summary:** 28/32 tests CORROBORATED, 3 FALSIFIED, 1 PARTIAL
+
+**Additional Tests (PMAT-122):**
+- F-OLLAMA-PARITY: 5.3x Ollama (264 vs 50 tok/s) ✅ **CORROBORATED**
+- F-FORMAT-PARITY: GGUF argmax=17 == SafeTensors argmax=17 ✅ **CORROBORATED**
+- F-MMAP-001: Memory mapping working ✅ **CORROBORATED**
+- F-OFFLINE-001: Sovereign AI offline mode ✅ **CORROBORATED**
+
+**Falsified Paths:**
+- ❌ F-APR-GGUF: APR from GGUF → garbage (PAD tokens)
+- ❌ F-APR-ST: APR from SafeTensors → garbage (PMAT-114 RE-FALSIFIED)
 - ⚠️ F-SAFETENSORS-GPU: Works via `apr chat`, NOT via `apr run`
+
+**Root Cause:** APR converter/loader bugs (validation 4/100), SafeTensors GPU not in `apr run`
 
 ### 13.7 Cross-Format Parity (The argmax Invariant)
 
