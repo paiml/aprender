@@ -872,13 +872,8 @@ pub(crate) fn run(model_path: &Path, config: &ServerConfig) -> Result<()> {
         println!("  GET  /metrics        - Prometheus metrics");
     }
 
-    println!();
-    println!(
-        "{}",
-        format!("Server ready at http://{}", config.bind_addr())
-            .green()
-            .bold()
-    );
+    // GH-153: "Server ready" message now printed AFTER TcpListener::bind succeeds
+    // in start_*_server functions, not here (was misleading since bind happens later)
     println!();
     println!("{}", "Press Ctrl+C to stop".dimmed());
 
