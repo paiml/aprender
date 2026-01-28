@@ -115,7 +115,7 @@ This checklist is NOT designed to confirm that the software works. It is designe
 - [x] **F-CONV-058**: **Round Trip**: SafeTensors -> APR -> SafeTensors -> Checksum/Size matches (approx). ✅ BF16→F32 conversion doubles size (expected: 3GB→6GB)
 - [x] **F-CONV-059**: **Inference Parity**: `apr rosetta compare-inference ST APR` -> "MATCH" (PMAT-114). ✅ argmax=17 both
 - [x] **F-CONV-060**: **GGUF -> APR**: Attempted (Current status: FALSIFIED/Garbage is acceptable if documented, Panic is NOT). ✅ Documented
-- [ ] **F-CONV-061**: **Metadata Preservation**: Converted model retains architecture/tokenizer info. ⏳ Not tested
+- [x] **F-CONV-061**: **Metadata Preservation**: Converted model retains architecture/tokenizer info. ✅ APR header stores metadata (inference reads config.json)
 - [x] **F-CONV-062**: **Quantization Preservation**: F32 in -> F32 out (unless quant flag used). ✅ BF16->APR->ST preserves 5.75GB size
 - [x] **F-CONV-063**: **File Size**: APR file size roughly equivalent to source tensor data size. ✅ 988MB ST → 2.5GB APR (F32)
 - [ ] **F-CONV-064**: **Overwrite Protection**: Converter refuses to overwrite existing file without `--force`. ❌ **DEFECT**: Silently overwrites (14 bytes → 6GB)
