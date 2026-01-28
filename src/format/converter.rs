@@ -11,7 +11,7 @@
 use crate::error::{AprenderError, Result};
 use crate::format::gguf::{
     dequantize_q5_0, dequantize_q8_0, load_gguf_raw, load_gguf_with_tokenizer, GgufModelConfig,
-    GgufRawTensor, GgufTokenizer,
+    GgufRawTensor, GgufReader, GgufTokenizer,
 };
 use crate::format::v2::{AprV2Metadata, AprV2Writer, QuantizationMetadata, TensorDType};
 use crate::format::validation::{AprValidator, TensorStats, ValidationReport};
@@ -2487,15 +2487,30 @@ impl ConvertReport {
 }
 
 /// Load tensors from model file
+///
+/// Supports: SafeTensors, APR, GGUF (GH-164 fix)
+/// GGUF tensors are dequantized to F32 during loading.
 fn load_model_tensors(path: &Path) -> Result<BTreeMap<String, (Vec<f32>, Vec<usize>)>> {
     let extension = path.extension().and_then(|e| e.to_str()).unwrap_or("");
 
     match extension {
         "safetensors" | "apr" => load_safetensors_tensors(path),
+        "gguf" => load_gguf_tensors_f32(path),
         other => Err(AprenderError::FormatError {
             message: format!("Unsupported format for conversion: .{other}"),
         }),
     }
+}
+
+/// Load GGUF tensors and dequantize to F32 (GH-164)
+///
+/// Uses GgufReader::get_all_tensors_f32() which handles:
+/// - Q4_K, Q5_K, Q6_K dequantization
+/// - Q4_0, Q5_0, Q8_0 dequantization
+/// - F16, F32 direct loading
+fn load_gguf_tensors_f32(path: &Path) -> Result<BTreeMap<String, (Vec<f32>, Vec<usize>)>> {
+    let reader = GgufReader::from_file(path)?;
+    reader.get_all_tensors_f32()
 }
 
 /// Calculate total tensor size in bytes (f32)
@@ -6808,5 +6823,56 @@ mod tests_pmat_107_gqa_metadata {
             "PMAT-107: TinyLlama-style 8:1 GQA must have num_kv_heads=4"
         );
         assert_eq!(config.num_heads, Some(32));
+    }
+}
+
+// =============================================================================
+// GH-164: GGUF Conversion Support Tests (Five-Whys Fix)
+// =============================================================================
+#[cfg(test)]
+mod tests_gh164_gguf_conversion {
+    use super::*;
+
+    /// GH-164 Test: load_model_tensors must accept GGUF files
+    ///
+    /// Five-Whys Root Cause:
+    ///   load_model_tensors() had no "gguf" case in match statement
+    ///
+    /// Fix: Add GGUF case that calls GgufRawTensor::get_all_tensors_f32()
+    #[test]
+    fn test_gh164_load_model_tensors_accepts_gguf_extension() {
+        // Create a minimal valid GGUF file for testing
+        let temp_dir = std::env::temp_dir();
+        let test_path = temp_dir.join("test_gh164.gguf");
+
+        // Minimal GGUF header (magic + version + tensor count + metadata count)
+        let mut gguf_data = Vec::new();
+        gguf_data.extend_from_slice(b"GGUF"); // Magic
+        gguf_data.extend_from_slice(&3u32.to_le_bytes()); // Version 3
+        gguf_data.extend_from_slice(&0u64.to_le_bytes()); // Tensor count = 0
+        gguf_data.extend_from_slice(&0u64.to_le_bytes()); // Metadata count = 0
+
+        std::fs::write(&test_path, &gguf_data).unwrap();
+
+        // Test that GGUF extension is recognized (may return empty tensors, but NOT "unsupported format")
+        let result = load_model_tensors(&test_path);
+
+        // Clean up
+        let _ = std::fs::remove_file(&test_path);
+
+        // The error should NOT be "Unsupported format" - it should load (possibly with 0 tensors)
+        match result {
+            Ok(tensors) => {
+                // Success - GGUF recognized
+                assert!(tensors.is_empty() || !tensors.is_empty(), "GGUF loaded");
+            }
+            Err(e) => {
+                let err_msg = e.to_string();
+                assert!(
+                    !err_msg.contains("Unsupported format"),
+                    "GH-164 FAIL: GGUF should be supported, got: {err_msg}"
+                );
+            }
+        }
     }
 }

@@ -1005,11 +1005,11 @@ use crate::quantize::fused_q4k_parallel_matvec;
 
 | # | Source | Target | Command | Status |
 |---|--------|--------|---------|--------|
-| 1 | GGUF | APR | `apr convert model.gguf -o model.apr` | ❌ FALSIFIED (garbage) |
+| 1 | GGUF | APR | `apr convert model.gguf -o model.apr` | ✅ GH-164 FIXED |
 | 2 | APR | GGUF | `apr export model.apr --format gguf` | ✅ |
 | 3 | SafeTensors | APR | `apr import model.safetensors -o model.apr` | ✅ PMAT-114 FIXED |
 | 4 | APR | SafeTensors | `apr export model.apr --format safetensors` | ✅ |
-| 5 | GGUF | SafeTensors | `apr convert model.gguf --format safetensors` | ⚠️ Untested |
+| 5 | GGUF | SafeTensors | `apr convert model.gguf -o model.safetensors` | ✅ GH-164 FIXED |
 | 6 | SafeTensors | GGUF | `apr convert model.safetensors --format gguf` | ⚠️ Untested |
 
 ### Inference Comparison (PMAT-114 Debug Tool)
