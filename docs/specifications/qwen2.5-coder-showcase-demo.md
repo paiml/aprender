@@ -751,12 +751,12 @@ Completed in 1.83s (cached)
 | II-B: APR Support | 10/15 | ⚠️ Compression, streaming |
 | II-C: SafeTensors | 7/15 | ⚠️ F16, BF16, sharded |
 | III-B: GPU Backend | 20/25 | ✅ GGUF GPU 274 tok/s, 5 gates pass (PMAT-106 CLOSED) |
-| IV: Correctness | ~15/50 | ⚠️ Many unchecked |
+| IV: Correctness | 35/50 | ✅ Arithmetic, determinism, no-garbage, empty/whitespace prompts pass |
 | V: Tracing | 30/40 | ✅ Basic, layer, JSON output working (APR-TRACE-001) |
 | VI: Server | 25/30 | ✅ Health, metrics, v1/completions, chat work (apr serve verified) |
-| VIII: Integration | ~10/20 | ⚠️ Partial |
+| VIII: Integration | 15/20 | ✅ apr chat verified, ChatML template auto-detected |
 
-**Total Estimated: ~205-235/300 (68-78%)**
+**Total Estimated: ~230-260/300 (77-87%)**
 
 ---
 
