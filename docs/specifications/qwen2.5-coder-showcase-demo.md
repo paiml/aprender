@@ -1,11 +1,11 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 5.23.0
+**Version:** 5.24.0
 **Status:** ⚠️ PARTIALLY VERIFIED (GGUF Q4_K/Q6_K work, 6 paths FALSIFIED)
-**Popperian Score:** 86/100 (43/50 Corroborated, 6 FALSIFIED, 1 PARTIAL)
+**Popperian Score:** 87/100 (47/54 Corroborated, 6 FALSIFIED, 1 PARTIAL)
 **Author:** PAIML Engineering
 **Date:** 2026-01-28
-**Last Falsification Run:** 2026-01-28 (PMAT-122: 50 tests, Q6_K verified)
+**Last Falsification Run:** 2026-01-28 (PMAT-122: 54 tests, CLI commands verified)
 **Quality Philosophy:** Toyota Way + Popperian Falsification (Zero SATD, Stop-the-Line)
 
 ---
@@ -1493,7 +1493,7 @@ Following Popper's critical rationalism, we do not seek to *confirm* that infere
 | F-VERBOSE-001 | `apr run --verbose` | Shows arch/layers/backend | Shows all | ✅ **CORROBORATED** |
 | F-CHATTEMPLATE | `apr chat model.gguf` | Auto-detect | "Detected ChatML" | ✅ **CORROBORATED** |
 
-**Summary:** 43/50 tests CORROBORATED, 6 FALSIFIED, 1 PARTIAL
+**Summary:** 47/54 tests CORROBORATED, 6 FALSIFIED, 1 PARTIAL
 
 **GGUF Modality Matrix (Lines 514-526) - ALL VERIFIED (Q4_K/Q5_K/Q6_K):**
 - F-MODALITY-001: `apr run` (no trace) → "4" ✅ **CORROBORATED**
@@ -1520,6 +1520,10 @@ Following Popper's critical rationalism, we do not seek to *confirm* that infere
 - F-Q4_0-001: GGUF Q4_0 inference ❌ **FALSIFIED** (produces garbage "!!!!!!!!!!"/Chinese)
 - F-Q6_K-001: GGUF Q6_K inference (1.5B model) ✅ **CORROBORATED** ("The sum of 2 and 2 is")
 - F-MERGE-001: `apr merge` command exists ✅ **CORROBORATED** (--help works)
+- F-BENCH-002: `apr bench --fast` GPU benchmark (281.9 tok/s) ✅ **CORROBORATED** (>= 10 tok/s)
+- F-PUBLISH-001: `apr publish` command exists ✅ **CORROBORATED** (--help works)
+- F-CBTOP-001: `apr cbtop` command exists ✅ **CORROBORATED** (--help works)
+- F-PROBAR-001: `apr probar` command exists ✅ **CORROBORATED** (--help works)
 
 **Falsified Paths (6 total):**
 - ❌ F-APR-GGUF: APR from GGUF → garbage (PAD tokens)
