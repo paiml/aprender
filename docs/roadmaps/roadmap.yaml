@@ -2136,11 +2136,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-115: Fix SafeTensors GPU silent fallback (Jidoka violation)'
-  status: inprogress
+  status: completed
   priority: critical
   assigned_to: null
   created: 2026-01-27T21:09:47Z
-  updated: 2026-01-27T21:09:51.113454281+00:00
+  updated: 2026-01-27T21:14:24Z
   spec: null
   acceptance_criteria: []
   phases: []
@@ -2150,4 +2150,144 @@ roadmap:
   - jidoka
   - safetensors
   - gpu
+  notes: null
+- id: PMAT-114
+  github_issue: null
+  item_type: task
+  title: 'PMAT-116: Implement SafeTensors GPU inference'
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-01-28T07:19:40Z
+  updated: 2026-01-28T07:23:21Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - safetensors
+  - gpu
+  - cuda
+  - spec
+  notes: null
+- id: PMAT-115
+  github_issue: null
+  item_type: task
+  title: 'PMAT-117: Implement SafeTensors GPU inference (from spec)'
+  status: inprogress
+  priority: critical
+  assigned_to: null
+  created: 2026-01-28T07:44:31Z
+  updated: 2026-01-28T07:44:35.931134400+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - safetensors
+  - gpu
+  - cuda
+  - implementation
+  notes: null
+- id: PMAT-116
+  github_issue: null
+  item_type: task
+  title: 'New task: PMAT-116'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-01-28T08:06:27.533748827+00:00
+  updated: 2026-01-28T08:06:27.533748827+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-117
+  github_issue: null
+  item_type: task
+  title: Fix SATD violations in apr-cli (Toyota Way compliance)
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-01-28T08:58:23Z
+  updated: 2026-01-28T08:58:28.300749415+00:00
+  spec: null
+  acceptance_criteria:
+  - Fix 4 TODO/FIXME/HACK markers in apr-cli per Toyota Way zero-SATD policy
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-118
+  github_issue: null
+  item_type: task
+  title: 'F-PERF-042: GPU > 2x CPU throughput verification'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-01-28T09:08:38Z
+  updated: 2026-01-28T09:08:47.496264857+00:00
+  spec: null
+  acceptance_criteria:
+  - Implement automated verification that GPU inference achieves >2x CPU throughput. Add to CI quality gates.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-119
+  github_issue: null
+  item_type: task
+  title: 'F-QUAL-032: Argmax parity GGUF vs SafeTensors QA gate'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-01-28T09:19:57Z
+  updated: 2026-01-28T09:20:01.794783588+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Implement QA gate to verify argmax parity between GGUF and SafeTensors formats for the same model. The invariant is: argmax(forward_gguf(M, tokens)) == argmax(forward_safetensors(M, tokens)). This prevents drift where one format produces subtle errors.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-120
+  github_issue: null
+  item_type: task
+  title: 'DEFECT: SafeTensors GPU chat produces garbage (Andon)'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-01-28T10:38:39Z
+  updated: 2026-01-28T11:07:18.685600198+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Observed: SafeTensors GPU chat produces garbage output despite spec claiming CORROBORATED. This is a STOP THE LINE defect requiring five-whys analysis. Evidence: ''apr chat model.safetensors --gpu'' produced garbage Chinese characters instead of ''2+2=4''.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-121
+  github_issue: null
+  item_type: task
+  title: 'FALSIFY-SPEC-001: Systematic falsification of qwen2.5-coder-showcase-demo.md claims'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-01-28T17:42:30Z
+  updated: 2026-01-28T17:42:36.672183931+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
   notes: null
