@@ -1,8 +1,8 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 5.3.0
+**Version:** 5.4.0
 **Status:** ✅ VERIFIED (All inference paths working)
-**Popperian Score:** 73/100 (73% Corroborated)
+**Popperian Score:** 75/100 (75% Corroborated)
 **Author:** PAIML Engineering
 **Date:** 2026-01-28
 **Quality Philosophy:** Toyota Way + Popperian Falsification (Zero SATD, Stop-the-Line)
@@ -1124,7 +1124,71 @@ Uses aprender's own ML algorithms for diagnostics:
 
 ---
 
-## Appendix C: Historical Bug Fixes (2026-01-21 to 2026-01-26)
+## Appendix C: Open GitHub Issues (Toyota Way: Known Defects)
+
+> **Toyota Way Reminder:** These are NOT "tech debt" or "nice to haves." These are **known defects** that we've honestly documented. Each blocks a user workflow. Each requires a stop-the-line response.
+
+### C.1 P0 Defects (Blocks Core Workflow)
+
+| Issue | Title | Root Cause | Impact |
+|-------|-------|------------|--------|
+| **#165** | `apr convert` fails 1.5B SafeTensors | Matmul dimension mismatch (896 vs 1536) | Cannot convert SafeTensors to APR for larger models |
+| **#164** | `apr convert` fails for GGUF | "Unsupported format for conversion" | Cannot convert GGUF to APR |
+| **#163** | Cannot import GGUF (validation) | RMSNorm weights flagged as invalid (mean outside [-0.1, 0.1]) | False positive validation blocks valid GGUF imports |
+| **#162** | Pulled models don't show in `apr list` | Cache directory mismatch (`~/.cache/pacha` vs expected) | Users can't find downloaded models |
+| **#161** | `apr chat` ignores `--max-tokens` | Flag parsed but not propagated to inference config | Stuck at 128 tokens regardless of flag |
+
+### C.2 P1 Features (Functionality Gap)
+
+| Issue | Title | Summary | Status |
+|-------|-------|---------|--------|
+| **#160** | Enable Tool Calling support | `tools` field in `/v1/chat/completions` ignored; grammar-constrained sampling not wired | Blocks LangChain/Agents integration |
+| **#152** | `--verbose` for serve payloads | No request/response logging middleware | Debugging production issues difficult |
+
+### C.3 P2 Performance (Optimization)
+
+| Issue | Title | Summary | Impact |
+|-------|-------|---------|--------|
+| **#159** | Convolution Layout Optimization | Auto-select NCHW vs NHWC based on backend | Suboptimal memory access patterns |
+| **#153** | Slow serve startup | Reads entire file (19GB) for 8-byte format detection | 6-10 second delay for large models |
+| **#149** | Lottery Ticket Hypothesis pruning | Sparse model support via magnitude pruning | Missing model compression feature |
+| **#144** | Synthetic noise generation | WASM-first noise models for edge inference | Feature request (low priority) |
+| **#141** | Y7: GPU Performance Benchmarks | APR decode ≥200 tok/s on GPU (RTX 4090) | Blocks APR GPU parity with GGUF |
+
+### C.4 Five-Whys Analysis Required
+
+**#165: SafeTensors 1.5B Conversion Panic**
+```
+1. WHY panic? → assertion `left == right` failed: matmul dimension mismatch: 896 vs 1536
+2. WHY 896 vs 1536? → 0.5B model uses hidden_size=896, 1.5B uses hidden_size=1536
+3. WHY mismatch? → Converter hardcodes 0.5B dimensions instead of reading from config
+4. WHY hardcoded? → [INVESTIGATION NEEDED - converter.rs]
+5. WHY no test? → [INVESTIGATION NEEDED - test only used 0.5B model]
+```
+
+**#163: GGUF Import False Positive Validation**
+```
+1. WHY validation fails? → "mean=0.6402 outside expected range [-0.1, 0.1]"
+2. WHY checking mean? → Linear weight validation assumes mean≈0
+3. WHY RMSNorm fails? → RMSNorm gamma weights are NOT mean≈0 (they're centered around 1.0)
+4. WHY not distinguished? → Validator treats all weights the same
+5. WHY no RMSNorm exception? → [FIX: Add weight type classification, skip mean check for norm weights]
+```
+
+### C.5 Triage Priority Matrix
+
+| Priority | Criteria | Issues |
+|----------|----------|--------|
+| **P0** | Blocks core `apr chat`/`apr convert` workflow | #161, #162, #163, #164, #165 |
+| **P1** | Missing expected feature | #160, #152 |
+| **P2** | Performance/optimization | #141, #153, #159 |
+| **P3** | Nice to have | #144, #149 |
+
+**Toyota Way Action:** P0 defects should stop all new feature development until resolved.
+
+---
+
+## Appendix D: Historical Bug Fixes (2026-01-21 to 2026-01-28)
 
 This appendix summarizes major bugs that have been fixed. See git history for details.
 
@@ -1191,48 +1255,68 @@ This appendix summarizes major bugs that have been fixed. See git history for de
 - RoPE position handled internally by attention kernel
 - Zero SATD implementation (falsification audit passed)
 
+### GitHub #158: GpuModel Send/Sync Bounds (2026-01-25)
+**Root Cause:** `GpuModel` struct missing `Send + Sync` trait bounds, breaks `apr-cli` cuda feature.
+**Fix:** Added explicit trait bounds to enable multi-threaded GPU model sharing.
+
+### GitHub #157: GPU Performance Threshold Aggressive (2026-01-25)
+**Root Cause:** Performance assertions too strict for small models.
+**Fix:** Adjusted threshold to account for model size variance.
+
+### GitHub #156: APR Missing Tokenizer (2026-01-25)
+**Root Cause:** APR format tokenizer field shows placeholder text instead of actual tokenizer.
+**Fix:** Proper tokenizer serialization in APR converter.
+
+### GitHub #155: GGUF LAYOUT-001 Regression (2026-01-25)
+**Root Cause:** Regression caused GGUF to output garbage (column-major kernel used for row-major data).
+**Fix:** Restored row-major kernel dispatch per LAYOUT-001 protocol.
+
+### GitHub #154: Payload Tracing Stubbed (2026-01-25)
+**Root Cause:** APR-TRACE-001 tracing was stubbed out, blocking debug of garbage output.
+**Fix:** Implemented full `build_trace_data()` helper across all code paths.
+
 ---
 
-## Appendix D: Epistemological Audit (Dr. K. Popper)
+## Appendix E: Epistemological Audit (Dr. K. Popper)
 
 **Auditor:** Karl Popper
 **Date:** 2026-01-26
 **Verdict:** **EMPIRICALLY CORROBORATED (Severe Testing Active)**
 
-### D.1 The Problem of Induction in QA
+### E.1 The Problem of Induction in QA
 The team has claimed "97.8% QA Pass Rate" as evidence of success. This is logically invalid. A high pass rate only tells us that we have not *yet* found the test case that breaks the system.
 *   **Observation:** The system passed 132/135 tests.
 *   **Conclusion:** The system is *compatible* with the current test suite. It is not *verified*.
 *   **Recommendation:** Stop optimizing for pass rate. Optimize for the *severity* of the tests. A test that always passes provides zero information.
 
-### D.2 Critique of Ad Hoc Hypotheses (PMAT-097)
+### E.2 Critique of Ad Hoc Hypotheses (PMAT-097)
 When the 0.5B model failed to produce coherent output, the team simply excluded it from the QA suite ("All QA uses 1.5B+ models").
 *   **Critique:** This is a classic conventionalist stratagem to save the theory "The system supports Qwen2.5".
 *   **Correction:** You must explicitly revise the theory to: "The system supports Qwen2.5 models *where parameter count > 1B*." The boundary conditions must be part of the scientific statement, not just a testing configuration.
 
-### D.3 The Value of PMAT-106 (GPU Gap)
+### E.3 The Value of PMAT-106 (GPU Gap)
 PMAT-106 is the most valuable artifact in this document. It is a successful falsification of the hypothesis "realizar supports universal GPU inference."
 *   **Action:** Do not hide this. It precisely demarcates the limits of the current technology. It converts a metaphysical claim ("we do AI") into an empirical one ("we do GGUF GPU inference, but fail at SafeTensors GPU inference").
 
-### D.4 Severe Testing Mandate
+### E.4 Severe Testing Mandate
 **Status:** **IMPLEMENTED** (See §7.9).
 The team has successfully implemented the Hang Detection and Garbage Detection protocols. The system is now actively subjected to the risk of failure (falsification) during every test run. The "Zombie Mitigation" logic further ensures that test artifacts do not pollute the experimental environment.
 *   **Verdict:** The testing methodology has shifted from "Validation" (seeking confirmation) to "Falsification" (seeking error). This is scientifically sound.
 
-### D.5 The Demarcation of Real vs. Synthetic
+### E.5 The Demarcation of Real vs. Synthetic
 The T-Series results (§13) introduce a critical demarcation. T100 (Real Model) provides genuine corroboration, whereas T103 (Synthetic Fixture) reveals only the failure of the *test instrument*. 
 *   **Advice:** Never mistake a fixture bug for a system refutation. A theory is only tested when its predictions about the *real world* (actual models) are challenged.
 *   **Status of APR:** Until a real model can be loaded, the "APR Inference" theory remains **Metaphysical**—it is untestable and thus outside the realm of empirical science.
 
-### D.6 Jidoka as Empirical Stop-Condition
+### E.6 Jidoka as Empirical Stop-Condition
 The integration of Toyota Production System principles (Appendix G) provides the "Andon Cord" necessary for scientific integrity. 
 *   **Principle:** If NaN/Inf is detected (Logit Collapse), the system must stop. 
 *   **Epistemological Value:** This prevents the accumulation of "Garbage Logits" which could lead to false corroborations through sheer randomness. Jidoka is the technical implementation of the falsificationist's "No" to a failing theory.
 
-### D.8 The Dismantling of Theatre
+### E.8 The Dismantling of Theatre
 The team has successfully addressed the critique of "Derived Metrics." By implementing the `BrickProfiler`, they have moved from the realm of *metaphysical simulation* to *empirical observation*. The "green lights" in `apr check` are now backed by real forward passes and NaN checks.
 
-### D.9 Demarcation of Truth: Argmax Parity
+### E.9 Demarcation of Truth: Argmax Parity
 The argmax parity (argmax=262) remains the cornerstone of the architecture's logical validity. It demonstrates that independent binary format readers (GGUF and SafeTensors) can reach the same logical conclusion.
 
 ---
@@ -1281,7 +1365,7 @@ The highest level of corroborated verisimilitude is achieved when two independen
 
 ---
 
-### D.7 Cross-Format Parity as Verisimilitude
+### E.7 Cross-Format Parity as Verisimilitude
 The verification of parity between GGUF and SafeTensors (argmax=262) is a profound corroboration of the "Unified Inference" theory. It demonstrates that our engine is not merely calculating *something*, but is correctly interpreting the underlying mathematical structure of the Qwen2 architecture across radically different binary formats.
 
 ---
@@ -1387,15 +1471,15 @@ fn t100_gguf_cpu_real_qwen2() {
 
 ---
 
-## Appendix E: Q4_K Quantization Format Specification
+## Appendix F: Q4_K Quantization Format Specification
 
-### E.1 Overview (from llama.cpp)
+### G.1 Overview (from llama.cpp)
 
 Q4_K is a mixed-precision 4-bit quantization format used by GGUF. Each **superblock** contains 256 elements.
 
 **Source:** `llama.cpp/ggml/src/ggml-quants.c`
 
-### E.2 Superblock Structure (144 bytes per 256 elements)
+### F.2 Superblock Structure (144 bytes per 256 elements)
 
 | Field | Bytes | Description |
 |-------|-------|-------------|
@@ -1405,7 +1489,7 @@ Q4_K is a mixed-precision 4-bit quantization format used by GGUF. Each **superbl
 | `qs` | 128 | Quantized values (4-bit packed, 256 elements) |
 | **Total** | **144** | Per superblock |
 
-### E.3 Dequantization Algorithm
+### F.3 Dequantization Algorithm
 
 ```c
 // From llama.cpp/ggml/src/ggml-quants.c
@@ -1426,7 +1510,7 @@ void dequantize_row_q4_K(const block_q4_K * x, float * y, int64_t k) {
 }
 ```
 
-### E.4 Size Calculation
+### F.4 Size Calculation
 
 For a weight matrix `[out_dim, in_dim]`:
 ```
@@ -1438,9 +1522,9 @@ total_bytes = num_superblocks × 144
 
 ---
 
-## Appendix F: SafeTensors Format Specification
+## Appendix G: SafeTensors Format Specification
 
-### F.1 Overview (from safetensors crate)
+### G.1 Overview (from safetensors crate)
 
 SafeTensors is a simple, fast, and safe tensor serialization format.
 
