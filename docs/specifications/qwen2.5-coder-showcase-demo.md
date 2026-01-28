@@ -750,13 +750,13 @@ Completed in 1.83s (cached)
 | II-A: GGUF Support | 20/20 | ✅ Q4_0/Q4_1 FIXED |
 | II-B: APR Support | 10/15 | ⚠️ Compression, streaming |
 | II-C: SafeTensors | 7/15 | ⚠️ F16, BF16, sharded |
-| III-B: GPU Backend | 0/25 | ❌ PMAT-106 |
+| III-B: GPU Backend | 20/25 | ✅ GGUF GPU 274 tok/s, 5 gates pass (PMAT-106 CLOSED) |
 | IV: Correctness | ~15/50 | ⚠️ Many unchecked |
 | V: Tracing | ~10/40 | ⚠️ Partial |
 | VI: Server | ~20/30 | ⚠️ Partial |
 | VIII: Integration | ~10/20 | ⚠️ Partial |
 
-**Total Estimated: ~160-190/300 (53-63%)**
+**Total Estimated: ~180-210/300 (60-70%)**
 
 ---
 
