@@ -14,12 +14,12 @@ This checklist is NOT designed to confirm that the software works. It is designe
 | I. Metaphysical Baseline | 9/10 | ✅ Binary 21MB (stripped), SIGINT not tested |
 | II. Loader Gauntlet | 9/15 | ⚠️ Unknown arch, tokenizer verified |
 | III. Output Quality | 14/15 | ✅ Core tests, system prompt, determinism, whitespace, special tokens |
-| IV. Performance | 10/15 | ✅ GPU 88.9x faster, 274 tok/s |
+| IV. Performance | 11/15 | ✅ GPU 88.9x, 274 tok/s, concurrent requests |
 | V. Rosetta Conversion | 5/10 | ⚠️ ST→APR works, parity verified |
 | VI. Jidoka & Safety | 8/15 | ✅ cargo deny, localhost, offline, sandbox, unsafe audit |
 | VII. Observability | 10/10 | ✅ All observability items verified |
 | VIII. T-Series | 8/10 | ✅ T100/T200 pass, CI gate, 7948 tests, 2+2=4 |
-| **TOTAL** | **73/100** | ⚠️ **73% CORROBORATED** |
+| **TOTAL** | **74/100** | ⚠️ **74% CORROBORATED** |
 
 **Last Updated:** 2026-01-28 (PMAT-112)
 **Verdict:** Significant progress. Key inference paths working.
@@ -87,7 +87,7 @@ This checklist is NOT designed to confirm that the software works. It is designe
 ### IV. Performance & Resource Falsification [15 Points]
 *Tests the "Efficient Inference" hypothesis.*
 
-**Run Date:** 2026-01-28 | **Score: 10/15**
+**Run Date:** 2026-01-28 | **Score: 11/15**
 
 - [x] **F-PERF-041**: **KV Cache O(n)**: Generation speed for token 100 vs token 1000 is roughly constant (not O(n²) slowdown). ✅ ~3ms/token
 - [x] **F-PERF-042**: **GPU Acceleration**: GGUF GPU tok/s > GGUF CPU tok/s (Must be > 2x to pass). ✅ 88.9x faster (268 vs 3 tok/s)
@@ -99,7 +99,7 @@ This checklist is NOT designed to confirm that the software works. It is designe
 - [ ] **F-PERF-048**: **Idle Usage**: `apr serve` uses near-zero CPU when idle. ⏳ Not tested
 - [x] **F-PERF-049**: **Model Loading Time**: < 10s for 1.5B model on SSD. ✅ 0.52s load time
 - [x] **F-PERF-050**: **First Token Latency**: < 1s for short prompt (warm start). ✅ 80ms prefill
-- [ ] **F-PERF-051**: **Concurrency**: Server handles 2 simultaneous requests (queueing or batching) without crashing. ⏳ Not tested
+- [x] **F-PERF-051**: **Concurrency**: Server handles 2 simultaneous requests (queueing or batching) without crashing. ✅ Both returned valid JSON
 - [x] **F-PERF-052**: **Throughput**: 1.5B Q4_K on CPU AVX2 > 10 tok/s. ✅ 14 tok/s (spec reference)
 - [x] **F-PERF-053**: **Throughput**: 1.5B Q4_K on GPU RTX 4090 > 50 tok/s. ✅ 274 tok/s verified
 - [x] **F-PERF-054**: **Oversubscription**: Running with threads > physical cores does not degrade performance > 50%. ✅ GPU path unaffected
