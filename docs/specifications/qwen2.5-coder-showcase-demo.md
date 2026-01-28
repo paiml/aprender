@@ -1,11 +1,11 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 5.18.0
-**Status:** ⭐ VERIFIED (GGUF inference working, CLI falsification 25/28 CORROBORATED)
-**Popperian Score:** 89/100 (25/28 Corroborated, 2 FALSIFIED, 1 PARTIAL)
+**Version:** 5.19.0
+**Status:** ⚠️ PARTIALLY VERIFIED (GGUF works, APR from SafeTensors RE-FALSIFIED)
+**Popperian Score:** 82/100 (23/28 Corroborated, 4 FALSIFIED, 1 PARTIAL)
 **Author:** PAIML Engineering
 **Date:** 2026-01-28
-**Last Falsification Run:** 2026-01-28 (PMAT-122: 25/28 CLI tests, 2 falsified, 1 partial)
+**Last Falsification Run:** 2026-01-28 (PMAT-122: PMAT-114 claim RE-FALSIFIED via testing)
 **Quality Philosophy:** Toyota Way + Popperian Falsification (Zero SATD, Stop-the-Line)
 
 ---
@@ -84,9 +84,9 @@ Compare:
 - GGUF GPU: ✅ **CORROBORATED** (CUDA path verified, 276.9 tok/s, 6.8x Ollama)
 - SafeTensors CPU: ✅ **CORROBORATED** (T200: Real Qwen2-0.5B, argmax=262)
 - SafeTensors GPU: ✅ **CORROBORATED** (PMAT-120 Fix: QKV bias loading + weight transpose)
-- APR CPU (SafeTensors): ✅ **CORROBORATED** (PMAT-114 Fix: fused QKV bias loading)
+- APR CPU (SafeTensors): ❌ **RE-FALSIFIED** (PMAT-122: produces "statement 1": instead of "4")
 - APR CPU (GGUF): ❌ **FALSIFIED** (Q5_0/Q4_0 dequantization issues)
-- APR GPU (SafeTensors): ✅ **CORROBORATED** (Same fix as SafeTensors GPU - PMAT-120)
+- APR GPU (SafeTensors): ❌ **RE-FALSIFIED** (PMAT-122: Same issue as APR CPU - garbage output)
 - Cross-format parity: ✅ **VERIFIED** (GGUF vs SafeTensors Invariant - All paths)
 - `apr check` (10-stage): ✅ **VERIFIED** (Real forward pass telemetry)
 - `apr profile`: ✅ **VERIFIED** (Real BrickProfiler telemetry)
@@ -164,21 +164,31 @@ apr chat model.gguf         # "2 + 2 equals 4."
 
 > **Toyota Way Reminder:** A FALSIFIED status is not a failure of engineering—it's a success of honesty. We do not hide defects behind vague labels like "experimental" or "beta." We state clearly: this does not work.
 
-### ✅ PMAT-114: SafeTensors→APR Inference Fixed
+### ❌ PMAT-114: SafeTensors→APR Inference (RE-FALSIFIED)
 
-**Status:** CORROBORATED (2026-01-27)
-**Andon Event:** Yes (stopped feature work for 2 hours)
+**Status:** RE-FALSIFIED (2026-01-28, PMAT-122)
+**Previous Status:** Was claimed CORROBORATED on 2026-01-27
+**Andon Event:** Yes (stop-the-line: spec claim contradicts evidence)
 
-**Problem (was):** APR files converted from SafeTensors produced garbage output.
-- **Root Cause (5-Whys):**
-  1. WHY garbage? → Attention bias not applied
-  2. WHY no bias? → Loader couldn't find `q_proj.bias`
-  3. WHY not found? → Converter fused biases into `qkv_proj.bias`
-  4. WHY mismatch? → Loader assumed separate biases (GGUF pattern)
-  5. WHY assumed? → No test for fused bias pattern
-- **Fix:** Modified `realizar/src/apr_transformer/mod.rs:600` to check for fused QKV bias first.
-- **Result:** SafeTensors→APR now produces correct output ("2+2 equals 4.") on both CPU and GPU.
-- **Prevention:** Added regression test for fused bias detection.
+**Problem:** APR files converted from SafeTensors produce garbage output.
+- **Observed (2026-01-28):**
+  - Direct SafeTensors: "2+2 equals 4." ✅ CORRECT
+  - APR from SafeTensors: "statement 1": The average..." ❌ GARBAGE
+  - Validation Score: 4/100 (Grade: F)
+
+- **Five-Whys Analysis (PMAT-122):**
+  1. WHY garbage output? → APR inference produces wrong tokens
+  2. WHY wrong tokens? → Validation score only 4/100
+  3. WHY low validation? → 21/25 validation checks "Not implemented"
+  4. WHY not implemented? → APR v2 format validation incomplete
+  5. WHY incomplete? → Focus was on GGUF inference first
+
+- **Root Cause:** APR converter and/or AprV2ModelCuda loader has bugs for SafeTensors-origin files.
+- **Previous "Fix" Assessment:** The PMAT-114 fix may have been incomplete or regressed.
+- **Recommended Fix:**
+  1. Implement full APR tensor integrity validation
+  2. Add golden test: SafeTensors input == APR output
+  3. Debug AprV2ModelCuda with SafeTensors-origin APR files
 
 ### ❌ PMAT-113: APR GGUF Import (Honestly FALSIFIED)
 
