@@ -1,16 +1,16 @@
 # SafeTensors GPU Inference Specification
 
-**Version:** 1.0.0
-**Status:** Draft
+**Version:** 1.2.0
+**Status:** Proposal (Subject to Falsification)
 **PMAT Ticket:** PMAT-116
 **Created:** 2026-01-28
-**Author:** Claude Opus 4.5 / Noah Gift
+**Author:** Claude Opus 4.5 / Noah Gift / Dr. Karl Popper (Persona)
 
 ---
 
 ## Abstract
 
-This specification defines the implementation of GPU-accelerated inference for SafeTensors format models in the aprender/realizar ecosystem. The design follows candle's device-agnostic tensor loading pattern with CUDA backend integration via cudarc.
+This specification defines the implementation of GPU-accelerated inference for SafeTensors format models in the aprender/realizar ecosystem. We posit a **conjecture of performance parity**: that a Rust-native, device-agnostic tensor loading pattern (via `candle`/`cudarc`) can match the throughput of optimized C++ kernels (GGUF) without sacrificing safety. This document outlines the architecture and a rigorous falsification protocol to test this hypothesis.
 
 ---
 
@@ -18,19 +18,46 @@ This specification defines the implementation of GPU-accelerated inference for S
 
 ### 1.1 Current State
 
-SafeTensors inference currently:
+SafeTensors inference currently exhibits behavior refuting the user's expectation of acceleration:
 - Silently falls back to CPU when `--gpu` requested (Jidoka violation, fixed in PMAT-115)
 - Now errors explicitly but provides no GPU path
-- Requires manual conversion to APR format for GPU inference
+- Requires manual conversion to APR format for GPU inference, introducing unnecessary friction and potential conversion errors.
 
-### 1.2 Target State
+### 1.2 Target State (Hypothesis)
 
-SafeTensors should:
-- Load directly to GPU memory via H2D transfer
-- Support zero-copy mmap where possible
-- Achieve performance parity with GGUF GPU path (200+ tok/s)
+We hypothesize that a direct H2D (Host-to-Device) loading mechanism for SafeTensors will:
+- Enable immediate GPU memory residency for model weights.
+- Support zero-copy mmap mechanics to minimize host memory pressure.
+- Withstand falsification attempts targeting a performance floor of 200 tok/s.
 
-### 1.3 SATD: Technical Debt Markers
+### 1.3 PMAT Work Integration (MANDATORY)
+
+**All work on this specification MUST be tracked via pmat work.**
+
+```bash
+# Before starting ANY implementation
+pmat work start PMAT-116
+
+# Verify quality gates before commits
+pmat quality-gates --strict
+
+# After completing implementation
+pmat work complete PMAT-116
+```
+
+**Quality Compliance Requirements:**
+
+| Metric | Current | Required | Enforcement |
+|--------|---------|----------|-------------|
+| Test Coverage | 96.94% | ≥95% | `make coverage` |
+| TDG Score | 95.2 | ≥95.0 (A+) | `pmat tdg .` |
+| Rust Project Score | 169.9/134 | ≥120/134 | `pmat rust-project-score` |
+| SATD Violations | 0 | 0 | `pmat analyze satd` |
+| Clippy Warnings | 0 | 0 | `cargo clippy -- -D warnings` |
+
+**Failure to maintain these metrics blocks merge.**
+
+### 1.4 SATD: Technical Debt Markers
 
 ```
 // TODO(PMAT-116): Implement SafeTensors GPU loading
@@ -40,7 +67,7 @@ SafeTensors should:
 
 ---
 
-## 2. Peer-Reviewed Citations
+## 2. Peer-Reviewed Citations & Theoretical Foundation
 
 ### 2.1 Memory-Mapped I/O for Deep Learning
 
@@ -101,6 +128,18 @@ SafeTensors should:
 > "Abstracting device placement behind a unified interface enables code reuse across CPU, CUDA, and other accelerators."
 
 **Citation:** Abadi, M., et al. (2016). "TensorFlow: A System for Large-Scale Machine Learning." *OSDI 2016*. [arXiv:1605.08695](https://arxiv.org/abs/1605.08695)
+
+### 2.11 Transformer Architecture
+
+> "The Transformer relies entirely on an attention mechanism to draw global dependencies between input and output, eschewing recurrence and allowing for significantly more parallelization."
+
+**Citation:** Vaswani, A., et al. (2017). "Attention Is All You Need." *Advances in Neural Information Processing Systems 30 (NIPS 2017)*. [arXiv:1706.03762](https://arxiv.org/abs/1706.03762)
+
+### 2.12 IO-Aware Attention
+
+> "FlashAttention computes exact attention with far fewer memory accesses, achieving speedups on BERT-large (training) and GPT-2 (speedup) by accounting for the asymmetry of GPU memory hierarchy."
+
+**Citation:** Dao, T., et al. (2022). "FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness." *Advances in Neural Information Processing Systems 35 (NeurIPS 2022)*. [arXiv:2205.14135](https://arxiv.org/abs/2205.14135)
 
 ---
 
@@ -186,6 +225,21 @@ pub struct SafeTensorsCudaModel {
 ---
 
 ## 4. Implementation Plan
+
+### 4.0 Pre-Implementation: PMAT Work Setup
+
+```bash
+# MANDATORY: Start pmat work tracking before any code changes
+pmat work start PMAT-116
+
+# Verify baseline metrics
+pmat tdg .                    # Must show A+ (≥95.0)
+make coverage                 # Must show ≥95%
+pmat rust-project-score       # Must show ≥120/134
+
+# Create work branch (if using feature branches)
+# NOTE: Per CLAUDE.md, work directly on master - no feature branches
+```
 
 ### 4.1 Phase 1: CUDA Storage Abstraction (2 days)
 
@@ -366,9 +420,9 @@ fn run_safetensors_inference(config: &InferenceConfig) -> Result<InferenceResult
 
 ### Methodology
 
-> "The criterion of the scientific status of a theory is its falsifiability." — Karl Popper
+> "Bold ideas, unjustified anticipations, and speculative thought, are our only means for interpreting nature... our guesses are guided by the unscientific, the metaphysical (though explicable biologically) faith in laws, in regularities which we can uncover/discover." — Karl Popper
 
-Each test is designed to **falsify** the hypothesis "SafeTensors GPU inference works correctly." If all 100 tests pass, the implementation is **corroborated** (not verified).
+We do not seek to prove this implementation works; we seek to prove it fails. Only by surviving the following 100 severe tests can the implementation be considered **corroborated**.
 
 ---
 
@@ -544,6 +598,18 @@ Each test is designed to **falsify** the hypothesis "SafeTensors GPU inference w
 
 ## 7. Test Execution Commands
 
+### 7.1 PMAT Work Tracking (Run First)
+
+```bash
+# MANDATORY: Ensure pmat work is active
+pmat work status PMAT-116
+
+# If not started:
+pmat work start PMAT-116
+```
+
+### 7.2 Falsification Tests
+
 ```bash
 # Run all falsification tests
 cargo test --features cuda safetensors_cuda -- --nocapture
@@ -564,9 +630,84 @@ cargo test --features cuda f_int -- --nocapture
 echo "2+2=" | apr chat model.safetensors --gpu --max-tokens 5
 ```
 
+### 7.3 Quality Gate Verification (MANDATORY)
+
+```bash
+# Coverage check (must maintain ≥95%)
+make coverage
+# Expected: 96.94% or higher
+
+# TDG score (must maintain A+)
+pmat tdg .
+# Expected: 95.0+ (Grade: A+)
+
+# Rust project score
+pmat rust-project-score
+# Expected: 120/134 or higher
+
+# SATD check (must be 0)
+pmat analyze satd
+# Expected: 0 violations
+
+# Clippy (must pass)
+cargo clippy --features cuda -- -D warnings
+# Expected: 0 warnings
+
+# Full quality gates
+pmat quality-gates --strict
+# Expected: ALL PASS
+```
+
+### 7.4 Completion
+
+```bash
+# Complete pmat work (runs all quality gates)
+pmat work complete PMAT-116
+
+# Verify final metrics
+pmat work annotate PMAT-116
+```
+
 ---
 
 ## 8. Definition of Done
+
+### 8.1 Quality Gates (MANDATORY)
+
+| Gate | Threshold | Command | Enforcement |
+|------|-----------|---------|-------------|
+| Test Coverage | ≥95% | `make coverage` | CI blocks merge |
+| TDG Score | A+ (≥95.0) | `pmat tdg .` | CI blocks merge |
+| Rust Project Score | ≥120/134 | `pmat rust-project-score` | CI blocks merge |
+| Clippy | 0 warnings | `cargo clippy -- -D warnings` | CI blocks merge |
+| SATD | 0 violations | `pmat analyze satd` | CI blocks merge |
+| Mutation Score | ≥80% | `cargo mutants` | CI warning |
+
+### 8.2 PMAT Work Tracking (MANDATORY)
+
+All development MUST use pmat work for tracking:
+
+```bash
+# Start work (creates contract with baseline metrics)
+pmat work start PMAT-116
+
+# Continue work (after breaks)
+pmat work continue PMAT-116
+
+# Complete work (runs quality gates, captures final metrics)
+pmat work complete PMAT-116
+
+# Status check
+pmat work status PMAT-116
+```
+
+**Work Contract Requirements:**
+- Baseline metrics captured at start (TDG, coverage, Rust score)
+- File manifest tracked (no file deletions without approval)
+- Quality gates run at completion
+- Delta report generated (before/after metrics)
+
+### 8.3 Acceptance Criteria
 
 - [ ] All 100 falsification tests pass (or documented as WARNING)
 - [ ] `apr chat model.safetensors --gpu` produces correct output
@@ -574,11 +715,14 @@ echo "2+2=" | apr chat model.safetensors --gpu --max-tokens 5
 - [ ] No memory leaks verified via valgrind/cuda-memcheck
 - [ ] Documentation updated with GPU usage examples
 - [ ] CHANGELOG entry added
+- [ ] **Test coverage ≥95% maintained** (current: 96.94%)
+- [ ] **TDG score A+ maintained** (current: 95.2)
+- [ ] **pmat work complete PMAT-116 passes all gates**
 - [ ] PMAT-116 closed
 
 ---
 
-## 9. Risk Assessment
+## 9. Risk Assessment & Theoretical Refutations
 
 | Risk | Likelihood | Impact | Mitigation |
 |------|------------|--------|------------|
@@ -586,6 +730,7 @@ echo "2+2=" | apr chat model.safetensors --gpu --max-tokens 5
 | VRAM fragmentation | Medium | Medium | Pre-allocate pools |
 | Dtype conversion loss | Low | High | Comprehensive tests |
 | Performance regression | Medium | High | Benchmark in CI |
+| **Hypothesis Refutation** | Medium | Critical | Pivot to `candle` or C++ if direct load fails |
 
 ---
 
@@ -601,6 +746,8 @@ echo "2+2=" | apr chat model.safetensors --gpu --max-tokens 5
 8. Constable, C. (2023). cudarc: Safe CUDA Driver Bindings for Rust.
 9. Abadi, M., et al. (2016). TensorFlow: Large-Scale Machine Learning. OSDI 2016.
 10. Candle Contributors. (2024). Candle: Minimalist ML Framework for Rust. GitHub.
+11. Vaswani, A., et al. (2017). Attention Is All You Need. NIPS 2017.
+12. Dao, T., et al. (2022). FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness. NeurIPS 2022.
 
 ---
 
