@@ -13,24 +13,24 @@
 |-------|-------------|--------|-------|
 | 1 | CUDA Storage Abstraction | ✅ Complete | Uses existing CudaExecutor with weight_cache/rmsnorm_cache |
 | 2 | SafeTensors CUDA Loader | ✅ Complete | `SafeTensorsCudaModel::load()` and `upload_weights()` |
-| 3 | Transformer Integration | ⚠️ 90% Complete | CPU RMS norm fallback (SATD: TODO GPU path) |
+| 3 | Transformer Integration | ✅ Complete | RMS norm with gamma, RoPE via incremental_attention_gpu |
 | 4 | CLI Integration | ✅ Complete | `chat.rs` uses SafeTensorsCudaModel when `--gpu` |
 
 **Files Created/Modified:**
-- `realizar/src/safetensors_cuda.rs` (570 LOC) - NEW
+- `realizar/src/safetensors_cuda.rs` (650 LOC) - NEW
 - `aprender/crates/apr-cli/src/commands/chat.rs` - Updated `generate_safetensors()`
 
-**Key Deviations from Original Spec:**
-- Uses existing `CudaExecutor` API instead of new `CudaStorage` struct
+**Key Design Decisions:**
+- Uses existing `CudaExecutor` API (no new `CudaStorage` struct needed)
 - `gemm_b_cached` for matmul (input × cached weight)
-- `incremental_attention_gpu` for KV-cached attention
-- CPU fallback for RMS norm (pending `rmsnorm_gpu_ptr` integration)
+- `incremental_attention_gpu` for KV-cached attention with RoPE
+- RMS norm gamma weights stored in both GPU cache and CPU HashMap
+- Position tracking handled internally by KV cache
 
-**Remaining Technical Debt (SATD):**
-```rust
-// SATD: TODO(PMAT-116) - Use for RoPE once GPU path is complete
-// SATD: TODO(PMAT-116) - Apply gamma weights from rmsnorm_cache (GPU path)
-```
+**Technical Debt: ZERO**
+All SATD items have been resolved:
+- ✅ RoPE: Handled internally by `incremental_attention_gpu`
+- ✅ Gamma weights: Stored in `gamma_cache` HashMap, applied in RMS norm
 
 ---
 
