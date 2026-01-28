@@ -1,11 +1,11 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 5.29.0
-**Status:** ⚠️ PARTIALLY VERIFIED (GGUF Q4_K/Q6_K work, 4 paths FALSIFIED, 2 FIXED)
-**Popperian Score:** 93/100 (60/65 Corroborated, 4 FALSIFIED, 1 PARTIAL)
+**Version:** 5.30.0
+**Status:** ⚠️ PARTIALLY VERIFIED (GGUF Q4_K/Q6_K work, 3 paths FALSIFIED, 3 FIXED)
+**Popperian Score:** 94/100 (61/65 Corroborated, 3 FALSIFIED, 1 PARTIAL)
 **Author:** PAIML Engineering
-**Date:** 2026-01-28
-**Last Falsification Run:** 2026-01-28 (PMAT-125/126: APR tokenizer + architecture FIXED)
+**Date:** 2026-01-29
+**Last Falsification Run:** 2026-01-29 (PMAT-127: F-APR-GGUF also FIXED by tokenizer fix)
 **Quality Philosophy:** Toyota Way + Popperian Falsification (Zero SATD, Stop-the-Line)
 
 ---
@@ -1536,13 +1536,12 @@ Following Popper's critical rationalism, we do not seek to *confirm* that infere
 - F-TREE-001: `apr tree` command exists (APR-only) ✅ **CORROBORATED**
 - F-HEX-001: `apr hex` command exists (APR-only) ✅ **CORROBORATED**
 
-**Falsified Paths (4 total):**
-- ❌ F-APR-GGUF: APR from GGUF → garbage (PAD tokens)
+**Falsified Paths (3 total):**
 - ❌ F-EVAL: Perplexity 1099 >> threshold 20
 - ❌ F-Q4_0: GGUF Q4_0 produces garbage (spec line 546 claim was FALSE)
-- ⚠️ F-SAFETENSORS-GPU: Works via `apr chat`, NOT via `apr run`
+- ⚠️ F-SAFETENSORS-GPU: Works via `apr chat`, NOT via `apr run` (design choice)
 
-**Fixed Paths (2 total):**
+**Fixed Paths (3 total):**
 - ✅ F-SERVE-GENERATE: /generate endpoint (PMAT-124: Added quantized_model handler)
   - Root cause: Handler only checked cuda_model, not quantized_model for CPU GGUF mode
   - Fix: Added `if let Some(quantized_model) = state.quantized_model()` block
@@ -1555,8 +1554,14 @@ Following Popper's critical rationalism, we do not seek to *confirm* that infere
   - Evidence before: "1. **Identify the type of problem**:" (BOS token only)
   - Evidence after: "2+2 equals 4. 4 is a whole number..." (actual inference)
 
+- ✅ F-APR-GGUF: APR from GGUF (PMAT-127: Same tokenizer fix as F-APR-ST)
+  - Root cause: Same as F-APR-ST - no tokenizer available for encoding
+  - Fix: PMAT-126 tokenizer cache search also fixed this path
+  - Evidence before: "PAD tokens" / garbage output
+  - Evidence after: "2+2 equals 4. 4 is the smallest whole number..." (correct)
+
 **Root Causes (Remaining):**
-1. ~~APR converter/loader bugs~~ **Partially FIXED** (tokenizer/arch detection working)
+1. ~~APR converter/loader bugs~~ **FULLY FIXED** (tokenizer + arch detection working for both paths)
 2. SafeTensors GPU not in `apr run` command (design choice, use `apr chat --gpu`)
 3. ~~`/generate` handler doesn't check quantized_model~~ **FIXED (PMAT-124)**
 4. Eval may have model or dataset issues
