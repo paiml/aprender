@@ -1,11 +1,11 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 5.24.0
+**Version:** 5.25.0
 **Status:** ⚠️ PARTIALLY VERIFIED (GGUF Q4_K/Q6_K work, 6 paths FALSIFIED)
-**Popperian Score:** 87/100 (47/54 Corroborated, 6 FALSIFIED, 1 PARTIAL)
+**Popperian Score:** 88/100 (51/58 Corroborated, 6 FALSIFIED, 1 PARTIAL)
 **Author:** PAIML Engineering
 **Date:** 2026-01-28
-**Last Falsification Run:** 2026-01-28 (PMAT-122: 54 tests, CLI commands verified)
+**Last Falsification Run:** 2026-01-28 (PMAT-122: 58 tests, SafeTensors serve verified)
 **Quality Philosophy:** Toyota Way + Popperian Falsification (Zero SATD, Stop-the-Line)
 
 ---
@@ -809,7 +809,7 @@ Completed in 1.83s (cached)
 | Section | Points | Status |
 |---------|--------|--------|
 | I-B: Verbose Mode UX | 10/14 | ⚠️ F-UX-027 to F-UX-040 (4 missing: hidden_dim, threads, quant, ctx) |
-| II-A: GGUF Support | 20/20 | ✅ Q4_0/Q4_1 FIXED |
+| II-A: GGUF Support | 18/20 | ⚠️ Q4_0/Q4_1 FALSIFIED (Q4_K/Q5_K/Q6_K work) |
 | II-B: APR Support | 10/15 | ⚠️ Compression, streaming |
 | II-C: SafeTensors | 7/15 | ⚠️ F16, BF16, sharded |
 | III-B: GPU Backend | 20/25 | ✅ GGUF GPU 274 tok/s, 5 gates pass (PMAT-106 CLOSED) |
@@ -1493,7 +1493,7 @@ Following Popper's critical rationalism, we do not seek to *confirm* that infere
 | F-VERBOSE-001 | `apr run --verbose` | Shows arch/layers/backend | Shows all | ✅ **CORROBORATED** |
 | F-CHATTEMPLATE | `apr chat model.gguf` | Auto-detect | "Detected ChatML" | ✅ **CORROBORATED** |
 
-**Summary:** 47/54 tests CORROBORATED, 6 FALSIFIED, 1 PARTIAL
+**Summary:** 51/58 tests CORROBORATED, 6 FALSIFIED, 1 PARTIAL
 
 **GGUF Modality Matrix (Lines 514-526) - ALL VERIFIED (Q4_K/Q5_K/Q6_K):**
 - F-MODALITY-001: `apr run` (no trace) → "4" ✅ **CORROBORATED**
@@ -1524,6 +1524,10 @@ Following Popper's critical rationalism, we do not seek to *confirm* that infere
 - F-PUBLISH-001: `apr publish` command exists ✅ **CORROBORATED** (--help works)
 - F-CBTOP-001: `apr cbtop` command exists ✅ **CORROBORATED** (--help works)
 - F-PROBAR-001: `apr probar` command exists ✅ **CORROBORATED** (--help works)
+- F-1.5B-GGUF-001: 1.5B Q6_K canonical prompt "What is 2+2?" → "4" ✅ **CORROBORATED**
+- F-1.5B-ST-001: 1.5B SafeTensors CPU canonical prompt → "4" ✅ **CORROBORATED** (17.8s)
+- F-SERVE-ST-001: `apr serve model.safetensors` /health → healthy ✅ **CORROBORATED**
+- F-SERVE-ST-002: SafeTensors /v1/chat/completions → "4" (0.29 tok/s) ✅ **CORROBORATED**
 
 **Falsified Paths (6 total):**
 - ❌ F-APR-GGUF: APR from GGUF → garbage (PAD tokens)
