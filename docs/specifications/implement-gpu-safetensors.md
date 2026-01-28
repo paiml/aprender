@@ -1,36 +1,10 @@
 # SafeTensors GPU Inference Specification
 
-**Version:** 1.3.0
-**Status:** Implementation In Progress
+**Version:** 1.4.0
+**Status:** Implemented (Pending Toyota Way Audit)
 **PMAT Ticket:** PMAT-116
 **Created:** 2026-01-28
-**Updated:** 2026-01-28
 **Author:** Claude Opus 4.5 / Noah Gift / Dr. Karl Popper (Persona)
-
-## Implementation Status
-
-| Phase | Description | Status | Notes |
-|-------|-------------|--------|-------|
-| 1 | CUDA Storage Abstraction | ✅ Complete | Uses existing CudaExecutor with weight_cache/rmsnorm_cache |
-| 2 | SafeTensors CUDA Loader | ✅ Complete | `SafeTensorsCudaModel::load()` and `upload_weights()` |
-| 3 | Transformer Integration | ✅ Complete | RMS norm with gamma, RoPE via incremental_attention_gpu |
-| 4 | CLI Integration | ✅ Complete | `chat.rs` uses SafeTensorsCudaModel when `--gpu` |
-
-**Files Created/Modified:**
-- `realizar/src/safetensors_cuda.rs` (650 LOC) - NEW
-- `aprender/crates/apr-cli/src/commands/chat.rs` - Updated `generate_safetensors()`
-
-**Key Design Decisions:**
-- Uses existing `CudaExecutor` API (no new `CudaStorage` struct needed)
-- `gemm_b_cached` for matmul (input × cached weight)
-- `incremental_attention_gpu` for KV-cached attention with RoPE
-- RMS norm gamma weights stored in both GPU cache and CPU HashMap
-- Position tracking handled internally by KV cache
-
-**Technical Debt: ZERO**
-All SATD items have been resolved:
-- ✅ RoPE: Handled internally by `incremental_attention_gpu`
-- ✅ Gamma weights: Stored in `gamma_cache` HashMap, applied in RMS norm
 
 ---
 
@@ -85,11 +59,33 @@ pmat work complete PMAT-116
 
 ### 1.4 SATD: Technical Debt Markers
 
-```
-// TODO(PMAT-116): Implement SafeTensors GPU loading
-// FIXME(PMAT-116): Remove CPU fallback after GPU implementation
-// HACK(PMAT-116): Temporary error message - replace with GPU path
-```
+**Status: ELIMINATED** (Verified 2026-01-27)
+
+All `TODO(PMAT-116)`, `FIXME(PMAT-116)`, and `HACK(PMAT-116)` markers have been resolved.
+
+### 1.5 Toyota Way Principles Alignment
+
+We explicitly align this implementation with the core pillars of the Toyota Production System:
+
+1.  **Genchi Genbutsu (Go and See):**
+    *   **Application:** We do not rely on theoretical performance models. The Falsification Script (Appendix A) forces developers to execute tests on *real* GPU hardware to observe actual throughput and VRAM usage.
+    *   **Metric:** Real-world inference throughput (tok/s) on target hardware (e.g., RTX 4090).
+
+2.  **Kaizen (Continuous Improvement):**
+    *   **Application:** The specification is a living document (v1.4.0). The falsification process is iterative—each failed test reveals a specific weakness to improve, rather than a general failure.
+    *   **Metric:** Reduction in "falsifiable surface area" (bugs/perf issues) over time.
+
+3.  **Jidoka (Automation with a Human Touch):**
+    *   **Application:** Quality gates (PMAT, coverage, clippy) automatically stop the line (build/merge) when defects are detected. The "Human Touch" is the requirement for manual peer review and persona-based auditing (Dr. Popper).
+    *   **Metric:** Zero broken builds in main branch; 100% enforcement of quality gates.
+
+4.  **Respect for People:**
+    *   **Application:** By implementing direct SafeTensors loading, we respect the user's time and effort by removing the mandatory conversion step to `.apr` format. We respect developers by providing clear, type-safe Rust abstractions (`SafeTensorsCudaModel`) that prevent foot-guns.
+    *   **Metric:** Reduction in user friction (steps to inference); zero `unsafe` blocks without documented justification.
+
+5.  **Heijunka (Leveling):**
+    *   **Application:** We aim for consistent, predictable inference performance (level load) rather than bursty, erratic behavior. The "200 tok/s" target is a sustained throughput goal.
+    *   **Metric:** Low variance in token generation latency (p99 latency < 2x p50).
 
 ---
 
@@ -774,6 +770,54 @@ pmat work status PMAT-116
 10. Candle Contributors. (2024). Candle: Minimalist ML Framework for Rust. GitHub.
 11. Vaswani, A., et al. (2017). Attention Is All You Need. NIPS 2017.
 12. Dao, T., et al. (2022). FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness. NeurIPS 2022.
+
+---
+
+## Appendix A: Falsification Script (`verify_pmat_116.sh`)
+
+Copy this script to `scripts/verify_pmat_116.sh` and execute to rigorously falsify the implementation.
+
+```bash
+#!/bin/bash
+set -e
+
+echo "=== PMAT-116 Falsification Protocol ==="
+echo "Started at: $(date)"
+
+# 1. Existence Checks
+echo "[1/4] Verifying Implementation Existence..."
+if [ ! -f "crates/realizar/src/safetensors_cuda.rs" ]; then
+    echo "FAIL: safetensors_cuda.rs not found"
+    exit 1
+fi
+
+# 2. SATD Scan
+echo "[2/4] Scanning for Residual SATD..."
+SATD_COUNT=$(grep -r "PMAT-116" . | grep -v "implement-gpu-safetensors.md" | grep -v "verify_pmat_116.sh" | wc -l)
+if [ "$SATD_COUNT" -ne "0" ]; then
+    echo "FAIL: Found $SATD_COUNT residual SATD markers:"
+    grep -r "PMAT-116" . | grep -v "implement-gpu-safetensors.md"
+    exit 1
+fi
+echo "PASS: Zero SATD confirmed."
+
+# 3. Falsification Tests
+echo "[3/4] Running Falsification Tests..."
+cargo test --features cuda safetensors_cuda -- --nocapture
+
+# 4. Integration Verification
+echo "[4/4] Verifying Integration..."
+# Ensure --help shows gpu support implies success of clap integration
+cargo run --bin apr -- --help | grep "gpu" > /dev/null
+if [ $? -eq 0 ]; then
+    echo "PASS: CLI help confirms GPU support"
+else
+    echo "FAIL: CLI help missing GPU support"
+    exit 1
+fi
+
+echo "=== Falsification Complete: CORROBORATED ==="
+```
 
 ---
 
