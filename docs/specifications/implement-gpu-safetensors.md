@@ -14,15 +14,23 @@
 | 1 | CUDA Storage Abstraction | ✅ Complete | Uses existing CudaExecutor with weight_cache/rmsnorm_cache |
 | 2 | SafeTensors CUDA Loader | ✅ Complete | `SafeTensorsCudaModel::load()` and `upload_weights()` |
 | 3 | Transformer Integration | ⚠️ 90% Complete | CPU RMS norm fallback (SATD: TODO GPU path) |
-| 4 | CLI Integration | ❌ Pending | Update chat.rs to use SafeTensorsCudaModel |
+| 4 | CLI Integration | ✅ Complete | `chat.rs` uses SafeTensorsCudaModel when `--gpu` |
 
-**File Created:** `realizar/src/safetensors_cuda.rs` (570 LOC)
+**Files Created/Modified:**
+- `realizar/src/safetensors_cuda.rs` (570 LOC) - NEW
+- `aprender/crates/apr-cli/src/commands/chat.rs` - Updated `generate_safetensors()`
 
 **Key Deviations from Original Spec:**
 - Uses existing `CudaExecutor` API instead of new `CudaStorage` struct
 - `gemm_b_cached` for matmul (input × cached weight)
 - `incremental_attention_gpu` for KV-cached attention
 - CPU fallback for RMS norm (pending `rmsnorm_gpu_ptr` integration)
+
+**Remaining Technical Debt (SATD):**
+```rust
+// SATD: TODO(PMAT-116) - Use for RoPE once GPU path is complete
+// SATD: TODO(PMAT-116) - Apply gamma weights from rmsnorm_cache (GPU path)
+```
 
 ---
 

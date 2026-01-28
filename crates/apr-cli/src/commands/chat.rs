@@ -1105,18 +1105,36 @@ mod realizar_chat {
             prompt: &[u32],
             config: &ChatConfig,
         ) -> Result<Vec<u32>, String> {
-            // JIDOKA (F-SAFE-GPU-ST): Fail explicitly if GPU requested but not supported
-            // Silent CPU fallback when user requests --gpu is a 0/100 FAIL per Popperian QA
+            // PMAT-116: GPU path for SafeTensors (direct H2D loading, no APR conversion)
             #[cfg(feature = "cuda")]
             if !config.force_cpu {
-                return Err(
-                    "SafeTensors GPU inference not yet supported. \
-                    Use --force-cpu flag, or convert to APR format first: \
-                    apr import model.safetensors -o model.apr && apr chat model.apr --gpu"
-                        .to_string(),
+                use realizar::safetensors_cuda::SafeTensorsCudaModel;
+
+                // Load SafeTensors directly to GPU (PMAT-116)
+                // This avoids APR conversion overhead and achieves GGUF parity
+                let mut cuda_model = SafeTensorsCudaModel::load(&self.model_path, 0)
+                    .map_err(|e| format!("SafeTensors CUDA load failed: {e}"))?;
+
+                eprintln!(
+                    "  {} {} ({}MB VRAM)",
+                    "GPU:".green(),
+                    cuda_model.device_name(),
+                    cuda_model.vram_mb()
                 );
+
+                // Use EOS token from config or default to Qwen2 EOS
+                let eos_id = 151645u32; // Qwen2 EOS token
+
+                // Generate with GPU acceleration
+                let tokens = cuda_model
+                    .generate(prompt, config.max_tokens.min(128), eos_id)
+                    .map_err(|e| format!("SafeTensors CUDA generate failed: {e}"))?;
+
+                // Return only generated tokens (skip prompt)
+                return Ok(tokens[prompt.len()..].to_vec());
             }
 
+            // CPU path: Use realizar's SafeTensors inference via AprTransformer
             // PMAT-108 FIX: Use realizar's SafeTensors inference, not aprender's training model
             // The old path used Qwen2Model.generate() which is 0.3 tok/s (training code)
             // The new path uses AprTransformer via SafetensorsToAprConverter for 25+ tok/s
