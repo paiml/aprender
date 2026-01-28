@@ -1207,39 +1207,69 @@ fn load_tokenizer_from_json(model_path: &Path) -> Option<GgufTokenizer> {
 }
 
 /// Infer model config from tensor shapes (for SafeTensors which has no metadata)
+///
+/// GH-165 FIX: Now handles both HuggingFace and GGUF tensor naming conventions:
+/// - HuggingFace: model.layers.N.self_attn.q_proj.weight, embed_tokens.weight
+/// - GGUF: blk.N.attn_q.weight, token_embd.weight
 fn infer_model_config_from_tensors(
     tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
 ) -> Option<GgufModelConfig> {
     // Try to find embedding tensor to get vocab_size and hidden_size
+    // Supports both HuggingFace (embed_tokens, wte) and GGUF (token_embd) naming
+    // GH-165 FIX: Handle both shape orders:
+    //   - HuggingFace: [vocab_size, hidden_size] (vocab first, larger)
+    //   - GGUF: [hidden_size, vocab_size] (hidden first, smaller)
+    // We detect by checking which dimension is larger (vocab_size >> hidden_size typically)
     let (vocab_size, hidden_size) = tensors
         .iter()
         .find(|(name, _)| {
             name.contains("embed_tokens")
                 || name.contains("wte")
                 || name.contains("word_embeddings")
+                || name.contains("token_embd") // GGUF naming
         })
         .and_then(|(_, (_, shape))| {
             if shape.len() == 2 {
-                Some((shape[0], shape[1]))
+                // Vocab size is typically much larger than hidden_size (e.g., 151936 vs 896)
+                // Detect order by comparing dimensions
+                let (dim0, dim1) = (shape[0], shape[1]);
+                if dim0 > dim1 {
+                    // [vocab_size, hidden_size] - HuggingFace order
+                    Some((dim0, dim1))
+                } else {
+                    // [hidden_size, vocab_size] - GGUF order
+                    Some((dim1, dim0))
+                }
             } else {
                 None
             }
         })?;
 
     // Count transformer layers
+    // Supports HuggingFace (layers.N., h.N., blocks.N.) and GGUF (blk.N.)
     let num_layers = tensors
         .keys()
         .filter_map(|name| {
-            // Match patterns like "layers.N." or "h.N." or "blocks.N."
+            // Match patterns like "layers.N." or "h.N." or "blocks.N." or "blk.N."
+            // GGUF uses "blk.N." pattern
+            if let Some(start) = name.find("blk.") {
+                let rest = &name[start + 4..]; // Skip "blk."
+                if let Some(end) = rest.find('.') {
+                    if let Ok(n) = rest[..end].parse::<usize>() {
+                        return Some(n);
+                    }
+                }
+            }
+            // HuggingFace patterns
             let patterns = [
-                (name.find("layers."), "."),
-                (name.find("h."), "."),
-                (name.find("blocks."), "."),
+                (name.find("layers."), 7), // "layers." is 7 chars
+                (name.find("h."), 2),      // "h." is 2 chars
+                (name.find("blocks."), 7), // "blocks." is 7 chars
             ];
-            for (pos, delim) in patterns {
+            for (pos, skip_len) in patterns {
                 if let Some(start) = pos {
-                    let rest = &name[start + 7..]; // Skip "layers." or similar
-                    if let Some(end) = rest.find(delim) {
+                    let rest = &name[start + skip_len..];
+                    if let Some(end) = rest.find('.') {
                         if let Ok(n) = rest[..end].parse::<usize>() {
                             return Some(n);
                         }
@@ -1253,9 +1283,14 @@ fn infer_model_config_from_tensors(
         .unwrap_or(0);
 
     // Try to infer num_heads from Q projection shape
+    // Supports HuggingFace (q_proj.weight) and GGUF (attn_q.weight)
     let num_heads = tensors
         .iter()
-        .find(|(name, _)| name.contains("q_proj.weight") || name.contains("query.weight"))
+        .find(|(name, _)| {
+            name.contains("q_proj.weight")
+                || name.contains("query.weight")
+                || name.contains("attn_q.weight") // GGUF naming
+        })
         .and_then(|(_, (_, shape))| {
             if shape.len() == 2 {
                 // q_proj is typically [num_heads * head_dim, hidden_size]
@@ -1279,33 +1314,48 @@ fn infer_model_config_from_tensors(
         });
 
     // Try to get intermediate_size from gate/up projection
+    // Supports HuggingFace (gate_proj, up_proj) and GGUF (ffn_gate, ffn_up)
+    // GH-165 FIX: Handle both shape orders (intermediate_size > hidden_size typically)
     let intermediate_size = tensors
         .iter()
         .find(|(name, _)| {
-            name.contains("gate_proj") || name.contains("up_proj") || name.contains("fc1")
+            name.contains("gate_proj")
+                || name.contains("up_proj")
+                || name.contains("fc1")
+                || name.contains("ffn_gate") // GGUF naming
+                || name.contains("ffn_up")   // GGUF naming
         })
         .and_then(|(_, (_, shape))| {
             if shape.len() == 2 {
-                Some(shape[0]) // Output dimension of gate/up projection
+                // intermediate_size is typically 4x hidden_size, so take the larger dimension
+                Some(shape[0].max(shape[1]))
             } else {
                 None
             }
         });
 
     // Infer architecture from tensor naming patterns
+    // Supports both HuggingFace and GGUF naming conventions
     let architecture = if tensors.keys().any(|k| k.contains("model.layers")) {
         Some("qwen2".to_string()) // or llama
     } else if tensors.keys().any(|k| k.contains("transformer.h")) {
         Some("gpt2".to_string())
+    } else if tensors.keys().any(|k| k.contains("blk.")) {
+        Some("qwen2".to_string()) // GGUF models (likely qwen2 or llama variant)
     } else {
         Some("unknown".to_string())
     };
 
     // PMAT-107: Infer num_kv_heads from K projection tensor shape for GQA support
     // K tensor shape: [kv_dim, hidden_dim] where kv_dim = num_kv_heads * head_dim
+    // Supports HuggingFace (k_proj.weight) and GGUF (attn_k.weight)
     let num_kv_heads = tensors
         .iter()
-        .find(|(name, _)| name.contains("k_proj.weight") || name.contains("key.weight"))
+        .find(|(name, _)| {
+            name.contains("k_proj.weight")
+                || name.contains("key.weight")
+                || name.contains("attn_k.weight") // GGUF naming
+        })
         .and_then(|(_, (_, shape))| {
             if let (2, Some(num_h)) = (shape.len(), num_heads) {
                 let kv_dim = shape[0];
@@ -6873,6 +6923,58 @@ mod tests_pmat_107_gqa_metadata {
             "PMAT-107: TinyLlama-style 8:1 GQA must have num_kv_heads=4"
         );
         assert_eq!(config.num_heads, Some(32));
+    }
+
+    /// GH-165 FIX: GGUF-style tensor naming must be supported
+    /// GGUF uses token_embd.weight, blk.N.attn_q.weight, etc.
+    /// GH-165 FIX: GGUF stores embedding as [hidden_size, vocab_size] (transposed from HuggingFace)
+    #[test]
+    fn test_gh165_gguf_style_tensor_naming() {
+        let mut tensors: BTreeMap<String, (Vec<f32>, Vec<usize>)> = BTreeMap::new();
+
+        // GGUF embedding: token_embd.weight [hidden_dim, vocab_size] (GGUF order!)
+        // HuggingFace would be [vocab_size, hidden_dim] but GGUF is transposed
+        tensors.insert(
+            "token_embd.weight".to_string(),
+            (vec![0.0; 896 * 32000], vec![896, 32000]),
+        );
+
+        // GGUF Q projection: blk.0.attn_q.weight [q_dim, hidden_dim]
+        tensors.insert(
+            "blk.0.attn_q.weight".to_string(),
+            (vec![0.0; 896 * 896], vec![896, 896]),
+        );
+
+        // GGUF K projection: blk.0.attn_k.weight [kv_dim, hidden_dim]
+        // Qwen2-0.5B: 896 hidden, 14 heads, 2 KV heads, head_dim=64
+        // kv_dim = 2 * 64 = 128
+        tensors.insert(
+            "blk.0.attn_k.weight".to_string(),
+            (vec![0.0; 128 * 896], vec![128, 896]),
+        );
+
+        // GGUF MLP: blk.0.ffn_gate.weight [hidden_size, intermediate_size] in GGUF order
+        tensors.insert(
+            "blk.0.ffn_gate.weight".to_string(),
+            (vec![0.0; 896 * 4864], vec![896, 4864]),
+        );
+
+        // Layer 1 for num_layers detection
+        tensors.insert(
+            "blk.1.attn_q.weight".to_string(),
+            (vec![0.0; 896 * 896], vec![896, 896]),
+        );
+
+        let config = infer_model_config_from_tensors(&tensors);
+        assert!(config.is_some(), "GH-165: GGUF-style tensors must be recognized");
+
+        let config = config.unwrap();
+        assert_eq!(config.vocab_size, Some(32000), "vocab_size from token_embd");
+        assert_eq!(config.hidden_size, Some(896), "hidden_size from token_embd");
+        assert_eq!(config.num_layers, Some(2), "num_layers from blk.N pattern");
+        assert_eq!(config.num_heads, Some(14), "num_heads from 896/64");
+        assert_eq!(config.num_kv_heads, Some(2), "num_kv_heads from attn_k (GQA)");
+        assert_eq!(config.intermediate_size, Some(4864), "intermediate from ffn_gate");
     }
 }
 
