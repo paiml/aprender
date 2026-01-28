@@ -1,8 +1,8 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 5.4.0
+**Version:** 5.5.0
 **Status:** ✅ VERIFIED (All inference paths working)
-**Popperian Score:** 75/100 (75% Corroborated)
+**Popperian Score:** 79/100 (79% Corroborated)
 **Author:** PAIML Engineering
 **Date:** 2026-01-28
 **Quality Philosophy:** Toyota Way + Popperian Falsification (Zero SATD, Stop-the-Line)
@@ -1138,24 +1138,49 @@ Uses aprender's own ML algorithms for diagnostics:
 | **#162** | Pulled models don't show in `apr list` | Cache directory mismatch (`~/.cache/pacha` vs expected) | Users can't find downloaded models |
 | **#161** | `apr chat` ignores `--max-tokens` | Flag parsed but not propagated to inference config | Stuck at 128 tokens regardless of flag |
 
-### C.2 P1 Features (Functionality Gap)
+### C.2 P1 Bugs (Data Loss / Safety Risk)
+
+| Issue | Title | Summary | Status |
+|-------|-------|---------|--------|
+| **#166** | `apr convert` silently overwrites | No `--force` flag check before overwrite | Data loss potential (F-CONV-064) |
+
+### C.3 P1 Features (Functionality Gap)
 
 | Issue | Title | Summary | Status |
 |-------|-------|---------|--------|
 | **#160** | Enable Tool Calling support | `tools` field in `/v1/chat/completions` ignored; grammar-constrained sampling not wired | Blocks LangChain/Agents integration |
 | **#152** | `--verbose` for serve payloads | No request/response logging middleware | Debugging production issues difficult |
 
-### C.3 P2 Performance (Optimization)
+### C.4 P2 Performance/UX (Optimization)
 
 | Issue | Title | Summary | Impact |
 |-------|-------|---------|--------|
+| **#167** | Context overflow error unclear | Returns CUDA_ERROR_UNKNOWN instead of "Context limit exceeded" | Confusing UX (F-QUAL-037) |
 | **#159** | Convolution Layout Optimization | Auto-select NCHW vs NHWC based on backend | Suboptimal memory access patterns |
 | **#153** | Slow serve startup | Reads entire file (19GB) for 8-byte format detection | 6-10 second delay for large models |
 | **#149** | Lottery Ticket Hypothesis pruning | Sparse model support via magnitude pruning | Missing model compression feature |
 | **#144** | Synthetic noise generation | WASM-first noise models for edge inference | Feature request (low priority) |
 | **#141** | Y7: GPU Performance Benchmarks | APR decode ≥200 tok/s on GPU (RTX 4090) | Blocks APR GPU parity with GGUF |
 
-### C.4 Five-Whys Analysis Required
+### C.5 Five-Whys Analysis Required
+
+**#166: apr convert Silently Overwrites (NEW)**
+```
+1. WHY was data lost? → File was overwritten without warning
+2. WHY no warning? → apr convert doesn't check if output file exists
+3. WHY no check? → No overwrite protection implemented
+4. WHY no protection? → [INVESTIGATION NEEDED - commands/convert.rs]
+5. WHY no test? → [INVESTIGATION NEEDED - test coverage gap]
+```
+
+**#167: Context Window Error Unclear (NEW)**
+```
+1. WHY unclear error? → CUDA kernel fails with generic error (CUDA_ERROR_UNKNOWN)
+2. WHY CUDA fails? → Attention matrix exceeds allocated size
+3. WHY size exceeded? → No pre-check for context length vs model max
+4. WHY no pre-check? → Context length validation not implemented before GPU dispatch
+5. WHY no validation? → [FIX: Add token count check before inference]
+```
 
 **#165: SafeTensors 1.5B Conversion Panic**
 ```
@@ -1175,16 +1200,18 @@ Uses aprender's own ML algorithms for diagnostics:
 5. WHY no RMSNorm exception? → [FIX: Add weight type classification, skip mean check for norm weights]
 ```
 
-### C.5 Triage Priority Matrix
+### C.6 Triage Priority Matrix
 
 | Priority | Criteria | Issues |
 |----------|----------|--------|
 | **P0** | Blocks core `apr chat`/`apr convert` workflow | #161, #162, #163, #164, #165 |
+| **P1** | Data loss / safety risk | #166 |
 | **P1** | Missing expected feature | #160, #152 |
-| **P2** | Performance/optimization | #141, #153, #159 |
+| **P2** | Performance/UX optimization | #141, #153, #159, #167 |
 | **P3** | Nice to have | #144, #149 |
 
 **Toyota Way Action:** P0 defects should stop all new feature development until resolved.
+**P1 Safety:** #166 (overwrite protection) should be prioritized to prevent data loss.
 
 ---
 

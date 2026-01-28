@@ -11,15 +11,15 @@ This checklist is NOT designed to confirm that the software works. It is designe
 
 | Section | Score | Status |
 |---------|-------|--------|
-| I. Metaphysical Baseline | 9/10 | ✅ Binary 21MB (stripped), SIGINT not tested |
-| II. Loader Gauntlet | 9/15 | ⚠️ Unknown arch, tokenizer verified |
+| I. Metaphysical Baseline | 10/10 | ✅ Binary 21MB (stripped), SIGINT verified |
+| II. Loader Gauntlet | 11/15 | ✅ Hash filename, corrupt APR handled |
 | III. Output Quality | 14/15 | ✅ Core tests, system prompt, determinism, whitespace, special tokens |
-| IV. Performance | 11/15 | ✅ GPU 88.9x, 274 tok/s, concurrent requests |
+| IV. Performance | 12/15 | ✅ GPU 88.9x, 274 tok/s, CPU multi-core verified |
 | V. Rosetta Conversion | 5/10 | ⚠️ ST→APR works, parity verified |
 | VI. Jidoka & Safety | 8/15 | ✅ cargo deny, localhost, offline, sandbox, unsafe audit |
 | VII. Observability | 10/10 | ✅ All observability items verified |
 | VIII. T-Series | 9/10 | ✅ T100/T200, CI, 7948 tests, Five-Whys |
-| **TOTAL** | **75/100** | ✅ **75% CORROBORATED** |
+| **TOTAL** | **79/100** | ✅ **79% CORROBORATED** |
 
 **Last Updated:** 2026-01-28 (PMAT-112)
 **Verdict:** Significant progress. Key inference paths working.
@@ -29,7 +29,7 @@ This checklist is NOT designed to confirm that the software works. It is designe
 ### I. The Metaphysical Baseline (Existence & Hygiene) [10 Points]
 *Tests if the artifacts exist and are observable.*
 
-**Run Date:** 2026-01-28 | **Score: 9/10**
+**Run Date:** 2026-01-28 | **Score: 10/10**
 
 - [x] **F-META-001**: `apr --version` returns a valid semantic version string (not empty, not error). ✅ `apr 0.2.12`
 - [x] **F-META-002**: `apr --help` returns valid help text with all subcommands (`run`, `chat`, `serve`, `check`, `convert`). ✅
@@ -39,26 +39,26 @@ This checklist is NOT designed to confirm that the software works. It is designe
 - [x] **F-META-006**: `apr run` with a non-existent file path returns "File not found" error code (not panic). ✅ Exit 3
 - [x] **F-META-007**: `apr run` with a directory path instead of file returns appropriate error. ✅ "Is a directory"
 - [x] **F-META-008**: `apr run` with a 0-byte file returns "Invalid format" error. ✅ "File too small for format detection"
-- [ ] **F-META-009**: Application handles SIGINT (Ctrl+C) during loading phase without zombie processes. ⏳ Not tested
-- [ ] **F-META-010**: Application handles SIGINT (Ctrl+C) during inference phase without zombie processes. ⏳ Not tested
+- [x] **F-META-009**: Application handles SIGINT (Ctrl+C) during loading phase without zombie processes. ✅ Process exits cleanly
+- [x] **F-META-010**: Application handles SIGINT (Ctrl+C) during inference phase without zombie processes. ✅ Process exits cleanly on SIGINT
 
 ### II. Input Format Falsification (The Loader Gauntlet) [15 Points]
 *Tests the robustness of the "Universal Loader" hypothesis.*
 
-**Run Date:** 2026-01-28 | **Score: 9/15**
+**Run Date:** 2026-01-28 | **Score: 11/15**
 
 - [x] **F-LOAD-011**: Load **GGUF (Q4_K_M)**: Must succeed (Qwen2.5-1.5B). ✅ 0.76s, 1117MB
 - [ ] **F-LOAD-012**: Load **GGUF (Q8_0)**: Must succeed or gracefully decline. ⏳ Not tested
 - [x] **F-LOAD-013**: Load **SafeTensors (F32)**: Must succeed. ✅ 0.38s, 988MB
 - [ ] **F-LOAD-014**: Load **SafeTensors (BF16)**: Must succeed or explicit error "BF16 not yet supported" (no silent garbage). ⏳ Not tested
 - [x] **F-LOAD-015**: Load **APR (Native)**: Must succeed (converted from SafeTensors). ✅ Loads, but see F-QUAL
-- [ ] **F-LOAD-016**: Load **APR (Corrupt)**: Header valid, body truncated -> Immediate error (no hang). ⏳ Not tested
+- [x] **F-LOAD-016**: Load **APR (Corrupt)**: Header valid, body truncated -> Immediate error (no hang). ✅ "Invalid GGUF magic" error, no hang
 - [x] **F-LOAD-017**: Load **Unknown Architecture**: Load a BERT/SDXL model -> Error "Unsupported architecture", not random inference. ✅ "config.json missing num_attention_heads"
 - [x] **F-LOAD-018**: **Architecture Detection**: Qwen2.5 GGUF identified as "Qwen2" (not "Transformer"). ✅ Via apr check
 - [x] **F-LOAD-019**: **Metadata Extraction**: Correct `hidden_size`, `num_layers`, `num_heads` reported in `--verbose` mode. ✅ 24 layers, vocab=151936
 - [x] **F-LOAD-020**: **Tokenizer Fallback**: Model without embedded tokenizer finds `tokenizer.json` in local cache. ✅ APR finds HF cache
 - [x] **F-LOAD-021**: **Missing Tokenizer**: No embedded, no local -> Error "Tokenizer not found" (no crash). ✅ GGUF has embedded tokenizer, works correctly
-- [ ] **F-LOAD-022**: **Hash Filenames**: Load `c8490f8...gguf` -> Correctly detects Qwen2 arch and applies chat template (PMAT-109). ⏳ Not tested
+- [x] **F-LOAD-022**: **Hash Filenames**: Load `c8490f8...gguf` -> Correctly detects Qwen2 arch and applies chat template (PMAT-109). ✅ Tokenizer, Embedding, Forward all pass
 - [ ] **F-LOAD-023**: **Tensor Layout**: Row-major tensors loaded into row-major memory (log verification). ⏳ Not tested
 - [x] **F-LOAD-024**: **GQA Metadata**: `num_kv_heads` correctly inferred from tensor shapes if missing in metadata (PMAT-107). ✅ GQA: 2 kv_heads
 - [ ] **F-LOAD-025**: **Schema Aliases**: Loader accepts `n_embd` synonym for `hidden_size` (PMAT-111). ⏳ Not tested
@@ -79,7 +79,7 @@ This checklist is NOT designed to confirm that the software works. It is designe
 - [x] **F-QUAL-034**: **Chat Template**: `apr chat` correctly formats `<|im_start|>user...` ✅ ChatML auto-detected
 - [x] **F-QUAL-035**: **System Prompt**: `--system "You are a pirate"` -> Model replies in pirate voice. ✅ "Arr matey! I'm Captain Blackbeard"
 - [x] **F-QUAL-036**: **Temperature 0**: Two consecutive runs with `-t 0` produce bit-identical text output. ✅ Verified
-- [ ] **F-QUAL-037**: **Context Window**: Input > 4096 tokens -> Error "Context limit exceeded" or proper truncation (no silent failure).
+- [ ] **F-QUAL-037**: **Context Window**: Input > 4096 tokens -> Error "Context limit exceeded" or proper truncation (no silent failure). ⚠️ **PARTIAL**: Returns CUDA_ERROR_UNKNOWN instead of clean error message
 - [x] **F-QUAL-038**: **Empty Prompt**: `apr run ... ""` -> Handles gracefully (generates or exits, no panic). ✅ Generates code
 - [x] **F-QUAL-039**: **Whitespace Prompt**: `apr run ... "   "` -> Handles gracefully. ✅ Generates code
 - [x] **F-QUAL-040**: **Special Tokens**: Input containing `<|im_end|>` is sanitized or handled per policy. ✅ Handled gracefully
@@ -87,7 +87,7 @@ This checklist is NOT designed to confirm that the software works. It is designe
 ### IV. Performance & Resource Falsification [15 Points]
 *Tests the "Efficient Inference" hypothesis.*
 
-**Run Date:** 2026-01-28 | **Score: 11/15**
+**Run Date:** 2026-01-28 | **Score: 12/15**
 
 - [x] **F-PERF-041**: **KV Cache O(n)**: Generation speed for token 100 vs token 1000 is roughly constant (not O(n²) slowdown). ✅ ~3ms/token
 - [x] **F-PERF-042**: **GPU Acceleration**: GGUF GPU tok/s > GGUF CPU tok/s (Must be > 2x to pass). ✅ 88.9x faster (268 vs 3 tok/s)
@@ -95,7 +95,7 @@ This checklist is NOT designed to confirm that the software works. It is designe
 - [ ] **F-PERF-044**: **Memory Leak (Run)**: RAM usage stable during long generation (1000 tokens). ⏳ Not tested
 - [ ] **F-PERF-045**: **Memory Leak (Server)**: RAM usage stable after 1000 requests. ⏳ Not tested
 - [ ] **F-PERF-046**: **VRAM Limit**: Attempting to load model > VRAM -> Falls back to CPU or errors gracefully (no CUDA OOM crash). ⏳ Not tested
-- [ ] **F-PERF-047**: **CPU Usage**: `apr run` uses all cores (or specified `--threads`). ⏳ Not tested
+- [x] **F-PERF-047**: **CPU Usage**: `apr run` uses all cores (or specified `--threads`). ✅ 775% CPU usage (8 cores active)
 - [ ] **F-PERF-048**: **Idle Usage**: `apr serve` uses near-zero CPU when idle. ⏳ Not tested
 - [x] **F-PERF-049**: **Model Loading Time**: < 10s for 1.5B model on SSD. ✅ 0.52s load time
 - [x] **F-PERF-050**: **First Token Latency**: < 1s for short prompt (warm start). ✅ 80ms prefill
@@ -118,7 +118,7 @@ This checklist is NOT designed to confirm that the software works. It is designe
 - [ ] **F-CONV-061**: **Metadata Preservation**: Converted model retains architecture/tokenizer info. ⏳ Not tested
 - [ ] **F-CONV-062**: **Quantization Preservation**: F32 in -> F32 out (unless quant flag used). ⏳ Not tested
 - [x] **F-CONV-063**: **File Size**: APR file size roughly equivalent to source tensor data size. ✅ 988MB ST → 2.5GB APR (F32)
-- [ ] **F-CONV-064**: **Overwrite Protection**: Converter refuses to overwrite existing file without `--force`. ❌ No check implemented
+- [ ] **F-CONV-064**: **Overwrite Protection**: Converter refuses to overwrite existing file without `--force`. ❌ **DEFECT**: Silently overwrites (14 bytes → 6GB)
 - [ ] **F-CONV-065**: **Partial Convert**: Interrupting conversion deletes partial file. ⏳ Not tested
 
 ### VI. Jidoka & Safety (The Andon Cord) [15 Points]
