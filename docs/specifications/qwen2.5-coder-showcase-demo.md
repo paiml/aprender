@@ -1,11 +1,11 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 5.19.0
-**Status:** ⚠️ PARTIALLY VERIFIED (GGUF works, APR from SafeTensors RE-FALSIFIED)
-**Popperian Score:** 82/100 (23/28 Corroborated, 4 FALSIFIED, 1 PARTIAL)
+**Version:** 5.20.0
+**Status:** ⚠️ PARTIALLY VERIFIED (GGUF works, 5 paths FALSIFIED)
+**Popperian Score:** 84/100 (32/38 Corroborated, 5 FALSIFIED, 1 PARTIAL)
 **Author:** PAIML Engineering
 **Date:** 2026-01-28
-**Last Falsification Run:** 2026-01-28 (PMAT-122: PMAT-114 claim RE-FALSIFIED via testing)
+**Last Falsification Run:** 2026-01-28 (PMAT-122: 38 tests, 5 falsified including PMAT-114 and PMAT-SERVE-FIX-001)
 **Quality Philosophy:** Toyota Way + Popperian Falsification (Zero SATD, Stop-the-Line)
 
 ---
@@ -1455,20 +1455,33 @@ Following Popper's critical rationalism, we do not seek to *confirm* that infere
 | F-VERBOSE-001 | `apr run --verbose` | Shows arch/layers/backend | Shows all | ✅ **CORROBORATED** |
 | F-CHATTEMPLATE | `apr chat model.gguf` | Auto-detect | "Detected ChatML" | ✅ **CORROBORATED** |
 
-**Summary:** 28/32 tests CORROBORATED, 3 FALSIFIED, 1 PARTIAL
+**Summary:** 32/38 tests CORROBORATED, 5 FALSIFIED, 1 PARTIAL
 
-**Additional Tests (PMAT-122):**
+**Additional Tests (PMAT-122 - Extended):**
 - F-OLLAMA-PARITY: 5.3x Ollama (264 vs 50 tok/s) ✅ **CORROBORATED**
 - F-FORMAT-PARITY: GGUF argmax=17 == SafeTensors argmax=17 ✅ **CORROBORATED**
 - F-MMAP-001: Memory mapping working ✅ **CORROBORATED**
 - F-OFFLINE-001: Sovereign AI offline mode ✅ **CORROBORATED**
+- F-CACHE-001: Cached model (hash filename) inference ✅ **CORROBORATED** (PMAT-109)
+- F-CHECK-REAL-001: Real forward pass in apr check ✅ **CORROBORATED** (PMAT-112)
+- F-SHOWCASE-001: apr showcase gguf step ✅ **CORROBORATED**
+- F-SAFETENSORS-CUDA-001: SafeTensors GPU via apr chat ✅ **CORROBORATED** (PMAT-116)
+- F-PROFILE-REAL-001: Real profiling telemetry ⚠️ **PARTIAL** (per-layer timing estimated)
+- F-SERVE-GENERATE-001: /generate endpoint ❌ **FALSIFIED** (PMAT-SERVE-FIX-001 RE-FALSIFIED)
+- F-EVAL-002: apr eval perplexity ❌ **FALSIFIED** (PPL=1099.62 >> 20.0)
 
-**Falsified Paths:**
+**Falsified Paths (5 total):**
 - ❌ F-APR-GGUF: APR from GGUF → garbage (PAD tokens)
 - ❌ F-APR-ST: APR from SafeTensors → garbage (PMAT-114 RE-FALSIFIED)
+- ❌ F-SERVE-GENERATE: /generate returns "No model available" (PMAT-SERVE-FIX-001 RE-FALSIFIED)
+- ❌ F-EVAL: Perplexity 1099 >> threshold 20
 - ⚠️ F-SAFETENSORS-GPU: Works via `apr chat`, NOT via `apr run`
 
-**Root Cause:** APR converter/loader bugs (validation 4/100), SafeTensors GPU not in `apr run`
+**Root Causes:**
+1. APR converter/loader bugs (validation 4/100)
+2. SafeTensors GPU not in `apr run` command
+3. /generate handler doesn't check cuda_model
+4. Eval may have model or dataset issues
 
 ### 13.7 Cross-Format Parity (The argmax Invariant)
 
