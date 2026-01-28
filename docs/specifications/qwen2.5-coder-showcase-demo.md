@@ -1,11 +1,11 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 5.28.0
-**Status:** ⚠️ PARTIALLY VERIFIED (GGUF Q4_K/Q6_K work, 5 paths FALSIFIED, 1 FIXED)
-**Popperian Score:** 91/100 (59/65 Corroborated, 5 FALSIFIED, 1 PARTIAL)
+**Version:** 5.29.0
+**Status:** ⚠️ PARTIALLY VERIFIED (GGUF Q4_K/Q6_K work, 4 paths FALSIFIED, 2 FIXED)
+**Popperian Score:** 93/100 (60/65 Corroborated, 4 FALSIFIED, 1 PARTIAL)
 **Author:** PAIML Engineering
 **Date:** 2026-01-28
-**Last Falsification Run:** 2026-01-28 (PMAT-124: /generate endpoint FIXED)
+**Last Falsification Run:** 2026-01-28 (PMAT-125/126: APR tokenizer + architecture FIXED)
 **Quality Philosophy:** Toyota Way + Popperian Falsification (Zero SATD, Stop-the-Line)
 
 ---
@@ -1536,22 +1536,28 @@ Following Popper's critical rationalism, we do not seek to *confirm* that infere
 - F-TREE-001: `apr tree` command exists (APR-only) ✅ **CORROBORATED**
 - F-HEX-001: `apr hex` command exists (APR-only) ✅ **CORROBORATED**
 
-**Falsified Paths (5 total):**
+**Falsified Paths (4 total):**
 - ❌ F-APR-GGUF: APR from GGUF → garbage (PAD tokens)
-- ❌ F-APR-ST: APR from SafeTensors → garbage (PMAT-114 RE-FALSIFIED)
 - ❌ F-EVAL: Perplexity 1099 >> threshold 20
 - ❌ F-Q4_0: GGUF Q4_0 produces garbage (spec line 546 claim was FALSE)
 - ⚠️ F-SAFETENSORS-GPU: Works via `apr chat`, NOT via `apr run`
 
-**Fixed Paths (1 total):**
+**Fixed Paths (2 total):**
 - ✅ F-SERVE-GENERATE: /generate endpoint (PMAT-124: Added quantized_model handler)
   - Root cause: Handler only checked cuda_model, not quantized_model for CPU GGUF mode
   - Fix: Added `if let Some(quantized_model) = state.quantized_model()` block
   - Evidence: `{"text":"What is 2+2?...","num_generated":10}` (was `{"error":"No model available"}`)
 
+- ✅ F-APR-ST: APR from SafeTensors (PMAT-125/126: Architecture + Tokenizer)
+  - Root cause 1: Architecture defaulted to "unknown" instead of reading from metadata
+  - Root cause 2: encode_text() only checked sibling tokenizer.json, not HuggingFace cache
+  - Fix: Extract architecture from APR metadata, search HF cache for tokenizers
+  - Evidence before: "1. **Identify the type of problem**:" (BOS token only)
+  - Evidence after: "2+2 equals 4. 4 is a whole number..." (actual inference)
+
 **Root Causes (Remaining):**
-1. APR converter/loader bugs (validation 4/100)
-2. SafeTensors GPU not in `apr run` command
+1. ~~APR converter/loader bugs~~ **Partially FIXED** (tokenizer/arch detection working)
+2. SafeTensors GPU not in `apr run` command (design choice, use `apr chat --gpu`)
 3. ~~`/generate` handler doesn't check quantized_model~~ **FIXED (PMAT-124)**
 4. Eval may have model or dataset issues
 5. **Q4_0/Q4_1 dequantization broken** (Q4_K works, Q4_0 doesn't)
