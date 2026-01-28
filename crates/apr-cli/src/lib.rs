@@ -1041,6 +1041,7 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
             trace_level,
             profile,
         } => {
+            // GH-152: Wire global verbose flag to server config for request/response logging
             let config = serve::ServerConfig {
                 port: *port,
                 host: host.clone(),
@@ -1052,6 +1053,7 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
                 trace: *trace,
                 trace_level: trace_level.clone(),
                 profile: *profile,
+                verbose: cli.verbose,
                 ..Default::default()
             };
             serve::run(file, &config)

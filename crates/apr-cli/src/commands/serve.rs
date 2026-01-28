@@ -67,6 +67,8 @@ pub(crate) struct ServerConfig {
     pub trace_level: String,
     /// Enable inline Roofline profiling (adds X-Profile headers)
     pub profile: bool,
+    /// GH-152: Enable verbose request/response logging
+    pub verbose: bool,
 }
 
 impl Default for ServerConfig {
@@ -84,6 +86,7 @@ impl Default for ServerConfig {
             trace: false,
             trace_level: "basic".to_string(),
             profile: false,
+            verbose: false,
         }
     }
 }
@@ -587,6 +590,14 @@ pub fn create_router(state: Arc<ServerState>) -> axum::Router {
     ) -> (StatusCode, Json<HealthResponse>) {
         let health = health_check(&state);
 
+        // GH-152: Verbose health check logging
+        if state.config.verbose {
+            eprintln!(
+                "[VERBOSE] GET /health: status={:?}, uptime={}s",
+                health.status, health.uptime_seconds
+            );
+        }
+
         // HR02: Return 503 during model load
         let status_code = match health.status {
             HealthStatus::Healthy => StatusCode::OK,
@@ -706,6 +717,19 @@ pub fn create_router(state: Arc<ServerState>) -> axum::Router {
             }
         };
 
+        // GH-152: Verbose request logging
+        if state.config.verbose {
+            let prompt_preview = if request.prompt.len() > 100 {
+                format!("{}...", &request.prompt[..100])
+            } else {
+                request.prompt.clone()
+            };
+            eprintln!(
+                "[VERBOSE] POST /generate: prompt={:?}, max_tokens={}, stream={}",
+                prompt_preview, request.max_tokens, request.stream
+            );
+        }
+
         // IC05: Empty prompt → 400 error
         if request.prompt.is_empty() {
             state.metrics.record_client_error();
@@ -740,6 +764,14 @@ pub fn create_router(state: Arc<ServerState>) -> axum::Router {
             let duration_ms = start.elapsed().as_millis() as u64;
             metrics.record_request(true, 2, duration_ms);
 
+            // GH-152: Verbose streaming response logging
+            if state.config.verbose {
+                eprintln!(
+                    "[VERBOSE] POST /generate streaming: started, latency_ms={}",
+                    duration_ms
+                );
+            }
+
             return Sse::new(stream)
                 .keep_alive(axum::response::sse::KeepAlive::default())
                 .into_response();
@@ -748,6 +780,14 @@ pub fn create_router(state: Arc<ServerState>) -> axum::Router {
         // Non-streaming response
         let duration_ms = start.elapsed().as_millis() as u64;
         state.metrics.record_request(true, 0, duration_ms);
+
+        // GH-152: Verbose response logging
+        if state.config.verbose {
+            eprintln!(
+                "[VERBOSE] POST /generate response: tokens=0, latency_ms={}, finish_reason=stop",
+                duration_ms
+            );
+        }
 
         // LG03: latency_ms included
         (
@@ -3151,6 +3191,16 @@ mod tests {
         assert_eq!(config.max_concurrent, 10);
         assert!(config.metrics);
         assert!(!config.no_gpu);
+        assert!(!config.verbose); // GH-152: verbose defaults to false
+    }
+
+    /// GH-152: Test verbose flag can be set
+    #[test]
+    fn test_server_config_verbose_flag() {
+        let mut config = ServerConfig::default();
+        assert!(!config.verbose);
+        config.verbose = true;
+        assert!(config.verbose);
     }
 
     #[test]
