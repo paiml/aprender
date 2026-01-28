@@ -16,10 +16,10 @@ This checklist is NOT designed to confirm that the software works. It is designe
 | III. Output Quality | 14/15 | ✅ Core tests, system prompt, determinism, whitespace, special tokens |
 | IV. Performance | 13/15 | ✅ GPU 88.9x, 274 tok/s, memory stable |
 | V. Rosetta Conversion | 9/10 | ✅ Round trip, BF16, partial cleanup |
-| VI. Jidoka & Safety | 14/15 | ✅ Jidoka NaN/Inf detection, bounds validation |
+| VI. Jidoka & Safety | 15/15 | ✅ PERFECT: Jidoka NaN/Inf, bounds, payload limit |
 | VII. Observability | 10/10 | ✅ All observability items verified |
 | VIII. T-Series | 10/10 | ✅ T100/T200, CI, 7948 tests, Five-Whys, regression suite |
-| **TOTAL** | **94/100** | ✅ **94% CORROBORATED** |
+| **TOTAL** | **95/100** | ✅ **95% CORROBORATED** |
 
 **Last Updated:** 2026-01-28 (PMAT-112)
 **Verdict:** Significant progress. Key inference paths working.
@@ -124,7 +124,7 @@ This checklist is NOT designed to confirm that the software works. It is designe
 ### VI. Jidoka & Safety (The Andon Cord) [15 Points]
 *Tests the "Stop on Defect" hypothesis.*
 
-**Run Date:** 2026-01-28 | **Score: 14/15**
+**Run Date:** 2026-01-28 | **Score: 15/15** ⭐ PERFECT
 
 - [x] **F-SAFE-066**: **NaN Detection**: Injecting NaN into weights -> Inference Halts (Panic/Error), does not output garbage. ✅ TrainingGuard::check_loss returns ValidationError "Jidoka: NaN"
 - [x] **F-SAFE-067**: **Inf Detection**: Intermediate activation overflow -> Inference Halts. ✅ TrainingGuard::check_loss returns ValidationError "Jidoka: Infinite"
@@ -136,7 +136,7 @@ This checklist is NOT designed to confirm that the software works. It is designe
 - [x] **F-SAFE-073**: **Sandboxing**: `apr run` does not write outside CWD or `/tmp`. ✅ No files created in home
 - [x] **F-SAFE-074**: **Network**: `apr run` (offline mode) makes NO network requests. ✅ --offline flag available
 - [x] **F-SAFE-075**: **API Security**: `apr serve` binds to localhost by default (not 0.0.0.0). ✅ --host default: 127.0.0.1
-- [ ] **F-SAFE-076**: **Input Sanitization**: Server payload > 10MB -> 413 Payload Too Large. ⏳ Not tested
+- [x] **F-SAFE-076**: **Input Sanitization**: Server payload > 10MB -> 413 Payload Too Large. ✅ size_limit_middleware returns 413 for >MAX_REQUEST_SIZE (10MB)
 - [x] **F-SAFE-077**: **Trace Safety**: `--trace` does not log environment variables or secrets. ✅ Verified
 - [x] **F-SAFE-078**: **Path Traversal**: `apr run ../../../etc/passwd` -> Blocked or handled as file (no exposure). ✅ "File not found"
 - [x] **F-SAFE-079**: **Dependency Audit**: `cargo deny check` passes. ✅ All checks pass
