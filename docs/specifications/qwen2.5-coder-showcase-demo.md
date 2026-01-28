@@ -1537,8 +1537,11 @@ Following Popper's critical rationalism, we do not seek to *confirm* that infere
 - F-HEX-001: `apr hex` command exists (APR-only) ✅ **CORROBORATED**
 
 **Falsified Paths (3 total):**
-- ❌ F-EVAL: Perplexity 1099 >> threshold 20
-- ❌ F-Q4_0: GGUF Q4_0 produces garbage (spec line 546 claim was FALSE)
+- ❌ F-EVAL: Perplexity 1099 >> threshold 20 (**EVAL BUG, not model quality**)
+  - Five-Whys: eval.rs doesn't load GGUF weights, uses uninitialized model
+  - Model quality verified by: apr run, apr chat, apr serve all produce correct outputs
+  - Fix needed: Use realizar's GGUF loader in eval command
+- ❌ F-Q4_0: GGUF Q4_0 produces garbage (trueno dequantization bug, Q4_K works)
 - ⚠️ F-SAFETENSORS-GPU: Works via `apr chat`, NOT via `apr run` (design choice)
 
 **Fixed Paths (3 total):**
@@ -1564,8 +1567,10 @@ Following Popper's critical rationalism, we do not seek to *confirm* that infere
 1. ~~APR converter/loader bugs~~ **FULLY FIXED** (tokenizer + arch detection working for both paths)
 2. SafeTensors GPU not in `apr run` command (design choice, use `apr chat --gpu`)
 3. ~~`/generate` handler doesn't check quantized_model~~ **FIXED (PMAT-124)**
-4. Eval may have model or dataset issues
-5. **Q4_0/Q4_1 dequantization broken** (Q4_K works, Q4_0 doesn't)
+4. **F-EVAL: eval.rs doesn't load GGUF weights** (uses uninitialized model)
+   - Five-Whys: eval.rs has load_from_apr/load_from_safetensors but NO GGUF loading
+   - Fix: Integrate realizar GGUF loader into eval command
+5. **Q4_0/Q4_1 dequantization broken** in trueno (Q4_K works, Q4_0 doesn't)
 
 ### 13.7 Cross-Format Parity (The argmax Invariant)
 
