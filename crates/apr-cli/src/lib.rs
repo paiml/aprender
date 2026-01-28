@@ -837,6 +837,14 @@ pub enum Commands {
         #[arg(long)]
         skip_gpu_speedup: bool,
 
+        /// Skip cross-format parity test (F-QUAL-032)
+        #[arg(long)]
+        skip_format_parity: bool,
+
+        /// SafeTensors model path for cross-format parity test (F-QUAL-032)
+        #[arg(long, value_name = "PATH")]
+        safetensors_path: Option<PathBuf>,
+
         /// Number of benchmark iterations
         #[arg(long, default_value = "10")]
         iterations: usize,
@@ -1378,6 +1386,8 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
             skip_throughput,
             skip_ollama,
             skip_gpu_speedup,
+            skip_format_parity,
+            safetensors_path,
             iterations,
             warmup,
             max_tokens,
@@ -1392,6 +1402,8 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
             *skip_throughput,
             *skip_ollama,
             *skip_gpu_speedup,
+            *skip_format_parity,
+            safetensors_path.clone(),
             *iterations,
             *warmup,
             *max_tokens,

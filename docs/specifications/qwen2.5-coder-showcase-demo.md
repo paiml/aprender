@@ -1,6 +1,6 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 4.8.0
+**Version:** 4.9.0
 **Status:** ✅ OPERATIONAL (Real Observability Active)
 **Author:** PAIML Engineering
 **Date:** 2026-01-28
@@ -108,7 +108,10 @@ Compare:
 | VII. Observability | 2/10 | F-OBS-081 ✅ --trace JSON, F-OBS-089 ✅ apr check |
 
 **Remaining Showcase Gaps:**
-- F-QUAL-032: Argmax parity GGUF vs SafeTensors (needs same model)
+- None! All showcase requirements implemented.
+
+**Completed (PMAT-119):**
+- ✅ F-QUAL-032: Cross-format parity GGUF vs SafeTensors (`apr qa --safetensors-path`)
 
 **Completed (PMAT-118):**
 - ✅ F-PERF-042: GPU > 2x CPU throughput verification (`apr qa --assert-gpu-speedup`)

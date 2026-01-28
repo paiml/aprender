@@ -25,6 +25,12 @@
 //!    - Falsifiable: If GPU speedup < threshold, test fails
 //!    - Toyota Way: Genchi Genbutsu - measure real performance
 //!
+//! 5. **Cross-Format Parity Test** (F-QUAL-032)
+//!    - Compare argmax between GGUF and SafeTensors for same model
+//!    - Invariant: argmax(forward_gguf) == argmax(forward_safetensors)
+//!    - Falsifiable: If argmax differs, cross-format parity is BROKEN
+//!    - Cornerstone of architecture's logical validity
+//!
 //! # Usage
 //!
 //! ```bash
@@ -34,6 +40,8 @@
 //! apr qa model.gguf --assert-gpu-speedup 3.0  # Custom GPU vs CPU speedup
 //! apr qa model.gguf --skip-ollama             # Skip Ollama comparison
 //! apr qa model.gguf --skip-gpu-speedup        # Skip GPU vs CPU test
+//! apr qa model.gguf --skip-format-parity      # Skip cross-format test
+//! apr qa model.gguf --safetensors-path m.st   # Compare with SafeTensors model
 //! apr qa model.gguf --json                    # JSON output for CI
 //! ```
 //!
@@ -69,6 +77,10 @@ pub struct QaConfig {
     pub skip_ollama: bool,
     /// Skip GPU vs CPU speedup test (F-PERF-042)
     pub skip_gpu_speedup: bool,
+    /// Skip cross-format parity test (F-QUAL-032)
+    pub skip_format_parity: bool,
+    /// SafeTensors model path for cross-format parity (F-QUAL-032)
+    pub safetensors_path: Option<std::path::PathBuf>,
     /// Number of benchmark iterations
     pub iterations: usize,
     /// Number of warmup iterations
@@ -91,6 +103,8 @@ impl Default for QaConfig {
             skip_throughput: false,
             skip_ollama: false,
             skip_gpu_speedup: false,
+            skip_format_parity: false,
+            safetensors_path: None,
             iterations: 10,
             warmup: 3,
             max_tokens: 32,
@@ -199,6 +213,8 @@ pub fn run(
     skip_throughput: bool,
     skip_ollama: bool,
     skip_gpu_speedup: bool,
+    skip_format_parity: bool,
+    safetensors_path: Option<std::path::PathBuf>,
     iterations: usize,
     warmup: usize,
     max_tokens: usize,
@@ -213,6 +229,8 @@ pub fn run(
         skip_throughput,
         skip_ollama,
         skip_gpu_speedup,
+        skip_format_parity,
+        safetensors_path,
         iterations,
         warmup,
         max_tokens,
@@ -293,6 +311,19 @@ fn run_qa(path: &Path, config: &QaConfig) -> Result<QaReport> {
         print_gate_result(&gpu_speedup_result);
     }
     gates.push(gpu_speedup_result);
+
+    // Gate 5: Cross-Format Parity (F-QUAL-032)
+    let format_parity_result = if config.skip_format_parity {
+        GateResult::skipped("format_parity", "Skipped by --skip-format-parity")
+    } else if config.safetensors_path.is_none() {
+        GateResult::skipped("format_parity", "No --safetensors-path provided")
+    } else {
+        run_format_parity_gate(path, config)?
+    };
+    if !config.json {
+        print_gate_result(&format_parity_result);
+    }
+    gates.push(format_parity_result);
 
     let total_duration = start.elapsed();
     let passed = gates.iter().all(|g| g.passed);
@@ -926,6 +957,147 @@ fn run_gpu_speedup_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
     }
 }
 
+/// Gate 5: Cross-Format Parity Test (F-QUAL-032)
+///
+/// Compares argmax output between GGUF and SafeTensors for the same model.
+/// Invariant: argmax(forward_gguf(M, tokens)) == argmax(forward_safetensors(M, tokens))
+///
+/// This is the cornerstone of the architecture's logical validity - it demonstrates
+/// that independent binary format readers can reach the same logical conclusion.
+fn run_format_parity_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
+    let start = Instant::now();
+
+    if !config.json && config.verbose {
+        println!("{}", "Running cross-format parity test...".yellow());
+    }
+
+    #[cfg(feature = "inference")]
+    {
+        use realizar::format::{detect_format, ModelFormat};
+        use realizar::gguf::{GGUFModel, MappedGGUFModel, OwnedQuantizedModel};
+        use realizar::safetensors_infer::SafetensorsToAprConverter;
+
+        let safetensors_path = match &config.safetensors_path {
+            Some(p) => p,
+            None => {
+                return Ok(GateResult::skipped(
+                    "format_parity",
+                    "No SafeTensors path provided (use --safetensors-path)",
+                ));
+            }
+        };
+
+        // Verify GGUF model
+        let gguf_bytes = std::fs::read(path)
+            .map_err(|e| CliError::ValidationFailed(format!("Failed to read GGUF: {e}")))?;
+
+        let gguf_format = detect_format(&gguf_bytes[..8.min(gguf_bytes.len())])
+            .map_err(|e| CliError::ValidationFailed(format!("Failed to detect GGUF format: {e}")))?;
+
+        if gguf_format != ModelFormat::Gguf {
+            return Ok(GateResult::skipped(
+                "format_parity",
+                "Primary model must be GGUF format",
+            ));
+        }
+
+        // Verify SafeTensors model exists
+        if !safetensors_path.exists() {
+            return Ok(GateResult::skipped(
+                "format_parity",
+                &format!("SafeTensors file not found: {}", safetensors_path.display()),
+            ));
+        }
+
+        // Load GGUF model and get tokenizer
+        let gguf = GGUFModel::from_bytes(&gguf_bytes)
+            .map_err(|e| CliError::ValidationFailed(format!("Failed to parse GGUF: {e}")))?;
+
+        // Test prompt - use simple arithmetic for deterministic output
+        let prompt = "<|im_start|>user\nWhat is 2+2?<|im_end|>\n<|im_start|>assistant\n";
+        let prompt_tokens: Vec<u32> = gguf.encode(prompt).unwrap_or_else(|| vec![151643, 9707]);
+
+        // Run GGUF forward pass to get logits
+        let gguf_logits = {
+            let mapped = MappedGGUFModel::from_path(path)
+                .map_err(|e| CliError::ValidationFailed(format!("GGUF map failed: {e}")))?;
+            let model = OwnedQuantizedModel::from_mapped(&mapped)
+                .map_err(|e| CliError::ValidationFailed(format!("GGUF model failed: {e}")))?;
+            model
+                .forward(&prompt_tokens)
+                .map_err(|e| CliError::ValidationFailed(format!("GGUF forward failed: {e}")))?
+        };
+
+        // Run SafeTensors forward pass to get logits
+        let st_logits = {
+            let transformer = SafetensorsToAprConverter::convert(safetensors_path)
+                .map_err(|e| CliError::ValidationFailed(format!("SafeTensors convert failed: {e}")))?;
+            transformer
+                .forward(&prompt_tokens)
+                .map_err(|e| CliError::ValidationFailed(format!("SafeTensors forward failed: {e}")))?
+        };
+
+        let duration = start.elapsed();
+
+        // Get argmax from logits
+        let gguf_argmax = gguf_logits
+            .iter()
+            .enumerate()
+            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+            .map(|(idx, _)| idx as u32);
+
+        let st_argmax = st_logits
+            .iter()
+            .enumerate()
+            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+            .map(|(idx, _)| idx as u32);
+
+        match (gguf_argmax, st_argmax) {
+            (Some(gguf_token), Some(st_token)) => {
+                if gguf_token == st_token {
+                    Ok(GateResult::passed(
+                        "format_parity",
+                        &format!(
+                            "GGUF argmax={} == SafeTensors argmax={} (Cross-format parity VERIFIED)",
+                            gguf_token, st_token
+                        ),
+                        Some(gguf_token as f64),
+                        Some(st_token as f64),
+                        duration,
+                    ))
+                } else {
+                    Ok(GateResult::failed(
+                        "format_parity",
+                        &format!(
+                            "GGUF argmax={} != SafeTensors argmax={} (Cross-format parity BROKEN)",
+                            gguf_token, st_token
+                        ),
+                        Some(gguf_token as f64),
+                        Some(st_token as f64),
+                        duration,
+                    ))
+                }
+            }
+            _ => Ok(GateResult::failed(
+                "format_parity",
+                "Failed to get argmax from one or both formats",
+                None,
+                None,
+                duration,
+            )),
+        }
+    }
+
+    #[cfg(not(feature = "inference"))]
+    {
+        let _ = (path, config);
+        Ok(GateResult::skipped(
+            "format_parity",
+            "Requires 'inference' feature",
+        ))
+    }
+}
+
 /// Check if Ollama is available by pinging the API
 fn check_ollama_available() -> bool {
     // Try to connect to Ollama API
@@ -1013,6 +1185,7 @@ fn print_gate_result(result: &GateResult) {
         "throughput" => "Throughput",
         "ollama_parity" => "Ollama Parity",
         "gpu_speedup" => "GPU Speedup",
+        "format_parity" => "Format Parity",
         _ => &result.name,
     };
 
@@ -1041,6 +1214,8 @@ mod tests {
         assert!(!config.skip_throughput);
         assert!(!config.skip_ollama);
         assert!(!config.skip_gpu_speedup);
+        assert!(!config.skip_format_parity);
+        assert!(config.safetensors_path.is_none());
     }
 
     #[test]
