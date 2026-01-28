@@ -1,11 +1,11 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 5.30.0
-**Status:** ⚠️ PARTIALLY VERIFIED (GGUF Q4_K/Q6_K work, 3 paths FALSIFIED, 3 FIXED)
-**Popperian Score:** 94/100 (61/65 Corroborated, 3 FALSIFIED, 1 PARTIAL)
+**Version:** 5.31.0
+**Status:** ⚠️ PARTIALLY VERIFIED (GGUF Q4_K/Q6_K work, 2 paths FALSIFIED, 4 FIXED)
+**Popperian Score:** 95/100 (62/65 Corroborated, 2 FALSIFIED, 1 PARTIAL)
 **Author:** PAIML Engineering
 **Date:** 2026-01-29
-**Last Falsification Run:** 2026-01-29 (PMAT-127: F-APR-GGUF also FIXED by tokenizer fix)
+**Last Falsification Run:** 2026-01-29 (PMAT-128: F-EVAL FIXED - PPL 12.45, was 1099)
 **Quality Philosophy:** Toyota Way + Popperian Falsification (Zero SATD, Stop-the-Line)
 
 ---
@@ -1514,7 +1514,7 @@ Following Popper's critical rationalism, we do not seek to *confirm* that infere
 - F-SAFETENSORS-CUDA-001: SafeTensors GPU via apr chat ✅ **CORROBORATED** (PMAT-116)
 - F-PROFILE-REAL-001: Real profiling telemetry ⚠️ **PARTIAL** (per-layer timing estimated)
 - F-SERVE-GENERATE-001: /generate endpoint ✅ **FIXED** (PMAT-124: Added quantized_model handler)
-- F-EVAL-002: apr eval perplexity ❌ **FALSIFIED** (PPL=1099.62 >> 20.0)
+- F-EVAL-002: apr eval perplexity ✅ **FIXED** (PMAT-128: PPL=12.45, was 1099)
 - F-ROSETTA-COMPARE-001: `apr rosetta compare-inference` ✅ **CORROBORATED** (command exists)
 - F-QA-002: `apr qa` full gates (274.8 tok/s, 4.7x Ollama) ✅ **CORROBORATED**
 - F-Q4_0-001: GGUF Q4_0 inference ❌ **FALSIFIED** (produces garbage "!!!!!!!!!!"/Chinese)
@@ -1536,19 +1536,20 @@ Following Popper's critical rationalism, we do not seek to *confirm* that infere
 - F-TREE-001: `apr tree` command exists (APR-only) ✅ **CORROBORATED**
 - F-HEX-001: `apr hex` command exists (APR-only) ✅ **CORROBORATED**
 
-**Falsified Paths (3 total):**
-- ❌ F-EVAL: Perplexity 1099 >> threshold 20 (**EVAL BUG, not model quality**)
-  - Five-Whys: eval.rs doesn't load GGUF weights, uses uninitialized model
-  - Model quality verified by: apr run, apr chat, apr serve all produce correct outputs
-  - Fix needed: Use realizar's GGUF loader in eval command
+**Falsified Paths (2 total):**
 - ❌ F-Q4_0: GGUF Q4_0 produces garbage (trueno dequantization bug, Q4_K works)
 - ⚠️ F-SAFETENSORS-GPU: Works via `apr chat`, NOT via `apr run` (design choice)
 
-**Fixed Paths (3 total):**
+**Fixed Paths (4 total):**
 - ✅ F-SERVE-GENERATE: /generate endpoint (PMAT-124: Added quantized_model handler)
   - Root cause: Handler only checked cuda_model, not quantized_model for CPU GGUF mode
   - Fix: Added `if let Some(quantized_model) = state.quantized_model()` block
   - Evidence: `{"text":"What is 2+2?...","num_generated":10}` (was `{"error":"No model available"}`)
+- ✅ F-EVAL: apr eval perplexity (PMAT-128: Integrated realizar GGUF loader)
+  - Root cause: eval.rs only had load_from_apr/load_from_safetensors, NO GGUF loading
+  - Five-Whys: eval used aprender::Qwen2Model with uninitialized weights for GGUF
+  - Fix: Added `run_gguf_evaluation()` using realizar's `OwnedQuantizedModel`
+  - Evidence: PPL=12.45 (was 1099.62) - Good quality per threshold 20.0
 
 - ✅ F-APR-ST: APR from SafeTensors (PMAT-125/126: Architecture + Tokenizer)
   - Root cause 1: Architecture defaulted to "unknown" instead of reading from metadata
@@ -1567,9 +1568,7 @@ Following Popper's critical rationalism, we do not seek to *confirm* that infere
 1. ~~APR converter/loader bugs~~ **FULLY FIXED** (tokenizer + arch detection working for both paths)
 2. SafeTensors GPU not in `apr run` command (design choice, use `apr chat --gpu`)
 3. ~~`/generate` handler doesn't check quantized_model~~ **FIXED (PMAT-124)**
-4. **F-EVAL: eval.rs doesn't load GGUF weights** (uses uninitialized model)
-   - Five-Whys: eval.rs has load_from_apr/load_from_safetensors but NO GGUF loading
-   - Fix: Integrate realizar GGUF loader into eval command
+4. ~~eval.rs doesn't load GGUF weights~~ **FIXED (PMAT-128)**
 5. **Q4_0/Q4_1 dequantization broken** in trueno (Q4_K works, Q4_0 doesn't)
 
 ### 13.7 Cross-Format Parity (The argmax Invariant)

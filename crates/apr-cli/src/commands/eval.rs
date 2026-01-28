@@ -5,18 +5,23 @@
 //! # Usage
 //!
 //! ```bash
-//! apr eval model.apr --dataset wikitext-2    # Evaluate on WikiText-2
-//! apr eval model.apr --dataset lambada       # Evaluate on LAMBADA
-//! apr eval model.apr --text "Hello world"    # Evaluate on custom text
+//! apr eval model.gguf --dataset wikitext-2   # Evaluate GGUF on WikiText-2
+//! apr eval model.apr --dataset lambada       # Evaluate APR on LAMBADA
+//! apr eval model.safetensors --text "Hello"  # Evaluate SafeTensors on custom text
 //! ```
 //!
 //! Toyota Way: Jidoka - fail fast if perplexity exceeds threshold.
+//!
+//! # PMAT-128 Fix: GGUF Weight Loading
+//!
+//! This module now uses realizar's GGUF inference engine for GGUF models,
+//! fixing the F-EVAL bug where GGUF models showed PPL ~1000 due to
+//! uninitialized weights.
 
 use crate::error::{CliError, Result};
 use crate::output;
 use aprender::demo::Qwen2Config;
 use aprender::models::Qwen2Model;
-use aprender::text::bpe::Qwen2BpeTokenizer;
 use colored::Colorize;
 use std::path::Path;
 use std::time::Instant;
@@ -129,6 +134,12 @@ fn run_evaluation(path: &Path, config: &EvalConfig) -> Result<EvalResult> {
     // Detect format
     let is_safetensors = path.extension().is_some_and(|e| e == "safetensors");
     let is_apr = path.extension().is_some_and(|e| e == "apr");
+    let is_gguf = path.extension().is_some_and(|e| e == "gguf");
+
+    // PMAT-128: Route GGUF to realizar's inference engine
+    if is_gguf {
+        return run_gguf_evaluation(path, config);
+    }
 
     // Create model config
     let model_config = if is_safetensors || is_apr {
@@ -185,7 +196,8 @@ fn run_evaluation(path: &Path, config: &EvalConfig) -> Result<EvalResult> {
         format!("Evaluating on {} characters...", eval_text.len()).yellow()
     );
 
-    // Tokenize
+    // Tokenize using aprender's BPE tokenizer
+    use aprender::text::bpe::Qwen2BpeTokenizer;
     let tokenizer = Qwen2BpeTokenizer::new();
     let tokens = tokenizer.encode(&eval_text);
 
@@ -235,6 +247,153 @@ fn get_eval_text(config: &EvalConfig) -> Result<String> {
             CliError::ValidationFailed("Custom dataset requires --text argument".to_string())
         }),
     }
+}
+
+/// PMAT-128: Run GGUF evaluation using realizar's inference engine
+///
+/// This fixes the F-EVAL bug where GGUF models showed PPL ~1000 due to
+/// uninitialized weights. Now uses realizar's `OwnedQuantizedModel` which
+/// properly loads GGUF weights.
+#[cfg(feature = "inference")]
+fn run_gguf_evaluation(path: &Path, config: &EvalConfig) -> Result<EvalResult> {
+    use realizar::gguf::{MappedGGUFModel, OwnedQuantizedModel};
+
+    println!("{}", "Loading GGUF model (realizar)...".yellow());
+    let start = Instant::now();
+
+    // Load GGUF via mmap
+    let mapped = MappedGGUFModel::from_path(path)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to load GGUF: {e}")))?;
+
+    // Create quantized model
+    let model = OwnedQuantizedModel::from_mapped(&mapped)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to parse GGUF: {e}")))?;
+
+    let load_time = start.elapsed();
+    println!(
+        "{} in {:.2}s ({} layers, vocab_size={})",
+        "Model ready".green(),
+        load_time.as_secs_f32(),
+        model.config.num_layers,
+        model.config.vocab_size
+    );
+    println!();
+
+    // Get evaluation text
+    let eval_text = get_eval_text(config)?;
+    println!(
+        "{}",
+        format!("Evaluating on {} characters...", eval_text.len()).yellow()
+    );
+
+    // Tokenize using GGUF's embedded tokenizer
+    let tokens = mapped
+        .model
+        .encode(&eval_text)
+        .ok_or_else(|| CliError::ValidationFailed("GGUF model has no tokenizer".to_string()))?;
+
+    // Limit tokens
+    let tokens: Vec<u32> = if tokens.len() > config.max_tokens {
+        tokens[..config.max_tokens].to_vec()
+    } else {
+        tokens
+    };
+
+    if tokens.len() < 2 {
+        return Err(CliError::ValidationFailed(
+            "Need at least 2 tokens for perplexity calculation".to_string(),
+        ));
+    }
+
+    println!(
+        "{}",
+        format!("Calculating perplexity on {} tokens...", tokens.len()).yellow()
+    );
+
+    // Calculate perplexity using realizar's forward pass
+    let eval_start = Instant::now();
+    let (perplexity, cross_entropy) = calculate_gguf_perplexity(&model, &tokens)?;
+    let eval_time = eval_start.elapsed();
+
+    let passed = perplexity <= config.threshold;
+
+    Ok(EvalResult {
+        perplexity,
+        cross_entropy,
+        tokens_evaluated: tokens.len(),
+        eval_time_secs: eval_time.as_secs_f32(),
+        passed,
+        threshold: config.threshold,
+    })
+}
+
+/// PMAT-128: Fallback for non-inference builds
+#[cfg(not(feature = "inference"))]
+fn run_gguf_evaluation(_path: &Path, _config: &EvalConfig) -> Result<EvalResult> {
+    Err(CliError::ValidationFailed(
+        "GGUF evaluation requires 'inference' feature. Rebuild with: \
+         cargo install --path crates/apr-cli --features inference"
+            .to_string(),
+    ))
+}
+
+/// PMAT-128: Calculate perplexity using realizar's GGUF inference
+#[cfg(feature = "inference")]
+fn calculate_gguf_perplexity(
+    model: &realizar::gguf::OwnedQuantizedModel,
+    tokens: &[u32],
+) -> Result<(f32, f32)> {
+    use realizar::gguf::OwnedQuantizedKVCache;
+
+    let vocab_size = model.config.vocab_size;
+    let mut total_log_prob = 0.0f64;
+    let mut count = 0usize;
+
+    // Create KV cache for efficient inference
+    let mut cache = OwnedQuantizedKVCache::new(
+        model.config.num_layers,
+        model.config.hidden_dim,
+        tokens.len() + 1, // max_seq_len = num tokens being evaluated
+    );
+
+    // Process each token and calculate log probability of next token
+    for (pos, window) in tokens.windows(2).enumerate() {
+        let input_token = window[0];
+        let target_token = window[1];
+
+        // Forward pass to get logits
+        let logits = model
+            .forward_single_with_cache(input_token, &mut cache, pos)
+            .map_err(|e| CliError::ValidationFailed(format!("Forward pass failed: {e}")))?;
+
+        // Compute log softmax
+        let max_logit = logits.iter().fold(f32::NEG_INFINITY, |a, &b| a.max(b));
+        let log_sum_exp: f64 = logits
+            .iter()
+            .map(|&l| ((l - max_logit) as f64).exp())
+            .sum::<f64>()
+            .ln()
+            + max_logit as f64;
+
+        // Get log probability of target token
+        let target_idx = target_token as usize;
+        if target_idx < vocab_size {
+            let log_prob = logits[target_idx] as f64 - log_sum_exp;
+            total_log_prob += log_prob;
+            count += 1;
+        }
+    }
+
+    if count == 0 {
+        return Err(CliError::ValidationFailed(
+            "No valid tokens for perplexity calculation".to_string(),
+        ));
+    }
+
+    let cross_entropy = (-total_log_prob / count as f64) as f32;
+    let perplexity = cross_entropy.exp();
+
+    Ok((perplexity, cross_entropy))
 }
 
 /// Calculate perplexity using the model
