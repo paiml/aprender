@@ -1,11 +1,11 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 5.26.0
+**Version:** 5.27.0
 **Status:** ⚠️ PARTIALLY VERIFIED (GGUF Q4_K/Q6_K work, 6 paths FALSIFIED)
-**Popperian Score:** 89/100 (55/62 Corroborated, 6 FALSIFIED, 1 PARTIAL)
+**Popperian Score:** 89/100 (58/65 Corroborated, 6 FALSIFIED, 1 PARTIAL)
 **Author:** PAIML Engineering
 **Date:** 2026-01-28
-**Last Falsification Run:** 2026-01-28 (PMAT-122: 62 tests, Jidoka error handling verified)
+**Last Falsification Run:** 2026-01-28 (PMAT-122: 65 tests, showcase verified)
 **Quality Philosophy:** Toyota Way + Popperian Falsification (Zero SATD, Stop-the-Line)
 
 ---
@@ -1493,7 +1493,7 @@ Following Popper's critical rationalism, we do not seek to *confirm* that infere
 | F-VERBOSE-001 | `apr run --verbose` | Shows arch/layers/backend | Shows all | ✅ **CORROBORATED** |
 | F-CHATTEMPLATE | `apr chat model.gguf` | Auto-detect | "Detected ChatML" | ✅ **CORROBORATED** |
 
-**Summary:** 55/62 tests CORROBORATED, 6 FALSIFIED, 1 PARTIAL
+**Summary:** 58/65 tests CORROBORATED, 6 FALSIFIED, 1 PARTIAL
 
 **GGUF Modality Matrix (Lines 514-526) - ALL VERIFIED (Q4_K/Q5_K/Q6_K):**
 - F-MODALITY-001: `apr run` (no trace) → "4" ✅ **CORROBORATED**
@@ -1532,6 +1532,9 @@ Following Popper's critical rationalism, we do not seek to *confirm* that infere
 - F-ST-GPU-002: `apr chat model.safetensors --gpu` → "2+2 equals 4." (GPU) ✅ **CORROBORATED**
 - F-JIDOKA-003: Nonexistent file error → "File not found" ✅ **CORROBORATED**
 - F-JIDOKA-004: Invalid GGUF error → "Format detection failed" ✅ **CORROBORATED**
+- F-SHOWCASE-004: `apr showcase --step gguf` → 9.3 tok/s, correct output ✅ **CORROBORATED**
+- F-TREE-001: `apr tree` command exists (APR-only) ✅ **CORROBORATED**
+- F-HEX-001: `apr hex` command exists (APR-only) ✅ **CORROBORATED**
 
 **Falsified Paths (6 total):**
 - ❌ F-APR-GGUF: APR from GGUF → garbage (PAD tokens)
