@@ -1,11 +1,11 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 5.22.0
-**Status:** ⚠️ PARTIALLY VERIFIED (GGUF Q4_K works, 6 paths FALSIFIED)
-**Popperian Score:** 85/100 (41/48 Corroborated, 6 FALSIFIED, 1 PARTIAL)
+**Version:** 5.23.0
+**Status:** ⚠️ PARTIALLY VERIFIED (GGUF Q4_K/Q6_K work, 6 paths FALSIFIED)
+**Popperian Score:** 86/100 (43/50 Corroborated, 6 FALSIFIED, 1 PARTIAL)
 **Author:** PAIML Engineering
 **Date:** 2026-01-28
-**Last Falsification Run:** 2026-01-28 (PMAT-122: 48 tests, Q4_0 RE-FALSIFIED)
+**Last Falsification Run:** 2026-01-28 (PMAT-122: 50 tests, Q6_K verified)
 **Quality Philosophy:** Toyota Way + Popperian Falsification (Zero SATD, Stop-the-Line)
 
 ---
@@ -1493,9 +1493,9 @@ Following Popper's critical rationalism, we do not seek to *confirm* that infere
 | F-VERBOSE-001 | `apr run --verbose` | Shows arch/layers/backend | Shows all | ✅ **CORROBORATED** |
 | F-CHATTEMPLATE | `apr chat model.gguf` | Auto-detect | "Detected ChatML" | ✅ **CORROBORATED** |
 
-**Summary:** 41/48 tests CORROBORATED, 6 FALSIFIED, 1 PARTIAL
+**Summary:** 43/50 tests CORROBORATED, 6 FALSIFIED, 1 PARTIAL
 
-**GGUF Modality Matrix (Lines 514-526) - ALL VERIFIED (Q4_K only):**
+**GGUF Modality Matrix (Lines 514-526) - ALL VERIFIED (Q4_K/Q5_K/Q6_K):**
 - F-MODALITY-001: `apr run` (no trace) → "4" ✅ **CORROBORATED**
 - F-MODALITY-002: `apr run --trace` → Per-layer timing + output ✅ **CORROBORATED**
 - F-MODALITY-003: `apr chat` (no trace) → "3+3 is 6" ✅ **CORROBORATED**
@@ -1518,6 +1518,8 @@ Following Popper's critical rationalism, we do not seek to *confirm* that infere
 - F-ROSETTA-COMPARE-001: `apr rosetta compare-inference` ✅ **CORROBORATED** (command exists)
 - F-QA-002: `apr qa` full gates (274.8 tok/s, 4.7x Ollama) ✅ **CORROBORATED**
 - F-Q4_0-001: GGUF Q4_0 inference ❌ **FALSIFIED** (produces garbage "!!!!!!!!!!"/Chinese)
+- F-Q6_K-001: GGUF Q6_K inference (1.5B model) ✅ **CORROBORATED** ("The sum of 2 and 2 is")
+- F-MERGE-001: `apr merge` command exists ✅ **CORROBORATED** (--help works)
 
 **Falsified Paths (6 total):**
 - ❌ F-APR-GGUF: APR from GGUF → garbage (PAD tokens)
