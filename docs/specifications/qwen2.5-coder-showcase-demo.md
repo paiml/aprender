@@ -752,11 +752,11 @@ Completed in 1.83s (cached)
 | II-C: SafeTensors | 7/15 | ⚠️ F16, BF16, sharded |
 | III-B: GPU Backend | 20/25 | ✅ GGUF GPU 274 tok/s, 5 gates pass (PMAT-106 CLOSED) |
 | IV: Correctness | ~15/50 | ⚠️ Many unchecked |
-| V: Tracing | ~10/40 | ⚠️ Partial |
-| VI: Server | ~20/30 | ⚠️ Partial |
+| V: Tracing | 30/40 | ✅ Basic, layer, JSON output working (APR-TRACE-001) |
+| VI: Server | 25/30 | ✅ Health, metrics, v1/completions, chat work (apr serve verified) |
 | VIII: Integration | ~10/20 | ⚠️ Partial |
 
-**Total Estimated: ~180-210/300 (60-70%)**
+**Total Estimated: ~205-235/300 (68-78%)**
 
 ---
 
