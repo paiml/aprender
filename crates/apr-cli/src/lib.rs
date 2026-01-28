@@ -432,6 +432,10 @@ pub enum Commands {
         /// Output file path
         #[arg(short, long)]
         output: PathBuf,
+
+        /// Force overwrite existing files
+        #[arg(short, long)]
+        force: bool,
     },
 
     /// Merge multiple models
@@ -1145,7 +1149,8 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
             quantize,
             compress,
             output,
-        } => convert::run(file, quantize.as_deref(), compress.as_deref(), output),
+            force,
+        } => convert::run(file, quantize.as_deref(), compress.as_deref(), output, *force),
         Commands::Merge {
             files,
             strategy,

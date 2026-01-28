@@ -16,10 +16,19 @@ pub(crate) fn run(
     quantize: Option<&str>,
     compress: Option<&str>,
     output: &Path,
+    force: bool,
 ) -> Result<()> {
     // Validate input exists
     if !file.exists() {
         return Err(CliError::FileNotFound(file.to_path_buf()));
+    }
+
+    // F-CONV-064: Overwrite protection - refuse to overwrite without --force
+    if output.exists() && !force {
+        return Err(CliError::ValidationFailed(format!(
+            "Output file '{}' already exists. Use --force to overwrite.",
+            output.display()
+        )));
     }
 
     println!("{}", "=== APR Convert ===".cyan().bold());
