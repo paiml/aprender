@@ -1,10 +1,28 @@
 # SafeTensors GPU Inference Specification
 
-**Version:** 1.2.0
-**Status:** Proposal (Subject to Falsification)
+**Version:** 1.3.0
+**Status:** Implementation In Progress
 **PMAT Ticket:** PMAT-116
 **Created:** 2026-01-28
+**Updated:** 2026-01-28
 **Author:** Claude Opus 4.5 / Noah Gift / Dr. Karl Popper (Persona)
+
+## Implementation Status
+
+| Phase | Description | Status | Notes |
+|-------|-------------|--------|-------|
+| 1 | CUDA Storage Abstraction | ✅ Complete | Uses existing CudaExecutor with weight_cache/rmsnorm_cache |
+| 2 | SafeTensors CUDA Loader | ✅ Complete | `SafeTensorsCudaModel::load()` and `upload_weights()` |
+| 3 | Transformer Integration | ⚠️ 90% Complete | CPU RMS norm fallback (SATD: TODO GPU path) |
+| 4 | CLI Integration | ❌ Pending | Update chat.rs to use SafeTensorsCudaModel |
+
+**File Created:** `realizar/src/safetensors_cuda.rs` (570 LOC)
+
+**Key Deviations from Original Spec:**
+- Uses existing `CudaExecutor` API instead of new `CudaStorage` struct
+- `gemm_b_cached` for matmul (input × cached weight)
+- `incremental_attention_gpu` for KV-cached attention
+- CPU fallback for RMS norm (pending `rmsnorm_gpu_ptr` integration)
 
 ---
 
