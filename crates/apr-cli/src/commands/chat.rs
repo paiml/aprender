@@ -590,28 +590,67 @@ mod realizar_chat {
 
             // Detect chat template from model architecture (Toyota Way: Jidoka - auto-detect)
             // F-TEMPLATE-001: Use GGUF metadata for architecture detection, not filename
+            // PMAT-120 FIX: SafeTensors/APR use config.json for architecture detection
             // Hash-based filenames (e.g., d4c4d9763127153c.gguf) don't contain model name
-            let model_name = if format == ModelFormat::Gguf {
-                // Parse GGUF metadata to get architecture (e.g., "qwen2", "llama")
-                use realizar::gguf::GGUFModel;
-                match GGUFModel::from_bytes(&model_bytes) {
-                    Ok(gguf) => {
-                        let arch = gguf.architecture().unwrap_or("unknown").to_string();
-                        // Map GGUF architecture to template-detectable name
-                        // Architecture names: qwen2, llama, phi3, mistral, etc.
-                        arch
+            let model_name = match format {
+                ModelFormat::Gguf => {
+                    // Parse GGUF metadata to get architecture (e.g., "qwen2", "llama")
+                    use realizar::gguf::GGUFModel;
+                    match GGUFModel::from_bytes(&model_bytes) {
+                        Ok(gguf) => {
+                            let arch = gguf.architecture().unwrap_or("unknown").to_string();
+                            // Map GGUF architecture to template-detectable name
+                            // Architecture names: qwen2, llama, phi3, mistral, etc.
+                            arch
+                        }
+                        Err(_) => path
+                            .file_stem()
+                            .and_then(|s| s.to_str())
+                            .unwrap_or("unknown")
+                            .to_string(),
                     }
-                    Err(_) => path
-                        .file_stem()
-                        .and_then(|s| s.to_str())
-                        .unwrap_or("unknown")
-                        .to_string(),
                 }
-            } else {
-                path.file_stem()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or("unknown")
-                    .to_string()
+                ModelFormat::SafeTensors | ModelFormat::Apr => {
+                    // PMAT-120: Read config.json for architecture detection
+                    // Five-Whys: "model.safetensors" filename doesn't indicate architecture
+                    // Root cause: detect_format_from_name("model") returns Raw template
+                    // Fix: Extract model_type or architectures from config.json
+                    let mut arch = String::from("unknown");
+                    if let Some(parent) = path.parent() {
+                        let config_path = parent.join("config.json");
+                        if config_path.exists() {
+                            if let Ok(json) = std::fs::read_to_string(&config_path) {
+                                if let Ok(v) = serde_json::from_str::<serde_json::Value>(&json) {
+                                    // Try model_type first (e.g., "qwen2")
+                                    if let Some(model_type) = v["model_type"].as_str() {
+                                        arch = model_type.to_lowercase();
+                                    }
+                                    // Fallback to architectures array (e.g., ["Qwen2ForCausalLM"])
+                                    else if let Some(archs) = v["architectures"].as_array() {
+                                        if let Some(first) = archs.first().and_then(|a| a.as_str()) {
+                                            // Extract base name: "Qwen2ForCausalLM" -> "qwen2"
+                                            arch = first
+                                                .trim_end_matches("ForCausalLM")
+                                                .trim_end_matches("LMHeadModel")
+                                                .to_lowercase();
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    // Fallback to parent directory name (often contains model name)
+                    if arch == "unknown" {
+                        arch = path
+                            .parent()
+                            .and_then(|p| p.file_name())
+                            .and_then(|s| s.to_str())
+                            .unwrap_or("unknown")
+                            .to_string();
+                    }
+                    arch
+                }
+                ModelFormat::Demo => "demo".to_string(),
             };
             let template_format = detect_format_from_name(&model_name);
             let chat_template = auto_detect_template(&model_name);
@@ -1129,6 +1168,16 @@ mod realizar_chat {
                 let tokens = cuda_model
                     .generate(prompt, config.max_tokens.min(128), eos_id)
                     .map_err(|e| format!("SafeTensors CUDA generate failed: {e}"))?;
+
+                // PMAT-120 DEBUG: Log generated token IDs
+                if config.trace {
+                    let new_tokens = &tokens[prompt.len()..];
+                    eprintln!(
+                        "[APR-TRACE] SafeTensors GPU generated {} tokens: {:?}",
+                        new_tokens.len(),
+                        &new_tokens[..new_tokens.len().min(20)]
+                    );
+                }
 
                 // Return only generated tokens (skip prompt)
                 return Ok(tokens[prompt.len()..].to_vec());
