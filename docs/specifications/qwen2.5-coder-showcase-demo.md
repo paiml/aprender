@@ -1,11 +1,11 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 5.21.0
-**Status:** ⚠️ PARTIALLY VERIFIED (GGUF works, 5 paths FALSIFIED)
-**Popperian Score:** 87/100 (39/45 Corroborated, 5 FALSIFIED, 1 PARTIAL)
+**Version:** 5.22.0
+**Status:** ⚠️ PARTIALLY VERIFIED (GGUF Q4_K works, 6 paths FALSIFIED)
+**Popperian Score:** 85/100 (41/48 Corroborated, 6 FALSIFIED, 1 PARTIAL)
 **Author:** PAIML Engineering
 **Date:** 2026-01-28
-**Last Falsification Run:** 2026-01-28 (PMAT-122: 45 tests, GGUF Modality Matrix 6/6 verified)
+**Last Falsification Run:** 2026-01-28 (PMAT-122: 48 tests, Q4_0 RE-FALSIFIED)
 **Quality Philosophy:** Toyota Way + Popperian Falsification (Zero SATD, Stop-the-Line)
 
 ---
@@ -424,6 +424,44 @@ $ curl -X POST http://127.0.0.1:19995/batch/generate -d '{"prompts":["Hi"],"max_
 | /v1/chat/completions  | ✅ Working                          |
 | /health               | ✅ Working                          |
 
+### ❌ PMAT-Q4_0-001: GGUF Q4_0/Q4_1 Support (RE-FALSIFIED)
+
+**Status:** RE-FALSIFIED (2026-01-28, PMAT-122)
+**Previous Claim:** FIXED (2026-01-27)
+**Andon Event:** Yes (stop-the-line: spec claim contradicts evidence)
+
+**Problem:** GGUF Q4_0 quantized models produce garbage output.
+
+**FALSIFICATION EVIDENCE (2026-01-28):**
+```bash
+$ apr run qwen2-0.5b-instruct-q4_0.gguf --prompt "2+2=" --max-tokens 10
+Output: !!!!!!!!!!
+
+$ apr run qwen2-0.5b-instruct-q4_0.gguf --prompt "What is 3+3?" --max-tokens 15
+Output: 皮's风的不要全部全部无不 his无 chance如何?如何
+
+# Compare with Q4_K (WORKS):
+$ apr run qwen2-0.5b-instruct-q4_k.gguf --prompt "What is 3+3?" --max-tokens 15
+Output: 3+3 is 6.
+```
+
+**Five-Whys Analysis:**
+1. WHY garbage output? → Token IDs are nonsense (repetitive punctuation or random Chinese)
+2. WHY wrong token IDs? → Q4_0 dequantization produces incorrect weights
+3. WHY incorrect dequantization? → Q4_0 format (type 2) uses different block structure than Q4_K
+4. WHY wasn't Q4_0 tested separately? → spec line 546 claim was based on Q4_K success
+5. ROOT CAUSE: Q4_0/Q4_1 dequantization kernels are buggy or not implemented correctly
+
+**Evidence:**
+- `apr check` passes 10/10 stages (structure validation) but actual inference fails
+- Same model works in llama.cpp/Ollama (proves weights are valid)
+- Q4_K (type 12) works correctly, Q4_0 (type 2) doesn't
+
+**Recommended Fix:**
+1. Debug Q4_0 dequantization in `trueno/src/backends/q4_0.rs`
+2. Add Q4_0-specific integration test with golden output
+3. Remove false claim from spec until fixed
+
 ### ✅ PMAT-113: APR CUDA F32 Weight Caching (P0 Hang Fix)
 
 **Status:** COMPLETE (2026-01-27, realizar v0.6.11)
@@ -543,7 +581,7 @@ All GGUF modalities verified working with and without tracing:
 | `apr check` command | ✅ DONE (PMAT-112) | §3 |
 | Verbose mode UX | ⚠️ 10/14 (4 missing items) | §2.3 |
 | CI parity gates | LAYOUT-001c/d not in CI | §9 |
-| ~~GGUF Q4_0/Q4_1 support~~ | ✅ FIXED (2026-01-27) | §10 |
+| GGUF Q4_0/Q4_1 support | ❌ RE-FALSIFIED (2026-01-28, PMAT-122) | §10 |
 
 ---
 
@@ -749,9 +787,9 @@ Completed in 1.83s (cached)
 |--------|---------------|---------------|------------|
 | GGUF Q4_K | ✅ 14 tok/s | ✅ 755 tok/s | ✅ |
 | GGUF Q5_K/Q6_K/Q8_0 | ✅ | ✅ | ✅ |
-| GGUF Q4_0/Q4_1 | ✅ 30 tok/s | ✅ Works | ✅ |
+| GGUF Q4_0/Q4_1 | ❌ FALSIFIED (garbage) | ❌ FALSIFIED | ✅ |
 | SafeTensors F32 | ✅ 2.2 tok/s | ⚠️ `apr chat` only (F-SAFETENSORS-GPU-001: `apr run` says "Not yet supported") | ✅ |
-| APR Q4_K | ✅ 8 tok/s | ✅ via GpuAdapter | ✅ |
+| APR Q4_K | ❌ FALSIFIED (garbage) | ❌ FALSIFIED | ✅ |
 
 ---
 
@@ -1455,9 +1493,9 @@ Following Popper's critical rationalism, we do not seek to *confirm* that infere
 | F-VERBOSE-001 | `apr run --verbose` | Shows arch/layers/backend | Shows all | ✅ **CORROBORATED** |
 | F-CHATTEMPLATE | `apr chat model.gguf` | Auto-detect | "Detected ChatML" | ✅ **CORROBORATED** |
 
-**Summary:** 39/45 tests CORROBORATED, 5 FALSIFIED, 1 PARTIAL
+**Summary:** 41/48 tests CORROBORATED, 6 FALSIFIED, 1 PARTIAL
 
-**GGUF Modality Matrix (Lines 514-526) - ALL VERIFIED:**
+**GGUF Modality Matrix (Lines 514-526) - ALL VERIFIED (Q4_K only):**
 - F-MODALITY-001: `apr run` (no trace) → "4" ✅ **CORROBORATED**
 - F-MODALITY-002: `apr run --trace` → Per-layer timing + output ✅ **CORROBORATED**
 - F-MODALITY-003: `apr chat` (no trace) → "3+3 is 6" ✅ **CORROBORATED**
@@ -1477,12 +1515,16 @@ Following Popper's critical rationalism, we do not seek to *confirm* that infere
 - F-PROFILE-REAL-001: Real profiling telemetry ⚠️ **PARTIAL** (per-layer timing estimated)
 - F-SERVE-GENERATE-001: /generate endpoint ❌ **FALSIFIED** (PMAT-SERVE-FIX-001 RE-FALSIFIED)
 - F-EVAL-002: apr eval perplexity ❌ **FALSIFIED** (PPL=1099.62 >> 20.0)
+- F-ROSETTA-COMPARE-001: `apr rosetta compare-inference` ✅ **CORROBORATED** (command exists)
+- F-QA-002: `apr qa` full gates (274.8 tok/s, 4.7x Ollama) ✅ **CORROBORATED**
+- F-Q4_0-001: GGUF Q4_0 inference ❌ **FALSIFIED** (produces garbage "!!!!!!!!!!"/Chinese)
 
-**Falsified Paths (5 total):**
+**Falsified Paths (6 total):**
 - ❌ F-APR-GGUF: APR from GGUF → garbage (PAD tokens)
 - ❌ F-APR-ST: APR from SafeTensors → garbage (PMAT-114 RE-FALSIFIED)
 - ❌ F-SERVE-GENERATE: /generate returns "No model available" (PMAT-SERVE-FIX-001 RE-FALSIFIED)
 - ❌ F-EVAL: Perplexity 1099 >> threshold 20
+- ❌ F-Q4_0: GGUF Q4_0 produces garbage (spec line 546 claim was FALSE)
 - ⚠️ F-SAFETENSORS-GPU: Works via `apr chat`, NOT via `apr run`
 
 **Root Causes:**
@@ -1490,6 +1532,7 @@ Following Popper's critical rationalism, we do not seek to *confirm* that infere
 2. SafeTensors GPU not in `apr run` command
 3. /generate handler doesn't check cuda_model
 4. Eval may have model or dataset issues
+5. **Q4_0/Q4_1 dequantization broken** (Q4_K works, Q4_0 doesn't)
 
 ### 13.7 Cross-Format Parity (The argmax Invariant)
 
