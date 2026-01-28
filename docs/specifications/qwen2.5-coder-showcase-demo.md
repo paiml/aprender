@@ -1,10 +1,11 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 5.15.0
-**Status:** ⭐ VERIFIED (All inference paths working)
+**Version:** 5.16.0
+**Status:** ⭐ VERIFIED (All inference paths working, CLI falsification 11/12 CORROBORATED)
 **Popperian Score:** 100/100 ⭐ (100% Corroborated, ALL 8 sections PERFECT)
 **Author:** PAIML Engineering
 **Date:** 2026-01-28
+**Last Falsification Run:** 2026-01-28 (PMAT-121: 11/12 CLI tests passed, 1 known falsified)
 **Quality Philosophy:** Toyota Way + Popperian Falsification (Zero SATD, Stop-the-Line)
 
 ---
