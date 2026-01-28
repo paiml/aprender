@@ -1,11 +1,11 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 5.25.0
+**Version:** 5.26.0
 **Status:** ⚠️ PARTIALLY VERIFIED (GGUF Q4_K/Q6_K work, 6 paths FALSIFIED)
-**Popperian Score:** 88/100 (51/58 Corroborated, 6 FALSIFIED, 1 PARTIAL)
+**Popperian Score:** 89/100 (55/62 Corroborated, 6 FALSIFIED, 1 PARTIAL)
 **Author:** PAIML Engineering
 **Date:** 2026-01-28
-**Last Falsification Run:** 2026-01-28 (PMAT-122: 58 tests, SafeTensors serve verified)
+**Last Falsification Run:** 2026-01-28 (PMAT-122: 62 tests, Jidoka error handling verified)
 **Quality Philosophy:** Toyota Way + Popperian Falsification (Zero SATD, Stop-the-Line)
 
 ---
@@ -1493,7 +1493,7 @@ Following Popper's critical rationalism, we do not seek to *confirm* that infere
 | F-VERBOSE-001 | `apr run --verbose` | Shows arch/layers/backend | Shows all | ✅ **CORROBORATED** |
 | F-CHATTEMPLATE | `apr chat model.gguf` | Auto-detect | "Detected ChatML" | ✅ **CORROBORATED** |
 
-**Summary:** 51/58 tests CORROBORATED, 6 FALSIFIED, 1 PARTIAL
+**Summary:** 55/62 tests CORROBORATED, 6 FALSIFIED, 1 PARTIAL
 
 **GGUF Modality Matrix (Lines 514-526) - ALL VERIFIED (Q4_K/Q5_K/Q6_K):**
 - F-MODALITY-001: `apr run` (no trace) → "4" ✅ **CORROBORATED**
@@ -1528,6 +1528,10 @@ Following Popper's critical rationalism, we do not seek to *confirm* that infere
 - F-1.5B-ST-001: 1.5B SafeTensors CPU canonical prompt → "4" ✅ **CORROBORATED** (17.8s)
 - F-SERVE-ST-001: `apr serve model.safetensors` /health → healthy ✅ **CORROBORATED**
 - F-SERVE-ST-002: SafeTensors /v1/chat/completions → "4" (0.29 tok/s) ✅ **CORROBORATED**
+- F-ST-GPU-001: `apr run model.safetensors` (GPU) → clear error "Not yet supported" ✅ **CORROBORATED** (spec accurate)
+- F-ST-GPU-002: `apr chat model.safetensors --gpu` → "2+2 equals 4." (GPU) ✅ **CORROBORATED**
+- F-JIDOKA-003: Nonexistent file error → "File not found" ✅ **CORROBORATED**
+- F-JIDOKA-004: Invalid GGUF error → "Format detection failed" ✅ **CORROBORATED**
 
 **Falsified Paths (6 total):**
 - ❌ F-APR-GGUF: APR from GGUF → garbage (PAD tokens)
