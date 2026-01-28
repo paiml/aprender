@@ -1,11 +1,11 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 5.27.0
-**Status:** ⚠️ PARTIALLY VERIFIED (GGUF Q4_K/Q6_K work, 6 paths FALSIFIED)
-**Popperian Score:** 89/100 (58/65 Corroborated, 6 FALSIFIED, 1 PARTIAL)
+**Version:** 5.28.0
+**Status:** ⚠️ PARTIALLY VERIFIED (GGUF Q4_K/Q6_K work, 5 paths FALSIFIED, 1 FIXED)
+**Popperian Score:** 91/100 (59/65 Corroborated, 5 FALSIFIED, 1 PARTIAL)
 **Author:** PAIML Engineering
 **Date:** 2026-01-28
-**Last Falsification Run:** 2026-01-28 (PMAT-122: 65 tests, showcase verified)
+**Last Falsification Run:** 2026-01-28 (PMAT-124: /generate endpoint FIXED)
 **Quality Philosophy:** Toyota Way + Popperian Falsification (Zero SATD, Stop-the-Line)
 
 ---
@@ -1513,7 +1513,7 @@ Following Popper's critical rationalism, we do not seek to *confirm* that infere
 - F-SHOWCASE-001: apr showcase gguf step ✅ **CORROBORATED**
 - F-SAFETENSORS-CUDA-001: SafeTensors GPU via apr chat ✅ **CORROBORATED** (PMAT-116)
 - F-PROFILE-REAL-001: Real profiling telemetry ⚠️ **PARTIAL** (per-layer timing estimated)
-- F-SERVE-GENERATE-001: /generate endpoint ❌ **FALSIFIED** (PMAT-SERVE-FIX-001 RE-FALSIFIED)
+- F-SERVE-GENERATE-001: /generate endpoint ✅ **FIXED** (PMAT-124: Added quantized_model handler)
 - F-EVAL-002: apr eval perplexity ❌ **FALSIFIED** (PPL=1099.62 >> 20.0)
 - F-ROSETTA-COMPARE-001: `apr rosetta compare-inference` ✅ **CORROBORATED** (command exists)
 - F-QA-002: `apr qa` full gates (274.8 tok/s, 4.7x Ollama) ✅ **CORROBORATED**
@@ -1536,18 +1536,23 @@ Following Popper's critical rationalism, we do not seek to *confirm* that infere
 - F-TREE-001: `apr tree` command exists (APR-only) ✅ **CORROBORATED**
 - F-HEX-001: `apr hex` command exists (APR-only) ✅ **CORROBORATED**
 
-**Falsified Paths (6 total):**
+**Falsified Paths (5 total):**
 - ❌ F-APR-GGUF: APR from GGUF → garbage (PAD tokens)
 - ❌ F-APR-ST: APR from SafeTensors → garbage (PMAT-114 RE-FALSIFIED)
-- ❌ F-SERVE-GENERATE: /generate returns "No model available" (PMAT-SERVE-FIX-001 RE-FALSIFIED)
 - ❌ F-EVAL: Perplexity 1099 >> threshold 20
 - ❌ F-Q4_0: GGUF Q4_0 produces garbage (spec line 546 claim was FALSE)
 - ⚠️ F-SAFETENSORS-GPU: Works via `apr chat`, NOT via `apr run`
 
-**Root Causes:**
+**Fixed Paths (1 total):**
+- ✅ F-SERVE-GENERATE: /generate endpoint (PMAT-124: Added quantized_model handler)
+  - Root cause: Handler only checked cuda_model, not quantized_model for CPU GGUF mode
+  - Fix: Added `if let Some(quantized_model) = state.quantized_model()` block
+  - Evidence: `{"text":"What is 2+2?...","num_generated":10}` (was `{"error":"No model available"}`)
+
+**Root Causes (Remaining):**
 1. APR converter/loader bugs (validation 4/100)
 2. SafeTensors GPU not in `apr run` command
-3. /generate handler doesn't check cuda_model
+3. ~~`/generate` handler doesn't check quantized_model~~ **FIXED (PMAT-124)**
 4. Eval may have model or dataset issues
 5. **Q4_0/Q4_1 dequantization broken** (Q4_K works, Q4_0 doesn't)
 
