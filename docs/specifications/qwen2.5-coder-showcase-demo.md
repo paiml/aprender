@@ -963,7 +963,7 @@ Completed in 1.83s (cached)
 | GGUF Q5_K/Q6_K/Q8_0 | ✅ | ✅ | ✅ |
 | GGUF Q4_0/Q4_1 | ✅ FIXED (2026-01-29) | ⚠️ CPU fallback | ✅ |
 | SafeTensors F32 | ✅ 2.2 tok/s | ✅ GPU via `apr run` (PMAT-129: SafeTensorsCudaModel wired up) | ✅ |
-| APR Q4_K | ❌ FALSIFIED (garbage) | ❌ FALSIFIED | ✅ |
+| APR Q4_K | ⚠️ FIX APPLIED (re-convert needed) | ⚠️ FIX APPLIED | ✅ |
 
 ---
 
@@ -1175,7 +1175,7 @@ run_with_timeout() {
 | 2 | 300-point falsification ≥ 290 | ⚠️ ~150-180 | Honest about gaps |
 | 3 | APR GPU (SafeTensors) works | ✅ PMAT-114 | Fixed, not deferred |
 | 4 | SafeTensors direct GPU | ✅ PMAT-116 | Zero SATD implementation |
-| 5 | GGUF→APR conversion | ❌ FALSIFIED | Honestly marked broken |
+| 5 | GGUF→APR conversion | ⚠️ FIX APPLIED (PMAT-130) | Q4_0/Q4_K/Q5_K dequant fixed, needs re-convert |
 | 6 | No duplicated inference code | ✅ | Single source of truth |
 | 7 | Ollama-style UX | ✅ | User-focused design |
 | 8 | Tracing works all paths | ✅ | Genchi Genbutsu |
