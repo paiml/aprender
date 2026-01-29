@@ -216,28 +216,31 @@ $ realizar run /tmp/qwen2-0.5b-test.apr "What is 2+2?" -n 10 --gpu
 2+2 equals 4.[151645] ✅
 ```
 
-### ❌ PMAT-113: APR GGUF Import (Honestly FALSIFIED)
+### ⚠️ PMAT-113: APR GGUF Import (FIX APPLIED - Needs Verification)
 
-**Status:** FALSIFIED (2026-01-27)
-**Why We're Proud of This Status:** Instead of shipping broken functionality with a "known issues" disclaimer, we clearly state: **this path does not work.**
+**Status:** FIX APPLIED (2026-01-29, PMAT-130)
+**Previous Status:** FALSIFIED (2026-01-27)
 
-**Problem:** APR files converted from GGUF produce garbage output.
-- **Observation:** Q5_0/Q4_0 dequantization produces incorrect values.
-- **Root Cause:** Likely dimension reversal and/or Q5_0 block dequantization bugs in converter.
-- **Honest Assessment:** This is complex. GGML uses column-major with reversed dimensions. We've attempted multiple fixes without success.
-- **Recommendation:** Use SafeTensors→APR instead. GGUF direct inference works perfectly.
+**Problem:** APR files converted from GGUF produced garbage output.
 
-**What We Did NOT Do:**
-- ❌ Ship it with `// TODO: fix dequantization`
-- ❌ Label it "experimental" and hope users don't notice
-- ❌ Remove it from the test matrix to improve pass rates
-- ❌ Derive metrics that hide the garbage output
+**Root Cause (Five-Whys):**
+1. WHY garbage output? → Token IDs were nonsense
+2. WHY wrong token IDs? → Dequantized weights were incorrect
+3. WHY incorrect weights? → Q4_0/Q4_K/Q5_K element ordering was wrong
+4. WHY wrong ordering? → GGML uses sequential nibbles, we used interleaved
+5. ROOT CAUSE: `dequantize_q4_0` output interleaved (low0,high0,low1,high1...) instead of GGML's (low0-15, high0-15)
 
-**What We DID Do:**
-- ✅ Marked it FALSIFIED in every status table
-- ✅ Documented the specific failure mode
-- ✅ Provided a working alternative (SafeTensors→APR)
-- ✅ Left it in the test matrix as a constant reminder
+**Fix Applied (aprender commit 2026-01-29):**
+- `src/format/gguf.rs:dequantize_q4_0`: Sequential nibble output
+- `src/format/gguf.rs:dequantize_q4_1`: Same fix
+- `src/format/gguf.rs:dequantize_q4_k`: Fixed scale/min unpacking
+- `src/format/gguf.rs:dequantize_q5_k`: Fixed scale/min unpacking
+
+**Verification Status:**
+- ✅ GGUF direct inference: Correlation 0.9999, tokens match exactly
+- ⚠️ APR from GGUF: Needs re-conversion with fixed code to verify
+
+**Next Step:** Re-run `apr convert model.gguf -o model.apr` and test inference
 
 ### 13.10 Critical Mass Round 5 Falsification (ALL P0 FIXED)
 
@@ -789,8 +792,8 @@ SafeTensors (F32) ──┬──> realizar inference (direct)
 | GGUF Q4_K | Direct | CPU (AVX2) | 14 tok/s | ✅ CORROBORATED |
 | APR F32 | SafeTensors | GPU (RTX 4090) | ~20 tok/s | ✅ CORROBORATED |
 | APR F32 | SafeTensors | CPU | 2.2 tok/s | ✅ CORROBORATED |
-| APR Q4_K | GGUF | GPU | ❌ | FALSIFIED (garbage) |
-| APR Q4_K | GGUF | CPU | ❌ | FALSIFIED (garbage) |
+| APR Q4_K | GGUF | GPU | ⚠️ | FIX APPLIED (re-convert needed) |
+| APR Q4_K | GGUF | CPU | ⚠️ | FIX APPLIED (re-convert needed) |
 | SafeTensors | Direct | CPU | 2.2 tok/s | ✅ CORROBORATED |
 | SafeTensors | Direct | GPU (RTX 4090) | ~15 tok/s | ✅ CORROBORATED (PMAT-116) |
 
