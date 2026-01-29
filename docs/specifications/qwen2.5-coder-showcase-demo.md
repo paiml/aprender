@@ -755,7 +755,7 @@ All GGUF modalities verified working with and without tracing:
 | `apr check` command | ✅ DONE (PMAT-112) | §3 |
 | Verbose mode UX | ⚠️ 10/14 (4 missing items) | §2.3 |
 | CI parity gates | LAYOUT-001c/d not in CI | §9 |
-| GGUF Q4_0/Q4_1 support | ❌ RE-FALSIFIED (2026-01-28, PMAT-122) | §10 |
+| GGUF Q4_0/Q4_1 support | ✅ FIXED (2026-01-29, PMAT-130) | §10 |
 
 ---
 
@@ -1805,7 +1805,7 @@ Following the Round 2 "Beyond Happy Paths" methodology, we tested robustness und
 | AUDIT-001 | Production unwrap() count | ✅ **PASS** | 0 unwrap() in inference hot paths (2251 in tests only) |
 | AUDIT-002 | Mutex lock().unwrap() in production | ✅ **PASS** | Only in MockGpuExecutor (test infrastructure) |
 
-#### V. Regression & Fix Validation (1 RE-FALSIFIED)
+#### V. Regression & Fix Validation (ALL FIXED)
 
 | Test ID | Description | Result | Evidence |
 |---------|-------------|--------|----------|
