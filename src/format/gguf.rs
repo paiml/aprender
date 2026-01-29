@@ -1310,7 +1310,14 @@ fn f16_to_f32(bits: u16) -> f32 {
 
 /// Dequantize `Q4_0` format
 /// `Q4_0`: blocks of 32 elements, each block has 2-byte f16 scale + 16 bytes of 4-bit quants
-fn dequantize_q4_0(data: &[u8], start: usize, num_elements: usize) -> Result<Vec<f32>> {
+///
+/// PMAT-231 FIX: Element order matches llama.cpp/GGML layout:
+/// - Low nibbles first (elements 0-15): byte[0]&0xF, byte[1]&0xF, ..., byte[15]&0xF
+/// - High nibbles second (elements 16-31): byte[0]>>4, byte[1]>>4, ..., byte[15]>>4
+///
+/// This was previously wrong (interleaved: low0, high0, low1, high1, ...) which
+/// caused APR inference to produce garbage output for Q4_0 quantized models.
+pub fn dequantize_q4_0(data: &[u8], start: usize, num_elements: usize) -> Result<Vec<f32>> {
     const BLOCK_SIZE: usize = 32;
     const BLOCK_BYTES: usize = 2 + 16; // f16 scale + 16 bytes of 4-bit values
 
@@ -1332,16 +1339,20 @@ fn dequantize_q4_0(data: &[u8], start: usize, num_elements: usize) -> Result<Vec
         let scale = f16_to_f32(scale_bits);
         offset += 2;
 
-        // Read 16 bytes = 32 4-bit values
+        // PMAT-231: Low nibbles first (elements 0-15), matching GGML/llama.cpp layout
         for i in 0..16 {
             let byte = data[offset + i];
-            // Lower 4 bits (subtract 8 to center around 0)
             let v0 = f32::from((byte & 0x0F) as i8 - 8);
-            // Upper 4 bits
-            let v1 = f32::from((byte >> 4) as i8 - 8);
             result.push(v0 * scale);
+        }
+
+        // PMAT-231: High nibbles second (elements 16-31)
+        for i in 0..16 {
+            let byte = data[offset + i];
+            let v1 = f32::from((byte >> 4) as i8 - 8);
             result.push(v1 * scale);
         }
+
         offset += 16;
     }
 
@@ -1553,14 +1564,26 @@ fn dequantize_q4_k(data: &[u8], start: usize, num_elements: usize) -> Result<Vec
         let mut scales = [0u8; 8];
         let mut mins = [0u8; 8];
 
-        // Unpack 6-bit scales and mins from 12 bytes
-        // First 8 bytes: lower 4 bits of scales, lower 4 bits of mins
-        // Last 4 bytes: upper 2 bits of scales and mins
+        // Unpack 6-bit scales and mins from 12 bytes (llama.cpp Q4_K format)
+        // The packing is:
+        //   bytes 0-3: lower 6 bits of scales[0-3]
+        //   bytes 4-7: lower 6 bits of mins[0-3]
+        //   bytes 8-11: combined upper 2 bits for scales[4-7] and mins[4-7]
+        //
+        // For j < 4:  scale = q[j] & 63,     min = q[j+4] & 63
+        // For j >= 4: scale = (q[j+4] & 0xF) | ((q[j-4] >> 6) << 4)
+        //             min   = (q[j+4] >> 4) | ((q[j] >> 6) << 4)
+        //
+        // F-REGR-231 FIX: Previous implementation was wrong for scales[4-7] and mins[4-7]
         for i in 0..4 {
+            // j < 4: direct 6-bit extraction
             scales[i] = scales_bytes[i] & 0x3F;
-            scales[i + 4] = scales_bytes[i + 4] & 0x3F;
-            mins[i] = (scales_bytes[i] >> 6) | ((scales_bytes[i + 8] & 0x0F) << 2);
-            mins[i + 4] = (scales_bytes[i + 4] >> 6) | ((scales_bytes[i + 8] >> 4) << 2);
+            mins[i] = scales_bytes[i + 4] & 0x3F;
+        }
+        for i in 0..4 {
+            // j >= 4: combine lower 4 bits from bytes 8-11 with upper 2 bits from bytes 0-3/4-7
+            scales[i + 4] = (scales_bytes[i + 8] & 0x0F) | ((scales_bytes[i] >> 6) << 4);
+            mins[i + 4] = (scales_bytes[i + 8] >> 4) | ((scales_bytes[i + 4] >> 6) << 4);
         }
         offset += 12;
 
@@ -1617,11 +1640,17 @@ fn dequantize_q5_k(data: &[u8], start: usize, num_elements: usize) -> Result<Vec
         let mut scales = [0u8; 8];
         let mut mins = [0u8; 8];
 
+        // Unpack 6-bit scales and mins from 12 bytes (llama.cpp Q5_K format - same as Q4_K)
+        // F-REGR-231 FIX: Use correct llama.cpp unpacking
         for i in 0..4 {
+            // j < 4: direct 6-bit extraction
             scales[i] = scales_bytes[i] & 0x3F;
-            scales[i + 4] = scales_bytes[i + 4] & 0x3F;
-            mins[i] = (scales_bytes[i] >> 6) | ((scales_bytes[i + 8] & 0x0F) << 2);
-            mins[i + 4] = (scales_bytes[i + 4] >> 6) | ((scales_bytes[i + 8] >> 4) << 2);
+            mins[i] = scales_bytes[i + 4] & 0x3F;
+        }
+        for i in 0..4 {
+            // j >= 4: combine lower 4 bits from bytes 8-11 with upper 2 bits from bytes 0-3/4-7
+            scales[i + 4] = (scales_bytes[i + 8] & 0x0F) | ((scales_bytes[i] >> 6) << 4);
+            mins[i + 4] = (scales_bytes[i + 8] >> 4) | ((scales_bytes[i + 4] >> 6) << 4);
         }
         offset += 12;
 
@@ -1719,7 +1748,11 @@ fn dequantize_q6_k(data: &[u8], start: usize, num_elements: usize) -> Result<Vec
 
 /// Dequantize `Q4_1` format
 /// `Q4_1`: blocks of 32 elements, each block has f16 scale + f16 min + 16 bytes of 4-bit quants
-fn dequantize_q4_1(data: &[u8], start: usize, num_elements: usize) -> Result<Vec<f32>> {
+///
+/// PMAT-231 FIX: Element order matches llama.cpp/GGML layout:
+/// - Low nibbles first (elements 0-15)
+/// - High nibbles second (elements 16-31)
+pub fn dequantize_q4_1(data: &[u8], start: usize, num_elements: usize) -> Result<Vec<f32>> {
     const BLOCK_SIZE: usize = 32;
     const BLOCK_BYTES: usize = 2 + 2 + 16; // f16 scale + f16 min + 16 bytes
 
@@ -1740,13 +1773,20 @@ fn dequantize_q4_1(data: &[u8], start: usize, num_elements: usize) -> Result<Vec
         let min = f16_to_f32(u16::from_le_bytes([data[offset + 2], data[offset + 3]]));
         offset += 4;
 
+        // PMAT-231: Low nibbles first (elements 0-15)
         for i in 0..16 {
             let byte = data[offset + i];
             let v0 = f32::from(byte & 0x0F) * scale + min;
-            let v1 = f32::from(byte >> 4) * scale + min;
             result.push(v0);
+        }
+
+        // PMAT-231: High nibbles second (elements 16-31)
+        for i in 0..16 {
+            let byte = data[offset + i];
+            let v1 = f32::from(byte >> 4) * scale + min;
             result.push(v1);
         }
+
         offset += 16;
     }
 
