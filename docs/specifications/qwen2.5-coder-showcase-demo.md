@@ -1,11 +1,11 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 5.31.0
-**Status:** ⚠️ PARTIALLY VERIFIED (GGUF Q4_K/Q6_K work, 2 paths FALSIFIED, 4 FIXED)
-**Popperian Score:** 95/100 (62/65 Corroborated, 2 FALSIFIED, 1 PARTIAL)
+**Version:** 5.32.0
+**Status:** ⚠️ PARTIALLY VERIFIED (GGUF Q4_K/Q6_K work, 1 path FALSIFIED, 5 FIXED)
+**Popperian Score:** 96/100 (63/65 Corroborated, 1 FALSIFIED, 1 PARTIAL)
 **Author:** PAIML Engineering
 **Date:** 2026-01-29
-**Last Falsification Run:** 2026-01-29 (PMAT-128: F-EVAL FIXED - PPL 12.45, was 1099)
+**Last Falsification Run:** 2026-01-29 (PMAT-129: F-SAFETENSORS-GPU FIXED - apr run uses SafeTensorsCudaModel)
 **Quality Philosophy:** Toyota Way + Popperian Falsification (Zero SATD, Stop-the-Line)
 
 ---
@@ -788,7 +788,7 @@ Completed in 1.83s (cached)
 | GGUF Q4_K | ✅ 14 tok/s | ✅ 755 tok/s | ✅ |
 | GGUF Q5_K/Q6_K/Q8_0 | ✅ | ✅ | ✅ |
 | GGUF Q4_0/Q4_1 | ❌ FALSIFIED (garbage) | ❌ FALSIFIED | ✅ |
-| SafeTensors F32 | ✅ 2.2 tok/s | ⚠️ `apr chat` only (F-SAFETENSORS-GPU-001: `apr run` says "Not yet supported") | ✅ |
+| SafeTensors F32 | ✅ 2.2 tok/s | ✅ GPU via `apr run` (PMAT-129: SafeTensorsCudaModel wired up) | ✅ |
 | APR Q4_K | ❌ FALSIFIED (garbage) | ❌ FALSIFIED | ✅ |
 
 ---
@@ -1484,7 +1484,7 @@ Following Popper's critical rationalism, we do not seek to *confirm* that infere
 | F-VALIDATE-001 | `apr validate model.apr` | VALID | VALID (3/100 pts) | ✅ **CORROBORATED** |
 | F-INSPECT-001 | `apr inspect model.apr` | Metadata | Type, Version, Flags | ✅ **CORROBORATED** |
 | F-SAFETENSORS-CPU | `apr run model.safetensors --no-gpu` | Coherent | Coherent output | ✅ **CORROBORATED** |
-| F-SAFETENSORS-GPU | `apr run model.safetensors` (GPU) | Works | "Not yet supported" | ⚠️ **apr chat works, apr run doesn't** |
+| F-SAFETENSORS-GPU | `apr run model.safetensors` (GPU) | Works | Works | ✅ **FIXED** (PMAT-129: SafeTensorsCudaModel) |
 | F-TRACE-JSON | `apr run --trace --trace-output` | JSON file | Valid JSON with timing | ✅ **CORROBORATED** |
 | F-EMPTY-PROMPT | `apr run --prompt ""` | No crash | Produces output | ✅ **CORROBORATED** |
 | F-DETERMINISM | Same prompt 3x | Same output | Identical | ✅ **CORROBORATED** |
@@ -1536,11 +1536,10 @@ Following Popper's critical rationalism, we do not seek to *confirm* that infere
 - F-TREE-001: `apr tree` command exists (APR-only) ✅ **CORROBORATED**
 - F-HEX-001: `apr hex` command exists (APR-only) ✅ **CORROBORATED**
 
-**Falsified Paths (2 total):**
+**Falsified Paths (1 total):**
 - ❌ F-Q4_0: GGUF Q4_0 produces garbage (trueno dequantization bug, Q4_K works)
-- ⚠️ F-SAFETENSORS-GPU: Works via `apr chat`, NOT via `apr run` (design choice)
 
-**Fixed Paths (4 total):**
+**Fixed Paths (5 total):**
 - ✅ F-SERVE-GENERATE: /generate endpoint (PMAT-124: Added quantized_model handler)
   - Root cause: Handler only checked cuda_model, not quantized_model for CPU GGUF mode
   - Fix: Added `if let Some(quantized_model) = state.quantized_model()` block
@@ -1550,6 +1549,11 @@ Following Popper's critical rationalism, we do not seek to *confirm* that infere
   - Five-Whys: eval used aprender::Qwen2Model with uninitialized weights for GGUF
   - Fix: Added `run_gguf_evaluation()` using realizar's `OwnedQuantizedModel`
   - Evidence: PPL=12.45 (was 1099.62) - Good quality per threshold 20.0
+- ✅ F-SAFETENSORS-GPU: apr run SafeTensors GPU (PMAT-129: Wired up SafeTensorsCudaModel)
+  - Root cause: run_safetensors_inference returned "Not yet supported" error
+  - Five-Whys: SafeTensorsCudaModel existed (PMAT-116) but wasn't wired to infer.rs
+  - Fix: Modified run_safetensors_inference to use SafeTensorsCudaModel::load() first
+  - Evidence: "Backend: GPU (NVIDIA RTX 4090)" - Output: "2+2 equals 4."
 
 - ✅ F-APR-ST: APR from SafeTensors (PMAT-125/126: Architecture + Tokenizer)
   - Root cause 1: Architecture defaulted to "unknown" instead of reading from metadata
@@ -1566,7 +1570,7 @@ Following Popper's critical rationalism, we do not seek to *confirm* that infere
 
 **Root Causes (Remaining):**
 1. ~~APR converter/loader bugs~~ **FULLY FIXED** (tokenizer + arch detection working for both paths)
-2. SafeTensors GPU not in `apr run` command (design choice, use `apr chat --gpu`)
+2. ~~SafeTensors GPU not in apr run~~ **FIXED (PMAT-129)** (SafeTensorsCudaModel wired up)
 3. ~~`/generate` handler doesn't check quantized_model~~ **FIXED (PMAT-124)**
 4. ~~eval.rs doesn't load GGUF weights~~ **FIXED (PMAT-128)**
 5. **Q4_0/Q4_1 dequantization broken** in trueno (Q4_K works, Q4_0 doesn't)
