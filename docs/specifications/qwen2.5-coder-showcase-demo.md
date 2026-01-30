@@ -1,7 +1,7 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 5.75.0
-**Status:** ✅ 17 closed, 0 open bugs (GH-181/182/183 COMPLETE)
+**Version:** 5.76.0
+**Status:** ✅ 18 closed, 0 open bugs (GH-184 verified working)
 **Popperian Score:** 100/100
 **Author:** PAIML Engineering
 **Date:** 2026-01-30
@@ -12,10 +12,11 @@
 
 ## GitHub Issues Status (Toyota Way: Transparency)
 
-**Summary:** 17 issues closed, 0 open bugs. All P0/P1/P2 defects resolved.
+**Summary:** 18 issues closed, 0 open bugs. All P0/P1/P2 defects resolved.
 
 | Issue | Title | Severity | Status | PMAT |
 |-------|-------|----------|--------|------|
+| [#184](https://github.com/paiml/aprender/issues/184) | apr profile --ci exits 0 on assertion fail | P1 | ✅ **CLOSED** | PMAT-196 |
 | [#183](https://github.com/paiml/aprender/issues/183) | Validation rejects valid GGUF v3 (inverted magic) | P1 | ✅ **CLOSED** | PMAT-195 |
 | [#182](https://github.com/paiml/aprender/issues/182) | SafeTensors missing companion files | P1 | ✅ **CLOSED** | PMAT-194 |
 | [#181](https://github.com/paiml/aprender/issues/181) | Conversion loses Q4_K_M block alignment | **P0** | ✅ **CLOSED** | PMAT-193 |

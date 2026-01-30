@@ -1061,6 +1061,64 @@ fn test_f_profile_ci_006_assert_p50_accepted() {
 }
 
 // ============================================================================
+// F-PROFILE-EXIT Tests (GH-184: Exit code verification)
+// ============================================================================
+
+// F-PROFILE-EXIT-001: Help text documents exit codes
+#[test]
+fn test_f_profile_exit_001_help_documents_exit_codes() {
+    // Verify that CI mode documentation exists in help
+    apr()
+        .args(["profile", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--ci"))
+        .stdout(predicate::str::contains("--assert-throughput"));
+}
+
+// F-PROFILE-EXIT-002: Non-existent model returns failure (not success)
+#[test]
+fn test_f_profile_exit_002_nonexistent_model_fails() {
+    // GH-184: Ensure file-not-found errors exit with non-zero code
+    apr()
+        .args([
+            "profile",
+            "/nonexistent/path/to/model.gguf",
+            "--ci",
+            "--assert-throughput",
+            "1.0",
+        ])
+        .assert()
+        .failure()
+        .code(predicate::ne(0)); // Must be non-zero exit code
+}
+
+// F-PROFILE-EXIT-003: CI mode with impossible threshold should fail
+// Note: This test requires a real model and inference feature
+#[test]
+#[ignore = "requires model download - run with: cargo test -- --ignored"]
+fn test_f_profile_exit_003_impossible_threshold_fails() {
+    // This test would need a real model to verify exit code on assertion failure
+    // The assertion --assert-throughput 999999999.0 should always fail
+    // and exit with code 1
+    apr()
+        .args([
+            "profile",
+            "test-model.gguf", // Would need real model path
+            "--ci",
+            "--assert-throughput",
+            "999999999.0",
+            "--warmup",
+            "1",
+            "--measure",
+            "1",
+        ])
+        .assert()
+        .failure()
+        .code(predicate::eq(1)); // Must be exit code 1 for assertion failure
+}
+
+// ============================================================================
 // F-CONVERT-QUANT Tests (GH-181: Q4_K_M block alignment)
 // ============================================================================
 

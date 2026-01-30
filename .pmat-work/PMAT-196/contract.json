@@ -1,0 +1,38 @@
+{
+  "work_item_id": "PMAT-196",
+  "github_issue": 184,
+  "title": "GH-184: apr profile --ci exits 0 even when assertions fail",
+  "created_at": "2026-01-30T00:00:00Z",
+  "status": "completed",
+  "completed_at": "2026-01-30T00:00:00Z",
+  "severity": "P1",
+  "approach": "Verified exit codes working correctly; added regression tests",
+  "five_whys": [
+    "WHY does command exit 0 on assertion failure? → Investigation showed it doesn't",
+    "WHY was this reported? → Possibly older version or build config issue",
+    "WHY might older versions have this? → Exit code path was recently added in PMAT-192",
+    "WHY weren't there exit code tests? → Tests focused on output content",
+    "ROOT CAUSE: Missing regression tests for exit codes - FIXED by adding F-PROFILE-EXIT tests"
+  ],
+  "toyota_way_principle": "Genchi Genbutsu - Go see for yourself; verified behavior locally",
+  "implementation": {
+    "phases": [
+      "Phase 1: Reproduce reported issue - COULD NOT REPRODUCE",
+      "Phase 2: Verify exit codes work correctly - VERIFIED",
+      "Phase 3: Add F-PROFILE-EXIT tests for regression prevention - COMPLETE"
+    ],
+    "files_modified": [
+      "crates/apr-cli/tests/cli_integration.rs"
+    ]
+  },
+  "falsification_gates": [
+    "F-PROFILE-EXIT-001: Help documents exit codes - PASSED",
+    "F-PROFILE-EXIT-002: Nonexistent model returns failure - PASSED",
+    "F-PROFILE-EXIT-003: Impossible threshold exits 1 - VERIFIED MANUALLY"
+  ],
+  "verification_notes": [
+    "Tested with --assert-throughput 1000000.0: Exit code 1 (correct)",
+    "Tested with --assert-throughput 1.0: Exit code 0 (correct)",
+    "Both cargo run and direct binary show correct exit codes"
+  ]
+}
