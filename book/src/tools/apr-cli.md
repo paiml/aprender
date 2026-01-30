@@ -112,6 +112,94 @@ curl -H "X-Trace-Level: brick" http://localhost:8080/v1/chat/completions ...
 curl -H "X-Trace-Level: layer" http://localhost:8080/v1/chat/completions ...
 ```
 
+### Tool Calling (GH-160)
+
+The server supports OpenAI-compatible tool calling, allowing models to invoke external functions.
+
+**Define tools in your request:**
+
+```bash
+curl -X POST http://localhost:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "default",
+    "messages": [{"role": "user", "content": "What is the weather in Tokyo?"}],
+    "tools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "get_weather",
+          "description": "Get the current weather for a location",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "location": {"type": "string", "description": "City name"},
+              "unit": {"type": "string", "enum": ["celsius", "fahrenheit"]}
+            },
+            "required": ["location"]
+          }
+        }
+      }
+    ],
+    "max_tokens": 100
+  }'
+```
+
+**Response with tool call:**
+
+```json
+{
+  "id": "chatcmpl-abc123",
+  "choices": [{
+    "message": {
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [{
+        "id": "call_xyz789",
+        "type": "function",
+        "function": {
+          "name": "get_weather",
+          "arguments": "{\"location\": \"Tokyo\", \"unit\": \"celsius\"}"
+        }
+      }]
+    },
+    "finish_reason": "tool_calls"
+  }]
+}
+```
+
+**Multi-turn with tool result:**
+
+After executing the tool, send the result back:
+
+```bash
+curl -X POST http://localhost:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "default",
+    "messages": [
+      {"role": "user", "content": "What is the weather in Tokyo?"},
+      {"role": "assistant", "content": null, "tool_calls": [{"id": "call_xyz789", "type": "function", "function": {"name": "get_weather", "arguments": "{\"location\": \"Tokyo\"}"}}]},
+      {"role": "tool", "tool_call_id": "call_xyz789", "content": "{\"temperature\": 22, \"condition\": \"sunny\"}"}
+    ],
+    "max_tokens": 100
+  }'
+```
+
+The model will then generate a response incorporating the tool result.
+
+**Tool choice control:**
+
+```json
+{
+  "tool_choice": "auto"
+}
+```
+
+Options: `"auto"` (default), `"none"` (disable tools), or `{"type": "function", "function": {"name": "specific_tool"}}`.
+
+**Example code:** See `cargo run --example tool_calling_demo` for a complete Rust example.
+
 ## Chat Command
 
 Interactive chat with language models (supports GGUF, APR, SafeTensors).
