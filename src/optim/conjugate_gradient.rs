@@ -443,4 +443,151 @@ mod tests {
             assert!(result.solution[1].abs() < 1e-4);
         }
     }
+
+    #[test]
+    fn test_cg_restart_interval() {
+        let optimizer = ConjugateGradient::new(100, 1e-5, CGBetaFormula::PolakRibiere)
+            .with_restart_interval(10);
+        assert_eq!(optimizer.restart_interval, 10);
+
+        // Run optimization with restart interval
+        let mut opt = optimizer;
+        let f = |x: &Vector<f32>| x[0] * x[0] + x[1] * x[1];
+        let grad = |x: &Vector<f32>| Vector::from_slice(&[2.0 * x[0], 2.0 * x[1]]);
+        let x0 = Vector::from_slice(&[5.0, 3.0]);
+        let result = opt.minimize(f, grad, x0);
+        assert_eq!(result.status, ConvergenceStatus::Converged);
+    }
+
+    #[test]
+    fn test_cg_reset() {
+        let mut optimizer = ConjugateGradient::new(100, 1e-5, CGBetaFormula::PolakRibiere);
+
+        // Run an optimization first
+        let f = |x: &Vector<f32>| x[0] * x[0];
+        let grad = |x: &Vector<f32>| Vector::from_slice(&[2.0 * x[0]]);
+        let x0 = Vector::from_slice(&[5.0]);
+        let _ = optimizer.minimize(f, grad, x0);
+
+        // Check state was set
+        assert!(optimizer.prev_direction.is_some());
+
+        // Reset and check state is cleared
+        optimizer.reset();
+        assert!(optimizer.prev_direction.is_none());
+        assert!(optimizer.prev_gradient.is_none());
+        assert_eq!(optimizer.iter_count, 0);
+    }
+
+    #[test]
+    #[should_panic(expected = "does not support stochastic")]
+    fn test_cg_step_panics() {
+        let mut optimizer = ConjugateGradient::new(100, 1e-5, CGBetaFormula::PolakRibiere);
+        let mut params = Vector::from_slice(&[1.0, 2.0]);
+        let grads = Vector::from_slice(&[0.1, 0.2]);
+        optimizer.step(&mut params, &grads);
+    }
+
+    #[test]
+    fn test_cg_numerical_error() {
+        let mut optimizer = ConjugateGradient::new(100, 1e-5, CGBetaFormula::PolakRibiere);
+
+        // Function that returns NaN
+        let f = |x: &Vector<f32>| {
+            if x[0] > 0.5 {
+                f32::NAN
+            } else {
+                x[0] * x[0]
+            }
+        };
+        let grad = |x: &Vector<f32>| Vector::from_slice(&[2.0 * x[0]]);
+
+        let x0 = Vector::from_slice(&[0.4]);
+        let result = optimizer.minimize(f, grad, x0);
+        // May hit NaN or converge depending on line search
+        assert!(
+            result.status == ConvergenceStatus::NumericalError
+                || result.status == ConvergenceStatus::Converged
+                || result.status == ConvergenceStatus::Stalled
+        );
+    }
+
+    #[test]
+    fn test_cg_max_iterations() {
+        // Very tight tolerance that won't be reached with only 2 iterations
+        let mut optimizer = ConjugateGradient::new(2, 1e-20, CGBetaFormula::PolakRibiere);
+
+        // Rosenbrock is hard to converge in 2 iterations
+        let f = |x: &Vector<f32>| {
+            let a = x[0];
+            let b = x[1];
+            (1.0 - a).powi(2) + 100.0 * (b - a * a).powi(2)
+        };
+        let grad = |x: &Vector<f32>| {
+            let a = x[0];
+            let b = x[1];
+            Vector::from_slice(&[
+                -2.0 * (1.0 - a) - 400.0 * a * (b - a * a),
+                200.0 * (b - a * a),
+            ])
+        };
+
+        let x0 = Vector::from_slice(&[-5.0, -5.0]);
+        let result = optimizer.minimize(f, grad, x0);
+        assert_eq!(result.status, ConvergenceStatus::MaxIterations);
+    }
+
+    #[test]
+    fn test_cg_hestenes_stiefel() {
+        let mut optimizer = ConjugateGradient::new(100, 1e-5, CGBetaFormula::HestenesStiefel);
+
+        // Multi-dimensional problem to exercise HS formula
+        let f = |x: &Vector<f32>| x[0] * x[0] + 2.0 * x[1] * x[1] + 3.0 * x[2] * x[2];
+        let grad =
+            |x: &Vector<f32>| Vector::from_slice(&[2.0 * x[0], 4.0 * x[1], 6.0 * x[2]]);
+
+        let x0 = Vector::from_slice(&[5.0, 3.0, 2.0]);
+        let result = optimizer.minimize(f, grad, x0);
+
+        assert_eq!(result.status, ConvergenceStatus::Converged);
+        assert!(result.solution[0].abs() < 1e-4);
+        assert!(result.solution[1].abs() < 1e-4);
+        assert!(result.solution[2].abs() < 1e-4);
+    }
+
+    #[test]
+    fn test_cg_fletcher_reeves() {
+        let mut optimizer = ConjugateGradient::new(100, 1e-5, CGBetaFormula::FletcherReeves);
+
+        let f = |x: &Vector<f32>| x[0] * x[0] + x[1] * x[1];
+        let grad = |x: &Vector<f32>| Vector::from_slice(&[2.0 * x[0], 2.0 * x[1]]);
+
+        let x0 = Vector::from_slice(&[10.0, 10.0]);
+        let result = optimizer.minimize(f, grad, x0);
+
+        assert_eq!(result.status, ConvergenceStatus::Converged);
+    }
+
+    #[test]
+    fn test_cg_beta_formula_equality() {
+        assert_eq!(CGBetaFormula::FletcherReeves, CGBetaFormula::FletcherReeves);
+        assert_ne!(CGBetaFormula::FletcherReeves, CGBetaFormula::PolakRibiere);
+
+        // Test Clone
+        let formula = CGBetaFormula::HestenesStiefel;
+        let cloned = formula;
+        assert_eq!(formula, cloned);
+
+        // Test Debug
+        let debug_str = format!("{:?}", CGBetaFormula::PolakRibiere);
+        assert!(debug_str.contains("PolakRibiere"));
+    }
+
+    #[test]
+    fn test_cg_clone() {
+        let optimizer = ConjugateGradient::new(100, 1e-5, CGBetaFormula::PolakRibiere);
+        let cloned = optimizer.clone();
+        assert_eq!(cloned.max_iter, 100);
+        assert_eq!(cloned.beta_formula, CGBetaFormula::PolakRibiere);
+    }
 }
