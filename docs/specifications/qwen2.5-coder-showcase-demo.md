@@ -1,8 +1,8 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 5.66.0
-**Status:** ⚠️ P0 PARTIAL: GH-177 detection-only, conversion root cause unfixed
-**Popperian Score:** 95/100 (RED TEAM: mutex unwrap P0, conversion NaN P0)
+**Version:** 5.67.0
+**Status:** ⚠️ P0 PARTIAL: GH-177 conversion NaN root cause unfixed (PMAT-189 mutex fix complete)
+**Popperian Score:** 97/100 (RED TEAM: conversion NaN P0 remaining)
 **Author:** PAIML Engineering
 **Date:** 2026-01-30
 **Last Falsification Run:** 2026-01-30 (CI parity gates, format conversion status)
@@ -122,7 +122,7 @@ Compare:
 
 | Finding | Severity | Status | Evidence |
 |---------|----------|--------|----------|
-| Mutex `.lock().unwrap()` in serve.rs | **P0** | ❌ FALSIFIED | 8 calls at lines 1431, 1478, 1556, 1620, 1902, 2003, 2894, 3084 |
+| Mutex `.lock().unwrap()` in serve.rs | **P0** | ✅ **FIXED** (PMAT-189) | All 8 calls replaced with proper error handling |
 | GH-177 Conversion NaN Root Cause | **P0** | ❌ UNFIXED | 84.6% output diff, 75 tensor errors (detection-only fix) |
 | `expect()` in run.rs hot paths | **P1** | ❌ FALSIFIED | Lines 1221, 1222: malformed model → panic |
 | Symlink loop error message | **P2** | 🟡 MISLEADING | Returns "Resource not found" instead of symlink error |
@@ -130,18 +130,23 @@ Compare:
 | Invalid magic bytes | — | ✅ PASSED | Graceful FAIL, clear error |
 | Permission denied | — | ✅ PASSED | "Permission denied (os error 13)" |
 
-**P0 Critical: Mutex Lock Poisoning Attack**
+**P0 FIXED: Mutex Lock Poisoning (PMAT-189)**
 ```rust
-// serve.rs:1478 - If worker panics, lock poisons, ALL requests fail
-let t = transformer.lock().unwrap();  // ❌ DANGEROUS
+// BEFORE (P0 CRITICAL):
+let t = transformer.lock().unwrap();  // ❌ Panic on poison
 
-// Required fix:
-let t = transformer.lock().map_err(|e| {
-    ApiError::internal(format!("Lock poisoned: {}", e))
-})?;
+// AFTER (PMAT-189 Fix):
+let t = match transformer.lock() {
+    Ok(guard) => guard,
+    Err(_poisoned) => {
+        return (StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": "Lock poisoned. Please restart server."})))
+            .into_response();  // ✅ Graceful 500
+    }
+};
 ```
 
-**Recommended Action:** Fix P0 mutex unwrap before production deployment.
+**Status:** ✅ All 8 mutex locks now handle poisoning gracefully.
 
 ### PMAT-120: SafeTensors GPU ✅ FIXED (Five-Whys Analysis)
 

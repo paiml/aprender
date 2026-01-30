@@ -1428,7 +1428,19 @@ fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
                 post(move |Json(req): Json<CompletionRequest>| {
                     let state = state_for_completions.clone();
                     async move {
-                        let s = state.lock().unwrap().clone();
+                        // PMAT-189: Handle mutex lock poisoning gracefully (Jidoka)
+                        let s = match state.lock() {
+                            Ok(guard) => guard.clone(),
+                            Err(_poisoned) => {
+                                return (
+                                    StatusCode::INTERNAL_SERVER_ERROR,
+                                    Json(serde_json::json!({
+                                        "error": "Server state corrupted (lock poisoned). Please restart the server."
+                                    })),
+                                )
+                                    .into_response();
+                            }
+                        };
 
                         // PMAT-098: Use shared transformer (no reload per request)
                         let transformer = match &s.transformer {
@@ -1475,7 +1487,19 @@ fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
                         };
 
                         let output_tokens = {
-                            let t = transformer.lock().unwrap();
+                            // PMAT-189: Handle transformer lock poisoning gracefully
+                            let t = match transformer.lock() {
+                                Ok(guard) => guard,
+                                Err(_poisoned) => {
+                                    return (
+                                        StatusCode::INTERNAL_SERVER_ERROR,
+                                        Json(serde_json::json!({
+                                            "error": "Transformer state corrupted (lock poisoned). Please restart the server."
+                                        })),
+                                    )
+                                        .into_response();
+                                }
+                            };
                             match t.generate_with_cache(&input_tokens, &gen_config) {
                                 Ok(tokens) => tokens,
                                 Err(e) => {
@@ -1553,7 +1577,16 @@ fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
                                 .and_then(|v| v.to_str().ok())
                                 .map(str::to_lowercase);
 
-                            let s = state.lock().unwrap().clone();
+                            // PMAT-189: Handle mutex lock poisoning gracefully (Jidoka)
+                            let s = match state.lock() {
+                                Ok(guard) => guard.clone(),
+                                Err(_poisoned) => {
+                                    return axum::Json(serde_json::json!({
+                                        "error": "Server state corrupted (lock poisoned). Please restart the server."
+                                    }))
+                                    .into_response();
+                                }
+                            };
 
                             // PMAT-098: Use shared transformer (no reload per request)
                             let transformer = match &s.transformer {
@@ -1617,7 +1650,16 @@ fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
                             };
 
                             let output_tokens = {
-                                let t = transformer.lock().unwrap();
+                                // PMAT-189: Handle transformer lock poisoning gracefully
+                                let t = match transformer.lock() {
+                                    Ok(guard) => guard,
+                                    Err(_poisoned) => {
+                                        return axum::Json(serde_json::json!({
+                                            "error": "Transformer state corrupted (lock poisoned). Please restart the server."
+                                        }))
+                                            .into_response();
+                                    }
+                                };
                                 match t.generate_with_cache(&input_tokens, &gen_config) {
                                     Ok(tokens) => tokens,
                                     Err(e) => {
@@ -1899,7 +1941,19 @@ fn start_apr_server_gpu(
                         let gen_start = Instant::now();
                         let max_tokens = req.max_tokens.min(128);
                         let output_tokens = {
-                            let mut model = cuda.lock().unwrap();
+                            // PMAT-189: Handle CUDA model lock poisoning gracefully
+                            let mut model = match cuda.lock() {
+                                Ok(guard) => guard,
+                                Err(_poisoned) => {
+                                    return (
+                                        StatusCode::INTERNAL_SERVER_ERROR,
+                                        Json(serde_json::json!({
+                                            "error": "GPU model state corrupted (lock poisoned). Please restart the server."
+                                        })),
+                                    )
+                                        .into_response();
+                                }
+                            };
                             match model.generate_cuda(
                                 &input_tokens,
                                 max_tokens,
@@ -2000,7 +2054,16 @@ fn start_apr_server_gpu(
                             let gen_start = Instant::now();
                             let max_tokens = max_tokens.min(256);
                             let output_tokens = {
-                                let mut model = cuda.lock().unwrap();
+                                // PMAT-189: Handle CUDA model lock poisoning gracefully
+                                let mut model = match cuda.lock() {
+                                    Ok(guard) => guard,
+                                    Err(_poisoned) => {
+                                        return axum::Json(serde_json::json!({
+                                            "error": "GPU model state corrupted (lock poisoned). Please restart the server."
+                                        }))
+                                            .into_response();
+                                    }
+                                };
                                 match model.generate_cuda(&input_tokens, max_tokens, eos_id) {
                                     Ok(t) => t,
                                     Err(e) => {
@@ -2891,7 +2954,19 @@ async fn safetensors_chat_completions_handler(
         trace: false,
     };
     let output_ids = {
-        let t = transformer.lock().unwrap();
+        // PMAT-189: Handle transformer lock poisoning gracefully
+        let t = match transformer.lock() {
+            Ok(guard) => guard,
+            Err(_poisoned) => {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    axum::Json(serde_json::json!({
+                        "error": "Transformer state corrupted (lock poisoned). Please restart the server."
+                    })),
+                )
+                    .into_response();
+            }
+        };
         match t.generate_with_cache(&input_ids, &gen_config) {
             Ok(ids) => ids,
             Err(e) => {
@@ -3081,7 +3156,19 @@ async fn safetensors_generate_handler(
         trace: false,
     };
     let output_ids = {
-        let t = transformer.lock().unwrap();
+        // PMAT-189: Handle transformer lock poisoning gracefully
+        let t = match transformer.lock() {
+            Ok(guard) => guard,
+            Err(_poisoned) => {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    axum::Json(serde_json::json!({
+                        "error": "Transformer state corrupted (lock poisoned). Please restart the server."
+                    })),
+                )
+                    .into_response();
+            }
+        };
         match t.generate_with_cache(&input_ids, &gen_config) {
             Ok(ids) => ids,
             Err(e) => {

@@ -1,0 +1,37 @@
+{
+  "work_item_id": "PMAT-189",
+  "github_issue": null,
+  "title": "P0: Mutex lock().unwrap() in serve.rs causes cascading server failure",
+  "created_at": "2026-01-30T00:00:00Z",
+  "status": "in_progress",
+  "severity": "P0",
+  "discovered_by": "Red Team Protocol 'Burn It Down'",
+  "approach": "Replace all mutex .lock().unwrap() with proper error handling",
+  "five_whys": [
+    "WHY does server become permanently unavailable? → Subsequent requests panic on poisoned mutex",
+    "WHY does mutex become poisoned? → Worker thread panicked while holding the lock",
+    "WHY does worker panic propagate? → .unwrap() on PoisonError causes panic",
+    "WHY use .unwrap() on mutex lock? → Original code assumed infallible lock acquisition",
+    "ROOT CAUSE: Missing error handling for mutex lock poisoning - violates Jidoka principle"
+  ],
+  "toyota_way_principle": "Jidoka - Build quality in; handle errors gracefully, never crash the line",
+  "implementation": {
+    "phases": [
+      "Phase 1: Audit all .lock().unwrap() calls in serve.rs (8 found)",
+      "Phase 2: Create ApiError variant for lock poisoning",
+      "Phase 3: Replace unwrap() with map_err() returning 500 Internal Server Error",
+      "Phase 4: Add unit tests for lock poisoning recovery",
+      "Phase 5: Update spec with fix status"
+    ],
+    "files_to_modify": [
+      "crates/apr-cli/src/commands/serve.rs"
+    ],
+    "lines_to_fix": [1431, 1478, 1556, 1620, 1902, 2003, 2894, 3084]
+  },
+  "falsification_gates": [
+    "F-SERVE-LOCK-001: Server returns 500 on poisoned state lock",
+    "F-SERVE-LOCK-002: Server returns 500 on poisoned transformer lock",
+    "F-SERVE-LOCK-003: Server returns 500 on poisoned CUDA lock",
+    "F-SERVE-LOCK-004: Server continues serving after single request panic"
+  ]
+}

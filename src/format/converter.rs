@@ -1558,7 +1558,7 @@ fn load_safetensors_tensors(path: &Path) -> Result<BTreeMap<String, (Vec<f32>, V
             })?;
 
         // PMAT-187: Validate tensor values after loading (Jidoka - stop the line)
-        validate_tensor_values(&name, &data)?;
+        validate_tensor_values(name, &data)?;
 
         tensors.insert(name.clone(), (data, meta.shape.clone()));
     }
