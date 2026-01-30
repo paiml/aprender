@@ -1,11 +1,11 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 5.48.0
-**Status:** ✅ ALL P0 DEFECTS FIXED + Q4_0/Q4_K DEQUANTIZATION FIXED + PMAT-085 FILE HEALTH
-**Popperian Score:** 100/100 (All P0 Fixed: #170 Explosion, #171 Empty Tokens, #168 Import 404, PMAT-130 Q4_0)
+**Version:** 5.49.0
+**Status:** ✅ ALL P0 DEFECTS FIXED + PMAT-172 FAIL-FAST TOKENIZER
+**Popperian Score:** 100/100 (All P0 Fixed: #170 Explosion, #171 BPE Merges, #172 Silent Failure Recovery, #168 Import 404, PMAT-130 Q4_0)
 **Author:** PAIML Engineering
 **Date:** 2026-01-30
-**Last Falsification Run:** 2026-01-29 (Critical Mass Round 5 - Complete)
+**Last Falsification Run:** 2026-01-30 (PMAT-171/172 Tokenizer Fixes)
 **Quality Philosophy:** Toyota Way + Popperian Falsification (Zero SATD, Stop-the-Line)
 
 ---
