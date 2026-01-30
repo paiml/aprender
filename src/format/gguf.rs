@@ -948,6 +948,23 @@ impl GgufReader {
         }
     }
 
+    /// Get BPE merge rules from metadata (PMAT-171)
+    ///
+    /// Returns the merge rules as "token1 token2" strings for BPE encoding.
+    /// Uses "tokenizer.ggml.merges" key from GGUF metadata.
+    #[must_use]
+    pub fn merges(&self) -> Option<Vec<String>> {
+        if let Some(GgufValue::ArrayString(merges)) = self.metadata.get("tokenizer.ggml.merges") {
+            if merges.is_empty() {
+                None
+            } else {
+                Some(merges.clone())
+            }
+        } else {
+            None
+        }
+    }
+
     /// Get general architecture name (e.g., "llama", "qwen2")
     #[must_use]
     pub fn architecture(&self) -> Option<String> {
@@ -1971,6 +1988,8 @@ pub fn load_gguf_tensors<P: AsRef<Path>>(path: P) -> Result<TensorDataMap> {
 pub struct GgufTokenizer {
     /// Vocabulary tokens (indexed by token ID)
     pub vocabulary: Vec<String>,
+    /// BPE merge rules (PMAT-171) - "token1 token2" strings for encoding
+    pub merges: Vec<String>,
     /// Tokenizer model type (e.g., "llama", "gpt2")
     pub model_type: Option<String>,
     /// BOS (beginning of sequence) token ID
@@ -2046,8 +2065,10 @@ pub fn load_gguf_with_tokenizer<P: AsRef<Path>>(path: P) -> Result<GgufLoadResul
 
     let tensors = reader.get_all_tensors_f32()?;
 
+    // PMAT-171: Extract both vocabulary and BPE merges for standalone APR encoding
     let tokenizer = GgufTokenizer {
         vocabulary: reader.vocabulary().unwrap_or_else(Vec::new),
+        merges: reader.merges().unwrap_or_else(Vec::new),
         model_type: reader.tokenizer_model(),
         bos_token_id: reader.bos_token_id(),
         eos_token_id: reader.eos_token_id(),
@@ -2060,7 +2081,7 @@ pub fn load_gguf_with_tokenizer<P: AsRef<Path>>(path: P) -> Result<GgufLoadResul
     let arch = reader.architecture();
     let rope_type = match arch.as_deref() {
         Some("qwen2" | "qwen2.5" | "qwen") => Some(2), // NEOX style
-        _ => Some(0), // Default to NORM style
+        _ => Some(0),                                  // Default to NORM style
     };
 
     let model_config = GgufModelConfig {
@@ -2119,8 +2140,10 @@ pub fn load_gguf_raw<P: AsRef<Path>>(path: P) -> Result<GgufRawLoadResult> {
         tensors.insert(name, GgufRawTensor { data, shape, dtype });
     }
 
+    // PMAT-171: Extract both vocabulary and BPE merges for standalone APR encoding
     let tokenizer = GgufTokenizer {
         vocabulary: reader.vocabulary().unwrap_or_else(Vec::new),
+        merges: reader.merges().unwrap_or_else(Vec::new),
         model_type: reader.tokenizer_model(),
         bos_token_id: reader.bos_token_id(),
         eos_token_id: reader.eos_token_id(),
@@ -2132,7 +2155,7 @@ pub fn load_gguf_raw<P: AsRef<Path>>(path: P) -> Result<GgufRawLoadResult> {
     let arch = reader.architecture();
     let rope_type = match arch.as_deref() {
         Some("qwen2" | "qwen2.5" | "qwen") => Some(2), // NEOX style
-        _ => Some(0), // Default to NORM style
+        _ => Some(0),                                  // Default to NORM style
     };
 
     let model_config = GgufModelConfig {
@@ -3116,6 +3139,7 @@ mod tests {
     fn test_gguf_tokenizer_has_vocabulary_false() {
         let tokenizer = GgufTokenizer {
             vocabulary: vec![],
+            merges: vec![],
             model_type: None,
             bos_token_id: None,
             eos_token_id: None,
@@ -3129,6 +3153,7 @@ mod tests {
     fn test_gguf_tokenizer_has_vocabulary_true() {
         let tokenizer = GgufTokenizer {
             vocabulary: vec!["a".into()],
+            merges: vec![],
             model_type: None,
             bos_token_id: None,
             eos_token_id: None,
@@ -3142,6 +3167,7 @@ mod tests {
     fn test_gguf_tokenizer_vocab_size() {
         let tokenizer = GgufTokenizer {
             vocabulary: vec!["a".into(), "b".into(), "c".into()],
+            merges: vec![],
             model_type: Some("llama".into()),
             bos_token_id: Some(1),
             eos_token_id: Some(2),
@@ -3176,6 +3202,7 @@ mod tests {
             tensors: BTreeMap::new(),
             tokenizer: GgufTokenizer {
                 vocabulary: vec![],
+                merges: vec![],
                 model_type: None,
                 bos_token_id: None,
                 eos_token_id: None,
@@ -3215,6 +3242,7 @@ mod tests {
             tensors: BTreeMap::new(),
             tokenizer: GgufTokenizer {
                 vocabulary: vec![],
+                merges: vec![],
                 model_type: None,
                 bos_token_id: None,
                 eos_token_id: None,

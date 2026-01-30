@@ -368,15 +368,17 @@ $ realizar run model.apr "2+2=" -n 10
 Model Type: LogisticRegression  ← WRONG
 ```
 
-**Root Cause (3 bugs):**
+**Root Cause (4 bugs):**
 1. **Vocabulary not embedded:** `write_apr_file_raw()` extracted vocabulary from GGUF but didn't write to APR metadata
-2. **Wrong tokenizer lookup:** `run_apr_inference()` only looked for external `tokenizer.json`, not embedded vocabulary
-3. **Header misinterpretation:** APR v2 header version bytes (2,0) interpreted as model type 0x0002="LogisticRegression"
+2. **BPE merges not embedded:** APR only embeds vocab (decode-only), not BPE merge rules (encode). PMAT-171 fix.
+3. **Wrong tokenizer lookup:** `run_apr_inference()` only looked for external `tokenizer.json`, not embedded vocabulary
+4. **Header misinterpretation:** APR v2 header version bytes (2,0) interpreted as model type 0x0002="LogisticRegression"
 
 **Fixes Applied:**
 1. `aprender/src/format/converter.rs`: Ensure vocabulary is embedded in APR metadata
-2. `realizar/src/cli/inference.rs`: Try `load_embedded_tokenizer()` first, fallback to external
-3. `realizar/src/model_loader.rs`: Handle APR v2 header format, read model type from JSON metadata
+2. `aprender/src/format/converter.rs`: Extract `tokenizer.ggml.merges` from GGUF and embed in APR (PMAT-171)
+3. `realizar/src/cli/inference.rs`: Try `load_embedded_tokenizer()` first, fallback to external
+4. `realizar/src/model_loader.rs`: Handle APR v2 header format, read model type from JSON metadata
 
 **Evidence (after fix):**
 ```
@@ -443,6 +445,107 @@ Score: 85/100
 3. T201 now uses synthetic fixture as fallback when real APR model unavailable
 
 **Result:** APR moved from METAPHYSICAL → EMPIRICAL. Test RUNS and produces output.
+
+### ✅ PMAT-171: APR BPE Merge Embedding (GH-171)
+
+**Status:** COMPLETE (2026-01-30)
+
+**Problem:** APR files converted from GGUF produce garbage output because they encode prompts differently than GGUF:
+```
+GGUF: "Hello" with ChatML → 10 tokens
+APR:  "Hello" with ChatML → 23 tokens  ← WRONG
+```
+
+**Root Cause (Five-Whys):**
+1. WHY garbage output? → Token IDs differ from GGUF
+2. WHY token IDs differ? → APR uses different tokenizer
+3. WHY different tokenizer? → APR can only decode (has vocab), cannot encode (missing BPE merges)
+4. WHY missing BPE merges? → GGUF-to-APR conversion only extracts vocabulary
+5. **ROOT CAUSE:** `tokenizer.ggml.merges` not extracted from GGUF and embedded in APR
+
+**Implementation State:**
+| Data | GGUF | APR (implemented) |
+|------|------|-------------------|
+| Vocabulary | ✅ `tokenizer.ggml.tokens` | ✅ `tokenizer.vocabulary` |
+| BPE Merges | ✅ `tokenizer.ggml.merges` | ✅ `tokenizer.merges` |
+| BOS/EOS | ✅ embedded | ✅ embedded |
+
+**Implementation (2026-01-30):**
+1. ✅ `aprender/src/format/gguf.rs`: Added `fn merges() -> Option<Vec<String>>` to `GgufReader`
+2. ✅ `aprender/src/format/gguf.rs`: Added `merges: Vec<String>` to `GgufTokenizer` struct
+3. ✅ `aprender/src/format/converter.rs`: Embeds merges in APR metadata as `tokenizer.merges` JSON array
+4. ✅ `realizar/src/apr/mod.rs`: Added `AprMetadata::get_embedded_merges()` to extract merge rules
+5. ✅ `realizar/src/apr/mod.rs`: Added `AprV2Model::load_embedded_bpe_tokenizer()` for full encode support
+6. ✅ `realizar/src/apr/mod.rs`: Updated `encode_text()` to prefer embedded BPE tokenizer first
+
+**Tokenizer Resolution (PMAT-172 Fail-Fast Design):**
+```
+APR MUST use embedded tokenizer ONLY - NO FALLBACK
+If missing → FAIL with clear error (not garbage output)
+```
+
+**Verification:**
+```bash
+# APR with embedded tokenizer → works
+realizar run model.apr "Hello" --verbose
+[PMAT-171] Using embedded BPE tokenizer from APR
+Prompt tokens: 10  ← MATCHES GGUF
+
+# APR without embedded tokenizer → clear error (not garbage)
+realizar run broken.apr "Hello"
+Error: APR file missing embedded tokenizer.
+       Re-convert with: apr convert model.gguf -o model.apr
+```
+
+### ✅ PMAT-172: Remove Silent Failure Recovery (P0)
+
+**Status:** COMPLETE (2026-01-30)
+
+**Problem:** APR `encode_text()` silently falls back to HuggingFace cache when embedded tokenizer is missing:
+```
+1. Try embedded tokenizer → fails (no merges)
+2. Try sibling tokenizer.json → fails (doesn't exist)
+3. Try HF cache → finds DIFFERENT model's tokenizer  ← WRONG
+4. Use wrong tokenizer → garbage output
+5. User thinks MODEL is broken  ← SILENT FAILURE
+```
+
+**Design Violation:** APR format is designed to be ONE self-contained file. Fallback to external files contradicts this design goal and creates defects.
+
+**Root Cause (Five-Whys):**
+1. WHY garbage output? → Wrong tokens generated
+2. WHY wrong tokens? → Using wrong tokenizer
+3. WHY wrong tokenizer? → Fallback found different model's tokenizer
+4. WHY fallback? → `encode_text()` has 3-tier fallback instead of fail-fast
+5. **ROOT CAUSE:** Silent Failure Recovery anti-pattern
+
+**Fix:** Fail fast with actionable error message:
+```rust
+// WRONG (silent failure)
+fn encode_text() -> Option<Vec<u32>> {
+    embedded.or_else(|| sibling).or_else(|| hf_cache)  // ← DEFECT
+}
+
+// CORRECT (fail-fast)
+fn encode_text(&self) -> Result<Vec<u32>, TokenizerError> {
+    self.load_embedded_bpe_tokenizer()
+        .ok_or(TokenizerError::MissingEmbeddedTokenizer)?
+        .encode(text)
+}
+```
+
+**Implementation (2026-01-30):**
+1. ✅ Rewrote `realizar/src/apr/mod.rs::encode_text()` with fail-fast design
+2. ✅ Removed `find_tokenizer_json_in_cache()` - source of Silent Failure Recovery bug
+3. ✅ APR: MUST use embedded tokenizer, clear error if missing
+4. ✅ SafeTensors: MUST use sibling tokenizer.json, clear error if missing
+
+**Error Messages (user sees clear instructions, not garbage):**
+```
+[PMAT-172] ERROR: APR file missing embedded tokenizer.
+           APR format requires self-contained tokenizer.
+           Re-convert with: apr convert <source>.gguf -o model.apr
+```
 
 ### ✅ PMAT-109: Cached GGUF Models Produce Garbage Output
 

@@ -10,8 +10,8 @@
 
 use crate::error::{AprenderError, Result};
 use crate::format::gguf::{
-    dequantize_q5_0, dequantize_q8_0, load_gguf_raw, load_gguf_with_tokenizer, GgufModelConfig,
-    GgufRawTensor, GgufReader, GgufTokenizer,
+    dequantize_q4_0, dequantize_q4_1, dequantize_q5_0, dequantize_q8_0, load_gguf_raw,
+    load_gguf_with_tokenizer, GgufModelConfig, GgufRawTensor, GgufReader, GgufTokenizer,
 };
 use crate::format::v2::{AprV2Metadata, AprV2Writer, QuantizationMetadata, TensorDType};
 use crate::format::validation::{AprValidator, TensorStats, ValidationReport};
@@ -143,8 +143,44 @@ impl Architecture {
     }
 
     fn qwen2_map_name(name: &str) -> String {
-        // PMAT-099: Preserve model. prefix for Qwen2
-        name.to_string()
+        // PMAT-113 FIX: Map GGUF tensor names to HuggingFace/APR canonical format
+        // GGUF: blk.N.attn_q.weight → HF: model.layers.N.self_attn.q_proj.weight
+
+        // Handle layer-specific tensors (blk.N.*)
+        if let Some(rest) = name.strip_prefix("blk.") {
+            if let Some(dot_pos) = rest.find('.') {
+                let layer_num = &rest[..dot_pos];
+                let suffix = &rest[dot_pos + 1..];
+
+                // Map GGUF tensor suffixes to HuggingFace names
+                let hf_suffix = match suffix {
+                    "attn_q.weight" => "self_attn.q_proj.weight",
+                    "attn_q.bias" => "self_attn.q_proj.bias",
+                    "attn_k.weight" => "self_attn.k_proj.weight",
+                    "attn_k.bias" => "self_attn.k_proj.bias",
+                    "attn_v.weight" => "self_attn.v_proj.weight",
+                    "attn_v.bias" => "self_attn.v_proj.bias",
+                    "attn_output.weight" => "self_attn.o_proj.weight",
+                    "attn_output.bias" => "self_attn.o_proj.bias",
+                    "attn_norm.weight" => "input_layernorm.weight",
+                    "ffn_gate.weight" => "mlp.gate_proj.weight",
+                    "ffn_up.weight" => "mlp.up_proj.weight",
+                    "ffn_down.weight" => "mlp.down_proj.weight",
+                    "ffn_norm.weight" => "post_attention_layernorm.weight",
+                    other => other, // Preserve unknown suffixes
+                };
+
+                return format!("model.layers.{layer_num}.{hf_suffix}");
+            }
+        }
+
+        // Handle non-layer tensors
+        match name {
+            "token_embd.weight" => "model.embed_tokens.weight".to_string(),
+            "output.weight" => "lm_head.weight".to_string(),
+            "output_norm.weight" => "model.norm.weight".to_string(),
+            _ => name.to_string(), // Preserve unknown names
+        }
     }
 }
 
@@ -788,20 +824,17 @@ pub fn apr_import<P: AsRef<Path>>(
     output: P,
     options: ImportOptions,
 ) -> Result<ValidationReport> {
-    println!("[DEBUG] apr_import called: source={}", source);
     let parsed_source = Source::parse(source)?;
     let output_path = output.as_ref();
 
     // Step 1: Resolve source to local path
     let local_path = resolve_source(&parsed_source, options.cache)?;
-    println!("[DEBUG] local_path={}", local_path.display());
 
     // Step 2: Check if GGUF - use raw import path to preserve quantization
     let extension = local_path
         .extension()
         .and_then(|e| e.to_str())
         .unwrap_or("");
-    println!("[DEBUG] extension={}", extension);
     if extension == "gguf" {
         // PMAT-103: Use raw GGUF loading to preserve Q4_K/Q6_K quantization
         // This is critical for format parity - we don't want to dequantize and re-quantize
@@ -809,7 +842,18 @@ pub fn apr_import<P: AsRef<Path>>(
     }
 
     // Non-GGUF path: Load tensors as f32, apply quantization during write
-    let load_result = load_source_tensors(&local_path, &options)?;
+    let mut load_result = load_source_tensors(&local_path, &options)?;
+
+    // PMAT-SAFETENSORS-TOK-001: For HuggingFace SafeTensors imports, try to find
+    // tokenizer.json from the same repo if not found as sibling file
+    if load_result.tokenizer.is_none() {
+        if let Source::HuggingFace { org, repo, .. } = &parsed_source {
+            // Try to find tokenizer.json in HuggingFace cache for this repo
+            if let Some(tokenizer_path) = find_in_cache(org, repo, "tokenizer.json") {
+                load_result.tokenizer = load_tokenizer_from_json(&tokenizer_path);
+            }
+        }
+    }
 
     // Step 3: Map tensor names to canonical APR names
     let mapped_tensors = map_tensor_names(&load_result.tensors, options.architecture);
@@ -839,7 +883,6 @@ fn apr_import_gguf_raw(
     output_path: &Path,
     options: &ImportOptions,
 ) -> Result<ValidationReport> {
-    println!("[PMAT-114 DEBUG] apr_import_gguf_raw called - gguf_path={}", gguf_path.display());
     // Load GGUF with raw quantized tensors (preserves Q4_K bytes)
     let raw_result = load_gguf_raw(gguf_path)?;
 
@@ -884,10 +927,39 @@ fn resolve_source(source: &Source, cache: bool) -> Result<PathBuf> {
             Ok(path.clone())
         }
         Source::HuggingFace { org, repo, file } => {
-            let filename = file.as_deref().unwrap_or("model.safetensors");
+            // PMAT-168: Smart default filename based on repo type
+            let filename = file.as_deref().unwrap_or_else(|| {
+                // Detect GGUF repos by name convention
+                if repo.to_lowercase().contains("gguf") {
+                    // Try common GGUF naming patterns
+                    // e.g., Qwen2.5-Coder-1.5B-Instruct-GGUF -> qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+                    "model.gguf" // We'll try multiple patterns in find_in_cache
+                } else {
+                    "model.safetensors"
+                }
+            });
 
             // Check standard cache locations first
             if cache {
+                // PMAT-168: Try multiple common filenames for GGUF repos
+                if repo.to_lowercase().contains("gguf") && file.is_none() {
+                    // Try common GGUF naming patterns
+                    let base_name = repo
+                        .to_lowercase()
+                        .replace("-gguf", "")
+                        .replace("_gguf", "");
+                    let gguf_patterns = [
+                        format!("{}-q4_k_m.gguf", base_name),
+                        format!("{}-q4_k.gguf", base_name),
+                        format!("{}-q8_0.gguf", base_name),
+                        "model.gguf".to_string(),
+                    ];
+                    for pattern in &gguf_patterns {
+                        if let Some(path) = find_in_cache(org, repo, pattern) {
+                            return Ok(path);
+                        }
+                    }
+                }
                 if let Some(path) = find_in_cache(org, repo, filename) {
                     return Ok(path);
                 }
@@ -907,7 +979,7 @@ fn resolve_source(source: &Source, cache: bool) -> Result<PathBuf> {
                 message: format!(
                     "HuggingFace model not found in cache. Download manually:\n\
                      huggingface-cli download {org}/{repo} {filename}\n\
-                     Or provide a local path to the SafeTensors file.",
+                     Or provide a local path to the SafeTensors/GGUF file.",
                 ),
             })
         }
@@ -1111,7 +1183,7 @@ fn load_model_config_from_json(model_path: &Path) -> Option<GgufModelConfig> {
     // Qwen2/Qwen2.5 models use NEOX-style RoPE (type 2)
     let rope_type = match architecture.as_deref() {
         Some("qwen2" | "qwen2.5" | "qwen") => Some(2), // NEOX style
-        _ => Some(0), // Default to NORM style
+        _ => Some(0),                                  // Default to NORM style
     };
 
     Some(GgufModelConfig {
@@ -1196,8 +1268,21 @@ fn load_tokenizer_from_json(model_path: &Path) -> Option<GgufTokenizer> {
         .and_then(|t| t.as_str())
         .map(String::from);
 
+    // PMAT-171: Extract BPE merge rules for encoding
+    let merges = json
+        .get("model")
+        .and_then(|m| m.get("merges"))
+        .and_then(|m| m.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default();
+
     Some(GgufTokenizer {
         vocabulary,
+        merges,
         model_type,
         bos_token_id,
         eos_token_id,
@@ -1323,7 +1408,7 @@ fn infer_model_config_from_tensors(
                 || name.contains("up_proj")
                 || name.contains("fc1")
                 || name.contains("ffn_gate") // GGUF naming
-                || name.contains("ffn_up")   // GGUF naming
+                || name.contains("ffn_up") // GGUF naming
         })
         .and_then(|(_, (_, shape))| {
             if shape.len() == 2 {
@@ -1375,7 +1460,7 @@ fn infer_model_config_from_tensors(
     // PMAT-114: Infer rope_type from architecture
     let rope_type = match architecture.as_deref() {
         Some("qwen2" | "qwen2.5" | "qwen") => Some(2), // NEOX style
-        _ => Some(0), // Default to NORM style
+        _ => Some(0),                                  // Default to NORM style
     };
 
     Some(GgufModelConfig {
@@ -1833,8 +1918,7 @@ fn write_apr_file(
                     .and_then(|s| s.split('.').next())
                     .and_then(|s| s.parse::<usize>().ok());
                 if let Some(layer_idx) = layer_idx_opt {
-                    let qkv_bias_name =
-                        format!("model.layers.{layer_idx}.self_attn.qkv_proj.bias");
+                    let qkv_bias_name = format!("model.layers.{layer_idx}.self_attn.qkv_proj.bias");
                     if qkv_bias_fused.contains_key(&qkv_bias_name) {
                         continue;
                     }
@@ -1954,7 +2038,9 @@ fn write_apr_file(
             cfg.rms_norm_eps,
         )
     } else {
-        (None, None, None, None, None, None, None, None, None, None, None)
+        (
+            None, None, None, None, None, None, None, None, None, None, None,
+        )
     };
 
     let metadata = AprV2Metadata {
@@ -2018,8 +2104,7 @@ fn write_apr_file(
                 .and_then(|s| s.split('.').next())
                 .and_then(|s| s.parse::<usize>().ok());
             if let Some(layer_idx) = layer_idx_opt {
-                let qkv_bias_name =
-                    format!("model.layers.{layer_idx}.self_attn.qkv_proj.bias");
+                let qkv_bias_name = format!("model.layers.{layer_idx}.self_attn.qkv_proj.bias");
                 if qkv_bias_fused.contains_key(&qkv_bias_name) {
                     continue; // Skip individual bias, we'll write fused version
                 }
@@ -2129,7 +2214,8 @@ fn write_apr_file_raw(
         .iter()
         .map(|(name, tensor)| {
             // Keep GGML-order dims - don't reverse
-            let shape_array: Vec<serde_json::Value> = tensor.shape
+            let shape_array: Vec<serde_json::Value> = tensor
+                .shape
                 .iter()
                 .map(|&dim| serde_json::Value::Number(serde_json::Number::from(dim as u64)))
                 .collect();
@@ -2144,7 +2230,7 @@ fn write_apr_file_raw(
         serde_json::Value::Object(tensor_shapes),
     );
 
-    // Add tokenizer data if available
+    // Add tokenizer data if available (PMAT-171: embed vocabulary for standalone APR files)
     if let Some(tok) = tokenizer {
         if !tok.vocabulary.is_empty() {
             let vocab_array: Vec<serde_json::Value> = tok
@@ -2297,8 +2383,8 @@ fn write_apr_file_raw(
 
     // Add all tensors with their native quantization format
     // PMAT-103: Store tensors as-is from GGUF for supported formats, dequantize others
-    // PMAT-114 FIX: Per apr_transformer/mod.rs, APR should store GGML-convention dims
-    // (NOT reversed) with raw GGUF data. The APR loader handles the interpretation.
+    // PMAT-086: APR stores GGUF data in row-major layout with GGML convention dims
+    // AprTransformer expects dims in GGML convention, data in row-major
     let mut dtype_counts: std::collections::HashMap<u32, usize> = std::collections::HashMap::new();
     for (name, tensor) in tensors {
         *dtype_counts.entry(tensor.dtype).or_insert(0) += 1;
@@ -2312,52 +2398,127 @@ fn write_apr_file_raw(
         match tensor.dtype {
             0 => {
                 // F32 - store data as-is with GGML-order dims
-                writer.add_tensor(name, TensorDType::F32, tensor.shape.clone(), tensor.data.clone());
+                writer.add_tensor(
+                    name,
+                    TensorDType::F32,
+                    tensor.shape.clone(),
+                    tensor.data.clone(),
+                );
             }
             1 => {
                 // F16 - store data as-is with GGML-order dims
-                writer.add_tensor(name, TensorDType::F16, tensor.shape.clone(), tensor.data.clone());
+                writer.add_tensor(
+                    name,
+                    TensorDType::F16,
+                    tensor.shape.clone(),
+                    tensor.data.clone(),
+                );
             }
             12 => {
                 // Q4_K - store raw for fused kernels with GGML-order dims
-                writer.add_tensor(name, TensorDType::Q4K, tensor.shape.clone(), tensor.data.clone());
+                writer.add_tensor(
+                    name,
+                    TensorDType::Q4K,
+                    tensor.shape.clone(),
+                    tensor.data.clone(),
+                );
             }
             14 => {
                 // Q6_K - store raw for fused kernels with GGML-order dims
-                writer.add_tensor(name, TensorDType::Q6K, tensor.shape.clone(), tensor.data.clone());
+                writer.add_tensor(
+                    name,
+                    TensorDType::Q6K,
+                    tensor.shape.clone(),
+                    tensor.data.clone(),
+                );
+            }
+            2 => {
+                // Q4_0 - dequantize to F32, keep GGML convention dims
+                // PMAT-086: APR stores GGUF data in row-major layout with GGML convention dims
+                // AprTransformer expects dims in GGML convention, data in row-major
+                match dequantize_q4_0(&tensor.data, 0, num_elements) {
+                    Ok(f32_data) => {
+                        // Keep GGML convention dims - APR transformer expects this
+                        let bytes: Vec<u8> = f32_data
+                            .iter()
+                            .flat_map(|f: &f32| f.to_le_bytes())
+                            .collect();
+                        writer.add_tensor(name, TensorDType::F32, tensor.shape.clone(), bytes);
+                    }
+                    Err(e) => {
+                        eprintln!("[WARN] Failed to dequantize Q4_0 tensor {name}: {e}");
+                        writer.add_tensor(
+                            name,
+                            TensorDType::F32,
+                            tensor.shape.clone(),
+                            tensor.data.clone(),
+                        );
+                    }
+                }
+            }
+            3 => {
+                // Q4_1 - dequantize to F32, keep GGML convention dims
+                // PMAT-086: APR stores GGUF data in row-major layout with GGML convention dims
+                match dequantize_q4_1(&tensor.data, 0, num_elements) {
+                    Ok(f32_data) => {
+                        // Keep GGML convention dims - APR transformer expects this
+                        let bytes: Vec<u8> = f32_data
+                            .iter()
+                            .flat_map(|f: &f32| f.to_le_bytes())
+                            .collect();
+                        writer.add_tensor(name, TensorDType::F32, tensor.shape.clone(), bytes);
+                    }
+                    Err(e) => {
+                        eprintln!("[WARN] Failed to dequantize Q4_1 tensor {name}: {e}");
+                        // Fall back to storing raw bytes (will fail at inference time)
+                        writer.add_tensor(
+                            name,
+                            TensorDType::F32,
+                            tensor.shape.clone(),
+                            tensor.data.clone(),
+                        );
+                    }
+                }
             }
             6 => {
-                // Q5_0 - dequantize to F32 and reverse dims (like GGUF loader)
-                // PMAT-114 FIX: GGUF loader at line 371 does dims.reverse() to convert
-                // GGML column-major convention to row-major interpretation.
-                // The DATA layout is already correct - we just need to reverse dims.
+                // Q5_0 - dequantize to F32, keep GGML convention dims
+                // PMAT-086: APR stores GGUF data in row-major layout with GGML convention dims
                 match dequantize_q5_0(&tensor.data, 0, num_elements) {
                     Ok(f32_data) => {
-                        // Reverse dims like GGUF loader does - data layout is already correct
-                        let reversed_shape: Vec<usize> = tensor.shape.iter().rev().copied().collect();
-                        eprintln!("[PMAT-114 DEBUG] Q5_0 {name}: GGML dims {:?} -> reversed dims {:?}", tensor.shape, reversed_shape);
-                        let bytes: Vec<u8> = f32_data.iter().flat_map(|f| f.to_le_bytes()).collect();
-                        writer.add_tensor(name, TensorDType::F32, reversed_shape, bytes);
+                        // Keep GGML convention dims - APR transformer expects this
+                        let bytes: Vec<u8> =
+                            f32_data.iter().flat_map(|f| f.to_le_bytes()).collect();
+                        writer.add_tensor(name, TensorDType::F32, tensor.shape.clone(), bytes);
                     }
                     Err(e) => {
                         eprintln!("[WARN] Failed to dequantize Q5_0 tensor {name}: {e}");
-                        writer.add_tensor(name, TensorDType::F32, tensor.shape.clone(), tensor.data.clone());
+                        writer.add_tensor(
+                            name,
+                            TensorDType::F32,
+                            tensor.shape.clone(),
+                            tensor.data.clone(),
+                        );
                     }
                 }
             }
             8 => {
-                // Q8_0 - dequantize to F32 and reverse dims (like GGUF loader)
-                // PMAT-114 FIX: Same as Q5_0 - reverse dims, don't transpose data
+                // Q8_0 - dequantize to F32, keep GGML convention dims
+                // PMAT-086: APR stores GGUF data in row-major layout with GGML convention dims
                 match dequantize_q8_0(&tensor.data, 0, num_elements) {
                     Ok(f32_data) => {
-                        // Reverse dims like GGUF loader does - data layout is already correct
-                        let reversed_shape: Vec<usize> = tensor.shape.iter().rev().copied().collect();
-                        let bytes: Vec<u8> = f32_data.iter().flat_map(|f| f.to_le_bytes()).collect();
-                        writer.add_tensor(name, TensorDType::F32, reversed_shape, bytes);
+                        // Keep GGML convention dims - APR transformer expects this
+                        let bytes: Vec<u8> =
+                            f32_data.iter().flat_map(|f| f.to_le_bytes()).collect();
+                        writer.add_tensor(name, TensorDType::F32, tensor.shape.clone(), bytes);
                     }
                     Err(e) => {
                         eprintln!("[WARN] Failed to dequantize Q8_0 tensor {name}: {e}");
-                        writer.add_tensor(name, TensorDType::F32, tensor.shape.clone(), tensor.data.clone());
+                        writer.add_tensor(
+                            name,
+                            TensorDType::F32,
+                            tensor.shape.clone(),
+                            tensor.data.clone(),
+                        );
                     }
                 }
             }
@@ -2367,14 +2528,24 @@ fn write_apr_file_raw(
                     "[WARN] GGUF dtype {} for tensor {} not yet supported, storing raw bytes",
                     tensor.dtype, name
                 );
-                writer.add_tensor(name, TensorDType::F32, tensor.shape.clone(), tensor.data.clone());
+                writer.add_tensor(
+                    name,
+                    TensorDType::F32,
+                    tensor.shape.clone(),
+                    tensor.data.clone(),
+                );
             }
             _ => {
                 eprintln!(
                     "[WARN] Unsupported GGUF dtype {} for tensor {}, storing as-is",
                     tensor.dtype, name
                 );
-                writer.add_tensor(name, TensorDType::F32, tensor.shape.clone(), tensor.data.clone());
+                writer.add_tensor(
+                    name,
+                    TensorDType::F32,
+                    tensor.shape.clone(),
+                    tensor.data.clone(),
+                );
             }
         }
     }
@@ -2449,11 +2620,50 @@ pub fn apr_convert<P: AsRef<Path>>(
 ) -> Result<ConvertReport> {
     let input_path = input.as_ref();
     let output_path = output.as_ref();
+    let extension = input_path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("");
+
+    eprintln!("[DEBUG apr_convert] input: {:?}, extension: {:?}", input_path, extension);
+
+    // F-REGR-231 FIX: For GGUF input, load with full config to preserve rope_type
+    // Qwen2.5 models require rope_type=2 (NEOX style), not default 0 (NORM style)
+    // PMAT-113 FIX: Also preserve tokenizer for APR embedding
+    let (gguf_config, gguf_tokenizer) = if extension == "gguf" {
+        match load_gguf_with_tokenizer(input_path) {
+            Ok(result) => {
+                eprintln!(
+                    "[PMAT-113] Extracted tokenizer with {} vocabulary tokens",
+                    result.tokenizer.vocabulary.len()
+                );
+                (Some(result.model_config), Some(result.tokenizer))
+            }
+            Err(_) => (None, None), // Fall back to inference if GGUF loading fails
+        }
+    } else {
+        (None, None)
+    };
 
     // Step 1: Load tensors
     let tensors = load_model_tensors(input_path)?;
     let original_size = calculate_tensor_size(&tensors);
     let original_count = tensors.len();
+
+    // Step 1b: Map GGUF tensor names to HuggingFace/APR canonical format (PMAT-113 fix)
+    // GGUF uses names like "blk.0.attn_q.weight" but APR loaders expect
+    // HuggingFace names like "model.layers.0.self_attn.q_proj.weight"
+    let tensors = if extension == "gguf" {
+        eprintln!("[PMAT-113] Mapping {} GGUF tensor names to HuggingFace format...", tensors.len());
+        let mapped = map_tensor_names(&tensors, Architecture::Qwen2);
+        // Debug: show a few mapped names
+        for (i, name) in mapped.keys().take(5).enumerate() {
+            eprintln!("[PMAT-113]   {}: {}", i, name);
+        }
+        mapped
+    } else {
+        tensors
+    };
 
     // Step 2: Handle Q4K specially - store raw Q4K bytes in APR v2 format
     if options.quantize == Some(QuantizationType::Q4K) {
@@ -2484,8 +2694,19 @@ pub fn apr_convert<P: AsRef<Path>>(
         tensors
     };
 
-    // Step 3: Save output (compression applied during save)
-    save_model_tensors(&tensors, output_path, options.compress)?;
+    // Step 3: Save output with GGUF config if available (F-REGR-231 fix)
+    // PMAT-113 FIX: Also embed tokenizer for standalone APR inference
+    if let Some(ref config) = gguf_config {
+        save_model_tensors_with_gguf_config_and_tokenizer(
+            &tensors,
+            output_path,
+            options.compress,
+            config,
+            gguf_tokenizer.as_ref(),
+        )?;
+    } else {
+        save_model_tensors(&tensors, output_path, options.compress)?;
+    }
 
     // Step 4: Calculate stats
     let converted_size = fs::metadata(output_path)
@@ -3187,6 +3408,168 @@ fn save_model_tensors_with_config(
         metadata.num_heads = cfg.num_heads;
         metadata.num_kv_heads = cfg.num_kv_heads;
         metadata.intermediate_size = cfg.intermediate_size;
+    }
+
+    // Create writer and add all tensors
+    let mut writer = AprV2Writer::new(metadata);
+    for (name, (data, shape)) in tensors {
+        writer.add_f32_tensor(name, shape.clone(), data);
+    }
+
+    // Write to file
+    let apr_bytes = writer.write().map_err(|e| AprenderError::FormatError {
+        message: format!("Failed to write APR format: {e}"),
+    })?;
+
+    fs::write(output, apr_bytes).map_err(|e| AprenderError::FormatError {
+        message: format!("Failed to write output file: {e}"),
+    })
+}
+
+/// Save model tensors to APR v2 format with GGUF model config (F-REGR-231 fix)
+///
+/// This function preserves critical GGUF metadata including:
+/// - rope_type: RoPE style (0=NORM, 2=NEOX) - CRITICAL for Qwen2.5 models
+/// - rope_theta: Position encoding frequency
+/// - rms_norm_eps: RMS normalization epsilon
+/// - All other model dimensions from GGUF
+///
+/// Without this, APR defaults to rope_type=0 which produces garbage for Qwen2.5.
+fn save_model_tensors_with_gguf_config(
+    tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
+    output: &Path,
+    _compression: Option<Compression>,
+    gguf_config: &GgufModelConfig,
+) -> Result<()> {
+    // Build AprV2Metadata with GGUF config (not inferred from tensor shapes)
+    let mut metadata = AprV2Metadata::new(gguf_config.architecture.as_deref().unwrap_or("qwen2"));
+    metadata.original_format = Some("gguf".to_string());
+    metadata.model_type = gguf_config
+        .architecture
+        .clone()
+        .unwrap_or_else(|| "qwen2".to_string());
+
+    // Copy all GGUF config fields to APR metadata
+    metadata.hidden_size = gguf_config.hidden_size;
+    metadata.num_layers = gguf_config.num_layers;
+    metadata.num_heads = gguf_config.num_heads;
+    metadata.num_kv_heads = gguf_config.num_kv_heads;
+    metadata.vocab_size = gguf_config.vocab_size;
+    metadata.intermediate_size = gguf_config.intermediate_size;
+    metadata.max_position_embeddings = gguf_config.max_position_embeddings;
+
+    // F-REGR-231 FIX: These fields are CRITICAL for correct inference
+    metadata.rope_theta = gguf_config.rope_theta;
+    metadata.rope_type = gguf_config.rope_type;
+    metadata.rms_norm_eps = gguf_config.rms_norm_eps;
+
+    // Create writer and add all tensors
+    let mut writer = AprV2Writer::new(metadata);
+    for (name, (data, shape)) in tensors {
+        writer.add_f32_tensor(name, shape.clone(), data);
+    }
+
+    // Write to file
+    let apr_bytes = writer.write().map_err(|e| AprenderError::FormatError {
+        message: format!("Failed to write APR format: {e}"),
+    })?;
+
+    fs::write(output, apr_bytes).map_err(|e| AprenderError::FormatError {
+        message: format!("Failed to write output file: {e}"),
+    })
+}
+
+/// Save model tensors to APR v2 format with GGUF config AND tokenizer (PMAT-113 fix)
+///
+/// This extends `save_model_tensors_with_gguf_config` to also embed the tokenizer
+/// vocabulary for standalone APR inference without sibling tokenizer.json files.
+fn save_model_tensors_with_gguf_config_and_tokenizer(
+    tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
+    output: &Path,
+    _compression: Option<Compression>,
+    gguf_config: &GgufModelConfig,
+    tokenizer: Option<&GgufTokenizer>,
+) -> Result<()> {
+    // Build AprV2Metadata with GGUF config (not inferred from tensor shapes)
+    let mut metadata = AprV2Metadata::new(gguf_config.architecture.as_deref().unwrap_or("qwen2"));
+    metadata.original_format = Some("gguf".to_string());
+    metadata.model_type = gguf_config
+        .architecture
+        .clone()
+        .unwrap_or_else(|| "qwen2".to_string());
+    // PMAT-113 FIX: Set architecture for chat template detection
+    metadata.architecture = gguf_config.architecture.clone();
+
+    // Copy all GGUF config fields to APR metadata
+    metadata.hidden_size = gguf_config.hidden_size;
+    metadata.num_layers = gguf_config.num_layers;
+    metadata.num_heads = gguf_config.num_heads;
+    metadata.num_kv_heads = gguf_config.num_kv_heads;
+    metadata.vocab_size = gguf_config.vocab_size;
+    metadata.intermediate_size = gguf_config.intermediate_size;
+    metadata.max_position_embeddings = gguf_config.max_position_embeddings;
+
+    // F-REGR-231 FIX: These fields are CRITICAL for correct inference
+    metadata.rope_theta = gguf_config.rope_theta;
+    metadata.rope_type = gguf_config.rope_type;
+    metadata.rms_norm_eps = gguf_config.rms_norm_eps;
+
+    // PMAT-113 FIX: Embed tokenizer vocabulary for standalone APR inference
+    if let Some(tok) = tokenizer {
+        if !tok.vocabulary.is_empty() {
+            eprintln!(
+                "[PMAT-113] Embedding {} vocabulary tokens into APR metadata",
+                tok.vocabulary.len()
+            );
+            // Store vocabulary as JSON array in custom metadata
+            let vocab_array: Vec<serde_json::Value> = tok
+                .vocabulary
+                .iter()
+                .map(|s| serde_json::Value::String(s.clone()))
+                .collect();
+            metadata.custom.insert(
+                "tokenizer.vocabulary".to_string(),
+                serde_json::Value::Array(vocab_array),
+            );
+            metadata.custom.insert(
+                "tokenizer.vocab_size".to_string(),
+                serde_json::Value::Number(serde_json::Number::from(tok.vocabulary.len())),
+            );
+        }
+        if let Some(ref model_type) = tok.model_type {
+            metadata.custom.insert(
+                "tokenizer.model".to_string(),
+                serde_json::Value::String(model_type.clone()),
+            );
+        }
+        if let Some(bos_id) = tok.bos_token_id {
+            metadata.custom.insert(
+                "tokenizer.bos_token_id".to_string(),
+                serde_json::Value::Number(serde_json::Number::from(bos_id)),
+            );
+        }
+        if let Some(eos_id) = tok.eos_token_id {
+            metadata.custom.insert(
+                "tokenizer.eos_token_id".to_string(),
+                serde_json::Value::Number(serde_json::Number::from(eos_id)),
+            );
+        }
+        // PMAT-171: Embed BPE merge rules for standalone APR encoding
+        if !tok.merges.is_empty() {
+            eprintln!(
+                "[PMAT-171] Embedding {} BPE merge rules into APR metadata",
+                tok.merges.len()
+            );
+            let merges_array: Vec<serde_json::Value> = tok
+                .merges
+                .iter()
+                .map(|s| serde_json::Value::String(s.clone()))
+                .collect();
+            metadata.custom.insert(
+                "tokenizer.merges".to_string(),
+                serde_json::Value::Array(merges_array),
+            );
+        }
     }
 
     // Create writer and add all tensors
@@ -6825,7 +7208,10 @@ mod tests_pmat_107_gqa_metadata {
         );
 
         let config = infer_model_config_from_tensors(&tensors);
-        assert!(config.is_some(), "PMAT-107: Config inference should succeed");
+        assert!(
+            config.is_some(),
+            "PMAT-107: Config inference should succeed"
+        );
 
         let config = config.unwrap();
 
@@ -6966,15 +7352,26 @@ mod tests_pmat_107_gqa_metadata {
         );
 
         let config = infer_model_config_from_tensors(&tensors);
-        assert!(config.is_some(), "GH-165: GGUF-style tensors must be recognized");
+        assert!(
+            config.is_some(),
+            "GH-165: GGUF-style tensors must be recognized"
+        );
 
         let config = config.unwrap();
         assert_eq!(config.vocab_size, Some(32000), "vocab_size from token_embd");
         assert_eq!(config.hidden_size, Some(896), "hidden_size from token_embd");
         assert_eq!(config.num_layers, Some(2), "num_layers from blk.N pattern");
         assert_eq!(config.num_heads, Some(14), "num_heads from 896/64");
-        assert_eq!(config.num_kv_heads, Some(2), "num_kv_heads from attn_k (GQA)");
-        assert_eq!(config.intermediate_size, Some(4864), "intermediate from ffn_gate");
+        assert_eq!(
+            config.num_kv_heads,
+            Some(2),
+            "num_kv_heads from attn_k (GQA)"
+        );
+        assert_eq!(
+            config.intermediate_size,
+            Some(4864),
+            "intermediate from ffn_gate"
+        );
     }
 }
 
