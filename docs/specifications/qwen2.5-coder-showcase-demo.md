@@ -1,7 +1,7 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 5.69.0
-**Status:** ✅ All P0 FIXED (PMAT-189 mutex, PMAT-190 Q4K layout)
+**Version:** 5.70.0
+**Status:** ✅ All issues RESOLVED (13 closed, 0 open bugs)
 **Popperian Score:** 100/100
 **Author:** PAIML Engineering
 **Date:** 2026-01-30
@@ -10,24 +10,26 @@
 
 ---
 
-## Open GitHub Issues (Toyota Way: Transparency)
+## GitHub Issues Status (Toyota Way: Transparency)
 
-| Issue | Title | Severity | Status | Falsification Impact |
-|-------|-------|----------|--------|---------------------|
-| [#179](https://github.com/paiml/aprender/issues/179) | APR tool test coverage only 69% (9/13 tools) | **P1** | ✅ **FIXED** (PMAT-191: 14 tests added, 100% coverage) | F-TOOL-COV-* +20 pts |
-| [#178](https://github.com/paiml/aprender/issues/178) | apr validate rejects valid GGUF v3 files | **P2** | ✅ **FIXED** (PMAT-188) | F-GGUF-* +5 pts |
-| [#177](https://github.com/paiml/aprender/issues/177) | Format conversion introduces NaN/Inf corruption | **P0** | ✅ **FIXED** (PMAT-187+190: Detection + Q4K layout fix) | F-CONV-* +10 pts |
-| [#176](https://github.com/paiml/aprender/issues/176) | Add ML tuning: freeze, LoRA, multi-task, drift | **P1** | ✅ **FIXED** (PMAT-184) | F-TUNE-* +30 pts |
-| [#175](https://github.com/paiml/aprender/issues/175) | Expose TensorStats validation for all formats | **P0** | ✅ **FIXED** (PMAT-180) | - |
-| [#174](https://github.com/paiml/aprender/issues/174) | Add --profile-output for flamegraph SVG | **P2** | ✅ **FIXED** (PMAT-182) | F-PROFILE-002 +5 pts |
-| [#173](https://github.com/paiml/aprender/issues/173) | Add --focus option for profile scope filtering | **P2** | ✅ **FIXED** (PMAT-182) | F-PROFILE-003 +5 pts |
-| [#172](https://github.com/paiml/aprender/issues/172) | Format Conversion NaN Corruption | P0 | ✅ CLOSED (PMAT-177) | - |
-| [#171](https://github.com/paiml/aprender/issues/171) | QA Report: Qwen2.5-Coder-1.5B-Instruct Qualified | Info | Open | - |
-| [#170](https://github.com/paiml/aprender/issues/170) | apr chat hangs with APR format (1.5B model) | P1 | ✅ **FIXED** (PMAT-181) | - |
-| [#169](https://github.com/paiml/aprender/issues/169) | Make apr import --output optional | P3 | ✅ **FIXED** (PMAT-185) | - |
-| [#168](https://github.com/paiml/aprender/issues/168) | Can't import GGUF model, fails with 404 | P1 | ✅ CLOSED (PMAT-168) | - |
-| [#162](https://github.com/paiml/aprender/issues/162) | Pulled models don't show on list | P2 | ✅ **VERIFIED** (PMAT-183: Working as designed) | - |
-| [#160](https://github.com/paiml/aprender/issues/160) | Enable Tool Calling support in apr serve API | P2 | ✅ **FIXED** (PMAT-186) | F-TOOL-* +25 pts |
+**Summary:** 13 issues closed, 0 open bugs. All P0/P1/P2 defects resolved.
+
+| Issue | Title | Severity | Status | PMAT |
+|-------|-------|----------|--------|------|
+| [#179](https://github.com/paiml/aprender/issues/179) | Tool test coverage 69% → 100% | P1 | ✅ CLOSED | PMAT-191 |
+| [#178](https://github.com/paiml/aprender/issues/178) | apr validate rejects GGUF v3 | P2 | ✅ CLOSED | PMAT-188 |
+| [#177](https://github.com/paiml/aprender/issues/177) | Format conversion NaN/Inf | **P0** | ✅ CLOSED | PMAT-187+190 |
+| [#176](https://github.com/paiml/aprender/issues/176) | ML tuning: LoRA, freeze, drift | P1 | ✅ CLOSED | PMAT-184 |
+| [#175](https://github.com/paiml/aprender/issues/175) | TensorStats validation | **P0** | ✅ CLOSED | PMAT-180 |
+| [#174](https://github.com/paiml/aprender/issues/174) | --profile-output flamegraph | P2 | ✅ CLOSED | PMAT-182 |
+| [#173](https://github.com/paiml/aprender/issues/173) | --focus profile filtering | P2 | ✅ CLOSED | PMAT-182 |
+| [#172](https://github.com/paiml/aprender/issues/172) | Format Conversion NaN (dup) | P0 | ✅ CLOSED | PMAT-177 |
+| [#171](https://github.com/paiml/aprender/issues/171) | QA Report: Qwen2.5-Coder | Info | 📋 Open | - |
+| [#170](https://github.com/paiml/aprender/issues/170) | apr chat hangs with APR | P1 | ✅ CLOSED | PMAT-181 |
+| [#169](https://github.com/paiml/aprender/issues/169) | apr import --output optional | P3 | ✅ CLOSED | PMAT-185 |
+| [#168](https://github.com/paiml/aprender/issues/168) | Import GGUF 404 error | P1 | ✅ CLOSED | PMAT-168 |
+| [#162](https://github.com/paiml/aprender/issues/162) | Pulled models not listed | P2 | ✅ CLOSED | PMAT-183 |
+| [#160](https://github.com/paiml/aprender/issues/160) | Tool calling API support | P2 | ✅ CLOSED | PMAT-186 |
 
 **Last Updated:** 2026-01-30
 
