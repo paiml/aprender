@@ -284,6 +284,7 @@
 - [Case Study: Benchmark Comparison](./examples/bench-comparison.md)
 - [Case Study: Showcase Benchmark](./examples/showcase-benchmark.md)
 - [Case Study: QA Falsification Protocol](./examples/qa-falsification.md)
+- [Case Study: Qwen2.5-Coder QA Playbook](./examples/qwen-qa-playbook.md)
 
 # Sprint-Based Development
 
