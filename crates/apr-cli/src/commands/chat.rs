@@ -28,6 +28,8 @@ use crate::output;
 use aprender::text::llama_tokenizer::LlamaTokenizer;
 // PMAT-109: Qwen tokenizer needed for APR/SafeTensors format
 use aprender::text::bpe::Qwen2BpeTokenizer;
+// PMAT-181: Read EOS token from APR metadata (fixes GH-170)
+use aprender::serialization::apr::AprReader;
 // Chat template support (Toyota Way: Standardized Work)
 use aprender::text::chat_template::{
     auto_detect_template, detect_format_from_name, ChatMessage, ChatTemplateEngine, TemplateFormat,
@@ -218,7 +220,8 @@ fn find_qwen_tokenizer(model_path: &Path) -> Result<Option<Qwen2BpeTokenizer>, C
                                             Ok(tok) => {
                                                 println!(
                                                     "{} {} ({})",
-                                                    "Loaded tokenizer from HuggingFace cache:".green(),
+                                                    "Loaded tokenizer from HuggingFace cache:"
+                                                        .green(),
                                                     tokenizer_path.display(),
                                                     format!("{} tokens", tok.vocab_size()).dimmed()
                                                 );
@@ -627,7 +630,8 @@ mod realizar_chat {
                                     }
                                     // Fallback to architectures array (e.g., ["Qwen2ForCausalLM"])
                                     else if let Some(archs) = v["architectures"].as_array() {
-                                        if let Some(first) = archs.first().and_then(|a| a.as_str()) {
+                                        if let Some(first) = archs.first().and_then(|a| a.as_str())
+                                        {
                                             // Extract base name: "Qwen2ForCausalLM" -> "qwen2"
                                             arch = first
                                                 .trim_end_matches("ForCausalLM")
@@ -997,6 +1001,11 @@ mod realizar_chat {
         }
 
         fn generate_apr(&self, prompt: &[u32], config: &ChatConfig) -> Result<Vec<u32>, String> {
+            // PMAT-181: Extract EOS token from APR metadata (fixes GH-170)
+            // Root cause: Different models have different EOS tokens, hardcoded 151645 was wrong
+            // Five-Whys: WHY hang? → WHY no output? → WHY immediate EOS? → Mismatch with model's actual EOS
+            let eos_token_id = self.extract_apr_eos_token().unwrap_or(151645);
+
             // PMAT-110: APR CUDA now works with KV cache (fixed in realizar)
             // Try GPU path first if not force_cpu
 
@@ -1012,16 +1021,12 @@ mod realizar_chat {
                                 Ok(mut cuda_model) => {
                                     let gpu_name = cuda_model.device_name().to_string();
                                     let vram_mb = cuda_model.vram_mb();
-                                    eprintln!(
-                                        "[APR CUDA: {} ({} MB VRAM)]",
-                                        gpu_name, vram_mb
-                                    );
+                                    eprintln!("[APR CUDA: {} ({} MB VRAM)]", gpu_name, vram_mb);
 
-                                    // Generate using CUDA path with KV cache (greedy sampling)
-                                    // EOS tokens: <|im_end|> = 151645
+                                    // PMAT-181: Use EOS token from model metadata
                                     let max_tokens = config.max_tokens;
                                     return cuda_model
-                                        .generate_cuda_with_cache(prompt, max_tokens, 151645)
+                                        .generate_cuda_with_cache(prompt, max_tokens, eos_token_id)
                                         .map_err(|e| format!("APR CUDA generate failed: {e}"));
                                 }
                                 Err(e) => {
@@ -1055,6 +1060,49 @@ mod realizar_chat {
             transformer
                 .generate_with_cache(prompt, &gen_config)
                 .map_err(|e| format!("APR generate failed: {e}"))
+        }
+
+        /// PMAT-181: Extract EOS token ID from APR metadata (fixes GH-170)
+        ///
+        /// Five-Whys Root Cause: Different Qwen2 model sizes may have different EOS tokens
+        /// in their metadata. The 1.5B model's EOS token was being mismatched with hardcoded
+        /// 151645, causing generation to terminate immediately or hang.
+        ///
+        /// Toyota Way: Genchi Genbutsu - Go and see the actual model metadata
+        fn extract_apr_eos_token(&self) -> Option<u32> {
+            // Parse APR metadata from model bytes
+            let reader = AprReader::from_bytes(self.model_bytes.clone()).ok()?;
+
+            // Try common metadata keys for EOS token (in order of specificity)
+            // 1. tokenizer.eos_token_id (GGUF-style)
+            // 2. eos_token_id (direct)
+            // 3. tokenizer_config.eos_token_id (nested)
+            let keys = [
+                "tokenizer.eos_token_id",
+                "eos_token_id",
+                "tokenizer.ggml.eos_token_id",
+            ];
+
+            for key in keys {
+                if let Some(value) = reader.get_metadata(key) {
+                    if let Some(id) = value.as_u64() {
+                        return Some(id as u32);
+                    }
+                }
+            }
+
+            // Try nested tokenizer_config
+            if let Some(config) = reader.get_metadata("tokenizer_config") {
+                if let Some(obj) = config.as_object() {
+                    if let Some(value) = obj.get("eos_token_id") {
+                        if let Some(id) = value.as_u64() {
+                            return Some(id as u32);
+                        }
+                    }
+                }
+            }
+
+            None
         }
 
         #[allow(dead_code)]

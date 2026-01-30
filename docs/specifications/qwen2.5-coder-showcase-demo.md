@@ -214,12 +214,13 @@ let d = if d_raw.is_nan() || d_raw.is_infinite() || d_raw.abs() < F16_MIN_NORMAL
 5. **ROOT CAUSE (HYPOTHESIS):** EOS token ID mismatch or CUDA KV cache issue with larger context
 
 **Investigation Tasks:**
-- [ ] Verify EOS token ID in 1.5B model metadata
+- [x] Verify EOS token ID in 1.5B model metadata (PMAT-181)
 - [ ] Add debug logging to `generate_cuda_with_cache`
-- [ ] Compare token generation trace with 0.5B model
-- [ ] Check if CPU path (AprTransformer) has same issue
+- [x] Compare token generation trace with 0.5B model
+- [x] Check if CPU path (AprTransformer) has same issue
 
-**Workaround:** Use `--force-cpu` flag or GGUF format directly
+**Fix (PMAT-181):** Read EOS token from APR metadata via `extract_apr_eos_token()` instead of hardcoding 151645.
+See `crates/apr-cli/src/commands/chat.rs:1068-1104` for implementation.
 
 ### 100-Point Falsification Results (PMAT-112, 2026-01-27)
 

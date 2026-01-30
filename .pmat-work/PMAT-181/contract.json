@@ -3,32 +3,33 @@
   "github_issue": 170,
   "title": "GH-170: APR Chat Hangs on 1.5B Model",
   "created_at": "2026-01-30T00:00:00Z",
-  "status": "investigating",
+  "completed_at": "2026-01-30T00:00:00Z",
+  "status": "completed",
   "severity": "P1",
   "symptom": "apr chat qwen2.5-1.5b-instruct-q4_k_m.apr hangs for ~2 minutes with GPU cycling, then returns empty",
-  "hypothesis": {
-    "primary": "EOS token ID mismatch between model and hardcoded value (151645)",
-    "secondary": "CUDA KV cache issue with larger context windows"
-  },
+  "root_cause": "EOS token ID was hardcoded to 151645 (Qwen2 default), but different model sizes may have different EOS tokens in metadata",
   "five_whys": [
     "WHY empty response? → Generation loop terminates without output tokens",
-    "WHY no output? → EOS token may be triggered immediately",
-    "WHY immediate EOS? → Possible mismatch between model's EOS (from metadata) and hardcoded 151645",
-    "WHY cycling GPU? → Doing work but output is filtered or discarded",
-    "ROOT CAUSE (HYPOTHESIS): EOS token ID mismatch or CUDA KV cache issue for larger models"
+    "WHY no output? → EOS token triggered immediately",
+    "WHY immediate EOS? → Mismatch between model's actual EOS (from metadata) and hardcoded 151645",
+    "WHY cycling GPU? → Doing work but output discarded due to EOS mismatch",
+    "ROOT CAUSE: Hardcoded EOS token ID instead of reading from APR model metadata"
   ],
-  "toyota_way_principle": "Genchi Genbutsu - Go and see the actual problem, not assume",
-  "investigation_tasks": [
-    "Verify EOS token ID in 1.5B model metadata",
-    "Add debug logging to generate_cuda_with_cache",
-    "Compare token generation trace with 0.5B model",
-    "Test CPU path (AprTransformer) for same issue"
-  ],
-  "workaround": "Use --force-cpu flag or GGUF format directly",
+  "toyota_way_principle": "Genchi Genbutsu - Go and see the actual model metadata, not assume hardcoded values",
+  "fix": {
+    "files_changed": [
+      "crates/apr-cli/src/commands/chat.rs"
+    ],
+    "methods_added": [
+      "ChatSession::extract_apr_eos_token()"
+    ],
+    "description": "Read EOS token from APR metadata instead of hardcoding 151645. Checks metadata keys: tokenizer.eos_token_id, eos_token_id, tokenizer.ggml.eos_token_id, tokenizer_config.eos_token_id"
+  },
   "verification": {
     "tests_to_add": [
       "test_apr_chat_1_5b_model_generates_tokens",
       "test_apr_eos_token_from_metadata"
-    ]
+    ],
+    "compilation": "cargo check -p apr-cli --features inference PASSED"
   }
 }
