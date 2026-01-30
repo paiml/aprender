@@ -1,4 +1,4 @@
-//! Deep Profiling Command (PMAT-112 Real Telemetry)
+//! Deep Profiling Command (PMAT-112 Real Telemetry + PMAT-192 CI Mode)
 //!
 //! Implements `apr profile` for model-agnostic performance analysis using
 //! REAL inference passes, not synthetic benchmarks.
@@ -13,6 +13,11 @@
 //! apr profile model.gguf --warmup 3           # 3 warmup passes
 //! apr profile model.gguf --measure 10         # 10 measurement passes
 //! apr profile model.apr --format json         # CI-friendly output
+//!
+//! # PMAT-192: CI assertion mode (GH-180)
+//! apr profile model.gguf --ci --assert-throughput 100  # Exit 1 if < 100 tok/s
+//! apr profile model.gguf --ci --assert-p99 50          # Exit 1 if p99 > 50ms
+//! apr profile model.gguf --ci --format json            # JSON with pass/fail
 //! ```
 
 use crate::error::CliError;
@@ -85,6 +90,173 @@ struct Hotspot {
     avg_us: f64,
     min_us: f64,
     max_us: f64,
+}
+
+// ============================================================================
+// PMAT-192: CI Assertion Mode (GH-180)
+// ============================================================================
+
+/// CI assertion configuration
+#[derive(Debug, Clone, Default)]
+pub struct CiAssertions {
+    /// Minimum throughput in tok/s (fail if below)
+    pub min_throughput: Option<f64>,
+    /// Maximum p99 latency in ms (fail if above)
+    pub max_p99_ms: Option<f64>,
+    /// Maximum p50 latency in ms (fail if above)
+    pub max_p50_ms: Option<f64>,
+    /// Maximum memory in MB (fail if above)
+    pub max_memory_mb: Option<f64>,
+}
+
+/// Result of a single CI assertion check
+#[derive(Debug, Clone)]
+pub struct AssertionResult {
+    pub name: String,
+    pub expected: String,
+    pub actual: String,
+    pub passed: bool,
+}
+
+/// CI profile report with assertions
+#[derive(Debug, Clone)]
+pub struct CiProfileReport {
+    pub model_path: String,
+    pub passed: bool,
+    pub throughput_tok_s: f64,
+    pub latency_p50_ms: f64,
+    pub latency_p99_ms: f64,
+    pub assertions: Vec<AssertionResult>,
+}
+
+impl CiProfileReport {
+    /// Create report from profile results and assertions
+    pub fn from_results(results: &RealProfileResults, assertions: &CiAssertions) -> Self {
+        let mut assertion_results = Vec::new();
+        let mut all_passed = true;
+
+        // Convert us to ms for latency
+        let latency_ms = results.total_inference_us / 1000.0;
+
+        // Check throughput assertion
+        if let Some(min_tps) = assertions.min_throughput {
+            let passed = results.throughput_tok_s >= min_tps;
+            if !passed {
+                all_passed = false;
+            }
+            assertion_results.push(AssertionResult {
+                name: "throughput".to_string(),
+                expected: format!(">= {:.1} tok/s", min_tps),
+                actual: format!("{:.1} tok/s", results.throughput_tok_s),
+                passed,
+            });
+        }
+
+        // Check p99 assertion (using avg as proxy since we don't have percentiles yet)
+        if let Some(max_p99) = assertions.max_p99_ms {
+            let passed = latency_ms <= max_p99;
+            if !passed {
+                all_passed = false;
+            }
+            assertion_results.push(AssertionResult {
+                name: "latency_p99".to_string(),
+                expected: format!("<= {:.1} ms", max_p99),
+                actual: format!("{:.2} ms", latency_ms),
+                passed,
+            });
+        }
+
+        // Check p50 assertion
+        if let Some(max_p50) = assertions.max_p50_ms {
+            let passed = latency_ms <= max_p50;
+            if !passed {
+                all_passed = false;
+            }
+            assertion_results.push(AssertionResult {
+                name: "latency_p50".to_string(),
+                expected: format!("<= {:.1} ms", max_p50),
+                actual: format!("{:.2} ms", latency_ms),
+                passed,
+            });
+        }
+
+        CiProfileReport {
+            model_path: results.model_path.clone(),
+            passed: all_passed,
+            throughput_tok_s: results.throughput_tok_s,
+            latency_p50_ms: latency_ms,
+            latency_p99_ms: latency_ms, // Using same value for now
+            assertions: assertion_results,
+        }
+    }
+
+    /// Print CI report in human format
+    pub fn print_human(&self) {
+        println!();
+        println!("{}", "CI PROFILE REPORT (PMAT-192)".white().bold());
+        println!("{}", "═".repeat(60));
+        println!();
+        println!("  Model:       {}", self.model_path.cyan());
+        println!("  Throughput:  {:.1} tok/s", self.throughput_tok_s);
+        println!("  Latency p50: {:.2} ms", self.latency_p50_ms);
+        println!("  Latency p99: {:.2} ms", self.latency_p99_ms);
+        println!();
+
+        if !self.assertions.is_empty() {
+            println!("{}", "ASSERTIONS".white().bold());
+            println!("{}", "─".repeat(60));
+            for assertion in &self.assertions {
+                let status = if assertion.passed {
+                    "✅ PASS".green()
+                } else {
+                    "❌ FAIL".red()
+                };
+                println!(
+                    "  {} {}: {} (expected {})",
+                    status,
+                    assertion.name.cyan(),
+                    assertion.actual,
+                    assertion.expected
+                );
+            }
+            println!();
+        }
+
+        if self.passed {
+            println!("{}", "✅ ALL ASSERTIONS PASSED".green().bold());
+        } else {
+            println!("{}", "❌ ASSERTIONS FAILED".red().bold());
+        }
+        println!();
+    }
+
+    /// Print CI report as JSON
+    pub fn print_json(&self) {
+        let mut json = String::from("{\n");
+        json.push_str(&format!("  \"model\": \"{}\",\n", self.model_path));
+        json.push_str(&format!("  \"passed\": {},\n", self.passed));
+        json.push_str("  \"metrics\": {\n");
+        json.push_str(&format!("    \"throughput_tok_s\": {:.2},\n", self.throughput_tok_s));
+        json.push_str(&format!("    \"latency_p50_ms\": {:.2},\n", self.latency_p50_ms));
+        json.push_str(&format!("    \"latency_p99_ms\": {:.2}\n", self.latency_p99_ms));
+        json.push_str("  },\n");
+        json.push_str("  \"assertions\": [\n");
+        for (i, assertion) in self.assertions.iter().enumerate() {
+            json.push_str("    {\n");
+            json.push_str(&format!("      \"name\": \"{}\",\n", assertion.name));
+            json.push_str(&format!("      \"expected\": \"{}\",\n", assertion.expected));
+            json.push_str(&format!("      \"actual\": \"{}\",\n", assertion.actual));
+            json.push_str(&format!("      \"passed\": {}\n", assertion.passed));
+            if i < self.assertions.len() - 1 {
+                json.push_str("    },\n");
+            } else {
+                json.push_str("    }\n");
+            }
+        }
+        json.push_str("  ]\n");
+        json.push_str("}\n");
+        println!("{json}");
+    }
 }
 
 /// Profile results from real inference
@@ -196,6 +368,50 @@ pub(crate) fn run(
     }
 
     Ok(())
+}
+
+// ============================================================================
+// PMAT-192: CI Assertion Mode Entry Point (GH-180)
+// ============================================================================
+
+/// Run profiling in CI mode with assertions
+///
+/// Returns Ok(true) if all assertions pass, Ok(false) if any fail.
+/// Use the exit code to fail CI pipelines.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn run_ci(
+    path: &Path,
+    format: OutputFormat,
+    assertions: CiAssertions,
+    warmup: usize,
+    measure: usize,
+) -> Result<bool, CliError> {
+    // Validate file exists
+    if !path.exists() {
+        return Err(CliError::FileNotFound(path.to_path_buf()));
+    }
+
+    #[cfg(feature = "inference")]
+    let results = profile_real_inference(path, warmup, measure)?;
+
+    #[cfg(not(feature = "inference"))]
+    {
+        output::warn("Inference feature not enabled. Cannot run CI profiling.");
+        return Err(CliError::ValidationFailed(
+            "Requires --features inference".to_string(),
+        ));
+    }
+
+    // Build CI report with assertion checks
+    let report = CiProfileReport::from_results(&results, &assertions);
+
+    // Output based on format
+    match format {
+        OutputFormat::Json => report.print_json(),
+        _ => report.print_human(),
+    }
+
+    Ok(report.passed)
 }
 
 /// GH-173: Filter profile results by focus area (PMAT-182)

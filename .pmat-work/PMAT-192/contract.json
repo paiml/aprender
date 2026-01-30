@@ -1,0 +1,36 @@
+{
+  "work_item_id": "PMAT-192",
+  "github_issue": 180,
+  "title": "GH-180: cbtop-style profiling (apr profile/benchmark unified)",
+  "created_at": "2026-01-30T00:00:00Z",
+  "status": "in_progress",
+  "severity": "P2",
+  "approach": "Unify existing profile.rs + cbtop.rs + add CI assertions mode",
+  "five_whys": [
+    "WHY need new profiling? → Existing commands fragmented (cbtop, profile, bench)",
+    "WHY fragmented? → Each added for different use cases over time",
+    "WHY not unified earlier? → Focus was on correctness, not UX",
+    "WHY UX matters now? → Users need CI/CD integration for regression testing",
+    "ROOT CAUSE: No unified profiler facade with CI assertion support"
+  ],
+  "toyota_way_principle": "Mieruka - Make performance visible at a glance",
+  "implementation": {
+    "phases": [
+      "Phase 1: Add CI assertion mode to existing profile.rs",
+      "Phase 2: Add JSON output with pass/fail status",
+      "Phase 3: Add --assert-throughput and --assert-p99 flags",
+      "Phase 4: Add differential benchmark mode",
+      "Phase 5: Add tests for F-PROFILE-CI-001"
+    ],
+    "files_to_modify": [
+      "crates/apr-cli/src/commands/profile.rs",
+      "crates/apr-cli/src/main.rs"
+    ]
+  },
+  "falsification_gates": [
+    "F-PROFILE-CI-001: apr profile --ci --assert-throughput 1 exits 0 on fast model",
+    "F-PROFILE-CI-002: apr profile --ci --assert-throughput 99999 exits 1 (threshold fail)",
+    "F-PROFILE-CI-003: apr profile --format json produces valid JSON",
+    "F-PROFILE-DIFF-001: apr benchmark model1 model2 shows delta percentage"
+  ]
+}

@@ -297,6 +297,54 @@ fn check_gguf_version(&mut self, data: &[u8]) {
 
 ---
 
+### GH-180: cbtop-style Profiling (PMAT-192) 🔵 IN PROGRESS
+
+**GitHub Issue:** [paiml/aprender#180](https://github.com/paiml/aprender/issues/180)
+**Severity:** P2
+**Status:** 🔵 IN PROGRESS (PMAT-192)
+
+**Objective:** Unify existing profiling commands with CI assertion support.
+
+**Implementation Plan:**
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| 1 | Add CI assertion mode to profile.rs | 🔵 |
+| 2 | Add JSON output with pass/fail | ⏳ |
+| 3 | Add --assert-throughput/--assert-p99 | ⏳ |
+| 4 | Add differential benchmark mode | ⏳ |
+| 5 | Add F-PROFILE-CI-* tests | ⏳ |
+
+**CLI Interface:**
+
+```bash
+# CI mode with assertions (exit 1 if threshold fails)
+apr profile model.gguf --ci --assert-throughput 100 --assert-p99 50
+
+# JSON output for programmatic consumption
+apr profile model.gguf --format json > results.json
+
+# Differential benchmark (A/B comparison)
+apr benchmark model_v1.gguf model_v2.gguf --report diff.md
+```
+
+**Falsification Gates:**
+- F-PROFILE-CI-001: `apr profile --ci --assert-throughput 1` exits 0
+- F-PROFILE-CI-002: `apr profile --ci --assert-throughput 99999` exits 1
+- F-PROFILE-CI-003: `apr profile --format json` produces valid JSON
+- F-PROFILE-DIFF-001: `apr benchmark m1 m2` shows delta percentage
+
+**Five-Whys Root Cause:**
+1. WHY need unified profiling? → Existing commands fragmented (cbtop, profile, bench)
+2. WHY fragmented? → Each added for different use cases over time
+3. WHY not unified earlier? → Focus was on correctness, not UX
+4. WHY UX matters now? → Users need CI/CD integration
+5. ROOT CAUSE: No unified profiler facade with CI assertion support
+
+**Toyota Way:** Mieruka - Make performance visible at a glance.
+
+---
+
 ### GH-179: APR Tool Test Coverage Gap (PMAT-191) ✅ FIXED
 
 **GitHub Issue:** [paiml/aprender#179](https://github.com/paiml/aprender/issues/179)

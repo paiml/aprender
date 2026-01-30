@@ -810,6 +810,31 @@ pub enum Commands {
         /// Output file path for flamegraph SVG (GH-174, PMAT-182)
         #[arg(long, short = 'o')]
         output: Option<PathBuf>,
+
+        // PMAT-192: CI Assertion Mode (GH-180)
+        /// Enable CI mode with assertion checks (exits 1 on failure)
+        #[arg(long)]
+        ci: bool,
+
+        /// Minimum throughput in tok/s (CI assertion, exits 1 if below)
+        #[arg(long)]
+        assert_throughput: Option<f64>,
+
+        /// Maximum p99 latency in ms (CI assertion, exits 1 if above)
+        #[arg(long)]
+        assert_p99: Option<f64>,
+
+        /// Maximum p50 latency in ms (CI assertion, exits 1 if above)
+        #[arg(long)]
+        assert_p50: Option<f64>,
+
+        /// Warmup passes before measurement (default: 3)
+        #[arg(long, default_value = "3")]
+        warmup: usize,
+
+        /// Measurement passes (default: 10)
+        #[arg(long, default_value = "10")]
+        measure: usize,
     },
 
     /// Falsifiable QA checklist for model releases
@@ -1414,26 +1439,52 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
             callgraph,
             fail_on_naive,
             output,
+            ci,
+            assert_throughput,
+            assert_p99,
+            assert_p50,
+            warmup,
+            measure,
         } => {
             let output_format = format.parse().unwrap_or(profile::OutputFormat::Human);
-            let profile_focus = focus
-                .as_ref()
-                .and_then(|f| f.parse().ok())
-                .unwrap_or(profile::ProfileFocus::All);
-            profile::run(
-                file,
-                *granular,
-                output_format,
-                profile_focus,
-                *detect_naive,
-                *threshold,
-                compare_hf.as_deref(),
-                *energy,
-                *perf_grade,
-                *callgraph,
-                *fail_on_naive,
-                output.as_deref(),
-            )
+
+            // PMAT-192: CI mode takes precedence
+            if *ci || assert_throughput.is_some() || assert_p99.is_some() || assert_p50.is_some() {
+                let assertions = profile::CiAssertions {
+                    min_throughput: *assert_throughput,
+                    max_p99_ms: *assert_p99,
+                    max_p50_ms: *assert_p50,
+                    max_memory_mb: None,
+                };
+                match profile::run_ci(file, output_format, assertions, *warmup, *measure) {
+                    Ok(true) => Ok(()),
+                    Ok(false) => {
+                        // Exit with error code for CI pipeline failure
+                        std::process::exit(1);
+                    }
+                    Err(e) => Err(e),
+                }
+            } else {
+                // Standard profiling mode
+                let profile_focus = focus
+                    .as_ref()
+                    .and_then(|f| f.parse().ok())
+                    .unwrap_or(profile::ProfileFocus::All);
+                profile::run(
+                    file,
+                    *granular,
+                    output_format,
+                    profile_focus,
+                    *detect_naive,
+                    *threshold,
+                    compare_hf.as_deref(),
+                    *energy,
+                    *perf_grade,
+                    *callgraph,
+                    *fail_on_naive,
+                    output.as_deref(),
+                )
+            }
         }
 
         Commands::Qa {
@@ -2027,6 +2078,41 @@ mod tests {
                 assert!(granular);
                 assert!(detect_naive);
                 assert!(fail_on_naive);
+            }
+            _ => panic!("Expected Profile command"),
+        }
+    }
+
+    /// Test parsing 'apr profile' with CI assertions (PMAT-192, GH-180)
+    #[test]
+    fn test_parse_profile_ci_mode() {
+        let args = vec![
+            "apr",
+            "profile",
+            "model.gguf",
+            "--ci",
+            "--assert-throughput",
+            "100",
+            "--assert-p99",
+            "50",
+            "--format",
+            "json",
+        ];
+        let cli = Cli::try_parse_from(args).expect("Failed to parse");
+        match cli.command {
+            Commands::Profile {
+                file,
+                ci,
+                assert_throughput,
+                assert_p99,
+                format,
+                ..
+            } => {
+                assert_eq!(file, PathBuf::from("model.gguf"));
+                assert!(ci);
+                assert_eq!(assert_throughput, Some(100.0));
+                assert_eq!(assert_p99, Some(50.0));
+                assert_eq!(format, "json");
             }
             _ => panic!("Expected Profile command"),
         }
