@@ -1,0 +1,37 @@
+{
+  "work_item_id": "PMAT-187",
+  "github_issue": 177,
+  "title": "GH-177: Format conversion introduces NaN/Inf corruption in tensor weights",
+  "created_at": "2026-01-30T00:00:00Z",
+  "status": "completed",
+  "completed_at": "2026-01-30T00:00:00Z",
+  "severity": "P0",
+  "approach": "Add post-conversion tensor validation with fail-fast on NaN/Inf/explosive values",
+  "five_whys": [
+    "WHY do converted models produce different output? → Tensor weights are corrupted during conversion",
+    "WHY are tensor weights corrupted? → NaN and Inf values introduced in dequantization/requantization",
+    "WHY are NaN/Inf values introduced? → Integer overflow or division by zero in quantization scaling",
+    "WHY does scaling overflow? → Q4_K uses block-wise scaling; conversion may not preserve scale bounds",
+    "ROOT CAUSE: No validation of tensor values after dequantization; corrupted values silently propagated"
+  ],
+  "toyota_way_principle": "Jidoka - Stop the line on quality defects, don't pass defects downstream",
+  "implementation": {
+    "phases": [
+      "Phase 1: Add validate_tensor_values() function to detect NaN/Inf/explosive means",
+      "Phase 2: Call validation after every dequantization in load_apr_tensors_f32",
+      "Phase 3: Call validation after every conversion in rosetta convert_internal",
+      "Phase 4: Return error on first corruption detected (fail fast)",
+      "Phase 5: Add tests for round-trip validation"
+    ],
+    "files_to_modify": [
+      "src/format/converter.rs",
+      "src/format/rosetta.rs"
+    ]
+  },
+  "falsification_gates": [
+    "F-CONV-NAN-001: No NaN values after dequantization",
+    "F-CONV-INF-001: No Inf values after dequantization",
+    "F-CONV-EXP-001: Mean values within [-100, 100] range",
+    "F-CONV-RT-001: Round-trip GGUF→APR→GGUF produces valid output"
+  ]
+}

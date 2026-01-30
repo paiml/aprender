@@ -146,11 +146,45 @@ apr chat model.gguf         # "2 + 2 equals 4."
 
 **PMAT Roadmap ID:** `SHOWCASE-BRICK-001`
 
-### PMAT-176/177: Format Conversion NaN Corruption ✅ VERIFIED (GH-172)
+### PMAT-187: Format Conversion NaN Corruption Detection ✅ FIXED (GH-177)
+
+**GitHub Issue:** [paiml/aprender#177](https://github.com/paiml/aprender/issues/177)
+**Severity:** P0 - CRITICAL (Data Corruption)
+**Status:** ✅ FIXED (2026-01-30) - Jidoka validation added
+**Previous Issue:** GH-172, PMAT-176/177 (partial fix, regression detected)
+**Discovered By:** apr-model-qa-playbook (Popperian Falsification)
+
+**Original Symptom:** `apr rosetta convert` introduced catastrophic numerical corruption:
+- GGUF → APR: 84.6% output difference (expected < ε=1e-6)
+- APR → GGUF: 63.4% output difference
+- Round-trip: 75 tensor errors with NaN/Inf, means ~10^38
+
+**Five-Whys Root Cause:**
+1. WHY corrupted output? → Tensor weights contain NaN/Inf after dequantization
+2. WHY NaN/Inf? → Corrupt scale factors from quantization metadata
+3. WHY not detected? → No post-dequantization validation
+4. WHY no validation? → Missing Jidoka check in conversion pipeline
+5. ROOT CAUSE: **Defects passed downstream without detection**
+
+**Fix Applied (PMAT-187):**
+1. ✅ Added `validate_tensor_values()` function detecting NaN/Inf/explosive means
+2. ✅ Integrated validation into `load_apr_tensors_f32()` after dequantization
+3. ✅ Integrated validation into `load_gguf_tensors_f32()` after loading
+4. ✅ Integrated validation into `load_safetensors_tensors()` after loading
+5. ✅ Added 8 unit tests for validation function
+
+**Toyota Way Jidoka Principle:** Stop the line on quality defects, don't pass defects downstream.
+Now the pipeline will fail fast with a clear error message if corruption is detected.
+
+**Evidence:** 8/8 PMAT-187 tests pass
+
+---
+
+### PMAT-176/177: Format Conversion NaN Corruption (Original Fix - GH-172)
 
 **GitHub Issue:** [paiml/aprender#172](https://github.com/paiml/aprender/issues/172)
 **Severity:** P0 - Stop the Line
-**Status:** ✅ VERIFIED (2026-01-30) - Scale factor validation and clamping implemented
+**Status:** ⚠️ PARTIAL FIX (regression in GH-177)
 **Evidence:** 9 Q4K tests pass, 2 PMAT-177 NaN protection tests pass
 
 **Summary:** `apr rosetta convert` produces lossy conversions with NaN/Inf corruption in round-trip tests.

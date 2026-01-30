@@ -1524,6 +1524,8 @@ fn load_source_tensors(path: &Path, _options: &ImportOptions) -> Result<SourceLo
 }
 
 /// Load tensors from `SafeTensors` file using memory-mapped I/O for efficiency
+///
+/// PMAT-187: Validates all tensors after loading to catch corruption early.
 fn load_safetensors_tensors(path: &Path) -> Result<BTreeMap<String, (Vec<f32>, Vec<usize>)>> {
     // Use MappedSafeTensors for zero-copy mmap access (much faster for large models)
     let mapped = MappedSafeTensors::open(path).map_err(|e| AprenderError::FormatError {
@@ -1554,6 +1556,9 @@ fn load_safetensors_tensors(path: &Path) -> Result<BTreeMap<String, (Vec<f32>, V
             .map_err(|e| AprenderError::FormatError {
                 message: format!("Failed to extract tensor '{name}': {e}"),
             })?;
+
+        // PMAT-187: Validate tensor values after loading (Jidoka - stop the line)
+        validate_tensor_values(&name, &data)?;
 
         tensors.insert(name.clone(), (data, meta.shape.clone()));
     }
@@ -2786,9 +2791,18 @@ fn load_model_tensors(path: &Path) -> Result<BTreeMap<String, (Vec<f32>, Vec<usi
 /// - Q4_K, Q5_K, Q6_K dequantization
 /// - Q4_0, Q5_0, Q8_0 dequantization
 /// - F16, F32 direct loading
+///
+/// PMAT-187: Validates all tensors after loading to catch corruption early.
 fn load_gguf_tensors_f32(path: &Path) -> Result<BTreeMap<String, (Vec<f32>, Vec<usize>)>> {
     let reader = GgufReader::from_file(path)?;
-    reader.get_all_tensors_f32()
+    let tensors = reader.get_all_tensors_f32()?;
+
+    // PMAT-187: Validate all tensors after loading (Jidoka - stop the line)
+    for (name, (data, _shape)) in &tensors {
+        validate_tensor_values(name, data)?;
+    }
+
+    Ok(tensors)
 }
 
 /// Load APR tensors and dequantize to F32 (PMAT-174)
@@ -2947,10 +2961,81 @@ fn load_apr_tensors_f32(path: &Path) -> Result<BTreeMap<String, (Vec<f32>, Vec<u
             }
         };
 
+        // PMAT-187: Validate tensor values after dequantization (Jidoka - stop the line)
+        validate_tensor_values(&name, &f32_data)?;
+
         tensors.insert(name, (f32_data, shape));
     }
 
     Ok(tensors)
+}
+
+/// PMAT-187: Validate tensor values for NaN/Inf/explosive corruption
+///
+/// Toyota Way Jidoka: Stop the line on quality defects, don't pass defects downstream.
+/// This catches corruption introduced during dequantization before it propagates.
+///
+/// # Errors
+///
+/// Returns error if tensor contains NaN, Inf, or explosive values (mean > 100)
+fn validate_tensor_values(name: &str, data: &[f32]) -> Result<()> {
+    if data.is_empty() {
+        return Ok(());
+    }
+
+    let mut nan_count = 0;
+    let mut inf_count = 0;
+    let mut sum: f64 = 0.0;
+
+    for &value in data {
+        if value.is_nan() {
+            nan_count += 1;
+        } else if value.is_infinite() {
+            inf_count += 1;
+        } else {
+            sum += value as f64;
+        }
+    }
+
+    // Fail fast on NaN
+    if nan_count > 0 {
+        return Err(AprenderError::FormatError {
+            message: format!(
+                "PMAT-187: Tensor '{}' contains {} NaN values (data corruption detected). \
+                 Toyota Way: Stop the line - do not pass defects downstream.",
+                name, nan_count
+            ),
+        });
+    }
+
+    // Fail fast on Inf
+    if inf_count > 0 {
+        return Err(AprenderError::FormatError {
+            message: format!(
+                "PMAT-187: Tensor '{}' contains {} Inf values (numerical overflow detected). \
+                 Toyota Way: Stop the line - do not pass defects downstream.",
+                name, inf_count
+            ),
+        });
+    }
+
+    // Check for explosive mean (indicates corrupted scale factors)
+    let valid_count = data.len() - nan_count - inf_count;
+    if valid_count > 0 {
+        let mean = sum / valid_count as f64;
+        if mean.abs() > 100.0 {
+            return Err(AprenderError::FormatError {
+                message: format!(
+                    "PMAT-187: Tensor '{}' has explosive mean={:.2e} (expected [-100, 100]). \
+                     This indicates corrupted quantization scale factors. \
+                     Toyota Way: Stop the line - do not pass defects downstream.",
+                    name, mean
+                ),
+            });
+        }
+    }
+
+    Ok(())
 }
 
 /// Dequantize F16 to F32 (PMAT-174)
@@ -2981,7 +3066,7 @@ fn dequantize_bf16_to_f32(bytes: &[u8], _num_elements: usize) -> Vec<f32> {
 fn dequantize_q8_0_to_f32(bytes: &[u8], num_elements: usize) -> Vec<f32> {
     const BLOCK_SIZE: usize = 32;
     const BLOCK_BYTES: usize = 2 + 32; // f16 scale + 32 int8s
-    // MSRV-compatible div_ceil: (n + d - 1) / d
+                                       // MSRV-compatible div_ceil: (n + d - 1) / d
     let num_blocks = (num_elements + BLOCK_SIZE - 1) / BLOCK_SIZE;
     let mut result = Vec::with_capacity(num_elements);
 
@@ -7788,5 +7873,85 @@ mod tests_gh164_gguf_conversion {
                 );
             }
         }
+    }
+}
+
+/// PMAT-187: Tests for tensor value validation (NaN/Inf/explosive detection)
+#[cfg(test)]
+mod tests_pmat187_tensor_validation {
+    use super::*;
+
+    #[test]
+    fn test_validate_tensor_values_clean_data() {
+        // Normal tensor data should pass
+        let data = vec![0.1, -0.2, 0.3, -0.4, 0.5];
+        let result = validate_tensor_values("test_tensor", &data);
+        assert!(result.is_ok(), "Clean data should pass validation");
+    }
+
+    #[test]
+    fn test_validate_tensor_values_empty_data() {
+        // Empty tensor should pass
+        let data: Vec<f32> = vec![];
+        let result = validate_tensor_values("empty_tensor", &data);
+        assert!(result.is_ok(), "Empty data should pass validation");
+    }
+
+    #[test]
+    fn test_validate_tensor_values_detects_nan() {
+        // Tensor with NaN should fail
+        let data = vec![0.1, f32::NAN, 0.3];
+        let result = validate_tensor_values("nan_tensor", &data);
+        assert!(result.is_err(), "NaN should be detected");
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("NaN"), "Error should mention NaN");
+        assert!(err.contains("PMAT-187"), "Error should reference PMAT-187");
+    }
+
+    #[test]
+    fn test_validate_tensor_values_detects_inf() {
+        // Tensor with Inf should fail
+        let data = vec![0.1, f32::INFINITY, 0.3];
+        let result = validate_tensor_values("inf_tensor", &data);
+        assert!(result.is_err(), "Inf should be detected");
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Inf"), "Error should mention Inf");
+    }
+
+    #[test]
+    fn test_validate_tensor_values_detects_neg_inf() {
+        // Tensor with -Inf should fail
+        let data = vec![0.1, f32::NEG_INFINITY, 0.3];
+        let result = validate_tensor_values("neg_inf_tensor", &data);
+        assert!(result.is_err(), "-Inf should be detected");
+    }
+
+    #[test]
+    fn test_validate_tensor_values_detects_explosive_mean() {
+        // Tensor with explosive mean (>100) should fail
+        let data = vec![1e38, 1e38, 1e38]; // Mean ~1e38
+        let result = validate_tensor_values("explosive_tensor", &data);
+        assert!(result.is_err(), "Explosive mean should be detected");
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("explosive"),
+            "Error should mention explosive mean"
+        );
+    }
+
+    #[test]
+    fn test_validate_tensor_values_allows_moderate_values() {
+        // Tensor with moderate values (mean < 100) should pass
+        let data = vec![50.0, -50.0, 30.0, -30.0]; // Mean = 0
+        let result = validate_tensor_values("moderate_tensor", &data);
+        assert!(result.is_ok(), "Moderate values should pass");
+    }
+
+    #[test]
+    fn test_validate_tensor_values_boundary_mean() {
+        // Tensor with mean exactly at boundary should pass
+        let data = vec![100.0, 100.0, 100.0]; // Mean = 100.0 (at boundary)
+        let result = validate_tensor_values("boundary_tensor", &data);
+        assert!(result.is_ok(), "Mean exactly at 100 should pass");
     }
 }
