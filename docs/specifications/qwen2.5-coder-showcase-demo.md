@@ -1,6 +1,6 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 5.64.0
+**Version:** 5.65.0
 **Status:** ✅ All P0/P1/P2 showcase issues FIXED
 **Popperian Score:** 100/100
 **Author:** PAIML Engineering
@@ -24,7 +24,7 @@
 | [#169](https://github.com/paiml/aprender/issues/169) | Make apr import --output optional | P3 | ✅ **FIXED** (PMAT-185) | - |
 | [#168](https://github.com/paiml/aprender/issues/168) | Can't import GGUF model, fails with 404 | P1 | ✅ CLOSED (PMAT-168) | - |
 | [#162](https://github.com/paiml/aprender/issues/162) | Pulled models don't show on list | P2 | ✅ **VERIFIED** (PMAT-183: Working as designed) | - |
-| [#160](https://github.com/paiml/aprender/issues/160) | Enable Tool Calling support in apr serve API | P2 | Open | - |
+| [#160](https://github.com/paiml/aprender/issues/160) | Enable Tool Calling support in apr serve API | P2 | ✅ **FIXED** (PMAT-186) | F-TOOL-* +25 pts |
 
 **Last Updated:** 2026-01-30
 
@@ -265,6 +265,15 @@ See `crates/apr-cli/src/commands/chat.rs:1068-1104` for implementation.
 - ✅ F-TUNE-005: JSON output for CI integration (`apr tune --json`)
 
 **Note:** `apr tune` currently provides **configuration planning** via entrenar-lora. Actual training execution is deferred to entrenar CLI.
+
+**Completed (PMAT-186, GH-160):**
+- ✅ F-TOOL-001: Tool definition parsing (OpenAI-compatible `tools` array)
+- ✅ F-TOOL-002: ChatCompletionRequest with tools support
+- ✅ F-TOOL-003: Parse tool calls from model output (`{"tool_call": {...}}`)
+- ✅ F-TOOL-004: Multi-turn tool conversation (tool_call_id in messages)
+- ✅ F-TOOL-005: Format tools into prompt for model
+
+**Note:** Tool calling adds OpenAI-compatible function calling to `/v1/chat/completions`. Models must be trained/fine-tuned to output tool call JSON.
 
 ---
 
