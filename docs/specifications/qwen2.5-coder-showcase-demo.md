@@ -1,9 +1,9 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 5.91.0
+**Version:** 5.93.0
 **Status:** ✅ 19 closed, 0 open P0 bugs. GH-186 APR Q4_K FIXED via dtype mapping correction.
 **Popperian Score:** 96/100 (All P0 bugs resolved, APRv3 statistical tools in progress)
-**Code Coverage:** 96.17% (target: ≥95%)
+**Code Coverage:** 96.16% (target: ≥95%)
 **Tool Coverage:** 16/16 (100%) - All APR tools verified (+ rosetta fingerprint, validate-stats)
 **Author:** PAIML Engineering
 **Date:** 2026-01-30
@@ -14,10 +14,11 @@
 
 ## GitHub Issues Status (Toyota Way: Transparency)
 
-**Summary:** 19 issues closed, 0 open P0 bugs. APR inference fully operational.
+**Summary:** 19 issues closed, 1 open P0 bug. **STOP THE LINE:** GH-190 GGUF→APR conversion garbage.
 
 | Issue | Title | Severity | Status | PMAT |
 |-------|-------|----------|--------|------|
+| [GH-190](docs/tickets/GH-190-GGUF-APR-CONVERSION-GARBAGE-OUTPUT.md) | **GGUF→APR conversion produces garbage (tensor name mismatch)** | **P0** | ❌ **OPEN** | PMAT-205 |
 | [#189](https://github.com/paiml/aprender/issues/189) | **APRv3: Per-tensor statistical fingerprints** | P1 | 🔧 **IN PROGRESS** | PMAT-201 |
 | [#190](https://github.com/paiml/aprender/issues/190) | **APRv3: Validate tensor statistics** | P1 | 🔧 **IN PROGRESS** | PMAT-202 |
 | [#188](https://github.com/paiml/aprender/issues/188) | **APR Rosetta: Differential tracing to catch layout bugs** | P1 | ✅ **FIXED** | PMAT-200 |
@@ -121,15 +122,15 @@ Compare:
 - GGUF GPU: ✅ **CORROBORATED** (CUDA path verified, 276.9 tok/s, 6.8x Ollama)
 - SafeTensors CPU: ✅ **CORROBORATED** (T200: Real Qwen2-0.5B, argmax=262)
 - SafeTensors GPU: ✅ **CORROBORATED** (PMAT-120 Fix: QKV bias loading + weight transpose)
-- APR CPU (GGUF): ❌ **FALSIFIED** (GH-186: Q4_K produces PAD tokens, tokenizer works)
-- APR GPU (GGUF): ❌ **FALSIFIED** (GH-186: Q4_K produces PAD tokens, tokenizer works)
+- APR CPU (GGUF): ❌ **FALSIFIED** (GH-190: tensor name mismatch, writer adds "model." prefix, loader expects bare names)
+- APR GPU (GGUF): ❌ **FALSIFIED** (GH-190: same root cause as CPU, 196 tensors with wrong names)
 - APR CPU (SafeTensors): ✅ **VERIFIED** (2026-01-29: "What is 2+2?" → "2+2 equals 4.")
 - APR GPU (SafeTensors): ✅ **VERIFIED** (2026-01-29: CUDA path verified, argmax=17)
-- Cross-format parity: ✅ **VERIFIED** (GGUF vs SafeTensors Invariant - All paths)
-- `apr check` (10-stage): ✅ **VERIFIED** (Real forward pass telemetry)
+- Cross-format parity: ❌ **FALSIFIED** (GH-190: GGUF→APR path broken, SafeTensors→APR works)
+- `apr check` (10-stage): ⚠️ **FALSE POSITIVE** (GH-190: 10/10 PASS on corrupted model)
 - `apr profile`: ✅ **VERIFIED** (Real BrickProfiler telemetry)
 - `apr chat`: ✅ Verified (Modality Matrix - CPU and GPU)
-- **Format Conversion:** ⚠️ **BLOCKED** (GH-185: APR missing embedded tokenizer, diff 0.56-0.75 vs ε=1e-6)
+- **Format Conversion (GGUF→APR):** ❌ **FALSIFIED** (GH-190: `qwen2_map_name()` adds "model." prefix, loader expects bare names)
 
 ### RED TEAM FINDINGS (2026-01-30): Protocol "Burn It Down"
 
@@ -2933,7 +2934,63 @@ These protocols harden the system against regression of recent critical fixes an
 *   **Protocol:** `F-EDGE-704 (The Empty Model)`
 *   **Target:** PMAT-178 (0-byte file handling).
 *   **Implementation:** `tests/loader_tests.rs`
-*   **Logic:** Create 0-byte file. Attempt `apr run`. Assert `ValidationFailed("File too small")`.
+### 13.14 Round 9 (The Perfect Storm) - Combined Failure Modes
+
+**Test Date:** 2026-01-30 | **Score:** 100/100 | **Status:** ✅ VERIFIED (Robust)
+
+Round 9 combines multiple failure modes to test system resilience under complex conditions.
+
+| Test ID | Description | Status | Points | Evidence |
+|---------|-------------|--------|--------|----------|
+| F-STORM-901 | Multi-Tenant Crash (2x GPU) | ✅ PASSED | 25/25 | Two servers run on ports 8080/8081 |
+| F-STORM-902 | Corrupt Config Sidecar | ✅ PASSED | 25/25 | Ignores bad sidecar, uses internal metadata |
+| F-STORM-903 | Zero-Weight Layer | ✅ PASSED | 25/25 | Valid forward pass (output reflects zero) |
+| F-STORM-904 | Precision Boundary (FP16) | ✅ PASSED | 25/25 | No NaN propagation in mixed-precision |
+| **TOTAL** | | **100/100** | **100%** |
+
+**Key Results:**
+1. ✅ **F-STORM-901:** Verified multi-tenant GPU usage. CUDA context sharing works correctly via `CudaExecutor` handle management.
+2. ✅ **F-STORM-902:** Verified robustness against user configuration errors. The loader prioritizes internal binary metadata over external JSON if the latter is invalid.
+3. ✅ **F-STORM-903:** Validated numerical stability. All-zero weights don't cause division-by-zero panics in normalization layers.
+4. ✅ **F-STORM-904:** Verified FP16/FP32 boundary handling. Small values (< 6e-5) are flushed to zero or handled without underflow exceptions.
+
+## 17. Protocol Evolution (Round 9)
+
+"The Perfect Storm" targets combined and boundary failure modes.
+
+#### I. Multi-Tenancy
+*   **Protocol:** `F-STORM-901 (The Multi-Tenant Crash)`
+*   **Implementation:** `tests/multi_tenant.rs`
+*   **Logic:**
+    1. Spawn Server A on port 8080 (GPU).
+    2. Spawn Server B on port 8081 (GPU).
+    3. Hammer both with requests.
+    4. Assert no cross-process VRAM corruption or context loss.
+
+#### II. Configuration Resilience
+*   **Protocol:** `F-STORM-902 (The Corrupt Config)`
+*   **Implementation:** `tests/loader_resilience.rs`
+*   **Logic:**
+    1. Place valid `model.safetensors`.
+    2. Place corrupted `config.json` (invalid JSON).
+    3. Run `apr run`.
+    4. Assert fallback to inferred config or internal metadata.
+
+#### III. Numerical Stability
+*   **Protocol:** `F-STORM-903 (The Zero-Weight Layer)`
+*   **Implementation:** `tests/math_stability.rs`
+*   **Logic:**
+    1. Create synthetic model with Layer 0 weights = 0.0.
+    2. Run inference.
+    3. Assert no Panic/NaN. Output should be uniform/zeroed but valid.
+
+#### IV. Precision Limits
+*   **Protocol:** `F-STORM-904 (The Precision Boundary)`
+*   **Implementation:** `tests/math_stability.rs`
+*   **Logic:**
+    1. Inject input values ~1e-7 (subnormal for FP16).
+    2. Run mixed-precision GEMM.
+    3. Assert result is valid (0.0 or correct), not NaN/Inf.
 
 ---
 

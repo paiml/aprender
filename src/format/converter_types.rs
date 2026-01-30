@@ -127,8 +127,14 @@ impl Architecture {
     }
 
     fn qwen2_map_name(name: &str) -> String {
-        // PMAT-113 FIX: Map GGUF tensor names to HuggingFace/APR canonical format
-        // GGUF: blk.N.attn_q.weight → HF: model.layers.N.self_attn.q_proj.weight
+        // PMAT-205 FIX (GH-190): Map GGUF tensor names to APR canonical format.
+        // APR uses BARE names WITHOUT "model." prefix to match the Qwen2 loader
+        // contract (models/qwen2/mod.rs:1046-1131).
+        //
+        // GGUF: blk.N.attn_q.weight → APR: layers.N.self_attn.q_proj.weight
+        //
+        // PMAT-113 originally added "model." prefix, but the loader expects bare
+        // names. This mismatch caused GH-190: 196 tensors unfindable → garbage.
 
         // Handle layer-specific tensors (blk.N.*)
         if let Some(rest) = name.strip_prefix("blk.") {
@@ -136,8 +142,8 @@ impl Architecture {
                 let layer_num = &rest[..dot_pos];
                 let suffix = &rest[dot_pos + 1..];
 
-                // Map GGUF tensor suffixes to HuggingFace names
-                let hf_suffix = match suffix {
+                // Map GGUF tensor suffixes to APR canonical names
+                let apr_suffix = match suffix {
                     "attn_q.weight" => "self_attn.q_proj.weight",
                     "attn_q.bias" => "self_attn.q_proj.bias",
                     "attn_k.weight" => "self_attn.k_proj.weight",
@@ -154,15 +160,16 @@ impl Architecture {
                     other => other, // Preserve unknown suffixes
                 };
 
-                return format!("model.layers.{layer_num}.{hf_suffix}");
+                // GH-190 FIX: No "model." prefix — loader expects "layers.N.suffix"
+                return format!("layers.{layer_num}.{apr_suffix}");
             }
         }
 
-        // Handle non-layer tensors
+        // Handle non-layer tensors (bare names, no "model." prefix)
         match name {
-            "token_embd.weight" => "model.embed_tokens.weight".to_string(),
+            "token_embd.weight" => "embed_tokens.weight".to_string(),
             "output.weight" => "lm_head.weight".to_string(),
-            "output_norm.weight" => "model.norm.weight".to_string(),
+            "output_norm.weight" => "norm.weight".to_string(),
             _ => name.to_string(), // Preserve unknown names
         }
     }
@@ -222,6 +229,7 @@ impl TensorExpectation {
 
     /// Get expectation for a tensor name
     #[must_use]
+    #[allow(clippy::case_sensitive_file_extension_comparisons)]
     pub fn for_tensor(name: &str) -> Option<Self> {
         // RMSNorm patterns (LLaMA, Qwen2, TinyLlama, GGUF) - check BEFORE generic LayerNorm
         // These use gamma initialized to 1.0, not the 0-centered LayerNorm

@@ -10,8 +10,8 @@
 
 use crate::error::{AprenderError, Result};
 use crate::format::gguf::{
-    load_gguf_raw,
-    load_gguf_with_tokenizer, GgufModelConfig, GgufRawTensor, GgufReader, GgufTokenizer,
+    load_gguf_raw, load_gguf_with_tokenizer, GgufModelConfig, GgufRawTensor, GgufReader,
+    GgufTokenizer,
 };
 use crate::format::v2::{AprV2Metadata, AprV2Writer, QuantizationMetadata};
 use crate::format::Compression;
@@ -21,22 +21,26 @@ use std::fs;
 use std::path::Path;
 
 // PMAT-197: Re-export types from converter_types module for backward compatibility
-pub use crate::format::converter_types::{
-    detect_sharded_model, Architecture, ImportError, ImportOptions, QuantizationType,
-    ShardedIndex, Source, TensorExpectation, ValidationConfig,
-};
 #[cfg(feature = "hf-hub-integration")]
 pub use crate::format::converter_types::parse_import_error;
+pub use crate::format::converter_types::{
+    detect_sharded_model, Architecture, ImportError, ImportOptions, QuantizationType, ShardedIndex,
+    Source, TensorExpectation, ValidationConfig,
+};
 
 // PMAT-197: Import functions moved to import.rs that are used elsewhere
 use import::{infer_model_config_from_tensors, load_safetensors_tensors, map_tensor_names};
 
 // For tests: re-export helper types and functions
+#[cfg(test)]
 pub(crate) use crate::format::validation::{AprValidator, TensorStats};
+#[cfg(test)]
 pub(crate) use import::{
-    compute_std, compute_tensor_stats, SourceLoadResult, TensorAccumulator, validate_single_tensor,
+    compute_std, compute_tensor_stats, validate_single_tensor, TensorAccumulator,
 };
+#[cfg(test)]
 pub(crate) use merge::calculate_merge_weights;
+#[cfg(test)]
 pub(crate) use std::path::PathBuf;
 
 // HF Hub integration is used via hf_hub::api::sync::ApiBuilder in download_from_hf()
@@ -201,7 +205,7 @@ pub fn apr_convert<P: AsRef<Path>>(
             if has_q4k {
                 eprintln!("[GH-181] Detected Q4K source, using raw byte pass-through");
 
-                // Map tensor names to HuggingFace format
+                // Map tensor names to APR canonical format (GH-190 fix: bare names)
                 let mapped_tensors: BTreeMap<String, GgufRawTensor> = raw_result
                     .tensors
                     .into_iter()
@@ -271,18 +275,18 @@ pub fn apr_convert<P: AsRef<Path>>(
     let original_size = calculate_tensor_size(&tensors);
     let original_count = tensors.len();
 
-    // Step 1b: Map GGUF tensor names to HuggingFace/APR canonical format (PMAT-113 fix)
+    // Step 1b: Map GGUF tensor names to APR canonical format (PMAT-205 fix / GH-190)
     // GGUF uses names like "blk.0.attn_q.weight" but APR loaders expect
-    // HuggingFace names like "model.layers.0.self_attn.q_proj.weight"
+    // bare names like "layers.0.self_attn.q_proj.weight" (no "model." prefix)
     let tensors = if extension == "gguf" {
         eprintln!(
-            "[PMAT-113] Mapping {} GGUF tensor names to HuggingFace format...",
+            "[PMAT-205] Mapping {} GGUF tensor names to APR canonical format...",
             tensors.len()
         );
         let mapped = map_tensor_names(&tensors, Architecture::Qwen2);
         // Debug: show a few mapped names
         for (i, name) in mapped.keys().take(5).enumerate() {
-            eprintln!("[PMAT-113]   {}: {}", i, name);
+            eprintln!("[PMAT-205]   {}: {}", i, name);
         }
         mapped
     } else {
@@ -1086,8 +1090,8 @@ fn quantize_q4_k(data: &[f32]) -> Vec<u8> {
 
             // Process 32 values → 16 bytes
             for l in 0..16 {
-                let idx0 = j * 32 + l * 2;       // First value of pair
-                let idx1 = j * 32 + l * 2 + 1;   // Second value of pair
+                let idx0 = j * 32 + l * 2; // First value of pair
+                let idx1 = j * 32 + l * 2 + 1; // Second value of pair
 
                 // Quantize: q = (value + min_val) / scale
                 let q0 = if scale > 1e-10 {
@@ -1671,12 +1675,10 @@ pub use import::apr_import;
 mod export;
 pub use export::{apr_export, ExportFormat, ExportOptions, ExportReport};
 
-
 // Merge functionality extracted to merge.rs (PMAT-197)
 mod merge;
 pub use merge::{apr_merge, MergeOptions, MergeReport, MergeStrategy};
 // For tests
-
 
 // Tests extracted to tests.rs (PMAT-197)
 #[cfg(test)]

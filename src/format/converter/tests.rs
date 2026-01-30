@@ -3413,3 +3413,191 @@ mod tests_gh185_tokenizer_merges {
         assert!(tok.merges.is_empty(), "WordPiece has no BPE merges");
     }
 }
+
+// ============================================================================
+// GH-190 Regression Tests: Tensor Name Roundtrip Contract
+// ============================================================================
+// The writer (qwen2_map_name) and reader (Qwen2Model::load_from_apr) must agree
+// on tensor naming convention. These tests encode the BEHAVIORAL CONTRACT.
+//
+// Root cause of GH-190: writer added "model." prefix, reader expected bare names.
+// Five-Whys: We tested instances (structural checks) not invariants (semantic checks).
+
+#[cfg(test)]
+mod tests_gh190_tensor_name_contract {
+    use super::*;
+
+    /// The 7 per-layer tensor types that must roundtrip correctly.
+    /// This is the CONTRACT between writer and reader.
+    const LAYER_TENSOR_SUFFIXES: &[(&str, &str)] = &[
+        ("attn_q.weight", "self_attn.q_proj.weight"),
+        ("attn_k.weight", "self_attn.k_proj.weight"),
+        ("attn_v.weight", "self_attn.v_proj.weight"),
+        ("attn_output.weight", "self_attn.o_proj.weight"),
+        ("ffn_gate.weight", "mlp.gate_proj.weight"),
+        ("ffn_up.weight", "mlp.up_proj.weight"),
+        ("ffn_down.weight", "mlp.down_proj.weight"),
+    ];
+
+    /// GH-190 FIX: GGUF layer tensors must map to BARE names (no "model." prefix).
+    /// The Qwen2 loader at models/qwen2/mod.rs:1065 expects "layers.N.suffix".
+    #[test]
+    fn test_gh190_gguf_layer_tensors_no_model_prefix() {
+        for layer in 0..3 {
+            for (gguf_suffix, apr_suffix) in LAYER_TENSOR_SUFFIXES {
+                let gguf_name = format!("blk.{layer}.{gguf_suffix}");
+                let mapped = Architecture::Qwen2.map_name(&gguf_name);
+                let expected = format!("layers.{layer}.{apr_suffix}");
+
+                assert_eq!(
+                    mapped, expected,
+                    "GH-190: GGUF '{gguf_name}' must map to '{expected}', got '{mapped}'"
+                );
+
+                // INVARIANT: mapped name must NEVER contain "model." prefix
+                assert!(
+                    !mapped.starts_with("model."),
+                    "GH-190 REGRESSION: '{mapped}' has 'model.' prefix — loader will not find it"
+                );
+            }
+        }
+    }
+
+    /// GH-190 FIX: GGUF non-layer tensors must map to bare names.
+    #[test]
+    fn test_gh190_gguf_nonlayer_tensors_no_model_prefix() {
+        let cases = [
+            ("token_embd.weight", "embed_tokens.weight"),
+            ("output.weight", "lm_head.weight"),
+            ("output_norm.weight", "norm.weight"),
+        ];
+
+        for (gguf_name, expected) in cases {
+            let mapped = Architecture::Qwen2.map_name(gguf_name);
+            assert_eq!(
+                mapped, expected,
+                "GH-190: GGUF '{gguf_name}' must map to '{expected}', got '{mapped}'"
+            );
+            assert!(
+                !mapped.starts_with("model."),
+                "GH-190 REGRESSION: '{mapped}' has 'model.' prefix — loader will not find it"
+            );
+        }
+    }
+
+    /// GH-190 FIX: Bias tensors must also get bare names.
+    #[test]
+    fn test_gh190_gguf_bias_tensors_no_model_prefix() {
+        let bias_cases = [
+            ("blk.0.attn_q.bias", "layers.0.self_attn.q_proj.bias"),
+            ("blk.0.attn_k.bias", "layers.0.self_attn.k_proj.bias"),
+            ("blk.0.attn_v.bias", "layers.0.self_attn.v_proj.bias"),
+            ("blk.0.attn_output.bias", "layers.0.self_attn.o_proj.bias"),
+        ];
+
+        for (gguf_name, expected) in bias_cases {
+            let mapped = Architecture::Qwen2.map_name(gguf_name);
+            assert_eq!(
+                mapped, expected,
+                "GH-190: GGUF '{gguf_name}' must map to '{expected}', got '{mapped}'"
+            );
+        }
+    }
+
+    /// GH-190 FIX: Norm tensors must get bare names.
+    #[test]
+    fn test_gh190_gguf_norm_tensors_no_model_prefix() {
+        let norm_cases = [
+            ("blk.0.attn_norm.weight", "layers.0.input_layernorm.weight"),
+            (
+                "blk.0.ffn_norm.weight",
+                "layers.0.post_attention_layernorm.weight",
+            ),
+        ];
+
+        for (gguf_name, expected) in norm_cases {
+            let mapped = Architecture::Qwen2.map_name(gguf_name);
+            assert_eq!(
+                mapped, expected,
+                "GH-190: GGUF '{gguf_name}' must map to '{expected}', got '{mapped}'"
+            );
+        }
+    }
+
+    /// INVARIANT: All 196 tensors in a 28-layer Qwen2 model must be findable.
+    /// This test encodes the PROPERTY, not individual instances.
+    #[test]
+    fn test_gh190_all_196_tensors_findable() {
+        let num_layers = 28;
+        let mut mapped_names = Vec::new();
+
+        // Non-layer tensors
+        for gguf_name in ["token_embd.weight", "output.weight", "output_norm.weight"] {
+            mapped_names.push(Architecture::Qwen2.map_name(gguf_name));
+        }
+
+        // Layer tensors (7 types × 28 layers = 196)
+        for layer in 0..num_layers {
+            for (gguf_suffix, _) in LAYER_TENSOR_SUFFIXES {
+                let gguf_name = format!("blk.{layer}.{gguf_suffix}");
+                mapped_names.push(Architecture::Qwen2.map_name(&gguf_name));
+            }
+        }
+
+        // Total: 3 non-layer + 196 layer = 199
+        assert_eq!(mapped_names.len(), 3 + num_layers * 7);
+
+        // INVARIANT: No mapped name may contain "model." prefix
+        for name in &mapped_names {
+            assert!(
+                !name.starts_with("model."),
+                "GH-190 REGRESSION: '{name}' starts with 'model.' — \
+                 the loader at models/qwen2/mod.rs:1065 will not find it"
+            );
+        }
+
+        // INVARIANT: All names must be unique
+        let unique: std::collections::HashSet<&String> = mapped_names.iter().collect();
+        assert_eq!(
+            unique.len(),
+            mapped_names.len(),
+            "Duplicate tensor names detected"
+        );
+    }
+
+    /// INVARIANT: Already-mapped HuggingFace names pass through unchanged.
+    /// This ensures SafeTensors → APR path is unaffected by the GH-190 fix.
+    #[test]
+    fn test_gh190_hf_names_passthrough_unchanged() {
+        let hf_names = [
+            "model.layers.0.self_attn.q_proj.weight",
+            "model.embed_tokens.weight",
+            "model.norm.weight",
+            "lm_head.weight",
+        ];
+
+        for name in hf_names {
+            let mapped = Architecture::Qwen2.map_name(name);
+            assert_eq!(
+                mapped, name,
+                "HuggingFace name '{name}' must pass through unchanged"
+            );
+        }
+    }
+
+    /// Unknown GGUF tensor names must pass through unchanged (no panic).
+    #[test]
+    fn test_gh190_unknown_tensors_passthrough() {
+        let unknown = [
+            "blk.0.custom_layer.weight",
+            "some_other_tensor",
+            "blk.0.unknown_suffix",
+        ];
+
+        for name in unknown {
+            let mapped = Architecture::Qwen2.map_name(name);
+            // Must not panic, and unknown names should contain some content
+            assert!(!mapped.is_empty(), "Mapped name for '{name}' is empty");
+        }
+    }
+}
