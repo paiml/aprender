@@ -859,7 +859,7 @@ All GGUF modalities verified working with and without tracing:
 | QA-VERIFY-001: Output verification | ✅ DONE | §7.5 |
 | QA-HANG-001: Timeout wrapper | ✅ DONE | §7.6 |
 | `apr check` command | ✅ DONE (PMAT-112) | §3 |
-| Verbose mode UX | ⚠️ 10/14 (4 missing items) | §2.3 |
+| Verbose mode UX | ✅ 14/14 (PMAT-173 complete) | §2.3 |
 | CI parity gates | LAYOUT-001c/d not in CI | §9 |
 | GGUF Q4_0/Q4_1 support | ✅ FIXED (2026-01-29, PMAT-130) | §10 |
 | PMAT-085: File health | ✅ FIXED (2026-01-30, optim/mod.rs 2848→2022) | Appendix B |
@@ -1090,7 +1090,7 @@ Completed in 1.83s (cached)
 
 | Section | Points | Status |
 |---------|--------|--------|
-| I-B: Verbose Mode UX | 10/14 | ⚠️ F-UX-027 to F-UX-040 (4 missing: hidden_dim, threads, quant, ctx) |
+| I-B: Verbose Mode UX | 14/14 | ✅ F-UX-027 to F-UX-040 (PMAT-173: all items complete) |
 | II-A: GGUF Support | 20/20 | ✅ Q4_0/Q4_1 FIXED (PMAT-Q4_0-001) |
 | II-B: APR Support | 10/15 | ⚠️ Compression, streaming |
 | II-C: SafeTensors | 7/15 | ⚠️ F16, BF16, sharded |
@@ -1353,7 +1353,7 @@ use crate::quantize::fused_q4k_parallel_matvec;
 | 3 | SafeTensors | APR | `apr import model.safetensors -o model.apr` | ✅ PMAT-114 FIXED |
 | 4 | APR | SafeTensors | `apr export model.apr --format safetensors` | ✅ |
 | 5 | GGUF | SafeTensors | `apr convert model.gguf -o model.safetensors` | ✅ GH-164 FIXED |
-| 6 | SafeTensors | GGUF | `apr convert model.safetensors --format gguf` | ⚠️ Untested |
+| 6 | SafeTensors | GGUF | `apr import ... && apr export --format gguf` | ⚠️ PMAT-174: Partial (needs metadata) |
 
 ### Inference Comparison (PMAT-114 Debug Tool)
 
