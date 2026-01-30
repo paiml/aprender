@@ -1,27 +1,27 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 5.90.0
-**Status:** ⚠️ 18 closed, 1 open P0 bug (GH-186: APR Q4_K inference garbage) + 2 APRv3 tools in progress
-**Popperian Score:** 91/100 (APR Q4_K inference blocked, APRv3 statistical tools in progress)
+**Version:** 5.91.0
+**Status:** ✅ 19 closed, 0 open P0 bugs. GH-186 APR Q4_K FIXED via dtype mapping correction.
+**Popperian Score:** 96/100 (All P0 bugs resolved, APRv3 statistical tools in progress)
 **Code Coverage:** 96.16% (target: ≥95%)
 **Tool Coverage:** 16/16 (100%) - All APR tools verified (+ rosetta fingerprint, validate-stats)
 **Author:** PAIML Engineering
 **Date:** 2026-01-30
-**Last Falsification Run:** 2026-01-30 (apr-model-qa-playbook requalification)
+**Last Falsification Run:** 2026-01-30 (GH-186 fixed - APR check/trace tools verified)
 **Quality Philosophy:** Toyota Way + Popperian Falsification (Zero SATD, Stop-the-Line)
 
 ---
 
 ## GitHub Issues Status (Toyota Way: Transparency)
 
-**Summary:** 18 issues closed, 1 open P0 bug. GH-185 blocks format conversion certification.
+**Summary:** 19 issues closed, 0 open P0 bugs. APR inference fully operational.
 
 | Issue | Title | Severity | Status | PMAT |
 |-------|-------|----------|--------|------|
 | [#189](https://github.com/paiml/aprender/issues/189) | **APRv3: Per-tensor statistical fingerprints** | P1 | 🔧 **IN PROGRESS** | PMAT-201 |
 | [#190](https://github.com/paiml/aprender/issues/190) | **APRv3: Validate tensor statistics** | P1 | 🔧 **IN PROGRESS** | PMAT-202 |
 | [#188](https://github.com/paiml/aprender/issues/188) | **APR Rosetta: Differential tracing to catch layout bugs** | P1 | ✅ **FIXED** | PMAT-200 |
-| [#186](https://github.com/paiml/aprender/issues/186) | **APR Q4_K inference produces garbage (PAD tokens)** | **P0** | ⏳ **OPEN** | PMAT-196 |
+| [#186](https://github.com/paiml/aprender/issues/186) | **APR Q4_K inference produces garbage (PAD tokens)** | **P0** | ✅ **FIXED** | PMAT-196 |
 | [#185](https://github.com/paiml/aprender/issues/185) | **APR missing embedded tokenizer** | **P0** | ✅ **FIXED** | PMAT-195 |
 | [#184](https://github.com/paiml/aprender/issues/184) | apr profile --ci exits 0 on assertion fail | P2 | ✅ **CLOSED** (not a bug) | - |
 | [#183](https://github.com/paiml/aprender/issues/183) | Validation rejects valid GGUF v3 (inverted magic) | P2 | ✅ **CLOSED** | PMAT-195 |
@@ -1999,13 +1999,31 @@ Compares tensor dimensions to detect GGML layout issues:
 - ✅ Provides actionable fix recommendations
 - ✅ Exit code 5 on layout mismatch (CI integration)
 
+### ✅ GH-186 RESOLUTION (2026-01-30)
+
+**Root Cause:** DType byte mapping mismatch between aprender and realizar.
+
+| DType | APR format (aprender) | realizar read as | Effect |
+|-------|----------------------|------------------|--------|
+| Q4K | 12 | "F32" (fallback!) | NaN/garbage |
+| Q6K | 14 | "F32" (fallback!) | NaN/garbage |
+| Q8 | 9 | "Q6_K" (wrong!) | corruption |
+
+**Fix:** Updated `realizar/src/apr/mod.rs` `from_binary()` dtype mapping to match `aprender/src/format/v2.rs` TensorDType enum.
+
+**Verification:**
+```bash
+apr check /tmp/test.apr  # Stage 9: logits[151936] ✅ (was: NaN)
+apr trace --payload /tmp/test.apr  # L2=1311.75, Range=[-16.33, 9.20] ✅
+```
+
 ### Problem Statement (Five-Whys)
 
-1. **Why** did APR Q4_K inference produce garbage? → Token IDs were PAD (151935)
-2. **Why** didn't we catch this earlier? → Tracing only shows timing, not token values
-3. **Why** no token comparison? → `--trace` designed for performance, not correctness
-4. **Why** not debug with existing tools? → No cross-format comparison capability
-5. **ROOT CAUSE:** Tracing is **format-agnostic** when it should be **format-aware**
+1. **Why** did APR Q4_K inference produce NaN/garbage? → All 151936 logits were NaN
+2. **Why** were logits NaN? → Q4K weights interpreted as F32 (uninitialized memory)
+3. **Why** interpreted as F32? → realizar dtype fallback: `_ => "F32"` for unknown bytes
+4. **Why** unknown bytes? → APR uses dtype 12 for Q4K, realizar expected dtype 8
+5. **ROOT CAUSE:** **DType enum mismatch** between aprender (writer) and realizar (reader)
 
 ### The Demarcation Problem
 
