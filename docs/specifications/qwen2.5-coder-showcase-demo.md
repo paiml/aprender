@@ -272,6 +272,7 @@ See `crates/apr-cli/src/commands/chat.rs:1068-1104` for implementation.
 - ✅ F-TOOL-003: Parse tool calls from model output (`{"tool_call": {...}}`)
 - ✅ F-TOOL-004: Multi-turn tool conversation (tool_call_id in messages)
 - ✅ F-TOOL-005: Format tools into prompt for model
+- ✅ F-TOOL-DOC: Book documentation and example (`cargo run --example tool_calling_demo`)
 
 **Note:** Tool calling adds OpenAI-compatible function calling to `/v1/chat/completions`. Models must be trained/fine-tuned to output tool call JSON.
 

@@ -38,5 +38,11 @@
     "F-TOOL-003: tool_calls returned when model invokes tool",
     "F-TOOL-004: Multi-turn tool conversation works",
     "F-TOOL-005: Streaming with tool calls works"
-  ]
+  ],
+  "deliverables": {
+    "code": ["crates/apr-cli/src/commands/serve.rs"],
+    "tests": ["9 unit tests (F-TOOL-001 to F-TOOL-005)"],
+    "examples": ["crates/apr-cli/examples/tool_calling_demo.rs"],
+    "documentation": ["book/src/tools/apr-cli.md (Tool Calling section)"]
+  }
 }
