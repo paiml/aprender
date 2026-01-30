@@ -241,4 +241,226 @@ mod tests {
 
         assert!(result.solution[0].abs() < 1e-4);
     }
+
+    #[test]
+    fn test_fista_new() {
+        let fista = FISTA::new(500, 0.05, 1e-4);
+        assert_eq!(fista.max_iter, 500);
+        assert!((fista.step_size - 0.05).abs() < 1e-10);
+        assert!((fista.tol - 1e-4).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_fista_reset() {
+        let mut fista = FISTA::new(100, 0.1, 1e-5);
+        fista.reset(); // Should do nothing but not panic
+    }
+
+    #[test]
+    #[should_panic(expected = "does not support stochastic updates")]
+    fn test_fista_step_unimplemented() {
+        let mut fista = FISTA::new(100, 0.1, 1e-5);
+        let mut params = Vector::from_slice(&[1.0, 2.0]);
+        let grad = Vector::from_slice(&[0.1, 0.2]);
+        fista.step(&mut params, &grad);
+    }
+
+    #[test]
+    fn test_fista_max_iterations() {
+        // Simple quadratic that converges slowly with small step
+        let smooth = |x: &Vector<f32>| x[0] * x[0] + x[1] * x[1];
+        let grad_smooth = |x: &Vector<f32>| Vector::from_slice(&[2.0 * x[0], 2.0 * x[1]]);
+        let proximal = |v: &Vector<f32>, _alpha: f32| v.clone(); // Identity proximal
+
+        let mut fista = FISTA::new(2, 0.0001, 1e-10); // Very few iterations, tiny step
+        let x0 = Vector::from_slice(&[100.0, 100.0]);
+        let result = fista.minimize(smooth, grad_smooth, proximal, x0);
+
+        assert_eq!(result.status, ConvergenceStatus::MaxIterations);
+        assert_eq!(result.iterations, 2);
+    }
+
+    #[test]
+    fn test_fista_2d_quadratic() {
+        // Minimize: x² + y²
+        let smooth = |x: &Vector<f32>| x[0] * x[0] + x[1] * x[1];
+        let grad_smooth = |x: &Vector<f32>| Vector::from_slice(&[2.0 * x[0], 2.0 * x[1]]);
+        let proximal = |v: &Vector<f32>, _alpha: f32| v.clone(); // Identity proximal
+
+        let mut fista = FISTA::new(1000, 0.1, 1e-6);
+        let x0 = Vector::from_slice(&[5.0, -3.0]);
+        let result = fista.minimize(smooth, grad_smooth, proximal, x0);
+
+        assert_eq!(result.status, ConvergenceStatus::Converged);
+        assert!(result.solution[0].abs() < 1e-4);
+        assert!(result.solution[1].abs() < 1e-4);
+    }
+
+    #[test]
+    fn test_fista_3d() {
+        // Minimize: x² + y² + z²
+        let smooth = |x: &Vector<f32>| x[0] * x[0] + x[1] * x[1] + x[2] * x[2];
+        let grad_smooth = |x: &Vector<f32>| {
+            Vector::from_slice(&[2.0 * x[0], 2.0 * x[1], 2.0 * x[2]])
+        };
+        let proximal = |v: &Vector<f32>, _alpha: f32| v.clone();
+
+        let mut fista = FISTA::new(1000, 0.1, 1e-5);
+        let x0 = Vector::from_slice(&[5.0, -3.0, 2.0]);
+        let result = fista.minimize(smooth, grad_smooth, proximal, x0);
+
+        assert_eq!(result.status, ConvergenceStatus::Converged);
+        assert!(result.solution[0].abs() < 1e-3);
+        assert!(result.solution[1].abs() < 1e-3);
+        assert!(result.solution[2].abs() < 1e-3);
+    }
+
+    #[test]
+    fn test_fista_objective_value() {
+        let smooth = |x: &Vector<f32>| (x[0] - 2.0).powi(2);
+        let grad_smooth = |x: &Vector<f32>| Vector::from_slice(&[2.0 * (x[0] - 2.0)]);
+        let proximal = |v: &Vector<f32>, _alpha: f32| v.clone();
+
+        let mut fista = FISTA::new(1000, 0.1, 1e-6);
+        let x0 = Vector::from_slice(&[0.0]);
+        let result = fista.minimize(smooth, grad_smooth, proximal, x0);
+
+        assert!(result.objective_value < 1e-6);
+        assert!((result.solution[0] - 2.0).abs() < 1e-3);
+    }
+
+    #[test]
+    fn test_fista_gradient_norm() {
+        let smooth = |x: &Vector<f32>| x[0] * x[0];
+        let grad_smooth = |x: &Vector<f32>| Vector::from_slice(&[2.0 * x[0]]);
+        let proximal = |v: &Vector<f32>, _alpha: f32| v.clone();
+
+        let mut fista = FISTA::new(1000, 0.1, 1e-6);
+        let x0 = Vector::from_slice(&[5.0]);
+        let result = fista.minimize(smooth, grad_smooth, proximal, x0);
+
+        // Gradient norm (actually diff_norm) should be small at convergence
+        assert!(result.gradient_norm < 1e-5);
+    }
+
+    #[test]
+    fn test_fista_constraint_violation_zero() {
+        let smooth = |x: &Vector<f32>| x[0] * x[0];
+        let grad_smooth = |x: &Vector<f32>| Vector::from_slice(&[2.0 * x[0]]);
+        let proximal = |v: &Vector<f32>, _alpha: f32| v.clone();
+
+        let mut fista = FISTA::new(1000, 0.1, 1e-6);
+        let x0 = Vector::from_slice(&[5.0]);
+        let result = fista.minimize(smooth, grad_smooth, proximal, x0);
+
+        assert!((result.constraint_violation - 0.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_fista_elapsed_time() {
+        let smooth = |x: &Vector<f32>| x[0] * x[0];
+        let grad_smooth = |x: &Vector<f32>| Vector::from_slice(&[2.0 * x[0]]);
+        let proximal = |v: &Vector<f32>, _alpha: f32| v.clone();
+
+        let mut fista = FISTA::new(1000, 0.1, 1e-6);
+        let x0 = Vector::from_slice(&[5.0]);
+        let result = fista.minimize(smooth, grad_smooth, proximal, x0);
+
+        // Elapsed time should be accessible
+        let _ = result.elapsed_time.as_nanos();
+    }
+
+    #[test]
+    fn test_fista_debug_clone() {
+        let fista = FISTA::new(100, 0.1, 1e-5);
+        let cloned = fista.clone();
+
+        assert_eq!(fista.max_iter, cloned.max_iter);
+        assert!((fista.step_size - cloned.step_size).abs() < 1e-10);
+        assert!((fista.tol - cloned.tol).abs() < 1e-10);
+
+        // Test Debug
+        let debug_str = format!("{:?}", fista);
+        assert!(debug_str.contains("FISTA"));
+    }
+
+    #[test]
+    fn test_fista_already_at_optimum() {
+        let smooth = |x: &Vector<f32>| x[0] * x[0];
+        let grad_smooth = |x: &Vector<f32>| Vector::from_slice(&[2.0 * x[0]]);
+        let proximal = |v: &Vector<f32>, _alpha: f32| v.clone();
+
+        let mut fista = FISTA::new(1000, 0.1, 1e-6);
+        // Start very close to optimum
+        let x0 = Vector::from_slice(&[1e-8]);
+        let result = fista.minimize(smooth, grad_smooth, proximal, x0);
+
+        assert_eq!(result.status, ConvergenceStatus::Converged);
+    }
+
+    #[test]
+    fn test_fista_l2_ball_constraint() {
+        // Minimize: (x - 5)² subject to ‖x‖ ≤ 2
+        let smooth = |x: &Vector<f32>| (x[0] - 5.0).powi(2);
+        let grad_smooth = |x: &Vector<f32>| Vector::from_slice(&[2.0 * (x[0] - 5.0)]);
+        let proximal = |v: &Vector<f32>, _alpha: f32| prox::project_l2_ball(v, 2.0);
+
+        let mut fista = FISTA::new(1000, 0.1, 1e-6);
+        let x0 = Vector::from_slice(&[0.0]);
+        let result = fista.minimize(smooth, grad_smooth, proximal, x0);
+
+        // Solution should be at boundary: x = 2
+        assert!((result.solution[0] - 2.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn test_fista_box_constraint() {
+        // Minimize: (x - 5)² subject to 0 ≤ x ≤ 1
+        let smooth = |x: &Vector<f32>| (x[0] - 5.0).powi(2);
+        let grad_smooth = |x: &Vector<f32>| Vector::from_slice(&[2.0 * (x[0] - 5.0)]);
+        let lower = Vector::from_slice(&[0.0]);
+        let upper = Vector::from_slice(&[1.0]);
+        let proximal = move |v: &Vector<f32>, _alpha: f32| prox::project_box(v, &lower, &upper);
+
+        let mut fista = FISTA::new(1000, 0.1, 1e-6);
+        let x0 = Vector::from_slice(&[0.5]);
+        let result = fista.minimize(smooth, grad_smooth, proximal, x0);
+
+        // Solution should be at upper bound: x = 1
+        assert!((result.solution[0] - 1.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn test_fista_different_step_sizes() {
+        let smooth = |x: &Vector<f32>| x[0] * x[0];
+        let grad_smooth = |x: &Vector<f32>| Vector::from_slice(&[2.0 * x[0]]);
+        let proximal = |v: &Vector<f32>, _alpha: f32| v.clone();
+
+        // Small step size
+        let mut fista1 = FISTA::new(1000, 0.01, 1e-6);
+        let x0 = Vector::from_slice(&[5.0]);
+        let result1 = fista1.minimize(smooth, grad_smooth, proximal, x0.clone());
+
+        // Larger step size
+        let mut fista2 = FISTA::new(1000, 0.4, 1e-6);
+        let result2 = fista2.minimize(smooth, grad_smooth, proximal, x0);
+
+        // Both should converge
+        assert_eq!(result1.status, ConvergenceStatus::Converged);
+        assert_eq!(result2.status, ConvergenceStatus::Converged);
+    }
+
+    #[test]
+    fn test_fista_iterations_tracked() {
+        let smooth = |x: &Vector<f32>| x[0] * x[0];
+        let grad_smooth = |x: &Vector<f32>| Vector::from_slice(&[2.0 * x[0]]);
+        let proximal = |v: &Vector<f32>, _alpha: f32| v.clone();
+
+        let mut fista = FISTA::new(1000, 0.1, 1e-6);
+        let x0 = Vector::from_slice(&[10.0]);
+        let result = fista.minimize(smooth, grad_smooth, proximal, x0);
+
+        // Should take some iterations
+        assert!(result.iterations <= 1000);
+    }
 }
