@@ -45524,7 +45524,7 @@ Uploading...
 <ol>
 <li><a href="tools/apr-spec.html#1-abstract">Abstract</a></li>
 <li><a href="tools/apr-spec.html#2-design-principles">Design Principles</a></li>
-<li><a href="tools/apr-spec.html#3-apr-v2-format">APR v2 Format</a>
+<li><a href="tools/apr-spec.html#3-apr-binary-format">APR Binary Format</a>
 <ul>
 <li><a href="tools/apr-spec.html#31-format-overview">3.1 Format Overview</a></li>
 <li><a href="tools/apr-spec.html#32-header-32-bytes">3.2 Header</a></li>
@@ -45600,7 +45600,7 @@ Uploading...
 <h2 id="1-abstract"><a class="header" href="#1-abstract">1. Abstract</a></h2>
 <p>APR (Aprender Portable Representation) is a WASM-first model serialization format for machine learning models. This specification covers:</p>
 <ul>
-<li><strong>APR v2 Format</strong>: Binary format supporting web-scale models (10B+ parameters) with tensor alignment, LZ4 streaming compression, and multi-file sharding</li>
+<li><strong>APR Binary Format</strong>: Binary format supporting web-scale models (10B+ parameters) with tensor alignment, LZ4 streaming compression, and multi-file sharding</li>
 <li><strong>CLI Operations</strong>: Comprehensive tooling for inspect, debug, trace, export, convert, import, merge, diff, and validate operations</li>
 <li><strong>Auxiliary Data</strong>: Patterns for storing vocabulary, tokenizer config, mel filterbanks, and other model-specific data</li>
 </ul>
@@ -45610,7 +45610,7 @@ Uploading...
 <ol>
 <li><strong>WASM-first</strong>: Must work in <code>wasm32-unknown-unknown</code> without Emscripten</li>
 <li><strong>Progressive enhancement</strong>: Features degrade gracefully (mmap → heap, compression → raw)</li>
-<li><strong>Backward compatibility</strong>: APR1 files remain readable</li>
+<li><strong>Single format</strong>: ONE format specification, no versioning complexity</li>
 <li><strong>Zero-copy where possible</strong>: Alignment enables direct tensor access</li>
 <li><strong>Streaming</strong>: Support chunked loading for large models</li>
 </ol>
@@ -45624,7 +45624,7 @@ Uploading...
 </tbody></table>
 </div>
 <hr />
-<h2 id="3-apr-v2-format"><a class="header" href="#3-apr-v2-format">3. APR v2 Format</a></h2>
+<h2 id="3-apr-binary-format"><a class="header" href="#3-apr-binary-format">3. APR Binary Format</a></h2>
 <h3 id="31-format-overview"><a class="header" href="#31-format-overview">3.1 Format Overview</a></h3>
 <pre><code>┌─────────────────────────────────────────────────────────────┐
 │ Header (32 bytes, aligned)                                  │
