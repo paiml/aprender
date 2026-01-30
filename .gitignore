@@ -39,3 +39,8 @@ models/
 .pmat-metrics/
 *.cov-backup
 .cargo/config.toml
+
+# PMAT
+.pmat/backup/
+.pmat-qa/
+.pmat-work/

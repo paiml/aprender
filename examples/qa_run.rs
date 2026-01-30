@@ -114,9 +114,7 @@ fn kill_all_registered() -> usize {
         // This is portable and doesn't require libc
         #[cfg(unix)]
         {
-            let _ = Command::new("kill")
-                .args(["-9", &pid.to_string()])
-                .output();
+            let _ = Command::new("kill").args(["-9", &pid.to_string()]).output();
         }
         #[cfg(windows)]
         {
@@ -360,8 +358,8 @@ struct MatrixCell {
     modality: Modality,
     backend: Backend,
     format: Format,
-    model_uri: String,   // HuggingFace URI or local path
-    with_trace: bool,    // Test with --trace flag
+    model_uri: String, // HuggingFace URI or local path
+    with_trace: bool,  // Test with --trace flag
 }
 
 impl MatrixCell {
@@ -489,10 +487,7 @@ impl ModelFixture {
 /// Verify all required models before running tests (PMAT-QA-PROTOCOL-001 §7.2)
 /// Returns (success_count, failures) for reporting
 #[allow(dead_code)] // Will be used in fixture-based test flow
-fn verify_model_fixtures(
-    config: &Config,
-    fixtures: &mut [ModelFixture],
-) -> (usize, Vec<String>) {
+fn verify_model_fixtures(config: &Config, fixtures: &mut [ModelFixture]) -> (usize, Vec<String>) {
     let mut successes = 0;
     let mut failures = Vec::new();
 
@@ -826,7 +821,10 @@ fn run_chat_test(
     if status.success() {
         Ok(format!("{}{}", stdout_str, stderr_str))
     } else {
-        Err(format!("Chat exit {}: {}{}", status, stdout_str, stderr_str))
+        Err(format!(
+            "Chat exit {}: {}{}",
+            status, stdout_str, stderr_str
+        ))
     }
 }
 
@@ -1036,14 +1034,14 @@ fn extract_output(raw: &str) -> String {
 /// Garbage patterns that indicate model collapse or tokenization failure
 /// (PMAT-QA-PROTOCOL-001 §7.5)
 const GARBAGE_PATTERNS: &[&str] = &[
-    "\u{FFFD}",    // Replacement character (encoding error)
-    "[UNK]",       // Unknown token marker
-    "akunji",      // Known GQA bug garbage
-    "olumbia",     // Known layout bug garbage
-    "专门窗",      // Known GQA bug CJK garbage
-    "token0",      // Raw token ID leak
-    "token1",      // Raw token ID leak
-    "<0x",         // Byte token leak (e.g., <0x0A>)
+    "\u{FFFD}", // Replacement character (encoding error)
+    "[UNK]",    // Unknown token marker
+    "akunji",   // Known GQA bug garbage
+    "olumbia",  // Known layout bug garbage
+    "专门窗",   // Known GQA bug CJK garbage
+    "token0",   // Raw token ID leak
+    "token1",   // Raw token ID leak
+    "<0x",      // Byte token leak (e.g., <0x0A>)
 ];
 
 /// BPE artifacts that indicate incomplete detokenization
@@ -1168,7 +1166,12 @@ fn run_cell_tests(config: &Config, cell: &MatrixCell) -> CellResult {
 
     // Test 1: Model loads (2 points)
     // Uses run_modality_test to dispatch based on modality (Run/Chat/Serve)
-    match run_modality_test(config, cell, "What is 2+2? Answer with just the number.", 10) {
+    match run_modality_test(
+        config,
+        cell,
+        "What is 2+2? Answer with just the number.",
+        10,
+    ) {
         Ok(_) => tests.push(TestResult::pass(
             "Model Load",
             2,
@@ -1189,7 +1192,12 @@ fn run_cell_tests(config: &Config, cell: &MatrixCell) -> CellResult {
     // Test 2: Correct output with full verification (3 points)
     // Uses verify_output which checks: empty, garbage, BPE, then answer
     // (PMAT-QA-PROTOCOL-001 §7.5)
-    match run_modality_test(config, cell, "What is 2+2? Answer with just the number.", 10) {
+    match run_modality_test(
+        config,
+        cell,
+        "What is 2+2? Answer with just the number.",
+        10,
+    ) {
         Ok(raw_output) => {
             let output = extract_output(&raw_output);
             match verify_output(&output, Some("4")) {
@@ -2006,17 +2014,11 @@ fn main() {
             println!("  {}{}{}", RED, failure, NC);
         }
         println!();
-        println!(
-            "{}ABORT: Cannot run tests with missing models{}",
-            RED, NC
-        );
+        println!("{}ABORT: Cannot run tests with missing models{}", RED, NC);
         std::process::exit(3);
     }
 
-    println!(
-        "{}✓ All {} model(s) verified{}\n",
-        GREEN, verified, NC
-    );
+    println!("{}✓ All {} model(s) verified{}\n", GREEN, verified, NC);
 
     // Run tests
     let mut results = Vec::new();

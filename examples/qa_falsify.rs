@@ -17,14 +17,14 @@ use std::time::{Duration, Instant};
 // ============================================================================
 
 const GARBAGE_PATTERNS: &[&str] = &[
-    "\u{FFFD}",    // Replacement character (encoding error)
-    "[UNK]",       // Unknown token marker
-    "akunji",      // Known GQA bug garbage
-    "olumbia",     // Known layout bug garbage
-    "专门窗",      // Known GQA bug CJK garbage
-    "token0",      // Raw token ID leak
-    "token1",      // Raw token ID leak
-    "<0x",         // Byte token leak (e.g., <0x0A>)
+    "\u{FFFD}", // Replacement character (encoding error)
+    "[UNK]",    // Unknown token marker
+    "akunji",   // Known GQA bug garbage
+    "olumbia",  // Known layout bug garbage
+    "专门窗",   // Known GQA bug CJK garbage
+    "token0",   // Raw token ID leak
+    "token1",   // Raw token ID leak
+    "<0x",      // Byte token leak (e.g., <0x0A>)
 ];
 
 const BPE_ARTIFACTS: &[char] = &[
@@ -88,7 +88,10 @@ fn verify_output(output: &str, expected_contains: Option<&str>) -> Result<String
     // 4. Expected answer check WITH WORD BOUNDARY (fixed)
     if let Some(expected) = expected_contains {
         if !contains_as_word(trimmed, expected) {
-            return Err(format!("FailMissingAnswer: expected '{}' as standalone word", expected));
+            return Err(format!(
+                "FailMissingAnswer: expected '{}' as standalone word",
+                expected
+            ));
         }
     }
 
@@ -100,23 +103,64 @@ fn verify_output(output: &str, expected_contains: Option<&str>) -> Result<String
 // ============================================================================
 
 fn test_garbage_detection() {
-    println!("\n{}═══════════════════════════════════════════════════════════════{}", "\x1b[1;34m", "\x1b[0m");
-    println!("{}TEST 2: GARBAGE DETECTION FALSIFICATION{}", "\x1b[1;33m", "\x1b[0m");
-    println!("{}═══════════════════════════════════════════════════════════════{}\n", "\x1b[1;34m", "\x1b[0m");
+    println!(
+        "\n{}═══════════════════════════════════════════════════════════════{}",
+        "\x1b[1;34m", "\x1b[0m"
+    );
+    println!(
+        "{}TEST 2: GARBAGE DETECTION FALSIFICATION{}",
+        "\x1b[1;33m", "\x1b[0m"
+    );
+    println!(
+        "{}═══════════════════════════════════════════════════════════════{}\n",
+        "\x1b[1;34m", "\x1b[0m"
+    );
 
     let test_cases = vec![
         // (input, should_pass, description)
-        ("This is a token", true, "Common English word 'token' - should PASS"),
-        ("token12345", false, "Raw token ID leak (token0/token1 pattern) - should FAIL"),
-        ("The symbol Ġ is used in BPE", false, "BPE artifact Ġ - should FAIL"),
-        ("I am akunji", false, "Model collapse hallucination - should FAIL"),
-        ("Welcome to Columbia University", false, "Contains 'olumbia' - should FAIL"),
+        (
+            "This is a token",
+            true,
+            "Common English word 'token' - should PASS",
+        ),
+        (
+            "token12345",
+            false,
+            "Raw token ID leak (token0/token1 pattern) - should FAIL",
+        ),
+        (
+            "The symbol Ġ is used in BPE",
+            false,
+            "BPE artifact Ġ - should FAIL",
+        ),
+        (
+            "I am akunji",
+            false,
+            "Model collapse hallucination - should FAIL",
+        ),
+        (
+            "Welcome to Columbia University",
+            false,
+            "Contains 'olumbia' - should FAIL",
+        ),
         ("Hello, world!", true, "Clean output - should PASS"),
         ("The answer is 4", true, "Simple answer - should PASS"),
-        ("token", true, "Just 'token' without number - should PASS (edge case)"),
-        ("mytoken0value", false, "token0 embedded in string - should FAIL"),
+        (
+            "token",
+            true,
+            "Just 'token' without number - should PASS (edge case)",
+        ),
+        (
+            "mytoken0value",
+            false,
+            "token0 embedded in string - should FAIL",
+        ),
         ("<0x0A>newline", false, "Byte token leak - should FAIL"),
-        ("Test [UNK] marker", false, "Unknown token marker - should FAIL"),
+        (
+            "Test [UNK] marker",
+            false,
+            "Unknown token marker - should FAIL",
+        ),
         ("Unicode: 专门窗 text", false, "CJK garbage - should FAIL"),
     ];
 
@@ -132,7 +176,11 @@ fn test_garbage_detection() {
             passed += 1;
         } else {
             println!("  {}✗ FAIL{}: {}", "\x1b[31m", "\x1b[0m", desc);
-            println!("    Expected: {}, Got: {:?}", if should_pass { "PASS" } else { "FAIL" }, result);
+            println!(
+                "    Expected: {}, Got: {:?}",
+                if should_pass { "PASS" } else { "FAIL" },
+                result
+            );
             failed += 1;
         }
     }
@@ -140,10 +188,15 @@ fn test_garbage_detection() {
     println!("\n  Summary: {}/{} tests passed", passed, passed + failed);
 
     if failed > 0 {
-        println!("  {}⚠ FALSIFICATION SUCCESSFUL: Garbage detection has {} edge case failures{}",
-                 "\x1b[1;31m", failed, "\x1b[0m");
+        println!(
+            "  {}⚠ FALSIFICATION SUCCESSFUL: Garbage detection has {} edge case failures{}",
+            "\x1b[1;31m", failed, "\x1b[0m"
+        );
     } else {
-        println!("  {}✓ Garbage detection held up under testing{}", "\x1b[32m", "\x1b[0m");
+        println!(
+            "  {}✓ Garbage detection held up under testing{}",
+            "\x1b[32m", "\x1b[0m"
+        );
     }
 }
 
@@ -152,27 +205,76 @@ fn test_garbage_detection() {
 // ============================================================================
 
 fn test_answer_verification() {
-    println!("\n{}═══════════════════════════════════════════════════════════════{}", "\x1b[1;34m", "\x1b[0m");
-    println!("{}TEST 5: FALSE CONFIDENCE AUDIT (Answer Verification){}", "\x1b[1;33m", "\x1b[0m");
-    println!("{}═══════════════════════════════════════════════════════════════{}\n", "\x1b[1;34m", "\x1b[0m");
+    println!(
+        "\n{}═══════════════════════════════════════════════════════════════{}",
+        "\x1b[1;34m", "\x1b[0m"
+    );
+    println!(
+        "{}TEST 5: FALSE CONFIDENCE AUDIT (Answer Verification){}",
+        "\x1b[1;33m", "\x1b[0m"
+    );
+    println!(
+        "{}═══════════════════════════════════════════════════════════════{}\n",
+        "\x1b[1;34m", "\x1b[0m"
+    );
 
     let test_cases = vec![
         // (input, expected, should_pass, description)
         // With word boundary fix, these edge cases now behave correctly
         ("4", Some("4"), true, "Exact answer '4' - should PASS"),
-        ("The answer is 4.", Some("4"), true, "Answer with context - should PASS"),
-        ("The answer is not 4, but 5.", Some("4"), true, "Contains standalone '4' - PASSES (acceptable)"),
+        (
+            "The answer is 4.",
+            Some("4"),
+            true,
+            "Answer with context - should PASS",
+        ),
+        (
+            "The answer is not 4, but 5.",
+            Some("4"),
+            true,
+            "Contains standalone '4' - PASSES (acceptable)",
+        ),
         ("2+2=4", Some("4"), true, "Equation format - should PASS"),
-        ("Four", Some("4"), false, "Word 'Four' not digit '4' - should FAIL"),
+        (
+            "Four",
+            Some("4"),
+            false,
+            "Word 'Four' not digit '4' - should FAIL",
+        ),
         ("5", Some("4"), false, "Wrong answer - should FAIL"),
-        ("The result is 14", Some("4"), false, "FIXED: '14' no longer matches '4' - should FAIL"),
-        ("I counted 4 apples and 5 oranges", Some("4"), true, "Multiple numbers - should PASS"),
+        (
+            "The result is 14",
+            Some("4"),
+            false,
+            "FIXED: '14' no longer matches '4' - should FAIL",
+        ),
+        (
+            "I counted 4 apples and 5 oranges",
+            Some("4"),
+            true,
+            "Multiple numbers - should PASS",
+        ),
         ("", Some("4"), false, "Empty output - should FAIL"),
         ("forty-four", Some("4"), false, "Spelled out - should FAIL"),
         // Additional word boundary tests
-        ("answer=4", Some("4"), true, "'4' after '=' is standalone - should PASS"),
-        ("x4y", Some("4"), false, "'4' embedded in alphanumeric - should FAIL"),
-        ("4.0", Some("4"), true, "'4' before '.' is standalone - should PASS"),
+        (
+            "answer=4",
+            Some("4"),
+            true,
+            "'4' after '=' is standalone - should PASS",
+        ),
+        (
+            "x4y",
+            Some("4"),
+            false,
+            "'4' embedded in alphanumeric - should FAIL",
+        ),
+        (
+            "4.0",
+            Some("4"),
+            true,
+            "'4' before '.' is standalone - should PASS",
+        ),
     ];
 
     let mut brittle_cases = 0;
@@ -185,21 +287,34 @@ fn test_answer_verification() {
 
         if actually_passed == *should_pass {
             if is_risk {
-                println!("  {}⚠ RISK{}: {} (passes but semantically wrong)", "\x1b[33m", "\x1b[0m", desc);
+                println!(
+                    "  {}⚠ RISK{}: {} (passes but semantically wrong)",
+                    "\x1b[33m", "\x1b[0m", desc
+                );
                 brittle_cases += 1;
             } else {
                 println!("  {}✓{}: {}", "\x1b[32m", "\x1b[0m", desc);
             }
         } else {
             println!("  {}✗{}: {}", "\x1b[31m", "\x1b[0m", desc);
-            println!("    Expected: {}, Got: {:?}", if *should_pass { "PASS" } else { "FAIL" }, result);
+            println!(
+                "    Expected: {}, Got: {:?}",
+                if *should_pass { "PASS" } else { "FAIL" },
+                result
+            );
         }
     }
 
     if brittle_cases > 0 {
-        println!("\n  {}⚠ FALSIFICATION FINDING:{} {} brittle cases remain", "\x1b[1;33m", "\x1b[0m", brittle_cases);
+        println!(
+            "\n  {}⚠ FALSIFICATION FINDING:{} {} brittle cases remain",
+            "\x1b[1;33m", "\x1b[0m", brittle_cases
+        );
     } else {
-        println!("\n  {}✓ FIX VERIFIED:{} Word boundary check prevents false positives", "\x1b[32m", "\x1b[0m");
+        println!(
+            "\n  {}✓ FIX VERIFIED:{} Word boundary check prevents false positives",
+            "\x1b[32m", "\x1b[0m"
+        );
         println!("    - 'The result is 14' now correctly FAILS (4 embedded in 14)");
         println!("    - 'x4y' correctly FAILS (4 embedded in alphanumeric)");
         println!("    - 'The answer is 4.' correctly PASSES (4 at word boundary)");
@@ -211,9 +326,18 @@ fn test_answer_verification() {
 // ============================================================================
 
 fn test_matrix_integrity() {
-    println!("\n{}═══════════════════════════════════════════════════════════════{}", "\x1b[1;34m", "\x1b[0m");
-    println!("{}TEST 4: MATRIX INTEGRITY CHECK{}", "\x1b[1;33m", "\x1b[0m");
-    println!("{}═══════════════════════════════════════════════════════════════{}\n", "\x1b[1;34m", "\x1b[0m");
+    println!(
+        "\n{}═══════════════════════════════════════════════════════════════{}",
+        "\x1b[1;34m", "\x1b[0m"
+    );
+    println!(
+        "{}TEST 4: MATRIX INTEGRITY CHECK{}",
+        "\x1b[1;33m", "\x1b[0m"
+    );
+    println!(
+        "{}═══════════════════════════════════════════════════════════════{}\n",
+        "\x1b[1;34m", "\x1b[0m"
+    );
 
     // Calculate expected matrix size:
     // 3 modalities (Run, Chat, Serve) × 3 formats (GGUF, SafeTensors, APR) × configs
@@ -246,7 +370,10 @@ fn test_matrix_integrity() {
     println!("    Per modality: 3 + 2 + 2 = 7 cells");
     println!("    Total: 3 modalities × 7 = 21 cells");
     println!();
-    println!("  {}NOTE:{} Documentation was updated: 21 cells (not original 27 claim).", "\x1b[32m", "\x1b[0m");
+    println!(
+        "  {}NOTE:{} Documentation was updated: 21 cells (not original 27 claim).",
+        "\x1b[32m", "\x1b[0m"
+    );
     println!();
     println!("  To verify, run: cargo run --example qa_run -- --full-matrix --help");
     println!("  And count 'Testing N cell(s)' in the output.");
@@ -255,7 +382,15 @@ fn test_matrix_integrity() {
     println!("\n  Running actual matrix count...");
 
     let output = Command::new("cargo")
-        .args(["run", "--example", "qa_run", "--release", "--", "--full-matrix", "--verbose"])
+        .args([
+            "run",
+            "--example",
+            "qa_run",
+            "--release",
+            "--",
+            "--full-matrix",
+            "--verbose",
+        ])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output();
@@ -266,21 +401,27 @@ fn test_matrix_integrity() {
             let stderr = String::from_utf8_lossy(&out.stderr);
 
             // Look for "Testing N cell(s)" or "FULL MATRIX: N cells"
-            if let Some(line) = stdout.lines().chain(stderr.lines())
+            if let Some(line) = stdout
+                .lines()
+                .chain(stderr.lines())
                 .find(|l| l.contains("FULL MATRIX:") || l.contains("Testing") && l.contains("cell"))
             {
                 println!("  Found: {}", line.trim());
 
                 // Extract number
-                if let Some(num) = line.split_whitespace()
-                    .find_map(|w| w.parse::<u32>().ok())
-                {
+                if let Some(num) = line.split_whitespace().find_map(|w| w.parse::<u32>().ok()) {
                     if num == 27 {
                         println!("  {}✓ Matrix claims 27 cells{}", "\x1b[32m", "\x1b[0m");
                     } else if num == 21 {
-                        println!("  {}⚠ Matrix has 21 cells (not 27 as documented){}", "\x1b[33m", "\x1b[0m");
+                        println!(
+                            "  {}⚠ Matrix has 21 cells (not 27 as documented){}",
+                            "\x1b[33m", "\x1b[0m"
+                        );
                     } else {
-                        println!("  {}⚠ Matrix has {} cells (unexpected){}", "\x1b[33m", num, "\x1b[0m");
+                        println!(
+                            "  {}⚠ Matrix has {} cells (unexpected){}",
+                            "\x1b[33m", num, "\x1b[0m"
+                        );
                     }
                 }
             } else {
@@ -299,9 +440,18 @@ fn test_matrix_integrity() {
 // ============================================================================
 
 fn test_hang_detection_simulation() {
-    println!("\n{}═══════════════════════════════════════════════════════════════{}", "\x1b[1;34m", "\x1b[0m");
-    println!("{}TEST 1: HANG DETECTION (Simulation){}", "\x1b[1;33m", "\x1b[0m");
-    println!("{}═══════════════════════════════════════════════════════════════{}\n", "\x1b[1;34m", "\x1b[0m");
+    println!(
+        "\n{}═══════════════════════════════════════════════════════════════{}",
+        "\x1b[1;34m", "\x1b[0m"
+    );
+    println!(
+        "{}TEST 1: HANG DETECTION (Simulation){}",
+        "\x1b[1;33m", "\x1b[0m"
+    );
+    println!(
+        "{}═══════════════════════════════════════════════════════════════{}\n",
+        "\x1b[1;34m", "\x1b[0m"
+    );
 
     println!("  Testing wait_with_timeout logic with a 3-second simulated hang...");
 
@@ -323,7 +473,10 @@ fn test_hang_detection_simulation() {
                 if start.elapsed() >= timeout {
                     let _ = child.kill();
                     let _ = child.wait();
-                    break Err(format!("HANG: Process killed after {}s timeout", timeout.as_secs()));
+                    break Err(format!(
+                        "HANG: Process killed after {}s timeout",
+                        timeout.as_secs()
+                    ));
                 }
                 std::thread::sleep(poll_interval);
             }
@@ -335,20 +488,37 @@ fn test_hang_detection_simulation() {
 
     match result {
         Err(msg) if msg.contains("HANG") => {
-            println!("  {}✓ PASS{}: Hang detected and process killed", "\x1b[32m", "\x1b[0m");
-            println!("    Elapsed: {:.2}s (timeout: {}s)", elapsed.as_secs_f64(), timeout.as_secs());
+            println!(
+                "  {}✓ PASS{}: Hang detected and process killed",
+                "\x1b[32m", "\x1b[0m"
+            );
+            println!(
+                "    Elapsed: {:.2}s (timeout: {}s)",
+                elapsed.as_secs_f64(),
+                timeout.as_secs()
+            );
             if elapsed.as_secs() <= timeout.as_secs() + 1 {
                 println!("    Timeout enforcement: ACCURATE");
             } else {
-                println!("    {}⚠ Timeout enforcement: DELAYED by {:.2}s{}",
-                         "\x1b[33m", elapsed.as_secs_f64() - timeout.as_secs_f64(), "\x1b[0m");
+                println!(
+                    "    {}⚠ Timeout enforcement: DELAYED by {:.2}s{}",
+                    "\x1b[33m",
+                    elapsed.as_secs_f64() - timeout.as_secs_f64(),
+                    "\x1b[0m"
+                );
             }
         }
         Ok(_) => {
-            println!("  {}✗ FAIL{}: Process completed without hang detection", "\x1b[31m", "\x1b[0m");
+            println!(
+                "  {}✗ FAIL{}: Process completed without hang detection",
+                "\x1b[31m", "\x1b[0m"
+            );
         }
         Err(e) => {
-            println!("  {}✗ FAIL{}: Unexpected error: {}", "\x1b[31m", "\x1b[0m", e);
+            println!(
+                "  {}✗ FAIL{}: Unexpected error: {}",
+                "\x1b[31m", "\x1b[0m", e
+            );
         }
     }
 
@@ -361,7 +531,10 @@ fn test_hang_detection_simulation() {
         .unwrap_or_default();
 
     if ps_output.contains("sleep 10") {
-        println!("  {}✗ ZOMBIE DETECTED{}: 'sleep 10' process still running", "\x1b[31m", "\x1b[0m");
+        println!(
+            "  {}✗ ZOMBIE DETECTED{}: 'sleep 10' process still running",
+            "\x1b[31m", "\x1b[0m"
+        );
     } else {
         println!("  {}✓ No zombie processes{}", "\x1b[32m", "\x1b[0m");
     }
@@ -372,11 +545,23 @@ fn test_hang_detection_simulation() {
 // ============================================================================
 
 fn test_zombie_server_info() {
-    println!("\n{}═══════════════════════════════════════════════════════════════{}", "\x1b[1;34m", "\x1b[0m");
-    println!("{}TEST 3: ZOMBIE SERVER (PMAT-098-PF SIGINT Resiliency){}", "\x1b[1;33m", "\x1b[0m");
-    println!("{}═══════════════════════════════════════════════════════════════{}\n", "\x1b[1;34m", "\x1b[0m");
+    println!(
+        "\n{}═══════════════════════════════════════════════════════════════{}",
+        "\x1b[1;34m", "\x1b[0m"
+    );
+    println!(
+        "{}TEST 3: ZOMBIE SERVER (PMAT-098-PF SIGINT Resiliency){}",
+        "\x1b[1;33m", "\x1b[0m"
+    );
+    println!(
+        "{}═══════════════════════════════════════════════════════════════{}\n",
+        "\x1b[1;34m", "\x1b[0m"
+    );
 
-    println!("  {}SIGINT Handler Implementation (PMAT-098-PF):{}", "\x1b[1m", "\x1b[0m");
+    println!(
+        "  {}SIGINT Handler Implementation (PMAT-098-PF):{}",
+        "\x1b[1m", "\x1b[0m"
+    );
     println!("     - Global process registry: Arc<Mutex<Vec<u32>>>");
     println!("     - ctrlc handler kills all registered processes");
     println!("     - ProcessGuard RAII for panic safety");
@@ -395,7 +580,10 @@ fn test_zombie_server_info() {
     println!("  {}B. Port Recovery Test:{}", "\x1b[1m", "\x1b[0m");
     println!("     1. Interrupt a test run with Ctrl+C");
     println!("     2. Immediately start a new test run");
-    println!("     3. {}PASS if no 'Address already in use' error{}", "\x1b[32m", "\x1b[0m");
+    println!(
+        "     3. {}PASS if no 'Address already in use' error{}",
+        "\x1b[32m", "\x1b[0m"
+    );
     println!();
     println!("  {}Implementation Details:{}", "\x1b[1m", "\x1b[0m");
     println!("     - setup_signal_handler() called at main() start");
@@ -409,9 +597,18 @@ fn test_zombie_server_info() {
 // ============================================================================
 
 fn main() {
-    println!("{}╔═══════════════════════════════════════════════════════════════╗{}", "\x1b[1;36m", "\x1b[0m");
-    println!("{}║     QA INFRASTRUCTURE FALSIFICATION (PMAT-098 Red Team)       ║{}", "\x1b[1;36m", "\x1b[0m");
-    println!("{}╚═══════════════════════════════════════════════════════════════╝{}", "\x1b[1;36m", "\x1b[0m");
+    println!(
+        "{}╔═══════════════════════════════════════════════════════════════╗{}",
+        "\x1b[1;36m", "\x1b[0m"
+    );
+    println!(
+        "{}║     QA INFRASTRUCTURE FALSIFICATION (PMAT-098 Red Team)       ║{}",
+        "\x1b[1;36m", "\x1b[0m"
+    );
+    println!(
+        "{}╚═══════════════════════════════════════════════════════════════╝{}",
+        "\x1b[1;36m", "\x1b[0m"
+    );
 
     // Run automated tests
     test_hang_detection_simulation();
@@ -420,16 +617,37 @@ fn main() {
     test_matrix_integrity();
     test_zombie_server_info();
 
-    println!("\n{}═══════════════════════════════════════════════════════════════{}", "\x1b[1;34m", "\x1b[0m");
+    println!(
+        "\n{}═══════════════════════════════════════════════════════════════{}",
+        "\x1b[1;34m", "\x1b[0m"
+    );
     println!("{}FALSIFICATION SUMMARY{}", "\x1b[1;33m", "\x1b[0m");
-    println!("{}═══════════════════════════════════════════════════════════════{}\n", "\x1b[1;34m", "\x1b[0m");
+    println!(
+        "{}═══════════════════════════════════════════════════════════════{}\n",
+        "\x1b[1;34m", "\x1b[0m"
+    );
 
     println!("  {}FINDINGS (All Fixed):{}", "\x1b[1m", "\x1b[0m");
-    println!("  1. Hang Detection: {}✓{} Works as designed (polling + kill)", "\x1b[32m", "\x1b[0m");
-    println!("  2. Garbage Detection: {}✓{} All edge cases handled correctly", "\x1b[32m", "\x1b[0m");
-    println!("  3. Zombie Server: {}✓ FIXED{} - SIGINT handler + ProcessGuard (PMAT-098-PF)", "\x1b[32m", "\x1b[0m");
-    println!("  4. Matrix Integrity: {}✓ FIXED{} - Documentation updated to 21 cells", "\x1b[32m", "\x1b[0m");
-    println!("  5. Answer Verification: {}✓ FIXED{} - Word boundary check added", "\x1b[32m", "\x1b[0m");
+    println!(
+        "  1. Hang Detection: {}✓{} Works as designed (polling + kill)",
+        "\x1b[32m", "\x1b[0m"
+    );
+    println!(
+        "  2. Garbage Detection: {}✓{} All edge cases handled correctly",
+        "\x1b[32m", "\x1b[0m"
+    );
+    println!(
+        "  3. Zombie Server: {}✓ FIXED{} - SIGINT handler + ProcessGuard (PMAT-098-PF)",
+        "\x1b[32m", "\x1b[0m"
+    );
+    println!(
+        "  4. Matrix Integrity: {}✓ FIXED{} - Documentation updated to 21 cells",
+        "\x1b[32m", "\x1b[0m"
+    );
+    println!(
+        "  5. Answer Verification: {}✓ FIXED{} - Word boundary check added",
+        "\x1b[32m", "\x1b[0m"
+    );
     println!();
     println!("  {}IMPLEMENTATION:{}", "\x1b[1m", "\x1b[0m");
     println!("  - ctrlc crate added to dev-dependencies");
