@@ -430,6 +430,146 @@ impl VerificationReport {
 }
 
 // ============================================================================
+// Validation Report (GH-175, PMAT-180)
+// ============================================================================
+
+/// Tensor validation result per APR-SPEC 10.9
+#[derive(Debug, Clone)]
+pub struct TensorValidation {
+    /// Tensor name
+    pub name: String,
+    /// Whether tensor passes all checks
+    pub is_valid: bool,
+    /// Number of NaN values detected
+    pub nan_count: usize,
+    /// Number of Inf values detected
+    pub inf_count: usize,
+    /// Number of zero values
+    pub zero_count: usize,
+    /// Total element count
+    pub element_count: usize,
+    /// Minimum value (excluding NaN/Inf)
+    pub min: f32,
+    /// Maximum value (excluding NaN/Inf)
+    pub max: f32,
+    /// Mean value (excluding NaN/Inf)
+    pub mean: f32,
+    /// Standard deviation
+    pub std: f32,
+    /// Specific validation failures
+    pub failures: Vec<String>,
+}
+
+impl TensorValidation {
+    /// Check if tensor has any NaN values
+    #[must_use]
+    pub fn has_nan(&self) -> bool {
+        self.nan_count > 0
+    }
+
+    /// Check if tensor has any Inf values
+    #[must_use]
+    pub fn has_inf(&self) -> bool {
+        self.inf_count > 0
+    }
+
+    /// Check if tensor is all zeros (suspicious)
+    #[must_use]
+    pub fn is_all_zeros(&self) -> bool {
+        self.zero_count == self.element_count
+    }
+}
+
+/// Complete validation report for a model file
+/// Implements APR-SPEC 10.9 Physics Constraints
+#[derive(Debug, Clone)]
+pub struct ValidationReport {
+    /// Detected format
+    pub format: FormatType,
+    /// File path validated
+    pub file_path: String,
+    /// Overall pass/fail status
+    pub is_valid: bool,
+    /// Total tensors validated
+    pub tensor_count: usize,
+    /// Tensors with issues
+    pub failed_tensor_count: usize,
+    /// Total NaN values across all tensors
+    pub total_nan_count: usize,
+    /// Total Inf values across all tensors
+    pub total_inf_count: usize,
+    /// Tensors that are all zeros
+    pub all_zero_tensors: Vec<String>,
+    /// Per-tensor validation results
+    pub tensors: Vec<TensorValidation>,
+    /// Validation time in milliseconds
+    pub duration_ms: u64,
+}
+
+impl ValidationReport {
+    /// Check if validation passed (no NaN/Inf, no all-zeros)
+    #[must_use]
+    pub fn passed(&self) -> bool {
+        self.is_valid
+    }
+
+    /// Get summary line for CLI output
+    #[must_use]
+    pub fn summary(&self) -> String {
+        if self.is_valid {
+            format!(
+                "VALID: {} tensors checked, 0 NaN, 0 Inf, 0 all-zeros",
+                self.tensor_count
+            )
+        } else {
+            format!(
+                "INVALID: {} tensors, {} NaN, {} Inf, {} all-zeros",
+                self.tensor_count,
+                self.total_nan_count,
+                self.total_inf_count,
+                self.all_zero_tensors.len()
+            )
+        }
+    }
+}
+
+impl fmt::Display for ValidationReport {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "=== Model Validation Report (APR-SPEC 10.9) ===")?;
+        writeln!(f, "Format: {}", self.format)?;
+        writeln!(f, "File: {}", self.file_path)?;
+        writeln!(
+            f,
+            "Status: {}",
+            if self.is_valid { "VALID" } else { "INVALID" }
+        )?;
+        writeln!(f, "Tensors: {}", self.tensor_count)?;
+        writeln!(f, "Total NaN: {}", self.total_nan_count)?;
+        writeln!(f, "Total Inf: {}", self.total_inf_count)?;
+        writeln!(f, "All-Zero Tensors: {}", self.all_zero_tensors.len())?;
+        writeln!(f, "Duration: {} ms", self.duration_ms)?;
+
+        if !self.is_valid {
+            writeln!(f, "\n--- Failed Tensors ---")?;
+            for tv in &self.tensors {
+                if !tv.is_valid {
+                    writeln!(
+                        f,
+                        "  {}: {} NaN, {} Inf, {} zeros / {}",
+                        tv.name, tv.nan_count, tv.inf_count, tv.zero_count, tv.element_count
+                    )?;
+                    for failure in &tv.failures {
+                        writeln!(f, "    - {failure}")?;
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+// ============================================================================
 // Conversion Options
 // ============================================================================
 
@@ -510,6 +650,34 @@ impl RosettaStone {
             FormatType::SafeTensors => self.inspect_safetensors(path, file_size),
             FormatType::Apr => self.inspect_apr(path, file_size),
         }
+    }
+
+    /// Validate a model file for physics constraints (GH-175, PMAT-180)
+    ///
+    /// Checks per APR-SPEC 10.9:
+    /// - NaN detection (corruption indicator)
+    /// - Inf detection (overflow indicator)
+    /// - All-zeros detection (uninitialized weights)
+    ///
+    /// # Errors
+    ///
+    /// Returns error if file cannot be read or format is unknown
+    pub fn validate<P: AsRef<Path>>(&self, path: P) -> Result<ValidationReport> {
+        let path = path.as_ref();
+        let start = std::time::Instant::now();
+
+        // Detect format
+        let format = FormatType::from_magic(path).or_else(|_| FormatType::from_extension(path))?;
+
+        // Dispatch to format-specific validation
+        let mut report = match format {
+            FormatType::Gguf => self.validate_gguf(path)?,
+            FormatType::SafeTensors => self.validate_safetensors(path)?,
+            FormatType::Apr => self.validate_apr(path)?,
+        };
+
+        report.duration_ms = start.elapsed().as_millis() as u64;
+        Ok(report)
     }
 
     /// Convert a model file to a different format
@@ -637,6 +805,243 @@ impl RosettaStone {
     // ========================================================================
     // Private Methods
     // ========================================================================
+
+    // ------------------------------------------------------------------------
+    // Validation Methods (GH-175, PMAT-180)
+    // ------------------------------------------------------------------------
+
+    fn validate_gguf(&self, path: &Path) -> Result<ValidationReport> {
+        use crate::format::gguf::GgufReader;
+
+        let reader = GgufReader::from_file(path)?;
+        let mut tensors = Vec::new();
+        let mut total_nan = 0;
+        let mut total_inf = 0;
+        let mut all_zero_tensors = Vec::new();
+
+        // Get tensor names from metadata
+        let tensor_names: Vec<String> = reader.tensors.iter().map(|t| t.name.clone()).collect();
+
+        for name in &tensor_names {
+            // Use GgufReader's dequantization (handles Q4K, Q6K, etc.)
+            if let Ok((f32_data, _shape)) = reader.get_tensor_f32(name) {
+                let tv = self.compute_tensor_validation(name, &f32_data);
+
+                total_nan += tv.nan_count;
+                total_inf += tv.inf_count;
+                if tv.is_all_zeros() {
+                    all_zero_tensors.push(name.clone());
+                }
+                tensors.push(tv);
+            }
+        }
+
+        let failed_count = tensors.iter().filter(|t| !t.is_valid).count();
+        let is_valid = total_nan == 0 && total_inf == 0 && all_zero_tensors.is_empty();
+
+        Ok(ValidationReport {
+            format: FormatType::Gguf,
+            file_path: path.display().to_string(),
+            is_valid,
+            tensor_count: tensors.len(),
+            failed_tensor_count: failed_count,
+            total_nan_count: total_nan,
+            total_inf_count: total_inf,
+            all_zero_tensors,
+            tensors,
+            duration_ms: 0, // Set by caller
+        })
+    }
+
+    fn validate_safetensors(&self, path: &Path) -> Result<ValidationReport> {
+        use crate::serialization::safetensors::MappedSafeTensors;
+
+        let mapped = MappedSafeTensors::open(path).map_err(|e| AprenderError::FormatError {
+            message: format!("SafeTensors open failed: {e}"),
+        })?;
+
+        let mut tensors = Vec::new();
+        let mut total_nan = 0;
+        let mut total_inf = 0;
+        let mut all_zero_tensors = Vec::new();
+
+        for name in mapped.tensor_names() {
+            // get_tensor returns Result<Vec<f32>, String>
+            if let Ok(f32_data) = mapped.get_tensor(name) {
+                let tv = self.compute_tensor_validation(name, &f32_data);
+
+                total_nan += tv.nan_count;
+                total_inf += tv.inf_count;
+                if tv.is_all_zeros() {
+                    all_zero_tensors.push(name.to_string());
+                }
+                tensors.push(tv);
+            }
+        }
+
+        let failed_count = tensors.iter().filter(|t| !t.is_valid).count();
+        let is_valid = total_nan == 0 && total_inf == 0 && all_zero_tensors.is_empty();
+
+        Ok(ValidationReport {
+            format: FormatType::SafeTensors,
+            file_path: path.display().to_string(),
+            is_valid,
+            tensor_count: tensors.len(),
+            failed_tensor_count: failed_count,
+            total_nan_count: total_nan,
+            total_inf_count: total_inf,
+            all_zero_tensors,
+            tensors,
+            duration_ms: 0,
+        })
+    }
+
+    fn validate_apr(&self, path: &Path) -> Result<ValidationReport> {
+        use crate::format::v2::AprV2Reader;
+
+        let data = std::fs::read(path).map_err(|e| AprenderError::FormatError {
+            message: format!("Cannot read APR file: {e}"),
+        })?;
+
+        let reader = AprV2Reader::from_bytes(&data).map_err(|e| AprenderError::FormatError {
+            message: format!("APR parse failed: {e}"),
+        })?;
+
+        let mut tensors = Vec::new();
+        let mut total_nan = 0;
+        let mut total_inf = 0;
+        let mut all_zero_tensors = Vec::new();
+
+        for name in reader.tensor_names() {
+            // Use get_tensor_as_f32 which handles dequantization
+            if let Some(f32_data) = reader.get_tensor_as_f32(name) {
+                let tv = self.compute_tensor_validation(name, &f32_data);
+
+                total_nan += tv.nan_count;
+                total_inf += tv.inf_count;
+                if tv.is_all_zeros() {
+                    all_zero_tensors.push(name.to_string());
+                }
+                tensors.push(tv);
+            }
+        }
+
+        let failed_count = tensors.iter().filter(|t| !t.is_valid).count();
+        let is_valid = total_nan == 0 && total_inf == 0 && all_zero_tensors.is_empty();
+
+        Ok(ValidationReport {
+            format: FormatType::Apr,
+            file_path: path.display().to_string(),
+            is_valid,
+            tensor_count: tensors.len(),
+            failed_tensor_count: failed_count,
+            total_nan_count: total_nan,
+            total_inf_count: total_inf,
+            all_zero_tensors,
+            tensors,
+            duration_ms: 0,
+        })
+    }
+
+    fn compute_tensor_validation(&self, name: &str, data: &[f32]) -> TensorValidation {
+        let element_count = data.len();
+        if element_count == 0 {
+            return TensorValidation {
+                name: name.to_string(),
+                is_valid: true,
+                nan_count: 0,
+                inf_count: 0,
+                zero_count: 0,
+                element_count: 0,
+                min: 0.0,
+                max: 0.0,
+                mean: 0.0,
+                std: 0.0,
+                failures: Vec::new(),
+            };
+        }
+
+        let mut min = f32::INFINITY;
+        let mut max = f32::NEG_INFINITY;
+        let mut sum = 0.0f64;
+        let mut nan_count = 0;
+        let mut inf_count = 0;
+        let mut zero_count = 0;
+
+        for &v in data {
+            if v.is_nan() {
+                nan_count += 1;
+                continue;
+            }
+            if v.is_infinite() {
+                inf_count += 1;
+                continue;
+            }
+            if v == 0.0 {
+                zero_count += 1;
+            }
+            if v < min {
+                min = v;
+            }
+            if v > max {
+                max = v;
+            }
+            sum += f64::from(v);
+        }
+
+        let valid_count = element_count - nan_count - inf_count;
+        let mean = if valid_count > 0 {
+            (sum / valid_count as f64) as f32
+        } else {
+            0.0
+        };
+
+        // Compute std dev
+        let mut var_sum = 0.0f64;
+        for &v in data {
+            if !v.is_nan() && !v.is_infinite() {
+                let diff = f64::from(v) - f64::from(mean);
+                var_sum += diff * diff;
+            }
+        }
+        let std = if valid_count > 1 {
+            (var_sum / (valid_count - 1) as f64).sqrt() as f32
+        } else {
+            0.0
+        };
+
+        // Collect failures
+        let mut failures = Vec::new();
+        if nan_count > 0 {
+            failures.push(format!("{nan_count} NaN values detected"));
+        }
+        if inf_count > 0 {
+            failures.push(format!("{inf_count} Inf values detected"));
+        }
+        if zero_count == element_count {
+            failures.push("All values are zero (uninitialized?)".to_string());
+        }
+
+        let is_valid = failures.is_empty();
+
+        TensorValidation {
+            name: name.to_string(),
+            is_valid,
+            nan_count,
+            inf_count,
+            zero_count,
+            element_count,
+            min: if min.is_infinite() { 0.0 } else { min },
+            max: if max.is_infinite() { 0.0 } else { max },
+            mean,
+            std,
+            failures,
+        }
+    }
+
+    // ------------------------------------------------------------------------
+    // Inspection Methods
+    // ------------------------------------------------------------------------
 
     fn inspect_gguf(&self, path: &Path, file_size: usize) -> Result<InspectionReport> {
         use crate::format::gguf::{load_gguf_raw, GgufRawTensor};
@@ -2454,6 +2859,60 @@ mod tests {
         assert!(
             result.is_err(),
             "Truncated GGUF file should return error, not Ok"
+        );
+    }
+
+    // GH-175, PMAT-180: Cross-format validation
+    // H0: validate() works for all formats and detects NaN/Inf/zeros
+    #[test]
+    fn gh175_cross_format_validation_pmat180() {
+        // Test with APR fixture (should be valid)
+        let apr_path = create_apr_fixture();
+        let rosetta = RosettaStone::new();
+
+        let report = rosetta.validate(&apr_path);
+        assert!(report.is_ok(), "APR validation should succeed");
+
+        let report = report.expect("validation");
+        assert!(
+            report.is_valid,
+            "APR fixture should be valid (no NaN/Inf/zeros)"
+        );
+        assert_eq!(report.total_nan_count, 0, "Should have no NaN");
+        assert_eq!(report.total_inf_count, 0, "Should have no Inf");
+        assert!(
+            report.all_zero_tensors.is_empty(),
+            "Should have no all-zero tensors"
+        );
+
+        // Test summary output
+        let summary = report.summary();
+        assert!(summary.contains("VALID"), "Summary should indicate VALID");
+
+        let _ = std::fs::remove_file(apr_path);
+    }
+
+    // GH-175: Validation report display
+    #[test]
+    fn gh175_validation_report_display() {
+        let report = ValidationReport {
+            format: FormatType::Apr,
+            file_path: "test.apr".to_string(),
+            is_valid: true,
+            tensor_count: 10,
+            failed_tensor_count: 0,
+            total_nan_count: 0,
+            total_inf_count: 0,
+            all_zero_tensors: vec![],
+            tensors: vec![],
+            duration_ms: 100,
+        };
+
+        let display = format!("{report}");
+        assert!(display.contains("VALID"), "Display should show VALID");
+        assert!(
+            display.contains("APR-SPEC 10.9"),
+            "Should reference APR-SPEC"
         );
     }
 }

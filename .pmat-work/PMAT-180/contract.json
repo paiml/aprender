@@ -1,0 +1,44 @@
+{
+  "work_item_id": "PMAT-180",
+  "github_issue": 175,
+  "title": "GH-175: Expose TensorStats validation for all formats",
+  "created_at": "2026-01-30T00:00:00Z",
+  "completed_at": "2026-01-30T00:00:00Z",
+  "status": "completed",
+  "severity": "P0",
+  "root_cause": "TensorStats validation existed but was only accessible for APR format",
+  "five_whys": [
+    "WHY no cross-format validation? → validate() method only existed for APR",
+    "WHY APR-only? → Original design focused on APR format spec",
+    "WHY needed for all formats? → apr-model-qa-playbook requires validation of GGUF/SafeTensors",
+    "WHY playbook needs this? → To detect NaN/Inf corruption before inference",
+    "ROOT CAUSE: Missing Rosetta Stone abstraction for validation across formats"
+  ],
+  "toyota_way_principle": "Jidoka - Built-in quality at source, detect defects immediately",
+  "fix": {
+    "files_changed": [
+      "src/format/rosetta.rs"
+    ],
+    "structs_added": [
+      "TensorValidation",
+      "ValidationReport"
+    ],
+    "methods_added": [
+      "RosettaStone::validate()",
+      "RosettaStone::validate_gguf()",
+      "RosettaStone::validate_safetensors()",
+      "RosettaStone::validate_apr()",
+      "RosettaStone::compute_tensor_validation()"
+    ],
+    "tests_added": [
+      "gh175_cross_format_validation_pmat180",
+      "gh175_validation_report_display"
+    ]
+  },
+  "verification": {
+    "tests_passed": true,
+    "test_count": 2,
+    "formats_supported": ["GGUF", "SafeTensors", "APR"],
+    "checks_implemented": ["NaN detection", "Inf detection", "All-zeros detection", "Per-tensor stats"]
+  }
+}
