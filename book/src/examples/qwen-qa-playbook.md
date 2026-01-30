@@ -8,8 +8,10 @@ This chapter documents the qualification testing of Qwen2.5-Coder-1.5B-Instruct 
 |--------|--------|--------|
 | **Tool Coverage** | 12/12 (100%) | ✅ PASS |
 | **Conversion Tests** | 0/7 (0%) | ❌ BLOCKED |
-| **MQS Score** | 125/210 (59.5%) | ⚠️ Below threshold |
+| **MQS Score** | N/A | ⚠️ Cannot compute (blocked) |
 | **Certification** | NOT QUALIFIED | Blocked by GH-185 |
+| **APR Version** | 0.2.12 | |
+| **Last Requalification** | 2026-01-30 16:55 UTC | GH-185 still open |
 
 ## Tool Coverage Testing (F-TOOL-*)
 
@@ -107,6 +109,15 @@ apr run model.apr -p "What is 2+2?" --max-tokens 8 --no-gpu
 | #183 | GGUF v3 validation messages | P2 | ✅ FIXED |
 | #182 | SafeTensors companion files | P1 | ✅ FIXED |
 | #181 | Q4_K_M block alignment | P0 | ✅ FIXED |
+
+## Requalification History
+
+| Date | APR Version | Tool Tests | Conversion | Result |
+|------|-------------|------------|------------|--------|
+| 2026-01-30 16:55 | 0.2.12 | 12/12 ✅ | 0/7 ❌ | BLOCKED (GH-185) |
+| 2026-01-30 (initial) | 0.2.11 | 12/12 ✅ | 0/7 ❌ | BLOCKED (GH-185) |
+
+**Next Steps:** Requalify after GH-185 is merged and `apr` version >= 0.2.13 is released.
 
 ## Running the QA Playbook
 
