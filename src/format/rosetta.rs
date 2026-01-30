@@ -2374,4 +2374,86 @@ mod tests {
 
         let _ = std::fs::remove_file(path);
     }
+
+    // F-STRESS-520: Panic 411 (Empty Tensor) - 0-byte file handling
+    // H0: Loading a 0-byte file should return error, not panic
+    // Refutation: Fails if 0-byte file causes panic instead of graceful error
+    // Toyota Way: Jidoka - detect defects at the source
+    #[test]
+    fn f_stress_520_zero_byte_file_no_panic_pmat178() {
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+
+        let inspector = RosettaStone::new();
+
+        // Create a 0-byte APR file
+        let mut temp_apr = NamedTempFile::with_suffix(".apr").expect("Create temp file");
+        temp_apr.flush().expect("Flush");
+
+        // Attempt to inspect - should return error, not panic
+        let result = inspector.inspect(temp_apr.path());
+        assert!(result.is_err(), "0-byte file should return error, not Ok");
+        let err_msg = format!("{:?}", result.unwrap_err());
+        assert!(
+            err_msg.contains("small")
+                || err_msg.contains("empty")
+                || err_msg.contains("parse")
+                || err_msg.contains("magic"),
+            "Error should indicate file issue: {err_msg}"
+        );
+
+        // Create a 0-byte GGUF file
+        let mut temp_gguf = NamedTempFile::with_suffix(".gguf").expect("Create temp file");
+        temp_gguf.flush().expect("Flush");
+
+        // Attempt to inspect - should return error, not panic
+        let result = inspector.inspect(temp_gguf.path());
+        assert!(
+            result.is_err(),
+            "0-byte GGUF file should return error, not Ok"
+        );
+
+        // Create a 0-byte SafeTensors file
+        let mut temp_st = NamedTempFile::with_suffix(".safetensors").expect("Create temp file");
+        temp_st.flush().expect("Flush");
+
+        // Attempt to inspect - should return error, not panic
+        let result = inspector.inspect(temp_st.path());
+        assert!(
+            result.is_err(),
+            "0-byte SafeTensors file should return error, not Ok"
+        );
+    }
+
+    // F-STRESS-520: Additional test - truncated file handling
+    // H0: Truncated files (partial headers) should return error, not panic
+    #[test]
+    fn f_stress_520_truncated_file_no_panic_pmat178() {
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+
+        let inspector = RosettaStone::new();
+
+        // Create a truncated APR file (just magic bytes, no header)
+        let mut temp = NamedTempFile::with_suffix(".apr").expect("Create temp file");
+        temp.write_all(b"APR\x00").expect("Write partial header");
+        temp.flush().expect("Flush");
+
+        let result = inspector.inspect(temp.path());
+        assert!(
+            result.is_err(),
+            "Truncated APR file should return error, not Ok"
+        );
+
+        // Create a truncated GGUF file (just magic bytes)
+        let mut temp_gguf = NamedTempFile::with_suffix(".gguf").expect("Create temp file");
+        temp_gguf.write_all(b"GGUF").expect("Write partial header");
+        temp_gguf.flush().expect("Flush");
+
+        let result = inspector.inspect(temp_gguf.path());
+        assert!(
+            result.is_err(),
+            "Truncated GGUF file should return error, not Ok"
+        );
+    }
 }

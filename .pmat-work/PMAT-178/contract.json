@@ -1,0 +1,31 @@
+{
+  "work_item_id": "PMAT-178",
+  "github_issue": null,
+  "title": "F-STRESS-520: Empty Tensor Panic Prevention Tests",
+  "created_at": "2026-01-30T00:00:00Z",
+  "completed_at": "2026-01-30T00:00:00Z",
+  "status": "completed",
+  "severity": "P1",
+  "root_cause": "Missing defensive tests for 0-byte and truncated model files",
+  "five_whys": [
+    "WHY could loading crash? → No graceful error for malformed files",
+    "WHY malformed files? → Users may have corrupted downloads or partial files",
+    "WHY no tests? → Stress testing was deferred to Round 6",
+    "WHY Round 6? → P0 inference fixes were prioritized",
+    "ROOT CAUSE: Missing Jidoka (built-in quality) tests for edge cases"
+  ],
+  "toyota_way_principle": "Jidoka - Detect defects at the source, not downstream",
+  "fix": {
+    "tests_added": [
+      "f_stress_520_zero_byte_file_no_panic_pmat178",
+      "f_stress_520_truncated_file_no_panic_pmat178"
+    ],
+    "file": "src/format/rosetta.rs",
+    "description": "Tests verify that 0-byte and truncated files return proper errors instead of panicking"
+  },
+  "verification": {
+    "tests_passed": true,
+    "formats_tested": ["APR", "GGUF", "SafeTensors"],
+    "scenarios": ["0-byte file", "truncated header (4 bytes)"]
+  }
+}

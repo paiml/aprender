@@ -2625,7 +2625,10 @@ pub fn apr_convert<P: AsRef<Path>>(
         .and_then(|e| e.to_str())
         .unwrap_or("");
 
-    eprintln!("[DEBUG apr_convert] input: {:?}, extension: {:?}", input_path, extension);
+    eprintln!(
+        "[DEBUG apr_convert] input: {:?}, extension: {:?}",
+        input_path, extension
+    );
 
     // F-REGR-231 FIX: For GGUF input, load with full config to preserve rope_type
     // Qwen2.5 models require rope_type=2 (NEOX style), not default 0 (NORM style)
@@ -2654,7 +2657,10 @@ pub fn apr_convert<P: AsRef<Path>>(
     // GGUF uses names like "blk.0.attn_q.weight" but APR loaders expect
     // HuggingFace names like "model.layers.0.self_attn.q_proj.weight"
     let tensors = if extension == "gguf" {
-        eprintln!("[PMAT-113] Mapping {} GGUF tensor names to HuggingFace format...", tensors.len());
+        eprintln!(
+            "[PMAT-113] Mapping {} GGUF tensor names to HuggingFace format...",
+            tensors.len()
+        );
         let mapped = map_tensor_names(&tensors, Architecture::Qwen2);
         // Debug: show a few mapped names
         for (i, name) in mapped.keys().take(5).enumerate() {
@@ -2802,9 +2808,10 @@ fn load_apr_tensors_f32(path: &Path) -> Result<BTreeMap<String, (Vec<f32>, Vec<u
         message: format!("Failed to open APR file: {e}"),
     })?;
     let mut data = Vec::new();
-    file.read_to_end(&mut data).map_err(|e| AprenderError::FormatError {
-        message: format!("Failed to read APR file: {e}"),
-    })?;
+    file.read_to_end(&mut data)
+        .map_err(|e| AprenderError::FormatError {
+            message: format!("Failed to read APR file: {e}"),
+        })?;
 
     // Validate header (44 bytes minimum)
     if data.len() < 44 {
@@ -2824,10 +2831,12 @@ fn load_apr_tensors_f32(path: &Path) -> Result<BTreeMap<String, (Vec<f32>, Vec<u
 
     // Parse header
     let tensor_count = u32::from_le_bytes([data[12], data[13], data[14], data[15]]) as usize;
-    let tensor_index_offset =
-        u64::from_le_bytes([data[24], data[25], data[26], data[27], data[28], data[29], data[30], data[31]]) as usize;
-    let data_offset =
-        u64::from_le_bytes([data[32], data[33], data[34], data[35], data[36], data[37], data[38], data[39]]) as usize;
+    let tensor_index_offset = u64::from_le_bytes([
+        data[24], data[25], data[26], data[27], data[28], data[29], data[30], data[31],
+    ]) as usize;
+    let data_offset = u64::from_le_bytes([
+        data[32], data[33], data[34], data[35], data[36], data[37], data[38], data[39],
+    ]) as usize;
 
     // Parse tensor index
     let mut tensors = BTreeMap::new();
@@ -2854,8 +2863,14 @@ fn load_apr_tensors_f32(path: &Path) -> Result<BTreeMap<String, (Vec<f32>, Vec<u
         let mut shape = Vec::with_capacity(ndim);
         for _ in 0..ndim {
             let dim = u64::from_le_bytes([
-                data[pos], data[pos + 1], data[pos + 2], data[pos + 3],
-                data[pos + 4], data[pos + 5], data[pos + 6], data[pos + 7],
+                data[pos],
+                data[pos + 1],
+                data[pos + 2],
+                data[pos + 3],
+                data[pos + 4],
+                data[pos + 5],
+                data[pos + 6],
+                data[pos + 7],
             ]) as usize;
             pos += 8;
             shape.push(dim);
@@ -2863,13 +2878,25 @@ fn load_apr_tensors_f32(path: &Path) -> Result<BTreeMap<String, (Vec<f32>, Vec<u
 
         // Offset and size
         let offset = u64::from_le_bytes([
-            data[pos], data[pos + 1], data[pos + 2], data[pos + 3],
-            data[pos + 4], data[pos + 5], data[pos + 6], data[pos + 7],
+            data[pos],
+            data[pos + 1],
+            data[pos + 2],
+            data[pos + 3],
+            data[pos + 4],
+            data[pos + 5],
+            data[pos + 6],
+            data[pos + 7],
         ]) as usize;
         pos += 8;
         let size = u64::from_le_bytes([
-            data[pos], data[pos + 1], data[pos + 2], data[pos + 3],
-            data[pos + 4], data[pos + 5], data[pos + 6], data[pos + 7],
+            data[pos],
+            data[pos + 1],
+            data[pos + 2],
+            data[pos + 3],
+            data[pos + 4],
+            data[pos + 5],
+            data[pos + 6],
+            data[pos + 7],
         ]) as usize;
         pos += 8;
 
@@ -2954,7 +2981,8 @@ fn dequantize_bf16_to_f32(bytes: &[u8], _num_elements: usize) -> Vec<f32> {
 fn dequantize_q8_0_to_f32(bytes: &[u8], num_elements: usize) -> Vec<f32> {
     const BLOCK_SIZE: usize = 32;
     const BLOCK_BYTES: usize = 2 + 32; // f16 scale + 32 int8s
-    let num_blocks = num_elements.div_ceil(BLOCK_SIZE);
+    // MSRV-compatible div_ceil: (n + d - 1) / d
+    let num_blocks = (num_elements + BLOCK_SIZE - 1) / BLOCK_SIZE;
     let mut result = Vec::with_capacity(num_elements);
 
     for i in 0..num_blocks {
@@ -3040,7 +3068,8 @@ fn dequantize_q4_k_to_f32(data: &[u8], num_elements: usize) -> Vec<f32> {
         } else {
             d_raw
         };
-        let dmin = if dmin_raw.is_nan() || dmin_raw.is_infinite() || dmin_raw.abs() < F16_MIN_NORMAL {
+        let dmin = if dmin_raw.is_nan() || dmin_raw.is_infinite() || dmin_raw.abs() < F16_MIN_NORMAL
+        {
             0.0
         } else {
             dmin_raw
@@ -3262,7 +3291,7 @@ fn quantize_q4_k(data: &[f32]) -> Vec<u8> {
     const SUPER_BLOCK_SIZE: usize = 256;
     const SUB_BLOCK_SIZE: usize = 32;
     const SUPER_BLOCK_BYTES: usize = 144; // 2 + 2 + 12 + 128
-    // PMAT-177: Minimum valid f16 normal value (~6.1e-5) - prevents NaN on round-trip
+                                          // PMAT-177: Minimum valid f16 normal value (~6.1e-5) - prevents NaN on round-trip
     const F16_MIN_NORMAL: f32 = 6.1e-5;
 
     if data.is_empty() {
@@ -3292,7 +3321,11 @@ fn quantize_q4_k(data: &[f32]) -> Vec<u8> {
             let range = max - min;
 
             // PMAT-177: Clamp to F16_MIN_NORMAL to prevent underflow in f16 encoding
-            sub_scales[j] = if range > F16_MIN_NORMAL { range / 15.0 } else { F16_MIN_NORMAL };
+            sub_scales[j] = if range > F16_MIN_NORMAL {
+                range / 15.0
+            } else {
+                F16_MIN_NORMAL
+            };
             sub_mins[j] = (-min).max(0.0); // Store as positive offset
         }
 
@@ -3655,6 +3688,7 @@ fn save_model_tensors_with_config(
 /// - All other model dimensions from GGUF
 ///
 /// Without this, APR defaults to rope_type=0 which produces garbage for Qwen2.5.
+#[allow(dead_code)] // Superseded by save_model_tensors_with_gguf_config_and_tokenizer
 fn save_model_tensors_with_gguf_config(
     tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
     output: &Path,
@@ -6471,8 +6505,14 @@ mod tests_import_errors {
         let nan_count = result.iter().filter(|v| v.is_nan()).count();
         let inf_count = result.iter().filter(|v| v.is_infinite()).count();
 
-        assert_eq!(nan_count, 0, "PMAT-177: dequantize_q4_k should not produce NaN");
-        assert_eq!(inf_count, 0, "PMAT-177: dequantize_q4_k should not produce Inf");
+        assert_eq!(
+            nan_count, 0,
+            "PMAT-177: dequantize_q4_k should not produce NaN"
+        );
+        assert_eq!(
+            inf_count, 0,
+            "PMAT-177: dequantize_q4_k should not produce Inf"
+        );
     }
 
     /// PMAT-177: Test that subnormal f16 scales are clamped to zero
