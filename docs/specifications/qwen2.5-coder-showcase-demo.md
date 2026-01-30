@@ -23,7 +23,7 @@
 | [#170](https://github.com/paiml/aprender/issues/170) | apr chat hangs with APR format (1.5B model) | P1 | ✅ **FIXED** (PMAT-181) | - |
 | [#169](https://github.com/paiml/aprender/issues/169) | Make apr import --output optional | P3 | Open | - |
 | [#168](https://github.com/paiml/aprender/issues/168) | Can't import GGUF model, fails with 404 | P1 | ✅ CLOSED (PMAT-168) | - |
-| [#162](https://github.com/paiml/aprender/issues/162) | Pulled models don't show on list | P2 | Open | - |
+| [#162](https://github.com/paiml/aprender/issues/162) | Pulled models don't show on list | P2 | ✅ **VERIFIED** (PMAT-183: Working as designed) | - |
 | [#160](https://github.com/paiml/aprender/issues/160) | Enable Tool Calling support in apr serve API | P2 | Open | - |
 
 **Last Updated:** 2026-01-30
