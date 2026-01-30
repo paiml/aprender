@@ -1,7 +1,7 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 5.72.0
-**Status:** ✅ 13 closed, 1 in-progress (GH-180/PMAT-192 Phase 1 complete)
+**Version:** 5.73.0
+**Status:** ✅ 14 closed, 0 open bugs (GH-180/PMAT-192 COMPLETE)
 **Popperian Score:** 100/100
 **Author:** PAIML Engineering
 **Date:** 2026-01-30
@@ -12,11 +12,11 @@
 
 ## GitHub Issues Status (Toyota Way: Transparency)
 
-**Summary:** 13 issues closed, 1 in-progress feature. All P0/P1/P2 defects resolved.
+**Summary:** 14 issues closed, 0 open bugs. All P0/P1/P2 defects resolved.
 
 | Issue | Title | Severity | Status | PMAT |
 |-------|-------|----------|--------|------|
-| [#180](https://github.com/paiml/aprender/issues/180) | cbtop-style profiling (apr profile/benchmark) | P2 | 🔵 **IN PROGRESS** | PMAT-192 |
+| [#180](https://github.com/paiml/aprender/issues/180) | cbtop-style profiling (apr profile/benchmark) | P2 | ✅ **CLOSED** | PMAT-192 |
 | [#179](https://github.com/paiml/aprender/issues/179) | Tool test coverage 69% → 100% | P1 | ✅ CLOSED | PMAT-191 |
 | [#178](https://github.com/paiml/aprender/issues/178) | apr validate rejects GGUF v3 | P2 | ✅ CLOSED | PMAT-188 |
 | [#177](https://github.com/paiml/aprender/issues/177) | Format conversion NaN/Inf | **P0** | ✅ CLOSED | PMAT-187+190 |
@@ -297,11 +297,11 @@ fn check_gguf_version(&mut self, data: &[u8]) {
 
 ---
 
-### GH-180: cbtop-style Profiling (PMAT-192) 🔵 IN PROGRESS
+### GH-180: cbtop-style Profiling (PMAT-192) ✅ COMPLETE
 
 **GitHub Issue:** [paiml/aprender#180](https://github.com/paiml/aprender/issues/180)
 **Severity:** P2
-**Status:** 🔵 IN PROGRESS (PMAT-192)
+**Status:** ✅ COMPLETE (PMAT-192)
 
 **Objective:** Unify existing profiling commands with CI assertion support.
 
@@ -312,8 +312,8 @@ fn check_gguf_version(&mut self, data: &[u8]) {
 | 1 | Add CI assertion mode to profile.rs | ✅ DONE |
 | 2 | Add JSON output with pass/fail | ✅ DONE |
 | 3 | Add --assert-throughput/--assert-p99 | ✅ DONE |
-| 4 | Add differential benchmark mode | ⏳ TODO |
-| 5 | Add F-PROFILE-CI-* tests | ⏳ TODO |
+| 4 | Add differential benchmark mode | ✅ DONE |
+| 5 | Add F-PROFILE-CI-* tests (6 tests) | ✅ DONE |
 
 **CLI Interface:**
 
