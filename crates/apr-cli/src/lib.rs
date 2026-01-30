@@ -19,7 +19,8 @@ pub mod federation;
 use commands::{
     bench, canary, canary::CanaryCommands, cbtop, chat, compare_hf, convert, debug, diff, eval,
     explain, export, flow, hex, import, inspect, lint, merge, probar, profile, publish, pull, qa,
-    rosetta, rosetta::RosettaCommands, run, serve, showcase, tensors, trace, tree, tui, validate,
+    rosetta, rosetta::RosettaCommands, run, serve, showcase, tensors, trace, tree, tui, tune,
+    validate,
 };
 
 /// apr - APR Model Operations Tool
@@ -874,6 +875,45 @@ pub enum Commands {
         verbose: bool,
     },
 
+    /// ML tuning: LoRA/QLoRA configuration and memory planning (GH-176)
+    Tune {
+        /// Path to model file (optional if using --model)
+        #[arg(value_name = "FILE")]
+        file: Option<PathBuf>,
+
+        /// Tuning method: auto, full, lora, qlora
+        #[arg(long, short = 'm', default_value = "auto")]
+        method: String,
+
+        /// LoRA rank (default: auto-selected)
+        #[arg(long, short = 'r')]
+        rank: Option<u32>,
+
+        /// Available VRAM in GB
+        #[arg(long, default_value = "16.0")]
+        vram: f64,
+
+        /// Only plan configuration, don't train
+        #[arg(long)]
+        plan: bool,
+
+        /// Model size for planning (e.g., "7B", "1.5B")
+        #[arg(long, value_name = "SIZE")]
+        model: Option<String>,
+
+        /// Freeze base model weights
+        #[arg(long)]
+        freeze_base: bool,
+
+        /// Training data file (JSONL format)
+        #[arg(long, value_name = "FILE")]
+        train_data: Option<PathBuf>,
+
+        /// Output as JSON (for CI integration)
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Qwen2.5-Coder showcase demo
     Showcase {
         /// Run all steps with auto-verification
@@ -1429,6 +1469,31 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
             *json || cli.json,
             *verbose || cli.verbose,
         ),
+
+        Commands::Tune {
+            file,
+            method,
+            rank,
+            vram,
+            plan,
+            model,
+            freeze_base,
+            train_data,
+            json,
+        } => {
+            let tune_method = method.parse().unwrap_or(tune::TuneMethod::Auto);
+            tune::run(
+                file.as_deref(),
+                tune_method,
+                *rank,
+                *vram,
+                *plan,
+                model.as_deref(),
+                *freeze_base,
+                train_data.as_deref(),
+                *json || cli.json,
+            )
+        }
 
         Commands::Showcase {
             auto_verify,

@@ -129,6 +129,9 @@ trueno-zram-core = { version = "0.2", optional = true }
 # GH-162 FIX: Use local path until fix is published to crates.io
 pacha = { path = "../../../pacha", default-features = false, features = ["remote"] }
 
+# ML tuning: LoRA/QLoRA configuration and memory planning (GH-176, PMAT-184)
+entrenar-lora = { path = "../../../entrenar/crates/entrenar-lora" }
+
 [[example]]
 name = "probar_tui_testing"
 required-features = ["inference"]

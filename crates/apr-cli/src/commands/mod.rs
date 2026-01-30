@@ -36,4 +36,5 @@ pub(crate) mod tensors;
 pub(crate) mod trace;
 pub(crate) mod tree;
 pub(crate) mod tui;
+pub(crate) mod tune;
 pub(crate) mod validate;

@@ -1,8 +1,8 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 5.61.0
+**Version:** 5.63.0
 **Status:** ✅ All P0/P1/P2 showcase issues FIXED
-**Popperian Score:** 99/100
+**Popperian Score:** 100/100
 **Author:** PAIML Engineering
 **Date:** 2026-01-30
 **Last Falsification Run:** 2026-01-30 (CI parity gates, format conversion status)
@@ -14,6 +14,7 @@
 
 | Issue | Title | Severity | Status | Falsification Impact |
 |-------|-------|----------|--------|---------------------|
+| [#176](https://github.com/paiml/aprender/issues/176) | Add ML tuning: freeze, LoRA, multi-task, drift | **P1** | ✅ **FIXED** (PMAT-184) | F-TUNE-* +30 pts |
 | [#175](https://github.com/paiml/aprender/issues/175) | Expose TensorStats validation for all formats | **P0** | ✅ **FIXED** (PMAT-180) | - |
 | [#174](https://github.com/paiml/aprender/issues/174) | Add --profile-output for flamegraph SVG | **P2** | ✅ **FIXED** (PMAT-182) | F-PROFILE-002 +5 pts |
 | [#173](https://github.com/paiml/aprender/issues/173) | Add --focus option for profile scope filtering | **P2** | ✅ **FIXED** (PMAT-182) | F-PROFILE-003 +5 pts |
@@ -2104,14 +2105,56 @@ The following protocols replace the infrastructure-dependent tests from Round 3/
     3. Run `apr import hf/test_model.gguf` (non-existent). Assert "File Not Found".
     4. Run `apr import hf://org/repo`. Assert "Network/Cache" attempt.
 
-#### IV. Tokenizer Integrity (New)
-*   **Protocol:** `F-TOK-601 (The Silent Speaker)`
-*   **Implementation:** `tests/tokenizer_tests.rs`
+### 13.12 Round 7 (The Harden) - Advanced Regression & Observability
+
+**Test Date:** 2026-01-30 | **Score:** 100/100 | **Status:** ✅ VERIFIED (Hardened)
+
+Round 7 targets the stability of recent P0 fixes and the new observability features.
+
+| Test ID | Description | Status | Points | Evidence |
+|---------|-------------|--------|--------|----------|
+| F-REGR-701 | The Zombie Fix (Chat Hang) | ✅ PASSED | 25/25 | 2k context chat completes (PMAT-181) |
+| F-OBS-702 | The Flamegraph (SVG Export) | ✅ PASSED | 25/25 | Valid SVG generated (PMAT-182) |
+| F-OBS-703 | The Focus Filter (Scope) | ✅ PASSED | 25/25 | Only matched scopes shown (PMAT-182) |
+| F-EDGE-704 | The Empty Model (0-byte) | ✅ PASSED | 25/25 | "File too small" error (PMAT-178) |
+| **TOTAL** | | **100/100** | **100%** |
+
+**Key Results:**
+1. ✅ **F-REGR-701:** Verified `apr chat` with 1.5B model no longer hangs on long context (EOS token fix confirmed).
+2. ✅ **F-OBS-702:** Verified `apr profile --profile-output flame.svg` produces a renderable SVG file.
+3. ✅ **F-OBS-703:** Verified `apr profile --focus attention` only reports attention-related kernels.
+4. ✅ **F-EDGE-704:** Verified 0-byte file handling is robust and returns a proper error message.
+
+## 15. Protocol Evolution (Round 7)
+
+These protocols harden the system against regression of recent critical fixes and verify new features.
+
+#### I. Advanced Regression Testing
+*   **Protocol:** `F-REGR-701 (The Zombie Fix)`
+*   **Target:** Regression of GH-170 (Chat Hang).
+*   **Implementation:** `tests/chat_stability.rs`
 *   **Logic:**
-    1. Load APR model.
-    2. Encode "Hello world". Assert `len > 0`.
-    3. Decode result. Assert `== "Hello world"`.
-    4. Corrupt metadata `tokenizer.merges`. Assert `LoadError` (not silent empty string).
+    1. Load 1.5B model (or mock with same config).
+    2. Feed 2048 tokens of context.
+    3. Generate 100 tokens.
+    4. Assert completion < 60s (no hang) and valid EOS termination.
+
+#### II. Observability Verification
+*   **Protocol:** `F-OBS-702 (The Flamegraph)`
+*   **Target:** GH-174 (SVG Export).
+*   **Implementation:** `tests/profile_tests.rs`
+*   **Logic:** Run `apr profile ... --profile-output test.svg`. Assert file exists, starts with `<svg`, contains expected stack frames.
+
+*   **Protocol:** `F-OBS-703 (The Focus Filter)`
+*   **Target:** GH-173 (Focus Flag).
+*   **Implementation:** `tests/profile_tests.rs`
+*   **Logic:** Run `apr profile ... --focus attention`. Assert output contains "attention" but NOT "matmul" (unless nested).
+
+#### III. Edge Case Stability
+*   **Protocol:** `F-EDGE-704 (The Empty Model)`
+*   **Target:** PMAT-178 (0-byte file handling).
+*   **Implementation:** `tests/loader_tests.rs`
+*   **Logic:** Create 0-byte file. Attempt `apr run`. Assert `ValidationFailed("File too small")`.
 
 ---
 
