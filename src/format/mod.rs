@@ -64,7 +64,7 @@ pub mod homomorphic;
 // Weight comparison module (GH-121, HuggingFace/SafeTensors comparison)
 pub mod compare;
 
-// APR v2 format module (GH-119, 64-byte alignment, JSON metadata, sharding)
+// APR format module (GH-119, 64-byte alignment, JSON metadata, sharding)
 pub mod v2;
 
 // GGUF export module (spec §7.2)

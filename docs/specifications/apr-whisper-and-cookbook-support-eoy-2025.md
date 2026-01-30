@@ -31,7 +31,7 @@ This specification consolidates all open GitHub issues and recent development wo
 - **TensorLogic neuro-symbolic reasoning** (Domingos, 2025)
 
 **Recent Releases**:
-- **v0.20.1**: Added comprehensive TensorLogic and Audio Processing chapters to the Book; fixed APR v2 native import format.
+- **v0.20.1**: Added comprehensive TensorLogic and Audio Processing chapters to the Book; fixed APR native import format.
 
 ---
 
@@ -207,7 +207,7 @@ Exit Codes:
 │  │ Params: 494M    │ │ ▸ model.layers.0.self_attn.q_proj [896, 896]    │   │
 │  │ Quantization:   │ │ ▸ model.layers.0.self_attn.k_proj [128, 896]    │   │
 │  │   Q4_K (4-bit)  │ │ ▸ model.layers.0.self_attn.v_proj [128, 896]    │   │
-│  │ Format: APR v2  │ │ ▸ model.layers.0.mlp.gate_proj   [4864, 896]    │   │
+│  │ Format: APR     │ │ ▸ model.layers.0.mlp.gate_proj   [4864, 896]    │   │
 │  │ Size: 285 MB    │ │ ...                                              │   │
 │  └─────────────────┘ └──────────────────────────────────────────────────┘   │
 │  ┌──────────────────────────────────────────────────────────────────────┐   │
@@ -1476,7 +1476,7 @@ Inspired by **llamafile** (Tunney, 2023), `apr` aims for single-file distributab
 **Mitigation**:
 - **Sandboxing**: WASM runtime enforces memory safety and isolation (Shostack, 2014).
 - **Least Privilege**: `apr` CLI requests specific capabilities (Network, FS) explicitly (Saltzer & Schroeder, 1975).
-- **Format Safety**: APR v2 uses zero-copy parsing with no code execution (unlike Pickle).
+- **Format Safety**: APR uses zero-copy parsing with no code execution (unlike Pickle).
 
 ### 9.4 Network Isolation Mandate (v2.1)
 
@@ -1612,7 +1612,7 @@ println!("{}", report.roofline_analysis());
 - **Status**: ✅ Done (120 speech tests pass).
 
 ### 11.3 Phase 3: The Demo (Completed)
-- **Qwen2-0.5B Conversion**: HuggingFace → APR v2.
+- **Qwen2-0.5B Conversion**: HuggingFace → APR.
 - **WASM Compilation**: `trueno` backend for `wasm32-simd128`.
 - **Web UI**: Minimal interface for "Chat with your Audio".
 - **Status**: ✅ Done (17 WASM tests pass, import infrastructure verified).
@@ -1991,7 +1991,7 @@ This section validates the **Realizar-First** architecture mandate (Section 2). 
 
 | # | Claim | Status | Note |
 |---|-------|--------|------|
-| D1 | APR v2 magic is APR2 | ✅ Pass | Verified in format::v2::tests |
+| D1 | APR magic bytes valid | ✅ Pass | Verified in format::v2::tests |
 | D2 | Tensors are 64-byte aligned | ✅ Pass | Verified in format::v2::tests |
 | D3 | Metadata is valid JSON | ✅ Pass | Verified in format::v2::tests |
 | D4 | Required metadata fields present | ✅ Pass | Verified in format::v2::tests |

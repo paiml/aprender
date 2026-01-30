@@ -1,11 +1,11 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 5.50.0
-**Status:** ✅ ALL P0 DEFECTS FIXED + PMAT-173 VERBOSE UX ITEMS
-**Popperian Score:** 100/100 (All P0 Fixed: #170 Explosion, #171 BPE Merges, #172 Silent Failure Recovery, #168 Import 404, PMAT-130 Q4_0)
+**Version:** 5.51.0
+**Status:** P0 DEFECT ACTIVE - PMAT-176 Format Conversion NaN Corruption
+**Popperian Score:** 94/100 (New P0: GH-172 Format Conversion NaN Corruption)
 **Author:** PAIML Engineering
 **Date:** 2026-01-30
-**Last Falsification Run:** 2026-01-30 (PMAT-173 Verbose UX Items F-UX-036 to F-UX-039)
+**Last Falsification Run:** 2026-01-30 (PMAT-176 Format Conversion Testing)
 **Quality Philosophy:** Toyota Way + Popperian Falsification (Zero SATD, Stop-the-Line)
 
 ---
@@ -79,7 +79,7 @@ Compare:
 
 ---
 
-**Honest QA Assessment (Popperian Falsification) - Updated 2026-01-29:**
+**Honest QA Assessment (Popperian Falsification) - Updated 2026-01-30:**
 - GGUF CPU: ✅ **CORROBORATED** (T100: Real Qwen2-0.5B, argmax=262)
 - GGUF GPU: ✅ **CORROBORATED** (CUDA path verified, 276.9 tok/s, 6.8x Ollama)
 - SafeTensors CPU: ✅ **CORROBORATED** (T200: Real Qwen2-0.5B, argmax=262)
@@ -92,6 +92,7 @@ Compare:
 - `apr check` (10-stage): ✅ **VERIFIED** (Real forward pass telemetry)
 - `apr profile`: ✅ **VERIFIED** (Real BrickProfiler telemetry)
 - `apr chat`: ✅ Verified (Modality Matrix - CPU and GPU)
+- **Format Conversion:** ❌ **FALSIFIED** (PMAT-176/GH-172: NaN corruption in round-trip)
 
 ### PMAT-120: SafeTensors GPU ✅ FIXED (Five-Whys Analysis)
 
@@ -124,6 +125,58 @@ apr chat model.gguf         # "2 + 2 equals 4."
 **PMAT-114 Fix (2026-01-27):** ✅ COMPLETE. Root cause: APR converter fuses QKV biases into `qkv_proj.bias` but loader only looked for separate biases. Fixed in `realizar/src/apr_transformer/mod.rs:600`.
 
 **PMAT Roadmap ID:** `SHOWCASE-BRICK-001`
+
+### PMAT-176: Format Conversion NaN Corruption ❌ ACTIVE P0 (GH-172)
+
+**GitHub Issue:** [paiml/aprender#172](https://github.com/paiml/aprender/issues/172)
+**Severity:** P0 - Stop the Line
+**Status:** ❌ FALSIFIED - Format conversions introduce NaN corruption
+
+**Summary:** `apr rosetta convert` produces lossy conversions with NaN/Inf corruption in round-trip tests.
+
+**Failure Matrix:**
+
+| Conversion | Status | Evidence |
+|------------|--------|----------|
+| GGUF → APR | ❌ FALSIFIED | diff=6.77e-1 (expected < 1e-6) |
+| APR → GGUF | ❌ FALSIFIED | diff=4.16e-1 |
+| GGUF → SafeTensors | ❌ FALSIFIED | Missing tokenizer.json/config.json |
+| SafeTensors → GGUF | ❌ FALSIFIED | diff=4.16e-1 |
+| SafeTensors → APR | ❌ FALSIFIED | diff=6.77e-1 |
+| Round-trip (GGUF→APR→ST→GGUF) | ❌ FALSIFIED | **NaN/Inf values in tensors** |
+
+**Evidence (75 validation errors):**
+```
+blk.0.attn_k.weight: contains 322 NaN values
+blk.0.attn_output.weight: contains 1880 NaN values
+blk.0.attn_q.weight: contains 2194 NaN values
+blk.0.ffn_down.weight: contains 7219 NaN values
+blk.0.ffn_gate.weight: contains 12864 NaN values
+blk.1.ffn_down.weight: contains 1 Inf values
+... (75 total validation errors)
+```
+
+**Five-Whys Analysis:**
+1. **WHY did round-trip fail?** → NaN values appeared in converted tensors
+2. **WHY NaN values?** → Dequantization → requantization precision loss accumulates
+3. **WHY precision loss?** → Q4_K_M → F32 → Q4_K_M conversion is not bit-exact
+4. **WHY different outputs?** → Inference on corrupted weights produces different results
+5. **ROOT CAUSE:** Any NaN in weights corrupts ALL inference - silent data corruption
+
+**Toyota Way Response:** STOP THE LINE. NaN in model weights is catastrophic.
+
+**Required Fix:**
+1. Add bit-exact round-trip tests to `apr rosetta` CI
+2. Implement `apr rosetta verify --strict` with epsilon tolerance checking
+3. Add NaN/Inf detection as hard failure in conversion pipeline
+4. Consider storing original quantization parameters for lossless round-trip
+
+**Reproduction:**
+```bash
+# Using apr-model-qa-playbook
+apr-qa run playbooks/models/qwen2.5-coder-1.5b-ci.playbook.yaml \
+  --subprocess --model-path model.gguf --no-gpu
+```
 
 ### 100-Point Falsification Results (PMAT-112, 2026-01-27)
 
@@ -372,13 +425,13 @@ Model Type: LogisticRegression  ← WRONG
 1. **Vocabulary not embedded:** `write_apr_file_raw()` extracted vocabulary from GGUF but didn't write to APR metadata
 2. **BPE merges not embedded:** APR only embeds vocab (decode-only), not BPE merge rules (encode). PMAT-171 fix.
 3. **Wrong tokenizer lookup:** `run_apr_inference()` only looked for external `tokenizer.json`, not embedded vocabulary
-4. **Header misinterpretation:** APR v2 header version bytes (2,0) interpreted as model type 0x0002="LogisticRegression"
+4. **Header misinterpretation:** APR header version bytes (2,0) interpreted as model type 0x0002="LogisticRegression"
 
 **Fixes Applied:**
 1. `aprender/src/format/converter.rs`: Ensure vocabulary is embedded in APR metadata
 2. `aprender/src/format/converter.rs`: Extract `tokenizer.ggml.merges` from GGUF and embed in APR (PMAT-171)
 3. `realizar/src/cli/inference.rs`: Try `load_embedded_tokenizer()` first, fallback to external
-4. `realizar/src/model_loader.rs`: Handle APR v2 header format, read model type from JSON metadata
+4. `realizar/src/model_loader.rs`: Handle APR header format, read model type from JSON metadata
 
 **Evidence (after fix):**
 ```
@@ -1555,7 +1608,7 @@ Actual investigation: 1.5B conversion works (5.75 GiB), but outputs SafeTensors 
 5. WHY no error? → This is intentional behavior, not a bug
 
 Resolution: apr convert without --quantize produces SafeTensors (valid, loadable)
-For true APR v2: use apr convert --quantize q4k
+For native APR format: use apr convert --quantize q4k
 ```
 
 **#163: GGUF Import False Positive Validation (✅ FIXED)**

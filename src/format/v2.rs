@@ -1,13 +1,13 @@
-//! APR v2 Format Module (GH-119)
+//! APR Format Module (GH-119)
 //!
-//! Implements the APR v2 format specification with:
+//! Implements the APR format specification with:
 //! - 64-byte tensor alignment for zero-copy mmap
 //! - LZ4 block compression (64KB blocks)
 //! - JSON metadata section
 //! - Multi-file sharding for 10B+ parameter models
-//! - Backward compatibility with APR v1
+//! - Single unified format (no versioning complexity)
 //!
-//! # Format Structure (APR v2)
+//! # Format Structure (APR)
 //!
 //! ```text
 //! ┌─────────────────────────────────────────────────────────────┐

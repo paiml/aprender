@@ -126,7 +126,7 @@ Tensor Data:
 
 ### 3.3 APR (Aprender Portable Representation)
 
-**Specification**: APR v2.0 (see APR-SPEC.md)
+**Specification**: APR (see APR-SPEC.md)
 **Extensions**: `.apr`
 **Types**: F16, F32, I8, Q4_K, Q5_K, Q6_K, Q8_0
 
@@ -309,7 +309,7 @@ EXAMPLES:
 ║                        ROSETTA CONVERSION REPORT                              ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║ Source: qwen2.5-coder-1.5b-q4_k_m.gguf (GGUF v3)                             ║
-║ Target: qwen2.5-coder-1.5b.apr (APR v2)                                       ║
+║ Target: qwen2.5-coder-1.5b.apr (APR)                                          ║
 ║ Mode: Preserve Quantization                                                   ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║                           CONVERSION STEPS                                    ║
@@ -399,7 +399,7 @@ Output:
 ║                        MODEL COMPARISON REPORT                                
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║ Model A: model1.gguf (GGUF v3)                                               ║
-║ Model B: model2.apr (APR v2)                                                 ║
+║ Model B: model2.apr (APR)                                                    ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║                           STRUCTURAL COMPARISON                               ║
 ╠──────────────────────────┬───────────────────┬───────────────────────────────╣

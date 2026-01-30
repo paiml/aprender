@@ -12,7 +12,7 @@
 
 1. [Abstract](#1-abstract)
 2. [Design Principles](#2-design-principles)
-3. [APR v2 Format](#3-apr-v2-format)
+3. [APR Binary Format](#3-apr-binary-format)
    - [3.1 Format Overview](#31-format-overview)
    - [3.2 Header](#32-header-32-bytes)
    - [3.3 Feature Flags](#33-feature-flags)
@@ -77,7 +77,7 @@
 
 APR (Aprender Portable Representation) is a WASM-first model serialization format for machine learning models. This specification covers:
 
-- **APR v2 Format**: Binary format supporting web-scale models (10B+ parameters) with tensor alignment, LZ4 streaming compression, and multi-file sharding
+- **APR Binary Format**: ONE format supporting web-scale models (10B+ parameters) with tensor alignment, LZ4 streaming compression, and multi-file sharding
 - **CLI Operations**: Comprehensive tooling for inspect, debug, trace, export, convert, import, merge, diff, and validate operations
 - **Auxiliary Data**: Patterns for storing vocabulary, tokenizer config, mel filterbanks, and other model-specific data
 
@@ -89,7 +89,7 @@ APR (Aprender Portable Representation) is a WASM-first model serialization forma
 
 1. **WASM-first**: Must work in `wasm32-unknown-unknown` without Emscripten
 2. **Progressive enhancement**: Features degrade gracefully (mmap → heap, compression → raw)
-3. **Backward compatibility**: APR1 files remain readable
+3. **Single format**: ONE format specification, no versioning complexity
 4. **Zero-copy where possible**: Alignment enables direct tensor access
 5. **Streaming**: Support chunked loading for large models
 
@@ -105,7 +105,7 @@ APR (Aprender Portable Representation) is a WASM-first model serialization forma
 
 ---
 
-## 3. APR v2 Format
+## 3. APR Binary Format
 
 ### 3.1 Format Overview
 

@@ -1771,7 +1771,7 @@ fn compute_tensor_stats(name: &str, data: &[f32]) -> TensorStats {
     }
 }
 
-/// Write tensors to native APR v2 format
+/// Write tensors to native APR format
 fn write_apr_file(
     tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
     output: &Path,
@@ -2069,7 +2069,7 @@ fn write_apr_file(
         ..Default::default()
     };
 
-    // Create APR v2 writer (APR2 magic)
+    // Create APR writer
     let mut writer = AprV2Writer::new(metadata);
 
     // Add all tensors with appropriate quantization (qkv_fused computed earlier)
@@ -2665,7 +2665,7 @@ pub fn apr_convert<P: AsRef<Path>>(
         tensors
     };
 
-    // Step 2: Handle Q4K specially - store raw Q4K bytes in APR v2 format
+    // Step 2: Handle Q4K specially - store raw Q4K bytes in APR format
     if options.quantize == Some(QuantizationType::Q4K) {
         save_model_tensors_q4k(&tensors, output_path)?;
 
@@ -2785,9 +2785,9 @@ fn load_gguf_tensors_f32(path: &Path) -> Result<BTreeMap<String, (Vec<f32>, Vec<
     reader.get_all_tensors_f32()
 }
 
-/// Load APR v2 tensors and dequantize to F32 (PMAT-174)
+/// Load APR tensors and dequantize to F32 (PMAT-174)
 ///
-/// APR v2 binary format:
+/// APR binary format:
 /// - Header (44 bytes): magic, version, flags, tensor_count, offsets, checksum
 /// - Metadata: JSON config
 /// - Tensor Index: binary tensor entries
@@ -3576,9 +3576,9 @@ fn save_model_tensors(
     })
 }
 
-/// Save model tensors to APR v2 format with embedded config metadata (GH-165 fix)
+/// Save model tensors to APR format with embedded config metadata (GH-165 fix)
 ///
-/// Infers model configuration from tensor shapes and embeds it in APR v2 metadata.
+/// Infers model configuration from tensor shapes and embeds it in APR metadata.
 /// This ensures AprTransformer can load with correct dimensions.
 /// If config cannot be inferred (generic tensors), saves with minimal metadata.
 fn save_model_tensors_with_config(
@@ -3619,7 +3619,7 @@ fn save_model_tensors_with_config(
     })
 }
 
-/// Save model tensors to APR v2 format with GGUF model config (F-REGR-231 fix)
+/// Save model tensors to APR format with GGUF model config (F-REGR-231 fix)
 ///
 /// This function preserves critical GGUF metadata including:
 /// - rope_type: RoPE style (0=NORM, 2=NEOX) - CRITICAL for Qwen2.5 models
@@ -3672,7 +3672,7 @@ fn save_model_tensors_with_gguf_config(
     })
 }
 
-/// Save model tensors to APR v2 format with GGUF config AND tokenizer (PMAT-113 fix)
+/// Save model tensors to APR format with GGUF config AND tokenizer (PMAT-113 fix)
 ///
 /// This extends `save_model_tensors_with_gguf_config` to also embed the tokenizer
 /// vocabulary for standalone APR inference without sibling tokenizer.json files.
@@ -3781,10 +3781,10 @@ fn save_model_tensors_with_gguf_config_and_tokenizer(
     })
 }
 
-/// Save model tensors with Q4K quantization in APR v2 format
+/// Save model tensors with Q4K quantization in APR format
 ///
 /// Selectively quantizes large weight tensors while keeping biases and norms as F32.
-/// Uses APR v2 format with proper Q4K dtype for GPU-accelerated inference.
+/// Uses APR format with proper Q4K dtype for GPU-accelerated inference.
 fn save_model_tensors_q4k(
     tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
     output: &Path,
@@ -3836,7 +3836,7 @@ fn save_model_tensors_q4k(
         }
     }
 
-    // Create APR v2 metadata
+    // Create APR metadata
     let param_count: u64 = tensors.values().map(|(data, _)| data.len() as u64).sum();
 
     let metadata = AprV2Metadata {
@@ -3900,7 +3900,7 @@ fn save_model_tensors_q4k(
 
     // Write to file
     let bytes = writer.write().map_err(|e| AprenderError::FormatError {
-        message: format!("Failed to serialize APR v2 format: {e}"),
+        message: format!("Failed to serialize APR format: {e}"),
     })?;
 
     let mut file = fs::File::create(output).map_err(|e| AprenderError::FormatError {
@@ -4945,9 +4945,9 @@ mod tests_conversion {
             result.err()
         );
 
-        // Load output as APR v2 and verify names are preserved (PMAT-099)
+        // Load output as APR and verify names are preserved (PMAT-099)
         let data = fs::read(output).expect("Failed to read output");
-        let reader = AprV2Reader::from_bytes(&data).expect("Failed to parse APR v2");
+        let reader = AprV2Reader::from_bytes(&data).expect("Failed to parse APR");
         let tensor_names = reader.tensor_names();
 
         // PMAT-099: Names are now preserved for AprTransformer compatibility
@@ -7613,7 +7613,7 @@ mod tests_gh165_apr_config_metadata {
         // Read the file and verify it contains hidden_size metadata
         let data = std::fs::read(&apr_path).unwrap();
 
-        // APR v2 format should have JSON metadata containing hidden_size
+        // APR format should have JSON metadata containing hidden_size
         let metadata_str = String::from_utf8_lossy(&data);
         let has_hidden_size = metadata_str.contains("hidden_size")
             || metadata_str.contains("\"hidden_dim\"")

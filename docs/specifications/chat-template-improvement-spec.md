@@ -758,7 +758,7 @@ Each checklist item follows the structure:
 ### Section 8: APR Format Integration (CTA-01 to CTA-10)
 
 #### CTA-01: chat_template in APR Metadata
-- **Claim**: `chat_template` stored in APR v2 metadata section
+- **Claim**: `chat_template` stored in APR metadata section
 - **Rejection Criterion**: Field not written or not readable
 - **Evidence**: Create APR with template, reload and verify
 - **Toyota Principle**: Standardized Work
@@ -766,7 +766,7 @@ Each checklist item follows the structure:
 #### CTA-02: Backward Compatibility
 - **Claim**: APR files without `chat_template` still load
 - **Rejection Criterion**: Error on old APR files
-- **Evidence**: Load APR v2 files created before this feature
+- **Evidence**: Load APR files created before this feature
 - **Toyota Principle**: Kaizen
 
 #### CTA-03: Template Format in Metadata
@@ -971,7 +971,7 @@ Each checklist item follows the structure:
 
 ### Phase 3: APR Format Extension (Week 3-4)
 
-1. Add `chat_template` to APR v2 metadata schema
+1. Add `chat_template` to APR metadata schema
 2. Update `apr import` to store template
 3. Update `apr inspect` to show template
 4. Update `apr validate` to check template
