@@ -80,6 +80,9 @@ pub mod model_card;
 #[allow(clippy::case_sensitive_file_extension_comparisons)]
 pub mod validation;
 
+// Converter types module (PMAT-197 - File size reduction)
+pub mod converter_types;
+
 // Converter module (spec §13 - Import/Convert Pipeline)
 #[allow(
     clippy::unnecessary_wraps,
