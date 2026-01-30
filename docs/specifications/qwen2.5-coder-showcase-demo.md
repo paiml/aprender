@@ -1,8 +1,8 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 5.65.0
-**Status:** ✅ All P0/P1/P2 showcase issues FIXED
-**Popperian Score:** 100/100
+**Version:** 5.66.0
+**Status:** ⚠️ P0 PARTIAL: GH-177 detection-only, conversion root cause unfixed
+**Popperian Score:** 95/100 (RED TEAM: mutex unwrap P0, conversion NaN P0)
 **Author:** PAIML Engineering
 **Date:** 2026-01-30
 **Last Falsification Run:** 2026-01-30 (CI parity gates, format conversion status)
@@ -15,7 +15,7 @@
 | Issue | Title | Severity | Status | Falsification Impact |
 |-------|-------|----------|--------|---------------------|
 | [#178](https://github.com/paiml/aprender/issues/178) | apr validate rejects valid GGUF v3 files | **P2** | ✅ **FIXED** (PMAT-188) | F-GGUF-* +5 pts |
-| [#177](https://github.com/paiml/aprender/issues/177) | Format conversion introduces NaN/Inf corruption | **P0** | ✅ **FIXED** (PMAT-187) | F-CONV-* +10 pts |
+| [#177](https://github.com/paiml/aprender/issues/177) | Format conversion introduces NaN/Inf corruption | **P0** | ⚠️ **PARTIAL** (PMAT-187: Detection only) | F-CONV-* +10 pts |
 | [#176](https://github.com/paiml/aprender/issues/176) | Add ML tuning: freeze, LoRA, multi-task, drift | **P1** | ✅ **FIXED** (PMAT-184) | F-TUNE-* +30 pts |
 | [#175](https://github.com/paiml/aprender/issues/175) | Expose TensorStats validation for all formats | **P0** | ✅ **FIXED** (PMAT-180) | - |
 | [#174](https://github.com/paiml/aprender/issues/174) | Add --profile-output for flamegraph SVG | **P2** | ✅ **FIXED** (PMAT-182) | F-PROFILE-002 +5 pts |
@@ -114,7 +114,34 @@ Compare:
 - `apr check` (10-stage): ✅ **VERIFIED** (Real forward pass telemetry)
 - `apr profile`: ✅ **VERIFIED** (Real BrickProfiler telemetry)
 - `apr chat`: ✅ Verified (Modality Matrix - CPU and GPU)
-- **Format Conversion:** ✅ **VERIFIED** (PMAT-177: NaN protection + Q4K tests pass)
+- **Format Conversion:** ⚠️ **PARTIAL** (PMAT-187: Detection works, conversion still produces NaN)
+
+### RED TEAM FINDINGS (2026-01-30): Protocol "Burn It Down"
+
+**Attack Surface Audit Results:**
+
+| Finding | Severity | Status | Evidence |
+|---------|----------|--------|----------|
+| Mutex `.lock().unwrap()` in serve.rs | **P0** | ❌ FALSIFIED | 8 calls at lines 1431, 1478, 1556, 1620, 1902, 2003, 2894, 3084 |
+| GH-177 Conversion NaN Root Cause | **P0** | ❌ UNFIXED | 84.6% output diff, 75 tensor errors (detection-only fix) |
+| `expect()` in run.rs hot paths | **P1** | ❌ FALSIFIED | Lines 1221, 1222: malformed model → panic |
+| Symlink loop error message | **P2** | 🟡 MISLEADING | Returns "Resource not found" instead of symlink error |
+| Empty file validation | — | ✅ PASSED | Graceful FAIL, no panic |
+| Invalid magic bytes | — | ✅ PASSED | Graceful FAIL, clear error |
+| Permission denied | — | ✅ PASSED | "Permission denied (os error 13)" |
+
+**P0 Critical: Mutex Lock Poisoning Attack**
+```rust
+// serve.rs:1478 - If worker panics, lock poisons, ALL requests fail
+let t = transformer.lock().unwrap();  // ❌ DANGEROUS
+
+// Required fix:
+let t = transformer.lock().map_err(|e| {
+    ApiError::internal(format!("Lock poisoned: {}", e))
+})?;
+```
+
+**Recommended Action:** Fix P0 mutex unwrap before production deployment.
 
 ### PMAT-120: SafeTensors GPU ✅ FIXED (Five-Whys Analysis)
 
@@ -179,6 +206,13 @@ apr chat model.gguf         # "2 + 2 equals 4."
 Now the pipeline will fail fast with a clear error message if corruption is detected.
 
 **Evidence:** 8/8 PMAT-187 tests pass
+
+**⚠️ PARTIAL FIX STATUS (Red Team Retest 2026-01-30):**
+- ✅ NaN/Inf Detection: Fails fast with clear errors (Jidoka working)
+- ❌ Conversion Logic: Still produces 84.6% output difference, 75 tensor NaN errors
+- ❌ Root Cause: Q4_K_M quantization metadata handling in `realizar/src/convert/`
+
+**Next Fix Required:** Target `realizar/src/convert/` to prevent NaN production, not just detect it.
 
 ---
 
