@@ -1,11 +1,11 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 5.49.0
-**Status:** ✅ ALL P0 DEFECTS FIXED + PMAT-172 FAIL-FAST TOKENIZER
+**Version:** 5.50.0
+**Status:** ✅ ALL P0 DEFECTS FIXED + PMAT-173 VERBOSE UX ITEMS
 **Popperian Score:** 100/100 (All P0 Fixed: #170 Explosion, #171 BPE Merges, #172 Silent Failure Recovery, #168 Import 404, PMAT-130 Q4_0)
 **Author:** PAIML Engineering
 **Date:** 2026-01-30
-**Last Falsification Run:** 2026-01-30 (PMAT-171/172 Tokenizer Fixes)
+**Last Falsification Run:** 2026-01-30 (PMAT-173 Verbose UX Items F-UX-036 to F-UX-039)
 **Quality Philosophy:** Toyota Way + Popperian Falsification (Zero SATD, Stop-the-Line)
 
 ---
@@ -997,10 +997,10 @@ apr check model.gguf
 | F-UX-033 | Backend type (CPU/GPU) displayed | ✅ "GPU" | ✅ "CPU (SIMD-accelerated)" | **PASS** (PMAT-131) |
 | F-UX-034 | GPU device name (when GPU) | ✅ "NVIDIA GeForce RTX 4090" | N/A | **PASS** |
 | F-UX-035 | VRAM amount (when GPU) | ✅ "24045 MB VRAM" | N/A | **PASS** |
-| F-UX-036 | Hidden dimensions displayed | ❌ Not shown | ❌ Not shown | **DEFERRED** |
-| F-UX-037 | Thread count displayed | ❌ Not shown | ❌ Not shown | **DEFERRED** |
-| F-UX-038 | Quantization type (GGUF) | ❌ Not shown | N/A | **DEFERRED** |
-| F-UX-039 | Context length displayed | ❌ Not shown | ❌ Not shown | **DEFERRED** |
+| F-UX-036 | Hidden dimensions displayed | ✅ "hidden_size=896" | ✅ "hidden_size=896" | **PASS** (PMAT-173) |
+| F-UX-037 | Thread count displayed | ✅ "threads=1 (GPU)" | ✅ "threads=32" | **PASS** (PMAT-173) |
+| F-UX-038 | Quantization type (GGUF) | ✅ "quant=Q4_K" | ✅ "quant=F32 (dequantized)" | **PASS** (PMAT-173) |
+| F-UX-039 | Context length displayed | ✅ "context_length=32768" | ✅ "context_length=32768" | **PASS** (PMAT-173) |
 | F-UX-040 | Total generation time displayed | ✅ "Completed in 1.83s" | ✅ "Completed in 4.35s" | **PASS** |
 
 **Example Output (GGUF GPU, verbose):**
@@ -1010,6 +1010,7 @@ Source: /home/noah/.apr/cache/hf/.../qwen2.5-coder-0.5b-instruct-q4_k_m.gguf
 Using mmap for 468MB model
 Loading model: ...
 Architecture: Qwen2 [GGUF: qwen2] (24 layers, vocab_size=151936)
+Config: hidden_size=896, context_length=32768, quant=Q4_K, threads=1 (GPU)
 Model loaded in 525.0ms
 Backend: GPU (NVIDIA GeForce RTX 4090, 24045 MB VRAM)
 Output:
@@ -1017,11 +1018,11 @@ Output:
 Completed in 1.83s (cached)
 ```
 
-**Missing Items (PMAT-121: Future Enhancement):**
-- F-UX-036: Hidden dimensions (hidden_size, num_attention_heads)
-- F-UX-037: Thread count (CPU inference thread pool)
-- F-UX-038: Quantization type (Q4_K_M, F32, etc.)
-- F-UX-039: Context length (max_position_embeddings)
+**PMAT-173 Implementation (2026-01-30):**
+- F-UX-036: Hidden dimensions now displayed via "hidden_size={}"
+- F-UX-037: Thread count now displayed via "threads={}"
+- F-UX-038: Quantization type now displayed via "quant={}" (Q4_K, F32, etc.)
+- F-UX-039: Context length now displayed via "context_length={}"
 
 ---
 
