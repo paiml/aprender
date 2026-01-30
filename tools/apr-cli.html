@@ -270,6 +270,76 @@ curl -H &quot;X-Trace-Level: brick&quot; http://localhost:8080/v1/chat/completio
 # Layer-level timing
 curl -H &quot;X-Trace-Level: layer&quot; http://localhost:8080/v1/chat/completions ...
 </code></pre>
+<h3 id="tool-calling-gh-160"><a class="header" href="#tool-calling-gh-160">Tool Calling (GH-160)</a></h3>
+<p>The server supports OpenAI-compatible tool calling, allowing models to invoke external functions.</p>
+<p><strong>Define tools in your request:</strong></p>
+<pre><code class="language-bash">curl -X POST http://localhost:8080/v1/chat/completions \
+  -H &quot;Content-Type: application/json&quot; \
+  -d '{
+    &quot;model&quot;: &quot;default&quot;,
+    &quot;messages&quot;: [{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;What is the weather in Tokyo?&quot;}],
+    &quot;tools&quot;: [
+      {
+        &quot;type&quot;: &quot;function&quot;,
+        &quot;function&quot;: {
+          &quot;name&quot;: &quot;get_weather&quot;,
+          &quot;description&quot;: &quot;Get the current weather for a location&quot;,
+          &quot;parameters&quot;: {
+            &quot;type&quot;: &quot;object&quot;,
+            &quot;properties&quot;: {
+              &quot;location&quot;: {&quot;type&quot;: &quot;string&quot;, &quot;description&quot;: &quot;City name&quot;},
+              &quot;unit&quot;: {&quot;type&quot;: &quot;string&quot;, &quot;enum&quot;: [&quot;celsius&quot;, &quot;fahrenheit&quot;]}
+            },
+            &quot;required&quot;: [&quot;location&quot;]
+          }
+        }
+      }
+    ],
+    &quot;max_tokens&quot;: 100
+  }'
+</code></pre>
+<p><strong>Response with tool call:</strong></p>
+<pre><code class="language-json">{
+  &quot;id&quot;: &quot;chatcmpl-abc123&quot;,
+  &quot;choices&quot;: [{
+    &quot;message&quot;: {
+      &quot;role&quot;: &quot;assistant&quot;,
+      &quot;content&quot;: null,
+      &quot;tool_calls&quot;: [{
+        &quot;id&quot;: &quot;call_xyz789&quot;,
+        &quot;type&quot;: &quot;function&quot;,
+        &quot;function&quot;: {
+          &quot;name&quot;: &quot;get_weather&quot;,
+          &quot;arguments&quot;: &quot;{\&quot;location\&quot;: \&quot;Tokyo\&quot;, \&quot;unit\&quot;: \&quot;celsius\&quot;}&quot;
+        }
+      }]
+    },
+    &quot;finish_reason&quot;: &quot;tool_calls&quot;
+  }]
+}
+</code></pre>
+<p><strong>Multi-turn with tool result:</strong></p>
+<p>After executing the tool, send the result back:</p>
+<pre><code class="language-bash">curl -X POST http://localhost:8080/v1/chat/completions \
+  -H &quot;Content-Type: application/json&quot; \
+  -d '{
+    &quot;model&quot;: &quot;default&quot;,
+    &quot;messages&quot;: [
+      {&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;What is the weather in Tokyo?&quot;},
+      {&quot;role&quot;: &quot;assistant&quot;, &quot;content&quot;: null, &quot;tool_calls&quot;: [{&quot;id&quot;: &quot;call_xyz789&quot;, &quot;type&quot;: &quot;function&quot;, &quot;function&quot;: {&quot;name&quot;: &quot;get_weather&quot;, &quot;arguments&quot;: &quot;{\&quot;location\&quot;: \&quot;Tokyo\&quot;}&quot;}}]},
+      {&quot;role&quot;: &quot;tool&quot;, &quot;tool_call_id&quot;: &quot;call_xyz789&quot;, &quot;content&quot;: &quot;{\&quot;temperature\&quot;: 22, \&quot;condition\&quot;: \&quot;sunny\&quot;}&quot;}
+    ],
+    &quot;max_tokens&quot;: 100
+  }'
+</code></pre>
+<p>The model will then generate a response incorporating the tool result.</p>
+<p><strong>Tool choice control:</strong></p>
+<pre><code class="language-json">{
+  &quot;tool_choice&quot;: &quot;auto&quot;
+}
+</code></pre>
+<p>Options: <code>&quot;auto&quot;</code> (default), <code>&quot;none&quot;</code> (disable tools), or <code>{&quot;type&quot;: &quot;function&quot;, &quot;function&quot;: {&quot;name&quot;: &quot;specific_tool&quot;}}</code>.</p>
+<p><strong>Example code:</strong> See <code>cargo run --example tool_calling_demo</code> for a complete Rust example.</p>
 <h2 id="chat-command"><a class="header" href="#chat-command">Chat Command</a></h2>
 <p>Interactive chat with language models (supports GGUF, APR, SafeTensors).</p>
 <pre><code class="language-bash"># Interactive chat (GPU by default)
