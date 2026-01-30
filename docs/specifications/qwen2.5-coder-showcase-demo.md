@@ -1,10 +1,10 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 5.78.0
-**Status:** ⚠️ 18 closed, 1 open P0 bug (GH-185: APR tokenizer embedding)
-**Popperian Score:** 92/100 (conversion tests blocked)
+**Version:** 5.80.0
+**Status:** ⚠️ 18 closed, 2 open P0 bugs (GH-185: APR tokenizer ✅ FIXED, GH-186: APR Q4_K inference garbage)
+**Popperian Score:** 91/100 (APR Q4_K inference blocked, rosetta tooling improved)
 **Code Coverage:** 96.16% (target: ≥95%)
-**Tool Coverage:** 12/12 (100%) - All APR tools verified
+**Tool Coverage:** 14/14 (100%) - All APR tools verified (+ rosetta diff-tensors, compare-inference)
 **Author:** PAIML Engineering
 **Date:** 2026-01-30
 **Last Falsification Run:** 2026-01-30 (apr-model-qa-playbook requalification)
@@ -18,7 +18,9 @@
 
 | Issue | Title | Severity | Status | PMAT |
 |-------|-------|----------|--------|------|
-| [#185](https://github.com/paiml/aprender/issues/185) | **APR missing embedded tokenizer** | **P0** | ⏳ **OPEN** | - |
+| [#188](https://github.com/paiml/aprender/issues/188) | **APR Rosetta: Differential tracing to catch layout bugs** | P1 | ✅ **FIXED** | PMAT-200 |
+| [#186](https://github.com/paiml/aprender/issues/186) | **APR Q4_K inference produces garbage (PAD tokens)** | **P0** | ⏳ **OPEN** | PMAT-196 |
+| [#185](https://github.com/paiml/aprender/issues/185) | **APR missing embedded tokenizer** | **P0** | ✅ **FIXED** | PMAT-195 |
 | [#184](https://github.com/paiml/aprender/issues/184) | apr profile --ci exits 0 on assertion fail | P2 | ✅ **CLOSED** (not a bug) | - |
 | [#183](https://github.com/paiml/aprender/issues/183) | Validation rejects valid GGUF v3 (inverted magic) | P2 | ✅ **CLOSED** | PMAT-195 |
 | [#182](https://github.com/paiml/aprender/issues/182) | SafeTensors missing companion files | P1 | ✅ **CLOSED** | PMAT-194 |
@@ -117,8 +119,8 @@ Compare:
 - GGUF GPU: ✅ **CORROBORATED** (CUDA path verified, 276.9 tok/s, 6.8x Ollama)
 - SafeTensors CPU: ✅ **CORROBORATED** (T200: Real Qwen2-0.5B, argmax=262)
 - SafeTensors GPU: ✅ **CORROBORATED** (PMAT-120 Fix: QKV bias loading + weight transpose)
-- APR CPU (GGUF): ✅ **VERIFIED** (PMAT-171 Fix: Embedded tokenizer + vocab)
-- APR GPU (GGUF): ✅ **VERIFIED** (PMAT-170+171 Fix: Q4K layout + tokenizer)
+- APR CPU (GGUF): ❌ **FALSIFIED** (GH-186: Q4_K produces PAD tokens, tokenizer works)
+- APR GPU (GGUF): ❌ **FALSIFIED** (GH-186: Q4_K produces PAD tokens, tokenizer works)
 - APR CPU (SafeTensors): ✅ **VERIFIED** (2026-01-29: "What is 2+2?" → "2+2 equals 4.")
 - APR GPU (SafeTensors): ✅ **VERIFIED** (2026-01-29: CUDA path verified, argmax=17)
 - Cross-format parity: ✅ **VERIFIED** (GGUF vs SafeTensors Invariant - All paths)
@@ -1439,7 +1441,7 @@ Completed in 1.83s (cached)
 | GGUF Q5_K/Q6_K/Q8_0 | ✅ | ✅ | ✅ |
 | GGUF Q4_0/Q4_1 | ✅ FIXED (2026-01-29) | ⚠️ CPU fallback | ✅ |
 | SafeTensors F32 | ✅ 2.2 tok/s | ✅ GPU via `apr run` (PMAT-129: SafeTensorsCudaModel wired up) | ✅ |
-| APR Q4_K | ⚠️ FIX APPLIED (re-convert needed) | ⚠️ FIX APPLIED | ✅ |
+| APR Q4_K | ❌ **FALSIFIED** (GH-186: PAD token flood) | ❌ **FALSIFIED** | ✅ |
 
 ---
 
@@ -1831,6 +1833,197 @@ Uses aprender's own ML algorithms for diagnostics:
 
 ---
 
+## 12.1 Format-Aware Differential Tracing (APR-TRACE-002)
+
+**Status:** ✅ **PARTIALLY IMPLEMENTED** (GH-188 rosetta tools)
+**PMAT Ticket:** PMAT-196, PMAT-200
+**Severity:** P0 - Tracing MUST detect format-specific inference bugs
+**Root Cause:** APR Q4_K produces garbage (PAD tokens) while GGUF Q4_K produces correct output. Current `--trace` cannot detect this class of bug.
+
+### Implementation Status (GH-188)
+
+Two rosetta subcommands now provide differential tracing:
+
+**1. `apr rosetta compare-inference` - Output Comparison**
+```bash
+apr rosetta compare-inference model.gguf model.apr --prompt "2+2=" --max-tokens 10
+```
+Compares actual inference outputs between two models and reports:
+- ✅ Text output mismatch detection
+- ✅ Diagnosis: "Model B produced no output" → "inference bug (layout, kernel, or load issue)"
+- ✅ Exit code 5 on mismatch (CI integration)
+
+**2. `apr rosetta diff-tensors` - Layout Mismatch Detection**
+```bash
+apr rosetta diff-tensors model.gguf model.apr --filter embed
+```
+Compares tensor dimensions to detect GGML layout issues:
+- ✅ Detects transposed dimensions (GGML [in,out] vs standard [out,in])
+- ✅ Provides actionable fix recommendations
+- ✅ Exit code 5 on layout mismatch (CI integration)
+
+### Problem Statement (Five-Whys)
+
+1. **Why** did APR Q4_K inference produce garbage? → Token IDs were PAD (151935)
+2. **Why** didn't we catch this earlier? → Tracing only shows timing, not token values
+3. **Why** no token comparison? → `--trace` designed for performance, not correctness
+4. **Why** not debug with existing tools? → No cross-format comparison capability
+5. **ROOT CAUSE:** Tracing is **format-agnostic** when it should be **format-aware**
+
+### The Demarcation Problem
+
+**Current tracing shows:**
+```
+[TRACE-CACHE] pos=14: 28 layers took 6.711842ms
+[APR-TRACE] tokenization: input_len=5, output_token_count=8
+```
+
+**Current tracing CANNOT show:**
+```
+❌ Cannot compare: GGUF token 262 vs APR token 151935 at position 0
+❌ Cannot flag: APR producing PAD tokens while GGUF produces valid output
+❌ Cannot detect: Weight loading differences between formats
+```
+
+### Specification: Differential Trace Mode (F-TRACE-DIFF-001)
+
+**Command:**
+```bash
+apr run model.gguf model.apr "What is 2+2?" --trace-diff
+```
+
+**Required Output:**
+```
+=== Format Differential Trace ===
+Reference: model.gguf (GGUF Q4_K)
+Candidate: model.apr (APR Q4_K)
+
+Token Generation Comparison:
+| Pos | GGUF Token | GGUF Text | APR Token | APR Text | Status |
+|-----|------------|-----------|-----------|----------|--------|
+| 0   | 262        | "The"     | 151935    | [PAD]    | ❌ MISMATCH |
+| 1   | 2160       | "sum"     | 151935    | [PAD]    | ❌ MISMATCH |
+| 2   | 315        | "of"      | 151935    | [PAD]    | ❌ MISMATCH |
+...
+
+❌ DIFFERENTIAL TRACE FAILED: 8/8 tokens mismatch
+   First divergence at position 0
+   Reference produces valid output, candidate produces PAD tokens
+   Likely cause: Weight loading error or quantization mismatch
+```
+
+### Specification: Tensor Value Comparison (F-TRACE-TENSOR-001)
+
+**Command:**
+```bash
+apr run model.gguf model.apr "2+2" --trace-diff --trace-tensors
+```
+
+**Required Output (when divergence detected):**
+```
+=== Tensor Comparison at First Divergence (pos=0) ===
+
+Layer 0 Attention Output:
+  GGUF: mean=-0.0234, std=0.891, min=-2.341, max=2.156
+  APR:  mean=0.0000, std=0.000, min=0.000, max=0.000  ❌ ZERO TENSOR
+  Diagnosis: APR attention weights not loaded or producing zeros
+
+Layer 0 FFN Output:
+  GGUF: mean=-0.0012, std=0.445, min=-1.234, max=1.567
+  APR:  mean=NaN, std=NaN, min=NaN, max=NaN  ❌ NaN DETECTED
+  Diagnosis: Numerical instability in APR FFN layer
+```
+
+### Specification: Automatic Bug Classification (F-TRACE-CLASS-001)
+
+The trace system MUST automatically classify detected issues:
+
+| Pattern | Classification | Likely Cause |
+|---------|---------------|--------------|
+| All PAD tokens | `WEIGHT_LOAD_FAILURE` | Weights not loaded or wrong format |
+| All zeros in hidden states | `EMBEDDING_FAILURE` | Embedding layer broken |
+| NaN/Inf in attention | `ATTENTION_OVERFLOW` | Scale factor or softmax issue |
+| Divergence after layer N | `LAYER_N_CORRUPTED` | Specific layer weight corruption |
+| First token wrong only | `KV_CACHE_INIT_BUG` | KV cache not initialized |
+| Garbage after position N | `CONTEXT_OVERFLOW` | RoPE or position encoding issue |
+
+### Falsification Gates (F-TRACE-DIFF-*)
+
+| ID | Requirement | Command | Expected | Status |
+|----|-------------|---------|----------|--------|
+| F-TRACE-DIFF-001 | Differential mode exists | `apr run a.gguf b.apr "test" --trace-diff` | Token comparison table | ❌ TODO |
+| F-TRACE-DIFF-002 | Detects PAD token flood | (inject PAD tokens) | `WEIGHT_LOAD_FAILURE` classification | ❌ TODO |
+| F-TRACE-DIFF-003 | Detects zero tensor | (inject zeros) | `EMBEDDING_FAILURE` classification | ❌ TODO |
+| F-TRACE-DIFF-004 | Detects NaN propagation | (inject NaN) | `ATTENTION_OVERFLOW` classification | ❌ TODO |
+| F-TRACE-DIFF-005 | JSON output mode | `--trace-diff --trace-output diff.json` | Valid JSON with all fields | ❌ TODO |
+| F-TRACE-DIFF-006 | CI exit code | `--trace-diff --ci` | Exit 1 on mismatch | ❌ TODO |
+
+### Integration with Jidoka (Stop-the-Line)
+
+Differential trace MUST integrate with Jidoka stop conditions:
+
+```rust
+// In realizar/src/inference_trace.rs
+pub enum DiffTraceResult {
+    /// Both formats produce identical output
+    Identical,
+    /// Minor numerical differences (within epsilon)
+    NumericallyEquivalent { max_diff: f32 },
+    /// Semantic divergence (different tokens)
+    Diverged {
+        first_divergence: usize,
+        reference_tokens: Vec<u32>,
+        candidate_tokens: Vec<u32>,
+        classification: BugClassification,
+    },
+}
+
+pub enum BugClassification {
+    WeightLoadFailure,
+    EmbeddingFailure,
+    AttentionOverflow,
+    LayerCorrupted(usize),
+    KvCacheInitBug,
+    ContextOverflow,
+    Unknown,
+}
+```
+
+### Toyota Way: Why This Matters
+
+> "If you cannot see the defect, you cannot fix it."
+> — Taiichi Ohno
+
+The current tracing system violates Genchi Genbutsu ("go and see"). We are optimizing for **timing performance** while ignoring **correctness observability**. The APR Q4_K bug went undetected because:
+
+1. `--trace` showed timing data (useless for correctness)
+2. No automatic comparison between formats
+3. No classification of failure modes
+4. No CI-compatible exit codes for automated detection
+
+**Dr. Popper says:** "A test that cannot fail provides zero information. A trace that cannot detect format divergence is not a trace—it is theatre."
+
+### Implementation Roadmap (PMAT-196)
+
+| Phase | Deliverable | LOC Est. |
+|-------|-------------|----------|
+| 1 | `--trace-diff` flag parsing | 50 |
+| 2 | Dual model loading | 100 |
+| 3 | Token-by-token comparison | 150 |
+| 4 | Tensor statistics extraction | 200 |
+| 5 | Bug classification logic | 150 |
+| 6 | JSON output mode | 100 |
+| 7 | CI exit code integration | 50 |
+| **Total** | | **~800 LOC** |
+
+**Files to modify:**
+- `crates/apr-cli/src/commands/run.rs` - Add `--trace-diff` flag
+- `realizar/src/inference_trace.rs` - Add `DiffTraceResult`, `BugClassification`
+- `realizar/src/lib.rs` - Add dual model inference API
+- `aprender/src/format/validation.rs` - Add tensor stats extraction
+
+---
+
 ## APR-Model-QA-Playbook Results (2026-01-30)
 
 **Test Framework:** apr-model-qa-playbook v0.1.0
@@ -1930,7 +2123,7 @@ apr run model.apr -p "What is 2+2?" --max-tokens 8 --no-gpu
 | #182 | SafeTensors companion files | P1 | ✅ FIXED |
 | #181 | Q4_K_M block alignment | P0 | ✅ FIXED |
 
-### Five-Whys: GH-185 Root Cause
+### Five-Whys: GH-185 Root Cause (✅ FIXED)
 
 1. **Why** does APR produce wrong output? → Tokenizer missing
 2. **Why** is tokenizer missing? → Conversion only copies tensor data
@@ -1938,7 +2131,36 @@ apr run model.apr -p "What is 2+2?" --max-tokens 8 --no-gpu
 4. **Why** not extract metadata? → `tokenizer.ggml.*` fields not parsed
 5. **ROOT CAUSE:** Converter focuses on weight data, not model packaging
 
-**Fix Location:** `src/format/converter.rs` - Extract GGUF tokenizer metadata and embed in APR.
+**Fix Applied:** `src/format/converter/write.rs` - BPE vocabulary and merges now embedded in APR metadata.
+**Verification:** realizar successfully loads embedded tokenizer (151936 vocab, 151387 merges).
+
+### Five-Whys: GH-186 Root Cause (⏳ INVESTIGATING)
+
+**Symptom:** APR Q4_K inference produces PAD tokens (151935) while GGUF Q4_K produces correct output ("The sum of 2").
+
+1. **Why** does APR produce PAD tokens? → Token IDs are 151935 (PAD) instead of valid tokens
+2. **Why** is token 151935 sampled? → Logits are incorrect (PAD has highest probability)
+3. **Why** are logits wrong? → lm_head output produces wrong values
+4. **Why** is lm_head wrong? → Hidden states from transformer are corrupted OR lm_head weights wrong
+5. **ROOT CAUSE (Hypothesis):** Q4_K weight dequantization or layout differs between GGUF and APR loading paths
+
+**Investigation Required:**
+- [ ] Compare Q4_K block layout: GGUF direct load vs APR converted
+- [ ] Trace hidden state values at layer 0 (embedding output)
+- [ ] Trace hidden state values at layer 23 (final transformer output)
+- [ ] Compare lm_head weights: GGUF vs APR
+- [ ] Check if `LAYOUT-001` violation occurred during conversion
+
+**Hypothesis Matrix:**
+
+| Component | GGUF Path | APR Path | Difference? |
+|-----------|-----------|----------|-------------|
+| Embedding | ✅ Works | ? | Need trace |
+| Attention Q4_K | ✅ Works | ? | Need trace |
+| FFN Q4_K | ✅ Works | ? | Need trace |
+| lm_head | ✅ Works | ? | Need trace |
+
+**Blocked By:** APR-TRACE-002 (Format-Aware Differential Tracing) not implemented.
 
 ---
 

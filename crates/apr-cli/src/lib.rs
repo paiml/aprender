@@ -1665,6 +1665,21 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
                 *tolerance,
                 *json || cli.json,
             ),
+            RosettaCommands::DiffTensors {
+                model_a,
+                model_b,
+                mismatches_only,
+                show_values,
+                filter,
+                json,
+            } => rosetta::run_diff_tensors(
+                model_a,
+                model_b,
+                *mismatches_only,
+                *show_values,
+                filter.as_deref(),
+                *json || cli.json,
+            ),
         },
 
         Commands::Publish {

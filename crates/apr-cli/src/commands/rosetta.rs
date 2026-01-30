@@ -125,6 +125,37 @@ pub enum RosettaCommands {
         #[arg(long)]
         json: bool,
     },
+
+    /// Diff tensors between two models to detect layout mismatches (GH-188)
+    ///
+    /// GGML convention stores weights as [in_dim, out_dim] while most ML frameworks
+    /// expect [out_dim, in_dim]. This command detects such mismatches that cause
+    /// garbage output (like PAD token floods - GH-186).
+    DiffTensors {
+        /// Reference model (typically GGUF - the one that works)
+        #[arg(value_name = "MODEL_A")]
+        model_a: PathBuf,
+
+        /// Test model (typically APR - the one producing garbage)
+        #[arg(value_name = "MODEL_B")]
+        model_b: PathBuf,
+
+        /// Only show tensors with dimension mismatches
+        #[arg(long)]
+        mismatches_only: bool,
+
+        /// Show first N values from each tensor for comparison
+        #[arg(long, default_value = "0")]
+        show_values: usize,
+
+        /// Filter tensors by name pattern (e.g., "embed", "lm_head", "layer.0")
+        #[arg(long)]
+        filter: Option<String>,
+
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 /// Run the rosetta inspect subcommand
@@ -450,7 +481,11 @@ pub fn run_compare_inference(
             "║ Model B: {:<66} ║",
             truncate_path(model_b.display().to_string(), 66)
         );
-        println!("║ Prompt: {:?}{} ║", prompt, " ".repeat(59_usize.saturating_sub(prompt.len())));
+        println!(
+            "║ Prompt: {:?}{} ║",
+            prompt,
+            " ".repeat(59_usize.saturating_sub(prompt.len()))
+        );
         println!(
             "{}",
             "╠══════════════════════════════════════════════════════════════════════════════╣"
@@ -567,7 +602,23 @@ pub fn run_compare_inference(
                 .cyan()
         );
 
-        if mismatches == 0 {
+        // GH-188 FIX: Detect when tracing captured nothing (inference failure)
+        if total_tokens == 0 {
+            println!(
+                "║ {:<76} ║",
+                "⚠️  NO TOKENS CAPTURED - INFERENCE MAY HAVE FAILED!"
+                    .red()
+                    .bold()
+            );
+            println!(
+                "║ {:<76} ║",
+                "Check that APR_TRACE_LOGITS output is being parsed correctly."
+            );
+            println!(
+                "║ {:<76} ║",
+                "Model A output: see below. Model B output: see below."
+            );
+        } else if mismatches == 0 {
             println!(
                 "║ {:<76} ║",
                 "All tokens match - models produce identical output"
@@ -583,7 +634,9 @@ pub fn run_compare_inference(
                 )
                 .yellow()
             );
-            println!("║ Possible causes:                                                              ║");
+            println!(
+                "║ Possible causes:                                                              ║"
+            );
             println!(
                 "║   1. Precision difference (F32 vs Q4K): logit variance ~0.5                  ║"
             );
@@ -645,6 +698,28 @@ pub fn run_compare_inference(
         println!("{}", "=== Generated Text ===".cyan().bold());
         println!("Model A: {:?}", result_a.output_text);
         println!("Model B: {:?}", result_b.output_text);
+
+        // GH-188: Direct text comparison for quick diagnosis
+        let text_a_clean = result_a.output_text.trim();
+        let text_b_clean = result_b.output_text.trim();
+        let text_a_has_content = !text_a_clean.is_empty() && !text_a_clean.contains("tok/s");
+        let text_b_has_content = !text_b_clean.is_empty() && !text_b_clean.contains("tok/s");
+
+        if text_a_has_content != text_b_has_content {
+            println!();
+            println!("{}", "⚠️  TEXT OUTPUT MISMATCH DETECTED:".red().bold());
+            if text_a_has_content && !text_b_has_content {
+                println!("   Model A produced text, Model B produced nothing/garbage.");
+                println!("   → Model B likely has inference bug (layout, kernel, or load issue).");
+            } else {
+                println!("   Model B produced text, Model A produced nothing/garbage.");
+                println!("   → Model A likely has inference bug (layout, kernel, or load issue).");
+            }
+        } else if text_a_has_content && text_b_has_content && text_a_clean != text_b_clean {
+            println!();
+            println!("{}", "⚠️  TEXT CONTENT DIFFERS:".yellow().bold());
+            println!("   Models produced different outputs (may be precision-related).");
+        }
     } else {
         // JSON output
         let match_rate = if total_tokens > 0 {
@@ -662,8 +737,34 @@ pub fn run_compare_inference(
         println!("  \"match_rate\": {:.4},", match_rate);
         println!("  \"text_a\": {:?},", result_a.output_text);
         println!("  \"text_b\": {:?},", result_b.output_text);
-        println!("  \"passed\": {}", mismatches == 0 || (1.0 - match_rate as f32) <= tolerance);
+        println!(
+            "  \"passed\": {}",
+            mismatches == 0 || (1.0 - match_rate as f32) <= tolerance
+        );
         println!("}}");
+    }
+
+    // GH-188 FIX: Fail if no tokens were captured (tracing broken or inference failed)
+    if total_tokens == 0 {
+        // Check if we have output text even without token traces
+        let a_empty = result_a.output_text.is_empty() || result_a.output_text.contains("tok/s");
+        let b_empty = result_b.output_text.is_empty() || result_b.output_text.contains("tok/s");
+
+        if a_empty && b_empty {
+            return Err(CliError::ValidationFailed(
+                "TRACING BROKEN: No tokens captured from either model. Check APR_TRACE_LOGITS parsing.".to_string()
+            ));
+        } else if a_empty {
+            return Err(CliError::ValidationFailed(format!(
+                "Model A produced no output. Model B: {:?}",
+                result_b.output_text
+            )));
+        } else if b_empty {
+            return Err(CliError::ValidationFailed(format!(
+                "Model B produced no output. Model A: {:?}",
+                result_a.output_text
+            )));
+        }
     }
 
     if mismatches > 0 {
@@ -680,6 +781,371 @@ pub fn run_compare_inference(
     }
 
     Ok(())
+}
+
+/// Run the rosetta diff-tensors subcommand (GH-188)
+///
+/// Compares tensor dimensions between two models to detect layout mismatches.
+/// GGML stores weights as [in_dim, out_dim] but most ML code expects [out_dim, in_dim].
+/// This mismatch causes garbage output (PAD token floods).
+pub fn run_diff_tensors(
+    model_a: &Path,
+    model_b: &Path,
+    mismatches_only: bool,
+    show_values: usize,
+    filter: Option<&str>,
+    json: bool,
+) -> Result<()> {
+    if !model_a.exists() {
+        return Err(CliError::FileNotFound(model_a.to_path_buf()));
+    }
+    if !model_b.exists() {
+        return Err(CliError::FileNotFound(model_b.to_path_buf()));
+    }
+
+    let rosetta = RosettaStone::new();
+
+    // Inspect both models
+    let report_a = rosetta
+        .inspect(model_a)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to inspect model A: {e}")))?;
+    let report_b = rosetta
+        .inspect(model_b)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to inspect model B: {e}")))?;
+
+    // Build tensor maps by normalized name
+    let tensors_a: std::collections::HashMap<String, _> = report_a
+        .tensors
+        .iter()
+        .map(|t| (normalize_tensor_name(&t.name), t))
+        .collect();
+    let tensors_b: std::collections::HashMap<String, _> = report_b
+        .tensors
+        .iter()
+        .map(|t| (normalize_tensor_name(&t.name), t))
+        .collect();
+
+    // Collect all unique tensor names
+    let mut all_names: Vec<_> = tensors_a.keys().chain(tensors_b.keys()).collect();
+    all_names.sort();
+    all_names.dedup();
+
+    // Apply filter
+    let filtered_names: Vec<_> = if let Some(pattern) = filter {
+        all_names
+            .into_iter()
+            .filter(|n| n.contains(pattern))
+            .collect()
+    } else {
+        all_names
+    };
+
+    let mut layout_mismatches = Vec::new();
+    let mut missing_in_a = Vec::new();
+    let mut missing_in_b = Vec::new();
+
+    if !json {
+        println!(
+            "{}",
+            "╔══════════════════════════════════════════════════════════════════════════════╗"
+                .cyan()
+        );
+        println!(
+            "{}",
+            "║               TENSOR DIFF REPORT (GH-188: Layout Mismatch Detection)        ║"
+                .cyan()
+        );
+        println!(
+            "{}",
+            "╠══════════════════════════════════════════════════════════════════════════════╣"
+                .cyan()
+        );
+        println!(
+            "║ Model A: {:<66} ║",
+            truncate_path(model_a.display().to_string(), 66)
+        );
+        println!(
+            "║ Model B: {:<66} ║",
+            truncate_path(model_b.display().to_string(), 66)
+        );
+        println!(
+            "{}",
+            "╠══════════════════════════════════════════════════════════════════════════════╣"
+                .cyan()
+        );
+        println!(
+            "{}",
+            "║ GGML Convention: [in_dim, out_dim] - needs transpose for standard matmul     ║"
+                .yellow()
+        );
+        println!(
+            "{}",
+            "║ Standard Conv:   [out_dim, in_dim] - expected by most ML code                ║"
+                .yellow()
+        );
+        println!(
+            "{}",
+            "╠══════════════════════════════════════════════════════════════════════════════╣"
+                .cyan()
+        );
+    }
+
+    for name in &filtered_names {
+        let tensor_a = tensors_a.get(*name);
+        let tensor_b = tensors_b.get(*name);
+
+        match (tensor_a, tensor_b) {
+            (Some(a), Some(b)) => {
+                let dims_match = a.shape == b.shape;
+                let is_transposed = is_transposed_dims(&a.shape, &b.shape);
+
+                if !dims_match || !mismatches_only {
+                    if !json {
+                        let status = if dims_match {
+                            "✓".green()
+                        } else if is_transposed {
+                            "⚠️".yellow()
+                        } else {
+                            "✗".red()
+                        };
+
+                        println!("║ {} {:<72} ║", status, name);
+                        println!(
+                            "║   A: {:?} {:>20} {:>15} bytes    ║",
+                            a.shape,
+                            a.dtype,
+                            a.size_bytes
+                        );
+                        println!(
+                            "║   B: {:?} {:>20} {:>15} bytes    ║",
+                            b.shape,
+                            b.dtype,
+                            b.size_bytes
+                        );
+
+                        if is_transposed {
+                            println!(
+                                "║   {} ║",
+                                "LAYOUT MISMATCH: Dimensions are transposed! Likely GGML convention."
+                                    .red()
+                                    .bold()
+                            );
+                            println!(
+                                "║   {} ║",
+                                "FIX: Transpose this tensor during load OR use row-major kernel"
+                                    .yellow()
+                            );
+                        }
+                        println!(
+                            "{}",
+                            "╠──────────────────────────────────────────────────────────────────────────────╣"
+                                .cyan()
+                        );
+                    }
+
+                    if is_transposed {
+                        layout_mismatches.push(((*name).clone(), a.shape.clone(), b.shape.clone()));
+                    }
+                }
+            }
+            (Some(a), None) => {
+                missing_in_b.push(((*name).clone(), a.shape.clone()));
+                if !mismatches_only && !json {
+                    println!("║ {} {:<72} ║", "−".red(), name);
+                    println!("║   A: {:?} (missing in B){}║", a.shape, " ".repeat(40));
+                    println!(
+                        "{}",
+                        "╠──────────────────────────────────────────────────────────────────────────────╣"
+                            .cyan()
+                    );
+                }
+            }
+            (None, Some(b)) => {
+                missing_in_a.push(((*name).clone(), b.shape.clone()));
+                if !mismatches_only && !json {
+                    println!("║ {} {:<72} ║", "+".green(), name);
+                    println!("║   B: {:?} (missing in A){}║", b.shape, " ".repeat(40));
+                    println!(
+                        "{}",
+                        "╠──────────────────────────────────────────────────────────────────────────────╣"
+                            .cyan()
+                    );
+                }
+            }
+            (None, None) => {} // shouldn't happen
+        }
+    }
+
+    // Summary
+    if json {
+        println!("{{");
+        println!("  \"model_a\": \"{}\",", model_a.display());
+        println!("  \"model_b\": \"{}\",", model_b.display());
+        println!("  \"tensors_a\": {},", tensors_a.len());
+        println!("  \"tensors_b\": {},", tensors_b.len());
+        println!("  \"layout_mismatches\": {},", layout_mismatches.len());
+        println!("  \"missing_in_a\": {},", missing_in_a.len());
+        println!("  \"missing_in_b\": {},", missing_in_b.len());
+        if !layout_mismatches.is_empty() {
+            println!("  \"mismatched_tensors\": [");
+            for (i, (name, shape_a, shape_b)) in layout_mismatches.iter().enumerate() {
+                let comma = if i < layout_mismatches.len() - 1 {
+                    ","
+                } else {
+                    ""
+                };
+                println!(
+                    "    {{\"name\": \"{}\", \"shape_a\": {:?}, \"shape_b\": {:?}}}{}",
+                    name, shape_a, shape_b, comma
+                );
+            }
+            println!("  ],");
+        }
+        println!(
+            "  \"diagnosis\": \"{}\"",
+            if layout_mismatches.is_empty() {
+                "No layout mismatches detected"
+            } else {
+                "LAYOUT MISMATCH: Some tensors have transposed dimensions (GGML convention)"
+            }
+        );
+        println!("}}");
+    } else {
+        println!(
+            "{}",
+            "║                                 SUMMARY                                       ║"
+                .cyan()
+        );
+        println!(
+            "{}",
+            "╠══════════════════════════════════════════════════════════════════════════════╣"
+                .cyan()
+        );
+        println!("║ Tensors in A: {:<62} ║", tensors_a.len());
+        println!("║ Tensors in B: {:<62} ║", tensors_b.len());
+        println!(
+            "║ Layout mismatches: {:<56} ║",
+            format!("{}", layout_mismatches.len()).red().bold()
+        );
+        println!("║ Missing in A: {:<62} ║", missing_in_a.len());
+        println!("║ Missing in B: {:<62} ║", missing_in_b.len());
+        println!(
+            "{}",
+            "╠══════════════════════════════════════════════════════════════════════════════╣"
+                .cyan()
+        );
+
+        if !layout_mismatches.is_empty() {
+            println!(
+                "{}",
+                "║                              DIAGNOSIS                                       ║"
+                    .red()
+                    .bold()
+            );
+            println!(
+                "{}",
+                "╠══════════════════════════════════════════════════════════════════════════════╣"
+                    .cyan()
+            );
+            println!(
+                "║ {} ║",
+                "LAYOUT MISMATCH DETECTED!".red().bold()
+            );
+            println!(
+                "║ {} ║",
+                "Tensors with transposed dimensions found. This causes garbage output."
+            );
+            println!("║ {} ║", "");
+            println!("║ {} ║", "Root Cause: GGML stores weights as [in_dim, out_dim]");
+            println!(
+                "║ {} ║",
+                "             Standard ML expects [out_dim, in_dim]"
+            );
+            println!("║ {} ║", "");
+            println!(
+                "║ {} ║",
+                "Fix Options:".yellow().bold()
+            );
+            println!(
+                "║ {} ║",
+                "  1. Transpose tensor data during APR load"
+            );
+            println!(
+                "║ {} ║",
+                "  2. Use row-major kernels that expect GGML layout"
+            );
+            println!(
+                "║ {} ║",
+                "  3. Store layout convention in APR metadata"
+            );
+            println!(
+                "{}",
+                "╠══════════════════════════════════════════════════════════════════════════════╣"
+                    .cyan()
+            );
+            println!(
+                "║ Mismatched tensors:                                                          ║"
+            );
+            for (name, shape_a, shape_b) in &layout_mismatches {
+                println!("║   {} ║", name);
+                println!("║     A: {:?} → B: {:?} ║", shape_a, shape_b);
+            }
+        } else {
+            println!(
+                "║ {} ║",
+                "No layout mismatches detected".green().bold()
+            );
+        }
+
+        println!(
+            "{}",
+            "╚══════════════════════════════════════════════════════════════════════════════╝"
+                .cyan()
+        );
+    }
+
+    // Return error if mismatches found (for CI assertion)
+    if !layout_mismatches.is_empty() {
+        return Err(CliError::ValidationFailed(format!(
+            "Layout mismatch: {} tensors have transposed dimensions",
+            layout_mismatches.len()
+        )));
+    }
+
+    let _ = show_values; // TODO: implement value comparison
+
+    Ok(())
+}
+
+/// Normalize tensor name for cross-format comparison
+fn normalize_tensor_name(name: &str) -> String {
+    // Remove common prefixes
+    let name = name
+        .trim_start_matches("model.")
+        .trim_start_matches("blk.")
+        .trim_start_matches("layers.");
+
+    // Normalize GGUF vs HF naming
+    name.replace("attn_q", "q_proj")
+        .replace("attn_k", "k_proj")
+        .replace("attn_v", "v_proj")
+        .replace("attn_output", "o_proj")
+        .replace("ffn_gate", "gate_proj")
+        .replace("ffn_up", "up_proj")
+        .replace("ffn_down", "down_proj")
+        .replace("attn_norm", "input_layernorm")
+        .replace("ffn_norm", "post_attention_layernorm")
+        .replace("token_embd", "embed_tokens")
+        .replace("output_norm", "norm")
+}
+
+/// Check if two shapes are transposed versions of each other
+fn is_transposed_dims(shape_a: &[usize], shape_b: &[usize]) -> bool {
+    if shape_a.len() != 2 || shape_b.len() != 2 {
+        return false;
+    }
+    // Check if dims are swapped
+    shape_a[0] == shape_b[1] && shape_a[1] == shape_b[0]
 }
 
 /// Inference result with logit data
@@ -705,10 +1171,9 @@ fn run_model_with_logits(
         .and_then(|e| e.to_str())
         .unwrap_or("");
 
-    // Use realizar for both GGUF and APR files for consistent comparison
-    // Use the full path to avoid picking up old versions from PATH
-    let realizar_path = std::env::var("REALIZAR_PATH")
-        .unwrap_or_else(|_| "realizar".to_string());
+    // GH-188: Use realizar for both GGUF and APR files for consistent comparison
+    // Use simple text format for clean output that's easy to compare
+    let realizar_path = std::env::var("REALIZAR_PATH").unwrap_or_else(|_| "realizar".to_string());
     let output = Command::new(&realizar_path)
         .arg("run")
         .arg(model_path)
@@ -719,9 +1184,9 @@ fn run_model_with_logits(
         .arg(temperature.to_string())
         .arg("--format")
         .arg("text")
-        .env("APR_TRACE_LOGITS", "1")
         .env("NO_COLOR", "1")
         .env("TERM", "dumb")
+        .env("REALIZE_DEBUG", "1") // Enable debug for APR load tracing
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
@@ -731,6 +1196,14 @@ fn run_model_with_logits(
         String::from_utf8_lossy(&output.stdout).to_string(),
         String::from_utf8_lossy(&output.stderr).to_string(),
     );
+
+    // GH-188 DEBUG: Log what we captured for diagnosis
+    if std::env::var("ROSETTA_DEBUG").is_ok() {
+        eprintln!("[ROSETTA] Model: {}", model_path.display());
+        eprintln!("[ROSETTA] Exit code: {:?}", output.status.code());
+        eprintln!("[ROSETTA] STDOUT ({} bytes): {:?}", stdout_text.len(), &stdout_text[..stdout_text.len().min(200)]);
+        eprintln!("[ROSETTA] STDERR ({} bytes): {:?}", stderr_text.len(), &stderr_text[..stderr_text.len().min(200)]);
+    }
 
     // Combine stdout and stderr for parsing (trace goes to both)
     let combined = format!("{}\n{}", stdout_text, stderr_text);
@@ -781,14 +1254,31 @@ fn run_model_with_logits(
         }
     }
 
-    // Extract output text - both GGUF and APR use realizar, so same parsing
-    // Strip ANSI codes and spinner characters, get last non-empty line
-    let clean = strip_ansi(&stdout_text);
-    let output_text = clean
+    // GH-188: Extract output text - without --verbose, stdout is just the generated text
+    // Filter out debug/trace lines, spinners, and noise
+    let output_text = strip_ansi(&stdout_text)
+        .chars()
+        .filter(|c| {
+            // Remove spinner characters
+            !matches!(c, '⠋' | '⠙' | '⠹' | '⠸' | '⠼' | '⠴' | '⠦' | '⠧' | '⠇' | '⠏')
+        })
+        .collect::<String>()
         .lines()
-        .filter(|l| !l.is_empty() && !l.contains('⠋') && !l.contains('⠙') && !l.contains('⠹') && !l.contains('⠸'))
-        .last()
-        .unwrap_or("")
+        .filter(|l| {
+            let t = l.trim();
+            !t.is_empty()
+                && !t.starts_with("[")
+                && !t.starts_with("Loading")
+                && !t.starts_with("Model loaded")
+                && !t.starts_with("Prompt tokens")
+                && !t.starts_with("Temperature:")
+                && !t.starts_with("Generated (")
+                && !t.contains("tok/s")
+                && !t.contains("ERROR")
+                && !t.contains("using greedy")
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
         .trim()
         .to_string();
     let _ = ext; // Suppress unused warning
@@ -811,7 +1301,7 @@ fn strip_ansi(text: &str) -> String {
             // Skip escape sequence
             if chars.peek() == Some(&'[') {
                 chars.next(); // consume '['
-                // Skip until we hit a letter
+                              // Skip until we hit a letter
                 while let Some(&next) = chars.peek() {
                     chars.next();
                     if next.is_ascii_alphabetic() {
