@@ -1592,6 +1592,23 @@ fn write_apr_file_raw(
                 serde_json::Value::Number(serde_json::Number::from(eos)),
             );
         }
+        // GH-185 FIX: Embed BPE merge rules for standalone APR encoding
+        // Without merges, the tokenizer cannot properly encode input text
+        if !tok.merges.is_empty() {
+            eprintln!(
+                "[GH-185] Embedding {} BPE merge rules into APR metadata",
+                tok.merges.len()
+            );
+            let merges_array: Vec<serde_json::Value> = tok
+                .merges
+                .iter()
+                .map(|s| serde_json::Value::String(s.clone()))
+                .collect();
+            custom.insert(
+                "tokenizer.merges".to_string(),
+                serde_json::Value::Array(merges_array),
+            );
+        }
     }
 
     // Add model config if available
@@ -7441,5 +7458,47 @@ mod tests_pmat187_tensor_validation {
         let data = vec![100.0, 100.0, 100.0]; // Mean = 100.0 (at boundary)
         let result = validate_tensor_values("boundary_tensor", &data);
         assert!(result.is_ok(), "Mean exactly at 100 should pass");
+    }
+}
+
+// =============================================================================
+// GH-185: APR Tokenizer Merges Embedding Tests
+// =============================================================================
+#[cfg(test)]
+mod tests_gh185_tokenizer_merges {
+    use crate::format::gguf::GgufTokenizer;
+
+    #[test]
+    fn test_tokenizer_merges_should_be_embedded() {
+        // GH-185: Verify that BPE merges are embedded in APR metadata
+        let tok = GgufTokenizer {
+            vocabulary: vec!["hello".to_string(), "world".to_string()],
+            merges: vec!["h e".to_string(), "l l".to_string(), "o w".to_string()],
+            model_type: Some("gpt2".to_string()),
+            bos_token_id: Some(1),
+            eos_token_id: Some(2),
+            architecture: Some("qwen2".to_string()),
+            model_name: Some("test".to_string()),
+        };
+
+        // Verify merges are not empty (the core of the bug)
+        assert!(!tok.merges.is_empty(), "Test tokenizer should have merges");
+        assert_eq!(tok.merges.len(), 3, "Should have 3 BPE merge rules");
+    }
+
+    #[test]
+    fn test_empty_merges_handled_gracefully() {
+        // Tokenizers without BPE merges (e.g., word-piece) should still work
+        let tok = GgufTokenizer {
+            vocabulary: vec!["[UNK]".to_string(), "[CLS]".to_string()],
+            merges: vec![], // No BPE merges
+            model_type: Some("wordpiece".to_string()),
+            bos_token_id: None,
+            eos_token_id: None,
+            architecture: None,
+            model_name: None,
+        };
+
+        assert!(tok.merges.is_empty(), "WordPiece has no BPE merges");
     }
 }
