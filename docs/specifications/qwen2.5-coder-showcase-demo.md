@@ -1,8 +1,9 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 5.76.0
+**Version:** 5.77.0
 **Status:** ✅ 18 closed, 0 open bugs (GH-184 verified working)
 **Popperian Score:** 100/100
+**Code Coverage:** 96.16% (target: ≥95%)
 **Author:** PAIML Engineering
 **Date:** 2026-01-30
 **Last Falsification Run:** 2026-01-30 (CI parity gates, format conversion status)
