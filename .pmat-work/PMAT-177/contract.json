@@ -1,0 +1,37 @@
+{
+  "work_item_id": "PMAT-177",
+  "github_issue": 172,
+  "title": "Fix format conversion NaN corruption - Add validation + scale clamping",
+  "created_at": "2026-01-30T00:00:00Z",
+  "status": "in_progress",
+  "severity": "P0",
+  "root_cause": "f16 scale factor precision loss in Q4_K/Q6_K dequant→requant cycles causes underflow to NaN",
+  "five_whys": [
+    "WHY NaN in round-trip? → dequantize_q4_k_to_f32() outputs NaN values",
+    "WHY NaN in dequantize? → Scale factors d/dmin become invalid after f16 encoding",
+    "WHY invalid scales? → f16 has min normal ~6.1e-5, scales below that underflow",
+    "WHY underflow? → quantize_q4_k() uses 1e-10 fallback which can't be encoded in f16",
+    "ROOT CAUSE: No validation of scale factors after f16 round-trip, no NaN detection in conversion pipeline"
+  ],
+  "toyota_way_principle": "Built-in Quality (Jidoka) - Detect defects at the source, not downstream",
+  "fix": {
+    "immediate": [
+      "Add NaN/Inf validation after all dequantization operations",
+      "Fail fast with actionable error if NaN detected"
+    ],
+    "short_term": [
+      "Clamp scale factors to valid f16 range (min=6.1e-5)",
+      "Add debug logging for scale underflow detection"
+    ],
+    "files_to_modify": [
+      "src/format/converter.rs - dequantize_q4_k_to_f32() line 3016",
+      "src/format/converter.rs - quantize_q4_k() line 3247",
+      "src/format/converter.rs - conversion pipeline line 2903"
+    ]
+  },
+  "verification": [
+    "Round-trip conversion NEVER produces NaN or Inf",
+    "Scale factors clamped to f16 normal range",
+    "Validation errors surfaced immediately with actionable message"
+  ]
+}

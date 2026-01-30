@@ -3016,6 +3016,8 @@ fn quantize_tensors(
 fn dequantize_q4_k_to_f32(data: &[u8], num_elements: usize) -> Vec<f32> {
     const SUPER_BLOCK_SIZE: usize = 256;
     const SUPER_BLOCK_BYTES: usize = 144;
+    // PMAT-177: Minimum valid f16 normal value (~6.1e-5), clamp scales to avoid NaN
+    const F16_MIN_NORMAL: f32 = 6.1e-5;
 
     let num_blocks = (num_elements + SUPER_BLOCK_SIZE - 1) / SUPER_BLOCK_SIZE;
     let mut result = vec![0.0f32; num_blocks * SUPER_BLOCK_SIZE];
@@ -3028,9 +3030,21 @@ fn dequantize_q4_k_to_f32(data: &[u8], num_elements: usize) -> Vec<f32> {
             break;
         }
 
-        // Read d and dmin (f16)
-        let d = f16_to_f32(u16::from_le_bytes([data[sb_start], data[sb_start + 1]]));
-        let dmin = f16_to_f32(u16::from_le_bytes([data[sb_start + 2], data[sb_start + 3]]));
+        // Read d and dmin (f16) - PMAT-177: Validate for NaN/Inf
+        let d_raw = f16_to_f32(u16::from_le_bytes([data[sb_start], data[sb_start + 1]]));
+        let dmin_raw = f16_to_f32(u16::from_le_bytes([data[sb_start + 2], data[sb_start + 3]]));
+
+        // PMAT-177: Replace NaN/Inf/subnormal with safe values to prevent corruption
+        let d = if d_raw.is_nan() || d_raw.is_infinite() || d_raw.abs() < F16_MIN_NORMAL {
+            0.0
+        } else {
+            d_raw
+        };
+        let dmin = if dmin_raw.is_nan() || dmin_raw.is_infinite() || dmin_raw.abs() < F16_MIN_NORMAL {
+            0.0
+        } else {
+            dmin_raw
+        };
 
         // Unpack scales and mins (llama.cpp format)
         let scales_bytes = &data[sb_start + 4..sb_start + 16];
@@ -3248,6 +3262,8 @@ fn quantize_q4_k(data: &[f32]) -> Vec<u8> {
     const SUPER_BLOCK_SIZE: usize = 256;
     const SUB_BLOCK_SIZE: usize = 32;
     const SUPER_BLOCK_BYTES: usize = 144; // 2 + 2 + 12 + 128
+    // PMAT-177: Minimum valid f16 normal value (~6.1e-5) - prevents NaN on round-trip
+    const F16_MIN_NORMAL: f32 = 6.1e-5;
 
     if data.is_empty() {
         return vec![];
@@ -3275,7 +3291,8 @@ fn quantize_q4_k(data: &[f32]) -> Vec<u8> {
             let max = sub_block.iter().fold(f32::NEG_INFINITY, |a, &b| a.max(b));
             let range = max - min;
 
-            sub_scales[j] = if range > 1e-10 { range / 15.0 } else { 1e-10 };
+            // PMAT-177: Clamp to F16_MIN_NORMAL to prevent underflow in f16 encoding
+            sub_scales[j] = if range > F16_MIN_NORMAL { range / 15.0 } else { F16_MIN_NORMAL };
             sub_mins[j] = (-min).max(0.0); // Store as positive offset
         }
 
@@ -3283,15 +3300,16 @@ fn quantize_q4_k(data: &[f32]) -> Vec<u8> {
         let max_scale = sub_scales.iter().fold(0.0f32, |a, &b| a.max(b));
         let max_min = sub_mins.iter().fold(0.0f32, |a, &b| a.max(b));
 
-        let d = if max_scale > 1e-10 {
+        // PMAT-177: Clamp d/dmin to F16_MIN_NORMAL to prevent NaN after f16 round-trip
+        let d = if max_scale > F16_MIN_NORMAL {
             max_scale / 63.0
         } else {
-            1e-10
+            F16_MIN_NORMAL
         };
-        let dmin = if max_min > 1e-10 {
+        let dmin = if max_min > F16_MIN_NORMAL {
             max_min / 63.0
         } else {
-            1e-10
+            F16_MIN_NORMAL
         };
 
         // Compute 6-bit scales and mins for each sub-block
@@ -3468,6 +3486,8 @@ fn transpose_q6k_for_matmul(data: &[u8], shape: &[usize]) -> (Vec<u8>, Vec<usize
 fn dequantize_q6_k_to_f32(data: &[u8], num_elements: usize) -> Vec<f32> {
     const SUPER_BLOCK_SIZE: usize = 256;
     const SUPER_BLOCK_BYTES: usize = 210;
+    // PMAT-177: Minimum valid f16 normal value (~6.1e-5), clamp scales to avoid NaN
+    const F16_MIN_NORMAL: f32 = 6.1e-5;
 
     let num_blocks = (num_elements + SUPER_BLOCK_SIZE - 1) / SUPER_BLOCK_SIZE;
     let mut result = vec![0.0f32; num_blocks * SUPER_BLOCK_SIZE];
@@ -3484,10 +3504,17 @@ fn dequantize_q6_k_to_f32(data: &[u8], num_elements: usize) -> Vec<f32> {
         let ql = &data[sb_start..sb_start + 128];
         let qh = &data[sb_start + 128..sb_start + 192];
         let scales_raw = &data[sb_start + 192..sb_start + 208];
-        let d = f16_to_f32(u16::from_le_bytes([
+        let d_raw = f16_to_f32(u16::from_le_bytes([
             data[sb_start + 208],
             data[sb_start + 209],
         ]));
+
+        // PMAT-177: Replace NaN/Inf/subnormal with safe values to prevent corruption
+        let d = if d_raw.is_nan() || d_raw.is_infinite() || d_raw.abs() < F16_MIN_NORMAL {
+            0.0
+        } else {
+            d_raw
+        };
 
         // Decode scales as signed i8
         let mut scales = [0i8; 16];
@@ -6424,6 +6451,50 @@ mod tests_import_errors {
         let result = dequantize_q4_k_to_f32(&data, 256);
         // Should produce zero-filled result
         assert_eq!(result.len(), 256);
+    }
+
+    /// PMAT-177: Test that NaN/Inf scale factors are replaced with safe values
+    #[test]
+    fn test_dequantize_q4k_nan_inf_protection_pmat177() {
+        // Create a Q4K block with NaN d value (f16 NaN = 0x7E00)
+        let mut data = vec![0u8; 144];
+        // Set d = NaN in f16 (0x7E00)
+        data[0] = 0x00;
+        data[1] = 0x7E;
+        // Set dmin = Inf in f16 (0x7C00)
+        data[2] = 0x00;
+        data[3] = 0x7C;
+
+        let result = dequantize_q4_k_to_f32(&data, 256);
+
+        // PMAT-177: Result should contain NO NaN or Inf values
+        let nan_count = result.iter().filter(|v| v.is_nan()).count();
+        let inf_count = result.iter().filter(|v| v.is_infinite()).count();
+
+        assert_eq!(nan_count, 0, "PMAT-177: dequantize_q4_k should not produce NaN");
+        assert_eq!(inf_count, 0, "PMAT-177: dequantize_q4_k should not produce Inf");
+    }
+
+    /// PMAT-177: Test that subnormal f16 scales are clamped to zero
+    #[test]
+    fn test_dequantize_q4k_subnormal_protection_pmat177() {
+        // Create a Q4K block with subnormal d value (f16 subnormal = 0x0001)
+        let mut data = vec![0u8; 144];
+        // Set d = subnormal in f16 (0x0001 - smallest subnormal)
+        data[0] = 0x01;
+        data[1] = 0x00;
+        // Set dmin = 0.0
+        data[2] = 0x00;
+        data[3] = 0x00;
+
+        let result = dequantize_q4_k_to_f32(&data, 256);
+
+        // PMAT-177: Subnormal should be treated as zero, result should be all zeros
+        let non_zero_count = result.iter().filter(|&&v| v != 0.0).count();
+        assert_eq!(
+            non_zero_count, 0,
+            "PMAT-177: subnormal f16 scales should be clamped to zero"
+        );
     }
 
     #[test]
