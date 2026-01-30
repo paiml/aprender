@@ -121,8 +121,8 @@ fn run_real_checks_apr(path: &Path) -> Result<Vec<StageResult>, CliError> {
         details: Some(format!("tokens={:?}", test_tokens)),
     });
 
-    // Stage 2: Embedding
-    let has_embed = tensor_names.iter().any(|n| n.contains("embed") || n.contains("wte"));
+    // Stage 2: Embedding (check for various naming conventions)
+    let has_embed = tensor_names.iter().any(|n| n.contains("emb") || n.contains("wte") || n.contains("token_embd"));
     results.push(StageResult {
         name: "Embedding",
         eli5: "Numbers → vectors",
