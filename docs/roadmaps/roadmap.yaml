@@ -1645,7 +1645,7 @@ roadmap:
   priority: critical
   assigned_to: null
   created: 2026-01-21T16:49:43Z
-  updated: 2026-01-21T16:49:49.584195704+00:00
+  updated: 2026-01-29T22:22:06.550972032+00:00
   spec: null
   acceptance_criteria:
   - Extract optimizers into separate files to reduce optim/mod.rs from 7090 to <2000 lines
@@ -2284,6 +2284,103 @@ roadmap:
   assigned_to: null
   created: 2026-01-28T17:42:30Z
   updated: 2026-01-28T17:42:36.672183931+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-122
+  github_issue: null
+  item_type: task
+  title: 'PMAT-123: Continue systematic falsification testing'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-01-28T20:38:31Z
+  updated: 2026-01-28T20:52:33.632764177+00:00
+  spec: null
+  acceptance_criteria:
+  - Continue falsification of qwen2.5-coder-showcase-demo.md spec claims
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-124
+  github_issue: null
+  item_type: task
+  title: 'New task: PMAT-124'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-01-28T20:53:22.329521595+00:00
+  updated: 2026-01-28T20:53:22.329521595+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: 'PMAT-127: Fix F-APR-GGUF - APR from GGUF produces garbage'
+  github_issue: null
+  item_type: task
+  title: 'New task: PMAT-127: Fix F-APR-GGUF - APR from GGUF produces garbage'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-01-28T23:40:09.296872973+00:00
+  updated: 2026-01-28T23:40:09.296872973+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: 'PMAT-129: Fix F-SAFETENSORS-GPU - apr run should support SafeTensors GPU'
+  github_issue: null
+  item_type: task
+  title: 'New task: PMAT-129: Fix F-SAFETENSORS-GPU - apr run should support SafeTensors GPU'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-01-29T07:44:56.916841389+00:00
+  updated: 2026-01-29T07:44:56.916841389+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: 'PMAT-130: Fix F-Q4_0 - GGUF Q4_0 dequantization produces garbage'
+  github_issue: null
+  item_type: task
+  title: 'New task: PMAT-130: Fix F-Q4_0 - GGUF Q4_0 dequantization produces garbage'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-01-29T07:51:38.043099434+00:00
+  updated: 2026-01-29T07:51:38.043099434+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: 'PMAT-131: Fix F-UX-033 - SafeTensors CPU should display backend type'
+  github_issue: null
+  item_type: task
+  title: 'New task: PMAT-131: Fix F-UX-033 - SafeTensors CPU should display backend type'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-01-29T08:06:40.076272804+00:00
+  updated: 2026-01-29T08:06:40.076272804+00:00
   spec: null
   acceptance_criteria: []
   phases: []

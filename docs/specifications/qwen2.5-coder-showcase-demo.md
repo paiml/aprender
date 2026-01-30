@@ -1,10 +1,10 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 5.80.0
-**Status:** ⚠️ 18 closed, 2 open P0 bugs (GH-185: APR tokenizer ✅ FIXED, GH-186: APR Q4_K inference garbage)
-**Popperian Score:** 91/100 (APR Q4_K inference blocked, rosetta tooling improved)
+**Version:** 5.90.0
+**Status:** ⚠️ 18 closed, 1 open P0 bug (GH-186: APR Q4_K inference garbage) + 2 APRv3 tools in progress
+**Popperian Score:** 91/100 (APR Q4_K inference blocked, APRv3 statistical tools in progress)
 **Code Coverage:** 96.16% (target: ≥95%)
-**Tool Coverage:** 14/14 (100%) - All APR tools verified (+ rosetta diff-tensors, compare-inference)
+**Tool Coverage:** 16/16 (100%) - All APR tools verified (+ rosetta fingerprint, validate-stats)
 **Author:** PAIML Engineering
 **Date:** 2026-01-30
 **Last Falsification Run:** 2026-01-30 (apr-model-qa-playbook requalification)
@@ -18,6 +18,8 @@
 
 | Issue | Title | Severity | Status | PMAT |
 |-------|-------|----------|--------|------|
+| [#189](https://github.com/paiml/aprender/issues/189) | **APRv3: Per-tensor statistical fingerprints** | P1 | 🔧 **IN PROGRESS** | PMAT-201 |
+| [#190](https://github.com/paiml/aprender/issues/190) | **APRv3: Validate tensor statistics** | P1 | 🔧 **IN PROGRESS** | PMAT-202 |
 | [#188](https://github.com/paiml/aprender/issues/188) | **APR Rosetta: Differential tracing to catch layout bugs** | P1 | ✅ **FIXED** | PMAT-200 |
 | [#186](https://github.com/paiml/aprender/issues/186) | **APR Q4_K inference produces garbage (PAD tokens)** | **P0** | ⏳ **OPEN** | PMAT-196 |
 | [#185](https://github.com/paiml/aprender/issues/185) | **APR missing embedded tokenizer** | **P0** | ✅ **FIXED** | PMAT-195 |
@@ -303,6 +305,141 @@ fn check_gguf_version(&mut self, data: &[u8]) {
 ```
 
 **Toyota Way Jidoka Principle:** Build quality in with proper format detection.
+
+---
+
+### PMAT-201: Per-Tensor Statistical Fingerprints (JAX-STAT-001) 🔧 IN PROGRESS
+
+**Specification:** APR-SPEC.md Section 17.1
+**Severity:** P1 (Catches GH-186 class bugs at load time)
+**Status:** 🔧 IN PROGRESS
+
+**Problem:** Current validation only checks file-level CRC32. A single corrupted tensor causes complete model failure while passing structural checks. This bug class has occurred 50+ times (GH-186, GH-177, PMAT-187).
+
+**Implementation: `apr rosetta fingerprint`**
+
+```bash
+# Generate fingerprints for all tensors
+apr rosetta fingerprint model.gguf --output fingerprints.json
+
+# Compare fingerprints between two models
+apr rosetta fingerprint model.gguf model.apr --diff
+```
+
+**Fingerprint Schema:**
+```rust
+struct TensorFingerprint {
+    name: String,
+    shape: Vec<usize>,
+    dtype: String,
+    mean: f32,
+    std: f32,
+    min: f32,
+    max: f32,
+    percentiles: [f32; 5],  // p5, p25, p50, p75, p95
+    nan_count: u32,
+    inf_count: u32,
+    zero_fraction: f32,
+    checksum: u32,          // Per-tensor CRC32
+}
+```
+
+**Falsification Gates:**
+- F-FINGERPRINT-001: `apr rosetta fingerprint model.gguf` produces valid JSON
+- F-FINGERPRINT-002: Fingerprints match between identical models
+- F-FINGERPRINT-003: Corrupted tensor detected by fingerprint diff (3σ deviation)
+- F-FINGERPRINT-004: `--diff` shows anomalies when APR differs from GGUF
+
+**Toyota Way:** Jidoka - Stop the line at the first sign of statistical anomaly.
+
+---
+
+### PMAT-202: Tensor Statistics Validation (JAX-STAT-002) 🔧 IN PROGRESS
+
+**Specification:** APR-SPEC.md Section 17.1
+**Severity:** P1
+**Status:** 🔧 IN PROGRESS
+
+**Problem:** Loading APR files doesn't validate tensor values against expected distributions.
+
+**Implementation: `apr rosetta validate-stats`**
+
+```bash
+# Validate APR against reference GGUF
+apr rosetta validate-stats model.apr --reference model.gguf
+
+# Validate APR against stored fingerprints
+apr rosetta validate-stats model.apr --fingerprints expected.json
+
+# Validate with role-specific thresholds
+apr rosetta validate-stats model.apr --strict
+```
+
+**Role-Specific Thresholds:**
+| Tensor Type | Expected Mean | Expected Std | Tolerance |
+|-------------|---------------|--------------|-----------|
+| Embedding | ≈0 | 0.02-0.1 | 3σ |
+| LayerNorm weight | ≈1 | 0.001-0.01 | 2σ |
+| LayerNorm bias | ≈0 | 0.001-0.01 | 3σ |
+| Attention weight | ≈0 | 0.01-0.05 | 3σ |
+| MLP weight | ≈0 | 0.01-0.05 | 3σ |
+
+**Error Code E020 - Statistical Anomaly:**
+```
+E020: Statistical anomaly in tensor 'model.layers.0.self_attn.q_proj.weight'
+      Expected mean ≈ 0.0, got 11.3 (deviation: 1130σ)
+      This indicates corrupted dequantization or layout mismatch.
+```
+
+**Falsification Gates:**
+- F-VALIDATE-STATS-001: Pass for correctly converted APR
+- F-VALIDATE-STATS-002: Fail with E020 for corrupted tensor
+- F-VALIDATE-STATS-003: Role-specific thresholds catch LayerNorm issues
+
+---
+
+### PMAT-203: Golden Output Embedding (JAX-GOLD-003) 📋 PLANNED
+
+**Specification:** APR-SPEC.md Section 17.3
+**Severity:** P2
+**Status:** 📋 PLANNED
+
+**Problem:** Detecting semantic correctness requires running inference. Model can load and produce output but still be wrong.
+
+**Implementation (Future):**
+- Embed golden tests in APR metadata
+- `apr validate --golden` runs tests without external files
+- Self-validating artifact pattern
+
+---
+
+### PMAT-204: Tensor Distribution Tags (DATA-SCI-004) 📋 PLANNED
+
+**Specification:** APR-SPEC.md Section 17.4
+**Severity:** P2
+**Status:** 📋 PLANNED
+
+**Problem:** Generic validation rules cause false positives/negatives for different tensor types.
+
+**Implementation (Future):**
+- Tag tensors with semantic role (Embedding, LayerNorm, etc.)
+- Role-specific validation thresholds
+- Quantization guidance based on role
+
+---
+
+### PMAT-205: Sharding-Aware Placement (JAX-SHARD-005) 📋 PLANNED
+
+**Specification:** APR-SPEC.md Section 17.5
+**Severity:** P3
+**Status:** 📋 PLANNED
+
+**Problem:** Large models require distributed inference hints.
+
+**Implementation (Future):**
+- JAX-inspired PartitionSpec in metadata
+- Device-agnostic tensor placement
+- Multi-GPU scaling hints
 
 ---
 

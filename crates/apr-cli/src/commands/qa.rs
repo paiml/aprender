@@ -991,8 +991,9 @@ fn run_format_parity_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
         let gguf_bytes = std::fs::read(path)
             .map_err(|e| CliError::ValidationFailed(format!("Failed to read GGUF: {e}")))?;
 
-        let gguf_format = detect_format(&gguf_bytes[..8.min(gguf_bytes.len())])
-            .map_err(|e| CliError::ValidationFailed(format!("Failed to detect GGUF format: {e}")))?;
+        let gguf_format = detect_format(&gguf_bytes[..8.min(gguf_bytes.len())]).map_err(|e| {
+            CliError::ValidationFailed(format!("Failed to detect GGUF format: {e}"))
+        })?;
 
         if gguf_format != ModelFormat::Gguf {
             return Ok(GateResult::skipped(
@@ -1030,11 +1031,13 @@ fn run_format_parity_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
 
         // Run SafeTensors forward pass to get logits
         let st_logits = {
-            let transformer = SafetensorsToAprConverter::convert(safetensors_path)
-                .map_err(|e| CliError::ValidationFailed(format!("SafeTensors convert failed: {e}")))?;
-            transformer
-                .forward(&prompt_tokens)
-                .map_err(|e| CliError::ValidationFailed(format!("SafeTensors forward failed: {e}")))?
+            let transformer =
+                SafetensorsToAprConverter::convert(safetensors_path).map_err(|e| {
+                    CliError::ValidationFailed(format!("SafeTensors convert failed: {e}"))
+                })?;
+            transformer.forward(&prompt_tokens).map_err(|e| {
+                CliError::ValidationFailed(format!("SafeTensors forward failed: {e}"))
+            })?
         };
 
         let duration = start.elapsed();

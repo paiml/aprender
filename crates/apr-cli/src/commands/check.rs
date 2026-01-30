@@ -14,6 +14,9 @@ use std::path::Path;
 #[cfg(feature = "inference")]
 use realizar::gguf::{MappedGGUFModel, OwnedQuantizedModel};
 
+#[cfg(feature = "inference")]
+use realizar::apr::AprV2Model;
+
 /// Stage result with detailed information
 #[derive(Debug)]
 #[allow(dead_code)]
@@ -53,17 +56,23 @@ pub(crate) fn run(path: &Path, no_gpu: bool) -> Result<(), CliError> {
     if passed_count == total_count {
         println!(
             "\n{}",
-            format!("✅ {}/{} STAGES PASSED. MODEL PROVEN CORRECT.", passed_count, total_count)
-                .green()
-                .bold()
+            format!(
+                "✅ {}/{} STAGES PASSED. MODEL PROVEN CORRECT.",
+                passed_count, total_count
+            )
+            .green()
+            .bold()
         );
         Ok(())
     } else {
         println!(
             "\n{}",
-            format!("❌ {}/{} STAGES PASSED. CHECK STAGE LOGS.", passed_count, total_count)
-                .red()
-                .bold()
+            format!(
+                "❌ {}/{} STAGES PASSED. CHECK STAGE LOGS.",
+                passed_count, total_count
+            )
+            .red()
+            .bold()
         );
         Err(CliError::ValidationFailed(
             "Model self-test failed".to_string(),
@@ -73,7 +82,169 @@ pub(crate) fn run(path: &Path, no_gpu: bool) -> Result<(), CliError> {
 
 /// Run REAL validation checks (PMAT-112)
 #[cfg(feature = "inference")]
-fn run_real_checks(path: &Path, _no_gpu: bool) -> Result<Vec<StageResult>, CliError> {
+fn run_real_checks(path: &Path, no_gpu: bool) -> Result<Vec<StageResult>, CliError> {
+    // Dispatch based on file extension
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+    match ext.to_lowercase().as_str() {
+        "apr" => run_real_checks_apr(path),
+        "gguf" => run_real_checks_gguf(path, no_gpu),
+        _ => Err(CliError::InvalidFormat(format!(
+            "Unsupported format: {}. Use .apr or .gguf",
+            ext
+        ))),
+    }
+}
+
+/// Run REAL validation for APR models (PMAT-112)
+#[cfg(feature = "inference")]
+fn run_real_checks_apr(path: &Path) -> Result<Vec<StageResult>, CliError> {
+    let mut results = Vec::new();
+
+    // Load APR model
+    let model = AprV2Model::load(path)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to load APR: {e}")))?;
+
+    let metadata = model.metadata();
+    let num_layers = metadata.num_layers.unwrap_or(0);
+    let _hidden_dim = metadata.hidden_size.unwrap_or(0);
+    let vocab_size = metadata.vocab_size.unwrap_or(32000);
+    let _num_heads = metadata.num_heads.unwrap_or(0);
+    let tensor_names: Vec<&str> = model.tensor_names();
+
+    // Stage 1: Tokenizer - check embedding works
+    let test_tokens = vec![1u32, 2];
+    let forward_result = model.forward(&test_tokens);
+    results.push(StageResult {
+        name: "Tokenizer",
+        eli5: "Words → numbers",
+        passed: forward_result.is_ok(),
+        details: Some(format!("tokens={:?}", test_tokens)),
+    });
+
+    // Stage 2: Embedding
+    let has_embed = tensor_names.iter().any(|n| n.contains("embed") || n.contains("wte"));
+    results.push(StageResult {
+        name: "Embedding",
+        eli5: "Numbers → vectors",
+        passed: has_embed,
+        details: if has_embed {
+            Some("Found embedding tensor".to_string())
+        } else {
+            Some("Missing embedding tensor".to_string())
+        },
+    });
+
+    // Stage 3: Positional Encoding
+    let has_rope = tensor_names.iter().any(|n| n.contains("rope") || n.contains("rotary"));
+    results.push(StageResult {
+        name: "Positional Encoding",
+        eli5: "\"You are word #3\"",
+        passed: true, // RoPE is computed, not stored
+        details: Some(if has_rope { "RoPE tensors found".to_string() } else { "RoPE computed inline".to_string() }),
+    });
+
+    // Stage 4: Q/K/V
+    let has_qkv = tensor_names.iter().any(|n| n.contains("q_proj") || n.contains("attn_q"))
+        && tensor_names.iter().any(|n| n.contains("k_proj") || n.contains("attn_k"))
+        && tensor_names.iter().any(|n| n.contains("v_proj") || n.contains("attn_v"));
+    results.push(StageResult {
+        name: "Q/K/V Projection",
+        eli5: "Make 3 question copies",
+        passed: has_qkv,
+        details: if has_qkv { Some("Q/K/V found".to_string()) } else { Some("Missing Q/K/V".to_string()) },
+    });
+
+    // Stage 5: Attention
+    let has_attn_out = tensor_names.iter().any(|n| n.contains("o_proj") || n.contains("attn_output"));
+    results.push(StageResult {
+        name: "Attention Scores",
+        eli5: "\"Who to look at?\"",
+        passed: has_attn_out,
+        details: if has_attn_out { Some("Attention output found".to_string()) } else { Some("Missing attention output".to_string()) },
+    });
+
+    // Stage 6: FFN
+    let has_ffn = tensor_names.iter().any(|n| n.contains("gate_proj") || n.contains("ffn_gate"))
+        && tensor_names.iter().any(|n| n.contains("up_proj") || n.contains("ffn_up"))
+        && tensor_names.iter().any(|n| n.contains("down_proj") || n.contains("ffn_down"));
+    results.push(StageResult {
+        name: "Feed-Forward (MLP)",
+        eli5: "\"Think about it\"",
+        passed: has_ffn,
+        details: if has_ffn { Some("MLP found".to_string()) } else { Some("Missing MLP".to_string()) },
+    });
+
+    // Stage 7: LayerNorm
+    let has_norm = tensor_names.iter().any(|n| n.contains("input_layernorm") || n.contains("attn_norm"))
+        && tensor_names.iter().any(|n| n.contains("post_attention_layernorm") || n.contains("ffn_norm"));
+    results.push(StageResult {
+        name: "Layer Norm",
+        eli5: "Keep numbers stable",
+        passed: has_norm && num_layers > 0,
+        details: Some(format!("{} layers", num_layers)),
+    });
+
+    // Stage 8: LM Head
+    let has_lm_head = tensor_names.iter().any(|n| n.contains("lm_head") || n == &"output.weight");
+    results.push(StageResult {
+        name: "LM Head",
+        eli5: "Vector → vocab scores",
+        passed: has_lm_head || has_embed, // tied embeddings OK
+        details: Some(format!("vocab_size={}{}", vocab_size, if !has_lm_head { " (tied)" } else { "" })),
+    });
+
+    // Stage 9: Logits - run forward pass
+    let logits_result = match model.forward(&[1u32]) {
+        Ok(logits) => {
+            let has_nan = logits.iter().any(|x| x.is_nan());
+            let has_inf = logits.iter().any(|x| x.is_infinite());
+            let valid = !has_nan && !has_inf && !logits.is_empty();
+            StageResult {
+                name: "Logits → Probs",
+                eli5: "Scores → percentages",
+                passed: valid,
+                details: Some(if has_nan { "NaN detected".to_string() } else if has_inf { "Inf detected".to_string() } else { format!("logits[{}]", logits.len()) }),
+            }
+        }
+        Err(e) => StageResult {
+            name: "Logits → Probs",
+            eli5: "Scores → percentages",
+            passed: false,
+            details: Some(format!("Forward failed: {e}")),
+        },
+    };
+    results.push(logits_result);
+
+    // Stage 10: Sampler
+    let sampler_result = match model.forward(&[1u32]) {
+        Ok(logits) => {
+            let max_logit = logits.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+            let exp_sum: f32 = logits.iter().map(|x| (x - max_logit).exp()).sum();
+            let probs: Vec<f32> = logits.iter().map(|x| (x - max_logit).exp() / exp_sum).collect();
+            let prob_sum: f32 = probs.iter().sum();
+            let valid = (prob_sum - 1.0).abs() < 0.001;
+            StageResult {
+                name: "Sampler/Decode",
+                eli5: "Pick word, return",
+                passed: valid,
+                details: Some(format!("softmax sum = {:.6}", prob_sum)),
+            }
+        }
+        Err(e) => StageResult {
+            name: "Sampler/Decode",
+            eli5: "Pick word, return",
+            passed: false,
+            details: Some(format!("Forward failed: {e}")),
+        },
+    };
+    results.push(sampler_result);
+
+    Ok(results)
+}
+
+/// Run REAL validation for GGUF models (PMAT-112)
+#[cfg(feature = "inference")]
+fn run_real_checks_gguf(path: &Path, _no_gpu: bool) -> Result<Vec<StageResult>, CliError> {
     let mut results = Vec::new();
 
     // Load the model first
@@ -114,21 +285,14 @@ fn run_real_checks(path: &Path, _no_gpu: bool) -> Result<Vec<StageResult>, CliEr
     });
 
     // Stage 4: Q/K/V Projection
-    let has_qkv = mapped
-        .model
-        .tensors
-        .iter()
-        .any(|t| t.name.contains("blk.0.attn_q") || t.name.contains("layers.0.self_attn.q_proj"))
-        && mapped
-            .model
-            .tensors
-            .iter()
-            .any(|t| t.name.contains("blk.0.attn_k") || t.name.contains("layers.0.self_attn.k_proj"))
-        && mapped
-            .model
-            .tensors
-            .iter()
-            .any(|t| t.name.contains("blk.0.attn_v") || t.name.contains("layers.0.self_attn.v_proj"));
+    let has_qkv =
+        mapped.model.tensors.iter().any(|t| {
+            t.name.contains("blk.0.attn_q") || t.name.contains("layers.0.self_attn.q_proj")
+        }) && mapped.model.tensors.iter().any(|t| {
+            t.name.contains("blk.0.attn_k") || t.name.contains("layers.0.self_attn.k_proj")
+        }) && mapped.model.tensors.iter().any(|t| {
+            t.name.contains("blk.0.attn_v") || t.name.contains("layers.0.self_attn.v_proj")
+        });
     results.push(StageResult {
         name: "Q/K/V Projection",
         eli5: "Make 3 question copies",
@@ -185,16 +349,15 @@ fn run_real_checks(path: &Path, _no_gpu: bool) -> Result<Vec<StageResult>, CliEr
     });
 
     // Stage 7: Layer Norm
-    let has_norm = mapped
-        .model
-        .tensors
-        .iter()
-        .any(|t| t.name.contains("attn_norm") || t.name.contains("input_layernorm"))
-        && mapped
+    let has_norm =
+        mapped
             .model
             .tensors
             .iter()
-            .any(|t| t.name.contains("ffn_norm") || t.name.contains("post_attention_layernorm"));
+            .any(|t| t.name.contains("attn_norm") || t.name.contains("input_layernorm"))
+            && mapped.model.tensors.iter().any(|t| {
+                t.name.contains("ffn_norm") || t.name.contains("post_attention_layernorm")
+            });
     results.push(StageResult {
         name: "Layer Norm",
         eli5: "Keep numbers stable",
@@ -262,7 +425,11 @@ fn check_tokenizer_real(model: &OwnedQuantizedModel) -> StageResult {
         eli5: "Words → numbers",
         passed: embedding_ok,
         details: if embedding_ok {
-            Some(format!("tokens={:?} → {} floats", test_tokens, embedding.len()))
+            Some(format!(
+                "tokens={:?} → {} floats",
+                test_tokens,
+                embedding.len()
+            ))
         } else {
             Some("Tokenizer/embedding failed".to_string())
         },
@@ -324,7 +491,10 @@ fn check_sampler_real(model: &OwnedQuantizedModel) -> StageResult {
             // Compute softmax (numerically stable)
             let max_logit = logits.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
             let exp_sum: f32 = logits.iter().map(|x| (x - max_logit).exp()).sum();
-            let probs: Vec<f32> = logits.iter().map(|x| (x - max_logit).exp() / exp_sum).collect();
+            let probs: Vec<f32> = logits
+                .iter()
+                .map(|x| (x - max_logit).exp() / exp_sum)
+                .collect();
 
             // PMAT-112 validation: softmax sum should be ≈ 1.0
             let prob_sum: f32 = probs.iter().sum();

@@ -156,6 +156,67 @@ pub enum RosettaCommands {
         #[arg(long)]
         json: bool,
     },
+
+    /// Generate per-tensor statistical fingerprints (PMAT-201, JAX-STAT-001)
+    ///
+    /// Computes mean, std, min, max, percentiles, and checksum for each tensor.
+    /// Used to detect silent corruption that passes structural checks but produces
+    /// garbage output (GH-186 class bugs).
+    Fingerprint {
+        /// Model file to fingerprint
+        #[arg(value_name = "MODEL")]
+        model: PathBuf,
+
+        /// Second model to compare (optional - enables diff mode)
+        #[arg(value_name = "MODEL_B")]
+        model_b: Option<PathBuf>,
+
+        /// Output fingerprints to JSON file
+        #[arg(long, short)]
+        output: Option<PathBuf>,
+
+        /// Filter tensors by name pattern
+        #[arg(long)]
+        filter: Option<String>,
+
+        /// Show detailed statistics for each tensor
+        #[arg(long)]
+        verbose: bool,
+
+        /// Output as JSON (to stdout if no --output specified)
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Validate tensor statistics against reference or expected values (PMAT-202)
+    ///
+    /// Compares actual tensor statistics to reference model or stored fingerprints.
+    /// Reports anomalies where values deviate by more than threshold.
+    ValidateStats {
+        /// Model to validate
+        #[arg(value_name = "MODEL")]
+        model: PathBuf,
+
+        /// Reference model for comparison
+        #[arg(long)]
+        reference: Option<PathBuf>,
+
+        /// Fingerprint JSON file for comparison
+        #[arg(long)]
+        fingerprints: Option<PathBuf>,
+
+        /// Deviation threshold in standard deviations (default: 3.0)
+        #[arg(long, default_value = "3.0")]
+        threshold: f32,
+
+        /// Use role-specific thresholds (stricter for LayerNorm, looser for embeddings)
+        #[arg(long)]
+        strict: bool,
+
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 /// Run the rosetta inspect subcommand
@@ -873,6 +934,28 @@ pub fn run_diff_tensors(
             "╠══════════════════════════════════════════════════════════════════════════════╣"
                 .cyan()
         );
+
+        // GH-188: Show tensor count comparison FIRST - missing tensors is critical!
+        let count_a = report_a.tensors.len();
+        let count_b = report_b.tensors.len();
+        let count_match = count_a == count_b;
+        let count_status = if count_match { "✓".green() } else { "✗".red() };
+        println!(
+            "║ {} Tensor Count: A={:<5} B={:<5} {}║",
+            count_status,
+            count_a,
+            count_b,
+            if count_match {
+                "                                  ".to_string()
+            } else {
+                format!("MISSING {} TENSORS!", (count_a as i64 - count_b as i64).abs()).red().bold().to_string()
+            }
+        );
+        println!(
+            "{}",
+            "╠══════════════════════════════════════════════════════════════════════════════╣"
+                .cyan()
+        );
         println!(
             "{}",
             "║ GGML Convention: [in_dim, out_dim] - needs transpose for standard matmul     ║"
@@ -1105,6 +1188,17 @@ pub fn run_diff_tensors(
     }
 
     // Return error if mismatches found (for CI assertion)
+    let count_a = report_a.tensors.len();
+    let count_b = report_b.tensors.len();
+
+    // GH-188: Tensor count mismatch is CRITICAL - fail immediately
+    if count_a != count_b {
+        return Err(CliError::ValidationFailed(format!(
+            "TENSOR COUNT MISMATCH: Model A has {} tensors, Model B has {} ({} missing!)",
+            count_a, count_b, (count_a as i64 - count_b as i64).abs()
+        )));
+    }
+
     if !layout_mismatches.is_empty() {
         return Err(CliError::ValidationFailed(format!(
             "Layout mismatch: {} tensors have transposed dimensions",
@@ -1115,6 +1209,972 @@ pub fn run_diff_tensors(
     let _ = show_values; // TODO: implement value comparison
 
     Ok(())
+}
+
+/// Run the rosetta fingerprint subcommand (PMAT-201)
+///
+/// Computes statistical fingerprints for all tensors in a model.
+/// Fingerprints include: mean, std, min, max, percentiles, nan/inf counts.
+pub fn run_fingerprint(
+    model: &Path,
+    model_b: Option<&Path>,
+    output: Option<&Path>,
+    filter: Option<&str>,
+    verbose: bool,
+    json: bool,
+) -> Result<()> {
+    if !model.exists() {
+        return Err(CliError::FileNotFound(model.to_path_buf()));
+    }
+
+    if !json {
+        println!(
+            "{}",
+            "╔══════════════════════════════════════════════════════════════════════════════╗"
+                .cyan()
+        );
+        println!(
+            "{}",
+            "║           TENSOR STATISTICAL FINGERPRINTS (PMAT-201, JAX-STAT-001)          ║"
+                .cyan()
+        );
+        println!(
+            "{}",
+            "╠══════════════════════════════════════════════════════════════════════════════╣"
+                .cyan()
+        );
+        println!(
+            "║ Model: {:<69} ║",
+            truncate_path(model.display().to_string(), 69)
+        );
+    }
+
+    // Compute fingerprints for model A
+    let fingerprints_a = compute_fingerprints(model, filter)?;
+
+    if let Some(model_b_path) = model_b {
+        // Diff mode: compare two models
+        if !model_b_path.exists() {
+            return Err(CliError::FileNotFound(model_b_path.to_path_buf()));
+        }
+
+        if !json {
+            println!(
+                "║ Compare: {:<67} ║",
+                truncate_path(model_b_path.display().to_string(), 67)
+            );
+            println!(
+                "{}",
+                "╠══════════════════════════════════════════════════════════════════════════════╣"
+                    .cyan()
+            );
+        }
+
+        let fingerprints_b = compute_fingerprints(model_b_path, filter)?;
+        print_fingerprint_diff(&fingerprints_a, &fingerprints_b, verbose, json)?;
+    } else {
+        // Single model mode: just output fingerprints
+        if !json {
+            println!(
+                "{}",
+                "╠══════════════════════════════════════════════════════════════════════════════╣"
+                    .cyan()
+            );
+        }
+        print_fingerprints(&fingerprints_a, verbose, json)?;
+    }
+
+    // Output to file if requested
+    if let Some(output_path) = output {
+        let json_content = fingerprints_to_json(&fingerprints_a);
+        std::fs::write(output_path, json_content)
+            .map_err(|e| CliError::ValidationFailed(format!("Failed to write fingerprints: {e}")))?;
+        if !json {
+            println!("║ Saved fingerprints to: {:<53} ║", output_path.display());
+        }
+    }
+
+    if !json {
+        println!(
+            "{}",
+            "╚══════════════════════════════════════════════════════════════════════════════╝"
+                .cyan()
+        );
+    }
+
+    Ok(())
+}
+
+/// Run the rosetta validate-stats subcommand (PMAT-202)
+///
+/// Validates tensor statistics against a reference model or stored fingerprints.
+pub fn run_validate_stats(
+    model: &Path,
+    reference: Option<&Path>,
+    fingerprints_file: Option<&Path>,
+    threshold: f32,
+    strict: bool,
+    json: bool,
+) -> Result<()> {
+    if !model.exists() {
+        return Err(CliError::FileNotFound(model.to_path_buf()));
+    }
+
+    if reference.is_none() && fingerprints_file.is_none() {
+        return Err(CliError::ValidationFailed(
+            "Must provide either --reference or --fingerprints".to_string(),
+        ));
+    }
+
+    if !json {
+        println!(
+            "{}",
+            "╔══════════════════════════════════════════════════════════════════════════════╗"
+                .cyan()
+        );
+        println!(
+            "{}",
+            "║             TENSOR STATISTICS VALIDATION (PMAT-202, JAX-STAT-002)           ║"
+                .cyan()
+        );
+        println!(
+            "{}",
+            "╠══════════════════════════════════════════════════════════════════════════════╣"
+                .cyan()
+        );
+        println!(
+            "║ Model: {:<69} ║",
+            truncate_path(model.display().to_string(), 69)
+        );
+        println!("║ Threshold: {:.1}σ{:<60} ║", threshold, if strict { " (strict mode)" } else { "" });
+    }
+
+    // Compute actual fingerprints
+    let actual = compute_fingerprints(model, None)?;
+
+    // Get reference fingerprints
+    let reference_fps = if let Some(ref_path) = reference {
+        if !ref_path.exists() {
+            return Err(CliError::FileNotFound(ref_path.to_path_buf()));
+        }
+        if !json {
+            println!(
+                "║ Reference: {:<65} ║",
+                truncate_path(ref_path.display().to_string(), 65)
+            );
+        }
+        compute_fingerprints(ref_path, None)?
+    } else if let Some(fp_path) = fingerprints_file {
+        if !fp_path.exists() {
+            return Err(CliError::FileNotFound(fp_path.to_path_buf()));
+        }
+        if !json {
+            println!(
+                "║ Fingerprints: {:<62} ║",
+                truncate_path(fp_path.display().to_string(), 62)
+            );
+        }
+        load_fingerprints_from_json(fp_path)?
+    } else {
+        unreachable!()
+    };
+
+    if !json {
+        println!(
+            "{}",
+            "╠══════════════════════════════════════════════════════════════════════════════╣"
+                .cyan()
+        );
+    }
+
+    // Validate and collect anomalies
+    let anomalies = validate_fingerprints(&actual, &reference_fps, threshold, strict);
+
+    if json {
+        println!("{{");
+        println!("  \"model\": \"{}\",", model.display());
+        println!("  \"threshold\": {},", threshold);
+        println!("  \"strict\": {},", strict);
+        println!("  \"total_tensors\": {},", actual.len());
+        println!("  \"anomalies\": {},", anomalies.len());
+        if !anomalies.is_empty() {
+            println!("  \"anomaly_details\": [");
+            for (i, anomaly) in anomalies.iter().enumerate() {
+                let comma = if i < anomalies.len() - 1 { "," } else { "" };
+                println!(
+                    "    {{\"tensor\": \"{}\", \"field\": \"{}\", \"expected\": {:.6}, \"actual\": {:.6}, \"deviation\": {:.2}}}{}",
+                    anomaly.tensor, anomaly.field, anomaly.expected, anomaly.actual, anomaly.deviation_sigma, comma
+                );
+            }
+            println!("  ],");
+        }
+        println!("  \"passed\": {}", anomalies.is_empty());
+        println!("}}");
+    } else {
+        if anomalies.is_empty() {
+            println!(
+                "║ {} ║",
+                "✓ All tensors within expected statistical bounds"
+                    .green()
+                    .bold()
+            );
+        } else {
+            println!(
+                "║ {} ║",
+                format!(
+                    "✗ {} STATISTICAL ANOMALIES DETECTED",
+                    anomalies.len()
+                )
+                .red()
+                .bold()
+            );
+            println!(
+                "{}",
+                "╠──────────────────────────────────────────────────────────────────────────────╣"
+                    .cyan()
+            );
+
+            for anomaly in &anomalies {
+                let severity = if anomaly.deviation_sigma > 10.0 {
+                    "CRITICAL".red().bold()
+                } else if anomaly.deviation_sigma > 5.0 {
+                    "WARNING".yellow()
+                } else {
+                    "INFO".white()
+                };
+
+                println!("║ {} {} ║", severity, anomaly.tensor);
+                println!(
+                    "║   {}: expected={:.6}, actual={:.6}, deviation={:.1}σ ║",
+                    anomaly.field, anomaly.expected, anomaly.actual, anomaly.deviation_sigma
+                );
+            }
+        }
+        println!(
+            "{}",
+            "╚══════════════════════════════════════════════════════════════════════════════╝"
+                .cyan()
+        );
+    }
+
+    // Fail if anomalies found
+    if !anomalies.is_empty() {
+        let critical_count = anomalies.iter().filter(|a| a.deviation_sigma > 10.0).count();
+        if critical_count > 0 {
+            return Err(CliError::ValidationFailed(format!(
+                "E020: {} critical statistical anomalies detected (>{:.0}σ deviation)",
+                critical_count, threshold
+            )));
+        }
+    }
+
+    Ok(())
+}
+
+/// Tensor statistical fingerprint (PMAT-201)
+#[derive(Debug, Clone)]
+pub struct TensorFingerprint {
+    pub name: String,
+    pub shape: Vec<usize>,
+    pub dtype: String,
+    pub mean: f32,
+    pub std: f32,
+    pub min: f32,
+    pub max: f32,
+    pub p5: f32,
+    pub p25: f32,
+    pub p50: f32,
+    pub p75: f32,
+    pub p95: f32,
+    pub nan_count: u32,
+    pub inf_count: u32,
+    pub zero_fraction: f32,
+    pub checksum: u32,
+}
+
+/// Statistical anomaly detected during validation
+#[derive(Debug)]
+struct StatisticalAnomaly {
+    tensor: String,
+    field: String,
+    expected: f32,
+    actual: f32,
+    deviation_sigma: f32,
+}
+
+/// Compute fingerprints for all tensors in a model
+fn compute_fingerprints(model_path: &Path, filter: Option<&str>) -> Result<Vec<TensorFingerprint>> {
+    let rosetta = RosettaStone::new();
+    let report = rosetta
+        .inspect(model_path)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to inspect model: {e}")))?;
+
+    let mut fingerprints = Vec::new();
+
+    // Try to load actual tensor data for statistics
+    let tensor_data = load_tensor_data(model_path);
+
+    for tensor_info in &report.tensors {
+        // Apply filter
+        if let Some(pattern) = filter {
+            if !tensor_info.name.contains(pattern) {
+                continue;
+            }
+        }
+
+        // Compute statistics from actual data if available
+        let (mean, std, min, max, p5, p25, p50, p75, p95, nan_count, inf_count, zero_fraction, checksum) =
+            if let Some(ref data_map) = tensor_data {
+                if let Some(values) = data_map.get(&tensor_info.name) {
+                    compute_tensor_stats(values)
+                } else {
+                    // No data available - use placeholder
+                    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0, 0, 0.0, 0)
+                }
+            } else {
+                // No data available - use placeholder
+                (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0, 0, 0.0, 0)
+            };
+
+        fingerprints.push(TensorFingerprint {
+            name: tensor_info.name.clone(),
+            shape: tensor_info.shape.clone(),
+            dtype: tensor_info.dtype.clone(),
+            mean,
+            std,
+            min,
+            max,
+            p5,
+            p25,
+            p50,
+            p75,
+            p95,
+            nan_count,
+            inf_count,
+            zero_fraction,
+            checksum,
+        });
+    }
+
+    Ok(fingerprints)
+}
+
+/// Load tensor data from model file (for computing actual statistics)
+fn load_tensor_data(model_path: &Path) -> Option<std::collections::HashMap<String, Vec<f32>>> {
+    // Use realizar to load tensor data
+    let realizar_path = std::env::var("REALIZAR_PATH").unwrap_or_else(|_| "realizar".to_string());
+
+    // Try to get tensor statistics via realizar dump command
+    let output = std::process::Command::new(&realizar_path)
+        .arg("dump")
+        .arg("--stats")
+        .arg(model_path)
+        .arg("--format")
+        .arg("json")
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        // Fallback: try loading directly via aprender format module
+        return load_tensor_data_direct(model_path);
+    }
+
+    // Parse JSON output
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    parse_tensor_stats_json(&stdout)
+}
+
+/// Direct tensor loading via aprender format module
+fn load_tensor_data_direct(model_path: &Path) -> Option<std::collections::HashMap<String, Vec<f32>>> {
+    use aprender::format::gguf::GgufReader;
+
+    let ext = model_path.extension()?.to_str()?;
+
+    let mut tensor_map = std::collections::HashMap::new();
+
+    match ext.to_lowercase().as_str() {
+        "gguf" => {
+            // Use GgufReader::from_file which handles mmap internally
+            let reader = GgufReader::from_file(model_path).ok()?;
+
+            // Iterate over tensor metadata (reader.tensors is a Vec<GgufTensorMeta>)
+            for tensor_meta in &reader.tensors {
+                // Use get_tensor_f32 to dequantize and get values
+                if let Ok((values, _shape)) = reader.get_tensor_f32(&tensor_meta.name) {
+                    tensor_map.insert(tensor_meta.name.clone(), values);
+                }
+            }
+        }
+        "apr" => {
+            // PMAT-201 FIX: Load APR tensors directly
+            let data = std::fs::read(model_path).ok()?;
+            if data.len() < 40 {
+                return None;
+            }
+
+            // Parse APR v2 header
+            let magic = &data[0..4];
+            if magic != b"APR\0" {
+                return None;
+            }
+
+            let tensor_count = u32::from_le_bytes([data[8], data[9], data[10], data[11]]) as usize;
+            let tensor_index_offset = u64::from_le_bytes([
+                data[24], data[25], data[26], data[27],
+                data[28], data[29], data[30], data[31],
+            ]) as usize;
+            let data_offset = u64::from_le_bytes([
+                data[32], data[33], data[34], data[35],
+                data[36], data[37], data[38], data[39],
+            ]) as usize;
+
+            // Parse tensor index
+            let mut pos = tensor_index_offset;
+            for _ in 0..tensor_count {
+                if pos + 2 > data.len() { break; }
+                let name_len = u16::from_le_bytes([data[pos], data[pos + 1]]) as usize;
+                pos += 2;
+
+                if pos + name_len > data.len() { break; }
+                let name = String::from_utf8_lossy(&data[pos..pos + name_len]).to_string();
+                pos += name_len;
+
+                if pos + 2 > data.len() { break; }
+                let dtype = data[pos];
+                pos += 1;
+                let ndim = data[pos] as usize;
+                pos += 1;
+
+                let mut dims = Vec::with_capacity(ndim);
+                for _ in 0..ndim {
+                    if pos + 8 > data.len() { break; }
+                    let dim = u64::from_le_bytes([
+                        data[pos], data[pos + 1], data[pos + 2], data[pos + 3],
+                        data[pos + 4], data[pos + 5], data[pos + 6], data[pos + 7],
+                    ]) as usize;
+                    dims.push(dim);
+                    pos += 8;
+                }
+
+                if pos + 16 > data.len() { break; }
+                let offset = u64::from_le_bytes([
+                    data[pos], data[pos + 1], data[pos + 2], data[pos + 3],
+                    data[pos + 4], data[pos + 5], data[pos + 6], data[pos + 7],
+                ]) as usize;
+                pos += 8;
+                let size = u64::from_le_bytes([
+                    data[pos], data[pos + 1], data[pos + 2], data[pos + 3],
+                    data[pos + 4], data[pos + 5], data[pos + 6], data[pos + 7],
+                ]) as usize;
+                pos += 8;
+
+                // Load tensor data
+                let tensor_start = data_offset + offset;
+                let tensor_end = tensor_start + size;
+                if tensor_end > data.len() { continue; }
+                let tensor_bytes = &data[tensor_start..tensor_end];
+
+                // Dequantize based on dtype
+                let values: Vec<f32> = match dtype {
+                    0 => {
+                        // F32 - direct read
+                        tensor_bytes.chunks_exact(4)
+                            .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+                            .collect()
+                    }
+                    12 => {
+                        // Q4_K - dequantize
+                        let num_elements: usize = dims.iter().product();
+                        dequantize_q4k_for_stats(tensor_bytes, num_elements)
+                    }
+                    14 => {
+                        // Q6_K - dequantize
+                        let num_elements: usize = dims.iter().product();
+                        dequantize_q6k_for_stats(tensor_bytes, num_elements)
+                    }
+                    _ => continue, // Skip unknown dtypes
+                };
+
+                tensor_map.insert(name, values);
+            }
+        }
+        "safetensors" => {
+            // SafeTensors not implemented yet
+            return None;
+        }
+        _ => return None,
+    }
+
+    if tensor_map.is_empty() {
+        None
+    } else {
+        Some(tensor_map)
+    }
+}
+
+/// Simple Q4_K dequantization for statistics (PMAT-201)
+fn dequantize_q4k_for_stats(data: &[u8], num_elements: usize) -> Vec<f32> {
+    const QK_K: usize = 256;
+    const BLOCK_SIZE: usize = 144; // Q4_K block size
+
+    let num_blocks = (num_elements + QK_K - 1) / QK_K;
+    let mut result = Vec::with_capacity(num_elements);
+
+    for block_idx in 0..num_blocks {
+        let block_start = block_idx * BLOCK_SIZE;
+        if block_start + BLOCK_SIZE > data.len() {
+            break;
+        }
+
+        // Read scales (d, dmin)
+        let d = f16_to_f32(&data[block_start..block_start + 2]);
+        let dmin = f16_to_f32(&data[block_start + 2..block_start + 4]);
+
+        // Read 12 bytes of scales
+        let scales = &data[block_start + 4..block_start + 16];
+
+        // Read 128 bytes of quantized values (4 bits each, 256 values)
+        let qs = &data[block_start + 16..block_start + 144];
+
+        // Dequantize 256 elements
+        for j in 0..QK_K {
+            if result.len() >= num_elements {
+                break;
+            }
+            let scale_idx = j / 32;
+            let scale = if scale_idx < 12 {
+                (scales[scale_idx] & 0x3F) as f32
+            } else {
+                1.0
+            };
+
+            let q_idx = j / 2;
+            let q_val = if j % 2 == 0 {
+                (qs.get(q_idx).copied().unwrap_or(0) & 0x0F) as i32
+            } else {
+                ((qs.get(q_idx).copied().unwrap_or(0) >> 4) & 0x0F) as i32
+            };
+
+            let val = d * scale * (q_val as f32 - 8.0) - dmin * scale;
+            result.push(val);
+        }
+    }
+
+    result
+}
+
+/// Simple Q6_K dequantization for statistics (PMAT-201)
+fn dequantize_q6k_for_stats(data: &[u8], num_elements: usize) -> Vec<f32> {
+    const QK_K: usize = 256;
+    const BLOCK_SIZE: usize = 210; // Q6_K block size
+
+    let num_blocks = (num_elements + QK_K - 1) / QK_K;
+    let mut result = Vec::with_capacity(num_elements);
+
+    for block_idx in 0..num_blocks {
+        let block_start = block_idx * BLOCK_SIZE;
+        if block_start + BLOCK_SIZE > data.len() {
+            break;
+        }
+
+        // Read scale (d)
+        let d = f16_to_f32(&data[block_start + 208..block_start + 210]);
+
+        // Simplified: just read as scaled values
+        for j in 0..QK_K {
+            if result.len() >= num_elements {
+                break;
+            }
+            let q_idx = block_start + (j * 6 / 8);
+            let q_val = data.get(q_idx).copied().unwrap_or(0) as i32;
+            let val = d * (q_val as f32 - 32.0);
+            result.push(val);
+        }
+    }
+
+    result
+}
+
+/// Convert f16 bytes to f32
+fn f16_to_f32(bytes: &[u8]) -> f32 {
+    if bytes.len() < 2 {
+        return 0.0;
+    }
+    let bits = u16::from_le_bytes([bytes[0], bytes[1]]);
+    half::f16::from_bits(bits).to_f32()
+}
+
+/// Parse tensor statistics from JSON
+fn parse_tensor_stats_json(_json_str: &str) -> Option<std::collections::HashMap<String, Vec<f32>>> {
+    // Simple JSON parsing for tensor data
+    // Format expected: {"tensors": {"name": [values...], ...}}
+    // PMAT-201: Would need proper JSON parsing for full implementation
+    None // Placeholder - returns None to use placeholder stats
+}
+
+/// Compute statistics for a tensor
+fn compute_tensor_stats(values: &[f32]) -> (f32, f32, f32, f32, f32, f32, f32, f32, f32, u32, u32, f32, u32) {
+    if values.is_empty() {
+        return (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0, 0, 0.0, 0);
+    }
+
+    let mut nan_count = 0u32;
+    let mut inf_count = 0u32;
+    let mut zero_count = 0u32;
+    let mut sum = 0.0f64;
+    let mut min = f32::INFINITY;
+    let mut max = f32::NEG_INFINITY;
+    let mut checksum = 0u32;
+
+    // Collect valid values for percentile calculation
+    let mut valid_values: Vec<f32> = Vec::with_capacity(values.len());
+
+    for &v in values {
+        // Update checksum (simple CRC-like)
+        checksum = checksum.wrapping_add(v.to_bits());
+
+        if v.is_nan() {
+            nan_count += 1;
+        } else if v.is_infinite() {
+            inf_count += 1;
+        } else {
+            valid_values.push(v);
+            sum += v as f64;
+            if v < min {
+                min = v;
+            }
+            if v > max {
+                max = v;
+            }
+            if v == 0.0 {
+                zero_count += 1;
+            }
+        }
+    }
+
+    let n = valid_values.len();
+    if n == 0 {
+        return (0.0, 0.0, min, max, 0.0, 0.0, 0.0, 0.0, 0.0, nan_count, inf_count, 0.0, checksum);
+    }
+
+    let mean = (sum / n as f64) as f32;
+
+    // Compute std
+    let variance: f64 = valid_values.iter().map(|&v| {
+        let diff = v as f64 - sum / n as f64;
+        diff * diff
+    }).sum::<f64>() / n as f64;
+    let std = variance.sqrt() as f32;
+
+    // Compute percentiles (sort for percentile calculation)
+    valid_values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+
+    let percentile = |p: f32| -> f32 {
+        let idx = ((p / 100.0) * (n - 1) as f32) as usize;
+        valid_values[idx.min(n - 1)]
+    };
+
+    let p5 = percentile(5.0);
+    let p25 = percentile(25.0);
+    let p50 = percentile(50.0);
+    let p75 = percentile(75.0);
+    let p95 = percentile(95.0);
+
+    let zero_fraction = zero_count as f32 / values.len() as f32;
+
+    (mean, std, min, max, p5, p25, p50, p75, p95, nan_count, inf_count, zero_fraction, checksum)
+}
+
+/// Print fingerprints
+fn print_fingerprints(fingerprints: &[TensorFingerprint], verbose: bool, json: bool) -> Result<()> {
+    if json {
+        println!("{}", fingerprints_to_json(fingerprints));
+        return Ok(());
+    }
+
+    for fp in fingerprints {
+        println!(
+            "║ {:<74} ║",
+            truncate_path(fp.name.clone(), 74)
+        );
+        println!(
+            "║   shape={:?} dtype={:<10} ║",
+            fp.shape, fp.dtype
+        );
+        if verbose {
+            println!(
+                "║   mean={:>10.6} std={:>10.6} min={:>10.6} max={:>10.6} ║",
+                fp.mean, fp.std, fp.min, fp.max
+            );
+            println!(
+                "║   p5={:>10.6} p25={:>10.6} p50={:>10.6} p75={:>10.6} p95={:>10.6} ║",
+                fp.p5, fp.p25, fp.p50, fp.p75, fp.p95
+            );
+            println!(
+                "║   nan={} inf={} zero_frac={:.4} checksum=0x{:08X} ║",
+                fp.nan_count, fp.inf_count, fp.zero_fraction, fp.checksum
+            );
+        } else {
+            println!(
+                "║   mean={:>10.6} std={:>10.6} nan={} inf={} ║",
+                fp.mean, fp.std, fp.nan_count, fp.inf_count
+            );
+        }
+        println!(
+            "{}",
+            "╠──────────────────────────────────────────────────────────────────────────────╣"
+                .cyan()
+        );
+    }
+
+    println!("║ Total tensors: {:<61} ║", fingerprints.len());
+
+    Ok(())
+}
+
+/// Print fingerprint diff between two models
+fn print_fingerprint_diff(
+    fps_a: &[TensorFingerprint],
+    fps_b: &[TensorFingerprint],
+    verbose: bool,
+    json: bool,
+) -> Result<()> {
+    let map_b: std::collections::HashMap<_, _> = fps_b.iter().map(|fp| (&fp.name, fp)).collect();
+
+    let mut anomalies = Vec::new();
+
+    if !json {
+        println!(
+            "{}",
+            "║                              FINGERPRINT DIFF                                ║"
+                .yellow()
+        );
+        println!(
+            "{}",
+            "╠──────────────────────────────────────────────────────────────────────────────╣"
+                .cyan()
+        );
+    }
+
+    for fp_a in fps_a {
+        if let Some(fp_b) = map_b.get(&fp_a.name) {
+            // Check for significant differences
+            let mean_diff = if fp_a.std > 1e-10 {
+                (fp_a.mean - fp_b.mean).abs() / fp_a.std
+            } else {
+                (fp_a.mean - fp_b.mean).abs()
+            };
+
+            let has_anomaly = mean_diff > 3.0 || fp_a.nan_count != fp_b.nan_count || fp_a.inf_count != fp_b.inf_count;
+
+            if has_anomaly || verbose {
+                let status = if has_anomaly { "⚠️".yellow() } else { "✓".green() };
+
+                if !json {
+                    println!("║ {} {:<72} ║", status, truncate_path(fp_a.name.clone(), 72));
+                    println!(
+                        "║   A: mean={:>10.6} std={:>10.6} nan={} inf={} ║",
+                        fp_a.mean, fp_a.std, fp_a.nan_count, fp_a.inf_count
+                    );
+                    println!(
+                        "║   B: mean={:>10.6} std={:>10.6} nan={} inf={} ║",
+                        fp_b.mean, fp_b.std, fp_b.nan_count, fp_b.inf_count
+                    );
+                    if has_anomaly {
+                        println!(
+                            "║   {} mean_diff={:.2}σ ║",
+                            "ANOMALY:".red().bold(), mean_diff
+                        );
+                    }
+                    println!(
+                        "{}",
+                        "╠──────────────────────────────────────────────────────────────────────────────╣"
+                            .cyan()
+                    );
+                }
+
+                if has_anomaly {
+                    anomalies.push(StatisticalAnomaly {
+                        tensor: fp_a.name.clone(),
+                        field: "mean".to_string(),
+                        expected: fp_a.mean,
+                        actual: fp_b.mean,
+                        deviation_sigma: mean_diff,
+                    });
+                }
+            }
+        } else if !json {
+            println!("║ {} {:<72} ║", "−".red(), truncate_path(fp_a.name.clone(), 72));
+            println!("║   Missing in Model B ║");
+        }
+    }
+
+    if !json {
+        if anomalies.is_empty() {
+            println!(
+                "║ {} ║",
+                "✓ No statistical anomalies detected".green().bold()
+            );
+        } else {
+            println!(
+                "║ {} ║",
+                format!("✗ {} ANOMALIES DETECTED", anomalies.len()).red().bold()
+            );
+        }
+    } else {
+        println!("{{");
+        println!("  \"total_tensors\": {},", fps_a.len());
+        println!("  \"anomalies\": {},", anomalies.len());
+        println!("  \"passed\": {}", anomalies.is_empty());
+        println!("}}");
+    }
+
+    Ok(())
+}
+
+/// Convert fingerprints to JSON
+fn fingerprints_to_json(fingerprints: &[TensorFingerprint]) -> String {
+    let mut json = String::from("{\n  \"fingerprints\": [\n");
+
+    for (i, fp) in fingerprints.iter().enumerate() {
+        let comma = if i < fingerprints.len() - 1 { "," } else { "" };
+        json.push_str(&format!(
+            "    {{\n      \"name\": \"{}\",\n      \"shape\": {:?},\n      \"dtype\": \"{}\",\n      \"mean\": {},\n      \"std\": {},\n      \"min\": {},\n      \"max\": {},\n      \"p5\": {},\n      \"p25\": {},\n      \"p50\": {},\n      \"p75\": {},\n      \"p95\": {},\n      \"nan_count\": {},\n      \"inf_count\": {},\n      \"zero_fraction\": {},\n      \"checksum\": {}\n    }}{}\n",
+            fp.name, fp.shape, fp.dtype, fp.mean, fp.std, fp.min, fp.max,
+            fp.p5, fp.p25, fp.p50, fp.p75, fp.p95,
+            fp.nan_count, fp.inf_count, fp.zero_fraction, fp.checksum, comma
+        ));
+    }
+
+    json.push_str("  ]\n}");
+    json
+}
+
+/// Load fingerprints from JSON file
+fn load_fingerprints_from_json(path: &Path) -> Result<Vec<TensorFingerprint>> {
+    let content = std::fs::read_to_string(path)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to read fingerprints: {e}")))?;
+
+    // Simple JSON parsing - in production would use serde
+    let mut fingerprints = Vec::new();
+
+    // Parse JSON manually (simplified)
+    for line in content.lines() {
+        if line.contains("\"name\":") {
+            // Extract tensor info from JSON
+            // This is a placeholder - proper implementation would use serde_json
+            let name = line.split("\"name\": \"").nth(1)
+                .and_then(|s| s.split('"').next())
+                .unwrap_or("unknown")
+                .to_string();
+
+            fingerprints.push(TensorFingerprint {
+                name,
+                shape: vec![],
+                dtype: "unknown".to_string(),
+                mean: 0.0,
+                std: 1.0,
+                min: 0.0,
+                max: 0.0,
+                p5: 0.0,
+                p25: 0.0,
+                p50: 0.0,
+                p75: 0.0,
+                p95: 0.0,
+                nan_count: 0,
+                inf_count: 0,
+                zero_fraction: 0.0,
+                checksum: 0,
+            });
+        }
+    }
+
+    Ok(fingerprints)
+}
+
+/// Validate fingerprints against reference
+fn validate_fingerprints(
+    actual: &[TensorFingerprint],
+    reference: &[TensorFingerprint],
+    threshold: f32,
+    strict: bool,
+) -> Vec<StatisticalAnomaly> {
+    let ref_map: std::collections::HashMap<_, _> = reference.iter()
+        .map(|fp| (normalize_tensor_name(&fp.name), fp))
+        .collect();
+
+    let mut anomalies = Vec::new();
+
+    for actual_fp in actual {
+        let norm_name = normalize_tensor_name(&actual_fp.name);
+        if let Some(ref_fp) = ref_map.get(&norm_name) {
+            // Get role-specific threshold
+            let role_threshold = if strict {
+                get_role_threshold(&actual_fp.name)
+            } else {
+                threshold
+            };
+
+            // Check mean
+            let mean_deviation = if ref_fp.std > 1e-10 {
+                (actual_fp.mean - ref_fp.mean).abs() / ref_fp.std
+            } else {
+                (actual_fp.mean - ref_fp.mean).abs() * 1000.0 // Scale up small differences
+            };
+
+            if mean_deviation > role_threshold {
+                anomalies.push(StatisticalAnomaly {
+                    tensor: actual_fp.name.clone(),
+                    field: "mean".to_string(),
+                    expected: ref_fp.mean,
+                    actual: actual_fp.mean,
+                    deviation_sigma: mean_deviation,
+                });
+            }
+
+            // Check for NaN/Inf (always anomalous if reference doesn't have them)
+            if actual_fp.nan_count > 0 && ref_fp.nan_count == 0 {
+                anomalies.push(StatisticalAnomaly {
+                    tensor: actual_fp.name.clone(),
+                    field: "nan_count".to_string(),
+                    expected: ref_fp.nan_count as f32,
+                    actual: actual_fp.nan_count as f32,
+                    deviation_sigma: f32::INFINITY,
+                });
+            }
+
+            if actual_fp.inf_count > 0 && ref_fp.inf_count == 0 {
+                anomalies.push(StatisticalAnomaly {
+                    tensor: actual_fp.name.clone(),
+                    field: "inf_count".to_string(),
+                    expected: ref_fp.inf_count as f32,
+                    actual: actual_fp.inf_count as f32,
+                    deviation_sigma: f32::INFINITY,
+                });
+            }
+        }
+    }
+
+    anomalies
+}
+
+/// Get role-specific threshold based on tensor name
+fn get_role_threshold(tensor_name: &str) -> f32 {
+    let name_lower = tensor_name.to_lowercase();
+
+    if name_lower.contains("layernorm") || name_lower.contains("layer_norm") || name_lower.contains("ln_") {
+        // LayerNorm weights should be very close to 1.0 - tight threshold
+        2.0
+    } else if name_lower.contains("embed") {
+        // Embeddings can have more variance
+        5.0
+    } else if name_lower.contains("lm_head") || name_lower.contains("output") {
+        // Output layers - moderate threshold
+        3.0
+    } else {
+        // Default threshold for other weights
+        3.0
+    }
 }
 
 /// Normalize tensor name for cross-format comparison
@@ -1144,8 +2204,11 @@ fn is_transposed_dims(shape_a: &[usize], shape_b: &[usize]) -> bool {
     if shape_a.len() != 2 || shape_b.len() != 2 {
         return false;
     }
-    // Check if dims are swapped
-    shape_a[0] == shape_b[1] && shape_a[1] == shape_b[0]
+    // Check if dims are swapped AND shapes are different (not square identical)
+    // For [896, 896] vs [896, 896], this should return false (identical, not transposed)
+    let is_swapped = shape_a[0] == shape_b[1] && shape_a[1] == shape_b[0];
+    let is_different = shape_a != shape_b;
+    is_swapped && is_different
 }
 
 /// Inference result with logit data

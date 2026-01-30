@@ -70,6 +70,12 @@
 14. [Implementation Roadmap](#14-implementation-roadmap)
 15. [References](#15-references)
 16. [Appendices](#16-appendices)
+17. [Future Improvements: APRv3 Research Directions](#17-future-improvements-aprv3-research-directions)
+    - [17.1 Per-Tensor Statistical Fingerprints](#171-per-tensor-statistical-fingerprints-jax-stat-001)
+    - [17.2 PyTree-Inspired Structural Metadata](#172-pytree-inspired-structural-metadata-jax-tree-002)
+    - [17.3 Reference Output Embeddings for Golden Tests](#173-reference-output-embeddings-for-golden-tests-jax-gold-003)
+    - [17.4 Tensor Distribution Tags](#174-tensor-distribution-tags-data-sci-004)
+    - [17.5 Sharding-Aware Tensor Placement](#175-sharding-aware-tensor-placement-jax-shard-005)
 
 ---
 
@@ -3482,6 +3488,260 @@ To ensure documentation never drifts from implementation ("The Map is the Territ
 ```rust
 let model = Apr::load("model.apr"); // Might not compile!
 ```
+
+---
+
+## 17. Future Improvements: APRv3 Research Directions
+
+Based on statistical best practices, data science principles, and JAX/Google ML infrastructure patterns, the following improvements are proposed for APRv3. Each addresses a specific failure mode observed in production ML systems.
+
+### 17.1 Per-Tensor Statistical Fingerprints (JAX-STAT-001)
+
+**Problem**: Current validation only checks file-level CRC32. A single corrupted tensor (e.g., `decoder.layer_norm.weight` with mean=11 instead of ~1) causes complete model failure while passing basic structural checks. This bug class has occurred 50+ times.
+
+**Proposal**: Store statistical fingerprints per-tensor in the tensor index:
+
+```rust
+struct TensorFingerprint {
+    mean: f32,
+    std: f32,
+    min: f32,
+    max: f32,
+    percentiles: [f32; 5],  // p5, p25, p50, p75, p95
+    nan_count: u32,
+    inf_count: u32,
+    zero_fraction: f32,
+    checksum: u32,          // Per-tensor CRC32
+}
+```
+
+**Validation Rule**: On load, recompute fingerprint and fail fast if any statistic deviates beyond tolerance:
+
+```rust
+// E.g., embedding tables should have mean ≈ 0, std ≈ 0.02-0.1
+// LayerNorm weights should have mean ≈ 1.0, std ≈ 0.01
+fn validate_tensor(tensor: &Tensor, expected: &TensorFingerprint) -> Result<(), E020> {
+    let actual = compute_fingerprint(tensor);
+    if (actual.mean - expected.mean).abs() > expected.std * 3.0 {
+        return Err(E020::StatisticalAnomaly { tensor: name, field: "mean" });
+    }
+    // ...
+}
+```
+
+**JAX Inspiration**: JAX's `jax.ShapeDtypeStruct` captures shape and dtype; we extend this to include distribution characteristics.
+
+**Falsifiable Claim**: 95% of silent corruption bugs would be caught at load time with fingerprint validation.
+
+---
+
+### 17.2 PyTree-Inspired Structural Metadata (JAX-TREE-002)
+
+**Problem**: Current APR stores flat tensor list without capturing model structure. Debugging requires correlating tensor names manually. Layout mismatches (row-major vs col-major) are invisible.
+
+**Proposal**: Add `pytree.json` structure descriptor alongside tensors:
+
+```json
+{
+  "tree_structure": {
+    "type": "Qwen2ForCausalLM",
+    "children": {
+      "model": {
+        "type": "Qwen2Model",
+        "children": {
+          "embed_tokens": { "type": "Embedding", "tensor": "model.embed_tokens.weight" },
+          "layers": {
+            "type": "ModuleList[32]",
+            "children": {
+              "0": {
+                "type": "Qwen2DecoderLayer",
+                "children": {
+                  "self_attn": {
+                    "type": "Qwen2Attention",
+                    "children": {
+                      "q_proj": { "type": "Linear", "tensor": "model.layers.0.self_attn.q_proj.weight", "layout": "row_major" },
+                      "k_proj": { "type": "Linear", "tensor": "model.layers.0.self_attn.k_proj.weight", "layout": "row_major" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+**Benefits**:
+1. **Diff tools** can show "Layer 5 Q-proj missing" instead of raw tensor names
+2. **Layout annotation** makes row-major vs col-major explicit (GH-188 root cause)
+3. **Type checking** validates tensor shapes match declared module types
+4. **Visualization** tools can render model architecture from metadata
+
+**JAX Inspiration**: JAX's `tree_flatten`/`tree_unflatten` with `pytreedef.json` storing the tree structure separately from leaf data.
+
+---
+
+### 17.3 Reference Output Embeddings for Golden Tests (JAX-GOLD-003)
+
+**Problem**: Detecting semantic correctness requires running inference. A model can load and produce output but still be wrong (garbage tokens, wrong language, etc.). Current canary tests store external JSON files.
+
+**Proposal**: Embed reference outputs directly in APR metadata:
+
+```json
+{
+  "golden_outputs": [
+    {
+      "input": "Hello",
+      "expected_tokens": [15496, 0],
+      "expected_text": "Hello!",
+      "temperature": 0.0,
+      "max_tokens": 5,
+      "tolerance": "exact"
+    },
+    {
+      "input": "2+2=",
+      "expected_pattern": "4|four",
+      "temperature": 0.0,
+      "max_tokens": 10,
+      "tolerance": "regex"
+    }
+  ]
+}
+```
+
+**Validation**: `apr validate model.apr --golden` runs embedded tests without external files:
+
+```bash
+$ apr validate qwen2.apr --golden
+Golden test 1/2: "Hello" → "Hello!" ✓
+Golden test 2/2: "2+2=" → "4" ✓
+All golden tests passed (2/2)
+```
+
+**JAX Inspiration**: JAX's `DisabledSafetyCheck` pattern for explicit safety overrides; we extend this to include positive tests.
+
+**Statistical Principle**: The model file becomes a self-validating artifact. Corruption detection moves from "does it load?" to "does it think correctly?"
+
+---
+
+### 17.4 Tensor Distribution Tags (DATA-SCI-004)
+
+**Problem**: Not all tensors are created equal. Embedding tables have different statistical properties than attention weights vs MLP biases. Generic validation rules cause false positives/negatives.
+
+**Proposal**: Tag each tensor with its semantic role and expected distribution:
+
+```rust
+enum TensorRole {
+    Embedding,           // mean≈0, std≈0.02-0.1, sparse
+    AttentionWeight,     // mean≈0, std≈0.01-0.02, dense
+    AttentionBias,       // mean≈0, std≈0.001, optional
+    MLPWeight,           // mean≈0, std≈0.01-0.05
+    MLPBias,             // mean≈0, std≈0.01
+    LayerNormWeight,     // mean≈1, std≈0.01 (gamma)
+    LayerNormBias,       // mean≈0, std≈0.01 (beta)
+    LMHead,              // often tied to embedding
+    PositionalEncoding,  // various patterns (rotary, absolute, alibi)
+    Quantized,           // Q4_K, Q6_K, Q8_0 - special rules
+}
+
+struct TensorMetadata {
+    name: String,
+    shape: Vec<usize>,
+    dtype: DType,
+    role: TensorRole,
+    expected_distribution: Distribution,
+}
+
+enum Distribution {
+    Normal { mean: f32, std: f32 },
+    Uniform { min: f32, max: f32 },
+    Xavier { fan_in: usize, fan_out: usize },
+    Kaiming { fan_in: usize, mode: String },
+    Custom { description: String },
+}
+```
+
+**Benefits**:
+1. **Role-specific validation**: LayerNorm weights MUST have mean≈1; embeddings SHOULD be zero-centered
+2. **Conversion safety**: Warn if quantizing LayerNorm weights (often should stay F32)
+3. **Initialization checking**: Verify weights match expected initialization scheme
+4. **Pruning guidance**: MLPWeight can be pruned; LayerNormWeight probably shouldn't
+
+**Data Science Principle**: Metadata should encode domain knowledge about what values are physically meaningful.
+
+---
+
+### 17.5 Sharding-Aware Tensor Placement (JAX-SHARD-005)
+
+**Problem**: Large models require distributed inference across multiple GPUs/TPUs. Current APR sharding (Phase 3) only handles file splitting, not tensor placement hints.
+
+**Proposal**: Add JAX-inspired `PartitionSpec` to tensor metadata:
+
+```json
+{
+  "tensors": {
+    "model.layers.0.self_attn.q_proj.weight": {
+      "shape": [4096, 4096],
+      "dtype": "f16",
+      "partition_spec": {
+        "mesh_axes": ["data", "model"],
+        "tensor_axes": [null, "model"],
+        "comment": "Shard along output dimension for tensor parallelism"
+      }
+    },
+    "model.embed_tokens.weight": {
+      "shape": [151936, 896],
+      "dtype": "f16",
+      "partition_spec": {
+        "mesh_axes": ["data", "model"],
+        "tensor_axes": ["model", null],
+        "comment": "Shard vocabulary for parallel embedding lookup"
+      },
+      "replication_hint": "all_gather_before_use"
+    }
+  }
+}
+```
+
+**Runtime Behavior**:
+```rust
+// Runtime interprets partition spec for available hardware
+let mesh = Mesh::new(&devices, &["data", "model"]);
+for tensor in model.tensors() {
+    let placement = tensor.partition_spec.resolve(&mesh);
+    tensor.shard_to(placement)?;
+}
+```
+
+**JAX Inspiration**: JAX's `PartitionSpec`, `NamedSharding`, and `jax.experimental.multihost_utils` for multi-device coordination.
+
+**Benefits**:
+1. **Optimal placement**: Format encodes expert knowledge about tensor parallelism
+2. **Hardware independence**: Same model file works on 1 GPU or 8 TPUs
+3. **Memory planning**: Runtime can pre-compute memory requirements per device
+4. **Overlap hints**: `replication_hint` enables prefetching strategies
+
+---
+
+### Summary: APRv3 Research Priorities
+
+| Improvement | Failure Mode Addressed | Implementation Complexity | Impact |
+|-------------|----------------------|---------------------------|--------|
+| **Per-tensor fingerprints** | Silent corruption | Medium | High |
+| **PyTree structure** | Layout mismatches | Medium | High |
+| **Golden output embedding** | Semantic correctness | Low | Medium |
+| **Distribution tags** | Over/under validation | Low | Medium |
+| **Sharding specs** | Multi-GPU scaling | High | High |
+
+**Next Steps**:
+1. Prototype fingerprint computation in `apr validate --fingerprint`
+2. Design pytree schema for Qwen2/LLaMA/Whisper architectures
+3. Add `--golden` flag to existing canary infrastructure
+4. Survey tensor roles across 10+ model architectures
+5. Study JAX `pjit` and Alpa for sharding patterns
 
 ---
 

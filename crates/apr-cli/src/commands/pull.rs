@@ -277,9 +277,9 @@ pub fn resolve_hf_uri(uri: &str) -> Result<String> {
         .call()
         .map_err(|e| CliError::NetworkError(format!("Failed to query HuggingFace API: {}", e)))?;
 
-    let body: serde_json::Value = response
-        .into_json()
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to parse HuggingFace response: {}", e)))?;
+    let body: serde_json::Value = response.into_json().map_err(|e| {
+        CliError::ValidationFailed(format!("Failed to parse HuggingFace response: {}", e))
+    })?;
 
     // Extract siblings (files) from response
     let siblings = body["siblings"]

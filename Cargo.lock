@@ -257,6 +257,7 @@ dependencies = [
  "entrenar-lora",
  "futures-util",
  "glob",
+ "half",
  "humansize",
  "jugar-probar 0.4.2",
  "pacha",

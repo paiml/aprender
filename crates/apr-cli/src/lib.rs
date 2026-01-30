@@ -1680,6 +1680,36 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
                 filter.as_deref(),
                 *json || cli.json,
             ),
+            RosettaCommands::Fingerprint {
+                model,
+                model_b,
+                output,
+                filter,
+                verbose,
+                json,
+            } => rosetta::run_fingerprint(
+                model,
+                model_b.as_ref().map(|p| p.as_path()),
+                output.as_ref().map(|p| p.as_path()),
+                filter.as_deref(),
+                *verbose,
+                *json || cli.json,
+            ),
+            RosettaCommands::ValidateStats {
+                model,
+                reference,
+                fingerprints,
+                threshold,
+                strict,
+                json,
+            } => rosetta::run_validate_stats(
+                model,
+                reference.as_ref().map(|p| p.as_path()),
+                fingerprints.as_ref().map(|p| p.as_path()),
+                *threshold,
+                *strict,
+                *json || cli.json,
+            ),
         },
 
         Commands::Publish {
