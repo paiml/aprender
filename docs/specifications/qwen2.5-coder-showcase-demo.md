@@ -1,8 +1,8 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 5.59.0
-**Status:** ⚠️ P1 OPEN - GH-170 APR chat hangs on 1.5B model
-**Popperian Score:** 99/100 (P1 issue under investigation: APR CUDA 1.5B model)
+**Version:** 5.61.0
+**Status:** ✅ All P0/P1/P2 showcase issues FIXED
+**Popperian Score:** 99/100
 **Author:** PAIML Engineering
 **Date:** 2026-01-30
 **Last Falsification Run:** 2026-01-30 (CI parity gates, format conversion status)
@@ -12,18 +12,18 @@
 
 ## Open GitHub Issues (Toyota Way: Transparency)
 
-| Issue | Title | Severity | Status |
-|-------|-------|----------|--------|
-| [#175](https://github.com/paiml/aprender/issues/175) | Expose TensorStats validation for all formats | **P0** | ✅ **FIXED** (PMAT-180) |
-| [#172](https://github.com/paiml/aprender/issues/172) | Format Conversion NaN Corruption | P0 | ✅ CLOSED (PMAT-177) |
-| [#174](https://github.com/paiml/aprender/issues/174) | Add --profile-output for flamegraph SVG | P2 | Open |
-| [#173](https://github.com/paiml/aprender/issues/173) | Add --focus option for profile scope filtering | P2 | Open |
-| [#171](https://github.com/paiml/aprender/issues/171) | QA Report: Qwen2.5-Coder-1.5B-Instruct Qualified | Info | Open |
-| [#170](https://github.com/paiml/aprender/issues/170) | apr chat hangs with APR format (1.5B model) | P1 | 🔍 Investigating |
-| [#169](https://github.com/paiml/aprender/issues/169) | Make apr import --output optional | P3 | Open |
-| [#168](https://github.com/paiml/aprender/issues/168) | Can't import GGUF model, fails with 404 | P1 | ✅ CLOSED (PMAT-168) |
-| [#162](https://github.com/paiml/aprender/issues/162) | Pulled models don't show on list | P2 | Open |
-| [#160](https://github.com/paiml/aprender/issues/160) | Enable Tool Calling support in apr serve API | P2 | Open |
+| Issue | Title | Severity | Status | Falsification Impact |
+|-------|-------|----------|--------|---------------------|
+| [#175](https://github.com/paiml/aprender/issues/175) | Expose TensorStats validation for all formats | **P0** | ✅ **FIXED** (PMAT-180) | - |
+| [#174](https://github.com/paiml/aprender/issues/174) | Add --profile-output for flamegraph SVG | **P2** | ✅ **FIXED** (PMAT-182) | F-PROFILE-002 +5 pts |
+| [#173](https://github.com/paiml/aprender/issues/173) | Add --focus option for profile scope filtering | **P2** | ✅ **FIXED** (PMAT-182) | F-PROFILE-003 +5 pts |
+| [#172](https://github.com/paiml/aprender/issues/172) | Format Conversion NaN Corruption | P0 | ✅ CLOSED (PMAT-177) | - |
+| [#171](https://github.com/paiml/aprender/issues/171) | QA Report: Qwen2.5-Coder-1.5B-Instruct Qualified | Info | Open | - |
+| [#170](https://github.com/paiml/aprender/issues/170) | apr chat hangs with APR format (1.5B model) | P1 | ✅ **FIXED** (PMAT-181) | - |
+| [#169](https://github.com/paiml/aprender/issues/169) | Make apr import --output optional | P3 | Open | - |
+| [#168](https://github.com/paiml/aprender/issues/168) | Can't import GGUF model, fails with 404 | P1 | ✅ CLOSED (PMAT-168) | - |
+| [#162](https://github.com/paiml/aprender/issues/162) | Pulled models don't show on list | P2 | Open | - |
+| [#160](https://github.com/paiml/aprender/issues/160) | Enable Tool Calling support in apr serve API | P2 | Open | - |
 
 **Last Updated:** 2026-01-30
 

@@ -805,6 +805,10 @@ pub enum Commands {
         /// Exit non-zero if naive implementation detected
         #[arg(long)]
         fail_on_naive: bool,
+
+        /// Output file path for flamegraph SVG (GH-174, PMAT-182)
+        #[arg(long, short = 'o')]
+        output: Option<PathBuf>,
     },
 
     /// Falsifiable QA checklist for model releases
@@ -1152,7 +1156,13 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
             compress,
             output,
             force,
-        } => convert::run(file, quantize.as_deref(), compress.as_deref(), output, *force),
+        } => convert::run(
+            file,
+            quantize.as_deref(),
+            compress.as_deref(),
+            output,
+            *force,
+        ),
         Commands::Merge {
             files,
             strategy,
@@ -1363,6 +1373,7 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
             perf_grade,
             callgraph,
             fail_on_naive,
+            output,
         } => {
             let output_format = format.parse().unwrap_or(profile::OutputFormat::Human);
             let profile_focus = focus
@@ -1381,6 +1392,7 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
                 *perf_grade,
                 *callgraph,
                 *fail_on_naive,
+                output.as_deref(),
             )
         }
 

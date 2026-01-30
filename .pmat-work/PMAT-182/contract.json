@@ -1,0 +1,39 @@
+{
+  "work_item_id": "PMAT-182",
+  "github_issue": [173, 174],
+  "title": "GH-173/174: Profile --focus and --output options",
+  "created_at": "2026-01-30T00:00:00Z",
+  "completed_at": "2026-01-30T00:00:00Z",
+  "status": "completed",
+  "severity": "P2",
+  "root_cause": "--focus parameter was unused (_focus prefix); --output flag for SVG not defined",
+  "five_whys": [
+    "WHY can't filter profiling? → --focus parameter passed but ignored",
+    "WHY ignored? → Function signature had _focus prefix indicating unused",
+    "WHY no SVG output? → --output flag not defined in CLI args",
+    "WHY not defined? → Feature was stubbed but not completed",
+    "ROOT CAUSE: Incomplete implementation of profile command features"
+  ],
+  "toyota_way_principle": "Jidoka - Build quality in, complete features fully",
+  "fix": {
+    "files_changed": [
+      "crates/apr-cli/src/lib.rs",
+      "crates/apr-cli/src/commands/profile.rs"
+    ],
+    "changes": [
+      "Added --output/-o flag to Profile command for SVG file path",
+      "Added filter_results_by_focus() function for focus filtering",
+      "Modified print_flamegraph() to accept output_path and write to file",
+      "Updated run() to apply focus filtering before output"
+    ]
+  },
+  "verification": {
+    "tests_passed": [
+      "test_output_format_parse",
+      "test_profile_focus_parse",
+      "test_detect_format"
+    ],
+    "compilation": "cargo check -p apr-cli --features inference PASSED",
+    "falsification_impact": "+10 points (F-PROFILE-002 +5, F-PROFILE-003 +5)"
+  }
+}

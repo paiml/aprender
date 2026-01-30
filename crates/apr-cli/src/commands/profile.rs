@@ -122,7 +122,7 @@ pub(crate) fn run(
     path: &Path,
     granular: bool,
     format: OutputFormat,
-    _focus: ProfileFocus,
+    focus: ProfileFocus,
     _detect_naive: bool,
     _naive_threshold: f64,
     _compare_hf: Option<&str>,
@@ -130,6 +130,7 @@ pub(crate) fn run(
     _perf_grade: bool,
     _callgraph: bool,
     _fail_on_naive: bool,
+    output_path: Option<&Path>,
 ) -> Result<(), CliError> {
     // Validate file exists
     if !path.exists() {
@@ -167,10 +168,19 @@ pub(crate) fn run(
 
     let profile_time = start.elapsed();
 
+    // GH-173: Apply focus filtering to results (PMAT-182)
+    let filtered_results = filter_results_by_focus(&results, focus);
+
+    // Show focus filter if applied
+    if !matches!(focus, ProfileFocus::All) {
+        output::kv("Focus filter", format!("{:?}", focus));
+        println!();
+    }
+
     // Output results based on format
     match format {
         OutputFormat::Human => {
-            print_human_results(&results, granular)?;
+            print_human_results(&filtered_results, granular)?;
             println!();
             println!(
                 "{}",
@@ -178,14 +188,85 @@ pub(crate) fn run(
             );
         }
         OutputFormat::Json => {
-            print_json_results(&results)?;
+            print_json_results(&filtered_results)?;
         }
         OutputFormat::Flamegraph => {
-            print_flamegraph(&results)?;
+            print_flamegraph(&filtered_results, output_path)?;
         }
     }
 
     Ok(())
+}
+
+/// GH-173: Filter profile results by focus area (PMAT-182)
+fn filter_results_by_focus(results: &RealProfileResults, focus: ProfileFocus) -> RealProfileResults {
+    let filtered_hotspots = match focus {
+        ProfileFocus::All => results.hotspots.clone(),
+        ProfileFocus::Attention => results
+            .hotspots
+            .iter()
+            .filter(|h| {
+                let name_lower = h.name.to_lowercase();
+                name_lower.contains("attention")
+                    || name_lower.contains("attn")
+                    || name_lower.contains("qkv")
+                    || name_lower.contains("softmax")
+            })
+            .cloned()
+            .collect(),
+        ProfileFocus::Mlp => results
+            .hotspots
+            .iter()
+            .filter(|h| {
+                let name_lower = h.name.to_lowercase();
+                name_lower.contains("mlp")
+                    || name_lower.contains("ffn")
+                    || name_lower.contains("gate")
+                    || name_lower.contains("up_proj")
+                    || name_lower.contains("down_proj")
+            })
+            .cloned()
+            .collect(),
+        ProfileFocus::Matmul => results
+            .hotspots
+            .iter()
+            .filter(|h| {
+                let name_lower = h.name.to_lowercase();
+                name_lower.contains("matmul")
+                    || name_lower.contains("gemm")
+                    || name_lower.contains("mm")
+                    || name_lower.contains("linear")
+            })
+            .cloned()
+            .collect(),
+        ProfileFocus::Embedding => results
+            .hotspots
+            .iter()
+            .filter(|h| {
+                let name_lower = h.name.to_lowercase();
+                name_lower.contains("embed")
+                    || name_lower.contains("lm_head")
+                    || name_lower.contains("vocab")
+            })
+            .cloned()
+            .collect(),
+    };
+
+    RealProfileResults {
+        model_path: results.model_path.clone(),
+        architecture: results.architecture.clone(),
+        num_layers: results.num_layers,
+        vocab_size: results.vocab_size,
+        hidden_dim: results.hidden_dim,
+        warmup_passes: results.warmup_passes,
+        measure_passes: results.measure_passes,
+        total_inference_us: results.total_inference_us,
+        throughput_tok_s: results.throughput_tok_s,
+        tokens_per_pass: results.tokens_per_pass,
+        hotspots: filtered_hotspots,
+        per_layer_us: results.per_layer_us.clone(),
+        is_real_data: results.is_real_data,
+    }
 }
 
 /// Profile model using REAL inference passes
@@ -308,10 +389,7 @@ fn profile_gguf_real(
     let total_us: f64 = forward_times.iter().sum();
     let avg_us = total_us / measure_passes as f64;
     // min/max computed for future detailed output
-    let _min_us = forward_times
-        .iter()
-        .cloned()
-        .fold(f64::INFINITY, f64::min);
+    let _min_us = forward_times.iter().cloned().fold(f64::INFINITY, f64::min);
     let _max_us = forward_times
         .iter()
         .cloned()
@@ -440,10 +518,7 @@ fn profile_apr_real(
 
     let total_us: f64 = forward_times.iter().sum();
     let avg_us = total_us / measure_passes as f64;
-    let min_us = forward_times
-        .iter()
-        .cloned()
-        .fold(f64::INFINITY, f64::min);
+    let min_us = forward_times.iter().cloned().fold(f64::INFINITY, f64::min);
     let max_us = forward_times
         .iter()
         .cloned()
@@ -493,10 +568,7 @@ fn print_human_results(results: &RealProfileResults, granular: bool) -> Result<(
 
     // Real data indicator
     if results.is_real_data {
-        println!(
-            "{}",
-            "✓ REAL TELEMETRY (not simulated)".green().bold()
-        );
+        println!("{}", "✓ REAL TELEMETRY (not simulated)".green().bold());
     } else {
         println!("{}", "⚠ SIMULATED DATA (inference disabled)".yellow());
     }
@@ -547,11 +619,7 @@ fn print_human_results(results: &RealProfileResults, granular: bool) -> Result<(
         println!("{}", "═".repeat(60));
         println!();
 
-        let max_layer_time = results
-            .per_layer_us
-            .iter()
-            .cloned()
-            .fold(0.0f64, f64::max);
+        let max_layer_time = results.per_layer_us.iter().cloned().fold(0.0f64, f64::max);
 
         for (i, &time_us) in results.per_layer_us.iter().enumerate() {
             let bar_width = if max_layer_time > 0.0 {
@@ -647,8 +715,8 @@ fn print_json_results(results: &RealProfileResults) -> Result<(), CliError> {
     Ok(())
 }
 
-/// Print flamegraph SVG
-fn print_flamegraph(results: &RealProfileResults) -> Result<(), CliError> {
+/// Print flamegraph SVG (GH-174: supports --output for file output)
+fn print_flamegraph(results: &RealProfileResults, output_path: Option<&Path>) -> Result<(), CliError> {
     let mut svg = String::new();
     svg.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
     svg.push_str("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"800\" height=\"400\">\n");
@@ -696,7 +764,16 @@ fn print_flamegraph(results: &RealProfileResults) -> Result<(), CliError> {
     }
 
     svg.push_str("</svg>\n");
-    println!("{svg}");
+
+    // GH-174: Write to file if output path specified, otherwise print to stdout
+    if let Some(path) = output_path {
+        std::fs::write(path, &svg).map_err(|e| {
+            CliError::ValidationFailed(format!("Failed to write flamegraph to {}: {e}", path.display()))
+        })?;
+        output::success(&format!("Flamegraph written to: {}", path.display()));
+    } else {
+        println!("{svg}");
+    }
     Ok(())
 }
 
