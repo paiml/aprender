@@ -2325,21 +2325,29 @@ roadmap:
   labels: []
   notes: null
 - id: 'PMAT-127: Fix F-APR-GGUF - APR from GGUF produces garbage'
-  github_issue: null
+  github_issue: 186
   item_type: task
-  title: 'New task: PMAT-127: Fix F-APR-GGUF - APR from GGUF produces garbage'
-  status: inprogress
+  title: 'FIXED: PMAT-127 APR from GGUF produces garbage (dtype mismatch)'
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-01-28T23:40:09.296872973+00:00
-  updated: 2026-01-28T23:40:09.296872973+00:00
+  updated: 2026-01-30T19:20:00+00:00
   spec: null
-  acceptance_criteria: []
+  acceptance_criteria:
+    - '[x] apr check /tmp/test.apr passes 10/10 stages'
+    - '[x] apr trace --payload shows valid logits (L2=1311.75, not NaN)'
+    - '[x] Root cause identified: dtype byte mismatch (APR 12=Q4K, realizar expected 8)'
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
-  notes: null
+  labels: ['bugfix', 'p0-resolved']
+  notes: |
+    Root Cause: DType byte mapping mismatch between aprender and realizar.
+    - APR format uses dtype 12 for Q4K, 14 for Q6K (per aprender/src/format/v2.rs)
+    - realizar read dtype 12 as fallback "F32" causing NaN logits
+    Fix: Updated realizar/src/apr/mod.rs from_binary() dtype mapping.
+    Commits: aaa0f9a3, 734a076f
 - id: 'PMAT-129: Fix F-SAFETENSORS-GPU - apr run should support SafeTensors GPU'
   github_issue: null
   item_type: task
