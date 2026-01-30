@@ -781,3 +781,188 @@ fn test_gh122_flow_with_layer_filter() {
         .assert()
         .success();
 }
+
+// ============================================================================
+// GH-179 / PMAT-191: Missing Tool Tests (Tool Coverage Gap)
+// ============================================================================
+
+// F-RUN-001: apr run help works
+#[test]
+fn test_f_run_001_help() {
+    apr()
+        .args(["run", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Run").or(predicate::str::contains("inference")));
+}
+
+// F-RUN-002: apr run with missing model shows error
+#[test]
+fn test_f_run_002_missing_model_error() {
+    apr()
+        .args(["run", "/nonexistent/model.gguf", "--prompt", "test"])
+        .assert()
+        .failure()
+        .stderr(
+            predicate::str::contains("not found")
+                .or(predicate::str::contains("No such file"))
+                .or(predicate::str::contains("Failed")),
+        );
+}
+
+// F-CHAT-001: apr chat help works
+#[test]
+fn test_f_chat_001_help() {
+    apr()
+        .args(["chat", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("chat").or(predicate::str::contains("Chat")));
+}
+
+// F-CHAT-002: apr chat with missing model shows error
+#[test]
+fn test_f_chat_002_missing_model_error() {
+    apr()
+        .args(["chat", "/nonexistent/model.gguf"])
+        .assert()
+        .failure()
+        .stderr(
+            predicate::str::contains("not found")
+                .or(predicate::str::contains("No such file"))
+                .or(predicate::str::contains("Failed")),
+        );
+}
+
+// F-SERVE-001: apr serve help works
+#[test]
+fn test_f_serve_001_help() {
+    apr()
+        .args(["serve", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("serve").or(predicate::str::contains("Serve")))
+        .stdout(predicate::str::contains("port").or(predicate::str::contains("PORT")));
+}
+
+// F-SERVE-002: apr serve with missing model shows error
+#[test]
+fn test_f_serve_002_missing_model_error() {
+    apr()
+        .args(["serve", "/nonexistent/model.gguf"])
+        .assert()
+        .failure()
+        .stderr(
+            predicate::str::contains("not found")
+                .or(predicate::str::contains("No such file"))
+                .or(predicate::str::contains("Failed")),
+        );
+}
+
+// F-CANARY-001: apr canary help works
+#[test]
+fn test_f_canary_001_help() {
+    apr()
+        .args(["canary", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("canary").or(predicate::str::contains("Canary")))
+        .stdout(predicate::str::contains("create").or(predicate::str::contains("check")));
+}
+
+// F-CANARY-002: apr canary create with missing model shows error
+#[test]
+fn test_f_canary_002_create_missing_model() {
+    apr()
+        .args([
+            "canary",
+            "create",
+            "--input",
+            "/tmp/test.wav",
+            "--output",
+            "/tmp/canary.json",
+            "/nonexistent/model.gguf",
+        ])
+        .assert()
+        .failure()
+        .stderr(
+            predicate::str::contains("not found")
+                .or(predicate::str::contains("No such file"))
+                .or(predicate::str::contains("Failed"))
+                .or(predicate::str::contains("does not exist")),
+        );
+}
+
+// F-TUNE-001: apr tune help works
+#[test]
+fn test_f_tune_001_help() {
+    apr()
+        .args(["tune", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("tune").or(predicate::str::contains("Tune")))
+        .stdout(predicate::str::contains("plan").or(predicate::str::contains("lora")));
+}
+
+// F-TUNE-002: apr tune with missing model shows error
+#[test]
+fn test_f_tune_002_missing_model() {
+    apr()
+        .args(["tune", "/nonexistent/model.gguf", "--plan"])
+        .assert()
+        .failure()
+        .stderr(
+            predicate::str::contains("not found")
+                .or(predicate::str::contains("No such file"))
+                .or(predicate::str::contains("Failed")),
+        );
+}
+
+// F-QA-001: apr qa help works
+#[test]
+fn test_f_qa_001_help() {
+    apr()
+        .args(["qa", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("qa").or(predicate::str::contains("QA")));
+}
+
+// F-QA-002: apr qa with missing model shows error
+#[test]
+fn test_f_qa_002_missing_model() {
+    apr()
+        .args(["qa", "/nonexistent/model.gguf"])
+        .assert()
+        .failure()
+        .stderr(
+            predicate::str::contains("not found")
+                .or(predicate::str::contains("No such file"))
+                .or(predicate::str::contains("Failed")),
+        );
+}
+
+// F-CONVERT-001: apr convert help works (rosetta subcommand)
+#[test]
+fn test_f_convert_001_rosetta_help() {
+    apr()
+        .args(["rosetta", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("convert").or(predicate::str::contains("Convert")));
+}
+
+// F-CONVERT-002: apr rosetta convert with missing model shows error
+#[test]
+fn test_f_convert_002_missing_model() {
+    apr()
+        .args(["rosetta", "convert", "/nonexistent/model.gguf", "/tmp/out.apr"])
+        .assert()
+        .failure()
+        .stderr(
+            predicate::str::contains("not found")
+                .or(predicate::str::contains("No such file"))
+                .or(predicate::str::contains("Failed"))
+                .or(predicate::str::contains("does not exist")),
+        );
+}

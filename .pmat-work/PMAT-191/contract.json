@@ -1,0 +1,36 @@
+{
+  "work_item_id": "PMAT-191",
+  "github_issue": 179,
+  "title": "GH-179: APR tool test coverage only 69% (9/13 tools)",
+  "created_at": "2026-01-30T00:00:00Z",
+  "status": "in_progress",
+  "severity": "P1",
+  "approach": "Add falsification gates for missing tools: run, chat, serve, canary, tune, qa",
+  "five_whys": [
+    "WHY is tool coverage 69%? → 4 tools have no direct tests",
+    "WHY no direct tests? → Focus was on format conversion, not CLI",
+    "WHY focus on format? → P0 conversion bugs took priority",
+    "WHY not parallel work? → Limited testing infrastructure for interactive tools",
+    "ROOT CAUSE: No falsification gates defined for interactive/server commands"
+  ],
+  "toyota_way_principle": "Poka-Yoke - Error-proof the system by testing all entry points",
+  "implementation": {
+    "phases": [
+      "Phase 1: Add F-RUN-001 direct apr run tests",
+      "Phase 2: Add F-SERVE-001 apr serve endpoint tests",
+      "Phase 3: Add F-CHAT-001 apr chat scripted tests",
+      "Phase 4: Add F-CANARY-001 regression tests",
+      "Phase 5: Update coverage to 13/13 (100%)"
+    ],
+    "target_coverage": "100% (13/13 tools)"
+  },
+  "falsification_gates": [
+    "F-RUN-001: apr run --help exits 0",
+    "F-RUN-002: apr run model.gguf --prompt 'test' produces output",
+    "F-SERVE-001: apr serve starts and responds to /health",
+    "F-SERVE-002: apr serve /v1/completions returns valid JSON",
+    "F-CHAT-001: apr chat --once 'test' produces response",
+    "F-CANARY-001: apr canary create generates baseline",
+    "F-TUNE-001: apr tune --plan generates config"
+  ]
+}
