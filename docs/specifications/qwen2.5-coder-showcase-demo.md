@@ -1,12 +1,30 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 5.54.0
+**Version:** 5.55.0
 **Status:** ✅ ALL ITEMS COMPLETE - PMAT-178 Empty Tensor Tests Added
 **Popperian Score:** 100/100 (All CI gates pass, all stress tests implemented)
 **Author:** PAIML Engineering
 **Date:** 2026-01-30
 **Last Falsification Run:** 2026-01-30 (CI parity gates, format conversion status)
 **Quality Philosophy:** Toyota Way + Popperian Falsification (Zero SATD, Stop-the-Line)
+
+---
+
+## Open GitHub Issues (Toyota Way: Transparency)
+
+| Issue | Title | Severity | Status |
+|-------|-------|----------|--------|
+| [#172](https://github.com/paiml/aprender/issues/172) | Format Conversion NaN Corruption | P0 | ⚠️ FIX APPLIED (PMAT-177) |
+| [#174](https://github.com/paiml/aprender/issues/174) | Add --profile-output for flamegraph SVG | P2 | Open |
+| [#173](https://github.com/paiml/aprender/issues/173) | Add --focus option for profile scope filtering | P2 | Open |
+| [#171](https://github.com/paiml/aprender/issues/171) | QA Report: Qwen2.5-Coder-1.5B-Instruct Qualified | Info | Open |
+| [#170](https://github.com/paiml/aprender/issues/170) | apr chat no longer works with qwen2.5-1.5b-instruct | P1 | Open |
+| [#169](https://github.com/paiml/aprender/issues/169) | Make apr import --output optional | P3 | Open |
+| [#168](https://github.com/paiml/aprender/issues/168) | Can't import GGUF model, fails with 404 | P1 | ✅ FIXED (PMAT-168) |
+| [#162](https://github.com/paiml/aprender/issues/162) | Pulled models don't show on list | P2 | Open |
+| [#160](https://github.com/paiml/aprender/issues/160) | Enable Tool Calling support in apr serve API | P2 | Open |
+
+**Last Updated:** 2026-01-30
 
 ---
 
@@ -130,7 +148,8 @@ apr chat model.gguf         # "2 + 2 equals 4."
 
 **GitHub Issue:** [paiml/aprender#172](https://github.com/paiml/aprender/issues/172)
 **Severity:** P0 - Stop the Line
-**Status:** ⚠️ FIX APPLIED (PMAT-177) - Needs re-verification
+**Status:** ⚠️ FIX APPLIED (PMAT-177) - Scale factor validation and clamping implemented
+**Next Action:** Run apr-model-qa-playbook to verify round-trip conversion works without NaN
 
 **Summary:** `apr rosetta convert` produces lossy conversions with NaN/Inf corruption in round-trip tests.
 
