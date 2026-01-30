@@ -1051,3 +1051,421 @@ fn test_tsne_embedding_finite() {
         }
     }
 }
+
+// ========================================================================
+// Additional Coverage Tests - StandardScaler panic paths
+// ========================================================================
+
+#[test]
+#[should_panic(expected = "Scaler not fitted")]
+fn test_standard_scaler_mean_panic() {
+    let scaler = StandardScaler::new();
+    let _ = scaler.mean();
+}
+
+#[test]
+#[should_panic(expected = "Scaler not fitted")]
+fn test_standard_scaler_std_panic() {
+    let scaler = StandardScaler::new();
+    let _ = scaler.std();
+}
+
+#[test]
+fn test_standard_scaler_inverse_transform_not_fitted() {
+    let scaler = StandardScaler::new();
+    let data = Matrix::from_vec(2, 2, vec![1.0, 2.0, 3.0, 4.0]).expect("valid matrix dimensions");
+    let result = scaler.inverse_transform(&data);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_standard_scaler_inverse_transform_dimension_mismatch() {
+    let train = Matrix::from_vec(3, 2, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+        .expect("valid matrix dimensions");
+    let test = Matrix::from_vec(2, 3, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+        .expect("valid matrix dimensions");
+
+    let mut scaler = StandardScaler::new();
+    scaler.fit(&train).expect("fit should succeed");
+    let result = scaler.inverse_transform(&test);
+    assert!(result.is_err());
+    assert_eq!(
+        result.expect_err("Should fail with dimension mismatch"),
+        "Feature dimension mismatch"
+    );
+}
+
+#[test]
+fn test_standard_scaler_save_load_safetensors() {
+    use std::fs;
+    use std::path::PathBuf;
+
+    let data = Matrix::from_vec(3, 2, vec![1.0, 10.0, 2.0, 20.0, 3.0, 30.0])
+        .expect("valid matrix dimensions");
+
+    let mut scaler = StandardScaler::new();
+    scaler.fit(&data).expect("fit should succeed");
+
+    // Save to temp file
+    let path = PathBuf::from("/tmp/test_standard_scaler.safetensors");
+    scaler.save_safetensors(&path).expect("save should succeed");
+
+    // Load back
+    let loaded = StandardScaler::load_safetensors(&path).expect("load should succeed");
+
+    // Compare mean and std
+    assert_eq!(scaler.mean(), loaded.mean());
+    assert_eq!(scaler.std(), loaded.std());
+
+    // Cleanup
+    let _ = fs::remove_file(&path);
+}
+
+#[test]
+fn test_standard_scaler_save_unfitted_error() {
+    let scaler = StandardScaler::new();
+    let result = scaler.save_safetensors("/tmp/test_unfitted.safetensors");
+    assert!(result.is_err());
+    assert!(result
+        .expect_err("Should fail")
+        .contains("Cannot save unfitted scaler"));
+}
+
+#[test]
+fn test_standard_scaler_with_both_disabled() {
+    let data = Matrix::from_vec(3, 1, vec![1.0, 2.0, 3.0]).expect("valid matrix dimensions");
+
+    let mut scaler = StandardScaler::new().with_mean(false).with_std(false);
+    let transformed = scaler
+        .fit_transform(&data)
+        .expect("fit_transform should succeed");
+
+    // Should be identity transform when both are disabled
+    assert!((transformed.get(0, 0) - 1.0).abs() < 1e-5);
+    assert!((transformed.get(1, 0) - 2.0).abs() < 1e-5);
+    assert!((transformed.get(2, 0) - 3.0).abs() < 1e-5);
+}
+
+#[test]
+fn test_standard_scaler_inverse_transform_with_options() {
+    let data = Matrix::from_vec(3, 2, vec![1.0, 10.0, 2.0, 20.0, 3.0, 30.0])
+        .expect("valid matrix dimensions");
+
+    // Test with only mean centering
+    let mut scaler_mean_only = StandardScaler::new().with_mean(true).with_std(false);
+    let transformed = scaler_mean_only
+        .fit_transform(&data)
+        .expect("fit_transform should succeed");
+    let recovered = scaler_mean_only
+        .inverse_transform(&transformed)
+        .expect("inverse_transform should succeed");
+
+    for i in 0..3 {
+        for j in 0..2 {
+            assert!(
+                (data.get(i, j) - recovered.get(i, j)).abs() < 1e-5,
+                "Mismatch at ({i}, {j})"
+            );
+        }
+    }
+
+    // Test with only std scaling
+    let mut scaler_std_only = StandardScaler::new().with_mean(false).with_std(true);
+    let transformed = scaler_std_only
+        .fit_transform(&data)
+        .expect("fit_transform should succeed");
+    let recovered = scaler_std_only
+        .inverse_transform(&transformed)
+        .expect("inverse_transform should succeed");
+
+    for i in 0..3 {
+        for j in 0..2 {
+            assert!(
+                (data.get(i, j) - recovered.get(i, j)).abs() < 1e-5,
+                "Mismatch at ({i}, {j})"
+            );
+        }
+    }
+}
+
+// ========================================================================
+// Additional Coverage Tests - MinMaxScaler panic paths
+// ========================================================================
+
+#[test]
+#[should_panic(expected = "Scaler not fitted")]
+fn test_minmax_scaler_data_min_panic() {
+    let scaler = MinMaxScaler::new();
+    let _ = scaler.data_min();
+}
+
+#[test]
+#[should_panic(expected = "Scaler not fitted")]
+fn test_minmax_scaler_data_max_panic() {
+    let scaler = MinMaxScaler::new();
+    let _ = scaler.data_max();
+}
+
+#[test]
+fn test_minmax_scaler_inverse_transform_not_fitted() {
+    let scaler = MinMaxScaler::new();
+    let data = Matrix::from_vec(2, 2, vec![1.0, 2.0, 3.0, 4.0]).expect("valid matrix dimensions");
+    let result = scaler.inverse_transform(&data);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_minmax_scaler_inverse_transform_dimension_mismatch() {
+    let train = Matrix::from_vec(3, 2, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+        .expect("valid matrix dimensions");
+    let test = Matrix::from_vec(2, 3, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+        .expect("valid matrix dimensions");
+
+    let mut scaler = MinMaxScaler::new();
+    scaler.fit(&train).expect("fit should succeed");
+    let result = scaler.inverse_transform(&test);
+    assert!(result.is_err());
+    assert_eq!(
+        result.expect_err("Should fail with dimension mismatch"),
+        "Feature dimension mismatch"
+    );
+}
+
+#[test]
+fn test_minmax_inverse_transform_constant_feature() {
+    // Test inverse transform with constant feature (zero range)
+    let data = Matrix::from_vec(3, 2, vec![1.0, 5.0, 2.0, 5.0, 3.0, 5.0])
+        .expect("valid matrix dimensions");
+
+    let mut scaler = MinMaxScaler::new();
+    let transformed = scaler
+        .fit_transform(&data)
+        .expect("fit_transform should succeed");
+    let recovered = scaler
+        .inverse_transform(&transformed)
+        .expect("inverse_transform should succeed");
+
+    // First column should be recovered
+    for i in 0..3 {
+        assert!(
+            (data.get(i, 0) - recovered.get(i, 0)).abs() < 1e-5,
+            "First column should be recovered"
+        );
+        // Constant column recovers to data_min value
+        assert!(
+            (5.0 - recovered.get(i, 1)).abs() < 1e-5,
+            "Constant column should recover to original value"
+        );
+    }
+}
+
+// ========================================================================
+// Additional Coverage Tests - PCA
+// ========================================================================
+
+#[test]
+fn test_pca_inverse_transform_not_fitted() {
+    let pca = PCA::new(2);
+    let data = Matrix::from_vec(2, 2, vec![1.0, 2.0, 3.0, 4.0]).expect("valid matrix dimensions");
+    let result = pca.inverse_transform(&data);
+    assert!(result.is_err());
+    assert_eq!(
+        result.expect_err("Should fail when not fitted"),
+        "PCA not fitted"
+    );
+}
+
+#[test]
+fn test_pca_components_not_fitted() {
+    let pca = PCA::new(2);
+    assert!(pca.components().is_none());
+}
+
+#[test]
+fn test_pca_explained_variance_not_fitted() {
+    let pca = PCA::new(2);
+    assert!(pca.explained_variance().is_none());
+    assert!(pca.explained_variance_ratio().is_none());
+}
+
+// ========================================================================
+// Additional Coverage Tests - TSNE
+// ========================================================================
+
+#[test]
+fn test_tsne_default() {
+    let tsne = TSNE::default();
+    assert!(!tsne.is_fitted());
+    assert_eq!(tsne.n_components(), 2);
+}
+
+#[test]
+fn test_tsne_builder_chain() {
+    let tsne = TSNE::new(3)
+        .with_perplexity(15.0)
+        .with_learning_rate(100.0)
+        .with_n_iter(500)
+        .with_random_state(123);
+
+    assert_eq!(tsne.n_components(), 3);
+    assert!(!tsne.is_fitted());
+}
+
+#[test]
+fn test_tsne_very_short_iterations() {
+    let data = Matrix::from_vec(
+        4,
+        2,
+        vec![1.0, 2.0, 2.0, 3.0, 10.0, 11.0, 11.0, 12.0],
+    )
+    .expect("valid matrix dimensions");
+
+    // Test with very few iterations (to hit early iteration paths)
+    let mut tsne = TSNE::new(2).with_n_iter(10).with_random_state(42);
+    let result = tsne.fit_transform(&data).expect("fit_transform should succeed");
+    assert_eq!(result.shape(), (4, 2));
+}
+
+#[test]
+fn test_tsne_high_iterations() {
+    let data = Matrix::from_vec(
+        4,
+        2,
+        vec![1.0, 2.0, 2.0, 3.0, 10.0, 11.0, 11.0, 12.0],
+    )
+    .expect("valid matrix dimensions");
+
+    // Test with iterations past momentum switch (250+)
+    let mut tsne = TSNE::new(2).with_n_iter(300).with_random_state(42);
+    let result = tsne.fit_transform(&data).expect("fit_transform should succeed");
+    assert_eq!(result.shape(), (4, 2));
+}
+
+#[test]
+fn test_tsne_single_component() {
+    let data = Matrix::from_vec(
+        4,
+        3,
+        vec![1.0, 2.0, 3.0, 2.0, 3.0, 4.0, 10.0, 11.0, 12.0, 11.0, 12.0, 13.0],
+    )
+    .expect("valid matrix dimensions");
+
+    // Reduce to 1D
+    let mut tsne = TSNE::new(1).with_n_iter(100).with_random_state(42);
+    let result = tsne.fit_transform(&data).expect("fit_transform should succeed");
+    assert_eq!(result.shape(), (4, 1));
+}
+
+#[test]
+fn test_tsne_very_low_perplexity() {
+    let data = Matrix::from_vec(
+        6,
+        3,
+        vec![
+            1.0, 2.0, 3.0, 1.5, 2.5, 3.5, 5.0, 6.0, 7.0, 5.5, 6.5, 7.5, 10.0, 11.0, 12.0, 10.5,
+            11.5, 12.5,
+        ],
+    )
+    .expect("valid matrix dimensions");
+
+    // Very low perplexity to test binary search extremes
+    let mut tsne = TSNE::new(2)
+        .with_perplexity(1.5)
+        .with_n_iter(50)
+        .with_random_state(42);
+    let result = tsne.fit_transform(&data).expect("fit_transform should succeed");
+    assert_eq!(result.shape(), (6, 2));
+}
+
+#[test]
+fn test_tsne_identical_points() {
+    // Test with nearly identical points (tests numerical stability)
+    let data = Matrix::from_vec(
+        4,
+        2,
+        vec![1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+    )
+    .expect("valid matrix dimensions");
+
+    let mut tsne = TSNE::new(2).with_n_iter(50).with_random_state(42);
+    let result = tsne.fit_transform(&data).expect("fit_transform should succeed");
+    assert_eq!(result.shape(), (4, 2));
+
+    // Results should be finite
+    for i in 0..4 {
+        for j in 0..2 {
+            assert!(result.get(i, j).is_finite());
+        }
+    }
+}
+
+#[test]
+fn test_tsne_large_values() {
+    // Test with large values (checks numerical stability)
+    let data = Matrix::from_vec(
+        4,
+        2,
+        vec![
+            1e6, 2e6, 1.1e6, 2.1e6, 5e6, 6e6, 5.1e6, 6.1e6,
+        ],
+    )
+    .expect("valid matrix dimensions");
+
+    let mut tsne = TSNE::new(2).with_n_iter(50).with_random_state(42);
+    let result = tsne.fit_transform(&data).expect("fit_transform should succeed");
+    assert_eq!(result.shape(), (4, 2));
+
+    // Results should be finite
+    for i in 0..4 {
+        for j in 0..2 {
+            assert!(result.get(i, j).is_finite());
+        }
+    }
+}
+
+#[test]
+fn test_tsne_without_random_state() {
+    let data = Matrix::from_vec(
+        4,
+        2,
+        vec![1.0, 2.0, 2.0, 3.0, 10.0, 11.0, 11.0, 12.0],
+    )
+    .expect("valid matrix dimensions");
+
+    // Without random state, should use time-based seed
+    let mut tsne = TSNE::new(2).with_n_iter(10);
+    let result = tsne.fit_transform(&data).expect("fit_transform should succeed");
+    assert_eq!(result.shape(), (4, 2));
+}
+
+// ========================================================================
+// StandardScaler save/load edge cases
+// ========================================================================
+
+#[test]
+fn test_standard_scaler_save_with_options() {
+    use std::fs;
+    use std::path::PathBuf;
+
+    let data = Matrix::from_vec(3, 2, vec![1.0, 10.0, 2.0, 20.0, 3.0, 30.0])
+        .expect("valid matrix dimensions");
+
+    // Test with mean=false, std=true
+    let mut scaler = StandardScaler::new().with_mean(false).with_std(true);
+    scaler.fit(&data).expect("fit should succeed");
+
+    let path = PathBuf::from("/tmp/test_standard_scaler_options.safetensors");
+    scaler.save_safetensors(&path).expect("save should succeed");
+
+    let loaded = StandardScaler::load_safetensors(&path).expect("load should succeed");
+
+    // Verify transform behavior matches
+    let test_data = Matrix::from_vec(1, 2, vec![2.0, 20.0]).expect("valid matrix dimensions");
+    let orig_transformed = scaler.transform(&test_data).expect("transform should succeed");
+    let loaded_transformed = loaded.transform(&test_data).expect("transform should succeed");
+
+    assert!((orig_transformed.get(0, 0) - loaded_transformed.get(0, 0)).abs() < 1e-5);
+    assert!((orig_transformed.get(0, 1) - loaded_transformed.get(0, 1)).abs() < 1e-5);
+
+    let _ = fs::remove_file(&path);
+}
