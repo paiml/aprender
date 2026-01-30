@@ -810,11 +810,20 @@ impl GgufReader {
             });
         }
 
-        // Check magic
+        // Check magic (GH-183: Enhanced error message for debugging)
         let magic = read_u32(&data, 0)?;
         if magic != GGUF_MAGIC {
+            // Show both hex and ASCII for easier debugging
+            let magic_bytes = &data[0..4.min(data.len())];
+            let magic_ascii: String = magic_bytes
+                .iter()
+                .map(|&b| if b.is_ascii_graphic() { b as char } else { '.' })
+                .collect();
             return Err(AprenderError::FormatError {
-                message: format!("Invalid GGUF magic: 0x{magic:08X}, expected 0x{GGUF_MAGIC:08X}"),
+                message: format!(
+                    "Invalid GGUF magic: 0x{magic:08X} (bytes: {magic_bytes:02X?}, ascii: \"{magic_ascii}\"), \
+                     expected 0x{GGUF_MAGIC:08X} (\"GGUF\")"
+                ),
             });
         }
 

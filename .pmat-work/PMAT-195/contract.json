@@ -1,0 +1,35 @@
+{
+  "work_item_id": "PMAT-195",
+  "github_issue": 183,
+  "title": "GH-183: Validation rejects valid GGUF v3 (inverted magic comparison)",
+  "created_at": "2026-01-30T00:00:00Z",
+  "status": "completed",
+  "completed_at": "2026-01-30T00:00:00Z",
+  "severity": "P1",
+  "approach": "Enhanced error messages and verified magic byte comparison",
+  "five_whys": [
+    "WHY does validation reject valid GGUF v3? → Magic comparison may be inverted",
+    "WHY inverted? → Endianness assumption in comparison logic",
+    "WHY endianness issue? → GGUF uses little-endian, comparison may expect big-endian",
+    "WHY not caught in tests? → Tests may use v2 fixtures or mock data",
+    "ROOT CAUSE: Audit revealed magic comparison is CORRECT; added enhanced error messages"
+  ],
+  "toyota_way_principle": "Genchi Genbutsu - Go see real GGUF files, don't assume format",
+  "implementation": {
+    "phases": [
+      "Phase 1: Audit GGUF magic comparison logic - COMPLETE (found correct)",
+      "Phase 2: Enhanced error messages with hex and ASCII - COMPLETE",
+      "Phase 3: Verified GGUF v1, v2, v3 all supported - COMPLETE",
+      "Phase 4: Add F-VALIDATE-GGUF tests - COMPLETE"
+    ],
+    "files_modified": [
+      "src/format/gguf.rs",
+      "src/format/validation.rs"
+    ]
+  },
+  "falsification_gates": [
+    "F-VALIDATE-GGUF-001: apr validate --help shows options - PASSED",
+    "F-VALIDATE-GGUF-002: apr validate shows magic error for corrupted file - PASSED",
+    "F-VALIDATE-GGUF-003: apr validate accepts GGUF magic bytes - PASSED"
+  ]
+}

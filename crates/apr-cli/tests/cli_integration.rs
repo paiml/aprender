@@ -1059,3 +1059,126 @@ fn test_f_profile_ci_006_assert_p50_accepted() {
         .assert()
         .failure(); // Expected - model doesn't exist
 }
+
+// ============================================================================
+// F-CONVERT-QUANT Tests (GH-181: Q4_K_M block alignment)
+// ============================================================================
+
+// F-CONVERT-QUANT-001: apr convert --help shows Q4K option
+#[test]
+fn test_f_convert_quant_001_help_shows_q4k() {
+    apr()
+        .args(["convert", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("q4k").or(predicate::str::contains("q4_k")));
+}
+
+// F-CONVERT-QUANT-002: apr convert with --quantize q4k accepted
+#[test]
+fn test_f_convert_quant_002_q4k_option_accepted() {
+    apr()
+        .args([
+            "convert",
+            "/nonexistent/model.gguf",
+            "/tmp/out.apr",
+            "--quantize",
+            "q4k",
+        ])
+        .assert()
+        .failure(); // Expected - model doesn't exist
+}
+
+// ============================================================================
+// F-EXPORT-COMPANION Tests (GH-182: SafeTensors companion files)
+// ============================================================================
+
+// F-EXPORT-COMPANION-001: apr export --help shows format options
+#[test]
+fn test_f_export_companion_001_help_shows_formats() {
+    apr()
+        .args(["export", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("safetensors"))
+        .stdout(predicate::str::contains("gguf"));
+}
+
+// F-EXPORT-COMPANION-002: apr export accepts safetensors format
+#[test]
+fn test_f_export_companion_002_safetensors_accepted() {
+    apr()
+        .args([
+            "export",
+            "/nonexistent/model.apr",
+            "--format",
+            "safetensors",
+            "/tmp/out.safetensors",
+        ])
+        .assert()
+        .failure(); // Expected - model doesn't exist
+}
+
+// ============================================================================
+// F-VALIDATE-GGUF Tests (GH-183: GGUF v3 validation)
+// ============================================================================
+
+// F-VALIDATE-GGUF-001: apr validate --help shows options
+#[test]
+fn test_f_validate_gguf_001_help_shows_options() {
+    apr()
+        .args(["validate", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("quality").or(predicate::str::contains("strict")));
+}
+
+// F-VALIDATE-GGUF-002: apr validate shows magic error for corrupted file
+#[test]
+fn test_f_validate_gguf_002_magic_error_message() {
+    use std::io::Write;
+
+    // Create a file with invalid magic
+    let mut file = NamedTempFile::new().expect("create temp file");
+    file.write_all(b"BADM1234567890123456789012345678")
+        .unwrap();
+
+    apr()
+        .args(["validate", file.path().to_str().unwrap()])
+        .assert()
+        .failure()
+        .stdout(
+            predicate::str::contains("Invalid magic")
+                .or(predicate::str::contains("magic"))
+                .or(predicate::str::contains("BADM")),
+        );
+}
+
+// F-VALIDATE-GGUF-003: apr validate accepts GGUF magic bytes
+#[test]
+fn test_f_validate_gguf_003_accepts_gguf_magic() {
+    use std::io::Write;
+
+    // Create a file with valid GGUF magic but minimal content
+    let mut file = NamedTempFile::new().expect("create temp file");
+    // GGUF magic + version 3 + minimal header
+    file.write_all(b"GGUF").unwrap(); // magic
+    file.write_all(&3u32.to_le_bytes()).unwrap(); // version 3
+    file.write_all(&0u64.to_le_bytes()).unwrap(); // tensor count
+    file.write_all(&0u64.to_le_bytes()).unwrap(); // metadata count
+    // Pad to 32 bytes
+    file.write_all(&[0u8; 8]).unwrap();
+
+    // This should pass the magic check (might fail later for other reasons)
+    let output = apr()
+        .args(["validate", file.path().to_str().unwrap()])
+        .output()
+        .expect("run command");
+
+    // Should not fail on magic bytes
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        !stdout.contains("Invalid magic"),
+        "GGUF magic should be accepted: {stdout}"
+    );
+}

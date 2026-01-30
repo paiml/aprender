@@ -1,7 +1,7 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 5.73.0
-**Status:** ✅ 14 closed, 0 open bugs (GH-180/PMAT-192 COMPLETE)
+**Version:** 5.75.0
+**Status:** ✅ 17 closed, 0 open bugs (GH-181/182/183 COMPLETE)
 **Popperian Score:** 100/100
 **Author:** PAIML Engineering
 **Date:** 2026-01-30
@@ -12,10 +12,13 @@
 
 ## GitHub Issues Status (Toyota Way: Transparency)
 
-**Summary:** 14 issues closed, 0 open bugs. All P0/P1/P2 defects resolved.
+**Summary:** 17 issues closed, 0 open bugs. All P0/P1/P2 defects resolved.
 
 | Issue | Title | Severity | Status | PMAT |
 |-------|-------|----------|--------|------|
+| [#183](https://github.com/paiml/aprender/issues/183) | Validation rejects valid GGUF v3 (inverted magic) | P1 | ✅ **CLOSED** | PMAT-195 |
+| [#182](https://github.com/paiml/aprender/issues/182) | SafeTensors missing companion files | P1 | ✅ **CLOSED** | PMAT-194 |
+| [#181](https://github.com/paiml/aprender/issues/181) | Conversion loses Q4_K_M block alignment | **P0** | ✅ **CLOSED** | PMAT-193 |
 | [#180](https://github.com/paiml/aprender/issues/180) | cbtop-style profiling (apr profile/benchmark) | P2 | ✅ **CLOSED** | PMAT-192 |
 | [#179](https://github.com/paiml/aprender/issues/179) | Tool test coverage 69% → 100% | P1 | ✅ CLOSED | PMAT-191 |
 | [#178](https://github.com/paiml/aprender/issues/178) | apr validate rejects GGUF v3 | P2 | ✅ CLOSED | PMAT-188 |

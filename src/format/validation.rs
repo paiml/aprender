@@ -580,7 +580,7 @@ impl AprValidator {
 
     /// Check 1: Magic bytes valid
     ///
-    /// GH-178: Support both APR and GGUF formats:
+    /// GH-178/GH-183: Support both APR and GGUF formats:
     /// - APR: `APR\0` (0x41 0x50 0x52 0x00)
     /// - GGUF: `GGUF` (0x47 0x47 0x55 0x46 = [71, 71, 85, 70])
     fn check_magic(&mut self, data: &[u8]) {
@@ -592,7 +592,14 @@ impl AprValidator {
                 // GH-178: GGUF magic is valid ([71, 71, 85, 70] = "GGUF")
                 CheckStatus::Pass
             } else {
-                CheckStatus::Fail(format!("Invalid magic: {:?} (expected APR or GGUF)", magic))
+                // GH-183: Enhanced error message showing hex and ASCII
+                let magic_ascii: String = magic
+                    .iter()
+                    .map(|&b| if b.is_ascii_graphic() { b as char } else { '.' })
+                    .collect();
+                CheckStatus::Fail(format!(
+                    "Invalid magic: {magic:02X?} (ascii: \"{magic_ascii}\"). Expected APR\\0 or GGUF"
+                ))
             }
         } else {
             CheckStatus::Fail("File too small for magic bytes".to_string())

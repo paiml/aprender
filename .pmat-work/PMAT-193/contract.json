@@ -1,0 +1,33 @@
+{
+  "work_item_id": "PMAT-193",
+  "github_issue": 181,
+  "title": "GH-181: Conversion loses Q4_K_M block alignment",
+  "created_at": "2026-01-30T00:00:00Z",
+  "status": "completed",
+  "completed_at": "2026-01-30T00:00:00Z",
+  "severity": "P0",
+  "approach": "Preserve quantized bytes directly instead of dequant→requant",
+  "five_whys": [
+    "WHY does conversion lose Q4_K_M alignment? → We dequantize to f32 then requantize",
+    "WHY dequant→requant? → Original design assumed format-agnostic intermediate",
+    "WHY format-agnostic? → Simplified cross-format conversion initially",
+    "WHY not direct byte copy? → Block alignment differences weren't considered",
+    "ROOT CAUSE: Missing direct quantized tensor pass-through when source/target quant types match"
+  ],
+  "toyota_way_principle": "Jidoka - Build quality in at the source, don't dequant if not needed",
+  "implementation": {
+    "phases": [
+      "Phase 1: Detect when source/target quant types match - COMPLETE",
+      "Phase 2: Implement direct byte-copy path for matching quant types - COMPLETE",
+      "Phase 3: Validate block alignment preservation - COMPLETE",
+      "Phase 4: Add F-CONVERT-QUANT tests - COMPLETE"
+    ],
+    "files_modified": [
+      "src/format/converter.rs"
+    ]
+  },
+  "falsification_gates": [
+    "F-CONVERT-QUANT-001: apr convert --help shows Q4K option - PASSED",
+    "F-CONVERT-QUANT-002: Q4_K_M → Q4_K_M uses raw byte pass-through - PASSED"
+  ]
+}

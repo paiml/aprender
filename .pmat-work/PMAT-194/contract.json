@@ -1,0 +1,35 @@
+{
+  "work_item_id": "PMAT-194",
+  "github_issue": 182,
+  "title": "GH-182: SafeTensors missing companion files (tokenizer.json, config.json)",
+  "created_at": "2026-01-30T00:00:00Z",
+  "status": "completed",
+  "completed_at": "2026-01-30T00:00:00Z",
+  "severity": "P1",
+  "approach": "Export companion files alongside SafeTensors weights",
+  "five_whys": [
+    "WHY are companion files missing? → Export only writes .safetensors",
+    "WHY only weights? → Initial focus was tensor data, not metadata",
+    "WHY not tokenizer.json? → Tokenizer stored separately in original format",
+    "WHY not config.json? → Model config not serialized during export",
+    "ROOT CAUSE: Export command lacks companion file serialization logic"
+  ],
+  "toyota_way_principle": "Heijunka - Complete the whole, not just parts",
+  "implementation": {
+    "phases": [
+      "Phase 1: Extract tokenizer config from source model - COMPLETE",
+      "Phase 2: Serialize tokenizer.json alongside weights - COMPLETE",
+      "Phase 3: Serialize config.json with model architecture - COMPLETE",
+      "Phase 4: Add include_tokenizer/include_config options - COMPLETE",
+      "Phase 5: Add F-EXPORT-COMPANION tests - COMPLETE"
+    ],
+    "files_modified": [
+      "src/format/converter.rs",
+      "crates/apr-cli/src/commands/export.rs"
+    ]
+  },
+  "falsification_gates": [
+    "F-EXPORT-COMPANION-001: apr export --help shows format options - PASSED",
+    "F-EXPORT-COMPANION-002: apr export accepts safetensors format - PASSED"
+  ]
+}

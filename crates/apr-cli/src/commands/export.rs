@@ -63,6 +63,7 @@ pub(crate) fn run(file: &Path, format: &str, output: &Path, quantize: Option<&st
     let options = ExportOptions {
         format: export_format,
         quantize: quant_type,
+        ..Default::default()
     };
 
     // Run export
