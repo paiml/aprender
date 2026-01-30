@@ -3,7 +3,7 @@
 **Version:** 5.91.0
 **Status:** ✅ 19 closed, 0 open P0 bugs. GH-186 APR Q4_K FIXED via dtype mapping correction.
 **Popperian Score:** 96/100 (All P0 bugs resolved, APRv3 statistical tools in progress)
-**Code Coverage:** 96.16% (target: ≥95%)
+**Code Coverage:** 96.17% (target: ≥95%)
 **Tool Coverage:** 16/16 (100%) - All APR tools verified (+ rosetta fingerprint, validate-stats)
 **Author:** PAIML Engineering
 **Date:** 2026-01-30
