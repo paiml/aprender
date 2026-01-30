@@ -257,6 +257,15 @@ See `crates/apr-cli/src/commands/chat.rs:1068-1104` for implementation.
 - ✅ F-CONV-059: `apr rosetta compare-inference` parity tool (implemented)
 - ✅ Zero SATD in apr-cli (4 violations fixed)
 
+**Completed (PMAT-184, GH-176):**
+- ✅ F-TUNE-001: LoRA configuration planning (`apr tune --method lora --model 7B`)
+- ✅ F-TUNE-002: QLoRA configuration planning (`apr tune --method qlora --vram 8`)
+- ✅ F-TUNE-003: Memory breakdown estimation (base model, adapter, optimizer, activations)
+- ✅ F-TUNE-004: VRAM utilization planning (`apr tune --model 1.5B --vram 16`)
+- ✅ F-TUNE-005: JSON output for CI integration (`apr tune --json`)
+
+**Note:** `apr tune` currently provides **configuration planning** via entrenar-lora. Actual training execution is deferred to entrenar CLI.
+
 ---
 
 ## Critical Failures (Falsifications)
