@@ -1,24 +1,26 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 5.77.0
-**Status:** ✅ 18 closed, 0 open bugs (GH-184 verified working)
-**Popperian Score:** 100/100
+**Version:** 5.78.0
+**Status:** ⚠️ 18 closed, 1 open P0 bug (GH-185: APR tokenizer embedding)
+**Popperian Score:** 92/100 (conversion tests blocked)
 **Code Coverage:** 96.16% (target: ≥95%)
+**Tool Coverage:** 12/12 (100%) - All APR tools verified
 **Author:** PAIML Engineering
 **Date:** 2026-01-30
-**Last Falsification Run:** 2026-01-30 (CI parity gates, format conversion status)
+**Last Falsification Run:** 2026-01-30 (apr-model-qa-playbook requalification)
 **Quality Philosophy:** Toyota Way + Popperian Falsification (Zero SATD, Stop-the-Line)
 
 ---
 
 ## GitHub Issues Status (Toyota Way: Transparency)
 
-**Summary:** 18 issues closed, 0 open bugs. All P0/P1/P2 defects resolved.
+**Summary:** 18 issues closed, 1 open P0 bug. GH-185 blocks format conversion certification.
 
 | Issue | Title | Severity | Status | PMAT |
 |-------|-------|----------|--------|------|
-| [#184](https://github.com/paiml/aprender/issues/184) | apr profile --ci exits 0 on assertion fail | P1 | ✅ **CLOSED** | PMAT-196 |
-| [#183](https://github.com/paiml/aprender/issues/183) | Validation rejects valid GGUF v3 (inverted magic) | P1 | ✅ **CLOSED** | PMAT-195 |
+| [#185](https://github.com/paiml/aprender/issues/185) | **APR missing embedded tokenizer** | **P0** | ⏳ **OPEN** | - |
+| [#184](https://github.com/paiml/aprender/issues/184) | apr profile --ci exits 0 on assertion fail | P2 | ✅ **CLOSED** (not a bug) | - |
+| [#183](https://github.com/paiml/aprender/issues/183) | Validation rejects valid GGUF v3 (inverted magic) | P2 | ✅ **CLOSED** | PMAT-195 |
 | [#182](https://github.com/paiml/aprender/issues/182) | SafeTensors missing companion files | P1 | ✅ **CLOSED** | PMAT-194 |
 | [#181](https://github.com/paiml/aprender/issues/181) | Conversion loses Q4_K_M block alignment | **P0** | ✅ **CLOSED** | PMAT-193 |
 | [#180](https://github.com/paiml/aprender/issues/180) | cbtop-style profiling (apr profile/benchmark) | P2 | ✅ **CLOSED** | PMAT-192 |
@@ -123,7 +125,7 @@ Compare:
 - `apr check` (10-stage): ✅ **VERIFIED** (Real forward pass telemetry)
 - `apr profile`: ✅ **VERIFIED** (Real BrickProfiler telemetry)
 - `apr chat`: ✅ Verified (Modality Matrix - CPU and GPU)
-- **Format Conversion:** ✅ **VERIFIED** (PMAT-187+190: NaN detection + Q4K layout fix)
+- **Format Conversion:** ⚠️ **BLOCKED** (GH-185: APR missing embedded tokenizer, diff 0.56-0.75 vs ε=1e-6)
 
 ### RED TEAM FINDINGS (2026-01-30): Protocol "Burn It Down"
 
@@ -1710,16 +1712,37 @@ use crate::quantize::fused_q4k_parallel_matvec;
 
 ## 10. Rosetta Format Conversion Matrix
 
-### Direct Conversions (6 paths)
+### Direct Conversions (6 paths) - Updated 2026-01-30
 
-| # | Source | Target | Command | Status |
-|---|--------|--------|---------|--------|
-| 1 | GGUF | APR | `apr convert model.gguf -o model.apr` | ✅ GH-164 FIXED |
-| 2 | APR | GGUF | `apr export model.apr --format gguf` | ✅ |
-| 3 | SafeTensors | APR | `apr import model.safetensors -o model.apr` | ✅ PMAT-114 FIXED |
-| 4 | APR | SafeTensors | `apr export model.apr --format safetensors` | ✅ |
-| 5 | GGUF | SafeTensors | `apr convert model.gguf -o model.safetensors` | ✅ GH-164 FIXED |
-| 6 | SafeTensors | GGUF | `apr import ... && apr export --format gguf` | ⚠️ PMAT-174: Partial (needs metadata) |
+**Status:** ⚠️ BLOCKED by GH-185 (APR missing embedded tokenizer)
+
+| # | Source | Target | Command | Status | QA Gate |
+|---|--------|--------|---------|--------|---------|
+| 1 | GGUF | APR | `apr rosetta convert model.gguf model.apr` | ❌ **BLOCKED** (GH-185) | F-CONV-G-A |
+| 2 | APR | GGUF | `apr export model.apr --format gguf` | ❌ **BLOCKED** | F-CONV-A-G |
+| 3 | SafeTensors | APR | `apr import model.safetensors -o model.apr` | ❌ **BLOCKED** | F-CONV-S-A |
+| 4 | APR | SafeTensors | `apr export model.apr --format safetensors` | ❌ **BLOCKED** (NaN) | F-CONV-A-S |
+| 5 | GGUF | SafeTensors | `apr rosetta convert model.gguf model.safetensors` | ❌ **BLOCKED** (NaN) | F-CONV-G-S |
+| 6 | SafeTensors | GGUF | `apr import ... && apr export --format gguf` | ❌ **BLOCKED** | F-CONV-S-G |
+
+**Root Cause (GH-185):** GGUF → APR conversion copies tensors but not tokenizer metadata.
+- GGUF stores tokenizer in `tokenizer.ggml.*` metadata fields
+- APR format requires embedded tokenizer for self-contained inference
+- Without tokenizer, APR inference produces garbage: `"4"` → `"1. What is the difference..."`
+
+**Required Fix:** Extract `tokenizer.ggml.tokens`, `tokenizer.ggml.scores`, etc. from GGUF and embed in APR.
+
+### Conversion Test Results (apr-model-qa-playbook 2026-01-30)
+
+| Gate | Conversion | Diff | Required | Status |
+|------|------------|------|----------|--------|
+| F-CONV-G-A | GGUF → APR | 0.746 | < 1e-6 | ❌ FAIL |
+| F-CONV-A-G | APR → GGUF | 0.560 | < 1e-6 | ❌ FAIL |
+| F-CONV-G-S | GGUF → SafeTensors | NaN | < 1e-6 | ❌ FAIL |
+| F-CONV-S-G | SafeTensors → GGUF | 0.560 | < 1e-6 | ❌ FAIL |
+| F-CONV-A-S | APR → SafeTensors | NaN | < 1e-6 | ❌ FAIL |
+| F-CONV-S-A | SafeTensors → APR | 0.748 | < 1e-6 | ❌ FAIL |
+| F-CONV-RT-001 | Round-trip | NaN | < 1e-6 | ❌ FAIL |
 
 ### Inference Comparison (PMAT-114 Debug Tool)
 
@@ -1805,6 +1828,117 @@ Uses aprender's own ML algorithms for diagnostics:
 | F-GPU-130b: Golden parity | ✅ Correlation 1.0 |
 | F-GPU-130c: >5.0 tok/s CPU | ✅ 14 tok/s |
 | F-GPU-130f: >100 tok/s GPU | ✅ 755 tok/s |
+
+---
+
+## APR-Model-QA-Playbook Results (2026-01-30)
+
+**Test Framework:** apr-model-qa-playbook v0.1.0
+**Model:** Qwen2.5-Coder-1.5B-Instruct (Q4_K_M)
+**Methodology:** Popperian Falsification + Toyota Way (Zero Defects)
+
+### Tool Coverage Testing (12/12 = 100%)
+
+| Tool | Gate | Exit | Duration | Status |
+|------|------|------|----------|--------|
+| `apr rosetta inspect` | F-INSPECT-001 | 0 | 1352ms | ✅ PASS |
+| `apr validate` | F-VALIDATE-001 | 0 | 768ms | ✅ PASS |
+| `apr check` | F-CHECK-001 | 0 | 2147ms | ✅ PASS |
+| `apr bench` | F-BENCH-001 | 0 | 594ms | ✅ PASS |
+| `apr run --trace-level none` | F-TRACELEVEL-001 | 0 | 5250ms | ✅ PASS |
+| `apr run --trace-level basic` | F-TRACELEVEL-002 | 0 | 4434ms | ✅ PASS |
+| `apr run --trace-level layer` | F-TRACELEVEL-003 | 0 | 4707ms | ✅ PASS |
+| `apr run --trace-level payload` | F-TRACELEVEL-004 | 0 | 4559ms | ✅ PASS |
+| `apr profile` | F-PROFILE-001 | 0 | 4110ms | ✅ PASS |
+| `apr profile --ci` | F-PROFILE-006 | 0 | 2654ms | ✅ PASS |
+| `apr profile --ci` (failure) | F-PROFILE-007 | 1 | 2373ms | ✅ PASS |
+| `apr profile --assert-p99` | F-PROFILE-008 | 0 | 2303ms | ✅ PASS |
+
+### New Profile CI Features Verified
+
+```bash
+# CI mode with throughput assertion
+apr profile model.gguf --ci --assert-throughput 10.0 --warmup 3 --measure 10
+
+# Output:
+CI PROFILE REPORT (PMAT-192)
+════════════════════════════════════════════════════════════
+  Throughput:  12.8 tok/s
+  Latency p50: 156.51 ms
+  Latency p99: 156.51 ms
+
+ASSERTIONS
+  ✅ PASS throughput: 12.8 tok/s (expected >= 10.0 tok/s)
+```
+
+**CI Mode Flags:**
+- `--ci` - Enable assertion checking mode
+- `--assert-throughput N` - Fail if throughput < N tok/s
+- `--assert-p99 N` - Fail if p99 latency > N ms
+- `--assert-p50 N` - Fail if p50 latency > N ms
+- `--warmup N` - Warmup passes before measurement
+- `--measure N` - Measurement passes for statistics
+
+**Exit Codes:** Returns 1 on assertion failure (CI-friendly).
+
+### Format Conversion Testing (0/7 = BLOCKED)
+
+**Blocker:** GH-185 - APR files missing embedded tokenizer
+
+| Gate | Conversion | Observed Diff | Required | Status |
+|------|------------|---------------|----------|--------|
+| F-CONV-G-A | GGUF → APR | 0.746 | < 1e-6 | ❌ FAIL |
+| F-CONV-A-G | APR → GGUF | 0.560 | < 1e-6 | ❌ FAIL |
+| F-CONV-G-S | GGUF → SafeTensors | NaN | < 1e-6 | ❌ FAIL |
+| F-CONV-S-G | SafeTensors → GGUF | 0.560 | < 1e-6 | ❌ FAIL |
+| F-CONV-A-S | APR → SafeTensors | NaN | < 1e-6 | ❌ FAIL |
+| F-CONV-S-A | SafeTensors → APR | 0.748 | < 1e-6 | ❌ FAIL |
+| F-CONV-RT-001 | Round-trip | NaN | < 1e-6 | ❌ FAIL |
+
+**Evidence of GH-185:**
+```bash
+# GGUF inference - CORRECT
+apr run model.gguf -p "What is 2+2?" --max-tokens 8 --no-gpu
+# Output: "4"
+
+# APR inference - WRONG (missing tokenizer)
+apr rosetta convert model.gguf model.apr
+apr run model.apr -p "What is 2+2?" --max-tokens 8 --no-gpu
+# Error: [PMAT-172] APR file missing embedded tokenizer.
+# Output: "1. What is the difference between a"
+```
+
+### Model Qualification Score (MQS)
+
+| Category | Points | Max | Status |
+|----------|--------|-----|--------|
+| Tool Coverage | 60 | 60 | ✅ 100% |
+| Conversion | 0 | 70 | ❌ BLOCKED |
+| Inference Accuracy | 40 | 50 | ✅ 80% |
+| Performance | 25 | 30 | ✅ 83% |
+| **Total** | **125** | **210** | **59.5%** |
+
+**Certification:** ❌ NOT QUALIFIED (requires ≥87%, blocked by GH-185)
+
+### Upstream Issues Filed
+
+| Issue | Title | Severity | Status |
+|-------|-------|----------|--------|
+| #185 | APR missing embedded tokenizer | **P0** | ⏳ OPEN |
+| #184 | CI exit code on failure | P2 | ✅ CLOSED (not a bug) |
+| #183 | GGUF v3 validation messages | P2 | ✅ FIXED |
+| #182 | SafeTensors companion files | P1 | ✅ FIXED |
+| #181 | Q4_K_M block alignment | P0 | ✅ FIXED |
+
+### Five-Whys: GH-185 Root Cause
+
+1. **Why** does APR produce wrong output? → Tokenizer missing
+2. **Why** is tokenizer missing? → Conversion only copies tensor data
+3. **Why** only tensors? → GGUF stores tokenizer in metadata, not tensors
+4. **Why** not extract metadata? → `tokenizer.ggml.*` fields not parsed
+5. **ROOT CAUSE:** Converter focuses on weight data, not model packaging
+
+**Fix Location:** `src/format/converter.rs` - Extract GGUF tokenizer metadata and embed in APR.
 
 ---
 
