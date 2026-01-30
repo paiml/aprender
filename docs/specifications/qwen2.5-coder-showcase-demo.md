@@ -1,7 +1,7 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 5.71.0
-**Status:** ✅ 13 closed, 1 open feature (GH-180)
+**Version:** 5.72.0
+**Status:** ✅ 13 closed, 1 in-progress (GH-180/PMAT-192 Phase 1 complete)
 **Popperian Score:** 100/100
 **Author:** PAIML Engineering
 **Date:** 2026-01-30
@@ -12,11 +12,11 @@
 
 ## GitHub Issues Status (Toyota Way: Transparency)
 
-**Summary:** 13 issues closed, 1 open feature request. All P0/P1/P2 defects resolved.
+**Summary:** 13 issues closed, 1 in-progress feature. All P0/P1/P2 defects resolved.
 
 | Issue | Title | Severity | Status | PMAT |
 |-------|-------|----------|--------|------|
-| [#180](https://github.com/paiml/aprender/issues/180) | cbtop-style profiling (apr profile/benchmark) | P2 | 🔵 **NEW** | - |
+| [#180](https://github.com/paiml/aprender/issues/180) | cbtop-style profiling (apr profile/benchmark) | P2 | 🔵 **IN PROGRESS** | PMAT-192 |
 | [#179](https://github.com/paiml/aprender/issues/179) | Tool test coverage 69% → 100% | P1 | ✅ CLOSED | PMAT-191 |
 | [#178](https://github.com/paiml/aprender/issues/178) | apr validate rejects GGUF v3 | P2 | ✅ CLOSED | PMAT-188 |
 | [#177](https://github.com/paiml/aprender/issues/177) | Format conversion NaN/Inf | **P0** | ✅ CLOSED | PMAT-187+190 |
@@ -309,11 +309,11 @@ fn check_gguf_version(&mut self, data: &[u8]) {
 
 | Phase | Description | Status |
 |-------|-------------|--------|
-| 1 | Add CI assertion mode to profile.rs | 🔵 |
-| 2 | Add JSON output with pass/fail | ⏳ |
-| 3 | Add --assert-throughput/--assert-p99 | ⏳ |
-| 4 | Add differential benchmark mode | ⏳ |
-| 5 | Add F-PROFILE-CI-* tests | ⏳ |
+| 1 | Add CI assertion mode to profile.rs | ✅ DONE |
+| 2 | Add JSON output with pass/fail | ✅ DONE |
+| 3 | Add --assert-throughput/--assert-p99 | ✅ DONE |
+| 4 | Add differential benchmark mode | ⏳ TODO |
+| 5 | Add F-PROFILE-CI-* tests | ⏳ TODO |
 
 **CLI Interface:**
 
