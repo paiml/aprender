@@ -1614,8 +1614,8 @@ Uses aprender's own ML algorithms for diagnostics:
 
 | Issue | Title | Summary | Status |
 |-------|-------|---------|--------|
-| **#169** | Make `apr import` have `--output` as optional | 🟠 **NEW** - UX improvement | Optional output path |
-| **#160** | Enable Tool Calling support | `tools` field in `/v1/chat/completions` ignored | Blocks LangChain/Agents |
+| ~~**#169**~~ | ~~Make `apr import` have `--output` as optional~~ | ✅ FIXED (PMAT-185) | Derives from source name |
+| ~~**#160**~~ | ~~Enable Tool Calling support~~ | ✅ FIXED (PMAT-186) | Full OpenAI-compatible API |
 | ~~**#152**~~ | ~~`--verbose` for serve payloads~~ | ✅ FIXED: verbose passed to AppState | Works |
 
 ### C.4 P2 Performance/UX (Optimization) - Updated 2026-01-29
