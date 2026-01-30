@@ -14,6 +14,7 @@
 
 | Issue | Title | Severity | Status | Falsification Impact |
 |-------|-------|----------|--------|---------------------|
+| [#179](https://github.com/paiml/aprender/issues/179) | APR tool test coverage only 69% (9/13 tools) | **P1** | 🔴 **OPEN** | F-TOOL-COV-* +20 pts |
 | [#178](https://github.com/paiml/aprender/issues/178) | apr validate rejects valid GGUF v3 files | **P2** | ✅ **FIXED** (PMAT-188) | F-GGUF-* +5 pts |
 | [#177](https://github.com/paiml/aprender/issues/177) | Format conversion introduces NaN/Inf corruption | **P0** | ✅ **FIXED** (PMAT-187+190: Detection + Q4K layout fix) | F-CONV-* +10 pts |
 | [#176](https://github.com/paiml/aprender/issues/176) | Add ML tuning: freeze, LoRA, multi-task, drift | **P1** | ✅ **FIXED** (PMAT-184) | F-TUNE-* +30 pts |
@@ -290,6 +291,45 @@ fn check_gguf_version(&mut self, data: &[u8]) {
 ```
 
 **Toyota Way Jidoka Principle:** Build quality in with proper format detection.
+
+---
+
+### GH-179: APR Tool Test Coverage Gap (PMAT-191) 🔴 OPEN
+
+**GitHub Issue:** [paiml/aprender#179](https://github.com/paiml/aprender/issues/179)
+**Severity:** P1
+**Status:** 🔴 OPEN
+**Current Coverage:** 9/13 tools (69%)
+
+**Tool Coverage Matrix:**
+
+| Tool | Spec Section | Tested? | Status |
+|------|-------------|---------|--------|
+| apr run | 4.4.1 | ⚠️ Indirect | Used by trace tests |
+| apr chat | 4.4.2 | ❌ No | NOT TESTED |
+| apr serve | 4.4.3 | ❌ No | NOT TESTED |
+| apr inspect | 4.4.4 | ✅ Yes | F-INSPECT-001 |
+| apr validate | 4.4.5 | ✅ Yes | F-VALIDATE-001 |
+| apr bench | 4.4.6 | ✅ Yes | F-BENCH-001 |
+| apr profile | 4.4.7 | ✅ Yes | F-PROFILE-001 |
+| apr trace | 4.4.8 | ✅ Yes | 4 levels |
+| apr check | 4.4.9 | ✅ Yes | F-CHECK-001 |
+| apr canary | 4.4.11 | ❌ No | NOT TESTED |
+| apr convert | 4.4.12 | ⚠️ Qual only | In full qual |
+| apr tune | 4.4.13 | ❌ No | NOT TESTED |
+| apr qa | 4.4.14 | ❌ No | NOT TESTED |
+
+**Missing Falsification Gates:**
+- F-RUN-001: Direct `apr run` with various flags
+- F-CHAT-001: Interactive/scripted chat mode
+- F-SERVE-001: OpenAI-compatible server endpoints
+- F-CANARY-001: Regression baseline/compare
+- F-TUNE-001: LoRA/QLoRA planning mode
+- F-QA-001: Meta-tool playbook execution
+
+**Tracing Gap:** Spec section 4.4.10 says tracing should work on `[run, chat, serve]` but only `run` is tested.
+
+**Toyota Way:** Poka-Yoke - Error-proof the system by testing all tools.
 
 ---
 
