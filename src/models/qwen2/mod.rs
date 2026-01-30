@@ -1719,6 +1719,7 @@ mod tests {
     ///
     /// Without this fix, lm_head.weight_t remains None and forward() panics.
     #[test]
+    #[ignore = "requires 0.5B model download - run with: cargo test -- --ignored"]
     fn test_safetensors_weight_tying_lm_head_ready() {
         // This test verifies the INVARIANT: after load_from_safetensors,
         // ALL Linear layers must be ready (weight_t is Some).
@@ -1767,6 +1768,7 @@ mod tests {
     /// S1: Tokenizer loads from tokenizer.json
     /// FALSIFICATION: Encoding "Hello" returns empty or panics
     #[test]
+    #[ignore = "requires tokenizer download - run with: cargo test -- --ignored"]
     fn s1_tokenizer_loads_from_json() {
         let tokenizer_path = std::path::Path::new("/home/noah/.cache/qwen2/tokenizer.json");
 
@@ -1794,6 +1796,7 @@ mod tests {
     /// S2: Tokenizer round-trips ASCII correctly
     /// FALSIFICATION: decode(encode("Hello")) != "Hello"
     #[test]
+    #[ignore = "requires tokenizer download - run with: cargo test -- --ignored"]
     fn s2_tokenizer_roundtrip_ascii() {
         let tokenizer_path = std::path::Path::new("/home/noah/.cache/qwen2/tokenizer.json");
 
@@ -1852,6 +1855,7 @@ mod tests {
     /// FALSIFICATION: OOM on 16GB machine OR load fails
     /// NOTE: Timing removed - use `cargo bench` for performance testing
     #[test]
+    #[ignore = "requires 0.5B model download - run with: cargo test -- --ignored"]
     fn s4_model_loads_memory_efficient() {
         let safetensors_path = std::path::Path::new(
             "/home/noah/.cache/huggingface/hub/models--Qwen--Qwen2-0.5B-Instruct/snapshots/c540970f9e29518b1d8f06ab8b24cba66ad77b6d/model.safetensors"
@@ -1888,6 +1892,7 @@ mod tests {
     /// S5: Model loads exactly 219 weight tensors
     /// FALSIFICATION: Tensor count != 219
     #[test]
+    #[ignore = "requires 0.5B model download - run with: cargo test -- --ignored"]
     fn s5_model_tensor_count() {
         let safetensors_path = std::path::Path::new(
             "/home/noah/.cache/huggingface/hub/models--Qwen--Qwen2-0.5B-Instruct/snapshots/c540970f9e29518b1d8f06ab8b24cba66ad77b6d/model.safetensors"
