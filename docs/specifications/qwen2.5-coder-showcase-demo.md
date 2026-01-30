@@ -14,6 +14,8 @@
 
 | Issue | Title | Severity | Status | Falsification Impact |
 |-------|-------|----------|--------|---------------------|
+| [#178](https://github.com/paiml/aprender/issues/178) | apr validate rejects valid GGUF v3 files | **P2** | ✅ **FIXED** (PMAT-188) | F-GGUF-* +5 pts |
+| [#177](https://github.com/paiml/aprender/issues/177) | Format conversion introduces NaN/Inf corruption | **P0** | ✅ **FIXED** (PMAT-187) | F-CONV-* +10 pts |
 | [#176](https://github.com/paiml/aprender/issues/176) | Add ML tuning: freeze, LoRA, multi-task, drift | **P1** | ✅ **FIXED** (PMAT-184) | F-TUNE-* +30 pts |
 | [#175](https://github.com/paiml/aprender/issues/175) | Expose TensorStats validation for all formats | **P0** | ✅ **FIXED** (PMAT-180) | - |
 | [#174](https://github.com/paiml/aprender/issues/174) | Add --profile-output for flamegraph SVG | **P2** | ✅ **FIXED** (PMAT-182) | F-PROFILE-002 +5 pts |
@@ -177,6 +179,48 @@ apr chat model.gguf         # "2 + 2 equals 4."
 Now the pipeline will fail fast with a clear error message if corruption is detected.
 
 **Evidence:** 8/8 PMAT-187 tests pass
+
+---
+
+### PMAT-188: apr validate GGUF v3 Support ✅ FIXED (GH-178)
+
+**GitHub Issue:** [paiml/aprender#178](https://github.com/paiml/aprender/issues/178)
+**Severity:** P2
+**Status:** ✅ FIXED (2026-01-30)
+**Evidence:** 7/7 GGUF validation tests pass
+
+**Original Symptom:** `apr validate model.gguf` incorrectly rejected valid GGUF v3 files with "Invalid magic" error.
+
+**Five-Whys Root Cause:**
+1. WHY does validate reject valid GGUF files? → Validator only checks for APR magic bytes
+2. WHY only APR magic bytes? → Original validator was APR-format specific
+3. WHY APR-specific? → Validation was designed for APR format before GGUF support
+4. WHY no GGUF version check? → Missing format detection in validate_structure()
+5. ROOT CAUSE: **Validator lacks format-aware magic byte checking and GGUF version validation**
+
+**Fix Applied (PMAT-188):**
+1. ✅ Updated `check_magic()` to accept both "APR\0" and "GGUF" magic bytes
+2. ✅ Added `check_gguf_version()` supporting versions 1, 2, 3
+3. ✅ Updated `validate_structure()` for format detection
+4. ✅ Added 7 GGUF-specific unit tests
+
+**Code Changes (validation.rs):**
+```rust
+// GH-178: Accept both APR and GGUF magic
+if magic == b"APR\0" {
+    CheckStatus::Pass
+} else if magic == b"GGUF" {
+    CheckStatus::Pass  // [71, 71, 85, 70]
+}
+
+// GGUF version validation (v1, v2, v3 supported)
+fn check_gguf_version(&mut self, data: &[u8]) {
+    let version = u32::from_le_bytes([data[4], data[5], data[6], data[7]]);
+    if (1..=3).contains(&version) { /* Pass */ }
+}
+```
+
+**Toyota Way Jidoka Principle:** Build quality in with proper format detection.
 
 ---
 

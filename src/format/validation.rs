@@ -509,18 +509,34 @@ impl AprValidator {
     }
 
     /// Run Section A: Format & Structural Integrity checks (1-25)
+    ///
+    /// GH-178: Detect format (APR vs GGUF) and validate appropriately
     fn validate_structure(&mut self, data: &[u8]) {
         // Check 1: Magic bytes valid
         self.check_magic(data);
 
-        // Check 2: Header size fixed (32 bytes)
+        // Check 2: Header size fixed (32 bytes for APR, 8+ for GGUF)
         self.check_header_size(data);
 
-        // Check 3: Version supported
-        if data.len() >= 32 {
-            if let Ok(header) = AprHeader::parse(data) {
-                self.check_version(&header);
-                self.check_flags(&header);
+        // GH-178: Detect format and validate version accordingly
+        if data.len() >= 4 {
+            let magic = &data[0..4];
+            if magic == b"GGUF" {
+                // GGUF format - check version at bytes 4-7 (u32 LE)
+                self.check_gguf_version(data);
+                // Skip APR-specific flags check for GGUF
+                self.add_check(
+                    11,
+                    "Flags parsed",
+                    Category::Structure,
+                    CheckStatus::Skip("GGUF format - no APR flags".to_string()),
+                );
+            } else if data.len() >= 32 {
+                // APR format
+                if let Ok(header) = AprHeader::parse(data) {
+                    self.check_version(&header);
+                    self.check_flags(&header);
+                }
             }
         }
 
@@ -543,14 +559,40 @@ impl AprValidator {
         }
     }
 
+    /// Check GGUF version (GH-178)
+    ///
+    /// GGUF versions 1, 2, and 3 are widely supported by llama.cpp
+    fn check_gguf_version(&mut self, data: &[u8]) {
+        let status = if data.len() >= 8 {
+            let version = u32::from_le_bytes([data[4], data[5], data[6], data[7]]);
+            // GH-178: GGUF v1, v2, v3 are all valid
+            if (1..=3).contains(&version) {
+                CheckStatus::Pass
+            } else {
+                CheckStatus::Fail(format!("Unsupported GGUF version: {version} (expected 1-3)"))
+            }
+        } else {
+            CheckStatus::Fail("File too small for GGUF version".to_string())
+        };
+
+        self.add_check(3, "Version supported", Category::Structure, status);
+    }
+
     /// Check 1: Magic bytes valid
+    ///
+    /// GH-178: Support both APR and GGUF formats:
+    /// - APR: `APR\0` (0x41 0x50 0x52 0x00)
+    /// - GGUF: `GGUF` (0x47 0x47 0x55 0x46 = [71, 71, 85, 70])
     fn check_magic(&mut self, data: &[u8]) {
         let status = if data.len() >= 4 {
             let magic = &data[0..4];
             if magic == b"APR\0" {
                 CheckStatus::Pass
+            } else if magic == b"GGUF" {
+                // GH-178: GGUF magic is valid ([71, 71, 85, 70] = "GGUF")
+                CheckStatus::Pass
             } else {
-                CheckStatus::Fail(format!("Invalid magic: {magic:?}"))
+                CheckStatus::Fail(format!("Invalid magic: {:?} (expected APR or GGUF)", magic))
             }
         } else {
             CheckStatus::Fail("File too small for magic bytes".to_string())
@@ -1515,6 +1557,122 @@ mod tests_section_a {
             .find(|c| c.id == 11)
             .unwrap();
         assert!(check.status.is_pass(), "Known flags should pass");
+    }
+
+    // GH-178: GGUF format support tests
+    #[test]
+    fn test_check_1_gguf_magic_valid() {
+        // GGUF magic: [71, 71, 85, 70] = "GGUF"
+        let mut data = vec![0u8; 32];
+        data[0..4].copy_from_slice(b"GGUF");
+        data[4] = 3; // GGUF version 3
+        let mut validator = AprValidator::new();
+        validator.validate_bytes(&data);
+        let check = validator
+            .report()
+            .checks
+            .iter()
+            .find(|c| c.id == 1)
+            .unwrap();
+        assert!(
+            check.status.is_pass(),
+            "GH-178: GGUF magic [71, 71, 85, 70] should pass"
+        );
+    }
+
+    #[test]
+    fn test_check_3_gguf_version_3_supported() {
+        let mut data = vec![0u8; 32];
+        data[0..4].copy_from_slice(b"GGUF");
+        data[4..8].copy_from_slice(&3u32.to_le_bytes()); // Version 3
+        let mut validator = AprValidator::new();
+        validator.validate_bytes(&data);
+        let check = validator
+            .report()
+            .checks
+            .iter()
+            .find(|c| c.id == 3)
+            .unwrap();
+        assert!(
+            check.status.is_pass(),
+            "GH-178: GGUF version 3 should be supported"
+        );
+    }
+
+    #[test]
+    fn test_check_3_gguf_version_2_supported() {
+        let mut data = vec![0u8; 32];
+        data[0..4].copy_from_slice(b"GGUF");
+        data[4..8].copy_from_slice(&2u32.to_le_bytes()); // Version 2
+        let mut validator = AprValidator::new();
+        validator.validate_bytes(&data);
+        let check = validator
+            .report()
+            .checks
+            .iter()
+            .find(|c| c.id == 3)
+            .unwrap();
+        assert!(
+            check.status.is_pass(),
+            "GH-178: GGUF version 2 should be supported"
+        );
+    }
+
+    #[test]
+    fn test_check_3_gguf_version_1_supported() {
+        let mut data = vec![0u8; 32];
+        data[0..4].copy_from_slice(b"GGUF");
+        data[4..8].copy_from_slice(&1u32.to_le_bytes()); // Version 1
+        let mut validator = AprValidator::new();
+        validator.validate_bytes(&data);
+        let check = validator
+            .report()
+            .checks
+            .iter()
+            .find(|c| c.id == 3)
+            .unwrap();
+        assert!(
+            check.status.is_pass(),
+            "GH-178: GGUF version 1 should be supported"
+        );
+    }
+
+    #[test]
+    fn test_check_3_gguf_version_0_unsupported() {
+        let mut data = vec![0u8; 32];
+        data[0..4].copy_from_slice(b"GGUF");
+        data[4..8].copy_from_slice(&0u32.to_le_bytes()); // Version 0 (invalid)
+        let mut validator = AprValidator::new();
+        validator.validate_bytes(&data);
+        let check = validator
+            .report()
+            .checks
+            .iter()
+            .find(|c| c.id == 3)
+            .unwrap();
+        assert!(
+            check.status.is_fail(),
+            "GH-178: GGUF version 0 should fail"
+        );
+    }
+
+    #[test]
+    fn test_check_3_gguf_version_4_unsupported() {
+        let mut data = vec![0u8; 32];
+        data[0..4].copy_from_slice(b"GGUF");
+        data[4..8].copy_from_slice(&4u32.to_le_bytes()); // Version 4 (future)
+        let mut validator = AprValidator::new();
+        validator.validate_bytes(&data);
+        let check = validator
+            .report()
+            .checks
+            .iter()
+            .find(|c| c.id == 3)
+            .unwrap();
+        assert!(
+            check.status.is_fail(),
+            "GH-178: GGUF version 4 should fail (future version)"
+        );
     }
 }
 
