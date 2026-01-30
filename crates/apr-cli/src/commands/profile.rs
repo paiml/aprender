@@ -414,6 +414,243 @@ pub(crate) fn run_ci(
     Ok(report.passed)
 }
 
+// ============================================================================
+// PMAT-192 Phase 4: Differential Benchmark Mode (GH-180)
+// ============================================================================
+
+/// Differential benchmark result comparing two models
+#[derive(Debug, Clone)]
+pub struct DiffBenchmarkReport {
+    pub model_a: String,
+    pub model_b: String,
+    pub throughput_a: f64,
+    pub throughput_b: f64,
+    pub throughput_delta_pct: f64,
+    pub latency_a_ms: f64,
+    pub latency_b_ms: f64,
+    pub latency_delta_pct: f64,
+    pub winner: String,
+    pub regressions: Vec<String>,
+    pub improvements: Vec<String>,
+}
+
+impl DiffBenchmarkReport {
+    /// Print human-readable diff report
+    pub fn print_human(&self) {
+        println!();
+        println!("{}", "DIFFERENTIAL BENCHMARK (PMAT-192)".white().bold());
+        println!("{}", "═".repeat(70));
+        println!();
+        println!("  Model A: {}", self.model_a.cyan());
+        println!("  Model B: {}", self.model_b.cyan());
+        println!();
+
+        // Table header
+        println!("{}", "┌─────────────┬──────────────┬──────────────┬──────────────┐");
+        println!("{}", "│ Metric      │ Model A      │ Model B      │ Delta        │");
+        println!("{}", "├─────────────┼──────────────┼──────────────┼──────────────┤");
+
+        // Throughput row
+        let tps_delta_str = if self.throughput_delta_pct >= 0.0 {
+            format!("+{:.1}% ✅", self.throughput_delta_pct).green().to_string()
+        } else {
+            format!("{:.1}% ⚠️", self.throughput_delta_pct).yellow().to_string()
+        };
+        println!(
+            "│ Throughput  │ {:>10.1} t/s │ {:>10.1} t/s │ {:>12} │",
+            self.throughput_a, self.throughput_b, tps_delta_str
+        );
+
+        // Latency row
+        let lat_delta_str = if self.latency_delta_pct <= 0.0 {
+            format!("{:.1}% ✅", self.latency_delta_pct).green().to_string()
+        } else {
+            format!("+{:.1}% ⚠️", self.latency_delta_pct).yellow().to_string()
+        };
+        println!(
+            "│ Latency     │ {:>10.2} ms │ {:>10.2} ms │ {:>12} │",
+            self.latency_a_ms, self.latency_b_ms, lat_delta_str
+        );
+
+        println!("{}", "└─────────────┴──────────────┴──────────────┴──────────────┘");
+        println!();
+
+        // Winner
+        println!("  {}: {}", "Winner".white().bold(), self.winner.green().bold());
+        println!();
+
+        // Regressions
+        if !self.regressions.is_empty() {
+            println!("{}", "  ⚠️  REGRESSIONS:".yellow().bold());
+            for r in &self.regressions {
+                println!("     - {}", r);
+            }
+            println!();
+        }
+
+        // Improvements
+        if !self.improvements.is_empty() {
+            println!("{}", "  ✅ IMPROVEMENTS:".green().bold());
+            for i in &self.improvements {
+                println!("     - {}", i);
+            }
+            println!();
+        }
+    }
+
+    /// Print JSON diff report
+    pub fn print_json(&self) {
+        let mut json = String::from("{\n");
+        json.push_str(&format!("  \"model_a\": \"{}\",\n", self.model_a));
+        json.push_str(&format!("  \"model_b\": \"{}\",\n", self.model_b));
+        json.push_str("  \"metrics\": {\n");
+        json.push_str(&format!("    \"throughput_a_tok_s\": {:.2},\n", self.throughput_a));
+        json.push_str(&format!("    \"throughput_b_tok_s\": {:.2},\n", self.throughput_b));
+        json.push_str(&format!("    \"throughput_delta_pct\": {:.2},\n", self.throughput_delta_pct));
+        json.push_str(&format!("    \"latency_a_ms\": {:.2},\n", self.latency_a_ms));
+        json.push_str(&format!("    \"latency_b_ms\": {:.2},\n", self.latency_b_ms));
+        json.push_str(&format!("    \"latency_delta_pct\": {:.2}\n", self.latency_delta_pct));
+        json.push_str("  },\n");
+        json.push_str(&format!("  \"winner\": \"{}\",\n", self.winner));
+        json.push_str("  \"regressions\": [");
+        for (i, r) in self.regressions.iter().enumerate() {
+            if i > 0 { json.push_str(", "); }
+            json.push_str(&format!("\"{}\"", r));
+        }
+        json.push_str("],\n");
+        json.push_str("  \"improvements\": [");
+        for (i, imp) in self.improvements.iter().enumerate() {
+            if i > 0 { json.push_str(", "); }
+            json.push_str(&format!("\"{}\"", imp));
+        }
+        json.push_str("]\n");
+        json.push_str("}\n");
+        println!("{json}");
+    }
+}
+
+/// Run differential benchmark comparing two models (Phase 4)
+///
+/// Returns Ok(true) if model_b is better or equal, Ok(false) if regression detected.
+#[allow(dead_code)]
+pub(crate) fn run_diff_benchmark(
+    model_a: &Path,
+    model_b: &Path,
+    format: OutputFormat,
+    warmup: usize,
+    measure: usize,
+    regression_threshold: f64, // e.g., 0.05 = 5% regression triggers failure
+) -> Result<bool, CliError> {
+    // Validate files exist
+    if !model_a.exists() {
+        return Err(CliError::FileNotFound(model_a.to_path_buf()));
+    }
+    if !model_b.exists() {
+        return Err(CliError::FileNotFound(model_b.to_path_buf()));
+    }
+
+    output::section("Differential Benchmark (PMAT-192 Phase 4)");
+    println!();
+
+    // Profile model A
+    output::kv("Profiling Model A", model_a.display());
+    #[cfg(feature = "inference")]
+    let results_a = profile_real_inference(model_a, warmup, measure)?;
+
+    #[cfg(not(feature = "inference"))]
+    return Err(CliError::ValidationFailed(
+        "Requires --features inference".to_string(),
+    ));
+
+    // Profile model B
+    output::kv("Profiling Model B", model_b.display());
+    #[cfg(feature = "inference")]
+    let results_b = profile_real_inference(model_b, warmup, measure)?;
+
+    // Calculate deltas
+    let throughput_delta = if results_a.throughput_tok_s > 0.0 {
+        ((results_b.throughput_tok_s - results_a.throughput_tok_s) / results_a.throughput_tok_s) * 100.0
+    } else {
+        0.0
+    };
+
+    let latency_a_ms = results_a.total_inference_us / 1000.0;
+    let latency_b_ms = results_b.total_inference_us / 1000.0;
+    let latency_delta = if latency_a_ms > 0.0 {
+        ((latency_b_ms - latency_a_ms) / latency_a_ms) * 100.0
+    } else {
+        0.0
+    };
+
+    // Determine winner
+    let winner = if results_b.throughput_tok_s > results_a.throughput_tok_s {
+        format!("Model B ({:.1}% faster)", throughput_delta.abs())
+    } else if results_a.throughput_tok_s > results_b.throughput_tok_s {
+        format!("Model A ({:.1}% faster)", throughput_delta.abs())
+    } else {
+        "Tie".to_string()
+    };
+
+    // Detect regressions and improvements
+    let mut regressions = Vec::new();
+    let mut improvements = Vec::new();
+
+    if throughput_delta < -regression_threshold * 100.0 {
+        regressions.push(format!(
+            "Throughput: {:.1}% slower ({:.1} → {:.1} tok/s)",
+            throughput_delta.abs(),
+            results_a.throughput_tok_s,
+            results_b.throughput_tok_s
+        ));
+    } else if throughput_delta > regression_threshold * 100.0 {
+        improvements.push(format!(
+            "Throughput: {:.1}% faster ({:.1} → {:.1} tok/s)",
+            throughput_delta,
+            results_a.throughput_tok_s,
+            results_b.throughput_tok_s
+        ));
+    }
+
+    if latency_delta > regression_threshold * 100.0 {
+        regressions.push(format!(
+            "Latency: {:.1}% slower ({:.2} → {:.2} ms)",
+            latency_delta,
+            latency_a_ms,
+            latency_b_ms
+        ));
+    } else if latency_delta < -regression_threshold * 100.0 {
+        improvements.push(format!(
+            "Latency: {:.1}% faster ({:.2} → {:.2} ms)",
+            latency_delta.abs(),
+            latency_a_ms,
+            latency_b_ms
+        ));
+    }
+
+    let report = DiffBenchmarkReport {
+        model_a: model_a.display().to_string(),
+        model_b: model_b.display().to_string(),
+        throughput_a: results_a.throughput_tok_s,
+        throughput_b: results_b.throughput_tok_s,
+        throughput_delta_pct: throughput_delta,
+        latency_a_ms,
+        latency_b_ms,
+        latency_delta_pct: latency_delta,
+        winner,
+        regressions: regressions.clone(),
+        improvements,
+    };
+
+    // Output
+    match format {
+        OutputFormat::Json => report.print_json(),
+        _ => report.print_human(),
+    }
+
+    // Return false if any regressions detected
+    Ok(regressions.is_empty())
+}
+
 /// GH-173: Filter profile results by focus area (PMAT-182)
 fn filter_results_by_focus(results: &RealProfileResults, focus: ProfileFocus) -> RealProfileResults {
     let filtered_hotspots = match focus {

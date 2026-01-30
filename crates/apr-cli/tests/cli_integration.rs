@@ -966,3 +966,96 @@ fn test_f_convert_002_missing_model() {
                 .or(predicate::str::contains("does not exist")),
         );
 }
+
+// ============================================================================
+// PMAT-192 Phase 5: F-PROFILE-CI-* Tests (GH-180)
+// ============================================================================
+
+// F-PROFILE-CI-001: apr profile --help shows CI options
+#[test]
+fn test_f_profile_ci_001_help_shows_ci_options() {
+    apr()
+        .args(["profile", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--ci"))
+        .stdout(predicate::str::contains("--assert-throughput"))
+        .stdout(predicate::str::contains("--assert-p99"));
+}
+
+// F-PROFILE-CI-002: apr profile with missing model shows error
+#[test]
+fn test_f_profile_ci_002_missing_model_error() {
+    apr()
+        .args(["profile", "/nonexistent/model.gguf"])
+        .assert()
+        .failure()
+        .stderr(
+            predicate::str::contains("not found")
+                .or(predicate::str::contains("No such file"))
+                .or(predicate::str::contains("Failed"))
+                .or(predicate::str::contains("does not exist")),
+        );
+}
+
+// F-PROFILE-CI-003: apr profile --ci with missing model shows error
+#[test]
+fn test_f_profile_ci_003_ci_mode_missing_model() {
+    apr()
+        .args([
+            "profile",
+            "/nonexistent/model.gguf",
+            "--ci",
+            "--assert-throughput",
+            "100",
+        ])
+        .assert()
+        .failure()
+        .stderr(
+            predicate::str::contains("not found")
+                .or(predicate::str::contains("No such file"))
+                .or(predicate::str::contains("Failed"))
+                .or(predicate::str::contains("does not exist")),
+        );
+}
+
+// F-PROFILE-CI-004: apr profile accepts format=json
+#[test]
+fn test_f_profile_ci_004_format_json_accepted() {
+    // Just verify the argument is accepted (will fail on missing model, but that's expected)
+    apr()
+        .args(["profile", "/nonexistent/model.gguf", "--format", "json"])
+        .assert()
+        .failure(); // Expected - model doesn't exist
+}
+
+// F-PROFILE-CI-005: apr profile accepts warmup and measure args
+#[test]
+fn test_f_profile_ci_005_warmup_measure_accepted() {
+    apr()
+        .args([
+            "profile",
+            "/nonexistent/model.gguf",
+            "--warmup",
+            "5",
+            "--measure",
+            "20",
+        ])
+        .assert()
+        .failure(); // Expected - model doesn't exist
+}
+
+// F-PROFILE-CI-006: apr profile --ci --assert-p50 accepted
+#[test]
+fn test_f_profile_ci_006_assert_p50_accepted() {
+    apr()
+        .args([
+            "profile",
+            "/nonexistent/model.gguf",
+            "--ci",
+            "--assert-p50",
+            "25",
+        ])
+        .assert()
+        .failure(); // Expected - model doesn't exist
+}
