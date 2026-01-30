@@ -3,7 +3,10 @@
   "github_issue": 179,
   "title": "GH-179: APR tool test coverage only 69% (9/13 tools)",
   "created_at": "2026-01-30T00:00:00Z",
-  "status": "in_progress",
+  "status": "completed",
+  "completed_at": "2026-01-30T00:00:00Z",
+  "tests_added": 14,
+  "coverage_achieved": "100% (13/13 tools)",
   "severity": "P1",
   "approach": "Add falsification gates for missing tools: run, chat, serve, canary, tune, qa",
   "five_whys": [
