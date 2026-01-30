@@ -7,17 +7,23 @@
 use crate::error::{CliError, Result};
 use aprender::format::{apr_import, Architecture, ImportOptions, Source, ValidationConfig};
 use colored::Colorize;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Run the import command
 pub(crate) fn run(
     source: &str,
-    output: &Path,
+    output: Option<&Path>,
     arch: Option<&str>,
     quantize: Option<&str>,
     force: bool,
     preserve_q4k: bool,
 ) -> Result<()> {
+    // GH-169: Derive output path from source if not provided
+    let output_path = match output {
+        Some(p) => p.to_path_buf(),
+        None => derive_output_path(source)?,
+    };
+    let output = output_path.as_path();
     // PMAT-103: If preserve_q4k is set and source is a local GGUF file,
     // use realizar's Q4K converter to preserve quantization
     #[cfg(feature = "inference")]
@@ -80,7 +86,10 @@ pub(crate) fn run(
 
     // Run import pipeline
     println!("{}", "Importing...".yellow());
-    println!("[DEBUG-CLI] About to call apr_import with source={}", source);
+    println!(
+        "[DEBUG-CLI] About to call apr_import with source={}",
+        source
+    );
 
     match apr_import(source, output, options) {
         Ok(report) => {
@@ -191,5 +200,101 @@ fn run_q4k_import(source: &Path, output: &Path) -> Result<()> {
             println!("{}", "✗ Q4K import failed".red().bold());
             Err(CliError::ValidationFailed(e.to_string()))
         }
+    }
+}
+
+/// Derive output .apr filename from source (GH-169)
+///
+/// Examples:
+/// - hf://Qwen/Qwen2.5-Coder-1.5B-Instruct → Qwen2.5-Coder-1.5B-Instruct.apr
+/// - hf://Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/model.gguf → model.apr
+/// - /path/to/model.gguf → model.apr
+/// - /path/to/model.safetensors → model.apr
+fn derive_output_path(source: &str) -> Result<PathBuf> {
+    // Parse the source to extract a reasonable filename
+    if let Ok(parsed) = Source::parse(source) {
+        match parsed {
+            Source::HuggingFace { org: _, repo, file } => {
+                // If file is specified, use its stem; otherwise use repo name
+                let base_name = if let Some(f) = file {
+                    Path::new(&f)
+                        .file_stem()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or(&repo)
+                        .to_string()
+                } else {
+                    repo
+                };
+                Ok(PathBuf::from(format!("{base_name}.apr")))
+            }
+            Source::Local(path) => {
+                let stem = path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .ok_or_else(|| {
+                        CliError::ValidationFailed("Cannot derive output name from source".into())
+                    })?;
+                Ok(PathBuf::from(format!("{stem}.apr")))
+            }
+            Source::Url(url) => {
+                // Extract filename from URL string
+                let filename = url.rsplit('/').next().unwrap_or("model");
+                let stem = Path::new(filename)
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("model");
+                Ok(PathBuf::from(format!("{stem}.apr")))
+            }
+        }
+    } else {
+        // Fallback: try to extract filename from source string
+        let path = Path::new(source);
+        let stem = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .ok_or_else(|| {
+                CliError::ValidationFailed(
+                    "Cannot derive output name from source. Please specify --output.".into(),
+                )
+            })?;
+        Ok(PathBuf::from(format!("{stem}.apr")))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_derive_output_path_hf_repo() {
+        let result = derive_output_path("hf://Qwen/Qwen2.5-Coder-1.5B-Instruct").unwrap();
+        assert_eq!(result, PathBuf::from("Qwen2.5-Coder-1.5B-Instruct.apr"));
+    }
+
+    #[test]
+    fn test_derive_output_path_hf_with_file() {
+        let result =
+            derive_output_path("hf://Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/model-q4k.gguf")
+                .unwrap();
+        assert_eq!(result, PathBuf::from("model-q4k.apr"));
+    }
+
+    #[test]
+    fn test_derive_output_path_local_gguf() {
+        let result = derive_output_path("/path/to/model.gguf").unwrap();
+        assert_eq!(result, PathBuf::from("model.apr"));
+    }
+
+    #[test]
+    fn test_derive_output_path_local_safetensors() {
+        let result = derive_output_path("model.safetensors").unwrap();
+        assert_eq!(result, PathBuf::from("model.apr"));
+    }
+
+    #[test]
+    fn test_derive_output_path_url() {
+        let result =
+            derive_output_path("https://example.com/models/qwen-1.5b.gguf").unwrap();
+        assert_eq!(result, PathBuf::from("qwen-1.5b.apr"));
     }
 }

@@ -1,6 +1,6 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 5.63.0
+**Version:** 5.64.0
 **Status:** ✅ All P0/P1/P2 showcase issues FIXED
 **Popperian Score:** 100/100
 **Author:** PAIML Engineering
@@ -21,7 +21,7 @@
 | [#172](https://github.com/paiml/aprender/issues/172) | Format Conversion NaN Corruption | P0 | ✅ CLOSED (PMAT-177) | - |
 | [#171](https://github.com/paiml/aprender/issues/171) | QA Report: Qwen2.5-Coder-1.5B-Instruct Qualified | Info | Open | - |
 | [#170](https://github.com/paiml/aprender/issues/170) | apr chat hangs with APR format (1.5B model) | P1 | ✅ **FIXED** (PMAT-181) | - |
-| [#169](https://github.com/paiml/aprender/issues/169) | Make apr import --output optional | P3 | Open | - |
+| [#169](https://github.com/paiml/aprender/issues/169) | Make apr import --output optional | P3 | ✅ **FIXED** (PMAT-185) | - |
 | [#168](https://github.com/paiml/aprender/issues/168) | Can't import GGUF model, fails with 404 | P1 | ✅ CLOSED (PMAT-168) | - |
 | [#162](https://github.com/paiml/aprender/issues/162) | Pulled models don't show on list | P2 | ✅ **VERIFIED** (PMAT-183: Working as designed) | - |
 | [#160](https://github.com/paiml/aprender/issues/160) | Enable Tool Calling support in apr serve API | P2 | Open | - |

@@ -371,9 +371,9 @@ pub enum Commands {
         #[arg(value_name = "SOURCE")]
         source: String,
 
-        /// Output .apr file path
+        /// Output .apr file path (default: derived from source name)
         #[arg(short, long)]
-        output: PathBuf,
+        output: Option<PathBuf>,
 
         /// Model architecture (whisper, llama, bert, auto)
         #[arg(long, default_value = "auto")]
@@ -1181,7 +1181,7 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
             preserve_q4k,
         } => import::run(
             source,
-            output,
+            output.as_deref(),
             Some(arch.as_str()),
             quantize.as_deref(),
             *force,
