@@ -1,0 +1,34 @@
+{
+  "work_item_id": "PMAT-190",
+  "github_issue": 177,
+  "title": "GH-177 ROOT CAUSE: Q4_K scale layout mismatch between gguf.rs and converter.rs",
+  "created_at": "2026-01-30T00:00:00Z",
+  "status": "in_progress",
+  "severity": "P0",
+  "approach": "Unify Q4_K dequantization to use same scale for both nibbles of same sub-block",
+  "five_whys": [
+    "WHY 84.6% output difference? → Values dequantized with wrong scales",
+    "WHY wrong scales? → converter.rs uses different scale indices than gguf.rs",
+    "WHY different indices? → Two incompatible Q4_K layout interpretations",
+    "WHY two implementations? → converter.rs copied candle layout, gguf.rs used llama.cpp",
+    "ROOT CAUSE: Layout mismatch - converter.rs uses DIFFERENT scales for low/high nibbles, but Q4_K uses SAME scale per sub-block"
+  ],
+  "toyota_way_principle": "Genchi Genbutsu - Go see the actual data, don't assume layouts match",
+  "implementation": {
+    "phases": [
+      "Phase 1: Align converter.rs dequantize_q4_k_to_f32 with gguf.rs dequantize_q4_k layout",
+      "Phase 2: Update quantize_q4_k to match the correct layout",
+      "Phase 3: Run round-trip tests to verify < 1e-6 error",
+      "Phase 4: Update spec with fix status"
+    ],
+    "files_to_modify": [
+      "src/format/converter.rs"
+    ],
+    "key_insight": "Q4_K uses ONE scale per 32-element sub-block, NOT different scales for low vs high nibbles"
+  },
+  "falsification_gates": [
+    "F-CONV-001: GGUF → APR diff < 1e-6",
+    "F-CONV-002: APR → GGUF diff < 1e-6",
+    "F-CONV-RT-001: Round-trip A → B → A identical within ε"
+  ]
+}

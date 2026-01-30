@@ -3174,35 +3174,28 @@ fn dequantize_q4_k_to_f32(data: &[u8], num_elements: usize) -> Vec<f32> {
             mins[i + 4] = (scales_bytes[i + 8] >> 4) | ((scales_bytes[i + 4] >> 6) << 4);
         }
 
-        // Read quantized values
+        // Read quantized values (128 bytes = 256 4-bit values)
         let qs = &data[sb_start + 16..sb_start + 144];
 
-        // Dequantize following candle/llama.cpp layout:
-        // For each 64-value chunk: output 32 low nibbles then 32 high nibbles
+        // PMAT-190 FIX: Match gguf.rs dequantize_q4_k layout exactly
+        // Q4_K uses 8 sub-blocks of 32 elements each
+        // Each sub-block uses ONE scale for ALL 32 elements (not different for low/high!)
+        // Layout: 16 bytes per sub-block, each byte → 2 values (low nibble, high nibble)
         let mut ys_index = out_start;
 
-        for chunk in 0..4 {
-            let q = &qs[chunk * 32..(chunk + 1) * 32];
+        for j in 0..8 {
+            // One scale per sub-block (same for both nibbles!)
+            let scale = d * f32::from(scales[j]);
+            let min_val = dmin * f32::from(mins[j]);
 
-            // Scale indices for this chunk
-            let scale_idx_low = chunk * 2;
-            let scale_idx_high = chunk * 2 + 1;
-
-            let d1 = d * f32::from(scales[scale_idx_low]);
-            let dm1 = dmin * f32::from(mins[scale_idx_low]);
-            let d2 = d * f32::from(scales[scale_idx_high]);
-            let dm2 = dmin * f32::from(mins[scale_idx_high]);
-
-            // First pass: 32 low nibbles
-            for &byte in q {
-                result[ys_index] = d1 * (byte & 0xF) as f32 - dm1;
-                ys_index += 1;
-            }
-
-            // Second pass: 32 high nibbles
-            for &byte in q {
-                result[ys_index] = d2 * (byte >> 4) as f32 - dm2;
-                ys_index += 1;
+            // Process 16 bytes → 32 values
+            for l in 0..16 {
+                let q_byte = qs[j * 16 + l];
+                let q0 = f32::from(q_byte & 0x0F);
+                let q1 = f32::from(q_byte >> 4);
+                result[ys_index] = q0 * scale - min_val;
+                result[ys_index + 1] = q1 * scale - min_val;
+                ys_index += 2;
             }
         }
     }
@@ -3468,45 +3461,35 @@ fn quantize_q4_k(data: &[f32]) -> Vec<u8> {
         }
         result.extend_from_slice(&scales_packed);
 
-        // Quantize values to 4-bit and pack into 128 bytes (candle/llama.cpp layout)
-        // For each 64-value chunk: first 32 values as low nibbles, next 32 as high nibbles
-        // Output order: [low0, low1, ..., low31, high0, high1, ..., high31] repeated 4 times
+        // PMAT-190 FIX: Quantize to match gguf.rs dequantize_q4_k layout
+        // Q4_K: 8 sub-blocks of 32 elements, ONE scale per sub-block
+        // 16 bytes per sub-block, each byte packs TWO CONSECUTIVE values
         let mut qs = [0u8; 128];
 
-        for chunk in 0..4 {
-            // Each chunk processes 64 values using 32 bytes
-            let chunk_start = chunk * 64;
-            let qs_start = chunk * 32;
+        for j in 0..8 {
+            // One scale per sub-block (same for both nibbles!)
+            let scale = d * f32::from(scales_6bit[j]);
+            let min_val = dmin * f32::from(mins_6bit[j]);
 
-            // Scale indices: chunk 0 uses scales 0,1; chunk 1 uses 2,3; etc.
-            let scale_idx_low = chunk * 2;
-            let scale_idx_high = chunk * 2 + 1;
+            // Process 32 values → 16 bytes
+            for l in 0..16 {
+                let idx0 = j * 32 + l * 2;       // First value of pair
+                let idx1 = j * 32 + l * 2 + 1;   // Second value of pair
 
-            let d1 = d * f32::from(scales_6bit[scale_idx_low]);
-            let dm1 = dmin * f32::from(mins_6bit[scale_idx_low]);
-            let d2 = d * f32::from(scales_6bit[scale_idx_high]);
-            let dm2 = dmin * f32::from(mins_6bit[scale_idx_high]);
-
-            // Quantize 64 values: first 32 go to low nibbles, next 32 to high nibbles
-            for i in 0..32 {
-                let idx_low = chunk_start + i;
-                let idx_high = chunk_start + 32 + i;
-
-                // Low nibble value (first 32 of chunk)
-                let q_low = if d1 > 1e-10 {
-                    ((padded[idx_low] + dm1) / d1).round().clamp(0.0, 15.0) as u8
+                // Quantize: q = (value + min_val) / scale
+                let q0 = if scale > 1e-10 {
+                    ((padded[idx0] + min_val) / scale).round().clamp(0.0, 15.0) as u8
+                } else {
+                    0
+                };
+                let q1 = if scale > 1e-10 {
+                    ((padded[idx1] + min_val) / scale).round().clamp(0.0, 15.0) as u8
                 } else {
                     0
                 };
 
-                // High nibble value (next 32 of chunk)
-                let q_high = if d2 > 1e-10 {
-                    ((padded[idx_high] + dm2) / d2).round().clamp(0.0, 15.0) as u8
-                } else {
-                    0
-                };
-
-                qs[qs_start + i] = (q_low & 0x0F) | ((q_high & 0x0F) << 4);
+                // Pack: low nibble = q0, high nibble = q1
+                qs[j * 16 + l] = (q0 & 0x0F) | ((q1 & 0x0F) << 4);
             }
         }
         result.extend_from_slice(&qs);
