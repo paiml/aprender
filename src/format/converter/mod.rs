@@ -1173,7 +1173,8 @@ pub(crate) fn quantize_q4_k_matrix(data: &[f32], shape: &[usize]) -> Vec<u8> {
 ///
 /// Returns: (transposed_q4k_bytes, transposed_shape)
 ///
-/// Note: GH-189 FIX - Now used in write.rs for GGUF→APR conversion.
+/// Note: GH-189 FIX - Reserved for GGUF→APR conversion optimization.
+#[allow(dead_code)]
 pub(crate) fn transpose_q4k_for_matmul(data: &[u8], shape: &[usize]) -> (Vec<u8>, Vec<usize>) {
     // Only transpose 2D tensors
     if shape.len() != 2 {
@@ -1208,8 +1209,9 @@ pub(crate) fn transpose_q4k_for_matmul(data: &[u8], shape: &[usize]) -> (Vec<u8>
 ///
 /// Same as transpose_q4k_for_matmul but for Q6K format.
 ///
-/// Note: GH-189 FIX - Now used in write.rs for GGUF→APR conversion.
+/// Note: GH-189 FIX - Reserved for GGUF→APR conversion optimization.
 /// Currently outputs Q4K for re-quantized transpose until Q6K encoder is added.
+#[allow(dead_code)]
 pub(crate) fn transpose_q6k_for_matmul(data: &[u8], shape: &[usize]) -> (Vec<u8>, Vec<usize>) {
     // Only transpose 2D tensors
     if shape.len() != 2 {

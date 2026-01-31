@@ -11,7 +11,6 @@ use std::path::Path;
 // Import shared functions from parent module
 use super::{calculate_tensor_size, load_model_tensors, quantize_tensors};
 
-
 /// Export format options
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExportFormat {
@@ -318,7 +317,10 @@ fn infer_model_config(tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>) -> Str
 /// If the input is APR format with embedded tokenizer, extract it.
 /// Otherwise return empty string.
 fn infer_tokenizer_json(input_path: &Path) -> String {
-    let extension = input_path.extension().and_then(|e| e.to_str()).unwrap_or("");
+    let extension = input_path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("");
 
     if extension == "apr" {
         // Try to read APR metadata which may contain tokenizer
@@ -353,4 +355,3 @@ fn infer_tokenizer_json(input_path: &Path) -> String {
     // Return empty if no tokenizer found
     String::new()
 }
-

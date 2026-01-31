@@ -3,8 +3,7 @@
 
 use crate::error::{AprenderError, Result};
 use crate::format::converter_types::{
-    Architecture, ImportError, ImportOptions, Source, TensorExpectation,
-    ValidationConfig,
+    Architecture, ImportError, ImportOptions, Source, TensorExpectation, ValidationConfig,
 };
 use crate::format::gguf::{
     load_gguf_raw, load_gguf_with_tokenizer, GgufModelConfig, GgufRawTensor, GgufTokenizer,
@@ -681,7 +680,10 @@ pub(crate) fn infer_model_config_from_tensors(
 }
 
 /// Load tensors from source file (`SafeTensors` format)
-pub(crate) fn load_source_tensors(path: &Path, _options: &ImportOptions) -> Result<SourceLoadResult> {
+pub(crate) fn load_source_tensors(
+    path: &Path,
+    _options: &ImportOptions,
+) -> Result<SourceLoadResult> {
     let extension = path.extension().and_then(|e| e.to_str()).unwrap_or("");
 
     match extension {
@@ -728,7 +730,9 @@ pub(crate) fn load_source_tensors(path: &Path, _options: &ImportOptions) -> Resu
 /// Load tensors from `SafeTensors` file using memory-mapped I/O for efficiency
 ///
 /// PMAT-187: Validates all tensors after loading to catch corruption early.
-pub(crate) fn load_safetensors_tensors(path: &Path) -> Result<BTreeMap<String, (Vec<f32>, Vec<usize>)>> {
+pub(crate) fn load_safetensors_tensors(
+    path: &Path,
+) -> Result<BTreeMap<String, (Vec<f32>, Vec<usize>)>> {
     // Use MappedSafeTensors for zero-copy mmap access (much faster for large models)
     let mapped = MappedSafeTensors::open(path).map_err(|e| AprenderError::FormatError {
         message: format!("Failed to mmap SafeTensors: {e}"),

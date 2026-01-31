@@ -10,7 +10,6 @@ use std::path::Path;
 // Import shared function from parent module
 use super::load_model_tensors;
 
-
 /// Merge strategy options
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MergeStrategy {
@@ -191,7 +190,10 @@ fn verify_single_model_tensors(
 }
 
 /// Calculate normalized merge weights based on strategy.
-pub(crate) fn calculate_merge_weights(input_count: usize, options: &MergeOptions) -> Result<Vec<f32>> {
+pub(crate) fn calculate_merge_weights(
+    input_count: usize,
+    options: &MergeOptions,
+) -> Result<Vec<f32>> {
     match options.strategy {
         MergeStrategy::Average => {
             let w = 1.0 / input_count as f32;
