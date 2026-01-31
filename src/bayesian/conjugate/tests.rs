@@ -117,6 +117,48 @@ use super::*;
     }
 
     #[test]
+    fn test_beta_binomial_credible_interval_90pct() {
+        let mut model = BetaBinomial::uniform();
+        model.update(7, 10);
+
+        let (lower, upper) = model
+            .credible_interval(0.90)
+            .expect("Valid confidence level");
+
+        let mean = model.posterior_mean();
+
+        // Mean should be within interval
+        assert!(lower < mean);
+        assert!(mean < upper);
+
+        // 90% interval should be narrower than 95%
+        let (lower_95, upper_95) = model.credible_interval(0.95).unwrap();
+        assert!(lower >= lower_95, "90% lower bound should be >= 95% lower bound");
+        assert!(upper <= upper_95, "90% upper bound should be <= 95% upper bound");
+    }
+
+    #[test]
+    fn test_beta_binomial_credible_interval_99pct() {
+        let mut model = BetaBinomial::uniform();
+        model.update(7, 10);
+
+        let (lower, upper) = model
+            .credible_interval(0.99)
+            .expect("Valid confidence level");
+
+        let mean = model.posterior_mean();
+
+        // Mean should be within interval
+        assert!(lower < mean);
+        assert!(mean < upper);
+
+        // 99% interval should be wider than 95%
+        let (lower_95, upper_95) = model.credible_interval(0.95).unwrap();
+        assert!(lower <= lower_95, "99% lower bound should be <= 95% lower bound");
+        assert!(upper >= upper_95, "99% upper bound should be >= 95% upper bound");
+    }
+
+    #[test]
     fn test_beta_binomial_credible_interval_invalid() {
         let model = BetaBinomial::uniform();
 
@@ -254,6 +296,48 @@ use super::*;
 
         // Lower bound should be non-negative (rate cannot be negative)
         assert!(lower >= 0.0);
+    }
+
+    #[test]
+    fn test_gamma_poisson_credible_interval_90pct() {
+        let mut model = GammaPoisson::noninformative();
+        model.update(&[3, 5, 4, 6, 2]);
+
+        let (lower, upper) = model
+            .credible_interval(0.90)
+            .expect("Valid confidence level");
+
+        let mean = model.posterior_mean();
+
+        // Mean should be within interval
+        assert!(lower < mean);
+        assert!(mean < upper);
+
+        // 90% interval should be narrower than 95%
+        let (lower_95, upper_95) = model.credible_interval(0.95).unwrap();
+        assert!(lower >= lower_95, "90% lower bound should be >= 95% lower bound");
+        assert!(upper <= upper_95, "90% upper bound should be <= 95% upper bound");
+    }
+
+    #[test]
+    fn test_gamma_poisson_credible_interval_99pct() {
+        let mut model = GammaPoisson::noninformative();
+        model.update(&[3, 5, 4, 6, 2]);
+
+        let (lower, upper) = model
+            .credible_interval(0.99)
+            .expect("Valid confidence level");
+
+        let mean = model.posterior_mean();
+
+        // Mean should be within interval
+        assert!(lower < mean);
+        assert!(mean < upper);
+
+        // 99% interval should be wider than 95%
+        let (lower_95, upper_95) = model.credible_interval(0.95).unwrap();
+        assert!(lower <= lower_95, "99% lower bound should be <= 95% lower bound");
+        assert!(upper >= upper_95, "99% upper bound should be >= 95% upper bound");
     }
 
     #[test]
