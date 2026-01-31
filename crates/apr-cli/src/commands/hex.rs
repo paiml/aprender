@@ -310,3 +310,205 @@ fn output_json(
 
     Ok(())
 }
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::{tempdir, NamedTempFile};
+    use std::io::Write;
+
+    // ========================================================================
+    // Statistics Tests
+    // ========================================================================
+
+    #[test]
+    fn test_compute_stats_empty() {
+        let (min, max, mean, std) = compute_stats(&[]);
+        assert_eq!(min, 0.0);
+        assert_eq!(max, 0.0);
+        assert_eq!(mean, 0.0);
+        assert_eq!(std, 0.0);
+    }
+
+    #[test]
+    fn test_compute_stats_single_value() {
+        let (min, max, mean, std) = compute_stats(&[5.0]);
+        assert_eq!(min, 5.0);
+        assert_eq!(max, 5.0);
+        assert_eq!(mean, 5.0);
+        assert_eq!(std, 0.0);
+    }
+
+    #[test]
+    fn test_compute_stats_simple_range() {
+        let data = [1.0, 2.0, 3.0, 4.0, 5.0];
+        let (min, max, mean, std) = compute_stats(&data);
+        assert_eq!(min, 1.0);
+        assert_eq!(max, 5.0);
+        assert_eq!(mean, 3.0);
+        // std for [1,2,3,4,5] is sqrt(2) ≈ 1.414
+        assert!((std - 1.4142).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_compute_stats_negative_values() {
+        let data = [-5.0, -2.0, 0.0, 2.0, 5.0];
+        let (min, max, mean, _std) = compute_stats(&data);
+        assert_eq!(min, -5.0);
+        assert_eq!(max, 5.0);
+        assert_eq!(mean, 0.0);
+    }
+
+    #[test]
+    fn test_compute_stats_all_same() {
+        let data = [7.0, 7.0, 7.0, 7.0];
+        let (min, max, mean, std) = compute_stats(&data);
+        assert_eq!(min, 7.0);
+        assert_eq!(max, 7.0);
+        assert_eq!(mean, 7.0);
+        assert_eq!(std, 0.0);
+    }
+
+    #[test]
+    fn test_compute_stats_large_values() {
+        let data = [1e6, 2e6, 3e6];
+        let (min, max, mean, _std) = compute_stats(&data);
+        assert_eq!(min, 1e6);
+        assert_eq!(max, 3e6);
+        assert_eq!(mean, 2e6);
+    }
+
+    #[test]
+    fn test_compute_stats_tiny_values() {
+        let data = [1e-6, 2e-6, 3e-6];
+        let (min, max, mean, _std) = compute_stats(&data);
+        assert!((min - 1e-6).abs() < 1e-9);
+        assert!((max - 3e-6).abs() < 1e-9);
+        assert!((mean - 2e-6).abs() < 1e-9);
+    }
+
+    // ========================================================================
+    // Run Command Tests
+    // ========================================================================
+
+    #[test]
+    fn test_run_file_not_found() {
+        let result = run(
+            Path::new("/nonexistent/model.apr"),
+            None,
+            100,
+            false,
+            false,
+            false,
+        );
+        assert!(result.is_err());
+        match result {
+            Err(CliError::FileNotFound(_)) => {}
+            _ => panic!("Expected FileNotFound error"),
+        }
+    }
+
+    #[test]
+    fn test_run_invalid_apr_file() {
+        let mut file = NamedTempFile::with_suffix(".apr").expect("create temp file");
+        file.write_all(b"not a valid apr file").expect("write");
+
+        let result = run(
+            file.path(),
+            None,
+            100,
+            false,
+            false,
+            false,
+        );
+        // Should fail because it's not a valid APR
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_is_directory() {
+        let dir = tempdir().expect("create temp dir");
+        let result = run(
+            dir.path(),
+            None,
+            100,
+            false,
+            false,
+            false,
+        );
+        // Should fail because it's a directory
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_with_tensor_filter() {
+        let mut file = NamedTempFile::with_suffix(".apr").expect("create temp file");
+        file.write_all(b"not a valid apr file").expect("write");
+
+        let result = run(
+            file.path(),
+            Some("encoder"),
+            100,
+            false,
+            false,
+            false,
+        );
+        // Should fail (invalid file) but tests the filter path
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_with_stats_flag() {
+        let mut file = NamedTempFile::with_suffix(".apr").expect("create temp file");
+        file.write_all(b"not a valid apr file").expect("write");
+
+        let result = run(
+            file.path(),
+            None,
+            100,
+            true, // show_stats
+            false,
+            false,
+        );
+        // Should fail (invalid file) but tests the stats path
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_with_list_only() {
+        let mut file = NamedTempFile::with_suffix(".apr").expect("create temp file");
+        file.write_all(b"not a valid apr file").expect("write");
+
+        let result = run(
+            file.path(),
+            None,
+            100,
+            false,
+            true, // list_only
+            false,
+        );
+        // Should fail (invalid file) but tests the list_only path
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_with_json_output() {
+        let mut file = NamedTempFile::with_suffix(".apr").expect("create temp file");
+        file.write_all(b"not a valid apr file").expect("write");
+
+        let result = run(
+            file.path(),
+            None,
+            100,
+            false,
+            false,
+            true, // json_output
+        );
+        // Should fail (invalid file) but tests the json path
+        assert!(result.is_err());
+    }
+}

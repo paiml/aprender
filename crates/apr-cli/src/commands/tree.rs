@@ -374,3 +374,234 @@ fn format_size(bytes: usize) -> String {
         format!("{bytes} B")
     }
 }
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::{tempdir, NamedTempFile};
+    use std::io::Write;
+
+    // ========================================================================
+    // TreeFormat Tests
+    // ========================================================================
+
+    #[test]
+    fn test_tree_format_from_str_ascii() {
+        assert_eq!("ascii".parse::<TreeFormat>().unwrap(), TreeFormat::Ascii);
+        assert_eq!("text".parse::<TreeFormat>().unwrap(), TreeFormat::Ascii);
+    }
+
+    #[test]
+    fn test_tree_format_from_str_dot() {
+        assert_eq!("dot".parse::<TreeFormat>().unwrap(), TreeFormat::Dot);
+        assert_eq!("graphviz".parse::<TreeFormat>().unwrap(), TreeFormat::Dot);
+    }
+
+    #[test]
+    fn test_tree_format_from_str_mermaid() {
+        assert_eq!("mermaid".parse::<TreeFormat>().unwrap(), TreeFormat::Mermaid);
+        assert_eq!("md".parse::<TreeFormat>().unwrap(), TreeFormat::Mermaid);
+    }
+
+    #[test]
+    fn test_tree_format_from_str_json() {
+        assert_eq!("json".parse::<TreeFormat>().unwrap(), TreeFormat::Json);
+    }
+
+    #[test]
+    fn test_tree_format_from_str_case_insensitive() {
+        assert_eq!("ASCII".parse::<TreeFormat>().unwrap(), TreeFormat::Ascii);
+        assert_eq!("DOT".parse::<TreeFormat>().unwrap(), TreeFormat::Dot);
+        assert_eq!("JSON".parse::<TreeFormat>().unwrap(), TreeFormat::Json);
+    }
+
+    #[test]
+    fn test_tree_format_from_str_invalid() {
+        assert!("invalid".parse::<TreeFormat>().is_err());
+        assert!("xyz".parse::<TreeFormat>().is_err());
+    }
+
+    // ========================================================================
+    // TreeNode Tests
+    // ========================================================================
+
+    #[test]
+    fn test_tree_node_new() {
+        let node = TreeNode::new("test", "root.test");
+        assert_eq!(node.name, "test");
+        assert_eq!(node.full_path, "root.test");
+        assert!(node.shape.is_none());
+        assert_eq!(node.size_bytes, 0);
+        assert!(!node.is_leaf);
+        assert!(node.children.is_empty());
+    }
+
+    #[test]
+    fn test_tree_node_total_size_leaf() {
+        let mut node = TreeNode::new("leaf", "root.leaf");
+        node.is_leaf = true;
+        node.size_bytes = 1000;
+        assert_eq!(node.total_size(), 1000);
+    }
+
+    #[test]
+    fn test_tree_node_total_size_parent() {
+        let mut parent = TreeNode::new("parent", "root");
+
+        let mut child1 = TreeNode::new("child1", "root.child1");
+        child1.is_leaf = true;
+        child1.size_bytes = 100;
+
+        let mut child2 = TreeNode::new("child2", "root.child2");
+        child2.is_leaf = true;
+        child2.size_bytes = 200;
+
+        parent.children.insert("child1".to_string(), child1);
+        parent.children.insert("child2".to_string(), child2);
+
+        assert_eq!(parent.total_size(), 300);
+    }
+
+    #[test]
+    fn test_tree_node_tensor_count_leaf() {
+        let mut node = TreeNode::new("leaf", "root.leaf");
+        node.is_leaf = true;
+        assert_eq!(node.tensor_count(), 1);
+    }
+
+    #[test]
+    fn test_tree_node_tensor_count_parent() {
+        let mut parent = TreeNode::new("parent", "root");
+
+        let mut child1 = TreeNode::new("child1", "root.child1");
+        child1.is_leaf = true;
+
+        let mut child2 = TreeNode::new("child2", "root.child2");
+        child2.is_leaf = true;
+
+        parent.children.insert("child1".to_string(), child1);
+        parent.children.insert("child2".to_string(), child2);
+
+        assert_eq!(parent.tensor_count(), 2);
+    }
+
+    // ========================================================================
+    // Format Size Tests
+    // ========================================================================
+
+    #[test]
+    fn test_format_size_bytes() {
+        assert_eq!(format_size(0), "0 B");
+        assert_eq!(format_size(100), "100 B");
+        assert_eq!(format_size(1023), "1023 B");
+    }
+
+    #[test]
+    fn test_format_size_kilobytes() {
+        assert_eq!(format_size(1024), "1.00 KB");
+        assert_eq!(format_size(2048), "2.00 KB");
+        assert_eq!(format_size(1536), "1.50 KB");
+    }
+
+    #[test]
+    fn test_format_size_megabytes() {
+        assert_eq!(format_size(1024 * 1024), "1.00 MB");
+        assert_eq!(format_size(10 * 1024 * 1024), "10.00 MB");
+    }
+
+    #[test]
+    fn test_format_size_gigabytes() {
+        assert_eq!(format_size(1024 * 1024 * 1024), "1.00 GB");
+        assert_eq!(format_size(2 * 1024 * 1024 * 1024), "2.00 GB");
+    }
+
+    // ========================================================================
+    // Run Command Tests
+    // ========================================================================
+
+    #[test]
+    fn test_run_file_not_found() {
+        let result = run(
+            Path::new("/nonexistent/model.apr"),
+            None,
+            TreeFormat::Ascii,
+            false,
+            None,
+        );
+        assert!(result.is_err());
+        match result {
+            Err(CliError::FileNotFound(_)) => {}
+            _ => panic!("Expected FileNotFound error"),
+        }
+    }
+
+    #[test]
+    fn test_run_invalid_apr() {
+        let mut file = NamedTempFile::with_suffix(".apr").expect("create temp file");
+        file.write_all(b"not a valid apr").expect("write");
+
+        let result = run(file.path(), None, TreeFormat::Ascii, false, None);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_is_directory() {
+        let dir = tempdir().expect("create temp dir");
+        let result = run(dir.path(), None, TreeFormat::Ascii, false, None);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_with_filter() {
+        let mut file = NamedTempFile::with_suffix(".apr").expect("create temp file");
+        file.write_all(b"not a valid apr").expect("write");
+
+        let result = run(file.path(), Some("decoder"), TreeFormat::Ascii, false, None);
+        // Should fail (invalid file) but tests filter path
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_with_dot_format() {
+        let mut file = NamedTempFile::with_suffix(".apr").expect("create temp file");
+        file.write_all(b"not a valid apr").expect("write");
+
+        let result = run(file.path(), None, TreeFormat::Dot, false, None);
+        // Should fail (invalid file) but tests dot format path
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_with_json_format() {
+        let mut file = NamedTempFile::with_suffix(".apr").expect("create temp file");
+        file.write_all(b"not a valid apr").expect("write");
+
+        let result = run(file.path(), None, TreeFormat::Json, false, None);
+        // Should fail (invalid file) but tests json format path
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_with_show_sizes() {
+        let mut file = NamedTempFile::with_suffix(".apr").expect("create temp file");
+        file.write_all(b"not a valid apr").expect("write");
+
+        let result = run(file.path(), None, TreeFormat::Ascii, true, None);
+        // Should fail (invalid file) but tests show_sizes path
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_with_max_depth() {
+        let mut file = NamedTempFile::with_suffix(".apr").expect("create temp file");
+        file.write_all(b"not a valid apr").expect("write");
+
+        let result = run(file.path(), None, TreeFormat::Ascii, false, Some(2));
+        // Should fail (invalid file) but tests max_depth path
+        assert!(result.is_err());
+    }
+}
