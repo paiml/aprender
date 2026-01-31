@@ -558,16 +558,23 @@ fn load_apr_tensors_f32(path: &Path) -> Result<BTreeMap<String, (Vec<f32>, Vec<u
                 dequantize_bf16_to_f32(tensor_bytes, num_elements)
             }
             8 => {
-                // Q4_K
+                // Q4 (basic 4-bit quantized - APR native format)
+                // This is different from Q4_K which uses super-blocks
                 dequantize_q4_k_to_f32(tensor_bytes, num_elements)
             }
             9 => {
-                // Q6_K
-                dequantize_q6_k_to_f32(tensor_bytes, num_elements)
-            }
-            10 => {
-                // Q8_0
+                // Q8 (8-bit quantized with scale - APR native format)
                 dequantize_q8_0_to_f32(tensor_bytes, num_elements)
+            }
+            12 => {
+                // Q4_K (GGUF K-quant format with super-blocks)
+                // F-ROSETTA-CONVERT-001 FIX: Use correct dtype from v2/mod.rs
+                dequantize_q4_k_to_f32(tensor_bytes, num_elements)
+            }
+            14 => {
+                // Q6_K (GGUF K-quant format with super-blocks)
+                // F-ROSETTA-CONVERT-001 FIX: Use correct dtype from v2/mod.rs
+                dequantize_q6_k_to_f32(tensor_bytes, num_elements)
             }
             _ => {
                 // Default to F32 interpretation
