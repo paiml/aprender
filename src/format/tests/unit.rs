@@ -2051,3 +2051,169 @@ use super::super::*;
             assert!(has_layer, "Should have layer {layer_idx} tensors");
         }
     }
+
+    // ========================================================================
+    // GGUF API Type Tests (T-COV-95: improve gguf/api.rs coverage)
+    // ========================================================================
+
+    #[test]
+    fn test_gguf_tokenizer_default() {
+        let tok = gguf::GgufTokenizer::default();
+        assert!(tok.vocabulary.is_empty());
+        assert!(tok.merges.is_empty());
+        assert!(tok.model_type.is_none());
+        assert!(tok.bos_token_id.is_none());
+        assert!(tok.eos_token_id.is_none());
+        assert!(tok.architecture.is_none());
+        assert!(tok.model_name.is_none());
+    }
+
+    #[test]
+    fn test_gguf_tokenizer_has_vocabulary() {
+        let mut tok = gguf::GgufTokenizer::default();
+        assert!(!tok.has_vocabulary());
+
+        tok.vocabulary = vec!["hello".to_string(), "world".to_string()];
+        assert!(tok.has_vocabulary());
+    }
+
+    #[test]
+    fn test_gguf_tokenizer_vocab_size() {
+        let mut tok = gguf::GgufTokenizer::default();
+        assert_eq!(tok.vocab_size(), 0);
+
+        tok.vocabulary = vec!["a".to_string(), "b".to_string(), "c".to_string()];
+        assert_eq!(tok.vocab_size(), 3);
+    }
+
+    #[test]
+    fn test_gguf_tokenizer_with_all_fields() {
+        let tok = gguf::GgufTokenizer {
+            vocabulary: vec!["<s>".to_string(), "</s>".to_string(), "hello".to_string()],
+            merges: vec!["h e".to_string(), "l l".to_string()],
+            model_type: Some("llama".to_string()),
+            bos_token_id: Some(0),
+            eos_token_id: Some(1),
+            architecture: Some("llama".to_string()),
+            model_name: Some("test-model".to_string()),
+        };
+        assert_eq!(tok.vocab_size(), 3);
+        assert!(tok.has_vocabulary());
+        assert_eq!(tok.merges.len(), 2);
+        assert_eq!(tok.bos_token_id, Some(0));
+        assert_eq!(tok.eos_token_id, Some(1));
+    }
+
+    #[test]
+    fn test_gguf_tokenizer_clone() {
+        let tok = gguf::GgufTokenizer {
+            vocabulary: vec!["test".to_string()],
+            merges: vec![],
+            model_type: Some("gpt2".to_string()),
+            bos_token_id: Some(50256),
+            eos_token_id: Some(50256),
+            architecture: None,
+            model_name: None,
+        };
+        let cloned = tok.clone();
+        assert_eq!(cloned.vocabulary, tok.vocabulary);
+        assert_eq!(cloned.model_type, tok.model_type);
+    }
+
+    #[test]
+    fn test_gguf_tokenizer_debug() {
+        let tok = gguf::GgufTokenizer::default();
+        let debug_str = format!("{tok:?}");
+        assert!(debug_str.contains("GgufTokenizer"));
+    }
+
+    #[test]
+    fn test_gguf_model_config_default() {
+        let cfg = gguf::GgufModelConfig::default();
+        assert!(cfg.architecture.is_none());
+        assert!(cfg.hidden_size.is_none());
+        assert!(cfg.num_layers.is_none());
+        assert!(cfg.num_heads.is_none());
+        assert!(cfg.num_kv_heads.is_none());
+        assert!(cfg.vocab_size.is_none());
+        assert!(cfg.intermediate_size.is_none());
+        assert!(cfg.max_position_embeddings.is_none());
+        assert!(cfg.rope_theta.is_none());
+        assert!(cfg.rms_norm_eps.is_none());
+        assert!(cfg.rope_type.is_none());
+    }
+
+    #[test]
+    fn test_gguf_model_config_with_values() {
+        let cfg = gguf::GgufModelConfig {
+            architecture: Some("llama".to_string()),
+            hidden_size: Some(4096),
+            num_layers: Some(32),
+            num_heads: Some(32),
+            num_kv_heads: Some(8),
+            vocab_size: Some(32000),
+            intermediate_size: Some(11008),
+            max_position_embeddings: Some(4096),
+            rope_theta: Some(10000.0),
+            rms_norm_eps: Some(1e-5),
+            rope_type: Some(0),
+        };
+        assert_eq!(cfg.architecture.as_deref(), Some("llama"));
+        assert_eq!(cfg.hidden_size, Some(4096));
+        assert_eq!(cfg.num_layers, Some(32));
+        assert_eq!(cfg.num_heads, Some(32));
+        assert_eq!(cfg.num_kv_heads, Some(8));
+        assert_eq!(cfg.vocab_size, Some(32000));
+        assert_eq!(cfg.intermediate_size, Some(11008));
+        assert_eq!(cfg.max_position_embeddings, Some(4096));
+        assert!((cfg.rope_theta.unwrap() - 10000.0).abs() < 1e-6);
+        assert!((cfg.rms_norm_eps.unwrap() - 1e-5).abs() < 1e-10);
+        assert_eq!(cfg.rope_type, Some(0));
+    }
+
+    #[test]
+    fn test_gguf_model_config_qwen2_style() {
+        // CORRECTNESS-011: Qwen2.5 models require rope_type=2 (NEOX style)
+        let cfg = gguf::GgufModelConfig {
+            architecture: Some("qwen2".to_string()),
+            hidden_size: Some(1536),
+            num_layers: Some(28),
+            num_heads: Some(12),
+            num_kv_heads: Some(2),
+            vocab_size: Some(151936),
+            intermediate_size: Some(8960),
+            max_position_embeddings: Some(32768),
+            rope_theta: Some(1000000.0),
+            rms_norm_eps: Some(1e-6),
+            rope_type: Some(2), // NEOX style for Qwen2.5
+        };
+        assert_eq!(cfg.rope_type, Some(2));
+        assert_eq!(cfg.architecture.as_deref(), Some("qwen2"));
+    }
+
+    #[test]
+    fn test_gguf_model_config_clone() {
+        let cfg = gguf::GgufModelConfig {
+            architecture: Some("phi".to_string()),
+            hidden_size: Some(2048),
+            num_layers: Some(24),
+            num_heads: Some(32),
+            num_kv_heads: Some(32),
+            vocab_size: Some(51200),
+            intermediate_size: Some(8192),
+            max_position_embeddings: Some(2048),
+            rope_theta: Some(10000.0),
+            rms_norm_eps: Some(1e-5),
+            rope_type: Some(0),
+        };
+        let cloned = cfg.clone();
+        assert_eq!(cloned.architecture, cfg.architecture);
+        assert_eq!(cloned.hidden_size, cfg.hidden_size);
+    }
+
+    #[test]
+    fn test_gguf_model_config_debug() {
+        let cfg = gguf::GgufModelConfig::default();
+        let debug_str = format!("{cfg:?}");
+        assert!(debug_str.contains("GgufModelConfig"));
+    }

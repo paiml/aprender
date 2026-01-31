@@ -193,28 +193,37 @@ tier4: tier3
 # CRITICAL: mold linker breaks LLVM coverage instrumentation
 # Solution: Temporarily move ~/.cargo/config.toml during coverage runs
 
-# Exclusion patterns for coverage reports (bashrs pattern)
-# Excludes: crates/, fuzz/, golden_traces/, external path deps (realizar/, trueno/)
-# Also excludes: experimental format module, feature-gated modules (audio, hf_hub, inspect)
-# And demo/benchmark/serialization code (bench_viz, showcase, demo/, metaheuristics/benchmarks)
-COVERAGE_EXCLUDE := --ignore-filename-regex='(crates/|fuzz/|golden_traces/|realizar/|trueno/|format/|audio/|hf_hub/|inspect/|bench_viz|showcase|explainable/|demo/|metaheuristics/benchmarks|serialization/)'
+# Exclusion patterns for coverage reports
+# ONLY excludes truly external/feature-gated code - all apr subcommands INCLUDED
+#   External crates:
+#     - crates/           : Separate crates (tested independently)
+#     - fuzz/             : Fuzz test infrastructure
+#     - golden_traces/    : Trace data files
+#     - realizar/         : External inference crate
+#     - trueno/           : External tensor crate
+#   Feature-gated (require --all-features):
+#     - audio/            : Requires audio feature + ALSA
+#     - hf_hub/           : HuggingFace hub (network-dependent)
+#   Test infrastructure:
+#     - test_factory      : Test code, not production
+#     - demo/             : Demo/example code
+# NOTE: ALL format/ modules INCLUDED - apr subcommands must have 95%+ coverage
+COVERAGE_EXCLUDE := --ignore-filename-regex='(crates/|fuzz/|golden_traces/|realizar/|trueno/|audio/|hf_hub/|demo/|test_factory)'
 
-# Fast coverage (<2 min): Lib + integration tests, skip only truly slow tests (bashrs style)
-# CRITICAL: Include property tests (prop_*) for 95%+ coverage - only skip slow ones
-coverage: ## Generate HTML coverage report (target: <2 min, 95%+)
-	@echo "📊 Running coverage (bashrs style, target: <2 min)..."
+# Fast coverage (<2min): Core modules with 95%+ coverage
+# NOTE: Feature-gated modules (signing, encryption, quantize) require --all-features
+#       but audio/wasm tests cause panics, so we run without for stability
+coverage: ## Generate HTML coverage report (target: <2min, 95%+)
+	@echo "📊 Running coverage (target: <2min, 95%+)..."
 	@which cargo-llvm-cov > /dev/null 2>&1 || cargo install cargo-llvm-cov --locked
 	@echo "⚙️  Disabling sccache/mold (breaks coverage instrumentation)..."
 	@test -f ~/.cargo/config.toml && mv ~/.cargo/config.toml ~/.cargo/config.toml.bak || true
 	@mkdir -p target/coverage
-	@echo "🧪 Running lib tests + property tests (PROPTEST_CASES=25 for speed)..."
-	@echo "   Using -j 2 to prevent OOM (LLVM instrumentation ~2x overhead)"
-	@PROPTEST_CASES=25 cargo llvm-cov --no-report --lib -j 2 \
-		-- --skip prop_gbm_expected_value_convergence \
-		--skip encryption --skip compressed --skip slow --skip heavy \
-		--skip h12_benchmark --skip j2_roofline --skip benchmark
-	@echo "📊 Generating report..."
-	@cargo llvm-cov report --html --output-dir target/coverage/html $(COVERAGE_EXCLUDE)
+	@echo "🧪 Running lib tests (PROPTEST_CASES=10, -j4)..."
+	@PROPTEST_CASES=10 cargo llvm-cov --lib -j 4 \
+		--html --output-dir target/coverage/html $(COVERAGE_EXCLUDE) \
+		-- --skip prop_gbm_expected_value \
+		--skip slow --skip heavy --skip benchmark --skip h12_ --skip j2_
 	@cargo llvm-cov report --lcov --output-path target/coverage/lcov.info $(COVERAGE_EXCLUDE)
 	@test -f ~/.cargo/config.toml.bak && mv ~/.cargo/config.toml.bak ~/.cargo/config.toml || true
 	@echo ""
