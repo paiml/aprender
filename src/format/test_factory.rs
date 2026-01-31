@@ -519,6 +519,154 @@ pub fn build_pygmy_apr_f16() -> Vec<u8> {
 }
 
 // ============================================================================
+// Encryption Pygmy Builders (feature-gated)
+// ============================================================================
+
+/// Build a minimal encrypted APR model in memory
+///
+/// Creates an APR file encrypted with password "test_password"
+#[cfg(feature = "format-encryption")]
+#[must_use]
+pub fn build_pygmy_apr_encrypted(password: &str) -> Vec<u8> {
+    use crate::format::{save_encrypted, ModelType, SaveOptions};
+    use serde::{Deserialize, Serialize};
+    use tempfile::NamedTempFile;
+
+    #[derive(Debug, Serialize, Deserialize)]
+    struct PygmyModel {
+        weights: Vec<f32>,
+        bias: f32,
+    }
+
+    let model = PygmyModel {
+        weights: vec![0.1, 0.2, 0.3, 0.4],
+        bias: 0.5,
+    };
+
+    let temp = NamedTempFile::with_suffix(".apr").expect("Create temp file");
+    save_encrypted(
+        &model,
+        ModelType::Custom,
+        temp.path(),
+        SaveOptions::default(),
+        password,
+    )
+    .expect("Save encrypted");
+
+    std::fs::read(temp.path()).expect("Read encrypted file")
+}
+
+/// Build encrypted APR with default test password
+#[cfg(feature = "format-encryption")]
+#[must_use]
+pub fn build_pygmy_apr_encrypted_default() -> Vec<u8> {
+    build_pygmy_apr_encrypted("pygmy_test_password_123")
+}
+
+// ============================================================================
+// Signing Pygmy Builders (feature-gated)
+// ============================================================================
+
+/// Build a minimal signed APR model in memory
+///
+/// Creates an APR file with Ed25519 signature
+#[cfg(feature = "format-signing")]
+#[must_use]
+pub fn build_pygmy_apr_signed() -> (Vec<u8>, ed25519_dalek::VerifyingKey) {
+    use crate::format::{save_signed, ModelType, SaveOptions};
+    use ed25519_dalek::SigningKey;
+    use rand::rngs::OsRng;
+    use serde::{Deserialize, Serialize};
+    use tempfile::NamedTempFile;
+
+    #[derive(Debug, Serialize, Deserialize)]
+    struct PygmyModel {
+        weights: Vec<f32>,
+        bias: f32,
+    }
+
+    let model = PygmyModel {
+        weights: vec![0.1, 0.2, 0.3, 0.4],
+        bias: 0.5,
+    };
+
+    // Generate signing key
+    let signing_key = SigningKey::generate(&mut OsRng);
+    let verifying_key = signing_key.verifying_key();
+
+    let temp = NamedTempFile::with_suffix(".apr").expect("Create temp file");
+    save_signed(
+        &model,
+        ModelType::Custom,
+        temp.path(),
+        SaveOptions::default(),
+        &signing_key,
+    )
+    .expect("Save signed");
+
+    let data = std::fs::read(temp.path()).expect("Read signed file");
+    (data, verifying_key)
+}
+
+/// Generate a test signing key pair
+#[cfg(feature = "format-signing")]
+#[must_use]
+pub fn generate_test_signing_key() -> ed25519_dalek::SigningKey {
+    use ed25519_dalek::SigningKey;
+    use rand::rngs::OsRng;
+    SigningKey::generate(&mut OsRng)
+}
+
+// ============================================================================
+// Quantization Pygmy Builders (feature-gated extras)
+// ============================================================================
+
+/// Build pygmy data for Q8_0 quantization testing
+#[cfg(feature = "format-quantize")]
+#[must_use]
+pub fn build_pygmy_quantize_data() -> Vec<f32> {
+    // Create data that exercises quantization edge cases
+    let mut data = Vec::with_capacity(64);
+
+    // Normal range values
+    for i in 0..32 {
+        data.push((i as f32 - 16.0) / 16.0);
+    }
+
+    // Edge case values
+    data.push(0.0);           // Zero
+    data.push(1.0);           // Max normal
+    data.push(-1.0);          // Min normal
+    data.push(0.5);           // Mid positive
+    data.push(-0.5);          // Mid negative
+    for _ in 0..27 {
+        data.push(0.001);     // Small values
+    }
+
+    data
+}
+
+/// Build pygmy Q8_0 quantized block
+#[cfg(feature = "format-quantize")]
+#[must_use]
+pub fn build_pygmy_q8_block() -> crate::format::quantize::QuantizedBlock {
+    use crate::format::quantize::{quantize as quantize_data, QuantType};
+
+    let data = build_pygmy_quantize_data();
+    quantize_data(&data, &[64], QuantType::Q8_0).expect("Quantize Q8_0")
+}
+
+/// Build pygmy Q4_0 quantized block
+#[cfg(feature = "format-quantize")]
+#[must_use]
+pub fn build_pygmy_q4_block() -> crate::format::quantize::QuantizedBlock {
+    use crate::format::quantize::{quantize as quantize_data, QuantType};
+
+    let data = build_pygmy_quantize_data();
+    quantize_data(&data, &[64], QuantType::Q4_0).expect("Quantize Q4_0")
+}
+
+// ============================================================================
 // Tests
 // ============================================================================
 
@@ -683,5 +831,251 @@ mod tests {
         // Note: overhead may make small models not show compression
         assert!(!q8_data.is_empty());
         assert!(!q4_data.is_empty());
+    }
+
+    // ========================================================================
+    // Feature-Gated Tests: Encryption (format-encryption)
+    // ========================================================================
+
+    #[cfg(feature = "format-encryption")]
+    mod encryption_tests {
+        use super::*;
+
+        #[test]
+        fn test_pygmy_apr_encrypted_roundtrip() {
+            let password = "test_password_123";
+            let encrypted_data = build_pygmy_apr_encrypted(password);
+
+            // Should have valid APR header with ENCRYPTED flag
+            assert!(encrypted_data.len() > 64);
+            assert_eq!(&encrypted_data[0..4], b"APRN");
+
+            // Verify ENCRYPTED flag is set (bytes 6-7 are u16 flags, ENCRYPTED = 0x0004)
+            let flags = u16::from_le_bytes([encrypted_data[6], encrypted_data[7]]);
+            assert!(
+                flags & 0x0004 != 0,
+                "ENCRYPTED flag (0x0004) should be set in flags: {flags:#06x}"
+            );
+        }
+
+        #[test]
+        fn test_pygmy_apr_encrypted_default() {
+            let data = build_pygmy_apr_encrypted_default();
+            assert!(!data.is_empty());
+            assert!(data.len() > 64);
+        }
+
+        #[test]
+        fn test_pygmy_encrypted_wrong_password_fails() {
+            use crate::format::{load_encrypted, ModelType};
+            use serde::{Deserialize, Serialize};
+            use tempfile::NamedTempFile;
+            use std::io::Write;
+
+            #[derive(Debug, Serialize, Deserialize)]
+            struct PygmyModel {
+                weights: Vec<f32>,
+                bias: f32,
+            }
+
+            let encrypted_data = build_pygmy_apr_encrypted("correct_password");
+
+            // Write to temp file
+            let mut temp = NamedTempFile::with_suffix(".apr").expect("Create temp");
+            temp.write_all(&encrypted_data).expect("Write");
+            temp.flush().expect("Flush");
+
+            // Try to load with wrong password - should fail
+            let result: crate::error::Result<PygmyModel> =
+                load_encrypted(temp.path(), ModelType::Custom, "wrong_password");
+            assert!(result.is_err(), "Wrong password should fail decryption");
+        }
+    }
+
+    // ========================================================================
+    // Feature-Gated Tests: Signing (format-signing)
+    // ========================================================================
+
+    #[cfg(feature = "format-signing")]
+    mod signing_tests {
+        use super::*;
+
+        #[test]
+        fn test_pygmy_apr_signed_has_signature() {
+            let (data, _verifying_key) = build_pygmy_apr_signed();
+
+            // Should have valid APR header with SIGNED flag
+            assert!(data.len() > 100); // Header + signature block
+            assert_eq!(&data[0..4], b"APRN");
+
+            // Verify SIGNED flag is set (bytes 6-7 are u16 flags, SIGNED = 0x0008)
+            let flags = u16::from_le_bytes([data[6], data[7]]);
+            assert!(
+                flags & 0x0008 != 0,
+                "SIGNED flag (0x0008) should be set in flags: {flags:#06x}"
+            );
+        }
+
+        #[test]
+        fn test_pygmy_signed_roundtrip() {
+            use crate::format::{load_verified, ModelType};
+            use serde::{Deserialize, Serialize};
+            use tempfile::NamedTempFile;
+            use std::io::Write;
+
+            #[derive(Debug, Serialize, Deserialize, PartialEq)]
+            struct PygmyModel {
+                weights: Vec<f32>,
+                bias: f32,
+            }
+
+            let (data, verifying_key) = build_pygmy_apr_signed();
+
+            // Write to temp file
+            let mut temp = NamedTempFile::with_suffix(".apr").expect("Create temp");
+            temp.write_all(&data).expect("Write");
+            temp.flush().expect("Flush");
+
+            // Load with signature verification
+            let loaded: PygmyModel =
+                load_verified(temp.path(), ModelType::Custom, Some(&verifying_key))
+                    .expect("Load signed should succeed");
+
+            assert_eq!(loaded.weights, vec![0.1, 0.2, 0.3, 0.4]);
+            assert!((loaded.bias - 0.5).abs() < 0.001);
+        }
+
+        #[test]
+        fn test_generate_signing_key() {
+            let key = generate_test_signing_key();
+            let verifying = key.verifying_key();
+
+            // Should be 32-byte keys
+            assert_eq!(verifying.as_bytes().len(), 32);
+        }
+
+        #[test]
+        fn test_pygmy_signed_tampering_detected() {
+            use crate::format::{load_verified, ModelType};
+            use serde::{Deserialize, Serialize};
+            use tempfile::NamedTempFile;
+            use std::io::Write;
+
+            #[derive(Debug, Serialize, Deserialize)]
+            struct PygmyModel {
+                weights: Vec<f32>,
+                bias: f32,
+            }
+
+            let (mut data, verifying_key) = build_pygmy_apr_signed();
+
+            // Tamper with the data (flip a bit in the payload area)
+            if data.len() > 100 {
+                data[80] ^= 0xFF;
+            }
+
+            // Write tampered data to temp file
+            let mut temp = NamedTempFile::with_suffix(".apr").expect("Create temp");
+            temp.write_all(&data).expect("Write");
+            temp.flush().expect("Flush");
+
+            // Load should fail due to signature mismatch
+            let result: crate::error::Result<PygmyModel> =
+                load_verified(temp.path(), ModelType::Custom, Some(&verifying_key));
+            assert!(result.is_err(), "Tampered file should fail verification");
+        }
+    }
+
+    // ========================================================================
+    // Feature-Gated Tests: Quantization (format-quantize)
+    // ========================================================================
+
+    #[cfg(feature = "format-quantize")]
+    mod quantize_tests {
+        use super::*;
+        use crate::format::quantize::{dequantize, QuantType};
+
+        #[test]
+        fn test_pygmy_quantize_data_valid() {
+            let data = build_pygmy_quantize_data();
+            assert_eq!(data.len(), 64);
+
+            // Check no NaN or Inf
+            for &v in &data {
+                assert!(v.is_finite());
+            }
+        }
+
+        #[test]
+        fn test_pygmy_q8_block_roundtrip() {
+            let original = build_pygmy_quantize_data();
+            let block = build_pygmy_q8_block();
+
+            // Verify block properties
+            assert_eq!(block.quant_type, QuantType::Q8_0);
+            assert!(!block.blocks.is_empty());
+
+            // Dequantize and verify values are close
+            let restored = dequantize(&block).expect("Dequantize Q8");
+            assert_eq!(restored.len(), original.len());
+
+            // Q8_0 should have reasonable accuracy
+            for (orig, rest) in original.iter().zip(restored.iter()) {
+                assert!((orig - rest).abs() < 0.1, "Q8_0 error too large");
+            }
+        }
+
+        #[test]
+        fn test_pygmy_q4_block_roundtrip() {
+            let original = build_pygmy_quantize_data();
+            let block = build_pygmy_q4_block();
+
+            // Verify block properties
+            assert_eq!(block.quant_type, QuantType::Q4_0);
+            assert!(!block.blocks.is_empty());
+
+            // Dequantize and verify values are somewhat close
+            let restored = dequantize(&block).expect("Dequantize Q4");
+            assert_eq!(restored.len(), original.len());
+
+            // Q4_0 has lower precision
+            for (orig, rest) in original.iter().zip(restored.iter()) {
+                assert!((orig - rest).abs() < 0.5, "Q4_0 error too large");
+            }
+        }
+
+        #[test]
+        fn test_quant_type_bits_per_weight() {
+            assert!((QuantType::Q8_0.bits_per_weight() - 8.5).abs() < 0.01);
+            assert!((QuantType::Q4_0.bits_per_weight() - 4.5).abs() < 0.01);
+            assert!((QuantType::Q4_1.bits_per_weight() - 5.0).abs() < 0.01);
+        }
+
+        #[test]
+        fn test_quant_type_from_u8() {
+            assert_eq!(QuantType::from_u8(0x01), Some(QuantType::Q8_0));
+            assert_eq!(QuantType::from_u8(0x02), Some(QuantType::Q4_0));
+            assert_eq!(QuantType::from_u8(0x03), Some(QuantType::Q4_1));
+            assert_eq!(QuantType::from_u8(0x10), Some(QuantType::Q8Tensor));
+            assert_eq!(QuantType::from_u8(0xFF), Some(QuantType::Custom));
+            assert_eq!(QuantType::from_u8(0x99), None);
+        }
+
+        #[test]
+        fn test_quantized_block_num_blocks() {
+            let block = build_pygmy_q8_block();
+            let num = block.num_blocks();
+            assert!(num > 0);
+
+            // With 64 elements and block size 32, should have 2 blocks
+            assert_eq!(num, 2);
+        }
+
+        #[test]
+        fn test_quantized_block_num_elements() {
+            let block = build_pygmy_q8_block();
+            let total = block.num_elements();
+            assert_eq!(total, 64);
+        }
     }
 }
