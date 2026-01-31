@@ -10,7 +10,7 @@
 //!
 //! Run with: `cargo run --example graph_social_network`
 
-use aprender::graph::Graph;
+use aprender::graph::{Graph, GraphCentrality};
 
 fn main() {
     println!("═══════════════════════════════════════════════════════");

@@ -1,4 +1,4 @@
-use aprender::graph::Graph;
+use aprender::graph::{Graph, GraphCentrality};
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 
 // Benchmark helper functions

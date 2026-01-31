@@ -254,15 +254,7 @@ fn test_pagerank_undirected() {
     assert!((pr[0] - pr[2]).abs() < 1e-6); // endpoints equal
 }
 
-#[test]
-fn test_kahan_diff() {
-    let a = vec![1.0, 2.0, 3.0];
-    let b = vec![1.1, 2.1, 2.9];
-    let diff = kahan_diff(&a, &b);
-    assert!((diff - 0.3).abs() < 1e-10);
-}
-
-// Betweenness centrality tests
+// Betweenness centrality tests (moved to centrality module, using GraphCentrality trait)
 
 #[test]
 fn test_betweenness_centrality_empty() {
