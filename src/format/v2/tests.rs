@@ -839,3 +839,233 @@ use super::*;
         assert_eq!(q8_data.len(), 4);
         assert!((q8_data[0] - 1.0).abs() < 0.1);
     }
+
+    // ========================================================================
+    // Pygmy-Based Tests (T-COV-95)
+    // ========================================================================
+
+    #[test]
+    fn test_pygmy_apr_metadata_full() {
+        use crate::format::test_factory::{build_pygmy_apr_with_config, PygmyConfig};
+
+        let config = PygmyConfig::llama_style();
+        let data = build_pygmy_apr_with_config(config);
+        let reader = AprV2Reader::from_bytes(&data).expect("parse");
+
+        // Check metadata fields
+        let metadata = reader.metadata();
+        assert_eq!(metadata.architecture, Some("llama".to_string()));
+        assert!(metadata.hidden_size.is_some());
+        assert!(metadata.vocab_size.is_some());
+        assert!(metadata.num_layers.is_some());
+    }
+
+    #[test]
+    fn test_pygmy_apr_tensor_lookup() {
+        use crate::format::test_factory::build_pygmy_apr;
+
+        let data = build_pygmy_apr();
+        let reader = AprV2Reader::from_bytes(&data).expect("parse");
+
+        // Test tensor lookup
+        let embed = reader.get_tensor("model.embed_tokens.weight");
+        assert!(embed.is_some());
+
+        let nonexistent = reader.get_tensor("nonexistent.weight");
+        assert!(nonexistent.is_none());
+    }
+
+    #[test]
+    fn test_pygmy_apr_tensor_data() {
+        use crate::format::test_factory::build_pygmy_apr;
+
+        let data = build_pygmy_apr();
+        let reader = AprV2Reader::from_bytes(&data).expect("parse");
+
+        // Test getting tensor data
+        let tensor_data = reader.get_tensor_data("model.embed_tokens.weight");
+        assert!(tensor_data.is_some());
+
+        // F32 tensor should have 4 bytes per element
+        let entry = reader.get_tensor("model.embed_tokens.weight").unwrap();
+        let expected_bytes = entry.element_count() * 4;
+        assert_eq!(tensor_data.unwrap().len(), expected_bytes);
+    }
+
+    #[test]
+    fn test_pygmy_apr_f32_tensor() {
+        use crate::format::test_factory::build_pygmy_apr;
+
+        let data = build_pygmy_apr();
+        let reader = AprV2Reader::from_bytes(&data).expect("parse");
+
+        // Test getting tensor as f32
+        let f32_data = reader.get_f32_tensor("model.embed_tokens.weight");
+        assert!(f32_data.is_some());
+
+        // Check that values are reasonable (not NaN or Inf)
+        for val in f32_data.unwrap() {
+            assert!(val.is_finite(), "Tensor values should be finite");
+        }
+    }
+
+    #[test]
+    fn test_pygmy_apr_f16_parsing() {
+        use crate::format::test_factory::build_pygmy_apr_f16;
+
+        let data = build_pygmy_apr_f16();
+        let reader = AprV2Reader::from_bytes(&data).expect("parse");
+
+        // Test that F16 APR parses correctly
+        let embed = reader.get_tensor("model.embed_tokens.weight");
+        assert!(embed.is_some());
+        assert_eq!(embed.unwrap().dtype, TensorDType::F16);
+    }
+
+    #[test]
+    fn test_pygmy_apr_q8_parsing() {
+        use crate::format::test_factory::build_pygmy_apr_q8;
+
+        let data = build_pygmy_apr_q8();
+        let reader = AprV2Reader::from_bytes(&data).expect("parse");
+
+        // Test that Q8 APR parses correctly
+        let tensor = reader.get_tensor("model.layers.0.self_attn.q_proj.weight");
+        assert!(tensor.is_some());
+        assert_eq!(tensor.unwrap().dtype, TensorDType::Q8);
+    }
+
+    #[test]
+    fn test_pygmy_apr_q4_parsing() {
+        use crate::format::test_factory::build_pygmy_apr_q4;
+
+        let data = build_pygmy_apr_q4();
+        let reader = AprV2Reader::from_bytes(&data).expect("parse");
+
+        // Test that Q4 APR parses correctly
+        let tensor = reader.get_tensor("model.layers.0.self_attn.q_proj.weight");
+        assert!(tensor.is_some());
+        assert_eq!(tensor.unwrap().dtype, TensorDType::Q4);
+    }
+
+    #[test]
+    fn test_pygmy_apr_reader_ref_vs_reader() {
+        use crate::format::test_factory::build_pygmy_apr;
+
+        let data = build_pygmy_apr();
+
+        // Compare AprV2Reader and AprV2ReaderRef
+        let reader = AprV2Reader::from_bytes(&data).expect("parse");
+        let reader_ref = AprV2ReaderRef::from_bytes(&data).expect("parse ref");
+
+        // Should have same metadata
+        assert_eq!(reader.metadata().model_type, reader_ref.metadata().model_type);
+        assert_eq!(reader.metadata().architecture, reader_ref.metadata().architecture);
+
+        // Should have same tensors
+        assert_eq!(reader.tensor_names().len(), reader_ref.tensor_names().len());
+    }
+
+    #[test]
+    fn test_pygmy_apr_shard_manifest() {
+        let mut manifest = ShardManifest::new(3);
+        assert_eq!(manifest.shard_count, 3);
+        assert_eq!(manifest.tensor_count, 0);
+
+        manifest.add_shard(ShardInfo {
+            filename: "shard-00001.apr".to_string(),
+            index: 0,
+            size: 1000,
+            tensors: vec!["tensor.a".to_string(), "tensor.b".to_string()],
+        });
+
+        assert_eq!(manifest.tensor_count, 2);
+        assert_eq!(manifest.total_size, 1000);
+        assert_eq!(manifest.shard_for_tensor("tensor.a"), Some(0));
+        assert_eq!(manifest.shard_for_tensor("nonexistent"), None);
+    }
+
+    #[test]
+    fn test_pygmy_apr_shard_manifest_json() {
+        let mut manifest = ShardManifest::new(2);
+        manifest.add_shard(ShardInfo {
+            filename: "shard-1.apr".to_string(),
+            index: 0,
+            size: 500,
+            tensors: vec!["a".to_string()],
+        });
+
+        // Test JSON roundtrip
+        let json = manifest.to_json().expect("serialize");
+        let parsed = ShardManifest::from_json(&json).expect("deserialize");
+
+        assert_eq!(parsed.shard_count, 2);
+        assert_eq!(parsed.tensor_count, 1);
+        assert_eq!(parsed.shard_for_tensor("a"), Some(0));
+    }
+
+    #[test]
+    fn test_v2_format_error_display_all_variants() {
+        let errors = vec![
+            V2FormatError::InvalidMagic([0xFF, 0xFF, 0xFF, 0xFF]),
+            V2FormatError::InvalidHeader("bad header".to_string()),
+            V2FormatError::InvalidTensorIndex("bad index".to_string()),
+            V2FormatError::MetadataError("bad metadata".to_string()),
+            V2FormatError::ChecksumMismatch,
+            V2FormatError::AlignmentError("misaligned".to_string()),
+            V2FormatError::IoError("io failed".to_string()),
+            V2FormatError::CompressionError("compress failed".to_string()),
+        ];
+
+        for error in errors {
+            let display = format!("{error}");
+            assert!(!display.is_empty());
+        }
+    }
+
+    #[test]
+    fn test_tensor_dtype_coverage() {
+        // Test all TensorDType variants
+        let dtypes = [
+            TensorDType::F32,
+            TensorDType::F16,
+            TensorDType::BF16,
+            TensorDType::F64,
+            TensorDType::I32,
+            TensorDType::I64,
+            TensorDType::I8,
+            TensorDType::U8,
+            TensorDType::Q4,
+            TensorDType::Q8,
+            TensorDType::Q4K,
+            TensorDType::Q6K,
+        ];
+
+        for dtype in dtypes {
+            // Test name()
+            assert!(!dtype.name().is_empty());
+
+            // Test bytes_per_element()
+            let _ = dtype.bytes_per_element();
+
+            // Test from_u8 roundtrip
+            let value = dtype as u8;
+            assert_eq!(TensorDType::from_u8(value), Some(dtype));
+        }
+
+        // Test invalid dtype
+        assert_eq!(TensorDType::from_u8(255), None);
+    }
+
+    #[test]
+    fn test_tensor_index_entry_element_count_3d() {
+        let entry = TensorIndexEntry::new(
+            "test",
+            TensorDType::F32,
+            vec![10, 20, 30],
+            0,
+            10 * 20 * 30 * 4,
+        );
+
+        assert_eq!(entry.element_count(), 6000); // 10 * 20 * 30
+    }
