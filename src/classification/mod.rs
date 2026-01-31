@@ -674,7 +674,7 @@ impl KNearestNeighbors {
 
         *class_weights
             .iter()
-            .max_by(|(_, a), (_, b)| a.partial_cmp(b).expect("Weights are valid f32 (not NaN)"))
+            .max_by(|(_, a), (_, b)| a.total_cmp(b))
             .map(|(label, _)| label)
             .expect("Neighbors slice is non-empty (k >= 1)")
     }

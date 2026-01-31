@@ -1422,8 +1422,8 @@ mod proptests {
             content in ".*"
         ) {
             let msg = ChatMessage::new(&role, &content);
-            let json = serde_json::to_string(&msg).unwrap();
-            let restored: ChatMessage = serde_json::from_str(&json).unwrap();
+            let json = serde_json::to_string(&msg).expect("ChatMessage serialization should succeed");
+            let restored: ChatMessage = serde_json::from_str(&json).expect("ChatMessage deserialization should succeed for valid JSON");
             prop_assert_eq!(msg, restored);
         }
 

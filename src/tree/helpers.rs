@@ -494,7 +494,7 @@ pub(super) fn get_unique_feature_values(
     n_samples: usize,
 ) -> Vec<f32> {
     let mut values: Vec<f32> = (0..n_samples).map(|i| x.get(i, feature_idx)).collect();
-    values.sort_by(|a, b| a.partial_cmp(b).expect("f32 values should be comparable"));
+    values.sort_by(|a, b| a.total_cmp(b));
     values.dedup();
     values
 }
