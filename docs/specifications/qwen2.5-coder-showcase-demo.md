@@ -6,18 +6,19 @@
 **Code Coverage:** 96.17% (target: ≥95%)
 **Tool Coverage:** 16/16 (100%) - All APR tools verified (+ rosetta fingerprint, validate-stats)
 **Author:** PAIML Engineering
-**Date:** 2026-01-30
-**Last Falsification Run:** 2026-01-30 (Omega Round 10)
+**Date:** 2026-01-31
+**Last Falsification Run:** 2026-01-31 (Omega Round 11 - GH-189 Fix)
 **Quality Philosophy:** Toyota Way + Popperian Falsification (Zero SATD, Stop-the-Line)
 
 ---
 
 ## GitHub Issues Status (Toyota Way: Transparency)
 
-**Summary:** 20 issues closed, 0 open. GH-190 GGUF→APR tensor name mismatch **CLOSED** (commit 57c67706).
+**Summary:** 21 issues closed, 0 open. GH-189 APR chat special tokens **CLOSED** (commit 3bcb485).
 
 | Issue | Title | Severity | Status | PMAT |
 |-------|-------|----------|--------|------|
+| [GH-189](docs/tickets/GH-189-APR-CHAT-SPECIAL-TOKENS.md) | **APR chat produces garbage (special tokens not atomic)** | **P0** | ✅ **CLOSED** (3bcb485) | PMAT-206 |
 | [GH-190](docs/tickets/GH-190-GGUF-APR-CONVERSION-GARBAGE-OUTPUT.md) | **GGUF→APR conversion produces garbage (tensor name mismatch)** | **P0** | ✅ **CLOSED** (57c67706) | PMAT-205 |
 | [#189](https://github.com/paiml/aprender/issues/189) | **APRv3: Per-tensor statistical fingerprints** | P1 | 🔧 **IN PROGRESS** | PMAT-201 |
 | [#190](https://github.com/paiml/aprender/issues/190) | **APRv3: Validate tensor statistics** | P1 | 🔧 **IN PROGRESS** | PMAT-202 |
@@ -2318,6 +2319,47 @@ apr run model.apr -p "What is 2+2?" --max-tokens 8 --no-gpu
 
 **Blocked By:** APR-TRACE-002 (Format-Aware Differential Tracing) not implemented.
 
+### Five-Whys: GH-189 Root Cause (✅ FIXED)
+
+**Symptom:** APR chat produces garbage output like "SZ Pythonp:eq不易stromlust_simps 행사allon" while GGUF chat works correctly ("Hello! How can I assist you today?").
+
+1. **Why** does APR produce garbage? → Tokenization differs from GGUF (23 tokens vs 2 tokens for "Hi")
+2. **Why** does APR tokenize differently? → Chat template markers split into characters
+3. **Why** are markers split? → `<|im_start|>`, `<|im_end|>` not recognized as atomic tokens
+4. **Why** not recognized? → `BpeTokenizer::encode()` passes empty HashMap for special_tokens
+5. **ROOT CAUSE:** `BpeTokenizer` struct lacked `special_tokens` field; `encode()` couldn't identify markers
+
+**Fix Applied (realizar v0.6.11):**
+1. Added `special_tokens: HashMap<String, u32>` field to `BpeTokenizer` struct
+2. Updated `BpeTokenizer::encode()` to use `self.special_tokens` for atomic tokenization
+3. Added `extract_special_tokens_from_vocab()` to identify special tokens by pattern:
+   - ChatML/Qwen: `<|im_start|>`, `<|im_end|>`, `<|endoftext|>`
+   - LLaMA: `<s>`, `</s>`, `<unk>`, `<pad>`, `<bos>`, `<eos>`
+   - Phi/Mistral: `<|assistant|>`, `<|user|>`, `<|system|>`
+   - Code models: `<|fim_prefix|>`, `<|fim_middle|>`, `<|fim_suffix|>`
+   - Any token matching `<|...|>` pattern
+4. Updated `load_embedded_bpe_tokenizer()` to extract special tokens from vocabulary
+5. Updated `load_tokenizer_from_path()` to extract special tokens from `added_tokens`
+
+**Verification:**
+```bash
+# GGUF path - works correctly
+echo "Hi" | apr chat model.gguf --max-tokens 10
+# → "Hello! How can I assist you today?"
+
+# Special tokens now atomic (not split into characters)
+# <|im_start|> → token 151644 (single token)
+# NOT: < | i m _ s t a r t | > → 12 separate tokens
+```
+
+**Commits:**
+- realizar: `3bcb485` - fix(apr): Add special_tokens support to BpeTokenizer (Refs GH-189)
+- aprender: `197def85` - chore(apr-cli): Update realizar to 0.6.11 (Refs GH-189)
+
+**Remaining APR Issues (Not Tokenization):**
+1. APR conversion without `--quantize q4k` produces F32 tensors (design limitation)
+2. APR Q4K path has dimension ordering mismatch with realizaer (separate investigation)
+
 ---
 
 ## Appendix A: Component Paths
@@ -2343,6 +2385,7 @@ apr run model.apr -p "What is 2+2?" --max-tokens 8 --no-gpu
 | T-QA-018-022 | Resource Efficiency | ✅ Done |
 | PMAT-116 | SafeTensors GPU Inference | ✅ Done (Zero SATD) |
 | PMAT-085 | File Health: optim/mod.rs | ✅ Done (2848→2022 lines) |
+| PMAT-206 | GH-189: APR BpeTokenizer Special Tokens | ✅ Done (realizar v0.6.11) |
 
 ---
 
