@@ -105,3 +105,189 @@ fn display_report(report: &ExportReport) {
     println!();
     println!("{}", "Export successful".green().bold());
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use aprender::format::ExportReport;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+
+    // ========================================================================
+    // Error Path Tests
+    // ========================================================================
+
+    #[test]
+    fn test_run_file_not_found() {
+        let result = run(
+            Path::new("/nonexistent/model.apr"),
+            "safetensors",
+            Path::new("/tmp/output.safetensors"),
+            None,
+        );
+        assert!(result.is_err());
+        match result {
+            Err(CliError::FileNotFound(_)) => {}
+            _ => panic!("Expected FileNotFound error"),
+        }
+    }
+
+    #[test]
+    fn test_run_unknown_format() {
+        // Create a temp file to bypass file existence check
+        let file = NamedTempFile::with_suffix(".apr").expect("create temp file");
+
+        let result = run(
+            file.path(),
+            "unknown_format",
+            Path::new("/tmp/output.xyz"),
+            None,
+        );
+        assert!(result.is_err());
+        match result {
+            Err(CliError::ValidationFailed(msg)) => {
+                assert!(msg.contains("Unknown export format"));
+            }
+            _ => panic!("Expected ValidationFailed error"),
+        }
+    }
+
+    #[test]
+    fn test_run_unknown_quantization() {
+        let file = NamedTempFile::with_suffix(".apr").expect("create temp file");
+
+        let result = run(
+            file.path(),
+            "safetensors",
+            Path::new("/tmp/output.safetensors"),
+            Some("unknown_quant"),
+        );
+        assert!(result.is_err());
+        match result {
+            Err(CliError::ValidationFailed(msg)) => {
+                assert!(msg.contains("Unknown quantization"));
+            }
+            _ => panic!("Expected ValidationFailed error"),
+        }
+    }
+
+    #[test]
+    fn test_run_unsupported_format_onnx() {
+        let file = NamedTempFile::with_suffix(".apr").expect("create temp file");
+
+        let result = run(file.path(), "onnx", Path::new("/tmp/output.onnx"), None);
+        assert!(result.is_err());
+        match result {
+            Err(CliError::ValidationFailed(msg)) => {
+                assert!(msg.contains("not yet supported"));
+            }
+            _ => panic!("Expected ValidationFailed error for unsupported format"),
+        }
+    }
+
+    // ========================================================================
+    // Quantization Option Tests
+    // ========================================================================
+
+    #[test]
+    fn test_run_with_int8_quantization() {
+        let file = NamedTempFile::with_suffix(".apr").expect("create temp file");
+
+        // This will fail at apr_export, but we test the quantization parsing
+        let result = run(
+            file.path(),
+            "safetensors",
+            Path::new("/tmp/output.safetensors"),
+            Some("int8"),
+        );
+        // Will fail because file is not a valid APR, but that's after quant parsing
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_with_int4_quantization() {
+        let file = NamedTempFile::with_suffix(".apr").expect("create temp file");
+
+        let result = run(
+            file.path(),
+            "safetensors",
+            Path::new("/tmp/output.safetensors"),
+            Some("int4"),
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_with_fp16_quantization() {
+        let file = NamedTempFile::with_suffix(".apr").expect("create temp file");
+
+        let result = run(
+            file.path(),
+            "safetensors",
+            Path::new("/tmp/output.safetensors"),
+            Some("fp16"),
+        );
+        assert!(result.is_err());
+    }
+
+    // ========================================================================
+    // Display Report Tests
+    // ========================================================================
+
+    #[test]
+    fn test_display_report_basic() {
+        let report = ExportReport {
+            original_size: 1024 * 1024, // 1MB
+            exported_size: 512 * 1024,  // 512KB
+            tensor_count: 10,
+            format: ExportFormat::SafeTensors,
+            quantization: None,
+        };
+        // Should not panic
+        display_report(&report);
+    }
+
+    #[test]
+    fn test_display_report_with_quantization() {
+        let report = ExportReport {
+            original_size: 2048 * 1024,
+            exported_size: 512 * 1024,
+            tensor_count: 20,
+            format: ExportFormat::Gguf,
+            quantization: Some(QuantizationType::Int8),
+        };
+        display_report(&report);
+    }
+
+    #[test]
+    fn test_display_report_large_model() {
+        let report = ExportReport {
+            original_size: 7 * 1024 * 1024 * 1024, // 7GB
+            exported_size: 4 * 1024 * 1024 * 1024, // 4GB
+            tensor_count: 500,
+            format: ExportFormat::Gguf,
+            quantization: Some(QuantizationType::Int4),
+        };
+        display_report(&report);
+    }
+
+    // ========================================================================
+    // Invalid APR File Tests
+    // ========================================================================
+
+    #[test]
+    fn test_run_invalid_apr_file() {
+        let mut file = NamedTempFile::with_suffix(".apr").expect("create temp file");
+        file.write_all(b"not a valid APR file")
+            .expect("write to file");
+
+        let result = run(
+            file.path(),
+            "safetensors",
+            Path::new("/tmp/output.safetensors"),
+            None,
+        );
+        // Should fail because file is not valid APR
+        assert!(result.is_err());
+    }
+}

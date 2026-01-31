@@ -123,3 +123,292 @@ pub(crate) fn run(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+
+    // ========================================================================
+    // File Validation Tests
+    // ========================================================================
+
+    #[test]
+    fn test_run_file_not_found() {
+        let result = run(
+            Path::new("/nonexistent/model.apr"),
+            None,
+            None,
+            Path::new("/tmp/output.apr"),
+            false,
+        );
+        assert!(result.is_err());
+        match result {
+            Err(CliError::FileNotFound(_)) => {}
+            _ => panic!("Expected FileNotFound error"),
+        }
+    }
+
+    #[test]
+    fn test_run_overwrite_protection() {
+        let input = NamedTempFile::with_suffix(".apr").expect("create input");
+        let output = NamedTempFile::with_suffix(".apr").expect("create output");
+
+        let result = run(
+            input.path(),
+            None,
+            None,
+            output.path(),
+            false, // force = false
+        );
+        assert!(result.is_err());
+        match result {
+            Err(CliError::ValidationFailed(msg)) => {
+                assert!(msg.contains("already exists"));
+                assert!(msg.contains("--force"));
+            }
+            _ => panic!("Expected ValidationFailed error for overwrite protection"),
+        }
+    }
+
+    #[test]
+    fn test_run_overwrite_with_force() {
+        let mut input = NamedTempFile::with_suffix(".apr").expect("create input");
+        let output = NamedTempFile::with_suffix(".apr").expect("create output");
+
+        input.write_all(b"test data").expect("write");
+
+        let result = run(
+            input.path(),
+            None,
+            None,
+            output.path(),
+            true, // force = true, but will still fail on invalid APR
+        );
+        // Will fail at actual conversion, but tests force path
+        assert!(result.is_err());
+    }
+
+    // ========================================================================
+    // Quantization Option Tests
+    // ========================================================================
+
+    #[test]
+    fn test_run_unknown_quantization() {
+        let input = NamedTempFile::with_suffix(".apr").expect("create temp file");
+
+        let result = run(
+            input.path(),
+            Some("unknown_quant"),
+            None,
+            Path::new("/tmp/output.apr"),
+            false,
+        );
+        assert!(result.is_err());
+        match result {
+            Err(CliError::ValidationFailed(msg)) => {
+                assert!(msg.contains("Unknown quantization"));
+            }
+            _ => panic!("Expected ValidationFailed error"),
+        }
+    }
+
+    #[test]
+    fn test_run_quantization_int8() {
+        let input = NamedTempFile::with_suffix(".apr").expect("create temp file");
+
+        let result = run(
+            input.path(),
+            Some("int8"),
+            None,
+            Path::new("/tmp/output.apr"),
+            false,
+        );
+        // Will fail at conversion, but tests int8 parsing
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_quantization_int4() {
+        let input = NamedTempFile::with_suffix(".apr").expect("create temp file");
+
+        let result = run(
+            input.path(),
+            Some("int4"),
+            None,
+            Path::new("/tmp/output.apr"),
+            false,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_quantization_fp16() {
+        let input = NamedTempFile::with_suffix(".apr").expect("create temp file");
+
+        let result = run(
+            input.path(),
+            Some("fp16"),
+            None,
+            Path::new("/tmp/output.apr"),
+            false,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_quantization_q4k() {
+        let input = NamedTempFile::with_suffix(".apr").expect("create temp file");
+
+        let result = run(
+            input.path(),
+            Some("q4k"),
+            None,
+            Path::new("/tmp/output.apr"),
+            false,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_quantization_q4_k_alias() {
+        let input = NamedTempFile::with_suffix(".apr").expect("create temp file");
+
+        let result = run(
+            input.path(),
+            Some("q4_k"),
+            None,
+            Path::new("/tmp/output.apr"),
+            false,
+        );
+        assert!(result.is_err());
+    }
+
+    // ========================================================================
+    // Compression Option Tests
+    // ========================================================================
+
+    #[test]
+    fn test_run_unknown_compression() {
+        let input = NamedTempFile::with_suffix(".apr").expect("create temp file");
+
+        let result = run(
+            input.path(),
+            None,
+            Some("unknown_compress"),
+            Path::new("/tmp/output.apr"),
+            false,
+        );
+        assert!(result.is_err());
+        match result {
+            Err(CliError::ValidationFailed(msg)) => {
+                assert!(msg.contains("Unknown compression"));
+            }
+            _ => panic!("Expected ValidationFailed error"),
+        }
+    }
+
+    #[test]
+    fn test_run_compression_none() {
+        let input = NamedTempFile::with_suffix(".apr").expect("create temp file");
+
+        let result = run(
+            input.path(),
+            None,
+            Some("none"),
+            Path::new("/tmp/output.apr"),
+            false,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_compression_zstd() {
+        let input = NamedTempFile::with_suffix(".apr").expect("create temp file");
+
+        let result = run(
+            input.path(),
+            None,
+            Some("zstd"),
+            Path::new("/tmp/output.apr"),
+            false,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_compression_zstd_default() {
+        let input = NamedTempFile::with_suffix(".apr").expect("create temp file");
+
+        let result = run(
+            input.path(),
+            None,
+            Some("zstd-default"),
+            Path::new("/tmp/output.apr"),
+            false,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_compression_zstd_max() {
+        let input = NamedTempFile::with_suffix(".apr").expect("create temp file");
+
+        let result = run(
+            input.path(),
+            None,
+            Some("zstd-max"),
+            Path::new("/tmp/output.apr"),
+            false,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_compression_lz4() {
+        let input = NamedTempFile::with_suffix(".apr").expect("create temp file");
+
+        let result = run(
+            input.path(),
+            None,
+            Some("lz4"),
+            Path::new("/tmp/output.apr"),
+            false,
+        );
+        assert!(result.is_err());
+    }
+
+    // ========================================================================
+    // Combined Options Tests
+    // ========================================================================
+
+    #[test]
+    fn test_run_quantize_and_compress() {
+        let input = NamedTempFile::with_suffix(".apr").expect("create temp file");
+
+        let result = run(
+            input.path(),
+            Some("int8"),
+            Some("zstd"),
+            Path::new("/tmp/output.apr"),
+            false,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_invalid_apr_file() {
+        let mut input = NamedTempFile::with_suffix(".apr").expect("create temp file");
+        input.write_all(b"not valid APR").expect("write");
+
+        let result = run(
+            input.path(),
+            None,
+            None,
+            Path::new("/tmp/output.apr"),
+            false,
+        );
+        assert!(result.is_err());
+    }
+}

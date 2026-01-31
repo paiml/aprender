@@ -56,3 +56,87 @@ pub(crate) fn run(
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ========================================================================
+    // Error Code Explanation Tests
+    // ========================================================================
+
+    #[test]
+    fn test_explain_known_error_code_e002() {
+        // E002 is explicitly handled
+        let result = run(Some("E002".to_string()), None, None);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_explain_unknown_error_code() {
+        // Unknown error codes should list available codes
+        let result = run(Some("E999".to_string()), None, None);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_explain_error_code_e001() {
+        let result = run(Some("E001".to_string()), None, None);
+        assert!(result.is_ok());
+    }
+
+    // ========================================================================
+    // Tensor Explanation Tests
+    // ========================================================================
+
+    #[test]
+    fn test_explain_known_tensor() {
+        let result = run(None, None, Some("encoder.conv1.weight".to_string()));
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_explain_unknown_tensor() {
+        let result = run(None, None, Some("unknown.tensor".to_string()));
+        assert!(result.is_ok());
+    }
+
+    // ========================================================================
+    // File/Model Explanation Tests
+    // ========================================================================
+
+    #[test]
+    fn test_explain_file() {
+        let result = run(None, Some(PathBuf::from("/path/to/model.apr")), None);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_explain_file_with_gguf_extension() {
+        let result = run(None, Some(PathBuf::from("model.gguf")), None);
+        assert!(result.is_ok());
+    }
+
+    // ========================================================================
+    // Edge Case Tests
+    // ========================================================================
+
+    #[test]
+    fn test_explain_no_arguments() {
+        // Should print help message
+        let result = run(None, None, None);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_explain_empty_code() {
+        let result = run(Some(String::new()), None, None);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_explain_empty_tensor() {
+        let result = run(None, None, Some(String::new()));
+        assert!(result.is_ok());
+    }
+}
