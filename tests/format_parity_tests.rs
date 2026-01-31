@@ -747,7 +747,7 @@ fn dd7_cryptographic_verification_capability() {
         || cargo_toml.contains("digest");
 
     // Also check if we have our own implementation
-    let v2_rs = include_str!("../src/format/v2.rs");
+    let v2_rs = include_str!("../src/format/v2/mod.rs");
     let has_checksum_impl = v2_rs.contains("checksum") || v2_rs.contains("crc");
 
     assert!(
