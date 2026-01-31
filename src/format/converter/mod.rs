@@ -1115,6 +1115,51 @@ fn quantize_q4_k(data: &[f32]) -> Vec<u8> {
     result
 }
 
+/// Quantize F32 matrix to Q4_K format with proper row padding (GH-189)
+///
+/// Unlike the flat `quantize_q4_k`, this function:
+/// - Takes matrix shape as input
+/// - Pads each row to a multiple of 256 elements
+/// - Creates super-blocks row-by-row for correct realizaer kernel layout
+///
+/// This matches how realizaer expects Q4_K weights: each output row has
+/// `ceil(in_dim/256)` super-blocks organized contiguously.
+pub(crate) fn quantize_q4_k_matrix(data: &[f32], shape: &[usize]) -> Vec<u8> {
+    const SUPER_BLOCK_SIZE: usize = 256;
+    const SUPER_BLOCK_BYTES: usize = 144;
+
+    // For 1D tensors, use the flat quantizer
+    if shape.len() != 2 {
+        return quantize_q4_k(data);
+    }
+
+    let rows = shape[0];
+    let cols = shape[1];
+
+    // Calculate super-blocks per row (with padding to 256)
+    let super_blocks_per_row = (cols + SUPER_BLOCK_SIZE - 1) / SUPER_BLOCK_SIZE;
+    let padded_cols = super_blocks_per_row * SUPER_BLOCK_SIZE;
+
+    let mut result = Vec::with_capacity(rows * super_blocks_per_row * SUPER_BLOCK_BYTES);
+
+    // Process each row
+    for row_idx in 0..rows {
+        // Extract and pad this row
+        let mut padded_row = vec![0.0f32; padded_cols];
+        let row_start = row_idx * cols;
+        let row_end = row_start + cols;
+        if row_end <= data.len() {
+            padded_row[..cols].copy_from_slice(&data[row_start..row_end]);
+        }
+
+        // Quantize this padded row using the flat quantizer
+        let row_q4k = quantize_q4_k(&padded_row);
+        result.extend_from_slice(&row_q4k);
+    }
+
+    result
+}
+
 /// Transpose Q4K data for matmul kernel compatibility (PMAT-103)
 ///
 /// GGUF stores weight matrices in column-major order (GGML convention) for `x @ W`.
