@@ -303,3 +303,375 @@ fn output_text(path: &Path, tensors: &[TensorInfo], show_stats: bool) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use tempfile::{tempdir, NamedTempFile};
+
+    // ========================================================================
+    // Path Validation Tests
+    // ========================================================================
+
+    #[test]
+    fn test_validate_path_not_found() {
+        let result = validate_path(Path::new("/nonexistent/model.apr"));
+        assert!(result.is_err());
+        match result {
+            Err(CliError::FileNotFound(_)) => {}
+            _ => panic!("Expected FileNotFound error"),
+        }
+    }
+
+    #[test]
+    fn test_validate_path_is_directory() {
+        let dir = tempdir().expect("create dir");
+        let result = validate_path(dir.path());
+        assert!(result.is_err());
+        match result {
+            Err(CliError::NotAFile(_)) => {}
+            _ => panic!("Expected NotAFile error"),
+        }
+    }
+
+    #[test]
+    fn test_validate_path_valid() {
+        let file = NamedTempFile::new().expect("create file");
+        let result = validate_path(file.path());
+        assert!(result.is_ok());
+    }
+
+    // ========================================================================
+    // Run Command Tests
+    // ========================================================================
+
+    #[test]
+    fn test_run_file_not_found() {
+        let result = run(
+            Path::new("/nonexistent/model.apr"),
+            false,
+            None,
+            false,
+            100,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_file_too_small() {
+        let mut file = NamedTempFile::with_suffix(".apr").expect("create file");
+        file.write_all(b"short").expect("write");
+
+        let result = run(file.path(), false, None, false, 100);
+        assert!(result.is_err());
+        match result {
+            Err(CliError::InvalidFormat(msg)) => {
+                assert!(msg.contains("too small") || msg.contains("Invalid"));
+            }
+            _ => panic!("Expected InvalidFormat error"),
+        }
+    }
+
+    #[test]
+    fn test_run_invalid_magic() {
+        let mut file = NamedTempFile::with_suffix(".apr").expect("create file");
+        // Write 32 bytes with invalid magic
+        let mut data = [0u8; 32];
+        data[0..4].copy_from_slice(b"XXXX");
+        file.write_all(&data).expect("write");
+
+        let result = run(file.path(), false, None, false, 100);
+        assert!(result.is_err());
+        match result {
+            Err(CliError::InvalidFormat(msg)) => {
+                assert!(msg.contains("Invalid magic"));
+            }
+            _ => panic!("Expected InvalidFormat error"),
+        }
+    }
+
+    // ========================================================================
+    // TensorInfo Tests
+    // ========================================================================
+
+    #[test]
+    fn test_tensor_info_serialization() {
+        let info = TensorInfo {
+            name: "encoder.weight".to_string(),
+            shape: vec![384, 80, 3],
+            dtype: "f32".to_string(),
+            size_bytes: 384 * 80 * 3 * 4,
+            mean: Some(0.001),
+            std: Some(0.04),
+            min: Some(-0.1),
+            max: Some(0.1),
+            nan_count: Some(0),
+            inf_count: Some(0),
+        };
+
+        let json = serde_json::to_string(&info).expect("serialize");
+        assert!(json.contains("encoder.weight"));
+        assert!(json.contains("384"));
+        assert!(json.contains("f32"));
+    }
+
+    #[test]
+    fn test_tensors_result_serialization() {
+        let result = TensorsResult {
+            file: "model.apr".to_string(),
+            tensor_count: 2,
+            total_size_bytes: 1000,
+            tensors: vec![
+                TensorInfo {
+                    name: "weight1".to_string(),
+                    shape: vec![100],
+                    dtype: "f32".to_string(),
+                    size_bytes: 400,
+                    mean: None,
+                    std: None,
+                    min: None,
+                    max: None,
+                    nan_count: None,
+                    inf_count: None,
+                },
+                TensorInfo {
+                    name: "weight2".to_string(),
+                    shape: vec![150],
+                    dtype: "f32".to_string(),
+                    size_bytes: 600,
+                    mean: None,
+                    std: None,
+                    min: None,
+                    max: None,
+                    nan_count: None,
+                    inf_count: None,
+                },
+            ],
+        };
+
+        let json = serde_json::to_string(&result).expect("serialize");
+        assert!(json.contains("model.apr"));
+        assert!(json.contains("tensor_count"));
+        assert!(json.contains("weight1"));
+        assert!(json.contains("weight2"));
+    }
+
+    // ========================================================================
+    // Helper Function Tests
+    // ========================================================================
+
+    #[test]
+    fn test_parse_shape_array_valid() {
+        let val = serde_json::json!([10, 20, 30]);
+        let shape = parse_shape_array(&val);
+        assert_eq!(shape, vec![10, 20, 30]);
+    }
+
+    #[test]
+    fn test_parse_shape_array_empty() {
+        let val = serde_json::json!([]);
+        let shape = parse_shape_array(&val);
+        assert!(shape.is_empty());
+    }
+
+    #[test]
+    fn test_parse_shape_array_not_array() {
+        let val = serde_json::json!("not an array");
+        let shape = parse_shape_array(&val);
+        assert!(shape.is_empty());
+    }
+
+    #[test]
+    fn test_parse_shape_array_mixed_types() {
+        let val = serde_json::json!([10, "invalid", 30]);
+        let shape = parse_shape_array(&val);
+        assert_eq!(shape, vec![10, 30]); // Skips invalid elements
+    }
+
+    #[test]
+    fn test_create_unavailable_tensor_info() {
+        let info = create_unavailable_tensor_info();
+        assert!(info.name.contains("not available"));
+        assert!(info.shape.is_empty());
+        assert_eq!(info.dtype, "unknown");
+    }
+
+    // ========================================================================
+    // Extract Functions Tests
+    // ========================================================================
+
+    #[test]
+    fn test_extract_from_tensor_shapes_empty() {
+        let metadata: HashMap<String, serde_json::Value> = HashMap::new();
+        let tensors = extract_from_tensor_shapes(&metadata, None, 100);
+        assert!(tensors.is_empty());
+    }
+
+    #[test]
+    fn test_extract_from_tensor_shapes_valid() {
+        let mut metadata: HashMap<String, serde_json::Value> = HashMap::new();
+        let mut shapes = serde_json::Map::new();
+        shapes.insert("layer1.weight".to_string(), serde_json::json!([100, 200]));
+        shapes.insert("layer2.weight".to_string(), serde_json::json!([200, 300]));
+        metadata.insert("tensor_shapes".to_string(), serde_json::Value::Object(shapes));
+
+        let tensors = extract_from_tensor_shapes(&metadata, None, 100);
+        assert_eq!(tensors.len(), 2);
+    }
+
+    #[test]
+    fn test_extract_from_tensor_shapes_with_filter() {
+        let mut metadata: HashMap<String, serde_json::Value> = HashMap::new();
+        let mut shapes = serde_json::Map::new();
+        shapes.insert("encoder.weight".to_string(), serde_json::json!([100, 200]));
+        shapes.insert("decoder.weight".to_string(), serde_json::json!([200, 300]));
+        metadata.insert("tensor_shapes".to_string(), serde_json::Value::Object(shapes));
+
+        let tensors = extract_from_tensor_shapes(&metadata, Some("encoder"), 100);
+        assert_eq!(tensors.len(), 1);
+        assert!(tensors[0].name.contains("encoder"));
+    }
+
+    #[test]
+    fn test_extract_from_tensor_shapes_with_limit() {
+        let mut metadata: HashMap<String, serde_json::Value> = HashMap::new();
+        let mut shapes = serde_json::Map::new();
+        for i in 0..10 {
+            shapes.insert(format!("layer{i}.weight"), serde_json::json!([100]));
+        }
+        metadata.insert("tensor_shapes".to_string(), serde_json::Value::Object(shapes));
+
+        let tensors = extract_from_tensor_shapes(&metadata, None, 3);
+        assert_eq!(tensors.len(), 3);
+    }
+
+    #[test]
+    fn test_extract_from_hyperparameters_empty() {
+        let metadata: HashMap<String, serde_json::Value> = HashMap::new();
+        let tensors = extract_from_hyperparameters(&metadata);
+        assert!(tensors.is_empty());
+    }
+
+    #[test]
+    fn test_extract_from_hyperparameters_valid() {
+        let mut metadata: HashMap<String, serde_json::Value> = HashMap::new();
+        let mut hp = serde_json::Map::new();
+        hp.insert("hidden_dim".to_string(), serde_json::json!(768));
+        hp.insert("num_layers".to_string(), serde_json::json!(12));
+        metadata.insert("hyperparameters".to_string(), serde_json::Value::Object(hp));
+
+        let tensors = extract_from_hyperparameters(&metadata);
+        assert_eq!(tensors.len(), 1);
+        assert!(!tensors[0].shape.is_empty());
+    }
+
+    #[test]
+    fn test_extract_tensor_info_fallback() {
+        // Empty metadata should return unavailable placeholder
+        let metadata_bytes = b"{}";
+        let tensors = extract_tensor_info(metadata_bytes, false, None, 100);
+        assert_eq!(tensors.len(), 1);
+        assert!(tensors[0].name.contains("not available"));
+    }
+
+    // ========================================================================
+    // Output Functions Tests
+    // ========================================================================
+
+    #[test]
+    fn test_output_json() {
+        let tensors = vec![TensorInfo {
+            name: "test".to_string(),
+            shape: vec![10],
+            dtype: "f32".to_string(),
+            size_bytes: 40,
+            mean: None,
+            std: None,
+            min: None,
+            max: None,
+            nan_count: None,
+            inf_count: None,
+        }];
+
+        // Should not panic
+        output_json(Path::new("test.apr"), &tensors);
+    }
+
+    #[test]
+    fn test_output_text_empty() {
+        output_text(Path::new("test.apr"), &[], false);
+    }
+
+    #[test]
+    fn test_output_text_with_tensors() {
+        let tensors = vec![TensorInfo {
+            name: "weight".to_string(),
+            shape: vec![100, 200],
+            dtype: "f32".to_string(),
+            size_bytes: 80000,
+            mean: None,
+            std: None,
+            min: None,
+            max: None,
+            nan_count: None,
+            inf_count: None,
+        }];
+
+        output_text(Path::new("test.apr"), &tensors, false);
+    }
+
+    #[test]
+    fn test_output_text_with_stats() {
+        let tensors = vec![TensorInfo {
+            name: "weight".to_string(),
+            shape: vec![100],
+            dtype: "f32".to_string(),
+            size_bytes: 400,
+            mean: Some(0.001),
+            std: Some(0.04),
+            min: Some(-0.1),
+            max: Some(0.1),
+            nan_count: Some(0),
+            inf_count: Some(0),
+        }];
+
+        output_text(Path::new("test.apr"), &tensors, true);
+    }
+
+    #[test]
+    fn test_output_text_with_nan_warning() {
+        let tensors = vec![TensorInfo {
+            name: "weight".to_string(),
+            shape: vec![100],
+            dtype: "f32".to_string(),
+            size_bytes: 400,
+            mean: Some(f32::NAN),
+            std: Some(0.04),
+            min: None,
+            max: None,
+            nan_count: Some(5),
+            inf_count: Some(0),
+        }];
+
+        output_text(Path::new("test.apr"), &tensors, true);
+    }
+
+    #[test]
+    fn test_output_text_with_inf_warning() {
+        let tensors = vec![TensorInfo {
+            name: "weight".to_string(),
+            shape: vec![100],
+            dtype: "f32".to_string(),
+            size_bytes: 400,
+            mean: Some(0.0),
+            std: Some(0.04),
+            min: None,
+            max: None,
+            nan_count: Some(0),
+            inf_count: Some(3),
+        }];
+
+        output_text(Path::new("test.apr"), &tensors, true);
+    }
+}
