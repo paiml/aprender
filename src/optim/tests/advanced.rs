@@ -283,15 +283,15 @@ fn test_fista_vs_no_acceleration() {
 #[test]
 fn test_coordinate_descent_new() {
     let cd = CoordinateDescent::new(100, 1e-6);
-    assert_eq!(cd.max_iter, 100);
-    assert!((cd.tol - 1e-6).abs() < 1e-12);
-    assert!(!cd.random_order);
+    assert_eq!(cd.max_iter(), 100);
+    assert!((cd.tol() - 1e-6).abs() < 1e-12);
+    assert!(!cd.random_order());
 }
 
 #[test]
 fn test_coordinate_descent_with_random_order() {
     let cd = CoordinateDescent::new(100, 1e-6).with_random_order(true);
-    assert!(cd.random_order);
+    assert!(cd.random_order());
 }
 
 #[test]
@@ -481,23 +481,23 @@ fn test_coordinate_descent_gradient_tracking() {
 #[test]
 fn test_admm_new() {
     let admm = ADMM::new(100, 1.0, 1e-4);
-    assert_eq!(admm.max_iter, 100);
-    assert_eq!(admm.rho, 1.0);
-    assert_eq!(admm.tol, 1e-4);
-    assert!(!admm.adaptive_rho);
+    assert_eq!(admm.max_iter(), 100);
+    assert_eq!(admm.rho(), 1.0);
+    assert_eq!(admm.tol(), 1e-4);
+    assert!(!admm.adaptive_rho());
 }
 
 #[test]
 fn test_admm_with_adaptive_rho() {
     let admm = ADMM::new(100, 1.0, 1e-4).with_adaptive_rho(true);
-    assert!(admm.adaptive_rho);
+    assert!(admm.adaptive_rho());
 }
 
 #[test]
 fn test_admm_with_rho_factors() {
     let admm = ADMM::new(100, 1.0, 1e-4).with_rho_factors(1.5, 1.5);
-    assert_eq!(admm.rho_increase, 1.5);
-    assert_eq!(admm.rho_decrease, 1.5);
+    assert_eq!(admm.rho_increase(), 1.5);
+    assert_eq!(admm.rho_decrease(), 1.5);
 }
 
 #[test]
