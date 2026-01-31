@@ -385,3 +385,57 @@ use super::*;
 
         let _ = edge_conv.forward(&x);
     }
+
+    // ==================== Accessor Tests ====================
+
+    #[test]
+    fn test_gcn_accessors() {
+        let gcn = GCNConv::new(16, 32);
+        assert_eq!(gcn.in_features(), 16);
+        assert_eq!(gcn.out_features(), 32);
+    }
+
+    #[test]
+    fn test_gat_accessors() {
+        let gat = GATConv::new(16, 8, 4);
+        assert_eq!(gat.num_heads(), 4);
+        assert_eq!(gat.out_features(), 8);
+        assert_eq!(gat.total_out_features(), 32); // 8 * 4 heads
+    }
+
+    #[test]
+    fn test_gin_accessors() {
+        let gin = GINConv::new(16, 64, 32);
+        assert_eq!(gin.in_features(), 16);
+        assert_eq!(gin.hidden_features(), 64);
+        assert_eq!(gin.out_features(), 32);
+        assert!((gin.eps() - 0.0).abs() < f32::EPSILON);
+        assert!(gin.train_eps()); // train_eps defaults to true
+    }
+
+    #[test]
+    fn test_gin_set_eps() {
+        let mut gin = GINConv::new(16, 64, 32);
+        gin.set_eps(0.5);
+        assert!((gin.eps() - 0.5).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_graphsage_accessors() {
+        let sage = GraphSAGEConv::new(16, 32);
+        assert_eq!(sage.aggregation(), SAGEAggregation::Mean);
+        assert!(sage.sample_size().is_none());
+    }
+
+    #[test]
+    fn test_graphsage_with_sample_size() {
+        let sage = GraphSAGEConv::new(16, 32).with_sample_size(10);
+        assert_eq!(sage.sample_size(), Some(10));
+    }
+
+    #[test]
+    fn test_edgeconv_accessors() {
+        let edge_conv = EdgeConv::new(4, 16, 8);
+        assert_eq!(edge_conv.in_features(), 4);
+        assert_eq!(edge_conv.out_features(), 8);
+    }
