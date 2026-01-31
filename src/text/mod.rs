@@ -43,9 +43,10 @@ pub mod entities;
 
 // Re-export key chat_template types for convenience
 pub use chat_template::{
-    auto_detect_template, create_template, detect_format_from_name, AlpacaTemplate, ChatMLTemplate,
-    ChatMessage, ChatTemplateEngine, HuggingFaceTemplate, Llama2Template, MistralTemplate,
-    PhiTemplate, RawTemplate, SpecialTokens, TemplateFormat,
+    auto_detect_template, contains_injection_patterns, create_template, detect_format_from_name,
+    sanitize_user_content, AlpacaTemplate, ChatMLTemplate, ChatMessage, ChatTemplateEngine,
+    HuggingFaceTemplate, Llama2Template, MistralTemplate, PhiTemplate, RawTemplate, SpecialTokens,
+    TemplateFormat,
 };
 pub mod incremental_idf;
 pub mod llama_tokenizer;
