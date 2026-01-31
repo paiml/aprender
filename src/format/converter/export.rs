@@ -338,8 +338,12 @@ fn infer_model_config(tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>) -> Str
         .map(|(_, (_, shape))| shape.first().copied().unwrap_or(hidden_size * 4))
         .unwrap_or(hidden_size * 4);  // Default to 4x hidden_size (common in transformers)
 
-    // GH-193: Infer head_dim
-    let head_dim = hidden_size / num_attention_heads;
+    // GH-193: Infer head_dim (guard against division by zero)
+    let head_dim = if num_attention_heads > 0 {
+        hidden_size / num_attention_heads
+    } else {
+        64  // Default head dimension
+    };
 
     // GH-193: Infer num_key_value_heads (GQA support)
     // Look for k_proj shape to detect if using GQA (grouped query attention)
@@ -352,7 +356,8 @@ fn infer_model_config(tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>) -> Str
             // For GQA: k_proj shape is [hidden_size, num_kv_heads * head_dim]
             // If shape[0] < hidden_size, it's GQA
             let kv_dim = shape.first().copied().unwrap_or(hidden_size);
-            (kv_dim / head_dim).max(1)
+            // Guard against division by zero
+            if head_dim > 0 { (kv_dim / head_dim).max(1) } else { 1 }
         })
         .unwrap_or(num_attention_heads);  // Default: same as num_attention_heads (MHA)
 
