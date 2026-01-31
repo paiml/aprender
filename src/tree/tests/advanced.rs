@@ -1,6 +1,16 @@
 //! Advanced tree tests: integration, coverage, utilities, and estimator traits.
 
 use crate::tree::*;
+use crate::tree::helpers::{
+    at_max_depth, bootstrap_sample, calculate_information_gain, check_stopping_criteria,
+    compute_mse, compute_regression_tree_feature_importances, compute_tree_feature_importances,
+    count_regression_tree_samples, count_tree_samples, evaluate_split_gain,
+    find_best_regression_split, find_best_regression_split_for_feature, flatten_tree_node,
+    get_sorted_unique_values, get_unique_feature_values, gini_split, make_regression_leaf,
+    mean_f32, partition_by_threshold, reconstruct_tree_node, split_by_threshold,
+    split_data_by_indices, split_indices_by_threshold, split_labels_by_threshold,
+    split_regression_data_by_indices, variance_f32,
+};
 use crate::primitives::{Matrix, Vector};
 
 // ===================================================================
@@ -790,14 +800,14 @@ fn test_regression_tree_node_depth() {
 #[test]
 fn test_gradient_boosting_classifier_new() {
     let gb = GradientBoostingClassifier::new();
-    assert!(gb.estimators.is_empty());
-    assert_eq!(gb.n_estimators, 100); // Config value, not fitted count
+    assert!(gb.estimators().is_empty());
+    assert_eq!(gb.configured_n_estimators(), 100); // Config value, not fitted count
 }
 
 #[test]
 fn test_gradient_boosting_classifier_default() {
     let gb = GradientBoostingClassifier::default();
-    assert!(gb.estimators.is_empty());
+    assert!(gb.estimators().is_empty());
 }
 
 #[test]
@@ -807,7 +817,7 @@ fn test_gradient_boosting_classifier_builders() {
         .with_learning_rate(0.05)
         .with_max_depth(5);
 
-    assert_eq!(gb.n_estimators, 50); // Config value, not fitted count
+    assert_eq!(gb.configured_n_estimators(), 50); // Config value, not fitted count
 }
 
 #[test]

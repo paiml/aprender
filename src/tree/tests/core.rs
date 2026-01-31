@@ -1,6 +1,10 @@
 //! Tests for decision tree algorithms.
 
 use crate::tree::*;
+use crate::tree::helpers::{
+    bootstrap_sample, build_tree, find_best_split, find_best_split_for_feature, gini_impurity,
+    gini_split, majority_class,
+};
 use crate::primitives::{Matrix, Vector};
 use crate::traits::Estimator;
 
@@ -658,9 +662,9 @@ fn test_random_forest_reproducible() {
 #[test]
 fn test_gradient_boosting_new() {
     let gbm = GradientBoostingClassifier::new();
-    assert_eq!(gbm.n_estimators, 100);
-    assert_eq!(gbm.learning_rate, 0.1);
-    assert_eq!(gbm.max_depth, 3);
+    assert_eq!(gbm.configured_n_estimators(), 100);
+    assert!((gbm.learning_rate() - 0.1).abs() < 1e-6);
+    assert_eq!(gbm.max_depth(), 3);
     assert_eq!(gbm.n_estimators(), 0); // No estimators before fit
 }
 
@@ -671,9 +675,9 @@ fn test_gradient_boosting_builder() {
         .with_learning_rate(0.05)
         .with_max_depth(5);
 
-    assert_eq!(gbm.n_estimators, 50);
-    assert_eq!(gbm.learning_rate, 0.05);
-    assert_eq!(gbm.max_depth, 5);
+    assert_eq!(gbm.configured_n_estimators(), 50);
+    assert!((gbm.learning_rate() - 0.05).abs() < 1e-6);
+    assert_eq!(gbm.max_depth(), 5);
 }
 
 #[test]
@@ -958,9 +962,9 @@ fn test_gradient_boosting_default() {
     let gbm1 = GradientBoostingClassifier::new();
     let gbm2 = GradientBoostingClassifier::default();
 
-    assert_eq!(gbm1.n_estimators, gbm2.n_estimators);
-    assert_eq!(gbm1.learning_rate, gbm2.learning_rate);
-    assert_eq!(gbm1.max_depth, gbm2.max_depth);
+    assert_eq!(gbm1.configured_n_estimators(), gbm2.configured_n_estimators());
+    assert!((gbm1.learning_rate() - gbm2.learning_rate()).abs() < 1e-6);
+    assert_eq!(gbm1.max_depth(), gbm2.max_depth());
 }
 
 // ========================================================================
