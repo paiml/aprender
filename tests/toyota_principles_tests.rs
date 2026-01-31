@@ -109,10 +109,10 @@ fn p3_pull_system_lazy_loading() {
 #[test]
 fn p4_heijunka_level_workload() {
     // Check for chunk-based processing patterns
-    let has_mel = Path::new("src/audio/mel.rs").exists();
+    let mel_path = Path::new("src/audio/mel.rs");
 
-    if has_mel {
-        let mel_rs = include_str!("../src/audio/mel.rs");
+    if mel_path.exists() {
+        let mel_rs = std::fs::read_to_string(mel_path).expect("Failed to read mel.rs");
         let has_chunking =
             mel_rs.contains("chunk") || mel_rs.contains("hop_length") || mel_rs.contains("frame");
 
@@ -121,6 +121,7 @@ fn p4_heijunka_level_workload() {
             "P4 FALSIFIED: Audio processing lacks chunk-based workload leveling"
         );
     }
+    // Skip test if audio/mel.rs doesn't exist (module may have been refactored)
 }
 
 // ============================================================================

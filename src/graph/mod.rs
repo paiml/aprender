@@ -23,6 +23,10 @@
 use rayon::prelude::*;
 use std::collections::{HashMap, VecDeque};
 
+pub mod centrality;
+
+pub use centrality::GraphCentrality;
+
 /// Graph node identifier (contiguous integers for cache efficiency).
 pub type NodeId = usize;
 
@@ -428,7 +432,7 @@ impl Graph {
     ///
     /// For undirected graphs, this is the same as `neighbors()`.
     /// For directed graphs, we need to scan all nodes to find incoming edges.
-    fn incoming_neighbors(&self, v: NodeId) -> Vec<NodeId> {
+    pub(crate) fn incoming_neighbors(&self, v: NodeId) -> Vec<NodeId> {
         if !self.is_directed {
             // For undirected graphs, incoming == outgoing
             return self.neighbors(v).to_vec();
