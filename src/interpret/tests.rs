@@ -510,3 +510,81 @@ use super::*;
         let debug_str = format!("{:?}", fc);
         assert!(debug_str.contains("FeatureContributions"));
     }
+
+    // ==================== Accessor Tests ====================
+
+    #[test]
+    fn test_shap_accessors() {
+        let background = vec![
+            Vector::from_slice(&[1.0, 2.0]),
+            Vector::from_slice(&[3.0, 4.0]),
+        ];
+        let model_fn = |_v: &Vector<f32>| 0.0_f32;
+        let explainer = ShapExplainer::new(&background, model_fn);
+
+        assert_eq!(explainer.background().len(), 2);
+        assert_eq!(explainer.n_features(), 2);
+        // expected_value is the mean prediction over background
+        let _ = explainer.expected_value();
+    }
+
+    #[test]
+    fn test_shap_with_n_samples() {
+        let background = vec![Vector::from_slice(&[1.0, 2.0])];
+        let model_fn = |_v: &Vector<f32>| 0.0_f32;
+        let explainer = ShapExplainer::new(&background, model_fn).with_n_samples(50);
+
+        assert_eq!(explainer.background().len(), 1);
+    }
+
+    #[test]
+    fn test_lime_accessors() {
+        let lime = LIME::new(100, 0.5);
+        assert_eq!(lime.n_samples(), 100);
+        assert!((lime.kernel_width() - 0.5).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_saliency_map_accessors() {
+        let sm = SaliencyMap::with_epsilon(1e-5);
+        assert!((sm.epsilon() - 1e-5).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_saliency_map_default_trait() {
+        let sm = SaliencyMap::default();
+        assert!((sm.epsilon() - 1e-4).abs() < f32::EPSILON); // Default is 1e-4
+    }
+
+    #[test]
+    fn test_counterfactual_accessors() {
+        let explainer = CounterfactualExplainer::new(200, 0.01);
+        assert_eq!(explainer.max_iter(), 200);
+        assert!((explainer.step_size() - 0.01).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_permutation_importance_scores_accessor() {
+        let pi = PermutationImportance {
+            importance: Vector::from_slice(&[0.3, 0.7, 0.1]),
+            baseline_score: 1.0,
+        };
+
+        let scores = pi.scores();
+        assert_eq!(scores.len(), 3);
+        assert!((scores[0] - 0.3).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_permutation_importance_ranking_order() {
+        let pi = PermutationImportance {
+            importance: Vector::from_slice(&[0.3, 0.7, 0.1]),
+            baseline_score: 1.0,
+        };
+
+        let ranking = pi.ranking();
+        // Should be sorted by importance descending: [1, 0, 2]
+        assert_eq!(ranking[0], 1); // 0.7 is highest
+        assert_eq!(ranking[1], 0); // 0.3 is second
+        assert_eq!(ranking[2], 2); // 0.1 is lowest
+    }
