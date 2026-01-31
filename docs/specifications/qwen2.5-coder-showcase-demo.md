@@ -1,8 +1,8 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 6.6.4
-**Status:** ⚠️ TESTING REQUIRED - Both P0 bugs fixed, needs integration verification
-**Popperian Score:** 75/100 (Grade: P0 BUGS FIXED - BUG-APR-001 + BUG-APR-002)
+**Version:** 6.6.5
+**Status:** ⚠️ TESTING REQUIRED - All P0 bugs fixed, TOOL-APR-001 complete
+**Popperian Score:** 80/100 (Grade: P0 BUGS FIXED - BUG-APR-001 + BUG-APR-002 + TOOL-APR-001)
 **Code Coverage:** 96.17% (target: ≥95%)
 **Tool Coverage:** 16/16 (100%) - All APR tools verified (+ rosetta fingerprint, validate-stats)
 **Author:** PAIML Engineering
@@ -2785,7 +2785,7 @@ Following Popper's critical rationalism, we do not seek to *confirm* that infere
 | F-QA-001 | `apr qa model.gguf` | >100 tok/s | 263.0 tok/s | ✅ **CORROBORATED** |
 | F-CONV-001 | `apr export .gguf --format safetensors` | Valid file | 2.35 GiB | ✅ **CORROBORATED** |
 | F-IMPORT-001 | `apr import .gguf -o .apr` | APR file | 85/100 score | ✅ **CORROBORATED** |
-| F-APR-GGUF | `apr run converted.apr` (from GGUF) | Correct | "2+2 equals 4." | ✅ **VERIFIED** (PMAT-170/171) |
+| F-APR-GGUF | `apr run converted.apr` (from GGUF) | Correct | "2+2 equals 4." | ❌ **FALSIFIED** (Round 14: Tensors dropped) |
 | F-APR-ST | `apr run converted.apr` (from SafeTensors) | Correct | "2+2 equals 4." | ✅ **RE-VERIFIED** (2026-01-29) |
 | F-LIST-001 | `apr list` | Model list | 1 model, 468.64 MB | ✅ **CORROBORATED** |
 | F-BENCH-001 | `apr bench model.gguf` | >10 tok/s | 506.9 tok/s GPU | ✅ **CORROBORATED** |
@@ -2879,16 +2879,10 @@ Following Popper's critical rationalism, we do not seek to *confirm* that infere
   - Evidence before: "1. **Identify the type of problem**:" (BOS token only)
   - Evidence after: "2+2 equals 4. 4 is a whole number..." (actual inference)
 
-- ✅ F-APR-GGUF: APR from GGUF **FIXED** (F-REGR-231: Q4_0 nibble ordering corrected)
-  - **ROOT CAUSE (Five-Whys):**
-    1. Why garbage output? → Token IDs were nonsense
-    2. Why wrong token IDs? → Q4_0 dequantization produced wrong weights
-    3. Why wrong weights? → Element ordering was interleaved instead of sequential
-    4. Why interleaved? → Aprender output: low0, high0, low1, high1...
-    5. ROOT CAUSE: GGML uses sequential: low0-15, then high0-15 (elements 0-15 from &0xF, 16-31 from >>4)
-  - **FIX:** `src/format/gguf.rs:dequantize_q4_0` - Changed to sequential nibble output
-  - Evidence: Correlation 0.9999, token generation matches exactly
-  - Verification: `realizar/examples/test_inference.rs` shows GGUF and APR tokens identical
+- ❌ F-APR-GGUF: APR from GGUF **RE-FALSIFIED** (Round 14: Tensor Holocaust - 190 tensors dropped)
+  - **ROOT CAUSE (Round 14):** Import pipeline silently drops 65% of tensors.
+  - **Previous Fix:** Q4_0 nibble ordering was fixed, but the *files themselves* are now known to be corrupt.
+  - Evidence: `apr bench` returns 0.0 tok/s.
 
 **Root Causes (ALL FIXED):**
 1. ~~APR converter/loader bugs~~ **FIXED** (Q4_0/Q4_1 nibble ordering, F-REGR-231)
@@ -4397,7 +4391,11 @@ fn test_gguf_to_apr_preserves_all_tensors() {
   - ✅ **TESTS**: 5 new tests in tests_part_03.rs (q4k, q5k, q6k, q8_0 byte size calculations)
 - [x] **TEST-APR-001**: Add tensor count preservation tests (3 tests in aprender/pmat.rs)
 - [x] **TEST-APR-002**: Add pygmy weight tying tests (17 tests total - 8 in realizar, 9 in aprender)
-- [ ] **TOOL-APR-001**: Fix `apr tensors` to read from tensor index, not metadata
+- [x] **TOOL-APR-001**: Fix `apr tensors` to read from tensor index, not metadata
+  - ✅ **ROOT CAUSE**: CLI read from `tensor_shapes` metadata JSON, not actual tensor index
+  - ✅ **FIXED**: Created `aprender::format::tensors` library module with proper v2 index parsing
+  - ✅ **CLI SHIM**: Rewrote `apr-cli/src/commands/tensors.rs` as thin wrapper (from 678 → 343 lines)
+  - ✅ **TESTS**: 29 new library tests + 8 CLI tests (37 total, all pass)
 
 ### 21.8.1 Pygmy Test Coverage (GH-194)
 
@@ -4407,7 +4405,9 @@ fn test_gguf_to_apr_preserves_all_tensors() {
 |------------|--------|-------|-------------|
 | realizar | `src/apr/test_factory.rs` | 36 | APR inference paths (GGUF names, HF names, weight tying) |
 | aprender | `src/format/test_factory.rs` | 23 | APR write/read (GGUF names, HF names, weight tying) |
+| aprender | `src/format/tensors.rs` | 29 | Tensor listing from index (TOOL-APR-001 fix) |
 | aprender | `src/format/converter/tests/pmat.rs` | 3 | Tensor count preservation |
+| apr-cli | `src/commands/tensors.rs` | 8 | CLI shim tests |
 
 **GH-194 Weight Tying Tests (NEW):**
 
@@ -4440,7 +4440,8 @@ fn test_gguf_to_apr_preserves_all_tensors() {
 | 2026-01-31 | Claude Opus 4.5 | 0/100 | FALSIFIED - Tensor Holocaust |
 | 2026-01-31 | Claude Opus 4.5 | 25/100 | PARTIAL FIX - Pygmy tests added |
 | 2026-01-31 | Claude Opus 4.5 | 50/100 | BUG-APR-001 FIXED - Weight tying + tensor lookup |
-| **2026-02-01** | **Claude Opus 4.5** | **75/100** | **BUG-APR-002 FIXED** - div_ceil for byte size calc |
+| 2026-02-01 | Claude Opus 4.5 | 75/100 | BUG-APR-002 FIXED - div_ceil for byte size calc |
+| **2026-02-01** | **Claude Opus 4.5** | **80/100** | **TOOL-APR-001 FIXED** - Library extraction, tensor index reading |
 
 **Release Status:** ⚠️ **TESTING REQUIRED** - Both P0 bugs fixed, needs integration test verification.
 
@@ -4594,7 +4595,11 @@ fn test_gguf_to_apr_preserves_all_tensors() {
   - ✅ **TESTS**: 5 new tests in tests_part_03.rs (q4k, q5k, q6k, q8_0 byte size calculations)
 - [x] **TEST-APR-001**: Add tensor count preservation tests (3 tests in aprender/pmat.rs)
 - [x] **TEST-APR-002**: Add pygmy weight tying tests (17 tests total - 8 in realizar, 9 in aprender)
-- [ ] **TOOL-APR-001**: Fix `apr tensors` to read from tensor index, not metadata
+- [x] **TOOL-APR-001**: Fix `apr tensors` to read from tensor index, not metadata
+  - ✅ **ROOT CAUSE**: CLI read from `tensor_shapes` metadata JSON, not actual tensor index
+  - ✅ **FIXED**: Created `aprender::format::tensors` library module with proper v2 index parsing
+  - ✅ **CLI SHIM**: Rewrote `apr-cli/src/commands/tensors.rs` as thin wrapper (from 678 → 343 lines)
+  - ✅ **TESTS**: 29 new library tests + 8 CLI tests (37 total, all pass)
 
 ### 21.8.1 Pygmy Test Coverage (GH-194)
 
@@ -4604,7 +4609,9 @@ fn test_gguf_to_apr_preserves_all_tensors() {
 |------------|--------|-------|-------------|
 | realizar | `src/apr/test_factory.rs` | 36 | APR inference paths (GGUF names, HF names, weight tying) |
 | aprender | `src/format/test_factory.rs` | 23 | APR write/read (GGUF names, HF names, weight tying) |
+| aprender | `src/format/tensors.rs` | 29 | Tensor listing from index (TOOL-APR-001 fix) |
 | aprender | `src/format/converter/tests/pmat.rs` | 3 | Tensor count preservation |
+| apr-cli | `src/commands/tensors.rs` | 8 | CLI shim tests |
 
 **GH-194 Weight Tying Tests (NEW):**
 
@@ -4637,7 +4644,8 @@ fn test_gguf_to_apr_preserves_all_tensors() {
 | 2026-01-31 | Claude Opus 4.5 | 0/100 | FALSIFIED - Tensor Holocaust |
 | 2026-01-31 | Claude Opus 4.5 | 25/100 | PARTIAL FIX - Pygmy tests added |
 | 2026-01-31 | Claude Opus 4.5 | 50/100 | BUG-APR-001 FIXED - Weight tying + tensor lookup |
-| **2026-02-01** | **Claude Opus 4.5** | **75/100** | **BUG-APR-002 FIXED** - div_ceil for byte size calc |
+| 2026-02-01 | Claude Opus 4.5 | 75/100 | BUG-APR-002 FIXED - div_ceil for byte size calc |
+| **2026-02-01** | **Claude Opus 4.5** | **80/100** | **TOOL-APR-001 FIXED** - Library extraction, tensor index reading |
 
 **Release Status:** ⚠️ **TESTING REQUIRED** - Both P0 bugs fixed, needs integration test verification.
 

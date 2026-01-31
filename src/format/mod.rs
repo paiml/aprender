@@ -138,6 +138,9 @@ pub mod types;
 // Core I/O operations (save, load, inspect, PMAT-198)
 pub mod core_io;
 
+// Tensor listing library (TOOL-APR-001 - reads actual tensor index)
+pub mod tensors;
+
 // Digital signatures (spec §4.2, PMAT-198)
 #[cfg(feature = "format-signing")]
 pub mod signing;
@@ -203,6 +206,13 @@ pub use rosetta_ml::{
     ConversionDecision, ConversionIssue, ErrorPattern, ErrorPatternLibrary, FixAction,
     HanseiReport, JidokaViolation, PatternSource, Priority, Regression, Severity, TarantulaTracker,
     TensorCanary, TensorFeatures, Trend, WilsonScore,
+};
+
+// Re-export tensor listing types (TOOL-APR-001 - reads actual tensor index)
+// Note: TensorListInfo used instead of TensorInfo to avoid conflict with rosetta::TensorInfo
+pub use tensors::{
+    format_size, is_valid_apr_magic, list_tensors, list_tensors_from_bytes,
+    TensorInfo as TensorListInfo, TensorListOptions, TensorListResult,
 };
 
 // Re-export quantization types when feature is enabled
