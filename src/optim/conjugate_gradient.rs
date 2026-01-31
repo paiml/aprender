@@ -543,8 +543,7 @@ mod tests {
 
         // Multi-dimensional problem to exercise HS formula
         let f = |x: &Vector<f32>| x[0] * x[0] + 2.0 * x[1] * x[1] + 3.0 * x[2] * x[2];
-        let grad =
-            |x: &Vector<f32>| Vector::from_slice(&[2.0 * x[0], 4.0 * x[1], 6.0 * x[2]]);
+        let grad = |x: &Vector<f32>| Vector::from_slice(&[2.0 * x[0], 4.0 * x[1], 6.0 * x[2]]);
 
         let x0 = Vector::from_slice(&[5.0, 3.0, 2.0]);
         let result = optimizer.minimize(f, grad, x0);
@@ -630,9 +629,7 @@ mod tests {
             let b = x[1];
             (a - 5.0).powi(2) + (b - 3.0).powi(2)
         };
-        let grad = |x: &Vector<f32>| {
-            Vector::from_slice(&[2.0 * (x[0] - 5.0), 2.0 * (x[1] - 3.0)])
-        };
+        let grad = |x: &Vector<f32>| Vector::from_slice(&[2.0 * (x[0] - 5.0), 2.0 * (x[1] - 3.0)]);
 
         let x0 = Vector::from_slice(&[0.0, 0.0]);
         let result = optimizer.minimize(f, grad, x0);
@@ -651,8 +648,7 @@ mod tests {
 
         // Function where gradients change rapidly
         let f = |x: &Vector<f32>| x[0].powi(4) + x[1].powi(4);
-        let grad =
-            |x: &Vector<f32>| Vector::from_slice(&[4.0 * x[0].powi(3), 4.0 * x[1].powi(3)]);
+        let grad = |x: &Vector<f32>| Vector::from_slice(&[4.0 * x[0].powi(3), 4.0 * x[1].powi(3)]);
 
         let x0 = Vector::from_slice(&[10.0, 10.0]);
         let result = optimizer.minimize(f, grad, x0);
@@ -755,9 +751,8 @@ mod tests {
 
         // Large initial gradient to ensure norm is calculated
         let f = |x: &Vector<f32>| (x[0] - 100.0).powi(2) + (x[1] - 200.0).powi(2);
-        let grad = |x: &Vector<f32>| {
-            Vector::from_slice(&[2.0 * (x[0] - 100.0), 2.0 * (x[1] - 200.0)])
-        };
+        let grad =
+            |x: &Vector<f32>| Vector::from_slice(&[2.0 * (x[0] - 100.0), 2.0 * (x[1] - 200.0)]);
 
         let x0 = Vector::from_slice(&[0.0, 0.0]);
         let result = optimizer.minimize(f, grad, x0);
@@ -770,8 +765,8 @@ mod tests {
     #[test]
     fn test_cg_with_restart_interval_zero() {
         // Zero restart interval should disable periodic restarts
-        let optimizer = ConjugateGradient::new(100, 1e-5, CGBetaFormula::PolakRibiere)
-            .with_restart_interval(0);
+        let optimizer =
+            ConjugateGradient::new(100, 1e-5, CGBetaFormula::PolakRibiere).with_restart_interval(0);
         assert_eq!(optimizer.restart_interval, 0);
     }
 
@@ -810,8 +805,7 @@ mod tests {
 
         // Function with nearly parallel gradients
         let f = |x: &Vector<f32>| x[0] * x[0] + 0.0001 * x[1] * x[1];
-        let grad =
-            |x: &Vector<f32>| Vector::from_slice(&[2.0 * x[0], 0.0002 * x[1]]);
+        let grad = |x: &Vector<f32>| Vector::from_slice(&[2.0 * x[0], 0.0002 * x[1]]);
 
         let x0 = Vector::from_slice(&[5.0, 0.001]);
         let result = optimizer.minimize(f, grad, x0);
@@ -826,8 +820,8 @@ mod tests {
     #[test]
     fn test_cg_high_dimensional() {
         // Test with higher dimensional problem
-        let mut optimizer = ConjugateGradient::new(200, 1e-5, CGBetaFormula::PolakRibiere)
-            .with_restart_interval(5);
+        let mut optimizer =
+            ConjugateGradient::new(200, 1e-5, CGBetaFormula::PolakRibiere).with_restart_interval(5);
 
         let f = |x: &Vector<f32>| {
             let mut sum = 0.0;

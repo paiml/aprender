@@ -651,6 +651,12 @@ fn transpose_last_two(x: &Tensor) -> Tensor {
 ///
 /// Uses `trueno::Matrix::batched_matmul_4d` for efficient SIMD computation.
 /// Per spec §2.4.1 Compute Backend Hierarchy: SIMD before naive loops.
+///
+/// # Panics
+/// Panics if `batched_matmul_4d` fails after dimension validation. This should
+/// never happen as dimensions are validated by the assert above. If it does,
+/// it indicates a bug in the trueno library.
+#[allow(clippy::expect_used)]
 fn matmul_batched(a: &Tensor, b: &Tensor) -> Tensor {
     let a_shape = a.shape();
     let b_shape = b.shape();
@@ -665,7 +671,7 @@ fn matmul_batched(a: &Tensor, b: &Tensor) -> Tensor {
 
         // Use Trueno's SIMD batched matmul for 4D attention tensors
         let output = Matrix::batched_matmul_4d(a.data(), b.data(), batch, heads, m, k1, n)
-            .expect("batched_matmul_4d failed");
+            .expect("batched_matmul_4d failed: dimensions validated but operation failed");
 
         Tensor::new(&output, &[batch, heads, m, n])
     } else {

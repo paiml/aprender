@@ -106,6 +106,8 @@ pub struct CiAssertions {
     /// Maximum p50 latency in ms (fail if above)
     pub max_p50_ms: Option<f64>,
     /// Maximum memory in MB (fail if above)
+    /// Reserved for future memory assertion support
+    #[allow(dead_code)]
     pub max_memory_mb: Option<f64>,
 }
 
@@ -131,7 +133,7 @@ pub struct CiProfileReport {
 
 impl CiProfileReport {
     /// Create report from profile results and assertions
-    pub fn from_results(results: &RealProfileResults, assertions: &CiAssertions) -> Self {
+    pub(crate) fn from_results(results: &RealProfileResults, assertions: &CiAssertions) -> Self {
         let mut assertion_results = Vec::new();
         let mut all_passed = true;
 
@@ -236,15 +238,27 @@ impl CiProfileReport {
         json.push_str(&format!("  \"model\": \"{}\",\n", self.model_path));
         json.push_str(&format!("  \"passed\": {},\n", self.passed));
         json.push_str("  \"metrics\": {\n");
-        json.push_str(&format!("    \"throughput_tok_s\": {:.2},\n", self.throughput_tok_s));
-        json.push_str(&format!("    \"latency_p50_ms\": {:.2},\n", self.latency_p50_ms));
-        json.push_str(&format!("    \"latency_p99_ms\": {:.2}\n", self.latency_p99_ms));
+        json.push_str(&format!(
+            "    \"throughput_tok_s\": {:.2},\n",
+            self.throughput_tok_s
+        ));
+        json.push_str(&format!(
+            "    \"latency_p50_ms\": {:.2},\n",
+            self.latency_p50_ms
+        ));
+        json.push_str(&format!(
+            "    \"latency_p99_ms\": {:.2}\n",
+            self.latency_p99_ms
+        ));
         json.push_str("  },\n");
         json.push_str("  \"assertions\": [\n");
         for (i, assertion) in self.assertions.iter().enumerate() {
             json.push_str("    {\n");
             json.push_str(&format!("      \"name\": \"{}\",\n", assertion.name));
-            json.push_str(&format!("      \"expected\": \"{}\",\n", assertion.expected));
+            json.push_str(&format!(
+                "      \"expected\": \"{}\",\n",
+                assertion.expected
+            ));
             json.push_str(&format!("      \"actual\": \"{}\",\n", assertion.actual));
             json.push_str(&format!("      \"passed\": {}\n", assertion.passed));
             if i < self.assertions.len() - 1 {
@@ -261,7 +275,7 @@ impl CiProfileReport {
 
 /// Profile results from real inference
 #[derive(Debug, Clone)]
-struct RealProfileResults {
+pub(crate) struct RealProfileResults {
     model_path: String,
     architecture: String,
     num_layers: usize,
@@ -446,15 +460,28 @@ impl DiffBenchmarkReport {
         println!();
 
         // Table header
-        println!("{}", "┌─────────────┬──────────────┬──────────────┬──────────────┐");
-        println!("{}", "│ Metric      │ Model A      │ Model B      │ Delta        │");
-        println!("{}", "├─────────────┼──────────────┼──────────────┼──────────────┤");
+        println!(
+            "{}",
+            "┌─────────────┬──────────────┬──────────────┬──────────────┐"
+        );
+        println!(
+            "{}",
+            "│ Metric      │ Model A      │ Model B      │ Delta        │"
+        );
+        println!(
+            "{}",
+            "├─────────────┼──────────────┼──────────────┼──────────────┤"
+        );
 
         // Throughput row
         let tps_delta_str = if self.throughput_delta_pct >= 0.0 {
-            format!("+{:.1}% ✅", self.throughput_delta_pct).green().to_string()
+            format!("+{:.1}% ✅", self.throughput_delta_pct)
+                .green()
+                .to_string()
         } else {
-            format!("{:.1}% ⚠️", self.throughput_delta_pct).yellow().to_string()
+            format!("{:.1}% ⚠️", self.throughput_delta_pct)
+                .yellow()
+                .to_string()
         };
         println!(
             "│ Throughput  │ {:>10.1} t/s │ {:>10.1} t/s │ {:>12} │",
@@ -463,20 +490,31 @@ impl DiffBenchmarkReport {
 
         // Latency row
         let lat_delta_str = if self.latency_delta_pct <= 0.0 {
-            format!("{:.1}% ✅", self.latency_delta_pct).green().to_string()
+            format!("{:.1}% ✅", self.latency_delta_pct)
+                .green()
+                .to_string()
         } else {
-            format!("+{:.1}% ⚠️", self.latency_delta_pct).yellow().to_string()
+            format!("+{:.1}% ⚠️", self.latency_delta_pct)
+                .yellow()
+                .to_string()
         };
         println!(
             "│ Latency     │ {:>10.2} ms │ {:>10.2} ms │ {:>12} │",
             self.latency_a_ms, self.latency_b_ms, lat_delta_str
         );
 
-        println!("{}", "└─────────────┴──────────────┴──────────────┴──────────────┘");
+        println!(
+            "{}",
+            "└─────────────┴──────────────┴──────────────┴──────────────┘"
+        );
         println!();
 
         // Winner
-        println!("  {}: {}", "Winner".white().bold(), self.winner.green().bold());
+        println!(
+            "  {}: {}",
+            "Winner".white().bold(),
+            self.winner.green().bold()
+        );
         println!();
 
         // Regressions
@@ -504,23 +542,45 @@ impl DiffBenchmarkReport {
         json.push_str(&format!("  \"model_a\": \"{}\",\n", self.model_a));
         json.push_str(&format!("  \"model_b\": \"{}\",\n", self.model_b));
         json.push_str("  \"metrics\": {\n");
-        json.push_str(&format!("    \"throughput_a_tok_s\": {:.2},\n", self.throughput_a));
-        json.push_str(&format!("    \"throughput_b_tok_s\": {:.2},\n", self.throughput_b));
-        json.push_str(&format!("    \"throughput_delta_pct\": {:.2},\n", self.throughput_delta_pct));
-        json.push_str(&format!("    \"latency_a_ms\": {:.2},\n", self.latency_a_ms));
-        json.push_str(&format!("    \"latency_b_ms\": {:.2},\n", self.latency_b_ms));
-        json.push_str(&format!("    \"latency_delta_pct\": {:.2}\n", self.latency_delta_pct));
+        json.push_str(&format!(
+            "    \"throughput_a_tok_s\": {:.2},\n",
+            self.throughput_a
+        ));
+        json.push_str(&format!(
+            "    \"throughput_b_tok_s\": {:.2},\n",
+            self.throughput_b
+        ));
+        json.push_str(&format!(
+            "    \"throughput_delta_pct\": {:.2},\n",
+            self.throughput_delta_pct
+        ));
+        json.push_str(&format!(
+            "    \"latency_a_ms\": {:.2},\n",
+            self.latency_a_ms
+        ));
+        json.push_str(&format!(
+            "    \"latency_b_ms\": {:.2},\n",
+            self.latency_b_ms
+        ));
+        json.push_str(&format!(
+            "    \"latency_delta_pct\": {:.2}\n",
+            self.latency_delta_pct
+        ));
         json.push_str("  },\n");
         json.push_str(&format!("  \"winner\": \"{}\",\n", self.winner));
         json.push_str("  \"regressions\": [");
         for (i, r) in self.regressions.iter().enumerate() {
-            if i > 0 { json.push_str(", "); }
+            if i > 0 {
+                json.push_str(", ");
+            }
             json.push_str(&format!("\"{}\"", r));
         }
         json.push_str("],\n");
         json.push_str("  \"improvements\": [");
         for (i, imp) in self.improvements.iter().enumerate() {
-            if i > 0 { json.push_str(", "); }
+            if i > 0 {
+                json.push_str(", ");
+            }
             json.push_str(&format!("\"{}\"", imp));
         }
         json.push_str("]\n");
@@ -569,7 +629,8 @@ pub(crate) fn run_diff_benchmark(
 
     // Calculate deltas
     let throughput_delta = if results_a.throughput_tok_s > 0.0 {
-        ((results_b.throughput_tok_s - results_a.throughput_tok_s) / results_a.throughput_tok_s) * 100.0
+        ((results_b.throughput_tok_s - results_a.throughput_tok_s) / results_a.throughput_tok_s)
+            * 100.0
     } else {
         0.0
     };
@@ -605,18 +666,14 @@ pub(crate) fn run_diff_benchmark(
     } else if throughput_delta > regression_threshold * 100.0 {
         improvements.push(format!(
             "Throughput: {:.1}% faster ({:.1} → {:.1} tok/s)",
-            throughput_delta,
-            results_a.throughput_tok_s,
-            results_b.throughput_tok_s
+            throughput_delta, results_a.throughput_tok_s, results_b.throughput_tok_s
         ));
     }
 
     if latency_delta > regression_threshold * 100.0 {
         regressions.push(format!(
             "Latency: {:.1}% slower ({:.2} → {:.2} ms)",
-            latency_delta,
-            latency_a_ms,
-            latency_b_ms
+            latency_delta, latency_a_ms, latency_b_ms
         ));
     } else if latency_delta < -regression_threshold * 100.0 {
         improvements.push(format!(
@@ -652,7 +709,10 @@ pub(crate) fn run_diff_benchmark(
 }
 
 /// GH-173: Filter profile results by focus area (PMAT-182)
-fn filter_results_by_focus(results: &RealProfileResults, focus: ProfileFocus) -> RealProfileResults {
+fn filter_results_by_focus(
+    results: &RealProfileResults,
+    focus: ProfileFocus,
+) -> RealProfileResults {
     let filtered_hotspots = match focus {
         ProfileFocus::All => results.hotspots.clone(),
         ProfileFocus::Attention => results
@@ -1169,7 +1229,10 @@ fn print_json_results(results: &RealProfileResults) -> Result<(), CliError> {
 }
 
 /// Print flamegraph SVG (GH-174: supports --output for file output)
-fn print_flamegraph(results: &RealProfileResults, output_path: Option<&Path>) -> Result<(), CliError> {
+fn print_flamegraph(
+    results: &RealProfileResults,
+    output_path: Option<&Path>,
+) -> Result<(), CliError> {
     let mut svg = String::new();
     svg.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
     svg.push_str("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"800\" height=\"400\">\n");
@@ -1221,7 +1284,10 @@ fn print_flamegraph(results: &RealProfileResults, output_path: Option<&Path>) ->
     // GH-174: Write to file if output path specified, otherwise print to stdout
     if let Some(path) = output_path {
         std::fs::write(path, &svg).map_err(|e| {
-            CliError::ValidationFailed(format!("Failed to write flamegraph to {}: {e}", path.display()))
+            CliError::ValidationFailed(format!(
+                "Failed to write flamegraph to {}: {e}",
+                path.display()
+            ))
         })?;
         output::success(&format!("Flamegraph written to: {}", path.display()));
     } else {

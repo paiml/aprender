@@ -514,9 +514,7 @@ mod tests {
             // Shifted quadratic that's convex away from origin
             (x[0] - 5.0).powi(2) + (x[1] - 5.0).powi(2)
         };
-        let grad = |x: &Vector<f32>| {
-            Vector::from_slice(&[2.0 * (x[0] - 5.0), 2.0 * (x[1] - 5.0)])
-        };
+        let grad = |x: &Vector<f32>| Vector::from_slice(&[2.0 * (x[0] - 5.0), 2.0 * (x[1] - 5.0)]);
 
         let x0 = Vector::from_slice(&[0.0, 0.0]);
         let result = optimizer.minimize(f, grad, x0);

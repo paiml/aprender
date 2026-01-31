@@ -94,6 +94,13 @@ impl Dropout {
 }
 
 impl Module for Dropout {
+    /// Forward pass with dropout.
+    ///
+    /// # Panics
+    /// Panics if the RNG mutex is poisoned (indicates prior thread panic - unrecoverable).
+    /// This is acceptable per Toyota Way: mutex poisoning means the system is already
+    /// in a catastrophic state from a prior panic.
+    #[allow(clippy::expect_used)]
     fn forward(&self, input: &Tensor) -> Tensor {
         if !self.training || self.p == 0.0 {
             return input.clone();
@@ -217,6 +224,11 @@ impl Dropout2d {
 }
 
 impl Module for Dropout2d {
+    /// Forward pass with 2D spatial dropout.
+    ///
+    /// # Panics
+    /// Panics if the RNG mutex is poisoned (unrecoverable system state).
+    #[allow(clippy::expect_used)]
     fn forward(&self, input: &Tensor) -> Tensor {
         if !self.training || self.p == 0.0 {
             return input.clone();
@@ -334,6 +346,11 @@ impl AlphaDropout {
 }
 
 impl Module for AlphaDropout {
+    /// Forward pass with alpha dropout (SELU-preserving).
+    ///
+    /// # Panics
+    /// Panics if the RNG mutex is poisoned (unrecoverable system state).
+    #[allow(clippy::expect_used)]
     fn forward(&self, input: &Tensor) -> Tensor {
         if !self.training || self.p == 0.0 {
             return input.clone();
@@ -439,7 +456,11 @@ impl DropBlock {
 }
 
 impl Module for DropBlock {
-    #[allow(clippy::range_plus_one)]
+    /// Forward pass with block dropout.
+    ///
+    /// # Panics
+    /// Panics if the RNG mutex is poisoned (unrecoverable system state).
+    #[allow(clippy::range_plus_one, clippy::expect_used)]
     fn forward(&self, input: &Tensor) -> Tensor {
         if !self.training || self.p == 0.0 {
             return input.clone();
@@ -570,6 +591,10 @@ impl DropConnect {
 
     /// Apply `DropConnect` to weight matrix.
     /// Returns masked weights (zeros some weights during training).
+    ///
+    /// # Panics
+    /// Panics if the RNG mutex is poisoned (unrecoverable system state).
+    #[allow(clippy::expect_used)]
     pub fn apply_to_weights(&self, weights: &Tensor) -> Tensor {
         if !self.training || self.p == 0.0 {
             return weights.clone();
@@ -595,6 +620,11 @@ impl DropConnect {
 }
 
 impl Module for DropConnect {
+    /// Forward pass with connection dropout.
+    ///
+    /// # Panics
+    /// Panics if the RNG mutex is poisoned (unrecoverable system state).
+    #[allow(clippy::expect_used)]
     fn forward(&self, input: &Tensor) -> Tensor {
         // DropConnect typically applied to weights, but for Module interface
         // we apply element-wise like dropout (for flexibility)
@@ -642,6 +672,11 @@ impl std::fmt::Debug for DropConnect {
     }
 }
 
+/// Apply dropout to a tensor with the given probability.
+///
+/// # Panics
+/// Panics if the RNG mutex is poisoned (unrecoverable system state).
+#[allow(clippy::expect_used)]
 fn apply_dropout(input: &Tensor, p: f32, rng: &Mutex<StdRng>) -> Tensor {
     let mut rng = rng.lock().expect("RNG lock");
     let scale = 1.0 / (1.0 - p);

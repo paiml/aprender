@@ -300,9 +300,8 @@ mod tests {
     fn test_fista_3d() {
         // Minimize: x² + y² + z²
         let smooth = |x: &Vector<f32>| x[0] * x[0] + x[1] * x[1] + x[2] * x[2];
-        let grad_smooth = |x: &Vector<f32>| {
-            Vector::from_slice(&[2.0 * x[0], 2.0 * x[1], 2.0 * x[2]])
-        };
+        let grad_smooth =
+            |x: &Vector<f32>| Vector::from_slice(&[2.0 * x[0], 2.0 * x[1], 2.0 * x[2]]);
         let proximal = |v: &Vector<f32>, _alpha: f32| v.clone();
 
         let mut fista = FISTA::new(1000, 0.1, 1e-5);

@@ -21,7 +21,18 @@ pub(crate) fn run(
             println!("  1. Run `apr validate --checksum` to verify.");
             println!("  2. Check source file integrity (MD5/SHA256).");
         } else {
-            println!("Unknown Error Code");
+            // PMAT-191: Structured error response (no "Unknown Error")
+            println!("Error code '{c}' not recognized.");
+            println!();
+            println!("Available error codes:");
+            println!("  E001  Invalid magic bytes (not an APR file)");
+            println!("  E002  Corrupted data (checksum mismatch)");
+            println!("  E003  Unsupported format version");
+            println!("  E004  Missing required tensor");
+            println!("  E005  Dimension mismatch");
+            println!("  E006  Quantization error");
+            println!();
+            println!("Run `apr validate <file>` for detailed diagnostics.");
         }
     } else if let Some(t) = tensor {
         println!("Explain tensor: {t}");
