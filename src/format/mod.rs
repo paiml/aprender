@@ -146,6 +146,11 @@ pub mod signing;
 #[cfg(feature = "format-encryption")]
 pub mod encryption;
 
+// Test factory - Pygmy model builders (T-COV-95)
+// Implements the "Active Pygmy" pattern for creating minimal valid models in memory
+#[cfg(test)]
+pub mod test_factory;
+
 // Re-export golden trace types
 pub use golden::{
     verify_logits, GoldenTrace, GoldenTraceSet, GoldenVerifyReport, LogitStats, TraceVerifyResult,

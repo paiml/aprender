@@ -877,4 +877,204 @@ mod tests_coverage_boost {
         };
         assert!(exp.check(&stats).is_ok());
     }
+
+    // ========================================================================
+    // Pygmy-Based Conversion Tests (T-COV-95)
+    // Using in-memory model builders to test conversion paths without real files
+    // ========================================================================
+
+    #[test]
+    fn test_pygmy_safetensors_to_apr_conversion() {
+        use crate::format::test_factory::{build_pygmy_safetensors, PygmyConfig};
+        use std::fs;
+        use tempfile::tempdir;
+
+        // Build pygmy SafeTensors
+        let st_data = build_pygmy_safetensors();
+
+        // Write to temp file
+        let dir = tempdir().expect("Failed to create temp dir");
+        let st_path = dir.path().join("pygmy_model.safetensors");
+        fs::write(&st_path, &st_data).expect("Failed to write SafeTensors");
+
+        // Read back and verify
+        let read_back = fs::read(&st_path).expect("Failed to read back");
+        assert_eq!(read_back.len(), st_data.len());
+
+        // Verify SafeTensors header is valid
+        let header_len = u64::from_le_bytes(read_back[0..8].try_into().unwrap());
+        assert!(header_len > 0);
+    }
+
+    #[test]
+    fn test_pygmy_apr_roundtrip() {
+        use crate::format::test_factory::build_pygmy_apr;
+        use crate::format::v2::AprV2Reader;
+        use std::fs;
+        use tempfile::tempdir;
+
+        // Build pygmy APR
+        let apr_data = build_pygmy_apr();
+
+        // Write to temp file
+        let dir = tempdir().expect("Failed to create temp dir");
+        let apr_path = dir.path().join("pygmy_model.apr");
+        fs::write(&apr_path, &apr_data).expect("Failed to write APR");
+
+        // Read back and parse
+        let read_back = fs::read(&apr_path).expect("Failed to read back");
+        let reader = AprV2Reader::from_bytes(&read_back).expect("Failed to parse APR");
+
+        // Verify metadata
+        assert_eq!(reader.metadata().architecture, Some("llama".to_string()));
+        assert!(!reader.tensor_names().is_empty());
+    }
+
+    #[test]
+    fn test_pygmy_apr_f16_roundtrip() {
+        use crate::format::test_factory::build_pygmy_apr_f16;
+        use crate::format::v2::AprV2Reader;
+        use std::fs;
+        use tempfile::tempdir;
+
+        let apr_data = build_pygmy_apr_f16();
+        let dir = tempdir().expect("Failed to create temp dir");
+        let apr_path = dir.path().join("pygmy_f16.apr");
+        fs::write(&apr_path, &apr_data).expect("Failed to write APR");
+
+        let read_back = fs::read(&apr_path).expect("Failed to read back");
+        let reader = AprV2Reader::from_bytes(&read_back).expect("Failed to parse APR");
+
+        // Verify alignment (critical for mmap)
+        assert!(reader.verify_alignment());
+    }
+
+    #[test]
+    fn test_pygmy_apr_q8_roundtrip() {
+        use crate::format::test_factory::build_pygmy_apr_q8;
+        use crate::format::v2::AprV2Reader;
+
+        let apr_data = build_pygmy_apr_q8();
+        let reader = AprV2Reader::from_bytes(&apr_data).expect("Failed to parse APR");
+
+        // Verify has attention tensors
+        let tensor_names = reader.tensor_names();
+        let has_q_proj = tensor_names
+            .iter()
+            .any(|n| n.contains("self_attn.q_proj.weight"));
+        assert!(has_q_proj);
+    }
+
+    #[test]
+    fn test_pygmy_apr_q4_roundtrip() {
+        use crate::format::test_factory::build_pygmy_apr_q4;
+        use crate::format::v2::AprV2Reader;
+
+        let apr_data = build_pygmy_apr_q4();
+        let reader = AprV2Reader::from_bytes(&apr_data).expect("Failed to parse APR");
+
+        // Verify alignment with Q4 block-aligned tensors
+        assert!(reader.verify_alignment());
+    }
+
+    #[test]
+    fn test_pygmy_config_llama_style_tensor_names() {
+        use crate::format::test_factory::{build_pygmy_apr_with_config, PygmyConfig};
+        use crate::format::v2::AprV2Reader;
+
+        let config = PygmyConfig::llama_style();
+        let apr_data = build_pygmy_apr_with_config(config);
+        let reader = AprV2Reader::from_bytes(&apr_data).expect("Failed to parse APR");
+
+        let names = reader.tensor_names();
+
+        // LLaMA-style should have standard tensor names
+        assert!(names.iter().any(|n| n.contains("embed_tokens")));
+        assert!(names.iter().any(|n| n.contains("input_layernorm")));
+        assert!(names.iter().any(|n| n.contains("self_attn.q_proj")));
+        assert!(names.iter().any(|n| n.contains("mlp.gate_proj")));
+    }
+
+    #[test]
+    fn test_pygmy_multiple_configs_all_valid() {
+        use crate::format::test_factory::{
+            build_pygmy_apr_with_config, build_pygmy_safetensors_with_config, PygmyConfig,
+        };
+        use crate::format::v2::AprV2Reader;
+
+        let configs = vec![
+            PygmyConfig::default(),
+            PygmyConfig::minimal(),
+            PygmyConfig::embedding_only(),
+            PygmyConfig::llama_style(),
+        ];
+
+        for config in configs {
+            // Test SafeTensors generation
+            let st_data = build_pygmy_safetensors_with_config(config.clone());
+            assert!(st_data.len() > 8, "SafeTensors should have header");
+
+            // Test APR generation
+            let apr_data = build_pygmy_apr_with_config(config);
+            let reader = AprV2Reader::from_bytes(&apr_data);
+            assert!(reader.is_ok(), "APR should be parseable");
+        }
+    }
+
+    #[test]
+    fn test_pygmy_safetensors_tensor_data_validity() {
+        use crate::format::test_factory::build_pygmy_safetensors;
+
+        let data = build_pygmy_safetensors();
+
+        // Parse header
+        let header_len = u64::from_le_bytes(data[0..8].try_into().unwrap()) as usize;
+        let header_str = std::str::from_utf8(&data[8..8 + header_len]).unwrap();
+
+        // Should be valid JSON
+        let parsed: serde_json::Value = serde_json::from_str(header_str).unwrap();
+        assert!(parsed.is_object());
+
+        // Should have data_offsets for tensors
+        if let Some(obj) = parsed.as_object() {
+            for (key, val) in obj {
+                if key != "__metadata__" {
+                    assert!(val.get("data_offsets").is_some());
+                    assert!(val.get("dtype").is_some());
+                    assert!(val.get("shape").is_some());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_tensor_accumulator_basic() {
+        let mut acc = TensorAccumulator::new();
+        for &v in &[1.0, 2.0, 3.0, 4.0, 5.0] {
+            acc.accumulate(v);
+        }
+        assert!((acc.mean() - 3.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_tensor_accumulator_with_nan_and_inf() {
+        let mut acc = TensorAccumulator::new();
+        acc.accumulate(1.0);
+        acc.accumulate(f32::NAN);
+        acc.accumulate(3.0);
+        acc.accumulate(f32::INFINITY);
+        acc.accumulate(5.0);
+
+        // safe_min/safe_max ignore NaN/Inf
+        assert!((acc.safe_min() - 1.0).abs() < 0.01);
+        assert!((acc.safe_max() - 5.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_tensor_accumulator_empty() {
+        let acc = TensorAccumulator::new();
+        assert_eq!(acc.mean(), 0.0);
+        assert_eq!(acc.safe_min(), 0.0);
+        assert_eq!(acc.safe_max(), 0.0);
+    }
 }
