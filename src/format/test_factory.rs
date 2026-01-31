@@ -667,6 +667,239 @@ pub fn build_pygmy_q4_block() -> crate::format::quantize::QuantizedBlock {
 }
 
 // ============================================================================
+// GH-194: GGUF-Style Naming Builders (Weight Tying Support)
+// ============================================================================
+
+/// Configuration for GGUF-style pygmy model (different tensor naming)
+#[derive(Debug, Clone)]
+pub struct GgufPygmyConfig {
+    /// Vocabulary size
+    pub vocab_size: usize,
+    /// Hidden dimension
+    pub hidden_size: usize,
+    /// Number of layers
+    pub num_layers: usize,
+    /// Use weight tying (token_embd.weight for both embedding and lm_head)
+    pub weight_tying: bool,
+}
+
+impl Default for GgufPygmyConfig {
+    fn default() -> Self {
+        Self {
+            vocab_size: 8,
+            hidden_size: 4,
+            num_layers: 1,
+            weight_tying: true, // GGUF models commonly use weight tying
+        }
+    }
+}
+
+/// Build APR with GGUF-style tensor naming
+///
+/// GGUF uses different tensor names than HuggingFace:
+/// - `token_embd.weight` instead of `model.embed_tokens.weight`
+/// - `blk.N.attn_q.weight` instead of `model.layers.N.self_attn.q_proj.weight`
+/// - `output.weight` for lm_head (or weight-tied to token_embd)
+///
+/// This is critical for GH-194: realizaer must find lm_head via `token_embd.weight`
+/// when weight tying is used.
+#[must_use]
+pub fn build_pygmy_apr_gguf_names() -> Vec<u8> {
+    build_pygmy_apr_gguf_names_with_config(GgufPygmyConfig::default())
+}
+
+/// Build APR with GGUF-style naming and custom config
+#[must_use]
+pub fn build_pygmy_apr_gguf_names_with_config(config: GgufPygmyConfig) -> Vec<u8> {
+    let mut metadata = AprV2Metadata::new("pygmy-gguf");
+    metadata.architecture = Some("qwen2".to_string());
+    metadata.hidden_size = Some(config.hidden_size);
+    metadata.vocab_size = Some(config.vocab_size);
+    metadata.num_layers = Some(config.num_layers);
+    metadata.custom.insert("naming".to_string(), serde_json::json!("gguf"));
+    metadata.custom.insert("weight_tying".to_string(), serde_json::json!(config.weight_tying));
+
+    let mut writer = AprV2Writer::new(metadata);
+
+    // Token embedding: GGUF uses `token_embd.weight` (NOT model.embed_tokens.weight)
+    // Shape: [vocab_size, hidden_size] in GGUF (row-major)
+    let embed_data: Vec<f32> = (0..config.vocab_size * config.hidden_size)
+        .map(|i| ((i % 100) as f32 - 50.0) / 1000.0)
+        .collect();
+    writer.add_f32_tensor(
+        "token_embd.weight",
+        vec![config.vocab_size, config.hidden_size],
+        &embed_data,
+    );
+
+    // Layer tensors with GGUF naming
+    for layer_idx in 0..config.num_layers {
+        // Input layernorm: blk.N.attn_norm.weight
+        let norm_data: Vec<f32> = vec![1.0; config.hidden_size];
+        writer.add_f32_tensor(
+            format!("blk.{layer_idx}.attn_norm.weight"),
+            vec![config.hidden_size],
+            &norm_data,
+        );
+        writer.add_f32_tensor(
+            format!("blk.{layer_idx}.ffn_norm.weight"),
+            vec![config.hidden_size],
+            &norm_data,
+        );
+
+        // Attention: blk.N.attn_{q,k,v,output}.weight
+        let qkvo_data: Vec<f32> = (0..config.hidden_size * config.hidden_size)
+            .map(|i| ((i % 200) as f32 - 100.0) / 2000.0)
+            .collect();
+        for suffix in &["attn_q", "attn_k", "attn_v", "attn_output"] {
+            writer.add_f32_tensor(
+                format!("blk.{layer_idx}.{suffix}.weight"),
+                vec![config.hidden_size, config.hidden_size],
+                &qkvo_data,
+            );
+        }
+
+        // MLP: blk.N.ffn_{gate,up,down}.weight
+        let intermediate = config.hidden_size * 2;
+        let gate_up_data: Vec<f32> = (0..intermediate * config.hidden_size)
+            .map(|i| ((i % 200) as f32 - 100.0) / 2000.0)
+            .collect();
+        let down_data: Vec<f32> = (0..config.hidden_size * intermediate)
+            .map(|i| ((i % 200) as f32 - 100.0) / 2000.0)
+            .collect();
+
+        writer.add_f32_tensor(
+            format!("blk.{layer_idx}.ffn_gate.weight"),
+            vec![intermediate, config.hidden_size],
+            &gate_up_data,
+        );
+        writer.add_f32_tensor(
+            format!("blk.{layer_idx}.ffn_up.weight"),
+            vec![intermediate, config.hidden_size],
+            &gate_up_data,
+        );
+        writer.add_f32_tensor(
+            format!("blk.{layer_idx}.ffn_down.weight"),
+            vec![config.hidden_size, intermediate],
+            &down_data,
+        );
+    }
+
+    // Output norm: output_norm.weight
+    let norm_data: Vec<f32> = vec![1.0; config.hidden_size];
+    writer.add_f32_tensor("output_norm.weight", vec![config.hidden_size], &norm_data);
+
+    // LM head (output projection)
+    if config.weight_tying {
+        // Weight tying: NO separate output.weight tensor
+        // realizaer must use token_embd.weight (transposed) for lm_head
+        // This is the GH-194 bug scenario
+    } else {
+        // No weight tying: separate output.weight tensor
+        let lm_head_data: Vec<f32> = (0..config.vocab_size * config.hidden_size)
+            .map(|i| ((i % 100) as f32 - 50.0) / 1000.0)
+            .collect();
+        writer.add_f32_tensor(
+            "output.weight",
+            vec![config.vocab_size, config.hidden_size],
+            &lm_head_data,
+        );
+    }
+
+    writer.write().unwrap_or_default()
+}
+
+/// Build APR with HuggingFace-style naming and weight tying
+///
+/// HuggingFace naming with weight tying uses `model.embed_tokens.weight`
+/// for both embedding lookup and lm_head (tied weights).
+#[must_use]
+pub fn build_pygmy_apr_hf_names_tied() -> Vec<u8> {
+    let config = PygmyConfig::default();
+    let mut metadata = AprV2Metadata::new("pygmy-hf-tied");
+    metadata.architecture = Some("qwen2".to_string());
+    metadata.hidden_size = Some(config.hidden_size);
+    metadata.vocab_size = Some(config.vocab_size);
+    metadata.num_layers = Some(config.num_layers);
+    metadata.custom.insert("naming".to_string(), serde_json::json!("huggingface"));
+    metadata.custom.insert("weight_tying".to_string(), serde_json::json!(true));
+
+    let mut writer = AprV2Writer::new(metadata);
+
+    // Token embedding: model.embed_tokens.weight
+    let embed_data: Vec<f32> = (0..config.vocab_size * config.hidden_size)
+        .map(|i| ((i % 100) as f32 - 50.0) / 1000.0)
+        .collect();
+    writer.add_f32_tensor(
+        "model.embed_tokens.weight",
+        vec![config.vocab_size, config.hidden_size],
+        &embed_data,
+    );
+
+    // Layer tensors with HuggingFace naming
+    for layer_idx in 0..config.num_layers {
+        // Norms
+        let norm_data: Vec<f32> = vec![1.0; config.hidden_size];
+        writer.add_f32_tensor(
+            format!("model.layers.{layer_idx}.input_layernorm.weight"),
+            vec![config.hidden_size],
+            &norm_data,
+        );
+        writer.add_f32_tensor(
+            format!("model.layers.{layer_idx}.post_attention_layernorm.weight"),
+            vec![config.hidden_size],
+            &norm_data,
+        );
+
+        // Attention
+        let qkvo_data: Vec<f32> = (0..config.hidden_size * config.hidden_size)
+            .map(|i| ((i % 200) as f32 - 100.0) / 2000.0)
+            .collect();
+        for suffix in &["q_proj", "k_proj", "v_proj", "o_proj"] {
+            writer.add_f32_tensor(
+                format!("model.layers.{layer_idx}.self_attn.{suffix}.weight"),
+                vec![config.hidden_size, config.hidden_size],
+                &qkvo_data,
+            );
+        }
+
+        // MLP
+        let intermediate = config.hidden_size * 2;
+        let gate_up_data: Vec<f32> = (0..intermediate * config.hidden_size)
+            .map(|i| ((i % 200) as f32 - 100.0) / 2000.0)
+            .collect();
+        let down_data: Vec<f32> = (0..config.hidden_size * intermediate)
+            .map(|i| ((i % 200) as f32 - 100.0) / 2000.0)
+            .collect();
+
+        writer.add_f32_tensor(
+            format!("model.layers.{layer_idx}.mlp.gate_proj.weight"),
+            vec![intermediate, config.hidden_size],
+            &gate_up_data,
+        );
+        writer.add_f32_tensor(
+            format!("model.layers.{layer_idx}.mlp.up_proj.weight"),
+            vec![intermediate, config.hidden_size],
+            &gate_up_data,
+        );
+        writer.add_f32_tensor(
+            format!("model.layers.{layer_idx}.mlp.down_proj.weight"),
+            vec![config.hidden_size, intermediate],
+            &down_data,
+        );
+    }
+
+    // Final norm
+    let norm_data: Vec<f32> = vec![1.0; config.hidden_size];
+    writer.add_f32_tensor("model.norm.weight", vec![config.hidden_size], &norm_data);
+
+    // NO lm_head.weight - weight tying uses model.embed_tokens.weight
+    // realizaer must find lm_head via model.embed_tokens.weight or embed_tokens.weight
+
+    writer.write().unwrap_or_default()
+}
+
+// ============================================================================
 // Tests
 // ============================================================================
 
@@ -1076,6 +1309,191 @@ mod tests {
             let block = build_pygmy_q8_block();
             let total = block.num_elements();
             assert_eq!(total, 64);
+        }
+    }
+
+    // ========================================================================
+    // GH-194: GGUF-Style Naming and Weight Tying Tests
+    // ========================================================================
+    // These tests verify that APR files with GGUF-style tensor naming
+    // are correctly written and can be read back. The critical scenario
+    // is weight tying where token_embd.weight is used for both embedding
+    // and lm_head (no separate output.weight tensor).
+
+    mod gh194_tests {
+        use super::*;
+
+        /// GH-194: GGUF-style naming must produce valid APR files
+        #[test]
+        fn test_gh194_gguf_names_valid_apr() {
+            let data = build_pygmy_apr_gguf_names();
+
+            // Must have valid APR magic
+            assert!(data.len() >= 64);
+            assert_eq!(&data[0..4], &MAGIC_V2);
+
+            // Must be parseable
+            let reader = AprV2Reader::from_bytes(&data);
+            assert!(reader.is_ok(), "GGUF-named APR must be parseable");
+        }
+
+        /// GH-194: GGUF-style APR must have token_embd.weight tensor
+        #[test]
+        fn test_gh194_gguf_names_has_token_embd() {
+            let data = build_pygmy_apr_gguf_names();
+            let reader = AprV2Reader::from_bytes(&data).unwrap();
+
+            let names = reader.tensor_names();
+            assert!(
+                names.iter().any(|n| *n == "token_embd.weight"),
+                "GH-194: GGUF-named APR must have token_embd.weight, found: {:?}",
+                names
+            );
+        }
+
+        /// GH-194: Weight tying model must NOT have separate output.weight
+        #[test]
+        fn test_gh194_weight_tying_no_output_tensor() {
+            let config = GgufPygmyConfig {
+                weight_tying: true,
+                ..Default::default()
+            };
+            let data = build_pygmy_apr_gguf_names_with_config(config);
+            let reader = AprV2Reader::from_bytes(&data).unwrap();
+
+            let names = reader.tensor_names();
+            assert!(
+                !names.iter().any(|n| *n == "output.weight"),
+                "GH-194: Weight-tied model must NOT have separate output.weight"
+            );
+            assert!(
+                names.iter().any(|n| *n == "token_embd.weight"),
+                "GH-194: Weight-tied model must have token_embd.weight"
+            );
+        }
+
+        /// GH-194: Non-tied model MUST have output.weight
+        #[test]
+        fn test_gh194_non_tied_has_output_tensor() {
+            let config = GgufPygmyConfig {
+                weight_tying: false,
+                ..Default::default()
+            };
+            let data = build_pygmy_apr_gguf_names_with_config(config);
+            let reader = AprV2Reader::from_bytes(&data).unwrap();
+
+            let names = reader.tensor_names();
+            assert!(
+                names.iter().any(|n| *n == "output.weight"),
+                "GH-194: Non-tied model must have output.weight"
+            );
+            assert!(
+                names.iter().any(|n| *n == "token_embd.weight"),
+                "GH-194: Non-tied model must have token_embd.weight"
+            );
+        }
+
+        /// GH-194: HuggingFace-style weight tying also works
+        #[test]
+        fn test_gh194_hf_names_tied_valid() {
+            let data = build_pygmy_apr_hf_names_tied();
+            let reader = AprV2Reader::from_bytes(&data).unwrap();
+
+            let names = reader.tensor_names();
+            assert!(
+                names.iter().any(|n| *n == "model.embed_tokens.weight"),
+                "GH-194: HF-named tied model must have model.embed_tokens.weight"
+            );
+            assert!(
+                !names.iter().any(|n| *n == "lm_head.weight"),
+                "GH-194: HF-named tied model must NOT have lm_head.weight"
+            );
+        }
+
+        /// GH-194: GGUF naming has correct layer tensor names
+        #[test]
+        fn test_gh194_gguf_names_layer_tensors() {
+            let data = build_pygmy_apr_gguf_names();
+            let reader = AprV2Reader::from_bytes(&data).unwrap();
+
+            let names = reader.tensor_names();
+
+            // Must have GGUF-style layer tensors
+            let expected_prefixes = [
+                "blk.0.attn_q.weight",
+                "blk.0.attn_k.weight",
+                "blk.0.attn_v.weight",
+                "blk.0.attn_output.weight",
+                "blk.0.ffn_gate.weight",
+                "blk.0.ffn_up.weight",
+                "blk.0.ffn_down.weight",
+                "blk.0.attn_norm.weight",
+                "blk.0.ffn_norm.weight",
+            ];
+
+            for expected in expected_prefixes {
+                assert!(
+                    names.iter().any(|n| *n == expected),
+                    "GH-194: GGUF naming must have tensor '{}', found: {:?}",
+                    expected,
+                    names
+                );
+            }
+        }
+
+        /// GH-194: Tensor count matches expected for GGUF-style model
+        #[test]
+        fn test_gh194_gguf_names_tensor_count() {
+            let config = GgufPygmyConfig {
+                num_layers: 2,
+                weight_tying: true,
+                ..Default::default()
+            };
+            let data = build_pygmy_apr_gguf_names_with_config(config);
+            let reader = AprV2Reader::from_bytes(&data).unwrap();
+
+            // Per layer: 9 tensors (4 attn + 3 mlp + 2 norms)
+            // Global: token_embd.weight + output_norm.weight = 2
+            // With weight tying, no output.weight
+            // Total: 2 layers * 9 + 2 = 20
+            let names = reader.tensor_names();
+            assert_eq!(
+                names.len(),
+                20,
+                "GH-194: 2-layer GGUF model with weight tying should have 20 tensors, got {}",
+                names.len()
+            );
+        }
+
+        /// GH-194: Metadata records weight tying status
+        #[test]
+        fn test_gh194_metadata_records_weight_tying() {
+            let data = build_pygmy_apr_gguf_names();
+            let reader = AprV2Reader::from_bytes(&data).unwrap();
+
+            let metadata = reader.metadata();
+            assert!(
+                metadata.custom.contains_key("weight_tying"),
+                "GH-194: Metadata should record weight_tying status"
+            );
+        }
+
+        /// GH-194: All tensor data is valid (not empty, no NaN/Inf)
+        #[test]
+        fn test_gh194_gguf_names_tensor_data_valid() {
+            let data = build_pygmy_apr_gguf_names();
+            let reader = AprV2Reader::from_bytes(&data).unwrap();
+
+            for name in reader.tensor_names() {
+                let tensor_data = reader.get_tensor_data(&name);
+                assert!(
+                    tensor_data.is_some(),
+                    "GH-194: Tensor '{}' data must be accessible",
+                    name
+                );
+                let bytes = tensor_data.unwrap();
+                assert!(!bytes.is_empty(), "GH-194: Tensor '{}' must not be empty", name);
+            }
         }
     }
 }

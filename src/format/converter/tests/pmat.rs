@@ -654,3 +654,88 @@ mod tests_gh190_tensor_name_contract {
         }
     }
 }
+
+// ============================================================================
+// GH-194: APR conversion must preserve ALL tensors
+// ============================================================================
+//
+// Root cause of GH-194: The `apr tensors` command was reading from metadata JSON
+// instead of the actual tensor index, making it appear that tensors were missing.
+// The actual APR file contains all tensors correctly.
+//
+// This module tests the INVARIANT that conversion preserves tensor count.
+
+#[cfg(test)]
+mod tests_gh194_tensor_count_preservation {
+    use crate::format::v2::{AprV2Writer, AprV2Metadata, TensorDType};
+
+    /// GH-194 INVARIANT: Writer must write exactly as many tensors as added.
+    #[test]
+    fn test_gh194_writer_preserves_tensor_count() {
+        let metadata = AprV2Metadata::default();
+        let mut writer = AprV2Writer::new(metadata);
+
+        // Add 290 tensors (simulating a Qwen2 0.5B model)
+        let expected_count = 290;
+        for i in 0..expected_count {
+            writer.add_tensor(
+                format!("tensor_{i}"),
+                TensorDType::F32,
+                vec![128],
+                vec![0u8; 512],
+            );
+        }
+
+        // Write and verify header reports correct count
+        let bytes = writer.write().expect("write should succeed");
+
+        // Header tensor_count is at bytes 8-11 (little-endian u32)
+        let tensor_count = u32::from_le_bytes([bytes[8], bytes[9], bytes[10], bytes[11]]);
+        assert_eq!(
+            tensor_count, expected_count,
+            "GH-194: Writer header must report {expected_count} tensors, got {tensor_count}"
+        );
+    }
+
+    /// GH-194 INVARIANT: Empty tensor data must not be silently dropped.
+    #[test]
+    fn test_gh194_empty_tensors_not_dropped() {
+        let metadata = AprV2Metadata::default();
+        let mut writer = AprV2Writer::new(metadata);
+
+        // Add tensors with various sizes including empty
+        writer.add_tensor("empty", TensorDType::F32, vec![0], vec![]);
+        writer.add_tensor("small", TensorDType::F32, vec![1], vec![0, 0, 0, 0]);
+        writer.add_tensor("medium", TensorDType::F32, vec![10], vec![0u8; 40]);
+
+        let bytes = writer.write().expect("write should succeed");
+        let tensor_count = u32::from_le_bytes([bytes[8], bytes[9], bytes[10], bytes[11]]);
+
+        assert_eq!(
+            tensor_count, 3,
+            "GH-194: All 3 tensors (including empty) must be written"
+        );
+    }
+
+    /// GH-194 INVARIANT: Quantized tensors must not be dropped.
+    #[test]
+    fn test_gh194_quantized_tensors_not_dropped() {
+        let metadata = AprV2Metadata::default();
+        let mut writer = AprV2Writer::new(metadata);
+
+        // Add tensors of each dtype
+        writer.add_tensor("f32", TensorDType::F32, vec![128], vec![0u8; 512]);
+        writer.add_tensor("f16", TensorDType::F16, vec![128], vec![0u8; 256]);
+        writer.add_tensor("q4k", TensorDType::Q4K, vec![256, 128], vec![0u8; 16512]);
+        writer.add_tensor("q6k", TensorDType::Q6K, vec![256, 128], vec![0u8; 26624]);
+        writer.add_tensor("q8", TensorDType::Q8, vec![128], vec![0u8; 132]);
+
+        let bytes = writer.write().expect("write should succeed");
+        let tensor_count = u32::from_le_bytes([bytes[8], bytes[9], bytes[10], bytes[11]]);
+
+        assert_eq!(
+            tensor_count, 5,
+            "GH-194: All 5 tensor types must be written"
+        );
+    }
+}
