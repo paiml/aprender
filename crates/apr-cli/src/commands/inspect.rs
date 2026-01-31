@@ -365,3 +365,320 @@ fn output_metadata_text(metadata: &MetadataInfo) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use tempfile::{tempdir, NamedTempFile};
+
+    // ========================================================================
+    // Path Validation Tests
+    // ========================================================================
+
+    #[test]
+    fn test_validate_path_not_found() {
+        let result = validate_path(Path::new("/nonexistent/model.apr"));
+        assert!(result.is_err());
+        match result {
+            Err(CliError::FileNotFound(_)) => {}
+            _ => panic!("Expected FileNotFound error"),
+        }
+    }
+
+    #[test]
+    fn test_validate_path_is_directory() {
+        let dir = tempdir().expect("create dir");
+        let result = validate_path(dir.path());
+        assert!(result.is_err());
+        match result {
+            Err(CliError::NotAFile(_)) => {}
+            _ => panic!("Expected NotAFile error"),
+        }
+    }
+
+    #[test]
+    fn test_validate_path_valid() {
+        let file = NamedTempFile::new().expect("create file");
+        let result = validate_path(file.path());
+        assert!(result.is_ok());
+    }
+
+    // ========================================================================
+    // Run Command Tests
+    // ========================================================================
+
+    #[test]
+    fn test_run_file_not_found() {
+        let result = run(
+            Path::new("/nonexistent/model.apr"),
+            false,
+            false,
+            false,
+            false,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_file_too_small() {
+        let mut file = NamedTempFile::with_suffix(".apr").expect("create file");
+        file.write_all(b"short").expect("write");
+
+        let result = run(file.path(), false, false, false, false);
+        assert!(result.is_err());
+        match result {
+            Err(CliError::InvalidFormat(msg)) => {
+                assert!(msg.contains("too small") || msg.contains("Invalid"));
+            }
+            _ => panic!("Expected InvalidFormat error"),
+        }
+    }
+
+    #[test]
+    fn test_run_invalid_magic() {
+        let mut file = NamedTempFile::with_suffix(".apr").expect("create file");
+        // Write 32 bytes with invalid magic
+        let mut data = [0u8; 32];
+        data[0..4].copy_from_slice(b"XXXX");
+        file.write_all(&data).expect("write");
+
+        let result = run(file.path(), false, false, false, false);
+        assert!(result.is_err());
+        match result {
+            Err(CliError::InvalidFormat(msg)) => {
+                assert!(msg.contains("Invalid magic"));
+            }
+            _ => panic!("Expected InvalidFormat error"),
+        }
+    }
+
+    // ========================================================================
+    // Serialization Tests
+    // ========================================================================
+
+    #[test]
+    fn test_flags_info_serialization() {
+        let flags = FlagsInfo {
+            encrypted: true,
+            signed: false,
+            compressed: true,
+            streaming: false,
+            quantized: true,
+        };
+
+        let json = serde_json::to_string(&flags).expect("serialize");
+        assert!(json.contains("\"encrypted\":true"));
+        assert!(json.contains("\"compressed\":true"));
+        assert!(json.contains("\"quantized\":true"));
+    }
+
+    #[test]
+    fn test_metadata_info_default() {
+        let info = MetadataInfo::default();
+        assert!(info.created_at.is_none());
+        assert!(info.model_name.is_none());
+        assert!(info.vocab_size.is_none());
+    }
+
+    #[test]
+    fn test_metadata_info_serialization() {
+        let info = MetadataInfo {
+            created_at: Some("2024-01-01".to_string()),
+            aprender_version: Some("0.4.0".to_string()),
+            model_name: Some("test-model".to_string()),
+            description: Some("A test model".to_string()),
+            vocab_size: Some(50000),
+            hyperparameters: Some(serde_json::json!({"hidden_dim": 768})),
+            metrics: Some(serde_json::json!({"accuracy": 0.95})),
+            chat_template: Some("{{prompt}}".to_string()),
+            chat_format: Some("chatml".to_string()),
+            special_tokens: Some(serde_json::json!({"bos": "<s>"})),
+        };
+
+        let json = serde_json::to_string(&info).expect("serialize");
+        assert!(json.contains("test-model"));
+        assert!(json.contains("50000"));
+        assert!(json.contains("hidden_dim"));
+    }
+
+    #[test]
+    fn test_inspect_result_serialization() {
+        let result = InspectResult {
+            file: "model.apr".to_string(),
+            valid: true,
+            model_type: "Whisper".to_string(),
+            version: "1.0".to_string(),
+            size_bytes: 1024 * 1024,
+            compressed_size: 512 * 1024,
+            uncompressed_size: 1024 * 1024,
+            flags: FlagsInfo {
+                encrypted: false,
+                signed: false,
+                compressed: true,
+                streaming: false,
+                quantized: false,
+            },
+            metadata: MetadataInfo::default(),
+        };
+
+        let json = serde_json::to_string_pretty(&result).expect("serialize");
+        assert!(json.contains("model.apr"));
+        assert!(json.contains("Whisper"));
+        assert!(json.contains("\"valid\": true")); // Pretty print has space
+    }
+
+    // ========================================================================
+    // Output Functions Tests
+    // ========================================================================
+
+    #[test]
+    fn test_output_flags_empty() {
+        let header = HeaderData {
+            version: (1, 0),
+            model_type: "Test".to_string(),
+            metadata_size: 0,
+            payload_size: 0,
+            uncompressed_size: 0,
+            compressed: false,
+            encrypted: false,
+            signed: false,
+            streaming: false,
+            quantized: false,
+        };
+
+        // Should not panic
+        output_flags(&header);
+    }
+
+    #[test]
+    fn test_output_flags_all() {
+        let header = HeaderData {
+            version: (1, 0),
+            model_type: "Test".to_string(),
+            metadata_size: 0,
+            payload_size: 1000,
+            uncompressed_size: 2000,
+            compressed: true,
+            encrypted: true,
+            signed: true,
+            streaming: true,
+            quantized: true,
+        };
+
+        output_flags(&header);
+    }
+
+    #[test]
+    fn test_output_metadata_text_empty() {
+        let metadata = MetadataInfo::default();
+        output_metadata_text(&metadata);
+    }
+
+    #[test]
+    fn test_output_metadata_text_full() {
+        let metadata = MetadataInfo {
+            created_at: Some("2024-01-01".to_string()),
+            aprender_version: Some("0.4.0".to_string()),
+            model_name: Some("test-model".to_string()),
+            description: Some("Test description".to_string()),
+            vocab_size: Some(50000),
+            hyperparameters: Some(serde_json::json!({"dim": 768})),
+            metrics: Some(serde_json::json!({"loss": 0.01})),
+            chat_template: Some("{{prompt}}".to_string()),
+            chat_format: Some("chatml".to_string()),
+            special_tokens: Some(serde_json::json!({"bos": "<s>", "eos": "</s>"})),
+        };
+
+        output_metadata_text(&metadata);
+    }
+
+    #[test]
+    fn test_output_metadata_text_long_template() {
+        let long_template = "a".repeat(200);
+        let metadata = MetadataInfo {
+            chat_template: Some(long_template),
+            chat_format: Some("custom".to_string()),
+            ..Default::default()
+        };
+
+        output_metadata_text(&metadata);
+    }
+
+    #[test]
+    fn test_output_json() {
+        let header = HeaderData {
+            version: (1, 0),
+            model_type: "Whisper".to_string(),
+            metadata_size: 100,
+            payload_size: 1000,
+            uncompressed_size: 2000,
+            compressed: true,
+            encrypted: false,
+            signed: false,
+            streaming: false,
+            quantized: false,
+        };
+
+        let metadata = MetadataInfo::default();
+        output_json(Path::new("test.apr"), 1024, &header, metadata);
+    }
+
+    #[test]
+    fn test_output_text() {
+        let header = HeaderData {
+            version: (1, 0),
+            model_type: "Whisper".to_string(),
+            metadata_size: 100,
+            payload_size: 1000,
+            uncompressed_size: 2000,
+            compressed: true,
+            encrypted: false,
+            signed: false,
+            streaming: false,
+            quantized: false,
+        };
+
+        let metadata = MetadataInfo::default();
+        output_text(Path::new("test.apr"), 1024, &header, &metadata, false, false, false);
+    }
+
+    #[test]
+    fn test_output_text_with_options() {
+        let header = HeaderData {
+            version: (2, 1),
+            model_type: "Generic".to_string(),
+            metadata_size: 0,
+            payload_size: 0,
+            uncompressed_size: 0,
+            compressed: false,
+            encrypted: false,
+            signed: false,
+            streaming: false,
+            quantized: false,
+        };
+
+        let metadata = MetadataInfo::default();
+        output_text(Path::new("test.apr"), 512, &header, &metadata, true, true, true);
+    }
+
+    #[test]
+    fn test_output_text_zero_payload() {
+        let header = HeaderData {
+            version: (1, 0),
+            model_type: "Test".to_string(),
+            metadata_size: 0,
+            payload_size: 0, // Edge case: division by zero protection
+            uncompressed_size: 0,
+            compressed: true, // Compressed but payload is 0
+            encrypted: false,
+            signed: false,
+            streaming: false,
+            quantized: false,
+        };
+
+        let metadata = MetadataInfo::default();
+        // Should not panic due to division by zero
+        output_text(Path::new("test.apr"), 0, &header, &metadata, false, false, false);
+    }
+}
