@@ -885,7 +885,7 @@ mod tests_coverage_boost {
 
     #[test]
     fn test_pygmy_safetensors_to_apr_conversion() {
-        use crate::format::test_factory::{build_pygmy_safetensors, PygmyConfig};
+        use crate::format::test_factory::build_pygmy_safetensors;
         use std::fs;
         use tempfile::tempdir;
 

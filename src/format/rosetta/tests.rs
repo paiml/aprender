@@ -1539,3 +1539,178 @@ use super::*;
             "Should reference APR-SPEC"
         );
     }
+
+    // ========================================================================
+    // Pygmy-Based Tests (T-COV-95)
+    // Testing rosetta paths with in-memory generated models
+    // ========================================================================
+
+    #[test]
+    fn pygmy_inspect_safetensors() {
+        use crate::format::test_factory::build_pygmy_safetensors;
+        use tempfile::NamedTempFile;
+        use std::io::Write;
+
+        let data = build_pygmy_safetensors();
+
+        let mut temp = NamedTempFile::with_suffix(".safetensors").expect("Create temp file");
+        temp.write_all(&data).expect("Write data");
+        temp.flush().expect("Flush");
+
+        let rosetta = RosettaStone::new();
+        let result = rosetta.inspect(temp.path());
+
+        assert!(result.is_ok(), "Should inspect pygmy SafeTensors");
+        let inspection = result.expect("inspection");
+        assert_eq!(inspection.format, FormatType::SafeTensors);
+        assert!(!inspection.tensors.is_empty());
+    }
+
+    #[test]
+    fn pygmy_inspect_apr() {
+        use crate::format::test_factory::build_pygmy_apr;
+        use tempfile::NamedTempFile;
+        use std::io::Write;
+
+        let data = build_pygmy_apr();
+
+        let mut temp = NamedTempFile::with_suffix(".apr").expect("Create temp file");
+        temp.write_all(&data).expect("Write data");
+        temp.flush().expect("Flush");
+
+        let rosetta = RosettaStone::new();
+        let result = rosetta.inspect(temp.path());
+
+        assert!(result.is_ok(), "Should inspect pygmy APR");
+        let inspection = result.expect("inspection");
+        assert_eq!(inspection.format, FormatType::Apr);
+        assert!(!inspection.tensors.is_empty());
+    }
+
+    #[test]
+    fn pygmy_validate_apr() {
+        use crate::format::test_factory::build_pygmy_apr;
+        use tempfile::NamedTempFile;
+        use std::io::Write;
+
+        let data = build_pygmy_apr();
+
+        let mut temp = NamedTempFile::with_suffix(".apr").expect("Create temp file");
+        temp.write_all(&data).expect("Write data");
+        temp.flush().expect("Flush");
+
+        let rosetta = RosettaStone::new();
+        let result = rosetta.validate(temp.path());
+
+        assert!(result.is_ok(), "Should validate pygmy APR");
+        let validation = result.expect("validation");
+        assert!(validation.is_valid, "Pygmy APR should be valid (no NaN/Inf)");
+        assert_eq!(validation.total_nan_count, 0);
+        assert_eq!(validation.total_inf_count, 0);
+    }
+
+    #[test]
+    fn pygmy_validate_safetensors() {
+        use crate::format::test_factory::build_pygmy_safetensors;
+        use tempfile::NamedTempFile;
+        use std::io::Write;
+
+        let data = build_pygmy_safetensors();
+
+        let mut temp = NamedTempFile::with_suffix(".safetensors").expect("Create temp file");
+        temp.write_all(&data).expect("Write data");
+        temp.flush().expect("Flush");
+
+        let rosetta = RosettaStone::new();
+        let result = rosetta.validate(temp.path());
+
+        assert!(result.is_ok(), "Should validate pygmy SafeTensors");
+        let validation = result.expect("validation");
+        assert!(validation.is_valid, "Pygmy SafeTensors should be valid");
+    }
+
+    #[test]
+    fn pygmy_inspect_apr_with_llama_style_config() {
+        use crate::format::test_factory::{build_pygmy_apr_with_config, PygmyConfig};
+        use tempfile::NamedTempFile;
+        use std::io::Write;
+
+        let config = PygmyConfig::llama_style();
+        let data = build_pygmy_apr_with_config(config);
+
+        let mut temp = NamedTempFile::with_suffix(".apr").expect("Create temp file");
+        temp.write_all(&data).expect("Write data");
+        temp.flush().expect("Flush");
+
+        let rosetta = RosettaStone::new();
+        let result = rosetta.inspect(temp.path());
+
+        assert!(result.is_ok(), "Should inspect LLaMA-style pygmy APR");
+        let inspection = result.expect("inspection");
+
+        // Should have LLaMA-style tensor names
+        assert!(
+            inspection.tensors.iter().any(|t| t.name.contains("self_attn")),
+            "Should have attention tensors"
+        );
+    }
+
+    #[test]
+    fn pygmy_inspect_quantized_apr() {
+        use crate::format::test_factory::{build_pygmy_apr_q8, build_pygmy_apr_f16};
+        use tempfile::NamedTempFile;
+        use std::io::Write;
+
+        // Test Q8 APR
+        let q8_data = build_pygmy_apr_q8();
+        let mut temp_q8 = NamedTempFile::with_suffix(".apr").expect("Create temp file");
+        temp_q8.write_all(&q8_data).expect("Write data");
+        temp_q8.flush().expect("Flush");
+
+        let rosetta = RosettaStone::new();
+        let result = rosetta.inspect(temp_q8.path());
+        assert!(result.is_ok(), "Should inspect Q8 pygmy APR");
+
+        // Test F16 APR
+        let f16_data = build_pygmy_apr_f16();
+        let mut temp_f16 = NamedTempFile::with_suffix(".apr").expect("Create temp file");
+        temp_f16.write_all(&f16_data).expect("Write data");
+        temp_f16.flush().expect("Flush");
+
+        let result = rosetta.inspect(temp_f16.path());
+        assert!(result.is_ok(), "Should inspect F16 pygmy APR");
+    }
+
+    #[test]
+    fn pygmy_format_from_magic_apr() {
+        use crate::format::test_factory::build_pygmy_apr;
+        use tempfile::NamedTempFile;
+        use std::io::Write;
+
+        let data = build_pygmy_apr();
+
+        let mut temp = NamedTempFile::with_suffix(".apr").expect("Create temp file");
+        temp.write_all(&data).expect("Write data");
+        temp.flush().expect("Flush");
+
+        let format = FormatType::from_magic(temp.path());
+        assert!(format.is_ok(), "Should detect format from magic");
+        assert_eq!(format.expect("format"), FormatType::Apr);
+    }
+
+    #[test]
+    fn pygmy_format_from_magic_safetensors() {
+        use crate::format::test_factory::build_pygmy_safetensors;
+        use tempfile::NamedTempFile;
+        use std::io::Write;
+
+        let data = build_pygmy_safetensors();
+
+        let mut temp = NamedTempFile::with_suffix(".safetensors").expect("Create temp file");
+        temp.write_all(&data).expect("Write data");
+        temp.flush().expect("Flush");
+
+        let format = FormatType::from_magic(temp.path());
+        assert!(format.is_ok(), "Should detect SafeTensors from magic");
+        assert_eq!(format.expect("format"), FormatType::SafeTensors);
+    }
