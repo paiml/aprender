@@ -2414,3 +2414,103 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-190
+  github_issue: null
+  item_type: task
+  title: 'GH-201: Eliminate hot-path unwrap() calls'
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-01-31T09:33:53Z
+  updated: 2026-01-31T09:42:05Z
+  spec: null
+  acceptance_criteria:
+  - 'Remove panic-inducing unwrap()/expect() from inference hot paths (nn/dropout.rs, nn/transformer.rs, nn/generation.rs). Ref: Popperian Audit Round 12, Test 1. Root cause: Missing CI enforcement of panic-free policy.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - p0
+  - panic-free
+  - round-12
+  notes: null
+- id: PMAT-191
+  github_issue: null
+  item_type: task
+  title: 'GH-202: Remove Unknown Error from explain.rs'
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-01-31T09:33:55Z
+  updated: 2026-01-31T09:42:07Z
+  spec: null
+  acceptance_criteria:
+  - 'Replace ''Unknown Error'' output with structured error message. Ref: Popperian Audit Round 12, Test 20. Root cause: Stringly-typed error codes without exhaustive match.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - p0
+  - error-handling
+  - round-12
+  notes: null
+- id: PMAT-192
+  github_issue: null
+  item_type: task
+  title: 'GH-203: Cross-architecture determinism validation'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-01-31T09:33:56Z
+  updated: 2026-01-31T09:44:40.793861455+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Add cross-machine determinism tests for zero-temperature inference. Ref: Popperian Audit Round 12, Test 4. Root cause: Incorrect FMA reproducibility assumption.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - p1
+  - determinism
+  - round-12
+  notes: null
+- id: PMAT-193
+  github_issue: null
+  item_type: task
+  title: 'GH-204: Prompt injection sanitization'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-01-31T09:33:57Z
+  updated: 2026-01-31T09:47:40.086444103+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Add sanitization for control tokens in user input. Ref: Popperian Audit Round 12, Test 17. Root cause: Missing security threat model.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - p1
+  - security
+  - round-12
+  notes: null
+- id: PMAT-194
+  github_issue: null
+  item_type: task
+  title: 'GH-205: Load testing infrastructure'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-01-31T09:33:59Z
+  updated: 2026-01-31T09:47:41.180383544+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Add 50-concurrent request tests and disconnect cleanup tests. Ref: Popperian Audit Round 12, Tests 9-10. Root cause: Spec evolution from CLI to server.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - p1
+  - testing
+  - round-12
+  notes: null
