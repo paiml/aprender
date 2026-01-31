@@ -141,6 +141,9 @@ pub mod core_io;
 // Tensor listing library (TOOL-APR-001 - reads actual tensor index)
 pub mod tensors;
 
+// Model diff library (TOOL-APR-002 - format-agnostic comparison)
+pub mod diff;
+
 // Digital signatures (spec §4.2, PMAT-198)
 #[cfg(feature = "format-signing")]
 pub mod signing;
@@ -213,6 +216,11 @@ pub use rosetta_ml::{
 pub use tensors::{
     format_size, is_valid_apr_magic, list_tensors, list_tensors_from_bytes,
     TensorInfo as TensorListInfo, TensorListOptions, TensorListResult,
+};
+
+// Re-export diff types (TOOL-APR-002 - format-agnostic comparison)
+pub use diff::{
+    diff_inspections, diff_models, DiffCategory, DiffEntry, DiffOptions, DiffReport,
 };
 
 // Re-export quantization types when feature is enabled

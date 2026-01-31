@@ -1,8 +1,8 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 6.6.5
-**Status:** ⚠️ TESTING REQUIRED - All P0 bugs fixed, TOOL-APR-001 complete
-**Popperian Score:** 80/100 (Grade: P0 BUGS FIXED - BUG-APR-001 + BUG-APR-002 + TOOL-APR-001)
+**Version:** 6.6.6
+**Status:** ⚠️ TESTING REQUIRED - All P0 bugs fixed, TOOL-APR-001 + TOOL-APR-002 complete
+**Popperian Score:** 82/100 (Grade: P0 BUGS FIXED - BUG-APR-001 + BUG-APR-002 + TOOL-APR-001 + TOOL-APR-002)
 **Code Coverage:** 96.17% (target: ≥95%)
 **Tool Coverage:** 16/16 (100%) - All APR tools verified (+ rosetta fingerprint, validate-stats)
 **Author:** PAIML Engineering
@@ -4396,6 +4396,12 @@ fn test_gguf_to_apr_preserves_all_tensors() {
   - ✅ **FIXED**: Created `aprender::format::tensors` library module with proper v2 index parsing
   - ✅ **CLI SHIM**: Rewrote `apr-cli/src/commands/tensors.rs` as thin wrapper (from 678 → 343 lines)
   - ✅ **TESTS**: 29 new library tests + 8 CLI tests (37 total, all pass)
+- [x] **TOOL-APR-002**: Extract `apr diff` logic to library (supports GGUF, APR, SafeTensors)
+  - ✅ **ROOT CAUSE**: CLI had inline comparison logic, not testable in isolation
+  - ✅ **FIXED**: Created `aprender::format::diff` library module with format-agnostic comparison
+  - ✅ **CLI SHIM**: Rewrote `apr-cli/src/commands/diff.rs` as thin wrapper (from 715 → 370 lines)
+  - ✅ **TESTS**: 38 new library tests + 14 CLI tests (52 total, all pass)
+  - ✅ **FORMATS**: Supports GGUF, APR, SafeTensors via rosetta inspection
 
 ### 21.8.1 Pygmy Test Coverage (GH-194)
 
@@ -4406,8 +4412,10 @@ fn test_gguf_to_apr_preserves_all_tensors() {
 | realizar | `src/apr/test_factory.rs` | 36 | APR inference paths (GGUF names, HF names, weight tying) |
 | aprender | `src/format/test_factory.rs` | 23 | APR write/read (GGUF names, HF names, weight tying) |
 | aprender | `src/format/tensors.rs` | 29 | Tensor listing from index (TOOL-APR-001 fix) |
+| aprender | `src/format/diff.rs` | 38 | Format-agnostic model diff (TOOL-APR-002 fix) |
 | aprender | `src/format/converter/tests/pmat.rs` | 3 | Tensor count preservation |
 | apr-cli | `src/commands/tensors.rs` | 8 | CLI shim tests |
+| apr-cli | `src/commands/diff.rs` | 14 | CLI shim tests (TOOL-APR-002) |
 
 **GH-194 Weight Tying Tests (NEW):**
 
@@ -4441,7 +4449,8 @@ fn test_gguf_to_apr_preserves_all_tensors() {
 | 2026-01-31 | Claude Opus 4.5 | 25/100 | PARTIAL FIX - Pygmy tests added |
 | 2026-01-31 | Claude Opus 4.5 | 50/100 | BUG-APR-001 FIXED - Weight tying + tensor lookup |
 | 2026-02-01 | Claude Opus 4.5 | 75/100 | BUG-APR-002 FIXED - div_ceil for byte size calc |
-| **2026-02-01** | **Claude Opus 4.5** | **80/100** | **TOOL-APR-001 FIXED** - Library extraction, tensor index reading |
+| 2026-02-01 | Claude Opus 4.5 | 80/100 | TOOL-APR-001 FIXED - Library extraction, tensor index reading |
+| **2026-02-01** | **Claude Opus 4.5** | **82/100** | **TOOL-APR-002 FIXED** - Multi-format diff (GGUF, APR, SafeTensors) |
 
 **Release Status:** ⚠️ **TESTING REQUIRED** - Both P0 bugs fixed, needs integration test verification.
 
@@ -4600,6 +4609,12 @@ fn test_gguf_to_apr_preserves_all_tensors() {
   - ✅ **FIXED**: Created `aprender::format::tensors` library module with proper v2 index parsing
   - ✅ **CLI SHIM**: Rewrote `apr-cli/src/commands/tensors.rs` as thin wrapper (from 678 → 343 lines)
   - ✅ **TESTS**: 29 new library tests + 8 CLI tests (37 total, all pass)
+- [x] **TOOL-APR-002**: Extract `apr diff` logic to library (supports GGUF, APR, SafeTensors)
+  - ✅ **ROOT CAUSE**: CLI had inline comparison logic, not testable in isolation
+  - ✅ **FIXED**: Created `aprender::format::diff` library module with format-agnostic comparison
+  - ✅ **CLI SHIM**: Rewrote `apr-cli/src/commands/diff.rs` as thin wrapper (from 715 → 370 lines)
+  - ✅ **TESTS**: 38 new library tests + 14 CLI tests (52 total, all pass)
+  - ✅ **FORMATS**: Supports GGUF, APR, SafeTensors via rosetta inspection
 
 ### 21.8.1 Pygmy Test Coverage (GH-194)
 
@@ -4610,8 +4625,10 @@ fn test_gguf_to_apr_preserves_all_tensors() {
 | realizar | `src/apr/test_factory.rs` | 36 | APR inference paths (GGUF names, HF names, weight tying) |
 | aprender | `src/format/test_factory.rs` | 23 | APR write/read (GGUF names, HF names, weight tying) |
 | aprender | `src/format/tensors.rs` | 29 | Tensor listing from index (TOOL-APR-001 fix) |
+| aprender | `src/format/diff.rs` | 38 | Format-agnostic model diff (TOOL-APR-002 fix) |
 | aprender | `src/format/converter/tests/pmat.rs` | 3 | Tensor count preservation |
 | apr-cli | `src/commands/tensors.rs` | 8 | CLI shim tests |
+| apr-cli | `src/commands/diff.rs` | 14 | CLI shim tests (TOOL-APR-002) |
 
 **GH-194 Weight Tying Tests (NEW):**
 
@@ -4645,7 +4662,8 @@ fn test_gguf_to_apr_preserves_all_tensors() {
 | 2026-01-31 | Claude Opus 4.5 | 25/100 | PARTIAL FIX - Pygmy tests added |
 | 2026-01-31 | Claude Opus 4.5 | 50/100 | BUG-APR-001 FIXED - Weight tying + tensor lookup |
 | 2026-02-01 | Claude Opus 4.5 | 75/100 | BUG-APR-002 FIXED - div_ceil for byte size calc |
-| **2026-02-01** | **Claude Opus 4.5** | **80/100** | **TOOL-APR-001 FIXED** - Library extraction, tensor index reading |
+| 2026-02-01 | Claude Opus 4.5 | 80/100 | TOOL-APR-001 FIXED - Library extraction, tensor index reading |
+| **2026-02-01** | **Claude Opus 4.5** | **82/100** | **TOOL-APR-002 FIXED** - Multi-format diff (GGUF, APR, SafeTensors) |
 
 **Release Status:** ⚠️ **TESTING REQUIRED** - Both P0 bugs fixed, needs integration test verification.
 
