@@ -162,3 +162,235 @@ fn print_category_score(report: &ValidationReport, category: Category, name: &st
 
     println!("{name:40} {score:>2}/{max} {color_bar}");
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+    use std::io::Write;
+    use tempfile::{tempdir, NamedTempFile};
+
+    // ========================================================================
+    // Path Validation Tests
+    // ========================================================================
+
+    #[test]
+    fn test_validate_path_not_found() {
+        let result = validate_path(Path::new("/nonexistent/model.apr"));
+        assert!(result.is_err());
+        match result {
+            Err(CliError::FileNotFound(_)) => {}
+            _ => panic!("Expected FileNotFound error"),
+        }
+    }
+
+    #[test]
+    fn test_validate_path_is_directory() {
+        let dir = tempdir().expect("create temp dir");
+        let result = validate_path(dir.path());
+        assert!(result.is_err());
+        match result {
+            Err(CliError::NotAFile(_)) => {}
+            _ => panic!("Expected NotAFile error"),
+        }
+    }
+
+    #[test]
+    fn test_validate_path_valid_file() {
+        let file = NamedTempFile::new().expect("create temp file");
+        let result = validate_path(file.path());
+        assert!(result.is_ok());
+    }
+
+    // ========================================================================
+    // Run Command Tests
+    // ========================================================================
+
+    #[test]
+    fn test_run_file_not_found() {
+        let result = run(
+            Path::new("/nonexistent/model.apr"),
+            false,
+            false,
+            None,
+        );
+        assert!(result.is_err());
+        match result {
+            Err(CliError::FileNotFound(_)) => {}
+            _ => panic!("Expected FileNotFound error"),
+        }
+    }
+
+    #[test]
+    fn test_run_is_directory() {
+        let dir = tempdir().expect("create temp dir");
+        let result = run(dir.path(), false, false, None);
+        assert!(result.is_err());
+        match result {
+            Err(CliError::NotAFile(_)) => {}
+            _ => panic!("Expected NotAFile error"),
+        }
+    }
+
+    #[test]
+    fn test_run_invalid_file() {
+        let mut file = NamedTempFile::with_suffix(".apr").expect("create temp file");
+        file.write_all(b"not a valid APR file").expect("write");
+
+        let result = run(file.path(), false, false, None);
+        // Should fail validation because file is not valid APR
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_with_quality_flag() {
+        let mut file = NamedTempFile::with_suffix(".apr").expect("create temp file");
+        file.write_all(b"invalid data").expect("write");
+
+        let result = run(file.path(), true, false, None);
+        // Should fail but quality flag is handled
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_with_min_score() {
+        let mut file = NamedTempFile::with_suffix(".apr").expect("create temp file");
+        file.write_all(b"invalid data").expect("write");
+
+        let result = run(file.path(), false, false, Some(100));
+        // Should fail before min_score check because file is invalid
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_with_strict_flag() {
+        let mut file = NamedTempFile::with_suffix(".apr").expect("create temp file");
+        file.write_all(b"test data").expect("write");
+
+        let result = run(file.path(), false, true, None);
+        // Should fail with strict mode
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_with_all_flags() {
+        let mut file = NamedTempFile::with_suffix(".apr").expect("create temp file");
+        file.write_all(b"test data").expect("write");
+
+        let result = run(file.path(), true, true, Some(50));
+        // Should fail with all flags enabled
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_empty_file() {
+        let file = NamedTempFile::with_suffix(".apr").expect("create temp file");
+        // Empty file - no write
+
+        let result = run(file.path(), false, false, None);
+        // Empty file should fail validation
+        assert!(result.is_err());
+    }
+
+    // ========================================================================
+    // Category Score Tests (using mocked reports via AprValidator)
+    // ========================================================================
+
+    #[test]
+    fn test_category_score_display() {
+        // Test that category score display doesn't panic
+        let mut category_scores = HashMap::new();
+        category_scores.insert(Category::Structure, 25);
+        category_scores.insert(Category::Physics, 20);
+        category_scores.insert(Category::Tooling, 15);
+        category_scores.insert(Category::Conversion, 10);
+
+        let report = ValidationReport {
+            checks: Vec::new(),
+            total_score: 70,
+            category_scores,
+        };
+
+        // These functions should not panic
+        print_category_score(&report, Category::Structure, "A. Format");
+        print_category_score(&report, Category::Physics, "B. Physics");
+        print_category_score(&report, Category::Tooling, "C. Tooling");
+        print_category_score(&report, Category::Conversion, "D. Conversion");
+    }
+
+    #[test]
+    fn test_category_score_missing() {
+        let report = ValidationReport {
+            checks: Vec::new(),
+            total_score: 0,
+            category_scores: HashMap::new(),
+        };
+
+        // Should handle missing category gracefully (default to 0)
+        print_category_score(&report, Category::Structure, "A. Structure");
+    }
+
+    #[test]
+    fn test_category_score_colors() {
+        // Test all color thresholds
+        let mut high_scores = HashMap::new();
+        high_scores.insert(Category::Structure, 25); // Green
+
+        let mut mid_scores = HashMap::new();
+        mid_scores.insert(Category::Structure, 17); // Yellow
+
+        let mut low_scores = HashMap::new();
+        low_scores.insert(Category::Structure, 5); // Red
+
+        let high_report = ValidationReport {
+            checks: Vec::new(),
+            total_score: 25,
+            category_scores: high_scores,
+        };
+
+        let mid_report = ValidationReport {
+            checks: Vec::new(),
+            total_score: 17,
+            category_scores: mid_scores,
+        };
+
+        let low_report = ValidationReport {
+            checks: Vec::new(),
+            total_score: 5,
+            category_scores: low_scores,
+        };
+
+        // All should display without panic
+        print_category_score(&high_report, Category::Structure, "High");
+        print_category_score(&mid_report, Category::Structure, "Medium");
+        print_category_score(&low_report, Category::Structure, "Low");
+    }
+
+    // ========================================================================
+    // Print Summary Tests
+    // ========================================================================
+
+    #[test]
+    fn test_print_summary_valid_report() {
+        let report = ValidationReport {
+            checks: Vec::new(), // No failed checks
+            total_score: 100,
+            category_scores: HashMap::new(),
+        };
+
+        let result = print_summary(&report, false);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_print_quality_assessment_empty() {
+        let report = ValidationReport {
+            checks: Vec::new(),
+            total_score: 0,
+            category_scores: HashMap::new(),
+        };
+
+        // Should not panic even with empty report
+        print_quality_assessment(&report);
+    }
+}

@@ -330,3 +330,386 @@ fn format_compression(compression: u8) -> String {
         _ => format!("unknown({compression})"),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use tempfile::{tempdir, NamedTempFile};
+
+    // ========================================================================
+    // Path Validation Tests
+    // ========================================================================
+
+    #[test]
+    fn test_validate_paths_first_not_found() {
+        let file2 = NamedTempFile::new().expect("create file");
+        let result = validate_paths(
+            Path::new("/nonexistent/model1.apr"),
+            file2.path(),
+        );
+        assert!(result.is_err());
+        match result {
+            Err(CliError::FileNotFound(_)) => {}
+            _ => panic!("Expected FileNotFound error"),
+        }
+    }
+
+    #[test]
+    fn test_validate_paths_second_not_found() {
+        let file1 = NamedTempFile::new().expect("create file");
+        let result = validate_paths(
+            file1.path(),
+            Path::new("/nonexistent/model2.apr"),
+        );
+        assert!(result.is_err());
+        match result {
+            Err(CliError::FileNotFound(_)) => {}
+            _ => panic!("Expected FileNotFound error"),
+        }
+    }
+
+    #[test]
+    fn test_validate_paths_first_is_directory() {
+        let dir = tempdir().expect("create dir");
+        let file2 = NamedTempFile::new().expect("create file");
+        let result = validate_paths(dir.path(), file2.path());
+        assert!(result.is_err());
+        match result {
+            Err(CliError::NotAFile(_)) => {}
+            _ => panic!("Expected NotAFile error"),
+        }
+    }
+
+    #[test]
+    fn test_validate_paths_valid() {
+        let file1 = NamedTempFile::new().expect("create file");
+        let file2 = NamedTempFile::new().expect("create file");
+        let result = validate_paths(file1.path(), file2.path());
+        assert!(result.is_ok());
+    }
+
+    // ========================================================================
+    // Run Command Tests
+    // ========================================================================
+
+    #[test]
+    fn test_run_file_not_found() {
+        let file = NamedTempFile::new().expect("create file");
+        let result = run(
+            Path::new("/nonexistent/model.apr"),
+            file.path(),
+            false,
+            false,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_invalid_files() {
+        let mut file1 = NamedTempFile::with_suffix(".apr").expect("create file");
+        let mut file2 = NamedTempFile::with_suffix(".apr").expect("create file");
+
+        // Write minimal data (less than header size)
+        file1.write_all(b"short").expect("write");
+        file2.write_all(b"short").expect("write");
+
+        let result = run(file1.path(), file2.path(), false, false);
+        // Should fail because files are too small
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_with_json_output() {
+        let mut file1 = NamedTempFile::with_suffix(".apr").expect("create file");
+        let mut file2 = NamedTempFile::with_suffix(".apr").expect("create file");
+
+        file1.write_all(b"short").expect("write");
+        file2.write_all(b"short").expect("write");
+
+        let result = run(file1.path(), file2.path(), false, true);
+        // Should fail but tests json output path
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_with_show_weights() {
+        let mut file1 = NamedTempFile::with_suffix(".apr").expect("create file");
+        let mut file2 = NamedTempFile::with_suffix(".apr").expect("create file");
+
+        file1.write_all(b"short").expect("write");
+        file2.write_all(b"short").expect("write");
+
+        let result = run(file1.path(), file2.path(), true, false);
+        // Should fail but tests show_weights path
+        assert!(result.is_err());
+    }
+
+    // ========================================================================
+    // Format Compression Tests
+    // ========================================================================
+
+    #[test]
+    fn test_format_compression_none() {
+        assert_eq!(format_compression(0), "none");
+    }
+
+    #[test]
+    fn test_format_compression_zstd() {
+        assert_eq!(format_compression(1), "zstd");
+    }
+
+    #[test]
+    fn test_format_compression_lz4() {
+        assert_eq!(format_compression(2), "lz4");
+    }
+
+    #[test]
+    fn test_format_compression_snappy() {
+        assert_eq!(format_compression(3), "snappy");
+    }
+
+    #[test]
+    fn test_format_compression_unknown() {
+        assert_eq!(format_compression(255), "unknown(255)");
+    }
+
+    // ========================================================================
+    // DiffEntry Tests
+    // ========================================================================
+
+    #[test]
+    fn test_diff_entry_serialization() {
+        let entry = DiffEntry {
+            field: "version".to_string(),
+            file1_value: "1.0".to_string(),
+            file2_value: "2.0".to_string(),
+        };
+        let json = serde_json::to_string(&entry).expect("serialize");
+        assert!(json.contains("version"));
+        assert!(json.contains("1.0"));
+        assert!(json.contains("2.0"));
+    }
+
+    #[test]
+    fn test_diff_result_serialization() {
+        let result = DiffResult {
+            file1: "model1.apr".to_string(),
+            file2: "model2.apr".to_string(),
+            identical: false,
+            differences: vec![DiffEntry {
+                field: "payload_size".to_string(),
+                file1_value: "1000".to_string(),
+                file2_value: "2000".to_string(),
+            }],
+        };
+        let json = serde_json::to_string(&result).expect("serialize");
+        assert!(json.contains("model1.apr"));
+        assert!(json.contains("model2.apr"));
+        assert!(json.contains("payload_size"));
+    }
+
+    #[test]
+    fn test_diff_result_identical() {
+        let result = DiffResult {
+            file1: "a.apr".to_string(),
+            file2: "b.apr".to_string(),
+            identical: true,
+            differences: vec![],
+        };
+        let json = serde_json::to_string(&result).expect("serialize");
+        assert!(json.contains("\"identical\":true"));
+    }
+
+    // ========================================================================
+    // Output Functions Tests
+    // ========================================================================
+
+    #[test]
+    fn test_output_json() {
+        let differences = vec![DiffEntry {
+            field: "test".to_string(),
+            file1_value: "a".to_string(),
+            file2_value: "b".to_string(),
+        }];
+        // Should not panic
+        output_json(Path::new("a.apr"), Path::new("b.apr"), false, differences);
+    }
+
+    #[test]
+    fn test_output_json_identical() {
+        output_json(Path::new("a.apr"), Path::new("b.apr"), true, vec![]);
+    }
+
+    #[test]
+    fn test_output_text_identical() {
+        output_text(Path::new("a.apr"), Path::new("b.apr"), true, &[], false);
+    }
+
+    #[test]
+    fn test_output_text_with_differences() {
+        let differences = vec![
+            DiffEntry {
+                field: "version".to_string(),
+                file1_value: "1.0".to_string(),
+                file2_value: "2.0".to_string(),
+            },
+            DiffEntry {
+                field: "compression".to_string(),
+                file1_value: "none".to_string(),
+                file2_value: "zstd".to_string(),
+            },
+        ];
+        output_text(Path::new("a.apr"), Path::new("b.apr"), false, &differences, false);
+    }
+
+    #[test]
+    fn test_output_text_with_show_weights() {
+        output_text(Path::new("a.apr"), Path::new("b.apr"), true, &[], true);
+    }
+
+    // ========================================================================
+    // Compute Differences Tests
+    // ========================================================================
+
+    #[test]
+    fn test_compute_differences_identical() {
+        let info = ModelInfo {
+            magic_valid: true,
+            version: (1, 0),
+            model_type: 1,
+            metadata_size: 100,
+            payload_size: 1000,
+            compression: 0,
+            flags: 0,
+            metadata: None,
+        };
+
+        let differences = compute_differences(&info, &info);
+        assert!(differences.is_empty());
+    }
+
+    #[test]
+    fn test_compute_differences_version() {
+        let info1 = ModelInfo {
+            magic_valid: true,
+            version: (1, 0),
+            model_type: 1,
+            metadata_size: 100,
+            payload_size: 1000,
+            compression: 0,
+            flags: 0,
+            metadata: None,
+        };
+
+        let info2 = ModelInfo {
+            magic_valid: true,
+            version: (2, 0),
+            model_type: 1,
+            metadata_size: 100,
+            payload_size: 1000,
+            compression: 0,
+            flags: 0,
+            metadata: None,
+        };
+
+        let differences = compute_differences(&info1, &info2);
+        assert_eq!(differences.len(), 1);
+        assert_eq!(differences[0].field, "version");
+    }
+
+    #[test]
+    fn test_compute_differences_compression() {
+        let info1 = ModelInfo {
+            magic_valid: true,
+            version: (1, 0),
+            model_type: 1,
+            metadata_size: 100,
+            payload_size: 1000,
+            compression: 0,
+            flags: 0,
+            metadata: None,
+        };
+
+        let info2 = ModelInfo {
+            magic_valid: true,
+            version: (1, 0),
+            model_type: 1,
+            metadata_size: 100,
+            payload_size: 1000,
+            compression: 1,
+            flags: 0,
+            metadata: None,
+        };
+
+        let differences = compute_differences(&info1, &info2);
+        assert_eq!(differences.len(), 1);
+        assert_eq!(differences[0].field, "compression");
+    }
+
+    #[test]
+    fn test_compute_differences_multiple() {
+        let info1 = ModelInfo {
+            magic_valid: true,
+            version: (1, 0),
+            model_type: 1,
+            metadata_size: 100,
+            payload_size: 1000,
+            compression: 0,
+            flags: 0,
+            metadata: None,
+        };
+
+        let info2 = ModelInfo {
+            magic_valid: false,
+            version: (2, 0),
+            model_type: 2,
+            metadata_size: 100,
+            payload_size: 1000,
+            compression: 1,
+            flags: 0,
+            metadata: None,
+        };
+
+        let differences = compute_differences(&info1, &info2);
+        assert!(differences.len() >= 4);
+    }
+
+    // ========================================================================
+    // Metadata Comparison Tests
+    // ========================================================================
+
+    #[test]
+    fn test_compare_metadata_both_none() {
+        let mut differences = Vec::new();
+        compare_metadata(None, None, &mut differences);
+        assert!(differences.is_empty());
+    }
+
+    #[test]
+    fn test_compare_metadata_first_present() {
+        let meta = format::Metadata::default();
+        let mut differences = Vec::new();
+        compare_metadata(Some(&meta), None, &mut differences);
+        assert_eq!(differences.len(), 1);
+        assert_eq!(differences[0].field, "metadata");
+    }
+
+    #[test]
+    fn test_compare_metadata_second_present() {
+        let meta = format::Metadata::default();
+        let mut differences = Vec::new();
+        compare_metadata(None, Some(&meta), &mut differences);
+        assert_eq!(differences.len(), 1);
+        assert_eq!(differences[0].field, "metadata");
+    }
+
+    #[test]
+    fn test_compare_metadata_both_present_same() {
+        let meta = format::Metadata::default();
+        let mut differences = Vec::new();
+        compare_metadata(Some(&meta), Some(&meta), &mut differences);
+        // Default metadata should be the same
+        assert!(differences.is_empty());
+    }
+}
