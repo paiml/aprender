@@ -1727,6 +1727,57 @@ fn test_projected_gd_no_line_search_max_iter() {
     assert_eq!(result.status, ConvergenceStatus::MaxIterations);
 }
 
+// Test ProjectedGradientDescent line search with actual backtracking
+#[test]
+fn test_projected_gd_line_search_backtracking() {
+    // Use a large initial step size that will require backtracking
+    // Problem: minimize x² starting far from optimum with huge step
+    let objective = |x: &Vector<f32>| x[0] * x[0];
+    let gradient = |x: &Vector<f32>| Vector::from_slice(&[2.0 * x[0]]);
+    let project = |x: &Vector<f32>| x.clone(); // No projection
+
+    // Initial step=10.0 is too large for this problem (gradient = 2*10 = 20, step = 200!)
+    // This will cause f(x_new) > f(x) triggering backtracking
+    let mut pgd = ProjectedGradientDescent::new(100, 10.0, 1e-6).with_line_search(0.5);
+    let x0 = Vector::from_slice(&[10.0]);
+    let result = pgd.minimize(objective, gradient, project, x0);
+
+    // Should still converge due to line search
+    assert_eq!(result.status, ConvergenceStatus::Converged);
+    // Solution should be near 0
+    assert!(result.solution[0].abs() < 1e-3);
+}
+
+// Test ProjectedGradientDescent line search max backtracking iterations
+#[test]
+fn test_projected_gd_line_search_max_backtrack() {
+    // Create a problem where backtracking won't help much
+    // but the solver still needs to try multiple backtracking steps
+    use std::cell::Cell;
+    use std::rc::Rc;
+
+    let call_count = Rc::new(Cell::new(0));
+    let count_clone = Rc::clone(&call_count);
+
+    // Objective that oscillates based on call count
+    let objective = move |x: &Vector<f32>| {
+        count_clone.set(count_clone.get() + 1);
+        // Large value initially, then small
+        x[0] * x[0] + if count_clone.get() < 5 { 1000.0 } else { 0.0 }
+    };
+    let gradient = |x: &Vector<f32>| Vector::from_slice(&[2.0 * x[0]]);
+    let project = |x: &Vector<f32>| x.clone();
+
+    // Large step will cause issues
+    let mut pgd = ProjectedGradientDescent::new(100, 5.0, 1e-6).with_line_search(0.5);
+    let x0 = Vector::from_slice(&[5.0]);
+    let result = pgd.minimize(objective, gradient, project, x0);
+
+    // Should eventually converge or hit max iterations
+    assert!(result.iterations > 0);
+    assert!(call_count.get() > 5); // Objective was called multiple times due to line search
+}
+
 // Test ConvergenceStatus variants
 #[test]
 fn test_convergence_status_all_variants() {

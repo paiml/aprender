@@ -19,8 +19,6 @@
 //! assert_eq!(dc.len(), 3);
 //! ```
 
-#[cfg(feature = "parallel")]
-use rayon::prelude::*;
 use std::collections::{HashMap, VecDeque};
 
 pub mod centrality;
