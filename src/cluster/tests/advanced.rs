@@ -2,6 +2,7 @@
 
 use crate::cluster::*;
 use crate::primitives::Matrix;
+use crate::traits::UnsupervisedEstimator;
 
 // ============================================================================
 // DBSCAN Tests

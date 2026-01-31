@@ -1,6 +1,8 @@
 //! Tests for clustering algorithms.
 
 use crate::cluster::*;
+use crate::primitives::Matrix;
+use crate::traits::UnsupervisedEstimator;
 
 fn sample_data() -> Matrix<f32> {
     // Two well-separated clusters
@@ -15,7 +17,7 @@ fn sample_data() -> Matrix<f32> {
 #[test]
 fn test_new() {
     let kmeans = KMeans::new(3);
-    assert_eq!(kmeans.n_clusters, 3);
+    assert_eq!(kmeans.n_clusters(), 3);
     assert!(!kmeans.is_fitted());
 }
 
@@ -65,19 +67,19 @@ fn test_labels_consistency() {
 #[test]
 fn test_with_max_iter() {
     let kmeans = KMeans::new(3).with_max_iter(10);
-    assert_eq!(kmeans.max_iter, 10);
+    assert_eq!(kmeans.max_iter(), 10);
 }
 
 #[test]
 fn test_with_tol() {
     let kmeans = KMeans::new(3).with_tol(1e-6);
-    assert!((kmeans.tol - 1e-6).abs() < 1e-10);
+    assert!((kmeans.tol() - 1e-6).abs() < 1e-10);
 }
 
 #[test]
 fn test_with_random_state() {
     let kmeans = KMeans::new(3).with_random_state(42);
-    assert_eq!(kmeans.random_state, Some(42));
+    assert_eq!(kmeans.random_state(), Some(42));
 }
 
 #[test]
@@ -376,7 +378,7 @@ fn test_initialization_reproducibility() {
 #[test]
 fn test_default() {
     let kmeans = KMeans::default();
-    assert_eq!(kmeans.n_clusters, 8);
+    assert_eq!(kmeans.n_clusters(), 8);
 }
 
 #[test]
@@ -703,7 +705,7 @@ fn test_save_load() {
     let loaded = KMeans::load(path).expect("Failed to load model");
 
     // Verify loaded model matches original
-    assert_eq!(kmeans.n_clusters, loaded.n_clusters);
+    assert_eq!(kmeans.n_clusters(), loaded.n_clusters());
     assert!((kmeans.inertia() - loaded.inertia()).abs() < 1e-6);
 
     // Verify predictions match
