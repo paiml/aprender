@@ -658,3 +658,105 @@ use super::*;
         let _ = config.clone();
         let _ = format!("{config:?}");
     }
+
+    // ==================== Eviction Policy Tests ====================
+
+    #[test]
+    fn test_eviction_policy_all_descriptions() {
+        // Test that all policies have descriptions
+        assert!(!EvictionPolicy::LRU.description().is_empty());
+        assert!(!EvictionPolicy::LFU.description().is_empty());
+        assert!(!EvictionPolicy::ARC.description().is_empty());
+        assert!(!EvictionPolicy::Clock.description().is_empty());
+        assert!(!EvictionPolicy::Fixed.description().is_empty());
+    }
+
+    #[test]
+    fn test_eviction_policy_all_use_cases() {
+        // Test that all policies have recommended use cases
+        assert!(!EvictionPolicy::LRU.recommended_use_case().is_empty());
+        assert!(!EvictionPolicy::LFU.recommended_use_case().is_empty());
+        assert!(!EvictionPolicy::ARC.recommended_use_case().is_empty());
+        assert!(!EvictionPolicy::Clock.recommended_use_case().is_empty());
+        assert!(!EvictionPolicy::Fixed.recommended_use_case().is_empty());
+    }
+
+    #[test]
+    fn test_cache_tier_latencies() {
+        // Test that all tiers have defined latencies
+        let l1_latency = CacheTier::L1Hot.typical_latency();
+        let l2_latency = CacheTier::L2Warm.typical_latency();
+        let l3_latency = CacheTier::L3Cold.typical_latency();
+
+        // L1 should be fastest, L3 slowest
+        assert!(l1_latency < l2_latency);
+        assert!(l2_latency < l3_latency);
+    }
+
+    #[test]
+    fn test_cache_tier_all_names() {
+        assert!(!CacheTier::L1Hot.name().is_empty());
+        assert!(!CacheTier::L2Warm.name().is_empty());
+        assert!(!CacheTier::L3Cold.name().is_empty());
+    }
+
+    #[test]
+    fn test_memory_budget_can_evict_reserved() {
+        let mut budget = MemoryBudget::new(100);
+        budget.reserve_page(1);
+        budget.reserve_page(2);
+
+        // Reserved pages cannot be evicted
+        assert!(!budget.can_evict(1));
+        assert!(!budget.can_evict(2));
+
+        // Unreserved pages can be evicted
+        assert!(budget.can_evict(3));
+
+        // After release, can evict
+        budget.release_page(1);
+        assert!(budget.can_evict(1));
+    }
+
+    #[test]
+    fn test_cache_metadata_all_builders() {
+        let path = PathBuf::from("/test/model.gguf");
+        let mtime = SystemTime::now();
+
+        let meta = CacheMetadata::new(1024)
+            .with_source(path.clone(), mtime)
+            .with_ttl(Duration::from_secs(300))
+            .with_compression_ratio(0.75);
+
+        assert_eq!(meta.size_bytes, 1024);
+        assert!((meta.compression_ratio - 0.75).abs() < f32::EPSILON);
+        assert_eq!(meta.source_path, Some(path));
+    }
+
+    #[test]
+    fn test_cache_data_size_and_compression() {
+        let compressed = CacheData::Compressed(vec![1u8; 100]);
+        let decompressed = CacheData::Decompressed(vec![1u8; 200]);
+
+        assert_eq!(compressed.size(), 100);
+        assert_eq!(decompressed.size(), 200);
+
+        assert!(compressed.is_compressed());
+        assert!(!decompressed.is_compressed());
+    }
+
+    #[test]
+    fn test_access_stats_prefetch_effectiveness() {
+        let mut stats = AccessStats::new();
+
+        // No prefetches should give 0 effectiveness
+        stats.record_hit(100, 1);
+        stats.record_hit(100, 2);
+        assert!((stats.prefetch_effectiveness() - 0.0).abs() < f64::EPSILON);
+
+        // Prefetch hits should increase effectiveness
+        stats.record_prefetch_hit();
+        stats.record_prefetch_hit();
+        stats.record_hit(100, 3);
+        assert!(stats.prefetch_effectiveness() > 0.0);
+    }
