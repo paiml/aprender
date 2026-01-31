@@ -257,3 +257,197 @@ fn output_text(batch: &BatchComparison, threshold: f64) {
         println!("  3. Quantization/precision loss during conversion");
     }
 }
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+
+    // ========================================================================
+    // map_hf_to_apr_name Tests
+    // ========================================================================
+
+    #[test]
+    fn test_map_hf_to_apr_name_with_model_prefix() {
+        let hf_name = "model.decoder.layers.0.encoder_attn.q_proj.weight";
+        let apr_name = map_hf_to_apr_name(hf_name);
+        assert_eq!(apr_name, "decoder.layers.0.encoder_attn.q_proj.weight");
+    }
+
+    #[test]
+    fn test_map_hf_to_apr_name_without_prefix() {
+        let hf_name = "decoder.layers.0.self_attn.k_proj.weight";
+        let apr_name = map_hf_to_apr_name(hf_name);
+        assert_eq!(apr_name, "decoder.layers.0.self_attn.k_proj.weight");
+    }
+
+    #[test]
+    fn test_map_hf_to_apr_name_encoder() {
+        let hf_name = "model.encoder.embed_positions.weight";
+        let apr_name = map_hf_to_apr_name(hf_name);
+        assert_eq!(apr_name, "encoder.embed_positions.weight");
+    }
+
+    #[test]
+    fn test_map_hf_to_apr_name_proj_out() {
+        let hf_name = "model.decoder.layers.3.fc2.weight";
+        let apr_name = map_hf_to_apr_name(hf_name);
+        assert_eq!(apr_name, "decoder.layers.3.fc2.weight");
+    }
+
+    #[test]
+    fn test_map_hf_to_apr_name_empty() {
+        let hf_name = "";
+        let apr_name = map_hf_to_apr_name(hf_name);
+        assert_eq!(apr_name, "");
+    }
+
+    #[test]
+    fn test_map_hf_to_apr_name_only_model() {
+        let hf_name = "model.";
+        let apr_name = map_hf_to_apr_name(hf_name);
+        assert_eq!(apr_name, "");
+    }
+
+    #[test]
+    fn test_map_hf_to_apr_name_no_model_prefix() {
+        let hf_name = "lm_head.weight";
+        let apr_name = map_hf_to_apr_name(hf_name);
+        assert_eq!(apr_name, "lm_head.weight");
+    }
+
+    // ========================================================================
+    // run Command Tests
+    // ========================================================================
+
+    #[test]
+    fn test_run_file_not_found() {
+        let result = run(
+            Path::new("/nonexistent/model.apr"),
+            "openai/whisper-tiny",
+            None,
+            1e-5,
+            false,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_invalid_apr() {
+        let mut file = NamedTempFile::with_suffix(".apr").expect("create temp file");
+        file.write_all(b"not a valid apr file").expect("write");
+
+        let result = run(file.path(), "openai/whisper-tiny", None, 1e-5, false);
+        // Either FeatureDisabled or InvalidFormat error
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_with_tensor_filter() {
+        let mut file = NamedTempFile::with_suffix(".apr").expect("create temp file");
+        file.write_all(b"not valid").expect("write");
+
+        let result = run(
+            file.path(),
+            "openai/whisper-tiny",
+            Some("decoder.layers.0"),
+            1e-5,
+            false,
+        );
+        // Should fail (invalid file or feature disabled)
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_with_json_output() {
+        let mut file = NamedTempFile::with_suffix(".apr").expect("create temp file");
+        file.write_all(b"not valid").expect("write");
+
+        let result = run(
+            file.path(),
+            "openai/whisper-tiny",
+            None,
+            1e-5,
+            true, // json_output
+        );
+        // Should fail (invalid file or feature disabled)
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_with_custom_threshold() {
+        let mut file = NamedTempFile::with_suffix(".apr").expect("create temp file");
+        file.write_all(b"not valid").expect("write");
+
+        let result = run(
+            file.path(),
+            "openai/whisper-tiny",
+            None,
+            1e-3, // looser threshold
+            false,
+        );
+        // Should fail (invalid file or feature disabled)
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_with_strict_threshold() {
+        let mut file = NamedTempFile::with_suffix(".apr").expect("create temp file");
+        file.write_all(b"not valid").expect("write");
+
+        let result = run(
+            file.path(),
+            "openai/whisper-tiny",
+            None,
+            1e-8, // strict threshold
+            false,
+        );
+        // Should fail (invalid file or feature disabled)
+        assert!(result.is_err());
+    }
+
+    #[test]
+    #[cfg(not(feature = "safetensors-compare"))]
+    fn test_run_feature_disabled() {
+        let mut file = NamedTempFile::with_suffix(".apr").expect("create temp file");
+        file.write_all(b"not valid").expect("write");
+
+        let result = run(file.path(), "openai/whisper-tiny", None, 1e-5, false);
+        match result {
+            Err(CliError::FeatureDisabled(feature)) => {
+                assert_eq!(feature, "safetensors-compare");
+            }
+            _ => panic!("Expected FeatureDisabled error"),
+        }
+    }
+
+    // ========================================================================
+    // Edge Cases
+    // ========================================================================
+
+    #[test]
+    fn test_map_hf_to_apr_name_special_chars() {
+        let hf_name = "model.layer_norm.weight";
+        let apr_name = map_hf_to_apr_name(hf_name);
+        assert_eq!(apr_name, "layer_norm.weight");
+    }
+
+    #[test]
+    fn test_map_hf_to_apr_name_deep_nesting() {
+        let hf_name = "model.decoder.layers.23.self_attn.k_proj.weight";
+        let apr_name = map_hf_to_apr_name(hf_name);
+        assert_eq!(apr_name, "decoder.layers.23.self_attn.k_proj.weight");
+    }
+
+    #[test]
+    fn test_map_hf_to_apr_name_bias() {
+        let hf_name = "model.encoder.layers.0.fc1.bias";
+        let apr_name = map_hf_to_apr_name(hf_name);
+        assert_eq!(apr_name, "encoder.layers.0.fc1.bias");
+    }
+}
